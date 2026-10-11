@@ -2,10 +2,11 @@ package templates
 
 // admin_list_pagination_render_test.go — 列表页分页条的渲染级守卫（审计 02-L §2 P1-13 / P1-14）。
 //
-// 分页条本身是 `admin/partials/pagination.html`：它只读两个键（PaginationInfo / PaginationLinks），
-// **单页或空数据时不渲染**（handler 侧的 shell.BuildPagination 在 total 不超过一页时返回 nil，
-// TemplateKeys 给出空 map）。所以「有没有分页」这件事有两半：handler 注入的键名对不对、
-// 模板消费的位置与传参对不对。本文件钉住后一半。
+// 分页条本身是 `admin/partials/pagination.html`：它读**事实键** `Pagination`（pkg/pagination.Page，
+// 迁移期末期）并保留旧两键（PaginationInfo / PaginationLinks）作兜底；**单页或空数据时不渲染**
+// （handler 侧只在 pagination.Facts(...).HasPagination() 为真时才注入该键 —— 键缺失）。
+// 所以「有没有分页」这件事有两半：handler 注入的键名对不对、模板消费的位置与传参对不对。
+// 本文件钉住后一半；mail 六页的**旧/新逐字节等价**在 admin_mail_pagination_facts_test.go。
 //
 // 三条判据：
 //  1. 无分页数据（键缺失）时**不出现** `.pagination` —— 单页列表上挂一条「上一页 / 下一页」是噪声；
@@ -14,16 +15,18 @@ package templates
 //     「键名与渲染位置一一对应」这条判据要留着守 —— 对错位置同样是用户看不见分页）；
 //  3. 分页链接保留筛选参数（翻页不能把用户的筛选条件丢掉）。
 //
-// 为什么这里用本地的 `pageLinkProbe` 而不是 shell.PageLink：`internal/shell` 反向 import 了
-// 本包（shell.TranslateFor → templates.TranslateFunc），本包再 import shell 就成环。
-// 探针的字段名与 shell.PageLink 逐字相同（Label / URL / Active / Disabled）——
-// 那边一旦改名，Jet 取字段会直接报 `no field or method Label`，本文件立刻变红。
-// 真实类型在端到端用例里覆盖：public/test/mail/feature 的页面分页测试走真 handler + 真模板。
+// 这里直接用 `pkg/pagination.PageLink`（不再需要本地探针）：分页实现与类型都在 pkg，
+// `pkg` 不反向 import `internal`，所以本包 import 它不成环 —— 旧探针存在的唯一理由
+// （`internal/shell` 反向依赖本包）已随分页迁出 shell 消失。字段名由真实类型给出，
+// 一旦改名 Jet 取字段会直接报 `no field or method Label`，本文件立刻变红。
+// 真实数据链路由端到端用例覆盖：public/test/mail/feature 的页面分页测试走真 handler + 真模板。
 
 import (
 	"html"
 	"strings"
 	"testing"
+
+	"go_wp/pkg/pagination"
 )
 
 // plainPaginationHrefs 摘出输出里的分页链接（断言失败时给出可读的实际值，而不是整页 HTML）。
@@ -41,23 +44,15 @@ func plainPaginationHrefs(plain string) string {
 	return strings.Join(hrefs, " | ")
 }
 
-// pageLinkProbe 与 shell.PageLink 同形状的渲染探针（见文件头注释的成环说明）。
-type pageLinkProbe struct {
-	Label    string
-	URL      string
-	Active   bool
-	Disabled bool
-}
-
 // paginationKeys 造一组「共 N 条 + 两个页码」的分页数据，键名与 handler 注入的完全一致。
-func paginationKeys(info string, links []pageLinkProbe) map[string]any {
+func paginationKeys(info string, links []pagination.PageLink) map[string]any {
 	return map[string]any{"PaginationInfo": info, "PaginationLinks": links}
 }
 
 // mailProbeLinks 一组指向 /admin/mail 的分页链接（用于 mail 页两张表的探针数据）。
-func mailProbeLinks(page int) []pageLinkProbe {
+func mailProbeLinks(page int) []pagination.PageLink {
 	next := "/admin/mail?page=" + itoa(page) + "&limit=20"
-	return []pageLinkProbe{
+	return []pagination.PageLink{
 		{Label: "上一页", Disabled: page == 1},
 		{Label: itoa(page), URL: "/admin/mail?page=" + itoa(page) + "&limit=20", Active: true},
 		{Label: itoa(page + 1), URL: next},
@@ -92,16 +87,15 @@ func TestAdminListPaginationRenders(t *testing.T) {
 	// 拆页后每页只有一张表：账号表的分页数据落在账号页自己的分页条上，
 	// 不再有「两表共用一组键名互相覆盖」的风险（拆页前那正是本用例守的东西）。
 	t.Run("mail/账号表的分页条", func(t *testing.T) {
-		data := map[string]any{"Accounts": []any{}}
-		for k, v := range paginationKeys("共 41 条，第 1-20 条", mailProbeLinks(1)) {
-			data[k] = v
-		}
-		out := renderAdminEmptyProbe(t, "admin/mail/mail", data)
+		out := renderAdminEmptyProbe(t, "admin/mail/mail", map[string]any{
+			"Accounts":   []any{},
+			"Pagination": mailPaginationFacts(41, 1, 20, "/admin/mail", "account_page", false),
+		})
 		if got := strings.Count(out, `class="pagination"`); got != 1 {
 			t.Fatalf("mail：账号表有分页数据时应渲染 1 条分页条，实际 %d 条", got)
 		}
 		if !strings.Contains(out, "共 41 条，第 1-20 条") {
-			t.Error("mail：分页信息未渲染")
+			t.Error("mail：分页信息未渲染（信息行由 partial 按事实键自己算）")
 		}
 	})
 
@@ -109,13 +103,9 @@ func TestAdminListPaginationRenders(t *testing.T) {
 		out := renderAdminEmptyProbe(t, "admin/mail/mail_contacts", marketingProbeData(map[string]any{
 			"Contacts": []any{},
 			"Keyword":  "vip@example.com", "Status": "subscribed",
-			"PaginationInfo": "共 120 条，第 51-100 条",
-			// 分页条里的当前页渲染成 <span>（没有 href），所以断言筛选参数必须看**非当前页**
-			// 的链接 —— 这正好是用户点「翻页」时走的那条。
-			"PaginationLinks": []pageLinkProbe{
-				{Label: "1", URL: "/admin/mail/contacts?keyword=vip%40example.com&status=subscribed&page=1"},
-				{Label: "2", URL: "/admin/mail/contacts?keyword=vip%40example.com&status=subscribed&page=2", Active: true},
-			},
+			// 事实键：Base 由 handler 用 reqparams.FilterBaseURL 拼好（筛选在基址里），
+			// 每页 50 条、链接带 limit —— 与迁移前 BuildPagination 的产出同形。
+			"Pagination": mailPaginationFacts(120, 2, 50, "/admin/mail/contacts?keyword=vip%40example.com&status=subscribed", "page", true),
 		}))
 		if got := strings.Count(out, `class="pagination"`); got != 1 {
 			t.Fatalf("mail_contacts：分页数据应渲染 1 条分页条，实际 %d 条", got)
@@ -145,12 +135,7 @@ func TestAdminListPaginationRenders(t *testing.T) {
 		if strings.Contains(single, `class="pagination"`) {
 			t.Error("mail_campaign：没有分页数据时不应渲染分页条（此前的「第 N 页」文本已删除）")
 		}
-		for k, v := range paginationKeys("共 120 条，第 51-100 条", []pageLinkProbe{
-			{Label: "1", URL: "/admin/mail/campaign?id=7&page=1&limit=50"},
-			{Label: "2", URL: "/admin/mail/campaign?id=7&page=2&limit=50", Active: true},
-		}) {
-			base[k] = v
-		}
+		base["Pagination"] = mailPaginationFacts(120, 2, 50, "/admin/mail/campaign?id=7", "page", true)
 		out := renderAdminEmptyProbe(t, "admin/mail/mail_campaign", base)
 		if got := strings.Count(out, `class="pagination"`); got != 1 {
 			t.Fatalf("mail_campaign：应收件人明细下有 1 条分页条，实际 %d 条", got)

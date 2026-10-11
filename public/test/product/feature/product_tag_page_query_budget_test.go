@@ -33,6 +33,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"go_wp/internal/middleware/adminctx"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
@@ -40,7 +41,6 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 
 	"go_wp/public/test/support"
 )
@@ -107,13 +107,13 @@ func newTagQueryFixture(t *testing.T) *tagPageFixture {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 页面组由 shell.PermContextMiddleware 注入权限码；这条链路不挂鉴权中间件，
+	// 页面组由 adminctx.PermContextMiddleware 注入权限码；这条链路不挂鉴权中间件，
 	// 注入一份权限，保证页面按真实形态渲染。
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{
+		c.Set(adminctx.PermSetKey, map[string]bool{
 			"product:tag_create": true, "product:tag_update": true, "product:tag_delete": true,
 		})
-		c.Set(shell.ButtonsKey, map[string]bool{
+		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"product.tag_create": true, "product.tag_update": true, "product.tag_delete": true,
 		})
 
@@ -302,7 +302,7 @@ func tagNamesOnPage(body string) []string {
 //	  （形状判据「必须是 GROUP BY」在首屏那一段里钉着，这里只数条数）；
 //	③ 所有页的标签名并集 == 库里的 want 个，且逐个都在某页出现过 ——
 //	  「分页」只改变一次看多少，不能变成「数据丢了」；
-//	④ 越界页码收敛到最后一页（不是渲染一张空表）—— 与 shell.BuildPagination 的
+//	④ 越界页码收敛到最后一页（不是渲染一张空表）—— 与 pkg/pagination.BuildPagination 的
 //	  同一条收敛规则一致，否则会出现「表格空、分页条却显示第 N 页」。
 //
 // 它替换了原先「最后一个标签名在页面上」的渲染证据：那个判据把「全量渲染」当成了

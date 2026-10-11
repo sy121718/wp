@@ -13,12 +13,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/module/block/contract"
 	"go_wp/internal/module/navigation/contract"
 	"go_wp/internal/module/page/contract"
 	"go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 )
 
@@ -36,22 +36,18 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 		return
 	}
 	h := NewNavigationPageHandle(navigations, projects)
-	// 面板块能力（超级菜单）：装配期注入；未注入时面板入口降级可见（PanelAvail=false）。
+	// 面板块能力（超级菜单）：装配期注入；未注入时**编辑抽屉**里的面板区整体降级
+	//（NavEditPanelAvail=false，入口隐藏 —— 不留一个点了没反应的下拉）。
 	h.SetBlockPanelPort(blocks)
-	adminPages.GET("/navigations", shell.PageAuthz("/api/navigation/list"), h.NavigationsPage)
+	adminPages.GET("/navigations", adminui.PageAuthz("/api/navigation/list"), h.NavigationsPage)
 	// GET 读编辑表单，但代理真正 POST /api/navigation/update 的权限动作。
 	adminPages.GET("/navigations/edit", builtin.CasbinMiddlewareForPathAs("/api/navigation/update", http.MethodPost), h.NavigationEditFragment)
 	// 面板设置复用 navigation:update；新建面板块是**块的创建**，故挂 block:create。
 	adminPages.POST("/navigations/panel", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.PanelSet)
 	adminPages.POST("/navigations/panel/create", builtin.CasbinMiddlewareForPath("/api/block/create"), h.PanelCreate)
-	adminPages.POST("/navigations/create", builtin.CasbinMiddlewareForPath("/api/navigation/create"), h.NavigationCreate)
-	adminPages.POST("/navigations/add-source", builtin.CasbinMiddlewareForPath("/api/navigation/create"), h.NavigationAddSource)
 	adminPages.POST("/navigations/update", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.NavigationUpdate)
-	adminPages.POST("/navigations/delete", builtin.CasbinMiddlewareForPath("/api/navigation/delete"), h.NavigationDelete)
-	// 批量删除复用同一条删除路径与权限点（/api/navigation/delete）：批量只是单条的加速器，
-	// 不是另一件事 —— 另立权限点会让「能删一个、不能删十个」这种状态出现。
-	adminPages.POST("/navigations/bulk-delete", builtin.CasbinMiddlewareForPath("/api/navigation/delete"), h.NavigationsBulkDelete)
-	adminPages.POST("/navigations/move", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.NavigationMove)
+	// 同级上移 / 下移已迁到真实 JSON 端点（POST /api/navigation/update，action="move"，
+	// 见 navigation_move_write.go）：页面这一侧不再保留它的 POST。
 
 	// 导航译文工作台（审计 I18N-007）：菜单标签不在页面文档里，页面翻译工作台看不到它，
 	// 构建期靠 navigation.label 语境回填 —— 本页是那个语境的唯一维护入口。
@@ -71,6 +67,10 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	if invalidator, ok := navigations.(navTranslationMenuInvalidator); ok {
 		translations.SetMenuInvalidator(invalidator)
 	}
-	adminPages.GET("/navigations/translations", shell.PageAuthz("/api/navigation/list"), translations.NavigationTranslations)
-	adminPages.POST("/navigations/translations/save", builtin.CasbinMiddlewareForPath("/api/navigation/update"), translations.SaveNavigationTranslations)
+	// 译文保存的写入口在真实 JSON 端点 POST /api/navigation/update（action="translations"）：
+	// 它由 SetupNavigationRoutes 注册，拿不到这里的 writer / marker / invalidator 端口，
+	// 所以把带端口的句柄交给包级写入口（未注入时该分支 fail closed，见
+	// navigation_translation_write.go）。
+	SetNavigationTranslationWriter(translations)
+	adminPages.GET("/navigations/translations", adminui.PageAuthz("/api/navigation/list"), translations.NavigationTranslations)
 }

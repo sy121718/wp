@@ -200,19 +200,14 @@ func TranslatableFields(entityType string) []string {
 //
 // tr 由调用点给：本包不依赖 gin / shell，取词函数一律从 inbound / service 传进来
 // （与 productservice.translateFrom 同一条约定）。中文是兜底，词条 key 见迁移 449。
+//
+// 「值 → (key, 兜底)」的映射**只有一份**，在 productenums.EntityTypeLabel
+// （internal/module/CLAUDE.md §enums）：本函数只是把它接成 tr 形态。此前这里自带一个 switch，
+// 而控制器的译文工作台另写一份同判据的 key + 兜底表 —— 两份映射的下场是同一个实体类型
+// 在两个入口叫两个名字（不报错、门禁也不红）。
 func EntityTypeLabel(tr func(key, fallback string) string, entityType string) string {
-	switch entityType {
-	case EntityTypeCategory:
-		return tr(productenums.ProductTranslationsEntityTypeCategory, "商品分类")
-	case EntityTypeBrand:
-		return tr(productenums.ProductTranslationsEntityTypeBrand, "商品品牌")
-	case EntityTypeTag:
-		return tr(productenums.ProductTranslationsEntityTypeTag, "商品标签")
-	case EntityTypeAttribute:
-		return tr(productenums.ProductTranslationsEntityTypeAttribute, "商品属性")
-	default:
-		return tr(productenums.ProductTranslationsEntityTypeProduct, "商品")
-	}
+	key, fallback := productenums.EntityTypeLabel(entityType)
+	return tr(key, fallback)
 }
 
 // FieldLabel 可翻译字段的展示名（后台翻译页字段列；未知字段原样返回 —— 字段名是数据）。

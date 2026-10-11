@@ -1,0 +1,326 @@
+package producthttp
+
+// product_pagination_facts_test.go — P3 B2 的 handler 级判据（task-109）。
+//
+// 模板级差分（internal/templates）证明「同一份 partial 用两种数据形态渲染出同样的字节」，
+// 这里补的是另一半：**handler 真的改成了事实键，且页面上出现的是可以独立复算的链接**。
+//
+// 期望值一律在测试里用 url.Values 独立拼（不复制产品代码的拼串逻辑）：链接里少一个筛选参数
+// 或少了 limit，页面上看不出来（照样能翻页），只有独立复算能发现。
+//
+// 另有一档必须保住的**既有行为**（lead 裁定：本批不改）：商品列表页在 total>0 之后逐行取详情
+// 失败时，失败页**仍然**带分页条 —— 旧 BuildPagination 拿到的就是这个 total。
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	productcontract "go_wp/internal/module/product/contract"
+	productdto "go_wp/internal/module/product/dto"
+	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/internal/templates"
+)
+
+// paginationElement 拼出页面里应当出现的**整段元素**（分页链接的字节）。
+//
+// 为什么断言整段元素而不是 `href="…"`：只盯属性值会漏掉「元素类名/内层文字变了」这类消融
+// （例如把 `<a class="pagination-btn">` 换成别的类、或把页码写死成 1），而那些同样是用户看得见的
+// 变化。整段元素的字节相等把「链接地址 + 类名 + 页码文字」一次钉住。
+func paginationElement(base string, page, limit int) string {
+	return `<a class="pagination-btn" href="` + paginationHref(base, page, limit) + `">` + strconv.Itoa(page) + `</a>`
+}
+
+// paginationHref 把「基地址 + page/limit」拼成页面里应当出现的属性字节。
+//
+// 页面里的 href 是 Jet 转义过的（`&` → `&amp;`，与旧 {{l.URL}} 插值同形），因此期望值也走
+// 同一条转义 —— 断言的是**实际字节**，不是浏览器解析后的值。
+func paginationHref(base string, page, limit int) string {
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	raw := base + sep + "page=" + strconv.Itoa(page) + "&limit=" + strconv.Itoa(limit)
+	return strings.ReplaceAll(raw, "&", "&amp;")
+}
+
+func TestTaxonomyPagesPaginationFactsRenderLinks(t *testing.T) {
+	const rows = 25 // 每页 20 → 两页，第 2 页一定在窗口里
+	cases := []struct {
+		name string
+		path string
+		base string
+	}{
+		{
+			name: "属性页",
+			path: "/admin/product-attributes?project=p1&keyword=pg&variation=1",
+			base: "/admin/product-attributes?keyword=pg&project=p1&variation=1",
+		},
+		{
+			name: "标签页",
+			path: "/admin/product-tags?project=p1&keyword=pg",
+			base: "/admin/product-tags?keyword=pg&project=p1",
+		},
+		{
+			name: "分类页",
+			path: "/admin/product-categories?project=p1&keyword=pg",
+			base: "/admin/product-categories?keyword=pg&project=p1",
+		},
+		{
+			name: "品牌页",
+			path: "/admin/product-brands?project=p1&keyword=pg",
+			base: "/admin/product-brands?keyword=pg&project=p1",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := &taxonomyStub{projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}}
+			seedTaxonomyRows(stub, rows)
+			h := &productPageHandle{projects: productPageProjectsStub{rows: stub.projects}, products: stub}
+
+			rec := taxonomyRequest(t, h, tc.path)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("成功档应 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, `class="pagination"`) {
+				t.Fatalf("超过一页却没渲染分页条")
+			}
+			// 整段元素字节收口（不是只比 href 的值）：地址、类名、页码文字一次钉住。
+			// 当前页（page=1）是 is-active 的 span、没有 href；能证明「基地址 + page + limit」
+			// 全都在链接里的是第 2 页那条。
+			for _, want := range []string{
+				paginationElement(tc.base, 2, 20),
+				`<span class="pagination-btn is-active">1</span>`,
+				`<span class="pagination-btn is-disabled">上一页</span>`,
+			} {
+				if !strings.Contains(body, want) {
+					t.Errorf("分页条里没有整段元素 %q", want)
+				}
+			}
+			// 旧键必须已经不在页面上：留着它就是「两条链并存」，下一批迁移会把其中一条改漏。
+			for _, bad := range []string{"PaginationLinks", "PaginationInfo"} {
+				if strings.Contains(body, bad) {
+					t.Errorf("页面上仍出现旧键 %q", bad)
+				}
+			}
+		})
+	}
+}
+
+// seedTaxonomyRows 给四页各铺 rows 行数据（同一份桩服务四页）。
+func seedTaxonomyRows(s *taxonomyStub, rows int) {
+	for i := 0; i < rows; i++ {
+		s.attrs = append(s.attrs, &productdto.AttributeResp{ID: "a", ProjectID: "p1", Key: "k", Name: "属性"})
+		s.tags = append(s.tags, &productdto.TagResp{ID: "t", ProjectID: "p1", Name: "标签", Kind: "manual"})
+		s.brands = append(s.brands, &productdto.BrandResp{ID: "b", ProjectID: "p1", Name: "品牌"})
+		s.categories = append(s.categories, &productdto.CategoryResp{ID: "c", ProjectID: "p1", Name: "分类"})
+		s.pageRows = append(s.pageRows, &productdto.CategoryResp{ID: "c", ProjectID: "p1", Name: "分类"})
+	}
+}
+
+// TestTaxonomyPagesSinglePageRendersNoPagination 单页/空集不渲染分页条（事实键不注入这一档）。
+func TestTaxonomyPagesSinglePageRendersNoPagination(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		path string
+	}{
+		{name: "属性页", path: "/admin/product-attributes?project=p1"},
+		{name: "标签页", path: "/admin/product-tags?project=p1"},
+		{name: "分类页", path: "/admin/product-categories?project=p1"},
+		{name: "品牌页", path: "/admin/product-brands?project=p1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := &taxonomyStub{projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}}
+			seedTaxonomyRows(stub, 3)
+			h := &productPageHandle{projects: productPageProjectsStub{rows: stub.projects}, products: stub}
+			body := taxonomyRequest(t, h, tc.path).Body.String()
+			if strings.Contains(body, `class="pagination"`) {
+				t.Fatalf("单页不该渲染分页条")
+			}
+		})
+	}
+}
+
+// TestProductsPagePaginationFactsRenderLinks 商品列表页：三个筛选参数与 limit 都在链接里。
+func TestProductsPagePaginationFactsRenderLinks(t *testing.T) {
+	const rows = 25
+	listRows := make([]*productdto.ProductResp, 0, rows)
+	for i := 0; i < rows; i++ {
+		listRows = append(listRows, &productdto.ProductResp{ID: "p1", Name: "商品", Status: "active"})
+	}
+	h := &productPageHandle{
+		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
+		products: &productPageProductsStub{
+			listRows: listRows,
+			getRes:   &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"},
+		},
+	}
+	rec := productPageRequest(t, h, "/admin/products?project=p1&keyword=abc&status=draft")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("成功档应 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
+	}
+	body := rec.Body.String()
+	base := "/admin/products?keyword=abc&project=p1&status=draft"
+	if !strings.Contains(body, paginationElement(base, 2, 20)) {
+		t.Fatalf("商品列表页的分页链接元素不对（筛选 / limit / 类名 / 页码文字，期望整段 %q）",
+			paginationElement(base, 2, 20))
+	}
+	if strings.Contains(body, "PaginationLinks") || strings.Contains(body, "PaginationInfo") {
+		t.Fatal("页面上仍出现旧分页键")
+	}
+}
+
+// TestProductsPageFailureAfterTotalKeepsFailureShape total 已确定后行详情失败：失败页仍是失败页。
+//
+// 设计稿里我把这一档写成「失败页仍带分页条」，**实测不成立**：products.html 的分支是
+// `{{if loadError}} 失败槽 {{else}} …含分页条… {{end}}`，失败分支根本不 include 分页片段 ——
+// 事实键注入了也没被渲染。迁移前后同形（本批没动任何模板分支），这里把实测行为钉住：
+// 失败页有失败槽、没有分页条，且分页事实仍按 total 注入（旧 BuildPagination 拿到的也是同一个
+// total，行为逐字节不变）。谁把它改成别的样子，这里红。
+func TestProductsPageFailureAfterTotalKeepsFailureShape(t *testing.T) {
+	const rows = 25
+	listRows := make([]*productdto.ProductResp, 0, rows)
+	for i := 0; i < rows; i++ {
+		listRows = append(listRows, &productdto.ProductResp{ID: "p1", Name: "商品", Status: "active"})
+	}
+	h := &productPageHandle{
+		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
+		products: &productPageProductsStub{
+			listRows: listRows,
+			getErr:   errors.New("读取商品详情失败"),
+		},
+	}
+	rec := productPageRequest(t, h, "/admin/products?project=p1")
+	body := assertProductPageFailure(t, "行详情失败", rec, http.StatusInternalServerError, "这一页的数据没能读出来")
+	if strings.Contains(body, `class="pagination"`) {
+		t.Fatal("失败页出现了分页条：产品列表的失败分支不 include 分页片段（实测行为）")
+	}
+	if strings.Contains(body, "PaginationLinks") || strings.Contains(body, "PaginationInfo") {
+		t.Fatal("失败页出现了旧分页键")
+	}
+	// 成功页仍有分页条（同一份数据、同一个 total，只是模板分支不同）：
+	// 这条对照让「失败页没有分页条」不至于被误读成「分页坏了」。
+	ok := &productPageHandle{
+		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
+		products: &productPageProductsStub{
+			listRows: listRows,
+			getRes:   &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"},
+		},
+	}
+	okBody := productPageRequest(t, ok, "/admin/products?project=p1").Body.String()
+	if !strings.Contains(okBody, paginationElement("/admin/products?project=p1", 2, 20)) {
+		t.Fatal("对照失败：成功页的分页链接元素没渲染出来")
+	}
+}
+
+// —— B2b：命中商品片段的 handler 级判据（模板级差分在 internal/templates）——
+
+// tagHitsStub 只实现片段用到的一个方法（其余因嵌入接口为 nil 而 panic）。
+type tagHitsStub struct {
+	productcontract.ProductService
+	resp *productdto.TagProductsPageResp
+	err  error
+}
+
+func (s *tagHitsStub) ListTagProductsPage(context.Context, *productdto.ListTagProductsPageReq) (*productdto.TagProductsPageResp, error) {
+	return s.resp, s.err
+}
+
+// tagHitsRequest 把片段挂到最小引擎上，用真实 Jet 渲染器跑完整个请求。
+func tagHitsRequest(t *testing.T, h *productPageHandle, target string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	engine.GET("/admin/product-tags/hits", h.ProductTagHitsFragment)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+	return rec
+}
+
+func tagHitsRows(n int) []*productdto.TagProductResp {
+	rows := make([]*productdto.TagProductResp, 0, n)
+	for i := 0; i < n; i++ {
+		rows = append(rows, &productdto.TagProductResp{ID: "p", Name: "商品", Slug: "sku", Status: "on"})
+	}
+	return rows
+}
+
+// TestTagHitsFragmentPaginationIsFactsDriven 片段走 handler 时：事实键必须注入、按钮是 hx-get、
+// info 区间按**本页实际行数**算。
+//
+// 为什么这条必须存在：片段的模板级用例（internal/templates）直接喂数据，看不到 handler 是否
+// 真的把 Pagination 交出去 —— 若 handler 按 HasPagination() 设闸，单页非空时模板读不到该键，
+// 页面上就会变成「没有分页信息」，而模板级用例照样全绿。
+func TestTagHitsFragmentPaginationIsFactsDriven(t *testing.T) {
+	t.Run("第二页三行", func(t *testing.T) {
+		h := &productPageHandle{products: &tagHitsStub{resp: &productdto.TagProductsPageResp{
+			TagID: "t1", TagName: "标签", Total: 45, Page: 2, PageSize: 20, TotalPage: 3,
+			Items: tagHitsRows(3),
+		}}}
+		rec := tagHitsRequest(t, h, "/admin/product-tags/hits?project=p1&id=t1&page=2&size=20")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("状态码应为 200，实际 %d", rec.Code)
+		}
+		body := rec.Body.String()
+		// 区间按实际行数（3 行）算 —— 不是按 total 推出的 21-40。
+		if !strings.Contains(body, "共 45 条，第 21-23 条") {
+			t.Fatalf("info 行没按实际行数算：%s", headOf(body))
+		}
+		// 整段按钮元素字节收口：地址（含 id/page/project 的键序）、类名、hx 三属性、按钮文字一次钉住。
+		for _, want := range []string{
+			tagHitsButtonElement(1, "上一页"),
+			tagHitsButtonElement(3, "下一页"),
+			`<div class="pagination-info">共 45 条，第 21-23 条</div>`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("片段缺少整段元素 %q", want)
+			}
+		}
+		if strings.Contains(body, `<a class="pagination-btn"`) {
+			t.Error("翻页入口出现了 <a href> 形态：本片段必须走 hx-get")
+		}
+		if strings.Contains(body, "limit=") {
+			t.Error("片段翻页链接不该带 limit（KeepLimit=false）")
+		}
+	})
+
+	t.Run("单页非空仍渲染两个禁用按钮", func(t *testing.T) {
+		h := &productPageHandle{products: &tagHitsStub{resp: &productdto.TagProductsPageResp{
+			TagID: "t1", TagName: "标签", Total: 5, Page: 1, PageSize: 20, TotalPage: 1,
+			Items: tagHitsRows(5),
+		}}}
+		body := tagHitsRequest(t, h, "/admin/product-tags/hits?project=p1&id=t1&page=1&size=20").Body.String()
+		if !strings.Contains(body, `class="pagination"`) {
+			t.Fatal("单页非空时片段没渲染分页条（handler 若按 HasPagination() 设闸就会这样）")
+		}
+		for _, want := range []string{
+			`<span class="pagination-btn is-disabled">上一页</span>`,
+			`<span class="pagination-btn is-disabled">下一页</span>`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("单页档缺少整段禁用元素 %q", want)
+			}
+		}
+		if got := strings.Count(body, `class="pagination-btn is-disabled"`); got != 2 {
+			t.Fatalf("禁用按钮 = %d 个，期望 2 个（上一页 / 下一页）", got)
+		}
+		if !strings.Contains(body, "共 5 条，第 1-5 条") {
+			t.Fatalf("info 行不对：%s", headOf(body))
+		}
+	})
+}
+
+// tagHitsButtonElement 命中商品片段里翻页按钮的整段字节（键序 id → page → project，属性按 HTML 转义）。
+func tagHitsButtonElement(page int, label string) string {
+	return `<button type="button" class="pagination-btn" hx-get="/admin/product-tags/hits?id=t1&amp;page=` +
+		strconv.Itoa(page) + `&amp;project=p1" hx-target="#tag-hits-panel" hx-swap="innerHTML">` + label + `</button>`
+}

@@ -12,10 +12,8 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
-{* 分页键由 handler 注入在顶层。单页或空数据时不存在 —— 取到 nil 不中断渲染，
-   分页片段里的 if 自然跳过。 *}
-{{tplLinks := .["PaginationLinks"]}}
-{{tplInfo := .["PaginationInfo"]}}
+{* 分页事实由 handler 注入在顶层键 "Pagination"（pkg/pagination.Page）；单页或空数据时
+   该键不存在 —— 缺键不中断渲染，片段里的 isset 守卫自然跳过。 *}
 {{canSaveTemplate := isset(.Buttons["mail.template_save"])}}
 {* 批量动作复用对应单条动作的权限点（路由层用同一个 CasbinMiddlewareForPath），不新增权限点。 *}
 {{canDeleteTemplate := isset(.Buttons["mail.template_delete"])}}
@@ -102,7 +100,7 @@
       </div>
     </form>
     {* 邮件模板表的分页条（每页 20 条；单页时不渲染）。 *}
-    {{include "../partials/pagination.html" map("t", tr, "PaginationLinks", tplLinks, "PaginationInfo", tplInfo)}}
+    {{include "../partials/pagination.html" map("t", tr, "Pagination", .["Pagination"])}}
   </section>
 
   {* 行内表单与抽屉模板放表格外：HTML 不允许 form 嵌套，按钮用 form="<id>" 关联。 *}

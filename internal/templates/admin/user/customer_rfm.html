@@ -5,8 +5,10 @@
 {* 这一点必须写在页面上，否则分数一定会被读成绝对等级。 *}
 {* Jet 方言：range 用 `range _, x := .List` 形式时 `.` 仍指向根作用域，元素走绑定变量。 *}
 {{extends "../layout.html"}}
+{{import "customer_badges.html"}}
 {{block body()}}
 {{rows := .Rows}}
+{{tr := .["t"]}}
 <div class="stack customers-page">
     <header class="page-head">
         <div class="page-head-main">
@@ -36,7 +38,10 @@
     <div class="filter-bar">
         <div class="filter-row">
             {{range _, tab := .SegmentTabs}}
-            <a class="badge {{tab.Badge}}" href="{{tab.URL}}"{{if tab.Active}} aria-current="true"{{end}}>{{if tab.Active}}<strong>✓ {{ .["t"](tab.LabelKey, tab.Label) }}</strong>{{else}}{{ .["t"](tab.LabelKey, tab.Label) }}{{end}} {{tab.Count}}</a>
+            {* 分段档位与徽章拼法在 customer_badges.html 的 customerRfmSegmentTab（与列表页的
+               计数徽章共用同一个 <a> 片段，档位按各自键域取）：vip → ok、potential → info，
+               其余（含「全部」）落 mute —— 原先「全部」没有色调类，与列表页的「全部」长得不一样。 *}
+            {{yield customerRfmSegmentTab(tab=tab, tr=tr)}}
             {{end}}
             <span class="text-mute text-sm">{{ .["t"]("admin.customer.rfm.scope", "范围：") }}{{.Range.From}} ~ {{.Range.To}}</span>
         </div>
@@ -61,7 +66,7 @@
                     {{range _, r := rows}}
                     <tr>
                         <td>
-                            <a href="{{r.DetailURL}}">{{if r.Name != ""}}{{r.Name}}{{else}}{{ .["t"]("admin.customer.rfm.unnamed", "客户 #") }}{{r.UserID}}{{end}}</a>
+                            <a href="/admin/customers/detail?id={{r.UserID}}">{{if r.Name != ""}}{{r.Name}}{{else}}{{ .["t"]("admin.customer.rfm.unnamed", "客户 #") }}{{r.UserID}}{{end}}</a>
                             {{if r.Email != ""}}<div class="text-mute text-sm">{{r.Email}}</div>{{end}}
                         </td>
                         <td>{{r.LastOrderAt}}</td>
@@ -70,12 +75,17 @@
                         <td class="col-num">{{r.MonetaryLabel}}</td>
                         <td class="col-num">{{r.RScore}} / {{r.FScore}} / {{r.MScore}}</td>
                         <td class="col-num">{{r.TotalScore}}</td>
-                        <td>{{r.SegmentLabel}}</td>
+                        {* 分段展示名在模板里选（服务端只给分段键）：认不出的取值**原样显示**，
+                           不渲染成空白 —— 口径变了而模板没跟上时，一个陌生的英文词
+                           比一个空单元格更容易被发现。 *}
+                        {{segment := r.Segment}}
+                        {{if segment == "vip"}}{{segment = tr("admin.customer.rfm.segment.vip", "高价值")}}{{else if segment == "potential"}}{{segment = tr("admin.customer.rfm.segment.potential", "潜力")}}{{else if segment == "low_value"}}{{segment = tr("admin.customer.rfm.segment.lowValue", "一般")}}{{end}}
+                        <td>{{segment}}</td>
                     </tr>
                     {{end}}
-                    {{if .Err != ""}}
+                    {{if .HasErr}}
                     {* 查询失败：仍然保留表头（用户能看见这一页有哪些列），把原因放进正文。 *}
-                    <tr><td colspan="8" class="cell-wrap">{{.Err}}</td></tr>
+                    <tr><td colspan="8" class="cell-wrap">{{ .["t"](.ErrKey, .ErrFallback) }}</td></tr>
                     {{else if !.RfmReady}}
                     <tr><td colspan="8" class="cell-wrap">{{ .["t"]("admin.customer.rfm.empty", "这段时间里没有可分析的客户：可能是还没有站点工程，也可能确实没有已付款的订单。换个时间段试试。") }}</td></tr>
                     {{else if len(rows) == 0}}

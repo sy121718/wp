@@ -350,7 +350,7 @@ const (
 // 字面量取值，页面搬回本模块后在本模块留一份常量，比让模块反向依赖 web/dashboard 层干净。
 const (
 	// MsgInventorySourcesTitle 货源管理页标题（issue #17）。
-	// 值就是 i18n key：shell.Prepare 会做 t(title, title)，词条命中则显示译文、未命中回退字面量。
+	// 值就是 i18n key：adminui.Prepare 会做 t(title, title)，词条命中则显示译文、未命中回退字面量。
 	// 因此**新增这两个常量必须同批 seed 词条**（迁移 217），否则顶栏会把 key 原样显示出来。
 	MsgInventorySourcesTitle = "MsgInventorySourcesTitle"
 	// MsgInventoryPurchasesTitle 采购入库页标题（issue #18）。同上，词条见迁移 217。
@@ -360,9 +360,13 @@ const (
 // 业务错误**补充说明**的词条（key + 具名参数 + 中文兜底）。
 //
 // 背景与 product 模块同一套（见 pkg/i18n/errdetail.go）：service 用
-// fmt.Errorf("%s：%s", 业务 key, 补充说明) 把上下文跟在业务文案后，而读侧只翻前半截 key ——
+// fmt.Errorf("%s: %s", 业务 key, 补充说明) 把上下文跟在业务文案后，而读侧只翻前半截 key ——
 // 后半截中文在英文界面上永远是中文。改用 ErrorDetail 之后，读侧
 // （inventoryErrDetailText）取词并填 {name} 占位符，整句按当前语言渲染。
+//
+// **分隔符是 ASCII 冒号**：页面出口按它切「key / 明细」两段再判形态
+// （adminui.BusinessErrFact → pkg/response.IsBusinessError，正则锚定、整串匹配不上），
+// 写成全角「：」时切不开，整条错误会被判成内部故障并丢掉明细。
 const (
 	// DetailExternalSKUOwner 「该外部编码在本仓已属于商品 X」里的那个商品。
 	//

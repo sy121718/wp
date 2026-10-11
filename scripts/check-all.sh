@@ -48,6 +48,8 @@ PLAIN_SCRIPTS=(
   check-page-title.sh
   check-help-popover.py
   check-route-registration-placement.sh
+  check-controller-i18n-literals.sh
+  check-shell-migration.sh
 )
 
 # 需要真实 PostgreSQL，且必须在迁移（go run ./cmd -migrate-only）之后。

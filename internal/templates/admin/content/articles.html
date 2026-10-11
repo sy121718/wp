@@ -50,9 +50,12 @@
        在这一行中断（HTTP 仍 200、之后的 HTML 整块消失）。删掉 isset 只是让渲染路径
        变窄 —— 线上由 articleListPageData 总给这个键，所以它坏起来不会有任何征兆。
        写动作的结论（成功 / 失败 / 批量）不再回带列表页：走 shell.RenderJump 的整页提示，
-       所以这里只剩**列表取数失败**这一条提示。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.article.list.lastError", "上一次操作未完成：") }}{{.Err}}</p>
+       所以这里只剩**列表取数失败**这一条提示。
+       Err 是**事实**（key + 中文兜底），取词在这里发生 —— 控制器不取词，英文后台下
+       这条提示才能真正跟着语言走。判空用 .Err.Key：articleErrMsgOfFact 的契约是
+       「Key 为空即空事实」（见 content_page.go）。 *}
+    {{if isset(.Err)}}{{if .Err.Key != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.article.list.lastError", "上一次操作未完成：") }}{{ .["t"](.Err.Key, .Err.Fallback) }}</p>
     {{end}}{{end}}
 
     {* 有 stale 时**什么都不渲染**：清单在抽屉里，页头徽章就是入口 ——
@@ -65,7 +68,9 @@
     <p class="stat-note">{{ .["t"]("admin.article.list.staleNone", "当前没有待重建的页面：所有页面的产物都与最新内容一致。") }}</p>
     {{end}}
     {{else}}
-    <p class="stat-note">{{ .StaleImpact.Hint }}</p>
+    {* Hint 是**事实**（key + 中文兜底），取词在这里发生 —— 控制器不取词，英文后台下
+       这句才会跟着语言走。 *}
+    <p class="stat-note">{{ .["t"](.StaleImpact.Hint.Key, .StaleImpact.Hint.Fallback) }}</p>
     {{end}}
     {{end}}
 
@@ -150,9 +155,9 @@
                     <td>{{r.Excerpt}}</td>
                     <td>
                         {{if r.Published}}
-                        <span class="badge badge-success">{{r.StateLabel}}</span>
+                        <span class="badge badge-success">{{tr(r.StateKey, r.StateFallback)}}</span>
                         {{else}}
-                        <span class="badge badge-mute">{{r.StateLabel}}</span>
+                        <span class="badge badge-mute">{{tr(r.StateKey, r.StateFallback)}}</span>
                         {{end}}
                     </td>
                     <td>v{{r.Revision}}</td>
@@ -174,7 +179,7 @@
 
         {* 分页条（审计 02-L P1-14）：服务端分页，总数来自内容契约的 Count（真源），
            翻页链接保留在同一个页面路径上（基地址由 handler 注入）。
-           单页或空数据时 handler 不注入 PaginationLinks，片段自然不渲染。
+           单页或空数据时 handler 交出的 Pagination 事实 HasPagination 为假，片段自然不渲染。
            位置抄 product_tags.html：在表格滚动容器与批量表单**之外**、list-card 之内 ——
            放进 .table-scroll 会跟着表格横向滚走，放进 <form> 会被批量勾选一起提交。 *}
         {{include "../partials/pagination.html"}}

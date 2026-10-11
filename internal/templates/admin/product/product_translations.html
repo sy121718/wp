@@ -11,6 +11,12 @@
        只剩源语言一种时整页走可行动空态，把「去哪儿加语言」指向站点设置的语言清单。 *}
 {{extends "../layout.html"}}
 {{block body()}}
+{* 取词：本页是**整页**（经 adminui.Prepare），t / tf 都由它注入。
+   槽位收的是**事实**（productMsg：key + 中文兜底 + `%s` 参数）而不是拼好的句子 ——
+   控制器不取词，语言由这里的 tr / tf 按当前请求决定。
+   两个都要声明：缺 tf 是 Jet 渲染中断（500），缺 t 是静默空串（200）。 *}
+{{tr := .["t"]}}
+{{tf := .["tf"]}}
 {{csrf := .["csrf_token"]}}
 <div class="stack">
     <header class="page-head">
@@ -54,7 +60,7 @@
         <strong>{{ .["t"]("admin.product_translations.errorsTitle", "未保存：请先修正以下问题") }}</strong>
         <ul class="list-reset">
             {{range _, e := .Errors}}
-            <li>{{e}}</li>
+            <li>{{if e.Label}}{{e.Label}}：{{end}}{{tf(e.Msg.Key, e.Msg.Fallback, e.Msg.Args)}}</li>
             {{end}}
         </ul>
     </div>
@@ -110,7 +116,7 @@
 
         {{range _, g := .Groups}}
         <section class="card card-body">
-            <h2 class="card-title mb-lg">{{g.Title}} <span class="badge badge-mute">{{ .["t"]("admin.product_translations.groupMetaLead", "（") }}{{len(g.Rows)}}{{ .["t"]("admin.product_translations.groupMetaMid", " 条 · ") }}{{g.Subtitle}}{{ .["t"]("admin.product_translations.groupMetaTail", "）") }}</span></h2>
+            <h2 class="card-title mb-lg">{{tr(g.TitleKey, g.TitleFallback)}} · {{g.Title}} <span class="badge badge-mute">{{ .["t"]("admin.product_translations.groupMetaLead", "（") }}{{len(g.Rows)}}{{ .["t"]("admin.product_translations.groupMetaMid", " 条 · ") }}{{g.Subtitle}}{{ .["t"]("admin.product_translations.groupMetaTail", "）") }}</span></h2>
             <div class="table-wrap">
                 <table class="data-table data-table-wide tr-table">
                     <thead>

@@ -10,17 +10,13 @@ package contenttemplatehttp
 // 写动作已按 /api/contenttemplate/* 的权限点 enforce。
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/content/contract"
 	"go_wp/internal/module/contenttemplate/contract"
 	"go_wp/internal/module/product/contract"
 	"go_wp/internal/module/project/contract"
-	"go_wp/internal/permission"
-	"go_wp/internal/shell"
 )
 
 // SetupContentTemplatePages 注册内容模板后台页面（/admin 组，中间件链由装配层统一挂好）。
@@ -39,21 +35,6 @@ func SetupContentTemplatePages(pages *gin.RouterGroup,
 		return
 	}
 	contentTemplatePages := newContentTemplatePageHandle(templates, projects, products, contents)
-	pages.GET("/content-templates", shell.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplatesPage)
-	pages.GET("/content-templates/edit", shell.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplateEditPage)
-	// 切换生效：权限点 contenttemplate:activate（迁移 288 seed）。必须用独立权限点映射 ——
-	// Casbin 中间件按**实际请求路径** enforce，复用 update 时这条路径没有策略匹配 → 全员 403
-	//（含超管）。这里把页面入口映射到 JSON 接口的授权路径，两个入口共用同一条策略。
-	pages.POST("/content-templates/activate",
-		builtin.CasbinMiddlewareForPath("/api/contenttemplate/activate"),
-		contentTemplatePages.ContentTemplatesActivate)
-	// 批量删除：权限点 contenttemplate:delete（迁移 234 seed）。本模块此前没有任何删除能力，
-	// 这条权限点与 contract 的 Delete、路由的 enforce 路径同批补上。
-	//
-	// /api/contenttemplate/delete 没有对应的 API 路由（删除只有页面入口），必须显式声明 ——
-	// 否则 permission.RoutesOf 查不到它，AI 工具按 fail closed 一律 forbidden。
-	permission.Declare(http.MethodPost, "/api/contenttemplate/delete", permission.ContenttemplateDelete)
-	pages.POST("/content-templates/bulk-delete",
-		builtin.CasbinMiddlewareForPath("/api/contenttemplate/delete"),
-		contentTemplatePages.ContentTemplatesBulkDelete)
+	pages.GET("/content-templates", adminui.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplatesPage)
+	pages.GET("/content-templates/edit", adminui.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplateEditPage)
 }

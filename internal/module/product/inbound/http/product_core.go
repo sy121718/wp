@@ -1,0 +1,1872 @@
+package producthttp
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"go_wp/internal/adminui"
+	"go_wp/internal/middleware/builtin"
+	presentationcontract "go_wp/internal/module/presentation/contract"
+	productcontract "go_wp/internal/module/product/contract"
+	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
+	productservice "go_wp/internal/module/product/service"
+	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/internal/shell"
+	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/response"
+	"html"
+	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
+
+// product_core.go — 商品本体的控制器：接口面 CRUD / 变体 + 列表 / 新建 / 编辑 / 详情页 / 批量。
+//
+// 一个文件 = 一个业务功能（internal/module/CLAUDE.md §inbound/http）：同一功能的
+// 「JSON 接口面 handler」与「后台页面 handler」住在一起 —— 它们改的常常是同一件事
+//（新增一个字段要同时进接口入参、表单回填与列表列），按 API / 页面拆开就会各改一处。
+//
+// 路由不在这里：唯一声明点是 product_router.go。
+
+// ==========================================================================
+// 与商品 / 变体接口同形：JSON 入参、pkg/response 出参、消息取 enums。
+// 本层只做绑定与转发，key 派生、值的归一与排序一律在 service。
+// ==========================================================================
+// Create 新建商品（自动生成首个变体）。
+func (h *Handle) Create(c *gin.Context) {
+	req := &productdto.CreateReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
+	res, err := h.svc.Create(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
+}
+
+// Update 修改商品。
+func (h *Handle) Update(c *gin.Context) {
+	req := &productdto.UpdateReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
+	res, err := h.svc.Update(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
+}
+
+// Get 商品详情（含变体与价格区间）。
+func (h *Handle) Get(c *gin.Context) {
+	req := &productdto.GetReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.Get(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusNotFound, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
+}
+
+// List 商品列表。
+func (h *Handle) List(c *gin.Context) {
+	req := &productdto.ListReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	list, err := h.svc.List(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
+}
+
+// Delete 删除商品。
+func (h *Handle) Delete(c *gin.Context) {
+	req := &productdto.DeleteReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
+	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
+}
+
+// CreateVariant 新增变体（未填字段由商品级默认值补齐）。
+func (h *Handle) CreateVariant(c *gin.Context) {
+	req := &productdto.CreateVariantReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
+	res, err := h.svc.CreateVariant(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
+}
+
+// UpdateVariant 修改变体（编辑路径不做默认值填充）。
+func (h *Handle) UpdateVariant(c *gin.Context) {
+	req := &productdto.UpdateVariantReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
+	res, err := h.svc.UpdateVariant(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
+}
+
+// DeleteVariant 删除变体。
+func (h *Handle) DeleteVariant(c *gin.Context) {
+	req := &productdto.DeleteVariantReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
+	if err := h.svc.DeleteVariant(c.Request.Context(), req); err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
+}
+
+// GenerateVariants 按勾选的属性值生成全部变体组合（issue #8）。
+//
+// 未勾选任何属性值（或 selections 缺省）= 无表单路径：按商品全部参与变体的
+// 属性组与其启用值生成；新变体逐字段继承商品级默认值。
+func (h *Handle) GenerateVariants(c *gin.Context) {
+	req := &productdto.GenerateVariantsReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
+	res, err := h.svc.GenerateVariants(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgVariantGenerateSuccess, res)
+}
+
+// 编辑路径的默认值语义由 service 保证：本层只做绑定与转发，不补字段。
+var _ = http.StatusOK
+
+// ==========================================================================
+// 商品列表页：筛选、分页、行内状态与分类/标签单元格。
+//
+// 筛选条与分页是全后台通用形态（GET 表单 + select），回跳地址与提示页出口在 product_jump.go。
+
+// productListPageTemplate 商品列表整页模板（失败页与成功页渲染**同一份**模板）。
+//
+// 本节起是原先的 product_list.go（列表页）。
+// ==========================================================================
+const productListPageTemplate = "admin/product/products.html"
+
+// productProjectExists 工程 id 是否真的在工程清单里。
+//
+// 用于把「工程不存在」与「这个工程下没有商品」分开：前者是请求参数的问题（400），
+// 后者才是空态（200）。两者此前都会渲染成同一张「暂无商品」的页面。
+//
+// 判据唯一一份在 service 的 ProjectExists：列表页、详情页、编辑页、属性页、标签页、
+// 捆绑页、新建页都经这里，两处各写一遍时改一处会让同一个 ?project=xxx 在不同页面
+// 得到不同档位。
+func productProjectExists(projects []projectdto.ProjectResp, id string) bool {
+	return productservice.ProjectExists(projects, id)
+}
+
+// ProductsPage 商品管理页：工程切换 + 商品列表 + 每个商品的变体面板 + 内联新建表单。
+func (h *productPageHandle) ProductsPage(c *gin.Context) {
+	ctx := c.Request.Context()
+	// 取数失败**不在这里出口**：整页 GET 只有一条渲染路径（函数末尾那次 c.HTML），
+	// 失败页与成功页渲染同一份模板、同一份页壳数据，差别只有状态码 / no-store / 失败槽
+	//（契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。
+	//
+	// 每个失败点各写一遍「渲染失败页」等于每页各有一份「失败页长什么样」的实现，
+	// 改一处必然漏一处；这里只记第一处失败的原因，末尾统一出口。
+	// httpStatus 与下面的筛选状态（status 查询串）不是一回事，名字分开避免撞车。
+	httpStatus := http.StatusOK
+	var loadErr error
+	fail := func(err error) {
+		if loadErr == nil {
+			loadErr = err
+			// 主数据没读到 = 500。参数不合法是另一档（400，见下面的工程校验）。
+			httpStatus = http.StatusInternalServerError
+		}
+	}
+	projects, err := h.projects.List(ctx)
+	if err != nil {
+		fail(err)
+	}
+	selected := strings.TrimSpace(c.Query("project"))
+	if selected == "" && len(projects) > 0 {
+		selected = projects[0].ID
+	}
+	// 查询串不是可信边界，但也不是可以装作没看见的输入：?project=<不存在的 id> 一路渲染下去
+	// 会得到「这个工程下没有商品」—— 把「工程不存在」说成了「工程是空的」。
+	// 参数级失败仍是**页面请求**：整页 + 400 + no-store（不是 JSON 报文，也不是裸文本）。
+	if loadErr == nil && selected != "" && !productProjectExists(projects, selected) {
+		httpStatus = http.StatusBadRequest
+		loadErr = errors.New(productenums.ErrInvalidParam)
+	}
+	// 筛选与分页（服务端渲染，零 JS）：关键词 / 状态 / 页码全部走查询串，
+	// 分页条与筛选表单是普通 GET —— 无 JS 也能用，且刷新后条件不丢。
+	// 查询串不是可信边界：关键词与状态在这里归一，页码非法值一律退回第 1 页。
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	status := strings.TrimSpace(c.Query("status"))
+	page := productPageNumber(c.Query("page"))
+	limit := productListPageSize
+	rows := make([]gin.H, 0, limit)
+	// 分类树与品牌列表一次取好：每个商品行都要渲染「挂哪些分类 / 主分类 / 品牌」，
+	// 放在循环里取会变成 2×N 次查询。
+	flat, ferr := h.flatCategories(ctx, selected)
+	if ferr != nil {
+		fail(ferr)
+	}
+	brands, berr := h.listBrands(ctx, selected)
+	if berr != nil {
+		fail(berr)
+	}
+	// 标签一次取好（issue #11）：每个商品行要渲染「挂哪些手工标签 / 命中了哪些自动标签」，
+	// 放在循环里取会变成 N 次查询。
+	tags, terr := h.listTags(ctx, selected)
+	if terr != nil {
+		fail(terr)
+	}
+	// 归属仓下拉（issue #15）与多仓勾选：变体 / 首建商品的归属仓在这里选（不选 = 默认仓）。
+	// **必须在商品行之前取好**：列表「库存」列的分仓明细要按工程仓库清单补齐未入库的仓。
+	warehouseOptions, werr := h.warehouseOptions(ctx, selected)
+	if werr != nil {
+		fail(werr)
+	}
+	// 分页总数与列表**同一份过滤条件**（service 的 CountProducts 与 List 共用 model 的
+	// 关键词 / 状态条件）：两处口径分叉时「共 N 条」与实际能翻出来的条数对不上。
+	total := int64(0)
+	if loadErr == nil && selected != "" {
+		list, lerr := h.products.List(ctx, &productdto.ListReq{
+			ProjectID: selected, Keyword: keyword, Status: status, Page: page, Size: limit,
+		})
+		if lerr != nil {
+			fail(lerr)
+		}
+		if lerr == nil {
+			total, lerr = h.products.CountProducts(ctx, &productdto.ListReq{
+				ProjectID: selected, Keyword: keyword, Status: status,
+			})
+			if lerr != nil {
+				fail(lerr)
+			}
+		}
+		for _, p := range list {
+			// 列表项不含变体明细，逐个取详情（一页 20 条，后台页可接受）。
+			detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: p.ID})
+			if derr != nil || detail == nil {
+				// 这一行是**主数据**的一部分：静默 continue 会让页面少一行却仍写着「共 N 条」，
+				// 用户据此以为商品已经被删了（而它只是这一行读不出来）。取不到就整页失败，
+				// 不把它吞成一张「看起来完整」的列表。
+				if derr == nil {
+					derr = fmt.Errorf("商品 %s 的详情为空", p.ID)
+				}
+				fail(fmt.Errorf("读取商品 %s 的详情失败：%w", p.ID, derr))
+				break
+			}
+			// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于 tagCellLabel 的
+			// 「{n} 个」词条（i18n.FillTranslate），模板侧的 tf 只填 `%s`，没有等价能力
+			//（见 tagCellLabel 的注释）—— 本页其余槽位一律交事实、由模板取词。
+			rows = append(rows, h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail,
+				shell.TranslateFor(c)))
+		}
+	}
+	// 属性组勾选列表（本批）：新建抽屉引用属性组时不再手打 UUID —— 可选值由服务端给出
+	// （与归属仓同一手法），用户看到的是一排「颜色（color）」，而不是一个暗示 UUID 的输入框。
+	attributeOptions, aerr := h.attributeOptions(ctx, selected)
+	if aerr != nil {
+		fail(aerr)
+	}
+	// 「从仓库选」的候选（docs/14 §1.1 入口 A，迁移 251）：按仓分组的仓库 SKU 清单。
+	// 前端只是便捷入口 —— 服务端在 Create 里会带着仓库 id 再复核一遍（不信任前端）。
+	warehouseSKUGroups, wserr := h.warehouseSKUOptions(ctx, selected, warehouseOptions)
+	if wserr != nil {
+		fail(wserr)
+	}
+	// 批量改价抽屉的规则清单与表单初值：三样全部取自定价工具（ListPricingRuleTypes /
+	// ListPricingRoundingOptions / defaultPricingForm）—— 抽屉与独立定价页共用同一个
+	// 规则表单片段（partials/pricing_rule_fields.html），键名或取值来源分叉会让其中
+	// 一处渲染成空下拉。
+	pricingRules := h.products.ListPricingRuleTypes(ctx)
+	pricingRoundings := h.products.ListPricingRoundingOptions(ctx)
+	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言，
+	// 与其它后台页面同一渲染入口（缺 token 时表单提交会被 CSRF 中间件挡下）。
+	pageData := gin.H{
+		// title 必须是**译文**：MsgProductsTitle 是 i18n key（迁移 163 已 seed zh「商品」/en「Products」），
+		// 直接放 key 会让浏览器标签与顶栏显示 "MsgProductsTitle" 这串英文常量
+		//（product_jump.go 的提示页一直是 TranslateFor 形态，这里是漏网的一处）。
+		"title":            MsgProductsTitle,
+		"menu":             "products",
+		"Projects":         projects,
+		"SelectedProject":  selected,
+		"WarehouseOptions": warehouseOptions,
+		"AttributeOptions": attributeOptions,
+		// 可选键：未接库存契约 / 该工程的仓库里还没有货时是空数组，模板据 isset + len
+		// 整块跳过（直接渲染模板的单测不带这个键，缺键会让整页在此中断）。
+		"WarehouseSKUOptions": warehouseSKUGroups,
+		"Rules":               pricingRules,
+		"Roundings":           pricingRoundings,
+		"Form":                defaultPricingForm(pricingRules, pricingRoundings),
+		"Products":            rows,
+		// 筛选回显（GET 表单的 value / selected）：提交后条件留在控件上，
+		// 否则用户看不出「现在到底筛了什么」。
+		"FilterKeyword": keyword,
+		"FilterStatus":  status,
+		"Statuses":      productStatusOptions(status),
+		"Page":          page,
+		"Limit":         limit,
+		"Total":         total,
+		// 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go），
+		// 所以模板里的 ?err= / ?done= 提示条已整批删除。
+		// ListQuery 是筛选上下文（表单 action 的 query）：写动作失败时由 shell.BackPath 读回。
+		"ListQuery": productQueryFromRequest(c, productListBackKeys...),
+	}
+	// 分页条：Go 只交事实（总数 / 页码 / 每页条数 / 基地址），文案、页码窗口与链接由
+	// admin/partials/pagination.html 渲染。基地址带当前筛选条件，翻页不丢条件。
+	//
+	// **失败页仍会注入分页事实**：total 在 List/CountProducts 之后就已确定，若随后逐行取详情
+	// 失败（本函数下面的 fail），total 仍 >0，于是失败页拿到与成功页同一份分页事实 —— 这是
+	// 迁移前的既有行为（旧 BuildPagination 拿到的就是同一个 total），本批**不改**它。
+	// 实测（task-109）：失败页**看不到**翻页入口 —— products.html 的分支是
+	// `{{if loadError}} 失败槽 {{else}} …含分页条… {{end}}`，失败分支不 include 分页片段；
+	// 注入的事实因此不被渲染。product_pagination_facts_test.go 把这两条同时钉住
+	//（失败页无分页条 + 成功页有），谁改分支谁红。
+	if pg := pagination.Facts(total, page, limit); pg.HasPagination() {
+		pg.Base = productListFilterURL(selected, keyword, status)
+		pageData["Pagination"] = pg
+	}
+	// 出口只有这一处（页面成败都走它）：失败槽 + no-store 只在这里加。
+	// 失败页与成功页共用同一份 pageData 与同一份模板 —— 模板据 .LoadFailed 先判失败，
+	// 失败分支不碰 Projects / Products 这些可能没读到的键。
+	if loadErr != nil {
+		pageData["LoadFailed"] = true
+		pageData["LoadError"] = productErrPageText(c, loadErr)
+		// 失败页不该被缓存：重试必须真的回到服务端，否则用户看到的是缓存的失败页。
+		c.Header("Cache-Control", "no-store")
+	}
+	c.HTML(httpStatus, productListPageTemplate, adminui.Prepare(c, pageData))
+}
+
+// productRow 组装单个商品的页面视图数据（列表页与详情页共用）。
+//
+// 键分两段：汇总段（VariantCount / PriceMin / PriceMax / HasRating / RatingAvg /
+// RatingCount / CategoryCell / CategoryOthers / BrandName）只回答「有哪些商品」，
+// 列表页只用这一段；明细段（Variants / Ratings / CategoryChecks / TagChecks /
+// AutoTags / VariationAttributes …）是某个商品的子资源，只有详情页用。
+//
+// 两页共用同一份组装：同一个值如果在两处各算一遍，分叉时没有任何东西会报错
+// （与「同一概念两处口径」是同一类问题）。
+//
+// tr 参数是**例外**（具名占位符句式）：只有 TagLabel 用得上它 —— 那条词条是
+// 「{n} 个」（i18n.FillTranslate 的具名占位符），而模板侧的 tf 只有 `%s`，填不了它。
+// 其余槽位（状态 / 主分类 / 品牌）一律交事实，取词在模板。
+func (h *productPageHandle) productRow(ctx context.Context, selected string,
+	flat []*productdto.CategoryResp, brands []*productdto.BrandResp, tags []*productdto.TagResp,
+	warehouses []productdto.WarehouseOptionView, detail *productdto.ProductResp, tr func(key, fallback string) string) gin.H {
+	// 评分读一次：明细 + 投影值（issue #33）。读不到按「没有评分」处理，页面照常渲染。
+	rating := ratingOf(h.products, ctx, selected, detail.ID)
+	ratingRows := make([]gin.H, 0, len(rating.Items))
+	for _, it := range rating.Items {
+		ratingRows = append(ratingRows, gin.H{
+			"ID": it.ID, "Score": formatScore(it.Score),
+			"Source": it.Source, "CreatedAt": it.CreatedAt,
+		})
+	}
+	categoryCell, categoryOthers := categoryCellLabel(flat, detail.CategoryIDs, detail.PrimaryCategoryID)
+	// 标签与自动标签各算一次（列表列的取值与详情页的勾选态共用同一份结果）。
+	tagChecks := checkedTagOptions(tags, detail.TagIDs)
+	autoTags := attachedAutoTags(tags, detail.TagIDs)
+	return gin.H{
+		"ID": detail.ID, "Name": detail.Name, "Slug": detail.Slug,
+		// 主体 SKU（products.sku_code）：详情页基本信息区只读展示 + 一句话说明唯一性范围。
+		"SKUCode":  detail.SKUCode,
+		"Status":   detail.Status,
+		"PriceMin": formatAmount(detail.PriceMin), "PriceMax": formatAmount(detail.PriceMax),
+		"VariantCount": detail.VariantCount,
+		// 变体**清单**行（docs/14 §8）：种子是库里已有的变体（不是重算笛卡尔积），
+		// 行上带可编辑的 SKU 与规范化后的 option_values（保存时原样回传）。
+		"Variants": variantListRows(detail),
+		// 引用的属性组（issue #7）：同一属性组可被多个商品共用，
+		// 这里只展示引用与属性值，编辑入口在 /admin/product-attributes。
+		"AttributeIDs":    detail.AttributeIDs,
+		"AttributeIDsCSV": strings.Join(detail.AttributeIDs, ","),
+		"Attributes":      detail.Attributes,
+		// 组合生成面板（issue #8）只列参与变体的组。
+		"VariationAttributes": variationAttributes(detail.Attributes),
+		// 分类与品牌（issue #10）：勾选态 / 选中态都由服务端算好，
+		// 模板只做展示；分类下拉带层级缩进（层级真源在 service 的树组装）。
+		// CategoryCell / CategoryOthers 是**列表列**要的「一个值 + 其余数量」：
+		// 一列一个概念，单元格放值，不把「挂载 N 个分类 · 主分类 X」拼成一句话。
+		"CategoryIDs":    detail.CategoryIDs,
+		"CategoryChecks": checkedCategoryOptions(flat, detail.CategoryIDs),
+		"CategoryCell":   categoryCell,
+		"CategoryOthers": categoryOthers,
+		// 主分类 / 品牌下拉：数据项给名字，「（不指定…）」空项给词条 + 中文兜底（事实），
+		// 取词在模板 —— 见 productPickOptions。
+		"PrimaryOptions":      productPickOptions(productenums.ProductsOptionNoPrimaryCategory, "（不指定主分类）", detail.PrimaryCategoryID, categoryPickOptions(flat)),
+		"BrandOptions":        productPickOptions(productenums.ProductsOptionNoBrand, "（不指定品牌）", detail.BrandID, productBrandNameOptions(brands)),
+		"PrimaryCategoryName": categoryNameByID(flat, detail.PrimaryCategoryID),
+		"BrandName":           brandNameByID(brands, detail.BrandID),
+		// 标签（issue #11）：手工标签勾选挂载（勾选态服务端算好）；自动标签只读展示 ——
+		// 归属由规则重算维护，手工改会被下一次重算覆盖，故不提供勾选框。
+		"TagIDs":    detail.TagIDs,
+		"TagChecks": tagChecks,
+		"AutoTags":  autoTags,
+		// TagLabel 是**列表列**要的单个值：这个商品挂了哪些标签（手工 + 自动合并的标签名）。
+		"TagLabel": tagCellLabel(tr, tagChecks, autoTags),
+		// 评分（issue #30 / #33）：明细 + 投影值。评分是独立表，这里读的是
+		// ListRatings 算出的平均值与条数；**没有评分时 HasRating=false** ——
+		// 空态与「评分 0」是两回事，模板据它给出不同文案。
+		"Ratings":     ratingRows,
+		"HasRating":   rating.HasRating,
+		"RatingAvg":   formatScore(rating.Rating),
+		"RatingCount": rating.RatingCount,
+		// 库存列（docs/14 §1.4）：三态 + 分仓明细。真源是 inventory_stocks，
+		// 这里只是把服务端算好的聚合结果整理成页面要的形状（服务端返回的是**有行**的仓，
+		// 未入库的仓由工程仓库清单补齐）。
+		"Stock": productStockCell(detail, warehouses),
+	}
+}
+
+// categoryCellLabel 商品行「分类」列要显示的单个值（一列一个概念：单元格是值，不是句子）。
+//
+// 取值优先级：主分类 > 挂载分类里的第一个 —— 挂了分类却没设主分类时显示空值是误导
+// （用户会以为这个商品没有分类）。都没有才返回空串，由模板渲染成 —。
+// others 是「其余分类数」，模板用 +N 徽章跟在值后面，不把三个信号拼成一句话。
+func categoryCellLabel(flat []*productdto.CategoryResp, attached []string, primaryID string) (label string, others int) {
+	if name := categoryNameByID(flat, primaryID); name != "" {
+		return name, maxInt(len(attached)-1, 0)
+	}
+	for _, node := range flat {
+		if node == nil || !containsString(attached, node.ID) {
+			continue
+		}
+		return node.Name, maxInt(len(attached)-1, 0)
+	}
+	return "", 0
+}
+
+// tagCellLabel 商品行「标签」列要显示的单个值（一列回答一个问题：这个商品挂什么标签）。
+//
+// 列的是**标签名**（手工挂载的 + 命中规则的自动标签，合并成一个名字列表），
+// 不做「手工 N · 自动 M」那种来源分解 —— 读这一列的人要知道「挂了哪些标签」，
+// 而不是「这些标签里有几个是手工建的」（那是标签管理页的问题）；两个数都是 0 时，
+// 那种分解更是纯噪声。名字多于 maxTagNames 时退化成数量，避免单元格被撑成一屏。
+//
+// tr 参数是**例外**（具名占位符句式）：超量那一档的词条是「{n} 个」——具名占位符，
+// 走的是 i18n.FillTranslate；模板注入的 tf 是 TranslateArgs（只认 `%s`），
+// 拿同一个 key 会在页面上渲染成字面的「{n} 个」。改词条值等于改 seed（运营可能改过的数据），
+// 不属于「控制器不取词」这一步，所以这里保留取词。
+func tagCellLabel(tr func(key, fallback string) string, tagChecks, autoTags []gin.H) string {
+	const maxTagNames = 3
+	names := make([]string, 0, len(tagChecks)+len(autoTags))
+	for _, t := range tagChecks {
+		checked, _ := t["Checked"].(bool)
+		if !checked {
+			continue
+		}
+		if name, ok := t["Name"].(string); ok && name != "" {
+			names = append(names, name)
+		}
+	}
+	for _, t := range autoTags {
+		if name, ok := t["Name"].(string); ok && name != "" {
+			names = append(names, name)
+		}
+	}
+	switch {
+	case len(names) == 0:
+		return ""
+	case len(names) > maxTagNames:
+		// 数量后缀是文案（中文「N 个」/ 英文「N tags」），不是数据：走词条而不是拼中文。
+		return i18n.FillTranslate(tr, productenums.ProductsListTagCount, "{n} 个",
+			map[string]string{"n": strconv.Itoa(len(names))})
+	default:
+		return strings.Join(names, "、")
+	}
+}
+
+// maxInt 取两者较大值（其余分类数不能为负：主分类不在挂载列表里时 len-1 会是 -1）。
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// productListPageSize 商品列表每页条数（服务端分页）。
+//
+// 20 与后台其它列表页同一量级：列表行要逐个取商品详情组装视图，
+// 一页取太多等于把「翻页」换成「一屏卡顿」。
+const productListPageSize = 20
+
+// productPageNumber 解析页码：空值 / 非数字 / 越界一律退回第 1 页。
+//
+// 查询串不是可信边界：page=abc、page=-3、page=999999 都会走到这里，
+// 服务端自行归一，绝不把非法页码透给取数层（负 offset 在 PG 上是错误）。
+func productPageNumber(raw string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n < 1 {
+		return 1
+	}
+	return n
+}
+
+// productListFilterURL 列表页的筛选基地址（**不含** page/limit：分页组件自己拼）。
+//
+// 分页链接由 pkg/pagination.BuildPagination 在这个基地址后追加 page/limit —— 把筛选条件
+// 拼进基地址，翻页时关键词与状态才不会丢；反过来说，若基地址里塞了 page，
+// 就会出现两个 page 参数，浏览器取第一个，翻页看起来「点了没反应」。
+func productListFilterURL(projectID, keyword, status string) string {
+	q := url.Values{}
+	if p := strings.TrimSpace(projectID); p != "" {
+		q.Set("project", p)
+	}
+	if k := strings.TrimSpace(keyword); k != "" {
+		q.Set("keyword", k)
+	}
+	if s := strings.TrimSpace(status); s != "" {
+		q.Set("status", s)
+	}
+	if enc := q.Encode(); enc != "" {
+		return "/admin/products?" + enc
+	}
+	return "/admin/products"
+}
+
+// productStatusOptions 列表筛选 / 编辑页的状态下拉项（含「全部状态」）。
+//
+// 槽位收**事实**（Key + 中文兜底）而不是成品串：语言是请求级的，控制器提前翻等于把这一句
+// 锁死在一种语言（英文界面上仍是中文，不报错、门禁也不红）。取词由模板的 tr 在渲染期做
+// （products.html 的筛选项与状态徽章、product_edit.html 的状态下拉）。
+//
+// 「值 → (key, 兜底)」的映射在 productenums.StatusLabel：本函数只给**值域与顺序**
+// （这一屏就这四档），控制器不再自带一张手抄的三元表。
+//
+// 状态维度**只有这一种入口**：不另配状态徽章筛选 —— 同一维度两套控件时，
+// 用户会怀疑它们是否等价（admin-ui-logic §2）。
+func productStatusOptions(current string) []gin.H {
+	values := []string{"", productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}
+	out := make([]gin.H, 0, len(values))
+	for _, value := range values {
+		key, fallback := productenums.StatusLabel(value)
+		out = append(out, gin.H{
+			"Value":         value,
+			"LabelKey":      key,
+			"LabelFallback": fallback,
+			"Selected":      value == strings.TrimSpace(current),
+		})
+	}
+	return out
+}
+
+// productPickOptions 「含空项的下拉」的选项事实：空项给词条（Key + 中文兜底），
+// 数据项给名字（分类名 / 品牌名）。
+//
+// 两条取值链并行而不是二选一的兜底：分类名与品牌名翻不了（它们不是文案），
+// 而「（不指定主分类）」必须按请求语言在渲染期取词。
+//
+// **数据行不给空的 LabelKey / LabelFallback 键**（不是给空串）：模板的判据是
+// `{{if isset(o.LabelKey)}}` —— 这是「键在不在」的判定，空串也算在，于是数据行会走取词分支、
+// 渲染成一片空白（`TestTaxonomyAdminPages` 实测：编辑页的品牌下拉只剩空 option）。
+// 数据行只给 `Label`，让 isset 落到 else 分支。
+//
+// data 只放**数据项**：分类侧复用 product_taxonomy.go 的 categoryPickOptions（分类名带层级
+// 缩进的真源只有一处），品牌侧由 productBrandNameOptions 给出同一个形状。
+func productPickOptions(noneKey, noneFallback, selected string, data []gin.H) []gin.H {
+	out := make([]gin.H, 0, len(data)+1)
+	out = append(out, gin.H{
+		"ID": "", "LabelKey": noneKey, "LabelFallback": noneFallback, "Selected": selected == "",
+	})
+	for _, item := range data {
+		id, _ := item["ID"].(string)
+		out = append(out, gin.H{
+			"ID": id, "Label": item["Label"],
+			"Selected": id == selected,
+		})
+	}
+	return out
+}
+
+// productBrandNameOptions 品牌下拉的数据项（id + 品牌名）。
+//
+// 与分类侧复用 categoryPickOptions 同一取舍：本函数只交**数据**，
+// 「（不指定品牌）」空项的词条由 productPickOptions 补。
+func productBrandNameOptions(brands []*productdto.BrandResp) []gin.H {
+	out := make([]gin.H, 0, len(brands))
+	for _, b := range brands {
+		if b != nil {
+			out = append(out, gin.H{"ID": b.ID, "Label": b.Name})
+		}
+	}
+	return out
+}
+
+// ==========================================================================
+// 商品新建页与它的表单契约。
+//
+// productCreateFormFields 是**模板读的字段清单**，与模板必须正反双向断言：漏列不是
+// 「页面截断」而是渲染失败 → htmx 不 swap（用户点了保存什么都看不到）。
+
+// productNewPageTemplate 新建商品整页模板（失败页与成功页渲染**同一份**模板）。
+// 左侧基础信息表单（字段名与原抽屉逐字一致，复用 /admin/products/create），
+// 右侧模板卡片区（默认模板 + 候选列表 + 预览入口）；模板绑定与可视化自定义
+// 在创建后的详情页继续（create 不落实例，绑定发生在首次发布）。
+
+// —— 商品建表单的失败分档出口（渐进增强；片段见 partials/product_create_form.html）——
+//
+// 本节起是原先的 product_create.go（新建页与它的表单字段协议）。
+// ==========================================================================
+const productNewPageTemplate = "admin/product/products_new.html"
+
+// ProductNewPage GET /admin/products/new：商品新建整页。
+//
+// 本批（整页 GET 取数下沉）之后控制器只剩三步：**读参数 → 调读模型 → 渲染**。
+// 工程清单、工程存在性校验、仓库选项、属性组选项、每仓 SKU 候选、模板清单与默认模板、
+// 15 个 data 键的装配、以及「哪个失败点算 400 / 哪个算 500」的编排，全部在
+// service.ProductNewPage 里（取数口径与页面的档位是业务结论，不是 HTTP 结论）。
+//
+// 三个具体后果：
+//
+//	· 控制器里不再有 gin.H 装配与取数助手调用 —— 页面数据只有一个来源（dto 视图）；
+//	· 状态码与 no-store 由视图带出来（adminui.PageResult），不再在这里判档，
+//	  于是「失败页长什么样」不再有第二种写法；
+//	· 失败槽文案（LoadError）仍在这里取词：取词是**请求级**的（按当前语言），
+//	  交给 service 就等于把语言钉进业务层。
+func (h *productPageHandle) ProductNewPage(c *gin.Context) {
+	reader, ok := h.products.(productcontract.ProductPageReader)
+	if !ok {
+		// 装配没接上读模型（老装配 / 桩）：整页 + 500 + no-store，走同一份失败页形状。
+		// 这条不可达就说明装配漏了；真出现时也不能把「没接上」说成「没有数据」。
+		view := &productdto.ProductNewPageView{
+			Title:      productenums.ProductsCreateSubmit,
+			Menu:       "products",
+			LoadFailed: true,
+			LoadError:  productInternalText(c, nil),
+			HTTPStatus: http.StatusInternalServerError,
+		}
+		adminui.RenderPage(c, productNewPageTemplate, view)
+		return
+	}
+	req := &productdto.ProductNewPageReq{ProjectID: strings.TrimSpace(c.Query("project"))}
+	view, err := reader.ProductNewPage(c.Request.Context(), req)
+	if view == nil {
+		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
+		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
+		view = &productdto.ProductNewPageView{
+			Title: productenums.ProductsCreateSubmit, Menu: "products", HTTPStatus: http.StatusInternalServerError,
+		}
+	}
+	if err != nil {
+		// 视图已带 LoadFailed / HTTPStatus（400 参数不合法 / 500 取数失败）。
+		// 这里只补**当前语言**的失败槽文案：原始的 err 只进日志。
+		view.LoadFailed = true
+		view.LoadError = productErrPageText(c, err)
+	}
+	adminui.RenderPage(c, productNewPageTemplate, view)
+}
+
+// productCreateFormFields 建表单片段的回填字段清单（片段与 handler 之间的协议）。
+//
+// 改片段里的 `name=` 必须同步改这里：helper 按这份清单给每个字段补零值键，漏列的字段
+// 在失败片段里读不到 —— 而 Jet 读缺失的 map 键会**从那一行截断整页**（HTTP 仍 200，
+// 错误槽之后的表单整块消失），现象是「保存失败后表单没了」，且没有任何报错。
+var productCreateFormFields = []string{
+	"projectId", "name", "type", "slug", "skuSource", "sku", "warehouseSku",
+	"externalSku", "defaultPrice", "quantity", "trackQuantity",
+	"attributeIds", "warehouseIds",
+}
+
+// productCreateFormData 建表单片段的渲染 data（**只在提交失败重渲染时**用）。
+//
+// 首屏（新建整页 / 列表页抽屉）不注入 FormEcho* 三键 —— 片段以 cfFill 开关区分
+// 「空表单」与「回填表单」，两个页面 handler 因此不必为它加键。
+func (h *productPageHandle) productCreateFormData(c *gin.Context, projectID, submitErr string) (gin.H, error) {
+	ctx := c.Request.Context()
+	projectID = strings.TrimSpace(projectID)
+	warehouses, err := h.warehouseOptions(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	attributes, err := h.attributeOptions(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	skuGroups, err := h.warehouseSKUOptions(ctx, projectID, warehouses)
+	if err != nil {
+		return nil, err
+	}
+	data := formEchoData(c, productCreateFormFields...)
+	data["SelectedProject"] = projectID
+	data["WarehouseOptions"] = warehouses
+	data["AttributeOptions"] = attributes
+	data["WarehouseSKUOptions"] = skuGroups
+	data["SubmitErr"] = submitErr
+	return data, nil
+}
+
+// productCreateFail 商品建表单的失败出口（分档口径唯一，别在调用点各写一份头判断）。
+//
+//	· htmx 请求：200 + 片段（错误槽 + 回填后的表单）—— 整页原地留住已填内容；
+//	· 原生请求：整页提示（shell.RenderJump）回本页（无 JS 环境：不跳走、错误可读）。
+//
+// **成功路径也走同一条出口**（ProductsCreate 用 productEditJump / productListJump）。
+func (h *productPageHandle) productCreateFail(c *gin.Context, projectID string, msg productMsg) {
+	if !isHXRequest(c) {
+		// 原生档：整页提示（取代原先的 302 + ?err= 回本页）。无 JS 环境下不跳走、错误可读。
+		productNewJump(c, false, projectID, msg)
+		return
+	}
+	// 片段槽位还没取词化（模板直接输出字符串）：这里取一次文本，报告里已登记。
+	data, err := h.productCreateFormData(c, projectID, productMsgText(c, msg))
+	if err != nil {
+		// 回填片段取数再失败：退回整页提示（错误仍可读），不把半个片段当成功返回。
+		logger.Scene("product").With("project", projectID).Error(err, "商品新建失败后重建表单片段失败，退回提示页")
+		productNewJump(c, false, projectID, msg)
+		return
+	}
+	c.HTML(http.StatusOK, "admin/product/product_create_form.html", adminui.Prepare(c, data))
+}
+
+// ProductsCreate 新建商品。
+//
+// 两条本批确定的语义：
+//
+//  1. **type 必须读**（迁移 238 的商品类型）：字段一旦漏读，service 会把空串兜底成
+//     variant —— 建「捆绑容器」得到的是一个带自己首个变体的常规商品，而且返回 302 成功、
+//     列表页也看得见，不留任何错误线索。
+//  2. **成功去商品详情页**，不是回列表：抽屉只有名称 / 类型 / URL 段 / 默认价 / 归属仓 /
+//     属性组几个字段，而 CreateReq 有 40+ 个字段（描述、图片、分类、品牌、标签、SEO…），
+//     商品详情页才是全量录入的地方。bundle 更明显 —— 它没有变体，回列表看不出任何进展。
+//     失败仍回新建页（表单所在处）并渲染整页提示：用户就在那里重填。
+func (h *productPageHandle) ProductsCreate(c *gin.Context) {
+	req := &productdto.CreateReq{
+		ProjectID: c.PostForm("projectId"),
+		Name:      c.PostForm("name"),
+		// 商品类型：variant（常规变体商品）｜bundle（捆绑容器，只有容器价）。
+		Type: strings.TrimSpace(c.PostForm("type")),
+		Slug: c.PostForm("slug"),
+		// 主体 SKU 编码（表单 name=sku，规则见 docs/14）：留空即派生（变体商品取 URL 段、
+		// 捆绑取 <商品段>_B）；填了且选了仓库 → 变体商品自动加仓库码前缀。
+		// **必须透传**：漏读等于运营填了个寂寞 —— 服务端会静默按 URL 段派生另一个编码，
+		// 建完看不出任何异常，直到与仓库对不上号。
+		SKUCode: strings.TrimSpace(c.PostForm("sku")),
+		// SKU 来源（docs/14 §1.1 的两条入口，迁移 251）：自己创建 / 从仓库选。
+		// **必须透传**：漏读就等于运营在抽屉里选了「从仓库选」却拿到一个按 URL 段
+		// 派生的商品，建完看不出任何异常 —— 与上面 sku 漏读是同一类静默失败。
+		SKUSource:    strings.TrimSpace(c.PostForm("skuSource")),
+		WarehouseSKU: strings.TrimSpace(c.PostForm("warehouseSku")),
+		ExternalSKU:  strings.TrimSpace(c.PostForm("externalSku")),
+		// 属性组：抽屉是勾选列表（同名多值），保留了逗号分隔单值的兼容形态。
+		AttributeIDs: attributeIDsFromForm(c),
+		// 归属仓：空值即兜底该工程的默认仓（单值形态保留，接口 / 脚本路径仍可用）。
+		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
+		// 多仓勾选（2026-09-19 口径）：勾了哪些仓就在哪些仓各建一行（裸码），
+		// 第一个仓是**认领仓**（决定主体 SKU 的仓码前缀）。同名多值 → PostFormArray，
+		// 一个都没勾时浏览器不提交这个字段（服务端按「默认仓」处理）。
+		WarehouseIDs: c.PostFormArray("warehouseIds"),
+	}
+	if price := strings.TrimSpace(c.PostForm("defaultPrice")); price != "" {
+		if v, perr := parseFloat(price); perr == nil {
+			req.DefaultPrice = &v
+		}
+	}
+	// 数量（迁移 261 的口径）：**不填数量 = 不跟踪 = 无限**。模板是一个「跟踪数量」开关
+	// 加一个数量框：开关没勾时数量框禁用、不提交 ⇒ 这里读不到值 ⇒ Quantity 保持 nil。
+	// 开关勾了而数量框留空 ⇒ 写 0（0 是「明确没货」，与「没填」是两回事）。
+	if strings.TrimSpace(c.PostForm("trackQuantity")) != "" {
+		qty := 0
+		if raw := strings.TrimSpace(c.PostForm("quantity")); raw != "" {
+			v, qerr := strconv.Atoi(raw)
+			if qerr != nil || v < 0 {
+				// 数量非法也是**表单失败**：htmx 档留在原页（错误槽 + 回填），不能悄悄跳走 ——
+				// 用户为这一张表填了十几行内容，为一个数字问题全丢是最贵的一种失败。
+				h.productCreateFail(c, req.ProjectID, productQuantityInvalidMsg)
+				return
+			}
+			qty = v
+		}
+		req.Quantity = &qty
+	}
+	created, err := h.products.Create(c.Request.Context(), req)
+	if err != nil {
+		// 业务错误的 Error() 是 enums 常量（= i18n key），直接铺到页面上就是
+		// 「列表页显示 ErrBundlePriceRequired」的来源：统一经 productErrText 取词。
+		// 出口走分档：htmx 档 200 + 回填片段，原生档渲染整页提示（见 productCreateFail）。
+		h.productCreateFail(c, req.ProjectID, productErrMsg(c, err))
+		return
+	}
+	if created != nil && created.ID != "" {
+		// 成功也走同一条出口：htmx 由 shell.RenderJump 输出 HX-Redirect（整页跳转），
+		// 原生渲染提示页 —— 取代原先的 redirectWhere。
+		productEditJump(c, true, req.ProjectID, created.ID, productActionDoneMsg)
+		return
+	}
+	// 兜底：拿到商品 id 才谈得上「进详情继续编辑」，否则回列表而不是构造一个空详情页。
+	productListJump(c, true, productActionDoneMsg)
+}
+
+// ==========================================================================
+// 商品编辑页（整页 + 回显 + 校验失败原地留住输入）。
+//
+// 表单带原生 method/action（无 JS 也能提交），另加 hx-post；失败时服务端把刚提交的值
+// 原样送回（formEcho 一族在 product_page_util.go），用户的输入比错误文案贵。
+
+// ProductEditPage GET /admin/products/edit：商品基本字段编辑页。
+// 为什么单独成页，而不是并进商品详情页：
+//   - 详情页的职能是**子资源维护**（变体清单 / 评分 / 属性引用 / 分类与品牌 / 手工标签），
+//     那里的每个表单都作用在「这个商品的某个子资源」上；
+//   - 商品**自身**的字段（名称 / URL 段 / SKU / 状态 / 价格 / 单位 / 重量 / SEO / 图集）
+//     自本页出现之前**只有创建时能填**，建完之后再也没有入口 —— 编辑入口缺位是真实缺口，
+//     不是版式问题；
+//   - 商品域翻译工作台（多语言）原先占着列表操作列的一格，本批收进编辑页：多语言改的是
+//     这个商品的字段译文，与「改这个商品」是同一件事。
+//
+// 表单协议：字段名与 /api/product/update 的 UpdateReq 的 json 标签**逐字对齐**
+// （name / slug / sku / status / defaultPrice / unit / weight / seoTitle / seoDescription /
+// images / imageAlts / attributeIds / categoryIds / primaryCategoryId / brandId / tagIds），
+// 改字段名等于改协议。
+//
+// 提交后回编辑页（PRG）而不是回列表：用户在这里改的是**这一个商品**，
+// 弹回列表等于让他重新找一遍再点进来（与详情页的写操作同一口径）。
+//
+// 本节起是原先的 product_edit.go（编辑页，字段名与 UpdateReq 的 json 标签逐字对齐）。
+// ==========================================================================
+func (h *productPageHandle) ProductEditPage(c *gin.Context) {
+	h.renderProductEditPage(c, strings.TrimSpace(c.Query("project")), strings.TrimSpace(c.Query("product")), "", false)
+}
+
+func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, echo bool) {
+	ctx := c.Request.Context()
+	// 取数失败**不在这里出口**：整页 GET 只有末尾那一次 c.HTML —— 失败页与成功页渲染同一份
+	// 模板、同一份页壳数据，差别只有状态码 / no-store / 失败槽
+	//（契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。
+	// 首错记因并置状态码；后续派生取数在 loadErr != nil 时全部短路（一条查询都不再发）。
+	httpStatus := http.StatusOK
+	var loadErr error
+	fail := func(err error) {
+		if loadErr == nil {
+			loadErr = err
+			httpStatus = http.StatusInternalServerError
+		}
+	}
+	projects, err := h.projects.List(ctx)
+	if err != nil {
+		fail(err)
+	}
+	if selected == "" && len(projects) > 0 {
+		selected = projects[0].ID
+	}
+	if loadErr == nil && selected != "" && !productProjectExists(projects, selected) {
+		// 判据是**本次请求已加载的工程集合**（与列表 / 新建 / 详情 / taxonomy 四页同一口径）：
+		// 工程被删除或并发变化会让旧链接里的工程失效，那时 400 是准确的事实。
+		httpStatus = http.StatusBadRequest
+		loadErr = errors.New(productenums.ErrInvalidParam)
+	}
+	data := gin.H{
+		"title":           MsgProductsTitle,
+		"menu":            "products",
+		"Projects":        projects,
+		"SelectedProject": selected,
+		"ProductID":       productID,
+		"HasProduct":      false,
+		"EditBlocked":     false,
+		// 变体的两个抽屉（新建 / 生成组合）要归属仓下拉：仓库清单在取数段拿到后填进来
+		// （下面 detail 读到之前先给空切片，模板的 len 判断自然跳过）。
+		"WarehouseOptions": []gin.H{},
+		// 回列表的链接与「取消」都回到用户来的地方（工程上下文保留）。
+		"BackURL": productListFilterURL(selected, "", ""),
+		// 状态下拉：当前商品读不出来时按「全部状态」那一档渲染（页面仍完整）。
+		"Statuses": productStatusOptions(""),
+		// 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go）；
+		// 只剩**原地重渲染**这一条路会给 Err（表单校验失败 / 选项读取失败），见下方 submitErr。
+	}
+	if submitErr != "" {
+		data["Err"] = submitErr
+	}
+	if loadErr == nil && selected != "" && productID != "" {
+		// 取数顺序与列表页一致（分类 / 品牌 / 标签 / 仓库各取一次），
+		// 因为行数据复用同一个 productRow 组装 —— 两页各算一遍必然分叉。
+		// 每条都套 loadErr == nil：前面读失败之后，后面的派生查询一条都不发。
+		var (
+			flat   []*productdto.CategoryResp
+			brands []*productdto.BrandResp
+			tags   []*productdto.TagResp
+		)
+		if flat, err = h.flatCategories(ctx, selected); err != nil {
+			fail(err)
+		}
+		if loadErr == nil {
+			if brands, err = h.listBrands(ctx, selected); err != nil {
+				fail(err)
+			}
+		}
+		if loadErr == nil {
+			if tags, err = h.listTags(ctx, selected); err != nil {
+				fail(err)
+			}
+		}
+		var warehouseOptions []productdto.WarehouseOptionView
+		if loadErr == nil {
+			if warehouseOptions, err = h.warehouseOptions(ctx, selected); err != nil {
+				fail(err)
+			}
+		}
+		// 仓库清单要进模板（变体的两个抽屉用它渲染归属仓下拉）——
+		// 只在 productRow 里用掉、忘了放进 data 的话，模板第一行的变量声明就会中断渲染。
+		data["WarehouseOptions"] = warehouseOptions
+		var detail *productdto.ProductResp
+		if loadErr == nil {
+			if detail, err = h.products.Get(ctx, &productdto.GetReq{ID: productID, ProjectID: selected}); err != nil {
+				// 业务 key 分档：不存在的商品 = 404、参数非法 = 400，其余（含驱动错误）
+				// 一律 500 —— 只有「这一行确实不在库里」才算「不存在」。
+				switch productErrKeyOf(err) {
+				case productenums.ErrNotFound:
+					httpStatus = http.StatusNotFound
+					loadErr = err
+				case productenums.ErrInvalidParam:
+					httpStatus = http.StatusBadRequest
+					loadErr = err
+				default:
+					fail(err)
+				}
+			} else if detail == nil {
+				// 契约上「没有错误却没有行」不该出现；真出现时不能当成功渲染 ——
+				// 那会把「读不出来」说成「这个商品没有内容」。
+				httpStatus = http.StatusNotFound
+				loadErr = errors.New(productenums.ErrNotFound)
+			}
+		}
+		if loadErr == nil && detail != nil {
+			data["HasProduct"] = true
+			// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于列表「标签」列的
+			// 「{n} 个」词条（i18n.FillTranslate），模板的 tf 只填 `%s`，没有等价能力。
+			row := h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail, shell.TranslateFor(c))
+			// productRow 的汇总段是给**列表列**用的（名称 / 状态 / 价格区间 / 分类 / 品牌 / 标签），
+			// 编辑表单还要几个列表列不需要的字段（副标题 / 单位 / SEO 两栏）——
+			// 在这里补，而不是往共享组装里塞：那会让列表页也背上只有编辑页才用的键。
+			row["Subtitle"] = detail.Subtitle
+			row["Unit"] = detail.Unit
+			row["SEOTitle"] = detail.SEOTitle
+			row["SEODescription"] = detail.SEODescription
+			// 商品描述在库里是 {"html": "..."}（jsonb 对象），富文本字段要的是裸 HTML。
+			// 这里破一次「表单字段名 = DTO json 标签」的例：两边形态本来就不同
+			//（对象 vs HTML 字符串），硬对齐只会把包装逻辑推到前端散落脚本里。
+			row["DescriptionHTML"] = productDescriptionHTML(detail.Description)
+			data["Product"] = row
+			data["Statuses"] = productStatusOptions(detail.Status)
+			// 属性组勾选态（详情页用的是逗号分隔的 id 输入框，编辑页是勾选列表）：
+			// 可选值来自工程属性组清单，勾选态由商品已引用的 id 决定。
+			opts, aerr := h.attributeOptions(ctx, selected)
+			if aerr != nil {
+				// 选择器缺失与主动取消勾选在 POST 上同形；读故障时撤掉保存入口。
+				data["EditBlocked"] = true
+				data["Err"] = productInternalText(c, aerr)
+			} else {
+				data["AttributeChecks"] = checkedAttributeOptions(opts, detail.AttributeIDs)
+			}
+			// 图集与数值字段：表单里是文本（textarea / input），按行与可空文本回填。
+			data["ImagesText"] = strings.Join(detail.Images, "\n")
+			data["ImageAltsText"] = strings.Join(detail.ImageAlts, "\n")
+			data["WeightText"] = nullableNumberText(detail.Weight)
+			data["DefaultPriceText"] = nullableNumberText(detail.DefaultPrice)
+			if echo {
+				form := formEchoFrom(c)
+				for field, key := range map[string]string{
+					"name": "Name", "subtitle": "Subtitle", "slug": "Slug", "sku": "SKUCode",
+					"unit": "Unit", "seoTitle": "SEOTitle", "seoDescription": "SEODescription",
+				} {
+					row[key] = form.value(field)
+				}
+				data["ImagesText"] = c.PostForm("images")
+				data["ImageAltsText"] = c.PostForm("imageAlts")
+				data["WeightText"] = c.PostForm("weight")
+				data["DefaultPriceText"] = c.PostForm("defaultPrice")
+				data["Statuses"] = productStatusOptions(form.value("status"))
+				// 勾选态按**本次提交的** attributeIds 重算（多选字段「一个都不勾」= 解绑全部，
+				// 浏览器在没有任何勾选时根本不提交该字段）。
+				//
+				// 直接用读回来的 opts 重算，**不要**在已勾选的视图上改：视图已是
+				// []productdto.AttributeCheckOptionView（类型化），对它做 `.([]gin.H)` 断言会
+				// 静默失配（ok=false），症状是校验失败重渲染时勾选态全部丢失 —— 用户以为
+				// 自己刚选的东西被清空了，而页面其余部分（错误文案、回填值）都正常。
+				data["AttributeChecks"] = checkedAttributeOptions(opts, form.list("attributeIds"))
+				row["CategoryChecks"] = checkedProductEditOptions(row["CategoryChecks"].([]gin.H), form.list("categoryIds"))
+				row["TagChecks"] = checkedProductEditOptions(row["TagChecks"].([]gin.H), form.list("tagIds"))
+				row["PrimaryOptions"] = selectedProductEditOptions(row["PrimaryOptions"].([]gin.H), form.value("primaryCategoryId"))
+				row["BrandOptions"] = selectedProductEditOptions(row["BrandOptions"].([]gin.H), form.value("brandId"))
+			}
+			// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
+			// 这里只给一个链接标记（type=variant 时不给这个键，模板据 isset 整块跳过）。
+			data["IsBundle"] = isBundleProduct(detail.Type)
+			// 详情页模板面板：详情页只读展示绑定状态，写动作（进入自定义 / 编辑模板 /
+			// 重新套用预设 / 回滚）都在本页 —— 与详情页共用同一份组装。
+			data["TplPanel"] = h.detailTemplatePanel(ctx, selected, productID)
+		}
+	}
+	if loadErr != nil {
+		data["LoadFailed"] = true
+		// 归口文案（中英 / 缺词 fallback 都在里面）；驱动原文与原始错误只进日志。
+		data["LoadError"] = productErrPageText(c, loadErr)
+		// 失败页不该被缓存：重试必须真的回到服务端。
+		c.Header("Cache-Control", "no-store")
+	}
+	c.HTML(httpStatus, "admin/product/product_edit.html", adminui.Prepare(c, data))
+}
+
+func checkedProductEditOptions(options []gin.H, selected []string) []gin.H {
+	for _, option := range options {
+		id, _ := option["ID"].(string)
+		option["Checked"] = containsString(selected, id)
+	}
+	return options
+}
+
+func selectedProductEditOptions(options []gin.H, selected string) []gin.H {
+	for _, option := range options {
+		id, _ := option["ID"].(string)
+		option["Selected"] = id == selected
+	}
+	return options
+}
+
+// ProductsUpdate POST /admin/products/update：保存商品基本字段。
+//
+// 语义与 service 的 Update 一一对应（**整体替换** vs **不改**）：
+//   - 文本字段总是提交（空串 = 清空该字段）；
+//   - 多选字段（属性组 / 分类 / 标签）总是非 nil —— 一个都没勾是「解绑全部」，
+//     不是「本次不改」（浏览器在没有任何勾选时根本不提交该字段，直接透传会把
+//     「取消勾选全部」变成静默无操作）；
+//   - 数值字段留空 = 不改（nil），不写 0：0 元与「没填」是两回事。
+func (h *productPageHandle) ProductsUpdate(c *gin.Context) {
+	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	id := formProductID(c)
+	if id == "" {
+		productListJump(c, false, productErrMsg(c, errors.New(productenums.ErrInvalidParam)))
+		return
+	}
+	req := &productdto.UpdateReq{ID: id, ProjectID: projectID}
+
+	// 名称必填：模板上有 required，但服务端不信任前端（缺了会静默保留旧名）。
+	name := strings.TrimSpace(c.PostForm("name"))
+	if name == "" {
+		productEditJump(c, false, projectID, id, productErrMsg(c, errors.New(productenums.ErrNameRequired)))
+		return
+	}
+	req.Name = &name
+
+	// URL 段：留空即不改（service 侧空串会被当成非法参数，且改名不该顺手清空路径）。
+	if slug := strings.TrimSpace(c.PostForm("slug")); slug != "" {
+		req.Slug = &slug
+	}
+	subtitle := strings.TrimSpace(c.PostForm("subtitle"))
+	req.Subtitle = &subtitle
+	unit := strings.TrimSpace(c.PostForm("unit"))
+	req.Unit = &unit
+	// 表单已不再提交 seoTitle / seoDescription（两者合并进商品名与副标题）。
+	// **这里不能改成 req.SEOTitle = &""**：那会让「改个商品名顺手清空 SEO 标题」——
+	// 两列保留着编辑者写过的历史值，不传即不改才是它们该有的归宿。
+	// 商品描述：富文本字段给的是裸 HTML，入库形态是 {"html": "..."}。
+	// 包装在这里做（不 trim：正文里的空白是有意义的排版）。
+	if descHTML, derr := json.Marshal(map[string]string{"html": c.PostForm("descriptionHtml")}); derr == nil {
+		req.Description = descHTML
+	}
+	if status := strings.TrimSpace(c.PostForm("status")); status != "" {
+		req.Status = &status
+	}
+	// 主体 SKU：留空即不改（存量编码一律不重写；清空编码在 service 侧是明确拒绝的错误）。
+	if sku := strings.TrimSpace(c.PostForm("sku")); sku != "" {
+		req.SKUCode = &sku
+	}
+	if raw := strings.TrimSpace(c.PostForm("defaultPrice")); raw != "" {
+		v, perr := parseFloat(raw)
+		if perr != nil {
+			h.productEditValidationFail(c, projectID, id, productEditDefaultPriceInvalidMsg)
+			return
+		}
+		req.DefaultPrice = &v
+	}
+	if raw := strings.TrimSpace(c.PostForm("weight")); raw != "" {
+		v, perr := parseFloat(raw)
+		if perr != nil {
+			h.productEditValidationFail(c, projectID, id, productEditWeightInvalidMsg)
+			return
+		}
+		req.Weight = &v
+	}
+	// 图集与 alt：按行切分（textarea 一行一个），空文本 = 清空该字段。
+	req.Images = splitFormLines(c.PostForm("images"))
+	req.ImageAlts = splitFormLines(c.PostForm("imageAlts"))
+
+	// 多选字段：**总是非 nil**（见方法注释）。
+	req.AttributeIDs = postFormArrayAlways(c, "attributeIds")
+	req.CategoryIDs = postFormArrayAlways(c, "categoryIds")
+	req.TagIDs = postFormArrayAlways(c, "tagIds")
+	primary := strings.TrimSpace(c.PostForm("primaryCategoryId"))
+	req.PrimaryCategoryID = &primary
+	brand := strings.TrimSpace(c.PostForm("brandId"))
+	req.BrandID = &brand
+
+	// 空 attributeIds 只有选项读取成功时才表示用户主动取消勾选。
+	if _, err := h.attributeOptions(c.Request.Context(), projectID); err != nil {
+		h.renderProductEditPage(c, projectID, id, productInternalText(c, err), true)
+		return
+	}
+	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
+		productEditJump(c, false, projectID, id, productErrMsg(c, err))
+		return
+	}
+	// 保存成功的回执走提示页（成品文案，走响应体不再进 URL）：
+	// 文案由 productSaved 词条给出，页面刷新后能看见「商品已保存」。
+	productEditJump(c, true, projectID, id, productSaved.fact())
+}
+
+func (h *productPageHandle) productEditValidationFail(c *gin.Context, projectID, id string, msg productMsg) {
+	// 片段槽位还没取词化（模板直接输出字符串）：这里取一次文本，报告里已登记。
+	h.renderProductEditPage(c, projectID, id, productMsgText(c, msg), true)
+}
+
+// postFormArrayAlways 取同名多值字段，**总是**返回非 nil 切片。
+//
+// 「一个都没勾」与「本次不改这个字段」是两回事：UpdateReq 里 nil = 不改、
+// 空数组 = 整体替换为空，而浏览器在没有任何勾选时根本不提交该字段
+// （PostFormArray 给 nil）—— 直接透传会让「取消勾选全部」变成静默无操作。
+func postFormArrayAlways(c *gin.Context, field string) []string {
+	if vals := c.PostFormArray(field); len(vals) > 0 {
+		return vals
+	}
+	return []string{}
+}
+
+// splitFormLines 把 textarea 的文本按行切成切片（去首尾空白、丢弃空行、**总是非 nil**）。
+//
+// 空文本给空切片而不是 nil：nil 在 UpdateReq 里表示「本次不改」，
+// 而用户在编辑页清空图集是一个明确意图（清空），不是「什么都没做」。
+func splitFormLines(raw string) []string {
+	out := []string{}
+	for _, line := range strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// nullableNumberText 可空数值 → 输入框文本（未设置给空串，不是 0）。
+//
+// 与列表展示用的 formatNullableAmount（空显示为 —）分开：— 是**展示**符号，
+// 填进 input 的 value 会变成一个待提交的非法值。
+func nullableNumberText(v *float64) string {
+	if v == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*v, 'f', -1, 64)
+}
+
+// checkedAttributeOptions 属性组勾选列表：给每组补一个 Checked（商品是否引用它）。
+//
+// 内嵌 AttributeOptionView 而不是复制键：标签口径仍只有 service 一处，
+// 这里只加「这一行在本次商品上是什么状态」。
+func checkedAttributeOptions(options []productdto.AttributeOptionView, selected []string) []productdto.AttributeCheckOptionView {
+	out := make([]productdto.AttributeCheckOptionView, 0, len(options))
+	for _, o := range options {
+		out = append(out, productdto.AttributeCheckOptionView{
+			AttributeOptionView: o,
+			Checked:             containsString(selected, o.ID),
+		})
+	}
+	return out
+}
+
+// productDescriptionHTML 从商品描述的 JSON 里取正文（富文本字段要裸 HTML）。
+//
+// 兼容两种存量形态：{"html": "..."} 与裸字符串。取不到就给空串 ——
+// 这个值只用于**回填编辑器**，猜错会让编辑者看到别人的正文，比空着危险得多。
+func productDescriptionHTML(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var asMap map[string]any
+	if err := json.Unmarshal(raw, &asMap); err == nil {
+		if s, ok := asMap["html"].(string); ok {
+			return s
+		}
+	}
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		return asString
+	}
+	return ""
+}
+
+// 编辑表单的两个参数级校验（**片段槽位**：product_edit.html 直接渲染 .SubmitError 文本，
+// 还没取词化 —— 这里用 adminui.MsgText 取成文本传进去）。
+var (
+	productEditDefaultPriceInvalidMsg = productMsg{
+		Key: productenums.ProductEditErrDefaultPriceInvalid, Fallback: "默认价格格式无效，请输入数字",
+	}
+	productEditWeightInvalidMsg = productMsg{
+		Key: productenums.ProductEditErrWeightInvalid, Fallback: "重量格式无效，请输入数字",
+	}
+)
+
+// ==========================================================================
+// 商品详情页：变体生成/预览/保存、评分、属性挂载、删除与预览框。
+//
+// 变体从「规格属性组合」生成：预览先算再存（variantPreviewRow），保存按 fingerPrint 覆盖式写入。
+
+// ProductDetailPage GET /admin/products/detail：单个商品的详情页（**只读**）。
+//
+// 为什么是独立页，而不是列表页里的第二、三张表（admin-ui-logic §1）：列表页只该回答
+// 「有哪些商品」；变体与评分是**某个商品的子资源**，属于该商品的详情。原来三张表平铺在
+// 列表页上，等于让列表页承载实体详情 —— 商品一多，变体表与评分表就是两份与商品表错位的
+// 长表，改一个商品要跨三处找入口。
+//
+// productDetailPageTemplate 商品详情整页模板（失败页与成功页渲染**同一份**模板）。
+//
+// 本节起是原先的 product_detail_page.go（详情页）。
+// ==========================================================================
+const productDetailPageTemplate = "admin/product/product_detail.html"
+
+// 本页只**看**：基本信息 / 属性引用 / 分类与品牌 / 标签 / 捆绑构成 / 变体清单 / 评分 /
+// 详情页模板的绑定状态。全部写动作（含变体与评分）在 ProductEditPage ——
+// 读与写混在同一页时用户分不清「我在看还是在改」，而且每个写表单都要带 CSRF、
+// 错误回显与回跳地址，那是编辑页的职责。
+//
+// 商品不存在（含没给 product 参数）渲染 .empty-state + 返回列表链接，**不 500**：
+// 手输 URL、书签失效、商品刚被删都会走到这里，500 什么也说明不了。
+// 但状态码要说实话：这是「这个 URL 指向的商品不存在」= 404 + no-store
+// （契约见 docs/rules/template-boundary.md §整页 GET 的失败出口），此前一律 200 且可缓存。
+//
+// 取数**失败**与「不存在」此前也混在同一条路径上：`derr == nil && detail != nil` 把
+// 「读不出来」（连接断了、权限、超时）一起吞成了「商品不存在」空态 —— 用户以为商品被删了。
+// 现在三档分开：业务上的「不存在」= 404；参数不合法 = 400；其余 = 500 + no-store。
+func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
+	ctx := c.Request.Context()
+	// 取数失败**不在这里出口**：整页 GET 只有一条渲染路径（函数末尾那次 c.HTML），
+	// 四档只改状态码与失败槽（契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）：
+	//   读到 → 200；业务上不存在 / 没给 product 参数 → 404；参数不合法 → 400；
+	//   其余（数据库 / 超时 / 畸形返回）→ 500 + no-store。
+	status := http.StatusOK
+	var loadErr error
+	fail := func(err error) {
+		if loadErr == nil {
+			loadErr = err
+			status = http.StatusInternalServerError
+		}
+	}
+	projects, err := h.projects.List(ctx)
+	if err != nil {
+		fail(err)
+	}
+	selected := strings.TrimSpace(c.Query("project"))
+	if selected == "" && len(projects) > 0 {
+		selected = projects[0].ID
+	}
+	// 与列表页同一档参数校验：?project=<不存在的 id> 不该渲染成「这个工程下没有商品」。
+	if loadErr == nil && selected != "" && !productProjectExists(projects, selected) {
+		status = http.StatusBadRequest
+		loadErr = errors.New(productenums.ErrInvalidParam)
+	}
+	// 仓库清单：只读页不用下拉，但行数据组装（productRow 的库存列）要按工程仓库清单
+	// 补齐未入库的仓 —— 与编辑页 / 列表页共用同一份组装，取数口径不能分叉。
+	warehouseOptions, werr := h.warehouseOptions(ctx, selected)
+	if werr != nil {
+		fail(werr)
+	}
+	productID := strings.TrimSpace(c.Query("product"))
+	hasProduct := false
+	product := gin.H{}
+	switch {
+	case loadErr != nil:
+		// 前面的取数已经失败：这一页的结论已定，不再为它取商品数据。
+	case productID == "":
+		// 没给 product 参数：这一页没有可读的对象，与「商品已被删除」是同一档（404）。
+		status = http.StatusNotFound
+	default:
+		// 只取目标商品那一条：详情页与列表页不同，不需要为整页商品各读一次评分 / 分类。
+		detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: productID})
+		switch {
+		case derr == nil && detail != nil:
+			flat, ferr := h.flatCategories(ctx, selected)
+			if ferr != nil {
+				fail(ferr)
+			}
+			brands, berr := h.listBrands(ctx, selected)
+			if berr != nil {
+				fail(berr)
+			}
+			tags, terr := h.listTags(ctx, selected)
+			if terr != nil {
+				fail(terr)
+			}
+			if loadErr == nil {
+				hasProduct = true
+				// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于列表「标签」列的
+				// 「{n} 个」词条（i18n.FillTranslate），模板的 tf 只填 `%s`，没有等价能力。
+				product = h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail, shell.TranslateFor(c))
+				// 捆绑容器（type=bundle）在详情页多一块「捆绑构成」编辑区：成员只作为选项与
+				// 履约明细，容器价才是套餐价。type=variant 时**不给这个键**，模板据 isset 整块跳过
+				// —— 区块的入口就在详情页，不该再要求运营去另一个菜单页找它。
+				if isBundleProduct(detail.Type) {
+					product["Bundle"] = h.bundlePanel(c, selected, detail.ID)
+				}
+			}
+		case productErrKeyOf(derr) == productenums.ErrNotFound:
+			// 业务上明确的「不存在」：404 + 同一页 + 模板自带的「商品不存在」空态。
+			status = http.StatusNotFound
+		case productErrKeyOf(derr) == productenums.ErrInvalidParam:
+			// 参数本身不合法（id 形态不对等）：400 + 同一页。
+			status = http.StatusBadRequest
+			loadErr = errors.New(productenums.ErrInvalidParam)
+		default:
+			// 其余（数据库 / 连接 / 未知错误，以及 detail 为 nil 的畸形返回）：500 + no-store。
+			// 「读不出来」与「不存在」必须分开：前者重试可能就成功了，后者再试也没用。
+			if derr == nil {
+				derr = fmt.Errorf("商品 %s 的详情为空", productID)
+			}
+			fail(derr)
+		}
+	}
+	data := gin.H{
+		"title": productenums.ProductDetailTitle, "menu": "products",
+		"Projects": projects, "SelectedProject": selected,
+		"ProductID": productID, "HasProduct": hasProduct, "Product": product,
+		"WarehouseOptions": warehouseOptions,
+		// 返回列表带上工程上下文：回到列表时不会掉回默认工程。
+		"BackURL": "/admin/products?project=" + selected,
+		// 只读页没有写操作，也没有任何提示位：写动作的结论走 shell.RenderJump 渲染提示页
+		//（见 product_jump.go），本页的 ?err= 读侧与提示条已整批删除。
+	}
+	// 详情页模板面板：详情页只读展示绑定状态与预览入口，编辑动作（进入自定义 / 编辑模板 /
+	// 重新套用预设 / 回滚）在编辑页 —— 两页共用 detailTemplatePanel 这一份组装。
+	data["TplPanel"] = h.detailTemplatePanel(ctx, selected, productID)
+	// 出口只有这一处（页面成败都走它）：失败槽只在这里加。「不存在」那一档没有失败槽 ——
+	// 模板自己的 .HasProduct=false 空态就是它的文案（读到了、库里没有这一条），
+	// 但它与「没读到」一样 no-store：重试必须真的回到服务端确认商品是否又出现了。
+	if loadErr != nil {
+		data["LoadFailed"] = true
+		data["LoadError"] = productErrPageText(c, loadErr)
+	}
+	if status != http.StatusOK {
+		c.Header("Cache-Control", "no-store")
+	}
+	c.HTML(status, productDetailPageTemplate, adminui.Prepare(c, data))
+}
+
+// variantSelectionFromForm 收「生成组合」表单里按前缀提交的勾选（attr:<属性组 id> → 值 id）。
+//
+// 生成（落库路径）、预览（不落库）两条 handler 共用它：字段名与收拢规则只有一份，
+// 两处各写一遍必然分叉（一个认 attr: 前缀、另一个漏读，表现为「预览有行、保存却没数据」）。
+func variantSelectionFromForm(c *gin.Context) []productdto.VariantSelectionReq {
+	_ = c.Request.ParseForm()
+	keys := make([]string, 0, len(c.Request.PostForm))
+	for key := range c.Request.PostForm {
+		if strings.HasPrefix(key, variantSelectionPrefix) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	out := make([]productdto.VariantSelectionReq, 0, len(keys))
+	for _, key := range keys {
+		attrID := strings.TrimPrefix(key, variantSelectionPrefix)
+		if attrID == "" {
+			continue
+		}
+		out = append(out, productdto.VariantSelectionReq{
+			AttributeID: attrID, ValueIDs: c.Request.PostForm[key],
+		})
+	}
+	return out
+}
+
+// ProductsVariantGenerate 按勾选的属性值批量生成变体组合（issue #8）。
+//
+// mode=all：不勾选任何值，按商品全部参与变体的属性组 × 全部启用值生成
+// （service 的无表单路径，导入 / 接口走同一条）。
+// 其它情况按勾选生成；一个都没勾选时直接退回并提示 —— 不静默退化成「全部生成」，
+// 那是最容易一次误造出上百个变体的路径。
+func (h *productPageHandle) ProductsVariantGenerate(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	productID := c.PostForm("productId")
+	req := &productdto.GenerateVariantsReq{
+		ProductID:   productID,
+		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
+	}
+	if strings.TrimSpace(c.PostForm("mode")) != "all" {
+		req.Selections = variantSelectionFromForm(c)
+		if len(req.Selections) == 0 {
+			// 裸 enums key 铺到页面上只会显示 ErrVariationSelectionEmpty —— 交事实（key + 中文兜底），
+			// 由提示页在渲染期取词。
+			productEditJump(c, false, projectID, productID,
+				productErrMsg(c, errors.New(productenums.ErrVariationSelectionEmpty)))
+			return
+		}
+	}
+	if _, err := h.products.GenerateVariants(c.Request.Context(), req); err != nil {
+		// 非业务错误的原文（PG / 构建器）只进日志，对外给归口文案。
+		productEditJump(c, false, projectID, productID, productErrMsg(c, err))
+		return
+	}
+	productEditJump(c, true, projectID, productID, productActionDoneMsg)
+}
+
+// variantPreviewRow 预览行的 JSON 形状：前端拿它渲染清单里的一行。
+//
+// Spec 是**服务端**拼的可读规格文本（与详情页表格同一份 specLabel），
+// 前端不自己拼属性名 —— 属性值改名后前端那份就会显示旧名字。
+type variantPreviewRow struct {
+	SKUCode      string          `json:"skuCode"`
+	OptionValues json.RawMessage `json:"optionValues"`
+	OptionKey    string          `json:"optionKey"`
+	Spec         string          `json:"spec"`
+}
+
+// ProductsVariantPreview 组合生成的**预览**（POST /admin/products/variant/preview，不落库）。
+//
+// 用户口径（docs/14 §8）：「生产只是显示，并不会存入数据库，必须保存才行」。
+// 因此本端点只回答「点这次生成会往前端清单里追加哪些行」：
+//   - 笛卡尔积、维度与数量上限、与既有组合的去重全在 service（与落库路径同一套规则）；
+//   - SKU 由服务端按变体 SKU 规则生成（前端不复刻这套算法），运营可在清单里逐行改写；
+//   - 响应是 JSON 而不是 HTMX 片段：前端要把这些行**追加**进已渲染的清单 DOM，
+//     而清单的初始行由服务端渲染（库里已有变体），两者是同一种行结构。
+//
+// 失败回 400 + 可读文案（走 productErrText 取词，不把 enums 裸 key 或 PG 报错铺给前端）。
+func (h *productPageHandle) ProductsVariantPreview(c *gin.Context) {
+	ctx := c.Request.Context()
+	productID := strings.TrimSpace(c.PostForm("productId"))
+	req := &productdto.PreviewVariantReq{
+		ProductID:   productID,
+		ProjectID:   strings.TrimSpace(c.PostForm("projectId")),
+		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
+		Selections:  variantSelectionFromForm(c),
+	}
+	// 清单里已有的组合原样回传（每行一条）：由服务端归一去重，前端不需要懂 optionKey。
+	for _, raw := range c.PostFormArray("optionValues") {
+		if trimmed := strings.TrimSpace(raw); trimmed != "" {
+			req.ExistingOptionValues = append(req.ExistingOptionValues, json.RawMessage(trimmed))
+		}
+	}
+	res, err := h.products.PreviewVariantCombinations(ctx, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "message": productErrText(c, err)})
+		return
+	}
+	attrs := []*productdto.AttributeResp{}
+	if detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: productID}); derr == nil && detail != nil {
+		attrs = detail.Attributes
+	}
+	rows := make([]variantPreviewRow, 0, len(res.Rows))
+	for _, row := range res.Rows {
+		if row == nil {
+			continue
+		}
+		rows = append(rows, variantPreviewRow{
+			SKUCode: row.SKUCode, OptionValues: row.OptionValues,
+			OptionKey: row.OptionKey, Spec: specLabel(row.OptionValues, attrs),
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"ok": true, "total": res.Total, "skipped": res.Skipped, "rows": rows,
+	})
+}
+
+// ProductsVariantSave 以清单为准保存变体（POST /admin/products/variant/save）——**唯一的落库动作**。
+//
+// 表单里的 rows 是一段 JSON（前端清单的全部行，顺序即期望顺序）：行上只有
+// variantId（既有变体；新增行为空）、可编辑的 skuCode 与 optionValues。
+// 服务端逐条重算（见 service.SaveVariantList），前端提交的形状一律不作数。
+//
+// 结果由提示页渲染（shell.RenderJump）回编辑页：成功含「新增 / 改 SKU / 删除」与逐条跳过原因，
+// 失败给白名单文案 —— 与编辑页其它写动作同一套出口，不新增渲染通道。
+func (h *productPageHandle) ProductsVariantSave(c *gin.Context) {
+	ctx := c.Request.Context()
+	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	productID := strings.TrimSpace(c.PostForm("productId"))
+	req := &productdto.SaveVariantListReq{
+		ProductID:   productID,
+		ProjectID:   projectID,
+		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
+		// 操作人取自会话，表单字段不作数（变体留痕的操作人不可伪造）。
+		OperatorID: builtin.CurrentUserIDText(c),
+	}
+	if raw := strings.TrimSpace(c.PostForm("rows")); raw != "" {
+		if uerr := json.Unmarshal([]byte(raw), &req.Rows); uerr != nil {
+			// 前端拼错了 JSON：这属于调用方参数错误，给可读提示而不是 PG / JSON 原始报错。
+			productEditJump(c, false, projectID, productID, productErrMsg(c, errors.New(productenums.ErrInvalidParam)))
+			return
+		}
+	}
+	// 这里不再预取商品详情（只为拼「哪个 SKU 被跳过」）：回带文案只报原因枚举，
+	// 逐行 SKU 由详情页本身呈现（见 variantSaveNotice 的说明），因此少一次 DB 往返。
+	res, err := h.products.SaveVariantList(ctx, req)
+	if err != nil {
+		productEditJump(c, false, projectID, productID, productErrMsg(c, err))
+		return
+	}
+	productEditJump(c, true, projectID, productID, variantSaveMsg(c, res))
+}
+
+// variantSkipFallbacks 清单外删除被跳过时的中文兜底（key 见 productenums.VariantSkip*）。
+var variantSkipFallbacks = map[string]string{
+	productenums.VariantSkipHasStock:       "仍有库存，未删除（请先处理库存或改为停用）",
+	productenums.VariantSkipReferenced:     "被 BOM 清单引用，未删除（请先解除引用）",
+	productenums.VariantSkipDuplicated:     "与清单里前面的行重复，已忽略",
+	productenums.VariantSkipVariantMissing: "这一行对应的变体已不存在（可能已被别处删除）",
+	// 本批新增的两个引用面（迁移 259）：被捆绑成员引用 / 有过库存流水。
+	productenums.VariantSkipBundleReferenced: "被捆绑成员引用，未删除（请先在捆绑配置里解除引用）",
+	productenums.VariantSkipHasMovement:      "有过库存流水（已被订单或库存变动用过），未删除（请改为停用）",
+}
+
+// variantSaveMsg 保存结果的回带结论（**事实**：单一情形给 key，多段拼接给成品串）。
+//
+// 「一条都没变」与「跳过若干」必须能区分：都写成「保存成功」时，用户无法判断是
+// 清单本来就与库里一致，还是有行被拦下了（被拦下的行下一次还会出现在清单里）。
+//
+// 带跳过明细时是「两句词条 + 逐条原因」拼起来的复合句，一段 key 表达不了 —— 这一档给
+// 成品串（Fallback，Key 为空），与 page 模块 pageTranslationsSavedMsg 同一取舍。
+func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) productMsg {
+	if res == nil {
+		return productMsg{Key: adminui.MsgInternalError, Fallback: productErrInternalFallback}
+	}
+	if res.Created == 0 && res.Updated == 0 && res.Deleted == 0 && len(res.Skipped) == 0 {
+		return productVariantSaveNoChange.fact()
+	}
+	// 例外（提示页出口）：这条结论是**多段词条拼出来的复合句**（「已保存…」+「跳过 N 条：原因」），
+	// 一段 key 表达不了 —— 提示页出口（shell.RenderJump）本来就是「需要成品串」的那一类。
+	tr := shell.TranslateFor(c)
+	// 数字一律 strconv.Itoa 成字符串后填入（词条只允许 %s）。
+	parts := []string{fmt.Sprintf(productBulkTextOf(c, productVariantSaveSaved),
+		strconv.Itoa(res.Created), strconv.Itoa(res.Updated), strconv.Itoa(res.Deleted))}
+	if len(res.Skipped) > 0 {
+		// 只报**原因**，不再把「哪个 SKU / 什么规格」拼进结论：
+		// 受控形态下（每条原因都来自 variantSkipFallbacks 的枚举）文案可读且不泄漏。
+		// 被跳过的行本来就留在清单里，逐行 SKU 由页面本身呈现。
+		items := make([]string, 0, len(res.Skipped))
+		for _, skip := range res.Skipped {
+			items = append(items, tr(skip.Reason, variantSkipFallbacks[skip.Reason]))
+		}
+		parts = append(parts, fmt.Sprintf(productBulkTextOf(c, productVariantSaveSkipped),
+			strconv.Itoa(len(res.Skipped)), strings.Join(items, "；")))
+	}
+	return productMsg{Fallback: strings.Join(parts, " ")}
+}
+
+// ProductsVariantCreate 为商品新增变体（未填字段继承商品级默认值）。
+func (h *productPageHandle) ProductsVariantCreate(c *gin.Context) {
+	req := &productdto.CreateVariantReq{
+		ProductID: c.PostForm("productId"),
+		SKUCode:   strings.TrimSpace(c.PostForm("skuCode")),
+		// 归属仓（issue #15）：空值即兜底默认仓；无论选没选都会在归属仓生成库存记录。
+		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
+	}
+	if price := strings.TrimSpace(c.PostForm("price")); price != "" {
+		if v, perr := parseFloat(price); perr == nil {
+			req.Price = &v
+		}
+	}
+	projectID := c.PostForm("projectId")
+	if _, err := h.products.CreateVariant(c.Request.Context(), req); err != nil {
+		productEditJump(c, false, projectID, req.ProductID, productErrMsg(c, err))
+		return
+	}
+	productEditJump(c, true, projectID, req.ProductID, productActionDoneMsg)
+}
+
+// ProductsVariantDelete 删除变体。
+//
+// 表单里的 id 是**变体 id**，回详情的商品 id 只能取 productId 隐藏域（不给 id 回落的机会）。
+func (h *productPageHandle) ProductsVariantDelete(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	productID := c.PostForm("productId")
+	if err := h.products.DeleteVariant(c.Request.Context(), &productdto.DeleteVariantReq{ID: c.PostForm("id")}); err != nil {
+		productEditJump(c, false, projectID, productID, productErrMsg(c, err))
+		return
+	}
+	productEditJump(c, true, projectID, productID, productActionDoneMsg)
+}
+
+// productRatingInvalidMsg 评分非数字的提示事实（0~5 的范围由 service 与 DB CHECK 兜底）。
+var productRatingInvalidMsg = productMsg{Key: productenums.ProductsRatingInvalid, Fallback: "评分必须是 0~5 的数字"}
+
+// ProductsRatingAdd 补录一条商品评分（issue #33）。
+//
+// 评分是**独立明细表**（#30），所以这是「加一条记录」而不是「改商品字段」——
+// 分值范围由 service 与数据库 CHECK 双重兜底，这里只把非数字提前拦下并给出可读文案。
+func (h *productPageHandle) ProductsRatingAdd(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	productID := c.PostForm("productId")
+	score, perr := strconv.ParseFloat(strings.TrimSpace(c.PostForm("score")), 64)
+	if perr != nil {
+		productEditJump(c, false, projectID, productID, productRatingInvalidMsg)
+		return
+	}
+	if _, err := h.products.AddRating(c.Request.Context(), &productdto.AddRatingReq{
+		ProductID:  productID,
+		Score:      score,
+		OperatorID: builtin.GetUsername(c),
+	}); err != nil {
+		productEditJump(c, false, projectID, productID, productErrMsg(c, err))
+		return
+	}
+	productEditJump(c, true, projectID, productID, productActionDoneMsg)
+}
+
+// ProductsRatingDelete 删掉一条评分（issue #33）：录错了能撤掉。
+//
+// 表单里的 id 是**评分 id**，回详情的商品 id 只能取 productId 隐藏域（不给 id 回落的机会）。
+func (h *productPageHandle) ProductsRatingDelete(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	productID := c.PostForm("productId")
+	if err := h.products.DeleteRating(c.Request.Context(), &productdto.DeleteRatingReq{
+		ID: c.PostForm("id"),
+		// 工程显式回传（DB-009）：product_ratings 有 FORCE 策略，删一条评分要在工程作用域里。
+		ProjectID: projectID,
+	}); err != nil {
+		productEditJump(c, false, projectID, productID, productErrMsg(c, err))
+		return
+	}
+	productEditJump(c, true, projectID, productID, productActionDoneMsg)
+}
+
+// ProductsAttributesSet 整体替换某商品引用的属性组（issue #7）。
+//
+// 引用的组必须是同一工程内真实存在的组（service 校验）；提交空数组即解绑全部。
+//
+// 表单的隐藏域是 id（值就是商品 id），formProductID 优先认 productId。
+func (h *productPageHandle) ProductsAttributesSet(c *gin.Context) {
+	projectID := c.PostForm("projectId")
+	req := &productdto.UpdateReq{
+		ID:           formProductID(c),
+		AttributeIDs: splitIDs(c.PostForm("attributeIds")),
+	}
+	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
+		productEditJump(c, false, projectID, req.ID, productErrMsg(c, err))
+		return
+	}
+	productEditJump(c, true, projectID, req.ID, productActionDoneMsg)
+}
+
+// ProductsDelete 删除商品（连带变体）。
+//
+// **例外：只有这个端点成功后仍回列表页** —— 商品已经不存在了，回详情页只会看到一个
+// 「商品不存在」的空态，用户还得再点一次返回列表。
+func (h *productPageHandle) ProductsDelete(c *gin.Context) {
+	if err := h.products.Delete(c.Request.Context(), &productdto.DeleteReq{ID: c.PostForm("id")}); err != nil {
+		productListJump(c, false, productErrMsg(c, err))
+		return
+	}
+	productListJump(c, true, productBulkDoneMsg(productBulkDone))
+}
+
+// ProductPreviewFrame 商品详情页的真实预览帧（GET /admin/products/preview-frame?productId=&project=）。
+//
+// 与文章编辑页的同类帧同构：用**详情页模板**渲染一份不写库、不激活的预览（PreviewInstance），
+// 看到的就是访客看到的样子。拼字段 HTML 那种回显照不出模板的任何东西 —— 商品详情页有图集、
+// 变体分组、关联分区，靠拼字符串还原不了。
+//
+// 代价与文章页一样：只反映**已保存**的数据。改完先保存，再点「刷新预览」。
+//
+// 为什么 iframe 直接 src：详情页是完整文档（自带样式与脚本），塞进 srcdoc 会与后台页面同源、
+// 脚本可能互扰；指一个页面组路由（Session 鉴权、不需 CSRF）最省事也最隔离。
+func (h *productPageHandle) ProductPreviewFrame(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	// 例外（非模板出口的成品串，同 JSON 出口那一类）：iframe 里直出的是**一段字面 HTML**
+	// （productPreviewFrameNotice），没有模板、也就没有渲染期取词这一层 ——
+	// 这里必须自己把事实取成当前语言的文本。
+	tr := shell.TranslateFor(c)
+	id := strings.TrimSpace(c.Query("productId"))
+	projectID := strings.TrimSpace(c.Query("project"))
+	if id == "" {
+		productPreviewFrameNotice(c, tr(productenums.ProductsPreviewNeedSave, "保存这个商品后，这里会显示它的详情页真实形态。"))
+		return
+	}
+	if h == nil || h.instances == nil {
+		productPreviewFrameNotice(c, tr(productenums.ProductsPreviewUnavailable, "预览不可用：发布能力未装配。"))
+		return
+	}
+	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationcontract.PreviewInstanceReq{
+		EntityType: productcontract.EntityTypeProduct, EntityID: id, ProjectID: projectID,
+	})
+	if err != nil {
+		// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
+		logger.Scene("product").With("product_id", id).Error(err, "商品详情页预览渲染失败")
+		productPreviewFrameNotice(c, tr(productenums.ProductsPreviewFailed, "预览渲染失败（多半是这个商品还没有可用的详情页模板）。"))
+		return
+	}
+	if res == nil || strings.TrimSpace(res.HTML) == "" {
+		productPreviewFrameNotice(c, tr(productenums.ProductsPreviewEmpty, "还没有可渲染的详情页：先给 product 类型建一套内容模板。"))
+		return
+	}
+	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物），不是错误信息。
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
+}
+
+// productPreviewFrameNotice 预览不可用时的替代页（iframe 里的一句人话）。
+//
+// 与 content 模块那个同形但是两份：各自在自己的模块包里（跨模块共用要走契约，而这是纯展示装配）。
+// 不用 5xx：iframe 对 5xx 显示浏览器自带错误页，读的人只会以为后台坏了 —— 而这里大多数情况是
+// 「还没保存」或「还没建模板」，都是正常状态。
+func productPreviewFrameNotice(c *gin.Context, text string) {
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(
+		`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>`+
+			`body{margin:0;padding:24px;font:14px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;`+
+			`color:#57606a;background:#fff;}p{margin:0;}</style></head><body><p>`+html.EscapeString(text)+`</p></body></html>`))
+}
+
+// ==========================================================================
+// 列表页的批量写动作：批量改价与批量删除。
+//
+// 结论一律「成功 N / 跳过 M」都说清楚（只报「操作完成」会把部分成功静默成全部成功）。
+
+// bulkPricingNothingSelected 没勾选就提交的意见（与批量删除同一口径：说清怎么继续）。
+//
+// 与其它批量回执同一个形状（key + 中文原文）：写侧 productBulkTextOf 取当前语言，
+// 提示页直接渲染成品文案（不再经 URL）。
+//
+// 本节起是原先的 product_bulk_ops.go（列表页的批量改价与批删）。
+// ==========================================================================
+var bulkPricingNothingSelected = productBulkText{productenums.BulkPricingNoneSelected, "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"}
+
+// ProductsBulkPricing 批量「按规则改价」（POST /admin/products/bulk-pricing）。
+//
+// 入口为什么搬到商品列表：定价工具的作用对象本来就是「筛选出的商品集 / 标签 / SKU」，
+// 而运营是在列表上圈出要改的那几个的；独立页 /admin/product-pricing 保留可用
+// （它能对单个 SKU / 筛选集改价，也是唯一能试算的地方），本端点补上「按勾选批量应用」。
+//
+// 语义与其它批量操作一致（见 internal/module/CLAUDE.md §inbound/http）：
+//
+//	· id 一律经 shell.BulkIDs（去空白 / 去重 / 上限），超限**整批拒绝**并说明原因；
+//	· 逐条走**单商品的应用路径**（scope=product），一条失败不中断整批；
+//	· 结论按「改价 N 个变体 / 跳过 M 个商品」回带列表页，不做静默的部分成功。
+//
+// 规则解析与校验完全复用定价工具那一份（pricingRuleReqFromForm → readPricingForm /
+// pricingParamsFromForm）：复制一份就会出现「抽屉填的 amount 被当成 multiplier」这类
+// 只在一个入口发生的错。
+func (h *productPageHandle) ProductsBulkPricing(c *gin.Context) {
+	ctx := c.Request.Context()
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		// 受控提示（一次最多操作 N 项）保持可见，但同样经归口助手判定来源。
+		productListJump(c, false, productBulkIDsMsg(c, berr))
+		return
+	}
+	if len(ids) == 0 {
+		productListJump(c, false, bulkPricingNothingSelected.fact())
+		return
+	}
+	note := strings.TrimSpace(c.PostForm("note"))
+	// 操作人取自会话，表单字段不作数（调价留痕的操作人不可伪造）。
+	operator := builtin.CurrentUserIDText(c)
+	changedVariants, unchangedProducts, skipped := 0, 0, 0
+	skipReason := ""
+	for _, id := range ids {
+		rule := pricingRuleReqFromForm(c, productenums.PricingScopeProduct, id)
+		res, aerr := h.products.ApplyPricing(ctx, &productdto.PricingApplyReq{
+			PricingRuleReq: *rule, Note: note, OperatorID: operator,
+		})
+		switch {
+		case aerr == nil:
+			if res != nil {
+				changedVariants += res.ChangedCount
+			}
+		case strings.TrimSpace(aerr.Error()) == productenums.ErrPricingNothingChanged:
+			// 这个商品本来就在目标价上：不是失败（service 不写空台账），单独计数。
+			unchangedProducts++
+		default:
+			skipped++
+			if skipReason == "" {
+				skipReason = productErrText(c, aerr)
+			}
+		}
+	}
+	mark := true
+	if skipped > 0 || changedVariants == 0 {
+		// 有跳过或一个变体都没改：走失败态（更显眼），用户下次会去看剩下的那些。
+		mark = false
+	}
+	productListJump(c, mark, bulkPricingResultMsg(changedVariants, unchangedProducts, skipped, skipReason))
+}
+
+// bulkPricingResultMsg 批量改价的结论**事实**（四类结果各一条词条 + `%s` 参数）。
+//
+// 选句与计数装配在 productenums.PricingBulkOutcome（控制器不再按计数挑文案）；
+// reason 是**已取词的成品串**（逐商品的跳过原因），作为 `%s` 参数填入 —— 它是数据不是结论，
+// 所以由调用方先取好（productErrText 在 JSON/片段出口仍在使用）。
+func bulkPricingResultMsg(changedVariants, unchangedProducts, skipped int, reason string) productMsg {
+	if strings.TrimSpace(reason) == "" {
+		reason = productErrFallbacks[productenums.ErrPricingTargetNotFound]
+	}
+	return productOutcomeMsg(productenums.PricingBulkOutcome(changedVariants, unchangedProducts, skipped, reason))
+}
+
+// ProductsBulkDelete 批量删除商品（连同其全部变体，由 service 保证）。
+//
+// 逐条走同一条删除路径：失败的那条（已不存在 / 被其它数据引用）由服务端拒绝，其余照常删除
+// —— 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
+// 结果按「已删 N 个 / 跳过 M 个」渲染提示页，避免静默的部分成功。
+func (h *productPageHandle) ProductsBulkDelete(c *gin.Context) {
+	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := shell.BulkIDs(c)
+	if berr != nil {
+		productListJump(c, false, productBulkIDsMsg(c, berr))
+		return
+	}
+	deleted, skipped := 0, 0
+	for _, id := range ids {
+		if err := h.products.Delete(c.Request.Context(), &productdto.DeleteReq{ID: id}); err != nil {
+			skipped++
+			continue
+		}
+		deleted++
+	}
+	ok, msg := productBulkDeleteResult(deleted, skipped, productBulkPartial, productBulkDone)
+	productListJump(c, ok, msg)
+}

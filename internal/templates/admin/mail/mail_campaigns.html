@@ -13,10 +13,8 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
-{* 分页键由 handler 注入在顶层（拆页后每页一张表）。单页或空数据时不存在 ——
-    取到 nil 不中断渲染，分页片段里的 if 自然跳过。 *}
-{{campaignsLinks := .["PaginationLinks"]}}
-{{campaignsInfo := .["PaginationInfo"]}}
+{* 分页事实由 handler 注入在顶层键 "Pagination"（pkg/pagination.Page）；单页或空数据时该键
+   不存在 —— 缺键不中断渲染，片段里的 isset 守卫自然跳过。 *}
 {{canSaveCampaign := isset(.Buttons["mail.campaign_save"])}}
 {* 批量动作复用对应单条动作的权限点（路由层用同一个 CasbinMiddlewareForPath），不新增权限点。 *}
 {{canDeleteCampaign := isset(.Buttons["mail.campaign_delete"])}}
@@ -112,7 +110,7 @@
       </div>
     </form>
     {* 分页条：活动列表此前硬编码 Page:1（永远只看得到前 50 个活动）。 *}
-    {{include "../partials/pagination.html" map("t", tr, "PaginationLinks", campaignsLinks, "PaginationInfo", campaignsInfo)}}
+    {{include "../partials/pagination.html" map("t", tr, "Pagination", .["Pagination"])}}
   </section>
 
   {* 行内表单与抽屉模板放列表外：HTML 不允许 form 嵌套，按钮用 form="<id>" 关联。 *}

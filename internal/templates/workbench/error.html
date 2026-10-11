@@ -1,0 +1,49 @@
+{* workbench/error.html — 工作台「整页打不开」时的**完整外壳**（400 / 404 / 5xx）。 *}
+{* 为什么单独一个模板而不是复用 layout.html：那个外壳用点号取编辑器专用键 *}
+{* （.jsVer / .document / .schemas / .isBlock / .previewQS …），错误请求下这些键都不存在， *}
+{* 渲染它等于把「页面打不开」换成渲染期 500。本页只读下面这几个键，缺一个都渲染不出来 —— *}
+{* 所以键的清单由 Go 侧固定给（renderWorkbenchPageError，workbench_page.go）。 *}
+{* 取词：t 由 Go 按请求语言注入（templates.TranslateFunc），tr 顶层声明一次后全程复用 —— *}
+{* Jet 里 .["t"](…) 不能出现在赋值右侧与 yield 参数里（internal/templates/CLAUDE.md）。 *}
+{* lang 缺数据时回退 zh-CN，不报错。 *}
+{* 状态码的事实区分（400 请求缺参 / 404 目标不存在 / 500 内部异常）由 Go 决定， *}
+{* 模板只负责把 title/message 原样显示 —— 文案归口在 workbenchShortFallbacks，本页不拼句子。 *}
+{{tr := .["t"]}}
+<!DOCTYPE html>
+<html lang="{{if .["lang"]}}{{ .["lang"] }}{{else}}zh-CN{{end}}" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.title}} — go_wp {{tr("workbench.ui.brand", "工作台")}}</title>
+    {* 样式与 layout.html 同一份入口（theme → ui → workbench → a11y），保证失败页与编辑器 *}
+    {* 看上去是同一个产品，而不是一张裸 HTML。 *}
+    <link rel="stylesheet" href="/static/css/theme.css">
+    <link rel="stylesheet" href="/static/css/ui.css">
+    <link rel="stylesheet" href="/static/css/workbench.css?v=20260906c">
+    <link rel="stylesheet" href="/static/css/workbench-a11y.css?v=20260908a">
+</head>
+<body class="wb-body">
+
+    {* ===== 顶栏：留住「返回后台」这条回路（失败页最需要的唯一一个动作） ===== *}
+    <header class="wb-topbar">
+        <div class="wb-topbar-left">
+            <a href="{{.backPath}}" class="wb-btn wb-btn-ghost" title="{{tr("workbench.ui.nav.back", "返回后台")}}">← {{tr("workbench.ui.nav.back", "返回后台")}}</a>
+        </div>
+        <div class="wb-topbar-right">
+            <span class="wb-status">{{tr("workbench.ui.brand", "工作台")}}</span>
+        </div>
+    </header>
+
+    {* ===== 正文：一句归口文案 + 一个出口 ===== *}
+    <main class="wb-main">
+        <div class="wb-canvas-wrap">
+            <div class="wb-panel">
+                <div class="wb-panel-head"><strong>{{.title}}</strong></div>
+                <p class="wb-status" id="wb-error-message" role="alert">{{.message}}</p>
+                <p><a class="wb-btn" href="{{.backPath}}">{{tr("workbench.ui.nav.back", "返回后台")}}</a></p>
+            </div>
+        </div>
+    </main>
+
+</body>
+</html>

@@ -43,9 +43,9 @@
                     </tr>
                 </thead>
                 <tbody>
-                    {{if .Err != ""}}
+                    {{if .HasErr}}
                     {* 查询失败：表头仍然保留（用户能看见这一页有哪些列），原因放进正文。 *}
-                    <tr><td colspan="{{.Colspan}}" class="cell-wrap">{{.Err}}</td></tr>
+                    <tr><td colspan="{{.Colspan}}" class="cell-wrap">{{ .["t"](.ErrKey, .ErrFallback) }}</td></tr>
                     {{else if !.CohortReady}}
                     <tr><td colspan="{{.Colspan}}" class="cell-wrap">{{ .["t"]("admin.customer.cohort.empty", "这段时间里没有新客户：可能是还没有站点工程，也可能确实没有新客户在这里下过单。换个时间段试试。") }}</td></tr>
                     {{else if len(rows) == 0}}

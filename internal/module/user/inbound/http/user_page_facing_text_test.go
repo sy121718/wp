@@ -1,15 +1,18 @@
 package userhttp
 
-// user_page_facing_text_test.go — 访客页面「命中白名单后显示的是译文、不是裸 key」的回归。
+// user_page_facing_text_test.go — 访客页面「页面出口给的是译文、不是裸 key」的回归。
 //
-// 根因（2026-09，与后台客户页 / order / return 各页同源）：userenums 的值是 i18n
-// **item_key**（user.err.usernameTaken / user.err.internal …），而访客页面
-// （user/register、user/account、user/message）里的 {{.error}} / {{.message}}
-// 是**直接渲染**的文本、不经过 pkg/response 的 translate —— 原先的 userMessage 只放行 key
-// 就把 key 原样渲染了出去：注册失败时访客看到的是「user.err.usernameTaken」。
+// 判据在本批改成了**形态**（pkg/response.IsBusinessError）：userenums 的值本身就是
+// i18n item_key，也是 `模块.类别.语义` 形态 —— 所以模块侧那份白名单
+// （userenums.UserFacingMessages / userFacingText）整批删除。
 //
-// 修法照 return_page_query.go / customer_query.go 的样板：**判定只有一份**
-// （userFacingText），页面出口多一层取词（userPageMessage / userKeyText）。
+// 两层出口：
+//   · userPageMessage —— 有 error 对象的那一类（注册 / 登录 / 资料保存失败）；
+//   · userKeyText     —— 没有 error、文案就是 enums 常量的那一类（缺设备标识、登出失败归口）。
+//
+// 两者都必须交**成品文本**：访客模板里的 {{ .["error"] }} / {{ .["message"] }} 是直接渲染的，
+// 拿不到 .["t"]（那是 adminui.Prepare 注入后台页面的）。只放行 key 的话，
+// 注册失败时访客看到的是「user.err.usernameTaken」。
 //
 // 用 pkg/i18n.InjectForTest 直接塞内存词条（英文值带 EN- 前缀，与中文毫无相似度）：
 // 不建库、不起装配，任何一处没按当前语言取词都会立刻暴露。
@@ -20,6 +23,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"go_wp/internal/adminui"
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/pkg/i18n"
 
@@ -33,6 +37,7 @@ var userFacingInjectedEntries = map[string]map[string]string{
 	userenums.ErrSessionNotFound: {"zh-CN": "会话不存在", "en-US": "EN-SESSION-NOT-FOUND"},
 	userenums.MsgResetMailSent:   {"zh-CN": "重置邮件已发送", "en-US": "EN-RESET-MAIL-SENT"},
 	userenums.ErrInternal:        {"zh-CN": "操作失败，请稍后重试", "en-US": "EN-INTERNAL"},
+	adminui.MsgInternalError:     {"zh-CN": "系统内部错误，请稍后重试", "en-US": "EN-INTERNAL-GATE"},
 }
 
 // userFacingLangCtx 构造一个绑定了 Accept-Language 的上下文。
@@ -47,17 +52,11 @@ func userFacingLangCtx(t *testing.T, lang string) *gin.Context {
 	return c
 }
 
-// TestUserPageMessageTranslatesWhitelistHit 命中白名单的那一支按当前语言取词。
-func TestUserPageMessageTranslatesWhitelistHit(t *testing.T) {
+// TestUserPageMessageTranslatesBusinessError 业务错误那一支按当前语言取词。
+func TestUserPageMessageTranslatesBusinessError(t *testing.T) {
 	i18n.InjectForTest(userFacingInjectedEntries, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
-	// 判定出口保持「原样返回 key」：白名单里存的就是 item_key。
-	if got := userFacingText(userenums.ErrUsernameTaken); got != userenums.ErrUsernameTaken {
-		t.Fatalf("判定出口应原样返回 key，实际 %q", got)
-	}
-
-	// 页面出口：同一份判定 + 按当前语言取词。
 	zh := userPageMessage(userFacingLangCtx(t, "zh-CN"), errors.New(userenums.ErrUsernameTaken))
 	if zh != "用户名已被占用" {
 		t.Errorf("zh-CN 页面出口应给译文，实际 %q（裸 key 说明少了取词那一层）", zh)
@@ -76,16 +75,16 @@ func TestUserPageMessageTranslatesWhitelistHit(t *testing.T) {
 	}
 }
 
-// TestUserPageMessageFallsBackToInternalText 未命中 → 归口文案；nil → 空串。
+// TestUserPageMessageFallsBackToInternalText 未命中形态 → 归口文案；nil → 空串。
 func TestUserPageMessageFallsBackToInternalText(t *testing.T) {
 	i18n.InjectForTest(userFacingInjectedEntries, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
 	c := userFacingLangCtx(t, "en-US")
 
-	// 未命中白名单：落归口文案，且**原文不进页面**（数据库原文只进日志）。
+	// 未命中（数据库原文）：落归口文案，且**原文不进页面**（只进日志）。
 	raw := `pq: relation "users" does not exist`
-	if got := userPageMessage(c, errors.New(raw)); got != "EN-INTERNAL" {
+	if got := userPageMessage(c, errors.New(raw)); got != "EN-INTERNAL-GATE" {
 		t.Errorf("未命中应落归口译文，实际 %q", got)
 	}
 
@@ -94,12 +93,13 @@ func TestUserPageMessageFallsBackToInternalText(t *testing.T) {
 		t.Errorf("nil error 应给空串，实际 %q", got)
 	}
 
-	// ErrInternal 自身不在白名单里 —— 它是归口文案，不是可透出的业务文案。
-	if got := userFacingText(userenums.ErrInternal); got != "" {
-		t.Errorf("ErrInternal 不应命中白名单，实际 %q", got)
+	// 形态不成立（数据库原文）的参数级出口 → 同样落归口，不把原文摆到页面上。
+	if got := userKeyText(c, raw); got != "EN-INTERNAL-GATE" {
+		t.Errorf("形态不成立的 key 应落归口译文，实际 %q", got)
 	}
-	// 但它经参数级出口时仍要取词（登出失败那一支就是这么用的）。
+	// ErrInternal 本身是**形态成立的 key**（userenums 的值就是 item_key），
+	// 所以它在参数级出口给的是它自己的译文 —— 登出失败那一支就是这么用的。
 	if got := userKeyText(c, userenums.ErrInternal); got != "EN-INTERNAL" {
-		t.Errorf("归口文案在参数级出口同样要取词，实际 %q", got)
+		t.Errorf("user.err.internal 在参数级出口应取它自己的译文，实际 %q", got)
 	}
 }

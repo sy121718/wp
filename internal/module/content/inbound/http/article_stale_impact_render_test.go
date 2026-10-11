@@ -31,11 +31,11 @@ func TestArticlesListRenderWithStaleImpactPages(t *testing.T) {
 		{ID: "a1", Slug: "hello-world", Revision: 1, UpdatedAt: "2026-09-13 10:00",
 			Data: map[string]any{"title": "第一篇"}},
 	}
-	data := articleListPageData(list, map[string]string{"a1": "/blog/hello-world"}, "")
+	data := articleListPageData(list, map[string]string{"a1": "/blog/hello-world"}, articleMsg{})
 	data["StaleImpact"] = gin.H{
 		"Available": true,
 		"Pages":     []gin.H{{"ID": "pg1", "Path": "/zh/stale-only-page", "ProjectID": "prj", "ProjectName": "站点"}},
-		"Total":     1, "Truncated": false, "Limit": 8, "Hint": "",
+		"Total":     1, "Truncated": false, "Limit": 8, "Hint": articleMsg{},
 	}
 	body := renderAdminTemplate(t, "admin/content/articles.html", articleLayoutData(data))
 	for _, want := range []string{
@@ -59,8 +59,10 @@ func TestArticlesListRenderWithStaleImpactPages(t *testing.T) {
 func TestArticleStaleDrawerRendersRows(t *testing.T) {
 	data := gin.H{
 		"Rows": []gin.H{
-			{"ID": "pg1", "Path": "/zh/stale-only-page", "ProjectName": "站点", "Published": true},
-			{"ID": "pg2", "Path": "/never-live", "ProjectName": "站点", "Published": false},
+			// RebuildFailure 是失败痕迹的**事实**槽位（Has / StageKey / StageFallback / At）：
+			// 调用方（content / block）总是给齐，模板按 Has 决定渲不渲染那一句。
+			{"ID": "pg1", "Path": "/zh/stale-only-page", "ProjectName": "站点", "Published": true, "RebuildFailure": gin.H{}},
+			{"ID": "pg2", "Path": "/never-live", "ProjectName": "站点", "Published": false, "RebuildFailure": gin.H{}},
 		},
 		"Total": 2, "Truncated": false, "Limit": 8, "MultiProject": false,
 	}

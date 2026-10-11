@@ -25,10 +25,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	pagedto "go_wp/internal/module/page/dto"
 	pageservice "go_wp/internal/module/page/service"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
 )
 
 // staleOverviewHandle 组装句柄：工程列表就绪，页面列表为空，stale 取数按参数给定。
@@ -191,7 +191,7 @@ func renderPagesBareData(t *testing.T, data gin.H) string {
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
 	router.GET("/admin/pages", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "admin/page/pages", shell.Prepare(c, data))
+		c.HTML(http.StatusOK, "admin/page/pages", adminui.Prepare(c, data))
 	})
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/pages", nil))
@@ -206,6 +206,6 @@ func barePagesMap() gin.H {
 	return gin.H{
 		"title": "页面管理", "menu": "pages",
 		"Projects": []projectcontract.ProjectResp{{ID: "p1", Name: "官网"}},
-		"Pages":    []pageRow{},
+		"Pages":    []pagedto.PageRow{},
 	}
 }

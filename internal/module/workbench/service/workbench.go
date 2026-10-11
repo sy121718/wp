@@ -222,7 +222,7 @@ func StaticJSVersion() string {
 
 // WorkbenchTitle 画布标题：作者自己的 SEO 标题优先，否则「前缀 + 草稿路径」。
 //
-// 取词在 Go 侧完成（tr 参与签名）：这个值会作为 data.title 交给 shell.Prepare，
+// 取词在 Go 侧完成（tr 参与签名）：这个值会作为 data.title 交给 adminui.Prepare，
 // 而 injectI18n 对 title 的处理是 `t(title, title)` —— 拼接过的句子不是 key，
 // 只会原样返回，所以前缀必须先在这里翻译好（词条 workbench.title.*）。
 func WorkbenchTitle(page *pagecontract.PageResp, tr Translate) string {

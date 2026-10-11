@@ -1,9 +1,6 @@
 // membership_handle.go — membership 模块的 JSON 接口（BIZ-3）。
 //
-// 与后台页面（membership_page_handle.go / membership_assign_page_handle.go）的分工：
-// 页面的写动作经「表单 POST → shell.RenderJump 渲染整页提示」，接口走 pkg/response 的 JSON 信封。
-// 两者共用同一份 service 与同一份错误归口（membership_err.go），
-// 所以「同一个错误在页面与接口上说法一致」不是靠两边各写一遍。
+// 后台写表单直调本接口，采用 pkg/response 的 JSON 信封与请求语言文案。
 package membershiphttp
 
 import (

@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
+
 	"strings"
 	"testing"
 
@@ -36,7 +36,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
+	bulkids "go_wp/pkg/bulkids"
 	"go_wp/public/test/support"
 )
 
@@ -85,7 +85,7 @@ func newContentTemplateErrorLeakEnv(t *testing.T) *contentTemplateEnv {
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := contenttemplatehttp.NewContentTemplatePageHandle(templatesSvc, projects, products, nil)
 	engine.GET("/admin/content-templates", handle.ContentTemplatesPage)
-	engine.POST("/admin/content-templates/bulk-delete", handle.ContentTemplatesBulkDelete)
+	engine.POST("/api/contenttemplate/delete", contenttemplatehttp.NewHandle(templatesSvc).Delete)
 	return &contentTemplateEnv{engine: engine, db: db, projectID: project.ID, products: products}
 }
 
@@ -174,24 +174,26 @@ func TestContentTemplatesBulkDeleteKeepsControlledLimitText(t *testing.T) {
 	if env == nil {
 		return
 	}
-	form := url.Values{}
+	ids := []string{}
 	// 用高于上限一条即触发整批拒绝（不依赖 @10 这类经验数字）。
-	for i := 0; i < shell.MaxBulkIDs+1; i++ {
-		form.Add("ids", fmt.Sprintf("00000000-0000-0000-0000-%012d", i))
+	for i := 0; i < bulkids.MaxIDs+1; i++ {
+		ids = append(ids, fmt.Sprintf("00000000-0000-0000-0000-%012d", i))
 	}
-	req := httptest.NewRequest(http.MethodPost,
-		"/admin/content-templates/bulk-delete?project="+env.projectID,
-		strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	payload, err := json.Marshal(map[string]any{"ids": ids})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/contenttemplate/delete", strings.NewReader(string(payload)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	env.engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("超限应渲染提示页（200），实际 %d，body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("超限应返回 JSON 400，实际 %d，body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
 	assertNoContentTemplateInternalLeak(t, "批量超限提示页", body)
-	if !strings.Contains(body, `data-jump-state="err"`) {
-		t.Fatalf("超限应渲染失败态提示页，body=%s", body)
+	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatal("expected JSON")
 	}
 	if !strings.Contains(body, "一次最多操作") {
 		t.Fatalf("受控提示应保持可见，body=%s", body)

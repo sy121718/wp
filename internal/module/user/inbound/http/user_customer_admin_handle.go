@@ -23,7 +23,6 @@ import (
 	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
-	"go_wp/internal/shell"
 	"go_wp/pkg/response"
 	"go_wp/pkg/sitetz"
 	"go_wp/pkg/utils"
@@ -48,14 +47,13 @@ func NewCustomerHandle(svc usercontract.CustomerAdminPort) *CustomerHandle {
 // 为什么在 handler：service 拿不到请求语言，而 StatusLabel 是**直接给客户端看的文本**
 // （/api/customer/* 的响应字段）—— 在那里拼中文的表现是英文调用方恒中文，且不会有任何报错。
 // 映射与后台页共用 userenums.StatusLabel（同一份 key + 中文兜底），于是同一个状态
-// 在页面与接口里说同一句话。
+// 在页面与接口里说同一句话；取词走共享出口 adminui（不再是 shell.TranslateFor）。
 func localizeCustomerLabels(c *gin.Context, resps ...*userdto.CustomerResp) {
-	tr := shell.TranslateFor(c)
 	for _, r := range resps {
 		if r == nil {
 			continue
 		}
-		r.StatusLabel = customerStatusText(tr, r.Status)
+		r.StatusLabel = customerStatusText(c, r.Status)
 	}
 }
 
@@ -64,7 +62,7 @@ func localizeCustomerStatusLabel(c *gin.Context, res *userdto.CustomerStatusResp
 	if res == nil {
 		return
 	}
-	res.StatusLabel = customerStatusText(shell.TranslateFor(c), res.Status)
+	res.StatusLabel = customerStatusText(c, res.Status)
 }
 
 // ListCustomers 客户列表（GET /api/customer/list）。
@@ -119,9 +117,17 @@ func (h *CustomerHandle) GetCustomer(c *gin.Context) {
 
 // SetCustomerStatus 启用 / 停用账号（POST /api/customer/status）。
 func (h *CustomerHandle) SetCustomerStatus(c *gin.Context) {
-	req := &userdto.CustomerStatusReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
+	var input struct {
+		CustomerID uint64 `json:"customerId"`
+		Status     *int   `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil || input.Status == nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, userenums.ErrInvalidParam)
+		return
+	}
+	req := &userdto.CustomerStatusReq{CustomerID: input.CustomerID, Status: *input.Status}
+	if req.CustomerID == 0 || (req.Status != userenums.StatusActive && req.Status != userenums.StatusDisabled) {
+		response.ErrorWithMessage(c, http.StatusBadRequest, userenums.ErrCustomerStatusInvalid)
 		return
 	}
 	res, err := h.svc.SetCustomerStatus(c.Request.Context(), req)
@@ -135,7 +141,7 @@ func (h *CustomerHandle) SetCustomerStatus(c *gin.Context) {
 	if res.Status == 1 {
 		msg = userenums.MsgCustomerEnabled
 	}
-	response.SuccessWithMessage(c, msg, res)
+	response.SuccessWithMessage(c, customerNotice(c, msg), res)
 }
 
 // UnlockCustomer 解除登录锁定（POST /api/customer/unlock）。
@@ -158,7 +164,7 @@ func (h *CustomerHandle) UnlockCustomer(c *gin.Context) {
 	case res.Cleared:
 		msg = userenums.MsgCustomerFailuresCleared
 	}
-	response.SuccessWithMessage(c, msg, res)
+	response.SuccessWithMessage(c, customerNotice(c, msg), res)
 }
 
 // —— 参数解析 ——

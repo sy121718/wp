@@ -83,8 +83,8 @@ package mailhttp
 // 用户看到的是原图 + 一个去画布的入口。
 
 // 为什么在出口做：写侧（service）落库的是「key + 参数」编码（见 mail/enums/mail_run_text.go），
-// 只有到 handler 这一层才知道请求语言。页面出口用 shell.TranslateFor(c)，
-// JSON API 出口用 pkg/i18n.TranslateFunc(response.RequestLanguage(c))。
+// 只有到出口这一层才知道请求语言。页面出口用 mailTranslate(c)（= templates.TranslateFunc
+// 按 response.RequestLanguage 取词），JSON API 出口用 i18n.TranslateFunc(...)。
 //
 // 为什么两个出口都要做：**不做的那一边会退步** —— 页面翻了、API 原样返回编码串，
 // 消费方看到的是 `mail.run.explain.waiting\x1f2026-01-02 15:04\x1fn1`。
@@ -106,14 +106,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/builder/core"
 	"go_wp/internal/module/mail/contract"
 	"go_wp/internal/module/mail/dto"
 	"go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
-	"go_wp/internal/shell"
+	"go_wp/internal/templates"
+	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
+	"go_wp/pkg/utils"
 )
 
 // MailAutomationCanvas 流程画布页（?id=N）。
@@ -125,12 +130,12 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 	id, hasID := mailQueryID(c)
 	if !hasID {
 		// 缺 id 是**引导**（不是异常输入）：渲染提示页并给出回流程列表的入口。
-		mailAutomationJump(c, false, mailAutomationIDRequiredText)
+		mailAutomationJump(c, false, mailAutomationIDRequiredMsg)
 		return
 	}
 	item, err := h.mail.GetAutomation(ctx, id)
 	if err != nil {
-		mailAutomationJump(c, false, mailErrPageText(c, err))
+		mailAutomationJump(c, false, mailErrMsg(c, err))
 		return
 	}
 	nodesJSON, merr := json.Marshal(item.Nodes)
@@ -151,11 +156,11 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 	metaJSON, _ := json.Marshal(meta)
 	// 发信节点的模板下拉（与表单页同一份数据）。
 	templates, _ := h.mail.ListTemplates(ctx, "")
-	c.HTML(http.StatusOK, "admin/mail/mail_automation_canvas.html", shell.Prepare(c, gin.H{
-		"title":     mailLabel(shell.TranslateFor(c), mailenums.PageTitleAutomationCanvas),
+	c.HTML(http.StatusOK, "admin/mail/mail_automation_canvas.html", adminui.Prepare(c, gin.H{
+		"title":     mailenums.PageTitleAutomationCanvas.Key,
 		"A":         item,
-		"NodesJSON": shell.JsonSafe(string(nodesJSON)),
-		"MetaJSON":  shell.JsonSafe(string(metaJSON)),
+		"NodesJSON": utils.JsonSafe(string(nodesJSON)),
+		"MetaJSON":  utils.JsonSafe(string(metaJSON)),
 		"Templates": templates,
 		"jsVer":     automationJsVer(),
 		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）；
@@ -199,8 +204,21 @@ const maxAutomationNodes = 12
 // mailAutomationPageSize 流程列表每页条数（运行记录页用自己的 mailAutomationRunsPageSize）。
 const mailAutomationPageSize = 50
 
-// mailTr 取词函数签名（shell.TranslateFor(c) 的形态）。
+// mailTr 取词函数签名（= 后台模板注入的 .["t"]：templates.TranslateFunc 按
+// response.RequestLanguage 取词，与 shell.TranslateFor 是同一实现）。
 type mailTr func(key, fallback string) string
+
+// mailTranslate 本模块的取词函数（先例见 user 模块的 userTr）。
+//
+// 直引 templates.TranslateFunc(response.RequestLanguage(c))：shell.TranslateFor 逐字就是
+// 这两行，而 shell 那一层是过渡转发，终局归属是 templates / pkg/i18n。
+//
+// 为什么本模块仍有 Go 侧取词：这几处**没有模板可代办** —— 访客面出口走 c.String、
+// JSON 逐条原因要成品文本、下拉选项与运行文案还原是数据字段。凡是「给模板放一句话」的
+// 槽位一律改成事实（mailMsg，见 mail_jump.go），取词交给渲染期。
+func mailTranslate(c *gin.Context) mailTr {
+	return templates.TranslateFunc(response.RequestLanguage(c))
+}
 
 // mailLabel 展示名取词：命中出译文、缺词条回落中文兜底；key 为空（未登记）直接给兜底。
 func mailLabel(tr mailTr, pair mailenums.LabelPair) string {
@@ -240,8 +258,8 @@ func nodeTypeOptions(tr mailTr) []nodeTypeOption {
 // 挤在一页时页面下半部常年滚动着几十条与当前操作无关的记录。
 func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
-	page := int(shell.ParseUint(c.Query("page")))
+	tr := mailTranslate(c)
+	page := int(reqparams.ParseUint(c.Query("page")))
 	if page <= 0 {
 		page = 1
 	}
@@ -261,7 +279,7 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 		data["Err"] = mailErrPageText(c, err)
 		data["Automations"] = []any{}
 		data["AutoTotal"] = 0
-		c.HTML(http.StatusOK, "admin/mail/mail_automation.html", shell.Prepare(c, data))
+		c.HTML(http.StatusOK, "admin/mail/mail_automation.html", adminui.Prepare(c, data))
 		return
 	}
 	// 列表行按模板需要投影：触发方式给中文标签（枚举不直接进界面），其余字段原样透出。
@@ -275,7 +293,7 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	}
 	data["Automations"] = autoRows
 	data["AutoTotal"] = automations.Total
-	c.HTML(http.StatusOK, "admin/mail/mail_automation.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/mail/mail_automation.html", adminui.Prepare(c, data))
 }
 
 // automationFormValues 编辑页表单当前值。
@@ -309,7 +327,7 @@ func formValuesFromItem(item *maildto.AutomationItem) automationFormValues {
 
 // formValuesFromPost 动作回显时取自本次提交（不落库）。
 func formValuesFromPost(c *gin.Context) automationFormValues {
-	id := shell.ParseUint(c.PostForm("id"))
+	id := reqparams.ParseUint(c.PostForm("id"))
 	trigger := strings.TrimSpace(c.PostForm("trigger_type"))
 	if trigger == "" {
 		trigger = "manual"
@@ -333,14 +351,14 @@ func formValuesFromPost(c *gin.Context) automationFormValues {
 // 页面只讲「触发方式 + 按顺序的步骤」：标识 / 下一步 / yes / no 四个输入框已从界面消失
 // （用户原话「新建自动化不知道是个什么东西完全没法用」），换算在 mail_automation_form.go。
 func (h *mailPageHandle) MailAutomationEdit(c *gin.Context) {
-	id := shell.ParseUint(c.Query("id"))
+	id := reqparams.ParseUint(c.Query("id"))
 	if id == 0 {
 		h.renderAutomationForm(c, automationFormValues{IsNew: true, Trigger: "manual", Entry: automationEntryKeyDefault}, []automationStep{{}}, "")
 		return
 	}
 	item, err := h.mail.GetAutomation(c.Request.Context(), id)
 	if err != nil {
-		mailAutomationJump(c, false, mailErrPageText(c, err))
+		mailAutomationJump(c, false, mailErrMsg(c, err))
 		return
 	}
 	if steps, ok := automationStepsFromGraph(item); ok {
@@ -358,7 +376,7 @@ func (h *mailPageHandle) MailAutomationEdit(c *gin.Context) {
 // 用户填的内容（尤其是他刚改过的步骤类型）必须留在页面上。否则「改类型 → 保存 →
 // 报错 → 页面翻回旧类型 → 再报错」就是死循环，而这条链路上用户没有任何出路。
 func (h *mailPageHandle) renderAutomationForm(c *gin.Context, form automationFormValues, steps []automationStep, errText string) {
-	tr := shell.TranslateFor(c)
+	tr := mailTranslate(c)
 	steps = trimAutomationSteps(steps)
 	// Err 只来自本页的表单校验（errText）—— 校验失败走 200 回显以留住用户输入；
 	// 写动作的结论走提示页（见 mail_jump.go），不再从查询参数读回。
@@ -379,7 +397,7 @@ func (h *mailPageHandle) renderAutomationForm(c *gin.Context, form automationFor
 	// 发信步骤要选模板：把模板列表给页面（省得用户手敲 key）。
 	templates, _ := h.mail.ListTemplates(c.Request.Context(), "")
 	data["Templates"] = templates
-	c.HTML(http.StatusOK, "admin/mail/mail_automation_edit.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/mail/mail_automation_edit.html", adminui.Prepare(c, data))
 }
 
 // renderAutomationFallback 表单表达不了的流程：只读展示原图 + 去画布的入口。
@@ -387,7 +405,7 @@ func (h *mailPageHandle) renderAutomationForm(c *gin.Context, form automationFor
 // 这里**不给可提交的步骤表单**：那份表单渲染出来是空的（还原失败），用户一保存就把
 // 还原不出来的节点整段删掉 —— 旧实现正是如此。宁可让他去画布改。
 func (h *mailPageHandle) renderAutomationFallback(c *gin.Context, item *maildto.AutomationItem) {
-	tr := shell.TranslateFor(c)
+	tr := mailTranslate(c)
 	rows := make([]gin.H, 0, len(item.Nodes))
 	for _, n := range item.Nodes {
 		rows = append(rows, gin.H{
@@ -410,7 +428,7 @@ func (h *mailPageHandle) renderAutomationFallback(c *gin.Context, item *maildto.
 	}
 	templates, _ := h.mail.ListTemplates(c.Request.Context(), "")
 	data["Templates"] = templates
-	c.HTML(http.StatusOK, "admin/mail/mail_automation_edit.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/mail/mail_automation_edit.html", adminui.Prepare(c, data))
 }
 
 // nodeTypeLabelOf 节点类型 → 当前语言标签；未知类型原样返回（兜底表要能显示真实取值）。
@@ -463,8 +481,8 @@ func triggerOptions(tr mailTr, selected string) []gin.H {
 // 同一个地址承载两种请求：步骤动作（增 / 删 / 上移 / 下移）与真正保存。动作优先判，
 // 它不落库、只回显 —— 这样没有 JS 也能排步骤。
 func (h *mailPageHandle) MailAutomationSave(c *gin.Context) {
-	tr := shell.TranslateFor(c)
-	id := shell.ParseUint(c.PostForm("id"))
+	tr := mailTranslate(c)
+	id := reqparams.ParseUint(c.PostForm("id"))
 	steps := readAutomationSteps(c)
 
 	if act, ok := stepActionOf(c); ok {
@@ -494,12 +512,11 @@ func (h *mailPageHandle) MailAutomationSave(c *gin.Context) {
 	if err != nil {
 		// 图校验失败（有环 / 悬空边 / 不可达 / 形状不对）走到这里，错误里带定位信息；
 		// 但也可能是数据库错误 —— 所以必须过白名单：命中 → 翻成中文，未命中 → 归口文案 + 日志。
-		mailAutomationEditJump(c, false, mailErrPageText(c, err), id)
+		mailAutomationEditJump(c, false, mailErrMsg(c, err), id)
 		return
 	}
-	// 与 mail_err.go 的 mailCountedNoticeTemplates[0] 同形（数字归一后可判定）。
-	ok := fmt.Sprintf(mailCountedNoticeTemplates[0], item.Version)
-	mailAutomationEditJump(c, true, ok, item.ID)
+	// 与 mail_err.go 的 mailAutomationSavedMsg 同一句话（版本号是位置参数）。
+	mailAutomationEditJump(c, true, mailAutomationSavedMsg.WithArgs(strconv.Itoa(item.Version)), item.ID)
 }
 
 // automationNodePositions 取原图里各节点的画布坐标（key → X / Y）。
@@ -525,22 +542,22 @@ func (h *mailPageHandle) automationNodePositions(c *gin.Context, id uint64) map[
 
 // MailAutomationStatus 启用 / 暂停 / 退回草稿。
 func (h *mailPageHandle) MailAutomationStatus(c *gin.Context) {
-	id := shell.ParseUint(c.PostForm("id"))
+	id := reqparams.ParseUint(c.PostForm("id"))
 	status := strings.TrimSpace(c.PostForm("status"))
 	if err := h.mail.SetAutomationStatus(c.Request.Context(), &maildto.SetAutomationStatusReq{ID: id, Status: status}); err != nil {
-		mailAutomationJump(c, false, mailErrPageText(c, err))
+		mailAutomationJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	mailAutomationJump(c, true, mailAutomationStatusNotice(c, status))
+	mailAutomationJump(c, true, mailMsg{Fallback: mailAutomationStatusNotice(c, status)})
 }
 
 // MailAutomationDelete 删除流程。
 func (h *mailPageHandle) MailAutomationDelete(c *gin.Context) {
-	if err := h.mail.DeleteAutomation(c.Request.Context(), shell.ParseUint(c.PostForm("id"))); err != nil {
-		mailAutomationJump(c, false, mailErrPageText(c, err))
+	if err := h.mail.DeleteAutomation(c.Request.Context(), reqparams.ParseUint(c.PostForm("id"))); err != nil {
+		mailAutomationJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	mailAutomationJump(c, true, mailAutomationDeletedText)
+	mailAutomationJump(c, true, mailAutomationDeletedMsg)
 }
 
 // mailAutomationsBulkDelete 批量删除自动化流程（POST /admin/mail/automations/bulk-delete）。
@@ -549,15 +566,15 @@ func (h *mailPageHandle) MailAutomationDelete(c *gin.Context) {
 // 逐条走同一条单条路径，失败只计跳过、不中断整批 —— 批量操作不能因为一条被服务端拒绝
 // 就整批回滚（那会让人以为「一条都没做」然后反复重试）。
 func (h *mailPageHandle) MailAutomationsBulkDelete(c *gin.Context) {
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
+	// 批量 id 统一入口（pkg/bulkids：去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
-		mailAutomationJump(c, false, mailBulkIDsText(c, berr))
+		mailAutomationJump(c, false, mailBulkIDsMsg(c, berr))
 		return
 	}
 	deleted, skipped := 0, 0
 	for _, raw := range ids {
-		id := shell.ParseUint(raw)
+		id := reqparams.ParseUint(raw)
 		if id == 0 {
 			skipped++
 			continue
@@ -569,7 +586,7 @@ func (h *mailPageHandle) MailAutomationsBulkDelete(c *gin.Context) {
 		deleted++
 	}
 	done, warn := mailBulkOutcome("删除", "自动化流程", deleted, skipped)
-	mailBulkJump(c, done, warn, mailAutomationBack(c), mailAutomationBackText(c))
+	mailBulkJump(c, done, warn, mailAutomationBack(c), mailAutomationBackMsg)
 }
 
 // MailAutomationRunDetail 实例排障详情页（「这个人卡在哪一步、为什么」）。
@@ -580,18 +597,18 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 	id, hasID := mailQueryID(c)
 	if !hasID {
 		// 缺 id 是**引导**（不是异常输入）：渲染提示页并给出回实例列表的入口。
-		mailAutomationRunsJump(c, false, mailRunIDRequiredText)
+		mailAutomationRunsJump(c, false, mailRunIDRequiredMsg)
 		return
 	}
 	detail, err := h.mail.AutomationRunDetail(c.Request.Context(), id)
 	if err != nil {
-		mailAutomationRunsJump(c, false, mailErrPageText(c, err))
+		mailAutomationRunsJump(c, false, mailErrMsg(c, err))
 		return
 	}
 	// Explain / error_message / 时间线 detail 都是写侧落下的运行文案编码，出口按语言还原。
-	mailRunDetailTexts(shell.TranslateFor(c), detail)
-	c.HTML(http.StatusOK, "admin/mail/mail_automation_run.html", shell.Prepare(c, gin.H{
-		"title": mailLabel(shell.TranslateFor(c), mailenums.PageTitleAutomationRun),
+	mailRunDetailTexts(mailTranslate(c), detail)
+	c.HTML(http.StatusOK, "admin/mail/mail_automation_run.html", adminui.Prepare(c, gin.H{
+		"title": mailenums.PageTitleAutomationRun.Key,
 		"D":     detail,
 		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）。
 	}))
@@ -603,11 +620,11 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 func (h *mailPageHandle) MailAutomationTick(c *gin.Context) {
 	n, err := h.mail.EnqueueDueRuns(c.Request.Context(), 500)
 	if err != nil {
-		mailAutomationRunsJump(c, false, mailErrPageText(c, err))
+		mailAutomationRunsJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	// 与 mail_err.go 的 mailCountedNoticeTemplates[1] 同形。
-	mailAutomationRunsJump(c, true, fmt.Sprintf(mailCountedNoticeTemplates[1], n))
+	// 与 mail_err.go 的 mailAutomationTickMsg 同一句话（补投条数是位置参数）。
+	mailAutomationRunsJump(c, true, mailAutomationTickMsg.WithArgs(strconv.Itoa(n)))
 }
 
 // splitFormList 逗号 / 中文逗号 / 顿号分隔 → 去空白去空项。
@@ -656,12 +673,12 @@ const mailAutomationRunsPageSize = 50
 // 是排障时的第一判断：有多少在等、有多少已经失败。
 func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
+	tr := mailTranslate(c)
 	page := mailPageNumber(c.Query("page"))
 	automationID, runStatus := c.Query("automationId"), c.Query("runStatus")
 
 	runs, err := h.mail.ListAutomationRuns(ctx, &maildto.AutomationRunListReq{
-		AutomationID: shell.ParseUint(automationID),
+		AutomationID: reqparams.ParseUint(automationID),
 		Status:       runStatus,
 		Page:         page,
 		PageSize:     mailAutomationRunsPageSize,
@@ -684,7 +701,7 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 		data["RunTotal"] = int64(0)
 		data["CountRunning"], data["CountWaiting"], data["CountCompleted"] = 0, 0, 0
 		data["CountFailed"], data["CountStopped"] = 0, 0
-		c.HTML(http.StatusOK, "admin/mail/mail_automation_runs.html", shell.Prepare(c, data))
+		c.HTML(http.StatusOK, "admin/mail/mail_automation_runs.html", adminui.Prepare(c, data))
 		return
 	}
 	// 运行文案（error_message）落库时是「key + 参数」编码，到出口才按语言还原。
@@ -700,14 +717,18 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 
 	// 分页条的基地址带上筛选：翻页时不能丢掉「在看哪个流程 / 哪个状态」，
 	// 否则翻到第 2 页就变成全量实例（而人以为自己还在筛选里）。
-	base := shell.FilterBaseURL("/admin/mail/automation/runs", map[string]string{
+	base := reqparams.FilterBaseURL("/admin/mail/automation/runs", map[string]string{
 		"automationId": automationID,
 		"runStatus":    runStatus,
 	})
-	for k, v := range shell.BuildPagination(runs.Total, page, mailAutomationRunsPageSize, base, tr).TemplateKeys() {
-		data[k] = v
+	// 分页只给事实：总数 / 页码 / 每页 / 基址由本行注入，信息行、翻页按钮与链接
+	// 全部由 admin/partials/pagination.html 按请求语言渲染。单页 / 空数据不注入键
+	// （与迁移前的空 map 同义），片段里 isset 守卫自然跳过。
+	if pg := pagination.Facts(runs.Total, page, mailAutomationRunsPageSize); pg.HasPagination() {
+		pg.Base = base
+		data["Pagination"] = pg
 	}
-	c.HTML(http.StatusOK, "admin/mail/mail_automation_runs.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/mail/mail_automation_runs.html", adminui.Prepare(c, data))
 }
 
 // mailCampaignsPageSize 活动每页条数。
@@ -735,18 +756,18 @@ func mailCampaignsClampPage(page int, total int64) int {
 // MailCampaignsPage 群发活动列表页（新建活动抽屉 + 表 + 批量删除 + 分页）。
 func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
+	tr := mailTranslate(c)
 	page := mailPageNumber(c.Query("page"))
 
 	campaigns, err := h.mail.ListCampaigns(ctx, &maildto.CampaignListReq{Page: page, PageSize: mailCampaignsPageSize})
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail/mail_campaigns.html", shell.Prepare(c, mailCampaignsErrData(c, err)))
+		c.HTML(http.StatusOK, "admin/mail/mail_campaigns.html", adminui.Prepare(c, mailCampaignsErrData(c, err)))
 		return
 	}
 	if fixed := mailCampaignsClampPage(page, campaigns.Total); fixed != page {
 		page = fixed
 		if campaigns, err = h.mail.ListCampaigns(ctx, &maildto.CampaignListReq{Page: page, PageSize: mailCampaignsPageSize}); err != nil {
-			c.HTML(http.StatusOK, "admin/mail/mail_campaigns.html", shell.Prepare(c, mailCampaignsErrData(c, err)))
+			c.HTML(http.StatusOK, "admin/mail/mail_campaigns.html", adminui.Prepare(c, mailCampaignsErrData(c, err)))
 			return
 		}
 	}
@@ -755,7 +776,7 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 	accounts, _ := h.mail.ListAccounts(ctx, "")
 	templates, _ := h.mail.ListTemplates(ctx, "")
 
-	data := shell.Prepare(c, gin.H{
+	data := adminui.Prepare(c, gin.H{
 		"title":         mailLabel(tr, mailenums.PageTitleCampaigns),
 		"Campaigns":     campaigns.Items,
 		"CampaignTotal": campaigns.Total,
@@ -766,9 +787,9 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 		// 被弹回第 1 页。写动作的结论不在本页回显（走 shell.RenderJump 提示页）。
 		"ListQuery": mailPageQuery(page),
 	})
-	for k, v := range shell.BuildPagination(campaigns.Total, page, mailCampaignsPageSize,
-		"/admin/mail/campaigns", tr).TemplateKeys() {
-		data[k] = v
+	if pg := pagination.Facts(campaigns.Total, page, mailCampaignsPageSize); pg.HasPagination() {
+		pg.Base = "/admin/mail/campaigns"
+		data["Pagination"] = pg
 	}
 	c.HTML(http.StatusOK, "admin/mail/mail_campaigns.html", data)
 }
@@ -779,7 +800,7 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 // len(.Campaigns) 渲染列表，缺键会让 Jet **在那一行中断**（HTTP 仍是 200、正文整块消失）。
 func mailCampaignsErrData(c *gin.Context, err error) gin.H {
 	return gin.H{
-		"title":         mailLabel(shell.TranslateFor(c), mailenums.PageTitleCampaigns),
+		"title":         mailenums.PageTitleCampaigns.Key,
 		"Err":           mailErrPageText(c, err),
 		"Campaigns":     []any{},
 		"CampaignTotal": int64(0),
@@ -792,10 +813,10 @@ func mailCampaignsErrData(c *gin.Context, err error) gin.H {
 // MailCampaignSave 保存群发活动。
 func (h *mailPageHandle) MailCampaignSave(c *gin.Context) {
 	req := &maildto.SaveCampaignReq{
-		ID:         shell.ParseUint(c.PostForm("id")),
+		ID:         reqparams.ParseUint(c.PostForm("id")),
 		Name:       c.PostForm("name"),
-		AccountID:  shell.ParseUint(c.PostForm("account_id")),
-		TemplateID: shell.ParseUint(c.PostForm("template_id")),
+		AccountID:  reqparams.ParseUint(c.PostForm("account_id")),
+		TemplateID: reqparams.ParseUint(c.PostForm("template_id")),
 		Subject:    c.PostForm("subject"),
 	}
 	if tags := strings.TrimSpace(c.PostForm("target_tags")); tags != "" {
@@ -806,32 +827,32 @@ func (h *mailPageHandle) MailCampaignSave(c *gin.Context) {
 		}
 	}
 	if _, err := h.mail.SaveCampaign(c.Request.Context(), req); err != nil {
-		mailCampaignsJump(c, false, mailErrPageText(c, err))
+		mailCampaignsJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	mailCampaignsJump(c, true, mailDoneText(c))
+	mailCampaignsJump(c, true, mailDoneMsg)
 }
 
 // MailCampaignStart 启动群发（HTTP 秒回；展开在后台分批进行）。
 func (h *mailPageHandle) MailCampaignStart(c *gin.Context) {
 	res, err := h.mail.StartCampaign(c.Request.Context(), &maildto.StartCampaignReq{
-		CampaignID: shell.ParseUint(c.PostForm("id")),
+		CampaignID: reqparams.ParseUint(c.PostForm("id")),
 	})
 	if err != nil {
-		mailCampaignsJump(c, false, mailErrPageText(c, err))
+		mailCampaignsJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	// 与 mail_err.go 的 mailCountedNoticeTemplates[3] 同形。
-	mailCampaignsJump(c, true, fmt.Sprintf(mailCountedNoticeTemplates[3], res.Total))
+	// 与 mail_err.go 的 mailCampaignStartedMsg 同一句话（目标人数是位置参数）。
+	mailCampaignsJump(c, true, mailCampaignStartedMsg.WithArgs(strconv.FormatInt(res.Total, 10)))
 }
 
 // MailCampaignDelete 删除活动。
 func (h *mailPageHandle) MailCampaignDelete(c *gin.Context) {
-	if err := h.mail.DeleteCampaign(c.Request.Context(), shell.ParseUint(c.PostForm("id"))); err != nil {
-		mailCampaignsJump(c, false, mailErrPageText(c, err))
+	if err := h.mail.DeleteCampaign(c.Request.Context(), reqparams.ParseUint(c.PostForm("id"))); err != nil {
+		mailCampaignsJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	mailCampaignsJump(c, true, mailDoneText(c))
+	mailCampaignsJump(c, true, mailDoneMsg)
 }
 
 // MailCampaignPage 活动报表页（打开 / 点击 / 退订与收件人明细）。
@@ -855,14 +876,14 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 	if !hasID {
 		// 缺 id 是**引导**（本页是菜单项，点菜单进来必然没带 id）：渲染提示页并给出
 		// 回活动列表的入口，而不是静默 302（静默弹回才会让菜单看起来是坏的）。
-		mailJump(c, false, mailCampaignIDRequiredText, mailCampaignsPath, mailCampaignsBackText(c))
+		mailJump(c, false, mailCampaignIDRequiredMsg, mailCampaignsPath, mailCampaignsBackMsg)
 		return
 	}
 	page := mailPageNumber(c.Query("page"))
 	report, err := h.mail.CampaignReport(ctx, id, page, mailCampaignsPageSize)
 	if err != nil {
 		// 回跳用固定路径（不带本页的 ?page=：那是收件人明细的页码，不是活动列表的页码）。
-		mailJump(c, false, mailErrPageText(c, err), mailCampaignsPath, mailCampaignsBackText(c))
+		mailJump(c, false, mailErrMsg(c, err), mailCampaignsPath, mailCampaignsBackMsg)
 		return
 	}
 	// 页号收敛：报表服务端不收敛（页码越界时收件人明细为空、Total 仍是真值），
@@ -872,13 +893,13 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 		if maxPage := int((report.Total + mailCampaignsPageSize - 1) / mailCampaignsPageSize); page > maxPage {
 			page = maxPage
 			if report, err = h.mail.CampaignReport(ctx, id, page, mailCampaignsPageSize); err != nil {
-				mailJump(c, false, mailErrPageText(c, err), mailCampaignsPath, mailCampaignsBackText(c))
+				mailJump(c, false, mailErrMsg(c, err), mailCampaignsPath, mailCampaignsBackMsg)
 				return
 			}
 		}
 	}
-	data := shell.Prepare(c, gin.H{
-		"title": mailLabel(shell.TranslateFor(c), mailenums.PageTitleCampaignReport),
+	data := adminui.Prepare(c, gin.H{
+		"title": mailenums.PageTitleCampaignReport.Key,
 		"R":     report,
 		"Page":  page,
 		// 写动作的结论不在本页回显（走 shell.RenderJump 提示页，见 mail_jump.go）；
@@ -886,9 +907,9 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 	})
 	// 收件人明细的分页条：baseURL 带上 id，翻页时不会丢掉「在看哪条活动」。
 	// 键名与 partials/pagination.html 读的键一致（该片段在这里用无参 include 渲染）。
-	for k, v := range shell.BuildPagination(report.Total, page, mailCampaignsPageSize,
-		fmt.Sprintf("/admin/mail/campaign?id=%d", id), shell.TranslateFor(c)).TemplateKeys() {
-		data[k] = v
+	if pg := pagination.Facts(report.Total, page, mailCampaignsPageSize); pg.HasPagination() {
+		pg.Base = fmt.Sprintf("/admin/mail/campaign?id=%d", id)
+		data["Pagination"] = pg
 	}
 	c.HTML(http.StatusOK, "admin/mail/mail_campaign.html", data)
 }
@@ -897,13 +918,13 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 //
 // 目前没有路由指向它（保留给外部核对脚本）—— 拆分本轮只是随活动域搬家，未注册路由。
 func (h *mailPageHandle) MailCampaignReportJSON(c *gin.Context) {
-	page := int(shell.ParseUint(c.Query("page")))
+	page := int(reqparams.ParseUint(c.Query("page")))
 	if page <= 0 {
 		page = 1
 	}
-	report, err := h.mail.CampaignReport(c.Request.Context(), shell.ParseUint(c.Query("id")), page, mailCampaignsPageSize)
+	report, err := h.mail.CampaignReport(c.Request.Context(), reqparams.ParseUint(c.Query("id")), page, mailCampaignsPageSize)
 	if err != nil {
-		shell.PageErrorBadRequest(c, "mail_campaigns", err)
+		adminui.PageErrorBadRequest(c, "mail_campaigns", err)
 		return
 	}
 	response.Success(c, report)
@@ -915,15 +936,15 @@ func (h *mailPageHandle) MailCampaignReportJSON(c *gin.Context) {
 // 发送中的活动由服务端拒绝（ErrCampaignSending）→ 只跳过它、其余照常删除：
 // 删掉发送中的活动，后台分批展开的收件人任务会在中途找不到活动，留下一批半截记录。
 func (h *mailPageHandle) MailCampaignsBulkDelete(c *gin.Context) {
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
+	// 批量 id 统一入口（pkg/bulkids：去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
-		mailCampaignsJump(c, false, mailBulkIDsText(c, berr))
+		mailCampaignsJump(c, false, mailBulkIDsMsg(c, berr))
 		return
 	}
 	deleted, skipped := 0, 0
 	for _, raw := range ids {
-		id := shell.ParseUint(raw)
+		id := reqparams.ParseUint(raw)
 		if id == 0 {
 			skipped++
 			continue
@@ -935,7 +956,7 @@ func (h *mailPageHandle) MailCampaignsBulkDelete(c *gin.Context) {
 		deleted++
 	}
 	done, warn := mailBulkOutcome("删除", "群发活动", deleted, skipped)
-	mailBulkJump(c, done, warn, mailCampaignsBack(c), mailCampaignsBackText(c))
+	mailBulkJump(c, done, warn, mailCampaignsBack(c), mailCampaignsBackMsg)
 }
 
 // mailContactsPageSize 联系人每页条数。
@@ -968,7 +989,7 @@ func mailContactsClampPage(page int, total int64) int {
 // MailContactsPage 联系人列表页（筛选 + 表 + 批量动作 + 分页；导入/新建/编辑走抽屉）。
 func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
+	tr := mailTranslate(c)
 	page := mailPageNumber(c.Query("page"))
 	keyword, status := c.Query("keyword"), c.Query("status")
 	tags := c.Query("tags")
@@ -985,7 +1006,7 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 	}
 	contacts, err := filter()
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail/mail_contacts.html", shell.Prepare(c, mailContactsErrData(c, err)))
+		c.HTML(http.StatusOK, "admin/mail/mail_contacts.html", adminui.Prepare(c, mailContactsErrData(c, err)))
 		return
 	}
 	// 页号收敛（见 mailContactsClampPage）：越界时用收敛后的页码重取一次。
@@ -993,7 +1014,7 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 	if fixed := mailContactsClampPage(page, contacts.Total); fixed != page {
 		page = fixed
 		if contacts, err = filter(); err != nil {
-			c.HTML(http.StatusOK, "admin/mail/mail_contacts.html", shell.Prepare(c, mailContactsErrData(c, err)))
+			c.HTML(http.StatusOK, "admin/mail/mail_contacts.html", adminui.Prepare(c, mailContactsErrData(c, err)))
 			return
 		}
 	}
@@ -1005,7 +1026,7 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 		tagOptions = nil
 	}
 
-	data := shell.Prepare(c, gin.H{
+	data := adminui.Prepare(c, gin.H{
 		"title":        mailLabel(tr, mailenums.PageTitleContacts),
 		"Contacts":     contacts.Items,
 		"ContactTotal": contacts.Total,
@@ -1019,9 +1040,10 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 		"ListQuery": mailContactsListQuery(keyword, status, tags, page),
 	})
 	// 基地址带上筛选，翻页才保留筛选条件（否则翻到第 2 页就回到全量）。
-	base := shell.FilterBaseURL(mailContactsPath, map[string]string{"keyword": keyword, "status": status, "tags": tags})
-	for k, v := range shell.BuildPagination(contacts.Total, page, mailContactsPageSize, base, tr).TemplateKeys() {
-		data[k] = v
+	base := reqparams.FilterBaseURL(mailContactsPath, map[string]string{"keyword": keyword, "status": status, "tags": tags})
+	if pg := pagination.Facts(contacts.Total, page, mailContactsPageSize); pg.HasPagination() {
+		pg.Base = base
+		data["Pagination"] = pg
 	}
 	c.HTML(http.StatusOK, "admin/mail/mail_contacts.html", data)
 }
@@ -1048,7 +1070,7 @@ func mailContactsListQuery(keyword, status, tags string, page int) string {
 
 func mailContactsErrData(c *gin.Context, err error) gin.H {
 	return gin.H{
-		"title":        mailLabel(shell.TranslateFor(c), mailenums.PageTitleContacts),
+		"title":        mailenums.PageTitleContacts.Key,
 		"Err":          mailErrPageText(c, err),
 		"Contacts":     []any{},
 		"ContactTotal": int64(0),
@@ -1082,26 +1104,27 @@ func (h *mailPageHandle) MailContactImport(c *gin.Context) {
 	}
 	res, err := h.mail.ImportContacts(c.Request.Context(), req)
 	if err != nil {
-		mailContactsJump(c, false, mailErrPageText(c, err))
+		mailContactsJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	// 与 mail_err.go 的 mailCountedNoticeTemplates[2] 同形。
-	mailContactsJump(c, true, fmt.Sprintf(mailCountedNoticeTemplates[2],
-		res.Imported, res.Updated, res.Skipped, res.Suppressed, len(res.Errors)))
+	// 与 mail_err.go 的 mailContactImportMsg 同一句话（五个计数是位置参数）。
+	mailContactsJump(c, true, mailContactImportMsg.WithArgs(
+		strconv.Itoa(res.Imported), strconv.Itoa(res.Updated), strconv.Itoa(res.Skipped),
+		strconv.Itoa(res.Suppressed), strconv.Itoa(len(res.Errors))))
 }
 
 // MailContactStatus 改联系人同意状态。
 func (h *mailPageHandle) MailContactStatus(c *gin.Context) {
 	req := &maildto.UpdateContactStatusReq{
-		ID:     shell.ParseUint(c.PostForm("id")),
+		ID:     reqparams.ParseUint(c.PostForm("id")),
 		Status: c.PostForm("status"),
 		Note:   c.PostForm("note"),
 	}
 	if err := h.mail.UpdateContactStatus(c.Request.Context(), req); err != nil {
-		mailContactsJump(c, false, mailErrPageText(c, err))
+		mailContactsJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	mailContactsJump(c, true, mailDoneText(c))
+	mailContactsJump(c, true, mailDoneMsg)
 }
 
 // —— 批量动作（评审规则 admin-ui-logic §7：列表首列勾选 + 批量条）——
@@ -1127,18 +1150,18 @@ func (h *mailPageHandle) MailContactsBulkStatus(c *gin.Context) {
 	switch target {
 	case "subscribed", "pending", "unsubscribed":
 	default:
-		mailContactsJump(c, false, mailContactStatusBadText)
+		mailContactsJump(c, false, mailContactStatusBadMsg)
 		return
 	}
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
+	// 批量 id 统一入口（pkg/bulkids：去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
-		mailContactsJump(c, false, mailBulkIDsText(c, berr))
+		mailContactsJump(c, false, mailBulkIDsMsg(c, berr))
 		return
 	}
 	changed, skipped := 0, 0
 	for _, raw := range ids {
-		id := shell.ParseUint(raw)
+		id := reqparams.ParseUint(raw)
 		if id == 0 {
 			skipped++
 			continue
@@ -1152,118 +1175,19 @@ func (h *mailPageHandle) MailContactsBulkStatus(c *gin.Context) {
 		changed++
 	}
 	done, warn := mailBulkOutcome("更新", "联系人", changed, skipped)
-	mailBulkJump(c, done, warn, mailContactsBack(c), mailContactsBackText(c))
+	mailBulkJump(c, done, warn, mailContactsBack(c), mailContactsBackMsg)
 }
 
-// —— 新建 / 编辑 / 删除 / 批量打标签（补齐「联系人 CRUD + 标签」）——
+// —— 联系人写动作：**已全部迁到 JSON 端点** ——
 //
-// 四条写路由的权限点各自独立（save / delete / tag），批量端点复用对应单条的 API 路径：
-// 权限路径与 API 完全同源，单列一条策略就等于把「能删一个」的人挡在批量外。
-
-// MailContactSave 新建 / 编辑联系人（POST /admin/mail/contact/save）。
+// 新建 / 编辑 / 单条删除 / 批量删除 / 批量打标签都由浏览器直调真实端点
+// （POST /api/mail/contact/{save,delete,tag}，见 mail_contact_write.go）：
+// 页面表单/按钮带 data-write-api（端点声明在**按钮**上，见 mail_contacts.html 的批量条注释），
+// 页面 POST 不再做转发，所以这里既没有单条 save/delete，也没有批量入口。
 //
-// ID=0 新建、否则编辑：handler 只按 ID 分派，两条路径的差别全在 service 里，
-// 表单字段因此同源 —— 分开两个端点必然出现「新建加了字段、编辑忘了加」。
+// 留在这里的只有**没有 JSON 端点**的批量改状态（MailContactsBulkStatus，上面那条）：
+// 服务端改状态要同步写抑制名单，语义与单条抽屉一致，仍走页面 POST。
 //
-// 失败时不原地留住输入（与账号 / 模板抽屉同一取舍）：错误文案渲染成提示页，
-// 抽屉需要重新打开。模板侧没有 htmx 承载，硬做回灌会把抽屉模板变成两套数据源；
-// 字段多到需要保住输入时，再按 internal/templates/CLAUDE.md 的写表单分档来做。
-func (h *mailPageHandle) MailContactSave(c *gin.Context) {
-	req := &maildto.SaveContactReq{
-		ID:            shell.ParseUint(c.PostForm("id")),
-		Email:         c.PostForm("email"),
-		Name:          c.PostForm("name"),
-		Tags:          splitTagInput(c.PostForm("tags")),
-		Source:        c.PostForm("source"),
-		ConsentSource: c.PostForm("consent_source"),
-		Status:        c.PostForm("status"),
-		OperatorID:    shell.CurrentUserID(c),
-	}
-	var err error
-	if req.ID > 0 {
-		err = h.mail.UpdateContact(c.Request.Context(), req)
-	} else {
-		_, err = h.mail.CreateContact(c.Request.Context(), req)
-	}
-	if err != nil {
-		mailContactsJump(c, false, mailErrPageText(c, err))
-		return
-	}
-	mailContactsJump(c, true, mailDoneText(c))
-}
-
-// MailContactDelete 删除单个联系人（POST /admin/mail/contact/delete）。
-//
-// 单条与批量走同一个 service 方法，抑制名单的边界（只删联系人、不动抑制记录）
-// 因此只有一处实现，见 service.DeleteContacts 的注释。
-func (h *mailPageHandle) MailContactDelete(c *gin.Context) {
-	id := shell.ParseUint(c.PostForm("id"))
-	if id == 0 {
-		mailContactsJump(c, false, mailContactDeleteBadText)
-		return
-	}
-	if _, err := h.mail.DeleteContacts(c.Request.Context(), &maildto.DeleteContactsReq{
-		IDs: []uint64{id}, OperatorID: shell.CurrentUserID(c),
-	}); err != nil {
-		mailContactsJump(c, false, mailErrPageText(c, err))
-		return
-	}
-	mailContactsJump(c, true, mailDoneText(c))
-}
-
-// MailContactsBulkDelete 批量删除联系人（POST /admin/mail/contacts/bulk-delete）。
-//
-// 结论按「已删除 N / 跳过 M」渲染（mailBulkOutcome）：M 是点选里已经不存在的那几个，
-// 必须说出来 —— 静默的部分成功会让人以为「一条都没删」然后反复重试。
-func (h *mailPageHandle) MailContactsBulkDelete(c *gin.Context) {
-	raw, berr := shell.BulkIDs(c)
-	if berr != nil {
-		mailContactsJump(c, false, mailBulkIDsText(c, berr))
-		return
-	}
-	idList, _ := parseFormIDs(raw)
-	deleted, err := h.mail.DeleteContacts(c.Request.Context(), &maildto.DeleteContactsReq{
-		IDs: idList, OperatorID: shell.CurrentUserID(c),
-	})
-	if err != nil {
-		mailContactsJump(c, false, mailErrPageText(c, err))
-		return
-	}
-	// 用点选条数（raw）作分母：非法 id 也在这批里，它们同样没有被删除。
-	skipped := len(raw) - int(deleted)
-	if skipped < 0 {
-		skipped = 0
-	}
-	done, warn := mailBulkOutcome("删除", "联系人", int(deleted), skipped)
-	mailBulkJump(c, done, warn, mailContactsBack(c), mailContactsBackText(c))
-}
-
-// MailContactsBulkTag 批量打标签（POST /admin/mail/contacts/bulk-tag）。
-//
-// 加与减在同一条请求里提交：分成两次提交必然出现「加成功、减失败」的半截状态，
-// 而运营看到的是一个错误、以为整批没生效。
-func (h *mailPageHandle) MailContactsBulkTag(c *gin.Context) {
-	raw, berr := shell.BulkIDs(c)
-	if berr != nil {
-		mailContactsJump(c, false, mailBulkIDsText(c, berr))
-		return
-	}
-	idList, invalid := parseFormIDs(raw)
-	changed, skipped, err := h.mail.TagContacts(c.Request.Context(), &maildto.TagContactsReq{
-		IDs:        idList,
-		Add:        splitTagInput(c.PostForm("add")),
-		Remove:     splitTagInput(c.PostForm("remove")),
-		OperatorID: shell.CurrentUserID(c),
-	})
-	if err != nil {
-		mailContactsJump(c, false, mailErrPageText(c, err))
-		return
-	}
-	// service 看不到被丢掉的非法 id（它们根本没进请求），跳过数在这里补齐。
-	done, warn := mailBulkOutcome("更新", "联系人", changed, skipped+invalid)
-	mailBulkJump(c, done, warn, mailContactsBack(c), mailContactsBackText(c))
-}
-
 // splitTagInput 把表单里的标签串切成标签列表（; | , 三种分隔符）。
 //
 // 与 service/mail_contact_import.go 的 splitTags **同口径**（导入抽屉的多标签也是
@@ -1280,14 +1204,15 @@ func splitTagInput(raw string) []string {
 	return out
 }
 
-// parseFormIDs 把 shell.BulkIDs 的字符串 id 转成 uint64，并统计非法项。
+// parseFormIDs 把批量表单提交的字符串 id 转成 uint64，并统计非法项。
+// id 已过 pkg/bulkids 的归一（去空白 / 去重 / 上限），这里只管类型转换与非法项计数。
 //
 // 非法项不静默丢弃：回执里的「跳过 M」要如实包含它们，否则运营点了 4 个、
 // 回执写「已更新 3 个」，会以为系统漏了一条。
 func parseFormIDs(raw []string) (ids []uint64, invalid int) {
 	ids = make([]uint64, 0, len(raw))
 	for _, s := range raw {
-		if v := shell.ParseUint(s); v > 0 {
+		if v := reqparams.ParseUint(s); v > 0 {
 			ids = append(ids, v)
 			continue
 		}
@@ -1305,40 +1230,29 @@ type mailPageHandle struct {
 const mailListPageSize = 20
 
 func mailPageNumber(raw string) int {
-	page := int(shell.ParseUint(raw))
+	page := int(reqparams.ParseUint(raw))
 	if page < 1 {
 		return 1
 	}
 	return page
 }
 
-// mailListPagination 在域内重写共享分页组件的固定 page 参数为域内页码参数名（account_page）。
+// mailListPaginationFacts 造列表页分页事实（列表页共用：账号页 / 模板页）。
 //
-// 为什么还要改参数名：拆页前同一页有两张表、共用一个 ?page=，必须靠 account_page /
-// template_page 区分；拆页后账号表仍沿用 account_page —— 它是既有书签与测试的契约，
-// 而 limit 每页固定，从链接里去掉（避免出现「翻页改条数」这种页面并不支持的操作）。
-func mailListPagination(total int64, page int, param, base string, tr mailTr) map[string]any {
-	pagination := shell.BuildPagination(total, page, mailListPageSize, base, tr)
-	if pagination == nil {
-		return map[string]any{}
-	}
-	for i := range pagination.Links {
-		link := &pagination.Links[i]
-		if link.URL == "" {
-			continue
-		}
-		u, err := url.Parse(link.URL)
-		if err != nil {
-			return map[string]any{} // 基址由调用方固定，异常时不输出错误链接。
-		}
-		q := u.Query()
-		q.Set(param, q.Get("page"))
-		q.Del("page")
-		q.Del("limit")
-		u.RawQuery = q.Encode()
-		link.URL = u.String()
-	}
-	return pagination.TemplateKeys()
+// 为什么还要传 param：拆页前同一页有两张表、共用一个 ?page=，必须靠 account_page /
+// template_page 区分；拆页后账号表仍沿用 account_page —— 它是既有书签与测试的契约。
+// limit 每页固定，KeepLimit=false 让链接不带它（避免出现「翻页改条数」这种页面并不支持的操作）。
+//
+// 历史：本函数此前逐条改写 BuildPagination 产出的链接（url.Parse → 改名 → 删 limit），
+// 那条路径在 param == "page"（模板页）时会把刚设好的页码一并删掉，链接退化成不带 ?page=
+// 的基址（翻页失效）。改为事实层后链接由 partial 用 Base + PageParam 生成，这一缺陷随
+// 旧路径一起消失 —— 属**有意的行为修复**，见 task-105 卡面与渲染测试的同名注释。
+func mailListPaginationFacts(total int64, page int, param, base string) pagination.Page {
+	pg := pagination.Facts(total, page, mailListPageSize)
+	pg.Base = base
+	pg.PageParam = param
+	pg.KeepLimit = false
+	return pg
 }
 
 // NewMailPageHandle 构造邮箱后台页处理器（与 NewHandle 同风格；
@@ -1357,21 +1271,24 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 	// 运营连那句归口文案都看不到。这两条分支此前正是这样。
 	accountRows, accountTotal, accountPage, err := h.mail.ListAccountsPage(ctx, "", mailPageNumber(c.Query("account_page")), mailListPageSize)
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail/mail.html", shell.Prepare(c, mailPageErrData(c, err)))
+		c.HTML(http.StatusOK, "admin/mail/mail.html", adminui.Prepare(c, mailPageErrData(c, err)))
 		return
 	}
 
-	data := shell.Prepare(c, gin.H{
-		"title":    mailLabel(shell.TranslateFor(c), mailenums.PageTitleAccounts),
+	data := adminui.Prepare(c, gin.H{
+		// 标题取词在组装侧做（mailLabel）：只交 key 的话词条缺失 / i18n 未初始化时
+		// 页面上是裸 key（admin.mail.accounts.heading），而 adminui.Prepare 的 title 兜底
+		// 正是 key 本身 —— 与 mail_ui_labels.go 文件头写明的那条相反。同模块其余四页
+		// 都是 mailLabel(...) 的形态，这里是唯一的例外。
+		"title":    mailLabel(mailTranslate(c), mailenums.PageTitleAccounts),
 		"Accounts": accountRows,
 		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）；
 		// Err 只由上面的取数失败分支注入。
 	})
-	// 分页数据按 TemplateKeys 摊平进 data 顶层：单页 / 空数据时它返回空 map，
-	// 于是 PaginationLinks / PaginationInfo 这两个键不存在 —— 模板侧用
-	// {{key := .["X"]}} 取值（缺键为 nil，不中断），分页片段里的 if 自然跳过。
-	for k, v := range mailListPagination(accountTotal, accountPage, "account_page", "/admin/mail", shell.TranslateFor(c)) {
-		data[k] = v
+	// 分页只注入事实；单页 / 空数据不注入键（与迁移前键缺失同义），
+	// 模板 include 里 isset 守卫自然跳过。
+	if pg := mailListPaginationFacts(accountTotal, accountPage, "account_page", "/admin/mail"); pg.HasPagination() {
+		data["Pagination"] = pg
 	}
 	c.HTML(http.StatusOK, "admin/mail/mail.html", data)
 }
@@ -1385,7 +1302,7 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 // **title 必须是小写 key**：layout.html 用 {{.title}} 取值，缺它同样会中断。
 func mailPageErrData(c *gin.Context, err error) gin.H {
 	return gin.H{
-		"title":    mailLabel(shell.TranslateFor(c), mailenums.PageTitleAccounts),
+		"title":    mailLabel(mailTranslate(c), mailenums.PageTitleAccounts),
 		"Err":      mailErrPageText(c, err),
 		"Accounts": []any{},
 	}
@@ -1394,7 +1311,7 @@ func mailPageErrData(c *gin.Context, err error) gin.H {
 // MailAccountSave 保存发信账号（id 为 0 即新建）。
 func (h *mailPageHandle) MailAccountSave(c *gin.Context) {
 	req := &maildto.SaveAccountReq{
-		ID:          shell.ParseUint(c.PostForm("id")),
+		ID:          reqparams.ParseUint(c.PostForm("id")),
 		Name:        c.PostForm("name"),
 		Purpose:     c.PostForm("purpose"),
 		FromName:    c.PostForm("from_name"),
@@ -1402,11 +1319,11 @@ func (h *mailPageHandle) MailAccountSave(c *gin.Context) {
 		ReplyTo:     c.PostForm("reply_to"),
 		Provider:    c.PostForm("provider"),
 		Host:        c.PostForm("host"),
-		Port:        int(shell.ParseUint(c.PostForm("port"))),
+		Port:        int(reqparams.ParseUint(c.PostForm("port"))),
 		Username:    c.PostForm("username"),
 		Password:    c.PostForm("password"),
 		Encryption:  c.PostForm("encryption"),
-		RatePerHour: int(shell.ParseUint(c.PostForm("rate_per_hour"))),
+		RatePerHour: int(reqparams.ParseUint(c.PostForm("rate_per_hour"))),
 	}
 	var err error
 	if req.ID > 0 {
@@ -1415,48 +1332,48 @@ func (h *mailPageHandle) MailAccountSave(c *gin.Context) {
 		_, err = h.mail.CreateAccount(c.Request.Context(), req)
 	}
 	if err != nil {
-		mailAccountsJump(c, false, mailErrPageText(c, err))
+		mailAccountsJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	mailAccountsJump(c, true, mailDoneText(c))
+	mailAccountsJump(c, true, mailDoneMsg)
 }
 
 // MailAccountDelete 删除发信账号。
 func (h *mailPageHandle) MailAccountDelete(c *gin.Context) {
-	if err := h.mail.DeleteAccount(c.Request.Context(), shell.ParseUint(c.PostForm("id"))); err != nil {
-		mailAccountsJump(c, false, mailErrPageText(c, err))
+	if err := h.mail.DeleteAccount(c.Request.Context(), reqparams.ParseUint(c.PostForm("id"))); err != nil {
+		mailAccountsJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	mailAccountsJump(c, true, mailDoneText(c))
+	mailAccountsJump(c, true, mailDoneMsg)
 }
 
 // MailAccountDefault 设为该用途的默认账号。
 func (h *mailPageHandle) MailAccountDefault(c *gin.Context) {
-	if err := h.mail.SetDefaultAccount(c.Request.Context(), shell.ParseUint(c.PostForm("id"))); err != nil {
-		mailAccountsJump(c, false, mailErrPageText(c, err))
+	if err := h.mail.SetDefaultAccount(c.Request.Context(), reqparams.ParseUint(c.PostForm("id"))); err != nil {
+		mailAccountsJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	mailAccountsJump(c, true, mailDoneText(c))
+	mailAccountsJump(c, true, mailDoneMsg)
 }
 
 // MailAccountTest 测试发送：结果**不回显为成功页**，而是把 SMTP 的真实反馈带回来。
 func (h *mailPageHandle) MailAccountTest(c *gin.Context) {
 	res, err := h.mail.TestSend(c.Request.Context(), &maildto.TestSendReq{
-		AccountID: shell.ParseUint(c.PostForm("id")),
+		AccountID: reqparams.ParseUint(c.PostForm("id")),
 		ToEmail:   c.PostForm("to_email"),
 		Lang:      response.RequestLanguage(c),
 	})
 	if err != nil {
-		mailAccountsJump(c, false, mailErrPageText(c, err))
+		mailAccountsJump(c, false, mailErrMsg(c, err))
 		return
 	}
 	if !res.OK {
-		// SMTP 的响应码与主机名只进日志（mailTestSendFailedText 里记）：它们既不是给运营看的，
+		// SMTP 的响应码与主机名只进日志（mailTestSendFailedMsg 里记）：它们既不是给运营看的，
 		// 也不该出现在 URL / 浏览器历史里。对外只给「可重试 / 永久拒绝 / 配置问题」。
-		mailAccountsJump(c, false, mailTestSendFailedText(c, res.ErrorKind, res.Error))
+		mailAccountsJump(c, false, mailTestSendFailedMsg(c, res.ErrorKind, res.Error))
 		return
 	}
-	mailAccountsJump(c, true, mailDoneText(c))
+	mailAccountsJump(c, true, mailDoneMsg)
 }
 
 // MailTemplateSave 保存邮件模板。
@@ -1477,19 +1394,19 @@ func (h *mailPageHandle) MailTemplateSave(c *gin.Context) {
 		}
 	}
 	if _, err := h.mail.UpsertTemplate(c.Request.Context(), req); err != nil {
-		mailTemplatesJump(c, false, mailErrPageText(c, err))
+		mailTemplatesJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	mailTemplatesJump(c, true, mailDoneText(c))
+	mailTemplatesJump(c, true, mailDoneMsg)
 }
 
 // MailTemplateDelete 删除邮件模板。
 func (h *mailPageHandle) MailTemplateDelete(c *gin.Context) {
 	if err := h.mail.DeleteTemplate(c.Request.Context(), c.PostForm("template_key"), c.PostForm("locale")); err != nil {
-		mailTemplatesJump(c, false, mailErrPageText(c, err))
+		mailTemplatesJump(c, false, mailErrMsg(c, err))
 		return
 	}
-	mailTemplatesJump(c, true, mailDoneText(c))
+	mailTemplatesJump(c, true, mailDoneMsg)
 }
 
 // MailMarketingRedirect 把旧的「邮件营销」地址引导到拆页后的联系人页。
@@ -1532,15 +1449,15 @@ func (h *mailPageHandle) MailMarketingRedirect(c *gin.Context) {
 // 无外键），所以服务端拒绝只来自「账号不存在 / 数据库报错」；将来引用校验加上来，
 // 这里自然按跳过处理，不需要改一处。
 func (h *mailPageHandle) MailAccountsBulkDelete(c *gin.Context) {
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
+	// 批量 id 统一入口（pkg/bulkids：去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
-		mailAccountsJump(c, false, mailBulkIDsText(c, berr))
+		mailAccountsJump(c, false, mailBulkIDsMsg(c, berr))
 		return
 	}
 	deleted, skipped := 0, 0
 	for _, raw := range ids {
-		id := shell.ParseUint(raw)
+		id := reqparams.ParseUint(raw)
 		if id == 0 {
 			skipped++
 			continue
@@ -1552,7 +1469,7 @@ func (h *mailPageHandle) MailAccountsBulkDelete(c *gin.Context) {
 		deleted++
 	}
 	done, warn := mailBulkOutcome("删除", "发信账号", deleted, skipped)
-	mailBulkJump(c, done, warn, mailAccountsPath, mailAccountsBackText(c))
+	mailBulkJump(c, done, warn, mailAccountsPath, mailAccountsBackMsg)
 }
 
 // MailTemplatesBulkDelete 批量删除邮件模板（POST /admin/mail/templates/bulk-delete）。
@@ -1565,7 +1482,7 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 	ctx := c.Request.Context()
 	list, err := h.mail.ListTemplates(ctx, "")
 	if err != nil {
-		mailTemplatesJump(c, false, mailTemplateListFailedText)
+		mailTemplatesJump(c, false, mailTemplateListFailedMsg)
 		return
 	}
 	type templateRef struct{ key, locale string }
@@ -1575,15 +1492,15 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 			byID[t.ID] = templateRef{key: t.TemplateKey, locale: t.Locale}
 		}
 	}
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
+	// 批量 id 统一入口（pkg/bulkids：去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
+	ids, berr := bulkids.Normalize(c.PostFormArray("ids"))
 	if berr != nil {
-		mailTemplatesJump(c, false, mailBulkIDsText(c, berr))
+		mailTemplatesJump(c, false, mailBulkIDsMsg(c, berr))
 		return
 	}
 	deleted, skipped := 0, 0
 	for _, raw := range ids {
-		ref, ok := byID[shell.ParseUint(raw)]
+		ref, ok := byID[reqparams.ParseUint(raw)]
 		if !ok {
 			skipped++
 			continue
@@ -1595,23 +1512,24 @@ func (h *mailPageHandle) MailTemplatesBulkDelete(c *gin.Context) {
 		deleted++
 	}
 	done, warn := mailBulkOutcome("删除", "邮件模板", deleted, skipped)
-	mailBulkJump(c, done, warn, mailTemplatesPath, mailTemplatesBackText(c))
+	mailBulkJump(c, done, warn, mailTemplatesPath, mailTemplatesBackMsg)
 }
 
-// mailBulkOutcome 把「成功 N / 跳过 M」折成两条提示文案。
+// mailBulkOutcome 把「成功 N / 跳过 M」折成两条提示**事实**（模板常量见 mail_err.go）。
 //
 // 有跳过时走失败提示（部分成功必须说出来）：只看到「已删除 2 个」的人会以为选中的都删了。
-func mailBulkOutcome(verb, noun string, done, skipped int) (doneText, warnText string) {
-	// 模板取自 mail_err.go 的 mailBulkResultTemplates（唯一一份字面量）。
+// 计数与词（动作 / 名词）都是位置参数：句子是词条，语言在渲染期由模板决定 ——
+// 这也是本函数不再返回拼好的中文串的原因。
+func mailBulkOutcome(verb, noun string, done, skipped int) (doneMsg, warnMsg mailMsg) {
 	switch {
 	case done == 0 && skipped == 0:
-		return "", ""
+		return mailMsg{}, mailMsg{}
 	case skipped == 0:
-		return fmt.Sprintf(mailBulkResultTemplates[0], verb, done, noun), ""
+		return mailBulkAllDoneMsg.WithArgs(verb, strconv.Itoa(done), noun), mailMsg{}
 	case done == 0:
-		return "", fmt.Sprintf(mailBulkResultTemplates[1], noun, verb, skipped)
+		return mailMsg{}, mailBulkAllSkippedMsg.WithArgs(noun, verb, strconv.Itoa(skipped))
 	default:
-		return "", fmt.Sprintf(mailBulkResultTemplates[2], verb, done, noun, skipped)
+		return mailMsg{}, mailBulkPartialMsg.WithArgs(verb, strconv.Itoa(done), noun, strconv.Itoa(skipped))
 	}
 }
 
@@ -1625,20 +1543,20 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 	if err != nil {
 		// 失败路径必须注入 title 与空集合：缺 title 会在 layout 中断、缺 Templates
 		// 会在列表行中断，两者都表现为「HTTP 200 + 半页 HTML」，运营连归口文案都看不全。
-		c.HTML(http.StatusOK, "admin/mail/mail_templates.html", shell.Prepare(c, mailTemplatesErrData(c, err)))
+		c.HTML(http.StatusOK, "admin/mail/mail_templates.html", adminui.Prepare(c, mailTemplatesErrData(c, err)))
 		return
 	}
-	data := shell.Prepare(c, gin.H{
-		"title":         mailLabel(shell.TranslateFor(c), mailenums.PageTitleTemplates),
+	data := adminui.Prepare(c, gin.H{
+		// 同上：标题在组装侧取词，缺词条回落中文兜底，不留裸 key。
+		"title":         mailLabel(mailTranslate(c), mailenums.PageTitleTemplates),
 		"Templates":     rows,
 		"TemplateTotal": total,
 		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）；
 		// Err 只由上面的取数失败分支注入。
 	})
-	// 分页数据摊平进 data 顶层：单页 / 空数据时 TemplateKeys 返回空 map，
-	// 于是 PaginationLinks 这个键不存在 —— 模板用 {{key := .["X"]}} 取值（缺键为 nil，不中断）。
-	for k, v := range mailListPagination(total, page, "page", "/admin/mail/templates", shell.TranslateFor(c)) {
-		data[k] = v
+	// 分页只注入事实；单页 / 空数据不注入键，模板 include 的 isset 守卫自然跳过。
+	if pg := mailListPaginationFacts(total, page, "page", "/admin/mail/templates"); pg.HasPagination() {
+		data["Pagination"] = pg
 	}
 	c.HTML(http.StatusOK, "admin/mail/mail_templates.html", data)
 }
@@ -1646,7 +1564,7 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 // mailTemplatesErrData 取数失败时的页面数据：归口文案 + 空列表 + 小写 title。
 func mailTemplatesErrData(c *gin.Context, err error) gin.H {
 	return gin.H{
-		"title":         mailLabel(shell.TranslateFor(c), mailenums.PageTitleTemplates),
+		"title":         mailLabel(mailTranslate(c), mailenums.PageTitleTemplates),
 		"Err":           mailErrPageText(c, err),
 		"Templates":     []any{},
 		"TemplateTotal": int64(0),
@@ -1656,7 +1574,7 @@ func mailTemplatesErrData(c *gin.Context, err error) gin.H {
 // 访客面文案的**中文兜底**（词条缺失 / i18n 未初始化时 pkg/i18n 落到这里）。
 //
 // 它们与迁移 410 的词条是同一句话的两份：词条是真相来源（后台可改），这里是兜底 ——
-// 与 shell.PageInternalText 的 (key, "系统内部错误，请稍后重试") 同一取舍。
+// 与 mail_err.go 的 mailInternalFallback（归口文案自带中文兜底）同一取舍。
 // 为什么不能兜底成 key：后台页面上出现裸 key 有人会来报，而这张页面只有收件人看见。
 const (
 	mailTrackLinkInvalidText       = "链接无效或已过期"

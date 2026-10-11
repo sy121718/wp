@@ -6,6 +6,7 @@
      · 工程选择器只在多工程时渲染（唯一选项的下拉是纯占位）。 *}
 {{extends "../layout.html"}}
 {{block body()}}
+{{tf := .["tf"]}}
 <div class="stack">
     {{if len(.Projects) == 0}}
     <section class="card card-body">
@@ -43,12 +44,13 @@
         {{end}}{{end}}
     </header>
 
-    {* 页面级**装载失败**提示：本页取数失败时由 handler 直接给（空串 = 无提示）。
+    {* 页面级**装载失败**提示：本页取数失败时由 handler 给**事实**（key + 中文兜底 + `%s` 参数），
+       取词在本模板做（tf）—— 控制器不提前翻，语言由当前请求决定。
        写动作的结论不再回带本页（走 shell.RenderJump 渲染提示页，见 project_jump.go），
        所以这条只由 buildSiteSettingsData 的取数失败填充。
        与下面语言清单的 LocaleError 分工不同 —— 那是就地回渲（回显用户输入的那几行）。 *}
-    {{if isset(.Err)}}{{if .Err}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{if isset(.Err)}}{{if .Err.Key != "" || .Err.Fallback != ""}}
+    <p class="badge badge-warning" role="alert">{{tf(.Err.Key, .Err.Fallback, .Err.Args)}}</p>
     {{end}}{{end}}
 
     {{if .Selected != ""}}

@@ -4,7 +4,7 @@ package feature
 //
 // 本批（受控类型批）把三个页面（订单 / 优惠码 / 退货）里「shell.BulkIDs 的失败被 err.Error()
 // 直接送进响应」的那一路，改成调用 shell.BulkIDsFacingText：超限错误是带 sentinel 的类型
-// （shell.ErrBulkIDsTooMany / *shell.BulkIDsError），于是「当前 M 项」（去重后的条数）也回到了
+// （bulkids.ErrTooMany / *bulkids.IDsError），于是「当前 M 项」（去重后的条数）也回到了
 // 页面上 —— 那个数只有 shell 知道，模块自己重算就是第二份真相（旧实现正是丢掉了它）。
 //
 // 断言因此是结构性的：① 响应里是受控文案且**不含任何内部细节指纹**；② 上限与本次条数
@@ -12,18 +12,28 @@ package feature
 // 见 internal/shell/bulk_test.go 的「包装不泄漏」用例）。
 // 只断言「没有 SQLSTATE」不足以区分「真的受控」与「恰好这句话里没有敏感词」。
 //
-// 传输通道的契约变化（架构改造后）：写动作的结论**不再经 URL**（302 + ?err= / ?ok= / ?done=），
-// 而是由 shell.RenderJump 渲染**提示页**（HTTP 200，文案在响应体里）。于是本用例横跨的
-// 「已迁 / 未迁」两档已经合并为一档：订单 / 优惠码 / 退货**六条批量入口全部迁移**，
-// 统一断言「200 + 提示页正文 + 无 Location 头」。读侧那套「查询参数不是可信边界」的
-// 白名单判定（orderFacingText / orderDoneTexts / orderPageDone）随通道一起整批删除 ——
-// 文案不进 URL，就没有「伪造的 ?err= 被当成提示」这条攻击面。
+// 传输通道的契约变化（架构改造后，三轮）：
+//   1. 写动作的结论不再经 URL（302 + ?err= / ?ok= / ?done=），而是由 shell.RenderJump 渲染
+//      **提示页**（HTTP 200，文案在响应体里）。
+//   2. 订单列表页的六个写动作迁到「前端直调 JSON」（static/js/ui/json_write.js）：批量走既有
+//      端点的**批档形状**（/api/order/status、/api/order/cancel，体里有 ids 即批档，见
+//      internal/module/order/inbound/http/order_bulk_write.go）。
+//   3. 退货页的两个批量动作收同一档（task-98 S3）：批档形状挂到 /api/order/return/{approve,reject}
+//      （见 internal/module/order/inbound/http/return_bulk_write.go），页面 POST 整批退役 ——
+//      order 模块**再也没有**提示页出口（shell.RenderJump 消费者归零）。
+// 两档的回执因此同为 **400 + 受控 key 的带参协议**（`shell.err.bulkIdsTooMany|上限|条数`，由
+// pkg/response 按 `|` 后的参数填成成品句）；安全判据完全相同（受控文案 + 不含内部细节指纹 +
+// 上限与本次条数两个数字都在），差别只在端点与形状白名单，所以这里仍分两组断言。
+//
+// 读侧那套「查询参数不是可信边界」的白名单判定（orderFacingText / orderDoneTexts /
+// orderPageDone）随通道一起整批删除 —— 文案不进 URL，就没有「伪造的 ?err= 被当成提示」这条
+// 攻击面。
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -35,7 +45,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
+	bulkids "go_wp/pkg/bulkids"
 )
 
 // orderLeakTokens 内部细节指纹：PG 原文与库结构里一定出现、业务文案里一定不出现。
@@ -51,70 +61,72 @@ func assertOrderLeakFree(t *testing.T, where, text string) {
 	}
 }
 
-// orderOverLimitForm 构造超过 shell.MaxBulkIDs 的批量表单（多给一条即触发上限）。
-func orderOverLimitForm(extra url.Values) url.Values {
-	form := url.Values{}
-	if extra != nil {
-		for k, vs := range extra {
-			form[k] = vs
-		}
+// orderOverLimitJSON 构造超限的**批档**请求体（体里有 ids 即批档，多给一条即触发上限）。
+func orderOverLimitJSON(extra map[string]any) string {
+	payload := map[string]any{"ids": orderOverLimitIDs()}
+	for k, v := range extra {
+		payload[k] = v
 	}
-	n := shell.MaxBulkIDs + 1
+	b, err := json.Marshal(payload)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
+// orderOverLimitIDs 超限的 id 列表（bulkids.MaxIDs + 1 条）。
+func orderOverLimitIDs() []string {
+	n := bulkids.MaxIDs + 1
 	ids := make([]string, 0, n)
 	for i := 1; i <= n; i++ {
 		ids = append(ids, strconv.Itoa(i))
 	}
-	form["ids"] = ids
-	return form
+	return ids
 }
 
-// orderPOSTForm 发一个表单 POST。
-func orderPOSTForm(engine *gin.Engine, path string, form url.Values) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+// orderPOSTJSON 发一个 JSON POST（写动作迁移后的真实通道）。
+func orderPOSTJSON(engine *gin.Engine, path, body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 	return rec
 }
 
-// TestOrderBulkPagesRejectOversizedSelectionWithControlledText 批量入口在 id 超限时都渲染
-// **受控文案**的提示页，且该文案与 err.Error() 无关（原文里的计数不会跟着出去）。
+// TestOrderBulkPagesRejectOversizedSelectionWithControlledText 批量入口在 id 超限时回的
+// **受控文案**与 err.Error() 无关（原文里的计数器、类型名都不会跟着出去）。
 //
-// 六条批量入口现在**都在同一条契约上**：shell.RenderJump 渲染提示页（HTTP 200），
-// 文案进响应体、不进 URL —— 于是「查询参数不是可信边界」那套读侧判定不再需要，
-// 「伪造的 ?err= 冒充提示」这条攻击面被整块删掉。
+// 两条通道各自断言：
 //
-// 共同的安全判据完全相同（受控文案 + 不含内部细节指纹 + 两个数字都在），
-// 差别只在传输：都断言 200 + 无 Location 头 + 正文里是受控文案。
+//	· 退货的两条页面批量入口（S3 未迁）：shell.RenderJump 渲染提示页（HTTP 200），
+//	  文案进响应体、不进 URL —— 「伪造的 ?err= 冒充提示」这条攻击面已被整块删掉；
+//	· 订单的两条批档入口（已迁 JSON）：400 + 受控 key 的带参协议，由 pkg/response 填成成品句。
 //
-// 用 nil service 是刻意的最小化：超限在读到 service 之前就被 shell.BulkIDs 拒绝，
+// 优惠码的两条批量入口同在 JSON 通道上，由 order_coupon_write_test.go 覆盖（那里是券的
+// 业务口径），本用例不重复。
+//
+// 用 nil service 是刻意的最小化：超限在读到 service 之前就被 bulkids.Normalize 拒绝，
 // 这条路径本来就不该碰数据库。
 func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	orderPages := orderhttp.NewOrderPageHandle(nil, nil, nil)
-	couponPages := orderhttp.NewCouponPageHandle(nil, nil)
-	returnPages := orderhttp.NewReturnPageHandle(nil, nil, nil, nil)
+	orderHandle := orderhttp.NewHandle(nil)
 
 	engine := gin.New()
-	// 提示页要渲染模板（shell.RenderJump 渲染 admin/jump.html），所以引擎必须挂渲染器 ——
-	// 与生产装配一致。
+	// 渲染器仍要挂：本文件后半段（TestOrderPageHidesInternalError）走的是真页面 GET。
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.POST("/admin/orders/bulk-status", orderPages.OrderBulkStatus)
-	engine.POST("/admin/orders/bulk-cancel", orderPages.OrderBulkCancel)
-	engine.POST("/admin/coupons/bulk-delete", couponPages.CouponBulkDelete)
-	engine.POST("/admin/coupons/bulk-toggle", couponPages.CouponBulkToggle)
-	engine.POST("/admin/returns/bulk-approve", returnPages.ReturnBulkApprove)
-	engine.POST("/admin/returns/bulk-reject", returnPages.ReturnBulkReject)
+	// 写路径全部是「前端直调 JSON」：超限在批档形状校验里被拒。
+	engine.POST("/api/order/status", orderHandle.ChangeStatus)
+	engine.POST("/api/order/cancel", orderHandle.CancelOrder)
+	engine.POST("/api/order/return/approve", orderHandle.ApproveReturn)
+	engine.POST("/api/order/return/reject", orderHandle.RejectReturn)
 
-	// 反证：shell.BulkIDs 在同一个表单上给出的原文里带「当前 N 项」的计数。
-	probe, _ := gin.CreateTestContext(httptest.NewRecorder())
-	probe.Request = httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(orderOverLimitForm(nil).Encode()))
-	probe.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	_, rawErr := shell.BulkIDs(probe)
+	// 反证：**形状校验真正经过的汇合点**（pkg/bulkids.Normalize，表单档与 JSON 批档共用同一个）
+	// 给出的 error 原文里带「当前 N 项」的计数 —— 它是给日志看的，不是给页面的。
+	_, rawErr := bulkids.Normalize(orderOverLimitIDs())
 	if rawErr == nil {
-		t.Fatalf("反证失败：ids 超过 %d 条时 shell.BulkIDs 应报错", shell.MaxBulkIDs)
+		t.Fatalf("反证失败：ids 超过 %d 条时 bulkids.Normalize 应报错", bulkids.MaxIDs)
 	}
-	over := strconv.Itoa(shell.MaxBulkIDs + 1)
+	over := strconv.Itoa(bulkids.MaxIDs + 1)
 	if !strings.Contains(rawErr.Error(), over) {
 		t.Fatalf("反证失败：原文应带本次条数 %s，实际 %v", over, rawErr)
 	}
@@ -127,36 +139,62 @@ func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) 
 		}
 		// 文案由**受控类型**给出，所以「当前 M 项」这个只有 shell 知道的去重后条数也应当出现。
 		// 少了 M 说明文案又退回了模块自己拼的版本。
-		if !strings.Contains(text, strconv.Itoa(shell.MaxBulkIDs)) || !strings.Contains(text, over) {
-			t.Errorf("%s 应带上限 %d 与本次条数 %s（由受控类型给回），实际 %q", where, shell.MaxBulkIDs, over, text)
+		if !strings.Contains(text, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(text, over) {
+			t.Errorf("%s 应带上限 %d 与本次条数 %s（由受控类型给回），实际 %q", where, bulkids.MaxIDs, over, text)
 		}
 		assertOrderLeakFree(t, where, text)
 	}
 
-	// 六条批量入口（订单 / 优惠码 / 退货）：200 + 提示页，文案在响应体里，且**不再有 Location**。
+	// ① 退货的两条批量入口（S3 已迁 JSON 批档）：400 + 受控回执，且**不再有 Location**。
 	//
-	// 批量取消 / 批量拒绝要求先填原因，否则整批不处理；补上这一项才能走到 id 校验。
-	// 目标状态字段名与 orders.html 的批量下拉一致（toStatus）—— 旧用例跟着 handler 读错的
-	// 字段构造请求，于是这条链路「测过了」，而真实页面提交的 toStatus 从未被读到。
-	for _, tc := range []struct {
-		path string
-		form url.Values
-	}{
-		{"/admin/orders/bulk-status", orderOverLimitForm(url.Values{"toStatus": {"paid"}})},
-		{"/admin/orders/bulk-cancel", orderOverLimitForm(url.Values{"remark": {"测试"}, "project": {"p"}})},
-		{"/admin/coupons/bulk-delete", orderOverLimitForm(nil)},
-		{"/admin/coupons/bulk-toggle", orderOverLimitForm(url.Values{"status": {"1"}})},
-		{"/admin/returns/bulk-approve", orderOverLimitForm(nil)},
-		{"/admin/returns/bulk-reject", orderOverLimitForm(url.Values{"remark": {"测试"}})},
+	// 批量拒绝要求先填原因，否则整批不处理；补上这一项才能走到 id 上限那一步
+	// （缺理由的 400 是另一条判据，见 order_return_write_test.go）。
+	// 超限在批档形状校验里就被拒（normalize 在读到 service 之前），本用例的 nil service
+	// 因此一次都不会被碰到 —— 真碰到了会 panic。
+	for _, tc := range []struct{ path, body string }{
+		{"/api/order/return/approve", orderOverLimitJSON(map[string]any{"remark": "测试"})},
+		{"/api/order/return/reject", orderOverLimitJSON(map[string]any{"remark": "测试"})},
 	} {
-		rec := orderPOSTForm(engine, tc.path, tc.form)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s 应回 200（提示页），实际 %d", tc.path, rec.Code)
+		rec := orderPOSTJSON(engine, tc.path, tc.body)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s 超限应回 400，实际 %d：%s", tc.path, rec.Code, rec.Body.String())
 		}
 		if loc := rec.Header().Get("Location"); loc != "" {
 			t.Errorf("%s 不应再用 302 + ?err= 回带文案，实际 Location=%q", tc.path, loc)
 		}
-		assertControlled(t, tc.path+" 的提示页", rec.Body.String())
+		assertControlled(t, tc.path+" 的批档回执", rec.Body.String())
+	}
+
+	// ② 订单的两条批档入口：超限即 400（形状先于服务，没碰数据库就判出来了），
+	//    回执只能是「受控 key 的带参协议」或它被 pkg/response 填成的成品句 —— 两者按
+	//    Accept-Language 都可能出现（本用例不设语言头），所以判据落在**信息量**上：
+	//    上限与本次条数两个数字都在、且不含原文指纹/未填参模板（与 S1 的券批档同口径）。
+	assertBatchControlled := func(t *testing.T, where, text string) {
+		t.Helper()
+		if !strings.Contains(text, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(text, over) {
+			t.Errorf("%s 应带上限 %d 与本次条数 %s（由受控类型给回），实际 %q", where, bulkids.MaxIDs, over, text)
+		}
+		// "一次最多操作 %s" 是**未填参**的模板：出现它说明有人把 raw 模板当成品发了，
+		// 或者填参链路断了（页面上会看到裸 %s）。
+		for _, tok := range []string{"bulkids:", "IDsError", "一次最多操作 %s"} {
+			if strings.Contains(text, tok) {
+				t.Errorf("%s 泄漏原文/未填参模板 %q：%s", where, tok, text)
+			}
+		}
+		assertOrderLeakFree(t, where, text)
+	}
+	for _, tc := range []struct {
+		path string
+		body string
+	}{
+		{"/api/order/status", orderOverLimitJSON(map[string]any{"toStatus": "paid"})},
+		{"/api/order/cancel", orderOverLimitJSON(map[string]any{"remark": "测试"})},
+	} {
+		rec := orderPOSTJSON(engine, tc.path, tc.body)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%s 超限应回 400，实际 %d：%s", tc.path, rec.Code, rec.Body.String())
+		}
+		assertBatchControlled(t, tc.path+" 的批档回执", rec.Body.String())
 	}
 }
 
@@ -165,7 +203,7 @@ func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) 
 //
 // 新契约：归口文案不再走 `c.String(500, …)` 或 `?err=`，而是进模板的 `.LoadErr`
 // （订单模板里是一条 `role="alert"` 的 badge，配空态段落「这一页的数据没能读出来」）。
-// 判据不变：**原文一个片段都不进响应体**，页面显示的是 shell.PageInternalText 的中文。
+// 判据不变：**原文一个片段都不进响应体**，页面显示的是 adminui.PageInternalText 的中文。
 func TestOrderPageHidesInternalError(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {

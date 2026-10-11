@@ -1,8 +1,13 @@
 {* admin/jump.html — 写操作完成后的整页提示（ThinkPHP 的 success() / error() 对应物）。
 
-   数据由 shell.RenderJump 给（一个 jumpView struct + title），**本页不取词**：
-   文案是调用点已经过白名单的成品串，页面只负责摆位置 —— 所以这里没有 .["t"](...) 调用，
-   也不会有「词条缺失 → 静默空串」那条路。
+   数据由 shell.RenderJump 给（一个 jumpView struct + title）：**正文按 key 取词**，
+   调用点给的是「key + 中文兜底 + 具名参数」，不是拼好的整句 ——
+   所以这里的文案随当前请求语言变化，而控制器不需要知道当前是什么语言。
+
+   取词函数由 adminui.Prepare 注入：tr 是 t（key + 兜底），tf 是「t + `%s` 位置参数填充」——
+   正文是一条带计数的词条（「已删除 %s 个页面。」），参数由调用点给（数字已在 Go 侧 strconv）。
+   两者都走 data 注入而不是 Set.AddGlobal：语言是请求级的，全局函数拿不到
+   （见 internal/templates/i18n.go 的取舍说明）。
 
    三条形态约定：
    1. 状态只用**字形 + 颜色**表达（✓ / !），不写「操作成功」这类全站文案 ——
@@ -15,12 +20,14 @@
 {{block head()}}{{if .Jump.Seconds > 0}}<meta http-equiv="refresh" content="{{.Jump.Seconds}};url={{.Jump.Back}}">{{end}}{{end}}
 
 {{block body()}}
+{{tr := .["t"]}}
+{{tf := .["tf"]}}
 <div class="stack jump-page">
     <div class="card jump-card" data-jump-state="{{if .Jump.OK}}ok{{else}}err{{end}}">
         <span class="jump-icon" aria-hidden="true">{{if .Jump.OK}}✓{{else}}!{{end}}</span>
-        <p class="jump-msg">{{.Jump.Msg}}</p>
-        {{if .Jump.BackText != ""}}
-        <p class="jump-actions"><a class="btn btn-primary" href="{{.Jump.Back}}">{{.Jump.BackText}}</a></p>
+        <p class="jump-msg">{{tf(.Jump.MsgKey, .Jump.Msg, .Jump.MsgArgs)}}</p>
+        {{if .Jump.BackTextShow}}
+        <p class="jump-actions"><a class="btn btn-primary" href="{{.Jump.Back}}">{{tr(.Jump.BackTextKey, .Jump.BackText)}}</a></p>
         {{end}}
     </div>
 </div>

@@ -25,6 +25,7 @@ import (
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
+	"go_wp/pkg/pagination"
 )
 
 // TestAnalyticsPageTemplateRenders 用真实 Jet 渲染器渲染统计页并断言关键内容。
@@ -56,10 +57,11 @@ func TestAnalyticsPageTemplateRenders(t *testing.T) {
 		"UAClasses": []analyticscontract.RankCount{{Value: "desktop", Views: 2, Visitors: 2}},
 		"Langs":     []analyticscontract.RankCount{{Value: "zh-CN", Views: 3, Visitors: 2}},
 		// 视图（tabs 初始选中）：handler 恒给；不给也能渲染（模板有兜底，见下面第二个用例）。
-		"ViewMode":       "daily",
-		"RankLimit":      20,
-		"PaginationInfo": "共 2 条", "PaginationLinks": nil,
-		"Err": "",
+		"ViewMode":  "daily",
+		"RankLimit": 20,
+		// 分页事实：零值＝没有分页（本夹具只有 2 条、每页 20）。
+		"Pagination": pagination.Page{},
+		"Err":        "",
 	}
 	body := renderAnalyticsPage(t, data)
 	for _, want := range []string{

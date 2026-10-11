@@ -124,7 +124,7 @@ func TestSEORouteIsRegisteredOnAuthenticatedAdminGroup(t *testing.T) {
 	// 页面 GET 的鉴权（docs/02-Z §4.3）：只读不等于不鉴权，菜单隐藏不是访问控制。
 	// obj 取该页菜单绑的码 seo:audit 声明的路径，而它声明为 POST（存量口径不一致），
 	// 故用 As 变体显式指定 act。
-	if !strings.Contains(body, `shell.PageAuthzAs("/api/seo/audit", http.MethodPost)`) {
+	if !strings.Contains(body, `adminui.PageAuthzAs("/api/seo/audit", http.MethodPost)`) {
 		t.Fatal("SEO 页面 GET 必须按菜单绑定的 seo:audit 鉴权")
 	}
 	if !strings.Contains(body, `NewSEOPageHandle(analytics, projects)`) {

@@ -15,18 +15,23 @@ package masterdatahttp
 // 数量增减在库存流水页 —— 两张表回答的是不同的问题。
 
 import (
+	"go_wp/internal/middleware/builtin"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/masterdata/contract"
 	"go_wp/internal/module/masterdata/dto"
 	"go_wp/internal/module/masterdata/enums"
 	"go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/reqparams"
+	"go_wp/pkg/response"
 )
 
 // masterDataEntityPageSize 实体清单一次展示的条数（后台核对用；完整清单走接口分页）。
@@ -105,7 +110,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	projects, err := h.projects.List(ctx)
 	// 工程列表装载失败：**降级渲染**，不拿走整个页面（与主题管理页、admin 六页同一判据）。
 	//
-	// 原先这里是 `c.String(500, shell.MsgInternalError)`：浏览器里没有页面，只有一块纯文本 ——
+	// 原先这里是 `c.String(500, adminui.MsgInternalError)`：浏览器里没有页面，只有一块纯文本 ——
 	// 侧栏、页头、筛选栏全部消失，而那块文本还是**未翻译的裸 key**（`c.String` 不经过任何
 	// translate，页面上直接显示 `MsgInternalError` 这串英文）。运营既判断不出是「这一页没读出来」
 	// 还是「后台坏了」，也没有任何可点的东西（换筛选、去别的菜单都做不到）。
@@ -121,7 +126,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		selected = projects[0].ID
 	}
 	filter := masterDataFilterOf(c)
-	page, limit := shell.PageParams(c)
+	page, limit := reqparams.PageParams(c)
 
 	// 本页**没有** ?err= 回执通道：它是只读页，没有任何写入口会往这里回带文案
 	//（grep 过：全仓没有 redirect 到 /admin/masterdata/changes?...err=）。
@@ -157,12 +162,12 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 				total = timeline.Total
 				current = &gin.H{
 					"EntityType": timeline.EntityType,
-					"EntityTypeLabel": masterDataLabel(shell.TranslateFor(c),
+					"EntityTypeLabel": masterDataLabel(i18n.TranslateFunc(response.RequestLanguage(c)),
 						masterdataenums.EntityTypeLabel(timeline.EntityType)),
 					"EntityID": timeline.EntityID, "EntityLabel": timeline.EntityLabel, "Total": timeline.Total,
 				}
 				for _, row := range timeline.Changes {
-					rows = append(rows, changeRow(shell.TranslateFor(c), row))
+					rows = append(rows, changeRow(i18n.TranslateFunc(response.RequestLanguage(c)), row))
 				}
 			}
 		} else {
@@ -171,7 +176,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 				pageErr = firstNonEmpty(pageErr, masterDataErrText(c, lerr))
 			} else {
 				for _, row := range list {
-					rows = append(rows, changeRow(shell.TranslateFor(c), row))
+					rows = append(rows, changeRow(i18n.TranslateFunc(response.RequestLanguage(c)), row))
 				}
 			}
 			if count, cerr := h.changes.CountChanges(ctx, listReq); cerr == nil {
@@ -193,7 +198,7 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 			pageErr = firstNonEmpty(pageErr, masterDataErrText(c, eerr))
 		} else {
 			for _, item := range entities {
-				entityRows = append(entityRows, entityRow(shell.TranslateFor(c), item, filter, selected))
+				entityRows = append(entityRows, entityRow(i18n.TranslateFunc(response.RequestLanguage(c)), item, filter, selected))
 			}
 		}
 		if count, cerr := h.changes.CountEntities(ctx, entityReq); cerr == nil {
@@ -209,15 +214,15 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		viewMode = masterDataViewRecords
 	}
 	// 分页与视图切换链接都基于同一份筛选条件（切视图不丢筛选）。
-	base := shell.FilterBaseURL("/admin/masterdata/changes", filter.values(selected))
+	base := reqparams.FilterBaseURL("/admin/masterdata/changes", filter.values(selected))
 
-	data := shell.Prepare(c, gin.H{
-		"title":           masterDataLabel(shell.TranslateFor(c), masterdataenums.PageTitleChanges),
+	data := adminui.Prepare(c, gin.H{
+		"title":           masterDataLabel(i18n.TranslateFunc(response.RequestLanguage(c)), masterdataenums.PageTitleChanges),
 		"menu":            "masterdata-changes",
 		"Projects":        projects,
 		"SelectedProject": selected,
-		"EntityTypes":     masterDataEntityTypeOptions(shell.TranslateFor(c)),
-		"Actions":         masterDataActionOptions(shell.TranslateFor(c)),
+		"EntityTypes":     masterDataEntityTypeOptions(i18n.TranslateFunc(response.RequestLanguage(c))),
+		"Actions":         masterDataActionOptions(i18n.TranslateFunc(response.RequestLanguage(c))),
 		// 筛选条件逐项传给模板（Jet 对「map 再索引」的链式访问不确定，与货源页同一手法）。
 		"FilterEntityType": filter.EntityType,
 		"FilterEntityID":   filter.EntityID,
@@ -246,8 +251,11 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		"RecordsViewURL":  base,
 		"EntitiesViewURL": base + "&view=" + masterDataViewEntities,
 	})
-	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
-		data[k] = v
+	// 分页事实（值语义）：零值＝没有分页，单页与装载失败两条路都不渲染分页条。
+	// 文案与链接由 admin/partials/pagination.html 用通用模板函数渲染。
+	if pg := pagination.Facts(total, page, limit); pg.HasPagination() {
+		pg.Base = base
+		data["Pagination"] = pg
 	}
 	c.HTML(http.StatusOK, "admin/masterdata/masterdata_changes.html", data)
 }
@@ -286,15 +294,15 @@ func masterDataErrText(c *gin.Context, err error) string {
 	}
 	key := strings.TrimSpace(err.Error())
 	if fallback, ok := masterDataFacingTexts[key]; ok {
-		return shell.TranslateFor(c)(key, fallback)
+		return i18n.TranslateFunc(response.RequestLanguage(c))(key, fallback)
 	}
 	logger.Scene(masterDataErrScene).
-		With("user_id", shell.CurrentUserID(c)).
+		With("user_id", builtin.CurrentUserID(c)).
 		Error(err, "主数据变更记录页取数失败（非业务错误，只对外给归口文案）")
-	return shell.PageInternalText(c)
+	return adminui.PageInternalText(c)
 }
 
-// masterDataTr 取词函数签名（shell.TranslateFor(c) 的形态）。
+// masterDataTr 取词函数签名（i18n.TranslateFunc(response.RequestLanguage(c)) 的形态）。
 type masterDataTr func(key, fallback string) string
 
 // masterDataLabel 展示名取词：命中出译文、缺词条回落中文兜底。
@@ -351,7 +359,7 @@ func entityRow(tr masterDataTr, item *masterdatadto.EntityHistoryResp, filter ma
 			masterdataenums.FieldLabel(item.EntityType, item.LastField)),
 		"LastOperatorID": masterDataValueLabel(item.LastOperatorID),
 		"LastAt":         masterDataTimeLabel(item.LastAt),
-		"URL": shell.FilterBaseURL("/admin/masterdata/changes",
+		"URL": reqparams.FilterBaseURL("/admin/masterdata/changes",
 			filter.entityValues(projectID, item.EntityType, item.EntityID)),
 	}
 }

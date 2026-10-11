@@ -83,16 +83,22 @@
             <strong>{{ .["t"]("admin.content.templates.listHeading", "模板列表（") }}{{.TemplateCount}}{{ .["t"]("admin.content.templates.listHeadingClose", "）") }}</strong>
         </div>
         {{end}}
-        {* 勾选框与批量动作同属一个 form（<form> 包 <table> 是合法的）：提交时浏览器直接带上
-           所有勾中的 ids，不需要在提交前注入隐藏域。「设为生效」是这个 form 里的第二个动作，
-           用按钮的 formaction 改投端点（与批量条上的批量按钮同一手法），不嵌套第二个 form。 *}
-        {* 回跳上下文走 action 的 query（服务端 shell.BackPath 按白名单读回），不再用隐藏域。 *}
-        <form method="post" action="/admin/content-templates/bulk-delete?project={{selectedProject}}&entityType={{ .EntityType }}">
+        {* 批量删除与行内启用共用表单，按钮声明覆盖 API 与写模式；成功刷新保留筛选参数。 *}
+        <form data-write-api="/api/contenttemplate/delete" data-write-mode="bulk"
+          data-msg-none-selected="{{tr("admin.content.templates.bulk.noneSelected", "请先选择内容模板。")}}"
+          data-msg-all-deleted="{{tr("admin.content.templates.bulk.allDeleted", "已删除 {deleted} 个模板。")}}"
+          data-msg-all-skipped="{{tr("admin.content.templates.bulk.allSkipped", "跳过 {skipped} 个模板。")}}"
+          data-msg-partial="{{tr("admin.content.templates.bulk.partial", "已删除 {deleted} 个，跳过 {skipped} 个模板。")}}"
+          data-msg-failed="{{tr("admin.common.write.failed", "操作失败，请稍后重试。")}}"
+          data-msg-refresh="{{tr("admin.content.templates.bulk.refresh", "刷新列表")}}"
+          data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}">
+        <p data-write-status role="status" aria-live="polite"></p>
+        <noscript><p>{{tr("admin.content.templates.write.noJs", "启用和删除内容模板需要 JavaScript。")}}</p></noscript>
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
         {{if .TemplateCount > 0}}
         {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-            {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.content.templates.bulkDeleteConfirm", "删除选中的模板？删除会连带清掉它的历史版本；被页面、实例或其它模板引用的模板不会被删除。"), danger=true)}}
+            <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden data-confirm="{{tr("admin.content.templates.bulkDeleteConfirm", "删除选中的模板？删除会连带清掉它的历史版本；被页面、实例或其它模板引用的模板不会被删除。")}}" data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
         {{yield bulkBarClose()}}
         {{end}}
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.content.templates.tableAria", "内容模板列表") }}">
@@ -151,7 +157,7 @@
                         {{else}}
                         {* 同一（工程, 类型）下只允许一套生效：切换是 POST，与 JSON 接口共用权限点
                            contenttemplate:activate（页面入口经 CasbinMiddlewareForPath 映射）。 *}
-                        <button type="submit" class="btn btn-sm" formaction="/admin/content-templates/activate?project={{selectedProject}}&entityType={{ .EntityType }}"
+                        <button type="submit" data-requires-js hidden class="btn btn-sm" data-write-api="/api/contenttemplate/activate" data-write-mode="single"
                                 name="id" value="{{t.ID}}">{{tr("admin.content.templates.activate", "设为生效")}}</button>
                         {{end}}
                     </td>

@@ -16,9 +16,7 @@
 {{import "../partials/bulk_bar.html"}}
 {{block body()}}
 {{tr := .["t"]}}
-{{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
-{{listQuery := .ListQuery}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -44,7 +42,7 @@
         </div>
     </header>
 
-    {* 写动作的结论不在这里：它由提示页在响应体里渲染（shell.RenderJump）。这一条只报「这次没读出来」。 *}
+    {* 审核结论显示在 JSON 写表单的结果槽，此处仅显示读取失败。 *}
     {{if .LoadErr != ""}}<p class="badge badge-warning" role="alert">{{ tr("admin.comment.load_failed", "评论列表暂时读不出来 —— 稍后重试。") }}{{.LoadErr}}</p>{{end}}
     {{if .NoProject}}<p class="badge badge-warning" role="alert">{{ tr("admin.comment.no_project", "还没有站点工程：评论按工程隔离，先建一个工程再看这一页。") }}</p>{{end}}
 
@@ -77,15 +75,21 @@
         <div class="card-header">
             <span class="card-title">{{ tr("admin.comment.menu", "评论审核") }}{{if .Total > 0}}（{{.Total}}）{{end}}</span>
         </div>
-        {* 回跳上下文走 action 的 query（服务端 shell.BackPath 按白名单读回），不再用隐藏域。 *}
-        <form method="post" action="/admin/comments/review?{{listQuery}}">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form data-write-api="/api/comment/review" data-write-mode="bulk"
+              data-write-number="ids" data-write-extra="projectId,status" data-write-outcome="review"
+              data-msg-none-selected="{{tr("admin.comment.err.nothing_selected", "先勾选要审核的评论。")}}"
+              data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+              data-msg-refresh="{{tr("admin.comment.write.refresh", "刷新列表")}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             {{if isset(.Buttons["comment.review"])}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                {{yield bulkBtn(label=tr("admin.comment.action.approve", "通过"), cls="btn btn-sm", name="status", value="approved")}}
-                {{yield bulkBtn(label=tr("admin.comment.action.reject", "驳回"), cls="btn btn-sm", name="status", value="rejected", confirm=tr("admin.comment.confirmReject", "驳回选中的评论？驳回后它们不会出现在公开页面上。"), danger=true)}}
+                <button type="submit" class="btn btn-sm" name="status" value="approved" data-requires-js hidden disabled>{{tr("admin.comment.action.approve", "通过")}}</button>
+                <button type="submit" class="btn btn-sm" name="status" value="rejected" data-requires-js hidden disabled
+                        data-confirm="{{tr("admin.comment.confirmReject", "驳回选中的评论？驳回后它们不会出现在公开页面上。")}}" data-confirm-danger>{{tr("admin.comment.action.reject", "驳回")}}</button>
             {{yield bulkBarClose()}}
+            <noscript><p class="form-hint">{{tr("admin.comment.write.noJs", "评论审核需要 JavaScript，请开启后重试。")}}</p></noscript>
             {{end}}
             <div class="table-wrap table-scroll" tabindex="0">
             <table class="data-table data-table-wide">

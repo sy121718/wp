@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"go_wp/internal/middleware/adminctx"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
@@ -31,7 +32,6 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 
 	"go_wp/public/test/support"
 )
@@ -48,13 +48,13 @@ func newBrandPagingEnv(t *testing.T) (*gin.Engine, *gorm.DB, *projectservice.Ser
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 页面组由 shell.PermContextMiddleware 注入权限码；这条链路不挂鉴权中间件，
+	// 页面组由 adminctx.PermContextMiddleware 注入权限码；这条链路不挂鉴权中间件，
 	// 注入一份权限，保证页面按真实形态渲染（品牌页的批量条与行内按钮按它显隐）。
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{
+		c.Set(adminctx.PermSetKey, map[string]bool{
 			"product:brand_create": true, "product:brand_update": true, "product:brand_delete": true,
 		})
-		c.Set(shell.ButtonsKey, map[string]bool{
+		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"product.brand_create": true, "product.brand_update": true, "product.brand_delete": true,
 		})
 

@@ -6,6 +6,7 @@ package sysconfighttp
 // SetupSysConfigRoutes 在同一位置调用 —— 落点分开、装配顺序不变。
 
 import (
+	"go_wp/internal/middleware/builtin"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -14,7 +15,6 @@ import (
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
 	"go_wp/internal/permission"
-	"go_wp/internal/shell"
 	"go_wp/pkg/response"
 )
 
@@ -27,6 +27,7 @@ func SetupSysConfigRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.
 	g := authorizedAPI.Group("/sysconfig")
 	g.GET("/get", permission.SysConfigGet, h.APIList)
 	g.POST("/save", permission.SysConfigSave, h.APISave)
+	g.POST("/system/save", permission.SysConfigSystemSave, h.APISystemSave)
 
 	// 后台页面：注册在 sysconfig_page_router.go（同一入口调用，装配顺序不变）。
 	SetupSysConfigPages(adminPages, h)
@@ -49,7 +50,7 @@ func (h *AdminHandle) APISave(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, sysconfigenums.ErrInvalidParam)
 		return
 	}
-	req.UpdateBy = int64(shell.CurrentUserID(c))
+	req.UpdateBy = int64(builtin.CurrentUserID(c))
 	res, err := h.svc.SetGroup(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusConflict, sysconfigErrText(c, err))

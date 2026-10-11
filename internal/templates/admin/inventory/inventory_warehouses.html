@@ -10,6 +10,9 @@
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
+{* 装载失败槽（docs/rules/template-boundary.md §整页 GET 的失败出口）：只在「这一页没读到」
+   那条路径上有值（Go 侧零值数据 + 500 + Cache-Control: no-store），正常渲染一律为空串。 *}
+{{loadError := .["LoadError"]}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -37,6 +40,14 @@
             {{end}}
         </div>
     </header>
+
+    {{if loadError}}
+    <section class="card list-card">
+        <p class="badge badge-danger" role="alert">{{loadError}}</p>
+        <p class="page-sub">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
+        <p class="hint">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
+    </section>
+    {{else}}
 
     {* 写动作的结论不在本页回显：它由 shell.RenderJump 渲染成提示页（见 inventory_jump.go），
        结论走响应体、不再经 ?err= / ?ok= / ?done= 回列表页。 *}
@@ -291,4 +302,5 @@
     </template>
     {{end}}
 </div>
+{{end}}
 {{end}}

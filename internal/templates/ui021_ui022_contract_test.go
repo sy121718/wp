@@ -16,7 +16,7 @@ func TestUI021WorkbenchFocusModeContract(t *testing.T) {
 		"title": "页面管理", "pageId": "page-1", "isBlock": false, "isTemplate": false,
 		"document": "{}", "meta": "{}", "schemas": "{}", "jsVer": "test",
 		// t / lang 是工作台模板的**必需键**（模板顶层 tr := .["t"] 取词，缺它文案会静默变空，
-		// 与 admin 各页渲染测试同一口径）。生产路径统一由 shell.Prepare 注入。
+		// 与 admin 各页渲染测试同一口径）。生产路径统一由 adminui.Prepare 注入。
 		"t": TranslateFunc("zh-CN"), "lang": "zh-CN",
 	}
 	html, err := render(t, set, "workbench/layout", data)

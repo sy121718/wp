@@ -13,10 +13,10 @@ package unit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -33,7 +33,6 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/pipeline"
-	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
 )
 
@@ -202,24 +201,38 @@ func saveNavTranslation(t *testing.T, f *presFixture, navSvc *navigationservice.
 	handle := navigationhttp.NewNavigationTranslationHandle(navSvc, projects)
 	handle.SetContentWriter(i18n.NewContentWriter(f.db))
 	handle.SetMenuInvalidator(navSvc)
+	// 译文保存现在是真实 JSON 写接口：句柄的端口（writer / pages / menus）在这里注入，
+	// 端点那边只负责判别形状与转发（见 internal/module/navigation/inbound/http/navigation_translation_write.go）。
+	navigationhttp.SetNavigationTranslationWriter(handle)
+	t.Cleanup(func() { navigationhttp.SetNavigationTranslationWriter(nil) })
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.POST("/admin/navigations/translations/save", handle.SaveNavigationTranslations)
+	router.POST("/api/navigation/update", navigationhttp.NewHandle(navSvc).Update)
 
-	form := url.Values{}
-	form.Set("project", f.projectID)
-	form.Set("lang", "en-US")
-	form.Add("rowContext", i18n.ContentContext("navigation", "label"))
-	form.Add("rowHash", i18n.ContentHash(sourceText))
-	form.Add("rowTarget", target)
-	req := httptest.NewRequest(http.MethodPost, "/admin/navigations/translations/save",
-		strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	body := fmt.Sprintf(
+		`{"action":"translations","project":%q,"lang":"en-US","rows":[{"context":%q,"hash":%q,"target":%q}]}`,
+		f.projectID, i18n.ContentContext("navigation", "label"), i18n.ContentHash(sourceText), target)
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/update", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
-	if recorder.Code != http.StatusSeeOther {
-		t.Fatalf("保存成功应 303 回工作台，实际 %d，body=%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("保存译文应 200（JSON 写接口），实际 %d，body=%s", recorder.Code, recorder.Body.String())
+	}
+	// 「200」本身证明不了写入：必须确认响应里的 written > 0，否则这条用例会在
+	// 「形状对了但什么都没写」的实现上静默通过，后面的 stale 断言也就失去意义。
+	var envelope struct {
+		Code int `json:"code"`
+		Data struct {
+			Written int `json:"written"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("保存响应不是 JSON 信封: %v，body=%s", err, recorder.Body.String())
+	}
+	if envelope.Code != http.StatusOK || envelope.Data.Written == 0 {
+		t.Fatalf("保存必须真的写入译文，实际 code=%d written=%d body=%s",
+			envelope.Code, envelope.Data.Written, recorder.Body.String())
 	}
 }

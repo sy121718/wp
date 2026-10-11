@@ -34,8 +34,8 @@ import (
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 	projectdto "go_wp/internal/module/project/dto"
 
+	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 
 	"go_wp/public/migrations"
 )
@@ -799,13 +799,13 @@ func newSourcePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-	// 新建/编辑入口按权限显隐（shell.Prepare 读 PermSetKey），而这条链路不走鉴权中间件：
+	// 新建/编辑入口按权限显隐（adminui.Prepare 读 PermSetKey），而这条链路不走鉴权中间件：
 	// 注入一份权限，让页面把所有原生表单写入口都渲染出来（多端契约断言的正是这些入口）。
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{
+		c.Set(adminctx.PermSetKey, map[string]bool{
 			"inventory:source_create": true, "inventory:source_update": true, "inventory:source_delete": true,
 		})
-		c.Set(shell.ButtonsKey, map[string]bool{
+		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"inventory.source_create": true, "inventory.source_update": true, "inventory.source_delete": true,
 		})
 

@@ -25,23 +25,21 @@ package blockhttp
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/block/contract"
 	"go_wp/internal/module/block/enums"
 	"go_wp/internal/module/block/model"
 	"go_wp/internal/module/page/contract"
 	"go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	"go_wp/pkg/safepath"
 	"go_wp/pkg/utils"
 )
 
@@ -74,16 +72,13 @@ func NewBlockPageHandle(blocks blockcontract.BlockService, projects projectcontr
 
 // blockRow 全局块列表行投影。
 type blockRow struct {
-	ID             string
-	Name           string
-	Kind           string
-	KindLabel      string
-	ReuseMode      string
-	ReuseModeLabel string
-	UpdatedAt      string
-	// RefCountText 影响面：该块当前被多少页面引用（只读统计）。
-	// 复制模式（template）显示「—」——它插入时已复制 AST，改它不影响任何页面。
-	RefCountText string
+	ID        string
+	Name      string
+	Kind      string
+	ReuseMode string
+	UpdatedAt utils.JSONTime
+	// -1 表示引用数查询失败，区别于零引用。
+	RefCount int64
 }
 
 // blocksPageData 全局块管理页数据。
@@ -113,86 +108,34 @@ func (d *blocksPageData) templateMap() gin.H {
 	}
 }
 
-// blockText 一条待取词文案：i18n key + 中文兜底（兜底同时是词条缺失时的显示值）。
-type blockText struct{ Key, Fallback string }
-
-// blockKindLabels 块类型标签（docs/02-D §4/§5 全量白名单）：kind → {key, 中文兜底}。
-//
-// **key 与模板 admin/block/blocks.html 的 kind 下拉是同一批**（`admin.blocks.kind.*`）：
-// 下拉是模板里 16 行硬编码的 tr 调用、本表是列表列直出的 KindLabel —— 两处同义，
-// 因此必须共用同一条词条，否则同一个 kind 在下拉里与列表里会显示成两个词。
-var blockKindLabels = map[string]blockText{
-	"header":       {"admin.blocks.kind.header", "页眉"},
-	"footer":       {"admin.blocks.kind.footer", "页脚"},
-	"block":        {"admin.blocks.kind.block", "区块"},
-	"announcement": {"admin.blocks.kind.announcement", "公告栏"},
-	"sidebar":      {"admin.blocks.kind.sidebar", "侧边栏"},
-	"breadcrumb":   {"admin.blocks.kind.breadcrumb", "面包屑"},
-	"drawer":       {"admin.blocks.kind.drawer", "抽屉导航"},
-	"search":       {"admin.blocks.kind.search", "搜索框"},
-	"cta":          {"admin.blocks.kind.cta", "CTA 段"},
-	"trust":        {"admin.blocks.kind.trust", "信任徽章"},
-	"brands":       {"admin.blocks.kind.brands", "品牌墙"},
-	"contact":      {"admin.blocks.kind.contact", "联系方式"},
-	"about":        {"admin.blocks.kind.about", "关于我们"},
-	"banner":       {"admin.blocks.kind.banner", "横幅"},
-	"grid":         {"admin.blocks.kind.grid", "多栏布局"},
-	"snippet":      {"admin.blocks.kind.snippet", "片段模板"},
-}
-
-// blockReuseModeLabels 复用方式标签（docs/02-D §5）：mode → {key, 中文兜底}。
-var blockReuseModeLabels = map[string]blockText{
-	"template": {"admin.blocks.reuseMode.template", "复制"},
-	"global":   {"admin.blocks.reuseMode.global", "引用"},
-}
-
-// kindLabel 块类型 → 当前语言标签；未登记的 kind 落「区块」（与模板下拉的默认项同义）。
-func kindLabel(tr func(key, fallback string) string, kind string) string {
-	item, ok := blockKindLabels[kind]
-	if !ok {
-		item = blockKindLabels["block"]
-	}
-	return tr(item.Key, item.Fallback)
-}
-
-// reuseModeLabel 复用方式 → 当前语言标签；未知取值按「引用」显示（与旧实现的默认分支一致）。
-func reuseModeLabel(tr func(key, fallback string) string, mode string) string {
-	item, ok := blockReuseModeLabels[mode]
-	if !ok {
-		item = blockReuseModeLabels["global"]
-	}
-	return tr(item.Key, item.Fallback)
-}
-
 // toBlockRows 按 kind 精确过滤（header/footer 页眉页脚组）。
-func toBlockRows(tr func(key, fallback string) string, blocks []blockcontract.BlockResp, kind string) []blockRow {
+func toBlockRows(blocks []blockcontract.BlockResp, kind string) []blockRow {
 	rows := make([]blockRow, 0, len(blocks))
 	for _, b := range blocks {
 		if b.Kind != kind {
 			continue
 		}
-		rows = append(rows, toBlockRow(tr, b))
+		rows = append(rows, toBlockRow(b))
 	}
 	return rows
 }
 
 // toOtherBlockRows 其余全部类型（新 kind + snippet 片段模板）归入「区块/复用资产」组。
-func toOtherBlockRows(tr func(key, fallback string) string, blocks []blockcontract.BlockResp) []blockRow {
+func toOtherBlockRows(blocks []blockcontract.BlockResp) []blockRow {
 	rows := make([]blockRow, 0, len(blocks))
 	for _, b := range blocks {
 		if b.Kind == "header" || b.Kind == "footer" {
 			continue
 		}
-		rows = append(rows, toBlockRow(tr, b))
+		rows = append(rows, toBlockRow(b))
 	}
 	return rows
 }
 
-func toBlockRow(tr func(key, fallback string) string, b blockcontract.BlockResp) blockRow {
+func toBlockRow(b blockcontract.BlockResp) blockRow {
 	return blockRow{
-		ID: b.ID, Name: b.Name, Kind: b.Kind, KindLabel: kindLabel(tr, b.Kind),
-		ReuseMode: b.ReuseMode, ReuseModeLabel: reuseModeLabel(tr, b.ReuseMode),
-		UpdatedAt: b.UpdatedAt.Time().Format("2006-01-02 15:04"),
+		ID: b.ID, Name: b.Name, Kind: b.Kind,
+		ReuseMode: b.ReuseMode, UpdatedAt: b.UpdatedAt,
 	}
 }
 
@@ -200,7 +143,7 @@ func toBlockRow(tr func(key, fallback string) string, b blockcontract.BlockResp)
 func (h *blockPageHandle) BlocksList(c *gin.Context) {
 	projects, err := h.projects.List(c.Request.Context())
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusInternalServerError, shell.MsgInternalError)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgInternalError)
 		return
 	}
 	data := &blocksPageData{
@@ -216,171 +159,21 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 	if data.SelectedProjectID != "" {
 		blocks, err := h.blocks.List(c.Request.Context(), &blockcontract.ListReq{ProjectID: data.SelectedProjectID})
 		if err != nil {
-			response.ErrorWithMessage(c, http.StatusInternalServerError, shell.MsgInternalError)
+			response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgInternalError)
 			return
 		}
-		tr := shell.TranslateFor(c)
-		data.Headers = toBlockRows(tr, blocks, "header")
-		data.Footers = toBlockRows(tr, blocks, "footer")
-		data.Blocks = toOtherBlockRows(tr, blocks)
+		data.Headers = toBlockRows(blocks, "header")
+		data.Footers = toBlockRows(blocks, "footer")
+		data.Blocks = toOtherBlockRows(blocks)
 		// 只读影响面（见 block_page_impact.go）：逐块引用页面数 + 待重建页面清单。
-		h.fillRefCounts(tr, c.Request.Context(), data.Headers)
-		h.fillRefCounts(tr, c.Request.Context(), data.Footers)
-		h.fillRefCounts(tr, c.Request.Context(), data.Blocks)
+		h.fillRefCounts(c.Request.Context(), data.Headers)
+		h.fillRefCounts(c.Request.Context(), data.Footers)
+		h.fillRefCounts(c.Request.Context(), data.Blocks)
 	}
 	// 影响面在两种分支（有工程 / 无工程）下都要给：模板是同一份，
 	// 缺这个键会让取值链中断（HTTP 仍 200、后半页整块消失）。
-	data.StaleImpact = h.blockStaleImpact(shell.TranslateFor(c), c.Request.Context())
-	c.HTML(http.StatusOK, "admin/block/blocks", shell.Prepare(c, data.templateMap()))
-}
-
-// CreateBlock 新建全局块（POST /admin/blocks/create），成功后进工作台编辑内容。
-//
-// 失败与成功都由 shell.RenderJump 渲染整页提示（取代原先的 303 + `?err=`）：
-// 失败回列表页（保留工程筛选，不自动跳），成功 1 秒后自动进工作台。
-// 此前这里走 c.String(400, blockBizError(err))，而业务错误的 Error() 是 enums 常量、也就是
-// i18n key —— 浏览器上落成一张**只有 ErrBlockDuplicate 字样的空白页**：没有页面壳、不是中文、
-// 也没有任何回列表的入口（用户报告的现象）。同名冲突这类高频分支恰恰最需要说清楚。
-func (h *blockPageHandle) CreateBlock(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	name := strings.TrimSpace(c.PostForm("name"))
-	kind := strings.TrimSpace(c.PostForm("kind"))
-	reuseMode := strings.TrimSpace(c.PostForm("reuseMode"))
-	back := blockListBack(c)
-	if projectID == "" || name == "" {
-		badReq := blockcontract.ErrParamRequired
-		if name == "" {
-			badReq = blockcontract.ErrNameRequired
-		}
-		blockPageJump(c, false, blockErrText(c, badReq), back)
-		return
-	}
-	block, err := h.blocks.Create(c.Request.Context(), &blockcontract.CreateReq{
-		ProjectID: projectID, Name: name, Kind: kind, ReuseMode: reuseMode,
-	})
-	if err != nil {
-		logger.Scene("block").With("op", "CreateBlock").With("project_id", projectID).
-			With("user_id", shell.CurrentUserID(c)).With("path", c.Request.URL.Path).
-			Error(err, "创建全局块失败")
-		blockPageJump(c, false, blockErrText(c, err), back)
-		return
-	}
-	// 成功：提示页 1 秒后自动进工作台编辑内容（原先是直接 303 到 /workbench?block=ID）。
-	blockJump(c, true,
-		shell.TranslateFor(c)(blockenums.MsgBlockCreated, "块已创建，正在打开编辑器"),
-		shell.WithParams("/workbench", map[string]string{"block": block.ID}),
-		shell.TranslateFor(c)("admin.blocks.action.edit", "编辑"))
-}
-
-// DeleteBlock 删除全局块（POST /admin/blocks/delete）。
-// 删除后由 block service 统一编排 stale（传播器在装配层注入）：绑定该块的主题下
-// 全部页面标待重建（产物退化为无页眉/页脚）。
-func (h *blockPageHandle) DeleteBlock(c *gin.Context) {
-	id := strings.TrimSpace(c.PostForm("id"))
-	back := blockListBack(c)
-	if id == "" {
-		blockPageJump(c, false, blockErrText(c, blockcontract.ErrParamRequired), back)
-		return
-	}
-	force := strings.TrimSpace(c.PostForm("force")) == "1"
-	if err := h.blocks.Delete(c.Request.Context(), &blockcontract.DeleteReq{ID: id, Force: force}); err != nil {
-		logger.Scene("block").With("op", "DeleteBlock").With("block_id", id).
-			With("user_id", shell.CurrentUserID(c)).With("path", c.Request.URL.Path).
-			Error(err, "删除全局块失败")
-		// blockRefErrText：被引用拒绝时把「哪一类引用、哪些实体」一起带给运营（ARCH-02）。
-		blockPageJump(c, false, blockRefErrText(c, err), back)
-		return
-	}
-	// 成功回执复用批量删除的 allDeleted 模板（count=1）：删一个块与批量删一个块说同一句话。
-	blockPageJump(c, true, blockBulkFilled(c, blockBulkResultTemplates[1], map[string]string{"count": "1"}), back)
-}
-
-// BlocksBulkDelete 批量删除全局块（POST /admin/blocks/bulk-delete，权限点 block:delete）。
-//
-// 逐条走**同一条单条删除路径**（h.blocks.Delete）：被页面引用的全局块由服务端拒绝，
-// 其余照常删除 —— 单条失败不中断整批（整批回滚会让用户以为「一个都没删」然后反复重试）。
-// 结果按「已删除 N 个 / 跳过 M 个」渲染成提示页，避免静默的部分成功。
-func (h *blockPageHandle) BlocksBulkDelete(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	back := blockListBack(c)
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		// 超限是 shell 的受控错误（值域只有 Count/Max）：走它的受控文案出口，
-		// 而不是把 err.Error() 拼进提示页（提示页不是可信边界，文案必须已归口）。
-		blockPageJump(c, false, shell.BulkIDsFacingText(c, berr), back)
-		return
-	}
-	// 明细要带块名：批量列表里用户按名字认块，一串 uuid 定位不了任何东西。
-	// 取名字是一次只读列表，失败只影响文案（记日志），不阻断删除流程。
-	nameByID := map[string]string{}
-	if projectID != "" {
-		if list, lerr := h.blocks.List(c.Request.Context(), &blockcontract.ListReq{ProjectID: projectID}); lerr == nil {
-			for i := range list {
-				nameByID[list[i].ID] = list[i].Name
-			}
-		} else {
-			logger.Scene("block").With("op", "BlocksBulkDelete").Error(lerr, "批量删除前取块名失败，提示退化为 id 前缀")
-		}
-	}
-	deleted, skipped := 0, 0
-	// 逐条记跳过原因，最多带 3 条进提示页（整串按展示上限封顶）。
-	details := make([]string, 0, 3)
-	for _, id := range ids {
-		if err := h.blocks.Delete(c.Request.Context(), &blockcontract.DeleteReq{ID: id}); err != nil {
-			logger.Scene("block").With("op", "BlocksBulkDelete").With("block_id", id).
-				With("user_id", shell.CurrentUserID(c)).With("path", c.Request.URL.Path).
-				Error(err, "批量删除全局块失败")
-			skipped++
-			if len(details) < 3 {
-				name := strings.TrimSpace(nameByID[id])
-				if name == "" {
-					name = shortBlockID(id)
-				}
-				details = append(details, blockRefSkipDetail(c, name, err))
-			}
-			continue
-		}
-		deleted++
-	}
-	// 有跳过 → 失败态（警告更显眼，运营下次会去看剩下那些）；全成功 → 成功态（1 秒后回列表）。
-	blockPageJump(c, skipped == 0, blocksBulkDeleteResult(c, deleted, skipped, details), back)
-}
-
-// blocksBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
-// （只报「操作完成」会把部分成功静默成全部成功，用户不会再去看剩下那几个）。
-// details 是逐条跳过原因（最多几条，由调用方截断）：全部跳过 / 部分跳过时附在结论之后，
-// 形状是「受控模板句 + ：+ 定位」。
-func blocksBulkDeleteResult(c *gin.Context, deleted, skipped int, details []string) string {
-	// 模板取自 block_err.go 的 blockBulkResultTemplates（单条删除的成功回执也复用它）。
-	tail := ""
-	if len(details) > 0 {
-		tail = "：" + strings.Join(details, "；")
-		if skipped > len(details) {
-			tail += "…"
-		}
-	}
-	switch {
-	case deleted == 0 && skipped == 0:
-		return blockBulkFilled(c, blockBulkResultTemplates[0], nil)
-	case skipped == 0:
-		return blockBulkFilled(c, blockBulkResultTemplates[1], map[string]string{"count": strconv.Itoa(deleted)})
-	case deleted == 0:
-		return truncateRunes(blockBulkFilled(c, blockBulkResultTemplates[2],
-			map[string]string{"count": strconv.Itoa(skipped)})+tail, shell.NoticeMaxBytes-1)
-	default:
-		return truncateRunes(blockBulkFilled(c, blockBulkResultTemplates[3],
-			map[string]string{"deleted": strconv.Itoa(deleted), "skipped": strconv.Itoa(skipped)})+tail, shell.NoticeMaxBytes-1)
-	}
-}
-
-// shortBlockID 取块 id 的前 8 位做提示里的退化定位（取名字失败时用）。
-func shortBlockID(id string) string {
-	id = strings.TrimSpace(id)
-	if len(id) <= 8 {
-		return id
-	}
-	return id[:8] + "…"
+	data.StaleImpact = h.blockStaleImpact(c, c.Request.Context())
+	c.HTML(http.StatusOK, "admin/block/blocks", adminui.Prepare(c, data.templateMap()))
 }
 
 // SaveBlockContent 工作台保存块内容（POST /admin/blocks/save-content，JSON）。
@@ -434,16 +227,17 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 		// 错误原文只进结构化日志 —— 与同文件其它写路径（CreateBlock / DeleteBlock）的写法一致。
 		logger.Scene("block").With("op", "SaveBlockContent").With("block_id", req.ID).
 			With("path", c.Request.URL.Path).Error(uerr, "工作台保存块内容失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, shell.MsgInternalError)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgInternalError)
 		return
 	}
 	// 回跳（303 PRG）：只有**站内相对路径**才接受，其它一律拒绝并落默认列表页。
 	//
 	// 开放重定向在后台同样是「看起来像本站自己发起的跳转」：//evil.example.com 是协议
 	// 相对 URL，浏览器会当外站处理；绝对 URL 更直接。判据与语言切换回跳共用同一份
-	//（shell.LocalReturnPath）。没传（普通块编辑）时不跳，保存后留在工作台。
+	//（pkg/safepath.LocalReturnPath，task-75 自 shell 迁入）。没传（普通块编辑）时不跳，
+	// 保存后留在工作台。
 	if raw := strings.TrimSpace(req.ReturnURL); raw != "" {
-		target := shell.LocalReturnPath(raw)
+		target := safepath.LocalReturnPath(raw)
 		if target == "" {
 			target = "/admin/blocks"
 		}
@@ -456,55 +250,38 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 	response.SuccessWithMessage(c, blockenums.ContentSavedRebuildQueued)
 }
 
-// blockErrInternalFallback 非业务错误（基础设施故障）的兜底文案：中文原文，兼作取词兜底。
-const blockErrInternalFallback = "系统内部错误，请稍后重试"
+// blockErrScene 页面出口的日志场景名（与 block 模块其它 logger.Scene("block") 调用点一致）。
+const blockErrScene = "block"
+
+// blockErrFact 一次错误的**展示事实**：判定 + 归口 + 日志都在 adminui（判据只有一条）。
+//
+// 用 Quiet 变体（**不记日志**）：本模块的真调用点（批量删除的逐条原因、单条删除的 409 拒绝）
+// 都在调用前记过一条更具体的日志（带 block_id / op / path），这里再记一次会让同一个错误
+// 在日志里出现两遍 —— 改造前 blockErrText 也不记日志，这是一条行为不变项。
+func blockErrFact(c *gin.Context, err error) adminui.ErrFact {
+	return adminui.PageErrorFactQuiet(c, blockErrScene, err)
+}
 
 // blockErrText 业务错误 → 当前语言文案。
 //
-// 业务错误的 Error() 就是 enums 常量，而 enums 常量即 i18n key（真文案在 sys_i18n，
-// 迁移 058 + 237 已 seed 全部 ErrBlock* 词条），所以这里按请求语言取词、以 key 作兜底：
-// 直接把 err.Error() 铺到页面上正是「页面上出现 ErrBlockDuplicate 裸 key」的来源。
-// 非业务错误原文只进日志（调用方已按操作记过一条），对外回通用提示。
-func blockErrText(c *gin.Context, err error) string {
-	tr := shell.TranslateFor(c)
-	if key := blockErrKey(err); key != "" {
-		return tr(key, key)
-	}
-	return tr(shell.MsgInternalError, blockErrInternalFallback)
-}
-
-// blockErrSentinels 全部 block 业务 sentinel（= 词条 key 的来源）。
-// 新增业务错误时在此同步登记：漏登记的后果是它被当成内部故障（通用提示 + 日志），
-// 方向是安全的（不泄漏内部细节），但用户拿到的是不可行动的提示。
-var blockErrSentinels = []error{
-	blockcontract.ErrParamRequired,
-	blockcontract.ErrNotFound,
-	blockcontract.ErrProjectNotFound,
-	blockcontract.ErrProjectRequired,
-	blockcontract.ErrNameRequired,
-	blockcontract.ErrInvalidDoc,
-	blockcontract.ErrInvalidKind,
-	blockcontract.ErrInvalidCategory,
-	blockcontract.ErrDuplicate,
-	blockcontract.ErrInvalidReuseMode,
-	blockcontract.ErrBlockInUse,
-}
-
-// blockErrKey 业务错误 → i18n 词条 key（非业务错误返回空串，按内部故障处理）。
+// 判定收敛到 adminui.PageErrorFact（pkg/response.IsBusinessError 的**形态**判据）：
+// 业务错误的取值本来就是 enums 常量、而 enums 的值即 i18n key（真文案在 sys_i18n，
+// 迁移 058 + 237 已 seed 全部 ErrBlock* 词条），所以「认得出形态 = 可以直接给用户看」。
 //
-// 一律取 **sentinel 自己的 Error()**（enums 常量、也即词条 key），不能取 err.Error()：
-// 被 fmt.Errorf("...: %w", err) 包过的错误，Error() 是整句话，拿去查词条必然查不到
-// —— 页面上就会出现那句内部包装文案。
-func blockErrKey(err error) string {
+// 原先这里是 blockErrSentinels + errors.Is 的**第二份白名单** —— 它是第二份真相：
+// service 换了措辞、或某个 key 改由别的模块提供就静默失配，而两种症状都不报错
+// （有时把内部错误当业务文案透出、有时把业务文案吞成归口）。判定只有一份之后，
+// 「业务错误必须能被认出来」这条守卫改由共享判据承担（见 block_page_handle_test.go）。
+//
+// 兜底仍是 key 本身（与改造前逐字一致）：词条缺失时页面显示裸 key，一眼可见且可查；
+// 空串会让失败在页面上**完全不可见**，用户以为操作成功了。
+func blockErrText(c *gin.Context, err error) string {
 	if err == nil {
-		return ""
+		// 拿不到任何错误时也给归口文案（页面/逐条结果不能出现空白）——
+		// 与改造前的形状一致；真调用点都带非 nil err。
+		return adminui.MsgText(c, adminui.InternalMsg())
 	}
-	for _, sentinel := range blockErrSentinels {
-		if errors.Is(err, sentinel) {
-			return sentinel.Error()
-		}
-	}
-	return ""
+	return adminui.ErrorFactText(c, blockErrFact(c, err))
 }
 
 // blockStalePageLimit 影响面清单一次列出的页面数（与 /admin/pages 的 staleOverviewLimit 同值）。
@@ -512,6 +289,23 @@ func blockErrKey(err error) string {
 // 消费者口径，定义在调用方：不填会落到 model 的 50 条默认，而只读区块的作用是让人**看见**
 // 影响面、不是给出完整清单（被截断的条数由 Total 给出并在页面上说明）。
 const blockStalePageLimit = 8
+
+// 影响面「读不到」的两条提示（事实：key + 中文兜底）。
+//
+// 包级变量并**不带 gin.Context**：这段文案属于哪个语言，由取词发生的时刻决定，
+// 与控制器无关 —— 控制器不取词（见批次约定 .cache/wp-refactor-A-brief.md）。
+// 两条分开是**故意的**：一条是「本页永远查不了（能力没装）」、另一条是「这一次没读出来」，
+// 处置方向不同（查部署 vs 刷新重试）。
+var (
+	blockImpactNoPageCapabilityMsg = adminui.Msg{
+		Key:      blockenums.ImpactUnavailableNoPageCapability,
+		Fallback: "页面能力未装配（装配层未把 page 契约传给块管理页），本次无法统计待重建影响面。",
+	}
+	blockImpactProjectReadFailedMsg = adminui.Msg{
+		Key:      blockenums.ImpactUnavailableProjectReadFailed,
+		Fallback: "读取站点工程失败，本次无法统计待重建影响面。",
+	}
+)
 
 // blockStaleImpact 取「全站待重建」影响面的数据（只读观测）。
 //
@@ -523,15 +317,18 @@ const blockStalePageLimit = 8
 // 降级语义：pages 未注入 / 读取失败 → Available=false（显示「读不到」），
 // 绝不渲染成「0 个待重建」—— 两者对运营的含义完全不同。契约返回 (nil, nil) 是异常形态，
 // 同样按读不到处理。
-func (h *blockPageHandle) blockStaleImpact(tr func(key, fallback string) string, ctx context.Context) gin.H {
-	unavailable := func(hint string) gin.H {
+func (h *blockPageHandle) blockStaleImpact(c *gin.Context, ctx context.Context) gin.H {
+	// Hint 由**事实**取成当前语言文本（取词走 adminui.MsgText，不再经 shell）：
+	// 这个槽位（模板 blocks.html 的 {{.StaleImpact.Hint}}）还没取词化 —— 优先形态是
+	// 把 key 交给模板、由它用注入的 tr 取值；本轮先按批次约定取成文本再传（见批次报告）。
+	unavailable := func(msg adminui.Msg) gin.H {
 		return gin.H{
 			"Available": false, "Pages": []gin.H{}, "Total": 0, "Truncated": false,
-			"Limit": blockStalePageLimit, "Hint": hint,
+			"Limit": blockStalePageLimit, "Hint": adminui.MsgText(c, msg),
 		}
 	}
 	if h == nil || h.pages == nil {
-		return unavailable(tr(blockenums.ImpactUnavailableNoPageCapability, "页面能力未装配（装配层未把 page 契约传给块管理页），本次无法统计待重建影响面。"))
+		return unavailable(blockImpactNoPageCapabilityMsg)
 	}
 	res, err := h.pages.ListStalePages(ctx, &pagecontract.StalePageListReq{
 		Limit:      blockStalePageLimit,
@@ -541,11 +338,11 @@ func (h *blockPageHandle) blockStaleImpact(tr func(key, fallback string) string,
 		// 工程表为空时契约返回 ErrProjectRequired：与真正的读取失败合并显示为「读不到」，
 		// 因为跨模块 import page/service 取那个哨兵是禁止的（AGENTS.md 模块边界）。
 		logger.Scene("block").Error(err, "读取全站待重建清单失败，待重建影响面本次不可用")
-		return unavailable(tr(blockenums.ImpactUnavailableProjectReadFailed, "读取站点工程失败，本次无法统计待重建影响面。"))
+		return unavailable(blockImpactProjectReadFailedMsg)
 	}
 	if res == nil {
 		logger.Scene("block").Warn("全站待重建清单返回空结果（契约实现异常）")
-		return unavailable("")
+		return unavailable(adminui.Msg{})
 	}
 	pages := make([]gin.H, 0, len(res.Pages))
 	for i := range res.Pages {
@@ -562,34 +359,10 @@ func (h *blockPageHandle) blockStaleImpact(tr func(key, fallback string) string,
 	}
 }
 
-// fillRefCounts 给一组列表行填上「被多少页面引用」的显示文案（就地改切片元素）。
-//
-// 逐块一次 COUNT 查询：块数量是后台量级（每工程几十个），与本页其余查询同一量级；
-// pages 未注入时 blockRefCount 返回 -1，全部显示为「未知」，不产生任何查询。
-func (h *blockPageHandle) fillRefCounts(tr func(key, fallback string) string, ctx context.Context, rows []blockRow) {
+// fillRefCounts 查询引用数，-1 表示无法读取，交由模板区分于零引用。
+func (h *blockPageHandle) fillRefCounts(ctx context.Context, rows []blockRow) {
 	for i := range rows {
-		rows[i].RefCountText = blockRefCountText(tr, rows[i], h.blockRefCount(ctx, rows[i]))
-	}
-}
-
-// blockRefCountText 引用数 → 页面文案。
-//
-// 「0 个引用」「未知」「不传播」是三件不同的事，必须显示成三种文案：
-// 把「读不到」显示成 0 会让人以为这个块没人用（进而放心删除），
-// 把 template 块显示成 0 会让人以为它需要重建。
-func blockRefCountText(tr func(key, fallback string) string, row blockRow, n int64) string {
-	switch {
-	case row.ReuseMode != blockmodel.ReuseGlobal:
-		return "—"
-	case n < 0:
-		return tr(blockenums.RefCountUnknown, "未知")
-	case n == 0:
-		return tr(blockenums.RefCountNone, "未被页面引用")
-	default:
-		// 占位符是命名形态（{count}），不用 Sprintf：词条可被运营在后台改，
-		// 裸 % 与中英参数错位都会让 Sprintf 输出乱码，命名替换对此免疫。
-		return i18n.FillTranslate(tr, blockenums.RefCountPages, "{count} 个页面引用",
-			map[string]string{"count": strconv.FormatInt(n, 10)})
+		rows[i].RefCount = h.blockRefCount(ctx, rows[i])
 	}
 }
 
@@ -626,7 +399,6 @@ func (h *blockPageHandle) BlocksStaleDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	tr := shell.TranslateFor(c)
 	res, err := h.pages.ListStalePages(c.Request.Context(), &pagecontract.StalePageListReq{
 		Limit:      blockStalePageLimit,
 		Descending: true,
@@ -650,36 +422,47 @@ func (h *blockPageHandle) BlocksStaleDrawer(c *gin.Context) {
 			"Path":        res.Pages[i].Path,
 			"ProjectName": res.Pages[i].ProjectName,
 			"Published":   res.Pages[i].Published,
-			// 失败痕迹（迁移 474）：非空说明这页不是「还没轮到」，而是重建失败过。
-			"FailedNote": rebuildFailureNote(tr, res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt),
+			// 失败痕迹（迁移 474）：有痕迹说明这页不是「还没轮到」，而是重建失败过。
+			// 交的是事实（阶段 key + 时刻），整句由共用的片段模板拼回。
+			"RebuildFailure": rebuildFailureViewOf(res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt),
 		})
 	}
-	c.HTML(http.StatusOK, "admin/partials/stale_pages_drawer.html", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/partials/stale_pages_drawer.html", adminui.Prepare(c, gin.H{
 		"Rows": rows, "Total": res.Total, "Truncated": res.Truncated,
 		"Limit": blockStalePageLimit, "MultiProject": len(projects) > 1,
 	}))
 }
 
-// rebuildFailureNote 组装「最近一次自动重建失败」的一句文案；没有失败痕迹时返回空串。
+// rebuildFailureView 失败痕迹的**事实**：阶段词条 key + 中文兜底 + 已格式化的时刻。
 //
-// 阶段与时刻来自迁移 474 落在 pages 上的两列；**不含错误原文**（后台页面不得直出内部错误，
-// 原文只进结构化日志，带 page_id 可定位）。与 /admin/articles、/admin/blocks 上同名函数
-// 是三份：各自在自己的模块包内（跨模块共用要走契约，而这是纯展示装配）。
-// 三处文案与阶段取值必须一致，改一处请同步另两处。
-func rebuildFailureNote(tr func(key, fallback string) string, stage string, at *utils.JSONTime) string {
+// 取词交给渲染期（片段模板用注入的 tr 拼回整句）：语言是请求级的，在控制器里提前翻等于
+// 替渲染期做决定 —— 英文后台下会显示中文，且不报错、没日志。
+// 本类型与 content 模块的同名类型、page 模块里的同名函数是三份（跨模块共用要走契约，
+// 而这是纯展示装配）；三处文案与阶段取值必须一致，改一处请同步另两处。
+type rebuildFailureView struct {
+	// StageKey / StageFallback 失败阶段文案；未登记的阶段 Key 空、Fallback 是原始阶段值。
+	StageKey      string
+	StageFallback string
+	// At 失败时刻（已格式化的墙上时间；时间格式与语言无关）。
+	At string
+	// Has 是否有失败痕迹（两列都空 = 没有）。
+	Has bool
+}
+
+// rebuildFailureViewOf 迁移 474 的两列 → 失败痕迹事实（**不含错误原文**）。
+func rebuildFailureViewOf(stage string, at *utils.JSONTime) rebuildFailureView {
 	if strings.TrimSpace(stage) == "" && at == nil {
-		return ""
+		return rebuildFailureView{}
 	}
-	label := stage
+	view := rebuildFailureView{Has: true, StageFallback: stage}
 	switch stage {
 	case "plan":
-		label = tr("admin.pages.impact.stage_plan", "计划阶段（站点语言清单或旧发布范围读不到）")
+		view.StageKey, view.StageFallback = "admin.pages.impact.stage_plan", "计划阶段（站点语言清单或旧发布范围读不到）"
 	case "build":
-		label = tr("admin.pages.impact.stage_build", "构建 / 发布阶段")
+		view.StageKey, view.StageFallback = "admin.pages.impact.stage_build", "构建 / 发布阶段"
 	}
-	prefix := tr("admin.pages.impact.rebuild_failed", "最近一次自动重建失败：")
-	if at == nil {
-		return prefix + label
+	if at != nil {
+		view.At = time.Time(*at).Local().Format("2006-01-02 15:04")
 	}
-	return prefix + label + "（" + time.Time(*at).Local().Format("2006-01-02 15:04") + "）"
+	return view
 }

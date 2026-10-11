@@ -4,6 +4,7 @@ package navigationmodel
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -154,6 +155,70 @@ func (m *Model) SaveWithExpected(ctx context.Context, projectID, id string,
 		return res.Error
 	})
 	return rows, err
+}
+
+// SwapRow 参与一次同级排序交换的一行：写回的目标排序值 + 调用方手上的版本 token。
+type SwapRow struct {
+	ID        string
+	SortOrder int
+	Expected  time.Time
+}
+
+// SwapConflictError 交换未成立：该行不存在 / 越出工程作用域 / 版本已变（条件 UPDATE 命中 0 行）。
+//
+// 为什么要有类型（而不是裸 errors.New）：① service 要拿 ID 去取「库内当前标题」当定位信息；
+// ② 它必须与真正的持久化错误（连接中断、约束冲突）区分开 —— 后者要原样上抛，
+// 不能被当成乐观锁冲突换成人话。
+type SwapConflictError struct {
+	ID string
+}
+
+// Error 只给日志用（对外文案由 service 按白名单归口）。
+func (e *SwapConflictError) Error() string {
+	return "navigation: swap conflict on row " + e.ID
+}
+
+// SwapSortOrders 在一个事务里交换两行的 sort_order（两条条件 UPDATE，任一失败整事务回滚）。
+//
+// 为什么必须是「一个事务里的两条语句」，而不是让调用方各调一次 Save：
+// 两次独立提交之间第二条一旦失败（并发改过 / 行已被删），第一条**已经落库** ——
+// 同级出现两个相同的 sort_order，而调用方收到的是一次「失败」，既不会重试也不会回滚
+// （历史 P1 的半交换）。这里两条语句同进同出，失败即整体回滚。
+//
+// 执行顺序按 id **升序**固定：两笔并发的交换最多共享一行，升序加锁不可能成环
+// （后一笔不会回头去锁更小的 id），所以不会互相死锁。id 是 uuid：PG 的 uuid 比较是
+// 16 字节 memcmp，与规范小写十六进制串的字典序一致，Go 侧的字符串 < 与之等价。
+//
+// 每条都必须恰好影响 1 行：RowsAffected != 1 即表示「这一行的版本已经不是调用方手上的那份」
+// （或行没了 / 越界），立即返回 SwapConflictError —— 闭包返回错误，外层事务把另一条已经
+// 成功的写入一起回滚掉，调用方看到的是「两行都没动」。
+//
+// 同时刷新两行的 update_time（同一个 now）：排序也是这份数据的一次写入，
+// 页面上的乐观锁 token 必须跟着失效，否则第二次点同一个按钮会拿旧 token 静默成功。
+func (m *Model) SwapSortOrders(ctx context.Context, projectID string, first, second SwapRow) error {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return errors.New("navigation: swap requires project scope")
+	}
+	rows := []SwapRow{first, second}
+	if rows[0].ID > rows[1].ID {
+		rows[0], rows[1] = rows[1], rows[0]
+	}
+	now := time.Now().UTC()
+	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		for _, row := range rows {
+			res := tx.Model(&NavigationEntity{}).
+				Where("id = ? AND project_id = ? AND update_time = ?", row.ID, projectID, row.Expected).
+				Updates(map[string]any{"sort_order": row.SortOrder, "update_time": now})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected != 1 {
+				return &SwapConflictError{ID: row.ID}
+			}
+		}
+		return nil
+	})
 }
 
 // Delete 按 ID 删除导航项。

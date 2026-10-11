@@ -1,18 +1,20 @@
 {* fragments/article_import.html — 文章导入画布的转换预览（HTMX 局部刷新）
-   数据：Err（可展示的错误文案）、Preview（articleImportPreviewView）。
+   数据：Err（adminui.Msg 事实：key + 中文兜底 + `%s` 参数）、Preview（articleImportPreviewView）。
    为什么要有这一块：转换是有损的（不可逆组件变占位、白名单外标签被剥壳），
    必须让使用者在点「创建页面」之前看到损失清单 —— 决策 5「降级不静默」。
-   取词：本片段不经 shell.Prepare，t 由调用点注入（content/inbound/http/article_import.go）；
-   带计数的整句（CountText）在 Go 侧用 i18n.FillTranslate 拼 —— 模板拿不到填充函数，
-   而「3 个组件」与「3 components」语序不同，拆成前后缀会让英文那半落到空串上。 *}
+   取词：t / tf 由调用点的 adminui.PrepareFragment 注入（片段不带页壳，不注入时模板里的
+   取词会静默变成空串 —— 不报错、不 500、不记日志）。槽位放的是事实，取词发生在这里。
+   唯一还留在 Go 侧的是 CountText：它的词条用**具名占位符** `{count}`，而注入的 tf 只支持
+   `%s`（换占位符要改写已 seed 的词条），且中英语序不同、拆前后缀会让英文那半落到空串上。 *}
 {{tr := .["t"]}}
-{{if .Err != ""}}
-<p class="badge badge-warning">{{.Err}}</p>
+{{tf := .["tf"]}}
+{{if .Err.Fallback != ""}}
+<p class="badge badge-warning">{{tf(.Err.Key, .Err.Fallback, .Err.Args)}}</p>
 {{else if .Preview.OK}}
 <p class="hint">{{.Preview.CountText}}</p>
 <div class="action-row">
     {{range _, t := .Preview.Types}}
-    <span class="badge badge-mute">{{t.Label}} × {{t.Count}}</span>
+    <span class="badge badge-mute">{{tr(t.LabelKey, t.LabelFallback)}} × {{t.Count}}</span>
     {{end}}
 </div>
 {{if .Preview.Lossless}}
@@ -21,7 +23,7 @@
 <p class="badge badge-warning">{{tr("admin.article.import.lossy", "有损转换：下面这些内容在导入时发生了降级")}}</p>
 <ul class="hint">
     {{range _, w := .Preview.Warnings}}
-    <li><code>{{w.Tag}}</code> · {{w.Action}} —— {{w.Detail}}</li>
+    <li><code>{{w.Tag}}</code> · {{tr(w.ActionKey, w.ActionFallback)}} —— {{w.Detail}}</li>
     {{end}}
 </ul>
 {{end}}

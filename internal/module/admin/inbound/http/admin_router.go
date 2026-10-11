@@ -151,5 +151,24 @@ func SetupAdminRoutes(rg *permission.RouteGroup, db *gorm.DB) admincontract.Auth
 		datarule.POST("/assignment/save", permission.DataruleAssignmentSave, handle.RuleAssignmentSave)
 	}
 
+	// --- 文案词条写端点（JSON）---
+	//
+	// 这里是 /api/i18n/save 的**唯一注册点**：词条页原先那四条页面 POST
+	// （/admin/i18n/update|save|delete|bulk-delete）迁到「前端直调本端点」后删除。
+	// 权限点沿用迁移 178 的 i18n:manage → 本路径 POST（sys_permission 那一行逐字不变），
+	// 所以既有的超管与角色策略一行都不用改；注册即声明，页面注册处原先那条
+	// permission.Declare(POST /api/i18n/save) 随之退休。
+	//
+	// handle 用与页面**同一个实例**（adminI18nHandle，见 admin_i18n_write.go）：
+	// 写成功要标记站点待重建，而那个端口（page 服务）只到页面装配那一层。
+	i18nAPI := rg.Group("/i18n").Use(
+		builtin.SessionAuthMiddleware(),
+		builtin.CSRFMiddleware(),
+		builtin.CasbinMiddleware(),
+	)
+	{
+		i18nAPI.POST("/save", permission.I18nManage, adminI18nHandle().I18nEntryWrite)
+	}
+
 	return svc
 }

@@ -10,6 +10,31 @@
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
+{* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
+   契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。正常渲染一律为空串。 *}
+{* 先判装载失败，再判空工程 / 空筛选：空态是「读到了、没有数据」，装载失败是「没读到」——
+   混在一起会让运营以为是属性组被删了。 *}
+{{loadError := .["LoadError"]}}
+{{if loadError}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{ .["t"]("admin.product_attributes.title", "商品属性") }}</h1>
+            </div>
+        </div>
+    </header>
+    {* 失败槽**不用** .empty-state：empty-state 是「读到了、没有数据」的形态，而列表页的空态
+       有它必须待的地方（表头常驻的 <tbody> 行里）。这一档是「整张表都没读到」，用 badge +
+       page-sub + hint 说清楚，也与「空态吃表头」的守卫
+       （scripts/check-empty-state-table-head.sh）划清界限。 *}
+    <section class="card list-card">
+        <p class="badge badge-danger" role="alert">{{loadError}}</p>
+        <p class="page-sub">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
+        <p class="hint">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
+    </section>
+</div>
+{{else}}
 {{selectedProject := .SelectedProject}}
 {* chain 索引取筛选回显：模板单测可能不带这两个键，缺键时 chain 给 nil（不中断渲染）；
    直接 {{.FilterKeyword}} 在缺键时会报错中断整页（HTTP 仍 200，后面整块 HTML 消失）。 *}
@@ -161,7 +186,7 @@
         </form>
         {* 分页条（审计 D3 的属性页那一半）：原先一次取 Size:200 —— 第 201 个属性组
            静默消失且页面不给任何提示；现在按页渲染并给出「共 N 条」，
-           单页时服务端不注入 PaginationLinks，片段自然不渲染。 *}
+           单页或空数据时 handler 不注入 Pagination 事实（HasPagination() 为假），片段自然不渲染。 *}
         {{include "../partials/pagination.html"}}
     </section>
 
@@ -196,4 +221,5 @@
     </template>
     {{end}}
 </div>
+{{end}}
 {{end}}

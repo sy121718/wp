@@ -9,16 +9,19 @@
      · htmx 请求：200 + 本片段（错误槽 + 回填后的行）—— 换掉 data-attr-values-host；
      · 原生请求：302 + ?err= 回列表页（既有行为一字不改）。
 
-   数据键：Csrf / Project / t / Action / GroupID / RowsCtx / InDrawer / SubmitErr
+   数据键：Csrf / Project / t / tf / Action / GroupID / RowsCtx / InDrawer / SubmitErr
    （失败时另有 FormEcho* 三键；首屏 vfFill 为假 → 读 .GroupID 初值）。
+   SubmitErr 收的是**事实**（adminui.Msg：key + 中文兜底 + `%s` 参数）：控制器不取词，
+   语言由本片段的 tf 按当前请求决定（缺 tf 声明 = 渲染中断 = 500，htmx 不 swap）。
 
    表单字段名与 /admin/product-attributes/set-values 的绑定逐字一致，改这里等于改协议；
    改 `name=` 必须同步改 util 的 attrValuesFormFields。 *}
 {{vfFill := isset(.FormEcho)}}
+{{vfTf := .["tf"]}}
         <div data-attr-values-host>
             {* 错误槽在**表单之外、host 之内**：放进表单里会被下一次提交一起换掉。 *}
-            {{if isset(.SubmitErr)}}{{if .SubmitErr != ""}}
-            <p class="badge badge-warning" role="alert" data-attr-values-err>{{.SubmitErr}}</p>
+            {{if isset(.SubmitErr)}}{{if .SubmitErr.Key != "" || .SubmitErr.Fallback != ""}}
+            <p class="badge badge-warning" role="alert" data-attr-values-err>{{vfTf(.SubmitErr.Key, .SubmitErr.Fallback, .SubmitErr.Args)}}</p>
             {{end}}{{end}}
         <form method="post" action="{{.Action}}" class="form-stack" data-attr-values-form
               hx-post="{{.Action}}" hx-target="closest [data-attr-values-host]" hx-swap="outerHTML">

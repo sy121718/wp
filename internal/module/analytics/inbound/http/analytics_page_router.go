@@ -15,9 +15,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/analytics/contract"
 	"go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
 )
 
 // setupAnalyticsPageRoutes 注册访问统计页与 SEO 控制台（pages = /admin 页面组；
@@ -29,11 +29,11 @@ func setupAnalyticsPageRoutes(pages *gin.RouterGroup,
 		return
 	}
 	analyticsPages := NewAnalyticsPageHandle(analytics, projects)
-	pages.GET("/analytics", shell.PageAuthz("/api/analytics/summary"), analyticsPages.AnalyticsPage)
+	pages.GET("/analytics", adminui.PageAuthz("/api/analytics/summary"), analyticsPages.AnalyticsPage)
 
 	seoPages := NewSEOPageHandle(analytics, projects)
 	// SEO 控制台的 obj 是它的体检权限点 seo:audit（菜单 /admin/seo 绑的就是它），
 	// 而该权限点声明为 POST /api/seo/audit —— 页面是 GET，故用 As 变体显式指定 act。
 	// 存量口径不一致（页面 GET 借一个 POST 权限点），归一与 02-Z 第二刀同批。
-	pages.GET("/seo", shell.PageAuthzAs("/api/seo/audit", http.MethodPost), seoPages.SEOPage)
+	pages.GET("/seo", adminui.PageAuthzAs("/api/seo/audit", http.MethodPost), seoPages.SEOPage)
 }

@@ -61,6 +61,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	pubcontract "go_wp/internal/module/publication/contract"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
@@ -589,22 +590,28 @@ func reportContentMisses(lang string, candidates int, misses int64) {
 		Warn("构建期内容译文缺失，已回退原文（补齐译文后需重建，docs/06-D §9）")
 }
 
-// 页面级语言排除的业务错误（后台按 enums 白名单透出文案）。
+// 页面级语言排除的业务错误。
+//
+// 对外文案（key + 中文兜底）**绑在错误声明处**（pkg/facing）：兜底原先写在
+// inbound/http 的 pageLangErrMsg switch 里，于是加一个错误要改两个包，而 http 层在
+// service 里看不见 —— 二开的人加完 sentinel，页面上显示的是裸 key，还不知道该去哪补。
+// 绑过来之后出口只调一次 pageErrMsg(c, err)，每个错误自带它那句话。
 var (
 	// ErrPageLangExcluded 该语言已被本页排除：发布 / 构建入口据此跳过。
 	//
 	// 这是**正常的业务状态**（作者主动排除），不是故障：批量发布把它记成 skipped，
 	// 单语言入口把它报成可读错误，都不当成失败。
-	ErrPageLangExcluded = errors.New(pageenums.ErrPageLangExcluded)
+	ErrPageLangExcluded = facing.New(pageenums.ErrPageLangExcluded, "该语言已被本页排除")
 	// ErrCannotExcludeDefaultLang 不允许排除默认语言。
 	//
 	// 默认语言是站点的基准：它的产物承载 x-default，且 default_plain 方案下「默认语言无前缀」
 	// 是路径映射的锚点。排除它会让所有互指指向一条不存在的路径 —— 拒绝比事后解释便宜。
-	ErrCannotExcludeDefaultLang = errors.New(pageenums.ErrCannotExcludeDefaultLang)
+	ErrCannotExcludeDefaultLang = facing.New(pageenums.ErrCannotExcludeDefaultLang,
+		"不能排除站点默认语言：它的产物承载 x-default，且「默认语言无前缀」的路径映射以它为锚点")
 	// ErrLangAlreadyExcluded 该语言此前已被排除（幂等入口不重复下线）。
-	ErrLangAlreadyExcluded = errors.New(pageenums.ErrLangAlreadyExcluded)
+	ErrLangAlreadyExcluded = facing.New(pageenums.ErrLangAlreadyExcluded, "该语言已被本页排除，无需重复操作")
 	// ErrLangNotExcluded 该语言不在本页的排除集合里（无从恢复）。
-	ErrLangNotExcluded = errors.New(pageenums.ErrLangNotExcluded)
+	ErrLangNotExcluded = facing.New(pageenums.ErrLangNotExcluded, "该语言未被本页排除，无从恢复")
 )
 
 // pageExcludesLang 本页是否排除了该语言（大小写敏感：语言码是存储值，不是展示文案）。

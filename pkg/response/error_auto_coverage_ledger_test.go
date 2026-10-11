@@ -27,13 +27,10 @@ import (
 // 用假 service 喂两档输入（enums key → 400 + 可展示文案；SQLSTATE 原文 → 500 + 通用文案且不泄漏），
 // 断言的正是这里要守的 ErrorAuto 出口。
 var stateAssertionGapBaseline = map[string]bool{
-	"blueprint":       true,
-	"build":           true,
-	"content":         true,
-	"contenttemplate": true,
-	"plugin":          true,
-	"presentation":    true,
-	"user":            true,
+	"blueprint":    true,
+	"build":        true,
+	"content":      true,
+	"presentation": true,
 }
 
 // statusAssertionMarkers 判定「测试断言过错误响应的状态码」的标记。

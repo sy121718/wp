@@ -77,6 +77,11 @@ const (
 	portProductPublishedLocator    = "product.SetPublishedEntityLocator"
 	portProductPurchaseChecker     = "product.SetPurchaseChecker"
 	portProductFragmentCacheBumper = "product.SetFragmentCacheBumper"
+	// 页面读模型的两条只读端口：注入发生在**模块自装配内部**（product.SetInventoryDeps /
+	// product.SetDetailTemplateDeps 收到依赖后转交给 service 的读模型），装配段只标记
+	// 「Setup 调用发生过」，与 portProductContentStore 同一手法。
+	portProductPageWarehouses      = "product.SetWarehouseOptionsPort"
+	portProductPageTemplates       = "product.SetEntityTemplatePort"
 	portPluginAdminAuthz           = "plugin.SetAdminAuthz"
 	portProjectLocaleRetire        = "project.SetLocaleRetirePort"
 	portPageExternalArtifactOwners = "page.SetExternalArtifactOwners"
@@ -200,6 +205,10 @@ var wiringManifest = []wiringEntry{
 	// —— 模块自装配内部的注入（routes.go 只记录「Setup 调用发生」）——
 	{portProductContentStore, "product（自装配，db）", "product / 构建期", wiringOptionalDegraded,
 		"商品可翻译字段逐字节回退原文（产物与接入译文前一致）"},
+	{portProductPageWarehouses, "inventory（经 product.SetInventoryDeps 转交）", "product 页面读模型（新建页 / 列表页）", wiringOptionalDegraded,
+		"商品新建页 / 列表页没有「归属仓」与「从仓库选」两块（页面照常 200，只是少这两块）——与接线前逐字一致"},
+	{portProductPageTemplates, "contenttemplate（经 product.SetDetailTemplateDeps 转交）", "product 页面读模型（新建页 / 列表页）", wiringOptionalDegraded,
+		"商品新建页的模板候选为空并给「模板能力未装配」提示（同上：与接线前逐字一致）"},
 	{portContentContentStore, "content（自装配，db）", "content / 构建期", wiringOptionalDegraded,
 		"内容可翻译字段逐字节回退原文（同上）"},
 	{portPluginAdminAuthz, "admin", "plugin", wiringOptionalDegraded,

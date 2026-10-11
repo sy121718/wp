@@ -259,7 +259,7 @@ func TestSiteSettingsTemplateRendersShippingFields(t *testing.T) {
 //
 // 漏登记的后果是**静默的**：写侧渲染提示页时 key 没有词条，页面上显示的是**裸 key**
 // （如 `ErrGA4IDInvalid`），不报错、不记日志。
-// 判据从源码里提取（而不是手工列一遍），这样新增一条 projectText 就自动纳入守卫。
+// 判据从源码里提取（而不是手工列一遍），这样新增一条 projectMsgOf 就自动纳入守卫。
 func TestSiteSettingsWriteKeysAreRegistered(t *testing.T) {
 	// 判据依赖「本模块 enums 的常量值 == 常量名」这条既有约定（projectenums 头部明文如此）。
 	// 先自检这条前提仍成立 —— 否则提取出的名字与登记表里的值对不上，断言会退化成永远通过。
@@ -270,7 +270,7 @@ func TestSiteSettingsWriteKeysAreRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读取站点设置页源码失败（路径假设变了要同步改）: %v", err)
 	}
-	re := regexp.MustCompile(`projectText\(c,\s*projectenums\.([A-Za-z0-9_]+),`)
+	re := regexp.MustCompile(`projectMsgOf\(projectenums\.([A-Za-z0-9_]+),`)
 	matches := re.FindAllStringSubmatch(string(src), -1)
 	if len(matches) == 0 {
 		t.Fatal("没有从源码里提取到任何受控文案出口：判据的空转形态（正则或调用形态变了）")

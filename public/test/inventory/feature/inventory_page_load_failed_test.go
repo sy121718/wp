@@ -1,6 +1,6 @@
 // Package feature 库存 / 采购后台页「工程列表装载失败」的降级渲染（本批收口的三处失败出口之一）。
 //
-// 这两页原先在 `h.projects.List` 失败时 `c.String(500, shell.MsgInternalError)`：
+// 这两页原先在 `h.projects.List` 失败时 `c.String(500, adminui.MsgInternalError)`：
 // 浏览器里没有页面，只有一块写着 `MsgInternalError` 的纯文本（归口 key 未经翻译直出），
 // 侧栏 / 页头 / 筛选栏整块消失 —— 运营既改不了也退不回去。
 //

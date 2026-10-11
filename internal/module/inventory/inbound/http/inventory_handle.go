@@ -26,8 +26,8 @@ import (
 // 缺失时退回数值 user_id，两者都没有则空串（留痕字段允许为空）。
 // 本函数不参与任何鉴权判断，只做展示用的文本化。
 //
-// 不走 shell.CurrentUserIDText：这里要的是「先登录名、后 id 文本」的组合语义，
-// 且保留非 int64 原始值分支（脚本 / 测试路径可能写入别的形状），shell 入口只认 int64。
+// 不走 builtin.CurrentUserIDText：这里要的是「先登录名、后 id 文本」的组合语义，
+// 且保留非 int64 原始值分支（脚本 / 测试路径可能写入别的形状），builtin.CurrentUserID 入口只认 int64。
 func operatorFromContext(c *gin.Context) (id string) {
 	if name := strings.TrimSpace(builtin.GetUsername(c)); name != "" {
 		return name

@@ -4,8 +4,9 @@ package pagehttp
 //
 // 守四件事，每一件错了都**不会报错也不会记日志**，只会在运营眼前少一句话或显示假话：
 //
-//  1. 判定表（pageErrorStatus）判成业务错误的 sentinel，页面出口（pageFacingText）必须认得出
-//     —— 漏一个的症状是「用户能自己修的问题被说成『系统内部错误』」；
+//  1. 判定表（pageErrorStatus）判成业务错误的 sentinel，**共享出口**（adminui.PageErrorFact，
+//     判据是 pkg/response.IsBusinessError）必须认得出 —— 漏一个的症状是「用户能自己修的问题
+//     被说成『系统内部错误』」，而那一句既不报错也不记日志；
 //  2. 写侧回执（批量结论文案与自造提示）取词必须非空；
 //  3. 缺参写出口真的渲染**整页提示**（HTTP 200 + data-jump-state="err" + 受控文案），
 //     而不是 c.String 纯文本页、也不再是 303 + ?err=；
@@ -27,11 +28,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/render"
 
+	"go_wp/internal/adminui"
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 )
 
 // pageErrCtx 构造一个测试上下文（无 i18n 词条时取词一律回落 fallback，
@@ -54,12 +55,16 @@ func pageQueryCtx(t *testing.T, key, raw string) *gin.Context {
 	return c
 }
 
-// TestPageFacingTextCoversBusinessSentinels 判定表与页面出口的双向对账。
+// TestBusinessSentinelsAreRecognisable 判定表与错误出口的双向对账。
 //
-// 方向：pageErrorStatus 判成 **非 500** 的每个 sentinel，pageFacingText 都要认（ok=true）
-// 且给非空文案 —— 缺了就是「业务错误的文案被吞成归口」，用户看到「系统内部错误，
-// 请稍后重试」，而实际原因是自己填错了字段。
-func TestPageFacingTextCoversBusinessSentinels(t *testing.T) {
+// 方向：pageErrorStatus 判成 **非 500** 的每个 sentinel，共享出口都要判成业务错误
+// （Business=true）且给非空 key —— 缺了就是「业务错误的文案被吞成归口」，用户看到
+// 「系统内部错误，请稍后重试」，而实际原因是自己填错了字段。
+//
+// 判据已从模块白名单换成 pkg/response.IsBusinessError（形态判定），所以这一条同时钉住
+// 「page 的 sentinel 取值确实是 `Err*` 常量名 / `a.b.c` key 形态」—— 谁把某个 sentinel
+// 改成中文原文，这里立刻变红，而不是等到英文界面上出现中文。
+func TestBusinessSentinelsAreRecognisable(t *testing.T) {
 	sentinels := []error{
 		pageservice.ErrInvalidParam,
 		pageservice.ErrInvalidKind,
@@ -87,9 +92,12 @@ func TestPageFacingTextCoversBusinessSentinels(t *testing.T) {
 			t.Errorf("sentinel %v 被判定成 500：页面出口会把它吞成归口文案（用户看到「请稍后重试」，实际是自己填错了）", err)
 			continue
 		}
-		text, ok := pageFacingText(c, err)
-		if !ok || strings.TrimSpace(text) == "" {
-			t.Errorf("sentinel %v 的业务文案没有被 pageFacingText 认出来（页面上会静默变成归口文案）", err)
+		fact := adminui.PageErrorFactQuiet(c, pageErrScene, err)
+		if !fact.Business || strings.TrimSpace(fact.Key) == "" {
+			t.Errorf("sentinel %v 没被判定成业务错误（取值必须是 Err* 常量名形态，页面上会静默变成归口文案）", err)
+		}
+		if strings.TrimSpace(adminui.ErrorFactText(c, fact)) == "" {
+			t.Errorf("sentinel %v 取词为空串（页面上会是一条空话）", err)
 		}
 	}
 }
@@ -101,23 +109,23 @@ func TestPageFacingTextCoversBusinessSentinels(t *testing.T) {
 func TestBulkDeleteResultSentences(t *testing.T) {
 	c := pageErrCtx(t, "")
 	for _, tc := range []struct{ deleted, skipped int }{{0, 0}, {3, 0}, {0, 3}, {2, 3}} {
-		msg := pagesBulkDeleteResult(c, tc.deleted, tc.skipped)
+		msg := pageMsgText(c, outcomeMsg(pageenums.PagesBulkDeleteOutcome(tc.deleted, tc.skipped)))
 		if strings.TrimSpace(msg) == "" {
 			t.Errorf("批量结论为空串（deleted=%d skipped=%d）", tc.deleted, tc.skipped)
 		}
 	}
-	for _, notice := range []pageBulkText{
+	for _, notice := range []pageMsg{
 		pagesLocalNoticeMissingID,
 		pagesLocalNoticeMissingPageID,
 		pagesLocalNoticeProjectNameRequired,
 		pagesLocalNoticePathRequired,
 	} {
-		if strings.TrimSpace(pageBulkTextOf(c, notice)) == "" {
+		if strings.TrimSpace(pageMsgText(c, notice)) == "" {
 			t.Errorf("自造回执 %+v 取词为空串（缺词条且 fallback 也为空）", notice)
 		}
 	}
 	// 归口文案也要能取到：装载失败降级渲染时它要能渲染出来。
-	if strings.TrimSpace(shell.PageInternalText(c)) == "" {
+	if strings.TrimSpace(adminui.PageInternalText(c)) == "" {
 		t.Error("归口文案取词为空串：装载失败降级渲染的提示会是一条空话")
 	}
 }
@@ -160,19 +168,19 @@ func TestCreateFormFailuresJumpWithNotice(t *testing.T) {
 			name: "新建工程缺名称",
 			path: "/admin/projects/create",
 			form: url.Values{"name": {"   "}},
-			want: pageBulkTextOf(c, pagesLocalNoticeProjectNameRequired),
+			want: pageMsgText(c, pagesLocalNoticeProjectNameRequired),
 		},
 		{
 			name: "新建页面缺工程",
 			path: "/admin/pages/create",
 			form: url.Values{"projectId": {""}, "draftPath": {"/about"}},
-			want: pageFacingKey(c, pageenums.ErrProjectRequired),
+			want: pageMsgText(c, pageMsg{Key: pageenums.ErrProjectRequired, Fallback: pageenums.ErrProjectRequired}),
 		},
 		{
 			name: "新建页面缺路径",
 			path: "/admin/pages/create",
 			form: url.Values{"projectId": {"p1"}, "draftPath": {"  "}},
-			want: pageBulkTextOf(c, pagesLocalNoticePathRequired),
+			want: pageMsgText(c, pagesLocalNoticePathRequired),
 		},
 	}
 	for _, tc := range cases {
@@ -197,7 +205,7 @@ func TestCreateFormFailuresJumpWithNotice(t *testing.T) {
 	}
 
 	// 两条必填分开报：合成句会让「没选工程」与「没填路径」看起来是同一个问题。
-	if pageBulkTextOf(c, pagesLocalNoticeProjectNameRequired) == pageBulkTextOf(c, pagesLocalNoticePathRequired) {
+	if pageMsgText(c, pagesLocalNoticeProjectNameRequired) == pageMsgText(c, pagesLocalNoticePathRequired) {
 		t.Fatal("缺工程名称与缺页面路径应是两条不同的回执（合成一句等于什么都没说）")
 	}
 }
@@ -208,11 +216,10 @@ func TestCreateFormFailuresJumpWithNotice(t *testing.T) {
 // 判据算错的方向是**危险的那个**：把装载失败渲染成「还没有站点工程」，会让用户
 // 去建一个本来就存在的工程。
 func TestSiteSlotPageDataDistinguishesLoadFailure(t *testing.T) {
-	c := pageErrCtx(t, "")
-	internal := shell.PageInternalText(c)
+	internal := adminui.InternalMsg()
 
 	t.Run("真的没有工程", func(t *testing.T) {
-		data := siteSlotPageData(nil, "", nil, nil, "")
+		data := siteSlotPageData(nil, "", nil, nil, pageMsg{})
 		if data["NoProjectEmpty"] != true {
 			t.Fatalf("工程列表为空且本次没有出错 → 应显示「还没有站点工程」，实际 NoProjectEmpty=%v", data["NoProjectEmpty"])
 		}
@@ -223,8 +230,9 @@ func TestSiteSlotPageDataDistinguishesLoadFailure(t *testing.T) {
 		if data["NoProjectEmpty"] != false {
 			t.Fatal("装载失败时工程列表同样是空的，但绝不能显示「还没有站点工程」（用户明明有工程）")
 		}
-		if data["Err"] != internal {
-			t.Fatalf("装载失败应把归口文案放进 Err，实际 %v", data["Err"])
+		got, ok := data["Err"].(pageMsg)
+		if !ok || got.Key != internal.Key || got.Fallback != internal.Fallback {
+			t.Fatalf("装载失败应把归口文案事实放进 Err，实际 %v", data["Err"])
 		}
 	})
 }
@@ -251,7 +259,7 @@ func TestSiteSlotsPageDegradesOnProjectLoadFailure(t *testing.T) {
 	if !strings.Contains(body, "</html>") {
 		t.Fatalf("页面没有渲染完（缺 </html>）：模板在某一行中断了，body=%s", body)
 	}
-	if !strings.Contains(body, shell.PageInternalText(pageErrCtx(t, ""))) {
+	if !strings.Contains(body, adminui.PageInternalText(pageErrCtx(t, ""))) {
 		t.Fatalf("页面上没有归口提示：用户看不出「是这一页没读出来」")
 	}
 	for _, tok := range []string{"SQLSTATE", "relation \"", "does not exist"} {
@@ -306,7 +314,7 @@ func TestPagesListReceiptNoticeHidesWhenObservabilityUnknown(t *testing.T) {
 
 	var current *pagesPageData
 	router.GET("/admin/pages", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "admin/page/pages", shell.Prepare(c, current.templateMap()))
+		c.HTML(http.StatusOK, "admin/page/pages", adminui.Prepare(c, current.templateMap()))
 	})
 	render := func(known, alert bool) string {
 		t.Helper()
@@ -359,7 +367,7 @@ func TestPagesListDegradesOnProjectLoadFailure(t *testing.T) {
 	if !strings.Contains(body, "</html>") {
 		t.Fatalf("页面没有渲染完（缺 </html>）：模板在某一行中断了，body=%s", body)
 	}
-	if !strings.Contains(body, shell.PageInternalText(pageErrCtx(t, ""))) {
+	if !strings.Contains(body, adminui.PageInternalText(pageErrCtx(t, ""))) {
 		t.Fatalf("页面上没有归口提示：用户看不出「是这一页没读出来」")
 	}
 	for _, tok := range []string{"SQLSTATE", "relation \"", "does not exist"} {

@@ -172,7 +172,7 @@
                 <legend>{{ .["t"]("admin.products.warehouses.label", "建在哪些仓（可多选，不勾即默认仓）") }}</legend>
                 {{range _, w := cfWarehouses}}
                 <label class="var-value">
-                    <input type="checkbox" name="warehouseIds" value="{{w.ID}}" data-warehouse-check data-code="{{w.Code}}" data-label="{{w.Label}}" {{if w.IsDefault}}data-default="1"{{end}}{{if cfFill}}{{range _, wid := .FormEchoMulti.warehouseIds}}{{if wid == w.ID}} checked{{end}}{{end}}{{end}}> {{w.Label}}
+                    <input type="checkbox" name="warehouseIds" value="{{w.ID}}" data-warehouse-check data-code="{{w.Code}}" data-label="{{w.Label}}{{if w.IsDefault}} {{ .["t"](w.DefaultSuffixKey, w.DefaultSuffixFallback) }}{{end}}" {{if w.IsDefault}}data-default="1"{{end}}{{if cfFill}}{{range _, wid := .FormEchoMulti.warehouseIds}}{{if wid == w.ID}} checked{{end}}{{end}}{{end}}> {{w.Label}}{{if w.IsDefault}} {{ .["t"](w.DefaultSuffixKey, w.DefaultSuffixFallback) }}{{end}}
                 </label>
                 {{end}}
                 <p class="hint">{{ .["t"]("admin.products.warehouses.hint", "按本表顺序第一个勾中的仓是认领仓（决定主体 SKU 的仓码前缀）；仓库里已有同编码的行会复用、不新建。") }}</p>

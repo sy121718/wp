@@ -106,8 +106,13 @@
         {* 空数据也渲染 <table>/<thead>：先让用户看见这个列表有哪些列，才谈得上判断「是不是筛错了」。
            空态整行落在 tbody 里（colspan = 11：勾选 / 券码 / 名称 / 折扣 / 门槛 / 已用上限 /
            每人限次 / 时间窗 / 状态 / 备注 / 操作）。 *}
-        <form method="post" action="/admin/coupons/bulk-toggle?{{listQuery}}">
-            {{yield csrfField()}}
+        {* 两个批量动作都迁到了「前端直调 JSON」（static/js/ui/json_write.js）：目标状态 / projectId
+           是启停要带、删除不要带的额外字段，所以端点声明落在**按钮**上（attrFrom：按钮优先、
+           表单兜底），表单上刻意不声明 data-write-api —— 声明了它会被继承成一个 fetch。
+           没有 action 是刻意的：禁用 JS 时这两个按钮是 hidden 的（下方 noscript 说明原因），
+           不会退化成「GET 当前页」这种看起来像成功的空动作。
+           也不需要 csrf 隐藏域：写请求走 X-CSRF-Token 头（见 <meta name="csrf-token">）。 *}
+        <form method="post">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
             {{if len(coupons) > 0}}
@@ -116,10 +121,42 @@
                     <option value="1">{{tr("admin.coupons.form.enabled", "启用")}}</option>
                     <option value="0">{{tr("admin.coupons.form.disabled", "停用")}}</option>
                 </select>
-                {{yield bulkBtn(label=tr("admin.coupons.bulk.toggle", "批量启停"), cls="btn btn-sm btn-primary")}}
-                {{yield bulkBtn(label=tr("admin.coupons.bulk.delete", "批量删除"), confirm=tr("admin.coupons.bulkDeleteConfirm", "删除选中的优惠码？有核销记录的会被拒绝（请改用停用），其余照常删除。"), danger=true, formaction="/admin/coupons/bulk-delete")}}
+                {* Endpoints and payload shapes are declared on the **buttons** themselves:
+                   `status` must be listed in data-write-number (a <select> value is always a string,
+                   the server accepts only the literal 0/1, so an unlisted status is sent as "0"/"1"
+                   and the whole batch is rejected with 400); `projectId` must NOT be listed
+                   (it is a string; coercing it to a number breaks binding).
+                   This note stays outside the button tag: a `{* *}` comment inside the tag breaks
+                   parsing by tag (the static check and the chain test both read attributes per <button …>). *}
+                <button type="submit" class="btn btn-sm btn-primary" data-requires-js hidden
+                        data-write-api="/api/order/coupon/update" data-write-mode="bulk" data-write-outcome="update"
+                        data-write-extra="status,projectId"
+                        data-write-number="status"
+                        data-msg-none-selected="{{tr("admin.coupons.bulk.noneSelected", "没有勾选任何优惠码，列表未改动。")}}"
+                        data-msg-all-updated="{{tr("admin.coupons.bulkToggle.allUpdated", "已更新 {count} 个优惠码。")}}"
+                        data-msg-all-skipped="{{tr("admin.coupons.bulkToggle.allSkipped", "{count} 个优惠码都未能更新（不存在或不属于当前站点）。")}}"
+                        data-msg-partial="{{tr("admin.coupons.bulkToggle.partial", "已更新 {updated} 个优惠码，{skipped} 个未能更新（不存在或不属于当前站点）。")}}"
+                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-refresh="{{tr("admin.coupons.bulk.refresh", "刷新列表")}}"
+                        data-confirm="{{tr("admin.coupons.bulkToggleConfirm", "把选中的优惠码改成上面选的状态？")}}">{{tr("admin.coupons.bulk.toggle", "批量启停")}}</button>
+                <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                        data-write-api="/api/order/coupon/delete" data-write-mode="bulk" data-write-outcome="delete"
+                        data-msg-none-selected="{{tr("admin.coupons.bulk.noneSelected", "没有勾选任何优惠码，列表未改动。")}}"
+                        data-msg-all-deleted="{{tr("admin.coupons.bulkDelete.allDeleted", "已删除 {count} 个优惠码。")}}"
+                        data-msg-all-skipped="{{tr("admin.coupons.bulkDelete.allSkipped", "{count} 个优惠码都未能删除（不存在或已有核销记录）。")}}"
+                        data-msg-partial="{{tr("admin.coupons.bulkDelete.partial", "已删除 {deleted} 个优惠码，{skipped} 个未能删除（不存在或已有核销记录）。")}}"
+                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-refresh="{{tr("admin.coupons.bulk.refresh", "刷新列表")}}"
+                        data-confirm="{{tr("admin.coupons.bulkDeleteConfirm", "删除选中的优惠码？有核销记录的会被拒绝（请改用停用），其余照常删除。")}}"
+                        data-confirm-danger>{{tr("admin.coupons.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}
+            {* 批量结果区（两个动作共用）：全成功 / 部分成功 / 全跳过的摘要 + **逐条原因**写在这儿。
+               刻意不自动刷新 —— 自动刷新会让「谁失败、为什么」一闪而过看不完；刷新入口由基座追加。 *}
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <noscript><p class="form-hint">{{tr("admin.coupons.write.noJs", "本页的新建、修改、删除与批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
             <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{tr("admin.coupons.list.heading", "优惠码")}}">
             <table class="data-table data-table-wide coupons-page-table">
             <thead>
@@ -239,10 +276,19 @@
 
     {* 行内写操作表单必须放在表格外：HTML 不允许 form 嵌套，
        按钮用 form="<id>" 关联到这里的隐藏表单（.hidden-form 见 theme.css）。
-       全部可改字段都要回送（整体更新语义），时间窗用 dateTimeLocal 输出控件认的写法。 *}
+       全部可改字段都要回送（整体更新语义），时间窗用 dateTimeLocal 输出控件认的写法。
+       两个动作都走前端直调 JSON，形状按端点分：停用 / 启用 → /api/order/coupon/update 的单档
+       （= 完整 CouponSaveReq），所以用 create 模式发「表单全部具名字段」（single 模式只发 {id}，
+       会把门槛、时间窗悄悄写成零值）；删除 → /api/order/coupon/delete 的单档（只发 {id}）。
+       数值字段必须 data-write-number 点名：JSON 里要是数字，字符串会被绑定拒绝。
+       结果区放在表单**外**的 host 里：隐藏表单是 display:none，写进去等于写进看不见的地方。 *}
+    <div data-write-host>
+    <p class="form-hint" data-write-status role="status" hidden></p>
     {{range _, cp := coupons}}
-    <form id="coupon-toggle-{{cp.ID}}" class="hidden-form" method="post" action="/admin/coupons/update?{{listQuery}}">
-        {{yield csrfField()}}
+    <form id="coupon-toggle-{{cp.ID}}" class="hidden-form"
+          data-write-api="/api/order/coupon/update" data-write-mode="create"
+          data-write-number="id,discountValue,minSubtotal,maxUses,perUserLimit,status"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
         <input type="hidden" name="id" value="{{cp.ID}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="name" value="{{cp.Name}}">
@@ -256,12 +302,14 @@
         <input type="hidden" name="remark" value="{{cp.Remark}}">
         <input type="hidden" name="status" value="{{if cp.Status == 1}}0{{else}}1{{end}}">
     </form>
-    <form id="coupon-del-{{cp.ID}}" class="hidden-form" method="post" action="/admin/coupons/delete?{{listQuery}}"
+    <form id="coupon-del-{{cp.ID}}" class="hidden-form"
+          data-write-api="/api/order/coupon/delete" data-write-mode="single" data-write-number="id"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
           data-confirm="{{tr("admin.coupons.list.deleteConfirm", "删除该优惠码？有核销记录的券会被拒绝，请改用停用。")}}" data-confirm-danger>
-        {{yield csrfField()}}
         <input type="hidden" name="id" value="{{cp.ID}}">
     </form>
     {{end}}
+    </div>
 
     {{if canCreate}}
     {* 新建表单本体在 coupon_create_form.html（注释与分档契约见该片段头）。 *}

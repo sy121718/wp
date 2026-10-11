@@ -7,6 +7,8 @@
 {* 文案走 t(key, 中文兜底)：字段标签与分组标题来自服务端字段表（数据驱动），模板只抽固定文案。 *}
 {{extends "../layout.html"}}
 {{block body()}}
+{{tr := .["t"]}}
+{{tf := .["tf"]}}
 <div class="stack theme-settings-page">
     <header class="page-head">
         <div class="page-head-main">
@@ -30,10 +32,11 @@
     </header>
 
     {* 保存失败提示（**就地重渲**，200，同一响应里带回错误槽 + 全部已填值 + 出错字段标红）。
+       错误槽收**事实**（key + 中文兜底 + `%s` 参数），取词在本模板做（tf）—— 控制器不提前翻。
        「部分成功」（整站刷新失败）不再回带本页 —— 走 shell.RenderJump 渲染整页提示（见 project_jump.go）。
        isset 包裹是硬要求：本模板会被不带该键的渲染路径复用（如模板结构测试）。 *}
-    {{if isset(.Err)}}{{if .Err}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{if isset(.Err)}}{{if .Err.Key != "" || .Err.Fallback != ""}}
+    <p class="badge badge-warning" role="alert">{{tf(.Err.Key, .Err.Fallback, .Err.Args)}}</p>
     {{end}}{{end}}
 
     <section class="card card-body">
@@ -48,6 +51,8 @@
 
             {* 字段由服务端字段表驱动（与工作台全局设置面板同源）：颜色走文本框可留空，固定档位走下拉，
                字体走可填可选的 datalist —— 用户不用猜格式。
+               分组标题 / 字段 label / 选项 label 收的是**事实**（TitleKey+TitleFallback 这类两字段），
+               取词在本模板做（tr）—— 控制器只交 key + 中文兜底，语言由当前请求决定。
                颜色**不把 input type=color 当表单字段**：它没有「未设置」状态，空值会被补成 #000000，
                保存一次就把「跟随内置默认」写成黑色；文本框留空才真的等于跟随默认。
                取色入口由基座控件补上（js/ui/colorfield.js，data-color-field）：文本框旁一个色块，
@@ -59,7 +64,7 @@
                组里全是可编辑字段，所以默认全开；折叠是给「我不想看这一组」用的，不是省版面用的。 *}
             <details class="section-fold" open>
                 <summary>
-                    <span class="fold-title">{{g.Title}}</span>
+                    <span class="fold-title">{{tr(g.TitleKey, g.TitleFallback)}}</span>
                     <span class="fold-note">{{len(g.Fields)}} {{ .["t"]("admin.theme_settings.group_items", "项") }}</span>
                 </summary>
                 <div class="fold-body">
@@ -68,28 +73,29 @@
                 {* 字段结构对齐全站主流：.form-field + `<label class="form-label" for>` + 控件，
                    不再用「label 包裹控件」的写法。包裹式能跑（读屏靠包裹关系），但 49 个 label
                    一个类都没有、也没有 for/id：样式与其它页漂移，脚本也没法定位到控件。
-                   f.Error 是保存失败后的**字段级**错误（handler 按出错值定位到字段）：
+                   f.Invalid 是保存失败后的**字段级**错误态（handler 按出错值定位到字段）：
                    控件上给 aria-invalid（基座 ui.css 用它画红框），下方给一行 .form-error 红字 ——
-                   用户不必在 52 个字段里猜哪里填错了。
+                   用户不必在 52 个字段里猜哪里填错了。红字收的是**事实**（ErrorKey/ErrorFallback），
+                   取词在本模板做。
                    两个键都用 isset 包裹：直接渲染本模板的单测不带它们，缺键会让整页从这一行起断掉。 *}
                 <div class="form-field">
                     {{if f.Kind == "select"}}
-                    <label class="form-label" for="tsf-{{f.Name}}">{{f.Label}}</label>
-                    <select id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-select"{{if isset(f.Error)}}{{if f.Error}} aria-invalid="true"{{end}}{{end}}>
-                        {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{o.Label}}</option>{{end}}
+                    <label class="form-label" for="tsf-{{f.Name}}">{{tr(f.LabelKey, f.LabelFallback)}}</label>
+                    <select id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-select"{{if isset(f.Invalid)}}{{if f.Invalid}} aria-invalid="true"{{end}}{{end}}>
+                        {{range _, o := f.Options}}<option value="{{o.Value}}"{{if o.Selected}} selected{{end}}>{{tr(o.LabelKey, o.LabelFallback)}}</option>{{end}}
                     </select>
                     {{else if f.Kind == "datalist"}}
-                    <label class="form-label" for="tsf-{{f.Name}}">{{f.Label}}</label>
-                    <input type="text" id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-input" list="theme-dl-{{f.Name}}" value="{{f.Value}}" spellcheck="false"{{if isset(f.Error)}}{{if f.Error}} aria-invalid="true"{{end}}{{end}}>
-                    <datalist id="theme-dl-{{f.Name}}">{{range _, o := f.Options}}<option value="{{o.Value}}">{{o.Label}}</option>{{end}}</datalist>
+                    <label class="form-label" for="tsf-{{f.Name}}">{{tr(f.LabelKey, f.LabelFallback)}}</label>
+                    <input type="text" id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-input" list="theme-dl-{{f.Name}}" value="{{f.Value}}" spellcheck="false"{{if isset(f.Invalid)}}{{if f.Invalid}} aria-invalid="true"{{end}}{{end}}>
+                    <datalist id="theme-dl-{{f.Name}}">{{range _, o := f.Options}}<option value="{{o.Value}}">{{tr(o.LabelKey, o.LabelFallback)}}</option>{{end}}</datalist>
                     {{else if f.Kind == "color"}}
-                    <label class="form-label" for="tsf-{{f.Name}}">{{f.Label}}</label>
-                    <input type="text" id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-input" data-color-field value="{{f.Value}}" placeholder="{{ .["t"]("admin.theme_settings.color_placeholder", "如 #3d444f；留空 = 内置默认") }}" spellcheck="false"{{if isset(f.Error)}}{{if f.Error}} aria-invalid="true"{{end}}{{end}}>
+                    <label class="form-label" for="tsf-{{f.Name}}">{{tr(f.LabelKey, f.LabelFallback)}}</label>
+                    <input type="text" id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-input" data-color-field value="{{f.Value}}" placeholder="{{ .["t"]("admin.theme_settings.color_placeholder", "如 #3d444f；留空 = 内置默认") }}" spellcheck="false"{{if isset(f.Invalid)}}{{if f.Invalid}} aria-invalid="true"{{end}}{{end}}>
                     {{else}}
-                    <label class="form-label" for="tsf-{{f.Name}}">{{f.Label}}</label>
-                    <input type="text" id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-input" value="{{f.Value}}"{{if isset(f.Error)}}{{if f.Error}} aria-invalid="true"{{end}}{{end}}>
+                    <label class="form-label" for="tsf-{{f.Name}}">{{tr(f.LabelKey, f.LabelFallback)}}</label>
+                    <input type="text" id="tsf-{{f.Name}}" name="{{f.Name}}" class="form-input" value="{{f.Value}}"{{if isset(f.Invalid)}}{{if f.Invalid}} aria-invalid="true"{{end}}{{end}}>
                     {{end}}
-                    {{if isset(f.Error)}}{{if f.Error}}<p class="form-error" role="alert">{{f.Error}}</p>{{end}}{{end}}
+                    {{if isset(f.Invalid)}}{{if f.Invalid}}<p class="form-error" role="alert">{{tr(f.ErrorKey, f.ErrorFallback)}}</p>{{end}}{{end}}
                 </div>
                 {{end}}
                 </div>
@@ -109,7 +115,7 @@
                     <label class="form-label" for="tsf-headerBlockId">{{ .["t"]("admin.theme_settings.header_block", "页眉块") }}</label>
                     <select id="tsf-headerBlockId" name="headerBlockId" class="form-select">
                         {{range _, b := .HeaderBlocks}}
-                        <option value="{{b.ID}}" {{if b.ID == .HeaderBlock}}selected{{end}}>{{b.Name}}</option>
+                        <option value="{{b.ID}}" {{if b.ID == .HeaderBlock}}selected{{end}}>{{tr(b.NameKey, b.NameFallback)}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -117,7 +123,7 @@
                     <label class="form-label" for="tsf-footerBlockId">{{ .["t"]("admin.theme_settings.footer_block", "页脚块") }}</label>
                     <select id="tsf-footerBlockId" name="footerBlockId" class="form-select">
                         {{range _, b := .FooterBlocks}}
-                        <option value="{{b.ID}}" {{if b.ID == .FooterBlock}}selected{{end}}>{{b.Name}}</option>
+                        <option value="{{b.ID}}" {{if b.ID == .FooterBlock}}selected{{end}}>{{tr(b.NameKey, b.NameFallback)}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -128,7 +134,7 @@
                     <label class="form-label" for="tsf-slots-announcement">{{ .["t"]("admin.theme_settings.announcement_block", "公告条块") }}</label>
                     <select id="tsf-slots-announcement" name="slots.announcement" class="form-select">
                         {{range _, b := .AnnouncementBlocks}}
-                        <option value="{{b.ID}}" {{if b.ID == .AnnouncementBlock}}selected{{end}}>{{b.Name}}</option>
+                        <option value="{{b.ID}}" {{if b.ID == .AnnouncementBlock}}selected{{end}}>{{tr(b.NameKey, b.NameFallback)}}</option>
                         {{end}}
                     </select>
                 </div>
@@ -149,13 +155,14 @@
                 <div class="theme-color-grid">
                     {* 结构模板与块是同一槽位的两条通道：构建期**模板优先**，模板未绑定或解析失败才回退块。
                        两者都留着不是冗余 —— 选「不绑定」就能回到块绑定，不必重建一套块。
-                       候选里带「当前生效」标注：多套并存时最要紧的就是看出哪套真的在生效。 *}
+                       候选里带「当前生效」标注：多套并存时最要紧的就是看出哪套真的在生效。
+                       后缀是**事实**（SuffixKey/SuffixFallback），在本模板拼在模板名之后并取词。 *}
                     <div class="form-field">
                         <label class="form-label" for="tsf-headerTemplateId">{{ .["t"]("admin.theme_settings.header_template", "页眉模板") }}</label>
                         <select id="tsf-headerTemplateId" name="headerTemplateId" class="form-select">
                             <option value="">{{ .["t"]("admin.theme_settings.structure_none", "（不绑定，用上面的页眉块）") }}</option>
                             {{if isset(.HeaderTemplateOptions)}}{{range _, o := .HeaderTemplateOptions}}
-                            <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                            <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Name}}{{tr(o.SuffixKey, o.SuffixFallback)}}</option>
                             {{end}}{{end}}
                         </select>
                     </div>
@@ -164,7 +171,7 @@
                         <select id="tsf-footerTemplateId" name="footerTemplateId" class="form-select">
                             <option value="">{{ .["t"]("admin.theme_settings.structure_none_footer", "（不绑定，用上面的页脚块）") }}</option>
                             {{if isset(.FooterTemplateOptions)}}{{range _, o := .FooterTemplateOptions}}
-                            <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+                            <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{o.Name}}{{tr(o.SuffixKey, o.SuffixFallback)}}</option>
                             {{end}}{{end}}
                         </select>
                     </div>

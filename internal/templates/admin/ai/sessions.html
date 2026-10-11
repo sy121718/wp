@@ -5,7 +5,8 @@
    两块内容由服务端一次渲染完（不跳转、不做 htmx 二次请求）：切标签不该重新走一遍请求；
    模型标签直接用配置页那套供应商卡片（provider_card.html + cardData），不存在第二份形状。
 
-   数据见 ai/inbound/http/ai_session_page.go 的 SessionsPage：
+   数据见 ai/inbound/http/ai_page.go:1235 的 SessionPageHandle.SessionsPage
+   （该 handler 早先从 ai_session_page.go 并入 ai_page.go，这里跟着更正）：
      Rows / Total / Page / PageSize / TotalPages / HasPrev / HasNext / PrevURL / NextURL（列表与分页）
      Filter（aidto.SessionQuery，筛选项回填）、FilterOptions（三个下拉的候选）
      Usage（指标卡）、Trend（aidto.SessionTrend：From / To / PeakText / Series，折线图）
@@ -41,6 +42,10 @@
 {{f := .Filter}}
 {{u := .Usage}}
 {{isModels := .IsModels}}
+{* 主数据失败事实（SessionsPage 的失败出口给的）：loadFailed 为真则整块标签区换成失败说明 ——
+   列表没读出来时，拿零值渲染指标卡与空列表，与「真的是 0 用量 / 真的没有会话」长得一样。 *}
+{{loadFailed := isset(.LoadFailed) && .LoadFailed}}
+{{loadError := .["LoadError"]}}
 {* 标签状态用模板内变量而不是内联条件：`{{if c}}...{{end}}` 嵌在属性中间是既定写法，
    而属性值里的比较表达式求值时机不好把握。 *}
 {{selSessions := "true"}}
@@ -66,6 +71,15 @@
         </div>
     </header>
 
+    {{if loadFailed}}
+    {* 会话清单没读出来：整块标签区换成失败说明，页面壳与侧栏照旧。
+       文案是归口后的当前语言译文（Go 侧 aiErrText），驱动原文只进日志。 *}
+    <section class="card list-card" role="alert">
+        <p class="badge badge-danger">{{loadError}}</p>
+        <p class="page-sub">{{tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来")}}</p>
+        <p class="hint">{{tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。")}}</p>
+    </section>
+    {{else}}
     <div class="tabs ai-tabs" data-tabs>
         <div class="tab-list" role="tablist">
             {* 模型在前：这个入口叫「大模型管理」，第一屏就该是模型配置（默认标签也在这里）。 *}
@@ -462,6 +476,7 @@
         {{end}}
         {{end}}
     </div>
+    {{end}}
 </div>
 
 {{if canManage}}

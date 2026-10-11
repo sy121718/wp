@@ -113,4 +113,6 @@ func SetupCustomerAdminRoutes(rg *permission.RouteGroup, svc usercontract.Custom
 	g.GET("/get", permission.UserCustomerDetail, h.GetCustomer)
 	g.POST("/status", permission.UserCustomerStatus, h.SetCustomerStatus)
 	g.POST("/unlock", permission.UserCustomerUnlock, h.UnlockCustomer)
+	g.POST("/bulk-status", permission.UserCustomerBulkStatus, h.BulkCustomerStatus)
+	g.POST("/bulk-unlock", permission.UserCustomerBulkUnlock, h.BulkCustomerUnlock)
 }

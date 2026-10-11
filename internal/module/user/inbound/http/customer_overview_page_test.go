@@ -15,7 +15,6 @@ import (
 	"time"
 
 	orderdto "go_wp/internal/module/order/dto"
-	"go_wp/internal/templates"
 )
 
 // fakeGrowthReader 记录收到的请求（含工程与区间），并按预设返回。
@@ -157,9 +156,9 @@ func TestCustomerRangeQueryCarriesExplicitRange(t *testing.T) {
 
 func TestCustomerOverviewPageDataWithoutGrowth(t *testing.T) {
 	data := customerOverviewPageData(
-		templates.TranslateFunc("zh-CN"),
+		customerTestPageTitle,
 		customerOverviewRange{Key: "month", From: "2026-10-01", To: "2026-10-05"},
-		nil, "客户管理能力没有接进来")
+		nil, customerMsg{Key: customerUnavailableLabel.key, Fallback: customerUnavailableLabel.fallback})
 	if data["GrowthReady"] != false {
 		t.Error("没拿到数据时 GrowthReady 必须是 false（模板据此渲染空态而不是一片 0）")
 	}
@@ -172,12 +171,12 @@ func TestCustomerOverviewPageDataWithoutGrowth(t *testing.T) {
 
 func TestCustomerOverviewPageDataCarriesGrowth(t *testing.T) {
 	data := customerOverviewPageData(
-		templates.TranslateFunc("zh-CN"),
+		customerTestPageTitle,
 		customerOverviewRange{Key: "month", From: "2026-10-01", To: "2026-10-05"},
 		&orderdto.CustomerGrowthResp{
 			OrderingCustomers: 8, NewCustomers: 3, ReturningCustomers: 5,
 			Repurchasers: 4, NewRepurchasers: 1, RepurchaseRateLabel: "50.0%",
-		}, "")
+		}, customerMsg{})
 	if data["GrowthReady"] != true {
 		t.Fatal("拿到数据时 GrowthReady 应为 true")
 	}

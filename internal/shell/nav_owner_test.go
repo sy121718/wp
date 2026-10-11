@@ -12,12 +12,15 @@ package shell_test
 //   2. **按段比而不是按字符比**（/admin/mail/campaign 是 /admin/mail/campaigns 的
 //      字符串前缀，按字符比会让 campaigns 页高亮到 campaign）；
 //   3. 取最长（两个菜单都是前缀时，高亮最具体的那个）。
+//
+// task-72 起实现（BuildNav / NavNode / NavGroup）归 internal/adminui —— 本用例留在原处
+// 只改包的引用面：判据、夹具与断言一字未改。
 
 import (
 	"testing"
 
+	"go_wp/internal/adminui"
 	admindto "go_wp/internal/module/admin/dto"
-	"go_wp/internal/shell"
 )
 
 func navTestTree() []admindto.MenuTreeNode {
@@ -40,10 +43,10 @@ func navTestTree() []admindto.MenuTreeNode {
 // activePaths 返回本次渲染里被标记为高亮的路径集合。
 func activePaths(t *testing.T, current string) map[string]bool {
 	t.Helper()
-	groups := shell.BuildNav(navTestTree(), current, func(key, fallback string) string { return fallback })
+	groups := adminui.BuildNav(navTestTree(), current, func(key, fallback string) string { return fallback })
 	got := map[string]bool{}
-	var walk func([]shell.NavNode)
-	walk = func(list []shell.NavNode) {
+	var walk func([]adminui.NavNode)
+	walk = func(list []adminui.NavNode) {
 		for _, n := range list {
 			if n.Active {
 				got[n.Path] = true

@@ -37,7 +37,15 @@ const (
 	// 构建产物详情（GET /api/artifact/detail）
 	ArtifactDetail Perm = "artifact:detail"
 
-	// —— block（6）——
+	// —— block（7）——
+	// 批量删除区块（POST /api/block/bulk-delete）。
+	//
+	// 为什么与 BlockDelete **分开**：sys_permission 每条权限点只有一列 api_path/api_method，
+	// 启动期 permission.SyncToDB 会按路由声明把这两列对齐 —— 同一个 code 挂在两条 API 路径上时
+	// 只能留下一条，另一条路径上的策略随之失效（超管 403、角色静默失权）。
+	// 「同一特权拆两条 code」的代价（角色授权面多一项）远小于「有一条路径必然失权」，
+	// 升级期的授权延续由迁移 594 复制既有 block:delete 主体兜住。
+	BlockBulkDelete Perm = "block:bulk_delete"
 	// 克隆区块（POST /api/block/clone）
 	BlockClone Perm = "block:clone"
 	// 新建区块（POST /api/block/create）
@@ -79,8 +87,8 @@ const (
 	// 评论审核列表（GET /api/comment/list）。评论的后台页 /admin/comments 也以它为可见性依据
 	// （菜单 permission_code 指向它）：看不到这一页的人多半也在审别人的评论。
 	CommentList Perm = "comment:list"
-	// 评论批量通过 / 驳回（POST /api/comment/review）。后台页的批量按钮经
-	// CasbinMiddlewareForPath 复用这一条（真源在此），不再另立一个页面专用权限点。
+	// 评论批量通过 / 驳回（POST /api/comment/review）。后台批量按钮提交 JSON 到此接口，
+	// 直接使用 authorizedAPI 的鉴权链与本权限点。
 	CommentReview Perm = "comment:review"
 
 	// —— content（6）——
@@ -631,11 +639,13 @@ const (
 	// 更新项目（POST /api/project/update）
 	ProjectUpdate Perm = "project:update"
 
-	// —— sysconfig（2）——
+	// —— sysconfig（3）——
 	// 读取系统设置（GET /api/sysconfig/get）
 	SysConfigGet Perm = "sysconfig:get"
 	// 保存系统设置（POST /api/sysconfig/save）
 	SysConfigSave Perm = "sysconfig:save"
+	// 原子保存系统默认值两组配置（POST /api/sysconfig/system/save）。
+	SysConfigSystemSave Perm = "sysconfig:system_save"
 
 	// —— publication（2）——
 	// 待处理发布回执（GET /api/publication/receipts/pending）
@@ -677,7 +687,9 @@ const (
 	// 停用/启用客户账号（POST /api/customer/status）
 	UserCustomerStatus Perm = "user:customer_status"
 	// 解除客户账号锁定（POST /api/customer/unlock）
-	UserCustomerUnlock Perm = "user:customer_unlock"
+	UserCustomerUnlock     Perm = "user:customer_unlock"
+	UserCustomerBulkStatus Perm = "user:customer_bulk_status"
+	UserCustomerBulkUnlock Perm = "user:customer_bulk_unlock"
 
 	// —— webhook（6）——
 	// 投递日志（GET /api/webhook/delivery/list）
@@ -759,12 +771,13 @@ var specs = map[Perm]spec{
 	ArtifactDetail: {module: "artifact", name: "构建产物详情"},
 
 	// —— block ——
-	BlockClone:  {module: "block", name: "克隆区块"},
-	BlockCreate: {module: "block", name: "新建区块"},
-	BlockDelete: {module: "block", name: "删除区块"},
-	BlockDetail: {module: "block", name: "区块详情"},
-	BlockList:   {module: "block", name: "区块列表"},
-	BlockUpdate: {module: "block", name: "更新区块"},
+	BlockBulkDelete: {module: "block", name: "批量删除区块"},
+	BlockClone:      {module: "block", name: "克隆区块"},
+	BlockCreate:     {module: "block", name: "新建区块"},
+	BlockDelete:     {module: "block", name: "删除区块"},
+	BlockDetail:     {module: "block", name: "区块详情"},
+	BlockList:       {module: "block", name: "区块列表"},
+	BlockUpdate:     {module: "block", name: "更新区块"},
 
 	// —— blueprint ——
 	BlueprintCreate:  {module: "blueprint", name: "模板创建"},
@@ -1070,8 +1083,9 @@ var specs = map[Perm]spec{
 	ProjectUpdate:        {module: "project", name: "更新项目"},
 
 	// —— sysconfig ——
-	SysConfigGet:  {module: "sysconfig", name: "读取系统设置"},
-	SysConfigSave: {module: "sysconfig", name: "保存系统设置"},
+	SysConfigGet:        {module: "sysconfig", name: "读取系统设置"},
+	SysConfigSave:       {module: "sysconfig", name: "保存系统设置"},
+	SysConfigSystemSave: {module: "sysconfig", name: "原子保存系统默认设置"},
 	// —— publication ——
 	PublicationReceiptsPending: {module: "publication", name: "待处理发布回执"},
 	PublicationSEOAudit:        {module: "publication", name: "SEO 审计"},
@@ -1091,10 +1105,12 @@ var specs = map[Perm]spec{
 	SEOAudit: {module: "seo", name: "产物 SEO 体检"},
 
 	// —— user ——
-	UserCustomerDetail: {module: "user", name: "查看客户详情"},
-	UserCustomerList:   {module: "user", name: "查看客户列表"},
-	UserCustomerStatus: {module: "user", name: "停用/启用客户账号"},
-	UserCustomerUnlock: {module: "user", name: "解除客户账号锁定"},
+	UserCustomerDetail:     {module: "user", name: "查看客户详情"},
+	UserCustomerList:       {module: "user", name: "查看客户列表"},
+	UserCustomerStatus:     {module: "user", name: "停用/启用客户账号"},
+	UserCustomerUnlock:     {module: "user", name: "解除客户账号锁定"},
+	UserCustomerBulkStatus: {module: "user", name: "批量停用/启用客户账号"},
+	UserCustomerBulkUnlock: {module: "user", name: "批量解除客户账号锁定"},
 
 	// —— webhook ——
 	WebhookDeliveryList:   {module: "webhook", name: "投递日志"},

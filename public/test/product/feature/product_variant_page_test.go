@@ -20,11 +20,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/adminctx"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 )
 
 // grantProductPerms 让测试以「有写权限的用户」身份渲染页面。
@@ -34,12 +34,12 @@ import (
 // 断言会失败在一个与业务无关的原因上。
 func grantProductPerms(engine *gin.Engine) {
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{
+		c.Set(adminctx.PermSetKey, map[string]bool{
 			"product:create": true, "product:update": true,
 			"product:variant_create": true, "product:variant_generate": true,
 			"product:variant_delete": true, "product:delete": true,
 		})
-		c.Set(shell.ButtonsKey, map[string]bool{
+		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"product.create": true, "product.update": true,
 			"product.variant_create": true, "product.variant_generate": true,
 			"product.variant_delete": true, "product.delete": true,

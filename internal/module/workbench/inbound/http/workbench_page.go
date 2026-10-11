@@ -40,6 +40,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/builder"
 	"go_wp/internal/module/analytics/dto"
 	"go_wp/internal/module/contenttemplate/contract"
@@ -54,10 +55,10 @@ import (
 	"go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	"go_wp/pkg/safepath"
 	"go_wp/pkg/utils"
 )
 
@@ -1205,12 +1206,12 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 	nodeID := strings.TrimSpace(c.PostForm("nodeId"))
 	node, err := workbenchservice.FindDocNode(json.RawMessage(c.PostForm("document")), nodeID)
 	if err != nil || node == nil {
-		c.HTML(http.StatusOK, "fragments/inspector_panel", gin.H{
+		// 空态分支同样经 PrepareFragment：片段模板里的取词（workbench.ui.inspector.empty 等）
+		// 靠它注入的 t —— 漏注入时 Jet **静默**输出空串（不是报错、状态码 200、日志干净），
+		// 空面板会变成一句话都没有。两条分支走同一个入口，不各写一份。
+		c.HTML(http.StatusOK, "fragments/inspector_panel", adminui.PrepareFragment(c, gin.H{
 			"NodeID": "",
-			// 空态分支也要给 t：片段模板里的取词（workbench.ui.inspector.empty 等）缺 t 时
-			// Jet 会静默输出空串（不是报错），空面板会变成一句话都没有。
-			"t": templates.TranslateFunc(response.RequestLanguage(c)),
-		})
+		}))
 		return
 	}
 	// tab：content / style（空 = 渲染全部，向后兼容旧调用）。
@@ -1222,16 +1223,17 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 	// 换成 JSON 反而会把一段 JSON 铺进面板）。
 	sections, err := h.svc.InspectorSections(c.Request.Context(), node, tab, projectID, workbenchTrFunc(c))
 	if err != nil {
-		c.String(http.StatusInternalServerError, shell.PageInternalText(c))
+		c.String(http.StatusInternalServerError, adminui.PageInternalText(c))
 		return
 	}
-	c.HTML(http.StatusOK, "fragments/inspector_panel", gin.H{
+	// 取词函数由 adminui.PrepareFragment 注入（片段不经 Prepare 页壳，见该函数注释）：
+	// 模板里的 workbench.ui.inspector.* 由渲染期按请求语言取，控制器不再提前取词。
+	// 注意本片段的**面板正文**仍是 service 拼串产出的 HTML（Sections[].HTML / Title 等），
+	// 那部分的取词留在 service —— 它没有模板槽位可放（见 workbench/service 文件头）。
+	c.HTML(http.StatusOK, "fragments/inspector_panel", adminui.PrepareFragment(c, gin.H{
 		"NodeID": nodeID, "NodeType": node.Type,
 		"Sections": sections,
-		// 片段模板的取词函数（与后台页面同一份 TranslateFunc）：片段不经 shell.Prepare，
-		// 不注入的话新增文案只能写死在模板里，英文界面上会留下中文。
-		"t": templates.TranslateFunc(response.RequestLanguage(c)),
-	})
+	}))
 }
 
 // OutlineTree 渲染结构树片段（过滤规则与前端一致：节点或任一后代命中即保留整条链路）。
@@ -1244,12 +1246,66 @@ func (h *Handle) OutlineTree(c *gin.Context) {
 	}
 	selectedID := strings.TrimSpace(c.PostForm("selectedId"))
 	filter := strings.ToLower(strings.TrimSpace(c.PostForm("filter")))
-	c.HTML(http.StatusOK, "fragments/outline_tree", gin.H{
+	// PrepareFragment：与同目录另一个片段（inspector_panel）走同一个入口，片段自带取词函数
+	// 才有统一的形状。**本片段今天并不消费 t/tf** —— 树 HTML 整块由
+	// workbenchservice.RenderOutlineHTML 拼串产出（Go 拼串，取词在 service 侧经 tr 完成），
+	// 模板只有一句 {{ .HTML | unsafe }}。注入在这里是为了「模板侧新增取词」时不必再想起它。
+	c.HTML(http.StatusOK, "fragments/outline_tree", adminui.PrepareFragment(c, gin.H{
 		"HTML": workbenchservice.RenderOutlineHTML(page.Root, selectedID, filter, workbenchTrFunc(c)),
-	})
+	}))
 }
 
 // workbench_handle.go - 工作台页面与画布（编辑器壳 / 块与模板画布 / 模板预览）。
+
+// renderWorkbenchPageError 工作台「整页打不开」的出口：回**完整外壳**，而不是一行裸文本。
+//
+// 为什么必须完整外壳：调用它的是**四种画布模式**的页面 handler（?id= 页面 / ?block= 全局块 /
+// ?template= 内容模板 / ?instance= 实例），地址栏里都是一个页面 URL —— 回 text/plain 等于把
+// 作者丢在一片空白上，连「返回后台」都没有；
+// 契约见 docs/rules/template-boundary.md「整页 GET 的失败出口：失败也必须是「这一页」」。
+//
+// 状态码保留**事实区分**（400 请求缺参 / 404 目标不存在 / 500 未知内部异常），文案同源：
+// title 与 message 都取自 workbenchShortFallbacks 的白名单短句（未登记的 key 拼不出来），
+// 原文只进日志 —— 与 workbench_err.go 的①白名单②归口文案同一口径。
+//
+// 为什么不复用 workbench/layout：那个外壳用点号取大量编辑器专用键（.jsVer / .document /
+// .schemas / .isBlock / .previewQS …），错误请求下这些值都不存在 —— 拿空值渲染等于把
+// 「页面打不开」换成又一个渲染期 500。错误外壳因此是**独立完整页**（workbench/error.html），
+// 只读本函数给的那几个键。
+//
+// 取词由 i18n.TranslateFunc 按 response.RequestLanguage 生成成品文案。
+//
+// no-store：失败页随后可能变成成功页（补上 id 再进来就是编辑器），缓存住会让浏览器
+// 继续显示旧的失败页 —— 与 page/navigation 的整页 500 同口径。
+func renderWorkbenchPageError(c *gin.Context, status int, key string) {
+	renderWorkbenchPageErrorText(c, status, key, workbenchShortText(c, key))
+}
+
+// renderWorkbenchPageErrorText 与 renderWorkbenchPageError 是同一条出口，区别只在文案来源：
+// 调用方已经把这一句算好了（占位符替换过的、或走 facing 白名单的），这里不再取词。
+//
+// 为什么需要这个变体（两处调用方都不是「key → 短句」能表达的）：
+//   - 模板模式 400：词条里带 {type} 占位符，替换必须在取词**之后**做 —— 译文里 {type}
+//     的位置与中文不同，在代码里拼句会拼出半句外语；
+//   - 实例模式 422：文案走 workbenchFacingText（受控出口，未登记返回空串），
+//     它是「这个实例还不能编辑」的业务状态，不属于 workbenchShortFallbacks 那张短句表。
+//
+// text 为空时回落 workbenchShortText(c, key)：空文案的失败页只剩顶栏与一个返回按钮，
+// 与「页面打不开」这个事实不成比例（未登记的 key 也在这一步被兜住，并由短句表记日志）。
+func renderWorkbenchPageErrorText(c *gin.Context, status int, key, text string) {
+	if strings.TrimSpace(text) == "" {
+		text = workbenchShortText(c, key)
+	}
+	lang := response.RequestLanguage(c)
+	c.Header("Cache-Control", "no-store")
+	c.HTML(status, "workbench/error", gin.H{
+		"lang":     lang,
+		"t":        templates.TranslateFunc(lang),
+		"title":    text,
+		"message":  text,
+		"backPath": "/admin",
+	})
+}
 
 // Workbench 可视化编辑器外壳：注入 Page 草稿 AST 与保存接口所需元数据。
 // ?block=ID 进入全局块编辑模式（同一画布，保存走块接口、无发布链）。
@@ -1269,7 +1325,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 	}
 	pageID := strings.TrimSpace(c.Query("id"))
 	if pageID == "" {
-		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrMissingPageID))
+		renderWorkbenchPageError(c, http.StatusBadRequest, workbenchenums.ErrMissingPageID)
 		return
 	}
 	// 走统一出口 pageOf：Detail 的 projectID 是必填的越权防护 scope，只传 ID 会被
@@ -1277,12 +1333,16 @@ func (h *Handle) Workbench(c *gin.Context) {
 	// 一个漏传 scope 的调用，在页面上长得一模一样。
 	page, err := h.svc.PageByID(c.Request.Context(), pageID)
 	if err != nil {
-		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrPageNotFound))
+		renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrPageNotFound)
 		return
 	}
 	documentJSON, err := json.Marshal(page.DraftDocument)
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrDraftEncodeFailed))
+		// 未知内部异常：与 400/404 同壳但**状态码不同**（页面上也要能看出「不是你的参数
+		// 问题」）。原文只进结构化日志 —— 序列化错误里带草稿结构片段，铺在页面上等于公开
+		// 内部结构（同 workbench_err.go 的③结构化日志口径）。
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).Error(err, "草稿文档序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrDraftEncodeFailed)
 		return
 	}
 	// 启用插件的组件库摘要与区块预设（palette 注入，docs/06 §5/§5.2）。
@@ -1316,7 +1376,9 @@ func (h *Handle) Workbench(c *gin.Context) {
 		"presets": pluginPresets,
 	})
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrEditorMetaEncodeFailed))
+		// 未知内部异常：路径与原文只进日志，页面上只给归口短句（与草稿序列化失败同口径）。
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).Error(err, "工作台编辑器元数据序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
 		return
 	}
 	// 组件 Inspector 面板 schema（docs/02-C3）：声明式 Controls 驱动检查器表单，
@@ -1324,7 +1386,8 @@ func (h *Handle) Workbench(c *gin.Context) {
 	// 插件组件 schema 合并（与内置同构，docs/06 §5：上传即出现在检查器）。
 	schemas, err := builder.ComponentSchemas()
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaBuildFailed))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).Error(err, "组件 schema 生成失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
 		return
 	}
 	if asm != nil {
@@ -1334,18 +1397,19 @@ func (h *Handle) Workbench(c *gin.Context) {
 	}
 	schemasJSON, err := json.Marshal(schemas)
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaEncodeFailed))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).Error(err, "组件 schema 序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
-	c.HTML(http.StatusOK, "workbench/layout", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "workbench/layout", adminui.Prepare(c, gin.H{
 		"title":     workbenchservice.WorkbenchTitle(page, workbenchTrFunc(c)),
 		"pageId":    page.ID,
 		"isBlock":   false,
 		"draftPath": page.DraftPath,
 		"version":   page.DraftVersion,
-		"document":  shell.JsonSafe(string(documentJSON)),
-		"meta":      shell.JsonSafe(string(metaJSON)),
-		"schemas":   shell.JsonSafe(string(schemasJSON)),
+		"document":  utils.JsonSafe(string(documentJSON)),
+		"meta":      utils.JsonSafe(string(metaJSON)),
+		"schemas":   utils.JsonSafe(string(schemasJSON)),
 		"jsVer":     workbenchservice.StaticJSVersion(),
 	}))
 }
@@ -1355,12 +1419,20 @@ func (h *Handle) Workbench(c *gin.Context) {
 func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 	block, err := h.svc.BlockByID(c.Request.Context(), blockID)
 	if err != nil || block == nil {
-		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrBlockNotFound))
+		// 404 是业务事实（块不存在或已删除）；读块时的故障也不在页面上分流，
+		// 但必须留一行日志 —— 否则「数据库连不上」在页面上与「块被删了」长得一样。
+		if err != nil {
+			logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("blockId", blockID).
+				Error(err, "全局块读取失败")
+		}
+		renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrBlockNotFound)
 		return
 	}
 	documentJSON, err := json.Marshal(block.Document)
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrBlockEncodeFailed))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("blockId", blockID).
+			Error(err, "块文档序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrBlockEncodeFailed)
 		return
 	}
 	meta := gin.H{
@@ -1376,35 +1448,41 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 	}
 	// returnUrl：菜单页「新建面板块并编辑」一路带过来的回跳目标。
 	//
-	// 白名单收敛在这一处（shell.LocalReturnPath）：不是站内相对路径的值直接**丢弃** ——
-	// meta 里没有这个键，保存后留在工作台，与普通块编辑完全一样。这里不做兜底跳转，
-	// 因为「没带 returnUrl」与「带了非法 returnUrl」对用户是同一件事：不该离开编辑器。
-	// 消费侧（SaveBlockContent）会再校验一次：meta 只是搬运，不是信任边界。
-	if back := shell.LocalReturnPath(c.Query("returnUrl")); back != "" {
+	// 白名单收敛在这一处（pkg/safepath.LocalReturnPath，task-75 自 shell 迁入）：不是站内
+	// 相对路径的值直接**丢弃** —— meta 里没有这个键，保存后留在工作台，与普通块编辑完全一样。
+	// 这里不做兜底跳转，因为「没带 returnUrl」与「带了非法 returnUrl」对用户是同一件事：
+	// 不该离开编辑器。消费侧（SaveBlockContent）会再校验一次：meta 只是搬运，不是信任边界。
+	if back := safepath.LocalReturnPath(c.Query("returnUrl")); back != "" {
 		meta["returnUrl"] = back
 	}
 	metaJSON, err := json.Marshal(meta)
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrEditorMetaEncodeFailed))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("blockId", blockID).
+			Error(err, "工作台编辑器元数据序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
 		return
 	}
 	schemas, err := builder.ComponentSchemas()
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaBuildFailed))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("blockId", blockID).
+			Error(err, "组件 schema 生成失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
 		return
 	}
 	schemasJSON, err := json.Marshal(schemas)
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaEncodeFailed))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("blockId", blockID).
+			Error(err, "组件 schema 序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
-	c.HTML(http.StatusOK, "workbench/layout", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "workbench/layout", adminui.Prepare(c, gin.H{
 		"title":    workbenchShortText(c, workbenchenums.TitleBlockPrefix) + block.Name,
 		"pageId":   block.ID,
 		"isBlock":  true,
-		"document": shell.JsonSafe(string(documentJSON)),
-		"meta":     shell.JsonSafe(string(metaJSON)),
-		"schemas":  shell.JsonSafe(string(schemasJSON)),
+		"document": utils.JsonSafe(string(documentJSON)),
+		"meta":     utils.JsonSafe(string(metaJSON)),
+		"schemas":  utils.JsonSafe(string(schemasJSON)),
 		"jsVer":    workbenchservice.StaticJSVersion(),
 	}))
 }
@@ -1420,13 +1498,19 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 //     真实记录解析，缺它只能看到空白组件（这正是这条校验存在的理由）。
 func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 	if !h.svc.ContentTemplatesReady() {
-		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplateEditNotAssembled))
+		// 503 不带异常对象：这是装配缺口（进程起来时没接上内容模板端口），
+		// 一行 Warn 让「用户看到 503」在日志里有对应事实。
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).
+			Warn("内容模板编辑能力未装配")
+		renderWorkbenchPageError(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplateEditNotAssembled)
 		return
 	}
 	// projectID 留空：这里只按 id 取模板（工程作用域由预览入口 previewTemplateTarget 负责）。
 	tpl, err := h.svc.TemplateByID(c.Request.Context(), templateID, "")
 	if err != nil {
-		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrTemplateNotFound))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("templateId", templateID).
+			Error(err, "内容模板读取失败")
+		renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrTemplateNotFound)
 		return
 	}
 	// 无实体模式按**模板行**判定：查询参数是请求方给的，拿它判等于让
@@ -1442,24 +1526,31 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		// 结构模板没有实体来源：请求带来的 entityId 一律丢弃（无实体模式不解析字段绑定）。
 		entityID = ""
 	} else if entityID == "" {
-		// 占位符 {type} 由词条携带：译文顺序可能与中文不同，所以不在这里拼进句子。
-		c.String(http.StatusBadRequest,
+		// 占位符 {type} 由词条携带：译文顺序可能与中文不同，所以不在这里拼进句子 ——
+		// 取词交给渲染出口，替换只对**取到的译文**做。
+		renderWorkbenchPageErrorText(c, http.StatusBadRequest, workbenchenums.ErrPreviewEntityIDRequired,
 			strings.ReplaceAll(workbenchShortText(c, workbenchenums.ErrPreviewEntityIDRequired), "{type}", entityType))
 		return
 	}
 	// 装配校验按模式分流：无实体模式走 page 编译管线，用不到模板预览端口。
 	if !noEntity && h.templatePreview == nil {
-		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplateEditNotAssembled))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("mode", "template-preview").
+			Warn("模板预览能力未装配")
+		renderWorkbenchPageError(c, http.StatusServiceUnavailable, workbenchenums.ErrContentTemplateEditNotAssembled)
 		return
 	}
 	if noEntity && h.pages == nil {
-		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrStructureTemplatePreviewNotAssembled))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("mode", "structure-preview").
+			Warn("无实体模板预览能力未装配")
+		renderWorkbenchPageError(c, http.StatusServiceUnavailable, workbenchenums.ErrStructureTemplatePreviewNotAssembled)
 		return
 	}
 	projectID := strings.TrimSpace(c.Query("projectId"))
 	documentJSON, err := json.Marshal(tpl.DraftDocument)
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrTemplateEncodeFailed))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("templateId", templateID).
+			Error(err, "模板文档序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrTemplateEncodeFailed)
 		return
 	}
 	metaJSON, err := json.Marshal(gin.H{
@@ -1476,21 +1567,27 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		"version":      tpl.DraftVersion,
 	})
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrEditorMetaEncodeFailed))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("templateId", templateID).
+			Error(err, "工作台编辑器元数据序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
 		return
 	}
 	schemas, err := builder.ComponentSchemas()
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaBuildFailed))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("templateId", templateID).
+			Error(err, "组件 schema 生成失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
 		return
 	}
 	schemasJSON, err := json.Marshal(schemas)
 	if err != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaEncodeFailed))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("templateId", templateID).
+			Error(err, "组件 schema 序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
 	previewQS := workbenchservice.TemplatePreviewQuery(tpl.ID, entityType, entityID, projectID)
-	c.HTML(http.StatusOK, "workbench/layout", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "workbench/layout", adminui.Prepare(c, gin.H{
 		"title":      workbenchShortText(c, workbenchenums.TitleTemplatePrefix) + tpl.Name,
 		"pageId":     tpl.ID,
 		"isBlock":    false,
@@ -1498,9 +1595,9 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		// 画布顶栏的模式提示：结构模板的预览不解析字段绑定，这件事要在编辑器里看得见
 		//（否则作者会以为「页眉里该出现的商品名没出现」是渲染坏了）。
 		"isStructureTemplate": noEntity,
-		"document":            shell.JsonSafe(string(documentJSON)),
-		"meta":                shell.JsonSafe(string(metaJSON)),
-		"schemas":             shell.JsonSafe(string(schemasJSON)),
+		"document":            utils.JsonSafe(string(documentJSON)),
+		"meta":                utils.JsonSafe(string(metaJSON)),
+		"schemas":             utils.JsonSafe(string(schemasJSON)),
 		"previewQS":           previewQS,
 		"jsVer":               workbenchservice.StaticJSVersion(),
 	}))
@@ -1639,7 +1736,7 @@ func (h *Handle) renderTemplatePreview(c *gin.Context, templateID, entityType, e
 	}
 	html := res.HTML
 	if withEditorBridge {
-		html = injectEditorBridge(html, shell.TranslateFor(c))
+		html = injectEditorBridge(html, i18n.TranslateFunc(response.RequestLanguage(c)))
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
@@ -1652,13 +1749,17 @@ func (h *Handle) SetInstanceOverrideDeps(instances presentationcontract.Presenta
 // workbenchInstance 实例编辑模式外壳。
 func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	if h.instances == nil {
-		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrInstanceEditNotAssembled))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).
+			Warn("实例编辑能力未装配")
+		renderWorkbenchPageError(c, http.StatusServiceUnavailable, workbenchenums.ErrInstanceEditNotAssembled)
 		return
 	}
 	ctx := c.Request.Context()
 	inst, err := h.instances.Get(ctx, &presentationdto.GetReq{ID: instanceID, ProjectID: c.Query("projectId")})
 	if err != nil {
-		c.String(http.StatusNotFound, workbenchShortText(c, workbenchenums.ErrInstanceNotFound))
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("instanceId", instanceID).
+			Error(err, "呈现实例读取失败")
+		renderWorkbenchPageError(c, http.StatusNotFound, workbenchenums.ErrInstanceNotFound)
 		return
 	}
 	// 生效文档：override 优先（toResp 随快照返回），否则实例尚无可编辑文档，
@@ -1667,10 +1768,18 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	if len(document) == 0 {
 		// 422 保留（这是「这个实例还不能编辑」的业务状态，不是服务端故障），
 		// 文案走 key：硬编码中文在英文站点上不会翻译，且说不清下一步怎么做。
-		c.String(http.StatusUnprocessableEntity, workbenchFacingText(c, workbenchenums.ErrInstanceNoDocument))
+		renderWorkbenchPageErrorText(c, http.StatusUnprocessableEntity, workbenchenums.ErrInstanceNoDocument,
+			workbenchFacingText(c, workbenchenums.ErrInstanceNoDocument))
 		return
 	}
-	documentJSON, _ := json.Marshal(document)
+	documentJSON, derr := json.Marshal(document)
+	if derr != nil {
+		// 原先这里的序列化错误被 `_` 丢掉：页面上是一张白屏，日志里什么都没有。
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("instanceId", instanceID).
+			Error(derr, "实例文档序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrDraftEncodeFailed)
+		return
+	}
 	// 渲染模式（迁移 282，双轨）：状态条据此显示「跟随模板中 / 独立文档」——
 	// 编辑者必须随时知道自己在改的是共享模板还是这一个商品，否则会以为
 	// 改模板会影响全站（或反之）。
@@ -1682,22 +1791,36 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	if renderMode == presentationdto.RenderModeDocument {
 		renderModeLabel = workbenchShortText(c, workbenchenums.ModeDocument)
 	}
-	metaJSON, _ := json.Marshal(gin.H{
+	metaJSON, merr := json.Marshal(gin.H{
 		"target": workbenchTargetOf(EditTargetInstance), "pageId": inst.ID,
 		"saveBase": "instance", "entityType": inst.EntityType, "entityId": inst.EntityID,
 		"projectId": inst.ProjectID, "draftPath": "", "instanceMode": true,
 		"renderMode": renderMode,
 	})
-	schemas, serr := builder.ComponentSchemas()
-	if serr != nil {
-		c.String(http.StatusInternalServerError, workbenchShortText(c, workbenchenums.ErrComponentSchemaBuildFailed))
+	if merr != nil {
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("instanceId", instanceID).
+			Error(merr, "工作台编辑器元数据序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrEditorMetaEncodeFailed)
 		return
 	}
-	schemasJSON, _ := json.Marshal(schemas)
-	// 与另外三种画布模式一致地走 shell.Prepare：它注入 t（画布模板的取词函数）、
+	schemas, serr := builder.ComponentSchemas()
+	if serr != nil {
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("instanceId", instanceID).
+			Error(serr, "组件 schema 生成失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
+		return
+	}
+	schemasJSON, serr2 := json.Marshal(schemas)
+	if serr2 != nil {
+		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("instanceId", instanceID).
+			Error(serr2, "组件 schema 序列化失败")
+		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
+		return
+	}
+	// 与另外三种画布模式一致地走 adminui.Prepare：它注入 t（画布模板的取词函数）、
 	// csrf_token（workbench.js 的 POST fetch 读它）与 lang。此前这个分支直接传 gin.H，
 	// 于是 layout.html 的 `{{ .["csrf_token"] }}` 恒为空串 —— JS 只能靠 sessionStorage 兜底。
-	c.HTML(http.StatusOK, "workbench/layout", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "workbench/layout", adminui.Prepare(c, gin.H{
 		"title": workbenchShortText(c, workbenchenums.TitleInstance), "pageId": inst.ID, "isBlock": false, "isTemplate": true,
 		// 双轨状态条（layout.html 据 isset(.instanceMode) 渲染）
 		"instanceMode": true, "renderMode": renderMode, "renderModeLabel": renderModeLabel,
@@ -1720,7 +1843,7 @@ func (h *Handle) InstanceSave(c *gin.Context) {
 		// api.js 的 send() 直接 r.json()，正文是 text/plain 时解析抛异常 → then 链断掉 →
 		// 到不了那句 alert，用户看不到任何提示。文案走归口译文：能力未装配属装配缺陷，
 		// 给用户看的只能是受控提示，装配细节不进响应。
-		c.JSON(http.StatusServiceUnavailable, gin.H{"code": 503, "message": shell.PageInternalText(c)})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"code": 503, "message": adminui.PageInternalText(c)})
 		return
 	}
 	var body struct {
@@ -1855,7 +1978,7 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, project
 	switch outcome {
 	case workbenchservice.PreviewOK:
 		if withEditorBridge {
-			html = []byte(injectEditorBridge(string(html), shell.TranslateFor(c)))
+			html = []byte(injectEditorBridge(string(html), i18n.TranslateFunc(response.RequestLanguage(c))))
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", html)
 	case workbenchservice.PreviewInvalidDocument:
@@ -1865,7 +1988,7 @@ func (h *Handle) renderPreview(c *gin.Context, document json.RawMessage, project
 	default:
 		// 这里原先直写 workbenchenums.MsgInternalError —— 那是一个裸 key，
 		// 画布响应体不经过 pkg/response 的翻译层，浏览器里看到的就是 "MsgInternalError"。
-		c.String(http.StatusInternalServerError, shell.PageInternalText(c))
+		c.String(http.StatusInternalServerError, adminui.PageInternalText(c))
 	}
 }
 

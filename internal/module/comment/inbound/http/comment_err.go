@@ -14,19 +14,19 @@
 // 评论的业务错误不带定位数据（哪一条被拒是日志的事，页面上不需要逐条回带），
 // 所以这里没有 SplitFacingDetail / facingSep 那一套。
 //
-// **读侧（?err= / ?done= 白名单与回跳 URL）已整批删除**：写动作的结论由 shell.RenderJump
-// 渲染成提示页（文案走响应体），回跳地址由 shell.BackPath 从表单 action 的 query 读回 ——
-// 查询参数不再承载文案，那套「证明这条提示出自本仓」的判定随之不需要了。
+// 页面只读展示；审核结论由 JSON API 回执承载，不经查询参数回带。
 package commenthttp
 
 import (
 	"errors"
+	"go_wp/internal/middleware/builtin"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	commentenums "go_wp/internal/module/comment/enums"
-	"go_wp/internal/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -53,7 +53,7 @@ func commentErrText(c *gin.Context, err error) string {
 		return response.TranslateMessage(c, msg)
 	}
 	logger.Scene(commentErrScene).
-		With("user_id", shell.CurrentUserID(c)).
+		With("user_id", builtin.CurrentUserID(c)).
 		With("path", c.Request.URL.Path).
 		Error(err, "comment 接口内部错误")
 	return commentenums.ErrInternal
@@ -65,13 +65,13 @@ func commentErrText(c *gin.Context, err error) string {
 // 而 check-no-internal-error-leak.sh 的判据只看 response.ErrorWithMessage / c.String 的实参。
 func commentErrPageText(c *gin.Context, err error) string {
 	if msg, ok := commentFacingText(err); ok {
-		return shell.TranslateFor(c)(msg, msg)
+		return i18n.TranslateFunc(response.RequestLanguage(c))(msg, msg)
 	}
 	logger.Scene(commentErrScene).
-		With("user_id", shell.CurrentUserID(c)).
+		With("user_id", builtin.CurrentUserID(c)).
 		With("path", c.Request.URL.Path).
 		Error(err, "comment 后台页面内部错误")
-	return shell.PageInternalText(c)
+	return adminui.PageInternalText(c)
 }
 
 // commentErrStatus 把业务错误映射到 HTTP 状态码。

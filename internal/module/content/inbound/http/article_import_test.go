@@ -151,11 +151,11 @@ func TestArticleImportPreviewView(t *testing.T) {
 	if len(view.Types) != 2 {
 		t.Fatalf("应出现两种组件，实际 %d 种", len(view.Types))
 	}
-	if view.Types[0].Label != "标题" || view.Types[0].Count != 2 {
+	if view.Types[0].LabelFallback != "标题" || view.Types[0].Count != 2 {
 		t.Errorf("标题计数错误：%+v", view.Types[0])
 	}
-	if len(view.Warnings) != 1 || view.Warnings[0].Action != "去壳保留内容" {
-		t.Errorf("降级动作未翻译成中文：%+v", view.Warnings)
+	if len(view.Warnings) != 1 || view.Warnings[0].ActionFallback != "去壳保留内容" {
+		t.Errorf("降级动作应给出中文兜底（取词在模板里）：%+v", view.Warnings)
 	}
 	// 无损输入：不产生警告，Lossless 为真。
 	clean, err := richdoc.HTMLToNodes("<h2>标题</h2><p>段落</p>")

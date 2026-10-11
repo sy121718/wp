@@ -12,18 +12,24 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	ordercontract "go_wp/internal/module/order/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/utils"
 )
 
 // detailSummary 一个正常的订单摘要（已付款 2 单、累计 198 元、最近一单 SO20260920001）。
+//
+// 只给**时刻**（LastOrderTime）不给预制串（LastOrderTimeText）：页面上的时间由模板的
+// dateTime() 格式化，设置那个串会让「模板又去读预制展示串」照样通过。
 func detailSummary() *ordercontract.CustomerOrderSummaryResp {
+	lastOrder := time.Date(2026, 9, 20, 8, 5, 0, 0, time.Local)
 	return &ordercontract.CustomerOrderSummaryResp{
 		UserID: 42, ProjectID: "p1",
 		OrderCount: 3, PaidOrderCount: 2, TotalAmount: 19800, TotalAmountLabel: "198.00",
 		LastOrderID: 900, LastOrderNo: "SO20260920001", LastOrderStatus: "paid",
-		LastOrderTimeText: "2026-09-20 08:05", HasOrders: true,
+		LastOrderTime: utils.NewJSONTimePtr(&lastOrder), HasOrders: true,
 	}
 }
 
@@ -32,17 +38,20 @@ func detailProjects() []projectcontract.ProjectResp {
 }
 
 func TestCustomerDetailTemplateRenders(t *testing.T) {
-	data := customerDetailPageData(customerSample(), detailProjects(), "p1", detailSummary(),
-		false, false, "", nil)
+	data := customerDetailPageData(customerTestDetailTitle, nil, customerSample(), detailProjects(), "p1", detailSummary(),
+		false, false, customerMsg{})
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	for _, want := range []string{
 		"客户详情", "艾丽丝", "alice@example.com", "203.0.113.7", "203.0.113.9",
 		"官网", "订单数 3", "¥198.00", "SO20260920001",
+		// 时间由模板的 dateTime() 格式化（服务端给的是时刻）：这一条同时钉住
+		// 「注册时间 / 最近登录 / 最近一单时间」三处都真的渲染出了东西。
+		"2026-09-01 10:30", "2026-09-20 08:05",
 		// 只断言参数本身：url.Values.Encode 会按字母序重排，且 Jet 会把 & 转义成 &amp;，
 		// 断言整串等于把实现细节抄进测试（改一次排序就要改一次测试）。
 		"orderId=900", "/admin/orders?",
-		"/admin/customers/status", "累计消费只统计",
+		"/api/customer/status", "累计消费只统计",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("详情页渲染结果缺少 %q", want)
@@ -53,8 +62,8 @@ func TestCustomerDetailTemplateRenders(t *testing.T) {
 // TestCustomerDetailTemplateNoOrders 没下过单是正常状态，不是错误。
 func TestCustomerDetailTemplateNoOrders(t *testing.T) {
 	summary := &ordercontract.CustomerOrderSummaryResp{UserID: 42, ProjectID: "p1"}
-	data := customerDetailPageData(customerSample(), detailProjects(), "p1", summary,
-		false, false, "", nil)
+	data := customerDetailPageData(customerTestDetailTitle, nil, customerSample(), detailProjects(), "p1", summary,
+		false, false, customerMsg{})
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	if !strings.Contains(body, "还没有下过单") {
@@ -67,7 +76,7 @@ func TestCustomerDetailTemplateNoOrders(t *testing.T) {
 
 // TestCustomerDetailTemplateNoProjects 没有站点工程时给说明，而不是渲染一个没用的工程下拉。
 func TestCustomerDetailTemplateNoProjects(t *testing.T) {
-	data := customerDetailPageData(customerSample(), nil, "", nil, false, false, "", nil)
+	data := customerDetailPageData(customerTestDetailTitle, nil, customerSample(), nil, "", nil, false, false, customerMsg{})
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	if !strings.Contains(body, "还没有站点工程，因此没有订单可统计") {
@@ -80,8 +89,8 @@ func TestCustomerDetailTemplateNoProjects(t *testing.T) {
 
 // TestCustomerDetailTemplateSummaryFailed 摘要读不出来时给说明，客户资料照常显示。
 func TestCustomerDetailTemplateSummaryFailed(t *testing.T) {
-	data := customerDetailPageData(customerSample(), detailProjects(), "p1", nil,
-		false, true, "", nil)
+	data := customerDetailPageData(customerTestDetailTitle, nil, customerSample(), detailProjects(), "p1", nil,
+		false, true, customerMsg{})
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
 	if !strings.Contains(body, "订单摘要暂时读不出来") {
@@ -97,10 +106,10 @@ func TestCustomerDetailTemplatePendingHasNoStatusAction(t *testing.T) {
 	item := customerSample()
 	item.Status = 2
 	item.StatusLabel = "待激活"
-	data := customerDetailPageData(item, nil, "", nil, false, false, "", nil)
+	data := customerDetailPageData(customerTestDetailTitle, nil, item, nil, "", nil, false, false, customerMsg{})
 	body := renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", customerTestLayoutData(data))
 
-	if strings.Contains(body, "/admin/customers/status") {
+	if strings.Contains(body, "/api/customer/status") {
 		t.Errorf("待激活客户不应渲染停用按钮")
 	}
 	if !strings.Contains(body, "客户还没完成邮箱验证") {

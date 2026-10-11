@@ -70,6 +70,30 @@ type MoveReq struct {
 	SortOrder *int   `json:"sortOrder"`
 }
 
+// SwapMoveReq 同级上移/下移请求（页面 handler 一次调用即可完成的**原子**交换）。
+//
+// 为什么不带「期望版本」（不做客户端陈旧锁）：现页面的 move 表单只有 id/dir，没有回带
+// update_time。服务端用自己刚读到的树快照当 token，防的是「快照 → 写入」这段窗口内的并发；
+// 它**不**宣称防住「页面渲染之后的陈旧操作」—— 那需要把 token 带进表单，属另一批。
+type SwapMoveReq struct {
+	ID string `json:"id" binding:"required"`
+	// ProjectID 调用方认为该项所属的工程。服务端会与真实归属比对，不一致即拒
+	// （跨工程一律拒 —— 移动是同一份树内部的相对位置写入，不属于「按 id 直改」）。
+	ProjectID string `json:"projectId"`
+	// Dir 上移 up / 下移 down。
+	Dir string `json:"dir" binding:"required"`
+}
+
+// SwapMoveResp 同级交换结果。
+type SwapMoveResp struct {
+	// Moved false = 已在首/末位，本次零写入（页面按原有的「无需调整」提示走，行为与修复前一致）。
+	Moved bool `json:"moved"`
+	// Reason 未位移的原因：""（已交换）/ boundary（首/末位）。
+	// 并列（sort_order 相等）不是这里的一种取值：它走业务错误 ErrSortTied（零写），
+	// 让页面用失败样式说清「没发生位移」，而不是回一个「已完成」。
+	Reason string `json:"reason,omitempty"`
+}
+
 // NavigationResp 导航项响应。
 type NavigationResp struct {
 	ID        string  `json:"id"`

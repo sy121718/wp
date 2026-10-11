@@ -163,9 +163,7 @@ func redirectProbeData(over map[string]any) map[string]any {
 		"CreateSource": "", "CreateTarget": "", "CreateFailed": false,
 		"Projects": []any{map[string]any{"ID": "pr1", "Name": "官网"}}, "SelectedProject": "pr1",
 		"Items": []any{}, "Total": 0, "EffectiveCount": 0, "MultiHopCount": 0, "LoopCount": 0,
-		// 分档由组装侧给（page 模块的 setRedirectCounts）：模板读 badge-{{.MultiHopTone}}，
-		// 计数为 0 → 两档都是中性。
-		"MultiHopTone": "mute", "LoopTone": "mute",
+		// 分档由**模板**按计数选（组装侧只给 MultiHopCount/LoopCount）：计数为 0 → 两档中性。
 	}, over)
 }
 

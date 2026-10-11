@@ -1,19 +1,20 @@
 {{tr := .["t"]}}
-{{csrf := .["csrf_token"]}}
 {{entry := .I18nEdit}}
-{* 列表筛选由服务端拼进表单 action 的 query（POST 回来由 shell.BackPath 读回）：
-   原先靠 _keyword/_lang/_category/_page 四个隐藏域塞整串返回上下文，已删除。 *}
-{{lq := ""}}{{if isset(.I18nListQuery)}}{{lq = .I18nListQuery}}{{end}}
-{{value := entry.Value}}{{category := entry.Category}}{{remark := entry.Remark}}
-{{if isset(.I18nEditEcho)}}
-{{value = .I18nEditEcho.value}}{{category = .I18nEditEcho.category}}{{remark = .I18nEditEcho.remark}}
-{{end}}
+{* 编辑抽屉的片段（GET /admin/i18n/edit 按需拉取，admin.js 注入 [data-drawer-fragment]）。
+   写动作与页面其余写操作一样由前端 fetch 直调 JSON 端点 POST /api/i18n/save：表单只声明
+   端点、写模式与文案来源，不再有 hx-post / action 回投，也不再把列表 query 拼进 action。
+   为什么用 create 模式而不是 single：single 模式只发 {id}，发不出动作标签，也发不出
+   (key, lang) 这个复合键；create 模式发**全部具名字段**（含 hidden 的 action/key/lang），
+   成功后整页刷新 —— 刷新带回当前 URL，列表的筛选与页码自动保住。
+   key / lang 是只读展示，但必须以 hidden 具名提交：词条的身份由二者共同决定。 *}
 <div data-drawer-fragment>
-    {{if isset(.I18nEditErr)}}{{if .I18nEditErr != ""}}<p class="badge badge-warning" role="alert">{{.I18nEditErr}}</p>{{end}}{{end}}
-    <form method="post" action="/admin/i18n/update{{if lq}}?{{lq}}{{end}}" hx-post="/admin/i18n/update{{if lq}}?{{lq}}{{end}}" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
+    <form data-write-api="/api/i18n/save" data-write-mode="create"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+        <input type="hidden" name="action" value="update">
         <input type="hidden" name="key" value="{{entry.Key}}">
         <input type="hidden" name="lang" value="{{entry.Lang}}">
+        {* 结果区：失败时就地给出原因（已填内容保留）；成功则整页刷新回列表。 *}
+        <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="form-grid">
             <div class="form-field">
                 <label class="form-label">key</label>
@@ -25,20 +26,23 @@
             </div>
             <div class="form-field form-field--wide">
                 <label class="form-label">{{tr("admin.i18n.label.value", "内容")}}</label>
-                <textarea name="value" class="form-textarea" rows="3" required>{{value}}</textarea>
+                <textarea name="value" class="form-textarea" rows="3" required>{{entry.Value}}</textarea>
             </div>
             <div class="form-field">
                 <label class="form-label">{{tr("admin.i18n.label.category", "分类")}}</label>
-                <input type="text" class="form-input" name="category" value="{{category}}">
+                <input type="text" class="form-input" name="category" value="{{entry.Category}}">
             </div>
             <div class="form-field">
                 <label class="form-label">{{tr("admin.i18n.label.remark", "备注")}}</label>
-                <input type="text" class="form-input" name="remark" value="{{remark}}">
+                <input type="text" class="form-input" name="remark" value="{{entry.Remark}}">
             </div>
         </div>
         <div class="action-row">
+            {* 无 JS 时写动作不可用，按钮是 hidden（有 JS 时由 json_write.js 的 [data-requires-js]
+               放出来），这里说清原因，避免被当成权限问题。 *}
+            <noscript><p class="form-hint">{{tr("admin.i18nWrite.noJs", "本页的新建、编辑与删除需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
             <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-            <button type="submit" class="btn btn-primary">{{tr("admin.i18n.action.save", "保存")}}</button>
+            <button type="submit" class="btn btn-primary" data-requires-js hidden>{{tr("admin.i18n.action.save", "保存")}}</button>
         </div>
     </form>
 </div>

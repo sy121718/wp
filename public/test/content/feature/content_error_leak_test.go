@@ -28,7 +28,7 @@ import (
 	contentmodel "go_wp/internal/module/content/model"
 	contentservice "go_wp/internal/module/content/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
+	bulkids "go_wp/pkg/bulkids"
 	"go_wp/public/test/support"
 )
 
@@ -138,7 +138,7 @@ func TestArticlesBulkDeleteKeepsControlledLimitText(t *testing.T) {
 	}
 	form := url.Values{}
 	// 用高于上限一条即触发整批拒绝（不依赖 @10 这类经验数字）。
-	for i := 0; i < shell.MaxBulkIDs+1; i++ {
+	for i := 0; i < bulkids.MaxIDs+1; i++ {
 		form.Add("ids", fmt.Sprintf("00000000-0000-0000-0000-%012d", i))
 	}
 	req := httptest.NewRequest(http.MethodPost, "/admin/articles/bulk-delete", strings.NewReader(form.Encode()))

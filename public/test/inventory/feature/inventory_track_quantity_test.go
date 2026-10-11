@@ -28,12 +28,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"go_wp/internal/middleware/adminctx"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 	"go_wp/public/test/support"
 )
 
@@ -630,9 +630,9 @@ func newTrackQuantityPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	engine.Use(func(c *gin.Context) {
-		// 仅供渲染（shell.Prepare 读 PermSetKey）；拦截由路由上的 Casbin 中间件负责。
-		c.Set(shell.PermSetKey, map[string]bool{"inventory:stock_change": true})
-		c.Set(shell.ButtonsKey, map[string]bool{"inventory.stock_change": true})
+		// 仅供渲染（adminui.Prepare 读 PermSetKey）；拦截由路由上的 Casbin 中间件负责。
+		c.Set(adminctx.PermSetKey, map[string]bool{"inventory:stock_change": true})
+		c.Set(adminctx.ButtonsKey, map[string]bool{"inventory.stock_change": true})
 	})
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory", handle.InventoryPage)

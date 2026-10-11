@@ -19,7 +19,6 @@ package feature
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +26,6 @@ import (
 
 	adminenums "go_wp/internal/module/admin/enums"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
-	"go_wp/internal/templates"
 	"go_wp/pkg/database"
 	"go_wp/public/test/support"
 
@@ -153,69 +151,66 @@ func TestAdminPageHandlersDoNotInlineErrorText(t *testing.T) {
 	}
 }
 
-// newAdminI18nPageEngine 只挂文案词条页的两个写接口（页面 handler 的裸路由，不带中间件）。
+// newAdminI18nWriteEngine 只挂词条写端点（裸路由，不带中间件）。
 //
-// 必须挂真 Jet 渲染器：写失败现在渲染整页提示（shell.RenderJump → c.HTML）。
-func newAdminI18nPageEngine(t *testing.T) *gin.Engine {
-	t.Helper()
+// 词条页的写动作在 task-17 从「页面 POST + 整页提示」迁到 JSON 端点 POST /api/i18n/save，
+// 所以本文件对词条页的接口级守卫也换到 JSON 通道：断言的是状态码与响应 message
+// （不再是提示页的 data-jump-state）。整页提示（shell.RenderJump）仍是其余 admin 页面
+// 写动作的出口，由同目录 admin_page_write_failed_test.go 覆盖。
+func newAdminI18nWriteEngine() *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	h := adminhttp.NewAdminI18nEntryHandle()
 	engine := gin.New()
-	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.POST("/admin/i18n/save", h.I18nEntrySave)
-	engine.POST("/admin/i18n/delete", h.I18nEntryDelete)
+	engine.POST("/api/i18n/save", adminhttp.NewAdminI18nEntryHandle().I18nEntryWrite)
 	return engine
 }
 
-// postAdminI18nPageJump 提交一个表单，返回提示页响应体与状态码。
-func postAdminI18nPageJump(t *testing.T, engine *gin.Engine, path string, form url.Values) (string, int) {
+// postAdminI18nWrite 发一个 JSON 写请求，返回状态码与响应 message。
+//
+// 用 support.SendRequest（本目录统一入口）而不是 httptest 手搓：请求构造与响应解析
+// 只在这一处，换协议时不必逐处改。
+func postAdminI18nWrite(t *testing.T, engine *gin.Engine, body string) (int, string) {
 	t.Helper()
 	recorder, err := support.SendRequest(engine, support.RequestOptions{
 		Method:  http.MethodPost,
-		Path:    path,
-		RawBody: []byte(form.Encode()),
-		Headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+		Path:    "/api/i18n/save",
+		RawBody: []byte(body),
+		Headers: map[string]string{"Content-Type": "application/json"},
 	})
 	if err != nil {
 		t.Fatalf("请求失败: %v", err)
 	}
-	return recorder.Body.String(), recorder.Code
+	return recorder.Code, jsonErrMessage(t, recorder.Body.String())
 }
 
-// TestAdminI18nPageJumpBusinessTextVisible 少填字段是**业务**错误，文案必须仍然可见。
+// TestAdminI18nWriteBusinessTextVisible 少填字段是**业务**错误，文案必须仍然可见。
 //
 // 这一条防的是「一刀切成通用提示」的反向缺陷：把 key/lang/内容为空的提示也归口成
 // 「操作失败，请稍后重试」，运营就只能反复猜测到底哪一项没填。校验留在 handler
-//（与同文件其它表单一致），所以这里连数据库都不需要。
-func TestAdminI18nPageJumpBusinessTextVisible(t *testing.T) {
-	engine := newAdminI18nPageEngine(t)
+// （与同文件其它表单一致），所以这里连数据库都不需要。
+func TestAdminI18nWriteBusinessTextVisible(t *testing.T) {
+	engine := newAdminI18nWriteEngine()
 
 	cases := []struct {
 		name string
-		path string
-		form url.Values
+		body string
 		want string // 期望命中的 enums key（按具体缺项返回具体文案）
 	}{
-		{"保存时 key 为空", "/admin/i18n/save", url.Values{"key": {""}, "lang": {"zh-CN"}, "value": {"x"}}, adminenums.ErrI18nKeyEmpty},
-		{"保存时语言为空", "/admin/i18n/save", url.Values{"key": {"a.b"}, "lang": {""}, "value": {"x"}}, adminenums.ErrI18nLangEmpty},
-		{"保存时内容为空", "/admin/i18n/save", url.Values{"key": {"a.b"}, "lang": {"zh-CN"}, "value": {"   "}}, adminenums.ErrI18nValueEmpty},
-		{"删除时 key 为空", "/admin/i18n/delete", url.Values{"key": {""}, "lang": {"zh-CN"}}, adminenums.ErrI18nKeyEmpty},
-		{"删除时语言为空", "/admin/i18n/delete", url.Values{"key": {"a.b"}, "lang": {""}}, adminenums.ErrI18nLangEmpty},
+		{"新建时 key 为空", `{"action":"create","lang":"zh-CN","value":"x"}`, adminenums.ErrI18nKeyEmpty},
+		{"新建时语言为空", `{"action":"create","key":"a.b","value":"x"}`, adminenums.ErrI18nLangEmpty},
+		{"新建时内容为空", `{"action":"create","key":"a.b","lang":"zh-CN","value":"   "}`, adminenums.ErrI18nValueEmpty},
+		{"删除时 key 为空", `{"action":"delete","lang":"zh-CN"}`, adminenums.ErrI18nKeyEmpty},
+		{"删除时语言为空", `{"action":"delete","key":"a.b"}`, adminenums.ErrI18nLangEmpty},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body, code := postAdminI18nPageJump(t, engine, tc.path, tc.form)
-			if code != http.StatusOK {
-				t.Fatalf("校验失败应渲染提示页（200），got %d body=%s", code, body)
+			code, got := postAdminI18nWrite(t, engine, tc.body)
+			if code != http.StatusBadRequest {
+				t.Fatalf("校验失败应回 400（受控文案），got %d msg=%q", code, got)
 			}
-			if !strings.Contains(body, `data-jump-state="err"`) {
-				t.Fatalf("失败提示页应带 data-jump-state=\"err\"：%s", body)
-			}
-			got := jumpMsgFromBody(body)
 			if !pageI18nEmptyCopyForms[tc.want][got] {
 				t.Fatalf("业务错误的文案必须可见且具体到缺哪一项（期望 %s），got %q", tc.want, got)
 			}
-			assertPageNoLeak(t, tc.name, body)
+			assertPageNoLeak(t, tc.name, got)
 		})
 	}
 }
@@ -226,23 +221,25 @@ func TestAdminI18nPageJumpBusinessTextVisible(t *testing.T) {
 // 而这张表单有三行，只能逐个试。这里把「具体」与「互不相同」两条一起钉死 ——
 // 只断言「能命中某个具体文案」会漏掉「三条做成了同一句」这种改造不彻底的情形。
 func TestAdminI18nEmptyFieldTextsAreDistinct(t *testing.T) {
-	engine := newAdminI18nPageEngine(t)
+	engine := newAdminI18nWriteEngine()
 
 	wantKey := map[string]string{
 		"key":   adminenums.ErrI18nKeyEmpty,
 		"lang":  adminenums.ErrI18nLangEmpty,
 		"value": adminenums.ErrI18nValueEmpty,
 	}
-	forms := map[string]url.Values{
-		"key":   {"key": {""}, "lang": {"zh-CN"}, "value": {"x"}},
-		"lang":  {"key": {"a.b"}, "lang": {""}, "value": {"x"}},
-		"value": {"key": {"a.b"}, "lang": {"zh-CN"}, "value": {"   "}},
+	bodies := map[string]string{
+		"key":   `{"action":"create","lang":"zh-CN","value":"x"}`,
+		"lang":  `{"action":"create","key":"a.b","value":"x"}`,
+		"value": `{"action":"create","key":"a.b","lang":"zh-CN","value":"   "}`,
 	}
 
 	seen := map[string]string{} // 文案 → 缺哪一项
 	for _, field := range []string{"key", "lang", "value"} {
-		body, _ := postAdminI18nPageJump(t, engine, "/admin/i18n/save", forms[field])
-		got := jumpMsgFromBody(body)
+		code, got := postAdminI18nWrite(t, engine, bodies[field])
+		if code != http.StatusBadRequest {
+			t.Fatalf("缺 %s 应回 400，got %d msg=%q", field, code, got)
+		}
 		if !pageI18nEmptyCopyForms[wantKey[field]][got] {
 			t.Fatalf("缺 %s 应返回 %s 的具体文案，got %q", field, wantKey[field], got)
 		}
@@ -253,29 +250,26 @@ func TestAdminI18nEmptyFieldTextsAreDistinct(t *testing.T) {
 			t.Fatalf("缺 %s 与缺 %s 的文案完全相同（%q）—— 拆成三条等于没拆", field, prev, got)
 		}
 		seen[got] = field
-		assertPageNoLeak(t, "缺 "+field, body)
+		assertPageNoLeak(t, "缺 "+field, got)
 	}
 }
 
-// TestAdminI18nPageJumpInternalErrorCollected 基础设施错误走归口文案，且响应体里没有原文。
+// TestAdminI18nWriteInternalErrorCollected 基础设施错误走归口文案，且响应体里没有原文。
 //
 // 前置条件：database 组件**未初始化** —— 这样 i18n.SaveEntry 会稳定地返回
 // ErrI18nUnavailable（归口分支），而不是真的写一次库。若同包其它用例已经初始化过组件
 // （admin_shell_i18n_test.go 会），本用例会跳过。
-func TestAdminI18nPageJumpInternalErrorCollected(t *testing.T) {
+func TestAdminI18nWriteInternalErrorCollected(t *testing.T) {
 	if database.IsInited() {
 		t.Skip("database 组件已被同包其它用例初始化，跳过（避免真的写库）；归口分支由 internal 单测覆盖")
 	}
-	engine := newAdminI18nPageEngine(t)
-	body, code := postAdminI18nPageJump(t, engine, "/admin/i18n/save", url.Values{
-		"key": {"page.err.test"}, "lang": {"zh-CN"}, "value": {"测试"},
-	})
-	if code != http.StatusOK {
-		t.Fatalf("存储不可用应渲染提示页（200），got %d body=%s", code, body)
+	engine := newAdminI18nWriteEngine()
+	code, got := postAdminI18nWrite(t, engine, `{"action":"create","key":"page.err.test","lang":"zh-CN","value":"测试"}`)
+	if code != http.StatusInternalServerError {
+		t.Fatalf("存储不可用应回 500（归口），got %d msg=%q", code, got)
 	}
-	got := jumpMsgFromBody(body)
 	if !pageInternalCopyForms[got] {
 		t.Fatalf("内部错误的文案应是归口形态，got %q", got)
 	}
-	assertPageNoLeak(t, "基础设施错误", body)
+	assertPageNoLeak(t, "基础设施错误", got)
 }

@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"go_wp/pkg/facing"
 )
 
 // TestIsBusinessErrorRecognizesEnumKeys 业务错误（enums 里的 i18n key 形态，判据 1）应被认作可展示。
@@ -142,7 +144,7 @@ func TestIsBusinessErrorCoversAllModuleEnums(t *testing.T) {
 						t.Fatalf("%s 的 %s 取值失败: %v", path, name.Name, uerr)
 					}
 					checked++
-					if businessErrKey.MatchString(value) || businessErrConstant.MatchString(value) {
+					if facing.IsBusinessKey(value) {
 						continue
 					}
 					if legacyKeyExceptions[value] {

@@ -1,29 +1,55 @@
 {{csrf := .["csrf_token"]}}
+{* 取词器：片段 data 是 gin.H，`.["t"]` 只能在顶层点号上取；下面 range 内的点号是行元素，
+   所以在这里先取出一次再复用（range 内点 `.` = 当前行，`.["key"]` 取的是行上的键）。 *}
+{{tr := .["t"]}}
 {{selectedProduct := .SelectedProduct}}
 {{maxOptions := .MaxOptions}}
 {{candidateSKUs := .Rows}}
 {{if isset(.CandidateSKUs)}}{{candidateSKUs = .CandidateSKUs}}{{end}}
+{* 片段档的装载失败：这一档**仍是片段**（200）—— htmx 用它替换页面里那一块，
+   整页失败页塞进片段槽会把外层结构一起换掉。LoadError 由 Go 侧置入。 *}
+{{loadError := .["LoadError"]}}
+{* 这三个键只在「写失败重渲染」这条路径上有值（Go 侧 product_page.go 填）；
+   片段也可能被别的调用方/测试单独渲染，所以缺键按「没有提交快照、不禁止保存」处理
+   —— 直接 .Key 在缺键时会抛 Jet Runtime Error，实测会整块响应被丢弃。 *}
+{{submitted := false}}{{saveBlocked := false}}
+{{if isset(.Submitted)}}{{submitted = .Submitted}}{{end}}
+{{if isset(.SaveBlocked)}}{{saveBlocked = .SaveBlocked}}{{end}}
+{{cfgMaxOptions := 0}}{{cfgMinTotalQty := 0}}{{cfgMaxTotalQty := 0}}
+{{if isset(.CfgMaxOptions)}}{{cfgMaxOptions = .CfgMaxOptions}}{{end}}
+{{if isset(.CfgMinTotalQty)}}{{cfgMinTotalQty = .CfgMinTotalQty}}{{end}}
+{{if isset(.CfgMaxTotalQty)}}{{cfgMaxTotalQty = .CfgMaxTotalQty}}{{end}}
 <div data-bundle-form-host>
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_bundle.saveError", "保存未完成：") }}{{.Err}}</p>
     {{end}}{{end}}
+    {{if loadError}}
+    {* 装载失败要说清「发生了什么」，但**不能吞掉表单**：这条路径是写失败重渲染，
+       hx-swap=outerHTML 会用这一段替换用户整块表单 —— 有提交快照时表单必须留在下面
+       （先把用户的输入留住，再谈报错）。 *}
+    <p class="badge badge-danger" role="alert">{{loadError}}</p>
+    <p class="page-sub">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
+    <p class="hint">{{if submitted}}{{ .["t"]("admin.product_bundle.reloadFailedKeepInput", "下面是你刚提交的成员清单与数值：本次禁止保存（配置没读出来，保存会把不完整的配置写进去），网络恢复后点「重新载入」再保存。") }}{{else}}{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}{{end}}</p>
+    {{end}}
     <section class="card card-body">
         <h2>{{ .["t"]("admin.product_bundle.rule.title", "选项规则") }}{{if .Detail}} · {{.Detail.ProductName}}{{end}}</h2>
         {{if .Detail}}
         <p><span class="badge">{{ .["t"]("admin.product_bundle.rule.basePriceLead", "套餐价（主体自定价）：") }}{{.Detail.BasePrice}}</span></p>
+        {{end}}
+        {{if .Detail || submitted}}
         <form method="post" action="/admin/products/bundle/save{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-post="/admin/products/bundle/save{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-target="closest [data-bundle-form-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="productId" value="{{selectedProduct}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <div class="form-inline">
                 <label>{{ .["t"]("admin.product_bundle.cfg.maxOptions", "选项数量上限") }}
-                    <input type="number" class="form-input" name="maxOptions" min="1" max="{{maxOptions}}" value="{{.Detail.Config.MaxOptions}}">
+                    <input type="number" class="form-input" name="maxOptions" min="1" max="{{maxOptions}}" value="{{cfgMaxOptions}}">
                 </label>
                 <label>{{ .["t"]("admin.product_bundle.cfg.minTotalQty", "整单最小总件数") }}
-                    <input type="number" class="form-input" name="minTotalQty" min="0" value="{{.Detail.Config.MinTotalQty}}">
+                    <input type="number" class="form-input" name="minTotalQty" min="0" value="{{cfgMinTotalQty}}">
                 </label>
                 <label>{{ .["t"]("admin.product_bundle.cfg.maxTotalQty", "整单最大总件数（0 = 不设上限）") }}
-                    <input type="number" class="form-input" name="maxTotalQty" min="0" value="{{.Detail.Config.MaxTotalQty}}">
+                    <input type="number" class="form-input" name="maxTotalQty" min="0" value="{{cfgMaxTotalQty}}">
                 </label>
             </div>
             {* Every member contributes the same nine fields in DOM order. *}
@@ -54,7 +80,11 @@
                                 <input type="hidden" name="memberWarehouseSku" value="{{if isset(row.WarehouseSKU)}}{{row.WarehouseSKU}}{{end}}">
                                 <input type="hidden" name="memberExternalSku" value="{{if isset(row.ExternalSKU)}}{{row.ExternalSKU}}{{end}}">
                             </td>
-                            <td>{{if isset(row.SourceLabel)}}{{if row.SourceLabel != ""}}<span data-member-source>{{row.SourceLabel}}</span>{{else}}<span class="text-mute" data-member-source>—</span>{{end}}{{else}}<span class="text-mute" data-member-source>—</span>{{end}}</td>
+                            {* 来源列：Go 侧给的是**事实段**（词条 Key + 兜底 + 可选数据值），
+                               分段拼接与取词都在这里 —— 控制器不再拼成品串。
+                               缺 SourceParts 的老形状（只有成品串 SourceLabel）原样输出，
+                               gojet 对 map 缺键取值会报错，所以先 isset 再取。 *}
+                            <td>{{if isset(row.SourceParts)}}{{if len(row.SourceParts) > 0}}<span data-member-source>{{range i, part := row.SourceParts}}{{if i > 0}} · {{end}}{{tr(part.LabelKey, part.LabelFallback)}}{{if part.Value != ""}} {{part.Value}}{{end}}{{end}}</span>{{else}}<span class="text-mute" data-member-source>—</span>{{end}}{{else if isset(row.SourceLabel)}}{{if row.SourceLabel != ""}}<span data-member-source>{{row.SourceLabel}}</span>{{else}}<span class="text-mute" data-member-source>—</span>{{end}}{{else}}<span class="text-mute" data-member-source>—</span>{{end}}</td>
                             <td>
                                 <select class="form-select" name="required" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.required", "必选") }}">
                                     <option value="1" {{if row.Required}}selected{{end}}>{{ .["t"]("admin.product_bundle.option.required", "必选") }}</option>
@@ -124,7 +154,14 @@
                 </tr>
             </template>
             <div class="action-row">
+                {{if saveBlocked}}
+                {* 配置读不出来 → 保存会把「只有成员、没有配置」的东西写进库：禁掉保存，
+                   只留「重新载入」这一条现有通道（本页没有别的读路径）。 *}
+                <a class="btn btn-ghost" href="/admin/products/bundle{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">{{ .["t"]("admin.product_bundle.reload", "重新载入") }}</a>
+                <button type="submit" class="btn btn-primary" disabled>{{ .["t"]("admin.product_bundle.cfg.saveBlocked", "保存配置（页面数据未读出）") }}</button>
+                {{else}}
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_bundle.cfg.save", "保存配置") }}</button>
+                {{end}}
             </div>
         </form>
         {{else}}

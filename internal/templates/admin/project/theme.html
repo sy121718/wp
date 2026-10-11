@@ -8,6 +8,7 @@
 {{extends "../layout.html"}}
 {{block body()}}
 {{tr := .["t"]}}
+{{tf := .["tf"]}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 <div class="stack">
@@ -47,7 +48,7 @@
     </header>
 
     {* 「还没有工程」空态由 handler 算好的 NoProjectEmpty 决定（= 工程列表为空 **且** 本次没有装载失败）。
-       为什么不在这里写 `len(.Projects) == 0 && .Err == ""`：模板是磁盘热读文件，而 Go 侧改动要等
+       为什么不在这里写 `len(.Projects) == 0 && .Err.Empty()`：模板是磁盘热读文件，而 Go 侧改动要等
        air 重编译，两边会短暂不同步 —— 缺键直接参与判断会让**整页中断**（HTTP 200 + 后面整块 HTML 消失）。
        可选键一律 isset 包裹，是 internal/templates/CLAUDE.md 的硬约定。
        三段齐：title（说清缺什么）+ desc（主题为什么必须挂在工程下）+ actions（真正能点的下一步）。 *}
@@ -63,13 +64,14 @@
     </section>
     {{else}}
 
-    {* 失败提示条：本页**装载失败**时由 handler 直接给（空串 = 无提示）。
+    {* 失败提示条：本页**装载失败**时由 handler 给**事实**（key + 中文兜底 + `%s` 参数），
+       取词在本模板做（tf）—— 控制器不提前翻，语言由当前请求决定。
        写操作（新建 / 激活 / 删除）的结论不再回带本页 —— 走 shell.RenderJump 渲染
        整页提示（见 project_jump.go），所以这条只由工程 / 主题列表取数失败填充。
        放在页头之后、列表之前：用户一眼看到「是这一页没读出来」，列表本身照常可读。 *}
-    {{if isset(.Err) && .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}
+    {{if isset(.Err)}}{{if .Err.Key != "" || .Err.Fallback != ""}}
+    <p class="badge badge-warning" role="alert">{{tf(.Err.Key, .Err.Fallback, .Err.Args)}}</p>
+    {{end}}{{end}}
 
     <section class="card list-card">
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.theme.table_aria", "主题列表") }}">

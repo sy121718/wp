@@ -8,7 +8,7 @@ const (
 	// —— 页面级语言排除（迁移 491）——
 	//
 	// 四条哨兵的取值即 i18n key（与其它 page 错误同形）；未接好词条前，后台页在调用点
-	// 给中文兜底（page_langs_handle.go 的 pageLangErrText），不显示裸 key。
+	// 给中文兜底（由 pkg/facing 的哨兵自带，见 page/service/page_lang.go），不显示裸 key。
 	//
 	// ErrPageLangExcluded 该语言已被本页排除：发布 / 构建入口据此跳过。
 	// 它是**正常业务状态**（作者主动撤下该语言），批量发布记成 skipped 而不是失败。
@@ -82,7 +82,7 @@ const (
 // 这几句是 handler 按计数拼出的整句回执（经 shell.RenderJump 渲染进整页提示），
 // 不是 service 错误，因此不进错误白名单。
 //
-// 中文原文留在 inbound/http/page_err.go 与 pages_handle.go
+// 中文原文留在 inbound/http/page_jump.go 与 pages_handle.go（key + 兜底的成对登记）
 // （与写侧取词用的那份模板结构体绑在一起），这里只声明 key。
 const (
 	// 页面列表批量删除的四个结论分支。
@@ -95,7 +95,7 @@ const (
 
 	// 页面表单的必填校验回执（handler 自造，同样**不是** service 错误）。
 	//
-	// 中文原文留在 inbound/http/page_err.go 的结构体里（写侧取词的唯一一份）。
+	// 中文原文留在 inbound/http/page_jump.go 的 pageMsg 里（写侧取词的唯一一份）。
 	//
 	// PageFormProjectNameRequired 新建站点工程时名称为空。
 	PageFormProjectNameRequired = "page.form.projectNameRequired"

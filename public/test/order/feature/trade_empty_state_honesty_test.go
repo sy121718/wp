@@ -33,6 +33,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"go_wp/internal/middleware/adminctx"
 	orderenums "go_wp/internal/module/order/enums"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	ordermodel "go_wp/internal/module/order/model"
@@ -43,7 +44,6 @@ import (
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
 	sysconfigservice "go_wp/internal/module/sysconfig/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -89,12 +89,12 @@ func newTradePageEnv(t *testing.T) *tradePageEnv {
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 权限上下文：生产里由 shell.PermContextMiddleware 按当前用户的权限码注入。
+	// 权限上下文：生产里由 adminctx.PermContextMiddleware 按当前用户的权限码注入。
 	// 本测试不装配 authz 组件，直接给一份「有 order:create」的集合 ——
 	// 页头与空态的建单入口都按它渲染（模板里 canCreate := isset(.PermSet["order:create"])）。
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{"order:create": true})
-		c.Set(shell.ButtonsKey, map[string]bool{"order.create": true})
+		c.Set(adminctx.PermSetKey, map[string]bool{"order:create": true})
+		c.Set(adminctx.ButtonsKey, map[string]bool{"order.create": true})
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
@@ -551,8 +551,8 @@ func newOrderCreatePageEnv(t *testing.T) *orderCreatePageEnv {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{"order:create": true})
-		c.Set(shell.ButtonsKey, map[string]bool{"order.create": true})
+		c.Set(adminctx.PermSetKey, map[string]bool{"order:create": true})
+		c.Set(adminctx.ButtonsKey, map[string]bool{"order.create": true})
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
@@ -779,30 +779,41 @@ func TestAdminOrderCreateDefaultsToNoGuestAccount(t *testing.T) {
 	}
 }
 
-// orderIDFromCreate 从建单成功提示页的回跳链接里取 orderId（列表页靠它展开新单）。
+// orderIDFromCreate 从建单成功后的 303 回跳 `Location` 里取 orderId（列表页靠它展开新单）。
+//
+// 成功出口的契约是 **303 PRG**，与 block / ai / page 三个模块的既有先例同口径
+// （见 internal/module/block/inbound/http/block_page.go:246、internal/module/ai/inbound/http/ai_page.go:1038）：
+//
+//	· 303 + `Location=/admin/orders?project=…&orderId=…` —— 浏览器接着发 GET，列表页按
+//	  orderId 展开新单，**事实确认落在刷新后的页面上**；
+//	· 刻意不挂 htmx、不做「重定向后提示」：后台没有这个面（task-67 之后 ?err=/?ok= 族整批退役，
+//	  lead 裁定不为它新建会话 flash —— 已有 303 先例一律不带提示）。
+//
+// 失败仍是 200 + 就地重渲（字段级标红 + 全字段回填，见 TestAdminOrderCreatePageEchoesOnFailure），
+// 303 只属于成功。这条断言把「成功=303」钉住：改回 200 + 提示页会立刻红。
 func orderIDFromCreate(t *testing.T, rec *httptest.ResponseRecorder) uint64 {
 	t.Helper()
-	body := strings.ReplaceAll(rec.Body.String(), "&amp;", "&")
-	if rec.Code != http.StatusOK || !strings.Contains(body, `data-jump-state="ok"`) {
-		t.Fatalf("建单成功应渲染成功提示页，实际 %d（%s）", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("建单成功应回 303 PRG，实际 %d（%s）", rec.Code, rec.Body.String())
 	}
-	const marker = `href="/admin/orders?`
-	i := strings.Index(body, marker)
-	if i < 0 {
-		t.Fatalf("提示页没有回列表的链接：%s", rec.Body.String())
+	loc := rec.Header().Get("Location")
+	if loc == "" {
+		t.Fatalf("303 必须带 Location（回列表并展开新单），实际为空")
 	}
-	rest := body[i+len(`href="`):]
-	end := strings.Index(rest, `"`)
-	if end < 0 {
-		t.Fatalf("回跳链接没有结束引号：%s", rest)
-	}
-	u, err := url.Parse(rest[:end])
+	u, err := url.Parse(loc)
 	if err != nil {
-		t.Fatalf("解析回跳地址失败: %v", err)
+		t.Fatalf("Location 不是合法 URL：%q（%v）", loc, err)
 	}
-	id, _ := strconv.ParseUint(u.Query().Get("orderId"), 10, 64)
-	if id == 0 {
-		t.Fatal("成功提示应带上新单的 orderId（回列表页时详情是展开的）")
+	if u.Path != "/admin/orders" {
+		t.Fatalf("回跳应落在订单列表 /admin/orders，实际 %q", u.Path)
+	}
+	raw := u.Query().Get("orderId")
+	if raw == "" {
+		t.Fatalf("Location 必须带 orderId（回列表页时该单的详情是展开的）：%q", loc)
+	}
+	id, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || id == 0 {
+		t.Fatalf("Location 里的 orderId 不是有效订单 id：%q（%v）", raw, err)
 	}
 	return id
 }

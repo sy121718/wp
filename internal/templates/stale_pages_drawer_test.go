@@ -57,8 +57,8 @@ func assertRowCellsMatchHead(t *testing.T, out string, want int) {
 func TestStalePagesDrawerSingleProject(t *testing.T) {
 	out := renderAdminEmptyProbe(t, "admin/partials/stale_pages_drawer.html", map[string]any{
 		"Rows": []map[string]any{
-			{"ID": "p1", "Path": "/zh/index", "ProjectName": "站点", "Published": true},
-			{"ID": "p2", "Path": "/draft-page", "ProjectName": "站点", "Published": false},
+			{"ID": "p1", "Path": "/zh/index", "ProjectName": "站点", "Published": true, "RebuildFailure": map[string]any{}},
+			{"ID": "p2", "Path": "/draft-page", "ProjectName": "站点", "Published": false, "RebuildFailure": map[string]any{}},
 		},
 		"Total": 2, "Truncated": false, "Limit": 8, "MultiProject": false,
 	})
@@ -86,8 +86,8 @@ func TestStalePagesDrawerSingleProject(t *testing.T) {
 func TestStalePagesDrawerMultiProjectKeepsColumnsAligned(t *testing.T) {
 	out := renderAdminEmptyProbe(t, "admin/partials/stale_pages_drawer.html", map[string]any{
 		"Rows": []map[string]any{
-			{"ID": "p1", "Path": "/about", "ProjectName": "站点甲", "Published": true},
-			{"ID": "p2", "Path": "/about", "ProjectName": "站点乙", "Published": true},
+			{"ID": "p1", "Path": "/about", "ProjectName": "站点甲", "Published": true, "RebuildFailure": map[string]any{}},
+			{"ID": "p2", "Path": "/about", "ProjectName": "站点乙", "Published": true, "RebuildFailure": map[string]any{}},
 		},
 		"Total": 2, "Truncated": true, "Limit": 8, "MultiProject": true,
 	})
@@ -112,10 +112,14 @@ func TestStalePagesDrawerMultiProjectKeepsColumnsAligned(t *testing.T) {
 // 两者的处置相反（等 vs 查日志）。没有它，读的人只能靠猜是队列在追还是真的坏了。
 func TestStalePagesDrawerShowsRebuildFailure(t *testing.T) {
 	note := "最近一次自动重建失败：构建 / 发布阶段（2026-09-29 16:20）"
+	// 失败痕迹是**事实**（Has + 阶段 key/兜底 + 已格式化时刻），整句由模板拼回 ——
+	// 这里喂的就是改造后的槽位形状，与调用方（content / block）交给模板的一致。
+	failed := map[string]any{"Has": true, "StageKey": "admin.pages.impact.stage_build",
+		"StageFallback": "构建 / 发布阶段", "At": "2026-09-29 16:20"}
 	out := renderAdminEmptyProbe(t, "admin/partials/stale_pages_drawer.html", map[string]any{
 		"Rows": []map[string]any{
-			{"ID": "p1", "Path": "/zh/index", "ProjectName": "站点", "Published": true, "FailedNote": note},
-			{"ID": "p2", "Path": "/zh/shop", "ProjectName": "站点", "Published": true, "FailedNote": ""},
+			{"ID": "p1", "Path": "/zh/index", "ProjectName": "站点", "Published": true, "RebuildFailure": failed},
+			{"ID": "p2", "Path": "/zh/shop", "ProjectName": "站点", "Published": true, "RebuildFailure": map[string]any{}},
 		},
 		"Total": 2, "Truncated": false, "Limit": 8, "MultiProject": false,
 	})

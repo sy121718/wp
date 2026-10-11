@@ -15,12 +15,9 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
-{* 分页键由 handler 注入在顶层。本页只有发信账号一张表，单页或空数据时这个键不存在 ——
-   取到 nil 不中断渲染，分页片段里的 if 自然跳过。
-   拆页前这里曾有 Accounts* / Templates* 两套前缀键（两张表各一份），
-   现在每页一张表，键名回归到 partials/pagination.html 读的那两个。 *}
-{{accLinks := .["PaginationLinks"]}}
-{{accInfo := .["PaginationInfo"]}}
+{* 分页事实由 handler 注入在顶层键 "Pagination"（pkg/pagination.Page）：信息行、翻页按钮与
+   链接都由 partials/pagination.html 按请求语言渲染，本页不再自己算。单页或空数据时该键
+   不存在 —— 缺键不中断渲染，片段里的 isset 守卫自然跳过（旧的两键形态已被事实层取代）。 *}
 {{canSaveAccount := isset(.Buttons["mail.account_save"])}}
 {* 批量动作复用对应单条动作的权限点（路由层用同一个 CasbinMiddlewareForPath），不新增权限点。 *}
 {{canDeleteAccount := isset(.Buttons["mail.account_delete"])}}
@@ -116,7 +113,7 @@
       </div>
     </form>
     {* 发信账号表的分页条（每页 20 条；单页时不渲染）。 *}
-    {{include "../partials/pagination.html" map("t", tr, "PaginationLinks", accLinks, "PaginationInfo", accInfo)}}
+    {{include "../partials/pagination.html" map("t", tr, "Pagination", .["Pagination"])}}
   </section>
 
 

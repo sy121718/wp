@@ -17,15 +17,15 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/middleware/adminctx"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 
 	"github.com/gin-gonic/gin"
 )
 
 // marketingPagePerms 页面里「导入联系人」「新建活动」等入口按权限码显隐，
-// 生产由鉴权中间件写进 context（shell.PermSetKey）；这里直接给全，
+// 生产由鉴权中间件写进 context（adminctx.PermSetKey）；这里直接给全，
 // 断言的是渲染结果而不是权限链本身。
 var marketingPagePerms = map[string]bool{
 	"mail:contact_import":    true,
@@ -47,8 +47,8 @@ func newMarketingPageRouter(t *testing.T) (*gin.Engine, *mailFixture) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, marketingPagePerms)
-		c.Set(shell.ButtonsKey, buttonsOf(marketingPagePerms))
+		c.Set(adminctx.PermSetKey, marketingPagePerms)
+		c.Set(adminctx.ButtonsKey, buttonsOf(marketingPagePerms))
 	})
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := mailhttp.NewMailPageHandle(f.svc)

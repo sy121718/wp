@@ -28,19 +28,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 	pkgcasbin "go_wp/pkg/casbin"
 )
 
 // newExternalSKUEditEngine 装配只挂库存页与「外码行内编辑」写入口的测试引擎（真实 Jet + 真实 service）。
 //
 // 与生产装配同形：写入口是原生表单 POST + PRG（与采购页的「登记入库」同一手法），
-// 不入 HTMX、不写自定义 JS。这里注入的权限集合只供**渲染**（shell.Prepare 读 PermSetKey），
+// 不入 HTMX、不写自定义 JS。这里注入的权限集合只供**渲染**（adminui.Prepare 读 PermSetKey），
 // 不参与拦截 —— 拦截一律由路由上的 Casbin 中间件判定，见 TestExternalSKUEditUnauthorizedBlocked。
 func newExternalSKUEditEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	t.Helper()
@@ -52,8 +52,8 @@ func newExternalSKUEditEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{"inventory:stock_change": true})
-		c.Set(shell.ButtonsKey, map[string]bool{"inventory.stock_change": true})
+		c.Set(adminctx.PermSetKey, map[string]bool{"inventory:stock_change": true})
+		c.Set(adminctx.ButtonsKey, map[string]bool{"inventory.stock_change": true})
 	})
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
 	engine.GET("/admin/inventory", handle.InventoryPage)

@@ -4,10 +4,19 @@ package contenthttp
 //
 // 三件套（AGENTS.md §响应与错误处理，与 admin 的 admin_err.go / block 的 block_err.go 同形）：
 //
-//	① 白名单 —— articleFacingMessages / articlePublishFacingMessages / articleImportFacingMessages
-//	   （三张表分别在 content_page.go，键是 enums 常量或 i18n key）；
-//	② 归口文案 —— 未命中时返回 shell.PageInternalText(c)（可翻译 key + 中文兜底）；
-//	③ 结构化日志 —— 原文只进日志，带 user_id（见 content_page.go 的 articleInternalText）。
+//	① **判定** —— 只有一条：adminui.PageErrorFact（pkg/response.IsBusinessError）。
+//	   本模块原先自持三张「可透出白名单」并逐条比对，那是**第二份真相**：service 换了措辞、
+//	   或某个 key 改由别的模块提供，白名单就静默失配，而两种症状都不报错（有时把内部错误
+//	   当业务文案透出、有时把业务文案吞成归口）。三张表现在只剩一件事 ——
+//	   **key → 中文兜底**（缺词条时页面显示什么），不再是可透出性判据。
+//	   （表在 content_page.go：articleFacingMessages / articlePublishFacingMessages /
+//	   articleImportFacingMessages；存在价值只剩「同一个 key 在不同场景各说各的」。）
+//	② 归口文案 —— 未命中时给 adminui.InternalMsg()（可翻译 key + 中文兜底）；
+//	③ 结构化日志 —— 原文只进日志，带 user_id（见 content_page.go 的 articleInternalMsg）。
+//
+// **控制器不取词**：本文件的出口收的是**事实**（adminui.Msg：key + 中文兜底 + `%s` 参数），
+// 不是拼好的句子 —— 「这段文案属于哪个语言」由模板取词时决定，与控制器无关。所以
+// 出口的 msg / backText 都是 adminui.Msg，回跳链接文字则是包级常量（静态文案不需要 c）。
 //
 // 传输通道：写动作的结论由 shell.RenderJump 渲染成整页提示（对应 ThinkPHP 的
 // success() / error()），**不再**经 302 / 303 + `?err=` / `?ok=` / `?done=` 回带列表页或编辑页。
@@ -16,9 +25,9 @@ package contenthttp
 // 再判一次「这条提示是不是本仓给的」（articleQueryText / articleDoneTexts / articlePageDone
 // 就是那套），而查询参数不是可信边界。文案走响应体之后，那套判定随之不需要了。
 //
-// 本文件只放**写侧出口**：回跳地址（shell.BackPath / shell.WithParams）与提示页渲染。
-// 错误归口（articleFacingError / articlePublishFacingError / articleImportFacingError 等）
-// 仍留在各自的用例文件里，与它们的白名单同处一份。
+// 本文件只放**写侧出口**：回跳地址（shell.BackPath / backpath.WithParams）与提示页渲染。
+// 错误归口（articleFacingErrMsg / articlePublishErrMsg / articleImportErrMsg 等）
+// 仍留在各自的用例文件里，与它们的兜底表同处一份。
 
 import (
 	"strings"
@@ -26,6 +35,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/shell"
+	"go_wp/pkg/backpath"
 )
 
 // articleJumpListBack 回文章列表页的回跳地址：从**本次请求的 query** 读回筛选上下文。
@@ -39,29 +49,27 @@ func articleJumpListBack(c *gin.Context) string {
 // articleJumpEditBack 回文章编辑页的回跳地址：id 来自本次提交的表单。
 //
 // 编辑页的写动作（保存 / 发布 / 重建 / 改 URL / 导入）都把 id 放在表单隐藏域里，
-// 不是查询参数 —— 所以用 shell.WithParams 拼，与 BackPath 共用同一份参数编码。
+// 不是查询参数 —— 所以用 backpath.WithParams 拼，与 BackPath 共用同一份参数编码。
 func articleJumpEditBack(c *gin.Context, id string) string {
-	return shell.WithParams(articleEditPagePath, map[string]string{"id": strings.TrimSpace(id)})
+	return backpath.WithParams(articleEditPagePath, map[string]string{"id": strings.TrimSpace(id)})
 }
 
-// articleJumpListText 列表页回跳链接的文字（复用页面标题词条，不新增全站词条）。
-func articleJumpListText(c *gin.Context) string {
-	return shell.TranslateFor(c)(articlePageTitle, "文章")
-}
-
-// articleJumpEditText 编辑页回跳链接的文字（复用页面标题词条）。
-func articleJumpEditText(c *gin.Context) string {
-	return shell.TranslateFor(c)(articleEditTitle, "编辑文章")
-}
+// —— 回跳链接文字（复用页面标题词条，不新增全站词条）——
+//
+// 全是静态的 key + 中文原文，所以是包级变量：**不需要 gin.Context** ——
+// 「这段文案属于哪个语言」由模板取词时决定，与控制器无关（这正是本批的形状要求）。
+var (
+	articleJumpListMsg = articleMsg{Key: articlePageTitle, Fallback: "文章"}
+	articleJumpEditMsg = articleMsg{Key: articleEditTitle, Fallback: "编辑文章"}
+)
 
 // articlePageJump 页面写动作的统一出口：整页提示。
 //
 // 取代原先的 302 / 303 + `?err=` / `?ok=` / `?done=`：那条通道要求读侧再判一次
 // 「这条提示是不是本仓给的」，而查询参数不是可信边界。现在文案走响应体，读侧判定随之删除。
 //
-// msg 必须**已过本模块白名单 / 已归口**（articleFacingError / articleFacingText /
-// articlePublishTextOf / articleFacingOrInternal 的产物），原文只进日志 ——
-// 换个页面呈现不等于可以把 err.Error() 铺在页面上。
+// msg / backText 都是**事实**（adminui.Msg）而不是拼好的句子：判定与兜底已在
+// articleFacingErrMsg 那一层做完，取词留给模板注入的 tf（见 adminui.Prepare）。
 //
 // 失败不自动跳转（Seconds=0）：运营要看清楚原因。成功 1 秒后自动回目标页
 // （与 sysconfig / plugin / block 同一取舍）。
@@ -69,20 +77,29 @@ func articleJumpEditText(c *gin.Context) string {
 // 例外：**保存文章失败**不走这里，仍由 articleUpdateFailure 原地重渲编辑页回填本次输入
 // （见 internal/templates/CLAUDE.md「写表单失败时原地留住输入」）—— 整页提示会把
 // 用户刚写的正文整屏清掉，那是比错误文案贵得多的损失。
-func articlePageJump(c *gin.Context, ok bool, msg, back, backText string) {
+func articlePageJump(c *gin.Context, ok bool, msg articleMsg, back string, backText articleMsg) {
+	seconds := 0
 	if ok {
-		shell.RenderJump(c, shell.Jump{OK: true, Msg: msg, Back: back, BackText: backText, Seconds: 1})
-		return
+		seconds = 1
 	}
-	shell.RenderJump(c, shell.Jump{Msg: msg, Back: back, BackText: backText})
+	shell.RenderJump(c, shell.Jump{
+		OK:          ok,
+		MsgKey:      msg.Key,
+		Msg:         msg.Fallback,
+		MsgArgs:     msg.Args,
+		Back:        back,
+		BackTextKey: backText.Key,
+		BackText:    backText.Fallback,
+		Seconds:     seconds,
+	})
 }
 
 // articleListJump 回文章列表页的提示页出口（新建 / 删除 / 批量删除共用）。
-func articleListJump(c *gin.Context, ok bool, msg string) {
-	articlePageJump(c, ok, msg, articleJumpListBack(c), articleJumpListText(c))
+func articleListJump(c *gin.Context, ok bool, msg articleMsg) {
+	articlePageJump(c, ok, msg, articleJumpListBack(c), articleJumpListMsg)
 }
 
 // articleEditJump 回文章编辑页的提示页出口（发布 / 重建 / 改 URL / 导入共用）。
-func articleEditJump(c *gin.Context, ok bool, id, msg string) {
-	articlePageJump(c, ok, msg, articleJumpEditBack(c, id), articleJumpEditText(c))
+func articleEditJump(c *gin.Context, ok bool, id string, msg articleMsg) {
+	articlePageJump(c, ok, msg, articleJumpEditBack(c, id), articleJumpEditMsg)
 }

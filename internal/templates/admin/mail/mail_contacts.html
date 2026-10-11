@@ -14,10 +14,8 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
-{* 分页键由 handler 注入在顶层（拆页后每页一张表，不再有 Contacts* / Campaigns* 前缀）。
-    单页或空数据时这个键不存在 —— 取到 nil 不中断渲染，分页片段里的 if 自然跳过。 *}
-{{contactsLinks := .["PaginationLinks"]}}
-{{contactsInfo := .["PaginationInfo"]}}
+{* 分页事实由 handler 注入在顶层键 "Pagination"（pkg/pagination.Page）；单页或空数据时该键
+   不存在 —— 缺键不中断渲染，片段里的 isset 守卫自然跳过。 *}
 {{canImportContact := isset(.Buttons["mail.contact_import"])}}
 {{canUpdateContact := isset(.Buttons["mail.contact_status"])}}
 {* CRUD 与标签各按自己的权限点显隐：能改状态的人不一定能删人，能删人的人不一定能改标签。 *}
@@ -27,13 +25,13 @@
 {* 标签候选来自全库（handler 经 ListContactTags 注入）：只做输入提示，不限制自由输入。
     直接手打标签最容易打出近义词（vip / VIP / 贵宾）—— 打岔一个，按标签圈人群就漏人。 *}
 {{tagOptions := .["TagOptions"]}}
-{* 写动作表单 action 的筛选上下文（服务端拼、回跳由 shell.BackPath 读回）：
-    批量改完不会被弹回未筛选的第 1 页。可选键用 chain 索引取（缺键为 nil，不中断）。 *}
+{* listQuery 只给**仍在页面 POST 的**写表单用了：批量改状态（/mail/contacts/bulk-status）与
+    改状态抽屉（/mail/contact/status）没有 JSON 端点，仍要走表单并带上筛选上下文
+    （服务端 shell.BackPath 读回，改完不会被弹回未筛选的第 1 页）。
+    新建 / 编辑 / 单条删除 / 批量删除 / 批量打标签已迁到 JSON 端点，刷新由 JS 触发，
+    链接自带当前 URL，不需要 listQuery。 *}
 {{listQuery := ""}}{{if isset(.ListQuery)}}{{listQuery = .ListQuery}}{{end}}
-{* 批量按钮的 formaction 会**整体覆盖** form 的 action（含 query），所以三个端点各自带上 listQuery。 *}
 {{bulkStatusAction := "/admin/mail/contacts/bulk-status" + listQuery}}
-{{bulkDeleteAction := "/admin/mail/contacts/bulk-delete" + listQuery}}
-{{bulkTagAction := "/admin/mail/contacts/bulk-tag" + listQuery}}
 <div class="stack">
   <header class="page-head">
     <div class="page-head-main">
@@ -111,9 +109,16 @@
     </form>
 
     {* 批量动作与勾选框同属一个 form（<form> 包 <table> 合法）；admin.js 按「最近的 form」定作用域。
-        筛选上下文放在 **action 的 query** 上（listQuery），服务端用 shell.BackPath 读回 ——
-        不再用 return* 隐藏域：字段名与列表筛选同名也不必加前缀，因为 query 与 body 是两处
-        （表单里的 status 是**目标状态**，query 里的 status 是列表筛选）。 *}
+        表单里「status」是**目标状态**（改状态用），筛选上下文在改状态那条页面 POST 的 action query 上
+        （listQuery，服务端 shell.BackPath 读回）—— 不再用 return* 隐藏域：query 与 body 是两处。 *}
+    {* 端点声明落在**按钮**上而不是表单上（json_write.js 的 attrFrom：按钮优先、表单兜底）：
+        三个动作共用同一批勾选框（勾选框必须留在表单里 —— 基座按 form.querySelectorAll 收 ids，
+        抽屉在列表外看不见它们），而它们的目标不同：
+          · 批量改状态没有 JSON 端点（服务端还要同步写抑制名单），必须保持原生页面 POST ——
+            所以表单上**不能**声明 data-write-api，否则它会被继承成一个 fetch；
+          · 批量删除 / 批量打标签声明自己的端点，并在按钮上带自己的结果文案。
+        bulk_bar 的 bulkBtn 不能加属性（那个片段的属性名是冻结契约，admin.js 依赖），
+        所以这两个按钮就地写在本页；class / data-confirm / data-confirm-danger 与 bulkBtn 同形。 *}
     <form method="post" action="{{bulkStatusAction}}">
       <input type="hidden" name="csrf_token" value="{{csrf}}">
       {* 批量条只在有数据时渲染：空表没有可勾选的行。
@@ -130,18 +135,42 @@
         {{yield bulkBtn(label=tr("admin.mail.marketing.bulk_status_submit", "批量改状态"), cls="btn btn-sm", confirm=tr("admin.mail.marketing.bulk_status_confirm", "把选中的联系人改为所选状态？改成「退订」会同时写入抑制名单，之后不会再被群发到。"))}}
         {{end}}
         {{if canDeleteContact}}
-        {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.mail.marketing.bulk_delete_confirm", "删除选中的联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。"), formaction=bulkDeleteAction, danger=true)}}
+        <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                data-write-api="/api/mail/contact/delete" data-write-mode="bulk"
+                data-msg-none-selected="{{tr("admin.mail.contacts.bulk.noneSelected", "没有勾选任何联系人，列表未改动。")}}"
+                data-msg-all-deleted="{{tr("admin.mail.contacts.bulkDelete.allDeleted", "已删除 {count} 位联系人。")}}"
+                data-msg-all-skipped="{{tr("admin.mail.contacts.bulkDelete.allSkipped", "{count} 位联系人都未能删除（可能已被删除）。")}}"
+                data-msg-partial="{{tr("admin.mail.contacts.bulkDelete.partial", "已删除 {deleted} 位联系人，{skipped} 位未能删除（可能已被删除）。")}}"
+                data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+                data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                data-msg-refresh="{{tr("admin.mail.contacts.bulkDelete.refresh", "刷新列表")}}"
+                data-confirm="{{tr("admin.mail.marketing.bulk_delete_confirm", "删除选中的联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。")}}"
+                data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
         {{end}}
         {* 批量打标签与「批量改状态」共用同一个 form 与同一批勾选框：抽屉在列表外，
             里面拿不到被勾选的 id，把它们搬过去要么新增业务 JS 搬运 id、要么让人重抄一遍名单。
-            改标签按钮用 bulk_bar 的 formaction 契约改投 /admin/mail/contacts/bulk-tag。 *}
+            add / remove 两个输入框由 data-write-extra 点名带上（只发点名字段，不会带上 status）。 *}
         {{if canTagContact}}
         <input class="form-input" type="text" name="add" aria-label="{{ .["t"]("admin.mail.marketing.bulk_tag.add", "加上标签") }}" placeholder="{{ .["t"]("admin.mail.marketing.bulk_tag.add.ph", "加上标签：vip,华南") }}">
         <input class="form-input" type="text" name="remove" aria-label="{{ .["t"]("admin.mail.marketing.bulk_tag.remove", "去掉标签") }}" placeholder="{{ .["t"]("admin.mail.marketing.bulk_tag.remove.ph", "去掉标签：vip") }}">
-        {{yield bulkBtn(label=tr("admin.mail.marketing.bulk_tag_submit", "批量打标签"), cls="btn btn-sm", formaction=bulkTagAction, confirm=tr("admin.mail.marketing.bulk_tag_confirm", "给选中的联系人打标签？填在「去掉」里的标签会从他们身上移除。"))}}
+        <button type="submit" class="btn btn-sm" data-requires-js hidden
+                data-write-api="/api/mail/contact/tag" data-write-mode="bulk" data-write-outcome="update"
+                data-write-extra="add,remove"
+                data-msg-none-selected="{{tr("admin.mail.contacts.bulk.noneSelected", "没有勾选任何联系人，列表未改动。")}}"
+                data-msg-all-updated="{{tr("admin.mail.contacts.bulkTag.allUpdated", "已为 {count} 位联系人更新标签。")}}"
+                data-msg-all-skipped="{{tr("admin.mail.contacts.bulkTag.allSkipped", "{count} 位联系人都未能更新标签（可能已被删除）。")}}"
+                data-msg-partial="{{tr("admin.mail.contacts.bulkTag.partial", "已为 {updated} 位联系人更新标签，{skipped} 位未能更新（可能已被删除）。")}}"
+                data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+                data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                data-msg-refresh="{{tr("admin.mail.contacts.bulkTag.refresh", "刷新列表")}}"
+                data-confirm="{{tr("admin.mail.marketing.bulk_tag_confirm", "给选中的联系人打标签？填在「去掉」里的标签会从他们身上移除。")}}">{{tr("admin.mail.marketing.bulk_tag_submit", "批量打标签")}}</button>
         {{end}}
       {{yield bulkBarClose()}}
       {{end}}{{end}}
+      {* 批量结果区：删除与打标签共用（改状态走页面 POST，不写这里）。刻意**不自动刷新** ——
+          自动刷新会让「成功 N / 跳过 M + 逐条原因」一闪而过，看不完。 *}
+      <p class="form-hint" data-write-status role="status" hidden></p>
+      <noscript><p class="form-hint">{{tr("admin.mail.contacts.write.noJs", "本页的新建、编辑、删除与批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
       <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.mail.marketing.contacts.heading", "联系人") }}">
       <table class="data-table">
       <thead><tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{ .["t"]("admin.common.bulk.selectAll", "全选") }}"></th><th>{{ .["t"]("admin.mail.marketing.contacts.col.email", "邮箱") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.name", "姓名") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.status", "状态") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.tags", "标签") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.source", "来源") }}</th><th>{{ .["t"]("admin.mail.marketing.contacts.col.consent_source", "同意来源") }}</th><th class="col-actions">{{ .["t"]("admin.mail.marketing.contacts.col.actions", "操作") }}</th></tr></thead>
@@ -199,9 +228,10 @@
           <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-contact-save-{{c.ID}}" data-drawer-title="{{tr("admin.mail.marketing.contact_form.edit_title", "编辑联系人")}} · {{c.Email}}">{{tr("admin.mail.marketing.contact_form.edit", "编辑")}}</button>
           {{end}}
           {* 单条删除走表格外的 hidden-form（form="…" 关联）：按钮本身在本页批量 form 内部，
-              再嵌一层 <form> 是非法嵌套（浏览器会丢弃内层表单，提交变成批量动作）。 *}
+              再嵌一层 <form> 是非法嵌套（浏览器会丢弃内层表单，提交变成批量动作）。
+              写动作由浏览器直调 JSON 接口，所以无 JS 时这个按钮是 hidden 的（见页尾 noscript）。 *}
           {{if canDeleteContact}}
-          <button type="submit" form="contact-del-{{c.ID}}" class="btn btn-sm btn-ghost">{{tr("admin.mail.action.delete", "删除")}}</button>
+          <button type="submit" form="contact-del-{{c.ID}}" class="btn btn-sm btn-ghost" data-requires-js hidden>{{tr("admin.mail.action.delete", "删除")}}</button>
           {{end}}
         </td>
       </tr>
@@ -212,11 +242,17 @@
       </div>
     </form>
     {* 分页条：联系人此前**已按页取数**（handler 传 Page/PageSize），但模板从不渲染翻页控件 ——
-        第 51 个联系人永远点不到。拆页后 handler 注入顶层 PaginationLinks / PaginationInfo。 *}
-    {{include "../partials/pagination.html" map("t", tr, "PaginationLinks", contactsLinks, "PaginationInfo", contactsInfo)}}
+        第 51 个联系人永远点不到。现在 handler 注入顶层事实键 "Pagination"，信息行与链接由
+        分页片段自己渲染。 *}
+    {{include "../partials/pagination.html" map("t", tr, "Pagination", .["Pagination"])}}
   </section>
 
-  {* 行内表单与抽屉模板放列表外：HTML 不允许 form 嵌套，按钮用 data-drawer-open 打开。 *}
+  {* 行内表单与抽屉模板放列表外：HTML 不允许 form 嵌套，按钮用 data-drawer-open 打开。
+      单条删除的结果区放在这批隐藏表单的共同 host 里（json_write.js 先找表单内的结果区，
+      找不到再找 closest('[data-write-host]') 里的那个）：删成功后整页刷新，所以这一段
+      只在**失败**时才可见（引用冲突 / 网络故障），不会一闪而过。 *}
+  <div data-write-host>
+    <p class="form-hint" data-write-status role="status" hidden></p>
   {{range _, c := .Contacts}}
   <template id="tpl-contact-status-{{c.ID}}">
     <form method="post" action="/admin/mail/contact/status{{listQuery}}" class="form-stack">
@@ -244,8 +280,11 @@
   {* 编辑抽屉：邮箱是抑制名单的关联键 —— 改邮箱不会把退订记录搬过去（搬了等于让退订者
       换个地址继续收）。留空 / 有权限的人都按这个语义操作，语义在服务端注释里有完整论证。 *}
   <template id="tpl-contact-save-{{c.ID}}">
-    <form method="post" action="/admin/mail/contact/save{{listQuery}}" class="form-stack">
-      <input type="hidden" name="csrf_token" value="{{csrf}}">
+    {* 编辑：create 模式发**表单全部具名字段**（email / name / tags / status / consent_source + id），
+       id>0 即编辑 —— 与新建共用同一份字段清单（分开两个端点必然出现「新建加了字段、编辑忘了加」）。
+       csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头（基座会跳过同名字段）。 *}
+    <form data-write-api="/api/mail/contact/save" data-write-mode="create" data-write-number="id"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
       <input type="hidden" name="id" value="{{c.ID}}">
       <div class="form-field">
         <label class="form-label" for="ce-email-{{c.ID}}">{{tr("admin.mail.marketing.contact_form.email", "邮箱") }}</label>
@@ -280,28 +319,36 @@
           <input class="form-input" id="ce-consent-{{c.ID}}" type="text" name="consent_source" value="{{c.ConsentSource}}" placeholder="{{tr("admin.mail.marketing.contact_form.consent_source.ph", "例如：本人在官网表单勾选同意")}}">
         </div>
       </div>
+      {* 结果区在表单内：失败时抽屉不关、已填内容一个字段都不动，只在这里点出原因。 *}
+      <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-        <button type="submit" class="btn btn-primary">{{tr("admin.mail.marketing.contact_form.save", "保存")}}</button>
+        <button type="submit" class="btn btn-primary" data-requires-js hidden>{{tr("admin.mail.marketing.contact_form.save", "保存")}}</button>
       </div>
+      <noscript><p class="form-hint">{{tr("admin.mail.contacts.write.noJs", "本页的新建、编辑、删除与批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
     </form>
   </template>
   {{end}}
   {{if canDeleteContact}}
-  <form id="contact-del-{{c.ID}}" class="hidden-form" method="post" action="/admin/mail/contact/delete{{listQuery}}"
+  {* 单条删除：真端点 POST /api/mail/contact/delete，payload 只有 {id}（single 模式）。
+     确认框仍归 ui/confirm.js（data-confirm 在表单上，按钮 form="…" 关联，提交依旧要确认）。 *}
+  <form id="contact-del-{{c.ID}}" class="hidden-form" data-write-api="/api/mail/contact/delete" data-write-mode="single"
+        data-write-number="id"
+        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
         data-confirm="{{tr("admin.mail.marketing.contact_delete_confirm", "删除该联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。")}}" data-confirm-danger>
-    <input type="hidden" name="csrf_token" value="{{csrf}}">
     <input type="hidden" name="id" value="{{c.ID}}">
   </form>
   {{end}}
   {{end}}
+  </div>
 
   {{if canSaveContact}}
   {* 新建抽屉：手工加一条（线下换名片、电话索要、单人补录）。同意状态默认「待确认」——
       没勾选同意证据就不该直接进可发送名单；要置为已订阅，必须同时写清同意来源（留痕）。 *}
   <template id="tpl-contact-save">
-    <form method="post" action="/admin/mail/contact/save{{listQuery}}" class="form-stack">
-      <input type="hidden" name="csrf_token" value="{{csrf}}">
+    {* 新建：与编辑同一端点、同一形状（id=0 即新建），字段清单一致才不会出现「新建漏字段」。 *}
+    <form data-write-api="/api/mail/contact/save" data-write-mode="create" data-write-number="id"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
       <input type="hidden" name="id" value="0">
       <div class="form-field">
         <label class="form-label" for="cn-email">{{tr("admin.mail.marketing.contact_form.email", "邮箱") }}</label>
@@ -332,10 +379,12 @@
           <input class="form-input" id="cn-consent" type="text" name="consent_source" placeholder="{{tr("admin.mail.marketing.contact_form.consent_source.ph", "例如：本人在官网表单勾选同意")}}">
         </div>
       </div>
+      <p class="form-hint" data-write-status role="status" hidden></p>
       <div class="action-row">
         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-        <button type="submit" class="btn btn-primary">{{tr("admin.mail.marketing.contact_form.save", "保存")}}</button>
+        <button type="submit" class="btn btn-primary" data-requires-js hidden>{{tr("admin.mail.marketing.contact_form.save", "保存")}}</button>
       </div>
+      <noscript><p class="form-hint">{{tr("admin.mail.contacts.write.noJs", "本页的新建、编辑、删除与批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
     </form>
   </template>
   {{end}}

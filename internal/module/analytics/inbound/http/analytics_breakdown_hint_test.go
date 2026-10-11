@@ -20,6 +20,7 @@ import (
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
+	"go_wp/pkg/pagination"
 )
 
 // TestBreakdownUnavailableJudgement 判据：只有「总数有数 + 三个维度榜全空」才提示。
@@ -91,14 +92,15 @@ func TestAnalyticsPageRendersBreakdownHint(t *testing.T) {
 			"FilterFrom":      "", "FilterTo": "",
 			"RangeFrom": "2026-01-01", "RangeTo": "2026-01-15",
 			"Total": 0, "Visitors": 0, "PathTotal": 0,
-			"Daily":          []analyticscontract.DailyCount{},
-			"Paths":          []analyticscontract.PathCount{},
-			"Referrers":      []analyticscontract.RankCount{},
-			"UAClasses":      []analyticscontract.RankCount{},
-			"Langs":          []analyticscontract.RankCount{},
-			"RankLimit":      20,
-			"PaginationInfo": "共 0 条", "PaginationLinks": nil,
-			"Err": "",
+			"Daily":     []analyticscontract.DailyCount{},
+			"Paths":     []analyticscontract.PathCount{},
+			"Referrers": []analyticscontract.RankCount{},
+			"UAClasses": []analyticscontract.RankCount{},
+			"Langs":     []analyticscontract.RankCount{},
+			"RankLimit": 20,
+			// 分页事实：零值＝没有分页（空数据）。
+			"Pagination": pagination.Page{},
+			"Err":        "",
 		}
 		if mutate != nil {
 			mutate(data)

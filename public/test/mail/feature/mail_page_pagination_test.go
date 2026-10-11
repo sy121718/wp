@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/net/html"
 
 	maildto "go_wp/internal/module/mail/dto"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
@@ -320,4 +321,178 @@ func (f *mailFixture) seedCampaignWithLogs(t *testing.T, n int) uint64 {
 // htmlUnescape 反转义 HTML 实体（Jet 会把 href 里的 & 写成 &amp;）。
 func htmlUnescape(s string) string {
 	return strings.NewReplacer("&amp;", "&", "&#34;", `"`, "&quot;", `"`).Replace(s)
+}
+
+// mailPaginationNav 解析渲染结果里**真实的分页条**，返回 (文本, href) 列表。
+//
+// 为什么按 nav 解析而不是字符串包含：分页条的当前页渲染成 <span>（**没有 href**），
+// 只有 prev / next 与其它页码才是链接；直接 grep `page=2` 会永远落空。这里用真 HTML
+// 解析器定位 class 含 pagination 的 <nav>，再取其内部元素 —— 断言的是操作者看到的控件。
+func mailPaginationNav(t *testing.T, body string) []struct{ Text, Href string } {
+	t.Helper()
+	doc, err := html.Parse(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("解析页面 HTML 失败: %v", err)
+	}
+	var nav *html.Node
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if nav != nil {
+			return
+		}
+		if n.Type == html.ElementNode && n.Data == "nav" {
+			for _, a := range n.Attr {
+				if a.Key == "class" && strings.Contains(a.Val, "pagination") {
+					nav = n
+					return
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(doc)
+	if nav == nil {
+		t.Fatal("页面里没有分页条（<nav class=\"pagination\">）")
+	}
+	var out []struct{ Text, Href string }
+	var collect func(*html.Node)
+	collect = func(n *html.Node) {
+		if n.Type == html.ElementNode && (n.Data == "a" || n.Data == "span") {
+			entry := struct{ Text, Href string }{}
+			for _, a := range n.Attr {
+				if a.Key == "href" {
+					entry.Href = a.Val
+				}
+			}
+			var text strings.Builder
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				if c.Type == html.TextNode {
+					text.WriteString(c.Data)
+				}
+			}
+			entry.Text = strings.TrimSpace(text.String())
+			if entry.Text != "" {
+				out = append(out, entry)
+			}
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			collect(c)
+		}
+	}
+	collect(nav)
+	if len(out) == 0 {
+		t.Fatal("分页条里没有可断言的分页项")
+	}
+	return out
+}
+
+// TestMailTemplatesPagePaginationLinksCarryPageParam task-105 的**追认修复**（lead 裁定 b）。
+//
+// 迁移前 mailListPagination 在 param=="page" 时先 q.Set("page", 自己) 再**无条件** q.Del("page")，
+// 模板页每条链接都退化成不带 ?page 的基址 —— 「下一页」永远回到第 1 页（翻页失效，且不报错）。
+// 改为事实层后链接由 partial 用 Base + PageParam 生成，必须带 ?page=N。
+// 当前页是 is-active 的 span（不生成 href），所以断言 prev / next 两条链接。
+func TestMailTemplatesPagePaginationLinksCarryPageParam(t *testing.T) {
+	f := newMailFeatureFixture(t)
+	if f == nil {
+		return
+	}
+	engine := newMailPaginationRouter(t, f)
+	for i := 0; i < 41; i++ {
+		if _, err := f.svc.UpsertTemplate(context.Background(), &maildto.SaveTemplateReq{
+			TemplateKey: fmt.Sprintf("pg_tpl_%02d", i), Name: "分页模板", Subject: "主题", BodyHTML: "<p>x</p>",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := mailGet(t, engine, "/admin/mail/templates?page=2")
+	nav := mailPaginationNav(t, body)
+
+	// 当前页：is-active 的 span，不该有 href。
+	var active *struct{ Text, Href string }
+	for i := range nav {
+		if nav[i].Text == "2" {
+			active = &nav[i]
+		}
+	}
+	if active == nil {
+		t.Fatalf("第 2 页应有一个「2」分页项，实际 %+v", nav)
+	}
+	if active.Href != "" {
+		t.Errorf("当前页不应是链接（会把用户送回同一页）：%q", active.Href)
+	}
+
+	// prev / next 必须带页码参数 —— 这就是修复点。
+	wants := map[string]string{"上一页": "page=1", "下一页": "page=3"}
+	for _, e := range nav {
+		want, ok := wants[e.Text]
+		if !ok {
+			continue
+		}
+		if e.Href == "" {
+			t.Errorf("%q 应是可点链接（修复前它指向不带页码的基址）", e.Text)
+			continue
+		}
+		u, err := url.Parse(htmlUnescape(e.Href))
+		if err != nil {
+			t.Fatalf("解析分页链接失败 %q: %v", e.Href, err)
+		}
+		if got := u.Query().Get("page"); got != want[5:] {
+			t.Errorf("%q 应指向 %s，实际 %q", e.Text, want, e.Href)
+		}
+		// 模板页每页固定 20 条：链接不得带 limit（否则用户能改每页条数，而页面不支持）。
+		if u.Query().Has("limit") {
+			t.Errorf("%q 链接不应带 limit：%q", e.Text, e.Href)
+		}
+		if u.Query().Has("account_page") {
+			t.Errorf("%q 链接不应带另一张表的页码参数：%q", e.Text, e.Href)
+		}
+	}
+}
+
+// TestMailPaginationLinksKeepPageFilters 联系人页（真 handler + 真模板）：分页链接必须带筛选参数。
+//
+// 迁移前这一条靠断言 handler 直接拼进链接的字节；迁移后 Base 由 handler 用
+// reqparams.FilterBaseURL 拼好、链接由 partial 生成 —— 分工变了，判据不变：
+// 用户点「下一页」时筛选不能丢（丢了会静默回到全量，而人以为自己还在筛选里）。
+func TestMailPaginationLinksKeepPageFilters(t *testing.T) {
+	f := newMailFeatureFixture(t)
+	if f == nil {
+		return
+	}
+	engine := newMailPaginationRouter(t, f)
+	// 120 条命中筛选，每页 50 → 3 页，保证有可点的非当前页链接。
+	for i := 0; i < 120; i++ {
+		if err := f.seedContact(context.Background(),
+			fmt.Sprintf("vip%03d@example.com", i), "常客", mailmodel.ContactStatusSubscribed, ""); err != nil {
+			t.Fatalf("造第 %d 个联系人失败：%v", i, err)
+		}
+	}
+
+	body := mailGet(t, engine, "/admin/mail/contacts?keyword=vip")
+	nav := mailPaginationNav(t, body)
+
+	links := 0
+	for _, e := range nav {
+		if e.Href == "" {
+			continue
+		}
+		links++
+		u, err := url.Parse(htmlUnescape(e.Href))
+		if err != nil {
+			t.Fatalf("解析分页链接失败 %q: %v", e.Href, err)
+		}
+		if got := u.Query().Get("keyword"); got != "vip" {
+			t.Errorf("%q 的分页链接丢了筛选 keyword（实际 %q）：%s", e.Text, got, e.Href)
+		}
+	}
+	if links < 2 {
+		t.Fatalf("应有多个可点分页链接（上一页/下一页/其它页码），实际 %d 条：%+v", links, nav)
+	}
+	// 拆页判据：这一页的链接不得带别的列表的页码参数。
+	assertNoQueryParam(t, body, "account_page")
 }

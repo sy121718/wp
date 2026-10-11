@@ -19,10 +19,13 @@ import (
 	"testing"
 )
 
-// TestProductDepsMissingTextNonEmpty 写侧取词必须给出非空文案。
+// TestProductDepsMissingTextNonEmpty 写侧交的是**事实**（key + 中文兜底），渲染期取词必须非空。
 func TestProductDepsMissingTextNonEmpty(t *testing.T) {
 	c, _ := newProductJumpContext(t, "", "", "")
-	if got := strings.TrimSpace(detailTemplateDepsMissingText(c)); got == "" {
+	if strings.TrimSpace(detailTemplateDepsMissingMsg.Key) == "" {
+		t.Fatal("这条提示必须带 i18n key：写侧只交事实，取词在渲染期")
+	}
+	if got := strings.TrimSpace(productMsgText(c, detailTemplateDepsMissingMsg)); got == "" {
 		t.Fatal("写侧产出了空文案：页面提示不能是空白")
 	}
 }
@@ -43,7 +46,7 @@ func TestProductDepsMissingRedirectIsFacing(t *testing.T) {
 	if !strings.Contains(body, `data-jump-state="err"`) {
 		t.Fatalf("应渲染 err 态提示页，body=%s", body)
 	}
-	if want := detailTemplateDepsMissingText(c); !strings.Contains(body, want) {
+	if want := productMsgText(c, detailTemplateDepsMissingMsg); !strings.Contains(body, want) {
 		t.Fatalf("提示页应含 %q，body=%s", want, body)
 	}
 	// 回跳目标必须带 project / product：裸 /admin/products/template 会落到页面 handler 的

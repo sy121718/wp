@@ -1,13 +1,18 @@
 {* admin/navigation_translations.html — 导航标签译文工作台（审计 I18N-007）。 *}
 {* 菜单文字不在页面文档里：页面翻译工作台看不到它。构建期按 navigation.label 语境回填。 *}
-{* 每个字段块必须同时输出 rowContext / rowHash / rowTarget 且顺序一致（保存端按位置对齐）。 *}
+{* 保存走真实 JSON 写端点 POST /api/navigation/update（action=translations，见
+     internal/module/navigation/inbound/http/navigation_translation_write.go）：表单只声明事实
+     （端点 / 写模式 / 行数组怎么收 / 成功后跳哪），行为全在 ui/json_write.js 里，模板零内联 JS。
+     每个行容器（.nav-tr-row）就是一个行对象：字段名 context / hash / target 由 data-write-rows 点名，
+     并行数组那种「按下标对齐」的隐式契约没有了 —— 一旦错位，译文会写到别的菜单文字上。
+     没有 action 是刻意的：禁用 JS 时提交按钮是 disabled 的（下方提醒说明原因），
+     浏览器对「默认提交按钮 disabled」的表单不做隐式提交，不会退化成「GET 当前页」这种假成功。 *}
 {* 版式遵循后台页壳标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2）：
      · 两段领域说明进页头 .help 悬浮，正文零说明文字；
      · 语言切换与「保存译文」同一行置于 .page-head（保存按钮用 form="<id>" 关联整表表单）。 *}
 {* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "../layout.html"}}
 {{block body()}}
-{{csrf := .["csrf_token"]}}
 {{groups := .Groups}}
 {{langs := .Langs}}
 {{lang := .Lang}}
@@ -40,7 +45,7 @@
                 <noscript><button type="submit" class="btn btn-sm">{{ .["t"]("admin.navigation_translations.switch_lang", "切换语言") }}</button></noscript>
             </form>
             {{if len(groups) > 0}}{{if !.["NoProject"]}}{{if !isset(.["VisibleCount"]) || .["VisibleCount"] > 0}}
-            <button type="submit" form="nav-translations-form" class="btn btn-primary">{{ .["t"]("admin.navigation_translations.save", "保存译文") }}</button>
+            <button type="submit" form="nav-translations-form" class="btn btn-primary" disabled data-requires-js>{{ .["t"]("admin.navigation_translations.save", "保存译文") }}</button>
             {{end}}{{end}}{{end}}
         </div>
     </header>
@@ -87,22 +92,27 @@
         </div>
     </section>
     {{else}}
-    <form id="nav-translations-form" method="post" action="/admin/navigations/translations/save">
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
+    <form id="nav-translations-form" method="post"
+          data-write-api="/api/navigation/update" data-write-mode="create"
+          data-write-rows=".nav-tr-row;context,hash,target"
+          data-write-nav="{{ .["SuccessURL"] }}">
+        {* 身体只带 action / lang / project 与行数组：筛选词不进身体（它只影响回跳地址），
+           否则严格白名单的端点会整条请求拒掉。CSRF 走 X-CSRF-Token 头（基座行为）。 *}
+        <input type="hidden" name="action" value="translations">
         <input type="hidden" name="lang" value="{{lang}}">
         <input type="hidden" name="project" value="{{projectID}}">
-        <input type="hidden" name="keyword" value="{{keyword}}">
+        <p class="form-hint" data-write-status role="status" hidden></p>
         {{range _, g := groups}}
         <section class="card card-body">
             <h2>{{g.Title}}</h2>
             {{if len(g.Rows) == 0}}{{if !isset(.["Keyword"]) || keyword == ""}}<p class="text-mute text-sm">{{tr("admin.navigation_translations.empty_group", "该位置还没有菜单项。")}}</p>{{end}}{{end}}
             {{range _, r := g.Rows}}
-            <div class="field">
+            <div class="field nav-tr-row">
                 <label>{{r.Source}}{{if r.Translated}} · {{tr("admin.navigation_translations.has_target", "已有译文")}}{{end}}</label>
                 <span class="text-mute text-sm">{{r.Path}}</span>
-                <input type="text" class="form-input" name="rowTarget" value="{{r.Target}}" placeholder="{{tr("admin.navigation_translations.target_placeholder", "译文")}}">
-                <input type="hidden" name="rowContext" value="{{r.Context}}">
-                <input type="hidden" name="rowHash" value="{{r.SourceHash}}">
+                <input type="text" class="form-input" name="target" value="{{r.Target}}" placeholder="{{tr("admin.navigation_translations.target_placeholder", "译文")}}">
+                <input type="hidden" name="context" value="{{r.Context}}">
+                <input type="hidden" name="hash" value="{{r.SourceHash}}">
             </div>
             {{end}}
         </section>

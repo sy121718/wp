@@ -6,11 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/utils"
 )
 
 // blocks_stale_impact_render_test.go — 全局块管理页的渲染级契约（02-L P1-4 / P1-10）。
@@ -39,10 +41,10 @@ func blocksLayoutData(base gin.H) gin.H {
 }
 
 // blocksRow 一行列表数据（形状取自 handler 的 blockRow 投影）。
-func blocksRow(id, name, kindLabel, reuseLabel string) gin.H {
+func blocksRow(id, name, kind, reuseMode string) gin.H {
 	return gin.H{
-		"ID": id, "Name": name, "KindLabel": kindLabel, "ReuseModeLabel": reuseLabel,
-		"UpdatedAt": "2026-01-02 15:04", "RefCountText": "2 个页面引用",
+		"ID": id, "Name": name, "Kind": kind, "ReuseMode": reuseMode,
+		"UpdatedAt": utils.NewJSONTime(time.Date(2026, 1, 2, 15, 4, 0, 0, time.Local)), "RefCount": int64(2),
 	}
 }
 
@@ -79,11 +81,11 @@ func blocksBaseData(rows bool) gin.H {
 		"Headers": []gin.H{}, "Footers": []gin.H{}, "Blocks": []gin.H{},
 	}
 	if rows {
-		data["Headers"] = []gin.H{blocksRow("b1", "站点页眉", "页眉", "引用")}
-		data["Footers"] = []gin.H{blocksRow("b2", "站点页脚", "页脚", "引用")}
+		data["Headers"] = []gin.H{blocksRow("b1", "站点页眉", "header", "global")}
+		data["Footers"] = []gin.H{blocksRow("b2", "站点页脚", "footer", "global")}
 		data["Blocks"] = []gin.H{
-			blocksRow("b3", "信任徽章", "信任徽章", "引用"),
-			blocksRow("b4", "商品卡", "区块", "复制"),
+			blocksRow("b3", "信任徽章", "trust", "global"),
+			blocksRow("b4", "商品卡", "block", "template"),
 		}
 	}
 	return data
@@ -138,7 +140,10 @@ func TestBlocksListKeepsSelectionAndDeleteWiring(t *testing.T) {
 	body := renderBlocksPage(t, blocksBaseData(true))
 
 	for _, want := range []string{
-		`action="/admin/blocks/bulk-delete`, // 勾选框所在的批量表单（action 上带工程筛选）
+		// 勾选框所在的批量表单：现在是「JSON 写表单」声明（前一版是页面 POST 的 action，
+		// 工程筛选不再进 action —— 批量只发 ids，结果由前端按当前 URL 刷新）。
+		`data-write-api="/api/block/bulk-delete"`, `data-write-mode="bulk"`,
+		`data-msg-none-selected`, `data-msg-partial`, `data-msg-refresh`,
 		`name="ids"`, "data-check-item", "data-bulk-bar", "data-bulk-count",
 		"data-filter-input", "data-filter-text", "data-filter-empty",
 	} {
@@ -247,5 +252,54 @@ func TestBlocksStaleImpactMissingKeyStillRenders(t *testing.T) {
 	}
 	if !strings.Contains(body, "data-check-all") {
 		t.Error("缺可选键影响了列表渲染（整页在某一行中断）")
+	}
+}
+
+// TestBlocksWriteFormsAreJSONWired 三个写入口都改走 JSON API，且**不再**残留页面 POST。
+//
+// 为什么两件事都要断言：只断言「新属性在」会漏掉「旧 action 也还在」——那种半迁移状态
+// 下表单同时声明了两条路径，浏览器仍会按 action 提交（POST 到页面路由），
+// 于是新链路形同虚设、而 page 侧 handler 又必须继续维护两份语义。
+//
+// 三处写入口的失败出口也在这里钉住（它们是**看不到就没人知道**的那类缺陷）：
+// 新建 / 批量在表单内有结果区；行内删除的表单自身 display:none，结果区必须挂在
+// [data-write-host] 上（json_write.js 的 statusOf 会沿 closest 上溯找它）。
+func TestBlocksWriteFormsAreJSONWired(t *testing.T) {
+	body := renderBlocksPage(t, blocksBaseData(true))
+
+	for _, want := range []string{
+		// 新建（抽屉表单）：成功直接进工作台编辑内容。
+		`data-write-api="/api/block/create"`, `data-write-mode="create"`,
+		`data-write-nav="/workbench?block={id}"`,
+		// 单条删除 + 批量删除端点。
+		`data-write-api="/api/block/delete"`, `data-write-mode="single"`,
+		`data-write-api="/api/block/bulk-delete"`, `data-write-mode="bulk"`,
+		// 结果区（三个写入口各一处）与行内删除的宿主元素。
+		`data-write-status`, `data-write-host`,
+		// 无 JS 状态：控件默认 hidden，由 json_write.js 的 [data-requires-js] 放出来。
+		`data-requires-js`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("缺少 %q：写入口没接上 JSON 基座", want)
+		}
+	}
+
+	// 旧页面 POST：一条都不能剩（残留 = 表单仍会 POST 到页面路由）。
+	for _, stale := range []string{
+		`action="/admin/blocks/create`, `action="/admin/blocks/delete`,
+		`action="/admin/blocks/bulk-delete`,
+	} {
+		if strings.Contains(body, stale) {
+			t.Errorf("仍残留页面 POST 路径 %q：半迁移状态下浏览器会按 action 提交", stale)
+		}
+	}
+
+	// 三个写入口的结果区数量：新建 1 + 批量 1 + 行内删除 1。
+	if n := strings.Count(body, `data-write-status`); n != 3 {
+		t.Errorf("结果区数量 = %d，期望 3（新建 / 批量 / 行内删除各一）", n)
+	}
+	// 无 JS 提示（禁用 JS 时写动作没有兜底端点，必须说清原因）。
+	if !strings.Contains(body, "需要 JavaScript") {
+		t.Error("缺少无 JS 提示：禁用 JS 时按钮不见了，用户会以为是权限问题")
 	}
 }

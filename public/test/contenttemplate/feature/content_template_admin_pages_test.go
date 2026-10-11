@@ -9,9 +9,9 @@ package feature
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -60,7 +60,7 @@ func newContentTemplateAdminEnv(t *testing.T) *contentTemplateAdminEnv {
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := contenttemplatehttp.NewContentTemplatePageHandle(templatesSvc, projects, products, nil)
 	engine.GET("/admin/content-templates", handle.ContentTemplatesPage)
-	engine.POST("/admin/content-templates/activate", handle.ContentTemplatesActivate)
+	engine.POST("/api/contenttemplate/activate", contenttemplatehttp.NewHandle(templatesSvc).Activate)
 	return &contentTemplateAdminEnv{engine: engine, db: db, projectID: project.ID, templates: templatesSvc}
 }
 
@@ -113,9 +113,9 @@ func TestContentTemplatesPageShowsStructureStateAndActivate(t *testing.T) {
 		"设为生效",     // 非生效那套的切换按钮
 		"页眉（结构模板）", // 结构模板与内容实体模板在类型列上分得开
 		"页脚（结构模板）",
-		"/admin/content-templates/activate", // 切换按钮真的指向页面入口
-		"引用未知",                              // 端口未装配 → 不是「无引用」
-		"/workbench?entityType=header",      // 结构模板的可视化编辑入口（无样例实体模式）
+		"/api/contenttemplate/activate", // 切换按钮真的指向页面入口
+		"引用未知",                          // 端口未装配 → 不是「无引用」
+		"/workbench?entityType=header",  // 结构模板的可视化编辑入口（无样例实体模式）
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("列表页缺少 %q", want)
@@ -134,26 +134,22 @@ func TestContentTemplatesPageShowsStructureStateAndActivate(t *testing.T) {
 	}
 
 	// 切换：把第一套设为生效 → 提示页（HTTP 200，成功态），回跳链接保留工程筛选。
-	form := url.Values{"id": {first.ID}}
+	payload, err := json.Marshal(map[string]string{"id": first.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
 	req := httptest.NewRequest(http.MethodPost,
-		"/admin/content-templates/activate?project="+env.projectID+"&entityType=header",
-		strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		"/api/contenttemplate/activate",
+		strings.NewReader(string(payload)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	env.engine.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("切换生效应渲染提示页（200），实际 %d，body=%s", rec.Code, rec.Body.String())
 	}
-	jumpBody := rec.Body.String()
-	assertNoContentTemplateInternalLeak(t, "切换成功提示页", jumpBody)
-	if !strings.Contains(jumpBody, `data-jump-state="ok"`) {
-		t.Fatalf("切换成功应渲染成功态提示页，body=%s", jumpBody)
-	}
-	if !strings.Contains(jumpBody, "已切换生效模板") {
-		t.Fatalf("切换成功提示页应含成功文案，body=%s", jumpBody)
-	}
-	if !strings.Contains(jumpBody, "project="+env.projectID) {
-		t.Fatalf("提示页回跳链接应保留工程筛选，body=%s", jumpBody)
+	assertNoContentTemplateInternalLeak(t, "启用 JSON 回执", rec.Body.String())
+	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatal("expected JSON")
 	}
 
 	// 落库校验：生效的那套换了，旧的必须已经置 false（同一类型只有一套生效）。
@@ -177,20 +173,13 @@ func TestContentTemplatesActivateRejectsMissingID(t *testing.T) {
 		return
 	}
 	req := httptest.NewRequest(http.MethodPost,
-		"/admin/content-templates/activate?project="+env.projectID,
-		strings.NewReader(url.Values{}.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		"/api/contenttemplate/activate",
+		strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	env.engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("缺 id 应渲染提示页（200），实际 %d", rec.Code)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing id status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	body := rec.Body.String()
-	assertNoContentTemplateInternalLeak(t, "缺 id 提示页", body)
-	if !strings.Contains(body, `data-jump-state="err"`) {
-		t.Fatalf("缺 id 应渲染失败态提示页，body=%s", body)
-	}
-	if !strings.Contains(body, "缺少模板 id") {
-		t.Fatalf("缺 id 提示页应含原因文案，body=%s", body)
-	}
+	assertNoContentTemplateInternalLeak(t, "缺 id JSON 回执", rec.Body.String())
 }

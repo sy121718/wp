@@ -16,17 +16,22 @@ package analyticshttp
 // publication 现有端点执行，本页只编排已有只读契约。
 
 import (
+	"go_wp/internal/middleware/builtin"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/analytics/contract"
 	"go_wp/internal/module/analytics/dto"
 	"go_wp/internal/module/analytics/enums"
 	"go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/reqparams"
+	"go_wp/pkg/response"
 )
 
 // analyticsPageTitle 页面标题（模块 enums 没有这个键，走 shell 的 i18n fallback 链路）。
@@ -93,7 +98,7 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 	projects, err := h.projects.List(ctx)
 	// 工程列表装载失败：**降级渲染**，不拿走整个页面（与主题管理页、admin 六页同一判据）。
 	//
-	// 原先这里是 `c.String(500, shell.MsgInternalError)`：浏览器里没有页面，只有一块纯文本，
+	// 原先这里是 `c.String(500, adminui.MsgInternalError)`：浏览器里没有页面，只有一块纯文本，
 	// 而且那块文本是**未翻译的裸 key**（页面上直接显示 `MsgInternalError` 这串英文）——
 	// `c.String` 不经过任何 translate，运营看到的不是人话，也没有侧栏 / 页头 / 时间范围筛选。
 	//
@@ -104,7 +109,7 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 	pageErr := ""
 	if loadFailed {
 		logger.Scene("analytics").
-			With("user_id", shell.CurrentUserID(c)).
+			With("user_id", builtin.CurrentUserID(c)).
 			Error(err, "读取站点工程列表失败")
 		pageErr = analyticsInternalText(c)
 	}
@@ -114,7 +119,7 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 	}
 	from := strings.TrimSpace(c.Query("from"))
 	to := strings.TrimSpace(c.Query("to"))
-	page, limit := shell.PageParams(c)
+	page, limit := reqparams.PageParams(c)
 	viewMode := analyticsViewMode(c)
 
 	var (
@@ -145,7 +150,7 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 		}
 	}
 
-	data := shell.Prepare(c, gin.H{
+	data := adminui.Prepare(c, gin.H{
 		"title":           analyticsPageTitle,
 		"menu":            "analytics",
 		"Projects":        projects,
@@ -180,11 +185,14 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 	// 重载后仍停在按天 —— 路径表在 hidden 面板里，表现就是「点了下一页什么也没发生」。
 	// 固定成 paths 之后：从路径标签翻页 → 重载 → 仍停在路径视图，第 2 页可见
 	// （回归见 analytics_page_render_test.go 的 view=paths&page=2 直达用例）。
-	base := shell.FilterBaseURL("/admin/analytics", map[string]string{
+	base := reqparams.FilterBaseURL("/admin/analytics", map[string]string{
 		"project": selected, "from": from, "to": to, "view": analyticsViewPaths,
 	})
-	for k, v := range shell.BuildPagination(pathTotal, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
-		data[k] = v
+	// 分页事实（值语义）：零值＝没有分页，单页与装载失败两条路都不渲染分页条。
+	// 文案与链接由 admin/partials/pagination.html 用通用模板函数渲染。
+	if pg := pagination.Facts(pathTotal, page, limit); pg.HasPagination() {
+		pg.Base = base
+		data["Pagination"] = pg
 	}
 	c.HTML(http.StatusOK, "admin/analytics/analytics.html", data)
 }
@@ -217,14 +225,14 @@ const analyticsInternalFallback = "统计服务内部错误，请稍后重试"
 
 // analyticsInternalText 统计页的归口文案：**当前语言**的译文（未命中词条回落中文）。
 //
-// 为什么不直接用 shell.MsgInternalError：它的**值**就是 key 本身（"MsgInternalError"），
+// 为什么不直接用 adminui.MsgInternalError：它的**值**就是 key 本身（"MsgInternalError"），
 // 而页面上的 {{.Err}} 是直接渲染的文本、不经过 response 的 translate —— 未命中白名单时
-// 把它原样返回，页面上显示的就是这串英文。取词走 shell.TranslateFor 是这一层唯一的出口。
+// 把它原样返回，页面上显示的就是这串英文。取词走 i18n.TranslateFunc 是这一层唯一的出口。
 //
 // 归口 key 取模块自己的 enums（ErrAnalyticsInternal）而不是壳层的通用 key：页面上写着
 // 「统计服务内部错误」时，排障的人一眼知道该去看 analytics 的场景日志。
 func analyticsInternalText(c *gin.Context) string {
-	return shell.TranslateFor(c)(analyticsenums.ErrAnalyticsInternal, analyticsInternalFallback)
+	return i18n.TranslateFunc(response.RequestLanguage(c))(analyticsenums.ErrAnalyticsInternal, analyticsInternalFallback)
 }
 
 // analyticsFacingError 把统计错误映射为页面可显示的文案（白名单收口，见 analyticsFacingMessages）。
@@ -245,7 +253,7 @@ func analyticsFacingError(c *gin.Context, err error) string {
 	msg := err.Error()
 	for _, allowed := range analyticsFacingMessages {
 		if msg == allowed {
-			return shell.TranslateFor(c)(allowed, analyticsInternalFallback)
+			return i18n.TranslateFunc(response.RequestLanguage(c))(allowed, analyticsInternalFallback)
 		}
 	}
 	logger.Scene("analytics").Error(err, "访问统计查询失败")
@@ -281,7 +289,7 @@ func (h *seoPageHandle) SEOPage(c *gin.Context) {
 	if err != nil {
 		logger.Error(err, "SEO 控制台读取站点列表失败")
 		data["ProjectError"] = true
-		c.HTML(http.StatusOK, "admin/analytics/seo.html", shell.Prepare(c, data))
+		c.HTML(http.StatusOK, "admin/analytics/seo.html", adminui.Prepare(c, data))
 		return
 	}
 	data["Projects"] = projects
@@ -307,5 +315,5 @@ func (h *seoPageHandle) SEOPage(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "admin/analytics/seo.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/analytics/seo.html", adminui.Prepare(c, data))
 }

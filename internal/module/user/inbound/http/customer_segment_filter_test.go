@@ -124,7 +124,7 @@ func TestCustomersPageSegmentFailureDoesNotFallBackToListAll(t *testing.T) {
 	if users.lastListRe != nil {
 		t.Error("分段没取到就不该查列表 —— 查出来的是「全部客户」，而页面上写着「新客」")
 	}
-	if !strings.Contains(rec.Body.String(), customerSegmentUnavailableText) {
+	if !strings.Contains(rec.Body.String(), customerSegmentUnavailableLabel.fallback) {
 		t.Error("应显示「分段筛选不可用」的提示，而不是把失败吞掉")
 	}
 }
@@ -143,7 +143,7 @@ func TestCustomersPageSegmentWithoutPortShowsNotice(t *testing.T) {
 	if users.lastListRe != nil {
 		t.Error("端口缺席时不该查列表")
 	}
-	if !strings.Contains(rec.Body.String(), customerSegmentUnavailableText) {
+	if !strings.Contains(rec.Body.String(), customerSegmentUnavailableLabel.fallback) {
 		t.Error("应显示「分段筛选不可用」的提示")
 	}
 }

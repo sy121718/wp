@@ -5,23 +5,16 @@
      · 「筛选」不再独占一张卡：计数徽章与条件表单并入列表卡的 .filter-bar；
      · 列表进 .table-scroll（表头吸顶 + 高度封顶），空数据改 .empty-state。 *}
 {* Jet 方言：extends 相对本目录；range 用 range 关键字；range 内访问外层值先在 block 顶部存变量。 *}
-{* 无 JS 也能用：筛选是普通 GET 表单；写操作是原生表单 POST + csrf_token 隐藏域， *}
-{* 提交后由 shell.RenderJump 渲染整页提示（对应 success()/error()）；回跳地址上的筛选 *}
-{* 上下文由表单 action 的 query 携带，服务端经 shell.BackPath 读回。 *}
-{* 注意：写操作的目标状态字段叫 toStatus，与「保留筛选」的 status 分开 —— *}
-{* 同名的话回跳时会把目标状态当成筛选条件，列表看起来像是「筛选没了」。 *}
+{* 筛选使用 GET，写操作经 JSON 基座提交，成功刷新保留当前页面 query。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{{import "customer_badges.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
 {{rows := .Rows}}
 {{listQuery := .["ListQuery"]}}
 {* 写动作表单的 action：上下文（筛选 / 翻页）随 query 一起提交，服务端经 shell.BackPath 读回。 *}
-{{bulkStatusAction := "/admin/customers/bulk-status?" + listQuery}}
-{{bulkUnlockAction := "/admin/customers/bulk-unlock?" + listQuery}}
-{{statusAction := "/admin/customers/status?" + listQuery}}
-{{unlockAction := "/admin/customers/unlock?" + listQuery}}
 {{fKeyword := .FilterKeyword}}
 {{fStatus := .FilterStatus}}
 {{fVerified := .FilterVerified}}
@@ -53,8 +46,8 @@
     {* 提示条只剩一个来源：本页自己的取数 / 筛选失败。写动作的结论走 shell.RenderJump
        渲染整页提示，不再经 ?err= / ?ok= / ?done= 回带 —— 前缀「上一次操作未完成：」随之退役
        （它描述的正是那条已被删除的通道），文案本身已是完整句子。 *}
-    {{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{if .HasErr}}
+    <p class="badge badge-warning" role="alert">{{ .["t"](.ErrKey, .ErrFallback) }}</p>
     {{end}}
     {{if .CapabilityMissing}}
     <p class="badge badge-warning" role="alert">
@@ -63,7 +56,8 @@
     {{end}}
 
     {* ===== 主区：状态计数 + 组合筛选（工具行）+ 列表，同一张卡 ===== *}
-    <section class="card list-card">
+    <section class="card list-card" data-write-host>
+ <p data-write-status role="status" aria-live="polite"></p>
         <div class="filter-bar">
             <div class="filter-row">
                 {* 计数徽章**就是**筛选控件：一个徽章一个链接（URL 由服务端生成，模板不拼查询串），
@@ -73,7 +67,10 @@
                    选中态：aria-current + ✓ 图标 + 加粗（不只靠颜色深浅区分）。
                    计数为 0 的徽章照样可点：点进去看到空态是合理预期，禁用反而像坏了。 *}
                 {{range _, tab := .CounterTabs}}
-                <a class="badge {{tab.Badge}}" href="{{tab.URL}}"{{if tab.Active}} aria-current="true"{{end}}>{{if tab.Active}}<strong>✓ {{tr(tab.LabelKey, tab.Label)}}</strong>{{else}}{{tr(tab.LabelKey, tab.Label)}}{{end}} {{tab.Count}}</a>
+                {* 色调按**口径键**取（服务端只给键、计数与 URL）：映射在 customer_badges.html
+                   的 customerFilterTab，与 RFM 页的分段徽章同一份片段 —— 一处改两页生效。
+                   计数为 0 的徽章照样可点：点进去看到空态是合理预期，禁用反而像坏了。 *}
+                {{yield customerFilterTab(tab=tab, tr=tr)}}
                 {{end}}
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.customers.help.label", "查看说明") }}" aria-expanded="false">?</button>
@@ -167,20 +164,20 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids（admin.js 只做计数与显隐，不注入字段）。
            行内写操作表单必须留在 </form> 之后 —— HTML 不允许 form 嵌套。 *}
-        <form method="post" action="{{bulkStatusAction}}">
+        <form data-write-api="/api/customer/bulk-status" data-write-mode="bulk" data-write-outcome="update" data-write-number="ids,status" data-write-extra="status"
+ data-msg-none-selected="{{tr("admin.customers.write.noneSelected", "请先选择客户。")}}" data-msg-all-updated="{{tr("admin.customers.write.allUpdated", "已更新 {updated} 个客户。")}}" data-msg-all-skipped="{{tr("admin.customers.write.allSkipped", "{skipped} 个客户未处理。")}}" data-msg-partial="{{tr("admin.customers.write.partial", "已更新 {updated} 个，{skipped} 个未处理。")}}" data-msg-refresh="{{tr("admin.customers.write.refresh", "刷新列表")}}" data-msg-failed="{{tr("admin.customers.write.failed", "操作失败，请稍后重试。")}}" data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}">
+ <p data-write-status role="status" aria-live="polite"></p>
+ <noscript><p>{{tr("admin.customers.write.noJs", "修改客户状态和解除锁定需要 JavaScript。")}}</p></noscript>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
-            {* 筛选与翻页不再塞隐藏域：上下文随 action 的 query 一起提交，服务端经
-               shell.BackPath 从本次请求的 query 读回（回跳后列表位置不变）。
-               注意 status 与批量目标状态 toStatus 是两个字段 —— 同名会让回跳后的列表
-               把「目标状态」当成筛选条件，看起来像「筛选没了」。 *}
+            {* 状态字段仅进 JSON 请求体，刷新仍使用当前筛选 URL。 *}
             {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
             {{if len(rows) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
                 {* 目标状态靠按钮的 name/value 带（requestSubmit(submitter) 会保留它）；
                     解除锁定用 formaction 改投另一个端点，勾选状态与筛选字段照旧带上。 *}
-                {{yield bulkBtn(label=tr("admin.customers.bulk.enable", "批量启用"), cls="btn btn-sm", confirm=tr("admin.customers.bulk.enableConfirm", "启用选中的客户？启用后他们可以重新登录。"), name="toStatus", value="1")}}
-                {{yield bulkBtn(label=tr("admin.customers.bulk.disable", "批量停用"), confirm=tr("admin.customers.bulk.disableConfirm", "停用选中的客户？停用后他们立刻登不上去，且不会自动恢复。"), danger=true, name="toStatus", value="0")}}
-                {{yield bulkBtn(label=tr("admin.customers.bulk.unlock", "批量解除锁定"), cls="btn btn-sm", confirm=tr("admin.customers.bulk.unlockConfirm", "解除选中客户的登录锁定？只清登录失败计数与锁定时间，不改账号状态。"), formaction=bulkUnlockAction)}}
+                <button type="submit" class="btn btn-sm" data-requires-js hidden name="status" value="1" data-confirm="{{tr("admin.customers.bulk.enableConfirm", "批量启用选中的客户？")}}">{{tr("admin.customers.bulk.enable", "批量启用")}}</button>
+                <button type="submit" class="btn btn-sm" data-requires-js hidden name="status" value="0" data-confirm="{{tr("admin.customers.bulk.disableConfirm", "批量停用选中的客户？")}}">{{tr("admin.customers.bulk.disable", "批量停用")}}</button>
+                <button type="submit" class="btn btn-sm" data-requires-js hidden data-write-api="/api/customer/bulk-unlock" data-write-outcome="receipt" data-write-extra="" data-confirm="{{tr("admin.customers.bulk.unlockConfirm", "批量解除锁定选中的客户？")}}">{{tr("admin.customers.bulk.unlock", "批量解除锁定")}}</button>
             {{yield bulkBarClose()}}
             {{end}}
             <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.customers.list.aria", "客户列表") }}">
@@ -224,7 +221,14 @@
                         <input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                     </td>
                     <td data-label="{{tr("admin.customers.col.customer", "客户")}}">
-                    <a class="row-title-link" href="{{r.DetailURL}}">{{r.DisplayLabel}}</a>
+                    {* 展示名三级回退（展示名 → 昵称 → 登录名）在模板里做：三个原值都由服务端给，挑哪一个、
+                       都空时显示什么属于展示判断（都空落「—」）。判空走 trimSpace —— "   " 也算没填，
+                       否则空白串挡住整条回退链；被挑中的值原样显示（同移走前的 customerDisplayLabel）。 *}
+                    {{displayName := r.DisplayName}}
+                    {{if trimSpace(displayName) == ""}}{{displayName = r.Nickname}}{{end}}
+                    {{if trimSpace(displayName) == ""}}{{displayName = r.Username}}{{end}}
+                    {{if trimSpace(displayName) == ""}}{{displayName = "—"}}{{end}}
+                    <a class="row-title-link" href="/admin/customers/detail?id={{r.ID}}">{{displayName}}</a>
                     <div class="hint">{{tr("admin.customers.field.username", "登录名")}} {{r.Username}}</div>
                 </td>
                 <td data-label="{{tr("admin.customers.col.email", "邮箱")}}">
@@ -232,32 +236,33 @@
                     <div class="hint">
                         {* 邮箱验证徽章的 key 与兜底都由服务端给（userenums.EmailVerifiedLabel），
                            模板只负责取词：写死中文就等于英文界面永远中文。
-                           isset 是双保险 —— 键由 customerRow 保证存在，但真缺了的话
-                           点号取值会把整页渲染打断（500 / htmx 不 swap），而不是少显示一个徽章。 *}
-                        {{if r.EmailVerified}}<span class="badge badge-success">{{if isset(r.EmailVerifiedKey)}}{{tr(r.EmailVerifiedKey, r.EmailVerifiedFallback)}}{{end}}</span>
-                        {{else}}<span class="badge badge-warning">{{if isset(r.EmailVerifiedKey)}}{{tr(r.EmailVerifiedKey, r.EmailVerifiedFallback)}}{{end}}</span>{{end}}
+                           档位与取词都在 customer_badges.html 的 customerVerifyBadge：键为空时
+                           tr 落兜底文案（i18n 的兜底链），不会渲染成空串。 *}
+                        {{yield customerVerifyBadge(verified=r.EmailVerified, labelKey=r.EmailVerifiedKey, labelFallback=r.EmailVerifiedFallback, tr=tr)}}
                     </div>
                 </td>
                 <td data-label="{{tr("admin.customers.col.status", "状态")}}">
-                    <span class="badge badge-{{r.StatusTone}}">{{if isset(r.StatusLabelKey)}}{{tr(r.StatusLabelKey, r.StatusLabelFallback)}}{{end}}</span>
+                    {* 状态档与标签在 customer_badges.html 的 customerStatusBadge（详情页同一份）：
+                       服务端只给状态值与「标签 key + 兜底」，未知取值落 mute。 *}
+                    {{yield customerStatusBadge(status=r.Status, labelKey=r.StatusLabelKey, labelFallback=r.StatusLabelFallback, tr=tr)}}
                     {{if r.Locked}}
-                    <div class="hint"><span class="badge badge-warning">{{tr("admin.customers.status.locked", "已锁定")}}</span>{{tr("admin.customers.status.locked_until", " 至 ")}}{{r.LockedUntilText}}</div>
+                    <div class="hint"><span class="badge badge-warning">{{tr("admin.customers.status.locked", "已锁定")}}</span>{{tr("admin.customers.status.locked_until", " 至 ")}}{{dateTime(r.LockedUntil)}}</div>
                     {{end}}
                 </td>
                 <td data-label="{{tr("admin.customers.col.last_login", "最近登录")}}">
-                    {{r.LastLoginTimeText}}
+                    {{lastLogin := dateTime(r.LastLoginTime)}}{{if lastLogin == ""}}{{lastLogin = "—"}}{{end}}{{lastLogin}}
                     <div class="hint">{{r.LastLoginIP}}{{if r.LastLoginLocation}} · {{r.LastLoginLocation}}{{end}}</div>
                 </td>
                 <td data-label="{{tr("admin.customers.col.registered_at", "注册时间")}}">
-                    {{r.RegisteredAtText}}
+                    {{registeredAt := dateTime(r.RegisteredAt)}}{{if registeredAt == ""}}{{registeredAt = "—"}}{{end}}{{registeredAt}}
                     <div class="hint">{{r.RegisterIP}}{{if r.RegisterLocation}} · {{r.RegisterLocation}}{{end}}</div>
                 </td>
                 <td class="col-actions" data-label="{{tr("admin.customers.col.actions", "操作")}}">
                     {{if r.Actionable}}
-                    <button type="submit" form="customer-status-{{r.ID}}" class="btn btn-sm">{{tr(r.StatusActionKey, r.StatusActionLabel)}}</button>
+                    <button type="submit" data-requires-js hidden form="customer-status-{{r.ID}}" class="btn btn-sm">{{tr(r.StatusActionKey, r.StatusActionLabel)}}</button>
                     {{end}}
                     {{if r.Locked}}
-                    <button type="submit" form="customer-unlock-{{r.ID}}" class="btn btn-sm">{{tr("admin.customers.action.unlock", "解除锁定")}}</button>
+                    <button type="submit" data-requires-js hidden form="customer-unlock-{{r.ID}}" class="btn btn-sm">{{tr("admin.customers.action.unlock", "解除锁定")}}</button>
                     {{end}}
                 </td>
             </tr>
@@ -268,18 +273,17 @@
             </div>
         </form>
         {* 行内写操作表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。
-           按钮用 form="<id>" 关联；筛选与翻页上下文随 action 的 query 提交，服务端经
-           shell.BackPath 读回，提示页的「返回」链接因此回到原来看的那一屏。 *}
+           按钮用 form="<id>" 关联；失败显示在可见卡片回执区，成功刷新当前 URL。 *}
         {{range _, r := rows}}
         {{if r.Actionable}}
-        <form id="customer-status-{{r.ID}}" class="hidden-form" method="post" action="{{statusAction}}">
+        <form id="customer-status-{{r.ID}}" class="hidden-form" data-write-api="/api/customer/status" data-write-mode="create" data-write-number="customerId,status" data-msg-failed="{{tr("admin.customers.write.failed", "操作失败，请稍后重试。")}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{r.ID}}">
-            <input type="hidden" name="toStatus" value="{{r.NextStatus}}">
+            <input type="hidden" name="status" value="{{r.NextStatus}}">
         </form>
         {{end}}
         {{if r.Locked}}
-        <form id="customer-unlock-{{r.ID}}" class="hidden-form" method="post" action="{{unlockAction}}">
+        <form id="customer-unlock-{{r.ID}}" class="hidden-form" data-write-api="/api/customer/unlock" data-write-mode="create" data-write-number="customerId" data-msg-failed="{{tr("admin.customers.write.failed", "操作失败，请稍后重试。")}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{r.ID}}">
         </form>

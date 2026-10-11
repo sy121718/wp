@@ -15,7 +15,7 @@ import (
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
-	"go_wp/internal/shell"
+	bulkids "go_wp/pkg/bulkids"
 )
 
 type reasonUpdateSpy struct {
@@ -45,7 +45,7 @@ func TestInventoryReasonsBulkStatus(t *testing.T) {
 		{"empty selection", url.Values{"projectId": {"p1"}, "status": {"active"}}, "", 0, "请选择要操作的原因"},
 		{"limit", func() url.Values {
 			v := url.Values{"projectId": {"p1"}, "status": {"active"}}
-			for i := 0; i <= shell.MaxBulkIDs; i++ {
+			for i := 0; i <= bulkids.MaxIDs; i++ {
 				v.Add("ids", fmt.Sprint(i))
 			}
 			return v

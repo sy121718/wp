@@ -26,8 +26,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	workbenchenums "go_wp/internal/module/workbench/enums"
-	"go_wp/internal/shell"
 )
 
 // internalErrorZhText 从 058 种子迁移里读 MsgInternalError 的 zh-CN 词条值。
@@ -61,13 +61,13 @@ func internalErrorContext() (*gin.Context, *httptest.ResponseRecorder) {
 // TestPageInternalTextIsControlledText 归口取词返回的是人话，不是裸 key。
 //
 // 这条断言在「i18n 已初始化 / 未初始化」两种环境下都成立，理由不是巧合：
-// shell.PageInternalText 是 TranslateFor(c)("MsgInternalError", "系统内部错误，请稍后重试")，
+// adminui.PageInternalText 是 TranslateFor(c)("MsgInternalError", "系统内部错误，请稍后重试")，
 // 而那个中文兜底与 058 的 zh-CN 词条**逐字相同** —— 命中词条与回落兜底返回的是同一个字符串。
 // 语言固定为 zh-CN（?lang=zh-CN），所以两种情况都等于词条值；只有「有人改了兜底」或
 // 「词条被改成别的措辞」时才会不等，而那正是该被测试拦下来的漂移。
 func TestPageInternalTextIsControlledText(t *testing.T) {
 	c, _ := internalErrorContext()
-	got := shell.PageInternalText(c)
+	got := adminui.PageInternalText(c)
 	want := internalErrorZhText(t)
 	if got != want {
 		t.Fatalf("归口文案 = %q，期望 %q", got, want)
@@ -122,7 +122,7 @@ func TestInspectorHandleInternalErrorExitsAreControlled(t *testing.T) {
 	}
 	// 与出口数对齐而不是钉死数字：出口个数是实现细节（取数失败合并或拆分都会变），
 	// 「每个 500 出口都有归口取词」才是判据 —— 新增出口却忘了走归口，这条仍然会红。
-	if n := strings.Count(src2, "shell.PageInternalText(c)"); n < len(exits) {
+	if n := strings.Count(src2, "adminui.PageInternalText(c)"); n < len(exits) {
 		t.Errorf("归口取词只出现 %d 次，少于 %d 个 500 出口", n, len(exits))
 	}
 }

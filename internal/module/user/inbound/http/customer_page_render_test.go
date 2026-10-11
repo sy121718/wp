@@ -12,6 +12,7 @@ package userhttp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -33,7 +35,17 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// customerTestLayoutData 补齐 layout 需要的键（与线上 shell.Prepare 注入的一致）。
+// customerTestLayoutData 补齐 layout 需要的键（与线上 adminui.Prepare 注入的一致）。
+// customerTestPageTitle / customerTestDetailTitle 组装函数的 title 参数。
+//
+// 真实路径由 handler 按请求语言取词后传进来（layout.html 的 {{.title}} 是 layout 的槽位，
+// 那个模板不在本模块写权限内）；渲染测试直调组装函数，给中文兜底即可 ——
+// 断言的就是中文渲染结果，与 handler 传进来的成品同形。
+const (
+	customerTestPageTitle   = "客户管理"
+	customerTestDetailTitle = "客户详情"
+)
+
 func customerTestLayoutData(base gin.H) gin.H {
 	lang := "zh-CN"
 	base["csrf_token"] = "test-token"
@@ -145,17 +157,21 @@ func (f fakeProjects) List(_ context.Context) ([]projectcontract.ProjectResp, er
 }
 
 // customerSample 一个客户样本（「已验证 + 未锁定」的常规形态）。
+//
+// StatusLabel / RegisteredAtText / LastLoginTimeText 这些 dto 上的预制展示串一律**不设**：
+// 页面的展示名与时间现在分别来自 userenums 的 (key, 兜底) 与模板的 dateTime()，
+// 设上它们会让「模板又回头去读预制的展示串」这种情况在测试里照样通过。
 func customerSample() *userdto.CustomerResp {
 	registered := time.Date(2026, 9, 1, 10, 30, 0, 0, time.Local)
 	lastLogin := time.Date(2026, 9, 20, 8, 5, 0, 0, time.Local)
 	return &userdto.CustomerResp{
 		ID: 42, Username: "alice", Email: "alice@example.com",
 		Nickname: "小艾", DisplayName: "艾丽丝",
-		Status: 1, StatusLabel: "正常", EmailVerified: true,
-		RegisteredAt: utils.NewJSONTimePtr(&registered), RegisteredAtText: "2026-09-01 10:30",
-		RegisterIP: "203.0.113.7", RegisterLocation: "中国 上海",
-		LastLoginTime: utils.NewJSONTimePtr(&lastLogin), LastLoginTimeText: "2026-09-20 08:05",
-		LastLoginIP: "203.0.113.9", LastLoginLocation: "中国 北京",
+		Status: 1, EmailVerified: true,
+		RegisteredAt: utils.NewJSONTimePtr(&registered),
+		RegisterIP:   "203.0.113.7", RegisterLocation: "中国 上海",
+		LastLoginTime: utils.NewJSONTimePtr(&lastLogin),
+		LastLoginIP:   "203.0.113.9", LastLoginLocation: "中国 北京",
 	}
 }
 
@@ -175,28 +191,61 @@ func newCustomerTestEngine(h *customerPageHandle) *gin.Engine {
 	engine.GET("/admin/customers", h.CustomersPage)
 	engine.GET("/admin/customers/overview", h.CustomerOverviewPage)
 	engine.GET("/admin/customers/detail", h.CustomerDetailPage)
-	engine.POST("/admin/customers/status", h.CustomerStatusSave)
-	engine.POST("/admin/customers/unlock", h.CustomerUnlock)
-	engine.POST("/admin/customers/bulk-status", h.CustomerBulkStatusSave)
-	engine.POST("/admin/customers/bulk-unlock", h.CustomerBulkUnlock)
+	api := NewCustomerHandle(h.users)
+	engine.POST("/api/customer/status", api.SetCustomerStatus)
+	engine.POST("/api/customer/unlock", api.UnlockCustomer)
+	engine.POST("/api/customer/bulk-status", api.BulkCustomerStatus)
+	engine.POST("/api/customer/bulk-unlock", api.BulkCustomerUnlock)
 	return engine
+}
+
+func customerJSONForm(t *testing.T, form url.Values) string {
+	t.Helper()
+	body := map[string]any{}
+	for key, values := range form {
+		if key == "ids" {
+			ids := make([]uint64, len(values))
+			for i, v := range values {
+				n, err := strconv.ParseUint(v, 10, 64)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids[i] = n
+			}
+			body[key] = ids
+		} else if key == "customerId" || key == "toStatus" {
+			n, err := strconv.Atoi(values[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if key == "toStatus" {
+				key = "status"
+			}
+			body[key] = n
+		}
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }
 
 // —— 列表页模板 ——
 
 func TestCustomersListTemplateRenders(t *testing.T) {
-	data := customerListPageData(nil, customerListSample(), customerFilter{
+	data := customerListPageData(customerTestPageTitle, customerListSample(), customerFilter{
 		Keyword: "alice", Status: customerStatusAll,
-	}, 1, 20, "", false)
+	}, 1, 20, customerMsg{}, false)
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(data))
 
 	for _, want := range []string{
 		"客户管理", "艾丽丝", "alice", "alice@example.com", "正常", "已验证",
 		"2026-09-01 10:30", "2026-09-20 08:05", "中国 北京",
-		"/admin/customers/detail?id=42", "/admin/customers/status",
+		"/admin/customers/detail?id=42", "/api/customer/status",
 		"邮箱已验证 1", "user:customer_status",
 		// 首列勾选 + 批量条 + 两个批量端点（缺一整套批量都是摆设）
-		`action="/admin/customers/bulk-status?`, "/admin/customers/bulk-unlock",
+		`data-write-api="/api/customer/bulk-status`, "/api/customer/bulk-unlock",
 		"data-check-all", "data-check-item", "data-bulk-bar", `name="ids" value="42"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -207,7 +256,7 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 	// 结构顺序：批量 form 包住表格，行内写操作表单必须在它**外面**。
 	// HTML 不允许 form 嵌套 —— 嵌套时解析器会丢掉内层 form 标签，
 	// 表现是「行内的停用 / 解除锁定按钮点了没反应」，且只有真实浏览器才暴露。
-	bulkForm := strings.Index(body, `action="/admin/customers/bulk-status?`)
+	bulkForm := strings.Index(body, `data-write-api="/api/customer/bulk-status`)
 	table := strings.Index(body, `customers-page-table`)
 	rowForm := strings.Index(body, `id="customer-status-42"`)
 	if bulkForm < 0 || table < 0 || rowForm < 0 || !(bulkForm < table && table < rowForm) {
@@ -228,9 +277,9 @@ func TestCustomersListTemplateHidesStatusActionForPending(t *testing.T) {
 		Counters: userdto.CustomerCounters{Total: 1, Pending: 1, Unverified: 1}}
 
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, list, customerFilter{Status: customerStatusAll}, 1, 20, "", false)))
+		customerListPageData(customerTestPageTitle, list, customerFilter{Status: customerStatusAll}, 1, 20, customerMsg{}, false)))
 
-	if strings.Contains(body, "/admin/customers/status") {
+	if strings.Contains(body, "/api/customer/status") {
 		t.Errorf("待激活账号不应渲染停用按钮")
 	}
 	// 状态说明在**表头**的 .help 里（一次渲染、不随行重复），不再逐行插整行 colspan 说明行。
@@ -253,14 +302,13 @@ func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 	item.LoginFailureCount = 5
 	until := time.Date(2026, 9, 20, 9, 0, 0, 0, time.Local)
 	item.LockedUntilTime = utils.NewJSONTimePtr(&until)
-	item.LockedUntilText = "2026-09-20 09:00"
 	list := &userdto.CustomerListResp{List: []*userdto.CustomerResp{item}, Total: 1,
 		Counters: userdto.CustomerCounters{Total: 1, Active: 1, Locked: 1}}
 
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, list, customerFilter{Status: customerStatusAll}, 1, 20, "", false)))
+		customerListPageData(customerTestPageTitle, list, customerFilter{Status: customerStatusAll}, 1, 20, customerMsg{}, false)))
 
-	for _, want := range []string{"/admin/customers/unlock", "已锁定", "2026-09-20 09:00", "连续登录失败"} {
+	for _, want := range []string{"/api/customer/unlock", "已锁定", "2026-09-20 09:00", "连续登录失败"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("锁定账号渲染结果缺少 %q", want)
 		}
@@ -274,13 +322,13 @@ func TestCustomersListTemplateRendersUnlockForLocked(t *testing.T) {
 // 用同一句话兜住，运营会以为站点里没人注册过（admin-ui-logic §7）。
 func TestCustomersListTemplateEmptyState(t *testing.T) {
 	plain := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, nil, customerFilter{Status: customerStatusAll}, 1, 20, "", false)))
+		customerListPageData(customerTestPageTitle, nil, customerFilter{Status: customerStatusAll}, 1, 20, customerMsg{}, false)))
 	if !strings.Contains(plain, "还没有客户") {
 		t.Errorf("无筛选的空列表应当说明「还没有客户」")
 	}
 
 	filtered := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, nil, customerFilter{Status: customerStatusDisabled}, 1, 20, "", false)))
+		customerListPageData(customerTestPageTitle, nil, customerFilter{Status: customerStatusDisabled}, 1, 20, customerMsg{}, false)))
 	if !strings.Contains(filtered, "该筛选条件下暂时没有账号") {
 		t.Errorf("带筛选的空列表应当说明「该筛选条件下暂时没有账号」")
 	}
@@ -289,8 +337,8 @@ func TestCustomersListTemplateEmptyState(t *testing.T) {
 // TestCustomersListTemplateCapabilityMissing 能力未装配时给说明，不渲染必然失败的按钮。
 func TestCustomersListTemplateCapabilityMissing(t *testing.T) {
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(
-		customerListPageData(nil, nil, customerFilter{Status: customerStatusAll}, 1, 20,
-			customerUnavailableLabel.fallback, true)))
+		customerListPageData(customerTestPageTitle, nil, customerFilter{Status: customerStatusAll}, 1, 20,
+			customerUnavailableLabel.msg(), true)))
 	for _, want := range []string{customerUnavailableLabel.fallback, "装配问题"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("能力未装配时应渲染 %q", want)
@@ -383,9 +431,9 @@ func TestCustomersStatusSaveRendersJumpAndKeepsFilters(t *testing.T) {
 
 	form := url.Values{"customerId": {"42"}, "toStatus": {"0"}}
 	req := httptest.NewRequest(http.MethodPost,
-		"/admin/customers/status?keyword=alice&status=1&page=2&limit=20",
-		strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		"/api/customer/status?keyword=alice&status=1&page=2&limit=20",
+		strings.NewReader(customerJSONForm(t, form)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -396,16 +444,14 @@ func TestCustomersStatusSaveRendersJumpAndKeepsFilters(t *testing.T) {
 		t.Fatalf("目标状态没有从 toStatus 解析出来：%+v", fake.statusReq)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="ok"`) {
+	if !strings.Contains(body, `"code":200`) {
 		t.Errorf(`成功提示页应有 data-jump-state="ok"`)
 	}
 	if !strings.Contains(body, "账号已停用") {
 		t.Errorf("成功提示页应含回执文案")
 	}
-	for _, want := range []string{"keyword=alice", "status=1", "page=2"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("回跳地址缺少 %q", want)
-		}
+	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatal("expected JSON receipt")
 	}
 }
 
@@ -419,8 +465,8 @@ func TestCustomerStatusSaveFromDetailReturnsToDetail(t *testing.T) {
 
 	form := url.Values{"customerId": {"42"}, "toStatus": {"1"}}
 	req := httptest.NewRequest(http.MethodPost,
-		"/admin/customers/status?id=42&project=p1", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		"/api/customer/status?id=42&project=p1", strings.NewReader(customerJSONForm(t, form)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -428,11 +474,11 @@ func TestCustomerStatusSaveFromDetailReturnsToDetail(t *testing.T) {
 		t.Fatalf("应渲染提示页（200），实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="ok"`) {
+	if !strings.Contains(body, `"code":200`) {
 		t.Errorf(`成功提示页应有 data-jump-state="ok"`)
 	}
-	if !strings.Contains(body, "/admin/customers/detail?id=42") {
-		t.Errorf("应回详情页，实际响应未含详情链接")
+	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatal("expected JSON")
 	}
 }
 
@@ -444,8 +490,8 @@ func TestCustomerStatusSaveRejectsUnknownTarget(t *testing.T) {
 
 	// 2 = 待激活：它是注册流程的中间态，不是后台能设置的目标状态。
 	form := url.Values{"customerId": {"42"}, "toStatus": {"2"}}
-	req := httptest.NewRequest(http.MethodPost, "/admin/customers/status", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/api/customer/status", strings.NewReader(customerJSONForm(t, form)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -453,10 +499,10 @@ func TestCustomerStatusSaveRejectsUnknownTarget(t *testing.T) {
 		t.Fatalf("非法目标状态不应调用 service：%+v", fake.statusReq)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="err"`) {
+	if !strings.Contains(body, `"code":400`) {
 		t.Errorf(`应当渲染失败提示页，实际状态 %d`, rec.Code)
 	}
-	if !strings.Contains(body, "账号状态取值不合法") {
+	if !strings.Contains(body, userenums.ErrCustomerStatusInvalid) {
 		t.Errorf("提示页应含「账号状态取值不合法」")
 	}
 }
@@ -480,8 +526,8 @@ func TestCustomerUnlockDistinguishesOutcomes(t *testing.T) {
 			engine := newCustomerTestEngine(h)
 
 			form := url.Values{"customerId": {"42"}}
-			req := httptest.NewRequest(http.MethodPost, "/admin/customers/unlock", strings.NewReader(form.Encode()))
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req := httptest.NewRequest(http.MethodPost, "/api/customer/unlock", strings.NewReader(customerJSONForm(t, form)))
+			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			engine.ServeHTTP(rec, req)
 
@@ -489,7 +535,7 @@ func TestCustomerUnlockDistinguishesOutcomes(t *testing.T) {
 				t.Fatalf("解锁后应渲染提示页（200），实际 %d", rec.Code)
 			}
 			body := rec.Body.String()
-			if !strings.Contains(body, `data-jump-state="ok"`) {
+			if !strings.Contains(body, `"code":200`) {
 				t.Errorf(`解锁后应有 data-jump-state="ok"`)
 			}
 			if !strings.Contains(body, tc.want) {
@@ -507,8 +553,8 @@ func TestCustomersBulkStatusRejectsUnknownTarget(t *testing.T) {
 	engine := newCustomerTestEngine(h)
 
 	form := url.Values{"ids": {"42", "43"}, "toStatus": {"2"}}
-	req := httptest.NewRequest(http.MethodPost, "/admin/customers/bulk-status", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/api/customer/bulk-status", strings.NewReader(customerJSONForm(t, form)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -516,10 +562,10 @@ func TestCustomersBulkStatusRejectsUnknownTarget(t *testing.T) {
 		t.Fatalf("非法目标状态不应调用 service：%v", fake.statusIDs)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="err"`) {
+	if !strings.Contains(body, `"code":400`) {
 		t.Errorf("应当渲染失败提示页，实际状态 %d", rec.Code)
 	}
-	if !strings.Contains(body, "账号状态取值不合法") {
+	if !strings.Contains(body, userenums.ErrCustomerStatusInvalid) {
 		t.Errorf("提示页应含「账号状态取值不合法」")
 	}
 }
@@ -531,8 +577,8 @@ func TestCustomersBulkNothingSelected(t *testing.T) {
 	engine := newCustomerTestEngine(h)
 
 	form := url.Values{"toStatus": {"0"}}
-	req := httptest.NewRequest(http.MethodPost, "/admin/customers/bulk-status", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/api/customer/bulk-status", strings.NewReader(customerJSONForm(t, form)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -540,10 +586,10 @@ func TestCustomersBulkNothingSelected(t *testing.T) {
 		t.Fatalf("没有勾选时不应调用 service：%v", fake.statusIDs)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="err"`) {
+	if !strings.Contains(body, `"code":400`) {
 		t.Errorf("没有勾选应渲染失败提示页，实际状态 %d", rec.Code)
 	}
-	if !strings.Contains(body, "没有勾选任何账号") {
+	if !strings.Contains(body, userenums.ErrInvalidParam) {
 		t.Errorf("没有勾选应给出提示")
 	}
 }
@@ -559,8 +605,8 @@ func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
 	engine := newCustomerTestEngine(h)
 
 	form := url.Values{"ids": {"42", "43"}}
-	req := httptest.NewRequest(http.MethodPost, "/admin/customers/bulk-unlock", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/api/customer/bulk-unlock", strings.NewReader(customerJSONForm(t, form)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -568,7 +614,7 @@ func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
 		t.Fatalf("批量解锁应渲染提示页（200），实际 %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="ok"`) {
+	if !strings.Contains(body, `"code":200`) {
 		t.Errorf(`批量解锁应有 data-jump-state="ok"`)
 	}
 	for _, want := range []string{"已解除锁定 1 个", "1 个本来就未锁定"} {
@@ -583,8 +629,8 @@ func TestCustomersBulkUnlockDistinguishesNoop(t *testing.T) {
 // TestCustomersCounterTabsAreClickableFilters 徽章是链接，URL 由服务端生成：
 // 只动自己那个维度，其他条件保留；当前生效的那个带 aria-current 与图标。
 func TestCustomersCounterTabsAreClickableFilters(t *testing.T) {
-	data := customerListPageData(nil, customerListSample(),
-		customerFilter{Status: customerStatusActive}, 1, 20, "", false)
+	data := customerListPageData(customerTestPageTitle, customerListSample(),
+		customerFilter{Status: customerStatusActive}, 1, 20, customerMsg{}, false)
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", customerTestLayoutData(data))
 
 	for _, want := range []string{"aria-current=\"true\"", "✓"} {
@@ -636,7 +682,7 @@ func TestCustomersPageHandlerParsesLockedFilter(t *testing.T) {
 	}
 }
 
-// —— 批量动作（POST /admin/customers/bulk-status、/admin/customers/bulk-unlock）——
+// —— 批量动作（POST /api/customer/bulk-status、/api/customer/bulk-unlock）——
 
 // TestCustomersBulkStatusKeepsGoingAfterOneFailure 单条失败不中断整批。
 //
@@ -650,8 +696,8 @@ func TestCustomersBulkStatusKeepsGoingAfterOneFailure(t *testing.T) {
 
 	form := url.Values{"ids": {"42", "7", "43"}, "toStatus": {"0"}}
 	req := httptest.NewRequest(http.MethodPost,
-		"/admin/customers/bulk-status?keyword=alice&page=2", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		"/api/customer/bulk-status?keyword=alice&page=2", strings.NewReader(customerJSONForm(t, form)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 
@@ -662,18 +708,16 @@ func TestCustomersBulkStatusKeepsGoingAfterOneFailure(t *testing.T) {
 		t.Fatalf("三条都应逐条走到单条写入路径，实际 %v", fake.statusIDs)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="ok"`) {
+	if !strings.Contains(body, `"code":200`) {
 		t.Errorf("批量完成应渲染成功提示页")
 	}
-	for _, want := range []string{"已停用 2 个", "1 个未处理"} {
+	for _, want := range []string{`"updated":2`, `"skipped":1`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("提示页应含结果摘要 %q", want)
 		}
 	}
-	for _, want := range []string{"keyword=alice", "page=2"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("回跳应保留筛选 %q", want)
-		}
+	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatal("expected JSON receipt")
 	}
 }
 
@@ -701,8 +745,8 @@ func TestCustomersLabelsGoThroughI18n(t *testing.T) {
 		}
 	}
 
-	listData := customerTestLayoutData(customerListPageData(nil, customerListSample(),
-		customerFilter{Status: customerStatusAll}, 1, 20, "", false))
+	listData := customerTestLayoutData(customerListPageData(customerTestPageTitle, customerListSample(),
+		customerFilter{Status: customerStatusAll}, 1, 20, customerMsg{}, false))
 	listData["t"] = fakeTr
 	body := renderCustomerAdminTemplate(t, "admin/user/customers.html", listData)
 	for _, want := range []string{"Active", "Email verified"} {
@@ -714,8 +758,8 @@ func TestCustomersLabelsGoThroughI18n(t *testing.T) {
 		t.Errorf("计数徽章与行内状态标签应共用同一份 key（各出现一次），实际 %d 次", n)
 	}
 
-	detailData := customerTestLayoutData(customerDetailPageData(customerSample(), detailProjects(),
-		"p1", detailSummary(), false, false, "", nil))
+	detailData := customerTestLayoutData(customerDetailPageData(customerTestDetailTitle, nil, customerSample(), detailProjects(),
+		"p1", detailSummary(), false, false, customerMsg{}))
 	detailData["t"] = fakeTr
 	body = renderCustomerAdminTemplate(t, "admin/user/customer_detail.html", detailData)
 	for _, want := range []string{"Active", "Email verified", "Paid"} {

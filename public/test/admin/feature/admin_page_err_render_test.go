@@ -13,7 +13,7 @@ package feature
 //  1. `?err=` 的任何取值都不渲染提示条（本文件上半）；
 //  2. 列表页提示条只剩一个来源 —— **列表取数失败**（归口文案 + 完整页壳），下半。
 //
-// 走真实链路：gin 路由 → RolesPage → shell.Prepare → Jet 模板 → 响应体。
+// 走真实链路：gin 路由 → RolesPage → adminui.Prepare → Jet 模板 → 响应体。
 // 角色服务用同包的假实现（返回空列表），本用例只关心 Err 这一个模板键。
 
 import (
@@ -44,7 +44,7 @@ func newAdminRolesPageEngineWith(t *testing.T, svc *fakeRoleService) *gin.Engine
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		ConfigPath:     support.NewComponentTestConfig(t),
 		GinMode:        gin.TestMode,
-		InitComponents: true, // 让 shell.Prepare 拿到 i18n / 会话组件
+		InitComponents: true, // 让 adminui.Prepare 拿到 i18n / 会话组件
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 			e.GET("/admin/roles", handle.RolesPage)

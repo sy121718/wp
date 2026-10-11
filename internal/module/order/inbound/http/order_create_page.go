@@ -23,6 +23,7 @@ package orderhttp
 
 import (
 	"fmt"
+	"go_wp/internal/middleware/builtin"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/order/contract"
 	"go_wp/internal/module/order/dto"
 	"go_wp/internal/module/order/enums"
@@ -37,7 +39,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/module/project/contract"
 	"go_wp/internal/module/sysconfig/contract"
-	"go_wp/internal/shell"
+	"go_wp/pkg/backpath"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
@@ -45,7 +47,7 @@ import (
 
 const (
 	// orderCreatePageTitle 页面标题（订单模块 enums 里没有这个标题键，
-	// 直接用字面量走 shell.Prepare 的 fallback 链路，与订单列表页同一做法）。
+	// 直接用字面量走 adminui.Prepare 的 fallback 链路，与订单列表页同一做法）。
 	orderCreatePageTitle = "代客建单"
 	// orderCreateDefaultRows 明细行的初始行数（可直接填写，不需要先加行）。
 	orderCreateDefaultRows = 2
@@ -62,7 +64,6 @@ const (
 
 // orderCreateItemRow 明细行：模板按提交顺序渲染，提交时 variantId / quantity 是并行数组。
 
-// orderCreateItemRow 明细行：模板按提交顺序渲染，提交时 variantId / quantity 是并行数组。
 type orderCreateItemRow struct {
 	VariantID string
 	Quantity  string
@@ -72,9 +73,6 @@ type orderCreateItemRow struct {
 //
 // 回填的是**用户刚打的字**，不回查数据库：新建路径上「库里的旧值」根本不存在。
 
-// orderCreateForm 页面上可回填的字段（GET 初始值 / POST 失败回填共用一份形状）。
-//
-// 回填的是**用户刚打的字**，不回查数据库：新建路径上「库里的旧值」根本不存在。
 type orderCreateForm struct {
 	ProjectID        string
 	CandidateKeyword string
@@ -103,7 +101,6 @@ type orderCreateForm struct {
 
 // orderCreatePageHandle 后台代客建单页处理器。
 
-// orderCreatePageHandle 后台代客建单页处理器。
 type orderCreatePageHandle struct {
 	orders   ordercontract.OrderService
 	projects projectcontract.ProjectService
@@ -125,12 +122,6 @@ type orderCreatePageHandle struct {
 // dict 是新增参数（与可用量不同）：它来自装配层的同一实例，没有「顺着 catalog 断言出来」
 // 的路径 —— 硬凑一条反而会绕开显式的依赖声明。
 
-// NewOrderCreatePageHandle 构造。
-//
-// 可用量走类型断言而不是新增参数：变体可用量是「有则显示、无则降级」的展示信息，
-// 缺它不该让建单页打不开（订单列表页的工程列表失败也是同一档处理）。
-// dict 是新增参数（与可用量不同）：它来自装配层的同一实例，没有「顺着 catalog 断言出来」
-// 的路径 —— 硬凑一条反而会绕开显式的依赖声明。
 func NewOrderCreatePageHandle(orders ordercontract.OrderService,
 	projects projectcontract.ProjectService,
 	catalog productcontract.ProductService,
@@ -149,10 +140,6 @@ func NewOrderCreatePageHandle(orders ordercontract.OrderService,
 // 查询参数：project（工程）、keyword（候选 SKU 关键词）、rows（明细行数）。
 // 三个都是**筛选 / 排版**参数，不承载业务语义，非法值一律归一（不报错）。
 
-// OrderCreatePage 后台代客建单页（GET /admin/orders/new）。
-//
-// 查询参数：project（工程）、keyword（候选 SKU 关键词）、rows（明细行数）。
-// 三个都是**筛选 / 排版**参数，不承载业务语义，非法值一律归一（不报错）。
 func (h *orderCreatePageHandle) OrderCreatePage(c *gin.Context) {
 	form := orderCreateForm{
 		ProjectID:        strings.TrimSpace(c.Query("project")),
@@ -170,7 +157,13 @@ func (h *orderCreatePageHandle) OrderCreatePage(c *gin.Context) {
 //   - 形状不合法（前端能判的那些）→ **200 + 就地重渲**（出错字段标红 + 回填）；
 //   - service 拒绝（变体不存在 / 缺货 / 券不可用 …）→ 同样 200 + 就地重渲，
 //     原因进顶部提示栏，用户填的东西一个字都不丢；
-//   - 成功 → 提示页，1 秒后回到列表并展开新单（orderId 在回跳地址上，不在文案通道里）。
+//   - 成功 → **303 PRG**：回列表页并展开新单（orderId 在 Location 上，不在文案通道里）。
+//
+// 成功出口为什么是 303 而不是提示页（task-98 S2）：本仓页面写动作的口径是
+// `c.Redirect(http.StatusSeeOther, target)`（见 page / block 的 PRG 回跳），提示页那一套
+// （shell.RenderJump + Msg/BackText/Seconds）已经整批退役（order 侧 0 消费者）；后台也没有
+// 跨请求的成功提示面（`?ok=` 族已按项目决策整批退役，layout 无 notice 槽）。这里的「确认」
+// 是**事实**而非空口提示：Location 带 orderId ⇒ 落回列表时那一单的详情是展开的。
 func (h *orderCreatePageHandle) OrderCreateSubmit(c *gin.Context) {
 	form := orderCreateFormFromPost(c)
 	req, fieldErrs := orderCreateReqFromForm(c, form)
@@ -182,7 +175,7 @@ func (h *orderCreatePageHandle) OrderCreateSubmit(c *gin.Context) {
 	// 来源与操作人由服务端写入，绝不受表单影响（表单里也没有这些字段）。
 	req.IPAddress = c.ClientIP()
 	req.UserAgent = c.Request.UserAgent()
-	req.CreateBy = shell.CurrentUserID(c)
+	req.CreateBy = builtin.CurrentUserID(c)
 
 	res, err := h.orders.CreateAdminOrder(c.Request.Context(), req)
 	if err != nil {
@@ -197,22 +190,15 @@ func (h *orderCreatePageHandle) OrderCreateSubmit(c *gin.Context) {
 		// 带上 orderId：回列表页时那一单的详情是展开的，运营一眼看到刚建的单。
 		params["orderId"] = strconv.FormatUint(res.ID, 10)
 	}
-	shell.RenderJump(c, shell.Jump{
-		OK:       true,
-		Msg:      shell.TranslateFor(c)(orderenums.MsgCreateSuccess, "订单已创建"),
-		Back:     shell.WithParams("/admin/orders", params),
-		BackText: orderBackText(c),
-		Seconds:  1,
-	})
+	// 303：POST 之后换成 GET 去看结果（PRG）。302 在部分客户端会被当成「重放原方法」，
+	// 于是「提交一次」变成「提交两次」—— 建单页尤其致命（会落两单，靠 RequestID 幂等兜）。
+	c.Redirect(http.StatusSeeOther, backpath.WithParams("/admin/orders", params))
 }
 
 // render 渲染整页（初始态与失败回填态共用同一个出口）。
 //
 // fieldErrs 为空 map / nil 时页面没有标红字段；pageErr 非空时顶部给错误提示栏。
 
-// render 渲染整页（初始态与失败回填态共用同一个出口）。
-//
-// fieldErrs 为空 map / nil 时页面没有标红字段；pageErr 非空时顶部给错误提示栏。
 func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fieldErrs map[string]string, pageErr string) {
 	ctx := c.Request.Context()
 
@@ -277,12 +263,12 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 
 	// 国家/地区下拉（收货与账单各一份）：字典**整表只取一次**，两份视图各自标选中项 ——
 	// 一份地址查一次库，等于同一份两百多行的清单在一屏里读两遍。
-	tr := shell.TranslateFor(c)
+	tr := orderTr(c)
 	countries := h.countryList(c)
 	shipCountries := countryOptionViews(tr, countries, form.Ship.Country)
 	billCountries := countryOptionViews(tr, countries, form.Bill.Country)
 
-	data := shell.Prepare(c, gin.H{
+	data := adminui.Prepare(c, gin.H{
 		"title": orderCreatePageTitle,
 		"menu":  "orders",
 		// 工程上下文（页头下拉；只有一个工程时整段不渲染 —— 单选项的选择器
@@ -321,12 +307,10 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 
 // countryNoneLabelKey 「（不填写）」空项的 i18n key（中文兜底写在 countryOptionViews 里）。
 
-// countryNoneLabelKey 「（不填写）」空项的 i18n key（中文兜底写在 countryOptionViews 里）。
 const countryNoneLabelKey = "admin.order_new.field.country_none"
 
 // countryOptionView 国家/地区下拉的一项（模板只读这三个字段）。
 
-// countryOptionView 国家/地区下拉的一项（模板只读这三个字段）。
 type countryOptionView struct {
 	Code     string
 	Label    string
@@ -338,10 +322,6 @@ type countryOptionView struct {
 // 读失败**不升级成整页错误**：国家是选填项，下拉空着页面照常可用、订单照常可建 ——
 // 与「工程列表装载失败 → 空列表 + 归口提示 + 200」同一档处理（真因由 sysconfig 侧记日志）。
 
-// countryList 取启用国家清单（字典未接入或读取失败时返回 nil）。
-//
-// 读失败**不升级成整页错误**：国家是选填项，下拉空着页面照常可用、订单照常可建 ——
-// 与「工程列表装载失败 → 空列表 + 归口提示 + 200」同一档处理（真因由 sysconfig 侧记日志）。
 func (h *orderCreatePageHandle) countryList(c *gin.Context) []sysconfigcontract.CountryOption {
 	if h.dict == nil {
 		return nil
@@ -365,17 +345,6 @@ func (h *orderCreatePageHandle) countryList(c *gin.Context) []sysconfigcontract.
 // 而不是「下拉里没有这一项，于是浏览器悄悄改选了第一项」—— 后者是「改了一个字段、
 // 另一个字段跟着变了」这类事故里最难查的一种。
 
-// countryOptionViews 国家清单 → 下拉视图。
-//
-// 首位是「（不填写）」空项：国家**选填** —— 非中国站点、或这单不需要寄的场景下，
-// 强行预选一个默认国家会让运营要么照错填、要么每次手动改回来。
-//
-// 选中项按「已提交的值 → 站点默认国家」定：失败重渲时回填的是运营刚提交的那一个，
-// 初次打开时预选站点默认国家（国内后台绝大多数是国内单，省掉一次手选；它只是预选，随时可改）。
-//
-// 已提交但字典里没有的码会**原样补进列表并选中**：运营在页面上看到的就是会被落库的值，
-// 而不是「下拉里没有这一项，于是浏览器悄悄改选了第一项」—— 后者是「改了一个字段、
-// 另一个字段跟着变了」这类事故里最难查的一种。
 func countryOptionViews(tr translate, countries []sysconfigcontract.CountryOption, submitted string) []countryOptionView {
 	selected := orderdto.NormalizeCountryCode(submitted)
 	if selected == "" {
@@ -408,13 +377,9 @@ func countryOptionViews(tr translate, countries []sysconfigcontract.CountryOptio
 // 标签形态：商品名 · SKU码 · 当前售价（可用 N）。价格是**商品当前售价**，
 // 只是给运营选品用的线索；真正入单的单价由服务端按下单快照落库，页面无法左右它。
 
-// candidateViews 候选变体 → 模板下拉项（标签在服务端拼好，模板不做算术与取词）。
-//
-// 标签形态：商品名 · SKU码 · 当前售价（可用 N）。价格是**商品当前售价**，
-// 只是给运营选品用的线索；真正入单的单价由服务端按下单快照落库，页面无法左右它。
 func (h *orderCreatePageHandle) candidateViews(c *gin.Context, projectID string,
 	skus []*productdto.BundleSKUResp) []gin.H {
-	tr := shell.TranslateFor(c)
+	tr := orderTr(c)
 	avail := map[string]int{}
 	if h.availability != nil && len(skus) > 0 {
 		ids := make([]string, 0, len(skus))
@@ -452,7 +417,6 @@ func (h *orderCreatePageHandle) candidateViews(c *gin.Context, projectID string,
 
 // orderCreateRowCount 解析明细行数（rows 查询参数）：非法 / 越界一律归一到 [1, orderCreateMaxRows]。
 
-// orderCreateRowCount 解析明细行数（rows 查询参数）：非法 / 越界一律归一到 [1, orderCreateMaxRows]。
 func orderCreateRowCount(raw string) int {
 	n, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil || n < 1 {
@@ -466,7 +430,6 @@ func orderCreateRowCount(raw string) int {
 
 // orderCreateFormFromPost 把这次提交的表单摊成回填视图（值只来自这次提交）。
 
-// orderCreateFormFromPost 把这次提交的表单摊成回填视图（值只来自这次提交）。
 func orderCreateFormFromPost(c *gin.Context) orderCreateForm {
 	form := orderCreateForm{
 		ProjectID:        strings.TrimSpace(c.PostForm("project")),
@@ -522,15 +485,6 @@ func orderCreateFormFromPost(c *gin.Context) orderCreateForm {
 // 而不是截断**：静默截断会让超出的明细凭空消失（订单照样建成、页面一切正常），
 // 这类缺陷事后只能靠对账发现，而项目规则明令禁止静默丢弃一行。
 
-// orderCreateItemRowsFromPost 从并行数组重建整份明细行（**按提交顺序**，不做索引 echo）。
-//
-// variantId / quantity 由浏览器按 DOM 顺序各提交一份数组，这里逐下标配对；
-// 行结构只由模板决定（每一行都提交这两个字段，没有任何行被 disabled —— 一旦某行
-// 不提交，后面的行就会整体错位一格，表现为「数量跑到别的商品上」且不报错）。
-//
-// 第二个返回值 = 「提交的行数超过解析上限」。它存在的意义是**把上限做成一次明确的拒绝
-// 而不是截断**：静默截断会让超出的明细凭空消失（订单照样建成、页面一切正常），
-// 这类缺陷事后只能靠对账发现，而项目规则明令禁止静默丢弃一行。
 func orderCreateItemRowsFromPost(c *gin.Context) (rows []orderCreateItemRow, tooMany bool) {
 	ids := c.PostFormArray("variantId")
 	quantities := c.PostFormArray("quantity")
@@ -559,16 +513,9 @@ func orderCreateItemRowsFromPost(c *gin.Context) (rows []orderCreateItemRow, too
 //
 // 返回值里的 fieldErrs 非空时**不调用** service：明知缺必填还打一次库没有意义。
 
-// orderCreateReqFromForm 表单 → CreateOrderReq，并给出**字段级**的错误（标红用）。
-//
-// 只做前端也判得出的形状校验（必填 / 邮箱形状 / 至少一行明细），判据与 service 的
-// validateCreateOrderReq 一致 —— 但真值仍在 service：这里放过的请求它会再校验一遍
-// （规格归属、启用状态、数量区间、库存、券），不变量以 service 为准。
-//
-// 返回值里的 fieldErrs 非空时**不调用** service：明知缺必填还打一次库没有意义。
 func orderCreateReqFromForm(c *gin.Context, form orderCreateForm) (*orderdto.CreateOrderReq, map[string]string) {
 	fieldErrs := map[string]string{}
-	tr := shell.TranslateFor(c)
+	tr := orderTr(c)
 
 	if form.Email == "" {
 		fieldErrs["customerEmail"] = tr(orderenums.ErrCustomerEmailRequired, orderenums.ErrCustomerEmailRequired)
@@ -623,7 +570,7 @@ func orderCreateReqFromForm(c *gin.Context, form orderCreateForm) (*orderdto.Cre
 	}, fieldErrs
 }
 
-// order_page_handle.go — 后台订单管理页（BIZ-1 销售侧）。
+// —— 建单页的表单取值与提交出口 ——
 
 //
 

@@ -1,8 +1,10 @@
 {{import "../partials/rich_editor.html"}}
 {{import "../partials/media_field.html"}}
-{{fill := isset(.FormEcho)}}{{tr := .["t"]}}{{create := .Mode == "create"}}
+{{fill := isset(.FormEcho)}}{{tr := .["t"]}}{{tf := .["tf"]}}{{create := .Mode == "create"}}
 <div data-brand-form-host>
-    {{if isset(.SubmitErr)}}<p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>{{end}}
+    {* SubmitErr 收的是**事实**（adminui.Msg：key + 中文兜底 + `%s` 参数）：控制器不取词，
+       语言由本片段的 tf 按当前请求决定（缺 tf 声明 = 渲染中断 = 500，htmx 不 swap）。 *}
+    {{if isset(.SubmitErr)}}{{if .SubmitErr.Key != "" || .SubmitErr.Fallback != ""}}<p class="badge badge-warning" role="alert">{{tf(.SubmitErr.Key, .SubmitErr.Fallback, .SubmitErr.Args)}}</p>{{end}}{{end}}
     <form method="post" action="/admin/product-brands/{{if create}}create{{else}}update{{end}}{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" class="form-stack" hx-post="/admin/product-brands/{{if create}}create{{else}}update{{end}}{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-target="closest [data-brand-form-host]" hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{.Csrf}}">
         <input type="hidden" name="projectId" value="{{if fill}}{{.FormEcho.projectId}}{{else}}{{.Project}}{{end}}">

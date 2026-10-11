@@ -6,8 +6,7 @@
      · 数据是 dto 本身（.Returns / .Detail.Return / .Detail.Order），模板直接读字段；
      · 文案用 tr、金额用 dto 里服务端算好的 *Label（展示串的真源在 service）；
      · 显示判断写在用它的地方（哪些表单渲染、徽章什么颜色、状态说明说哪一句）；
-     · 写动作的上下文走表单 action 的 query（{{.ListQuery}} + status + returnId），
-       结论由 shell.RenderJump 渲染提示页 —— 不再经 ?ok= / ?err= / ?done=。 *}
+     · 写动作经 JSON API 返回成品回执，成功后刷新页面；列表上下文由 .ListQuery 保留。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
 {{import "../partials/csrf_field.html"}}
@@ -17,7 +16,8 @@
 {{returns := .Returns}}
 {{listQuery := .ListQuery}}
 {{statusTabs := .StatusTabs}}
-{{statusLabel := .StatusLabel}}
+{{returnLabels := .ReturnStatusLabels}}
+{{orderLabels := .OrderStatusLabels}}
 <div class="stack returns-page">
     <header class="page-head">
         <div class="page-head-main">
@@ -58,7 +58,7 @@
     {{if .Detail}}
     {{d := .Detail}}{{r := d.Return}}{{o := d.Order}}
     <section class="card card-body">
-        <h2>{{tr("admin.returns.detail.heading", "退货单详情")}} <code>{{r.ReturnNo}}</code> <span class="badge badge-{{r.StatusTone}}">{{statusLabel(r.Status)}}</span></h2>
+        <h2>{{tr("admin.returns.detail.heading", "退货单详情")}} <code>{{r.ReturnNo}}</code> <span class="badge badge-{{r.StatusTone}}">{{label := returnLabels[r.Status]}}{{tr(label.Key, label.Fallback)}}</span></h2>
         <dl class="kv">
             <div class="kv-item"><dt>{{tr("admin.returns.detail.order", "订单")}}</dt><dd><a href="/admin/orders?{{listQuery}}&orderId={{r.OrderID}}"><code>{{r.OrderNo}}</code></a></dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.detail.customer", "客户")}}</dt><dd>{{r.CustomerName}} · {{r.CustomerEmail}}</dd></div>
@@ -108,7 +108,7 @@
         <h3>{{tr("admin.returns.order_summary.heading", "订单摘要")}}</h3>
         {{if o}}
         <dl class="kv">
-            <div class="kv-item"><dt>{{tr("admin.returns.detail.order", "订单")}}</dt><dd><strong>{{o.OrderNo}}</strong> <span class="badge badge-{{o.StatusTone}}">{{ .OrderStatusLabel(o.Status) }}</span></dd></div>
+            <div class="kv-item"><dt>{{tr("admin.returns.detail.order", "订单")}}</dt><dd><strong>{{o.OrderNo}}</strong> <span class="badge badge-{{o.StatusTone}}">{{label := orderLabels[o.Status]}}{{tr(label.Key, label.Fallback)}}</span></dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.order_summary.total", "订单总额")}}</dt><dd>{{money(o.Total, currencyPrefix(o.Currency))}}</dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.order_summary.created_at", "下单时间")}}</dt><dd>{{dateTime(o.CreateTime)}}</dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.order_summary.customer", "客户")}}</dt><dd>{{o.CustomerName}} · {{o.CustomerEmail}}</dd></div>
@@ -130,11 +130,22 @@
             </span>
         </h3>
 
-        {* 表单的上下文全部在 action 的 query 上（列表筛选 + status + returnId），
-           不再逐项铺隐藏域 —— 服务端由 shell.BackPath 按白名单读回。 *}
+        {* 审核与收货都走前端直调 JSON API（task-98 S3）：端点就是同一条
+           /api/order/return/{approve,reject,receive}，页面不再有自己的写路径 —— 于是
+           「结论走提示页 + 回跳地址从表单 action 的 query 读回」那一套整批消失
+           （order 模块的 shell.RenderJump 消费者随之归零）。
+           表单只声明**事实**（端点 / 写模式 / 数字字段 / 布尔字段 / 失败文案），行为全在基座里；
+           没有 method/action 是刻意的：禁用 JS 时按钮是 hidden 的（见表格前的 noscript），
+           不会退化成「GET 当前页」这种看起来像成功的空动作。
+           returnId 是**数字**：DOM 的值都是字符串，而服务端按 uint64 严格绑定，所以要点名；
+           autoReceive 是**布尔**：同理必须点名 —— 直接发 "1" 会让整条请求 400（页面不替服务端
+           猜类型，与 data-write-number 同口径；见 static/js/ui/json_write.js 的 data-write-bool）。 *}
         {{if r.Status == "requested"}}
-        <form method="post" action="/admin/returns/approve?{{listQuery}}&status={{.FilterStatus}}&returnId={{r.ID}}" class="form-stack">
-            {{yield csrfField()}}
+        <form data-write-api="/api/order/return/approve" data-write-mode="create"
+              data-write-number="returnId" data-write-bool="autoReceive"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}" class="form-stack">
+            <input type="hidden" name="returnId" value="{{r.ID}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="form-inline">
                 <input type="text" class="form-input" name="remark" placeholder="{{tr("admin.returns.ph.review_remark", "审核意见（可选，客户可见）")}}" autocomplete="off">
                 <select class="form-select" name="warehouseId" aria-label="{{tr("admin.returns.warehouse.default", "入库仓库（默认仓）")}}">
@@ -153,16 +164,24 @@
                 <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.returns.action.approve", "同意退货")}}</button>
             </div>
         </form>
-        <form method="post" action="/admin/returns/reject?{{listQuery}}&status={{.FilterStatus}}&returnId={{r.ID}}" class="form-inline">
-            {{yield csrfField()}}
+        {* 拒绝：理由必填由服务端的 400 兜底（缺 / 空 / null 一律整条拒绝，
+           不再由页面先判一遍再渲染提示页）—— 页面侧只保留 required 这个快速反馈。 *}
+        <form data-write-api="/api/order/return/reject" data-write-mode="create"
+              data-write-number="returnId"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}" class="form-inline">
+            <input type="hidden" name="returnId" value="{{r.ID}}">
             <input type="text" class="form-input" name="remark" placeholder="{{tr("admin.returns.ph.reject_remark", "拒绝原因（必填，客户要知道为什么）")}}" required autocomplete="off">
             <button type="submit" class="btn btn-sm">{{tr("admin.returns.action.reject", "拒绝申请")}}</button>
+            <p class="form-hint" data-write-status role="status" hidden></p>
         </form>
         {{end}}
 
         {{if r.Status == "approved"}}
-        <form method="post" action="/admin/returns/receive?{{listQuery}}&status={{.FilterStatus}}&returnId={{r.ID}}" class="form-stack">
-            {{yield csrfField()}}
+        <form data-write-api="/api/order/return/receive" data-write-mode="create"
+              data-write-number="returnId"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}" class="form-stack">
+            <input type="hidden" name="returnId" value="{{r.ID}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="form-inline">
                 <select class="form-select" name="warehouseId" aria-label="{{tr("admin.returns.warehouse.default", "入库仓库（默认仓）")}}">
                     <option value="">{{tr("admin.returns.warehouse.default", "入库仓库（默认仓）")}}</option>
@@ -180,8 +199,14 @@
         {{end}}
 
         {{if r.Status == "received"}}
-        <form method="post" action="/admin/returns/receive?{{listQuery}}&status={{.FilterStatus}}&returnId={{r.ID}}" class="form-stack">
-            {{yield csrfField()}}
+        {* 补退款走的是**同一条** receive 端点：服务端识别出入库已完成，只补做退款。
+           重复点安全（幂等，不会重复加库存）—— 这也是「单条成功只整页刷新、不再按落地态
+           换一句提示」的补偿说明：刷新后行徽章就是结论，多点一次不会造成第二笔退款。 *}
+        <form data-write-api="/api/order/return/receive" data-write-mode="create"
+              data-write-number="returnId"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}" class="form-stack">
+            <input type="hidden" name="returnId" value="{{r.ID}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="form-inline">
                 <input type="text" class="form-input" name="transactionId" placeholder="{{tr("admin.returns.ph.txn_optional", "退款流水号（可选，留空则沿用原流水号）")}}" autocomplete="off">
                 <input type="text" class="form-input" name="remark" placeholder="{{tr("admin.returns.ph.remark_short", "备注（可选）")}}" autocomplete="off">
@@ -204,7 +229,7 @@
                 {{range _, tab := statusTabs}}
                 {{sv := tab.Value}}
                 {{cnt := (sv == "" ? .CountsAll : .Counts[sv])}}
-                <a class="badge badge-{{tab.Tone}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/returns?{{listQuery}}&status={{sv}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{statusLabel(sv)}}{{end}} {{if sv == "requested" || sv == "received"}}<strong>{{cnt}}</strong>{{else}}{{cnt}}{{end}}</a>
+                <a class="badge badge-{{tab.Tone}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/returns?{{listQuery}}&status={{sv}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{label := returnLabels[sv]}}{{tr(label.Key, label.Fallback)}}{{end}} {{if sv == "requested" || sv == "received"}}<strong>{{cnt}}</strong>{{else}}{{cnt}}{{end}}</a>
                 {{end}}
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{tr("admin.returns.help.label", "查看说明")}}" aria-expanded="false">?</button>
@@ -240,19 +265,44 @@
         {* 空数据也渲染 <table>/<thead>：先让用户看见这个列表有哪些列，才谈得上判断「是不是筛错了」。
            空态整行落在 tbody 里（colspan = 8：勾选 / 退货单号 / 订单号 / 客户 / 状态 /
            退款金额 / 申请时间 / 操作）。 *}
-        <form method="post" action="/admin/returns/bulk-approve?{{listQuery}}&status={{.FilterStatus}}">
-            {{yield csrfField()}}
+        {* 两个批量动作也直调 JSON（与订单列表页的批量流转同法）：端点声明落在**按钮**上
+           （attrFrom：按钮优先、表单兜底），表单上刻意不声明 —— 声明了它会被继承成一个 fetch，
+           两个按钮就没法各投各的端点。批量拒绝的理由必填由服务端判（缺 / 空 / null → 400 +
+           零 service 调用），页面不再自己拼「本次没有处理任何退货申请」这种整句结论。
+           没有 action 是刻意的：禁用 JS 时按钮是 hidden 的（下方 noscript 说明原因）。 *}
+        <form method="post">
             {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
             {{if len(returns) > 0}}
-            {* 批量拒绝的 action 必须先算成变量：yield 的参数是**字面量**，
-                  写在字符串里的 {{...}} 不会展开（会被原样输出到 href 里，链接直接坏掉）。 *}
-            {{bulkRejectAction := "/admin/returns/bulk-reject?" + listQuery + "&status=" + .FilterStatus}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
                 <input type="text" class="form-input" name="remark" autocomplete="off" placeholder="{{tr("admin.returns.ph.bulk_remark", "备注（同意时可选；批量拒绝时作为拒绝理由，必填）")}}">
-                {{yield bulkBtn(label=tr("admin.returns.bulk.approve", "批量同意"), cls="btn btn-sm btn-primary")}}
-                {{yield bulkBtn(label=tr("admin.returns.bulk.reject", "批量拒绝"), confirm=tr("admin.returns.bulkRejectConfirm", "拒绝选中的退货申请？客户会看到拒绝结果，拒绝理由请先填在备注框里。"), danger=true, formaction=bulkRejectAction)}}
+                <button type="submit" class="btn btn-sm btn-primary" data-requires-js hidden
+                        data-write-api="/api/order/return/approve" data-write-mode="bulk" data-write-outcome="update"
+                        data-write-extra="remark"
+                        data-msg-none-selected="{{tr("admin.returns.bulk.noneSelected", "没有勾选任何退货申请，列表未改动。")}}"
+                        data-msg-all-updated="{{tr("admin.returns.bulkApprove.allUpdated", "已同意 {count} 个退货申请。")}}"
+                        data-msg-all-skipped="{{tr("admin.returns.bulkApprove.allSkipped", "{count} 个退货申请都未能同意（已被审过或已不存在）。")}}"
+                        data-msg-partial="{{tr("admin.returns.bulkApprove.partial", "已同意 {updated} 个退货申请，{skipped} 个未能同意（已被审过或已不存在）。")}}"
+                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-refresh="{{tr("admin.returns.bulk.refresh", "刷新列表")}}">{{tr("admin.returns.bulk.approve", "批量同意")}}</button>
+                <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                        data-write-api="/api/order/return/reject" data-write-mode="bulk" data-write-outcome="update"
+                        data-write-extra="remark"
+                        data-msg-none-selected="{{tr("admin.returns.bulk.noneSelected", "没有勾选任何退货申请，列表未改动。")}}"
+                        data-msg-all-updated="{{tr("admin.returns.bulkReject.allUpdated", "已拒绝 {count} 个退货申请。")}}"
+                        data-msg-all-skipped="{{tr("admin.returns.bulkReject.allSkipped", "{count} 个退货申请都未能拒绝（已被审过或已不存在）。")}}"
+                        data-msg-partial="{{tr("admin.returns.bulkReject.partial", "已拒绝 {updated} 个退货申请，{skipped} 个未能拒绝（已被审过或已不存在）。")}}"
+                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-refresh="{{tr("admin.returns.bulk.refresh", "刷新列表")}}"
+                        data-confirm="{{tr("admin.returns.bulkRejectConfirm", "拒绝选中的退货申请？客户会看到拒绝结果，拒绝理由请先填在备注框里。")}}"
+                        data-confirm-danger>{{tr("admin.returns.bulk.reject", "批量拒绝")}}</button>
             {{yield bulkBarClose()}}
             {{end}}
+            {* 批量结果区（两个动作共用）：全成功 / 部分成功 / 全跳过的摘要 + **逐条原因**写在这儿。
+               刻意不自动刷新 —— 自动刷新会让「谁失败、为什么」一闪而过看不完；刷新入口由基座追加。 *}
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <noscript><p class="form-hint">{{tr("admin.returns.write.noJs", "本页的审核、收货与两个批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
             <div class="table-wrap table-scroll" tabindex="0">
             <table class="data-table data-table-wide">
             <thead>
@@ -277,7 +327,7 @@
             <p class="empty-title">{{if selectedProject}}{{tr("admin.returns.list.empty_project", "这个工程还没有退货申请")}}{{else}}{{tr("admin.returns.list.empty_no_project", "还没有站点工程")}}{{end}}</p>
             <p class="empty-desc">{{tr("admin.returns.list.empty_tail", "客户在订单里提交退货申请后就会出现在这里。")}}
             {{if .FilterOrderID > 0}}{{tr("admin.returns.list.order_filter_lead", "当前还带着订单筛选（订单 ID")}} {{.FilterOrderID}}{{tr("admin.returns.list.order_filter_mid", "），")}}{{end}}
-            {{if .FilterStatus != ""}}{{tr("admin.returns.list.status_filter_lead", "当前还带着状态筛选「")}}{{statusLabel(.FilterStatus)}}{{tr("admin.returns.list.status_filter_tail", "」—— 点上面的「全部」可以清掉。")}}{{end}}</p>
+            {{if .FilterStatus != ""}}{{tr("admin.returns.list.status_filter_lead", "当前还带着状态筛选「")}}{{label := returnLabels[.FilterStatus]}}{{tr(label.Key, label.Fallback)}}{{tr("admin.returns.list.status_filter_tail", "」—— 点上面的「全部」可以清掉。")}}{{end}}</p>
             {{if .FilterOrderID > 0 || .FilterStatus != ""}}
             <div class="empty-actions">
                 {{if .FilterOrderID > 0}}<a class="btn" href="/admin/returns?{{listQuery}}">{{tr("admin.returns.order_filter.clear", "清除该筛选")}}</a>{{end}}
@@ -294,7 +344,7 @@
                 <td data-label="{{tr("admin.returns.col.return_no", "退货单号")}}"><a class="row-title-link" href="/admin/returns?{{listQuery}}&returnId={{rt.ID}}"><code>{{rt.ReturnNo}}</code></a></td>
                 <td data-label="{{tr("admin.returns.col.order_no", "订单号")}}"><code>{{rt.OrderNo}}</code></td>
                 <td data-label="{{tr("admin.returns.col.customer", "客户")}}">{{rt.CustomerName}} <span class="hint">{{rt.CustomerEmail}}</span></td>
-                <td data-label="{{tr("admin.returns.col.status", "状态")}}"><span class="badge badge-{{rt.StatusTone}}">{{statusLabel(rt.Status)}}</span></td>
+                <td data-label="{{tr("admin.returns.col.status", "状态")}}"><span class="badge badge-{{rt.StatusTone}}">{{label := returnLabels[rt.Status]}}{{tr(label.Key, label.Fallback)}}</span></td>
                 <td data-label="{{tr("admin.returns.col.refund_amount", "退款金额")}}"><strong>{{rt.RefundLabel}}</strong></td>
                 <td data-label="{{tr("admin.returns.col.created_at", "申请时间")}}">{{dateTime(rt.CreateTime)}}</td>
                 <td data-label="{{tr("admin.returns.col.actions", "操作")}}" class="col-actions">

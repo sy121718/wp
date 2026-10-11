@@ -30,7 +30,7 @@ const (
 	// 不经 sys_i18n（模板侧那 5 个才 seed 词条）。
 	//
 	// 所以这批文案**不跟着语言走**：它们只在异常路径出现（没配模型 / 没写问题 /
-	// 这轮失败 / 截断），而悬浮球的回答片段是单独渲染的（不走 shell.Prepare 的 i18n 注入）。
+	// 这轮失败 / 截断），而悬浮球的回答片段是单独渲染的（不走 adminui.Prepare 的 i18n 注入）。
 	// 要让它跟着语言走，得把片段渲染也接上 i18n 注入 —— 独立的一批，
 	// 见 inbound/http/ai_fab_handle.go 顶部注释。
 	MsgFabNoModel     = "ai.fab.noModel"

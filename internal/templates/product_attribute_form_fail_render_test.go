@@ -25,11 +25,19 @@ import (
 // Tr 是取词函数：该片段的 data 是**结构体**（Jet 在 struct 上不支持 `.["t"]`，
 // 只有 func 字段可调），取词函数因此随数据类一起传 —— 形状与 handle 的 attrRowsCtx.Tr 一致。
 func attrRowsCtxData(groupID string, rows []map[string]any) map[string]any {
+	// t / tf 是**事实取词**的那两个函数：生产路径由 adminui.PrepareFragment 注入
+	// （attrRowsCtxData 现在就是 PrepareFragment 的返回），这里给等价的一份。
 	return map[string]any{
 		"GroupID": groupID,
 		"Rows":    rows,
-		"Tr":      TranslateFunc("zh-CN"),
+		"t":       TranslateFunc("zh-CN"),
+		"tf":      func(key, fallback string, args []string) string { return fillForTest(fallback, args) },
 	}
+}
+
+// submitErrFact 错误槽事实（Key + 中文兜底 + `%s` 参数）—— 槽位收事实，取词在模板里。
+func submitErrFact(fallback string) map[string]any {
+	return map[string]any{"Key": "", "Fallback": fallback, "Args": []string{}}
 }
 
 // attrGroupFragmentData 属性组片段的渲染数据（键与 handle 的 attrGroupFormData 逐键一致）。
@@ -44,12 +52,13 @@ func attrGroupFragmentData(echo bool) map[string]any {
 	}
 	d := map[string]any{
 		"Csrf": "tok", "Project": "pr1", "t": TranslateFunc("zh-CN"),
+		"tf":   func(key, fallback string, args []string) string { return fillForTest(fallback, args) },
 		"Mode": "create", "Action": "/admin/product-attributes/create", "IsCreate": true,
 		"GroupID": "new", "Name": "", "Key": "", "Sort": 0, "VariationChecked": true,
 		"RowsCtx": attrRowsCtxData("new", rows), "InDrawer": true,
 	}
 	if echo {
-		d["SubmitErr"] = "属性组标识已被占用"
+		d["SubmitErr"] = submitErrFact("属性组标识已被占用")
 		d["FormEcho"] = map[string]any{
 			"projectId": "pr1", "id": "new", "name": "颜色", "key": "color", "sort": "3", "isVariation": "0",
 		}
@@ -74,11 +83,12 @@ func attrValuesFragmentData(echo bool) map[string]any {
 	}
 	d := map[string]any{
 		"Csrf": "tok", "Project": "pr1", "t": TranslateFunc("zh-CN"),
+		"tf":     func(key, fallback string, args []string) string { return fillForTest(fallback, args) },
 		"Action": "/admin/product-attributes/set-values", "GroupID": groupID,
 		"RowsCtx": attrRowsCtxData(groupID, rows), "InDrawer": true,
 	}
 	if echo {
-		d["SubmitErr"] = "属性值标识重复"
+		d["SubmitErr"] = submitErrFact("属性值标识重复")
 		d["FormEcho"] = map[string]any{"projectId": "pr1", "id": groupID, "groupId": groupID}
 		d["FormEchoChecked"] = map[string]any{"id": true, "groupId": true}
 		d["FormEchoMulti"] = map[string]any{"id": []string{groupID}, "groupId": []string{groupID}}

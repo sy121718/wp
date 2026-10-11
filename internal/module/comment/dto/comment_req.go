@@ -59,9 +59,7 @@ type ReviewReq struct {
 	ProjectID string `json:"projectId" form:"projectId"`
 	// IDs 要处理的评论 id。
 	//
-	// 页面表单入口经 shell.BulkIDs 去空白 / 去重 / 限量（MaxBulkIDs）；JSON 入口的上限
-	// 由 service 的 commentenums.MaxReviewIDs 兜住 —— 两条入口都必须有界，
-	// 否则「一次提交多少 id」就交给请求方决定了。
+	// JSON API 与 MCP 共用 service 的 MaxReviewIDs 上限，超限整批返回参数错误。
 	IDs []int64 `json:"ids" form:"ids"`
 	// Status 目标状态；只接受 approved / rejected（见 enums.ReviewableStatuses）。
 	Status string `json:"status" form:"status"`

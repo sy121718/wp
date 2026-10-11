@@ -4,8 +4,8 @@ package pageservice
 //
 //	fmt.Errorf("%w: %v", ErrInvalidDocument, builderErr)
 //
-// 而 ErrInvalidDocument 在 page_handle.go 的 pageErrorStatus 里落 **400**（不是 500），
-// 于是两个出口都会把它给用户看：JSON 出口的 pageErrorMessage、页面出口的 pageFacingText。
+// 而 ErrInvalidDocument 在 pages_handle.go 的 pageErrorStatus 里落 **400**（不是 500），
+// 于是两个出口都会把它给用户看：JSON 出口的 pageErrorMessage、页面出口的 pageErrMsg。
 // 改造前那半句是 builder 的硬编码中文（「顶级节点 0: 组件树深度 11 超过上限 10…」），
 // 英文界面上必然中英混排。
 //

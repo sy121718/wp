@@ -10,17 +10,18 @@ package workbenchhttp
 import (
 	"context"
 	"encoding/json"
+	"go_wp/internal/middleware/builtin"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/navigation/contract"
 	"go_wp/internal/module/navigation/dto"
 	"go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 	seoscore "go_wp/internal/seo"
-	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -60,7 +61,7 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 	if h == nil || h.svc == nil || h.svc.NavigationPicker() == nil {
 		// 归口译文：c.JSON 的 message 不经过模板取词层，直接写 MsgInternalError（裸 key）
 		// 会让前端弹出一串 "MsgInternalError"。
-		response.ErrorWithMessage(c, http.StatusServiceUnavailable, shell.PageInternalText(c))
+		response.ErrorWithMessage(c, http.StatusServiceUnavailable, adminui.PageInternalText(c))
 		return
 	}
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
@@ -75,7 +76,7 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 		ProjectID: projectID, Title: title, Path: path, Kind: kind,
 	})
 	if err != nil || created == nil {
-		logger.Scene("workbench").With("user_id", shell.CurrentUserID(c)).
+		logger.Scene("workbench").With("user_id", builtin.CurrentUserID(c)).
 			With("project_id", projectID).Error(err, "检查器新建菜单项失败")
 		response.ErrorWithMessage(c, http.StatusBadRequest, h.navigationFacingText(c, err))
 		return
@@ -108,7 +109,7 @@ func (h *Handle) SEOScore(c *gin.Context) {
 	}
 	res, err := seoscore.ScoreDocument(document, c.PostForm("url"), requestScoreLang(c))
 	if err != nil {
-		shell.PageErrorBadRequest(c, "seo_score", err)
+		adminui.PageErrorBadRequest(c, "seo_score", err)
 		return
 	}
 	response.Success(c, res)

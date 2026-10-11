@@ -64,13 +64,15 @@ func rfmSample() *orderdto.CustomerRfmResp {
 				UserID: 106, LastOrderAt: "2026-10-04", RecencyDays: 1,
 				Frequency: 5, MonetaryCents: 123450, MonetaryLabel: "CNY 1,234.50",
 				RScore: 5, FScore: 5, MScore: 4, TotalScore: 14,
-				Segment: "vip", SegmentLabel: "高价值",
+				// SegmentLabel 不设：分段展示名由模板按 Segment 取词，
+				// 设上它会让「模板又去读预制的展示串」照样通过。
+				Segment: "vip",
 			},
 			{
 				UserID: 107, LastOrderAt: "2026-09-20", RecencyDays: 15,
 				Frequency: 1, MonetaryCents: 20000, MonetaryLabel: "CNY 200.00",
 				RScore: 3, FScore: 2, MScore: 2, TotalScore: 7,
-				Segment: "low_value", SegmentLabel: "一般",
+				Segment: "low_value",
 			},
 		},
 	}
@@ -237,7 +239,7 @@ func TestCustomerRfmPageWithoutPortShowsNotice(t *testing.T) {
 		t.Fatalf("响应 %d（端口缺席不该 500）", rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, customerRfmUnavailableText) {
+	if !strings.Contains(body, customerRfmUnavailableLabel.fallback) {
 		t.Error("端口缺席时应显示「暂时不可用」的说明")
 	}
 	// 表头**保留**（门禁 check-empty-state-table-head.sh 的口径：空态吃掉表头时，

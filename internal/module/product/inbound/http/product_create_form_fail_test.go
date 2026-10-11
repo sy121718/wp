@@ -31,7 +31,7 @@ func TestProductCreateFailSplitsByRequestKind(t *testing.T) {
 
 	// htmx 档：200 + 片段，且**不设** HX-Redirect（那是「跳走」的形态，与「原地留住输入」相反）。
 	c, rec := newHXContext(t, "true", "name=DRAFT")
-	h.productCreateFail(c, "", msg)
+	h.productCreateFail(c, "", productMsg{Fallback: msg})
 	c.Writer.WriteHeaderNow() // gin 的状态码是延迟写的（WriteHeader 只记录），不刷出来读到的永远是 200
 	if rec.Code != http.StatusOK {
 		t.Fatalf("htmx 档状态码 = %d，want 200（302 会被 htmx 跟随并吞掉 Location）", rec.Code)
@@ -45,7 +45,7 @@ func TestProductCreateFailSplitsByRequestKind(t *testing.T) {
 
 	// 原生档：整页提示（200 + err 态）回新建页，取代原先的 302 + ?err=。
 	c2, rec2 := newProductJumpContext(t, "", "project=pr1", "name=DRAFT")
-	h.productCreateFail(c2, "pr1", msg)
+	h.productCreateFail(c2, "pr1", productMsg{Fallback: msg})
 	c2.Writer.WriteHeaderNow()
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("原生档状态码 = %d，want 200（提示页）", rec2.Code)
@@ -74,7 +74,7 @@ func TestProductCreateFormDataCarriesEchoKeys(t *testing.T) {
 		t.Fatalf("取回填 data 失败：%v", err)
 	}
 
-	// 键名必须带 FormEcho 前缀：列表页的 `Form` 是批量改价的 pricingForm **结构体**，
+	// 键名必须带 FormEcho 前缀：列表页的 `Form` 是批量改价的 productdto.PricingForm **结构体**，
 	// 撞名时片段里的 `{{.Form.name}}` 命中结构体、Jet 报错并让整个片段渲染失败。
 	if _, exists := data["Form"]; exists {
 		t.Error("回填键不能叫 Form（与列表页批量改价的结构体撞名，会让片段渲染失败）")

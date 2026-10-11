@@ -11,6 +11,10 @@
  *   data-confirm-cancel  取消按钮文案（默认「取消」）
  *   data-confirm-danger  危险操作：确认按钮走危险色
  *
+ * 放行机制（与 ui/json_write.js 的约定）：确认之后**临时摘掉 data-confirm 再重派发**，
+ * 不给元素留任何「已确认」标记 —— 标记会残留成 DOM 状态，表现为第二次点同一个删除表单
+ * 不再确认（详见 submitConfirmed 的注释）。所以其它控件只需判「属性还在不在」。
+ *
  * 为什么用 <dialog>：showModal() 自带原生模态语义（焦点陷阱、inert 背景、Esc 关闭），
  * 这些自己拿 div 拼要写一堆还容易出错（读屏读不到上下文、Tab 能跑出弹窗）。
  * 内联 onclick/onsubmit 在这里被彻底去掉：模板里只留一个属性。
@@ -102,14 +106,30 @@
     document.addEventListener('submit', function (e) {
         var form = e.target;
         if (!form || !form.hasAttribute || !form.hasAttribute('data-confirm')) { return; }
-        if (form.dataset.wbConfirmBypass === '1') { return; }   // 已确认放行
         e.preventDefault();
-        open(form, function () {
-            form.dataset.wbConfirmBypass = '1';
-            // requestSubmit 会再次触发 submit 事件，此时被 bypass 放行。
-            if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
-        });
+        open(form, function () { submitConfirmed(form); });
     }, true);
+
+    // submitConfirmed 在确认之后放行「这一次」提交。
+    //
+    // 为什么不是「打个标记再 requestSubmit」（旧写法用 form.dataset.wbConfirmBypass）：
+    // 标记是**可观察且会残留**的 DOM 状态，而残留的含义就是「以后每次提交都跳过确认」——
+    // 用户第二次点同一个删除表单时会直接执行，确认框再也不弹；而清标记的时机谁也说不准
+    // （提交成功会整页刷新、失败会留在原地，两种情况都得各自记得清）。
+    // 这里改为在**重派发的那一刻把 data-confirm 临时摘掉**：requestSubmit 同步派发，事件
+    // 跑完才返回，所以「摘除—恢复」包在 try/finally 里就是严格的一次性令牌 —— 期间
+    // 其它控件（如 ui/json_write.js 的提交监听）看到的是一张「本来就没有 data-confirm」
+    // 的表单，事件结束后属性原样回来，下一次提交照样要确认。
+    function submitConfirmed(form) {
+        var saved = form.getAttribute('data-confirm');
+        form.removeAttribute('data-confirm');
+        try {
+            if (form.requestSubmit) { form.requestSubmit(); return; }
+            form.submit();   // 老浏览器兜底：原生提交不派发 submit 事件（那种环境下本文件的监听本来也跑不到）
+        } finally {
+            if (saved !== null) { form.setAttribute('data-confirm', saved); }
+        }
+    }
 
     // 点击带 data-confirm 的按钮/链接：优先走它自己声明的动作。
     //   - button[form] + type=submit：确认后提交该表单；
@@ -117,16 +137,24 @@
     document.addEventListener('click', function (e) {
         var el = e.target.closest('[data-confirm]');
         if (!el || el.tagName === 'FORM') { return; }
-        if (el.dataset.wbConfirmBypass === '1') { el.dataset.wbConfirmBypass = ''; return; }
         e.preventDefault();
-        open(el, function () {
-            el.dataset.wbConfirmBypass = '1';
+        open(el, function () { activateConfirmed(el); });
+    }, true);
+
+    // activateConfirmed 放行「这一次」点击：与 submitConfirmed 同一手法（临时摘属性，
+    // 而不是留标记），理由见上 —— 留在元素上的标记会让第二次点击不再确认。
+    function activateConfirmed(el) {
+        var saved = el.getAttribute('data-confirm');
+        el.removeAttribute('data-confirm');
+        try {
             if (el.tagName === 'A' && el.href) { global.location.href = el.href; return; }
             if (el.form && el.form.requestSubmit) { el.form.requestSubmit(el); return; }
             if (el.form) { el.form.submit(); return; }
             el.click();
-        });
-    }, true);
+        } finally {
+            if (saved !== null) { el.setAttribute('data-confirm', saved); }
+        }
+    }
 
     // 代码触发的确认（给工作台这类在 JS 里 confirm() 的场景用）：
     //   WBUI.confirm('确认发布？', function () { … }, { title, ok, cancel, danger })

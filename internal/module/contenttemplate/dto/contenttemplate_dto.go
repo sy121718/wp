@@ -27,6 +27,25 @@ type DeleteReq struct {
 	ID string `json:"id" binding:"required"`
 }
 
+// BulkDeleteReq 批量删除模板请求。服务端负责去重、清空白与 200 条上限。
+type BulkDeleteReq struct {
+	IDs []string `json:"ids" binding:"required,min=1,dive,required"`
+}
+
+// BulkDeleteItemResult 批量删除的一条结果；失败 message 是当前请求语言的受控成品文案。
+type BulkDeleteItemResult struct {
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
+	Message string `json:"message,omitempty"`
+}
+
+// BulkDeleteResp 批量删除结果，部分成功仍返回 200。
+type BulkDeleteResp struct {
+	Deleted int                    `json:"deleted"`
+	Skipped int                    `json:"skipped"`
+	Items   []BulkDeleteItemResult `json:"items"`
+}
+
 // ActivateReq 切换生效模板（多套存着、单套生效）。
 //
 // 同一（工程, 类型）下至多一套生效：部分唯一索引

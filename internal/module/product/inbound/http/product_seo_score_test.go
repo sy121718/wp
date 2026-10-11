@@ -96,7 +96,7 @@ func TestSeoScoreFragmentRendersProfileAndDuplicates(t *testing.T) {
 // TestSeoScoreFragmentRendersEntityEmptyState 读不到实体时给一句可读的话，不是空白面板。
 func TestSeoScoreFragmentRendersEntityEmptyState(t *testing.T) {
 	body := renderAdminTemplate(t, "fragments/seo_score",
-		gin.H{"Score": scoreView{Empty: "读不到这个商品，无法评分"}, "t": testTranslateFunc()})
+		gin.H{"Score": productdto.ScoreView{Empty: "读不到这个商品，无法评分"}, "t": testTranslateFunc()})
 	if !strings.Contains(body, "读不到这个商品，无法评分") {
 		t.Fatalf("空态应显示传入的文案，实际输出：%s", body)
 	}
@@ -206,7 +206,7 @@ func productRowForRender() gin.H {
 // hx-target 不一致、缺 csrf 隐藏域），用户点开抽屉会看到一个按不动的按钮 —— 页面测试全绿。
 func TestProductSeoDrawerFragmentRenders(t *testing.T) {
 	body := renderAdminTemplate(t, "admin/product/entity_seo_drawer.html", productPageLayoutData(gin.H{
-		"Score":        scoreView{OK: true, Total: 72, Grade: "C"},
+		"Score":        productdto.ScoreView{OK: true, Total: 72, Grade: "C"},
 		"ScoreURL":     "/admin/products/seo-score",
 		"TargetID":     "product-seo-score-p1",
 		"HiddenFields": []seoHiddenField{{"projectId", "proj-1"}, {"productId", "p1"}},

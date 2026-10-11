@@ -70,9 +70,10 @@ const (
 // 对客户是拒绝登录的理由，对运营是刚做完的操作回执。混在一堆里，读代码的人
 // 会以为后台的回执也会出现在访客页面上。
 //
-// 这些文案同样要登记进 UserFacingMessages：后台页面把 service 的错误经那份白名单回显，
-// 没登记的话页面上只会显示一句「操作失败，请稍后重试」——
-// 运营分不清是「被拒绝了」还是「系统坏了」。
+// 这些文案**不需要**再登记进任何白名单：出口的判据是**形态**（常量值本身就是
+// `模块.类别.语义` 形态的 i18n key，见 pkg/response.IsBusinessError），
+// 白名单那份第二真相已随本批「控制器不取词」一起删除（理由见
+// internal/adminui/page_error.go 的文件头）。
 const (
 	MsgCustomerEnabled  = "user.msg.customerEnabled"
 	MsgCustomerDisabled = "user.msg.customerDisabled"
@@ -82,35 +83,27 @@ const (
 	// MsgCustomerFailuresCleared 没被锁、但有残留的失败计数被清掉：
 	// 与「无需解除」分开说，否则运营会以为这个按钮什么都没做。
 	MsgCustomerFailuresCleared = "user.msg.customerFailuresCleared"
+	MsgCustomerBulkUnlock      = "user.msg.customerBulkUnlock"
 	// ErrCustomerStatusInvalid 只允许「正常」与「已停用」两个目标值。
 	ErrCustomerStatusInvalid = "user.err.customerStatusInvalid"
 )
 
-// UserFacingMessages 可以原样展示给访客的全部业务文案。
+// —— 可透出性判据不在这里 ——
 //
-// 存在的理由：service 的业务错误来自这里，而基础设施错误（数据库 / Redis）的原文
-// 可能含表名、列名甚至 SQL 片段。展示层拿这张表做白名单，
-// 不在表里的一律落到 ErrInternal 并记日志 —— 白名单漏写只会显示成一句通用提示（一眼可见），
-// 黑名单漏写则会把内部细节摆到访客面前（不易发现）。
+// 曾经有一份 `var UserFacingMessages []string`（可原样展示给访客的全部业务文案），
+// 展示层拿它做白名单、不在表里的一律落到 ErrInternal 并记日志。
 //
-// 新增面向访客的错误文案时必须同步加到这里，否则页面只会显示「操作失败，请稍后重试」。
-var UserFacingMessages = []string{
-	// 注册 / 验证
-	MsgRegisterSuccess, MsgActivateSuccess, MsgResetMailSent,
-	ErrInvalidParam, ErrUsernameRequired, ErrUsernameTooShort, ErrUsernameTooLong,
-	ErrUsernameTaken, ErrEmailRequired, ErrEmailInvalid, ErrEmailTaken,
-	ErrPasswordTooShort, ErrUserNotFound, ErrActivationInvalid, ErrMailUnavailable,
-	// 登录 / 会话
-	ErrLoginRequired, ErrBadCredentials, ErrAccountLocked, ErrAccountDisabled,
-	ErrAccountPending, ErrPasswordLoginUnavailable, ErrSessionNotFound,
-	ErrSessionExpired, ErrNotLoggedIn,
-	// 账号中心
-	ErrOldPasswordWrong, ErrNewPasswordSame, ErrProfileVisibilityInvalid,
-	ErrPageSizeInvalid,
-	// 后台客户管理（页面回显 + /api/customer/* 的错误）
-	MsgCustomerEnabled, MsgCustomerDisabled, MsgCustomerUnlocked, MsgCustomerNotLocked,
-	MsgCustomerFailuresCleared, ErrCustomerStatusInvalid,
-}
+// **它被删掉了**（同批：page / user 两个模块的「控制器取词」收口）。白名单是第二份真相：
+// 本模块的常量值本身就是 i18n item_key，也是 `模块.类别.语义` 形态 ——
+// 而「这条错误能不能给用户看」的判据就是这个**形态**，唯一一份在
+// pkg/response.IsBusinessError（`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[…]$` 或
+// `^(Err|Msg)[A-Z]…$`），页面出口的封装在 internal/adminui/page_error.go。
+//
+// 白名单的两个失效方向都不报错：service 换了措辞 / 某个 key 改由别的模块提供 → 静默失配；
+// 有时把内部错误当业务文案透出，有时把业务文案吞成归口文案。而形态判据零维护 ——
+// 数据库 / Redis / os 的原文天然长不成点分小写的形状（`pq: relation "users" does not exist`）。
+//
+// 新增面向访客的错误文案：直接在本文件加常量即可，**不需要**同步登记到任何地方。
 
 // —— 账号状态 / 邮箱验证 / 订单状态的展示标签（枚举 → 展示名的唯一真源）——
 //

@@ -10,27 +10,28 @@
 // SQLSTATE），它会随 500 原样直出给前端。响应不是可信边界。
 // 门禁：scripts/check-no-internal-error-leak.sh。
 //
-// 页面写动作的结论由 membershipJump 渲染成**整页提示**（对应 ThinkPHP 的 success() / error()），
-// 不再经 302 + `?err=` / `?done=` 回带 —— 那条通道要求读侧再判一次「这条提示是不是本仓给的」，
-// 而查询参数不是可信边界；读侧判定（membershipNoticeTexts / membershipPageErr / membershipPageDone）
-// 与回跳 URL 拼装（membershipErrURL / membershipOKURL）随之整批删除。
-//
 // 与 navigation_err.go 同形（同一套三种形态的判据），差别只在模块前缀：
 //   - 整串相等   → 白名单命中，按当前语言取词；
 //   - `key|param` → 带参协议，交给 response 的取词；
-//   - `key：<定位>` → 本模块自己拼的形态（「这个工程没配默认等级：<project_id>」），
-//     必须自己翻：response 的 translate 不认识全角「：」，不翻的话页面上会原样出现裸 key。
+//   - `key：<定位>` → 本模块自己拼的形态（「这个工程没配默认等级：<project_id>」）。
+//
+// 两条出口，**取词责任不同**（这是本文件最容易混的一处）：
+//   - JSON 出口 membershipErrText 只回**枚举 key**（带定位信息时归一成半角「: 」），
+//     取词交给 pkg/response 的 translate，按**请求方**的语言解析 —— 前端要能按自己的
+//     系统语言渲染，响应里就不能躺着一句服务端已经定好的中文；
+//   - 页面出口 membershipErrPageText 直接回**当前语言下成品的一句**（页面是服务端渲染的，
+//     语言由本次请求的 cookie 决定，模板只负责把它放进提示条）。
 package membershiphttp
 
 import (
+	"go_wp/internal/middleware/builtin"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	membershipenums "go_wp/internal/module/membership/enums"
-	membershipmodel "go_wp/internal/module/membership/model"
-	"go_wp/internal/shell"
+	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -54,7 +55,7 @@ func membershipFacingText(err error) (string, bool) {
 // localizeFacing 把白名单命中的文案转成当前语言下可直接渲染的一句。
 func localizeFacing(c *gin.Context, msg string) string {
 	if key, detail, ok := membershipenums.SplitFacingDetail(msg); ok {
-		return shell.TranslateFor(c)(key, key) + facingSep(c) + detail
+		return templates.TranslateFunc(response.RequestLanguage(c))(key, key) + facingSep(c) + detail
 	}
 	return response.TranslateMessage(c, msg)
 }
@@ -69,16 +70,35 @@ func facingSep(c *gin.Context) string {
 
 // membershipErrText JSON 接口的错误文案出口。
 //
-// 命中白名单 → 业务文案；未命中 → 记结构化日志 + 归口文案。
+// 命中白名单 → 返回**枚举 key**（不是译文）；未命中 → 记结构化日志 + 归口 key。
+//
+// 为什么这里不取词：调用点紧接着就调 response.ErrorWithMessage(c, …)，它内部会把实参
+// 交给 translate 按**本次请求**的语言解析。在这一层先翻一遍，等于把「已经定成服务端语言的
+// 字符串」再交给 translate（那时它既不等于任何 key、也不含「: 」），一句话就此定型 ——
+// 前端换语言、或运营用另一种语言打开，看到的还是服务端当时那句。
+//
+// 用带定位信息的形态时必须归一成半角「: 」（translate 只认这一种，见 pkg/response）：
+// 本模块写侧固定拼全角「：」（enums.FacingDetailSep），不归一则整串都不命中词条，
+// 响应里会原样出现 `membership.err.defaultTierMissing：42`。
 func membershipErrText(c *gin.Context, err error) string {
 	if msg, ok := membershipFacingText(err); ok {
-		return localizeFacing(c, msg)
+		return facingKeyForResponse(msg)
 	}
 	logger.Scene(membershipErrScene).
-		With("user_id", shell.CurrentUserID(c)).
+		With("user_id", builtin.CurrentUserID(c)).
 		With("path", c.Request.URL.Path).
 		Error(err, "membership 接口内部错误")
 	return membershipenums.ErrInternal
+}
+
+// facingKeyForResponse 把白名单命中的文案归一成 pkg/response 认得的形态：
+// `key：<定位>`（全角，本模块写侧）→ `key: <定位>`（半角，translate 的形态 3）。
+// 其余形态（纯 key / key|param）原样返回。
+func facingKeyForResponse(msg string) string {
+	if key, detail, ok := membershipenums.SplitFacingDetail(msg); ok {
+		return key + membershipErrSepHalf + detail
+	}
+	return msg
 }
 
 // membershipErrPageText 后台页面路径的归口文案（整页渲染 + 提示条，不走 pkg/response）。
@@ -90,10 +110,10 @@ func membershipErrPageText(c *gin.Context, err error) string {
 		return localizeFacing(c, msg)
 	}
 	logger.Scene(membershipErrScene).
-		With("user_id", shell.CurrentUserID(c)).
+		With("user_id", builtin.CurrentUserID(c)).
 		With("path", c.Request.URL.Path).
 		Error(err, "membership 后台页面内部错误")
-	return shell.TranslateFor(c)(membershipenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）")
+	return templates.TranslateFunc(response.RequestLanguage(c))(membershipenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）")
 }
 
 // membershipErrStatus 把业务错误映射到 HTTP 状态码。
@@ -125,59 +145,4 @@ func membershipErrStatus(err error) int {
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
-}
-
-// membershipTierBackKeys / membershipAssignBackKeys 写动作回跳要带回来的筛选上下文。
-//
-// 与模板里表单 action 的 query 逐键对应（页面渲染时拼进 action，POST 回来由
-// shell.BackPath 从本次请求的 query 读回）—— 两处必须是同一份，否则会出现
-// 「页面把某个筛选拼进去了、回跳时又丢掉」这种只在特定筛选下才暴露的差异。
-//
-// 层级页的上下文只有工程；归属页还有等级 / 来源 / 访客 / 页码四维筛选。
-var (
-	membershipTierBackKeys   = []string{"project"}
-	membershipAssignBackKeys = []string{"project", "tierId", "source", "userId", "page"}
-)
-
-// membershipJump 页面写动作的统一出口：整页提示（对应 ThinkPHP 的 success() / error()）。
-//
-// 取代原先的 302 + `?err=` / `?done=`：那条通道要求读侧再判一次「这条提示是不是本仓给的」
-// （membershipNoticeTexts 的候选集合），而查询参数不是可信边界。现在文案走响应体，
-// 读侧判定与回跳 URL 拼装随之整批删除。
-//
-// 提示文本必须**已过本模块白名单 / 已归口**（membershipErrPageText / membershipNotice 的产物），
-// 原文只进日志 —— 换个页面呈现不等于可以把 err.Error() 铺在页面上。
-//
-// 失败不自动跳转（Seconds=0）：运营要看清楚原因。成功 1 秒后自动回列表页
-// （与 sysconfig / order / plugin 同一取舍）。
-func membershipJump(c *gin.Context, ok bool, text, back, backText string) {
-	if ok {
-		shell.RenderJump(c, shell.Jump{OK: true, Msg: text, Back: back, BackText: backText, Seconds: 1})
-		return
-	}
-	shell.RenderJump(c, shell.Jump{Msg: text, Back: back, BackText: backText})
-}
-
-// membershipTierBackText / membershipAssignBackText 提示页链接的文字。
-//
-// 复用两个页面的标题词条而不是新造 `*.action.back`：新增词条要走 seed 迁移，
-// 而这一句的语义就是「去这一页」（同 order 的 couponBackText）。
-func membershipTierBackText(c *gin.Context) string {
-	return shell.TranslateFor(c)(membershipenums.PageTiersTitle, "会员等级与权益")
-}
-
-func membershipAssignBackText(c *gin.Context) string {
-	return shell.TranslateFor(c)(membershipenums.PageAssignmentsTitle, "会员归属")
-}
-
-// membershipSourceLabelKey 归属来源的展示用词条 key。
-//
-// 放在本文件（而非 enums）：它只在展示层用，且必须与 sourceValue 的两个取值一一对应。
-func membershipSourceLabelKey(source string) (key, fallback string) {
-	switch source {
-	case membershipmodel.SourceManual:
-		return membershipenums.SourceLabelManual, "手工指定"
-	default:
-		return membershipenums.SourceLabelAuto, "自动重算"
-	}
 }

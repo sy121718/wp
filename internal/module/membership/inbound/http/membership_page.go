@@ -1,9 +1,12 @@
 package membershiphttp
 
-// 这一层只做两件事：把运营在页面上的输入翻译成 service 的入参，把 service 的输出翻译成
-// 模板直接可渲染的文本。**换算只在这里做一次** —— 门槛在库里是「分」（与 orders 的金额列同口径），
-// 而运营的输入与阅读习惯是「元」：这个边界就是本文件，别处不许再有第二次换算
-// （两次换算的典型症状是「填 1000 存成 100000」，而两处看起来都合理）。
+// 这一层只做两件事：把运营在页面上的输入翻译成 service 的入参，把 service 的输出投影成
+// **只含业务事实**的行 / 选项数据。展示口径不在这里 —— 分 → 元走模板的 money()、
+// 折扣百分比走 percent()、时刻走 dateTime()、枚举文案由模板 tr() 取词：
+// Go 侧不再产出任何一句界面文案，也不再拼「20%」「2026-09-26 10:00:00」这类展示串
+//（同一份加工散在 Go 与模板两处时必然漂移，而且两边看起来都「正常」）。
+//
+// 写入由浏览器调用既有 JSON API；金额输入的单位转换由声明式写控件负责。
 
 // 两个页面，各管一件事：
 //
@@ -15,9 +18,7 @@ package membershiphttp
 // 会让「改门槛」与「查某个人」互相干扰 —— 与库存域把「变动原因字典」从库存页拆出去
 // 是同一轮设计评审的结论。
 //
-// 页面形态照本仓既有后台页：GET 渲染整页、POST 写动作的结论由 shell.RenderJump 渲染成
-// 整页提示（文案走响应体，不再经 ?err= / ?done= 回带），数据由 templateMap 组装
-// （模板只渲染、不查询）。错误一律经 membershipErr.go 的三件套。
+// GET 渲染整页，写动作直调 JSON API；错误由 membership_err.go 归口。
 
 // 与 membership_page_handle.go 分开：那个文件是「页面怎么组装」，本文件是「一个行 / 一个选项
 // 长什么样」。行视图在这里定型的好处是列表与筛选栏不会各造一份形状
@@ -25,7 +26,6 @@ package membershiphttp
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -33,91 +33,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/membership/contract"
 	"go_wp/internal/module/membership/dto"
 	"go_wp/internal/module/membership/enums"
 	"go_wp/internal/module/membership/model"
 	"go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/reqparams"
+	"go_wp/pkg/utils"
 )
-
-// parseYuanToFen 把「元」输入解析成「分」（整数运算，不经过浮点）。
-//
-// 不用 strconv.ParseFloat(raw, 64) * 100：0.1 这类二进制无法精确表示的值乘 100 会得到
-// 9.999999999999998，四舍五入之后偶尔差 1 分 —— 而门槛差 1 分会把「消费满 1000 元」的会员
-// 挡在门外一单。整数拆分（整数部分 + 两位小数）没有这个问题。
-//
-// 接受形态：`1000` / `1000.5` / `1000.50` / `1,000.50`（千分位容忍，运营从表格里复制常见）；
-// 空串返回 (0, nil) —— 调用方据此区分「没填」与「填了 0」。
-func parseYuanToFen(raw string) (int64, error) {
-	value := strings.TrimSpace(raw)
-	value = strings.ReplaceAll(value, ",", "")
-	if value == "" {
-		return 0, nil
-	}
-	neg := false
-	if strings.HasPrefix(value, "-") {
-		neg = true
-		value = value[1:]
-	}
-	intPart, fracPart, _ := strings.Cut(value, ".")
-	if intPart == "" {
-		intPart = "0"
-	}
-	if len(fracPart) > 2 {
-		return 0, errors.New(membershipenums.ErrInvalidParam)
-	}
-	// 一位小数补零到两位，保证「1.5 元」读作 150 分而不是 15 分。
-	for len(fracPart) < 2 {
-		fracPart += "0"
-	}
-	if fracPart == "" {
-		fracPart = "00"
-	}
-	whole, ierr := strconv.ParseInt(intPart, 10, 64)
-	if ierr != nil {
-		return 0, errors.New(membershipenums.ErrInvalidParam)
-	}
-	frac, ferr := strconv.ParseInt(fracPart, 10, 64)
-	if ferr != nil {
-		return 0, errors.New(membershipenums.ErrInvalidParam)
-	}
-	fen := whole*100 + frac
-	if neg {
-		fen = -fen
-	}
-	return fen, nil
-}
-
-// formatFenToYuan 把「分」格式化成「元」的两位小数字符串（表单回填与列表展示共用）。
-func formatFenToYuan(fen int64) string {
-	neg := fen < 0
-	if neg {
-		fen = -fen
-	}
-	out := strconv.FormatInt(fen/100, 10) + "." + twoDigits(fen%100)
-	if neg {
-		return "-" + out
-	}
-	return out
-}
-
-// twoDigits 补足两位（0 → "00"，5 → "05"）。
-func twoDigits(n int64) string {
-	if n < 10 {
-		return "0" + strconv.FormatInt(n, 10)
-	}
-	return strconv.FormatInt(n, 10)
-}
-
-// formBool 解析表单里的勾选值（HTML checkbox 未勾选时字段根本不存在，值为空串）。
-func formBool(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "on", "yes":
-		return true
-	}
-	return false
-}
 
 // formInt 解析整数输入，空串或非法值回落默认值。
 func formInt(raw string, fallback int) int {
@@ -145,43 +70,6 @@ func formInt64(raw string, fallback int64) int64 {
 	return parsed
 }
 
-// parseEntitlementsFromForm 从等级表单里抽出权益清单（新建等级与保存权益共用）。
-//
-// 表单形态是「两个固定字段」而不是动态行：本期只交付两种权益
-// （免运费 / 折扣），固定字段让「没填折扣」与「折扣填 0」能被区分 ——
-// 前者是不设折扣，后者（0%）在取值域之外（折扣只接受 1..100）。
-func parseEntitlementsFromForm(c *gin.Context) []membershipentitlementForm {
-	items := make([]membershipentitlementForm, 0, 2)
-	items = append(items, membershipentitlementForm{
-		Enabled:  c.PostForm("freeShipping") != "",
-		Kind:     membershipenums.KindFreeShipping,
-		ValueInt: boolToInt64(formBool(c.PostForm("freeShipping"))),
-	})
-	discountRaw := strings.TrimSpace(c.PostForm("discountPercent"))
-	items = append(items, membershipentitlementForm{
-		Enabled:  discountRaw != "",
-		Kind:     membershipenums.KindDiscount,
-		ValueInt: formInt64(discountRaw, 0),
-	})
-	return items
-}
-
-// membershipentitlementForm 表单里一条权益的原始输入（Enabled = 运营在页面上给了值）。
-type membershipentitlementForm struct {
-	Enabled  bool
-	Kind     string
-	ValueInt int64
-}
-
-// boolToInt64 布尔 → 免运费的 value_int（0/1）。
-func boolToInt64(v bool) int64 {
-	if v {
-		return 1
-	}
-	return 0
-}
-
-// 页面路径常量（回跳与分页基址都用同一份字面量，避免两处各写一遍而慢慢漂移）。
 const (
 	membershipTiersPath       = "/admin/membership"
 	membershipAssignmentsPath = "/admin/membership/assignments"
@@ -199,18 +87,24 @@ func NewMembershipPageHandle(svc membershipcontract.MembershipService,
 	return &membershipPageHandle{svc: svc, projects: projects}
 }
 
-// membershipTierRow 等级列表的一行（模板直接渲染，不在模板里做换算或判断）。
+// membershipTierRow 等级列表的一行 —— **只装业务事实**：门槛保持「分」、折扣保持原始数字、
+// 权益的存在与取值分开存。展示口径（分 → 元、百分比串、文案）全部留给模板。
 type membershipTierRow struct {
-	ID            int64
-	Name          string
-	SortOrder     int
-	ThresholdYuan string
-	IsDefault     bool
-	Remark        string
-	FreeShipping  bool
-	DiscountText  string
-	// DiscountRaw 折扣的原始数字（编辑表单回填 input 用；展示用 DiscountText）。
-	DiscountRaw string
+	ID        int64
+	Name      string
+	SortOrder int
+	// ThresholdAmount 升级门槛，单位**分**（与 orders 的金额列同口径）。
+	ThresholdAmount int64
+	IsDefault       bool
+	Remark          string
+	// FreeShipping 是否配了免运费权益（value_int == 1）。
+	FreeShipping bool
+	// HasDiscount 是否配了折扣权益；DiscountPercent 是它的取值（1..100，20 = 打八折）。
+	//
+	// 「有没有这条权益」与「取值是多少」分开：编辑表单要靠前者决定折扣 input 留空还是回填数字
+	//（取值域是 1..100，回填一个 0 只会被当成越界）。
+	HasDiscount     bool
+	DiscountPercent int64
 	// HasEntitlement 该等级是否配了至少一种权益（空态文案与「两种都是关」要能分辨）。
 	HasEntitlement bool
 }
@@ -224,23 +118,26 @@ type membershipTierEdit struct {
 	ID              int64
 	Name            string
 	SortOrder       int
-	ThresholdYuan   string
+	ThresholdAmount int64
 	Remark          string
 	FreeShipping    bool
-	DiscountPercent string
+	HasDiscount     bool
+	DiscountPercent int64
 	IsDefault       bool
 }
 
-// membershipAssignRow 归属列表的一行。
+// membershipAssignRow 归属列表的一行 —— 只装业务事实。
+//
+// Source 给的是**原始枚举值**（auto / manual）：来源的显示名、以及「这一行能不能解除锁定」，
+// 都由模板按它判（取值从 .SourceManual / .SourceAuto 拿，模板里不硬编码字面量）。
+// AssignedAt 给原始时刻，格式化在模板（dateTime）。
 type membershipAssignRow struct {
 	ID         int64
 	UserID     uint64
 	TierID     int64
 	TierName   string
 	Source     string
-	SourceText string
-	IsManual   bool
-	AssignedAt string
+	AssignedAt utils.JSONTime
 }
 
 // —— 等级与权益页 ——
@@ -261,10 +158,8 @@ type membershipTiersPageData struct {
 	KindFreeShippingValue string
 	KindDiscountValue     string
 	// ListQuery 列表上下文（工程）的查询串，拼进写动作表单的 action。
-	// 服务端自己拼：页面不把上下文塞进隐藏域，回跳时由 shell.BackPath 按白名单读回来。
 	ListQuery string
 	// LoadErr 这一次列表没读出来的原因（空串 = 正常）。
-	// 写动作的结论不在这里：它由提示页在响应体里渲染（shell.RenderJump）。
 	LoadErr string
 	// LoadFailed 本次请求的工程列表没读出来（降级渲染）。
 	//
@@ -274,8 +169,10 @@ type membershipTiersPageData struct {
 }
 
 // templateMap 转 Jet 模板键（页面框架字段以小写 title / menu 取值）。
+//
+// 这里**不注入任何界面文案**：两张页面的枚举显示名（来源、权益类型）都由模板 tr() 取词，
+// 与列表列共用同一份 key —— Go 侧再翻一遍必然出现「同一个值在两处显示成两个词」。
 func (d *membershipTiersPageData) templateMap(c *gin.Context) gin.H {
-	tr := shell.TranslateFor(c)
 	return gin.H{
 		"title":                 d.Title,
 		"menu":                  d.Menu,
@@ -286,8 +183,6 @@ func (d *membershipTiersPageData) templateMap(c *gin.Context) gin.H {
 		"HasTiers":              len(d.Tiers) > 0,
 		"KindFreeShippingValue": d.KindFreeShippingValue,
 		"KindDiscountValue":     d.KindDiscountValue,
-		"KindFreeShippingLabel": tr(membershipenums.KindLabelFreeShipping, "免运费"),
-		"KindDiscountLabel":     tr(membershipenums.KindLabelDiscount, "折扣"),
 		"ListQuery":             d.ListQuery,
 		"LoadErr":               d.LoadErr,
 		"LoadFailed":            d.LoadFailed,
@@ -296,14 +191,13 @@ func (d *membershipTiersPageData) templateMap(c *gin.Context) gin.H {
 
 // renderTiersPage 等级页的唯一渲染出口（正常与降级两条路都从这里出）。
 func (h *membershipPageHandle) renderTiersPage(c *gin.Context, d *membershipTiersPageData) {
-	c.HTML(http.StatusOK, "admin/membership/membership.html", shell.Prepare(c, d.templateMap(c)))
+	c.HTML(http.StatusOK, "admin/membership/membership.html", adminui.Prepare(c, d.templateMap(c)))
 }
 
 // MembershipPage 等级与权益页。
 func (h *membershipPageHandle) MembershipPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	// 列表取数失败的提示（空串 = 正常）。写动作的结论不在这里：它由提示页在响应体里
-	// 渲染（shell.RenderJump），读侧 ?err= 已整批删除。
+	// 列表取数失败的提示（空串 = 正常）；写结果由 JSON API 返回。
 	loadErrText := ""
 
 	projects, loadErr := h.listProjects(ctx)
@@ -377,51 +271,48 @@ type membershipAssignmentsPageData struct {
 	// 显示而不是隐藏：运营需要知道「这个功能还没接线」，而不是点了按钮拿到一句
 	// 「重算不可用」的报错 —— 后者会被当成故障上报。
 	RecalcAvailable bool
-	Pagination      *shell.PaginationData
+	Pagination      pagination.Page
 }
 
-// templateMap 转 Jet 模板键。
+// templateMap 转 Jet 模板键（来源文案同样不在这里取词，见 membershipTiersPageData.templateMap）。
 func (d *membershipAssignmentsPageData) templateMap(c *gin.Context) gin.H {
-	tr := shell.TranslateFor(c)
 	m := gin.H{
-		"title":            d.Title,
-		"menu":             d.Menu,
-		"Projects":         d.Projects,
-		"SelectedProject":  d.SelectedProject,
-		"TierOptions":      d.TierOptions,
-		"SourceOptions":    d.SourceOptions,
-		"FilterTier":       d.FilterTier,
-		"FilterSource":     d.FilterSource,
-		"FilterUser":       d.FilterUser,
-		"Rows":             d.Rows,
-		"Total":            d.Total,
-		"ListQuery":        d.ListQuery,
-		"LoadErr":          d.LoadErr,
-		"LoadFailed":       d.LoadFailed,
-		"RecalcAvailable":  d.RecalcAvailable,
-		"SourceManual":     membershipmodel.SourceManual,
-		"SourceAuto":       membershipmodel.SourceAuto,
-		"SourceManualText": tr(membershipenums.SourceLabelManual, "手工指定"),
-		"SourceAutoText":   tr(membershipenums.SourceLabelAuto, "自动重算"),
+		"title":           d.Title,
+		"menu":            d.Menu,
+		"Projects":        d.Projects,
+		"SelectedProject": d.SelectedProject,
+		"TierOptions":     d.TierOptions,
+		"SourceOptions":   d.SourceOptions,
+		"FilterTier":      d.FilterTier,
+		"FilterSource":    d.FilterSource,
+		"FilterUser":      d.FilterUser,
+		"Rows":            d.Rows,
+		"Total":           d.Total,
+		"ListQuery":       d.ListQuery,
+		"LoadErr":         d.LoadErr,
+		"LoadFailed":      d.LoadFailed,
+		"RecalcAvailable": d.RecalcAvailable,
+		// 来源的**取值**（不是文案）：模板按它判这一行来自自动重算还是手工指定
+		//（显示名与「能不能解除锁定」都由模板决定）。
+		"SourceManual": membershipmodel.SourceManual,
+		"SourceAuto":   membershipmodel.SourceAuto,
 	}
-	// 分页条键（PaginationInfo / PaginationLinks）：nil 时给空 map，模板的
-	// {{if .["PaginationLinks"]}} 自然跳过 —— 单页与装载失败两条路都不渲染分页条。
-	for k, v := range d.Pagination.TemplateKeys() {
-		m[k] = v
-	}
+	// 分页**事实**（pagination.Page，值语义）：零值就是「没有分页」，单页与装载失败
+	// 两条路都让 partial 的 {{if .Pagination.HasPagination}} 为假，自然不渲染分页条。
+	// 文案、链接与选中态由 admin/partials/pagination.html 用通用模板函数渲染。
+	m["Pagination"] = d.Pagination
 	return m
 }
 
 // renderAssignmentsPage 归属页的唯一渲染出口。
 func (h *membershipPageHandle) renderAssignmentsPage(c *gin.Context, d *membershipAssignmentsPageData) {
-	c.HTML(http.StatusOK, "admin/membership/membership_assignments.html", shell.Prepare(c, d.templateMap(c)))
+	c.HTML(http.StatusOK, "admin/membership/membership_assignments.html", adminui.Prepare(c, d.templateMap(c)))
 }
 
 // MembershipAssignmentsPage 会员归属页。
 func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	// 列表取数失败的提示（空串 = 正常）。写动作的结论不在这里：它由提示页在响应体里
-	// 渲染（shell.RenderJump），读侧 ?err= 已整批删除。
+	// 列表取数失败的提示（空串 = 正常）；写结果由 JSON API 返回。
 	loadErrText := ""
 
 	projects, loadErr := h.listProjects(ctx)
@@ -444,7 +335,7 @@ func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 	rows := []membershipAssignRow{}
 	tierOptions := []gin.H{}
 	var total int64
-	var pagination *shell.PaginationData
+	var pg pagination.Page
 
 	if !loadFailed && selected != "" {
 		// 等级下拉与行上的等级名都来自这一份清单：一次查询同时支撑筛选栏与列表渲染。
@@ -454,7 +345,7 @@ func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 				loadErrText = membershipErrPageText(c, terr)
 			}
 		} else {
-			tierOptions = membershipTierOptions(c, tiers, filterTier)
+			tierOptions = membershipTierOptions(tiers, filterTier)
 		}
 
 		n, cerr := h.svc.CountAssignments(ctx, &membershipdto.CountAssignmentsReq{
@@ -477,16 +368,18 @@ func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 				}
 			} else {
 				for _, item := range list {
-					rows = append(rows, membershipAssignRowOf(shell.TranslateFor(c), item))
+					rows = append(rows, membershipAssignRowOf(item))
 				}
 			}
-			pagination = shell.BuildPagination(total, page, limit, shell.FilterBaseURL(
-				membershipAssignmentsPath, map[string]string{
+			if p := pagination.Facts(total, page, limit); p.HasPagination() {
+				p.Base = reqparams.FilterBaseURL(membershipAssignmentsPath, map[string]string{
 					"project": selected,
 					"tierId":  itoa64(filterTier),
 					"source":  filterSource,
 					"userId":  itoaU64(filterUser),
-				}), shell.TranslateFor(c))
+				})
+				pg = p
+			}
 		}
 	}
 
@@ -496,7 +389,7 @@ func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 		Projects:        projects,
 		SelectedProject: selected,
 		TierOptions:     tierOptions,
-		SourceOptions:   membershipSourceOptions(c, filterSource),
+		SourceOptions:   membershipSourceOptions(filterSource),
 		FilterTier:      filterTier,
 		FilterSource:    filterSource,
 		FilterUser:      filterUser,
@@ -512,156 +405,8 @@ func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 		LoadErr:         loadErrText,
 		LoadFailed:      loadFailed,
 		RecalcAvailable: h.recalcAvailable(),
-		Pagination:      pagination,
+		Pagination:      pg,
 	})
-}
-
-// —— 写动作（表单 POST → shell.RenderJump 渲染提示页）——
-//
-// 每个动作都只做「解析表单 → 调 service → 出口渲染」，业务判据全在 service：
-// 页面这一层不该有第二份「谁能改什么」的规则（两份必然漂移，且漂移方向不可预测）。
-//
-// 回跳地址由 shell.BackPath 从**表单 action 的 query**（页面渲染时拼进去的筛选上下文）
-// 读回，服务端自己拼 —— 不再把上下文塞进隐藏域、也不再把结论文案拼进 URL。
-
-// TierCreate 新建等级（可同时带权益）。
-func (h *membershipPageHandle) TierCreate(c *gin.Context) {
-	back := shell.BackPath(c, membershipTiersPath, membershipTierBackKeys...)
-	backText := membershipTierBackText(c)
-	projectID := c.PostForm("projectId")
-	thresholdFen, aerr := parseYuanToFen(c.PostForm("thresholdYuan"))
-	if aerr != nil {
-		membershipJump(c, false, membershipErrPageText(c, aerr), back, backText)
-		return
-	}
-	req := &membershipdto.CreateTierReq{
-		ProjectID:       projectID,
-		Name:            c.PostForm("name"),
-		SortOrder:       formInt(c.PostForm("sortOrder"), 0),
-		ThresholdAmount: thresholdFen,
-		IsDefault:       formBool(c.PostForm("isDefault")),
-		Remark:          c.PostForm("remark"),
-		Entitlements:    entitlementsFromForm(c),
-	}
-	if _, err := h.svc.CreateTier(c.Request.Context(), req); err != nil {
-		membershipJump(c, false, membershipErrPageText(c, err), back, backText)
-		return
-	}
-	membershipJump(c, true, membershipNotice(c, membershipenums.MsgTierCreated), back, backText)
-}
-
-// TierUpdate 更新等级（表单**不含** is_default —— 那是独立的「设为默认」动作）。
-func (h *membershipPageHandle) TierUpdate(c *gin.Context) {
-	back := shell.BackPath(c, membershipTiersPath, membershipTierBackKeys...)
-	backText := membershipTierBackText(c)
-	projectID := c.PostForm("projectId")
-	tierID := formInt64(c.PostForm("id"), 0)
-	thresholdFen, aerr := parseYuanToFen(c.PostForm("thresholdYuan"))
-	if aerr != nil {
-		membershipJump(c, false, membershipErrPageText(c, aerr), back, backText)
-		return
-	}
-	name := c.PostForm("name")
-	remark := c.PostForm("remark")
-	sortOrder := formInt(c.PostForm("sortOrder"), 0)
-	req := &membershipdto.UpdateTierReq{
-		ProjectID:       projectID,
-		TierID:          tierID,
-		Name:            &name,
-		SortOrder:       &sortOrder,
-		ThresholdAmount: &thresholdFen,
-		Remark:          &remark,
-	}
-	if _, err := h.svc.UpdateTier(c.Request.Context(), req); err != nil {
-		membershipJump(c, false, membershipErrPageText(c, err), back, backText)
-		return
-	}
-	membershipJump(c, true, membershipNotice(c, membershipenums.MsgTierUpdated), back, backText)
-}
-
-// TierDefault 把某个等级设为默认等级（原默认自动让位）。
-//
-// 独立动作而不是编辑表单里的一个复选框：复选框的「未勾选」会与「取消当前默认等级」
-// 撞在一起（后者必须被拒绝），于是编辑备注这类无关操作会因为没勾那个框而失败。
-// 独立成动作后语义是单向的（「设为默认」），不存在被误触发的取消路径。
-func (h *membershipPageHandle) TierDefault(c *gin.Context) {
-	back := shell.BackPath(c, membershipTiersPath, membershipTierBackKeys...)
-	backText := membershipTierBackText(c)
-	projectID := c.PostForm("projectId")
-	tierID := formInt64(c.PostForm("id"), 0)
-	yes := true
-	req := &membershipdto.UpdateTierReq{ProjectID: projectID, TierID: tierID, IsDefault: &yes}
-	if _, err := h.svc.UpdateTier(c.Request.Context(), req); err != nil {
-		membershipJump(c, false, membershipErrPageText(c, err), back, backText)
-		return
-	}
-	membershipJump(c, true, membershipNotice(c, membershipenums.MsgTierUpdated), back, backText)
-}
-
-// TierDelete 删除等级。
-func (h *membershipPageHandle) TierDelete(c *gin.Context) {
-	back := shell.BackPath(c, membershipTiersPath, membershipTierBackKeys...)
-	backText := membershipTierBackText(c)
-	projectID := c.PostForm("projectId")
-	tierID := formInt64(c.PostForm("id"), 0)
-	if err := h.svc.DeleteTier(c.Request.Context(), &membershipdto.DeleteTierReq{
-		ProjectID: projectID, TierID: tierID,
-	}); err != nil {
-		membershipJump(c, false, membershipErrPageText(c, err), back, backText)
-		return
-	}
-	membershipJump(c, true, membershipNotice(c, membershipenums.MsgTierDeleted), back, backText)
-}
-
-// EntitlementSave 全量保存某等级的权益（表单即最终状态）。
-func (h *membershipPageHandle) EntitlementSave(c *gin.Context) {
-	back := shell.BackPath(c, membershipTiersPath, membershipTierBackKeys...)
-	backText := membershipTierBackText(c)
-	projectID := c.PostForm("projectId")
-	tierID := formInt64(c.PostForm("tierId"), 0)
-	req := &membershipdto.SaveEntitlementsReq{
-		ProjectID: projectID,
-		TierID:    tierID,
-		Items:     entitlementsFromForm(c),
-	}
-	if _, err := h.svc.SaveEntitlements(c.Request.Context(), req); err != nil {
-		membershipJump(c, false, membershipErrPageText(c, err), back, backText)
-		return
-	}
-	membershipJump(c, true, membershipNotice(c, membershipenums.MsgEntitlementSaved), back, backText)
-}
-
-// AssignSet 手工指定某访客的等级。
-func (h *membershipPageHandle) AssignSet(c *gin.Context) {
-	back := shell.BackPath(c, membershipAssignmentsPath, membershipAssignBackKeys...)
-	backText := membershipAssignBackText(c)
-	projectID := c.PostForm("projectId")
-	req := &membershipdto.AssignManualReq{
-		ProjectID: projectID,
-		UserID:    uint64(formInt64(c.PostForm("userId"), 0)),
-		TierID:    formInt64(c.PostForm("tierId"), 0),
-	}
-	if _, err := h.svc.AssignManual(c.Request.Context(), req); err != nil {
-		membershipJump(c, false, membershipErrPageText(c, err), back, backText)
-		return
-	}
-	membershipJump(c, true, membershipNotice(c, membershipenums.MsgAssignSet), back, backText)
-}
-
-// AssignUnlock 取消手工锁定。
-func (h *membershipPageHandle) AssignUnlock(c *gin.Context) {
-	back := shell.BackPath(c, membershipAssignmentsPath, membershipAssignBackKeys...)
-	backText := membershipAssignBackText(c)
-	projectID := c.PostForm("projectId")
-	req := &membershipdto.UnlockManualReq{
-		ProjectID: projectID,
-		UserID:    uint64(formInt64(c.PostForm("userId"), 0)),
-	}
-	if err := h.svc.UnlockManual(c.Request.Context(), req); err != nil {
-		membershipJump(c, false, membershipErrPageText(c, err), back, backText)
-		return
-	}
-	membershipJump(c, true, membershipNotice(c, membershipenums.MsgAssignUnlocked), back, backText)
 }
 
 // —— 内部助手 ——
@@ -712,28 +457,10 @@ const (
 	assignmentsMaxPageSize = 200
 )
 
-// membershipNoticeFallback 成功回执的中文兜底（词条缺失时显示它，而不是裸 key）。
-//
-// 与迁移 462a 的 seed 值逐条一致：兜底与词条不一致时，英文界面上会突然冒出一句中文，
-// 而两边看起来都「有值」。
-var membershipNoticeFallback = map[string]string{
-	membershipenums.MsgTierCreated:      "等级已创建",
-	membershipenums.MsgTierUpdated:      "等级已更新",
-	membershipenums.MsgTierDeleted:      "等级已删除",
-	membershipenums.MsgEntitlementSaved: "权益已保存",
-	membershipenums.MsgAssignSet:        "已指定会员等级",
-	membershipenums.MsgAssignUnlocked:   "已取消手工锁定（下次日结按消费额重算）",
-}
-
-// membershipNotice 取一条成功回执的当前语言文字（渲染进提示页，见 membershipJump）。
-func membershipNotice(c *gin.Context, key string) string {
-	return shell.TranslateFor(c)(key, membershipNoticeFallback[key])
-}
-
 // membershipListQuery 列表上下文的查询串（拼进写动作表单的 action）。
 //
-// 空值丢弃、编码走 url.Values（键有序、产物稳定）—— 与 shell.WithParams 同口径。
-// 只带**筛选上下文**，不带任何结论文案 —— 结论走响应体（见 shell.RenderJump）。
+// 空值丢弃、编码走 url.Values（键有序、产物稳定）—— 与 backpath.WithParams 同口径。
+// 只带筛选上下文，供 JSON 写成功导航回列表。
 func membershipListQuery(params map[string]string) string {
 	q := url.Values{}
 	for k, v := range params {
@@ -746,15 +473,16 @@ func membershipListQuery(params map[string]string) string {
 
 // membershipTierRowOf 等级响应 → 列表行视图。
 //
-// 换算与拼接都在这里做完：模板只渲染，不做判断（Jet 里做逻辑的代价是出错时整页 500）。
+// 只搬运事实：门槛保持「分」、折扣保持原始数字 —— 换算与文案都在模板里做
+// （模板那边有 money / percent / tr，同一个页面不会出现两份口径）。
 func membershipTierRowOf(tier *membershipdto.TierResp) membershipTierRow {
 	row := membershipTierRow{
-		ID:            tier.ID,
-		Name:          tier.Name,
-		SortOrder:     tier.SortOrder,
-		ThresholdYuan: formatFenToYuan(tier.ThresholdAmount),
-		IsDefault:     tier.IsDefault,
-		Remark:        tier.Remark,
+		ID:              tier.ID,
+		Name:            tier.Name,
+		SortOrder:       tier.SortOrder,
+		ThresholdAmount: tier.ThresholdAmount,
+		IsDefault:       tier.IsDefault,
+		Remark:          tier.Remark,
 	}
 	for _, ent := range tier.Entitlements {
 		switch ent.Kind {
@@ -762,8 +490,8 @@ func membershipTierRowOf(tier *membershipdto.TierResp) membershipTierRow {
 			row.FreeShipping = ent.ValueInt == 1
 			row.HasEntitlement = true
 		case membershipenums.KindDiscount:
-			row.DiscountText = strconv.FormatInt(ent.ValueInt, 10) + "%"
-			row.DiscountRaw = strconv.FormatInt(ent.ValueInt, 10)
+			row.HasDiscount = true
+			row.DiscountPercent = ent.ValueInt
 			row.HasEntitlement = true
 		}
 	}
@@ -772,66 +500,47 @@ func membershipTierRowOf(tier *membershipdto.TierResp) membershipTierRow {
 
 // membershipAssignRowOf 归属响应 → 列表行视图。
 //
-// tr 由调用点传入（不在这里现取）：行视图是纯函数，取词依赖请求上下文，
-// 混在一起会让「同一行在不同语言下渲染成什么」变得不可单测。
-func membershipAssignRowOf(tr func(key, fallback string) string, item *membershipdto.AssignmentResp) membershipAssignRow {
-	key, fallback := membershipSourceLabelKey(item.Source)
+// 纯函数、不碰请求上下文：来源只搬原始枚举值、时刻只搬原始时间。
+// 这样「同一行在什么语言下渲染成什么」完全由模板决定，行视图本身可单测
+// （旧实现把 tr 传进来取词，行视图就没法脱离请求上下文断言）。
+func membershipAssignRowOf(item *membershipdto.AssignmentResp) membershipAssignRow {
 	return membershipAssignRow{
 		ID:         item.ID,
 		UserID:     item.UserID,
 		TierID:     item.TierID,
 		TierName:   item.TierName,
 		Source:     item.Source,
-		SourceText: tr(key, fallback),
-		IsManual:   item.Source == membershipmodel.SourceManual,
-		AssignedAt: item.AssignedAt.Time().Format("2006-01-02 15:04:05"),
+		AssignedAt: item.AssignedAt,
 	}
 }
 
-// membershipSourceOptions 来源筛选下拉（空值 = 全部）。
+// membershipSourceOptions 来源筛选下拉的**取值**（空值 = 全部）。
 //
-// Selected 由服务端算好而不是让模板比较：Jet 的 if 只接受 bool，
-// 在模板里写 `{{if s.Value == $.FilterSource}}` 既有根引用（$）的解析风险，
-// 也把「哪个选项被选中」这条判断摊到模板里 —— 出错时整页 500。
-func membershipSourceOptions(c *gin.Context, selected string) []gin.H {
-	tr := shell.TranslateFor(c)
-	options := []struct{ Value, Label string }{
-		{"", tr("admin.common.filter.optionAll", "全部")},
-		{membershipmodel.SourceAuto, tr(membershipenums.SourceLabelAuto, "自动重算")},
-		{membershipmodel.SourceManual, tr(membershipenums.SourceLabelManual, "手工指定")},
-	}
-	out := make([]gin.H, 0, len(options))
-	for _, opt := range options {
-		out = append(out, gin.H{"Value": opt.Value, "Label": opt.Label, "Selected": opt.Value == selected})
+// 只给两件事实：「有哪些取值」与「当前选中哪一个」。选项的显示名是 UI 文案，
+// 由模板 tr() 取词 —— Go 侧不再产出任何一句界面文案。
+//
+// Selected 仍由服务端算好：让模板比较「选项值 == 根级过滤器」要引入根引用（$），
+// 而「哪个选项被选中」是一条纯数据判断，放在这里零风险。
+func membershipSourceOptions(selected string) []gin.H {
+	values := []string{"", membershipmodel.SourceAuto, membershipmodel.SourceManual}
+	out := make([]gin.H, 0, len(values))
+	for _, v := range values {
+		out = append(out, gin.H{"Value": v, "Selected": v == selected})
 	}
 	return out
 }
 
-// membershipTierOptions 等级筛选 / 选择下拉（Selected 同样由服务端算好）。
-func membershipTierOptions(c *gin.Context, tiers []*membershipdto.TierResp, selected int64) []gin.H {
-	tr := shell.TranslateFor(c)
-	out := make([]gin.H, 0, len(tiers)+1)
-	out = append(out, gin.H{
-		"Value": int64(0), "Label": tr("admin.common.filter.optionAll", "全部"), "Selected": selected == 0,
-	})
+// membershipTierOptions 等级筛选 / 选择下拉。
+//
+// 只列**真实存在的等级**（Label 是等级名 —— 那是运营输入的数据，不是 UI 文案）。
+// 「全部」那一项由模板自己渲染：筛选栏必须有它、手工指定表单绝不能有它
+// （选中「全部」等于提交 tierId=0，service 只能回一句「等级不存在」）。
+//
+// Selected 由服务端算好（判据同 membershipSourceOptions）。
+func membershipTierOptions(tiers []*membershipdto.TierResp, selected int64) []gin.H {
+	out := make([]gin.H, 0, len(tiers))
 	for _, tier := range tiers {
 		out = append(out, gin.H{"Value": tier.ID, "Label": tier.Name, "Selected": tier.ID == selected})
-	}
-	return out
-}
-
-// entitlementsFromForm 把表单里的两个固定权益字段转成 service 入参。
-//
-// 「字段不存在 = 这一条权益不设」是有意的：全量保存的语义就是「没列出的会被删掉」，
-// 于是「取消免运费」不需要一个单独的删除动作 —— 运营把勾去掉再保存即可。
-func entitlementsFromForm(c *gin.Context) []membershipdto.EntitlementReq {
-	forms := parseEntitlementsFromForm(c)
-	out := make([]membershipdto.EntitlementReq, 0, len(forms))
-	for _, form := range forms {
-		if !form.Enabled {
-			continue
-		}
-		out = append(out, membershipdto.EntitlementReq{Kind: form.Kind, ValueInt: form.ValueInt})
 	}
 	return out
 }
@@ -901,19 +610,20 @@ func membershipTierEditOf(list []*membershipdto.TierResp, tierID int64) *members
 			continue
 		}
 		edit := &membershipTierEdit{
-			ID:            tier.ID,
-			Name:          tier.Name,
-			SortOrder:     tier.SortOrder,
-			ThresholdYuan: formatFenToYuan(tier.ThresholdAmount),
-			Remark:        tier.Remark,
-			IsDefault:     tier.IsDefault,
+			ID:              tier.ID,
+			Name:            tier.Name,
+			SortOrder:       tier.SortOrder,
+			ThresholdAmount: tier.ThresholdAmount,
+			Remark:          tier.Remark,
+			IsDefault:       tier.IsDefault,
 		}
 		for _, ent := range tier.Entitlements {
 			switch ent.Kind {
 			case membershipenums.KindFreeShipping:
 				edit.FreeShipping = ent.ValueInt == 1
 			case membershipenums.KindDiscount:
-				edit.DiscountPercent = strconv.FormatInt(ent.ValueInt, 10)
+				edit.HasDiscount = true
+				edit.DiscountPercent = ent.ValueInt
 			}
 		}
 		return edit

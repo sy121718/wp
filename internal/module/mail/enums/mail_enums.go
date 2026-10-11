@@ -68,40 +68,42 @@ const (
 	ErrInternal = "mail.err.internal"
 )
 
-// MailFacingMessages 可以原样展示给运营 / 前端的邮箱业务文案（**白名单**）。
+// Notice* 后台页面级受控提示的 key（批量结论、带计数的回执、缺参引导）。
 //
-// 方向是安全的：漏写一条只会让页面显示一句通用提示（一眼可见，且
-// mail_enums_test.go 会按本包源文件逐个常量对账），而黑名单漏写会把 service 上抛的
-// PostgreSQL / SMTP 原文摆到页面上（不易发现）。
+// 它们与上面的 Msg* / Err* 差别只在**来源**：不是 service 上抛、也不是 response 的 message，
+// 而是 handler 自己写出的句子（见 inbound/http/mail_err.go 的 mail*Msg 事实块）。
+// 「能不能对外说」不再靠枚举常量判定 —— 判定只有一条：pkg/response.IsBusinessError，
+// 经 internal/adminui 的 PageErrorFact 出口；这批常量的职责只是给这些句子一个**可翻译的 key**。
 //
-// 命中的文案一律按 i18n key 翻译后再展示 —— 本模块 enums 的值就是 key
-// （"mail.err.accountNotFound" 对应「发信账号不存在」），此前页面直接拼 err.Error()
-// 的结果是运营看到一串 key。
+// 词条由迁移 seed（本次改造新增的清单见改造报告「新 i18n key」一节），
+// 词条缺失时回落 handler 里的中文兜底（与改造前逐字相同）。
+const (
+	NoticeBulkAllDone    = "mail.bulk.allDone"
+	NoticeBulkAllSkipped = "mail.bulk.allSkipped"
+	NoticeBulkPartial    = "mail.bulk.partial"
+	// NoticeAutomationTick 手工补投一轮延时实例的回执（补投条数是位置参数）。
+	NoticeAutomationTick = "mail.msg.automationTick"
+	// NoticeTemplateListFailed 模板列表取数失败：本次批量删除没有执行。
+	NoticeTemplateListFailed = "mail.page.templateListFailed"
+	// NoticeContactStatusBad 批量改联系人状态时目标状态不在受控取值里。
+	NoticeContactStatusBad = "mail.page.contactStatusBad"
+	// 缺 id 的三句引导（分档判据见 inbound/http 的 mailQueryID）。
+	NoticeCampaignIDRequired   = "mail.page.campaignIDRequired"
+	NoticeRunIDRequired        = "mail.page.runIDRequired"
+	NoticeAutomationIDRequired = "mail.page.automationIDRequired"
+)
+
+// MailFacingMessages 已于「控制器不取词」这一批删除，这里留一条路标。
 //
-// ErrInternal 本身不进白名单：它是未命中时的返回值，不是业务文案。
-var MailFacingMessages = []string{
-	// 成功回执（response.Success 的 message）
-	MsgSendSuccess, MsgSaveSuccess, MsgDeleteSuccess, MsgImportSuccess,
-	MsgTestSent, MsgCampaignStarted, MsgAutomationStarted,
-	// 业务错误
-	ErrInvalidParam, ErrAccountNotFound, ErrTemplateNotFound, ErrContactNotFound,
-	ErrCampaignNotFound, ErrAccountDisabled, ErrAccountIncomplete, ErrSuppressed,
-	ErrEmailRequired, ErrEmailInvalid, ErrContactEmailExists, ErrContactTagEmpty,
-	ErrConsentSourceRequired,
-	ErrImportEmpty, ErrImportTooLarge,
-	ErrCampaignNotDraft, ErrCampaignNoRecipient, ErrCipherSecretMissing,
-	ErrCipherUnavailable, ErrTemplateSyntax, ErrCampaignSending,
-	ErrAutomationNotFound, ErrAutomationTriggerInvalid, ErrAutomationGraphInvalid,
-	ErrAutomationRunExists, ErrAutomationRunNotFound,
-	// 访客面（邮件里的公开链接）文案。
-	//
-	// 它们与上面那些的差别只在**来源**：这一组由 handler 自己产出（不是 service 上抛的错误），
-	// 但它们同样是「可以对外展示的邮箱文案」，所以留在同一份白名单里 ——
-	// 判据是「这句话能不能给外部看」，不是「它从哪一层冒出来」。
-	// 不登记的话 mail_enums_test.go 会直接变红（本包每个 Err* / Msg* 常量都得在这里有位置）。
-	ErrTrackLinkInvalid, ErrUnsubscribeLinkInvalid,
-	MsgUnsubscribeDoneTitle, MsgUnsubscribeDoneBody, MsgUnsubscribeDoneNote,
-}
+// 它是一份必须与上面每个 Err* / Msg* 常量逐条对齐的**白名单**（漏一条 = 业务错误在页面上
+// 变成一句通用提示，不报错、不记日志；黑名单漏一条 = service 上抛的 PostgreSQL / SMTP
+// 原文直出）。现在判定只有一条形状判据（pkg/response.IsBusinessError：a.b.c 形态的 key，
+// 或 Err* / Msg* 常量名），统一经 internal/adminui 的 PageErrorFact 出口 —— 见
+// internal/module/mail/inbound/http/mail_err.go 的文件头说明。
+//
+// 于是「能对外说的话」与「模块有哪些文案常量」不再需要人工对账：前者由错误的形状决定，
+// 后者是 enums 自己的事。原来钉那份对账的 AST 测试改成「key 形态与唯一性」自检
+//（mail_enums_test.go）。
 
 // 测试邮件内容（后台「测试发送」触发，用于验证 SMTP 配置）。
 //

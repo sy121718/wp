@@ -1,23 +1,28 @@
 package blockhttp
 
-// block_err.go — 全局块页写动作的**出口归口**（错误文案三件套 + 整页提示）。
+// block_err.go — 全局块写动作的**文案归口**（错误文案三件套）。
 //
 // 三件套（AGENTS.md §响应与错误处理）：
 //
-//	① 白名单 —— blockErrSentinels（= blockcontract 的 sentinel，值即 i18n key，见 block_page.go）；
-//	② 归口文案 —— 未命中时返回 shell.MsgInternalError（可翻译 key + 中文兜底）；
+//	① 可透出性 —— 交给 adminui.PageErrorFact，判据是 pkg/response.IsBusinessError 的**形态**
+//	   （enums 常量名 / `模块.类别.语义` 的 key）。原先这里是 blockErrSentinels + errors.Is，
+//	   那是**第二份真相**：service 换了措辞、或某个 key 改由别的模块提供就静默失配；
+//	② 归口文案 —— 未命中时返回 adminui.MsgInternalError（可翻译 key + 中文兜底）；
 //	③ 结构化日志 —— 原文只进日志，带 user_id / path（在各写路径的调用点记）。
 //
-// 传输通道：写动作的结论由 shell.RenderJump 渲染成整页提示（对应 ThinkPHP 的
-// success() / error()），**不再**经 302 + `?err=` / `?done=` 回带列表页。
+// 传输通道已两次收窄，这里记清楚现状，免得下一个人按旧形状找出口：
+//   · **读侧**（?err= / ?done= 的受控文案集合与判定）整批删除 —— 那条通道要求每个模块
+//     维护一份「受控文案 + 数字归一模板」来证明提示出自本仓，而查询参数不是可信边界；
+//   · **页面写路由**整批删除 —— 新建 / 删除 / 批量删除现在由前端直调 JSON API
+//     （static/js/ui/json_write.js），整页提示页（shell.RenderJump）那条通道随之退役。
 //
-// **读侧（?err= / ?done= 的受控文案集合与判定）已整批删除**：那条通道的代价是每个模块
-// 都要维护一份「受控文案 + 数字归一模板」来证明提示出自本仓（blockNoticeTexts /
-// blockPageErr / blockPageDone 就是那套），而查询参数不是可信边界。文案走响应体之后，
-// 那套判定随之不需要了。
-//
-// 本文件剩下的都是**写侧**：把 service 的错误 / 计数结论渲染成可展示的成品文案，
-// 以及回跳地址（shell.BackPath 从表单 action 的 query 读回筛选上下文）。
+// 于是本文件只剩两件事：
+//   ① blockErrText / blockErrFact —— 错误 → 受控文案 / 展示事实（判定与归口在
+//      adminui.PageErrorFact，模块不再持有 sentinel 白名单；SaveBlockContent 与
+//      JSON 批量端点的逐条原因都用它）；
+//   ② blockRefErrText / blockRefUsageText —— 删除被拒时把**引用明细**（哪一类引用、
+//      哪些实体）拼进文案，让人知道去哪儿解除引用（页面与批量结果区共用同一份措辞）。
+// 回跳地址（shell.BackPath + 提示页链接）已随页面写路由一起删除。
 
 import (
 	"strconv"
@@ -26,17 +31,26 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockenums "go_wp/internal/module/block/enums"
-	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 )
 
 // blockRefDetailMaxBytes 引用明细允许占用的字节上限（**展示封顶**）。
 //
 // 提示页正文太长会挤掉「立即前往」的链接与其它提示；这里按可读性封顶。
-// （原先是按读侧 shell.NoticeMaxBytes 的 URL 形状判定反推出来的，那条判定已删除。）
+// （原先是按读侧的 URL 形状判定反推出来的，那条判定已删除。）
 const blockRefDetailMaxBytes = 420
+
+// blockRefTextMaxBytes「受控文案 + ：+ 引用明细」整串的展示上限（字节）。
+//
+// 512 取自壳层原先的受控回执上限（那族协议已整族下线，task-67）—— 这里只借用它的量级：
+// 整串进的是提示页正文，超长会把页面撑破；留 1 字节给 truncateRunes 收尾的「…」，
+// 故使用时 −1（与原先引用该常量时的取值一致）。
+// 为什么不继续跨包引用：那个常量所属的读侧协议已无任何消费方，留一个指向
+// 「已不存在的协议」的引用，会让下一个读代码的人去找一段没有上下文的常量。
+const blockRefTextMaxBytes = 512
 
 // blockUsageKindKey 引用类别 → i18n key（真文案在 sys_i18n，迁移 297）。
 //
@@ -72,7 +86,12 @@ func blockRefUsageText(c *gin.Context, err error) string {
 	if len(usages) == 0 {
 		return ""
 	}
-	tr := shell.TranslateFor(c)
+	// 取词：事实 → 当前语言文本。原先这里是 shell.TranslateFor(c)，同一个动作走两条链
+	// （一处 shell、一处 adminui）会让「换语言时只有半数文案跟着变」这种缺陷没有单一落点。
+	// 形状仍是 func(key, fallback string) string：i18n.FillTranslate 要这个签名。
+	tr := func(key, fallback string) string {
+		return adminui.MsgText(c, adminui.Msg{Key: key, Fallback: fallback})
+	}
 	order := make([]blockcontract.BlockUsageKind, 0, len(usages))
 	grouped := map[blockcontract.BlockUsageKind][]string{}
 	for _, u := range usages {
@@ -116,84 +135,32 @@ func truncateRunes(s string, maxBytes int) string {
 	return s[:cut] + "…"
 }
 
-// blockBulkResultTemplates 批量删除的结论文案模板（{count} 等是命名占位符）。
-//
-// 单条删除的成功回执也复用这里的 allDeleted（count=1），所以「删一个块」与「批量删一个块」
-// 说的是同一句话 —— 两处各写一句的下场是同一个动作在两种入口下措辞不同。
-var blockBulkResultTemplates = []blockText{
-	{"admin.blocks.bulkResult.noneSelected", "没有选中任何块，列表未改动。"},
-	{"admin.blocks.bulkResult.allDeleted", "已删除 {count} 个块。"},
-	{"admin.blocks.bulkResult.allSkipped", "{count} 个块都未能删除，列表未改动。"},
-	{"admin.blocks.bulkResult.partial", "已删除 {deleted} 个，{skipped} 个未能删除（被引用的全局块需先解除引用）。"},
-}
-
-// blockBulkFilled 把批量结论文案模板填成成品句子（占位符命名形态，见 pkg/i18n/placeholder.go）。
-func blockBulkFilled(c *gin.Context, t blockText, params map[string]string) string {
-	return i18n.FillTranslate(shell.TranslateFor(c), t.Key, t.Fallback, params)
-}
-
 // blockRefErrText 块删除被拒时的页面文案：受控文案 + "：" + 引用明细。
 //
 // 明细是可定位的数据（哪一类引用、哪些实体），受控文案来自白名单；整串按展示上限封顶。
 func blockRefErrText(c *gin.Context, err error) string {
 	msg := blockErrText(c, err)
 	if detail := blockRefUsageText(c, err); detail != "" {
-		msg = truncateRunes(msg+"："+detail, shell.NoticeMaxBytes-1)
+		msg = truncateRunes(msg+"："+detail, blockRefTextMaxBytes-1)
 	}
 	return msg
 }
 
-// blockRefSkipDetail 批量删除中单个块的跳过原因（块名 + 受控原因 + 引用明细）。
+// blockRefErrorMessage 与 blockErrorMessage 同源，但**带引用明细**时改用 blockRefErrText。
 //
-// 带块名而不是只带 id：批量列表里用户看的是「名字」，一串 uuid 定位不了任何东西。
-// 名字取不到时由调用方退化成 id 前缀。
-func blockRefSkipDetail(c *gin.Context, name string, err error) string {
-	reason := blockErrText(c, err)
-	if detail := blockRefUsageText(c, err); detail != "" {
-		reason = reason + "：" + detail
+// 用在哪：删除被拒（409）这类「操作者必须知道是哪些页面/资源挡住」的回应。
+// 为什么不能直接用 err.Error()：那串来自 contract.BlockInUseError，形态是
+// 「block.err.inUse: page_document /pricing (main); media_asset …」—— 引用类别是内部枚举值
+// （page_document 这种），分隔符与括号也是另一套写法；而页面提示走的是 blockRefErrText
+// （本地化类别名 + 全角冒号 + 「、」分隔 + 超量收尾）。同一次拒绝，批量接口逐条回的是后者、
+// 单条删除回的是前者，用户看到的会是两套说法，且靠 err.Error() 拼出的半角「: 」还会被
+// response.translate 当「key: detail」解析（前缀不是 key，最终原样下发 —— 能显示，但类别名
+// 是未翻译的内部值）。
+//
+// 无明细（普通业务错误 / 内部错误）时完全退回 blockErrorMessage：日志与 500 兜底文案都照旧。
+func blockRefErrorMessage(c *gin.Context, err error) string {
+	if blockRefUsageText(c, err) == "" {
+		return blockErrorMessage(err)
 	}
-	if strings.TrimSpace(name) == "" {
-		return reason
-	}
-	return strings.TrimSpace(name) + "：" + reason
-}
-
-// blockListPath 全局块列表页路径（写动作失败时的回跳目标）。
-const blockListPath = "/admin/blocks"
-
-// blockBackText 提示页那个链接的文字（复用页面标题词条，不新增全站词条）。
-func blockBackText(c *gin.Context) string {
-	return shell.TranslateFor(c)(blockenums.MsgBlockTitle, "全局块")
-}
-
-// blockListBack 回列表页的回跳地址：从**本次请求的 query** 读回工程筛选。
-//
-// 上下文随表单 action 的 query 一起提交（`action="/admin/blocks/delete?project=…"`），
-// 服务端按调用点显式列出的键读回来 —— 不再从隐藏域读整串返回 URL，也不再由 Go 拼 ?err=。
-func blockListBack(c *gin.Context) string {
-	return shell.BackPath(c, blockListPath, "project")
-}
-
-// blockPageJump 页面写动作的统一出口：整页提示（回列表页）。
-//
-// 取代原先的 303 + `?err=` / `?done=`：那条通道要求读侧再判一次「这条提示是不是本仓给的」
-// （blockNoticeTexts 的候选集合），而查询参数不是可信边界。现在文案走响应体，读侧判定随之删除。
-//
-// 提示文本必须**已过本模块白名单 / 已归口**（blockErrText / blockRefErrText /
-// shell.BulkIDsFacingText / blockBulkFilled 的产物），原文只进日志 ——
-// 换个页面呈现不等于可以把 err.Error() 铺在页面上。
-//
-// 失败不自动跳转（Seconds=0）：运营要看清楚原因。成功 1 秒后自动回列表页
-// （与 sysconfig / plugin / order 同一取舍）。
-func blockPageJump(c *gin.Context, ok bool, msg, back string) {
-	blockJump(c, ok, msg, back, blockBackText(c))
-}
-
-// blockJump 带自定义链接文字的提示页出口（新建成功要跳工作台，链接文字不是「全局块」）。
-func blockJump(c *gin.Context, ok bool, msg, back, backText string) {
-	if ok {
-		shell.RenderJump(c, shell.Jump{OK: true, Msg: msg, Back: back, BackText: backText, Seconds: 1})
-		return
-	}
-	shell.RenderJump(c, shell.Jump{Msg: msg, Back: back, BackText: backText})
+	return blockRefErrText(c, err)
 }

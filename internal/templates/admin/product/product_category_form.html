@@ -2,9 +2,12 @@
 {{import "../partials/media_field.html"}}
 {{fill := isset(.FormEcho)}}
 {{tr := .["t"]}}
+{{tf := .["tf"]}}
 {{create := .Mode == "create"}}
 <div data-category-form-host>
-    {{if isset(.SubmitErr)}}<p class="badge badge-warning" role="alert">{{.SubmitErr}}</p>{{end}}
+    {* SubmitErr 收的是**事实**（adminui.Msg：key + 中文兜底 + `%s` 参数）：控制器不取词，
+       语言由本片段的 tf 按当前请求决定（缺 tf 声明 = 渲染中断 = 500，htmx 不 swap）。 *}
+    {{if isset(.SubmitErr)}}{{if .SubmitErr.Key != "" || .SubmitErr.Fallback != ""}}<p class="badge badge-warning" role="alert">{{tf(.SubmitErr.Key, .SubmitErr.Fallback, .SubmitErr.Args)}}</p>{{end}}{{end}}
     <form method="post" action="/admin/product-categories/{{if create}}create{{else}}update{{end}}{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" class="form-stack"
           hx-post="/admin/product-categories/{{if create}}create{{else}}update{{end}}{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-target="closest [data-category-form-host]" hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{.Csrf}}">
@@ -21,7 +24,11 @@
             <select aria-label="{{tr("admin.product_categories.label.parent", "父级分类")}}" class="form-select" name="parentId" data-category-parent-select>
                 <option value="" {{if parent == ""}}selected{{end}}>{{tr("admin.product_categories.option.topLevel", "（顶级分类）")}}</option>
                 {{range _, o := .Options}}{{if o.ID != id}}<option value="{{o.ID}}" {{if o.ID == parent}}selected{{end}}>{{o.Label}}</option>{{end}}{{end}}
-                {{if isset(.ParentMissing)}}{{if .ParentMissing}}<option value="{{parent}}" selected>{{if isset(.ParentLabel)}}{{.ParentLabel}}{{else}}{{parent}}{{end}}</option>{{end}}{{end}}
+                {* 父级不在候选列表里（跨工程遗留 / 父级行已不存在）：仍渲染当前选中项。
+                   ParentLabel 是名称（数据）；ParentOutOfScope 为真时补一句说明 —— 这句是文案，
+                   在渲染期取词（与 product_categories.html 的行徽章同一句，词条见迁移 508）。
+                   <option> 里只能放纯文本，所以这里不能用 span 徽章形态。 *}
+                {{if isset(.ParentMissing)}}{{if .ParentMissing}}<option value="{{parent}}" selected>{{if isset(.ParentLabel)}}{{.ParentLabel}}{{else}}{{parent}}{{end}}{{if isset(.ParentOutOfScope)}}{{if .ParentOutOfScope}}{{tr("admin.product_categories.parent.out_of_scope", "（不属于本工程）")}}{{end}}{{end}}</option>{{end}}{{end}}
             </select>
             <div data-category-parent-results role="status"></div>
             </div>

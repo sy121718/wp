@@ -5,7 +5,7 @@ package shell
 // 守四件事，每一件出错时都是静默的：
 //
 //  1. **白名单只透传列出的键** —— 透传过宽时，攻击者能在表单 action 的 query 里塞任意参数，
-//     回跳 URL 就变成他可控的（这条与 notice.go 的读侧判定是同一类边界）；
+//     回跳 URL 就变成他可控的（只透传明确列出的筛选参数）；
 //  2. **路径必须是站内相对路径** —— `//evil.example.com` 这类协议相对地址会让管理员被送出站；
 //  3. **值要做形状收敛** —— 超长 / 含控制字符的值丢弃而不是原样拼进 Location；
 //  4. **产物稳定** —— 键有序，同一个上下文拼出的 URL 逐字相同（否则「拼岔了」这类
@@ -16,6 +16,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"go_wp/pkg/safepath"
 
 	"github.com/gin-gonic/gin"
 )
@@ -76,7 +78,7 @@ func TestBackPathRejectsUnsafePath(t *testing.T) {
 		"admin/coupons",          // 不以 / 开头：浏览器会按当前路径拼接
 		"/admin/x\\..\\evil",     // 反斜杠
 		"/admin/x\nLocation: /y", // 控制字符
-		"/" + strings.Repeat("a", langRedirectMaxBytes+1),
+		"/" + strings.Repeat("a", safepath.MaxReturnPathBytes+1),
 	} {
 		if got := BackPath(c, bad, "project"); got != adminHomePath {
 			t.Fatalf("路径 %q 应当被拒绝并回 %q，实际 %q", bad, adminHomePath, got)
@@ -113,25 +115,5 @@ func TestBackPathStableOrder(t *testing.T) {
 	}
 	if ka != "/admin/coupons?page=2&project=p1&status=enabled" {
 		t.Fatalf("期望按键排序，实际 %q", ka)
-	}
-}
-
-// TestWithParams 显式参数拼装：空值丢弃，值转义。
-func TestWithParams(t *testing.T) {
-	cases := []struct {
-		path   string
-		params map[string]string
-		want   string
-	}{
-		{"/admin/orders", nil, "/admin/orders"},
-		{"/admin/orders", map[string]string{"project": ""}, "/admin/orders"},
-		{"/admin/orders", map[string]string{"project": "p1"}, "/admin/orders?project=p1"},
-		{"/admin/orders", map[string]string{"b": "2", "a": "1"}, "/admin/orders?a=1&b=2"},
-		{"/admin/orders", map[string]string{"q": "a b"}, "/admin/orders?q=a+b"},
-	}
-	for _, c := range cases {
-		if got := WithParams(c.path, c.params); got != c.want {
-			t.Fatalf("WithParams(%q, %v)=%q，want %q", c.path, c.params, got, c.want)
-		}
 	}
 }

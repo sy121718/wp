@@ -95,8 +95,9 @@ func TestCouponWindowStatusIndependentOfProcessTimeZone(t *testing.T) {
 //
 // 判据来自「控件换型最容易出的回归」：**换了控件、保存不了**。后台表单里
 // <input type="datetime-local"> 提交的是它自己的 value 形态「2026-01-01T09:00」（带 T），
-// 而服务端的解析布局只有「2006-01-02」/「2006-01-02 15:04(:05)」—— 两者之间靠表单解析归口
-// （orderhttp.couponFormTimeValue）转换一次。
+// 而服务端的解析布局只有「2006-01-02」/「2006-01-02 15:04(:05)」—— 两者之间靠**写路径的
+// handler** 归口（orderhttp.couponTimeInputValue）转换一次；页面 POST 时代的
+// couponFormTimeValue 已随迁移删除（归类判断交给服务端，handler 只做形态转换）。
 //
 // 本用例把这条链的两端都钉住，且**故意先断言未转换的形态会被拒绝**：
 //
@@ -116,11 +117,11 @@ func TestCouponWindowAcceptsDateTimePickerForm(t *testing.T) {
 	}
 	if _, err := f.orders.CreateCoupon(ctx, raw); err == nil {
 		t.Fatal("带 T 的控件形态不该被服务端直接接受：若这里通过了，说明解析布局已覆盖它，" +
-			"form 侧的 couponFormTimeValue 就该删掉（两处都能收 = 两处都在定义格式）")
+			"写路径的归口就该删掉（两处都能收 = 两处都在定义格式）")
 	}
 
-	// ② 归口转换之后的形态（orderhttp.couponFormTimeValue("2026-01-01T09:00") 的输出，
-	//    与 coupon_page_query_test.go 里的字面量同值）能被接受，且时刻分毫不差。
+	// ② 归口转换之后的形态（orderhttp.couponTimeInputValue("2026-01-01T09:00") 的输出
+	//    = "2026-01-01 09:00:00"）能被接受，且时刻分毫不差。
 	res := f.addCoupon(t, &orderdto.CouponSaveReq{
 		Code: "DTL-0900", Name: "日期时间控件", DiscountType: "fixed", DiscountValue: 1000,
 		StartsAt: "2026-01-01 09:00", EndsAt: "2026-01-31 23:59",

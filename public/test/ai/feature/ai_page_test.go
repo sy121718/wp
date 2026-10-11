@@ -5,7 +5,7 @@ package feature
 // 覆盖范围（写在前面，避免高估）：模板 + 数据键 + handler 的重定向/片段出口。
 // **不含**鉴权链（SessionAuth / CSRF / Casbin）—— 那条链的装配断言属于三层中间件的既有测试，
 // 这里不重复充当；本文件用直挂 handler 的方式跑，理由与 sysconfig 页面测试一致：
-// 整页继承 layout.html，而 layout 的侧栏来自 shell.PermContextMiddleware 注入的导航树，
+// 整页继承 layout.html，而 layout 的侧栏来自 adminctx.PermContextMiddleware 注入的导航树，
 // 测试环境没有登录会话，走 HTTP 只会拿到「页面暂时无法显示」。
 //
 // 钉住三件事：
@@ -87,7 +87,7 @@ func renderAITemplate(t *testing.T, name string, data gin.H) string {
 	return rec.Body.String()
 }
 
-// pageBaseData 页面模板的公共数据键（与 shell.Prepare 注入同形）。
+// pageBaseData 页面模板的公共数据键（与 adminui.Prepare 注入同形）。
 func pageBaseData(title string) gin.H {
 	return gin.H{
 		"title":      title,

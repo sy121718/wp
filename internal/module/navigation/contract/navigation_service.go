@@ -109,6 +109,12 @@ type NavigationService interface {
 	// SourceGroups 返回该工程可加入菜单的来源候选（管理页「按来源添加」消费）。
 	// 未注入解析器时返回空列表（页面退化为仅支持自定义链接）。
 	SourceGroups(ctx context.Context, projectID string) (groups []SourceGroup, err error)
+	// SwapMove 同级上移/下移：把该项与相邻项（同工程、同位置、同父级）的排序**一次事务**换过来。
+	//
+	// 与 Update 的区别：Update 写的是「已知 id + 已知目标值」的单行；本方法写的是**相对位置**，
+	// 邻位由服务端从树快照里选，两条条件 UPDATE 必须同进同出（任一失败整体回滚）。
+	// 已在首/末位返回 Moved=false（零写入）；同级 sort_order 并列返回 ErrSortTied（零写入）。
+	SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) (res *navigationdto.SwapMoveResp, err error)
 	// Delete 删除导航项。
 	Delete(ctx context.Context, req *navigationdto.DeleteReq) (err error)
 	// Render 返回该工程该 kind 的导航 HTML 片段。

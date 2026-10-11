@@ -5,7 +5,7 @@
 //
 // 为什么语言相关的取词（t）不在这里：语言是**请求级**的（URL 前缀 / cookie /
 // Accept-Language 每请求解析一次），而全局函数是进程启动期注册一次 —— 一个进程级函数
-// 拿不到「当前请求的语言」。所以 t 仍由 shell.Prepare 注入渲染数据。
+// 拿不到「当前请求的语言」。所以 t 仍由 adminui.Prepare 注入渲染数据。
 //
 // —— 两条 Jet v6.3.2 的实测行为，决定了本文件的形状（别按直觉改回去）——
 //
@@ -34,14 +34,19 @@ import (
 
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/sitetz"
 	"go_wp/pkg/utils"
 )
 
 // injectGlobals 给 Jet Set 注入全局函数（所有 Set 共用同一套）。
 //
-// 五个函数覆盖后台与组件模板里反复出现的四类格式化。新增一个之前先问：
-// 「这是不是纯函数、且两个以上的模板会用到」—— 只服务一个页面的格式化留在视图层，
-// 不要往这里堆。
+// 覆盖后台与组件模板里反复出现的几类格式化（金额 / 千分位 / 百分比 / 日期时刻 / 表单回填 /
+// 文案填充 / 分页）。新增一个之前先问：「这是不是纯函数、且两个以上的模板会用到」——
+// 只服务一个页面的格式化留在视图层，不要往这里堆。
+//
+// 日期一族共五个（时区 × 精度两维，见 docs/rules/template-boundary.md 的清单）：
+// dateTime（本地，分钟）、date（本地，日）、dateTimeLocal（本地，datetime-local 控件值）、
+// siteDateTime（**站点时区**，分钟）、dateTimeSecond（本地，秒）。
 func injectGlobals(set *jet.Set) {
 	set.AddGlobal("money", money)
 	set.AddGlobal("thousands", thousands)
@@ -49,6 +54,8 @@ func injectGlobals(set *jet.Set) {
 	set.AddGlobal("dateTime", dateTime)
 	set.AddGlobal("date", date)
 	set.AddGlobal("dateTimeLocal", dateTimeLocal)
+	set.AddGlobal("siteDateTime", siteDateTime)
+	set.AddGlobal("dateTimeSecond", dateTimeSecond)
 	set.AddGlobal("fill", fill)
 	set.AddGlobal("formValue", formValue)
 	set.AddGlobal("formChecked", formChecked)
@@ -56,6 +63,9 @@ func injectGlobals(set *jet.Set) {
 	set.AddGlobal("currencyPrefix", currencyPrefix)
 	set.AddGlobal("percentChange", percentChange)
 	set.AddGlobal("percentChangeDir", percentChangeDir)
+	set.AddGlobal("sprintf", sprintf)
+	set.AddGlobal("queryURL", queryURL)
+	set.AddGlobal("pageNumbers", pageNumbers)
 }
 
 // money 金额（**整数分**）→ 展示串：符号 + 两位小数，如 ¥1234.50。
@@ -150,6 +160,36 @@ func dateTimeLocal(v any) string {
 		return local.Format("2006-01-02T15:04:05")
 	}
 	return local.Format("2006-01-02T15:04")
+}
+
+// siteDateTime 时间 → **站点时区**、分钟精度（2006-01-02 15:04）。
+//
+// 与 dateTime 的分工是时区口径，不是格式：dateTime 用服务器本地时区（后台绝大多数页面就是这个
+// 口径），而「排定几点上线」这类**面向人的时刻**按站点时区理解 —— pkg/sitetz 是那个口径的唯一
+// 声明点（GO_WP_SITE_TIMEZONE，未设时回退本地时区）。
+//
+// 为什么不在模板里传时区名（dateTimeIn("Asia/Shanghai", v)）：那会让 IANA 名散进模板，与
+// 「口径只在一处声明」相悖 —— 模板只做展示选择，不去拼口径。
+// 零值 / nil / 空指针一律返回空串，由模板决定显示什么（与 dateTime 同规则）。
+func siteDateTime(v any) string {
+	t, ok := toTime("siteDateTime", v)
+	if !ok {
+		return ""
+	}
+	return t.In(sitetz.Location()).Format("2006-01-02 15:04")
+}
+
+// dateTimeSecond 时间 → 本地时区、秒精度（2006-01-02 15:04:05）。
+//
+// 给「本身就按秒记录」的观测值用（例如列表页回执状态条的最近一次收敛时刻）：截到分钟会让人
+// 对不上日志。展示到秒不是展示内部精度 —— 需要更高精度请先在 Go 侧决定怎么截。
+// 零值 / nil / 空指针一律返回空串（同 dateTime）。
+func dateTimeSecond(v any) string {
+	t, ok := toTime("dateTimeSecond", v)
+	if !ok {
+		return ""
+	}
+	return t.Local().Format("2006-01-02 15:04:05")
 }
 
 // fill 用命名参数填充文案里的 `{name}` 占位符：`fill(tr("k", "减 {value}%"), "value", 20)`。
@@ -445,3 +485,137 @@ const (
 	maxInt64AsFloat = 9223372036854775808.0
 	minInt64AsFloat = -9223372036854775808.0
 )
+
+// —— 分页展示层的三个通用函数（task-94 P1 / task-99）——
+//
+// 为什么是通用函数、而不是一个"分页组件"：模板回答「显示成什么样」（哪几个页码、按钮写什么、
+// 选中态落在谁身上），但这些小事各自都需要一点**算法**——位置填充、URL 编码、窗口计算。
+// 让每个页面各写一遍必然分叉，于是把它们做成无上下文的纯函数（与 fill/money 同一条判据：
+// 不读 gin.Context、不查库、不看语言），语义由 pkg/pagination 的事实层供料。
+//
+// 三条实测约束（见 admin_pagination_globals_p0plus_test.go 的探针）：
+//   - 模板里的数字字面量是 float64 → 位置填充必须先过 stringify；
+//   - Jet 渲染时对插值做 HTML 转义、且**恰好一次** → 这里返回未转义的 `&`；
+//   - 全局函数**裸名（无括号）不是调用** → 模板里一律写 `queryURL(...)`。
+
+// stringifyAll 把一组值逐个收敛成展示串。
+//
+// 为什么不是 `stringify(args)...`：本包的 stringify 吃**单值**、返回 string，没有切片形态
+// （写不出来的东西不要硬写成一句"看起来更短"的代码）。
+func stringifyAll(args []any) []any {
+	out := make([]any, len(args))
+	for i, a := range args {
+		out[i] = stringify(a)
+	}
+	return out
+}
+
+// sprintf 位置填充：`sprintf(tr("shell.pagination.info", "共 %s 条，第 %s-%s 条"), pg.Total, pg.Start, pg.End)`。
+//
+// 与 fill 的分工：fill 填 `{name}` 命名占位符（词条正文里有裸 `%` 的场景，用 Sprintf 会乱码）；
+// 本函数填 `%s` 位置占位符（shell.pagination.* 这一族由迁移 059 定下 %s 形态，且被
+// public/test/pkg/i18n 的分页种子测试钉住"只允许 %s"）。两者都在，不是重复。
+//
+// 值必须先过 stringify：模板字面量与 partial 里的数字是 float64，直接 Sprintf 会产出
+// `%!s(float64=120)` —— 页面上一句乱码，而没有任何报错。
+//
+// 填不干净（残留 `%s` 或出现 `%!`）只记警告并**原样返回**：与 fill 同一取舍 ——
+// 页面上露出 `%!s(MISSING)` 比"悄悄补个 0 渲染成看似成立的结论"安全。
+func sprintf(pattern string, args ...any) string {
+	out := fmt.Sprintf(pattern, stringifyAll(args)...)
+	if strings.Contains(out, "%!") || strings.Contains(out, "%s") {
+		logger.Scene("template").
+			With("pattern", pattern).
+			Warn("模板位置填充后仍有未替换的占位符（词条被改坏或参数个数写错）")
+	}
+	return out
+}
+
+// queryURL 把已知事实串成查询串：`queryURL(pg.Base, pg.PageParam, pg.NextPage(), "limit", pg.Limit)`。
+//
+// 语义（与迁移前的 Go 拼法逐字节一致——这是 P2「partial 改写后渲染字节不变」的前提）：
+//   - base 空或全空白 → 返回空串（调用点据此不渲染链接）；
+//   - base 已含 `?` → 用 `&` 续接，否则用 `?`；
+//   - 键必须是字符串：写错直接 panic（与 fill 同风格）。静默丢掉一个筛选条件的链接
+//     会把用户带到「筛选没了」的页面，比 500 难发现得多；
+//   - 值先 stringify 再 url.QueryEscape（与 url.Values.Encode 同口径，空格 → `+`）；
+//   - **按调用顺序追加、不排序、不去重**：这是迁移前的既有语义（旧 link() 也是无条件追加），
+//     当前调用点的 base 只含筛选、page/limit 从不预置 → 字节与旧完全一致。
+//     将来若要去重，那是一次**行为变更**，另开卡，别顺手改；
+//   - 参数个数为奇数时忽略最后那个孤键（与 fill 的容忍度一致）。
+//
+// 返回值**不预先做 HTML 转义**：Jet 渲染插值时会把 `&` 转成 `&amp;`，这里若先转一次，
+// 页面上就是 `&amp;amp;` —— 链接静默坏掉且不报错（探针里有专门用例钉这条）。
+func queryURL(base string, kv ...any) string {
+	if strings.TrimSpace(base) == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(base)
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	for i := 0; i+1 < len(kv); i += 2 {
+		key, ok := kv[i].(string)
+		if !ok {
+			panic(misuse("queryURL", kv[i], "参数名（字符串）"))
+		}
+		b.WriteString(sep)
+		sep = "&"
+		b.WriteString(url.QueryEscape(key))
+		b.WriteByte('=')
+		b.WriteString(url.QueryEscape(stringify(kv[i+1])))
+	}
+	return b.String()
+}
+
+// pageNumbers 给出分页条要显示的**页码窗口**（win = 窗口宽度，含首尾固定位与省略位）。
+//
+// 只返回整数页码：省略号画在哪由模板决定（相邻两个数字差 > 1 就画一个）。这样"窗口策略"
+// 留在通用层、可以拿旧实现做逐页 oracle，"怎么画"留在模板。
+//
+// 口径与迁移前的 BuildPagination 逐字一致（win=7：首、尾、当前页 ± (win-3)/2，贴边时平移窗口）；
+// `pages <= 1` 返回空切片（模板据此不渲染页码组，与"单页不显示分页条"同一条判据）。
+// win < 3 时按 3 处理：更窄的窗口无法同时容纳首尾与当前位置，退化成确定性的最小形态，
+// 而不是算出负长度或死循环。
+func pageNumbers(page, pages, win int) []int {
+	if pages <= 1 {
+		return nil
+	}
+	if win < 3 {
+		win = 3
+	}
+	if page < 1 {
+		page = 1
+	}
+	if page > pages {
+		page = pages
+	}
+	if pages <= win {
+		out := make([]int, 0, pages)
+		for p := 1; p <= pages; p++ {
+			out = append(out, p)
+		}
+		return out
+	}
+	half := (win - 3) / 2 // 预留首、尾、当前页
+	lo := page - half
+	hi := page + half
+	if lo < 2 {
+		lo, hi = 2, lo+win-3
+	}
+	if hi > pages-1 {
+		hi, lo = pages-1, pages-1-(win-3)
+	}
+	out := make([]int, 0, win)
+	out = append(out, 1)
+	for p := lo; p <= hi; p++ {
+		if p < 2 || p > pages-1 {
+			continue
+		}
+		out = append(out, p)
+	}
+	out = append(out, pages)
+	return out
+}

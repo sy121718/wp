@@ -7,8 +7,8 @@ package feature
 //
 //	GET /admin/customers        客户列表（含筛选与计数）
 //	GET /admin/customers/detail 客户资料 + **跨模块**的订单摘要（订单模块的只读聚合）
-//	POST /admin/customers/status 停用账号 → 库里真的变了
-//	POST /admin/customers/unlock 解除锁定 → 锁定字段真的被清空
+//	POST /api/customer/status 停用账号 → 库里真的变了
+//	POST /api/customer/unlock 解除锁定 → 锁定字段真的被清空
 //
 // 只测「handler 返回 200」是不够的：客户页最容易出的错是「页面渲染出来了，
 // 但数字是错的」（金额口径、锁定判定、筛选没落到 SQL 上），所以每条断言都回库核对。
@@ -87,8 +87,8 @@ func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 	page := userhttp.NewCustomerPageHandle(users, orders, projects)
 	engine.GET("/admin/customers", page.CustomersPage)
 	engine.GET("/admin/customers/detail", page.CustomerDetailPage)
-	engine.POST("/admin/customers/status", page.CustomerStatusSave)
-	engine.POST("/admin/customers/unlock", page.CustomerUnlock)
+	engine.POST("/api/customer/status", userhttp.NewCustomerHandle(users).SetCustomerStatus)
+	engine.POST("/api/customer/unlock", userhttp.NewCustomerHandle(users).UnlockCustomer)
 
 	return &customerE2EEnv{
 		engine: engine, db: db,
@@ -136,8 +136,8 @@ func (e *customerE2EEnv) get(t *testing.T, path string) *httptest.ResponseRecord
 
 func (e *customerE2EEnv) post(t *testing.T, path string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(customerFeatureJSONForm(t, form)))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	e.engine.ServeHTTP(rec, req)
 	return rec
@@ -197,7 +197,7 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 	})
 
 	t.Run("停用账号会真的落库", func(t *testing.T) {
-		rec := env.post(t, "/admin/customers/status", url.Values{
+		rec := env.post(t, "/api/customer/status", url.Values{
 			"customerId": {strconv.FormatUint(customer.ID, 10)},
 			"toStatus":   {strconv.Itoa(usermodel.UserStatusDisabled)},
 		})
@@ -205,7 +205,7 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 			t.Fatalf("停用应渲染提示页（200），实际 %d", rec.Code)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, `data-jump-state="ok"`) {
+		if !strings.Contains(body, `"code":200`) {
 			t.Errorf(`停用后应有 data-jump-state="ok"`)
 		}
 		if !strings.Contains(body, "账号已停用") {
@@ -228,14 +228,14 @@ func TestCustomerPageE2EListDetailAndWrites(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("设置锁定失败: %v", err)
 		}
-		rec := env.post(t, "/admin/customers/unlock", url.Values{
+		rec := env.post(t, "/api/customer/unlock", url.Values{
 			"customerId": {strconv.FormatUint(customer.ID, 10)},
 		})
 		if rec.Code != http.StatusOK {
 			t.Fatalf("解锁应渲染提示页（200），实际 %d", rec.Code)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, `data-jump-state="ok"`) {
+		if !strings.Contains(body, `"code":200`) {
 			t.Errorf(`解锁后应有 data-jump-state="ok"`)
 		}
 		if !strings.Contains(body, "账号已解除锁定") {

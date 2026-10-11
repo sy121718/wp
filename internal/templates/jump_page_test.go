@@ -18,18 +18,36 @@ import (
 	"testing"
 )
 
-// jumpPageData 复刻 shell.RenderJump 传的键（struct 在模板里按字段名取，与 map 等价）。
+// jumpPageData 复刻 adminui.RenderJumpPage 传的键（struct 在模板里按字段名取，与 map 等价）。
+//
+// task-152 起正文是**事实**（MsgKey + 中文兜底 + `%s` 参数）而不是成品串：模板用注入的
+// tf 取词，所以这里也要给 tf（未初始化 i18n 时它回落兜底并按参数填充 → 与旧行为同形）。
 func jumpPageData(ok bool, msg, back, backText string, seconds int) map[string]any {
 	return map[string]any{
 		"title": msg,
+		"t":     func(key, fallback string) string { return fallback },
+		"tf":    func(key, fallback string, args []string) string { return fillForTest(fallback, args) },
 		"Jump": map[string]any{
-			"OK":       ok,
-			"Msg":      msg,
-			"Back":     back,
-			"BackText": backText,
-			"Seconds":  seconds,
+			"OK":           ok,
+			"MsgKey":       "",
+			"Msg":          msg,
+			"MsgArgs":      []string{},
+			"Back":         back,
+			"BackTextKey":  "",
+			"BackText":     backText,
+			"BackTextShow": backText != "",
+			"Seconds":      seconds,
 		},
 	}
+}
+
+// fillForTest 复刻 adminui.TranslateArgs 在「无词条」时的行为：回落兜底再填 `%s`。
+func fillForTest(fallback string, args []string) string {
+	out := fallback
+	for _, a := range args {
+		out = strings.Replace(out, "%s", a, 1)
+	}
+	return out
 }
 
 func renderJumpPage(t *testing.T, data map[string]any) string {

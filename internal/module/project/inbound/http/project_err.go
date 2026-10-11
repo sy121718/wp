@@ -19,13 +19,12 @@ package projecthttp
 
 import (
 	"errors"
+	"go_wp/internal/middleware/builtin"
 	"net/http"
 
 	projectenums "go_wp/internal/module/project/enums"
 	service "go_wp/internal/module/project/service"
-	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
-	r "go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
 )
@@ -87,21 +86,24 @@ func projectErrStatusText(err error, fallbackKey string) (status int, key string
 	}
 }
 
-// projectErrParam 页面路径的错误文案归口：返回**当前语言的译文**，供整页提示渲染。
+// projectErrMsg 页面路径的错误**事实**（key + 中文兜底），供整页提示 / 错误槽渲染。
 //
-// 为什么必须翻译：页面上的提示是直接渲染的文本（shell.RenderJump 的 Msg 不进
-// response 的 translate）。不翻的话运营看到的是裸 key（ErrThemeInternal）而不是
-// 「主题服务内部错误」。
+// 为什么给事实而不是成品译文：语言是**请求级**的，控制器提前翻成整句意味着每处都要再判
+// 一次「这句属于哪个语言」，漏一处就是「中文环境全对、英文界面上整句中文」—— 不报错、
+// 不记日志。现在取词发生在渲染期（提示页注入的 tf）。
+//
+// Fallback 取 key 本身：本域 enums 的常量值就是 key（projectenums 头部明文如此），
+// 而词条缺失时的展示行为与迁入前逐字一致（r.TranslateMessage 缺词时同样回落 key 原文）。
 //
 // 判据与 themeError 的 default 分支同源：**只有落到 500 才是「预期外的故障」**，
 // 业务错误（缺参 / 不存在 / 被引用拒绝）是预期内的用户输入问题，不污染错误日志。
-func projectErrParam(c *gin.Context, scene, fallbackKey string, err error) string {
+func projectErrMsg(c *gin.Context, scene, fallbackKey string, err error) projectMsg {
 	status, key := projectErrStatusText(err, fallbackKey)
 	if err != nil && status == http.StatusInternalServerError {
-		logger.Scene(scene).With("user_id", shell.CurrentUserID(c)).
+		logger.Scene(scene).With("user_id", builtin.CurrentUserID(c)).
 			With("path", c.Request.URL.Path).Error(err, "项目域页面操作失败")
 	}
-	return r.TranslateMessage(c, key)
+	return projectMsg{Key: key, Fallback: key}
 }
 
 // projectWriteTextKeys 写侧会渲染到页面上的全部文案 key（**迁移登记守卫的登记表**）。

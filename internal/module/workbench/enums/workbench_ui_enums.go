@@ -5,7 +5,7 @@ package workbenchenums
 // 为什么这些 key 不用模板取词：结构树（outline_handle.go）与检查器（inspector_*.go）的
 // HTML 是 Go 拼串产出的（模板只做一个 `|unsafe` 插槽），字段的 Label / Placeholder /
 // Options 也在 Go 侧按组件 schema 分派 —— 模板层看不到这些句子，所以 key 与中文兜底
-// 都登记在这里，取词统一走 shell.TranslateFor(c)。
+// 都登记在这里，取词按请求语言调用 pkg/i18n。
 //
 // 与 workbench/err 那批的分工：err.* 是**失败**文案（帮作者判断下一步），这一批是
 // 画布控件上的**固定标签**。命名沿用「模块前缀 + 面名 + 语义」，与库内既有的

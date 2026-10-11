@@ -386,9 +386,9 @@ const (
 // 与 admin / order 的 Bulk* 同口径：值 = sys_i18n 的 item_key，**不带 Err / Msg 前缀**。
 // 这些句子是 handler 按计数拼出的整句回执（由 shell.RenderJump 渲染成整页提示），
 // 不是 service 返回的错误，因此不进 productErrFallbacks / productErrSentinels 那套错误白名单 ——
-// 它们的取词在 product_err.go 的 productBulkTextOf。
+// 它们的取词在 product_jump.go 的 productBulkTextOf（错误出口与提示页出口同一个文件）。
 //
-// 中文原文全部留在 inbound/http/product_err.go（与写侧共用的那份 bulkTemplate 表绑在一起），
+// 中文原文全部留在 inbound/http/product_jump.go（与写侧共用的那份 bulkTemplate 表绑在一起），
 // 这里的常量只声明 key。
 const (
 	// 批量删除：五个实体各一对（部分成功 / 全部成功）。
@@ -417,6 +417,6 @@ const (
 
 	// 商品编辑页保存成功的回执（无占位符）。
 	//
-	// 由 shell.RenderJump 渲染成整页提示；取词见 product_err.go 的 productSaved。
+	// 由 shell.RenderJump 渲染成整页提示；取词见 product_jump.go 的 productSaved。
 	MsgProductSaved = "product.msg.saved"
 )

@@ -12,7 +12,7 @@ package feature
 //   ?id=       页面模式（isBlock=false，无 isTemplate）
 //   ?block=    块模式（isBlock=true，无 isTemplate）
 //   ?template= 模板模式（isTemplate=true + previewQS）
-//   ?instance= 实例模式（isTemplate=true + previewQS，且**不走 shell.Prepare**）
+//   ?instance= 实例模式（isTemplate=true + previewQS，且**不走 adminui.Prepare**）
 // 断言两层：① 整页渲染完（</html> + 画布 iframe + 保存按钮 + 数据岛 script）；
 // ② 该模式的顶栏 / 画布分支确实选中（发布按钮 / 结构模板徽标 / 实例模式状态条）。
 

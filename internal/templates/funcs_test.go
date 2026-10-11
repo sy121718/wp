@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/CloudyKit/jet/v6"
+
+	"go_wp/pkg/sitetz"
+	"go_wp/pkg/utils"
 )
 
 // funcs_test.go — 模板全局函数（funcs.go）的判据。
@@ -147,6 +150,8 @@ func TestGlobalsRegistered(t *testing.T) {
 		{"percent", `{{ percent(1.5, 1) }}`, "1.5%"},
 		{"dateTime", `{{ dateTime(zero) }}`, ""},
 		{"date", `{{ date(zero) }}`, ""},
+		{"siteDateTime", `{{ siteDateTime(zero) }}`, ""},
+		{"dateTimeSecond", `{{ dateTimeSecond(zero) }}`, ""},
 	}
 	vars := jet.VarMap{}
 	vars.Set("zero", time.Time{})
@@ -328,6 +333,122 @@ func TestDateTimeAndDate(t *testing.T) {
 func TestDateTimeRejectsNonTime(t *testing.T) {
 	if _, err := renderGlobal(t, `{{ dateTime("2026-10-07") }}`, nil); err == nil {
 		t.Fatal("字符串入参应当渲染失败")
+	}
+}
+
+// 站点时区与本地时区在这一批判据里被**强制分离**（本地=UTC、站点=Asia/Shanghai）：
+// 「按谁的时区渲染」只有在两个口径确实不同的时候才是可判的 —— 两者相同（真实部署里常见）时，
+// 实现被写成另一个口径也照样绿。
+const (
+	sitetzEnvKey   = "GO_WP_SITE_TIMEZONE"
+	sitetzShanghai = "Asia/Shanghai"
+)
+
+// useShanghaiSiteAndUTCLocal 强制「本地=UTC / 站点=Asia/Shanghai」，测试结束还原。
+//
+// 禁 t.Parallel()：这里改的是进程级状态（time.Local 与 sitetz 的 sync.Once 缓存）。
+func useShanghaiSiteAndUTCLocal(t *testing.T) {
+	t.Helper()
+	oldLocal := time.Local
+	time.Local = time.UTC
+	t.Setenv(sitetzEnvKey, sitetzShanghai)
+	sitetz.ResetForTest()
+	t.Cleanup(func() {
+		sitetz.ResetForTest() // 还原（t.Setenv 自动恢复环境变量）
+		time.Local = oldLocal
+	})
+	if got := sitetz.Name(); got != sitetzShanghai {
+		t.Fatalf("站点时区未生效（得到 %q，期望 %q）：时区库不可用或解析失败，本组判据失去区分力", got, sitetzShanghai)
+	}
+}
+
+// TestSiteDateTimeUsesSiteTimezone siteDateTime 按**站点时区**（而非服务器本地时区）渲染到分钟。
+//
+// 判据的力量来自两个口径确实不同：同一绝对时刻在 UTC 下是 01:05、在 Asia/Shanghai 下是 09:05。
+// 实现被改回 .Local()、或站点时区解析失效回退本地，两种退化都会被这条抓住。
+// 入参覆盖页面交事实的真实形态：time.Time / JSONTime / JSONTime 指针。
+func TestSiteDateTimeUsesSiteTimezone(t *testing.T) {
+	useShanghaiSiteAndUTCLocal(t)
+
+	at := time.Date(2026, 10, 7, 1, 5, 0, 0, time.UTC)
+	jt := utils.NewJSONTime(at)
+	var nilPtr *time.Time
+	var nilJTPtr *utils.JSONTime
+	vars := jet.VarMap{}
+	vars.Set("at", at)
+	vars.Set("jt", jt)
+	vars.Set("jtPtr", &jt)
+	vars.Set("nilPtr", nilPtr)
+	vars.Set("nilJTPtr", nilJTPtr)
+	vars.Set("zero", time.Time{})
+
+	cases := []struct {
+		expr   string
+		expect string
+	}{
+		{`{{ siteDateTime(at) }}`, "2026-10-07 09:05"},
+		{`{{ siteDateTime(jt) }}`, "2026-10-07 09:05"},
+		{`{{ siteDateTime(jtPtr) }}`, "2026-10-07 09:05"},
+		{`{{ siteDateTime(zero) }}`, ""},
+		{`{{ siteDateTime(nilPtr) }}`, ""},
+		{`{{ siteDateTime(nilJTPtr) }}`, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.expr, func(t *testing.T) {
+			if got := mustRender(t, c.expr, vars); got != c.expect {
+				t.Fatalf("期望 %q，实际 %q", c.expect, got)
+			}
+		})
+	}
+
+	// 对照：同一入参在 dateTime（本地）下是 UTC 的钟点 —— 上面那条不是恒真。
+	if got := mustRender(t, `{{ dateTime(at) }}`, vars); got != "2026-10-07 01:05" {
+		t.Fatalf("对照口径 dateTime 期望 %q，实际 %q（本地时区被改动？本组判据失去区分力）", "2026-10-07 01:05", got)
+	}
+	// 站点时区名不进模板：不存在按字面量指定时区的入口（口径只在一处声明）。
+	if _, err := renderGlobal(t, `{{ dateTimeIn("Asia/Shanghai", at) }}`, vars); err == nil {
+		t.Fatal("模板里不应存在按字面量指定时区的入口")
+	}
+}
+
+// TestDateTimeSecondKeepsSeconds 秒精度：截到分钟会让人对不上日志（这个函数存在的理由）。
+//
+// 同时钉住它用的是**本地**时区而不是站点时区：收秒的对象是「观测值」，与「面向人的时刻」
+// 不是同一个口径；混用会让状态条与日志对不上。
+func TestDateTimeSecondKeepsSeconds(t *testing.T) {
+	useShanghaiSiteAndUTCLocal(t)
+
+	at := time.Date(2026, 10, 7, 9, 5, 7, 0, time.UTC)
+	jt := utils.NewJSONTime(at)
+	var nilPtr *time.Time
+	var nilJTPtr *utils.JSONTime
+	vars := jet.VarMap{}
+	vars.Set("at", at)
+	vars.Set("jt", jt)
+	vars.Set("jtPtr", &jt)
+	vars.Set("nilPtr", nilPtr)
+	vars.Set("nilJTPtr", nilJTPtr)
+	vars.Set("zero", time.Time{})
+
+	cases := []struct {
+		expr   string
+		expect string
+	}{
+		{`{{ dateTimeSecond(at) }}`, "2026-10-07 09:05:07"},
+		{`{{ dateTimeSecond(jt) }}`, "2026-10-07 09:05:07"},
+		{`{{ dateTimeSecond(jtPtr) }}`, "2026-10-07 09:05:07"},
+		{`{{ dateTimeSecond(zero) }}`, ""},
+		{`{{ dateTimeSecond(nilPtr) }}`, ""},
+		{`{{ dateTimeSecond(nilJTPtr) }}`, ""},
+		// 对照：分钟精度会把秒吃掉，且用的是本地时区（09:05 而非站点时区的 17:05）。
+		{`{{ dateTime(at) }}`, "2026-10-07 09:05"},
+	}
+	for _, c := range cases {
+		t.Run(c.expr, func(t *testing.T) {
+			if got := mustRender(t, c.expr, vars); got != c.expect {
+				t.Fatalf("期望 %q，实际 %q", c.expect, got)
+			}
+		})
 	}
 }
 

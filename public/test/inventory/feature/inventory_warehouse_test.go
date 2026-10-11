@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/net/html"
 	"gorm.io/gorm"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
@@ -36,9 +37,9 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 
+	"go_wp/internal/middleware/adminctx"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -614,8 +615,8 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	// 列表页的新建入口按权限渲染；多仓勾选表单在独立新建页。
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{"product:create": true})
-		c.Set(shell.ButtonsKey, map[string]bool{"product.create": true})
+		c.Set(adminctx.PermSetKey, map[string]bool{"product:create": true})
+		c.Set(adminctx.ButtonsKey, map[string]bool{"product.create": true})
 	})
 	handle := producthttp.NewProductPageHandle(f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
@@ -670,11 +671,16 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	}
 
 	// 表单提交时指定 SH → 变体落在 SH，SKU 前缀是归属仓短码（SH_TEE…）。
+	before := countVariants(t, f, p.ID)
 	rec = postForm(engine, "/admin/products/variant/create", url.Values{
 		"projectId": {f.projectID}, "productId": {p.ID}, "warehouseId": {sh.ID},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("POST 新增变体应 302，实际 %d：%s", rec.Code, rec.Body.String())
+	// 写动作的结论走**整页提示**（productEditJump → shell.RenderJump），
+	// 不再是「302 + 回列表页的查询参数」：断言真实契约（200 / no-store / ok 态 /
+	// meta 自动回跳到归属商品编辑页 / 无 Location）——只换状态码数字不叫修好。
+	assertVariantCreatedJump(t, rec, productEditJumpTarget(f.projectID, p.ID))
+	if after := countVariants(t, f, p.ID); after != before+1 {
+		t.Fatalf("变体应真实入库：POST 前 %d 个，POST 后 %d 个", before, after)
 	}
 	detail, err := f.products.Get(ctx, &productdto.GetReq{ID: p.ID})
 	if err != nil {
@@ -692,6 +698,16 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	}
 	if picked == nil {
 		t.Fatalf("表单指定仓库后应在该仓生成库存记录，实际 %+v", detail.Variants)
+	}
+	// 「恰好一条」：所选仓只应多出一行库存记录（没有第二处把 SH 也算成归属仓）。
+	inChosen := 0
+	for _, v := range detail.Variants {
+		if _, gerr := f.inventory.GetStock(ctx, &inventorydto.GetStockReq{VariantID: v.ID, WarehouseID: sh.ID}); gerr == nil {
+			inChosen++
+		}
+	}
+	if inChosen != 1 {
+		t.Fatalf("所选仓应恰好多出一条库存记录，实际 %d 条（变体共 %d 个）", inChosen, len(detail.Variants))
 	}
 	if !strings.HasPrefix(picked.SKUCode, "SZ_TEE") {
 		t.Fatalf("表单路径的变体 SKU 也应沿用容器主体前缀（SZ_TEE…），实际 %q", picked.SKUCode)
@@ -772,16 +788,16 @@ func newInventoryPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 主行动按钮按权限渲染（shell.Prepare 读 PermSetKey）：这条链路不挂鉴权中间件，
+	// 主行动按钮按权限渲染（adminui.Prepare 读 PermSetKey）：这条链路不挂鉴权中间件，
 	// 注入一份权限，让「页面里存在写入口」这类断言保持有效。
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{
+		c.Set(adminctx.PermSetKey, map[string]bool{
 			"inventory:warehouse_create": true, "inventory:warehouse_update": true,
 			"inventory:warehouse_delete": true, "inventory:reason_create": true,
 			// 库存调整入口（盘点 / 报损）与原因启停：两者都按权限显隐，测试外壳给全集。
 			"inventory:stock_change": true, "inventory:reason_update": true,
 		})
-		c.Set(shell.ButtonsKey, map[string]bool{
+		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"inventory.warehouse_create": true, "inventory.warehouse_update": true,
 			"inventory.warehouse_delete": true, "inventory.reason_create": true,
 			// 库存调整入口（盘点 / 报损）与原因启停：两者都按权限显隐，测试外壳给全集。
@@ -824,6 +840,131 @@ func postForm(engine *gin.Engine, path string, form url.Values) *httptest.Respon
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 	return rec
+}
+
+// assertVariantCreatedJump 变体创建成功后的**整页提示**契约（取代原先的 302 断言）。
+//
+// 用 HTML 解析而不是 `strings.Contains`：回跳地址带 `&`，模板会把它转义成 `&amp;`，
+// 字符串包含只能按转义形态写（脆），也拿不到「这个属性属于哪个元素」那层语义。
+func assertVariantCreatedJump(t *testing.T, rec *httptest.ResponseRecorder, wantBack string) {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("写动作结论走整页提示，应为 200（不再是 302），实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Location"); got != "" {
+		t.Fatalf("整页提示不应带 Location（否则浏览器会再跳一次），实际 %q", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("提示页必须 no-store（回跳目标随本次操作变化，缓存会让人看到上一条结论），实际 %q", got)
+	}
+
+	doc, err := html.Parse(strings.NewReader(rec.Body.String()))
+	if err != nil {
+		t.Fatalf("提示页不是可解析的 HTML: %v", err)
+	}
+
+	card := findNode(doc, func(n *html.Node) bool {
+		return n.Type == html.ElementNode && hasAttr(n, "data-jump-state")
+	})
+	if card == nil {
+		t.Fatalf("提示页缺少 data-jump-state 标记：%s", rec.Body.String())
+	}
+	if got := attrValue(card, "data-jump-state"); got != "ok" {
+		t.Fatalf("变体创建成功应为 ok 态，实际 %q", got)
+	}
+
+	meta := findNode(doc, func(n *html.Node) bool {
+		return n.Type == html.ElementNode && n.Data == "meta" && strings.EqualFold(attrValue(n, "http-equiv"), "refresh")
+	})
+	if meta == nil {
+		t.Fatal("成功提示页应有 meta refresh（1 秒后自动回跳）")
+	}
+	if got, want := attrValue(meta, "content"), "1;url="+wantBack; got != want {
+		t.Fatalf("meta refresh 回跳目标应为 %q，实际 %q", want, got)
+	}
+
+	link := findNode(doc, func(n *html.Node) bool {
+		return n.Type == html.ElementNode && n.Data == "a" && strings.Contains(attrValue(n, "class"), "btn-primary")
+	})
+	if link == nil {
+		t.Fatal("成功提示页应有「立即前往」链接")
+	}
+	if got := attrValue(link, "href"); got != wantBack {
+		t.Fatalf("「立即前往」应指向归属商品编辑页 %q，实际 %q", wantBack, got)
+	}
+
+	if msg := nodeText(findNode(doc, func(n *html.Node) bool { return attrValue(n, "class") == "jump-msg" })); strings.TrimSpace(msg) == "" {
+		t.Fatal("提示页缺少结论文案")
+	}
+}
+
+// productEditJumpTarget 变体写动作成功后的回跳目标：归属商品的编辑页。
+//
+// 键序不手写：用 url.Values.Encode 拼（与 backpath.WithParams 同一口径），
+// 否则断言会变成「我猜的键序对不对」，而不是「目标页对不对」。
+func productEditJumpTarget(projectID, productID string) string {
+	q := url.Values{}
+	q.Set("project", strings.TrimSpace(projectID))
+	q.Set("product", strings.TrimSpace(productID))
+	return "/admin/products/edit?" + q.Encode()
+}
+
+// findNode 深度优先找第一个满足条件的节点。
+func findNode(root *html.Node, match func(*html.Node) bool) *html.Node {
+	if root == nil {
+		return nil
+	}
+	if match(root) {
+		return root
+	}
+	for child := root.FirstChild; child != nil; child = child.NextSibling {
+		if found := findNode(child, match); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// hasAttr 节点是否带某属性（属性值为空也算存在）。
+func hasAttr(n *html.Node, key string) bool {
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// attrValue 取属性值（HTML 解析已解转义，`&amp;` 在这里就是 `&`）。
+func attrValue(n *html.Node, key string) string {
+	if n == nil {
+		return ""
+	}
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+// nodeText 节点的全部文本。
+func nodeText(n *html.Node) string {
+	if n == nil {
+		return ""
+	}
+	var sb strings.Builder
+	var walk func(*html.Node)
+	walk = func(cur *html.Node) {
+		if cur.Type == html.TextNode {
+			sb.WriteString(cur.Data)
+		}
+		for child := cur.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(n)
+	return sb.String()
 }
 
 // countVariants 商品的变体数量（直查，用于断言「失败不留半截」）。

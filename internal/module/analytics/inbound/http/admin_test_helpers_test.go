@@ -18,7 +18,7 @@ import (
 	"go_wp/internal/templates"
 )
 
-// articleLayoutData 补齐 layout 需要的键（与线上 shell.Prepare 注入的一致）。
+// articleLayoutData 补齐 layout 需要的键（与线上 adminui.Prepare 注入的一致）。
 func articleLayoutData(base gin.H) gin.H {
 	lang := "zh-CN"
 	base["csrf_token"] = "test-token"

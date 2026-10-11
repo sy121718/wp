@@ -10,7 +10,7 @@ package producthttp
 //     而不是 302 + ?err=，也不是 c.String 纯文本；
 //  2. htmx 请求走 **HX-Redirect**（htmx 会自己跟随 302，那时响应头已读不到 Location，
 //     整页 HTML 会被塞进片段位）；
-//  3. 回跳地址由 shell.BackPath / shell.WithParams 从**服务端**拼，筛选上下文按调用点
+//  3. 回跳地址由 shell.BackPath / backpath.WithParams 从**服务端**拼，筛选上下文按调用点
 //     显式列出的键读回 —— 手拼的 ?err= / ?done= 不再被渲染成「系统说的话」。
 
 import (
@@ -22,6 +22,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/templates"
 )
@@ -53,7 +54,7 @@ func newProductJumpContext(t *testing.T, hxHeader, rawQuery, body string) (*gin.
 // TestProductListJumpRendersNoticePage 原生失败渲染整页提示（200 + err 态 + 文案 + 回跳链接）。
 func TestProductListJumpRendersNoticePage(t *testing.T) {
 	c, rec := newProductJumpContext(t, "", "project=p1&keyword=abc&status=draft&page=2", "")
-	productListJump(c, false, "商品名称必填")
+	productListJump(c, false, productMsg{Fallback: "商品名称必填"})
 	c.Writer.WriteHeaderNow()
 
 	if rec.Code != http.StatusOK {
@@ -78,7 +79,7 @@ func TestProductListJumpRendersNoticePage(t *testing.T) {
 // TestProductJumpHXRedirect htmx 请求走 HX-Redirect（不把整页 HTML 塞进片段位）。
 func TestProductJumpHXRedirect(t *testing.T) {
 	c, rec := newProductJumpContext(t, "true", "project=p1", "")
-	productListJump(c, true, "操作已完成")
+	productListJump(c, true, productActionDoneMsg)
 	c.Writer.WriteHeaderNow()
 
 	if rec.Code != http.StatusOK {
@@ -176,16 +177,24 @@ func TestProductWriteHandlersJumpOnValidationFail(t *testing.T) {
 }
 
 // TestProductJumpBackTextFollowsPage 回跳链接文字取各页标题词条（不新增全站词条）。
+//
+// 写侧只交事实：每条回跳文字必须带 i18n key，且渲染期取出的文字非空。
 func TestProductJumpBackTextFollowsPage(t *testing.T) {
 	c, _ := newProductJumpContext(t, "", "", "")
-	if got := productListBackText(c); got == "" {
-		t.Error("列表回跳链接文字为空")
-	}
-	if got := productAttrBackText(c); got == "" {
-		t.Error("属性页回跳链接文字为空")
-	}
-	if got := productPricingBackText(c); got == "" {
-		t.Error("定价页回跳链接文字为空")
+	for _, tc := range []struct {
+		name string
+		msg  productMsg
+	}{
+		{"列表", productListBackMsg},
+		{"属性", productAttrBackMsg},
+		{"定价", productPricingBackMsg},
+	} {
+		if strings.TrimSpace(tc.msg.Key) == "" {
+			t.Errorf("%s回跳链接文字必须带 i18n key", tc.name)
+		}
+		if got := productMsgText(c, tc.msg); got == "" {
+			t.Errorf("%s回跳链接文字为空", tc.name)
+		}
 	}
 }
 
@@ -193,13 +202,13 @@ func TestProductJumpBackTextFollowsPage(t *testing.T) {
 func TestProductBulkDeleteResultSentences(t *testing.T) {
 	c, _ := newProductJumpContext(t, "", "", "")
 	for _, tc := range []struct{ deleted, skipped int }{{0, 0}, {3, 0}, {0, 3}, {2, 3}} {
-		_, msg := productBulkDeleteResult(c, tc.deleted, tc.skipped, productTagBulkPartial, productTagBulkDone)
-		if strings.TrimSpace(msg) == "" {
+		_, m := productBulkDeleteResult(tc.deleted, tc.skipped, productTagBulkPartial, productTagBulkDone)
+		if strings.TrimSpace(adminui.MsgText(c, m)) == "" {
 			t.Errorf("批量结论为空串（deleted=%d skipped=%d）", tc.deleted, tc.skipped)
 		}
 	}
 	// 单条删除复用批量结论文案（计数 1）：与批量入口措辞一致。
-	if got := productBulkDoneText(c, productTagBulkDone); !strings.Contains(got, "1") {
+	if got := adminui.MsgText(c, productBulkDoneMsg(productTagBulkDone)); !strings.Contains(got, "1") {
 		t.Errorf("单条删除结论 = %q，应含计数 1", got)
 	}
 }

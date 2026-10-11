@@ -5,9 +5,13 @@
    形态决定：编辑用服务端按 ?edit=<id> 渲染的编辑区，不用抽屉 + JS 回填 ——
    本仓不新增散落业务 JS（AGENTS.md §交互方式），而回填要读的值（门槛的元表示、
    折扣的原始数字）从 HTML 属性转进 input 是一段没人维护的胶水代码。
-   新建用抽屉（不需要回填，本仓既有形态）。 *}
+   新建用抽屉（不需要回填，本仓既有形态）。
+
+   展示口径全在模板里：门槛 money(分, "")、折扣 percent(值, 0)、枚举文案 tr() ——
+   handler 只给业务事实（门槛的分、折扣的原始数字、原始枚举值），不产出任何展示串。 *}
 {{extends "../layout.html"}}
 {{block body()}}
+{{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{listQuery := .ListQuery}}
@@ -25,7 +29,7 @@
         <div class="page-actions">
             <a class="btn btn-ghost" href="/admin/membership/assignments?project={{selectedProject}}">{{ .["t"]("admin.membership.link.assignments", "会员归属") }}</a>
             {{if isset(.Buttons["membership.tier_create"])}}
-            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-tier-create" data-drawer-title="{{ .["t"]("admin.membership.tier.create", "新建等级") }}">＋ {{ .["t"]("admin.membership.tier.create", "新建等级") }}</button>
+            <button type="button" data-requires-js hidden class="btn btn-primary" data-drawer-open="#tpl-tier-create" data-drawer-title="{{ .["t"]("admin.membership.tier.create", "新建等级") }}">＋ {{ .["t"]("admin.membership.tier.create", "新建等级") }}</button>
             {{end}}
             {{if len(.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/membership">
@@ -39,6 +43,7 @@
             {{end}}
         </div>
     </header>
+    <noscript><p class="form-hint">{{tr("admin.membership.write.noJs", "本页的写操作需要 JavaScript，请开启 JavaScript 后重试。")}}</p></noscript>
 
     {{if .LoadFailed}}<p class="badge badge-warning" role="alert">{{ .["t"]("admin.membership.loadFailed", "工程列表没读出来，本页数据未加载，请稍后重试。") }}</p>{{end}}
     {{if .LoadErr != ""}}<p class="badge badge-warning" role="alert">{{.LoadErr}}</p>{{end}}
@@ -47,10 +52,11 @@
     {{if isset(.Edit)}}
     <section class="card">
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.tier.editTitle", "编辑等级") }}：{{ .Edit.Name }}</span></div>
-        <form method="post" action="/admin/membership/tier/update?{{listQuery}}" class="form-stack">
+        <form data-write-api="/api/membership/tier/update" data-write-mode="create" data-write-builder="membership-tier" data-write-number="tierId,sortOrder" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("membership.err.internal", "操作失败，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="id" value="{{ .Edit.ID }}">
+            <input type="hidden" name="tierId" value="{{ .Edit.ID }}">
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label req" for="tier-name">{{ .["t"]("admin.membership.tier.field.name", "等级名称") }}</label>
@@ -58,7 +64,7 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="tier-threshold">{{ .["t"]("admin.membership.tier.field.threshold", "升级门槛（元）") }}</label>
-                    <input type="text" class="form-input" id="tier-threshold" name="thresholdYuan" value="{{ .Edit.ThresholdYuan }}" inputmode="decimal" autocomplete="off">
+                    <input type="text" class="form-input" id="tier-threshold" name="thresholdYuan" value="{{money(.Edit.ThresholdAmount, "")}}" inputmode="decimal" autocomplete="off">
                     <p class="form-hint">{{ .["t"]("admin.membership.tier.field.thresholdHint", "累计消费达到这个金额即进入本档；默认等级一般填 0。") }}</p>
                 </div>
                 <div class="form-group">
@@ -73,7 +79,7 @@
             </div>
             <div class="action-row">
                 <a class="btn btn-ghost" href="/admin/membership?project={{selectedProject}}">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button>
+                <button type="submit" data-requires-js hidden disabled class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button>
             </div>
         </form>
     </section>
@@ -81,8 +87,9 @@
     <section class="card">
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.entitlement.title", "权益") }}</span></div>
         <p class="form-hint">{{ .["t"]("admin.membership.entitlement.hint", "清单即最终状态：这里没勾选 / 没填写的权益会被删掉。免运费与折扣相加扣减，与优惠码各自独立计账。") }}</p>
-        <form method="post" action="/admin/membership/entitlement/save?{{listQuery}}" class="form-stack">
+        <form data-write-api="/api/membership/entitlement/save" data-write-mode="create" data-write-builder="membership-entitlements" data-write-number="tierId" data-membership-shipping-kind="{{.KindFreeShippingValue}}" data-membership-discount-kind="{{.KindDiscountValue}}" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("membership.err.internal", "操作失败，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="tierId" value="{{ .Edit.ID }}">
             <div class="form-row">
@@ -92,12 +99,13 @@
                 </div>
                 <div class="form-group">
                     <label class="form-label" for="tier-discount">{{ .["t"]("admin.membership.entitlement.percent", "折扣（%）") }}</label>
-                    <input type="number" class="form-input" id="tier-discount" name="discountPercent" value="{{ .Edit.DiscountPercent }}" min="1" max="100" step="1" inputmode="numeric">
+                    {* 没有折扣权益时留空（而不是回填一个 0 —— 取值域是 1..100，0 会被当成越界）。 *}
+                    <input type="number" class="form-input" id="tier-discount" name="discountPercent" value="{{if .Edit.HasDiscount}}{{.Edit.DiscountPercent}}{{end}}" min="1" max="100" step="1" inputmode="numeric">
                     <p class="form-hint">{{ .["t"]("admin.membership.entitlement.percentHint", "填 20 表示扣减 20%（打八折）；留空 = 该等级没有折扣。取值 1–100。") }}</p>
                 </div>
             </div>
             <div class="action-row">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.membership.entitlement.save", "保存权益") }}</button>
+                <button type="submit" data-requires-js hidden disabled class="btn btn-primary">{{ .["t"]("admin.membership.entitlement.save", "保存权益") }}</button>
             </div>
         </form>
     </section>
@@ -107,20 +115,23 @@
         <div class="action-row">
             {{if !.Edit.IsDefault}}
             {{if isset(.Buttons["membership.tier_update"])}}
-            <form method="post" action="/admin/membership/tier/default?{{listQuery}}">
+            <form data-write-api="/api/membership/tier/update" data-write-mode="create" data-write-number="tierId" data-write-bool="isDefault" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("membership.err.internal", "操作失败，请稍后重试")}}">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <p class="form-hint" data-write-status role="status" hidden></p>
+                <input type="hidden" name="isDefault" value="true">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
-                <input type="hidden" name="id" value="{{ .Edit.ID }}">
-                <button type="submit" class="btn btn-sm">{{ .["t"]("admin.membership.tier.setDefault", "设为默认等级") }}</button>
+                <input type="hidden" name="tierId" value="{{ .Edit.ID }}">
+                <button type="submit" data-requires-js hidden disabled class="btn btn-sm">{{ .["t"]("admin.membership.tier.setDefault", "设为默认等级") }}</button>
             </form>
             {{end}}
             {{end}}
             {{if isset(.Buttons["membership.tier_delete"])}}
-            <form method="post" action="/admin/membership/tier/delete?{{listQuery}}">
+            <form data-write-api="/api/membership/tier/delete" data-write-mode="create" data-write-number="tierId" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("membership.err.internal", "操作失败，请稍后重试")}}">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
+                <p class="form-hint" data-write-status role="status" hidden></p>
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
-                <input type="hidden" name="id" value="{{ .Edit.ID }}">
-                <button type="submit" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                <input type="hidden" name="tierId" value="{{ .Edit.ID }}">
+                <button type="submit" data-requires-js hidden disabled class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
             </form>
             {{end}}
         </div>
@@ -155,13 +166,13 @@
             {{range _, r := .Tiers}}
             <tr>
                 <td>{{r.Name}}{{if r.Remark != ""}}<br><span class="form-hint">{{r.Remark}}</span>{{end}}</td>
-                <td>{{r.ThresholdYuan}}</td>
+                <td>{{money(r.ThresholdAmount, "")}}</td>
                 <td>{{r.SortOrder}}</td>
                 <td>{{if r.IsDefault}}{{ .["t"]("admin.membership.tier.defaultBadge", "默认等级") }}{{else}}—{{end}}</td>
                 <td>
                     {{if !r.HasEntitlement}}{{ .["t"]("admin.membership.entitlement.none", "未配置权益") }}{{end}}
                     {{if r.FreeShipping}}{{ .["t"]("admin.membership.entitlement.kind.freeShipping", "免运费") }} {{end}}
-                    {{if r.DiscountRaw != ""}}{{ .["t"]("admin.membership.entitlement.kind.discount", "折扣") }} {{r.DiscountText}}{{end}}
+                    {{if r.HasDiscount}}{{ .["t"]("admin.membership.entitlement.kind.discount", "折扣") }} {{percent(r.DiscountPercent, 0)}}{{end}}
                 </td>
                 <td class="col-actions">
                     <a class="btn btn-sm" href="/admin/membership?project={{selectedProject}}&edit={{r.ID}}">{{ .["t"]("admin.common.action.edit", "编辑") }}</a>
@@ -176,8 +187,9 @@
 
 {{if isset(.Buttons["membership.tier_create"])}}
 <template id="tpl-tier-create">
-    <form method="post" action="/admin/membership/tier/create?{{listQuery}}" class="form-stack">
+    <form data-write-api="/api/membership/tier/create" data-write-mode="create" data-write-builder="membership-tier" data-write-number="sortOrder" data-write-bool="isDefault" data-membership-create="true" data-membership-shipping-kind="{{.KindFreeShippingValue}}" data-membership-discount-kind="{{.KindDiscountValue}}" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("membership.err.internal", "操作失败，请稍后重试")}}" class="form-stack">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <p class="form-hint" data-write-status role="status" hidden></p>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <div class="form-group">
             <label class="form-label req" for="nt-name">{{ .["t"]("admin.membership.tier.field.name", "等级名称") }}</label>
@@ -209,7 +221,7 @@
         </div>
         <div class="action-row">
             <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.membership.tier.create", "新建等级") }}</button>
+            <button type="submit" data-requires-js hidden disabled class="btn btn-primary">{{ .["t"]("admin.membership.tier.create", "新建等级") }}</button>
         </div>
     </form>
 </template>

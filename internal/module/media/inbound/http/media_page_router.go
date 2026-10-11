@@ -9,7 +9,7 @@ package mediahttp
 import (
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/shell"
+	"go_wp/internal/adminui"
 )
 
 // SetupMediaPages 注册媒体库页面（/admin 组，中间件链由装配层统一挂好）。
@@ -19,5 +19,5 @@ func SetupMediaPages(adminPages *gin.RouterGroup) {
 	if adminPages == nil {
 		return
 	}
-	adminPages.GET("/media", shell.PageAuthz("/api/media/list"), MediaPage)
+	adminPages.GET("/media", adminui.PageAuthz("/api/media/list"), MediaPage)
 }

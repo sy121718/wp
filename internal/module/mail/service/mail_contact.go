@@ -987,8 +987,8 @@ func (s *Service) fireContactTagsAdded(ctx context.Context, contactID uint64, be
 // 而丢掉行锁就会让并发写互相覆盖（见 model.LockContactTagsTx 的说明）。
 // 批量 IN 预读只能省一次读、不能省锁 —— 锁外读到的旧值随时会变，写回去就是丢更新。
 //
-// 牺牲是 N 次往返（N = 点选条数）。为什么可接受：点选上限由 shell.BulkIDs 封顶
-// （MaxBulkIDs），不是无界输入；将来上限若放大到几百，再把这里改成「按 id 升序一次锁多行」。
+// 牺牲是 N 次往返（N = 点选条数）。为什么可接受：点选上限由 pkg/bulkids 封顶
+// （MaxIDs），不是无界输入；将来上限若放大到几百，再把这里改成「按 id 升序一次锁多行」。
 //
 // changed 计「已处理」而不是「标签真的变了」：全部人本来就带着该标签时，
 // 回执说「已处理 N 个」比两个数字都是 0、页面没有任何反馈要好（后者会被当成点了没反应）。
@@ -1116,7 +1116,7 @@ func tagListEqual(a, b []string) bool {
 	return true
 }
 
-// dedupIDs 去零、去重（保序）。批量入口的 id 集合来自 shell.BulkIDs，
+// dedupIDs 去零、去重（保序）。批量入口的 id 集合来自 pkg/bulkids（页面与 JSON 同源），
 // 但单条路径与直接调用 service 的测试也会走这里，重复 id 会让同一条被处理两次
 // （第二次数出的 changed/skipped 就是假的）。
 func dedupIDs(ids []uint64) []uint64 {

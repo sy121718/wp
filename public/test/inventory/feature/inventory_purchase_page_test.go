@@ -20,7 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/shell"
+	"go_wp/internal/middleware/adminctx"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -42,16 +42,16 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
-	// 新建采购单进右侧抽屉后，表单与写入口都按权限渲染（shell.Prepare 读 PermSetKey）；
+	// 新建采购单进右侧抽屉后，表单与写入口都按权限渲染（adminui.Prepare 读 PermSetKey）；
 	// 这条链路不走鉴权中间件，注入一份权限，让断言「页面里存在原生表单写入口」保持有效。
 	// 生产入库表单也在本页（本批补回），所以权限集合要一并注入：页面按 PermSetKey 决定
 	// 表单渲染不渲染，漏注入的表现是「表单没渲染」而不是模板报错。
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{
+		c.Set(adminctx.PermSetKey, map[string]bool{
 			"inventory:purchase_create":     true,
 			"inventory:purchase_production": true,
 		})
-		c.Set(shell.ButtonsKey, map[string]bool{
+		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"inventory.purchase_create":     true,
 			"inventory.purchase_production": true,
 		})

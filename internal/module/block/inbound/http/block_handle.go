@@ -6,12 +6,15 @@ package blockhttp
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
+	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
 	blockservice "go_wp/internal/module/block/service"
+	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
@@ -82,6 +85,9 @@ func (h *Handle) Update(c *gin.Context) {
 }
 
 // Delete 删除块（global 块被引用默认拒绝，force=true 强制删除）。
+//
+// 被拒（409）时用 blockRefErrorMessage：与批量删除逐条原因同一套文案 ——
+// 「哪些页面/资源挡住了」是操作者唯一能据此行动的信息，不能只剩一句「不能删除」。
 func (h *Handle) Delete(c *gin.Context) {
 	var req blockdto.DeleteReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -89,10 +95,74 @@ func (h *Handle) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
-		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
+		response.ErrorWithMessage(c, blockErrorStatus(err), blockRefErrorMessage(c, err))
 		return
 	}
 	response.Success(c, nil)
+}
+
+// BulkDelete 批量删除块（POST /api/block/bulk-delete）。
+//
+// 为什么要它在服务端，而不是「前端循环调单条删除」：批量 id 是**无界输入**，
+// 去重与上限必须落在可信边界内侧 —— 前端那份上限改一行 JS 就没了。
+// 这里用 pkg/bulkids.Normalize（终局纯工具），与表单批量（shell.BulkIDs → 同一个函数）
+// 共用一份规则：两个入口各复刻一遍，「按去重后条数判上限」这个细节会先分叉。
+//
+// 语义与旧的页面批量逐字一致：
+//   - 逐条走 svc.Delete（与单条删除是同一条路径，因此被引用的 global 块照旧被拒）；
+//   - 单条失败**不中断**整批（整批回滚会让用户以为「一个都没删」然后反复重试）；
+//   - 部分成功回 200 + 真实计数，不伪装成整批失败。
+func (h *Handle) BulkDelete(c *gin.Context) {
+	var req blockdto.BulkDeleteReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		paramBindFail(c, err)
+		return
+	}
+	ids, nerr := bulkids.Normalize(req.IDs)
+	if nerr != nil {
+		// 超限：整批拒绝（不静默截断）。文案是 bulkids 的词条 + 带参协议（key|max|count），
+		// 由 response 按请求语言取词 —— 与页面批量的超限提示同一词条、同一个数字顺序。
+		response.ErrorWithMessage(c, http.StatusBadRequest, bulkTooManyMessage(nerr))
+		return
+	}
+	if len(ids) == 0 {
+		// 归一化后一条不剩（提交的全是空白）：不是错误，回空结果，由前端说「没有选中任何块」。
+		response.Success(c, &blockdto.BulkDeleteResp{Items: []blockdto.BulkDeleteItemResult{}})
+		return
+	}
+
+	res := &blockdto.BulkDeleteResp{Items: make([]blockdto.BulkDeleteItemResult, 0, len(ids))}
+	for _, id := range ids {
+		item := blockdto.BulkDeleteItemResult{ID: id}
+		if derr := h.svc.Delete(c.Request.Context(), &blockdto.DeleteReq{ID: id}); derr != nil {
+			logger.Scene("block").With("op", "BulkDelete").With("block_id", id).
+				With("user_id", builtin.GetUserID(c)).With("path", c.Request.URL.Path).
+				Error(derr, "批量删除全局块失败")
+			// 逐条原因复用页面删单条时的受控文案 + 引用明细（blockRefErrText）：
+			// 两处各写一句会让同一个「为什么删不掉」在不同入口下措辞不同。
+			item.Message = blockRefErrText(c, derr)
+			res.Skipped++
+		} else {
+			item.Deleted = true
+			res.Deleted++
+		}
+		res.Items = append(res.Items, item)
+	}
+	response.Success(c, res)
+}
+
+// bulkTooManyMessage 批量超限文案的**带参协议形态**（key|max|count）。
+//
+// 词条与两个数字都归 pkg/bulkids 所有（bulkids.MsgTooMany 的两个 %s 依次是上限与本次条数，
+// 见迁移 277）；模块侧只把它翻成 response 认识的形态，按键取词仍由 pkg/response 做。
+// 不要在模块里另拼一句话：去重后的条数只有归一函数算得出来，重算就是第二份真相。
+func bulkTooManyMessage(err error) string {
+	max, count := bulkids.MaxIDs, 0
+	var tooMany *bulkids.IDsError
+	if errors.As(err, &tooMany) {
+		max, count = tooMany.Max, tooMany.Count
+	}
+	return fmt.Sprintf("%s|%d|%d", bulkids.MsgTooMany, max, count)
 }
 
 // CloneAST 复制块 AST（编辑器「插入-复制」动作）：返回与源块脱钩的独立文档。

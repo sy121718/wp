@@ -46,6 +46,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
+	"go_wp/internal/adminui"
+	"go_wp/internal/backref"
 	"go_wp/internal/builder"
 	"go_wp/internal/module/block/contract"
 	"go_wp/internal/module/page/contract"
@@ -55,7 +57,6 @@ import (
 	"go_wp/internal/module/sysconfig/contract"
 	seoscore "go_wp/internal/seo"
 	"go_wp/internal/siteurl"
-	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -211,9 +212,10 @@ func workbenchSettingsPanel(c *gin.Context) {
 			view.AccessHash = hash
 		}
 	}
-	// t 是片段模板的取词函数：片段不经 shell.Prepare，缺 t 时 Jet 把取词调用求值成空串。
+	// 片段也是页面出口：壳键走 adminui.Prepare（t / tf）—— 片段不经它时缺 t，
+	// 而 Jet 对缺 t 是**静默**的（取词调用求值成空串，页面结构完整、日志干净）。
 	c.HTML(http.StatusOK, "fragments/settings_panel",
-		gin.H{"Settings": view, "t": shell.TranslateFor(c)})
+		adminui.Prepare(c, gin.H{"Settings": view}))
 }
 
 // applyAccessPassword 把明文访问密码变成 settings.access 里的 bcrypt 哈希。
@@ -267,8 +269,7 @@ func applyAccessPassword(doc json.RawMessage, password string) (json.RawMessage,
 func workbenchSeoScorePanel(c *gin.Context) {
 	doc := json.RawMessage(c.PostForm("document"))
 	c.HTML(http.StatusOK, "fragments/seo_score",
-		gin.H{"Score": scoreViewOf(doc, c.PostForm("url"), requestScoreLang(c), shell.TranslateFor(c)),
-			"t": shell.TranslateFor(c)})
+		adminui.Prepare(c, gin.H{"Score": scoreViewOf(doc, c.PostForm("url"), requestScoreLang(c), projectTr(c))}))
 }
 
 // settingsViewOf 解析草稿文档的 settings 片段。
@@ -477,7 +478,11 @@ type siteSettingsData struct {
 	// 与 LocaleError 的分工：LocaleError 是**语言清单**校验失败的就地提示（回渲染 + 回显用户输入，
 	// 见 SaveSiteLocales）；Err 只由 buildSiteSettingsData 的取数失败填充。
 	// 写动作的结论不再回显到本页（走 shell.RenderJump 渲染提示页，见 project_jump.go）。
-	Err string
+	//
+	// 槽位收的是**事实**（key + 中文兜底）而不是拼好的译文：语言是请求级的，控制器提前翻
+	// 等于替渲染期做决定；漏一处就是「中文环境全对、英文界面整句中文」，不报错也不记日志。
+	// 取词回渲染期，模板用 Prepare 注入的 tf（形状同 fragments/page_langs.html 的 Err 槽）。
+	Err projectMsg
 	// LangOptions 已收录语言（sys_dict type='language' 的启用项）——语言码 datalist 的
 	// 唯一提示来源。与 project_locales.lang 同口径（完整语言码，如 zh-CN）。
 	LangOptions []sysconfigcontract.DictOption
@@ -536,7 +541,7 @@ func NewSiteSettingsAdminHandle(projects projectcontract.ProjectService, pages p
 // SiteSettings 站点设置页（GET /admin/settings）。
 func (h *siteSettingsAdminHandle) SiteSettings(c *gin.Context) {
 	data := h.buildSiteSettingsData(c, strings.TrimSpace(c.Query("project")))
-	c.HTML(http.StatusOK, "admin/project/settings", shell.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/project/settings", adminui.Prepare(c, data.templateMap()))
 }
 
 // buildSiteSettingsData 组装站点设置页数据（工程列表 + 选中工程的基础信息与语言清单）。
@@ -550,7 +555,7 @@ func (h *siteSettingsAdminHandle) buildSiteSettingsData(c *gin.Context, selected
 		// 原先这里是「写 500 JSON 响应 → 再 c.HTML 渲染同一请求」：响应头已经发出，
 		// 浏览器停在 JSON 上，后面那次渲染白做（Gin 会打 headers already written）。
 		// 页面没被拿走才是重点 —— 运营还能换工程、走别的菜单，而不是对着一坨 JSON。
-		data.Err = projectErrParam(c, "settings", projectenums.ErrProjectInternal, err)
+		data.Err = projectErrMsg(c, "settings", projectenums.ErrProjectInternal, err)
 		return data
 	}
 	data.Projects = projects
@@ -645,14 +650,14 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	// 缺参拆两条见 CreateTheme 的同类注释：工程缺失时连「回哪一页」都定不下来，
 	// 只能回设置页入口（不带工程筛选）；名称缺失时工程是知道的，回该工程的设置页。
 	if projectID == "" {
-		projectJump(c, false, projectText(c, projectenums.ErrProjectRequired, "请先选择要操作的站点工程"),
-			shell.BackPath(c, "/admin/settings"), siteSettingsBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrProjectRequired, "请先选择要操作的站点工程"),
+			backref.BackPath(c, "/admin/settings"), siteSettingsBackMsg)
 		return
 	}
 	back := siteSettingsBack(c)
 	if name == "" {
-		projectJump(c, false, projectText(c, projectenums.ErrSiteSettingsNameRequired, "工程与站点名称不能为空"),
-			back, siteSettingsBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrSiteSettingsNameRequired, "工程与站点名称不能为空"),
+			back, siteSettingsBackMsg)
 		return
 	}
 	// 读取当前 settings，合并本页字段。
@@ -663,8 +668,8 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 			logger.Scene("settings").With("project", projectID).Error(err, "读取站点工程失败")
 		}
 		// 回设置页入口（不带工程筛选）：该工程已不存在，带着它的 id 回跳只会落到一个空表单。
-		projectJump(c, false, projectText(c, projectenums.ErrProjectNotFound, "站点工程不存在"),
-			shell.BackPath(c, "/admin/settings"), siteSettingsBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrProjectNotFound, "站点工程不存在"),
+			backref.BackPath(c, "/admin/settings"), siteSettingsBackMsg)
 		return
 	}
 	// URL 规则：逐实体类型读表单。留空 = 不配置该项（回落 siteurl 的默认模式）；
@@ -677,8 +682,8 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		}
 		if perr := siteurl.ValidatePattern(raw); perr != nil {
 			// 非法路径模式：原文（哪个实体、期望什么形状）只进日志，对外一句归口文案。
-			projectJump(c, false, projectErrParam(c, "site_settings", projectenums.ErrProjectInternal, perr),
-				back, siteSettingsBackText(c))
+			projectJump(c, false, projectErrMsg(c, "site_settings", projectenums.ErrProjectInternal, perr),
+				back, siteSettingsBackMsg)
 			return
 		}
 		patterns[k.Kind] = siteurl.Normalize(raw)
@@ -687,8 +692,8 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	if raw := strings.TrimSpace(c.PostForm("ga4MeasurementId")); raw != "" {
 		id, ok := builder.NormalizeGA4MeasurementID(raw)
 		if !ok {
-			projectJump(c, false, projectText(c, projectenums.ErrGA4IDInvalid, "GA4 测量 ID 格式不合法（形如 G-XXXXXXXXXX，只允许字母与数字）"),
-				back, siteSettingsBackText(c))
+			projectJump(c, false, projectMsgOf(projectenums.ErrGA4IDInvalid, "GA4 测量 ID 格式不合法（形如 G-XXXXXXXXXX，只允许字母与数字）"),
+				back, siteSettingsBackMsg)
 			return
 		}
 		ga4ID = id
@@ -699,8 +704,8 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	if raw := strings.TrimSpace(c.PostForm("searchConsoleVerification")); raw != "" {
 		token, ok := builder.NormalizeSearchConsoleVerification(raw)
 		if !ok {
-			projectJump(c, false, projectText(c, projectenums.ErrGSCVerificationInvalid, "Search Console 验证 token 格式不合法（base64url：字母、数字、- 与 _，8~128 位）"),
-				back, siteSettingsBackText(c))
+			projectJump(c, false, projectMsgOf(projectenums.ErrGSCVerificationInvalid, "Search Console 验证 token 格式不合法（base64url：字母、数字、- 与 _，8~128 位）"),
+				back, siteSettingsBackMsg)
 			return
 		}
 		searchConsoleToken = token
@@ -730,7 +735,7 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		if rawBody != "" && !bodyOK {
 			data.BodyScriptsError = projectenums.SiteSettingsBodyScriptsInvalid
 		}
-		c.HTML(http.StatusOK, "admin/project/settings", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/project/settings", adminui.Prepare(c, data.templateMap()))
 		return
 	}
 	// 站点运费规则（站点级基础运费 + 满额免运费门槛）：库内单位是**分**，表单是**元**，
@@ -741,14 +746,14 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	// 页面上看不出任何异常，只能等客户问「为什么没收运费」才发现。
 	baseCents, baseErr := projectdto.ParseYuanToCents(c.PostForm("shippingBaseFee"))
 	if baseErr != nil {
-		projectJump(c, false, projectText(c, projectenums.ErrShippingBaseFeeInvalid, "基础运费金额不合法（负数 / 非数字 / 超上限）"),
-			back, siteSettingsBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrShippingBaseFeeInvalid, "基础运费金额不合法（负数 / 非数字 / 超上限）"),
+			back, siteSettingsBackMsg)
 		return
 	}
 	thresholdCents, thresholdErr := projectdto.ParseYuanToCents(c.PostForm("shippingFreeThreshold"))
 	if thresholdErr != nil {
-		projectJump(c, false, projectText(c, projectenums.ErrShippingFreeThresholdInvalid, "满额免运费门槛金额不合法（同上）"),
-			back, siteSettingsBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrShippingFreeThresholdInvalid, "满额免运费门槛金额不合法（同上）"),
+			back, siteSettingsBackMsg)
 		return
 	}
 	// 组合判据（与读取侧同一个函数）：目前只有「非负 + 上限」，已由上面两次解析把住；
@@ -756,8 +761,8 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	// 这类跨字段规则时，不会漏掉保存侧这条链路。失败时提示落在门槛字段上：跨字段规则
 	// 必然是「门槛与另一个字段的关系」，指到门槛最可定位。
 	if _, nerr := projectdto.NormalizeShippingPolicy(baseCents, thresholdCents); nerr != nil {
-		projectJump(c, false, projectText(c, projectenums.ErrShippingFreeThresholdInvalid, "满额免运费门槛金额不合法（同上）"),
-			back, siteSettingsBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrShippingFreeThresholdInvalid, "满额免运费门槛金额不合法（同上）"),
+			back, siteSettingsBackMsg)
 		return
 	}
 	// 自定义 404 页（SEO-013）：只卡长度 —— 存的是一份完整 HTML 文档，没有可校验的
@@ -765,8 +770,8 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	// 被每次读设置解析，所以在入口拒绝，而不是存进去等发布时才发现。
 	notFoundHTML := strings.TrimSpace(c.PostForm("notFoundHtml"))
 	if len(notFoundHTML) > maxNotFoundHTMLLen {
-		projectJump(c, false, projectText(c, projectenums.ErrNotFoundHTMLTooLong, "自定义 404 页内容过长（上限 32 KiB）"),
-			back, siteSettingsBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrNotFoundHTMLTooLong, "自定义 404 页内容过长（上限 32 KiB）"),
+			back, siteSettingsBackMsg)
 		return
 	}
 	settingsJSON, err := mergeSiteSettings(project.Settings, projectcontract.SiteSettings{
@@ -788,8 +793,8 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		ShippingFreeThreshold: thresholdCents,
 	})
 	if err != nil {
-		projectJump(c, false, projectErrParam(c, "settings", projectenums.ErrProjectInternal, err),
-			back, siteSettingsBackText(c))
+		projectJump(c, false, projectErrMsg(c, "settings", projectenums.ErrProjectInternal, err),
+			back, siteSettingsBackMsg)
 		return
 	}
 	// 构建可见的字段**是否真的变了**：changed 决定保存后要不要标 stale。
@@ -799,13 +804,13 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 	if _, err := h.projects.Update(c.Request.Context(), &projectcontract.UpdateReq{
 		ID: projectID, Name: name, Settings: settingsJSON,
 	}); err != nil {
-		projectJump(c, false, projectErrParam(c, "settings", projectenums.ErrProjectInternal, err),
-			back, siteSettingsBackText(c))
+		projectJump(c, false, projectErrMsg(c, "settings", projectenums.ErrProjectInternal, err),
+			back, siteSettingsBackMsg)
 		return
 	}
 	// 保存成功之后才标记（失败路径不标：配置没落库，标了只会白重建一次）。
 	h.markPagesStaleForSiteSettingsChange(c.Request.Context(), projectID, settingsChanged)
-	projectJump(c, true, siteSettingsSavedText(c), back, siteSettingsBackText(c))
+	projectJump(c, true, siteSettingsSavedMsg, back, siteSettingsBackMsg)
 }
 
 // siteSettingsDiffer 比较两份 settings 的**语义**（不看键顺序与空白）。
@@ -1058,7 +1063,7 @@ func (h *siteSettingsAdminHandle) LocaleRowsFragment(c *gin.Context) {
 			}
 		}
 	}
-	c.HTML(http.StatusOK, "admin/partials/locale_rows", shell.Prepare(c, gin.H{"Locales": rows}))
+	c.HTML(http.StatusOK, "admin/partials/locale_rows", adminui.Prepare(c, gin.H{"Locales": rows}))
 }
 
 // SaveSiteLocales POST /admin/settings/locales/save：全量保存站点语言清单。
@@ -1072,8 +1077,8 @@ func (h *siteSettingsAdminHandle) LocaleRowsFragment(c *gin.Context) {
 func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	if projectID == "" {
-		projectJump(c, false, projectText(c, projectenums.ErrProjectRequired, "请先选择要操作的站点工程"),
-			shell.BackPath(c, "/admin/settings"), siteSettingsBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrProjectRequired, "请先选择要操作的站点工程"),
+			backref.BackPath(c, "/admin/settings"), siteSettingsBackMsg)
 		return
 	}
 	back := siteSettingsBack(c)
@@ -1099,8 +1104,8 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 		mode, merr := i18n.ParseSiteLangURLMode(modeRaw)
 		if merr != nil {
 			// 合法取值写在文案里，用户对着改即可。
-			projectJump(c, false, projectText(c, projectenums.ErrLangURLModeInvalid, "语言 URL 方案取值非法（可选 off / default_plain / all_prefix）"),
-				back, siteSettingsBackText(c))
+			projectJump(c, false, projectMsgOf(projectenums.ErrLangURLModeInvalid, "语言 URL 方案取值非法（可选 off / default_plain / all_prefix）"),
+				back, siteSettingsBackMsg)
 			return
 		}
 		// 与**该工程**当前生效的方案比较：此前比的是进程级全局值，多工程下等于拿
@@ -1120,8 +1125,8 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 			modeChanged = true
 		}
 		if err := h.saveLangURLMode(c.Request.Context(), projectID, mode); err != nil {
-			projectJump(c, false, projectErrParam(c, "settings", projectenums.ErrProjectInternal, err),
-				back, siteSettingsBackText(c))
+			projectJump(c, false, projectErrMsg(c, "settings", projectenums.ErrProjectInternal, err),
+				back, siteSettingsBackMsg)
 			return
 		}
 	}
@@ -1132,7 +1137,7 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 		data := h.buildSiteSettingsData(c, projectID)
 		data.Locales = rows // 回显用户输入，便于就地修正
 		data.LocaleError = siteSettingsLocalesInval
-		c.HTML(http.StatusOK, "admin/project/settings", shell.Prepare(c, data.templateMap()))
+		c.HTML(http.StatusOK, "admin/project/settings", adminui.Prepare(c, data.templateMap()))
 		return
 	}
 	h.markPagesStaleForLocaleChange(c.Request.Context(), projectID, before, after)
@@ -1145,7 +1150,7 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 			}
 		}
 	}
-	projectJump(c, true, localesSavedText(c), back, siteSettingsBackText(c))
+	projectJump(c, true, localesSavedMsg, back, siteSettingsBackMsg)
 }
 
 // saveLangURLMode 把语言 URL 方案持久化到工程 settings 并热更新进程值。
@@ -1259,11 +1264,13 @@ type themeManageData struct {
 	Projects          []projectcontract.ProjectResp
 	SelectedProjectID string
 	Themes            []themeRow
-	// Err 本页**装载失败**的降级提示（空 = 无提示）。
+	// Err 本页**装载失败**的降级提示（Empty() = 无提示）。
 	//
 	// 本页的写操作（新建 / 激活 / 删除）的结论不再回带 —— 走 shell.RenderJump 渲染
 	// 整页提示（见 project_jump.go），所以提示条只由工程 / 主题列表取数失败填充。
-	Err string
+	//
+	// 存**事实**（key + 中文兜底）：语言是请求级的，取词由模板用 Prepare 注入的 tf 做。
+	Err projectMsg
 	// NoProjectEmpty 「还没有工程」空态：工程列表为空 **且** 本次装载没有失败。
 	//
 	// 不能只判 len(Projects)==0：装载失败时工程列表同样是空的，但那时该显示的是
@@ -1288,8 +1295,8 @@ func (d *themeManageData) templateMap() gin.H {
 // renderThemeManage 渲染主题页 —— 三处出口（正常 / 工程装载失败 / 主题装载失败）共用，
 // 保证 NoProjectEmpty 与 Err 的关系只有一处定义。
 func (h *themeAdminHandle) renderThemeManage(c *gin.Context, data *themeManageData) {
-	data.NoProjectEmpty = len(data.Projects) == 0 && data.Err == ""
-	c.HTML(http.StatusOK, "admin/project/theme", shell.Prepare(c, data.templateMap()))
+	data.NoProjectEmpty = len(data.Projects) == 0 && data.Err.Empty()
+	c.HTML(http.StatusOK, "admin/project/theme", adminui.Prepare(c, data.templateMap()))
 }
 
 // ThemeManage 主题管理页：列出工程全部主题，支持新建/激活/删除。
@@ -1309,7 +1316,7 @@ func (h *themeAdminHandle) ThemeManage(c *gin.Context) {
 		// 装载失败不拿走整个页面（与 admin 六页同一判据）：空列表 + 归口提示，
 		// 侧栏、页头、工程选择器全部保留 —— 运营看得出「是这一页没读出来」，
 		// 而不是对着一块纯文本 / JSON 以为整个后台坏了。原文只进日志。
-		data.Err = projectErrParam(c, "theme", projectenums.ErrThemeInternal, err)
+		data.Err = projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err)
 		h.renderThemeManage(c, data)
 		return
 	}
@@ -1323,7 +1330,7 @@ func (h *themeAdminHandle) ThemeManage(c *gin.Context) {
 		themes, terr := h.projects.ListThemes(c.Request.Context(), data.SelectedProjectID)
 		if terr != nil {
 			// 同上：主题列表读不出来时，页面仍要能操作（换工程、去别的菜单）。
-			data.Err = projectErrParam(c, "theme", projectenums.ErrThemeInternal, terr)
+			data.Err = projectErrMsg(c, "theme", projectenums.ErrThemeInternal, terr)
 			h.renderThemeManage(c, data)
 			return
 		}
@@ -1349,28 +1356,28 @@ func (h *themeAdminHandle) CreateTheme(c *gin.Context) {
 	// 「没选工程」与「没填名字」说成同一件事，而两者的修法完全不同
 	// （前者是选择器 / URL 的问题，后者是输入框的问题）。两条都复用现成词条。
 	if projectID == "" {
-		projectJump(c, false, projectText(c, projectenums.ErrThemeProjectIDEmpty, "工程 ID 不能为空"),
-			back, themesBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrThemeProjectIDEmpty, "工程 ID 不能为空"),
+			back, themesBackMsg)
 		return
 	}
 	if name == "" {
-		projectJump(c, false, projectText(c, projectenums.ErrThemeNameRequired, "主题名称不能为空"),
-			back, themesBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrThemeNameRequired, "主题名称不能为空"),
+			back, themesBackMsg)
 		return
 	}
 	theme, err := h.projects.CreateTheme(c.Request.Context(), &projectcontract.ThemeCreateReq{
 		ProjectID: projectID, Name: name,
 	})
 	if err != nil {
-		projectJump(c, false, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err),
-			back, themesBackText(c))
+		projectJump(c, false, projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err),
+			back, themesBackMsg)
 		return
 	}
 	// 回填：该工程 theme_id 为空的历史页面挂到新主题（失败不阻塞，可再次保存触发）。
 	if err := h.pages.AttachThemeToUnassigned(c.Request.Context(), projectID, theme.ID); err != nil {
 		logger.Scene("page").With("project", projectID).With("theme", theme.ID).Warn("回填未挂主题页面失败")
 	}
-	projectJump(c, true, themeCreatedText(c), back, themesBackText(c))
+	projectJump(c, true, themeCreatedMsg, back, themesBackMsg)
 }
 
 // ActivateTheme 激活主题（POST /admin/themes/activate）。
@@ -1385,13 +1392,13 @@ func (h *themeAdminHandle) ActivateTheme(c *gin.Context) {
 	id := strings.TrimSpace(c.PostForm("id"))
 	back := themesBack(c)
 	if id == "" {
-		projectJump(c, false, projectText(c, projectenums.ErrThemeIDRequired, "缺少主题 id"),
-			back, themesBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
+			back, themesBackMsg)
 		return
 	}
 	if err := h.projects.ActivateTheme(c.Request.Context(), &projectcontract.ThemeActivateReq{ID: id}); err != nil {
-		projectJump(c, false, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err),
-			back, themesBackText(c))
+		projectJump(c, false, projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err),
+			back, themesBackMsg)
 		return
 	}
 	// 激活已提交：取新激活主题的 ProjectID 与 Settings，编排刷新整站页面。
@@ -1401,23 +1408,23 @@ func (h *themeAdminHandle) ActivateTheme(c *gin.Context) {
 	theme, err := h.projects.GetTheme(c.Request.Context(), id)
 	if err != nil || theme == nil {
 		logger.Scene("theme").With("theme_id", id).Error(err, "激活后取主题失败，整站换皮未执行")
-		projectJump(c, false, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err),
-			back, themesBackText(c))
+		projectJump(c, false, projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err),
+			back, themesBackMsg)
 		return
 	}
 	themeJSON, structureJSON, err := themeSnapshots(theme.Settings)
 	if err != nil {
 		logger.Scene("theme").With("theme_id", theme.ID).Error(err, "序列化主题快照失败")
-		projectJump(c, false, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err),
-			back, themesBackText(c))
+		projectJump(c, false, projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err),
+			back, themesBackMsg)
 		return
 	}
 	if err := h.pages.ReskinProjectForTheme(c.Request.Context(), theme.ProjectID, theme.ID, themeJSON, structureJSON); err != nil {
-		projectJump(c, false, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err),
-			back, themesBackText(c))
+		projectJump(c, false, projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err),
+			back, themesBackMsg)
 		return
 	}
-	projectJump(c, true, themeActivatedText(c), back, themesBackText(c))
+	projectJump(c, true, themeActivatedMsg, back, themesBackMsg)
 }
 
 // refreshThemePages 把主题设置应用到已挂该主题的页面（主题设置保存路径）：
@@ -1504,8 +1511,8 @@ func (h *themeAdminHandle) DeleteTheme(c *gin.Context) {
 	id := strings.TrimSpace(c.PostForm("id"))
 	back := themesBack(c)
 	if id == "" {
-		projectJump(c, false, projectText(c, projectenums.ErrThemeIDRequired, "缺少主题 id"),
-			back, themesBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
+			back, themesBackMsg)
 		return
 	}
 	projectID := ""
@@ -1513,8 +1520,8 @@ func (h *themeAdminHandle) DeleteTheme(c *gin.Context) {
 		projectID = theme.ProjectID
 	}
 	if err := h.projects.DeleteTheme(c.Request.Context(), id); err != nil {
-		projectJump(c, false, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err),
-			back, themesBackText(c))
+		projectJump(c, false, projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err),
+			back, themesBackMsg)
 		return
 	}
 	if projectID != "" {
@@ -1524,7 +1531,7 @@ func (h *themeAdminHandle) DeleteTheme(c *gin.Context) {
 			}
 		}
 	}
-	projectJump(c, true, themeDeletedText(c), back, themesBackText(c))
+	projectJump(c, true, themeDeletedMsg, back, themesBackMsg)
 }
 
 // ThemeRedirect 旧入口 /admin/theme 301 到新主题管理页。
@@ -1533,10 +1540,24 @@ func (h *themeAdminHandle) ThemeRedirect(c *gin.Context) {
 }
 
 // panelOption 选项下拉项（与迁移前 inspectorOption 同形：模板按字段名访问）。
+//
+// **字段表的源数据**：Label 是中文原文（themeLabelKeys 按文本查 key），
+// 交给模板时转成 panelOptionView（label 拆成 key + 兜底两项）。
 type panelOption struct {
 	Value    string
 	Label    string
 	Selected bool
+}
+
+// panelOptionView 视图侧的一个选项（label 是**事实**：key + 中文兜底）。
+//
+// 为什么不复用 panelOption：源数据里只有一个中文 Label，而槽位要的是
+// `tr(LabelKey, LabelFallback)` 两个值 —— 语言是请求级的，装配期取词等于把语言定死。
+type panelOptionView struct {
+	Value         string
+	LabelKey      string
+	LabelFallback string
+	Selected      bool
 }
 
 // themeField 主题设置字段：[显示名, 回显路径(JSON 字段名), 提交键名, 控件, 选项]。
@@ -1557,26 +1578,33 @@ type themeFieldGroup struct {
 
 // themeFieldView 模板渲染用的字段视图（含当前值）。
 type themeFieldView struct {
-	Label string
+	// LabelKey / LabelFallback 字段 label 的**事实**（key 为空 = 表里没有这条文本，
+	// 兜底即中文原文）。取词在渲染期做。
+	LabelKey      string
+	LabelFallback string
 	// Path 回显路径（themeSettings JSON 字段名，取色器槽用）。
 	Path    string
 	Name    string
 	Kind    string
 	Value   string
-	Options []panelOption
-	// Invalid / Error 保存失败后的**字段级**错误态：Invalid 让控件输出 aria-invalid="true"
-	// （基座 ui.css 用它画红框，读屏也会播报），Error 是控件下方的一行红字（.form-error）。
+	Options []panelOptionView
+	// Invalid / ErrorKey / ErrorFallback 保存失败后的**字段级**错误态：Invalid 让控件输出
+	// aria-invalid="true"（基座 ui.css 用它画红框，读屏也会播报），ErrorKey / ErrorFallback
+	// 是控件下方那一行红字（.form-error）的事实，取词在渲染期做。
 	//
 	// 只有主题设置页会用它们：工作台的全局设置面板复用同一个字段视图，
 	// 那里的字段始终是零值（无错可报），模板不会渲染出多余节点。
-	Invalid bool
-	Error   string
+	Invalid       bool
+	ErrorKey      string
+	ErrorFallback string
 }
 
 // themeFieldGroupView 模板渲染用的分组视图。
 type themeFieldGroupView struct {
-	Title  string
-	Fields []themeFieldView
+	// TitleKey / TitleFallback 分组标题的事实（口径同 themeFieldView.LabelKey）。
+	TitleKey      string
+	TitleFallback string
+	Fields        []themeFieldView
 }
 
 // themeLabelKeys 主题设置的**展示文案**（分组标题 / 字段 label / 下拉选项 label）→ i18n key。
@@ -1683,9 +1711,13 @@ var themeLabelKeys = map[string]string{
 	"中文无衬线":         "admin.theme_settings.label.optFontChineseSans",
 }
 
-// themeLabelText 展示文案 → 当前语言文案；表里没有的文本原样返回（见 themeLabelKeys 注释）。
-func themeLabelText(tr func(key, fallback string) string, label string) string {
-	return tr(themeLabelKeys[label], label)
+// themeLabelFact 展示文案 → 事实（key + 中文兜底）；表里没有的文本原样兜底（见 themeLabelKeys 注释）。
+//
+// 只做「中文原文 → key」的查表，**不取词**：语言是请求级的，字段表没有语言这一维，
+// 取词发生在渲染期（模板 `tr(LabelKey, LabelFallback)`）。key 为空时模板的 tr 原样返回兜底，
+// 与迁出前 `tr("", label)` 的行为逐字一致。
+func themeLabelFact(label string) (key, fallback string) {
+	return themeLabelKeys[label], label
 }
 
 // themeFieldGroups 主题设置字段表（与后端 SaveThemeSettings 的点分键名对齐）。
@@ -1807,21 +1839,30 @@ func optionsOf(pairs ...string) []panelOption {
 // 工作台的全局设置面板与后台的主题设置页共用这一份 —— 控件类型（下拉/取色器/数值档位）
 // 只在这里定义一次，避免两边各写一套、改了这头忘那头。
 //
-// tr 为可选取词函数（不传时按中文原文渲染，见 themeLabelKeys）：分组标题、字段 label
-// 与选项 label 全部经它取词，字段表本身只留中文原文。
-func buildThemeGroups(settings map[string]any, trs ...func(key, fallback string) string) []themeFieldGroupView {
-	tr := func(_, fallback string) string { return fallback }
-	if len(trs) > 0 && trs[0] != nil {
-		tr = trs[0]
-	}
+// **不收取词函数**（此前是可选参数 `trs ...func(key, fallback string) string`）：本函数产出
+// 的只有事实（分组标题 / 字段 label / 选项 label 的 key + 中文兜底），取词由模板在渲染期做 ——
+// 语言是请求级的，装配期取词等于把「这段文案属于哪个语言」定死在数据里。
+func buildThemeGroups(settings map[string]any) []themeFieldGroupView {
 	groups := make([]themeFieldGroupView, 0, len(themeFieldGroups))
 	for _, g := range themeFieldGroups {
-		view := themeFieldGroupView{Title: themeLabelText(tr, g.Title), Fields: make([]themeFieldView, 0, len(g.Fields))}
+		titleKey, titleFallback := themeLabelFact(g.Title)
+		view := themeFieldGroupView{
+			TitleKey: titleKey, TitleFallback: titleFallback,
+			Fields: make([]themeFieldView, 0, len(g.Fields)),
+		}
 		for _, f := range g.Fields {
 			value := propString(settings, f.Path)
-			item := themeFieldView{Label: themeLabelText(tr, f.Label), Path: f.Path, Name: f.Name, Kind: f.Kind, Value: value}
+			labelKey, labelFallback := themeLabelFact(f.Label)
+			item := themeFieldView{
+				LabelKey: labelKey, LabelFallback: labelFallback,
+				Path: f.Path, Name: f.Name, Kind: f.Kind, Value: value,
+			}
 			for _, o := range f.Options {
-				item.Options = append(item.Options, panelOption{Value: o.Value, Label: themeLabelText(tr, o.Label), Selected: o.Value == value})
+				optionKey, optionFallback := themeLabelFact(o.Label)
+				item.Options = append(item.Options, panelOptionView{
+					Value: o.Value, LabelKey: optionKey, LabelFallback: optionFallback,
+					Selected: o.Value == value,
+				})
 			}
 			view.Fields = append(view.Fields, item)
 		}
@@ -1850,18 +1891,20 @@ func propString(obj map[string]any, path string) string {
 // workbenchGlobalPanel 渲染全局设置（站点主题）面板片段（POST /workbench/global）。
 func workbenchGlobalPanel(c *gin.Context) {
 	themeID := strings.TrimSpace(c.PostForm("themeId"))
-	// t 是片段模板的取词函数：片段不经 shell.Prepare，缺 t 时 Jet 把取词调用求值成空串。
-	tr := shell.TranslateFor(c)
 	if themeID == "" {
-		c.HTML(http.StatusOK, "fragments/global_panel", gin.H{"ThemeID": "", "t": tr})
+		// 片段（本面板与 settings_panel / seo_score 同路）的取词键 t / tf 由 Prepare 注入；
+		// 缺 t 时 Jet 是**静默**的（取词调用求值成空串，页面结构完整、日志干净）。
+		c.HTML(http.StatusOK, "fragments/global_panel", adminui.Prepare(c, gin.H{"ThemeID": ""}))
 		return
 	}
 	var settings map[string]any
 	if raw := c.PostForm("settings"); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &settings)
 	}
+	// Groups 里只有**事实**（分组标题 / 字段 label / 选项 label 的 key + 中文兜底），
+	// 取词由模板在渲染期做 —— 本函数因此不再需要取词函数（原 tr := projectTr(c) 已删除）。
 	c.HTML(http.StatusOK, "fragments/global_panel",
-		gin.H{"ThemeID": themeID, "Groups": buildThemeGroups(settings, tr), "t": tr})
+		adminui.Prepare(c, gin.H{"ThemeID": themeID, "Groups": buildThemeGroups(settings)}))
 }
 
 // 主题设置页文案（i18n key，与 dashboard enums 迁移前同值）。
@@ -1943,21 +1986,31 @@ type themeSettingsData struct {
 	// 本页原先对失败**没有任何出口** —— 失败是一块纯文本错误页。
 	//
 	// 保存成功的回执不再回显到本页（走 shell.RenderJump 渲染提示页，见 project_jump.go）。
-	Err string
+	//
+	// 存**事实**（key + 中文兜底）：取词回渲染期，模板用 Prepare 注入的 tf。
+	Err projectMsg
 }
 
 // structureTemplateOptionView 结构模板下拉项（selected 由服务端算好，前端不认识这组数据）。
 type structureTemplateOptionView struct {
-	ID       string
-	Label    string
-	Selected bool
+	ID string
+	// Name 模板名（**原始数据**，不是取词结果）。
+	Name string
+	// SuffixKey / SuffixFallback 「（当前生效）」后缀的**事实**（空 = 不加后缀）：
+	// 模板把它拼在 Name 之后并取词 —— 拼好的整串没法按请求语言换（本批的形状要求）。
+	SuffixKey      string
+	SuffixFallback string
+	Selected       bool
 }
 
 // blockOption 页眉/页脚绑定候选下拉项。
 type blockOption struct {
-	ID   string
-	Name string
-	Kind string
+	ID string
+	// NameKey / NameFallback 下拉项文案的**事实**：真实块名走兜底（key 为空），
+	// 「（未设置）」占位项走 key + 中文兜底 —— 两种都由模板的 tr 取词。
+	NameKey      string
+	NameFallback string
+	Kind         string
 }
 
 // templateMap 转 Jet 模板键 map。
@@ -2022,23 +2075,22 @@ type themeSettingsJSON struct {
 func (h *themeAdminHandle) ThemeSettings(c *gin.Context) {
 	themeID := strings.TrimSpace(c.Query("id"))
 	if themeID == "" {
-		projectJump(c, false, projectText(c, projectenums.ErrThemeIDRequired, "缺少主题 id"),
-			themesBack(c), themesBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
+			themesBack(c), themesBackMsg)
 		return
 	}
 	data := h.loadThemeSettings(c, themeID)
 	if data == nil {
-		projectJump(c, false, projectText(c, projectenums.ErrThemeNotFound, "主题不存在"),
-			themesBack(c), themesBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrThemeNotFound, "主题不存在"),
+			themesBack(c), themesBackMsg)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/project/theme_settings", shell.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/project/theme_settings", adminui.Prepare(c, data.templateMap()))
 }
 
 // loadThemeSettings 组装单主题设置页数据；主题不存在返回 nil。
 func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *themeSettingsData {
 	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
 	theme, err := h.projects.GetTheme(ctx, themeID)
 	if err != nil || theme == nil {
 		return nil
@@ -2085,19 +2137,21 @@ func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *th
 		for _, o := range opts {
 			// 标签里带「当前生效」：多套模板并存时，下拉必须能看出哪一套是每次构建真正生效的那套，
 			// 否则「选了另一套没生效」会被当成 bug（生效与否由模板列表的「设为生效」决定）。
-			label := o.Name
+			//
+			// 后缀是**事实**（SuffixKey / SuffixFallback），模板拼在模板名之后 ——
+			// 拼接与取词都在渲染期，控制器不产出成品串（拼好的串换不了语言）。
+			view := structureTemplateOptionView{ID: o.ID, Name: o.Name}
 			if o.IsDefault {
-				label += tr(projectenums.ThemeSettingsStructureCurrent, "（当前生效）")
+				view.SuffixKey = projectenums.ThemeSettingsStructureCurrent
+				view.SuffixFallback = "（当前生效）"
 			}
 			if o.EntityType == "footer" {
-				data.FooterTemplateOptions = append(data.FooterTemplateOptions, structureTemplateOptionView{
-					ID: o.ID, Label: label, Selected: o.ID == data.FooterTemplateID,
-				})
+				view.Selected = o.ID == data.FooterTemplateID
+				data.FooterTemplateOptions = append(data.FooterTemplateOptions, view)
 				continue
 			}
-			data.HeaderTemplateOptions = append(data.HeaderTemplateOptions, structureTemplateOptionView{
-				ID: o.ID, Label: label, Selected: o.ID == data.HeaderTemplateID,
-			})
+			view.Selected = o.ID == data.HeaderTemplateID
+			data.HeaderTemplateOptions = append(data.HeaderTemplateOptions, view)
 		}
 	}
 	// 其余槽位（目前是公告条）从 slots 映射里取：加新槽位时这里与模板各加一行。
@@ -2107,15 +2161,20 @@ func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *th
 	if len(theme.Settings) > 0 {
 		_ = json.Unmarshal(theme.Settings, &rawSettings)
 	}
-	data.Groups = buildThemeGroups(rawSettings, tr)
+	data.Groups = buildThemeGroups(rawSettings)
 	// 页眉/页脚绑定候选：本工程的页眉/页脚类全局块。
 	if blocks, err := h.blocks.List(ctx, &blockcontract.ListReq{ProjectID: theme.ProjectID}); err == nil {
-		unset := tr(projectenums.ThemeSettingsBlockUnset, "（未设置）")
-		data.HeaderBlocks = []blockOption{{ID: "", Name: unset}}
-		data.FooterBlocks = []blockOption{{ID: "", Name: unset}}
-		data.AnnouncementBlocks = []blockOption{{ID: "", Name: unset}}
+		// 「（未设置）」占位项是**事实**；真实块名是原始数据（key 为空，兜底即块名）——
+		// 两者都由模板的 tr 取词，形状统一，模板不必分两支渲染。
+		unset := blockOption{
+			NameKey:      projectenums.ThemeSettingsBlockUnset,
+			NameFallback: "（未设置）",
+		}
+		data.HeaderBlocks = []blockOption{unset}
+		data.FooterBlocks = []blockOption{unset}
+		data.AnnouncementBlocks = []blockOption{unset}
 		for _, b := range blocks {
-			opt := blockOption{ID: b.ID, Name: b.Name, Kind: b.Kind}
+			opt := blockOption{ID: b.ID, NameFallback: b.Name, Kind: b.Kind}
 			switch b.Kind {
 			case "header":
 				data.HeaderBlocks = append(data.HeaderBlocks, opt)
@@ -2155,17 +2214,17 @@ func (h *themeAdminHandle) loadThemeSettings(c *gin.Context, themeID string) *th
 //   - 结构绑定（顶层）：headerBlockId / footerBlockId
 func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 	themeID := strings.TrimSpace(c.PostForm("id"))
-	// 回跳地址由 shell.BackPath 从**本次请求的 query** 读回（表单 action 上带 ?id=<主题>），
+	// 回跳地址由 backref.BackPath 从**本次请求的 query** 读回（表单 action 上带 ?id=<主题>），
 	// 不读隐藏域里的整串 URL。id 缺失 / 主题不存在时回主题列表。
 	if themeID == "" {
-		projectJump(c, false, projectText(c, projectenums.ErrThemeIDRequired, "缺少主题 id"),
-			themesBack(c), themesBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrThemeIDRequired, "缺少主题 id"),
+			themesBack(c), themesBackMsg)
 		return
 	}
 	data := h.loadThemeSettings(c, themeID)
 	if data == nil {
-		projectJump(c, false, projectText(c, projectenums.ErrThemeNotFound, "主题不存在"),
-			themesBack(c), themesBackText(c))
+		projectJump(c, false, projectMsgOf(projectenums.ErrThemeNotFound, "主题不存在"),
+			themesBack(c), themesBackMsg)
 		return
 	}
 	// 本页地址（带主题 id）：成功 /「部分成功」整页提示以它为回跳基。
@@ -2255,7 +2314,7 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 	})
 	if err != nil {
 		// 组装 JSON 失败（几乎不可达：字段全是字符串）—— 同样就地重渲，保住已经填好的 52 个值。
-		themeSettingsFailPage(c, data, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err), nil, nil)
+		themeSettingsFailPage(c, data, projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err), nil, nil)
 		return
 	}
 	// ParseThemeSettings 校验（IsSafeCSSValue 白名单，防 CSS 注入）；非法就地重渲并给提示。
@@ -2263,13 +2322,13 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 		// CSS 值白名单不通过：原文（哪个字段、期望什么形状）只进日志，对外一句归口文案 +
 		// 出错字段的就近红字（`themeSettingsInvalidField` 按出错值定位字段）。
 		logger.Scene("theme").With("theme_id", themeID).Error(verr, "主题设置校验失败")
-		themeSettingsFailPage(c, data, projectText(c, projectenums.MsgThemeSettingsInvalid, "主题设置不合法"), verr, settingsJSON)
+		themeSettingsFailPage(c, data, projectMsgOf(projectenums.MsgThemeSettingsInvalid, "主题设置不合法"), verr, settingsJSON)
 		return
 	}
 	if _, err := h.projects.UpdateTheme(c.Request.Context(), &projectcontract.ThemeUpdateReq{
 		ID: themeID, Name: data.ThemeName, Settings: settingsJSON,
 	}); err != nil {
-		themeSettingsFailPage(c, data, projectErrParam(c, "theme", projectenums.ErrThemeInternal, err), nil, settingsJSON)
+		themeSettingsFailPage(c, data, projectErrMsg(c, "theme", projectenums.ErrThemeInternal, err), nil, settingsJSON)
 		return
 	}
 	// 颜色/字体快照合入 settings.theme + 页眉/页脚绑定合入 settings.structure，
@@ -2277,14 +2336,14 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 	if code := h.refreshThemePages(c, themeID, settingsJSON); code != 0 {
 		// 部分成功：设置**已经落库**，失败的只是「合入页面文档 + 标记待重建」这一步。
 		// 提示必须说清这层区别，否则用户以为白填了一遍又填一次。
-		projectJump(c, false, projectText(c, projectenums.MsgThemeSettingsRefreshFailed,
+		projectJump(c, false, projectMsgOf(projectenums.MsgThemeSettingsRefreshFailed,
 			"主题设置已保存，但整站页面刷新失败 —— 稍后在页面列表里重建即可，不必重填。"),
-			back, themeSettingsBackText(c))
+			back, themeSettingsBackMsg)
 		return
 	}
 	// 成功：整页提示（1 秒后回本页）。保存的后果是「该主题下全部页面标记待重建」，
 	// 页面与保存前逐字相同，用户需要一个明确的确认。
-	projectJump(c, true, themeSettingsSavedText(c), back, themeSettingsBackText(c))
+	projectJump(c, true, themeSettingsSavedMsg, back, themeSettingsBackMsg)
 }
 
 // themeSettingsFailPage 保存失败的**统一出口**：就地重渲本页（200 + 回填 + 错误槽 + 出错字段标红）。
@@ -2305,17 +2364,19 @@ func (h *themeAdminHandle) SaveThemeSettings(c *gin.Context) {
 // 前端回显脚本按点分键从内嵌 JSON 取 value 覆盖各输入框，留着旧 JSON 会把刚回填好的
 // 字段再改回旧值 —— 那正是「输入全丢」的现场，所以这里必须换成提交值。
 // json.Marshal 默认转义 HTML（`<` → `\u003c`），`</script>` 逃逸不成立。
-func themeSettingsFailPage(c *gin.Context, data *themeSettingsData, text string, fieldErr error, echoSettings json.RawMessage) {
-	data.Err = text
+func themeSettingsFailPage(c *gin.Context, data *themeSettingsData, msg projectMsg, fieldErr error, echoSettings json.RawMessage) {
+	// Err 槽位收**事实**：theme_settings.html 用 Prepare 注入的 tf 在渲染期取词 ——
+	// 控制器不再提前翻成文本（形状同 fragments/page_langs.html 的 Err / Done 槽）。
+	data.Err = msg
 	if len(echoSettings) > 0 {
 		data.ThemeSettingsJSON = string(echoSettings)
 	}
 	themeSettingsEchoForm(c, data)
 	if name, _, _ := themeSettingsInvalidField(data.Groups, fieldErr); name != "" {
 		themeSettingsMarkInvalid(data.Groups, name,
-			shell.TranslateFor(c)(themeSettingsFieldInvalidKey, themeSettingsFieldInvalidFallback))
+			projectMsg{Key: themeSettingsFieldInvalidKey, Fallback: themeSettingsFieldInvalidFallback})
 	}
-	c.HTML(http.StatusOK, "admin/project/theme_settings", shell.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/project/theme_settings", adminui.Prepare(c, data.templateMap()))
 }
 
 // themeSettingsEchoForm 失败回填：把本次提交的表单值覆盖到页面数据上（「输入不丢」的全部实现）。
@@ -2388,7 +2449,10 @@ func themeSettingsMarkTemplateSelected(options []structureTemplateOptionView, cu
 	}
 }
 
-// themeSettingsInvalidField 从校验错误里定位出错的字段（返回提交键名 / 字段标签 / 出错的值）。
+// themeSettingsInvalidField 从校验错误里定位出错的字段（返回提交键名 / 字段 label 的中文兜底 / 出错的值）。
+//
+// label 只作**定位说明**用（调用方不用它渲染 —— 就近红字的文案是固定词条，
+// 见 themeSettingsFieldInvalidKey），所以这里给兜底原文而不是事实。
 //
 // `builder.ValidateThemeSettings` 的错误形态是 `主题设置 主色 值非法: "not-a-css-value;evil"`：
 // 前半段是**中文标签**，但它与字段表的 Label 并不同名（「主色」对「主色」是巧合，
@@ -2409,7 +2473,7 @@ func themeSettingsInvalidField(groups []themeFieldGroupView, err error) (name, l
 			// 校验发生在 TrimSpace 之后（SaveThemeSettings 提交值一律 trim），
 			// 回填的却是用户原文（带空格也照原样显示），所以两边都比一次。
 			if f.Value == bad || strings.TrimSpace(f.Value) == bad {
-				return f.Name, f.Label, bad
+				return f.Name, f.LabelFallback, bad
 			}
 		}
 	}
@@ -2433,7 +2497,10 @@ func themeSettingsQuotedValue(msg string) (string, bool) {
 }
 
 // themeSettingsMarkInvalid 给定位到的字段打上错误态（模板据此渲染 aria-invalid 与就近红字）。
-func themeSettingsMarkInvalid(groups []themeFieldGroupView, name, text string) {
+//
+// 只接受**事实**（key + 中文兜底）：这一行红字与顶部归口提示是同一类槽位，
+// 语言由渲染期的 tr 决定，控制器不提前翻。
+func themeSettingsMarkInvalid(groups []themeFieldGroupView, name string, msg projectMsg) {
 	if name == "" {
 		return
 	}
@@ -2441,7 +2508,8 @@ func themeSettingsMarkInvalid(groups []themeFieldGroupView, name, text string) {
 		for fi := range groups[gi].Fields {
 			if groups[gi].Fields[fi].Name == name {
 				groups[gi].Fields[fi].Invalid = true
-				groups[gi].Fields[fi].Error = text
+				groups[gi].Fields[fi].ErrorKey = msg.Key
+				groups[gi].Fields[fi].ErrorFallback = msg.Fallback
 				return
 			}
 		}

@@ -1,21 +1,28 @@
 package feature
 
-// navigation_bulk_limit_text_test.go — 导航菜单页批量删除的 id 超限路径（本批受控类型收口）。
+// navigation_bulk_limit_text_test.go — 导航菜单页批量删除的 id 超限路径（JSON 通道）。
 //
-// 背景：这一处此前把 berr.Error() 直接拼进 ?err=，靠门禁豁免 + 注释「shell.BulkIDs 的错误是
-// 受控中文提示」放行。现在超限错误是**带 sentinel 的类型**（shell.ErrBulkIDsTooMany /
-// *shell.BulkIDsError，值域只有 Count/Max 两个整数），页面走 shell.BulkIDsFacingText，
-// 结论由 shell.RenderJump 渲染成整页提示 —— 豁免已从 scripts/check-no-internal-error-leak.sh
-// 删除，本文件守住那条收口。
+// 背景：批量删除已从页面 POST 迁到真实 JSON 端点（POST /api/navigation/delete，批档 = {"ids":[…]},
+// 见 internal/module/navigation/inbound/http/navigation_delete_write.go）。超限不再渲染整页提示，
+// 而是 400 + 受控 key 的**带参协议**（`shell.err.bulkIdsTooMany|上限|本次条数`），由 pkg/response
+// 的 translate 按 | 后的参数依次填 %s —— 与 block / 词条页 / 联系人页同一口径
+// （页面出口那条 shell.BulkIDsFacingText 已随页面 POST 退役，词条与两个数字仍是同一个真源：
+// pkg/bulkids）。
 //
-// 用 nil service 是刻意的：超限在读到 service 之前就被 shell.BulkIDs 拒绝，
-// 这条路径不该碰数据库（碰了就 panic，而不是悄悄跑通）。
+// 本文件守住那条收口：
+//   - 响应里是**受控 key**，不是 bulkids.IDsError 的原文（原文只进日志）；
+//   - 上限与本次条数两个数字都在 —— 只断言「超限了」会让「当前 M 项」丢了也绿，
+//     而 M（去重后的条数）正是这批发往服务端的那个数；
+//   - 不含任何内部细节指纹。
+//
+// 用 nil service 是刻意的：超限在**读到 service 之前**就被 pkg/bulkids 拒绝，
+// 这条路径本来就不该碰数据库（碰了就 panic，而不是悄悄跑通）。
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -23,63 +30,89 @@ import (
 	"github.com/gin-gonic/gin"
 
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
-	"go_wp/internal/templates"
-	"go_wp/internal/shell"
+	bulkids "go_wp/pkg/bulkids"
 )
 
-// navBulkOverLimitForm 造一份超过 shell.MaxBulkIDs 的批量表单。
-func navBulkOverLimitForm() url.Values {
-	form := url.Values{"projectId": {"00000000-0000-0000-0000-000000000000"}, "kind": {"header"}}
-	for i := 0; i < shell.MaxBulkIDs+1; i++ {
-		form.Add("ids", "00000000-0000-0000-0000-"+strconv.Itoa(1000000000000+i))
+// navBulkOverLimitIDs 造一份超过 bulkids.MaxIDs 的 id 列表（多给一条即触发上限）。
+func navBulkOverLimitIDs() []string {
+	ids := make([]string, 0, bulkids.MaxIDs+1)
+	for i := 0; i < bulkids.MaxIDs+1; i++ {
+		ids = append(ids, "00000000-0000-0000-0000-"+strconv.Itoa(1000000000000+i))
 	}
-	return form
+	return ids
 }
 
-// TestNavigationsBulkDeleteOverLimitUsesControlledText 超限时渲染失败提示页（受控文案两个数字都在），
+// navBulkOverLimitJSONBody 把上面那份 id 列表编成批档请求体。
+func navBulkOverLimitJSONBody() string {
+	ids := navBulkOverLimitIDs()
+	quoted := make([]string, 0, len(ids))
+	for _, id := range ids {
+		quoted = append(quoted, `"`+id+`"`)
+	}
+	return `{"ids":[` + strings.Join(quoted, ",") + `]}`
+}
+
+// navJSONErrMessage 取 JSON 错误响应里的 message（pkg/response.Response）。
+func navJSONErrMessage(t *testing.T, body string) string {
+	t.Helper()
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatalf("响应不是 JSON：%v（%s）", err, body)
+	}
+	return resp.Message
+}
+
+// navBulkOverLimitRawError 反证用：把同一份 id 列表交给 pkg/bulkids，取回原始错误。
+func navBulkOverLimitRawError() error {
+	_, err := bulkids.Normalize(navBulkOverLimitIDs())
+	return err
+}
+
+// TestNavigationsBulkDeleteOverLimitUsesControlledText 超限时给出受控提示（两个数字都在），
 // 且响应里没有内部错误原文的任何片段。
 func TestNavigationsBulkDeleteOverLimitUsesControlledText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	handle := navigationhttp.NewNavigationPageHandle(nil, nil)
-	engine.POST("/admin/navigations/bulk-delete", handle.NavigationsBulkDelete)
+	// nil service：超限必须在这之前被拒绝，否则下面这条请求会 panic（而不是悄悄跑通）。
+	engine.POST("/api/navigation/delete", navigationhttp.NewHandle(nil).Delete)
 
-	// 反证：原始错误是带 sentinel 的类型，值域里只有两个整数。
-	probe, _ := gin.CreateTestContext(httptest.NewRecorder())
-	probe.Request = httptest.NewRequest(http.MethodPost, "/admin/navigations/bulk-delete",
-		strings.NewReader(navBulkOverLimitForm().Encode()))
-	probe.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	_, rawErr := shell.BulkIDs(probe)
-	if rawErr == nil || !errors.Is(rawErr, shell.ErrBulkIDsTooMany) {
+	// 反证：原始错误是带 sentinel 的类型，值域只有两个整数（上限 / 本次条数），
+	// 且它确实知道本次条数 —— 少了这一步，「响应没泄漏」可能只是因为原文里本来就没有细节。
+	rawErr := navBulkOverLimitRawError()
+	if rawErr == nil || !errors.Is(rawErr, bulkids.ErrTooMany) {
 		t.Fatalf("反证失败：超限应返回命中 sentinel 的错误，实际 %v", rawErr)
 	}
+	over := strconv.Itoa(bulkids.MaxIDs + 1)
+	if !strings.Contains(rawErr.Error(), over) {
+		t.Fatalf("反证失败：原文应带本次条数 %s，实际 %v", over, rawErr)
+	}
 
-	form := navBulkOverLimitForm()
-	req := httptest.NewRequest(http.MethodPost, "/admin/navigations/bulk-delete", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "/api/navigation/delete",
+		strings.NewReader(navBulkOverLimitJSONBody()))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("超限应渲染失败提示页（不再是 303 + ?err=），实际 %d，body=%s", rec.Code, rec.Body.String())
+
+	// 整批拒绝（400）而不是部分执行：超限是形状问题，删除没有撤销。
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("超限应整批拒绝（400，不部分执行），实际 %d，body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="err"`) {
-		t.Fatalf("提示页缺少 err 态：%s", body)
+	message := navJSONErrMessage(t, body)
+	if !strings.HasPrefix(message, bulkids.MsgTooMany+"|") {
+		t.Fatalf("超限应回受控 key（%s）的带参协议而不是原文，实际 %q", bulkids.MsgTooMany, message)
 	}
-	if !strings.Contains(body, "</html>") {
-		t.Fatal("提示页未渲染到布局尾部（模板在某一行中断）")
+	if !strings.Contains(message, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(message, over) {
+		t.Fatalf("受控提示应带上限 %d 与本次条数 %s，实际 %q", bulkids.MaxIDs, over, message)
 	}
-	if !strings.Contains(body, "一次最多操作") {
-		t.Fatalf("应展示受控提示：%s", body)
-	}
-	over := strconv.Itoa(shell.MaxBulkIDs + 1)
-	if !strings.Contains(body, strconv.Itoa(shell.MaxBulkIDs)) || !strings.Contains(body, over) {
-		t.Fatalf("受控提示应带上限 %d 与本次条数 %s：%s", shell.MaxBulkIDs, over, body)
-	}
-	for _, tok := range []string{"SQLSTATE", "42P02", "constraint", "uuid", "invalid input syntax"} {
+	for _, tok := range []string{
+		"SQLSTATE", "42P02", "constraint", "uuid", "invalid input syntax", "bulkids:",
+	} {
 		if strings.Contains(body, tok) {
-			t.Errorf("提示页泄漏内部细节 %q：%s", tok, body)
+			t.Errorf("响应泄漏内部细节 %q：%s", tok, body)
 		}
 	}
 }

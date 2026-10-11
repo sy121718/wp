@@ -26,7 +26,7 @@ import (
 	"go_wp/internal/templates"
 )
 
-// articleLayoutData 补齐 layout 需要的键（与线上 shell.Prepare / withI18n 注入的一致）。
+// articleLayoutData 补齐 layout 需要的键（与线上 adminui.Prepare / withI18n 注入的一致）。
 func articleLayoutData(base gin.H) gin.H {
 	lang := "zh-CN"
 	base["csrf_token"] = "test-token"
@@ -35,7 +35,7 @@ func articleLayoutData(base gin.H) gin.H {
 	base["langs"] = templates.LanguageOptions(lang)
 	base["lang_redirect"] = "/admin/articles"
 	// 新建入口进抽屉后按权限显隐，抽屉 <template> 只在有权限时渲染 —— 测试数据给全集
-	//（运行时由 shell.Prepare 注入该用户拥有的权限码）。
+	//（运行时由 adminui.Prepare 注入该用户拥有的权限码）。
 	base["Buttons"] = map[string]any{"content.create": true, "content.update": true, "content.delete": true}
 	return base
 }
@@ -63,7 +63,7 @@ func TestArticlesListTemplateRenders(t *testing.T) {
 		{ID: "a2", Slug: "second-post", Revision: 1, UpdatedAt: "2026-09-12 09:00",
 			Data: map[string]any{"title": "第二篇"}},
 	}
-	data := articleListPageData(list, map[string]string{"a1": "/blog/hello-world"}, "")
+	data := articleListPageData(list, map[string]string{"a1": "/blog/hello-world"}, articleMsg{})
 	body := renderAdminTemplate(t, "admin/content/articles.html", articleLayoutData(data))
 
 	for _, want := range []string{
@@ -165,7 +165,7 @@ func TestArticleEditTemplateRendersSEOFields(t *testing.T) {
 			"seoTitle": "SEO 标题", "seoDescription": "SEO 描述", "focusKeyword": "关键词",
 			"featuredImage": "/storage/image/cover.webp",
 		}}
-	data := articleEditPageData(context.Background(), &articlePageHandle{}, item, "a1", "", "zh-CN")
+	data := articleEditPageData(context.Background(), &articlePageHandle{}, item, "a1", articleMsg{}, "zh-CN")
 	body := renderAdminTemplate(t, "admin/content/article_edit.html", articleLayoutData(data))
 
 	for _, want := range []string{
@@ -260,19 +260,19 @@ func TestArticleEditPublishStates(t *testing.T) {
 		{
 			name: "无模板",
 			view: gin.H{"PublishConfigured": true, "Published": false, "HasTemplates": false,
-				// NoTemplateHint 在生产路径上是 handler **取词后的成品文案**
-				//（article_publish.go：articlePublishHintText(tr, articleNoTemplateHint)）。
-				// 这里用同一助手 + 无参 tr 复现那条路径：直接把 key 交给模板，模板只会原样
-				// 渲染出 key，于是「页面里有一句人话」这条断言永远找不到目标。
-				"NoTemplateHint": articlePublishHintText(articlePublishTr(nil), articleNoTemplateHint)},
+				// NoTemplateHint 在生产路径上是**事实**（key + 中文兜底，见 articlePublishHintMsg），
+				// 取词在模板里发生。这里给事实而不是成品句子：直接塞一句话会把「模板有没有
+				// 真的走取词」这条路径整个绕过去（改动前后都绿）。
+				"NoTemplateHint": articlePublishHintMsg(articleNoTemplateHint)},
 			want: []string{"还没有「文章详情模板」"},
 			// 没有模板时**不能**渲染发布表单，页头也不能留关联按钮：
 			// 那会是一次必然失败的点击（卡内给的是「为什么发不了」的说明）。
 			notWant: []string{"/admin/articles/publish", `form="article-publish-form"`},
 		},
 		{
-			name:    "能力未装配",
-			view:    gin.H{"PublishConfigured": false, "PublishHint": "发布能力未装配（装配缺陷），本页只显示文章内容。"},
+			name: "能力未装配",
+			// 与生产路径同形：articlePublishUnavailable(articlePublishHintMsg(articlePublishDepsMissingText))。
+			view:    gin.H{"PublishConfigured": false, "PublishHint": articlePublishHintMsg(articlePublishDepsMissingText)},
 			want:    []string{"发布能力未装配"},
 			notWant: []string{"/admin/articles/publish", "/admin/articles/rebuild", `form="article-publish-form"`},
 		},
@@ -281,7 +281,7 @@ func TestArticleEditPublishStates(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := &articlePageHandle{}
-			data := articleEditPageData(context.Background(), h, item, "a1", "", "zh-CN")
+			data := articleEditPageData(context.Background(), h, item, "a1", articleMsg{}, "zh-CN")
 			for k, v := range tc.view {
 				data[k] = v
 			}

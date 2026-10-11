@@ -7,20 +7,17 @@ package commenthttp
 // 是不是手滑」变成跨页跳转；而状态筛选（`?status=`）已经把「只看待审」这件事
 // 变成一次点击。
 //
-// 页面形态照本仓既有后台页：GET 渲染整页、POST 走表单 302 回列表（?err= / ?done= 回带），
+// 页面 GET 渲染整页，审核写操作由浏览器直调 /api/comment/review；
 // 数据由 templateMap 组装（模板只渲染、不查询）。错误一律经 comment_err.go 的三件套，
 // 后台页 handler **不直出内部错误**（门禁 scripts/check-no-internal-error-leak.sh）。
 //
 // 工程是**必选上下文**：评论按工程隔离（RLS 作用域也要求它），所以页面顶部有工程下拉，
 // 且「一个工程都没有」是一种明确的空态（引导去建工程），而不是一个空白列表。
 
-// 与 comment_page_handle.go 分开：那个文件是「页面怎么组装」，本文件是「一行、一个选项长什么样」。
-// 行视图在这里定型的好处是「列表列」与「筛选栏」不会各造一份形状 —— 同一个状态在
-// 两处显示成不同文案，是这类页面最常见的静默不一致。
+// 页面装配与行视图同处一份实现，列表与筛选共享状态文案。
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -28,13 +25,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/comment/contract"
 	"go_wp/internal/module/comment/dto"
 	"go_wp/internal/module/comment/enums"
 	"go_wp/internal/module/project/dto"
-	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/logger"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/response"
 )
 
 // commentProjectLister 后台页需要的工程读取能力（**收窄到一条方法**）。
@@ -81,15 +79,9 @@ type commentsPageData struct {
 	Page  int
 	// NoProject 一个站点工程都没有：评论按工程隔离，这一页无从下手（明确的空态）。
 	NoProject bool
-	// ListQuery 列表上下文（工程 / 筛选 / 页码）的查询串，拼进写动作表单的 action。
-	//
-	// 服务端自己拼（shell.WithParams 同款口径）：页面不需要把上下文塞进隐藏域，
-	// 回跳时由 shell.BackPath 按白名单读回来。
-	ListQuery string
 	// LoadErr 这一次没读出来的原因（空串 = 正常）。
 	//
-	// 写动作的结论不在这里：它由提示页在响应体里渲染（shell.RenderJump），
-	// 不再经 ?err= / ?done= 回带 —— 查询参数不是可信边界，那套读侧白名单随之消失。
+	// 审核结论由 JSON API 返回成品文案，此处仅承载读取失败提示。
 	LoadErr string
 }
 
@@ -110,25 +102,23 @@ func (d *commentsPageData) templateMap(c *gin.Context) gin.H {
 		"Total":           d.Total,
 		"Page":            d.Page,
 		"NoProject":       d.NoProject,
-		"ListQuery":       d.ListQuery,
 		"LoadErr":         d.LoadErr,
 	}
-	// 分页条的两个键：单页 / 空数据时为空 map，模板的 {{if}} 自然跳过。
-	for k, v := range paginationKeys(c, d.Total, d.Page, d.FilterValues) {
-		keys[k] = v
-	}
+	// 分页**事实**（pagination.Page，值语义）：零值＝没有分页，模板据 HasPagination()
+	// 决定渲不渲染分页条；文案与链接由 admin/partials/pagination.html 渲染。
+	keys["Pagination"] = paginationFacts(d.Total, d.Page, d.FilterValues)
 	return keys
 }
 
 // render 审核页的唯一渲染出口（正常与降级两条路都从这里出）。
 func (h *commentPageHandle) render(c *gin.Context, d *commentsPageData) {
-	c.HTML(http.StatusOK, "admin/comment/comments.html", shell.Prepare(c, d.templateMap(c)))
+	c.HTML(http.StatusOK, "admin/comment/comments.html", adminui.Prepare(c, d.templateMap(c)))
 }
 
 // CommentsPage 审核队列页（GET /admin/comments）。
 func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
+	tr := i18n.TranslateFunc(response.RequestLanguage(c))
 
 	title := tr(commentenums.PageTitle.Key, commentenums.PageTitle.Fallback)
 	data := &commentsPageData{
@@ -150,7 +140,6 @@ func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 	}
 	data.Projects = projects
 	data.SelectedProject = pickCommentProject(c.Query("project"), projects)
-	data.ListQuery = commentListQuery(data.SelectedProject, data.FilterStatus, data.FilterEntityType, data.FilterKeyword, data.Page)
 	if data.SelectedProject == "" {
 		data.NoProject = true
 		data.Rows = []commentRow{}
@@ -194,76 +183,6 @@ func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 	data.Total = res.Total
 	data.Page = res.Page
 	h.render(c, data)
-}
-
-// Review 批量通过 / 驳回（POST /admin/comments/review）。
-//
-// 权限不在本函数里判：页面写动作经 builtin.CasbinMiddlewareForPath("/api/comment/review")
-// 复用接口的权限点（真源在 comment_router.go 的接口注册处）。
-func (h *commentPageHandle) Review(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	status := strings.TrimSpace(c.PostForm("status"))
-	// 回跳上下文**随表单 action 的 query** 一起提交，服务端按白名单读回来 ——
-	// 不再用 filterStatus / filterEntityType / filterKeyword 三个隐藏域，
-	// 也不再由 Go 拼 ?err= / ?done= 的回跳 URL（结论走响应体，见 shell.RenderJump）。
-	back := shell.BackPath(c, commentsPath, "project", "status", "entityType", "keyword", "page")
-	backText := shell.TranslateFor(c)(commentenums.PageTitle.Key, commentenums.PageTitle.Fallback)
-
-	ids, err := commentIDsFromForm(c)
-	if err != nil {
-		// 超限：整批拒绝并把可展示的原因渲染成提示页（文案来自 shell 的白名单出口）。
-		commentReviewFail(c, shell.BulkIDsFacingText(c, err), back, backText)
-		return
-	}
-	if len(ids) == 0 {
-		commentReviewFail(c,
-			shell.TranslateFor(c)(commentenums.LabelKeyErrNothingSelected, commentenums.LabelErrNothingSelected),
-			back, backText)
-		return
-	}
-
-	res, rerr := h.svc.Review(c.Request.Context(), &commentdto.ReviewReq{
-		ProjectID:  projectID,
-		IDs:        ids,
-		Status:     status,
-		ReviewerID: shell.CurrentUserID(c),
-	})
-	if rerr != nil {
-		commentReviewFail(c, commentErrPageText(c, rerr), back, backText)
-		return
-	}
-	shell.RenderJump(c, shell.Jump{
-		OK:       true,
-		Msg:      commentReviewNotice(c, res),
-		Back:     back,
-		BackText: backText,
-		Seconds:  1,
-	})
-}
-
-// commentReviewFail 审核失败的出口：整页提示（不自动跳转，用户要看清原因）。
-//
-// 文案必须**已过本模块的白名单**（commentErrPageText / shell 的受控出口）——
-// 换个页面呈现不等于可以把 err.Error() 铺在页面上。
-func commentReviewFail(c *gin.Context, msg, back, backText string) {
-	shell.RenderJump(c, shell.Jump{Msg: msg, Back: back, BackText: backText})
-}
-
-// commentReviewNotice 审核完成回执（带条数的成品文案）。
-//
-// Sprintf 的模板来自词条（缺词条时用中文兜底）：**模板与条数都不可信** ——
-// 词条若被改坏（例如混进 %!d 这类协议外占位符），Sprintf 会输出一段垃圾，
-// 所以模板必须先过 i18n 的占位符检查（同 shell.BulkIDsFacingText 的判据）。
-func commentReviewNotice(c *gin.Context, res *commentdto.ReviewResp) string {
-	if res == nil {
-		return ""
-	}
-	pair := commentenums.DoneTemplate(res.Status == commentenums.StatusApproved)
-	tpl := shell.TranslateFor(c)(pair.Key, pair.Fallback)
-	if !i18n.HasStringPlaceholdersOnly(tpl) {
-		tpl = pair.Fallback
-	}
-	return fmt.Sprintf(tpl, res.Affected)
 }
 
 // listProjects 列出站点工程（失败时返回错误，由调用方降级渲染）。
@@ -372,7 +291,7 @@ func pickCommentProject(requested string, projects []projectdto.ProjectResp) str
 
 // commentStatusOptions 状态筛选下拉（Selected 由服务端算好，模板只渲染）。
 func commentStatusOptions(c *gin.Context, selected string) []gin.H {
-	tr := shell.TranslateFor(c)
+	tr := i18n.TranslateFunc(response.RequestLanguage(c))
 	out := make([]gin.H, 0, len(commentenums.Statuses())+1)
 	out = append(out, gin.H{
 		"Value":    "",
@@ -392,7 +311,7 @@ func commentStatusOptions(c *gin.Context, selected string) []gin.H {
 
 // commentEntityOptions 实体类型筛选下拉（取值来自 service 的注册表 —— 拥有者声明的那份）。
 func commentEntityOptions(c *gin.Context, svc commentcontract.CommentService, selected string) []gin.H {
-	tr := shell.TranslateFor(c)
+	tr := i18n.TranslateFunc(response.RequestLanguage(c))
 	out := []gin.H{{
 		"Value":    "",
 		"Label":    tr(commentenums.LabelKeyFilterAll, commentenums.LabelFilterAll),
@@ -417,7 +336,7 @@ func commentEntityLabelMap(c *gin.Context, svc commentcontract.CommentService) m
 	if svc == nil {
 		return out
 	}
-	for _, et := range svc.EntityTypeLabels(shell.TranslateFor(c)) {
+	for _, et := range svc.EntityTypeLabels(i18n.TranslateFunc(response.RequestLanguage(c))) {
 		out[et.Type] = et.Label
 	}
 	return out
@@ -432,8 +351,11 @@ type commentFilterValues struct {
 	Keyword    string
 }
 
-// paginationKeys 分页条的两个模板键（单页 / 空数据时返回空 map，模板自然不渲染）。
-func paginationKeys(c *gin.Context, total int64, page int, f commentFilterValues) map[string]any {
+// paginationFacts 分页事实（值语义：零值＝没有分页，模板据此不渲染分页条）。
+//
+// 基址带上审核页的全部筛选条件（翻页不丢条件），页码参数与 limit 沿用默认
+// （PageParam="page"、KeepLimit=true）—— 与迁移前的链接字节一致。
+func paginationFacts(total int64, page int, f commentFilterValues) pagination.Page {
 	q := url.Values{}
 	q.Set("project", f.Project)
 	if f.Status != "" {
@@ -445,12 +367,9 @@ func paginationKeys(c *gin.Context, total int64, page int, f commentFilterValues
 	if f.Keyword != "" {
 		q.Set("keyword", f.Keyword)
 	}
-	base := commentsPath + "?" + q.Encode()
-	pg := shell.BuildPagination(total, page, commentsPageSize, base, shell.TranslateFor(c))
-	if pg == nil {
-		return map[string]any{}
-	}
-	return pg.TemplateKeys()
+	pg := pagination.Facts(total, page, commentsPageSize)
+	pg.Base = commentsPath + "?" + q.Encode()
+	return pg
 }
 
 // queryInt 读一个非负整数查询参数（解析失败返回 0，由调用方决定默认值）。
@@ -463,52 +382,4 @@ func queryInt(raw string) int {
 		return 0
 	}
 	return n
-}
-
-// commentIDsFromForm 读批量审核的 id 列表（经 shell.BulkIDs 去空白 / 去重 / 限量）。
-//
-// 返回值第二个是「超限」这类可展示的拒绝原因（命中 shell 的白名单），
-// 由调用方回带进 ?err= —— 整批拒绝而不是截断执行（见 shell.BulkIDs 的说明）。
-func commentIDsFromForm(c *gin.Context) ([]int64, error) {
-	raw, err := shell.BulkIDs(c)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]int64, 0, len(raw))
-	for _, s := range raw {
-		n, perr := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-		if perr != nil || n <= 0 {
-			// 非数字 id 不是「可展示的业务错误」（没有一条给运营看的话说得通），
-			// 而是有人在手工构造表单 —— 跳过它，但**留痕**（静默跳过会让
-			// 「选了 5 条只处理了 3 条」变得无法解释）。
-			logger.Scene(commentErrScene).
-				With("user_id", shell.CurrentUserID(c)).
-				With("path", c.Request.URL.Path).
-				Warn("批量审核的 id 不是正整数，已跳过该条")
-			continue
-		}
-		out = append(out, n)
-	}
-	return out, nil
-}
-
-// commentListQuery 列表上下文的查询串（拼进写动作表单的 action）。
-//
-// 与 order 的 couponListQuery 同形：空值丢弃、编码走 url.Values（键有序、产物稳定）。
-// 只带**筛选上下文**，不带任何结论文案 —— 结论走响应体（见 shell.RenderJump）。
-func commentListQuery(projectID, status, entityType, keyword string, page int) string {
-	q := url.Values{}
-	set := func(key, value string) {
-		if strings.TrimSpace(value) != "" {
-			q.Set(key, value)
-		}
-	}
-	set("project", projectID)
-	set("status", status)
-	set("entityType", entityType)
-	set("keyword", keyword)
-	if page > 0 {
-		set("page", strconv.Itoa(page))
-	}
-	return q.Encode()
 }

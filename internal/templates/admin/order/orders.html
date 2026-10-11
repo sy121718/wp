@@ -4,8 +4,10 @@
      · 数据是 dto 本身（.Orders / .Detail.Head / .Detail.Items / .Detail.Logs）；
      · 文案用 tr（状态标签经 .OrderStatusLabel 收敛 enums 的 key+兜底）；
      · 显示判断写在用它的地方：徽章颜色、哪些操作表单渲染、空态说哪句话；
-     · 写动作的上下文走表单 action 的 query（{{.ListQuery}} + status + orderId），
-       结论由 shell.RenderJump 渲染提示页 —— 不再经 ?ok= / ?err= / ?done=。
+     · 写动作由前端直调 JSON（static/js/ui/json_write.js）：单条走 /api/order/{status,cancel,
+       refund,note} 的单档，两个批量动作走 /api/order/{status,cancel} 的**批档**（体里有 ids
+       即批档）；页面不再有自己的写路径，结论由响应体承担，逐条原因写在结果区 ——
+       不再经 ?ok= / ?err= / ?done=，也不再走整页提示页。
 
    状态机的显示投影（模板按它们决定渲染哪些按钮，**服务端仍是唯一裁决者**）：
      · 通用流转：pending → paid → shipped → completed（取消与退款各有独立用例，
@@ -92,13 +94,18 @@
 
         {* 空数据也渲染 <table>/<thead>：用户得先看见「这个列表有哪些列」才谈得上认知。
            空态落在 tbody 的整行里（colspan = 8 列）。 *}
-        <form method="post" action="/admin/orders/bulk-status?{{listQuery}}&status={{.FilterStatus}}">
-            {{yield csrfField()}}
+        {* 两个批量动作都迁到了「前端直调 JSON」（static/js/ui/json_write.js）：目标状态 / 备注
+           是流转与取消各自要带的额外字段，所以端点声明落在**按钮**上（attrFrom：按钮优先、
+           表单兜底），表单上刻意不声明 data-write-api —— 声明了它会被继承成一个 fetch，
+           两个按钮就没法各投各的端点。
+           `toStatus` 是**字符串**（paid / shipped / completed），因此不进 data-write-number：
+           它是服务端严格认的枚举值，声明成数值字段只会是个误导后续测试的伪契约。
+           没有 action 是刻意的：禁用 JS 时这两个按钮是 hidden 的（下方 noscript 说明原因），
+           不会退化成「GET 当前页」这种看起来像成功的空动作。
+           也不需要 csrf 隐藏域：写请求走 X-CSRF-Token 头（见 <meta name="csrf-token">）。 *}
+        <form method="post">
             {* 批量条只在有数据时渲染：空表没有可勾选的行。 *}
             {{if len(orders) > 0}}
-            {* 批量拒绝的 action 必须先算成变量：yield 的参数是**字面量**，
-                  写在字符串里的 {{...}} 不会展开（会被原样输出到 href 里，链接直接坏掉）。 *}
-            {{bulkRejectAction := "/admin/orders/bulk-cancel?" + listQuery + "&status=" + .FilterStatus}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
                 <select class="form-select" name="toStatus" aria-label="{{tr("admin.orders.bulk.target", "目标状态")}}">
                     {* 通用流转的三个目标：取消与退款各有独立用例（走通用入口必被拒绝）。 *}
@@ -107,10 +114,35 @@
                     <option value="completed">{{statusLabel("completed")}}</option>
                 </select>
                 <input type="text" class="form-input" name="remark" autocomplete="off" placeholder="{{tr("admin.orders.ph.bulk_remark", "备注（可选；批量取消时作为取消原因，必填）")}}">
-                {{yield bulkBtn(label=tr("admin.orders.bulk.status", "批量流转"), cls="btn btn-sm btn-primary")}}
-                {{yield bulkBtn(label=tr("admin.orders.bulk.cancel", "批量取消"), confirm=tr("admin.orders.bulkCancelConfirm", "取消选中的订单？尚未发货的那部分库存会归还，已发货 / 已完成的会被跳过。"), danger=true, formaction=bulkRejectAction)}}
+                <button type="submit" class="btn btn-sm btn-primary" data-requires-js hidden
+                        data-write-api="/api/order/status" data-write-mode="bulk" data-write-outcome="update"
+                        data-write-extra="toStatus,remark"
+                        data-msg-none-selected="{{tr("admin.orders.bulk.noneSelected", "没有勾选任何订单，列表未改动。")}}"
+                        data-msg-all-updated="{{tr("admin.orders.bulkStatus.allUpdated", "已流转 {count} 个订单。")}}"
+                        data-msg-all-skipped="{{tr("admin.orders.bulkStatus.allSkipped", "{count} 个订单都未能流转（状态不允许这条边或已不存在）。")}}"
+                        data-msg-partial="{{tr("admin.orders.bulkStatus.partial", "已流转 {updated} 个订单，{skipped} 个未能流转（状态不允许这条边或已不存在）。")}}"
+                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-refresh="{{tr("admin.orders.bulk.refresh", "刷新列表")}}"
+                        data-confirm="{{tr("admin.orders.bulkStatusConfirm", "把选中的订单流转成上面选的状态？状态机不允许这条边的会被跳过。")}}">{{tr("admin.orders.bulk.status", "批量流转")}}</button>
+                <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                        data-write-api="/api/order/cancel" data-write-mode="bulk" data-write-outcome="update"
+                        data-write-extra="remark"
+                        data-msg-none-selected="{{tr("admin.orders.bulk.noneSelected", "没有勾选任何订单，列表未改动。")}}"
+                        data-msg-all-updated="{{tr("admin.orders.bulkCancel.allUpdated", "已取消 {count} 个订单。")}}"
+                        data-msg-all-skipped="{{tr("admin.orders.bulkCancel.allSkipped", "{count} 个订单都未能取消（已发货 / 已完成或已不存在）。")}}"
+                        data-msg-partial="{{tr("admin.orders.bulkCancel.partial", "已取消 {updated} 个订单，{skipped} 个未能取消（已发货 / 已完成或已不存在）。")}}"
+                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-refresh="{{tr("admin.orders.bulk.refresh", "刷新列表")}}"
+                        data-confirm="{{tr("admin.orders.bulkCancelConfirm", "取消选中的订单？尚未发货的那部分库存会归还，已发货 / 已完成的会被跳过。")}}"
+                        data-confirm-danger>{{tr("admin.orders.bulk.cancel", "批量取消")}}</button>
             {{yield bulkBarClose()}}
             {{end}}
+            {* 批量结果区（两个动作共用）：全成功 / 部分成功 / 全跳过的摘要 + **逐条原因**写在这儿。
+               刻意不自动刷新 —— 自动刷新会让「谁失败、为什么」一闪而过看不完；刷新入口由基座追加。 *}
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <noscript><p class="form-hint">{{tr("admin.orders.write.noJs", "本页的流转、取消、退款、备注与两个批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
             <div class="table-wrap table-scroll" tabindex="0">
             <table class="data-table data-table-wide orders-page-table">
             <thead>
@@ -266,10 +298,20 @@
                 <span class="help-pop" role="tooltip">{{tr("admin.orders.hint.cancel_refund.lead", "取消与退款各是独立用例：取消会归还")}}<strong>{{tr("admin.orders.hint.cancel_refund.strong", "尚未发货")}}</strong>{{tr("admin.orders.hint.cancel_refund.tail", "那部分库存，退款只动钱与状态（不归还库存）。")}}</span>
             </span>
         </h3>
-        {* 表单的上下文全部在 action 的 query 上（列表筛选 + status + orderId）。 *}
+        {* 四个详情写动作全部迁到「前端直调 JSON」（static/js/ui/json_write.js）：端点即
+           /api/order/{status,cancel,refund,note} 的单档，走 `create` 模式发**全部具名字段**。
+           `orderId` 因此必须是表单里的 hidden 具名字段（以前它只活在 action 的 query 上），
+           且必须进 data-write-number —— 绑定的字段类型是整数，字符串会被拒。
+           成功后基座 location.reload()：详情是服务端渲染的，刷新才能让状态徽章与流转链同源；
+           当前 URL 的 query 不动（工程 / 筛选 / orderId 都还在，位置不丢）。
+           失败把后端那句话写进下面的结果区，输入原样留着。
+           不用 single 模式：那只发 {id}，改状态要带的 toStatus / reason / remark 会全丢。 *}
+        <div data-write-host>
+        <p class="form-hint" data-write-status role="status" hidden></p>
         {{if head.Status == "pending" || head.Status == "paid" || head.Status == "shipped"}}
-        <form method="post" action="/admin/orders/status?{{listQuery}}&status={{.FilterStatus}}&orderId={{head.ID}}" class="form-inline">
-            {{yield csrfField()}}
+        <form class="form-inline" data-write-api="/api/order/status" data-write-mode="create"
+              data-write-number="orderId" data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+            <input type="hidden" name="orderId" value="{{head.ID}}">
             <select class="form-select" name="toStatus" required aria-label="{{tr("admin.orders.action.transition", "流转状态")}}">
                 {{if head.Status == "pending"}}<option value="paid">{{statusLabel("paid")}}</option>{{end}}
                 {{if head.Status == "paid"}}<option value="shipped">{{statusLabel("shipped")}}</option>{{end}}
@@ -284,8 +326,9 @@
 
         {* 可取消 = 未发货（已发货的单要退就走退款，退货入库另算）。 *}
         {{if head.Status == "pending" || head.Status == "paid"}}
-        <form method="post" action="/admin/orders/cancel?{{listQuery}}&status={{.FilterStatus}}&orderId={{head.ID}}" class="form-inline">
-            {{yield csrfField()}}
+        <form class="form-inline" data-write-api="/api/order/cancel" data-write-mode="create"
+              data-write-number="orderId" data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+            <input type="hidden" name="orderId" value="{{head.ID}}">
             <input type="text" class="form-input input-wide" name="reason" placeholder="{{tr("admin.orders.ph.cancel_reason", "取消原因（必填）")}}" required autocomplete="off">
             <button type="submit" class="btn btn-sm">{{tr("admin.orders.action.cancel", "取消订单")}}</button>
         </form>
@@ -293,13 +336,15 @@
 
         {* 可退款 = paid / shipped / completed（钱与货分开：退款不归还库存）。 *}
         {{if head.Status == "paid" || head.Status == "shipped" || head.Status == "completed"}}
-        <form method="post" action="/admin/orders/refund?{{listQuery}}&status={{.FilterStatus}}&orderId={{head.ID}}" class="form-inline">
-            {{yield csrfField()}}
+        <form class="form-inline" data-write-api="/api/order/refund" data-write-mode="create"
+              data-write-number="orderId" data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+            <input type="hidden" name="orderId" value="{{head.ID}}">
             <input type="text" class="form-input input-wide" name="reason" placeholder="{{tr("admin.orders.ph.refund_reason", "退款原因（必填）")}}" required autocomplete="off">
             <input type="text" class="form-input input-wide" name="transactionId" placeholder="{{tr("admin.orders.ph.txn_optional", "通道流水号（可选，留空则沿用原流水号）")}}" autocomplete="off">
             <button type="submit" class="btn btn-sm">{{tr("admin.orders.action.refund", "退款")}}</button>
         </form>
         {{end}}
+        </div>
 
         <h3>{{tr("admin.orders.note.heading", "后台备注")}}
             <span class="help">
@@ -307,13 +352,17 @@
                 <span class="help-pop" role="tooltip">{{tr("admin.orders.note.hint.lead", "备注记的是")}}<strong>{{tr("admin.orders.note.hint.strong_judgement", "人对这张单的判断")}}</strong>{{tr("admin.orders.note.hint.mid", "（客服记客户说了什么、仓库记为什么改地址），它")}}<strong>{{tr("admin.orders.note.hint.strong_state", "不改变订单状态")}}</strong>{{tr("admin.orders.note.hint.tail", "，也不会写进上面的状态流转链 —— 那一列回答的是「订单处在哪一步」，混进备注就再也看不出什么时候发的货。客户自己填的备注在详情上方另有一栏，两者互不覆盖。")}}</span>
             </span>
         </h3>
-        <form method="post" action="/admin/orders/note?{{listQuery}}&status={{.FilterStatus}}&orderId={{head.ID}}" class="form-stack">
-            {{yield csrfField()}}
+        <div data-write-host>
+        <p class="form-hint" data-write-status role="status" hidden></p>
+        <form class="form-stack" data-write-api="/api/order/note" data-write-mode="create"
+              data-write-number="orderId" data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+            <input type="hidden" name="orderId" value="{{head.ID}}">
             <textarea class="form-input" name="adminNote" rows="3" maxlength="500" placeholder="{{tr("admin.orders.ph.admin_note", "例如：客户电话说改地址，已同步仓库")}}">{{head.AdminNote}}</textarea>
             <div class="action-row">
                 <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.orders.action.save_note", "保存备注")}}</button>
             </div>
         </form>
+        </div>
     </section>
     {{end}}
 </div>

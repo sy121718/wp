@@ -60,6 +60,13 @@ func SetupMailRoutes(rg *permission.RouteGroup, db *gorm.DB, pages *gin.RouterGr
 	g.GET("/contact/list", permission.MailContactList, handle.ContactList)
 	g.POST("/contact/import", permission.MailContactImport, handle.ContactImport)
 	g.POST("/contact/status", permission.MailContactStatus, handle.ContactStatus)
+	// 联系人写操作（增改 / 删 / 批删 / 批标签）：**真实 JSON 端点**，前端 fetch 直调。
+	// 权限点沿用迁移 525 的三条对象（路径与方法逐字不变 → 超管与角色策略一行都不用改），
+	// 区别只是它们从「页面借用的幽灵路径」变成了真实路由：permission.RoutesOf 现在查得到，
+	// AI 工具的权限判定不再 fail closed。实现与形状判据见 mail_contact_write.go。
+	g.POST("/contact/save", permission.MailContactSave, handle.ContactSave)
+	g.POST("/contact/delete", permission.MailContactDelete, handle.ContactDelete)
+	g.POST("/contact/tag", permission.MailContactTag, handle.ContactTag)
 	// 群发活动：启动只受理（统计人数 + 改状态 + 入队展开任务），收件人展开在后台分批完成。
 	g.GET("/campaign/list", permission.MailCampaignList, handle.CampaignList)
 	g.GET("/campaign/get", permission.MailCampaignGet, handle.CampaignGet)

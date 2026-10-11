@@ -92,9 +92,9 @@
 
     {* Err 只剩一处写侧：保存失败原地重渲时带回的保存错误（articleUpdateFailure）。
        成功回执不再进模板（走 shell.RenderJump 的整页提示，见 content_err.go）。 *}
-    {{if .Err != ""}}
-    <p class="badge badge-warning" role="alert" id="article-edit-error">{{ .["t"]("admin.article.edit.lastError", "上一次操作未完成：") }}{{.Err}}</p>
-    {{end}}
+    {{if isset(.Err)}}{{if .Err.Key != ""}}
+    <p class="badge badge-warning" role="alert" id="article-edit-error">{{ .["t"]("admin.article.edit.lastError", "上一次操作未完成：") }}{{ .["t"](.Err.Key, .Err.Fallback) }}</p>
+    {{end}}{{end}}
     {{if .EditUnavailable}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.article.edit.unavailable", "文章信息暂时不可用；以下是本次提交内容，请保留后返回列表重新打开文章。") }}</p>
     {{end}}
@@ -273,10 +273,10 @@
                     <button type="submit" class="btn btn-primary">{{ .["t"]("admin.article.edit.publishSubmit", "发布") }}</button>
                 </form>
                 {{else}}
-                <p class="badge badge-warning" role="alert">{{.NoTemplateHint}}</p>
+                <p class="badge badge-warning" role="alert">{{ .["t"](.NoTemplateHint.Key, .NoTemplateHint.Fallback) }}</p>
                 {{end}}
                 {{else if !.EditUnavailable}}
-                <p class="badge badge-warning" role="alert">{{.PublishHint}}</p>
+                <p class="badge badge-warning" role="alert">{{ .["t"](.PublishHint.Key, .PublishHint.Fallback) }}</p>
                 {{end}}
             </section>
             <section class="card card-body">
@@ -345,7 +345,7 @@
                     <p class="text-mute text-sm">{{ .["t"]("admin.article.edit.importPreviewEmpty", "还没有预览。点「预览转换结果」看看正文会变成多少个组件、有没有损失。") }}</p>
                 </div>
                 {{else if !.EditUnavailable}}
-                <p class="badge badge-warning" role="alert">{{.ImportHint}}</p>
+                <p class="badge badge-warning" role="alert">{{ .["t"](.ImportHint.Key, .ImportHint.Fallback) }}</p>
                 {{end}}
             </section>
         </aside>

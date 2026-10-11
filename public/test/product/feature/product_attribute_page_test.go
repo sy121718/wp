@@ -19,13 +19,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/adminctx"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 
 	productdto "go_wp/internal/module/product/dto"
 	projectdto "go_wp/internal/module/project/dto"
@@ -43,13 +43,13 @@ func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	// 属性组行内操作与值编辑器抽屉按权限渲染（shell.Prepare 读 PermSetKey）：
+	// 属性组行内操作与值编辑器抽屉按权限渲染（adminui.Prepare 读 PermSetKey）：
 	// 这条链路不挂鉴权中间件，注入一份权限，让「页面里存在值编辑器」这类断言保持有效。
 	engine.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{
+		c.Set(adminctx.PermSetKey, map[string]bool{
 			"product:attribute_create": true, "product:attribute_update": true, "product:attribute_delete": true,
 		})
-		c.Set(shell.ButtonsKey, map[string]bool{
+		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"product.attribute_create": true, "product.attribute_update": true, "product.attribute_delete": true,
 		})
 

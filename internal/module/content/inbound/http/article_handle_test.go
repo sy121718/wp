@@ -65,7 +65,7 @@ func TestArticleUpdateFailureEchoesSubmittedFields(t *testing.T) {
 		form    url.Values
 		message string
 	}{
-		{name: "标题缺失", form: url.Values{"id": {"a1"}, "title": {""}, "body": {"<p>新正文 &amp; 更多</p>"}, "excerpt": {""}, "featuredImage": {"/storage/new.jpg"}, "seoTitle": {""}, "seoDescription": {"新描述 <>&\"'"}, "focusKeyword": {"新词"}}, message: articleMissingTitleText},
+		{name: "标题缺失", form: url.Values{"id": {"a1"}, "title": {""}, "body": {"<p>新正文 &amp; 更多</p>"}, "excerpt": {""}, "featuredImage": {"/storage/new.jpg"}, "seoTitle": {""}, "seoDescription": {"新描述 <>&\"'"}, "focusKeyword": {"新词"}}, message: articleMissingTitleMsg.Fallback},
 		{name: "业务拒绝", err: errors.New(contentenums.ErrInvalidField), form: url.Values{"id": {"a1"}, "title": {"新标题 & < > \" '"}, "body": {"<h2>新正文 &amp; 标题</h2><p>第二段</p>"}, "excerpt": {"新摘要\n第二行"}, "featuredImage": {"https://example.test/?x=1&y=2"}, "seoTitle": {"SEO 新标题"}, "seoDescription": {"新描述 <>&\"'"}, "focusKeyword": {"新词"}}, message: articleFacingMessages[contentenums.ErrInvalidField]},
 		{name: "内部错误归口", err: errors.New("relation secret_table does not exist"), form: url.Values{"id": {"a1"}, "title": {"新标题"}, "body": {"<p>新正文</p>"}, "excerpt": {"新摘要"}, "featuredImage": {""}, "seoTitle": {""}, "seoDescription": {""}, "focusKeyword": {""}}, message: "系统内部错误"},
 	}
@@ -97,6 +97,12 @@ func TestArticleUpdateFailureEchoesSubmittedFields(t *testing.T) {
 			if strings.Contains(body, "secret_table") {
 				t.Error("内部错误原文泄漏")
 			}
+			// 取词必须发生在模板里：错误以**事实**（key + 中文兜底）交给模板，页面上只该有
+			// 兜底那句话。key 若出现在页面上，说明某个渲染点还在直接输出事实结构体
+			// （Jet 的 fmt 打印会把 Key 一起带上），这条断言就是为此设的。
+			if strings.Contains(body, "admin.article.err.") {
+				t.Error("错误 key 出现在页面上 —— 取词应发生在模板里")
+			}
 			if !strings.Contains(body, `form="article-form"`) || strings.Contains(body, "以下是本次提交内容") {
 				t.Error("元数据可信时应保留可操作的保存入口")
 			}
@@ -114,8 +120,8 @@ func TestArticleUpdateMissingIDAndMetadataFailure(t *testing.T) {
 		getErr  error
 		message string
 	}{
-		{name: "缺少文章标识", message: articleMissingIDText},
-		{name: "文章元数据读取失败", id: "a1", getErr: errors.New("relation private_table does not exist"), message: articleMissingTitleText},
+		{name: "缺少文章标识", message: articleMissingIDMsg.Fallback},
+		{name: "文章元数据读取失败", id: "a1", getErr: errors.New("relation private_table does not exist"), message: articleMissingTitleMsg.Fallback},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -133,6 +139,9 @@ func TestArticleUpdateMissingIDAndMetadataFailure(t *testing.T) {
 			}
 			if strings.Contains(body, "private_table") {
 				t.Error("元数据读取错误原文泄漏")
+			}
+			if strings.Contains(body, "admin.article.err.") {
+				t.Error("错误 key 出现在页面上 —— 取词应发生在模板里")
 			}
 			for _, forbidden := range []string{`form="article-form"`, `hx-post="/admin/articles/score"`, `action="/admin/articles/publish"`, `action="/admin/articles/import-page"`} {
 				if strings.Contains(body, forbidden) {

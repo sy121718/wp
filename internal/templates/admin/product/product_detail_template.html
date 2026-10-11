@@ -9,6 +9,9 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
+{* 整页装载失败的归口文案（只在 Go 侧失败路径上有值：500/400 + no-store）；
+   契约见 docs/rules/template-boundary.md §整页 GET 的失败出口。 *}
+{{loadError := .["LoadError"]}}
 {{canCreateTemplate := isset(.Buttons["contenttemplate.create"])}}
 <div class="stack">
     <header class="page-head">
@@ -42,7 +45,15 @@
         </div>
     </header>
 
-    {{if !.Ready}}
+    {{if loadError}}
+    {* 失败优先于「未装配」：先判「没读到」，再判装配缺陷 ——
+       两者都是这一页不能用，但原因和处置完全不同。 *}
+    <section class="card card-body">
+        <p class="badge badge-danger" role="alert">{{loadError}}</p>
+        <p class="page-sub">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
+        <p class="hint">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
+    </section>
+    {{else if !.Ready}}
     <section class="card card-body">
         <div class="empty-state">
             <p class="empty-title">{{ .["t"]("admin.product_detail_template.notReadyTitle", "详情页模板能力未装配") }}</p>

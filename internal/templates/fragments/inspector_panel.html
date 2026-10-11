@@ -1,7 +1,10 @@
 {* fragments/inspector_panel.html — 检查器面板（HTMX 服务端渲染，docs/09 §3 打样）
    数据：NodeID / NodeType / Sections（分组 → 字段）
    约定：控件带 data-wb-path（相对 props 的路径）与 data-wb-kind，客户端统一事件委托回写 AST。
-   取词：本片段不经 shell.Prepare，t 由调用点单独注入（见 inspector_handle.go 的渲染数据）。 *}
+   取词：本片段不经 shell.Prepare，t 由数据注入 —— 装配处走 adminui.PrepareFragment
+   （workbench_page.go 的 InspectorPanel，两条分支都经它）。
+   **面板正文里的分组标题 / 字段标签 / 占位符仍是 service 拼串产出的 HTML**（Sections[].HTML
+   等由 workbench/service 的 tr 取词），本文件只负责空态与少数固定提示这几种模板侧取词。 *}
 {{if .NodeID == ""}}
 <p class="wb-empty">{{ .["t"]("workbench.ui.inspector.empty", "在画布或大纲树中选择组件") }}</p>
 {{else}}

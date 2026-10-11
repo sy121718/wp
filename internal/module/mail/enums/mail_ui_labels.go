@@ -101,7 +101,7 @@ const (
 
 // —— 页面标题（layout 的 <title> 与顶栏）——
 //
-// 为什么 handler 先取词再把**成品文案**交给 shell.Prepare：Prepare 内部是 `t(title, title)`
+// 为什么 handler 先取词再把**成品文案**交给 adminui.Prepare：Prepare 内部是 `t(title, title)`
 // （兜底就是 key 本身），词条缺失时页面标题会显示 `admin.mail.heading` 这样的裸 key。
 // 先取一次词，交出去的就是可读文案，中文兜底也回到了代码里。
 // 已存在的 key 一律复用（admin.mail.heading / templates.heading / marketing.contacts.heading /

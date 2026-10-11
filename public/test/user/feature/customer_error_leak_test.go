@@ -4,9 +4,9 @@ package feature
 //
 // 两件事：
 //   · 批量动作的 id 超限（本批改向）：超限错误是 shell 的**受控类型**
-//     （shell.ErrBulkIDsTooMany / *shell.BulkIDsError），页面走 shell.BulkIDsFacingText，
+//     （bulkids.ErrTooMany / *bulkids.IDsError），页面走 shell.BulkIDsFacingText，
 //     文案由类型给出 —— 因此「当前 M 项」（去重后的条数，只有 shell 知道）也回到了页面上，
-//     而不是像旧实现那样用 shell.MaxBulkIDs 重组、把 M 丢掉；结构性断言见下；
+//     而不是像旧实现那样用 bulkids.MaxIDs 重组、把 M 丢掉；结构性断言见下；
 //   · 取数撞上真实 PG 错误（表被删）：错误原文带表名与 SQLSTATE，页面只给归口文案，
 //     并由 customerFacingError 记一条带场景 / user_id / 路径的结构化日志（原文只进日志）。
 //
@@ -32,8 +32,9 @@ import (
 	userhttp "go_wp/internal/module/user/inbound/http"
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
-	"go_wp/internal/templates"
 	"go_wp/internal/shell"
+	"go_wp/internal/templates"
+	bulkids "go_wp/pkg/bulkids"
 	"go_wp/public/test/support"
 )
 
@@ -70,8 +71,8 @@ func newCustomerLeakEnv(t *testing.T) (*gin.Engine, *userservice.Service, *gorm.
 	// 订单摘要端口传 nil：列表页不用它（详情页才用），本文件只打列表页与批量端点。
 	page := userhttp.NewCustomerPageHandle(users, nil, projects)
 	engine.GET("/admin/customers", page.CustomersPage)
-	engine.POST("/admin/customers/bulk-status", page.CustomerBulkStatusSave)
-	engine.POST("/admin/customers/bulk-unlock", page.CustomerBulkUnlock)
+	engine.POST("/api/customer/bulk-status", userhttp.NewCustomerHandle(users).BulkCustomerStatus)
+	engine.POST("/api/customer/bulk-unlock", userhttp.NewCustomerHandle(users).BulkCustomerUnlock)
 	return engine, users, db
 }
 
@@ -82,7 +83,7 @@ func TestCustomerBulkOversizedSelectionUsesControlledText(t *testing.T) {
 	if engine == nil {
 		return
 	}
-	n := shell.MaxBulkIDs + 1
+	n := bulkids.MaxIDs + 1
 	ids := make([]string, 0, n)
 	for i := 1; i <= n; i++ {
 		ids = append(ids, strconv.Itoa(i))
@@ -103,18 +104,18 @@ func TestCustomerBulkOversizedSelectionUsesControlledText(t *testing.T) {
 		path string
 		form url.Values
 	}{
-		{"/admin/customers/bulk-status", url.Values{"ids": ids, "toStatus": {"1"}}},
-		{"/admin/customers/bulk-unlock", url.Values{"ids": ids}},
+		{"/api/customer/bulk-status", url.Values{"ids": ids, "toStatus": {"1"}}},
+		{"/api/customer/bulk-unlock", url.Values{"ids": ids}},
 	} {
-		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(customerFeatureJSONForm(t, tc.form)))
+		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		engine.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
+		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("%s 应渲染提示页（200），实际 %d", tc.path, rec.Code)
 		}
 		body := rec.Body.String()
-		if !strings.Contains(body, `data-jump-state="err"`) {
+		if !strings.Contains(body, `"code":400`) {
 			t.Errorf("%s 应渲染失败提示页", tc.path)
 		}
 		if !strings.Contains(body, "一次最多操作") {
@@ -122,9 +123,9 @@ func TestCustomerBulkOversizedSelectionUsesControlledText(t *testing.T) {
 		}
 		// 结构性断言（本批改向）：文案由**受控类型**给出，两个数字（上限 / 本次条数）都要在。
 		// 旧实现能对上「一次最多操作」，却恰好丢了「当前 M 项」—— 所以少了 M 就是退化。
-		if !strings.Contains(body, strconv.Itoa(shell.MaxBulkIDs)) || !strings.Contains(body, over) {
+		if !strings.Contains(body, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(body, over) {
 			t.Errorf("%s 的提示页应带上限 %d 与本次条数 %s（由受控类型给回）",
-				tc.path, shell.MaxBulkIDs, over)
+				tc.path, bulkids.MaxIDs, over)
 		}
 		assertCustomerLeakFree(t, tc.path+" 的提示页", body)
 	}

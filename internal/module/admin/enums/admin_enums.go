@@ -15,44 +15,14 @@ const (
 	ErrInternal = "ErrInternal"
 )
 
-// AdminFacingMessages 可以原样展示给前端的管理面业务文案（**白名单**）。
+// 本包**没有**「可以原样展示的业务文案」白名单：可透出性判据只有一条，在页面出口
+// internal/adminui（pkg/response.IsBusinessError 的形态判定：`模块.类别.语义` 或 `Err*` / `Msg*`），
+// 本包的常量值恰好落在这两种形态里，所以「认得出形态 = 可以直接给用户看」。
 //
-// 存在的理由：service 的业务错误全部来自本包，而基础设施错误的原文
-// （PostgreSQL 的 23505、约束名 uk_sys_role_code、表名、文件路径）不该出网。
-// handler 侧的归口助手（internal/module/admin/inbound/http/admin_err.go）拿这张表做白名单：
-// 命中 → 原样透出（前端据此提示「哪一项不合法」）；未命中 → 记日志 + ErrInternal 归口文案。
-//
-// 白名单而不是黑名单：漏写只会让前端看到一句通用提示（一眼可见，且
-// admin_enums_test.go 会按本文件逐个常量对账），黑名单漏写则会把内部细节摆到页面上。
-//
-// 不含三类：成功文案（MsgSuccess / MsgLogoutSuccess，永远不会作为错误返回）、
-// 归口文案 ErrInternal（它是未命中时的返回值，不是业务文案）、以及任何非字符串常量。
-var AdminFacingMessages = []string{
-	// 通用
-	MsgBadRequest, MsgUnauthorized,
-	// 管理员
-	ErrCaptchaExpired, ErrBadCredentials, ErrAccountLocked, ErrAccountDisabled,
-	ErrAdminNotFound, ErrSuperAdminExists, ErrFieldProtected, ErrEmailExists,
-	ErrUsernameExists, ErrPhoneExists, ErrUserNotFound, ErrDeleteSelf,
-	ErrDeleteSuperAdmin, ErrSuperAdminOnly, MsgWrongUserType,
-	// 角色
-	ErrRoleNotFound, ErrRoleCodeExists, ErrRoleIsSystem, ErrRoleCodeNumeric,
-	// 菜单
-	ErrMenuNotFound, ErrMenuHasChildren, ErrMenuIsSystem, ErrMenuCircle,
-	ErrMenuParentNotFound, ErrMenuParentMustBeDir, ErrMenuDepthExceeded,
-	ErrCodeNotBindable, ErrCodeRequired, ErrCodeNotEnabled,
-	// 权限点
-	ErrPermissionNotFound, ErrCodeExists, ErrCodeImmutable, ErrInvalidMethod,
-	ErrPermissionAssigned, ErrMenuReferenced,
-	// 部门
-	ErrDeptNotFound, ErrDeptHasChildren, ErrDeptHasUsers, ErrDeptCircle, ErrDeptCodeExists,
-	// 数据权限规则
-	ErrRuleNotFound, ErrInvalidDomain, ErrInvalidAssignment, ErrRuleConfigInvalid,
-	ErrRuleFieldNotAllowed, ErrRuleOpNotAllowed, ErrRuleLogicNotAllowed,
-	// 列表排序参数与文案词条表单
-	ErrSortFieldInvalid, ErrSortDirectionInvalid,
-	ErrI18nKeyEmpty, ErrI18nLangEmpty, ErrI18nValueEmpty,
-}
+// 曾经有过一张 AdminFacingMessages 白名单 + 一条 AST 对账用例，已随「控制器不取词 / 错误文案
+// 单一判据」这一批整批删除。它坏在哪里：白名单是**第二份真相** —— service 换了措辞、或某个 key
+// 改由别的模块提供，白名单就静默失配，而两种症状都不报错（有时把内部错误当业务文案透出、
+// 有时把业务文案吞成归口），且 page 出口 / JSON 出口会给出不同结论。
 
 // --- 管理员 ---
 
@@ -156,17 +126,15 @@ const (
 	ErrI18nValueEmpty = "admin.err.i18nValueEmpty" // 词条内容不能为空
 )
 
-// --- 批量操作的结论文案（页面回执，不是错误白名单）---
+// --- 批量操作的结论文案（页面回执，不是错误）---
 //
 // 这一组与上面那些常量同形（值 = sys_i18n 的 item_key），但**刻意不带 Err / Msg 前缀**：
-// admin_enums_test.go 按前缀逐个常量对账 AdminFacingMessages，而那张白名单管的是
-// 「service 返回的错误能不能透出」。批量结论是 handler 按计数自己拼出的整句回执
-// （进提示页的响应体），既不是 service 错误、也不该进错误白名单 ——
-// 误加进去会让「读侧候选必须能由写侧复现」那条对账用例变红。
+// 带前缀的常量会被当成「service 返回的错误」看待，而批量结论是 handler 按计数自己拼出的
+// 整句回执（进提示页的响应体），既不是 service 错误、也不该被错误文案判据筛选。
 //
 // 为什么 key 放 enums 而不是 handler 包：模块的对外文案 key 一律以 enums 为唯一登记处，
 // 回执文案同属对外文案，不该是例外。中文原文（模板 + 名词）留在 inbound/http ——
-// 它与「写侧按当前语言取词」的那一份绑在同一个结构体里（见 admin_err.go 的 adminBulkText）。
+// 它与「写侧按当前语言取词」的那一份绑在同一个事实里（见 admin_err.go 的 adminBulkDoneMsg）。
 const (
 	// BulkDoneKey 批量删除全部成功的结论模板（两个 %s：删除数、名词译文）。
 	BulkDoneKey = "admin.bulk.done"

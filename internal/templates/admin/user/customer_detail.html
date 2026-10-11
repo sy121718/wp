@@ -5,6 +5,7 @@
      · .kv 的每对「标签 + 值」包进 .kv-item，网格才对得上（裸 dt/dd 会被拆成两格）。 *}
 {* Jet 方言：extends 相对本目录；range 用 range 关键字；可能缺键的 map 用 ["key"] 索引访问。 *}
 {{extends "../layout.html"}}
+{{import "customer_badges.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 <div class="stack customer-detail-page">
@@ -26,8 +27,8 @@
     {* 提示条只剩一个来源：本页自己的取数失败（工程列表 / 订单摘要）。写动作的结论走
        shell.RenderJump 渲染整页提示，不再经 ?err= / ?ok= 回带 —— 前缀「上一次操作未完成：」
        随之退役（它描述的正是那条已被删除的通道）。 *}
-    {{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{if .HasErr}}
+    <p class="badge badge-warning" role="alert">{{ .["t"](.ErrKey, .ErrFallback) }}</p>
     {{end}}
 
     {{if not .HasDetail}}
@@ -39,22 +40,33 @@
     </section>
     {{end}}
 
+    <noscript><p>{{ .["t"]("admin.customers.write.noJs", "修改客户状态和解除锁定需要 JavaScript。") }}</p></noscript>
     {{if .HasDetail}}
+    {* 展示名三级回退与时刻格式化在这里做，状态 / 邮箱验证的徽章走 customer_badges.html
+       （与列表页共用同一份档位映射，一处改两页生效）。
+       判空走 trimSpace（"   " 也算没填，否则挡住回退链），被挑中的值原样显示（同移走前的 customerDisplayLabel）。 *}
+    {{tr := .["t"]}}
+    {{displayName := .DisplayName}}
+    {{if trimSpace(displayName) == ""}}{{displayName = .Nickname}}{{end}}
+    {{if trimSpace(displayName) == ""}}{{displayName = .Username}}{{end}}
+    {{if trimSpace(displayName) == ""}}{{displayName = "—"}}{{end}}
+    {{registeredAt := dateTime(.RegisteredAt)}}{{if registeredAt == ""}}{{registeredAt = "—"}}{{end}}
+    {{lastLogin := dateTime(.LastLoginTime)}}{{if lastLogin == ""}}{{lastLogin = "—"}}{{end}}
     <section class="card card-body">
-        <h2>{{.DisplayLabel}} <span class="badge badge-{{.StatusTone}}">{{if isset(.StatusLabelKey)}}{{ .["t"](.StatusLabelKey, .StatusLabelFallback) }}{{end}}</span></h2>
+        <h2>{{displayName}} {{yield customerStatusBadge(status=.Status, labelKey=.StatusLabelKey, labelFallback=.StatusLabelFallback, tr=tr)}}</h2>
         <dl class="kv">
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.username", "登录名") }}</dt><dd>{{.Username}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.email", "邮箱") }}</dt><dd>{{.Email}} <span class="badge badge-{{.EmailVerifiedTone}}">{{if isset(.EmailVerifiedKey)}}{{ .["t"](.EmailVerifiedKey, .EmailVerifiedFallback) }}{{end}}</span></dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.registered_at", "注册时间") }}</dt><dd>{{.RegisteredAtText}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.email", "邮箱") }}</dt><dd>{{.Email}} {{yield customerVerifyBadge(verified=.EmailVerified, labelKey=.EmailVerifiedKey, labelFallback=.EmailVerifiedFallback, tr=tr)}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.registered_at", "注册时间") }}</dt><dd>{{registeredAt}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.register_source", "注册来源") }}</dt><dd>{{.RegisterIP}}{{if .RegisterLocation}} · {{.RegisterLocation}}{{end}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.last_login", "最近登录") }}</dt><dd>{{.LastLoginTimeText}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.last_login", "最近登录") }}</dt><dd>{{lastLogin}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.last_login_ip", "最近登录 IP") }}</dt><dd>{{.LastLoginIP}}{{if .LastLoginLocation}} · {{.LastLoginLocation}}{{end}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.customer_detail.field.login_failures", "登录失败次数") }}</dt><dd>{{.LoginFailureCount}}</dd></div>
             <div class="kv-item">
                 <dt>{{ .["t"]("admin.customer_detail.field.lock_status", "锁定状态") }}</dt>
                 <dd>
                     {{if .Locked}}
-                    <span class="badge badge-warning">{{ .["t"]("admin.customer_detail.lock.locked", "已锁定") }}</span>{{ .["t"]("admin.customer_detail.lock.until", " 至 ") }}{{.LockedUntilText}}{{ .["t"]("admin.customer_detail.lock.auto", "（到时间会自动解除）") }}
+                    <span class="badge badge-warning">{{ .["t"]("admin.customer_detail.lock.locked", "已锁定") }}</span>{{ .["t"]("admin.customer_detail.lock.until", " 至 ") }}{{dateTime(.LockedUntil)}}{{ .["t"]("admin.customer_detail.lock.auto", "（到时间会自动解除）") }}
                     {{else}}
                     <span class="badge badge-mute">{{ .["t"]("admin.customer_detail.lock.unlocked", "未锁定") }}</span>
                     {{end}}
@@ -105,15 +117,19 @@
         <dl class="kv">
             <div class="kv-item kv-item--wide">
                 <dt>{{ .["t"]("admin.customer_detail.orders.last_order", "最近一单") }}</dt>
-                <dd>{{if .LastOrderTimeText}}<a href="{{.LastOrderURL}}"><code>{{.LastOrderNo}}</code></a> · {{if isset(.LastOrderStatusKey)}}{{ .["t"](.LastOrderStatusKey, .LastOrderStatusFallback) }}{{end}} · {{.LastOrderTimeText}}{{else}}{{ .["t"]("admin.customer_detail.orders.no_order", "这个客户在当前工程里还没有下过单。") }}{{end}}</dd>
+                {* 判据用契约里的显式布尔 HasOrders（0 单 + 0 元与「查不到」在数字上无法区分），
+                   不用时间串是否为空 —— 那是展示值。直达链接由模板按 orderId 拼
+                   （订单页靠这个参数展开详情，不新开路由）。 *}
+                <dd>{{if .HasOrders}}<a href="/admin/orders?project={{.SelectedProject}}&orderId={{.LastOrderID}}"><code>{{.LastOrderNo}}</code></a> · {{if isset(.LastOrderStatusKey)}}{{ .["t"](.LastOrderStatusKey, .LastOrderStatusFallback) }}{{end}} · {{dateTime(.LastOrderTime)}}{{else}}{{ .["t"]("admin.customer_detail.orders.no_order", "这个客户在当前工程里还没有下过单。") }}{{end}}</dd>
             </div>
         </dl>
         {{end}}
     </section>
 
     {* 会员等级（BIZ-3 展示侧）：只读展示 —— 指定等级 / 解除锁定在「会员归属」页（各自的权限点）。
-       降级形态（模块未接入 / 没选工程 / 读不出来）由服务端收敛成 .MembershipNotice 一句话：
-       模板不猜原因，也不判断 nil。渲染键由 Go 侧恒设（缺键会让 Jet 中断整页 → 500 → htmx 不 swap）。 *}
+       降级形态（模块未接入 / 没选工程 / 读不出来）由服务端收敛成 HasMembershipNotice +
+       MembershipNoticeKey/Fallback 三个键：模板不猜原因、不取词前拼句子。
+       渲染键由 Go 侧恒设（缺键会让 Jet 中断整页 → 500 → htmx 不 swap）。 *}
     <section class="card card-body">
         <h2>{{ .["t"]("admin.customer_detail.membership.heading", "会员等级") }}
             <span class="help">
@@ -121,11 +137,11 @@
                 <span class="help-pop" role="tooltip">{{ .["t"]("admin.customer_detail.membership.hint", "等级按「站点工程 + 客户账号」解析：同一个客户在不同工程可以是不同等级。这里只读 —— 指定等级与解除锁定在「会员归属」页。") }}</span>
             </span>
         </h2>
-        {* 三档由服务端收敛：Notice 非空 = 有降级说明；否则看 HasMembership。
-           两者都套 isset —— 「数据里没有这个键」与「值为空」在 Jet 里是两件事，
-           缺键出现在 if 条件里会中断整页渲染（→ 500 → htmx 不 swap，用户什么都看不到）。 *}
-        {{if isset(.MembershipNotice) && .MembershipNotice != ""}}
-        <p class="hint">{{.MembershipNotice}}</p>
+        {* 三档由服务端收敛：HasMembershipNotice = 有降级说明；否则看 HasMembership。
+           两个键都由 Go 侧恒设（applyCustomerMembership），所以直接参与 if 判断是安全的；
+           取词走 .["t"](key, 兜底) —— 服务端只交事实，不再在 Go 里拼句子。 *}
+        {{if .HasMembershipNotice}}
+        <p class="hint">{{ .["t"](.MembershipNoticeKey, .MembershipNoticeFallback) }}</p>
         {{else if isset(.HasMembership) && .HasMembership}}
         <dl class="kv">
             <div class="kv-item">
@@ -155,14 +171,15 @@
             </span>
         </h2>
         {{if .Actionable}}
-        <form method="post" action="/admin/customers/status?id={{.ID}}&project={{.SelectedProject}}" class="form-inline">
+        <form data-write-api="/api/customer/status" data-write-mode="create" data-write-number="customerId,status" data-msg-failed="{{ .["t"]("admin.customers.write.failed", "操作失败，请稍后重试。") }}" class="form-inline">
+ <p data-write-status role="status" aria-live="polite"></p>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{.ID}}">
-            <input type="hidden" name="toStatus" value="{{.NextStatus}}">
+            <input type="hidden" name="status" value="{{.NextStatus}}">
             {* 动词与后缀两段都走词条：原先前半句是服务端硬编码中文（「停用」），
                英文界面上与 i18n 的 account_suffix 拼起来就是「Disable这个账号」式中英混排。
                现在中英各自成句（zh「停用」+「这个账号」/ en "Disable" + " this account"）。 *}
-            <button type="submit" class="btn btn-primary">{{ .["t"](.StatusActionKey, .StatusActionLabel) }}{{ .["t"]("admin.customer_detail.action.account_suffix", "这个账号") }}</button>
+            <button type="submit" data-requires-js hidden class="btn btn-primary">{{ .["t"](.StatusActionKey, .StatusActionLabel) }}{{ .["t"]("admin.customer_detail.action.account_suffix", "这个账号") }}</button>
         </form>
         {{else}}
         <p class="hint">
@@ -172,10 +189,11 @@
         </p>
         {{end}}
         {{if .Locked}}
-        <form method="post" action="/admin/customers/unlock?id={{.ID}}&project={{.SelectedProject}}" class="form-inline">
+        <form data-write-api="/api/customer/unlock" data-write-mode="create" data-write-number="customerId" data-msg-failed="{{ .["t"]("admin.customers.write.failed", "操作失败，请稍后重试。") }}" class="form-inline">
+ <p data-write-status role="status" aria-live="polite"></p>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{.ID}}">
-            <button type="submit" class="btn">{{ .["t"]("admin.customer_detail.action.unlock", "解除锁定") }}</button>
+            <button type="submit" data-requires-js hidden class="btn">{{ .["t"]("admin.customer_detail.action.unlock", "解除锁定") }}</button>
         </form>
         {{else}}
         <p class="hint">

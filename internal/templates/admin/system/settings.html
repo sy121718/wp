@@ -21,12 +21,13 @@
         </div>
     </header>
 
-    {* 写动作的结论由提示页在响应体里渲染（shell.RenderJump）；这一条只报「这次没读出来」。 *}
+    {* 读取失败在本页显示，保存回执由 JSON 写基座显示。 *}
     {{if isset(.LoadErr)}}{{if .LoadErr}}
     <p class="badge badge-warning" role="alert">{{.LoadErr}}</p>
     {{end}}{{end}}
 
-    <form method="post" action="/admin/system/save" class="card card-body">
+    <form data-write-api="/api/sysconfig/system/save" data-write-mode="create" data-write-number="i18nVersion,tradeVersion" data-msg-failed="{{ .["t"]("sysconfig.err.internal", "操作失败，请稍后重试（细节只进日志）。") }}" class="card card-body">
+        <p data-write-status role="status" aria-live="polite"></p>
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         {* 乐观锁：带上读到的版本；库内已变则整批拒绝（不自动重试、不静默覆盖）。 *}
         <input type="hidden" name="i18nVersion" value="{{.I18N.Version}}">
@@ -76,8 +77,9 @@
         <p class="form-hint">{{ .["t"]("admin.system.hint.trade", "默认国家与默认货币是全局默认 + 兜底（工程级覆盖走站点设置页）。货币由后台全局限定为单值：它影响新订单的币种标签与页面展示（含 SEO 结构化数据）；前台用户只能改自己的地区（国家 / 省），没有货币选择器。已下单的订单保留当时的币种快照。注意：改币种只改标签，不换算金额 —— 它等于声明本站商品定价本来就是该币种；若商品价格按人民币填，改成美元后显示的是同样的数字（如 ¥19.90 显示为 $19.90），不是换算后的价格。") }}</p>
 
         <div class="form-actions">
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.system.submit", "保存") }}</button>
+            <button type="submit" data-requires-js hidden class="btn btn-primary">{{ .["t"]("admin.system.submit", "保存") }}</button>
         </div>
+        <noscript><p role="alert">{{ .["t"]("admin.system.write.noJs", "保存设置需要启用 JavaScript。") }}</p></noscript>
     </form>
 </div>
 {{end}}

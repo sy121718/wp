@@ -28,6 +28,15 @@ func SetupBlockRoutes(rg *permission.RouteGroup, db *gorm.DB, projects projectco
 	g.POST("/create", permission.BlockCreate, h.Create)
 	g.POST("/update", permission.BlockUpdate, h.Update)
 	g.POST("/delete", permission.BlockDelete, h.Delete)
+	// 批量删除：**独立权限点** block:bulk_delete。
+	//
+	// 曾与单条删除共用一个 code，但那在本仓的权限模型里是不成立的：sys_permission 每个 code
+	// 只有一列 api_path/api_method，permission.SyncToDB 按声明对齐这两列 —— 两条 API 路径共用
+	// 一个 code 时，同步只能留下其中一条，另一条上的策略随即失配（超管 403、角色静默失权）。
+	// 权限点的*能力*仍然是「删区块」这一档，升级期的授权延续由迁移 594 复制既有
+	// block:delete 主体（且只复制这些主体）兜住。
+	// 上限与去重由 pkg/bulkids.Normalize 在服务端强制 —— 前端也有一次同口径的拦截，但那只是快速反馈。
+	g.POST("/bulk-delete", permission.BlockBulkDelete, h.BulkDelete)
 	g.POST("/clone", permission.BlockClone, h.CloneAST)
 	return svc
 }

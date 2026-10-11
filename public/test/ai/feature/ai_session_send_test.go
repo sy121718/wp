@@ -24,13 +24,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"go_wp/internal/middleware/adminctx"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aihttp "go_wp/internal/module/ai/inbound/http"
 	aimodel "go_wp/internal/module/ai/model"
 	aiservice "go_wp/internal/module/ai/service"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 )
 
 // sessionSendBaseURL 全局单播的 documentation 网段字面量（只为过 SSRF 门禁）。
@@ -86,7 +86,7 @@ func newSessionSendProvider(t *testing.T, svc *aiservice.Service) {
 }
 
 // sessionSendUserID 用例里的「已登录账号」：页面 handler 从 gin.Context 取 user_id
-// （shell.CurrentUserID → builtin.GetUserID），所以中间件往 context 里塞一个。
+// （builtin.CurrentUserID → builtin.GetUserID），所以中间件往 context 里塞一个。
 // 这里不塞就等于未登录 —— 会话层的第一关卡会把请求挡在对话之前（ErrUserRequired）。
 const sessionSendUserID int64 = 1
 
@@ -222,10 +222,10 @@ func serveSessionsPage(t *testing.T, ph *aihttp.SessionPageHandle) *httptest.Res
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
 		c.Set("user_id", sessionSendUserID)
-		c.Set(shell.PermSetKey, map[string]bool{
+		c.Set(adminctx.PermSetKey, map[string]bool{
 			"ai:provider_list": true, "ai:session_list": true, "ai:chat": true,
 		})
-		c.Set(shell.ButtonsKey, map[string]bool{
+		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"ai.provider_list": true, "ai.session_list": true, "ai.chat": true,
 		})
 

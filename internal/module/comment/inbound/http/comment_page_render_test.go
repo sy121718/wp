@@ -26,10 +26,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/adminctx"
 	commentdto "go_wp/internal/module/comment/dto"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 	"go_wp/pkg/utils"
 )
 
@@ -94,10 +94,10 @@ func renderCommentsPage(t *testing.T, svc *stubCommentSvc, projects stubProjects
 		if withReviewPerm {
 			perm["comment:review"] = true
 		}
-		// 权限集合由 shell.PermContextMiddleware 注入；这一步单独设，
+		// 权限集合由 adminctx.PermContextMiddleware 注入；这一步单独设，
 		// 是为了让渲染测试不依赖 admin 权限契约与完整装配链路。
-		c.Set(shell.PermSetKey, perm)
-		c.Set(shell.ButtonsKey, buttonsOf(perm))
+		c.Set(adminctx.PermSetKey, perm)
+		c.Set(adminctx.ButtonsKey, buttonsOf(perm))
 		h.CommentsPage(c)
 	})
 	rec := httptest.NewRecorder()
@@ -141,6 +141,9 @@ func pageFixture() *stubCommentSvc {
 // TestCommentsPageRendersRows 页面把内容、实体、评论人、状态与时间都渲染出来。
 func TestCommentsPageRendersRows(t *testing.T) {
 	body := renderCommentsPage(t, pageFixture(), stubProjects{list: []projectdto.ProjectResp{{ID: "p-1", Name: "演示站"}}}, "", true)
+	if strings.Contains(body, "/admin/comments/review") {
+		t.Fatal("页面仍含旧表单写入口")
+	}
 
 	for _, want := range []string{
 		"评论审核",
@@ -152,7 +155,14 @@ func TestCommentsPageRendersRows(t *testing.T) {
 		// 表头七列齐全（勾选 / 内容 / 评论对象 / 评论人 / 状态 / 提交时间 / 操作）。
 		"内容", "评论对象", "评论人", "提交时间", "操作",
 		// 批量条：批量表单的目标端点必须出现在页面上。
-		"/admin/comments/review",
+		`data-write-api="/api/comment/review"`,
+		`data-write-mode="bulk"`, `data-write-number="ids"`,
+		`data-write-extra="projectId,status"`, `data-write-outcome="review"`,
+		`name="status" value="approved" data-requires-js hidden disabled`,
+		`name="status" value="rejected" data-requires-js hidden disabled`,
+		`data-write-status role="status"`, `name="projectId" value="p-1"`,
+		`name="ids" value="12"`, `data-msg-none-selected=`, `data-msg-refresh=`,
+		`meta name="csrf-token"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("页面缺少 %q", want)

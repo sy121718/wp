@@ -11,9 +11,9 @@ package masterdatahttp
 import (
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
 )
 
 // SetupMasterDataPages 注册后台「变更记录」页。
@@ -26,5 +26,5 @@ func SetupMasterDataPages(pages *gin.RouterGroup, svc masterdatacontract.MasterD
 		return
 	}
 	changePages := NewMasterDataChangePageHandle(svc, project)
-	pages.GET("/masterdata/changes", shell.PageAuthz("/api/masterdata/change/list"), changePages.MasterDataChangesPage)
+	pages.GET("/masterdata/changes", adminui.PageAuthz("/api/masterdata/change/list"), changePages.MasterDataChangesPage)
 }

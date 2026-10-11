@@ -5,7 +5,7 @@ import (
 	"context"
 	"errors"
 	"github.com/CloudyKit/jet/v6"
-	"go_wp/internal/shell"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -141,12 +141,12 @@ func TestMenuEditFragmentAndEcho(t *testing.T) {
 	r := gin.New()
 	set := jet.NewSet(jet.NewOSFileSystemLoader("../../../../templates"), jet.WithTemplateNameExtensions([]string{"", ".html"}))
 	for _, data := range []gin.H{
-		shell.Prepare(testDrawerContext("/menus/edit"), gin.H{"MenuEdit": s.row, "Parents": s.parents}),
-		shell.Prepare(testDrawerContext("/menus/update"), gin.H{"MenuEdit": s.row, "MenuEditErr": "错误", "MenuEditEcho": map[string]string{"title": "用户原值", "parent_id": "7", "type": "2", "status": "1", "path": "/custom", "icon": "", "sort_order": "0", "remark": ""}, "MenuEditParent": uint64(7), "Parents": s.parents}),
+		adminui.Prepare(testDrawerContext("/menus/edit"), gin.H{"MenuEdit": s.row, "Parents": s.parents}),
+		adminui.Prepare(testDrawerContext("/menus/update"), gin.H{"MenuEdit": s.row, "MenuEditErr": "错误", "MenuEditEcho": map[string]string{"title": "用户原值", "parent_id": "7", "type": "2", "status": "1", "path": "/custom", "icon": "", "sort_order": "0", "remark": ""}, "MenuEditParent": uint64(7), "Parents": s.parents}),
 		// 候选读失败（不传 Parents）：模板必须退化成 hidden parent_id，而不是丢掉这个字段。
-		shell.Prepare(testDrawerContext("/menus/edit"), gin.H{"MenuEdit": s.row}),
+		adminui.Prepare(testDrawerContext("/menus/edit"), gin.H{"MenuEdit": s.row}),
 		// 权限点清单：候选按 module 分组，勾选态在 Go 侧算好（模板只渲染）。
-		shell.Prepare(testDrawerContext("/menus/edit"), gin.H{"MenuEdit": s.row, "Parents": s.parents, "PermChoices": []permChoiceGroup{
+		adminui.Prepare(testDrawerContext("/menus/edit"), gin.H{"MenuEdit": s.row, "Parents": s.parents, "PermChoices": []permChoiceGroup{
 			{Module: "menu", Items: []permChoiceItem{{Code: "menu:list", Name: "菜单列表", Checked: true}, {Code: "menu:create", Name: "新建菜单"}}},
 			{Module: "role", Items: []permChoiceItem{{Code: "role:list", Name: "角色列表"}}},
 		}}),

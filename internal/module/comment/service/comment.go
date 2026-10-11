@@ -433,8 +433,7 @@ func (s *Service) Review(ctx context.Context, req *commentdto.ReviewReq) (res *c
 	if len(req.IDs) == 0 {
 		return nil, errParam(commentenums.ErrNothingSelected)
 	}
-	// 集合上限：handler 已经经 shell.BulkIDs 去重限过量，这里再判一次 ——
-	// service 是契约的最终执行者，不能押注在调用方身上（将来多一个 API 调用点就漏了）。
+	// 契约统一限定集合上限，API 与 MCP 调用均在写入前整批校验。
 	if len(req.IDs) > commentenums.MaxReviewIDs {
 		return nil, errParam(commentenums.ErrInvalidParam)
 	}

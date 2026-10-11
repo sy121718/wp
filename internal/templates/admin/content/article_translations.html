@@ -66,7 +66,9 @@
 
     {{if len(errors) > 0}}
     <div class="tr-alert" role="alert">
-        <ul class="list-reset">{{range _, e := errors}}<li>{{e}}</li>{{end}}</ul>
+        {* 每条都是**事实**（key + 中文兜底），取词在这里发生；range 内 . 指向元素，
+           所以用上面声明的 tr，而不是 .["t"]。 *}
+        <ul class="list-reset">{{range _, e := errors}}<li>{{tr(e.Key, e.Fallback)}}</li>{{end}}</ul>
     </div>
     {{end}}
 
@@ -98,7 +100,7 @@
             <p class="text-mute text-sm">{{g.Subtitle}}</p>
             {{range _, r := g.Rows}}
             <div class="field">
-                <label>{{r.FieldLabel}}{{if r.Translated}} · {{tr("admin.article.translations.hasTarget", "已有译文")}}{{end}}</label>
+                <label>{{tr(r.FieldKey, r.FieldFallback)}}{{if r.Translated}} · {{tr("admin.article.translations.hasTarget", "已有译文")}}{{end}}</label>
                 <span class="text-mute text-sm">{{tr("admin.article.translations.sourceLabel", "原文：")}}{{r.Source}}</span>
                 {{if r.Rich}}
                 <textarea class="form-textarea" name="rowTarget" rows="5">{{r.Target}}</textarea>
@@ -112,7 +114,7 @@
         </section>
         {{end}}
     </form>
-    {{if .["PaginationLinks"]}}{{include "../partials/pagination.html"}}{{end}}
+    {{include "../partials/pagination.html"}}
     {{end}}
 </div>
 {{end}}

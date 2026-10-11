@@ -103,9 +103,9 @@ func TestBundleMemberSourcePanelRenders(t *testing.T) {
 	body := getPage(t, engine, "/admin/products/bundle?project="+f.projectID+"&product="+bundle.ID)
 	for _, want := range []string{
 		"成员来源",
-		"从商品导入（该商品的启用变体）",
-		"从仓库选（按仓挑选仓库 SKU）",
-		"自选属性值组合（服务端重算笛卡尔积）",
+		"从商品导入",
+		"从仓库选",
+		"自选属性组合",
 		"来源",
 		"解析并追加成员",
 		"移除",

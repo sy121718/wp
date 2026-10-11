@@ -15,16 +15,16 @@ type AttributeValueResp struct {
 
 // AttributeResp 属性组（含全部属性值）。
 type AttributeResp struct {
-	ID          string               `json:"id"`
-	ProjectID   string               `json:"projectId"`
-	Key         string               `json:"key"`
-	Name        string               `json:"name"`
-	IsVariation bool                 `json:"isVariation"`
+	ID          string `json:"id"`
+	ProjectID   string `json:"projectId"`
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	IsVariation bool   `json:"isVariation"`
 	// VariationTone 是否参与变体 → 徽标分档（info / mute），**只给服务端模板用**（json:"-"）。
 	// 判据就是上面的 IsVariation，但模板不该再学一遍这个布尔。
-	VariationTone string `json:"-"`
-	Sort        int                  `json:"sort"`
-	Values      []AttributeValueResp `json:"values"`
+	VariationTone string               `json:"-"`
+	Sort          int                  `json:"sort"`
+	Values        []AttributeValueResp `json:"values"`
 	// ValueCount / VariationValueCount 是列表展示用的只读派生值。
 	ValueCount          int    `json:"valueCount"`
 	VariationValueCount int    `json:"variationValueCount"`

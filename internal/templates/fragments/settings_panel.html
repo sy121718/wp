@@ -1,7 +1,8 @@
 {* fragments/settings_panel.html — 页面设置表单（HTMX 服务端渲染，docs/09 §3）
    约定：字段带 data-wb-setting（doc 内路径）与可选 data-wb-kind（list=空格分隔数组）；
    segment 按钮带 data-wb-setting + data-wb-value，客户端统一事件委托回写。
-   取词：本片段不经 shell.Prepare，t 由调用点单独注入（project/inbound/http/settings_panel.go）；
+   取词：本片段不经 PrepareFragment，t / tf 由数据注入（Go 侧经 adminui.Prepare，
+   见 project/inbound/http/project_page.go 的 workbenchSettingsPanel）；
    缺 t 时 Jet 把 tr(...) 求值成空串（不报错、不 500）—— 所以调用点必须给。 *}
 {{tr := .["t"]}}
 <div class="wb-field wb-field-seg">

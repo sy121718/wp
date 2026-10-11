@@ -8,13 +8,15 @@
 {* 无 JS 也能用：工程切换是原生 form GET，绑定面板是原生 form GET 进入、原生 form POST 提交
    （带 csrf_token 隐藏域），解绑同样是原生表单 POST；提交后服务端渲染整页提示
    （shell.RenderJump，成功 1 秒后自动回本页）。 *}
-{* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
+{* 文案走 t(key, 中文兜底) / tf(key, 中文兜底, %s 参数)：range 内不能写赋值语句，
+   先把两个函数存进变量 tr / tf 再取词。Go 侧只交事实（key + 兜底），不交成品串。 *}
 {{extends "../layout.html"}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{rows := .Rows}}
 {{tr := .["t"]}}
+{{tf := .["tf"]}}
 {* 0 工程是独立的一档状态：页头 badge 与列表区的占位说明都按它分档。
    可选键直接参与判断会在缺键时中断整页渲染，所以先 isset 再存成模板内变量。 *}
 {{noProjectEmpty := isset(.NoProjectEmpty) && .NoProjectEmpty}}
@@ -40,10 +42,15 @@
                 </select>
             </form>
             {{end}}
+            {* 页头两个档位由计数事实选（原先由 Go 的 unpublishedSlotsTone / deletedSlotsTone 给）：
+               判据与旧 helper 逐字一致 —— `n != 0`，**含负数非零**；class 词保持 warn / danger / mute。
+               count 键可能在直接渲染本模板的单测里缺席，故 isset 守一层（缺键落中性档，不中断整页）。 *}
+            {{unpublishedTone := "mute"}}{{if isset(.UnpublishedCount)}}{{if .UnpublishedCount != 0}}{{unpublishedTone = "warn"}}{{end}}{{end}}
+            {{deletedTone := "mute"}}{{if isset(.DeletedCount)}}{{if .DeletedCount != 0}}{{deletedTone = "danger"}}{{end}}{{end}}
             <span class="sr-only">{{ .["t"]("admin.site_slots.overview.title", "概览") }}</span>
             <span class="badge badge-mute">{{ .["t"]("admin.site_slots.bound_count", "已绑定") }} {{.BoundCount}} / {{.Total}}</span>
-            <span class="badge badge-{{.UnpublishedTone}}">{{ .["t"]("admin.site_slots.unpublished_count", "已绑定但未发布") }} {{.UnpublishedCount}}</span>
-            <span class="badge badge-{{.DeletedTone}}">{{ .["t"]("admin.site_slots.deleted_count", "绑定的页面已被删除") }} {{.DeletedCount}}</span>
+            <span class="badge badge-{{unpublishedTone}}">{{ .["t"]("admin.site_slots.unpublished_count", "已绑定但未发布") }} {{if isset(.UnpublishedCount)}}{{.UnpublishedCount}}{{end}}</span>
+            <span class="badge badge-{{deletedTone}}">{{ .["t"]("admin.site_slots.deleted_count", "绑定的页面已被删除") }} {{if isset(.DeletedCount)}}{{.DeletedCount}}{{end}}</span>
         </div>
     </header>
 
@@ -52,8 +59,8 @@
        可选键一律 isset 包裹（internal/templates/CLAUDE.md 硬约定）：模板是磁盘热读文件，
        而 Go 侧改动要等 air 重编译，两边会短暂不同步 —— 缺键直接参与判断会让**整页中断**
        （HTTP 200 + 后面整块 HTML 消失）。 *}
-    {{if isset(.Err) && .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.site_slots.err_prefix", "上一次操作未完成：") }}{{.Err}}</p>
+    {{if .Err.Key != "" || .Err.Fallback != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.site_slots.err_prefix", "上一次操作未完成：") }}{{tf(.Err.Key, .Err.Fallback, .Err.Args)}}</p>
     {{end}}
     {* 「还没有站点工程」提示由 handler 算好的 NoProjectEmpty 决定（= 工程列表为空 **且** 本次没有出错）。
        装载失败时工程列表同样是空的，但那时该说的是「这一页没读出来」而不是「去建一个工程」——
@@ -124,12 +131,32 @@
                 <tbody>
                 {{range _, r := rows}}
                 <tr>
+                    {* 行状态徽章：事实（Bound / PageDeleted / Published）在 Go 侧，
+                       档位与文案在这里定 —— 优先级照旧：未绑定 → 绑定已失效 → 已发布 → 降级未发布。
+                       档位用**已注册的词表** ok / warn / danger / mute（scripts/check-template-presentation.sh
+                       判据 4 的词表；Gate 只认 `.badge-<tone>` 别名，自造档会静默失色）。
+                       原先 Go 产出的是 badge-success / badge-warning 两个字面类名：字面量变了，
+                       **视觉等价有据** —— ui.css:834 `.badge-success` 与 :850 `.badge-ok` 声明逐字节相同
+                      （同一 CSS 变量与兜底色），:840 `.badge-warning` 与 :851 `.badge-warn` 同理；
+                       这四个类没有任何其它规则或属性选择器改它们的属性，JS 也不按它们选行/改行为
+                       （唯一的 `.badge-warning` 选择器在 workbench panels.js，读的是它自己那份失败响应页）。
+                       三个事实先取零值再按 isset 覆盖：缺键行落「未绑定/中性」，
+                       与「完整零值事实行」（Bound=false）走同一条路径，**任何情况下都渲染徽章**。 *}
+                    {{bBound := false}}{{if isset(r.Bound)}}{{bBound = r.Bound}}{{end}}
+                    {{bDeleted := false}}{{if isset(r.PageDeleted)}}{{bDeleted = r.PageDeleted}}{{end}}
+                    {{bPublished := false}}{{if isset(r.Published)}}{{bPublished = r.Published}}{{end}}
+                    {{tone := "mute"}}{{stateLabel := tr("admin.site_slots.state.unbound", "未绑定")}}
+                    {{if bBound}}
+                    {{tone = "ok"}}{{stateLabel = tr("admin.site_slots.state.published", "已发布")}}
+                    {{if bDeleted}}{{tone = "danger"}}{{stateLabel = tr("admin.site_slots.state.deleted", "绑定已失效")}}
+                    {{else if !bPublished}}{{tone = "warn"}}{{stateLabel = tr("admin.site_slots.state.unpublished", "已绑定但未发布")}}{{end}}
+                    {{end}}
                     <td>
-                        <strong>{{r.SlotName}}</strong>
+                        <strong>{{tr(r.SlotNameKey, r.SlotNameFallback)}}</strong>
                         <span class="text-mute text-sm"><code>{{r.Slot}}</code></span>
-                        <span class="badge {{r.Badge}}">{{r.StateLabel}}</span>
+                        <span class="badge badge-{{tone}}">{{stateLabel}}</span>
                     </td>
-                    <td>{{r.Usage}}</td>
+                    <td>{{tr(r.UsageKey, r.UsageFallback)}}</td>
                     <td>
                         {{if r.Unbound}}
                         <span class="text-mute text-sm">{{tr("admin.site_slots.unbound", "未绑定（正常状态：这个站没有这个页面，就不用绑）。")}}</span>
@@ -156,7 +183,7 @@
                            键盘可聚焦、触屏可点、鼠标可点；面板本身是原生 form + 原生 select，四种输入都不需要额外脚本。 *}
                         <a class="btn btn-sm{{if r.Unbound}} btn-primary{{end}}"
                            href="/admin/site-slots?project={{selectedProject}}&amp;slot={{r.Slot}}#slot-bind-panel"
-                           {{if isset(r.Active) && r.Active}}aria-current="true"{{end}}>{{r.BindLabel}}</a>
+                           {{if isset(r.Active) && r.Active}}aria-current="true"{{end}}>{{if r.Bound}}{{tr("admin.site_slots.action.rebind", "换绑")}}{{else}}{{tr("admin.site_slots.action.bind", "绑定")}}{{end}}</a>
                         {{end}}
                         {{if r.Bound}}
                         <button type="submit" form="slot-unbind-{{r.Slot}}" class="btn btn-sm">{{tr("admin.site_slots.action.unbind", "解绑")}}</button>
@@ -177,7 +204,7 @@
     {{if isset(.BindSlot) && .BindSlot != ""}}
     <section class="card" id="slot-bind-panel">
         <div class="list-toolbar">
-            <strong>{{.BindLabel}}：{{.BindSlotName}}</strong>
+            <strong>{{if .BindBound}}{{tr("admin.site_slots.action.rebind", "换绑")}}{{else}}{{tr("admin.site_slots.action.bind", "绑定")}}{{end}}：{{tr(.BindSlotNameKey, .BindSlotNameFallback)}}</strong>
             <span class="text-mute text-sm"><code>{{.BindSlot}}</code></span>
         </div>
         <div class="card-body">
@@ -201,7 +228,7 @@
                 {{end}}
                 <div class="action-row">
                     <a class="btn btn-ghost" href="/admin/site-slots?project={{selectedProject}}">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
-                    <button type="submit" class="btn btn-primary">{{.BindLabel}}</button>
+                    <button type="submit" class="btn btn-primary">{{if .BindBound}}{{tr("admin.site_slots.action.rebind", "换绑")}}{{else}}{{tr("admin.site_slots.action.bind", "绑定")}}{{end}}</button>
                 </div>
             </form>
         </div>

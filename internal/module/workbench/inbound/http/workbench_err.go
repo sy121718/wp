@@ -7,7 +7,7 @@ package workbenchhttp
 // 「预览编译失败」暴露。状态码刻意保留 422（这是作者能自己处理的配置问题，不是服务端故障），
 // 缺的是**可归因**：作者拿到那句话既不知道错在哪，也不知道下一步做什么。
 //
-// 三件套（与 admin 的 admin_err.go / page 的 page_err.go 同形）：
+// 三件套（与 admin 的 admin_err.go 同形；page 那份已收敛到 internal/adminui.PageErrorFact）：
 //
 //	① 白名单   —— workbenchFacingFallbacks：键 = workbenchenums 的 key，值 = 中文兜底。
 //	              没登记 = 不给用户看（走归口文案），漏登记只会少一句提示（一眼可见），
@@ -34,10 +34,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
-	"go_wp/internal/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 )
 
 // workbenchErrScene 结构化日志场景名（与工作台其它 logger.Scene 一致）。
@@ -84,19 +86,19 @@ var workbenchFacingFallbacks = map[string]string{
 
 // workbenchFacingText 命中可展示文案 → 当前语言的文本；未登记 → 返回空串（调用方走归口文案）。
 //
-// 取词一律经 shell.TranslateFor（语言取自请求），不直接输出 key：这些文本会进
+// 取词直接经 i18n.TranslateFunc，语言取自请求；这些成品文本会进
 // 预览 iframe 的 body 与 JSON message，不经过 pkg/response 的翻译层。
 func workbenchFacingText(c *gin.Context, key string) string {
 	fallback, ok := workbenchFacingFallbacks[key]
 	if !ok {
 		return ""
 	}
-	return shell.TranslateFor(c)(key, fallback)
+	return i18n.TranslateFunc(response.RequestLanguage(c))(key, fallback)
 }
 
 // workbenchCompileFallbackText 编译失败的归口文案（词条 MsgCompileFailed，缺词条回落中文）。
 func workbenchCompileFallbackText(c *gin.Context) string {
-	return shell.TranslateFor(c)(workbenchenums.MsgCompileFailed, workbenchCompileFallback)
+	return i18n.TranslateFunc(response.RequestLanguage(c))(workbenchenums.MsgCompileFailed, workbenchCompileFallback)
 }
 
 // writePreviewCompileRejected 预览编译失败的 422 出口（画布 iframe / 新标签预览共用）。
@@ -248,9 +250,9 @@ func workbenchShortText(c *gin.Context, key string) string {
 		logger.Scene(workbenchErrScene).
 			With("path", c.Request.URL.Path).
 			Error(errors.New("workbench 短句未登记中文兜底"), "受控短句表缺条目")
-		return shell.PageInternalText(c)
+		return adminui.PageInternalText(c)
 	}
-	return shell.TranslateFor(c)(key, fallback)
+	return i18n.TranslateFunc(response.RequestLanguage(c))(key, fallback)
 }
 
 // workbenchTrFunc 按 key 取词的函数（兜底来自 workbenchShortFallbacks）。

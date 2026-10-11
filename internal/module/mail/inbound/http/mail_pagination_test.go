@@ -12,29 +12,42 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/shell"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/reqparams"
 )
 
-// TestMailListPaginationLinks 列表翻页链接只带自己的页码参数。
-func TestMailListPaginationLinks(t *testing.T) {
-	keys := mailListPagination(45, 1, "account_page", "/admin/mail", nil)
-	links, ok := keys["PaginationLinks"].([]shell.PageLink)
-	if !ok || len(links) == 0 {
-		t.Fatalf("应注入分页链接，实际 %#v", keys)
+// TestMailListPaginationFacts 列表页分页事实：页码参数名归域内、链接不带 limit。
+//
+// 迁移后 handler 只给事实（Base / PageParam / KeepLimit），链接由 partial 用它们生成 ——
+// 所以这里钉的是**给模板的输入**：参数名、基址、是否带 limit、分页是否成立。
+// 渲染出来的 href 字节由 internal/templates 的 facts 矩阵与 mail 的 E2E 覆盖。
+func TestMailListPaginationFacts(t *testing.T) {
+	pg := mailListPaginationFacts(45, 1, "account_page", "/admin/mail")
+	if pg.PageParam != "account_page" {
+		t.Fatalf("页码参数名应归域内 account_page，实际 %q", pg.PageParam)
 	}
-	for _, link := range links {
-		if !strings.Contains(link.URL, "account_page=2") {
-			continue
-		}
-		// 拆页前两张表共用 ?page=，链接里必须互带另一张表的页码；
-		// 拆页后每页只有一张表，链接里既不该有共享 page（会被误读成另一页的页码），
-		// 也不该出现另一页的参数（那会把用户送到一个不存在的筛选状态）。
-		if strings.Contains(link.URL, "template_page") || strings.Contains(link.URL, "limit=") {
-			t.Fatalf("翻页链接泄漏了无关参数：%s", link.URL)
-		}
-		return
+	if pg.Base != "/admin/mail" {
+		t.Fatalf("基址应原样带出，实际 %q", pg.Base)
 	}
-	t.Fatalf("缺少第二页链接：%+v", links)
+	if pg.KeepLimit {
+		t.Error("账号页每页固定，链接不得带 limit（KeepLimit 必须为 false）")
+	}
+	if !pg.HasPagination() || !pg.HasNext() || pg.HasPrev() {
+		t.Fatalf("45 条 / 每页 20：应成立且只有下一页，实际 %+v", pg)
+	}
+	if pg.Pages != 3 || pg.Page != 1 || pg.Start != 1 || pg.End != 20 {
+		t.Fatalf("事实算错：pages=%d page=%d start=%d end=%d", pg.Pages, pg.Page, pg.Start, pg.End)
+	}
+}
+
+// TestMailListPaginationFactsSinglePage 单页 / 空数据不成立 —— handler 据此**不注入**键，
+// 与迁移前 TemplateKeys 给空 map 的效果一致（模板侧 isset 守卫）。
+func TestMailListPaginationFactsSinglePage(t *testing.T) {
+	for _, total := range []int64{0, 1, int64(mailListPageSize)} {
+		if pg := mailListPaginationFacts(total, 1, "page", "/admin/mail/templates"); pg.HasPagination() {
+			t.Fatalf("total=%d 不应成立分页，实际 %+v", total, pg)
+		}
+	}
 }
 
 // TestMailContactsClampPage 单表页码收敛（越界收敛到最大页，空数据收敛到 1）。
@@ -83,48 +96,32 @@ func TestMailCampaignsClampPage(t *testing.T) {
 	}
 }
 
-// TestMailPaginationOnlyBeyondOnePage 分页条只在超一页时出现，且链接保留筛选参数。
+// TestMailPaginationFiltersStayInBase 筛选参数必须留在**基址**里：
+// 链接由 partial 用 Base 拼，Base 丢筛选就等于翻页回全量（而人以为自己还在筛选里）。
 //
-// 这一条钉的是「handler 侧注入给模板的键」的行为契约（模板如何消费见
-// internal/templates/admin_list_pagination_render_test.go）：
-// TemplateKeys 在无分页时给出空 map，模板据此不渲染 —— 谁把它改成「总是注入」，
-// 单页列表上就会出现一条只有一个「1」的分页条。
-func TestMailPaginationOnlyBeyondOnePage(t *testing.T) {
-	t.Run("空数据 / 单页 → 不注入", func(t *testing.T) {
-		for _, total := range []int64{0, 1, int64(mailContactsPageSize)} {
-			keys := shell.BuildPagination(total, 1, mailContactsPageSize, "/admin/mail/contacts", nil).TemplateKeys()
-			if len(keys) != 0 {
-				t.Fatalf("total=%d 不应注入分页键，实际 %v", total, keys)
-			}
-		}
+// 迁移前这一条靠断言 BuildPagination 产出的链接字节；迁移后 handler 与模板分工变了，
+// 断言的落点随之变成「注入给模板的 Base」，href 字节由 internal/templates 的矩阵覆盖。
+func TestMailPaginationFiltersStayInBase(t *testing.T) {
+	base := reqparams.FilterBaseURL(mailContactsPath, map[string]string{
+		"keyword": "vip@example.com", "status": "subscribed",
 	})
-
-	t.Run("超一页 → 注入页码，且链接保留筛选", func(t *testing.T) {
-		base := shell.FilterBaseURL("/admin/mail/contacts", map[string]string{
-			"keyword": "vip@example.com", "status": "subscribed",
-		})
-		keys := shell.BuildPagination(int64(mailContactsPageSize)+1, 1, mailContactsPageSize, base, nil).TemplateKeys()
-		links, ok := keys["PaginationLinks"].([]shell.PageLink)
-		if !ok || len(links) == 0 {
-			t.Fatalf("超一页应注入页码链接，实际 %#v", keys)
+	pg := pagination.Facts(int64(mailContactsPageSize)+1, 1, mailContactsPageSize)
+	pg.Base = base
+	if pg.Base != base {
+		t.Fatalf("Base 应原样带出，实际 %q", pg.Base)
+	}
+	for _, want := range []string{"keyword=vip%40example.com", "status=subscribed"} {
+		if !strings.Contains(pg.Base, want) {
+			t.Errorf("基址 %q 缺少筛选 %q —— 翻页会回到未筛选的全量", pg.Base, want)
 		}
-		// 当前页是 span（没有 URL），所以检查非当前页的链接 —— 那才是「翻页」走的路径。
-		var href string
-		for _, l := range links {
-			if !l.Active && !l.Disabled && l.URL != "" {
-				href = l.URL
-				break
-			}
-		}
-		if href == "" {
-			t.Fatalf("应存在可点的页码链接，实际 %+v", links)
-		}
-		for _, want := range []string{"keyword=vip%40example.com", "status=subscribed", "page=2", "limit=" + itoaTest(mailContactsPageSize)} {
-			if !strings.Contains(href, want) {
-				t.Errorf("翻页链接 %q 缺少 %q —— 翻页会丢筛选或丢每页条数", href, want)
-			}
-		}
-	})
+	}
+	if !pg.HasPagination() || !pg.HasNext() {
+		t.Fatalf("每页 %d 条、共 %d 条应超一页，实际 %+v", mailContactsPageSize, mailContactsPageSize+1, pg)
+	}
+	// 联系人页保留 limit（与账号页相反：那两页每页固定 20 条，从链接里去掉）。
+	if !pg.KeepLimit {
+		t.Error("联系人页链接应带 limit（KeepLimit 默认 true）")
+	}
 }
 
 // itoaTest 小整数转字符串（避免为一条断言引入 strconv 依赖的噪声）。

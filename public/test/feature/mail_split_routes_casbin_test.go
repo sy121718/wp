@@ -18,26 +18,39 @@ package feature
 //   C. 「GET 页面裸注册（无 Casbin）」与「写操作挂 Casbin」的差别：普通管理员
 //      （is_admin=0、无任何 mail 策略）能打开六页，但写操作 403；再用因果反证
 //      （补策略 → 同一请求立刻放行）证明 403 确实由该条 Casbin 路径决定；
-//   D. 五组写操作的 302 回跳目标 = 各自所属页面 —— 拆页后最容易回错页的地方。
+//   D. 仍留在页面 POST 上的写动作：结论走 shell.RenderJump（200 整页提示 + no-store + **无 Location**），
+//      回跳目标 = 各自所属页面 —— 拆页后最容易回错页的地方（成功档 1 秒后经 meta refresh 自动跳，
+//      失败档只给「立即前往」链接：运营要先看清原因再走）。
+//      联系人的四种写动作已迁到 /api/mail/contact/{save,delete,tag}（见本文件末尾的
+//      TestMailSplitContactJSONWritesRequireCasbinPolicy 与 TestMailSplitContactPageWritePostsAreRetired），
+//      所以它们不再出现在这张「页面写动作回跳」表里，而是按「JSON 契约 + 真实落库」验收。
 //
 // 前置条件不满足一律 t.Fatal：本包先例不写 t.Skip —— 「账号没建出来 → 登录失败 → Skip」
 // 会让 go test 显示 ok 而断言从未执行。
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"go_wp/config"
+	"go_wp/internal/middleware/adminctx"
 	builtin "go_wp/internal/middleware/builtin"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
+	maildto "go_wp/internal/module/mail/dto"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
+	mailmodel "go_wp/internal/module/mail/model"
+	mailservice "go_wp/internal/module/mail/service"
 	"go_wp/internal/permission"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/public/migrations"
@@ -45,6 +58,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/net/html"
 	"gorm.io/gorm"
 )
 
@@ -145,9 +159,22 @@ func newMailSplitRoutesEnv(t *testing.T) *mailSplitRoutesEnv {
 			// /admin 页面组：中间件链与 assembly.go 一致（Session + CSRF + 权限上下文）。
 			adminPages := engine.Group("/admin",
 				builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
-				shell.PermContextMiddleware(adminAuthz))
+				adminctx.PermContextMiddleware(adminAuthz))
 			// 邮件模块：/api/mail/* 业务接口 + /admin/mail* 页面路由一起注册。
-			mailhttp.SetupMailRoutes(permission.NewRouteGroup(api), db, adminPages)
+			//
+			// /api 上再显式包一层三层链（Session + CSRF + Casbin），与 assembly.go 的
+			// authorizedAPI 逐字同构：mail 的 API 路由**不**自带中间件，判权全靠组级链。
+			// 少了这一层，「无策略 403」就永远测不出来（拿到的会是 handler 自己的 4xx/200），
+			// 而生产有 —— 测试装置必须与生产同构，否则断言的是另一个系统。
+			authorizedAPI := permission.NewRouteGroup(
+				api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware()))
+			// 发信账号保存要加密 SMTP 密码：密钥由装配层从 config.yaml 的 app.secret 读入后注入
+			//（SetupMailRoutes → config.GetViper）。测试配置这一项留空 ⇒ 不补一个临时密钥，
+			// 「保存账号」这条表单链路就永远停在「未配置加密密钥」的失败档，白测一趟。
+			if v, cerr := config.GetViper(); cerr == nil && v != nil {
+				v.Set("app.secret", "qa-mail-split-routes-secret")
+			}
+			mailhttp.SetupMailRoutes(authorizedAPI, db, adminPages)
 		},
 	})
 	if err != nil {
@@ -228,18 +255,92 @@ func mailSplitRoutesPOST(t *testing.T, env *mailSplitRoutesEnv, sess *support.Ad
 	return recorder
 }
 
-// mailSplitRoutesLocationPath 取 302 的 Location 并只留路径（错误回跳会带 ?err=...）。
-func mailSplitRoutesLocationPath(t *testing.T, recorder *httptest.ResponseRecorder, where string) string {
+// mailSplitRoutesJump 提示页（shell.RenderJump）里能当验收判据的三样东西。
+type mailSplitRoutesJump struct {
+	// State data-jump-state 的值：ok（成功档）/ err（失败档）。
+	State string
+	// Back 回跳地址原文（可能带筛选 query）。
+	Back string
+	// BackPath 回跳地址的路径部分（比归属页时只看路径，page= 之类的 query 不算差异）。
+	BackPath string
+	// FromMeta 回跳地址来自 meta refresh（成功档 Seconds>0）而不是「立即前往」链接。
+	FromMeta bool
+}
+
+// mailSplitRoutesJumpPage 解析提示页：状态标记 + 回跳地址。
+//
+// 用 golang.org/x/net/html 建树，不用正则扫全文：提示页是**完整 layout**（侧栏本来就有
+// 几十个 /admin/* 链接），只有 jump 卡片**内部**的那个链接才是这次动作的回跳目标 ——
+// 正则命中侧栏不会红，却会让「回错了页」的断言永远通过。
+func mailSplitRoutesJumpPage(t *testing.T, recorder *httptest.ResponseRecorder) mailSplitRoutesJump {
 	t.Helper()
-	loc := recorder.Header().Get("Location")
-	if loc == "" {
-		t.Fatalf("%s：响应没有 Location 头（code=%d body=%s）", where, recorder.Code, mailSplitRoutesHead(recorder.Body.String(), 300))
-	}
-	parsed, err := url.Parse(loc)
+	body := recorder.Body.String()
+	doc, err := html.Parse(strings.NewReader(body))
 	if err != nil {
-		t.Fatalf("%s：Location %q 解析失败: %v", where, loc, err)
+		t.Fatalf("提示页不是可解析的 HTML: %v（正文前 400 字：%s）", err, mailSplitRoutesHead(body, 400))
 	}
-	return parsed.Path
+
+	var state, fromMeta, fromLink string
+	var walk func(node *html.Node, inJump bool)
+	walk = func(node *html.Node, inJump bool) {
+		if node.Type == html.ElementNode {
+			switch node.Data {
+			case "div":
+				if value := mailSplitRoutesHTMLAttr(node, "data-jump-state"); value != "" {
+					if state == "" {
+						state = value
+					}
+					inJump = true
+				}
+			case "meta":
+				if fromMeta == "" && strings.EqualFold(mailSplitRoutesHTMLAttr(node, "http-equiv"), "refresh") {
+					if content := mailSplitRoutesHTMLAttr(node, "content"); content != "" {
+						if idx := strings.Index(content, "url="); idx >= 0 {
+							fromMeta = strings.TrimSpace(content[idx+len("url="):])
+						}
+					}
+				}
+			case "a":
+				if inJump && fromLink == "" {
+					if href := mailSplitRoutesHTMLAttr(node, "href"); strings.HasPrefix(href, "/admin/") {
+						fromLink = href
+					}
+				}
+			}
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child, inJump)
+		}
+	}
+	walk(doc, false)
+
+	if state == "" {
+		t.Fatalf("响应不是整页提示页（缺 data-jump-state；这条通道的出口是 shell 层的 RenderJump）；正文前 400 字：%s",
+			mailSplitRoutesHead(body, 400))
+	}
+	back, fromMetaRefresh := fromMeta, true
+	if back == "" {
+		back, fromMetaRefresh = fromLink, false
+	}
+	if back == "" {
+		t.Fatalf("提示页里找不到回跳地址（meta refresh 与 jump 卡片内的 /admin 链接都没有）；正文前 400 字：%s",
+			mailSplitRoutesHead(body, 400))
+	}
+	parsed, err := url.Parse(back)
+	if err != nil {
+		t.Fatalf("回跳地址 %q 解析失败: %v", back, err)
+	}
+	return mailSplitRoutesJump{State: state, Back: back, BackPath: parsed.Path, FromMeta: fromMetaRefresh}
+}
+
+// mailSplitRoutesHTMLAttr 取元素的属性值（不存在返回空串）。
+func mailSplitRoutesHTMLAttr(node *html.Node, key string) string {
+	for _, attr := range node.Attr {
+		if attr.Key == key {
+			return attr.Val
+		}
+	}
+	return ""
 }
 
 // mailSplitRoutesHead 截取正文前 n 个字符用于失败输出（整页 HTML 会淹没日志）。
@@ -356,7 +457,7 @@ func TestMailSplitRoutesLegacyMarketingIsRedirectOnly(t *testing.T) {
 // 本用例的前身（TestMailSplitPageGETHasNoCasbinButPOSTDoes）钉的是旧口径「GET 页面不挂
 // Casbin，只靠侧栏按权限渲染」—— 那条约定已被 docs/02-Z §4.3 判定为缺陷：菜单隐藏不是
 // 访问控制，任何登录账号直输 URL 就能进。现在页面 GET 借**该页菜单绑定的读权限点**
-// enforce（shell.PageAuthz），与 /api/* 共用同一批策略，所以「无策略 → 403」「补策略 → 200」
+// enforce（adminui.PageAuthz），与 /api/* 共用同一批策略，所以「无策略 → 403」「补策略 → 200」
 // 与写操作完全同构。
 func TestMailSplitPageGETRequiresCasbinPolicy(t *testing.T) {
 	env := newMailSplitRoutesEnv(t)
@@ -457,176 +558,326 @@ func TestMailSplitPageGETRequiresCasbinPolicy(t *testing.T) {
 	}
 }
 
-// TestMailSplitPOSTRedirectsBackToOwningPage 五组写操作的 302 回跳目标。
-func TestMailSplitPOSTRedirectsBackToOwningPage(t *testing.T) {
+// TestMailSplitPagePostJumpsBackToOwningPage 十组页面写动作的提示页回跳目标。
+//
+// 结论走 shell.RenderJump（200 整页提示 + no-store + 无 Location），不是 302 + Location：
+// 成功档 1 秒后经 meta refresh 自动跳，失败档只给「立即前往」链接。两档都必须回到
+// **各自所属页面** —— 拆页后最容易回错页的地方。
+func TestMailSplitPagePostJumpsBackToOwningPage(t *testing.T) {
 	env := newMailSplitRoutesEnv(t)
+
+	// 联系人状态变更要改一条**真实存在**的联系人：这个库里不一定有 id=1，而本用例验的是
+	// 「成功档的回跳目标」，不是「失败档怎么走」。「id 不存在」的行为另有归属：
+	// service 先查存在性（internal/module/mail/service/mail_contact.go:81-84 GetContact，
+	// 未命中回 mailenums.ErrContactNotFound）⇒ 页面 err 档 / JSON 400，已由
+	// public/test/mail/feature/mail_contact_crud_test.go 的
+	// TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess 钉住，别混进这条用例。
+	contactID := mailSplitContactSeed(t, env,
+		fmt.Sprintf("qa.route.status.%d@example.invalid", mailSplitContactNext()))
 
 	cases := []struct {
 		name string
 		path string
 		form url.Values
+		// want 归属页路径（回跳目标）。
 		want string
+		// wantState 提示页档位：ok = 成功档（meta refresh 自动跳）/ err = 失败档（只给链接）。
+		wantState string
 	}{
 		{
 			name: "账号保存",
 			path: "/admin/mail/account/save",
 			form: url.Values{
+				// 字段与 mail.html 的新建账号表单一致：handler 不读 is_default / status，
+				// 带上它们只会让这条用例以为自己在测「默认 / 启用」。
 				"name": {"路由验收账号"}, "purpose": {"marketing"},
 				"from_name": {"QA"}, "from_email": {"qa@example.invalid"},
 				"host": {"smtp.example.invalid"}, "port": {"25"},
 				"username": {"qa"}, "password": {"qa-secret"},
-				"is_default": {"1"}, "status": {"1"},
 			},
-			want: "/admin/mail",
+			want:      "/admin/mail",
+			wantState: "ok",
 		},
 		{
 			name: "模板保存",
 			path: "/admin/mail/template/save",
 			form: url.Values{
-				"key": {"qa_route_tpl"}, "locale": {"zh-CN"},
+				// 字段与 mail_templates.html 的新建表单 / handler 逐字对齐（template_key / body_html）。
+				"template_key": {"qa_route_tpl"}, "locale": {"zh-CN"},
 				"name": {"路由验收模板"}, "subject": {"路由验收主题"},
-				"body": {"<p>hi</p>"},
+				"body_html": {"<p>hi</p>"},
 			},
-			want: "/admin/mail/templates",
+			want:      "/admin/mail/templates",
+			wantState: "ok",
 		},
 		{
 			name: "联系人导入",
 			path: "/admin/mail/contact/import",
-			form: url.Values{"emails": {"qa-import@example.invalid"}},
-			want: "/admin/mail/contacts",
-		},
-		{
-			name: "联系人状态变更",
-			path: "/admin/mail/contact/status",
-			form: url.Values{"id": {"1"}, "status": {"subscribed"}},
-			want: "/admin/mail/contacts",
-		},
-		{
-			name: "联系人保存",
-			path: "/admin/mail/contact/save",
 			form: url.Values{
-				"id": {"0"}, "email": {"qa-route-contact@example.invalid"},
-				"name": {"路由验收联系人"}, "tags": {"qa-route"}, "status": {"pending"},
+				// 导入体是文本域 content（可含 CSV 行），不是 emails；同意声明与来源是合规留痕。
+				"content":          {"qa-import@example.invalid"},
+				"consent_declared": {"on"},
+				"consent_source":   {"qa 路由验收"},
 			},
-			want: "/admin/mail/contacts",
+			want:      "/admin/mail/contacts",
+			wantState: "ok",
 		},
 		{
-			// 用一个不存在的 id：回跳目标与「删成功」相同，但不会动别条用例的数据。
-			name: "联系人删除",
-			path: "/admin/mail/contact/delete",
-			form: url.Values{"id": {"999999"}},
-			want: "/admin/mail/contacts",
+			// 联系人的保存 / 单删 / 批删 / 批标签已迁到 /api/mail/contact/{save,delete,tag}：
+			// 它们不再有页面 POST，因此不在这张回跳表里（用 TestMailSplitContactPageWritePostsAreRetired
+			// 钉「旧路径已消失」，用 TestMailSplitContactJSONWritesRequireCasbinPolicy 钉新通道。
+			name: "联系人状态变更",
+			// 用真实落库的联系人 id（page 上就是这么来的）⇒ 成功档。
+			path:      "/admin/mail/contact/status",
+			form:      url.Values{"id": {strconv.FormatUint(contactID, 10)}, "status": {"subscribed"}},
+			want:      "/admin/mail/contacts",
+			wantState: "ok",
 		},
 		{
-			name: "联系人批量删除",
-			path: "/admin/mail/contacts/bulk-delete",
-			form: url.Values{"ids": {"999999"}},
-			want: "/admin/mail/contacts",
+			name:      "活动保存",
+			path:      "/admin/mail/campaign/save",
+			form:      url.Values{"name": {"路由验收活动"}, "template_id": {"1"}, "account_id": {"1"}},
+			want:      "/admin/mail/campaigns",
+			wantState: "err",
 		},
 		{
-			name: "联系人批量打标签",
-			path: "/admin/mail/contacts/bulk-tag",
-			form: url.Values{"ids": {"999999"}, "add": {"qa-route"}},
-			want: "/admin/mail/contacts",
+			name:      "活动启动",
+			path:      "/admin/mail/campaign/start",
+			form:      url.Values{"id": {"1"}},
+			want:      "/admin/mail/campaigns",
+			wantState: "err",
 		},
 		{
-			name: "活动保存",
-			path: "/admin/mail/campaign/save",
-			form: url.Values{"name": {"路由验收活动"}, "template_id": {"1"}, "account_id": {"1"}},
-			want: "/admin/mail/campaigns",
+			name:      "活动删除",
+			path:      "/admin/mail/campaign/delete",
+			form:      url.Values{"id": {"1"}},
+			want:      "/admin/mail/campaigns",
+			wantState: "err",
 		},
 		{
-			name: "活动启动",
-			path: "/admin/mail/campaign/start",
-			form: url.Values{"id": {"1"}},
-			want: "/admin/mail/campaigns",
+			name:      "流程状态变更",
+			path:      "/admin/mail/automation/status",
+			form:      url.Values{"id": {"1"}, "status": {"1"}},
+			want:      "/admin/mail/automation",
+			wantState: "err",
 		},
 		{
-			name: "活动删除",
-			path: "/admin/mail/campaign/delete",
-			form: url.Values{"id": {"1"}},
-			want: "/admin/mail/campaigns",
+			name:      "流程删除",
+			path:      "/admin/mail/automation/delete",
+			form:      url.Values{"id": {"1"}},
+			want:      "/admin/mail/automation",
+			wantState: "err",
 		},
 		{
-			name: "流程状态变更",
-			path: "/admin/mail/automation/status",
-			form: url.Values{"id": {"1"}, "status": {"1"}},
-			want: "/admin/mail/automation",
-		},
-		{
-			name: "流程删除",
-			path: "/admin/mail/automation/delete",
-			form: url.Values{"id": {"1"}},
-			want: "/admin/mail/automation",
-		},
-		{
-			name: "自动化 tick",
-			path: "/admin/mail/automation/tick",
-			form: url.Values{},
-			want: "/admin/mail/automation/runs",
+			name:      "自动化 tick",
+			path:      "/admin/mail/automation/tick",
+			form:      url.Values{},
+			want:      "/admin/mail/automation/runs",
+			wantState: "ok",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := mailSplitRoutesPOST(t, env, env.SuperAdmin, tc.path, tc.form)
-			if recorder.Code != http.StatusFound {
-				t.Fatalf("超管 POST %s 应 302 回跳: got=%d body=%s",
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("超管 POST %s 的提示页应回 200: got=%d body=%s",
 					tc.path, recorder.Code, mailSplitRoutesHead(recorder.Body.String(), 400))
 			}
-			if got := mailSplitRoutesLocationPath(t, recorder, tc.path); got != tc.want {
+			// 结论不进缓存：否则「重试」拿回的还是上一次的结论。
+			if cc := recorder.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+				t.Errorf("提示页应带 no-store，得到 %q", cc)
+			}
+			// 无 Location：这条通道已由 302 换成响应体，留着 Location 说明有人还在往旧通道上接。
+			if loc := recorder.Header().Get("Location"); loc != "" {
+				t.Errorf("提示页不该带 Location（那是旧 302 通道），得到 %q", loc)
+			}
+
+			jump := mailSplitRoutesJumpPage(t, recorder)
+			if jump.State != tc.wantState {
+				t.Errorf("POST %s 的提示页应为 %s 档，实际 %s（正文前 400 字：%s）",
+					tc.path, tc.wantState, jump.State, mailSplitRoutesHead(recorder.Body.String(), 400))
+			}
+			if jump.BackPath != tc.want {
 				t.Errorf("POST %s 应回跳到 %q，实际 %q（拆页后回错了页）",
-					tc.path, tc.want, got)
+					tc.path, tc.want, jump.BackPath)
+			}
+			// 档位与回跳通道要一致：成功档自动跳（meta refresh），失败档不自动跳（只给链接）。
+			if tc.wantState == "ok" && !jump.FromMeta {
+				t.Errorf("成功档应经 meta refresh 自动回跳，实际回跳地址来自链接：%q", jump.Back)
+			}
+			if tc.wantState == "err" && jump.FromMeta {
+				t.Errorf("失败档不该自动跳走（运营要先看清原因），实际 meta refresh：%q", jump.Back)
 			}
 		})
 	}
 }
 
-// mailSplitContactCrudRoutes 本批新增的四条写路由（权限路径与 API 同源）。
+// mailSplitContactJSONWrite 一条联系人 JSON 写端点的验收：端点 / 权限码 / 载荷 / 真实落库断言。
 //
-// 批量端点复用单条的 API 路径：策略是按 (api_path, api_method) 授权的，
-// 「能删一个」与「能批量删」必须由同一条策略决定（单列一条不会自动生效，
-// 但少了它就会让有权限的人在批量入口被挡）。
-var mailSplitContactCrudRoutes = []struct {
+// 三条端点在同一条权限点的**不同 code** 上判权（/api/mail/contact/{save,delete,tag}，
+// 权限点由迁移 525 落库）—— 批量与单条**共用同一条路径**：sys_permission 每个 code 只有一列
+// api_path/api_method，另开一条 /api/mail/contact/bulk-delete 就必须新增权限点，
+// 而新增权限点 = 已授权角色静默缩权（见 521 与 block_router.go 的成文教训）。
+// 区分单条/批量的是**请求体形状**（恰好给 id 或恰好给 ids），不是路径。
+type mailSplitContactJSONWrite struct {
 	name string
 	path string
 	api  string
 	code string
-	form url.Values
-}{
-	{
-		name: "联系人保存", path: "/admin/mail/contact/save",
-		api: "/api/mail/contact/save", code: "mail:contact_save",
-		form: url.Values{"id": {"0"}, "email": {"qa-casbin-contact@example.invalid"}, "name": {"Casbin 验收"}},
-	},
-	{
-		name: "联系人删除", path: "/admin/mail/contact/delete",
-		api: "/api/mail/contact/delete", code: "mail:contact_delete",
-		form: url.Values{"id": {"999999"}},
-	},
-	{
-		name: "联系人批量删除", path: "/admin/mail/contacts/bulk-delete",
-		api: "/api/mail/contact/delete", code: "mail:contact_delete",
-		form: url.Values{"ids": {"999999"}},
-	},
-	{
-		name: "联系人批量打标签", path: "/admin/mail/contacts/bulk-tag",
-		api: "/api/mail/contact/tag", code: "mail:contact_tag",
-		form: url.Values{"ids": {"999999"}, "add": {"qa-casbin"}},
-	},
+	// build 每次都现造一份载荷（并可能先备好它要操作的数据）：同一份载荷会被发三次
+	//（403 反例 / 超管 / 补策略后），而删除是破坏性动作 —— 复用同一份数据会让第三次拿到
+	//「这一条已经不存在」，于是用例红在夹具上而不是红在权限上。让 build 负责备料，三次各自成立。
+	build func(t *testing.T, env *mailSplitRoutesEnv) map[string]interface{}
+	// check 在「补策略后放行」的那一次之后跑：断言效果**真的落到库里**。
+	// 只看状态码会把「回 200 但没写库」当成通过。
+	check func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{}, body map[string]interface{})
+	// checkDenied 在 403 那一次之后跑：断言被拦下的请求没有留下任何痕迹。
+	checkDenied func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{})
 }
 
-// TestMailSplitContactCrudRoutesRequireCasbinPolicy 本批四条写路由：裸注册 403、超管放行、补策略即放行。
+// mailSplitContactWrites 四条子用例（save / delete 单条 / delete 批量 / tag 批量）。
+//
+// 邮箱与标签都带自增序号：同一个子用例会被跑多轮（本文件多个用例共用一张测试库），
+// 撞已有邮箱会被 service 的「邮箱已存在」挡下，那是夹具问题、不是端点问题。
+func mailSplitContactWrites() []mailSplitContactJSONWrite {
+	// 夹具与断言之间要传的东西**不能塞进请求体**：三条端点都是严格白名单（多一个字段就 400），
+	// 而「这次用的是哪个邮箱 / 哪个标签」正是端点不认识的信息。所以走闭包变量。
+	var deletedEmail string
+	var bulkEmails []string
+	tagged := map[string]string{} // 子用例 → 本次使用的标签名
+	return []mailSplitContactJSONWrite{
+		{
+			name: "联系人保存（新建走同一端点）",
+			path: "/api/mail/contact/save", api: "/api/mail/contact/save", code: "mail:contact_save",
+			build: func(t *testing.T, _ *mailSplitRoutesEnv) map[string]interface{} {
+				return map[string]interface{}{
+					"email":  fmt.Sprintf("qa.json.save.%d@example.invalid", mailSplitContactNext()),
+					"name":   "Casbin JSON 验收",
+					"status": string(mailmodel.ContactStatusPending),
+				}
+			},
+			check: func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{}, _ map[string]interface{}) {
+				email, _ := payload["email"].(string)
+				if !mailSplitContactExists(t, env, email) {
+					t.Fatalf("放行后联系人 %s 应已落库", email)
+				}
+			},
+			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{}) {
+				email, _ := payload["email"].(string)
+				if mailSplitContactExists(t, env, email) {
+					t.Fatalf("403 的请求不该写库，但 %s 已经存在了", email)
+				}
+			},
+		},
+		{
+			name: "联系人删除（单条）",
+			path: "/api/mail/contact/delete", api: "/api/mail/contact/delete", code: "mail:contact_delete",
+			build: func(t *testing.T, env *mailSplitRoutesEnv) map[string]interface{} {
+				deletedEmail = fmt.Sprintf("qa.json.del.%d@example.invalid", mailSplitContactNext())
+				return map[string]interface{}{"id": mailSplitContactSeed(t, env, deletedEmail)}
+			},
+			check: func(t *testing.T, env *mailSplitRoutesEnv, _ map[string]interface{}, _ map[string]interface{}) {
+				if mailSplitContactExists(t, env, deletedEmail) {
+					t.Fatalf("放行后 %s 应已删除", deletedEmail)
+				}
+			},
+			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, _ map[string]interface{}) {
+				if !mailSplitContactExists(t, env, deletedEmail) {
+					t.Fatalf("403 的删除不该动数据，但 %s 已经不在了", deletedEmail)
+				}
+			},
+		},
+		{
+			name: "联系人删除（批量，与单条同路径同权限点）",
+			path: "/api/mail/contact/delete", api: "/api/mail/contact/delete", code: "mail:contact_delete",
+			build: func(t *testing.T, env *mailSplitRoutesEnv) map[string]interface{} {
+				bulkEmails = make([]string, 0, 2)
+				ids := make([]string, 0, 2)
+				for i := 0; i < 2; i++ {
+					email := fmt.Sprintf("qa.json.bulk.%d@example.invalid", mailSplitContactNext())
+					bulkEmails = append(bulkEmails, email)
+					ids = append(ids, strconv.FormatUint(mailSplitContactSeed(t, env, email), 10))
+				}
+				return map[string]interface{}{"ids": ids}
+			},
+			check: func(t *testing.T, env *mailSplitRoutesEnv, _ map[string]interface{}, body map[string]interface{}) {
+				data, ok := body["data"].(map[string]interface{})
+				if !ok {
+					t.Fatalf("批量回执缺少 data：%#v", body)
+				}
+				if deleted, _ := data["deleted"].(float64); int(deleted) != len(bulkEmails) {
+					t.Fatalf("应删掉 %d 条，实际 %#v", len(bulkEmails), data)
+				}
+				for _, email := range bulkEmails {
+					if mailSplitContactExists(t, env, email) {
+						t.Fatalf("放行后 %s 应已删除", email)
+					}
+				}
+			},
+			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, _ map[string]interface{}) {
+				for _, email := range bulkEmails {
+					if !mailSplitContactExists(t, env, email) {
+						t.Fatalf("403 的批量删除不该动数据，但 %s 已经不在了", email)
+					}
+				}
+			},
+		},
+		{
+			name: "联系人打标签（批量，非破坏动作）",
+			path: "/api/mail/contact/tag", api: "/api/mail/contact/tag", code: "mail:contact_tag",
+			build: func(t *testing.T, env *mailSplitRoutesEnv) map[string]interface{} {
+				seq := mailSplitContactNext()
+				email := fmt.Sprintf("qa.json.tag.%d@example.invalid", seq)
+				tag := fmt.Sprintf("qa-json-%d", seq)
+				tagged["tag"] = tag
+				// add / remove 是**字符串**（页面上的文本框，`,` 或 `;` 分隔），不是数组：
+				// 端点的白名单按页面表单的字段形状定，发数组会被判成参数非法。
+				return map[string]interface{}{
+					"ids": []string{strconv.FormatUint(mailSplitContactSeed(t, env, email), 10)},
+					"add": tag,
+				}
+			},
+			check: func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{}, body map[string]interface{}) {
+				data, ok := body["data"].(map[string]interface{})
+				if !ok {
+					t.Fatalf("打标签回执缺少 data：%#v", body)
+				}
+				// 键名必须是 updated：deleted 会被前端当成「这一行可以移除了」。
+				if _, isDelete := data["deleted"]; isDelete {
+					t.Fatalf("打标签是非破坏动作，回执不该有 deleted 键：%#v", data)
+				}
+				if updated, _ := data["updated"].(float64); updated != 1 {
+					t.Fatalf("应报告 1 条已更新，实际 %#v", data)
+				}
+				ids, _ := payload["ids"].([]string)
+				if !mailSplitContactTagged(t, env, ids[0], tagged["tag"]) {
+					t.Fatalf("放行后联系人 %s 应带上标签 %q", ids[0], tagged["tag"])
+				}
+			},
+			checkDenied: func(t *testing.T, env *mailSplitRoutesEnv, payload map[string]interface{}) {
+				ids, _ := payload["ids"].([]string)
+				if mailSplitContactTagged(t, env, ids[0], tagged["tag"]) {
+					t.Fatalf("403 的打标签不该动数据，但 %s 已经带上了 %q", ids[0], tagged["tag"])
+				}
+			},
+		},
+	}
+}
+
+// TestMailSplitContactJSONWritesRequireCasbinPolicy 联系人三条 JSON 写端点：无策略 403、超管放行、补策略即放行且真的落库。
 //
 // 与 TestMailSplitPageGETHasNoCasbinButPOSTDoes 同一套反证手法（先钉「策略不存在」这个前提，
-// 再补策略看同一请求是否立刻不再被拦），差别只在覆盖面：这里逐条走完四条新路由。
-func TestMailSplitContactCrudRoutesRequireCasbinPolicy(t *testing.T) {
+// 再用「补策略 → 同一请求立刻不再是 403」证明 403 确实由该条 Casbin 路径决定），
+// 区别是这里打的是 /api 上的真实端点，走的是生产链路：
+// Session（会话 Cookie）→ CSRF（X-CSRF-Token）→ Casbin（迁移 525 的权限点）→ handler → PG。
+func TestMailSplitContactJSONWritesRequireCasbinPolicy(t *testing.T) {
 	env := newMailSplitRoutesEnv(t)
 	subject := strconv.FormatInt(env.PlainID, 10)
 
-	for _, tc := range mailSplitContactCrudRoutes {
+	for _, tc := range mailSplitContactWrites() {
 		t.Run(tc.name, func(t *testing.T) {
-			// 自带清理：删除与批量删除共用同一个 api_path + 权限码，上一条子用例补进去的策略
+			// 自带清理：删除单条与批量删除共用同一个 api_path + 权限码，上一条子用例补进去的策略
 			// 会让下一条的「403 反例」前提不成立。
 			if err := env.DB.Exec(`DELETE FROM sys_casbin_rule
 				WHERE ptype = 'p' AND v0 = ? AND v1 = ? AND v3 = ?`,
@@ -636,7 +887,6 @@ func TestMailSplitContactCrudRoutesRequireCasbinPolicy(t *testing.T) {
 			if err := pkgcasbin.ReloadPolicy(); err != nil {
 				t.Fatalf("重载 Casbin 策略失败: %v", err)
 			}
-
 			var policyCount int64
 			if err := env.DB.Raw(`SELECT count(*) FROM sys_casbin_rule
 				WHERE ptype = 'p' AND v0 = ? AND v1 = ? AND v3 = ?`,
@@ -644,25 +894,29 @@ func TestMailSplitContactCrudRoutesRequireCasbinPolicy(t *testing.T) {
 				t.Fatalf("查询普通管理员的 %s 策略失败: %v", tc.api, err)
 			}
 			if policyCount != 0 {
-				t.Fatalf("反例前提不成立：普通管理员（id=%s）已有 %d 条 %s 策略",
-					subject, policyCount, tc.api)
+				t.Fatalf("反例前提不成立：普通管理员（id=%s）已有 %d 条 %s 策略", subject, policyCount, tc.api)
 			}
 
-			forbidden := mailSplitRoutesPOST(t, env, env.PlainAdmin, tc.path, tc.form)
-			if forbidden.Code != http.StatusForbidden {
+			// 1) 反例：无策略的普通管理员 —— 被 Casbin 拦在 handler 之前（不是 4xx 形状错）。
+			// 载荷在这一刻造好并留着，403 之后就用它断言「没留下任何痕迹」。
+			deniedPayload := tc.build(t, env)
+			denied := mailSplitRoutesJSONPost(t, env, env.PlainAdmin, tc.path, deniedPayload)
+			if denied.Code != http.StatusForbidden {
 				t.Fatalf("无策略的普通管理员 POST %s 应 403: got=%d body=%s",
-					tc.path, forbidden.Code, mailSplitRoutesHead(forbidden.Body.String(), 300))
+					tc.path, denied.Code, mailSplitRoutesHead(denied.Body.String(), 300))
+			}
+			if tc.checkDenied != nil {
+				tc.checkDenied(t, env, deniedPayload)
 			}
 
-			// 超管：权限点由迁移 525 落库，策略由 seed 通道（051_superadmin_all_policies）
-			// 动态补全 —— 所以超管这里必须是 302（不是 403）。
-			asAdmin := mailSplitRoutesPOST(t, env, env.SuperAdmin, tc.path, tc.form)
-			if asAdmin.Code != http.StatusFound {
-				t.Fatalf("超管 POST %s 应 302: got=%d body=%s",
+			// 2) 超管对照：权限点由迁移 525 落库、超管策略由 seed 通道动态补全 —— 必须是 200。
+			asAdmin := mailSplitRoutesJSONPost(t, env, env.SuperAdmin, tc.path, tc.build(t, env))
+			if asAdmin.Code != http.StatusOK {
+				t.Fatalf("超管 POST %s 应 200: got=%d body=%s",
 					tc.path, asAdmin.Code, mailSplitRoutesHead(asAdmin.Body.String(), 300))
 			}
 
-			// 因果反证：补上策略后同一请求立刻放行。
+			// 3) 因果反证 + 落库：补上策略后普通管理员的同一请求立刻放行，且效果真的写进了库。
 			if err := env.DB.Exec(`INSERT INTO sys_casbin_rule (ptype, v0, v1, v2, v3)
 				VALUES ('p', ?, ?, 'POST', ?)
 				ON CONFLICT (ptype, v0, v1, v2, v3, v4, v5) DO NOTHING`,
@@ -672,15 +926,120 @@ func TestMailSplitContactCrudRoutesRequireCasbinPolicy(t *testing.T) {
 			if err := pkgcasbin.ReloadPolicy(); err != nil {
 				t.Fatalf("重载 Casbin 策略失败: %v", err)
 			}
-			allowed := mailSplitRoutesPOST(t, env, env.PlainAdmin, tc.path, tc.form)
-			if allowed.Code == http.StatusForbidden {
-				t.Fatalf("补上策略后 %s 不应再 403（说明 403 由该条 Casbin 路径决定）: body=%s",
-					tc.path, mailSplitRoutesHead(allowed.Body.String(), 300))
-			}
-			if allowed.Code != http.StatusFound {
-				t.Fatalf("补上策略后 %s 应 302 回跳: got=%d body=%s",
+			payload := tc.build(t, env)
+			allowed := mailSplitRoutesJSONPost(t, env, env.PlainAdmin, tc.path, payload)
+			if allowed.Code != http.StatusOK {
+				t.Fatalf("补上策略后 %s 应 200（说明 403 由该条 Casbin 路径决定）: got=%d body=%s",
 					tc.path, allowed.Code, mailSplitRoutesHead(allowed.Body.String(), 300))
 			}
+			tc.check(t, env, payload, mailSplitRoutesJSONBody(t, allowed))
 		})
 	}
 }
+
+// TestMailSplitContactPageWritePostsAreRetired 四条联系人页面 POST 已下线：直连它们只拿到 404。
+//
+// 迁移后的唯一写入口是 /api/mail/contact/{save,delete,tag}。旧路径若还留着（哪怕是 403/405），
+// 页面表单「还能写」的错觉就会一直在，而真正的写入路径反而没人验证 —— 所以这里钉的是
+// 「路径已经不存在」，而不是「路径被拒绝」。
+func TestMailSplitContactPageWritePostsAreRetired(t *testing.T) {
+	env := newMailSplitRoutesEnv(t)
+	for _, path := range []string{
+		"/admin/mail/contact/save",
+		"/admin/mail/contact/delete",
+		"/admin/mail/contacts/bulk-delete",
+		"/admin/mail/contacts/bulk-tag",
+	} {
+		recorder := mailSplitRoutesPOST(t, env, env.SuperAdmin, path, url.Values{"id": {"1"}})
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("旧页面写路由 %s 应已下线（404），实际 %d: body=%s",
+				path, recorder.Code, mailSplitRoutesHead(recorder.Body.String(), 200))
+		}
+	}
+}
+
+// mailSplitRoutesJSONPost 带会话与 CSRF 的 JSON POST —— 前端 json_write.js 在生产里就是这么发的。
+func mailSplitRoutesJSONPost(t *testing.T, env *mailSplitRoutesEnv, sess *support.AdminSession, path string, payload map[string]interface{}) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("序列化 %s 的请求体失败: %v", path, err)
+	}
+	recorder, err := support.SendRequest(env.Engine, support.RequestOptions{
+		Method: http.MethodPost,
+		Path:   path,
+		Headers: map[string]string{
+			"Cookie":       sess.Cookie,
+			"X-CSRF-Token": sess.CSRFToken,
+			"Content-Type": "application/json",
+		},
+		RawBody: raw,
+	})
+	if err != nil {
+		t.Fatalf("发送 POST %s 失败: %v", path, err)
+	}
+	return recorder
+}
+
+// mailSplitRoutesJSONBody 解析回执体（pkg/response 的 {code,message,data}）。
+func mailSplitRoutesJSONBody(t *testing.T, recorder *httptest.ResponseRecorder) map[string]interface{} {
+	t.Helper()
+	body := map[string]interface{}{}
+	if recorder.Body.Len() == 0 {
+		return body
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("回执不是 JSON: %s", mailSplitRoutesHead(recorder.Body.String(), 300))
+	}
+	return body
+}
+
+// mailSplitContactSeed 落一条联系人并返回 id（走真实 service：本用例验收的是端点，不是建号逻辑）。
+func mailSplitContactSeed(t *testing.T, env *mailSplitRoutesEnv, email string) uint64 {
+	t.Helper()
+	svc := mailservice.NewService(mailmodel.NewMailModel(env.DB))
+	id, err := svc.CreateContact(context.Background(), &maildto.SaveContactReq{
+		Email: email, Name: "Casbin JSON 验收", Status: mailmodel.ContactStatusPending, OperatorID: 1,
+	})
+	if err != nil {
+		t.Fatalf("落联系人 %s 失败: %v", email, err)
+	}
+	if id == 0 {
+		t.Fatalf("落联系人 %s 返回 id=0", email)
+	}
+	return id
+}
+
+// mailSplitContactExists 库里是否还有这条联系人（真删了才算删）。
+func mailSplitContactExists(t *testing.T, env *mailSplitRoutesEnv, email string) bool {
+	t.Helper()
+	var n int64
+	if err := env.DB.Raw(`SELECT count(*) FROM mail_contacts WHERE email = ?`, email).Scan(&n).Error; err != nil {
+		t.Fatalf("查询联系人 %s 失败: %v", email, err)
+	}
+	return n > 0
+}
+
+// mailSplitContactTagged 联系人是否带上了该标签（tags 是 PG 原生 text[]）。
+func mailSplitContactTagged(t *testing.T, env *mailSplitRoutesEnv, id, tag string) bool {
+	t.Helper()
+	contactID, err := strconv.ParseUint(id, 10, 64)
+	if err != nil {
+		t.Fatalf("id %q 不是数字: %v", id, err)
+	}
+	row, err := mailmodel.NewMailModel(env.DB).GetContact(context.Background(), contactID)
+	if err != nil {
+		t.Fatalf("读取联系人 %d 失败: %v", contactID, err)
+	}
+	for _, got := range row.Tags {
+		if got == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// mailSplitContactSeq 让每次 build 造出互不相同的邮箱与标签（同一个子用例会被发多次）。
+var mailSplitContactSeq int64
+
+func mailSplitContactNext() int64 { return atomic.AddInt64(&mailSplitContactSeq, 1) }

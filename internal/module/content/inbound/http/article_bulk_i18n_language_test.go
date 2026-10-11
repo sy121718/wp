@@ -2,10 +2,11 @@ package contenthttp
 
 // article_bulk_i18n_language_test.go — 批量结论文案的**当前语言一致性**回归。
 //
-// 为什么必须有这一条：写侧（articleBulkDeleteResult）经 articleBulkTextOf 取词，
-// 提示页的正文也经 shell.TranslateFor 渲染 —— 只要有人把候选写死成中文常量（或忘了带 c），
-// 中文环境下一切正常，英文页面上运营看到的却是中文。用 pkg/i18n.InjectForTest 直接塞内存
-// 词条，不建库、不起装配。
+// 为什么必须有这一条：写侧（articleBulkDeleteResult）只产出**事实**（key + 中文兜底 +
+// `%s` 参数），取词发生在渲染期（提示页用注入的 tf）—— 只要有人把兜底写死成中文常量
+// 并当成成品串直接输出（或忘了带 c），中文环境下一切正常，英文页面上运营看到的却是中文。
+// 所以断言分两半：事实经 adminui.MsgText(当前语言) 取词正确，以及提示页正文照此渲染。
+// 用 pkg/i18n.InjectForTest 直接塞内存词条，不建库、不起装配。
 
 import (
 	"net/http"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	contentenums "go_wp/internal/module/content/enums"
 	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
@@ -61,7 +63,9 @@ func TestArticleBulkNoticeFollowsRequestLanguage(t *testing.T) {
 		{"部分成功", 2, 3, "EN-PART 2 3"},
 	}
 	for _, tc := range cases {
-		msg := articleBulkDeleteResult(en, tc.deleted, tc.skipped)
+		// 断言的是「事实 + 渲染期取词」的合成结果：articleBulkDeleteResult 给 key 与参数，
+		// adminui.MsgText 按当前语言翻（提示页的 tmpl 走同一实现）。
+		msg := adminui.MsgText(en, articleBulkDeleteResult(tc.deleted, tc.skipped))
 		if msg != tc.want {
 			t.Errorf("%s：应按当前语言拼装，got %q want %q", tc.name, msg, tc.want)
 		}
@@ -86,7 +90,7 @@ func TestArticleBulkNoticeFollowsRequestLanguage(t *testing.T) {
 	}
 
 	zh := articleBulkLangCtx(t, "zh-CN")
-	if msg := articleBulkDeleteResult(zh, 3, 0); msg != "已删除 3 篇文章。" {
+	if msg := adminui.MsgText(zh, articleBulkDeleteResult(3, 0)); msg != "已删除 3 篇文章。" {
 		t.Errorf("中文请求应取中文词条，实际 %q", msg)
 	}
 }

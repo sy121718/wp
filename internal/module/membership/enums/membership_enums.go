@@ -98,17 +98,17 @@ const (
 //
 // 这批不进白名单对账（不是 Err* / Msg* 前缀）：它们是**界面文案**，
 // 由模板与后台页 handler 经 tr(key, 中文兜底) 取用。
+//
+// 词条 key 与模板字面量的**对应关系不在本文件**：来源显示名（admin.membership.assign.source.*）
+// 与权益类型名（admin.membership.entitlement.kind.*）由模板按原始枚举值判分支后 tr() 取词
+// （与 block 模块的 admin.blocks.kind.* 同形）。早先它们在这里各有一个常量，由 Go 侧取好词
+// 再塞进行视图 —— 那样同一个值会在 Go 与模板两处各翻一次，且「页面用什么 key」这件事
+// 被拆到两个包里。这里只保留 handler 真正要用的两个页面标题。
 const (
-	// SourceLabelAuto / SourceLabelManual 归属来源的展示名（后台归属列表与筛选下拉）。
-	SourceLabelAuto   = "admin.membership.assign.source.auto"
-	SourceLabelManual = "admin.membership.assign.source.manual"
 	// PageTiersTitle / PageAssignmentsTitle 两个后台页的标题（传给模板的 title 键，
-	// shell.Prepare 的 injectI18n 会把它当 key 翻译；后台菜单的 title_key 另见 463）。
+	// adminui.Prepare 的 injectI18n 会把它当 key 翻译；后台菜单的 title_key 另见 463）。
 	PageTiersTitle       = "admin.membership.title"
 	PageAssignmentsTitle = "admin.membership.assign.title"
-	// KindLabelFreeShipping / KindLabelDiscount 权益类型的展示名（等级列表的权益列）。
-	KindLabelFreeShipping = "admin.membership.entitlement.kind.freeShipping"
-	KindLabelDiscount     = "admin.membership.entitlement.kind.discount"
 )
 
 // EntitlementKinds 本期支持的权益类型（上界封闭：新增一种要同时改这里、迁移 462 的 CHECK

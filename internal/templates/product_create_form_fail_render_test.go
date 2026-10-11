@@ -24,7 +24,8 @@ func productCreateFailData() map[string]any {
 		"SelectedProject": "pr1", "Err": "",
 		"Projects": groupDProjects(),
 		"WarehouseOptions": []map[string]any{
-			{"ID": "w1", "Label": "苏州仓", "Code": "SZ", "IsDefault": true},
+			{"ID": "w1", "Label": "苏州仓", "Code": "SZ", "IsDefault": true,
+				"DefaultSuffixKey": "admin.inventory.change.warehouseDefaultSuffix", "DefaultSuffixFallback": "· 默认仓"},
 			{"ID": "w2", "Label": "杭州仓", "Code": "HZ", "IsDefault": false},
 		},
 		"AttributeOptions": []map[string]any{

@@ -17,7 +17,8 @@ import (
 	"strings"
 	"testing"
 
-	"go_wp/internal/shell"
+	"go_wp/internal/adminui"
+	"go_wp/pkg/safepath"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,7 +26,7 @@ import (
 // adminLangRedirectCtx 组一个「当前请求 URI == uri」的上下文。
 //
 // 不用 httptest.NewRequest：带换行 / 反斜杠的取值会让请求行本身非法（构造不出来），
-// 而这里要的正是「shell 与 admin 对同一个字符串各自怎么判」。构造后用 RequestURI() 自检，
+// 而这里要的正是「Prepare 与 admin 对同一个字符串各自怎么判」。构造后用 RequestURI() 自检，
 // 还原不出来就直接失败，免得测试在错误的输入上给出「通过」。
 func adminLangRedirectCtx(t *testing.T, uri string) *gin.Context {
 	t.Helper()
@@ -42,39 +43,47 @@ func adminLangRedirectCtx(t *testing.T, uri string) *gin.Context {
 	return c
 }
 
-// TestAdminLangRedirectMatchesShellCriterion 语言回跳的两处判据必须逐项一致。
+// TestAdminLangRedirectMatchesPrepareCriterion 语言回跳的两处判据必须逐项一致。
 //
-// 渲染侧（shell.LangRedirect，把值写进隐藏域）与消费侧（adminSafeLangRedirect，
+// 渲染侧（adminui.Prepare，把值写进隐藏域）与消费侧（adminSafeLangRedirect，
 // 校验 query 里带回来的值）是同一个协议的两端：一端放宽就多一个开放重定向面，
 // 一端收紧就让运营「切了语言回不到原页面」。
 //
-// 判据已归口到 shell.LangRedirectPath（导出入口，按字符串判定），消费侧不再重抄 ——
-// 所以这条用例退化成「同源确认」：同一批取值喂给渲染侧（经 RequestURI）与导出判据
-// （按字符串），取舍必须逐项一致，且消费侧的回跳落点与之一致。断言一条都没删：
+// 判据已归口到 pkg/safepath.LangRedirectPath（导出入口，按字符串判定；task-75 自 shell 迁出），
+// 消费侧不再重抄 —— 所以这条用例退化成「同源确认」：同一批取值喂给渲染侧（经 RequestURI）
+// 与导出判据（按字符串），取舍必须逐项一致，且消费侧的回跳落点与之一致。断言一条都没删：
 // 取材不成立（渲染侧判据变了）时仍然直接 Fatal。
-func TestAdminLangRedirectMatchesShellCriterion(t *testing.T) {
+func TestAdminLangRedirectMatchesPrepareCriterion(t *testing.T) {
 	cases := []struct {
-		uri  string
-		want bool
+		uri      string
+		want     bool
+		fallback string
 	}{
-		{"/", true},
-		{"/admin/roles?page=2&keyword=x", true},
-		{"/admin/products?project=" + strings.Repeat("x", 300), true},
-		{"/admin/products?project=" + strings.Repeat("x", 520), false}, // 超过 512 字节
-		{"/admin/" + strings.Repeat("y", 600), false},
-		{"//evil.example.com/x", false},
-		{"https://evil.example.com/x", false},
-		{"admin/system/roles", false},
+		{"/", true, ""},
+		{"/admin/roles?page=2&keyword=x", true, ""},
+		{"/admin/products?project=" + strings.Repeat("x", 300), true, ""},
+		{"/admin/products?project=" + strings.Repeat("x", 520), false, "/admin/products"},
+		{"/admin/" + strings.Repeat("y", 600), false, "/admin"},
+		{"//evil.example.com/x", false, "/admin"},
+		{"https://evil.example.com/x", false, "/admin"},
+		{"admin/system/roles", false, "/admin"},
 	}
 	for _, tc := range cases {
 		c := adminLangRedirectCtx(t, tc.uri)
-		shellAccepts := shell.LangRedirect(c) == tc.uri
-		if shellAccepts != tc.want {
-			t.Fatalf("渲染侧判据与预期不符：%q shell=%v want=%v（这条测试的取材已经不成立了）", tc.uri, shellAccepts, tc.want)
+		rendered, ok := adminui.Prepare(c, nil)["lang_redirect"].(string)
+		if !ok || rendered == "" {
+			t.Fatalf("lang_redirect 必须注入非空字符串，实际 %q (string=%v)", rendered, ok)
+		}
+		if !tc.want && rendered != tc.fallback {
+			t.Fatalf("被拒绝的 URI %q 应在隐藏域回落到 %q，实际 %q", tc.uri, tc.fallback, rendered)
+		}
+		prepareAccepts := rendered == tc.uri
+		if prepareAccepts != tc.want {
+			t.Fatalf("渲染侧判据与预期不符：%q Prepare=%v want=%v（这条测试的取材已经不成立了）", tc.uri, prepareAccepts, tc.want)
 		}
 		// 判据只有一份：导出入口按字符串判定，渲染侧与消费侧都调它。
-		if got := shell.LangRedirectPath(tc.uri) != ""; got != tc.want {
-			t.Errorf("导出判据与渲染侧不一致：%q LangRedirectPath=%v shell=%v", tc.uri, got, shellAccepts)
+		if got := safepath.LangRedirectPath(tc.uri) != ""; got != tc.want {
+			t.Errorf("导出判据与渲染侧不一致：%q LangRedirectPath=%v Prepare=%v", tc.uri, got, prepareAccepts)
 		}
 		// 消费侧语义：合法原样回跳、不合法回**控制面首页** —— 两条都要在。
 		//
@@ -103,7 +112,7 @@ func TestAdminLangRedirectRejectsDecodedJunk(t *testing.T) {
 		"/admin/roles\x1b[31m",
 		"/admin/roles\x7f",
 	} {
-		if shell.LangRedirectPath(raw) != "" {
+		if safepath.LangRedirectPath(raw) != "" {
 			t.Errorf("解码后才出现的字符同样要拒：%q", raw)
 		}
 		if got := adminSafeLangRedirect(raw); got != "/admin" {

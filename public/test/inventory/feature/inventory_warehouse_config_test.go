@@ -255,7 +255,7 @@ func TestInventoryAdjustEntryOnPage(t *testing.T) {
 	if hit.Code != http.StatusOK || !strings.Contains(hit.Body.String(), v.SKUCode) {
 		t.Fatalf("当前时间窗口应查到流水，实际 %d", hit.Code)
 	}
-	// 非法时间：GET 渲染走 shell.PageError（不 500、不静默忽略）。
+	// 非法时间：GET 由 inventoryPageError 渲染受控失败页，不应静默忽略筛选条件。
 	bad := httptestGet(engine, "/admin/inventory?project="+f.projectID+"&timeFrom=not-a-time")
 	if bad.Code == http.StatusOK && strings.Contains(bad.Body.String(), v.SKUCode) {
 		t.Fatalf("非法时间不应被静默忽略并照常展示流水")

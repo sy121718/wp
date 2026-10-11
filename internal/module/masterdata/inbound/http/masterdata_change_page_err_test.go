@@ -2,7 +2,7 @@ package masterdatahttp
 
 // masterdata_change_page_err_test.go — 工程列表装载失败时变更记录页必须降级渲染。
 //
-// 原先那一分支是 `c.String(500, shell.MsgInternalError)`：浏览器里只有一块**未翻译的裸 key**
+// 原先那一分支是 `c.String(500, adminui.MsgInternalError)`：浏览器里只有一块**未翻译的裸 key**
 // （页面上直接显示 MsgInternalError 这串英文），侧栏 / 页头 / 筛选栏全部消失。本用例把降级渲染
 // 的契约钉住：
 //  1. HTTP 200 且是**完整页面**（响应体含 </html>，筛选控件在）；

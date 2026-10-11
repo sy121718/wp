@@ -1,0 +1,62 @@
+package adminui
+
+// render.go — 页面/片段的**渲染出口**：控制器最后一步只该是一行渲染。
+//
+// 为什么需要它：控制器的终局是「绑定并校验请求 → 调 service → 渲染」四步（见
+// internal/module/CLAUDE.md §inbound/http）。渲染这一步如果每个 handler 自己写，就会重复三件事：
+//   · HTTP 分档（200 / 400 参数不合法 / 500 取数失败）；
+//   · no-store（失败页不该被缓存，否则重试看到的是缓存的失败页）；
+//   · 取词函数注入（PrepareView / PrepareFragmentView，漏了是**静默**空串）。
+// 这三件事的判据都属于「这一屏的结论」，所以由**视图**给出（实现 PageResult），渲染出口只读它 ——
+// handler 因此不再需要 `if errors.Is(...) { status = 400 }` 这类分档代码。
+//
+// 失败页与成功页渲染**同一份模板**：差别只有状态码 / no-store / 视图里的失败槽。两份模板必然漂移，
+// 而漂移的表现是「失败页缺了某个必需键」→ 渲染中断 → 500（见 internal/templates/CLAUDE.md）。
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+// PageResult 视图自带的渲染结论（HTTP 分档 + 缓存策略）。
+//
+// 由 dto 视图实现（值接收者，零值即「200 且可缓存」）：
+//
+//	func (v ProductNewPageView) PageStatus() int    { return v.status }
+//	func (v ProductNewPageView) PageNoStore() bool  { return v.Failed }
+//
+// 不实现该接口的视图按「200 + 可缓存」处理 —— 存量 handler 迁移期不必一次改完。
+type PageResult interface {
+	// PageStatus 返回 HTTP 状态码；返回 0 视为 200。
+	PageStatus() int
+	// PageNoStore 为 true 时设置 Cache-Control: no-store。
+	PageNoStore() bool
+}
+
+// RenderPage 后台整页渲染出口：视图 → 状态码 / 缓存头 / 取词注入 → c.HTML。
+func RenderPage(c *gin.Context, tpl string, view any) {
+	status := http.StatusOK
+	if r, ok := view.(PageResult); ok {
+		if s := r.PageStatus(); s > 0 {
+			status = s
+		}
+		if r.PageNoStore() {
+			c.Header("Cache-Control", "no-store")
+		}
+	}
+	c.HTML(status, tpl, PrepareView(c, view))
+}
+
+// RenderFragment 后台片段渲染出口（htmx 局部更新）：只注入取词函数，不带页壳。
+//
+// 片段**一律 200**：htmx 2.0.4 把 5xx 判成 `swap:false`，失败片段返回 500 等于「用户点了没反应」。
+// 失败因此表达在视图的失败槽里（同 internal/templates/CLAUDE.md 的实测记录）。
+func RenderFragment(c *gin.Context, tpl string, view any) {
+	c.HTML(http.StatusOK, tpl, PrepareFragmentView(c, view))
+}
+
+// PrepareFragmentView 片段版的视图渲染入口：ViewMap + PrepareFragment。
+func PrepareFragmentView(c *gin.Context, view any) gin.H {
+	return PrepareFragment(c, ViewMap(view))
+}

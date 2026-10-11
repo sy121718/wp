@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"go_wp/pkg/pagination"
 )
 
 // admin_product_tag_hits_card_test.go — 「命中的商品」卡改为内容驱动（审计 02-L P1-7）。
@@ -30,8 +32,10 @@ func tagHitsPageData() map[string]any {
 		"FilterKeyword": "", "Filtered": false,
 		"RuleTypes": []map[string]any{{"Type": "new", "Name": "新品", "Params": "days"}},
 		"Tags": []map[string]any{{
-			"ID": "t1", "Name": "清仓", "Slug": "clearance", "Kind": "manual", "KindLabel": "手工",
-			"IsRule": false, "RuleLabel": "", "ProductCount": 3, "RecalcAt": "",
+			"ID": "t1", "Name": "清仓", "Slug": "clearance", "Kind": "manual",
+			"KindLabelKey": "", "KindLabelFallback": "手工",
+			"IsRule": false, "RuleLabel": "", "ProductCount": 3,
+			"RecalcAt": "", "RecalcLabelKey": "admin.product_tags.recalc.none", "RecalcLabelFallback": "未按规则重算过",
 			"RuleType": "", "RuleDays": "", "RuleMinPrice": "", "RuleMaxPrice": "",
 		}},
 	})
@@ -91,13 +95,12 @@ func TestProductTagsPageRendersEmptyHitsAnchorOnly(t *testing.T) {
 
 // ② 片段自带卡壳 + 表格：点开「N 个商品」之后出现的就是这张带壳的卡。
 func TestProductTagHitsFragmentProvidesCardShell(t *testing.T) {
+	// 分页交事实（task-109 B2b）：模板自己按**本页实际行数**算 info 区间、用 queryURL 拼 hx-get。
 	data := groupDData(map[string]any{
 		"TagID": "t1", "ProjectID": "pr1", "TagName": "清仓",
-		"Total": 120, "Page": 2, "PageSize": 50, "TotalPage": 3,
-		"PageInfo": "共 120 条，第 51-100 条",
-		"PrevURL":  "/admin/product-tags/hits?project=pr1&id=t1&page=1",
-		"NextURL":  "/admin/product-tags/hits?project=pr1&id=t1&page=3",
-		"Items":    []map[string]any{{"ID": "p1", "Name": "上架商品", "Slug": "p-one", "Status": "published"}},
+		"Total":      120,
+		"Items":      []map[string]any{{"ID": "p1", "Name": "上架商品", "Slug": "p-one", "Status": "published"}},
+		"Pagination": tagHitsFacts(120, 2, 50, "pr1"),
 	})
 	out, err := render(t, groupDSet(t), "admin/product/product_tag_hits", data)
 	if err != nil {
@@ -144,8 +147,8 @@ func TestProductTagHitsFragmentBranchesCarryCardShell(t *testing.T) {
 			name: "没有商品命中",
 			data: map[string]any{
 				"TagID": "t1", "ProjectID": "pr1", "TagName": "清仓",
-				"Total": 0, "Page": 1, "PageSize": 50, "TotalPage": 0,
-				"PageInfo": "共 0 条，第 0-0 条", "Items": []map[string]any{},
+				"Total": 0, "Items": []map[string]any{},
+				"Pagination": tagHitsFacts(0, 1, 50, "pr1"),
 			},
 			want: "当前没有商品命中这个标签",
 		},
@@ -184,4 +187,14 @@ func TestProductTagHitsAnchorStaysLiveRegion(t *testing.T) {
 	if strings.Contains(anchor, `aria-label=""`) {
 		t.Fatalf("锚点容器应有区域名（aria-label）：%s", anchor)
 	}
+}
+
+// tagHitsFacts 命中商品片段的分页事实（与 handler 注入方式一致：Base 固定、KeepLimit=false）。
+func tagHitsFacts(total, page, size int, projectID string) pagination.Page {
+	pg := pagination.Facts(int64(total), page, size)
+	pg.Base = "/admin/product-tags/hits"
+	pg.PageParam = "page"
+	pg.KeepLimit = false
+	_ = projectID
+	return pg
 }

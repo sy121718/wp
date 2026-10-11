@@ -1,6 +1,7 @@
 package mailhttp
 
 import (
+	"go_wp/internal/middleware/builtin"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"go_wp/internal/module/mail/contract"
 	"go_wp/internal/module/mail/dto"
 	"go_wp/internal/module/mail/enums"
-	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
@@ -22,7 +22,7 @@ func (h *Handle) AutomationSave(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
 		return
 	}
-	req.OperatorID = shell.CurrentUserID(c)
+	req.OperatorID = builtin.CurrentUserID(c)
 	item, err := h.svc.SaveAutomation(c.Request.Context(), &req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
@@ -78,7 +78,7 @@ func (h *Handle) AutomationStatus(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
 		return
 	}
-	req.OperatorID = shell.CurrentUserID(c)
+	req.OperatorID = builtin.CurrentUserID(c)
 	if err := h.svc.SetAutomationStatus(c.Request.Context(), &req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
@@ -105,7 +105,7 @@ func (h *Handle) AutomationStartRun(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
 		return
 	}
-	req.OperatorID = shell.CurrentUserID(c)
+	req.OperatorID = builtin.CurrentUserID(c)
 	started, err := h.svc.StartRun(c.Request.Context(), req.AutomationID, req.ContactID, "manual")
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)

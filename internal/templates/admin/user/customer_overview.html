@@ -32,8 +32,8 @@
         "resetHref", "/admin/customers/overview",
         "hint", .Range.From + " ~ " + .Range.To)}}
 
-    {{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
+    {{if .HasErr}}
+    <p class="badge badge-warning" role="alert">{{ .["t"](.ErrKey, .ErrFallback) }}</p>
     {{else if !.GrowthReady}}
     {* 空态与错误分开：没有工程 / 区间内确实没人下单，都不是「出错了」。
        但也有可能只是没接线 —— 上面那条 Err 已经覆盖了那种情况。 *}

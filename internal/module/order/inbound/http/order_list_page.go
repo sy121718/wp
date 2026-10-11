@@ -8,9 +8,10 @@ package orderhttp
 //   - **dto 直接交给模板**：Orders 是 []*orderdto.OrderResp、Detail 是 *orderdto.OrderDetailResp，
 //     模板读 o.OrderNo / detail.Head.Total / it.UnitPrice 这些原始字段。Go 侧因此没有
 //     orderListRow / orderDetailView / orderStatusCounters / orderBulkTargets 这一层。
-//   - **写动作的结论走提示页**（shell.RenderJump），回跳地址由 shell.BackPath 从表单 action
-//     的 query 里按白名单读回。于是 ?err= / ?ok= / ?done= 那套读侧白名单与
-//     orderDoneTexts / orderPageDone / orderBulkActions / orderBulkExtraNotices 一起消失。
+//   - **写动作的结论既不走 URL 也不走提示页**：前端直接调 JSON 接口（task-98 S2），
+//     页面侧只剩「按钮 / 表单声明调用事实 + 结果区承载回执」。于是 ?err= / ?ok= / ?done= 那套
+//     读侧白名单、orderDoneTexts / orderPageDone / orderBulkActions / orderBulkExtraNotices，
+//     以及写侧的 shell.RenderJump + shell.BackPath 机关都整批消失。
 //
 // 三条与状态有关的口径（模板按它们渲染，服务端仍是唯一裁决者）：
 //
@@ -31,13 +32,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/order/contract"
 	"go_wp/internal/module/order/dto"
-	"go_wp/internal/module/order/enums"
 	"go_wp/internal/module/project/contract"
 	"go_wp/internal/module/sysconfig/contract"
-	"go_wp/internal/shell"
+	"go_wp/pkg/backpath"
+	"go_wp/pkg/pagination"
 )
 
 // orderPageHandle 订单管理页处理器。
@@ -75,18 +76,6 @@ type orderFilter struct {
 var orderStatusValues = []string{
 	"", "pending", "paid", "shipped", "completed", "cancelled", "refunded",
 }
-
-// orderBulkCancelReasonRequired 批量取消缺原因时的提示（整批不处理）。
-var orderBulkCancelReasonRequired = orderBulkText{orderenums.BulkCancelReasonRequired,
-	"批量取消需要先填原因（表单里的备注框），本次没有处理任何订单。"}
-
-// orderListQueryKeys 列表上下文的白名单键。
-//
-// 一份给「渲染时拼进表单 action」（orderListQuery），一份给「POST 回来时读回上下文」
-// （shell.BackPath 的 keys 参数）—— 两处必须是同一份。**不含 status**：状态由徽章行
-// 与表单各自显式拼（徽章要覆盖它、表单要保留它），混进基础串里会出现「点了别的状态徽章
-// 却还带着旧状态」这种自相矛盾。
-var orderListQueryKeys = []string{"project", "keyword", "paymentMethod", "page", "limit", "orderId"}
 
 // OrdersPage 订单管理页（GET /admin/orders）。
 func (h *orderPageHandle) OrdersPage(c *gin.Context) {
@@ -152,8 +141,8 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		}
 	}
 
-	data := shell.Prepare(c, gin.H{
-		// 标题是 i18n key：shell.Prepare 按当前语言取词（模板不再看到裸 key）。
+	data := adminui.Prepare(c, gin.H{
+		// 标题是 i18n key：adminui.Prepare 按当前语言取词（模板不再看到裸 key）。
 		"title":           "admin.orders.heading",
 		"menu":            "orders",
 		"Projects":        projects,
@@ -177,7 +166,7 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		"FilterPayment": filter.PaymentMethod,
 		// 这一次没读出来的原因（空串 = 正常）：模板据此把「装载失败」与「还没有订单」分开。
 		"LoadErr": loadErrText,
-		// 列表上下文（拼进表单 action 的 query；不含 status，见 orderListQueryKeys）。
+		// 列表上下文（拼进页内链接的 query；不含 status，见 orderListQuery）。
 		"ListQuery": orderListQuery(selected, filter, page, limit),
 		// 国家/地区代码 → 当前语言的显示名。函数值直接进数据：模板里
 		// `{{ .CountryLabel(code) }}` 调用它，详情不必预先翻好每一段地址。
@@ -185,210 +174,14 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		"Page":         page,
 		"Limit":        limit,
 	})
-	base := shell.WithParams("/admin/orders", map[string]string{
+	base := backpath.WithParams("/admin/orders", map[string]string{
 		"project": selected, "status": filter.Status, "keyword": filter.Keyword,
 		"paymentMethod": filter.PaymentMethod,
 	})
-	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
-		data[k] = v
-	}
+	pg := pagination.Facts(total, page, limit)
+	pg.Base = base
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/order/orders.html", data)
-}
-
-// —— 写动作 ——
-
-// OrderStatusChange 状态流转（POST /admin/orders/status）。
-func (h *orderPageHandle) OrderStatusChange(c *gin.Context) {
-	orderID := orderQueryID(c.PostForm("orderId"))
-	if orderID == 0 {
-		h.orderFail(c, orderFacing(c, orderInvalidIDLabel))
-		return
-	}
-	req := &orderdto.ChangeStatusReq{
-		OrderID:  orderID,
-		ToStatus: strings.TrimSpace(c.PostForm("toStatus")),
-		Remark:   strings.TrimSpace(c.PostForm("remark")),
-		// 操作人由会话覆盖写入，绝不受表单影响。
-		OperatorType: orderOperatorTypeAdmin,
-		OperatorID:   shell.CurrentUserID(c),
-		OperatorName: builtin.GetUsername(c),
-	}
-	if err := h.orders.ChangeStatus(c.Request.Context(), req); err != nil {
-		h.orderFail(c, orderFacingError(c, err))
-		return
-	}
-	h.orderDone(c, orderenums.MsgStatusChanged)
-}
-
-// OrderNoteSave 保存后台备注（POST /admin/orders/note）。
-//
-// 备注**不是状态流转**：只改 admin_note 一列，不写 status_logs —— 那条链回答的是
-// 「订单处在哪一步、什么时候变过」，把备注混进去会让「这单什么时候发的货」变成要翻记录才看得出来。
-func (h *orderPageHandle) OrderNoteSave(c *gin.Context) {
-	orderID := orderQueryID(c.PostForm("orderId"))
-	if orderID == 0 {
-		h.orderFail(c, orderFacing(c, orderInvalidIDLabel))
-		return
-	}
-	if _, err := h.orders.UpdateOrderNote(c.Request.Context(), &orderdto.UpdateOrderNoteReq{
-		OrderID:   orderID,
-		AdminNote: strings.TrimSpace(c.PostForm("adminNote")),
-		// 操作人由会话覆盖写入，绝不受表单影响。
-		OperatorType: orderOperatorTypeAdmin,
-		OperatorID:   shell.CurrentUserID(c),
-		OperatorName: builtin.GetUsername(c),
-	}); err != nil {
-		h.orderFail(c, orderFacingError(c, err))
-		return
-	}
-	h.orderDone(c, orderenums.MsgNoteUpdated)
-}
-
-// OrderCancel 取消订单（POST /admin/orders/cancel）：服务端会归还尚未发货那部分库存。
-func (h *orderPageHandle) OrderCancel(c *gin.Context) {
-	orderID := orderQueryID(c.PostForm("orderId"))
-	if orderID == 0 {
-		h.orderFail(c, orderFacing(c, orderInvalidIDLabel))
-		return
-	}
-	if _, err := h.orders.CancelOrder(c.Request.Context(), &orderdto.CancelOrderReq{
-		OrderID:      orderID,
-		Reason:       strings.TrimSpace(c.PostForm("reason")),
-		OperatorType: orderOperatorTypeAdmin,
-		OperatorID:   shell.CurrentUserID(c),
-		OperatorName: builtin.GetUsername(c),
-	}); err != nil {
-		h.orderFail(c, orderFacingError(c, err))
-		return
-	}
-	// 取消只有「成功 / 失败」两种结果（归还库存与释放券核销同事务，失败即回滚）。
-	h.orderDone(c, orderenums.MsgCancelled)
-}
-
-// OrderRefund 退款（POST /admin/orders/refund）：**不归还库存**（退货入库是另一件事）。
-func (h *orderPageHandle) OrderRefund(c *gin.Context) {
-	orderID := orderQueryID(c.PostForm("orderId"))
-	if orderID == 0 {
-		h.orderFail(c, orderFacing(c, orderInvalidIDLabel))
-		return
-	}
-	if err := h.orders.RefundOrder(c.Request.Context(), &orderdto.RefundOrderReq{
-		OrderID:       orderID,
-		Reason:        strings.TrimSpace(c.PostForm("reason")),
-		TransactionID: strings.TrimSpace(c.PostForm("transactionId")),
-		OperatorType:  orderOperatorTypeAdmin,
-		OperatorID:    shell.CurrentUserID(c),
-		OperatorName:  builtin.GetUsername(c),
-	}); err != nil {
-		h.orderFail(c, orderFacingError(c, err))
-		return
-	}
-	h.orderDone(c, orderenums.MsgRefunded)
-}
-
-// OrderBulkStatus 批量状态流转（POST /admin/orders/bulk-status）。
-//
-// 逐条走**同一条单条流转路径**：状态机不允许那条边的订单（或已不存在的单）只跳过它、
-// 继续处理其余 —— 批量操作不能因为一条非法边就整批停下，否则用户会以为「一条都没做」
-// 然后反复重试（重试又会在别的单上撞同一堵墙）。
-func (h *orderPageHandle) OrderBulkStatus(c *gin.Context) {
-	// 目标状态读 toStatus（与单条流转同名字段，也与模板批量下拉的 name 一致）。
-	// 批量表单里另有一个 status，那是**回跳保留的筛选值**，两者不同义：读错这一处，
-	// toStatus 恒为空串 → 整批被判「非法目标状态」→ 回执「0 个已流转」。
-	toStatus := strings.TrimSpace(c.PostForm("toStatus"))
-	remark := strings.TrimSpace(c.PostForm("remark"))
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		h.orderFail(c, shell.BulkIDsFacingText(c, berr))
-		return
-	}
-	flowed, skipped := 0, 0
-	for _, raw := range ids {
-		id := orderQueryID(raw)
-		if id == 0 {
-			skipped++
-			continue
-		}
-		err := h.orders.ChangeStatus(c.Request.Context(), &orderdto.ChangeStatusReq{
-			OrderID:      id,
-			ToStatus:     toStatus,
-			Remark:       remark,
-			OperatorType: orderOperatorTypeAdmin,
-			OperatorID:   shell.CurrentUserID(c),
-			OperatorName: builtin.GetUsername(c),
-		})
-		if err != nil {
-			skipped++
-			continue
-		}
-		flowed++
-	}
-	h.orderDone(c, bulkSummary(c, orderBulkVerbFlowed, orderBulkNounOrder, flowed, skipped))
-}
-
-// OrderBulkCancel 批量取消（POST /admin/orders/bulk-cancel）。
-//
-// 取消原因必填：缺原因时**整批不处理**并把原因说清楚 —— 逐条取消却没有原因，
-// 事后在状态流转链上会看到一串没有理由的「已取消」，那是审计上查不清的状态。
-func (h *orderPageHandle) OrderBulkCancel(c *gin.Context) {
-	reason := strings.TrimSpace(c.PostForm("remark"))
-	if reason == "" {
-		h.orderFail(c, orderBulkTextOf(c, orderBulkCancelReasonRequired))
-		return
-	}
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		h.orderFail(c, shell.BulkIDsFacingText(c, berr))
-		return
-	}
-	cancelled, skipped := 0, 0
-	for _, raw := range ids {
-		id := orderQueryID(raw)
-		if id == 0 {
-			skipped++
-			continue
-		}
-		if _, err := h.orders.CancelOrder(c.Request.Context(), &orderdto.CancelOrderReq{
-			OrderID:      id,
-			Reason:       reason,
-			OperatorType: orderOperatorTypeAdmin,
-			OperatorID:   shell.CurrentUserID(c),
-			OperatorName: builtin.GetUsername(c),
-		}); err != nil {
-			skipped++
-			continue
-		}
-		cancelled++
-	}
-	h.orderDone(c, bulkSummary(c, orderBulkVerbCancelled, orderBulkNounOrder, cancelled, skipped))
-}
-
-// —— 出口与请求工具 ——
-
-// orderDone 写成功：提示页（htmx 档由 RenderJump 换成 HX-Redirect）。
-func (h *orderPageHandle) orderDone(c *gin.Context, msg string) {
-	shell.RenderJump(c, shell.Jump{
-		OK:       true,
-		Msg:      msg,
-		Back:     shell.BackPath(c, "/admin/orders", orderListQueryKeys...),
-		BackText: orderBackText(c),
-		Seconds:  1,
-	})
-}
-
-// orderFail 写失败：提示页，不自动跳转（用户要看清原因）。
-func (h *orderPageHandle) orderFail(c *gin.Context, msg string) {
-	shell.RenderJump(c, shell.Jump{
-		OK:       false,
-		Msg:      msg,
-		Back:     shell.BackPath(c, "/admin/orders", orderListQueryKeys...),
-		BackText: orderBackText(c),
-	})
-}
-
-// orderBackText 提示页那个链接的文字（复用页面标题词条，不新增全站词条）。
-func orderBackText(c *gin.Context) string {
-	return shell.TranslateFor(c)("admin.orders.heading", "订单管理")
 }
 
 // orderListQuery 列表上下文 → 查询串（拼进表单 action；空值不拼）。
@@ -428,9 +221,4 @@ func countryLabelFunc(c *gin.Context, dict sysconfigcontract.DictReader) func(st
 		return func(code string) string { return strings.TrimSpace(code) }
 	}
 	return label
-}
-
-// orderFacing 取词（key + 中文兜底 → 当前语言的成品文案）。
-func orderFacing(c *gin.Context, l orderLabel) string {
-	return orderLabelOf(shell.TranslateFor(c), l)
 }

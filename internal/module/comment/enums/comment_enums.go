@@ -288,7 +288,7 @@ const (
 
 // PageTitle 审核页标题（key + 中文兜底）。
 //
-// handler 先取词再把成品文案交给 shell.Prepare —— Prepare 内部是 `t(title, title)`，
+// handler 先取词再把成品文案交给 adminui.Prepare —— Prepare 内部是 `t(title, title)`，
 // 兜底就是 key 本身，词条缺失时页面标题会显示 `admin.comment.menu` 这样的裸 key，
 // 所以这里给出 LabelPair 让调用点用 `tr(key, fallback)`。
 var PageTitle = LabelPair{MsgPageTitle, "评论审核"}

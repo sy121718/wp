@@ -2,7 +2,8 @@ package feature
 
 // admin_page_write_failed_test.go — 页面写失败出口的「业务文案可见」回归。
 //
-// 背景：shell.AdminWriteFailed 恒给 400 + MsgInternalError（通用提示）。admin 的页面写端点
+// 背景：兜空出口（当年的 shell.AdminWriteFailed，现为 adminui.AdminWriteFailedText）恒给
+// 400 + MsgInternalError（通用提示）。admin 的页面写端点
 // 都在用它，于是「角色编码已存在 / 系统内置角色不可删除 / 用户名已存在」这类**业务**错误在运营侧
 // 表现成「系统出错了」—— 该改的是表单里的某一个字段，运营却只能反复重试。
 //

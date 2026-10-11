@@ -14,10 +14,10 @@ package mailhttp
 import (
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/module/mail/contract"
 	"go_wp/internal/permission"
-	"go_wp/internal/shell"
 )
 
 // setupMailPageRoutes 注册邮箱后台页（pages = /admin 页面组）。
@@ -33,13 +33,13 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	declareMailPageObjects()
 
 	// —— 发信账号 ——
-	pages.GET("/mail", shell.PageAuthz("/api/mail/account/list"), mailPage.MailPage)
+	pages.GET("/mail", adminui.PageAuthz("/api/mail/account/list"), mailPage.MailPage)
 	pages.POST("/mail/account/save", builtin.CasbinMiddlewareForPath("/api/mail/account/save"), mailPage.MailAccountSave)
 	pages.POST("/mail/account/delete", builtin.CasbinMiddlewareForPath("/api/mail/account/delete"), mailPage.MailAccountDelete)
 	pages.POST("/mail/account/default", builtin.CasbinMiddlewareForPath("/api/mail/account/default"), mailPage.MailAccountDefault)
 	pages.POST("/mail/account/test", builtin.CasbinMiddlewareForPath("/api/mail/account/test"), mailPage.MailAccountTest)
 	// —— 邮件模板 ——
-	pages.GET("/mail/templates", shell.PageAuthz("/api/mail/template/list"), mailPage.MailTemplatesPage)
+	pages.GET("/mail/templates", adminui.PageAuthz("/api/mail/template/list"), mailPage.MailTemplatesPage)
 	pages.POST("/mail/template/save", builtin.CasbinMiddlewareForPath("/api/mail/template/save"), mailPage.MailTemplateSave)
 	pages.POST("/mail/template/delete", builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplateDelete)
 	// 批量动作（评审规则 admin-ui-logic §7：列表首列勾选 + 批量条）。
@@ -49,25 +49,30 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	pages.POST("/mail/templates/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplatesBulkDelete)
 
 	// —— 联系人 ——
-	pages.GET("/mail/contacts", shell.PageAuthz("/api/mail/contact/list"), mailPage.MailContactsPage)
+	pages.GET("/mail/contacts", adminui.PageAuthz("/api/mail/contact/list"), mailPage.MailContactsPage)
 	pages.POST("/mail/contact/import", builtin.CasbinMiddlewareForPath("/api/mail/contact/import"), mailPage.MailContactImport)
 	pages.POST("/mail/contact/status", builtin.CasbinMiddlewareForPath("/api/mail/contact/status"), mailPage.MailContactStatus)
 	pages.POST("/mail/contacts/bulk-status", builtin.CasbinMiddlewareForPath("/api/mail/contact/status"), mailPage.MailContactsBulkStatus)
-	// CRUD 与标签：单条与批量复用同一条 API 权限点（批量端点不单列权限点 ——
-	// 那会造出「能删一条、不能批量删」这种没有意义的状态）。权限点见迁移 525。
-	pages.POST("/mail/contact/save", builtin.CasbinMiddlewareForPath("/api/mail/contact/save"), mailPage.MailContactSave)
-	pages.POST("/mail/contact/delete", builtin.CasbinMiddlewareForPath("/api/mail/contact/delete"), mailPage.MailContactDelete)
-	pages.POST("/mail/contacts/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/contact/delete"), mailPage.MailContactsBulkDelete)
-	pages.POST("/mail/contacts/bulk-tag", builtin.CasbinMiddlewareForPath("/api/mail/contact/tag"), mailPage.MailContactsBulkTag)
+	// CRUD 与标签：**已全部迁到 JSON 端点**（见 mail_contact_write.go，注册见 mail_router.go）。
+	// 页面表单与批量条按钮带 data-write-api 直调，四条页面 POST 因此下线：
+	// 新建 / 编辑（原 POST /mail/contact/save）、单条删除（原 POST /mail/contact/delete）、
+	// 批量删除与批量打标签（原 POST /mail/contacts/bulk-delete、/bulk-tag）。
+	// 权限点与 obj 逐字不变（沿用迁移 525 的 /api/mail/contact/{save,delete,tag}），
+	// 不新增权限点、不写权限迁移。
+	//
+	// 仍留在页面 POST 的只有批量改状态（/mail/contacts/bulk-status）：它没有 JSON 端点
+	// （服务端改状态要同步写抑制名单），而批量条上「一个表单并排多个动作」现在由
+	// json_write.js 的**按钮级声明**（读 e.submitter）支持 —— 表单自己不声明端点，
+	// 所以这个按钮不会被邻居的声明继承成 fetch。
 
 	// —— 群发活动（列表 + 报表）——
-	pages.GET("/mail/campaigns", shell.PageAuthz("/api/mail/campaign/list"), mailPage.MailCampaignsPage)
+	pages.GET("/mail/campaigns", adminui.PageAuthz("/api/mail/campaign/list"), mailPage.MailCampaignsPage)
 	pages.POST("/mail/campaign/save", builtin.CasbinMiddlewareForPath("/api/mail/campaign/save"), mailPage.MailCampaignSave)
 	pages.POST("/mail/campaign/start", builtin.CasbinMiddlewareForPath("/api/mail/campaign/start"), mailPage.MailCampaignStart)
 	pages.POST("/mail/campaign/delete", builtin.CasbinMiddlewareForPath("/api/mail/campaign/delete"), mailPage.MailCampaignDelete)
 	pages.POST("/mail/campaigns/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/campaign/delete"), mailPage.MailCampaignsBulkDelete)
 	// 活动报表（#38 P1）：打开 / 点击 / 退订与收件人明细。报表是只读，权限沿用活动列表。
-	pages.GET("/mail/campaign", shell.PageAuthz("/api/mail/campaign/list"), mailPage.MailCampaignPage)
+	pages.GET("/mail/campaign", adminui.PageAuthz("/api/mail/campaign/list"), mailPage.MailCampaignPage)
 
 	// 旧「邮件营销」页已拆成「联系人」与「群发活动」两页。这里保留 302 而不是让路径 404：
 	// 它此前同时是 sys_menus 的菜单项和用户书签，直接消失会让人以为功能被删了。
@@ -76,13 +81,13 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	pages.GET("/mail/marketing", mailPage.MailMarketingRedirect)
 
 	// —— 自动化 ——
-	pages.GET("/mail/automation", shell.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationPage)
-	pages.GET("/mail/automation/edit", shell.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationEdit)
+	pages.GET("/mail/automation", adminui.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationPage)
+	pages.GET("/mail/automation/edit", adminui.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationEdit)
 	// 运行记录（排障）：流程是配置、实例是现场，拆成两页各答一个问题。
-	pages.GET("/mail/automation/runs", shell.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationRunsPage)
-	pages.GET("/mail/automation/run", shell.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationRunDetail)
+	pages.GET("/mail/automation/runs", adminui.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationRunsPage)
+	pages.GET("/mail/automation/run", adminui.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationRunDetail)
 	// 画布（P4）：可视化摆放节点。连线仍在侧栏下拉里改（触屏 / 键盘都能用）。
-	pages.GET("/mail/automation/canvas", shell.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationCanvas)
+	pages.GET("/mail/automation/canvas", adminui.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationCanvas)
 	pages.POST("/mail/automation/save", builtin.CasbinMiddlewareForPath("/api/mail/automation/save"), mailPage.MailAutomationSave)
 	pages.POST("/mail/automation/status", builtin.CasbinMiddlewareForPath("/api/mail/automation/status"), mailPage.MailAutomationStatus)
 	pages.POST("/mail/automation/delete", builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationDelete)
@@ -101,7 +106,9 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 // 排查时会往「AI 权限配错了」的方向找，真正的原因在这里。
 //
 // 重复声明同值安全（Declare 遇到同 key 同权限点直接 return）；与 API 侧已声明的
-// /api/mail/contact/status 等重叠也走这条路径。
+// /api/mail/contact/status 等重叠也走这条路径 —— 联系人写三条（save / delete / tag）如今也有
+// 真实路由了，这里保留声明是为了让**本模块的声明清单自成一份、不依赖装配顺序**
+// （mail_page_router_test.go 只调本函数，不装路由）。
 func declareMailPageObjects() {
 	permission.Declare("POST", "/api/mail/account/save", permission.MailAccountSave)
 	permission.Declare("POST", "/api/mail/account/delete", permission.MailAccountDelete)

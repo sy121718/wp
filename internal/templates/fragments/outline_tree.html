@@ -1,2 +1,6 @@
-{* fragments/outline_tree.html — 结构树（HTMX 服务端渲染，docs/09 §3） *}
+{* fragments/outline_tree.html — 结构树（HTMX 服务端渲染，docs/09 §3）
+   数据：HTML —— 整棵树已由 workbench/service 的 RenderOutlineHTML 拼串产出（Go 拼串，
+   取词在 service 侧完成），模板只做插槽。
+   装配处同样经 adminui.PrepareFragment 注入 t / tf（与 inspector_panel 统一入口）；
+   本文件今天**不用**它们 —— 将来这里若要写取词，t 已经在数据里，不必再改渲染入口。 *}
 {{ .HTML | unsafe }}

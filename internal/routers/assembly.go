@@ -22,6 +22,7 @@ import (
 
 	"go_wp/internal/builder/core"
 	"go_wp/internal/mcp"
+	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
@@ -101,7 +102,6 @@ import (
 	webhookhttp "go_wp/internal/module/webhook/inbound/http"
 	"go_wp/internal/permission"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/casbin"
 	"go_wp/pkg/database"
@@ -490,11 +490,11 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 模块不必各写一遍，也就不会漏挂某一环。
 	a.adminPages = router.Group("/admin",
 		builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
-		shell.PermContextMiddleware(adminAuthzSvc))
+		adminctx.PermContextMiddleware(adminAuthzSvc))
 	// 编辑器组：根级前缀（/workbench*、仪表盘首页），中间件与后台页面组一致。
 	a.workbenchPages = router.Group("",
 		builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
-		shell.PermContextMiddleware(adminAuthzSvc))
+		adminctx.PermContextMiddleware(adminAuthzSvc))
 	// 开发阶段一键登录（浏览器直接访问 /admin/dev-login?to=/admin/xxx）：
 	// **只在 debug 模式下注册** —— release 环境这个路由根本不存在，比运行时判断更可靠。
 	// 具体安全约束（只认环回地址、只登超管、走同一套会话路径）见 admin/inbound/http/dev_login.go。

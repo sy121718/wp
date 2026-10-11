@@ -26,7 +26,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
+	bulkids "go_wp/pkg/bulkids"
 )
 
 // productInternalLeakTokens 内部细节指纹：出现任一即视为泄漏。
@@ -181,7 +181,7 @@ func TestProductPageKeepsBulkLimitText(t *testing.T) {
 	}
 	form := url.Values{"projectId": {f.projectID}}
 	// 用高于上限一条即触发整批拒绝（不依赖 @10 这类经验数字）。
-	for i := 0; i < shell.MaxBulkIDs+1; i++ {
+	for i := 0; i < bulkids.MaxIDs+1; i++ {
 		form.Add("ids", fmt.Sprintf("00000000-0000-0000-0000-%012d", i))
 	}
 	body := productNoticeBody(t, postProductForm(engine, "/admin/products/bulk-delete", form))

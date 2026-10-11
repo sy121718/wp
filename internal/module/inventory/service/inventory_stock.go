@@ -828,7 +828,11 @@ func (s *Service) assertExternalSKUProductScope(ctx context.Context, projectID, 
 		return err
 	}
 	if owner != "" {
-		return fmt.Errorf("%s：%s", inventoryenums.ErrExternalSKUProductConflict,
+		// 分隔符必须是 **ASCII 冒号**：页面出口按它把「业务 key」与「明细段」切一刀，再对前段
+		// 做形态判定（adminui.BusinessErrFact 的判据是 pkg/response.IsBusinessError，正则锚定，
+		// 整串匹配不上）。写成全角「：」时切不开 —— 整条错误会被判成内部故障，用户拿到的
+		// 是「系统内部错误」，而明细里那句「被哪个商品占了」也一并丢掉。
+		return fmt.Errorf("%s: %s", inventoryenums.ErrExternalSKUProductConflict,
 			i18n.ErrorDetail(inventoryenums.DetailExternalSKUOwner, "name", owner))
 	}
 	return nil

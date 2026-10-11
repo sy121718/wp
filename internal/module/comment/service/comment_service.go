@@ -102,7 +102,7 @@ func (s *Service) IsRegisteredEntityType(entityType string) bool {
 
 // EntityTypeLabels 已注册实体类型的展示名（顺序 = 注册顺序）。
 //
-// tr 由调用点给（后台页用 shell.TranslateFor）：本包不依赖 gin / shell，
+// tr 由调用点按请求语言注入：本包不依赖 HTTP 展示层，
 // 取词函数一律从 inbound 传进来（同 productcontract.EntityTypeLabel 的约定）。
 func (s *Service) EntityTypeLabels(tr func(key, fallback string) string) []commentdto.EntityType {
 	out := make([]commentdto.EntityType, 0, len(s.entityTypes))

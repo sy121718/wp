@@ -6,9 +6,13 @@
    手工指定过的归属不会被日结按消费额覆盖，直到有人在这里解除锁定。 *}
 {{extends "../layout.html"}}
 {{block body()}}
+{{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{listQuery := .ListQuery}}
+{* 来源的**原始取值**：行上的显示名与「这一行能不能解除锁定」都按它判
+   （与筛选栏同一份 tr key —— 同一个来源在列表列与下拉里显示成两个词是这类页面的常见不一致）。 *}
+{{sourceManual := .SourceManual}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -34,6 +38,7 @@
             {{end}}
         </div>
     </header>
+    <noscript><p class="form-hint">{{tr("admin.membership.write.noJs", "本页的写操作需要 JavaScript，请开启 JavaScript 后重试。")}}</p></noscript>
 
     {{if .LoadFailed}}<p class="badge badge-warning" role="alert">{{ .["t"]("admin.membership.loadFailed", "工程列表没读出来，本页数据未加载，请稍后重试。") }}</p>{{end}}
     {{if .LoadErr != ""}}<p class="badge badge-warning" role="alert">{{.LoadErr}}</p>{{end}}
@@ -43,8 +48,9 @@
     {{if isset(.Buttons["membership.assign_set"])}}
     <section class="card">
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.assign.setTitle", "手工指定等级") }}</span></div>
-        <form method="post" action="/admin/membership/assign/set?{{listQuery}}" class="form-stack">
+        <form data-write-api="/api/membership/assign/set" data-write-mode="create" data-write-number="userId,tierId" data-write-nav="/admin/membership/assignments?{{listQuery}}" data-msg-failed="{{tr("membership.err.internal", "操作失败，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-row">
                 <div class="form-group">
@@ -62,7 +68,7 @@
                 </div>
             </div>
             <div class="action-row">
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.membership.assign.set", "指定等级") }}</button>
+                <button type="submit" data-requires-js hidden disabled class="btn btn-primary">{{ .["t"]("admin.membership.assign.set", "指定等级") }}</button>
             </div>
         </form>
     </section>
@@ -81,8 +87,9 @@
             </select>
             <label class="sr-only" for="ma-f-source">{{ .["t"]("admin.membership.assign.col.source", "来源") }}</label>
             <select class="form-select" id="ma-f-source" name="source">
+                {* 选项文案在模板里取词：handler 只给「有哪些取值 + 当前选中哪一个」。 *}
                 {{range _, s := .SourceOptions}}
-                <option value="{{s.Value}}" {{if s.Selected}}selected{{end}}>{{s.Label}}</option>
+                <option value="{{s.Value}}" {{if s.Selected}}selected{{end}}>{{if s.Value == sourceManual}}{{ .["t"]("admin.membership.assign.source.manual", "手工指定") }}{{else if s.Value != ""}}{{ .["t"]("admin.membership.assign.source.auto", "自动重算") }}{{else}}{{ .["t"]("admin.common.filter.optionAll", "全部") }}{{end}}</option>
                 {{end}}
             </select>
             <label class="sr-only" for="ma-f-user">{{ .["t"]("admin.membership.assign.filter.user", "按访客 ID 查") }}</label>
@@ -119,16 +126,17 @@
             <tr>
                 <td>{{r.UserID}}</td>
                 <td>{{r.TierName}}</td>
-                <td>{{r.SourceText}}</td>
-                <td>{{r.AssignedAt}}</td>
+                <td>{{if r.Source == sourceManual}}{{ .["t"]("admin.membership.assign.source.manual", "手工指定") }}{{else}}{{ .["t"]("admin.membership.assign.source.auto", "自动重算") }}{{end}}</td>
+                <td>{{dateTime(r.AssignedAt)}}</td>
                 <td class="col-actions">
-                    {{if r.IsManual}}
+                    {{if r.Source == sourceManual}}
                     {{if isset(.Buttons["membership.assign_unlock"])}}
-                    <form method="post" action="/admin/membership/assign/unlock?{{listQuery}}">
+                    <form data-write-api="/api/membership/assign/unlock" data-write-mode="create" data-write-number="userId" data-msg-failed="{{tr("membership.err.internal", "操作失败，请稍后重试")}}">
                         <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
                         <input type="hidden" name="projectId" value="{{selectedProject}}">
                         <input type="hidden" name="userId" value="{{r.UserID}}">
-                        <button type="submit" class="btn btn-sm">{{ .["t"]("admin.membership.assign.unlock", "解除锁定") }}</button>
+                        <button type="submit" data-requires-js hidden disabled class="btn btn-sm">{{ .["t"]("admin.membership.assign.unlock", "解除锁定") }}</button>
                     </form>
                     {{end}}
                     {{else}}
@@ -140,7 +148,8 @@
             </tbody>
         </table>
         </div>
-        {* 分页条：单页 / 装载失败时 handler 不注入那两个键，片段自然不渲染。 *}
+        {* 分页条：handler 只交事实（.Pagination = pagination.Page）—— 单页 / 装载失败时
+           HasPagination() 为假，片段自然不渲染；信息行与链接由 partial 用模板函数现算。 *}
         {{include "../partials/pagination.html"}}
     </section>
 </div>

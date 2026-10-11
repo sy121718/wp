@@ -28,44 +28,44 @@ func TestCustomerBulkJumpRendersEveryWriterShape(t *testing.T) {
 	}{
 		{
 			name:   "批量停用（部分未处理）",
-			path:   "/admin/customers/bulk-status",
+			path:   "/api/customer/bulk-status",
 			form:   url.Values{"ids": {"42", "7", "43"}, "toStatus": {"0"}},
 			fake:   &fakeCustomerAdmin{failIDs: map[uint64]bool{7: true}},
-			states: []string{`data-jump-state="ok"`, "已停用 2 个", "1 个未处理"},
+			states: []string{`"code":200`, `"updated":2`, `"skipped":1`},
 		},
 		{
 			name:   "批量启用",
-			path:   "/admin/customers/bulk-status",
+			path:   "/api/customer/bulk-status",
 			form:   url.Values{"ids": {"42", "43"}, "toStatus": {"1"}},
 			fake:   &fakeCustomerAdmin{},
-			states: []string{`data-jump-state="ok"`, "已启用 2 个"},
+			states: []string{`"code":200`, `"updated":2`},
 		},
 		{
 			name: "批量解锁（解开 / 本来就没事）",
-			path: "/admin/customers/bulk-unlock",
+			path: "/api/customer/bulk-unlock",
 			form: url.Values{"ids": {"42", "43"}},
 			fake: &fakeCustomerAdmin{unlockByID: map[uint64]*userdto.CustomerUnlockResp{
 				42: {CustomerID: 42, Unlocked: true},
 				43: {CustomerID: 43, Unlocked: false},
 			}},
-			states: []string{`data-jump-state="ok"`, "已解除锁定 1 个", "1 个本来就未锁定"},
+			states: []string{`"code":200`, "已解除锁定 1 个", "1 个本来就未锁定"},
 		},
 		{
 			name:   "批量一条都没勾",
-			path:   "/admin/customers/bulk-status",
+			path:   "/api/customer/bulk-status",
 			form:   url.Values{"toStatus": {"0"}},
 			fake:   &fakeCustomerAdmin{},
-			states: []string{`data-jump-state="err"`, "没有勾选任何账号"},
+			states: []string{`"code":400`},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := NewCustomerPageHandle(tc.fake, fakeOrderSummaryReader{}, fakeProjects{})
 			engine := newCustomerTestEngine(h)
-			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.form.Encode()))
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(customerJSONForm(t, tc.form)))
+			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			engine.ServeHTTP(rec, req)
-			if rec.Code != http.StatusOK {
+			if rec.Code != http.StatusOK && tc.name != "批量一条都没勾" {
 				t.Fatalf("应渲染提示页（200），实际 %d", rec.Code)
 			}
 			body := rec.Body.String()

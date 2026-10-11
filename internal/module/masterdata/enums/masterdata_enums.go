@@ -228,7 +228,7 @@ const MsgMasterDataChangesTitle = "MsgMasterDataChangesTitle"
 
 // PageTitleChanges 变更记录页标题（key + 中文兜底）。
 //
-// handler 先取词再把成品文案交给 shell.Prepare —— Prepare 内部是 `t(title, title)`，
+// handler 先取词再把成品文案交给 adminui.Prepare —— Prepare 内部是 `t(title, title)`，
 // 兜底就是 key 本身，词条缺失时页面标题会显示 `MsgMasterDataChangesTitle` 这样的裸 key。
 // 词条沿用历史行（sys_i18n 的 MsgMasterDataChangesTitle，zh/en 成对）。
 var PageTitleChanges = LabelPair{MsgMasterDataChangesTitle, "变更记录"}

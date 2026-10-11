@@ -15,7 +15,7 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
-	"go_wp/internal/shell"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
 
@@ -31,7 +31,7 @@ func NewHandle(svc ordercontract.OrderService) *Handle { return &Handle{svc: svc
 //
 // 客户端传什么都不看：操作人是审计字段，能被伪造的审计等于没有审计。
 //
-// 不走 shell.CurrentUserID：这里要 id 与登录名一次取出（shell 入口只给 id），
+// 不走 builtin.CurrentUserID：这里要 id 与登录名一次取出（builtin.CurrentUserID 入口只给 id），
 // 且保留非 int64 原始值分支（含字符串 id 的解析），统一入口只认 int64。
 func operatorFromContext(c *gin.Context) (id uint64, name string) {
 	name = strings.TrimSpace(builtin.GetUsername(c))
@@ -105,7 +105,19 @@ func (h *Handle) ListOrders(c *gin.Context) {
 }
 
 // ChangeStatus 状态流转（发货 / 完成）。
+//
+// 一个端点**两种形状**（task-98 S2）：体里有 `ids` → 批档（后台列表页的批量流转），否则单档
+// （既有调用方的语义逐字不变）。判别键是形状不是 action —— 不另开路径的理由见
+// order_bulk_write.go 头注释（sys_permission 每个权限点只有一列 api_path）。
 func (h *Handle) ChangeStatus(c *gin.Context) {
+	raw, ok := orderWriteBody(c)
+	if !ok {
+		return
+	}
+	if raw != nil && orderWriteHasKey(raw, "ids") {
+		h.orderStatusBulk(c, raw)
+		return
+	}
 	req := &orderdto.ChangeStatusReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
@@ -121,7 +133,17 @@ func (h *Handle) ChangeStatus(c *gin.Context) {
 }
 
 // CancelOrder 取消订单。
+//
+// 与 ChangeStatus 同形：体里有 `ids` → 批档（后台列表页的批量取消），否则单档。
 func (h *Handle) CancelOrder(c *gin.Context) {
+	raw, ok := orderWriteBody(c)
+	if !ok {
+		return
+	}
+	if raw != nil && orderWriteHasKey(raw, "ids") {
+		h.orderCancelBulk(c, raw)
+		return
+	}
 	req := &orderdto.CancelOrderReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
@@ -229,6 +251,10 @@ func (h *Handle) CreateCoupon(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 		return
 	}
+	// 时间窗：控件形态（带 T）→ 服务端认的写法。浏览器的 datetime-local 只能给 T 形态，
+	// 归口必须在 handler（旧页面路径由已删的 couponFormTimeValue 做），见 couponTimeInputValue。
+	req.StartsAt = couponTimeInputValue(req.StartsAt)
+	req.EndsAt = couponTimeInputValue(req.EndsAt)
 	applyCouponOperator(c, req)
 	res, err := h.svc.CreateCoupon(c.Request.Context(), req)
 	if err != nil {
@@ -239,12 +265,32 @@ func (h *Handle) CreateCoupon(c *gin.Context) {
 }
 
 // UpdateCoupon 修改优惠码（券码不可改：改码等于换一张券）。
+//
+// 同时是**批量停用 / 启用**的唯一写入口（严格形状并集，见 coupon_write.go）：
+// body 里带 ids 就是批档（{ids, status, projectId?}），否则是单档的改动请求 ——
+// 单档行为逐字不变（仍旧走 c.ShouldBind，form 与 json 两种绑定语义都不动）。
 func (h *Handle) UpdateCoupon(c *gin.Context) {
+	raw, ok := orderWriteBody(c)
+	if !ok {
+		return
+	}
+	if orderWriteHasKey(raw, "ids") {
+		if !orderWriteShapeOK(raw, orderCouponToggleBulkKeys) {
+			response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+			return
+		}
+		h.couponToggleBulk(c, raw)
+		return
+	}
 	req := &orderdto.CouponSaveReq{}
 	if err := c.ShouldBind(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 		return
 	}
+	// 时间窗归口与新建同源（见 couponTimeInputValue）：编辑抽屉与行内启停表单都是
+	// datetime-local 控件形态，不归口就会在服务端被判「生效时间不合法」。
+	req.StartsAt = couponTimeInputValue(req.StartsAt)
+	req.EndsAt = couponTimeInputValue(req.EndsAt)
 	applyCouponOperator(c, req)
 	res, err := h.svc.UpdateCoupon(c.Request.Context(), req)
 	if err != nil {
@@ -255,9 +301,44 @@ func (h *Handle) UpdateCoupon(c *gin.Context) {
 }
 
 // DeleteCoupon 删除优惠码（有核销记录的一律拒绝，请改用停用）。
+//
+// 严格形状并集（见 coupon_write.go）：单档 {id} 删一张（列表行内删除）、批档 {ids} 批量删除。
+//
+// 形状修正记录：此前这里读的是 c.PostForm("couponId")，而本端点的调用方（前端基座
+// static/js/ui/json_write.js、脚本、将来的集成方）一律发 JSON body —— 于是它**对 JSON
+// 调用方事实上不可用**（必然 400），只有页面那条走 service 的专用路径能删券。
+// 本批改成严格 JSON 形状后，同一个权限锚点既服务单条也服务批量。
 func (h *Handle) DeleteCoupon(c *gin.Context) {
-	id, err := strconv.ParseUint(strings.TrimSpace(c.PostForm("couponId")), 10, 64)
-	if err != nil || id == 0 {
+	raw, ok := orderWriteBody(c)
+	if !ok {
+		return
+	}
+	hasIDs := orderWriteHasKey(raw, "ids")
+	if hasIDs {
+		if orderWriteHasKey(raw, "id") || orderWriteHasKey(raw, "couponId") {
+			// 单档键与批档键混用：形状错，不替调用方选一个。
+			response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+			return
+		}
+		if !orderWriteShapeOK(raw, orderCouponDeleteBulkKeys) {
+			response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+			return
+		}
+		h.couponDeleteBulk(c, raw)
+		return
+	}
+	if !orderWriteShapeOK(raw, orderCouponDeleteSingleKeys) {
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	idKey, ok := orderCouponDeleteIDKey(raw)
+	if !ok {
+		// 两个键都给或都不给：形状错。
+		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return
+	}
+	id, ok := orderWriteUintOf(raw, idKey)
+	if !ok || id == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 		return
 	}
@@ -328,7 +409,7 @@ func (h *Handle) AuditCouponCounts(c *gin.Context) {
 // 且不会有任何报错。映射与页面侧共用 returnStatusText（同一份 orderenums.ReturnStatusLabel），
 // 于是同一个状态在列表页、详情页与接口里说同一句话。
 func localizeReturnLabels(c *gin.Context, resps ...*orderdto.ReturnResp) {
-	tr := shell.TranslateFor(c)
+	tr := i18n.TranslateFunc(response.RequestLanguage(c))
 	for _, r := range resps {
 		if r == nil {
 			continue
@@ -380,7 +461,18 @@ func (h *Handle) GetReturn(c *gin.Context) {
 }
 
 // ApproveReturn 同意退货（autoReceive=true 时一步完成入库 + 退款）。
+// 一个端点**两种形状**（task-98 S3）：体里有 `ids` → 批档（退货页的批量同意），否则单档
+// （既有调用方的语义逐字不变）。判别键是形状不是 action —— 不另开路径的理由见
+// return_bulk_write.go 头注释（sys_permission 每个权限点只有一列 api_path）。
 func (h *Handle) ApproveReturn(c *gin.Context) {
+	raw, ok := orderWriteBody(c)
+	if !ok {
+		return
+	}
+	if raw != nil && orderWriteHasKey(raw, "ids") {
+		h.returnBulkApprove(c, raw)
+		return
+	}
 	req := &orderdto.ReturnReviewReq{}
 	if err := c.ShouldBind(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
@@ -397,7 +489,17 @@ func (h *Handle) ApproveReturn(c *gin.Context) {
 }
 
 // RejectReturn 拒绝退货（必须给理由）。
+//
+// 与 ApproveReturn 同形：体里有 `ids` → 批档（退货页的批量拒绝，理由必填由批档判）。
 func (h *Handle) RejectReturn(c *gin.Context) {
+	raw, ok := orderWriteBody(c)
+	if !ok {
+		return
+	}
+	if raw != nil && orderWriteHasKey(raw, "ids") {
+		h.returnBulkReject(c, raw)
+		return
+	}
 	req := &orderdto.ReturnReviewReq{}
 	if err := c.ShouldBind(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)

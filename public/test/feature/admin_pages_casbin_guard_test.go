@@ -44,13 +44,13 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/middleware/adminctx"
 	builtin "go_wp/internal/middleware/builtin"
 	admincontract "go_wp/internal/module/admin/contract"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	"go_wp/internal/permission"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 	"go_wp/pkg/captcha"
 	pkgcasbin "go_wp/pkg/casbin"
 	"go_wp/public/migrations"
@@ -203,7 +203,7 @@ func newAdminPagesTestEnv(t *testing.T) *adminPagesTestEnv {
 			// /admin 页面组：中间件链与 assembly.go 逐字一致（Session + CSRF + 权限上下文）。
 			adminPages := engine.Group("/admin",
 				builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
-				shell.PermContextMiddleware(adminAuthzSvc))
+				adminctx.PermContextMiddleware(adminAuthzSvc))
 			// 文案词条页的「站点待重建」标记与两条用例无关，pages 传 nil（未注入即 no-op）。
 			adminhttp.SetupAdminPages(adminPages, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, adminCRUD, nil, nil)
 		},

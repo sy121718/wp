@@ -15,14 +15,14 @@ func TestCategoryDrawerFailureEcho(t *testing.T) {
 	for _, mode := range []string{"create", "update"} {
 		t.Run(mode, func(t *testing.T) {
 			c, rec, cap := newAttrCaptureContext(t, "true", form.Encode())
-			h.categoryFormFail(c, mode, "duplicate")
+			h.categoryFormFail(c, mode, productMsg{Fallback: "duplicate"})
 			c.Writer.WriteHeaderNow()
 			if rec.Code != http.StatusOK || cap.name != "admin/product/product_category_form.html" {
 				t.Fatalf("failure response: status=%d template=%q", rec.Code, cap.name)
 			}
 			data := capturedData(t, cap)
-			if data["SubmitErr"] != "duplicate" {
-				t.Fatalf("error slot: %v", data["SubmitErr"])
+			if msg, ok := data["SubmitErr"].(productMsg); !ok || msg.Fallback != "duplicate" {
+				t.Fatalf("error slot = %#v，want productMsg{Fallback: duplicate}", data["SubmitErr"])
 			}
 			echo := data["FormEcho"].(gin.H)
 			for _, key := range []string{"projectId", "name", "slug", "parentId", "sort", "image", "seoTitle", "seoDescription", "description"} {
@@ -38,7 +38,7 @@ func TestCategoryDrawerNativeFailureAndSuccess(t *testing.T) {
 	h := &productPageHandle{}
 	// 原生失败：整页提示（200 + err 态）回分类页，取代原先的 302 + ?err=。
 	c, rec := newProductJumpContext(t, "", "project=p1", "projectId=p1&name=Draft")
-	h.categoryFormFail(c, "create", "duplicate")
+	h.categoryFormFail(c, "create", productMsg{Fallback: "duplicate"})
 	c.Writer.WriteHeaderNow()
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-jump-state="err"`) {
 		t.Fatalf("native failure: %d %q", rec.Code, rec.Body.String())

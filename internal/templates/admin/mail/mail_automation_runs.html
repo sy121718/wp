@@ -13,10 +13,8 @@
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
-{* 分页键由 handler 注入在顶层；单页或空数据时不存在 —— 取到 nil 不中断渲染，
-   分页片段里的 if 自然跳过。 *}
-{{runsLinks := .["PaginationLinks"]}}
-{{runsInfo := .["PaginationInfo"]}}
+{* 分页事实由 handler 注入在顶层键 "Pagination"（pkg/pagination.Page）；单页或空数据时该键
+   不存在 —— 缺键不中断渲染，片段里的 isset 守卫自然跳过。 *}
 <div class="stack">
   <header class="page-head">
     <div class="page-head-main">
@@ -128,7 +126,7 @@
     <div class="card-header"><span class="text-mute text-sm">{{ .["t"]("admin.mail.automation.runs.total_prefix", "共 ") }}{{.RunTotal}}{{ .["t"]("admin.mail.automation.runs.total_suffix", " 个实例。") }}</span></div>
     {{end}}
     {* 实例表的分页条（基地址带上筛选：翻页时不能丢掉「在看哪个流程 / 哪个状态」）。 *}
-    {{include "../partials/pagination.html" map("t", tr, "PaginationLinks", runsLinks, "PaginationInfo", runsInfo)}}
+    {{include "../partials/pagination.html" map("t", tr, "Pagination", .["Pagination"])}}
   </section>
 
   {* 补投表单放列表外：HTML 不允许 form 嵌套，页头按钮用 form="<id>" 关联。

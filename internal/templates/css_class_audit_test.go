@@ -349,29 +349,50 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 		values: nil,
 		note:   "取值域是权限类型枚举（由 DB 的 permissions.type 驱动，静态枚举不出来）→ 退回前缀放行",
 	},
+	// 档位词表（ok/warn/danger/mute/info）有几份副本，权威是 docs/rules/template-boundary.md:161：
+	//   · 本条的 values（Go 侧登记，TestDynamicClassToneValuesInVocabulary 按它判模板自选档）；
+	//   · scripts/check-template-presentation.sh:39 的 TONE_VOCAB（门禁判据 4 执行用）。
+	// 漂移不会**静默**失色 —— 模板自选档越表会被判据 4 直接判红（红可见），届时按 doc:161 两侧同时对齐，
+	// 不要只改一边；真正会静默失色的是「模板写了词表外的档而 ui.css 没有 .badge-<档> 别名」。
 	"badge-": {
 		site: "admin/ai/mcp.html:41 `badge-{{.McpTone}}`；admin/ai/provider_card.html:15 `badge-{{.StatusTone}}`；" +
 			"admin/ai/provider_card.html:31 与 admin/ai/provider_models.html:19 `badge-{{.ModelsNoticeTone}}`；" +
-			"admin/user/customer_detail.html:44 `badge-{{.StatusTone}}`、:47 `badge-{{.EmailVerifiedTone}}`；" +
-			"admin/user/customers.html:242 `badge-{{r.StatusTone}}`；admin/mail/mail_campaign.html:126 `badge-{{p.StatusTone}}`；" +
-			"admin/page/page_translations.html:154 与 admin/product/product_translations.html:149 `badge-{{r.EngineTone}}`；" +
-			"admin/product/product_pricing.html:136 `badge-{{l.StatusTone}}`；admin/product/product_tags.html:145 `badge-{{t.KindTone}}`；" +
-			"admin/product/product_detail.html:66 `badge-{{a.VariationTone}}`；" +
-			"admin/order/orders.html:69 `badge-{{tab.Tone}}`、:157 `badge-{{o.StatusTone}}`、:185 `badge-{{head.StatusTone}}`；" +
-			"admin/order/returns.html:61 `{{r.StatusTone}}`、:111 `{{o.StatusTone}}`、:206 `{{tab.Tone}}`、:296 `{{rt.StatusTone}}`；" +
+			"admin/ai/sessions.html:402 `badge-{{e.Tone}}`；" +
+			"admin/inventory/inventory_purchases.html:203 `badge-{{l.OutstandingTone}}`；" +
+			"admin/mail/mail_campaign.html:126 `badge-{{p.StatusTone}}`；" +
 			"admin/order/coupons.html:175 `badge-{{cp.StateTone}}`；" +
-			"admin/page/page_redirects.html:86/87 `{{.MultiHopTone}}`/`{{.LoopTone}}`；" +
-			"admin/page/site_slots.html:45/46 `{{.UnpublishedTone}}`/`{{.DeletedTone}}`；" +
-			"admin/inventory/inventory_purchases.html:203 `badge-{{l.OutstandingTone}}`",
+			"admin/order/orders.html:70 `badge-{{tab.Tone}}`、:158 `badge-{{o.StatusTone}}`、:186 `badge-{{head.StatusTone}}`；" +
+			"admin/order/returns.html:61 `badge-{{r.StatusTone}}`、:111 `badge-{{o.StatusTone}}`、:207 `badge-{{tab.Tone}}`、:297 `badge-{{rt.StatusTone}}`；" +
+			"admin/page/page_redirects.html:86/87 `badge-{{tone}}`（按计数事实在模板里选档：MultiHopCount > 0 → warn、LoopCount > 0 → danger，否则中性；计数为负同样中性）；" +
+			"admin/page/page_translations.html:154 `badge-{{engineTone}}`（按 r.Engine 事实选档：== ai → info，其余走中性；空 engine 不渲染徽标而是中性破折号）；" +
+			"admin/page/site_slots.html:50/51 `badge-{{unpublishedTone}}`/`badge-{{deletedTone}}`（页头计数档）、" +
+			":155 `badge-{{tone}}`（行状态档：published→ok、unpublished→warn，原先 Go 产的是 badge-success/badge-warning 字面类名，" +
+			"ui.css:850/851 与 :834/:840 声明逐字节相同 ⇒ 视觉等价）；" +
+			"admin/product/product_detail.html:66 `badge-{{a.VariationTone}}`；" +
+			"admin/product/product_pricing.html:136 `badge-{{l.StatusTone}}`；" +
+			"admin/product/product_tags.html:145 `badge-{{t.KindTone}}`；" +
+			"admin/product/product_translations.html:149 `badge-{{r.EngineTone}}`；" +
+			"admin/user/customer_badges.html:22 `badge-{{tone}}`（状态档）、:24 `badge-{{tone}}`（邮箱验证档）、" +
+			"admin/user/customer_badges.html:30 `badge-{{tone}}`（筛选口径与 RFM 分段徽章，三页共用）",
 		values: []string{"ok", "warn", "danger", "mute", "info"},
-		note: "取值域 = 各 Go helper 的返回值并集（语义档，见 docs/rules/template-boundary.md §语义 vs 外观）：" +
-			"mcpSwitchTone{ok,mute}、providerStatusTone{ok,warn}、noticeTone{ok,warn}、" +
-			"customerStatusTone{ok,warn,danger,mute}、emailVerifiedTone{ok,warn}、recipientStatusTone{warn,mute}、" +
-			"i18n.ContentEngineTone{info,mute}、pricingLineTone/tagKindTone/variationTone{info,mute}、" +
+		note: "取值域 = 各产出点返回值的并集（语义档，见 docs/rules/template-boundary.md §语义 vs 外观）：" +
+			"Go 侧 —— mcpSwitchTone{ok,mute}、providerStatusTone{ok,warn}、noticeTone{ok,warn}、" +
+			"recipientStatusTone{warn,mute}、i18n.ContentEngineTone{info,mute}（product 的译文来源档，internal/module/product/inbound/http/product_page.go 产出）、pricingLineTone/tagKindTone/variationTone{info,mute}、" +
 			"orderenums.OrderStatusTone{warn,info,ok,danger,mute}、ReturnStatusTone{warn,ok,mute}、" +
-			"CouponStateTone{ok,danger,warn,mute}、redirectMultiHopTone{warn,mute}、redirectLoopTone{danger,mute}、" +
-			"unpublishedSlotsTone{warn,mute}、deletedSlotsTone{danger,mute}、outstandingTone{warn,ok}、" +
-			"sessionEventTone{info,ok,warn} —— 并集 {ok,warn,danger,mute,info}。" +
+			"CouponStateTone{ok,danger,warn,mute}、" +
+			"outstandingTone{warn,ok}、" +
+			"sessionEventTone{info,ok,warn}；" +
+			"模板侧（按事实在模板里选档）—— admin/user/customer_badges.html 一份片段供三页共用：" +
+			"customerStatusBadge 的 tone{mute,ok,danger,warn}（按状态值取）、customerVerifyBadge 的 tone{warn,ok}（按邮箱验证事实取）、" +
+			"customerFilterTab / customerRfmSegmentTab 经 customerTabAnchor 的 tone{mute,ok,danger,warn,info}（按口径键 / 分段键取）；" +
+			"admin/page/site_slots.html 的页头 unpublishedTone{mute,warn} / deletedTone{mute,danger}（按计数 `!= 0` 取）" +
+			"与行内 tone{mute,danger,ok,warn}（按 Bound/PageDeleted/Published 事实取）；" +
+			"admin/page/page_redirects.html 的 tone{mute,warn}（多跳，按 MultiHopCount > 0 取）与 tone{mute,danger}（成环，按 LoopCount > 0 取）；" +
+			"admin/page/page_translations.html 的 engineTone{mute,info}（按 r.Engine == ai 取）。" +
+			"两侧并集仍是 {ok,warn,danger,mute,info}：模板侧只能在同一个词表内取档，由 TestDynamicClassToneValuesInVocabulary 钉住" +
+			"（自造档在 ui.css 没有 `.badge-<档>` 别名，页面不报错、只是静默失色）。" +
+			"注：ui.css 另有 `.badge-success`(:834)/`.badge-warning`(:840) 两个既有类名，与 `.badge-ok`(:850)/`.badge-warn`(:851) " +
+			"声明逐字节相同；迁移到模板时统一取词表内的 ok/warn，站点证据见本条目 site。" +
 			"颜色映射在 ui.css 的 `.badge-<tone>` 别名（.badge-ok/.badge-warn 是新增别名，其余沿用既有类名）",
 	},
 }
@@ -391,6 +412,73 @@ func TestDynamicClassEvidenceIsCurrent(t *testing.T) {
 			t.Errorf("扫描到动态前缀 %q（来源 %v）却没有证据条目：请先写明拼接点与取值域，再决定放行范围",
 				prefix, facts.dynPrefixes[prefix])
 		}
+	}
+}
+
+// reToneBadgeVar 模板里 `badge-{{name}}` 的局部变量；Go 字段形态（`{{.McpTone}}`、`{{r.StatusTone}}`）含点，不在此列。
+var reToneBadgeVar = regexp.MustCompile(`badge-\{\{([a-z][A-Za-z0-9_]*)\}\}`)
+
+// reToneAssign 模板表达式里的字面量赋值：`{{x := "…"}}`（初始化）与 `{{x = "…"}}`（分支内改写）。
+// 只在 `{{…}}` 表达式内匹配，免得把同一行的 `class="badge badge-{{tone}}"` 当成赋值。
+var reToneAssign = regexp.MustCompile(`\{\{[^}]*\b([a-z][A-Za-z0-9_]*)\s*:?=\s*"([^"]*)"`)
+
+// TestDynamicClassToneValuesInVocabulary 模板自己产出的档必须落在词表内。
+//
+// 展示判断归模板（见 docs/rules/template-boundary.md §语义 vs 外观）之后，模板会在
+// `badge-{{tone}}` 前按事实选档，也就可能写出词表外的档（"error"、"critical"…）。
+// 这类档在 ui.css 没有 `.badge-<档>` 别名：页面不报错，只是**静默失色** —— 所以由本测试钉住，
+// 与 scripts/check-template-presentation.sh 判据 4 同一条口径（脚本守模板文件，本测试守词表本身）。
+// Go 字段（`{{.XxxTone}}` / `{{r.StatusTone}}`）的档位由各自产出函数负责，不在这里判。
+func TestDynamicClassToneValuesInVocabulary(t *testing.T) {
+	vocab := map[string]bool{}
+	for _, v := range dynamicClassEvidence["badge-"].values {
+		vocab[v] = true
+	}
+	if len(vocab) == 0 {
+		t.Fatal("badge- 的取值域是空的：本判据没有词表可比")
+	}
+
+	checked := 0
+	for _, p := range walkFiles(t, ".", func(p string) bool {
+		return strings.HasSuffix(p, ".html") || strings.HasSuffix(p, ".jet")
+	}) {
+		r := rel(t, p)
+		lines := strings.Split(readFile(t, p), "\n")
+
+		// 本文件内每个局部变量的字面量取值 → 首次赋值的行号。
+		// 只认本文件内的赋值：变量若由 include/yield 从别处传进来，取值域不在这里判。
+		assigned := map[string]map[string]int{}
+		for i, line := range lines {
+			for _, m := range reToneAssign.FindAllStringSubmatch(line, -1) {
+				if assigned[m[1]] == nil {
+					assigned[m[1]] = map[string]int{}
+				}
+				if _, seen := assigned[m[1]][m[2]]; !seen {
+					assigned[m[1]][m[2]] = i + 1
+				}
+			}
+		}
+
+		for i, line := range lines {
+			for _, m := range reToneBadgeVar.FindAllStringSubmatch(line, -1) {
+				got, ok := assigned[m[1]]
+				if !ok {
+					continue
+				}
+				for value, at := range got {
+					checked++
+					if !vocab[value] {
+						t.Errorf("%s:%d 用 `badge-{{%s}}` 取档，但该变量在 %s:%d 被赋成词表外的 %q："+
+							"ui.css 里没有 `.badge-%s` 别名，这一档会静默失色。词表与分工见 docs/rules/template-boundary.md",
+							r, i+1, m[1], r, at, value, value)
+					}
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Errorf("没扫到任何「模板局部 tone 变量」的取值（checked=0）：该形态要么消失了、要么写法变了，" +
+			"本判据正在静默失效 —— 请更新扫描正则，而不是把这条保护删掉")
 	}
 }
 

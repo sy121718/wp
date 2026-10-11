@@ -1,16 +1,18 @@
-{* admin/navigations.html — 前台导航菜单：结构树 + 排序 + 打开方式（零 JS，原生表单提交） *}
+{* admin/navigations.html — 前台导航菜单：结构树 + 排序 + 打开方式
+   （页面只读 GET；写动作由浏览器直调 JSON 接口，无 JS 时写按钮整体隐去） *}
 {* 版式遵循后台页壳与列表页标准骨架（评审规则 ~/.dsh/skills/admin-ui-logic §2.1/§2.2/§3/§7）：
      · 领域说明两段进页头 .help 悬浮，正文零说明文字；
      · 工程 / 导航位置两个上下文选择器与页头同行（单工程时不渲染工程下拉）；
      · 菜单结构是 .data-table：末列 .col-actions 放编辑 / 删除，「排序」列放上移 / 下移；
      · 行内表单（上移 / 下移 / 删除 / 编辑抽屉）全部放表格外，按钮用 form="<id>" 关联
-       （HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格）。 *}
+       （HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格）；上移 / 下移与删除走
+       JSON 声明（/api/navigation/update 的 action=move、/api/navigation/delete），
+       编辑抽屉与面板块仍是页面 POST。 *}
 {* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
 {{block body()}}
 {{tr := .["t"]}}
-{{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{kind := .Kind}}
 {{canUpdate := isset(.Buttons["navigation.update"])}}
@@ -18,8 +20,21 @@
 {* 面板块保存后回跳时要点开的那一项（?menu=<id>）：只参与行比对，从不进 HTML。
    用链索引取值：直接渲染模板的单测不带该键，点号取值会让整页在那行中断。 *}
 {{menuFocus := .["MenuID"]}}
+{* 取数失败时的归口文案：只在「页面装载失败」那条路径上有值（Go 侧零值数据 + 500 + no-store），
+   正常渲染一律为空串。 *}
+{{loadError := .["LoadError"]}}
 <div class="stack">
-    {{if len(.Projects) == 0}}
+    {* 先判装载失败，再判空工程：空工程是「读到了、列表为空」，装载失败是「没读到」——
+       混在一起会让运营以为工程被删了。两档的差别只有这句话与状态码（Go 侧）。 *}
+    {{if loadError}}
+    <section class="card list-card">
+        <p class="badge badge-danger" role="alert">{{loadError}}</p>
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
+        </div>
+    </section>
+    {{else if len(.Projects) == 0}}
     <section class="card list-card">
         <div class="empty-state">
             <p class="empty-title">{{ .["t"]("admin.navigations.no_project.title", "还没有站点工程") }}</p>
@@ -82,10 +97,19 @@
        字段与 action 一个字符未改，只换承载形态。 *}
     {{if canUpdate}}
     <template id="tpl-nav-create">
-        <form method="post" action="/admin/navigations/create?project={{selectedProject}}&amp;kind={{kind}}" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* 新建走 JSON API（前端直调 /api/navigation/create）：成功整页刷新回列表，
+           失败在原地点出并保住已填内容。表单只声明**事实**（端点 / 写模式 / 文案从哪来），
+           行为全在基座里 —— 模板不写内联 JS。
+           没有 method/action 是刻意的：禁用 JS 时提交按钮是 hidden 的（下方 noscript 说明原因），
+           不会退化成「GET 当前页」这种看起来像成功的空动作。 *}
+        <form data-write-api="/api/navigation/create"
+              data-write-mode="create"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+              class="form-stack">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="kind" value="{{kind}}">
+            {* 结果区：失败时写在这儿（表单内容原样保留），成功则整页刷新回列表。 *}
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="form-field">
                 <label class="form-label req" for="nav-new-title">{{ .["t"]("admin.navigations.field.title", "菜单文字") }}</label>
                 <input type="text" id="nav-new-title" name="title" class="form-input" placeholder="{{ .["t"]("admin.navigations.title_placeholder", "菜单文字，如：关于我们") }}" required>
@@ -113,8 +137,15 @@
                 </div>
             </div>
             <div class="action-row">
+                {* 无 JS 时新建不可用：写动作由浏览器直调接口完成，没有端到端兜底表单。
+                   按钮是 hidden（有 JS 时由 json_write.js 的 [data-requires-js] 放出来），
+                   这里说清原因，避免用户把「按钮不见了」读成权限问题。
+                   已知文本缺口（task-91 登记，**不在本卡 scope**）：词条
+                   admin.navigations.write.noJs 只点名「新建与删除」，而排序（上移 / 下移）现在
+                   同样需要 JS。改词条要动 public/migrations（另开卡），本卡只登记不改。 *}
+                <noscript><p class="form-hint">{{ .["t"]("admin.navigations.write.noJs", "本页的新建与删除需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。") }}</p></noscript>
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.navigations.add", "添加") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden>{{ .["t"]("admin.navigations.add", "添加") }}</button>
             </div>
         </form>
     </template>
@@ -133,13 +164,46 @@
     {{if len(.SourceGroups) > 0}}
     <template id="tpl-nav-add-source">
         {{range _, g := .SourceGroups}}
+        {* 分组标题：取词在模板，key 与 enums 的 Source* / 适配器给 contract 的同一批
+           （admin.navigations.source.*）。已知类型各带中文兜底 —— 本仓约定是每个调用点
+           自带中文（缺词条时看不出、不露 key、不露空串），`check-i18n-keys-seeded` 守
+           「key 有没有词条」这条另一个方向。
+           未知类型（将来新增的来源）走 contract 透传的 key、兜底成类型名：新类型不改模板
+           也能拿到已翻好的译文，而兜底值仍是「看得出是什么」而不是空白。 *}
+        {{sourceLabel := g.Type}}
+        {{if g.Type == "page"}}{{sourceLabel = tr("admin.navigations.source.page", "页面")}}
+        {{else if g.Type == "article"}}{{sourceLabel = tr("admin.navigations.source.article", "文章")}}
+        {{else if g.Type == "product"}}{{sourceLabel = tr("admin.navigations.source.product", "产品")}}
+        {{else if g.Type == "category"}}{{sourceLabel = tr("admin.navigations.source.category", "分类")}}
+        {{else}}{{sourceLabel = tr(g.Title, g.Type)}}{{end}}
         <details class="nav-source-group" open>
-            <summary class="nav-source-summary">{{g.Title}}（{{len(g.Items)}}）</summary>
-            <form method="post" action="/admin/navigations/add-source?project={{selectedProject}}&amp;kind={{kind}}" class="form-stack">
-                <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <summary class="nav-source-summary">{{sourceLabel}}（{{len(g.Items)}}）</summary>
+            {* 每组一个表单：写动作是 JSON API（前端直调 /api/navigation/create 的 action=addSource
+               档），基座的批量档按**本表单**收集已勾选项（name=ids），action/projectId/kind/sourceType
+               由 data-write-extra 显式点名带出 —— 基座不会替模板凭空生成字段（尤其那个 hidden
+               action，它就是分支判别键）。成功后就地显示摘要（不删行、不刷新，方便接着加另一组），
+               失败逐条列出原因，勾选状态与已填内容都保留。
+               提交按钮沿用「本组没有可加入项」的置灰判据，且**刻意不加** data-requires-js：
+               基座放行该属性时会一并摘掉 disabled，等于把这条判据抹掉。抽屉内容在 <template>
+               里、无 JS 时根本打不开，所以这里不需要切片 A 那种 noscript 兜底。 *}
+            <form data-write-api="/api/navigation/create"
+                  data-write-mode="bulk"
+                  data-write-outcome="add"
+                  data-write-extra="action,projectId,kind,sourceType"
+                  data-msg-none-selected="{{tr("admin.navigations.notice.noSourcePicked", "请至少勾选一项要加入菜单的内容。")}}"
+                  data-msg-all-added="{{tr("admin.navigations.addSource.result.allAdded", "已加入 {count} 项。")}}"
+                  data-msg-all-skipped="{{tr("admin.navigations.addSource.result.allSkipped", "{count} 项都未能加入，菜单未改动。")}}"
+                  data-msg-partial="{{tr("admin.navigations.addSource.result.partial", "已加入 {added} 项，{skipped} 项未能加入。")}}"
+                  data-msg-too-many="{{ .["t"]("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行") }}"
+                  data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                  data-msg-refresh="{{tr("admin.navigations.write.refresh", "刷新列表")}}"
+                  class="form-stack">
+                <input type="hidden" name="action" value="addSource">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="kind" value="{{kind}}">
                 <input type="hidden" name="sourceType" value="{{g.Type}}">
+                {* 结果区：批量档就地显示摘要 + 逐条原因，刷新的入口也挂在这儿（不自动刷新）。 *}
+                <p class="form-hint" data-write-status role="status" hidden></p>
                 {{range _, it := g.Items}}
                 {* 显示 Title（人类可读标题）为主、URL 为辅 —— 不是 Label。
                    Label 对页面来说是 DraftPath、对内容是 slug，与 URL 高度重合
@@ -147,7 +211,7 @@
                    Title 才是「勾进菜单后会成为什么菜单项文字」的答案；
                    URL 是它的落点。两者都空时才退回 Label 兜底。 *}
                 <label class="nav-source-item">
-                    <input type="checkbox" name="sourceIds" value="{{it.ID}}" {{if it.URL == ""}}disabled{{end}}>
+                    <input type="checkbox" name="ids" value="{{it.ID}}" {{if it.URL == ""}}disabled{{end}}>
                     <span class="nav-source-title">{{it.Title}}</span>
                     {{if it.URL == ""}}<em>{{tr("admin.navigations.no_public_path", "（暂无公开路径，先发布后再添加）")}}</em>{{else}}<code>{{it.URL}}</code>{{end}}
                 </label>
@@ -195,10 +259,20 @@
            所以上移/下移/删除的行内表单放表格外、按钮用 form="<id>" 关联）。
            form 只包 .table-wrap 而不是整张 .list-card：.list-toolbar 必须保持
            .list-card 的直接子元素（样式与脚本按此定位）。 *}
-        <form method="post" action="/admin/navigations/bulk-delete?project={{selectedProject}}&amp;kind={{kind}}">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
-            <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="kind" value="{{kind}}">
+        {* 批量删除的**事实**在这里：端点 / 批模式 / 五条结论文案。
+           语义（去重 / 上限 200 / 逐条失败不中断 / 子项一并删除）全在服务端同一个
+           /api/navigation/delete 里，页面这层只负责「勾选 → 提交 → 把结果说出来」。
+           结论词条与页面提示页时代同一批（admin.navigations.bulkResult.*，命名占位符）。 *}
+        <form data-write-api="/api/navigation/delete"
+              data-write-mode="bulk"
+              data-msg-none-selected="{{tr("admin.navigations.bulkResult.noneSelected", "没有勾选任何菜单项，列表未改动。")}}"
+              data-msg-all-deleted="{{tr("admin.navigations.bulkResult.allDeleted", "已删除 {count} 个菜单项。")}}"
+              data-msg-all-skipped="{{tr("admin.navigations.bulkResult.allSkipped", "{count} 个菜单项都未能删除，列表未改动。")}}"
+              data-msg-partial="{{tr("admin.navigations.bulkResult.partial", "已删除 {deleted} 个，{skipped} 个未能删除（可能已被删除）。")}}"
+              data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+              data-msg-refresh="{{tr("admin.navigations.write.refresh", "刷新列表")}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete}}{{if len(.Rows) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
@@ -221,24 +295,39 @@
                 </td></tr>
                 {{else}}
                 {{range _, r := .Rows}}
+                {* 行数据只带事实（标题 / 链接 / 层级 / 打开方式取值）：打开方式的文案在这里取词。
+                   key 与「添加菜单项」抽屉的 target 下拉**同一批**（admin.navigations.target.*）——
+                   不共用会让同一项在行里与下拉里显示成两个词（不报错、也没有别的测试会红）。 *}
+                {{targetLabel := tr("admin.navigations.target.self", "当前窗口")}}
+                {{if r.Target == "blank"}}{{targetLabel = tr("admin.navigations.target.blank", "新标签页")}}{{end}}
                 {* data-filter-text = 这行的可筛文本（客户端筛选按它匹配）。
                    行标题在编辑抽屉里才能改，这里先把「菜单项 / 链接 / 打开方式」三列纳入匹配范围。 *}
-                <tr data-filter-text="{{r.Title}} {{r.Path}} {{r.TargetLabel}}">
+                <tr data-filter-text="{{r.Title}} {{r.Path}} {{targetLabel}}">
                     <td class="col-check">
                         <input type="checkbox" name="ids" value="{{r.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
                     </td>
-                    <td style="padding-left:{{r.Indent}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-url="/admin/navigations/edit?id={{r.ID}}&amp;project={{selectedProject}}&amp;kind={{kind}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"{{if menuFocus == r.ID}} data-drawer-auto="1"{{end}}>{{if r.Depth > 0}}↳ {{end}}{{r.Title}}</button>{{else}}{{if r.Depth > 0}}↳ {{end}}{{r.Title}}{{end}}</td>
+                    {* 层级缩进：模板只把 Depth 放进 CSS 变量，间距由 theme.css 的 .tree-cell 算 ——
+                       模板与 Go 都不产出 px（改间距 / 换皮只动那一条 CSS）。 *}
+                    <td><div class="tree-cell" style="--tree-depth:{{r.Depth}}">{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-url="/admin/navigations/edit?id={{r.ID}}&amp;project={{selectedProject}}&amp;kind={{kind}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"{{if menuFocus == r.ID}} data-drawer-auto="1"{{end}}>{{if r.Depth > 0}}↳ {{end}}{{r.Title}}</button>{{else}}{{if r.Depth > 0}}↳ {{end}}{{r.Title}}{{end}}</div></td>
                     <td><code>{{r.Path}}</code></td>
-                    <td>{{r.TargetLabel}}</td>
+                    <td>{{targetLabel}}</td>
                     <td>
-                        <button type="submit" form="nav-up-{{r.ID}}" class="btn btn-sm btn-icon" {{if r.First}}disabled{{end}} title="{{tr("admin.navigations.title_up", "上移")}}" aria-label="{{tr("admin.navigations.title_up", "上移")}}">↑</button>
-                        <button type="submit" form="nav-down-{{r.ID}}" class="btn btn-sm btn-icon" {{if r.Last}}disabled{{end}} title="{{tr("admin.navigations.title_down", "下移")}}" aria-label="{{tr("admin.navigations.title_down", "下移")}}">↓</button>
+                        {* 排序也走 JSON（POST /api/navigation/update，action=move）：无 JS 时按钮整体隐去。
+                           放行标记挂在外层 span 而不是按钮上：基座放出 [data-requires-js] 时会**一并摘掉
+                           disabled**（json_write.js 的 WBUI.register），而这里的 disabled 是「首项不可上移 /
+                           末项不可下移」的边界语义 —— 挂在按钮上会在放行那一步被清掉，边界项随即变成
+                           可点却点了没反应的空动作。 *}
+                        <span data-requires-js hidden><button type="submit" form="nav-up-{{r.ID}}" class="btn btn-sm btn-icon" {{if r.First}}disabled{{end}} title="{{tr("admin.navigations.title_up", "上移")}}" aria-label="{{tr("admin.navigations.title_up", "上移")}}">↑</button></span>
+                        <span data-requires-js hidden><button type="submit" form="nav-down-{{r.ID}}" class="btn btn-sm btn-icon" {{if r.Last}}disabled{{end}} title="{{tr("admin.navigations.title_down", "下移")}}" aria-label="{{tr("admin.navigations.title_down", "下移")}}">↓</button></span>
                     </td>
                     <td class="col-actions">
                         {{if canUpdate}}
                         <button type="button" class="btn btn-sm" data-drawer-url="/admin/navigations/edit?id={{r.ID}}&amp;project={{selectedProject}}&amp;kind={{kind}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
                         {{end}}
-                        <button type="submit" form="nav-del-{{r.ID}}" class="btn btn-sm btn-danger">{{tr("admin.navigations.action.delete", "删除")}}</button>
+                        {* 行内删除同样**没有无 JS 兜底**（写动作由浏览器直调接口完成）：按钮 hidden，
+                            由基座的 [data-requires-js] 在有 JS 时放出来。留着可见会让用户点一下
+                            得到一个「什么都没发生」的空动作 —— 那比看不见按钮更难判断。 *}
+                        <button type="submit" form="nav-del-{{r.ID}}" class="btn btn-sm btn-danger" data-requires-js hidden>{{tr("admin.navigations.action.delete", "删除")}}</button>
                     </td>
                 </tr>
                 {{end}}
@@ -257,25 +346,37 @@
 
     {* 行内表单与编辑抽屉放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格。 *}
     {{range _, r := .Rows}}
-    <form id="nav-up-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/move?project={{selectedProject}}&amp;kind={{kind}}&amp;menu={{r.ID}}">
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
-        <input type="hidden" name="kind" value="{{kind}}">
-        <input type="hidden" name="id" value="{{r.ID}}">
-        <input type="hidden" name="dir" value="up">
-    </form>
-    <form id="nav-down-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/move?project={{selectedProject}}&amp;kind={{kind}}&amp;menu={{r.ID}}">
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
-        <input type="hidden" name="kind" value="{{kind}}">
-        <input type="hidden" name="id" value="{{r.ID}}">
-        <input type="hidden" name="dir" value="down">
-    </form>
-    <form id="nav-del-{{r.ID}}" class="hidden-form" method="post" action="/admin/navigations/delete?project={{selectedProject}}&amp;kind={{kind}}"
+    {* 上移 / 下移走 JSON 声明（create 档）：single 档只发 {id}，带不出 action / dir / projectId；
+       create 档发全部具名字段、成功整页刷新（顺序变了，刷新正是要的效果），失败把原因写进同 host
+       的结果区、表单原位保留 —— 正好是「错误保留输入与焦点」。具名字段集必须与服务端白名单逐字
+       一致（action / projectId / id / dir）：kind 是页面的筛选上下文（服务端从导航项自己读），
+       多发一个键只会让严格白名单把整条请求拒掉；csrf 走 <meta name="csrf-token"> 请求头，不在表内。
+       表单刻意不带 method / action：留着 action，一旦无 JS 被提交就会打成一条已退役的页面 POST。 *}
+    <div data-write-host>
+        <p class="form-hint" data-write-status role="status" hidden></p>
+        <form id="nav-up-{{r.ID}}" class="hidden-form"
+              data-write-api="/api/navigation/update" data-write-mode="create"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+            <input type="hidden" name="action" value="move">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{r.ID}}">
+            <input type="hidden" name="dir" value="up">
+        </form>
+        <form id="nav-down-{{r.ID}}" class="hidden-form"
+              data-write-api="/api/navigation/update" data-write-mode="create"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+            <input type="hidden" name="action" value="move">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{r.ID}}">
+            <input type="hidden" name="dir" value="down">
+        </form>
+    </div>
+    {* 行内删除走 JSON 单档（只发 id）：确认框由 data-confirm 承担，成功整页刷新
+       （列表的派生列由服务端重算，就地删行会同源不上）。 *}
+    <form id="nav-del-{{r.ID}}" class="hidden-form"
+          data-write-api="/api/navigation/delete" data-write-mode="single"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
           data-confirm="{{tr("admin.navigations.confirm_delete_prefix", "确定删除「")}}{{r.Title|safeJs}}{{tr("admin.navigations.confirm_delete_suffix", "」？它的子菜单项会一并删除。")}}" data-confirm-danger>
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
-        <input type="hidden" name="kind" value="{{kind}}">
         <input type="hidden" name="id" value="{{r.ID}}">
     </form>
     {{end}}

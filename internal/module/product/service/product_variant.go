@@ -1490,7 +1490,7 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 // detail 是**可定位明细**（引用面 / 工程 / 商品 id），与 Reason 分开两个字段：
 // Reason 只承载受控原因枚举（提示页直接展示）；自由文本若拼进 Reason 会让提示页出现
 // 不可控内容，所以明细只能走响应体里的 Detail，不能拼进 Reason。反之单条删除路径
-//（DeleteVariant）返回的是错误，那里按 key：detail 的既有形态拼接，明细照常可见。
+// （DeleteVariant）返回的是错误，那里按 key：detail 的既有形态拼接，明细照常可见。
 func variantSkipOf(v *productmodel.VariantEntity, reason, detail string) productdto.VariantSaveSkip {
 	if v == nil {
 		return productdto.VariantSaveSkip{Reason: reason, Detail: detail}

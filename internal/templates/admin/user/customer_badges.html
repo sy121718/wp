@@ -1,0 +1,30 @@
+{* admin/user/customer_badges.html — 客户徽章片段：状态档 / 邮箱验证档 / 筛选口径与 RFM 分段。
+   列表页（customers.html）、详情页（customer_detail.html）、RFM 页（customer_rfm.html）共用一份映射。
+
+   为什么抽出来：「状态值 → 语义档」原来在列表页与详情页各写一遍，改一边忘一边的症状是
+   同一个状态在列表页是绿、在详情页是灰 —— 不报错，也没有别的测试会红。
+
+   分工：服务端只给事实（Status 值、EmailVerified 布尔、tab 的键 / 计数 / URL），
+   「取哪一档、怎么拼出来」是本片段的事（展示判断在模板侧，见
+   docs/rules/template-boundary.md §语义 vs 外观）。档位只能取 ok / warn / danger / mute / info
+   —— ui.css 的 `.badge-<tone>` 别名只定义了这些；自造档不会报错、只会静默失色，
+   由 scripts/check-template-presentation.sh 判据 4 与
+   internal/templates/css_class_audit_test.go 的 TestDynamicClassToneValuesInVocabulary 守住。
+   未知取值一律落 mute：宁可显示得平淡，也不要把不认识的状态渲染成成功或失败。
+
+   用法：{{import "customer_badges.html"}} 之后 {{yield customerStatusBadge(status=r.Status, ...)}}。
+   tr 是 per-request 取词闭包（.["t"]），必须由调用点传进来 —— 全局函数读不到请求上下文。
+
+   **每个 block 的块体都写成一行**：yield 会把块体的首尾换行一起输出，行内调用
+   （`<h2>{{displayName}} {{yield customerStatusBadge(...)}}</h2>`）会因此在展示名与徽章之间
+   多出一个空行 —— 视觉上被 HTML 折叠成空格，但相邻文本节点的断言（渲染测试）会当场红。 *}
+
+{{block customerStatusBadge(status, labelKey, labelFallback, tr)}}{{tone := "mute"}}{{if status == 1}}{{tone = "ok"}}{{else if status == 0}}{{tone = "danger"}}{{else if status == 2}}{{tone = "warn"}}{{end}}<span class="badge badge-{{tone}}">{{tr(labelKey, labelFallback)}}</span>{{end}}
+
+{{block customerVerifyBadge(verified, labelKey, labelFallback, tr)}}{{tone := "warn"}}{{if verified}}{{tone = "ok"}}{{end}}<span class="badge badge-{{tone}}">{{tr(labelKey, labelFallback)}}</span>{{end}}
+
+{{block customerFilterTab(tab, tr)}}{{tone := "mute"}}{{if tab.Key == "active"}}{{tone = "ok"}}{{else if tab.Key == "disabled"}}{{tone = "danger"}}{{else if tab.Key == "pending"}}{{tone = "warn"}}{{else if tab.Key == "locked"}}{{tone = "info"}}{{end}}{{yield customerTabAnchor(tab=tab, tr=tr, tone=tone)}}{{end}}
+
+{{block customerRfmSegmentTab(tab, tr)}}{{tone := "mute"}}{{if tab.Key == "vip"}}{{tone = "ok"}}{{else if tab.Key == "potential"}}{{tone = "info"}}{{end}}{{yield customerTabAnchor(tab=tab, tr=tr, tone=tone)}}{{end}}
+
+{{block customerTabAnchor(tab, tr, tone)}}<a class="badge badge-{{tone}}" href="{{tab.URL}}"{{if tab.Active}} aria-current="true"{{end}}>{{if tab.Active}}<strong>✓ {{tr(tab.LabelKey, tab.Label)}}</strong>{{else}}{{tr(tab.LabelKey, tab.Label)}}{{end}} {{tab.Count}}</a>{{end}}

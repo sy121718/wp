@@ -1,13 +1,16 @@
 {* fragments/page_langs.html — 页面级语言排除面板（迁移 491，HTMX 服务端渲染）
-   数据（由 page/inbound/http/page_langs_handle.go 的 pageLangsPanelData 注入，**全部键总是存在**）：
-     t（取词函数）/ CSRFToken / PageID / Path / Items（[]pageLangRowView）/ Error / Done
+   数据（由 page/inbound/http/page_langs.go 的 pageLangsPanelData 注入，**全部键总是存在**）：
+     CSRFToken / PageID / Path / Items（[]pageLangRowView）/ Err / Done
    一行 = 一个**站点启用语言**在本页的产出状态。列语义：
      · 语言   —— 完整语言码
      · 状态   —— 已排除（不产出）/ 已发布 / 未发布
      · 说明   —— 默认语言等不可操作的原因
      · 操作   —— 排除（会下线该语言产物）/ 恢复（只解除排除，不自动重新发布）
-   取词：本片段不经 shell.Prepare，t 由调用点注入。 *}
+   取词：本片段不经 Prepare，t / tf 由数据注入（Go 侧经 adminui.PrepareFragment）。
+   槽位收的是**事实**（adminui.Msg：key + 中文兜底 + `%s` 参数）而不是拼好的句子 ——
+   控制器不取词，语言由这里的 tr / tf 按当前请求决定。 *}
 {{tr := .["t"]}}
+{{tf := .["tf"]}}
 {{pageID := .PageID}}
 {{csrf := .CSRFToken}}
 <div class="langs-panel" id="page-langs-{{pageID}}">
@@ -15,8 +18,8 @@
         <strong>{{tr("admin.page.langs.title", "语言产出范围")}}</strong>
         {{if .Path != ""}}<span class="text-mono text-mute">{{ .Path }}</span>{{end}}
     </div>
-    {{if .Error != ""}}<p class="badge badge-warning" role="alert">{{ .Error }}</p>{{end}}
-    {{if .Done != ""}}<p class="badge badge-info" role="status">{{ .Done }}</p>{{end}}
+    {{err := .Err}}{{if err.Key != "" || err.Fallback != ""}}<p class="badge badge-warning" role="alert">{{tf(err.Key, err.Fallback, err.Args)}}</p>{{end}}
+    {{done := .Done}}{{if done.Key != "" || done.Fallback != ""}}<p class="badge badge-info" role="status">{{tf(done.Key, done.Fallback, done.Args)}}</p>{{end}}
     {* 空态表头常驻（门禁 check-empty-state-table-head.sh）：table 不进 if，空态整行进 tbody。 *}
     <div class="table-wrap table-scroll">
         <table class="data-table">
@@ -37,8 +40,8 @@
             {{range _, r := .Items}}
             <tr>
                 <td class="text-mono">{{r.Lang}}</td>
-                <td>{{r.Status}}</td>
-                <td class="text-sm">{{r.Note}}</td>
+                <td>{{tr(r.StatusKey, r.StatusFallback)}}</td>
+                <td class="text-sm">{{tr(r.NoteKey, r.NoteFallback)}}</td>
                 <td class="col-actions">
                     {{if r.Excluded}}
                     <form method="post" action="/admin/page-langs/restore"

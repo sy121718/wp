@@ -22,7 +22,7 @@ import (
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 
-	"go_wp/internal/shell"
+	"go_wp/internal/adminui"
 	"go_wp/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
@@ -100,7 +100,7 @@ func (h *Handle) Dashboard(c *gin.Context) {
 	// 但「只挂外壳、不装业务服务」的渲染测试与降级装配路径都可能走到这里 ——
 	// 首页是登录后的第一跳，它挂掉等于后台进不去。
 	if h.projects == nil || h.pages == nil {
-		c.HTML(http.StatusOK, "admin/dashboard", shell.Prepare(c, gin.H{
+		c.HTML(http.StatusOK, "admin/dashboard", adminui.Prepare(c, gin.H{
 			"title": workbenchenums.MsgDashboardTitle,
 			"menu":  "dashboard",
 		}))
@@ -113,7 +113,7 @@ func (h *Handle) Dashboard(c *gin.Context) {
 		// 概览是**只读汇总页**：数据源读不到不该让整页 500 —— 页面壳照常渲染、
 		// 统计区退回空态、页头说明口径暂时不可用，用户仍然能用侧栏去别的页面干活。
 		// （整页 500 会把导航一起打掉，把一个"概览暂时没有数字"变成"后台进不去"。）
-		c.HTML(http.StatusOK, "admin/dashboard", shell.Prepare(c, gin.H{
+		c.HTML(http.StatusOK, "admin/dashboard", adminui.Prepare(c, gin.H{
 			"title": workbenchenums.MsgDashboardTitle,
 			"menu":  "dashboard",
 			"Err":   err.Error(),
@@ -124,7 +124,7 @@ func (h *Handle) Dashboard(c *gin.Context) {
 	// 2026-10 改版：页面统计（工程 / 页面总数 / 已发布 / 草稿 / 最近更新）整块下线 ——
 	// 那些数字的落点是 /admin/pages 与工程列表，而概览页每渲染一次都要为全部工程
 	// 逐个 List 一遍页面，这几百毫秒在「登录后的第一跳」上是纯浪费。
-	c.HTML(http.StatusOK, "admin/dashboard", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/dashboard", adminui.Prepare(c, gin.H{
 		"title": workbenchenums.MsgDashboardTitle,
 		"menu":  "dashboard",
 		// 区间在 handler 里解析（query → from/to），三块（KPI / 趋势 / 榜单）共用同一个窗口。

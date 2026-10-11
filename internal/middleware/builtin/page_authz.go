@@ -24,9 +24,19 @@ package builtin
 //
 // 唯一约定写法（页面 router 里，放在 `pages.GET(...)` 的第二个参数位置）：
 //
-//	pages.GET("/blocks", shell.PageAuthz("/api/block/list"), h.BlocksList)
+//	pages.GET("/blocks", adminui.PageAuthz("/api/block/list"), h.BlocksList)
 //
-// shell.PageAuthz 是薄包装：把 shell.RejectPageRequest 绑到本中间件上。
+// adminui.PageAuthz 是薄包装：把本包的判定与 adminui 的整页拒绝出口绑在一起
+// （task-92 批 4a 自 internal/shell 迁入）。
+//
+// **本中间件只用于 GET 的页面导航目标**（点菜单、刷新、直输 URL、中键新标签）。后台已没有
+// 页面 POST/PUT/DELETE 写路由 —— 页面写动作一律直调 `/api/*` 的 JSON 接口，鉴权走
+// authorizedAPI 那一条链。把 `PageAuthz*` 挂到 `pages.POST(...)` 上是错的方向：写请求会收到
+// 一张 HTML 提示页，前端按 JSON 解析，表现是「点了没反应」。
+//
+// 本包**永不** import 渲染代码：出口一律由调用方注入（PageRejectFunc）。谁在这里加一个
+// 默认出口，谁就把「判定」与「渲染」焊成同一层 —— 那正是本批要拆开的东西；反过来也会与
+// internal/adminui 构成导入环（adminui → builtin 已有一条真实边）。
 
 import (
 	"net/http"

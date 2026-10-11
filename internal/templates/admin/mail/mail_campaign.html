@@ -136,7 +136,7 @@
     </div>
     {* 收件人明细分页：此前这里只有一句「第 N 页」文本，**没有任何翻页控件** ——
        超过 50 条之后第 2 页永远打不开（比「无分页」更差：页面看起来像有分页）。
-       改用既有分页组件（handler 调 shell.BuildPagination 注入 PaginationInfo/Links）。 *}
+       改用既有分页组件（handler 注入顶层事实键 "Pagination"，片段自己渲染信息行与链接）。 *}
     {{include "../partials/pagination.html"}}
   </section>
 </div>

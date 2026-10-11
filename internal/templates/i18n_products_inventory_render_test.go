@@ -31,7 +31,7 @@ func groupDData(extra map[string]any) map[string]any {
 	d := map[string]any{
 		"lang": "zh-CN", "langs": LanguageOptions("zh-CN"),
 		"title": "组D", "t": TranslateFunc("zh-CN"), "csrf_token": "tok",
-		// 列表页的新建/编辑入口改走抽屉后，按钮按权限显隐（运行时由 shell.Prepare 注入，
+		// 列表页的新建/编辑入口改走抽屉后，按钮按权限显隐（运行时由 adminui.Prepare 注入，
 		// 测试外壳给一份全集）：否则每加一个入口就要往各页数据里补一个权限码，
 		// 漏补的表现是「按钮不渲染、wants 断言红」，与模板本身无关。
 		"Buttons": map[string]any{
@@ -410,8 +410,10 @@ func TestGroupDTagsPageRenders(t *testing.T) {
 		"Err": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
 		"RuleTypes": []map[string]any{{"Type": "new", "Name": "新品", "Params": "days"}},
 		"Tags": []map[string]any{{
-			"ID": "t1", "Name": "新品", "Slug": "new", "IsRule": true, "KindLabel": "自动标签",
+			"ID": "t1", "Name": "新品", "Slug": "new", "IsRule": true,
+			"KindLabelKey": "", "KindLabelFallback": "自动标签",
 			"RuleLabel": "新品（days）", "ProductCount": 1, "RecalcAt": "2026-01-01", "Sort": 0,
+			"RecalcLabelKey": "", "RecalcLabelFallback": "",
 			"RuleType": "new", "RuleDays": "30", "RuleMinPrice": "", "RuleMaxPrice": "",
 			"Products": []map[string]any{{"Name": "商品一", "Slug": "p-one", "Status": "draft"}},
 		}},
@@ -449,6 +451,7 @@ func TestGroupDTranslationsPageRenders(t *testing.T) {
 		"Langs": []map[string]any{{"Code": "en-US", "Label": "en-US", "Active": true}},
 		"Groups": []map[string]any{{
 			"Title": "商品", "Subtitle": "商品自身",
+			"TitleKey": "", "TitleFallback": "商品",
 			"Rows": []map[string]any{{
 				"FieldLabel": "商品名", "Context": "product.name", "Source": "商品一",
 				"Rich": false, "Target": "", "SourceHash": "h1", "Translated": false, "Engine": "",

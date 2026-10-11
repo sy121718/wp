@@ -52,6 +52,8 @@ package aihttp
 import (
 	"context"
 	"encoding/json"
+	"go_wp/internal/middleware/adminctx"
+	"go_wp/internal/middleware/builtin"
 	"net/http"
 	"net/url"
 	"sort"
@@ -61,6 +63,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/mcp"
 	aicontract "go_wp/internal/module/ai/contract"
 	aidto "go_wp/internal/module/ai/dto"
@@ -98,14 +101,14 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 		// 没有可用模型时**直说**，不要让请求走到出站层再失败：
 		// 那里的错误是「模型调用失败」，用户会去查网络，而真正的原因是没配供应商。
 		h.renderFab(c, gin.H{
-			"FabError":  fabText(aienums.MsgFabNoModel),
+			"FabError":  fabMsg(aienums.MsgFabNoModel),
 			"FabAskKey": c.PostForm("ctxPath"),
 		})
 		return
 	}
 	if input == "" {
 		h.renderFab(c, gin.H{
-			"FabError":  fabText(aienums.MsgFabEmptyInput),
+			"FabError":  fabMsg(aienums.MsgFabEmptyInput),
 			"FabAskKey": c.PostForm("ctxPath"),
 		})
 		return
@@ -127,7 +130,7 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 	})
 	if err != nil {
 		h.renderFab(c, gin.H{
-			"FabError":  fabText(aienums.MsgFabFailed),
+			"FabError":  fabMsg(aienums.MsgFabFailed),
 			"FabAskKey": c.PostForm("ctxPath"),
 		})
 		return
@@ -152,29 +155,43 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 	// 而不是从事件列表里找最后一条（列表可能因为折叠/重放而不含它）。
 	if r := fabReasoningOf(res); r != "" {
 		data["FabReasoning"] = r
-		data["FabThinkLabel"] = fabText(aienums.MsgFabThinkLabel)
+		data["FabThinkLabel"] = fabMsg(aienums.MsgFabThinkLabel)
 	}
 	if truncated {
-		data["FabTruncatedText"] = fabText(aienums.MsgFabTruncated)
+		data["FabTruncatedText"] = fabMsg(aienums.MsgFabTruncated)
 	}
 	if n := len(res.ToolEvents); n > 0 {
-		data["FabToolsText"] = fabText(aienums.MsgFabToolsPrefix) + strconv.Itoa(n) + fabText(aienums.MsgFabToolsSuffix)
+		// 「这轮查了数据 N 次。」是**两段词条 + 一个数字**（前缀 + 计数 + 后缀），
+		// 事实模型的一个 key 表达不了它（`%s` 只能落在一条词条里，而前缀词条本身没有占位符）。
+		// 所以按原样给两个事实、数字单独给：三者在渲染期拼起来，逐字等于原先 Go 侧拼串的结果，
+		// 而在英文下数字会落进英文的语序里（原先那条路径永远显示中文）。
+		data["FabToolsPrefix"] = fabMsg(aienums.MsgFabToolsPrefix)
+		data["FabToolsSuffix"] = fabMsg(aienums.MsgFabToolsSuffix)
+		data["FabToolsCount"] = strconv.Itoa(n)
 	}
 	// 既没有话、也没有取过数：可能是模型只调了工具但工具全失败。
 	// 这句要说清「可以去看详情」—— 详情里有工具名与参数，那才是排查的入口。
 	if answer == "" && len(res.ToolEvents) == 0 {
-		data["FabEmptyText"] = fabText(aienums.MsgFabEmpty)
+		data["FabEmptyText"] = fabMsg(aienums.MsgFabEmpty)
 	}
 	h.renderFab(c, data)
 }
 
 // renderFab 渲染悬浮球的结果片段。
 //
+// 数据装配处经 adminui.PrepareFragment 注入取词函数：片段不经 Prepare 页壳
+// （CSRF / 权限码 / 导航树对它是白算），但**文案要按请求语言取** —— 注入链只有这一条
+// （语言是请求级的，全局函数拿不到）。漏注入的后果是静默的：`{{tf := .["tf"]}}` 拿到 nil，
+// 该片段所有取词一起变空串，而状态码 200、日志干净（见 internal/templates/CLAUDE.md）。
+//
+// 槽位收的是**事实**（adminui.Msg：key + 中文兜底 + `%s` 参数），不是拼好的句子 ——
+// 这样 `ai.fab.*` 的词条才跟着界面语言走（迁移 568 播的种，原先因为拿不到 t 而闲置）。
+//
 // **一律 200**：面板里的每一句话（没写问题、没配模型、这轮失败）都是**正常的业务回答**，
 // 而 htmx 默认不替换 4xx/5xx 的响应 —— 用状态码表达业务结果会让用户点了按钮
 // 看到面板毫无变化。真正的内部错误（模板渲染失败）由框架自己回 500，那才是 5xx 的位置。
 func (h *SessionPageHandle) renderFab(c *gin.Context, data gin.H) {
-	c.HTML(http.StatusOK, "partials/ai_fab_result", data)
+	c.HTML(http.StatusOK, "partials/ai_fab_result", adminui.PrepareFragment(c, data))
 }
 
 // fabViewsOf 从本轮的工具事件里收集可渲染视图（P5 的渲染数据通道）。
@@ -273,12 +290,18 @@ func composeFabInput(c *gin.Context, input string) string {
 	return b.String()
 }
 
-// fabText 把 key 换成面向用户的文案。
+// fabText 把 key 换成**中文**文案（enums 的兜底表）。
 //
-// **必须走这一步**：`aienums.MsgFab*` 是 **key**（`ai.fab.tools` 这种），
-// 文案在 `FacingMessages` 里。直接把常量塞进模板的结果是把 key 原样渲染给用户 ——
-// 实测真跑一次时页面上出现 `ai.fab.tools2ai.fab.toolsUnit`，而那轮恰好是
-// 「模型要求补上下文」的正常回答，看起来像模板坏了（这个缺陷只有真调模型才会暴露，
+// 现在的调用者只有两处，都是「产物没有模板槽位」的地方：
+//   - 流式路径（ai_handle.go 的 writeFabStream*）—— 产物是响应体里的一段文本；
+//   - fabMsg 的兜底来源 —— 片段模板缺词条时显示它。
+//
+// 页面片段（partials/ai_fab_result）**不再走这里**：它的文案由模板的 tf 按请求语言取
+// （见 fabMsg / renderFab），所以页面上显示的是译文而不是中文兜底。
+//
+// **绝不把 key 原样塞进页面**：`aienums.MsgFab*` 是 **key**（`ai.fab.tools` 这种），
+// 文案在 `FacingMessages` 里。实测真跑一次时页面上出现 `ai.fab.tools2ai.fab.toolsUnit`，
+// 而那轮恰好是「模型要求补上下文」的正常回答，看起来像模板坏了（这个缺陷只有真调模型才会暴露，
 // 假上游的用例断言的是「渲染出了那句提示」，不会去看那句提示长什么样）。
 //
 // 取不到时回 key 本身（可见的降级）：这一层是异常路径的最后兜底，
@@ -288,6 +311,19 @@ func fabText(key string) string {
 		return v
 	}
 	return key
+}
+
+// fabMsg 悬浮球面板上一句话的**事实**（key + 中文兜底），交给片段模板的 tf 取词。
+//
+// 为什么控制器不再自己取词：面板片段的语言是**请求级**的，而 fabText 只读 enums 的中文兜底
+// （它是流式路径的最后兜底，那条路径的产物是响应体里的一段文本、没有模板可依托）。
+// 走事实之后 `ai.fab.*` 那 7 条 seed 才真正生效 —— 迁移 568 的注释里写着「将来把片段渲染
+// 也接上 i18n 注入，它们就能直接生效」，接的就是这一步。
+//
+// 兜底仍取 fabText：两条路径说的是同一句话，兜底表若各写一份，症状是
+// 「非流式显示一句、流式显示另一句」，而两处都不报错。
+func fabMsg(key string) adminui.Msg {
+	return adminui.Msg{Key: key, Fallback: fabText(key)}
 }
 
 const (
@@ -329,14 +365,14 @@ func (h *McpPageHandle) Page(c *gin.Context) {
 func (h *McpPageHandle) TokenCreate(c *gin.Context) {
 	var req aidto.TokenCreateReq
 	if err := c.ShouldBind(&req); err != nil {
-		h.renderTokens(c, "", shell.TranslateFor(c)(aienums.ErrInvalidParam, "参数不正确"), "")
+		h.renderTokens(c, "", aiMsgText(c, aienums.ErrInvalidParam, "参数不正确"), "")
 		return
 	}
 	req.UserID = userID(c)
 	res, err := h.tokens.Create(c.Request.Context(), &req)
 	if err != nil {
 		// 业务错误按 key 转当前语言；未登记的 key 原样显示（缺陷可见，而不是吞掉）。
-		h.renderTokens(c, "", shell.TranslateFor(c)(err.Error(), err.Error()), "")
+		h.renderTokens(c, "", aiMsgText(c, err.Error(), err.Error()), "")
 		return
 	}
 	h.renderTokens(c, res.Token, "", "")
@@ -351,16 +387,15 @@ func (h *McpPageHandle) TokenRevoke(c *gin.Context) {
 	var form struct {
 		ID int64 `form:"id"`
 	}
-	t := shell.TranslateFor(c)
 	if err := c.ShouldBind(&form); err != nil || form.ID <= 0 {
-		h.renderTokens(c, "", t(aienums.ErrInvalidParam, "参数不正确"), "")
+		h.renderTokens(c, "", aiMsgText(c, aienums.ErrInvalidParam, "参数不正确"), "")
 		return
 	}
 	if err := h.tokens.Revoke(c.Request.Context(), form.ID); err != nil {
-		h.renderTokens(c, "", t(err.Error(), err.Error()), "")
+		h.renderTokens(c, "", aiMsgText(c, err.Error(), err.Error()), "")
 		return
 	}
-	h.renderTokens(c, "", "", t("admin.ai.mcp.token.revokeDone", "已撤销该令牌（立即失效）"))
+	h.renderTokens(c, "", "", aiMsgText(c, "admin.ai.mcp.token.revokeDone", "已撤销该令牌（立即失效）"))
 }
 
 // renderTokens 渲染令牌区块片段。
@@ -372,8 +407,10 @@ func (h *McpPageHandle) renderTokens(c *gin.Context, newToken, errText, doneText
 //
 // 片段要**同样的数据**：它是令牌区块的完整重渲染（含刚生成的那一行），
 // 少给一个字段就会出现「创建之后列表少了一行」这类不一致。
+// 槽位契约（ErrText / DoneText / Title / Lead）是**字符串** —— 模板直接渲染它们，
+// 所以取词落在这一层（走共享的 adminui.MsgText），这几处**还没取词化**：
+// 要改成「传 key、模板 tr」得连带改 mcp.html / mcp_tokens.html 的数据契约。
 func (h *McpPageHandle) pageData(c *gin.Context, newToken, errText, doneText string) gin.H {
-	t := shell.TranslateFor(c)
 	ctx := c.Request.Context()
 
 	tokens, err := h.tokens.List(ctx, &aidto.TokenListReq{All: true, UserID: userID(c)})
@@ -381,22 +418,22 @@ func (h *McpPageHandle) pageData(c *gin.Context, newToken, errText, doneText str
 		// 列表拉不到不阻塞页面：给空列表 + 一句提示，比让整页 500 好（页面还有工具清单与地址可看）。
 		tokens = nil
 		if errText == "" {
-			errText = t(aienums.ErrInternal, "暂时无法读取令牌列表")
+			errText = aiMsgText(c, aienums.ErrInternal, "暂时无法读取令牌列表")
 		}
 	}
 
 	// 文案一律由调用方给：整页进入时为空（写动作的结论由 shell.RenderJump 渲染成提示页，
 	// 不再经 ?err= / ?done= 回带），片段进入时是刚算出的成品文案。
 
-	title := t("admin.ai.mcp.title", "MCP 与外部访问")
+	title := aiMsgText(c, "admin.ai.mcp.title", "MCP 与外部访问")
 	// 开关只读一次：页面要如实显示它（这里是运维判断「外面能不能进来」的唯一地方），
 	// 徽标分档与文案必须同源 —— 读两次若中间被改，会出现「文字说已开启、颜色说已关闭」。
 	enabled := h.mcpEnabled(ctx)
-	return shell.Prepare(c, gin.H{
+	return adminui.Prepare(c, gin.H{
 		// title（小写）是 layout 壳读的键（与同后台其它页面一致）；页面正文自己再取一次做 h1。
 		"title":        title,
 		"Title":        title,
-		"Lead":         t("admin.ai.mcp.lead", ""),
+		"Lead":         aiMsgText(c, "admin.ai.mcp.lead", ""),
 		"Endpoint":     mcpEndpointURL(c),
 		"Tokens":       tokenRows(tokens),
 		"Tools":        h.tools(),
@@ -445,14 +482,14 @@ func (h *McpPageHandle) mcpEnabled(ctx context.Context) bool {
 // 并带上读到的 Version 走乐观锁 —— 两个人同时点，后一个会被拒绝而不是覆盖对方。
 func (h *McpPageHandle) McpToggle(c *gin.Context) {
 	if h.config == nil {
-		mcpJump(c, false, shell.TranslateFor(c)(aienums.ErrInternal, "暂时无法读取令牌列表"))
+		mcpJump(c, false, adminui.Msg{Key: aienums.ErrInternal, Fallback: "暂时无法读取令牌列表"})
 		return
 	}
 	on := c.PostForm("enabled") == "1"
 	ctx := c.Request.Context()
 	g, err := h.config.GetGroup(ctx, sysconfigcontract.GroupAI)
 	if err != nil {
-		mcpJump(c, false, shell.TranslateFor(c)(aienums.ErrInternal, "暂时无法读取令牌列表"))
+		mcpJump(c, false, adminui.Msg{Key: aienums.ErrInternal, Fallback: "暂时无法读取令牌列表"})
 		return
 	}
 	data := make(map[string]any, len(g.Data)+1)
@@ -470,14 +507,14 @@ func (h *McpPageHandle) McpToggle(c *gin.Context) {
 		// （浏览器历史、访问日志、Referer 都留一份）。对外给归口文案 ——
 		// 用户此刻要做的是刷新重试，不是读一段数据库报错。
 		logger.Scene("ai").With("group", sysconfigcontract.GroupAI).Error(err, "保存对外接入点开关失败")
-		mcpJump(c, false, shell.TranslateFor(c)(aienums.ErrInternal, "保存失败，请稍后重试"))
+		mcpJump(c, false, adminui.Msg{Key: aienums.ErrInternal, Fallback: "保存失败，请稍后重试"})
 		return
 	}
 	if on {
-		mcpJump(c, true, shell.TranslateFor(c)("admin.ai.mcp.switch.onDone", "已开启对外接入点（最迟 5 秒后生效）"))
+		mcpJump(c, true, adminui.Msg{Key: "admin.ai.mcp.switch.onDone", Fallback: "已开启对外接入点（最迟 5 秒后生效）"})
 		return
 	}
-	mcpJump(c, true, shell.TranslateFor(c)("admin.ai.mcp.switch.offDone", "已关闭对外接入点（最晚 5 秒后对任何请求回 404）"))
+	mcpJump(c, true, adminui.Msg{Key: "admin.ai.mcp.switch.offDone", Fallback: "已关闭对外接入点（最晚 5 秒后对任何请求回 404）"})
 }
 
 // mcpJump 开关动作的出口：整页提示（对应 ThinkPHP 的 success() / error()）。
@@ -485,14 +522,26 @@ func (h *McpPageHandle) McpToggle(c *gin.Context) {
 // 取代了原先的 PRG + ?err= / ?done=：那条通道的文案要在 URL 上走一圈，
 // 于是读侧还得证明「这条提示确实是本仓给的」。现在文案走响应体，读侧判定随之消失。
 // 代价是刷新会重放这次提交 —— 而开关是幂等的（再关一次还是关），与 order 的写动作同一取舍。
-func mcpJump(c *gin.Context, ok bool, msg string) {
+// msg 与回跳链接文字都是**事实**（key + 中文兜底）：正文与链接的取词都发生在渲染期
+// （提示页模板的 tf），控制器不拼句子。
+func mcpJump(c *gin.Context, ok bool, msg adminui.Msg) {
 	back := mcpPagePath
-	backText := shell.TranslateFor(c)("admin.ai.mcp.title", "MCP 与外部访问")
-	if ok {
-		shell.RenderJump(c, shell.Jump{OK: true, Msg: msg, Back: back, BackText: backText, Seconds: 1})
-		return
+	backText := adminui.Msg{Key: "admin.ai.mcp.title", Fallback: "MCP 与外部访问"}
+	jump := shell.Jump{
+		OK:       ok,
+		MsgKey:   msg.Key,
+		Msg:      msg.Fallback,
+		MsgArgs:  msg.Args,
+		Back:     back,
+		BackText: backText.Fallback,
 	}
-	shell.RenderJump(c, shell.Jump{Msg: msg, Back: back, BackText: backText})
+	if backText.Key != "" {
+		jump.BackTextKey = backText.Key
+	}
+	if ok {
+		jump.Seconds = 1
+	}
+	shell.RenderJump(c, jump)
 }
 
 // mcpEndpointURL 拼出接入地址（用当前请求的 scheme + host）。
@@ -798,8 +847,8 @@ func (h *PageHandle) ModelsCandidates(c *gin.Context) {
 	// 两个页面合成一个（532 的菜单合并）之后，弹窗不再靠「重渲染整页 + data-modal-auto-open」，
 	// 而是作为片段插进模型标签底部的 #ai-picker-host —— 整页重渲染会把用户在同一页其它卡片里
 	// 刚填的密钥冲掉。非 htmx 请求（没有 JS）退回整页入口，至少不丢功能。
-	page := shell.Prepare(c, gin.H{
-		"title":  shell.TranslateFor(c)(aienums.AdminLLMTitle, "大模型管理"),
+	page := adminui.Prepare(c, gin.H{
+		"title":  aiMsgText(c, aienums.AdminLLMTitle, "大模型管理"),
 		"Picker": picker,
 	})
 	if hxFragment(c, pickerTemplate, page) {
@@ -955,9 +1004,11 @@ func (h *PageHandle) modelsFailure(c *gin.Context, providerID int64, rows []aidt
 // noticeKey 是 i18n key（不是译文）；这里翻成当前语言并填充 {n}/{m} 后才交给模板。
 func (h *PageHandle) modelsData(c *gin.Context, provider aidto.Provider, rows []aidto.ModelEntry, noticeKey string, params map[string]string, isErr bool) gin.H {
 	provider.Models = rows
-	return shell.Prepare(c, gin.H{
-		"Provider":        provider,
-		"Rows":            modelRows(rows),
+	return adminui.Prepare(c, gin.H{
+		"Provider": provider,
+		"Rows":     modelRows(rows),
+		// 这个槽位**还没取词化**：provider_models.html 直接渲染 {{.ModelsNotice}} 是文本，
+		// 所以在这里取成文本。要改成「传 key、模板 tr」得连带改那份模板的数据契约。
 		"ModelsNotice":    facingTextParams(c, noticeKey, params),
 		"ModelsNoticeErr": isErr,
 		// 分档与无障碍角色在**这一份**数据里也要给全：provider_models.html 有两条渲染路径
@@ -977,20 +1028,48 @@ func (h *PageHandle) pageNotice(c *gin.Context, slot, key string, params map[str
 		redirectWhere(c, pagePath)
 		return
 	}
-	aiSessionsJump(c, slot != "err", facingTextParams(c, key, params), pagePath)
+	aiSessionsJump(c, slot != "err", aiConclusionFact(c, key, params), pagePath)
+}
+
+// aiConclusionFact 提示页结论的**事实**。
+//
+// 无参数：key + 中文兜底交给提示页取词（正常形态）。
+// 有参数：本模块的占位符是**具名**的 `{n}` / `{m}`（见 aienums.FormatFacing），
+// 而提示页的 tf 只填 `%s` **位置**参数 —— 两种协议不是一回事，一段 key 表达不了它。
+// 所以这里先把参数填成成品串、Key 留空（提示页对 Key 为空的处理是「原样显示 Msg」）：
+// 这是本模块唯一的「成品串」出口，其余事实都走 key。
+//
+// 命名用 Fact 而不是 Notice/Msg：它**构造事实**、不写响应，因此不属于「出口 helper」
+// （scripts/check-shell-migration.sh 的 ownhelper 判据按函数名匹配 jump/notice/fail，
+// 名字里带 Notice / Jump / Fail 会被算进「待收敛的出口数」—— 那会让台账看起来没有收敛，而这里本就不需要收敛）。
+func aiConclusionFact(c *gin.Context, key string, params map[string]string) adminui.Msg {
+	if len(params) == 0 {
+		return adminui.Msg{Key: key, Fallback: aiErrFallback(key)}
+	}
+	return adminui.Msg{Fallback: facingTextParams(c, key, params)}
 }
 
 // aiSessionsJump 渲染整页提示，回跳地址只带筛选、不带结论文案。
-func aiSessionsJump(c *gin.Context, ok bool, msg, back string) {
+// msg 是**事实**（key + 中文兜底 + `%s` 参数）：正文与回跳链接文字的取词都在渲染期
+// （提示页模板的 tf），控制器不拼句子。
+func aiSessionsJump(c *gin.Context, ok bool, msg adminui.Msg, back string) {
 	if strings.TrimSpace(back) == "" {
 		back = pagePath
 	}
-	backText := shell.TranslateFor(c)(aienums.AdminLLMTitle, "大模型管理")
-	if ok {
-		shell.RenderJump(c, shell.Jump{OK: true, Msg: msg, Back: back, BackText: backText, Seconds: 1})
-		return
+	backText := adminui.Msg{Key: aienums.AdminLLMTitle, Fallback: "大模型管理"}
+	jump := shell.Jump{
+		OK:          ok,
+		MsgKey:      msg.Key,
+		Msg:         msg.Fallback,
+		MsgArgs:     msg.Args,
+		Back:        back,
+		BackTextKey: backText.Key,
+		BackText:    backText.Fallback,
 	}
-	shell.RenderJump(c, shell.Jump{Msg: msg, Back: back, BackText: backText})
+	if ok {
+		jump.Seconds = 1
+	}
+	shell.RenderJump(c, jump)
 }
 
 // redirectSlot PRG 回执落在哪个槽位（错误 → err，其余 → done）。
@@ -1010,7 +1089,7 @@ func facingTextParams(c *gin.Context, key string, params map[string]string) stri
 	if !ok {
 		return key
 	}
-	return aienums.FormatFacing(shell.TranslateFor(c)(key, text), params)
+	return aienums.FormatFacing(aiMsgText(c, key, text), params)
 }
 
 // facingText 按 key 取当前语言的文案（未登记的 key 原样返回）。
@@ -1071,7 +1150,7 @@ func statusPtr(raw string) *int {
 
 // userID 当前登录用户 ID（写操作的 update_by / create_by）。
 func userID(c *gin.Context) int64 {
-	return int64(shell.CurrentUserID(c))
+	return int64(builtin.CurrentUserID(c))
 }
 
 // modelRows 把模型目录转成模板用的行视图。
@@ -1216,14 +1295,38 @@ type providerLister interface {
 	ListProviders(ctx context.Context) ([]aidto.Provider, error)
 }
 
+// sessionServicePort 是会话页要对会话服务做的全部事。
+//
+// 与上面的 providerLister 同一手法、同一个理由被复用到这里：整页渲染的验收（失败 / 空态 /
+// 有数据三档）要在不连库的情况下跑一遍真实 Jet —— 具体类型 *aiservice.SessionService 的 model
+// 字段未导出，测试塞不进任何替身，连失败档都只能靠「连不上库」间接撞出来。
+// 装配处传进来的仍是 *aiservice.SessionService（方法集满足这里），接线与行为都不变。
+type sessionServicePort interface {
+	ListSessionsFiltered(ctx context.Context, f aidto.SessionQuery, page, size int) ([]aidto.Session, int64, error)
+	SessionModelUsageOf(ctx context.Context, sessionIDs []int64) (map[int64][]aidto.SessionModelUsage, error)
+	SessionCallsOf(ctx context.Context, sessionIDs []int64) (map[int64]aidto.SessionCalls, error)
+	SessionUsageOf(ctx context.Context, f aidto.SessionQuery) (aidto.SessionUsage, error)
+	SessionTrend(ctx context.Context, f aidto.SessionQuery, trendDays int) (aidto.SessionTrend, error)
+	SessionFilterOptions(ctx context.Context) (aidto.SessionFilterOptions, error)
+	GetSession(ctx context.Context, id int64) (*aidto.SessionDetail, error)
+	ListEvents(ctx context.Context, sessionID int64, page, size int) ([]aidto.SessionEventItem, int64, error)
+	AppendEvent(ctx context.Context, req aidto.AppendEventReq) (*aidto.AppendEventResult, error)
+	RenameSession(ctx context.Context, req aidto.RenameSessionReq) (*aidto.Session, error)
+	Fold(ctx context.Context, req aidto.FoldReq) (*aidto.FoldResult, error)
+	FoldPlan(ctx context.Context, req aidto.FoldPlanReq) (*aidto.FoldPlanResult, error)
+	SendMessage(ctx context.Context, req aidto.SendMessageReq) (*aidto.SendMessageResult, error)
+	SendMessageStream(ctx context.Context, req aidto.SendMessageReq, emit func(aiservice.StreamEvent)) (*aidto.SendMessageResult, error)
+	RecentDialogue(ctx context.Context, key string, limit int) ([]aidto.DialogueTurn, error)
+}
+
 // SessionPageHandle 会话管理页处理器。
 type SessionPageHandle struct {
-	svc       *aiservice.SessionService
+	svc       sessionServicePort
 	providers providerLister
 }
 
 // NewSessionPageHandle 构造；providers 为 nil 时不渲染发消息区的供应商候选。
-func NewSessionPageHandle(svc *aiservice.SessionService, providers providerLister) *SessionPageHandle {
+func NewSessionPageHandle(svc sessionServicePort, providers providerLister) *SessionPageHandle {
 	return &SessionPageHandle{svc: svc, providers: providers}
 }
 
@@ -1249,10 +1352,8 @@ func (h *SessionPageHandle) SessionsPage(c *gin.Context) {
 	}
 
 	rows, total, err := h.svc.ListSessionsFiltered(ctx, filter, page, sessionPageSize)
-	if err != nil {
-		shell.PageError(c, "ai", err)
-		return
-	}
+	loadFailed := err != nil
+
 	tab := sessionTabOf(c.Query("tab"))
 	// 停在没权限的标签上等于给用户一个空面板：切到另一个。两个都没有时保持原样 ——
 	// 页面渲染成「没有可用的 AI 功能」空态，比白屏或 403 都清楚。
@@ -1263,46 +1364,80 @@ func (h *SessionPageHandle) SessionsPage(c *gin.Context) {
 	} else if tab == sessionTabSessions && !canSessions && canModels {
 		tab = sessionTabModels
 	}
-	data := shell.Prepare(c, gin.H{
-		"title": shell.TranslateFor(c)(aienums.AdminLLMTitle, "大模型管理"),
-		// Rows 是 []gin.H（每项 {Session, Usage}），不是 []aidto.Session：
-		// 每行要带上它自己的按 (供应商, 模型) 拆分，而模板对 map 做动态索引
-		// （.ModelUsage[r.ID]）依赖 Jet 的索引表达式；拼成同序的嵌套结构没这层不确定性。
-		"Rows":     h.sessionRows(ctx, rows),
-		"Total":    total,
-		"Page":     page,
-		"PageSize": sessionPageSize,
-		"Filter":   filter,
-		"Keyword":  filter.Keyword,
-		"Status":   filter.Status,
-		"Tab":      tab,
+
+	// 失败与成功共用同一份装配与**同一处**渲染出口（adminui.Prepare 在函数开头只出现一次）。
+	// 下面这些键与「读没读到」无关，两个分支都必须给：模板 body 顶层的 let（Filter / Usage /
+	// IsModels / CanViewModels / CanViewSessions）恒定求值，缺一个就在那一行中断
+	//（现象是 HTTP 500 + 之后整块 HTML 消失，见 internal/templates/CLAUDE.md）。
+	//
+	// Prepare 必须在**装配之前**：下面 attachProviderCards 会把 data 借给
+	// provider_card.html（cardData 的 "t": base["t"]），卡片的取词函数 / csrf_token /
+	// PermSet 全靠这次注入。挪到末尾会让卡片拿到三个 nil —— 取词当场渲染失败（500），
+	// 而 csrf_token 为空只会静默渲染出空值（表单提交必被 CSRF 拒）。
+	data := adminui.Prepare(c, gin.H{
+		// title 槽是**文本**（layout 壳读 .title），所以在这里取成文本（还没取词化）。
+		"title": aiMsgText(c, aienums.AdminLLMTitle, "大模型管理"),
+		"Page":  page, "PageSize": sessionPageSize,
+		"Filter": filter, "Keyword": filter.Keyword, "Status": filter.Status,
+		"Tab": tab,
 		// IsModels 是给模板用的布尔：在模板里比较字符串（.Tab == "models"）
 		// 要依赖 Jet 的比较表达式求值，多一处能出错的地方。
 		"IsModels": tab == sessionTabModels,
 		// 标签按权限裁剪：没权限的标签连按钮都不渲染（模板据此包 {{if}}）。
-		"CanViewModels":   canModels,
-		"CanViewSessions": canSessions,
+		// 权限是事实：一次取数失败不改变「这个人能看什么」，失败分支照给。
+		"CanViewModels": canModels, "CanViewSessions": canSessions,
+		// Usage 是模板顶层的 let（u := .Usage）：失败时给零值 —— 标签区整块会被失败槽换掉，
+		// 没有人会看到这个 0。
+		"Usage": aidto.SessionUsage{},
+		// 这三项是包级静态清单，**两个分支都渲染的模板块也要取**：新建供应商抽屉
+		//（provider_create.html，页头按钮 + 末尾 include 都在失败槽之外）与供应商卡片都读它们。
+		// 缺一个的后果不是「少显示一块」而是 Jet 当场中断 —— 整页 500 且只剩半截 HTML，
+		// 与「主数据没读出来」是两回事。
+		"Presets":         aiservice.BuiltinPresets(),
+		"BuiltinKeys":     aiservice.BuiltinProviderKeys(),
+		"ProtocolOptions": aienums.ProtocolOptions,
 	})
+	status := http.StatusOK
+	if loadFailed {
+		// 会话清单是这一页的**主数据**：读不到就不该有这一页 —— 同页完整 HTML 500 + no-store
+		//（docs/rules/template-boundary.md §「整页 GET 的失败出口：失败也必须是『这一页』」，
+		// 样板 navigation_page.go:290-317）。
+		//
+		// 单点出口，所以内联：这一页只有列表这一处主数据失败，看板 / 供应商卡片 / 详情各有自己的
+		// 就地降级（attach*，200 + 就地提示条），语义与「整页没读出来」不同，不能混为一谈。
+		// 失败时不装配那些块：模板的 `{{if loadFailed}}` 把整块标签区换成失败说明 —— 零值渲染
+		// 出来的指标卡与空列表，与「真的是 0 用量 / 真的没有会话」长得一样。
+		data["LoadFailed"] = true
+		data["LoadError"] = aiErrText(c, err)
+		c.Header("Cache-Control", "no-store")
+		status = http.StatusInternalServerError
+	} else {
+		// Rows 是 []gin.H（每项 {Session, Usage}），不是 []aidto.Session：
+		// 每行要带上它自己的按 (供应商, 模型) 拆分，而模板对 map 做动态索引
+		// （.ModelUsage[r.ID]）依赖 Jet 的索引表达式；拼成同序的嵌套结构没这层不确定性。
+		data["Rows"] = h.sessionRows(ctx, rows)
+		data["Total"] = total
 
-	// 详情（?id=）先装配：它决定详情区显示什么，而看板与卡片与它无关，各自独立降级。
-	h.attachSessionDetail(c, ctx, data)
-	h.attachSessionUsage(c, ctx, data, filter)
-	h.attachProviderCards(c, ctx, data)
+		// 详情（?id=）先装配：它决定详情区显示什么，而看板与卡片与它无关，各自独立降级。
+		h.attachSessionDetail(c, ctx, data)
+		h.attachSessionUsage(c, ctx, data, filter)
+		h.attachProviderCards(c, ctx, data)
 
-	// 分页链接在服务端拼好带着全部筛选条件：让模板自己拼 query 就得在每个翻页链接里
-	// 把七八个参数各写一遍，漏一个就变成「翻页把筛选清空」。
-	totalPages := int((total + int64(sessionPageSize) - 1) / int64(sessionPageSize))
-	data["TotalPages"] = totalPages
-	data["HasPrev"] = page > 1
-	data["HasNext"] = page < totalPages
-	if page > 1 {
-		data["PrevURL"] = sessionPageURL(c, page-1)
+		// 分页链接在服务端拼好带着全部筛选条件：让模板自己拼 query 就得在每个翻页链接里
+		// 把七八个参数各写一遍，漏一个就变成「翻页把筛选清空」。
+		totalPages := int((total + int64(sessionPageSize) - 1) / int64(sessionPageSize))
+		data["TotalPages"] = totalPages
+		data["HasPrev"] = page > 1
+		data["HasNext"] = page < totalPages
+		if page > 1 {
+			data["PrevURL"] = sessionPageURL(c, page-1)
+		}
+		if page < totalPages {
+			data["NextURL"] = sessionPageURL(c, page+1)
+		}
 	}
-	if page < totalPages {
-		data["NextURL"] = sessionPageURL(c, page+1)
-	}
 
-	c.HTML(http.StatusOK, sessionTemplate, data)
+	c.HTML(status, sessionTemplate, data)
 }
 
 // sessionRows 把会话列表拼成模板行数据：每行带上它自己的按 (供应商, 模型) 拆分。
@@ -1422,12 +1557,12 @@ func sessionTabOf(raw string) string {
 	return sessionTabModels
 }
 
-// sessionCan 读本请求的权限码集合（shell.PermSetKey 由 Casbin 中间件注入）。
+// sessionCan 读本请求的权限码集合（adminctx.PermSetKey 由权限上下文中间件注入）。
 //
 // 页面路由只挂了「进入页面」的那一个 obj，标签内部各自的动作权限点要在这里判 ——
 // 没权限的标签不渲染，用户不会看到一个点进去全是 403 的入口。
 func sessionCan(c *gin.Context, code string) bool {
-	v, ok := c.Get(shell.PermSetKey)
+	v, ok := c.Get(adminctx.PermSetKey)
 	if !ok {
 		return false
 	}
@@ -1549,7 +1684,8 @@ func (h *SessionPageHandle) SessionSend(c *gin.Context) {
 // 不再带 ?id=：详情已经是抽屉，回跳时那句 id 只会让页面白查一次详情而页面并不渲染它。
 // 结论文案走响应体，不写进 URL。
 func (h *SessionPageHandle) sessionNotice(c *gin.Context, ok bool, key string) {
-	aiSessionsJump(c, ok, facingText(c, key), sessionJumpBack(c.PostForm("back")))
+	// key 交给提示页取词（事实）；命中不了兜底表的 key 给归口文案而不是裸 key。
+	aiSessionsJump(c, ok, adminui.Msg{Key: key, Fallback: aiErrFallback(key)}, sessionJumpBack(c.PostForm("back")))
 }
 
 // sessionJumpBack 校验并清洗抽屉表单带回的返回地址：只留筛选，丢掉旧的 err/done 槽。

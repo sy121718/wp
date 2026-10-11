@@ -26,14 +26,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/order/contract"
 	"go_wp/internal/module/order/dto"
 	"go_wp/internal/module/order/enums"
 	"go_wp/internal/module/project/contract"
 	"go_wp/internal/module/sysconfig/contract"
-	"go_wp/internal/shell"
+	"go_wp/pkg/backpath"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/response"
 )
 
 // returnPageHandle 退货入库页处理器。
@@ -64,10 +67,24 @@ type returnFilter struct {
 
 // returnStatusValues 状态维度的取值白名单（含空串 = 「全部」）。
 //
-// 顺序 = 徽章行里的顺序；文案由模板经 StatusLabel 取词（真源是
-// orderenums.ReturnStatusLabel 的 `admin.returns.status.*` 词条）。
+// 顺序 = 徽章行里的顺序；文案由 Jet 用已解析的状态词条事实取词
+// （真源是 orderenums.ReturnStatusLabel 的 `admin.returns.status.*` 词条）。
 var returnStatusValues = []string{
 	"", "requested", "approved", "received", "completed", "rejected", "cancelled",
+}
+
+type statusLabelFact struct {
+	Key      string
+	Fallback string
+}
+
+func statusLabelFacts(values []string, resolve func(string) (string, string)) map[string]statusLabelFact {
+	facts := make(map[string]statusLabelFact, len(values))
+	for _, value := range values {
+		key, fallback := resolve(value)
+		facts[value] = statusLabelFact{Key: key, Fallback: fallback}
+	}
+	return facts
 }
 
 // returnListQueryKeys 列表上下文的白名单键（渲染时拼 action / POST 回来时读回，两处同一份）。
@@ -137,7 +154,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		}
 	}
 
-	data := shell.Prepare(c, gin.H{
+	data := adminui.Prepare(c, gin.H{
 		"title":           "admin.returns.heading",
 		"menu":            "orders",
 		"Projects":        projects,
@@ -151,10 +168,12 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		"CountsAll": countsAll(counts),
 		"Detail":    detail,
 		// 状态徽章行的「取值 + 分档」（含空串 = 全部）+ 当前生效值。
-		"StatusTabs":    returnStatusTabs(),
-		"FilterStatus":  filter.Status,
-		"FilterKeyword": filter.Keyword,
-		"FilterOrderID": filter.OrderID,
+		"StatusTabs":         returnStatusTabs(),
+		"FilterStatus":       filter.Status,
+		"ReturnStatusLabels": returnStatusPageFacts(returnStatusValues, filter.Status, returns, detail),
+		"OrderStatusLabels":  orderStatusPageFacts(orderStatusValues, detail),
+		"FilterKeyword":      filter.Keyword,
+		"FilterOrderID":      filter.OrderID,
 		// 这一次没读出来的原因（空串 = 正常）：模板据此把「装载失败」与「还没有退货申请」分开。
 		"LoadErr": loadErrText,
 		// 列表上下文（拼进表单 action / 徽章链接；不含 status，见 returnListQueryKeys）。
@@ -163,207 +182,34 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		"Warehouses": h.enabledWarehouses(ctx, selected),
 		// 状态 → 当前语言标签。enums 的 (key, fallback) 是两返回值，模板接不住，
 		// 所以这里包一层单值函数进数据：**取词仍在模板调用点发生**，Go 不预先拼行视图。
-		"StatusLabel": returnStatusLabelFunc(c),
-		// 订单摘要里的订单状态标签（与订单页同一份真源 orderenums.OrderStatusLabel）。
-		"OrderStatusLabel": orderStatusLabelFunc(c),
-		"Page":             page,
-		"Limit":            limit,
+		// 订单摘要里的收货地址要显示国家**标签**（模板调 .CountryLabel(o.ShipCountry)）。
+		// 这一项必须显式给：模板是在 `{{if o.ShipAddress}}` 分支里调它的，而 Jet 对
+		// 「数据里没有这个键就当作函数调用」的处理是渲染失败 → 整页 500 换成归口提示页。
+		// 换句话说，只要选中一张**订单有地址**的退货单，审核入口就整个打不开 ——
+		// 这是用 task-119 的链式证据（真渲染 + 真数据）才照出来的：只渲染 returnId=不存在的
+		// 那类页时，detail 分支根本不进，缺陷一直是隐形的。
+		"CountryLabel": countryLabelFunc(c, h.dict),
+		"Page":         page,
+		"Limit":        limit,
 	})
-	base := shell.WithParams("/admin/returns", map[string]string{
+	base := backpath.WithParams("/admin/returns", map[string]string{
 		"project": selected, "status": filter.Status, "keyword": filter.Keyword,
 	})
-	for k, v := range shell.BuildPagination(total, page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
-		data[k] = v
-	}
+	pg := pagination.Facts(total, page, limit)
+	pg.Base = base
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/order/returns.html", data)
 }
 
-// —— 写动作 ——
-
-// ReturnApprove 同意退货申请（POST /admin/returns/approve）。
+// —— 请求工具 ——
 //
-// autoReceive 勾上时服务端会在同一次调用里完成「入库 + 退款」（一步到底）；
-// 不勾则停在已同意待收货，等仓库点货后再走 ReturnReceive。
-func (h *returnPageHandle) ReturnApprove(c *gin.Context) {
-	returnID := orderQueryID(c.PostForm("returnId"))
-	if returnID == 0 {
-		h.returnFail(c, returnFacing(c, returnIDInvalidLabel))
-		return
-	}
-	res, err := h.orders.ApproveReturn(c.Request.Context(), &orderdto.ReturnReviewReq{
-		ReturnID:      returnID,
-		Remark:        strings.TrimSpace(c.PostForm("remark")),
-		AutoReceive:   returnFormBool(c.PostForm("autoReceive")),
-		WarehouseID:   strings.TrimSpace(c.PostForm("warehouseId")),
-		TransactionID: strings.TrimSpace(c.PostForm("transactionId")),
-		// 操作人由会话覆盖写入，绝不受表单影响。
-		OperatorType: returnOperatorTypeAdmin,
-		OperatorID:   shell.CurrentUserID(c),
-		OperatorName: builtin.GetUsername(c),
-	})
-	if err != nil {
-		h.returnFail(c, returnFacingError(c, err))
-		return
-	}
-	// 勾了 autoReceive 的单会直接落到「已入库待退款」甚至「已完成」，
-	// 提示语跟着实际落地状态走，否则运营会以为只批了同意、又去点一次收货。
-	ok := orderenums.MsgReturnApproved
-	if res != nil && res.Status != "approved" {
-		ok = orderenums.MsgReturnReceived
-	}
-	h.returnDone(c, ok)
-}
-
-// ReturnReject 拒绝退货申请（POST /admin/returns/reject）：**必须给理由** ——
-// 客户要知道为什么，否则他会再申请一次。
-func (h *returnPageHandle) ReturnReject(c *gin.Context) {
-	returnID := orderQueryID(c.PostForm("returnId"))
-	if returnID == 0 {
-		h.returnFail(c, returnFacing(c, returnIDInvalidLabel))
-		return
-	}
-	remark := strings.TrimSpace(c.PostForm("remark"))
-	if remark == "" {
-		h.returnFail(c, returnFacingKey(c, orderenums.ErrReturnRejectReasonRequired))
-		return
-	}
-	if _, err := h.orders.RejectReturn(c.Request.Context(), &orderdto.ReturnReviewReq{
-		ReturnID:     returnID,
-		Remark:       remark,
-		OperatorType: returnOperatorTypeAdmin,
-		OperatorID:   shell.CurrentUserID(c),
-		OperatorName: builtin.GetUsername(c),
-	}); err != nil {
-		h.returnFail(c, returnFacingError(c, err))
-		return
-	}
-	h.returnDone(c, orderenums.MsgReturnRejected)
-}
-
-// ReturnReceive 确认收货（POST /admin/returns/receive）：先入库、再退款。
+// 写动作（同意 / 拒绝 / 收货 / 批量同意 / 批量拒绝）已全部迁到前端直调 JSON（task-98 S3）：
+// 端点就是 order_router.go 里的 /api/order/return/{approve,reject,receive}，批量靠请求体形状
+// 分流（见 return_bulk_write.go），页面不再有自己的写路径 —— 于是这个文件里不再需要
+// returnDone / returnFail / returnFacing / returnFormBool / returnBulkRejectReasonRequired
+// 这一整套「提示页 + 表单回跳」的机关，也不再需要页面对应的常量。
 //
-// 这个入口同时承担两件事，因为服务端把它们做成了幂等且可重入的同一条用例：
-//
-//   - status=approved：货到仓库了，点这一下 —— 入库（加回库存）成功后立刻退款；
-//   - status=received：上一次入库成功但退款没做完（通道抖动 / 网络断了），
-//     再点一次只会补做退款 —— 入库那一步服务端会识别出已完成，不会重复加库存。
-func (h *returnPageHandle) ReturnReceive(c *gin.Context) {
-	returnID := orderQueryID(c.PostForm("returnId"))
-	if returnID == 0 {
-		h.returnFail(c, returnFacing(c, returnIDInvalidLabel))
-		return
-	}
-	if _, err := h.orders.ReceiveReturn(c.Request.Context(), &orderdto.ReturnReceiveReq{
-		ReturnID:      returnID,
-		WarehouseID:   strings.TrimSpace(c.PostForm("warehouseId")),
-		TransactionID: strings.TrimSpace(c.PostForm("transactionId")),
-		Remark:        strings.TrimSpace(c.PostForm("remark")),
-		OperatorType:  returnOperatorTypeAdmin,
-		OperatorID:    shell.CurrentUserID(c),
-		OperatorName:  builtin.GetUsername(c),
-	}); err != nil {
-		h.returnFail(c, returnFacingError(c, err))
-		return
-	}
-	h.returnDone(c, orderenums.MsgReturnReceived)
-}
-
-// ReturnBulkApprove 批量同意退货申请（POST /admin/returns/bulk-approve）。
-//
-// 逐条走**同一条单条审核路径**：不在「待审核」的单（已被别人审过、已撤销）由服务端拒绝，
-// 只跳过它并计入跳过数，其余照常同意 —— 一条不合规的申请不该让整批停下。
-//
-// **不批量自动入库**：autoReceive 会把「同意 → 入库 → 退款」一步做完，批量点一下等于
-// 对一批单同时加库存与放款，那不是批量操作该承担的确认强度。
-func (h *returnPageHandle) ReturnBulkApprove(c *gin.Context) {
-	remark := strings.TrimSpace(c.PostForm("remark"))
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		h.returnFail(c, shell.BulkIDsFacingText(c, berr))
-		return
-	}
-	approved, skipped := 0, 0
-	for _, raw := range ids {
-		id := orderQueryID(raw)
-		if id == 0 {
-			skipped++
-			continue
-		}
-		_, err := h.orders.ApproveReturn(c.Request.Context(), &orderdto.ReturnReviewReq{
-			ReturnID:    id,
-			Remark:      remark,
-			AutoReceive: false,
-			// 操作人由会话覆盖写入，绝不受表单影响。
-			OperatorType: returnOperatorTypeAdmin,
-			OperatorID:   shell.CurrentUserID(c),
-			OperatorName: builtin.GetUsername(c),
-		})
-		if err != nil {
-			skipped++
-			continue
-		}
-		approved++
-	}
-	h.returnDone(c, bulkSummary(c, orderBulkVerbApproved, orderBulkNounReturn, approved, skipped))
-}
-
-// ReturnBulkReject 批量拒绝退货申请（POST /admin/returns/bulk-reject）：理由必填。
-func (h *returnPageHandle) ReturnBulkReject(c *gin.Context) {
-	remark := strings.TrimSpace(c.PostForm("remark"))
-	if remark == "" {
-		h.returnFail(c, orderBulkTextOf(c, returnBulkRejectReasonRequired))
-		return
-	}
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		h.returnFail(c, shell.BulkIDsFacingText(c, berr))
-		return
-	}
-	rejected, skipped := 0, 0
-	for _, raw := range ids {
-		id := orderQueryID(raw)
-		if id == 0 {
-			skipped++
-			continue
-		}
-		if _, err := h.orders.RejectReturn(c.Request.Context(), &orderdto.ReturnReviewReq{
-			ReturnID:     id,
-			Remark:       remark,
-			OperatorType: returnOperatorTypeAdmin,
-			OperatorID:   shell.CurrentUserID(c),
-			OperatorName: builtin.GetUsername(c),
-		}); err != nil {
-			skipped++
-			continue
-		}
-		rejected++
-	}
-	h.returnDone(c, bulkSummary(c, orderBulkVerbRejected, orderBulkNounReturn, rejected, skipped))
-}
-
-// —— 出口与请求工具 ——
-
-// returnDone 写成功：提示页（htmx 档由 RenderJump 换成 HX-Redirect）。
-func (h *returnPageHandle) returnDone(c *gin.Context, msg string) {
-	shell.RenderJump(c, shell.Jump{
-		OK:       true,
-		Msg:      msg,
-		Back:     shell.BackPath(c, "/admin/returns", returnListQueryKeys...),
-		BackText: shell.TranslateFor(c)("admin.returns.heading", "退货入库"),
-		Seconds:  1,
-	})
-}
-
-// returnFail 写失败：提示页，不自动跳转（用户要看清原因）。
-func (h *returnPageHandle) returnFail(c *gin.Context, msg string) {
-	shell.RenderJump(c, shell.Jump{
-		OK:       false,
-		Msg:      msg,
-		Back:     shell.BackPath(c, "/admin/returns", returnListQueryKeys...),
-		BackText: shell.TranslateFor(c)("admin.returns.heading", "退货入库"),
-	})
-}
-
+// 本页（GET）仍然只做「绑定 → 调 service → 渲染」。
 // returnListQuery 列表上下文 → 查询串（拼进表单 action / 徽章链接；空值不拼）。
 //
 // 刻意**不含 status**：徽章链接要覆盖它、写表单要保留它（表单里那个隐藏域）。
@@ -390,24 +236,45 @@ func returnListQuery(projectID string, filter returnFilter, page, limit int) str
 
 // returnStatusText 状态 → 展示文案：按状态**值**取词（不拿 service 给的中文标签反查）。
 //
-// 两个消费方：页面（模板经 StatusLabel 函数调用）与 JSON 接口（order_handle.go 的
-// localizeReturnLabels —— 接口响应里的 StatusLabel 也要按请求语言取词，否则英文站点恒中文）。
-// 认不出的取值回落「—」：模板直接渲染这个值，空白单元格读不出「不知道」。
+// 仅供 JSON 接口 localizeReturnLabels：响应里的 StatusLabel 按请求语言取词。
+// 页面使用 statusLabelFacts 交给 Jet；未知状态保持原始值，空白状态显示「—」。
 func returnStatusText(tr translate, status string) string {
 	key, fallback := orderenums.ReturnStatusLabel(status)
 	return orderLabelOf(tr, orderLabel{key, fallback})
 }
 
-// returnStatusLabelFunc 状态 → 当前语言标签（包一层单值函数给模板调用）。
+// returnStatusPageFacts 退货状态事实表：取值白名单 + 生效筛选值 + 列表每一行 + 详情退货单。
 //
-// 真源是 orderenums.ReturnStatusLabel 的 (key, fallback)；模板接不住两返回值，
-// 所以在这里收敛成单值。**取词发生在模板调用点**（`{{ .StatusLabel(s) }}`），
-// Go 不预先给每一行拼标签。
-func returnStatusLabelFunc(c *gin.Context) func(string) string {
-	tr := shell.TranslateFor(c)
-	return func(status string) string {
-		return returnStatusText(tr, status)
+// **生效筛选值必须收进来**：空列表时页面上唯一会显示的状态就是它（空态那行
+// 「当前还带着状态筛选「…」」），漏掉它的症状是——筛选值合法时一切正常，
+// 而筛选值是空的/未知的那几种情况下整页渲染报错（模板索引到缺键）。
+func returnStatusPageFacts(values []string, filterStatus string, returns []*orderdto.ReturnResp, detail *orderdto.ReturnDetailResp) map[string]statusLabelFact {
+	statuses := append([]string(nil), values...)
+	statuses = append(statuses, filterStatus)
+	for _, item := range returns {
+		if item != nil {
+			statuses = append(statuses, item.Status)
+		}
 	}
+	if detail != nil {
+		if detail.Return != nil {
+			statuses = append(statuses, detail.Return.Status)
+		}
+	}
+	return statusLabelFacts(statuses, orderenums.ReturnStatusLabel)
+}
+
+// orderStatusPageFacts 摘要订单状态事实表：取值白名单 + 详情里的订单状态。
+//
+// **两张表刻意分开**：退货状态与订单状态是两套枚举（key 前缀都不同），
+// 合成一张表看着省事，但模板里 `orderLabels[o.Status]` 与 `returnLabels[r.Status]`
+// 就只靠人眼区分了 —— 串表时一行状态会显示另一套词条的文本，而且不报错。
+func orderStatusPageFacts(values []string, detail *orderdto.ReturnDetailResp) map[string]statusLabelFact {
+	statuses := append([]string(nil), values...)
+	if detail != nil && detail.Order != nil {
+		statuses = append(statuses, detail.Order.Status)
+	}
+	return statusLabelFacts(statuses, orderenums.OrderStatusLabel)
 }
 
 // countsAll 各状态计数之和（「全部」徽章的那个数）。
@@ -419,9 +286,15 @@ func countsAll(counts map[string]int64) int64 {
 	return all
 }
 
-// orderStatusLabelFunc 订单状态 → 当前语言标签（订单摘要里的那个徽章用）。
+// orderStatusLabelFunc 订单状态 → 当前语言标签（订单列表与销售概览仍使用）。
+//
+// **Go 侧取词的遗留出口**：这两个页面把闭包当 data 交给模板
+// （orders.html 的 `{{statusLabel := .OrderStatusLabel}}`、sales_overview.html 的
+// `{{ .OrderStatusLabel(sv) }}`），于是取词发生时模板还看不到 key。
+// 退货页那一批已经改成「状态 → 词条事实」交给 Jet 取词（见 statusLabelFacts），
+// 这两处等模板槽位一起改（A 项遗留清单）。取词入口统一走 orderTr。
 func orderStatusLabelFunc(c *gin.Context) func(string) string {
-	tr := shell.TranslateFor(c)
+	tr := orderTr(c)
 	return func(status string) string {
 		key, fallback := orderenums.OrderStatusLabel(status)
 		return tr(key, fallback)
@@ -453,12 +326,6 @@ func (h *returnPageHandle) enabledWarehouses(ctx context.Context, projectID stri
 
 // —— 退货页自有的常量与文案白名单 ——
 
-// returnOperatorTypeAdmin 后台操作人类型（表单不传，由控制器覆盖写入）。
-const returnOperatorTypeAdmin = "admin"
-
-// 退货单编号不合法（表单里的 returnId 缺失 / 被改坏时回带的参数级提示）。
-var returnIDInvalidLabel = orderLabel{"admin.returns.form.invalid_id", "退货单编号不合法，请回到列表页重新操作。"}
-
 // returnFacingExtras 本页允许原样显示的**模块外**文案。
 //
 // orderenums.UserFacingMessages 是结算链路的白名单（那些文案会显示给访客），
@@ -469,12 +336,7 @@ var returnFacingExtras = []string{
 	orderenums.MsgReturnApproved, orderenums.MsgReturnRejected, orderenums.MsgReturnReceived,
 	orderenums.ErrReturnRejectReasonRequired, orderenums.ErrReturnNotReviewable, orderenums.ErrReturnNotReceivable,
 	orderenums.ErrReturnNotFound,
-	returnIDInvalidLabel.fallback,
 }
-
-// returnBulkRejectReasonRequired 批量拒绝缺理由时的提示（整批不处理）。
-var returnBulkRejectReasonRequired = orderBulkText{orderenums.BulkReturnRejectReasonRequired,
-	"批量拒绝需要先填理由（表单里的备注框），本次没有处理任何退货申请。"}
 
 // returnFacingError 把 service 的错误收敛成可展示文案：命中白名单取词展示，
 // 未命中记结构化日志并给归口文案（原文只进日志）。
@@ -483,10 +345,10 @@ func returnFacingError(c *gin.Context, err error) string {
 		return ""
 	}
 	if msg := returnFacingText(err.Error()); msg != "" {
-		return shell.TranslateFor(c)(msg, msg)
+		return i18n.TranslateFunc(response.RequestLanguage(c))(msg, msg)
 	}
-	logger.Scene("order-return").With("path", c.Request.URL.Path).Error(err, "退货写操作失败")
-	return shell.PageInternalText(c)
+	logger.Scene("order-return").With("path", c.Request.URL.Path).Error(err, "退货页读取失败")
+	return adminui.PageInternalText(c)
 }
 
 // returnFacingText 白名单判定：命中返回原文，未命中返回空串。
@@ -504,26 +366,4 @@ func returnFacingText(raw string) string {
 		}
 	}
 	return ""
-}
-
-// returnFacingKey 本页自造文案（enums 里的 key）取词后展示。
-//
-// 兜底用 key 本身而不是中文：这些 key 已在 seed 里（check-i18n-keys-seeded.sh 守着），
-// 真缺词条时露出的是一串 key —— 比「悄悄显示一句写死的中文」更容易被发现。
-func returnFacingKey(c *gin.Context, key string) string {
-	return shell.TranslateFor(c)(key, key)
-}
-
-// returnFormBool 复选框的值：只认 "1" / "true" / "on"（浏览器三种写法）。
-func returnFormBool(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "on", "yes":
-		return true
-	}
-	return false
-}
-
-// returnFacing 取词（key + 中文兜底 → 当前语言的成品文案）。
-func returnFacing(c *gin.Context, l orderLabel) string {
-	return orderLabelOf(shell.TranslateFor(c), l)
 }

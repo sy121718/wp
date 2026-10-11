@@ -1,0 +1,25 @@
+# 控制器词条 key 字面量的存量基线（check-controller-i18n-literals.sh 读这张表）。
+#
+# 口径（改口径等于改门禁，脚本头与本文件各写一份）：
+#   · 统计范围 `internal/module/<模块>/inbound/http/*.go`（**非** _test.go），跳过整行注释；
+#   · 计数单位是 key 字面量的**出现次数**（`"<名字空间>.<子域>.<...>"`），不是文件数或行数；
+#   · 只有 `down` 一种 mode：只允许下降；计数归零的条目**必须删行**（僵尸行会让测试失败）；
+#   · 未登记的模块一旦出现字面量即失败 —— 新模块要么当场写干净，要么显式登记存量。
+#
+# 终局：控制器里不出现任何词条 key 字面量（key 一律来自 `internal/module/<模块>/enums/`）。
+# page / product 已在 task-153 批次清零，故**不在此表**（出现即失败）。
+#
+# 格式：<key>\t<count>\tdown\t<理由>
+lit:project	92	down	存量：工程页/主题页/全局面板的槽位事实在控制器里直接写 key（拟随后续批次提成 project/enums 常量）
+lit:content	63	down	存量：文章页/导入页/译文页的槽位事实直接写 key（随后续批次提成 content/enums 常量）
+lit:user	46	down	存量：客户页/RFM/分段的槽位事实直接写 key（随后续批次提成 user/enums 常量）
+lit:workbench	10	down	存量：工作台 inspector/大纲的槽位事实直接写 key
+lit:admin	8	down	存量：后台设置/角色页的槽位事实直接写 key
+lit:inventory	8	down	存量：库存调整页的槽位事实直接写 key
+lit:order	7	down	存量：订单页的槽位事实直接写 key
+lit:ai	6	down	存量：AI 面板结果的槽位事实直接写 key
+lit:navigation	5	down	存量：导航页的槽位事实直接写 key
+lit:sysconfig	5	down	存量：系统配置页的槽位事实直接写 key
+lit:block	2	down	存量：区块页 stale 抽屉的槽位事实直接写 key
+lit:contenttemplate	2	down	存量：内容模板页的槽位事实直接写 key
+lit:media	1	down	存量：媒体库页的槽位事实直接写 key

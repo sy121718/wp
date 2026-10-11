@@ -18,6 +18,9 @@ package templates
 
 import (
 	"os"
+	"time"
+
+	"go_wp/pkg/utils"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -41,12 +44,12 @@ func contentFilterClientPages() []contentFilterTemplate {
 			rows:  2,
 			data: map[string]any{
 				"Headers": []any{map[string]any{
-					"ID": "b1", "Name": "站点页眉", "UpdatedAt": "2026-09-18 09:00", "RefCountText": "3 个页面",
+					"ID": "b1", "Name": "站点页眉", "Kind": "header", "ReuseMode": "global", "UpdatedAt": utils.NewJSONTime(time.Date(2026, 9, 18, 9, 0, 0, 0, time.Local)), "RefCount": int64(3),
 				}},
 				"Footers": []any{},
 				"Blocks": []any{map[string]any{
-					"ID": "b2", "Name": "信任徽章", "KindLabel": "区块", "ReuseModeLabel": "全局引用",
-					"UpdatedAt": "2026-09-18 09:00", "RefCountText": "2 个页面",
+					"ID": "b2", "Name": "信任徽章", "Kind": "trust", "ReuseMode": "global",
+					"UpdatedAt": utils.NewJSONTime(time.Date(2026, 9, 18, 9, 0, 0, 0, time.Local)), "RefCount": int64(2),
 				}},
 				"Projects":        []any{map[string]any{"ID": "p1", "Name": "官网"}},
 				"SelectedProject": "p1",
@@ -163,7 +166,9 @@ func TestPagesListFilterBarServerSide(t *testing.T) {
 	base := func(projects []any) map[string]any {
 		return map[string]any{
 			"Projects": projects, "Pages": []any{}, "Blueprints": []any{},
-			"Err": "", "Done": "",
+			// Err / Done 是**事实**（key + 中文兜底 + %s 参数）：空 map = 无提示。
+			// 给空串会让模板的 .Err.Key 取得字符串字段而报错。
+			"Err": map[string]any{"Key": "", "Fallback": ""}, "Done": map[string]any{"Key": "", "Fallback": ""},
 		}
 	}
 	twoProjects := []any{
@@ -218,7 +223,7 @@ func TestPagesListEmptyStateTwoTiers(t *testing.T) {
 			"Projects":        []any{map[string]any{"ID": "p1", "Name": "官网"}, map[string]any{"ID": "p2", "Name": "活动站"}},
 			"SelectedProject": "p2", "Pages": []any{}, "Blueprints": []any{},
 			"FilteredProject": filtered,
-			"Err":             "", "Done": "",
+			"Err":             map[string]any{"Key": "", "Fallback": ""}, "Done": map[string]any{"Key": "", "Fallback": ""},
 		}
 	}
 

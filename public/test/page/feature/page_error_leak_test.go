@@ -29,7 +29,7 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
+	bulkids "go_wp/pkg/bulkids"
 )
 
 // pageInternalLeakTokens 内部细节指纹：出现任一即视为泄漏。
@@ -144,7 +144,7 @@ func TestPageBulkDeleteKeepsControlledLimitText(t *testing.T) {
 	}
 	form := url.Values{}
 	// 用高于上限一条即触发整批拒绝（不依赖 @10 这类经验数字）。
-	for i := 0; i < shell.MaxBulkIDs+1; i++ {
+	for i := 0; i < bulkids.MaxIDs+1; i++ {
 		form.Add("ids", fmt.Sprintf("00000000-0000-0000-0000-%012d", i))
 	}
 	body := pageJumpBody(t, "err", postPageForm(engine, "/admin/pages/bulk-delete", form))

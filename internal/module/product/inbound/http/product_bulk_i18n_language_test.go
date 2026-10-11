@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/i18n"
@@ -93,35 +94,36 @@ func TestProductBulkNoticeFollowsRequestLanguage(t *testing.T) {
 		{"部分改价", 3, 0, 2, reason, "EN-PRICE-PART 3 2 " + reason},
 	}
 	for _, tc := range pricing {
-		msg := bulkPricingResultMsg(en, tc.changed, tc.unchanged, tc.skipped, tc.reason)
+		// 事实 → 渲染期取词：MsgText 就是提示页在响应体里那一步。
+		msg := adminui.MsgText(en, bulkPricingResultMsg(tc.changed, tc.unchanged, tc.skipped, tc.reason))
 		if msg != tc.want {
 			t.Errorf("批量改价「%s」应按当前语言拼装，got %q want %q", tc.name, msg, tc.want)
 		}
 	}
 
 	// 3) 变体清单保存：模板 + 跳过段前缀都要按当前语言。
-	saved := variantSaveNotice(en, &productdto.SaveVariantListResp{Created: 1, Updated: 2, Deleted: 3})
+	saved := adminui.MsgText(en, variantSaveMsg(en, &productdto.SaveVariantListResp{Created: 1, Updated: 2, Deleted: 3}))
 	if saved != "EN-VARIANT 1 2 3" {
 		t.Errorf("变体清单保存应按当前语言拼装，实际 %q", saved)
 	}
-	withSkip := variantSaveNotice(en, &productdto.SaveVariantListResp{
+	withSkip := adminui.MsgText(en, variantSaveMsg(en, &productdto.SaveVariantListResp{
 		Created: 1,
 		Skipped: []productdto.VariantSaveSkip{{Reason: productenums.VariantSkipHasStock}},
-	})
+	}))
 	if !strings.HasPrefix(withSkip, "EN-VARIANT 1 0 0 EN-VARIANT-SKIP 1 ") {
 		t.Errorf("变体清单保存（含跳过）应按当前语言拼装，实际 %q", withSkip)
 	}
-	noChange := variantSaveNotice(en, &productdto.SaveVariantListResp{})
+	noChange := adminui.MsgText(en, variantSaveMsg(en, &productdto.SaveVariantListResp{}))
 	if noChange != "EN-VARIANT-NOCHANGE" {
 		t.Errorf("「没有需要保存的变化」应按当前语言，实际 %q", noChange)
 	}
 
 	// 4) 批量删除结论（productBulkDeleteResult）。
-	if _, msg := productBulkDeleteResult(en, 3, 0, productTagBulkPartial, productTagBulkDone); msg != "EN-TAG 3" {
-		t.Errorf("批量删除结论应按当前语言，实际 %q", msg)
+	if _, m := productBulkDeleteResult(3, 0, productTagBulkPartial, productTagBulkDone); adminui.MsgText(en, m) != "EN-TAG 3" {
+		t.Errorf("批量删除结论应按当前语言，实际 %q", adminui.MsgText(en, m))
 	}
-	if _, msg := productBulkDeleteResult(en, 3, 2, productTagBulkPartial, productTagBulkDone); msg != "EN-TAG-PART 3 2" {
-		t.Errorf("批量删除部分成功结论应按当前语言，实际 %q", msg)
+	if _, m := productBulkDeleteResult(3, 2, productTagBulkPartial, productTagBulkDone); adminui.MsgText(en, m) != "EN-TAG-PART 3 2" {
+		t.Errorf("批量删除部分成功结论应按当前语言，实际 %q", adminui.MsgText(en, m))
 	}
 
 	// 5) 中文请求走中文词条。

@@ -12,9 +12,9 @@
 {* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{{import "block_row.html"}}
 {{block body()}}
 {{tr := .["t"]}}
-{{csrf := .["csrf_token"]}}
 {{selectedProject := .["SelectedProject"]}}
 {{canCreate := isset(.Buttons["block.create"])}}
 {{canDelete := isset(.Buttons["block.delete"])}}
@@ -89,11 +89,19 @@
     {{end}}
 
     <template id="tpl-block-create">
-        {* action 上带工程筛选：写动作失败时由服务端 shell.BackPath 读回，渲染成整页提示页
-           （结论走响应体，不再经 ?err= 回列表页）。 *}
-        <form method="post" action="/admin/blocks/create{{if selectedProject}}?project={{selectedProject}}{{end}}">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* 新建走 JSON API（前端直调 /api/block/create，见 static/js/ui/json_write.js）：
+           成功直接进工作台编辑内容（原先是「提示页 1 秒后跳转」那一跳），失败在原地点出
+           并保住已填内容。表单只声明**事实**（端点 / 写模式 / 跳哪儿 / 文案从哪来），
+           行为全在控件里 —— 模板里不写内联 JS。
+           没有 action 是刻意的：禁用 JS 时提交按钮是 hidden 的（下方 noscript 说明原因），
+           不会退化成「GET 当前页」这种看起来像成功的空动作。 *}
+        <form data-write-api="/api/block/create"
+              data-write-mode="create"
+              data-write-nav="/workbench?block={id}"
+              data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+            {* 结果区：失败时写在这儿（表单内容原样保留），成功则整页跳走。 *}
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="form-row">
                 <div class="form-group">
                     <input type="text" name="name" class="form-input" placeholder="{{ .["t"]("admin.blocks.name_placeholder", "块名称，如：站点页眉") }}" required>
@@ -130,8 +138,12 @@
             </div>
             </div>
             <div class="action-row">
+                {* 无 JS 时新建不可用：写动作由浏览器直调接口完成，没有端到端兜底表单。
+                   按钮是 hidden（有 JS 时由 json_write.js 的 [data-requires-js] 放出来），
+                   这里说清原因，避免用户以为「按钮不见了」是权限问题。 *}
+                <noscript><p class="form-hint">{{ .["t"]("admin.blocks.write.noJs", "本页的新建与删除需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。") }}</p></noscript>
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden>{{ .["t"]("admin.blocks.create", "新建并编辑") }}</button>
             </div>
         </form>
     </template>
@@ -141,9 +153,18 @@
        （admin.js 的 scopeOf = closest('form')）。form 包在 .list-card 外层而不是内层：
        admin.js 与 theme.css 都用「.list-card 的直接子元素」定位卡片结构，插一层 form
        会让卡内的 .filter-bar 与表格失去边框衔接。 *}
-    <form method="post" action="/admin/blocks/bulk-delete{{if selectedProject}}?project={{selectedProject}}{{end}}">
-    <input type="hidden" name="csrf_token" value="{{csrf}}">
-    <input type="hidden" name="projectId" value="{{selectedProject}}">
+    {* 批量删除前段已说过「结果如何呈现」：这里只写**事实**声明。
+       批量语义（去重 / 200 上限 / 逐条失败不中断）在服务端 /api/block/bulk-delete 里，
+       页面这一层只负责「勾选 → 提交 → 把逐条结果说出来」。 *}
+    <form data-write-api="/api/block/bulk-delete"
+          data-write-mode="bulk"
+          data-msg-none-selected="{{tr("admin.blocks.bulkResult.noneSelected", "没有选中任何块，列表未改动。")}}"
+          data-msg-all-deleted="{{tr("admin.blocks.bulkResult.allDeleted", "已删除 {count} 个块。")}}"
+          data-msg-all-skipped="{{tr("admin.blocks.bulkResult.allSkipped", "{count} 个块都未能删除，列表未改动。")}}"
+          data-msg-partial="{{tr("admin.blocks.bulkResult.partial", "已删除 {deleted} 个，{skipped} 个未能删除（被引用的全局块需先解除引用）。")}}"
+          data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+          data-msg-refresh="{{tr("admin.blocks.write.refresh", "刷新列表")}}">
     <section class="card list-card">
         {* 筛选栏（客户端过滤：输入即过滤行，不发请求、不刷新页面）。
            为什么是客户端而不是服务端：service 侧确实有 kind / category / reuseMode 三个维度
@@ -165,6 +186,9 @@
             {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.blocks.bulk_delete_confirm", "删除选中的块？被页面引用的全局块需先解除引用，其余照常删除。"), danger=true)}}
         {{yield bulkBarClose()}}
         {{end}}
+        {* 批量结果区：成功/失败都写在这儿（不自动刷新 —— 自动刷新会让
+           「已删 N / 跳过 M + 逐条原因」一闪而过，看不完）。 *}
+        <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.blocks.heading", "全局块") }}">
             {* 一张表承载全部三类块：勾选 | 名称 | 类型 | 复用方式 | 更新时间 | 影响面 | 操作。
                合并前三段各有自己的 <table> 与表头（5 / 5 / 7 列），全选框的唯一性由
@@ -201,54 +225,9 @@
                 {* data-filter-text = 这行的可筛文本（客户端筛选按它匹配，全表生效）。
                    类型与复用方式必须一起进匹配文本 —— 筛选框的 placeholder 承诺了「名称 / 类型 / 复用方式」
                    三个维度，而合并后类型只在单元格里显示，不写进来就筛不到「页眉」/「页脚」。 *}
-                {{range _, b := .Headers}}
-                <tr data-filter-text="{{b.Name}} {{b.KindLabel}} {{b.ReuseModeLabel}} {{b.RefCountText}}">
-                    <td class="col-check">
-                        <input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
-                    </td>
-                    <td>{{b.Name}}</td>
-                    <td><span class="badge badge-mute">{{b.KindLabel}}</span></td>
-                    <td>{{b.ReuseModeLabel}}</td>
-                    <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
-                    <td class="text-mute text-sm">{{b.RefCountText}}</td>
-                    <td class="col-actions">
-                        <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
-                        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
-                    </td>
-                </tr>
-                {{end}}
-                {{range _, b := .Footers}}
-                <tr data-filter-text="{{b.Name}} {{b.KindLabel}} {{b.ReuseModeLabel}} {{b.RefCountText}}">
-                    <td class="col-check">
-                        <input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
-                    </td>
-                    <td>{{b.Name}}</td>
-                    <td><span class="badge badge-mute">{{b.KindLabel}}</span></td>
-                    <td>{{b.ReuseModeLabel}}</td>
-                    <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
-                    <td class="text-mute text-sm">{{b.RefCountText}}</td>
-                    <td class="col-actions">
-                        <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
-                        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
-                    </td>
-                </tr>
-                {{end}}
-                {{range _, b := .Blocks}}
-                <tr data-filter-text="{{b.Name}} {{b.KindLabel}} {{b.ReuseModeLabel}} {{b.RefCountText}}">
-                    <td class="col-check">
-                        <input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{ .["t"]("admin.common.bulk.selectRow", "选择该行") }}">
-                    </td>
-                    <td>{{b.Name}}</td>
-                    <td><span class="badge badge-mute">{{b.KindLabel}}</span></td>
-                    <td>{{b.ReuseModeLabel}}</td>
-                    <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
-                    <td class="text-mute text-sm">{{b.RefCountText}}</td>
-                    <td class="col-actions">
-                        <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
-                        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger">{{tr("admin.blocks.action.delete", "删除")}}</button>
-                    </td>
-                </tr>
-                {{end}}
+                {{range _, b := .Headers}}{{yield blockRow(b=b, tr=tr)}}{{end}}
+                {{range _, b := .Footers}}{{yield blockRow(b=b, tr=tr)}}{{end}}
+                {{range _, b := .Blocks}}{{yield blockRow(b=b, tr=tr)}}{{end}}
                 {{end}}
                 </tbody>
             </table>
@@ -265,27 +244,30 @@
        三类块同属 blocks 表、id 全局唯一，不会撞 id。
        删除确认文案按类型分两种：绑定了主题的页眉/页脚删除后主题下页面会重建，
        其余块只影响引用它的页面 —— 说清楚才好让人决定点不点。 *}
+    <div data-write-host>
+    <p class="form-hint" data-write-status role="status" hidden></p>
     {{range _, b := .Headers}}
-    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete{{if selectedProject}}?project={{selectedProject}}{{end}}"
+    <form id="block-del-{{b.ID}}" class="hidden-form" data-write-api="/api/block/delete" data-write-mode="single"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
           data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{b.ID}}">
     </form>
     {{end}}
     {{range _, b := .Footers}}
-    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete{{if selectedProject}}?project={{selectedProject}}{{end}}"
+    <form id="block-del-{{b.ID}}" class="hidden-form" data-write-api="/api/block/delete" data-write-mode="single"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
           data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{b.ID}}">
     </form>
     {{end}}
     {{range _, b := .Blocks}}
-    <form id="block-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/blocks/delete{{if selectedProject}}?project={{selectedProject}}{{end}}"
+    <form id="block-del-{{b.ID}}" class="hidden-form" data-write-api="/api/block/delete" data-write-mode="single"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
           data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix", "」？")}}" data-confirm-danger>
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{b.ID}}">
     </form>
     {{end}}
+    </div>
     {{end}}
 </div>
 {{end}}

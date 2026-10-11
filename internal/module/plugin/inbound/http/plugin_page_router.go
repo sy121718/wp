@@ -10,9 +10,9 @@ package pluginhttp
 // 页面路径本身不在权限点表里，直接以页面路径 enforce 会让所有人（含超管）403。
 
 import (
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	plugincontract "go_wp/internal/module/plugin/contract"
-	"go_wp/internal/shell"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,8 +25,6 @@ func SetupPluginPages(adminPages *gin.RouterGroup, plugins plugincontract.Plugin
 		return
 	}
 	h := &pluginPageHandle{plugins: plugins}
-	adminPages.GET("/plugins", shell.PageAuthz("/api/plugin/list"), h.PluginsPage)
+	adminPages.GET("/plugins", adminui.PageAuthz("/api/plugin/list"), h.PluginsPage)
 	adminPages.POST("/plugins/install", builtin.CasbinMiddlewareForPath("/api/plugin/install"), h.PluginsInstall)
-	adminPages.POST("/plugins/toggle", builtin.CasbinMiddlewareForPath("/api/plugin/toggle"), h.PluginsToggle)
-	adminPages.POST("/plugins/uninstall", builtin.CasbinMiddlewareForPath("/api/plugin/uninstall"), h.PluginsUninstall)
 }

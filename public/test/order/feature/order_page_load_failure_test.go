@@ -5,7 +5,7 @@ package feature
 // 背景：三处原先在 `h.projects.List(ctx)` 失败时 `c.String(500, orderenums.ErrInternal)`。
 // 浏览器里没有页面，只有一块纯文本 —— 侧栏、页头、筛选器、分页壳全部消失，用户既改不了
 // 也退不回去；而那句归口文案还是**硬编码中文常量**（enums.ErrInternal = "操作失败，请稍后重试"），
-// 英文界面上照旧显示中文，与页面路径既有的归口文案（shell.PageInternalText）也是两套说法。
+// 英文界面上照旧显示中文，与页面路径既有的归口文案（adminui.PageInternalText）也是两套说法。
 // 本批改成降级渲染：空列表 + 归口提示 + HTTP 200 + 页面结构完好（判据与 project 域
 // theme_admin_pages.go 的 ThemeManage、admin 六页同一形状）。
 //
@@ -49,7 +49,7 @@ var orderPageLeakMarkers = []string{"SQLSTATE", "42P01", "pq:", `relation "`}
 // orderPageLoadFailedTitle 装载失败空态的标题（模板 t() 兜底与 406 的词条同值）。
 const orderPageLoadFailedTitle = "这一页的数据没能读出来"
 
-// orderPageInternalText 归口文案（shell.PageInternalText：词条 MsgInternalError 的译文，
+// orderPageInternalText 归口文案（adminui.PageInternalText：词条 MsgInternalError 的译文，
 // 缺词条时回落同一句中文兜底）。
 const orderPageInternalText = "系统内部错误，请稍后重试"
 
@@ -78,7 +78,7 @@ func newOrderPageEngine(t *testing.T, projects projectcontract.ProjectService) *
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		ConfigPath:     support.NewComponentTestConfig(t),
 		GinMode:        gin.TestMode,
-		InitComponents: true, // shell.Prepare 需要 i18n / 会话组件
+		InitComponents: true, // adminui.Prepare 需要 i18n / 会话组件
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 			e.GET("/admin/orders", orders.OrdersPage)

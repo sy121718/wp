@@ -29,7 +29,9 @@ func adminShellData() map[string]any {
 
 // newAdminTestSet 建一个与运行期同构的模板集合（相对 admin/ 之外的目录，扩展名 .html）。
 func newAdminTestSet() *jet.Set {
-	return jet.NewSet(jet.NewOSFileSystemLoader("."), jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	set := jet.NewSet(jet.NewOSFileSystemLoader("."), jet.WithTemplateNameExtensions([]string{"", ".html"}))
+	injectGlobals(set)
+	return set
 }
 
 // 外壳必须带上全局进度条：元素 + 样式 + 三段失败文案（JS 兜底文案的 i18n 来源）。

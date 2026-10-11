@@ -13,6 +13,8 @@
 
    数据键（调用方给齐；缺键会让整个抽屉渲染中断 → htmx 因 5xx 不 swap，用户点开是空白）：
      Rows（含 ID / Path / ProjectName / Published）、Total、Truncated、Limit、MultiProject。
+      RebuildFailure 是失败痕迹的**事实**（Has / StageKey / StageFallback / At），
+      整句在模板里按「前缀 + 阶段 + 时刻」拼回（与改造前逐字一致）。
 
    两处（文章 / 块）共用同一份模板与同一批词条：它们说的是同一件事，各写一份的下场是同一个现象
    在两个页面上有两种说法。 *}
@@ -40,10 +42,11 @@
                 {* 「已发布但有更新」与「从未上线」是两件事：后者的处置不是重建，而是先发布 ——
                    合并成一句会让运营按「重建」处理一个根本还没上线的页面。 *}
                 <td>{{if p.Published}}<span class="badge badge-warning">{{tr("admin.pages.status.stale", "有更新未发布")}}</span>{{else}}<span class="badge badge-mute">{{tr("admin.pages.impact.never_published", "未上线")}}</span>{{end}}
-                    {* 失败痕迹：非空说明这页**不是还没轮到重建，而是重建失败过** ——
+                    {* 失败痕迹：有痕迹说明这页**不是还没轮到重建，而是重建失败过** ——
                        两者的处置相反（等 vs 查日志），只给 stale 徽标时读的人只能猜。
-                       文案在 Go 侧组装（含阶段与时刻），模板不做判据。 *}
-                    {{if p.FailedNote}}<div class="stat-note" role="status">{{p.FailedNote}}</div>{{end}}</td>
+                       文字交的是**事实**（阶段 key + 已格式化时刻），整句在这里按
+                       前缀 + 阶段 + 时刻的顺序拼回 —— 与改造前逐字一致。 *}
+                    {{if p.RebuildFailure.Has}}<div class="stat-note" role="status">{{tr("admin.pages.impact.rebuild_failed", "最近一次自动重建失败：")}}{{tr(p.RebuildFailure.StageKey, p.RebuildFailure.StageFallback)}}{{if p.RebuildFailure.At}}（{{p.RebuildFailure.At}}）{{end}}</div>{{end}}</td>
                 <td class="col-actions"><a class="btn btn-sm" href="/workbench?id={{p.ID}}">{{tr("admin.pages.action.edit", "编辑")}}</a></td>
             </tr>
             {{end}}

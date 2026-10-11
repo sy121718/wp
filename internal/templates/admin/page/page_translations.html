@@ -9,11 +9,21 @@
        组件名落在合并整行的分组行里。为什么不是 tabs / 每组一张表：各组表头完全相同，
        且全部组共用页头一个「保存全部」—— 拆成多块会让这次保存切成互相看不见的几段，
        面板全渲染时体积也不省（见 docs/02-L P1-5 的方案评审）。 *}
-{* 文案走 t(key, 中文兜底)：range 内不能写赋值语句，先把 t 存成变量 tr 再取词。 *}
+{* 文案一律走 t(key, 中文兜底) / tf(key, 中文兜底, %s 参数)：range 内不能写赋值语句，
+   先把两个函数存进变量 tr / tf 再取词。Go 侧只交事实（key + 兜底 + 参数），
+   任何成品串都不该从这里进页面 —— 成品串会把整页文案锁死在一种语言。 *}
 {{extends "../layout.html"}}
 {{block body()}}
 {{tr := .["t"]}}
+{{tf := .["tf"]}}
 {{csrf := .["csrf_token"]}}
+{* 失败槽的两档事实（Go 侧零值数据 + 状态码 + no-store 时才非空）：
+   参数非法 = 400（地址里少了页面标识）；主数据没读到 = 404 / 500。
+   用 isset 包一层：直接渲染本模板的单测不带这两个键，点号取值会让整页在那行中断。 *}
+{{paramInvalid := isset(.ParamInvalid) && .ParamInvalid}}
+{{loadFailed := isset(.LoadFailed) && .LoadFailed}}
+{{paramError := .["ParamError"]}}
+{{loadError := .["LoadError"]}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -37,8 +47,8 @@
                 <noscript><button type="submit" class="btn btn-sm">{{ .["t"]("admin.page_translations.switch_lang", "切换语言") }}</button></noscript>
             </form>
             <span class="badge badge-mute">{{ .["t"]("admin.page_translations.page_progress", "本页完成度 ") }}{{.PageDone}} / {{.PageTotal}}</span>
-            {{if .SiteNote}}
-            <span class="badge badge-mute">{{.SiteNote}}</span>
+            {{if .SiteNote.Key != "" || .SiteNote.Fallback != ""}}
+            <span class="badge badge-mute">{{tf(.SiteNote.Key, .SiteNote.Fallback, .SiteNote.Args)}}</span>
             {{else}}
             <span class="badge badge-mute">{{ .["t"]("admin.page_translations.site_progress_lead", "全站完成度 ") }}{{.Lang}}{{ .["t"]("admin.page_translations.site_progress_mid", "：") }}{{.SiteDone}} / {{.SiteTotal}}{{ .["t"]("admin.page_translations.site_progress_tail", " 条") }}</span>
             {{end}}
@@ -49,12 +59,38 @@
         </div>
     </header>
 
+    {* 三档的顺序：参数非法 → 取数失败 → （读到了）内容。
+       参数非法是「这一页打不开，改地址」，取数失败是「没读到，稍后重试」，
+       空态是「读到了、只是没有可翻译的行」—— 混在一起运营会以为文本被删了
+       （docs/rules/template-boundary.md「失败槽：失败优先于空态」）。 *}
+    {{if paramInvalid}}
+    <section class="card list-card" role="alert">
+        <div class="empty-state">
+            <p class="empty-title">{{tf(paramError.Key, paramError.Fallback, paramError.Args)}}</p>
+            <p class="empty-desc">
+                <a class="btn btn-sm" href="/admin/pages">{{ .["t"]("admin.pages.list_heading", "页面列表") }}</a>
+            </p>
+        </div>
+    </section>
+    {{else if loadFailed}}
+    <section class="card list-card">
+        <p class="badge badge-danger" role="alert">{{tf(loadError.Key, loadError.Fallback, loadError.Args)}}</p>
+        <div class="empty-state">
+            <p class="empty-title">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
+            <p class="empty-desc">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
+        </div>
+    </section>
+    {{else}}
+
     {{if .Errors}}
     <div class="tr-alert" role="alert">
         <strong>{{ .["t"]("admin.page_translations.unsaved", "未保存：请先修正以下问题") }}</strong>
         <ul class="list-reset">
+            {* 逐行错误：Label 是「哪一行」（原文 context 名，可能为空 = 页面级），
+               Msg 是词条事实 —— 两者在模板里合成一句，编排（「X：Y」还是「Y (X)」）
+               由界面决定，不由 Go 决定。 *}
             {{range _, e := .Errors}}
-            <li>{{e}}</li>
+            <li>{{if e.Label}}{{e.Label}}：{{end}}{{tf(e.Msg.Key, e.Msg.Fallback, e.Msg.Args)}}</li>
             {{end}}
         </ul>
     </div>
@@ -133,7 +169,7 @@
                     {* 首列留空：组件的归属已由上面的分组行表达；**列数必须与表头一致** ——
                        数据行少一个 td 时浏览器把缺的列补在行尾，整表会左移一列（字段列显示成组件列）。 *}
                     <td class="tr-component"></td>
-                    <td class="tr-field">{{r.Field}}{{if r.Rich}}<br><span class="badge badge-mute">{{tr("admin.page_translations.rich", "富文本")}}</span>{{end}}{{if r.Origin}}<br><span class="badge badge-info" title="{{tr("admin.page_translations.origin_title", "全站共享文本：改动后所有使用该块的页面同步生效")}}">{{r.Origin}}</span>{{end}}</td>
+                    <td class="tr-field">{{r.Field}}{{if r.Rich}}<br><span class="badge badge-mute">{{tr("admin.page_translations.rich", "富文本")}}</span>{{end}}{{if r.Origin == "header" || r.Origin == "footer" || r.Origin == "block"}}<br><span class="badge badge-info" title="{{tr("admin.page_translations.origin_title", "全站共享文本：改动后所有使用该块的页面同步生效")}}">{{if r.Origin == "header"}}{{tr("admin.page_translations.origin.header", "页眉块")}}{{else if r.Origin == "footer"}}{{tr("admin.page_translations.origin.footer", "页脚块")}}{{else if r.Origin == "block"}}{{tr("admin.page_translations.origin.block", "全局块")}}{{end}}</span>{{end}}</td>
                     <td class="tr-source">{{r.Source}}</td>
                     <td class="tr-target">
                         <textarea class="form-textarea" name="rowTarget" rows="{{if r.Rich}}4{{else}}2{{end}}" maxlength="{{r.Limit}}" placeholder="{{tr("admin.page_translations.target_placeholder", "填写译文（留空则不写入）")}}">{{r.Target}}</textarea>
@@ -151,7 +187,8 @@
                     </td>
                     <td>
                         {{if r.Engine}}
-                        <span class="badge badge-{{r.EngineTone}}">{{r.Engine}}</span>
+                        {{engineTone := "mute"}}{{if r.Engine == "ai"}}{{engineTone = "info"}}{{end}}
+                        <span class="badge badge-{{engineTone}}">{{r.Engine}}</span>
                         {{else}}
                         <span class="text-mute">—</span>
                         {{end}}
@@ -164,7 +201,7 @@
                         <details>
                             <summary>↳ {{tr("admin.page_translations.reuse_lead", "还用在另外 ")}}{{r.ReusePages}}{{tr("admin.page_translations.reuse_tail", " 个页面（修改后全站同步生效）")}}</summary>
                             <div class="text-mute text-sm">
-                                {{tr("admin.page_translations.reuse_occurrences_lead", "该文本在 ")}}{{r.ReuseTotal}}{{tr("admin.page_translations.reuse_occurrences_tail", " 个页面出现：")}}{{r.ReuseHint}}<br>
+                                {{tr("admin.page_translations.reuse_occurrences_lead", "该文本在 ")}}{{r.ReuseTotal}}{{tr("admin.page_translations.reuse_occurrences_tail", " 个页面出现：")}}{{range i, path := r.ReusePaths}}{{if i < 6}}{{if i > 0}}{{tr("admin.page_translations.reuse.pathSeparator", "、")}}{{end}}{{path}}{{end}}{{end}}{{if len(r.ReusePaths) > 6}}{{tr("admin.page_translations.reuse.moreSuffix", " 等页面")}}{{end}}<br>
                                 {{tr("admin.page_translations.reuse_shared_lead", "共 1 个译文（context = ")}}{{r.Context}}{{tr("admin.page_translations.reuse_shared_mid", "，lang = ")}}{{.Lang}}{{tr("admin.page_translations.reuse_shared_tail", "）")}}
                             </div>
                         </details>
@@ -178,6 +215,7 @@
             </div>
         </section>
     </form>
+    {{end}}
     {{end}}
 </div>
 {{end}}

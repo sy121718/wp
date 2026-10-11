@@ -15,14 +15,14 @@ func TestBrandDrawerFailureEchoAndRedirect(t *testing.T) {
 	for _, mode := range []string{"create", "update"} {
 		t.Run(mode, func(t *testing.T) {
 			c, rec, cap := newAttrCaptureContext(t, "true", values.Encode())
-			h.brandFormFail(c, mode, "duplicate")
+			h.brandFormFail(c, mode, productMsg{Fallback: "duplicate"})
 			c.Writer.WriteHeaderNow()
 			if rec.Code != http.StatusOK || cap.name != "admin/product/product_brand_form.html" {
 				t.Fatalf("failure: %d %q", rec.Code, cap.name)
 			}
 			data := capturedData(t, cap)
-			if data["SubmitErr"] != "duplicate" {
-				t.Errorf("error: %v", data["SubmitErr"])
+			if msg, ok := data["SubmitErr"].(productMsg); !ok || msg.Fallback != "duplicate" {
+				t.Errorf("error slot = %#v，want productMsg{Fallback: duplicate}", data["SubmitErr"])
 			}
 			echo := data["FormEcho"].(gin.H)
 			for _, key := range []string{"projectId", "id", "name", "slug", "sort", "logo", "description", "seoTitle", "seoDescription"} {
@@ -35,7 +35,7 @@ func TestBrandDrawerFailureEchoAndRedirect(t *testing.T) {
 
 	// 原生失败：整页提示（200 + err 态）回品牌页，取代原先的 302 + ?err=。
 	c, rec := newProductJumpContext(t, "", "project=p1", values.Encode())
-	h.brandFormFail(c, "update", "duplicate")
+	h.brandFormFail(c, "update", productMsg{Fallback: "duplicate"})
 	c.Writer.WriteHeaderNow()
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `data-jump-state="err"`) {
 		t.Fatalf("native failure: %d %q", rec.Code, rec.Body.String())

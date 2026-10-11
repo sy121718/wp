@@ -3,22 +3,32 @@
    分成三个模板会让「换目标」在不同状态下指向不同元素，而目标选择器写在悬浮球骨架里
    （只有一处），两边对不上时表现为「点了没反应」。
 
-   **本片段整体由 c.HTML 单独渲染，不走 shell.Prepare** —— 所以这里拿不到 `t` 函数，
-   一句话都不能在这里拼。所有文案（含「已截断」「查了几次数据」这类带数字的）
-   由 Go 侧造好整句传进来（见 ai_fab_handle.go 的 renderFab 调用点）。
+   **本片段整体由 c.HTML 单独渲染，不走 shell.Prepare** —— 取词函数由数据注入，
+   装配处是 adminui.PrepareFragment（见 ai_page.go 的 renderFab）：它只注入 lang / t / tf，
+   不注入页壳那套。片段模板因此**自己取词**，Go 侧只给事实。
+
+   槽位收的是**事实**（adminui.Msg：key + 中文兜底 + `%s` 参数），不是拼好的句子 ——
+   语言是请求级的，控制器提前取词等于替渲染期做决定（原先 `ai.fab.*` 的 7 条词条
+   因为片段拿不到 t 而一直用不上，迁移 568 的注释记着这件事）。
+   唯一的例外是回答正文（.FabAnswer）与思考过程（.FabReasoning）：那是模型产出的文本，
+   不是界面文案，原样输出。
+
+   漏注入 tf 的后果是**静默**的：`{{tf := .["tf"]}}` 拿到 nil，本片段所有取词一起变空串 ——
+   状态码 200、日志干净、面板结构完整，只是所有提示都没了（见 internal/templates/CLAUDE.md）。
 
    判断一律走 `isset`：Jet 对 map 上**缺席**的键求值会抛运行时错误
    （`there is no field or method 'FabError'`，整段 500），而 `isset` 对缺席安全。
    会话页的 DetailErr/EventsErr 用的是同一形态。 *}
+{{tf := .["tf"]}}
 
-{{if isset(.FabError)}}
-<p class="ai-fab-error" role="alert">{{.FabError}}</p>
+{{if isset(.FabError)}}{{errMsg := .FabError}}
+<p class="ai-fab-error" role="alert">{{tf(errMsg.Key, errMsg.Fallback, errMsg.Args)}}</p>
 {{else}}
 {* 思考过程放在**回答之前**且默认折叠：它是过程不是结论，展开会盖过真正的答复。
    用 <details> 而不是自己做展开 —— 键盘可达与读屏语义是浏览器给的。 *}
-{{if isset(.FabReasoning)}}
+{{if isset(.FabThinkLabel)}}{{think := .FabThinkLabel}}
 <details class="ai-fab-think">
-    <summary>{{.FabThinkLabel}}</summary>
+    <summary>{{tf(think.Key, think.Fallback, think.Args)}}</summary>
     <div class="ai-fab-think-body">{{.FabReasoning}}</div>
 </details>
 {{end}}
@@ -27,12 +37,17 @@
 <div class="ai-fab-answer">{{.FabAnswer}}</div>
 {{end}}
 
-{{if isset(.FabTruncatedText)}}
-<p class="ai-fab-note">{{.FabTruncatedText}}</p>
+{{if isset(.FabTruncatedText)}}{{trunc := .FabTruncatedText}}
+<p class="ai-fab-note">{{tf(trunc.Key, trunc.Fallback, trunc.Args)}}</p>
 {{end}}
 
-{{if isset(.FabToolsText)}}
-<p class="ai-fab-note">{{.FabToolsText}}</p>
+{* 「这轮查了数据 N 次。」是**两段词条 + 一个数字**：事实模型的一个 key 表达不了它
+   （`%s` 只能落在一条词条里，而前缀词条自身没有占位符），所以按原样给两个事实，
+   数字单独给，三者在渲染期拼起来 —— 逐字等于原先 Go 侧拼串的产物。
+   前缀与后缀**必须成对给**（只给一半会在下面这行取 .FabToolsSuffix 的字段时运行时报错）；
+   装配处是同一个 if 分支，别在别处补一个只给前缀的路径。 *}
+{{if isset(.FabToolsPrefix)}}{{tp := .FabToolsPrefix}}{{ts := .FabToolsSuffix}}
+<p class="ai-fab-note">{{tf(tp.Key, tp.Fallback, tp.Args)}}{{.FabToolsCount}}{{tf(ts.Key, ts.Fallback, ts.Args)}}</p>
 {{end}}
 
 {* 图表：与 AI 会话页共用同一个片段（ui_blocks.html）。
@@ -46,7 +61,7 @@
 </div>
 {{end}}
 
-{{if isset(.FabEmptyText)}}
-<p class="ai-fab-empty">{{.FabEmptyText}}</p>
+{{if isset(.FabEmptyText)}}{{emptyMsg := .FabEmptyText}}
+<p class="ai-fab-empty">{{tf(emptyMsg.Key, emptyMsg.Fallback, emptyMsg.Args)}}</p>
 {{end}}
 {{end}}

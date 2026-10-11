@@ -28,8 +28,8 @@ import (
 	"github.com/gin-gonic/gin"
 	ginrender "github.com/gin-gonic/gin/render"
 
+	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
-	"go_wp/internal/shell"
 )
 
 // —— 渲染捕获（把失败出口真正交给模板的那份 data 截下来）——
@@ -122,7 +122,7 @@ func TestAttrGroupFormFailSplitsByRequestKind(t *testing.T) {
 
 	// htmx 档：200 + 片段，且**不设** HX-Redirect（那是「跳走」的形态，与「原地留住输入」相反）。
 	c, rec, cap := newAttrCaptureContext(t, "true", attrGroupSubmitBody())
-	h.attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", msg)
+	h.attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", productMsg{Fallback: msg})
 	c.Writer.WriteHeaderNow() // gin 的状态码是延迟写的，不刷出来读到的永远是默认值
 	if rec.Code != http.StatusOK {
 		t.Fatalf("htmx 档状态码 = %d，want 200（302 会被 htmx 跟随并吞掉 Location）", rec.Code)
@@ -139,7 +139,7 @@ func TestAttrGroupFormFailSplitsByRequestKind(t *testing.T) {
 
 	// 原生档：整页提示（200 + err 态），取代原先的 302 + ?err= 回列表。
 	c2, rec2 := newProductJumpContext(t, "", "project=pr1", "projectId=pr1&name=颜色")
-	h.attrGroupFormFail(c2, attrGroupModeCreate, "pr1", "new", msg)
+	h.attrGroupFormFail(c2, attrGroupModeCreate, "pr1", "new", productMsg{Fallback: msg})
 	c2.Writer.WriteHeaderNow()
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("原生档状态码 = %d，want 200（提示页）", rec2.Code)
@@ -161,7 +161,7 @@ func TestAttrValuesFormFailSplitsByRequestKind(t *testing.T) {
 	h := &productPageHandle{}
 
 	c, rec, cap := newAttrCaptureContext(t, "true", attrValuesSubmitBody())
-	h.attrValuesFormFail(c, "pr1", "a1", "属性值标识重复")
+	h.attrValuesFormFail(c, "pr1", "a1", productMsg{Fallback: "属性值标识重复"})
 	c.Writer.WriteHeaderNow()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("htmx 档状态码 = %d，want 200", rec.Code)
@@ -171,7 +171,7 @@ func TestAttrValuesFormFailSplitsByRequestKind(t *testing.T) {
 	}
 
 	c2, rec2 := newProductJumpContext(t, "", "project=pr1", attrValuesSubmitBody())
-	h.attrValuesFormFail(c2, "pr1", "a1", "属性值标识重复")
+	h.attrValuesFormFail(c2, "pr1", "a1", productMsg{Fallback: "属性值标识重复"})
 	c2.Writer.WriteHeaderNow()
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("原生档状态码 = %d，want 200（提示页）", rec2.Code)
@@ -191,7 +191,7 @@ func TestAttrValuesFormFailSplitsByRequestKind(t *testing.T) {
 func TestAttrGroupFormFailEchoesSubmittedValues(t *testing.T) {
 	h := &productPageHandle{}
 	c, _, cap := newAttrCaptureContext(t, "true", attrGroupSubmitBody())
-	h.attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", "标识已被占用")
+	h.attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", productMsg{Fallback: "标识已被占用"})
 
 	data := capturedData(t, cap)
 
@@ -234,21 +234,18 @@ func TestAttrGroupFormFailEchoesSubmittedValues(t *testing.T) {
 	if got := data["GroupID"]; got != "new" {
 		t.Errorf("GroupID = %v，want new（值编辑器容器 id 的依据）", got)
 	}
-	rows, ok := data["RowsCtx"].(attrRowsCtx)
-	if !ok {
-		t.Fatalf("data[\"RowsCtx\"] 类型 = %T，want attrRowsCtx", data["RowsCtx"])
+	rows := rowsCtxRows(t, data)
+	if len(rows) != 1 {
+		t.Fatalf("RowsCtx.Rows 行数 = %d，want 1（用户刚编的那一行要留住）", len(rows))
 	}
-	if len(rows.Rows) != 1 {
-		t.Fatalf("RowsCtx.Rows 行数 = %d，want 1（用户刚编的那一行要留住）", len(rows.Rows))
-	}
-	if rows.Rows[0].Label != "红" || rows.Rows[0].Key != "red" {
-		t.Errorf("回填行 = %+v，want label=红 key=red", rows.Rows[0])
+	if rows[0].Label != "红" || rows[0].Key != "red" {
+		t.Errorf("回填行 = %+v，want label=红 key=red", rows[0])
 	}
 	if got := data["InDrawer"]; got != true {
 		t.Errorf("InDrawer = %v，want true（表单带了 inDrawer 隐藏域）", got)
 	}
-	if got := data["SubmitErr"]; got != "标识已被占用" {
-		t.Errorf("SubmitErr = %v，want 标识已被占用", got)
+	if got, ok := data["SubmitErr"].(productMsg); !ok || got.Fallback != "标识已被占用" {
+		t.Errorf("SubmitErr = %#v，want productMsg{Fallback: 标识已被占用}", data["SubmitErr"])
 	}
 	// 片段取词靠数据里的 t 键（带参数 include，拿不到页面 data）：缺了它整块渲染失败。
 	if _, exists := data["t"]; !exists {
@@ -262,14 +259,14 @@ func TestAttrGroupFormFailKeepsDrawerShapeByDeclaration(t *testing.T) {
 
 	// 表单申报了 inDrawer（抽屉里的正常提交）→ 片段要能渲染出「取消」按钮。
 	c, _, cap := newAttrCaptureContext(t, "true", "name=颜色&inDrawer=1")
-	h.attrGroupFormFail(c, attrGroupModeEdit, "pr1", "a1", "失败")
+	h.attrGroupFormFail(c, attrGroupModeEdit, "pr1", "a1", productMsg{Fallback: "失败"})
 	if capturedData(t, cap)["InDrawer"] != true {
 		t.Error("表单申报了 inDrawer，片段应带 InDrawer（否则抽屉里失败一次「取消」按钮就没了）")
 	}
 
 	// 没申报（片段被别处复用）→ 不该凭空渲染抽屉专属按钮。
 	c2, _, cap2 := newAttrCaptureContext(t, "true", "name=颜色")
-	h.attrGroupFormFail(c2, attrGroupModeEdit, "pr1", "a1", "失败")
+	h.attrGroupFormFail(c2, attrGroupModeEdit, "pr1", "a1", productMsg{Fallback: "失败"})
 	if _, exists := capturedData(t, cap2)["InDrawer"]; exists {
 		t.Error("表单没申报 inDrawer 时不该给 InDrawer 键")
 	}
@@ -279,7 +276,7 @@ func TestAttrGroupFormFailKeepsDrawerShapeByDeclaration(t *testing.T) {
 func TestAttrGroupFormFailEditModePointsAtUpdate(t *testing.T) {
 	h := &productPageHandle{}
 	c, _, cap := newAttrCaptureContext(t, "true", "id=a1&name=颜色&key=color&sort=1&isVariation=0&inDrawer=1")
-	h.attrGroupFormFail(c, attrGroupModeEdit, "pr1", "a1", "失败")
+	h.attrGroupFormFail(c, attrGroupModeEdit, "pr1", "a1", productMsg{Fallback: "失败"})
 
 	data := capturedData(t, cap)
 	if got := data["Action"]; got != attrGroupUpdateAction {
@@ -300,22 +297,19 @@ func TestAttrGroupFormFailEditModePointsAtUpdate(t *testing.T) {
 func TestAttrValuesFormFailEchoesValueRows(t *testing.T) {
 	h := &productPageHandle{}
 	c, _, cap := newAttrCaptureContext(t, "true", attrValuesSubmitBody())
-	h.attrValuesFormFail(c, "pr1", "a1", "属性值标识重复")
+	h.attrValuesFormFail(c, "pr1", "a1", productMsg{Fallback: "属性值标识重复"})
 
 	data := capturedData(t, cap)
-	rows, ok := data["RowsCtx"].(attrRowsCtx)
-	if !ok {
-		t.Fatalf("data[\"RowsCtx\"] 类型 = %T，want attrRowsCtx", data["RowsCtx"])
+	rows := rowsCtxRows(t, data)
+	if len(rows) != 2 {
+		t.Fatalf("回填行数 = %d，want 2", len(rows))
 	}
-	if len(rows.Rows) != 2 {
-		t.Fatalf("回填行数 = %d，want 2", len(rows.Rows))
-	}
-	if rows.Rows[0].Label != "红" || !rows.Rows[0].Enabled {
-		t.Errorf("第 1 行 = %+v，want label=红 且启用（提交里有 1）", rows.Rows[0])
+	if rows[0].Label != "红" || !rows[0].Enabled {
+		t.Errorf("第 1 行 = %+v，want label=红 且启用（提交里有 1）", rows[0])
 	}
 	// 这一条钉的是「禁用也能存」：按「字段是否存在」判时它恒为启用（用户取消的勾选被静默丢弃）。
-	if rows.Rows[1].Label != "蓝" || rows.Rows[1].Enabled {
-		t.Errorf("第 2 行 = %+v，want label=蓝 且**未**启用（用户明确取消了勾选）", rows.Rows[1])
+	if rows[1].Label != "蓝" || rows[1].Enabled {
+		t.Errorf("第 2 行 = %+v，want label=蓝 且**未**启用（用户明确取消了勾选）", rows[1])
 	}
 	if got := data["Action"]; got != attrValuesAction {
 		t.Errorf("Action = %v，want %v", got, attrValuesAction)
@@ -348,9 +342,9 @@ func TestAttrValuesFormFailPreservesSparseRawRows(t *testing.T) {
 	if got := attrRowsFromForm(c); len(got) != 2 || got[0].Label != "红" || got[0].Sort != 0 || got[1].Label != "蓝" || got[1].Sort != -3 {
 		t.Fatalf("保存输入 = %+v，want 两条解析后的非空行", got)
 	}
-	(&productPageHandle{}).attrValuesFormFail(c, "pr1", "a1", "重复")
+	(&productPageHandle{}).attrValuesFormFail(c, "pr1", "a1", productMsg{Fallback: "重复"})
 	data := capturedData(t, cap)
-	rows := data["RowsCtx"].(attrRowsCtx).Rows
+	rows := rowsCtxRows(t, data)
 	if len(rows) != 3 || rows[0].Index != 0 || rows[0].Label != "  红  " || rows[0].Key != " red " || rows[0].Sort != "oops" || !rows[0].Enabled ||
 		rows[1].Index != 2 || rows[1].Label != "" || rows[1].Sort != "  " || rows[1].Enabled ||
 		rows[2].Index != 5 || rows[2].Label != " 蓝 " || rows[2].Sort != "-03" || rows[2].Enabled {
@@ -366,8 +360,8 @@ func TestAttrGroupFormFailPreservesRawValueRows(t *testing.T) {
 	form.Set("values[3].label", " 蓝 ")
 	form.Set("values[3].sort", "bad")
 	c, _, cap := newAttrCaptureContext(t, "true", form.Encode())
-	(&productPageHandle{}).attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", "重复")
-	rows := capturedData(t, cap)["RowsCtx"].(attrRowsCtx).Rows
+	(&productPageHandle{}).attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", productMsg{Fallback: "重复"})
+	rows := rowsCtxRows(t, capturedData(t, cap))
 	if len(rows) != 2 || rows[0].Index != 0 || rows[0].Label != " " || rows[0].Sort != "" || rows[1].Index != 3 || rows[1].Label != " 蓝 " || rows[1].Sort != "bad" {
 		t.Fatalf("新建属性组失败回显行 = %+v", rows)
 	}
@@ -381,13 +375,13 @@ func TestAttrFailedFormJetRender(t *testing.T) {
 		fail           func(*gin.Context)
 	}{
 		{"新建组", attrGroupFormTemplate, true, func(c *gin.Context) {
-			(&productPageHandle{}).attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", "重复")
+			(&productPageHandle{}).attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", productMsg{Fallback: "重复"})
 		}},
 		{"编辑组", attrGroupFormTemplate, false, func(c *gin.Context) {
-			(&productPageHandle{}).attrGroupFormFail(c, attrGroupModeEdit, "pr1", "a1", "重复")
+			(&productPageHandle{}).attrGroupFormFail(c, attrGroupModeEdit, "pr1", "a1", productMsg{Fallback: "重复"})
 		}},
 		{"属性值", attrValuesFormTemplate, true, func(c *gin.Context) {
-			(&productPageHandle{}).attrValuesFormFail(c, "pr1", "a1", "重复")
+			(&productPageHandle{}).attrValuesFormFail(c, "pr1", "a1", productMsg{Fallback: "重复"})
 		}},
 	}
 	for _, tc := range cases {
@@ -448,6 +442,23 @@ func capturedData(t *testing.T, cap *captureRender) gin.H {
 	return data
 }
 
+// rowsCtxRows 取回填的值行。
+//
+// RowsCtx 自身也是 gin.H（取词函数 t/tf 由 adminui.PrepareFragment 注入，见 attrRowsCtxData）——
+// 用结构体时 Jet 取不到 `.["t"]`，于是控制器得替它取词；换成 gin.H 就是为了把取词放回渲染期。
+func rowsCtxRows(t *testing.T, data gin.H) []productdto.AttrValueFormRow {
+	t.Helper()
+	ctx, ok := data["RowsCtx"].(gin.H)
+	if !ok {
+		t.Fatalf("data[\"RowsCtx\"] 类型 = %T，want gin.H（片段取词靠它里面的 t/tf）", data["RowsCtx"])
+	}
+	rows, ok := ctx["Rows"].([]productdto.AttrValueFormRow)
+	if !ok {
+		t.Fatalf("RowsCtx[\"Rows\"] 类型 = %T，want []productdto.AttrValueFormRow", ctx["Rows"])
+	}
+	return rows
+}
+
 // TestAttrFormDataShapeMatchesFirstPaint 首屏与失败重渲染的数据形状必须一致。
 //
 // 这是本批最容易分叉的地方：页面首屏由 attrCreateDrawerForm / attrRowDrawerForms 组装，
@@ -455,16 +466,15 @@ func capturedData(t *testing.T, cap *captureRender) gin.H {
 // 「少渲一块」，而是整块渲染失败（500），而 htmx 对 5xx 不 swap：用户点保存后什么都看不到。
 func TestAttrFormDataShapeMatchesFirstPaint(t *testing.T) {
 	h := &productPageHandle{}
-	tr := func(_, fallback string) string { return fallback }
 	// 失败档专属键：它们本就不该出现在首屏。
 	failOnly := map[string]bool{
 		"FormEcho": true, "FormEchoChecked": true, "FormEchoMulti": true, "SubmitErr": true,
 	}
-	// 壳层键（lang / t / csrf_token / PermSet / 导航…）：失败档的 data 会过一遍 shell.Prepare，
+	// 壳层键（lang / t / csrf_token / PermSet / 导航…）：失败档的 data 会过一遍 adminui.Prepare，
 	// 这些键不是抽屉的数据 —— 用一个空 Prepare 现场取键集，不硬编码清单（会漂移）。
 	shellKeys := map[string]bool{}
 	probe, _, _ := newAttrCaptureContext(t, "", "")
-	for k := range shell.Prepare(probe, gin.H{}) {
+	for k := range adminui.Prepare(probe, gin.H{}) {
 		shellKeys[k] = true
 	}
 	compare := func(t *testing.T, label string, first, fail gin.H) {
@@ -486,19 +496,19 @@ func TestAttrFormDataShapeMatchesFirstPaint(t *testing.T) {
 
 	// 属性组：新建形态（首屏 attrCreateDrawerForm ↔ 失败 attrGroupFormFail(create)）。
 	c, _, cap := newAttrCaptureContext(t, "true", attrGroupSubmitBody())
-	h.attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", "失败")
-	compare(t, "属性组/新建", attrCreateDrawerForm("tok", "pr1", "", tr), capturedData(t, cap))
+	h.attrGroupFormFail(c, attrGroupModeCreate, "pr1", "new", productMsg{Fallback: "失败"})
+	compare(t, "属性组/新建", attrCreateDrawerForm(c, "tok", "pr1", ""), capturedData(t, cap))
 
 	// 属性组：编辑形态（首屏 attrRowDrawerForms ↔ 失败 attrGroupFormFail(edit)）。
 	c2, _, cap2 := newAttrCaptureContext(t, "true", "id=a1&name=颜色&key=color&inDrawer=1")
-	h.attrGroupFormFail(c2, attrGroupModeEdit, "pr1", "a1", "失败")
-	editFirst, _ := attrRowDrawerForms("tok", "pr1", "", tr, attributeRespForTest("a1"))
+	h.attrGroupFormFail(c2, attrGroupModeEdit, "pr1", "a1", productMsg{Fallback: "失败"})
+	editFirst, _ := attrRowDrawerForms(c2, "tok", "pr1", "", attributeRespForTest("a1"))
 	compare(t, "属性组/编辑", editFirst, capturedData(t, cap2))
 
 	// 属性值（首屏 attrValuesFormData ↔ 失败 attrValuesFormFail）。
 	c3, _, cap3 := newAttrCaptureContext(t, "true", attrValuesSubmitBody())
-	h.attrValuesFormFail(c3, "pr1", "a1", "失败")
-	_, valuesFirst := attrRowDrawerForms("tok", "pr1", "", tr, attributeRespForTest("a1"))
+	h.attrValuesFormFail(c3, "pr1", "a1", productMsg{Fallback: "失败"})
+	_, valuesFirst := attrRowDrawerForms(c3, "tok", "pr1", "", attributeRespForTest("a1"))
 	compare(t, "属性值", valuesFirst, capturedData(t, cap3))
 }
 

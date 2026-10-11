@@ -13,7 +13,7 @@ package feature
 //  4. 表单解析：空值、非数字、重复 id 都不该让保存失败（真实落库集合由 service 侧
 //     重新过滤，那里有真实 PostgreSQL 用例钉着）。
 //
-// 走真实链路：gin 路由 → AdminPagesHandle → shell.Prepare → Jet 模板 → 响应体。
+// 走真实链路：gin 路由 → AdminPagesHandle → adminui.Prepare → Jet 模板 → 响应体。
 // 角色服务用本包的假实现（admin_err_response_test.go 里的 fakeRoleService）。
 
 import (
@@ -47,7 +47,7 @@ func newAdminRolePermissionsEngine(t *testing.T, svc *fakeRoleService) *gin.Engi
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		ConfigPath:     support.NewComponentTestConfig(t),
 		GinMode:        gin.TestMode,
-		InitComponents: true, // 让 shell.Prepare 拿到 i18n / 会话组件
+		InitComponents: true, // 让 adminui.Prepare 拿到 i18n / 会话组件
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 			e.GET("/admin/roles/permissions/drawer", handle.RolePermissionsDrawer)

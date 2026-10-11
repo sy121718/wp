@@ -15,6 +15,8 @@ import (
 	ginrender "github.com/gin-gonic/gin/render"
 
 	inventoryenums "go_wp/internal/module/inventory/enums"
+
+	"go_wp/internal/adminui"
 )
 
 type inventoryCaptureRender struct {
@@ -118,9 +120,12 @@ func TestInventoryFormFailurePreservesRawInput(t *testing.T) {
 func TestInventoryFormSuccessJumpAndNativeFailure(t *testing.T) {
 	back := inventoryWarehousesPath + "?project=p1"
 	// 成功：htmx 档走 HX-Redirect，原生档渲染提示页（结论走响应体，不再是 302 + ?ok=）。
+	//
+	// 出口收的是**事实**（adminui.Msg：key + 中文兜底），取词在渲染期由模板注入的 tf 完成 ——
+	// 所以这里断言的是「交出去的是哪条词条」，而不是「Go 拼好的那句话」（本批改造的判据）。
 	for _, hx := range []bool{true, false} {
 		c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, hx)
-		inventoryJump(c, true, "操作已完成", back, "仓库管理")
+		inventoryJump(c, true, inventoryDoneMsg, back, inventoryWarehouseBackMsg)
 		c.Writer.WriteHeaderNow()
 		if hx {
 			if rec.Code != http.StatusOK || rec.Header().Get("HX-Redirect") != back {
@@ -130,6 +135,17 @@ func TestInventoryFormSuccessJumpAndNativeFailure(t *testing.T) {
 		}
 		if rec.Code != http.StatusOK || view.name != "admin/jump.html" {
 			t.Fatalf("原生成功提示页: %d %q", rec.Code, view.name)
+		}
+		jump, ok := view.data.(gin.H)["Jump"].(adminui.JumpView)
+		if !ok {
+			t.Fatalf("提示页数据里没有 Jump 视图: %T", view.data)
+		}
+		if jump.MsgKey != inventoryActionDoneKey || jump.Msg != inventoryActionDoneFallback {
+			t.Errorf("正文事实 = %q/%q，want %q/%q",
+				jump.MsgKey, jump.Msg, inventoryActionDoneKey, inventoryActionDoneFallback)
+		}
+		if jump.BackTextKey != inventoryenums.InventoryWarehousesTitle || jump.BackText != inventoryWarehouseBackMsg.Fallback {
+			t.Errorf("回跳文字事实 = %q/%q", jump.BackTextKey, jump.BackText)
 		}
 	}
 	// 原生失败：渲染失败提示页（不再是 302 + ?err=）。

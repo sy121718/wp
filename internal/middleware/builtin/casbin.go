@@ -92,7 +92,7 @@ func casbinMiddleware(forcedObj, forcedAct string) gin.HandlerFunc {
 // 返回值 status 为 0 表示放行；非 0 时 key 是给调用方的建议文案（取 pkg/enums 的 key，
 // 由 response 层翻译）。**响应形态由调用方决定**：API 与页面写操作走 JSON
 // （casbinMiddleware / CasbinMiddlewareForPath*），后台页面 GET 走整页提示
-// （shell.PageCasbinMiddleware，docs/02-Z §4.3）。
+// （adminui.PageAuthz，docs/02-Z §4.3）。
 //
 // 为什么把响应从判定里剥出来：页面被拒时回 JSON，直接输 URL 的人只在浏览器里看到一坨
 // 报文，不知道该找谁开权限；而判定逻辑若各写一份，两处「什么算通过」迟早分叉 ——

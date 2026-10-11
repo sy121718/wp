@@ -208,9 +208,8 @@ func TestProductDetailBundlePanelAbsentForVariant(t *testing.T) {
 // 挂牌价只是参考值，变体已删除时两者都给 —（0 会被读成「这个成员不要钱」）。
 func TestBundlePanelRowsBackofficePriceShape(t *testing.T) {
 	cost := 20.0
-	// 取词用直通函数（本用例断言的是价格口径，不是文案）：来源标签在批次 C 引入。
-	passthrough := func(key, fallback string) string { return fallback }
-	rows := bundlePanelRows(passthrough, []*productdto.BundleOptionDetail{
+	// 来源标签已改交事实（Key + 兜底），取词在模板里 —— 本用例只断言价格口径。
+	rows := bundlePanelRows([]*productdto.BundleOptionDetail{
 		{SKUCode: "A1", ItemPrice: 45.5, CostPrice: &cost, Enabled: true},
 		{SKUCode: "A2", ItemPrice: 10, CostPrice: nil, Enabled: false},
 		{SKUCode: "", ItemPrice: 0, CostPrice: nil, Enabled: false},

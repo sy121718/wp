@@ -417,15 +417,16 @@ type translationLangOption struct {
 }
 
 type articleTranslationRow struct {
-	Context    string
-	Field      string
-	FieldLabel string
-	Source     string
-	SourceHash string
-	Target     string
-	Engine     string
-	Translated bool
-	Rich       bool
+	Context       string
+	Field         string
+	FieldKey      string
+	FieldFallback string
+	Source        string
+	SourceHash    string
+	Target        string
+	Engine        string
+	Translated    bool
+	Rich          bool
 }
 
 type articleTranslationGroup struct {
@@ -446,7 +447,6 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		"Buttons": map[string]bool{"i18n.manage": true},
 		"Keyword": "", "LangFilter": "", "CatFilter": "",
 		"I18nEditURLs": []string{"/admin/i18n/edit?key=site.component.gallery.prev&lang=en-US"},
-		"Saved":        "site.component.gallery.prev · en-US", "Errored": "",
 		"Entries": []i18n.Entry{{
 			Key: "site.component.gallery.prev", Lang: "en-US", Value: "Previous",
 			Category: "ui", UpdateTime: "2026-09-14 10:00",
@@ -457,18 +457,28 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("词条页渲染失败: %v", err)
 	}
-	// 断言覆盖新版式的三处要点：领域说明进 .help（不再铺在首屏）、筛选并入列表卡、
-	// 行内编辑按需 GET、删除与新建抽屉模板都在（原版这三块分散在三张卡里）。
+	// 断言覆盖新版式的要点：领域说明进 .help（不再铺在首屏）、筛选并入列表卡、
+	// 行内编辑按需 GET、以及**写动作的 JSON 声明**（页面 POST 已退役，见下）。
 	for _, want := range []string{
 		"文案词条", "page-head", "help-pop",
 		"filter-bar", "table-scroll", "data-table",
 		"site.component.gallery.prev", "Previous",
-		"/admin/i18n/save", "/admin/i18n/delete", "csrf_token",
+		`data-write-api="/api/i18n/save"`, `data-write-mode="bulk"`,
+		"data-msg-all-deleted", "data-msg-refresh", "data-write-status",
+		`name="action" value="delete"`, `name="action" value="create"`,
+		"data-requires-js",
 		`data-drawer-open="#tpl-i18n-create"`, "tpl-i18n-create",
 		`data-drawer-url="/admin/i18n/edit?key=site.component.gallery.prev`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("词条页缺少 %q（模板可能中途中断）", want)
+		}
+	}
+	// 反向：写动作不再回投页面路由、也不再自带表单 csrf 域（CSRF 走 X-CSRF-Token 头，
+	// 由 static/js/ui/json_write.js 从 meta/sessionStorage 取）。
+	for _, unwanted := range []string{`action="/admin/i18n/`, `hx-post="/admin/i18n/`, `name="csrf_token"`} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("词条页不应再出现 %q —— 写动作已收敛到 JSON 端点 POST /api/i18n/save", unwanted)
 		}
 	}
 
@@ -480,7 +490,6 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 	}
 	empty["Entries"] = []i18n.Entry{}
 	empty["Categories"] = []string{}
-	empty["Saved"] = ""
 	out, err = render(t, set, "admin/system/i18n", empty)
 	if err != nil {
 		t.Fatalf("空列表渲染失败: %v", err)
@@ -543,8 +552,8 @@ func TestArticleTranslationsPageRenders(t *testing.T) {
 		"Groups": []articleTranslationGroup{{
 			Key: "a-1", EntityType: "article", EntityID: "a-1", Title: "标题", Subtitle: "slug",
 			Rows: []articleTranslationRow{
-				{Context: "article.title", Field: "title", FieldLabel: "标题", Source: "中文标题", SourceHash: "h1", Target: "English", Translated: true},
-				{Context: "article.body", Field: "body", FieldLabel: "正文", Source: "<p>正文</p>", SourceHash: "h2", Rich: true},
+				{Context: "article.title", Field: "title", FieldKey: "admin.article.translations.field.title", FieldFallback: "标题", Source: "中文标题", SourceHash: "h1", Target: "English", Translated: true},
+				{Context: "article.body", Field: "body", FieldKey: "admin.article.translations.field.body", FieldFallback: "正文", Source: "<p>正文</p>", SourceHash: "h2", Rich: true},
 			},
 		}},
 	}
@@ -576,6 +585,8 @@ func TestNavigationTranslationsPageRenders(t *testing.T) {
 		"Langs": []translationLangOption{{Code: "en-US", Label: "en-US", Active: true}},
 		"Saved": true, "SavedNote": "已保存 1 条译文；已标记受影响页面待重建（下次构建生效）。",
 		"Errors": []string{}, "RowCount": 1, "Done": 0,
+		// 成功回跳地址由 Go 侧拼好并转义（data-write-nav）；模板不自己拼 query。
+		"SuccessURL": "/admin/navigations/translations?lang=en-US&project=p1",
 		"Groups": []navigationTranslationGroup{
 			{Kind: "header", Title: "页眉导航", Rows: []navigationTranslationRow{
 				{Context: "navigation.label", NodeID: "n-1", Kind: "header", Path: "/shop",
@@ -588,8 +599,15 @@ func TestNavigationTranslationsPageRenders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("导航译文页渲染失败: %v", err)
 	}
+	// 保存契约从「三个并行数组按下标对齐」换成「行容器 + 具名字段」：断言的目的是
+	// 「模板真的渲染出了可提交的形状」，所以钉住行容器与三个字段名，以及声明式写契约。
 	for _, want := range []string{
-		"保存译文", "rowContext", "rowHash", "rowTarget",
+		"保存译文", "class=\"field nav-tr-row\"",
+		"name=\"context\"", "name=\"hash\"", "name=\"target\"",
+		"data-write-api=\"/api/navigation/update\"", "data-write-mode=\"create\"",
+		"data-write-rows=\".nav-tr-row;context,hash,target\"",
+		"name=\"action\" value=\"translations\"",
+		"/admin/navigations/translations?lang=en-US&amp;project=p1",
 		"商品", "/shop", "该位置还没有菜单项",
 	} {
 		if !strings.Contains(out, want) {

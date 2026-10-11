@@ -23,11 +23,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contentenums "go_wp/internal/module/content/enums"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
+	bulkids "go_wp/pkg/bulkids"
 )
 
 // articleBulkDeleteStub 只实现批量删除用到的 Delete（其余方法嵌入 nil 接口，测试不会走到）。
@@ -107,7 +108,7 @@ func TestArticlesBulkDeleteNoSelectionRendersJumpPage(t *testing.T) {
 func TestArticlesBulkDeleteLimitRendersControlledText(t *testing.T) {
 	e := articleBulkTestEngine(&articleBulkDeleteStub{})
 	form := url.Values{}
-	for i := 0; i < shell.MaxBulkIDs+1; i++ {
+	for i := 0; i < bulkids.MaxIDs+1; i++ {
 		form.Add("ids", fmt.Sprintf("id-%03d", i))
 	}
 	rec := articleBulkPost(e, form)
@@ -148,8 +149,8 @@ func TestArticlesPageIgnoresForgedResultQuery(t *testing.T) {
 
 // TestArticleDeleteRendersJumpPageWithBusinessText 单条删除的失败也走提示页，业务文案原样可见。
 //
-// 与批量删除共用同一套出口（articleListJump），但白名单命中的是单条删除的归口路径
-// （articleFacingError）—— 覆盖 public/test/content 里那条 302→提示页的断言。
+// 与批量删除共用同一套出口（articleListJump），但命中的是单条删除那条业务错误 ——
+// 覆盖 public/test/content 里那条 302→提示页的断言。
 func TestArticleDeleteRendersJumpPageWithBusinessText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
@@ -188,7 +189,7 @@ func TestArticleBulkResultTemplatesAreDistinct(t *testing.T) {
 	seen := make(map[string]int, len(articleBulkResultTemplates))
 	for i, tpl := range articleBulkResultTemplates {
 		// 比较**当前语言**的模板：词条写重了同样要红（中文相同、英文不同也算重）。
-		key := strings.TrimSpace(articleBulkTextOf(c, tpl))
+		key := strings.TrimSpace(adminui.MsgText(c, tpl))
 		if prev, ok := seen[key]; ok {
 			t.Errorf("第 %d 与第 %d 条模板完全相同：%q", prev, i, key)
 		}
@@ -196,8 +197,8 @@ func TestArticleBulkResultTemplatesAreDistinct(t *testing.T) {
 	}
 }
 
-// articleBulkCtx 纯函数用例用的上下文：批量结论文案的模板要按当前语言取
-// （articleBulkTextOf），取词必须带 c。本包单跑时 i18n 未初始化，取词回落到中文原文。
+// articleBulkCtx 纯函数用例用的上下文：批量结论文案的**事实**要按当前语言取词
+// （adminui.MsgText），取词必须带 c。本包单跑时 i18n 未初始化，取词回落到中文原文。
 func articleBulkCtx(t *testing.T) *gin.Context {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

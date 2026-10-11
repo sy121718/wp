@@ -29,7 +29,7 @@ type ScheduleSetReq struct {
 	// RedirectPath 仅下线用：旧路径 301 到这里（空 = 直接下线，访问面 404）。
 	RedirectPath string `json:"redirectPath"`
 	// CreateBy 排定发起人（= sys_admin.id，bigint，与全库 create_by 同型），
-	// 由 **handler** 用 shell.CurrentUserID 填（0 = 未登录 / 系统排定，落库为 NULL）。
+	// 由 **handler** 用 builtin.CurrentUserID 填（0 = 未登录 / 系统排定，落库为 NULL）。
 	//
 	// `json:"-"` 是硬要求：它不从请求体读。让客户端自报发起人等于把审计字段交给请求方
 	// 决定，而 page_schedules.create_by 的用途正是「事后回答谁排的」。

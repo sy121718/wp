@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/middleware/adminctx"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
 	pagedto "go_wp/internal/module/page/dto"
@@ -19,7 +20,6 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/permission"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 
 	"github.com/gin-gonic/gin"
 )
@@ -30,8 +30,8 @@ func renderNavigationsPage(t *testing.T, page gin.HandlerFunc, projectID string,
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/admin/navigations", func(c *gin.Context) {
-		c.Set(shell.PermSetKey, perms)
-		c.Set(shell.ButtonsKey, buttonsOf(perms))
+		c.Set(adminctx.PermSetKey, perms)
+		c.Set(adminctx.ButtonsKey, buttonsOf(perms))
 		page(c)
 	})
 
@@ -53,20 +53,36 @@ func TestNavigationsPageRenders(t *testing.T) {
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	handle := navigationhttp.NewNavigationPageHandle(navSvc, projects)
 	body := renderNavigationsPage(t, handle.NavigationsPage, projectID, map[string]bool{string(permission.NavigationUpdate): true})
-	for _, want := range []string{"导航菜单", "首页", "新品", "/admin/navigations/create", "/admin/navigations/move"} {
+	for _, want := range []string{"导航菜单", "首页", "新品", "/api/navigation/create"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("页面缺少 %q", want)
 		}
 	}
-	// 写动作的表单 action 带上本次筛选：回跳地址由 shell.BackPath 从它读回（结论走提示页响应体）。
+	// 上移 / 下移也迁到真实 JSON 端点（action=move）：页面只剩声明，旧页面 POST 退役。
+	// 放行标记挂在外层 span（基座放行 [data-requires-js] 时会摘 disabled，边界语义要留在按钮上）。
 	for _, want := range []string{
-		"/admin/navigations/create?project=" + projectID + "&amp;kind=header",
-		"/admin/navigations/bulk-delete?project=" + projectID + "&amp;kind=header",
-		"/admin/navigations/move?project=" + projectID + "&amp;kind=header",
-		"/admin/navigations/delete?project=" + projectID + "&amp;kind=header",
+		`data-write-api="/api/navigation/update"`,
+		`data-write-mode="create"`,
+		`<input type="hidden" name="action" value="move">`,
+		`name="dir" value="up"`,
+		`name="dir" value="down"`,
+		`<span data-requires-js hidden><button type="submit" form="nav-up-`,
+		`<span data-requires-js hidden><button type="submit" form="nav-down-`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Errorf("写表单 action 未带筛选上下文：%q", want)
+			t.Errorf("排序表单缺少 JSON 写声明 %q", want)
+		}
+	}
+	if strings.Contains(body, "/admin/navigations/move") {
+		t.Error("页面 POST /admin/navigations/move 应已退役")
+	}
+	// 新建与删除已迁到真实 JSON 端点（页面 POST 退役）：页面上只剩端点声明，请求由基座发出。
+	for _, want := range []string{
+		`data-write-api="/api/navigation/create"`,
+		`data-write-api="/api/navigation/delete"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("页面缺少 JSON 写端点声明 %q", want)
 		}
 	}
 }
@@ -87,13 +103,28 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	handle := navigationhttp.NewNavigationPageHandle(navSvc, projects)
 	body := renderNavigationsPage(t, handle.NavigationsPage, projectID, map[string]bool{string(permission.NavigationUpdate): true})
-	for _, want := range []string{"从已有内容添加", "/admin/navigations/add-source", "/about", "页面（1）"} {
+	for _, want := range []string{"从已有内容添加", "/about", "页面（1）"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("页面缺少 %q", want)
 		}
 	}
-	if want := "/admin/navigations/add-source?project=" + projectID + "&amp;kind=header"; !strings.Contains(body, want) {
-		t.Errorf("来源抽屉 action 未带筛选上下文：%q", want)
+	// 来源批量加入已迁到真实 JSON 端点：抽屉表单只声明事实（端点 / 批量档 / outcome / 具名字段 /
+	// 分支判别键 / 结果区），请求由基座发出 —— 页面 POST 与它的 action=query 回跳链一起退役。
+	for _, want := range []string{
+		`data-write-api="/api/navigation/create"`,
+		`data-write-mode="bulk"`,
+		`data-write-outcome="add"`,
+		`data-write-extra="action,projectId,kind,sourceType"`,
+		`<input type="hidden" name="action" value="addSource">`,
+		`name="ids"`,
+		`data-write-status`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("来源抽屉缺少 JSON 写声明 %q", want)
+		}
+	}
+	if strings.Contains(body, "/admin/navigations/add-source") {
+		t.Error("页面 POST /admin/navigations/add-source 应已退役")
 	}
 
 	withoutUpdate := renderNavigationsPage(t, handle.NavigationsPage, projectID, map[string]bool{})
@@ -101,8 +132,8 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 		t.Error("无更新权限时页面主体未渲染")
 	}
 	for _, forbidden := range []string{
-		`data-drawer-open="#tpl-nav-create"`, `id="tpl-nav-create"`, "/admin/navigations/create",
-		`data-drawer-open="#tpl-nav-add-source"`, `id="tpl-nav-add-source"`, "/admin/navigations/add-source",
+		`data-drawer-open="#tpl-nav-create"`, `id="tpl-nav-create"`, `data-write-api="/api/navigation/create"`,
+		`data-drawer-open="#tpl-nav-add-source"`, `id="tpl-nav-add-source"`, `data-write-outcome="add"`,
 	} {
 		if strings.Contains(withoutUpdate, forbidden) {
 			t.Errorf("无更新权限时页面仍出现操作 %q", forbidden)

@@ -23,6 +23,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/builder"
 	"go_wp/internal/module/content/contract"
 	"go_wp/internal/module/content/dto"
@@ -33,7 +34,6 @@ import (
 	"go_wp/internal/module/product/contract"
 	"go_wp/internal/module/product/dto"
 	"go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
 )
 
 const contentTemplatesListPath = "/admin/content-templates"
@@ -74,9 +74,15 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		// 工程列表装载失败：**降级渲染**，不拿走整个页面（与主题管理页、admin 六页同一判据）。
+		// 工程列表装载失败：**这一页的主数据失败了** —— 工程上下文是页面的前提（选择器 + 写动作归属），
+		// 而且这一支在给出 `Impact` / `templates.List` 之前就 return：**列表主体根本没读**。
+		// 出口因此是「同页完整 HTML + 500 + no-store」（docs/rules/template-boundary.md §整页 GET 的失败出口），
+		// 而不是 200 的降级渲染：200 在监控里与正常页一模一样，失败会一直无声地发生；
+		// 失败页也不该被缓存，否则「重试」只是把同一份失败从缓存里再拿回来。
+		//（早期把这一支写成「可选辅助降级 200」的示例，已在 2026-10 按上面的短路证据纠正 ——
+		// 没有可靠工程归属的列表查询不再继续。）
 		//
-		// 原先这里是 `c.String(500, shell.MsgInternalError)`：浏览器里没有页面，只有一块纯文本，
+		// 此前这里是 `c.String(500, adminui.MsgInternalError)`：浏览器里没有页面，只有一块纯文本，
 		// 而且那块文本是**未翻译的裸 key**（页面上直接显示 `MsgInternalError` 这串英文）——
 		// 侧栏、页头、筛选栏、列表全部消失，用户既不能改筛选也不能去别的菜单。
 		//
@@ -100,7 +106,8 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 			"ImpactAvailable": false,
 			"ImpactNote":      contentTemplateImpactLoadFailedText(c),
 		}
-		c.HTML(http.StatusOK, "admin/contenttemplate/content_templates.html", shell.Prepare(c, data))
+		c.Header("Cache-Control", "no-store")
+		c.HTML(http.StatusInternalServerError, "admin/contenttemplate/content_templates.html", adminui.Prepare(c, data))
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -118,7 +125,7 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	}
 	if h.templates == nil {
 		data["Ready"] = false
-		c.HTML(http.StatusOK, "admin/contenttemplate/content_templates.html", shell.Prepare(c, data))
+		c.HTML(http.StatusOK, "admin/contenttemplate/content_templates.html", adminui.Prepare(c, data))
 		return
 	}
 	// 引用反查先于列表：影响面（哪些模板被页面 / 实例引用）是这一页的删前决策依据。
@@ -130,13 +137,36 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	}
 	list, err := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: entityType, ProjectID: selected})
 	if err != nil {
-		shell.PageError(c, "content_template", err)
+		// 模板清单是这一页的**主数据**：读不到就不该有这一页 —— 同页完整 HTML 500 + no-store
+		//（docs/rules/template-boundary.md §「整页 GET 的失败出口：失败也必须是『这一页』」，
+		// 样板 navigation_page.go:290-317）。
+		//
+		// 与上面 `projects.List` 失败那条的分界不在状态码（两条现在都是 500 + no-store），
+		// 而在**页面赖以成立的主数据是否已经读完**：工程列表失败时 `Impact` / `templates.List`
+		// 都还没查（`:75-111` 直接 return），列表主体根本没读；这里失败时工程上下文与筛选骨架
+		// 还在，但列表主体同样没有了。两条都是主数据失败，200 会让失败与「真的没有模板」在
+		// 监控与空态上长得一样；`LoadFailed` 只区分「没读出来」与「读到了、只是空的」，不携带档位。
+		//
+		// 键与成功路径同一份：Err 喂模板 :29 的提示条，LoadFailed 喂模板 :118 的失败空态
+		//（「列表没读出来」≠「还没有模板」）。原文只进日志（contentTemplateInternalText）。
+		data["Err"] = contentTemplateInternalText(c, err)
+		data["LoadFailed"] = true
+		data["Ready"] = true
+		data["ImpactAvailable"] = impact.Available
+		data["ImpactNote"] = contentTemplateImpactNote(c, impact, impactErr)
+		data["Templates"] = []gin.H{}
+		data["TemplateCount"] = 0
+		c.Header("Cache-Control", "no-store")
+		c.HTML(http.StatusInternalServerError, "admin/contenttemplate/content_templates.html", adminui.Prepare(c, data))
 		return
 	}
-	// 展示标签（实体类型 / 角色 / 槽位）在 handler 取词：service 拿不到请求语言，
+	// 展示标签（实体类型 / 角色 / 槽位）在这里取成**当前语言文本**：service 拿不到请求语言，
 	// 模板直接渲染的文本也不经过 pkg/response 的 translate（见 enums 的 contenttemplate_labels.go）。
-	tr := shell.TranslateFor(c)
-	refsByTemplate := contentTemplateRefsByTemplate(tr, impact)
+	//
+	// 这几个槽位（模板的 {{t.TypeLabel}} / {{t.RoleLabel}} / {{t.Slots}}）**还没取词化**：
+	// 优先形态是把 LabelPair 交给模板、由它用注入的 tr 取词；本轮先按批次约定把它
+	// 取成文本再传（取词走 adminui.MsgText，不再经 shell）。已登记在批次报告里。
+	refsByTemplate := contentTemplateRefsByTemplate(c, impact)
 	rows := make([]gin.H, 0, len(list))
 	for _, t := range list {
 		// 结构模板（页眉 / 页脚）不是内容实体：工作台以**无样例实体**模式打开它 ——
@@ -165,8 +195,8 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 			// 结构模板（页眉 / 页脚）与内容实体模板在这张表里是两类东西：前者没有实体来源、
 			// 也不接受字段绑定，两者的可编辑性与删除后果都不同，页面上必须一眼分得开。
 			"IsStructure": isStructure,
-			"TypeLabel":   contentTemplateTypeLabel(tr, t.EntityType),
-			"RoleLabel":   contentTemplateRoleLabel(tr, t.TemplateRole),
+			"TypeLabel":   contentTemplateTypeLabel(c, t.EntityType),
+			"RoleLabel":   contentTemplateRoleLabel(c, t.TemplateRole),
 			"IsDefault":   t.IsDefault,
 			// SampleErr 是**模板数据**（形态③）：依赖错误只能出归口文案，原文进日志。
 			"EditURL": editURL, "SampleErr": sampleNote,
@@ -183,81 +213,7 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	// 未装配与「没有引用」必须长得不一样，否则运营会拿一个空白引用列表当证据去删模板。
 	data["ImpactAvailable"] = impact.Available
 	data["ImpactNote"] = contentTemplateImpactNote(c, impact, impactErr)
-	c.HTML(http.StatusOK, "admin/contenttemplate/content_templates.html", shell.Prepare(c, data))
-}
-
-// ContentTemplatesActivate 切换生效模板（POST /admin/content-templates/activate）。
-//
-// 与 JSON 接口 POST /api/contenttemplate/activate 是同一个动作、同一条权限点
-// （contenttemplate:activate）：同一（工程, 类型）下**多套存着、单套生效**，
-// 切换后旧的那套不再生效。页面上的「设为生效」按钮走这里，不重复实现业务规则 ——
-// service 内部负责事务（旧的置 false、目标置 true）与依赖扇出。
-//
-// 回执：成功 / 失败都由 contentTemplateJump 渲染整页提示（文案走响应体）；
-// 回跳地址由 shell.BackPath 从表单 action 的 query 读回，保留工程与实体类型筛选
-// （否则用户切完一次就丢了当前视图）。
-func (h *contentTemplatePageHandle) ContentTemplatesActivate(c *gin.Context) {
-	if h.templates == nil {
-		contentTemplateJump(c, false, contentTemplateJumpText(c, contentTemplatesNotReadyText))
-		return
-	}
-	id := strings.TrimSpace(c.PostForm("id"))
-	if id == "" {
-		contentTemplateJump(c, false, contentTemplateJumpText(c, contentTemplateMissingIDText))
-		return
-	}
-	if _, err := h.templates.Activate(c.Request.Context(), &contenttemplatedto.ActivateReq{ID: id}); err != nil {
-		// 错误原文只进日志：文案经本页白名单归口（content_template_err.go）。
-		contentTemplateJump(c, false, contentTemplateErrText(c, err))
-		return
-	}
-	contentTemplateJump(c, true, contentTemplateJumpText(c, contentTemplateActivateDoneText))
-}
-
-// ContentTemplatesBulkDelete 批量删除内容模板（POST /admin/content-templates/bulk-delete）。
-//
-// 逐条走**同一条单条删除路径**（h.templates.Delete）：被自动发布实例引用的模板由数据库
-// 外键拒绝，其余照常删除 —— 单条失败不中断整批（整批回滚会让用户以为「一个都没删」然后反复重试）。
-// 结果按「已删除 N 个 / 跳过 M 个」渲染成提示页，回跳地址保留工程与实体类型筛选。
-func (h *contentTemplatePageHandle) ContentTemplatesBulkDelete(c *gin.Context) {
-	if h.templates == nil {
-		contentTemplateJump(c, false, contentTemplateJumpText(c, contentTemplatesNotReadyText))
-		return
-	}
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		// 受控提示（一次最多操作 N 项）由 shell 的受控出口生成，保持可见。
-		contentTemplateJump(c, false, shell.BulkIDsFacingText(c, berr))
-		return
-	}
-	deleted, skipped := 0, 0
-	for _, id := range ids {
-		if err := h.templates.Delete(c.Request.Context(), &contenttemplatedto.DeleteReq{ID: id}); err != nil {
-			skipped++
-			continue
-		}
-		deleted++
-	}
-	// 有跳过就是失败提示（更显眼，用户下次会去看剩下那些）；全成功才是成功提示。
-	contentTemplateJump(c, skipped == 0, contentTemplatesBulkDeleteResult(deleted, skipped))
-}
-
-// contentTemplatesBulkDeleteResult 批量删除的结果文案：成功几个、跳过几个都要说清楚
-// （只报「操作完成」等于把部分成功静默成全部成功，用户不会再去看剩下那几个）。
-func contentTemplatesBulkDeleteResult(deleted, skipped int) string {
-	// 模板取自 content_template_err.go 的 contentTemplatesBulkResultTemplates ——
-	// 那里同时是读侧白名单的来源：写侧改措辞时读侧跟着变，不会静默失配成归口文案。
-	switch {
-	case deleted == 0 && skipped == 0:
-		return contentTemplatesBulkResultTemplates[0]
-	case skipped == 0:
-		return fmt.Sprintf(contentTemplatesBulkResultTemplates[1], deleted)
-	case deleted == 0:
-		return fmt.Sprintf(contentTemplatesBulkResultTemplates[2], skipped)
-	default:
-		return fmt.Sprintf(contentTemplatesBulkResultTemplates[3], deleted, skipped)
-	}
+	c.HTML(http.StatusOK, "admin/contenttemplate/content_templates.html", adminui.Prepare(c, data))
 }
 
 // ContentTemplateEditPage GET /admin/content-templates/edit：302 到工作台（保留 query）。
@@ -270,7 +226,7 @@ func contentTemplatesBulkDeleteResult(deleted, skipped int) string {
 func (h *contentTemplatePageHandle) ContentTemplateEditPage(c *gin.Context) {
 	templateID := strings.TrimSpace(c.Query("id"))
 	if templateID == "" {
-		contentTemplateJump(c, false, contentTemplateJumpText(c, contentTemplateMissingIDText))
+		contentTemplateJump(c, false, contentTemplateMissingIDMsg)
 		return
 	}
 	entityID := strings.TrimSpace(c.Query("entityId"))
@@ -282,7 +238,7 @@ func (h *contentTemplatePageHandle) ContentTemplateEditPage(c *gin.Context) {
 	if h.templates != nil {
 		tpl, err := h.templates.Get(c.Request.Context(), &contenttemplatedto.GetReq{ID: templateID})
 		if err != nil {
-			contentTemplateJump(c, false, contentTemplateJumpText(c, contentTemplateNotFoundText))
+			contentTemplateJump(c, false, contentTemplateNotFoundMsg)
 			return
 		}
 		if contenttemplatemodel.IsStructureTemplateType(tpl.EntityType) {
@@ -295,14 +251,15 @@ func (h *contentTemplatePageHandle) ContentTemplateEditPage(c *gin.Context) {
 		if entityID == "" {
 			sampleID, hint, serr := h.sampleEntityID(c.Request.Context(), projectID, entityType)
 			if serr != nil || strings.TrimSpace(hint) != "" {
-				contentTemplateJump(c, false, contentTemplateJumpText(c, sampleErrText(c, hint, serr)))
+				// 依赖错误（可能是 PG 原文）只能出归口文案、原文进日志；可行动提示原样可见。
+				contentTemplateJump(c, false, contentTemplateMsg{Fallback: sampleErrText(c, hint, serr)})
 				return
 			}
 			entityID = sampleID
 		}
 	}
 	if entityID == "" || entityType == "" {
-		contentTemplateJump(c, false, contentTemplateJumpText(c, contentTemplateSampleMissingText))
+		contentTemplateJump(c, false, contentTemplateSampleMissingMsg)
 		return
 	}
 	c.Redirect(http.StatusFound, workbenchTemplateURL(templateID, entityType, entityID, projectID))
@@ -366,21 +323,18 @@ func (h *contentTemplatePageHandle) sampleEntityID(ctx context.Context, projectI
 	}
 }
 
-// contentTemplateTranslate 展示层取词函数（与 shell.TranslateFor(c) 同形）。
-//
-// 展示标签一律经它取词，**中文原文留在 enums 里当兜底**：模板直接渲染的文本
-// 不经过 pkg/response 的 translate，在 Go 侧写死中文等于英文界面恒中文。
-type contentTemplateTranslate = func(key, fallback string) string
-
 // contentTemplateLabel 取一条标签的当前语言文本。
 //
-// key 为空（认不出的取值 / 纯定位说明）直接给兜底：`tr("", …)` 查不到行，
+// 标签的形状就是 LabelPair{Key, Fallback}，与共享形状 adminui.Msg 逐字段同形 ——
+// 所以取词走 adminui.MsgText（事实 → 当前语言文本），模块不再持有取词闭包。
+//
+// key 为空（认不出的取值 / 纯定位说明）直接给兜底：空 key 查不到行，
 // 白白多一次查表，语义也不清。
-func contentTemplateLabel(tr contentTemplateTranslate, pair contenttemplateenums.LabelPair) string {
-	if tr == nil || strings.TrimSpace(pair.Key) == "" {
+func contentTemplateLabel(c *gin.Context, pair contenttemplateenums.LabelPair) string {
+	if strings.TrimSpace(pair.Key) == "" {
 		return pair.Fallback
 	}
-	return tr(pair.Key, pair.Fallback)
+	return adminui.MsgText(c, adminui.Msg{Key: pair.Key, Fallback: pair.Fallback})
 }
 
 // contentTemplatePageRef 页面引用的一行。
@@ -417,7 +371,7 @@ type contentTemplateImpactRow struct {
 //
 // 一次扫描服务整页：列表页每套模板都要显示「引用 N 处」，逐个模板各扫一遍页面与实例
 // 文档就是 N 次全表扫描（页面一多这一页就点不动）。
-func contentTemplateRefsByTemplate(tr contentTemplateTranslate, impact *contenttemplatedto.ImpactResp) map[string]*contentTemplateImpactRow {
+func contentTemplateRefsByTemplate(c *gin.Context, impact *contenttemplatedto.ImpactResp) map[string]*contentTemplateImpactRow {
 	out := map[string]*contentTemplateImpactRow{}
 	if impact == nil {
 		return out
@@ -428,7 +382,7 @@ func contentTemplateRefsByTemplate(tr contentTemplateTranslate, impact *contentt
 			row = &contentTemplateImpactRow{Pages: []contentTemplatePageRef{}, Instances: []contentTemplateInstanceRef{}}
 			out[ref.TemplateID] = row
 		}
-		slots := contentTemplateSlotsLabel(tr, ref.Slots)
+		slots := contentTemplateSlotsLabel(c, ref.Slots)
 		switch ref.Kind {
 		case contenttemplatedto.ReferenceKindPage:
 			label := strings.TrimSpace(ref.PageTitle)
@@ -464,7 +418,7 @@ func contentTemplateRefsByTemplate(tr contentTemplateTranslate, impact *contentt
 //
 // 判据复用 builder 的槽位常量而不是就地写 "header"/"footer"：构建期就是按这两个
 // 常量合并绑定的，写死字符串的话槽位改名只会在这一页静默失效（引用列少一半）。
-func contentTemplateSlotsLabel(tr contentTemplateTranslate, slots []string) string {
+func contentTemplateSlotsLabel(c *gin.Context, slots []string) string {
 	if len(slots) == 0 {
 		return ""
 	}
@@ -472,9 +426,9 @@ func contentTemplateSlotsLabel(tr contentTemplateTranslate, slots []string) stri
 	for _, slot := range slots {
 		switch slot {
 		case builder.SlotHeader:
-			labels = append(labels, contentTemplateLabel(tr, contenttemplateenums.LabelSlotHeader))
+			labels = append(labels, contentTemplateLabel(c, contenttemplateenums.LabelSlotHeader))
 		case builder.SlotFooter:
-			labels = append(labels, contentTemplateLabel(tr, contenttemplateenums.LabelSlotFooter))
+			labels = append(labels, contentTemplateLabel(c, contenttemplateenums.LabelSlotFooter))
 		default:
 			// 认不出的槽位原样显示（不是空白）：兜底行为与改前一致，
 			// 让手改数据带来的怪值照样说得清。
@@ -488,13 +442,13 @@ func contentTemplateSlotsLabel(tr contentTemplateTranslate, slots []string) stri
 // contentTemplateTypeLabel 实体类型 → 当前语言的展示名（结构模板与内容实体模板要一眼分得开）。
 //
 // 取值映射的真源在 contenttemplateenums.EntityTypeLabel，本函数只负责取词。
-func contentTemplateTypeLabel(tr contentTemplateTranslate, entityType string) string {
-	return contentTemplateLabel(tr, contenttemplateenums.EntityTypeLabel(entityType))
+func contentTemplateTypeLabel(c *gin.Context, entityType string) string {
+	return contentTemplateLabel(c, contenttemplateenums.EntityTypeLabel(entityType))
 }
 
 // contentTemplateRoleLabel 模板角色 → 当前语言的展示名（真源同上）。
-func contentTemplateRoleLabel(tr contentTemplateTranslate, role string) string {
-	return contentTemplateLabel(tr, contenttemplateenums.TemplateRoleLabel(role))
+func contentTemplateRoleLabel(c *gin.Context, role string) string {
+	return contentTemplateLabel(c, contenttemplateenums.TemplateRoleLabel(role))
 }
 
 // contentTemplateImpactNote 影响面状态提示（空串 = 无需提示）。

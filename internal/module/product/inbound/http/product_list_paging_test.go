@@ -132,7 +132,7 @@ func TestProductListBaseURL(t *testing.T) {
 			if got != c.want {
 				t.Fatalf("基地址 = %q，期望 %q", got, c.want)
 			}
-			// page / limit 由 shell.BuildPagination 自己追加：基地址里出现它们就会有两个同名参数。
+			// page / limit 由 pkg/pagination.BuildPagination 自己追加：基地址里出现它们就会有两个同名参数。
 			if strings.Contains(got, "page=") || strings.Contains(got, "limit=") {
 				t.Fatalf("基地址不应含 page/limit：%q", got)
 			}

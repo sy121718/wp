@@ -3,16 +3,16 @@ package plugindto
 
 // ToggleReq 启停插件。
 type ToggleReq struct {
-	ID      string `form:"id" binding:"required"`
-	Enabled bool   `form:"enabled"`
+	ID      string `form:"id" json:"id" binding:"required"`
+	Enabled bool   `form:"enabled" json:"enabled"`
 }
 
 // UninstallReq 卸载插件。
 type UninstallReq struct {
-	ID string `form:"id" binding:"required"`
+	ID string `form:"id" json:"id" binding:"required"`
 }
 
 // DetailReq 插件详情。
 type DetailReq struct {
-	ID string `form:"id" binding:"required"`
+	ID string `form:"id" json:"id" binding:"required"`
 }

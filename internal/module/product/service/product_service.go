@@ -151,6 +151,15 @@ type Service struct {
 	// productcontract.PurchaseChecker 的注释。刻意是**收窄的是非题端口**而不是
 	// OrderService：商品只需要一个答案，拿不到订单的读写能力。
 	purchases productcontract.PurchaseChecker
+	// pageWarehouses / pageTemplates 是**页面读模型**的两条跨模块只读端口
+	//（装配期注入，可空；见 product_page.go 的 ProductNewPage）。
+	//
+	// 与 inv / invSvc 的区别是「给谁用」：那两条服务的是商品的**业务**用例（库存事实、
+	// 创建时的库存行），这两条只服务「后台某一屏要显示哪些选项」，端口上因此只有读方法
+	//（contract/warehouse_options.go / entity_templates.go）。未注入 = 那一块降级，
+	// 不影响商品的任何业务行为。
+	pageWarehouses productcontract.WarehouseOptionsPort
+	pageTemplates  productcontract.EntityTemplatePort
 }
 
 // SetInventory 注入库存真源只读契约；漏接会静默跳过投影和删除守卫，装配期必须自检。

@@ -13,6 +13,13 @@ package pagination
 //
 // 链接为普通 GET 参数（?page=2&limit=20），符合项目「只用 GET/POST + Query 参数」约定；
 // 点页码即整页刷新，无需前端状态，也不与抽屉/筛选脚本耦合。
+//
+// 本文件现在有**两层**（迁移期并存，见 task-94 设计）：
+//   - 上层的 BuildPagination/PaginationData 是**展示产物**（信息行句子、按钮文字、href、
+//     选中态、省略号都在 Go 侧预制成成品），正在被逐批替换；
+//   - 末段「事实层」的 Page/Facts 是终局替代：只回答「值是多少」，显示成什么样由模板决定
+//     （docs/rules/template-boundary.md：模板回答显示成什么样，不回答值是多少）。
+//     旧 API 的删除（含本段上方那些类型）属于独立的最后一步，不与新增混做。
 import (
 	"fmt"
 	"strconv"
@@ -152,3 +159,87 @@ func BuildPagination(total int64, page, limit int, baseURL string,
 	}
 	return pd
 }
+
+// ============================ 事实层 ============================
+//
+// 下面这些是分页的「值是多少」，与上面那层的分工是**事实 vs 展示**：
+//
+//   - 事实：总数、当前页、每页条数、共几页、本页覆盖哪一段、页码参数叫什么、
+//     链接里要不要带 limit、链接基址（路径 + 已知筛选）。
+//   - 不在这里：信息行句子（「共 %s 条，第 %s-%s 条」）、上/下一页文字、href 串接、
+//     选中/禁用态、省略号画在哪 —— 这些由模板用通用函数做（internal/templates/funcs.go
+//     的 sprintf/queryURL/pageNumbers）。
+//
+// 三条必须知道的约定（都是踩过才写下来的，别按直觉改）：
+//
+//  1. **值语义**。Facts 返回 Page **值**，零值表示「没有分页」。这不是风格选择：
+//     探针实测（internal/templates/admin_pagination_probe_p0_test.go）指针/类型化 nil 一旦
+//     穿透模板守卫就是进程级 panic，而值类型的零值只会让 `{{if .HasPagination()}}` 为假。
+//  2. **默认参数与现行链接字节一致**：PageParam 默认 "page"、KeepLimit 默认 true，即
+//     `?page=N&limit=M` —— 迁移期间 31 个调用点的链接必须一字不变。唯一例外是 mail 的
+//     账号页（参数名 account_page 且不保留 limit），由调用点显式覆盖这两个字段。
+//  3. **本段零依赖**：不 import fmt/strconv/i18n，也不拼任何文案或 URL。一旦在这里拼句子，
+//     展示就又搬回 Go 了 —— pagination_facts_test.go 里有边界守卫断言盯住这一点。
+
+// Page 是分页的**事实**：在第几页、每页多少条、共几页、本页覆盖哪一段。
+//
+// PageParam/KeepLimit/Base 由调用点补齐（Facts 给出与现状一致的默认值）。
+type Page struct {
+	Total int64
+	Page  int
+	Limit int
+	Pages int
+	Start int // 本页第一条的序号（1 起）；没有数据时为 0
+	End   int // 本页最后一条的序号；没有数据时为 0
+
+	PageParam string // 页码参数名（默认 "page"）
+	KeepLimit bool   // 链接里是否带 limit（默认 true，与现行链接一致）
+	Base      string // 链接基址：页面路径 + 已知筛选条件（不含 page/limit）
+}
+
+// Facts 把「总数 / 当前页 / 每页条数」收敛成分页事实。
+//
+// 夹紧与取整口径与 BuildPagination 逐字一致（limit 下限 20、page 下限 1、页数向上取整、
+// page 超出页数时夹到末页），因为迁移期的验收判据就是「渲染字节相同」。
+func Facts(total int64, page, limit int) Page {
+	if limit < 1 {
+		limit = 20
+	}
+	if page < 1 {
+		page = 1
+	}
+	pages := 0
+	if total > 0 {
+		pages = int((total + int64(limit) - 1) / int64(limit))
+	}
+	if pages > 0 && page > pages {
+		page = pages
+	}
+	p := Page{
+		Total:     total,
+		Page:      page,
+		Limit:     limit,
+		Pages:     pages,
+		PageParam: "page",
+		KeepLimit: true,
+	}
+	if total > 0 {
+		p.Start = (page-1)*limit + 1
+		p.End = page * limit
+		if int64(p.End) > total {
+			p.End = int(total)
+		}
+	}
+	return p
+}
+
+// HasPagination 是否该显示分页条：多于一页才有意义（单页与空集都不渲染）。
+func (p Page) HasPagination() bool { return p.Pages > 1 }
+
+// HasPrev / HasNext 决定上/下一页是链接还是禁用态。
+func (p Page) HasPrev() bool { return p.Page > 1 }
+func (p Page) HasNext() bool { return p.Page < p.Pages }
+
+// PrevPage / NextPage 只在 HasPrev/HasNext 为真时使用（模板里就是这么写的）。
+func (p Page) PrevPage() int { return p.Page - 1 }
+func (p Page) NextPage() int { return p.Page + 1 }

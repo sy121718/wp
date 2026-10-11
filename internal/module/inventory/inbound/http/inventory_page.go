@@ -17,8 +17,12 @@ package inventoryhttp
 //
 // 错误回显（硬规则）：**禁止把 err.Error() 铺到页面上** —— 业务错误的 Error() 就是
 // enums 常量（也就是 i18n key），直接铺出去页面上会出现 ErrWarehouseCodeTaken 这种裸 key。
-// 统一走 inventoryErrText：按请求语言取词、以 key 作兜底；非业务错误只给通用提示
-// （与 internal/module/block/inbound/http/block_page_handle.go 的 blockErrText 同形）。
+// 统一走 inventoryErrMsg / inventoryErrText：判定与归口只有一条（adminui.PageErrorFact →
+// pkg/response.IsBusinessError，与 JSON 出口 response.ErrorAuto 同一份），模块侧只剩
+// 「key + 中文兜底」的兜底表（inventoryErrFallbacks）与明细解码。
+//
+// 写动作的结论由提示页渲染（见 inventory_jump.go）：交出去的是**事实**（key + 兜底 + 参数），
+// 取词在渲染期发生 —— 控制器不再自己拼整句。
 
 // 与库存管理页 / 货源管理页同一模式：GET 渲染完整页，写动作的结论由 shell.RenderJump
 // 渲染成整页提示（原生表单 + csrf_token 隐藏域；文案经 inventoryErrText 取词后再交给提示页）。
@@ -68,6 +72,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/module/inventory/contract"
 	"go_wp/internal/module/inventory/dto"
@@ -76,8 +81,11 @@ import (
 	"go_wp/internal/module/product/dto"
 	"go_wp/internal/module/project/contract"
 	"go_wp/internal/shell"
+	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/reqparams"
 )
 
 // 页面路径常量（回跳地址的唯一定义处，避免各 handler 手写字符串抄错）。
@@ -122,7 +130,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		shell.PageError(c, "inventory", err)
+		inventoryPageError(c, inventoryMetaHome, err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -132,12 +140,12 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 
 	warehouses, err := h.listWarehouses(c, selected)
 	if err != nil {
-		shell.PageError(c, "inventory", err)
+		inventoryPageError(c, inventoryMetaHome, err)
 		return
 	}
 	options, err := h.variantOptions(ctx, selected)
 	if err != nil {
-		shell.PageError(c, "inventory", err)
+		inventoryPageError(c, inventoryMetaHome, err)
 		return
 	}
 
@@ -159,7 +167,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 			ProjectID: selected, SKUCode: sku,
 		})
 		if serr != nil {
-			shell.PageError(c, "inventory", serr)
+			inventoryPageError(c, inventoryMetaHome, serr)
 			return
 		}
 		tr := shell.TranslateFor(c)
@@ -209,7 +217,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 
 	reasons, err := h.listReasons(c, selected)
 	if err != nil {
-		shell.PageError(c, "inventory", err)
+		inventoryPageError(c, inventoryMetaHome, err)
 		return
 	}
 
@@ -225,7 +233,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	movements, total, page, err := h.listMovements(c, selected, sku, filterWarehouse, filterDirection,
 		filterReason, filterTimeFrom, filterTimeTo, page, limit)
 	if err != nil {
-		shell.PageError(c, "inventory", err)
+		inventoryPageError(c, inventoryMetaHome, err)
 		return
 	}
 
@@ -259,9 +267,11 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	// 实际是筛选被清掉。
 	// total 来自契约的 CountMovements（与 ListMovements 同一份过滤条件），因此分页条给的是
 	// 真页码窗口与「共 N 条」，而不是「上一页 / 下一页 + 后面还有记录」这种探测式降级形态。
-	// 单页或空数据时 BuildPagination 返回 nil，TemplateKeys 给空 map，模板自然不渲染。
-	for k, v := range shell.BuildPagination(total, page, limit, shell.FilterBaseURL(inventoryPagePath,
-		map[string]string{
+	// 单页或空数据时 HasPagination 为假，模板自然不渲染。
+	//
+	// 分页条只交事实：信息行 / 页码窗口 / 链接参数顺序由 partial 现算。
+	if pg := pagination.Facts(total, page, limit); pg.HasPagination() {
+		pg.Base = reqparams.FilterBaseURL(inventoryPagePath, map[string]string{
 			"project":     selected,
 			"sku":         sku,
 			"variantId":   variantID,
@@ -270,10 +280,10 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 			"reasonCode":  filterReason,
 			"timeFrom":    filterTimeFrom,
 			"timeTo":      filterTimeTo,
-		}), shell.TranslateFor(c)).TemplateKeys() {
-		pageData[k] = v
+		})
+		pageData["Pagination"] = pg
 	}
-	c.HTML(http.StatusOK, "admin/inventory/inventory.html", shell.Prepare(c, pageData))
+	c.HTML(http.StatusOK, "admin/inventory/inventory.html", adminui.Prepare(c, pageData))
 }
 
 // InventoryWarehousesPage 仓库管理页（从库存主页拆出）。
@@ -286,7 +296,7 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		shell.PageError(c, "inventory", err)
+		inventoryPageError(c, inventoryMetaWarehouses, err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -295,11 +305,11 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 	}
 	warehouses, err := h.listWarehouses(c, selected)
 	if err != nil {
-		shell.PageError(c, "inventory", err)
+		inventoryPageError(c, inventoryMetaWarehouses, err)
 		return
 	}
 	tr := shell.TranslateFor(c)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_warehouses.html", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/inventory/inventory_warehouses.html", adminui.Prepare(c, gin.H{
 		"title":               tr(inventoryenums.InventoryWarehousesTitle, "仓库管理"),
 		"menu":                "inventory-warehouses",
 		"Projects":            projects,
@@ -323,7 +333,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		shell.PageError(c, "inventory", err)
+		inventoryPageError(c, inventoryMetaReasons, err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -332,11 +342,11 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 	}
 	reasons, err := h.listReasons(c, selected)
 	if err != nil {
-		shell.PageError(c, "inventory", err)
+		inventoryPageError(c, inventoryMetaReasons, err)
 		return
 	}
 	tr := shell.TranslateFor(c)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_reasons.html", shell.Prepare(c, gin.H{
+	c.HTML(http.StatusOK, "admin/inventory/inventory_reasons.html", adminui.Prepare(c, gin.H{
 		"title":            tr(inventoryenums.InventoryReasonsTitle, "变动原因字典"),
 		"menu":             "inventory-reasons",
 		"Projects":         projects,
@@ -368,7 +378,7 @@ func (h *inventoryPageHandle) InventoryWarehouseCreate(c *gin.Context) {
 		h.warehouseFormFail(c, false, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventoryWarehouseBack(c), inventoryWarehouseBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
 }
 
 // InventoryWarehouseUpdate 修改仓库（名称 / 短码 / 类型 / 排序 / 状态 / 第三方对接配置）。
@@ -393,7 +403,7 @@ func (h *inventoryPageHandle) InventoryWarehouseUpdate(c *gin.Context) {
 		h.warehouseFormFail(c, true, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventoryWarehouseBack(c), inventoryWarehouseBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
 }
 
 // InventoryWarehouseDefault 切换默认仓（同工程唯一；「未指定仓库」的兜底）。
@@ -401,20 +411,20 @@ func (h *inventoryPageHandle) InventoryWarehouseDefault(c *gin.Context) {
 	yes := true
 	req := &inventorydto.UpdateWarehouseReq{ID: c.PostForm("id"), IsDefault: &yes}
 	if _, err := h.inventory.UpdateWarehouse(c.Request.Context(), req); err != nil {
-		inventoryJump(c, false, inventoryErrText(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackText(c))
+		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventoryWarehouseBack(c), inventoryWarehouseBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
 }
 
 // InventoryWarehouseDelete 删除仓库（默认仓 / 有非零库存时服务端拒绝）。
 func (h *inventoryPageHandle) InventoryWarehouseDelete(c *gin.Context) {
 	if err := h.inventory.DeleteWarehouse(c.Request.Context(),
 		&inventorydto.DeleteWarehouseReq{ID: c.PostForm("id"), ProjectID: c.PostForm("projectId")}); err != nil {
-		inventoryJump(c, false, inventoryErrText(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackText(c))
+		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventoryWarehouseBack(c), inventoryWarehouseBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
 }
 
 // InventoryWarehousesBulkDelete 批量删除仓库。
@@ -425,13 +435,13 @@ func (h *inventoryPageHandle) InventoryWarehouseDelete(c *gin.Context) {
 func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	back := inventoryWarehouseBack(c)
-	backText := inventoryWarehouseBackText(c)
+	backMsg := inventoryWarehouseBackMsg
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		// 超限是 shell 的受控错误（值域只有 Count/Max）：走它的受控文案出口，
+		// 超限是受控错误（值域只有 Count/Max）：走受控结论出口（inventoryBulkIDsMsg），
 		// 而不是把 err.Error() 拼进提示页（提示页不是可信边界，文案必须已归口）。
-		inventoryJump(c, false, shell.BulkIDsFacingText(c, berr), back, backText)
+		inventoryJump(c, false, inventoryBulkIDsMsg(c, berr), back, backMsg)
 		return
 	}
 	deleted, skipped := 0, 0
@@ -443,11 +453,13 @@ func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
 		}
 		deleted++
 	}
+	// 计数是**事实的一部分**：调用点只给已 strconv 的数字，取词与 `%s` 填充在渲染期做
+	// （传 int 会被 TranslateArgs 当字符串填，产出 `%!s(int=2)` 这种看起来「像一句结论」的垃圾）。
 	switch {
 	case skipped > 0:
-		inventoryJump(c, false, fmt.Sprintf(inventoryBulkText(c, inventoryBulkWarehousePartial), deleted, skipped), back, backText)
+		inventoryJump(c, false, inventoryBulkWarehousePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)), back, backMsg)
 	case deleted > 0:
-		inventoryJump(c, true, fmt.Sprintf(inventoryBulkText(c, inventoryBulkWarehouseDone), deleted), back, backText)
+		inventoryJump(c, true, inventoryBulkWarehouseDone.WithArgs(strconv.Itoa(deleted)), back, backMsg)
 	default:
 		// 没有选中任何 id（批量条在无勾选时不会提交）：回列表，不渲染提示页 ——
 		// 与改造前一致，且提示页不能显示空串（RenderJump 会把空串落成归口文案）。
@@ -472,10 +484,10 @@ func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
 
 	respond := func(err error) {
 		if err != nil {
-			inventoryJump(c, false, inventoryErrText(c, err), inventoryStockBack(c), inventoryStockBackText(c))
+			inventoryJump(c, false, inventoryErrMsg(c, err), inventoryStockBack(c), inventoryStockBackMsg)
 			return
 		}
-		inventoryJump(c, true, inventoryDoneText(c), inventoryStockBack(c), inventoryStockBackText(c))
+		inventoryJump(c, true, inventoryDoneMsg, inventoryStockBack(c), inventoryStockBackMsg)
 	}
 
 	if direction != inventoryenums.DirectionAdjust && direction != inventoryenums.DirectionOut {
@@ -532,10 +544,10 @@ func (h *inventoryPageHandle) InventoryExternalSKUUpdate(c *gin.Context) {
 		ExternalSKU: c.PostForm("externalSku"),
 	}
 	if _, err := h.inventory.BindExternalSKU(c.Request.Context(), req); err != nil {
-		inventoryJump(c, false, inventoryErrText(c, err), inventoryStockBack(c), inventoryStockBackText(c))
+		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryStockBack(c), inventoryStockBackMsg)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventoryStockBack(c), inventoryStockBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventoryStockBack(c), inventoryStockBackMsg)
 }
 
 // InventoryStockTrackingUpdate 库存页行内编辑：切换某 (仓库, 变体) 行的跟踪开关并写入数量。
@@ -560,10 +572,10 @@ func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
 
 	respond := func(err error) {
 		if err != nil {
-			inventoryJump(c, false, inventoryErrText(c, err), inventoryStockBack(c), inventoryStockBackText(c))
+			inventoryJump(c, false, inventoryErrMsg(c, err), inventoryStockBack(c), inventoryStockBackMsg)
 			return
 		}
-		inventoryJump(c, true, inventoryDoneText(c), inventoryStockBack(c), inventoryStockBackText(c))
+		inventoryJump(c, true, inventoryDoneMsg, inventoryStockBack(c), inventoryStockBackMsg)
 	}
 
 	// 跟踪态必须显式给数量：无限态的数量框是 disabled 的（浏览器不提交该字段），
@@ -600,7 +612,7 @@ func (h *inventoryPageHandle) InventoryReasonCreate(c *gin.Context) {
 		h.reasonFormFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventoryReasonBack(c), inventoryReasonBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventoryReasonBack(c), inventoryReasonBackMsg)
 }
 
 // InventoryReasonUpdate 后台表单修改自定义变动原因（改名 / 停用 / 排序）。
@@ -624,26 +636,26 @@ func (h *inventoryPageHandle) InventoryReasonUpdate(c *gin.Context) {
 		h.reasonEditFormFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventoryReasonBack(c), inventoryReasonBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventoryReasonBack(c), inventoryReasonBackMsg)
 }
 
 // InventoryReasonsBulkStatus 按现有更新权限逐条切换原因状态，不触碰名称和排序。
 func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	back := inventoryReasonBack(c)
-	backText := inventoryReasonBackText(c)
+	backMsg := inventoryReasonBackMsg
 	status := strings.TrimSpace(c.PostForm("status"))
 	if status != inventoryenums.StatusActive && status != inventoryenums.StatusDisabled {
-		inventoryJump(c, false, inventoryErrText(c, errors.New(inventoryenums.ErrReasonStatusInvalid)), back, backText)
+		inventoryJump(c, false, inventoryErrMsg(c, errors.New(inventoryenums.ErrReasonStatusInvalid)), back, backMsg)
 		return
 	}
 	ids, err := shell.BulkIDs(c)
 	if err != nil {
-		inventoryJump(c, false, shell.BulkIDsFacingText(c, err), back, backText)
+		inventoryJump(c, false, inventoryBulkIDsMsg(c, err), back, backMsg)
 		return
 	}
 	if len(ids) == 0 {
-		inventoryJump(c, false, inventoryBulkText(c, inventoryBulkReasonNoneSelected), back, backText)
+		inventoryJump(c, false, inventoryBulkReasonNoneSelected, back, backMsg)
 		return
 	}
 	updated, skipped := 0, 0
@@ -656,13 +668,13 @@ func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
 		}
 		updated++
 	}
-	// 模板是 %s（strict 校验只认字符串占位符），所以数字先转成字符串再填 ——
-	// 传 int 会让 Sprintf 产出 `%!s(int=2)` 这种垃圾，而它看起来「像一句结论」。
+	// 计数是事实的一部分：调用点只给已 strconv 的数字，取词与 `%s` 填充在渲染期做
+	// （传 int 会被 TranslateArgs 当字符串填，产出 `%!s(int=2)` 这种看起来「像一句结论」的垃圾）。
 	switch {
 	case skipped > 0:
-		inventoryJump(c, false, fmt.Sprintf(inventoryBulkText(c, inventoryBulkReasonPartial), strconv.Itoa(updated), strconv.Itoa(skipped)), back, backText)
+		inventoryJump(c, false, inventoryBulkReasonPartial.WithArgs(strconv.Itoa(updated), strconv.Itoa(skipped)), back, backMsg)
 	case updated > 0:
-		inventoryJump(c, true, fmt.Sprintf(inventoryBulkText(c, inventoryBulkReasonDone), strconv.Itoa(updated)), back, backText)
+		inventoryJump(c, true, inventoryBulkReasonDone.WithArgs(strconv.Itoa(updated)), back, backMsg)
 	default:
 		redirectWhere(c, back)
 	}
@@ -816,7 +828,7 @@ func (h *inventoryPageHandle) listMovements(c *gin.Context, projectID, sku, ware
 // 三页原先都是「handler 里写死上限 + 模板里没有分页条」：流水 50 条、货源 200 条、
 // 采购单 100 条，第 N+1 条起**静默消失**（流水按时间倒序，第 51 条之后的老记录永远看不到）。
 //
-// 这里接的是项目既有的分页设施（`partials/pagination.html` + shell.BuildPagination），
+// 这里接的是项目既有的分页设施（`partials/pagination.html` + pkg/pagination 事实层 Facts），
 // 与其它列表页共用同一套模板与样式：链接是普通 GET 参数（?page=&limit=），点页码整页刷新，
 // 不引入任何前端状态、不与抽屉脚本耦合。
 //
@@ -848,7 +860,7 @@ func inventoryPageParams(c *gin.Context, defaultSize, maxSize int) (page, limit 
 // 必须在**取数之前**收敛：越界页码（手输 URL、过期书签、上一次筛选残留的 page）直接传给
 // 列表接口时，服务端会老老实实返回一个空页，而分页条按收敛后的页码渲染 ——
 // 「表格为空、分页条却显示第 2 页」这种自相矛盾的组合就是这样来的
-// （shell.BuildPagination 只收敛它自己显示的那一页，不会回头改取数用的页码）。
+// （pkg/pagination 只收敛分页条自己显示的那一页，不会回头改取数用的页码）。
 //
 // 总数因此必须在取数之前拿到 —— 这三个页面的契约都提供了 CountXxx，本批起不再靠实探。
 func clampInventoryPage(page, limit int, total int64) int {
@@ -1048,42 +1060,54 @@ func stockQuantityLabel(tr func(key, fallback string) string, track bool, quanti
 // 结论经 302 + `?err=` / `?ok=` / `?done=` 回列表页，回跳地址由 Go 拼。改成 shell.RenderJump
 // 渲染提示页之后，**结论不再进 URL**，那套「拼 URL + 读侧白名单」整批删除。
 
-// inventoryErrInternalFallback 非业务错误（基础设施故障）的兜底文案：中文原文，兼作取词兜底。
-const inventoryErrInternalFallback = "系统内部错误，请稍后重试"
-
 // inventoryErrScene 结构化日志的场景名（与模块其它 logger.Scene("inventory") 调用点一致）。
 const inventoryErrScene = "inventory"
 
-// inventoryErrText 业务错误 → 当前语言文案。
+// inventoryErrMsg 业务错误 → 一句结论的**事实**（key + 中文兜底 + 参数）。
 //
-// 业务错误的 Error() 就是 enums 常量，而 enums 常量即 i18n key，所以这里按请求语言取词。
-// sys_i18n 里已 seed 的是仓库 / 库存 / 原因 / 外码 / 入库 SKU 这几类（迁移 242/243/252/270）；
-// 采购 / 收货 / 生产入库那一组仍未 seed（它们的注册文件不在本批授权内），
-// 由下面的兜底表给出中文 —— 未命中兜底表时返回的会是裸 key，所以新错误必须两处都登记。
-// 取不到词条时退回 inventoryErrFallbacks 的中文，**不是**那个裸 key ——
-// 把裸 key 铺到页面上（ErrExternalSKUInvalid）既不中文也不是一句人能读的话。
-// 非业务错误对外只给通用提示，**原文进结构化日志**（场景 + user_id）—— 「不许直出内部错误」
-// 之后仍要留下可诊断性：谁在哪个页面撞上了哪条 SQL / 约束，只有日志能回答。
-func inventoryErrText(c *gin.Context, err error) string {
-	tr := shell.TranslateFor(c)
-	key, tail := inventoryErrKey(err)
-	if key == "" {
-		if err != nil {
-			logger.Scene(inventoryErrScene).
-				With("user_id", shell.CurrentUserID(c)).
-				Error(err, "库存页操作失败（非业务错误，只对外给归口文案）")
-		}
-		return tr(shell.MsgInternalError, inventoryErrInternalFallback)
+// 判据与归口只有一份实现：adminui.PageErrorFact → pkg/response.IsBusinessError（形态判据，
+// 与 JSON 出口 response.ErrorAuto 同一份）。本模块原先另持一份文案 key 白名单
+// （inventoryErrKeys，约 70 行），那是**第二份真相**：enums 新增一条业务错误时要记得在两处
+// 登记，而漏登记的方向还是「静默变成系统内部错误」—— 用户看到一句不可行动的提示，页面上
+// 看不到任何线索。白名单已删除；模块侧只剩**兜底表**（inventoryErrFallbacks：key → 中文原文），
+// 它只在词条缺失 / i18n 未初始化时生效，不是可透出性判据。
+//
+// 非业务错误对外只给共享归口文案（adminui.InternalMsg），**原文进结构化日志**
+// （PageErrorFact 带场景 + path + user_id）—— 「不许直出内部错误」之后仍要留下可诊断性：
+// 谁在哪个页面撞上了哪条 SQL / 约束，只有日志能回答。
+func inventoryErrMsg(c *gin.Context, err error) adminui.Msg {
+	return inventoryErrMsgOf(c, adminui.PageErrorFact(c, inventoryErrScene, err))
+}
+
+// inventoryErrMsgOf 把错误事实摊成一句结论。三档：
+//
+//	· Key 为空（err 为 nil）→ 空事实（提示页那边会把空正文落成归口文案）；
+//	· 非业务错误 → 共享归口事实（key + 中文原文）；
+//	· 业务错误 → key + 模块兜底表的中文；带明细段时给成品串 ——「key + 明细」一段 key
+//	  表达不了（明细是多段「词条 + 具名参数」的编码）。
+func inventoryErrMsgOf(c *gin.Context, f adminui.ErrFact) adminui.Msg {
+	if f.Key == "" {
+		return adminui.Msg{}
 	}
-	text := tr(key, inventoryErrFallback(key))
-	if tail != "" {
-		if detail := inventoryErrDetailText(tr, tail); detail != "" {
-			// 补充说明原样跟在译文后：service 写进去的是「为什么被拒」的上下文
+	if !f.Business {
+		return adminui.InternalMsg()
+	}
+	if f.Tail != "" {
+		if detail := inventoryErrDetailText(shell.TranslateFor(c), f.Tail); detail != "" {
+			// 补充说明已按当前语言渲染：service 写进去的是「为什么被拒」的上下文
 			//（例如被哪个商品占了外码），吞掉它就等于让人去猜。
-			text += "：" + detail
+			return adminui.Msg{Fallback: adminui.TranslateArgs(c, f.Key, inventoryErrFallback(f.Key), nil) + "：" + detail}
 		}
 	}
-	return text
+	return adminui.Msg{Key: f.Key, Fallback: inventoryErrFallback(f.Key)}
+}
+
+// inventoryErrText 一句结论的**文本**形态（片段槽位 / 页面提示条用：那边的模板直接渲染文本）。
+//
+// 这些槽位本批还没取词化（模板拿到的是成品文本而不是「key + 兜底」，因此它无法按请求语言
+// 自己取词）—— 清单见本批报告。新槽位一律传 adminui.Msg 并在模板里用 tf 取词。
+func inventoryErrText(c *gin.Context, err error) string {
+	return inventoryMsgText(c, inventoryErrMsg(c, err))
 }
 
 // inventoryErrDetailText 业务错误的**补充说明** → 当前语言文案。
@@ -1094,6 +1118,10 @@ func inventoryErrText(c *gin.Context, err error) string {
 //     service 用它把「为什么被拒」也词条化（例如「该外部编码在本仓已属于商品 X」），
 //     整句按当前语言取词并填 {name} 占位符；
 //  2. 其余（历史形态的纯文本）—— 原样透出，行为与本通道引入前一致。
+//
+// tail 由 adminui.PageErrorFact 按 **ASCII 冒号** 从「业务 key: 明细」里切出来
+// （见 pkg/response.IsBusinessError 的锚定形态判据）；写成全角「：」时切不开，
+// 整条错误会被判成内部故障、明细随之一并丢掉。
 //
 // 未登记的明细 key 跳过该段并记一条日志（少一句补充说明，好过把编码串摆到页面上）。
 func inventoryErrDetailText(tr func(key, fallback string) string, tail string) string {
@@ -1121,52 +1149,68 @@ func inventoryErrDetailText(tr func(key, fallback string) string, tail string) s
 // inventoryPageErr / inventoryPageOk / inventoryPageDone / inventoryNoticeSuccess /
 // inventoryNoticeTexts / inventoryNoticeToken / inventoryBulkNoticeTemplates。
 //
-// 留下的都是**写侧**要用的取法：结论文案模板与「key + 中文兜底」的取词。
+// 留下的只有**事实**：单条回执与批量结论的 key + 中文兜底（adminui.Msg）。
+// 取词不再是本文件的事 —— 它在提示页渲染期由模板注入的 tf 完成（见 internal/adminui/prepare.go），
+// 所以「成功说的是哪句话」与「这是哪门语言」在两处各自回答一次，不再混在调用点里。
 
 // inventoryActionDoneKey / inventoryActionDoneFallback 单条写动作成功回执的 i18n key 与中文兜底。
 //
 // 词条见迁移 280（中英各一行）；取不到词条时回落这份中文（与仓库里其它
 // 「key + 中文兜底」的写法一致），中文环境的表现就是「操作已完成」。
+// 出口处的载体是 inventory_jump.go 的 inventoryDoneMsg（adminui.Msg）。
 const (
 	inventoryActionDoneKey      = "admin.inventory.actionDone"
 	inventoryActionDoneFallback = "操作已完成"
 )
 
-// inventoryBulkNoticeTemplate 批量结论文案的一条模板（i18n key + 中文兜底）。
+// —— 批量结论（事实形态：key + 中文兜底 + `%s` 参数）——
 //
-// 具名类型 + inventoryBulkText 统一取法：各 BulkDelete 写侧都从这里取词后再 Sprintf，
-// 不各写各的字面量（改词条时只改一处）。
-type inventoryBulkNoticeTemplate struct {
-	key, fallback string
-	// strict 只允许 %s 占位符：词条被写坏时回落中文兜底。
-	//
-	// 仓库的两条是迁移 243 已落库的词条（中英都用 %d），保持宽松路径 = 与旧行为逐字一致；
-	// **新增**的词条一律 strict（%s + strconv.Itoa），因为 %d 会让「占位符个数写错」
-	// 在 Sprintf 时静默产出 %!d(MISSING) 之类的东西，而这条路直接给运营看。
-	strict bool
-}
-
-// inventoryBulkText 取一条批量结论文案的当前语言模板（写侧唯一取法）。
-func inventoryBulkText(c *gin.Context, t inventoryBulkNoticeTemplate) string {
-	text := shell.TranslateFor(c)(t.key, t.fallback)
-	if t.strict && !i18n.HasStringPlaceholdersOnly(text) {
-		return t.fallback
-	}
-	return text
-}
-
-// inventoryBulkNoticeTemplates 批量操作的结论文案模板。
+// 原先这里是「模板结构体 inventoryBulkNoticeTemplate + inventoryBulkText 取词 + 调用点
+// fmt.Sprintf」的三件套：取词、语言判定、拼串都在 Go 侧完成，调用点还要自己记住
+// 「这条词条是 %d 还是 %s」的口径。收成 adminui.Msg 之后，调用点只给 strconv 过的数字，
+// 取词与占位符填充都在渲染期由模板注入的 tf 完成（同 adminui.TranslateArgs 一份实现）。
 //
-// 各 BulkDelete 写侧用 inventoryBulkText 取词后 Sprintf（%d / %s 的口径见各模板的 strict）。
+// 兜底一律写 `%s`：TranslateArgs 只接受 `%s` 位置占位符，词条里混进 `%d` 时它会**丢弃词条**
+// 回落这里的兜底，而兜底若还是 `%d`、参数却是字符串，Sprintf 会产出 `%!d(string=2)` 这种
+// 「看起来像结论」的垃圾。迁移 243 里 admin.inventory.bulk.partial / .deleted 两条词条
+// 正是 `%d`（中英都是），它们需要一份把占位符改成 `%s` 的 i18n 迁移 —— 见本批报告。
+// 在那之前：中文界面输出逐字不变（词条与兜底同文），英文界面这两条会落中文兜底。
 var (
-	inventoryBulkWarehousePartial   = inventoryBulkNoticeTemplate{"admin.inventory.bulk.partial", "已删除 %d 个，%d 个未能删除（默认仓或仓内仍有非零库存）", false}
-	inventoryBulkWarehouseDone      = inventoryBulkNoticeTemplate{"admin.inventory.bulk.deleted", "已删除 %d 个仓库", false}
-	inventoryBulkSourcePartial      = inventoryBulkNoticeTemplate{"admin.inventory.bulk.sourcePartial", "已删除 %s 个，%s 个未能删除（仍被采购单或历史流水引用）", true}
-	inventoryBulkSourceDone         = inventoryBulkNoticeTemplate{"admin.inventory.bulk.sourceDone", "已删除 %s 个货源", true}
-	inventoryBulkReasonPartial      = inventoryBulkNoticeTemplate{"admin.inventory.bulk.reasonPartial", "已更新 %s 个原因，%s 个未能更新", true}
-	inventoryBulkReasonDone         = inventoryBulkNoticeTemplate{"admin.inventory.bulk.reasonDone", "已更新 %s 个原因", true}
-	inventoryBulkReasonNoneSelected = inventoryBulkNoticeTemplate{"admin.inventory.bulk.reasonNoneSelected", "请选择要操作的原因", false}
+	inventoryBulkWarehousePartial   = adminui.Msg{Key: "admin.inventory.bulk.partial", Fallback: "已删除 %s 个，%s 个未能删除（默认仓或仓内仍有非零库存）"}
+	inventoryBulkWarehouseDone      = adminui.Msg{Key: "admin.inventory.bulk.deleted", Fallback: "已删除 %s 个仓库"}
+	inventoryBulkSourcePartial      = adminui.Msg{Key: "admin.inventory.bulk.sourcePartial", Fallback: "已删除 %s 个，%s 个未能删除（仍被采购单或历史流水引用）"}
+	inventoryBulkSourceDone         = adminui.Msg{Key: "admin.inventory.bulk.sourceDone", Fallback: "已删除 %s 个货源"}
+	inventoryBulkReasonPartial      = adminui.Msg{Key: "admin.inventory.bulk.reasonPartial", Fallback: "已更新 %s 个原因，%s 个未能更新"}
+	inventoryBulkReasonDone         = adminui.Msg{Key: "admin.inventory.bulk.reasonDone", Fallback: "已更新 %s 个原因"}
+	inventoryBulkReasonNoneSelected = adminui.Msg{Key: "admin.inventory.bulk.reasonNoneSelected", Fallback: "请选择要操作的原因"}
 )
+
+// inventoryBulkIDsMsg 批量 id 读取失败的一句结论（事实形态，提示页出口用）。
+//
+// 判据是**类型事实**（*bulkids.IDsError）而不是文案比对：超限文案带两个只有错误类型知道的
+// 数字（上限 Max 与**去重后**的本次条数 Count），拿 bulkids.MaxIDs 重算就丢了 Count。
+// 与 adminui.BulkIDsFacingText 同一判据、同一份词条 —— 差别只在这里交出去的是「key + 参数」
+// 而不是拼好的字符串（提示页要的是事实）。
+func inventoryBulkIDsMsg(c *gin.Context, err error) adminui.Msg {
+	var tooMany *bulkids.IDsError
+	if !errors.As(err, &tooMany) {
+		// 未命中也接住：调用方几乎总是把批量读取的错误直接递进来，但判据必须是类型而不是
+		// 「谁构造的」—— 换成别的错误时应当退回归口文案，而不是把不认识的原文送出去。
+		if err != nil {
+			logger.Scene(inventoryErrScene).
+				With("path", c.Request.URL.Path).
+				Error(err, "批量 id 读取失败：未命中受控错误，只对外给归口文案")
+		}
+		return adminui.InternalMsg()
+	}
+	logger.Scene(inventoryErrScene).
+		With("path", c.Request.URL.Path).
+		With("count", tooMany.Count).
+		With("max", tooMany.Max).
+		Warn("批量操作被拒：提交的 id 数量超过上限")
+	return adminui.Msg{Key: bulkids.MsgTooMany, Fallback: bulkids.TooManyTemplate}.
+		WithArgs(strconv.Itoa(tooMany.Max), strconv.Itoa(tooMany.Count))
+}
 
 // inventoryErrFallbacks 兜底文案（i18n 未初始化 / 该 key 还没有词条时用）。
 //
@@ -1228,134 +1272,6 @@ func inventoryErrFallback(key string) string {
 	return key
 }
 
-// inventoryErrKeys 库存域业务错误的**文案 key 白名单**（enums 常量值）。
-//
-// 为什么是字符串白名单而不是 sentinel 列表：本模块的 enums 是**字符串常量**
-// （值就是 i18n key），service 用 errors.New(...) 现场构造 error —— 每条都是新实例，
-// errors.Is 认不出来。这里按 Error() 匹配 key，两种形态都认：
-//
-//	· 整串等于 key（errors.New(key)）；
-//	· 以「key：」开头（service 用 fmt.Errorf("%s：补充说明", key) 把上下文跟在后面，
-//	  如 N:1 冲突会把占位它的商品 id 带上）—— 取 key 部分查词条，补充说明拼在文案后。
-//
-// 被 fmt.Errorf("...: %w") 包过的错误（前缀在 key **之前**）仍匹配不上，会落到通用提示：
-// 那种包装说明错误不是本模块主动抛给用户的业务判定，对外不该泄漏内部细节。
-//
-// 新增业务错误时在此同步登记：漏登记的后果是它被当成内部故障（通用提示），
-// 用户拿到的是不可行动的提示，而页面上看不到任何内部细节。
-var inventoryErrKeys = map[string]bool{
-	inventoryenums.ErrInvalidParam: true,
-	// 仓库
-	inventoryenums.ErrWarehouseNotFound:             true,
-	inventoryenums.ErrWarehouseNameRequired:         true,
-	inventoryenums.ErrWarehouseCodeRequired:         true,
-	inventoryenums.ErrWarehouseCodeInvalid:          true,
-	inventoryenums.ErrWarehouseCodeTaken:            true,
-	inventoryenums.ErrWarehouseStatusInvalid:        true,
-	inventoryenums.ErrWarehouseIsDefault:            true,
-	inventoryenums.ErrWarehouseHasStock:             true,
-	inventoryenums.ErrWarehouseDisabled:             true,
-	inventoryenums.ErrWarehouseProjectMismatch:      true,
-	inventoryenums.ErrWarehouseDefaultMissing:       true,
-	inventoryenums.ErrWarehouseTypeInvalid:          true,
-	inventoryenums.ErrWarehouseConfigInvalid:        true,
-	inventoryenums.ErrWarehouseCredentialInvalid:    true,
-	inventoryenums.ErrWarehouseCredentialKeyMissing: true,
-	inventoryenums.ErrWarehouseTypeVirtualDefault:   true,
-	// 库存记录与变动
-	inventoryenums.ErrStockNotFound:            true,
-	inventoryenums.ErrStockVariantRequired:     true,
-	inventoryenums.ErrStockWarehouseNeeded:     true,
-	inventoryenums.ErrStockLinesRequired:       true,
-	inventoryenums.ErrStockLinesTooMany:        true,
-	inventoryenums.ErrStockDirectionInvalid:    true,
-	inventoryenums.ErrStockQuantityInvalid:     true,
-	inventoryenums.ErrStockProductRequired:     true,
-	inventoryenums.ErrStockReasonRequired:      true,
-	inventoryenums.ErrStockInsufficient:        true,
-	inventoryenums.ErrStockRemarkRequired:      true,
-	inventoryenums.ErrStockCostInvalid:         true, // 显式传入的成本价不合法（负数 / NaN）
-	inventoryenums.ErrMovementTimeRangeInvalid: true,
-	// 无限库存（迁移 261）：跟踪态必须显式给数量 / 不跟踪的行不允许带数量。
-	// 不登记 = 被当成内部故障，用户只拿到「系统内部错误」，而这两条本来就是
-	// 「表单该怎么填」的提示。
-	inventoryenums.ErrStockQuantityRequired:  true,
-	inventoryenums.ErrStockUntrackedQuantity: true,
-	// 变动原因
-	inventoryenums.ErrReasonNotFound:          true,
-	inventoryenums.ErrReasonDirectionMismatch: true,
-	inventoryenums.ErrReasonCodeRequired:      true,
-	inventoryenums.ErrReasonCodeInvalid:       true,
-	inventoryenums.ErrReasonCodeTaken:         true,
-	inventoryenums.ErrReasonNameRequired:      true,
-	inventoryenums.ErrReasonDirectionInvalid:  true,
-	inventoryenums.ErrReasonBuiltin:           true,
-	inventoryenums.ErrReasonStatusInvalid:     true,
-	// 仓库 SKU 外部编码（迁移 251 / 词条 252）：库存页行内编辑外码的两条业务错误。
-	// 不登记 = 被当成内部故障，用户只拿到「系统内部错误」，而「编码太长」这种
-	// 本来就该自己改一下的事情，页面上看不到任何可行动的线索。
-	inventoryenums.ErrExternalSKUInvalid:         true,
-	inventoryenums.ErrExternalSKUProductConflict: true,
-	// 入库入口的 SKU 编码校验（迁移 270 已 seed 词条）：空串一律拒绝，
-	// 文案必须可行动（让调用方传裸码），不能退化成「系统内部错误」。
-	inventoryenums.ErrStockSKURequired: true,
-	// —— 采购单 / 收货 / 生产入库（issue #18）——
-	//
-	// 采购页三个写入口（建单 / 收货 / 生产入库）与它们取数失败的文案都经
-	// purchaseOrderRows → inventoryErrText 回显，因此这一组
-	// 必须在本白名单里：漏登记 = 被当成内部故障，用户拿到「系统内部错误」而看不到
-	// 任何可行动的线索（例如「超收了」「单已收满」「货源停用了」）。
-	// ErrSourceNotFound / ErrPurchaseSourceDisabled 也在其中：resolvePurchaseSource
-	// 的拒绝理由就是它们，属于采购路径的正常业务分支。
-	inventoryenums.ErrSourceNotFound:              true,
-	inventoryenums.ErrPurchaseOrderNotFound:       true,
-	inventoryenums.ErrPurchaseCodeRequired:        true,
-	inventoryenums.ErrPurchaseCodeInvalid:         true,
-	inventoryenums.ErrPurchaseCodeTaken:           true,
-	inventoryenums.ErrPurchaseSourceRequired:      true,
-	inventoryenums.ErrPurchaseSourceDisabled:      true,
-	inventoryenums.ErrPurchaseLinesRequired:       true,
-	inventoryenums.ErrPurchaseLinesTooMany:        true,
-	inventoryenums.ErrPurchaseLineRequired:        true,
-	inventoryenums.ErrPurchaseLineDuplicate:       true,
-	inventoryenums.ErrPurchaseQuantityInvalid:     true,
-	inventoryenums.ErrPurchasePriceInvalid:        true,
-	inventoryenums.ErrPurchaseStatusInvalid:       true,
-	inventoryenums.ErrPurchaseLinesLocked:         true,
-	inventoryenums.ErrPurchaseLineNotFound:        true,
-	inventoryenums.ErrReceiptLinesRequired:        true,
-	inventoryenums.ErrReceiptLineDuplicate:        true,
-	inventoryenums.ErrReceiptQuantityInvalid:      true,
-	inventoryenums.ErrReceiptOverReceive:          true,
-	inventoryenums.ErrReceiptOrderDone:            true,
-	inventoryenums.ErrReceiptRequestInvalid:       true,
-	inventoryenums.ErrProductionSourceNotInternal: true,
-	inventoryenums.ErrProductionVariantRequired:   true,
-	inventoryenums.ErrProductionCostInvalid:       true,
-}
-
-// inventoryErrKey 业务错误 → i18n 词条 key 与其补充说明（非业务错误返回空串，按内部故障处理）。
-//
-// 识别两种形态（见 inventoryErrKeys 的注释）：整串等于 key，或以「key：」开头。
-func inventoryErrKey(err error) (key, tail string) {
-	if err == nil {
-		return "", ""
-	}
-	msg := strings.TrimSpace(err.Error())
-	if msg == "" {
-		return "", ""
-	}
-	if inventoryErrKeys[msg] {
-		return msg, ""
-	}
-	for candidate := range inventoryErrKeys {
-		if strings.HasPrefix(msg, candidate+"：") {
-			return candidate, strings.TrimSpace(strings.TrimPrefix(msg, candidate+"："))
-		}
-	}
-	return "", ""
-}
-
 var warehouseCreateFields = []string{"projectId", "code", "name", "sort", "isDefault", "type", "provider", "externalCode", "address", "contact", "allowsShipping", "apiCredential", "secretRef"}
 var warehouseEditFields = []string{"projectId", "id", "code", "name", "sort", "type", "provider", "externalCode", "address", "contact", "allowsShipping", "apiCredential", "secretRef", "status"}
 
@@ -1369,7 +1285,7 @@ func warehouseFormData(c *gin.Context, edit bool, row gin.H) gin.H {
 func (h *inventoryPageHandle) warehouseFormFail(c *gin.Context, edit bool, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
-		inventoryJump(c, false, inventoryErrText(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackText(c))
+		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
 		return
 	}
 	// htmx 分支原样保留：失败在抽屉里重渲片段（错误槽 + 回填后的表单），不丢用户输入。
@@ -1381,7 +1297,7 @@ func (h *inventoryPageHandle) warehouseFormFail(c *gin.Context, edit bool, err e
 	data["FormEcho"] = inventoryRawFormValues(c, fields)
 	data["SubmitErr"] = inventoryErrText(c, err)
 	data["ListQuery"] = inventoryQueryFromRequest(c, inventoryWarehouseBackKeys...)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_warehouse_form.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/inventory/inventory_warehouse_form.html", adminui.Prepare(c, data))
 }
 
 // 原值快照保留空串和首尾空白；业务请求归一化不影响重新编辑的输入。
@@ -1406,7 +1322,7 @@ func reasonFormData(c *gin.Context) gin.H {
 func (h *inventoryPageHandle) reasonFormFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
-		inventoryJump(c, false, inventoryErrText(c, err), inventoryReasonBack(c), inventoryReasonBackText(c))
+		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryReasonBack(c), inventoryReasonBackMsg)
 		return
 	}
 	// htmx 分支原样保留：失败在抽屉里重渲片段。
@@ -1414,13 +1330,13 @@ func (h *inventoryPageHandle) reasonFormFail(c *gin.Context, err error) {
 	data["FormEcho"] = inventoryRawFormValues(c, reasonCreateFields)
 	data["SubmitErr"] = inventoryErrText(c, err)
 	data["ListQuery"] = inventoryQueryFromRequest(c, inventoryReasonBackKeys...)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", adminui.Prepare(c, data))
 }
 
 func (h *inventoryPageHandle) reasonEditFormFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
-		inventoryJump(c, false, inventoryErrText(c, err), inventoryReasonBack(c), inventoryReasonBackText(c))
+		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryReasonBack(c), inventoryReasonBackMsg)
 		return
 	}
 	// htmx 分支原样保留：失败在抽屉里重渲片段。
@@ -1429,7 +1345,7 @@ func (h *inventoryPageHandle) reasonEditFormFail(c *gin.Context, err error) {
 	data["FormEcho"] = inventoryRawFormValues(c, reasonEditFields)
 	data["SubmitErr"] = inventoryErrText(c, err)
 	data["ListQuery"] = inventoryQueryFromRequest(c, inventoryReasonBackKeys...)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", adminui.Prepare(c, data))
 }
 
 // parseIntOr 解析十进制整数，失败返回兜底值（后台表单容错，不因一个脏字段 500）。
@@ -1462,10 +1378,10 @@ func parseIntOr(s string, fallback int) int {
 
 // isHXRequest 这次请求是否由 htmx 发起（HX-Request: true）。
 //
-// 判据委托 shell.IsHXRequest（同一份实现）：RenderJump 对 htmx 输出 HX-Redirect 用的也是它，
+// 判据委托 reqparams.IsHXRequest（同一份实现）：RenderJump 对 htmx 输出 HX-Redirect 用的也是它，
 // 两个出口必须认同同一个信号 —— 各写一份就会出现「某个模块的失败分档静默失效」。
 func isHXRequest(c *gin.Context) bool {
-	return shell.IsHXRequest(c)
+	return reqparams.IsHXRequest(c)
 }
 
 // redirectWhere 页面写动作的 PRG 出口。
@@ -1496,7 +1412,7 @@ func redirectWhere(c *gin.Context, target string) {
 //	if hxFragment(c, "admin/<模块>/xxx_form.html", data) {   // 模块专属片段跟模块走（见 templates/CLAUDE.md）
 //		return
 //	}
-//	inventoryJump(c, false, inventoryErrText(c, err), back, backText)
+//	inventoryJump(c, false, inventoryErrMsg(c, err), back, backMsg)
 //
 // 片段模板必须**可独立渲染**（不带 extends layout，data 由调用点给齐），并且自带
 // htmx 需要的结构（错误槽 + 回填后的表单）—— 模板由各批自己建，本 helper 只管分档。
@@ -1516,7 +1432,7 @@ const formEchoMemory = 32 << 20
 // 值只来自**这次提交**，不回查数据库：回填要的是「用户刚打的字」，而不是「库里的旧值」
 // （新建 / 行内编辑路径上后者会把人刚改的内容顶掉，比不回填更糟）。
 type formEcho struct {
-	// values 归一化后的提交值：去首尾空白、丢空项（与 shell.FieldValue 同口径）。
+	// values 归一化后的提交值：去首尾空白、丢空项（与 reqparams.FieldValue 同口径）。
 	// 多值字段保留**提交顺序** —— 顺序在本域有语义（多仓勾选按表内顺序取认领仓），
 	// 排序或去重都会改掉它。
 	values url.Values
@@ -1599,7 +1515,7 @@ var purchaseCreateFormFields = []string{"projectId", "code", "sourceId", "wareho
 func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, projectID string, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
-		inventoryJump(c, false, inventoryErrText(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackText(c))
+		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
 		return
 	}
 	// htmx 分支原样保留：失败在抽屉里重渲片段（错误槽 + 回填后的表单），不丢用户输入。
@@ -1630,7 +1546,7 @@ func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, project
 		"SubmitErr":      inventoryErrText(c, err),
 		"ListQuery":      inventoryQueryFromRequest(c, inventoryPurchaseBackKeys...),
 	}
-	c.HTML(http.StatusOK, "admin/inventory/inventory_purchase_create_form.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/inventory/inventory_purchase_create_form.html", adminui.Prepare(c, data))
 }
 
 func formArrayAtRaw(values []string, index int) string {
@@ -1801,11 +1717,11 @@ type inventoryPurchasesPageData struct {
 	// 模板据此把「真的没有货源 / 没有采购单」与「这一次没读出来」分开 —— 前者引导去建一个，
 	// 后者只能说明稍后重试，把人引向新建抽屉是错的。
 	LoadFailed bool
-	// Pagination 分页条数据（nil = 单页 / 装载失败，模板不渲染分页条）。
+	// Pagination 分页条事实（零值 = 单页 / 装载失败，HasPagination 为假，模板不渲染）。
 	//
 	// 放在结构体里而不是在渲染处临时拼：正常与降级两条路共用一份 templateMap，
 	// 降级分支才不会「忘记」给某个键（Jet 缺 key 是整页中断）。
-	Pagination *shell.PaginationData
+	Pagination pagination.Page
 }
 
 // templateMap 转 Jet 模板键（一次性幂等键在这里生成：每次渲染一个新的，双击提交即被挡住）。
@@ -1837,17 +1753,15 @@ func (d *inventoryPurchasesPageData) templateMap(c *gin.Context) gin.H {
 		// 写动作表单 action 上带的筛选上下文（见 inventory_jump.go）。
 		"ListQuery": inventoryQueryFromRequest(c, inventoryPurchaseBackKeys...),
 	}
-	// 分页条键（PaginationInfo / PaginationLinks）：nil 时给空 map，模板的
-	// {{if .["PaginationLinks"]}} 自然跳过 —— 单页与装载失败两条路都不渲染分页条。
-	for k, v := range d.Pagination.TemplateKeys() {
-		m[k] = v
-	}
+	// 分页条事实交给 partial 决定：零值（单页）与装载失败两条路 HasPagination 都为假，
+	// 片段自然不渲染。
+	m["Pagination"] = d.Pagination
 	return m
 }
 
 // renderPurchasesPage 采购页的唯一渲染出口（正常 / 装载失败两条路共用）。
 func (h *inventoryPurchasePageHandle) renderPurchasesPage(c *gin.Context, d *inventoryPurchasesPageData) {
-	c.HTML(http.StatusOK, "admin/inventory/inventory_purchases.html", shell.Prepare(c, d.templateMap(c)))
+	c.HTML(http.StatusOK, "admin/inventory/inventory_purchases.html", adminui.Prepare(c, d.templateMap(c)))
 }
 
 // InventoryPurchasesPage 采购入库页：新建采购单 + 采购单列表（含逐行收货）+ 生产入库 + 进货历史。
@@ -1862,7 +1776,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 	// 工程列表读不出来**不拿走整个页面**（判据与货源页 / order 域订单页 / project 域主题页一致）：
 	// 空数据 + 归口提示 + HTTP 200，页头 / 筛选栏 / 侧栏全部保留。
 	//
-	// 原先这里是 `c.String(500, shell.MsgInternalError)`：页面上就是 `MsgInternalError`
+	// 原先这里是 `c.String(500, adminui.MsgInternalError)`：页面上就是 `MsgInternalError`
 	// 这串英文 —— 归口 key 未经翻译直出，症状比脱壳更隐蔽（看起来像后台坏了）。
 	loadFailed := loadErr != nil
 	if loadFailed {
@@ -1912,15 +1826,15 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 	// 翻页不丢条件。total 来自契约的 CountPurchaseOrders（与 ListPurchaseOrders
 	// 同一份过滤条件），因此给的是页码窗口与「共 N 条」。
 	// 装载失败时不构造分页条：工程上下文没定下来，URL 上的 page 不是有效页码。
-	var pagination *shell.PaginationData
+	var pg pagination.Page
 	if !loadFailed {
-		pagination = shell.BuildPagination(total, page, limit, shell.FilterBaseURL(
-			inventoryPurchasesPath, map[string]string{
-				"project":  selected,
-				"status":   filterStatus,
-				"sourceId": filterSource,
-				"keyword":  filterKeyword,
-			}), shell.TranslateFor(c))
+		pg = pagination.Facts(total, page, limit)
+		pg.Base = reqparams.FilterBaseURL(inventoryPurchasesPath, map[string]string{
+			"project":  selected,
+			"status":   filterStatus,
+			"sourceId": filterSource,
+			"keyword":  filterKeyword,
+		})
 	}
 
 	h.renderPurchasesPage(c, &inventoryPurchasesPageData{
@@ -1936,7 +1850,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 		FilterKeyword:   filterKeyword,
 		Err:             pageErr,
 		LoadFailed:      loadFailed,
-		Pagination:      pagination,
+		Pagination:      pg,
 	})
 }
 
@@ -1956,7 +1870,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseCreate(c *gin.Context) {
 		h.purchaseCreateFail(c, projectID, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventoryPurchaseBack(c), inventoryPurchaseBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
 }
 
 // InventoryPurchaseReceipt 登记某一行（或多行）采购收货。
@@ -1980,10 +1894,10 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseReceipt(c *gin.Context) {
 		req.Lines[0].UnitPrice = &price
 	}
 	if _, err := h.inventory.RegisterReceipt(c.Request.Context(), req); err != nil {
-		inventoryJump(c, false, inventoryErrText(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackText(c))
+		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventoryPurchaseBack(c), inventoryPurchaseBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
 }
 
 // InventoryPurchaseProduction 自家工厂生产入库（无采购单，成本价手工填写）。
@@ -2011,10 +1925,10 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseProduction(c *gin.Context
 		req.UnitCost = &cost
 	}
 	if _, err := h.inventory.RegisterProductionInbound(c.Request.Context(), req); err != nil {
-		inventoryJump(c, false, inventoryErrText(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackText(c))
+		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventoryPurchaseBack(c), inventoryPurchaseBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
 }
 
 // —— 页面取数（视图组装：模板不做逻辑）——
@@ -2341,11 +2255,11 @@ type inventorySourcesPageData struct {
 	// 是「这个工程真的没有货源」还是「这一次没读出来」—— 前者要引导去建一个，
 	// 后者只能说明「稍后重试」，把人引向新建抽屉是错的。
 	LoadFailed bool
-	// Pagination 分页条数据（nil = 单页 / 装载失败，模板不渲染分页条）。
+	// Pagination 分页条事实（零值 = 单页 / 装载失败，HasPagination 为假，模板不渲染）。
 	//
 	// 与其它键一样放在结构体里：正常渲染与降级渲染共用一份 templateMap，
 	// 降级分支才不会「忘记」给某个键（Jet 缺 key 是整页中断，见 internal/templates/CLAUDE.md）。
-	Pagination *shell.PaginationData
+	Pagination pagination.Page
 }
 
 // templateMap 转 Jet 模板键（页面框架字段以小写 title / menu 取值）。
@@ -2374,11 +2288,9 @@ func (d *inventorySourcesPageData) templateMap(c *gin.Context) gin.H {
 		// 写动作表单 action 上带的筛选上下文（见 inventory_jump.go）。
 		"ListQuery": inventoryQueryFromRequest(c, inventorySourceBackKeys...),
 	}
-	// 分页条键（PaginationInfo / PaginationLinks）：nil 时给空 map，模板的
-	// {{if .["PaginationLinks"]}} 自然跳过 —— 单页与装载失败两条路都不渲染分页条。
-	for k, v := range d.Pagination.TemplateKeys() {
-		m[k] = v
-	}
+	// 分页条事实交给 partial 决定：零值（单页）与装载失败两条路 HasPagination 都为假，
+	// 片段自然不渲染。
+	m["Pagination"] = d.Pagination
 	return m
 }
 
@@ -2387,7 +2299,7 @@ func (d *inventorySourcesPageData) templateMap(c *gin.Context) gin.H {
 func (h *inventorySourcePageHandle) renderSourcesPage(c *gin.Context, d *inventorySourcesPageData) {
 	data := d.templateMap(c)
 	data["SourceCreateForm"] = sourceFormData(c, false, nil)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_sources.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/inventory/inventory_sources.html", adminui.Prepare(c, data))
 }
 
 // InventorySourcesPage 货源管理页：工程切换 + 关联方统计 + 筛选 + 新建 + 列表（可编辑）。
@@ -2403,7 +2315,7 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 	// 空列表 + 归口提示 + HTTP 200，页头 / 筛选栏 / 批量条与侧栏全部保留 ——
 	// 运营看得出「是这一页没读出来」，而不是对着一块纯文本以为整个后台坏了。
 	//
-	// 原先这里是 `c.String(500, shell.MsgInternalError)`：响应的是一块**裸归口 key** 的纯文本，
+	// 原先这里是 `c.String(500, adminui.MsgInternalError)`：响应的是一块**裸归口 key** 的纯文本，
 	// 页面上显示的就是 `MsgInternalError` 这串英文（既没翻译、也没页壳）。
 	loadFailed := loadErr != nil
 	if loadFailed {
@@ -2484,20 +2396,20 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 	// status 用**原始取值**：includeDisabled 时 FilterStatus 已被归一成空串（模板的
 	// 「全部（含停用）」是另一个键 FilterStatusAll），拿归一后的值拼链接会让翻页时
 	// 「连停用的一起列」被悄悄丢掉 —— 表现为翻页后记录变少，看着像数据丢了。
-	var pagination *shell.PaginationData
+	var pg pagination.Page
 	if !loadFailed {
 		statusForLink := filterStatus
 		if includeDisabled {
 			statusForLink = sourceStatusFilterAll
 		}
-		pagination = shell.BuildPagination(total, page, limit, shell.FilterBaseURL(
-			"/admin/inventory/sources", map[string]string{
-				"project":      selected,
-				"type":         filterType,
-				"relatedParty": filterRelated,
-				"status":       statusForLink,
-				"keyword":      filterKeyword,
-			}), shell.TranslateFor(c))
+		pg = pagination.Facts(total, page, limit)
+		pg.Base = reqparams.FilterBaseURL("/admin/inventory/sources", map[string]string{
+			"project":      selected,
+			"type":         filterType,
+			"relatedParty": filterRelated,
+			"status":       statusForLink,
+			"keyword":      filterKeyword,
+		})
 	}
 
 	h.renderSourcesPage(c, &inventorySourcesPageData{
@@ -2512,7 +2424,7 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 		FilterKeyword:   filterKeyword,
 		Err:             pageErr,
 		LoadFailed:      loadFailed,
-		Pagination:      pagination,
+		Pagination:      pg,
 	})
 }
 
@@ -2539,7 +2451,7 @@ func (h *inventorySourcePageHandle) InventorySourceCreate(c *gin.Context) {
 		h.sourceFormFail(c, false, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventorySourceBack(c), inventorySourceBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventorySourceBack(c), inventorySourceBackMsg)
 }
 
 // InventorySourceUpdate 修改货源（表单即最终状态：结算价留空 = 清空）。
@@ -2574,7 +2486,7 @@ func (h *inventorySourcePageHandle) InventorySourceUpdate(c *gin.Context) {
 		h.sourceFormFail(c, true, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventorySourceBack(c), inventorySourceBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventorySourceBack(c), inventorySourceBackMsg)
 }
 
 // InventorySourceDelete 删除货源。
@@ -2582,10 +2494,10 @@ func (h *inventorySourcePageHandle) InventorySourceDelete(c *gin.Context) {
 	if err := h.inventory.DeleteSource(c.Request.Context(), &inventorydto.DeleteSourceReq{
 		ID: c.PostForm("id"),
 	}); err != nil {
-		inventoryJump(c, false, inventoryErrText(c, err), inventorySourceBack(c), inventorySourceBackText(c))
+		inventoryJump(c, false, inventoryErrMsg(c, err), inventorySourceBack(c), inventorySourceBackMsg)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneText(c), inventorySourceBack(c), inventorySourceBackText(c))
+	inventoryJump(c, true, inventoryDoneMsg, inventorySourceBack(c), inventorySourceBackMsg)
 }
 
 // InventorySourcesBulkDelete 批量删除货源。
@@ -2595,14 +2507,14 @@ func (h *inventorySourcePageHandle) InventorySourceDelete(c *gin.Context) {
 // 结果按「已删 N 个 / 跳过 M 个」渲染成提示页，避免静默的部分成功（语义未变，只换传输通道）。
 func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
 	back := inventorySourceBack(c)
-	backText := inventorySourceBackText(c)
+	backMsg := inventorySourceBackMsg
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
 	if berr != nil {
-		// 超限是 shell 的**受控错误**（shell.BulkIDsError：值域只有 Count/Max 两个整数，
-		// 装不下表名 / 约束名 / SQLSTATE），文案走 shell 的受控出口 —— 它按当前语言拼出
+		// 超限是**受控错误**（pkg/bulkids 的 *IDsError：值域只有 Count/Max 两个整数，
+		// 装不下表名 / 约束名 / SQLSTATE），文案走受控结论出口 —— 它按当前语言给
 		//「一次最多操作 N 项，当前 M 项，请分批进行」，不会把可行动提示抹成通用提示。
-		inventoryJump(c, false, shell.BulkIDsFacingText(c, berr), back, backText)
+		inventoryJump(c, false, inventoryBulkIDsMsg(c, berr), back, backMsg)
 		return
 	}
 	deleted, skipped := 0, 0
@@ -2615,11 +2527,9 @@ func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
 	}
 	switch {
 	case skipped > 0:
-		inventoryJump(c, false, fmt.Sprintf(
-			inventoryBulkText(c, inventoryBulkSourcePartial), strconv.Itoa(deleted), strconv.Itoa(skipped)), back, backText)
+		inventoryJump(c, false, inventoryBulkSourcePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)), back, backMsg)
 	case deleted > 0:
-		inventoryJump(c, true, fmt.Sprintf(
-			inventoryBulkText(c, inventoryBulkSourceDone), strconv.Itoa(deleted)), back, backText)
+		inventoryJump(c, true, inventoryBulkSourceDone.WithArgs(strconv.Itoa(deleted)), back, backMsg)
 	default:
 		// 没有选中任何 id（批量条在无勾选时不会提交）：回列表，不渲染提示页。
 		redirectWhere(c, back)
@@ -2783,7 +2693,7 @@ func sourceFormData(c *gin.Context, edit bool, row gin.H) gin.H {
 func (h *inventorySourcePageHandle) sourceFormFail(c *gin.Context, edit bool, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
-		inventoryJump(c, false, inventoryErrText(c, err), inventorySourceBack(c), inventorySourceBackText(c))
+		inventoryJump(c, false, inventoryErrMsg(c, err), inventorySourceBack(c), inventorySourceBackMsg)
 		return
 	}
 	// htmx 分支原样保留：失败在抽屉里重渲片段。
@@ -2795,5 +2705,5 @@ func (h *inventorySourcePageHandle) sourceFormFail(c *gin.Context, edit bool, er
 	data["FormEcho"] = inventoryRawFormValues(c, fields)
 	data["SubmitErr"] = inventoryErrText(c, err)
 	data["ListQuery"] = inventoryQueryFromRequest(c, inventorySourceBackKeys...)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_source_form.html", shell.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/inventory/inventory_source_form.html", adminui.Prepare(c, data))
 }

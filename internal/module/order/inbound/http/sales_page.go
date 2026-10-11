@@ -26,10 +26,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/module/order/contract"
 	"go_wp/internal/module/order/dto"
 	"go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
 )
 
 // orderSalesPageHandle 销售概览页的 handler。
@@ -106,7 +106,7 @@ func (h *orderSalesPageHandle) SalesOverviewPage(c *gin.Context) {
 		}
 	}
 
-	data := shell.Prepare(c, gin.H{
+	data := adminui.Prepare(c, gin.H{
 		"title":           "admin.order.sales.title",
 		"menu":            "orders",
 		"Projects":        projects,

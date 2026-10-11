@@ -15,13 +15,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	ordercontract "go_wp/internal/module/order/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
-	"go_wp/internal/shell"
 )
 
 // ——— 后台页面（/admin/*，BIZ-1 销售侧）———
@@ -41,13 +41,13 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// 状态合法性不在这里判断：服务端状态机拒绝哪条边，页面就把哪条边藏起来 ——
 	// 前端最多只能少给一个按钮，给多了也只是被服务端拒掉并原样回显原因。
 	orderPages := NewOrderPageHandle(svc, projects, dict)
-	pages.GET("/orders", shell.PageAuthz("/api/order/list"), orderPages.OrdersPage)
+	pages.GET("/orders", adminui.PageAuthz("/api/order/list"), orderPages.OrdersPage)
 	// 销售概览页（GET /admin/orders/overview）：整页只读报表 —— 只读不等于不鉴权，
 	// 菜单隐藏不是访问控制（docs/02-Z §4.3）。obj 取该页菜单绑的码 order:overview 声明的
 	// api_path，而它恰好就是这条页面路径本身（**存量特例**：绝大多数页面的 obj 是 `/api/*`
 	// 形态，见 internal/middleware/builtin/page_authz.go 的说明），归一与 02-Z 第二刀同批。
 	salesPages := NewOrderSalesPageHandle(svc, projects)
-	pages.GET("/orders/overview", shell.PageAuthz("/admin/orders/overview"), salesPages.SalesOverviewPage)
+	pages.GET("/orders/overview", adminui.PageAuthz("/admin/orders/overview"), salesPages.SalesOverviewPage)
 	// 这个权限点同时仍是可授权对象：声明它不只是为了拦请求 —— 侧栏菜单绑 order:overview，
 	// 角色分权经 menu_ids 收集到它，
 	// 而 permission.RoutesOf 也才有非空结果（空集会被工具侧按 fail closed 一律 forbidden）。
@@ -58,41 +58,42 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// 都指向它（同一个 URL）。写动作复用 order:create —— 与上面几条同手法，
 	// **不新增权限点、不写 seed 迁移**；权限点路径一个字符都不能改。
 	//
-	// 这一页是整页表单（字段 20+、明细可多行），失败一律**就地重渲 200 + 回填**，
-	// 不走 303 + ?err= 回跳：303 之后是 GET，没有 PostForm，几十个字段必然全丢。
+	// 这一页是整页表单（字段 20+、明细可多行）：**成功**走 303 PRG 回列表（Location 带
+	// orderId，那一单的详情是展开的），**失败**一律就地重渲 200 + 字段标红 + 回填 ——
+	// 失败不能走 303：303 之后是 GET，没有 PostForm，几十个字段必然全丢。
 	orderCreate := NewOrderCreatePageHandle(svc, projects, product, dict)
-	pages.GET("/orders/new", shell.PageAuthz("/api/order/list"), orderCreate.OrderCreatePage)
+	pages.GET("/orders/new", adminui.PageAuthz("/api/order/list"), orderCreate.OrderCreatePage)
 	pages.POST("/orders/create", builtin.CasbinMiddlewareForPath("/api/order/create"), orderCreate.OrderCreateSubmit)
-	pages.POST("/orders/status", builtin.CasbinMiddlewareForPath("/api/order/status"), orderPages.OrderStatusChange)
-	pages.POST("/orders/cancel", builtin.CasbinMiddlewareForPath("/api/order/cancel"), orderPages.OrderCancel)
-	pages.POST("/orders/refund", builtin.CasbinMiddlewareForPath("/api/order/refund"), orderPages.OrderRefund)
-	// 后台备注（迁移 146 的 order:note）：只改 admin_note 一列，不写状态流转。
-	pages.POST("/orders/note", builtin.CasbinMiddlewareForPath("/api/order/note"), orderPages.OrderNoteSave)
-	// 列表级批量动作：逐条走上面那两条单条路径的 service 用例，权限点也逐字复用它们，
-	// 不新增权限点、不写迁移（新增权限点就要同批 seed，否则含超管在内全员 403）。
-	pages.POST("/orders/bulk-status", builtin.CasbinMiddlewareForPath("/api/order/status"), orderPages.OrderBulkStatus)
-	pages.POST("/orders/bulk-cancel", builtin.CasbinMiddlewareForPath("/api/order/cancel"), orderPages.OrderBulkCancel)
+	// 列表页的写动作（流转 / 取消 / 退款 / 备注 与两个批量动作）已整批迁到前端直调 JSON：
+	// 单条走 order_router.go 里的 /api/order/{status,cancel,refund,note}，批量走
+	// /api/order/{status,cancel} 的**批档形状**（体里有 ids 即批档，判别键是形状不是 action）
+	// —— 页面不再有自己的写路径，于是也**不再需要**「页面路径借 API 权限点」那层
+	// （那些 CasbinMiddlewareForPath("/api/...") 只是把 API path 字符串拿来当 Casbin obj 用）。
+	//
+	// 不另开 /api/order/bulk-* 的理由：sys_permission 每个权限点只有一列 api_path/api_method，
+	// 再开路径就必须新增权限点，而「新增权限点 = 已授权角色静默缩权」是本仓有案可查的事故
+	// （见 order_bulk_write.go 头注释）。
 
 	// 退货入库（RMA）：客户在访问面提交申请，后台在这里审核与收货。
 	// **先入库、后退款**的强顺序由 service 的 ReceiveReturn 保证。
+	// 审核 / 拒绝 / 收货与两个批量动作已迁到前端直调 JSON（task-98 S3）：端点就是
+	// /api/order/return/{approve,reject,receive}，批量靠请求体形状分流（见 return_bulk_write.go），
+	// 页面不再有自己的写路径 —— 于是也**不再需要**「页面路径借 API 权限点」那层
+	// （那些 CasbinMiddlewareForPath 只是把 API path 字符串拿来当 Casbin obj 用）。
 	returnPages := NewReturnPageHandle(svc, projects, warehouses, dict)
-	pages.GET("/returns", shell.PageAuthz("/api/order/return/list"), returnPages.ReturnsPage)
-	pages.POST("/returns/approve", builtin.CasbinMiddlewareForPath("/api/order/return/approve"), returnPages.ReturnApprove)
-	pages.POST("/returns/reject", builtin.CasbinMiddlewareForPath("/api/order/return/reject"), returnPages.ReturnReject)
-	pages.POST("/returns/receive", builtin.CasbinMiddlewareForPath("/api/order/return/receive"), returnPages.ReturnReceive)
-	// 批量审核：同意与拒绝各复用单条动作的权限点。
-	pages.POST("/returns/bulk-approve", builtin.CasbinMiddlewareForPath("/api/order/return/approve"), returnPages.ReturnBulkApprove)
-	pages.POST("/returns/bulk-reject", builtin.CasbinMiddlewareForPath("/api/order/return/reject"), returnPages.ReturnBulkReject)
+	pages.GET("/returns", adminui.PageAuthz("/api/order/return/list"), returnPages.ReturnsPage)
 
-	// 优惠码管理页：列表 + 新建 + 修改（含停用 / 启用）+ 删除 + 核销记录。
-	// 核销**没有手工入口** —— 它发生在建单事务内，页面只展示结果（核销明细是真源）。
+	// 优惠码管理页：只剩两个 GET —— 列表与编辑抽屉片段。核销**没有手工入口** —— 它发生在
+	// 建单事务内，页面只展示结果（核销明细是真源）。
+	//
+	// 写动作（新建 / 修改含停用启用 / 删除 / 批量删除 / 批量启停）已迁到前端直调 JSON：
+	// 端点就是 order_router.go 里的 /api/order/coupon/{create,update,delete}，页面不再有
+	// 自己的写路径 —— 于是也**不再需要**「页面路径借 API 权限点」那层（那些
+	// CasbinMiddlewareForPath("/api/...") 只是把 API path 字符串拿来当 Casbin obj 用）。
+	//
+	// 编辑抽屉仍是 GET：片段里的表单自己声明 data-write-api 端点（前端发 JSON），
+	// 权限照旧按「能改券」判 —— 看不到 update 权限的人不该拿到这张表单。
 	couponPages := NewCouponPageHandle(svc, projects)
-	pages.GET("/coupons", shell.PageAuthz("/api/order/coupon/list"), couponPages.CouponsPage)
+	pages.GET("/coupons", adminui.PageAuthz("/api/order/coupon/list"), couponPages.CouponsPage)
 	pages.GET("/coupons/edit-form", builtin.CasbinMiddlewareForPathAs("/api/order/coupon/update", http.MethodPost), couponPages.CouponEditForm)
-	pages.POST("/coupons/create", builtin.CasbinMiddlewareForPath("/api/order/coupon/create"), couponPages.CouponCreate)
-	pages.POST("/coupons/update", builtin.CasbinMiddlewareForPath("/api/order/coupon/update"), couponPages.CouponUpdate)
-	pages.POST("/coupons/delete", builtin.CasbinMiddlewareForPath("/api/order/coupon/delete"), couponPages.CouponDelete)
-	// 批量删除 / 启停：启停走 /api/order/coupon/update（单条启停也走它）。
-	pages.POST("/coupons/bulk-delete", builtin.CasbinMiddlewareForPath("/api/order/coupon/delete"), couponPages.CouponBulkDelete)
-	pages.POST("/coupons/bulk-toggle", builtin.CasbinMiddlewareForPath("/api/order/coupon/update"), couponPages.CouponBulkToggle)
 }

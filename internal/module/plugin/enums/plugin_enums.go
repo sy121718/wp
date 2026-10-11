@@ -1,7 +1,7 @@
 // Package pluginenums 插件模块响应消息。
 //
 // 常量**值**是 i18n key（不是中文文案）：中文只以「出口处的中文兜底」形态存在
-// （inbound/http/plugin_err.go 的 pluginFacingMessage、service/plugin_runtime.go 的
+// （inbound/http/plugin_err.go 的 pluginMsg、service/plugin_runtime.go 的
 // defaultComponentHint）。理由见 pkg/response.IsBusinessError —— 判据是值的**形态**，
 // 中文值两层判据都不命中，会被当成内部错误（500 + 通用文案）。
 package pluginenums

@@ -5,6 +5,8 @@ package shell_test
 // 菜单真源是 sys_menus 表（224 起侧栏由它驱动）。这条用例走**真库**读那一行，
 // 再经真实的 BuildNav 渲染成侧栏结构 —— 只查 SQL 不看渲染，会漏掉「行在、但
 // is_hidden=1 / type 不对 / 没有权限码所以过滤掉」这类「菜单存在却看不见」的情形。
+//
+// task-72 起 BuildNav 归 internal/adminui，本用例只改引用面，取数与断言不变。
 
 import (
 	"strings"
@@ -12,8 +14,8 @@ import (
 
 	"gorm.io/gorm"
 
+	"go_wp/internal/adminui"
 	admindto "go_wp/internal/module/admin/dto"
-	"go_wp/internal/shell"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -52,7 +54,7 @@ func TestSystemSettingsMenuRendersInSidebar(t *testing.T) {
 	}
 	parent.Children = []admindto.MenuTreeNode{leaf}
 
-	groups := shell.BuildNav([]admindto.MenuTreeNode{parent}, row.Path, func(key, fallback string) string {
+	groups := adminui.BuildNav([]admindto.MenuTreeNode{parent}, row.Path, func(key, fallback string) string {
 		return fallback
 	})
 	var rendered strings.Builder

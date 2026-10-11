@@ -75,7 +75,8 @@ func (r *Resolver) Candidates(ctx context.Context, projectID string) (groups []n
 //
 // 本包是 outbound 适配器，**不在这一层拼文案**：它没有请求语言，写出中文就等于把
 // 一种语言焊进契约数据。contract 的 SourceGroup.Title 因此只承载 key，
-// 由展示层（navigation/inbound/http 的 navSourceGroupTitle）取词 + 兜底。
+// 由展示层取词 + 兜底：页面把 key 原样透传（inbound/http 的 navSourceGroup 的 Title），
+// 模板 admin/navigation/navigations.html 按类型取词并自带中文兜底。
 func sourceGroupTitleKey(entityType string) string {
 	switch strings.TrimSpace(entityType) {
 	case "page":

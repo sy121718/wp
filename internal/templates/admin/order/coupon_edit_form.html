@@ -1,36 +1,35 @@
 {* admin/order/coupon_edit_form.html — 修改优惠码表单片段。
 
-   两个身份：① GET /admin/coupons/edit-form 的按需抽屉响应（data-drawer-url 加载）；
-   ② 「写失败不丢输入」的失败重渲染载体 —— 服务端按 HX-Request 分档（见
-   internal/module/order/inbound/http/coupon_page.go 的 couponEditFail）。
+   唯一身份：GET /admin/coupons/edit-form 的按需抽屉响应（列表页的 data-drawer-url 加载）。
 
-   数据只有两个来源，且不需要开关分流：
-     · `.Coupon` 是 **dto 本身**（首屏的初始值：券码只读文本、各字段当前值）；
-     · `.Echo` 是本次提交的原始表单（失败档才有内容）。
-   取值一律 `formValue(.Echo, "字段名", 初始值)`：提交里有这个字段就用提交值（哪怕空串），
-   没有才用 dto 的值。旧写法的 ceFill 开关、ce* 局部变量、FormEcho 前缀键、字段清单
-   与双向断言全部不需要了。
+   写路径已迁到「前端直调 JSON」（POST /api/order/coupon/update 的单档 = 完整 CouponSaveReq，
+   见 static/js/ui/json_write.js）：成功回列表（data-write-nav 带回当前筛选上下文），
+   失败在抽屉里**原地**显示后端给的那句话、已填内容留着。于是旧写法的
+   「失败重渲片段 + Echo 回填 + SubmitErr 错误槽」（服务端的 couponEditFail）整块不需要了，
+   本片段不再读 .Echo / .SubmitErr / .ListQuery。
+
+   数据只有一个来源：`.Coupon` 是 **dto 本身**（券码只读文本、各字段当前值、时间窗经
+   dateTimeLocal 转成控件认的写法）。**必须回送全部可改字段** —— 服务端是整体更新，
+   漏送的字段会被写成零值（把门槛悄悄清零）；照抄券码（不可改）不在此列。
 
    控件 id 用 `coupon-{{id}}-…`：本片段是**多实例**模板（不同券各一份），id 带券 id
    才不依赖「只有一份在 DOM 里」这个巧合；每个可见字段都配 label + for。
-
-   表单字段名与 /admin/coupons/update 的绑定逐字一致，改这里等于改协议。
-   列表上下文在 action 的 query 上（不再用 returnQuery 隐藏域）。 *}
-{{import "../partials/csrf_field.html"}}
+   字段名与 /api/order/coupon/update 的绑定逐字一致，改这里等于改协议。
+   数值字段必须 data-write-number 点名（JSON 里要是数字，字符串会被绑定拒绝）。 *}
 {{tr := .["t"]}}
 {{cp := .Coupon}}
 {{id := cp.ID}}
-{{discountType := formValue(.Echo, "discountType", cp.DiscountType)}}
-{{status := formValue(.Echo, "status", cp.Status)}}
-            <div data-coupon-edit-host data-drawer-fragment>
-                {{if .SubmitErr != ""}}
-                <p class="badge badge-warning" role="alert" data-coupon-edit-err>{{.SubmitErr}}</p>
-                {{end}}
-                <form method="post" action="/admin/coupons/update?{{.ListQuery}}" class="form-stack" data-coupon-edit-form
-                      hx-post="/admin/coupons/update?{{.ListQuery}}" hx-target="closest [data-coupon-edit-host]" hx-swap="outerHTML">
-                    {{yield csrfField()}}
+            <div data-drawer-fragment>
+                <form class="form-stack"
+                      data-write-api="/api/order/coupon/update" data-write-mode="create"
+                      data-write-number="id,discountValue,minSubtotal,maxUses,perUserLimit,status"
+                      data-write-nav="/admin/coupons?{{.ListQuery}}"
+                      data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
                     <input type="hidden" name="id" value="{{id}}">
-                    <input type="hidden" name="projectId" value="{{formValue(.Echo, "projectId", cp.ProjectID)}}">
+                    <input type="hidden" name="projectId" value="{{cp.ProjectID}}">
+                    {* 结果区：失败写在这儿（表单内容原样保留），成功则整页跳回列表。 *}
+                    <p class="form-hint" data-write-status role="status" hidden></p>
+                    <noscript><p class="form-hint">{{tr("admin.coupons.write.noJs", "本页的新建、修改、删除与批量动作需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。")}}</p></noscript>
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label" for="coupon-{{id}}-code">{{tr("admin.coupons.detail.code_aria", "券码（不可修改）")}}</label>
@@ -38,60 +37,61 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="coupon-{{id}}-name">{{tr("admin.coupons.detail.ph.name", "名称")}}</label>
-                            <input type="text" class="form-input" id="coupon-{{id}}-name" name="name" value="{{formValue(.Echo, "name", cp.Name)}}" maxlength="120" autocomplete="off">
+                            <input type="text" class="form-input" id="coupon-{{id}}-name" name="name" value="{{cp.Name}}" maxlength="120" autocomplete="off">
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label" for="coupon-{{id}}-discount-type">{{tr("admin.coupons.col.discount", "折扣")}}</label>
                             <select class="form-select" id="coupon-{{id}}-discount-type" name="discountType" required>
-                                <option value="percent" {{if discountType == "percent"}}selected{{end}}>{{tr("admin.coupons.type.percent", "按比例（折扣力度 1..100）")}}</option>
-                                <option value="fixed" {{if discountType == "fixed"}}selected{{end}}>{{tr("admin.coupons.type.fixed", "固定金额（单位：分）")}}</option>
+                                <option value="percent" {{if cp.DiscountType == "percent"}}selected{{end}}>{{tr("admin.coupons.type.percent", "按比例（折扣力度 1..100）")}}</option>
+                                <option value="fixed" {{if cp.DiscountType == "fixed"}}selected{{end}}>{{tr("admin.coupons.type.fixed", "固定金额（单位：分）")}}</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="coupon-{{id}}-status">{{tr("admin.coupons.col.status", "状态")}}</label>
                             <select class="form-select" id="coupon-{{id}}-status" name="status">
-                                <option value="1" {{if status == "1"}}selected{{end}}>{{tr("admin.coupons.form.enabled", "启用")}}</option>
-                                <option value="0" {{if status == "0"}}selected{{end}}>{{tr("admin.coupons.form.disabled", "停用")}}</option>
+                                <option value="1" {{if cp.Status == 1}}selected{{end}}>{{tr("admin.coupons.form.enabled", "启用")}}</option>
+                                <option value="0" {{if cp.Status == 0}}selected{{end}}>{{tr("admin.coupons.form.disabled", "停用")}}</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="coupon-{{id}}-min-subtotal">{{tr("admin.coupons.detail.ph.min_subtotal", "使用门槛（分）")}}</label>
-                            <input type="number" class="form-input" id="coupon-{{id}}-min-subtotal" name="minSubtotal" value="{{formValue(.Echo, "minSubtotal", cp.MinSubtotal)}}" inputmode="numeric" step="1" min="0">
+                            <input type="number" class="form-input" id="coupon-{{id}}-min-subtotal" name="minSubtotal" value="{{cp.MinSubtotal}}" inputmode="numeric" step="1" min="0">
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label" for="coupon-{{id}}-discount-value">{{tr("admin.coupons.detail.ph.discount_value", "折扣值")}}</label>
-                            <input type="number" class="form-input" id="coupon-{{id}}-discount-value" name="discountValue" value="{{formValue(.Echo, "discountValue", cp.DiscountValue)}}" inputmode="numeric" step="1" min="1" required>
+                            <input type="number" class="form-input" id="coupon-{{id}}-discount-value" name="discountValue" value="{{cp.DiscountValue}}" inputmode="numeric" step="1" min="1" required>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="coupon-{{id}}-max-uses">{{tr("admin.coupons.detail.ph.max_uses", "总次数上限（0 = 不限）")}}</label>
-                            <input type="number" class="form-input" id="coupon-{{id}}-max-uses" name="maxUses" value="{{formValue(.Echo, "maxUses", cp.MaxUses)}}" inputmode="numeric" step="1" min="0">
+                            <input type="number" class="form-input" id="coupon-{{id}}-max-uses" name="maxUses" value="{{cp.MaxUses}}" inputmode="numeric" step="1" min="0">
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="coupon-{{id}}-per-user-limit">{{tr("admin.coupons.detail.ph.per_user_limit", "每人限次（0 = 不限）")}}</label>
-                            <input type="number" class="form-input" id="coupon-{{id}}-per-user-limit" name="perUserLimit" value="{{formValue(.Echo, "perUserLimit", cp.PerUserLimit)}}" inputmode="numeric" step="1" min="0">
+                            <input type="number" class="form-input" id="coupon-{{id}}-per-user-limit" name="perUserLimit" value="{{cp.PerUserLimit}}" inputmode="numeric" step="1" min="0">
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label" for="coupon-{{id}}-starts-at">{{tr("admin.coupons.detail.ph.starts_at", "开始时间（留空 = 不限）")}}</label>
-                            <input type="datetime-local" step="1" class="form-input" id="coupon-{{id}}-starts-at" name="startsAt" value="{{formValue(.Echo, "startsAt", dateTimeLocal(cp.StartsAt))}}">
+                            <input type="datetime-local" step="1" class="form-input" id="coupon-{{id}}-starts-at" name="startsAt" value="{{dateTimeLocal(cp.StartsAt)}}">
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="coupon-{{id}}-ends-at">{{tr("admin.coupons.detail.ph.ends_at", "结束时间（留空 = 不限）")}}</label>
-                            <input type="datetime-local" step="1" class="form-input" id="coupon-{{id}}-ends-at" name="endsAt" value="{{formValue(.Echo, "endsAt", dateTimeLocal(cp.EndsAt))}}">
+                            <input type="datetime-local" step="1" class="form-input" id="coupon-{{id}}-ends-at" name="endsAt" value="{{dateTimeLocal(cp.EndsAt)}}">
                         </div>
                     </div>
                     <div class="form-group">
                         <label class="form-label" for="coupon-{{id}}-remark">{{tr("admin.coupons.detail.ph.remark", "备注")}}</label>
-                        <input type="text" class="form-input" id="coupon-{{id}}-remark" name="remark" value="{{formValue(.Echo, "remark", cp.Remark)}}" maxlength="255" autocomplete="off" placeholder="{{tr("admin.coupons.ph.remark", "备注（活动说明 / 内部口径）")}}">
+                        <input type="text" class="form-input" id="coupon-{{id}}-remark" name="remark" value="{{cp.Remark}}" maxlength="255" autocomplete="off" placeholder="{{tr("admin.coupons.ph.remark", "备注（活动说明 / 内部口径）")}}">
                     </div>
                     <div class="action-row">
                         <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-                        <button type="submit" class="btn btn-primary">{{tr("admin.coupons.detail.submit", "保存修改")}}</button>
+                        {* 无 JS 时写动作不可用，按钮是 hidden（有 JS 时由 json_write.js 的 [data-requires-js] 放出来）。 *}
+                        <button type="submit" class="btn btn-primary" data-requires-js hidden>{{tr("admin.coupons.detail.submit", "保存修改")}}</button>
                     </div>
                 </form>
             </div>

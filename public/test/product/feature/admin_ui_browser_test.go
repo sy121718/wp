@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"go_wp/internal/middleware/adminctx"
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
-	"go_wp/internal/shell"
 
 	"github.com/gin-gonic/gin"
 )
@@ -55,15 +55,15 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 		}
 		c.Next()
 	})
-	// 后台页面路由由 shell.PermContextMiddleware 注入权限码集合，主行动按钮与抽屉按权限渲染；
+	// 后台页面路由由 adminctx.PermContextMiddleware 注入权限码集合，主行动按钮与抽屉按权限渲染；
 	// 这条链路不挂鉴权中间件，注入一份权限，让「页面里存在表单写入口」这类断言保持有效。
 	router.Use(func(c *gin.Context) {
-		c.Set(shell.PermSetKey, map[string]bool{
+		c.Set(adminctx.PermSetKey, map[string]bool{
 			"product:brand_create": true, "product:brand_update": true, "product:brand_delete": true,
 			"product:category_create": true, "product:category_update": true, "product:category_delete": true,
 			"product:tag_create": true, "product:tag_update": true, "product:tag_delete": true,
 		})
-		c.Set(shell.ButtonsKey, map[string]bool{
+		c.Set(adminctx.ButtonsKey, map[string]bool{
 			"product.brand_create": true, "product.brand_update": true, "product.brand_delete": true,
 			"product.category_create": true, "product.category_update": true, "product.category_delete": true,
 			"product.tag_create": true, "product.tag_update": true, "product.tag_delete": true,

@@ -8,7 +8,10 @@ package productenums
 //
 // 为什么收在这里：调用点原先直接写 key 字面量（`tr("admin.products.status.draft", "草稿")`），
 // 「谁在用这个 key」「改词条要动哪几处」都只能靠字符串检索，改 key 时容易漏。收到 enums 之后
-// key 与常量名一一对应；**中文兜底仍留在调用点原地**（词条缺失时的回落，不搬进 enums）。
+// key 与常量名一一对应；**静态文案的中文兜底仍留在调用点原地**（词条缺失时的回落，不搬进 enums）。
+//
+// 例外是「值 → 文案」的映射（业务取值 → key + 兜底）：那里的兜底跟着映射一起住在
+// product_label_enums.go —— 同一 key 在两处各写一句兜底必然漂移（词条缺失时两个入口说两句话）。
 //
 // 模板（.jet / .html）不在此列：Jet 里引用不到 Go 常量，那里的 key 必然内联。
 //
@@ -25,6 +28,16 @@ const (
 	ProductsOptionNoPrimaryCategory = "admin.products.option.noPrimaryCategory"
 	ProductsOptionNoBrand           = "admin.products.option.noBrand"
 	ProductDetailTitle              = "admin.product_detail.title"
+	// 编辑页 / 写动作回执 / 详情页的评分与预览（提示页与 iframe 出口的成品串）。
+	ProductsEditTitle             = "admin.products.edit.title"
+	ProductsActionDone            = "admin.products.actionDone"
+	ProductsBulkNoneSelected      = "admin.products.bulk.noneSelected"
+	ProductsCreateQuantityInvalid = "admin.products.create.quantityInvalid"
+	ProductsRatingInvalid         = "admin.products.rating.invalid"
+	ProductsPreviewNeedSave       = "admin.products.preview.needSave"
+	ProductsPreviewUnavailable    = "admin.products.preview.unavailable"
+	ProductsPreviewFailed         = "admin.products.preview.failed"
+	ProductsPreviewEmpty          = "admin.products.preview.empty"
 
 	// —— 多语言译文（entityType / field 是译文域的字段白名单，与模板同一份对应关系）——
 	ProductTranslationsTitle                    = "admin.product_translations.title"
@@ -48,6 +61,12 @@ const (
 	ProductTranslationsFieldTagName             = "admin.product_translations.field.tagName"
 	ProductTranslationsFieldAttributeName       = "admin.product_translations.field.attributeName"
 	ProductTranslationsFieldAttributeValues     = "admin.product_translations.field.attributeValues"
+	// 行级校验结论（值是 key，中文兜底在同目录的 TranslationMsgFallbacks 表里 ——
+	// 那几条是页面上最常出现的几句话，控制器只交事实、取词在模板）。
+	ProductTranslationsErrContextInvalid = "admin.product_translations.err.contextInvalid"
+	ProductTranslationsErrSourceSkipped  = "admin.product_translations.err.sourceSkipped"
+	ProductTranslationsErrTargetEmpty    = "admin.product_translations.err.targetEmpty"
+	ProductTranslationsErrShapeMismatch  = "admin.product_translations.err.shapeMismatch"
 
 	// —— 标签 ——
 	ProductTagsTitle      = "admin.product_tags.title"
@@ -62,6 +81,11 @@ const (
 	ProductDetailTemplateTitle        = "admin.product_detail_template.title"
 	ProductEditErrDefaultPriceInvalid = "admin.product_edit.err.defaultPriceInvalid"
 	ProductEditErrWeightInvalid       = "admin.product_edit.err.weightInvalid"
+	// 详情页模板页的参数级提示与降级引导（都经提示页渲染成品串）。
+	ProductDetailTemplateNoProductPrompt = "admin.product_detail_template.noProductPrompt"
+	ProductDetailTemplateDepsMissing     = "admin.product_detail_template.depsMissing"
+	ProductDetailTemplateNameRequired    = "admin.product_detail_template.nameRequired"
+	ProductDetailTemplatePathRequired    = "admin.product_detail_template.pathRequired"
 
 	// —— 捆绑配置 ——
 	ProductBundleTitle                   = "admin.product_bundle.title"
@@ -72,6 +96,9 @@ const (
 	ProductBundleSourceNone              = "admin.product_bundle.source.none"
 	ProductBundleSourceWarehouseSKULabel = "admin.product_bundle.source.warehouseSkuLabel"
 	ProductBundleSourceExternalSKULabel  = "admin.product_bundle.source.externalSkuLabel"
+	// 配置页的两种「没有可配对象」与面板读取失败（提示页与面板降级都用）。
+	ProductBundleNoProduct    = "admin.product_bundle.noProduct"
+	ProductBundleDetailFailed = "admin.product_bundle.detailFailed"
 
 	// —— 定价工具 ——
 	ProductPricingTitle            = "admin.product_pricing.title"
@@ -85,6 +112,9 @@ const (
 	ProductPricingFilterCategoryID = "admin.product_pricing.filter.categoryId"
 	ProductPricingFilterBrandID    = "admin.product_pricing.filter.brandId"
 	ProductPricingFilterTagID      = "admin.product_pricing.filter.tagId"
+	// 应用调价后的回执：三段拼一句（前缀 + 计数 + 后缀），词条还是两段式（见迁移）。
+	ProductPricingAppliedLead = "admin.product_pricing.applied.lead"
+	ProductPricingAppliedTail = "admin.product_pricing.applied.tail"
 
 	// —— SEO 评分 ——
 	//

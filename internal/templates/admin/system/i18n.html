@@ -1,5 +1,12 @@
 {* admin/i18n.html — 文案词条管理（审计 I18N-003）。 *}
 {* 读写都走 pkg/i18n 的端口；本页只管「选一条、改一句、存回去」。 *}
+{* 写动作（新建 / 编辑 / 删除 / 批量删除）由前端 fetch 直调 JSON 端点 POST /api/i18n/save
+   （static/js/ui/json_write.js；请求体形状是严格 tagged union，见
+   internal/module/admin/inbound/http/admin_i18n_write.go）。页面 POST 已删除，因此：
+     · 表单只声明**事实**（端点 / 写模式 / 文案从哪来），行为全在控件里，模板不写内联 JS；
+     · 成功后整页刷新（列表的派生列由服务端重算，且刷新天然保住当前的筛选与页码 ——
+       原先靠表单 action 上带 ?keyword=… 回带上下文，那套已随页面 POST 一起退役）；
+     · 失败就地显示原因并保住已填内容。 *}
 {* 版式遵循 theme.css「后台页壳」段（admin 页面设计评审，见 docs/02-H-admin-page-shell.md）：
      · 领域说明（与迁移 seed 的分工）收进页头 .help —— 原版两段 232 字直接铺在首屏；
      · 筛选并入列表卡 .filter-bar，列表进 .table-scroll（表头吸顶 + 高度封顶）；
@@ -10,10 +17,6 @@
 {{import "../partials/bulk_bar.html"}}
 {{block body()}}
 {{tr := .["t"]}}
-{{csrf := .["csrf_token"]}}
-{* 写动作表单的 action 上带的筛选上下文（服务端渲染时拼、POST 回来由 shell.BackPath 读回）。
-   可选键一律 isset 包裹：直接渲染模板的单测不带它，缺失键会让整页在此中断。 *}
-{{lq := ""}}{{if isset(.ListQuery)}}{{lq = .ListQuery}}{{end}}
 {{entries := .Entries}}
 {{editURLs := .["I18nEditURLs"]}}
 {{hasEditURLs := false}}
@@ -29,6 +32,14 @@
 {{if .Keyword != ""}}{{hasFilter = true}}{{end}}
 {{if langFilter != ""}}{{hasFilter = true}}{{end}}
 {{if catFilter != ""}}{{hasFilter = true}}{{end}}
+{* 整页失败槽：主数据没读到（LoadFailed）时只渲染失败卡 —— 失败优先于空态，
+   「没读出来」与「读到了、只是空的」必须分开。 *}
+{{loadFailed := false}}
+{{if isset(.LoadFailed)}}{{loadFailed = .LoadFailed}}{{end}}
+{{loadError := .["LoadError"]}}
+{* 失败页不渲染新建入口：抽屉模板与列表同属失败分支，留着按钮只会指向一个不存在的抽屉。 *}
+{{canCreate := canManage}}
+{{if loadFailed}}{{canCreate = false}}{{end}}
 <div class="stack">
     {* 页头：标题 + 领域说明；新建入口在这里，不再自占一张卡。 *}
     <header class="page-head">
@@ -41,15 +52,22 @@
                 </span>
             </div>
         </div>
-        {{if canManage}}
+        {{if canCreate}}
         <div class="page-actions">
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-i18n-create" data-drawer-title="{{ .["t"]("admin.common.action.create", "新建") }}">{{ .["t"]("admin.common.action.create", "新建") }}</button>
         </div>
         {{end}}
     </header>
 
-    {* 写动作的结论不再经 ?saved=/?errored=/?done=/?err= 回带（走 shell.RenderJump 的整页提示，
-       见 admin_jump.go）；本页不再有查询参数喂进来的提示条。 *}
+    {* 失败优先空态：主数据没读到时不渲染筛选、表格、空态、分页与写表单，
+       只给结论与下一步 —— 与「读到了、只是空的」分开。 *}
+    {{if loadFailed}}
+    <section class="card list-card" role="alert">
+        <p class="badge badge-danger">{{loadError}}</p>
+        <p class="page-sub">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
+        <p class="hint">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
+    </section>
+    {{else}}
 
     {* 主区：筛选工具行 + 列表，同一张卡。 *}
     <section class="card list-card">
@@ -82,8 +100,17 @@
            所以行内删除表单放表格外、按钮用 form="<id>" 关联）。
            勾选值带 (key, lang) 复合键：词条唯一标识是二元组，只带 key 会把其它语言的
            同名词条一起删掉 —— 分隔符与解析见 handler 的 adminI18nEntryKeySeparator。 *}
-        <form method="post" action="/admin/i18n/bulk-delete{{if lq}}?{{lq}}{{end}}">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form data-write-api="/api/i18n/save"
+              data-write-mode="bulk"
+              data-msg-none-selected="{{tr("admin.i18nBulk.noneSelected", "没有勾选任何词条，列表未改动。")}}"
+              data-msg-all-deleted="{{tr("admin.i18nWrite.bulkResult.allDeleted", "已删除 {count} 条词条（构建时回退到组件包内的中文兜底）。")}}"
+              data-msg-all-skipped="{{tr("admin.i18nWrite.bulkResult.allSkipped", "{count} 条词条都未能删除，列表未改动。")}}"
+              data-msg-partial="{{tr("admin.i18nWrite.bulkResult.partial", "已删除 {deleted} 条，{skipped} 条未能删除（可能已被删除）。")}}"
+              data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+              data-msg-refresh="{{tr("admin.i18nWrite.refresh", "刷新列表")}}">
+            {* 结果区：批量结论（已删 N / 跳过 M + 逐条原因）就地显示在这里。 *}
+            <p class="form-hint" data-write-status role="status" hidden></p>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canManage}}{{if len(entries) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
@@ -125,7 +152,10 @@
                             <button type="button" class="btn btn-ghost" data-drawer-url="{{editURLs[i]}}" data-drawer-title="{{tr("admin.i18n.action.edit", "编辑")}} {{e.Key}}">{{tr("admin.i18n.action.edit", "编辑")}}</button>
                             {{end}}
                             {{if canManage}}
-                            <button type="submit" form="i18n-del-{{i}}" class="btn btn-sm btn-danger"
+                            {* 无 JS 时删除按钮是 hidden（有 JS 时由 json_write.js 的 [data-requires-js] 放出来）：
+                               写动作由浏览器直调接口完成，没有端到端兜底表单，留一个「点了只是重新加载本页」
+                               的按钮不如藏起来。 *}
+                            <button type="submit" form="i18n-del-{{i}}" class="btn btn-sm btn-danger" data-requires-js hidden
                                     data-confirm="{{tr("msg_delete_confirm", "确定要删除吗？")}}" data-confirm-danger>{{tr("admin.i18n.action.delete", "删除")}}</button>
                             {{end}}
                         </td>
@@ -137,17 +167,23 @@
         </div>
         </form>
         {* 行内删除表单放表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器提前闭合表格；
-           行内按钮用 form="<id>" 指回这里的隐藏表单（表单字段与原来完全一致）。
-           只在有数据时渲染：空表没有可删除的行，分页条同理（没有数据就没有页可翻）。 *}
+           行内按钮用 form="<id>" 指回这里的隐藏表单。
+           写模式是 create 而不是 single：single 模式只发 {id}，发不出动作标签与 (key, lang)
+           复合键；create 模式发**全部具名字段**、成功后同样整页刷新，语义正好对上。
+           动作标签 action=delete 是必需的（严格 tagged union，服务端不接受形状猜测）。 *}
         {{if len(entries) > 0}}
+        <div data-write-host>
+        <p class="form-hint" data-write-status role="status" hidden></p>
         {{range i, e := entries}}
-        <form id="i18n-del-{{i}}" class="hidden-form" method="post" action="/admin/i18n/delete{{if lq}}?{{lq}}{{end}}"
+        <form id="i18n-del-{{i}}" class="hidden-form" data-write-api="/api/i18n/save" data-write-mode="create"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
               data-confirm="{{tr("msg_delete_confirm", "确定要删除吗？")}}" data-confirm-danger>
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="action" value="delete">
             <input type="hidden" name="key" value="{{e.Key}}">
             <input type="hidden" name="lang" value="{{e.Lang}}">
         </form>
         {{end}}
+        </div>
         {{include "../partials/pagination.html"}}
         {{end}}
     </section>
@@ -155,8 +191,11 @@
     {* 新建抽屉：按钮在页头，模板本体留在文档末尾（<template> 不参与渲染）。 *}
     {{if canManage}}
     <template id="tpl-i18n-create">
-        <form method="post" action="/admin/i18n/save{{if lq}}?{{lq}}{{end}}">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form data-write-api="/api/i18n/save" data-write-mode="create"
+              data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}">
+            <input type="hidden" name="action" value="create">
+            {* 结果区：失败时写在这儿（表单内容原样保留），成功则整页刷新回列表。 *}
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="form-grid">
                 <div class="form-field">
                     <label class="form-label">key</label>
@@ -187,11 +226,15 @@
                 </div>
             </div>
             <div class="action-row">
+                {* 无 JS 时写动作不可用：按钮是 hidden（有 JS 时由 json_write.js 的 [data-requires-js]
+                   放出来），这里说清原因，避免用户以为「按钮不见了」是权限问题。 *}
+                <noscript><p class="form-hint">{{ .["t"]("admin.i18nWrite.noJs", "本页的新建、编辑与删除需要 JavaScript：写操作由浏览器直接调用接口完成。请开启 JavaScript 后重试。") }}</p></noscript>
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.i18n.action.save", "保存") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden>{{ .["t"]("admin.i18n.action.save", "保存") }}</button>
             </div>
         </form>
     </template>
+    {{end}}
     {{end}}
 </div>
 {{end}}

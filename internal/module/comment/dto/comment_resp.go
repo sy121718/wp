@@ -84,8 +84,7 @@ type AdminListResp struct {
 
 // ReviewResp 批量审核结果。
 type ReviewResp struct {
-	// Affected 实际被改写的行数（可能小于请求条数：并发的另一次审核已把它改成目标状态，
-	// 或者 id 不属于这个工程 —— 两种情况都不该被报成失败，但**必须如实回带**）。
+	// Affected 本次更新实际影响的行数；未匹配的 id 不计入，重复同状态审核仍计入更新。
 	Affected int64
 	// Status 本次设置的目标状态。
 	Status string

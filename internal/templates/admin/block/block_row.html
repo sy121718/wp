@@ -1,0 +1,51 @@
+{* 块列表的一行（/admin/blocks）。行数据只有业务事实：Kind / ReuseMode / UpdatedAt / RefCount
+   （handler 的 blockRow 投影），标签、时间与「N 个页面引用」这类 UI 文案都在这里生成 ——
+   原先那三张表（blockKindLabels / blockReuseModeLabels / blockRefCountText）已从 Go 侧删除。
+
+   kind 的 key 集必须与 blocks.html 新建抽屉的类型下拉**同一批**：同一个 kind 在下拉里与列表里
+   显示成两个词，是本条失守的唯一症状（不报错、也没有别的测试会红）。
+   判据：internal/templates/site_structure_i18n_test.go 的 TestBlockRowLabelsComeFromSeededKeys
+   （两处 key 集逐一相等 + 这里用到的每个 key 都在迁移里中英成对）。
+   RefCount 为 -1 表示引用数读不到，必须与 0 引用区分：把「读不到」显示成「没人用」
+   会让人以为这个块可以放心删。 *}
+{{block blockRow(b, tr)}}
+{{kind := tr("admin.blocks.kind.block", "区块")}}
+{{if b.Kind == "header"}}{{kind = tr("admin.blocks.kind.header", "页眉")}}
+{{else if b.Kind == "footer"}}{{kind = tr("admin.blocks.kind.footer", "页脚")}}
+{{else if b.Kind == "announcement"}}{{kind = tr("admin.blocks.kind.announcement", "公告栏")}}
+{{else if b.Kind == "sidebar"}}{{kind = tr("admin.blocks.kind.sidebar", "侧边栏")}}
+{{else if b.Kind == "breadcrumb"}}{{kind = tr("admin.blocks.kind.breadcrumb", "面包屑")}}
+{{else if b.Kind == "drawer"}}{{kind = tr("admin.blocks.kind.drawer", "抽屉导航")}}
+{{else if b.Kind == "search"}}{{kind = tr("admin.blocks.kind.search", "搜索框")}}
+{{else if b.Kind == "cta"}}{{kind = tr("admin.blocks.kind.cta", "CTA 段")}}
+{{else if b.Kind == "trust"}}{{kind = tr("admin.blocks.kind.trust", "信任徽章")}}
+{{else if b.Kind == "brands"}}{{kind = tr("admin.blocks.kind.brands", "品牌墙")}}
+{{else if b.Kind == "contact"}}{{kind = tr("admin.blocks.kind.contact", "联系方式")}}
+{{else if b.Kind == "about"}}{{kind = tr("admin.blocks.kind.about", "关于我们")}}
+{{else if b.Kind == "banner"}}{{kind = tr("admin.blocks.kind.banner", "横幅")}}
+{{else if b.Kind == "grid"}}{{kind = tr("admin.blocks.kind.grid", "多栏布局")}}
+{{else if b.Kind == "snippet"}}{{kind = tr("admin.blocks.kind.snippet", "片段模板")}}{{end}}
+{{reuse := tr("admin.blocks.reuseMode.global", "引用")}}
+{{if b.ReuseMode == "template"}}{{reuse = tr("admin.blocks.reuseMode.template", "复制")}}{{end}}
+{{ref := "—"}}
+{{if b.ReuseMode == "global"}}
+    {{if b.RefCount < 0}}{{ref = tr("admin.blocks.refCount.unknown", "未知")}}
+    {{else if b.RefCount == 0}}{{ref = tr("admin.blocks.refCount.none", "未被页面引用")}}
+    {{else}}{{ref = fill(tr("admin.blocks.refCount.pages", "{count} 个页面引用"), "count", b.RefCount)}}{{end}}
+{{end}}
+<tr data-filter-text="{{b.Name}} {{kind}} {{reuse}} {{ref}}">
+    <td class="col-check"><input type="checkbox" name="ids" value="{{b.ID}}" data-check-item aria-label="{{tr("admin.common.bulk.selectRow", "选择该行")}}"></td>
+    <td>{{b.Name}}</td>
+    <td><span class="badge badge-mute">{{kind}}</span></td>
+    <td>{{reuse}}</td>
+    <td class="text-mute text-sm">{{dateTime(b.UpdatedAt)}}</td>
+    <td class="text-mute text-sm">{{ref}}</td>
+    <td class="col-actions">
+        <a class="btn btn-sm" href="/workbench?block={{b.ID}}">{{tr("admin.blocks.action.edit", "编辑")}}</a>
+        {* 删除走 JSON API（表单在表格外，见 blocks.html 的行内删除表单；按钮用 form 属性挂过去）。
+            按钮随该 form 一起需要 JS：无 JS 时写动作没有兜底端点，藏起来并在表单上方说清原因，
+            比留一个「点了只是重新加载本页」的按钮诚实。 *}
+        <button type="submit" form="block-del-{{b.ID}}" class="btn btn-sm btn-danger" data-requires-js hidden>{{tr("admin.blocks.action.delete", "删除")}}</button>
+    </td>
+</tr>
+{{end}}

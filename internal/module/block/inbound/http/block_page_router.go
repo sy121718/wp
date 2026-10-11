@@ -9,11 +9,11 @@ package blockhttp
 import (
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/module/block/contract"
 	"go_wp/internal/module/page/contract"
 	"go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
 )
 
 // SetupBlockPages 注册全局块管理页（/admin 组，中间件链由装配层统一挂好）。
@@ -32,13 +32,13 @@ func SetupBlockPages(adminPages *gin.RouterGroup,
 	h := NewBlockPageHandle(blocks, projects, pages...)
 	// 页面 GET 鉴权：借列表读权限点（菜单 /admin/blocks 绑 block:list → GET /api/block/list）。
 	// 与页面写操作同一手法（不同动词各挂各的中间件），页面与 API 共用一条 Casbin 链。
-	adminPages.GET("/blocks", shell.PageAuthz("/api/block/list"), h.BlocksList)
+	adminPages.GET("/blocks", adminui.PageAuthz("/api/block/list"), h.BlocksList)
 	// 待重建影响面清单（只读抽屉片段）：页头徽章是入口，清单在抽屉里。
 	// 鉴权复用列表页读权限点（GET 与 /api/block/list 的策略动词一致）。
 	adminPages.GET("/blocks/stale/drawer", builtin.CasbinMiddlewareForPath("/api/block/list"), h.BlocksStaleDrawer)
-	adminPages.POST("/blocks/create", builtin.CasbinMiddlewareForPath("/api/block/create"), h.CreateBlock)
-	adminPages.POST("/blocks/delete", builtin.CasbinMiddlewareForPath("/api/block/delete"), h.DeleteBlock)
-	// 批量删除复用单条删除的权限点（不新增权限点、不写迁移）：能删一个块的人就能删一批。
-	adminPages.POST("/blocks/bulk-delete", builtin.CasbinMiddlewareForPath("/api/block/delete"), h.BlocksBulkDelete)
+	// 写动作已全部改走 JSON API（前端直调 /api/block/{create,delete,bulk-delete}，
+	// 见 static/js/ui/json_write.js）：页面侧不再有「薄转发」的写路由 ——
+	// 那条链路要么整页刷新丢输入、要么多一跳提示页，而 JSON 契约本来就更严。
+	// 权限点不变：仍由 /api 组的 Casbin 规则判定，页面只保留读入口与工作台保存。
 	adminPages.POST("/blocks/save-content", builtin.CasbinMiddlewareForPath("/api/block/update"), h.SaveBlockContent)
 }

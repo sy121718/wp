@@ -12,16 +12,16 @@ package sysconfighttp_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfighttp "go_wp/internal/module/sysconfig/inbound/http"
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
 	sysconfigservice "go_wp/internal/module/sysconfig/service"
@@ -51,10 +51,10 @@ func serve(t *testing.T, handle *sysconfighttp.AdminHandle, method, target, body
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 	engine.GET("/admin/system", handle.SystemPage)
-	engine.POST("/admin/system/save", handle.SystemSave)
+	engine.POST("/api/sysconfig/system/save", handle.APISystemSave)
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	if body != "" {
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Content-Type", "application/json")
 	}
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
@@ -64,7 +64,7 @@ func serve(t *testing.T, handle *sysconfighttp.AdminHandle, method, target, body
 // TestSystemSettingsPageRenders 真实渲染：四个字段 + 字典下拉 + version + 完整整页。
 //
 // 这里用**同一模板 + 与 handler 同形的数据**直渲，而不是经 HTTP 走 SetPage：
-// 后台整页继承 layout.html，而 layout 的侧栏来自 shell.PermContextMiddleware 注入的
+// 后台整页继承 layout.html，而 layout 的侧栏来自 adminctx.PermContextMiddleware 注入的
 // 权限导航树（需要登录会话 + 权限服务）——测试环境不具备，走 HTTP 只会得到一个
 // 「页面暂时无法显示」。数据源与 handler 一致（同样的 svc 调用与同样的键名），
 // 因此模板与数据键对不上、下拉没接字典这类问题仍会被这条断言抓住。
@@ -110,7 +110,7 @@ func TestSystemSettingsPageRenders(t *testing.T) {
 		`name="defaultLang"`, `name="siteLangURLMode"`,
 		`name="defaultCountry"`, `name="defaultCurrency"`,
 		`name="i18nVersion"`, `name="tradeVersion"`,
-		`action="/admin/system/save"`,
+		`data-write-api="/api/sysconfig/system/save"`,
 		`value="zh-CN"`, // 语言下拉来自 sys_dict（type=language）
 		`value="CNY"`,   // 货币下拉来自 sys_dict（type=currency）
 		`value="CN"`,    // 国家下拉来自 sys_area（kind=country）
@@ -154,24 +154,15 @@ func TestSystemSettingsSavePreservesUnexposedKeys(t *testing.T) {
 	}
 	t.Logf("保存前 lang_url_codes = %v；default_lang = %v", before, group.Data["default_lang"])
 
-	form := url.Values{
-		"i18nVersion":     {strconv.FormatInt(group.Version, 10)},
-		"tradeVersion":    {strconv.FormatInt(tradeVersion(t, svc), 10)},
-		"defaultLang":     {"en-US"},
-		"siteLangURLMode": {"default_plain"},
-		"defaultCountry":  {"CN"},
-		"defaultCurrency": {"CNY"},
+	form := map[string]any{"i18nVersion": group.Version, "tradeVersion": tradeVersion(t, svc), "defaultLang": "en-US", "siteLangURLMode": "default_plain", "defaultCountry": "CN", "defaultCurrency": "CNY"}
+	payload, err := json.Marshal(form)
+	if err != nil {
+		t.Fatal(err)
 	}
-	rec := serve(t, handle, http.MethodPost, "/admin/system/save", form.Encode())
-	// 写动作的结论走**响应体**（整页提示，shell.RenderJump）：200 + 成功态 + 1 秒后自动回本页。
-	if rec.Code != http.StatusOK {
-		t.Fatalf("保存成功应渲染提示页（200），实际 %d（body=%s）", rec.Code, rec.Body.String())
+	rec := serve(t, handle, http.MethodPost, "/api/sysconfig/system/save", string(payload))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("保存回执应为 JSON 200: %d %s", rec.Code, rec.Body.String())
 	}
-	if body := rec.Body.String(); !strings.Contains(body, `data-jump-state="ok"`) ||
-		!strings.Contains(body, `http-equiv="refresh"`) || !strings.Contains(body, "</html>") {
-		t.Fatalf("保存成功应给整页提示（成功态 + 自动回跳），实际：%s", body)
-	}
-
 	after, err := svc.GetGroup(ctx, "i18n")
 	if err != nil {
 		t.Fatalf("保存后读 i18n 组失败: %v", err)
@@ -194,31 +185,70 @@ func TestSystemSettingsSaveRejectsStaleVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读 i18n 组失败: %v", err)
 	}
-	form := url.Values{
-		"i18nVersion":     {strconv.FormatInt(group.Version-1, 10)},
-		"tradeVersion":    {strconv.FormatInt(tradeVersion(t, svc), 10)},
-		"defaultLang":     {"en-US"},
-		"siteLangURLMode": {"default_plain"},
-		"defaultCountry":  {"CN"},
-		"defaultCurrency": {"CNY"},
+	form := map[string]any{"i18nVersion": group.Version, "tradeVersion": tradeVersion(t, svc), "defaultLang": "en-US", "siteLangURLMode": "default_plain", "defaultCountry": "CN", "defaultCurrency": "CNY"}
+	if _, err := svc.SetGroup(ctx, &sysconfigdto.SetGroupReq{GroupKey: "i18n", Version: group.Version, Data: group.Data}); err != nil {
+		t.Fatal(err)
 	}
-	rec := serve(t, handle, http.MethodPost, "/admin/system/save", form.Encode())
-	// 失败也是整页提示（200 + 失败态），但不自动回跳 —— 用户要看清原因。
-	if rec.Code != http.StatusOK {
-		t.Fatalf("冲突应渲染提示页（200），实际 %d", rec.Code)
+	payload, err := json.Marshal(form)
+	if err != nil {
+		t.Fatal(err)
 	}
-	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="err"`) || !strings.Contains(body, "</html>") {
-		t.Fatalf("冲突应给整页失败提示，实际：%s", body)
-	}
-	if strings.Contains(body, `http-equiv="refresh"`) {
-		t.Fatalf("失败提示不应自动回跳（用户要看原因）")
+	rec := serve(t, handle, http.MethodPost, "/api/sysconfig/system/save", string(payload))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("旧版本应返回 JSON 409: %d %s", rec.Code, rec.Body.String())
 	}
 	after, _ := svc.GetGroup(ctx, "i18n")
-	if after.Version != group.Version {
+	if after.Version != group.Version+1 {
 		t.Fatalf("冲突提交不该写库：版本从 %d 变成了 %d", group.Version, after.Version)
 	}
 	t.Logf("旧版本提交被拒：提示页失败态，版本仍为 %d", after.Version)
+}
+
+func TestSystemSettingsTradeConflictRollsBackI18N(t *testing.T) {
+	handle, svc, _ := newSystemPageEnv(t)
+	ctx := context.Background()
+	i18nBefore, err := svc.GetGroup(ctx, "i18n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tradeBefore, err := svc.GetGroup(ctx, "trade")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SetGroup(ctx, &sysconfigdto.SetGroupReq{GroupKey: "trade", Version: tradeBefore.Version, Data: tradeBefore.Data}); err != nil {
+		t.Fatal(err)
+	}
+	form := map[string]any{"i18nVersion": i18nBefore.Version, "tradeVersion": tradeBefore.Version, "defaultLang": "en-US", "siteLangURLMode": "default_plain", "defaultCountry": "CN", "defaultCurrency": "CNY"}
+	payload, err := json.Marshal(form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := serve(t, handle, http.MethodPost, "/api/sysconfig/system/save", string(payload))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("stale trade version: %d %s", rec.Code, rec.Body.String())
+	}
+	i18nAfter, err := svc.GetGroup(ctx, "i18n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tradeAfter, err := svc.GetGroup(ctx, "trade")
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeJSON, err := json.Marshal(i18nBefore.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterJSON, err := json.Marshal(i18nAfter.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i18nAfter.Version != i18nBefore.Version || string(afterJSON) != string(beforeJSON) {
+		t.Fatalf("trade conflict changed i18n: before=%+v after=%+v", i18nBefore, i18nAfter)
+	}
+	if tradeAfter.Version != tradeBefore.Version+1 {
+		t.Fatalf("trade changed during failed aggregate: before=%d after=%d", tradeBefore.Version, tradeAfter.Version)
+	}
 }
 
 func tradeVersion(t *testing.T, svc *sysconfigservice.Service) int64 {

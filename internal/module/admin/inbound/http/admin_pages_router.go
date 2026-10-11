@@ -12,12 +12,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/module/admin/contract"
 	"go_wp/internal/module/page/contract"
 	"go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
-	"go_wp/internal/shell"
 )
 
 // SetupAdminPages 注册 admin 六领域管理页 + 文案词条页 + 语言切换。
@@ -43,7 +43,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	}
 	handle := NewAdminPagesHandle(admins, roles, perms, menus, depts, rules)
 
-	adminPages.GET("/administrators", shell.PageAuthz("/api/admin/list"), handle.AdministratorsPage)
+	adminPages.GET("/administrators", adminui.PageAuthz("/api/admin/list"), handle.AdministratorsPage)
 	adminPages.POST("/administrators/create", builtin.CasbinMiddlewareForPath("/api/admin/create"), handle.AdministratorsCreate)
 	adminPages.POST("/administrators/update", builtin.CasbinMiddlewareForPath("/api/admin/edit"), handle.AdministratorsUpdate)
 	adminPages.POST("/administrators/delete", builtin.CasbinMiddlewareForPath("/api/admin/delete"), handle.AdministratorsDelete)
@@ -61,7 +61,7 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.GET("/administrators/menus/drawer", builtin.CasbinMiddlewareForPath("/api/admin/menu/list"), handle.AdministratorMenusDrawer)
 	adminPages.POST("/administrators/menus/save", builtin.CasbinMiddlewareForPath("/api/admin/menu/save"), handle.AdministratorMenusSave)
 
-	adminPages.GET("/roles", shell.PageAuthz("/api/role/list"), handle.RolesPage)
+	adminPages.GET("/roles", adminui.PageAuthz("/api/role/list"), handle.RolesPage)
 	adminPages.POST("/roles/create", builtin.CasbinMiddlewareForPath("/api/role/create"), handle.RolesCreate)
 	adminPages.POST("/roles/update", builtin.CasbinMiddlewareForPath("/api/role/update"), handle.RolesUpdate)
 	adminPages.POST("/roles/delete", builtin.CasbinMiddlewareForPath("/api/role/delete"), handle.RolesDelete)
@@ -74,28 +74,28 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.GET("/roles/permissions/drawer", builtin.CasbinMiddlewareForPath("/api/role/menu/list"), handle.RolePermissionsDrawer)
 	adminPages.POST("/roles/permissions/save", builtin.CasbinMiddlewareForPath("/api/role/menu/save"), handle.RolePermissionsSave)
 
-	adminPages.GET("/menus", shell.PageAuthz("/api/menu/tree"), handle.MenusPage)
+	adminPages.GET("/menus", adminui.PageAuthz("/api/menu/tree"), handle.MenusPage)
 	adminPages.GET("/menus/edit", builtin.CasbinMiddlewareForPathAs("/api/menu/update", "POST"), handle.MenusEditFragment)
 	adminPages.POST("/menus/create", builtin.CasbinMiddlewareForPath("/api/menu/create"), handle.MenusCreate)
 	adminPages.POST("/menus/update", builtin.CasbinMiddlewareForPath("/api/menu/update"), handle.MenusUpdate)
 	adminPages.POST("/menus/delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusDelete)
 	adminPages.POST("/menus/bulk-delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusBulkDelete)
 
-	adminPages.GET("/permissions", shell.PageAuthz("/api/permission/list"), handle.PermissionsPage)
+	adminPages.GET("/permissions", adminui.PageAuthz("/api/permission/list"), handle.PermissionsPage)
 	adminPages.GET("/permissions/edit", builtin.CasbinMiddlewareForPathAs("/api/permission/update", "POST"), handle.PermissionsEditFragment)
 	adminPages.POST("/permissions/create", builtin.CasbinMiddlewareForPath("/api/permission/create"), handle.PermissionsCreate)
 	adminPages.POST("/permissions/update", builtin.CasbinMiddlewareForPath("/api/permission/update"), handle.PermissionsUpdate)
 	adminPages.POST("/permissions/delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsDelete)
 	adminPages.POST("/permissions/bulk-delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsBulkDelete)
 
-	adminPages.GET("/departments", shell.PageAuthz("/api/dept/tree"), handle.DepartmentsPage)
+	adminPages.GET("/departments", adminui.PageAuthz("/api/dept/tree"), handle.DepartmentsPage)
 	adminPages.POST("/departments/create", builtin.CasbinMiddlewareForPath("/api/dept/create"), handle.DepartmentsCreate)
 	adminPages.POST("/departments/update", builtin.CasbinMiddlewareForPath("/api/dept/update"), handle.DepartmentsUpdate)
 	adminPages.POST("/departments/delete", builtin.CasbinMiddlewareForPath("/api/dept/delete"), handle.DepartmentsDelete)
 	adminPages.POST("/departments/bulk-delete", builtin.CasbinMiddlewareForPath("/api/dept/delete"), handle.DepartmentsBulkDelete)
 
-	adminPages.GET("/datarules", shell.PageAuthz("/api/datarule/list"), handle.DatarulesPage)
-	adminPages.GET("/datarules/edit", shell.PageAuthz("/api/datarule/detail"), handle.DatarulesEditPage)
+	adminPages.GET("/datarules", adminui.PageAuthz("/api/datarule/list"), handle.DatarulesPage)
+	adminPages.GET("/datarules/edit", adminui.PageAuthz("/api/datarule/detail"), handle.DatarulesEditPage)
 	adminPages.POST("/datarules/create", builtin.CasbinMiddlewareForPath("/api/datarule/create"), handle.DatarulesCreate)
 	adminPages.POST("/datarules/update", builtin.CasbinMiddlewareForPath("/api/datarule/update"), handle.DatarulesUpdate)
 	adminPages.POST("/datarules/delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesDelete)
@@ -103,34 +103,39 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// 配置编辑器片段：纯渲染、不落库，因此不挂 Casbin（写入仍走 /datarules/update）。
 	adminPages.POST("/datarules/config-editor", handle.DataruleConfigEditor)
 
-	// 文案词条页（审计 I18N-003）：读页面挂 i18n:view（迁移 294 新增的只读权限点），
-	// 写操作挂 i18n:manage（/api/i18n/save）—— 漏挂等于任何登录管理员都能改全站文案。
+	// 文案词条页（审计 I18N-003）：读页面挂 i18n:view（迁移 294 新增的只读权限点）。
+	// 写动作**不再有页面 POST**：增 / 改 / 删 / 批删都走真实端点 POST /api/i18n/save
+	// （注册点在 admin_router.go，权限点 i18n:manage → 本路径逐字不变），前端 fetch 直调。
 	//
 	// 为什么读页面要一个**独立的**权限点、不能复用 i18n:manage：CasbinMiddlewareForPath
 	// 的 act 取自实际请求方法，页面是 GET 而 i18n:manage 的策略只有 POST ——
 	// 复用会让 enforce 匹配不到任何策略，**含超管在内全员 403**。
-	i18nPages := NewAdminI18nEntryHandle()
+	//
+	// 编辑抽屉的片段口仍按 i18n:manage 的**POST 策略**判定（CasbinMiddlewareForPathAs 强制 act）：
+	// 抽屉里就是该词条的全部可写字段，不挂鉴权等于把写面暴露给任何登录账号。
+	i18nPages := adminI18nHandle()
 	// 语言下拉的字典只读口（dict 可选：未注入时下拉只有「全部语言」）。
 	if dict != nil {
 		i18nPages.SetDictReader(dict)
 	}
 	// 词条变更 → 站点待重建（与页面 / 商品 / 导航翻译、站点设置同一动作）。
 	// 漏接的表现是"改了词条站点不更新"，且没有任何报错，故装配期必须接上。
+	// 写端点用的是**同一个 handle 实例**（adminI18nHandle），所以这个端口对它同样生效。
 	i18nPages.SetPageMarker(pages)
-	// 两个 Casbin 对象都没有对应的 API 路由（词条页只有页面路由），必须在**注册处显式声明**：
-	// 否则 permission.RoutesOf 查不到这两条权限点，AI 工具按 fail closed 一律 forbidden，
+	// /api/i18n/list 至今没有真实 API 路由（读侧只有这条页面路由在用），必须在**注册处显式声明**：
+	// 否则 permission.RoutesOf 查不到这条权限点，AI 工具按 fail closed 一律 forbidden，
 	// 而页面本身完全正常（AGENTS.md §AI 工具记过这一类）。样板：mail 的 declareMailPageObjects。
+	//
+	// /api/i18n/save 的声明已经不需要在这里补：它现在是**真实路由**（admin_router.go 的
+	// rg.Group("/i18n").POST("/save", …)），注册动作本身就是声明。
+	// 三件事仍必须同时成立，任何一件漂移都不报错、只静默：① sys_permission 行的
+	// api_path/api_method 与注册/enforce 的逐字一致（漂移 → 授权界面勾得上、请求照样 403）
+	// ② 方法一致（294 的教训：GET 复用 POST 策略 = 含超管全员 403）③ 注册点在 /api 组内
+	// （漏在外面 → Casbin 中间件不生效）。回归：admin_i18n_borrow_test.go；
+	// 运行时面见 public/test/admin/feature/admin_i18n_edit_drawer_test.go。
 	permission.Declare(http.MethodGet, "/api/i18n/list", permission.I18nView)
-	permission.Declare(http.MethodPost, "/api/i18n/save", permission.I18nManage)
-	adminPages.GET("/i18n", shell.PageAuthz("/api/i18n/list"), i18nPages.I18nEntriesPage)
+	adminPages.GET("/i18n", adminui.PageAuthz("/api/i18n/list"), i18nPages.I18nEntriesPage)
 	adminPages.GET("/i18n/edit", builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"), i18nPages.I18nEntryEditFragment)
-	adminPages.POST("/i18n/update", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntryUpdate)
-	adminPages.POST("/i18n/save", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntrySave)
-	adminPages.POST("/i18n/delete", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntryDelete)
-	// 批量删除复用同一条删除路径与权限点（i18n:manage → /api/i18n/save）：
-	// 批量只是单条的加速器，不是另一件事；另立权限点会长出
-	// 「能删一条、不能删十条」这种没人能解释的状态。
-	adminPages.POST("/i18n/bulk-delete", builtin.CasbinMiddlewareForPath("/api/i18n/save"), i18nPages.I18nEntriesBulkDelete)
 
 	// 语言切换（多语言 P1）：GET 属安全方法，写语言 Cookie 后 302 回跳。
 	adminPages.GET("/lang", AdminLangSwitch)

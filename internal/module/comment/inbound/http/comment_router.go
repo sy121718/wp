@@ -5,10 +5,8 @@
 //	· rg（authorizedAPI，前缀 /api，三层链 Session + CSRF + Casbin）—— JSON 接口；
 //	· pages（后台页面组，前缀 /admin，Session + CSRF + 权限上下文由装配层统一挂）—— 整页渲染。
 //
-// 页面上的写动作走 pages 组 + builtin.CasbinMiddlewareForPath("/api/comment/review")，
-// **复用接口的权限点**：权限点声明的真源是 rg 那边的注册动作，一个字符都不能改
-// （路径换了而权限点没换，结果是页面按钮人人可见但提交必 403，或者更糟 —— 提交成功
-// 但用的是另一个权限）。形态与 membership_router.go 一致。
+// 页面审核通过 fetch 提交 JSON 到 /api/comment/review，直接经过 authorizedAPI 的
+// Session、CSRF 与 Casbin 链；权限声明以 rg 的真实接口注册为准。
 //
 // 实体类型白名单**不在这里定义**：由装配层从拥有该实体的模块（content / product）取
 // 常量后传进来（见 SetupCommentRoutes 的 entityTypes 参数）。本模块不抄一份取值表 ——

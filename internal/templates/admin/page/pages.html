@@ -9,6 +9,7 @@
 {{import "../partials/bulk_bar.html"}}
 {{block body()}}
 {{tr := .["t"]}}
+{{tf := .["tf"]}}
 {{csrf := .["csrf_token"]}}
 {{canCreateProject := isset(.Buttons["project.create"])}}
 {{canCreatePage := isset(.Buttons["page.create"])}}
@@ -42,10 +43,11 @@
     </header>
 
     {* Err 是**列表取数失败**的提示条（写动作的结论走 shell.RenderJump 渲染提示页，
-       不再经 query 回带）。可选键一律 isset 包裹：直接渲染模板的单测不带 Err，
-       缺失键会让整页在这一行中断（HTTP 仍 200，后半部分整块消失）。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.pages.last_error", "上一次操作未完成：") }}{{.Err}}</p>
+       不再经 query 回带）。槽位收的是**事实**（key + 中文兜底 + %s 参数），取词由 tf 做；
+       两项都空 = 无提示。直接渲染模板的单测必须给这个键（缺键会让整页在这一行中断：
+       HTTP 仍 200，后半部分整块消失）。 *}
+    {{if isset(.Err)}}{{if .Err.Key != "" || .Err.Fallback != ""}}
+    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.pages.last_error", "上一次操作未完成：") }}{{tf(.Err.Key, .Err.Fallback, .Err.Args)}}</p>
     {{end}}{{end}}
 
     {* 发布回执收敛状态（只读观测）：待收敛回执是「访问面已切换、数据库还差一步」的窗口，
@@ -59,7 +61,7 @@
     <p class="badge badge-warning" role="status">
         {{ .["t"]("admin.pages.receipts.pending", "待收敛发布回执") }}：{{if isset(.ReceiptPending)}}{{ .ReceiptPending }}{{end}}
         {{if isset(.ReceiptOldest)}}{{if .ReceiptOldest != ""}}· {{ .["t"]("admin.pages.receipts.oldest", "最老一条已等待") }} {{ .ReceiptOldest }}{{end}}{{end}}
-        {{if isset(.ReceiptLastConverge)}}{{if .ReceiptLastConverge != ""}}· {{ .["t"]("admin.pages.receipts.last_converge", "最近一次收敛") }} {{ .ReceiptLastConverge }}{{end}}{{end}}
+        {{if isset(.ReceiptLastConverge)}}{{receiptLast := dateTimeSecond(.ReceiptLastConverge)}}{{if receiptLast != ""}}· {{ .["t"]("admin.pages.receipts.last_converge", "最近一次收敛") }} {{receiptLast}}{{end}}{{end}}
         · {{ .["t"]("admin.pages.receipts.action", "收敛例程每分钟兜底一次；持续积压请查服务日志（scene=publication）与线上路径一致性，必要时人工核对后再处理。") }}
     </p>
     {{else}}
@@ -88,7 +90,7 @@
                 {{range _, p := .StaleOverview.Pages}}
                 <li><code>{{p.Path}}</code> <span class="stat-note">{{p.ProjectName}}</span>{{if !p.Published}} <span class="badge badge-mute">{{tr("admin.pages.impact.never_published", "未上线")}}</span>{{end}} <a href="/workbench?id={{p.ID}}">{{tr("admin.pages.action.edit", "编辑")}}</a>
                     {* 失败痕迹：与文章 / 块页的抽屉同一口径（同一批页面，三处显示必须一致）。 *}
-                    {{if p.FailedNote}}<div class="stat-note">{{p.FailedNote}}</div>{{end}}</li>
+                    {{if p.FailedStageKey != "" || p.FailedStageFallback != ""}}<div class="stat-note">{{tr("admin.pages.impact.rebuild_failed", "最近一次自动重建失败：")}}{{tr(p.FailedStageKey, p.FailedStageFallback)}}{{if isset(p.FailedAt)}}（{{siteDateTime(p.FailedAt)}}）{{end}}</div>{{end}}</li>
                 {{end}}
             </ul>
             {{if .StaleOverview.Truncated}}
@@ -194,18 +196,19 @@
                         {{else}}<span class="badge badge-mute">{{tr("admin.pages.status.draft", "草稿")}}</span>{{end}}
                         {* 定时上下线（PIPE-7）：有待执行排定时给出到点时刻，让运营一眼看出「这页已经排了队」；
                            排定失败是决策 2 的「硬失败」在后台的可见面 —— 到点没执行且只在日志里留痕，
-                           与静默不生效没有区别。两处文案与时间都由 Go 侧算好（见 pageRow）。 *}
+                           与静默不生效没有区别。文案由 Go 侧按当前语言取好，时间交**模板**格式化
+                           （siteDateTime：站点时区 + 分钟；见 pageRow 的字段注释）。 *}
                         {* 可选键一律 isset 包裹：直接渲染本模板的单测（pages_list_test.go）
                            不带这两个键，缺键会让整页在那一行中断（渲染器走 500 + 丢弃半截内容）。 *}
-                        {{if isset(p.SchedulePendingAt)}}{{if p.SchedulePendingAt != ""}}
-                        <span class="badge badge-info">{{tr("admin.pages.status.scheduled", "已排定")}} {{p.SchedulePendingAt}}</span>
+                        {{if isset(p.SchedulePendingAt)}}{{schedAt := siteDateTime(p.SchedulePendingAt)}}{{if schedAt != ""}}
+                        <span class="badge badge-info">{{tr("admin.pages.status.scheduled", "已排定")}} {{schedAt}}</span>
                         {{end}}{{end}}
                         {{if isset(p.ScheduleAlert)}}{{if p.ScheduleAlert}}
-                        <span class="badge badge-warning" title="{{p.ScheduleFailedNote}}">{{tr("admin.pages.status.schedule_failed", "排定失败")}}</span>
+                        <span class="badge badge-warning" title="{{tr(p.ScheduleFailedKey, p.ScheduleFailedFallback)}}">{{tr("admin.pages.status.schedule_failed", "排定失败")}}</span>
                         {{end}}{{end}}
                     </td>
                     <td>v{{p.Version}}</td>
-                    <td class="text-mute text-sm">{{p.UpdatedAt}}</td>
+                    <td class="text-mute text-sm">{{dateTime(p.UpdatedAt)}}</td>
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/workbench?id={{p.ID}}">{{tr("admin.pages.action.edit", "编辑")}}</a>
                         <a class="btn btn-sm btn-ghost" href="/workbench/preview?id={{p.ID}}" target="_blank">{{tr("admin.pages.action.preview", "预览")}}</a>

@@ -1,44 +1,59 @@
 package blockhttp
 
-// block_page_handle_test.go — 块管理页「写动作出口」的护栏。
+// block_page_handle_test.go — 块错误文案归口的护栏（判定收敛到 adminui.PageErrorFact）。
 //
-// 现象（用户报告）：在 /admin/blocks 点了「新建并编辑」之后，浏览器停在一张只有
+// 现象（用户报告，历史）：在 /admin/blocks 点了「新建并编辑」之后，浏览器停在一张只有
 // ErrBlockDuplicate 字样的空白页上 —— 没有页面壳、不是中文、也没有回列表的入口。
-// 两个成因就在这里守住：
+// 成因之一在这里守住：**业务错误必须能被认出来**。认不出来的会被当成内部故障（通用提示），
+// 而同名冲突、被引用、类型非法这些都是用户自己就能改正的业务失败；漏认一条，用户看到的
+// 提示与日志里那条 error 就对不上号。
 //
-//  1. 业务错误必须能被认出来（blockErrKey）：认不出来的会被当成内部故障（通用提示），
-//     而同名冲突、被引用、类型非法这些都是用户自己就能改正的业务失败；
-//  2. 失败必须回到**页面**（提示页）：本页不再有「只输出一行裸文本」的第二条通道，
-//     也不再靠 303 + ?err= 把结论文案塞进查询串。
+// 判据已不再由本模块持有：原先的 blockErrSentinels + errors.Is 是**第二份真相**
+// —— service 换了措辞、或某个 key 改由别的模块提供就静默失配。现在只有一条共享判据
+//（pkg/response.IsBusinessError 的**形态**：`Err*` / `Msg*` 常量名，或 `模块.类别.语义` 的
+// key，经 adminui.PageErrorFact 使用）。所以本文件守两件事：
+//  1. 每个 sentinel 的值都过得了那条形态判据 —— 新增一个「值既不是 key 也不是常量名」的
+//     sentinel 会在这里变红，而不是静默退化成「系统内部错误」；
+//  2. 非业务错误（驱动 / ORM 原文）一律落归口文案，原文一个字节都不上页面。
 //
-// 断言的是渲染产物本身（HTTP 200 + data-jump-state + 文案），不是「函数没报错」。
+// 另一半（「失败必须回到页面」）已随页面写路由一起退役：写动作现在由前端直调 JSON API，
+// 页面提示页那条通道整批删除。写路径现在的守卫在：
+//   · block_bulk_delete_test.go —— 批量端点（受控 JSON、逐条结果、不泄原文）；
+//   · blocks_stale_impact_render_test.go 的 TestBlocksWriteFormsAreJSONWired ——
+//     三个写入口都接 JSON，且不得残留页面 POST。
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/spf13/viper"
 
+	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
-	blockdto "go_wp/internal/module/block/dto"
-	"go_wp/internal/templates"
-	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 
 	"gorm.io/gorm"
 )
 
-// TestBlockErrKeyBusinessErrors 每一个业务 sentinel 都要映射到自己的词条 key。
+// blockErrTestContext 一个最小可用的 gin 上下文（取词链要读请求语言）。
 //
-// 漏登记一个 → 它被当成内部错误 → 用户只看到「系统内部错误，请稍后重试」，
+// 不断言具体译文：i18n 的缓存是包级共享的（同包其它用例会 InjectForTest），
+// 断言锁定在「命中的是哪条 key / 走的是哪条链」这类与词条无关的量上。
+func blockErrTestContext() *gin.Context {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/admin/blocks", nil)
+	return c
+}
+
+// TestBlockSentinelsAreBusinessErrors 每一个业务 sentinel 都要被共享判据认出来。
+//
+// 漏认一条 → 它被当成内部错误 → 用户只看到「系统内部错误，请稍后重试」，
 // 而日志里那条 error 与用户看到的提示对不上号。
-func TestBlockErrKeyBusinessErrors(t *testing.T) {
+func TestBlockSentinelsAreBusinessErrors(t *testing.T) {
 	sentinels := []error{
 		blockcontract.ErrParamRequired,
 		blockcontract.ErrNotFound,
@@ -53,165 +68,66 @@ func TestBlockErrKeyBusinessErrors(t *testing.T) {
 		blockcontract.ErrBlockInUse,
 	}
 	for _, err := range sentinels {
-		got := blockErrKey(err)
-		if got == "" {
-			t.Fatalf("业务错误 %v 未被识别为业务错误（会被当成内部故障）", err)
+		if !response.IsBusinessError(err) {
+			t.Fatalf("业务错误 %v 过不了共享形态判据（会被当成内部故障：通用提示 + 日志）", err)
 		}
-		if got != err.Error() {
-			t.Fatalf("业务错误的词条 key 应等于其 Error()（enums 常量即 key），实际 %q vs %q", got, err.Error())
+		fact, ok := adminui.BusinessErrFact(err)
+		if !ok {
+			t.Fatalf("业务错误 %v 未被判定为可展示", err)
 		}
-	}
-	// 包装后的错误同样要认得出来（service 内部可能用 %w 套一层）。
-	if got := blockErrKey(fmt.Errorf("定位块失败: %w", blockcontract.ErrNotFound)); got != blockcontract.ErrNotFound.Error() {
-		t.Fatalf("包装后的业务错误应仍被识别，实际 %q", got)
+		if fact.Key != err.Error() {
+			t.Fatalf("业务错误的词条 key 应等于其 Error()（enums 常量即 key），实际 %q vs %q", fact.Key, err.Error())
+		}
 	}
 }
 
-// TestBlockErrKeyNonBusinessErrors 基础设施错误一律判空（原文只进日志，不上面）。
-func TestBlockErrKeyNonBusinessErrors(t *testing.T) {
+// TestBlockErrFactSplitsCompositeError 复合错误（`key: 明细`）按冒号切一刀、拿前段判定。
+//
+// 删除被拒时 service 给的是 `ErrBlockInUse: page_document /pricing (main); …`：
+// 整体过不了形态判据（pkg/response 的正则是**锚定的**），必须能从前段认出 key ——
+// 否则一眼可改的业务失败会退化成「系统内部错误」。
+func TestBlockErrFactSplitsCompositeError(t *testing.T) {
+	err := blockcontract.NewBlockInUseError([]blockcontract.BlockUsage{
+		{Kind: blockcontract.UsageKindPageDocument, EntityID: "page-42", Label: "/pricing", Detail: "main"},
+	})
+	fact, ok := adminui.BusinessErrFact(err)
+	if !ok || fact.Key != blockcontract.ErrBlockInUse.Error() {
+		t.Fatalf("复合错误应从前段认出业务 key，实际 key=%q ok=%v（原文 %q）", fact.Key, ok, err.Error())
+	}
+	if strings.TrimSpace(fact.Tail) == "" {
+		t.Fatalf("明细段应原样带出（引用类别与定位由模块自己解码），实际空：%+v", fact)
+	}
+}
+
+// TestBlockErrTextBusinessErrorKeepsKey 业务错误 → 自己的词条（缺词条时回落 key 本身）。
+func TestBlockErrTextBusinessErrorKeepsKey(t *testing.T) {
+	c := blockErrTestContext()
+	got := blockErrText(c, blockcontract.ErrNotFound)
+	if strings.TrimSpace(got) == "" {
+		t.Fatal("业务错误必须给出一句可展示文案（空串会让失败在页面上完全不可见）")
+	}
+	// 业务分支与归口分支必须长得不一样：两者相同就意味着判定失效（全都归口）。
+	if got == adminui.MsgText(c, adminui.InternalMsg()) {
+		t.Fatalf("业务错误被吞成归口文案：%q", got)
+	}
+}
+
+// TestBlockErrTextNonBusinessGivesInternal 基础设施错误一律归口：原文一个字节都不上页面。
+func TestBlockErrTextNonBusinessGivesInternal(t *testing.T) {
+	c := blockErrTestContext()
 	cases := []error{
-		nil,
-		errors.New("pq: relation \"blocks\" does not exist"),
-		gorm.ErrRecordNotFound, // 驱动/ORM 的内部错误，不是本模块的业务语义
+		errors.New(`pq: relation "blocks" does not exist (SQLSTATE 42P01)`),
+		gorm.ErrRecordNotFound, // 驱动 / ORM 的内部错误，不是本模块的业务语义
 	}
 	for _, err := range cases {
-		if got := blockErrKey(err); got != "" {
-			t.Fatalf("非业务错误 %v 应返回空串（回通用提示 + 记日志），实际 %q", err, got)
+		got := blockErrText(c, err)
+		if got != adminui.MsgText(c, adminui.InternalMsg()) {
+			t.Fatalf("非业务错误应落归口文案，实际 %q（原文 %q）", got, err.Error())
 		}
-	}
-}
-
-// jumpStubService 只覆盖写动作出口用例需要的 Create / Delete，其余方法由
-// stubBlockService（block_save_content_err_test.go）提升 —— 它的 Create / Delete 会 panic，
-// 这里覆盖掉，避免为「验证出口形状」写第二份完整桩。
-type jumpStubService struct {
-	stubBlockService
-	createResp *blockdto.BlockResp
-	createErr  error
-	deleteErr  error
-}
-
-func (s *jumpStubService) Create(context.Context, *blockdto.CreateReq) (*blockdto.BlockResp, error) {
-	return s.createResp, s.createErr
-}
-
-func (s *jumpStubService) Delete(context.Context, *blockdto.DeleteReq) error {
-	return s.deleteErr
-}
-
-// runBlockWrite 用真实 Jet 模板跑一次写 handler，返回状态码与响应体。
-//
-// target 里带上 query（表单 action 上带的筛选上下文，shell.BackPath 从它读回）；
-// form 是 POST 表单体。
-func runBlockWrite(t *testing.T, target, form string, handler gin.HandlerFunc) (int, string) {
-	t.Helper()
-	v := viper.New()
-	v.Set("log.base_dir", t.TempDir())
-	if err := logger.Init(v); err != nil {
-		t.Fatalf("logger init: %v", err)
-	}
-	gin.SetMode(gin.TestMode)
-	engine := gin.New()
-	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.POST("/write", handler)
-
-	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(form))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, req)
-	return rec.Code, rec.Body.String()
-}
-
-// assertJumpPage 断言提示页形状：200 + 状态标记 + 整页渲染完 + 指定文案片段。
-func assertJumpPage(t *testing.T, code int, body, state string, wants ...string) {
-	t.Helper()
-	if code != http.StatusOK {
-		t.Fatalf("提示页应为 200（不再是 303 + ?err=），实际 %d", code)
-	}
-	if !strings.Contains(body, `data-jump-state="`+state+`"`) {
-		t.Fatalf("提示页缺少 data-jump-state=%q：%s", state, body)
-	}
-	if !strings.Contains(body, "</html>") {
-		t.Fatal("提示页未渲染到布局尾部（模板在某一行中断）")
-	}
-	for _, want := range wants {
-		if !strings.Contains(body, want) {
-			t.Errorf("提示页缺少 %q", want)
+		for _, leak := range []string{"pq:", "blocks", "SQLSTATE", "record not found"} {
+			if strings.Contains(got, leak) {
+				t.Fatalf("驱动原文泄漏到页面文案里（%q 出现在 %q）", leak, got)
+			}
 		}
-	}
-}
-
-// TestCreateBlockJumpPage 新建失败 → 失败提示页（200 + err 态 + 白名单文案，不自动跳转）。
-func TestCreateBlockJumpPage(t *testing.T) {
-	h := NewBlockPageHandle(&jumpStubService{}, nil)
-	code, body := runBlockWrite(t, "/write?project=p-1", "projectId=p-1&name=", h.CreateBlock)
-
-	assertJumpPage(t, code, body, "err")
-	if !strings.Contains(body, blockcontract.ErrNameRequired.Error()) &&
-		!strings.Contains(body, "块名称不能为空") {
-		t.Errorf("失败提示页没有带白名单文案（未接 i18n 时为 key，接上后为译文）：%s", body)
-	}
-	if strings.Contains(body, "http-equiv=\"refresh\"") {
-		t.Error("失败不应自动跳转（Seconds=0）：运营要看清楚原因")
-	}
-}
-
-// TestCreateBlockSuccessJumpToWorkbench 新建成功 → 成功提示页（200 + ok 态 + 1 秒后进工作台）。
-func TestCreateBlockSuccessJumpToWorkbench(t *testing.T) {
-	h := NewBlockPageHandle(&jumpStubService{createResp: &blockdto.BlockResp{ID: "b-9"}}, nil)
-	code, body := runBlockWrite(t, "/write?project=p-1", "projectId=p-1&name=站点页眉", h.CreateBlock)
-
-	assertJumpPage(t, code, body, "ok", "块已创建", `href="/workbench?block=b-9"`)
-	if !strings.Contains(body, "http-equiv=\"refresh\"") {
-		t.Error("成功应在 1 秒后自动跳转（meta refresh）")
-	}
-}
-
-// TestDeleteBlockJumpPage 删除成功 → 成功提示页，文案复用批量删除的 allDeleted 模板（count=1）。
-func TestDeleteBlockJumpPage(t *testing.T) {
-	h := NewBlockPageHandle(&jumpStubService{}, nil)
-	code, body := runBlockWrite(t, "/write?project=p-1", "id=b-1", h.DeleteBlock)
-
-	assertJumpPage(t, code, body, "ok", "已删除 1 个块")
-}
-
-// TestDeleteBlockReferencedJumpPage 被引用拒绝 → 失败提示页（不自动跳转）。
-func TestDeleteBlockReferencedJumpPage(t *testing.T) {
-	h := NewBlockPageHandle(&jumpStubService{deleteErr: blockcontract.ErrBlockInUse}, nil)
-	code, body := runBlockWrite(t, "/write?project=p-1", "id=b-1", h.DeleteBlock)
-
-	assertJumpPage(t, code, body, "err")
-	if !strings.Contains(body, blockcontract.ErrBlockInUse.Error()) &&
-		!strings.Contains(body, "已被页面或主题引用") {
-		t.Errorf("被引用拒绝应带白名单文案：%s", body)
-	}
-	if strings.Contains(body, "http-equiv=\"refresh\"") {
-		t.Error("失败不应自动跳转")
-	}
-}
-
-// TestBlocksBulkDeleteJumpPage 批量删除：全成功 → ok 态；有跳过 → err 态。
-func TestBlocksBulkDeleteJumpPage(t *testing.T) {
-	t.Run("全成功", func(t *testing.T) {
-		h := NewBlockPageHandle(&jumpStubService{}, nil)
-		code, body := runBlockWrite(t, "/write?project=p-1", "projectId=p-1&ids=b-1&ids=b-2", h.BlocksBulkDelete)
-		assertJumpPage(t, code, body, "ok", "已删除 2 个块")
-	})
-	t.Run("部分失败", func(t *testing.T) {
-		h := NewBlockPageHandle(&jumpStubService{deleteErr: blockcontract.ErrBlockInUse}, nil)
-		code, body := runBlockWrite(t, "/write?project=p-1", "projectId=p-1&ids=b-1&ids=b-2", h.BlocksBulkDelete)
-		assertJumpPage(t, code, body, "err")
-		if !strings.Contains(body, "未能删除") {
-			t.Errorf("部分失败应说清跳过数：%s", body)
-		}
-	})
-}
-
-// TestBlockWriteBackKeepsProjectFilter 回跳地址从表单 action 的 query 读回工程筛选。
-func TestBlockWriteBackKeepsProjectFilter(t *testing.T) {
-	h := NewBlockPageHandle(&jumpStubService{}, nil)
-	_, body := runBlockWrite(t, "/write?project=p-1", "id=b-1", h.DeleteBlock)
-	if !strings.Contains(body, `href="/admin/blocks?project=p-1"`) {
-		t.Errorf("回跳地址未保留工程筛选（表单 action 上带 project，服务端 BackPath 读回）：%s", body)
 	}
 }

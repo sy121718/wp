@@ -35,6 +35,13 @@ const (
 	// 文案后接「：<菜单项标题>」的定位信息（页面出口经 enums.SplitFacingDetail 拆出
 	// key 与定位、只翻 key，所以本词条内不带 %s 占位符）。
 	ErrStaleVersion = "ErrStaleVersion"
+	// ErrSortTied 同级排序值并列（重复），交换两行取值不产生任何位移。
+	//
+	// sort_order 上没有唯一约束（「同级唯一」只是应用层不变量：Create 用 MaxSortOrder+1 追加），
+	// 外部脚本按 /api/navigation/update 裸置位或手工写库都能造出并列；此时交换两行的取值
+	// 等于什么都没换（并列由 id ASC 决胜），所以显式**不位移**并回这句，而不是回一个
+	// 「已完成」把没发生的事说成发生了。零写零失效：不进事务、不派发 stale。
+	ErrSortTied = "ErrSortTied"
 	// ErrInternal 未归类的内部错误（SQL / 表名 / 约束名 / 文件路径等）对外归口文案。
 	//
 	// 值刻意带模块前缀：sys_i18n 的主键是 (item_key, lang)，裸 key "ErrInternal" 已被
@@ -53,7 +60,7 @@ const (
 var NavigationFacingMessages = []string{
 	ErrInvalidParam, ErrNotFound, ErrInvalidKind, ErrPathTaken,
 	ErrInvalidSource, ErrInvalidTarget, ErrInvalidParent, ErrProjectRequired,
-	ErrStaleVersion,
+	ErrStaleVersion, ErrSortTied,
 }
 
 // —— 白名单的两种读法（本模块内共享，别在各处再抄一份判据）——
@@ -130,9 +137,10 @@ const (
 
 	// 来源分组标题（「从已有内容添加」抽屉按来源实体分组）。
 	//
-	// 这批 key 有两个取用者，**分层是有意的**：inbound/http 的 navSourceGroupTitles 带中文兜底
-	//（展示层才拿得到请求语言），outbound/source 的 sourceGroupTitleKey 只回 key（该适配器在
-	// service 层之下，写中文等于把一种语言焊进契约数据）。常量共用这一份，两处形态各自保留。
+	// 这批 key 有两个取用者，**分层是有意的**：模板 admin/navigation/navigations.html
+	// 按来源类型取词并自带中文兜底（展示层才拿得到请求语言），outbound/source 的
+	// sourceGroupTitleKey 只回 key（该适配器在 service 层之下，写中文等于把一种语言
+	// 焊进契约数据）。常量共用这一份，两处形态各自保留。
 	SourcePage     = "admin.navigations.source.page"     // 页面
 	SourceArticle  = "admin.navigations.source.article"  // 文章
 	SourceProduct  = "admin.navigations.source.product"  // 产品

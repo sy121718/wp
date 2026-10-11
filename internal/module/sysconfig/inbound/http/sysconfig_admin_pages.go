@@ -13,16 +13,17 @@ package sysconfighttp
 import (
 	"context"
 	"errors"
+	"go_wp/internal/middleware/builtin"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
-	"go_wp/internal/shell"
-	"go_wp/pkg/logger"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
 
@@ -109,8 +110,8 @@ func (h *AdminHandle) SystemPage(c *gin.Context) {
 			errText = sysconfigErrText(c, coerr)
 		}
 	}
-	c.HTML(http.StatusOK, "admin/system/settings", shell.Prepare(c, gin.H{
-		"title":           shell.TranslateFor(c)(sysconfigenums.AdminSystemTitle, "系统设置"),
+	c.HTML(http.StatusOK, "admin/system/settings", adminui.Prepare(c, gin.H{
+		"title":           i18n.TranslateFunc(response.RequestLanguage(c))(sysconfigenums.AdminSystemTitle, "系统设置"),
 		"I18N":            i18nGroup,
 		"Trade":           tradeGroup,
 		"LangOptions":     langs,
@@ -121,29 +122,34 @@ func (h *AdminHandle) SystemPage(c *gin.Context) {
 	}))
 }
 
-// SystemSave POST /admin/system/save：保存两组（PRG 回本页）。
-func (h *AdminHandle) SystemSave(c *gin.Context) {
+// APISystemSave saves the system form through one atomic aggregate JSON request.
+func (h *AdminHandle) APISystemSave(c *gin.Context) {
+	var req sysconfigdto.SystemSaveReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, sysconfigenums.ErrInvalidParam)
+		return
+	}
 	ctx := c.Request.Context()
-	lang := strings.TrimSpace(c.PostForm("defaultLang"))
-	mode := strings.TrimSpace(c.PostForm("siteLangURLMode"))
-	country := strings.TrimSpace(c.PostForm("defaultCountry"))
-	currency := strings.TrimSpace(c.PostForm("defaultCurrency"))
-	i18nVersion := parseVersion(c.PostForm("i18nVersion"))
-	tradeVersion := parseVersion(c.PostForm("tradeVersion"))
+	lang := strings.TrimSpace(req.DefaultLang)
+	mode := strings.TrimSpace(req.SiteLangURLMode)
+	country := strings.TrimSpace(req.DefaultCountry)
+	currency := strings.TrimSpace(req.DefaultCurrency)
+	i18nVersion := req.I18NVersion
+	tradeVersion := req.TradeVersion
 
-	if msg := h.validateOptions(c, lang, mode, country, currency); msg != "" {
-		sysconfigJump(c, false, msg)
+	if status, msg := h.validateOptions(c, lang, mode, country, currency); msg != "" {
+		response.ErrorWithMessage(c, status, msg)
 		return
 	}
 
 	i18nGroup, errText := h.loadGroup(c, groupI18N)
 	if errText != "" {
-		sysconfigJump(c, false, errText)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, errText)
 		return
 	}
 	tradeGroup, errText := h.loadGroup(c, groupTrade)
 	if errText != "" {
-		sysconfigJump(c, false, errText)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, errText)
 		return
 	}
 	// 版本以**页面提交的**为准（乐观锁前置条件），而不是刚读出来的当前值 ——
@@ -159,13 +165,16 @@ func (h *AdminHandle) SystemSave(c *gin.Context) {
 				"default_currency": currency,
 			})},
 		},
-		UpdateBy: int64(shell.CurrentUserID(c)),
+		UpdateBy: int64(builtin.CurrentUserID(c)),
 	}); err != nil {
-		logger.Scene("sysconfig").With("path", c.Request.URL.Path).Error(err, "系统设置保存失败")
-		sysconfigJump(c, false, sysconfigErrText(c, err))
+		status := http.StatusInternalServerError
+		if sysconfigFacingMessages[err.Error()] {
+			status = http.StatusConflict
+		}
+		response.ErrorWithMessage(c, status, sysconfigErrText(c, err))
 		return
 	}
-	sysconfigJump(c, true, shell.TranslateFor(c)("admin.system.saved", "系统设置已保存（全局默认值立即对读取方生效）"))
+	response.SuccessWithMessage(c, i18n.Translate("admin.system.saved", "系统设置已保存（全局默认值立即对读取方生效）", response.RequestLanguage(c)))
 }
 
 // loadGroup 读一组配置；组不存在返回可读提示（本页不凭空建组）。
@@ -175,7 +184,7 @@ func (h *AdminHandle) loadGroup(c *gin.Context, key string) (groupView, string) 
 	if err != nil {
 		if errors.Is(err, sysconfigcontract.ErrGroupNotFound) {
 			return groupView{Key: key, Data: map[string]any{}},
-				shell.TranslateFor(c)("admin.system.group_missing", "配置分组缺失，请先执行数据库迁移（make migrate）后再打开本页")
+				i18n.TranslateFunc(response.RequestLanguage(c))("admin.system.group_missing", "配置分组缺失，请先执行数据库迁移（make migrate）后再打开本页")
 		}
 		return groupView{Key: key, Data: map[string]any{}}, sysconfigErrText(c, err)
 	}
@@ -201,24 +210,34 @@ func mergeGroup(current map[string]any, editable []string, values map[string]str
 }
 
 // validateOptions 校验提交值：必须在字典/枚举里（防伪造，不靠前端下拉）。
-func (h *AdminHandle) validateOptions(c *gin.Context, lang, mode, country, currency string) string {
+func (h *AdminHandle) validateOptions(c *gin.Context, lang, mode, country, currency string) (int, string) {
 	ctx := c.Request.Context()
-	if lang == "" || country == "" || currency == "" {
-		return shell.TranslateFor(c)(sysconfigenums.ErrInvalidParam, "请把四个设置项都选上")
+	t := i18n.TranslateFunc(response.RequestLanguage(c))
+	if lang == "" || country == "" || currency == "" || !contains(siteLangURLModeValues, mode) {
+		return http.StatusBadRequest, t(sysconfigenums.ErrInvalidParam, "请把四个设置项都选上")
 	}
-	if !contains(siteLangURLModeValues, mode) {
-		return shell.TranslateFor(c)(sysconfigenums.ErrInvalidParam, "请把四个设置项都选上")
+	langs, err := h.dict.ListDictOptions(ctx, "language")
+	if err != nil {
+		return http.StatusInternalServerError, sysconfigErrText(c, err)
 	}
-	if opts, err := h.dict.ListDictOptions(ctx, "language"); err == nil && !hasCode(opts, lang) {
-		return shell.TranslateFor(c)("admin.system.err.lang_unknown", "选择的默认语言不在字典里（可能已被停用），请重新选择")
+	if !hasCode(langs, lang) {
+		return http.StatusBadRequest, t("admin.system.err.lang_unknown", "选择的默认语言不在字典里（可能已被停用），请重新选择")
 	}
-	if opts, err := h.dict.ListDictOptions(ctx, "currency"); err == nil && !hasCode(opts, currency) {
-		return shell.TranslateFor(c)("admin.system.err.currency_unknown", "选择的默认货币不在字典里（可能已被停用），请重新选择")
+	currencies, err := h.dict.ListDictOptions(ctx, "currency")
+	if err != nil {
+		return http.StatusInternalServerError, sysconfigErrText(c, err)
 	}
-	if opts, err := h.dict.ListCountryOptions(ctx, response.RequestLanguage(c)); err == nil && !hasCode2(opts, country) {
-		return shell.TranslateFor(c)("admin.system.err.country_unknown", "选择的默认国家不在字典里（可能已被停用），请重新选择")
+	if !hasCode(currencies, currency) {
+		return http.StatusBadRequest, t("admin.system.err.currency_unknown", "选择的默认货币不在字典里（可能已被停用），请重新选择")
 	}
-	return ""
+	countries, err := h.dict.ListCountryOptions(ctx, response.RequestLanguage(c))
+	if err != nil {
+		return http.StatusInternalServerError, sysconfigErrText(c, err)
+	}
+	if !hasCode2(countries, country) {
+		return http.StatusBadRequest, t("admin.system.err.country_unknown", "选择的默认国家不在字典里（可能已被停用），请重新选择")
+	}
+	return http.StatusOK, ""
 }
 
 func contains(list []string, v string) bool {

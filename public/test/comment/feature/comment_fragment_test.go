@@ -119,11 +119,9 @@ func submitAndApprove(t *testing.T, svc *commentservice.Service, entityType, ent
 	if res.Status != commentenums.StatusPending {
 		t.Fatalf("新评论必须落 pending（先审后发），实际 %q", res.Status)
 	}
-	if _, err := svc.Review(context.Background(), &commentdto.ReviewReq{
-		ProjectID: testProjectID, IDs: []int64{res.ID},
-		Status: commentenums.StatusApproved, ReviewerID: 9,
-	}); err != nil {
-		t.Fatalf("审核失败：%v", err)
+	receipt := reviewViaAPI(t, svc, res.ID, commentenums.StatusApproved, 9)
+	if receipt.Affected != 1 {
+		t.Fatalf("审核条数不符：%+v", receipt)
 	}
 	return res.ID
 }

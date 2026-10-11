@@ -89,6 +89,7 @@ import (
 	"github.com/gin-gonic/gin"
 	gsessions "github.com/gorilla/sessions"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/builder"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/module/membership/contract"
@@ -101,10 +102,13 @@ import (
 	"go_wp/internal/module/user/enums"
 	"go_wp/internal/module/user/service"
 	"go_wp/internal/shell"
+	"go_wp/internal/templates"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/crypto"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	"go_wp/pkg/sitetz"
 	"go_wp/pkg/utils"
@@ -116,7 +120,7 @@ const customerCohortPath = "/admin/customers/cohort"
 // customerCohortTitleLabel 页标题（词条 key + 兜底文案）。
 //
 // 必须在 Go 侧设进 data：layout.html 的 `{{.title}}` 是**无条件读**的，
-// shell.Prepare 的 injectI18n 只翻译已有非空字符串、不注入 —— 漏设的结果是
+// adminui.Prepare 的 injectI18n 只翻译已有非空字符串、不注入 —— 漏设的结果是
 // 整页 500，而错误信息里只有模板行号，看不出是「少了这个键」。
 var customerCohortTitleLabel = userLabel{"admin.customer.cohort.title", "群组留存"}
 
@@ -129,7 +133,6 @@ var customerCohortUnavailableLabel = userLabel{
 // CustomerCohortPage 群组留存（GET /admin/customers/cohort）。
 func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
 	rng := customerOverviewRangeOf(c.Query("range"), c.Query("from"), c.Query("to"), time.Now())
 
 	// 工程：与客户概览页逐字同规则 —— 先看 ?project=，没有就用第一个；
@@ -146,13 +149,13 @@ func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 	}
 
 	var res *orderdto.CustomerCohortResp
-	var errText string
+	var errMsg customerMsg
 	switch {
 	case h.cohort == nil:
-		errText = userLabelOf(tr, customerCohortUnavailableLabel)
+		errMsg = customerCohortUnavailableLabel.msg()
 	case selected == "":
 		// 没有工程就没有订单可算 —— 「还没建站点工程」是正常状态，不是错误。
-		errText = ""
+		errMsg = customerMsg{}
 	default:
 		got, err := h.cohort.CustomerCohortByRange(ctx, &orderdto.CustomerCohortReq{
 			ProjectID: selected,
@@ -160,16 +163,14 @@ func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 			To:        rng.To,
 		})
 		if err != nil {
-			errText = customerFacingError(c, err)
+			errMsg = customerErrMsg(c, err)
 		} else {
 			res = got
 		}
 	}
 
-	data := customerOverviewPageData(tr, rng, nil, "")
+	data := customerOverviewPageData(customerLabelText(c, customerCohortTitleLabel), rng, nil, errMsg)
 	data["Path"] = customerCohortPath
-	data["title"] = userLabelOf(tr, customerCohortTitleLabel)
-	data["Err"] = errText
 	data["CohortReady"] = res != nil
 	// 列头在 Go 侧定（Jet 的 `{{range}}` 只能遍历集合，没有「遍历 0..N」这种写法）。
 	// 列头用**相对月序号**而不是年月：每一行的首单月不同，同一列在各行是不同月份，
@@ -196,7 +197,7 @@ func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 	} else {
 		data["Rows"] = []orderdto.CustomerCohortRow{}
 	}
-	c.HTML(200, "admin/user/customer_cohort", shell.Prepare(c, data))
+	c.HTML(200, "admin/user/customer_cohort", adminui.Prepare(c, data))
 }
 
 // customer_handle.go — 后台客户管理页（GET /admin/customers 列表、GET /admin/customers/detail 详情）。
@@ -241,19 +242,77 @@ func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 //
 //     不能拿它当业务提示直接显示」那套读侧白名单判定（?err= / ?ok= / ?done= 已整批删除）。
 
+// —— 页面出口：控制器不取词 ——
+//
+// 本包交给模板的是**事实**：key（词条主键）+ 中文兜底 + `%s` 参数，取词发生在渲染期
+// （后台模板 `{{ .["t"](key, fallback) }}`，共享形状见 internal/adminui/msg.go）。
+//
+// 为什么不许 Go 侧先拼好一句话：语言是**请求级**的（语言 Cookie → query lang →
+// Accept-Language）。在 Go 里取词再交给模板，漏一处**不会报错、不记日志、测试也不红**，
+// 表现是「中文全对、英文界面整句还是中文」—— 只能靠人肉比对页面。
+//
+// 判定与归口只有一份（internal/adminui/page_error.go，判据是 pkg/response.IsBusinessError
+// 的**形态**）。本包不再维护 userenums 那份 XxxFacingMessages 白名单：它是第二份真相，
+// service 换了措辞或某个 key 改由别处提供时静默失配，两种症状都不报错。
+
+// customerMsg 一句页面结论：key + 中文兜底 + `%s` 参数。
+//
+// 用共享形状 adminui.Msg 的**别名**而不是新造 struct：同形类型各造一份就有两个「事实」
+// 定义，迟早分叉（page 模块的 pageMsg 同样如此）。
+type customerMsg = adminui.Msg
+
+// customerErrMsg 业务错误 → 一句结论（判定 + 归口 + 未命中记日志，全在 adminui）。
+func customerErrMsg(c *gin.Context, err error) customerMsg {
+	return customerErrFactOf(adminui.PageErrorFact(c, userErrScene, err))
+}
+
+// customerErrFactOf 错误事实 → 一句结论。
+//
+// 只取 Key / Fallback，**丢弃 Tail**：本模块 service 不产出
+// `fmt.Errorf("%w: 明细")` 形态的复合错误（已 rg 确认，Tail 恒为空）。
+// 将来引入时必须在这里解码明细（样板见 page 模块的 pageDetailText）。
+func customerErrFactOf(f adminui.ErrFact) customerMsg {
+	if f.Key == "" && f.Fallback == "" {
+		return customerMsg{}
+	}
+	return customerMsg{Key: f.Key, Fallback: f.Fallback}
+}
+
+// customerErrText 错误 → 成品文本。只给**必须交文本**的槽位用：
+// 模板直接渲染的 {{.Err}} 之类（访客页模板不在本模块写权限内，见 userTextOf 注释）。
+func customerErrText(c *gin.Context, err error) string {
+	return adminui.MsgText(c, customerErrMsg(c, err))
+}
+
 // userLabel 一条展示标签 / 自造文案（i18n key + 中文兜底）。本模块通用（客户页、访客页都用）。
 //
-// 取词只有一个入口（userLabelOf），tr 为 nil（纯函数测试路径）时回落中文兜底。
+// 它的用途只剩两种：① 折成 customerMsg 交给出口（见 msg()）；
+// ② 少数必须由 Go 交成品文本的槽位（<title>、访客页 {{.error}}）。
 // 直接在 Go 里写中文的后果是：页面模板里的 {{.Err}} / {{.Ok}} / {{.title}} / {{.message}}
 // 都是**直接渲染**的文本、不经过 pkg/response 的 translate —— 英文界面恒中文。
 type userLabel struct{ key, fallback string }
 
-// userLabelOf 取一条标签的当前语言文本。
-func userLabelOf(tr func(key, fallback string) string, l userLabel) string {
-	if tr == nil {
-		return l.fallback
+// msg 一条标签 → 一句结论（key + 中文兜底）。
+func (l userLabel) msg() customerMsg {
+	return customerMsg{Key: l.key, Fallback: l.fallback}
+}
+
+// customerLabelText 标签 → 成品文本。只给**必须交文本**的槽位用：
+// 后台页的 <title>（layout.html 无条件读它，而那个模板不在本模块写权限内）与
+// 访客页模板里直接渲染的 {{ .["error"] }} / {{ .["message"] }}（见 userTextOf）。
+// 其余槽位一律给事实 + 模板取词。
+func customerLabelText(c *gin.Context, l userLabel) string {
+	return adminui.MsgText(c, l.msg())
+}
+
+// customerMsgFirst 取第一条非空结论（多处「提示只留第一条」的收口）。
+func customerMsgFirst(values ...customerMsg) customerMsg {
+	for _, v := range values {
+		if !v.Empty() {
+			return v
+		}
 	}
-	return tr(l.key, l.fallback)
+	return customerMsg{}
 }
 
 const (
@@ -265,7 +324,7 @@ const (
 	customerDetailPath = "/admin/customers/detail"
 )
 
-// 客户页的页面标题：词条命中出译文，未命中回落中文兜底（经 shell.Prepare 的 fallback 链路进 <title>）。
+// 客户页的页面标题：词条命中出译文，未命中回落中文兜底（经 adminui.Prepare 的 fallback 链路进 <title>）。
 var (
 	customerPageTitleLabel       = userLabel{"admin.customers.heading", "客户管理"}
 	customerDetailPageTitleLabel = userLabel{"admin.customer_detail.heading", "客户详情"}
@@ -293,10 +352,12 @@ const (
 
 // 本页自造的文案（参数级提示 / 装配降级说明）。
 //
-// userenums.UserFacingMessages 只登记「用户模块产出的」文案；下面这几条是后台页面
-// 自己造的，**直接渲染**（或经提示页渲染），不再经 ?err= 回显 —— 那条读侧通道已随
-// 「写结论走 shell.RenderJump」整批删除，所以不再需要一份「受控文案集合」来证明
-// 这条提示出自本仓。形态统一为 key + 中文兜底，取词走 userLabelOf。
+// 这几条是后台页面自己造的，**直接渲染**（或经提示页渲染），不走 ?err= 回显 ——
+// 那条读侧通道已随「写结论走 shell.RenderJump」整批删除，所以不再需要一份
+// 「受控文案集合」来证明这条提示出自本仓（userenums.UserFacingMessages 已删）。
+//
+// 形态统一为 key + 中文兜底：Go 侧只交事实（.msg() 给 customerMsg，或经
+// customerLabelText 取成品文本给**直接渲染**的槽位），取词发生在渲染期。
 var (
 	// customerUnavailableLabel 客户管理能力未装配。
 	//
@@ -507,7 +568,7 @@ func customerPageMinOrders(v string) int {
 //
 // 返回值是三态（调用方据此决定「不筛 / 筛 / 报错」）：
 //   - Segment 为空            → nil，不筛；
-//   - 端口缺席或取数失败      → nil + 非空错误文案（调用方**不查列表**，见 CustomersPage）；
+//   - 端口缺席或取数失败      → nil + 非空结论（调用方**不查列表**，见 CustomersPage）；
 //   - 取到了（含零个人）      → **非 nil** 切片（零个人是空切片）。
 //
 // 第三种里的空切片是关键：它一路传到 model 的 `id IN (...)` 之前被短路成空结果。
@@ -515,24 +576,24 @@ func customerPageMinOrders(v string) int {
 //
 // 工程取第一个（与客户概览页同规则）：客户列表页没有工程选择器，
 // 而分段口径是工程维度的 —— 不选工程就没法算。
-func (h *customerPageHandle) segmentCustomerIDs(ctx context.Context, f customerFilter) ([]int64, string) {
+func (h *customerPageHandle) segmentCustomerIDs(ctx context.Context, f customerFilter) ([]int64, customerMsg) {
 	if f.Segment == "" && f.MinOrders == 0 {
-		return nil, ""
+		return nil, customerMsg{}
 	}
 	if h.segments == nil {
 		// 没接线时明确说「筛不了」，而不是当作没筛。
-		return nil, customerSegmentUnavailableText
+		return nil, customerSegmentUnavailableLabel.msg()
 	}
 	if h.projects == nil {
-		return nil, customerSegmentUnavailableText
+		return nil, customerSegmentUnavailableLabel.msg()
 	}
 	list, perr := h.projects.List(ctx)
 	if perr != nil {
-		return nil, customerSegmentUnavailableText
+		return nil, customerSegmentUnavailableLabel.msg()
 	}
 	if len(list) == 0 {
 		// 还没建站点工程：没有任何订单可算 —— 这是正常状态，结果是「零个人」。
-		return []int64{}, ""
+		return []int64{}, customerMsg{}
 	}
 	from, to := customerSegmentWindow(f, time.Now())
 	res, err := h.segments.CustomerSegmentIDsByRange(ctx, &orderdto.CustomerSegmentIDsReq{
@@ -545,12 +606,12 @@ func (h *customerPageHandle) segmentCustomerIDs(ctx context.Context, f customerF
 		Limit: customerSegmentFilterLimit,
 	})
 	if err != nil {
-		return nil, customerSegmentUnavailableText
+		return nil, customerSegmentUnavailableLabel.msg()
 	}
 	if res == nil {
-		return []int64{}, ""
+		return []int64{}, customerMsg{}
 	}
-	return res.UserIDs, ""
+	return res.UserIDs, customerMsg{}
 }
 
 // customerSegmentFilterLimit 列表筛选一次最多取多少个分段 id。
@@ -559,13 +620,22 @@ func (h *customerPageHandle) segmentCustomerIDs(ctx context.Context, f customerF
 // 筛选结果，不如取满上限、让结果在超过时由用户自己缩小时间范围。
 const customerSegmentFilterLimit = 500
 
-// customerRfmSegmentUnavailableText RFM 分段筛不了时的归口文案。
+// customerRfmSegmentUnavailableLabel RFM 分段筛不了时的归口文案。
 //
 // 与消费分段的文案分开：两者可能同时出错，而用户需要知道是哪一维没生效。
-const customerRfmSegmentUnavailableText = "按 RFM 分段筛选暂时不可用（数据没接上），请先用其它条件。"
+//
+// 这两条（连同下面几条）是**本模块自造的归口文案**，词条尚未 seed：
+// 缺词条时按 fallback 原文显示中文（不退化、不显示裸 key），key 已在批次报告里登记。
+var customerRfmSegmentUnavailableLabel = userLabel{
+	"admin.customer.filter.rfm_unavailable",
+	"按 RFM 分段筛选暂时不可用（数据没接上），请先用其它条件。",
+}
 
-// customerSegmentUnavailableText 分段筛不了时的提示（归口文案，不外泄内部错误）。
-const customerSegmentUnavailableText = "按消费分段筛选暂时不可用（数据没接上），请先用其它条件。"
+// customerSegmentUnavailableLabel 分段筛不了时的提示（归口文案，不外泄内部错误）。
+var customerSegmentUnavailableLabel = userLabel{
+	"admin.customer.filter.segment_unavailable",
+	"按消费分段筛选暂时不可用（数据没接上），请先用其它条件。",
+}
 
 // customerSegmentWindow 分段的默认时间窗口：没给就用本月（与客户概览页默认档一致）。
 //
@@ -592,7 +662,7 @@ func customerSegmentWindow(f customerFilter, now time.Time) (from, to string) {
 // CustomersPage 客户列表（GET /admin/customers）。
 func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	page, limit := shell.PageParams(c)
+	page, limit := reqparams.PageParams(c)
 	filter := customerFilter{
 		Keyword:        strings.TrimSpace(c.Query("keyword")),
 		Status:         customerPageStatus(c.Query("status")),
@@ -610,45 +680,34 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 
 	// 写动作的结论不在这里回显（走 shell.RenderJump 渲染提示页，见 customerJump）；
 	// 页面上的提示条只剩一个来源：本页自己的取数 / 筛选失败。
-	pageErr := ""
-	// 展示标签与自造文案的取词函数（不再在 Go 里写死中文）。
-	tr := shell.TranslateFor(c)
+	//
+	// 提示一律是**结论**（key + 中文兜底），不是拼好的句子 —— 取词归模板。
+	var pageErr customerMsg
 
 	// 消费分段：先把「谁在这段里」从订单模块要回来，再筛客户行。
 	//
 	// 失败时**不回落成「不筛」**：回落会让「筛不出来」显示成「全部客户」，
 	// 而那正好是运营最可能相信的结果（数字变大了，看起来像筛对了）。
 	segIDs, segErr := h.segmentCustomerIDs(ctx, filter)
-	if segErr != "" {
-		pageErr = customerFirstNonEmpty(pageErr, segErr)
-	}
 	// RFM 分段是**另一维**：两个筛选都要成立，所以取交集（见 intersectCustomerIDs）。
 	rfmIDs, rfmErr := h.rfmSegmentIDs(ctx, filter)
-	if rfmErr != "" {
-		pageErr = customerFirstNonEmpty(pageErr, rfmErr)
-	}
 	// 会员等级是**第三维**：三维都要成立，所以逐次求交（每步都保留 nil/空切片 的区别）。
 	tierIDs, tierErr := h.tierCustomerIDs(ctx, filter)
-	if tierErr != "" {
-		pageErr = customerFirstNonEmpty(pageErr, tierErr)
-	}
 	filterIDs := intersectCustomerIDs(intersectCustomerIDs(segIDs, rfmIDs), tierIDs)
+	pageErr = customerMsgFirst(segErr, rfmErr, tierErr)
 
 	var list *userdto.CustomerListResp
 	switch {
 	case h.users == nil:
 		// 能力未装配：给出说明而不是 500，也不渲染一个点了必然失败的按钮。
-		pageErr = customerFirstNonEmpty(pageErr, userLabelOf(tr, customerUnavailableLabel))
-	case segErr != "":
-		// 分段没取到就不查列表：查出来的是「全部客户」，而页面上写着「新客」。
-		_ = segErr
-	case rfmErr != "":
-		// RFM 分段同理。**每一个「会取 id 的维度」都要有自己的分支**：漏一个，
-		// 那一维失败就会一路走到 default 查出全部客户，而页面上写着那个筛选条件 ——
-		// 这正是「筛不出来显示成全部客户」最容易被相信的形态。
-		_ = rfmErr
-	case tierErr != "":
-		_ = tierErr
+		pageErr = customerMsgFirst(pageErr, customerUnavailableLabel.msg())
+	case !pageErr.Empty():
+		// 任一维（消费分段 / RFM / 会员等级）没取到就不查列表：查出来的是「全部客户」，
+		// 而页面上写着那个筛选条件 —— 这正是「筛不出来显示成全部客户」最容易被相信的形态。
+		//
+		// **合并成一条判断是刻意的**：逐维各写一个分支时，「新增一个会取 id 的维度却忘了
+		// 加分支」会让那一维失败后一路走到 default 查出全部客户；这里只要它把结论交进
+		// pageErr 就自动被拦住。
 	default:
 		res, err := h.users.ListCustomers(ctx, &userdto.CustomerListReq{
 			Keyword:        filter.Keyword,
@@ -662,22 +721,25 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 			Limit:          limit,
 		})
 		if err != nil {
-			pageErr = customerFirstNonEmpty(pageErr, customerFacingError(c, err))
+			pageErr = customerMsgFirst(pageErr, customerErrMsg(c, err))
 		} else {
 			list = res
 		}
 	}
 
-	data := customerListPageData(tr, list, filter, page, limit, pageErr, h.users == nil)
+	data := customerListPageData(customerLabelText(c, customerPageTitleLabel), list, filter, page, limit, pageErr, h.users == nil)
 	// 等级下拉的选项要现场取（等级是运营自建的，不是常量表）：
 	// 取不到时给空切片，页面渲染成只有「不限等级」一项 —— 而不是整个下拉消失。
 	data["TierOptions"] = h.membershipTierOptions(ctx)
-	data = shell.Prepare(c, data)
+	data = adminui.Prepare(c, data)
 	// 写动作的结论不在本页回显（走 shell.RenderJump）；写动作表单 action 上的筛选
 	// 上下文由 customerListPageData 组进 ListQuery，不再把整串回跳 URL 塞进隐藏域。
-	base := shell.FilterBaseURL(customerListPath, customerFilterValues(filter))
-	for k, v := range shell.BuildPagination(customerTotal(list), page, limit, base, shell.TranslateFor(c)).TemplateKeys() {
-		data[k] = v
+	// 分页条：handler 只交事实（pkg/pagination.Page），信息行与链接由
+	// admin/partials/pagination.html 用 sprintf / queryURL 现算；
+	// 单页 / 空集时 HasPagination 为假，片段自然不渲染。
+	if pg := pagination.Facts(customerTotal(list), page, limit); pg.HasPagination() {
+		pg.Base = reqparams.FilterBaseURL(customerListPath, customerFilterValues(filter))
+		data["Pagination"] = pg
 	}
 	c.HTML(http.StatusOK, "admin/user/customers.html", data)
 }
@@ -687,19 +749,18 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 // 资料与登录事实来自 user 模块，订单摘要来自订单模块 —— 页面只做编排。
 func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
 	id := customerQueryID(c.Query("id"))
 	if id == 0 {
-		customerListJumpFail(c, userLabelOf(tr, customerInvalidIDLabel))
+		customerListJumpFail(c, customerInvalidIDLabel.msg())
 		return
 	}
 	// 写动作的结论不在这里回显（走 shell.RenderJump 渲染提示页，见 customerJump）；
 	// 页面上的提示条只剩一个来源：本页自己的取数失败。
-	pageErr := ""
 
 	if h.users == nil {
-		c.HTML(http.StatusOK, "admin/user/customer_detail.html", shell.Prepare(c, customerDetailPageData(
-			nil, nil, "", nil, false, false, customerFirstNonEmpty(pageErr, userLabelOf(tr, customerUnavailableLabel)), c)))
+		c.HTML(http.StatusOK, "admin/user/customer_detail.html", adminui.Prepare(c, customerDetailPageData(
+			customerLabelText(c, customerDetailPageTitleLabel), c,
+			nil, nil, "", nil, false, false, customerUnavailableLabel.msg())))
 		return
 	}
 
@@ -710,9 +771,10 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 	if err != nil || detail == nil {
 		// 客户不存在时不渲染空详情页（它的每个动作都要求一个存在的客户），
 		// 而是给一张提示页 + 回列表的链接。
-		msg := customerFacingError(c, err)
-		if msg == "" {
-			msg = shell.TranslateFor(c)(userenums.ErrUserNotFound, "用户不存在")
+		msg := customerErrMsg(c, err)
+		if msg.Empty() {
+			// 契约没给 error 却给了 nil 详情：这是本模块自己知道的语义，兜一句话。
+			msg = customerMsg{Key: userenums.ErrUserNotFound, Fallback: "用户不存在"}
 		}
 		customerListJumpFail(c, msg)
 		return
@@ -720,11 +782,11 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 
 	// 工程：订单是工程维度的，摘要必须落在某一个工程上（默认第一个，与订单页同口径）。
 	var projects []projectcontract.ProjectResp
-	projectsErr := ""
+	var projectsErr customerMsg
 	if h.projects != nil {
 		list, perr := h.projects.List(ctx)
 		if perr != nil {
-			projectsErr = shell.PageInternalText(c)
+			projectsErr = customerErrMsg(c, perr)
 		} else {
 			projects = list
 		}
@@ -735,20 +797,20 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 	}
 
 	var summary *ordercontract.CustomerOrderSummaryResp
-	summaryErr := ""
+	var summaryErr customerMsg
 	switch {
 	case h.orders == nil:
-		summaryErr = userLabelOf(tr, customerOrdersUnavailableLabel)
+		summaryErr = customerOrdersUnavailableLabel.msg()
 	case selected == "":
 		// 没有工程就没有订单可算 —— 这是「还没建站点工程」的正常状态，不是错误。
-		summaryErr = ""
+		summaryErr = customerMsg{}
 	default:
 		res, oerr := h.orders.CustomerOrderSummaryOf(ctx, &ordercontract.CustomerOrderSummaryReq{
 			ProjectID: selected,
 			UserID:    id,
 		})
 		if oerr != nil {
-			summaryErr = customerFacingError(c, oerr)
+			summaryErr = customerErrMsg(c, oerr)
 		} else {
 			summary = res
 		}
@@ -759,262 +821,12 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 	// 否则页面上会出现「工程 A 的消费、工程 B 的等级」，而两者都看起来是对的）。
 	// 渲染键在 applyCustomerMembership 里**恒设**（含空值）：Jet 缺键会中断整页渲染。
 	memberData := customerDetailPageData(
-		detail, projects, selected, summary, projectsErr != "", summaryErr != "",
-		customerFirstNonEmpty(pageErr, projectsErr, summaryErr), c)
+		customerLabelText(c, customerDetailPageTitleLabel), c,
+		detail, projects, selected, summary, !projectsErr.Empty(), !summaryErr.Empty(),
+		customerMsgFirst(projectsErr, summaryErr))
 	applyCustomerMembership(memberData, h.membershipView(ctx, c, selected, id))
-	c.HTML(http.StatusOK, "admin/user/customer_detail.html", shell.Prepare(c, memberData))
+	c.HTML(http.StatusOK, "admin/user/customer_detail.html", adminui.Prepare(c, memberData))
 }
-
-// CustomerStatusSave 启用 / 停用账号（POST /admin/customers/status）。
-func (h *customerPageHandle) CustomerStatusSave(c *gin.Context) {
-	if h.users == nil {
-		customerJumpFail(c, userLabelOf(shell.TranslateFor(c), customerUnavailableLabel))
-		return
-	}
-	id := customerQueryID(c.PostForm("customerId"))
-	// 目标状态取 toStatus，**不是** status：筛选用的 status 随表单 action 的 query 回跳，
-	// 两者同名会让回跳后的列表把「目标状态」当成筛选条件，看起来像「筛选没了」。
-	status := customerPageStatus(c.PostForm("toStatus"))
-	if id == 0 {
-		customerJumpFail(c, userLabelOf(shell.TranslateFor(c), customerInvalidIDLabel))
-		return
-	}
-	// 目标状态只接受「正常 / 已停用」两个值（与 service 的白名单一致，但这里先拦一道）：
-	// 表单是客户端可伪造的，而待激活一旦能当目标值，就会出现「被手工改成未验证」的账号 ——
-	// 它既收不到验证邮件、也没有人能解释它是怎么来的。
-	if status != customerStatusActive && status != customerStatusDisabled {
-		customerJumpFail(c, userLabelOf(shell.TranslateFor(c), customerStatusInvalidLabel))
-		return
-	}
-	res, err := h.users.SetCustomerStatus(c.Request.Context(), &userdto.CustomerStatusReq{
-		CustomerID: id,
-		Status:     status,
-	})
-	if err != nil {
-		customerJumpFail(c, customerFacingError(c, err))
-		return
-	}
-	// 回执按**目标状态**给：运营点的是「停用」，回执就应该是「账号已停用」。
-	customerJumpDone(c, customerNotice(c, customerStatusMessage(res.Status)))
-}
-
-// CustomerUnlock 解除登录锁定（POST /admin/customers/unlock）。
-func (h *customerPageHandle) CustomerUnlock(c *gin.Context) {
-	if h.users == nil {
-		customerJumpFail(c, userLabelOf(shell.TranslateFor(c), customerUnavailableLabel))
-		return
-	}
-	id := customerQueryID(c.PostForm("customerId"))
-	if id == 0 {
-		customerJumpFail(c, userLabelOf(shell.TranslateFor(c), customerInvalidIDLabel))
-		return
-	}
-	res, err := h.users.UnlockCustomer(c.Request.Context(), &userdto.CustomerUnlockReq{CustomerID: id})
-	if err != nil {
-		customerJumpFail(c, customerFacingError(c, err))
-		return
-	}
-	// 三种结果各说各的（见 dto 注释）：解除了锁定 / 清了残留计数 / 本来就没事。
-	switch {
-	case res.Unlocked:
-		customerJumpDone(c, customerNotice(c, userenums.MsgCustomerUnlocked))
-	case res.Cleared:
-		customerJumpDone(c, customerNotice(c, userenums.MsgCustomerFailuresCleared))
-	default:
-		customerJumpDone(c, customerNotice(c, userenums.MsgCustomerNotLocked))
-	}
-}
-
-// CustomerBulkStatusSave 批量启用 / 停用（POST /admin/customers/bulk-status）。
-//
-// 逐条走**同一条单条写入路径**（h.users.SetCustomerStatus，与 /admin/customers/status 一致）：
-// 某一条失败不中断整批 —— 整批回滚会让运营以为「一条都没做」，然后反复重试。
-// 结果按「已处理 N 个 / 未处理 M 个」渲染进提示页，不做静默的部分成功。
-func (h *customerPageHandle) CustomerBulkStatusSave(c *gin.Context) {
-	if h.users == nil {
-		customerJumpFail(c, userLabelOf(shell.TranslateFor(c), customerUnavailableLabel))
-		return
-	}
-	// 目标状态取自 toStatus（筛选用的 status 随表单 action 的 query 回跳，两者同名会让
-	// 回跳后的列表看起来「筛选没了」）；只接受「正常 / 已停用」两个值，与单条动作同口径。
-	status := customerPageStatus(c.PostForm("toStatus"))
-	if status != customerStatusActive && status != customerStatusDisabled {
-		customerJumpFail(c, userLabelOf(shell.TranslateFor(c), customerStatusInvalidLabel))
-		return
-	}
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		customerJumpFail(c, customerBulkIDsText(c, berr))
-		return
-	}
-	if len(ids) == 0 {
-		// 表单是客户端可伪造的：一条都没勾就直接提交是可能的，不能当成功处理。
-		customerJumpFail(c, userLabelOf(shell.TranslateFor(c), customerBulkNothingSelectedLabel))
-		return
-	}
-	ctx := c.Request.Context()
-	done, skipped := 0, 0
-	for _, raw := range ids {
-		id := customerQueryID(raw)
-		if id == 0 {
-			skipped++
-			continue
-		}
-		if _, err := h.users.SetCustomerStatus(ctx, &userdto.CustomerStatusReq{
-			CustomerID: id, Status: status,
-		}); err != nil {
-			skipped++
-			continue
-		}
-		done++
-	}
-	customerJumpDone(c, customerBulkSummary(c, customerStatusActionVerb(c, status), done, skipped))
-}
-
-// CustomerBulkUnlock 批量解除登录锁定（POST /admin/customers/bulk-unlock）。
-//
-// 同一批里三种情况分开计数（真的解开了 / 本来就没事 / 未处理）：
-// 把「本来就没事」混进「失败」会让运营以为有账号没解锁成功而去点第二次，
-// 混进「成功」则是谎报 —— 而它其实是这条批量指令里最需要被解释的一种结果。
-func (h *customerPageHandle) CustomerBulkUnlock(c *gin.Context) {
-	if h.users == nil {
-		customerJumpFail(c, userLabelOf(shell.TranslateFor(c), customerUnavailableLabel))
-		return
-	}
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		customerJumpFail(c, customerBulkIDsText(c, berr))
-		return
-	}
-	if len(ids) == 0 {
-		customerJumpFail(c, userLabelOf(shell.TranslateFor(c), customerBulkNothingSelectedLabel))
-		return
-	}
-	ctx := c.Request.Context()
-	unlocked, noop, skipped := 0, 0, 0
-	for _, raw := range ids {
-		id := customerQueryID(raw)
-		if id == 0 {
-			skipped++
-			continue
-		}
-		res, err := h.users.UnlockCustomer(ctx, &userdto.CustomerUnlockReq{CustomerID: id})
-		switch {
-		case err != nil:
-			skipped++
-		case res != nil && res.Unlocked:
-			unlocked++
-		default:
-			noop++
-		}
-	}
-	customerJumpDone(c, customerBulkUnlockSummary(c, unlocked, noop, skipped))
-}
-
-// —— 批量结论的文案源（渲染进提示页）——
-//
-// 形态与 order 模块的 orderBulkText 同构：**key 与中文原文只有这一份**，
-// 写侧用它 Sprintf 出整句，经 shell.RenderJump 直接渲染进响应体 —— 不再经 ?done=
-// 回带，所以也不需要读侧那份「候选集合 + 数字归一比对」（customerBulkNoticeCandidates
-// 已随读侧整批删除）。
-//
-// 句子拆成 前缀 + 分段（连接符拼接）+ 句号 三个部件：英文的语序与标点都不同，
-// 把整句焊成一条词条就等于按「分支 × 计数组合」抄一份句子表。
-type customerBulkText struct{ key, fallback string }
-
-var (
-	customerBulkPrefixStatus = customerBulkText{"user.bulk.prefix.status", "批量操作："}
-	customerBulkPrefixUnlock = customerBulkText{"user.bulk.prefix.unlock", "批量解除锁定："}
-	customerBulkTailNone     = customerBulkText{"user.bulk.tail.none", "没有可处理的账号。"}
-	customerBulkJoiner       = customerBulkText{"user.bulk.joiner", "，"}
-	customerBulkPeriod       = customerBulkText{"user.bulk.period", "。"}
-
-	customerBulkStatusDone    = customerBulkText{"user.bulk.status.done", "{verb} {count} 个"}
-	customerBulkStatusSkipped = customerBulkText{"user.bulk.status.skipped", "{count} 个未处理（账号不存在，或当前状态不允许这个动作）"}
-	customerBulkUnlockDone    = customerBulkText{"user.bulk.unlock.done", "已解除锁定 {count} 个"}
-	customerBulkUnlockNoop    = customerBulkText{"user.bulk.unlock.noop", "{count} 个本来就未锁定"}
-	customerBulkUnlockSkipped = customerBulkText{"user.bulk.unlock.skipped", "{count} 个未处理（账号不存在）"}
-
-	customerBulkVerbEnabled  = customerBulkText{"user.bulk.verb.enabled", "已启用"}
-	customerBulkVerbDisabled = customerBulkText{"user.bulk.verb.disabled", "已停用"}
-)
-
-// customerBulkTextOf 取一条批量结论文案的当前语言文本，并按命名参数填充 `{name}`。
-//
-// 占位符是 `{verb}` / `{count}` 这类名字，填充走 pkg/i18n 的 FillTranslate（命名替换）而非
-// fmt.Sprintf：词条能在后台被运营改出裸 %，Sprintf 会把它当格式化动词输出乱码；
-// 中英词条的占位符顺序不一致时还会静默错配。填完仍有残留时自动回落中文兜底。
-func customerBulkTextOf(c *gin.Context, t customerBulkText, kv map[string]string) string {
-	return i18n.FillTranslate(shell.TranslateFor(c), t.key, t.fallback, kv)
-}
-
-// customerBulkSentence 拼一句批量结论：前缀 + 分段 + 句号（三部分都按当前语言取）。
-func customerBulkSentence(c *gin.Context, prefix customerBulkText, parts []string) string {
-	if len(parts) == 0 {
-		return customerBulkTextOf(c, prefix, nil) + customerBulkTextOf(c, customerBulkTailNone, nil)
-	}
-	return customerBulkTextOf(c, prefix, nil) +
-		strings.Join(parts, customerBulkTextOf(c, customerBulkJoiner, nil)) +
-		customerBulkTextOf(c, customerBulkPeriod, nil)
-}
-
-// customerBulkSummary 批量状态动作的结果摘要（成功数与未处理数分开说）。
-func customerBulkSummary(c *gin.Context, verb string, done, skipped int) string {
-	parts := make([]string, 0, 2)
-	if done > 0 {
-		parts = append(parts, customerBulkTextOf(c, customerBulkStatusDone, map[string]string{
-			"verb": verb, "count": strconv.Itoa(done)}))
-	}
-	if skipped > 0 {
-		parts = append(parts, customerBulkTextOf(c, customerBulkStatusSkipped,
-			map[string]string{"count": strconv.Itoa(skipped)}))
-	}
-	return customerBulkSentence(c, customerBulkPrefixStatus, parts)
-}
-
-// customerBulkUnlockSummary 批量解锁的结果摘要（解开 / 本来就没事 / 未处理三件事分开说）。
-func customerBulkUnlockSummary(c *gin.Context, unlocked, noop, skipped int) string {
-	parts := make([]string, 0, 3)
-	if unlocked > 0 {
-		parts = append(parts, customerBulkTextOf(c, customerBulkUnlockDone,
-			map[string]string{"count": strconv.Itoa(unlocked)}))
-	}
-	if noop > 0 {
-		parts = append(parts, customerBulkTextOf(c, customerBulkUnlockNoop,
-			map[string]string{"count": strconv.Itoa(noop)}))
-	}
-	if skipped > 0 {
-		parts = append(parts, customerBulkTextOf(c, customerBulkUnlockSkipped,
-			map[string]string{"count": strconv.Itoa(skipped)}))
-	}
-	return customerBulkSentence(c, customerBulkPrefixUnlock, parts)
-}
-
-// customerStatusActionVerb 目标状态 → 摘要里的动词（回执按**目标状态**给，与单条动作一致）。
-func customerStatusActionVerb(c *gin.Context, status int) string {
-	return customerBulkTextOf(c, customerStatusActionVerbKey(status), nil)
-}
-
-// customerStatusActionVerbKey 目标状态 → 摘要里动词的词条。
-func customerStatusActionVerbKey(status int) customerBulkText {
-	if status == customerStatusActive {
-		return customerBulkVerbEnabled
-	}
-	return customerBulkVerbDisabled
-}
-
-// —— 写动作的出口：整页提示（对应 ThinkPHP 的 success() / error()）——
-//
-// 取代原先的 302 + `?err=` / `?ok=` / `?done=`：那条通道要求读侧再判一次「这条提示
-// 是不是本仓给的」（customerPageFacingText 白名单、customerBulkNoticeCandidates 的
-// 数字归一比对），而查询参数不是可信边界。现在文案走响应体，读侧判定
-// （customerPageDone / customerBulkNoticeCandidates / FacingQueryText 调用）随之删除。
-//
-// 提示文本必须**已过本模块白名单 / 已归口**（customerFacingError / customerNotice /
-// customerBulkSummary 的产物），原文只进日志 —— 换个页面呈现不等于可以把 err.Error()
-// 铺在页面上。
 
 // customerListBackKeys 列表写动作回跳要带回来的筛选上下文。
 //
@@ -1030,7 +842,7 @@ var customerListBackKeys = []string{
 
 // customerListQuery 列表上下文 → 查询串（拼进写动作表单的 action）。
 //
-// 空值丢弃、编码走 url.Values（键有序、产物稳定）—— 与 shell.WithParams 同口径。
+// 空值丢弃、编码走 url.Values（键有序、产物稳定）—— 与 backpath.WithParams 同口径。
 // 只带**筛选上下文**，不带任何结论文案：结论走响应体（见 shell.RenderJump）。
 func customerListQuery(filter customerFilter, page, limit int) string {
 	q := url.Values{}
@@ -1057,57 +869,47 @@ var customerNoticeFallback = map[string]string{
 	userenums.MsgCustomerNotLocked:       "该账号没有处于锁定状态，无需解除",
 }
 
-// customerNotice 取一条成功回执的当前语言文字（渲染进提示页，见 customerJumpDone）。
-func customerNotice(c *gin.Context, key string) string {
-	return shell.TranslateFor(c)(key, customerNoticeFallback[key])
-}
-
-// customerWriteBack 写动作的回跳地址与链接文字（列表页 / 详情页两档）。
+// customerNotice 取一条 JSON 成功回执的当前语言文字。
 //
-// 表单 action 的 query 里带 `id` 表示这个动作来自**客户详情页**（详情页的写表单
-// action 是 `/admin/customers/status?id=…&project=…`）；否则来自列表页。
-// 回跳地址由服务端从 query 按白名单读回，页面不再把整串 URL 塞进隐藏域。
-func customerWriteBack(c *gin.Context) (back, backText string) {
-	if strings.TrimSpace(c.Query("id")) != "" {
-		return shell.BackPath(c, customerDetailPath, "id", "project"),
-			userLabelOf(shell.TranslateFor(c), customerDetailPageTitleLabel)
-	}
-	return shell.BackPath(c, customerListPath, customerListBackKeys...),
-		userLabelOf(shell.TranslateFor(c), customerPageTitleLabel)
+// 接口面（/api/customer/*）交出去的是**成品 JSON 字段**，没有模板渲染期可取词，
+// 所以这里是「拿事实取成品」而非「拼句子」：key 来自 userenums，兜底表只服务缺词条。
+func customerNotice(c *gin.Context, key string) string {
+	return adminui.MsgText(c, customerMsg{Key: key, Fallback: customerNoticeFallback[key]})
 }
 
 // customerListBack 回客户列表的地址与链接文字（详情页 GET 出错时用：此时请求 URL 上
 // 带着 `id`，不能走 customerWriteBack 那条「有 id 就回详情页」的分档）。
-func customerListBack(c *gin.Context) (back, backText string) {
+//
+// 链接文字是**结论**（key + 兜底）：取词由 admin/jump.html 的 tr 做。
+func customerListBack(c *gin.Context) (back string, backText customerMsg) {
 	return shell.BackPath(c, customerListPath, customerListBackKeys...),
-		userLabelOf(shell.TranslateFor(c), customerPageTitleLabel)
+		customerPageTitleLabel.msg()
 }
 
 // customerJump 渲染整页提示（htmx 档由 shell.RenderJump 换成 HX-Redirect）。
 //
+// 交出去的是**事实**（MsgKey + 中文兜底 + `%s` 参数）：整页提示的取词在
+// admin/jump.html 的 `tf(.Jump.MsgKey, .Jump.Msg, .Jump.MsgArgs)` 里发生。
+//
 // 成功 1 秒后自动回跳；失败不自动跳（Seconds=0）：运营要看清楚原因。
-func customerJump(c *gin.Context, ok bool, msg, back, backText string) {
-	if ok {
-		shell.RenderJump(c, shell.Jump{OK: true, Msg: msg, Back: back, BackText: backText, Seconds: 1})
-		return
+func customerJump(c *gin.Context, ok bool, msg customerMsg, back string, backText customerMsg) {
+	j := shell.Jump{
+		OK:          ok,
+		MsgKey:      msg.Key,
+		Msg:         msg.Fallback,
+		MsgArgs:     msg.Args,
+		Back:        back,
+		BackTextKey: backText.Key,
+		BackText:    backText.Fallback,
 	}
-	shell.RenderJump(c, shell.Jump{Msg: msg, Back: back, BackText: backText})
-}
-
-// customerJumpDone 写成功：整页提示，1 秒后自动回跳。
-func customerJumpDone(c *gin.Context, msg string) {
-	back, backText := customerWriteBack(c)
-	customerJump(c, true, msg, back, backText)
-}
-
-// customerJumpFail 写失败：整页提示，不自动跳转。
-func customerJumpFail(c *gin.Context, msg string) {
-	back, backText := customerWriteBack(c)
-	customerJump(c, false, msg, back, backText)
+	if ok {
+		j.Seconds = 1
+	}
+	shell.RenderJump(c, j)
 }
 
 // customerListJumpFail 详情页 GET 出错的提示页：回跳目标恒为列表页。
-func customerListJumpFail(c *gin.Context, msg string) {
+func customerListJumpFail(c *gin.Context, msg customerMsg) {
 	back, backText := customerListBack(c)
 	customerJump(c, false, msg, back, backText)
 }
@@ -1116,22 +918,22 @@ func customerListJumpFail(c *gin.Context, msg string) {
 //
 // 与消费分段走**两套**不同的分段：那三个看下单行为（新客 / 回头客 / 复购），
 // 这一条看 RFM 总分。两者同时给出时调用方取交集（见 intersectCustomerIDs）。
-func (h *customerPageHandle) rfmSegmentIDs(ctx context.Context, f customerFilter) ([]int64, string) {
+func (h *customerPageHandle) rfmSegmentIDs(ctx context.Context, f customerFilter) ([]int64, customerMsg) {
 	if f.RfmSegment == "" {
-		return nil, ""
+		return nil, customerMsg{}
 	}
 	// 端口没接、没有工程、取数失败：都明确说「筛不了」，而不是当作没筛
 	//（当作没筛会让「筛不出来」显示成「全部客户」，而那正是用户最可能相信的结果）。
 	if h.rfm == nil || h.projects == nil {
-		return nil, customerRfmSegmentUnavailableText
+		return nil, customerRfmSegmentUnavailableLabel.msg()
 	}
 	list, perr := h.projects.List(ctx)
 	if perr != nil {
-		return nil, customerRfmSegmentUnavailableText
+		return nil, customerRfmSegmentUnavailableLabel.msg()
 	}
 	if len(list) == 0 {
 		// 还没建站点工程：没有任何订单可算 —— 正常状态，结果是「零个人」。
-		return []int64{}, ""
+		return []int64{}, customerMsg{}
 	}
 	from, to := customerSegmentWindow(f, time.Now())
 	res, err := h.rfm.CustomerRfmSegmentIDsByRange(ctx, &orderdto.CustomerRfmSegmentIDsReq{
@@ -1143,13 +945,13 @@ func (h *customerPageHandle) rfmSegmentIDs(ctx context.Context, f customerFilter
 		Limit: customerSegmentFilterLimit,
 	})
 	if err != nil {
-		return nil, customerRfmSegmentUnavailableText
+		return nil, customerRfmSegmentUnavailableLabel.msg()
 	}
 	ids := res.UserIDs
 	if ids == nil {
 		ids = []int64{}
 	}
-	return ids, ""
+	return ids, customerMsg{}
 }
 
 // intersectCustomerIDs 两个 id 列表的交集；nil 表示「这一维不筛」。
@@ -1195,28 +997,31 @@ const (
 	membershipFilterMaxPages = 5
 )
 
-// membershipFilterTruncatedText 达到翻页上限时的归口文案。
+// membershipFilterTruncatedLabel 达到翻页上限时的归口文案。
 //
 // 达到上限时**整维当作失败**（不交出那部分 id）：交出一半 id 会让页面显示一个
 // 看起来正常、只是少了一批人的列表 —— 而用户无从知道少了。明说「筛不了、请收窄」
 // 是唯一不会静默出错的形态。
-const membershipFilterTruncatedText = "该会员等级的人数超过筛选上限，无法作为筛选项使用。请配合其它条件一起筛。"
+var membershipFilterTruncatedLabel = userLabel{
+	"admin.customer.filter.tier_truncated",
+	"该会员等级的人数超过筛选上限，无法作为筛选项使用。请配合其它条件一起筛。",
+}
 
 // tierCustomerIDs 把「会员等级」换成一批客户 id（三态同 segmentCustomerIDs）。
-func (h *customerPageHandle) tierCustomerIDs(ctx context.Context, f customerFilter) ([]int64, string) {
+func (h *customerPageHandle) tierCustomerIDs(ctx context.Context, f customerFilter) ([]int64, customerMsg) {
 	if f.TierID <= 0 {
-		return nil, ""
+		return nil, customerMsg{}
 	}
 	if h.membershipAdmin == nil || h.projects == nil {
-		return nil, membershipFilterUnavailableText
+		return nil, membershipFilterUnavailableLabel.msg()
 	}
 	list, perr := h.projects.List(ctx)
 	if perr != nil {
-		return nil, membershipFilterUnavailableText
+		return nil, membershipFilterUnavailableLabel.msg()
 	}
 	if len(list) == 0 {
 		// 还没建站点工程：没有任何归属可算 —— 正常状态，结果是「零个人」。
-		return []int64{}, ""
+		return []int64{}, customerMsg{}
 	}
 	ids := make([]int64, 0, membershipFilterPageSize)
 	for page := 1; page <= membershipFilterMaxPages; page++ {
@@ -1227,21 +1032,24 @@ func (h *customerPageHandle) tierCustomerIDs(ctx context.Context, f customerFilt
 			Size:      membershipFilterPageSize,
 		})
 		if err != nil {
-			return nil, membershipFilterUnavailableText
+			return nil, membershipFilterUnavailableLabel.msg()
 		}
 		for _, row := range rows {
 			ids = append(ids, int64(row.UserID))
 		}
 		if len(rows) < membershipFilterPageSize {
-			return ids, ""
+			return ids, customerMsg{}
 		}
 	}
-	// 翻满上限还没取完：整维作失败（见 membershipFilterTruncatedText 的说明）。
-	return nil, membershipFilterTruncatedText
+	// 翻满上限还没取完：整维作失败（见 membershipFilterTruncatedLabel 的说明）。
+	return nil, membershipFilterTruncatedLabel.msg()
 }
 
-// membershipFilterUnavailableText 会员等级筛选不可用时的归口文案。
-const membershipFilterUnavailableText = "按会员等级筛选暂时不可用（会员模块没接上），请先用其它条件。"
+// membershipFilterUnavailableLabel 会员等级筛选不可用时的归口文案。
+var membershipFilterUnavailableLabel = userLabel{
+	"admin.customer.filter.tier_unavailable",
+	"按会员等级筛选暂时不可用（会员模块没接上），请先用其它条件。",
+}
 
 // membershipTierOptions 客户列表的等级下拉（按 id 升序，与会员模块的展示顺序一致）。
 //
@@ -1445,15 +1253,21 @@ func customerRangeQuery(rng customerOverviewRange) string {
 // 与客户列表页同一条理由：渲染键名只在这里定义一次，真实渲染测试可以直接喂数据
 // 走同一条组装路径，不必在测试里手抄一份键名。
 //
+// title 是**已取词的成品**（`<title>` 是 layout.html 无条件读的槽位，那个模板不在本模块
+// 写权限内，短时期内拿不到 .["t"] 取词 —— 见本批报告「未取词化的片段槽位」）。
+// 错误提示则一律是事实（ErrKey / ErrFallback / HasErr 三个键），取词归模板。
+//
 // 不再有 `Presets` 键：三页（概览 / 群组 / RFM）的时间筛选条已统一成
 // admin/partials/date_filter.html 组件，档位下拉由它自己渲染 —— 服务端拼胶囊链接的那套
 // 逻辑（customerOverviewPresetLinks）随之删除，留着就是第二份会漂移的真源。
-func customerOverviewPageData(tr func(key, fallback string) string, rng customerOverviewRange, growth *orderdto.CustomerGrowthResp, errText string) gin.H {
+func customerOverviewPageData(title string, rng customerOverviewRange, growth *orderdto.CustomerGrowthResp, errMsg customerMsg) gin.H {
 	data := gin.H{
-		"title": userLabelOf(tr, customerOverviewTitleLabel),
-		"Path":  customerOverviewPath,
-		"Range": rng,
-		"Err":   errText,
+		"title":       title,
+		"Path":        customerOverviewPath,
+		"Range":       rng,
+		"ErrKey":      errMsg.Key,
+		"ErrFallback": errMsg.Fallback,
+		"HasErr":      !errMsg.Empty(),
 		// GrowthReady 与「有数据」是两件事：未接线时给一句人话，而不是一片 0
 		//（0 会被读成「这段时间一个客户都没来」）。同其它页面的降级口径。
 		"GrowthReady": growth != nil,
@@ -1473,7 +1287,6 @@ func customerOverviewPageData(tr func(key, fallback string) string, rng customer
 // CustomerOverviewPage 客户概览（GET /admin/customers/overview）。
 func (h *customerPageHandle) CustomerOverviewPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
 	rng := customerOverviewRangeOf(c.Query("range"), c.Query("from"), c.Query("to"), time.Now())
 
 	// 工程：客户增长是工程维度的（同一批人在两个站点上是两件事），
@@ -1492,14 +1305,14 @@ func (h *customerPageHandle) CustomerOverviewPage(c *gin.Context) {
 	}
 
 	var growth *orderdto.CustomerGrowthResp
-	var errText string
+	var errMsg customerMsg
 	switch {
 	case h.growth == nil:
-		errText = userLabelOf(tr, customerUnavailableLabel)
+		errMsg = customerUnavailableLabel.msg()
 	case selected == "":
 		// 没有工程就没有订单可算 —— 「还没建站点工程」是正常状态，不是错误。
 		// 留空：模板会把 GrowthReady=false 渲染成一句空态说明，而不是一片 0。
-		errText = ""
+		errMsg = customerMsg{}
 	default:
 		res, err := h.growth.CustomerGrowthByRange(ctx, &orderdto.CustomerGrowthReq{
 			ProjectID: selected,
@@ -1507,13 +1320,13 @@ func (h *customerPageHandle) CustomerOverviewPage(c *gin.Context) {
 			To:        rng.To,
 		})
 		if err != nil {
-			errText = customerFacingError(c, err)
+			errMsg = customerErrMsg(c, err)
 		} else {
 			growth = res
 		}
 	}
 
-	data := shell.Prepare(c, customerOverviewPageData(tr, rng, growth, errText))
+	data := adminui.Prepare(c, customerOverviewPageData(customerLabelText(c, customerOverviewTitleLabel), rng, growth, errMsg))
 	c.HTML(200, "admin/user/customer_overview", data)
 }
 
@@ -1523,29 +1336,15 @@ const customerRfmPath = "/admin/customers/rfm"
 // customerRfmTitleLabel 页标题（词条 key + 兜底文案）。
 var customerRfmTitleLabel = userLabel{"admin.customer.rfm.title", "RFM 分析"}
 
-// customerRfmSegmentLabel 分段 → 词条 key 与兜底文案。
-//
-// 与订单侧的白名单同字面量（那边是唯一的判定处，这里只做展示映射）：
-// 认不出的分段原样显示，而不是渲染成空白 —— 口径变了而这里没跟上时，
-// 页面上出现一个陌生的英文词比出现一个空单元格更容易被发现。
-func customerRfmSegmentText(tr func(key, fallback string) string, segment string) string {
-	switch segment {
-	case "vip":
-		return tr("admin.customer.rfm.segment.vip", "高价值")
-	case "potential":
-		return tr("admin.customer.rfm.segment.potential", "潜力")
-	case "low_value":
-		return tr("admin.customer.rfm.segment.lowValue", "一般")
-	}
-	return segment
-}
-
 // customerRfmRow 明细表的一行（客户资料 + RFM 分数）。
+//
+// 只有事实：详情链接由模板按 UserID 拼，分段展示名由模板按 Segment 取词。
+// 分段**认不出时原样显示**（不渲染成空白）这一条也随之落在模板的 if 链上 ——
+// 口径变了而模板没跟上时，页面上出现一个陌生的英文词比出现一个空单元格更容易被发现。
 type customerRfmRow struct {
 	UserID        int64
 	Name          string
 	Email         string
-	DetailURL     string
 	LastOrderAt   string
 	RecencyDays   int
 	Frequency     int64
@@ -1555,23 +1354,26 @@ type customerRfmRow struct {
 	MScore        int
 	TotalScore    int
 	Segment       string
-	SegmentLabel  string
 }
 
 // customerRfmPageData 组装渲染数据（纯函数：不取数、不依赖 gin.Context）。
-func customerRfmPageData(tr func(key, fallback string) string, rng customerOverviewRange,
+//
+// title 是已取词的成品、错误提示是事实（ErrKey / ErrFallback / HasErr），同概览页。
+func customerRfmPageData(title string, rng customerOverviewRange,
 	res *orderdto.CustomerRfmResp, rows []customerRfmRow,
-	segment string, page, limit int, total int64, errText string) gin.H {
+	segment string, page, limit int, total int64, errMsg customerMsg) gin.H {
 	data := gin.H{
-		"title":   userLabelOf(tr, customerRfmTitleLabel),
-		"Path":    customerRfmPath,
-		"Range":   rng,
-		"Segment": segment,
-		"Err":     errText,
-		"Rows":    rows,
-		"Page":    page,
-		"Limit":   limit,
-		"Total":   total,
+		"title":       title,
+		"Path":        customerRfmPath,
+		"Range":       rng,
+		"Segment":     segment,
+		"ErrKey":      errMsg.Key,
+		"ErrFallback": errMsg.Fallback,
+		"HasErr":      !errMsg.Empty(),
+		"Rows":        rows,
+		"Page":        page,
+		"Limit":       limit,
+		"Total":       total,
 		// RfmReady 与「有数据」是两件事：未接线时给一句人话，而不是三格 0
 		//（0 会被读成「这段时间一个客户都没有」）。同其它页面的降级口径。
 		"RfmReady": res != nil,
@@ -1588,7 +1390,7 @@ func customerRfmPageData(tr func(key, fallback string) string, rng customerOverv
 
 // customerRfmSegmentTabs 分段筛选徽章（与客户列表的计数徽章同一条口径：
 // 一个徽章一个链接，URL 由服务端拼好，条件之间可叠加）。
-func customerRfmSegmentTabs(tr func(key, fallback string) string, res *orderdto.CustomerRfmResp, active string, rng customerOverviewRange) []gin.H {
+func customerRfmSegmentTabs(res *orderdto.CustomerRfmResp, active string, rng customerOverviewRange) []gin.H {
 	if res == nil {
 		return nil
 	}
@@ -1597,10 +1399,11 @@ func customerRfmSegmentTabs(tr func(key, fallback string) string, res *orderdto.
 		if key != "" {
 			url += "&segment=" + key
 		}
+		// 色调由模板按 Key 取（语义档 → 类名的映射在 ui.css），这里只给事实：
+		// 分段键、计数、当前是否选中、URL（URL 带时间窗口与其他条件，拼串归服务端）。
 		return gin.H{
 			"Key": key, "LabelKey": labelKey, "Label": label,
-			"Count": count, "Active": key == active,
-			"Badge": customerRfmBadge(key), "URL": url,
+			"Count": count, "Active": key == active, "URL": url,
 		}
 	}
 	return []gin.H{
@@ -1609,19 +1412,6 @@ func customerRfmSegmentTabs(tr func(key, fallback string) string, res *orderdto.
 		mk("potential", "admin.customer.rfm.segment.potential", "潜力", res.Potential),
 		mk("low_value", "admin.customer.rfm.segment.lowValue", "一般", res.LowValue),
 	}
-}
-
-// customerRfmBadge 分段 → 徽章色调（与列表页的计数徽章同一套类名）。
-func customerRfmBadge(key string) string {
-	switch key {
-	case "vip":
-		return "badge-success"
-	case "potential":
-		return "badge-info"
-	case "low_value":
-		return "badge-mute"
-	}
-	return ""
 }
 
 // customerRfmPageSegment 分段查询值 → 已知分段（认不出一律回落「全部」）。
@@ -1636,30 +1426,29 @@ func customerRfmPageSegment(v string) string {
 // CustomerRfmPage RFM 分析（GET /admin/customers/rfm）。
 func (h *customerPageHandle) CustomerRfmPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
 	rng := customerOverviewRangeOf(c.Query("range"), c.Query("from"), c.Query("to"), time.Now())
 	segment := customerRfmPageSegment(c.Query("segment"))
-	page, limit := shell.PageParams(c)
+	page, limit := reqparams.PageParams(c)
 	if limit > 0 && limit > rfmMaxPageSize {
 		limit = rfmMaxPageSize
 	}
 
 	var res *orderdto.CustomerRfmResp
-	var errText string
+	var errMsg customerMsg
 	switch {
 	case h.rfm == nil:
-		errText = customerRfmUnavailableText
+		errMsg = customerRfmUnavailableLabel.msg()
 	case h.projects == nil:
-		errText = customerRfmUnavailableText
+		errMsg = customerRfmUnavailableLabel.msg()
 	default:
 		list, perr := h.projects.List(ctx)
 		if perr != nil {
-			errText = customerRfmUnavailableText
+			errMsg = customerRfmUnavailableLabel.msg()
 			break
 		}
 		if len(list) == 0 {
 			// 还没建站点工程：没有订单可算 —— 正常状态，结果是空报表。
-			errText = ""
+			errMsg = customerMsg{}
 			break
 		}
 		out, rerr := h.rfm.CustomerRfmByRange(ctx, &orderdto.CustomerRfmReq{
@@ -1671,27 +1460,27 @@ func (h *customerPageHandle) CustomerRfmPage(c *gin.Context) {
 			Offset:    (page - 1) * limit,
 		})
 		if rerr != nil {
-			errText = customerRfmUnavailableText
+			errMsg = customerRfmUnavailableLabel.msg()
 		} else {
 			res = out
 		}
 	}
 
-	rows := h.customerRfmRows(ctx, tr, res)
+	rows := h.customerRfmRows(ctx, res)
 	var total int64
 	if res != nil {
 		total = res.Total
 	}
-	data := shell.Prepare(c, customerRfmPageData(tr, rng, res,
-		rows, segment, page, limit, total, errText))
-	data["SegmentTabs"] = customerRfmSegmentTabs(tr, res, segment, rng)
+	data := adminui.Prepare(c, customerRfmPageData(customerLabelText(c, customerRfmTitleLabel), rng, res,
+		rows, segment, page, limit, total, errMsg))
+	data["SegmentTabs"] = customerRfmSegmentTabs(res, segment, rng)
 	// 分页链接保留区间与分段：不带的话翻页会静默变成「全部区间 + 全部分段」。
-	base := customerRfmPath + "?" + customerRangeQuery(rng)
-	if segment != "" {
-		base += "&segment=" + segment
-	}
-	for k, v := range shell.BuildPagination(total, page, limit, base, tr).TemplateKeys() {
-		data[k] = v
+	if pg := pagination.Facts(total, page, limit); pg.HasPagination() {
+		pg.Base = customerRfmPath + "?" + customerRangeQuery(rng)
+		if segment != "" {
+			pg.Base += "&segment=" + segment
+		}
+		data["Pagination"] = pg
 	}
 	c.HTML(http.StatusOK, "admin/user/customer_rfm", data)
 }
@@ -1700,7 +1489,7 @@ func (h *customerPageHandle) CustomerRfmPage(c *gin.Context) {
 //
 // 取不到资料时**保留这一行并显示 id**：整行丢掉会让表格少人而没有任何提示，
 // 而「订单侧有这个人、客户侧查不到」正是需要被看见的异常（账号被注销）。
-func (h *customerPageHandle) customerRfmRows(ctx context.Context, tr func(key, fallback string) string, res *orderdto.CustomerRfmResp) []customerRfmRow {
+func (h *customerPageHandle) customerRfmRows(ctx context.Context, res *orderdto.CustomerRfmResp) []customerRfmRow {
 	if res == nil || len(res.Items) == 0 {
 		return nil
 	}
@@ -1731,8 +1520,6 @@ func (h *customerPageHandle) customerRfmRows(ctx context.Context, tr func(key, f
 			MScore:        it.MScore,
 			TotalScore:    it.TotalScore,
 			Segment:       it.Segment,
-			SegmentLabel:  customerRfmSegmentText(tr, it.Segment),
-			DetailURL:     customerListPath + "/detail?id=" + strconv.FormatInt(it.UserID, 10),
 		}
 		if info, ok := names[it.UserID]; ok {
 			row.Name = info.Name
@@ -1746,8 +1533,11 @@ func (h *customerPageHandle) customerRfmRows(ctx context.Context, tr func(key, f
 // rfmMaxPageSize 明细分页上限（与订单侧的上限同值）。
 const rfmMaxPageSize = 200
 
-// customerRfmUnavailableText 取数不可用时的提示（归口文案，不外泄内部错误）。
-const customerRfmUnavailableText = "RFM 分析暂时不可用（数据没接上），请稍后再试。"
+// customerRfmUnavailableLabel 取数不可用时的提示（归口文案，不外泄内部错误）。
+var customerRfmUnavailableLabel = userLabel{
+	"admin.customer.rfm.unavailable",
+	"RFM 分析暂时不可用（数据没接上），请稍后再试。",
+}
 
 // customer_view.go - 客户管理页的视图构造（列表/详情数据、行视图、状态选项与标签）。
 
@@ -1756,8 +1546,11 @@ const customerRfmUnavailableText = "RFM 分析暂时不可用（数据没接上�
 // 抽出来的理由同订单页：渲染键名与计数口径只在这里定义一次，
 // 真实渲染测试可以直接喂数据走同一条组装路径，不必在测试里手抄一份键名
 // （手抄的那份会随模板演进静默失配，而那正是「页面上少了一块、断言却通过」的成因）。
-func customerListPageData(tr func(key, fallback string) string, list *userdto.CustomerListResp, filter customerFilter,
-	page, limit int, pageErr string, capabilityMissing bool) gin.H {
+//
+// title 是已取词的成品（layout.html 的槽位），pageErr 是**事实**（ErrKey / ErrFallback /
+// HasErr 三个键）—— 取词归模板。
+func customerListPageData(title string, list *userdto.CustomerListResp, filter customerFilter,
+	page, limit int, pageErr customerMsg, capabilityMissing bool) gin.H {
 	rows := make([]gin.H, 0)
 	counters := userdto.CustomerCounters{}
 	if list != nil {
@@ -1767,7 +1560,7 @@ func customerListPageData(tr func(key, fallback string) string, list *userdto.Cu
 		}
 	}
 	return gin.H{
-		"title":    userLabelOf(tr, customerPageTitleLabel),
+		"title":    title,
 		"menu":     "customers",
 		"Rows":     rows,
 		"Total":    customerTotal(list),
@@ -1797,7 +1590,9 @@ func customerListPageData(tr func(key, fallback string) string, list *userdto.Cu
 		// 组装函数必须给零值，不能指望调用方记得设。
 		"TierOptions":       []gin.H{},
 		"CapabilityMissing": capabilityMissing,
-		"Err":               pageErr,
+		"ErrKey":            pageErr.Key,
+		"ErrFallback":       pageErr.Fallback,
+		"HasErr":            !pageErr.Empty(),
 		// ListQuery 写动作表单 action 上的筛选上下文（POST 回来由 shell.BackPath
 		// 从 query 读回）。放在组装函数里：渲染测试直接调本函数也能拿到，
 		// 不必在测试里手抄一份「拼进 action 的查询串」。
@@ -1809,13 +1604,18 @@ func customerListPageData(tr func(key, fallback string) string, list *userdto.Cu
 //
 // 四个「给运营看的说明」都是显式布尔 + 文案，而不是让模板去判断 nil：
 // Jet 里判断一个可能为 nil 的接口值很容易写成「看起来对、渲染出来是空块」。
-func customerDetailPageData(detail *userdto.CustomerResp, projects []projectcontract.ProjectResp,
+//
+// title 是已取词的成品（layout.html 的槽位）；c 只服务 customerDetailBackURL
+// （「返回列表」要保留筛选上下文），允许为 nil；pageErr 是事实（三键）。
+func customerDetailPageData(title string, c *gin.Context, detail *userdto.CustomerResp, projects []projectcontract.ProjectResp,
 	selected string, summary *ordercontract.CustomerOrderSummaryResp,
-	projectsFailed, summaryFailed bool, pageErr string, c *gin.Context) gin.H {
+	projectsFailed, summaryFailed bool, pageErr customerMsg) gin.H {
 	data := gin.H{
-		"title":           userLabelOf(shell.TranslateFor(c), customerDetailPageTitleLabel),
+		"title":           title,
 		"menu":            "customers",
-		"Err":             pageErr,
+		"ErrKey":          pageErr.Key,
+		"ErrFallback":     pageErr.Fallback,
+		"HasErr":          !pageErr.Empty(),
 		"HasDetail":       detail != nil,
 		"Projects":        projects,
 		"SelectedProject": selected,
@@ -1838,24 +1638,27 @@ func customerDetailPageData(detail *userdto.CustomerResp, projects []projectcont
 		data["ID"] = detail.ID
 		data["Username"] = detail.Username
 		data["Email"] = detail.Email
-		data["DisplayLabel"] = row["DisplayLabel"]
+		// 展示名三个原值都给模板（三级回退由 Jet 决定，与列表页同一份逻辑）。
+		data["DisplayName"] = row["DisplayName"]
+		data["Nickname"] = row["Nickname"]
+		// 状态值也要给：徽章色调由模板按状态值取语义档（色调不是数据）。
+		data["Status"] = row["Status"]
 		// 状态与邮箱验证的展示名一律「key + 中文兜底」两个键（来源 userenums），
 		// 模板取词（tr(key, fallback)）——给中文值就等于英文界面永远中文。
 		data["StatusLabelKey"] = row["StatusLabelKey"]
 		data["StatusLabelFallback"] = row["StatusLabelFallback"]
-		data["StatusTone"] = row["StatusTone"]
 		data["EmailVerified"] = detail.EmailVerified
-		data["EmailVerifiedTone"] = emailVerifiedTone(detail.EmailVerified)
 		data["EmailVerifiedKey"] = row["EmailVerifiedKey"]
 		data["EmailVerifiedFallback"] = row["EmailVerifiedFallback"]
-		data["RegisteredAtText"] = detail.RegisteredAtText
+		// 时间给时刻本身（*utils.JSONTime），格式化归模板的 dateTime()。
+		data["RegisteredAt"] = row["RegisteredAt"]
 		data["RegisterIP"] = row["RegisterIP"]
 		data["RegisterLocation"] = row["RegisterLocation"]
-		data["LastLoginTimeText"] = detail.LastLoginTimeText
+		data["LastLoginTime"] = row["LastLoginTime"]
 		data["LastLoginIP"] = row["LastLoginIP"]
 		data["LastLoginLocation"] = row["LastLoginLocation"]
 		data["Locked"] = detail.Locked
-		data["LockedUntilText"] = row["LockedUntilText"]
+		data["LockedUntil"] = row["LockedUntil"]
 		data["LoginFailureCount"] = detail.LoginFailureCount
 		data["Actionable"] = row["Actionable"]
 		data["NextStatus"] = row["NextStatus"]
@@ -1877,15 +1680,17 @@ func customerDetailPageData(detail *userdto.CustomerResp, projects []projectcont
 		data["PaidOrderCount"] = summary.PaidOrderCount
 		data["TotalAmountLabel"] = summary.TotalAmountLabel
 		data["LastOrderNo"] = summary.LastOrderNo
-		// 原样传：模板靠它是否为空来区分「有最近一单」与「还没下过单」，
-		// 在这里转成「—」会让两种状态长得一模一样（于是零订单显示成一行破折号）。
-		data["LastOrderTimeText"] = summary.LastOrderTimeText
+		// 最近一单：给**时刻**与「有没有单」这个显式布尔，不给预格式化的串。
+		// HasOrders 是契约里的显式布尔（0 单 + 0 元与「查不到」在数字上无法区分），
+		// 模板靠它选「显示聚合数字」还是「还没下过单」——
+		// 拿空串当判据会在时间格式化后失效（这正是原先那串 Text 的用法）。
+		data["LastOrderTime"] = summary.LastOrderTime
+		data["LastOrderID"] = summary.LastOrderID
+		data["HasOrders"] = summary.HasOrders
 		// 最近一单的状态同样走「key + 中文兜底」，且**与订单页共用同一份映射**：
 		// 真源在 order 模块（orderenums.OrderStatusLabel），跨模块经 ordercontract 引用 ——
 		// 这里原先自留一份 userenums.OrderStatusLabel，改一处另一处会静默漂移。
 		data["LastOrderStatusKey"], data["LastOrderStatusFallback"] = ordercontract.OrderStatusLabel(summary.LastOrderStatus)
-		// 最近一单的直达链接：订单页按 orderId 参数展开详情（不新开路由）。
-		data["LastOrderURL"] = customerOrderURL(selected, summary.LastOrderID)
 	} else {
 		data["HasSummary"] = false
 	}
@@ -1906,27 +1711,31 @@ func customerRow(item *userdto.CustomerResp) gin.H {
 	statusKey, statusFallback := userenums.StatusLabel(item.Status)
 	verifyKey, verifyFallback := userenums.EmailVerifiedLabel(item.EmailVerified)
 	row := gin.H{
-		"ID":                    item.ID,
-		"Username":              customerTextOrEmpty(item.Username),
-		"Email":                 customerTextOrEmpty(item.Email),
-		"DisplayLabel":          customerDisplayLabel(item),
+		"ID":       item.ID,
+		"Username": customerTextOrEmpty(item.Username),
+		"Email":    customerTextOrEmpty(item.Email),
+		// 展示名三级回退（展示名 → 昵称 → 登录名）与详情链接都归模板：
+		// 页面只给三个原值，怎么挑、挑不中显示什么由 Jet 决定（同 block 的行片段口径）。
+		"DisplayName":           item.DisplayName,
+		"Nickname":              item.Nickname,
 		"Status":                item.Status,
 		"StatusLabelKey":        statusKey,
 		"StatusLabelFallback":   statusFallback,
-		"StatusTone":            customerStatusTone(item.Status),
 		"EmailVerified":         item.EmailVerified,
 		"EmailVerifiedKey":      verifyKey,
 		"EmailVerifiedFallback": verifyFallback,
-		"RegisteredAtText":      customerTextOrEmpty(item.RegisteredAtText),
-		"RegisterIP":            customerTextOrEmpty(item.RegisterIP),
-		"RegisterLocation":      customerTextOrEmpty(item.RegisterLocation),
-		"LastLoginTimeText":     customerTextOrEmpty(item.LastLoginTimeText),
-		"LastLoginIP":           customerTextOrEmpty(item.LastLoginIP),
-		"LastLoginLocation":     customerTextOrEmpty(item.LastLoginLocation),
-		"Locked":                item.Locked,
-		"LockedUntilText":       customerTextOrEmpty(item.LockedUntilText),
-		"LoginFailureCount":     item.LoginFailureCount,
-		"DetailURL":             customerDetailURL(item.ID),
+		// 时间一律给时刻本身（*utils.JSONTime），格式化归模板的 dateTime() ——
+		// 预格式化的字符串让模板既没有本地化余地，也分不出「没有这个时刻」（空串）
+		// 与「时刻存在但格式化后为空」。
+		"RegisteredAt":      item.RegisteredAt,
+		"RegisterIP":        customerTextOrEmpty(item.RegisterIP),
+		"RegisterLocation":  customerTextOrEmpty(item.RegisterLocation),
+		"LastLoginTime":     item.LastLoginTime,
+		"LastLoginIP":       customerTextOrEmpty(item.LastLoginIP),
+		"LastLoginLocation": customerTextOrEmpty(item.LastLoginLocation),
+		"Locked":            item.Locked,
+		"LockedUntil":       item.LockedUntilTime,
+		"LoginFailureCount": item.LoginFailureCount,
 		// 状态动作：只有「正常 ↔ 已停用」两个方向。
 		//
 		// 待激活的账号刻意不给按钮：它登不上去（status != active 一律拒绝登录），
@@ -1966,12 +1775,13 @@ func customerRow(item *userdto.CustomerResp) gin.H {
 
 // customerStatusText 状态取值 → **当前语言**的展示名（按状态值取词，不拿别处给的中文反查）。
 //
-// 本模块的两个出口共用同一份映射（userenums.StatusLabel）：后台页 customerRow 给模板
-// (key, 兜底) 由模板 tr 取词；/api/customer/* 的 handler 拿不到模板，直接要已取词的字符串。
+// 只服务 /api/customer/*：JSON 出口没有模板渲染期，必须交成品文本。
+// 后台页 customerRow 给模板 (key, 中文兜底) 两个键，由模板取词 —— 映射只有一份
+// （userenums.StatusLabel），所以同一句话在页面与接口里不会漂移。
 // 认不出的取值走 userenums 的「未知状态(N)」兜底 —— 它在 key 为空串时由取词函数原样返回。
-func customerStatusText(tr func(key, fallback string) string, status int) string {
+func customerStatusText(c *gin.Context, status int) string {
 	key, fallback := userenums.StatusLabel(status)
-	return userLabelOf(tr, userLabel{key: key, fallback: fallback})
+	return customerLabelText(c, userLabel{key: key, fallback: fallback})
 }
 
 // customerCounterTabs 页头计数徽章 → 可点击的筛选链接（信息与操作合一）。
@@ -2017,24 +1827,23 @@ func customerCounterTabs(counters userdto.CustomerCounters, filter customerFilte
 		LabelKey string
 		Label    string
 		Count    int64
-		Badge    string
 		Active   bool
 		Apply    func(url.Values)
 	}{
-		{"all", allKey, allLabel, counters.Total, "badge-mute",
+		{"all", allKey, allLabel, counters.Total,
 			filter.Status == customerStatusAll && filter.EmailVerified == userdto.EmailVerifiedAll && !filter.Locked,
 			func(q url.Values) { q.Del("status"); q.Del("emailVerified"); q.Del("locked") }},
-		{"active", activeKey, activeLabel, counters.Active, "badge-success",
+		{"active", activeKey, activeLabel, counters.Active,
 			filter.Status == customerStatusActive, setStatus(customerStatusActive)},
-		{"disabled", disabledKey, disabledLabel, counters.Disabled, "badge-danger",
+		{"disabled", disabledKey, disabledLabel, counters.Disabled,
 			filter.Status == customerStatusDisabled, setStatus(customerStatusDisabled)},
-		{"pending", pendingKey, pendingLabel, counters.Pending, "badge-warning",
+		{"pending", pendingKey, pendingLabel, counters.Pending,
 			filter.Status == customerStatusPending, setStatus(customerStatusPending)},
-		{"locked", lockedKey, lockedLabel, counters.Locked, "badge-info",
+		{"locked", lockedKey, lockedLabel, counters.Locked,
 			filter.Locked, func(q url.Values) { q.Set("locked", "1") }},
-		{"verified", verifiedKey, verifiedLabel, counters.Verified, "badge-mute",
+		{"verified", verifiedKey, verifiedLabel, counters.Verified,
 			filter.EmailVerified == userdto.EmailVerifiedYes, setVerified(userdto.EmailVerifiedYes)},
-		{"unverified", unverifiedKey, unverifiedLabel, counters.Unverified, "badge-mute",
+		{"unverified", unverifiedKey, unverifiedLabel, counters.Unverified,
 			filter.EmailVerified == userdto.EmailVerifiedNo, setVerified(userdto.EmailVerifiedNo)},
 	}
 	out := make([]gin.H, 0, len(tabs))
@@ -2050,9 +1859,10 @@ func customerCounterTabs(counters userdto.CustomerCounters, filter customerFilte
 		if len(q) > 0 {
 			target += "?" + q.Encode()
 		}
+		// 色调由模板按 Key 取（语义档 → 类名的映射在 ui.css），这里只给事实。
 		out = append(out, gin.H{
 			"Key": t.Key, "LabelKey": t.LabelKey, "Label": t.Label,
-			"Count": t.Count, "Badge": t.Badge, "Active": t.Active, "URL": target,
+			"Count": t.Count, "Active": t.Active, "URL": target,
 		})
 	}
 	return out
@@ -2069,7 +1879,7 @@ func customerFilterActive(filter customerFilter) bool {
 		strings.TrimSpace(filter.RegisteredTo) != ""
 }
 
-// customerFilterValues 列表页链接要保留的筛选条件（空值由 shell.FilterBaseURL 丢弃）。
+// customerFilterValues 列表页链接要保留的筛选条件（空值由 reqparams.FilterBaseURL 丢弃）。
 func customerFilterValues(filter customerFilter) map[string]string {
 	return map[string]string{
 		"keyword":        filter.Keyword,
@@ -2140,52 +1950,6 @@ func customerStatusMessage(status int) string {
 	return userenums.MsgCustomerDisabled
 }
 
-// customerStatusTone 状态 → 徽标分档（未知值给中性档：宁可显示得平淡，
-// 也不要把一个不认识的状态渲染成成功或失败）。
-//
-// **按状态值查，不按文案查**：同仓反例是 order 的 couponStatusBadge(statusLabel string)——
-// 拿已翻译 / 已格式化的文案反查样式表，改一句词条就让样式静默失效（不报错、测试也不红）。
-//
-// 出**语义档**（ok / warn / danger / mute）而不是类名（badge-success）：类名是外观，
-// 映射归 ui.css 的 `.badge-<tone>` 别名（见 docs/rules/template-boundary.md §语义 vs 外观）。
-func customerStatusTone(status int) string {
-	switch status {
-	case customerStatusActive:
-		return "ok"
-	case customerStatusDisabled:
-		return "danger"
-	case customerStatusPending:
-		return "warn"
-	default:
-		return "mute"
-	}
-}
-
-// emailVerifiedTone 邮箱验证状态 → 徽标分档。
-//
-// 与 userenums.EmailVerifiedLabel 同源：那个给展示名，这个给分档 ——
-// 「未验证」不是错误但也不是正常态，所以是 warn 而不是 danger 或 mute。
-func emailVerifiedTone(verified bool) string {
-	if verified {
-		return "ok"
-	}
-	return "warn"
-}
-
-// customerDisplayLabel 客户的展示名（展示名 → 昵称 → 登录名）。
-//
-// 三级回退：客户可能三个字段只填了一个，列表里显示一列破折号等于没显示这个人是谁。
-func customerDisplayLabel(item *userdto.CustomerResp) string {
-	switch {
-	case strings.TrimSpace(item.DisplayName) != "":
-		return item.DisplayName
-	case strings.TrimSpace(item.Nickname) != "":
-		return item.Nickname
-	default:
-		return customerTextOrEmpty(item.Username)
-	}
-}
-
 // customerTotal 列表总数（list 为 nil 时是 0）。
 func customerTotal(list *userdto.CustomerListResp) int64 {
 	if list == nil {
@@ -2226,9 +1990,25 @@ var pageTitles = map[string]userLabel{
 	"user/account":       {"user.page.account", "账号中心"},
 }
 
-// userTextOf 访客页文案的取词入口（等价于 userLabelOf(shell.TranslateFor(c), l)）。
+// userTextOf 访客页**文本槽位**取词：这些槽位没有渲染期。
+//
+// 访客页模板（internal/templates/user/**，不在本模块写权限内）读的是
+// `{{ .["error"] }}` / `{{ .["message"] }}` / `{{ .["title"] }}` —— **直接渲染的成品文本**，
+// 拿不到 .["t"]（那是 adminui.Prepare 注入后台页面的）。所以这里必须交文本，
+// 但取词本身走共享出口 adminui.MsgText（不再是 shell.TranslateFor(c)(key, fallback) 那种
+// 在模块里拼句子的写法）。等访客模板纳入权限后，这两处应当改成模板取词。
 func userTextOf(c *gin.Context, l userLabel) string {
-	return userLabelOf(shell.TranslateFor(c), l)
+	return customerLabelText(c, l)
+}
+
+// userTr 访客页的取词函数（= 后台模板注入的 .["t"]：internal/templates.TranslateFunc
+// 按 response.RequestLanguage 取词，与 shell.TranslateFor 是同一实现）。
+//
+// 只服务两处：① render 注入 data["t"] 给模板里的 `{{ .["t"](...) }}`；
+// ② userTextFilled 的具名占位符填充（i18n.FillTranslate 要一个取词函数，
+// 而 adminui 只导出「事实 → 文本」，不导出取词函数本身）。
+func userTr(c *gin.Context) func(key, fallback string) string {
+	return templates.TranslateFunc(response.RequestLanguage(c))
 }
 
 // userTextFilled 取词并按命名参数填充 `{name}` 占位符（复用 pkg/i18n 的实现）。
@@ -2236,8 +2016,12 @@ func userTextOf(c *gin.Context, l userLabel) string {
 // 词条被改坏（填完仍有残留占位符）时 FillTranslate 自动回落中文兜底再填一次；
 // 参数缺失也不补默认值：补 0 会渲染出一句「看起来像结论」的错话，
 // 而页面显示代码里的原文至少能让人看出「这句没配好」。
+//
+// 走 FillTranslate 而不是 adminui.TranslateArgs：后者的占位符协议是 `%s` 位置参数，
+// 而这两条词条（user.message.activated.body / resend_done.body）用的是 `{username}` /
+// `{email}` 具名占位符 —— 改词条等于改运营可能已经改过的数据，不在本批范围内。
 func userTextFilled(c *gin.Context, l userLabel, kv map[string]string) string {
-	return i18n.FillTranslate(shell.TranslateFor(c), l.key, l.fallback, kv)
+	return i18n.FillTranslate(userTr(c), l.key, l.fallback, kv)
 }
 
 // render 渲染访客页面，自动补齐 CSRF token 与当前登录用户。
@@ -2264,14 +2048,14 @@ func (h *Handle) render(c *gin.Context, status int, name string, data gin.H) {
 	if _, ok := data["lang"]; !ok {
 		data["lang"] = response.RequestLanguage(c)
 	}
-	// i18n 取词函数（与后台 shell.Prepare 注入的 data["t"] 同源）：访客页面模板用
+	// i18n 取词函数（与后台 adminui.Prepare 注入的 data["t"] 同源）：访客页面模板用
 	// {{ .["t"]("user.x", "中文兜底") }} 取词。
 	//
 	// **必须在这里无条件注入**：chain 索引 + 函数调用在缺 t 时是静默空串
 	// （不报错、不 500、无日志），漏掉的后果是整页文案一起变空白
 	// （见 internal/templates/CLAUDE.md「缺键的两种后果」）。
 	if _, ok := data["t"]; !ok {
-		data["t"] = shell.TranslateFor(c)
+		data["t"] = userTr(c)
 	}
 	// 书写方向（审计 I18N-02）：访客页面与静态产物用同一条规则
 	// （builder.DirAttr：RTL 才落字节，LTR 是 HTML 缺省）。判据各写一份就会出现
@@ -2284,67 +2068,38 @@ func (h *Handle) render(c *gin.Context, status int, name string, data gin.H) {
 		data["site"] = "go_wp"
 	}
 	if _, ok := data["title"]; !ok {
-		data["title"] = userLabelOf(shell.TranslateFor(c), pageTitles[name])
+		data["title"] = userTextOf(c, pageTitles[name])
 	}
 	c.HTML(status, name, data)
 }
 
-// userFacingText 白名单判定：命中返回原文（**item_key**），未命中返回空串。
+// userPageMessage 访客页出口的错误文案：业务错误取当前语言，其余归口 + 记日志。
 //
-// 只做判定、不取词。白名单而非黑名单：service 的业务错误全部来自 userenums，
-// 而数据库 / Redis 的错误原文可能带表名与 SQL 片段。判定只有这一份，
-// 页面出口（userPageMessage / userKeyText）与接口面共用同一张 UserFacingMessages。
-func userFacingText(raw string) string {
-	msg := raw
-	for _, m := range userenums.UserFacingMessages {
-		if prefix, _, found := strings.Cut(m, "%s"); found {
-			// 带参数的文案（如锁定剩余时间）只比较 %s 之前的部分。
-			if strings.HasPrefix(msg, prefix) {
-				return msg
-			}
-			continue
-		}
-		if msg == m {
-			return msg
-		}
-	}
-	return ""
-}
-
-// userPageMessage 页面出口的错误文案归口（白名单判定 + **取当前语言的译文**）。
+// 判定与归口都收敛到共享的 adminui（判据是 pkg/response.IsBusinessError 的**形态**）。
+// 本模块不再维护 userenums.UserFacingMessages 那份白名单 —— 它是第二份真相：
+// service 换了措辞、或某个 key 改由别的模块提供，白名单就静默失配，
+// 而两种症状都不报错（有时把内部错误当业务文案透出，有时把业务文案吞成归口）。
 //
-// 为什么页面路径必须多这一层取词：userenums 的值是 i18n **item_key**
-// （user.err.usernameTaken / user.msg.customerDisabled …），而访客页面
-// （user/register、user/account、user/message）里的 {{.error}} / {{.message}} 是
-// **直接渲染**的文本，不经过 pkg/response 的 translate —— 只放行 key 的话，
-// 访客注册失败看到的是「user.err.usernameTaken」，而不是「用户名已被占用」。
-//
-// 命中 → 取词；未命中 → 记结构化日志 + 归口文案（原文只进日志）。
-// 取词函数据 fallback 原样返回 key：词条缺失时页面显示 key（一眼可见），不静默吞掉整句。
+// 为什么访客页必须交成品文本：模板里的 {{ .["error"] }} / {{ .["message"] }} 是
+// **直接渲染**的文本、不经过 pkg/response 的 translate —— 只给 key 的话，
+// 注册失败时访客看到的是「user.err.usernameTaken」。
 func userPageMessage(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-	if hit := userFacingText(err.Error()); hit != "" {
-		return shell.TranslateFor(c)(hit, hit)
-	}
-	logger.Scene("user").
-		With("path", c.Request.URL.Path).
-		Error(err, "用户模块出现未归类错误")
-	return shell.TranslateFor(c)(userenums.ErrInternal, "操作失败，请稍后重试")
+	return adminui.PageErrorText(c, "user", err)
 }
 
 // userKeyText 参数级提示的取词出口：没有 error 对象、文案就是 enums 里的某个常量
 // （缺 device 标识、登出失败归口等场景直接传常量给模板）。
 //
-// 与 userPageMessage 同源（同一份 userFacingText 判定）：白名单内的 key 直接渲染时
-// 同样不能裸出。ErrInternal 不在白名单里，会落归口文案 —— 这正是它该有的语义
-// （归口文案是「未命中时的返回值」，不是业务文案）。
+// 与 userPageMessage 同一份判据（只是入参是字符串）：形态不像业务 key 的一律落归口文案
+// —— 归口文案是「未命中时的返回值」，不是业务文案。
 func userKeyText(c *gin.Context, key string) string {
-	if hit := userFacingText(key); hit != "" {
-		return shell.TranslateFor(c)(hit, hit)
+	if fact, ok := adminui.BusinessErrFact(errors.New(key)); ok {
+		return adminui.ErrorFactText(c, fact)
 	}
-	return shell.TranslateFor(c)(userenums.ErrInternal, "操作失败，请稍后重试")
+	return adminui.MsgText(c, adminui.InternalMsg())
 }
 
 // formValue 取表单字段并去空白（访客页面的表单字段全部是文本）。
@@ -2729,7 +2484,11 @@ type customerMembershipView struct {
 	DiscountPercent int64
 	// Notice 降级说明（非空时模板只显示它，不显示等级）。三种形态：
 	// 端口未接入 / 没选工程 / 解析失败。
-	Notice string
+	//
+	// 是**事实**（key + 中文兜底），不是拼好的句子：customer_detail.html 的
+	// MembershipNotice 槽位用 .["t"] 取词。跨模块出口（FacingTexter）给的是成品文本，
+	// 那种形态用 Key 为空 + Fallback 为成品表达（MsgText 在 Key=="" 时原样返回）。
+	Notice customerMsg
 }
 
 // SetMembershipDisplay 注入会员展示所需的两个端口（装配期调用）。
@@ -2750,19 +2509,18 @@ func (h *customerPageHandle) SetMembershipDisplay(reader membershipcontract.Read
 // （消费额与等级都按工程算），没有工程就没有可展示的等级 —— 这是正常状态，
 // 不是错误（客户管理页在没有站点工程时也长这样）。
 func (h *customerPageHandle) membershipView(ctx context.Context, c *gin.Context, projectID string, userID uint64) customerMembershipView {
-	tr := shell.TranslateFor(c)
 	if h.membership == nil {
 		// 装配缺失：说清是「会员模块没接」，而不是让运营以为这个客户没有等级。
-		return customerMembershipView{Notice: tr(customerMembershipUnavailableLabel.key, customerMembershipUnavailableLabel.fallback)}
+		return customerMembershipView{Notice: customerMembershipUnavailableLabel.msg()}
 	}
 	if userID == 0 || projectID == "" {
-		return customerMembershipView{Notice: tr(customerMembershipNoProjectLabel.key, customerMembershipNoProjectLabel.fallback)}
+		return customerMembershipView{Notice: customerMembershipNoProjectLabel.msg()}
 	}
 	member, err := h.membership.Resolve(ctx, &membershipdto.ResolveReq{ProjectID: projectID, UserID: userID})
 	if err != nil || member == nil {
 		// 原文只进日志（经 FacingTexter 归口）：客户页拿不到会员模块的 enums 白名单，
 		// 直出 err.Error() 会把 PostgreSQL 原文漏到页面上。
-		return customerMembershipView{Notice: h.membershipFacingText(c, err)}
+		return customerMembershipView{Notice: h.membershipFacingMsg(c, err)}
 	}
 	return customerMembershipView{
 		HasMembership:   true,
@@ -2773,17 +2531,19 @@ func (h *customerPageHandle) membershipView(ctx context.Context, c *gin.Context,
 	}
 }
 
-// membershipFacingText 会员模块错误的展示文案（拿不到出口时用本地兜底）。
-func (h *customerPageHandle) membershipFacingText(c *gin.Context, err error) string {
-	tr := shell.TranslateFor(c)
-	fallback := tr(customerMembershipFailedLabel.key, customerMembershipFailedLabel.fallback)
+// membershipFacingMsg 会员模块错误的展示结论（拿不到出口时用本地兜底）。
+//
+// 跨模块出口（membershipcontract.FacingTexter）返回的是**已取词的成品文本**：
+// 那是对方模块的边界（它自己知道哪些错误可透出），所以这里给 Key 为空、Fallback 为成品的
+// 结论 —— 本模块不再替它取词，也不会拿本模块的白名单去拦它。
+func (h *customerPageHandle) membershipFacingMsg(c *gin.Context, err error) customerMsg {
 	if h.membershipFacing == nil || err == nil {
-		return fallback
+		return customerMembershipFailedLabel.msg()
 	}
 	if text := h.membershipFacing.FacingText(response.RequestLanguage(c), err); text != "" {
-		return text
+		return customerMsg{Fallback: text}
 	}
-	return fallback
+	return customerMembershipFailedLabel.msg()
 }
 
 // applyCustomerMembership 把会员视图写进详情页渲染数据。
@@ -2795,7 +2555,9 @@ func (h *customerPageHandle) membershipFacingText(c *gin.Context, err error) str
 // **渲染键恒设**（包括空值）是硬要求：Jet 的 `{{if .X}}` 遇到缺失的键会中断整页渲染
 // → 500 → htmx 不 swap（用户在浏览器里看不到任何反应）。
 func applyCustomerMembership(data gin.H, view customerMembershipView) {
-	data["MembershipNotice"] = view.Notice
+	data["MembershipNoticeKey"] = view.Notice.Key
+	data["MembershipNoticeFallback"] = view.Notice.Fallback
+	data["HasMembershipNotice"] = !view.Notice.Empty()
 	data["HasMembership"] = view.HasMembership
 	data["MembershipTierName"] = view.TierName
 	data["MembershipIsDefault"] = view.IsDefaultTier
@@ -2835,113 +2597,25 @@ func customerDetailBackURL(c *gin.Context) string {
 	return customerListPath + "?" + q.Encode()
 }
 
-// customerOrderURL 最近一单在订单管理页的展开链接（订单页靠 orderId 参数展开详情）。
-func customerOrderURL(projectID string, orderID uint64) string {
-	if orderID == 0 {
-		return ""
-	}
-	q := url.Values{}
-	if strings.TrimSpace(projectID) != "" {
-		q.Set("project", projectID)
-	}
-	q.Set("orderId", strconv.FormatUint(orderID, 10))
-	return "/admin/orders?" + q.Encode()
-}
-
-// customerDetailURL 某个客户的详情链接（保留不来 —— 返回时用「返回列表」回到筛选结果）。
-func customerDetailURL(id uint64) string {
-	return customerDetailPath + "?id=" + strconv.FormatUint(id, 10)
-}
-
-// customerPageFacingText 页面路径的提示取词出口（白名单判定 + **取当前语言的译文**）。
-//
-// 与订单页同因（见 internal/module/order/inbound/http/order_page_query.go 的
-// orderPageFacingText）：userenums.UserFacingMessages 里存的是 item_key
-// （user.msg.customerDisabled / user.err.userNotFound …），而页面模板 customers.html /
-// customer_detail.html 里的 {{.Err}} 是**直接渲染**的文本、不经过 pkg/response 的
-// translate —— 只放行 key 的话，运营看到的就是「user.err.userNotFound」。
-//
-// 白名单判定仍只有一份（customerFacingText），本函数只把命中的值按当前语言取词。
-// 写动作的成功 / 失败文案现在由 shell.RenderJump 渲染（见 customerJumpDone / customerJumpFail），
-// 本函数只剩页面取数失败（customerFacingError）这一条消费路径。
-func customerPageFacingText(c *gin.Context) func(string) string {
-	return func(raw string) string {
-		hit := customerFacingText(raw)
-		if hit == "" {
-			return ""
-		}
-		return shell.TranslateFor(c)(hit, hit)
-	}
-}
-
-// customerFacingError 把 user 模块的错误转成可展示文案（后台客户页的错误文案归口出口）。
-//
-// 三件套（对齐 AGENTS.md「响应与错误处理」，样板见 admin_err.go / navigation_err.go）：
-//
-//	· 白名单 —— customerFacingText（userenums.UserFacingMessages）；
-//	· 归口文案 —— shell.PageInternalText(c)（MsgInternalError 的当前语言译文）；
-//	· 结构化日志 —— 未命中时记一条带场景 / user_id / 路径的日志，原文只进日志。
-//
-// 未命中的通常是数据库 / Redis 错误的 Error()，带表名甚至 SQL 片段，那是给运维看的；
-// 页面上给一句通用提示，日志里留全文 —— 否则「页面上什么都没说」会变成最难查的一类问题
-// （这一条此前缺失：函数直接返回了归口文案而没有记日志）。
-//
-// 命中那一支经 customerPageFacingText 取译文（白名单里是 item_key）。
-func customerFacingError(c *gin.Context, err error) string {
-	if err == nil {
-		return ""
-	}
-	if msg := customerPageFacingText(c)(err.Error()); msg != "" {
-		return msg
-	}
-	logger.Scene(userErrScene).
-		With("user_id", shell.CurrentUserID(c)).
-		With("path", c.Request.URL.Path).
-		Error(err, "后台客户页处理失败")
-	return shell.PageInternalText(c)
-}
-
 // userErrScene 后台客户页的日志场景名（与 user 模块其它 logger.Scene("user") 调用点一致）。
+//
+// 错误出口的三件事（判定 / 归口文案 / 结构化日志）现在全在共享的 adminui：
+// 本包只把自己的 error 递进去（见 customerErrMsg），不再维护
+// 「白名单（customerFacingText / userFacingText）+ 取词（customerPageFacingText）+
+// 归口（PageInternalText）」那一套三件套 —— 每个模块各写一份的下场是同一个错误在
+// 页面出口与 JSON 出口给出不同结论（见 internal/adminui/page_error.go 的文件头）。
 const userErrScene = "user"
 
 // customerBulkIDsText shell.BulkIDs 的失败文案（单次提交的 id 超过上限）。
 //
-// 只是转调 shell 的受控出口：超限错误是 shell 的类型（shell.BulkIDsError），
+// 只是转调 shell 的受控出口：超限错误是 pkg/bulkids 的类型（*IDsError），
 // 「一次最多操作 N 项，当前 M 项，请分批进行」按当前语言生成，其中**当前 M 项**
-// （去重后的条数）只有 shell 知道 —— 本模块不再用 shell.MaxBulkIDs 重算一遍：
+// （去重后的条数）只有 error 类型知道 —— 本模块不再用上限常量重算一遍：
 // 那是第二份真相，而且必然丢掉 Count（旧的实现正是如此）。
 // 判据也不再是「文案来自哪里」而是类型：出口只认 sentinel，认不出就回落归口文案。
 // 留痕（哪个操作人、哪个页面触发）由 shell 的出口统一记日志。
 func customerBulkIDsText(c *gin.Context, err error) string {
-	return shell.BulkIDsFacingText(c, err)
-}
-
-// customerFacingText 白名单校验：命中返回原文，未命中返回空串。
-//
-// 只做判定、不取词：白名单里存的是 item_key，页面出口用 customerPageFacingText 取译文。
-// 判定只有这一份（只认 userenums.UserFacingMessages —— 本页自造的文案现在直接经
-// userLabelOf 渲染，不再经 ?err= 回显，所以不需要第二部分受控集合）。
-func customerFacingText(raw string) string {
-	msg := strings.TrimSpace(raw)
-	if msg == "" {
-		return ""
-	}
-	for _, allowed := range userenums.UserFacingMessages {
-		if msg == allowed {
-			return msg
-		}
-	}
-	return ""
-}
-
-// customerFirstNonEmpty 取第一个非空文案（多处「提示只留第一条」的收口）。
-func customerFirstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
+	return adminui.BulkIDsFacingText(c, err)
 }
 
 // customerQueryID 解析 id / customerId（非法即 0）。
@@ -3377,8 +3051,11 @@ func (h *Handle) DoLogin(c *gin.Context) {
 	if werr := writeUserToken(c, res.Token, formBool(c, "remember")); werr != nil {
 		// cookie 写不进去 → 会话虽然是真建了的，但这个浏览器拿不到令牌。
 		// 提示重新登录比「看着像登录成功、下一页又回到登录页」好排查。
+		//
+		// 文案走 userKeyText 取词：{{ .["error"] }} 是**直接渲染**的槽位，
+		// 直接把 enums 常量塞进去，访客看到的是「user.err.internal」这个裸 key。
 		h.render(c, http.StatusInternalServerError, "user/login", gin.H{
-			"error":   userenums.ErrInternal,
+			"error":   userKeyText(c, userenums.ErrInternal),
 			"account": account,
 			"next":    next,
 		})
@@ -3425,8 +3102,9 @@ func (h *Handle) ShowForgot(c *gin.Context) {
 func (h *Handle) DoForgot(c *gin.Context) {
 	email := formValue(c, "email")
 	if email == "" {
+		// 同上：裸 key 进直接渲染的槽位等于把 item_key 摆给访客看。
 		h.render(c, http.StatusBadRequest, "user/forgot", gin.H{
-			"error": userenums.ErrEmailRequired,
+			"error": userKeyText(c, userenums.ErrEmailRequired),
 			"email": email,
 		})
 		return

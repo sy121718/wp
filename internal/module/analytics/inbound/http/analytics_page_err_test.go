@@ -2,7 +2,7 @@ package analyticshttp
 
 // analytics_page_err_test.go — 工程列表装载失败时统计页必须降级渲染（不是一块裸文本）。
 //
-// 原先那一分支是 `c.String(500, shell.MsgInternalError)`：浏览器里只有一块纯文本，
+// 原先那一分支是 `c.String(500, adminui.MsgInternalError)`：浏览器里只有一块纯文本，
 // 而且渲染的是**未翻译的裸 key**（`c.String` 不经过任何 translate，页面上直接显示
 // `MsgInternalError` 这串英文）—— 侧栏、页头、时间范围筛选全部消失。本用例把降级渲染的契约钉住：
 //  1. HTTP 200 且是**完整页面**（响应体含 </html>，页面骨架在）；
@@ -11,7 +11,7 @@ package analyticshttp
 //     而真正的问题是这一次没读出来。
 //
 // 同一条判据的另一半在 analyticsFacingError：Summary 失败时的归口文案过去也是
-// `shell.MsgInternalError`（值就是 key 本身），页面上同样显示裸 key，本批一并收口。
+// `adminui.MsgInternalError`（值就是 key 本身），页面上同样显示裸 key，本批一并收口。
 
 import (
 	"context"
