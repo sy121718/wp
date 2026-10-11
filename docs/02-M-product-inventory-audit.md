@@ -34,7 +34,7 @@
 | 16 | 货源管理 | `/admin/inventory/sources` | `inventory_source_page_handle.go:57` | `inventory_sources.html` |
 | 17 | 采购入库 | `/admin/inventory/purchases` | `inventory_purchase_page_handle.go:80` | `inventory_purchases.html` |
 
-路由注册：`inbound/http/product_page_router.go:57-177`、`inventory/inbound/http/inventory_router.go:115-156`。
+路由注册：`inbound/http/product_router.go`（`SetupProductPages`，页面面；接口面 `SetupProductRoutes` 同文件）、`inventory/inbound/http/inventory_router.go:115-156`。
 共享片段：`partials/bulk_bar.html`（批量条）、`partials/pagination.html`、`partials/product_create_form.html`、
 `partials/product_attribute_rows.html`、`partials/pricing_rule_fields.html`。
 

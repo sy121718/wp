@@ -13,9 +13,7 @@
 
 ## 0. 一句话结论 + 推荐路线
 
-**端点齐、语义齐、只缺 UI**：`POST /api/order/create` 与 `order:create` 都已存在且已按「后台代客」语义落库
-（`CreatedVia=admin` / `CreateBy` / `operator_type=admin` / `Attribution` 允许 nil），本项是**纯 UI 接线**，
-service 只需为「开号策略」加一个显式开关。
+**当前入口复核（2026-10-10）**：后台代客建单走页面路径 `POST /admin/orders/create`，调用 `CreateAdminOrder`，来源固定 `created_via=admin`；`POST /api/order/create` 调用 `CreateAPIOrder`，来源固定 `created_via=api`，两条路径不能互相顶替（`internal/module/order/service/order.go:123` / `:128`；页面与 API 调用分别见 `internal/module/order/inbound/http/order_create_page.go:179`、`internal/module/order/inbound/http/order_handle.go:69`）。建单页面入口已存在，本文其余设计推演保留立项时点；以下标注的现行事实优先于当时建议。立项时下文引用的 `navPathAlias`、缺入口和缺侧栏高亮属于历史推演；现行侧栏在 `internal/adminui/nav.go:169-188` 通过路径段最长前缀归属 `navOwnerPath`，无需映射表。
 
 推荐路线（四条一起定，缺一条会返工）：
 
@@ -24,7 +22,7 @@ service 只需为「开号策略」加一个显式开关。
 | 1 | 入口形态 | **独立整页 `/admin/orders/new`**，页头主行动 + 空态主行动**双入口**（同 URL） |
 | 2 | 商品明细 | **服务端渲染的变体候选行**（复用 `ListBundleSKUs` 的能力）起步；「按 SKU 搜 + 可用量」是后继增量 |
 | 3 | 开号语义 | **admin 入口默认不开号、不发初始密码邮件**；开号是操作人**显式勾选**的 opt-in |
-| 4 | 权限 | **复用 `order:create`**，页面写动作走 `CasbinMiddlewareForPath("/api/order/create")`；**不新增权限点、不写 seed 迁移** |
+| 4 | 权限 | **复用 `order:create`**，建单页的写动作走 `CasbinMiddlewareForPath("/api/order/create")`；**不新增权限点、不写 seed 迁移** |
 
 一句话风险：**不先定第 3 条就做 UI，等于把「运营误填邮箱 → 系统给陌生人发初始密码」直接放上台面。**
 
@@ -36,15 +34,17 @@ service 只需为「开号策略」加一个显式开关。
 
 | 事实 | 语义位置 |
 |---|---|
-| 订单页只有 `GET /admin/orders` + 写动作 `status / cancel / refund / note / bulk-status / bulk-cancel` | `order_router.go` 的 `if pages != nil` 段 |
-| 页头 `.page-actions` 内只有工程下拉，且**仅多工程时**渲染 | `orders.html` 的 `<header class="page-head">` |
-| 「有工程无订单」空态**只在带筛选时**给 `.empty-actions`（「重置」），无筛选时**不给** | `orders.html` 的空态分支 + handler 的 `FilterActive` |
+| 列表只保留 `GET /admin/orders`（另有 `GET /admin/orders/overview`）；六个列表写动作已迁 JSON：单条走 `/api/order/{status,cancel,refund,note}`，批量走 `/api/order/{status,cancel}` 的批档（体含 `ids`，逐条结论为 `items[].message`）；对应页面 POST 已删。建单 POST 独立保留 | `internal/module/order/inbound/http/order_page_router.go:50-73`、`internal/module/order/inbound/http/order_router.go:84-88`、`internal/module/order/inbound/http/order_handle.go:109-143`；`internal/routers/testdata/routes.snapshot` 当前 662 行（2026-10-10，只读静态快照；卡面 673→667 是早期批次，不作为当前总数），且无这六个页面 POST；不运行装配 |
+| 页头已给有权限用户建单入口 `/admin/orders/new?project=…`，工程下拉仍仅多工程时渲染 | `internal/templates/admin/order/orders.html:49`；入口存在性断言见 `public/test/order/feature/trade_empty_state_honesty_test.go:272` |
+| 有权限用户在无筛选空态也有建单主行动；重置动作仍按筛选条件给 | `internal/templates/admin/order/orders.html:175`；当前断言见 `public/test/order/feature/trade_empty_state_honesty_test.go:218-230` |
 | 空态文案里「（或后台代客建单）」**已删**，库值也已更新 | `admin.orders.list.empty_tail`（迁移 417 改过库值） |
-| 同模块**已有**「页头 + 空态双入口」的正确样本 | `coupons.html`：页头 `.page-actions` 与空态 `.empty-actions` 各放一次同一个「＋ 新建优惠码」（`data-drawer-open="#tpl-coupon-create"`，`canCreate = isset(.PermSet["order:coupon_create"])`） |
-| 后台已有「字段多 → 整页」的先例与结论 | `/admin/products/new`（`product_page_router.go`）+ `docs/02-T`：商品新建**从抽屉改成整页**，理由是 13 个字段 + 失败回填 |
+| 同模块**已有**「页头 + 空态双入口」的正确样本 | `coupons.html`：页头 `.page-actions` 与空态 `.empty-actions` 各放一次同一个「＋ 新建优惠码」（`data-drawer-open="#tpl-coupon-create"`，`canCreate = isset(.Buttons["order.coupon_create"])`） |
+| 后台已有「字段多 → 整页」的先例与结论 | `/admin/products/new`（`internal/module/product/inbound/http/product_router.go` 的 `SetupProductPages`）+ `docs/02-T`：商品新建**从抽屉改成整页**，理由是 13 个字段 + 失败回填 |
 | 列表页「新建」入口的抽屉片段 | `admin/partials/toolbar_create.html`（`allowed` / `tpl` / `title` / `label`） |
 
-### 方案
+### 方案（以下保留立项时推演）
+
+本节及后续影响面、风险、实施清单按设计时点保留：建单双入口与测试判据反转现已落地，当前导航归属由 `internal/adminui/nav.go:169` 的 `navOwnerPath` 按路径段最长前缀判定，旧 `navPathAlias` 加映射建议属于历史方案。
 
 | 方案 | 做法 | 代价 | 判断 |
 |---|---|---|---|

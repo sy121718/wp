@@ -153,7 +153,7 @@ Artifact ≠ 可编辑源码
 - **禁止 `{{.csrf_token}}`（点号无索引）**：缺 key 会运行时报错、整个响应失败（渲染器先渲到 buffer，
   失败走 `http.Error(500, …)` 并丢弃半截内容；htmx 片段因 5xx 不 swap 而**毫无反应**）。
   判断存在性用 chain 写法：`{{if .["DevLogin"]}}`。
-- 注入点：后台页面 `shell.Prepare`、访客页面 `user.Handle.render`；**fragment 模板例外** ——
+- 注入点：后台页面 `adminui.Prepare`、访客页面 `user.Handle.render`；**fragment 模板例外** ——
   `fragments/*.jet` 的 data 是 struct，只能写 `{{ .CSRFToken }}`。细节见 `internal/templates/CLAUDE.md`。
 
 ### 交互方式（HTMX）
@@ -213,12 +213,14 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - 业务模块统一通过模块 `enums` 提供响应消息；`pkg` 和系统包直接用中文提示或原始 `err`
 - **后台页面 handler 禁止直出内部错误**，三种形态一起管：① 响应写入（`c.String(500, err.Error())` /
   `*.ErrorWithMessage`）；② 重定向 query（`?err=` 里塞 `err.Error()`）；③ 模板数据（`data.Errors = …`）。
-  走 `shell.PageError` / `pkg/response` + enums。门禁 `bash scripts/check-no-internal-error-leak.sh`，
+  走页面出口 `internal/adminui` 的 `PageErrorBadRequest` / `PageError`（500，仅剩 order 停区在用）或 `pkg/response` + enums。门禁 `bash scripts/check-no-internal-error-leak.sh`，
   配**带理由的豁免清单**（条目不再命中即失败，禁止只增不减）。
 - **每个模块要有「错误文案三件套」**：① 可透出业务文案的**白名单**（`XxxFacingMessages`，与 enums 常量
   一一对应，用 AST 对账测试钉住）；② **归口文案**（未命中时返回的可翻译 key，如 `adminenums.ErrInternal`；
   `sys_i18n` 主键是 `(item_key, lang)`）；③ **结构化日志**（原文只进日志，带场景与 user_id）。
-  样板见 `internal/module/admin/inbound/http/admin_err.go`、`navigation_err.go`、`orderFacingText`。
+  样板见 `internal/module/navigation/inbound/http/navigation_err.go`、`orderFacingText`；admin 那一份已
+  换成共享判据（`internal/adminui` 的形态判定 + 归口 + 结构化日志，见
+  `internal/module/admin/inbound/http/admin_err.go`）。
 - 判据是**形状**不是字面量：新增 handler 先问「这个 err 会不会进响应」，而不是等门禁逐个堵接收方别名。
 
 ### AI 工具（MCP）开发

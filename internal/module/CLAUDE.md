@@ -87,13 +87,81 @@ module_name/
 ## inbound/http
 
 - `*_router.go` 获取 `db`、创建 `model` 与 `service`、注册路由。路由注册（`.GET(` / `.POST(`）只出现在 router 文件里。
+- **路由只有一份**：`<module>_router.go` 是唯一声明点 —— 接口面（`SetupXxxRoutes`）与页面面
+  （`SetupXxxPages`）都在这一个文件里，按**业务域分节**，同一功能的接口与其页面写在同一节里
+  （接口面在前、页面面在后）。不要按 API / 页面拆成两个 router 文件，更不要按功能开一堆
+  `*_<功能>_router.go`：路由是**权限点 / CSRF / Casbin 的对账面**，散开之后的表现是
+  「接口能删、页面删不掉」这类**不报错**的分叉。样板：`page/inbound/http/page_router.go`、
+  `product/inbound/http/product_router.go`。
+  · **存量按现状为准**：多数模块仍是 `<模块>_router.go` + `<模块>_page_router.go` 两个文件
+    （约 20 个模块），**不做批量合并** —— 改到哪个模块就把那个模块并成一份，没改到的不动。
 - `handle` 负责参数绑定、调用 service、**输出响应**。Jet 渲染在 handle，不在 router。
-  页面视图形状和回填字段清单留在 handle（它们和模板做双向断言），不进 `enums`，不进 `dto`。
-- 一个页面的 handler、查询、视图、回填在同一个文件里。方法短不是再拆文件的理由。
-  多个页面共用的展示映射可以单独一个文件。JSON API 与页面分开，各自一个文件，不再按域拆。
+- **控制器只做四件事**：绑定并校验请求 → 调 service → 把结果装配成模板 data（**事实**）→ 渲染/响应。
+  **不做**的三件事，各有归属：
+  · 「值 → 文案」的映射（`switch stage { case "plan": return {Key, Fallback} }` 这种）→ 进 `enums`
+    （见下节），控制器只留一行调用；
+  · i18n 词条 key 的字面量（`"admin.pages.impact.stage_plan"`）→ key 的归属是 `enums` 常量，
+    控制器只引用常量。门禁 `bash scripts/check-controller-i18n-literals.sh`（基线只减不增，
+    归零的条目必须删行）；
+  · 业务判断（谁能删、状态能不能推进、金额怎么算）→ service。
+  判据：控制器里出现 `switch` 时问一句「这是在挑文案，还是在做业务判断」——挑文案就是走错了层。
+- **一屏的取数编排与视图装配也在 service，不在控制器**（§dto 那条「展示串在 service 组装响应时写进
+  dto」的落地形态）：
+  · 这一屏要哪些数据、按什么口径取（工程列表 + 仓库选项 + 属性组选项 + 模板清单 + 每仓 SKU 候选…）
+    → service 的**读模型方法**（`ProductNewPage(ctx, req) (*dto.ProductNewPageView, error)`），
+    它持有各契约端口；分档（400 参数不合法 / 500 取数失败）也由它给出的错误决定；
+  · 行的形状、标签事实、失败槽 → 同一个 dto 视图（`dto/product_view.go` 那类纯数据 struct）；
+  · 控制器只剩：读参数 → **请求边界**校验（工程是否存在、参数格式）→ 调 service →
+    决定状态码 / no-store → `c.HTML(status, tpl, adminui.PrepareView(c, view))`。
+  实测判据：控制器里出现 `gin.H{...}` 装配、`[]gin.H` 行构造、`warehouseOptions/attributeOptions`
+  这类取数助手、或「每个失败点各写一遍失败页」的 `loadErr` 编排 —— 这一屏的读模型还没下沉。
+  · **视图摊平只有一处实现**：`adminui.PrepareView(c, view)`（结构体 → 一层键 + t/tf/csrf），
+    模板的 `{{.Projects}}` 写法不变；不要在 handler 里手写 `gin.H{"Projects": …, …}`。
+  · **表单回填的字段清单不再手写**：原先靠 `var productCreateFormFields = []string{...}` + 按名字
+    补零值键（漏一个就是渲染期 500、htmx 不 swap），视图结构体本身就是那份清单（字段即契约）。
+- **渲染视图与表单回显形状放 `dto`（第三类）**：页面/片段按字段读的形状（`ScoreView`、`AttrValueFormRow`
+  这类纯数据 struct）与表单取值回显形状进 `dto/`，**不要写在 handle 文件里**。
+  理由是复用面：它与 handle、模板、测试三处逐字段对齐，留在控制器里，任何想复用或断言它的地方都得
+  import `inbound/http`（带着全部 handler）；放进 dto 后与 `XxxReq` / `XxxResp` 同级。
+  边界：**带装配方法的聚合**（产出 gin.H 的 `templateMap()`）与**解析/装配选项**
+  （`attrGroupFormOpts` / `formEcho` 这类带未导出字段和读取器的）留在 handle —— 它们调 gin、拼模板 data，
+  不是纯数据。样板：`product/dto/product_view.go`（文件头写了三类分工与判据）、
+  `page/dto/page_view.go`（10 个行形状从 `page/inbound/http` 搬入，判据 `page_view_boundary_test.go`）。
+  · 跨模块形状**不另造一份**：缺译报告的行直接复用契约里的 `pagedto.TranslationMissRow`，
+    不为了「视图字段叫 Path 更顺」再声明一个逐字段等价的类型（两份等价定义 = 静默分叉）。
+  视图字段名就是**模板契约**，改名等于改模板。
+  仍不进 dto 的：展示标签的取词（`enums`）、权限/路由清单（router）、模板必需键清单（handle 与模板断言）。
+- **按业务功能拆的是控制器，不是路由**：模块小（一两个页面）一个文件即可；模块大
+  （page / product 这种十几屏的）一个业务功能一个 `<module>_<功能>.go`，里面装该功能的
+  handler + 查询 + 视图 + 回填 + 该功能自己的出口/回跳助手；多个功能共用的出口原语单独一个
+  `<module>_jump.go`。判据仍是「另一个功能改一处，这个文件要不要跟着改」。
+  样板：`page/inbound/http/`（**8 个控制器文件 + 1 个 router**：`pages_handle.go` 页面本体两面 +
+  版本历史、`page_translations.go` 译文三件套、`page_langs.go` / `page_schedule.go` /
+  `page_redirect.go` / `page_site_slot.go` / `page_stale.go` 各一功能、`page_jump.go` 共享出口原语）、
+  `product/inbound/http/`（**10 个控制器文件 + 1 个 router**：`product_page.go` 处理器与文件索引、
+  `product_core.go` 商品本体 / `product_attributes.go` 属性 / `product_taxonomy.go` 分类品牌标签 /
+  `product_bundle.go` 捆绑 / `product_pricing.go` 定价 / `product_detail_template.go` 详情模板与评分 /
+  `product_translations.go` 译文、`product_page_util.go` 共用装配原语、`product_jump.go` 共享出口原语）。
+  · 反面教材（本仓实测）：product 曾拆到 19 个、page 曾 13 个 —— 按**UI 屏**（list / create / edit /
+    detail / bulk）或按**API 面 / 页面面**分家，都不满足「一个文件 = 一个业务功能」；
+    同功能内再按屏拆文件 = 拆过头（一个业务域几个屏 = 一个文件）。
+- **控制器只交文案事实，取词在模板**：槽位给 `adminui.Msg{Key, Fallback, Args}`
+  （`type XxxMsg = adminui.Msg` 别名），结构体字段用 `XxxKey` / `XxxFallback`，模板用
+  `{{tr := .["t"]}}` / `{{tf := .["tf"]}}` 取词；片段渲染一律经 `adminui.PrepareFragment`
+  （手工塞 `"t": shell.TranslateFor(c)` 是旧写法）。理由是二开：**后台是 Go 渲染、词条在库里**，
+  控制器里写「错误 → 文案」的映射，等于加一门语言要回头改控制器。
+  只允许四类例外，且每处要在上一行注释写明属于哪一类：
+  · JSON 出口的成品串（响应体里给前端/外部接口的字面量）；
+  · 提示页出口（`shell.RenderJump` 那条链需要成品串）；
+  · 具名占位符句式（`i18n.FillTranslate` 的 `{label}：{actual}` —— 模板的 `tf` 只有 `%s`）；
+  · 把取词函数放进 Request Context 给 service 用的中间件（`<module>TranslateMiddleware`）。
+  边界由测试钉住：`product/inbound/http/product_i18n_boundary_test.go` 的允许清单
+  **只减不增**（新增命中即失败，登记项不再命中同样失败）。
+- 一个页面的 handler、查询、视图、回填按上一条走：小模块同文件，大模块按功能**一个功能一个文件**。
+  多个页面共用的展示映射可以单独一个文件。
 - `inbound/mcp` 一个模块一个文件：工具注册、入参、回给模型的文案都在里面。
 - 响应消息统一取 `enums`
-- 取当前操作人一律用 `shell.CurrentUserID(c)` / `shell.CurrentUserIDText(c)`（内部走 `builtin.GetUserID`，
+- 取当前操作人一律用 `builtin.CurrentUserID(c)` / `builtin.CurrentUserIDText(c)`（内部走 `builtin.GetUserID`，
   带类型断言保护 —— 裸断言在类型异常时会把请求打成 500）。只有确实要区分「未登录 → 401」与
   「会话值类型异常 → 500」时才直接读 `c.Get("user_id")`，并写明理由。
 - **列表页批量操作（多选后删除 / 改状态 / 审批）必须成对遵守两条**：
@@ -231,6 +299,20 @@ DeptID uint64 `gorm:"column:dept_id" datarule:"label=所属部门;ops=EQ,NEQ,IN,
 
 - `enums/` 是**必须目录**，只放**用户可见文案**：成功消息、参数错误、未授权、业务错误，以及状态 / 分段的展示标签
 - 展示标签的形状是 `XxxLabel(value) (key, fallback string)`：i18n key + 中文兜底都要有，key 必须能在 seed 里找到
+- **「值 → 文案」的映射函数住在这里，不住在控制器**：业务枚举 / 状态码 / 阶段 / 来源标识 → `(key, fallback)`
+  的 `switch`（`RebuildStageLabel(stage)`、`LangStatusLabel(status)`、`RedirectResultLabel(code)`）都写在本目录，
+  控制器只调用一行。判据是**值的域属于谁**：值的域在本模块的业务里，它的展示文案就是本模块 enums 的事。
+  · 未知值不要静默吞掉：回落到原值（页面上显示 `plan2` 至少能让人去查）或专门的 unknown 词条，
+    并在函数注释里写明这个选择；
+  · 控制器里出现「挑文案的 switch」= 走错层，门禁与评审都会打回（见 §inbound/http）。
+  · **按计数选整句**（批量删除报「成功 N / 跳过 M」）用扩展形状
+    `func XxxOutcome(n, m int) Outcome`，`type Outcome struct{ Key, Fallback string; Args []string }` ——
+    候选句本身是常量，要选的是「哪一条 + 带哪几个计数」；`Args` 一律在 enums 里 strconv，
+    控制器只做一次转换（`outcomeMsg`）。样板：`pageenums.PagesBulkDeleteOutcome` /
+    `RedirectBulkDeleteOutcome`（判据 `page_label_enums_test.go` 四分支各一条）。
+- **key 字面量只出现在这里**：控制器、模板之外的 Go 代码引用词条一律走 `enums` 常量
+  （老式 `MsgXxx = "MsgXxx"`，新式点分 key 常量组，按文件既有分组写）。
+  门禁 `bash scripts/check-controller-i18n-literals.sh`（基线只减不增）。
 - 不放这些：表单字段清单（在 handle）、长度上限（在做校验的 service）、值域白名单（在拥有该值的 model）
 - `handle` 和 `service` 不直接硬编码响应文案
 - 未接好 `i18n` 时，`ErrXxx` / `MsgXxx` 直接等于中文常量

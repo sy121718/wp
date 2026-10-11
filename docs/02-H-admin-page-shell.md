@@ -126,7 +126,7 @@
 
 **4 个页面的顶栏在显示原始 i18n key**（`MsgMasterDataChangesTitle — go_wp 管理后台`）。
 
-`internal/web/shell/shell.go` 会对 title 做 `t(title, title)`：词条命中显示译文，
+`internal/adminui/prepare.go:122-124` 的 `injectI18n` 会对 title 做 `t(title, title)`（2026-10-10 核对；本节 2026-09 写作时的 `internal/web/shell/shell.go` 是历史路径，order 五个生产文件六处调用已直引 `adminui.Prepare`，`internal/shell` 的 `Prepare` 转发已删除）：词条命中显示译文，
 未命中**回退字面量**。因此 handler 传 `Msg*Title` 而词条缺失时，key 会原样出现在顶栏与
 `<title>` 里。全站实测命中 4 个页面：
 

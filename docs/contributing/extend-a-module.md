@@ -124,3 +124,4 @@ DeptID uint64 `gorm:"column:dept_id" datarule:"label=所属部门;ops=EQ,NEQ,IN,
 - [ ] 触及按 `project_id` 取数的路径时，`public/test/rls/` 用例通过
 - [ ] 本模块的职责与不变量同步进 [`../13-module-inventory.md`](../13-module-inventory.md)
 - [ ] 新增门禁脚本已接进 `scripts/check-all.sh` 的 `PLAIN_SCRIPTS` 或 `DB_SCRIPTS`
+- [ ] 触碰 `internal/shell` 的调用面时，`bash scripts/check-shell-migration.sh` 通过（基线**只许下降**：计数降了就把脚本打印的新数字粘回 `scripts/shell-migration-allow.txt`，条目归零就删掉该行）。新增导出符号要同时登记进 `internal/shell/shell_migration_test.go` 的终局归属计划，见 [`gates.md`](gates.md)

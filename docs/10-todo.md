@@ -43,10 +43,14 @@
 > 说明两处是不同时点的两次统计。差额来自盘点后逐次追加的条目 —— 其中 \`COV-1\`~\`COV-4\`（第 11 节）
 > 明确可考为 2026-09-19 补入，其余无逐条考证。**一律以正文实测 104 为准**，本表与附一同口径重算。
 
+> **2026-10 追加（`COV-5`，第 11 节）**：2026-10 复核 task-22 M2 时识别「shell 回跳路径的两条 Warn 无日志断言」，补入 `COV-5` ⇒
+> 判据算式里的 COV 项由 **4 → 5**、条目总数 **104 → 105**、未开始 **26 → 27**
+>（`COV-4` 是误判核销、`COV-1`~`COV-3` 仍是未开始，未开始的 +1 只来自新条目）。本表与附一同口径同步。
+
 | 指标 | 数量 |
 |---|---|
-| 条目总数 | **104** |
-| 未开始 | **26** |
+| 条目总数 | **105** |
+| 未开始 | **27** |
 | 部分完成 | **14** |
 | 文档滞后（清单已核为落地，目标文档口径未跟上） | **21** |
 | 待决策（非实现项） | **2** |
@@ -54,7 +58,7 @@
 | **明确不做（冻结，不在当前路线内）** | **10** |
 
 > 说明：\`文档滞后\` 条目同样计入总数，但**不应作为施工项**——先修文档口径即可。
-> 真正需要动手的是「未开始 + 部分完成」共 **40** 条；**冻结的 10 条（PLG 全组）不计入施工范围**。
+> 真正需要动手的是「未开始 + 部分完成」共 **41** 条（2026-10 追加 `COV-5` 后重算）；**冻结的 10 条（PLG 全组）不计入施工范围**。
 > \`文档滞后\` 与 \`已落地\` 两列**不可相加当作「都做完了」**：前者指清单已核为落地、但**目标文档的口径还没跟上**（仍需改文档）。
 
 > **与审计台账的关系（根因，2026-09-26 补）**：仓库 \`scripts/audit-mark-resolved.py\` 是审计发现项的
@@ -204,7 +208,7 @@
 | INF-5 | qiniu 存储不支持批量打包（一期限定 \`storage_type=local\`） | \`media-variants-recon.md\`（L204） | 未开始（已知限制） | 低 | 无 |
 | INF-6 | 变体异步生成（goroutine / asynq + \`pending\` 状态） | \`media-variants-recon.md\` §A（L196） | 部分完成：\`media_variant_task.go\` 已接 asynq 任务；上传同步生成仍在 | 低 | 无 |
 | INF-7 | \`GenerateVariants\` 导出为契约方法（存量回填 / 重新生成按钮） | \`media-variants-recon.md\` §B（L198） | 文档滞后-代码已有：\`internal/module/media/contract/media_service.go:61\` 已导出 \`GenerateVariants(ctx, attachmentID uint64) ([]mediadto.VariantResp, error)\`。**2026-09-26 行号复核：原记录引的 \`:33\` 已失效** | — | 无 |
-| INF-8 | 后台「菜单管理」页未收录 \`/admin/navigations\` | \`09-session-handoff.md\` §4（L390） | ✅ **已落地（2026-09-26 复核）**：\`/admin/navigations\` **已在菜单树里** —— seed 迁移 \`public/migrations/224_admin_nav_menu_rebuild.sql:149\`（\`('导航菜单', '内容', '/admin/navigations', 'navigation:list', 7)\`，同文件 \`:99\` 是目录归属），路径别名 \`internal/web/shell/nav.go:162\`（\`/admin/navigations/translations\` → \`/admin/navigations\`）；页面本身在 \`internal/module/navigation/inbound/http/navigation_page_handle.go:3\`（注释即「前台导航菜单管理页（/admin/navigations）」），模板 \`internal/templates/admin/navigation/navigations.html\`。**原记录「未开始（侧边栏走代码配置）」两处都过时** —— 侧栏菜单是 **DB seed 驱动**（渲染 \`internal/web/shell/nav.go:56\` \`BuildNav\`），不是代码配置；且该页已收录 | — | 无 |
+| INF-8 | 后台「菜单管理」页未收录 \`/admin/navigations\` | \`09-session-handoff.md\` §4（L390） | ✅ **已落地（2026-09-26 复核）**：\`/admin/navigations\` **已在菜单树里** —— seed 迁移 \`public/migrations/224_admin_nav_menu_rebuild.sql:149\`（\`('导航菜单', '内容', '/admin/navigations', 'navigation:list', 7)\`，同文件 \`:99\` 是目录归属），路径别名 \`internal/web/shell/nav.go:162\`（\`/admin/navigations/translations\` → \`/admin/navigations\`）；页面本身在 \`internal/module/navigation/inbound/http/navigation_page_handle.go:3\`（注释即「前台导航菜单管理页（/admin/navigations）」），模板 \`internal/templates/admin/navigation/navigations.html\`。**原记录「未开始（侧边栏走代码配置）」两处都过时** —— 侧栏菜单是 **DB seed 驱动**（渲染 \`internal/web/shell/nav.go:56\` \`BuildNav\`），不是代码配置；且该页已收录。**2026-10 补（task-72 后）**：本行引的 `internal/web/shell/nav.go` 是**当时的包路径**（该前缀现已不存在，规范路径是 `internal/shell`），且侧栏视图构建已从 `internal/shell` 整体迁入 `internal/adminui/nav.go`（`internal/shell/nav.go` 已删除）；`navPathAlias` 也已不存在（现按路径段最长前缀自动归属，见 `internal/adminui/nav.go` 的 `navOwnerPath`）。上面的「路径别名」与 `BuildNav:56` 按**当时事实**保留，勿据它写新代码 | — | 无 |
 | INF-9 | 复刻页外链图片本地化（走媒体库，顺带验证变体管线） | \`09-session-handoff.md\` §4（L383） | 文档滞后-代码已有：同文 §3（L270-274）已记录完成（10 张图本地化，仅剩 \`<a>\` 链接保留外链） | — | 无 |
 | INF-10 | 访客面零 JS 校验 / 依赖 fan-out E2E 验收清单保持规划态 | \`04-runtime-and-delivery.md\`（L148） | 文档滞后：依赖 fan-out 见 PIPE-3；Runtime Fragment / Client Enhancement / PresentationInstance / ContentTemplate 均已落地 | — | 见 PIPE-3 |
 | INF-11 | 页面设置面板缺 Robots / Keywords 字段（与 PIPE-9/PIPE-10 同源，此处记录 UI 侧） | \`0-A2\` §2.1、\`templates/fragments/settings_panel.html\` | **部分完成（2026-09 复核；2026-09-26 补行号）**：Robots 侧已落地 —— 面板有「搜索引擎收录」（index/noindex）与「链接跟踪」（follow/nofollow）两组按钮（\`internal/templates/fragments/settings_panel.html:36\` / \`:43\`；见其 \`data-wb-setting=\"settings.seo.robotsIndex\" / robotsFollow\`），后端 \`settingsViewOf\` 也解析了这两个字段；**Keywords 仍未做**（同 PIPE-10，\`builder.SEO\` 结构里没有 keywords，只有 \`SecondaryKeywords\`（\`internal/builder/settings.go:168-169\`））。**本次回填修正**：上一版写「面板仅 title/description/…」漏了 robots 两组 | 低 | PIPE-10 |
@@ -308,17 +312,35 @@
 逐项比对该次重构的 delete / rename 明细，发现**三个能力的测试被 delete 且无 rename 替代**。
 它们与门禁修复本身无关，但都是「代码还在、断言没了」——**重构不会让它们报错，只会在某天回归时才发现**。
 
+> **2026-10 追加 `COV-5`（来源与 `e7405ca9` 无关）**：复核 task-22 M2（`shell.BackPath` 的路径/白名单查询构造迁到 `pkg/backpath`）时识别 ——
+> 构造侧（`pkg/backpath.Build` / `KeepValue`）的**判据与返回值**都有测试，但壳层「值被丢弃 / 路径不合法」时记的**两条 Warn 没有任何断言**：
+> 把这两条 `Warn` 降为 `Debug`、或让本该静默的空值也走 `Warn` 分支，现有用例都不会红 —— 准确说：**这两条 `Warn` 级别没有任何断言**。
+>（`Warn`→`Debug` 只证明「Warn 这一级别没被测到」，**不能**推出「这两行日志整段删掉也无人发现」—— 措辞上不要把两者等同。）
+>
+> 本轮同时按 2026-10 的 `rg` 实测**更正了下表 `COV-1` / `COV-2` / `COV-4` 的路径与符号**（旧 `文件:行` 多已失效，原因见各行的「出处」列）；
+> 判定依据仍是本节末尾那条「按能力追、不按名字追」。
+
 | # | 能力 | 出处 | 现状 | 优先级 | 依赖/前置 |
 |---|---|---|---|---|---|
-| COV-1 | workbench 编辑目标注册表无断言 | `internal/module/workbench/inbound/http/workbench_target.go:126`（`EditTargetFor`）/ `:132`（`WorkbenchTargets`），注释自称「测试与前端契约共用」；原测试 `dashboard/inbound/http/workbench_target_test.go`（`TestWorkbenchTargetRegistry`）随 `e7405ca9` 删除且无 rename | 未开始（全树 grep `EditTarget` / `WorkbenchTargets` 在 `*_test.go` 中零命中） | 中 | 无 |
-| COV-2 | `internal/web/shell/nav.go` 整包无断言 | `nav.go:56` `BuildNav` / `:89` `buildNavNodes` / `:113` `firstNavPath` / `:126` `containsActive` / `:160` `NavPathAlias` / `:173` `NavPathFor`；旧 `nav_path_alias_test.go`（`TestNavPathFor`）与 `nav_normalize_contract_test.go`（`TestDashboardNormalizePathMatrix`）随 `e7405ca9` 删除且无 rename | 未开始（`internal/web/shell` 现只有 `bulk_test.go` / `errors_test.go` / `notice_test.go`）。这些是**纯函数**（路径归一、别名映射、父级展开态计算），按 CQ-020 二层策略正属「模块内就近单测」 | 中 | 无 |
+| COV-1 | workbench 编辑目标注册表无断言 | **现行落点（2026-10 实测）**：`internal/module/workbench/inbound/http/workbench_page.go` 的 `EditTargetFor`（`:2526`）与 `WorkbenchTargets`（`:2532`）；注释自称「测试与前端契约共用」。**旧记录的 `workbench_target.go:126` / `:132` 已失效 —— 该文件已不存在，能力整体并回了 `workbench_page.go`**。原测试 `dashboard/inbound/http/workbench_target_test.go`（`TestWorkbenchTargetRegistry`）随 `e7405ca9` 删除且无 rename | 未开始（2026-10 实测：全树 `*_test.go`（含 `public/test/`）内 `EditTargetFor` / `WorkbenchTargets` **零命中**） | 中 | 无 |
+| COV-2 | `internal/shell/nav.go` 的侧栏构建缺断言 | **现行落点（2026-10 实测）**：文件是 `internal/shell/nav.go`（**旧记录的 `internal/web/shell/nav.go` 已失效**）：`BuildNav`（`:61`）/ `buildNavNodes`（`:96`）/ `firstNavPath`（`:120`）/ `containsActive`（`:133`）；**`NavPathAlias` 与 `NavPathFor` 已随重构移除（全树零命中，不再是待补项）**。旧 `nav_path_alias_test.go`（`TestNavPathFor`）与 `nav_normalize_contract_test.go`（`TestDashboardNormalizePathMatrix`）随 `e7405ca9` 删除且无 rename | **部分覆盖（2026-10 复核）**：`BuildNav` 主路径**已被两处真实渲染用例覆盖** —— `internal/shell/nav_system_menu_test.go:21`（`:55` 直接调 `BuildNav`）与 `internal/shell/nav_owner_test.go:63`（`:43` 同）。未直接覆盖的是内部纯函数：`buildNavNodes` 的递归与 Open 计算、`firstNavPath`、`containsActive`（现只能经 `BuildNav` 间接触达，删掉其中一条分支的两个测试仍会绿）。这些是纯函数（路径归一、别名映射、父级展开态计算），按 CQ-020 二层策略正属「模块内就近单测」。**注**：旧记录「`internal/shell` 现只有 `bulk_test.go` / `errors_test.go` / `notice_test.go`」已过期（现另有 `back_test.go` / `jump_test.go` / `nav_owner_test.go` / `nav_system_menu_test.go` / `notice_param_test.go` / `shell_migration_test.go`）。**2026-10 再复核（task-72 后）**：本行「现行落点 `internal/shell/nav.go`」**再次失效** —— 侧栏构建已整体迁入 `internal/adminui/nav.go`（旧文件已删除），现行位置是 `BuildNav`（`adminui/nav.go:71`）/ `buildNavNodes`（`:106`）/ `firstNavPath`（`:130`）/ `containsActive`（`:143`）；两处真实渲染用例仍留在 shell 包内、改为调 `adminui.BuildNav`（`internal/shell/nav_system_menu_test.go:57`、`internal/shell/nav_owner_test.go:46`），覆盖结论不变。**同一行的落点会搬家 —— 路径类结论要跟着代码走，别只跟着上一版文档走** | 中 | 无 |
 | COV-3 | 页面路由渲染覆盖台账无替代 | 旧 `public/test/dashboard/feature/dashboard_route_coverage_ledger_test.go`（`TestDashboardRoutesHaveRenderTests`）随 `e7405ca9` 删除 | 未开始（全树 grep `RoutesHaveRenderTests` / `routeCoverage` 零命中）。台账的语义是「每个后台路由都有对应的渲染测试」——它消失意味着**新增页面漏测渲染不再有系统级提醒** | 中 | 无 |
-| COV-4 | ~~语言切换的开放重定向防护无覆盖~~ **已核实为误判** | 旧 `dashboard/inbound/http/lang_handle_test.go`（`TestLangSwitch` / `TestLangSwitchOpenRedirectGuard`）确随 `e7405ca9` 删除 | ✅ **覆盖已转移，不是缺口（2026-09 核实）**：判据在重构中**单源化**到 `internal/web/shell/notice.go:151` 的 `LangRedirectPath`，由 `notice_test.go:112` 的 `TestLangRedirectPathIsTheOnlyCriterion` + `TestLangRedirectConverges` 断言，消费侧另有 `admin/inbound/http/admin_notice_test.go:190-242` 的对照用例（含 `//evil.example.com` 这类反例）。运行时入口 `AdminLangSwitch`（`admin/inbound/http/admin_pages_handle.go:1158`）经 `adminSafeLangRedirect` 调同一份判据。**不要另派工补这一条** | — | 无 |
+| COV-4 | ~~语言切换的开放重定向防护无覆盖~~ **已核实为误判** | 旧 `dashboard/inbound/http/lang_handle_test.go`（`TestLangSwitch` / `TestLangSwitchOpenRedirectGuard`）确随 `e7405ca9` 删除 | ✅ **覆盖已转移，不是缺口（2026-10-10 复核当前源码）**：判据单源化到 `pkg/safepath/safepath.go:94` 的 `LangRedirectPath`，`:108` 的 `LocalReturnPath` 委托同一判据；测试在 `pkg/safepath/safepath_test.go:155`、`:189`，请求入口回归现为 `internal/adminui/prepare_contract_test.go` 的 `TestPrepareLangRedirectFallbackChain`，直接断言真实 `Prepare` 的 `lang_redirect`（合法 query、超长 query、超长 path、协议相对 path）。消费侧对照在 `internal/module/admin/inbound/http/admin_notice_test.go` 的 `TestAdminLangRedirectMatchesPrepareCriterion`，同时对比实际装配输出与 safepath/admin 判据。语言切换入口是 `internal/module/admin/inbound/http/admin_page.go:1206` 的 `AdminLangSwitch`，经 `:1229` 的 `adminSafeLangRedirect` 调用该判据；页面装配侧在 `internal/adminui/prepare.go` 的 `langRedirect` 复用同一函数。零消费者的 `internal/shell/notice.go` 与旧测试已删除，覆盖保留在真实页面装配入口。**不要另派工补这一条** | — | 无 |
+| COV-5 | shell 回跳路径的两条 Warn 无日志断言（2026-10 新增） | `internal/shell/back.go` 的 `BackPath`：① 路径不合法、整条回跳地址被丢弃时 `Warn("回跳路径不合法（非站内相对路径或超长），回控制面首页")`（2026-10 实测 `:64`）；② 逐键值级丢弃时 `Warn("回跳参数被丢弃（超长或含控制字符）")`（`:78`，带 `key` / `len` 字段）。构造与判据在 `pkg/backpath`：`Build`（`:48`；`:49` 用 `safepath.IsSameOriginPath` + `MaxReturnPathBytes` 判路径）、`KeepValue`（`:70`，空串 → false）。**静态等价**：`Build` 内部丢值的判据就是 `KeepValue`（`:58`），壳层记日志也调 `backpath.KeepValue`（`back.go` 的守卫行）⇒ 「构造时丢掉的」与「日志里说丢掉的」靠**同一份实现**保证不漂移；但没有任何用例断言这件事 | 未开始（**2026-10 实测**：`internal/shell/back_test.go` 的 9 个用例只断言返回值 —— `TestBackPathRejectsUnsafePath:71` / `TestBackPathDropsOverlongValue:88` / `TestBackPathDropsControlChars:97` / `TestBackPathDropsEmptyValues:45` 等，无一条读日志。两次 `go test -overlay` 变异**仍全绿**：① 两条 `Warn` 降为 `Debug`（该级别不落盘 —— 它证明的是「**Warn 级别无断言**」，**不等于**「这两行删掉也无人发现」，两者不要等同）；② 去掉 `back.go` 的空值静默守卫、让空值也走 `Warn` 分支（「空值不该刷日志」这条规则同样无断言）。缺口性质是**诊断日志覆盖不足**，不是行为缺陷） | 低 | 无 |
 
 > **COV-4 的判定过程本身是个教训**：初次盘点按**函数名字面量**（`LangSwitch`）grep，得出「无替代测试」；
-> 而重构把那项能力**改名并拆到另一层**（`AdminLangSwitch` + `shell.LangRedirectPath`）。
+> 而重构把那项能力**改名并拆到另一层**（`AdminLangSwitch` + `pkg/safepath.LangRedirectPath`，渲染入口为 `adminui.Prepare`）。
 > 判断「测试是否丢失」要按**能力**追，不能按**名字**追 —— 同类误判之所以没在 COV-1/COV-2 上发生，
 > 只是因为那两处的函数名恰好没改。**盘点结论在下发补工之前必须先按能力复核一遍。**
+
+> **`COV-5` 的补测方式（2026-10 记录，供动手时直接照抄）**：**不需要给 `logger` 加钩子** —— 用 `logger.Init` 配一个
+> `log.base_dir = t.TempDir()` 的 viper 配置，让本用例独占日志目录（`logger.Init` 会清空场景 logger 缓存，新目录确实生效），
+> 再按 scene 子目录（这里是 `shell`）**逐行解析结构化 JSON**、对目标字段做**完整等值**比对 —— 不要退化成整段文本里找子串，
+> 子串会把 `\"` 转义后照样看得见的行也算命中（等于没写进去）。本仓已有两处可直接抄的样例（均由 task-40 落地）：
+> `internal/module/ai/inbound/http/ai_sessions_page_render_test.go` 的 `aiSessionsTestLogHasRawError`、
+> `internal/module/contenttemplate/inbound/http/content_template_page_err_test.go` 的 `ctTestLogHasRawError`。
+> 两个前提别忘：`logger` 是**包级全局**配置，用例必须**串行**（不加 `t.Parallel()`）并在 `t.Cleanup` 里 `logger.Close()` 关句柄；
+> 断言要留一条**负断言**（换一条本次没发生过的错误必须判未命中），否则「找得到」可能来自任何一行日志。
 
 ---
 
@@ -356,17 +378,17 @@
 | SEO | SEO-1 ~ SEO-10 | 10 | 1 | 2 | 1 | 0 | 6 | 0 |
 | 插件体系 | PLG-1 ~ PLG-10 | 10 | 0 | 0 | 0 | 0 | 0 | **10** |
 | 组件与构建器 | CMP-1 ~ CMP-16 | 16 | 6 | 3 | 6 | 1 | 0 | 0 |
-| 重构遗留覆盖缺口 | COV-1 ~ COV-4 | 4 | 3 | 0 | 0 | 0 | 1 | 0 |
+| 重构遗留覆盖缺口 | COV-1 ~ COV-5 | 5 | 4 | 0 | 0 | 0 | 1 | 0 |
 | 多语言 | I18N-1 ~ I18N-18 | 18 | 8 | 1 | 0 | 1 | 8 | 0 |
 | 发布管线 | PIPE-1 ~ PIPE-13 | 13 | 5 | 4 | 2 | 0 | 2 | 0 |
 | 商品与业务 | BIZ-1 ~ BIZ-9 | 9 | 2 | 2 | 0 | 0 | 5 | 0 |
 | 基础设施 | INF-1 ~ INF-11 | 11 | 1 | 2 | 4 | 0 | 4 | 0 |
 | 文档一致性 | DOC-1 ~ DOC-13 | 13 | 0 | 0 | 8 | 0 | 5 | 0 |
-| **合计** | — | **104** | **26** | **14** | **21** | **2** | **31** | **10** |
+| **合计** | — | **105** | **27** | **14** | **21** | **2** | **31** | **10** |
 
 > **说明（2026-09-26 重算）**：本表的旧口径（合计 104 / 未开始 68 / 部分完成 10 / 文档滞后 24 / 待决策 2）
 > 与正文逐行归类不符，**已按正文实测重算** —— 旧口径把大量「已核销」「已落地」的行仍计在「未开始」里。
-> 重算后九组条数之和仍为 104（10+10+16+4+18+13+9+11+13），与 §0.3 同口径。
+> 重算后九组条数之和仍为 105（10+10+16+**5**+18+13+9+11+13 —— COV 组于 2026-10 由 4 条增至 5 条），与 §0.3 同口径。
 > **本表是索引，不是工单量**：\`PLG\` 整组（10 条）已冻结，不得计入工作量；其余「已落地/已核销」列
 > 与「文档滞后」列的区别见 §0.3 的说明（前者核对即可，后者仍需改目标文档）。
 > 历史上被点名「已核销、不应重复施工」的条目（\`CMP-6\` / \`CMP-9\` / \`CMP-10\` 等）保留在正文表中以便追溯。
@@ -386,7 +408,7 @@
 | 捆绑表单非法数值文本 | 失败回填时非法数字文本会被归一为 `0`，不是原样回显 | `admin/product/` 捆绑配置片段 |
 | 导航创建 check→create 竞态 | 并发下可能留下孤儿块（校验通过后目标被改） | `navigation` 服务层 |
 | 商品编辑其它业务错误出口 | 非校验类错误仍走 `302 + ?err=`（主表单已按 htmx / 原生分档，变体与评分等子资源写路径仍是纯 302），长表单输入会丢 | `product_page_*` 写路径 |
-| workbench 失败出口批 1 / 批 4 | **仍未做**：`workbench_handle.go` 还有 30 处硬编码中文 `c.String`（如 `:48`「缺少页面 id」）；`workbench_preview_handle.go:100` 直出 `workbench_enums.go:8` 的 `MsgInternalError`（**值即英文裸 key**）⇒ 用户看到英文裸串。批 2 / 批 3 已闭环 | `internal/module/workbench/inbound/http`（批 2 走 `shell.PageInternalText`、批 3 走 `c.JSON`） |
+| workbench 失败出口批 1 / 批 4 | **旧未做判据已失效（2026-10-10 源码复核，非全批验收）**：预览入口的参数/不存在提示已走 `workbenchShortText`（`internal/module/workbench/inbound/http/workbench_page.go:1903-1944`）；内部失败取 `adminui.PageInternalText`（`:1989`），受控短句表及取词见 `internal/module/workbench/inbound/http/workbench_err.go:246-254`，不再直出裸 key。编译拒绝仍是 422 文本分档（`:1984-1985`），是否符合各入口的目标响应形态须逐支验收，不能据符号迁移断言全批完成。历史批 2 / 批 3 已闭环说明保留 | `internal/module/workbench/inbound/http`（当时批 2 走 `shell.PageInternalText`、批 3 走 `c.JSON`；今天的内部文案归 `adminui.PageInternalText`） |
 | 失败出口门禁扩围（三件） | **仍未做**：① `scripts/check-no-internal-error-leak.sh` 的 TARGETS 仍是 `find internal/module -type d -path '*/inbound/http'` ⇒ 扁平单包的 `runtimefragment` 整批漏过；② 候选集仍以「行内含 `.Error()`」为入口 ⇒ 硬编码文案与裸归口 key 从不进候选；③ `public/test/enums/unit/enums_key_seed_test.go` 的 `enumsFiles` 只有 cart/order/user/mail/workbench，**无 analytics** | 门禁脚本 + 该测试 |
 | mediafield.js 弹窗未收口 | 选图弹窗仍自建 `.media-pick-mask`（`mediafield.js:80`），全文件无 `WBUI.modal` 调用 | `internal/templates/static/js/ui/mediafield.js` |
 

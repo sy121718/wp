@@ -6,16 +6,18 @@
 
 | 命令 | 实际执行 |
 |---|---|
-| `make check` | `gofmt -l internal/ pkg/ public/ cmd/ config/` + `go vet ./...`，然后 `bash scripts/check-all.sh`（**无外部依赖组，12 个脚本**） |
-| `make check-db` | `bash scripts/check-all.sh --db-only`（**只需数据库组，1 个脚本**） |
-| `make check-all` | `bash scripts/check-all.sh --with-db`（**全部 13 个脚本**） |
+| `make check` | `gofmt -l internal/ pkg/ public/ cmd/ config/` + `go vet ./...`，然后 `bash scripts/check-all.sh`（**plain 组，19 个脚本**） |
+| `make check-db` | `bash scripts/check-all.sh --db-only`（**数据库组，4 个脚本**） |
+| `make check-all` | `bash scripts/check-all.sh --with-db`（**全部 23 个脚本**） |
 | `make test-race` | `go test -race -p 4 ./pkg/... ./internal/pipeline/... ./internal/builder/... ./internal/module/publication/... ./internal/module/presentation/... -count=1 -timeout 20m` |
 | `make test` | `go test -p $(nproc) ./... -count=1` |
 | `make test-short` | `go test ./pkg/... ./internal/... ./cmd/... ./config/... ./public/migrations/... -count=1` |
 
+上述脚本数来自 2026-10-10 的 `scripts/check-all.sh:32-60`：plain 19、DB 4。DB 组包含权限缺口、菜单页面绑定、按钮码绑定、页面 GET 鉴权；其中权限缺口检查会运行 Go 路由装配，装配会同步数据库权限与策略，不能当作只读核验。只做文档复核时运行无参数 plain 入口；页面 GET 鉴权的只读与快照边界见 [后台响应形态与门禁口径](../rules/response-shapes.md)。
+
 `check-all.sh` 会 `export SKY_CSS_GUARD=error`，把多设备 CSS 检查从「默认告警」升为硬门禁。未知参数退出码 2。脚本文件缺失视为失败，不静默跳过。
 
-## 无外部依赖组（`PLAIN_SCRIPTS`，12 个）
+## plain 组（`PLAIN_SCRIPTS`，19 个；2026-10-10 复核）
 
 ### `check-no-internal-error-leak.sh`
 
@@ -23,7 +25,7 @@
 
 判据：按三种**调用形状**匹配，不看变量名 —— ① 响应写入（`*.ErrorWithMessage(` / `c.String(`）的实参带 `.Error()`；② 重定向 query 里出现 `?err="+url.QueryEscape(err.Error())`；③ 模板数据 `data.Errors = []string{… + err.Error()}`。
 
-改法：用 `shell.PageError(c, scene, err)`，或模块自己的归口助手（如 `internal/module/admin/inbound/http/admin_err.go`），或 `pkg/response.ErrorAuto` —— 用户看场景文案，细节进日志。
+改法：片段端点的 500 JSON 出口用 `adminui.PageErrorInternal(c, scene, err)`（`internal/adminui/errors.go:66`，不渲染整页页壳），或模块自己的归口助手（如 `internal/module/admin/inbound/http/admin_err.go`），或 `pkg/response.ErrorAuto` —— 用户看场景文案，细节进日志。
 
 豁免：脚本内 `EXEMPT`（文件 + **形态**）逐条记账（`declare -A EXEMPT`，`:74` 起）。只放行某文件的某一种形态，该文件将来出现别的形态照样会被抓住。登记了却不再命中的条目会被判为过期（`:107`），逼着清理。
 
@@ -127,7 +129,19 @@
 
 豁免：无豁免清单（warn-only 本身就是它的豁免口径）。
 
-## 需要数据库组（`DB_SCRIPTS`，1 个）
+### `check-shell-migration.sh`
+
+管什么：`internal/shell` 的**删除进度**。shell 的使用点散落在多个 scope 里（精确计数不写死在文档里，由门禁每次运行实时输出），这让它不是「可以原地改名的包」：删掉三成和删掉一半在编译上毫无区别，只有把计数固定成基线、且**只允许下降**，「这一批搬干净了没有」才是可回答的问题。终局是删掉整个包，责任归 admin 模块（后台外壳与页面出口）、middleware（中间件与请求上下文）、pkg（通用工具）、project（站点 URL 那两条）。
+
+判据（三条，全部是**按 scope 聚合的计数**，计数单位是出现次数）：① `shell.<标识符>` 使用点，按 scope（`internal/<pkg>` 的前两段）× 生产/测试两档聚合；② 页面 POST 出口形态按模块计数 —— `shell.RenderJump` 调用点、模块自建 jump/notice/fail helper 定义数、`c.String(` 直出数，这三个数是「页面写操作还没迁到 JSON API」的可测代理（迁移方向：前端 fetch 现有 API，页面 POST 逐步删除，权限点保留）；③ 基线条目**不再命中即失败**（僵尸清单等于没有门禁）。只统计 `*.go`、跳过**整行注释**、`internal/shell/**` 自身不计。
+
+豁免/基线：`scripts/shell-migration-allow.txt`（格式 `<key>` TAB `<计数>` TAB `<down|keep>` TAB `<理由>`）。`down` = 迁移收敛面，只许下降；`keep` = 只作「新增即红」的守卫、不要求下降（必须写明为什么不属收敛面，例：workbench 保留的片段与预览 `c.String` 属设计形态，数量以当次扫描为准）。缺理由 / mode 非法 / count 非数字 / key 重复都是脚本自身错误（退出码 2）。计数下降时脚本会打印可直接粘贴回基线文件的数字。
+
+为什么基线只到 scope 粒度、不列具体引用：把当前数百个引用抄进清单，下一次改一行动模板就要重写它，这份门禁两周内就会被绕过 —— 而被绕过的门禁比没有门禁更坏（同 `check-i18n-coverage.sh` 的取舍）。**符号粒度**由 `internal/shell/shell_migration_test.go` 守：导出符号必须登记终局归属（新增要登记、搬走要删条目，两个方向都判），跨包类型别名 / 常量变量同值映射 / 单行转发必须登记在只减不增的别名清单里。
+
+退出码：0 通过 / 1 违规或僵尸基线 / 2 环境或自检失败。树干净时脚本会做**两条自检**：①负向 —— 把探针条目的基线**临时收紧到当前实测值**（这份收紧副本只活在自检里，正式基线文件不动），再人为 +1，判据必须报违规，报不出就自判失败（退出 2），判据退化成空转时不会继续报「✓」；②正向 —— 同一条目人为**降到基线以下**，判据必须**不**报违规、且把它记成可下调。两条都在，才既拦得住「判据失效」、又不会把「迁移正常下降」误判成超限。门禁绿 ≠ 没问题：这是启发式的形状计数，不解析语法，注释掉的调用点与动态拼出的 `shell.…` 名字都看不见。
+
+## 需要数据库组（`DB_SCRIPTS`，4 个；2026-10-10 复核）
 
 ### `check-permission-gaps.sh`
 

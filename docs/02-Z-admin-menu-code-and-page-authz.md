@@ -60,10 +60,10 @@
 `/admin` 组**组级**只挂会话、CSRF 与权限上下文，没有 Casbin：
 
 ```go
-// internal/routers/assembly.go:491
+// 后台页面组装配示意（实际注入实现：internal/middleware/adminctx/context.go:46）
 a.adminPages = router.Group("/admin",
     builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(),
-    shell.PermContextMiddleware(adminAuthzSvc))
+    adminctx.PermContextMiddleware(adminAuthzSvc))
 ```
 
 页面 GET 的鉴权是**逐路由**挂的（`builtin.CasbinMiddlewareForPath("/api/xxx")`，借对应业务 API 的权限点，
@@ -100,7 +100,7 @@ plugin、product/\*、admin/lang 等。表现是**任何登录账号直接输 UR
 
 ### 2.3 前台菜单渲染不带权限短码
 
-侧栏视图类型里只有菜单身份，一个权限码都没有（`internal/web/shell/nav.go:24` 与 `:40`）；
+侧栏视图类型里只有菜单身份，一个权限码都没有（现行落点是 `internal/adminui/nav.go` 的 `NavNode` 与 `NavGroup`，2026-10 实测 `:36` 与 `:52`；**本行 2026-09 写作的 `internal/web/shell/nav.go:24` 与 `:40` 是当时的包路径，该前缀现已不存在**，类型也随 task-72 从 `internal/shell/nav.go` 一并迁走）；
 `BuildNav` / `buildNavNodes` 不向下传 `MenuTreeNode.PermissionCodes`；模板
 `admin/partials/sidebar.html` 与 `nav-nodes.html` 只读 Title / Path / Children / Active / Open。
 
@@ -116,7 +116,7 @@ plugin、product/\*、admin/lang 等。表现是**任何登录账号直接输 UR
 | 菜单 path 死链 | 3 条：`/project`、`/artifact`、`/publication`（都是 `is_hidden=1`，所以未暴露；实测 GET 全部 404） |
 | 菜单 path 语义错位 | 菜单 95「重定向管理」path = `/api/page/redirect`（页面确实挂在 `/api` 前缀下，见 `page/inbound/http/pages_handle.go:24` 的取舍说明） |
 | 菜单码与页面码不一致 | 菜单 151「大模型管理」绑 `ai:provider_list` + `ai:session_list`（任一命中即显示），页面只 enforce `ai:session_list` → 只被授前者的账号**菜单可见、点进去 403** |
-| 硬编码子页面归属 | `internal/web/shell/nav.go:143` 的 `navPathAlias`，11 条子页面 → 父菜单映射（高亮用） |
+| ~~硬编码子页面归属~~ **已消除（2026-10 复核）** | 当时 `internal/web/shell/nav.go:143` 的 `navPathAlias`（11 条子页面 → 父菜单映射）已被**路径段最长前缀**规则取代：子页面 URL 只要挂在父菜单 URL 的路径段下就自动归属，不再需要声明表（现行实现是 `internal/adminui/nav.go` 的 `navOwnerPath`，task-72 自 `internal/shell/nav.go` 迁入）。当初唯一不满足该规则的页面翻译工作台路径已改名成 `/admin/pages/translations` |
 
 ### 2.5 按钮行的身份现状（关键）
 
@@ -273,7 +273,7 @@ CI 里靠确定性种子保证稳定。要免重启就得上 catch-all 分发器
 |---|---|
 | 数据 | 迁移 `589_menu_button_code.sql`（+ register）：给已有 68 个 type=3 节点填码 + 补 **56 个**缺失节点。新节点的 `title` 取 `sys_permission.permission_name`（授权界面上给运营看的那个名字，不另编一套中文），父菜单取「该模块的列表类菜单」，因此它们在「菜单管理」里落在正确位置 |
 | 服务 | 契约加 `AuthorizedButtonCodes`（admin service 实现，与 `matchedMenuCodes` 同源：节点绑的任一码命中即算可用） |
-| 注入 | `shell.PermContextMiddleware` 算出按钮码集合写进 context，`Prepare` 注入 `Buttons`（与 `PermSet` 同源、不同键空间） |
+| 注入 | `adminctx.PermContextMiddleware`（`internal/middleware/adminctx/context.go`）算出按钮码集合写进 context，`Prepare` 注入 `Buttons`（与 `PermSet` 同源、不同键空间） |
 | 模板 | **143 处** `isset(.PermSet["x:y"])` → `isset(.Buttons["x.y"])`，37 个文件；模板层从此不出现权限码 |
 | 测试 | 40 个测试文件同步（数据键形态 + `c.Set` 形态 + 4 处变量形态 + 1 处裸 `"perm_set"` 键） |
 | 门禁 | 新脚本 `check-button-code-binding.sh`：① 模板每个按钮码必须在 `sys_menus` 里有 type=3 节点；② 模板里不得再出现 `PermSet[` 或 `Buttons["a:b"]`（权限码形态）。两个方向都先剔注释 |

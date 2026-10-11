@@ -322,12 +322,15 @@
 **模式 A 实测（未修）**：`/admin/themes/settings`（无 id）→ `nodes=4, title='', bodyHead='缺少主题 id'`；`?id=00000000-…` → `bodyHead='主题不存在'`。**脱离页壳、无 title、无导航**。
 **职能**：单主题全量设计令牌（11 色 + 排版 + 按钮 + 表面 + 动效 + 图片）+ 全局页眉/页脚/公告条块绑定 + 结构模板绑定。
 
+> **本节及以下所有「303 / 302 + `?err=`」改法均已退役（2026-10，task-67 / task-69 收口）**：任务 1~4（含 `:330` / `:339` / `:348` / `:355-357`）、§11 表格（`:592`）与附录（`:620`）把 `?err=` 写作**新修法**的地方，按**当时审计证据**保留，但**不可再作为新方案** —— 结论不再经 query 回带。现行分流：页面 GET 装载失败 → **同页失败槽**（`LoadFailed` / `LoadError`）+ 真实状态码 + `Cache-Control: no-store`；写动作 → **JSON 写**（`data-write-api` / `data-write-mode` + `data-msg-*`，服务端按请求语言给成品、Jet 取 UI 词）；仍有真实页面 POST 的少数入口 → 受控整页提示（`shell.RenderJump`，结论在响应体）。判据见 [`rules/i18n.md`](rules/i18n.md) 第四节。
+> `:355-357` 里「模板补 `?err=` 错误槽位」的诉求（失败后输入不丢、能定位到出错字段）不变，对应的现行形态就是**同页失败槽**。本文件的任务清单、实测数据与编号一律按当时事实保留。
+
 **任务 1：POST 校验失败不再裸出 i18n key（本域最严重出口）**
 - 级别：**P0**
 - 位置：`internal/module/project/inbound/http/theme_settings_admin_pages.go:372`
 - 现状（实测）：`POST /admin/themes/settings/save` 带 `id=<真实id>` + `colors.primary=not-a-css-value;evil` → **`400` + body `MsgThemeSettingsInvalid`（23 字节、非 JSON、无页壳、无 title）**。常量定义在同文件 `:27`（`themeSettingsMsgInvalid = "MsgThemeSettingsInvalid"`），库里有中文值「主题设置不合法」（`058_i18n_seed_enums.sql:272`）——**handler 直出 key 本身，没过 i18n**。
 - 问题：**`02-I` §5.2.5「模式 A 全量核验」与 `02-L` P0-1 都没有记录这一处**（只记了 `:148/153/278/283` 四处 GET/POST 的缺参分支）。用户场景极常见：52 个字段里手打错一个颜色值（写 `red` 而非 `#ff0000`、或粘进一段带分号的 CSS）→ 点「保存并应用到该主题页面」→ **整页消失，只剩 `MsgThemeSettingsInvalid` 一行字**，看不到哪里错了，也回不到表单。这是 `02-I` §5.2.4 #31（datarule_edit 裸 key）的**同族第 2 例**。
-- 改法：**303 回本页 + `?err=`**（该页模板需同时补错误槽位，见任务 4）。**不要**只换成 `shell.PageErrorBadRequest(c, "<scene>", err)`（`internal/web/shell/errors.go:45`）—— 已核实它内部就是 `response.ErrorWithMessage(c, 400, MsgInternalError)`，**返回 JSON、不渲染页壳**，换成它等于从「裸文本」变成「裸 JSON」，问题只换了个形状（`shell.PageError` 同理，`internal/module/product/inventory/inbound/http/inventory_page_handle.go:81` 用的是它）。保存失败时用户最需要的是「回到表单、看到哪里错、且输入还在」。
+- 改法（**`?err=` 部分已退役，见本节开头标记**）：**303 回本页 + `?err=`**（该页模板需同时补错误槽位，见任务 4）。**不要**只换成 `shell.PageErrorBadRequest(c, "<scene>", err)`（`internal/web/shell/errors.go:45`）—— 已核实它内部就是 `response.ErrorWithMessage(c, 400, MsgInternalError)`，**返回 JSON、不渲染页壳**，换成它等于从「裸文本」变成「裸 JSON」，问题只换了个形状（`shell.PageError` 同理，`internal/module/product/inventory/inbound/http/inventory_page_handle.go:81` 用的是它）。保存失败时用户最需要的是「回到表单、看到哪里错、且输入还在」。
 - 验证：`curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -X POST -d 'csrf_token=<t>&id=<id>&colors.primary=not-a-css-value;evil' http://127.0.0.1:8080/admin/themes/settings/save` → 期望 `303` + `…/admin/themes/settings?id=<id>&err=…`；浏览器端 `document.querySelector('.badge-warning')` 存在且 `document.title` 非空。
 - 风险：`ParseThemeSettings` 的失败原因是**字段级**的（哪个字段、什么值不合法），若要在页面上定位到具体字段，需要把 `err` 拆成字段名 + 提示（任务 4 的加强版）。至少先别丢页壳。
 
@@ -336,16 +339,16 @@
 - 位置：`internal/module/project/inbound/http/theme_settings_admin_pages.go:148`（GET 缺 id）、`:153`（GET 不存在）、`:278`（POST 缺 id）、`:283`（POST 不存在）
 - 现状：四处 `c.String(400|404, "缺少主题 id"|"主题不存在")`。实测 GET 侧：`nodes=4, document.title='', bodyHead='缺少主题 id'`。**`02-L` P0-1 / `02-I` §5.2.5 已记录（「最差档」），但至今未修** —— 管理域那批修的是 `admin_pages_handle.go`，`theme_settings_admin_pages.go` 不在其授权范围内（任务背景已点明）。**本轮确认：未修**。
 - 问题：用户从收藏夹/分享链接进入（`?id=` 被截断）→ 白页 + 一行字，只能手改地址栏。
-- 改法：**同族统一出口** —— GET 侧改 303 回 `/admin/themes?err=…`（列表页已渲染 `Err` 槽位）；POST 侧 303 回 `/admin/themes/settings?id=…&err=…`（若 id 本身缺失则回列表页）。**判据（`02-J` §H10）**：改一个失败出口时把**同一函数里所有失败分支**逐个过 —— 本文件还有 `:366`/`:378`/`:384`（任务 3）没修。
+- 改法（**历史方案：下面这条 `?err=` 形态已退役**，见 §8 开头标记）：**同族统一出口** —— GET 侧改 303 回 `/admin/themes?err=…`（列表页已渲染 `Err` 槽位）；POST 侧 303 回 `/admin/themes/settings?id=…&err=…`（若 id 本身缺失则回列表页）。**判据（`02-J` §H10）**：改一个失败出口时把**同一函数里所有失败分支**逐个过 —— 本文件还有 `:366`/`:378`/`:384`（任务 3）没修。
 - 验证：`curl -s http://127.0.0.1:8080/admin/themes/settings | wc -c` 应远大于 7；`document.title` 非空；页面含 `<h1>` 或完整导航。四个分支各测一次。
-- 风险：**不要只换 `shell.PageErrorBadRequest`** —— 已核实它内部是 `response.ErrorWithMessage`（JSON、不渲染页壳），换它等于「裸文本 → 裸 JSON」。若目标是「给带导航的可读页面」，**必须走 303 + `?err=`**。这一点 `02-L` §0.5「新增待办」已踩过（当时结论：`shell.PageError` 也解决不了这 6 处取数失败出口），别重犯。
+- 风险（**属上面那条已退役方案**；但后半句仍然成立）：**不要只换 `shell.PageErrorBadRequest`** —— 已核实它内部是 `response.ErrorWithMessage`（JSON、不渲染页壳），换它等于「裸文本 → 裸 JSON」。若目标是「给带导航的可读页面」，**必须走 303 + `?err=`**。这一点 `02-L` §0.5「新增待办」已踩过（当时结论：`shell.PageError` 也解决不了这 6 处取数失败出口），别重犯。
 
 **任务 3：JSON / 裸文本三个出口一并收口**
 - 级别：**P0**
 - 位置：`internal/module/project/inbound/http/theme_settings_admin_pages.go:366`、`:378`（`response.ErrorWithMessage(c, 500, themePageMsgInternal)`）、`:384`（`c.String(code, "主题设置保存成功，但页面刷新失败")`）
 - 现状：`:366` 是 `json.Marshal` 失败（几乎不可能触发）；`:378` 是 `UpdateTheme` 失败（**真实可达**：DB 抖动/约束冲突）→ 用户点保存得到 **JSON body**（`{"code":500,"message":"MsgInternalError"}`，且 message 也是裸 key，`themePageMsgInternal = "MsgInternalError"` 见 `theme_admin_pages.go:28`）；`:384` 是保存成功但页面刷新失败 → **裸文本 + 非标准状态码**。
 - 问题：`AGENTS.md` 硬约束「后台页面 handler 禁止 `c.String(500, err.Error())` 直出」的**第①种形态**；JSON 出口虽然「不是裸文本」，但对一个原生表单 POST 的页面来说**同样是脱离页壳的死胡同**（用户看到一坨 JSON）。`:384` 更麻烦：**操作其实成功了**（主题设置已落库），却给一个裸文本错误页 —— 用户会重试，而重试是幂等的（无害）但体验上等于「不知道成没成」。
-- 改法：`:366`/`:378` → 303 回本页 + `?err=`（`themePageMsgInternal` 经 i18n 翻译后再拼，不要直出 key）；`:384` → 303 回本页 + `?err=`（文案改成「主题设置已保存，但页面标记待重建失败，请稍后重试」——**说清"保存成功了"**，别让用户以为白干）。
+- 改法（**历史方案：`?err=` 形态已退役**，见 §8 开头标记）：`:366`/`:378` → 303 回本页 + `?err=`（`themePageMsgInternal` 经 i18n 翻译后再拼，不要直出 key）；`:384` → 303 回本页 + `?err=`（文案改成「主题设置已保存，但页面标记待重建失败，请稍后重试」——**说清"保存成功了"**，别让用户以为白干）。
 - 验证：`grep -n "response.ErrorWithMessage\|c.String" internal/module/project/inbound/http/theme_settings_admin_pages.go` 应为 0（除 `:387` 的正常 303）；`scripts/check-no-internal-error-leak.sh` 通过。
 - 风险：`:384` 的 `code` 来自 `h.refreshThemePages` 的返回值，改成 303 后要确认该函数的错误仍被记录到日志（原文只进日志，见 `AGENTS.md`「错误文案三件套」）。
 
@@ -571,6 +574,8 @@
 
 # 本域共性问题（可合并成一批的）
 
+> **本表与「建议修复批次」里的 `?err=` 处方已退役（2026-10，task-67 / task-69 收口）**：G7 / G8 与批次 A1 / A2 / B* 里写作「走 303 + `?err=`」「以 `customer_detail` 为对齐目标」的地方，按**当时审计证据**保留，但**不可再作为新方案** —— 结论不再经 query 回带。现行分流：页面 GET 装载失败 → **同页失败槽**（`LoadFailed` / `LoadError`）+ 真实状态码 + `Cache-Control: no-store`；写动作 → **JSON 写**（`data-write-api` / `data-write-mode` + `data-msg-*`）；仍有真实页面 POST 的少数入口 → 受控整页提示（`shell.RenderJump`）。判据见 [`rules/i18n.md`](rules/i18n.md) 第四节。
+
 | # | 形态 | 命中页 | 判据 | 建议 |
 |---|---|---|---|---|
 | G1 | **空态时 `<table>` 整张不渲染 → 表头消失** | orders `:92/:103`、returns `:272/:290`、coupons `:105/:122`、customers `:99/:112` | `02-L` P0-3 同族（已记 4 处，**本域新增 4 处**） | 四页同批修：`<table>` 移出 `{{if}}`，空态进 `colspan` 行。`02-L` §0.5 批 D 已有可复制的做法 |
@@ -609,6 +614,8 @@
 ---
 
 # 不要动的地方（已确认正确的样板）
+
+> **本表「模式 A 的正确处理」一行里的 `?err=` 形态已退役（2026-10，task-67 / task-69）**：该行作为「当时做对了什么」的记录保留；今天「做对」的形态是**同页失败槽 + 真实状态码 + `no-store`**（写动作走 JSON 写），判据见 [`rules/i18n.md`](rules/i18n.md) 第四节。其余各页「对齐」的目标也随之变成失败槽，而不是 `?err=`。
 
 | 样板 | 位置 | 为什么 |
 |---|---|---|

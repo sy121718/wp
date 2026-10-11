@@ -291,10 +291,14 @@ guaranteed-invalid 会让整条声明失效）；别名选择器用 `[data-theme
 | `mail_automation_run` | `?id` 缺失 | 302 + `?err=参数不合法` | 中 | `mail_automation_page.go:313-316` |
 | `mail_automation_canvas` | `?id` 缺失/不存在 | 302 + `?err=自动化流程不存在` | 中 | `mail_automation_canvas.go:33-37` |
 
-**统一修法**（出口已现成）：
-- **最差档 7 处** → `shell.PageErrorBadRequest(c, "<scene>", err)`（`internal/web/shell/errors.go:45` 已有，`inventory_page_handle.go:81` 等在用），或 303 回列表页带可读 `?err=`；
-- **静默档 1 处** → 改 302 + `?err=`（该页 `RolesPage` 已渲染 `Err` 字段，**零改动成本**）；
+**当时的统一修法**（历史方案；现行边界见下）：
+- **最差档 7 处** → `shell.PageErrorBadRequest(c, "<scene>", err)`（2026-09 当时落点为 `internal/web/shell/errors.go:45`；旧路径与 shell 侧符号现均已删除，继任者见下），或 303 回列表页带可读 `?err=`（**后半句已退役，见下**）；
+- **静默档 1 处** → 改 302 + `?err=`（该页 `RolesPage` 已渲染 `Err` 字段，**零改动成本**；**该改法已退役，见下**）；
 - **中档 3 处** → 补 `id == 0` 前置判定 + 按「缺少 / 不存在 / 无权限」三档给文案。
+
+> **本节的 `?err=` 修法已退役（2026-10，task-67 / task-69 收口）**：上面「统一修法」里的「303 回列表页带可读 `?err=`」（最差档）与「改 302 + `?err=`」（静默档）**是当时的方案，不可再作为新修法** —— 结论不再经 query 回带。现行分流（判据见 [`rules/i18n.md`](rules/i18n.md) 第四节）：页面 GET 装载失败 → **同页失败槽**（模板读 `LoadFailed` / `LoadError`）+ 真实状态码 + `Cache-Control: no-store`；写动作 → **JSON 写**（`data-write-api` / `data-write-mode` + `data-msg-*`，服务端按请求语言给成品、Jet 取 UI 词）；仍有真实页面 POST 的少数入口 → 受控整页提示（`shell.RenderJump`，结论在响应体）。
+> 2026-10-10 复核：旧 `shell.PageErrorBadRequest` 已迁为 `adminui.PageErrorBadRequest`（`internal/adminui/errors.go:46-50`，400 JSON）；生产调用在 `internal/module/mail/inbound/http/mail_page.go:913`、`internal/module/workbench/inbound/http/workbench_handle.go:112`、`internal/module/product/inbound/http/product_page.go:1960`。另一个出口 `adminui.PageErrorInternal`（`internal/adminui/errors.go:66-70`，500 JSON）用于 `internal/module/order/inbound/http/coupon_page.go:220` / `:233` 的片段失败。两者均不渲染页壳，页面 GET 的主口径仍是同页失败槽。
+> 本表与本节其余内容按**当时审计事实**保留（不改写当时结论），只标注现行边界。
 
 > **判据扩展**（应写入 `02-J` §A）：模式 A 除「`c.String` 直出」与「`c.Redirect(...?err=)` 回带内部错误」，
 > 还包括「**无前置 `id==0` 判定、靠下游查询失败兜底**」这一形态（mail 三页都是）。
@@ -344,7 +348,7 @@ guaranteed-invalid 会让整条声明失效）；别名选择器用 `[data-theme
 
 | 序 | 项 | 依据 | 成本 |
 |---|---|---|---|
-| 3 | **P0 #3** 5 处 `c.String` 直出改 `shell.PageError` | 脱离页壳的死胡同 + 违反项目硬约束 | 低（纯 handler 分支） |
+| 3 | **P0 #3** 历史 5 处 `c.String` 直出逐页复判：片段 500 JSON 用 `adminui.PageErrorInternal`，整页用同页失败槽（本项未作全量完成判定） | 脱离页壳的死胡同 + 违反项目硬约束 | 低（纯 handler 分支） |
 | 4 | **P1 #11** `product_detail_template` 死入口（缺参静默 302） | 与 #3 同族，一并收口 | 低 |
 | 5 | **P1 #6** `media` 套骨架 + 补批量选择 | 全站唯一未套骨架；无批量是实打实的效率损失 | 低 |
 | 6 | **P1 #5** 删死模板 `tpl-product-create` | 删一行 + 验证，纯收益 | 极低 |

@@ -7,6 +7,14 @@
 > 的一次讨论，核实后结论与直觉相反 —— 渲染的落点全仓一致，真正不统一的是**路由注册的落点**
 > 与**页面装配入口的形态**。本文给出事实基线、不可动的约束、逐文件工作清单与验收判据。
 >
+> **口径更新（2026-10-11，page / product 批）**：**路由只有一份** —— 不再拆
+> `<模块>_router.go`（接口）/ `<模块>_page_router.go`（页面）两个文件，接口面与页面面并进
+> `<模块>_router.go` 一个文件、按**业务域分节**（同一功能的接口与页面挨着写）。**按业务功能拆的是控制器**：
+> `page/inbound/http/` 12 个控制器文件 + 1 个 router、`product/inbound/http/` 16 个控制器文件 + 1 个
+> router（`product_page.go` 从 7728 行降到 79 行，只留处理器与文件索引）。
+> 存量仍按现状（约 20 个模块还是两个 router 文件），改到哪个模块并哪个，见
+> `internal/module/CLAUDE.md` §inbound/http。
+>
 > **与 `02-Z-admin-menu-code-and-page-authz.md` 是同一个目标的两半**：本文管「注册写在哪」（落点与命名），
 > 02-Z 管「一次注册写几样东西」（path / 菜单码 / 权限点 / handler 一次声明）。
 > 两者叠加，共同目标是**精简控制器与代码链路**（同 order 模块那一轮 HTTP 层 5088 → 3564 行）。
@@ -45,7 +53,7 @@
 | 5 | `media/.../media_page_handle.go` | 1 条注册 + `SetupMediaPages` | 搬进 `media_page_router.go` |
 | 6 | `navigation/.../navigation_page.go` | 12 条注册 + `SetupNavigationPages` | 搬进 `navigation_page_router.go` |
 | 7 | `plugin/.../plugin_page_handle.go` | 4 条注册 + `SetupPluginPages` | 搬进 `plugin_page_router.go` |
-| 8 | `product/inbound/http/product_page.go` | 2 条翻译页注册 + `SetupProductTranslationRoutes` | 拆 `product_router.go`（API）/ `product_page_router.go`（页面），翻译页注册一并移入 |
+| 8 | `product/inbound/http/product_page.go` | 2 条翻译页注册 + `SetupProductTranslationRoutes` | **已定稿口径：路由只有一份** —— 全并进 `product_router.go`（唯一声明点，按业务域分节：商品本体 / 属性 / 分类品牌 / 标签 / 捆绑 / 定价 + 页面面；翻译页注册一并移入），`product_page_router.go` 已删除；按功能拆的是**控制器**（10 个文件：`product_core.go` 商品本体 / `product_attributes.go` / `product_taxonomy.go` / `product_bundle.go` / `product_pricing.go` / `product_detail_template.go` / `product_translations.go` + 入口与两个共用原语文件） |
 | 9 | `project/inbound/http/project_handle.go` | 6 条 `/api/theme/*` 注册 + `SetupThemeRoutes` | `SetupThemeRoutes` 搬进 `project_router.go`；`SetupProjectPages` 拆到 `project_page_router.go` |
 | 10 | `user/.../user_customer_admin_handle.go` | 4 条 `/api/customer/*` 注册 + `SetupCustomerAdminRoutes` | 搬进 `user_router.go`；`SetupCustomerPages` 拆到 `user_page_router.go` |
 
@@ -131,7 +139,7 @@
 | 4 | `media_page_handle.go:19` `SetupMediaPages` | 同上 | 移到 `media_page_router.go` | 全模块只有 1 条页面路由 |
 | 5 | `plugin_page_handle.go:160` `SetupPluginPages` | 同上 | 移到 `plugin_page_router.go` | — |
 | 6 | `navigation_page_handle.go:661` `SetupNavigationPages` | 同上 | 移到 `navigation_page_router.go` | 迁移 447 引用 `line 33`，同样在 661 之前，不受影响 |
-| 7 | `product_translation_page.go:83` `SetupProductTranslationRoutes` | 同上 | 移进已存在的 `product_page_router.go` | 该函数已被 `product_page_router.go:200` 调用，只是搬定义 |
+| 7 | `product_translation_page.go:83` `SetupProductTranslationRoutes` | 同上 | 移进 `product_router.go` | 已落地：该函数在 `product_router.go` 里被 `SetupProductPages` 调用 |
 | 8 | `user_customer_admin_handle.go:51` `SetupCustomerAdminRoutes` | **API** setup 住在 handler 文件 | 移到 `user_router.go` | 与 `router_customer.go`（访客客户页）的分工需在文件头写明 |
 | 9 | `contenttemplate/inbound/http/contenttemplate_pages.go` | 50 行、纯注册、无 handler | 改名 `contenttemplate_page_router.go` | 纯改名，零逻辑 |
 | 10 | `content/inbound/http/article_router.go` | 103 行、纯注册 | **暂不改名** | 已被 `page-endpoint-authz-allow.txt` 按路径登记 **3 条**；改名必须同批改豁免清单，否则该门禁按「登记项不再命中」判失败 |

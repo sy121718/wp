@@ -45,6 +45,61 @@ Jet 的 `if` 要求 bool，而缺失的 map 键求值成 nil —— 类型不符
 一起变空）。`shell.Prepare` 无条件注入 `t`，所以漏 `t` 只可能出现在**不走 Prepare 的渲染路径**与
 **测试里手工构造的 data** —— 写这类测试/片段渲染时先把 `t` 与 `lang` 带上。
 
+### `t` 与 `tf` 必须成对（缺 `tf` 是 500，缺 `t` 是静默）
+
+`tf(key, fallback, args)` 是「取词 + 填 `%s` 占位符」那一个（签名
+`func(key, fallback string, args []string) string`），给带计数的整句用（「已保存 %s 条译文。」）。
+两个都经 `data` 注入 —— `adminui.Prepare`（整页）与 `adminui.PrepareFragment`（片段/整页但不走 layout）
+都注入，**语言是请求级的，所以不能挂 `set.AddGlobal`**（并发下 -race 报 DATA RACE）。
+
+两种缺法的后果**不一样，别记混**：
+
+| 缺 | 后果 |
+|---|---|
+| 模板调了 `tf(...)` 而 data 里没有 `tf` | `identifier "tf" not available in current … or parent scope` → 渲染中断 → **500** |
+| 模板用 `{{tr := .["t"]}}` 而 data 里没有 `t` | **静默空串**（见上表） |
+
+实测（2026-10，本仓）：`admin/page/pages.html` 只声明了 `{{tr := .["t"]}}`，新加的提示槽却调了
+`tf(...)` —— 于是「列表取数失败」那条降级提示一分页就 500，而这条路径平时不走，
+单元测试喂的数据恰好都不触发它。**加 `{{tf := .["tf"]}}` 与调用必须在同一次改动里**。
+
+### 槽位收**事实**，不收成品串
+
+取词解在渲染期：数据槽给 `adminui.Msg`（`{Key, Fallback, Args}`，模板 `tr` / `tf` 取词），
+**不要在 Go 里翻好再塞进程串**。成品串把那一句锁死在一种语言，而它在英文界面上仍然是中文
+（不报错、门禁也不红）。槽位判空统一写 `{{if x.Key != "" || x.Fallback != ""}}` ——
+**不要写 `{{if x}}`**：结构体恒为真，空事实会渲染成一个空徽标。
+
+同一处还有两件事一起改：
+- 模板里新出现的取词（不论 `tr` 还是 `tf`）要同时声明对应变量；
+- 直接渲染模板的测试（`internal/templates`、`public/test/**/feature`）喂的数据要跟着换形状 ——
+  给空串（旧形态）会在 `.Key` 上炸，给缺键会被 `isset` 守卫吞掉（那时断言会变成「提示没出现」）。
+
+### 行数据是 `gin.H` 时，缺键当**参数**用会中断渲染
+
+同一条「缺键」在不同位置后果不同（2026-10，product 批实测）：
+
+| 用法 | 缺键时 |
+|---|---|
+| `{{x.Foo}}` 直接输出 | **静默空串**（不报错） |
+| `{{tr(x.FooKey, x.FooFallback)}}` 当**函数实参** | `call expression: argument for position 0 in func(string, string) string is not a valid value` → 渲染中断 → **500** |
+
+所以「行数据只有 `Label`、模板改读 `LabelKey` 之后忘了改夹具」这类错会在**渲染期**炸而不是编译期，
+症状是整块片段 500（htmx 对 5xx 不 swap，用户点了没反应）。两类做法：
+
+- 生产路径：把键**给齐**（Go 侧装配恒给 `XxxKey` + `XxxFallback`）——这是正解，模板不写守卫；
+- 过渡/兼容老形状：模板写 `{{if isset(x.LabelKey)}}{{tr(x.LabelKey, x.LabelFallback)}}{{else}}{{x.Label}}{{end}}`
+  （`isset` 对 map 缺键返回 false；结构体字段恒存在，**不需要**这层守卫）。
+  · **`isset` 问的是「键在不在」，不是「值空不空」** —— 数据行（分类名 / 品牌名 / 商品名这类**没有词条**
+  的行）带上 `"LabelKey": ""` 就等于给定了这个键，`isset` 为真 → 走取词分支 → `tr("", "")` →
+  **空白 option**：200、结构完整、日志干净。实测 `TestTaxonomyAdminPages`（`public/test/product/feature`）
+  报「商品编辑页缺少 \"山野\"」就是这个原因。判据：**数据行整键省略，不给空串**
+  （`productPickOptions` / `bundleSourceProductOptions` + `internal/module/product/inbound/http/product_dropdown_option_shape_test.go`，
+  该测试对「数据行带上键」与「空项没给非空 Key」两个方向都判失败）。
+
+判据在测试侧：`internal/templates` 的夹具按**新形状**手写（`internal/templates/product_attribute_form_fail_render_test.go`
+是样板：`SubmitErr` 给 `{Key, Fallback, Args}`、片段 data 带 `t` 与 `tf`）。
+
 ## 错误分支也必须给齐模板必需键
 
 **取数失败的分支不是「少渲染一块」，而是会把整页渲染打断**（后果见上节）。实测：mail 三个页面的错误分支
@@ -316,8 +371,16 @@ Jet v6 支持**三元表达式与算术**，所以「折叠卡 summary 带计数
   （见 `AGENTS.md` §「数据库」的 122/104 教训）
 - **struct 作渲染 data 的模板不能写 `{{ .["t"](…) }}`**：Jet 的 chain 索引在 struct 上会运行时报错
   `can't use t as field name in struct type` —— 与上文 CSRF 的 fragment 特例**同源**，但适用范围更大：
-  **任何**以 struct 为渲染 data 的模板都如此（实测 `admin/product/product_attribute_rows.html` 收到的是
-  `attrRowsCtx{GroupID, Rows}`）。做法：给 struct 加取词函数字段（`Tr func(key, fallback string) string`），
-  模板里 `{{tr := .Tr}}` 声明一次后复用。**所有构造点都要填**：先 `rg 'attrRowsCtx\{'` 找全（实测 5 处），
-  漏一个就是模板里 nil 函数调用 → 整页 500，而它的表现是通用错误页，不像「页面截断」那么容易发现；
-  测试里的模拟数据同样要加这个字段。
+  **任何**以 struct 为渲染 data 的模板都如此（实测 `admin/product/product_attribute_rows.html` 曾收到
+  `attrRowsCtx{GroupID, Rows}`）。**做法：把片段 data 改成 `gin.H` 并走 `adminui.PrepareFragment`**
+  （它注入 `t` / `tf` / `lang`），取词因此留在渲染期，控制器也不需要任何取词函数 ——
+  `product/inbound/http/product_attributes.go` 的 `attrRowsCtxData` 是样板：
+  ```go
+  func attrRowsCtxData(c *gin.Context, groupID string, rows []attrValueFormRow) gin.H {
+      return adminui.PrepareFragment(c, gin.H{"GroupID": groupID, "Rows": rows})
+  }
+  ```
+  旧写法（给 struct 挂 `Tr func(key, fallback string) string` 字段、由控制器填 `shell.TranslateFor(c)`）
+  是**控制器取词**，已按 `internal/module/CLAUDE.md` §inbound/http 清掉；**不要**再给 struct 加这类字段。
+  注意 `gin.H` 缺键的后果：当**函数实参**用会 500（见上文「行数据是 `gin.H` 时」那节），
+  所以改形状时同批改 `internal/templates/**` 的夹具。
