@@ -14,6 +14,16 @@
 
 ## 1. 审计范围（页面 / 路由 / handler / 模板）
 
+> **handler 列记的是审计当时的文件名**（`product_page_handle.go` / `product_new_page.go` /
+> `product_edit_page.go` / `product_taxonomy_page.go` …）。那之后控制器按业务功能合并成一族文件
+> （`product_core.go` / `product_attributes.go` / `product_taxonomy.go` / `product_bundle.go` /
+> `product_pricing.go` / `product_detail_template.go` / `product_translations.go` / `product_page_util.go`），
+> 旧文件名一律已不存在 —— 按图索骥请以 `internal/module/product/inbound/http/` 的现役文件为准。
+> **本文其余章节给的行号同理，都是审计当时的位置**，不随重构同步。
+>
+> 一处名字撞车要留意：`product_edit_page.go` 现在指的是 **service** 的新文件
+> （`internal/module/product/service/product_edit_page.go`，编辑页读模型），与下表里那个 handler 引用无关。
+
 | # | 页面 | 路由（GET） | handler | 模板 |
 |---|---|---|---|---|
 | 1 | 商品列表 | `/admin/products` | `product_page_handle.go:86` | `products.html` |
