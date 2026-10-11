@@ -6,6 +6,11 @@
 // 渲染一张卡片不需要其中任何一条。
 //
 // 返回的是本模块的渲染视图（dto 的重导出），不是对方的 dto。
+//
+// 注入链同样是两跳：装配 `SetDetailTemplateDeps(templatePort)` →
+// `inbound/http/product_detail_template.go` 转交 `service.SetEntityTemplatePort`
+// → 读模型字段。装配登记见 `internal/routers/wiring.go` 的
+// `portProductPageTemplates`。
 package productcontract
 
 import (

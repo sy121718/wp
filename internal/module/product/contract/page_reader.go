@@ -8,6 +8,11 @@
 //
 // 与 VariantAvailabilityPort 一样，端口只声明**读**方法：控制器拿到它也只能读，
 // 写动作仍然只走各自的用例方法。
+//
+// 实现方是本模块 service（编译期断言 `var _ ProductPageReader = (*Service)(nil)`
+// 在 `service/product_page.go`）；消费方是 `inbound/http/product_core.go` 的
+// `ProductNewPage`，那里只能是**运行期**断言 —— 控制器持有的是 `ProductService`，
+// 读模型不在它的能力面上（放上去等于把页面的形状变成跨模块契约的一部分，见上）。
 package productcontract
 
 import (

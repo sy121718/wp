@@ -4,6 +4,11 @@
 // 实现方是库存模块 —— 与 VariantAvailabilityPort / VariantStockPort 同一方向
 // （本模块定义端口、对方实现、装配注入）。
 //
+// 注入链是**两跳**，改任一跳都会让「归属仓」静默消失（页面照常 200，无日志）：
+// 装配 `SetInventoryDeps(warehousePort)` → `inbound/http/product_page.go` 转交
+// `service.SetWarehouseOptionsPort` → 读模型字段。装配登记见
+// `internal/routers/wiring.go` 的 `portProductPageWarehouses`。
+//
 // 为什么是**收窄端口**而不是直接把 inventorycontract.InventoryService 交给读模型：
 // 那个接口上还有建仓 / 改仓 / 删仓 / 调库存这类写能力。渲染一个「商品新建页」不需要
 // 其中任何一条，而接口一旦交给页面层，「顺手调一次库存」就在某次无关改动里变得可能。
