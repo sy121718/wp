@@ -81,6 +81,10 @@ type editorStub struct {
 	editView *productdto.ProductEditPageView
 	editErr  error
 
+	// 「详情页模板」整页同样改走读模型（2026-10-11，第九个方法）。
+	detailTemplatePageView *productdto.ProductDetailTemplatePageView
+	detailTemplatePageErr  error
+
 	calls []string
 }
 
@@ -129,6 +133,31 @@ func (s *editorStub) ProductCreateForm(context.Context, *productdto.ProductCreat
 func (s *editorStub) ProductPricingPage(context.Context, *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageView, error) {
 	s.record("ProductPricingPage")
 	return productPricingPageViewStub(nil), nil
+}
+
+func (s *editorStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageView, error) {
+	s.record("ProductDetailTemplatePage")
+	view := s.detailTemplatePageView
+	if view == nil {
+		view = detailTemplatePageViewStub(func(v *productdto.ProductDetailTemplatePageView) {
+			if req != nil {
+				v.SelectedProject = req.ProjectID
+				// 菜单入口不带 product：读模型据此置 NoProduct，控制器走引导出口。
+				if req.ProductID == "" {
+					v.NoProduct = true
+					v.Ready = false
+				} else {
+					v.Product = productdto.DetailTemplateProductView{ID: req.ProductID, Name: "商品一", Slug: "prod-1"}
+				}
+			}
+			if s.detailTemplatePageErr != nil {
+				v.HTTPStatus = http.StatusInternalServerError
+				v.LoadFailed = true
+				v.Ready = false
+			}
+		})
+	}
+	return view, s.detailTemplatePageErr
 }
 
 func (s *editorStub) ProductAttributesPage(context.Context, *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageView, error) {
@@ -225,17 +254,20 @@ func (s *editorProjectsStub) Detail(context.Context, *projectdto.DetailReq) (*pr
 	return nil, nil
 }
 
-// editorTemplatesStub 模板清单是详情页模板页的主数据（读不到 = 装载失败）。
+// editorTemplatesStub 详情页模板页的**装配在位**标记。
+//
+// 这一屏的模板清单取数已下沉到 service 的读模型（这里不再直接 List），所以本桩不再提供
+// listErr 之类的失败注入；它只负责让 h.templates 非 nil（否则页面走「未装配」档），
+// 并记录调用用于「工程清单失败时模板侧一条都不发」那条反面断言。
 type editorTemplatesStub struct {
 	contenttemplatecontract.ContentTemplateService
-	listErr error
-	rows    []*contenttemplatecontract.TemplateResp
-	calls   []string
+	rows  []*contenttemplatecontract.TemplateResp
+	calls []string
 }
 
 func (s *editorTemplatesStub) List(context.Context, *contenttemplatecontract.ListReq) ([]*contenttemplatecontract.TemplateResp, error) {
 	s.calls = append(s.calls, "List")
-	return s.rows, s.listErr
+	return s.rows, nil
 }
 
 func (s *editorTemplatesStub) ResolveTemplate(context.Context, string) (*contenttemplatecontract.ResolvedTemplate, error) {
@@ -294,12 +326,16 @@ var editorPages = []editorPage{
 		skipProjectCases: true,
 	},
 	{
-		name:          "详情页模板",
-		path:          "/admin/products/template?project=p1&product=prod1",
-		marker:        "商品详情页模板",
-		successCalls:  []string{"Get"},
-		breakLoad:     func(s *editorStub) { s.getErr = errors.New(editorDriverText) },
-		loadFailCalls: []string{"Get"},
+		name:   "详情页模板",
+		path:   "/admin/products/template?project=p1&product=prod1",
+		marker: "商品详情页模板",
+		// 取数编排（工程清单 → 商品三档 → 模板清单 → 默认 / 绑定标注）已整体进 service 的
+		// 读模型：控制器只调一次 ProductDetailTemplatePage，失败之后不会再发任何派生查询。
+		successCalls:  []string{"ProductDetailTemplatePage"},
+		breakLoad:     func(s *editorStub) { s.detailTemplatePageErr = errors.New(editorDriverText) },
+		loadFailCalls: []string{"ProductDetailTemplatePage"},
+		// 工程清单 / 未知工程两条已随取数编排归 service（同编辑页）。
+		skipProjectCases: true,
 	},
 }
 
@@ -556,14 +592,17 @@ func TestEditProductErrorGrades(t *testing.T) {
 	}
 }
 
-// TestDetailTemplateTemplateListFailure 模板清单（这一页的主数据）读不到：500 + 零派生查询。
+// TestDetailTemplateTemplateListFailure 读模型报装载失败（主数据模板清单读不到）：500 + 完整页壳。
+//
+// 「模板清单读不到之后一条派生取数都不发」这条判据已经下沉到 service
+// （service/product_detail_template_page.go 的文件头第 1 条），在
+// service/product_detail_template_page_test.go 里对着端口桩断言 —— 控制器这一层看不到派生调用。
 func TestDetailTemplateTemplateListFailure(t *testing.T) {
-	h, _, tpls, insts := editorEnv()
-	tpls.listErr = errors.New(editorDriverText)
+	h, stub, _, _ := editorEnv()
+	stub.detailTemplatePageErr = errors.New(editorDriverText)
 	rec := editorRequest(t, h, "/admin/products/template?project=p1&product=prod1")
 	assertProductPageFailure(t, "模板清单失败", rec, http.StatusInternalServerError, "商品详情页模板")
-	assertCalls(t, "模板清单失败 模板侧", tpls.calls, []string{"List"})
-	assertCalls(t, "模板清单失败 实例侧", insts.calls, nil)
+	assertCalls(t, "模板清单失败", stub.calls, []string{"ProductDetailTemplatePage"})
 }
 
 // TestDetailTemplateDepsMissingIsNotFailure 未装配模板能力是「装配缺陷的可见提示」：200 的就地说明，
@@ -600,9 +639,9 @@ func TestDetailTemplateNoProductIsGuidance(t *testing.T) {
 	if !strings.Contains(body, "请先从商品列表选择一件商品") {
 		t.Fatalf("菜单入口应给出「去哪选商品」的引导，body=%s", headOf(body))
 	}
-	if len(stub.calls) != 0 {
-		t.Fatalf("没选商品时不该发任何商品取数，实际 %v", stub.calls)
-	}
+	// 读模型**会被调一次**（「没给 product」这个结论由它给：它是取数编排的一部分，
+	// 顺带还判了工程存在性）。不该发生的是它之下的派生取数 —— 那条判据在 service。
+	assertCalls(t, "菜单入口", stub.calls, []string{"ProductDetailTemplatePage"})
 }
 
 // TestBundleSaveFailureKeepsFragmentBoundary 写失败原地重渲染的**响应边界**：

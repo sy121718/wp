@@ -753,6 +753,7 @@ func (a *assembly) mountAdminPages() {
 	// 于是漏接时启动自检能报出来，而不是等运营发现「新建页没有仓库下拉」。
 	marks.mark(portProductPageWarehouses)
 	marks.mark(portProductPageTemplates)
+	marks.mark(portProductPageDetailTemplate)
 	projecthttp.SetupProjectPages(a.adminPages, a.workbenchPages, a.projectService, a.pageService, a.blockSvc, a.sysConfigDict)
 
 	// 编辑器平台（workbench 模块）：仪表盘首页 + /workbench/* 全部路由。

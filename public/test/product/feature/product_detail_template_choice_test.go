@@ -13,6 +13,7 @@ package feature
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -31,6 +32,7 @@ import (
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
+	productcontract "go_wp/internal/module/product/contract"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
@@ -582,4 +584,126 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	if !strings.Contains(html, "极简版式") || strings.Contains(html, "活动版式") {
 		t.Fatalf("切换后产物应换成第二套模板: %s", html)
 	}
+}
+
+// detailTemplateFailingPort 一个「清单读不到」的详情模板端口桩。
+//
+// 用来钉住两件事：主数据（模板清单）读不到 = 整页装载失败；且失败之后
+// **默认模板与绑定实例两条派生查询都不发**（它们是清单派生的事实，清单没到之前
+// 发出去只会在主错误之外再叠两层，排障日志从一段变三段而页面说的是同一句话）。
+type detailTemplateFailingPort struct {
+	candidates int
+	derived    int
+}
+
+func (p *detailTemplateFailingPort) DetailTemplateCandidates(context.Context, string) ([]productcontract.DetailTemplateCandidateView, error) {
+	p.candidates++
+	return nil, errors.New("template list unavailable")
+}
+
+func (p *detailTemplateFailingPort) DefaultDetailTemplate(context.Context, string) (string, error) {
+	p.derived++
+	return "", nil
+}
+
+func (p *detailTemplateFailingPort) BoundDetailTemplate(context.Context, string, string) productcontract.BoundTemplateView {
+	p.derived++
+	return productcontract.BoundTemplateView{}
+}
+
+// TestProductDetailTemplatePageTemplateListFailureStopsDerivedQueries 主数据读不到：
+// 500 + no-store + 完整页壳，且派生查询一条都不发。
+//
+// 反面判据：把「清单失败」写成静默空清单，页面会显示成「这个商品还没有任何模板」——
+// 用户以为要去新建一套，而真实原因是没读到；这条判据同时挡住「失败后继续查默认模板」。
+func TestProductDetailTemplatePageTemplateListFailureStopsDerivedQueries(t *testing.T) {
+	engine, f := newDetailTemplatePageEngine(t)
+	if engine == nil {
+		return
+	}
+	productID := f.createProduct(t, "夏季衬衫", "summer-shirt", "纯棉", 99, 99)
+	port := &detailTemplateFailingPort{}
+	f.products.SetDetailTemplatePort(port)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		"/admin/products/template?project="+f.projectID+"&product="+productID, nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("模板清单读不到应 500，实际 %d，body=%s", rec.Code, headOfBody(rec.Body.String()))
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("失败页必须 no-store（重试要真的回到服务端），实际 %q", got)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "</html>") {
+		t.Fatal("失败页也必须是完整页壳（不是裸错误文本）")
+	}
+	if !strings.Contains(body, "这一页的数据没能读出来") {
+		t.Fatalf("失败页应渲染失败槽，body=%s", headOfBody(body))
+	}
+	if strings.Contains(body, "template list unavailable") {
+		t.Fatal("失败页不得直出内部错误原文")
+	}
+	if port.candidates != 1 {
+		t.Fatalf("模板清单应被读一次，实际 %d", port.candidates)
+	}
+	if port.derived != 0 {
+		t.Fatalf("清单失败后不该再发派生取数（默认模板 / 绑定实例），实际 %d 次", port.derived)
+	}
+}
+
+// TestProductDetailTemplatePageAnnotationFailuresStillRenderPage 标注类失败不参与失败判定：
+// 默认模板解析不到、绑定实例读不到时页面照常 200 可用。
+//
+// 这两条是「顺带知道一下」的事实。把它们计入失败会让发布链路一抖整页就红，
+// 而页面此时正需要有人去点「首次发布」—— 挡住的正是修复它的那一步。
+func TestProductDetailTemplatePageAnnotationFailuresStillRenderPage(t *testing.T) {
+	engine, f := newDetailTemplatePageEngine(t)
+	if engine == nil {
+		return
+	}
+	productID := f.createProduct(t, "夏季衬衫", "summer-shirt", "纯棉", 99, 99)
+	f.products.SetDetailTemplatePort(&detailTemplateEmptyPort{})
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
+		"/admin/products/template?project="+f.projectID+"&product="+productID, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("标注类失败时页面应 200，实际 %d，body=%s", rec.Code, headOfBody(rec.Body.String()))
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "夏季衬衫") {
+		t.Fatalf("页面主体（商品）仍应渲染，body=%s", headOfBody(body))
+	}
+	if strings.Contains(body, "这一页的数据没能读出来") {
+		t.Fatal("标注类失败不该渲染失败槽")
+	}
+	// 没有实例 = 还没发布过：页面要据此提示「还没发布」，而不是留空让人猜。
+	if !strings.Contains(body, "未发布") {
+		t.Fatalf("没有实例时应提示未发布，body=%s", headOfBody(body))
+	}
+}
+
+// detailTemplateEmptyPort 「读到了、什么都没有」的端口（与「读不到」区分：
+// 前者是空清单 + 没有实例，页面照常可用）。
+type detailTemplateEmptyPort struct{}
+
+func (p *detailTemplateEmptyPort) DetailTemplateCandidates(context.Context, string) ([]productcontract.DetailTemplateCandidateView, error) {
+	return []productcontract.DetailTemplateCandidateView{}, nil
+}
+
+func (p *detailTemplateEmptyPort) DefaultDetailTemplate(context.Context, string) (string, error) {
+	return "", nil
+}
+
+func (p *detailTemplateEmptyPort) BoundDetailTemplate(context.Context, string, string) productcontract.BoundTemplateView {
+	return productcontract.BoundTemplateView{}
+}
+
+// headOfBody 失败诊断里的 body 前缀（失败时整页可能很长，只留开头足够定位）。
+func headOfBody(s string) string {
+	if len(s) > 600 {
+		return s[:600]
+	}
+	return s
 }

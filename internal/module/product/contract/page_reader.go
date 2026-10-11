@@ -11,7 +11,7 @@
 //
 // 实现方是本模块 service（编译期断言 `var _ ProductPageReader = (*Service)(nil)`
 // 在 `service/product_page.go`）；消费方是 `inbound/http/` 的整页控制器
-// （新建 / 列表 / 详情 / 编辑 / 建表单 / 定价工具 / 属性库），那里只能是**运行期**断言 ——
+// （新建 / 列表 / 详情 / 编辑 / 建表单 / 定价工具 / 属性库 / 详情页模板），那里只能是**运行期**断言 ——
 // 控制器持有的是 `ProductService`，读模型不在它的能力面上（放上去等于把页面的形状
 // 变成跨模块契约的一部分，见上）。
 //
@@ -97,4 +97,17 @@ type ProductPageReader interface {
 	// 行装配不在这里：每行的两个抽屉表单要 csrf 与取词函数（gin.Context 的产物），
 	// 所以只交原料（AttributeDetails），成品行由控制器装（同 ProductListPage）。
 	ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (res *productdto.ProductAttributesPageView, err error)
+
+	// ProductDetailTemplatePage 「详情页模板」整页的读模型：工程清单 → 工程存在性校验 →
+	// 商品详情（三档）→ 模板清单（主数据）→ 默认模板与绑定实例的标注，并给出这一屏的档位。
+	//
+	// 契约同上，另加三条这一屏特有的：
+	//   · 模板清单读不到 = 整页装载失败，且**一条派生取数都不发**（默认模板 / 绑定实例 /
+	//     发布路径都从清单派生，清单没到之前发出去只会在主错误之外再叠一层错误）；
+	//   · 默认模板解析失败、绑定实例读不到**都不算失败**（前者按「没有默认」、后者按
+	//     「还没有实例」渲染）—— 凡是「顺带知道一下」的事实都不参与失败判定，
+	//     否则发布链路一抖整页就红，而页面此时正需要让人点「首次发布」；
+	//   · 没给 product 参数时置 NoProduct 并**停止取数**（菜单入口形态，控制器据此走
+	//     引导出口；它不是 400 —— 本页本来就有「还没选商品」的入口）。
+	ProductDetailTemplatePage(ctx context.Context, req *productdto.ProductDetailTemplatePageReq) (res *productdto.ProductDetailTemplatePageView, err error)
 }

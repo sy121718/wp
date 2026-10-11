@@ -82,6 +82,7 @@ const (
 	// 「Setup 调用发生过」，与 portProductContentStore 同一手法。
 	portProductPageWarehouses      = "product.SetWarehouseOptionsPort"
 	portProductPageTemplates       = "product.SetEntityTemplatePort"
+	portProductPageDetailTemplate  = "product.SetDetailTemplatePort"
 	portPluginAdminAuthz           = "plugin.SetAdminAuthz"
 	portProjectLocaleRetire        = "project.SetLocaleRetirePort"
 	portPageExternalArtifactOwners = "page.SetExternalArtifactOwners"
@@ -209,6 +210,8 @@ var wiringManifest = []wiringEntry{
 		"商品新建页 / 列表页没有「归属仓」与「从仓库选」两块（页面照常 200，只是少这两块）——与接线前逐字一致"},
 	{portProductPageTemplates, "contenttemplate（经 product.SetDetailTemplateDeps 转交）", "product 页面读模型（新建页 / 列表页）", wiringOptionalDegraded,
 		"商品新建页的模板候选为空并给「模板能力未装配」提示（同上：与接线前逐字一致）"},
+	{portProductPageDetailTemplate, "contenttemplate + presentation（经 product.SetDetailTemplateDeps 转交）", "product 页面读模型（详情页模板页）", wiringOptionalDegraded,
+		"详情页模板页的模板清单读不到 = 整页 500（它是那一屏的主数据），不再退化成空清单 —— 这一档与接线前逐字一致（接线前同样把 List 失败算装载失败）"},
 	{portContentContentStore, "content（自装配，db）", "content / 构建期", wiringOptionalDegraded,
 		"内容可翻译字段逐字节回退原文（同上）"},
 	{portPluginAdminAuthz, "admin", "plugin", wiringOptionalDegraded,

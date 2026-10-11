@@ -118,6 +118,10 @@ type productPageReaderStub struct {
 	attributesPageView *productdto.ProductAttributesPageView
 	attributesPageErr  error
 	attributesPageReqs []*productdto.ProductAttributesPageReq
+
+	detailTemplatePageView *productdto.ProductDetailTemplatePageView
+	detailTemplatePageErr  error
+	detailTemplatePageReqs []*productdto.ProductDetailTemplatePageReq
 }
 
 func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
@@ -153,6 +157,34 @@ func (s *productPageReaderStub) ProductPricingPage(_ context.Context, req *produ
 func (s *productPageReaderStub) ProductAttributesPage(_ context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageView, error) {
 	s.attributesPageReqs = append(s.attributesPageReqs, req)
 	return s.attributesPageView, s.attributesPageErr
+}
+
+func (s *productPageReaderStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageView, error) {
+	s.detailTemplatePageReqs = append(s.detailTemplatePageReqs, req)
+	return s.detailTemplatePageView, s.detailTemplatePageErr
+}
+
+// detailTemplatePageViewStub 「详情页模板」整页的成功档视图（键给齐，与 service 同型）。
+func detailTemplatePageViewStub(mutate func(*productdto.ProductDetailTemplatePageView)) *productdto.ProductDetailTemplatePageView {
+	v := &productdto.ProductDetailTemplatePageView{
+		Title:             productenums.ProductDetailTemplateTitle,
+		Menu:              "products",
+		Projects:          []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
+		SelectedProject:   "p1",
+		Ready:             true,
+		Product:           productdto.DetailTemplateProductView{ID: "prod-1", Name: "商品一", Slug: "p1"},
+		Templates:         []productdto.DetailTemplateOptionView{{ID: "tpl-1", Name: "默认详情模板", DraftVersion: 3, IsBound: true, IsDefault: true}},
+		TemplateCount:     1,
+		BoundTemplateID:   "tpl-1",
+		DefaultTemplateID: "tpl-1",
+		InstanceExists:    true,
+		InstanceStatus:    "published",
+		InstanceURL:       "/site/p1/p1",
+	}
+	if mutate != nil {
+		mutate(v)
+	}
+	return v
 }
 
 // ListRatings 行组装（productRow）会读一次评分（issue #33）：嵌入的 ProductService 是 nil 时

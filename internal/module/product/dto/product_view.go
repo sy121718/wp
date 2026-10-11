@@ -728,3 +728,77 @@ func (v ProductPricingPageView) PageStatus() int { return v.HTTPStatus }
 func (v ProductPricingPageView) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
+
+// ProductDetailTemplatePageReq 「详情页模板」整页的取数入参（两个查询串参数）。
+type ProductDetailTemplatePageReq struct {
+	// ProjectID 工程 id；空串 = 取工程清单的第一个。
+	ProjectID string
+	// ProductID 商品 id；空串 = 还没选商品（菜单入口），控制器据此走引导出口。
+	ProductID string
+}
+
+// DetailTemplateProductView 这一屏展示的商品（只四个字段，不给整份商品）。
+type DetailTemplateProductView struct {
+	ID   string
+	Name string
+	Slug string
+	// URLPath 发布路径的**表单初值**（按选中工程的 URL 规则派生，用户可改）。
+	// 不是已发布路径 —— 后者在 InstanceURL 里。
+	URLPath string
+}
+
+// DetailTemplateOptionView 模板候选的渲染行。
+//
+// IsBound / IsDefault 由**本屏**算出（实例实际绑的那一套 / 当前解析到的默认那一套），
+// 不复用内容模板模块的 IsDefault：那是 (工程, 类型) 作用域的生效标记，
+// 与「这个商品的实例绑在谁身上」不是一回事，两者混用会让「已绑定」被显示成「类型默认」。
+type DetailTemplateOptionView struct {
+	ID           string
+	Name         string
+	DraftVersion int64
+	UpdatedAt    string
+	IsBound      bool
+	IsDefault    bool
+}
+
+// ProductDetailTemplatePageView 「详情页模板」整页的渲染视图（本模块第八个读模型）。
+//
+// Ready 与 LoadFailed 是两件事：Ready = 「能不能给这一屏干活」（缺模板能力时为假，
+// 走页内提示而不是失败页），LoadFailed = 「取数没读到」（失败槽）。两者混成一个布尔时
+// 「未装配」会被显示成「数据读不出来」，而前者要人去查装配、后者重试就好。
+type ProductDetailTemplatePageView struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	Projects        []projectdto.ProjectResp
+	SelectedProject string
+
+	// Ready 主数据齐了（含 Product 与 Templates）；为假时控制器走「未装配」或
+	// 「缺商品」两个出口，不渲染模板清单。
+	Ready bool
+
+	Product           DetailTemplateProductView
+	Templates         []DetailTemplateOptionView
+	TemplateCount     int
+	BoundTemplateID   string
+	DefaultTemplateID string
+	InstanceExists    bool
+	InstanceStatus    string
+	InstanceURL       string
+
+	// NoProduct 没给 product 参数：控制器据此走引导出口（整页提示回列表）而不是渲染本页。
+	// 它不是参数非法 —— 本页本来就有「还没选商品」的入口形态。
+	NoProduct bool
+
+	LoadFailed bool
+	LoadError  string
+	HTTPStatus int
+}
+
+// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+func (v ProductDetailTemplatePageView) PageStatus() int { return v.HTTPStatus }
+
+// PageNoStore 失败页不该被缓存：重试必须真的回到服务端。
+func (v ProductDetailTemplatePageView) PageNoStore() bool {
+	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
+}

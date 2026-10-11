@@ -84,6 +84,20 @@ type Service struct {
 	// 不影响商品的任何业务行为。
 	pageWarehouses productcontract.WarehouseOptionsPort
 	pageTemplates  productcontract.EntityTemplatePort
+	// pageDetailTemplates 是「详情页模板」整页的主数据端口（候选清单 / 默认模板 / 绑定实例）。
+	//
+	// 与 pageTemplates 的区别是**宽度与失败语义**：那条只服务卡片区（id + 名字，读不到降级），
+	// 这条服务整页（要版本号与更新时间，读不到是装载失败）。合成一条会让卡片区把整页拖红。
+	pageDetailTemplates productcontract.DetailTemplatePort
+}
+
+// SetDetailTemplatePort 注入「详情页模板」整页的主数据端口（装配期调用）。
+//
+// 由 inbound/http 的 SetDetailTemplateDeps 转交（装配段只调那一个 setter）：
+// 与 SetWarehouseOptionsPort / SetEntityTemplatePort 同一链路，理由见 product_page.go
+// 的 productPagePortWiring 注释 —— 装配段直接再写一行会让只调 setter 的路径静默漏接。
+func (s *Service) SetDetailTemplatePort(port productcontract.DetailTemplatePort) {
+	s.pageDetailTemplates = port
 }
 
 // SetInventory 注入库存真源只读契约；漏接会静默跳过投影和删除守卫，装配期必须自检。

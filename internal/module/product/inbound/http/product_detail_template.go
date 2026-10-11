@@ -17,11 +17,14 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	ctoutbound "go_wp/internal/module/product/outbound/contenttemplate"
+	dtoutbound "go_wp/internal/module/product/outbound/detailtemplate"
+	projectdto "go_wp/internal/module/project/dto"
 	seoscore "go_wp/internal/seo"
 	"go_wp/internal/seo/scoring"
 	"go_wp/internal/shell"
 	"go_wp/internal/siteurl"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"net/http"
 	"regexp"
@@ -211,141 +214,91 @@ func (h *productPageHandle) SetDetailTemplateDeps(templates contenttemplatecontr
 			wiring.SetEntityTemplatePort(port)
 		}
 	}
+	// 「详情页模板」整页的主数据端口走同一次注入：它要模板清单的**四个**字段（版本号、
+	// 更新时间）与绑定实例，与上面的卡片端口宽度不同、失败语义也不同，所以是另一条
+	// （两条合成一条会让卡片区的降级把整页拖成 500）。
+	if wiring, ok := h.products.(productPagePortWiring); ok {
+		wiring.SetDetailTemplatePort(dtoutbound.New(templates, instances))
+	}
 }
 
+// productDetailTemplatePageTemplate 这一屏的模板（整页 GET，成功 / 失败 / 未装配同模板同页壳）。
+const productDetailTemplatePageTemplate = "admin/product/product_detail_template.html"
+
 // ProductDetailTemplatePage GET /admin/products/template：某商品的详情页模板选择与预览页。
+//
+// 取数失败**不在这里出口**：整页 GET 只有末尾那一次渲染（成功 / 失败同模板同页壳，
+// 差别只有状态码 / no-store / 失败槽）—— 契约见 docs/rules/template-boundary.md §整页 GET 的失败出口。
+//
+// 这一屏的两个出口判断留在控制器，因为它们都是**HTTP 出口**而不是取数结论：
+//
+//	· 依赖未装配 → 200 的就地说明（不是装载失败：区别是「没读到」与「这条能力没接上」）；
+//	· 还没选商品 → 整页引导提示（要指名去哪选，见上面 productDetailTemplateNoProductPromptMsg）。
 func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
-	ctx := c.Request.Context()
-	// 取数失败**不在这里出口**：整页 GET 只有末尾那一次 c.HTML（成功 / 失败同模板同页壳，
-	// 差别只有状态码 / no-store / 失败槽）—— 契约见
-	// docs/rules/template-boundary.md §整页 GET 的失败出口。
-	httpStatus := http.StatusOK
-	var loadErr error
-	fail := func(err error) {
-		if loadErr == nil {
-			loadErr = err
-			httpStatus = http.StatusInternalServerError
-		}
-	}
-	projects, err := h.projects.List(ctx)
-	if err != nil {
-		fail(err)
-	}
-	selected := strings.TrimSpace(c.Query("project"))
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
-	}
-	if loadErr == nil && selected != "" && !productProjectExists(projects, selected) {
-		// 与商品域其它整页 GET 同一口径（判据是本次请求已加载的工程集合）。
-		httpStatus = http.StatusBadRequest
-		loadErr = errors.New(productenums.ErrInvalidParam)
-	}
-	productID := strings.TrimSpace(c.Query("product"))
-	// 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go），
-	// 所以本页没有 Err 键 —— 模板里的提示条已整批删除。
-	data := gin.H{
-		"title": productenums.ProductDetailTemplateTitle, "menu": "products",
-		"Projects": projects, "SelectedProject": selected,
-		// 模板里的 `{{if .Ready}}` / `{{if !.Ready}}` 依赖这个键：失败档也要有初值
-		//（缺键会让 Jet 在渲染期报错，整块响应被丢弃 —— 那正是本任务要消灭的形态）。
-		"Ready": false,
-	}
 	// 未装配（缺内容模板 / 自动发布契约）是**装配缺陷的可见提示**，不是装载失败：
-	// 与「没读到数据」分开，仍然是 200 的就地说明。
-	if loadErr == nil && (h.templates == nil || h.instances == nil) {
-		c.HTML(http.StatusOK, "admin/product/product_detail_template.html",
-			adminui.Prepare(c, withDetailTemplateMissing(data)))
+	// 与「没读到数据」分开，仍然是 200 的就地说明（先于取数判断 —— 否则两个出口会互相盖住）。
+	if h.templates == nil || h.instances == nil {
+		unassembled := detailTemplateUnassembledView()
+		adminui.RenderPage(c, productDetailTemplatePageTemplate, &unassembled)
 		return
 	}
-	if loadErr == nil && productID == "" {
-		// 菜单入口（不带 product）走这里：带一句指名去哪选的引导再回列表，
-		// 不静默跳转 —— 整页提示（取代原先的 302 + ?err=）。这不是「参数非法」：
-		// 本页本来就有「还没选商品」的入口形态，所以是 200 的引导页而不是 400。
+	reader, ok := h.products.(productcontract.ProductPageReader)
+	if !ok {
+		// 装配缺陷：读模型没接上。给 500 而不是渲染成一张空表 —— 否则
+		// 「装配没接上」与「这个商品还没有模板」在页面上长得一模一样，而前者要有人去看装配。
+		logger.Scene(productPageScene).Error(errDetailTemplateReadModel,
+			"商品详情页模板页取数无处可去：读模型未注入")
+		missing := detailTemplateLoadFailureView(http.StatusInternalServerError)
+		adminui.RenderPage(c, productDetailTemplatePageTemplate, &missing)
+		return
+	}
+	view, err := reader.ProductDetailTemplatePage(c.Request.Context(), &productdto.ProductDetailTemplatePageReq{
+		ProjectID: c.Query("project"),
+		ProductID: c.Query("product"),
+	})
+	if view == nil {
+		// 契约上视图恒非 nil；契约是约定而不是类型保证，这一层兜底必须存在，
+		// 否则一次实现失误会让整页 500 且没有页壳。
+		failed := detailTemplateLoadFailureView(http.StatusInternalServerError)
+		view = &failed
+		err = errors.New("商品详情页模板页的视图为空")
+	}
+	if view.NoProduct {
 		productListJump(c, false, productDetailTemplateNoProductPromptMsg)
 		return
 	}
-	var product *productdto.ProductResp
-	if loadErr == nil {
-		if product, err = h.products.Get(ctx, &productdto.GetReq{ID: productID}); err != nil {
-			// 只有「这一行确实不在库里」才是 404；参数非法 400；其余（含驱动错误）500 ——
-			// 不把服务错误误报成「商品不存在」。
-			switch productErrKeyOf(err) {
-			case productenums.ErrNotFound:
-				httpStatus = http.StatusNotFound
-				loadErr = err
-			case productenums.ErrInvalidParam:
-				httpStatus = http.StatusBadRequest
-				loadErr = err
-			default:
-				fail(err)
-			}
-		} else if product == nil {
-			httpStatus = http.StatusNotFound
-			loadErr = errors.New(productenums.ErrNotFound)
-		}
-	}
-	if loadErr == nil {
-		// 模板清单（多套命名模板）与当前默认模板：默认模板 = 该类型当前解析到的那套，
-		// 实例未显式绑定模板时商品就发布在它上面。
-		if rows, lerr := h.templates.List(ctx, &contenttemplatecontract.ListReq{EntityType: productcontract.EntityTypeProduct}); lerr != nil {
-			// 模板清单是这一页的主数据：读不到就是装载失败（后面的派生查询一条都不发）。
-			fail(lerr)
-		} else {
-			defaultID := ""
-			if tpl, rerr := h.templates.ResolveTemplate(ctx, productcontract.EntityTypeProduct); rerr == nil {
-				defaultID = tpl.TemplateID
-			}
-			boundID := ""
-			instanceExists := false
-			instanceStatus := ""
-			instanceURL := ""
-			if inst, ierr := h.instances.GetByEntity(ctx, &presentationcontract.GetByEntityReq{
-				EntityType: productcontract.EntityTypeProduct, EntityID: productID,
-			}); ierr == nil && inst != nil {
-				instanceExists, boundID = true, inst.TemplateID
-				instanceStatus, instanceURL = inst.Status, inst.URLPath
-			}
-			templates := make([]gin.H, 0, len(rows))
-			for _, t := range rows {
-				templates = append(templates, gin.H{
-					"ID": t.ID, "Name": t.Name, "DraftVersion": t.DraftVersion,
-					"UpdatedAt": t.UpdatedAt,
-					"IsBound":   t.ID == boundID,
-					"IsDefault": t.ID == defaultID,
-				})
-			}
-			if !instanceExists {
-				boundID = defaultID
-			}
-			data["Product"] = gin.H{
-				"ID": product.ID, "Name": product.Name, "Slug": product.Slug,
-				// 表单预填的发布路径：按选中工程的 URL 规则派生（用户可改）。
-				"URLPath": siteurl.DetailPathForProject(ctx, h.projects, selected, siteurl.KindProduct, product.Slug, product.ID),
-			}
-			data["Templates"] = templates
-			data["TemplateCount"] = len(templates)
-			data["BoundTemplateID"] = boundID
-			data["DefaultTemplateID"] = defaultID
-			data["InstanceExists"] = instanceExists
-			data["InstanceStatus"] = instanceStatus
-			data["InstanceURL"] = instanceURL
-			data["Ready"] = true
-		}
-	}
-	if loadErr != nil {
-		data["LoadFailed"] = true
+	if err != nil {
+		view.LoadFailed = true
 		// 归口文案（中英 / 缺词 fallback 都在里面）；驱动原文与原始错误只进日志。
-		data["LoadError"] = productErrPageText(c, loadErr)
-		// 失败页不该被缓存：重试必须真的回到服务端。
-		c.Header("Cache-Control", "no-store")
+		view.LoadError = productErrPageText(c, err)
 	}
-	c.HTML(httpStatus, "admin/product/product_detail_template.html", adminui.Prepare(c, data))
+	adminui.RenderPage(c, productDetailTemplatePageTemplate, view)
 }
 
-// withDetailTemplateMissing 未注入模板契约时的页面数据（装配缺陷的可见提示）。
-func withDetailTemplateMissing(data gin.H) gin.H {
-	data["Ready"] = false
-	return data
+// errDetailTemplateReadModel 读模型未注入时的日志事由（不出口，只进日志）。
+var errDetailTemplateReadModel = errors.New("商品页面读模型未注入（装配缺陷）")
+
+// detailTemplateUnassembledView 模板能力未装配时的视图（200，就地说明）。
+//
+// Ready 为假 → 模板走「详情页模板能力未装配」那一块；不给 LoadFailed —— 那是
+// 「取数没读到」的槽，两者混用会让「没装配」被说成「数据读不出来」，而前者要人去查装配。
+func detailTemplateUnassembledView() productdto.ProductDetailTemplatePageView {
+	view := detailTemplateLoadFailureView(http.StatusOK)
+	view.Title = productenums.ProductDetailTemplateTitle
+	view.Menu = "products"
+	return view
+}
+
+// detailTemplateLoadFailureView 失败档的视图（给齐模板必需键，避免失败分支只设了错误键）。
+func detailTemplateLoadFailureView(status int) productdto.ProductDetailTemplatePageView {
+	return productdto.ProductDetailTemplatePageView{
+		Title:      productenums.ProductDetailTemplateTitle,
+		Menu:       "products",
+		Projects:   []projectdto.ProjectResp{},
+		Templates:  []productdto.DetailTemplateOptionView{},
+		LoadFailed: status != http.StatusOK,
+		HTTPStatus: status,
+	}
 }
 
 // productDetailPath 商品详情页的默认 URL（与商品 slug 一致；发布实例按它激活静态产物）。

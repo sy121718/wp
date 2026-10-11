@@ -84,6 +84,7 @@ type productPageHandle struct {
 type productPagePortWiring interface {
 	SetWarehouseOptionsPort(productcontract.WarehouseOptionsPort)
 	SetEntityTemplatePort(productcontract.EntityTemplatePort)
+	SetDetailTemplatePort(productcontract.DetailTemplatePort)
 }
 
 // NewProductPageHandle 构造。
