@@ -278,4 +278,54 @@ func init() {
 	registerNavigationJumpI18n()
 	// 592：页面鉴权/菜单码收口带出的 4 条提示文案词条（见 register_admin_ui_new_keys_i18n.go）。
 	registerAdminUINewKeysI18n()
+	// 593：区块页 JSON 写表单的两条界面文案（见 register_admin_blocks_write_ui_i18n.go）。
+	registerAdminBlocksWriteUII18n()
+	// 594：区块批量删除的独立权限点（长期定义：权限点行 + 超管策略补缺，见 register_block_bulk_delete_permission.go）。
+	registerBlockBulkDeletePermission()
+	// 595：词条页 JSON 写表单的界面文案（见 register_admin_i18n_write_ui_i18n.go）。
+	registerAdminI18nWriteUII18n()
+	// 596 / 597：一次性数据迁移的标记表 + 历史 block:delete 主体的一次性授权复制
+	// （见 register_block_bulk_delete_grant_copy.go）。与 594 分开注册是刻意的：
+	// 594 每次启动按长期定义补缺、597 只执行一次（标记行所在即完成）。
+	registerBlockBulkDeleteGrantCopy()
+	// 598：联系人页 JSON 写表单的界面文案（见 register_mail_contact_write_ui_i18n.go）。
+	registerMailContactWriteUII18n()
+	// 599：商品捆绑页「写失败 + 重读也失败」档的三条界面文案
+	//（见 register_product_bundle_write_ui_i18n.go）。
+	registerProductBundleWriteUII18n()
+	// 600：导航菜单页 JSON 写表单的两条界面文案（见 register_navigation_write_ui_i18n.go）。
+	registerNavigationWriteUII18n()
+	// 601：导航菜单页「来源批量加入菜单」迁到 JSON API 后的三条结果文案
+	//（见 register_navigation_add_source_ui_i18n.go）。
+	registerNavigationAddSourceUII18n()
+	// 602：导航同级上移/下移改成原子交换后，同级排序值并列的业务文案
+	//（见 register_navigation_sort_tied_i18n.go）。
+	registerNavigationSortTiedI18n()
+	// 603：优惠码页 JSON 写表单的界面文案（见 register_admin_coupons_write_ui_i18n.go）。
+	registerAdminCouponsWriteUII18n()
+	// 604：订单列表页 JSON 写表单的界面文案（见 register_admin_orders_write_ui_i18n.go）。
+	registerAdminOrdersWriteUII18n()
+	// 605：退货页 JSON 写表单的界面文案（见 register_admin_returns_write_ui_i18n.go）。
+	registerAdminReturnsWriteUII18n()
+	// 606：会员页 JSON 写表单的界面文案 —— 该主题自带 init() 注册（见
+	// register_membership_write_ui_i18n.go），不在这里再调一次（重复 registerSeed 会撞版本号）。
+	// 607：评论页 JSON 写表单的界面文案（见 register_admin_comment_write_ui_i18n.go）。
+	registerAdminCommentWriteUII18n()
+	// 608：插件页 JSON 写表单的界面文案（见 register_admin_plugin_write_ui_i18n.go）。
+	registerAdminPluginWriteUII18n()
+	// 609：内容模板页 JSON 写表单的界面文案（见 register_admin_contenttemplate_write_ui_i18n.go）。
+	registerAdminContentTemplateWriteUII18n()
+	// 610：客户页 JSON 写表单的界面文案（见 register_admin_customer_write_ui_i18n.go）。
+	registerAdminCustomerWriteUII18n()
+	// 611：系统设置页 JSON 写表单的界面文案（见 register_admin_system_write_ui_i18n.go）。
+	registerAdminSystemWriteUII18n()
+	// 612：客户列表筛选归口文案 + 商品评分参数级提示（见 register_admin_customer_filter_i18n.go）。
+	registerAdminCustomerFilterI18n()
+	// 613：翻译工作台保存回执的整句化 —— 新增两条带 %s 的整句 + 删掉 192 的三段式词条
+	//（见 register_page_translations_saved_i18n.go）。
+	registerPageTranslationsSavedI18n()
+	// 614：mail 页面级受控提示的 9 条词条 —— 「控制器不取词」这一批新引入的 Notice* key
+	//（见 register_mail_page_notice_i18n.go；enums 对账判据只认 a.msg./a.err./a.test. 三种形态，
+	//  这批 7 条连红都不会红，所以必须有人读一遍 enums 的新增块）。
+	registerMailPageNoticeI18n()
 }

@@ -76,8 +76,13 @@ func registerAnalyticsSeoAndPermissions() {
 	// 只有断言「表没变」的测试会红，很容易被当成测试本身过时。
 	//
 	// 接手方是 555（`register_customer_catalog.go`）：它按 path 判定，判据与对象一致。
-	// SQL 文件 `153_customer_admin_menu.sql` 保留在仓库里作为历史记录，不再执行。
-	// 同一个手法在本仓用过（220 / 221 / 140 三个 seed 连注册带 SQL 注销）。
+	//
+	// SQL 文件 `153_customer_admin_menu.sql` 已**连文件一起注销**（2026-10）：
+	// register_registry_test.go 的 TestEmbeddedSQLFilesAllRegistered 要求磁盘上的每个 .sql
+	// 都挂在注册台账里（195 未注册导致一批测试在缺列上失败的教训）—— 留一个「不再执行、
+	// 但仍躺在磁盘上」的孤儿文件会让该测试恒红，而把它注册成空 seed 又会让「已注销」
+	// 看起来像「已注册」。同一手法在本仓用过（220 / 221 / 140 三个 seed 连注册带 SQL 注销），
+	// 本文件的内容可在 git 历史里查到（git log -- public/migrations/153_customer_admin_menu.sql）。
 
 	// 154：详情页改 URL 权限点（1 条）+ 超管策略。
 	//

@@ -22,14 +22,25 @@ var registerProjectPageJumpI18nOnce sync.Once
 
 // registerProjectPageJumpI18nSeed 注册 590（真正干活的那一半）。
 func registerProjectPageJumpI18nSeed() {
-	// 门槛 = 本批 3 个 key 的 **en-US** 行都在（枚举本批自己的对象，上界封闭）。
+	// 门槛 = 本批 3 个 key × 中英两种语言 = **6 个 (item_key, lang) 组合都在**（枚举本批自己的
+	// 对象，上界封闭）。
+	//
+	// 为什么两种语言都数：只数一种（这里原先是 en-US）时，另一种语言缺行占不到计数里 ——
+	// 任一条 zh-CN 缺失时判据仍返回 1 → RunSeeds 跳过 → 缺的中文**永远补不上**，
+	// 界面回退到组件包内的兜底文案（错得安静：没有异常、没有日志）。定则见 AGENTS.md
+	// §数据库「判据的偏差方向要刻意选**宁可重跑，不可静默跳过**」。
+	// 阈值取**精确组合数 6**：低于它缺词也能满足（同一条缺陷），高于它判据永不满足、
+	// 每次启动都重跑这批 SQL。SQL 是 ON CONFLICT (item_key, lang) DO NOTHING，重跑只补缺行、
+	// 不覆盖运营改过的值。
+	//
 	// ConditionSQL 由迁移器 db.Raw 直接执行，**没有任何参数替换** —— 判定要用的 key 只能
 	// 写成 SQL 字面量；写成 item_key = ? 会永远查不到行，让这条迁移每次启动重跑。
+	// 用例：public/migrations/recent_write_ui_seed_guard_test.go。
 	registerSeed(Seed{
 		Version:   "590-project-page-jump-i18n",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 3 THEN 1 ELSE 0 END FROM sys_i18n " +
-			"WHERE lang = 'en-US' AND item_key IN (" +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 6 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
 			"'admin.theme.ok.created','admin.theme.ok.activated','admin.theme.ok.deleted')",
 		SQL: mustSQL("590_project_page_jump_i18n.sql"),
 	})

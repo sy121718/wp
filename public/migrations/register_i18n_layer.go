@@ -233,7 +233,7 @@ func registerI18nDataLayer() {
 
 	// 228：后台页面标题 Msg*Title 词条补缺（4 key × 2 语言，zh-CN 4 行 / en-US 4 行）。
 	//
-	// 为什么必须 seed：shell.Prepare 对渲染数据里的 title 做 t(title, title) —— 词条命中
+	// 为什么必须 seed：adminui.Prepare 对渲染数据里的 title 做 t(title, title) —— 词条命中
 	// 显示译文，未命中**回退字面量**。因此 handler 传 Msg*Title 而词条缺失时，顶栏与
 	// <title> 会把 key 原样显示（"MsgMasterDataChangesTitle — go_wp 管理后台"）。
 	// 2026-09 后台页面设计评审全量实测 4 个页面命中，见 SQL 头部注释。

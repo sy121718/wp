@@ -60,22 +60,42 @@ func TestMailEmptyStatesSeedPreservesOperatorValues(t *testing.T) {
 				t.Fatalf("第 %d 轮旧 seed %s 判定 %d，错误 %v", round, historical.Version, applied, err)
 			}
 		}
-		for _, tc := range []struct{ key, lang, want string }{
-			{"admin.mail.templates.empty", "zh-CN", "新建邮件模板，填写主题与正文。"},
-			{"admin.mail.templates.empty", "en-US", custom},
-			{"admin.mail.marketing.contacts.empty.initial.title", "zh-CN", custom},
-			{"admin.mail.marketing.contacts.empty.initial.title", "en-US", "No contacts yet"},
-			{"admin.mail.marketing.contacts.empty.initial", "zh-CN", "在下方导入联系人，开始建立发送名单。"},
-			{"admin.mail.marketing.contacts.empty.initial", "en-US", "Import contacts below to start building your mailing list."},
-			{"admin.mail.marketing.contacts.empty", "zh-CN", "可调整筛选条件，或在下方折叠区批量导入联系人。"},
-			{"admin.mail.marketing.contacts.empty", "en-US", "Adjust the filters, or import contacts in the section below."},
+		// 下面那两条键的中英终值不是 441 写的，而是比它晚的收口迁移改写的：
+		//   522 —— 邮件拆页后 `.empty`（筛选无结果）改指页头「导入联系人」抽屉；
+		//   526 —— 联系人 CRUD 落地后重写 `.initial`（无筛选空态）描述。
+		// 所以断言终值之前，先确认这两条迁移确实把判据翻转成了「已完成」：
+		// 否则「期望值」就只是现实的镜子 —— 谁把 522 / 526 删了，用例照样绿。
+		// （本用例的库里只有 `.initial.title` zh-CN 被改成运营值，不影响这两条判据。）
+		for _, version := range []string{
+			"522-mail-split-i18n-fixes",
+			"526-mail-contact-crud-i18n",
+		} {
+			superseding := findSeedByVersion(t, version)
+			if err := db.Raw(superseding.ConditionSQL).Scan(&applied).Error; err != nil || applied != 1 {
+				t.Fatalf("第 %d 轮 %s 判定 %d，错误 %v；下面的终值由它收口", round, version, applied, err)
+			}
+		}
+		for _, tc := range []struct{ key, lang, want, by string }{
+			// by = 终值出处：`441` 表示这一轮仍由 441 写入/保持的值。
+			{"admin.mail.templates.empty", "zh-CN", "新建邮件模板，填写主题与正文。", "441"},
+			{"admin.mail.templates.empty", "en-US", custom, "441（运营值）"},
+			{"admin.mail.marketing.contacts.empty.initial.title", "zh-CN", custom, "441（运营值，后继迁移不得覆盖）"},
+			{"admin.mail.marketing.contacts.empty.initial.title", "en-US", "No contacts yet", "441"},
+			{"admin.mail.marketing.contacts.empty.initial", "zh-CN",
+				"新建一位联系人手工加一条，或用「导入联系人」批量导入 CSV —— 名单建立起来才能按标签圈人群群发。", "526"},
+			{"admin.mail.marketing.contacts.empty.initial", "en-US",
+				"Add one contact by hand, or import a CSV in bulk — the list has to exist before you can target people by tag.", "526"},
+			{"admin.mail.marketing.contacts.empty", "zh-CN",
+				"可调整筛选条件，或点右上角「导入联系人」批量导入。", "522"},
+			{"admin.mail.marketing.contacts.empty", "en-US",
+				`Adjust the filters, or use "Import contacts" at the top right to bulk import.`, "522"},
 		} {
 			var got string
 			if err := db.Raw("SELECT item_value FROM sys_i18n WHERE item_key = ? AND lang = ?", tc.key, tc.lang).Scan(&got).Error; err != nil {
 				t.Fatal(err)
 			}
 			if got != tc.want {
-				t.Errorf("第 %d 轮 %s/%s = %q，期望 %q", round, tc.key, tc.lang, got, tc.want)
+				t.Errorf("第 %d 轮 %s/%s = %q，期望 %q（终值出处 %s）", round, tc.key, tc.lang, got, tc.want, tc.by)
 			}
 		}
 	}

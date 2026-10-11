@@ -12,6 +12,10 @@
 --   实际上 handler 侧读的是 enums 的中文兜底（悬浮球的回答片段由 c.HTML 单独渲染、
 --   不经 shell.Prepare，拿不到 `t` 函数），所以那 7 条 seed 了也暂时用不上；
 --   将来把片段渲染也接上 i18n 注入，它们就能直接生效。
+--   【现状 2026-10】那句「将来」已兑现：回答片段的装配处改走 adminui.PrepareFragment
+--   （internal/module/ai/inbound/http/ai_page.go 的 renderFab），槽位收的是 adminui.Msg 事实，
+--   取词在渲染期按请求语言做 —— 本批这 7 条词条已经真正生效。
+--   上面两句保持原样，记的是当时的状态。
 --
 -- 判据只枚举**模板侧那两个代表 key**（不放 handler 侧的），原因见 register 文件：
 --   判据里混进 handler 侧的 key，一旦将来只改那一侧，判据会先失效再引发重复插入。
