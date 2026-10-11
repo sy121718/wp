@@ -110,4 +110,18 @@ type ProductPageReader interface {
 	//   · 没给 product 参数时置 NoProduct 并**停止取数**（菜单入口形态，控制器据此走
 	//     引导出口；它不是 400 —— 本页本来就有「还没选商品」的入口）。
 	ProductDetailTemplatePage(ctx context.Context, req *productdto.ProductDetailTemplatePageReq) (res *productdto.ProductDetailTemplatePageView, err error)
+
+	// ProductBundlePage 捆绑配置整页的读模型：工程清单 → 工程存在性校验 → 工程商品 →
+	// 捆绑配置（三档）→ 候选 SKU → 来源属性 / 仓库清单 / 逐仓 SKU 候选，并给出这一屏的档位。
+	//
+	// 契约同上，另加两条这一屏特有的：
+	//   · 成员表行、候选下拉、三种来源面板的选项都在这条读模型里装（它们是纯函数，
+	//     输入是读回来的原料，一条也不需要 gin.Context）；
+	//   · 失败档**照样装配**（Rows / CandidateSKUs / Cfg* / 来源面板都给齐），并置
+	//     SaveBlocked —— 写失败之后重读又失败时，成员清单是这一屏里最贵的内容，
+	//     不能因为页面重建失败就把它丢掉；保存入口撤掉即可，不是把整屏清空。
+	//
+	// Submitted 由控制器填（写路径产物，在请求体里，读模型不认识 gin.Context）：
+	// 非 nil 时成员清单一律按它渲染，而不是按库里读回来的配置。
+	ProductBundlePage(ctx context.Context, req *productdto.ProductBundlePageReq) (res *productdto.ProductBundlePageView, err error)
 }

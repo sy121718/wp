@@ -122,6 +122,10 @@ type productPageReaderStub struct {
 	detailTemplatePageView *productdto.ProductDetailTemplatePageView
 	detailTemplatePageErr  error
 	detailTemplatePageReqs []*productdto.ProductDetailTemplatePageReq
+
+	bundleView *productdto.ProductBundlePageView
+	bundleErr  error
+	bundleReqs []*productdto.ProductBundlePageReq
 }
 
 func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
@@ -162,6 +166,45 @@ func (s *productPageReaderStub) ProductAttributesPage(_ context.Context, req *pr
 func (s *productPageReaderStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageView, error) {
 	s.detailTemplatePageReqs = append(s.detailTemplatePageReqs, req)
 	return s.detailTemplatePageView, s.detailTemplatePageErr
+}
+
+func (s *productPageReaderStub) ProductBundlePage(_ context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageView, error) {
+	s.bundleReqs = append(s.bundleReqs, req)
+	return s.bundleView, s.bundleErr
+}
+
+// productBundlePageViewStub 捆绑配置页的成功档视图（键给齐，与 service 同型）。
+//
+// Rows 给一行**已配置成员**（不是空白行）：成员表是这一屏里最贵的内容，
+// 渲染用例要能看出「行真的装出来了」——只给空白行时，把装配整段删掉也照样绿。
+func productBundlePageViewStub(mutate func(*productdto.ProductBundlePageView)) *productdto.ProductBundlePageView {
+	v := &productdto.ProductBundlePageView{
+		Title:           productenums.ProductBundleTitle,
+		Menu:            "products",
+		Projects:        []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
+		SelectedProject: "p1",
+		Products:        []*productdto.ProductResp{{ID: "prod1", Name: "商品一"}},
+		SelectedProduct: "prod1",
+		Detail:          &productdto.BundleConfigResp{ProductID: "prod1", ProductName: "商品一"},
+		Skus:            []*productdto.BundleSKUResp{},
+		Rows: []productdto.BundleOptionRow{{
+			VariantID: "v1", SKULabel: "商品一 · SKU-1", Required: true,
+			DefaultQty: 2, MinQty: 1, MaxQty: 5, Available: 9,
+			SourceParts: []productdto.BundleSourcePart{{LabelKey: productenums.ProductBundleSourceExternalSKULabel, LabelFallback: "外部编码", Value: "EXT-1"}},
+		}},
+		CandidateSKUs:    []productdto.BundleCandidateView{{ID: "v1", Label: "商品一 · SKU-1"}},
+		SkuCount:         1,
+		MaxOptions:       productdto.BundleMaxOptionsLimit,
+		Sources:          []map[string]any{{"Value": productenums.BundleSourceProduct, "LabelKey": productenums.ProductBundleSourceProduct, "LabelFallback": "从商品导入", "Selected": true}},
+		Source:           productenums.BundleSourceProduct,
+		SourceProducts:   []map[string]any{{"ID": "", "LabelKey": productenums.ProductBundleOptionNone, "LabelFallback": "— 不选 —", "Selected": true}},
+		SourceAttributes: []*productdto.AttributeResp{},
+		SourceWarehouses: []productdto.BundleSourceWarehouseGroupView{},
+	}
+	if mutate != nil {
+		mutate(v)
+	}
+	return v
 }
 
 // detailTemplatePageViewStub 「详情页模板」整页的成功档视图（键给齐，与 service 同型）。

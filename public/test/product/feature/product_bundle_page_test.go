@@ -6,6 +6,7 @@ package feature
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,6 +17,8 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
+	productservice "go_wp/internal/module/product/service"
+	projectdto "go_wp/internal/module/project/dto"
 	runtimefragment "go_wp/internal/module/runtimefragment"
 	"go_wp/internal/templates"
 )
@@ -265,4 +268,71 @@ func newBundlePageEngine(t *testing.T) (*gin.Engine, *bundleFixture) {
 	engine.GET("/admin/products/bundle", handle.ProductBundlePage)
 	engine.POST("/admin/products/bundle/save", handle.ProductBundleSave)
 	return engine, f
+}
+
+// bundlePageFailReader 读模型包装：**只覆盖 ProductBundlePage**，其余能力透传真实 service。
+//
+// 用途是造「这一屏的主数据读不出来」这一档 —— 真库里读失败要靠断连接/坏 SQL 才能构造，
+// 而这一档要验的是控制器**拿到失败视图之后**做什么（档位 / no-store / 页壳 / 失败槽 /
+// 不直出内部错误），与失败是怎么来的无关。
+type bundlePageFailReader struct {
+	*productservice.Service
+	status int
+}
+
+func (r *bundlePageFailReader) ProductBundlePage(context.Context, *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageView, error) {
+	// 契约：视图恒非 nil，失败也要给齐模板必需键（空切片而不是缺键）。
+	return &productdto.ProductBundlePageView{
+		Title:            "捆绑配置",
+		Menu:             "products",
+		Projects:         []projectdto.ProjectResp{},
+		Products:         []*productdto.ProductResp{},
+		Skus:             []*productdto.BundleSKUResp{},
+		Rows:             []productdto.BundleOptionRow{},
+		CandidateSKUs:    []productdto.BundleCandidateView{},
+		Sources:          []map[string]any{},
+		SourceProducts:   []map[string]any{},
+		SourceAttributes: []*productdto.AttributeResp{},
+		SourceWarehouses: []productdto.BundleSourceWarehouseGroupView{},
+		MaxOptions:       productdto.BundleMaxOptionsLimit,
+		SaveBlocked:      true,
+		LoadFailed:       true,
+		HTTPStatus:       r.status,
+	}, errors.New("bundle config read failed: internal detail")
+}
+
+// TestBundlePageReadFailureIsFiveHundred 主数据读不到：500 + no-store + 完整页壳 + 失败槽，
+// 且不直出内部错误；保存入口撤掉（读不出来就不该让人提交，否则会把不完整配置写进去）。
+//
+// 反面判据：把这一档写成「渲染成空骨架 + 200」最省事，但那样运营看到的是「这个套餐还没配
+// 成员」——他会开始重新配一遍，而真实原因是没读到；这条判据同时挡住内部错误原文泄漏。
+func TestBundlePageReadFailureIsFiveHundred(t *testing.T) {
+	f := newBundleFixture(t)
+	if f == nil {
+		return
+	}
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
+	handle := producthttp.NewProductPageHandle(&bundlePageFailReader{Service: f.products, status: http.StatusInternalServerError}, f.projects)
+	engine.GET("/admin/products/bundle", handle.ProductBundlePage)
+
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products/bundle?project="+f.projectID, nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("主数据读不到应 500，实际 %d，body=%s", rec.Code, oneLine(rec.Body.String()))
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("失败页必须 no-store（重试要真的回到服务端），实际 %q", got)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "</html>") {
+		t.Fatal("失败页也必须是完整页壳（不是裸错误文本）")
+	}
+	if !strings.Contains(body, "这一页的数据没能读出来") {
+		t.Fatalf("失败页应渲染失败槽，body=%s", oneLine(body))
+	}
+	if strings.Contains(body, "internal detail") {
+		t.Fatal("失败页不得直出内部错误原文")
+	}
 }

@@ -30,6 +30,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -85,6 +86,10 @@ type editorStub struct {
 	detailTemplatePageView *productdto.ProductDetailTemplatePageView
 	detailTemplatePageErr  error
 
+	// 捆绑配置页也改走读模型（第十个方法）。
+	bundlePageView *productdto.ProductBundlePageView
+	bundlePageErr  error
+
 	calls []string
 }
 
@@ -133,6 +138,76 @@ func (s *editorStub) ProductCreateForm(context.Context, *productdto.ProductCreat
 func (s *editorStub) ProductPricingPage(context.Context, *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageView, error) {
 	s.record("ProductPricingPage")
 	return productPricingPageViewStub(nil), nil
+}
+
+// ProductBundlePage 读模型桩：**按契约**把提交快照渲染回来（Submitted 非 nil 时成员行与
+// 配置数值一律取它）。契约本身（快照优先于库里的配置）的判据在真实库的
+// public/test/product/feature/product_bundle_page_test.go（那里「非法配置 → 原请求 200 +
+// value=9 回填」跑的是真 service）；本桩只保证控制器那一层拿到的是契约形状的视图。
+func (s *editorStub) ProductBundlePage(_ context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageView, error) {
+	s.record("ProductBundlePage")
+	view := s.bundlePageView
+	if view == nil {
+		view = productBundlePageViewStub(func(v *productdto.ProductBundlePageView) {
+			if req != nil {
+				v.SelectedProject = req.ProjectID
+				v.SelectedProduct = req.ProductID
+				if req.Submitted != nil {
+					v.Rows = stubSubmittedRows(req.Submitted)
+					v.CfgMaxOptions = req.Submitted.MaxOptions
+					v.CfgMinTotalQty = req.Submitted.MinTotalQty
+					v.CfgMaxTotalQty = req.Submitted.MaxTotalQty
+					v.Submitted = true
+				}
+			}
+			if s.bundlePageErr != nil {
+				v.HTTPStatus = http.StatusInternalServerError
+				v.LoadFailed = true
+				v.SaveBlocked = true
+			}
+		})
+	}
+	return view, s.bundlePageErr
+}
+
+// stubSubmittedRows 把提交快照摊成渲染行，与读模型的装配同形（含**原样占位**的空白行与尾部空槽）。
+func stubSubmittedRows(form *productdto.BundleSubmittedForm) []productdto.BundleOptionRow {
+	rows := make([]productdto.BundleOptionRow, 0, len(form.VariantIDs)+1)
+	hasBlank := false
+	for i, rawID := range form.VariantIDs {
+		id := strings.TrimSpace(rawID)
+		if id == "" {
+			hasBlank = true
+		}
+		rows = append(rows, productdto.BundleOptionRow{
+			VariantID: id, Required: stubAt(form.Required, i) == "1",
+			DefaultQty: stubAtoi(form.DefaultQty, i), MinQty: stubAtoi(form.MinQty, i), MaxQty: stubAtoi(form.MaxQty, i),
+			SourceKind: stubAt(form.SourceKinds, i), WarehouseID: stubAt(form.WarehouseIDs, i),
+			WarehouseSKU: stubAt(form.WarehouseSKUs, i), ExternalSKU: stubAt(form.ExternalSKUs, i),
+			SourceParts: []productdto.BundleSourcePart{},
+		})
+	}
+	if len(rows) < productdto.BundleMaxOptionsLimit && !hasBlank {
+		rows = append(rows, productdto.BundleOptionRow{
+			Required: true, DefaultQty: 1, MinQty: 1, SourceParts: []productdto.BundleSourcePart{},
+		})
+	}
+	return rows
+}
+
+func stubAt(values []string, i int) string {
+	if i < 0 || i >= len(values) {
+		return ""
+	}
+	return strings.TrimSpace(values[i])
+}
+
+func stubAtoi(values []string, i int) int {
+	n, err := strconv.Atoi(stubAt(values, i))
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 func (s *editorStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageView, error) {
@@ -306,12 +381,16 @@ type editorPage struct {
 
 var editorPages = []editorPage{
 	{
-		name:          "组合页",
-		path:          "/admin/products/bundle?project=p1&product=prod1",
-		marker:        "捆绑配置",
-		successCalls:  []string{"List", "GetBundleConfig", "ListBundleSKUs"},
-		breakLoad:     func(s *editorStub) { s.configErr = errors.New(editorDriverText) },
-		loadFailCalls: []string{"List", "GetBundleConfig"},
+		name:   "组合页",
+		path:   "/admin/products/bundle?project=p1&product=prod1",
+		marker: "捆绑配置",
+		// 取数编排（工程清单 → 工程商品 → 配置三档 → 候选 SKU → 来源面板三条）已整体进
+		// service 的读模型：控制器只调一次 ProductBundlePage，失败之后不会再发任何派生查询。
+		successCalls:  []string{"ProductBundlePage"},
+		breakLoad:     func(s *editorStub) { s.bundlePageErr = errors.New(editorDriverText) },
+		loadFailCalls: []string{"ProductBundlePage"},
+		// 工程清单 / 未知工程两条已随取数编排归 service（同编辑页）。
+		skipProjectCases: true,
 	},
 	{
 		name:   "编辑页",
@@ -498,13 +577,17 @@ func TestEditorPagesSuccessRendersPage(t *testing.T) {
 	}
 }
 
-// TestBundleConfigErrorGrades 捆绑配置读取的错误分档：不存在 404 / 参数非法 400 / 其余 500。
+// TestBundleConfigErrorGrades 捆绑配置读取的错误分档**由读模型给出**，控制器只原样透出。
+//
+// 「哪种错误落哪一档」（不存在 404 / 参数非法 400 / 其余 500）的判据已经下沉到
+// service/product_bundle_page.go（对着真实 PG 的用例在 public/test/product/feature），
+// 这里验的是控制器那一层的两件事：不改判档位、按这一次的 err 归口当前语言的失败槽。
 func TestBundleConfigErrorGrades(t *testing.T) {
 	cases := []struct {
-		name       string
-		err        error
-		wantStatus int
-		wantText   string
+		name     string
+		err      error
+		status   int
+		wantText string
 	}{
 		{"商品不存在", errors.New(productenums.ErrNotFound), http.StatusNotFound, "商品或变体不存在"},
 		{"参数非法", errors.New(productenums.ErrInvalidParam), http.StatusBadRequest, "请求参数无效"},
@@ -513,11 +596,16 @@ func TestBundleConfigErrorGrades(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h, stub, _, _ := editorEnv()
-			stub.configErr = tc.err
+			stub.bundlePageView = productBundlePageViewStub(func(v *productdto.ProductBundlePageView) {
+				v.HTTPStatus = tc.status
+				v.LoadFailed = true
+				v.SaveBlocked = true
+			})
+			stub.bundlePageErr = tc.err
 			rec := editorRequest(t, h, "/admin/products/bundle?project=p1&product=prod1")
-			assertProductPageFailure(t, tc.name, rec, tc.wantStatus, tc.wantText)
-			// 配置读不到之后，SKU 候选与仓库候选都不该再发。
-			assertCalls(t, tc.name, stub.calls, []string{"List", "GetBundleConfig"})
+			assertProductPageFailure(t, tc.name, rec, tc.status, tc.wantText)
+			// 取数编排在 service：控制器只调一次读模型。
+			assertCalls(t, tc.name, stub.calls, []string{"ProductBundlePage"})
 		})
 	}
 }
@@ -696,7 +784,7 @@ func TestBundleSaveFailureKeepsFragmentBoundary(t *testing.T) {
 		stub.setErr = errors.New(productenums.ErrBundlePriceRequired)
 		// 保存失败之后重建页面又读不到配置：这一档最容易写成「整页失败页 + 500」，
 		// 而它必须仍是片段（200）：否则 htmx 会因为 5xx 不 swap，用户看到的是「点了没反应」。
-		stub.configErr = errors.New(editorDriverText)
+		stub.bundlePageErr = errors.New(editorDriverText)
 		rec := editorSaveRequest(t, h, true)
 		body := rec.Body.String()
 		if rec.Code != http.StatusOK {
@@ -729,7 +817,7 @@ func TestBundleSaveFailureKeepsFragmentBoundary(t *testing.T) {
 func TestBundleSaveNativeDoubleFailureKeepsSubmittedSnapshot(t *testing.T) {
 	h, stub, _, _ := editorEnv()
 	stub.setErr = errors.New(productenums.ErrBundlePriceRequired)
-	stub.configErr = errors.New(editorDriverText)
+	stub.bundlePageErr = errors.New(editorDriverText)
 	rec := editorSaveRequest(t, h, false)
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK {

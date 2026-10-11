@@ -33,6 +33,22 @@ import (
 // 是同一个数，两处各写一个 200 时，改一处的那天两个页面会静默给出不同的候选集。
 const PageAttributeOptionSize = 200
 
+// VariationAttributes 参与变体的属性组（组合生成面板只勾选这些组）。
+//
+// 导出是为了让页面处理器与读模型共用**同一份判据**：变体生成抽屉（productRow 的
+// VariationAttributes 字段）与捆绑页的「自选属性组合」来源面板都只列参与变体的组 ——
+// 不参与变体的组构不出组合。两处各写一遍时，哪天加了「按某类属性组兜底组合」的规则，
+// 只改一处就会让两个入口给出不同的候选集。
+func VariationAttributes(attrs []*productdto.AttributeResp) []*productdto.AttributeResp {
+	out := make([]*productdto.AttributeResp, 0, len(attrs))
+	for _, a := range attrs {
+		if a != nil && a.IsVariation {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 // ProjectExists 工程 id 是否真的在工程清单里。
 //
 // 用于把「工程不存在」与「这个工程下没有商品」分开：前者是请求参数的问题（400），

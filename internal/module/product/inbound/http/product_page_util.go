@@ -214,13 +214,7 @@ func optionValuesJSON(raw json.RawMessage) string {
 
 // variationAttributes 参与变体的属性组（组合生成面板只勾选这些组）。
 func variationAttributes(attrs []*productdto.AttributeResp) []*productdto.AttributeResp {
-	out := make([]*productdto.AttributeResp, 0, len(attrs))
-	for _, a := range attrs {
-		if a != nil && a.IsVariation {
-			out = append(out, a)
-		}
-	}
-	return out
+	return productservice.VariationAttributes(attrs)
 }
 
 // specLabel 规格组合的可读文本：按属性组定义顺序把「组名 值名」拼起来。

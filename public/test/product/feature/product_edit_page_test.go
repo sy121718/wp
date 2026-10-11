@@ -231,6 +231,10 @@ func (s failedAttributeListService) ProductDetailTemplatePage(context.Context, *
 	return nil, nil
 }
 
+func (s failedAttributeListService) ProductBundlePage(context.Context, *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageView, error) {
+	return nil, nil
+}
+
 func (s failedAttributeListService) ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageView, error) {
 	return s.reader.ProductAttributesPage(ctx, req)
 }

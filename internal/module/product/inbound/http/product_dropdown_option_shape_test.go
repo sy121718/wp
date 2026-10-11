@@ -5,7 +5,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 )
 
@@ -61,18 +60,7 @@ func TestDropdownOptionsSeparateFactsFromData(t *testing.T) {
 		}
 	}
 
-	// 同为「空项 + 数据行」形状的另一处（捆绑来源商品下拉）：同一判据必须一起成立。
-	products := []*productdto.ProductResp{{ID: "p-1", Name: "衬衫 A"}, {ID: "p-2", Name: "裤装 B"}}
-	bundle := bundleSourceProductOptions(products, "p-2")
-	if key, _ := bundle[0]["LabelKey"].(string); key == "" {
-		t.Fatalf("捆绑来源商品下拉的空项必须给非空 LabelKey")
-	}
-	for i, row := range bundle[1:] {
-		if _, ok := row["LabelKey"]; ok {
-			t.Fatalf("捆绑来源商品数据项 %d 带上了 LabelKey 键 —— 同 productPickOptions，整键省略", i)
-		}
-		if row["Label"] != products[i].Name {
-			t.Fatalf("捆绑来源商品数据项 %d 的 Label 应为 %q，实际 %v", i, products[i].Name, row["Label"])
-		}
-	}
+	// 同为「空项 + 数据行」形状的另两处：来源下拉与捆绑来源商品下拉。
+	// 捆绑页那两条已随取数装配下沉到 service，那边的判据见
+	// service/product_bundle_page_test.go 的 TestBundleSourceProductOptionsShape。
 }
