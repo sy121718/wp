@@ -76,6 +76,11 @@ type editorStub struct {
 	config     *productdto.BundleConfigResp
 	skus       []*productdto.BundleSKUResp
 
+	// 编辑页已改走读模型（ProductPageReader）：这一页的取数编排与档位都在 service，
+	// 桩只负责交回一份视图 / 一个失败 —— 原来的 getErr / categoriesErr 那一族对编辑页不再生效。
+	editView *productdto.ProductEditPageView
+	editErr  error
+
 	calls []string
 }
 
@@ -95,6 +100,48 @@ func (s *editorStub) Get(context.Context, *productdto.GetReq) (*productdto.Produ
 		return nil, nil
 	}
 	return s.getRes, nil
+}
+
+// 读模型接口（ProductPageReader）是一个整体：编辑页虽然只用到 ProductEditPage，
+// 但**另外三屏的方法必须在**，少一个就是类型断言失败 → 整包走 500 兜底页
+// （症状是「控制器根本没被调到」，calls 为空）。这三条在本文件里不会被调用，
+// 存在只是为了让 editorStub 满足接口。
+func (s *editorStub) ProductNewPage(context.Context, *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
+	s.record("ProductNewPage")
+	return productNewPageViewStub(nil), nil
+}
+
+func (s *editorStub) ProductListPage(context.Context, *productdto.ProductListPageReq) (*productdto.ProductListPageView, error) {
+	s.record("ProductListPage")
+	return productListPageViewStub(nil), nil
+}
+
+func (s *editorStub) ProductDetailPage(context.Context, *productdto.ProductDetailPageReq) (*productdto.ProductDetailPageView, error) {
+	s.record("ProductDetailPage")
+	return productDetailPageViewStub(nil), nil
+}
+
+func (s *editorStub) ProductEditPage(_ context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageView, error) {
+	s.record("ProductEditPage")
+	view := s.editView
+	if view == nil {
+		// 契约：视图恒非 nil（失败也要给齐模板必需键）—— 失败档只置档位，键留桩的默认值。
+		view = productEditPageViewStub(func(v *productdto.ProductEditPageView) {
+			if req != nil {
+				v.ProductID = req.ProductID
+				if req.ProjectID != "" {
+					v.SelectedProject = req.ProjectID
+				}
+			}
+			if s.editErr != nil {
+				v.HTTPStatus = http.StatusInternalServerError
+				v.LoadFailed = true
+				v.HasProduct = false
+				v.Detail = nil
+			}
+		})
+	}
+	return view, s.editErr
 }
 
 func (s *editorStub) ListCategories(context.Context, *productdto.ListCategoryReq) ([]*productdto.CategoryResp, error) {
@@ -204,6 +251,10 @@ type editorPage struct {
 	breakLoad func(s *editorStub)
 	// loadFailCalls 主数据失败时的**全部**调用：失败那一条之后不许再发任何查询。
 	loadFailCalls []string
+	// skipProjectCases 跳过「工程清单失败」与「未知工程」两条（下同 `?project=<不存在的 id>`）。
+	// 编辑页已把取数编排交给读模型：控制器不再自己读工程清单，那两条判据因此落在
+	// service（工程清单读失败 / 未知工程的取数与档位都由 ProductEditPage 决定）。
+	skipProjectCases bool
 }
 
 var editorPages = []editorPage{
@@ -216,12 +267,16 @@ var editorPages = []editorPage{
 		loadFailCalls: []string{"List", "GetBundleConfig"},
 	},
 	{
-		name:          "编辑页",
-		path:          "/admin/products/edit?project=p1&product=prod1",
-		marker:        "编辑商品",
-		successCalls:  []string{"ListCategories", "ListBrands", "ListTags", "Get", "ListAttributes", "ListRatings"},
-		breakLoad:     func(s *editorStub) { s.brandsErr = errors.New(editorDriverText) },
-		loadFailCalls: []string{"ListCategories", "ListBrands"},
+		name:   "编辑页",
+		path:   "/admin/products/edit?project=p1&product=prod1",
+		marker: "编辑商品",
+		// 编辑页的取数编排与档位都在 service 的读模型里：控制器只调一次 ProductEditPage，
+		// 失败之后不会再发任何派生查询（那一条属于 service 的判据，见 product/service 的用例）。
+		successCalls:  []string{"ProductEditPage"},
+		breakLoad:     func(s *editorStub) { s.editErr = errors.New(editorDriverText) },
+		loadFailCalls: []string{"ProductEditPage"},
+		// 工程清单 / 未知工程两条已随取数编排归 service。
+		skipProjectCases: true,
 	},
 	{
 		name:          "详情页模板",
@@ -331,6 +386,9 @@ func TestEditorPagesLoadFailureRendersSamePage(t *testing.T) {
 // TestEditorPagesProjectListFailureSkipsDerivedQueries 工程清单本身就失败：500 + 零派生查询。
 func TestEditorPagesProjectListFailureSkipsDerivedQueries(t *testing.T) {
 	for _, p := range editorPages {
+		if p.skipProjectCases {
+			continue
+		}
 		t.Run(p.name, func(t *testing.T) {
 			h, stub, tpls, insts := editorEnv()
 			h.projects = &editorProjectsStub{err: errors.New(editorDriverText)}
@@ -346,6 +404,9 @@ func TestEditorPagesProjectListFailureSkipsDerivedQueries(t *testing.T) {
 // TestEditorPagesUnknownProjectIsBadRequest ?project 不在本次请求加载到的工程集合里：400 + 零派生查询。
 func TestEditorPagesUnknownProjectIsBadRequest(t *testing.T) {
 	for _, p := range editorPages {
+		if p.skipProjectCases {
+			continue
+		}
 		t.Run(p.name, func(t *testing.T) {
 			h, stub, _, _ := editorEnv()
 			rec := editorRequest(t, h, replaceProject(p.path, "does-not-exist"))
@@ -410,42 +471,62 @@ func TestBundleConfigErrorGrades(t *testing.T) {
 	}
 }
 
-// TestEditProductErrorGrades 编辑页商品读取的错误分档（含「没有错误却没有行」的兜底）。
+// TestEditProductErrorGrades 编辑页的错误分档：**档位由读模型给出**（判据在 service：
+// 商品读不到的三档 + 「没有错误却没有行」的兜底都在那边），控制器这一层只验两件事 ——
+// 原样传出视图带的档位（不自己改判）+ 按这一次的 err 归口**当前语言**的失败槽文案。
 func TestEditProductErrorGrades(t *testing.T) {
+	// failedEditView 读模型交回来的失败档（键给齐：契约上视图恒非 nil）。
+	failedEditView := func(status int) *productdto.ProductEditPageView {
+		return productEditPageViewStub(func(v *productdto.ProductEditPageView) {
+			v.HTTPStatus = status
+			v.LoadFailed = true
+			v.HasProduct = false
+			v.Detail = nil
+		})
+	}
 	cases := []struct {
 		name       string
 		setup      func(s *editorStub)
 		wantStatus int
 		wantText   string
-		wantCalls  []string
 	}{
 		{
-			name:       "商品不存在",
-			setup:      func(s *editorStub) { s.getErr = errors.New(productenums.ErrNotFound) },
+			name: "商品不存在",
+			setup: func(s *editorStub) {
+				s.editErr = errors.New(productenums.ErrNotFound)
+				s.editView = failedEditView(http.StatusNotFound)
+			},
 			wantStatus: http.StatusNotFound,
 			wantText:   "商品或变体不存在",
-			wantCalls:  []string{"ListCategories", "ListBrands", "ListTags", "Get"},
 		},
 		{
-			name:       "参数非法",
-			setup:      func(s *editorStub) { s.getErr = errors.New(productenums.ErrInvalidParam) },
+			name: "参数非法",
+			setup: func(s *editorStub) {
+				s.editErr = errors.New(productenums.ErrInvalidParam)
+				s.editView = failedEditView(http.StatusBadRequest)
+			},
 			wantStatus: http.StatusBadRequest,
 			wantText:   "请求参数无效",
-			wantCalls:  []string{"ListCategories", "ListBrands", "ListTags", "Get"},
 		},
 		{
-			name:       "驱动错误",
-			setup:      func(s *editorStub) { s.getErr = errors.New(editorDriverText) },
+			name: "驱动错误",
+			setup: func(s *editorStub) {
+				s.editErr = errors.New(editorDriverText)
+				s.editView = failedEditView(http.StatusInternalServerError)
+			},
 			wantStatus: http.StatusInternalServerError,
 			wantText:   "这一页的数据没能读出来",
-			wantCalls:  []string{"ListCategories", "ListBrands", "ListTags", "Get"},
 		},
 		{
-			name:       "没有错误却没有行",
-			setup:      func(s *editorStub) { s.getNilNoErr = true },
+			name: "没有错误却没有行",
+			setup: func(s *editorStub) {
+				// 读模型给了 404 档但没给 err：这一档与详情页同一口径 ——
+				// 「读到了、库里没有」，页面渲染的是**空态**而不是失败槽，
+				// 所以断言的是空态文案，不是归口错误文案。
+				s.editView = failedEditView(http.StatusNotFound)
+			},
 			wantStatus: http.StatusNotFound,
-			wantText:   "商品或变体不存在",
-			wantCalls:  []string{"ListCategories", "ListBrands", "ListTags", "Get"},
+			wantText:   "商品不存在",
 		},
 	}
 	for _, tc := range cases {
@@ -454,9 +535,8 @@ func TestEditProductErrorGrades(t *testing.T) {
 			tc.setup(stub)
 			rec := editorRequest(t, h, "/admin/products/edit?project=p1&product=prod1")
 			assertProductPageFailure(t, tc.name, rec, tc.wantStatus, tc.wantText)
-			// 商品读不到之后：属性勾选清单与评分都不该再发（属性读失败是有意降档的另一条路，
-			// 但这里连降档的机会都不该有）。
-			assertCalls(t, tc.name, stub.calls, tc.wantCalls)
+			// 取数编排在 service：控制器只调一次读模型（失败之后不会再发任何派生查询）。
+			assertCalls(t, tc.name, stub.calls, []string{"ProductEditPage"})
 		})
 	}
 }

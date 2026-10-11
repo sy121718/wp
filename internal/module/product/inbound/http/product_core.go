@@ -793,186 +793,130 @@ func (h *productPageHandle) ProductsCreate(c *gin.Context) {
 //
 // 本节起是原先的 product_edit.go（编辑页，字段名与 UpdateReq 的 json 标签逐字对齐）。
 // ==========================================================================
+
+// productEditPageTemplate 商品编辑整页模板（失败页与成功页渲染**同一份**模板）。
+const productEditPageTemplate = "admin/product/product_edit.html"
+
 func (h *productPageHandle) ProductEditPage(c *gin.Context) {
 	h.renderProductEditPage(c, strings.TrimSpace(c.Query("project")), strings.TrimSpace(c.Query("product")), "", false)
 }
 
 func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, echo bool) {
 	ctx := c.Request.Context()
-	// 取数失败**不在这里出口**：整页 GET 只有末尾那一次 c.HTML —— 失败页与成功页渲染同一份
-	// 模板、同一份页壳数据，差别只有状态码 / no-store / 失败槽
-	//（契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。
-	// 首错记因并置状态码；后续派生取数在 loadErr != nil 时全部短路（一条查询都不再发）。
-	httpStatus := http.StatusOK
-	var loadErr error
-	fail := func(err error) {
-		if loadErr == nil {
-			loadErr = err
-			httpStatus = http.StatusInternalServerError
+	reader, ok := h.products.(productcontract.ProductPageReader)
+	if !ok {
+		// 装配没接上读模型（老装配 / 桩）：整页 + 500 + no-store，走同一份失败页形状。
+		view := &productdto.ProductEditPageView{
+			Title: MsgProductsTitle, Menu: "products", Err: submitErr,
+			LoadFailed: true, LoadError: productInternalText(c, nil),
+			HTTPStatus: http.StatusInternalServerError,
+		}
+		adminui.RenderPage(c, productEditPageTemplate, view)
+		return
+	}
+	// 取数编排（工程 / 参数档 / 分类 / 品牌 / 标签 / 仓库 / 商品详情 / 属性组候选 + 三档判据）
+	// 全在 service 的读模型里；这里只剩控制器负责的派生值、**表单回显**与出口。
+	view, err := reader.ProductEditPage(ctx, &productdto.ProductEditPageReq{
+		ProjectID: selected, ProductID: productID,
+	})
+	if view == nil {
+		// 契约上视图恒非 nil（失败也要给齐模板必需键）：真出现 nil 时兜一个空视图。
+		view = &productdto.ProductEditPageView{
+			Title: MsgProductsTitle, Menu: "products", HTTPStatus: http.StatusInternalServerError,
 		}
 	}
-	projects, err := h.projects.List(ctx)
+	view.Title = MsgProductsTitle
+	view.Menu = "products"
+	// 写动作的结论不在本页回显（走提示页，见 product_jump.go）；只剩**原地重渲染**这一条路
+	// 会给 Err（表单校验失败 / 选项读取失败）。
+	view.Err = submitErr
+	// 回列表的链接与「取消」都回到用户来的地方（工程上下文保留）。
+	view.BackURL = productListFilterURL(view.SelectedProject, "", "")
+	// 属性组候选读失败：撤掉保存入口并按当前语言归口 —— 「选择器缺失」与「用户主动取消了
+	// 全部引用」在 POST 上同形，读故障时不能装作后者。
+	if view.AttributeOptionsErr != nil {
+		view.EditBlocked = true
+		if view.Err == "" {
+			view.Err = productInternalText(c, view.AttributeOptionsErr)
+		}
+	}
+	// 状态下拉：先按「全部状态」那一档给默认值 —— 商品读不出来时页面仍完整；读到了会覆盖。
+	view.Statuses = productStatusOptions("")
+	// 分类树的扁平行：行装配（productRow 的分类下拉）要的是带层级缩进的平铺序列，
+	// 树本身只有分类选择器用 —— 读模型给树，摊平是渲染前一步的派生值，所以在这里做。
+	view.Flat = flattenCategoryTree(view.Categories)
+	if err == nil && view.HasProduct && view.Detail != nil {
+		// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于列表「标签」列的
+		// 「{n} 个」词条（i18n.FillTranslate），模板的 tf 只填 `%s`，没有等价能力。
+		row := h.productRow(ctx, view.SelectedProject, view.Flat, view.Brands, view.Tags,
+			view.WarehouseOptions, view.Detail, shell.TranslateFor(c))
+		// productRow 的汇总段是给**列表列**用的（名称 / 状态 / 价格区间 / 分类 / 品牌 / 标签），
+		// 编辑表单还要几个列表列不需要的字段（副标题 / 单位 / SEO 两栏）——
+		// 在这里补，而不是往共享组装里塞：那会让列表页也背上只有编辑页才用的键。
+		row["Subtitle"] = view.Detail.Subtitle
+		row["Unit"] = view.Detail.Unit
+		row["SEOTitle"] = view.Detail.SEOTitle
+		row["SEODescription"] = view.Detail.SEODescription
+		// 商品描述在库里是 {"html": "..."}（jsonb 对象），富文本字段要的是裸 HTML。
+		// 这里破一次「表单字段名 = DTO json 标签」的例：两边形态本来就不同
+		//（对象 vs HTML 字符串），硬对齐只会把包装逻辑推到前端散落脚本里。
+		row["DescriptionHTML"] = productDescriptionHTML(view.Detail.Description)
+		view.Statuses = productStatusOptions(view.Detail.Status)
+		// 属性组勾选态（详情页用的是逗号分隔的 id 输入框，编辑页是勾选列表）：
+		// 可选值来自读模型给的候选，勾选态由商品已引用的 id 决定。
+		// 候选读失败那一档走上面的 EditBlocked（AttributeChecks 保持为空）。
+		if view.AttributeOptionsErr == nil {
+			view.AttributeChecks = checkedAttributeOptions(view.AttributeOptions, view.Detail.AttributeIDs)
+		}
+		// 图集与数值字段：表单里是文本（textarea / input），按行与可空文本回填。
+		view.ImagesText = strings.Join(view.Detail.Images, "\n")
+		view.ImageAltsText = strings.Join(view.Detail.ImageAlts, "\n")
+		view.WeightText = nullableNumberText(view.Detail.Weight)
+		view.DefaultPriceText = nullableNumberText(view.Detail.DefaultPrice)
+		// 表单回显：校验失败重渲染时用**这次提交的值**覆盖上面读回来的值。
+		// 提交值只在请求体里，所以这一整段是控制器的事（service 不认识 gin.Context）。
+		if echo {
+			form := formEchoFrom(c)
+			for field, key := range map[string]string{
+				"name": "Name", "subtitle": "Subtitle", "slug": "Slug", "sku": "SKUCode",
+				"unit": "Unit", "seoTitle": "SEOTitle", "seoDescription": "SEODescription",
+			} {
+				row[key] = form.value(field)
+			}
+			view.ImagesText = c.PostForm("images")
+			view.ImageAltsText = c.PostForm("imageAlts")
+			view.WeightText = c.PostForm("weight")
+			view.DefaultPriceText = c.PostForm("defaultPrice")
+			view.Statuses = productStatusOptions(form.value("status"))
+			// 勾选态按**本次提交的** attributeIds 重算（多选字段「一个都不勾」= 解绑全部，
+			// 浏览器在没有任何勾选时根本不提交该字段）。
+			//
+			// 直接用读回来的候选重算，**不要**在已勾选的视图上改：视图已是
+			// []productdto.AttributeCheckOptionView（类型化），对它做 `.([]gin.H)` 断言会
+			// 静默失配（ok=false），症状是校验失败重渲染时勾选态全部丢失 —— 用户以为
+			// 自己刚选的东西被清空了，而页面其余部分（错误文案、回填值）都正常。
+			view.AttributeChecks = checkedAttributeOptions(view.AttributeOptions, form.list("attributeIds"))
+			row["CategoryChecks"] = checkedProductEditOptions(row["CategoryChecks"].([]gin.H), form.list("categoryIds"))
+			row["TagChecks"] = checkedProductEditOptions(row["TagChecks"].([]gin.H), form.list("tagIds"))
+			row["PrimaryOptions"] = selectedProductEditOptions(row["PrimaryOptions"].([]gin.H), form.value("primaryCategoryId"))
+			row["BrandOptions"] = selectedProductEditOptions(row["BrandOptions"].([]gin.H), form.value("brandId"))
+		}
+		view.Product = row
+		// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
+		// 这里只给一个链接标记（type=variant 时为假，模板据 isset 整块跳过）。
+		view.IsBundle = isBundleProduct(view.Detail.Type)
+	}
+	// 详情页模板面板：详情页只读展示绑定状态，写动作（进入自定义 / 编辑模板 / 重新套用预设 /
+	// 回滚）都在本页 —— 与详情页共用同一份组装。
+	view.TplPanel = h.detailTemplatePanel(ctx, view.SelectedProject, view.ProductID)
 	if err != nil {
-		fail(err)
+		// 视图已带 LoadFailed / HTTPStatus；这里只补**当前语言**的失败槽文案：
+		// 驱动原文与原始错误只进日志。
+		view.LoadFailed = true
+		view.LoadError = productErrPageText(c, err)
 	}
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
-	}
-	if loadErr == nil && selected != "" && !productProjectExists(projects, selected) {
-		// 判据是**本次请求已加载的工程集合**（与列表 / 新建 / 详情 / taxonomy 四页同一口径）：
-		// 工程被删除或并发变化会让旧链接里的工程失效，那时 400 是准确的事实。
-		httpStatus = http.StatusBadRequest
-		loadErr = errors.New(productenums.ErrInvalidParam)
-	}
-	data := gin.H{
-		"title":           MsgProductsTitle,
-		"menu":            "products",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"ProductID":       productID,
-		"HasProduct":      false,
-		"EditBlocked":     false,
-		// 变体的两个抽屉（新建 / 生成组合）要归属仓下拉：仓库清单在取数段拿到后填进来
-		// （下面 detail 读到之前先给空切片，模板的 len 判断自然跳过）。
-		"WarehouseOptions": []gin.H{},
-		// 回列表的链接与「取消」都回到用户来的地方（工程上下文保留）。
-		"BackURL": productListFilterURL(selected, "", ""),
-		// 状态下拉：当前商品读不出来时按「全部状态」那一档渲染（页面仍完整）。
-		"Statuses": productStatusOptions(""),
-		// 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go）；
-		// 只剩**原地重渲染**这一条路会给 Err（表单校验失败 / 选项读取失败），见下方 submitErr。
-	}
-	if submitErr != "" {
-		data["Err"] = submitErr
-	}
-	if loadErr == nil && selected != "" && productID != "" {
-		// 取数顺序与列表页一致（分类 / 品牌 / 标签 / 仓库各取一次），
-		// 因为行数据复用同一个 productRow 组装 —— 两页各算一遍必然分叉。
-		// 每条都套 loadErr == nil：前面读失败之后，后面的派生查询一条都不发。
-		var (
-			flat   []*productdto.CategoryResp
-			brands []*productdto.BrandResp
-			tags   []*productdto.TagResp
-		)
-		if flat, err = h.flatCategories(ctx, selected); err != nil {
-			fail(err)
-		}
-		if loadErr == nil {
-			if brands, err = h.listBrands(ctx, selected); err != nil {
-				fail(err)
-			}
-		}
-		if loadErr == nil {
-			if tags, err = h.listTags(ctx, selected); err != nil {
-				fail(err)
-			}
-		}
-		var warehouseOptions []productdto.WarehouseOptionView
-		if loadErr == nil {
-			if warehouseOptions, err = h.warehouseOptions(ctx, selected); err != nil {
-				fail(err)
-			}
-		}
-		// 仓库清单要进模板（变体的两个抽屉用它渲染归属仓下拉）——
-		// 只在 productRow 里用掉、忘了放进 data 的话，模板第一行的变量声明就会中断渲染。
-		data["WarehouseOptions"] = warehouseOptions
-		var detail *productdto.ProductResp
-		if loadErr == nil {
-			if detail, err = h.products.Get(ctx, &productdto.GetReq{ID: productID, ProjectID: selected}); err != nil {
-				// 业务 key 分档：不存在的商品 = 404、参数非法 = 400，其余（含驱动错误）
-				// 一律 500 —— 只有「这一行确实不在库里」才算「不存在」。
-				switch productErrKeyOf(err) {
-				case productenums.ErrNotFound:
-					httpStatus = http.StatusNotFound
-					loadErr = err
-				case productenums.ErrInvalidParam:
-					httpStatus = http.StatusBadRequest
-					loadErr = err
-				default:
-					fail(err)
-				}
-			} else if detail == nil {
-				// 契约上「没有错误却没有行」不该出现；真出现时不能当成功渲染 ——
-				// 那会把「读不出来」说成「这个商品没有内容」。
-				httpStatus = http.StatusNotFound
-				loadErr = errors.New(productenums.ErrNotFound)
-			}
-		}
-		if loadErr == nil && detail != nil {
-			data["HasProduct"] = true
-			// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于列表「标签」列的
-			// 「{n} 个」词条（i18n.FillTranslate），模板的 tf 只填 `%s`，没有等价能力。
-			row := h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail, shell.TranslateFor(c))
-			// productRow 的汇总段是给**列表列**用的（名称 / 状态 / 价格区间 / 分类 / 品牌 / 标签），
-			// 编辑表单还要几个列表列不需要的字段（副标题 / 单位 / SEO 两栏）——
-			// 在这里补，而不是往共享组装里塞：那会让列表页也背上只有编辑页才用的键。
-			row["Subtitle"] = detail.Subtitle
-			row["Unit"] = detail.Unit
-			row["SEOTitle"] = detail.SEOTitle
-			row["SEODescription"] = detail.SEODescription
-			// 商品描述在库里是 {"html": "..."}（jsonb 对象），富文本字段要的是裸 HTML。
-			// 这里破一次「表单字段名 = DTO json 标签」的例：两边形态本来就不同
-			//（对象 vs HTML 字符串），硬对齐只会把包装逻辑推到前端散落脚本里。
-			row["DescriptionHTML"] = productDescriptionHTML(detail.Description)
-			data["Product"] = row
-			data["Statuses"] = productStatusOptions(detail.Status)
-			// 属性组勾选态（详情页用的是逗号分隔的 id 输入框，编辑页是勾选列表）：
-			// 可选值来自工程属性组清单，勾选态由商品已引用的 id 决定。
-			opts, aerr := h.attributeOptions(ctx, selected)
-			if aerr != nil {
-				// 选择器缺失与主动取消勾选在 POST 上同形；读故障时撤掉保存入口。
-				data["EditBlocked"] = true
-				data["Err"] = productInternalText(c, aerr)
-			} else {
-				data["AttributeChecks"] = checkedAttributeOptions(opts, detail.AttributeIDs)
-			}
-			// 图集与数值字段：表单里是文本（textarea / input），按行与可空文本回填。
-			data["ImagesText"] = strings.Join(detail.Images, "\n")
-			data["ImageAltsText"] = strings.Join(detail.ImageAlts, "\n")
-			data["WeightText"] = nullableNumberText(detail.Weight)
-			data["DefaultPriceText"] = nullableNumberText(detail.DefaultPrice)
-			if echo {
-				form := formEchoFrom(c)
-				for field, key := range map[string]string{
-					"name": "Name", "subtitle": "Subtitle", "slug": "Slug", "sku": "SKUCode",
-					"unit": "Unit", "seoTitle": "SEOTitle", "seoDescription": "SEODescription",
-				} {
-					row[key] = form.value(field)
-				}
-				data["ImagesText"] = c.PostForm("images")
-				data["ImageAltsText"] = c.PostForm("imageAlts")
-				data["WeightText"] = c.PostForm("weight")
-				data["DefaultPriceText"] = c.PostForm("defaultPrice")
-				data["Statuses"] = productStatusOptions(form.value("status"))
-				// 勾选态按**本次提交的** attributeIds 重算（多选字段「一个都不勾」= 解绑全部，
-				// 浏览器在没有任何勾选时根本不提交该字段）。
-				//
-				// 直接用读回来的 opts 重算，**不要**在已勾选的视图上改：视图已是
-				// []productdto.AttributeCheckOptionView（类型化），对它做 `.([]gin.H)` 断言会
-				// 静默失配（ok=false），症状是校验失败重渲染时勾选态全部丢失 —— 用户以为
-				// 自己刚选的东西被清空了，而页面其余部分（错误文案、回填值）都正常。
-				data["AttributeChecks"] = checkedAttributeOptions(opts, form.list("attributeIds"))
-				row["CategoryChecks"] = checkedProductEditOptions(row["CategoryChecks"].([]gin.H), form.list("categoryIds"))
-				row["TagChecks"] = checkedProductEditOptions(row["TagChecks"].([]gin.H), form.list("tagIds"))
-				row["PrimaryOptions"] = selectedProductEditOptions(row["PrimaryOptions"].([]gin.H), form.value("primaryCategoryId"))
-				row["BrandOptions"] = selectedProductEditOptions(row["BrandOptions"].([]gin.H), form.value("brandId"))
-			}
-			// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
-			// 这里只给一个链接标记（type=variant 时不给这个键，模板据 isset 整块跳过）。
-			data["IsBundle"] = isBundleProduct(detail.Type)
-			// 详情页模板面板：详情页只读展示绑定状态，写动作（进入自定义 / 编辑模板 /
-			// 重新套用预设 / 回滚）都在本页 —— 与详情页共用同一份组装。
-			data["TplPanel"] = h.detailTemplatePanel(ctx, selected, productID)
-		}
-	}
-	if loadErr != nil {
-		data["LoadFailed"] = true
-		// 归口文案（中英 / 缺词 fallback 都在里面）；驱动原文与原始错误只进日志。
-		data["LoadError"] = productErrPageText(c, loadErr)
-		// 失败页不该被缓存：重试必须真的回到服务端。
-		c.Header("Cache-Control", "no-store")
-	}
-	c.HTML(httpStatus, "admin/product/product_edit.html", adminui.Prepare(c, data))
+	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
+	adminui.RenderPage(c, productEditPageTemplate, view)
 }
 
 func checkedProductEditOptions(options []gin.H, selected []string) []gin.H {
@@ -1204,7 +1148,7 @@ const productDetailPageTemplate = "admin/product/product_detail.html"
 // 现在三档分开：业务上的「不存在」= 404；参数不合法 = 400；其余 = 500 + no-store。
 //
 // 取数编排（工程 / 仓库 / 商品 / 分类 / 品牌 / 标签）与上面三档的判定都在 service 的读模型里
-//（service.ProductDetailPage）；本函数只剩「取参数 → 调读模型 → 补控制器负责的派生值 → 一个出口」。
+// （service.ProductDetailPage）；本函数只剩「取参数 → 调读模型 → 补控制器负责的派生值 → 一个出口」。
 func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	reader, ok := h.products.(productcontract.ProductPageReader)

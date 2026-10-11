@@ -78,7 +78,7 @@ func (s productPageProjectsStub) List(context.Context) ([]projectdto.ProjectResp
 	return s.rows, s.err
 }
 
-// productPageReaderStub 页面读模型桩（新建页 / 列表页 / 详情页的取数编排都已在 service）。
+// productPageReaderStub 页面读模型桩（新建页 / 列表页 / 详情页 / 编辑页的取数编排都已在 service）。
 //
 // 控制器现在只做三步：读参数 → 调读模型 → 渲染。所以这一层的用例验的是**控制器**的三段
 // （参数转发 / 渲染 / 档位与 no-store），取数编排本身由 service 的用例
@@ -93,8 +93,8 @@ type productPageReaderStub struct {
 	// reqs 记录控制器转下来的入参：参数读丢了要能看出来。
 	reqs []*productdto.ProductNewPageReq
 
-	// 列表页 / 详情页的桩：同一个接口的另外两个方法，用例各自只填自己那一份。
-	// **三个方法都要在** —— 接口是一个整体，少一个就是断言失败、整包 500。
+	// 列表页 / 详情页 / 编辑页的桩：同一个接口的另外三个方法，用例各自只填自己那一份。
+	// **四个方法都要在** —— 接口是一个整体，少一个就是断言失败、整包 500。
 	listView *productdto.ProductListPageView
 	listErr  error
 	listReqs []*productdto.ProductListPageReq
@@ -102,6 +102,10 @@ type productPageReaderStub struct {
 	detailView *productdto.ProductDetailPageView
 	detailErr  error
 	detailReqs []*productdto.ProductDetailPageReq
+
+	editView *productdto.ProductEditPageView
+	editErr  error
+	editReqs []*productdto.ProductEditPageReq
 }
 
 func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
@@ -117,6 +121,11 @@ func (s *productPageReaderStub) ProductListPage(_ context.Context, req *productd
 func (s *productPageReaderStub) ProductDetailPage(_ context.Context, req *productdto.ProductDetailPageReq) (*productdto.ProductDetailPageView, error) {
 	s.detailReqs = append(s.detailReqs, req)
 	return s.detailView, s.detailErr
+}
+
+func (s *productPageReaderStub) ProductEditPage(_ context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageView, error) {
+	s.editReqs = append(s.editReqs, req)
+	return s.editView, s.editErr
 }
 
 // ListRatings 行组装（productRow）会读一次评分（issue #33）：嵌入的 ProductService 是 nil 时
@@ -182,6 +191,31 @@ func productDetailPageViewStub(mutate func(*productdto.ProductDetailPageView)) *
 		SelectedProject:  "p1",
 		ProductID:        "prod-1",
 		WarehouseOptions: []productdto.WarehouseOptionView{},
+		Categories:       []*productdto.CategoryResp{},
+		Brands:           []*productdto.BrandResp{},
+		Tags:             []*productdto.TagResp{},
+		HTTPStatus:       http.StatusOK,
+	}
+	if mutate != nil {
+		mutate(v)
+	}
+	return v
+}
+
+// productEditPageViewStub 编辑页视图桩（默认「读到、正常」档；失败 / 空态由用例改）。
+// 与详情页同一口径：列表键一律给空列表而不是缺键 —— 控制器不再补任何键。
+// Detail 给一条最小商品（行装配 productRow 要它），其余表单字段由控制器算。
+func productEditPageViewStub(mutate func(*productdto.ProductEditPageView)) *productdto.ProductEditPageView {
+	v := &productdto.ProductEditPageView{
+		Title:            MsgProductsTitle,
+		Menu:             "products",
+		Projects:         []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
+		SelectedProject:  "p1",
+		ProductID:        "prod1",
+		HasProduct:       true,
+		Detail:           &productdto.ProductResp{ID: "prod1", Name: "商品一", Slug: "prod-1"},
+		WarehouseOptions: []productdto.WarehouseOptionView{},
+		AttributeOptions: []productdto.AttributeOptionView{},
 		Categories:       []*productdto.CategoryResp{},
 		Brands:           []*productdto.BrandResp{},
 		Tags:             []*productdto.TagResp{},

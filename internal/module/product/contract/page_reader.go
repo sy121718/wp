@@ -10,9 +10,12 @@
 // 写动作仍然只走各自的用例方法。
 //
 // 实现方是本模块 service（编译期断言 `var _ ProductPageReader = (*Service)(nil)`
-// 在 `service/product_page.go`）；消费方是 `inbound/http/product_core.go` 的
-// `ProductNewPage`，那里只能是**运行期**断言 —— 控制器持有的是 `ProductService`，
+// 在 `service/product_page.go`）；消费方是 `inbound/http/` 的四个整页控制器
+// （新建 / 列表 / 详情 / 编辑），那里只能是**运行期**断言 —— 控制器持有的是 `ProductService`，
 // 读模型不在它的能力面上（放上去等于把页面的形状变成跨模块契约的一部分，见上）。
+//
+// **四个方法必须在同一个接口里**：控制器一次断言拿到整份读模型，少实现一个就是断言失败 →
+// 整页走 500 兜底页（症状是「这一屏的取数根本没被调到」，桩与中间层的包装类型都踩过）。
 package productcontract
 
 import (
@@ -53,4 +56,15 @@ type ProductPageReader interface {
 	//   · 400 参数不合法（?project=<不存在的 id> / id 形态不对）—— 进失败槽 + no-store；
 	//   · 500 其余（数据库 / 连接 / 超时 / 畸形返回）—— 进失败槽 + no-store。
 	ProductDetailPage(ctx context.Context, req *productdto.ProductDetailPageReq) (res *productdto.ProductDetailPageView, err error)
+
+	// ProductEditPage 商品编辑整页的读模型：工程清单 → 工程存在性校验 → 分类树 / 品牌 /
+	// 标签 / 仓库清单 → 商品详情（三档，判据同 ProductDetailPage）→ 属性组候选，
+	// 并给出这一屏的档位。
+	//
+	// 契约同上，另加一条：**属性组候选读失败不让整页失败** —— 它是表单里的一块选择器。
+	// 原始错误随视图带出（AttributeOptionsErr），由控制器决定撤掉保存入口并归口文案。
+	//
+	// 表单回显也不在这里：校验失败重渲染要用**这次提交的值**覆盖读回来的值，
+	// 而提交值在请求体里 —— 那是控制器的事（inbound/http 的 formEchoFrom）。
+	ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (res *productdto.ProductEditPageView, err error)
 }

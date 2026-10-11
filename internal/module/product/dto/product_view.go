@@ -251,6 +251,91 @@ func (v ProductDetailPageView) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
+// ProductEditPageReq 商品编辑整页的取数入参。
+type ProductEditPageReq struct {
+	// ProjectID 查询串 / 表单里的工程 id；空串 = 取工程清单的第一个。
+	ProjectID string
+	// ProductID 要编辑的商品 id；空串 = 没给参数 → **200 空表单**（不是 404）：
+	// 编辑页是写入口，让运营看到一个空表单比看到一个 404 有用（详情页反过来）。
+	// 给了 id 但库里没有才是 404（与详情页同一档：空态、不进失败槽）。
+	ProductID string
+}
+
+// ProductEditPageView 商品编辑整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值与回显）。
+//
+// 与 ProductDetailPageView 的两点不同：
+//   - 多一组 AttributeOptions —— 编辑表单的勾选列表用属性组候选，详情页用的是逗号分隔的 id 输入框；
+//   - 多两个**控制器侧**的字段：Err（原地重渲染的失败文案）与 EditBlocked（属性组读不到时撤掉
+//     保存入口）。两者回答的是「这次提交怎么样」，不是「库里有什么」，本层不参与。
+//
+// **表单回显（echo）不在本层**：校验失败重渲染时要用**用户刚提交的值**覆盖读回来的值，
+// 而提交值在请求体里 —— 那是控制器的事（inbound/http 的 formEchoFrom），
+// 也是这一屏与新建页 / 列表页 / 详情页唯一多出来的一层。
+type ProductEditPageView struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	Projects        []projectdto.ProjectResp
+	SelectedProject string
+	ProductID       string
+	// HasProduct 为假 = 没读到商品：模板据此走空态分支（与详情页同一档）。
+	HasProduct bool
+
+	WarehouseOptions []WarehouseOptionView
+	AttributeOptions []AttributeOptionView
+
+	// —— 行装配原料（Product 成品行由控制器的 productRow 组装）——
+	// Categories 是**分类树**（扁平行由控制器的 flattenCategoryTree 做）。
+	Detail     *ProductResp
+	Categories []*CategoryResp
+	Brands     []*BrandResp
+	Tags       []*TagResp
+	Flat       []*CategoryResp
+
+	// —— 控制器装配的产物 ——
+	Product  map[string]any
+	TplPanel map[string]any
+	BackURL  string
+
+	// Err 表单校验失败 / 选项读取失败的原地重渲染文案（控制器填）。
+	Err string
+	// EditBlocked 属性组读不到时撤掉保存入口：选择器缺失与主动取消勾选在 POST 上同形，
+	// 读故障时不能装作「用户取消了全部引用」。
+	EditBlocked bool
+	// AttributeOptionsErr 属性组候选读取失败的原因（模板不读）。
+	// 控制器据此把 EditBlocked 置真并按当前语言归口文案 —— 本层不认识 HTTP，只交出事实。
+	AttributeOptionsErr error
+
+	// —— 表单字段的回填文本与勾选态（控制器算；echo=true 时用**这次提交的值**覆盖）——
+	// Statuses 当前选中档；AttributeChecks 属性组勾选列表；四个 *Text 是图集与数值字段的
+	// 文本形态（表单里是 textarea / input，库里是可空数值与切片）。
+	Statuses         []StatusOptionView
+	AttributeChecks  []AttributeCheckOptionView
+	ImagesText       string
+	ImageAltsText    string
+	WeightText       string
+	DefaultPriceText string
+	// IsBundle 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 —— 这里只给链接标记
+	//（type=variant 时为假，模板据 isset 整块跳过）。
+	IsBundle bool
+
+	LoadFailed bool
+	LoadError  string
+	HTTPStatus int
+}
+
+// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+func (v ProductEditPageView) PageStatus() int { return v.HTTPStatus }
+
+// PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
+//
+// 判据与详情页一致：**非 200 一律 no-store**。404「商品不存在」不走失败槽（那是「读到了、
+// 库里没有」，模板给的是空态），但它同样是一次不该被缓存的结果 —— 商品刚被建回来时，
+// 缓存的 404 会把运营挡在门外。
+func (v ProductEditPageView) PageNoStore() bool {
+	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
+}
+
 // WarehouseOptionView 仓库下拉 / 勾选项的渲染视图。
 //
 // Label 只拼**数据**（仓名 + 编码）；「默认仓」后缀是词条，用 DefaultSuffixKey +

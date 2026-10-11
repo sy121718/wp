@@ -177,12 +177,46 @@ func TestProductEditPageRejectsEmptyName(t *testing.T) {
 	}
 }
 
+// failedAttributeListService 制造「属性组清单读失败」这一档。
+//
+// 为什么 GET 那一半改成在读模型的**产出**上注入：取数编排已下沉（service.ProductEditPage 内部
+// 调 s.ListAttributes），而 Go 的嵌入方法不经过外层包装 —— 覆盖 ListAttributes 对读模型不再生效，
+// 断言会变成「页面 200、属性组还在」的假绿。现在 ProductEditPage 不再走嵌入的 ProductService，
+// 而是显式委托给真读模型，再覆盖成故障档：与真实故障在视图层同形（AttributeOptionsErr 非空、
+// 候选为空、整页仍 200）。
+//
+// ListAttributes 的覆盖**保留**：POST（ProductsUpdate）那条路径仍由控制器直调它，
+// 「即使绕开缺失的选择器直接 POST，服务端仍须拒绝整体替换」靠它成立。
 type failedAttributeListService struct {
 	productcontract.ProductService
+	reader productcontract.ProductPageReader
 }
 
 func (s failedAttributeListService) ListAttributes(context.Context, *productdto.ListAttributeReq) ([]*productdto.AttributeResp, error) {
 	return nil, errors.New("injected attribute list failure: internal detail")
+}
+
+func (s failedAttributeListService) ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageView, error) {
+	view, err := s.reader.ProductEditPage(ctx, req)
+	if view != nil {
+		view.AttributeOptionsErr = errors.New("injected attribute list failure: internal detail")
+		view.AttributeOptions = nil
+	}
+	return view, err
+}
+
+// 读模型接口是一个整体：本桩只覆盖 ProductEditPage 一条，另外三条也必须在 —— 少一条就是
+// 类型断言失败 → 整页走 500 兜底页（症状是「属性组故障档根本没被渲染」，而断言只会说状态码不对）。
+func (s failedAttributeListService) ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
+	return s.reader.ProductNewPage(ctx, req)
+}
+
+func (s failedAttributeListService) ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (*productdto.ProductListPageView, error) {
+	return s.reader.ProductListPage(ctx, req)
+}
+
+func (s failedAttributeListService) ProductDetailPage(ctx context.Context, req *productdto.ProductDetailPageReq) (*productdto.ProductDetailPageView, error) {
+	return s.reader.ProductDetailPage(ctx, req)
 }
 
 func TestProductEditPageRejectsInvalidNumbersWithoutPartialWrite(t *testing.T) {
@@ -256,7 +290,7 @@ func TestProductEditPageAttributeListFailureBlocksWrite(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(failedAttributeListService{ProductService: f.svc}, f.projects)
+	handle := producthttp.NewProductPageHandle(failedAttributeListService{ProductService: f.svc, reader: f.svc}, f.projects)
 	engine.GET("/admin/products/edit", handle.ProductEditPage)
 	engine.POST("/admin/products/update", handle.ProductsUpdate)
 
