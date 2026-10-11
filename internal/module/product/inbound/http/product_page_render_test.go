@@ -161,11 +161,21 @@ type productPageReaderStub struct {
 	err  error
 	// reqs 记录控制器转下来的入参：参数读丢了要能看出来。
 	reqs []*productdto.ProductNewPageReq
+
+	// 列表页（ProductsPage）的桩：同一个接口的第二个方法，用例各自只填自己那一份。
+	listView *productdto.ProductListPageView
+	listErr  error
+	listReqs []*productdto.ProductListPageReq
 }
 
 func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
 	s.reqs = append(s.reqs, req)
 	return s.view, s.err
+}
+
+func (s *productPageReaderStub) ProductListPage(_ context.Context, req *productdto.ProductListPageReq) (*productdto.ProductListPageView, error) {
+	s.listReqs = append(s.listReqs, req)
+	return s.listView, s.listErr
 }
 
 // productNewPageViewStub 成功档视图（与 service 产出的同型：列表键一律给空列表而不是缺键）。
@@ -180,6 +190,33 @@ func productNewPageViewStub(mutate func(*productdto.ProductNewPageView)) *produc
 		AttributeOptions:    []productdto.AttributeOptionView{},
 		WarehouseSKUOptions: []productdto.WarehouseSKUGroupView{},
 		Templates:           []productdto.EntityTemplateOptionView{},
+		HTTPStatus:          http.StatusOK,
+	}
+	if mutate != nil {
+		mutate(v)
+	}
+	return v
+}
+
+// productListPageViewStub 列表页成功档视图（与 service 产出的同型：列表键一律给空列表
+// 而不是缺键 —— 控制器不再补任何键）。
+//
+// 分页条只由 total / page / limit 三个事实决定，所以「25 条 → 两页」这类用例只改 Total。
+func productListPageViewStub(mutate func(*productdto.ProductListPageView)) *productdto.ProductListPageView {
+	v := &productdto.ProductListPageView{
+		Projects:            []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
+		SelectedProject:     "p1",
+		Page:                1,
+		Limit:               productListPageSize,
+		WarehouseOptions:    []productdto.WarehouseOptionView{},
+		AttributeOptions:    []productdto.AttributeOptionView{},
+		WarehouseSKUOptions: []productdto.WarehouseSKUGroupView{},
+		RowDetails:          []*productdto.ProductResp{},
+		Categories:          []*productdto.CategoryResp{},
+		Brands:              []*productdto.BrandResp{},
+		Tags:                []*productdto.TagResp{},
+		Rules:               []*productdto.PricingRuleTypeResp{},
+		Roundings:           []*productdto.PricingRoundingOptionResp{},
 		HTTPStatus:          http.StatusOK,
 	}
 	if mutate != nil {
@@ -250,10 +287,18 @@ func headOf(body string) string {
 // —— 整页 GET 失败出口：用例 ——
 
 // TestProductsPageLoadFailureRendersSamePage 主数据没读到：同页完整 HTML + 500 + no-store。
+//
+// 列表页的取数编排已下沉到 service（读模型）：这里验的是**控制器**拿失败视图之后的出口
+// （档位 / no-store / 同页形状），取数失败本身的判据在 service 的用例里。
 func TestProductsPageLoadFailureRendersSamePage(t *testing.T) {
 	h := &productPageHandle{
-		projects: productPageProjectsStub{err: errors.New(`pq: relation "products" does not exist`)},
-		products: &productPageProductsStub{},
+		products: &productPageReaderStub{
+			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+				v.HTTPStatus = http.StatusInternalServerError
+				v.LoadFailed = true
+			}),
+			listErr: errors.New(`pq: relation "products" does not exist`),
+		},
 	}
 	rec := productPageRequest(t, h, "/admin/products")
 	assertProductPageFailure(t, "列表页主数据失败", rec, http.StatusInternalServerError, "这一页的数据没能读出来")
@@ -263,10 +308,16 @@ func TestProductsPageLoadFailureRendersSamePage(t *testing.T) {
 //
 // ?project=<不存在的工程 id> 此前会渲染成「这个工程下没有商品」——把「工程不存在」说成了
 // 「工程是空的」，运营照着这句话去建商品，就建到另一个工程上了。
+// 档位由读模型带出（service 判「工程不存在」= 400），控制器只把它交给渲染出口。
 func TestProductsPageBadProjectParamIsFullPage(t *testing.T) {
 	h := &productPageHandle{
-		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: &productPageProductsStub{},
+		products: &productPageReaderStub{
+			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+				v.HTTPStatus = http.StatusBadRequest
+				v.LoadFailed = true
+			}),
+			listErr: errors.New(productenums.ErrInvalidParam),
+		},
 	}
 	rec := productPageRequest(t, h, "/admin/products?project=does-not-exist")
 	assertProductPageFailure(t, "列表页工程参数不合法", rec, http.StatusBadRequest, "请求参数无效")
@@ -276,12 +327,17 @@ func TestProductsPageBadProjectParamIsFullPage(t *testing.T) {
 //
 // 此前这里是 `if derr != nil { continue }`：页面少一行却仍写着「共 N 条」，用户据此以为
 // 商品已经被删了 —— 而它只是这一行读不出来。主数据取不到就不该渲染成一张「完整」的列表。
+// 判据现在在 service 侧（逐行取详情失败即整页失败，见 service.ProductListPage），
+// 控制器这一层验的是它透出来的档位。
 func TestProductsPageRowDetailFailureIsNotSwallowed(t *testing.T) {
 	h := &productPageHandle{
-		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: &productPageProductsStub{
-			listRows: []*productdto.ProductResp{{ID: "prod-1"}},
-			getErr:   errors.New(`pq: canceling statement due to statement timeout`),
+		products: &productPageReaderStub{
+			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+				v.Total = 1
+				v.HTTPStatus = http.StatusInternalServerError
+				v.LoadFailed = true
+			}),
+			listErr: errors.New(`pq: canceling statement due to statement timeout`),
 		},
 	}
 	rec := productPageRequest(t, h, "/admin/products?project=p1")
@@ -399,8 +455,11 @@ func TestProductDetailPageRendersProductWhenDetailReadable(t *testing.T) {
 // 这里刻意用「零工程」这个真实空态（不是「没读到」）覆盖「空态不是失败」这一条。
 func TestProductsPageSuccessRendersPage(t *testing.T) {
 	h := &productPageHandle{
-		projects: productPageProjectsStub{},
-		products: &productPageProductsStub{},
+		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			// 「零工程」这个真实空态：不是「没读到」，是读到了、一个都没有。
+			v.Projects = []projectdto.ProjectResp{}
+			v.SelectedProject = ""
+		})},
 	}
 	rec := productPageRequest(t, h, "/admin/products")
 	if rec.Code != http.StatusOK {

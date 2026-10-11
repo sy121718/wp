@@ -34,4 +34,13 @@ type ProductPageReader interface {
 	//   · 失败后**一条派生取数都不发**（在非法工程上继续查只会把「工程不存在」渲染成
 	//     「这个工程下没有可选项」）。
 	ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (res *productdto.ProductNewPageView, err error)
+
+	// ProductListPage 商品列表整页的读模型：工程清单 → 工程存在性校验 → 分类树 / 品牌 /
+	// 标签 / 仓库清单 → 列表与总数（同一份过滤条件）→ 逐行详情 → 属性组选项 / 每仓 SKU
+	// 候选 → 定价规则清单，并给出这一屏的档位。
+	//
+	// 契约同上（视图恒非 nil / 失败带 LoadFailed 与 HTTPStatus / 失败后不发派生取数），
+	// 另加一条：**逐行详情取不到就整页失败**，不做静默跳过 —— 少一行而仍写着「共 N 条」，
+	// 用户会以为商品被删了。
+	ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (res *productdto.ProductListPageView, err error)
 }

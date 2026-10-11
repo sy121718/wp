@@ -22,6 +22,7 @@ package productdto
 import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/pkg/facing"
+	"go_wp/pkg/pagination"
 )
 
 // ==========================================================================
@@ -89,6 +90,101 @@ func (v ProductNewPageView) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
 func (v ProductNewPageView) PageNoStore() bool { return v.LoadFailed }
+
+// ProductListPageReq 商品列表整页的取数入参。
+//
+// Page 是**已归一**的页码：控制器用跨页共用的 productPageNumber 归一（`?page=abc` /
+// `?page=-3` 已经退回 1），本方法只做下限保护。归一不在这里做，是为了不让同一份规则
+// 在 service 与控制器各写一遍（那三个页面的页码归一与这里的必须同口径）。
+type ProductListPageReq struct {
+	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
+	ProjectID string
+	Keyword   string
+	Status    string
+	Page      int
+}
+
+// ProductListPageView 商品列表整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值）。
+//
+// 它是这一屏**唯一的模板数据源**（`adminui.RenderPage(c, tpl, view)` 没有额外的 args 参数），
+// 因此字段分三类，各自有明确的写者：
+//   - **service 的读模型写**：Projects / SelectedProject / Filter* / Page / Limit / Total /
+//     RowDetails / Categories / Brands / Tags / 三组选项 / Rules / Roundings（取数结果）；
+//   - **控制器写**：Title / Menu（页壳键，title 的 i18n key 常量是 http 包的 MsgProductsTitle）、
+//     Flat（分类树扁平化）/ Form（改价表单初值）/ Statuses（状态下拉）/ Products（成品行）/
+//     Pagination / ListQuery —— 这些的**计算工具还被别的页面共用**（分类标签页 / 详情页回显 /
+//     独立定价页），搬进 service 等于让那几页各留一份，理由见 service/product_list_page.go 文件头；
+//   - **控制器在失败时写**：LoadError（按当前语言归口；LoadFailed / HTTPStatus 由读模型给）。
+type ProductListPageView struct {
+	// Title 放 enums 的 i18n key（取词在渲染期，理由同 ProductNewPageView）。
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	// Projects 工程清单与本次选中的工程：整页的工程上下文（失败页也带着它）。
+	Projects        []projectdto.ProjectResp
+	SelectedProject string
+
+	// FilterKeyword / FilterStatus 回显；Statuses 是下拉选项；Page / Limit / Total 是分页
+	// **事实**（基地址与翻页链接由 ListQuery + Pagination 承载，本层不拼 URL）。
+	FilterKeyword string
+	FilterStatus  string
+	Statuses      []StatusOptionView
+	Page          int
+	Limit         int
+	Total         int64
+
+	// 行装配的原料：RowDetails 是本页每行的商品详情（列表项不含变体明细，逐行取）；
+	// Categories 是**分类树**，Flat 是控制器扁平化后的行（两棵树都留着 —— 行渲染按
+	// 父在前子紧随的顺序读 Flat，分类选择器按树读 Categories，见 products.html 的两处）。
+	RowDetails []*ProductResp
+	Categories []*CategoryResp
+	Flat       []*CategoryResp
+	Brands     []*BrandResp
+	Tags       []*TagResp
+
+	// 页面上三处抽屉/表单要的选项（事实 + 词条 key，取词在渲染期）。
+	WarehouseOptions    []WarehouseOptionView
+	AttributeOptions    []AttributeOptionView
+	WarehouseSKUOptions []WarehouseSKUGroupView
+
+	// 批量改价抽屉的规则清单、尾数处理清单与表单初值。
+	Rules     []*PricingRuleTypeResp
+	Roundings []*PricingRoundingOptionResp
+	Form      PricingForm
+
+	// Products 成品行（`[]map[string]any` 与 gin.H 同型，dto 因此不必 import gin）；
+	// Pagination 分页条事实；ListQuery 筛选上下文（表单 action 的 query，写动作失败时
+	// 由 pkg/backpath 读回，见 product_jump.go 的 productListBackKeys）。
+	Products   []map[string]any
+	Pagination pagination.Page
+	ListQuery  string
+
+	// LoadFailed 本次请求**没读到**（不是「读到了、只是空的」）；LoadError 由控制器
+	// 按当前语言归口后填。
+	LoadFailed bool
+	LoadError  string
+
+	// HTTPStatus 这一屏的档位：200 读到 / 400 参数不合法 / 500 主数据没读到（导出理由同
+	// ProductNewPageView.HTTPStatus）。
+	HTTPStatus int
+}
+
+// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+func (v ProductListPageView) PageStatus() int { return v.HTTPStatus }
+
+// PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
+func (v ProductListPageView) PageNoStore() bool { return v.LoadFailed }
+
+// StatusOptionView 状态下拉的一项（值 + 词条 key + 是否选中）。
+//
+// LabelKey / LabelFallback 而不是成品译文的理由同 WarehouseOptionView：取词在渲染期，
+// 控制器提前翻好就把这一句锁死在一种语言（英文界面上留中文，不报错、门禁也不红）。
+type StatusOptionView struct {
+	Value         string
+	LabelKey      string
+	LabelFallback string
+	Selected      bool
+}
 
 // WarehouseOptionView 仓库下拉 / 勾选项的渲染视图。
 //

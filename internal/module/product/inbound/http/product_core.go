@@ -226,172 +226,86 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	// 每个失败点各写一遍「渲染失败页」等于每页各有一份「失败页长什么样」的实现，
 	// 改一处必然漏一处；这里只记第一处失败的原因，末尾统一出口。
 	// httpStatus 与下面的筛选状态（status 查询串）不是一回事，名字分开避免撞车。
-	httpStatus := http.StatusOK
-	var loadErr error
-	fail := func(err error) {
-		if loadErr == nil {
-			loadErr = err
-			// 主数据没读到 = 500。参数不合法是另一档（400，见下面的工程校验）。
-			httpStatus = http.StatusInternalServerError
+	reader, ok := h.products.(productcontract.ProductPageReader)
+	if !ok {
+		// 装配没接上读模型（老装配 / 桩）：整页 + 500 + no-store，走同一份失败页形状
+		//（与 ProductNewPage 同一处理）。这条不可达就说明装配漏了；真出现时也不能把
+		//「没接上」说成「没有数据」。
+		view := &productdto.ProductListPageView{
+			Title: MsgProductsTitle, Menu: "products", Limit: productListPageSize,
+			LoadFailed: true, LoadError: productInternalText(c, nil),
+			HTTPStatus: http.StatusInternalServerError,
+		}
+		adminui.RenderPage(c, productListPageTemplate, view)
+		return
+	}
+	// 取参数 → 调读模型（取数编排在 service：取哪些数据、按什么顺序、哪条失败算 400 /
+	// 哪条只降级，都是业务结论。见 service.ProductListPage）。
+	// 页码归一用跨页共用的 productPageNumber（属性页 / 分类标签页同口径）。
+	view, err := reader.ProductListPage(ctx, &productdto.ProductListPageReq{
+		ProjectID: strings.TrimSpace(c.Query("project")),
+		Keyword:   strings.TrimSpace(c.Query("keyword")),
+		Status:    strings.TrimSpace(c.Query("status")),
+		Page:      productPageNumber(c.Query("page")),
+	})
+	if view == nil {
+		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
+		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
+		view = &productdto.ProductListPageView{
+			Title: MsgProductsTitle, Menu: "products", Limit: productListPageSize,
+			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
-	projects, err := h.projects.List(ctx)
-	if err != nil {
-		fail(err)
-	}
-	selected := strings.TrimSpace(c.Query("project"))
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
-	}
-	// 查询串不是可信边界，但也不是可以装作没看见的输入：?project=<不存在的 id> 一路渲染下去
-	// 会得到「这个工程下没有商品」—— 把「工程不存在」说成了「工程是空的」。
-	// 参数级失败仍是**页面请求**：整页 + 400 + no-store（不是 JSON 报文，也不是裸文本）。
-	if loadErr == nil && selected != "" && !productProjectExists(projects, selected) {
-		httpStatus = http.StatusBadRequest
-		loadErr = errors.New(productenums.ErrInvalidParam)
-	}
-	// 筛选与分页（服务端渲染，零 JS）：关键词 / 状态 / 页码全部走查询串，
-	// 分页条与筛选表单是普通 GET —— 无 JS 也能用，且刷新后条件不丢。
-	// 查询串不是可信边界：关键词与状态在这里归一，页码非法值一律退回第 1 页。
-	keyword := strings.TrimSpace(c.Query("keyword"))
-	status := strings.TrimSpace(c.Query("status"))
-	page := productPageNumber(c.Query("page"))
-	limit := productListPageSize
-	rows := make([]gin.H, 0, limit)
-	// 分类树与品牌列表一次取好：每个商品行都要渲染「挂哪些分类 / 主分类 / 品牌」，
-	// 放在循环里取会变成 2×N 次查询。
-	flat, ferr := h.flatCategories(ctx, selected)
-	if ferr != nil {
-		fail(ferr)
-	}
-	brands, berr := h.listBrands(ctx, selected)
-	if berr != nil {
-		fail(berr)
-	}
-	// 标签一次取好（issue #11）：每个商品行要渲染「挂哪些手工标签 / 命中了哪些自动标签」，
-	// 放在循环里取会变成 N 次查询。
-	tags, terr := h.listTags(ctx, selected)
-	if terr != nil {
-		fail(terr)
-	}
-	// 归属仓下拉（issue #15）与多仓勾选：变体 / 首建商品的归属仓在这里选（不选 = 默认仓）。
-	// **必须在商品行之前取好**：列表「库存」列的分仓明细要按工程仓库清单补齐未入库的仓。
-	warehouseOptions, werr := h.warehouseOptions(ctx, selected)
-	if werr != nil {
-		fail(werr)
-	}
-	// 分页总数与列表**同一份过滤条件**（service 的 CountProducts 与 List 共用 model 的
-	// 关键词 / 状态条件）：两处口径分叉时「共 N 条」与实际能翻出来的条数对不上。
-	total := int64(0)
-	if loadErr == nil && selected != "" {
-		list, lerr := h.products.List(ctx, &productdto.ListReq{
-			ProjectID: selected, Keyword: keyword, Status: status, Page: page, Size: limit,
-		})
-		if lerr != nil {
-			fail(lerr)
-		}
-		if lerr == nil {
-			total, lerr = h.products.CountProducts(ctx, &productdto.ListReq{
-				ProjectID: selected, Keyword: keyword, Status: status,
-			})
-			if lerr != nil {
-				fail(lerr)
-			}
-		}
-		for _, p := range list {
-			// 列表项不含变体明细，逐个取详情（一页 20 条，后台页可接受）。
-			detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: p.ID})
-			if derr != nil || detail == nil {
-				// 这一行是**主数据**的一部分：静默 continue 会让页面少一行却仍写着「共 N 条」，
-				// 用户据此以为商品已经被删了（而它只是这一行读不出来）。取不到就整页失败，
-				// 不把它吞成一张「看起来完整」的列表。
-				if derr == nil {
-					derr = fmt.Errorf("商品 %s 的详情为空", p.ID)
-				}
-				fail(fmt.Errorf("读取商品 %s 的详情失败：%w", p.ID, derr))
-				break
-			}
-			// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于 tagCellLabel 的
+	// 上面的取数编排（分类树 / 品牌 / 标签 / 仓库清单 / 列表与总数 / 逐行详情 / 属性组选项 /
+	// 每仓候选 / 定价规则清单）全在 service 的读模型里；这里只做控制器负责的派生值与出口。
+	// —— 控制器负责的派生值 ——
+	// 页壳键：title 的 i18n key 常量在本包（MsgProductsTitle 是迁移 163 seed 的词条名）。
+	view.Title = MsgProductsTitle
+	view.Menu = "products"
+	// 分类扁平行（行渲染按「父在前、子紧随」的顺序读 Flat）、状态下拉、改价表单初值：
+	// 三处的工具都被别的页面用着（分类标签页 / 详情页回显 / 独立定价页），所以留在本包。
+	view.Flat = flattenCategoryTree(view.Categories)
+	view.Statuses = productStatusOptions(view.FilterStatus)
+	view.Form = defaultPricingForm(view.Rules, view.Roundings)
+	// 成品行：一行一个 productRow（它与详情页、只读页共用一份组装）。**取数失败时不装配** ——
+	// 那时 RowDetails 可能是半截的（逐行取详情失败会 break），渲染它只会得到一张残表。
+	if err == nil {
+		rows := make([]map[string]any, 0, len(view.RowDetails))
+		for _, detail := range view.RowDetails {
+			// 具名占位符句式的例外：这个 tr 只经由 productRow 服务于 tagCellLabel 的
 			// 「{n} 个」词条（i18n.FillTranslate），模板侧的 tf 只填 `%s`，没有等价能力
 			//（见 tagCellLabel 的注释）—— 本页其余槽位一律交事实、由模板取词。
-			rows = append(rows, h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail,
-				shell.TranslateFor(c)))
+			rows = append(rows, h.productRow(ctx, view.SelectedProject, view.Flat, view.Brands, view.Tags,
+				view.WarehouseOptions, detail, shell.TranslateFor(c)))
 		}
-	}
-	// 属性组勾选列表（本批）：新建抽屉引用属性组时不再手打 UUID —— 可选值由服务端给出
-	// （与归属仓同一手法），用户看到的是一排「颜色（color）」，而不是一个暗示 UUID 的输入框。
-	attributeOptions, aerr := h.attributeOptions(ctx, selected)
-	if aerr != nil {
-		fail(aerr)
-	}
-	// 「从仓库选」的候选（docs/14 §1.1 入口 A，迁移 251）：按仓分组的仓库 SKU 清单。
-	// 前端只是便捷入口 —— 服务端在 Create 里会带着仓库 id 再复核一遍（不信任前端）。
-	warehouseSKUGroups, wserr := h.warehouseSKUOptions(ctx, selected, warehouseOptions)
-	if wserr != nil {
-		fail(wserr)
-	}
-	// 批量改价抽屉的规则清单与表单初值：三样全部取自定价工具（ListPricingRuleTypes /
-	// ListPricingRoundingOptions / defaultPricingForm）—— 抽屉与独立定价页共用同一个
-	// 规则表单片段（partials/pricing_rule_fields.html），键名或取值来源分叉会让其中
-	// 一处渲染成空下拉。
-	pricingRules := h.products.ListPricingRuleTypes(ctx)
-	pricingRoundings := h.products.ListPricingRoundingOptions(ctx)
-	// withCSRF：注入 csrf_token（POST 表单隐藏域）+ 导航树 + 权限码 + 多语言，
-	// 与其它后台页面同一渲染入口（缺 token 时表单提交会被 CSRF 中间件挡下）。
-	pageData := gin.H{
-		// title 必须是**译文**：MsgProductsTitle 是 i18n key（迁移 163 已 seed zh「商品」/en「Products」），
-		// 直接放 key 会让浏览器标签与顶栏显示 "MsgProductsTitle" 这串英文常量
-		//（product_jump.go 的提示页一直是 TranslateFor 形态，这里是漏网的一处）。
-		"title":            MsgProductsTitle,
-		"menu":             "products",
-		"Projects":         projects,
-		"SelectedProject":  selected,
-		"WarehouseOptions": warehouseOptions,
-		"AttributeOptions": attributeOptions,
-		// 可选键：未接库存契约 / 该工程的仓库里还没有货时是空数组，模板据 isset + len
-		// 整块跳过（直接渲染模板的单测不带这个键，缺键会让整页在此中断）。
-		"WarehouseSKUOptions": warehouseSKUGroups,
-		"Rules":               pricingRules,
-		"Roundings":           pricingRoundings,
-		"Form":                defaultPricingForm(pricingRules, pricingRoundings),
-		"Products":            rows,
-		// 筛选回显（GET 表单的 value / selected）：提交后条件留在控件上，
-		// 否则用户看不出「现在到底筛了什么」。
-		"FilterKeyword": keyword,
-		"FilterStatus":  status,
-		"Statuses":      productStatusOptions(status),
-		"Page":          page,
-		"Limit":         limit,
-		"Total":         total,
-		// 写动作的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go），
-		// 所以模板里的 ?err= / ?done= 提示条已整批删除。
-		// ListQuery 是筛选上下文（表单 action 的 query）：写动作失败时由 shell.BackPath 读回。
-		"ListQuery": productQueryFromRequest(c, productListBackKeys...),
+		view.Products = rows
 	}
 	// 分页条：Go 只交事实（总数 / 页码 / 每页条数 / 基地址），文案、页码窗口与链接由
 	// admin/partials/pagination.html 渲染。基地址带当前筛选条件，翻页不丢条件。
 	//
 	// **失败页仍会注入分页事实**：total 在 List/CountProducts 之后就已确定，若随后逐行取详情
-	// 失败（本函数下面的 fail），total 仍 >0，于是失败页拿到与成功页同一份分页事实 —— 这是
-	// 迁移前的既有行为（旧 BuildPagination 拿到的就是同一个 total），本批**不改**它。
+	// 失败，total 仍 >0，于是失败页拿到与成功页同一份分页事实 —— 这是迁移前的既有行为
+	//（旧 BuildPagination 拿到的就是同一个 total），本批**不改**它。
 	// 实测（task-109）：失败页**看不到**翻页入口 —— products.html 的分支是
 	// `{{if loadError}} 失败槽 {{else}} …含分页条… {{end}}`，失败分支不 include 分页片段；
-	// 注入的事实因此不被渲染。product_pagination_facts_test.go 把这两条同时钉住
-	//（失败页无分页条 + 成功页有），谁改分支谁红。
-	if pg := pagination.Facts(total, page, limit); pg.HasPagination() {
-		pg.Base = productListFilterURL(selected, keyword, status)
-		pageData["Pagination"] = pg
+	// 注入的事实因此不被渲染。product_pagination_facts_test.go 把这两条同时钉住。
+	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
+		pg.Base = productListFilterURL(view.SelectedProject, view.FilterKeyword, view.FilterStatus)
+		view.Pagination = pg
 	}
-	// 出口只有这一处（页面成败都走它）：失败槽 + no-store 只在这里加。
-	// 失败页与成功页共用同一份 pageData 与同一份模板 —— 模板据 .LoadFailed 先判失败，
-	// 失败分支不碰 Projects / Products 这些可能没读到的键。
-	if loadErr != nil {
-		pageData["LoadFailed"] = true
-		pageData["LoadError"] = productErrPageText(c, loadErr)
-		// 失败页不该被缓存：重试必须真的回到服务端，否则用户看到的是缓存的失败页。
-		c.Header("Cache-Control", "no-store")
+	// 写动作的结论不在本页回显（走提示页渲染，见 product_jump.go），所以模板里的
+	// ?err= / ?done= 提示条已整批删除。ListQuery 是筛选上下文（表单 action 的 query）：
+	// 写动作失败时由 pkg/backpath 读回。
+	view.ListQuery = productQueryFromRequest(c, productListBackKeys...)
+
+	if err != nil {
+		// 视图已带 LoadFailed / HTTPStatus（400 参数不合法 / 500 取数失败）。
+		// 这里只补**当前语言**的失败槽文案：原始的 err 只进日志。
+		view.LoadFailed = true
+		view.LoadError = productErrPageText(c, err)
 	}
-	c.HTML(httpStatus, productListPageTemplate, adminui.Prepare(c, pageData))
+	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
+	adminui.RenderPage(c, productListPageTemplate, view)
 }
 
 // productRow 组装单个商品的页面视图数据（列表页与详情页共用）。
@@ -592,16 +506,16 @@ func productListFilterURL(projectID, keyword, status string) string {
 //
 // 状态维度**只有这一种入口**：不另配状态徽章筛选 —— 同一维度两套控件时，
 // 用户会怀疑它们是否等价（admin-ui-logic §2）。
-func productStatusOptions(current string) []gin.H {
+func productStatusOptions(current string) []productdto.StatusOptionView {
 	values := []string{"", productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}
-	out := make([]gin.H, 0, len(values))
+	out := make([]productdto.StatusOptionView, 0, len(values))
 	for _, value := range values {
 		key, fallback := productenums.StatusLabel(value)
-		out = append(out, gin.H{
-			"Value":         value,
-			"LabelKey":      key,
-			"LabelFallback": fallback,
-			"Selected":      value == strings.TrimSpace(current),
+		out = append(out, productdto.StatusOptionView{
+			Value:         value,
+			LabelKey:      key,
+			LabelFallback: fallback,
+			Selected:      value == strings.TrimSpace(current),
 		})
 	}
 	return out

@@ -152,16 +152,15 @@ func TestTaxonomyPagesSinglePageRendersNoPagination(t *testing.T) {
 // TestProductsPagePaginationFactsRenderLinks 商品列表页：三个筛选参数与 limit 都在链接里。
 func TestProductsPagePaginationFactsRenderLinks(t *testing.T) {
 	const rows = 25
-	listRows := make([]*productdto.ProductResp, 0, rows)
-	for i := 0; i < rows; i++ {
-		listRows = append(listRows, &productdto.ProductResp{ID: "p1", Name: "商品", Status: "active"})
-	}
+	// 列表页的取数编排在 service（读模型）里，控制器只调它 —— 桩因此给**视图**，
+	// 不再 mock List / CountProducts / Get（那些方法已不在这条渲染路径上）。
 	h := &productPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: &productPageProductsStub{
-			listRows: listRows,
-			getRes:   &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"},
-		},
+		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			v.Total = rows
+			v.FilterKeyword = "abc"
+			v.FilterStatus = "draft"
+		})},
 	}
 	rec := productPageRequest(t, h, "/admin/products?project=p1&keyword=abc&status=draft")
 	if rec.Code != http.StatusOK {
@@ -186,16 +185,18 @@ func TestProductsPagePaginationFactsRenderLinks(t *testing.T) {
 // 失败页有失败槽、没有分页条，且分页事实仍按 total 注入（旧 BuildPagination 拿到的也是同一个
 // total，行为逐字节不变）。谁把它改成别的样子，这里红。
 func TestProductsPageFailureAfterTotalKeepsFailureShape(t *testing.T) {
+	// 列表页取数编排在 service（读模型）：桩给视图，total 与失败档都由视图带出
+	//（「total 已确定后行详情失败」在 service 侧就是「视图带 LoadFailed 且 Total 仍 >0」）。
 	const rows = 25
-	listRows := make([]*productdto.ProductResp, 0, rows)
-	for i := 0; i < rows; i++ {
-		listRows = append(listRows, &productdto.ProductResp{ID: "p1", Name: "商品", Status: "active"})
-	}
 	h := &productPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: &productPageProductsStub{
-			listRows: listRows,
-			getErr:   errors.New("读取商品详情失败"),
+		products: &productPageReaderStub{
+			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+				v.Total = rows
+				v.LoadFailed = true
+				v.HTTPStatus = http.StatusInternalServerError
+			}),
+			listErr: errors.New("读取商品详情失败"),
 		},
 	}
 	rec := productPageRequest(t, h, "/admin/products?project=p1")
@@ -210,10 +211,9 @@ func TestProductsPageFailureAfterTotalKeepsFailureShape(t *testing.T) {
 	// 这条对照让「失败页没有分页条」不至于被误读成「分页坏了」。
 	ok := &productPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: &productPageProductsStub{
-			listRows: listRows,
-			getRes:   &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"},
-		},
+		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			v.Total = rows
+		})},
 	}
 	okBody := productPageRequest(t, ok, "/admin/products?project=p1").Body.String()
 	if !strings.Contains(okBody, paginationElement("/admin/products?project=p1", 2, 20)) {
