@@ -43,4 +43,14 @@ type ProductPageReader interface {
 	// 另加一条：**逐行详情取不到就整页失败**，不做静默跳过 —— 少一行而仍写着「共 N 条」，
 	// 用户会以为商品被删了。
 	ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (res *productdto.ProductListPageView, err error)
+
+	// ProductDetailPage 商品详情整页的读模型：工程清单 → 工程存在性校验 → 仓库清单 →
+	// 商品详情 → 分类树 / 品牌 / 标签，并给出这一屏的档位。
+	//
+	// 契约同上，另加一条**三档**（这三个此前混在一句 `derr == nil && detail != nil` 里）：
+	//   · 404 业务上的「不存在」（含没给 product 参数）—— **不进失败槽**，走模板自带的空态，
+	//     仍然 no-store（商品可能刚被建回来，重试要真的回到服务端）；
+	//   · 400 参数不合法（?project=<不存在的 id> / id 形态不对）—— 进失败槽 + no-store；
+	//   · 500 其余（数据库 / 连接 / 超时 / 畸形返回）—— 进失败槽 + no-store。
+	ProductDetailPage(ctx context.Context, req *productdto.ProductDetailPageReq) (res *productdto.ProductDetailPageView, err error)
 }

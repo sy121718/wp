@@ -78,76 +78,7 @@ func (s productPageProjectsStub) List(context.Context) ([]projectdto.ProjectResp
 	return s.rows, s.err
 }
 
-// productPageProductsStub 同上：只实现失败档位经过的那几个方法。
-type productPageProductsStub struct {
-	productcontract.ProductService
-	listRows []*productdto.ProductResp
-	listErr  error
-	getRes   *productdto.ProductResp
-	getErr   error
-	// calls 记录被调用过的方法名：失败档要断言「一条派生取数都没发」，只看状态码看不出来。
-	calls []string
-}
-
-func (s *productPageProductsStub) record(name string) {
-	s.calls = append(s.calls, name)
-}
-
-func (s *productPageProductsStub) List(context.Context, *productdto.ListReq) ([]*productdto.ProductResp, error) {
-	s.record("List")
-	return s.listRows, s.listErr
-}
-
-func (s *productPageProductsStub) CountProducts(context.Context, *productdto.ListReq) (int64, error) {
-	s.record("CountProducts")
-	return int64(len(s.listRows)), nil
-}
-
-func (s *productPageProductsStub) Get(context.Context, *productdto.GetReq) (*productdto.ProductResp, error) {
-	s.record("Get")
-	return s.getRes, s.getErr
-}
-
-// 列表页在商品行之前要先取好分类 / 品牌 / 标签（每个商品行都要渲染这三样）：
-// 这几条要成功返回空清单，「商品详情读不出来」那条路径才走得下去。
-func (s *productPageProductsStub) ListCategories(context.Context, *productdto.ListCategoryReq) ([]*productdto.CategoryResp, error) {
-	s.record("ListCategories")
-	return nil, nil
-}
-
-func (s *productPageProductsStub) ListBrands(context.Context, *productdto.ListBrandReq) ([]*productdto.BrandResp, error) {
-	s.record("ListBrands")
-	return nil, nil
-}
-
-func (s *productPageProductsStub) ListTags(context.Context, *productdto.ListTagReq) ([]*productdto.TagResp, error) {
-	s.record("ListTags")
-	return nil, nil
-}
-
-// 属性组勾选列表与评分明细：列表页 / 详情页会取（不是失败路径上的调用），桩给空清单。
-func (s *productPageProductsStub) ListAttributes(context.Context, *productdto.ListAttributeReq) ([]*productdto.AttributeResp, error) {
-	s.record("ListAttributes")
-	return nil, nil
-}
-
-func (s *productPageProductsStub) ListRatings(context.Context, *productdto.ListRatingsReq) (*productdto.RatingResp, error) {
-	s.record("ListRatings")
-	return &productdto.RatingResp{}, nil
-}
-
-// 批量改价抽屉的规则清单：列表页无条件取它（不是失败路径上的调用），桩要给空清单。
-func (s *productPageProductsStub) ListPricingRuleTypes(context.Context) []*productdto.PricingRuleTypeResp {
-	s.record("ListPricingRuleTypes")
-	return nil
-}
-
-func (s *productPageProductsStub) ListPricingRoundingOptions(context.Context) []*productdto.PricingRoundingOptionResp {
-	s.record("ListPricingRoundingOptions")
-	return nil
-}
-
-// productPageReaderStub 页面读模型桩（新建页的取数编排已下沉到 service）。
+// productPageReaderStub 页面读模型桩（新建页 / 列表页 / 详情页的取数编排都已在 service）。
 //
 // 控制器现在只做三步：读参数 → 调读模型 → 渲染。所以这一层的用例验的是**控制器**的三段
 // （参数转发 / 渲染 / 档位与 no-store），取数编排本身由 service 的用例
@@ -162,10 +93,15 @@ type productPageReaderStub struct {
 	// reqs 记录控制器转下来的入参：参数读丢了要能看出来。
 	reqs []*productdto.ProductNewPageReq
 
-	// 列表页（ProductsPage）的桩：同一个接口的第二个方法，用例各自只填自己那一份。
+	// 列表页 / 详情页的桩：同一个接口的另外两个方法，用例各自只填自己那一份。
+	// **三个方法都要在** —— 接口是一个整体，少一个就是断言失败、整包 500。
 	listView *productdto.ProductListPageView
 	listErr  error
 	listReqs []*productdto.ProductListPageReq
+
+	detailView *productdto.ProductDetailPageView
+	detailErr  error
+	detailReqs []*productdto.ProductDetailPageReq
 }
 
 func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
@@ -176,6 +112,17 @@ func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdt
 func (s *productPageReaderStub) ProductListPage(_ context.Context, req *productdto.ProductListPageReq) (*productdto.ProductListPageView, error) {
 	s.listReqs = append(s.listReqs, req)
 	return s.listView, s.listErr
+}
+
+func (s *productPageReaderStub) ProductDetailPage(_ context.Context, req *productdto.ProductDetailPageReq) (*productdto.ProductDetailPageView, error) {
+	s.detailReqs = append(s.detailReqs, req)
+	return s.detailView, s.detailErr
+}
+
+// ListRatings 行组装（productRow）会读一次评分（issue #33）：嵌入的 ProductService 是 nil 时
+// 那一次调用会 panic，所以成功档要给它一个空结果（与 productPageProductsStub 同一处理）。
+func (s *productPageReaderStub) ListRatings(context.Context, *productdto.ListRatingsReq) (*productdto.RatingResp, error) {
+	return &productdto.RatingResp{}, nil
 }
 
 // productNewPageViewStub 成功档视图（与 service 产出的同型：列表键一律给空列表而不是缺键）。
@@ -218,6 +165,27 @@ func productListPageViewStub(mutate func(*productdto.ProductListPageView)) *prod
 		Rules:               []*productdto.PricingRuleTypeResp{},
 		Roundings:           []*productdto.PricingRoundingOptionResp{},
 		HTTPStatus:          http.StatusOK,
+	}
+	if mutate != nil {
+		mutate(v)
+	}
+	return v
+}
+
+// productDetailPageViewStub 详情页视图桩（默认「读到、正常」档；失败 / 空态由用例改）：
+// 列表键一律给空列表而不是缺键 —— 控制器不再补任何键。
+func productDetailPageViewStub(mutate func(*productdto.ProductDetailPageView)) *productdto.ProductDetailPageView {
+	v := &productdto.ProductDetailPageView{
+		Title:            productenums.ProductDetailTitle,
+		Menu:             "products",
+		Projects:         []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
+		SelectedProject:  "p1",
+		ProductID:        "prod-1",
+		WarehouseOptions: []productdto.WarehouseOptionView{},
+		Categories:       []*productdto.CategoryResp{},
+		Brands:           []*productdto.BrandResp{},
+		Tags:             []*productdto.TagResp{},
+		HTTPStatus:       http.StatusOK,
 	}
 	if mutate != nil {
 		mutate(v)
@@ -367,34 +335,38 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 	cases := []struct {
 		name       string
 		target     string
-		getErr     error
+		status     int   // 读模型给出的档位（service 的产出）
+		readerErr  error // 读模型是否同时抛错：404 那一档**不抛**（「读到了、库里没有」）
 		wantStatus int
 		wantText   string // 页面上应出现的文案
 	}{
 		{
 			name:       "没给 product 参数 → 404",
 			target:     "/admin/products/detail",
+			status:     http.StatusNotFound,
 			wantStatus: http.StatusNotFound,
 			wantText:   "商品不存在",
 		},
 		{
 			name:       "业务上不存在 → 404",
 			target:     "/admin/products/detail?project=p1&product=prod-1",
-			getErr:     errors.New(productenums.ErrNotFound),
+			status:     http.StatusNotFound,
 			wantStatus: http.StatusNotFound,
 			wantText:   "商品不存在",
 		},
 		{
 			name:       "参数不合法 → 400",
 			target:     "/admin/products/detail?project=p1&product=not-a-uuid",
-			getErr:     errors.New(productenums.ErrInvalidParam),
+			status:     http.StatusBadRequest,
+			readerErr:  errors.New(productenums.ErrInvalidParam),
 			wantStatus: http.StatusBadRequest,
 			wantText:   "请求参数无效",
 		},
 		{
 			name:       "读不出来 → 500（不是「不存在」）",
 			target:     "/admin/products/detail?project=p1&product=prod-1",
-			getErr:     errors.New(`pq: relation "products" does not exist`),
+			status:     http.StatusInternalServerError,
+			readerErr:  errors.New(`pq: relation "products" does not exist`),
 			wantStatus: http.StatusInternalServerError,
 			wantText:   "这一页的数据没能读出来",
 		},
@@ -403,7 +375,14 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := &productPageHandle{
 				projects: productPageProjectsStub{rows: projectRows},
-				products: &productPageProductsStub{getErr: tc.getErr},
+				// 取数编排已下沉到 service（读模型）：桩给**读模型的产出**（档位 + 是否抛错），
+				// 不再 mock Get / ListCategories 这些方法（它们已不在这条渲染路径上）。
+				products: &productPageReaderStub{
+					detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageView) {
+						v.HTTPStatus = tc.status
+					}),
+					detailErr: tc.readerErr,
+				},
 			}
 			rec := productPageRequest(t, h, tc.target)
 			body := assertProductPageFailure(t, tc.name, rec, tc.wantStatus, tc.wantText)
@@ -425,9 +404,10 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 func TestProductDetailPageRendersProductWhenDetailReadable(t *testing.T) {
 	h := &productPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: &productPageProductsStub{
-			getRes: &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"},
-		},
+		products: &productPageReaderStub{detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageView) {
+			v.HasProduct = true
+			v.Detail = &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"}
+		})},
 	}
 	rec := productPageRequest(t, h, "/admin/products/detail?project=p1&product=prod-1")
 	if rec.Code != http.StatusOK {

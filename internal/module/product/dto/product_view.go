@@ -20,6 +20,8 @@
 package productdto
 
 import (
+	"net/http"
+
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/pagination"
@@ -184,6 +186,69 @@ type StatusOptionView struct {
 	LabelKey      string
 	LabelFallback string
 	Selected      bool
+}
+
+// ProductDetailPageReq 商品详情整页的取数入参。
+type ProductDetailPageReq struct {
+	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
+	ProjectID string
+	// ProductID 查询串里的商品 id；空串 = 没给参数（与「商品已被删除」同一档：404）。
+	ProductID string
+}
+
+// ProductDetailPageView 商品详情整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值）。
+//
+// 字段的写者与 ProductListPageView 同一套约定：
+//   - **service 写**：Projects / SelectedProject / ProductID / HasProduct / WarehouseOptions /
+//     Detail / Categories / Brands / Tags（取数结果）；
+//   - **控制器写**：Title / Menu（页壳）、BackURL（URL 形状属 HTTP）、Flat（扁平行）、
+//     Product（成品行）、Bundle / TplPanel（两块面板各自的取数与组装）；
+//   - **控制器在失败时写**：LoadError。
+type ProductDetailPageView struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	Projects        []projectdto.ProjectResp
+	SelectedProject string
+	ProductID       string
+	// HasProduct 为假 = 没读到商品（不存在 / 没给参数）：模板据此走空态分支，
+	// 与「读不出来」（LoadFailed）是两档 —— 前者再试也没用，后者可能重试就成功。
+	HasProduct bool
+
+	// WarehouseOptions 行数据组装（库存列）要按工程仓库清单补齐未入库的仓 —— 与列表页 /
+	// 编辑页共用同一份组装，取数口径不能分叉。
+	WarehouseOptions []WarehouseOptionView
+
+	// —— 行装配原料（Product 成品行由控制器的 productRow 组装）——
+	// Categories 是**分类树**（扁平行由控制器的 flattenCategoryTree 做，分类页也在用它）。
+	Detail     *ProductResp
+	Categories []*CategoryResp
+	Brands     []*BrandResp
+	Tags       []*TagResp
+	Flat       []*CategoryResp
+
+	// —— 控制器装配的产物 ——
+	// Product 是 productRow 的输出（列表 / 详情 / 编辑三页共用同一份组装）；
+	// Bundle 只在 type=bundle 时给（模板据 isset 整块跳过）；TplPanel 是详情模板面板。
+	Product  map[string]any
+	Bundle   map[string]any
+	TplPanel map[string]any
+	// BackURL 回列表的链接（带工程上下文，不掉回默认工程）。
+	BackURL string
+
+	LoadFailed bool
+	LoadError  string
+	HTTPStatus int
+}
+
+// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+func (v ProductDetailPageView) PageStatus() int { return v.HTTPStatus }
+
+// PageNoStore 非 200 的档位都不该被缓存 —— **404 也一样**：商品可能刚被删，也可能刚被建回来，
+// 重试必须真的回到服务端确认。这与「失败页」不是同一件事：404 走的是模板自带的空态分支
+// （那是「读到了、库里没有」，不是「没读到」）。
+func (v ProductDetailPageView) PageNoStore() bool {
+	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
 // WarehouseOptionView 仓库下拉 / 勾选项的渲染视图。

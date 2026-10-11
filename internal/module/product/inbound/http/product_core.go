@@ -1202,117 +1202,70 @@ const productDetailPageTemplate = "admin/product/product_detail.html"
 // 取数**失败**与「不存在」此前也混在同一条路径上：`derr == nil && detail != nil` 把
 // 「读不出来」（连接断了、权限、超时）一起吞成了「商品不存在」空态 —— 用户以为商品被删了。
 // 现在三档分开：业务上的「不存在」= 404；参数不合法 = 400；其余 = 500 + no-store。
+//
+// 取数编排（工程 / 仓库 / 商品 / 分类 / 品牌 / 标签）与上面三档的判定都在 service 的读模型里
+//（service.ProductDetailPage）；本函数只剩「取参数 → 调读模型 → 补控制器负责的派生值 → 一个出口」。
 func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	// 取数失败**不在这里出口**：整页 GET 只有一条渲染路径（函数末尾那次 c.HTML），
-	// 四档只改状态码与失败槽（契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）：
-	//   读到 → 200；业务上不存在 / 没给 product 参数 → 404；参数不合法 → 400；
-	//   其余（数据库 / 超时 / 畸形返回）→ 500 + no-store。
-	status := http.StatusOK
-	var loadErr error
-	fail := func(err error) {
-		if loadErr == nil {
-			loadErr = err
-			status = http.StatusInternalServerError
+	reader, ok := h.products.(productcontract.ProductPageReader)
+	if !ok {
+		// 装配没接上读模型（老装配 / 桩）：整页 + 500 + no-store，走同一份失败页形状
+		//（与 ProductNewPage / ProductsPage 同一处理）。
+		view := &productdto.ProductDetailPageView{
+			Title: productenums.ProductDetailTitle, Menu: "products",
+			LoadFailed: true, LoadError: productInternalText(c, nil),
+			HTTPStatus: http.StatusInternalServerError,
+		}
+		adminui.RenderPage(c, productDetailPageTemplate, view)
+		return
+	}
+	view, err := reader.ProductDetailPage(ctx, &productdto.ProductDetailPageReq{
+		ProjectID: strings.TrimSpace(c.Query("project")),
+		ProductID: strings.TrimSpace(c.Query("product")),
+	})
+	if view == nil {
+		// 契约上视图恒非 nil（失败也要给齐模板必需键）：真出现 nil 时兜一个空视图。
+		view = &productdto.ProductDetailPageView{
+			Title: productenums.ProductDetailTitle, Menu: "products",
+			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
-	projects, err := h.projects.List(ctx)
-	if err != nil {
-		fail(err)
-	}
-	selected := strings.TrimSpace(c.Query("project"))
-	if selected == "" && len(projects) > 0 {
-		selected = projects[0].ID
-	}
-	// 与列表页同一档参数校验：?project=<不存在的 id> 不该渲染成「这个工程下没有商品」。
-	if loadErr == nil && selected != "" && !productProjectExists(projects, selected) {
-		status = http.StatusBadRequest
-		loadErr = errors.New(productenums.ErrInvalidParam)
-	}
-	// 仓库清单：只读页不用下拉，但行数据组装（productRow 的库存列）要按工程仓库清单
-	// 补齐未入库的仓 —— 与编辑页 / 列表页共用同一份组装，取数口径不能分叉。
-	warehouseOptions, werr := h.warehouseOptions(ctx, selected)
-	if werr != nil {
-		fail(werr)
-	}
-	productID := strings.TrimSpace(c.Query("product"))
-	hasProduct := false
-	product := gin.H{}
-	switch {
-	case loadErr != nil:
-		// 前面的取数已经失败：这一页的结论已定，不再为它取商品数据。
-	case productID == "":
-		// 没给 product 参数：这一页没有可读的对象，与「商品已被删除」是同一档（404）。
-		status = http.StatusNotFound
-	default:
-		// 只取目标商品那一条：详情页与列表页不同，不需要为整页商品各读一次评分 / 分类。
-		detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: productID})
-		switch {
-		case derr == nil && detail != nil:
-			flat, ferr := h.flatCategories(ctx, selected)
-			if ferr != nil {
-				fail(ferr)
-			}
-			brands, berr := h.listBrands(ctx, selected)
-			if berr != nil {
-				fail(berr)
-			}
-			tags, terr := h.listTags(ctx, selected)
-			if terr != nil {
-				fail(terr)
-			}
-			if loadErr == nil {
-				hasProduct = true
-				// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于列表「标签」列的
-				// 「{n} 个」词条（i18n.FillTranslate），模板的 tf 只填 `%s`，没有等价能力。
-				product = h.productRow(ctx, selected, flat, brands, tags, warehouseOptions, detail, shell.TranslateFor(c))
-				// 捆绑容器（type=bundle）在详情页多一块「捆绑构成」编辑区：成员只作为选项与
-				// 履约明细，容器价才是套餐价。type=variant 时**不给这个键**，模板据 isset 整块跳过
-				// —— 区块的入口就在详情页，不该再要求运营去另一个菜单页找它。
-				if isBundleProduct(detail.Type) {
-					product["Bundle"] = h.bundlePanel(c, selected, detail.ID)
-				}
-			}
-		case productErrKeyOf(derr) == productenums.ErrNotFound:
-			// 业务上明确的「不存在」：404 + 同一页 + 模板自带的「商品不存在」空态。
-			status = http.StatusNotFound
-		case productErrKeyOf(derr) == productenums.ErrInvalidParam:
-			// 参数本身不合法（id 形态不对等）：400 + 同一页。
-			status = http.StatusBadRequest
-			loadErr = errors.New(productenums.ErrInvalidParam)
-		default:
-			// 其余（数据库 / 连接 / 未知错误，以及 detail 为 nil 的畸形返回）：500 + no-store。
-			// 「读不出来」与「不存在」必须分开：前者重试可能就成功了，后者再试也没用。
-			if derr == nil {
-				derr = fmt.Errorf("商品 %s 的详情为空", productID)
-			}
-			fail(derr)
+	// 仓库清单 / 商品详情 / 分类树 / 品牌 / 标签的取数编排全在 service 的读模型里
+	//（service.ProductDetailPage，含 404 / 400 / 500 三档）；这里只做控制器负责的派生值与出口。
+	// —— 控制器负责的派生值 ——
+	view.Title = productenums.ProductDetailTitle
+	view.Menu = "products"
+	// 返回列表带上工程上下文：回到列表时不会掉回默认工程。
+	view.BackURL = "/admin/products?project=" + view.SelectedProject
+	// 行装配（productRow）留在控制器：它产出 gin.H、要取词函数、内部还会读一次评分，
+	// 而且列表页 / 编辑页 / 本页三处共用同一份组装 —— 拆成三份必然分叉。
+	// 失败时不装配：原料可能是半截的，渲染它只会得到一张残页。
+	if err == nil && view.HasProduct && view.Detail != nil {
+		view.Flat = flattenCategoryTree(view.Categories)
+		// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于列表「标签」列的
+		// 「{n} 个」词条（i18n.FillTranslate），模板的 tf 只填 `%s`，没有等价能力。
+		product := h.productRow(ctx, view.SelectedProject, view.Flat, view.Brands, view.Tags,
+			view.WarehouseOptions, view.Detail, shell.TranslateFor(c))
+		// 捆绑容器（type=bundle）在详情页多一块「捆绑构成」编辑区：成员只作为选项与履约明细，
+		// 容器价才是套餐价。type=variant 时**不给这个键**，模板据 isset 整块跳过
+		// —— 区块的入口就在详情页，不该再要求运营去另一个菜单页找它。
+		if isBundleProduct(view.Detail.Type) {
+			product["Bundle"] = h.bundlePanel(c, view.SelectedProject, view.Detail.ID)
 		}
-	}
-	data := gin.H{
-		"title": productenums.ProductDetailTitle, "menu": "products",
-		"Projects": projects, "SelectedProject": selected,
-		"ProductID": productID, "HasProduct": hasProduct, "Product": product,
-		"WarehouseOptions": warehouseOptions,
-		// 返回列表带上工程上下文：回到列表时不会掉回默认工程。
-		"BackURL": "/admin/products?project=" + selected,
-		// 只读页没有写操作，也没有任何提示位：写动作的结论走 shell.RenderJump 渲染提示页
-		//（见 product_jump.go），本页的 ?err= 读侧与提示条已整批删除。
+		view.Product = product
 	}
 	// 详情页模板面板：详情页只读展示绑定状态与预览入口，编辑动作（进入自定义 / 编辑模板 /
 	// 重新套用预设 / 回滚）在编辑页 —— 两页共用 detailTemplatePanel 这一份组装。
-	data["TplPanel"] = h.detailTemplatePanel(ctx, selected, productID)
-	// 出口只有这一处（页面成败都走它）：失败槽只在这里加。「不存在」那一档没有失败槽 ——
-	// 模板自己的 .HasProduct=false 空态就是它的文案（读到了、库里没有这一条），
-	// 但它与「没读到」一样 no-store：重试必须真的回到服务端确认商品是否又出现了。
-	if loadErr != nil {
-		data["LoadFailed"] = true
-		data["LoadError"] = productErrPageText(c, loadErr)
+	view.TplPanel = h.detailTemplatePanel(ctx, view.SelectedProject, view.ProductID)
+	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore，
+	// 非 200 一律 no-store）。「不存在」那一档没有失败槽 —— 模板自己的 .HasProduct=false
+	// 空态就是它的文案（读到了、库里没有这一条），但它与「没读到」一样 no-store：
+	// 重试必须真的回到服务端确认商品是否又出现了。
+	if err != nil {
+		view.LoadFailed = true
+		view.LoadError = productErrPageText(c, err)
 	}
-	if status != http.StatusOK {
-		c.Header("Cache-Control", "no-store")
-	}
-	c.HTML(status, productDetailPageTemplate, adminui.Prepare(c, data))
+	adminui.RenderPage(c, productDetailPageTemplate, view)
 }
 
 // variantSelectionFromForm 收「生成组合」表单里按前缀提交的勾选（attr:<属性组 id> → 值 id）。
