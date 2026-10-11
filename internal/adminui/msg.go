@@ -28,7 +28,12 @@ type Msg = facing.Msg
 // 实现与模板注入的 `tf` **同一份**（TranslateArgs）：这样「Go 侧取词」与「渲染期取词」
 // 对同一个事实给出同一个字符串。曾经这里对 Key 为空的事实直接返回 Fallback（跳过 `%s` 填充），
 // 于是同一个 Msg 在 JSON 出口不填参数、在页面上填 —— 两条出口给出不同的句子，而都不报错。
+// 参数按**填了哪一种**分派：有具名参数走 TranslateFill（语序归词条），否则走 TranslateArgs
+// （`%s` 位置，语序归调用方）。分派不按 Key 是否为空判 —— 那是本文件开头记的那次分叉。
 func MsgText(c *gin.Context, m Msg) string {
+	if len(m.Named) > 0 {
+		return TranslateFill(c, m.Key, m.Fallback, m.Named)
+	}
 	return TranslateArgs(c, m.Key, m.Fallback, m.Args)
 }
 

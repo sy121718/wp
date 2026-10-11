@@ -116,6 +116,18 @@ func TranslateArgs(c *gin.Context, key, fallback string, args []string) string {
 	return fmt.Sprintf(text, toAnyStrings(args)...)
 }
 
+// TranslateFill 取词 + `{name}` 具名占位符填充（MsgText 的具名档走这里）。
+//
+// 与 TranslateArgs 的分工是**谁决定语序**：位置参数按调用方给的顺序填（词条把 `%s` 排错位
+// 就渲染错），具名参数由词条自己排（运营把「{n} 个」改成「items: {n}」不用动调用方代码）。
+// 两条并存的原因见 TranslateArgs 的注释：位置参数那批是已 seed、运营可能改过的数据。
+//
+// 降级同口径：词条缺席或占位符被改坏时回落中文兜底再填一次，绝不把 `{n}` 这样的字面量
+// 摆给运营看（这层回落实现在 pkg/i18n.FillTranslate）。
+func TranslateFill(c *gin.Context, key, fallback string, params map[string]string) string {
+	return i18n.FillTranslate(translateFor(c), key, fallback, params)
+}
+
 // toAnyStrings 把 []string 摊成 []any 交给 fmt.Sprintf（`%s` 对 string 原样输出）。
 func toAnyStrings(in []string) []any {
 	out := make([]any, len(in))

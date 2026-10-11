@@ -15,6 +15,7 @@ package adminui
 // 第 ① 条立刻红。
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -60,5 +61,50 @@ func TestMsgEmpty(t *testing.T) {
 	}
 	if (Msg{Key: "a.b.c"}).Empty() {
 		t.Errorf("只有 Key 的 Msg 不是 Empty")
+	}
+}
+
+// ⑤ 具名参数：`{n}` 按名字填，语序由词条决定（不是调用方）。
+func TestMsgTextFillsNamedArgs(t *testing.T) {
+	c := errFactCtx(t)
+	m := Msg{Fallback: "已删除 {n} 个页面。", Named: map[string]string{"n": "3"}}
+	if got := MsgText(c, m); got != "已删除 3 个页面。" {
+		t.Errorf("MsgText = %q，want %q", got, "已删除 3 个页面。")
+	}
+}
+
+// ⑥ 词条缺席 + 具名参数：回落兜底原文后仍要填上（与位置参数同口径）。
+func TestMsgTextFillsNamedArgsOnMissingEntry(t *testing.T) {
+	c := errFactCtx(t)
+	m := Msg{Key: "admin.msg_test.absent_key", Fallback: "上架 {days} 天内", Named: map[string]string{"days": "7"}}
+	if got := MsgText(c, m); got != "上架 7 天内" {
+		t.Errorf("MsgText = %q，want %q", got, "上架 7 天内")
+	}
+}
+
+// ⑦ 两种参数都给时**用具名**：判据是「语序归谁」，不是「哪个先填」。
+func TestMsgTextPrefersNamedOverPositional(t *testing.T) {
+	c := errFactCtx(t)
+	m := Msg{
+		Fallback: "共 {n} 项",
+		Args:     []string{"9"},
+		Named:    map[string]string{"n": "3"},
+	}
+	if got := MsgText(c, m); got != "共 3 项" {
+		t.Errorf("MsgText = %q，want %q —— 具名参数应优先", got, "共 3 项")
+	}
+}
+
+// ⑧ 参数名拼错（词条与兜底两处都填不干净）时返回**尽力填过的兜底原文** —— 带 `{n}`
+// 字面量，但比空串好（空串会让失败在页面上完全不可见）。
+//
+// 写成测试是让「参数名拼错」有一个会变红的地方，不是说这个行为是设计目标：设计目标
+// 那条是「词条被改坏 → 回落兜底原文，而那里能填干净」，由 pkg/i18n 的
+// TestFillTranslateFallsBackOnBrokenEntry 钉住。
+func TestMsgTextNamedArgWithWrongParamName(t *testing.T) {
+	c := errFactCtx(t)
+	m := Msg{Fallback: "已删除 {n} 个页面。", Named: map[string]string{"wrongName": "3"}}
+	if got := MsgText(c, m); !strings.Contains(got, "{n}") {
+		t.Errorf("MsgText = %q —— 参数名拼错时不再保留兜底原文，确认是有意改动", got)
 	}
 }
