@@ -111,9 +111,9 @@ var (
 	// siteSettingsSavedMsg 站点设置保存成功。
 	siteSettingsSavedMsg = projectMsg{Key: projectenums.MsgSiteSettingsSaved, Fallback: "站点设置已保存"}
 	// localesSavedMsg 语言清单保存成功（词条在迁移 187）。
-	localesSavedMsg = projectMsg{Key: siteLocalesSavedKey, Fallback: siteLocalesSavedFallback}
+	localesSavedMsg = projectMsg{Key: projectenums.SiteLocalesSaved, Fallback: siteLocalesSavedFallback}
 	// themeSettingsSavedMsg 主题设置保存成功（词条在迁移 451）。
-	themeSettingsSavedMsg = projectMsg{Key: themeSettingsSavedTextKey, Fallback: themeSettingsSavedTextFallback}
+	themeSettingsSavedMsg = projectMsg{Key: projectenums.ThemeSettingsOKSaved, Fallback: themeSettingsSavedTextFallback}
 
 	themeCreatedMsg   = projectMsg{Key: projectenums.ThemeOKCreated, Fallback: "主题已创建"}
 	themeActivatedMsg = projectMsg{Key: projectenums.ThemeOKActivated, Fallback: "主题已激活，该主题下页面已标记待重建"}

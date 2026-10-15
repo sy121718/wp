@@ -124,4 +124,11 @@ const (
 	SEOScoreIssueFormat    = "admin.seo.score.issueFormat"    // {label}：{actual}（基准 {benchmark}）→ {hint}
 	SEOScoreSerpTitleEmpty = "admin.seo.score.serpTitleEmpty" // （未填写 SEO 标题）
 	SEOScoreSerpDescEmpty  = "admin.seo.score.serpDescEmpty"  // （未填写 SEO 描述）
+
+	// 主题设置页的保存回执与字段级错误（展示文案常量见 theme_settings_label_keys.go）。
+	ThemeSettingsOKSaved         = "admin.theme_settings.ok.saved"         // 主题设置已保存，该主题下页面已标记待重建
+	ThemeSettingsErrFieldInvalid = "admin.theme_settings.err.fieldInvalid" // 这个值不合法：只能填颜色、尺寸这类 CSS 值
+
+	// SiteLocalesSaved 语言清单保存成功的回执（admin 命名空间下的词条，迁移 187）。
+	SiteLocalesSaved = "admin.settings.locales.saved" // 语言清单已保存
 )

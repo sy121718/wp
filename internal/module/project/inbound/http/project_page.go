@@ -393,9 +393,8 @@ const (
 	// siteSettingsLocalesInval 语言清单校验失败的就地提示（回渲染 + 回显用户输入，
 	// 不经整页提示，所以不在 projectWriteTextKeys 里）。
 	siteSettingsLocalesInval = "MsgSiteLocalesInvalid"
-	// siteLocalesSavedKey / siteLocalesSavedFallback 语言清单保存成功的回执
-	//（整页提示的 OK 分支；词条在迁移 187）。
-	siteLocalesSavedKey      = "admin.settings.locales.saved"
+	// siteLocalesSavedFallback 语言清单保存成功的回执中文兜底（整页提示的 OK 分支）；
+	// key 见 projectenums.SiteLocalesSaved（词条在迁移 187）。
 	siteLocalesSavedFallback = "语言清单已保存。"
 )
 
@@ -1616,99 +1615,102 @@ type themeFieldGroupView struct {
 //
 // **表里没有的文本 = 不翻译**（如 value 与 label 相同的 "20px"、"Inter, system-ui, sans-serif"），
 // 取词函数收到空 key 时原样返回 label —— 这正是我们要的行为，不需要为它们造 key。
+//
+// value 一律是 projectenums 的常量（enums/theme_settings_label_keys.go）—— 控制器不写 key
+// 字面量，门禁 scripts/check-controller-i18n-literals.sh 按出现次数钉住。
 var themeLabelKeys = map[string]string{
 	// —— 分组标题（同时是字段 label 的按同一行取词）——
-	"颜色":      "admin.theme_settings.label.colors",
-	"排版 · 标题": "admin.theme_settings.label.typographyHeading",
-	"排版 · 正文": "admin.theme_settings.label.typographyBody",
-	"排版 · 链接": "admin.theme_settings.label.typographyLink",
-	"按钮":      "admin.theme_settings.label.button",
-	"表面":      "admin.theme_settings.label.surface",
-	"图片":      "admin.theme_settings.label.images",
-	"动效":      "admin.theme_settings.label.motion",
+	"颜色":      projectenums.ThemeSettingsLabelColors,
+	"排版 · 标题": projectenums.ThemeSettingsLabelTypographyHeading,
+	"排版 · 正文": projectenums.ThemeSettingsLabelTypographyBody,
+	"排版 · 链接": projectenums.ThemeSettingsLabelTypographyLink,
+	"按钮":      projectenums.ThemeSettingsLabelButton,
+	"表面":      projectenums.ThemeSettingsLabelSurface,
+	"图片":      projectenums.ThemeSettingsLabelImages,
+	"动效":      projectenums.ThemeSettingsLabelMotion,
 	// —— 字段 label ——
-	"主色":     "admin.theme_settings.label.primaryColor",
-	"次色":     "admin.theme_settings.label.secondaryColor",
-	"点缀色":    "admin.theme_settings.label.accentColor",
-	"成功色":    "admin.theme_settings.label.successColor",
-	"警告色":    "admin.theme_settings.label.warningColor",
-	"危险色":    "admin.theme_settings.label.dangerColor",
-	"正文色":    "admin.theme_settings.label.bodyColor",
-	"标题色":    "admin.theme_settings.label.headingColor",
-	"页面背景":   "admin.theme_settings.label.pageBackground",
-	"卡片底色":   "admin.theme_settings.label.cardSurface",
-	"边框色":    "admin.theme_settings.label.borderColor",
-	"字重":     "admin.theme_settings.label.fontWeight",
-	"基准字号":   "admin.theme_settings.label.headingSize",
-	"标题下间距":  "admin.theme_settings.label.headingSpacing",
-	"字体":     "admin.theme_settings.label.fontFamily",
-	"字号":     "admin.theme_settings.label.bodySize",
-	"行高":     "admin.theme_settings.label.lineHeight",
-	"悬停色":    "admin.theme_settings.label.linkHoverColor",
-	"下划线":    "admin.theme_settings.label.underline",
-	"背景":     "admin.theme_settings.label.buttonBackground",
-	"文字色":    "admin.theme_settings.label.buttonTextColor",
-	"圆角":     "admin.theme_settings.label.radius",
-	"纵向内边距":  "admin.theme_settings.label.paddingY",
-	"横向内边距":  "admin.theme_settings.label.paddingX",
-	"悬停背景":   "admin.theme_settings.label.hoverBackground",
-	"悬停文字色":  "admin.theme_settings.label.hoverTextColor",
-	"边框宽":    "admin.theme_settings.label.borderWidth",
-	"边框样式":   "admin.theme_settings.label.borderStyle",
-	"阴影":     "admin.theme_settings.label.shadow",
-	"全局圆角":   "admin.theme_settings.label.globalRadius",
-	"默认阴影":   "admin.theme_settings.label.defaultShadow",
-	"懒加载默认":  "admin.theme_settings.label.lazyDefault",
-	"懒加载骨架屏": "admin.theme_settings.label.lazySkeleton",
-	"过渡时长":   "admin.theme_settings.label.transitionDuration",
-	"缓动":     "admin.theme_settings.label.easing",
-	"默认入场":   "admin.theme_settings.label.entrance",
+	"主色":     projectenums.ThemeSettingsLabelPrimaryColor,
+	"次色":     projectenums.ThemeSettingsLabelSecondaryColor,
+	"点缀色":    projectenums.ThemeSettingsLabelAccentColor,
+	"成功色":    projectenums.ThemeSettingsLabelSuccessColor,
+	"警告色":    projectenums.ThemeSettingsLabelWarningColor,
+	"危险色":    projectenums.ThemeSettingsLabelDangerColor,
+	"正文色":    projectenums.ThemeSettingsLabelBodyColor,
+	"标题色":    projectenums.ThemeSettingsLabelHeadingColor,
+	"页面背景":   projectenums.ThemeSettingsLabelPageBackground,
+	"卡片底色":   projectenums.ThemeSettingsLabelCardSurface,
+	"边框色":    projectenums.ThemeSettingsLabelBorderColor,
+	"字重":     projectenums.ThemeSettingsLabelFontWeight,
+	"基准字号":   projectenums.ThemeSettingsLabelHeadingSize,
+	"标题下间距":  projectenums.ThemeSettingsLabelHeadingSpacing,
+	"字体":     projectenums.ThemeSettingsLabelFontFamily,
+	"字号":     projectenums.ThemeSettingsLabelBodySize,
+	"行高":     projectenums.ThemeSettingsLabelLineHeight,
+	"悬停色":    projectenums.ThemeSettingsLabelLinkHoverColor,
+	"下划线":    projectenums.ThemeSettingsLabelUnderline,
+	"背景":     projectenums.ThemeSettingsLabelButtonBackground,
+	"文字色":    projectenums.ThemeSettingsLabelButtonTextColor,
+	"圆角":     projectenums.ThemeSettingsLabelRadius,
+	"纵向内边距":  projectenums.ThemeSettingsLabelPaddingY,
+	"横向内边距":  projectenums.ThemeSettingsLabelPaddingX,
+	"悬停背景":   projectenums.ThemeSettingsLabelHoverBackground,
+	"悬停文字色":  projectenums.ThemeSettingsLabelHoverTextColor,
+	"边框宽":    projectenums.ThemeSettingsLabelBorderWidth,
+	"边框样式":   projectenums.ThemeSettingsLabelBorderStyle,
+	"阴影":     projectenums.ThemeSettingsLabelShadow,
+	"全局圆角":   projectenums.ThemeSettingsLabelGlobalRadius,
+	"默认阴影":   projectenums.ThemeSettingsLabelDefaultShadow,
+	"懒加载默认":  projectenums.ThemeSettingsLabelLazyDefault,
+	"懒加载骨架屏": projectenums.ThemeSettingsLabelLazySkeleton,
+	"过渡时长":   projectenums.ThemeSettingsLabelTransitionDuration,
+	"缓动":     projectenums.ThemeSettingsLabelEasing,
+	"默认入场":   projectenums.ThemeSettingsLabelEntrance,
 	// —— 下拉选项 label ——
-	"默认":            "admin.theme_settings.label.optDefault",
-	"无":             "admin.theme_settings.label.optNone",
-	"小":             "admin.theme_settings.label.optSmall",
-	"中":             "admin.theme_settings.label.optMedium",
-	"大":             "admin.theme_settings.label.optLarge",
-	"特大":            "admin.theme_settings.label.optXLarge",
-	"直角":            "admin.theme_settings.label.optRadiusNone",
-	"胶囊":            "admin.theme_settings.label.optRadiusPill",
-	"实线":            "admin.theme_settings.label.optBorderSolid",
-	"虚线":            "admin.theme_settings.label.optBorderDashed",
-	"点线":            "admin.theme_settings.label.optBorderDotted",
-	"双线":            "admin.theme_settings.label.optBorderDouble",
-	"无边框":           "admin.theme_settings.label.optBorderNone",
-	"悬停时":           "admin.theme_settings.label.optUnderlineHover",
-	"始终":            "admin.theme_settings.label.optUnderlineAlways",
-	"开启":            "admin.theme_settings.label.optOn",
-	"关闭":            "admin.theme_settings.label.optOff",
-	"开启（推荐）":        "admin.theme_settings.label.optOnRecommended",
-	"常规":            "admin.theme_settings.label.optWeightRegular",
-	"中等":            "admin.theme_settings.label.optWeightMedium",
-	"半粗":            "admin.theme_settings.label.optWeightSemiBold",
-	"粗体":            "admin.theme_settings.label.optWeightBold",
-	"淡入":            "admin.theme_settings.label.optFadeIn",
-	"淡入·上":          "admin.theme_settings.label.optFadeUp",
-	"上滑":            "admin.theme_settings.label.optSlideUp",
-	"缩放":            "admin.theme_settings.label.optZoomIn",
-	"无（瞬时）":         "admin.theme_settings.label.optDurationNone",
-	"8px（推荐）":       "admin.theme_settings.label.optRadius8Recommended",
-	"10px（推荐）":      "admin.theme_settings.label.optRadius10Recommended",
-	"12px（推荐）":      "admin.theme_settings.label.optRadius12Recommended",
-	"16px（推荐）":      "admin.theme_settings.label.optSize16Recommended",
-	"20px（推荐）":      "admin.theme_settings.label.optSize20Recommended",
-	"32px（推荐）":      "admin.theme_settings.label.optSize32Recommended",
-	"200ms（推荐）":     "admin.theme_settings.label.optDuration200Recommended",
-	"1.4（紧凑）":       "admin.theme_settings.label.optLineHeight14Tight",
-	"1.6（常用）":       "admin.theme_settings.label.optLineHeight16Common",
-	"1.7（推荐）":       "admin.theme_settings.label.optLineHeight17Recommended",
-	"1.8（宽松）":       "admin.theme_settings.label.optLineHeight18Loose",
-	"系统默认（推荐）":      "admin.theme_settings.label.optFontSystemRecommended",
-	"默认（跟随主题）":      "admin.theme_settings.label.optFontThemeDefault",
-	"Inter / 现代无衬线": "admin.theme_settings.label.optFontInter",
-	"Georgia（衬线）":   "admin.theme_settings.label.optFontGeorgia",
-	"衬线体":           "admin.theme_settings.label.optFontSerif",
-	"等宽体":           "admin.theme_settings.label.optFontMono",
-	"中文无衬线":         "admin.theme_settings.label.optFontChineseSans",
+	"默认":            projectenums.ThemeSettingsLabelOptDefault,
+	"无":             projectenums.ThemeSettingsLabelOptNone,
+	"小":             projectenums.ThemeSettingsLabelOptSmall,
+	"中":             projectenums.ThemeSettingsLabelOptMedium,
+	"大":             projectenums.ThemeSettingsLabelOptLarge,
+	"特大":            projectenums.ThemeSettingsLabelOptXLarge,
+	"直角":            projectenums.ThemeSettingsLabelOptRadiusNone,
+	"胶囊":            projectenums.ThemeSettingsLabelOptRadiusPill,
+	"实线":            projectenums.ThemeSettingsLabelOptBorderSolid,
+	"虚线":            projectenums.ThemeSettingsLabelOptBorderDashed,
+	"点线":            projectenums.ThemeSettingsLabelOptBorderDotted,
+	"双线":            projectenums.ThemeSettingsLabelOptBorderDouble,
+	"无边框":           projectenums.ThemeSettingsLabelOptBorderNone,
+	"悬停时":           projectenums.ThemeSettingsLabelOptUnderlineHover,
+	"始终":            projectenums.ThemeSettingsLabelOptUnderlineAlways,
+	"开启":            projectenums.ThemeSettingsLabelOptOn,
+	"关闭":            projectenums.ThemeSettingsLabelOptOff,
+	"开启（推荐）":        projectenums.ThemeSettingsLabelOptOnRecommended,
+	"常规":            projectenums.ThemeSettingsLabelOptWeightRegular,
+	"中等":            projectenums.ThemeSettingsLabelOptWeightMedium,
+	"半粗":            projectenums.ThemeSettingsLabelOptWeightSemiBold,
+	"粗体":            projectenums.ThemeSettingsLabelOptWeightBold,
+	"淡入":            projectenums.ThemeSettingsLabelOptFadeIn,
+	"淡入·上":          projectenums.ThemeSettingsLabelOptFadeUp,
+	"上滑":            projectenums.ThemeSettingsLabelOptSlideUp,
+	"缩放":            projectenums.ThemeSettingsLabelOptZoomIn,
+	"无（瞬时）":         projectenums.ThemeSettingsLabelOptDurationNone,
+	"8px（推荐）":       projectenums.ThemeSettingsLabelOptRadius8Recommended,
+	"10px（推荐）":      projectenums.ThemeSettingsLabelOptRadius10Recommended,
+	"12px（推荐）":      projectenums.ThemeSettingsLabelOptRadius12Recommended,
+	"16px（推荐）":      projectenums.ThemeSettingsLabelOptSize16Recommended,
+	"20px（推荐）":      projectenums.ThemeSettingsLabelOptSize20Recommended,
+	"32px（推荐）":      projectenums.ThemeSettingsLabelOptSize32Recommended,
+	"200ms（推荐）":     projectenums.ThemeSettingsLabelOptDuration200Recommended,
+	"1.4（紧凑）":       projectenums.ThemeSettingsLabelOptLineHeight14Tight,
+	"1.6（常用）":       projectenums.ThemeSettingsLabelOptLineHeight16Common,
+	"1.7（推荐）":       projectenums.ThemeSettingsLabelOptLineHeight17Recommended,
+	"1.8（宽松）":       projectenums.ThemeSettingsLabelOptLineHeight18Loose,
+	"系统默认（推荐）":      projectenums.ThemeSettingsLabelOptFontSystemRecommended,
+	"默认（跟随主题）":      projectenums.ThemeSettingsLabelOptFontThemeDefault,
+	"Inter / 现代无衬线": projectenums.ThemeSettingsLabelOptFontInter,
+	"Georgia（衬线）":   projectenums.ThemeSettingsLabelOptFontGeorgia,
+	"衬线体":           projectenums.ThemeSettingsLabelOptFontSerif,
+	"等宽体":           projectenums.ThemeSettingsLabelOptFontMono,
+	"中文无衬线":         projectenums.ThemeSettingsLabelOptFontChineseSans,
 }
 
 // themeLabelFact 展示文案 → 事实（key + 中文兜底）；表里没有的文本原样兜底（见 themeLabelKeys 注释）。
@@ -1915,24 +1917,19 @@ const (
 	themeSettingsMsgTitle = "MsgThemeSettingsTitle"
 )
 
-// themeSettingsSavedTextKey / themeSettingsSavedTextFallback 保存成功回执（整页提示的
-// OK 分支：key + 中文兜底成对，取词走 projectText）。
+// themeSettingsSavedTextFallback 保存成功回执的中文兜底（整页提示的 OK 分支：key + 中文兜底
+// 成对，取词走 projectText）；key 见 projectenums.ThemeSettingsOKSaved。
 //
 // 词条在 `sys_i18n`（迁移 451 已 seed 中英各一条）。此前这里只有一句中文常量、
 // 以「值当 key」的方式取词 —— 库内没有中文 item_key，等于永远只显示中文。
-const (
-	themeSettingsSavedTextKey      = "admin.theme_settings.ok.saved"
-	themeSettingsSavedTextFallback = "主题设置已保存，该主题下页面已标记待重建 —— 重新构建后新样式才会出现在访问面。"
-)
+const themeSettingsSavedTextFallback = "主题设置已保存，该主题下页面已标记待重建 —— 重新构建后新样式才会出现在访问面。"
 
-// themeSettingsFieldInvalidText 字段级错误的一行红字（就近提示，模板渲染在控件下方）。
+// themeSettingsFieldInvalidFallback 字段级错误那一行红字的中文兜底（就近提示，模板渲染在控件下方）；
+// key 见 projectenums.ThemeSettingsErrFieldInvalid（词条在 sys_i18n，迁移 451）。
 //
 // 措辞只说「允许什么」而不复述白名单实现：`core.IsSafeCSSValue` 放行的是颜色、长度、
 // 字号、关键字这类 CSS 值，用户要做的是「改成一个正常的值」，不是理解校验器。
-const (
-	themeSettingsFieldInvalidKey      = "admin.theme_settings.err.fieldInvalid"
-	themeSettingsFieldInvalidFallback = "这个值不合法：只能填颜色（#3d444f）、尺寸（16px）这类 CSS 值。"
-)
+const themeSettingsFieldInvalidFallback = "这个值不合法：只能填颜色（#3d444f）、尺寸（16px）这类 CSS 值。"
 
 // themeSettingsData 单主题设置页数据（全局颜色/字体/页眉页脚块绑定）。
 type themeSettingsData struct {
@@ -2374,7 +2371,7 @@ func themeSettingsFailPage(c *gin.Context, data *themeSettingsData, msg projectM
 	themeSettingsEchoForm(c, data)
 	if name, _, _ := themeSettingsInvalidField(data.Groups, fieldErr); name != "" {
 		themeSettingsMarkInvalid(data.Groups, name,
-			projectMsg{Key: themeSettingsFieldInvalidKey, Fallback: themeSettingsFieldInvalidFallback})
+			projectMsg{Key: projectenums.ThemeSettingsErrFieldInvalid, Fallback: themeSettingsFieldInvalidFallback})
 	}
 	c.HTML(http.StatusOK, "admin/project/theme_settings", adminui.Prepare(c, data.templateMap()))
 }
@@ -2452,7 +2449,7 @@ func themeSettingsMarkTemplateSelected(options []structureTemplateOptionView, cu
 // themeSettingsInvalidField 从校验错误里定位出错的字段（返回提交键名 / 字段 label 的中文兜底 / 出错的值）。
 //
 // label 只作**定位说明**用（调用方不用它渲染 —— 就近红字的文案是固定词条，
-// 见 themeSettingsFieldInvalidKey），所以这里给兜底原文而不是事实。
+// 见 projectenums.ThemeSettingsErrFieldInvalid），所以这里给兜底原文而不是事实。
 //
 // `builder.ValidateThemeSettings` 的错误形态是 `主题设置 主色 值非法: "not-a-css-value;evil"`：
 // 前半段是**中文标签**，但它与字段表的 Label 并不同名（「主色」对「主色」是巧合，

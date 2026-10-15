@@ -149,6 +149,6 @@ var projectWriteTextKeys = []string{
 	projectenums.ThemeOKCreated,
 	projectenums.ThemeOKActivated,
 	projectenums.ThemeOKDeleted,
-	siteLocalesSavedKey,
-	themeSettingsSavedTextKey,
+	projectenums.SiteLocalesSaved,
+	projectenums.ThemeSettingsOKSaved,
 }
