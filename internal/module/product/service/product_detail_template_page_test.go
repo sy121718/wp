@@ -33,17 +33,17 @@ type detailTemplatePortStub struct {
 	calls []string
 }
 
-func (p *detailTemplatePortStub) DetailTemplateCandidates(context.Context, string) ([]productcontract.DetailTemplateCandidateView, error) {
+func (p *detailTemplatePortStub) DetailTemplateCandidates(context.Context, string, string) ([]productcontract.DetailTemplateCandidateView, error) {
 	p.calls = append(p.calls, "Candidates")
 	return nil, nil
 }
 
-func (p *detailTemplatePortStub) DefaultDetailTemplate(context.Context, string) (string, error) {
+func (p *detailTemplatePortStub) DefaultDetailTemplate(context.Context, string, string) (string, error) {
 	p.calls = append(p.calls, "Default")
 	return "", nil
 }
 
-func (p *detailTemplatePortStub) BoundDetailTemplate(context.Context, string, string) productcontract.BoundTemplateView {
+func (p *detailTemplatePortStub) BoundDetailTemplate(context.Context, string, string, string) productcontract.BoundTemplateView {
 	p.calls = append(p.calls, "Bound")
 	return productcontract.BoundTemplateView{}
 }

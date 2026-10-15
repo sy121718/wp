@@ -103,14 +103,16 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 	}
 
 	if firstErr == nil {
-		candidates, cerr := s.detailTemplates(ctx, productcontract.EntityTypeProduct)
+		// 三个取数口都带 selected：它们是本端口自带工程作用域的读口，多工程下不带工程
+		// 会被下游回 ErrProjectRequired —— 主数据那一条因此变成整页 500。
+		candidates, cerr := s.detailTemplates(ctx, selected, productcontract.EntityTypeProduct)
 		if cerr != nil {
 			// 主数据：读不到就是整页装载失败，后面的派生查询一条都不发（文件头第 1 条）。
 			fail(cerr)
 		} else {
 			// 下面两项都**不参与失败判定**：它们是标注（当前默认是哪套 / 这个商品绑在哪）。
-			defaultID := s.defaultDetailTemplate(ctx, productcontract.EntityTypeProduct)
-			bound := s.boundDetailTemplate(ctx, productcontract.EntityTypeProduct, productID)
+			defaultID := s.defaultDetailTemplate(ctx, selected, productcontract.EntityTypeProduct)
+			bound := s.boundDetailTemplate(ctx, selected, productcontract.EntityTypeProduct, productID)
 			boundID := bound.TemplateID
 			if !bound.Exists {
 				// 没有实例 = 还没发布过：显示上按「当前生效的那套」标，而不是留空。
@@ -152,27 +154,30 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 	return view, nil
 }
 
-// detailTemplates 模板清单（端口未注入 = 降级成空清单，不是失败）。
+// detailTemplates 本工程的模板清单（端口未注入 = 降级成空清单，不是失败）。
 //
 // 与「未装配」的区分留在控制器：那一档由 handle 的依赖字段判断（见 product_detail_template.go
 // 的 ProductDetailTemplatePage），这里只保证端口为空时不 panic。
-func (s *Service) detailTemplates(ctx context.Context, entityType string) ([]productcontract.DetailTemplateCandidateView, error) {
+//
+// projectID 由调用方给（它已解析出 selected）：这一跳本身就是「哪个工程的模板」，
+// 端口不再有「自己猜一个工程」的余地。
+func (s *Service) detailTemplates(ctx context.Context, projectID, entityType string) ([]productcontract.DetailTemplateCandidateView, error) {
 	if s.pageDetailTemplates == nil {
 		return []productcontract.DetailTemplateCandidateView{}, nil
 	}
-	rows, err := s.pageDetailTemplates.DetailTemplateCandidates(ctx, entityType)
+	rows, err := s.pageDetailTemplates.DetailTemplateCandidates(ctx, projectID, entityType)
 	if rows == nil {
 		rows = []productcontract.DetailTemplateCandidateView{}
 	}
 	return rows, err
 }
 
-// defaultDetailTemplate 当前默认模板 id（端口未注入或解析不到 = 空串）。
-func (s *Service) defaultDetailTemplate(ctx context.Context, entityType string) string {
+// defaultDetailTemplate 本工程的当前默认模板 id（端口未注入或解析不到 = 空串）。
+func (s *Service) defaultDetailTemplate(ctx context.Context, projectID, entityType string) string {
 	if s.pageDetailTemplates == nil {
 		return ""
 	}
-	id, err := s.pageDetailTemplates.DefaultDetailTemplate(ctx, entityType)
+	id, err := s.pageDetailTemplates.DefaultDetailTemplate(ctx, projectID, entityType)
 	if err != nil {
 		return ""
 	}
@@ -180,11 +185,11 @@ func (s *Service) defaultDetailTemplate(ctx context.Context, entityType string) 
 }
 
 // boundDetailTemplate 该商品当前绑定的发布实例（读不到 = 没有实例，理由见文件头第 2 条）。
-func (s *Service) boundDetailTemplate(ctx context.Context, entityType, entityID string) productcontract.BoundTemplateView {
+func (s *Service) boundDetailTemplate(ctx context.Context, projectID, entityType, entityID string) productcontract.BoundTemplateView {
 	if s.pageDetailTemplates == nil {
 		return productcontract.BoundTemplateView{}
 	}
-	return s.pageDetailTemplates.BoundDetailTemplate(ctx, entityType, entityID)
+	return s.pageDetailTemplates.BoundDetailTemplate(ctx, projectID, entityType, entityID)
 }
 
 var _ = projectdto.ProjectResp{}

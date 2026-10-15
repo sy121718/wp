@@ -596,17 +596,17 @@ type detailTemplateFailingPort struct {
 	derived    int
 }
 
-func (p *detailTemplateFailingPort) DetailTemplateCandidates(context.Context, string) ([]productcontract.DetailTemplateCandidateView, error) {
+func (p *detailTemplateFailingPort) DetailTemplateCandidates(context.Context, string, string) ([]productcontract.DetailTemplateCandidateView, error) {
 	p.candidates++
 	return nil, errors.New("template list unavailable")
 }
 
-func (p *detailTemplateFailingPort) DefaultDetailTemplate(context.Context, string) (string, error) {
+func (p *detailTemplateFailingPort) DefaultDetailTemplate(context.Context, string, string) (string, error) {
 	p.derived++
 	return "", nil
 }
 
-func (p *detailTemplateFailingPort) BoundDetailTemplate(context.Context, string, string) productcontract.BoundTemplateView {
+func (p *detailTemplateFailingPort) BoundDetailTemplate(context.Context, string, string, string) productcontract.BoundTemplateView {
 	p.derived++
 	return productcontract.BoundTemplateView{}
 }
@@ -688,15 +688,15 @@ func TestProductDetailTemplatePageAnnotationFailuresStillRenderPage(t *testing.T
 // 前者是空清单 + 没有实例，页面照常可用）。
 type detailTemplateEmptyPort struct{}
 
-func (p *detailTemplateEmptyPort) DetailTemplateCandidates(context.Context, string) ([]productcontract.DetailTemplateCandidateView, error) {
+func (p *detailTemplateEmptyPort) DetailTemplateCandidates(context.Context, string, string) ([]productcontract.DetailTemplateCandidateView, error) {
 	return []productcontract.DetailTemplateCandidateView{}, nil
 }
 
-func (p *detailTemplateEmptyPort) DefaultDetailTemplate(context.Context, string) (string, error) {
+func (p *detailTemplateEmptyPort) DefaultDetailTemplate(context.Context, string, string) (string, error) {
 	return "", nil
 }
 
-func (p *detailTemplateEmptyPort) BoundDetailTemplate(context.Context, string, string) productcontract.BoundTemplateView {
+func (p *detailTemplateEmptyPort) BoundDetailTemplate(context.Context, string, string, string) productcontract.BoundTemplateView {
 	return productcontract.BoundTemplateView{}
 }
 

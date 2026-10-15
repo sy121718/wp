@@ -45,16 +45,24 @@ type BoundTemplateView struct {
 }
 
 // DetailTemplatePort 「详情页模板」整页的只读端口（两个上游模块的并集）。
+//
+// 三个方法都带**工程作用域**，参数位置紧随 ctx（与 contenttemplate 契约的
+// ResolveTemplateScoped(ctx, projectID, entityType) 一致 —— 工程是作用域，不是实体参数）。
+//
+// 为什么必须有：本端口的两段下游（contenttemplate 的 List / ResolveTemplate、presentation 的
+// GetByEntity）在多工程部署下都要显式工程，不带时它们回 ErrProjectRequired，症状是**整页 500**；
+// 而调用方（读模型）手里本来就有解析好的工程 id（service.ProductDetailTemplatePage 的 selected），
+// 漏传即缺陷。
 type DetailTemplatePort interface {
-	// DetailTemplateCandidates 该实体类型的模板清单。失败 = 这一屏的主数据没读到
+	// DetailTemplateCandidates 本工程内该实体类型的模板清单。失败 = 这一屏的主数据没读到
 	// （整页装载失败，不是「暂时没有候选」—— 与 EntityTemplatePort 的降级语义相反）。
-	DetailTemplateCandidates(ctx context.Context, entityType string) (out []DetailTemplateCandidateView, err error)
-	// DefaultDetailTemplate 该实体类型当前解析到的默认模板 id（未解析到时返回空串，不报错）。
-	DefaultDetailTemplate(ctx context.Context, entityType string) (templateID string, err error)
+	DetailTemplateCandidates(ctx context.Context, projectID, entityType string) (out []DetailTemplateCandidateView, err error)
+	// DefaultDetailTemplate 本工程内该实体类型当前解析到的默认模板 id（未解析到时返回空串，不报错）。
+	DefaultDetailTemplate(ctx context.Context, projectID, entityType string) (templateID string, err error)
 	// BoundDetailTemplate 该实体当前绑定的发布实例。
 	//
 	// 读不到按「没有实例」处理（Exists=false），不报错：这一屏对实例的依赖是**展示**
 	// （显示还没发布 / 发布在哪个路径），不是前置条件 —— 实例读不出来时页面仍要能
 	// 让人去点「首次发布」。
-	BoundDetailTemplate(ctx context.Context, entityType, entityID string) (view BoundTemplateView)
+	BoundDetailTemplate(ctx context.Context, projectID, entityType, entityID string) (view BoundTemplateView)
 }

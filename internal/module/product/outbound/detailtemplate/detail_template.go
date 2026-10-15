@@ -44,13 +44,16 @@ func New(templates contenttemplatecontract.ContentTemplateService, instances ins
 
 var _ productcontract.DetailTemplatePort = (*Port)(nil)
 
-// DetailTemplateCandidates 该实体类型的模板清单。
-func (p *Port) DetailTemplateCandidates(ctx context.Context, entityType string) (out []productcontract.DetailTemplateCandidateView, err error) {
+// DetailTemplateCandidates 本工程内该实体类型的模板清单。
+//
+// 工程显式透给下游：contenttemplate.List 在 req.ProjectID 为空时只认「唯一工程」，
+// 多工程部署下回 ErrProjectRequired（这一屏的主数据，读不到即整页失败）。
+func (p *Port) DetailTemplateCandidates(ctx context.Context, projectID, entityType string) (out []productcontract.DetailTemplateCandidateView, err error) {
 	out = []productcontract.DetailTemplateCandidateView{}
 	if p.templates == nil {
 		return out, nil
 	}
-	rows, lerr := p.templates.List(ctx, &contenttemplatecontract.ListReq{EntityType: entityType})
+	rows, lerr := p.templates.List(ctx, &contenttemplatecontract.ListReq{EntityType: entityType, ProjectID: projectID})
 	if lerr != nil {
 		return nil, lerr
 	}
@@ -68,12 +71,15 @@ func (p *Port) DetailTemplateCandidates(ctx context.Context, entityType string) 
 	return out, nil
 }
 
-// DefaultDetailTemplate 该实体类型当前解析到的默认模板 id。
-func (p *Port) DefaultDetailTemplate(ctx context.Context, entityType string) (templateID string, err error) {
+// DefaultDetailTemplate 本工程内该实体类型当前解析到的默认模板 id。
+//
+// 走 ResolveTemplateScoped（显式工程）而不是无工程的 ResolveTemplate：后者在多工程下回
+// ErrProjectRequired。这里已经有工程 id，不该退到「唯一工程」的兜底。
+func (p *Port) DefaultDetailTemplate(ctx context.Context, projectID, entityType string) (templateID string, err error) {
 	if p.templates == nil {
 		return "", nil
 	}
-	tpl, rerr := p.templates.ResolveTemplate(ctx, entityType)
+	tpl, rerr := p.templates.ResolveTemplateScoped(ctx, projectID, entityType)
 	if rerr != nil {
 		return "", rerr
 	}
@@ -87,12 +93,14 @@ func (p *Port) DefaultDetailTemplate(ctx context.Context, entityType string) (te
 //
 // 读不到 / 实例为空一律按「没有实例」返回，不往上抛错：这一屏对实例的依赖是展示，
 // 前置条件是模板清单 —— 实例读不出来时页面仍要能让人点「首次发布」。
-func (p *Port) BoundDetailTemplate(ctx context.Context, entityType, entityID string) productcontract.BoundTemplateView {
+func (p *Port) BoundDetailTemplate(ctx context.Context, projectID, entityType, entityID string) productcontract.BoundTemplateView {
 	if p.instances == nil || entityID == "" {
 		return productcontract.BoundTemplateView{}
 	}
+	// 工程同样显式透下去：presentation 侧 GetByEntity 不带工程时多工程下解析不出唯一工程，
+	// 这里按「没有实例」吞掉会让页面把「读不到」显示成「还没发布」。
 	inst, ierr := p.instances.GetByEntity(ctx, &presentationcontract.GetByEntityReq{
-		EntityType: entityType, EntityID: entityID,
+		EntityType: entityType, EntityID: entityID, ProjectID: projectID,
 	})
 	if ierr != nil || inst == nil {
 		return productcontract.BoundTemplateView{}

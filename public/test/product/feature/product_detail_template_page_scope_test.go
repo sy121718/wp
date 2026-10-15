@@ -10,11 +10,17 @@
 //	B) internal/module/product/service/product_detail_template_ops.go 的 DetailTemplateDocument：
 //	   原先走**无工程**的 ResolveTemplate；contenttemplate 侧 resolveProjectID("") 在多工程下回
 //	   ErrProjectRequired —— 于是「新建模板但不指定复制来源」这条最常用的路径整条失败。
+//	C) product/contract/detail_template_port.go 的三个只读方法（模板清单 / 默认模板 / 绑定实例）
+//	   原先签名里**没有工程 id**，下游 contenttemplate 与 presentation 在多工程下回
+//	   ErrProjectRequired —— 整页在取到商品之后崩成 500。本文件注入**真实**端口（外面套一层只
+//	   记录工程 id 的壳），断言页面 200 且三个方法各自收到的 projectID == 页面上解析出的工程。
 //
 // 为什么既有用例照不出：既有 feature 用例都跑在**单工程**夹具上，兜底解析出的那一个恰好就是
 // 唯一的那一个，「传了」与「没传」行为等价。本文件复用同包 product_detail_template_project_scope_test.go
 // 的 projectScopeFixture（detailFixture 之上再建第二个工程），并断言两条**方向相反**的事实：
+//
 //   - 商品属于「解析出的工程」时，不带 projectId 也必须取到（漏传作用域 -> 400，红）；
+//
 //   - 商品只属于**另一个**工程时，也必须走到「取商品」而不是在解析工程时就以 400 断掉
 //     （RLS 未切换前超级用户连接下跨工程仍可见，故不断言 404 —— 见用例内的说明）。
 package feature
@@ -31,8 +37,10 @@ import (
 
 	"go_wp/internal/middleware/adminctx"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
+	dtoutbound "go_wp/internal/module/product/outbound/detailtemplate"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
 )
@@ -41,11 +49,11 @@ import (
 //
 // 权限键照 choice_test 的做法注入（页面的「新建命名模板」入口按权限显隐）：本文件验的是
 // 工程作用域，不是权限链，不挂鉴权中间件。
-func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture) {
+func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture, *detailTemplateRecordingPort) {
 	t.Helper()
 	base := newDetailFixture(t)
 	if base == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	other, err := base.projects.Create(context.Background(), &projectdto.CreateReq{Name: "第二站点工程"})
 	if err != nil {
@@ -64,18 +72,66 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 	})
 	handle := producthttp.NewProductPageHandle(base.products, base.products, base.projects)
 	handle.SetDetailTemplateDeps(base.templates, base.pres)
-	// 把「详情页模板」整页的**只读端口**退回未注入档（SetDetailTemplateDeps 会顺带注入它）。
-	//
-	// 为什么：本文件钉的是「取商品那一跳」的工程作用域，而该端口自己的三条读口
-	//（DetailTemplateCandidates / DefaultDetailTemplate / BoundDetailTemplate）**同样没有工程参数**
-	// ——多工程下它们在取商品之后才失败，把本判据掩盖成 500。那是同一缺陷形态的另一处，
-	// 修它要动 product 契约 + outbound 适配器 + 两处既有测试的 fake（不在本批清单内，
-	// 已作为清单外发现上报）。端口未注入时这一跳降级成空清单（page.go 文件头第 1 条之外
-	// 的既有降级口径），于是本用例只测它要测的那一跳。
-	base.products.SetDetailTemplatePort(nil)
+	// 注入**真实**端口（与 handle.SetDetailTemplateDeps 内部注入的是同一个构造）外加一层记录壳：
+	// 本文件的断言要同时看到「页面 200」与「三个端口方法各自收到的工程 id」。退回空端口规避，
+	// 多工程下端口读不到工程时回的是**错误**这件事就被掩盖掉了。
+	port := &detailTemplateRecordingPort{inner: dtoutbound.New(base.templates, base.pres)}
+	base.products.SetDetailTemplatePort(port)
 	engine.GET("/admin/products/template", handle.ProductDetailTemplatePage)
 	engine.POST("/admin/products/template/create", handle.ProductDetailTemplateCreate)
-	return engine, scope
+	return engine, scope, port
+}
+
+// detailTemplateRecordingPort 「详情页模板」整页只读端口的记录外壳：转发给真实适配器，
+// 同时记下每次调用收到的 projectID。
+//
+// 只断言「页面 200」不够：那只能证明端口拿到了一个**能解析的**工程，传成另一个工程的 id
+// （典型是把 productID 塞进工程位、或写死第一个工程）时页面照样 200 —— 只有对参照得出来。
+type detailTemplateRecordingPort struct {
+	inner productcontract.DetailTemplatePort
+	calls []string
+}
+
+func (p *detailTemplateRecordingPort) DetailTemplateCandidates(ctx context.Context, projectID, entityType string) ([]productcontract.DetailTemplateCandidateView, error) {
+	p.calls = append(p.calls, "Candidates:"+projectID)
+	return p.inner.DetailTemplateCandidates(ctx, projectID, entityType)
+}
+
+func (p *detailTemplateRecordingPort) DefaultDetailTemplate(ctx context.Context, projectID, entityType string) (string, error) {
+	p.calls = append(p.calls, "Default:"+projectID)
+	return p.inner.DefaultDetailTemplate(ctx, projectID, entityType)
+}
+
+func (p *detailTemplateRecordingPort) BoundDetailTemplate(ctx context.Context, projectID, entityType, entityID string) productcontract.BoundTemplateView {
+	p.calls = append(p.calls, "Bound:"+projectID)
+	return p.inner.BoundDetailTemplate(ctx, projectID, entityType, entityID)
+}
+
+// reset 清掉调用记录（同一用例里第二次读页面时只断言这一次的取数）。
+func (p *detailTemplateRecordingPort) reset() { p.calls = nil }
+
+// assertAllScopedTo 端口收到的**每一次**调用的工程 id 都必须等于 want，且三个取数口都发到过。
+func (p *detailTemplateRecordingPort) assertAllScopedTo(t *testing.T, want string) {
+	t.Helper()
+	if len(p.calls) == 0 {
+		t.Fatal("详情模板页一条端口取数都没发：端口没接上读模型")
+	}
+	for _, c := range p.calls {
+		if !strings.HasSuffix(c, ":"+want) {
+			t.Fatalf("端口方法收到的工程 id 不是页面上解析出的 %q，实际调用 %v", want, p.calls)
+		}
+	}
+	for _, name := range []string{"Candidates", "Default", "Bound"} {
+		hit := false
+		for _, c := range p.calls {
+			if strings.HasPrefix(c, name+":") {
+				hit = true
+			}
+		}
+		if !hit {
+			t.Fatalf("端口方法 %s 没被调用（三个取数口要一起发），实际 %v", name, p.calls)
+		}
+	}
 }
 
 // templateScopeResolvedProjectID 复现 service 的工程解析口径：不带 projectId 时取**工程清单第一个**。
@@ -140,7 +196,7 @@ func templateScopeTemplateCount(t *testing.T, f *projectScopeFixture, projectID 
 // 解析出的工程作用域。两条方向相反的断言 —— 只断言「取到了」时，「取的是另一个工程的商品」
 // 仍然是绿的。
 func TestProductDetailTemplatePageServiceScopesProductLookup(t *testing.T) {
-	_, f := newTemplateScopePageEngine(t)
+	_, f, port := newTemplateScopePageEngine(t)
 	if f == nil {
 		return
 	}
@@ -166,6 +222,11 @@ func TestProductDetailTemplatePageServiceScopesProductLookup(t *testing.T) {
 	if !view.Ready || view.Product.ID != mine {
 		t.Fatalf("页面读模型未取到该商品：Ready=%v Product=%+v，want %s", view.Ready, view.Product, mine)
 	}
+	// 端口侧对参：三个取数口收到的 projectID 必须等于页面上解析出的 selected。
+	// 漏传（空串）在多工程下就让 contenttemplate 回 ErrProjectRequired；传成**另一个**工程的 id
+	// 页面照样 200，只有逐个方法对参才照得出来。
+	port.assertAllScopedTo(t, selected)
+	port.reset()
 
 	// 2) 商品只属于**另一个**工程：同样必须走到「取商品」这一步，而不是在解析工程时以 400 断掉
 	//    （400 只可能来自 product 侧 resolveProjectID —— 那正是「没带作用域」的症状）。
@@ -185,7 +246,7 @@ func TestProductDetailTemplatePageServiceScopesProductLookup(t *testing.T) {
 // TestProductDetailTemplatePageGETRendersWithoutProjectParam 端点层：多工程站点上**不带** projectId
 // 打开 GET /admin/products/template 必须成功渲染（不是 400）。
 func TestProductDetailTemplatePageGETRendersWithoutProjectParam(t *testing.T) {
-	engine, f := newTemplateScopePageEngine(t)
+	engine, f, port := newTemplateScopePageEngine(t)
 	if engine == nil {
 		return
 	}
@@ -206,12 +267,14 @@ func TestProductDetailTemplatePageGETRendersWithoutProjectParam(t *testing.T) {
 			t.Fatalf("详情模板页缺少 %q：%s", want, body)
 		}
 	}
+	// 渲染出内容还不够：三个取数口必须都收到页面上解析出的工程（不带工程即多工程下 500）。
+	port.assertAllScopedTo(t, selected)
 }
 
 // TestProductDetailTemplateCreateWithoutCopySourceScopesToProject 端点层：「新建模板但不指定复制来源」
 // 在多工程站点上必须成功，且复制的是**该工程**的默认模板文档（不是空文档、也不是别的工程的模板）。
 func TestProductDetailTemplateCreateWithoutCopySourceScopesToProject(t *testing.T) {
-	engine, f := newTemplateScopePageEngine(t)
+	engine, f, _ := newTemplateScopePageEngine(t)
 	if engine == nil {
 		return
 	}
