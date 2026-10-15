@@ -58,9 +58,10 @@ func TestApplyRowFactsBundlePriceMatchesApplyPriceRange(t *testing.T) {
 
 // TestRatingRespOfAggZeroValue 无评分商品的零值投影：不在 map ⇒ Count=0 ⇒ HasRating=false。
 //
-// 这条对应 dd.txt 3.5 的「无评分商品的零值表示」：与 ratingsOf 读不到时的渲染一致
-// （HasRating=false、RatingCount=0、明细为空），但**错误不走这条路**（那是 productRowsFromList
-// 返回 error ⇒ 500，不是渲染成「暂无评分」）。
+// 这条对应 dd.txt 3.5 的「无评分商品的零值表示」：与详情路径「确实没有评分」时的渲染一致
+// （HasRating=false、RatingCount=0、明细为空）。**读不到不走这条路**：两条路径都不吞错 ——
+// 批量侧是 productRowsFromList 返回 error，详情 / 编辑侧是 ratingsOf 返回 error
+//（service/product_row_rating_failure_test.go 用失败注入钉住这两档的区别）。
 func TestRatingRespOfAggZeroValue(t *testing.T) {
 	zero := ratingRespOfAgg(productmodel.RatingAgg{})
 	if zero == nil {

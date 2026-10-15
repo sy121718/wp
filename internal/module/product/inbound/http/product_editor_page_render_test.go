@@ -64,7 +64,6 @@ type editorStub struct {
 	brandsErr     error
 	tagsErr       error
 	attributesErr error
-	ratingsErr    error
 	listErr       error
 	configErr     error
 	skusErr       error
@@ -300,8 +299,10 @@ func (s *editorStub) ListAttributes(context.Context, *productdto.ListAttributeRe
 
 func (s *editorStub) ListRatings(context.Context, *productdto.ListRatingsReq) (*productdto.RatingResp, error) {
 	s.record("ListRatings")
-	// 读不到评分按「没有评分」处理（页面照常渲染），所以这一条不属于失败档。
-	return nil, s.ratingsErr
+	// 恒返回 (nil, nil)：这个 stub 只回答「这一屏怎么渲染」，恒无评分。
+	// 评分读不到的失败档由 service 包 product_row_rating_failure_test.go 覆盖（读不到 = 失败档，
+	// 不得渲染成「暂无评分」—— dd.txt 3.5 验收表最后一行）。
+	return nil, nil
 }
 
 func (s *editorStub) GetBundleConfig(context.Context, *productdto.GetBundleConfigReq) (*productdto.BundleConfigResp, error) {

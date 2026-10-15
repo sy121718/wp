@@ -39,15 +39,24 @@ import (
 //
 // selected 是**当前工程**：评分表有 FORCE RLS 策略，明细查询要工程作用域；兜底解析
 // （取唯一工程）在多工程下会直接判参数错，所以把页面上正在用的那个工程显式传下来。
+//
+// error 只表示**取数失败**（评分读不到，见 ratingsOf）：调用方按各自既有的失败通道处理
+// （详情页 / 编辑页都走 fail(...) ⇒ LoadFailed 失败页），与列表路径同一档。
+// 入参 detail 为 nil 是畸形调用，返回 (nil, nil) —— 调用方本来就有「详情非 nil 才装配」的守卫。
 func (s *Service) productRow(ctx context.Context, selected string, flat []*productdto.CategoryResp,
 	brands []*productdto.BrandResp, tags []*productdto.TagResp,
-	warehouses []productdto.WarehouseOptionView, detail *productdto.ProductResp) *productdto.ProductRow {
+	warehouses []productdto.WarehouseOptionView, detail *productdto.ProductResp) (*productdto.ProductRow, error) {
 	if detail == nil {
-		return nil
+		return nil, nil
 	}
-	// 评分读一次：明细 + 投影值（issue #33）。读不到按「没有评分」处理，页面照常渲染。
-	return s.productRowWithRating(ctx, flat, brands, tags, warehouses, detail,
-		s.ratingsOf(ctx, selected, detail.ID))
+	// 评分读一次：明细 + 投影值（issue #33）。**读不到 = 读取失败**（error 向上传播，
+	// 页面判 500 失败页）；只有「读到了、这条商品确实没有评分」才渲染零评分。
+	// 两者混作一档就是 dd.txt 3.5 验收表最后一行点名的缺陷：数据库故障被渲染成「暂无评分」。
+	rating, err := s.ratingsOf(ctx, selected, detail.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.productRowWithRating(ctx, flat, brands, tags, warehouses, detail, rating), nil
 }
 
 // productRowWithRating 行装配的本体：评分由调用方给 —— 详情页 / 编辑页给 ratingsOf 的
@@ -158,7 +167,8 @@ func (s *Service) productRowFromList(ctx context.Context, flat []*productdto.Cat
 // ratingRespOfAgg 把批量聚合结果投影成行装配要的评分形状（**只填投影值，明细为空**）。
 //
 // 不在 map 里（agg 是零值）= 一条评分都没有 ⇒ HasRating=false、RatingCount=0 ——
-// 与 ratingsOf 读不到时的零值渲染逐字一致（模板据此把评分列显示成 —）。
+// 与详情路径「确实没有评分」时的零值渲染逐字一致（模板据此把评分列显示成 —）。
+// **读不到不是这一档**：两条批量读失败会返回 error（见 productRowsFromList）。
 func ratingRespOfAgg(agg productmodel.RatingAgg) *productdto.RatingResp {
 	return &productdto.RatingResp{Rating: agg.Avg, RatingCount: agg.Count, HasRating: agg.Count > 0}
 }
@@ -228,13 +238,25 @@ func applyRowFacts(item *productdto.ProductResp, facts productmodel.ProductRowFa
 	}
 }
 
-// ratingsOf 读某商品的评分明细与投影值（读不到就按「没有评分」处理，页面照常渲染）。
-func (s *Service) ratingsOf(ctx context.Context, projectID, productID string) *productdto.RatingResp {
+// ratingsOf 读某商品的评分明细与投影值，**两档语义分开**（dd.txt 3.5 验收表最后一行）：
+//
+//   - 读取失败（数据库 / 连接 / 超时 / 被 RLS 挡掉的作用域错）→ 返回 error。调用方据此判
+//     500 失败页，绝不把「没读到」渲染成「暂无评分」——用户会以为这个商品真的没被打过分，
+//     而真相是这一层没读到（重试可能就好了）。
+//   - 读到、但这条商品确实没有评分（ListRatings 成功返回空结果）→ 零评分：HasRating=false、
+//     RatingCount=0，模板把评分列显示成 —。这条**不是**失败。
+//
+// 与列表路径同一口径（productRowsFromList 对 RatingSummariesByProducts 的错误同样不吞）。
+// 成功却拿到 nil 结果属于畸形返回，与详情为 nil 同一档，判失败。
+func (s *Service) ratingsOf(ctx context.Context, projectID, productID string) (*productdto.RatingResp, error) {
 	res, err := s.ListRatings(ctx, &productdto.ListRatingsReq{ProductID: productID, ProjectID: projectID})
-	if err != nil || res == nil {
-		return &productdto.RatingResp{}
+	if err != nil {
+		return nil, fmt.Errorf("读取商品 %s 的评分失败：%w", productID, err)
 	}
-	return res
+	if res == nil {
+		return nil, fmt.Errorf("商品 %s 的评分返回为空", productID)
+	}
+	return res, nil
 }
 
 // formatScore 评分统一两位小数（4.5 → 4.50）。

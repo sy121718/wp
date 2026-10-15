@@ -139,9 +139,16 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 	// 行装配：成品行在**读模型**里产出（控制器不再拼行）。条件与原控制器一致 —— 取数全部
 	// 成功、商品存在、详情非 nil 才装配；失败时不装配：原料可能是半截的，渲染它只会得到
 	// 一张残表（列表页逐行取详情失败会 break）。
+	// 评分读不到（productRow 返回的 error）**不吞**：与列表路径同一档，页面据此走 500 失败页，
+	// 而不是把数据库故障渲染成「暂无评分」（dd.txt 3.5 验收表最后一行）。
 	if firstErr == nil && view.HasProduct && view.Detail != nil {
-		view.Product = s.productRow(ctx, selected, FlattenCategoryTree(view.Categories),
+		row, rerr := s.productRow(ctx, selected, FlattenCategoryTree(view.Categories),
 			view.Brands, view.Tags, view.WarehouseOptions, view.Detail)
+		if rerr != nil {
+			fail(rerr)
+		} else {
+			view.Product = row
+		}
 	}
 	if firstErr != nil {
 		// 失败页给齐模板必需键：上面每个字段都有值（空列表而不是缺失），渲染不会断在
