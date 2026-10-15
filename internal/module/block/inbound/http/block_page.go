@@ -437,8 +437,9 @@ func (h *blockPageHandle) BlocksStaleDrawer(c *gin.Context) {
 //
 // 取词交给渲染期（片段模板用注入的 tr 拼回整句）：语言是请求级的，在控制器里提前翻等于
 // 替渲染期做决定 —— 英文后台下会显示中文，且不报错、没日志。
-// 本类型与 content 模块的同名类型、page 模块里的同名函数是三份（跨模块共用要走契约，
-// 而这是纯展示装配）；三处文案与阶段取值必须一致，改一处请同步另两处。
+// 本类型与 content 模块的同名类型是两份（跨模块共用要走契约，而这是纯展示装配）。
+// 阶段 → 文案用 blockenums 的 ImpactStage* 常量，与 page/enums 的 RebuildStageLabel 同持
+// 一对 key（content 侧已改为直接调那个函数）：改一处请同步另一处。
 type rebuildFailureView struct {
 	// StageKey / StageFallback 失败阶段文案；未登记的阶段 Key 空、Fallback 是原始阶段值。
 	StageKey      string
@@ -457,9 +458,9 @@ func rebuildFailureViewOf(stage string, at *utils.JSONTime) rebuildFailureView {
 	view := rebuildFailureView{Has: true, StageFallback: stage}
 	switch stage {
 	case "plan":
-		view.StageKey, view.StageFallback = "admin.pages.impact.stage_plan", "计划阶段（站点语言清单或旧发布范围读不到）"
+		view.StageKey, view.StageFallback = blockenums.ImpactStagePlan, "计划阶段（站点语言清单或旧发布范围读不到）"
 	case "build":
-		view.StageKey, view.StageFallback = "admin.pages.impact.stage_build", "构建 / 发布阶段"
+		view.StageKey, view.StageFallback = blockenums.ImpactStageBuild, "构建 / 发布阶段"
 	}
 	if at != nil {
 		view.At = time.Time(*at).Local().Format("2006-01-02 15:04")

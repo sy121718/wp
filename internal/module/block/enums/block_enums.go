@@ -57,4 +57,13 @@ const (
 	RefCountPages                      = "admin.blocks.refCount.pages"                       // 引用数（{count} 个页面引用）
 	UsageMore                          = "admin.blocks.usage.more"                           // 引用处数过多时的省略后缀（ 等 {count} 处）
 	ContentSavedRebuildQueued          = "admin.blocks.content.savedRebuild"                 // 已保存，关联页面将标记为待重建
+
+	// —— 借自 admin.pages.* 的影响面阶段词条（block 侧 stale 抽屉展示同一列 stage）——
+	//
+	// 阶段取值由 page service 写进 pages.rebuild_failed_stage（迁移 474），它的展示文案在
+	// page/enums 的 RebuildStageLabel 里已有一份。block 侧的 stale 抽屉按既有取舍
+	// 「三处各持一份、改一处同步另两处」保留本模块的常量（见 block_page.go 的说明）：
+	// 引 page/enums 会造出那条取舍正在回避的跨模块依赖，而这里只是两个字符串。
+	ImpactStagePlan  = "admin.pages.impact.stage_plan"  // 计划阶段（站点语言清单或旧发布范围读不到）
+	ImpactStageBuild = "admin.pages.impact.stage_build" // 构建 / 发布阶段
 )

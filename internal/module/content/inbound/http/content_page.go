@@ -148,14 +148,15 @@ const (
 	articleBlogPathPrefix = "/blog/"
 )
 
-// 成功回执（常量值是 i18n key，登记在 articleFacingMessages 里）。
+// 成功回执（常量值取自 contentenums，登记在 articleFacingMessages 里）。
 //
-// 常量值是 **i18n key**，中文兜底在同文件的 articleFacingMessages —— 两者成对。
+// 常量值取自 contentenums（key 的字面量只住 enums 包），中文兜底在同文件的
+// articleFacingMessages —— 两者成对。
 // 此前这里的常量值是中文本身、被当成 key 去查库，而库内没有中文 item_key，于是永远只显示中文。
 const (
-	articleCreatedText = "admin.article.ok.created"
-	articleSavedText   = "admin.article.ok.saved"
-	articleDeletedText = "admin.article.ok.deleted"
+	articleCreatedText = contentenums.OkCreated
+	articleSavedText   = contentenums.OkSaved
+	articleDeletedText = contentenums.OkDeleted
 )
 
 // articleMsg 一句结论的事实 —— 就是共享形状 adminui.Msg（key + 中文兜底 + `%s` 参数）。
@@ -198,11 +199,11 @@ var articleFacingMessages = map[string]string{
 }
 
 // 参数级错误（本页自造；同样登记兜底表 —— 自造文案不登记会在缺词条时显示裸 key）。
-// 值是 i18n key，中文兜底见 articleFacingMessages。
+// 值取自 contentenums，中文兜底见 articleFacingMessages。
 const (
-	articleMissingIDText    = "admin.article.err.missingID"
-	articleMissingTitleText = "admin.article.err.missingTitle"
-	articleMissingSlugText  = "admin.article.err.missingSlug"
+	articleMissingIDText    = contentenums.ErrMissingID
+	articleMissingTitleText = contentenums.ErrMissingTitle
+	articleMissingSlugText  = contentenums.ErrMissingSlug
 )
 
 // articleFacingMsgOf 本页自造文案的**事实**（key + 兜底表里的中文原文）。
@@ -600,11 +601,11 @@ func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	tr := shell.TranslateFor(c)
 	id := strings.TrimSpace(c.Query("id"))
 	if id == "" {
-		articlePreviewFrameNotice(c, tr("admin.article.preview.needSave", "保存这篇文章后，这里会显示它的详情页真实形态。"))
+		articlePreviewFrameNotice(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。"))
 		return
 	}
 	if h == nil || h.instances == nil {
-		articlePreviewFrameNotice(c, tr("admin.article.preview.unavailable", "预览不可用：发布能力未装配。"))
+		articlePreviewFrameNotice(c, tr(contentenums.PreviewUnavailable, "预览不可用：发布能力未装配。"))
 		return
 	}
 	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
@@ -613,11 +614,11 @@ func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	if err != nil {
 		// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
 		logger.Scene("content").With("article_id", id).Error(err, "文章详情页预览渲染失败")
-		articlePreviewFrameNotice(c, tr("admin.article.preview.failed", "预览渲染失败（多半是这部文章还没有可用的详情页模板）。"))
+		articlePreviewFrameNotice(c, tr(contentenums.PreviewFailed, "预览渲染失败（多半是这部文章还没有可用的详情页模板）。"))
 		return
 	}
 	if res == nil || strings.TrimSpace(res.HTML) == "" {
-		articlePreviewFrameNotice(c, tr("admin.article.preview.empty", "还没有可渲染的详情页：先给 article 类型建一套内容模板。"))
+		articlePreviewFrameNotice(c, tr(contentenums.PreviewEmpty, "还没有可渲染的详情页：先给 article 类型建一套内容模板。"))
 		return
 	}
 	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物），不是错误信息。
@@ -651,14 +652,14 @@ const (
 
 // 导入相关文案（登记在白名单里 —— 它们会作为提示页正文渲染）。
 //
-// 常量值是 **i18n key**，中文兜底在 articleImportFacingMessages —— 两者成对，
-// 取词统一走 articleImportTextOf。
+// 常量值取自 contentenums，中文兜底在 articleFacingMessages —— 两者成对，
+// 取词统一走 articleImportTextMsg。
 const (
-	articleImportEmptyBodyText = "admin.article.import.err.emptyBody"
-	articleImportNoProjectText = "admin.article.import.err.noProject"
-	articleImportNoPathText    = "admin.article.import.err.noPath"
-	articleImportNoPageText    = "admin.article.import.err.noPageCapability"
-	articleImportDepsText      = "admin.article.import.err.depsMissing"
+	articleImportEmptyBodyText = contentenums.ImportErrEmptyBody
+	articleImportNoProjectText = contentenums.ImportErrNoProject
+	articleImportNoPathText    = contentenums.ImportErrNoPath
+	articleImportNoPageText    = contentenums.ImportErrNoPageCapability
+	articleImportDepsText      = contentenums.ImportErrDepsMissing
 )
 
 // articleImportTextMsg 本页文案的**事实**（key + 兜底表里的中文原文；导入区块用）。
@@ -711,22 +712,22 @@ type articleImportWarningView struct {
 //
 // 只列会出现的那几个：导入方向只产出可逆子集 + 占位，不会出现几十种组件。
 var articleComponentLabels = map[string]articleImportText{
-	"core.heading":   {"admin.article.import.node.heading", "标题"},
-	"core.text":      {"admin.article.import.node.text", "正文"},
-	"core.list":      {"admin.article.import.node.list", "列表"},
-	"core.quote":     {"admin.article.import.node.quote", "引用"},
-	"core.image":     {"admin.article.import.node.image", "图片"},
-	"core.divider":   {"admin.article.import.node.divider", "分隔线"},
-	"core.table":     {"admin.article.import.node.table", "表格"},
-	"core.container": {"admin.article.import.node.container", "容器"},
+	"core.heading":   {contentenums.ImportNodeHeading, "标题"},
+	"core.text":      {contentenums.ImportNodeText, "正文"},
+	"core.list":      {contentenums.ImportNodeList, "列表"},
+	"core.quote":     {contentenums.ImportNodeQuote, "引用"},
+	"core.image":     {contentenums.ImportNodeImage, "图片"},
+	"core.divider":   {contentenums.ImportNodeDivider, "分隔线"},
+	"core.table":     {contentenums.ImportNodeTable, "表格"},
+	"core.container": {contentenums.ImportNodeContainer, "容器"},
 }
 
 // articleImportActionLabels 降级动作 → 文案（与 richdoc.WarningAction 一一对应）。
 var articleImportActionLabels = map[richdoc.WarningAction]articleImportText{
-	richdoc.ActionUnwrap:      {"admin.article.import.action.unwrap", "去壳保留内容"},
-	richdoc.ActionDrop:        {"admin.article.import.action.drop", "已丢弃"},
-	richdoc.ActionTrim:        {"admin.article.import.action.trim", "已裁剪"},
-	richdoc.ActionPlaceholder: {"admin.article.import.action.placeholder", "占位（不可还原）"},
+	richdoc.ActionUnwrap:      {contentenums.ImportActionUnwrap, "去壳保留内容"},
+	richdoc.ActionDrop:        {contentenums.ImportActionDrop, "已丢弃"},
+	richdoc.ActionTrim:        {contentenums.ImportActionTrim, "已裁剪"},
+	richdoc.ActionPlaceholder: {contentenums.ImportActionPlaceholder, "占位（不可还原）"},
 }
 
 // ArticleImportPreview 预览转换结果（POST /admin/articles/import-preview）。
@@ -884,7 +885,7 @@ func articleImportPreviewViewOf(res *richdoc.Result, trs ...func(key, fallback s
 	view := articleImportPreviewView{
 		OK:        true,
 		NodeCount: len(res.Nodes),
-		CountText: i18n.FillTranslate(tr, "admin.article.import.resultCount",
+		CountText: i18n.FillTranslate(tr, contentenums.ImportResultCount,
 			"转换结果：{count} 个组件", map[string]string{"count": strconv.Itoa(len(res.Nodes))}),
 		Lossless: len(res.Warnings) == 0,
 		Types:    make([]articleImportTypeView, 0, len(order)),
@@ -1436,17 +1437,17 @@ type rebuildFailureView struct {
 //
 // 原文可能带 SQL / 路径 / 内部标识，后台页面不得直出内部错误（AGENTS.md 红线），
 // 它只进结构化日志（带 page_id 可定位）；这里给的是「失败在哪一步、什么时候」。
+//
+// 阶段 → 文案（key + 中文兜底）复用 page/enums 的 RebuildStageLabel：那一列
+// （pages.rebuild_failed_stage）由 page service 写入，映射的真源在 page 模块。
+// 此前这里抄了同一份 switch（block 的 stale 抽屉还有第三份），两处各写一份的代价是
+// 词条改名时静默失配（页面上英文回落成中文），而这份可以被一次调用替掉。
 func rebuildFailureViewOf(stage string, at *utils.JSONTime) rebuildFailureView {
 	if strings.TrimSpace(stage) == "" && at == nil {
 		return rebuildFailureView{}
 	}
 	view := rebuildFailureView{Has: true, StageFallback: stage}
-	switch stage {
-	case "plan":
-		view.StageKey, view.StageFallback = "admin.pages.impact.stage_plan", "计划阶段（站点语言清单或旧发布范围读不到）"
-	case "build":
-		view.StageKey, view.StageFallback = "admin.pages.impact.stage_build", "构建 / 发布阶段"
-	}
+	view.StageKey, view.StageFallback = pageenums.RebuildStageLabel(stage)
 	if at != nil {
 		view.At = time.Time(*at).Local().Format("2006-01-02 15:04")
 	}
@@ -1495,9 +1496,9 @@ func (h *articleTranslationHandle) SetContentWriter(w *i18n.ContentWriter) { h.w
 
 // articleFieldLabel 字段的展示名（工作台用）：字段名 → {i18n key, 中文兜底}。
 var articleFieldLabel = map[string]articleTranslationText{
-	"title":   {"admin.article.translations.field.title", "标题"},
-	"body":    {"admin.article.translations.field.body", "正文"},
-	"excerpt": {"admin.article.translations.field.excerpt", "摘要"},
+	"title":   {contentenums.TranslationsFieldTitle, "标题"},
+	"body":    {contentenums.TranslationsFieldBody, "正文"},
+	"excerpt": {contentenums.TranslationsFieldExcerpt, "摘要"},
 	// seoTitle / seoDescription 的登记已删（2026-09-30 字段合并）：两个字段的值
 	// 分别是 title / excerpt 的别名，已从可翻译字段清单里去掉（contentcontract），
 	// 这里留着标签表只会让「有个能翻的 SEO 标题」看起来还存在。
@@ -1532,7 +1533,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	data := h.build(c, lang, projectID, keyword)
 	// 保存校验必须使用提交时的同一页，否则第二页的行会被误判为原文已变化。
 	if page != data.Page || c.PostForm("limit") != strconv.Itoa(data.Limit) {
-		data.Errors = []articleMsg{articleTranslationMsg("admin.article.translations.err.pageChanged", "列表页码已变化，请刷新后重试")}
+		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrPageChanged, "列表页码已变化，请刷新后重试")}
 		c.HTML(http.StatusOK, "admin/content/article_translations.html", adminui.Prepare(c, data.templateMap()))
 		return
 	}
@@ -1541,12 +1542,12 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	hashes := c.PostFormArray("rowHash")
 	targets := c.PostFormArray("rowTarget")
 	if len(contexts) != len(hashes) || len(contexts) != len(targets) {
-		data.Errors = []articleMsg{articleTranslationMsg("admin.article.translations.err.rowCountMismatch", "提交的行数不一致，请刷新后重试")}
+		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrRowCountMismatch, "提交的行数不一致，请刷新后重试")}
 		c.HTML(http.StatusOK, "admin/content/article_translations.html", adminui.Prepare(c, data.templateMap()))
 		return
 	}
 	if h.writer == nil {
-		data.Errors = []articleMsg{articleTranslationMsg("admin.article.translations.err.storageUnavailable", "译文存储不可用")}
+		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrStorageUnavailable, "译文存储不可用")}
 		c.HTML(http.StatusOK, "admin/content/article_translations.html", adminui.Prepare(c, data.templateMap()))
 		return
 	}
@@ -1561,7 +1562,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 		source, ok := data.sourceOf(contextName, hashes[i])
 		if !ok {
 			rowErrors = append(rowErrors, articleTranslationFilled(c,
-				"admin.article.translations.err.sourceChanged", "{context}：原文已变化，请刷新后重试",
+				contentenums.TranslationsErrSourceChanged, "{context}：原文已变化，请刷新后重试",
 				map[string]string{"context": contextName}))
 			continue
 		}
@@ -1627,7 +1628,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 				Error(uerr, "写入文章译文失败")
 			// 这一处已记过带 lang 的日志：文案出口用不记日志的版本，避免同一错误记两条。
 			data.Errors = []articleMsg{articleTranslationFilled(c,
-				"admin.article.translations.err.saveFailed", "保存失败：{detail}",
+				contentenums.TranslationsErrSaveFailed, "保存失败：{detail}",
 				map[string]string{"detail": adminui.MsgText(c, articleErrMsgQuiet(c, uerr))})}
 			c.HTML(http.StatusOK, "admin/content/article_translations.html", adminui.Prepare(c, data.templateMap()))
 			return
@@ -1667,14 +1668,14 @@ func articleTranslationDone(c *gin.Context, projectID, lang, keyword string, pag
 	var msg articleMsg
 	if written > 0 {
 		msg = articleTranslationFilled(c,
-			"admin.article.translations.saved", "已保存 {count} 条译文（下次构建生效）。",
+			contentenums.TranslationsSaved, "已保存 {count} 条译文（下次构建生效）。",
 			map[string]string{"count": strconv.Itoa(written)})
 	} else {
-		msg = articleTranslationMsg("admin.article.translations.savedNone", "没有需要写入的变化。")
+		msg = articleTranslationMsg(contentenums.TranslationsSavedNone, "没有需要写入的变化。")
 	}
 	articlePageJump(c, true, msg,
 		articleTranslationLocation(projectID, lang, keyword, page, limit),
-		articleMsg{Key: "admin.article.translations.heading", Fallback: "文章翻译"})
+		articleMsg{Key: contentenums.TranslationsHeading, Fallback: "文章翻译"})
 }
 
 // articleTranslationsData 页面数据。
@@ -1726,22 +1727,22 @@ func (d *articleTranslationsData) sourceOf(contextName, hash string) (articleTra
 // articleTranslationFallbacks 校验类文案 key → 中文兜底（写成一张表而不是散在 return 里：
 // 取词点要拿同一个兜底，两处各写一份就会「词条改了、兜底没改」）。
 var articleTranslationFallbacks = map[string]string{
-	"admin.article.translations.err.contextInvalid":  "语境非法：不是文章的可翻译字段",
-	"admin.article.translations.err.notTranslatable": "原文不参与翻译（空串、纯数字或纯符号）",
-	"admin.article.translations.err.richMismatch":    "正文译文的形态与原文不一致：原文含 HTML 标签时译文也必须含标签",
+	contentenums.TranslationsErrContextInvalid:  "语境非法：不是文章的可翻译字段",
+	contentenums.TranslationsErrNotTranslatable: "原文不参与翻译（空串、纯数字或纯符号）",
+	contentenums.TranslationsErrRichMismatch:    "正文译文的形态与原文不一致：原文含 HTML 标签时译文也必须含标签",
 }
 
 // validateArticleTarget 校验一条文章译文的可写性（与构建期同源）。
 func validateArticleTarget(contextName string, source articleTranslationRow, target string) string {
 	entityType, field, ok := i18n.ParseContentContext(contextName)
 	if !ok || !contentcontract.IsTranslatableField(entityType, field) {
-		return "admin.article.translations.err.contextInvalid"
+		return contentenums.TranslationsErrContextInvalid
 	}
 	if !i18n.ShouldTranslateContent(source.Source) {
-		return "admin.article.translations.err.notTranslatable"
+		return contentenums.TranslationsErrNotTranslatable
 	}
 	if source.Rich && hasMarkup(source.Source) != hasMarkup(target) {
-		return "admin.article.translations.err.richMismatch"
+		return contentenums.TranslationsErrRichMismatch
 	}
 	return ""
 }
@@ -1782,7 +1783,7 @@ func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID, keywor
 		page = 1
 	}
 	data := &articleTranslationsData{
-		Title: "admin.article.translations.heading", Menu: "article-translations", Lang: lang,
+		Title: contentenums.TranslationsHeading, Menu: "article-translations", Lang: lang,
 		Keyword: keyword, Page: page, Limit: limit, ProjectID: projectID,
 		Groups: []articleTranslationGroup{},
 	}
@@ -1793,14 +1794,14 @@ func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID, keywor
 		return data
 	}
 	if h.contents == nil {
-		data.Errors = []articleMsg{articleTranslationMsg("admin.article.translations.err.depsMissing", "内容模块未装配")}
+		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrDepsMissing, "内容模块未装配")}
 		return data
 	}
 	filter := &contentdto.ListReq{EntityType: "article", Keyword: keyword}
 	total, err := h.contents.Count(ctx, filter)
 	if err != nil {
 		data.Errors = []articleMsg{articleErrFilled(c,
-			"admin.article.translations.err.countFailed", "读取文章总数失败：{detail}", err)}
+			contentenums.TranslationsErrCountFailed, "读取文章总数失败：{detail}", err)}
 		return data
 	}
 	data.HasData = total > 0
@@ -1809,7 +1810,7 @@ func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID, keywor
 		unfiltered, countErr := h.contents.Count(ctx, &contentdto.ListReq{EntityType: "article"})
 		if countErr != nil {
 			data.Errors = []articleMsg{articleErrFilled(c,
-				"admin.article.translations.err.countFailed", "读取文章总数失败：{detail}", countErr)}
+				contentenums.TranslationsErrCountFailed, "读取文章总数失败：{detail}", countErr)}
 			return data
 		}
 		data.HasData = unfiltered > 0
@@ -1821,7 +1822,7 @@ func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID, keywor
 	if err != nil {
 		// 形态③（模板数据 Errors）：err.Error() 直接拼进来会把 PG 原文摆到页面上。
 		data.Errors = []articleMsg{articleErrFilled(c,
-			"admin.article.translations.err.listFailed", "读取文章列表失败：{detail}", err)}
+			contentenums.TranslationsErrListFailed, "读取文章列表失败：{detail}", err)}
 		return data
 	}
 	if pg := pagination.Facts(total, page, limit); pg.HasPagination() {
@@ -2169,22 +2170,22 @@ func articleBulkIDsJumpMsg(c *gin.Context, err error) articleMsg {
 // 本页文案的常量值是 **i18n key**，中文兜底在同文件的 articlePublishFacingMessages ——
 // 两者成对，取词统一走 articlePublishTextOf / articlePublishHintText。
 const (
-	articlePublishedText      = "admin.article.publish.ok.published"
-	articleRebuiltText        = "admin.article.publish.ok.rebuilt"
-	articleURLUpdatedText     = "admin.article.publish.ok.urlUpdated"
-	articleNoProjectText      = "admin.article.publish.err.noProject"
-	articleNoURLPathText      = "admin.article.publish.err.noURLPath"
-	articleNoTemplatePickText = "admin.article.publish.err.noTemplatePick"
+	articlePublishedText      = contentenums.PublishOkPublished
+	articleRebuiltText        = contentenums.PublishOkRebuilt
+	articleURLUpdatedText     = contentenums.PublishOkURLUpdated
+	articleNoProjectText      = contentenums.PublishErrNoProject
+	articleNoURLPathText      = contentenums.PublishErrNoURLPath
+	articleNoTemplatePickText = contentenums.PublishErrNoTemplatePick
 	// articleNoTemplateHint 没有 article 模板时的出口说明（不含任何按钮）。
-	articleNoTemplateHint = "admin.article.publish.hint.noTemplate"
+	articleNoTemplateHint = contentenums.PublishHintNoTemplate
 	// articlePublishUnavailableText 发布能力未装配时的出口文案。
-	articlePublishUnavailableText = "admin.article.publish.err.unavailable"
+	articlePublishUnavailableText = contentenums.PublishErrUnavailable
 	// articlePublishDepsMissingText 发布能力未装配（装配缺陷）的就地说明。
-	articlePublishDepsMissingText = "admin.article.publish.err.depsMissing"
+	articlePublishDepsMissingText = contentenums.PublishErrDepsMissing
 	// articleNewPathRequiredText 改 URL 时没填新路径。
-	articleNewPathRequiredText = "admin.article.publish.err.newPathRequired"
+	articleNewPathRequiredText = contentenums.PublishErrNewPathRequired
 	// articleSaveFirstHint 还没有实体时的发布区块提示。
-	articleSaveFirstHint = "admin.article.publish.hint.saveFirst"
+	articleSaveFirstHint = contentenums.PublishHintSaveFirst
 )
 
 // articlePublishTextMsg 本页文案的**事实**（key + 发布兜底表里的中文原文）。

@@ -28,3 +28,19 @@ const (
 	// ErrProjectNotFound 显式指定的工程不存在。
 	ErrProjectNotFound = "ErrProjectNotFound"
 )
+
+// —— 点分 key 常量（新式）——
+//
+// 值是 sys_i18n 的 item_key，命名按「去掉模块子域前缀（`admin.content.templates.`）
+// 后的语义路径」；中文兜底留在调用点。与上面那批 `ErrXxx = "ErrXxx"` 分开成组：
+// 老式形态的值就是常量名本身（sys_i18n 里存同名 key）。
+//
+// 为什么词条 key 必须提成常量：控制器里写 key 字面量时，词条改名没有编译期保护，
+// 静默失配的表现是「英文界面回落成中文」，不报错也不记日志；
+// 门禁 scripts/check-controller-i18n-literals.sh（inbound/http/*.go 里出现字面量即失败）。
+const (
+	// ImpactLoadFailed 本次没取到引用面（工程列表未读到）—— 与「能力未装配」分开的另一条归因。
+	ImpactLoadFailed = "admin.content.templates.impact.loadFailed"
+	// Heading 模板列表页标题；回跳提示页的「立即前往」链接文字复用同一条词条（不新增全站词条）。
+	Heading = "admin.content.templates.heading"
+)

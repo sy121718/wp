@@ -51,4 +51,7 @@ const (
 
 	// VariantStatusMissing 变体状态文案的兜底（状态值不在已知集合里）。
 	VariantStatusMissing = "admin.media.variantStatus.missing" // 无变体记录（missing）
+
+	// Heading 媒体库页标题（页头与回跳链接文字共用同一条词条）。
+	Heading = "admin.media.heading" // 媒体库
 )

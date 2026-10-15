@@ -179,7 +179,7 @@ var (
 // 这条是「这一次没读出来（工程列表没读到），刷新可能就好了」。把后者说成「能力未装配」
 // 是本类缺陷的同一个形状 —— 用一句不准确的话把人支向错的方向（去查部署，而实际只需刷新）。
 const (
-	contentTemplateImpactLoadFailedKey      = "admin.content.templates.impact.loadFailed"
+	contentTemplateImpactLoadFailedKey      = contenttemplateenums.ImpactLoadFailed
 	contentTemplateImpactLoadFailedFallback = "本次没取到引用面（工程列表未读到），删除前请人工确认。"
 )
 
@@ -210,7 +210,7 @@ var contentTemplateBackMsg = contentTemplateMsg{
 
 // contentTemplateBackTextKey / Fallback 列表页标题词条（链接文字复用，不新增全站词条）。
 const (
-	contentTemplateBackTextKey      = "admin.content.templates.heading"
+	contentTemplateBackTextKey      = contenttemplateenums.Heading
 	contentTemplateBackTextFallback = "内容模板"
 )
 
