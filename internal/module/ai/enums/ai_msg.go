@@ -147,6 +147,15 @@ var FacingMessages = map[string]string{
 const (
 	// AdminLLMTitle 合并后统一入口的标题（侧栏菜单与页面 h1 同源）。
 	AdminLLMTitle = "admin.ai.menu.title"
+
+	// MCP 与外部访问页（整页 / 令牌片段 / 提示页共用的标题与说明）。
+	McpTitle = "admin.ai.mcp.title"
+	McpLead  = "admin.ai.mcp.lead"
+
+	// MCP 页写动作的结论文案（片段回执与提示页）。
+	McpTokenRevokeDone = "admin.ai.mcp.token.revokeDone"
+	McpSwitchOnDone    = "admin.ai.mcp.switch.onDone"
+	McpSwitchOffDone   = "admin.ai.mcp.switch.offDone"
 )
 
 // FacingText 查面向用户的文案（key → 中文兜底）；未登记返回 ("", false)。

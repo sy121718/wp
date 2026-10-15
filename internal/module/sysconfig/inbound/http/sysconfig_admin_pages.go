@@ -174,7 +174,7 @@ func (h *AdminHandle) APISystemSave(c *gin.Context) {
 		response.ErrorWithMessage(c, status, sysconfigErrText(c, err))
 		return
 	}
-	response.SuccessWithMessage(c, i18n.Translate("admin.system.saved", "系统设置已保存（全局默认值立即对读取方生效）", response.RequestLanguage(c)))
+	response.SuccessWithMessage(c, i18n.Translate(sysconfigenums.AdminSystemSaved, "系统设置已保存（全局默认值立即对读取方生效）", response.RequestLanguage(c)))
 }
 
 // loadGroup 读一组配置；组不存在返回可读提示（本页不凭空建组）。
@@ -184,7 +184,7 @@ func (h *AdminHandle) loadGroup(c *gin.Context, key string) (groupView, string) 
 	if err != nil {
 		if errors.Is(err, sysconfigcontract.ErrGroupNotFound) {
 			return groupView{Key: key, Data: map[string]any{}},
-				i18n.TranslateFunc(response.RequestLanguage(c))("admin.system.group_missing", "配置分组缺失，请先执行数据库迁移（make migrate）后再打开本页")
+				i18n.TranslateFunc(response.RequestLanguage(c))(sysconfigenums.AdminSystemGroupMissing, "配置分组缺失，请先执行数据库迁移（make migrate）后再打开本页")
 		}
 		return groupView{Key: key, Data: map[string]any{}}, sysconfigErrText(c, err)
 	}
@@ -221,21 +221,21 @@ func (h *AdminHandle) validateOptions(c *gin.Context, lang, mode, country, curre
 		return http.StatusInternalServerError, sysconfigErrText(c, err)
 	}
 	if !hasCode(langs, lang) {
-		return http.StatusBadRequest, t("admin.system.err.lang_unknown", "选择的默认语言不在字典里（可能已被停用），请重新选择")
+		return http.StatusBadRequest, t(sysconfigenums.AdminSystemErrLangUnknown, "选择的默认语言不在字典里（可能已被停用），请重新选择")
 	}
 	currencies, err := h.dict.ListDictOptions(ctx, "currency")
 	if err != nil {
 		return http.StatusInternalServerError, sysconfigErrText(c, err)
 	}
 	if !hasCode(currencies, currency) {
-		return http.StatusBadRequest, t("admin.system.err.currency_unknown", "选择的默认货币不在字典里（可能已被停用），请重新选择")
+		return http.StatusBadRequest, t(sysconfigenums.AdminSystemErrCurrencyUnknown, "选择的默认货币不在字典里（可能已被停用），请重新选择")
 	}
 	countries, err := h.dict.ListCountryOptions(ctx, response.RequestLanguage(c))
 	if err != nil {
 		return http.StatusInternalServerError, sysconfigErrText(c, err)
 	}
 	if !hasCode2(countries, country) {
-		return http.StatusBadRequest, t("admin.system.err.country_unknown", "选择的默认国家不在字典里（可能已被停用），请重新选择")
+		return http.StatusBadRequest, t(sysconfigenums.AdminSystemErrCountryUnknown, "选择的默认国家不在字典里（可能已被停用），请重新选择")
 	}
 	return http.StatusOK, ""
 }

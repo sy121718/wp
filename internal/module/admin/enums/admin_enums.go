@@ -172,4 +172,17 @@ const (
 	// 数据规则配置编辑器的下拉占位与前置提示（字段与操作符两个下拉各一条）。
 	DatarulesEditorFieldPlaceholder = "admin.datarules.editor.field_placeholder" // 请选择字段
 	DatarulesEditorFieldRequired    = "admin.datarules.editor.field_required"    // 请先选择字段
+
+	// 文案词条页（admin/system/i18n）与数据规则失败页的页面级文案。
+	I18nTitle           = "admin.i18n.title"             // 文案词条
+	DatarulesBackToEdit = "admin.datarules.back_to_edit" // 返回编辑页
+
+	// 登录页标题：key 属 shell 名字空间（词条迁移 059），模板 login.html 与本处同一 key。
+	ShellLoginTitle = "shell.login.title" // 登录
+
+	// 开发登录（仅 debug 注册）的拒绝与失败文案：c.String 直出，不经过模板取词层。
+	DevLoginLoopbackOnly  = "admin.dev_login.loopback_only"  // 开发登录仅限本机访问
+	DevLoginFailed        = "admin.dev_login.failed"         // 开发登录失败，详情见服务端日志
+	DevLoginSessionFailed = "admin.dev_login.session_failed" // 写会话失败，详情见服务端日志
+	DevLoginCSRFFailed    = "admin.dev_login.csrf_failed"    // 轮换 CSRF token 失败，详情见服务端日志
 )

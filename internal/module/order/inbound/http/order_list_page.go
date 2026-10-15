@@ -35,6 +35,7 @@ import (
 	"go_wp/internal/adminui"
 	"go_wp/internal/module/order/contract"
 	"go_wp/internal/module/order/dto"
+	"go_wp/internal/module/order/enums"
 	"go_wp/internal/module/project/contract"
 	"go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/backpath"
@@ -143,7 +144,7 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 
 	data := adminui.Prepare(c, gin.H{
 		// 标题是 i18n key：adminui.Prepare 按当前语言取词（模板不再看到裸 key）。
-		"title":           "admin.orders.heading",
+		"title":           orderenums.OrdersHeading,
 		"menu":            "orders",
 		"Projects":        projects,
 		"SelectedProject": selected,

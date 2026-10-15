@@ -349,7 +349,7 @@ var navInvalidParamMsg = navText{Key: navigationenums.ErrInvalidParam, Fallback:
 // 形态与 navInvalidParamMsg 同形：key + 中文兜底的事实，取词在渲染期。
 // 模板侧另有「本组没有可加入项时按钮置灰」，这里是服务端兜底。
 var navNoticeNoSourcePicked = navText{
-	Key: "admin.navigations.notice.noSourcePicked", Fallback: "请至少勾选一项要加入菜单的内容。",
+	Key: navigationenums.NoticeNoSourcePicked, Fallback: "请至少勾选一项要加入菜单的内容。",
 }
 
 // —— 写侧文案（提示页用）——

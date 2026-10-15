@@ -29,6 +29,7 @@ import (
 	"go_wp/internal/adminui"
 	"go_wp/internal/module/order/contract"
 	"go_wp/internal/module/order/dto"
+	"go_wp/internal/module/order/enums"
 	"go_wp/internal/module/project/contract"
 )
 
@@ -107,7 +108,7 @@ func (h *orderSalesPageHandle) SalesOverviewPage(c *gin.Context) {
 	}
 
 	data := adminui.Prepare(c, gin.H{
-		"title":           "admin.order.sales.title",
+		"title":           orderenums.OrderSalesTitle,
 		"menu":            "orders",
 		"Projects":        projects,
 		"SelectedProject": selected,

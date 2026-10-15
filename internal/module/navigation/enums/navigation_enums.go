@@ -110,6 +110,9 @@ func SplitFacingDetail(msg string) (key, detail string, ok bool) {
 //
 // 中文兜底**不在这里** —— 兜底留在调用点（词条缺失时的回落），见各 inbound/http 文件。
 const (
+	// 译文工作台的页面标题（页面本体与回跳链接共用同一条词条）。
+	TranslationHeading = "admin.navigation_translations.heading" // 导航译文
+
 	// 译文工作台的保存结果文案。
 	Saved     = "admin.navigation_translations.saved"     // 已保存 %d 条译文；已标记受影响页面待重建（下次构建生效）
 	SavedNone = "admin.navigation_translations.savedNone" // 没有需要写入的变化
@@ -122,6 +125,12 @@ const (
 	ErrNotTranslatable    = "admin.navigation_translations.err.notTranslatable"    // %s：该菜单文字不参与翻译（纯数字或纯符号）
 	ErrSaveFailed         = "admin.navigation_translations.err.saveFailed"         // 保存失败：%s
 	ErrProjectListFailed  = "admin.navigation_translations.err.projectListFailed"  // 读取工程列表失败，请稍后重试
+
+	// 导航菜单列表页与写路径共用的事实文案（页面标题被回跳链接复用）。
+	Heading              = "admin.navigations.heading"               // 导航菜单
+	ActionDone           = "admin.navigations.actionDone"            // 操作已完成
+	NoPublicPath         = "admin.navigations.no_public_path"        // （暂无公开路径，先发布后再添加）
+	NoticeNoSourcePicked = "admin.navigations.notice.noSourcePicked" // 请至少勾选一项要加入菜单的内容。
 
 	// 导航类型标题（译文工作台按位置分组）。
 	KindFooter = "admin.navigations.kind.footer" // 页脚导航

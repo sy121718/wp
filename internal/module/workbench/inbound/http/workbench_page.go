@@ -723,20 +723,20 @@ func buildTopPages(viewsByPath map[string]int64, kindOfPath map[string]string) [
 func overviewPageKindKey(kind string) string {
 	switch kind {
 	case pageenums.PageKindHome:
-		return "admin.dashboard.pageKind.home"
+		return workbenchenums.DashboardPageKindHome
 	case pageenums.PageKindPage:
-		return "admin.dashboard.pageKind.page"
+		return workbenchenums.DashboardPageKindPage
 	case pageenums.PageKindArticle:
-		return "admin.dashboard.pageKind.article"
+		return workbenchenums.DashboardPageKindArticle
 	case pageenums.PageKindTag:
-		return "admin.dashboard.pageKind.tag"
+		return workbenchenums.DashboardPageKindTag
 	case pageenums.PageKindArchive:
-		return "admin.dashboard.pageKind.archive"
+		return workbenchenums.DashboardPageKindArchive
 	case pageenums.PageKindSearch:
-		return "admin.dashboard.pageKind.search"
+		return workbenchenums.DashboardPageKindSearch
 	// 404 也进路径排行，而且它往往是运营最该看见的一类流量（用户在找不存在的页）。
 	case pageenums.PageKindNotFound:
-		return "admin.dashboard.pageKind.notFound"
+		return workbenchenums.DashboardPageKindNotFound
 	default:
 		return ""
 	}
@@ -866,7 +866,7 @@ var trendGranularityKeys = []string{
 
 // granularityLabelKey 粒度 → 词条键。
 func granularityLabelKey(g string) string {
-	return "admin.dashboard.trend.granularity." + g
+	return workbenchenums.DashboardTrendGranularityPrefix + g
 }
 
 // defaultGranularity 区间长度对应的默认粒度。
@@ -964,7 +964,7 @@ func parseOverviewRange(c *gin.Context, today time.Time) overviewRange {
 
 // granularityTitleKey 粒度 → 趋势卡标题词条键。
 func granularityTitleKey(g string) string {
-	return "admin.dashboard.trend.title." + g
+	return workbenchenums.DashboardTrendTitlePrefix + g
 }
 
 // granularityTitle 粒度 → 标题中文兜底。
@@ -1161,7 +1161,7 @@ func rangePresets(c *gin.Context, active overviewRange) []rangePreset {
 	for _, k := range keys {
 		out = append(out, rangePreset{
 			Key:      k,
-			LabelKey: "admin.dashboard.range." + k,
+			LabelKey: workbenchenums.DashboardRangePrefix + k,
 			Label:    rangePresetLabel(k),
 			URL:      rangePresetURL(c, k, active.From, active.To),
 			Active:   active.Key == k,

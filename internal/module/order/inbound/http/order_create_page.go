@@ -307,7 +307,7 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 
 // countryNoneLabelKey 「（不填写）」空项的 i18n key（中文兜底写在 countryOptionViews 里）。
 
-const countryNoneLabelKey = "admin.order_new.field.country_none"
+const countryNoneLabelKey = orderenums.OrderNewFieldCountryNone
 
 // countryOptionView 国家/地区下拉的一项（模板只读这三个字段）。
 

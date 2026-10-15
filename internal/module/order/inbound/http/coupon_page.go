@@ -169,7 +169,7 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 
 	data := adminui.Prepare(c, gin.H{
 		// 标题是 i18n key：adminui.Prepare 会按当前语言取词（模板不再看到裸 key）。
-		"title": "admin.coupons.heading",
+		"title": orderenums.CouponsHeading,
 		"menu":  "coupons",
 		// 取数结果：dto 原样交给模板，字段名就是模板要用的名字。
 		"Projects":        projects,
@@ -313,9 +313,9 @@ var couponFacingExtras = []string{
 // 槽位还没取词化（见 CouponsPage 的 LoadErrText），要能直接交给 adminui.MsgText。
 var (
 	// couponIDInvalidLabel 表单里的券 id 不合法。
-	couponIDInvalidLabel = adminui.Msg{Key: "admin.coupons.form.invalid_id", Fallback: "优惠码编号不合法，请回到列表页重新操作。"}
+	couponIDInvalidLabel = adminui.Msg{Key: orderenums.CouponFormInvalidID, Fallback: "优惠码编号不合法，请回到列表页重新操作。"}
 	// couponForeignLabel couponId 指向的是别的工程的券。
-	couponForeignLabel = adminui.Msg{Key: "admin.coupons.form.foreign_project", Fallback: "这张优惠码不属于当前选中的站点工程，请切回它所属的工程再操作。"}
+	couponForeignLabel = adminui.Msg{Key: orderenums.CouponFormForeignProject, Fallback: "这张优惠码不属于当前选中的站点工程，请切回它所属的工程再操作。"}
 )
 
 // couponFacingText 白名单判定：命中返回原文，未命中返回空串。

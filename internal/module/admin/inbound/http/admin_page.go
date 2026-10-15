@@ -680,7 +680,7 @@ func adminDataruleBack(c *gin.Context, id uint64) (back string, backText adminui
 	}
 	back = backpath.WithParams("/admin/datarules/edit", map[string]string{"id": strconv.FormatUint(id, 10)})
 	// 编辑页那份表单填一次成本很高，失败提示页上的链接必须指回它（而不是列表页）。
-	return back, adminui.Msg{Key: "admin.datarules.back_to_edit", Fallback: "返回编辑页"}
+	return back, adminui.Msg{Key: adminenums.DatarulesBackToEdit, Fallback: "返回编辑页"}
 }
 
 // DatarulesUpdate 保存数据规则（POST /admin/datarules/update）。
@@ -1080,7 +1080,7 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 		// 驱动原文（表名 / SQLSTATE）只进日志。
 		// 字典与分页不再下探：主数据都没读到，派生数据不该继续查（与库存页失败后的守卫同一判据）。
 		data := gin.H{
-			"title":        "admin.i18n.title",
+			"title":        adminenums.I18nTitle,
 			"Entries":      []i18n.Entry{},
 			"I18nEditURLs": []string{},
 			"Keyword":      filter.Keyword,
@@ -1111,7 +1111,7 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 		// title 是 i18n **key**（不是中文）：adminui.Prepare → injectI18n 会按当前语言翻译它。
 		// admin.i18n.title 是库内既有的词条（zh-CN「文案词条」/ 英文），所以这里复用它 ——
 		// 写中文原文会让英文后台的页面标题恒为中文（其它页面标题都已经是 enums key）。
-		"title":        "admin.i18n.title",
+		"title":        adminenums.I18nTitle,
 		"Entries":      items,
 		"I18nEditURLs": editURLs,
 		"Keyword":      filter.Keyword,
@@ -1256,7 +1256,7 @@ func AdminLoginPage(c *gin.Context) {
 	// 标题走 shell.login.title（缺词条回退「登录」）。这里是**模板数据槽**（layout 壳读 .title，
 	// 槽位契约是字符串），所以取成文本传进去 —— 取词走共享的 adminui.MsgText。
 	c.HTML(http.StatusOK, "admin/login", adminui.Prepare(c, gin.H{
-		"title":         adminui.MsgText(c, adminui.Msg{Key: "shell.login.title", Fallback: "登录"}),
+		"title":         adminui.MsgText(c, adminui.Msg{Key: adminenums.ShellLoginTitle, Fallback: "登录"}),
 		"captcha_id":    id,
 		"captcha_image": image,
 		// debug 模式才显示一键登录入口（release 下路由压根不存在，显示了也是个死链）。
@@ -2361,14 +2361,14 @@ func (h *Handle) DevLogin(c *gin.Context) {
 		logger.Scene("admin").With("remote", c.Request.RemoteAddr).Warn("拒绝非本机的一键登录请求")
 		// 文案走 key + 中文兜底：这几句是 c.String 直出的响应体，不经过模板取词层，
 		// 写死中文会让英文后台的运营看到中文错误（迁移 452 seed 中英词条）。
-		c.String(http.StatusForbidden, adminui.MsgText(c, adminui.Msg{Key: "admin.dev_login.loopback_only", Fallback: "开发登录仅限本机访问"}))
+		c.String(http.StatusForbidden, adminui.MsgText(c, adminui.Msg{Key: adminenums.DevLoginLoopbackOnly, Fallback: "开发登录仅限本机访问"}))
 		return
 	}
 
 	res, err := h.admin.DevLogin(c.Request.Context(), strings.TrimSpace(c.Query("user")))
 	if err != nil {
 		logger.Scene("admin").Error(err, "开发登录失败")
-		c.String(http.StatusInternalServerError, adminui.MsgText(c, adminui.Msg{Key: "admin.dev_login.failed", Fallback: "开发登录失败，详情见服务端日志"}))
+		c.String(http.StatusInternalServerError, adminui.MsgText(c, adminui.Msg{Key: adminenums.DevLoginFailed, Fallback: "开发登录失败，详情见服务端日志"}))
 		return
 	}
 
@@ -2377,12 +2377,12 @@ func (h *Handle) DevLogin(c *gin.Context) {
 		SessionID: res.SessionID,
 	}, false); err != nil {
 		logger.Scene("admin").Error(err, "开发登录写会话失败")
-		c.String(http.StatusInternalServerError, adminui.MsgText(c, adminui.Msg{Key: "admin.dev_login.session_failed", Fallback: "写会话失败，详情见服务端日志"}))
+		c.String(http.StatusInternalServerError, adminui.MsgText(c, adminui.Msg{Key: adminenums.DevLoginSessionFailed, Fallback: "写会话失败，详情见服务端日志"}))
 		return
 	}
 	if _, err := builtin.RotateCSRFToken(c); err != nil {
 		logger.Scene("admin").Error(err, "开发登录轮换 CSRF token 失败")
-		c.String(http.StatusInternalServerError, adminui.MsgText(c, adminui.Msg{Key: "admin.dev_login.csrf_failed", Fallback: "轮换 CSRF token 失败，详情见服务端日志"}))
+		c.String(http.StatusInternalServerError, adminui.MsgText(c, adminui.Msg{Key: adminenums.DevLoginCSRFFailed, Fallback: "轮换 CSRF token 失败，详情见服务端日志"}))
 		return
 	}
 

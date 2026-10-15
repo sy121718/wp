@@ -875,7 +875,7 @@ func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang
 	tr func(key, fallback string) string) *navigationTranslationsData {
 	data := &navigationTranslationsData{
 		// 标题写 i18n key：adminui.Prepare 会对 "title" 取词，词条见 sys_i18n。
-		Title: "admin.navigation_translations.heading", Menu: "navigation-translations",
+		Title: navigationenums.TranslationHeading, Menu: "navigation-translations",
 		ProjectID: projectID, Lang: lang,
 		Groups:    []navigationTranslationGroup{},
 		NoProject: projectID == "" && h.projects == nil,

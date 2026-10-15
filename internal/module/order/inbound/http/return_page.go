@@ -155,7 +155,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 	}
 
 	data := adminui.Prepare(c, gin.H{
-		"title":           "admin.returns.heading",
+		"title":           orderenums.ReturnsHeading,
 		"menu":            "orders",
 		"Projects":        projects,
 		"SelectedProject": selected,

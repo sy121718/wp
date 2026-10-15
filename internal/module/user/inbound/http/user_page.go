@@ -122,11 +122,11 @@ const customerCohortPath = "/admin/customers/cohort"
 // 必须在 Go 侧设进 data：layout.html 的 `{{.title}}` 是**无条件读**的，
 // adminui.Prepare 的 injectI18n 只翻译已有非空字符串、不注入 —— 漏设的结果是
 // 整页 500，而错误信息里只有模板行号，看不出是「少了这个键」。
-var customerCohortTitleLabel = userLabel{"admin.customer.cohort.title", "群组留存"}
+var customerCohortTitleLabel = userLabel{userenums.KeyCustomerCohortTitle, "群组留存"}
 
 // customerCohortUnavailableLabel 端口缺席时的说明（不是「没有客户」——那是两种不同的空）。
 var customerCohortUnavailableLabel = userLabel{
-	"admin.customer.cohort.unavailable",
+	userenums.KeyCustomerCohortUnavailable,
 	"群组留存暂时不可用（数据没接上）。",
 }
 
@@ -326,8 +326,8 @@ const (
 
 // 客户页的页面标题：词条命中出译文，未命中回落中文兜底（经 adminui.Prepare 的 fallback 链路进 <title>）。
 var (
-	customerPageTitleLabel       = userLabel{"admin.customers.heading", "客户管理"}
-	customerDetailPageTitleLabel = userLabel{"admin.customer_detail.heading", "客户详情"}
+	customerPageTitleLabel       = userLabel{userenums.KeyCustomersHeading, "客户管理"}
+	customerDetailPageTitleLabel = userLabel{userenums.KeyCustomerDetailHeading, "客户详情"}
 )
 
 // 账号状态取值：真源在本模块 enums（与 usermodel.UserStatus* 同值），页面与 service 共用同一份。
@@ -346,8 +346,8 @@ const (
 // 而 account_suffix 早已中英成对（zh「这个账号」/ en「 this account」）——
 // 动词留在 Go 里当硬编码中文时，英文界面就变成「Disable这个账号」式中英混排。
 const (
-	customerActionDisable = "admin.customers.action.disable"
-	customerActionEnable  = "admin.customers.action.enable"
+	customerActionDisable = userenums.KeyCustomerActionDisable
+	customerActionEnable  = userenums.KeyCustomerActionEnable
 )
 
 // 本页自造的文案（参数级提示 / 装配降级说明）。
@@ -364,16 +364,16 @@ var (
 	// 复用库里现成的 admin.customers.capability_missing（模板 customers.html 的
 	// 装配提示块用的是同一条词条）：同一件事在一个页面上有两种说法，运营会以为
 	// 「页顶那条」与「列表里那条」是两回事。
-	customerUnavailableLabel = userLabel{"admin.customers.capability_missing",
+	customerUnavailableLabel = userLabel{userenums.KeyCustomerCapabilityMissing,
 		"客户管理能力未装配（装配缺陷），本页只显示列表框架。"}
 	// customerInvalidIDLabel 客户编号不合法。
-	customerInvalidIDLabel = userLabel{"admin.customers.form.invalid_id",
+	customerInvalidIDLabel = userLabel{userenums.KeyCustomerFormInvalidID,
 		"客户编号不合法，请回到列表页重新操作。"}
 	// customerOrdersUnavailableLabel 订单摘要不可用（订单模块未装配）。
-	customerOrdersUnavailableLabel = userLabel{"admin.customer_detail.orders.unavailable",
+	customerOrdersUnavailableLabel = userLabel{userenums.KeyCustomerOrdersUnavailable,
 		"订单摘要不可用：订单模块未装配（装配缺陷），客户资料本身不受影响。"}
 	// customerBulkNothingSelectedLabel 批量操作一条都没勾。
-	customerBulkNothingSelectedLabel = userLabel{"admin.customers.bulk.none_selected",
+	customerBulkNothingSelectedLabel = userLabel{userenums.KeyCustomerBulkNoneSelected,
 		"批量操作：没有勾选任何账号，请先勾选左侧复选框再执行。"}
 	// customerStatusInvalidLabel 目标状态取值不合法（表单可伪造，这里先拦一道）。
 	customerStatusInvalidLabel = userLabel{userenums.ErrCustomerStatusInvalid, "账号状态取值不合法"}
@@ -627,13 +627,13 @@ const customerSegmentFilterLimit = 500
 // 这两条（连同下面几条）是**本模块自造的归口文案**，词条尚未 seed：
 // 缺词条时按 fallback 原文显示中文（不退化、不显示裸 key），key 已在批次报告里登记。
 var customerRfmSegmentUnavailableLabel = userLabel{
-	"admin.customer.filter.rfm_unavailable",
+	userenums.KeyCustomerFilterRfmUnavailable,
 	"按 RFM 分段筛选暂时不可用（数据没接上），请先用其它条件。",
 }
 
 // customerSegmentUnavailableLabel 分段筛不了时的提示（归口文案，不外泄内部错误）。
 var customerSegmentUnavailableLabel = userLabel{
-	"admin.customer.filter.segment_unavailable",
+	userenums.KeyCustomerFilterSegmentUnavailable,
 	"按消费分段筛选暂时不可用（数据没接上），请先用其它条件。",
 }
 
@@ -1003,7 +1003,7 @@ const (
 // 看起来正常、只是少了一批人的列表 —— 而用户无从知道少了。明说「筛不了、请收窄」
 // 是唯一不会静默出错的形态。
 var membershipFilterTruncatedLabel = userLabel{
-	"admin.customer.filter.tier_truncated",
+	userenums.KeyCustomerFilterTierTruncated,
 	"该会员等级的人数超过筛选上限，无法作为筛选项使用。请配合其它条件一起筛。",
 }
 
@@ -1047,7 +1047,7 @@ func (h *customerPageHandle) tierCustomerIDs(ctx context.Context, f customerFilt
 
 // membershipFilterUnavailableLabel 会员等级筛选不可用时的归口文案。
 var membershipFilterUnavailableLabel = userLabel{
-	"admin.customer.filter.tier_unavailable",
+	userenums.KeyCustomerFilterTierUnavailable,
 	"按会员等级筛选暂时不可用（会员模块没接上），请先用其它条件。",
 }
 
@@ -1107,7 +1107,7 @@ const customerOverviewRangeMaxDays = 366
 //
 // 用 userLabel 而不是直接写字面 key：模板壳读的是 data["title"]，而 injectI18n 只翻
 // **非空字符串**。给裸 key 时若该词条恰好没 seed 进库，顶栏会显示 "admin.customer.overview.title"。
-var customerOverviewTitleLabel = userLabel{"admin.customer.overview.title", "客户概览"}
+var customerOverviewTitleLabel = userLabel{userenums.KeyCustomerOverviewTitle, "客户概览"}
 
 // customerOverviewRange 生效窗口（含首尾，UTC 日界，与订单聚合同口径）。
 type customerOverviewRange struct {
@@ -1334,7 +1334,7 @@ func (h *customerPageHandle) CustomerOverviewPage(c *gin.Context) {
 const customerRfmPath = "/admin/customers/rfm"
 
 // customerRfmTitleLabel 页标题（词条 key + 兜底文案）。
-var customerRfmTitleLabel = userLabel{"admin.customer.rfm.title", "RFM 分析"}
+var customerRfmTitleLabel = userLabel{userenums.KeyCustomerRfmTitle, "RFM 分析"}
 
 // customerRfmRow 明细表的一行（客户资料 + RFM 分数）。
 //
@@ -1407,10 +1407,10 @@ func customerRfmSegmentTabs(res *orderdto.CustomerRfmResp, active string, rng cu
 		}
 	}
 	return []gin.H{
-		mk("", "admin.customer.rfm.tab.all", "全部", res.Customers),
-		mk("vip", "admin.customer.rfm.segment.vip", "高价值", res.Vip),
-		mk("potential", "admin.customer.rfm.segment.potential", "潜力", res.Potential),
-		mk("low_value", "admin.customer.rfm.segment.lowValue", "一般", res.LowValue),
+		mk("", userenums.KeyCustomerRfmTabAll, "全部", res.Customers),
+		mk("vip", userenums.KeyCustomerRfmSegmentVip, "高价值", res.Vip),
+		mk("potential", userenums.KeyCustomerRfmSegmentPotential, "潜力", res.Potential),
+		mk("low_value", userenums.KeyCustomerRfmSegmentLowValue, "一般", res.LowValue),
 	}
 }
 
@@ -1535,7 +1535,7 @@ const rfmMaxPageSize = 200
 
 // customerRfmUnavailableLabel 取数不可用时的提示（归口文案，不外泄内部错误）。
 var customerRfmUnavailableLabel = userLabel{
-	"admin.customer.rfm.unavailable",
+	userenums.KeyCustomerRfmUnavailable,
 	"RFM 分析暂时不可用（数据没接上），请稍后再试。",
 }
 
@@ -1981,13 +1981,13 @@ func NewHandle(svc *userservice.Service) *Handle { return &Handle{svc: svc} }
 //
 // 值不是裸中文：<title> 是**直接渲染**的文本，硬写中文等于英文界面里标题永远中文。
 var pageTitles = map[string]userLabel{
-	"user/login":         {"user.page.login", "登录"},
-	"user/register":      {"user.page.register", "注册"},
-	"user/register_done": {"user.page.register_done", "注册成功"},
-	"user/forgot":        {"user.page.forgot", "找回密码"},
-	"user/reset":         {"user.page.reset", "重置密码"},
-	"user/message":       {"user.page.message", "提示"},
-	"user/account":       {"user.page.account", "账号中心"},
+	"user/login":         {userenums.KeyUserPageLogin, "登录"},
+	"user/register":      {userenums.KeyUserPageRegister, "注册"},
+	"user/register_done": {userenums.KeyUserPageRegisterDone, "注册成功"},
+	"user/forgot":        {userenums.KeyUserPageForgot, "找回密码"},
+	"user/reset":         {userenums.KeyUserPageReset, "重置密码"},
+	"user/message":       {userenums.KeyUserPageMessage, "提示"},
+	"user/account":       {userenums.KeyUserPageAccount, "账号中心"},
 }
 
 // userTextOf 访客页**文本槽位**取词：这些槽位没有渲染期。
@@ -2567,9 +2567,9 @@ func applyCustomerMembership(data gin.H, view customerMembershipView) {
 
 // 三个降级说明（i18n key + 中文兜底，与页面其余展示标签同形态）。
 var (
-	customerMembershipUnavailableLabel = userLabel{"admin.customer_detail.membership.unavailable", "会员模块尚未接入，这里看不到等级。"}
-	customerMembershipNoProjectLabel   = userLabel{"admin.customer_detail.membership.no_project", "还没有站点工程：会员等级按工程计算，选定工程后才能看到。"}
-	customerMembershipFailedLabel      = userLabel{"admin.customer_detail.membership.failed", "会员等级暂时读不出来 —— 客户资料本身不受影响。"}
+	customerMembershipUnavailableLabel = userLabel{userenums.KeyCustomerMembershipUnavailable, "会员模块尚未接入，这里看不到等级。"}
+	customerMembershipNoProjectLabel   = userLabel{userenums.KeyCustomerMembershipNoProject, "还没有站点工程：会员等级按工程计算，选定工程后才能看到。"}
+	customerMembershipFailedLabel      = userLabel{userenums.KeyCustomerMembershipFailed, "会员等级暂时读不出来 —— 客户资料本身不受影响。"}
 )
 
 // customer_query.go - 客户管理页的查询参数解析、URL 派生与对外文案出口。
@@ -2903,28 +2903,28 @@ func (h *Handle) DoRevokeOtherSessions(c *gin.Context) {
 // 硬写中文等于英文界面恒中文。带变量的正文用 %s 占位 —— 词条协议只允许字符串占位符，
 // 因此变量先经 fmt.Sprintf 字符串化（用户名 / 邮箱本来就是字符串，无需转换）。
 var (
-	userMsgActivationInvalidTitle = userLabel{"user.message.activation_invalid.title", "验证链接无效"}
-	userMsgActivationFailedTitle  = userLabel{"user.message.activation_failed.title", "验证未通过"}
+	userMsgActivationInvalidTitle = userLabel{userenums.KeyUserMessageActivationInvalidTitle, "验证链接无效"}
+	userMsgActivationFailedTitle  = userLabel{userenums.KeyUserMessageActivationFailedTitle, "验证未通过"}
 	// userMsgActivatedTitle 复用访客消息词条 user.msg.activateSuccess（值同为「邮箱验证成功」）：
 	// 同一句话在消息通道与结果页各留一条词条，翻译改动时必然分叉。
 	userMsgActivatedTitle = userLabel{userenums.MsgActivateSuccess, "邮箱验证成功"}
-	userMsgActivatedBody  = userLabel{"user.message.activated.body", "账号 {username} 已激活，现在可以登录了。"}
+	userMsgActivatedBody  = userLabel{userenums.KeyUserMessageActivatedBody, "账号 {username} 已激活，现在可以登录了。"}
 
-	userMsgResendFailedTitle = userLabel{"user.message.resend_failed.title", "重发失败"}
-	userMsgResendDoneTitle   = userLabel{"user.message.resend_done.title", "验证邮件已重发"}
-	userMsgResendDoneBody    = userLabel{"user.message.resend_done.body",
+	userMsgResendFailedTitle = userLabel{userenums.KeyUserMessageResendFailedTitle, "重发失败"}
+	userMsgResendDoneTitle   = userLabel{userenums.KeyUserMessageResendDoneTitle, "验证邮件已重发"}
+	userMsgResendDoneBody    = userLabel{userenums.KeyUserMessageResendDoneBody,
 		"如果 {email} 是一个待验证的账号，新的验证邮件已经发出，请查收。"}
 
-	userMsgLogoutFailedTitle = userLabel{"user.message.logout_failed.title", "登出失败"}
-	userMsgResetMailTitle    = userLabel{"user.message.reset_mail.title", "重置邮件已提交"}
-	userMsgLinkInvalidTitle  = userLabel{"user.message.link_invalid.title", "链接无效"}
+	userMsgLogoutFailedTitle = userLabel{userenums.KeyUserMessageLogoutFailedTitle, "登出失败"}
+	userMsgResetMailTitle    = userLabel{userenums.KeyUserMessageResetMailTitle, "重置邮件已提交"}
+	userMsgLinkInvalidTitle  = userLabel{userenums.KeyUserMessageLinkInvalidTitle, "链接无效"}
 
-	userMsgPasswordResetTitle = userLabel{"user.message.password_reset.title", "密码已重置"}
-	userMsgPasswordResetBody  = userLabel{"user.message.password_reset.body", "请使用新密码登录。"}
+	userMsgPasswordResetTitle = userLabel{userenums.KeyUserMessagePasswordResetTitle, "密码已重置"}
+	userMsgPasswordResetBody  = userLabel{userenums.KeyUserMessagePasswordResetBody, "请使用新密码登录。"}
 
-	userMsgAccountOpenFailedTitle = userLabel{"user.message.account_open_failed.title", "打不开账号中心"}
-	userMsgPasswordChangedTitle   = userLabel{"user.message.password_changed.title", "密码已修改"}
-	userMsgPasswordChangedBody    = userLabel{"user.message.password_changed.body",
+	userMsgAccountOpenFailedTitle = userLabel{userenums.KeyUserMessageAccountOpenFailedTitle, "打不开账号中心"}
+	userMsgPasswordChangedTitle   = userLabel{userenums.KeyUserMessagePasswordChangedTitle, "密码已修改"}
+	userMsgPasswordChangedBody    = userLabel{userenums.KeyUserMessagePasswordChangedBody,
 		"为安全起见，所有设备（包括当前这台）都已退出登录，请用新密码重新登录。"}
 )
 

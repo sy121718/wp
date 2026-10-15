@@ -52,4 +52,14 @@ const (
 	InventoryPurchasesProductionOpen  = "admin.inventory_purchases.production.open"
 	InventoryPurchasesOptionCostLabel = "admin.inventory_purchases.option.costLabel"
 	InventoryPurchasesOptionCostUnset = "admin.inventory_purchases.option.costUnset"
+
+	// —— 单条与批量写动作的结论文案（提示页 / 片段回执的事实形态：key + 中文兜底 + `%s` 参数）——
+	InventoryActionDone             = "admin.inventory.actionDone"
+	InventoryBulkWarehousePartial   = "admin.inventory.bulk.partial"
+	InventoryBulkWarehouseDone      = "admin.inventory.bulk.deleted"
+	InventoryBulkSourcePartial      = "admin.inventory.bulk.sourcePartial"
+	InventoryBulkSourceDone         = "admin.inventory.bulk.sourceDone"
+	InventoryBulkReasonPartial      = "admin.inventory.bulk.reasonPartial"
+	InventoryBulkReasonDone         = "admin.inventory.bulk.reasonDone"
+	InventoryBulkReasonNoneSelected = "admin.inventory.bulk.reasonNoneSelected"
 )

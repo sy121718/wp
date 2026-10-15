@@ -395,7 +395,7 @@ func (h *McpPageHandle) TokenRevoke(c *gin.Context) {
 		h.renderTokens(c, "", aiMsgText(c, err.Error(), err.Error()), "")
 		return
 	}
-	h.renderTokens(c, "", "", aiMsgText(c, "admin.ai.mcp.token.revokeDone", "已撤销该令牌（立即失效）"))
+	h.renderTokens(c, "", "", aiMsgText(c, aienums.McpTokenRevokeDone, "已撤销该令牌（立即失效）"))
 }
 
 // renderTokens 渲染令牌区块片段。
@@ -425,7 +425,7 @@ func (h *McpPageHandle) pageData(c *gin.Context, newToken, errText, doneText str
 	// 文案一律由调用方给：整页进入时为空（写动作的结论由 shell.RenderJump 渲染成提示页，
 	// 不再经 ?err= / ?done= 回带），片段进入时是刚算出的成品文案。
 
-	title := aiMsgText(c, "admin.ai.mcp.title", "MCP 与外部访问")
+	title := aiMsgText(c, aienums.McpTitle, "MCP 与外部访问")
 	// 开关只读一次：页面要如实显示它（这里是运维判断「外面能不能进来」的唯一地方），
 	// 徽标分档与文案必须同源 —— 读两次若中间被改，会出现「文字说已开启、颜色说已关闭」。
 	enabled := h.mcpEnabled(ctx)
@@ -433,7 +433,7 @@ func (h *McpPageHandle) pageData(c *gin.Context, newToken, errText, doneText str
 		// title（小写）是 layout 壳读的键（与同后台其它页面一致）；页面正文自己再取一次做 h1。
 		"title":        title,
 		"Title":        title,
-		"Lead":         aiMsgText(c, "admin.ai.mcp.lead", ""),
+		"Lead":         aiMsgText(c, aienums.McpLead, ""),
 		"Endpoint":     mcpEndpointURL(c),
 		"Tokens":       tokenRows(tokens),
 		"Tools":        h.tools(),
@@ -511,10 +511,10 @@ func (h *McpPageHandle) McpToggle(c *gin.Context) {
 		return
 	}
 	if on {
-		mcpJump(c, true, adminui.Msg{Key: "admin.ai.mcp.switch.onDone", Fallback: "已开启对外接入点（最迟 5 秒后生效）"})
+		mcpJump(c, true, adminui.Msg{Key: aienums.McpSwitchOnDone, Fallback: "已开启对外接入点（最迟 5 秒后生效）"})
 		return
 	}
-	mcpJump(c, true, adminui.Msg{Key: "admin.ai.mcp.switch.offDone", Fallback: "已关闭对外接入点（最晚 5 秒后对任何请求回 404）"})
+	mcpJump(c, true, adminui.Msg{Key: aienums.McpSwitchOffDone, Fallback: "已关闭对外接入点（最晚 5 秒后对任何请求回 404）"})
 }
 
 // mcpJump 开关动作的出口：整页提示（对应 ThinkPHP 的 success() / error()）。
@@ -526,7 +526,7 @@ func (h *McpPageHandle) McpToggle(c *gin.Context) {
 // （提示页模板的 tf），控制器不拼句子。
 func mcpJump(c *gin.Context, ok bool, msg adminui.Msg) {
 	back := mcpPagePath
-	backText := adminui.Msg{Key: "admin.ai.mcp.title", Fallback: "MCP 与外部访问"}
+	backText := adminui.Msg{Key: aienums.McpTitle, Fallback: "MCP 与外部访问"}
 	jump := shell.Jump{
 		OK:       ok,
 		MsgKey:   msg.Key,

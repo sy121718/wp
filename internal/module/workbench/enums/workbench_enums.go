@@ -167,3 +167,25 @@ const ModeFollowTemplate = "workbench.mode.followTemplate"
 
 // ModeDocument 双轨状态条：当前是只影响本实例的独立文档。
 const ModeDocument = "workbench.mode.document"
+
+// —— 仪表盘页（admin/dashboard.html）的页面级文案 key（迁移 550 / 552 / 553 / 554 seed）——
+//
+// key 属 `admin.` 名字空间（它们是**后台页面**的文案，不是工作台画布控件的文案），
+// 取词发生在工作台的 dashboard 控制器里：模板侧同名 key 内联、控制器侧必须走常量
+// （门禁 scripts/check-controller-i18n-literals.sh）。
+const (
+	DashboardPageKindHome     = "admin.dashboard.pageKind.home"
+	DashboardPageKindPage     = "admin.dashboard.pageKind.page"
+	DashboardPageKindArticle  = "admin.dashboard.pageKind.article"
+	DashboardPageKindTag      = "admin.dashboard.pageKind.tag"
+	DashboardPageKindArchive  = "admin.dashboard.pageKind.archive"
+	DashboardPageKindSearch   = "admin.dashboard.pageKind.search"
+	DashboardPageKindNotFound = "admin.dashboard.pageKind.notFound"
+)
+
+// 以下三条是**前缀**（调用方按粒度 / 区间键拼后缀），值不是完整 item_key。
+const (
+	DashboardTrendGranularityPrefix = "admin.dashboard.trend.granularity."
+	DashboardTrendTitlePrefix       = "admin.dashboard.trend.title."
+	DashboardRangePrefix            = "admin.dashboard.range."
+)

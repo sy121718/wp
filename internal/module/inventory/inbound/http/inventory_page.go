@@ -1159,7 +1159,7 @@ func inventoryErrDetailText(tr func(key, fallback string) string, tail string) s
 // 「key + 中文兜底」的写法一致），中文环境的表现就是「操作已完成」。
 // 出口处的载体是 inventory_jump.go 的 inventoryDoneMsg（adminui.Msg）。
 const (
-	inventoryActionDoneKey      = "admin.inventory.actionDone"
+	inventoryActionDoneKey      = inventoryenums.InventoryActionDone
 	inventoryActionDoneFallback = "操作已完成"
 )
 
@@ -1176,13 +1176,13 @@ const (
 // 正是 `%d`（中英都是），它们需要一份把占位符改成 `%s` 的 i18n 迁移 —— 见本批报告。
 // 在那之前：中文界面输出逐字不变（词条与兜底同文），英文界面这两条会落中文兜底。
 var (
-	inventoryBulkWarehousePartial   = adminui.Msg{Key: "admin.inventory.bulk.partial", Fallback: "已删除 %s 个，%s 个未能删除（默认仓或仓内仍有非零库存）"}
-	inventoryBulkWarehouseDone      = adminui.Msg{Key: "admin.inventory.bulk.deleted", Fallback: "已删除 %s 个仓库"}
-	inventoryBulkSourcePartial      = adminui.Msg{Key: "admin.inventory.bulk.sourcePartial", Fallback: "已删除 %s 个，%s 个未能删除（仍被采购单或历史流水引用）"}
-	inventoryBulkSourceDone         = adminui.Msg{Key: "admin.inventory.bulk.sourceDone", Fallback: "已删除 %s 个货源"}
-	inventoryBulkReasonPartial      = adminui.Msg{Key: "admin.inventory.bulk.reasonPartial", Fallback: "已更新 %s 个原因，%s 个未能更新"}
-	inventoryBulkReasonDone         = adminui.Msg{Key: "admin.inventory.bulk.reasonDone", Fallback: "已更新 %s 个原因"}
-	inventoryBulkReasonNoneSelected = adminui.Msg{Key: "admin.inventory.bulk.reasonNoneSelected", Fallback: "请选择要操作的原因"}
+	inventoryBulkWarehousePartial   = adminui.Msg{Key: inventoryenums.InventoryBulkWarehousePartial, Fallback: "已删除 %s 个，%s 个未能删除（默认仓或仓内仍有非零库存）"}
+	inventoryBulkWarehouseDone      = adminui.Msg{Key: inventoryenums.InventoryBulkWarehouseDone, Fallback: "已删除 %s 个仓库"}
+	inventoryBulkSourcePartial      = adminui.Msg{Key: inventoryenums.InventoryBulkSourcePartial, Fallback: "已删除 %s 个，%s 个未能删除（仍被采购单或历史流水引用）"}
+	inventoryBulkSourceDone         = adminui.Msg{Key: inventoryenums.InventoryBulkSourceDone, Fallback: "已删除 %s 个货源"}
+	inventoryBulkReasonPartial      = adminui.Msg{Key: inventoryenums.InventoryBulkReasonPartial, Fallback: "已更新 %s 个原因，%s 个未能更新"}
+	inventoryBulkReasonDone         = adminui.Msg{Key: inventoryenums.InventoryBulkReasonDone, Fallback: "已更新 %s 个原因"}
+	inventoryBulkReasonNoneSelected = adminui.Msg{Key: inventoryenums.InventoryBulkReasonNoneSelected, Fallback: "请选择要操作的原因"}
 )
 
 // inventoryBulkIDsMsg 批量 id 读取失败的一句结论（事实形态，提示页出口用）。

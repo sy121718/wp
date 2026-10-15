@@ -57,7 +57,7 @@ var navigationAddSourceKeys = map[string]bool{
 // 刻意复用模板里那条 key（迁移 192，中英成对）：同一件事在管理页抽屉与接口回执里
 // 说的是同一句话，不给它再抄一份文案 —— 两份迟早会有一边改一边忘。
 // 它是**业务回执**的文案（随请求语言解析），不是模板预渲染的 UI 文案。
-const navigationAddSourceNoPathKey = "admin.navigations.no_public_path"
+const navigationAddSourceNoPathKey = navigationenums.NoPublicPath
 
 // navigationAddSourceItem 逐条结果。
 //

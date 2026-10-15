@@ -25,6 +25,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/backref"
+	navigationenums "go_wp/internal/module/navigation/enums"
 	"go_wp/internal/shell"
 )
 
@@ -51,10 +52,10 @@ func navListBackMenu(c *gin.Context) string {
 // **请求级**的，每多一处就多一次「这句话属于哪个语言」的判断。
 var (
 	// navListBackTitle 列表页回跳链接文字（复用页面标题词条，不新增全站词条）。
-	navListBackTitle = navText{Key: "admin.navigations.heading", Fallback: "导航菜单"}
+	navListBackTitle = navText{Key: navigationenums.Heading, Fallback: "导航菜单"}
 
 	// navDoneNotice 写动作成功回执（复用同一句话，不按动作细分；词条见迁移 590）。
-	navDoneNotice = navText{Key: "admin.navigations.actionDone", Fallback: "操作已完成"}
+	navDoneNotice = navText{Key: navigationenums.ActionDone, Fallback: "操作已完成"}
 )
 
 // navJump 提示页出口：成功 1 秒后自动跳，失败不自动跳（运营要看清楚原因）。

@@ -364,4 +364,17 @@ func CouponStateTone(state string) string {
 const (
 	// OrderNewOptionAvailable 代客建单页候选变体行的可用量标注模板（%s = 可用数）。
 	OrderNewOptionAvailable = "admin.order_new.option.available" // 可用 %s
+
+	// 后台页面标题（layout 的 <title>，adminui.Prepare 按当前语言取词）。
+	CouponsHeading  = "admin.coupons.heading"   // 优惠码
+	OrdersHeading   = "admin.orders.heading"    // 订单
+	ReturnsHeading  = "admin.returns.heading"   // 退货
+	OrderSalesTitle = "admin.order.sales.title" // 销售概览
+
+	// 券页表单校验的展示槽文案（key + 中文兜底的事实，交给 adminui.MsgText）。
+	CouponFormInvalidID      = "admin.coupons.form.invalid_id"
+	CouponFormForeignProject = "admin.coupons.form.foreign_project"
+
+	// 代客建单页国家/地区下拉的「（不填写）」空项。
+	OrderNewFieldCountryNone = "admin.order_new.field.country_none"
 )

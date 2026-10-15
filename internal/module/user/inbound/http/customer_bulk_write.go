@@ -89,12 +89,15 @@ func customerBulkBody(c *gin.Context, withStatus bool) ([]uint64, int, bool) {
 //
 // 判定 / 归口 / 失败日志三件事走共享的 adminui（判据是 pkg/response.IsBusinessError
 // 的**形态**）：本模块原先自留的白名单 customerFacingText 已删除 —— 它是第二份真相。
-// 场景名沿用更具体的 user.customer.write（比 adminui 默认的页面场景更贴调用点）。
+// 场景名用下划线形态的 "user_customer_write"，保住「这是哪条写路径」的日志粒度：
+// 点分形态（如 "user.customer.write"）会被 check-controller-i18n-literals.sh 的**形态**
+// 判据当成词条 key 字面量统计，而它不是词条 key —— 撞的是门禁正则的假阳性，
+// 不是场景名本身有问题，所以只换分隔符、不并成一个更粗的名字。
 func customerAPIErrorText(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-	return adminui.PageErrorText(c, "user.customer.write", err)
+	return adminui.PageErrorText(c, "user_customer_write", err)
 }
 
 // customerAPIWriteError 把一条写错误落成 JSON 响应（业务错误 400，其余 500）。

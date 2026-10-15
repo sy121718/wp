@@ -161,6 +161,62 @@ const (
 	LabelKeyFailuresHint = "admin.customers.status.help.failures"
 )
 
+// 页面文案的词条 key（页面标题 / 装配降级说明 / 访客结果页的标题与正文）。
+//
+// 与上面 LabelKey* 那批的分工：那是**状态与徽标**的展示标签，本批是**页面级文案**；
+// 中文兜底同样留在调用点（词条缺失时的回落）。
+const (
+	KeyCustomerCohortTitle              = "admin.customer.cohort.title"
+	KeyCustomerCohortUnavailable        = "admin.customer.cohort.unavailable"
+	KeyCustomersHeading                 = "admin.customers.heading"
+	KeyCustomerDetailHeading            = "admin.customer_detail.heading"
+	KeyCustomerActionDisable            = "admin.customers.action.disable"
+	KeyCustomerActionEnable             = "admin.customers.action.enable"
+	KeyCustomerCapabilityMissing        = "admin.customers.capability_missing"
+	KeyCustomerFormInvalidID            = "admin.customers.form.invalid_id"
+	KeyCustomerOrdersUnavailable        = "admin.customer_detail.orders.unavailable"
+	KeyCustomerBulkNoneSelected         = "admin.customers.bulk.none_selected"
+	KeyCustomerFilterRfmUnavailable     = "admin.customer.filter.rfm_unavailable"
+	KeyCustomerFilterSegmentUnavailable = "admin.customer.filter.segment_unavailable"
+	KeyCustomerFilterTierTruncated      = "admin.customer.filter.tier_truncated"
+	KeyCustomerFilterTierUnavailable    = "admin.customer.filter.tier_unavailable"
+	KeyCustomerOverviewTitle            = "admin.customer.overview.title"
+	KeyCustomerRfmTitle                 = "admin.customer.rfm.title"
+	KeyCustomerRfmTabAll                = "admin.customer.rfm.tab.all"
+	KeyCustomerRfmSegmentVip            = "admin.customer.rfm.segment.vip"
+	KeyCustomerRfmSegmentPotential      = "admin.customer.rfm.segment.potential"
+	KeyCustomerRfmSegmentLowValue       = "admin.customer.rfm.segment.lowValue"
+	KeyCustomerRfmUnavailable           = "admin.customer.rfm.unavailable"
+	KeyCustomerMembershipUnavailable    = "admin.customer_detail.membership.unavailable"
+	KeyCustomerMembershipNoProject      = "admin.customer_detail.membership.no_project"
+	KeyCustomerMembershipFailed         = "admin.customer_detail.membership.failed"
+
+	// 访客侧重定向页的浏览器标题（pageTitles 表）。
+	KeyUserPageLogin        = "user.page.login"
+	KeyUserPageRegister     = "user.page.register"
+	KeyUserPageRegisterDone = "user.page.register_done"
+	KeyUserPageForgot       = "user.page.forgot"
+	KeyUserPageReset        = "user.page.reset"
+	KeyUserPageMessage      = "user.page.message"
+	KeyUserPageAccount      = "user.page.account"
+
+	// 访客结果页（user/message）的标题与正文。
+	KeyUserMessageActivationInvalidTitle = "user.message.activation_invalid.title"
+	KeyUserMessageActivationFailedTitle  = "user.message.activation_failed.title"
+	KeyUserMessageActivatedBody          = "user.message.activated.body"
+	KeyUserMessageResendFailedTitle      = "user.message.resend_failed.title"
+	KeyUserMessageResendDoneTitle        = "user.message.resend_done.title"
+	KeyUserMessageResendDoneBody         = "user.message.resend_done.body"
+	KeyUserMessageLogoutFailedTitle      = "user.message.logout_failed.title"
+	KeyUserMessageResetMailTitle         = "user.message.reset_mail.title"
+	KeyUserMessageLinkInvalidTitle       = "user.message.link_invalid.title"
+	KeyUserMessagePasswordResetTitle     = "user.message.password_reset.title"
+	KeyUserMessagePasswordResetBody      = "user.message.password_reset.body"
+	KeyUserMessageAccountOpenFailedTitle = "user.message.account_open_failed.title"
+	KeyUserMessagePasswordChangedTitle   = "user.message.password_changed.title"
+	KeyUserMessagePasswordChangedBody    = "user.message.password_changed.body"
+)
+
 // 词条缺失时的中文兜底（与库内 zh-CN 值逐字一致：不一致时，兜底生效与否会表现出两种文案）。
 const (
 	LabelStatusAll      = "全部"

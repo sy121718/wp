@@ -43,6 +43,20 @@ const (
 	AdminSystemTitle = "admin.system.title"
 )
 
+// 设置页写路径与参数校验的用户可见文案（值即 sys_i18n key）。
+const (
+	// AdminSystemSaved 保存成功回执（页面出口的成品句）。
+	AdminSystemSaved = "admin.system.saved"
+	// AdminSystemGroupMissing 配置分组缺失（迁移未执行）—— 整页可读提示。
+	AdminSystemGroupMissing = "admin.system.group_missing"
+	// AdminSystemErrLangUnknown 提交的默认语言不在字典里。
+	AdminSystemErrLangUnknown = "admin.system.err.lang_unknown"
+	// AdminSystemErrCurrencyUnknown 提交的默认货币不在字典里。
+	AdminSystemErrCurrencyUnknown = "admin.system.err.currency_unknown"
+	// AdminSystemErrCountryUnknown 提交的默认国家不在字典里。
+	AdminSystemErrCountryUnknown = "admin.system.err.country_unknown"
+)
+
 // SysConfigFacingMessages 可以原样展示给前端的业务文案（**白名单**）。
 //
 // 命中 → 原样透出；未命中 → inbound 的归口助手记结构化日志并返回 ErrInternal。
