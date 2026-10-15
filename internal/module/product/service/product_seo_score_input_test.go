@@ -627,3 +627,35 @@ func TestFirstNonEmptyTextAndSlashSlug(t *testing.T) {
 		t.Fatalf("空 slug 返回空串（不能产出裸斜杠），实际 %q", got)
 	}
 }
+
+// ==========================================================================
+// 工程作用域：商品分支取商品那一跳必须带上调用方已经收到的 projectID。
+//
+// 多工程部署下 product 侧的 resolveProjectID 在「显式工程为空且工程数 != 1」时回
+// ErrInvalidParam，而 SeoScoreInputOf 把它当成**读取失败**、回「读不到这个商品，无法评分」空态
+// —— 商品其实就在调用方那个工程里（handler 已经把 projectId 传进来了）。
+//
+// 本用例断言的是**读口收到的 GetReq**：只断言「有 Input」照不出漏传 —— 单工程夹具下兜底
+// 解析出的那一个恰好就是唯一的那个，传与不传行为等价。
+// ==========================================================================
+
+func TestSeoScoreInputOfProductScopeReachesReadPort(t *testing.T) {
+	detail := seoTestProduct()
+	var got *productdto.GetReq
+	r := &seoReadStub{t: t, get: func(_ context.Context, req *productdto.GetReq) (*productdto.ProductResp, error) {
+		got = req
+		return detail, nil
+	}}
+
+	res := SeoScoreInputOf(context.Background(), r, nil, scoring.KindProduct, detail.ID, seoTestProjectID, "zh-CN")
+	if res.Input == nil {
+		t.Fatalf("正常档应给出 Input，实际 Err=%v Empty=%+v", res.Err, res.Empty)
+	}
+	if got == nil {
+		t.Fatal("商品读口一次都没被调用")
+	}
+	if got.ProjectID != seoTestProjectID {
+		t.Fatalf("取商品收到的工程 id = %q，want %q —— 漏传时多工程部署下 resolveProjectID 回 ErrInvalidParam，"+
+			"评分退化成「读不到这个商品，无法评分」空态", got.ProjectID, seoTestProjectID)
+	}
+}

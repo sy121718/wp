@@ -94,7 +94,10 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 		// 手输 URL、书签失效、商品刚被删都会走到这里；模板自带的空态就是它的文案。
 		view.HTTPStatus = 404
 	default:
-		detail, derr := s.Get(ctx, &productdto.GetReq{ID: productID})
+		// 取商品这一跳必须带上面已解析出的工程作用域：多工程部署下 product 侧的
+		// resolveProjectID 在「显式工程为空且工程数 != 1」时回 ErrInvalidParam，
+		// 被下面判成 400 —— 而商品本来就在 selected 里（打开这一页的人手里有工程 id）。
+		detail, derr := s.Get(ctx, &productdto.GetReq{ID: productID, ProjectID: selected})
 		switch {
 		case derr == nil && detail != nil:
 			view.Detail = detail

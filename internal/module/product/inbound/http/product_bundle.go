@@ -318,7 +318,10 @@ func (h *productPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
 	// 规格文本要用来源商品的属性组：「组合在商品侧没有对应变体」必须指得出是哪一组。
 	attrs := []*productdto.AttributeResp{}
 	if req.SourceProductID != "" {
-		if detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: req.SourceProductID}); derr == nil && detail != nil {
+		// 同变体预览：取来源商品必须带作用域（req.ProjectID 上面已从表单读出），
+		// 否则多工程部署下这一跳被 resolveProjectID 拒掉、attrs 退化为空，
+		// spec 静默降级成 optionKey（derr 被忽略，不报错）。
+		if detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: req.SourceProductID, ProjectID: req.ProjectID}); derr == nil && detail != nil {
 			attrs = detail.Attributes
 		}
 	}

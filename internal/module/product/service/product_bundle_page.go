@@ -106,7 +106,10 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 
 	var detail *productdto.BundleConfigResp
 	if firstErr == nil && selectedProduct != "" {
-		cfg, derr := s.GetBundleConfig(ctx, &productdto.GetBundleConfigReq{ProductID: selectedProduct})
+		// 带工程作用域：GetBundleConfigReq.ProjectID 为空时由 service 走「唯一工程」兜底，
+		// 多工程部署下那一步回 ErrInvalidParam，被下面判成 400 —— 整页打不开，
+		// 而商品本来就在上面已解析出的 selectedProject 里。
+		cfg, derr := s.GetBundleConfig(ctx, &productdto.GetBundleConfigReq{ProductID: selectedProduct, ProjectID: selectedProject})
 		if derr != nil {
 			// 按业务事实分档，不把三种情况混成一种（此前一律 detail=nil 渲染空骨架，
 			// 把「读不出来」说成了「这个商品还没配捆绑」—— 这两种事实对运营的动作完全不同：
@@ -155,7 +158,7 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 	view.Source = source
 	view.SourceWarehouseID = sourceWarehouseID
 	if firstErr == nil && sourceProductID != "" {
-		attrs := s.BundleSourceAttributes(ctx, sourceProductID)
+		attrs := s.BundleSourceAttributes(ctx, selectedProject, sourceProductID)
 		view.SourceAttributes = attrs
 	}
 	warehouses := []productdto.WarehouseOptionView{}
@@ -219,12 +222,17 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 //
 // 读不出来当空清单而不是失败：这一屏对它的依赖是**展示**（可勾选的候选），
 // 前置条件是配置本身 —— 让面板的可选清单决定整页成败，运营连配置都改不了了。
-func (s *Service) BundleSourceAttributes(ctx context.Context, productID string) []*productdto.AttributeResp {
+//
+// projectID 必须由调用方给（本页已解析出的 selectedProject）：取商品那一跳不带作用域时，
+// 多工程部署下 product 侧的 resolveProjectID 回 ErrInvalidParam，本函数的「读不出来」
+// 分支把它静默吞成空清单 —— 用户看到「没有可勾选属性」，不报错、日志也干净，
+// 而那个来源商品本来就在同一个工程里。
+func (s *Service) BundleSourceAttributes(ctx context.Context, projectID, productID string) []*productdto.AttributeResp {
 	id := strings.TrimSpace(productID)
 	if id == "" {
 		return []*productdto.AttributeResp{}
 	}
-	detail, err := s.Get(ctx, &productdto.GetReq{ID: id})
+	detail, err := s.Get(ctx, &productdto.GetReq{ID: id, ProjectID: projectID})
 	if err != nil || detail == nil {
 		return []*productdto.AttributeResp{}
 	}

@@ -176,7 +176,10 @@ func SeoScoreInputOf(ctx context.Context, r ProductReadPort, insts SeoInstancePa
 		}
 
 	default:
-		detail, err := r.Get(ctx, &productdto.GetReq{ID: id})
+		// 取商品带本函数已经收到的工程作用域（projectID 是形参）：不传时多工程部署下
+		// product 侧的 resolveProjectID 回 ErrInvalidParam，评分退化成
+		// 「读不到这个商品，无法评分」空态 —— 商品其实就在调用方那个工程里。
+		detail, err := r.Get(ctx, &productdto.GetReq{ID: id, ProjectID: projectID})
 		if err != nil || detail == nil {
 			res := emptyOf(productenums.SEOEmptyProductUnreadable, "读不到这个商品，无法评分")
 			res.Err = err

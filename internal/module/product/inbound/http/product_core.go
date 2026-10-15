@@ -1006,8 +1006,11 @@ func (h *productPageHandle) ProductsVariantPreview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "message": productErrText(c, err)})
 		return
 	}
+	// 取属性组那一跳带作用域（req.ProjectID 上面已从表单读出）：多工程部署下不带它
+	// 会被 product 侧的 resolveProjectID 拒掉，attrs 退化为空 —— derr 被刻意忽略，
+	// 于是 spec 静默降级成 optionKey（「属性组：值」标签全丢），页面上看不出报错。
 	attrs := []*productdto.AttributeResp{}
-	if detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: productID}); derr == nil && detail != nil {
+	if detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: productID, ProjectID: req.ProjectID}); derr == nil && detail != nil {
 		attrs = detail.Attributes
 	}
 	rows := make([]variantPreviewRow, 0, len(res.Rows))
