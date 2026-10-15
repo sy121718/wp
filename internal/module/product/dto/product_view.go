@@ -137,7 +137,9 @@ type ProductListPageView struct {
 	Limit         int
 	Total         int64
 
-	// 行装配的原料：RowDetails 是本页每行的商品详情（列表项不含变体明细，逐行取）；
+	// 行装配的原料：RowDetails 是**本页的列表项**（P0-1 之后不再逐行取详情 ——
+	// 逐商品 s.Get 已删除，行缺的挂载事实与评分投影按本页 id 批量补，
+	// 见 service/product_row.go 的 productRowsFromList）；
 	// Categories 是**分类树**（分类选择器按树读，见 products.html）。行本身由读模型装配进
 	// Products。
 	RowDetails []*ProductResp

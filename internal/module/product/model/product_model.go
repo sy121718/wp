@@ -304,6 +304,90 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 	return list, err
 }
 
+// idBatchSize 按 id 批量读（IN (...)）时的批次大小。
+//
+// PG 的绑定参数上限是 65535，这里取一个远小于它的值：一个批次就是一次往返，
+// 500 个 id 已经覆盖任何一页的商品数，再大只增加单条 SQL 的解析成本。
+const idBatchSize = 500
+
+// ProductRowFacts 商品列表行装配要的挂载事实（**既不是商品详情，也不是完整商品行**）。
+//
+// 为什么单列一次读法，而不是把这几列并进 List 的 Select：List 的返回体是
+// GET /api/product/list 的对外响应（inbound/http/product_core.go 的 handle.List 直接
+// 序列化），往它的 ProductResp 里补字段等于改对外响应形状。列表行真正缺的只有
+// 「挂载 id + 容器价」这几列，就按这几列单独读一次（本项目一次、与商品数无关）。
+//
+// jsonb 列保持 json.RawMessage（与 ProductEntity 同一形状）：解码归 service 的
+// decodeStrings 一处做，model 不另立一份解码。
+type ProductRowFacts struct {
+	// Type 商品类型（TypeVariant / TypeBundle）：容器价的判定要用它。
+	Type string
+	// CategoryIDs 挂载的分类 id 数组（jsonb）。
+	CategoryIDs json.RawMessage
+	// PrimaryCategoryID 主分类（可空）。
+	PrimaryCategoryID string
+	// BrandID 品牌（可空）。
+	BrandID string
+	// TagIDs 挂载的标签 id 数组（jsonb，手工 + 自动）。
+	TagIDs json.RawMessage
+	// DefaultPrice 容器价（仅 TypeBundle 有意义）：商品侧只有一个对外价格，
+	// 取值规则见 service 的 applyPriceRange 的 bundle 分支。
+	DefaultPrice *float64
+}
+
+// rowFactsRow ListRowFacts 的扫描目标：只含被 Select 出来的列（不是完整商品行）。
+type rowFactsRow struct {
+	ID                string          `gorm:"column:id"`
+	Type              string          `gorm:"column:type"`
+	CategoryIDs       json.RawMessage `gorm:"column:category_ids"`
+	PrimaryCategoryID *string         `gorm:"column:primary_category_id"`
+	BrandID           *string         `gorm:"column:brand_id"`
+	TagIDs            json.RawMessage `gorm:"column:tag_ids"`
+	DefaultPrice      *float64        `gorm:"column:default_price"`
+}
+
+// ListRowFacts 按 id 批量读列表行的挂载事实（列表页消 N+1 的第二条批量读）。
+//
+// projectID 是**必填的工程作用域**（products 在迁移 215 名单里，缺作用域会静默 0 行）；
+// 空 id 列表直接返回空 map，不发 IN ()；读失败返回 error，由调用方判失败。
+func (m *Model) ListRowFacts(ctx context.Context, projectID string, productIDs []string) (map[string]ProductRowFacts, error) {
+	ids := make([]string, 0, len(productIDs))
+	for _, id := range productIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	out := make(map[string]ProductRowFacts, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []rowFactsRow
+	for start := 0; start < len(ids); start += idBatchSize {
+		end := min(start+idBatchSize, len(ids))
+		var batch []rowFactsRow
+		if err := rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Model(&ProductEntity{}).
+				Select("id, type, category_ids, primary_category_id, brand_id, tag_ids, default_price").
+				// 与评分批量读同理：project_id 显式进 WHERE（RLS 换角色前不生效）。
+				Where("project_id = ? AND id IN ?", projectID, ids[start:end]).Scan(&batch).Error
+		}); err != nil {
+			return nil, err
+		}
+		rows = append(rows, batch...)
+	}
+	for _, r := range rows {
+		f := ProductRowFacts{Type: r.Type, CategoryIDs: r.CategoryIDs, TagIDs: r.TagIDs, DefaultPrice: r.DefaultPrice}
+		if r.PrimaryCategoryID != nil {
+			f.PrimaryCategoryID = *r.PrimaryCategoryID
+		}
+		if r.BrandID != nil {
+			f.BrandID = *r.BrandID
+		}
+		out[r.ID] = f
+	}
+	return out, nil
+}
+
 // CollectionFilter 集合源的取数条件（issue #21：状态 + 分类 / 品牌 / 标签）。
 //
 // 全部是**等值**维度且彼此 AND —— 集合源只接受声明过的维度，不接受过滤表达式

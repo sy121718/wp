@@ -22,14 +22,17 @@
 //   - **分页条只给事实**：Total / Page / Limit 由本方法给，基地址与链接由控制器按当前
 //     请求拼（基地址带筛选条件，翻页不丢条件）。
 //
-// 逐行取详情是**有意的 N+1**（一页 20 条，后台页可接受），但**读不到就整页失败**：
-// 静默 continue 会让页面少一行却仍写着「共 N 条」，用户据此以为商品已经被删了。
+// **取数常数条、与商品数无关**（本屏的性能口径）：分页列表一次、变体聚合一次、属性组一次、
+// 库存聚合一次，行原料的补充是**按本页 id 各一次**的批量读（挂载事实 + 评分投影，见
+// service/product_row.go 的 productRowsFromList）—— 逐商品详情查询（N+1 的来源之一）
+// 已彻底删除，另一处逐商品评分查询也一并断掉。**但读不到仍旧整页失败**：静默 continue 会让
+// 页面少一行却仍写着「共 N 条」，用户据此以为商品已经被删了；评分读不到也不许渲染成
+// 「暂无评分」（dd.txt 3.5 验收表最后一行）。
 package productservice
 
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	productdto "go_wp/internal/module/product/dto"
@@ -155,6 +158,12 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 
 	// 分页总数与列表**同一份过滤条件**（CountProducts 与 List 共用 model 的关键词 / 状态条件）：
 	// 两处口径分叉时「共 N 条」与实际能翻出来的条数对不上。
+	//
+	// 列表项就是**行装配的原料**（RowDetails 与 Products 逐行对应）：曾经这里是「逐个商品
+	// 取一次详情」（N+1 的来源），现在行要的挂载事实与评分投影都由 productRowsFromList
+	// 按本页 id 批量补 —— 逐商品详情查询已彻底删除，也不再保留「把 s.Get 包成另一个逐商品
+	// 方法」的退路（dd.txt 3.1）。
+	var pageItems []*productdto.ProductResp
 	if firstErr == nil && selected != "" {
 		list, lerr := s.List(ctx, &productdto.ListReq{
 			ProjectID: selected, Keyword: keyword, Status: status, Page: page, Size: ProductListPageSize,
@@ -170,20 +179,8 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 			} else {
 				view.Total = total
 			}
-			for _, p := range list {
-				// 列表项不含变体明细，逐个取详情（一页 20 条，后台页可接受）。
-				detail, derr := s.Get(ctx, &productdto.GetReq{ID: p.ID})
-				if derr != nil || detail == nil {
-					// 这一行是**主数据**的一部分：静默 continue 会让页面少一行却仍写着「共 N 条」，
-					// 用户据此以为商品已经被删了（而它只是这一行读不出来）。取不到就整页失败。
-					if derr == nil {
-						derr = fmt.Errorf("商品 %s 的详情为空", p.ID)
-					}
-					fail(fmt.Errorf("读取商品 %s 的详情失败：%w", p.ID, derr))
-					break
-				}
-				view.RowDetails = append(view.RowDetails, detail)
-			}
+			pageItems = list
+			view.RowDetails = list
 		}
 	}
 
@@ -215,17 +212,17 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 	view.Roundings = s.ListPricingRoundingOptions(ctx)
 
 	// 行装配：成品行在**读模型**里产出（控制器不再拼行）。只在取数全部成功时装配 ——
-	// 逐行取详情失败时 RowDetails 是半截的（见上面的 break），渲染它只会得到一张残表。
+	// 批量取数失败时原料是空的（见上面的 pageItems），渲染它只会得到一张残表；
+	// 批量读失败（挂载事实 / 评分）同样判失败：不吞错误，页面据此走 500 失败页。
 	// 分类树在这里扁平化一次（只服务行装配），控制器不再需要那份扁平行。
 	if firstErr == nil {
 		flat := FlattenCategoryTree(view.Categories)
-		rows := make([]productdto.ProductRow, 0, len(view.RowDetails))
-		for _, detail := range view.RowDetails {
-			if row := s.productRow(ctx, selected, flat, view.Brands, view.Tags, view.WarehouseOptions, detail); row != nil {
-				rows = append(rows, *row)
-			}
+		rows, rerr := s.productRowsFromList(ctx, selected, flat, view.Brands, view.Tags, view.WarehouseOptions, pageItems)
+		if rerr != nil {
+			fail(rerr)
+		} else {
+			view.Products = rows
 		}
-		view.Products = rows
 	}
 
 	if firstErr != nil {

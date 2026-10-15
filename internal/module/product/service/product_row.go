@@ -15,12 +15,14 @@ package productservice
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/money"
 )
@@ -44,7 +46,25 @@ func (s *Service) productRow(ctx context.Context, selected string, flat []*produ
 		return nil
 	}
 	// 评分读一次：明细 + 投影值（issue #33）。读不到按「没有评分」处理，页面照常渲染。
-	rating := s.ratingsOf(ctx, selected, detail.ID)
+	return s.productRowWithRating(ctx, flat, brands, tags, warehouses, detail,
+		s.ratingsOf(ctx, selected, detail.ID))
+}
+
+// productRowWithRating 行装配的本体：评分由调用方给 —— 详情页 / 编辑页给 ratingsOf 的
+// 明细 + 投影值（明细行两者都渲染），列表页给批量聚合出来的投影值（见 productRowFromList）。
+//
+// **本函数不取任何数**：签名里没有 projectID，也没有 model 调用 —— 「这一行要什么原料」
+// 由调用方批量备齐，装配只做纯计算。
+func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.CategoryResp,
+	brands []*productdto.BrandResp, tags []*productdto.TagResp,
+	warehouses []productdto.WarehouseOptionView, detail *productdto.ProductResp,
+	rating *productdto.RatingResp) *productdto.ProductRow {
+	if detail == nil {
+		return nil
+	}
+	if rating == nil {
+		rating = &productdto.RatingResp{}
+	}
 	ratingRows := make([]map[string]any, 0, len(rating.Items))
 	for _, it := range rating.Items {
 		ratingRows = append(ratingRows, map[string]any{
@@ -112,6 +132,99 @@ func (s *Service) productRow(ctx context.Context, selected string, flat []*produ
 		// 库存列（docs/14 §1.4）：三态 + 分仓明细。真源是 inventory_stocks，
 		// 这里只是把服务端算好的聚合结果整理成页面要的形状。
 		Stock: productStockCell(detail, warehouses),
+	}
+}
+
+// productRowFromList 列表页的一行：原料是**列表项**（s.List 的分页结果）+ 批量补齐的
+// 挂载事实 + 批量评分投影 —— 全程不取商品详情。
+//
+// 列表项已经带出汇总段要的全部原料：名称 / 状态 / 价格区间（从变体派生；容器价由
+// applyRowFacts 按同一规则补）/ 变体数 / 库存三态（s.List 里 fillProductStock 批量填）；
+// 分类·品牌·标签的**名字**来自本页一次读的分类树与品牌·标签清单，行里只需要挂载 id。
+//
+// 明细段（Subtitle / Unit / DescriptionHTML / Variants / Attributes / Ratings 明细 /
+// PrimaryOptions / BrandOptions）在列表路径**刻意为空**：列表模板（products.html）只读
+// 汇总段，为它加载完整详情对象正是这次要消掉的开销（见 dto.ProductRow 的两段划分）。
+func (s *Service) productRowFromList(ctx context.Context, flat []*productdto.CategoryResp,
+	brands []*productdto.BrandResp, tags []*productdto.TagResp,
+	warehouses []productdto.WarehouseOptionView, item *productdto.ProductResp,
+	agg productmodel.RatingAgg) *productdto.ProductRow {
+	if item == nil {
+		return nil
+	}
+	return s.productRowWithRating(ctx, flat, brands, tags, warehouses, item, ratingRespOfAgg(agg))
+}
+
+// ratingRespOfAgg 把批量聚合结果投影成行装配要的评分形状（**只填投影值，明细为空**）。
+//
+// 不在 map 里（agg 是零值）= 一条评分都没有 ⇒ HasRating=false、RatingCount=0 ——
+// 与 ratingsOf 读不到时的零值渲染逐字一致（模板据此把评分列显示成 —）。
+func ratingRespOfAgg(agg productmodel.RatingAgg) *productdto.RatingResp {
+	return &productdto.RatingResp{Rating: agg.Avg, RatingCount: agg.Count, HasRating: agg.Count > 0}
+}
+
+// productRowsFromList 把一页列表项装配成成品行（列表页唯一的行入口）。
+//
+// 两条批量读都在这里、各一次：挂载事实（ListRowFacts）与评分投影
+// （RatingSummariesByProducts）。二者任一失败**返回 error，不吞** —— 页面据此判 500，
+// 而不是把「读不到」渲染成「暂无评分」（dd.txt 3.5 验收表最后一行）。
+//
+// 挂载事实缺行时同样判失败：列表项刚读过而事实读不到，与「逐行取详情失败」是同一档
+// 静默失效（少一行却仍写着「共 N 条」，用户据此以为商品被删了）。
+func (s *Service) productRowsFromList(ctx context.Context, projectID string, flat []*productdto.CategoryResp,
+	brands []*productdto.BrandResp, tags []*productdto.TagResp,
+	warehouses []productdto.WarehouseOptionView, items []*productdto.ProductResp) ([]productdto.ProductRow, error) {
+	rows := make([]productdto.ProductRow, 0, len(items))
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		if item != nil && item.ID != "" {
+			ids = append(ids, item.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return rows, nil
+	}
+	facts, err := s.m.ListRowFacts(ctx, projectID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("读取商品列表行的挂载事实失败：%w", err)
+	}
+	ratings, err := s.m.RatingSummariesByProducts(ctx, projectID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("读取商品列表行的评分失败：%w", err)
+	}
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		if _, ok := facts[item.ID]; !ok {
+			return nil, fmt.Errorf("商品 %s 的列表行事实为空", item.ID)
+		}
+		applyRowFacts(item, facts[item.ID])
+		if row := s.productRowFromList(ctx, flat, brands, tags, warehouses, item, ratings[item.ID]); row != nil {
+			rows = append(rows, *row)
+		}
+	}
+	return rows, nil
+}
+
+// applyRowFacts 把批量事实补到列表项上（行装配的原料）。
+//
+// 只补**列表行真正缺的那几列**：s.List 的列表项已经带出价格区间（从变体派生）与库存三态。
+// 容器价（bundle）是唯一的例外：商品侧只有一个对外价格 = products.default_price，
+// 而列表项的 Select 里没有这一列、applyPriceRange 的 bundle 分支又只认它 —— 这里按
+// **同一规则**补一次。两处口径是否一致由 product_list_row_parity_test.go 对账
+// applyPriceRange 钉住：改了一处、另一处不改就变红。
+func applyRowFacts(item *productdto.ProductResp, facts productmodel.ProductRowFacts) {
+	if item == nil {
+		return
+	}
+	item.CategoryIDs = decodeStrings(facts.CategoryIDs)
+	item.TagIDs = decodeStrings(facts.TagIDs)
+	item.PrimaryCategoryID = facts.PrimaryCategoryID
+	item.BrandID = facts.BrandID
+	if item.Type == productmodel.TypeBundle && facts.DefaultPrice != nil {
+		item.DefaultPrice = facts.DefaultPrice
+		item.PriceMin, item.PriceMax = *facts.DefaultPrice, *facts.DefaultPrice
 	}
 }
 

@@ -14,6 +14,7 @@ package productmodel
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -73,6 +74,72 @@ func (m *Model) ListRatings(ctx context.Context, productID, projectID string) (l
 			Order("create_time DESC, id DESC").Find(&list).Error
 	})
 	return list, err
+}
+
+// RatingAgg 一个商品的评分投影（批量读回后按商品聚合的结果）。
+//
+// 与 RatingSummary 的关系是「同一个函数算出来的值」：批量路径按商品分组后仍然调
+// RatingSummary，不做 SQL 侧 AVG —— 理由见 RatingSummariesByProducts。
+type RatingAgg struct {
+	// Avg 平均分（与 RatingSummary 的逐条累加逐字一致）。
+	Avg float64
+	// Count 评分条数（恒 > 0；**无评分的商品不进 map**）。
+	Count int
+}
+
+// RatingSummariesByProducts 一次读回若干商品的评分投影（商品列表页消 N+1 用）。
+//
+// **为什么聚合放在 Go 侧而不是 SQL 的 GROUP BY + AVG**：口径会漂。实测（310 组
+// score numeric(3,2) 样本，对照 RatingSummary 的逐条累加）：AVG(score)::float8 与逐条
+// 累加有 76 例浮点不等、其中 **8 例两位小数展示不同**（例：4.49 + 1.90 —— 逐条
+// 3.1950000000000003 展示 3.20，SQL 侧 3.1949999999999998 展示 3.19）。同一个商品
+// 在列表页与详情页会因此显示不同的平均分，而两边各自看都对。所以这里只做
+// 「一次批量读取 + 按商品分组」，聚合一律交回 RatingSummary（唯一口径）。
+// 代价是回传本页商品的评分明细行：评分是运营补录数据、product_id 上有索引，
+// 量级与本页商品数同阶（也与详情页读一个商品的明细同阶）。
+//
+// 语义：
+//   - productIDs 为空（或去掉空串后为空）→ 直接返回空 map，不发 IN ()；
+//   - 无评分的商品**不在 map 里**（调用方按 RatingAgg{} 处理 ⇒ HasRating=false，
+//     与 ratingsOf 的零值渲染一致）；有一条 0 分的评分则 Count=1、Avg=0；
+//   - 项目隔离与 ListRatings 同一份：同一张表（product_ratings）+ rls.InProjectScope；
+//   - 任一批次失败返回 error（**不返回半截 map 冒充成功**）—— 列表页据此判 500，
+//     而不是把「读不到」渲染成「暂无评分」。
+func (m *Model) RatingSummariesByProducts(ctx context.Context, projectID string, productIDs []string) (map[string]RatingAgg, error) {
+	ids := make([]string, 0, len(productIDs))
+	for _, id := range productIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	out := make(map[string]RatingAgg, len(ids))
+	for start := 0; start < len(ids); start += idBatchSize {
+		end := min(start+idBatchSize, len(ids))
+		var rows []*ProductRatingEntity
+		if err := rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).Model(&ProductRatingEntity{}).
+				// project_id 谓词显式写进 WHERE（与 rls.InProjectScope 叠加，不是替代）：
+				// 策略在换非超级角色之前不生效（AGENTS.md DB-009），只靠作用域时本连接读得到
+				// 别的工程的评分行 —— 判据见 product_rating_summary_batch_test.go 的跨工程用例。
+				Where("project_id = ? AND product_id IN ?", projectID, ids[start:end]).
+				// 组内顺序与 ListRatings 逐字一致（create_time DESC, id DESC）：
+				// 浮点累加与顺序有关，换序会让同一商品的均值在两个路径上差 1 ulp。
+				Order("product_id, create_time DESC, id DESC").
+				Find(&rows).Error
+		}); err != nil {
+			return nil, err
+		}
+		grouped := make(map[string][]ProductRatingEntity, len(rows))
+		for _, row := range rows {
+			grouped[row.ProductID] = append(grouped[row.ProductID], *row)
+		}
+		for productID, items := range grouped {
+			if avg, count, ok := RatingSummary(items); ok {
+				out[productID] = RatingAgg{Avg: avg, Count: count}
+			}
+		}
+	}
+	return out, nil
 }
 
 // CreateRating 写入一条评分（projectID 由调用方从商品带出，保持与商品同工程）。
