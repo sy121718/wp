@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"go_wp/internal/adminui"
 	contentcontract "go_wp/internal/module/content/contract"
-	contentdto "go_wp/internal/module/content/dto"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	pagecontract "go_wp/internal/module/page/contract"
@@ -18,25 +17,40 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	ctoutbound "go_wp/internal/module/product/outbound/contenttemplate"
 	dtoutbound "go_wp/internal/module/product/outbound/detailtemplate"
+	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
 	seoscore "go_wp/internal/seo"
 	"go_wp/internal/seo/scoring"
 	"go_wp/internal/shell"
-	"go_wp/internal/siteurl"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-// product_detail_template.go — 商品详情页模板（issue #14）与 SEO 评分（同一屏上的两块）。
+// product_detail_template.go — 商品详情页模板（issue #14）与 SEO 评分的 **HTTP 层**。
 //
-// 为什么这两件事同文件：详情页模板决定前台形态，评分给这份形态打分，两者读的是同一份
-// 详情页文档与同一批实体（商品 / 分类 / 品牌），改一处常要同时看另一处。
-// 评分本体在 internal/seo/scoring，这里只做输入与视图。
+// 这两块过去同文件、且逻辑也都在这里；拆分后本文件只做 HTTP 该做的事：请求绑定、
+// 权限入口（路由在 product_router.go）、调用 service 用例、HTTP 错误映射与响应渲染。
+// 两块能力的实现位置：
+//
+//	· 详情页模板：模板文档组装 / 首次发布 / 切换模板 / 改 URL / 预览编排 →
+//	  internal/module/product/service/product_detail_template_ops.go；
+//	  整页读模型 → internal/module/product/service/product_detail_template_page.go
+//	  （两个文件名像、职责不同，改之前看各自文件头）。
+//	· SEO 评分：输入构造、标题索引、算分与冲突清单的组织 →
+//	  internal/module/product/service/product_seo_score.go。
+//
+// 评分规则本体在 internal/seo/scoring：service 那一侧只做**输入**，本文件只做**视图**。
+
+// 编译期断言：service 用例声明的两个窄端口由本包这两个契约面满足 ——
+// 端口是「评分输入 / 模板编排真正需要什么」的形状，契约改宽改窄时这里先报错。
+var (
+	_ productservice.ProductReadPort            = (productcontract.ProductService)(nil)
+	_ productservice.DetailTemplateInstancePort = (ProductDetailTemplatePort)(nil)
+)
 
 var errModeUnavailable = errors.New("详情页双轨能力未装配")
 
@@ -221,6 +235,17 @@ func (h *productPageHandle) SetDetailTemplateDeps(templates contenttemplatecontr
 	}
 }
 
+// detailTemplateDeps 把装配期注入的依赖打成 service 用例的入参（写动作 / 预览共用）。
+//
+// 为什么不直接让 handler 持有 service 实例：本包测试用 fake 实现 productcontract.ProductService
+// 构造 handler（NewProductPageHandle(fake, nil, nil)），handler 一旦要求具体的 service 实例，
+// 这些 fake 场景就全部用不了。装配照旧在 product_router.go，这里只把同一批依赖换个形状交出去。
+func (h *productPageHandle) detailTemplateDeps() productservice.DetailTemplateDeps {
+	return productservice.DetailTemplateDeps{
+		Templates: h.templates, Instances: h.instances, Products: h.products, Projects: h.projects,
+	}
+}
+
 // productDetailTemplatePageTemplate 这一屏的模板（整页 GET，成功 / 失败 / 未装配同模板同页壳）。
 const productDetailTemplatePageTemplate = "admin/product/product_detail_template.html"
 
@@ -310,35 +335,14 @@ func (h *productPageHandle) ProductDetailTemplateCreate(c *gin.Context) {
 			productDetailTemplateNameRequiredMsg)
 		return
 	}
-	doc, err := h.templateDocument(c.Request.Context(), projectID, copyFrom)
-	if err != nil {
-		productDetailTemplateJump(c, false, projectID, productID, detailTemplateTemplateMsg(c, err))
-		return
-	}
-	if _, err = h.templates.Create(c.Request.Context(), &contenttemplatecontract.CreateReq{
-		EntityType: productcontract.EntityTypeProduct, Name: name, DraftDocument: doc, ProjectID: projectID,
-	}); err != nil {
+	// 顺序与拆分前一致（dd 6.3 ⑤）：**先取文档、再建模板**（取不到复制来源就不建空的）。
+	// 两处失败走同一张 contenttemplate 文案表，故 service 只回一个 error。
+	if err := productservice.CreateDetailTemplate(c.Request.Context(), h.detailTemplateDeps(),
+		projectID, name, copyFrom); err != nil {
 		productDetailTemplateJump(c, false, projectID, productID, detailTemplateTemplateMsg(c, err))
 		return
 	}
 	productDetailTemplateJump(c, true, projectID, productID, productActionDoneMsg)
-}
-
-// templateDocument 取「复制来源」的模板文档：指定模板优先，缺省取该类型默认模板。
-func (h *productPageHandle) templateDocument(ctx context.Context, projectID, templateID string) (doc json.RawMessage, err error) {
-	id := strings.TrimSpace(templateID)
-	if id == "" {
-		tpl, rerr := h.templates.ResolveTemplate(ctx, productcontract.EntityTypeProduct)
-		if rerr != nil {
-			return nil, rerr
-		}
-		id = tpl.TemplateID
-	}
-	res, gerr := h.templates.Get(ctx, &contenttemplatecontract.GetReq{ID: id})
-	if gerr != nil {
-		return nil, gerr
-	}
-	return res.DraftDocument, nil
 }
 
 // ProductDetailTemplatePublish POST /admin/products/template/publish：
@@ -350,23 +354,21 @@ func (h *productPageHandle) ProductDetailTemplatePublish(c *gin.Context) {
 	}
 	projectID := c.PostForm("projectId")
 	productID := c.PostForm("productId")
-	req := &presentationcontract.CreateInstanceReq{
-		ProjectID: projectID, EntityType: productcontract.EntityTypeProduct, EntityID: productID,
-		TemplateID: strings.TrimSpace(c.PostForm("templateId")),
-		URLPath:    strings.TrimSpace(c.PostForm("urlPath")),
-	}
-	if req.URLPath == "" {
-		product, err := h.products.Get(c.Request.Context(), &productdto.GetReq{ID: productID})
-		if err != nil {
-			productDetailTemplateJump(c, false, projectID, productID, productErrMsg(c, err))
+	// 编排（URLPath 为空时先按站点 URL 规则派生路径）在 service，顺序与拆分前一致（dd 6.3 ⑤⑥）：
+	// 先取商品拿 slug，取不到就直接报错，不继续建实例。
+	// 路径派生口径见 internal/siteurl：这里只是把表单预填好，用户填了就用用户的。
+	err := productservice.PublishDetailTemplate(c.Request.Context(), h.detailTemplateDeps(),
+		projectID, productID,
+		strings.TrimSpace(c.PostForm("templateId")), strings.TrimSpace(c.PostForm("urlPath")))
+	if err != nil {
+		// 两类失败走**两张不同的文案表**：取商品失败（product 的 enums）与建实例失败
+		// （presentation 的 enums）拆分前各自调用 productErrMsg / detailTemplateFacingMsg。
+		// 合成一句会把「商品不存在」说成「这个商品还没有详情页实例」—— 用户据此会去发布一次。
+		var lookup *productservice.DetailTemplateProductLookupError
+		if errors.As(err, &lookup) {
+			productDetailTemplateJump(c, false, projectID, productID, productErrMsg(c, lookup.Err))
 			return
 		}
-		// 路径按站点 URL 规则派生（SiteSettings.urlPatterns，未配置则用 siteurl 的默认模式）：
-		// 这里只是把表单预填好，用户填了就用用户的 —— 见 internal/siteurl 的三条口径。
-		req.URLPath = siteurl.DetailPathForProject(c.Request.Context(), h.projects, projectID,
-			siteurl.KindProduct, product.Slug, productID)
-	}
-	if _, err := h.instances.CreateInstance(c.Request.Context(), req); err != nil {
 		productDetailTemplateJump(c, false, projectID, productID, detailTemplateFacingMsg(c, err))
 		return
 	}
@@ -391,12 +393,10 @@ func (h *productPageHandle) ProductDetailTemplateUpdateURL(c *gin.Context) {
 			productDetailTemplatePathRequiredMsg)
 		return
 	}
-	if _, err := h.instances.UpdateURL(c.Request.Context(), &presentationcontract.UpdateURLReq{
-		EntityType:   productcontract.EntityTypeProduct,
-		EntityID:     productID,
-		NewPath:      newPath,
-		WithRedirect: c.PostForm("withRedirect") != "",
-	}); err != nil {
+	// 规范化、唯一性检查与冲突行为都在 presentation 侧（service 只透传 NewPath / WithRedirect），
+	// 因此这一条与拆分前逐字一致（dd 6.3 ⑥）。
+	if err := productservice.UpdateDetailTemplateURL(c.Request.Context(), h.instances, productID, newPath,
+		c.PostForm("withRedirect") != ""); err != nil {
 		productDetailTemplateJump(c, false, projectID, productID, detailTemplateFacingMsg(c, err))
 		return
 	}
@@ -412,9 +412,8 @@ func (h *productPageHandle) ProductDetailTemplateApply(c *gin.Context) {
 	}
 	projectID := c.PostForm("projectId")
 	productID := c.PostForm("productId")
-	if _, err := h.instances.Rebuild(c.Request.Context(), &presentationcontract.RebuildReq{
-		EntityID: productID, TemplateID: strings.TrimSpace(c.PostForm("templateId")),
-	}); err != nil {
+	if err := productservice.ApplyDetailTemplate(c.Request.Context(), h.instances, productID,
+		strings.TrimSpace(c.PostForm("templateId"))); err != nil {
 		productDetailTemplateJump(c, false, projectID, productID, detailTemplateFacingMsg(c, err))
 		return
 	}
@@ -431,10 +430,8 @@ func (h *productPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 		h.detailTemplateDepsMissingRedirect(c)
 		return
 	}
-	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationcontract.PreviewInstanceReq{
-		ProjectID: c.PostForm("projectId"), EntityType: productcontract.EntityTypeProduct,
-		EntityID: c.PostForm("productId"), TemplateID: strings.TrimSpace(c.PostForm("templateId")),
-	})
+	res, err := productservice.PreviewDetailTemplate(c.Request.Context(), h.instances,
+		c.PostForm("projectId"), c.PostForm("productId"), strings.TrimSpace(c.PostForm("templateId")))
 	if err != nil {
 		// 「预览失败」对作者是可用信息，原因（模板不存在 / 文档非法 / 渲染出错）只进日志。
 		adminui.PageErrorBadRequest(c, "product_detail_template", err)
@@ -604,18 +601,17 @@ func (h *productPageHandle) detailTemplatePanel(ctx context.Context, selected, p
 }
 
 // ==========================================================================
-// SEO 评分：行内面板、抽屉与三个实体的取数（商品 / 分类 / 品牌）。
+// SEO 评分：行内面板、抽屉与三个实体的取数入口（商品 / 分类 / 品牌）。
 //
-// 三个 POST 端点共用 entityScoreInputOf 一份取数口径 —— 抽屉与行内按钮各写一份的下场是
-// 「同一个商品在两处分数不同」。评分本体在 internal/seo/scoring，这里只做输入与视图。
+// 取数与算分都在 productservice（product_seo_score.go 的 SeoScoreInputOf / SeoTitleIndex /
+// SeoEntityScore）—— 三个 POST 端点与抽屉共用**同一份**取数口径，抽屉与行内按钮各写一份的
+// 下场是「同一个商品在两处分数不同」。本文件只剩请求绑定、取词、调用与渲染。
 
 // 评分等级文案（颜色 → 当前语言）的**唯一映射**在 seoscore.ScoreGradeText
-//（internal/seo/score_grade.go），调用点在 product_seo_score_page.go 的
-// entityScoreView。本文件此前自带一份 key + 中文兜底表（与本模块 enums 里的
-// admin.seo.grade.* 常量配套），已按「同一批展示文案只能有一份定义」收编 ——
-// 收编后 product 取到的是 content / project 用的同一批词条 admin.seo.score.grade.*。
-
-// seo_entity_score_input.go - 实体评分的输入素材提取（标题、正文纯文本、图片与分类名）。
+// （internal/seo/score_grade.go），调用点在下面的 entityScoreView。本文件此前自带一份
+// key + 中文兜底表（与本模块 enums 里的 admin.seo.grade.* 常量配套），已按「同一批展示文案
+// 只能有一份定义」收编 —— 收编后 product 取到的是 content / project 用的同一批词条
+// admin.seo.score.grade.*。
 // ==========================================================================
 const (
 	MsgProductsTitle = "MsgProductsTitle"
@@ -625,13 +621,6 @@ const (
 func requestScoreLang(c *gin.Context) string {
 	return response.RequestLanguage(c)
 }
-
-// seoTitleIndexSize 标题索引每类实体的取样上限。
-//
-// 「编辑期轻量版」的重点是点一下就有结果（一次列表查询，不是遍历产物文件）。
-// 超过上限时商品一侧由 service 按自己的分页上限收敛 —— 这点在注释里写明，
-// 因为「索引不完整」会让冲突清单漏报，而漏报是检查类功能最不能有的失效模式。
-const seoTitleIndexSize = 100
 
 // SetSeoTitleSources 注入全站标题索引所需的另外两份只读契约（装配期调用，可空）。
 //
@@ -643,10 +632,39 @@ func (h *productPageHandle) SetSeoTitleSources(pages pagecontract.PageService, c
 	h.seoContents = contents
 }
 
+// seoTitleSources 标题索引所需的另外两份只读契约（未注入时是零值 = 索引退化成三域）。
+func (h *productPageHandle) seoTitleSources() productservice.SeoTitleExtraSources {
+	return productservice.SeoTitleExtraSources{Pages: h.seoPages, Contents: h.seoContents}
+}
+
+// scoreInputOf 取评分输入 —— 本包唯一的取数入口（三个 POST 端点与抽屉共用）。
+//
+// 取数与算分都在 productservice（SeoScoreInputOf）：抽屉与行内按钮各写一份取数口径的下场
+// 是「同一个商品在两处分数不同」。这里只做 HTTP 该做的事：拿请求语言、把依赖交进去、
+// 把空态的词取好。
+//
+// in == nil 表示**没取到实体**：可能是数据缺失（没传 id / 库里没有），也可能是读取失败
+// （res.Err 非空）。两者的现状出口都是那句空态文案（与拆分前逐字一致），但**绝不是 0 分**；
+// 判据与将来换出口（例如读取失败回 500）的位置都在 service 的 SeoScoreInputResult 注释里。
+func (h *productPageHandle) scoreInputOf(c *gin.Context, kind scoring.PageKind,
+	id, projectID string) (in *scoring.EntityPageInput, selfID string, emptyView productdto.ScoreView) {
+	res := productservice.SeoScoreInputOf(c.Request.Context(), h.products, h.instances,
+		kind, id, projectID, requestScoreLang(c))
+	if res.Input == nil {
+		return nil, "", scoreEmptyView(c, res.Empty)
+	}
+	return res.Input, res.SelfID, productdto.ScoreView{}
+}
+
+// scoreEmptyView 空态片段视图：文案是「key + 中文兜底」的事实（service 给出），取值在 HTTP 层。
+func scoreEmptyView(c *gin.Context, empty productservice.SeoScoreEmpty) productdto.ScoreView {
+	return productdto.ScoreView{Empty: shell.TranslateFor(c)(empty.Key, empty.Fallback)}
+}
+
 // ProductScorePanel 商品详情页的编辑期评分（POST /admin/products/seo-score）。
 func (h *productPageHandle) ProductScorePanel(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	in, selfID, emptyView := h.entityScoreInputOf(c.Request.Context(), c, scoring.KindProduct,
+	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindProduct,
 		strings.TrimSpace(c.PostForm("productId")), projectID)
 	if in == nil {
 		// 判据是 in == nil（「没取到实体」），**不是** emptyView.OK ——
@@ -660,7 +678,7 @@ func (h *productPageHandle) ProductScorePanel(c *gin.Context) {
 // ProductCategoryScorePanel 商品分类页的编辑期评分（POST /admin/product-categories/seo-score）。
 func (h *productPageHandle) ProductCategoryScorePanel(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	in, selfID, emptyView := h.entityScoreInputOf(c.Request.Context(), c, scoring.KindCategory,
+	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindCategory,
 		strings.TrimSpace(c.PostForm("id")), projectID)
 	if in == nil {
 		// 判据是 in == nil（「没取到实体」），**不是** emptyView.OK ——
@@ -674,7 +692,7 @@ func (h *productPageHandle) ProductCategoryScorePanel(c *gin.Context) {
 // ProductBrandScorePanel 品牌页的编辑期评分（POST /admin/product-brands/seo-score）。
 func (h *productPageHandle) ProductBrandScorePanel(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	in, selfID, emptyView := h.entityScoreInputOf(c.Request.Context(), c, scoring.KindBrand,
+	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindBrand,
 		strings.TrimSpace(c.PostForm("id")), projectID)
 	if in == nil {
 		// 判据是 in == nil（「没取到实体」），**不是** emptyView.OK ——
@@ -686,11 +704,14 @@ func (h *productPageHandle) ProductBrandScorePanel(c *gin.Context) {
 }
 
 // entityScoreViewOf 算分 + 查 title 重复 → 片段视图（三个 POST 端点与抽屉共用同一段流程）。
+//
+// 算分与冲突判定本身都在 productservice（SeoEntityScore / SeoTitleIndex）：
+// 这里只把请求侧的取词函数与依赖交进去，再组装片段视图。
 func (h *productPageHandle) entityScoreViewOf(ctx context.Context, c *gin.Context,
 	in *scoring.EntityPageInput, projectID, selfID string) productdto.ScoreView {
-	res := scoring.ScoreEntityPage(in)
 	tr := shell.TranslateFor(c)
-	dups := scoring.DuplicateTitles(scoring.EntityTitle(in), h.seoTitleIndex(ctx, projectID, tr), selfID)
+	res, dups := productservice.SeoEntityScore(in,
+		productservice.SeoTitleIndex(ctx, h.products, h.seoTitleSources(), projectID, tr), selfID)
 	return entityScoreView(tr, in, res, dups)
 }
 
@@ -773,221 +794,6 @@ func entityScoreView(tr func(key, fallback string) string, in *scoring.EntityPag
 	return sv
 }
 
-// seoTitleIndex 同工程已发布 / 已有内容的标题索引（审计 SEO-018 编辑期轻量版）。
-//
-// 每类实体各一次列表查询（商品 / 分类 / 品牌 / 页面 / 文章），不遍历产物文件 ——
-// 那是发布侧体检（SEO-019）的活，编辑期要的是点一下就能出结果。
-//
-// 与发布侧对齐的是**结论形状**（列出全部冲突页面），不是数据来源：发布侧读的是真正
-// 服务出去的 <title>，这里读的是实体字段（写之前就得能提示）。两者的差异写在
-// scoring.DuplicateTitles 的注释里，改任一处都要一起看。
-//
-// 「已发布」的判据按实体能力各自取：
-//   - 商品：status=published（草稿商品还没有线上页面，拿它判重复会让运营被一堆
-//     没上架的东西挡住）；
-//   - 分类 / 品牌：它们是分类法，没有发布状态，随商品上线 —— 全量参与比对；
-//   - 页面：草稿文档里看不出发布与否，按全部页面参与（宁可多提示一次，
-//     也不要漏掉一个即将上线的重复标题）。
-func (h *productPageHandle) seoTitleIndex(ctx context.Context, projectID string,
-	tr func(key, fallback string) string) []scoring.TitleEntry {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return nil
-	}
-	var out []scoring.TitleEntry
-	if list, err := h.products.List(ctx, &productdto.ListReq{
-		ProjectID: projectID, Status: productenums.StatusPublished, Size: seoTitleIndexSize,
-	}); err == nil {
-		for _, p := range list {
-			if p == nil {
-				continue
-			}
-			out = append(out, scoring.TitleEntry{
-				// 标题就是商品名（2026-09-30 合并后口径）：唯一性检查必须拿**会发布出去
-				// 的那个标题**比对，再读 seo_title 只会拿库里的残留旧值去比。
-				Title: p.Name,
-				Page:  slashSlug(p.Slug),
-				ID:    p.ID,
-			})
-		}
-	}
-	if cats, err := h.flatCategories(ctx, projectID); err == nil {
-		for _, cat := range cats {
-			if cat == nil {
-				continue
-			}
-			out = append(out, scoring.TitleEntry{
-				Title: cat.Name,
-				Page:  slashSlug(cat.Slug),
-				ID:    cat.ID,
-			})
-		}
-	}
-	if brands, err := h.listBrands(ctx, projectID); err == nil {
-		for _, b := range brands {
-			if b == nil {
-				continue
-			}
-			out = append(out, scoring.TitleEntry{
-				Title: b.Name,
-				Page:  slashSlug(b.Slug),
-				ID:    b.ID,
-			})
-		}
-	}
-	// 页面与文章（可空注入）：两者都是「同一个站点的其它页面」，缺了它们
-	// 跨内容的重复标题检不出来 —— 但缺依赖不该让评分不可用，故按可选处理。
-	if h.seoPages != nil {
-		if drafts, err := h.seoPages.ListDrafts(ctx); err == nil {
-			for _, d := range drafts {
-				if d.ProjectID != projectID {
-					continue
-				}
-				if title := pageDraftTitle(d.DraftDocument); title != "" {
-					out = append(out, scoring.TitleEntry{Title: title, Page: slashSlug(d.DraftPath), ID: d.ID})
-				}
-			}
-		}
-	}
-	if h.seoContents != nil {
-		if rows, err := h.seoContents.List(ctx, &contentdto.ListReq{EntityType: "article", Limit: seoTitleIndexSize}); err == nil {
-			for _, r := range rows {
-				if r == nil || r.Data == nil {
-					continue
-				}
-				// 文章的 SEO 标题即标题（2026-09-30 合并）：不再优先读 seoTitle。
-				title := contentText(r.Data, "title")
-				if title == "" {
-					continue
-				}
-				// contents 列表接口没有工程过滤参数，标题索引据此标注来源：
-				// 多工程部署时别的工程的文章也会进这份索引，宁可报一次重复让人核对，
-				// 也好过因为查不到而假报「没有重复」。
-				out = append(out, scoring.TitleEntry{
-					Title: title,
-					Page: i18n.FillTranslate(tr, productenums.SEOIndexArticle, "文章 {slug}",
-						map[string]string{"slug": r.Slug}),
-					ID: r.ID,
-				})
-			}
-		}
-	}
-	return out
-}
-
-// instancePath 取实体详情页实例的线上路径（未注入实例契约 / 未发布 → 空串）。
-func (h *productPageHandle) instancePath(ctx context.Context, entityType, entityID string) string {
-	if h.instances == nil || strings.TrimSpace(entityID) == "" {
-		return ""
-	}
-	inst, err := h.instances.GetByEntity(ctx, &presentationcontract.GetByEntityReq{
-		EntityType: entityType, EntityID: entityID,
-	})
-	if err != nil || inst == nil {
-		return ""
-	}
-	return strings.TrimSpace(inst.URLPath)
-}
-
-// entityScoreInputOf 按实体类型取数并构造评分输入。
-//
-// 三个 POST 端点共用这一份：同一个实体不该有两种取数口径（抽屉与行内按钮各写一份，
-// 下场是「同一个商品在两处分数不同」）。
-//
-// kind 就是 scoring.PageKind（「用哪套尺子」）：取值不在这里另立一份常量 ——
-// 控制器此前自带 scoreKindProduct / Category / Brand 三个字符串，与 scoring.Kind* 逐字同值，
-// 改一处另一处静默失配。缺实体 id 时的空态文案走 productenums.ScoreMissingEntityLabel。
-//
-// 第三个返回值是**空态视图**（OK=false，Empty 已取好词）：非 OK 时调用方直接渲染它 ——
-// 三个端点因此共用同一条失败路径，不必各自拼一句文案。
-func (h *productPageHandle) entityScoreInputOf(ctx context.Context, c *gin.Context,
-	kind scoring.PageKind, id, projectID string) (in *scoring.EntityPageInput, selfID string, emptyView productdto.ScoreView) {
-	tr := shell.TranslateFor(c)
-	emptyOf := func(key, fallback string) productdto.ScoreView { return productdto.ScoreView{Empty: tr(key, fallback)} }
-
-	if id == "" {
-		// 缺实体 id 的空态：页型 → 文案事实的映射在 enums（控制器不挑文案）。
-		key, fallback := productenums.ScoreMissingEntityLabel(string(kind))
-		return nil, "", emptyOf(key, fallback)
-	}
-
-	switch kind {
-	case scoring.KindCategory:
-		node, err := h.products.GetCategory(ctx, &productdto.GetCategoryReq{ID: id})
-		if err != nil || node == nil {
-			return nil, "", emptyOf(productenums.SEOEmptyCategoryUnreadable, "读不到这个分类，无法评分")
-		}
-		// SEO 标题 / 描述与「分类名 / 分类描述」合并（2026-09-30，与商品同口径）：
-		// 分类名即 <title>、分类描述即 meta description。描述是富文本，先去掉标签
-		// 再喂给评分器 —— 否则 <p> 会被算进 meta 描述长度。
-		instPath := h.instancePath(ctx, productcontract.EntityTypeCategory, node.ID)
-		return &scoring.EntityPageInput{
-			Kind:           scoring.KindCategory,
-			Name:           node.Name,
-			Description:    stripEntityTags(node.Description),
-			SEOTitle:       node.Name,
-			SEODescription: stripEntityTags(node.Description),
-			Slug:           node.Slug,
-			URL:            firstNonEmptyString(instPath, slashSlug(node.Slug)),
-			Images:         singleImage(node.Image, "hero"),
-			ChildNames:     categoryChildNames(ctx, h, projectID, node.ID),
-			Locale:         requestScoreLang(c),
-			HasCanonical:   instPath != "",
-			HasSchema:      instPath != "",
-		}, node.ID, productdto.ScoreView{}
-
-	case scoring.KindBrand:
-		brand, err := h.products.GetBrand(ctx, &productdto.GetBrandReq{ID: id})
-		if err != nil || brand == nil {
-			return nil, "", emptyOf(productenums.SEOEmptyBrandUnreadable, "读不到这个品牌，无法评分")
-		}
-		// 同分类：品牌名即 <title>、品牌描述即 meta description（2026-09-30 合并）。
-		instPath := h.instancePath(ctx, productcontract.EntityTypeBrand, brand.ID)
-		return &scoring.EntityPageInput{
-			Kind:           scoring.KindBrand,
-			Name:           brand.Name,
-			Description:    stripEntityTags(brand.Description),
-			SEOTitle:       brand.Name,
-			SEODescription: stripEntityTags(brand.Description),
-			Slug:           brand.Slug,
-			URL:            firstNonEmptyString(instPath, slashSlug(brand.Slug)),
-			Images:         singleImage(brand.Logo, "hero"),
-			Locale:         requestScoreLang(c),
-			HasCanonical:   instPath != "",
-			HasSchema:      instPath != "",
-		}, brand.ID, productdto.ScoreView{}
-
-	default:
-		detail, err := h.products.Get(ctx, &productdto.GetReq{ID: id})
-		if err != nil || detail == nil {
-			return nil, "", emptyOf(productenums.SEOEmptyProductUnreadable, "读不到这个商品，无法评分")
-		}
-		// 线上路径与「产物是否已带 canonical / JSON-LD」是同一个问题的两面：
-		// 实例有线上路径 = 详情页真的发布过 = 构建期已注入这两样（presentation 的 applyEntitySEO）。
-		instPath := h.instancePath(ctx, productcontract.EntityTypeProduct, detail.ID)
-		return &scoring.EntityPageInput{
-			Kind:        scoring.KindProduct,
-			Name:        detail.Name,
-			Subtitle:    detail.Subtitle,
-			Description: entityPlainText(detail.Description),
-			// 评分与前台对齐（2026-09-30 合并）：商品名即 <title>、副标题即 meta description。
-			// 若这里仍读 seo_title/seo_description，评分看到的标题会和实际发布出去的**不是同一个**——
-			// 编辑改商品名、分数不动，是最难解释的一种不一致。
-			SEOTitle:       detail.Name,
-			SEODescription: detail.Subtitle,
-			Slug:           detail.Slug,
-			URL:            firstNonEmptyString(instPath, slashSlug(detail.Slug)),
-			Images:         productPageImages(detail),
-			SpecNames:      variationSpecNames(detail),
-			ChildNames:     productCategoryNames(detail),
-			Locale:         requestScoreLang(c),
-			// 未发布时判假：评分器只该显示编辑者能改的东西，而这两项要发布一次才会出现。
-			HasCanonical: instPath != "",
-			HasSchema:    instPath != "",
-		}, detail.ID, productdto.ScoreView{}
-	}
-}
-
 // EntitySeoDrawer 商品 SEO 评分抽屉片段（GET /admin/products/seo/drawer?productId=&project=）。
 //
 // 为什么只有商品走抽屉：抽屉基座（ui/drawer.js）是**单例** —— 打开新抽屉会替换当前那个。
@@ -1012,7 +818,7 @@ func (h *productPageHandle) EntitySeoDrawer(c *gin.Context) {
 		"TargetID":     "product-seo-score-" + id,
 		"HiddenFields": productScoreHiddenFields(id, projectID),
 	}
-	in, selfID, emptyView := h.entityScoreInputOf(c.Request.Context(), c, scoring.KindProduct, id, projectID)
+	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindProduct, id, projectID)
 	if in == nil {
 		// 读不到实体：仍给 200 + 片段（里面就是那句空态文案）—— 这不是「加载失败」，
 		// 抽屉的失败重试界面会把「这个商品读不到」伪装成网络问题。
@@ -1033,134 +839,12 @@ func productScoreHiddenFields(id, projectID string) []seoHiddenField {
 type seoHiddenField struct{ Name, Value string }
 
 // pageDraftTitle 页面草稿的 SEO 标题（settings.seo.title）。
-func pageDraftTitle(doc json.RawMessage) string {
-	if len(doc) == 0 {
-		return ""
-	}
-	var parsed struct {
-		Settings struct {
-			SEO struct {
-				Title string `json:"title"`
-			} `json:"seo"`
-		} `json:"settings"`
-	}
-	if err := json.Unmarshal(doc, &parsed); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(parsed.Settings.SEO.Title)
-}
-
-// contentText 取内容实体数据里的一个字符串字段（非字符串按空处理）。
-func contentText(data map[string]any, key string) string {
-	s, _ := data[key].(string)
-	return strings.TrimSpace(s)
-}
-
-// entityPlainText 商品描述（jsonb）→ 纯文本。
 //
-// 两种形态与构建期一致（{"html": "..."} 富文本 / JSON 字符串纯文本），
-// 去标签的理由与文章侧相同：把 <p> 当正文算进字数，一篇 300 字的描述会被算成 900。
-func entityPlainText(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var asMap map[string]any
-	if err := json.Unmarshal(raw, &asMap); err == nil {
-		if s, ok := asMap["html"].(string); ok {
-			return stripEntityTags(s)
-		}
-	}
-	var asString string
-	if err := json.Unmarshal(raw, &asString); err == nil {
-		return stripEntityTags(asString)
-	}
-	return ""
-}
+// 实现在 productservice（product_seo_score.go 的 PageDraftTitle），这里留一行委托：本包测试
+// 直接调用这个标识符（product_seo_score_test.go），同包改名等于改测试契约。
+func pageDraftTitle(doc json.RawMessage) string { return productservice.PageDraftTitle(doc) }
 
-var entityTagRe = regexp.MustCompile("<[^>]+>")
-
-// stripEntityTags 去 HTML 标签并压掉多余空白（只读展示与统计用，不承担清洗职责）。
-func stripEntityTags(s string) string {
-	if strings.TrimSpace(s) == "" {
-		return ""
-	}
-	return strings.TrimSpace(strings.Join(strings.Fields(entityTagRe.ReplaceAllString(s, " ")), " "))
-}
-
-// productPageImages 商品图集 → 评分图片项（首图按 hero、其余按 content，
-// alt 与 Images 逐位对应 —— 与构建期 imageAltsJSON 同一份数据）。
-func productPageImages(p *productdto.ProductResp) []scoring.Image {
-	if p == nil {
-		return nil
-	}
-	out := make([]scoring.Image, 0, len(p.Images))
-	for i, src := range p.Images {
-		if strings.TrimSpace(src) == "" {
-			continue
-		}
-		kind := "content"
-		if i == 0 {
-			kind = "hero"
-		}
-		alt := ""
-		if i < len(p.ImageAlts) {
-			alt = strings.TrimSpace(p.ImageAlts[i])
-		}
-		out = append(out, scoring.Image{Src: strings.TrimSpace(src), Alt: alt, Kind: kind})
-	}
-	return out
-}
-
-// singleImage 单图实体（分类图 / 品牌 logo）→ 评分图片项。
-func singleImage(src, kind string) []scoring.Image {
-	if strings.TrimSpace(src) == "" {
-		return nil
-	}
-	return []scoring.Image{{Src: strings.TrimSpace(src), Kind: kind}}
-}
-
-// variationSpecNames 参与变体的属性组名（详情页把它们渲染成分组小标题）。
-func variationSpecNames(p *productdto.ProductResp) []string {
-	if p == nil {
-		return nil
-	}
-	out := make([]string, 0, len(p.Attributes))
-	for _, a := range p.Attributes {
-		if a != nil && a.IsVariation && strings.TrimSpace(a.Name) != "" {
-			out = append(out, strings.TrimSpace(a.Name))
-		}
-	}
-	return out
-}
-
-// productCategoryNames 商品挂载的分类名（详情页的关联分区标题）。
-func productCategoryNames(p *productdto.ProductResp) []string {
-	if p == nil {
-		return nil
-	}
-	out := make([]string, 0, len(p.Categories))
-	for _, c := range p.Categories {
-		if c != nil && strings.TrimSpace(c.Name) != "" {
-			out = append(out, strings.TrimSpace(c.Name))
-		}
-	}
-	return out
-}
-
-// categoryChildNames 某分类的子分类名（列表页把子分类渲染成小节）。
+// entityPlainText 商品描述（jsonb）→ 纯文本（评分与前台展示口径一致）。
 //
-// 取不到（分类不存在 / 列表失败）返回 nil：少一个小标题只会让标题结构项如实报缺，
-// 不会让评分整体失败。
-func categoryChildNames(ctx context.Context, h *productPageHandle, projectID, id string) []string {
-	cats, err := h.flatCategories(ctx, projectID)
-	if err != nil {
-		return nil
-	}
-	out := make([]string, 0, 2)
-	for _, c := range cats {
-		if c != nil && c.ParentID == id && strings.TrimSpace(c.Name) != "" {
-			out = append(out, strings.TrimSpace(c.Name))
-		}
-	}
-	return out
-}
+// 同 pageDraftTitle：实现在 productservice.EntityPlainText，本处是给本包测试留的委托。
+func entityPlainText(raw json.RawMessage) string { return productservice.EntityPlainText(raw) }
