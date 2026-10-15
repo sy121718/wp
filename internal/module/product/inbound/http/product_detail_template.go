@@ -393,9 +393,11 @@ func (h *productPageHandle) ProductDetailTemplateUpdateURL(c *gin.Context) {
 			productDetailTemplatePathRequiredMsg)
 		return
 	}
-	// 规范化、唯一性检查与冲突行为都在 presentation 侧（service 只透传 NewPath / WithRedirect），
-	// 因此这一条与拆分前逐字一致（dd 6.3 ⑥）。
-	if err := productservice.UpdateDetailTemplateURL(c.Request.Context(), h.instances, productID, newPath,
+	// 规范化、唯一性检查与冲突行为都在 presentation 侧（service 只透传 projectID / NewPath /
+	// WithRedirect）。工程作用域必须由这里传下去：它来自表单里用户选中的工程，是页面上
+	// 「当前站点」的唯一来源，presentation 侧的「工程唯一时取该工程」兜底在多工程站点上
+	// 会落到另一个工程（改的是别的站点的路径，页面仍回成功）。
+	if err := productservice.UpdateDetailTemplateURL(c.Request.Context(), h.instances, projectID, productID, newPath,
 		c.PostForm("withRedirect") != ""); err != nil {
 		productDetailTemplateJump(c, false, projectID, productID, detailTemplateFacingMsg(c, err))
 		return
@@ -412,7 +414,8 @@ func (h *productPageHandle) ProductDetailTemplateApply(c *gin.Context) {
 	}
 	projectID := c.PostForm("projectId")
 	productID := c.PostForm("productId")
-	if err := productservice.ApplyDetailTemplate(c.Request.Context(), h.instances, productID,
+	// projectID 同 ProductDetailTemplateUpdateURL：工程作用域由页面传入，不走 presentation 的兜底。
+	if err := productservice.ApplyDetailTemplate(c.Request.Context(), h.instances, projectID, productID,
 		strings.TrimSpace(c.PostForm("templateId"))); err != nil {
 		productDetailTemplateJump(c, false, projectID, productID, detailTemplateFacingMsg(c, err))
 		return

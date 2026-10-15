@@ -18,6 +18,7 @@ package productservice
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -51,6 +52,18 @@ type DetailTemplateDeps struct {
 	Projects  siteurl.ProjectDetailReader                    // 站点 URL 规则（默认路径的派生依据）
 }
 
+// 两条防御性错误（任务 2）：契约上不该发生，一旦发生就是「实现违约 / 坏数据」——
+// 继续往下走要么 panic、要么把空文档写进库。这正是要拦的两种形态。
+//
+// 不用 enums 常量：这两个 key 不在 handler 的文案白名单里（它按 contenttemplate 的
+// 业务 key 映射），于是会落到共享归口文案 —— 用户看到「内部错误」，原文只进日志。
+var (
+	// errDetailTemplateNilGetResult 模板契约 Get 返回 (nil, nil)：下一行就会解引用 res.DraftDocument。
+	errDetailTemplateNilGetResult = errors.New("product: 模板契约 Get 返回空结果（nil, nil），取不到模板文档")
+	// errDetailTemplateEmptyDoc 复制来源的文档为空（空串 / 纯空白 / JSON null），拒绝建空模板。
+	errDetailTemplateEmptyDoc = errors.New("product: 复制来源的模板文档为空，拒绝建没有内容的模板")
+)
+
 // DetailTemplateDocument 取「复制来源」的模板文档：指定模板优先，缺省取该类型默认模板。
 func DetailTemplateDocument(ctx context.Context, templates contenttemplatecontract.ContentTemplateService,
 	templateID string) (doc json.RawMessage, err error) {
@@ -66,6 +79,11 @@ func DetailTemplateDocument(ctx context.Context, templates contenttemplatecontra
 	if gerr != nil {
 		return nil, gerr
 	}
+	// 契约上 Get 成功必给结果，(nil, nil) 属于实现违约。不拦这一条，下一行解引用
+	// res.DraftDocument 就是 panic —— 现场只剩一个栈，连「哪一步坏了」都读不出来。
+	if res == nil {
+		return nil, errDetailTemplateNilGetResult
+	}
 	return res.DraftDocument, nil
 }
 
@@ -79,10 +97,25 @@ func CreateDetailTemplate(ctx context.Context, deps DetailTemplateDeps, projectI
 	if err != nil {
 		return err
 	}
+	// 防坏数据，不改变非空路径的行为：HTTP 绑定层的 binding:"required" 只在绑定期生效，
+	// service 直调（本包测试、MCP 工具、后台脚本）不经它 —— 于是空文档会一路写进库，
+	// 表现为「模板建出来了，编辑器打开是一片空白」，而用户当时看到的是成功提示。
+	if detailTemplateDocEmpty(doc) {
+		return errDetailTemplateEmptyDoc
+	}
 	_, err = deps.Templates.Create(ctx, &contenttemplatecontract.CreateReq{
 		EntityType: productcontract.EntityTypeProduct, Name: name, DraftDocument: doc, ProjectID: projectID,
 	})
 	return err
+}
+
+// detailTemplateDocEmpty 文档是否为空内容（空串 / 纯空白 / JSON null）。
+//
+// 判据取「解出来的字节里没有内容」，不解析文档结构：文档语义校验是编辑器与
+// contenttemplate 契约的职责，这一层只拦「空文档落库」这一种坏数据。
+func detailTemplateDocEmpty(doc json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(doc))
+	return trimmed == "" || trimmed == "null"
 }
 
 // PublishDetailTemplate 首次为该商品建立发布实例并发布（可指定模板），激活静态产物。
@@ -127,13 +160,17 @@ func PublishDetailTemplate(ctx context.Context, deps DetailTemplateDeps, project
 //
 // 内容（商品字段、模板绑定、产物内容）完全不动 —— 路径是站点事实而不是内容的一部分：
 // 改它的代价是重建产物 + 处置旧链接，不是重新编辑商品。
-// 规范化、唯一性检查与冲突行为都在 presentation 侧（本函数只透传 NewPath / WithRedirect），
-// 因此这一条的行为与拆分前逐字一致。
+// 规范化、唯一性检查与冲突行为都在 presentation 侧（本函数只透传 projectID / NewPath / WithRedirect）。
+//
+// 工程作用域靠调用方传入，不依赖 presentation 侧的「工程唯一时取该工程」兜底：多工程站点上
+// 那一兜底会把实例定位与占用预检落到**另一个工程**，于是改的是别的站点的线上路径，
+// 而页面照样回「修改成功」。空串也原样透传 —— 挑工程不是 service 的事。
 func UpdateDetailTemplateURL(ctx context.Context, instances DetailTemplateInstancePort,
-	productID, newPath string, withRedirect bool) error {
+	projectID, productID, newPath string, withRedirect bool) error {
 	_, err := instances.UpdateURL(ctx, &presentationcontract.UpdateURLReq{
 		EntityType:   productcontract.EntityTypeProduct,
 		EntityID:     productID,
+		ProjectID:    projectID,
 		NewPath:      newPath,
 		WithRedirect: withRedirect,
 	})
@@ -141,10 +178,14 @@ func UpdateDetailTemplateURL(ctx context.Context, instances DetailTemplateInstan
 }
 
 // ApplyDetailTemplate 把商品切换（或确认）到选中的模板并重新发布 —— 产物随模板变化（验收 4）。
+//
+// 工程作用域同样靠调用方传入（同 UpdateDetailTemplateURL）：RebuildReq.ProjectID 空着时
+// presentation 走「工程唯一时取该工程」的兜底，多工程站点会重建别的工程的实例，
+// 用户看到「切换成功」而当前站点的产物没有变。
 func ApplyDetailTemplate(ctx context.Context, instances DetailTemplateInstancePort,
-	productID, templateID string) error {
+	projectID, productID, templateID string) error {
 	_, err := instances.Rebuild(ctx, &presentationcontract.RebuildReq{
-		EntityID: productID, TemplateID: templateID,
+		EntityID: productID, ProjectID: projectID, TemplateID: templateID,
 	})
 	return err
 }

@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -82,9 +83,10 @@ type fakeDetailTemplates struct {
 	resolveErr         error
 	resolveTemplateID  string
 
-	getIDs []string
-	getErr error
-	getDoc json.RawMessage
+	getIDs     []string
+	getErr     error
+	getDoc     json.RawMessage
+	getNilResp bool // 模拟契约违约：Get 成功但返回 (nil, nil)
 
 	createReqs []*contenttemplatecontract.CreateReq
 	createErr  error
@@ -102,6 +104,9 @@ func (f *fakeDetailTemplates) Get(_ context.Context, req *contenttemplatecontrac
 	f.getIDs = append(f.getIDs, req.ID)
 	if f.getErr != nil {
 		return nil, f.getErr
+	}
+	if f.getNilResp {
+		return nil, nil
 	}
 	return &contenttemplatecontract.TemplateResp{ID: req.ID, DraftDocument: f.getDoc}, nil
 }
@@ -305,6 +310,24 @@ func TestDetailTemplateDocumentGetFailureBubbles(t *testing.T) {
 	}
 }
 
+// 契约违约（Get 返回 nil, nil）：必须回一个明确错误，而不是 panic。
+//
+// 去掉护栏后这一条会 panic（nil 解引用），测试进程直接崩 —— 拦不住就必然变红。
+func TestDetailTemplateDocumentNilGetResultFailsInsteadOfPanicking(t *testing.T) {
+	templates := &fakeDetailTemplates{getNilResp: true}
+
+	doc, err := productservice.DetailTemplateDocument(context.Background(), templates, detailTemplateTestTemplateID)
+	if err == nil {
+		t.Fatalf("Get 返回 (nil, nil) 时应报错，实际 nil（文档 = %s）", doc)
+	}
+	if !strings.Contains(err.Error(), "空结果") {
+		t.Fatalf("err = %v，want 明确说明「Get 返回空结果」的错误", err)
+	}
+	if doc != nil {
+		t.Fatalf("出错时文档应为 nil，实际 %s", doc)
+	}
+}
+
 // ---- 2. CreateDetailTemplate：顺序契约 ----
 
 // **顺序契约**：取文档失败时 Templates.Create 一次都不许被调用。
@@ -366,6 +389,41 @@ func TestCreateDetailTemplatePropagatesCreateFailure(t *testing.T) {
 		detailTemplateTestProjectID, "详情页模板 C", detailTemplateTestTemplateID)
 	if !errors.Is(err, errDetailTemplateCreateTpl) {
 		t.Fatalf("err = %v，want %v", err, errDetailTemplateCreateTpl)
+	}
+}
+
+// 坏数据护栏：复制来源的文档为空（空串 / 纯空白 / JSON null）时必须报错，且**不建模板**。
+//
+// 去掉护栏后 Create 会被调用，库里多出一套没有内容的模板 —— 编辑器打开是一片空白，
+// 而用户当时看到的是成功提示。四种「空」的写法都要覆盖：空串与 JSON null 是两种不同的
+// 入库结果（前者落空 jsonb、后者落 JSON 字面量 null），只测其中一种会漏掉另一种。
+func TestCreateDetailTemplateRejectsEmptyDocument(t *testing.T) {
+	cases := []struct {
+		name string
+		doc  json.RawMessage
+	}{
+		{"nil", nil},
+		{"空串", json.RawMessage("")},
+		{"纯空白", json.RawMessage("   \n\t")},
+		{"JSON null", json.RawMessage("null")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			templates := &fakeDetailTemplates{getDoc: tc.doc}
+
+			err := productservice.CreateDetailTemplate(context.Background(),
+				detailTemplateDeps(templates, &fakeDetailInstances{}, nil, nil),
+				detailTemplateTestProjectID, "详情页模板 空文档", detailTemplateTestTemplateID)
+			if err == nil {
+				t.Fatalf("来源文档为空（%q）时应报错，实际 nil：空文档会被原样写进库", tc.doc)
+			}
+			if !strings.Contains(err.Error(), "文档为空") {
+				t.Fatalf("err = %v，want 明确说明「文档为空」的错误", err)
+			}
+			if len(templates.createReqs) != 0 {
+				t.Fatalf("空文档却调用了 Templates.Create %d 次：取不到内容就不该建模板", len(templates.createReqs))
+			}
+		})
 	}
 }
 
@@ -506,14 +564,17 @@ func TestPublishDetailTemplateCreateInstanceFailureIsNotProductLookup(t *testing
 
 // ---- 4. UpdateDetailTemplateURL：参数透传 ----
 
-// 四个字段逐字段透传。WithRedirect 写错（true → false）不会报错，只会让旧链接被直接取消激活
+// 五个字段逐字段透传。WithRedirect 写错（true → false）不会报错，只会让旧链接被直接取消激活
 // 而不是登记 301 —— 用户看不见区别，直到外链全断。
+//
+// ProjectID 漏传（原先的缺陷）同样不报错：presentation 会按「工程唯一时取该工程」兜底，
+// 单工程站点上一切正常，多工程站点改的是**另一个工程**的线上路径。
 func TestUpdateDetailTemplateURLPassesFieldsThrough(t *testing.T) {
 	instances := &fakeDetailInstances{}
 	const newPath = "/shop/tee-shirt"
 
 	if err := productservice.UpdateDetailTemplateURL(context.Background(), instances,
-		detailTemplateTestProductID, newPath, true); err != nil {
+		detailTemplateTestProjectID, detailTemplateTestProductID, newPath, true); err != nil {
 		t.Fatalf("UpdateDetailTemplateURL 报错：%v", err)
 	}
 	if len(instances.updateURLReqs) != 1 {
@@ -525,6 +586,10 @@ func TestUpdateDetailTemplateURLPassesFieldsThrough(t *testing.T) {
 	}
 	if req.EntityID != detailTemplateTestProductID {
 		t.Fatalf("UpdateURLReq.EntityID = %q，want %q", req.EntityID, detailTemplateTestProductID)
+	}
+	if req.ProjectID != detailTemplateTestProjectID {
+		t.Fatalf("UpdateURLReq.ProjectID = %q，want %q（工程作用域靠调用方传入，漏传会落到别的工程）",
+			req.ProjectID, detailTemplateTestProjectID)
 	}
 	if req.NewPath != newPath {
 		t.Fatalf("UpdateURLReq.NewPath = %q，want %q", req.NewPath, newPath)
@@ -539,7 +604,7 @@ func TestUpdateDetailTemplateURLPropagatesFailure(t *testing.T) {
 	instances := &fakeDetailInstances{updateURLErr: errDetailTemplateUpdateURL}
 
 	err := productservice.UpdateDetailTemplateURL(context.Background(), instances,
-		detailTemplateTestProductID, "/shop/tee-shirt", false)
+		detailTemplateTestProjectID, detailTemplateTestProductID, "/shop/tee-shirt", false)
 	if !errors.Is(err, errDetailTemplateUpdateURL) {
 		t.Fatalf("err = %v，want %v", err, errDetailTemplateUpdateURL)
 	}
@@ -548,20 +613,44 @@ func TestUpdateDetailTemplateURLPropagatesFailure(t *testing.T) {
 	}
 }
 
+// 空串也原样透传：service 不替调用方挑工程。
+//
+// 判据能变红：若在这里加一层「空则取唯一工程 / 默认工程」的兜底，收到的就不是空串；
+// 而那一兜底正是多工程站点改错站点的根因，必须留在 presentation 的显式解析里。
+func TestUpdateDetailTemplateURLPassesEmptyProjectIDThrough(t *testing.T) {
+	instances := &fakeDetailInstances{}
+
+	if err := productservice.UpdateDetailTemplateURL(context.Background(), instances,
+		"", detailTemplateTestProductID, "/shop/tee-shirt", false); err != nil {
+		t.Fatalf("UpdateDetailTemplateURL 报错：%v", err)
+	}
+	if len(instances.updateURLReqs) != 1 {
+		t.Fatalf("UpdateURL 被调用 %d 次，want 1", len(instances.updateURLReqs))
+	}
+	if got := instances.updateURLReqs[0].ProjectID; got != "" {
+		t.Fatalf("UpdateURLReq.ProjectID = %q，want \"\"：service 只透传，不替调用方解析工程", got)
+	}
+}
+
 // ---- 5. ApplyDetailTemplate：参数透传 ----
 
-// EntityID / TemplateID 逐字段透传（TemplateID 漏传 → 沿用实例当前绑定，切换模板看起来「没生效」）。
+// ProjectID / EntityID / TemplateID 逐字段透传（TemplateID 漏传 → 沿用实例当前绑定，切换模板
+// 看起来「没生效」；ProjectID 漏传 → 多工程站点上重建的是另一个工程的实例，同样是「看起来没生效」）。
 func TestApplyDetailTemplatePassesEntityAndTemplate(t *testing.T) {
 	instances := &fakeDetailInstances{}
 
 	if err := productservice.ApplyDetailTemplate(context.Background(), instances,
-		detailTemplateTestProductID, detailTemplateTestTemplateID); err != nil {
+		detailTemplateTestProjectID, detailTemplateTestProductID, detailTemplateTestTemplateID); err != nil {
 		t.Fatalf("ApplyDetailTemplate 报错：%v", err)
 	}
 	if len(instances.rebuildReqs) != 1 {
 		t.Fatalf("Rebuild 被调用 %d 次，want 1", len(instances.rebuildReqs))
 	}
 	req := instances.rebuildReqs[0]
+	if req.ProjectID != detailTemplateTestProjectID {
+		t.Fatalf("RebuildReq.ProjectID = %q，want %q（工程作用域靠调用方传入，漏传会落到别的工程）",
+			req.ProjectID, detailTemplateTestProjectID)
+	}
 	if req.EntityID != detailTemplateTestProductID {
 		t.Fatalf("RebuildReq.EntityID = %q，want %q", req.EntityID, detailTemplateTestProductID)
 	}
@@ -575,9 +664,25 @@ func TestApplyDetailTemplatePropagatesFailure(t *testing.T) {
 	instances := &fakeDetailInstances{rebuildErr: errDetailTemplateRebuild}
 
 	err := productservice.ApplyDetailTemplate(context.Background(), instances,
-		detailTemplateTestProductID, detailTemplateTestTemplateID)
+		detailTemplateTestProjectID, detailTemplateTestProductID, detailTemplateTestTemplateID)
 	if !errors.Is(err, errDetailTemplateRebuild) {
 		t.Fatalf("err = %v，want %v", err, errDetailTemplateRebuild)
+	}
+}
+
+// 空串同样原样透传（与 UpdateDetailTemplateURL 同一判据）。
+func TestApplyDetailTemplatePassesEmptyProjectIDThrough(t *testing.T) {
+	instances := &fakeDetailInstances{}
+
+	if err := productservice.ApplyDetailTemplate(context.Background(), instances,
+		"", detailTemplateTestProductID, detailTemplateTestTemplateID); err != nil {
+		t.Fatalf("ApplyDetailTemplate 报错：%v", err)
+	}
+	if len(instances.rebuildReqs) != 1 {
+		t.Fatalf("Rebuild 被调用 %d 次，want 1", len(instances.rebuildReqs))
+	}
+	if got := instances.rebuildReqs[0].ProjectID; got != "" {
+		t.Fatalf("RebuildReq.ProjectID = %q，want \"\"：service 只透传，不替调用方解析工程", got)
 	}
 }
 
