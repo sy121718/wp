@@ -74,14 +74,22 @@ func detailTemplateCopySourceDoc(t *testing.T) json.RawMessage {
 
 // fakeDetailTemplates 实现 contenttemplatecontract.ContentTemplateService。
 //
-// 只覆盖本文件用到的三个方法（ResolveTemplate / Get / Create）；其余十四个方法靠**嵌入接口**兜底：
+// 只覆盖本文件用到的四个方法（ResolveTemplateScoped / ResolveTemplate / Get / Create）；
+// ResolveTemplate 一并留着是**判据的一部分**：它是无工程的入口，多工程部署下解析不出工程，
+// 被测编排一次都不该走它 —— 走了就是本批修掉的那个老缺陷，记录字段供断言钉住。
+// 其余十四个方法靠**嵌入接口**兜底：
 // 一旦被走到就是 nil 接口方法调用 panic —— 「编排落到别的模板方法上」是缺陷，用 panic 保证它不静默通过。
 type fakeDetailTemplates struct {
 	contenttemplatecontract.ContentTemplateService
 
 	resolveEntityTypes []string
-	resolveErr         error
-	resolveTemplateID  string
+
+	// 带作用域入口收到的工程 id 与实体类型（顺序一一对应）。
+	resolveScopedProjects    []string
+	resolveScopedEntityTypes []string
+
+	resolveErr        error
+	resolveTemplateID string
 
 	getIDs     []string
 	getErr     error
@@ -94,6 +102,16 @@ type fakeDetailTemplates struct {
 
 func (f *fakeDetailTemplates) ResolveTemplate(_ context.Context, entityType string) (*contenttemplatecontract.ResolvedTemplate, error) {
 	f.resolveEntityTypes = append(f.resolveEntityTypes, entityType)
+	if f.resolveErr != nil {
+		return nil, f.resolveErr
+	}
+	return &contenttemplatecontract.ResolvedTemplate{TemplateID: f.resolveTemplateID, EntityType: entityType}, nil
+}
+
+// ResolveTemplateScoped 带作用域的入口：记录收到的工程 id 与实体类型，返回与 ResolveTemplate 同形的结果。
+func (f *fakeDetailTemplates) ResolveTemplateScoped(_ context.Context, projectID, entityType string) (*contenttemplatecontract.ResolvedTemplate, error) {
+	f.resolveScopedProjects = append(f.resolveScopedProjects, projectID)
+	f.resolveScopedEntityTypes = append(f.resolveScopedEntityTypes, entityType)
 	if f.resolveErr != nil {
 		return nil, f.resolveErr
 	}
@@ -250,15 +268,24 @@ func TestDetailTemplateDocumentBlankIDResolvesDefaultTemplate(t *testing.T) {
 	doc := detailTemplateCopySourceDoc(t)
 	templates := &fakeDetailTemplates{resolveTemplateID: "tpl-default", getDoc: doc}
 
-	got, err := productservice.DetailTemplateDocument(ctx, templates, "   ")
+	got, err := productservice.DetailTemplateDocument(ctx, templates, detailTemplateTestProjectID, "   ")
 	if err != nil {
 		t.Fatalf("DetailTemplateDocument 报错：%v", err)
 	}
 	if string(got) != string(doc) {
 		t.Fatalf("文档 = %s，want %s（DraftDocument 应原样返回）", got, doc)
 	}
-	if len(templates.resolveEntityTypes) != 1 || templates.resolveEntityTypes[0] != productcontract.EntityTypeProduct {
-		t.Fatalf("ResolveTemplate 收到的实体类型 = %v，want [%s]", templates.resolveEntityTypes, productcontract.EntityTypeProduct)
+	// 判据 1：走的是带作用域的入口（无工程的 ResolveTemplate 一次都不该被调用）。
+	if len(templates.resolveEntityTypes) != 0 {
+		t.Fatalf("无工程的 ResolveTemplate 被调用 %v：多工程部署下它解析不出工程（ErrProjectRequired），"+
+			"缺省来源必须走 ResolveTemplateScoped", templates.resolveEntityTypes)
+	}
+	// 判据 2：作用域原样传到 contenttemplate —— 传空串等价于没传，多工程下同样失败。
+	if len(templates.resolveScopedProjects) != 1 || templates.resolveScopedProjects[0] != detailTemplateTestProjectID {
+		t.Fatalf("ResolveTemplateScoped 收到的工程 id = %v，want [%s]", templates.resolveScopedProjects, detailTemplateTestProjectID)
+	}
+	if len(templates.resolveScopedEntityTypes) != 1 || templates.resolveScopedEntityTypes[0] != productcontract.EntityTypeProduct {
+		t.Fatalf("ResolveTemplateScoped 收到的实体类型 = %v，want [%s]", templates.resolveScopedEntityTypes, productcontract.EntityTypeProduct)
 	}
 	if len(templates.getIDs) != 1 || templates.getIDs[0] != "tpl-default" {
 		t.Fatalf("Get 收到的 id = %v，want [tpl-default]（应取 ResolveTemplate 解析出来的默认模板）", templates.getIDs)
@@ -270,11 +297,14 @@ func TestDetailTemplateDocumentExplicitIDTrimsAndSkipsResolve(t *testing.T) {
 	ctx := context.Background()
 	templates := &fakeDetailTemplates{getDoc: detailTemplateCopySourceDoc(t)}
 
-	if _, err := productservice.DetailTemplateDocument(ctx, templates, "  tpl-explicit  "); err != nil {
+	if _, err := productservice.DetailTemplateDocument(ctx, templates, detailTemplateTestProjectID, "  tpl-explicit  "); err != nil {
 		t.Fatalf("DetailTemplateDocument 报错：%v", err)
 	}
 	if len(templates.resolveEntityTypes) != 0 {
 		t.Fatalf("显式指定模板时 ResolveTemplate 被调用 %d 次（%v）：不该查默认模板", len(templates.resolveEntityTypes), templates.resolveEntityTypes)
+	}
+	if len(templates.resolveScopedProjects) != 0 {
+		t.Fatalf("显式指定模板时 ResolveTemplateScoped 被调用 %d 次（%v）：不该查默认模板", len(templates.resolveScopedProjects), templates.resolveScopedProjects)
 	}
 	if len(templates.getIDs) != 1 || templates.getIDs[0] != "tpl-explicit" {
 		t.Fatalf("Get 收到的 id = %v，want [tpl-explicit]（前后空白应被 TrimSpace 掉）", templates.getIDs)
@@ -285,7 +315,7 @@ func TestDetailTemplateDocumentExplicitIDTrimsAndSkipsResolve(t *testing.T) {
 func TestDetailTemplateDocumentResolveFailureBubbles(t *testing.T) {
 	templates := &fakeDetailTemplates{resolveErr: errDetailTemplateResolve}
 
-	doc, err := productservice.DetailTemplateDocument(context.Background(), templates, "")
+	doc, err := productservice.DetailTemplateDocument(context.Background(), templates, detailTemplateTestProjectID, "")
 	if !errors.Is(err, errDetailTemplateResolve) {
 		t.Fatalf("err = %v，want %v（取默认模板失败应原样返回）", err, errDetailTemplateResolve)
 	}
@@ -301,7 +331,7 @@ func TestDetailTemplateDocumentResolveFailureBubbles(t *testing.T) {
 func TestDetailTemplateDocumentGetFailureBubbles(t *testing.T) {
 	templates := &fakeDetailTemplates{getErr: errDetailTemplateDocRead}
 
-	doc, err := productservice.DetailTemplateDocument(context.Background(), templates, detailTemplateTestTemplateID)
+	doc, err := productservice.DetailTemplateDocument(context.Background(), templates, detailTemplateTestProjectID, detailTemplateTestTemplateID)
 	if !errors.Is(err, errDetailTemplateDocRead) {
 		t.Fatalf("err = %v，want %v", err, errDetailTemplateDocRead)
 	}
@@ -316,7 +346,7 @@ func TestDetailTemplateDocumentGetFailureBubbles(t *testing.T) {
 func TestDetailTemplateDocumentNilGetResultFailsInsteadOfPanicking(t *testing.T) {
 	templates := &fakeDetailTemplates{getNilResp: true}
 
-	doc, err := productservice.DetailTemplateDocument(context.Background(), templates, detailTemplateTestTemplateID)
+	doc, err := productservice.DetailTemplateDocument(context.Background(), templates, detailTemplateTestProjectID, detailTemplateTestTemplateID)
 	if err == nil {
 		t.Fatalf("Get 返回 (nil, nil) 时应报错，实际 nil（文档 = %s）", doc)
 	}

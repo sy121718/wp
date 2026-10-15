@@ -65,11 +65,21 @@ var (
 )
 
 // DetailTemplateDocument 取「复制来源」的模板文档：指定模板优先，缺省取该类型默认模板。
+//
+// projectID 是**必须**的工程作用域（调用方持有：HTTP 表单的 projectId / 编排的上游）。
+// 缺省来源走 ResolveTemplateScoped 而不是无工程的 ResolveTemplate —— 后者在 contenttemplate
+// 侧只能取「唯一工程」，多工程部署下 resolveProjectID("") 直接回 ErrProjectRequired，
+// 于是「新建模板但不指定复制来源」这条最常用的路径整条失败（用户看到的是「新建失败」，
+// 而该类型下本来就有可复制的模板）。这一层不猜工程、也不兜底取第一个 —— 猜错会静默
+// 复制成**别的工程**的模板文档。
+//
+// 下面 Get 那一跳**不需要**作用域：contenttemplate 的 Get 逐工程探测、根本不读 req.ProjectID
+// （带作用域的入口是 GetScoped）。两者判据不同，不要顺手一起改。
 func DetailTemplateDocument(ctx context.Context, templates contenttemplatecontract.ContentTemplateService,
-	templateID string) (doc json.RawMessage, err error) {
+	projectID, templateID string) (doc json.RawMessage, err error) {
 	id := strings.TrimSpace(templateID)
 	if id == "" {
-		tpl, rerr := templates.ResolveTemplate(ctx, productcontract.EntityTypeProduct)
+		tpl, rerr := templates.ResolveTemplateScoped(ctx, projectID, productcontract.EntityTypeProduct)
 		if rerr != nil {
 			return nil, rerr
 		}
@@ -93,7 +103,7 @@ func DetailTemplateDocument(ctx context.Context, templates contenttemplatecontra
 // 反过来先建空模板再补文档，会在失败时留下一套没有内容的模板。
 // 「模板名为空」这类参数级校验留在 HTTP 层：它决定的是回哪个提示页。
 func CreateDetailTemplate(ctx context.Context, deps DetailTemplateDeps, projectID, name, copyFrom string) error {
-	doc, err := DetailTemplateDocument(ctx, deps.Templates, copyFrom)
+	doc, err := DetailTemplateDocument(ctx, deps.Templates, projectID, copyFrom)
 	if err != nil {
 		return err
 	}

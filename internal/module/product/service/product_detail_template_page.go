@@ -80,7 +80,11 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 
 	var product *productdto.ProductResp
 	if firstErr == nil {
-		detail, derr := s.Get(ctx, &productdto.GetReq{ID: productID})
+		// 取商品这一跳必须带工程作用域：product 侧 Get 经 resolveProjectID 解析工程，
+		// 多工程下不带 scope 时它拒绝猜一个、直接回 ErrInvalidParam —— 于是被下面的
+		// ErrInvalidParam 分支判成 400，整页打不开（而商品本来取得到：它就是上面
+		// 已算出的 selected 那个工程里的商品）。
+		detail, derr := s.Get(ctx, &productdto.GetReq{ID: productID, ProjectID: selected})
 		switch {
 		case derr == nil && detail != nil:
 			product = detail
