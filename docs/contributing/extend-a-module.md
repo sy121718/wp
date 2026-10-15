@@ -71,6 +71,8 @@ blockSvc := blockhttp.SetupBlockRoutes(authorizedAPI, db, projectService)
 
 2. `internal/routers/wiring.go`：如果新模块对外提供「装配期注入的可空端口」，在 `wiringManifest` 里加一条 `wiringEntry`，选对 `wiringKind` 并写清 `Consequence`（未注入时用户/运维看到什么）。端口名在 `routes.go` 里用常量 `marks.mark(...)` 标记，提供方用 `RequireWiringPort(port, ok)` 断言。三类 Kind 的语义见 [`architecture.md`](architecture.md) 第 6 节。
 
+   第二现场：**模块自己 `Setup*` 内部的装配期注入也是装配面**。端口若在模块的 `inbound/http` 里被注入（形如 `handle.SetXxxPort(svc)`），扫描面已由 `internal/routers/wiring_coverage_test.go` 扩到 `internal/module/*/inbound/http/*.go`（模块侧只认不接返回值的调用语句 `ast.ExprStmt`，业务写方法 `h.svc.SetBOM(ctx, req)` 自动排除）。判据：跨模块**可空端口**必须登记；实参是模块自己 `Setup*` 的形参、或本模块构造对象（编译器保证必给，不存在「未注入 → 用户看到什么」）的调用进 `moduleInternalSetters` 豁免清单并逐条写明「谁在哪把什么交给谁」，**豁免清单只减不增**（不再命中的条目会让测试失败）。
+
 3. 数据权限域：域声明属于**拥有该表**的模块。样板在 `internal/module/admin/inbound/http/datarule_bootstrap.go`（`RegisterDomain` → `SetProvider` → `RegisterPluginWithDB`）。注册必须发生在**注册路由之前**；声明写错要在装配期直接失败 —— 域没注册上的后果是行级过滤整体静默失效（fail-open），不能等到「规则存进去了却一条都没拦住」才发现。白名单来自实体字段 tag：
 
 ```go

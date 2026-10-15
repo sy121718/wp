@@ -101,8 +101,8 @@ module_name/
   · 「值 → 文案」的映射（`switch stage { case "plan": return {Key, Fallback} }` 这种）→ 进 `enums`
     （见下节），控制器只留一行调用；
   · i18n 词条 key 的字面量（`"admin.pages.impact.stage_plan"`）→ key 的归属是 `enums` 常量，
-    控制器只引用常量。门禁 `bash scripts/check-controller-i18n-literals.sh`（基线只减不增，
-    归零的条目必须删行）；
+    控制器只引用常量。门禁 `bash scripts/check-controller-i18n-literals.sh`（控制器出现字面量即失败；
+    基线表为空＝终局零容忍，任何模块再写一处字面量都会被判违规）；
   · 业务判断（谁能删、状态能不能推进、金额怎么算）→ service。
   判据：控制器里出现 `switch` 时问一句「这是在挑文案，还是在做业务判断」——挑文案就是走错了层。
 - **一屏的取数编排与视图装配也在 service，不在控制器**（§dto 那条「展示串在 service 组装响应时写进
@@ -312,7 +312,7 @@ DeptID uint64 `gorm:"column:dept_id" datarule:"label=所属部门;ops=EQ,NEQ,IN,
     `RedirectBulkDeleteOutcome`（判据 `page_label_enums_test.go` 四分支各一条）。
 - **key 字面量只出现在这里**：控制器、模板之外的 Go 代码引用词条一律走 `enums` 常量
   （老式 `MsgXxx = "MsgXxx"`，新式点分 key 常量组，按文件既有分组写）。
-  门禁 `bash scripts/check-controller-i18n-literals.sh`（基线只减不增）。
+  门禁 `bash scripts/check-controller-i18n-literals.sh`（控制器出现字面量即失败；基线表为空＝终局零容忍）。
 - 不放这些：表单字段清单（在 handle）、长度上限（在做校验的 service）、值域白名单（在拥有该值的 model）
 - `handle` 和 `service` 不直接硬编码响应文案
 - 未接好 `i18n` 时，`ErrXxx` / `MsgXxx` 直接等于中文常量
