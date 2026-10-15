@@ -537,6 +537,16 @@ func TestPublishDetailTemplateDerivesURLPathFromProjectRules(t *testing.T) {
 		t.Fatalf("CreateInstanceReq.URLPath = %q，want %q（DetailPathForProject 同参数的结果；硬编码默认模式会得到 %q）",
 			got, want, defaultPath)
 	}
+	// 取商品这一跳同样必须在工程作用域内：product 侧 Get 经 resolveProjectID 解析工程，
+	// 不带作用域时多工程部署直接回 ErrInvalidParam —— 单工程夹具里它恰好解析出唯一的那个工程，
+	// 于是「带了」与「没带」在既有端点上行为等价、差异不可观测（本文件这条断言是它的直接判据）。
+	if len(products.getReqs) != 1 {
+		t.Fatalf("Products.Get 被调用 %d 次，want 1（派生路径必须先取商品拿 slug）", len(products.getReqs))
+	}
+	if got := products.getReqs[0].ProjectID; got != detailTemplateTestProjectID {
+		t.Fatalf("Products.Get 收到的 GetReq.ProjectID = %q，want %q（漏传时多工程下 product 侧 resolveProjectID 回 ErrInvalidParam）",
+			got, detailTemplateTestProjectID)
+	}
 	if reads := len(projects.detailIDs) - projectReadsBefore; reads != 1 {
 		t.Fatalf("派生默认路径时查工程 URL 规则 %d 次，want 1", reads)
 	}

@@ -32,7 +32,7 @@ func rowCount(t *testing.T, db *gorm.DB, table, id string) int {
 func jsonbList(t *testing.T, db *gorm.DB, table, id, col string) []string {
 	t.Helper()
 	var raw string
-	if err := db.Table(table).Select("COALESCE(" + col + "::text, '[]')").Where("id = ?", id).Scan(&raw).Error; err != nil {
+	if err := db.Table(table).Select("COALESCE("+col+"::text, '[]')").Where("id = ?", id).Scan(&raw).Error; err != nil {
 		t.Fatalf("读 %s.%s 失败：%v", table, col, err)
 	}
 	var out []string

@@ -1,4 +1,4 @@
-// product_detail_template_project_scope_test.go —— 「详情页模板」两个写入口的**工程作用域**（P167）。
+// product_detail_template_project_scope_test.go —— 「详情页模板」三个写入口的**工程作用域**（P167 / P168）。
 //
 // 被钉住的缺陷形态：internal/module/product/inbound/http/product_detail_template.go 的两个写入口
 // 读出了表单里的 projectId 却没往下传 —— UpdateURLReq.ProjectID / RebuildReq.ProjectID 收到空串，
@@ -10,11 +10,14 @@
 // 工程不唯一 -> resolveProjectID 直接回 ErrProjectRequired -> 漏传时写操作走不到实例定位，
 // 端点渲染失败态提示页（data-jump-state="err"）。
 //
-// 钉住的接线（变红实验就是把这两处实参改成 ""）：
+// 钉住的接线（变红实验就是把这几处实参改成 ""）：
 // 1) POST /admin/products/template/url -> ProductDetailTemplateUpdateURL 的 projectID 实参
 // -> productservice.UpdateDetailTemplateURL -> UpdateURLReq.ProjectID -> Service.UpdateURL；
 // 2) POST /admin/products/template/apply -> ProductDetailTemplateApply 的 projectID 实参
-// -> productservice.ApplyDetailTemplate -> RebuildReq.ProjectID -> Service.Rebuild。
+// -> productservice.ApplyDetailTemplate -> RebuildReq.ProjectID -> Service.Rebuild；
+// 3) POST /admin/products/template/publish（**不传 urlPath**）-> PublishDetailTemplate 里
+// 「取商品拿 slug」那一跳的 GetReq.ProjectID -> product 侧 resolveProjectID
+// （工程不唯一即回 ErrInvalidParam）—— 它不落在 presentation，而在 product 自己这一跳。
 //
 // 每条用例都同时断言两件事：「A 站真的改了」与「B 站一个字节都没动」—— 只断言前者时，
 // 「写到了别的工程上」这种失败仍然是绿的。
@@ -34,6 +37,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/internal/siteurl"
 	"go_wp/internal/templates"
 )
 
@@ -55,7 +59,7 @@ type projectScopeFixture struct {
 	instA, instB                string
 }
 
-// newProjectScopeEngine 装配双工程引擎：只挂「详情页模板」的两个写入口。
+// newProjectScopeEngine 装配双工程引擎：只挂「详情页模板」的三个写入口。
 //
 // 不挂鉴权中间件（与 product_detail_template_choice_test.go 的页面引擎同一取舍）：
 // 本文件验的是工程作用域，不是权限链。
@@ -80,6 +84,7 @@ func newProjectScopeEngine(t *testing.T) (*gin.Engine, *projectScopeFixture) {
 	handle.SetDetailTemplateDeps(base.templates, base.pres)
 	engine.POST("/admin/products/template/url", handle.ProductDetailTemplateUpdateURL)
 	engine.POST("/admin/products/template/apply", handle.ProductDetailTemplateApply)
+	engine.POST("/admin/products/template/publish", handle.ProductDetailTemplatePublish)
 	return engine, scope
 }
 
@@ -249,6 +254,62 @@ func TestProductDetailTemplateApplyKeepsProjectScope(t *testing.T) {
 	}
 	if bInst.URLPath != scopePathB {
 		t.Fatalf("B 站实例路径不得被改动，实际 %s", bInst.URLPath)
+	}
+	if bAfter := activeHTML(t, scopePathB); bAfter != bBefore {
+		t.Fatalf("B 站产物不得被改动:\n改前 %s\n改后 %s", bBefore, bAfter)
+	}
+}
+
+// TestProductDetailTemplatePublishKeepsProjectScope 「首次发布」的空 urlPath 分支：工程作用域必须
+// 一路带到**取商品拿 slug**那一跳（productservice.PublishDetailTemplate -> ProductReadPort.Get 的
+// GetReq.ProjectID）。少带这一段，product 侧 resolveProjectID 解析不出工程就回 ErrInvalidParam，
+// 发布在建实例之前就断了 —— 而这个商品的实例本该建得出来。
+//
+// 为什么既有 publish 用例照不出它：它们都跑在**单工程**夹具上，空作用域恰好解析出那唯一的工程，
+// 于是「带了」与「没带」行为等价。本夹具两个工程 -> 漏传时发布直接失败（失败态提示页），
+// 而不是「发布到了另一个工程」那种更隐蔽的错法。
+func TestProductDetailTemplatePublishKeepsProjectScope(t *testing.T) {
+	engine, f := newProjectScopeEngine(t)
+	if engine == nil {
+		return
+	}
+	f.seedScopeSites(t)
+	// 给「首次发布」单独一个 A 站商品：已建过实例的商品再发一次是另一条路径，混进来会掩盖本判据。
+	const pubSlug = "scope-cap"
+	pubA := f.scopeProduct(t, f.projectID, "A站发布用帽", pubSlug)
+
+	bBefore := activeHTML(t, scopePathB)
+	if !strings.Contains(bBefore, "B站版式") {
+		t.Fatalf("B 站初始产物应使用 B 站版式模板：%s", bBefore)
+	}
+
+	// 刻意**不传 urlPath**：让服务端按站点 URL 规则派生（这正是漏传工程作用域的那条分支）。
+	rec := postForm(engine, "/admin/products/template/publish", url.Values{
+		"projectId": {f.projectID}, "productId": {pubA}, "templateId": {f.tplAFirst},
+	})
+	assertJumpOK(t, rec)
+
+	// 期望值用 siteurl 同参数自己算一遍（不硬编码模式），并确认它确实在 A 站落成了产物 ——
+	// 只比 URLPath 的话，「派生对了但产物没激活」仍然是绿的。
+	want := siteurl.DetailPathForProject(context.Background(), f.projects, f.projectID,
+		siteurl.KindProduct, pubSlug, pubA)
+	if want == "" || !strings.Contains(want, pubSlug) {
+		t.Fatalf("派生出的默认路径无效（%q）：判据失效，先查 siteurl 的默认模式", want)
+	}
+	if got := f.instanceOf(t, f.projectID, pubA).URLPath; got != want {
+		t.Fatalf("A 站新实例的 URLPath = %q，want %q（空 urlPath 时应按站点规则派生）", got, want)
+	}
+	if !activeFileExists(want) {
+		t.Fatalf("A 站派生路径 %s 上没有激活产物", want)
+	}
+
+	// B 站：实例 / 绑定 / 产物一个字节都没动。
+	bInst := f.instanceOf(t, f.projectB, f.productB)
+	if bInst.URLPath != scopePathB {
+		t.Fatalf("B 站实例路径不得被改动，实际 %s", bInst.URLPath)
+	}
+	if got := instanceTemplateID(t, f.detailFixture, f.instB); got != f.tplB {
+		t.Fatalf("B 站实例模板绑定不得被改动，实际 %s", got)
 	}
 	if bAfter := activeHTML(t, scopePathB); bAfter != bBefore {
 		t.Fatalf("B 站产物不得被改动:\n改前 %s\n改后 %s", bBefore, bAfter)

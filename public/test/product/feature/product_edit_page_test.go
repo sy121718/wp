@@ -206,7 +206,7 @@ func (s failedAttributeListService) ProductEditPage(ctx context.Context, req *pr
 }
 
 // 读模型接口是一个整体：本桩只覆盖 ProductEditPage 一条，其余几条也必须在 —— 少一条就编译不过
-//（reader 是构造实参的静态类型，不再有运行期断言 → 500 兜底页这条路径）。
+// （reader 是构造实参的静态类型，不再有运行期断言 → 500 兜底页这条路径）。
 func (s failedAttributeListService) ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
 	return s.reader.ProductNewPage(ctx, req)
 }

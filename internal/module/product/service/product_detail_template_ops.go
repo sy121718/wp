@@ -145,7 +145,10 @@ func PublishDetailTemplate(ctx context.Context, deps DetailTemplateDeps, project
 		TemplateID: templateID, URLPath: urlPath,
 	}
 	if req.URLPath == "" {
-		product, err := deps.Products.Get(ctx, &productdto.GetReq{ID: productID})
+		// 多工程下这一跳必须带作用域：product 侧 Get 经 resolveProjectID 解析工程，
+		// 工程不唯一时它拒绝猜一个、直接回 ErrInvalidParam —— 表现是「发布失败」，
+		// 而这个商品的实例本该建得出来（同 CreateInstance 的 ProjectID，见上）。
+		product, err := deps.Products.Get(ctx, &productdto.GetReq{ID: productID, ProjectID: projectID})
 		if err != nil {
 			return &DetailTemplateProductLookupError{Err: err}
 		}
