@@ -15,6 +15,7 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	productmodel "go_wp/internal/module/product/model"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/pkg/money"
 )
@@ -111,8 +112,15 @@ func (s *Service) ProductPricingPage(ctx context.Context, req *productdto.Produc
 
 // pricingHistory 调价留痕（批次 + 逐变体明细）。
 //
-// 两级降级都是有意保留的：列表读不到 → 空台账；**单条明细读不到 → 退回批次本身的汇总** ——
-// 一条明细的故障不该让整页打不开。
+// 明细是**一次批量读**：按列表里这批批次的 id 取回全部逐条明细，再按 adjustment_id 分组装配。
+// 改造前是「逐批次 GetPriceAdjustment」，而那一跳后面还跟着两次查询（明细 + 商品名），于是
+// 台账最多 10 批就要发 30 次读，且次数随批次数线性增长（dd.txt 第八批 8.1 的台账等价物）。
+//
+// 两级降级都保留，第二级的粒度变了（有意）：列表读不到 → 空台账；**批量明细读不到 → 整批
+// 退回各批次本身的汇总行**。原来「单条明细读不到 → 退回该批的汇总」是逐批独立的，批量读之后
+// 明细只有一次往返，读不到就是每一批都读不到（= 改造前每批都失败那个状态）。不逐批重试：
+// 明细这一路读不到通常是库或作用域层面的故障，逐批重试只会把故障放大成 N 倍慢查询，
+// 而台账是这一屏的附注（主体是改价表单）。
 func (s *Service) pricingHistory(ctx context.Context, projectID string) (rows []map[string]any) {
 	rows = []map[string]any{}
 	if strings.TrimSpace(projectID) == "" {
@@ -124,15 +132,60 @@ func (s *Service) pricingHistory(ctx context.Context, projectID string) (rows []
 	if err != nil {
 		return rows
 	}
+	ids := make([]string, 0, len(list))
 	for _, a := range list {
-		detail, derr := s.GetPriceAdjustment(ctx, &productdto.GetPriceAdjustmentReq{ID: a.ID})
-		if derr != nil {
-			rows = append(rows, pricingHistoryRow(a))
-			continue
+		ids = append(ids, a.ID)
+	}
+	grouped := s.pricingHistoryItems(ctx, projectID, ids)
+	for _, a := range list {
+		detail := *a
+		// 这一批没有明细（空批次，或整批读不到）时不设 Items：pricingHistoryRow 会给出
+		// 「这一批没有逐变体明细」那一档，与改造前「退回批次本身汇总」同形。
+		if items, ok := grouped[a.ID]; ok {
+			detail.Items = items
 		}
-		rows = append(rows, pricingHistoryRow(detail))
+		rows = append(rows, pricingHistoryRow(&detail))
 	}
 	return rows
+}
+
+// pricingHistoryItems 一次批量读回这批批次的明细，按 adjustment_id 分组（键存在 = 这一批有明细）。
+//
+// 返回空 map 表示整批明细读不到（含商品名那一跳失败）：调用方据此退回各批次的汇总行 ——
+// 与改造前逐批 Get 全部失败等价。
+func (s *Service) pricingHistoryItems(ctx context.Context, projectID string, adjustmentIDs []string) map[string][]*productdto.PriceAdjustmentItemResp {
+	grouped := map[string][]*productdto.PriceAdjustmentItemResp{}
+	if len(adjustmentIDs) == 0 {
+		return grouped
+	}
+	details, err := s.m.ListAdjustmentItemsByAdjustmentIDs(ctx, adjustmentIDs, projectID)
+	if err != nil {
+		return grouped
+	}
+	// 每批的展示上限与单批次详情一致（maxPricingAdjustmentItems）：截断在取商品名之前，
+	// 与单批次版本「先按上限取、再补名字」的顺序相同。批量 SQL 里做不了这件事 ——
+	// 跨批次的全局 LIMIT 不是「每批 N 条」，而是按批次顺序整体切一刀。
+	perAdjustment := make(map[string][]*productmodel.PriceAdjustmentItemEntity, len(adjustmentIDs))
+	kept := make([]*productmodel.PriceAdjustmentItemEntity, 0, len(details))
+	for _, d := range details {
+		if d == nil {
+			continue
+		}
+		group := perAdjustment[d.AdjustmentID]
+		if len(group) >= maxPricingAdjustmentItems {
+			continue
+		}
+		perAdjustment[d.AdjustmentID] = append(group, d)
+		kept = append(kept, d)
+	}
+	names, nerr := s.adjustmentProductNames(ctx, projectID, kept)
+	if nerr != nil {
+		return grouped
+	}
+	for adjID, group := range perAdjustment {
+		grouped[adjID] = adjustmentItemResps(group, names)
+	}
+	return grouped
 }
 
 // pricingHistoryRow 批次 → 模板行（时间压成可读文本，明细逐条列出原价与新价）。

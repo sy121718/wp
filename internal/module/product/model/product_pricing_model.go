@@ -151,6 +151,34 @@ func (m *Model) ListAdjustmentItems(ctx context.Context, adjustmentID, projectID
 	return list, err
 }
 
+// ListAdjustmentItemsByAdjustmentIDs 多个批次的逐变体明细（一次批量读；台账页用）。
+//
+// project_id 谓词在这里是**显式**的：明细表自己不带 project_id（它靠父批次头归属工程，
+// 见实体注释），所以批量路径把作用域经父批次表的子查询落下来 —— 只按 adjustment_id 过滤
+// 等于把「调用方传进来的 id 一定是本工程的」当成约束前提，而这正是留下静默读到别的工程
+// 数据的那种写法。
+//
+// 排序沿用单批次版本（create_time ASC, sku_code ASC, id ASC），前面拼 adjustment_id：
+// 组内顺序与逐批次读逐行一致，组间顺序只让分组结果稳定。
+//
+// 不设 SQL 端 limit：跨批次的全局 LIMIT 不是「每批最多 N 条」，而是按批次顺序整体切一刀
+// （先读到的批次可能吃掉全部份额，后面的批次静默少行）。每批的展示上限由调用方分组后施加，
+// 与单批次版本的 limit 语义等价。
+func (m *Model) ListAdjustmentItemsByAdjustmentIDs(ctx context.Context, adjustmentIDs []string, projectID string) (list []*PriceAdjustmentItemEntity, err error) {
+	if len(adjustmentIDs) == 0 {
+		return nil, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		inProject := tx.WithContext(ctx).Model(&PriceAdjustmentEntity{}).
+			Select("id").Where("project_id = ?", projectID).Where("id IN ?", adjustmentIDs)
+		return tx.WithContext(ctx).Model(&PriceAdjustmentItemEntity{}).
+			Where("adjustment_id IN (?)", inProject).
+			Order("adjustment_id ASC, create_time ASC, sku_code ASC, id ASC").
+			Find(&list).Error
+	})
+	return list, err
+}
+
 // ListProductsForPricing 筛选集取数：按条件取工程内商品（单表查询，条件以参数传入）。
 //
 // 只取筛选与展示需要的列；关键词只匹配商品名（与后台列表口径一致）。
