@@ -166,29 +166,6 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// firstNonEmptyString 取第一个非空值。
-func firstNonEmptyString(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
-}
-
-// slashSlug URL 段 → 路径形态（空 slug 返回空串）。
-//
-// 商品 / 分类 / 品牌详情页的路径由各自的 slug 构成，编辑期没有发布实例时用它做
-// URL 干净度判定的近似值：slug 本身就是要检查的对象（长度、大小写、参数），
-// 不是编出来的路径。
-func slashSlug(slug string) string {
-	slug = strings.TrimSpace(slug)
-	if slug == "" {
-		return ""
-	}
-	return "/" + slug
-}
-
 // productTranslateMiddleware 让本模块的 service 能按请求语言取词。
 //
 // service 层没有语言上下文（语言来自后台 Cookie / Accept-Language，只有 gin.Context

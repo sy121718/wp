@@ -50,6 +50,7 @@ PLAIN_SCRIPTS=(
   check-route-registration-placement.sh
   check-controller-i18n-literals.sh
   check-shell-migration.sh
+  check-jet-translation-call-sites.sh
 )
 
 # 需要真实 PostgreSQL，且必须在迁移（go run ./cmd -migrate-only）之后。

@@ -1,7 +1,6 @@
 package producthttp
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"go_wp/internal/adminui"
@@ -382,27 +381,6 @@ func (h *productPageHandle) ProductsTaxonomySet(c *gin.Context) {
 		return
 	}
 	productEditJump(c, true, projectID, req.ID, productActionDoneMsg)
-}
-
-// flatCategories 取某工程的分类树并摊平成 DFS 前序列表（工程为空时返回空列表）。
-func (h *productPageHandle) flatCategories(ctx context.Context, projectID string) (out []*productdto.CategoryResp, err error) {
-	out = []*productdto.CategoryResp{}
-	if projectID == "" {
-		return out, nil
-	}
-	tree, err := h.products.ListCategories(ctx, &productdto.ListCategoryReq{ProjectID: projectID})
-	if err != nil {
-		return nil, err
-	}
-	return productservice.FlattenCategoryTree(tree), nil
-}
-
-// listBrands 取某工程的品牌列表。
-func (h *productPageHandle) listBrands(ctx context.Context, projectID string) (out []*productdto.BrandResp, err error) {
-	if projectID == "" {
-		return []*productdto.BrandResp{}, nil
-	}
-	return h.products.ListBrands(ctx, &productdto.ListBrandReq{ProjectID: projectID})
 }
 
 // missingParentIDs 挑出本页里「父级不在候选列表」的那些父级 id（去重、保持出现顺序）。

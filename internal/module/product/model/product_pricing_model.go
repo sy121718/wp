@@ -49,8 +49,22 @@ func (PriceAdjustmentEntity) TableName() string { return "product_price_adjustme
 
 // PriceAdjustmentItemEntity 调价批次逐变体明细（原价 → 新价）。
 //
-// 不建指向 product_variants 的外键（与 081 的关联列精简原则一致）：
-// 变体后续被删掉，历史留痕仍要可读，故 SKU 编码与商品 id 都存当时的快照。
+// 明细**有**两条指向商品域的外键（迁移 134 补，均 ON DELETE RESTRICT；
+// public/migrations/134_inventory_reference_fks.sql:34-41）：
+//
+//	fk_product_price_adjustment_items_product → products(id)
+//	fk_product_price_adjustment_items_variant → product_variants(id)
+//
+// 它们推翻了 095 当初「明细不建指向 product_variants 的外键」那句写法（095 的注释是
+// 历史陈述，照它造数据会被拦住），所以两条事实要一起记住：
+//
+//   - 删变体 / 删商品之前必须先处理留痕明细，否则删除本身被 RESTRICT 挡住；
+//   - 写明细前变体必须已存在，否则插入被挡住 —— 实测原文：
+//     insert or update on table "product_price_adjustment_items" violates foreign key
+//     constraint "fk_product_price_adjustment_items_variant" (SQLSTATE 23503)。
+//
+// 明细里的 SKU 编码与商品 id 仍是**当时的快照**（商品改名后展示层按当前数据补名字，
+// 快照这一份仍可读）：快照给的是「可读」，外键给的是「引用完整」，两者不冲突。
 type PriceAdjustmentItemEntity struct {
 	ID           string    `gorm:"column:id;primaryKey"`
 	AdjustmentID string    `gorm:"column:adjustment_id;not null"`
