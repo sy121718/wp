@@ -60,12 +60,12 @@ type productPageTemplatePortStub struct {
 	calls int
 }
 
-func (s *productPageTemplatePortStub) EntityTemplates(context.Context, string) ([]productdto.EntityTemplateOptionView, error) {
+func (s *productPageTemplatePortStub) EntityTemplates(context.Context, string, string) ([]productdto.EntityTemplateOptionView, error) {
 	s.calls++
 	return []productdto.EntityTemplateOptionView{}, nil
 }
 
-func (s *productPageTemplatePortStub) DefaultEntityTemplate(context.Context, string) (string, error) {
+func (s *productPageTemplatePortStub) DefaultEntityTemplate(context.Context, string, string) (string, error) {
 	s.calls++
 	return "", nil
 }

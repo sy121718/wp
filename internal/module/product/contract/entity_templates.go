@@ -28,8 +28,14 @@ type EntityTemplateOptionView = productdto.EntityTemplateOptionView
 // 不构成整页失败（右侧卡片是**可选辅助**，见 docs/rules/template-boundary.md
 // §整页 GET 的失败出口）；因此实现方按普通 error 返回即可，调用方决定降级还是失败。
 type EntityTemplatePort interface {
+	// 两个方法的 projectID 都紧随 ctx（与 contenttemplate 的
+	// ResolveTemplateScoped(ctx, projectID, entityType) 同族）：内容模板表带 FORCE 工程策略，
+	// 不传工程时实现方只能回落「唯一工程」，多工程部署下读口回 ErrProjectRequired，
+	// 调用方（商品新建页读模型）手里本来就有工程 id —— 不传这一个参数就够不着本工程的模板。
+	// 空串语义与其余读口一致：= 唯一工程。
+
 	// EntityTemplates 该实体类型的模板清单（entityType 见 EntityTypeProduct）。
-	EntityTemplates(ctx context.Context, entityType string) (out []EntityTemplateOptionView, err error)
+	EntityTemplates(ctx context.Context, projectID, entityType string) (out []EntityTemplateOptionView, err error)
 	// DefaultEntityTemplate 该实体类型的当前模板 id（未绑定 / 无模板时返回空串）。
-	DefaultEntityTemplate(ctx context.Context, entityType string) (templateID string, err error)
+	DefaultEntityTemplate(ctx context.Context, projectID, entityType string) (templateID string, err error)
 }

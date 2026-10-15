@@ -189,10 +189,14 @@ func (s *Service) ProductNewPage(ctx context.Context, req *productdto.ProductNew
 	// 页面右侧据此给两句不同的提示（TemplatesAvail 分开说）。
 	if firstErr == nil && s.pageTemplates != nil {
 		view.TemplatesAvail = true
-		if rows, terr := s.pageTemplates.EntityTemplates(ctx, productcontract.EntityTypeProduct); terr == nil {
+		// 两个读口都带**本页选中的工程**（selected）：内容模板表带 FORCE 工程策略，
+		// 工程留空时对方只能回落「唯一工程」，多工程部署下回 ErrProjectRequired ——
+		// 而这条端口的失败按降级处理（空清单），于是卡片区静默变空、页面照常 200，
+		// 「配置读不到」被渲染成「这一屏没有候选」。
+		if rows, terr := s.pageTemplates.EntityTemplates(ctx, selected, productcontract.EntityTypeProduct); terr == nil {
 			view.Templates = rows
 		}
-		if id, rerr := s.pageTemplates.DefaultEntityTemplate(ctx, productcontract.EntityTypeProduct); rerr == nil {
+		if id, rerr := s.pageTemplates.DefaultEntityTemplate(ctx, selected, productcontract.EntityTypeProduct); rerr == nil {
 			view.DefaultTemplateID = id
 		}
 	}

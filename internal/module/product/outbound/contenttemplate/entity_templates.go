@@ -31,14 +31,15 @@ var _ productcontract.EntityTemplatePort = (*Options)(nil)
 
 // EntityTemplates 该实体类型的模板清单。
 //
-// ListReq 只带 EntityType（与读模型下沉前逐字一致）：模板清单的作用域口径属于内容模板
-// 模块的取数层，商品页不在这里替它决定「要不要按工程过滤」。
-func (o *Options) EntityTemplates(ctx context.Context, entityType string) (out []productdto.EntityTemplateOptionView, err error) {
+// ListReq 带上调用方给的工程（ListReq.ProjectID）：内容模板表带 FORCE 工程策略，
+// 工程留空时对方的 resolveProjectID 只能回落「唯一工程」，多工程部署下回 ErrProjectRequired
+// —— 调用方按降级处理（空清单），于是「配置读不到」被渲染成「这一屏没有候选」。
+func (o *Options) EntityTemplates(ctx context.Context, projectID, entityType string) (out []productdto.EntityTemplateOptionView, err error) {
 	out = []productdto.EntityTemplateOptionView{}
 	if o.svc == nil {
 		return out, nil
 	}
-	rows, lerr := o.svc.List(ctx, &contenttemplatecontract.ListReq{EntityType: entityType})
+	rows, lerr := o.svc.List(ctx, &contenttemplatecontract.ListReq{EntityType: entityType, ProjectID: projectID})
 	if lerr != nil {
 		return nil, lerr
 	}
@@ -52,11 +53,14 @@ func (o *Options) EntityTemplates(ctx context.Context, entityType string) (out [
 }
 
 // DefaultEntityTemplate 该实体类型当前解析到的模板 id（未绑定时不报错、返回空串）。
-func (o *Options) DefaultEntityTemplate(ctx context.Context, entityType string) (templateID string, err error) {
+//
+// 走 ResolveTemplateScoped（显式工程），不是 ResolveTemplate：后者没有工程参数、
+// 多工程部署下必然报「需要显式指定工程」，当前模板 id 就永远回填不出来。
+func (o *Options) DefaultEntityTemplate(ctx context.Context, projectID, entityType string) (templateID string, err error) {
 	if o.svc == nil {
 		return "", nil
 	}
-	tpl, rerr := o.svc.ResolveTemplate(ctx, entityType)
+	tpl, rerr := o.svc.ResolveTemplateScoped(ctx, projectID, entityType)
 	if rerr != nil {
 		return "", rerr
 	}
