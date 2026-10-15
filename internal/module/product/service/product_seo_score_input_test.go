@@ -659,3 +659,62 @@ func TestSeoScoreInputOfProductScopeReachesReadPort(t *testing.T) {
 			"评分退化成「读不到这个商品，无法评分」空态", got.ProjectID, seoTestProjectID)
 	}
 }
+
+// ==========================================================================
+// 工程作用域：分类 / 品牌两个分支的读口也必须带上调用方已经收到的 projectID。
+//
+// 与商品那一条同源、同一档：product 侧 resolveProjectID 在「显式工程为空且工程数 != 1」时回
+// ErrInvalidParam，SeoScoreInputOf 把它当成**读取失败**、回「读不到这个分类 / 品牌，无法评分」
+// 空态 —— 实体其实就在调用方那个工程里（handler 已经把 projectId 传进来了）。
+//
+// 断言落在**读口收到的 req** 上：只断言「有 Input」照不出漏传 —— 单工程夹具下兜底解析出的
+// 那一个恰好就是唯一的那个，传与不传行为等价。
+// ==========================================================================
+
+func TestSeoScoreInputOfCategoryScopeReachesReadPort(t *testing.T) {
+	node := seoTestCategory()
+	var got *productdto.GetCategoryReq
+	r := &seoReadStub{t: t,
+		getCat: func(_ context.Context, req *productdto.GetCategoryReq) (*productdto.CategoryResp, error) {
+			got = req
+			return node, nil
+		},
+		// 分类分支还会取子分类名（CategoryChildNames → ListCategories），也吃同一个 projectID。
+		listCats: func(context.Context, *productdto.ListCategoryReq) ([]*productdto.CategoryResp, error) {
+			return nil, nil
+		},
+	}
+
+	res := SeoScoreInputOf(context.Background(), r, nil, scoring.KindCategory, node.ID, seoTestProjectID, "zh-CN")
+	if res.Input == nil {
+		t.Fatalf("正常档应给出 Input，实际 Err=%v Empty=%+v", res.Err, res.Empty)
+	}
+	if got == nil {
+		t.Fatal("分类读口一次都没被调用")
+	}
+	if got.ProjectID != seoTestProjectID {
+		t.Fatalf("取分类收到的工程 id = %q，want %q —— 漏传时多工程部署下 resolveProjectID 回 ErrInvalidParam，"+
+			"评分退化成「读不到这个分类，无法评分」空态", got.ProjectID, seoTestProjectID)
+	}
+}
+
+func TestSeoScoreInputOfBrandScopeReachesReadPort(t *testing.T) {
+	brand := seoTestBrand()
+	var got *productdto.GetBrandReq
+	r := &seoReadStub{t: t, getBrand: func(_ context.Context, req *productdto.GetBrandReq) (*productdto.BrandResp, error) {
+		got = req
+		return brand, nil
+	}}
+
+	res := SeoScoreInputOf(context.Background(), r, nil, scoring.KindBrand, brand.ID, seoTestProjectID, "zh-CN")
+	if res.Input == nil {
+		t.Fatalf("正常档应给出 Input，实际 Err=%v Empty=%+v", res.Err, res.Empty)
+	}
+	if got == nil {
+		t.Fatal("品牌读口一次都没被调用")
+	}
+	if got.ProjectID != seoTestProjectID {
+		t.Fatalf("取品牌收到的工程 id = %q，want %q —— 漏传时多工程部署下 resolveProjectID 回 ErrInvalidParam，"+
+			"评分退化成「读不到这个品牌，无法评分」空态", got.ProjectID, seoTestProjectID)
+	}
+}

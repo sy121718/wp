@@ -121,7 +121,10 @@ func SeoScoreInputOf(ctx context.Context, r ProductReadPort, insts SeoInstancePa
 
 	switch kind {
 	case scoring.KindCategory:
-		node, err := r.GetCategory(ctx, &productdto.GetCategoryReq{ID: id})
+		// 取分类带本函数已经收到的工程作用域（projectID 是形参，与商品那一跳同口径）：
+		// 不传时多工程部署下 product 侧的 resolveProjectID 回 ErrInvalidParam，评分退化成
+		// 「读不到这个分类，无法评分」空态 —— 分类其实就在调用方那个工程里。
+		node, err := r.GetCategory(ctx, &productdto.GetCategoryReq{ID: id, ProjectID: projectID})
 		if err != nil || node == nil {
 			res := emptyOf(productenums.SEOEmptyCategoryUnreadable, "读不到这个分类，无法评分")
 			res.Err = err
@@ -150,7 +153,9 @@ func SeoScoreInputOf(ctx context.Context, r ProductReadPort, insts SeoInstancePa
 		}
 
 	case scoring.KindBrand:
-		brand, err := r.GetBrand(ctx, &productdto.GetBrandReq{ID: id})
+		// 同分类：品牌读口同样要带上调用方给的工程作用域（漏传 = 多工程下读不到品牌、
+		// 评分退化成「读不到这个品牌，无法评分」空态）。
+		brand, err := r.GetBrand(ctx, &productdto.GetBrandReq{ID: id, ProjectID: projectID})
 		if err != nil || brand == nil {
 			res := emptyOf(productenums.SEOEmptyBrandUnreadable, "读不到这个品牌，无法评分")
 			res.Err = err
