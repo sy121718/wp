@@ -145,9 +145,10 @@ Jet 的 `if` 要求 bool，而缺失的 map 键求值成 nil —— 类型不符
 五条实测约束（踩过，别重试）：
 
 1. `{{import ...}}` 必须写在 `{{extends "layout.html"}}` **之后**、任何 `{{block}}` **之前**；
-2. **`.["t"](...)` 不能出现在「赋值右侧 / 单目表达式」里** —— Jet 报
+2. **`.["t"](...)` 不能出现在「赋值右侧 / 单目表达式 / `map(...)` 的参数值位置」里** —— Jet 报
    `unexpected node type .["t"] in unary expression`。这包括 yield 参数，也包括
-   `{{x := .["t"]("k", "兜底")}}`；一律先 `{{tr := .["t"]}}` 声明成变量再用 `tr(...)`。
+   `{{x := .["t"]("k", "兜底")}}` 与 `map("t", .["t"])`（后者实测记录在
+   `admin/partials/date_filter.html` 头部注释里）；一律先 `{{tr := .["t"]}}` 声明成变量再用 `tr(...)`。
    **取词留在调用点，片段只收成品文案** —— 否则 `admin_group_f_i18n_test.go` 的 key 判据会把词条算成孤儿；
 3. yield 有两种形态且配平要求**相反**：`{{yield b(args)}}` 不需要 `end`，`{{yield b(args) content}}` 必须配
    `end`。配平判据（`admin_template_integrity_test.go`）已同时识别两者；

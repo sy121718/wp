@@ -13,6 +13,7 @@
 | 写测试 / 改测试基建 / 下结论前的验证 | [`testing.md`](testing.md) |
 | 改组件 / 改样式 / 交互改动 / 多端适配 | [`frontend.md`](frontend.md) |
 | 写词条 / 改文案 / 后台整页与 JSON 响应的文案边界与取词 | [`i18n.md`](i18n.md)（**历史**：`?err=` 一类 URL 回执通道已退役，见该文第四节） |
+| 改 Jet 模板 / 取词 / 存在性判定（`isset`）/ `.["t"]` 调用形态 | [`jet-template-contract.md`](jet-template-contract.md) |
 | 并行批次执行者（子代理） | [`../agents/parallel-batch-rules.md`](../agents/parallel-batch-rules.md) |
 
 ## 分工
