@@ -435,21 +435,19 @@ func bundleSourceOptions(selected string) []map[string]any {
 
 // bundleSourceProductOptions 来源商品下拉项（工程内全部商品；自引用由服务端拒绝）。
 //
-// 「— 不选 —」空项给词条（事实），商品项给数据名 —— 与 productPickOptions 同一形状。
-// 商品项同样**不给空的 LabelKey 键**（模板判据是 isset，空串也会走取词分支渲染成空白）。
+// 形状直接复用 productPickOptions：「— 不选 —」空项给词条（事实）、商品项给数据名且
+// **不给空的 LabelKey 键**（模板判据是 isset，空串也会走取词分支渲染成空白）。
+// 这段形状只有一处实现 —— 两个构造点各写一遍时，改了一处不会报错，只会让其中一个下拉
+// 渲染出一排空白 option。
 func bundleSourceProductOptions(products []*productdto.ProductResp, selected string) []map[string]any {
-	out := make([]map[string]any, 0, len(products)+1)
-	out = append(out, map[string]any{
-		"ID": "", "LabelKey": productenums.ProductBundleOptionNone, "LabelFallback": "— 不选 —",
-		"Selected": selected == "",
-	})
+	data := make([]map[string]any, 0, len(products))
 	for _, p := range products {
 		if p == nil {
 			continue
 		}
-		out = append(out, map[string]any{"ID": p.ID, "Label": p.Name, "Selected": p.ID == selected})
+		data = append(data, map[string]any{"ID": p.ID, "Label": p.Name})
 	}
-	return out
+	return productPickOptions(productenums.ProductBundleOptionNone, "— 不选 —", selected, data)
 }
 
 // bundleSourceWarehouseGroups 来源仓下拉 + 各仓的仓库 SKU 勾选清单。

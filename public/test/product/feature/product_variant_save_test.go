@@ -535,7 +535,7 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 	engine := gin.New()
 	// 保存成功走 shell.RenderJump，没有渲染器会在 c.HTML 处 panic。
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	engine.POST("/admin/products/variant/preview", handle.ProductsVariantPreview)
 	engine.POST("/admin/products/variant/save", handle.ProductsVariantSave)
 
@@ -624,7 +624,7 @@ func TestVariantListSeedFromStoredVariants(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	engine.GET("/admin/products/edit", handle.ProductEditPage)
 	rec := httptest.NewRecorder()
 	// 变体清单在**编辑页**（详情页只读）：清单的初始行 / 保存入口都在那里。

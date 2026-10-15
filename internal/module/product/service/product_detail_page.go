@@ -9,9 +9,9 @@
 // 三档此前混在一句 `derr == nil && detail != nil` 里，「读不出来」被一起吞成了「商品不存在」
 // —— 用户以为商品被删了，而它只是这一层没读到。
 //
-// 行装配（productRow）仍留在控制器：它产出 gin.H、要取词函数、内部还会读一次评分，
-// 且列表页 / 编辑页 / 本页三处共用同一份组装 —— 本方法只把**原料**（Detail / Categories /
-// Brands / Tags / WarehouseOptions）交给它。理由与 product_list_page.go 的文件头同一套。
+// **行装配也在本方法里**（service/product_row.go 的 productRow）：列表页 / 编辑页 / 本页
+// 三处共用同一份组装，原料（Detail / Categories / Brands / Tags / WarehouseOptions）就是
+// 本方法已经取到的那些 —— 产物是 view.Product。理由与 product_list_page.go 的文件头同一套。
 package productservice
 
 import (
@@ -136,6 +136,13 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 		}
 	}
 
+	// 行装配：成品行在**读模型**里产出（控制器不再拼行）。条件与原控制器一致 —— 取数全部
+	// 成功、商品存在、详情非 nil 才装配；失败时不装配：原料可能是半截的，渲染它只会得到
+	// 一张残表（列表页逐行取详情失败会 break）。
+	if firstErr == nil && view.HasProduct && view.Detail != nil {
+		view.Product = s.productRow(ctx, selected, FlattenCategoryTree(view.Categories),
+			view.Brands, view.Tags, view.WarehouseOptions, view.Detail)
+	}
 	if firstErr != nil {
 		// 失败页给齐模板必需键：上面每个字段都有值（空列表而不是缺失），渲染不会断在
 		// 「失败分支只设了错误键」上（internal/templates/CLAUDE.md §错误分支也必须给齐必需键）。

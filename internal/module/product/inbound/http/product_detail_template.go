@@ -24,7 +24,6 @@ import (
 	"go_wp/internal/shell"
 	"go_wp/internal/siteurl"
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"net/http"
 	"regexp"
@@ -242,16 +241,9 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 		adminui.RenderPage(c, productDetailTemplatePageTemplate, &unassembled)
 		return
 	}
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		// 装配缺陷：读模型没接上。给 500 而不是渲染成一张空表 —— 否则
-		// 「装配没接上」与「这个商品还没有模板」在页面上长得一模一样，而前者要有人去看装配。
-		logger.Scene(productPageScene).Error(errDetailTemplateReadModel,
-			"商品详情页模板页取数无处可去：读模型未注入")
-		missing := detailTemplateLoadFailureView(http.StatusInternalServerError)
-		adminui.RenderPage(c, productDetailTemplatePageTemplate, &missing)
-		return
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	view, err := reader.ProductDetailTemplatePage(c.Request.Context(), &productdto.ProductDetailTemplatePageReq{
 		ProjectID: c.Query("project"),
 		ProductID: c.Query("product"),
@@ -274,9 +266,6 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	}
 	adminui.RenderPage(c, productDetailTemplatePageTemplate, view)
 }
-
-// errDetailTemplateReadModel 读模型未注入时的日志事由（不出口，只进日志）。
-var errDetailTemplateReadModel = errors.New("商品页面读模型未注入（装配缺陷）")
 
 // detailTemplateUnassembledView 模板能力未装配时的视图（200，就地说明）。
 //

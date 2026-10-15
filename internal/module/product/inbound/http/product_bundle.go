@@ -4,14 +4,12 @@ import (
 	"errors"
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
-	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"net/http"
 	"net/url"
@@ -96,15 +94,9 @@ func bundleSubmittedFormFromRequest(c *gin.Context) *productdto.BundleSubmittedF
 }
 
 func (h *productPageHandle) renderBundlePage(c *gin.Context, submitted *productdto.BundleSubmittedForm, failure string, fragment bool) {
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		// 装配缺陷：读模型没接上。给 500 而不是渲染成一张能保存的空表单 ——
-		// 否则运营会照着一张「配置读不出来」的空表去配，且提交也会失败。
-		logger.Scene(productPageScene).Error(errBundleReadModel, "捆绑配置页取数无处可去：读模型未注入")
-		missing := bundlePageFailureView(http.StatusInternalServerError)
-		adminui.RenderPage(c, productBundlePageTemplate, &missing)
-		return
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	view, err := reader.ProductBundlePage(c.Request.Context(), &productdto.ProductBundlePageReq{
 		ProjectID:         bundleQueryParam(c, "project", "projectId"),
 		ProductID:         bundleQueryParam(c, "product", "productId"),
@@ -158,9 +150,6 @@ func (h *productPageHandle) renderBundlePage(c *gin.Context, submitted *productd
 	// 整页档：出口只有这一处（页面成败都走它）。没有提交快照的装载失败 = 失败槽 + 状态码。
 	c.HTML(view.PageStatus(), productBundlePageTemplate, bundlePageData(c, view, extra))
 }
-
-// errBundleReadModel 读模型未注入时的日志事由（不出口，只进日志）。
-var errBundleReadModel = errors.New("商品页面读模型未注入（装配缺陷）")
 
 // bundlePageData 摊平视图 + 叠加控制器那三样键（写失败的成品串与两个 URL 形状）。
 //
@@ -345,7 +334,7 @@ func (h *productPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
 			"skuCode":     m.SKUCode,
 			"productId":   m.ProductID,
 			"productName": m.ProductName,
-			"spec":        specLabel(m.OptionValues, attrs),
+			"spec":        productservice.SpecLabel(m.OptionValues, attrs),
 			"sourceKind":  m.Source.Kind,
 			"sourceLabel": bundleSourceLabel(tr, productdto.BundleOption{
 				SourceKind: m.Source.Kind, WarehouseID: m.Source.WarehouseID,
@@ -366,7 +355,7 @@ func (h *productPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
 		if label == "" {
 			label = strings.TrimSpace(s.VariantID)
 		}
-		if spec := specLabel(s.OptionValues, attrs); spec != "" && spec != "—" {
+		if spec := productservice.SpecLabel(s.OptionValues, attrs); spec != "" && spec != "—" {
 			if label == "" {
 				label = spec
 			} else {
@@ -525,52 +514,6 @@ func (h *productPageHandle) bundlePanel(c *gin.Context, projectID, productID str
 	panel["Options"] = rows
 	panel["OptionCount"] = len(rows)
 	return panel
-}
-
-// productStockCell 商品列表「库存」列的数据（三态 + 分仓明细）。
-//
-// 三态口径（docs/14 §1.4）：任一仓不跟踪 → ∞（**绝不求和**，求和等于把无限当 0）；
-// 全部跟踪 → 各仓数量之和（0 就显示 0）；一个仓都没有这一行 → 未入库。
-//
-// 分仓明细按**工程仓库清单**逐仓列出：服务端返回的 StockWarehouses 只含有库存行的仓，
-// 「某仓没有行」同样是一条信息（该仓未入库）—— 只列有行的仓会让运营以为这个商品只在那几个仓。
-//
-// 文案（∞ / 未入库）留在模板侧用 tr() 取词，这里只给出状态与数字：
-// 一种语言一个值，别把中文拼进数据层（接口调用方拿到的会是中文）。
-func productStockCell(detail *productdto.ProductResp, warehouses []productdto.WarehouseOptionView) gin.H {
-	cell := gin.H{
-		"State": productenums.StockStateNone,
-		"Total": 0,
-		"Rows":  []gin.H{},
-	}
-	if detail == nil {
-		return cell
-	}
-	if detail.StockState != "" {
-		cell["State"] = detail.StockState
-	}
-	cell["Total"] = detail.StockTotal
-	byWarehouse := make(map[string]*productdto.ProductWarehouseStockResp, len(detail.StockWarehouses))
-	for _, row := range detail.StockWarehouses {
-		if row != nil {
-			byWarehouse[row.WarehouseID] = row
-		}
-	}
-	rows := make([]gin.H, 0, len(warehouses))
-	for _, w := range warehouses {
-		item := gin.H{"WarehouseID": w.ID, "WarehouseLabel": w.Label,
-			"State": productenums.StockStateNone, "Quantity": 0}
-		if row, ok := byWarehouse[w.ID]; ok {
-			item["State"] = row.State
-			item["Quantity"] = row.Quantity
-			if row.SKUCode != "" {
-				item["SKUCode"] = row.SKUCode
-			}
-		}
-		rows = append(rows, item)
-	}
-	cell["Rows"] = rows
-	return cell
 }
 
 // bundlePanelReadFailedFallback 捆绑配置读取失败的中文兜底（key 在

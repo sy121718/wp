@@ -27,7 +27,7 @@ import (
 
 // TestProductCreateFailSplitsByRequestKind 分档判据。
 func TestProductCreateFailSplitsByRequestKind(t *testing.T) {
-	h := &productPageHandle{products: &productPageReaderStub{createFormView: productCreateFormViewStub(nil)}}
+	h := &productPageHandle{products: &productPageReaderStub{createFormView: productCreateFormViewStub(nil)}, reader: &productPageReaderStub{createFormView: productCreateFormViewStub(nil)}}
 	const msg = "捆绑商品必须填写套餐价"
 
 	// htmx 档：200 + 片段，且**不设** HX-Redirect（那是「跳走」的形态，与「原地留住输入」相反）。
@@ -74,7 +74,7 @@ func TestProductCreateFailSplitsByRequestKind(t *testing.T) {
 // 是批量改价的 productdto.PricingForm 结构体，撞名会让模板 {{.Form.name}} 命中结构体而渲染失败）。
 func TestProductCreateFormViewCarriesEchoKeys(t *testing.T) {
 	reader := &productPageReaderStub{createFormView: productCreateFormViewStub(nil)}
-	h := &productPageHandle{products: reader}
+	h := &productPageHandle{products: reader, reader: reader}
 	c, _ := newHXContext(t, "true",
 		"name=DRAFT+SKU&sku=ABC_B&type=bundle&attributeIds=a1&attributeIds=a2&warehouseIds=w1&trackQuantity=1")
 

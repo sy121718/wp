@@ -472,7 +472,7 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
+	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.GET("/admin/product-categories", handle.ProductCategoriesPage)
 	engine.POST("/admin/product-categories/create", handle.ProductCategoriesCreate)
 	engine.POST("/admin/product-categories/delete", handle.ProductCategoriesDelete)

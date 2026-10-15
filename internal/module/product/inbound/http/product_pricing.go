@@ -2,14 +2,11 @@ package producthttp
 
 import (
 	"encoding/json"
-	"errors"
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
-	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -86,20 +83,9 @@ const productPricingPageTemplate = "admin/product/product_pricing.html"
 // form / preview / errMsg 是**写路径的产物**（试算失败要原地重渲染，把用户填的表单与试算结果
 // 带回来）。service 不认识 gin.Context，所以由这里读出来经 Req 传进去。
 func (h *productPageHandle) renderPricingPageWith(c *gin.Context, form *productdto.PricingForm, preview *productdto.PricingPreviewResp, errMsg string) {
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		// 装配缺陷：读模型没接上（老装配 / 桩）。本页三处取数各自降级、没有取数失败档，
-		// 所以这是**唯一**的非 200 来源 —— 渲染成 500 而不是静默给空页面：空的参考表与
-		// 「根本没接上」长得一模一样，而后者要有人去看装配。
-		logger.Scene("product").Error(errors.New("商品页面读模型未注入（装配缺陷）"), "定价页取数无处可去")
-		adminui.RenderPage(c, productPricingPageTemplate, &productdto.ProductPricingPageView{
-			Title: productenums.ProductPricingTitle, Menu: "product-pricing",
-			Projects: []projectdto.ProjectResp{}, PreviewSummary: map[string]any{},
-			PreviewRows: []map[string]any{}, History: []map[string]any{},
-			HTTPStatus: http.StatusInternalServerError,
-		})
-		return
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	view, err := reader.ProductPricingPage(c.Request.Context(), &productdto.ProductPricingPageReq{
 		ProjectID: strings.TrimSpace(c.Query("project")),
 		Form:      form,

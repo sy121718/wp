@@ -136,6 +136,13 @@ func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEd
 		}
 	}
 
+	// 行装配：成品行在**读模型**里产出（控制器不再拼行）。条件与原控制器一致 —— 取数全部
+	// 成功、商品存在、详情非 nil 才装配；失败时不装配：原料可能是半截的，渲染它只会得到
+	// 一张残表（列表页逐行取详情失败会 break）。
+	if firstErr == nil && view.HasProduct && view.Detail != nil {
+		view.Product = s.productRow(ctx, selected, FlattenCategoryTree(view.Categories),
+			view.Brands, view.Tags, view.WarehouseOptions, view.Detail)
+	}
 	if firstErr != nil {
 		// 失败页给齐模板必需键：上面每个字段都有值（空列表而不是缺失），渲染不会断在
 		// 「失败分支只设了错误键」上（internal/templates/CLAUDE.md §错误分支也必须给齐必需键）。

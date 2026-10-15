@@ -39,7 +39,7 @@ func newCreateFlowEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
+	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.GET("/admin/products", handle.ProductsPage)
 	engine.GET("/admin/products/new", handle.ProductNewPage)
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)

@@ -107,10 +107,6 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 	// SEO 检查跟着商品走：它已从列表页的折叠区搬进**商品详情页**
 	// （评分/变体/SEO 都是某个商品的属性：SEO 面板在**编辑页**，详情页只读，见 admin-ui-logic §1）。
 	product := productRowForRender()
-	product["Subtitle"] = ""
-	product["Unit"] = ""
-	product["SEOTitle"] = ""
-	product["SEODescription"] = ""
 	products := renderAdminTemplate(t, "admin/product/product_edit.html", productPageLayoutData(gin.H{
 		"title": "编辑商品", "menu": "products",
 		"Projects": []gin.H{}, "SelectedProject": "proj-1",
@@ -165,8 +161,6 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 	}
 }
 
-// productRowForRender 商品列表行数据（键集合与 ProductsPage 组装的 row 一致）。
-// productRowForRender 商品行数据的渲染用例夹具（评分片段与页面挂载点共用）。
 func testTranslateFunc() func(key, fallback string) string {
 	// 单测里的取词函数：与「i18n 未初始化」时的真实链路一致 —— 返回调用点给的中文兜底。
 	// 展示文案的取词函数在真实请求里由 shell.TranslateFor(c) 提供（页面路由组的中间件）。
@@ -178,25 +172,34 @@ func testTranslateFunc() func(key, fallback string) string {
 	}
 }
 
-func productRowForRender() gin.H {
+// productRowForRender 商品行数据的渲染用例夹具（详情页 / 编辑页 / 捆绑区块 / 评分片段共用）。
+//
+// 行由读模型装配（service/product_row.go），形状是 dto.ProductRow —— 本夹具与它逐字段对齐。
+// 模板读 `p.X` 时 struct 缺字段会**渲染期报错**（map 缺键只是 nil），所以这个夹具同时充当
+// 「模板 ↔ 结构体」的渲染守卫；字段级双向对账见 product_row_template_test.go。
+func productRowForRender() *productdto.ProductRow {
 	attr := &productdto.AttributeResp{ID: "a1", Name: "颜色", IsVariation: true}
-	return gin.H{
-		"ID": "p1", "Name": "纯棉 T 恤", "Slug": "tee", "Status": "published",
-		"PriceMin": "59", "PriceMax": "99", "VariantCount": 1,
-		"Variants": []gin.H{{
+	return &productdto.ProductRow{
+		ID: "p1", Name: "纯棉 T 恤", Slug: "tee", Status: "published",
+		PriceMin: "59", PriceMax: "99", VariantCount: 1,
+		Variants: []map[string]any{{
 			"ID": "v1", "SKUCode": "SZ_TEE_001", "Spec": "颜色 白色",
 			"Price": "59", "ComparePrice": "—", "CostPrice": "—", "Enabled": true, "StockTotal": 10,
 		}},
-		"AttributeIDs": []string{"a1"}, "AttributeIDsCSV": "a1",
-		"Attributes":          []*productdto.AttributeResp{attr},
-		"VariationAttributes": []*productdto.AttributeResp{attr},
-		"CategoryIDs":         []string{"c1"},
-		"CategoryChecks":      []gin.H{{"ID": "c1", "Label": "男装", "Checked": true}},
-		"PrimaryOptions":      []gin.H{{"ID": "c1", "Label": "男装", "Selected": true}},
-		"BrandOptions":        []gin.H{{"ID": "", "Label": "（不指定品牌）", "Selected": true}},
-		"PrimaryCategoryName": "男装", "BrandName": "—",
-		"TagIDs": []string{}, "TagChecks": []gin.H{}, "AutoTags": []gin.H{},
-		"Ratings": []gin.H{}, "HasRating": false, "RatingAvg": "0.00", "RatingCount": 0,
+		Attributes:          []*productdto.AttributeResp{attr},
+		VariationAttributes: []*productdto.AttributeResp{attr},
+		CategoryChecks:      []map[string]any{{"ID": "c1", "Label": "男装", "Checked": true}},
+		CategoryCell:        "男装",
+		PrimaryOptions:      []map[string]any{{"ID": "c1", "Label": "男装", "Selected": true}},
+		BrandOptions:        []map[string]any{{"ID": "", "Label": "（不指定品牌）", "Selected": true}},
+		BrandName:           "—",
+		TagChecks:           []map[string]any{},
+		AutoTags:            []map[string]any{},
+		TagLabel:            "—",
+		Ratings:             []map[string]any{},
+		HasRating:           false,
+		RatingAvg:           "0.00",
+		RatingCount:         0,
 	}
 }
 

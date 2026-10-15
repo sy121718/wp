@@ -404,7 +404,7 @@ func TestProductPageCreateContainerSKUTakenChineseError(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	engine.POST("/admin/products/create", handle.ProductsCreate)
 
 	form := url.Values{
@@ -554,7 +554,7 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products", handle.ProductsPage)
 	// 建表单的落点已是独立整页（列表页抽屉退役，见 getProductsNewPage 的注释）——
@@ -623,7 +623,7 @@ func TestProductPageCreateUntrackedQuantityNeverPrefilled(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	engine.POST("/admin/products/create", handle.ProductsCreate)
 
 	post := func(name, slug, sku string, form url.Values) {
@@ -715,7 +715,7 @@ func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products", handle.ProductsPage)
 

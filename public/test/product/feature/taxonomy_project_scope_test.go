@@ -22,7 +22,7 @@ func TestTaxonomyFormsCarryProjectScope(t *testing.T) {
 	if _, err := f.projects.Create(ctx, &projectdto.CreateReq{Name: "另一个工程"}); err != nil {
 		t.Fatal(err)
 	}
-	h := producthttp.NewProductPageHandle(f.svc, f.projects)
+	h := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	router := gin.New()
 	// 写成功走 shell.RenderJump，没有渲染器会在 c.HTML 处 panic。
 	router.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)

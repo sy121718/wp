@@ -35,7 +35,7 @@ func newProductsPageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	engine.GET("/admin/products", handle.ProductsPage)
 	// 评分是商品的子资源：明细表在**只读**的详情页，「添加评分 / 删除」在编辑页。
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)

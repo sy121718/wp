@@ -6,18 +6,19 @@
 
    —— 提交失败的「原地留住输入」分档（路径 A 渐进增强，与商品建表单同形）——
    表单保留原生 method/action（无 JS 时行为与从前一字不差），另加 hx-post：htmx 优先拦住
-   submit，服务端按 HX-Request 分档（见 product_attribute_page_util.go 的 attrGroupFormFail）：
+   submit，服务端按 HX-Request 分档（见 product_attributes.go 的 attrGroupFormFail）：
 
      · htmx 请求：200 + **本片段自身**（错误槽 + 回填后的表单）—— 换掉 data-attr-group-host；
-     · 原生请求：302 + ?err= 回列表页（既有行为）。
+     · 原生请求：整页提示（shell.RenderJump）回列表页。
 
    本片段的顶层容器 `<div data-attr-group-host>` 就是这个替换单元：抽屉（<template>）被
    ui/drawer.js 克隆到 document 级之后，表单的 `closest [data-attr-group-host]` 找到的正是
    克隆体内部的这个 div —— 两条入口都不必各自包一层（包两层会让「谁是被替换的那个」不一致）。
 
-   回填值来自 handler 注入的 **FormEcho / FormEchoChecked / FormEchoMulti**（见 formEchoData）：
+   回填值来自 handler 注入的 **FormEcho**（dto.AttrGroupFormEcho 结构体指针，见 attrGroupFormFail）：
+   模板读的是**导出字段名**（`.FormEcho.Name`），与控件的 `name=` 由 form: 标签对齐。
    带前缀是因为片段与页面共用一份键空间，而属性页的键空间里已有 `Mode` / `Rows` 这类名字。
-   首屏**不注入**这三个键（gfFill 为假 → 渲染 .Name / .Key / .Sort / .VariationChecked 初值）。
+   首屏**不给**这个键（gfFill 为假 → 渲染 .Name / .Key / .Sort / .VariationChecked 初值）。
 
    数据键：
      · Csrf / Project / t / tf —— 片段是**带参数 include** 的，拿不到页面 data，取词函数与 token
@@ -32,7 +33,7 @@
        `%s` 参数），取词在本片段的 tf 里做（控制器不取词）。
 
    表单字段名与 /admin/product-attributes/{create,update} 的绑定逐字一致，改这里等于改协议；
-   改 `name=` 必须同步改 util 的 attrGroupFormFields（漏列会让失败片段读不到键而整块 500）。 *}
+   改 `name=` 必须同步改 dto.AttrGroupFormEcho 的 form: 标签（双向对账见 product_attribute_form_fail_test.go）。 *}
 {{gfFill := isset(.FormEcho)}}
 {{gfCreate := .IsCreate}}
 {* 占位文案两形态有别：新建给「例：颜色」的示例，编辑给中性的字段名 ——
@@ -55,25 +56,25 @@
         <form method="post" action="{{.Action}}" class="form-stack" data-attr-group-form
               hx-post="{{.Action}}" hx-target="closest [data-attr-group-host]" hx-swap="outerHTML">
             <input type="hidden" name="csrf_token" value="{{.Csrf}}">
-            <input type="hidden" name="projectId" value="{{if gfFill}}{{.FormEcho.projectId}}{{else}}{{.Project}}{{end}}">
+            <input type="hidden" name="projectId" value="{{if gfFill}}{{.FormEcho.ProjectID}}{{else}}{{.Project}}{{end}}">
             {* 抽屉形态申报（见上方注释）：失败重渲染后「取消」按钮仍在抽屉里。 *}
             {{if isset(.InDrawer)}}<input type="hidden" name="inDrawer" value="1">{{end}}
             {{if gfCreate}}
             {* 新建：groupId=new 是值编辑器容器的 id 依据（attr-values-new）。 *}
             <input type="hidden" name="groupId" value="new">
             {{else}}
-            <input type="hidden" name="id" value="{{if gfFill}}{{.FormEcho.id}}{{else}}{{.GroupID}}{{end}}">
+            <input type="hidden" name="id" value="{{if gfFill}}{{.FormEcho.ID}}{{else}}{{.GroupID}}{{end}}">
             {{end}}
             <div class="form-inline">
-                <input aria-label="{{gfNamePh}}" type="text" class="form-input" name="name" value="{{if gfFill}}{{.FormEcho.name}}{{else}}{{.Name}}{{end}}" placeholder="{{gfNamePh}}" required>
-                <input aria-label="{{gfKeyPh}}" type="text" class="form-input" name="key" value="{{if gfFill}}{{.FormEcho.key}}{{else}}{{.Key}}{{end}}" placeholder="{{gfKeyPh}}" autocomplete="off">
-                <input aria-label="{{ .["t"]("admin.product_attributes.ph.sort", "排序") }}" type="number" class="form-input" name="sort" value="{{if gfFill}}{{.FormEcho.sort}}{{else}}{{.Sort}}{{end}}" placeholder="{{ .["t"]("admin.product_attributes.ph.sort", "排序") }}" inputmode="numeric" step="1">
+                <input aria-label="{{gfNamePh}}" type="text" class="form-input" name="name" value="{{if gfFill}}{{.FormEcho.Name}}{{else}}{{.Name}}{{end}}" placeholder="{{gfNamePh}}" required>
+                <input aria-label="{{gfKeyPh}}" type="text" class="form-input" name="key" value="{{if gfFill}}{{.FormEcho.Key}}{{else}}{{.Key}}{{end}}" placeholder="{{gfKeyPh}}" autocomplete="off">
+                <input aria-label="{{ .["t"]("admin.product_attributes.ph.sort", "排序") }}" type="number" class="form-input" name="sort" value="{{if gfFill}}{{.FormEcho.Sort}}{{else}}{{.Sort}}{{end}}" placeholder="{{ .["t"]("admin.product_attributes.ph.sort", "排序") }}" inputmode="numeric" step="1">
                 <label class="attr-switch">
-                    {* 勾选回填：必须按**值**命中（FormEchoMulti 里存在 "1"）——
-                       用 FormEchoChecked 判会一次勾上（同名隐藏域让它**每次提交都存在**），
+                    {* 勾选回填：必须按**值**命中（FormEcho.IsVariation 里存在 "1"）——
+                       按 bool 或「首个值」判（同名隐藏域让它**每次提交都存在**）会把没勾的组判成勾上的，
                        于是用户没勾的组在失败重渲染后变成勾上的（见 util 的 formValueHas）。 *}
                     <input type="hidden" name="isVariation" value="0">
-                    <input type="checkbox" name="isVariation" value="1"{{if gfFill}}{{range _, v := .FormEchoMulti.isVariation}}{{if v == "1"}} checked{{end}}{{end}}{{else}}{{if .VariationChecked}} checked{{end}}{{end}}> {{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}
+                    <input type="checkbox" name="isVariation" value="1"{{if gfFill}}{{range _, v := .FormEcho.IsVariation}}{{if v == "1"}} checked{{end}}{{end}}{{else}}{{if .VariationChecked}} checked{{end}}{{end}}> {{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}
                 </label>
             </div>
             {* 属性值行编辑器只属于新建形态：编辑抽屉只改属性组本身，值走「属性值」抽屉。

@@ -101,7 +101,7 @@ func TestProductScorePanelUsesProductProfile(t *testing.T) {
 			Images: []string{"/img/tee.webp"}, ImageAlts: []string{"白色纯棉 T 恤"},
 		},
 	}
-	h := NewProductPageHandle(fake, nil)
+	h := NewProductPageHandle(fake, nil, nil)
 	body := postScorePanel(t, h.ProductScorePanel, url.Values{
 		"projectId": {"proj-1"}, "productId": {"p1"},
 	})
@@ -127,7 +127,7 @@ func TestProductScorePanelListsTitleConflicts(t *testing.T) {
 			{ID: "p2", ProjectID: "proj-1", Name: "纯棉 T 恤", Slug: "tee-b", Status: "published"},
 		},
 	}
-	h := NewProductPageHandle(fake, nil)
+	h := NewProductPageHandle(fake, nil, nil)
 	body := postScorePanel(t, h.ProductScorePanel, url.Values{
 		"projectId": {"proj-1"}, "productId": {"p1"},
 	})
@@ -143,7 +143,7 @@ func TestBrandScorePanelUsesLandingProfile(t *testing.T) {
 	fake := &fakeProductService{
 		brands: []*productdto.BrandResp{{ID: "b1", ProjectID: "proj-1", Name: "示例品牌", Slug: "demo"}},
 	}
-	h := NewProductPageHandle(fake, nil)
+	h := NewProductPageHandle(fake, nil, nil)
 	body := postScorePanel(t, h.ProductBrandScorePanel, url.Values{
 		"projectId": {"proj-1"}, "id": {"b1"},
 	})
@@ -159,7 +159,7 @@ func TestCategoryScorePanelUsesLandingProfile(t *testing.T) {
 	fake := &fakeProductService{
 		cats: []*productdto.CategoryResp{{ID: "c1", ProjectID: "proj-1", Name: "男装", Slug: "men"}},
 	}
-	h := NewProductPageHandle(fake, nil)
+	h := NewProductPageHandle(fake, nil, nil)
 	body := postScorePanel(t, h.ProductCategoryScorePanel, url.Values{
 		"projectId": {"proj-1"}, "id": {"c1"},
 	})
@@ -172,7 +172,7 @@ func TestCategoryScorePanelUsesLandingProfile(t *testing.T) {
 
 // TestProductScorePanelMissingEntityIsReadable 读不到实体时给一句可读的话，不是 500。
 func TestProductScorePanelMissingEntityIsReadable(t *testing.T) {
-	h := NewProductPageHandle(&fakeProductService{}, nil)
+	h := NewProductPageHandle(&fakeProductService{}, nil, nil)
 	body := postScorePanel(t, h.ProductScorePanel, url.Values{"projectId": {"proj-1"}, "productId": {"ghost"}})
 	if !strings.Contains(body, "读不到这个商品") {
 		t.Fatalf("空态应给出可读文案，实际输出：%s", body)

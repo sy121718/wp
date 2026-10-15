@@ -1,4 +1,10 @@
-package producthttp
+package productservice
+
+// product_row_options_test.go — 行装配里「含空项的下拉」选项事实的形状契约。
+//
+// 原 internal/module/product/inbound/http/product_dropdown_option_shape_test.go，随
+// 行装配下沉（productRow 从控制器搬进 service/product_row.go）迁到本包：判据没变，
+// 位置跟着实现走 —— 断言的是 service 造出来的行，不是控制器的。
 
 import (
 	"testing"
@@ -15,8 +21,8 @@ import (
 //
 // isset 问的是**键在不在**，不是「值空不空」—— 数据行（分类名 / 品牌名 / 商品名，它们不是文案、
 // 没有词条）一旦带上 `LabelKey: ""` 这个键，isset 即为真，于是走取词分支渲染出**空白 option**：
-// 页面 200、结构完整、没有任何报错（实测 `public/test/product/feature` 的
-// `TestTaxonomyAdminPages` 报「商品编辑页缺少 "山野"」）。
+// 页面 200、结构完整、没有任何报错（实测 public/test/product/feature 的
+// TestTaxonomyAdminPages 报「商品编辑页缺少 "山野"」）。
 //
 // 所以数据行只给 `Label`，**不给空的 LabelKey / LabelFallback 键**；这条判据两个方向都守：
 // 数据行带上键 → 失败；空项没给非空 LabelKey → 也失败。

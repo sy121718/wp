@@ -1,7 +1,6 @@
 package producthttp
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/shell"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
@@ -213,19 +211,9 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	// 每个失败点各写一遍「渲染失败页」等于每页各有一份「失败页长什么样」的实现，
 	// 改一处必然漏一处；这里只记第一处失败的原因，末尾统一出口。
 	// httpStatus 与下面的筛选状态（status 查询串）不是一回事，名字分开避免撞车。
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		// 装配没接上读模型（老装配 / 桩）：整页 + 500 + no-store，走同一份失败页形状
-		//（与 ProductNewPage 同一处理）。这条不可达就说明装配漏了；真出现时也不能把
-		//「没接上」说成「没有数据」。
-		view := &productdto.ProductListPageView{
-			Title: MsgProductsTitle, Menu: "products", Limit: productListPageSize,
-			LoadFailed: true, LoadError: productInternalText(c, nil),
-			HTTPStatus: http.StatusInternalServerError,
-		}
-		adminui.RenderPage(c, productListPageTemplate, view)
-		return
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	// 取参数 → 调读模型（取数编排在 service：取哪些数据、按什么顺序、哪条失败算 400 /
 	// 哪条只降级，都是业务结论。见 service.ProductListPage）。
 	// 页码归一用跨页共用的 productPageNumber（属性页 / 分类标签页同口径）。
@@ -249,24 +237,11 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	// 页壳键：title 的 i18n key 常量在本包（MsgProductsTitle 是迁移 163 seed 的词条名）。
 	view.Title = MsgProductsTitle
 	view.Menu = "products"
-	// 分类扁平行（行渲染按「父在前、子紧随」的顺序读 Flat）、状态下拉、改价表单初值：
-	// 三处的工具都被别的页面用着（分类标签页 / 详情页回显 / 独立定价页），所以留在本包。
-	view.Flat = productservice.FlattenCategoryTree(view.Categories)
+	// 状态下拉与改价表单初值：两处的工具都被别的页面用着（详情页回显 / 独立定价页），
+	// 所以留在本包。分类扁平行与成品行**不在控制器**了 —— 两者只服务行装配，已随行下沉
+	// 进读模型（service/product_row.go），本页拿到的是排好序的 view.Products。
 	view.Statuses = productStatusOptions(view.FilterStatus)
 	view.Form = productservice.DefaultPricingForm(view.Rules, view.Roundings)
-	// 成品行：一行一个 productRow（它与详情页、只读页共用一份组装）。**取数失败时不装配** ——
-	// 那时 RowDetails 可能是半截的（逐行取详情失败会 break），渲染它只会得到一张残表。
-	if err == nil {
-		rows := make([]map[string]any, 0, len(view.RowDetails))
-		for _, detail := range view.RowDetails {
-			// 具名占位符句式的例外：这个 tr 只经由 productRow 服务于 tagCellLabel 的
-			// 「{n} 个」词条（i18n.FillTranslate），模板侧的 tf 只填 `%s`，没有等价能力
-			//（见 tagCellLabel 的注释）—— 本页其余槽位一律交事实、由模板取词。
-			rows = append(rows, h.productRow(ctx, view.SelectedProject, view.Flat, view.Brands, view.Tags,
-				view.WarehouseOptions, detail, shell.TranslateFor(c)))
-		}
-		view.Products = rows
-	}
 	// 分页条：Go 只交事实（总数 / 页码 / 每页条数 / 基地址），文案、页码窗口与链接由
 	// admin/partials/pagination.html 渲染。基地址带当前筛选条件，翻页不丢条件。
 	//
@@ -293,153 +268,6 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 	}
 	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
 	adminui.RenderPage(c, productListPageTemplate, view)
-}
-
-// productRow 组装单个商品的页面视图数据（列表页与详情页共用）。
-//
-// 键分两段：汇总段（VariantCount / PriceMin / PriceMax / HasRating / RatingAvg /
-// RatingCount / CategoryCell / CategoryOthers / BrandName）只回答「有哪些商品」，
-// 列表页只用这一段；明细段（Variants / Ratings / CategoryChecks / TagChecks /
-// AutoTags / VariationAttributes …）是某个商品的子资源，只有详情页用。
-//
-// 两页共用同一份组装：同一个值如果在两处各算一遍，分叉时没有任何东西会报错
-// （与「同一概念两处口径」是同一类问题）。
-//
-// tr 参数是**例外**（具名占位符句式）：只有 TagLabel 用得上它 —— 那条词条是
-// 「{n} 个」（i18n.FillTranslate 的具名占位符），而模板侧的 tf 只有 `%s`，填不了它。
-// 其余槽位（状态 / 主分类 / 品牌）一律交事实，取词在模板。
-func (h *productPageHandle) productRow(ctx context.Context, selected string,
-	flat []*productdto.CategoryResp, brands []*productdto.BrandResp, tags []*productdto.TagResp,
-	warehouses []productdto.WarehouseOptionView, detail *productdto.ProductResp, tr func(key, fallback string) string) gin.H {
-	// 评分读一次：明细 + 投影值（issue #33）。读不到按「没有评分」处理，页面照常渲染。
-	rating := ratingOf(h.products, ctx, selected, detail.ID)
-	ratingRows := make([]gin.H, 0, len(rating.Items))
-	for _, it := range rating.Items {
-		ratingRows = append(ratingRows, gin.H{
-			"ID": it.ID, "Score": formatScore(it.Score),
-			"Source": it.Source, "CreatedAt": it.CreatedAt,
-		})
-	}
-	categoryCell, categoryOthers := categoryCellLabel(flat, detail.CategoryIDs, detail.PrimaryCategoryID)
-	// 标签与自动标签各算一次（列表列的取值与详情页的勾选态共用同一份结果）。
-	tagChecks := checkedTagOptions(tags, detail.TagIDs)
-	autoTags := attachedAutoTags(tags, detail.TagIDs)
-	return gin.H{
-		"ID": detail.ID, "Name": detail.Name, "Slug": detail.Slug,
-		// 主体 SKU（products.sku_code）：详情页基本信息区只读展示 + 一句话说明唯一性范围。
-		"SKUCode":  detail.SKUCode,
-		"Status":   detail.Status,
-		"PriceMin": formatAmount(detail.PriceMin), "PriceMax": formatAmount(detail.PriceMax),
-		"VariantCount": detail.VariantCount,
-		// 变体**清单**行（docs/14 §8）：种子是库里已有的变体（不是重算笛卡尔积），
-		// 行上带可编辑的 SKU 与规范化后的 option_values（保存时原样回传）。
-		"Variants": variantListRows(detail),
-		// 引用的属性组（issue #7）：同一属性组可被多个商品共用，
-		// 这里只展示引用与属性值，编辑入口在 /admin/product-attributes。
-		"AttributeIDs":    detail.AttributeIDs,
-		"AttributeIDsCSV": strings.Join(detail.AttributeIDs, ","),
-		"Attributes":      detail.Attributes,
-		// 组合生成面板（issue #8）只列参与变体的组。
-		"VariationAttributes": variationAttributes(detail.Attributes),
-		// 分类与品牌（issue #10）：勾选态 / 选中态都由服务端算好，
-		// 模板只做展示；分类下拉带层级缩进（层级真源在 service 的树组装）。
-		// CategoryCell / CategoryOthers 是**列表列**要的「一个值 + 其余数量」：
-		// 一列一个概念，单元格放值，不把「挂载 N 个分类 · 主分类 X」拼成一句话。
-		"CategoryIDs":    detail.CategoryIDs,
-		"CategoryChecks": checkedCategoryOptions(flat, detail.CategoryIDs),
-		"CategoryCell":   categoryCell,
-		"CategoryOthers": categoryOthers,
-		// 主分类 / 品牌下拉：数据项给名字，「（不指定…）」空项给词条 + 中文兜底（事实），
-		// 取词在模板 —— 见 productPickOptions。
-		"PrimaryOptions":      productPickOptions(productenums.ProductsOptionNoPrimaryCategory, "（不指定主分类）", detail.PrimaryCategoryID, categoryPickOptions(flat)),
-		"BrandOptions":        productPickOptions(productenums.ProductsOptionNoBrand, "（不指定品牌）", detail.BrandID, productBrandNameOptions(brands)),
-		"PrimaryCategoryName": categoryNameByID(flat, detail.PrimaryCategoryID),
-		"BrandName":           brandNameByID(brands, detail.BrandID),
-		// 标签（issue #11）：手工标签勾选挂载（勾选态服务端算好）；自动标签只读展示 ——
-		// 归属由规则重算维护，手工改会被下一次重算覆盖，故不提供勾选框。
-		"TagIDs":    detail.TagIDs,
-		"TagChecks": tagChecks,
-		"AutoTags":  autoTags,
-		// TagLabel 是**列表列**要的单个值：这个商品挂了哪些标签（手工 + 自动合并的标签名）。
-		"TagLabel": tagCellLabel(tr, tagChecks, autoTags),
-		// 评分（issue #30 / #33）：明细 + 投影值。评分是独立表，这里读的是
-		// ListRatings 算出的平均值与条数；**没有评分时 HasRating=false** ——
-		// 空态与「评分 0」是两回事，模板据它给出不同文案。
-		"Ratings":     ratingRows,
-		"HasRating":   rating.HasRating,
-		"RatingAvg":   formatScore(rating.Rating),
-		"RatingCount": rating.RatingCount,
-		// 库存列（docs/14 §1.4）：三态 + 分仓明细。真源是 inventory_stocks，
-		// 这里只是把服务端算好的聚合结果整理成页面要的形状（服务端返回的是**有行**的仓，
-		// 未入库的仓由工程仓库清单补齐）。
-		"Stock": productStockCell(detail, warehouses),
-	}
-}
-
-// categoryCellLabel 商品行「分类」列要显示的单个值（一列一个概念：单元格是值，不是句子）。
-//
-// 取值优先级：主分类 > 挂载分类里的第一个 —— 挂了分类却没设主分类时显示空值是误导
-// （用户会以为这个商品没有分类）。都没有才返回空串，由模板渲染成 —。
-// others 是「其余分类数」，模板用 +N 徽章跟在值后面，不把三个信号拼成一句话。
-func categoryCellLabel(flat []*productdto.CategoryResp, attached []string, primaryID string) (label string, others int) {
-	if name := categoryNameByID(flat, primaryID); name != "" {
-		return name, maxInt(len(attached)-1, 0)
-	}
-	for _, node := range flat {
-		if node == nil || !containsString(attached, node.ID) {
-			continue
-		}
-		return node.Name, maxInt(len(attached)-1, 0)
-	}
-	return "", 0
-}
-
-// tagCellLabel 商品行「标签」列要显示的单个值（一列回答一个问题：这个商品挂什么标签）。
-//
-// 列的是**标签名**（手工挂载的 + 命中规则的自动标签，合并成一个名字列表），
-// 不做「手工 N · 自动 M」那种来源分解 —— 读这一列的人要知道「挂了哪些标签」，
-// 而不是「这些标签里有几个是手工建的」（那是标签管理页的问题）；两个数都是 0 时，
-// 那种分解更是纯噪声。名字多于 maxTagNames 时退化成数量，避免单元格被撑成一屏。
-//
-// tr 参数是**例外**（具名占位符句式）：超量那一档的词条是「{n} 个」——具名占位符，
-// 走的是 i18n.FillTranslate；模板注入的 tf 是 TranslateArgs（只认 `%s`），
-// 拿同一个 key 会在页面上渲染成字面的「{n} 个」。改词条值等于改 seed（运营可能改过的数据），
-// 不属于「控制器不取词」这一步，所以这里保留取词。
-func tagCellLabel(tr func(key, fallback string) string, tagChecks, autoTags []map[string]any) string {
-	const maxTagNames = 3
-	names := make([]string, 0, len(tagChecks)+len(autoTags))
-	for _, t := range tagChecks {
-		checked, _ := t["Checked"].(bool)
-		if !checked {
-			continue
-		}
-		if name, ok := t["Name"].(string); ok && name != "" {
-			names = append(names, name)
-		}
-	}
-	for _, t := range autoTags {
-		if name, ok := t["Name"].(string); ok && name != "" {
-			names = append(names, name)
-		}
-	}
-	switch {
-	case len(names) == 0:
-		return ""
-	case len(names) > maxTagNames:
-		// 数量后缀是文案（中文「N 个」/ 英文「N tags」），不是数据：走词条而不是拼中文。
-		return i18n.FillTranslate(tr, productenums.ProductsListTagCount, "{n} 个",
-			map[string]string{"n": strconv.Itoa(len(names))})
-	default:
-		return strings.Join(names, "、")
-	}
-}
-
-// maxInt 取两者较大值（其余分类数不能为负：主分类不在挂载列表里时 len-1 会是 -1）。
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // productListPageSize 商品列表每页条数（服务端分页）。
@@ -511,48 +339,6 @@ func productStatusOptions(current string) []productdto.StatusOptionView {
 	return out
 }
 
-// productPickOptions 「含空项的下拉」的选项事实：空项给词条（Key + 中文兜底），
-// 数据项给名字（分类名 / 品牌名）。
-//
-// 两条取值链并行而不是二选一的兜底：分类名与品牌名翻不了（它们不是文案），
-// 而「（不指定主分类）」必须按请求语言在渲染期取词。
-//
-// **数据行不给空的 LabelKey / LabelFallback 键**（不是给空串）：模板的判据是
-// `{{if isset(o.LabelKey)}}` —— 这是「键在不在」的判定，空串也算在，于是数据行会走取词分支、
-// 渲染成一片空白（`TestTaxonomyAdminPages` 实测：编辑页的品牌下拉只剩空 option）。
-// 数据行只给 `Label`，让 isset 落到 else 分支。
-//
-// data 只放**数据项**：分类侧复用 product_taxonomy.go 的 categoryPickOptions（分类名带层级
-// 缩进的真源只有一处），品牌侧由 productBrandNameOptions 给出同一个形状。
-func productPickOptions(noneKey, noneFallback, selected string, data []map[string]any) []map[string]any {
-	out := make([]map[string]any, 0, len(data)+1)
-	out = append(out, gin.H{
-		"ID": "", "LabelKey": noneKey, "LabelFallback": noneFallback, "Selected": selected == "",
-	})
-	for _, item := range data {
-		id, _ := item["ID"].(string)
-		out = append(out, gin.H{
-			"ID": id, "Label": item["Label"],
-			"Selected": id == selected,
-		})
-	}
-	return out
-}
-
-// productBrandNameOptions 品牌下拉的数据项（id + 品牌名）。
-//
-// 与分类侧复用 categoryPickOptions 同一取舍：本函数只交**数据**，
-// 「（不指定品牌）」空项的词条由 productPickOptions 补。
-func productBrandNameOptions(brands []*productdto.BrandResp) []map[string]any {
-	out := make([]map[string]any, 0, len(brands))
-	for _, b := range brands {
-		if b != nil {
-			out = append(out, gin.H{"ID": b.ID, "Label": b.Name})
-		}
-	}
-	return out
-}
-
 // ==========================================================================
 // 商品新建页与它的表单契约。
 //
@@ -586,20 +372,9 @@ const productNewPageTemplate = "admin/product/products_new.html"
 //	· 失败槽文案（LoadError）仍在这里取词：取词是**请求级**的（按当前语言），
 //	  交给 service 就等于把语言钉进业务层。
 func (h *productPageHandle) ProductNewPage(c *gin.Context) {
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		// 装配没接上读模型（老装配 / 桩）：整页 + 500 + no-store，走同一份失败页形状。
-		// 这条不可达就说明装配漏了；真出现时也不能把「没接上」说成「没有数据」。
-		view := &productdto.ProductNewPageView{
-			Title:      productenums.ProductsCreateSubmit,
-			Menu:       "products",
-			LoadFailed: true,
-			LoadError:  productInternalText(c, nil),
-			HTTPStatus: http.StatusInternalServerError,
-		}
-		adminui.RenderPage(c, productNewPageTemplate, view)
-		return
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	req := &productdto.ProductNewPageReq{ProjectID: strings.TrimSpace(c.Query("project"))}
 	view, err := reader.ProductNewPage(c.Request.Context(), req)
 	if view == nil {
@@ -632,11 +407,9 @@ const productCreateFormTemplate = "admin/product/product_create_form.html"
 // 表单门控：走到这里就是「回填表单」，所以恒给一个非 nil 的 echo —— 模板靠 `isset(.FormEcho)`
 // 区分空表单与回填表单，门控契约见 dto.ProductCreateFormView。
 func (h *productPageHandle) productCreateFormView(c *gin.Context, projectID, submitErr string) (*productdto.ProductCreateFormView, error) {
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		// 装配缺陷：读模型没接上（老装配 / 桩）。调用方据此退回整页提示，不留半个表单。
-		return nil, errors.New("商品页面读模型未注入（装配缺陷）：建表单取数无处可去")
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	view, err := reader.ProductCreateForm(c.Request.Context(), &productdto.ProductCreateFormReq{
 		ProjectID: strings.TrimSpace(projectID),
 	})
@@ -790,17 +563,9 @@ func (h *productPageHandle) ProductEditPage(c *gin.Context) {
 
 func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, echo bool) {
 	ctx := c.Request.Context()
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		// 装配没接上读模型（老装配 / 桩）：整页 + 500 + no-store，走同一份失败页形状。
-		view := &productdto.ProductEditPageView{
-			Title: MsgProductsTitle, Menu: "products", Err: submitErr,
-			LoadFailed: true, LoadError: productInternalText(c, nil),
-			HTTPStatus: http.StatusInternalServerError,
-		}
-		adminui.RenderPage(c, productEditPageTemplate, view)
-		return
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	// 取数编排（工程 / 参数档 / 分类 / 品牌 / 标签 / 仓库 / 商品详情 / 属性组候选 + 三档判据）
 	// 全在 service 的读模型里；这里只剩控制器负责的派生值、**表单回显**与出口。
 	view, err := reader.ProductEditPage(ctx, &productdto.ProductEditPageReq{
@@ -829,25 +594,9 @@ func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	}
 	// 状态下拉：先按「全部状态」那一档给默认值 —— 商品读不出来时页面仍完整；读到了会覆盖。
 	view.Statuses = productStatusOptions("")
-	// 分类树的扁平行：行装配（productRow 的分类下拉）要的是带层级缩进的平铺序列，
-	// 树本身只有分类选择器用 —— 读模型给树，摊平是渲染前一步的派生值，所以在这里做。
-	view.Flat = productservice.FlattenCategoryTree(view.Categories)
 	if err == nil && view.HasProduct && view.Detail != nil {
-		// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于列表「标签」列的
-		// 「{n} 个」词条（i18n.FillTranslate），模板的 tf 只填 `%s`，没有等价能力。
-		row := h.productRow(ctx, view.SelectedProject, view.Flat, view.Brands, view.Tags,
-			view.WarehouseOptions, view.Detail, shell.TranslateFor(c))
-		// productRow 的汇总段是给**列表列**用的（名称 / 状态 / 价格区间 / 分类 / 品牌 / 标签），
-		// 编辑表单还要几个列表列不需要的字段（副标题 / 单位 / SEO 两栏）——
-		// 在这里补，而不是往共享组装里塞：那会让列表页也背上只有编辑页才用的键。
-		row["Subtitle"] = view.Detail.Subtitle
-		row["Unit"] = view.Detail.Unit
-		row["SEOTitle"] = view.Detail.SEOTitle
-		row["SEODescription"] = view.Detail.SEODescription
-		// 商品描述在库里是 {"html": "..."}（jsonb 对象），富文本字段要的是裸 HTML。
-		// 这里破一次「表单字段名 = DTO json 标签」的例：两边形态本来就不同
-		//（对象 vs HTML 字符串），硬对齐只会把包装逻辑推到前端散落脚本里。
-		row["DescriptionHTML"] = productDescriptionHTML(view.Detail.Description)
+		// 行已由读模型装配（service/product_row.go）：副标题 / 单位 / 描述 HTML 都是行上的
+		// 字段，控制器不再往行里补键 —— 这里只剩「编辑表单要、列表与详情页不要」的那几样。
 		view.Statuses = productStatusOptions(view.Detail.Status)
 		// 属性组勾选态（详情页用的是逗号分隔的 id 输入框，编辑页是勾选列表）：
 		// 可选值来自读模型给的候选，勾选态由商品已引用的 id 决定。
@@ -864,31 +613,31 @@ func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 		// 提交值只在请求体里，所以这一整段是控制器的事（service 不认识 gin.Context）。
 		if echo {
 			form := formEchoFrom(c)
-			for field, key := range map[string]string{
-				"name": "Name", "subtitle": "Subtitle", "slug": "Slug", "sku": "SKUCode",
-				"unit": "Unit", "seoTitle": "SEOTitle", "seoDescription": "SEODescription",
-			} {
-				row[key] = form.value(field)
-			}
+			// 文本字段逐项回填到行字段：行已是结构体，字段名由编译器对账，不再走
+			// 「表单名 → 行键」的映射表（改名会静默丢回显，且不报错）。
+			view.Product.Name = form.value("name")
+			view.Product.Subtitle = form.value("subtitle")
+			view.Product.Slug = form.value("slug")
+			view.Product.SKUCode = form.value("sku")
+			view.Product.Unit = form.value("unit")
 			view.ImagesText = c.PostForm("images")
 			view.ImageAltsText = c.PostForm("imageAlts")
 			view.WeightText = c.PostForm("weight")
 			view.DefaultPriceText = c.PostForm("defaultPrice")
 			view.Statuses = productStatusOptions(form.value("status"))
-			// 勾选态按**本次提交的** attributeIds 重算（多选字段「一个都不勾」= 解绑全部，
-			// 浏览器在没有任何勾选时根本不提交该字段）。
+			// 勾选态回填的**唯一**入口（见上）：一个都不给时按「已选中」渲染，
+			// 所以没提交参数时必须在这里挡掉。
 			//
-			// 直接用读回来的候选重算，**不要**在已勾选的视图上改：视图已是
-			// []productdto.AttributeCheckOptionView（类型化），对它做 `.([]gin.H)` 断言会
-			// 静默失配（ok=false），症状是校验失败重渲染时勾选态全部丢失 —— 用户以为
-			// 自己刚选的东西被清空了，而页面其余部分（错误文案、回填值）都正常。
+			// 属性勾选清单是具体类型 []productdto.AttributeCheckOptionView，
+			// `.([]gin.H)` / `.([]map[string]any)` 断言都会失败（ok=false）——
+			// 直接用值回填的选项清单重算，不要在已勾选的视图上改。
 			view.AttributeChecks = checkedAttributeOptions(view.AttributeOptions, form.list("attributeIds"))
-			row["CategoryChecks"] = checkedProductEditOptions(row["CategoryChecks"].([]map[string]any), form.list("categoryIds"))
-			row["TagChecks"] = checkedProductEditOptions(row["TagChecks"].([]map[string]any), form.list("tagIds"))
-			row["PrimaryOptions"] = selectedProductEditOptions(row["PrimaryOptions"].([]map[string]any), form.value("primaryCategoryId"))
-			row["BrandOptions"] = selectedProductEditOptions(row["BrandOptions"].([]map[string]any), form.value("brandId"))
+			view.Product.CategoryChecks = checkedProductEditOptions(view.Product.CategoryChecks, form.list("categoryIds"))
+			view.Product.TagChecks = checkedProductEditOptions(view.Product.TagChecks, form.list("tagIds"))
+			view.Product.PrimaryOptions = selectedProductEditOptions(view.Product.PrimaryOptions, form.value("primaryCategoryId"))
+			view.Product.BrandOptions = selectedProductEditOptions(view.Product.BrandOptions, form.value("brandId"))
 		}
-		view.Product = row
+
 		// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
 		// 这里只给一个链接标记（type=variant 时为假，模板据 isset 整块跳过）。
 		view.IsBundle = isBundleProduct(view.Detail.Type)
@@ -1070,27 +819,6 @@ func checkedAttributeOptions(options []productdto.AttributeOptionView, selected 
 	return out
 }
 
-// productDescriptionHTML 从商品描述的 JSON 里取正文（富文本字段要裸 HTML）。
-//
-// 兼容两种存量形态：{"html": "..."} 与裸字符串。取不到就给空串 ——
-// 这个值只用于**回填编辑器**，猜错会让编辑者看到别人的正文，比空着危险得多。
-func productDescriptionHTML(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var asMap map[string]any
-	if err := json.Unmarshal(raw, &asMap); err == nil {
-		if s, ok := asMap["html"].(string); ok {
-			return s
-		}
-	}
-	var asString string
-	if err := json.Unmarshal(raw, &asString); err == nil {
-		return asString
-	}
-	return ""
-}
-
 // 编辑表单的两个参数级校验（**片段槽位**：product_edit.html 直接渲染 .SubmitError 文本，
 // 还没取词化 —— 这里用 adminui.MsgText 取成文本传进去）。
 var (
@@ -1138,18 +866,9 @@ const productDetailPageTemplate = "admin/product/product_detail.html"
 // （service.ProductDetailPage）；本函数只剩「取参数 → 调读模型 → 补控制器负责的派生值 → 一个出口」。
 func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		// 装配没接上读模型（老装配 / 桩）：整页 + 500 + no-store，走同一份失败页形状
-		//（与 ProductNewPage / ProductsPage 同一处理）。
-		view := &productdto.ProductDetailPageView{
-			Title: productenums.ProductDetailTitle, Menu: "products",
-			LoadFailed: true, LoadError: productInternalText(c, nil),
-			HTTPStatus: http.StatusInternalServerError,
-		}
-		adminui.RenderPage(c, productDetailPageTemplate, view)
-		return
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	view, err := reader.ProductDetailPage(ctx, &productdto.ProductDetailPageReq{
 		ProjectID: strings.TrimSpace(c.Query("project")),
 		ProductID: strings.TrimSpace(c.Query("product")),
@@ -1168,23 +887,18 @@ func (h *productPageHandle) ProductDetailPage(c *gin.Context) {
 	view.Menu = "products"
 	// 返回列表带上工程上下文：回到列表时不会掉回默认工程。
 	view.BackURL = "/admin/products?project=" + view.SelectedProject
-	// 行装配（productRow）留在控制器：它产出 gin.H、要取词函数、内部还会读一次评分，
-	// 而且列表页 / 编辑页 / 本页三处共用同一份组装 —— 拆成三份必然分叉。
-	// 失败时不装配：原料可能是半截的，渲染它只会得到一张残页。
-	if err == nil && view.HasProduct && view.Detail != nil {
-		view.Flat = productservice.FlattenCategoryTree(view.Categories)
-		// 例外（具名占位符句式）：这个 tr 只经由 productRow 服务于列表「标签」列的
-		// 「{n} 个」词条（i18n.FillTranslate），模板的 tf 只填 `%s`，没有等价能力。
-		product := h.productRow(ctx, view.SelectedProject, view.Flat, view.Brands, view.Tags,
-			view.WarehouseOptions, view.Detail, shell.TranslateFor(c))
+	// 行已由读模型装配（service/product_row.go）—— 控制器只补详情页独有的面板；
+	// 「取数失败时不装配」由读模型自己保证（HasProduct / Detail 为假时它不建行）。
+	if err == nil && view.HasProduct && view.Detail != nil && view.Product != nil {
 		// 捆绑容器（type=bundle）在详情页多一块「捆绑构成」编辑区：成员只作为选项与履约明细，
-		// 容器价才是套餐价。type=variant 时**不给这个键**，模板据 isset 整块跳过
+		// 容器价才是套餐价。type=variant 时**不给这个字段**，模板据 isset 整块跳过
 		// —— 区块的入口就在详情页，不该再要求运营去另一个菜单页找它。
+		// （Bundle 保持可 nil：nil 才让 isset(p.Bundle) 为假、整块跳过。）
 		if isBundleProduct(view.Detail.Type) {
-			product["Bundle"] = h.bundlePanel(c, view.SelectedProject, view.Detail.ID)
+			view.Product.Bundle = h.bundlePanel(c, view.SelectedProject, view.Detail.ID)
 		}
-		view.Product = product
 	}
+
 	// 详情页模板面板：详情页只读展示绑定状态与预览入口，编辑动作（进入自定义 / 编辑模板 /
 	// 重新套用预设 / 回滚）在编辑页 —— 两页共用 detailTemplatePanel 这一份组装。
 	view.TplPanel = h.detailTemplatePanel(ctx, view.SelectedProject, view.ProductID)
@@ -1308,7 +1022,7 @@ func (h *productPageHandle) ProductsVariantPreview(c *gin.Context) {
 		}
 		rows = append(rows, variantPreviewRow{
 			SKUCode: row.SKUCode, OptionValues: row.OptionValues,
-			OptionKey: row.OptionKey, Spec: specLabel(row.OptionValues, attrs),
+			OptionKey: row.OptionKey, Spec: productservice.SpecLabel(row.OptionValues, attrs),
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{

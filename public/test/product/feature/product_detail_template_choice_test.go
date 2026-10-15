@@ -476,7 +476,7 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 		c.Set(adminctx.PermSetKey, map[string]bool{"contenttemplate:create": true})
 		c.Set(adminctx.ButtonsKey, map[string]bool{"contenttemplate.create": true})
 	})
-	handle := producthttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetDetailTemplateDeps(f.templates, f.pres)
 	engine.GET("/admin/products/template", handle.ProductDetailTemplatePage)
 	engine.POST("/admin/products/template/create", handle.ProductDetailTemplateCreate)

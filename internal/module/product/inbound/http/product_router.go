@@ -59,7 +59,11 @@ import (
 //
 // issue #32：归属仓解析与库存记录生成不再经跨模块端口 —— 商品与库存同属一个模块，
 // 装配时把库存 service 直接交给商品用例（传 nil 表示不生成库存记录，纯商品单测路径）。
-func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectcontract.ProjectService) productcontract.ProductService {
+// 返回 (接口面契约, 页面读模型)。两个返回值都是**同一个 service**、两个静态类型：
+// 读模型（contract.ProductPageReader）只有页面面用得到，而页面装配
+// （assembly_publish.go 的 SetupProductPages）与接口面装配在不同方法里 —— 由装配层
+// 把这两条一起往下传，页面处理器就不必在请求期断言，漏接变成编译错误。
+func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectcontract.ProjectService) (productcontract.ProductService, productcontract.ProductPageReader) {
 	svc := productservice.NewService(productmodel.NewModel(db), project)
 	svc.SetContentStore(i18n.NewDBContentStore(db))
 	handle := NewHandle(svc)
@@ -134,7 +138,7 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/pricing/apply", permission.ProductPricingApply, handle.ApplyPricing)
 	g.GET("/pricing/history", permission.ProductPricingHistory, handle.ListPriceAdjustments)
 	g.GET("/pricing/adjustment", permission.ProductPricingAdjustment, handle.GetPriceAdjustment)
-	return svc
+	return svc, svc
 }
 
 // ══ 页面面装配（/admin 组）══
@@ -146,8 +150,10 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 // 页面 GET 的 Casbin 待补（见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3）。
 
 // SetupProductPages 装配 product 域后台页面，返回页面处理器。
+// reader 是 products 的读模型面（同一个实现，类型不同）；两者都是构造页处理器的必需实参。
 func SetupProductPages(pages *gin.RouterGroup,
 	products productcontract.ProductService,
+	reader productcontract.ProductPageReader,
 	projects projectcontract.ProjectService,
 	contentTemplates contenttemplatecontract.ContentTemplateService,
 	presentations presentationcontract.PresentationService,
@@ -166,7 +172,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.Use(productTranslateMiddleware())
 	// 商品管理页（issue #5）：页面 GET 走 /admin 组认证（Session+CSRF，无 Casbin）；
 	// 写动作复用商品 API 权限点做 Casbin 鉴权（与既有管理页一致）。
-	productPages := NewProductPageHandle(products, projects)
+	productPages := NewProductPageHandle(products, reader, projects)
 	// 详情页模板选择与预览（issue #14）：模板清单 / 商品发布实例的模板绑定 / 预览渲染。
 	productPages.SetDetailTemplateDeps(contentTemplates, presentations)
 	// 归属仓下拉（issue #15）：建商品与新增变体时可选仓库（不选即默认仓）。

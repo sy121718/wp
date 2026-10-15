@@ -60,7 +60,7 @@ func newVariantPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
+	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.GET("/admin/products", handle.ProductsPage)
 	// 变体是商品的子资源，表格与生成入口都在商品详情页（列表页只回答「有哪些商品」）。
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)

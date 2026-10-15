@@ -41,7 +41,7 @@ func bundleDetailPage(t *testing.T, bundle gin.H) string {
 	t.Helper()
 	product := productRowForRender()
 	if bundle != nil {
-		product["Bundle"] = bundle
+		product.Bundle = map[string]any(bundle)
 	}
 	return renderAdminTemplate(t, "admin/product/product_detail.html", productPageLayoutData(gin.H{
 		"title": "商品详情", "menu": "products",
@@ -53,13 +53,11 @@ func bundleDetailPage(t *testing.T, bundle gin.H) string {
 }
 
 // bundleEditPage 渲染商品编辑页 —— 捆绑构成的**编辑入口**在这里（详情页只读）。
-func bundleEditPage(t *testing.T, product gin.H) string {
+//
+// 行形状是 dto.ProductRow（读模型装配的产物，service/product_row.go）：struct 的零值就是
+// 「字段在、值为空」—— 模板 `{{.Product.Subtitle}}` 照样读到空串，不再需要给 map 补键。
+func bundleEditPage(t *testing.T, product *productdto.ProductRow) string {
 	t.Helper()
-	// 编辑表单要的几个键（真实 handler 由 productRow 与回填文本给出）。
-	product["Subtitle"] = ""
-	product["Unit"] = ""
-	product["SEOTitle"] = ""
-	product["SEODescription"] = ""
 	return renderAdminTemplate(t, "admin/product/product_edit.html", productPageLayoutData(gin.H{
 		"title": "编辑商品", "menu": "products",
 		"Projects": []gin.H{}, "SelectedProject": "proj-1",

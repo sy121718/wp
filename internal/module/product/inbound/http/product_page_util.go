@@ -1,16 +1,11 @@
 package producthttp
 
 import (
-	"context"
-	"encoding/json"
 	"go_wp/internal/middleware/builtin"
-	productcontract "go_wp/internal/module/product/contract"
-	productdto "go_wp/internal/module/product/dto"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/shell"
 	"go_wp/pkg/money"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -20,8 +15,10 @@ import (
 // product_page_util.go — 商品各页面共用的表单回显、分页与取值小工具。
 //
 // formEcho 一族是「写失败时原地留住输入」的底座：值从**本次提交**里读回，
-// 所以键名要带前缀（FormEcho / FormEchoChecked / FormEchoMulti）—— 片段与页面共用
-// 同一份渲染 data，通用键名会撞上页面已有键。
+// 归一化口径（去首尾空白、丢空项、多值保序）就收在这里。
+// **怎么落进视图**不在这个文件：每个表单自己有 dto 的 `XxxFormEcho` 结构体（字段即清单），
+// 由 adminui.FillForm 按 `form:` 标签填 —— 回填键仍必须叫 `FormEcho` 并带前缀，
+// 片段与页面共用同一份渲染 data，通用键名（`Form`）会撞上页面已有键。
 
 // formProductID 取表单里的商品 id：优先 productId，再回落 id。
 //
@@ -32,7 +29,7 @@ import (
 // 「提交失败原地留住输入」出口（路径 A 渐进增强）。
 //
 // 形状与口径**照批 1 的商品建表单**（product_core.go 的 productCreateFormView + admin/product/product_create_form.html），
-// 分档判据只有一份（product_page_util.go 的 isHXRequest / hxFragment / formEchoData）：
+// 分档判据只有一份（product_page_util.go 的 isHXRequest / hxFragment / formEchoFrom）：
 //
 //	· htmx 请求：失败返 200 + 片段（错误槽 + 回填后的表单）—— 抽屉原地留住已填内容；
 //	· 原生请求：整页提示（shell.RenderJump）回列表页（取代原先的 302 + ?err=）；
@@ -138,123 +135,6 @@ func (e formEcho) list(name string) []string {
 	return e.values[name]
 }
 
-// checked 该字段这次是否被提交过（复选框的回填判据）。
-//
-// 判据是「字段在提交里存在」：复选框只有被勾选才会提交 —— 所以勾选态用 checked，
-// 文本值用 value，两者不要混用（文本框的值可能是空串，那不代表「没填过」）。
-func (e formEcho) checked(name string) bool {
-	return len(e.values[name]) > 0
-}
-
-// formEchoData 把回填值摊成片段 data 可直接并入的三个键。
-//
-//	"FormEcho"        gin.H{字段名: string}   文本 / 下拉 / 隐藏域 → value="{{ .FormEcho.sku }}"
-//	"FormEchoChecked" gin.H{字段名: bool}     复选框 → {{if .FormEchoChecked.trackQuantity}}checked{{end}}
-//	"FormEchoMulti"   gin.H{字段名: []string} 多值字段的完整提交值（保序）
-//
-// **键名必须带 FormEcho 前缀**：片段与页面共用同一份渲染 data，而页面自己的键空间里
-// 早已有同名键 —— 商品列表页的 `Form` 是**批量改价的 productdto.PricingForm 结构体**
-// （product_core.go 的 `"Form": productservice.DefaultPricingForm(...)`）。沿用裸 `Form` 会让片段里的
-// `{{.Form.name}}` 命中结构体，Jet 报 `can't use name as field name in struct type` 并
-// **从那一行截断整页**（HTTP 仍 200）—— 而且只在列表页那条渲染路径上炸，新建整页看不出来。
-//
-// **字段名要逐个列出**：Jet 读 map 里缺失的键会抛运行时错误、整个片段渲染失败 ——
-// 渲染器先渲到 buffer，失败走 `http.Error(500, …)`（buffer 里的半截内容被丢弃），
-// 而 htmx 默认把 5xx 判成 `swap:false`：用户点了保存**什么都看不到**。
-// 所以列出的字段都被补成零值。模板里访问**未列出**的字段仍要用 isset 包裹
-// （见 internal/templates/CLAUDE.md 的「可选数据键必须用 isset 判断」）。
-func formEchoData(c *gin.Context, fields ...string) gin.H {
-	echo := formEchoFrom(c)
-	form := make(gin.H, len(fields))
-	checked := make(gin.H, len(fields))
-	multi := make(gin.H, len(fields))
-	for _, name := range fields {
-		form[name] = echo.value(name)
-		checked[name] = echo.checked(name)
-		multi[name] = echo.list(name)
-	}
-	return gin.H{"FormEcho": form, "FormEchoChecked": checked, "FormEchoMulti": multi}
-}
-
-// variantListRows 变体「清单」表的初始行 —— 直接来自**库里已有的变体**。
-//
-// 关键语义（docs/14 §8「预览—保存」）：清单的种子是既有变体，**不是重算笛卡尔积** ——
-// 重算会让上次删掉的组合自己冒出来。只有运营再点一次「生成组合」（显式动作）才会
-// 把新组合追加进清单；保存之前库里一个字节都不变，所以行上的「移除」只是移出清单。
-//
-// OptionValues 是**规范化后的 JSON 文本**（逐行原样回传服务端做组合去重与跳过提示），
-// 规格列的可读文本由服务端拼（specLabel），前端不做属性名解析。
-func variantListRows(detail *productdto.ProductResp) []gin.H {
-	rows := make([]gin.H, 0, len(detail.Variants))
-	for _, v := range detail.Variants {
-		rows = append(rows, gin.H{
-			"ID": v.ID, "SKUCode": v.SKUCode, "Spec": specLabel(v.OptionValues, detail.Attributes),
-			"OptionValues": optionValuesJSON(v.OptionValues),
-			"Price":        formatAmount(v.Price),
-			"ComparePrice": formatNullableAmount(v.ComparePrice),
-			"CostPrice":    formatNullableAmount(v.CostPrice),
-			"Enabled":      v.Enabled, "StockTotal": v.StockTotal,
-		})
-	}
-	return rows
-}
-
-// optionValuesJSON 变体组合的规范化 JSON 文本（空 / null 归一到 {}）。
-//
-// 它同时是清单行的 data 属性值与预览去重的入参：组合为空的对象表示「无规格变体」
-// （商品创建时的首个变体），归一成 {} 而不是空串，前端 JSON.parse 才不会炸。
-func optionValuesJSON(raw json.RawMessage) string {
-	s := strings.TrimSpace(string(raw))
-	if s == "" || s == "null" {
-		return "{}"
-	}
-	return s
-}
-
-// variationAttributes 参与变体的属性组（组合生成面板只勾选这些组）。
-func variationAttributes(attrs []*productdto.AttributeResp) []*productdto.AttributeResp {
-	return productservice.VariationAttributes(attrs)
-}
-
-// specLabel 规格组合的可读文本：按属性组定义顺序把「组名 值名」拼起来。
-//
-// 组已被删除或 key 改过的历史组合用原始 key→值兜底显示，不让后台丢信息。
-func specLabel(raw json.RawMessage, attrs []*productdto.AttributeResp) string {
-	var m map[string]string
-	if err := json.Unmarshal(raw, &m); err != nil || len(m) == 0 {
-		return "—"
-	}
-	used := map[string]bool{}
-	parts := make([]string, 0, len(m))
-	for _, a := range attrs {
-		if a == nil {
-			continue
-		}
-		value, ok := m[a.Key]
-		if !ok {
-			continue
-		}
-		used[a.Key] = true
-		label := value
-		for _, v := range a.Values {
-			if v.Key == value {
-				label = v.Label
-				break
-			}
-		}
-		parts = append(parts, a.Name+" "+label)
-	}
-	rest := make([]string, 0, len(m))
-	for k, v := range m {
-		if !used[k] {
-			rest = append(rest, k+" "+v)
-		}
-	}
-	sort.Strings(rest)
-	parts = append(parts, rest...)
-	return strings.Join(parts, " · ")
-}
-
 // formatAmount 数值 → 后台展示文本（整数不带小数尾巴）。
 //
 // 唯一实现在 pkg/money.FormatYuan（审计 CQ-013：此前与商品构建期的 formatPrice
@@ -265,27 +145,6 @@ func formatAmount(v float64) string { return money.FormatYuan(v) }
 //
 // 唯一实现在 pkg/money.FormatYuanOrDash（与 formatAmount 同一处理：本名是同包多个后台页共用）。
 func formatNullableAmount(v *float64) string { return money.FormatYuanOrDash(v) }
-
-// formatScore 评分统一两位小数（4.5 → 4.50）。
-//
-// 与集合源给前台的 rating 字段同一口径：评分是 0~5 的小数，
-// 用最短表示会得到 4.5 / 4.25 混排，两位小数更符合评分展示习惯。
-func formatScore(v float64) string {
-	return strconv.FormatFloat(v, 'f', 2, 64)
-}
-
-// ratingOf 读某商品的评分明细与投影值（读不到就按「没有评分」处理，页面照常渲染）。
-//
-// projectID 由调用方给出（DB-009）：product_ratings 有 FORCE 策略，明细查询要工程作用域。
-// 兜底解析（resolveProjectID 取唯一工程）在多工程下会直接判参数错，所以后台页这里把
-// 自己在用的那个工程显式传下去，不走兜底。
-func ratingOf(svc productcontract.ProductService, ctx context.Context, projectID, productID string) *productdto.RatingResp {
-	res, err := svc.ListRatings(ctx, &productdto.ListRatingsReq{ProductID: productID, ProjectID: projectID})
-	if err != nil || res == nil {
-		return &productdto.RatingResp{}
-	}
-	return res
-}
 
 // containsString 判断切片是否含目标值。
 func containsString(list []string, want string) bool {

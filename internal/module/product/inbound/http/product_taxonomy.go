@@ -6,7 +6,6 @@ import (
 	"errors"
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
-	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
@@ -32,17 +31,9 @@ const productBrandsPageTemplate = "admin/product/product_brands.html"
 const productTagsPageTemplate = "admin/product/product_tags.html"
 
 func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		// 装配没接上读模型：整页 + 500 + no-store。真出现时也不能把「没接上」
-		// 说成「这个工程还没有分类」。
-		adminui.RenderPage(c, productCategoriesPageTemplate, &productdto.ProductCategoriesPageView{
-			Title: productenums.ProductCategoriesTitle, Menu: "product-categories",
-			LoadFailed: true, LoadError: productInternalText(c, nil),
-			HTTPStatus: http.StatusInternalServerError,
-		})
-		return
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	// 取参数 → 调读模型（取数编排在 service：取哪些、按什么顺序、哪条失败算 400 /
 	// 哪条只降级，都是业务结论。见 service.ProductCategoriesPage）。
 	view, err := reader.ProductCategoriesPage(c.Request.Context(), &productdto.ProductCategoriesPageReq{
@@ -62,7 +53,7 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 	view.Menu = "product-categories"
 	view.ListQuery = productQueryFromRequest(c, productCategoriesBackKeys...)
 	// 候选列表**只收本工程**的分类（判据与理由见 service.CategoriesInProject）。
-	options := categoryPickOptions(productservice.CategoriesInProject(view.PickFlat, view.SelectedProject))
+	options := productservice.CategoryPickOptions(productservice.CategoriesInProject(view.PickFlat, view.SelectedProject))
 	view.Options = options
 	view.CategoryCreateForm = categoryDrawerData(c, "create", view.SelectedProject, nil, options, nil)
 	// 行装配只在取数成功时做 —— 失败页渲染的是失败槽，装配出的行不会被读到。
@@ -250,15 +241,9 @@ func (h *productPageHandle) ProductCategoriesBulkDelete(c *gin.Context) {
 
 // ProductBrandsPage 品牌管理页：工程切换 + 筛选栏 + 品牌列表 + 内联新建表单。
 func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		adminui.RenderPage(c, productBrandsPageTemplate, &productdto.ProductBrandsPageView{
-			Title: productenums.ProductBrandsTitle, Menu: "product-brands",
-			LoadFailed: true, LoadError: productInternalText(c, nil),
-			HTTPStatus: http.StatusInternalServerError,
-		})
-		return
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	view, err := reader.ProductBrandsPage(c.Request.Context(), &productdto.ProductBrandsPageReq{
 		ProjectID: strings.TrimSpace(c.Query("project")),
 		Keyword:   strings.TrimSpace(c.Query("keyword")),
@@ -423,53 +408,6 @@ func (h *productPageHandle) listBrands(ctx context.Context, projectID string) (o
 	return h.products.ListBrands(ctx, &productdto.ListBrandReq{ProjectID: projectID})
 }
 
-// categoryPickOptions 父级下拉选项（Selected 由模板按行的 ParentID 比对得出）。
-//
-// 分类名带层级缩进的真源只有一处（service.CategoryLabel）；树的扁平化同理
-// （service.FlattenCategoryTree，分类页与商品列表页共用）。
-func categoryPickOptions(flat []*productdto.CategoryResp) []map[string]any {
-	out := make([]map[string]any, 0, len(flat))
-	for _, node := range flat {
-		out = append(out, gin.H{"ID": node.ID, "Label": productservice.CategoryLabel(node)})
-	}
-	return out
-}
-
-// checkedCategoryOptions 商品页的分类勾选框（勾选态由服务端算好，模板不做集合运算）。
-func checkedCategoryOptions(flat []*productdto.CategoryResp, checked []string) []map[string]any {
-	picked := make(map[string]bool, len(checked))
-	for _, id := range checked {
-		picked[id] = true
-	}
-	out := make([]map[string]any, 0, len(flat))
-	for _, node := range flat {
-		out = append(out, gin.H{
-			"ID": node.ID, "Label": productservice.CategoryLabel(node), "Checked": picked[node.ID],
-		})
-	}
-	return out
-}
-
-// categoryNameByID 按 id 取分类名（找不到返回空串，不让悬空引用把页面打崩）。
-func categoryNameByID(flat []*productdto.CategoryResp, id string) string {
-	for _, node := range flat {
-		if node.ID == id {
-			return node.Name
-		}
-	}
-	return ""
-}
-
-// brandNameByID 按 id 取品牌名（找不到返回空串）。
-func brandNameByID(brands []*productdto.BrandResp, id string) string {
-	for _, b := range brands {
-		if b != nil && b.ID == id {
-			return b.Name
-		}
-	}
-	return ""
-}
-
 // missingParentIDs 挑出本页里「父级不在候选列表」的那些父级 id（去重、保持出现顺序）。
 //
 // 纯逻辑部分单独成函数：候选集合的判定（不是 service 读）才是「谁会走模板那条额外分支」
@@ -541,7 +479,7 @@ func (h *productPageHandle) categoryFormFail(c *gin.Context, mode string, msg pr
 					options = append(options, parent)
 				}
 			}
-			data["Options"] = categoryPickOptions(options)
+			data["Options"] = productservice.CategoryPickOptions(options)
 		}
 	}
 	data["FormEcho"] = rawDrawerEcho(c, []string{"projectId", "id", "name", "slug", "parentId", "sort", "image", "description", "seoTitle", "seoDescription"})
@@ -900,15 +838,9 @@ type tagForm struct {
 
 // ProductTagsPage 标签管理页：工程切换 + 筛选栏 + 新建表单 + 规则类型说明 + 标签列表（含命中商品）。
 func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		adminui.RenderPage(c, productTagsPageTemplate, &productdto.ProductTagsPageView{
-			Title: productenums.ProductTagsTitle, Menu: "product-tags",
-			LoadFailed: true, LoadError: productInternalText(c, nil),
-			HTTPStatus: http.StatusInternalServerError,
-		})
-		return
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	view, err := reader.ProductTagsPage(c.Request.Context(), &productdto.ProductTagsPageReq{
 		ProjectID: strings.TrimSpace(c.Query("project")),
 		Keyword:   strings.TrimSpace(c.Query("keyword")),
@@ -1309,36 +1241,4 @@ func ruleParamText(params json.RawMessage, key string) string {
 	s := strings.TrimSpace(string(raw))
 	s = strings.Trim(s, `"`)
 	return s
-}
-
-// checkedTagOptions 商品页的手工标签勾选框（勾选态由服务端算好，模板不做集合运算）。
-func checkedTagOptions(tags []*productdto.TagResp, attached []string) []map[string]any {
-	have := map[string]bool{}
-	for _, id := range attached {
-		have[id] = true
-	}
-	out := make([]map[string]any, 0, len(tags))
-	for _, t := range tags {
-		if t == nil || t.Kind != productenums.TagKindManual {
-			continue
-		}
-		out = append(out, gin.H{"ID": t.ID, "Name": t.Name, "Checked": have[t.ID]})
-	}
-	return out
-}
-
-// attachedAutoTags 商品已归属的自动标签（只读展示：归属由规则重算维护）。
-func attachedAutoTags(tags []*productdto.TagResp, attached []string) []map[string]any {
-	have := map[string]bool{}
-	for _, id := range attached {
-		have[id] = true
-	}
-	out := make([]map[string]any, 0, len(tags))
-	for _, t := range tags {
-		if t == nil || t.Kind != productenums.TagKindRule || !have[t.ID] {
-			continue
-		}
-		out = append(out, gin.H{"ID": t.ID, "Name": t.Name, "RuleLabel": t.RuleLabel})
-	}
-	return out
 }

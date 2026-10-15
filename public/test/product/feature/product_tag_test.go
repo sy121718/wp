@@ -479,7 +479,7 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
+	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.GET("/admin/product-tags", handle.ProductTagsPage)
 	// 命中商品片段（PERF-02）：标签页首屏只给数量，展开时按页取这一段。
 	engine.GET("/admin/product-tags/hits", handle.ProductTagHitsFragment)

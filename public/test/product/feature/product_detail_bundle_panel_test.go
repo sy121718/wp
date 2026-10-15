@@ -52,7 +52,7 @@ func newBundleDetailEngine(t *testing.T) (*gin.Engine, *bundleFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
 	engine.GET("/admin/products/edit", handle.ProductEditPage)
 	engine.GET("/admin/products/bundle", handle.ProductBundlePage)

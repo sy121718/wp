@@ -18,6 +18,8 @@ package templates
 import (
 	"strings"
 	"testing"
+
+	productdto "go_wp/internal/module/product/dto"
 )
 
 // attrRowsCtxData 属性值行编辑器的数据类（形状与 handle 的 attrRowsCtx 一致）。
@@ -42,8 +44,9 @@ func submitErrFact(fallback string) map[string]any {
 
 // attrGroupFragmentData 属性组片段的渲染数据（键与 handle 的 attrGroupFormData 逐键一致）。
 //
-// echo=false 是**首屏**：不注入 FormEcho* 三键（片段以 gfFill 门控走初值分支）；
-// echo=true 是**失败重渲染**：三个回填键 + SubmitErr 都在场。
+// echo=false 是**首屏**：不给 FormEcho 键（片段以 gfFill 门控走初值分支）；
+// echo=true 是**失败重渲染**：FormEcho（dto.AttrGroupFormEcho 结构体指针）+ SubmitErr 都在场 ——
+// 形状与 handler 逐字一致：attrGroupFormFail 用 adminui.FillForm 填的就是这个结构体。
 func attrGroupFragmentData(echo bool) map[string]any {
 	rows := []map[string]any{}
 	if echo {
@@ -59,11 +62,12 @@ func attrGroupFragmentData(echo bool) map[string]any {
 	}
 	if echo {
 		d["SubmitErr"] = submitErrFact("属性组标识已被占用")
-		d["FormEcho"] = map[string]any{
-			"projectId": "pr1", "id": "new", "name": "颜色", "key": "color", "sort": "3", "isVariation": "0",
+		// 勾选态按**值**命中：结构体里存的是同名多值的完整提交（隐藏域的 0 在前、复选框的 1 在后），
+		// 片段 range 它找 "1" —— 按 bool 判会被隐藏域骗到「永远勾上」。
+		d["FormEcho"] = &productdto.AttrGroupFormEcho{
+			ProjectID: "pr1", ID: "new", Name: "颜色", Key: "color", Sort: "3",
+			IsVariation: []string{"0", "1"},
 		}
-		d["FormEchoChecked"] = map[string]any{"isVariation": true}
-		d["FormEchoMulti"] = map[string]any{"isVariation": []string{"0", "1"}}
 	}
 	return d
 }
@@ -89,9 +93,7 @@ func attrValuesFragmentData(echo bool) map[string]any {
 	}
 	if echo {
 		d["SubmitErr"] = submitErrFact("属性值标识重复")
-		d["FormEcho"] = map[string]any{"projectId": "pr1", "id": groupID, "groupId": groupID}
-		d["FormEchoChecked"] = map[string]any{"id": true, "groupId": true}
-		d["FormEchoMulti"] = map[string]any{"id": []string{groupID}, "groupId": []string{groupID}}
+		d["FormEcho"] = &productdto.AttrValueFormEcho{ProjectID: "pr1", ID: groupID, GroupID: groupID}
 	}
 	return d
 }
@@ -173,8 +175,7 @@ func TestAttrGroupFormFragmentRendersFailEcho(t *testing.T) {
 func TestAttrGroupFormFragmentUncheckedVariant(t *testing.T) {
 	data := attrGroupFragmentData(true)
 	// 这次提交只带同名隐藏域（用户**没**勾「参与变体」）。
-	data["FormEchoMulti"] = map[string]any{"isVariation": []string{"0"}}
-	data["FormEcho"].(map[string]any)["isVariation"] = "0"
+	data["FormEcho"].(*productdto.AttrGroupFormEcho).IsVariation = []string{"0"}
 	out := renderAttrFragment(t, "product_attribute_group_form.html", data)
 
 	if strings.Contains(out, `name="isVariation" value="1" checked`) {

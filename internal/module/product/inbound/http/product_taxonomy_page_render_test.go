@@ -27,7 +27,6 @@ import (
 	"strings"
 	"testing"
 
-	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	projectdto "go_wp/internal/module/project/dto"
@@ -97,7 +96,7 @@ var taxonomyPages = []taxonomyPage{
 func taxonomyHandle(stub *productPageReaderStub) *productPageHandle {
 	return &productPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: stub,
+		products: stub, reader: stub,
 	}
 }
 
@@ -247,35 +246,9 @@ func TestTaxonomyPagesFailureSlotIsNotAnEmptyState(t *testing.T) {
 	}
 }
 
-// taxonomyNoReaderStub 只实现 ProductService（**不**实现 ProductPageReader）：
-// 用来造「装配漏了读模型」这一档。嵌入的接口为 nil，被调用到就是 panic ——
-// 比「什么都返回零值」的桩安全。
-type taxonomyNoReaderStub struct {
-	productcontract.ProductService
-}
+// 读模型没接上这一档已从运行期消失：读模型是构造实参（productPageHandle.reader），
+// 漏接 = 编译错误，判据见 product_reader_injection_test.go —— 运行期不再有
+// 「类型断言失败 → 500 兜底」这条路径，所以这里不再有对应用例。
 
-// TestTaxonomyPagesMissingReadModelIsFiveHundred 读模型没接上（装配缺陷）：500 + no-store，
-// **不是**渲染成一张空表。
-//
-// 这条挡的是「装配漏了读模型」这类缺陷被静默成「这个工程没有数据」——后者会让运营以为
-// 数据被删了。判据是状态码与完整页壳，而不是某句具体文案。
-func TestTaxonomyPagesMissingReadModelIsFiveHundred(t *testing.T) {
-	for _, p := range taxonomyPages {
-		t.Run(p.name, func(t *testing.T) {
-			h := &productPageHandle{
-				projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-				products: &taxonomyNoReaderStub{},
-			}
-			rec := productPageRequestFor(t, h, p.route, p.path)
-			if rec.Code != http.StatusInternalServerError {
-				t.Fatalf("%s：读模型没接上应 500，实际 %d，body=%s", p.name, rec.Code, headOf(rec.Body.String()))
-			}
-			if got := rec.Header().Get("Cache-Control"); got != "no-store" {
-				t.Fatalf("%s：装配缺陷页必须 no-store，实际 %q", p.name, got)
-			}
-			if !strings.Contains(rec.Body.String(), "</html>") {
-				t.Fatalf("%s：装配缺陷页也必须是完整页壳，body=%s", p.name, headOf(rec.Body.String()))
-			}
-		})
-	}
-}
+// 桩 taxonomyNoReaderStub（只实现 ProductService、故意不实现读模型）随之删除：
+// 「漏接读模型」不再有运行期形态，构造处少一个实参就编译不过。

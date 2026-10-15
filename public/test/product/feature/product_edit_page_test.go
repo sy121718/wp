@@ -205,8 +205,8 @@ func (s failedAttributeListService) ProductEditPage(ctx context.Context, req *pr
 	return view, err
 }
 
-// 读模型接口是一个整体：本桩只覆盖 ProductEditPage 一条，其余几条也必须在 —— 少一条就是
-// 类型断言失败 → 整页走 500 兜底页（症状是「属性组故障档根本没被渲染」，而断言只会说状态码不对）。
+// 读模型接口是一个整体：本桩只覆盖 ProductEditPage 一条，其余几条也必须在 —— 少一条就编译不过
+//（reader 是构造实参的静态类型，不再有运行期断言 → 500 兜底页这条路径）。
 func (s failedAttributeListService) ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
 	return s.reader.ProductNewPage(ctx, req)
 }
@@ -322,7 +322,7 @@ func TestProductEditPageAttributeListFailureBlocksWrite(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(failedAttributeListService{ProductService: f.svc, reader: f.svc}, f.projects)
+	handle := producthttp.NewProductPageHandle(failedAttributeListService{ProductService: f.svc, reader: f.svc}, failedAttributeListService{ProductService: f.svc, reader: f.svc}, f.projects)
 	engine.GET("/admin/products/edit", handle.ProductEditPage)
 	engine.POST("/admin/products/update", handle.ProductsUpdate)
 

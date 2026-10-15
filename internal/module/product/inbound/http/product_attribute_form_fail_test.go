@@ -17,8 +17,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -199,29 +199,27 @@ func TestAttrGroupFormFailEchoesSubmittedValues(t *testing.T) {
 	if _, exists := data["Form"]; exists {
 		t.Error("回填键不能叫 Form（与页面已有键撞名会让片段渲染失败）")
 	}
-	echo, ok := data["FormEcho"].(gin.H)
+	echo, ok := data["FormEcho"].(*productdto.AttrGroupFormEcho)
 	if !ok {
-		t.Fatalf("data[\"FormEcho\"] 类型 = %T，want gin.H", data["FormEcho"])
+		t.Fatalf("data[\"FormEcho\"] 类型 = %T，want *productdto.AttrGroupFormEcho", data["FormEcho"])
 	}
-	if got := echo["name"]; got != "颜色" {
-		t.Errorf("FormEcho.name = %v，want 颜色", got)
+	if echo.Name != "颜色" {
+		t.Errorf("FormEcho.Name = %q，want 颜色", echo.Name)
 	}
-	if got := echo["sort"]; got != "3" {
-		t.Errorf("FormEcho.sort = %v，want 3（数字字段也要回填）", got)
+	if echo.Key != "color" {
+		t.Errorf("FormEcho.Key = %q，want color", echo.Key)
 	}
-	// 清单里列出的字段都必须存在（补零值）：模板读不到就整块渲染失败。
-	for _, field := range attrGroupFormFields {
-		if _, exists := echo[field]; !exists {
-			t.Errorf("FormEcho 缺字段 %q —— 模板读不到会整块渲染失败（htmx 不 swap）", field)
-		}
+	// 排序按**提交原文**回填（结构体里是 string）：原样还给用户比解析成数字重要。
+	if echo.Sort != "3" {
+		t.Errorf("FormEcho.Sort = %q，want 3（数字字段也按提交原文回填）", echo.Sort)
 	}
-	multi, ok := data["FormEchoMulti"].(gin.H)
-	if !ok {
-		t.Fatalf("data[\"FormEchoMulti\"] 类型 = %T，want gin.H", data["FormEchoMulti"])
+	// 没提交的字段是零值而不是缺键：结构体字段恒在场 —— 这正是换掉手写清单的意义。
+	if echo.ID != "" {
+		t.Errorf("FormEcho.ID = %q，want 空串（本次提交里没有 id）", echo.ID)
 	}
 	// 勾选态必须能按值命中：隐藏域与复选框两个值都在，且保持提交顺序。
-	if got, _ := multi["isVariation"].([]string); len(got) != 2 || got[0] != "0" || got[1] != "1" {
-		t.Errorf("FormEchoMulti.isVariation = %v，want [0 1]（按值命中回填勾选态）", got)
+	if len(echo.IsVariation) != 2 || echo.IsVariation[0] != "0" || echo.IsVariation[1] != "1" {
+		t.Errorf("FormEcho.IsVariation = %v，want [0 1]（按值命中回填勾选态）", echo.IsVariation)
 	}
 
 	// 结构性键：形态、地址、组 id、值行、抽屉申报、错误槽。
@@ -288,8 +286,8 @@ func TestAttrGroupFormFailEditModePointsAtUpdate(t *testing.T) {
 	if got := data["GroupID"]; got != "a1" {
 		t.Errorf("GroupID = %v，want a1", got)
 	}
-	if got, _ := data["FormEcho"].(gin.H)["id"]; got != "a1" {
-		t.Errorf("FormEcho.id = %v，want a1", got)
+	if echo, ok := data["FormEcho"].(*productdto.AttrGroupFormEcho); !ok || echo.ID != "a1" {
+		t.Errorf("FormEcho = %#v（ok=%v），want ID=a1", data["FormEcho"], ok)
 	}
 }
 
@@ -317,8 +315,8 @@ func TestAttrValuesFormFailEchoesValueRows(t *testing.T) {
 	if got := data["InDrawer"]; got != true {
 		t.Errorf("InDrawer = %v，want true", got)
 	}
-	if got, _ := data["FormEcho"].(gin.H)["id"]; got != "a1" {
-		t.Errorf("FormEcho.id = %v，want a1", got)
+	if echo, ok := data["FormEcho"].(*productdto.AttrValueFormEcho); !ok || echo.GroupID != "a1" {
+		t.Errorf("FormEcho = %#v（ok=%v），want GroupID=a1", data["FormEcho"], ok)
 	}
 }
 
@@ -468,7 +466,7 @@ func TestAttrFormDataShapeMatchesFirstPaint(t *testing.T) {
 	h := &productPageHandle{}
 	// 失败档专属键：它们本就不该出现在首屏。
 	failOnly := map[string]bool{
-		"FormEcho": true, "FormEchoChecked": true, "FormEchoMulti": true, "SubmitErr": true,
+		"FormEcho": true, "SubmitErr": true,
 	}
 	// 壳层键（lang / t / csrf_token / PermSet / 导航…）：失败档的 data 会过一遍 adminui.Prepare，
 	// 这些键不是抽屉的数据 —— 用一个空 Prepare 现场取键集，不硬编码清单（会漂移）。
@@ -553,59 +551,90 @@ func TestAttrFormCheckedReadsAllSubmittedValues(t *testing.T) {
 	}
 }
 
-// ——— 字段清单 ↔ 模板 双向断言 ———
+// ——— 回填结构体 ↔ 模板 双向断言 ———
 
-// TestAttrFormFieldsMatchTemplate 字段清单与模板**双向**对齐。
+// TestAttrFormEchoMatchesTemplate 两个属性抽屉的回填结构体与模板**双向**一致性。
 //
-// 正向：模板里读到的每个 `FormEcho*.字段` 都必须在清单里 —— 漏列让片段渲染失败 → 500 →
+// 判据与 TestProductCreateFormEchoMatchesTemplate 同形（那份的注释解释了为什么必须两个方向：
+// 模板读了结构体没有的字段才会炸 —— Jet 运行时错误 → 500 → htmx 不 swap，用户点了没反应）。
 //
-//	htmx 不 swap（用户点保存后什么都看不到）；
-//
-// 反向：清单里列的每个字段模板都得真的在读 —— 只增不减的清单会掩盖「模板删了字段、清单还留着」，
-//
-//	而那种残留下次会被当成「已经在读了」的依据。
-func TestAttrFormFieldsMatchTemplate(t *testing.T) {
+// 换掉手写清单（attrGroupFormFields / attrValuesFormFields）之后，原来那两条「模板 ↔ 清单」
+// 断言改成「模板 ↔ 结构体」：清单不再是一份能漂移的字符串数组，漏字段在编译期就不存在；
+// 但**模板读错名字**仍然可能，所以两个方向都钉。第三条钉的是另一半协议：`form:` 标签必须与
+// 该控件的 `name=` 逐字一致 —— FillForm 按标签取值、浏览器按 name 提交，不同就是「用户填了、
+// 失败后回填成空」，而页面看起来完全正常。
+func TestAttrFormEchoMatchesTemplate(t *testing.T) {
 	cases := []struct {
-		name   string
-		tmpl   string
-		fields []string
+		name string
+		base string
+		echo any
 	}{
-		{"属性组表单", attrGroupFormTemplate, attrGroupFormFields},
-		{"属性值表单", attrValuesFormTemplate, attrValuesFormFields},
+		{"属性组表单", "product_attribute_group_form.html", productdto.AttrGroupFormEcho{}},
+		{"属性值表单", "product_attribute_values_form.html", productdto.AttrValueFormEcho{}},
 	}
-	// 模板在 internal/templates 下（本包在 internal/module/product/inbound/http）。
-	elemRe := regexp.MustCompile(`FormEcho(?:Checked|Multi)?\.([A-Za-z0-9_]+)`)
+	// 这三个 name= 不是回填字段：csrf_token 由页面数据键给；inDrawer 是抽屉形态申报，值恒为 "1"
+	//（失败重渲染时由 handler 从本次提交里原样恢复）；属性组表单新建形态的 groupId 是**常量**
+	//（值写死 new，编辑形态走 id），因此没有对应的回填字段可谈。其余每个 name= 都必须能回填。
+	notEchoed := map[string]bool{"csrf_token": true, "inDrawer": true, "groupId": true}
+	elemRe := regexp.MustCompile(`\.FormEcho\.([A-Za-z][A-Za-z0-9_]*)`)
+	nameRe := regexp.MustCompile(`\bname="([A-Za-z][A-Za-z0-9_]*)"`)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			src, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "templates", tc.tmpl))
-			if err != nil {
-				t.Fatalf("读片段模板失败: %v", err)
+			// 注释里会以文字提到字段名：先剥掉 {* … *} 再扫，免得判据被一句注释带偏。
+			fragment := stripJetComments(string(productTemplateSource(t, tc.base)))
+			echoType := reflect.TypeOf(tc.echo)
+			exported := map[string]bool{}
+			fieldByFormName := map[string]string{}
+			for i := 0; i < echoType.NumField(); i++ {
+				field := echoType.Field(i)
+				exported[field.Name] = true
+				fieldByFormName[field.Tag.Get("form")] = field.Name
+			}
+
+			// —— 模板 → 结构体：模板里读的每个回填字段都要是导出字段 ——
+			read := elemRe.FindAllStringSubmatch(fragment, -1)
+			if len(read) == 0 {
+				t.Fatal("没从片段里解析出任何 .FormEcho.* 访问 —— 正则或模板结构已变，这条守门成了空转")
 			}
 			inTemplate := map[string]bool{}
-			for _, m := range elemRe.FindAllStringSubmatch(string(src), -1) {
+			for _, m := range read {
 				inTemplate[m[1]] = true
-			}
-			declared := map[string]bool{}
-			for _, f := range tc.fields {
-				declared[f] = true
-			}
-			for field := range inTemplate {
-				if !declared[field] {
-					t.Errorf("模板读了 FormEcho*.%s，但清单里没有它 —— 失败片段取不到这个键，整块渲染失败", field)
+				if !exported[m[1]] {
+					t.Errorf("片段读了 .FormEcho.%s，但 %T 没有这个导出字段 —— 失败重渲染抛 Jet 运行时错误 → 500 → htmx 不 swap", m[1], tc.echo)
 				}
 			}
-			for field := range declared {
-				if !inTemplate[field] {
-					t.Errorf("清单里的 %s 模板没有在读 —— 清单残留（模板改了名，清单没跟）", field)
+			// —— 结构体 → 模板：每个字段模板必须真的读 ——
+			for fname := range exported {
+				if !inTemplate[fname] {
+					t.Errorf("%T.%s 没有任何模板读它 —— 结构体已与模板脱节", tc.echo, fname)
 				}
 			}
-			// 清单本身不能有重复项：重复不会报错，只会让「有没有列全」的判据失真。
-			seen := map[string]bool{}
-			for _, f := range tc.fields {
-				if seen[f] {
-					t.Errorf("清单里有重复字段 %q", f)
+
+			// —— 标签 ↔ 控件的 name ——
+			namesInMarkup := map[string]bool{}
+			for _, m := range nameRe.FindAllStringSubmatch(fragment, -1) {
+				namesInMarkup[m[1]] = true
+			}
+			if len(namesInMarkup) == 0 {
+				t.Fatal("没从片段里解析出任何 name= —— 正则或模板结构已变，这条守门成了空转")
+			}
+			for formName, fname := range fieldByFormName {
+				if formName == "" || formName == "-" {
+					t.Errorf("%T.%s 缺 form 标签（FillForm 会退化成首字母小写，歧义）", tc.echo, fname)
+					continue
 				}
-				seen[f] = true
+				if !namesInMarkup[formName] {
+					t.Errorf("%T.%s 的 form 标签是 %q，但片段里没有 name=%q 的控件 —— 回填会读到一个永远提交不上来的键（用户填的内容失败后丢光，且不报错）", tc.echo, fname, formName, formName)
+				}
+			}
+			// 反向：片段里除上面两类之外的每个 name= 都要能回填，否则「改了 markup 忘了加字段」会漏。
+			for name := range namesInMarkup {
+				if notEchoed[name] {
+					continue
+				}
+				if _, ok := fieldByFormName[name]; !ok {
+					t.Errorf("片段里有 name=%q，但回填结构体 %T 没有对应字段 —— 这个控件提交上来的值失败后回填不了", name, tc.echo)
+				}
 			}
 		})
 	}

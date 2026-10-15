@@ -6,9 +6,11 @@ package producthttp
 // CountAttributes / ListAttributes）。取数下沉之后那两条路径不再经过控制器，所以本文件
 // 接住同一族判据，改用**读模型桩**：
 //
-//	读模型没接上              → 500 + no-store（不是静默渲染成「没有属性组」）
 //	?project=<不存在的 id>    → 400 + no-store
 //	正常档                    → 200、完整页壳、行与抽屉表单真的渲染出来、参数转发到读模型
+//
+// 「读模型没接上 → 500」这一档已从运行期消失（读模型是构造实参，漏接=编译错误，
+// 判据见 product_reader_injection_test.go），所以下表里没有它。
 //
 // 反面判据与 taxonomy 那批同源：只断言「失败档是红色」挡不住「把取数整段跳过」——
 // 所以成功档必须断言**该取的数真的取了**（这里体现为读模型收到的入参）。
@@ -57,7 +59,7 @@ func attributesPageEnv(view *productdto.ProductAttributesPageView, err error) (*
 	reader := &productPageReaderStub{attributesPageView: view, attributesPageErr: err}
 	h := &productPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: reader,
+		products: reader, reader: reader,
 	}
 	return h, reader
 }
@@ -112,14 +114,9 @@ func TestProductAttributesPageUnknownProjectIsBadRequest(t *testing.T) {
 	assertProductPageFailure(t, "属性页未知工程", rec, http.StatusBadRequest, "这一页的数据没能读出来")
 }
 
-// TestProductAttributesPageWithoutReadModelIsFiveHundred 装配缺陷：读模型没接上必须 500 + no-store。
-//
-// 反面判据：静默渲染成一张「没有属性组」的空表最省事，但那会让「装配没接上」与
-// 「这个工程本来就没有属性组」在页面上长得一模一样，而前者要有人去看装配。
-func TestProductAttributesPageWithoutReadModelIsFiveHundred(t *testing.T) {
-	rec := attributesPageRequest(t, &productPageHandle{}, "/admin/product-attributes")
-	assertProductPageFailure(t, "属性页读模型未注入", rec, http.StatusInternalServerError, "这一页的数据没能读出来")
-}
+// 读模型没接上这一档已从运行期消失：读模型是构造实参（productPageHandle.reader），
+// 漏接 = 编译错误，判据见 product_reader_injection_test.go —— 运行期不再有
+// 「类型断言失败 → 500 兜底」这条路径，所以这里不再有对应用例。
 
 // TestProductAttributesPageNilViewIsGuarded 读模型返回 nil 视图：不 panic，兜成 500 页。
 //
@@ -130,7 +127,7 @@ func TestProductAttributesPageNilViewIsGuarded(t *testing.T) {
 	reader.attributesPageView = nil
 	h := &productPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: reader,
+		products: reader, reader: reader,
 	}
 	rec := attributesPageRequest(t, h, "/admin/product-attributes?project=p1")
 	if rec.Code != http.StatusInternalServerError {

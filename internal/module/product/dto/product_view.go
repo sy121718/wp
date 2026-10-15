@@ -113,9 +113,11 @@ type ProductListPageReq struct {
 //   - **service 的读模型写**：Projects / SelectedProject / Filter* / Page / Limit / Total /
 //     RowDetails / Categories / Brands / Tags / 三组选项 / Rules / Roundings（取数结果）；
 //   - **控制器写**：Title / Menu（页壳键，title 的 i18n key 常量是 http 包的 MsgProductsTitle）、
-//     Flat（分类树扁平化）/ Form（改价表单初值）/ Statuses（状态下拉）/ Products（成品行）/
-//     Pagination / ListQuery —— 这些的**计算工具还被别的页面共用**（分类标签页 / 详情页回显 /
-//     独立定价页），搬进 service 等于让那几页各留一份，理由见 service/product_list_page.go 文件头；
+//     Form（改价表单初值）/ Statuses（状态下拉）/
+//     Pagination / ListQuery —— 这些的**计算工具还被别的页面共用**（详情页回显 / 独立定价页），
+//     搬进 service 等于让那几页各留一份，理由见 service/product_list_page.go 文件头；
+//     **Products（成品行）不在此列** —— 行装配已下沉进读模型（service/product_row.go），
+//     控制器不再拼行；只服务行装配的分类树扁平行（Flat）随之下沉，视图不再有那个字段；
 //   - **控制器在失败时写**：LoadError（按当前语言归口；LoadFailed / HTTPStatus 由读模型给）。
 type ProductListPageView struct {
 	// Title 放 enums 的 i18n key（取词在渲染期，理由同 ProductNewPageView）。
@@ -136,11 +138,10 @@ type ProductListPageView struct {
 	Total         int64
 
 	// 行装配的原料：RowDetails 是本页每行的商品详情（列表项不含变体明细，逐行取）；
-	// Categories 是**分类树**，Flat 是控制器扁平化后的行（两棵树都留着 —— 行渲染按
-	// 父在前子紧随的顺序读 Flat，分类选择器按树读 Categories，见 products.html 的两处）。
+	// Categories 是**分类树**（分类选择器按树读，见 products.html）。行本身由读模型装配进
+	// Products。
 	RowDetails []*ProductResp
 	Categories []*CategoryResp
-	Flat       []*CategoryResp
 	Brands     []*BrandResp
 	Tags       []*TagResp
 
@@ -154,10 +155,10 @@ type ProductListPageView struct {
 	Roundings []*PricingRoundingOptionResp
 	Form      PricingForm
 
-	// Products 成品行（`[]map[string]any` 与 gin.H 同型，dto 因此不必 import gin）；
-	// Pagination 分页条事实；ListQuery 筛选上下文（表单 action 的 query，写动作失败时
-	// 由 pkg/backpath 读回，见 product_jump.go 的 productListBackKeys）。
-	Products   []map[string]any
+	// Products 成品行（读模型装配，形状见 ProductRow）；Pagination 分页条事实；
+	// ListQuery 筛选上下文（表单 action 的 query，写动作失败时由 pkg/backpath 读回，
+	// 见 product_jump.go 的 productListBackKeys）。
+	Products   []ProductRow
 	Pagination pagination.Page
 	ListQuery  string
 
@@ -201,8 +202,10 @@ type ProductDetailPageReq struct {
 // 字段的写者与 ProductListPageView 同一套约定：
 //   - **service 写**：Projects / SelectedProject / ProductID / HasProduct / WarehouseOptions /
 //     Detail / Categories / Brands / Tags（取数结果）；
-//   - **控制器写**：Title / Menu（页壳）、BackURL（URL 形状属 HTTP）、Flat（扁平行）、
-//     Product（成品行）、Bundle / TplPanel（两块面板各自的取数与组装）；
+//   - **控制器写**：Title / Menu（页壳）、BackURL（URL 形状属 HTTP）、Bundle / TplPanel
+//     （两块面板各自的取数与组装）；
+//   - **读模型写行**：Product 成品行由 service 的行装配产出（service/product_row.go），
+//     控制器只在 type=bundle 时往里补 Bundle；
 //   - **控制器在失败时写**：LoadError。
 type ProductDetailPageView struct {
 	Title string `view:"title"`
@@ -219,18 +222,18 @@ type ProductDetailPageView struct {
 	// 编辑页共用同一份组装，取数口径不能分叉。
 	WarehouseOptions []WarehouseOptionView
 
-	// —— 行装配原料（Product 成品行由控制器的 productRow 组装）——
-	// Categories 是**分类树**（扁平行由 service.FlattenCategoryTree 派生）。
+	// —— 行装配原料与成品 ——
+	// Detail 是这一行的商品详情；Categories 是**分类树**（分类选择器按树读）；行本身由读模型
+	// 装配进 Product（service/product_row.go，三页共用同一份组装）。
 	Detail     *ProductResp
 	Categories []*CategoryResp
 	Brands     []*BrandResp
 	Tags       []*TagResp
-	Flat       []*CategoryResp
 
-	// —— 控制器装配的产物 ——
-	// Product 是 productRow 的输出（列表 / 详情 / 编辑三页共用同一份组装）；
-	// Bundle 只在 type=bundle 时给（模板据 isset 整块跳过）；TplPanel 是详情模板面板。
-	Product  map[string]any
+	// —— 装配的产物 ——
+	// Product 是成品行（读模型写）；Bundle 只在 type=bundle 时给（模板据 isset 整块跳过）；
+	// TplPanel 是详情模板面板（控制器组装）。
+	Product  *ProductRow
 	Bundle   map[string]any
 	TplPanel map[string]any
 	// BackURL 回列表的链接（带工程上下文，不掉回默认工程）。
@@ -284,16 +287,17 @@ type ProductEditPageView struct {
 	WarehouseOptions []WarehouseOptionView
 	AttributeOptions []AttributeOptionView
 
-	// —— 行装配原料（Product 成品行由控制器的 productRow 组装）——
-	// Categories 是**分类树**（扁平行由 service.FlattenCategoryTree 派生）。
+	// —— 行装配原料与成品 ——
+	// Detail 是这一行的商品详情；Categories 是**分类树**（分类选择器按树读）；行本身由读模型
+	// 装配进 Product（service/product_row.go，三页共用同一份组装）。
 	Detail     *ProductResp
 	Categories []*CategoryResp
 	Brands     []*BrandResp
 	Tags       []*TagResp
-	Flat       []*CategoryResp
 
-	// —— 控制器装配的产物 ——
-	Product  map[string]any
+	// —— 装配的产物 ——
+	// Product 是成品行（读模型写）；TplPanel 是详情模板面板。
+	Product  *ProductRow
 	TplPanel map[string]any
 	BackURL  string
 
@@ -614,6 +618,37 @@ type ProductCreateFormEcho struct {
 	TrackQuantity bool     `form:"trackQuantity"`
 	AttributeIDs  []string `form:"attributeIds"`
 	WarehouseIDs  []string `form:"warehouseIds"`
+}
+
+// AttrGroupFormEcho 属性组抽屉表单的回填值：字段清单本身（与 ProductCreateFormEcho 同一契约）。
+//
+// 三条约定与 ProductCreateFormEcho 一致（form 标签 ↔ 控件 name 逐字一致、类型表达控件形态、
+// 双向一致性由 product_attribute_form_fail_test.go 用反射 + 模板源码对账钉住），两处**形状**不同：
+//
+//   - `Sort` 是 string 而不是 int：回填的是**本次提交的原文**，解析失败也要原样还给用户
+//     （转 int 失败就只剩空框，用户填的东西被悄悄丢掉）；
+//   - `IsVariation` 是 []string 而不是 bool：「同名隐藏域打底 + 复选框」的控件每次提交都会带上
+//     隐藏域的 0，按 bool（字段是否存在 / 首个值）判会**永远为真**，必须按**值**命中（模板 range 找 "1"）——
+//     与 formValueHas 那条已修缺陷同源。
+//
+// 属性值行（values[n].*）不在任何回填结构体里：它们的回填走 RowsCtx
+// （attrEchoRowsFromForm 按原始索引重建），塞进这里只会得到一串没人读的字符串。
+type AttrGroupFormEcho struct {
+	ProjectID   string   `form:"projectId"`
+	ID          string   `form:"id"`
+	Name        string   `form:"name"`
+	Key         string   `form:"key"`
+	Sort        string   `form:"sort"`
+	IsVariation []string `form:"isVariation"`
+}
+
+// AttrValueFormEcho 属性值抽屉表单的回填值。
+//
+// 只有三个隐藏域：本表单的可见字段全是 values[n].* 的行，行回填走 RowsCtx（见 AttrGroupFormEcho）。
+type AttrValueFormEcho struct {
+	ProjectID string `form:"projectId"`
+	ID        string `form:"id"`
+	GroupID   string `form:"groupId"`
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。

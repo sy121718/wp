@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
-	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
@@ -39,17 +38,9 @@ const productAttributesPageTemplate = "admin/product/product_attributes.html"
 // ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
 func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	reader, ok := h.products.(productcontract.ProductPageReader)
-	if !ok {
-		// 装配没接上读模型（老装配 / 桩）：整页 + 500 + no-store，走同一份失败页形状。
-		// 这条不可达就说明装配漏了；真出现时也不能把「没接上」说成「没有属性组」。
-		adminui.RenderPage(c, productAttributesPageTemplate, &productdto.ProductAttributesPageView{
-			Title: productenums.ProductAttributesTitle, Menu: "product-attributes",
-			LoadFailed: true, LoadError: productInternalText(c, nil),
-			HTTPStatus: http.StatusInternalServerError,
-		})
-		return
-	}
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
 	// 取参数 → 调读模型（取数编排在 service：取哪些数据、按什么顺序、哪条失败算 400 /
 	// 哪条只降级，都是业务结论。见 service.ProductAttributesPage）。
 	view, err := reader.ProductAttributesPage(ctx, &productdto.ProductAttributesPageReq{
@@ -400,22 +391,6 @@ func attrGroupFormAction(mode string) string {
 	return attrGroupCreateAction
 }
 
-// attrGroupFormFields 属性组表单的回填字段清单。
-//
-// 改片段里的 `name=` 必须同步改这里：helper 按这份清单给每个字段补零值键，漏列的字段
-// 在失败片段里读不到 —— Jet 读缺失的 map 键会在那一行渲染失败，整块响应被丢弃（500），
-// htmx 判 5xx 为不 swap：用户看到的是「点了保存什么也没发生」，页面上的输入还是旧的。
-//
-// isVariation 只能按 FormEchoMulti 的**值**回填、不能用 FormEchoChecked：它是
-// 「同名隐藏域打底 + 复选框」的形态，隐藏域让它**每次提交都存在** —— 详见 formValueHas。
-var attrGroupFormFields = []string{"projectId", "id", "name", "key", "sort", "isVariation"}
-
-// attrValuesFormFields 属性值表单的回填字段清单。
-//
-// values[n].* 不在这里：属性值行的回填走 RowsCtx（由 attrEchoRowsFromForm 按原始索引重建），
-// 不是单值回填 —— 塞进 FormEcho 只会得到一串没人读的字符串。
-var attrValuesFormFields = []string{"projectId", "id", "groupId"}
-
 // attrGroupFormOpts 属性组抽屉表单的数据入参。
 //
 // 用结构体而不是位置参数：这里连着两个 id（工程 / 属性组）与一个模式串，位置写反
@@ -443,7 +418,7 @@ type attrGroupFormOpts struct {
 // 键分两类：
 //   - 结构性键（Csrf / Project / t / tf / Mode / Action / IsCreate / GroupID /
 //     VariationChecked / RowsCtx）—— 恒定给齐，片段在**任何**渲染路径下都能独立成立；
-//   - 回填三键（FormEcho / FormEchoChecked / FormEchoMulti）—— 只在失败重渲染时并入
+//   - 回填键 FormEcho（*productdto.AttrGroupFormEcho）—— 只在失败重渲染时并入
 //     （见 attrGroupFormFail），片段以 `gfFill := isset(.FormEcho)` 区分首屏与回填。
 //
 // t / tf 由 adminui.PrepareBare 注入：片段是**带参数 include** 的（数据是每个抽屉
@@ -481,8 +456,8 @@ type attrValuesFormOpts struct {
 // attrValuesFormData 属性值抽屉表单的渲染数据（首屏与失败重渲染共用）。
 //
 // 回填的**主体是 RowsCtx**（用户刚编辑的那几行，由 attrEchoRowsFromForm 保留位置和原值）；
-// FormEcho* 三键只承载 projectId / id / groupId 这几个隐藏域 —— 值表单的可见字段
-// 全是 values[n].*，没有单值字段可回填。t / tf 同 attrGroupFormData（PrepareBare 注入）。
+// FormEcho（*productdto.AttrValueFormEcho）只承载 projectId / id / groupId 这几个隐藏域 ——
+// 值表单的可见字段全是 values[n].*，没有单值字段可回填。t / tf 同 attrGroupFormData（PrepareBare 注入）。
 func attrValuesFormData(c *gin.Context, o attrValuesFormOpts) gin.H {
 	return adminui.PrepareBare(c, gin.H{
 		"Csrf": o.Csrf, "Project": o.ProjectID,
@@ -544,9 +519,12 @@ func (h *productPageHandle) attrGroupFormFail(c *gin.Context, mode, projectID, g
 	})
 	// 错误槽收**事实**（productMsg），取词在 product_attribute_group_form.html 的 tf 里做。
 	data["SubmitErr"] = msg
-	for k, v := range formEchoData(c, attrGroupFormFields...) {
-		data[k] = v
-	}
+	// 回填值按**结构体字段**填（dto.AttrGroupFormEcho）：`form:` 标签就是那份字段清单，
+	// 不再手写字符串数组 —— 漏一个字段在编译期就不存在，而「模板改了 name、结构体没跟」
+	// 由 product_attribute_form_fail_test.go 的反射 + 模板源码双向对账钉住。
+	echo := &productdto.AttrGroupFormEcho{}
+	adminui.FillForm(echo, formEchoFrom(c).values)
+	data["FormEcho"] = echo
 	// 抽屉形态由**表单自己**申报（隐藏域 inDrawer）：抽屉内容被 ui/drawer.js 克隆到
 	// document 级，由渲染路径反推（HX-Target / Referer / 请求 URL）都不可靠；
 	// 一次表单提交能把这个事实原样带过来 —— 否则抽屉里失败一次，「取消」按钮就消失了。
@@ -570,9 +548,10 @@ func (h *productPageHandle) attrValuesFormFail(c *gin.Context, projectID, groupI
 	})
 	// 错误槽收**事实**（productMsg），取词在 product_attribute_values_form.html 的 tf 里做。
 	data["SubmitErr"] = msg
-	for k, v := range formEchoData(c, attrValuesFormFields...) {
-		data[k] = v
-	}
+	// 回填值按结构体字段填（dto.AttrValueFormEcho），口径同 attrGroupFormFail。
+	echo := &productdto.AttrValueFormEcho{}
+	adminui.FillForm(echo, formEchoFrom(c).values)
+	data["FormEcho"] = echo
 	if strings.TrimSpace(c.PostForm("inDrawer")) == "" {
 		delete(data, "InDrawer")
 	}

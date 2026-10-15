@@ -264,7 +264,7 @@ func newBundlePageEngine(t *testing.T) (*gin.Engine, *bundleFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	engine.GET("/admin/products/bundle", handle.ProductBundlePage)
 	engine.POST("/admin/products/bundle/save", handle.ProductBundleSave)
 	return engine, f
@@ -314,7 +314,7 @@ func TestBundlePageReadFailureIsFiveHundred(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(&bundlePageFailReader{Service: f.products, status: http.StatusInternalServerError}, f.projects)
+	handle := producthttp.NewProductPageHandle(&bundlePageFailReader{Service: f.products, status: http.StatusInternalServerError}, &bundlePageFailReader{Service: f.products, status: http.StatusInternalServerError}, f.projects)
 	engine.GET("/admin/products/bundle", handle.ProductBundlePage)
 
 	rec := httptest.NewRecorder()

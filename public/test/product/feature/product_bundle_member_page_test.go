@@ -43,7 +43,7 @@ func newBundleMemberPageEngine(t *testing.T) (*gin.Engine, *bundleFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(f.products, f.projects)
+	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products/bundle", handle.ProductBundlePage)
 	engine.POST("/admin/products/bundle/save", handle.ProductBundleSave)

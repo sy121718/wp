@@ -823,7 +823,7 @@ func newPricingPageEngine(t *testing.T) (*gin.Engine, *pricingFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(f.svc, f.projects)
+	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.GET("/admin/product-pricing", handle.ProductPricingPage)
 	engine.POST("/admin/product-pricing/preview", handle.ProductPricingPreview)
 	engine.POST("/admin/product-pricing/apply", handle.ProductPricingApply)

@@ -2,8 +2,10 @@ package producthttp
 
 // product_page_util_test.go — HTMX 写表单「回填快照」的最小验证（本批铺设的地基）。
 //
-// 只钉一件后续各写表单都要依赖、错了会**静默失效**的事：
-// 回填快照的字段值、多值顺序、勾选态、缺失键补零（模板访问缺失键会中断渲染）。
+// 只钉一件后续各写表单都要依赖、错了会**静默失效**的事：归一化后的字段值、多值顺序、
+// 去首尾空白、空值丢弃。（勾选态与「缺键补零」原由 formEchoData 的三个 map 键承担，
+// 现已换成 dto 的 XxxFormEcho 结构体 + adminui.FillForm —— 字段即清单、Go 类型即控件形态，
+// 那两件事由各表单自己的反射 + 模板源码对账判据钉住。）
 //
 // 分档判据（isHXRequest）与出口（shell.RenderJump）的守卫在 product_jump_test.go：
 // 原 redirectWhere / hxFragment 两个 helper 已随「结论走 shell.RenderJump」删除。
@@ -62,48 +64,33 @@ func newHXContext(t *testing.T, hxHeader, body string) (*gin.Context, *httptest.
 	return c, rec
 }
 
-// formEchoData：单值取首个、多值保序、空值丢弃、复选框按「是否提交过」判定、列出即补零键。
-func TestFormEchoDataKeepsSubmittedValues(t *testing.T) {
+// formEchoFrom：单值取首个、多值保序、空值丢弃 —— 所有失败回填共用的快照口径。
+//
+// 商品建表单与两个属性抽屉都把这个快照喂给 adminui.FillForm（结构体字段即清单），
+// 所以这里钉的是**所有**回填路径的输入：归一化口径一变，症状是「用户打的空格被原样回填 /
+// 多值顺序被改」，两边都不报错、页面看起来正常。
+func TestFormEchoSnapshotKeepsSubmittedValues(t *testing.T) {
 	c, _ := newHXContext(t, "true",
-		"name=%E5%95%86%E5%93%81&sku=ABC_B&attributeIds=a1&attributeIds=a2&trackQuantity=1&empty=&warehouseIds=w1")
-	data := formEchoData(c, "name", "sku", "type", "attributeIds", "trackQuantity", "empty")
+		"name=%E5%95%86%E5%93%81&sku=%20ABC_B%20&attributeIds=a1&attributeIds=a2&empty=&warehouseIds=w1")
+	echo := formEchoFrom(c)
 
-	form, ok := data["FormEcho"].(gin.H)
-	if !ok {
-		t.Fatal("data[\"FormEcho\"] 不是 gin.H —— 模板里的 {{ .FormEcho.name }} 会直接取不到")
+	if got := echo.value("name"); got != "商品" {
+		t.Errorf("value(name) = %q，want 商品", got)
 	}
-	if got := form["name"]; got != "商品" {
-		t.Errorf("FormEcho.name = %v，want 商品", got)
+	// 去首尾空白：回填进输入框的该是用户实际打的字，不是他误带的空格。
+	if got := echo.value("sku"); got != "ABC_B" {
+		t.Errorf("value(sku) = %q，want ABC_B（去首尾空白）", got)
 	}
-	if got := form["sku"]; got != "ABC_B" {
-		t.Errorf("FormEcho.sku = %v，want ABC_B", got)
+	// 没提交的字段给空串：调用方拿到的永远是能直接进视图的值（缺失不等于 panic）。
+	if got := echo.value("type"); got != "" {
+		t.Errorf("value(type) = %q，want 空串", got)
 	}
-	// 提交里没有的字段也必须存在（空串）：Jet 对缺失的 map 键会中断整页渲染。
-	if got, exists := form["type"]; !exists || got != "" {
-		t.Errorf("FormEcho.type = %v（存在=%v），want 空串且键存在", got, exists)
+	// 多值保序：顺序在本域有语义（「按本表顺序第一个勾中的仓是认领仓」）。
+	if got := echo.list("attributeIds"); len(got) != 2 || got[0] != "a1" || got[1] != "a2" {
+		t.Errorf("list(attributeIds) = %v，want [a1 a2]（保提交顺序）", got)
 	}
-	if _, exists := form["warehouseIds"]; exists {
-		t.Error("未列出的字段不该出现在 FormEcho 里（列出即补零，未列出即不出现）")
-	}
-
-	checked, ok := data["FormEchoChecked"].(gin.H)
-	if !ok {
-		t.Fatal("data[\"FormEchoChecked\"] 不是 gin.H")
-	}
-	if got := checked["trackQuantity"]; got != true {
-		t.Errorf("FormEchoChecked.trackQuantity = %v，want true", got)
-	}
-	// 空值提交（empty=）不算勾选：判据是「字段在提交里存在且有值」。
-	if got := checked["empty"]; got != false {
-		t.Errorf("FormEchoChecked.empty = %v，want false（空值不算勾选）", got)
-	}
-
-	multi, ok := data["FormEchoMulti"].(gin.H)
-	if !ok {
-		t.Fatal("data[\"FormEchoMulti\"] 不是 gin.H")
-	}
-	list, _ := multi["attributeIds"].([]string)
-	if len(list) != 2 || list[0] != "a1" || list[1] != "a2" {
-		t.Errorf("FormEchoMulti.attributeIds = %v，want [a1 a2]（保提交顺序）", list)
+	// 空值提交（empty=）等同没填：留着空串会让「填过」与「没填」在回填里混掉。
+	if got := echo.list("empty"); len(got) != 0 {
+		t.Errorf("list(empty) = %v，want 空（空值丢弃）", got)
 	}
 }

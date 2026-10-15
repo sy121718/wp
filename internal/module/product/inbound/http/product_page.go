@@ -47,6 +47,13 @@ const variantSelectionPrefix = "attr:"
 // productPageHandle 商品后台页处理器。
 type productPageHandle struct {
 	products productcontract.ProductService
+	// reader 读模型（contract.ProductPageReader）：与 products 是**同一个实现的两个静态类型**，
+	// 由 SetupProductRoutes 一次产出、装配期一起交进来。
+	//
+	// 为什么不像以前那样在请求期 h.products.(ProductPageReader) 断言：断言把「装配漏接」
+	// 推迟到运营点开那一页时才暴露，只能给 500 兜底，漏接既不会编译报错也不会被门禁抓到；
+	// 现在漏接 = 构造处少一个实参 = 编译错误（判据见 product_reader_injection_test.go）。
+	reader   productcontract.ProductPageReader
 	projects projectcontract.ProjectService
 	// templates / instances 供「详情页模板」页（issue #14）消费：模板列表与版本、
 	// 商品发布实例的模板绑定与预览渲染。经 SetDetailTemplateDeps 注入 ——
@@ -88,8 +95,12 @@ type productPagePortWiring interface {
 }
 
 // NewProductPageHandle 构造。
-func NewProductPageHandle(products productcontract.ProductService, projects projectcontract.ProjectService) *productPageHandle {
-	return &productPageHandle{products: products, projects: projects}
+//
+// reader 必须显式给出（哪怕它与 products 是同一个值）：它承载的是「这一份实现能不能读
+// 页面读模型」这个事实，装配期说清楚比请求期断言强 —— 两个参数类型不同，漏给读模型
+// 在编译期就报错。
+func NewProductPageHandle(products productcontract.ProductService, reader productcontract.ProductPageReader, projects projectcontract.ProjectService) *productPageHandle {
+	return &productPageHandle{products: products, reader: reader, projects: projects}
 }
 
 // SetInventoryDeps 注入仓库清单依赖（issue #15，装配期调用）。

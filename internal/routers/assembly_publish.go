@@ -746,7 +746,7 @@ func (a *assembly) mountAdminPages() {
 	userhttp.SetupCustomerPages(a.adminPages, a.userAdminSvc, a.orderSvc, a.projectService,
 		a.membershipSvc, a.membershipFacing, a.orderSvc, a.orderSvc, a.orderSvc, a.orderSvc,
 		membershipAdmin, membershipTiers)
-	producthttp.SetupProductPages(a.adminPages, a.productSvc, a.projectService,
+	producthttp.SetupProductPages(a.adminPages, a.productSvc, a.productReader, a.projectService,
 		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)
 	// 页面读模型的两条只读端口在模块内部转交（SetInventoryDeps / SetDetailTemplateDeps 收到
 	// 依赖后同时给处理器与 service 读模型）：装配段只记录「这两条依赖到达过」，

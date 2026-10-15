@@ -4,23 +4,21 @@
 // 控制器只剩「读参数 → 调这里 → 渲染」。那一屏的完整理由（为什么取数编排属于业务结论、
 // 为什么失败之后一条派生取数都不发、为什么不写第二份失败页）在这里同样成立，不重复。
 //
-// **本方法只搬取数，不搬纯函数**。列表页还要四样东西：页码归一（productPageNumber）、
-// 状态下拉（productStatusOptions）、分类树扁平化（FlattenCategoryTree）、改价表单初值
-// （DefaultPricingForm）—— 前三个各自还被别的页面用着（属性页 / 分类标签页 /
-// 详情页回显），都在 `inbound/http` 里；表单初值已随定价页一起下沉进本包。把它们搬进本包等于让那几页各留一份或反向
-// import 控制器包，两条路都比留在原地差；所以这里给**原料**（分类树而不是扁平行、
-// 规则清单而不是表单初值），控制器用自己那份工具加工 —— 一份实现，两个页面共用。
+// **本方法既搬取数也搬行装配**（行装配见文件末尾与 service/product_row.go）。仍留在控制器
+// 的只有两件跨页共用的工具：页码归一（productPageNumber，属性页 / 分类标签页同口径）与
+// 状态下拉（productStatusOptions，编辑页也用）。它们搬进本包等于让那几页各留一份或反向
+// import 控制器包，两条路都比留在原地差；改价表单初值已随定价页一起下沉进本包
+// （controller 拿 Rules / Roundings 调 DefaultPricingForm）。
 //
 // 这一屏与新建页的三个不同点：
 //   - **分页与筛选**：keyword / status / page 全走查询串（服务端渲染、零 JS）。页码由
 //     控制器归一后传进来（`productPageNumber` 是跨页共用的工具），本方法只做下限保护；
 //     总数与列表用**同一份过滤条件** —— 两处各写一遍 WHERE 时，「共 N 条」与实际能翻出来
 //     的条数对不上，而两边单独看都对；
-//   - **行装配的原料**：列表行由控制器的 productRow 组装（它与详情页、只读页共用一份
-//     组装），本方法把原料（RowDetails / Categories / Brands / Tags / WarehouseOptions）
-//     连同页级事实交出去。行装配整体下沉要先把那批拼装工具（productPickOptions /
-//     categoryPickOptions / variationAttributes …）找个共同的家，它们还服务 bundle 与
-//     taxonomy 页，不属于这一批；
+//   - **行装配在本方法里完成**：每个商品一行（service/product_row.go），与详情页 / 编辑页
+//     共用同一份组装。原料（RowDetails / Categories / Brands / Tags / WarehouseOptions）
+//     仍留在视图里 —— 分类选择器按树读，行本身则已经装配进 Products；嵌套值保持
+//     map[string]any 的形状（模板的 isset 判据依赖它，见 dto.ProductRow 的文件头）；
 //   - **分页条只给事实**：Total / Page / Limit 由本方法给，基地址与链接由控制器按当前
 //     请求拼（基地址带筛选条件，翻页不丢条件）。
 //
@@ -50,9 +48,9 @@ const ProductListPageSize = 20
 // 但只有第一处失败原因会被说出来。
 func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (res *productdto.ProductListPageView, err error) {
 	view := &productdto.ProductListPageView{
-		// Title / Menu / Flat / Form / Statuses / Products / Pagination / ListQuery 都由
-		// 控制器填：title 的 i18n key 常量在 http 包（MsgProductsTitle），派生值的计算
-		// 工具还被别的页面共用。这里只写**取数结果**。
+		// Title / Menu / Form / Statuses / Pagination / ListQuery 都由控制器填：title 的
+		// i18n key 常量在 http 包（MsgProductsTitle），派生值的计算工具还被别的页面共用。
+		// Products（成品行）由本方法末尾装配，Flat 已随行装配下沉、视图不再有那个字段。
 		Projects:            []projectdto.ProjectResp{},
 		WarehouseOptions:    []productdto.WarehouseOptionView{},
 		AttributeOptions:    []productdto.AttributeOptionView{},
@@ -215,6 +213,20 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 	// 调 DefaultPricingForm 自己算（一份实现：独立定价页与批量改价抽屉共用）。
 	view.Rules = s.ListPricingRuleTypes(ctx)
 	view.Roundings = s.ListPricingRoundingOptions(ctx)
+
+	// 行装配：成品行在**读模型**里产出（控制器不再拼行）。只在取数全部成功时装配 ——
+	// 逐行取详情失败时 RowDetails 是半截的（见上面的 break），渲染它只会得到一张残表。
+	// 分类树在这里扁平化一次（只服务行装配），控制器不再需要那份扁平行。
+	if firstErr == nil {
+		flat := FlattenCategoryTree(view.Categories)
+		rows := make([]productdto.ProductRow, 0, len(view.RowDetails))
+		for _, detail := range view.RowDetails {
+			if row := s.productRow(ctx, selected, flat, view.Brands, view.Tags, view.WarehouseOptions, detail); row != nil {
+				rows = append(rows, *row)
+			}
+		}
+		view.Products = rows
+	}
 
 	if firstErr != nil {
 		// 失败页给齐模板必需键：上面每个字段都有值（空列表而不是缺失），渲染不会断在

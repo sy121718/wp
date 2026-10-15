@@ -301,8 +301,8 @@ func detailTemplatePageViewStub(mutate func(*productdto.ProductDetailTemplatePag
 	return v
 }
 
-// ListRatings 行组装（productRow）会读一次评分（issue #33）：嵌入的 ProductService 是 nil 时
-// 那一次调用会 panic，所以成功档要给它一个空结果（与 productPageProductsStub 同一处理）。
+// ListRatings 读模型装配行时会读一次评分（service/product_row.go 的 ratingsOf，issue #33）：
+// 嵌入的 ProductService 是 nil 时那一次调用会 panic，所以成功档要给它一个空结果。
 func (s *productPageReaderStub) ListRatings(context.Context, *productdto.ListRatingsReq) (*productdto.RatingResp, error) {
 	return &productdto.RatingResp{}, nil
 }
@@ -372,12 +372,20 @@ func productDetailPageViewStub(mutate func(*productdto.ProductDetailPageView)) *
 	if mutate != nil {
 		mutate(v)
 	}
+	// 行由读模型装配（service/product_row.go）：桩按同一口径补一条行，字段与 Detail 对齐。
+	// 控制器不再拼行 —— 页面渲染要的 Product 只能从读模型来（缺了就是 nil，模板走空态）。
+	if v.HasProduct && v.Detail != nil && v.Product == nil {
+		row := productRowForRender()
+		row.ID, row.Name, row.Status, row.Slug = v.Detail.ID, v.Detail.Name, v.Detail.Status, v.Detail.Slug
+		v.Product = row
+	}
 	return v
 }
 
 // productEditPageViewStub 编辑页视图桩（默认「读到、正常」档；失败 / 空态由用例改）。
 // 与详情页同一口径：列表键一律给空列表而不是缺键 —— 控制器不再补任何键。
-// Detail 给一条最小商品（行装配 productRow 要它），其余表单字段由控制器算。
+// Detail 给一条最小商品，行（Product）由本桩按读模型口径补（见 return 前那段）；
+// 图集文本 / 价格文本这类表单字段仍由控制器算。
 func productEditPageViewStub(mutate func(*productdto.ProductEditPageView)) *productdto.ProductEditPageView {
 	v := &productdto.ProductEditPageView{
 		Title:            MsgProductsTitle,
@@ -396,6 +404,13 @@ func productEditPageViewStub(mutate func(*productdto.ProductEditPageView)) *prod
 	}
 	if mutate != nil {
 		mutate(v)
+	}
+	// 行由读模型装配（service/product_row.go）：桩按同一口径补一条行，字段与 Detail 对齐。
+	// 控制器不再拼行 —— 页面渲染要的 Product 只能从读模型来（缺了就是 nil，模板走空态）。
+	if v.HasProduct && v.Detail != nil && v.Product == nil {
+		row := productRowForRender()
+		row.ID, row.Name, row.Status, row.Slug = v.Detail.ID, v.Detail.Name, v.Detail.Status, v.Detail.Slug
+		v.Product = row
 	}
 	return v
 }
@@ -543,6 +558,12 @@ func TestProductsPageLoadFailureRendersSamePage(t *testing.T) {
 				v.LoadFailed = true
 			}),
 			listErr: errors.New(`pq: relation "products" does not exist`),
+		}, reader: &productPageReaderStub{
+			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+				v.HTTPStatus = http.StatusInternalServerError
+				v.LoadFailed = true
+			}),
+			listErr: errors.New(`pq: relation "products" does not exist`),
 		},
 	}
 	rec := productPageRequest(t, h, "/admin/products")
@@ -557,6 +578,12 @@ func TestProductsPageLoadFailureRendersSamePage(t *testing.T) {
 func TestProductsPageBadProjectParamIsFullPage(t *testing.T) {
 	h := &productPageHandle{
 		products: &productPageReaderStub{
+			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+				v.HTTPStatus = http.StatusBadRequest
+				v.LoadFailed = true
+			}),
+			listErr: errors.New(productenums.ErrInvalidParam),
+		}, reader: &productPageReaderStub{
 			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
 				v.HTTPStatus = http.StatusBadRequest
 				v.LoadFailed = true
@@ -583,6 +610,13 @@ func TestProductsPageRowDetailFailureIsNotSwallowed(t *testing.T) {
 				v.LoadFailed = true
 			}),
 			listErr: errors.New(`pq: canceling statement due to statement timeout`),
+		}, reader: &productPageReaderStub{
+			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+				v.Total = 1
+				v.HTTPStatus = http.StatusInternalServerError
+				v.LoadFailed = true
+			}),
+			listErr: errors.New(`pq: canceling statement due to statement timeout`),
 		},
 	}
 	rec := productPageRequest(t, h, "/admin/products?project=p1")
@@ -598,7 +632,7 @@ func TestProductNewPageLoadFailureRendersSamePage(t *testing.T) {
 		}),
 		err: errors.New(`pq: relation "products" does not exist`),
 	}
-	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader}
+	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products/new")
 	assertProductPageFailure(t, "新建页主数据失败", rec, http.StatusInternalServerError, "这一页的数据没能读出来")
 }
@@ -659,6 +693,11 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 						v.HTTPStatus = tc.status
 					}),
 					detailErr: tc.readerErr,
+				}, reader: &productPageReaderStub{
+					detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageView) {
+						v.HTTPStatus = tc.status
+					}),
+					detailErr: tc.readerErr,
 				},
 			}
 			rec := productPageRequest(t, h, tc.target)
@@ -677,11 +716,15 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 // TestProductDetailPageRendersProductWhenDetailReadable 成功档回归：详情取到了就正常渲染。
 //
 // 只断言「不再是失败页」这一层：整页 200、页壳完整、失败槽与 404 空态都不出现。
-// （字段级明细由 productRow 自己的用例覆盖，这里要钉的是失败出口没有把成功路径一起改坏。）
+// （字段级明细由 ProductRow ↔ 模板的对账判据覆盖，见 product_row_template_test.go；
+// 这里要钉的是失败出口没有把成功路径一起改坏。）
 func TestProductDetailPageRendersProductWhenDetailReadable(t *testing.T) {
 	h := &productPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: &productPageReaderStub{detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageView) {
+			v.HasProduct = true
+			v.Detail = &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"}
+		})}, reader: &productPageReaderStub{detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageView) {
 			v.HasProduct = true
 			v.Detail = &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"}
 		})},
@@ -713,6 +756,10 @@ func TestProductDetailPageRendersProductWhenDetailReadable(t *testing.T) {
 func TestProductsPageSuccessRendersPage(t *testing.T) {
 	h := &productPageHandle{
 		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			// 「零工程」这个真实空态：不是「没读到」，是读到了、一个都没有。
+			v.Projects = []projectdto.ProjectResp{}
+			v.SelectedProject = ""
+		})}, reader: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
 			// 「零工程」这个真实空态：不是「没读到」，是读到了、一个都没有。
 			v.Projects = []projectdto.ProjectResp{}
 			v.SelectedProject = ""
@@ -750,7 +797,7 @@ func TestProductNewPageUnknownProjectIsBadRequest(t *testing.T) {
 		}),
 		err: errors.New(productenums.ErrInvalidParam),
 	}
-	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader}
+	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products/new?project=does-not-exist")
 	assertProductPageFailure(t, "新建页 ?project=不存在的 id", rec, http.StatusBadRequest, "请求参数无效")
 }
@@ -762,7 +809,7 @@ func TestProductNewPageUnknownProjectIsBadRequest(t *testing.T) {
 // （永远读默认工程）也能全绿，而症状是「切换工程后新建页仍然是第一个工程的数据」。
 func TestProductNewPageForwardsProjectToReader(t *testing.T) {
 	reader := &productPageReaderStub{view: productNewPageViewStub(nil)}
-	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader}
+	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products/new?project=p1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("合法工程应 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
@@ -778,7 +825,7 @@ func TestProductNewPageForwardsProjectToReader(t *testing.T) {
 // TestProductNewPageSuccessRendersPage 成功档回归（新建页）：同一份模板 + 同一份页数据。
 func TestProductNewPageSuccessRendersPage(t *testing.T) {
 	reader := &productPageReaderStub{view: productNewPageViewStub(nil)}
-	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader}
+	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products/new")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("新建页读到数据时应 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))

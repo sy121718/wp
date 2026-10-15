@@ -32,8 +32,7 @@ func TestControllerI18nBoundary(t *testing.T) {
 		"product_translations.go": "具名占位符：i18n.FillTranslate 的 {n} 句式（同上）",
 		"product_pricing.go":      "提示页出口：三段拼串的整句（收成 %s 整句要改 seed 词条）",
 		"product_core.go": "Tail 复合句（提示页出口，变体清单保存）+ ProductPreviewFrame 直接 c.Data 返回 iframe " +
-			"HTML（没有模板取词层）+ productRow 的 tr 参数（列表页与详情页两处：唯一用途是 tagCellLabel 里 " +
-			"i18n.FillTranslate 的具名 {n}）",
+			"HTML（没有模板取词层）",
 		"product_bundle.go": "JSON 出口：ProductsBundleMembersResolve 的响应体字面量（来源标签）",
 	}
 
