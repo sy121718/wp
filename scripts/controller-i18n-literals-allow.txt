@@ -8,18 +8,7 @@
 #
 # 终局：控制器里不出现任何词条 key 字面量（key 一律来自 `internal/module/<模块>/enums/`）。
 # page / product 已在 task-153 批次清零，故**不在此表**（出现即失败）。
+# **本表为空 = 进入终局零容忍模式**：空基线时所有模块都算「未登记」，任何模块出现字面量即失败；
+# 脚本的空清单自检也随之改为验证 unregistered 分支（不再因「基线为空」判环境失败）。
 #
 # 格式：<key>\t<count>\tdown\t<理由>
-lit:project	92	down	存量：工程页/主题页/全局面板的槽位事实在控制器里直接写 key（拟随后续批次提成 project/enums 常量）
-lit:content	63	down	存量：文章页/导入页/译文页的槽位事实直接写 key（随后续批次提成 content/enums 常量）
-lit:user	46	down	存量：客户页/RFM/分段的槽位事实直接写 key（随后续批次提成 user/enums 常量）
-lit:workbench	10	down	存量：工作台 inspector/大纲的槽位事实直接写 key
-lit:admin	8	down	存量：后台设置/角色页的槽位事实直接写 key
-lit:inventory	8	down	存量：库存调整页的槽位事实直接写 key
-lit:order	7	down	存量：订单页的槽位事实直接写 key
-lit:ai	6	down	存量：AI 面板结果的槽位事实直接写 key
-lit:navigation	5	down	存量：导航页的槽位事实直接写 key
-lit:sysconfig	5	down	存量：系统配置页的槽位事实直接写 key
-lit:block	2	down	存量：区块页 stale 抽屉的槽位事实直接写 key
-lit:contenttemplate	2	down	存量：内容模板页的槽位事实直接写 key
-lit:media	1	down	存量：媒体库页的槽位事实直接写 key

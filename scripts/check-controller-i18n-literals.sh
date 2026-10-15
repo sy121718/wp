@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-controller-i18n-literals.sh — 控制器不得写 i18n 词条 key 字面量（判据计数，只减不增）。
+# check-controller-i18n-literals.sh — 控制器不得写 i18n 词条 key 字面量（控制器出现字面量即失败；基线表为空＝终局零容忍）。
 #
 # 为什么需要它：后台是 Go 渲染、词条真源在 `sys_i18n` 表里，key 的**归属**是各模块的 `enums`
 # （`internal/module/CLAUDE.md` §enums：展示标签的形状是 `XxxLabel(value) (key, fallback)`）。
@@ -15,6 +15,9 @@
 #   · 超过基线 → 违规；低于基线 → 通过，并打印可直接粘贴的基线行（只减不增）；
 #   · 基线条目**不再命中即失败**（计数归零的条目必须删行，僵尸清单等于没有门禁）；
 #   · 未登记的模块一旦出现字面量即失败（新模块必须显式登记它的存量或直接做干净）。
+#   · **终局零容忍**：当基线表为空（全仓控制器已清干净）时本门禁不退化成「永远通过」——
+#     此时所有模块都算「未登记」，任何模块再出现字面量都会判违规；负向自检也随之改为
+#     验证 unregistered 分支（空基线时注入一个未登记计数必须报违规）。
 # 口径与 shell-migration-allow.txt 一致：计数单位是**出现次数**，不是文件数或行数；
 # 跳过整行注释（注释里解释 key 是正常的），行尾注释照计（宁可多计一行让人看一眼）。
 #
@@ -105,8 +108,10 @@ def load_allow(path):
         seen.add(key)
         entries.append((key, int(cnt), mode, reason, lineno))
     if not entries:
-        print("基线文件没有任何条目 —— 门禁会退化成永远通过", file=sys.stderr)
-        sys.exit(2)
+        # 终局状态：全仓控制器已无词条字面量，基线表为空 —— 这不是退化：空基线时
+        # compare() 的 unregistered 分支把「任何模块出现字面量」判成违规，比「只减不增」更严
+        # （连「新模块先登记存量」这条后路也一并关掉）。
+        print("· 基线表为空 —— 进入终局零容忍模式（任何模块出现词条字面量即违规）")
     return entries
 
 def compare(entries, counts):
@@ -160,17 +165,30 @@ if not fail and improved:
 
 # 负向自检：判据必须能报违规，否则它已经退化成空转。
 if not fail:
-    probe_key = entries[0][0]
-    forced = collections.Counter(counts)
-    forced[probe_key] = max(counts.get(probe_key, 0), entries[0][1]) + 1
-    pv, _, _, _ = compare(entries, forced)
-    if not pv:
-        print("✗ 判据自检失败：人为把 %s 的计数 +1 之后没有报违规 —— 判据已退化成空转。"
-              % probe_key, file=sys.stderr)
-        sys.exit(2)
+    if entries:
+        probe_key = entries[0][0]
+        forced = collections.Counter(counts)
+        forced[probe_key] = max(counts.get(probe_key, 0), entries[0][1]) + 1
+        pv, _, _, _ = compare(entries, forced)
+        if not pv:
+            print("✗ 判据自检失败：人为把 %s 的计数 +1 之后没有报违规 —— 判据已退化成空转。"
+                  % probe_key, file=sys.stderr)
+            sys.exit(2)
+    else:
+        # 终局零容忍模式下判据落在 unregistered 分支上，自检也必须打在那一支上。
+        forced = collections.Counter(counts)
+        forced["lit:__selfcheck_probe__"] = 1
+        _, _, _, pu = compare(entries, forced)
+        if not pu:
+            print("✗ 判据自检失败：空基线时人为注入一个未登记模块的计数之后没有报违规 —— "
+                  "判据已退化成空转。", file=sys.stderr)
+            sys.exit(2)
 
 if fail:
     sys.exit(1)
 
-print("✓ 控制器词条 key 字面量门禁通过（%d 条基线）" % len(entries))
+if entries:
+    print("✓ 控制器词条 key 字面量门禁通过（%d 条基线）" % len(entries))
+else:
+    print("✓ 控制器词条 key 字面量门禁通过（终局零容忍：全仓控制器无字面量，基线表为空）")
 PYEOF
