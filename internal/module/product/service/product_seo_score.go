@@ -340,9 +340,8 @@ func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSo
 
 // flatCategoriesOf 取某工程的分类树并摊平成 DFS 前序列表（工程为空时返回空列表）。
 //
-// 与 inbound/http 的 flatCategories 是同一口径（同一个 ListCategories 契约 + 同一份
-// FlattenCategoryTree）；跨包不可见，故在本包重述一遍。迁移后 http 那一份（
-// internal/module/product/inbound/http/product_taxonomy.go 的 flatCategories）已无调用方。
+// 口径：同一个 ListCategories 契约 + 同一份 FlattenCategoryTree。**本函数是唯一实现** ——
+// 原先 inbound/http 的 flatCategories 是同一口径的第二份，已随迁移删除（task-163）。
 func flatCategoriesOf(ctx context.Context, r ProductReadPort, projectID string) (out []*productdto.CategoryResp, err error) {
 	out = []*productdto.CategoryResp{}
 	if projectID == "" {
@@ -498,8 +497,8 @@ func CategoryChildNames(ctx context.Context, r ProductReadPort, projectID, id st
 
 // firstNonEmptyText 取第一个非空值。
 //
-// 与 inbound/http 的 firstNonEmptyString 同一逻辑：跨包不可见，而本文件的取数逻辑
-// 要用它拼「实例路径 → 否则 slug 近似路径」（迁移后 http 那一份已无调用方）。
+// 本文件的取数逻辑用它拼「实例路径 → 否则 slug 近似路径」。与 inbound/http 的 firstNonEmpty
+// 同逻辑但仍是两份实现（跨包不可见）—— 收敛另立一轮，不在本批。
 func firstNonEmptyText(values ...string) string {
 	for _, v := range values {
 		if strings.TrimSpace(v) != "" {
@@ -513,7 +512,7 @@ func firstNonEmptyText(values ...string) string {
 //
 // 商品 / 分类 / 品牌详情页的路径由各自的 slug 构成，编辑期没有发布实例时用它做
 // URL 干净度判定的近似值：slug 本身就是要检查的对象（长度、大小写、参数），
-// 不是编出来的路径。同 firstNonEmptyText：跨包不可见，故在本包重述。
+// 不是编出来的路径。**唯一实现**（原先 inbound/http 的同名函数已随迁移删除，task-163）。
 func slashSlug(slug string) string {
 	slug = strings.TrimSpace(slug)
 	if slug == "" {

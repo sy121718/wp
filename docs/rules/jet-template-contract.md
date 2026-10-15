@@ -256,10 +256,13 @@ st.blocks / st.context`，但**任何跨 Execute 留在 Runtime 上的自定义�
 | 注释文本里的 `.["t"]` | 11 | 文档性文字，改它没有收益 |
 | 全站 `isset(` | 488 | 缺键守卫**不可替代**（§3.1）；其中 map 键守卫必须原样保留 |
 
-### 6.2 需要动的小项（按收益排序，均非本批范围）
+### 6.2 需要动的小项（按收益排序）
 
-1. **加一条静态闸门**（成本最低、防的是下一个代理）：扫 `{{ *:= *\.["t(f)?"]\s*\(` 命中即失败 ——
-   该形态 Jet 直接报错，写下来必然踩。现网 0 处，属「终局零容忍」型检查。
+1. **静态闸门 —— 已落地**（task-163，2026-10）：`scripts/check-jet-translation-call-sites.sh`
+   扫 `internal/templates/**/*.html`（147 个模板），判据即原定的「赋值右侧直调 `. ["t(f)?"] (`
+   命中即失败」，并外加一步**先剥 `{* … *}` 注释**（换成等长空白、保行号）—— 注释里的字面量不是调用，
+   照报是假红（教训取自 `check-empty-state-table-head.sh`）。已登记进 `scripts/check-all.sh` 的
+   `PLAIN_SCRIPTS`（第 21 个）。现网 0 处，属「终局零容忍」型检查。
 2. **结构体字段恒真守卫清理**（63 处形如 `isset(x.Field)`）：先按「x 是 map 行还是结构体行」分类
    （判据：数据由 `product_row.go` 这类 map 装配处产出 → map；由 dto 结构体产出 → 结构体），
    结构体行上除可 nil 字段外删掉 `isset`，只留显式判空。
@@ -326,5 +329,6 @@ st.blocks / st.context`，但**任何跨 Execute 留在 Runtime 上的自定义�
 
 - 2026-10 task-155：本文新建。定稿「不新增 `hasVal`、语言走 data 注入、三种 `.["t"]` 形态不动」，
   附 11 个常驻探针（`internal/templates/jet_template_contract_probe_test.go`）。
-- 待办（清单外，需 lead 决策）：`docs/rules/README.md` 的「什么时候读哪份」表加一行指向本文；
-  §6.2 两项清理与静态门禁尚未落。
+- 2026-10 task-163：§6.2 第 1 项（静态闸门）落地，见该节；§6.2 第 2 项（63 处结构体字段恒真守卫清理）
+  经 lead 裁决**不做** —— 收益低而模板面风险高，模板回归已由 `internal/templates` 的 718 条用例覆盖。
+- 待办（清单外）：无。`docs/rules/README.md` 的「什么时候读哪份」表已含本文（task-155 加）。

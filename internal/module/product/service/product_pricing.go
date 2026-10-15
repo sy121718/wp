@@ -298,8 +298,9 @@ func (s *Service) ListPriceAdjustments(ctx context.Context, req *productdto.List
 
 // GetPriceAdjustment 单批次留痕详情（含逐变体「原价 → 新价」明细）。
 //
-// 明细里的商品名按当前数据补全：商品被改名或删除时，SKU 编码快照仍然可读
-// （明细不建外键的用意就在这里）。
+// 明细里的商品名按当前数据补全：商品被改名时，SKU 编码快照仍然可读 —— 快照负责
+// 「改名后仍可读」，引用完整由两条 ON DELETE RESTRICT 外键负责（见
+// model.PriceAdjustmentItemEntity 的实体注释与迁移 134）。
 func (s *Service) GetPriceAdjustment(ctx context.Context, req *productdto.GetPriceAdjustmentReq) (res *productdto.PriceAdjustmentResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
