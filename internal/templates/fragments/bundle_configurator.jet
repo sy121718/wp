@@ -31,6 +31,7 @@
       hx-target="next .sky-bundle-result" hx-swap="innerHTML"
       hx-trigger="submit, input changed delay:500ms">
   <input type="hidden" name="productId" value="{{ .ProductID }}">
+  <input type="hidden" name="projectId" value="{{ .ProjectID }}">
   <div class="sky-bundle-options">
   {{range _, it := .Items}}
     <div class="sky-bundle-option">

@@ -188,7 +188,7 @@
     {{if .Detail}}
     <section class="card card-body">
         <h2>{{ .["t"]("admin.product_bundle.preview.title", "前台配置器预览") }}</h2>
-        <div hx-get="/_fragments/bundleConfigurator?productId={{selectedProduct}}" hx-trigger="load" hx-swap="innerHTML"></div>
+        <div hx-get="/_fragments/bundleConfigurator?productId={{selectedProduct}}&amp;projectId={{selectedProject}}" hx-trigger="load" hx-swap="innerHTML"></div>
     </section>
     {{end}}
     {{end}}

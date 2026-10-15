@@ -45,7 +45,10 @@ func init() {
 
 // bundleConfiguratorView 配置器片段的模板数据。
 type bundleConfiguratorView struct {
-	ProductID   string
+	ProductID string
+	// ProjectID 回填进表单的隐藏域：整单校验那一次请求同样需要工程上下文
+	// （片段 POST 只带表单字段，地址栏的查询串不在其中）。
+	ProjectID   string
 	ProductName string
 	Price       string
 	PriceLabel  string
@@ -89,7 +92,11 @@ type bundleResultItemView struct {
 	LineText    string
 }
 
-// renderBundleConfigurator 渲染配置器（GET /_fragments/bundleConfigurator?productId=…）。
+// renderBundleConfigurator 渲染配置器（GET /_fragments/bundleConfigurator?productId=…&projectId=…）。
+//
+// projectId 是**必填**，与同族的 variantAvailability / productList / livePrice / searchResults
+// 同一口径：产物里本就烘了工程上下文，片段读一跳也必须有工程（多工程下没有「默认工程」这回事，
+// 漏传会退化成 resolveProjectID 的 ErrInvalidParam）。
 func renderBundleConfigurator(ctx context.Context, r *Request) (string, error) {
 	if deps.BundleProvider == nil {
 		return "", errors.New("捆绑配置器未接入商品模块")
@@ -98,13 +105,18 @@ func renderBundleConfigurator(ctx context.Context, r *Request) (string, error) {
 	if productID == "" {
 		return "", errors.New("缺少 productId")
 	}
-	data, err := deps.BundleProvider.BundleConfiguratorData(ctx, productID)
+	projectID := strings.TrimSpace(r.Params["projectId"])
+	if projectID == "" {
+		return "", errors.New("缺少 projectId")
+	}
+	data, err := deps.BundleProvider.BundleConfiguratorData(ctx, productID, projectID)
 	if err != nil {
 		return "", err
 	}
 	price := formatAmount(data.BasePrice)
 	view := bundleConfiguratorView{
 		ProductID:   data.ProductID,
+		ProjectID:   projectID,
 		ProductName: data.ProductName,
 		Price:       price,
 		PriceLabel:  bundlePriceLine(r, price),
@@ -143,6 +155,10 @@ func renderBundleConfiguratorCheck(ctx context.Context, r *Request) (string, err
 	if productID == "" {
 		return "", errors.New("缺少 productId")
 	}
+	projectID := strings.TrimSpace(r.Params["projectId"])
+	if projectID == "" {
+		return "", errors.New("缺少 projectId")
+	}
 	ids := r.Values["variantId"]
 	qtys := r.Values["qty"]
 	items := make([]productdto.BundleSelectItem, 0, len(ids))
@@ -165,6 +181,7 @@ func renderBundleConfiguratorCheck(ctx context.Context, r *Request) (string, err
 	}
 	res, err := deps.BundleProvider.ValidateBundleSelection(ctx, &productdto.ValidateBundleSelectionReq{
 		ProductID: productID,
+		ProjectID: projectID,
 		Items:     items,
 	})
 	if err != nil {

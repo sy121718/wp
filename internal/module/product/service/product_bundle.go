@@ -779,8 +779,11 @@ func bundleChangeInput(e *productmodel.ProductEntity, operator string, before, a
 // BundleValidate 供 runtimefragment 与后台预览复用的校验入口（契约的 BundleConfiguratorPort）。
 //
 // 直接就是 ValidateBundleSelection 的别名语义：片段处理器拿到的是同一个结论。
-func (s *Service) BundleConfiguratorData(ctx context.Context, productID string) (res *productdto.BundleConfigResp, err error) {
-	return s.GetBundleConfig(ctx, &productdto.GetBundleConfigReq{ProductID: productID})
+func (s *Service) BundleConfiguratorData(ctx context.Context, productID, projectID string) (res *productdto.BundleConfigResp, err error) {
+	// 工程必须由调用方（片段处理器）给：GetBundleConfig 内部走 resolveProjectID，
+	// 多工程部署下漏传工程 → ErrInvalidParam → 片段 500「片段渲染失败」，
+	// 而正确形态是「渲染出这个商品的配置器」。productID 反推不出工程（读一跳要工程）。
+	return s.GetBundleConfig(ctx, &productdto.GetBundleConfigReq{ProductID: productID, ProjectID: projectID})
 }
 
 // ValidateBundleSelection 整单校验 + 算价。
@@ -953,6 +956,6 @@ var (
 	_ productcontract.BundleConfiguratorPort = (*Service)(nil)
 	// 片段侧只需要一个方法，单独一个窄接口（见 contract/product_bundle.go）。
 	_ interface {
-		BundleConfiguratorData(ctx context.Context, productID string) (*productdto.BundleConfigResp, error)
+		BundleConfiguratorData(ctx context.Context, productID, projectID string) (*productdto.BundleConfigResp, error)
 	} = (*Service)(nil)
 )

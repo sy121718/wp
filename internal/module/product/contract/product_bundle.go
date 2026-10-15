@@ -20,7 +20,11 @@ import (
 type BundleConfiguratorPort interface {
 	// BundleConfiguratorData 读某商品的捆绑配置 + 每个选项的 SKU 快照与**真源可用量**。
 	// 商品不存在、或该商品没配任何选项（不是捆绑品）时返回错误。
-	BundleConfiguratorData(ctx context.Context, productID string) (res *productdto.BundleConfigResp, err error)
+	//
+	// projectID 紧随 ctx（与 contenttemplate 的 ResolveTemplateScoped 同族）：productID
+	// **不能**反推工程（商品读一跳带 FORCE 工程策略，必须显式给工程）。空串只在单工程
+	// 部署下可回落唯一工程；多工程部署下读口会回 ErrInvalidParam。
+	BundleConfiguratorData(ctx context.Context, productID, projectID string) (res *productdto.BundleConfigResp, err error)
 	// ValidateBundleSelection 整单硬校验 + 算价（纯读，不写库）：
 	// 漏填必选项 / 单项超上下限 / 低于整单最小总件数 / 数量非法 / 超可用量一律拒绝。
 	ValidateBundleSelection(ctx context.Context, req *productdto.ValidateBundleSelectionReq) (res *productdto.BundleSelectionResp, err error)

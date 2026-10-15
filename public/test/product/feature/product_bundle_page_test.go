@@ -62,7 +62,7 @@ func TestBundleConfiguratorFragment(t *testing.T) {
 
 	// GET 渲染配置器：SKU、必选标记、可用量、套餐价、HTMX 属性都要在。
 	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_fragments/bundleConfigurator?productId="+main.ID, nil))
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_fragments/bundleConfigurator?productId="+main.ID+"&projectId="+f.projectID, nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("配置器片段应 200，实际 %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -70,7 +70,7 @@ func TestBundleConfiguratorFragment(t *testing.T) {
 	for _, want := range []string{
 		v.SKUCode, "必选", "可用 2", "套餐价 129.00",
 		`hx-post="/_fragments/bundleConfiguratorCheck"`,
-		`name="variantId"`, `name="qty"`, `name="productId"`,
+		`name="variantId"`, `name="qty"`, `name="productId"`, `name="projectId"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("配置器片段缺少 %q\n%s", want, body)
@@ -79,7 +79,7 @@ func TestBundleConfiguratorFragment(t *testing.T) {
 
 	// POST 合法选择 → 结论片段含套餐价与总件数。
 	ok := postForm(engine, "/_fragments/bundleConfiguratorCheck", url.Values{
-		"productId": {main.ID}, "variantId": {v.ID}, "qty": {"2"},
+		"productId": {main.ID}, "projectId": {f.projectID}, "variantId": {v.ID}, "qty": {"2"},
 	})
 	if ok.Code != http.StatusOK {
 		t.Fatalf("校验片段应 200，实际 %d", ok.Code)
@@ -93,7 +93,7 @@ func TestBundleConfiguratorFragment(t *testing.T) {
 
 	// POST 非法选择（低于整单下限）→ 200 + 可读提示，不是 500。
 	bad := postForm(engine, "/_fragments/bundleConfiguratorCheck", url.Values{
-		"productId": {main.ID}, "variantId": {v.ID}, "qty": {"1"},
+		"productId": {main.ID}, "projectId": {f.projectID}, "variantId": {v.ID}, "qty": {"1"},
 	})
 	if bad.Code != http.StatusOK {
 		t.Fatalf("非法选择也应是 200 + 提示，实际 %d", bad.Code)
@@ -107,7 +107,7 @@ func TestBundleConfiguratorFragment(t *testing.T) {
 
 	// 超可用量 → 提示库存不足（只读真源）。
 	over := postForm(engine, "/_fragments/bundleConfiguratorCheck", url.Values{
-		"productId": {main.ID}, "variantId": {v.ID}, "qty": {"3"},
+		"productId": {main.ID}, "projectId": {f.projectID}, "variantId": {v.ID}, "qty": {"3"},
 	})
 	if over.Code != http.StatusOK || !strings.Contains(over.Body.String(), "超过了当前可用库存") {
 		t.Fatalf("超库存应给可读提示，实际 %d %s", over.Code, oneLine(over.Body.String()))
@@ -115,7 +115,7 @@ func TestBundleConfiguratorFragment(t *testing.T) {
 
 	// 非整数数量 → 参数提示（不是 500）。
 	nan := postForm(engine, "/_fragments/bundleConfiguratorCheck", url.Values{
-		"productId": {main.ID}, "variantId": {v.ID}, "qty": {"abc"},
+		"productId": {main.ID}, "projectId": {f.projectID}, "variantId": {v.ID}, "qty": {"abc"},
 	})
 	if nan.Code != http.StatusOK || !strings.Contains(nan.Body.String(), "数量必须是整数") {
 		t.Fatalf("非整数数量应给可读提示，实际 %d %s", nan.Code, nan.Body.String())
@@ -149,7 +149,7 @@ func TestBundleConfiguratorResponsiveContract(t *testing.T) {
 	f.setBundleConfig(t, main.ID, bundleWith(v.ID, true, 1, 1, 0, 1, 0))
 
 	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_fragments/bundleConfigurator?productId="+main.ID, nil))
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/_fragments/bundleConfigurator?productId="+main.ID+"&projectId="+f.projectID, nil))
 	body := rec.Body.String()
 	for _, want := range []string{
 		"flex-wrap",                           // 桌面 / 平板 / 手机都由容器自己折行，不靠固定宽度
@@ -198,7 +198,7 @@ func TestBundleProductsBundlePage(t *testing.T) {
 		`name="maxOptions"`,
 		v.SKUCode,
 		// 前台配置器预览：同一份渲染在后台可见。
-		`hx-get="/_fragments/bundleConfigurator?productId=` + main.ID + `"`,
+		`hx-get="/_fragments/bundleConfigurator?productId=` + main.ID + `&amp;projectId=` + f.projectID + `"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("配置页缺少 %q", want)

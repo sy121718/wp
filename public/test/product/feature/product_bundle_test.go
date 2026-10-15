@@ -122,8 +122,9 @@ func (f *bundleFixture) addStock(t *testing.T, v *productdto.VariantResp, qty in
 // setBundleConfig 保存配置的小工具（失败即测试失败）。
 func (f *bundleFixture) setBundleConfig(t *testing.T, productID string, cfg productdto.BundleConfig) *productdto.BundleConfigResp {
 	t.Helper()
+	// 工程显式给：多工程部署下没有「回落唯一工程」这条退路（写一跳同样要工程）。
 	res, err := f.products.SetBundleConfig(context.Background(), &productdto.SetBundleConfigReq{
-		ProductID: productID, Config: cfg, OperatorID: "tester",
+		ProjectID: f.projectID, ProductID: productID, Config: cfg, OperatorID: "tester",
 	})
 	if err != nil {
 		t.Fatalf("保存捆绑配置失败: %v", err)
@@ -135,7 +136,7 @@ func (f *bundleFixture) setBundleConfig(t *testing.T, productID string, cfg prod
 func (f *bundleFixture) setBundleConfigErr(t *testing.T, productID string, cfg productdto.BundleConfig) string {
 	t.Helper()
 	_, err := f.products.SetBundleConfig(context.Background(), &productdto.SetBundleConfigReq{
-		ProductID: productID, Config: cfg,
+		ProjectID: f.projectID, ProductID: productID, Config: cfg,
 	})
 	if err == nil {
 		t.Fatalf("该配置应被拒绝，实际保存成功")
