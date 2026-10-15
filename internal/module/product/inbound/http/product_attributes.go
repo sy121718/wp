@@ -330,11 +330,11 @@ func (h *productPageHandle) ProductAttributesDelete(c *gin.Context) {
 	productAttrJump(c, true, productBulkDoneMsg(productAttrBulkDone))
 }
 
-// ProductAttributesBulkDelete 批量删除属性组（连同其全部属性值，由 service 保证）。
+// ProductAttributesBulkDelete 批量删除属性组（连同其全部属性值，由外键级联）。
 //
-// 逐条走同一条删除路径：被商品引用的那一条由服务端拒绝，其余照常删除 ——
-// 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
-// 结果按「已删 N 个 / 跳过 M 个」回带列表页，避免静默的部分成功。
+// 业务编排在 service.BulkDeleteProductAttributes（一次查回整批的引用面，可删的一条 DELETE +
+// 一次失效入队，同一事务）；本层只解析 id、调用例、映射结果。
+// 被商品引用的那些进「跳过」桶，结果按「已删 N 个 / 未成功 M 个」回带列表页。
 func (h *productPageHandle) ProductAttributesBulkDelete(c *gin.Context) {
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := shell.BulkIDs(c)
@@ -342,15 +342,12 @@ func (h *productPageHandle) ProductAttributesBulkDelete(c *gin.Context) {
 		productAttrJump(c, false, productBulkIDsMsg(c, berr))
 		return
 	}
-	deleted, skipped := 0, 0
-	for _, id := range ids {
-		if err := h.products.DeleteAttribute(c.Request.Context(), &productdto.DeleteAttributeReq{ID: id}); err != nil {
-			skipped++
-			continue
-		}
-		deleted++
+	res, err := h.products.BulkDeleteProductAttributes(c.Request.Context(), &productdto.BulkDeleteReq{IDs: ids})
+	if err != nil {
+		productAttrJump(c, false, productErrMsg(c, err))
+		return
 	}
-	ok, msg := productBulkDeleteResult(deleted, skipped, productAttrBulkPartial, productAttrBulkDone)
+	ok, msg := productBulkDeleteResult(res.Succeeded, res.NotDone(), productAttrBulkPartial, productAttrBulkDone)
 	productAttrJump(c, ok, msg)
 }
 

@@ -1314,37 +1314,32 @@ func (h *productPageHandle) ProductsBulkPricing(c *gin.Context) {
 		productListJump(c, false, bulkPricingNothingSelected.fact())
 		return
 	}
-	note := strings.TrimSpace(c.PostForm("note"))
-	// 操作人取自会话，表单字段不作数（调价留痕的操作人不可伪造）。
-	operator := builtin.CurrentUserIDText(c)
-	changedVariants, unchangedProducts, skipped := 0, 0, 0
-	skipReason := ""
-	for _, id := range ids {
-		rule := pricingRuleReqFromForm(c, productenums.PricingScopeProduct, id)
-		res, aerr := h.products.ApplyPricing(ctx, &productdto.PricingApplyReq{
-			PricingRuleReq: *rule, Note: note, OperatorID: operator,
-		})
-		switch {
-		case aerr == nil:
-			if res != nil {
-				changedVariants += res.ChangedCount
-			}
-		case strings.TrimSpace(aerr.Error()) == productenums.ErrPricingNothingChanged:
-			// 这个商品本来就在目标价上：不是失败（service 不写空台账），单独计数。
-			unchangedProducts++
-		default:
-			skipped++
-			if skipReason == "" {
-				skipReason = productErrText(c, aerr)
-			}
-		}
+	// 规则解析与校验完全复用定价工具那一份（readPricingForm / pricingParamsFromForm）：
+	// 复制一份就会出现「抽屉填的 amount 被当成 multiplier」这类只在一个入口发生的错。
+	// 范围恒为「单个商品的全部变体」，TargetID 由 service 逐商品注入。
+	rule := pricingRuleReqFromForm(c, productenums.PricingScopeProduct, "")
+	res, aerr := h.products.BulkApplyPricing(ctx, &productdto.BulkPricingReq{
+		IDs: ids,
+		// 操作人取自会话，表单字段不作数（调价留痕的操作人不可伪造）。
+		Note:       strings.TrimSpace(c.PostForm("note")),
+		OperatorID: builtin.CurrentUserIDText(c),
+		Rule:       *rule,
+	})
+	if aerr != nil {
+		productListJump(c, false, productErrMsg(c, aerr))
+		return
 	}
 	mark := true
-	if skipped > 0 || changedVariants == 0 {
+	if res.NotDone() > 0 || res.ChangedVariants == 0 {
 		// 有跳过或一个变体都没改：走失败态（更显眼），用户下次会去看剩下的那些。
 		mark = false
 	}
-	productListJump(c, mark, bulkPricingResultMsg(changedVariants, unchangedProducts, skipped, skipReason))
+	// 跳过原因由 service 回**业务 key**；取词（按请求语言翻成整句）留在这一层。
+	reason := ""
+	if res.SkipReasonKey != "" {
+		reason = productErrText(c, errors.New(res.SkipReasonKey))
+	}
+	productListJump(c, mark, bulkPricingResultMsg(res.ChangedVariants, res.UnchangedProducts, res.NotDone(), reason))
 }
 
 // bulkPricingResultMsg 批量改价的结论**事实**（四类结果各一条词条 + `%s` 参数）。
@@ -1371,14 +1366,11 @@ func (h *productPageHandle) ProductsBulkDelete(c *gin.Context) {
 		productListJump(c, false, productBulkIDsMsg(c, berr))
 		return
 	}
-	deleted, skipped := 0, 0
-	for _, id := range ids {
-		if err := h.products.Delete(c.Request.Context(), &productdto.DeleteReq{ID: id}); err != nil {
-			skipped++
-			continue
-		}
-		deleted++
+	res, err := h.products.BulkDeleteProducts(c.Request.Context(), &productdto.BulkDeleteReq{IDs: ids})
+	if err != nil {
+		productListJump(c, false, productErrMsg(c, err))
+		return
 	}
-	ok, msg := productBulkDeleteResult(deleted, skipped, productBulkPartial, productBulkDone)
+	ok, msg := productBulkDeleteResult(res.Succeeded, res.NotDone(), productBulkPartial, productBulkDone)
 	productListJump(c, ok, msg)
 }

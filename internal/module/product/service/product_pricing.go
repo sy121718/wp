@@ -116,14 +116,35 @@ func (s *Service) PreviewPricing(ctx context.Context, req *productdto.PricingPre
 	}, nil
 }
 
-// ApplyPricing 应用调价：算价 → 写回 product_variants.price → 写留痕（同一事务）。
+// ApplyPricing 应用调价：算价 → 写回 product_variants.price → 写留痕（同一事务）→ 重算自动标签。
+//
+// 批量入口（BulkApplyPricing）**不走这一个**，而是逐商品调 applyPricingOnce、整批结束后
+// 只重算一次：现状控制器逐商品调用本方法，N 个商品就触发 N 次全工程标签重算
+//（每次都是全量幂等重算，多余 N-1 次）。
+func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApplyReq) (res *productdto.PricingApplyResp, err error) {
+	res, err = s.applyPricingOnce(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	// 变体写操作后的重算时机（#11）：价格变了，价格区间 / 促销规则的归属可能跟着变。
+	recalc, rerr := s.recalcPricingAutoTags(ctx, res.ProjectID)
+	if rerr != nil {
+		return nil, rerr
+	}
+	res.RecalculatedTags = recalc
+	return res, nil
+}
+
+// applyPricingOnce 一次调价的完整落库（算价 → 写回 → 留痕 → 失效），**不重算自动标签**。
+//
+// 拆出来只为一件事：让批量用例能把 N 次重算压成一次，同时不复制算价 / 事务 / 台账这份
+// 编排（复制一份就是第二份真相）。调用方负责收尾的重算。
 //
 // 三个决定性的语义：
 //   - 只有**真正发生变化**的变体才写库、才留痕：无改动的行写一遍等于伪造「改动记录」；
 //   - 一条改动都没有时整体报错（ErrPricingNothingChanged），不写空批次 —— 空台账比没有台账更误导；
-//   - 价格写回后立刻重算本工程的自动标签（变体写操作后的重算时机，见 #11）：
-//     价格区间 / 促销规则的归属由价格决定，不重算就会立刻变成坏数据。
-func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApplyReq) (res *productdto.PricingApplyResp, err error) {
+//   - 价格写回与留痕在同一事务里（半截状态「改了价却没有记录」是留痕功能的致命伤）。
+func (s *Service) applyPricingOnce(ctx context.Context, req *productdto.PricingApplyReq) (res *productdto.PricingApplyResp, err error) {
 	if req == nil {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
@@ -216,11 +237,6 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 		return nil, err
 	}
 	s.bumpFragmentCache(ctx, pr.projectID)
-	// 变体写操作后的重算时机（#11）：价格变了，价格区间 / 促销规则的归属可能跟着变。
-	recalc, rerr := s.recalcPricingAutoTags(ctx, pr.projectID)
-	if rerr != nil {
-		return nil, rerr
-	}
 	return &productdto.PricingApplyResp{
 		AdjustmentID:     adj.ID,
 		RuleType:         pr.rule.Type,
@@ -234,7 +250,6 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 		TargetCount:      len(lines),
 		ChangedCount:     counts.changed,
 		SkippedCount:     counts.skipped,
-		RecalculatedTags: recalc,
 		Lines:            changedLines,
 	}, nil
 }

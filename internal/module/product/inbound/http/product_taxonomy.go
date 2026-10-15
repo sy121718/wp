@@ -216,9 +216,11 @@ func (h *productPageHandle) ProductCategoriesDelete(c *gin.Context) {
 
 // ProductCategoriesBulkDelete 批量删除分类。
 //
-// 逐条走同一条删除路径：有子分类或被商品引用的那一条由服务端拒绝，其余照常删除 ——
-// 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
-// 结果按「已删 N 个 / 跳过 M 个」渲染提示页，避免静默的部分成功。
+// 业务编排在 service.BulkDeleteProductCategories：一次查回整批（存在性 / 子级 / 引用面），
+// 可删的那些一条 DELETE + 一次失效入队，同一事务。本层只解析 id、调用例、映射结果 ——
+// 不再自己循环、也不再累加计数（dd.txt §5.5）。
+// 被拒绝的那些（有子分类 / 被商品引用 / 不存在）进「跳过」桶，结果按「已删 N 个 / 未成功 M 个」
+// 渲染提示页，避免静默的部分成功。
 func (h *productPageHandle) ProductCategoriesBulkDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
@@ -227,15 +229,13 @@ func (h *productPageHandle) ProductCategoriesBulkDelete(c *gin.Context) {
 		productCategoriesJump(c, false, productBulkIDsMsg(c, berr))
 		return
 	}
-	deleted, skipped := 0, 0
-	for _, id := range ids {
-		if err := h.products.DeleteCategory(c.Request.Context(), &productdto.DeleteCategoryReq{ProjectID: projectID, ID: id}); err != nil {
-			skipped++
-			continue
-		}
-		deleted++
+	res, err := h.products.BulkDeleteProductCategories(c.Request.Context(),
+		&productdto.BulkDeleteReq{ProjectID: projectID, IDs: ids})
+	if err != nil {
+		productCategoriesJump(c, false, productErrMsg(c, err))
+		return
 	}
-	ok, msg := productBulkDeleteResult(deleted, skipped, productCategoryBulkPartial, productCategoryBulkDone)
+	ok, msg := productBulkDeleteResult(res.Succeeded, res.NotDone(), productCategoryBulkPartial, productCategoryBulkDone)
 	productCategoriesJump(c, ok, msg)
 }
 
@@ -337,9 +337,9 @@ func (h *productPageHandle) ProductBrandsDelete(c *gin.Context) {
 
 // ProductBrandsBulkDelete 批量删除品牌。
 //
-// 逐条走同一条删除路径：被商品引用的那一条由服务端拒绝，其余照常删除 ——
-// 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
-// 结果按「已删 N 个 / 跳过 M 个」渲染提示页，避免静默的部分成功。
+// 业务编排在 service.BulkDeleteProductBrands（一次查回整批的引用面，可删的一条 DELETE +
+// 一次失效入队，同一事务）；本层只解析 id、调用例、映射结果。
+// 被商品引用的那些进「跳过」桶，结果按「已删 N 个 / 未成功 M 个」渲染提示页。
 func (h *productPageHandle) ProductBrandsBulkDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
@@ -348,15 +348,13 @@ func (h *productPageHandle) ProductBrandsBulkDelete(c *gin.Context) {
 		productBrandsJump(c, false, productBulkIDsMsg(c, berr))
 		return
 	}
-	deleted, skipped := 0, 0
-	for _, id := range ids {
-		if err := h.products.DeleteBrand(c.Request.Context(), &productdto.DeleteBrandReq{ProjectID: projectID, ID: id}); err != nil {
-			skipped++
-			continue
-		}
-		deleted++
+	res, err := h.products.BulkDeleteProductBrands(c.Request.Context(),
+		&productdto.BulkDeleteReq{ProjectID: projectID, IDs: ids})
+	if err != nil {
+		productBrandsJump(c, false, productErrMsg(c, err))
+		return
 	}
-	ok, msg := productBulkDeleteResult(deleted, skipped, productBrandBulkPartial, productBrandBulkDone)
+	ok, msg := productBulkDeleteResult(res.Succeeded, res.NotDone(), productBrandBulkPartial, productBrandBulkDone)
 	productBrandsJump(c, ok, msg)
 }
 
@@ -1029,9 +1027,9 @@ func (h *productPageHandle) ProductTagsDelete(c *gin.Context) {
 
 // ProductTagsBulkDelete 批量删除标签（手工 / 自动一视同仁：删除即解绑商品上的该标签）。
 //
-// 逐条走同一条删除路径：失败的那一条由服务端拒绝，其余照常删除 ——
-// 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
-// 结果按「已删 N 个 / 跳过 M 个」回带列表页，避免静默的部分成功。
+// 业务编排在 service.BulkDeleteProductTags：整批一次算引用面（本工程的引用解绑、别的工程的
+// 引用打回给人），可删的那些「解绑 + 失效入队 + 删行」在同一事务里按工程分组执行。
+// 本层只解析 id、调用例、映射结果。
 func (h *productPageHandle) ProductTagsBulkDelete(c *gin.Context) {
 	projectID := c.PostForm("projectId")
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
@@ -1041,15 +1039,13 @@ func (h *productPageHandle) ProductTagsBulkDelete(c *gin.Context) {
 		productTagsJump(c, false, productBulkIDsMsg(c, berr))
 		return
 	}
-	deleted, skipped := 0, 0
-	for _, id := range ids {
-		if err := h.products.DeleteTag(c.Request.Context(), &productdto.DeleteTagReq{ProjectID: projectID, ID: id}); err != nil {
-			skipped++
-			continue
-		}
-		deleted++
+	res, err := h.products.BulkDeleteProductTags(c.Request.Context(),
+		&productdto.BulkDeleteReq{ProjectID: projectID, IDs: ids})
+	if err != nil {
+		productTagsJump(c, false, productErrMsg(c, err))
+		return
 	}
-	ok, msg := productBulkDeleteResult(deleted, skipped, productTagBulkPartial, productTagBulkDone)
+	ok, msg := productBulkDeleteResult(res.Succeeded, res.NotDone(), productTagBulkPartial, productTagBulkDone)
 	productTagsJump(c, ok, msg)
 }
 

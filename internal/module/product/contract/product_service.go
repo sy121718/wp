@@ -33,6 +33,18 @@ type ProductService interface {
 	// 所有既有调用方的返回形状，而只有后台列表页需要它。
 	CountProducts(ctx context.Context, req *productdto.ListReq) (n int64, err error)
 	Delete(ctx context.Context, req *productdto.DeleteReq) (err error)
+	// —— 批量用例（task-156，dd.txt §5.1）——
+	// 六个批量操作各自一个用例：控制器只解析请求、调用例、把结果映射成既有响应，
+	// 不再自己循环调单条用例、也不再累加任何计数（dd.txt §5.5）。
+	// 结果一律是 productdto.BulkResult 的四个桶：Requested / Succeeded / Skipped / Failed。
+	BulkDeleteProducts(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error)
+	BulkDeleteProductCategories(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error)
+	BulkDeleteProductBrands(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error)
+	BulkDeleteProductAttributes(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error)
+	BulkDeleteProductTags(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error)
+	// BulkApplyPricing 批量按规则改价：规则的作用范围由用例逐商品注入（scope=product、
+	// TargetID=当前商品 id），调用方不必传 Scope / TargetID。
+	BulkApplyPricing(ctx context.Context, req *productdto.BulkPricingReq) (res *productdto.BulkPricingResult, err error)
 
 	// 商品评分（issue #30 / #33）：评分是**独立明细表**（product_ratings），不是商品上的列，
 	// 所以维护走这三个用例；平均分与条数由明细投影算在返回里。
