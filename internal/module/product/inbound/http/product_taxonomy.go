@@ -13,7 +13,6 @@ import (
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -1119,27 +1118,28 @@ func tagRuleParamsFromForm(c *gin.Context, ruleType string) (raw json.RawMessage
 	params := map[string]any{}
 	switch ruleType {
 	case productenums.TagRuleNewArrival:
-		if v := strings.TrimSpace(c.PostForm("days")); v != "" {
-			n, perr := strconv.Atoi(v)
-			if perr != nil {
-				return nil, errors.New(productenums.ErrTagRuleParamsInvalid)
-			}
-			params["days"] = n
+		// 三个输入框（days / minPrice / maxPrice）的绑定语义在 dto（空串 = 不给这个参数键，
+		// 非法数字 = 绑定期错误）；这里的分档是**报错**（与定价页的「不给键」不同，是既有语义：
+		// 这是自动标签的规则参数，值域由 service 判，但「不是数字」当场就能说清楚）。
+		if n, perr := productdto.OptInt("days", c.PostForm("days")); perr != nil {
+			return nil, errors.New(productenums.ErrTagRuleParamsInvalid)
+		} else if n != nil {
+			params["days"] = *n
 		}
 	case productenums.TagRulePriceRange:
-		if v := strings.TrimSpace(c.PostForm("minPrice")); v != "" {
-			f, perr := parseFloat(v)
-			if perr != nil {
-				return nil, errors.New(productenums.ErrTagRuleParamsInvalid)
-			}
-			params["minPrice"] = f
+		minPrice, perr := productdto.OptFloat("minPrice", c.PostForm("minPrice"))
+		if perr != nil {
+			return nil, errors.New(productenums.ErrTagRuleParamsInvalid)
 		}
-		if v := strings.TrimSpace(c.PostForm("maxPrice")); v != "" {
-			f, perr := parseFloat(v)
-			if perr != nil {
-				return nil, errors.New(productenums.ErrTagRuleParamsInvalid)
-			}
-			params["maxPrice"] = f
+		if minPrice != nil {
+			params["minPrice"] = *minPrice
+		}
+		maxPrice, perr := productdto.OptFloat("maxPrice", c.PostForm("maxPrice"))
+		if perr != nil {
+			return nil, errors.New(productenums.ErrTagRuleParamsInvalid)
+		}
+		if maxPrice != nil {
+			params["maxPrice"] = *maxPrice
 		}
 	case productenums.TagRuleOnSale:
 		// 无参数规则：空对象即可（给了也不会有其它键）。

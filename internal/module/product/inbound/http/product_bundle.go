@@ -13,7 +13,6 @@ import (
 	"go_wp/pkg/response"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -87,8 +86,10 @@ func bundleSubmittedFormFromRequest(c *gin.Context) *productdto.BundleSubmittedF
 		MinTotalQty:   atoiOrZero(c.PostForm("minTotalQty")),
 		MaxTotalQty:   atoiOrZero(c.PostForm("maxTotalQty")),
 	}
-	if v, aerr := strconv.Atoi(strings.TrimSpace(c.PostForm("maxOptions"))); aerr == nil && v > 0 {
-		form.MaxOptions = v
+	// 选项上限：空串 / 非法 / ≤0 一律**保持默认值**（service 侧另有取值域校验）——
+	// 与既有行为一致，只是把「空串 = 未提交」这条语义收进 dto.OptInt。
+	if v, aerr := productdto.OptInt("maxOptions", c.PostForm("maxOptions")); aerr == nil && v != nil && *v > 0 {
+		form.MaxOptions = *v
 	}
 	return form
 }
@@ -213,8 +214,8 @@ func (h *productPageHandle) ProductBundleSave(c *gin.Context) {
 		return
 	}
 	cfg := productdto.NewEmptyBundleConfig()
-	if v, aerr := strconv.Atoi(strings.TrimSpace(c.PostForm("maxOptions"))); aerr == nil && v > 0 {
-		cfg.MaxOptions = v
+	if v, aerr := productdto.OptInt("maxOptions", c.PostForm("maxOptions")); aerr == nil && v != nil && *v > 0 {
+		cfg.MaxOptions = *v
 	}
 	cfg.MinTotalQty = atoiOrZero(c.PostForm("minTotalQty"))
 	cfg.MaxTotalQty = atoiOrZero(c.PostForm("maxTotalQty"))
@@ -399,11 +400,12 @@ func atoiAt(values []string, i int) int {
 }
 
 // atoiOrZero 解析整数，非法一律 0。
+//
+// 语义（空串 = 0、「0」有效、非法 = 0 + 错误事实）在 dto.FormInt，本函数只是把错误**刻意丢掉**：
+// 捆绑成员表的每一格都可能是空行与半填的数字，「逐格报错」会让「表格还没填完」变成一片红。
+// 该拒的（负数、必选数量为 0 等）由 service 的配置校验统一给出可读原因，前端只负责搬运。
 func atoiOrZero(s string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil {
-		return 0
-	}
+	n, _ := productdto.FormInt("bundleQty", s, 0)
 	return n
 }
 

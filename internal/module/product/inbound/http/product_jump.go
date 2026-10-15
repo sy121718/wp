@@ -348,7 +348,7 @@ func productBulkDeleteResult(deleted, skipped int, partial, done productBulkText
 // 的 enums），白名单就静默失配，症状是把业务文案吞成归口、或把内部错误当业务文案透出，
 // 两种都不报错。判定收口到 productErrFact 一处（见 product_page.go）。
 //
-// 模块**保留** productErrFallbacks（key → 中文兜底）：那只是缺词条时的展示原文，
+// 模块**保留**「key → 中文兜底」的表（productenums.ProductErrFallbacks 是本模块那半张、
 // 不是可透出性判据（与 page 模块的 pageenums.ErrDetailFallbacks 同一性质）。
 // ==========================================================================
 type productBulkText struct{ key, fallback string }
@@ -433,7 +433,7 @@ var productSaved = productBulkText{productenums.MsgProductSaved, "商品已保�
 func productBulkIDsMsg(c *gin.Context, err error) productMsg {
 	var tooMany *bulkids.IDsError
 	if !errors.As(err, &tooMany) {
-		return productMsg{Key: adminui.MsgInternalError, Fallback: productErrInternalFallback}
+		return adminui.InternalMsg()
 	}
 	return productMsg{Key: bulkids.MsgTooMany, Fallback: bulkids.TooManyTemplate}.
 		WithArgs(strconv.Itoa(tooMany.Max), strconv.Itoa(tooMany.Count))
@@ -453,15 +453,21 @@ func productBulkIDsMsg(c *gin.Context, err error) productMsg {
 //（失败页与成功页共用同一份模板与同一份页数据，差别只有状态码 / no-store / 失败槽）。
 // 这里若再放一个「渲染失败页」的函数，模块就又多了一条出口形态 —— 那正是要收敛的东西。
 
-// productErrPageFallback 页面出口在连兜底词条都取不到时的最后一句中文。
+// productErrUnregisteredFallback 「有业务形态、但本仓没登记展示原文」时的兜底（task-158 §7.3 ⑥）。
 //
-// 两个「不能」：页面不能显示空串（错误槽空着，用户以为没出错），也不能显示裸 key。
-const productErrPageFallback = "操作失败，请稍后重试（细节只进日志）"
+// 两个「不能」：页面不能显示空串（错误槽空着，用户以为没出错），也不能显示裸 key
+// （ErrSomethingNew 这种串运营只会以为后台坏了）。也不能借共享归口文案说「系统内部错误」
+// —— 那是**非业务**错误的口径，把一次业务拒绝说成系统故障同样误导。
+//
+// 它本该永不出现：productenums.ProductErrFallbacks 的覆盖面由 AST 守卫钉住，
+// 未登记的 key 只可能来自「新加常量又没跑测试」。出现时记一条 warn（带 err_key），
+// 所以「多了一句稳定文案、少了一句该有的话」在日志里看得见。
+const productErrUnregisteredFallback = "操作失败，请稍后重试（细节只进日志）"
 
 // productErrPageText 页面出口的成品文案（片段槽位 / 整页失败槽用）。
 //
 // 判定与日志都在 productErrMsg（见 product_page.go 的 productErrFact）：命中业务错误取
-// 当前语言（缺词条走 productErrFallbacks 兜底）；未命中记一条日志并给归口文案。
+// 当前语言（缺词条走 productErrFallbackText 查到的中文兜底）；未命中记一条日志并给归口文案。
 func productErrPageText(c *gin.Context, err error) string {
 	return productMsgText(c, productErrMsg(c, err))
 }
@@ -478,37 +484,14 @@ func productErrKeyOf(err error) string {
 	return key
 }
 
-// productErrInternalFallback 非业务错误的兜底文案（兼作取词兜底）。
-const productErrInternalFallback = "系统内部错误，请稍后重试"
-
-// productErrFallbacks 上述业务错误的中文兜底（i18n 未初始化或该 key 没有词条时用）。
+// productErrForeignFallbacks 别模块业务 key 的展示兜底（key 的归属不在本模块，表暂由本层带着）。
 //
-// 已 seed 的 key（如 ErrBundlePriceRequired 见迁移 239）在真实请求里取 sys_i18n 的文案，
-// 这里的兜底与 seed 保持一致，避免「同一句话在测试与线上不一样」。
-var productErrFallbacks = map[string]string{
-	productenums.ErrInvalidParam:                   "请求参数无效",
-	productenums.ErrNotFound:                       "商品或变体不存在",
-	productenums.ErrSlugTaken:                      "该 URL 段在本工程已被占用",
-	productenums.ErrSkuTaken:                       "该 SKU 编码在本商品下已被占用",
-	productenums.ErrNameRequired:                   "商品名称必填",
-	productenums.ErrAttrNotFound:                   "属性组不存在",
-	productenums.ErrAttrProjectMismatch:            "属性组不属于该商品所在工程",
-	productenums.ErrProductTypeInvalid:             "商品类型不合法（仅支持变体商品或捆绑商品）",
-	productenums.ErrProductTypeImmutable:           "商品类型在创建后不可更改",
-	productenums.ErrBundlePriceRequired:            "捆绑商品必须自定价：容器价需大于 0",
-	productenums.ErrSkuContainerMissing:            "SKU 编码无法生成：商品 URL 段不含 ASCII 字符，请显式填写 SKU 编码",
-	productenums.ErrContainerSkuInvalid:            "主体 SKU 不合法：必须是非空字符串",
-	productenums.ErrBundleSKURequired:              "捆绑商品必须填写主体 SKU 编码（新建抽屉已给出建议值，可直接修改）",
-	productenums.ErrContainerSKUTaken:              "该主体 SKU 在本工程已被其它商品占用（主体编码在工程内唯一）",
-	productenums.ErrVariantSKUEmpty:                "变体的 SKU 编码不能为空：请填写一个编码（或改回系统生成的编码）",
-	productenums.ErrVariantOptionsInvalid:          "变体的规格组合不合法：属性组或属性值不属于该商品",
-	productenums.ErrVariantHasStock:                "变体仍有库存，不能删除（请改为停用）",
-	productenums.VariantSkipBundleReferenced:       "该变体被捆绑成员引用，不能删除（请先在捆绑配置里解除引用）",
-	productenums.VariantSkipHasMovement:            "该变体有过库存流水（已被订单或库存变动用过），不能删除（请改为停用）",
-	productenums.ErrBundleSourceInvalid:            "成员来源不合法：只支持「从商品导入」「从仓库选」「自选属性值组合」",
-	productenums.ErrBundleSourceProductRequired:    "该来源必须先选一个来源商品",
-	productenums.ErrBundleSourceWarehouseRequired:  "从仓库选时必须指定仓库并至少勾选一条仓库 SKU",
-	productenums.ErrBundleSelfReference:            "捆绑成员不能引用捆绑主体自己（自引用）",
+// 为什么留在这层而不是搬进各自的 enums：那两个模块**还没有**通用兜底表
+// （internal/module/inventory/enums/inventory_enums.go 只有 ErrDetailFallbacks，
+// presentation 同理）。写进 product 的 enums 更糟 —— key 的归属一旦跨模块，
+// 对方改名就没有编译错误兜着。所以本表只装「展示原文」，且**只减不增**：
+// 对方模块补上 ErrFallbacks 后就把对应条目删掉。
+var productErrForeignFallbacks = map[string]string{
 	inventoryenums.ErrSKUSourceInvalid:             "SKU 来源取值不合法：只支持「自己创建」与「从仓库选」",
 	inventoryenums.ErrWarehouseSKURequired:         "从仓库选 SKU 时必须先选仓库并指明该仓的那条仓库 SKU",
 	inventoryenums.ErrWarehouseSKUNotFound:         "该仓库里没有这条仓库 SKU：请确认仓库选对了，或先在该仓建好这条货的库存记录",
@@ -524,79 +507,21 @@ var productErrFallbacks = map[string]string{
 	presentationenums.ErrRollbackTargetMiss:        "回滚目标不存在：该版本不属于这个商品，或产物文件已缺失",
 	presentationenums.ErrRollbackFailed:            "回滚失败：线上版本保持不变",
 	presentationenums.ErrSnapshotMismatch:          "该版本不属于这个商品，不能用来回滚",
-	productenums.ErrPricingRuleTypeInvalid:         "定价规则类型不是内置类型",
-	productenums.ErrPricingRuleParamsInvalid:       "定价规则参数不合法（参数键 / 类型 / 取值范围）",
-	productenums.ErrPricingRoundingInvalid:         "尾数处理不是内置选项",
-	productenums.ErrPricingScopeInvalid:            "定价作用范围不合法",
-	productenums.ErrPricingTargetRequired:          "该作用范围必须指定目标（变体 id 或商品 id）",
-	productenums.ErrPricingTargetNotFound:          "商品或变体不存在、没有可改价的变体（捆绑容器只有容器价，不能按规则改价）",
-	productenums.ErrPricingFilterEmpty:             "筛选集至少要给一个筛选条件",
-	productenums.ErrPricingNothingChanged:          "按该规则算下来没有任何价格变化",
-	productenums.ErrPricingTargetTooMany:           "命中的商品数超过单批上限，请收紧筛选条件",
-	productenums.ErrPricingAdjustmentNotFound:      "调价批次不存在",
-	// 同上：完整性补齐后的中文兜底（i18n 未初始化或该 key 没有词条时用）。
-	productenums.ErrAttrInUse:                    "属性组已被商品引用，不能删除",
-	productenums.ErrAttrKeyRequired:              "属性组标识不能改为空",
-	productenums.ErrAttrKeyTaken:                 "该属性组标识在本工程已被占用",
-	productenums.ErrAttrNameRequired:             "属性组名称必填",
-	productenums.ErrBrandInUse:                   "品牌已被商品引用，不能删除",
-	productenums.ErrBrandNameRequired:            "品牌名称必填",
-	productenums.ErrBrandNotFound:                "品牌不存在",
-	productenums.ErrBrandProjectMismatch:         "品牌不属于该商品所在工程",
-	productenums.ErrBrandSlugTaken:               "该品牌 URL 段在本工程已被占用",
-	productenums.ErrBundleMaxOptionsInvalid:      "捆绑选项数量上限不合法（允许范围 1~20）",
-	productenums.ErrBundleNotConfigured:          "该商品没有配置捆绑选项（不是捆绑商品）",
-	productenums.ErrBundleOptionRequired:         "漏填了捆绑的必选项",
-	productenums.ErrBundleOptionsExceeded:        "捆绑选项数超过上限",
-	productenums.ErrBundleQtyAboveMax:            "某一项的数量超过该项最大数量",
-	productenums.ErrBundleQtyAboveStock:          "某一项的数量超过该仓可用库存",
-	productenums.ErrBundleQtyBelowMin:            "某一项的数量低于该项最小数量",
-	productenums.ErrBundleQtyInvalid:             "数量不合法（负数 / 非整数 / 超过硬上限）",
-	productenums.ErrBundleQtyRangeInvalid:        "某一项的数量区间自相矛盾（最小 > 默认、最大 < 最小等）",
-	productenums.ErrBundleShapeInvalid:           "捆绑配置形状非法（既不是空值，也不是 JSON 对象）",
-	productenums.ErrBundleStockUnavailable:       "读不到库存可用量（库存能力未装配），捆绑校验拒绝通过",
-	productenums.ErrBundleTotalAboveMax:          "整单总件数超过最大总件数",
-	productenums.ErrBundleTotalBelowMin:          "整单总件数低于最小总件数",
-	productenums.ErrBundleTotalRangeInvalid:      "整单件数区间自相矛盾（最大 < 最小，或低于必选项最小量之和）",
-	productenums.ErrBundleTotalUnreachable:       "整单下限高于所有选项能加到的上限（永远无法满足）",
-	productenums.ErrBundleVariantDuplicated:      "同一个 SKU 在配置里或同一次选择里出现多次",
-	productenums.ErrBundleVariantNotFound:        "选项引用的 SKU 不存在（可能已被删除）",
-	productenums.ErrBundleVariantNotInConfig:     "选择里出现了配置之外的 SKU",
-	productenums.ErrBundleVariantProjectMismatch: "选项引用的 SKU 不属于该商品所在工程",
-	productenums.ErrBundleVariantRequired:        "捆绑选项缺少 SKU",
-	productenums.ErrCategoryCycle:                "不能把分类挂到自身或自己的后代下",
-	productenums.ErrCategoryHasChildren:          "分类仍有子级，不能删除",
-	productenums.ErrCategoryInUse:                "分类已被商品引用，不能删除",
-	productenums.ErrCategoryNameRequired:         "分类名称必填",
-	productenums.ErrCategoryNotFound:             "分类不存在",
-	productenums.ErrCategoryParentMismatch:       "父分类不属于该分类所在工程",
-	productenums.ErrCategoryProjectMismatch:      "分类不属于该商品所在工程",
-	productenums.ErrCategorySlugTaken:            "该分类 URL 段在本工程已被占用",
-	productenums.ErrCollectionFilterInvalid:      "过滤维度不在集合源白名单内",
-	productenums.ErrCollectionSourceInvalid:      "集合源标识不合法（不是本模块实现的源）",
-	productenums.ErrInvalidField:                 "提交了不支持的字段（不在商品字段白名单内）",
-	productenums.ErrInvalidType:                  "实体类型不合法",
-	productenums.ErrRelatedInvalid:               "相关商品引用不合法：引用的商品必须存在、属于本工程，且不能指向自己",
-	productenums.ErrTagCrossProject:              "标签仍被其它工程的商品引用，不能删除",
-	productenums.ErrTagKindInvalid:               "标签类型不是 manual / rule",
-	productenums.ErrTagNameRequired:              "标签名称必填",
-	productenums.ErrTagNotFound:                  "标签不存在",
-	productenums.ErrTagNotManual:                 "自动标签的归属由重算维护，不能手工挂载",
-	productenums.ErrTagProjectMismatch:           "标签不属于该商品所在工程",
-	productenums.ErrTagRuleNotAllowed:            "手工标签不能带自动规则",
-	productenums.ErrTagRuleParamsInvalid:         "规则参数不合法（键 / 类型 / 取值范围）",
-	productenums.ErrTagRuleTypeInvalid:           "规则类型不是内置类型（不接受自由表达式）",
-	productenums.ErrTagSlugTaken:                 "该标签 URL 段在本工程已被占用",
-	productenums.ErrVariationAttributeInvalid:    "勾选的属性组未参与该商品的变体",
-	productenums.ErrVariationCountLimit:          "变体组合数超过上限",
-	productenums.ErrVariationDimensionLimit:      "参与变体的属性维度超过上限",
-	productenums.ErrVariationNoDimension:         "没有可参与变体的属性值",
-	productenums.ErrVariationValueInvalid:        "勾选的属性值不属于该属性组或已停用",
-	productenums.ErrVariationSelectionEmpty:      "未勾选任何属性值：请至少勾选一个属性值，或改用「生成全部组合」",
-	productenums.VariantSkipDuplicated:           "清单里重复的规格组合（只保留第一行）",
-	productenums.VariantSkipHasStock:             "该变体仍有非零库存",
-	productenums.VariantSkipReferenced:           "该变体被 BOM 清单引用",
-	productenums.VariantSkipVariantMissing:       "清单引用的既有变体已不存在（可能已被并发删除）",
+}
+
+// productErrFallbackText key → 已登记的中文兜底（未登记返回空串）。
+//
+// 两段查：先本模块 enums 的表（key 的归属与文案真源都在那儿，见 productenums.ProductErrFallbacks），
+// 再跨模块那张。查表顺序就是优先级，两张表不允许有交集
+// （product_err_fallback_tables_test.go 守着）。
+func productErrFallbackText(key string) string {
+	if key == "" {
+		return ""
+	}
+	if fb := productenums.ProductErrFallbacks[key]; fb != "" {
+		return fb
+	}
+	return productErrForeignFallbacks[key]
 }
 
 // productErrFactOf 业务错误的判定与拆分（**纯事实**，不记日志）。
@@ -643,7 +568,20 @@ func productErrFactWith(c *gin.Context, err error, logIt bool) adminui.ErrFact {
 		return adminui.ErrFact{}
 	}
 	if key, tail, business := productErrFactOf(err); business {
-		return adminui.ErrFact{Key: key, Fallback: key, Tail: tail, Business: true}
+		fb := productErrFallbackText(key)
+		if fb == "" {
+			// 「有业务形态、但没有展示原文」的 key：对外给稳定的一句兜底（绝不显示裸 key），
+			// 对内记一条 warn 带上 key —— 否则「页面上少了一句该有的话」没有任何信号。
+			if logIt {
+				logger.Scene(productErrScene).
+					With("path", c.Request.URL.Path).
+					With("user_id", builtin.CurrentUserID(c)).
+					With("err_key", key).
+					Warn("业务错误 key 未登记中文兜底（补进 productenums.ProductErrFallbacks）")
+			}
+			fb = productErrUnregisteredFallback
+		}
+		return adminui.ErrFact{Key: key, Fallback: fb, Tail: tail, Business: true}
 	}
 	if logIt {
 		logger.Scene(productErrScene).
@@ -651,7 +589,7 @@ func productErrFactWith(c *gin.Context, err error, logIt bool) adminui.ErrFact {
 			With("user_id", builtin.CurrentUserID(c)).
 			Error(err, "商品后台页操作失败（非业务错误，只对外给归口文案）")
 	}
-	return adminui.ErrFact{Key: adminui.MsgInternalError, Fallback: productErrInternalFallback}
+	return adminui.InternalErrorFact()
 }
 
 // productErrMsg 业务错误 → 一句结论事实（判定见 productErrFact）。
@@ -681,14 +619,17 @@ func productErrMsgOf(c *gin.Context, f adminui.ErrFact) productMsg {
 }
 
 // productErrFallbackOf key → 中文兜底（缺词条时的展示原文，不是可透出性判据）。
+//
+// def 是事实自带的兜底（adminui.ErrFact.Fallback）。都取不到时给**归口文案**（共享那一份），
+// 不回落到裸 key：页面上出现 ErrBundlePriceRequired 这种串，运营只会以为后台坏了。
 func productErrFallbackOf(key, def string) string {
-	if fb := productErrFallbacks[key]; fb != "" {
+	if fb := productErrFallbackText(key); fb != "" {
 		return fb
 	}
 	if strings.TrimSpace(def) != "" {
 		return def
 	}
-	return productErrInternalFallback
+	return adminui.InternalErrorFact().Fallback
 }
 
 // productErrScene 日志场景名（与 product 模块其它 logger.Scene("product") 一致）。
@@ -705,7 +646,7 @@ func productInternalText(c *gin.Context, err error) string {
 			With("user_id", builtin.CurrentUserID(c)).
 			Error(err, "商品后台页操作失败（非业务错误，只对外给归口文案）")
 	}
-	return productMsgText(c, productMsg{Key: adminui.MsgInternalError, Fallback: productErrInternalFallback})
+	return adminui.PageInternalText(c)
 }
 
 // productErrText 业务错误 → 当前语言文案（**片段槽位 / JSON 出口**用：那边模板不取词）。

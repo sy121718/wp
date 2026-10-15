@@ -156,11 +156,6 @@ func containsString(list []string, want string) bool {
 	return false
 }
 
-// parseFloat 解析表单里的金额字段（非法值返回错误，由调用方忽略）。
-func parseFloat(s string) (float64, error) {
-	return strconv.ParseFloat(s, 64)
-}
-
 // firstNonEmpty 取第一个非空字符串。
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {

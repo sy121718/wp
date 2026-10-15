@@ -155,7 +155,7 @@ func TestProductWriteHandlersJumpOnValidationFail(t *testing.T) {
 		if !strings.Contains(body, `data-jump-state="err"`) {
 			t.Fatalf("应渲染 err 态提示页，body=%s", body)
 		}
-		if !strings.Contains(body, productErrFallbacks[productenums.ErrNameRequired]) {
+		if !strings.Contains(body, productErrFallbackText(productenums.ErrNameRequired)) {
 			t.Fatalf("提示页应含「商品名称必填」，body=%s", body)
 		}
 		if !strings.Contains(body, "/admin/products/edit?") || !strings.Contains(body, "product=prod1") {

@@ -486,7 +486,7 @@ func detailTemplateTemplateMsg(c *gin.Context, err error) productMsg {
 }
 
 // detailTemplateErrMsg 判定复用 productErrFactOf，中文兜底按依赖挑表（表里没有则回落
-// productErrFallbacks / 共享归口）。
+// productErrFallbackText / 共享归口）。
 func detailTemplateErrMsg(c *gin.Context, err error, table map[string]string) productMsg {
 	f := productErrFact(c, err)
 	if f.Key == "" {

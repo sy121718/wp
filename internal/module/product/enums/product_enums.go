@@ -385,7 +385,7 @@ const (
 //
 // 与 admin / order 的 Bulk* 同口径：值 = sys_i18n 的 item_key，**不带 Err / Msg 前缀**。
 // 这些句子是 handler 按计数拼出的整句回执（由 shell.RenderJump 渲染成整页提示），
-// 不是 service 返回的错误，因此不进 productErrFallbacks / productErrSentinels 那套错误白名单 ——
+// 不是 service 返回的错误，因此不进 productenums.ProductErrFallbacks 那套「错误 key → 展示原文」的表 ——
 // 它们的取词在 product_jump.go 的 productBulkTextOf（错误出口与提示页出口同一个文件）。
 //
 // 中文原文全部留在 inbound/http/product_jump.go（与写侧共用的那份 bulkTemplate 表绑在一起），

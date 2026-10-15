@@ -164,22 +164,19 @@ func pricingParamsFromForm(form productdto.PricingForm) json.RawMessage {
 	params := map[string]any{}
 	switch form.RuleType {
 	case productenums.PricingRuleCostMultiple:
-		if form.Multiplier != "" {
-			if v, err := parseFloat(form.Multiplier); err == nil {
-				params["multiplier"] = v
-			}
+		// 空串 = 本次不给这个参数（与既有的「非空才解析」前置判据同义）；非法数字**不给键** ——
+		// service 会统一报「参数缺失或不是数字」，这里不重复一套校验（见函数头注释）。
+		// NaN / 正负无穷归入非法：它们进了算价会得到一整批 NaN 价格。
+		if v, err := productdto.OptFloat("multiplier", form.Multiplier); err == nil && v != nil {
+			params["multiplier"] = *v
 		}
 	case productenums.PricingRuleCostMarkup, productenums.PricingRuleFixedPrice:
-		if form.Amount != "" {
-			if v, err := parseFloat(form.Amount); err == nil {
-				params["amount"] = v
-			}
+		if v, err := productdto.OptFloat("amount", form.Amount); err == nil && v != nil {
+			params["amount"] = *v
 		}
 	case productenums.PricingRuleTargetMargin:
-		if form.Margin != "" {
-			if v, err := parseFloat(form.Margin); err == nil {
-				params["margin"] = v
-			}
+		if v, err := productdto.OptFloat("margin", form.Margin); err == nil && v != nil {
+			params["margin"] = *v
 		}
 	}
 	raw, err := json.Marshal(params)

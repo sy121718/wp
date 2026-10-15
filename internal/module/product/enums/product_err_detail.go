@@ -11,7 +11,7 @@ package productenums
 //
 // 本文件是那半句的真源：service 侧用 i18n.ErrorDetail(常量, name, value, …) 产出
 // 「key + 参数」，读侧取词并填 {name} 占位符。中文兜底留在这里（i18n 未初始化 /
-// 词条缺失时用），与 productErrFallbacks 同一形态。
+// 词条缺失时用），与 ProductErrFallbacks 同一形态（同目录 product_err_fallbacks.go）。
 const (
 	// —— 定价规则参数（service/product_pricing_rule.go）——
 	DetailPricingParamsNotObject   = "admin.product_pricing.detail.paramsNotObject"

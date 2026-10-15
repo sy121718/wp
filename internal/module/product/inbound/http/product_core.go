@@ -487,27 +487,24 @@ func (h *productPageHandle) ProductsCreate(c *gin.Context) {
 		// 一个都没勾时浏览器不提交这个字段（服务端按「默认仓」处理）。
 		WarehouseIDs: c.PostFormArray("warehouseIds"),
 	}
-	if price := strings.TrimSpace(c.PostForm("defaultPrice")); price != "" {
-		if v, perr := parseFloat(price); perr == nil {
-			req.DefaultPrice = &v
-		}
+	// 默认价：空串 = 本次不填；非法数字**按未填处理**（既有语义，不改 —— 新建抽屉只填
+	// 名称 / 类型 / URL 段 / 价格 / 归属仓，service 仍会按「没给价」给出它自己的结论）。
+	// NaN / 正负无穷归入非法（dto.OptFloat 的契约）：不是数字的值进了金额运算会污染整批数据。
+	if v, perr := productdto.OptFloat("defaultPrice", c.PostForm("defaultPrice")); perr == nil && v != nil {
+		req.DefaultPrice = v
 	}
 	// 数量（迁移 261 的口径）：**不填数量 = 不跟踪 = 无限**。模板是一个「跟踪数量」开关
 	// 加一个数量框：开关没勾时数量框禁用、不提交 ⇒ 这里读不到值 ⇒ Quantity 保持 nil。
 	// 开关勾了而数量框留空 ⇒ 写 0（0 是「明确没货」，与「没填」是两回事）。
-	if strings.TrimSpace(c.PostForm("trackQuantity")) != "" {
-		qty := 0
-		if raw := strings.TrimSpace(c.PostForm("quantity")); raw != "" {
-			v, qerr := strconv.Atoi(raw)
-			if qerr != nil || v < 0 {
-				// 数量非法也是**表单失败**：htmx 档留在原页（错误槽 + 回填），不能悄悄跳走 ——
-				// 用户为这一张表填了十几行内容，为一个数字问题全丢是最贵的一种失败。
-				h.productCreateFail(c, req.ProjectID, productQuantityInvalidMsg)
-				return
-			}
-			qty = v
-		}
-		req.Quantity = &qty
+	// 数量（迁移 261 的口径）：开关与数量框的**同组绑定**语义收在 dto.TrackedQuantity ——
+	// 没勾开关 = 不跟踪 = 无限（nil）；勾了却留空 = 明确 0；非法 / 负数 = 绑定期错误。
+	if qty, qerr := productdto.TrackedQuantity(c.PostForm("trackQuantity"), c.PostForm("quantity")); qerr != nil {
+		// 数量非法也是**表单失败**：htmx 档留在原页（错误槽 + 回填），不能悄悄跳走 ——
+		// 用户为这一张表填了十几行内容，为一个数字问题全丢是最贵的一种失败。
+		h.productCreateFail(c, req.ProjectID, productQuantityInvalidMsg)
+		return
+	} else {
+		req.Quantity = qty
 	}
 	created, err := h.products.Create(c.Request.Context(), req)
 	if err != nil {
@@ -719,21 +716,19 @@ func (h *productPageHandle) ProductsUpdate(c *gin.Context) {
 	if sku := strings.TrimSpace(c.PostForm("sku")); sku != "" {
 		req.SKUCode = &sku
 	}
-	if raw := strings.TrimSpace(c.PostForm("defaultPrice")); raw != "" {
-		v, perr := parseFloat(raw)
-		if perr != nil {
-			h.productEditValidationFail(c, projectID, id, productEditDefaultPriceInvalidMsg)
-			return
-		}
-		req.DefaultPrice = &v
+	// 默认价 / 重量：空串 = 本次不改；非法数字**明确报错**（与新建抽屉的「按未填处理」不同，
+	// 这是既有的字段分档：这里改的就是这一个商品，让用户以为改成功比报一次错糟得多）。
+	if v, perr := productdto.OptFloat("defaultPrice", c.PostForm("defaultPrice")); perr != nil {
+		h.productEditValidationFail(c, projectID, id, productEditDefaultPriceInvalidMsg)
+		return
+	} else if v != nil {
+		req.DefaultPrice = v
 	}
-	if raw := strings.TrimSpace(c.PostForm("weight")); raw != "" {
-		v, perr := parseFloat(raw)
-		if perr != nil {
-			h.productEditValidationFail(c, projectID, id, productEditWeightInvalidMsg)
-			return
-		}
-		req.Weight = &v
+	if v, perr := productdto.OptFloat("weight", c.PostForm("weight")); perr != nil {
+		h.productEditValidationFail(c, projectID, id, productEditWeightInvalidMsg)
+		return
+	} else if v != nil {
+		req.Weight = v
 	}
 	// 图集与 alt：按行切分（textarea 一行一个），空文本 = 清空该字段。
 	req.Images = splitFormLines(c.PostForm("images"))
@@ -1086,7 +1081,7 @@ var variantSkipFallbacks = map[string]string{
 // 成品串（Fallback，Key 为空），与 page 模块 pageTranslationsSavedMsg 同一取舍。
 func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) productMsg {
 	if res == nil {
-		return productMsg{Key: adminui.MsgInternalError, Fallback: productErrInternalFallback}
+		return adminui.InternalMsg()
 	}
 	if res.Created == 0 && res.Updated == 0 && res.Deleted == 0 && len(res.Skipped) == 0 {
 		return productVariantSaveNoChange.fact()
@@ -1119,10 +1114,9 @@ func (h *productPageHandle) ProductsVariantCreate(c *gin.Context) {
 		// 归属仓（issue #15）：空值即兜底默认仓；无论选没选都会在归属仓生成库存记录。
 		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
 	}
-	if price := strings.TrimSpace(c.PostForm("price")); price != "" {
-		if v, perr := parseFloat(price); perr == nil {
-			req.Price = &v
-		}
+	// 变体价：空串 = 不填（service 继承商品级默认价）；非法数字按未填处理（与商品新建同一分档）。
+	if v, perr := productdto.OptFloat("price", c.PostForm("price")); perr == nil && v != nil {
+		req.Price = v
 	}
 	projectID := c.PostForm("projectId")
 	if _, err := h.products.CreateVariant(c.Request.Context(), req); err != nil {
@@ -1349,7 +1343,7 @@ func (h *productPageHandle) ProductsBulkPricing(c *gin.Context) {
 // 所以由调用方先取好（productErrText 在 JSON/片段出口仍在使用）。
 func bulkPricingResultMsg(changedVariants, unchangedProducts, skipped int, reason string) productMsg {
 	if strings.TrimSpace(reason) == "" {
-		reason = productErrFallbacks[productenums.ErrPricingTargetNotFound]
+		reason = productErrFallbackText(productenums.ErrPricingTargetNotFound)
 	}
 	return productOutcomeMsg(productenums.PricingBulkOutcome(changedVariants, unchangedProducts, skipped, reason))
 }
