@@ -120,7 +120,7 @@ func (s *Service) PreviewPricing(ctx context.Context, req *productdto.PricingPre
 //
 // 批量入口（BulkApplyPricing）**不走这一个**，而是逐商品调 applyPricingOnce、整批结束后
 // 只重算一次：现状控制器逐商品调用本方法，N 个商品就触发 N 次全工程标签重算
-//（每次都是全量幂等重算，多余 N-1 次）。
+// （每次都是全量幂等重算，多余 N-1 次）。
 func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApplyReq) (res *productdto.PricingApplyResp, err error) {
 	res, err = s.applyPricingOnce(ctx, req)
 	if err != nil {
@@ -238,19 +238,19 @@ func (s *Service) applyPricingOnce(ctx context.Context, req *productdto.PricingA
 	}
 	s.bumpFragmentCache(ctx, pr.projectID)
 	return &productdto.PricingApplyResp{
-		AdjustmentID:     adj.ID,
-		RuleType:         pr.rule.Type,
-		RuleParams:       pr.ruleParams,
-		RuleLabel:        pr.rule.Describe(translateFrom(ctx), pr.ruleParams),
-		Rounding:         pr.rounding,
-		RoundingLabel:    describePricingRounding(translateFrom(ctx), pr.rounding),
-		Scope:            pr.scope,
-		ScopeLabel:       describePricingScope(translateFrom(ctx), pr.scope),
-		ProjectID:        pr.projectID,
-		TargetCount:      len(lines),
-		ChangedCount:     counts.changed,
-		SkippedCount:     counts.skipped,
-		Lines:            changedLines,
+		AdjustmentID:  adj.ID,
+		RuleType:      pr.rule.Type,
+		RuleParams:    pr.ruleParams,
+		RuleLabel:     pr.rule.Describe(translateFrom(ctx), pr.ruleParams),
+		Rounding:      pr.rounding,
+		RoundingLabel: describePricingRounding(translateFrom(ctx), pr.rounding),
+		Scope:         pr.scope,
+		ScopeLabel:    describePricingScope(translateFrom(ctx), pr.scope),
+		ProjectID:     pr.projectID,
+		TargetCount:   len(lines),
+		ChangedCount:  counts.changed,
+		SkippedCount:  counts.skipped,
+		Lines:         changedLines,
 	}, nil
 }
 

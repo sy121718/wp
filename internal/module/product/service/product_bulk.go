@@ -62,10 +62,11 @@ func normalizeBulkIDs(ids []string) []string {
 // BulkDeleteProducts 批量删除商品（连同其全部变体、各仓库存行 —— 由外键级联）。
 //
 // 事务语义（改造前 → 改造后）：
-//   · 改造前：每条商品一个独立事务（product.go Delete：删除 + 失效 + 留痕），
-//     一条失败不影响其它条（控制器把失败算进「跳过」）；
-//   · 改造后：校验批量化，**要删的商品在同一个事务里删**（删除 + 逐商品失效 + 整批留痕），
-//     任一步失败整批回滚并报错。「逐项跳过」的语义不变（不存在的项不进删除集合）。
+//
+//	· 改造前：每条商品一个独立事务（product.go Delete：删除 + 失效 + 留痕），
+//	  一条失败不影响其它条（控制器把失败算进「跳过」）；
+//	· 改造后：校验批量化，**要删的商品在同一个事务里删**（删除 + 逐商品失效 + 整批留痕），
+//	  任一步失败整批回滚并报错。「逐项跳过」的语义不变（不存在的项不进删除集合）。
 //
 // 行锁：删除集合是先「锁定 + 读快照」再删 —— LockProductsTx 按 id 升序 FOR UPDATE，
 // 锁住的行就是本次要删的行；锁之后行数对不上（被并发删掉）即整批回滚，不留半截状态。
@@ -151,9 +152,10 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 // BulkDeleteProductCategories 批量删除分类。
 //
 // 三条前置规则与单条版（DeleteCategory）逐条一致，只是改成一次算完整批：
-//  ① 不存在 → Skipped；
-//  ② 仍有子级 → Skipped（外键是 SET NULL，会把子级静默提升为顶级，层级信息就丢了）；
-//  ③ 仍被**任何工程**的商品引用（附属 category_ids 或主分类 primary_category_id）→ Skipped。
+//
+//	① 不存在 → Skipped；
+//	② 仍有子级 → Skipped（外键是 SET NULL，会把子级静默提升为顶级，层级信息就丢了）；
+//	③ 仍被**任何工程**的商品引用（附属 category_ids 或主分类 primary_category_id）→ Skipped。
 func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error) {
 	if req == nil {
 		return nil, errors.New(productenums.ErrInvalidParam)
@@ -353,8 +355,9 @@ func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productd
 // BulkDeleteProductTags 批量删除标签（手工 / 自动一视同仁）。
 //
 // 与单条版（DeleteTag）的两条语义逐条一致：
-//   · **本工程**内的引用不拒绝 —— 解绑即可（标签是标记不是外键），但「解绑 + 删行」必须原子；
-//   · **别的工程**的引用一律打回给人（Skipped）：不替别的工程改数据，也不留下永久悬空 id。
+//
+//	· **本工程**内的引用不拒绝 —— 解绑即可（标签是标记不是外键），但「解绑 + 删行」必须原子；
+//	· **别的工程**的引用一律打回给人（Skipped）：不替别的工程改数据，也不留下永久悬空 id。
 //
 // 写作用域是**标签自己的工程**（与单条版一致）：分组后逐工程切换 rls 作用域，
 // 每组建一次解绑 + 失效入队 + 删行，全部在同一事务里。
