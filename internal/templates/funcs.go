@@ -123,8 +123,14 @@ func percent(v any, digits int) string {
 
 // dateTime 时间 → 本地时区、分钟精度（2006-01-02 15:04）。
 //
-// 零值 / nil / 空指针一律返回空串，由模板决定显示什么（`{{if .PaidAt}}`）——
+// 零值 / typed nil / 空指针一律返回空串，由模板决定显示什么（`{{if .PaidAt}}`）——
 // 工具函数不该替页面选「—」还是「未支付」。
+//
+// 上面说的「nil」**只指 Go 侧传进来的 typed nil**（dto 的 *time.Time / utils.JSONTime）。
+// 模板里不能写裸 nil 字面量：`{{ dateTime(nil) }}` 在 Jet 里不是「没有值」而是**实参无效**，
+// 渲染当场失败（半截输出 + HTTP 500），不会收敛成空串。模板侧判空只有一条写法 —— 用
+// `{{if .X}}`。实测见 internal/templates/funcs_boundary_test.go 与
+// docs/rules/jet-template-contract.md §8。
 func dateTime(v any) string {
 	t, ok := toTime("dateTime", v)
 	if !ok {
@@ -170,7 +176,8 @@ func dateTimeLocal(v any) string {
 //
 // 为什么不在模板里传时区名（dateTimeIn("Asia/Shanghai", v)）：那会让 IANA 名散进模板，与
 // 「口径只在一处声明」相悖 —— 模板只做展示选择，不去拼口径。
-// 零值 / nil / 空指针一律返回空串，由模板决定显示什么（与 dateTime 同规则）。
+// 零值 / typed nil（Go 侧传入）/ 空指针一律返回空串，由模板决定显示什么（与 dateTime 同规则）。
+// 裸 nil 字面量不能当实参、模板侧判空的唯一写法见 dateTime 的注释（docs/rules/jet-template-contract.md §8）。
 func siteDateTime(v any) string {
 	t, ok := toTime("siteDateTime", v)
 	if !ok {
@@ -183,7 +190,7 @@ func siteDateTime(v any) string {
 //
 // 给「本身就按秒记录」的观测值用（例如列表页回执状态条的最近一次收敛时刻）：截到分钟会让人
 // 对不上日志。展示到秒不是展示内部精度 —— 需要更高精度请先在 Go 侧决定怎么截。
-// 零值 / nil / 空指针一律返回空串（同 dateTime）。
+// 零值 / typed nil / 空指针一律返回空串（同 dateTime；裸 nil 字面量不能当实参）。
 func dateTimeSecond(v any) string {
 	t, ok := toTime("dateTimeSecond", v)
 	if !ok {
@@ -281,6 +288,10 @@ func DateTimeLocal(v any) string { return dateTimeLocal(v) }
 // 与 percent 分开：percent 不带符号（符号是显示决定），而变化率这个场景里
 // 「涨还是跌」必须一眼看出来，符号本身就是信息。nil（无基期）返回空串 ——
 // 显示 `+0.0%` 会让「上期一单没卖」看起来像「持平」。
+//
+// 这里的「nil」同样只指 **Go 侧传入的 typed nil**（例如 *float64）：模板里写
+// `{{ percentChange(nil, 1) }}` 会**在求值期失败**（半截输出 + HTTP 500），不是空串。
+// 判空用 `{{if .X}}`。实测见 docs/rules/jet-template-contract.md §8。
 func percentChange(v any, digits int) string {
 	if isNil(v) {
 		return ""

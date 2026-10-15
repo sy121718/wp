@@ -3,6 +3,7 @@
 > 本文是 **task-155（P0-2）的实测结果 + 定稿契约**。判据一句话版在 `AGENTS.md` §「模板渲染（Jet v6）」与
 > `internal/templates/CLAUDE.md`；本文给论证、实测矩阵与迁移分档。
 > 探针：`internal/templates/jet_template_contract_probe_test.go`（11 个用例，36 个子测，全绿）。
+> task-164 追加 **§8 模板函数的入参语义与已知边界**（五条实测事实 + 判据现状）；原有变更记录顺延为 §9。
 
 ## 0. 结论速览
 
@@ -325,10 +326,85 @@ st.blocks / st.context`，但**任何跨 Execute 留在 Runtime 上的自定义�
 6 格立刻 FAIL（`typed nil *struct` / `nil map` / `nil slice` / `typed nil func` / `typed nil chan` …），
 还原后 18 个子测全绿 —— 矩阵量的是**两个独立来源**（Jet `isset` vs Go 侧 `isNil`），不是自证。
 
-## 8. 变更记录
+## 8. 模板函数的入参语义与已知边界（实测）
+
+本节把 `internal/templates/funcs.go` 那一族「缺值给空串」函数的**入参语义**写清楚。它不是期望，
+而是实测结论：**「空」在 Go 侧与模板侧不是同一种东西**。照直觉写会 500，而 500 的表现取决于渲染出口
+（整页请求 vs HTMX 片段），所以「模板作者知道该怎么写」与「知道炸了长什么样」是同一件事。
+
+### 8.1 裸 `nil` 字面量不是实参；只有 Go 侧传入的 typed nil 才收敛成空串
+
+- **位置**：`internal/templates/funcs.go:124-134`（`dateTime` 的注释 + 函数）、`internal/templates/funcs.go:285-293`
+  （`percentChange` 的注释 + 函数）。两处注释**改造前**原文写「零值 / nil / 空指针一律返回空串」——**只对 Go 侧传入的 typed nil 成立**；
+  同一族还有 `siteDateTime`（`internal/templates/funcs.go:179`）与 `dateTimeSecond`（`:192`）两行写着一模一样的话，本批一并改成「typed nil」措辞。
+  task-164 已按本节把这些注释理顺（**只改注释、未动一行代码**，`gofmt -l` 空、`go test ./internal/templates/` 全绿）。
+- **实测原文**：`{{ dateTime(nil) }}` →
+  `Jet Runtime Error: call expression: argument for position 0 in func(interface {}) string is not a valid value`
+  （半截输出：失败点之前的字节保留，之后没有；HTTP 500）。
+- **用户可见症状**：整页 500；若这个插值在 HTMX 片段里，片段遇 5xx 不 swap，用户看到的是「点了没反应」。
+- **正确写法**：模板侧判空只有一条写法 —— `{{if .X}}`；要「空值」就由 Go 侧传 typed nil
+  （`*time.Time` / `utils.JSONTime` / `*float64`）。
+- **当前判据**：有。`internal/templates/funcs_boundary_test.go:140`（`TestBoundaryNilLiteralIsNotAValidArgument`，
+  3 个裸 nil 子用例 + 1 个字面量时间用例）与 `:182`（`TestBoundaryTypedNilArgumentIsFine`，typed nil 的对照格）。
+
+### 8.2 typed nil 指针直出（不经任何函数收敛）渲染成 `<nil>`
+
+- **实测**：`{{ .Row.NilPtr }}`（`*int` 为 nil）→ 页面字节 `&lt;nil&gt;`（转义一次），**不报错**。
+- **对照**：经 `stringify`（`internal/templates/funcs.go:273`，判空用 `isNil`，同文件 `:325`）那条路才是空串 —— 这正是 `stringify` 存在的理由。
+- **用户可见症状**：页面上多出一行 `<nil>`。列渲染了、页面不报错、测试不红，只有人肉看得见。
+- **当前判据**：有。`internal/templates/funcs_boundary_test.go:121`
+  （`TestBoundaryTypedNilPointerRendersNilLiteral`，`DIRECT=[&lt;nil&gt;]` 与 `VIA_FN=[]` 两格同时钉住）。
+  **但没有任何闸门阻止模板直接插值一个可空列** —— 要加静态闸门须另开批次（§8.6）。
+
+### 8.3 越界字面量的两种失败时机（同一类写法、两种现象）
+
+| 入参形态 | 失败时机 | 实测原文 | 产出 |
+|---|---|---|---|
+| 整数字面量 `100000000000000000000`（超 int64） | **解析期**（`GetTemplate`） | `template: …: integer overflow`（带模板名与行号） | **零输出** |
+| 浮点字面量 `1e30`（过解析） | **运行期**（函数的范围检查） | `模板函数 money：期望int64 范围内的整数，实际 float64（值 1e+30）` | 半截输出 + 错误 |
+
+- **位置**：`internal/templates/funcs.go` 的整数 / 浮点收敛（`toInt64` `:399` / `toFloat64` `:441`）与 `money` 的范围检查（`money` 在 `:85`）。
+- **用户可见症状**：解析期失败 = 整页没有字节；运行期失败 = 页面渲了一半。同一类写法两种现象，排查时容易当成两个问题。
+- **当前判据**：有。`internal/templates/funcs_boundary_test.go:303`（`…FailsBeforeRender`）与 `:321`（`…FailsAtRender`），
+  两格各自断言失败时机与产出字节。
+
+### 8.4 未知枚举传给数值函数 = 整页失败（刻意的）
+
+- **实测原文**：`{{ percentChangeDir("published") }}` →
+  `模板函数 percentChangeDir：期望整数，实际 string（值 published）`（半截输出 + 错误）。
+- **位置与立场**：设计写在 `internal/templates/funcs.go:19-21` —— 本文件的函数**返回纯值、传错类型直接 panic**，
+  由 `exec.go` 的 `recover` 转成模板错误。静默按 0 处理会渲染出 `flat` / `0.0%`，
+  而那看起来是一个成立的结论 —— 「宁可 500 不静默」是刻意的。
+- **用户可见症状**：整页失败；在 HTMX 片段里则是「点了没反应」（5xx 不 swap）。
+- **当前判据**：有。`internal/templates/funcs_boundary_test.go:241`
+  （同时断言错误文案能直接定位函数 / 实际类型 / 实际值）。
+
+### 8.5 未知页型 kind 的两处 `default`
+
+- **落点 1**：`internal/module/product/service/product_seo_score.go:110`（`SeoScoreInputOf`）的 `switch kind`
+  落到 `:178` 的 `default` → 走商品读口，且 `Input.Kind` 被**改写**为 `scoring.KindProduct`（`:189-191`）——
+  未知页型不会带着原 kind 进评分器。
+- **落点 2**：`internal/seo/scoring/entity_page.go:38-47`（`ProfileFor`）的 `default` 返回 `nil`（nil = 默认权重）。
+- **当前判据**：两处都有 —— `internal/module/product/service/product_seo_score_input_test.go:424-442`
+  （未知页型 `"landing"` 走商品读口、`Input.Kind` 落 `scoring.KindProduct`、缺 id 时文案回落「缺少商品」）；
+  `internal/seo/scoring/entity_page_test.go:15`（`TestProfileForWiring`，显式覆盖 `KindProduct` / `KindCategory` /
+  `KindBrand` 与两档默认权重回落）。
+- **残留缺口**：两张对应表都是**手写枚举**。`PageKind` 新增取值时没有任何判据会红（编译器也不管）：
+  新页型要么静默走商品分支（`SeoScoreInputOf`），要么静默用默认权重（`ProfileFor`）。
+  换句话说「kind 与 Profile 的对应」目前由**注释 + 手写用例**守，缺的是「枚举封闭」这道闸门。
+
+### 8.6 收口方向（本批不做）
+
+给上面这些边界加静态闸门（例如「可空列未经函数收敛直出」的模板扫描、`PageKind` 枚举封闭检查）
+**须另开批次**：它们要新增门禁脚本或新测试，属于本批边界之外。本节的立场与 §6.2 一致 ——
+先把事实与判据现状记录清楚，改造单独一批。
+
+## 9. 变更记录
 
 - 2026-10 task-155：本文新建。定稿「不新增 `hasVal`、语言走 data 注入、三种 `.["t"]` 形态不动」，
   附 11 个常驻探针（`internal/templates/jet_template_contract_probe_test.go`）。
 - 2026-10 task-163：§6.2 第 1 项（静态闸门）落地，见该节；§6.2 第 2 项（63 处结构体字段恒真守卫清理）
   经 lead 裁决**不做** —— 收益低而模板面风险高，模板回归已由 `internal/templates` 的 718 条用例覆盖。
 - 待办（清单外）：无。`docs/rules/README.md` 的「什么时候读哪份」表已含本文（task-155 加）。
+- 2026-10 task-164：新增 §8「模板函数的入参语义与已知边界」（五条实测事实 + 各自的判据现状 + §8.6 的收口方向），
+  既有「变更记录」顺延为 §9；`internal/templates/funcs.go` 的 `dateTime` / `percentChange` 注释按实测改写（**只改注释、不动代码**）。
