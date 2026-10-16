@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +34,55 @@ import (
 
 // DefaultTestRedisAddr 测试默认 Redis 地址（本地实例），可用 TEST_REDIS_ADDR 覆盖。
 const DefaultTestRedisAddr = "127.0.0.1:6379"
+
+// 测试包 → Redis DB 号分配表。
+//
+// 每个使用 SetupRedisForTest / SetupRedisForTestAt 的测试包必须占一个独立 DB：
+// 会话 key 是 user:session:<userID>，各 feature 包的管理员在独立 PG 测试库里 userID 恒为 1，
+// 共用 DB 时会互相删会话 → 并发全量偶发 302 /admin/login 假红。
+//
+// 新增调用点：领一个没用过的号（1..15）并登记；public/test/architecture 下的门禁测试
+// 双向对账（漏登记 / 条目不再命中都失败）。DB 0 留给生产默认值，测试不要占用。
+var testRedisDBByDir = map[string]int{
+	"internal/module/publication/inbound/http": 1,
+	"public/test/feature":                      2,
+	"public/test/navigation/feature":           3,
+	"public/test/user/feature":                 4,
+	"public/test/architecture":                 5,
+}
+
+// testRedisDBForCaller 取调用方所在目录对应的 DB 号；未登记即失败，避免新包静默退回 DB 0。
+func testRedisDBForCaller(t *testing.T) int {
+	t.Helper()
+	for i := 2; i < 12; i++ {
+		_, file, _, ok := runtime.Caller(i)
+		if !ok {
+			break
+		}
+		dir := repoRelativeDir(file)
+		if strings.HasSuffix(dir, "public/test/support") {
+			continue
+		}
+		db, found := testRedisDBByDir[dir]
+		if !found {
+			t.Fatalf("测试 Redis DB 未分配：%s —— 请在 public/test/support/admin_session.go 的 testRedisDBByDir 领一个未用过的号（1..15）", dir)
+		}
+		return db
+	}
+	t.Fatalf("无法定位 SetupRedisForTest 的调用方目录")
+	return 0
+}
+
+// repoRelativeDir 把调用点文件路径折成「仓库相对目录」，与仓库所在的绝对路径无关。
+func repoRelativeDir(file string) string {
+	dir := path.Dir(file)
+	for _, marker := range []string{"/public/", "/internal/", "/cmd/", "/pkg/"} {
+		if i := strings.LastIndex(dir, marker); i >= 0 {
+			return dir[i+1:]
+		}
+	}
+	return dir
+}
 
 // TestAdminUsername / TestAdminPassword 测试管理员的默认凭证。
 const (
@@ -53,7 +104,7 @@ func SetupRedisForTest(t *testing.T) error {
 	if addr == "" {
 		addr = DefaultTestRedisAddr
 	}
-	return SetupRedisForTestAt(t, addr)
+	return setupRedisForTestWithDB(t, addr, testRedisDBForCaller(t))
 }
 
 // SetupRedisForTestAt 用显式 Redis 地址初始化测试用 cache（Redis）与 auth 组件，
@@ -61,9 +112,22 @@ func SetupRedisForTest(t *testing.T) error {
 func SetupRedisForTestAt(t *testing.T, addr string) error {
 	t.Helper()
 
+	return setupRedisForTestWithDB(t, addr, testRedisDBForCaller(t))
+}
+
+// setupRedisForTestWithDB 用指定 Redis DB 初始化测试用组件。
+//
+// 为什么要分 DB：会话 key 是 user:session:<userID>（pkg/auth/session.go:66），
+// 而各 feature 测试包的管理员在各自独立的 PG 测试库里 userID 恒为 1；
+// 共用 DB 0 时一个包的登出/清理（pkg/auth/session.go:198 的 Del）会删掉另一个包刚建的会话，
+// 症状是并发跑全量时偶发 302 /admin/login 的假红（与 Go 版本无关）。
+func setupRedisForTestWithDB(t *testing.T, addr string, db int) error {
+	t.Helper()
+
 	cfg := viper.New()
 	cfg.Set("redis.addrs", []string{addr})
 	cfg.Set("auth.session_secret", "sky-feature-test-session-secret")
+	cfg.Set("redis.db", db)
 
 	if err := cache.Init(cfg); err != nil {
 		wrapped := fmt.Errorf("%w: %v", ErrRedisUnavailable, err)
