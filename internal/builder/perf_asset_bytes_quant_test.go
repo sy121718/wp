@@ -12,7 +12,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -178,7 +178,9 @@ func TestPerfQuantNoResidualMergeableRules(t *testing.T) {
 			dupBytes += len(rules[idxs[0]].text) * (len(idxs) - 1)
 		}
 	}
-	sort.Sort(sort.Reverse(sort.IntSlice(sizes)))
+	// 仅用于日志展示前 10 个最大的分组，排序稳定性无影响。
+	slices.Sort(sizes)
+	slices.Reverse(sizes)
 	shown := sizes
 	if len(shown) > 10 {
 		shown = shown[:10]
