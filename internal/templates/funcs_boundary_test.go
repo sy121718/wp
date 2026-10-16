@@ -282,6 +282,12 @@ func TestBoundaryJSONRawMessageIsRenderedUnvalidated(t *testing.T) {
 	// product service 的 PageDraftTitle / EntityPlainText 各自把非法 JSON 收敛成空串
 	// （判据在 internal/module/product/service/product_seo_score_input_test.go）。
 	// 若哪天这里开始报错，就是渲染层多了一层没人要求的校验 —— 本用例会红。
+	//
+	// Go 1.27 起 encoding/json.RawMessage 成了 jsontext.Value 的别名（jsonv2 默认开启），该类型自带
+	// String()：Jet 原先按 []byte 直出的那条分支不再命中，改用 String() —— 于是 **nil 值从空串变成
+	// "null"**（1.26 与 GOEXPERIMENT=nojsonv2 下仍是空串，实测对照）。渲染层「不校验 JSON」的契约不变，
+	// 变的只是空值的文本形态；在 JSON 语境里 "null" 比空串更准确。生产模板不直接渲染这个类型
+	// （internal/templates 下 *.jet 零使用），所以这里只更新期望值。
 	set := bpSet(t, map[string]string{
 		"j.jet": `OK=[{{ .Doc }}] BAD=[{{ .Bad }}] NULL=[{{ .NilDoc }}] OKRAW=[{{ .Doc|raw }}] BADRAW=[{{ .Bad|raw }}]`,
 	})
@@ -294,7 +300,7 @@ func TestBoundaryJSONRawMessageIsRenderedUnvalidated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("渲染层不该对 JSON 内容做校验（解析责任在 Go 侧），实际报错 %v", err)
 	}
-	want := `OK=[{&#34;a&#34;:1}] BAD=[{&#34;a&#34;:] NULL=[] OKRAW=[{"a":1}] BADRAW=[{"a":]`
+	want := `OK=[{&#34;a&#34;:1}] BAD=[{&#34;a&#34;:] NULL=[null] OKRAW=[{"a":1}] BADRAW=[{"a":]`
 	if out != want {
 		t.Fatalf("实际 %q，期望 %q", out, want)
 	}

@@ -1,6 +1,6 @@
 module go_wp
 
-go 1.26
+go 1.27.0
 
 require (
 	github.com/CloudyKit/jet/v6 v6.3.2
