@@ -6,8 +6,9 @@
 package productlist
 
 import (
+	"cmp"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -462,35 +463,41 @@ func sortItems(items []map[string]any, order string) {
 	if order == OrderRatingDesc {
 		// 评分排序（issue #29）：无评分（ratingValue 缺失）的排最后 —— 与价格同一口径，
 		// 「还没人评过」不是「0 分」。
-		sort.SliceStable(items, func(i, j int) bool {
-			a, aok := itemRating(items[i])
-			b, bok := itemRating(items[j])
+		slices.SortStableFunc(items, func(a, b map[string]any) int {
+			ra, aok := itemRating(a)
+			rb, bok := itemRating(b)
 			if aok != bok {
-				return aok
+				if aok {
+					return -1
+				}
+				return 1
 			}
 			if !aok {
-				return false
+				return 0
 			}
-			return a > b
+			return cmp.Compare(rb, ra)
 		})
 		return
 	}
 	if order == OrderPriceAsc || order == OrderPriceDesc {
 		// 价格排序（issue #28）：按**最低启用变体价**排。没有启用变体（minPrice 缺失）的排最后，
 		// 不按 0 元参与比较 —— 「没有可售规格」不是「免费」。
-		sort.SliceStable(items, func(i, j int) bool {
-			a, aok := itemPrice(items[i])
-			b, bok := itemPrice(items[j])
+		slices.SortStableFunc(items, func(a, b map[string]any) int {
+			pa, aok := itemPrice(a)
+			pb, bok := itemPrice(b)
 			if aok != bok {
-				return aok
+				if aok {
+					return -1
+				}
+				return 1
 			}
 			if !aok {
-				return false
+				return 0
 			}
 			if order == OrderPriceAsc {
-				return a < b
+				return cmp.Compare(pa, pb)
 			}
-			return a > b
+			return cmp.Compare(pb, pa)
 		})
 		return
 	}
@@ -498,12 +505,12 @@ func sortItems(items []map[string]any, order string) {
 		t, _ := source.ItemTime(item, source.ItemFieldCreatedAt)
 		return t
 	}
-	sort.SliceStable(items, func(i, j int) bool {
-		a, b := createdAt(items[i]), createdAt(items[j])
+	slices.SortStableFunc(items, func(a, b map[string]any) int {
+		ta, tb := createdAt(a), createdAt(b)
 		if order == OrderNewest {
-			return a.After(b)
+			return tb.Compare(ta)
 		}
-		return a.Before(b)
+		return ta.Compare(tb)
 	})
 }
 

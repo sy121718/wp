@@ -14,7 +14,8 @@ package builder
 // 类型的唯一使用者，放在这里比让 builder.go 也 import 组件包更收敛。
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 
 	"go_wp/internal/builder/components/layoutslot"
@@ -116,11 +117,11 @@ func SortedSlots(bindings map[string]string) []string {
 		}
 		return 1 << 30 // 未知槽位最后（它们本来就会被展开逻辑跳过）
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if pi, pj := pos(out[i]), pos(out[j]); pi != pj {
-			return pi < pj
+	slices.SortStableFunc(out, func(a, b string) int {
+		if pa, pb := pos(a), pos(b); pa != pb {
+			return cmp.Compare(pa, pb)
 		}
-		return out[i] < out[j]
+		return cmp.Compare(a, b)
 	})
 	return out
 }
@@ -166,10 +167,10 @@ func expandStructureSlots(root []*core.Node, slots []StructureSlot) []*core.Node
 		return root
 	}
 	byPos := func(list []*core.Node) {
-		sort.SliceStable(list, func(i, j int) bool {
-			si, _ := layoutslot.SlotOf(list[i])
-			sj, _ := layoutslot.SlotOf(list[j])
-			return layoutslot.PositionOf(si) < layoutslot.PositionOf(sj)
+		slices.SortStableFunc(list, func(a, b *core.Node) int {
+			sa, _ := layoutslot.SlotOf(a)
+			sb, _ := layoutslot.SlotOf(b)
+			return cmp.Compare(layoutslot.PositionOf(sa), layoutslot.PositionOf(sb))
 		})
 	}
 	byPos(before)

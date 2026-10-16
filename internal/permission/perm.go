@@ -18,7 +18,8 @@
 package permission
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"sync"
 )
 
@@ -140,16 +141,10 @@ func All() []Perm {
 	for p := range specs {
 		out = append(out, p)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		mi, ni, _ := Label(out[i])
-		mj, nj, _ := Label(out[j])
-		if mi != mj {
-			return mi < mj
-		}
-		if ni != nj {
-			return ni < nj
-		}
-		return out[i] < out[j]
+	slices.SortFunc(out, func(a, b Perm) int {
+		ma, na, _ := Label(a)
+		mb, nb, _ := Label(b)
+		return cmp.Or(cmp.Compare(ma, mb), cmp.Compare(na, nb), cmp.Compare(a, b))
 	})
 	return out
 }
@@ -173,11 +168,8 @@ func RoutesOf(p Perm) []RouteSpec {
 			out = append(out, r)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Path != out[j].Path {
-			return out[i].Path < out[j].Path
-		}
-		return out[i].Method < out[j].Method
+	slices.SortFunc(out, func(a, b RouteSpec) int {
+		return cmp.Or(cmp.Compare(a.Path, b.Path), cmp.Compare(a.Method, b.Method))
 	})
 	return out
 }
@@ -188,11 +180,8 @@ func Snapshot() []RouteSpec {
 	defer regMu.Unlock()
 	out := make([]RouteSpec, len(declared))
 	copy(out, declared)
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Path != out[j].Path {
-			return out[i].Path < out[j].Path
-		}
-		return out[i].Method < out[j].Method
+	slices.SortFunc(out, func(a, b RouteSpec) int {
+		return cmp.Or(cmp.Compare(a.Path, b.Path), cmp.Compare(a.Method, b.Method))
 	})
 	return out
 }
@@ -203,7 +192,7 @@ func Exempts() []string {
 	defer regMu.Unlock()
 	out := make([]string, len(exemptRoutes))
 	copy(out, exemptRoutes)
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

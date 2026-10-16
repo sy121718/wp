@@ -36,11 +36,12 @@ package inventoryservice
 // 而不是回到库存模块里再维护一份平行的名称表。
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -733,11 +734,8 @@ func uniqueSortedKeys(items []changeItem) []stockKey {
 		seen[it.key] = true
 		keys = append(keys, it.key)
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].variantID != keys[j].variantID {
-			return keys[i].variantID < keys[j].variantID
-		}
-		return keys[i].warehouseID < keys[j].warehouseID
+	slices.SortFunc(keys, func(a, b stockKey) int {
+		return cmp.Or(cmp.Compare(a.variantID, b.variantID), cmp.Compare(a.warehouseID, b.warehouseID))
 	})
 	return keys
 }
@@ -746,11 +744,8 @@ func uniqueSortedKeys(items []changeItem) []stockKey {
 func sortItems(items []changeItem) []changeItem {
 	out := make([]changeItem, len(items))
 	copy(out, items)
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].key.variantID != out[j].key.variantID {
-			return out[i].key.variantID < out[j].key.variantID
-		}
-		return out[i].key.warehouseID < out[j].key.warehouseID
+	slices.SortStableFunc(out, func(a, b changeItem) int {
+		return cmp.Or(cmp.Compare(a.key.variantID, b.key.variantID), cmp.Compare(a.key.warehouseID, b.key.warehouseID))
 	})
 	return out
 }

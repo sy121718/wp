@@ -10,10 +10,11 @@
 package contenttemplatemodel
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -406,14 +407,8 @@ func (m *Model) ListBlockDocumentRefs(ctx context.Context, projectID, blockID st
 		}
 		rows = append(draft, hist...)
 		// 原 SQL 的 `ORDER BY 2 ASC, 1 ASC, 3 ASC` = name, id, version。
-		sort.SliceStable(rows, func(i, j int) bool {
-			if rows[i].Name != rows[j].Name {
-				return rows[i].Name < rows[j].Name
-			}
-			if rows[i].ID != rows[j].ID {
-				return rows[i].ID < rows[j].ID
-			}
-			return rows[i].Version < rows[j].Version
+		slices.SortStableFunc(rows, func(a, b BlockDocRefRow) int {
+			return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.ID, b.ID), cmp.Compare(a.Version, b.Version))
 		})
 		return nil
 	})

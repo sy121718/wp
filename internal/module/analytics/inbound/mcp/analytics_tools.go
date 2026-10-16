@@ -15,10 +15,11 @@ package analyticsmcp
 // 而它们的时间口径必须一致才有意义（分两次调用就可能跨过日界）。
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"go_wp/internal/mcp"
@@ -153,7 +154,7 @@ func dailyText(daily []analyticsdto.DailyCount) string {
 func peakDaysText(daily []analyticsdto.DailyCount, total int) string {
 	sorted := make([]analyticsdto.DailyCount, len(daily))
 	copy(sorted, daily)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Views > sorted[j].Views })
+	slices.SortStableFunc(sorted, func(a, b analyticsdto.DailyCount) int { return cmp.Compare(b.Views, a.Views) })
 	n := 3
 	if len(sorted) < n {
 		n = len(sorted)

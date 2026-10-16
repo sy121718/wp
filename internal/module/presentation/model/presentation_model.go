@@ -12,10 +12,11 @@
 package presentationmodel
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -814,14 +815,20 @@ func (m *Model) ListBlockDocumentRefs(ctx context.Context, projectID, blockID st
 		}
 		rows = append(fromOverride, fromSnapshot...)
 		// 原 SQL 的 ORDER BY 2 ASC, 1 ASC, 5 ASC → url_path, instance_id, from_snapshot（false 在前）。
-		sort.SliceStable(rows, func(i, j int) bool {
-			if rows[i].URLPath != rows[j].URLPath {
-				return rows[i].URLPath < rows[j].URLPath
+		slices.SortStableFunc(rows, func(a, b BlockDocRefRow) int {
+			if c := cmp.Compare(a.URLPath, b.URLPath); c != 0 {
+				return c
 			}
-			if rows[i].InstanceID != rows[j].InstanceID {
-				return rows[i].InstanceID < rows[j].InstanceID
+			if c := cmp.Compare(a.InstanceID, b.InstanceID); c != 0 {
+				return c
 			}
-			return !rows[i].FromSnapshot && rows[j].FromSnapshot
+			if a.FromSnapshot == b.FromSnapshot {
+				return 0
+			}
+			if !a.FromSnapshot {
+				return -1
+			}
+			return 1
 		})
 		return nil
 	})

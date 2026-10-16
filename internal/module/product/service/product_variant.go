@@ -64,13 +64,14 @@ package productservice
 //	· **限量**：一次最多查 VariantAvailabilityLookupMaxIDs 个变体，超出即截断（GET 片段不报错）。
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1013,7 +1014,7 @@ func decodeOptionPairs(raw json.RawMessage) []optionPair {
 	for k, v := range m {
 		out = append(out, optionPair{Key: k, Value: v})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	slices.SortFunc(out, func(a, b optionPair) int { return cmp.Compare(a.Key, b.Key) })
 	return out
 }
 
@@ -1023,7 +1024,7 @@ func decodeOptionPairs(raw json.RawMessage) []optionPair {
 func optionKey(pairs []optionPair) string {
 	sorted := make([]optionPair, len(pairs))
 	copy(sorted, pairs)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Key < sorted[j].Key })
+	slices.SortFunc(sorted, func(a, b optionPair) int { return cmp.Compare(a.Key, b.Key) })
 	var b strings.Builder
 	for i, p := range sorted {
 		if i > 0 {
@@ -1658,19 +1659,16 @@ func sortedOptionPairs(pairs []optionPair, groupOrder map[string]int) []optionPa
 	sorted := make([]optionPair, len(pairs))
 	copy(sorted, pairs)
 	fallback := len(groupOrder) + 1
-	sort.SliceStable(sorted, func(i, j int) bool {
-		ri, iok := groupOrder[sorted[i].Key]
-		if !iok {
-			ri = fallback
+	slices.SortStableFunc(sorted, func(a, b optionPair) int {
+		ra, aok := groupOrder[a.Key]
+		if !aok {
+			ra = fallback
 		}
-		rj, jok := groupOrder[sorted[j].Key]
-		if !jok {
-			rj = fallback
+		rb, bok := groupOrder[b.Key]
+		if !bok {
+			rb = fallback
 		}
-		if ri != rj {
-			return ri < rj
-		}
-		return sorted[i].Key < sorted[j].Key
+		return cmp.Or(cmp.Compare(ra, rb), cmp.Compare(a.Key, b.Key))
 	})
 	return sorted
 }

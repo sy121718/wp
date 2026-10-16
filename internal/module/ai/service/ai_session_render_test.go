@@ -1,9 +1,10 @@
 package aiservice_test
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -64,7 +65,7 @@ func ordersSpec() aidto.ToolSpec {
 // renderMetaOf 取出结果事件里的 meta.render（没有就回空串）。
 func renderMetaOf(t *testing.T, events []aidto.SessionEventItem) string {
 	t.Helper()
-	sort.Slice(events, func(i, j int) bool { return events[i].Seq < events[j].Seq })
+	slices.SortFunc(events, func(a, b aidto.SessionEventItem) int { return cmp.Compare(a.Seq, b.Seq) })
 	for _, e := range events {
 		if e.Meta == nil {
 			continue

@@ -11,7 +11,9 @@
 package prompt
 
 import (
+	"cmp"
 	"embed"
+	"slices"
 	"sort"
 	"strings"
 
@@ -93,7 +95,7 @@ func ManualTopics() []ManualTopic {
 		}
 		out = append(out, ManualTopic{Name: name, Title: title})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	slices.SortFunc(out, func(a, b ManualTopic) int { return cmp.Compare(a.Name, b.Name) })
 	return out
 }
 

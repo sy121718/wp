@@ -1,11 +1,12 @@
 package seo
 
 import (
+	"cmp"
 	"encoding/xml"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -200,7 +201,7 @@ func WriteSiteFiles(dir, baseURL string, entries []SitemapEntry) error {
 
 // normalizeEntries sitemap 条目的规范形态：去重（同 Loc 只留第一条）+ 按 Loc 升序。
 //
-// 排序用 sort.SliceStable 而不是插入排序：SEO-011 的分片场景本就是大站，
+// 排序用 slices.SortStableFunc 而不是插入排序：SEO-011 的分片场景本就是大站，
 // 上万条 URL 走 O(n²) 会让每次发布多花几十秒。去重后 Loc 唯一，
 // 稳定排序与插入排序的产物逐字节相同（单文件 sitemap 的字节不变量不受影响）。
 func normalizeEntries(entries []SitemapEntry) []SitemapEntry {
@@ -213,7 +214,7 @@ func normalizeEntries(entries []SitemapEntry) []SitemapEntry {
 		seen[e.Loc] = true
 		out = append(out, e)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Loc < out[j].Loc })
+	slices.SortStableFunc(out, func(a, b SitemapEntry) int { return cmp.Compare(a.Loc, b.Loc) })
 	return out
 }
 
@@ -358,7 +359,7 @@ func normalizeAlternates(in []SitemapAlternate) []SitemapAlternate {
 	if len(main) < 2 {
 		return nil
 	}
-	sort.SliceStable(main, func(i, j int) bool { return main[i].Lang < main[j].Lang })
+	slices.SortStableFunc(main, func(a, b SitemapAlternate) int { return cmp.Compare(a.Lang, b.Lang) })
 	if xdefault == "" {
 		return main
 	}

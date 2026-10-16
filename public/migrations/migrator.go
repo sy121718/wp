@@ -6,7 +6,7 @@ package migrations
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -75,6 +75,19 @@ func compareVersion(a, b string) bool {
 	return a < b
 }
 
+// compareVersionCmp 是 compareVersion 的三值版本（cmp 语义），供 slices.SortStableFunc 使用。
+// compareVersion 为严格弱序（数字主版本 → 后缀 → 整体字符串），故两次调用即可判定三态。
+func compareVersionCmp(a, b string) int {
+	switch {
+	case compareVersion(a, b):
+		return -1
+	case compareVersion(b, a):
+		return 1
+	default:
+		return 0
+	}
+}
+
 // parseVersionPrefix 解析迁移版本前缀：数字 + 可选小写字母后缀 + 分隔符。
 //
 // 合法形状：
@@ -116,12 +129,12 @@ func parseVersionPrefix(version string) (major int, suffix string, err error) {
 
 // All 返回按版本号排序的全部迁移。
 //
-// 用稳定排序：sort.Slice 在版本号重复时的相对顺序属实现细节，稳定排序固定为
+// 用稳定排序：非稳定排序在版本号重复时的相对顺序属实现细节，稳定排序固定为
 // 注册顺序，使同一组注册在任何构建上都排出同一序列。ValidateRegistry 已拒绝
 // 重复版本号，这里是第二道保险 —— 只消除不确定性，不新增启动期失败路径。
 func All() []Migration {
-	sort.SliceStable(allMigrations, func(i, j int) bool {
-		return compareVersion(allMigrations[i].Version, allMigrations[j].Version)
+	slices.SortStableFunc(allMigrations, func(a, b Migration) int {
+		return compareVersionCmp(a.Version, b.Version)
 	})
 	return allMigrations
 }
@@ -130,8 +143,8 @@ func All() []Migration {
 // 种子版本号此前没有重复校验（见 TestSeedVersionsUnique），稳定排序保证
 // 「万一重复」时顺序仍由注册顺序确定，而不是随构建漂移。
 func AllSeeds() []Seed {
-	sort.SliceStable(allSeeds, func(i, j int) bool {
-		return compareVersion(allSeeds[i].Version, allSeeds[j].Version)
+	slices.SortStableFunc(allSeeds, func(a, b Seed) int {
+		return compareVersionCmp(a.Version, b.Version)
 	})
 	return allSeeds
 }

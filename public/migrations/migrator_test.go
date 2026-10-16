@@ -1,7 +1,7 @@
 package migrations
 
 import (
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -38,7 +38,7 @@ func TestCustomMigrationChecksParameterConvention(t *testing.T) {
 
 func TestCompareVersionNumericSort(t *testing.T) {
 	versions := []string{"999_foo", "1000_bar", "154_baz", "001_init"}
-	sort.Slice(versions, func(i, j int) bool { return compareVersion(versions[i], versions[j]) })
+	slices.SortFunc(versions, func(a, b string) int { return compareVersionCmp(a, b) })
 	want := []string{"001_init", "154_baz", "999_foo", "1000_bar"}
 	for i, v := range want {
 		if versions[i] != v {
@@ -60,7 +60,7 @@ func TestParseVersionPrefixRejectsBadName(t *testing.T) {
 // TestCompareVersionPatchSuffix 字母后缀是补丁位：同主编号下空后缀在前，字母按字典序。
 func TestCompareVersionPatchSuffix(t *testing.T) {
 	versions := []string{"087b_product_variant_options", "086b_product_attribute_menu", "087_product_variant_generate", "086_product_attribute", "086a_product_attribute_permissions", "088_product_taxonomy"}
-	sort.Slice(versions, func(i, j int) bool { return compareVersion(versions[i], versions[j]) })
+	slices.SortFunc(versions, func(a, b string) int { return compareVersionCmp(a, b) })
 	want := []string{
 		"086_product_attribute",
 		"086a_product_attribute_permissions",

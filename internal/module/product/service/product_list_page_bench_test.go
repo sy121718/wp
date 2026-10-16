@@ -24,9 +24,10 @@ package productservice_test
 // 所以旧记录里的 SQL=16 是**探针口径**少 1，不是页面少一条语句。
 
 import (
+	"cmp"
 	"context"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -116,7 +117,7 @@ func measureListPage(t *testing.T, ctx context.Context, s *productservice.Servic
 		sqlCount, lookups, rowCount = probe.total(), probe.perProductDetailLookups(), len(view.Products)
 	}
 
-	sort.Slice(durs, func(i, j int) bool { return durs[i] < durs[j] })
+	slices.SortFunc(durs, func(a, b time.Duration) int { return cmp.Compare(a, b) })
 	t.Logf("n=%3d 第 %d 页：行数=%2d SQL=%2d 逐商品详情=%d | 耗时 min=%-10s 中位=%-10s max=%-10s（%d 次：%s）",
 		n, page, rowCount, sqlCount, lookups,
 		durs[0], durs[len(durs)/2], durs[len(durs)-1], len(durs), formatDurations(durs))

@@ -46,6 +46,7 @@ package pubservice
 //     不引入解析器级别的重型依赖。
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -53,7 +54,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -124,11 +125,11 @@ func feedItems(dir, baseURL string, routes []pubmodel.RouteEntity, langs []strin
 		}
 		cands = append(cands, rt)
 	}
-	sort.SliceStable(cands, func(i, j int) bool {
-		if !cands[i].UpdatedAt.Equal(cands[j].UpdatedAt) {
-			return cands[i].UpdatedAt.After(cands[j].UpdatedAt)
+	slices.SortStableFunc(cands, func(a, b pubmodel.RouteEntity) int {
+		if c := b.UpdatedAt.Compare(a.UpdatedAt); c != 0 {
+			return c
 		}
-		return cands[i].Path < cands[j].Path
+		return cmp.Compare(a.Path, b.Path)
 	})
 
 	items := make([]seo.FeedItem, 0, len(cands))
@@ -626,7 +627,7 @@ func AuditSite(docs []AuditDocument, activePaths map[string]bool) (issues []Audi
 		if len(pages) < 2 {
 			continue
 		}
-		sort.Strings(pages)
+		slices.Sort(pages)
 		// 必须把命中页面**列进结论**：只报「有 2 个页面重复」等于给了一个无法行动的结果 ——
 		// 运营知道有问题，却不知道该去改哪一页。这是体检类功能的常见失手。
 		issues = append(issues, AuditIssue{Path: strings.Join(pages, ", "), Item: AuditTitleDuplicate, Level: AuditLevelWarning,

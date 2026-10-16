@@ -30,9 +30,10 @@ package routers
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
-	"sort"
+	"slices"
 	"strings"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -223,14 +224,12 @@ func (p *contentTemplateImpactRefs) ListTemplateReferences(ctx context.Context, 
 	}
 
 	// 确定性输出：同一份数据渲染出来的行序不随 map 迭代变化（列表页会按它渲染）。
-	sort.Slice(refs, func(i, j int) bool {
-		if refs[i].TemplateID != refs[j].TemplateID {
-			return refs[i].TemplateID < refs[j].TemplateID
-		}
-		if refs[i].Kind != refs[j].Kind {
-			return refs[i].Kind < refs[j].Kind
-		}
-		return refs[i].PageID+refs[i].InstanceID < refs[j].PageID+refs[j].InstanceID
+	slices.SortFunc(refs, func(a, b contenttemplatedto.TemplateReference) int {
+		return cmp.Or(
+			cmp.Compare(a.TemplateID, b.TemplateID),
+			cmp.Compare(a.Kind, b.Kind),
+			cmp.Compare(a.PageID+a.InstanceID, b.PageID+b.InstanceID),
+		)
 	})
 	return refs, unparsable, nil
 }
@@ -263,7 +262,7 @@ func structureBindingsInDocument(doc json.RawMessage) (title string,
 		slotsByTemplate[id] = append(slotsByTemplate[id], slot)
 	}
 	for id := range slotsByTemplate {
-		sort.Strings(slotsByTemplate[id])
+		slices.Sort(slotsByTemplate[id])
 	}
 	return strings.TrimSpace(parsed.Settings.SEO.Title), slotsByTemplate, nil
 }

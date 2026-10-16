@@ -65,11 +65,12 @@ package aiservice
 // 是**装配方**——它同时看得见 model 与 mcp，转换就在这里发生一次。
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1711,7 +1712,7 @@ func projectEvents(events []aimodel.AIEventEntity) []aidto.SessionItem {
 			placedItems = append(placedItems, placed{order: e.Seq, item: sessionItemOf(e, false)})
 		}
 	}
-	sort.SliceStable(placedItems, func(i, j int) bool { return placedItems[i].order < placedItems[j].order })
+	slices.SortStableFunc(placedItems, func(a, b placed) int { return cmp.Compare(a.order, b.order) })
 
 	out := make([]aidto.SessionItem, 0, len(placedItems))
 	for i := range placedItems {
@@ -2006,7 +2007,7 @@ func (s *SessionService) SessionTrend(ctx context.Context, f aidto.SessionQuery,
 	}
 
 	// 总量降序：消耗最大的那条排最上面，也拿到调色板第 1 号色。
-	sort.SliceStable(order, func(i, j int) bool { return groups[order[i]].total > groups[order[j]].total })
+	slices.SortStableFunc(order, func(a, b string) int { return cmp.Compare(groups[b].total, groups[a].total) })
 
 	if len(order) > trendSeriesMax {
 		rest := &bucket{tokens: make([]int64, len(days)), count: len(order) - trendSeriesMax + 1}

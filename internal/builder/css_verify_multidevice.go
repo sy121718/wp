@@ -31,10 +31,12 @@ package builder
 //   · @keyframes 子树跳过：帧里的百分比尺寸不是布局宽度来源，判定它们只有噪音。
 
 import (
+	"cmp"
 	"fmt"
 	"log"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -539,17 +541,13 @@ func dedupViolations(in []CSSViolation) []CSSViolation {
 		seen[key] = true
 		out = append(out, v)
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].File != out[j].File {
-			return out[i].File < out[j].File
-		}
-		if out[i].Line != out[j].Line {
-			return out[i].Line < out[j].Line
-		}
-		if out[i].Rule != out[j].Rule {
-			return out[i].Rule < out[j].Rule
-		}
-		return out[i].Selector < out[j].Selector
+	slices.SortStableFunc(out, func(a, b CSSViolation) int {
+		return cmp.Or(
+			cmp.Compare(a.File, b.File),
+			cmp.Compare(a.Line, b.Line),
+			cmp.Compare(a.Rule, b.Rule),
+			cmp.Compare(a.Selector, b.Selector),
+		)
 	})
 	return out
 }

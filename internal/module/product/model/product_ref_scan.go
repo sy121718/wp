@@ -52,8 +52,10 @@ package productmodel
 //     「冲突与数据不一致一律打回给人」，禁止自动清理 / 静默放过）。
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 
@@ -192,11 +194,8 @@ func (m *Model) scanProductRefs(ctx context.Context, refColumns []string, projec
 	}
 	// 稳定输出：工程清单升序（scopes 已归一），商品采样按工程 + 商品 id 排序 ——
 	// 同一份数据每次得到同一句话，评估与测试都可复现。
-	sort.SliceStable(ref.Products, func(i, j int) bool {
-		if ref.Products[i].ProjectID != ref.Products[j].ProjectID {
-			return ref.Products[i].ProjectID < ref.Products[j].ProjectID
-		}
-		return ref.Products[i].ProductID < ref.Products[j].ProductID
+	slices.SortStableFunc(ref.Products, func(a, b RefProduct) int {
+		return cmp.Or(cmp.Compare(a.ProjectID, b.ProjectID), cmp.Compare(a.ProductID, b.ProductID))
 	})
 	for _, pid := range scopes {
 		if ref.ProductCounts[pid] > 0 {

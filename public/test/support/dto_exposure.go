@@ -15,6 +15,7 @@
 package support
 
 import (
+	"cmp"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -23,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -202,11 +204,8 @@ func ScanDTOExposure(t *testing.T, opts DTOExposureOptions) []DTOExposureFinding
 		}
 	}
 
-	sort.Slice(findings, func(i, j int) bool {
-		if findings[i].File != findings[j].File {
-			return findings[i].File < findings[j].File
-		}
-		return findings[i].Line < findings[j].Line
+	slices.SortFunc(findings, func(a, b DTOExposureFinding) int {
+		return cmp.Or(cmp.Compare(a.File, b.File), cmp.Compare(a.Line, b.Line))
 	})
 	return findings
 }

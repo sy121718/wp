@@ -57,11 +57,13 @@ package aiservice
 // 不要手改本文件的数据行：改数据要重跑生成脚本（见 ai_model_catalog.go 文件头）。
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -604,7 +606,7 @@ func BuiltinPresets() []BuiltinPresetOption {
 			ModelCount:  len(p.Models),
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	slices.SortFunc(out, func(a, b BuiltinPresetOption) int { return cmp.Compare(a.Key, b.Key) })
 	return out
 }
 

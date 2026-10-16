@@ -6,7 +6,8 @@
 package scoring
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 )
 
@@ -86,11 +87,8 @@ func InternalLinkSuggestions(doc *LinkDocument, candidates []LinkCandidate, limi
 			Score: score, Reason: reason,
 		})
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Score != out[j].Score {
-			return out[i].Score > out[j].Score
-		}
-		return out[i].Title < out[j].Title
+	slices.SortStableFunc(out, func(a, b LinkSuggestion) int {
+		return cmp.Or(cmp.Compare(b.Score, a.Score), cmp.Compare(a.Title, b.Title))
 	})
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]

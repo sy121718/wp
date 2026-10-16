@@ -45,10 +45,11 @@ package pageservice
 // 用同一个开关表达。
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -1051,14 +1052,12 @@ func (s *Service) UntranslatedPageLangs(ctx context.Context, projectID string) (
 	}
 	// 排序口径与原 SQL 一致（misses 降序，再 draft_path / lang 升序）——契约只保证
 	// 「每页每语言一行」，顺序由调用方按展示需要定，那里才有 draft_path。
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].Misses != rows[j].Misses {
-			return rows[i].Misses > rows[j].Misses
-		}
-		if rows[i].DraftPath != rows[j].DraftPath {
-			return rows[i].DraftPath < rows[j].DraftPath
-		}
-		return rows[i].Lang < rows[j].Lang
+	slices.SortStableFunc(rows, func(a, b pagedto.TranslationMissRow) int {
+		return cmp.Or(
+			cmp.Compare(b.Misses, a.Misses),
+			cmp.Compare(a.DraftPath, b.DraftPath),
+			cmp.Compare(a.Lang, b.Lang),
+		)
 	})
 	return rows, nil
 }

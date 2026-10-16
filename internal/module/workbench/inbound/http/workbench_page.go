@@ -28,11 +28,13 @@ package workbenchhttp
 // 从 dashboard_handle.go 拆出：单一职责（编辑器桥接），与页面渲染/预览解耦。
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -528,7 +530,7 @@ func buildTrend(byDay map[string]*overviewTrendPoint, viewsByDay map[string]int6
 	for _, p := range buckets {
 		points = append(points, *p)
 	}
-	sort.Slice(points, func(i, j int) bool { return points[i].Day < points[j].Day })
+	slices.SortFunc(points, func(a, b overviewTrendPoint) int { return cmp.Compare(a.Day, b.Day) })
 
 	var maxSales, maxViews int64
 	for _, p := range points {
@@ -700,11 +702,8 @@ func buildTopPages(viewsByPath map[string]int64, kindOfPath map[string]string) [
 			Path: path, Views: views, Kind: kind, KindKey: overviewPageKindKey(kind),
 		})
 	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Views != items[j].Views {
-			return items[i].Views > items[j].Views
-		}
-		return items[i].Path < items[j].Path
+	slices.SortFunc(items, func(a, b overviewTopPage) int {
+		return cmp.Or(cmp.Compare(b.Views, a.Views), cmp.Compare(a.Path, b.Path))
 	})
 	if len(items) > overviewPageTopLimit {
 		items = items[:overviewPageTopLimit]
@@ -746,14 +745,12 @@ func buildTop(products []overviewTopProduct) []overviewTopProduct {
 	if len(products) == 0 {
 		return nil
 	}
-	sort.SliceStable(products, func(i, j int) bool {
-		if products[i].Quantity != products[j].Quantity {
-			return products[i].Quantity > products[j].Quantity
-		}
-		if products[i].ProductName != products[j].ProductName {
-			return products[i].ProductName < products[j].ProductName
-		}
-		return products[i].SKU < products[j].SKU
+	slices.SortStableFunc(products, func(a, b overviewTopProduct) int {
+		return cmp.Or(
+			cmp.Compare(b.Quantity, a.Quantity),
+			cmp.Compare(a.ProductName, b.ProductName),
+			cmp.Compare(a.SKU, b.SKU),
+		)
 	})
 	if len(products) > overviewTopLimit {
 		products = products[:overviewTopLimit]

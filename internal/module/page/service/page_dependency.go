@@ -58,10 +58,11 @@ package pageservice
 // （调用方已经算出精确集合，不做任何全站标记）。
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -538,7 +539,7 @@ func dependencyRefsOf(rows []pagemodel.DependencyRefRow) []pagecontract.Dependen
 	if len(out) == 0 {
 		return nil
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	slices.SortFunc(out, func(a, b pagecontract.DependencyPageRef) int { return cmp.Compare(a.ID, b.ID) })
 	return out
 }
 
@@ -899,8 +900,15 @@ func mergeStaleRows(parts [][]pagemodel.StalePageRow, limit int, orderBy string,
 	for i := range parts {
 		all = append(all, parts[i]...)
 	}
-	sort.SliceStable(all, func(i, j int) bool {
-		return staleRowLess(all[i], all[j], orderBy, descending)
+	slices.SortStableFunc(all, func(a, b pagemodel.StalePageRow) int {
+		switch {
+		case staleRowLess(a, b, orderBy, descending):
+			return -1
+		case staleRowLess(b, a, orderBy, descending):
+			return 1
+		default:
+			return 0
+		}
 	})
 	if limit > 0 && len(all) > limit {
 		all = all[:limit]

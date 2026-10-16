@@ -1,7 +1,8 @@
 package adminservice
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"testing"
 	"time"
 
@@ -108,7 +109,7 @@ func TestBuildPermissionTreeKeepsCheckedDisabledNode(t *testing.T) {
 
 	tree := buildPermissionTree(all, []uint64{30})
 	got := collectTreeIDs(tree)
-	sort.Slice(got, func(i, j int) bool { return got[i] < got[j] })
+	slices.SortFunc(got, func(a, b uint64) int { return cmp.Compare(a, b) })
 
 	// 20 已禁用但它是已勾选按钮 30 的祖先 —— 必须保留，否则下次保存时 30 的授权会连带消失。
 	// 40 未勾选且已禁用 —— 不进树（页面不该让人去勾一个已经关掉的菜单）。

@@ -17,9 +17,11 @@ package feature
 // 本文件只判 524 这 51 个键的落地、幂等与文案一致性，对旧键只查「库里确有中文值」。
 
 import (
+	"cmp"
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -92,11 +94,8 @@ func mailAEI18nSQLPairs(t *testing.T) []mailI18nExpectation {
 		key, lang, _ := strings.Cut(composed, "\x00")
 		pairs = append(pairs, mailI18nExpectation{key: key, lang: lang, new: value})
 	}
-	sort.Slice(pairs, func(i, j int) bool {
-		if pairs[i].key != pairs[j].key {
-			return pairs[i].key < pairs[j].key
-		}
-		return pairs[i].lang < pairs[j].lang
+	slices.SortFunc(pairs, func(a, b mailI18nExpectation) int {
+		return cmp.Or(cmp.Compare(a.key, b.key), cmp.Compare(a.lang, b.lang))
 	})
 	return pairs
 }

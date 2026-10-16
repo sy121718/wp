@@ -21,10 +21,11 @@ package productservice
 //	  保证「同一次提交产生确定的数组顺序」，进而保证构建期输出确定（不变量 5）。
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -463,7 +464,7 @@ func sanitizeAttributeValues(reqs []productdto.AttributeValueReq) []productdto.A
 			ID: id, Key: key, Label: label, Sort: sortV, Enabled: enabled,
 		})
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Sort < out[j].Sort })
+	slices.SortStableFunc(out, func(a, b productdto.AttributeValueResp) int { return cmp.Compare(a.Sort, b.Sort) })
 	return out
 }
 

@@ -8,7 +8,8 @@ package compliance
 // 「两份产物都在手上、且都声称互指对方」这一种能当场证伪的情况，不猜、不误报。
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 
 	"go_wp/internal/seo"
@@ -32,7 +33,7 @@ type SiteReport struct {
 func InspectSite(arts []Artifact) *SiteReport {
 	in := make([]Artifact, len(arts))
 	copy(in, arts)
-	sort.SliceStable(in, func(i, j int) bool { return in[i].URL < in[j].URL })
+	slices.SortStableFunc(in, func(a, b Artifact) int { return cmp.Compare(a.URL, b.URL) })
 
 	rep := &SiteReport{Checked: len(in), Checks: perArtifactChecks + siteChecks}
 	byPath := make(map[string]int, len(in))
@@ -77,11 +78,8 @@ func InspectSite(arts []Artifact) *SiteReport {
 			}
 		}
 	}
-	sort.SliceStable(cross, func(i, j int) bool {
-		if cross[i].URL != cross[j].URL {
-			return cross[i].URL < cross[j].URL
-		}
-		return cross[i].Rule < cross[j].Rule
+	slices.SortStableFunc(cross, func(a, b Finding) int {
+		return cmp.Or(cmp.Compare(a.URL, b.URL), cmp.Compare(a.Rule, b.Rule))
 	})
 	rep.Findings = cross
 	return rep
@@ -112,14 +110,12 @@ func (s *SiteReport) AllFindings() []Finding {
 		out = append(out, r.Findings...)
 	}
 	out = append(out, s.Findings...)
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].URL != out[j].URL {
-			return out[i].URL < out[j].URL
-		}
-		if out[i].Rule != out[j].Rule {
-			return out[i].Rule < out[j].Rule
-		}
-		return out[i].Level < out[j].Level
+	slices.SortStableFunc(out, func(a, b Finding) int {
+		return cmp.Or(
+			cmp.Compare(a.URL, b.URL),
+			cmp.Compare(a.Rule, b.Rule),
+			cmp.Compare(a.Level, b.Level),
+		)
 	})
 	return out
 }

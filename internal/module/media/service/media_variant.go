@@ -19,6 +19,7 @@ package mediaservice
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -34,7 +35,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -523,7 +524,7 @@ func (s *Service) ProbeImageVariants(ctx context.Context, url string) []mediato.
 			Width: w,
 		})
 	}
-	sort.Slice(refs, func(i, j int) bool { return refs[i].Width < refs[j].Width })
+	slices.SortFunc(refs, func(a, b mediato.VariantRef) int { return cmp.Compare(a.Width, b.Width) })
 	return refs
 }
 

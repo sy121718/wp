@@ -27,12 +27,14 @@ package architecture
 // 清单里若有条目已经不是候选（方法被包进事务了 / 被删了），测试会失败要求删掉它 —— 清单只增不减就是另一种腐化。
 
 import (
+	"cmp"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -321,7 +323,7 @@ func TestServiceWritePathsHaveTransactionBoundary(t *testing.T) {
 		t.Fatalf("扫描失败: %v", walkErr)
 	}
 
-	sort.Slice(findings, func(i, j int) bool { return findings[i].key < findings[j].key })
+	slices.SortFunc(findings, func(a, b finding) int { return cmp.Compare(a.key, b.key) })
 	for _, f := range findings {
 		t.Errorf("写路径缺少事务边界：%s（%s）—— 要么把它包进一个事务（service 起事务，tx 透传给 model 与其它模块的 …Tx 方法），要么在 txBoundaryAllow 里写明「这几处写天然独立」的理由。判据见 AGENTS.md「写操作的事务与回滚」", f.key, f.detail)
 	}

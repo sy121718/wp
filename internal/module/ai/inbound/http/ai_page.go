@@ -50,13 +50,14 @@ package aihttp
 // 不再把 ?done= / ?err= 写进 URL。
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
 	"net/http"
 	"net/url"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -660,7 +661,7 @@ func (h *McpPageHandle) scopeOptions() []scopeOption {
 		}
 		out = append(out, scopeOption{Code: string(p), Label: label})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Code < out[j].Code })
+	slices.SortFunc(out, func(a, b scopeOption) int { return cmp.Compare(a.Code, b.Code) })
 	return out
 }
 

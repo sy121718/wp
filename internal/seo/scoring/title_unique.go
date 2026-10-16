@@ -14,7 +14,8 @@ package scoring
 // 这个坑（见该审计条目的 resolutionNote 第 ⑦ 条），这里不再踩第二次。
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 )
 
@@ -58,7 +59,7 @@ func DuplicateTitles(target string, entries []TitleEntry, selfID string) []Title
 		seen[page] = true
 		out = append(out, TitleEntry{Title: target, Page: page, ID: e.ID})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Page < out[j].Page })
+	slices.SortFunc(out, func(a, b TitleEntry) int { return cmp.Compare(a.Page, b.Page) })
 	return out
 }
 

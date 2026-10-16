@@ -13,9 +13,10 @@ package core
 // 白名单仍由各领域模块自己维护：注册表只做分发与聚合，不定义字段。
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -184,7 +185,7 @@ func (r *collectionRegistry) CollectionSchemas(ctx context.Context) ([]Collectio
 		}
 		out = append(out, schemas...)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Source < out[j].Source })
+	slices.SortStableFunc(out, func(a, b CollectionSchema) int { return cmp.Compare(a.Source, b.Source) })
 	return out, nil
 }
 

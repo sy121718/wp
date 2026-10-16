@@ -12,6 +12,7 @@ package aiservice_test
 // PG 不可用时用例整体 t.Skip（support 的一致口径）。
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,7 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -163,7 +164,7 @@ func TestSessionChatToolRoundTrip(t *testing.T) {
 	// ③ 事件成对落库：user → tool(call) → tool(result) → assistant。
 	// ListEvents 按 seq **倒序**回（列表页要从新到旧），这里排序后再断言时序关系。
 	events := listSessionEvents(t, sess, res.Session.ID)
-	sort.Slice(events, func(i, j int) bool { return events[i].Seq < events[j].Seq })
+	slices.SortFunc(events, func(a, b aidto.SessionEventItem) int { return cmp.Compare(a.Seq, b.Seq) })
 	got := make([]string, 0, len(events))
 	for _, e := range events {
 		got = append(got, e.Kind)
@@ -312,7 +313,7 @@ func TestSessionChatToolFailureKeepsConversation(t *testing.T) {
 	}
 
 	events := listSessionEvents(t, sess, res.Session.ID)
-	sort.Slice(events, func(i, j int) bool { return events[i].Seq < events[j].Seq })
+	slices.SortFunc(events, func(a, b aidto.SessionEventItem) int { return cmp.Compare(a.Seq, b.Seq) })
 	if events[2].Content != "工具执行失败" {
 		t.Fatalf("结果事件正文 = %q", events[2].Content)
 	}

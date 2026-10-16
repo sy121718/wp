@@ -1,9 +1,10 @@
 package adminservice
 
 import (
+	"cmp"
 	"context"
 	"errors"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -131,11 +132,8 @@ type menuPageNode struct {
 func buildMenuPageForest(rows []adminmodel.MenuPageRow, matched map[uint64]bool) []*menuPageNode {
 	sorted := make([]adminmodel.MenuPageRow, len(rows))
 	copy(sorted, rows)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		if sorted[i].SortOrder != sorted[j].SortOrder {
-			return sorted[i].SortOrder < sorted[j].SortOrder
-		}
-		return sorted[i].ID < sorted[j].ID
+	slices.SortStableFunc(sorted, func(a, b adminmodel.MenuPageRow) int {
+		return cmp.Or(cmp.Compare(a.SortOrder, b.SortOrder), cmp.Compare(a.ID, b.ID))
 	})
 	nodes := make(map[uint64]*menuPageNode, len(sorted))
 	for _, r := range sorted {
@@ -638,7 +636,7 @@ func (s *Service) GetPermissionCodesByIDs(ctx context.Context, menuIDs []uint64)
 	for id := range byMenu {
 		ids = append(ids, id)
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	slices.Sort(ids)
 
 	seen := make(map[string]struct{})
 	var codes []string
@@ -714,7 +712,7 @@ func withAncestorMenuIDs(all []adminmodel.MenuEntity, ids []uint64) []uint64 {
 			cursor = m.ParentID
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	slices.Sort(out)
 	return out
 }
 

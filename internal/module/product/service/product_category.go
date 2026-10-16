@@ -17,9 +17,10 @@ package productservice
 // 边界：品牌不生成 URL、不写产物；静态化在发布管线里。
 
 import (
+	"cmp"
 	"context"
 	"errors"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -517,15 +518,12 @@ func containsID(ids []string, id string) bool {
 // 排序在这里做而不是在 SQL 里：递归 CTE 的输出顺序在 UNION ALL 之后没有语义，
 // 同一层的兄弟必须按 sort / create_time / id 定序才对得上用户在表单里看到的顺序。
 func buildCategoryPageTree(rows []*productmodel.CategoryPageRow) []*productdto.CategoryResp {
-	sort.SliceStable(rows, func(i, j int) bool {
-		a, b := rows[i], rows[j]
-		if a.Sort != b.Sort {
-			return a.Sort < b.Sort
-		}
-		if !a.CreatedAt.Equal(b.CreatedAt) {
-			return a.CreatedAt.Before(b.CreatedAt)
-		}
-		return a.ID < b.ID
+	slices.SortStableFunc(rows, func(a, b *productmodel.CategoryPageRow) int {
+		return cmp.Or(
+			cmp.Compare(a.Sort, b.Sort),
+			a.CreatedAt.Compare(b.CreatedAt),
+			cmp.Compare(a.ID, b.ID),
+		)
 	})
 	byID := make(map[string]*productdto.CategoryResp, len(rows))
 	for _, row := range rows {

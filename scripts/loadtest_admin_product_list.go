@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -435,9 +437,7 @@ func calcPercentiles(latencies []time.Duration) (p50, p90, p95, p99 time.Duratio
 		return 0, 0, 0, 0
 	}
 
-	sort.Slice(latencies, func(i, j int) bool {
-		return latencies[i] < latencies[j]
-	})
+	slices.SortFunc(latencies, func(a, b time.Duration) int { return cmp.Compare(a, b) })
 
 	p50 = percentile(latencies, 0.50)
 	p90 = percentile(latencies, 0.90)
