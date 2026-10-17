@@ -14,6 +14,7 @@
 package feature
 
 import (
+	"bytes"
 	"context"
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -537,7 +538,8 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	engine.POST("/admin/products/variant/preview", handle.ProductsVariantPreview)
-	engine.POST("/admin/products/variant/save", handle.ProductsVariantSave)
+	// 保存是 JSON 端点（页面声明 data-write-api + 基座发起 fetch）：表单 POST 已不存在。
+	engine.POST("/api/product/variant/save", producthttp.NewHandle(f.products).SaveVariantList)
 
 	rec := postForm(engine, "/admin/products/variant/preview", url.Values{
 		"projectId": {f.projectID}, "productId": {p.ID}, "warehouseId": {f.warehouse.ID},
@@ -571,25 +573,47 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 		t.Fatalf("预览不该写库：期望 1 个变体，实际 %d", len(got))
 	}
 
-	rowsJSON, merr := json.Marshal([]map[string]any{
-		{"variantId": "", "skuCode": preview.Rows[0].SKUCode, "optionValues": json.RawMessage(preview.Rows[0].OptionValues)},
-		{"variantId": "", "skuCode": preview.Rows[1].SKUCode, "optionValues": json.RawMessage(preview.Rows[1].OptionValues)},
+	rec = postJSON(t, engine, "/api/product/variant/save", map[string]any{
+		"projectId": f.projectID, "productId": p.ID, "warehouseId": f.warehouse.ID,
+		"rows": []map[string]any{
+			{"variantId": "", "skuCode": preview.Rows[0].SKUCode, "optionValues": json.RawMessage(preview.Rows[0].OptionValues)},
+			{"variantId": "", "skuCode": preview.Rows[1].SKUCode, "optionValues": json.RawMessage(preview.Rows[1].OptionValues)},
+		},
 	})
-	if merr != nil {
-		t.Fatalf("组装清单失败: %v", merr)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("保存应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	rec = postForm(engine, "/admin/products/variant/save", url.Values{
-		"projectId": {f.projectID}, "productId": {p.ID}, "warehouseId": {f.warehouse.ID},
-		"rows": {string(rowsJSON)},
-	})
-	body := rec.Body.String()
-	assertJumpOK(t, rec)
-	if !strings.Contains(body, "新增 2 个") {
-		t.Fatalf("回执文案应含新增计数，body=%s", body)
+	var saved struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			Created int `json:"created"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &saved); err != nil {
+		t.Fatalf("保存响应不是合法 JSON: %v（%s）", err, rec.Body.String())
+	}
+	// 成功回执是一句复合句（计数 + 跳过原因），页面用 data-write-flash 把它带过整页刷新。
+	if saved.Code != 0 || !strings.Contains(saved.Message, "新增 2 个") || saved.Data.Created != 2 {
+		t.Fatalf("回执应含新增计数与计数本身，实际 code=%d message=%q created=%d", saved.Code, saved.Message, saved.Data.Created)
 	}
 	if got := f.variantsOf(t, p.ID); len(got) != 2 {
 		t.Fatalf("保存后应有 2 个变体，实际 %d", len(got))
 	}
+}
+
+// postJSON 以 JSON 体打一个接口端点：基座接管的写路径都是 JSON，不再是表单。
+func postJSON(t *testing.T, engine *gin.Engine, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("序列化请求体失败: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec
 }
 
 // 保证 httptest 被使用（其余用例走 service 直调）。

@@ -328,13 +328,17 @@
             {{end}}
         </div>
         <p class="text-mute text-sm">{{ .["t"]("admin.products.variants.listHint", "清单里的「生成 / 移除」都不写库：生成只是把组合显示在这里，「保存变体清单」才落库。") }}</p>
-        <form method="post" action="/admin/products/variant/save" data-variant-form
-              data-msg-failed="{{ .["t"]("admin.products.variant.saveFailed", "清单序列化失败，请刷新页面后重试。") }}">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* 保存走 JSON 写基座：清单行不是具名控件，rows 由 ui/product_variant_write.js 注册的
+           builder 从清单 DOM 组装；成功后的结论经 data-write-flash 带过随后的整页刷新
+           （清单刷新后才是库里的样子，被跳过的那几行也才会重新出现）。 *}
+        <p class="form-hint badge" data-write-flash-target="product-variant-save" role="status" hidden></p>
+        <form data-write-api="/api/product/variant/save" data-write-mode="form"
+              data-write-builder="product-variant-rows" data-write-flash="product-variant-save"
+              data-variant-form
+              data-msg-failed="{{ .["t"]("admin.products.variant.saveFailed", "清单保存失败，请刷新页面后重试。") }}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{p.ID}}">
-            {* rows 由提交时的 JS 用清单 DOM 组装（JSON 数组）：行上的 variantId / skuCode / optionValues *}
-            <input type="hidden" name="rows" data-variant-rows>
             <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.variants.aria", "商品变体") }}">
                 <table class="data-table data-table-wide">
                     <thead><tr><th>SKU</th><th>{{ .["t"]("admin.products.col.spec", "规格") }}</th><th>{{ .["t"]("admin.products.col.price", "价格") }}</th><th>{{ .["t"]("admin.products.col.comparePrice", "对比价") }}</th><th>{{ .["t"]("admin.products.col.costPrice", "成本价") }}</th><th>{{ .["t"]("admin.products.col.enabled", "启用") }}</th><th>{{ .["t"]("admin.products.col.stock", "库存") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th></tr></thead>
@@ -370,7 +374,7 @@
                     {{end}}
                 </select>
                 {{end}}
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.products.variant.saveList", "保存变体清单") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.products.variant.saveList", "保存变体清单") }}</button>
             </div>
         </form>
         {* 清单行的结构只写一份：JS 追加新行时克隆它（列数、按钮、data 属性与既有行逐字一致）。 *}
@@ -517,8 +521,9 @@
 
     {* ==== 抽屉 ==== *}
     <template id="tpl-variant-create-{{p.ID}}">
-        <form method="post" action="/admin/products/variant/create" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form class="form-stack" data-write-api="/api/product/variant/create" data-write-mode="form"
+              data-write-float="price" data-write-skip-empty="skuCode,price">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{p.ID}}">
             <input type="text" class="form-input" name="skuCode" placeholder="{{ .["t"]("admin.products.variant.phSku", "SKU 编码（留空自动生成）") }}">
@@ -534,7 +539,7 @@
             {{end}}
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.products.variant.add", "新增变体") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.products.variant.add", "新增变体") }}</button>
             </div>
         </form>
     </template>
@@ -595,148 +600,6 @@
         </form>
     </template>
 
-{* 变体清单的交互（docs/14 §8 预览—保存模型）。
-   三条规则决定这段脚本的形态：
-   1. 事件用 document 级委托 —— 抽屉内容是从 <template> 克隆进 DOM 的，逐个绑监听会在
-      抽屉关闭（body.innerHTML = ''）时失效；委托对克隆前后的元素一视同仁。
-   2. 「生成」是一次**不落库**的取数：POST 到 /admin/products/variant/preview，
-      把返回的行按清单行的同一种结构（<template data-variant-row-tpl>）追加进 DOM。
-   3. 「保存」才组装 rows（JSON）交给服务端；「移除」只是 tr.remove()。
-   文案一律从 data-msg-* 取（服务端按当前语言渲染），脚本里不写死文案。 *}
-<script>
-(function () {
-    'use strict';
-
-    function variantListBody() {
-        return document.querySelector('[data-variant-list]');
-    }
-
-    // 清单里每行的 option_values（规范化 JSON 文本）：原样回传给预览接口做去重判据。
-    function variantListOptionValues() {
-        var out = [];
-        document.querySelectorAll('[data-variant-row]').forEach(function (tr) {
-            var raw = tr.getAttribute('data-option-values');
-            if (raw) { out.push(raw); }
-        });
-        return out;
-    }
-
-    function appendVariantRows(rows) {
-        var body = variantListBody();
-        var tpl = document.querySelector('[data-variant-row-tpl]');
-        if (!body || !tpl) { return; }
-        rows.forEach(function (row) {
-            var frag = tpl.content.cloneNode(true);
-            var tr = frag.querySelector('tr');
-            if (!tr) { return; }
-            tr.setAttribute('data-option-values', JSON.stringify(row.optionValues || {}));
-            var spec = tr.querySelector('[data-cell-spec]');
-            if (spec) { spec.textContent = row.spec || ''; }
-            var sku = tr.querySelector('[data-variant-sku]');
-            if (sku) { sku.value = row.skuCode || ''; }
-            body.appendChild(frag);
-        });
-        hideVariantEmptyRow();
-    }
-
-    // 空态行：有行时隐藏。hidden 之外再给一次行内 display —— 页面样式里若给行设过
-    // display，UA 的 [hidden] 规则会被盖掉（.btn 与 [hidden] 的同一个坑）。
-    function hideVariantEmptyRow() {
-        var body = variantListBody();
-        if (!body) { return; }
-        var empty = body.querySelector('[data-variant-empty]');
-        if (!empty) { return; }
-        var hasRow = !!body.querySelector('[data-variant-row]');
-        if (hasRow) {
-            empty.hidden = true;
-            empty.style.display = 'none';
-        } else {
-            empty.hidden = false;
-            empty.style.display = '';
-        }
-    }
-
-    function setGenerateStatus(text) {
-        document.querySelectorAll('[data-generate-status]').forEach(function (el) {
-            el.textContent = text || '';
-        });
-    }
-
-    document.addEventListener('click', function (e) {
-        var remove = e.target.closest('[data-variant-remove]');
-        if (remove) {
-            var tr = remove.closest('[data-variant-row]');
-            if (tr) { tr.remove(); }
-            hideVariantEmptyRow();
-            return;
-        }
-        var trigger = e.target.closest('[data-generate-selected], [data-generate-all]');
-        if (!trigger) { return; }
-        var box = trigger.closest('[data-variant-generate]');
-        if (!box) { return; }
-        var fd = new FormData();
-        fd.append('projectId', box.getAttribute('data-project') || '');
-        fd.append('productId', box.getAttribute('data-product') || '');
-        var warehouse = box.querySelector('[data-generate-warehouse]');
-        fd.append('warehouseId', warehouse ? warehouse.value : '');
-        if (!trigger.hasAttribute('data-generate-all')) {
-            box.querySelectorAll('input[type=checkbox][name^="attr:"]:checked').forEach(function (cb) {
-                fd.append(cb.name, cb.value);
-            });
-        }
-        variantListOptionValues().forEach(function (raw) { fd.append('optionValues', raw); });
-        setGenerateStatus('');
-        fetch(box.getAttribute('data-preview-url') || '', {
-            method: 'POST',
-            headers: { 'X-CSRF-Token': box.getAttribute('data-csrf') || '' },
-            body: fd
-        }).then(function (res) {
-            return res.json().catch(function () { return null; });
-        }).then(function (data) {
-            if (!data || !data.ok) {
-                var reason = data && data.message ? data.message : '';
-                setGenerateStatus((box.getAttribute('data-msg-failed') || '') + reason);
-                return;
-            }
-            var rows = data.rows || [];
-            appendVariantRows(rows);
-            if (rows.length) {
-                setGenerateStatus((box.getAttribute('data-msg-added') || '').replace('%d', String(rows.length)));
-            } else {
-                setGenerateStatus(box.getAttribute('data-msg-none') || '');
-            }
-        }).catch(function () {
-            setGenerateStatus(box.getAttribute('data-msg-failed') || '');
-        });
-    });
-
-    // 保存：把清单 DOM 组装成 rows（JSON）交给服务端 —— 前端提交的形状一律不被服务端信任，
-    // 这里只做「把界面上的东西如实报上去」，组合合法性与唯一性由服务端重算。
-    document.addEventListener('submit', function (e) {
-        var form = e.target.closest('[data-variant-form]');
-        if (!form) { return; }
-        var holder = form.querySelector('[data-variant-rows]');
-        if (!holder) { return; }
-        var rows = [];
-        document.querySelectorAll('[data-variant-row]').forEach(function (tr) {
-            var sku = tr.querySelector('[data-variant-sku]');
-            var opts = {};
-            try { opts = JSON.parse(tr.getAttribute('data-option-values') || '{}'); } catch (err) { opts = {}; }
-            rows.push({
-                variantId: tr.getAttribute('data-variant-id') || '',
-                skuCode: sku ? sku.value : '',
-                optionValues: opts
-            });
-        });
-        try {
-            holder.value = JSON.stringify(rows);
-        } catch (err) {
-            e.preventDefault();
-            window.alert(form.getAttribute('data-msg-failed') || '');
-        }
-    });
-})();
-</script>
 
     {{end}}
     {{end}}

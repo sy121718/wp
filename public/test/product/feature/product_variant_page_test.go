@@ -3,10 +3,10 @@
 // 覆盖验收 1 与 2 的**后台页面部分**：
 //
 //	· GET /admin/products 渲染出组合生成面板（参与变体的属性组 + 其启用值）；
-//	· POST /admin/products/variant/generate（mode=selected）按勾选生成组合，
-//	  页面随之能看到每个变体的规格文本；
-//	· mode 缺省且一个值都没勾选时**拒绝并提示**，不静默退化成「全部生成」；
-//	· mode=all 走无表单路径（全部参与变体的组 × 全部启用值）。
+//	· 生成规则（勾选值 → 组合、空选择 → 全部维度）由 service 承担 —— 页面上的「生成」
+//	  只把组合追加进清单、**不写库**，真正落库的是清单保存（/api/product/variant/save），
+//	  两条路径共用 service 的同一套规则，所以这里直调 service 覆盖规则本身；
+//	· 变体区的写入口都在 JSON 写基座上（不再有 /admin/products/variant/* 页面端点）。
 //
 // 用真实 Jet 模板渲染（与生产同一 template root），断言页面里到底有什么。
 package feature
@@ -22,7 +22,6 @@ import (
 
 	"go_wp/internal/middleware/adminctx"
 	productdto "go_wp/internal/module/product/dto"
-	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
 )
@@ -66,7 +65,6 @@ func newVariantPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
 	// 商品自身字段（名称 / URL 段 / SKU / 状态 / 价格 / SEO / 图集）与多语言入口在编辑页。
 	engine.GET("/admin/products/edit", handle.ProductEditPage)
-	engine.POST("/admin/products/variant/generate", handle.ProductsVariantGenerate)
 	return engine, f
 }
 
@@ -147,9 +145,9 @@ func TestProductsPageRendersVariantGeneratePanel(t *testing.T) {
 	}
 }
 
-// TestProductsVariantGeneratePageFlow 页面写链路：
-// 勾选后生成全部组合 → 页面显示每个变体的规格；没勾选 → 明确拒绝且不写变体。
-func TestProductsVariantGeneratePageFlow(t *testing.T) {
+// TestVariantGenerateSelectionsCreateCombinations 勾选值 → 组合（service 规则），
+// 生成的变体在页面上以规格文本呈现。
+func TestVariantGenerateSelectionsCreateCombinations(t *testing.T) {
 	engine, f := newVariantPageEngine(t)
 	if engine == nil {
 		return
@@ -157,33 +155,14 @@ func TestProductsVariantGeneratePageFlow(t *testing.T) {
 	attr := mkVariationAttr(t, f, "颜色", "color", []string{"red", "blue"})
 	product := mkVariationProduct(t, f, "流程商品", "flow-product", []string{attr.ID}, nil)
 
-	// 默认 mode（=selected）但一个值都没勾选：拒绝，且不静默退化为全部生成。
-	rec := postForm(engine, "/admin/products/variant/generate", url.Values{
-		"projectId": {f.projectID}, "productId": {product.ID},
-	})
-	body := assertJumpErr(t, rec)
-	// 被拒也留在编辑页（用户就在这一页操作），错误走提示页正文。
-	assertEditRedirect(t, jumpBackHref(t, rec), f.projectID, product.ID)
-	// 提示必须**可读**：这里原先断言 Location 里带 enums 裸 key（ErrVariationSelectionEmpty），
-	// 而那正是「把 enums 常量铺到页面上」的形态（第三波 CQ-009 形态②）。
-	// 现在 handler 统一经 productErrText 取词，断言的是中文文案 + 不再出现裸 key。
-	if !strings.Contains(body, "未勾选任何属性值") {
-		t.Fatalf("未勾选应提示「未勾选任何属性值」，body=%s", body)
+	if _, err := f.svc.GenerateVariants(t.Context(), &productdto.GenerateVariantsReq{
+		ProjectID: f.projectID, ProductID: product.ID,
+		Selections: []productdto.VariantSelectionReq{{
+			AttributeID: attr.ID, ValueIDs: []string{attr.Values[0].ID, attr.Values[1].ID},
+		}},
+	}); err != nil {
+		t.Fatalf("按勾选生成变体失败: %v", err)
 	}
-	if strings.Contains(body, productenums.ErrVariationSelectionEmpty) {
-		t.Fatalf("提示页不应出现 enums 裸 key，body=%s", body)
-	}
-	if got, _ := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID}); got.VariantCount != 1 {
-		t.Fatalf("拒绝时不应写入变体，实际 %d 个", got.VariantCount)
-	}
-
-	// 勾选两个值 → 生成两个组合。
-	rec = postForm(engine, "/admin/products/variant/generate", url.Values{
-		"projectId": {f.projectID}, "productId": {product.ID}, "mode": {"selected"},
-		"attr:" + attr.ID: {attr.Values[0].ID, attr.Values[1].ID},
-	})
-	assertJumpOK(t, rec)
-	assertEditRedirect(t, jumpBackHref(t, rec), f.projectID, product.ID)
 	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
@@ -199,25 +178,64 @@ func TestProductsVariantGeneratePageFlow(t *testing.T) {
 	}
 }
 
-// TestProductsVariantGenerateAllMode mode=all 走无表单路径：不勾选也生成全部组合。
-func TestProductsVariantGenerateAllMode(t *testing.T) {
-	engine, f := newVariantPageEngine(t)
-	if engine == nil {
+// TestVariantGenerateEmptySelectionsExpandsAll 空选择 = 无表单路径：按全部启用值展开
+// （页面上的「生成全部组合」与被删掉的 mode=all 走的是同一条服务端语义）。
+func TestVariantGenerateEmptySelectionsExpandsAll(t *testing.T) {
+	_, f := newVariantPageEngine(t)
+	if f == nil {
 		return
 	}
 	attr := mkVariationAttr(t, f, "尺寸", "size", []string{"s", "m"})
 	product := mkVariationProduct(t, f, "全部生成商品", "all-mode", []string{attr.ID}, nil)
 
-	rec := postForm(engine, "/admin/products/variant/generate", url.Values{
-		"projectId": {f.projectID}, "productId": {product.ID}, "mode": {"all"},
-	})
-	assertJumpOK(t, rec)
-	assertEditRedirect(t, jumpBackHref(t, rec), f.projectID, product.ID)
+	if _, err := f.svc.GenerateVariants(t.Context(), &productdto.GenerateVariantsReq{
+		ProjectID: f.projectID, ProductID: product.ID,
+	}); err != nil {
+		t.Fatalf("空选择生成失败: %v", err)
+	}
 	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: product.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}
 	if got.VariantCount != 2 {
-		t.Fatalf("mode=all 应生成 2 个组合，实际 %d", got.VariantCount)
+		t.Fatalf("全部启用值应生成 2 个组合，实际 %d", got.VariantCount)
+	}
+}
+
+// TestProductEditVariantsUseJSONWriteBase 变体区的三个写入口都在 JSON 写基座上：
+// 清单保存（含 rows 的 builder 与跨刷新结论）、新建变体抽屉、组合预览。
+//
+// 负向断言同样重要：旧的页面端点（表单 action / hx-post）一个都不该再出现在标记里 ——
+// 它们背后的 handler 已删除，残留只会变成「点了没反应」。
+func TestProductEditVariantsUseJSONWriteBase(t *testing.T) {
+	engine, f := newVariantPageEngine(t)
+	if engine == nil {
+		return
+	}
+	attr := mkVariationAttr(t, f, "颜色", "color", []string{"red"})
+	product := mkVariationProduct(t, f, "基座商品", "base-product", []string{attr.ID}, nil)
+
+	body := getProductEditPage(engine, f.projectID, product.ID)
+	for _, want := range []string{
+		`data-write-api="/api/product/variant/save"`,
+		`data-write-builder="product-variant-rows"`,
+		`data-write-flash="product-variant-save"`,
+		`data-write-flash-target="product-variant-save"`,
+		`data-write-api="/api/product/variant/create"`,
+		`data-preview-url="/admin/products/variant/preview"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("变体区缺少基座声明 %q", want)
+		}
+	}
+	for _, bad := range []string{
+		`action="/admin/products/variant/save"`,
+		`action="/admin/products/variant/create"`,
+		`action="/admin/products/variant/generate"`,
+		`name="rows"`,
+	} {
+		if strings.Contains(body, bad) {
+			t.Fatalf("变体区不应再出现旧提交形态 %q", bad)
+		}
 	}
 }

@@ -359,6 +359,19 @@ function setup(config) {
         return btn;
     });
     body.appendChild(form);
+    // flashTargets：结论落点（data-write-flash-target）。必须在 vm 执行前挂进 body ——
+    // readyState 已是 complete，renderFlash 在模块加载那一刻就会跑一次。
+    const flashTargets = (cfg.flashTargets || []).map((name) => {
+        const box = makeEl('p', { 'data-write-flash-target': name });
+        box.hidden = true;
+        body.appendChild(box);
+        return box;
+    });
+
+    // flashStore：跨刷新结论的落点。seed 用短名给（'product-variant-save'），前缀由基座拼 ——
+    // 这里补前缀只是为了让用例与基座用的是同一条 key，不是在用例里复述实现。
+    const flashStore = {};
+    Object.keys(cfg.flashSeed || {}).forEach((name) => { flashStore['json_write_flash:' + name] = cfg.flashSeed[name]; });
 
     const requests = [];
     const calls = { assign: [], reload: 0 };
@@ -388,11 +401,19 @@ function setup(config) {
                 text: () => Promise.resolve(cfg.responseText === undefined ? JSON.stringify(body) : cfg.responseText),
             });
         },
-        sessionStorage: { getItem: () => null },
+        // sessionStorage 必须真读写：「写进去 → 刷新 → 读出来 → 删掉」是 flash 的全部契约，
+        // 只桩一个 getItem: () => null 等于让这条链路永远测不到（也永远绿）。
+        sessionStorage: {
+            getItem(key) { return Object.prototype.hasOwnProperty.call(flashStore, key) ? flashStore[key] : null; },
+            setItem(key, value) { flashStore[key] = String(value); },
+            removeItem(key) { delete flashStore[key]; },
+        },
     };
     sandbox.window = sandbox;
     sandbox.location = {
-        reload() { calls.reload += 1; },
+        // reload 那一刻的 store 快照：结论若在刷新**之后**才写，页面已经走了、等于什么都没留下；
+        // 只断言「store 最终有值」看不出这个顺序。
+        reload() { calls.reload += 1; calls.reloadStore = Object.assign({}, flashStore); },
         assign(url) { calls.assign.push(url); },
     };
     vm.runInNewContext(utilSource, sandbox);
@@ -409,6 +430,7 @@ function setup(config) {
     const WBUI = sandbox.WBUI;
     return {
         WBUI, form, status, submit, buttons, rows, requests, calls, sandbox,
+        flashTarget(name) { return flashTargets.find((box) => box.getAttribute('data-write-flash-target') === name) || null; },
         get dialog() { return dialog; },
         resolveFetch(body) {
             if (!deferred.length) { throw new Error('没有在飞的请求'); }
@@ -1939,6 +1961,41 @@ test('同一字段被两档声明点名：当场报错且不发请求（不再�
     ok.fire(); await tick();
     assert.equal(ok.requests.length, 1);
     assert.equal('defaultPrice' in ok.requests[0].body, false);
+});
+
+test('data-write-flash：成功后结论先进 sessionStorage，再整页刷新', async () => {
+    const env = setup({
+        attrs: {
+            'data-write-api': '/api/product/variant/save',
+            'data-write-mode': 'form',
+            'data-write-flash': 'product-variant-save',
+        },
+        createFields: [{ name: 'productId', value: 'p-1' }],
+        respond: { code: 0, message: '已保存 2 条（新增 2 个，更新 0 个，删除 0 个）' },
+    });
+    env.fire(); await tick();
+    assert.equal(env.requests.length, 1);
+    // 刷新照旧（变体清单以库为准），但刷新那一刻结论必须已经在 store 里。
+    assert.equal(env.calls.reload, 1);
+    assert.equal(env.calls.reloadStore['json_write_flash:product-variant-save'],
+        '已保存 2 条（新增 2 个，更新 0 个，删除 0 个）');
+});
+
+test('data-write-flash-target：落地时补写上次留下的结论，读完即删', () => {
+    const env = setup({
+        attrs: {},
+        createFields: [{ name: 'productId', value: 'p-1' }],
+        flashTargets: ['product-variant-save', 'product-variant-clean'],
+        flashSeed: { 'product-variant-save': '已保存 2 条，跳过 1 条：仍有库存' },
+    });
+    const box = env.flashTarget('product-variant-save');
+    assert.ok(box);
+    assert.equal(box.hidden, false);
+    assert.equal(box.textContent, '已保存 2 条，跳过 1 条：仍有库存');
+    // 没有结论的落点保持隐藏：空槽不能白占一行高度。
+    assert.equal(env.flashTarget('product-variant-clean').hidden, true);
+    // 读完即删：下一次落地（哪怕还是这个页面）不该再重现上一批的结论。
+    assert.equal(env.sandbox.sessionStorage.getItem('json_write_flash:product-variant-save'), null);
 });
 
 test('data-write-float 认不出的取值原样发字符串（交给严格 API 报错，而不是变成 0 或 NaN）', async () => {

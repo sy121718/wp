@@ -86,6 +86,9 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/variant/generate", permission.ProductVariantGenerate, handle.GenerateVariants)
 	g.POST("/variant/update", permission.ProductVariantUpdate, handle.UpdateVariant)
 	g.POST("/variant/delete", permission.ProductVariantDelete, handle.DeleteVariant)
+	// 清单保存（整张清单一次提交，前端从清单 DOM 组装 rows）：权限点复用组合生成 ——
+	// 页面侧原先的 /admin/products/variant/save 挂的就是它，保存与生成本就是同一批人。
+	g.POST("/variant/save", permission.ProductVariantGenerate, handle.SaveVariantList)
 
 	// —— 属性组与属性值（issue #7）——
 	// 属性组可跨商品复用，故独立于商品资源。
@@ -211,18 +214,11 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 页面 GET 走页面组（Session + CSRF，无 Casbin）；写动作复用商品更新权限点
 	//（与 /products/attributes、/products/taxonomy 同一改动面：改的都是这个商品本身）。
 	pages.GET("/products/edit", adminui.PageAuthzAs("/api/product/update", http.MethodPost), productPages.ProductEditPage)
-	pages.POST("/products/variant/create", builtin.CasbinMiddlewareForPath("/api/product/variant/create"), productPages.ProductsVariantCreate)
-	pages.POST("/products/variant/delete", builtin.CasbinMiddlewareForPath("/api/product/variant/delete"), productPages.ProductsVariantDelete)
-	// 变体组合生成（issue #8）：勾选属性值 → 笛卡尔积；不勾选则按全部启用值生成。
-	// **落库口径一字未改**（接口 / 导入 / 批量生成仍走它），抽屉的「生成」自本批起走下面的预览。
-	pages.POST("/products/variant/generate", builtin.CasbinMiddlewareForPath("/api/product/variant/generate"), productPages.ProductsVariantGenerate)
-	// 变体清单的「预览—保存」模型（docs/14 §8）：
-	//   · preview —— 只算不写（纯计算，**不挂 Casbin**，与 /product-attributes/value-rows 同一先例：
-	//     页面组已有 Session + CSRF，而这个端点落不了任何库）；
-	//   · save —— 以清单为准落库（新增 / 改 SKU / 删清单外），复用组合生成的权限点：
-	//     改动的都是「这个商品的规格组合」这一件事，不新增权限点。
+	// 变体清单的组合预览（docs/14 §8 的「预览—保存」模型）：**只算不写** —— 纯计算，
+	// 因此不挂 Casbin（与 /product-attributes/value-rows 同一先例：页面组已有 Session + CSRF，
+	// 而这个端点落不了任何库）。返回的行由前端追加进清单，用户点保存才落库。
+	// 变体的四个写动作（新建 / 生成 / 删除 / 清单保存）已全部在 /api/product/variant/* 。
 	pages.POST("/products/variant/preview", productPages.ProductsVariantPreview)
-	pages.POST("/products/variant/save", builtin.CasbinMiddlewareForPath("/api/product/variant/generate"), productPages.ProductsVariantSave)
 	pages.POST("/products/delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsDelete)
 	// 批量删除：与单条删除共用同一个权限点与同一条 service 路径，逐条处理、单条失败不整批回滚。
 	pages.POST("/products/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsBulkDelete)

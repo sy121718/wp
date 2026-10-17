@@ -138,23 +138,6 @@ func TestProductBackHelpersKeepFilters(t *testing.T) {
 	}
 }
 
-// TestProductWriteHandlersJumpOnValidationFail 校验型失败（不碰 service）也走整页提示。
-func TestProductWriteHandlersJumpOnValidationFail(t *testing.T) {
-	h := &productPageHandle{}
-
-	t.Run("生成变体未勾选", func(t *testing.T) {
-		c, rec := newProductJumpContext(t, "", "", "projectId=p1&productId=prod1")
-		h.ProductsVariantGenerate(c)
-		c.Writer.WriteHeaderNow()
-		if rec.Code != http.StatusOK {
-			t.Fatalf("状态码 = %d，want 200", rec.Code)
-		}
-		if !strings.Contains(rec.Body.String(), `data-jump-state="err"`) {
-			t.Fatalf("应渲染 err 态提示页，body=%s", rec.Body.String())
-		}
-	})
-}
-
 // TestProductJumpBackTextFollowsPage 回跳链接文字取各页标题词条（不新增全站词条）。
 //
 // 写侧只交事实：每条回跳文字必须带 i18n key，且渲染期取出的文字非空。

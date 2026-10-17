@@ -341,7 +341,7 @@ func TestProductEditPageAttributeListFailure(t *testing.T) {
 	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `role="alert"`) ||
 		!strings.Contains(page.Body.String(), "系统内部错误") ||
 		strings.Contains(page.Body.String(), `id="product-edit-main"`) ||
-		strings.Contains(page.Body.String(), `action="/admin/products/variant/save"`) ||
+		strings.Contains(page.Body.String(), `data-write-api="/api/product/variant/save"`) ||
 		strings.Contains(page.Body.String(), `action="/admin/products/rating/add"`) ||
 		strings.Contains(page.Body.String(), "injected attribute list failure") {
 		t.Fatalf("属性取数失败应展示归口错误且不渲染危险表单：状态=%d，页面尾部=%s", page.Code, tailOfPage(page.Body.String(), 900))

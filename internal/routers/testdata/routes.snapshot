@@ -409,11 +409,7 @@ POST /admin/products/template/preview
 POST /admin/products/template/publish
 POST /admin/products/template/url
 POST /admin/products/translations/save
-POST /admin/products/variant/create
-POST /admin/products/variant/delete
-POST /admin/products/variant/generate
 POST /admin/products/variant/preview
-POST /admin/products/variant/save
 POST /admin/projects/create
 POST /admin/roles/bulk-delete
 POST /admin/roles/create
@@ -601,6 +597,7 @@ POST /api/product/update
 POST /api/product/variant/create
 POST /api/product/variant/delete
 POST /api/product/variant/generate
+POST /api/product/variant/save
 POST /api/product/variant/update
 POST /api/project/create
 POST /api/project/update

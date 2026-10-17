@@ -195,7 +195,7 @@ func TestProductDetailBundlePanelAbsentForVariant(t *testing.T) {
 		}
 	}
 	edit := bundleEditPage(t, productRowForRender())
-	for _, want := range []string{"action=\"/admin/products/variant/create\"", "action=\"/admin/products/rating/add\"", "保存变体清单"} {
+	for _, want := range []string{"data-write-api=\"/api/product/variant/create\"", "action=\"/admin/products/rating/add\"", "保存变体清单"} {
 		if !strings.Contains(edit, want) {
 			t.Fatalf("编辑页缺少 %q", want)
 		}

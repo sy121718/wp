@@ -235,9 +235,10 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		// 详情入口也在：改完去看只读的构成（变体 / 评分 / 捆绑）。
 		"/admin/products/detail?project=pr1&amp;product=p1",
 		// 变体 / 评分的写协议与搬页前逐字相同（改版式不改协议）。
-		`action="/admin/products/variant/save"`,
+		`data-write-api="/api/product/variant/save"`,
+		`data-write-builder="product-variant-rows"`,
 		`data-preview-url="/admin/products/variant/preview"`,
-		`action="/admin/products/variant/create"`,
+		`data-write-api="/api/product/variant/create"`,
 		`action="/admin/products/rating/add"`,
 		`action="/admin/products/rating/delete"`,
 		// SEO 评分已移入抽屉：编辑页只留入口，评分按钮与结果容器在
@@ -290,8 +291,8 @@ func TestGroupDProductDetailPageRenders(t *testing.T) {
 		`action="/admin/products/taxonomy"`,
 		`action="/admin/products/tags"`,
 		`action="/admin/products/seo-score"`,
-		`action="/admin/products/variant/save"`,
-		`action="/admin/products/variant/create"`,
+		`data-write-api="/api/product/variant/save"`,
+		`data-write-api="/api/product/variant/create"`,
 		`action="/admin/products/rating/add"`,
 		`action="/admin/products/rating/delete"`,
 		`action="/admin/products/reapply-preset"`,

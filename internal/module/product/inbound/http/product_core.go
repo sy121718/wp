@@ -714,37 +714,6 @@ func variantSelectionFromForm(c *gin.Context) []productdto.VariantSelectionReq {
 	return out
 }
 
-// ProductsVariantGenerate 按勾选的属性值批量生成变体组合（issue #8）。
-//
-// mode=all：不勾选任何值，按商品全部参与变体的属性组 × 全部启用值生成
-// （service 的无表单路径，导入 / 接口走同一条）。
-// 其它情况按勾选生成；一个都没勾选时直接退回并提示 —— 不静默退化成「全部生成」，
-// 那是最容易一次误造出上百个变体的路径。
-func (h *productPageHandle) ProductsVariantGenerate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	productID := c.PostForm("productId")
-	req := &productdto.GenerateVariantsReq{
-		ProductID:   productID,
-		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
-	}
-	if strings.TrimSpace(c.PostForm("mode")) != "all" {
-		req.Selections = variantSelectionFromForm(c)
-		if len(req.Selections) == 0 {
-			// 裸 enums key 铺到页面上只会显示 ErrVariationSelectionEmpty —— 交事实（key + 中文兜底），
-			// 由提示页在渲染期取词。
-			productEditJump(c, false, projectID, productID,
-				productErrMsg(c, errors.New(productenums.ErrVariationSelectionEmpty)))
-			return
-		}
-	}
-	if _, err := h.products.GenerateVariants(c.Request.Context(), req); err != nil {
-		// 非业务错误的原文（PG / 构建器）只进日志，对外给归口文案。
-		productEditJump(c, false, projectID, productID, productErrMsg(c, err))
-		return
-	}
-	productEditJump(c, true, projectID, productID, productActionDoneMsg)
-}
-
 // variantPreviewRow 预览行的 JSON 形状：前端拿它渲染清单里的一行。
 //
 // Spec 是**服务端**拼的可读规格文本（与详情页表格同一份 specLabel），
@@ -808,42 +777,6 @@ func (h *productPageHandle) ProductsVariantPreview(c *gin.Context) {
 	})
 }
 
-// ProductsVariantSave 以清单为准保存变体（POST /admin/products/variant/save）——**唯一的落库动作**。
-//
-// 表单里的 rows 是一段 JSON（前端清单的全部行，顺序即期望顺序）：行上只有
-// variantId（既有变体；新增行为空）、可编辑的 skuCode 与 optionValues。
-// 服务端逐条重算（见 service.SaveVariantList），前端提交的形状一律不作数。
-//
-// 结果由提示页渲染（shell.RenderJump）回编辑页：成功含「新增 / 改 SKU / 删除」与逐条跳过原因，
-// 失败给白名单文案 —— 与编辑页其它写动作同一套出口，不新增渲染通道。
-func (h *productPageHandle) ProductsVariantSave(c *gin.Context) {
-	ctx := c.Request.Context()
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	productID := strings.TrimSpace(c.PostForm("productId"))
-	req := &productdto.SaveVariantListReq{
-		ProductID:   productID,
-		ProjectID:   projectID,
-		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
-		// 操作人取自会话，表单字段不作数（变体留痕的操作人不可伪造）。
-		OperatorID: builtin.CurrentUserIDText(c),
-	}
-	if raw := strings.TrimSpace(c.PostForm("rows")); raw != "" {
-		if uerr := json.Unmarshal([]byte(raw), &req.Rows); uerr != nil {
-			// 前端拼错了 JSON：这属于调用方参数错误，给可读提示而不是 PG / JSON 原始报错。
-			productEditJump(c, false, projectID, productID, productErrMsg(c, errors.New(productenums.ErrInvalidParam)))
-			return
-		}
-	}
-	// 这里不再预取商品详情（只为拼「哪个 SKU 被跳过」）：回带文案只报原因枚举，
-	// 逐行 SKU 由详情页本身呈现（见 variantSaveNotice 的说明），因此少一次 DB 往返。
-	res, err := h.products.SaveVariantList(ctx, req)
-	if err != nil {
-		productEditJump(c, false, projectID, productID, productErrMsg(c, err))
-		return
-	}
-	productEditJump(c, true, projectID, productID, variantSaveMsg(c, res))
-}
-
 // variantSkipFallbacks 清单外删除被跳过时的中文兜底（key 见 productenums.VariantSkip*）。
 var variantSkipFallbacks = map[string]string{
 	productenums.VariantSkipHasStock:       "仍有库存，未删除（请先处理库存或改为停用）",
@@ -889,37 +822,29 @@ func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) product
 	return productMsg{Fallback: strings.Join(parts, " ")}
 }
 
-// ProductsVariantCreate 为商品新增变体（未填字段继承商品级默认值）。
-func (h *productPageHandle) ProductsVariantCreate(c *gin.Context) {
-	req := &productdto.CreateVariantReq{
-		ProductID: c.PostForm("productId"),
-		SKUCode:   strings.TrimSpace(c.PostForm("skuCode")),
-		// 归属仓（issue #15）：空值即兜底默认仓；无论选没选都会在归属仓生成库存记录。
-		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
-	}
-	// 变体价：空串 = 不填（service 继承商品级默认价）；非法数字按未填处理（与商品新建同一分档）。
-	if v, perr := productdto.OptFloat("price", c.PostForm("price")); perr == nil && v != nil {
-		req.Price = v
-	}
-	projectID := c.PostForm("projectId")
-	if _, err := h.products.CreateVariant(c.Request.Context(), req); err != nil {
-		productEditJump(c, false, projectID, req.ProductID, productErrMsg(c, err))
-		return
-	}
-	productEditJump(c, true, projectID, req.ProductID, productActionDoneMsg)
-}
-
-// ProductsVariantDelete 删除变体。
+// SaveVariantList 以清单为准保存变体（POST /api/product/variant/save）——变体**唯一的落库动作**。
 //
-// 表单里的 id 是**变体 id**，回详情的商品 id 只能取 productId 隐藏域（不给 id 回落的机会）。
-func (h *productPageHandle) ProductsVariantDelete(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	productID := c.PostForm("productId")
-	if err := h.products.DeleteVariant(c.Request.Context(), &productdto.DeleteVariantReq{ID: c.PostForm("id")}); err != nil {
-		productEditJump(c, false, projectID, productID, productErrMsg(c, err))
+// rows 是整张清单（顺序即期望顺序）：行上只有 variantId（既有变体；新增行为空）、
+// 可编辑的 skuCode 与 optionValues。服务端逐条重算（见 service.SaveVariantList），
+// 客户端提交的形状一律不作数。
+//
+// 结论是一句**复合句**（「已保存 N 条」+「跳过 M 条：原因」）：一段 key 表达不了，因此走
+// message 回给页面；页面用 data-write-flash 把它带过保存后的整页刷新 —— 清单刷新后才是库里的
+// 样子，被跳过的那几行也才会重新出现在清单里（它们本来就是「没能写进去」的那些行）。
+func (h *Handle) SaveVariantList(c *gin.Context) {
+	req := &productdto.SaveVariantListReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
-	productEditJump(c, true, projectID, productID, productActionDoneMsg)
+	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
+	req.OperatorID = operatorFromContext(c)
+	res, err := h.svc.SaveVariantList(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productMsgText(c, variantSaveMsg(c, res)), res)
 }
 
 // productRatingInvalidMsg 评分非数字的提示事实（0~5 的范围由 service 与 DB CHECK 兜底）。

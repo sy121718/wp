@@ -236,6 +236,41 @@
         box.setAttribute('data-write-state', kind || 'ok');
     }
 
+    // ── 跨刷新的结论（data-write-flash）──
+    // 有一类写操作成功后**必须整页刷新**：服务端以库为准重算了结果（变体清单就是这种），
+    // 就地改 DOM 会与库不一致。可这类操作的结论往往不止「成功」两个字（例如「跳过 2 条：
+    // 被引用」），而刷新会把结果区一起抹掉 —— 于是结论存进 sessionStorage，落地后由
+    // renderFlash 写进页面上的 [data-write-flash-target="同名"]，读完即删（刷新两次不重现）。
+    var FLASH_PREFIX = 'json_write_flash:';
+
+    function flashKey(name) { return FLASH_PREFIX + name; }
+
+    // storeFlash 在 reload / 跳转**之前**调用。隐私模式下 sessionStorage 会抛错：
+    // 结论就丢了，但不能因此让写操作变红。
+    function storeFlash(form, submitter, text) {
+        var name = attrFrom(form, submitter, 'data-write-flash');
+        if (!name || !text) { return; }
+        try { global.sessionStorage.setItem(flashKey(name), text); } catch (e) { /* 写不进去就算了 */ }
+    }
+
+    function renderFlash() {
+        var targets = global.document.querySelectorAll('[data-write-flash-target]');
+        for (var i = 0; i < targets.length; i++) {
+            var box = targets[i];
+            var name = box.getAttribute('data-write-flash-target');
+            var text = '';
+            try {
+                text = global.sessionStorage.getItem(flashKey(name)) || '';
+                global.sessionStorage.removeItem(flashKey(name));
+            } catch (e) { text = ''; }
+            if (!text) { continue; }
+            box.textContent = '';
+            var line = global.document.createElement('span');
+            line.textContent = text;
+            box.appendChild(line);
+            box.hidden = false;
+        }
+    }
     // refreshEntry 结果区里的「刷新列表」入口：不自动刷新，让人先看完再刷新。
     function refreshEntry(form, submitter) {
         var label = attrMsg(form, submitter, 'refresh');
@@ -1059,6 +1094,8 @@
                 return;
             }
             var data = r.body.data || {};
+            // 结论先存（下面的 reload / 跳转会立刻把结果区抹掉，这是它唯一的去处）。
+            storeFlash(form, submitter, r.body.message || '');
             var nav = attrFrom(form, submitter, 'data-write-nav');
             if (nav) { global.location.assign(fill(nav, { id: data.id || '' })); return; }
             global.location.reload();
@@ -1095,6 +1132,13 @@
     // 同时摘掉 disabled：整表提交的保存按钮在无 JS 时必须是**真的按不动**（浏览器对
     // 「默认提交按钮 disabled」的表单不做隐式提交，回车也不会把整表 POST 到一个不存在的页面上），
     // 所以模板把它写成 disabled + data-requires-js；只放出来不摘 disabled 会让「有 JS 也点不动」。
+    // 上次写操作留下的结论（表单一成功就刷新，结果区留不住）：页面一落地就补写进结果槽。
+    if (global.document.readyState === 'loading') {
+        global.document.addEventListener('DOMContentLoaded', renderFlash, false);
+    } else {
+        renderFlash();
+    }
+
     WBUI.register(function (scope) {
         WBUI.each(WBUI.$$('[data-requires-js]', scope), function (el) {
             if (!WBUI.markOnce(el, 'RequiresJS')) { return; }

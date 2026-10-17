@@ -14,7 +14,9 @@
 package feature
 
 import (
+	"bytes"
 	"context"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -622,7 +624,8 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products", handle.ProductsPage)
 	engine.GET("/admin/products/new", handle.ProductNewPage)
-	engine.POST("/admin/products/variant/create", handle.ProductsVariantCreate)
+	// 新建变体是 JSON 端点（页面声明 data-write-api + 基座发起 fetch）。
+	engine.POST("/api/product/variant/create", producthttp.NewHandle(f.products).CreateVariant)
 
 	rec := httptestGet(engine, "/admin/products?project="+f.projectID)
 	if rec.Code != http.StatusOK {
@@ -672,13 +675,18 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 
 	// 表单提交时指定 SH → 变体落在 SH，SKU 前缀是归属仓短码（SH_TEE…）。
 	before := countVariants(t, f, p.ID)
-	rec = postForm(engine, "/admin/products/variant/create", url.Values{
-		"projectId": {f.projectID}, "productId": {p.ID}, "warehouseId": {sh.ID},
+	rec = postJSON(t, engine, "/api/product/variant/create", map[string]any{
+		"projectId": f.projectID, "productId": p.ID, "warehouseId": sh.ID,
 	})
-	// 写动作的结论走**整页提示**（productEditJump → shell.RenderJump），
-	// 不再是「302 + 回列表页的查询参数」：断言真实契约（200 / no-store / ok 态 /
-	// meta 自动回跳到归属商品编辑页 / 无 Location）——只换状态码数字不叫修好。
-	assertVariantCreatedJump(t, rec, productEditJumpTarget(f.projectID, p.ID))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("新建变体应 200，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	var created struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil || created.Code != 0 {
+		t.Fatalf("新建变体应回成功 JSON，实际 %v：%s", err, rec.Body.String())
+	}
 	if after := countVariants(t, f, p.ID); after != before+1 {
 		t.Fatalf("变体应真实入库：POST 前 %d 个，POST 后 %d 个", before, after)
 	}
@@ -837,6 +845,20 @@ func httptestGet(engine *gin.Engine, path string) *httptest.ResponseRecorder {
 func postForm(engine *gin.Engine, path string, form url.Values) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	return rec
+}
+
+// postJSON 以 JSON 体打一个接口端点：基座接管的写路径都是 JSON，不再是表单。
+func postJSON(t *testing.T, engine *gin.Engine, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("序列化请求体失败: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
 	return rec
