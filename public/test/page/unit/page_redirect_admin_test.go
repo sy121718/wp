@@ -190,7 +190,7 @@ func TestRedirectAdminMultiHopChainMerged(t *testing.T) {
 	if res.Total != 2 || res.MultiHopCount != 1 {
 		t.Fatalf("应检出 1 条多跳链: %+v", res)
 	}
-	var head *pagedto.RedirectItem
+	var head *pagedto.RedirectItemResp
 	for i := range res.Items {
 		if res.Items[i].SourcePath == "/chain-a" {
 			head = &res.Items[i]

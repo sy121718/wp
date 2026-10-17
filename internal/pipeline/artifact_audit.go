@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 )
 
-// OrphanArtifact 一个「磁盘上有、数据库里没人认领」的产物目录。
-type OrphanArtifact struct {
+// OrphanArtifactResp 一个「磁盘上有、数据库里没人认领」的产物目录。
+type OrphanArtifactResp struct {
 	Hash string `json:"hash"`
 	Path string `json:"path"`
 	// Bytes 该目录下文件总字节数（运维判断清理收益用）。
@@ -57,7 +57,7 @@ func ListDiskArtifactHashes(root string) (hashes []string, err error) {
 //
 // 只读、不删除 —— 孤儿文件交给产物 GC 按保留期处理，这里只负责把它们暴露出来。
 // 属主查询失败时**不**把该模块的产物当孤儿（宁可漏报也不能误报，误报会导致误删）。
-func AuditOrphanArtifacts(ctx context.Context, root string, owners ...OwnerProvider) (orphans []OrphanArtifact, checked int, err error) {
+func AuditOrphanArtifacts(ctx context.Context, root string, owners ...OwnerProvider) (orphans []OrphanArtifactResp, checked int, err error) {
 	diskHashes, derr := ListDiskArtifactHashes(root)
 	if derr != nil {
 		return nil, 0, derr
@@ -84,7 +84,7 @@ func AuditOrphanArtifacts(ctx context.Context, root string, owners ...OwnerProvi
 		}
 		dir := filepath.Join(root, "artifacts", h)
 		bytes, files := dirUsage(dir)
-		orphans = append(orphans, OrphanArtifact{Hash: h, Path: dir, Bytes: bytes, Files: files})
+		orphans = append(orphans, OrphanArtifactResp{Hash: h, Path: dir, Bytes: bytes, Files: files})
 	}
 	return orphans, checked, nil
 }
