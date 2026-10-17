@@ -733,6 +733,14 @@ func (h *productPageHandle) ProductsUpdate(c *gin.Context) {
 	// 图集与 alt：按行切分（textarea 一行一个），空文本 = 清空该字段。
 	req.Images = splitFormLines(c.PostForm("images"))
 	req.ImageAlts = splitFormLines(c.PostForm("imageAlts"))
+	// 主图：媒体控件是隐藏域，**恒在表单里**（空态也提交空串），因此
+	// 「提交了空串」= 用户点了「移除」，「字段缺失」才是本次不改 —— 与 slug / sku 的
+	// 「留空即不改」不同：那两个是文本栏，空着不提交是常事；主图有显式的移除按钮，
+	// 空串就是明确意图。漏读这个字段的失效模式是「编辑页能选图、保存后又回到旧图」：
+	// 不报错、不崩，也是运营最不容易察觉的那种。
+	if v, ok := c.GetPostForm("defaultImage"); ok {
+		req.DefaultImage = &v
+	}
 
 	// 多选字段：**总是非 nil**（见方法注释）。
 	req.AttributeIDs = postFormArrayAlways(c, "attributeIds")

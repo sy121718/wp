@@ -44,9 +44,9 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 	}
 	ctx := context.Background()
 	price := 99.0
-	// 主图参建（不经 /storage/ 前缀，StorageURL 会原样返回）：编辑页必须把它回填进
-	// 媒体控件的隐藏域 —— 之前 ProductRow 漏赋值，控件恒空，保存时表单把这个空值
-	// 原样提交，等于静默清掉库里已有的主图。
+	// 主图参建：编辑页必须把它回填进媒体控件的隐藏域 —— ProductRow 漏赋值时控件恒空，
+	// 而保存路径会读那个隐藏域（三种形态见 TestProductEditPageSavesDefaultImage）。
+	// 注意归一：/img/x 会被 upload.StorageURL 变成 /storage/img/x，所以只比对文件名片段。
 	coverImage := "/img/product-cover.jpg"
 	created, err := f.svc.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "编辑前", Slug: "before-edit", DefaultPrice: &price,
@@ -158,6 +158,62 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 	}
 	if len(detached.AttributeIDs) != 0 {
 		t.Fatalf("一个都不勾应解绑全部，实际 %v", detached.AttributeIDs)
+	}
+}
+
+// TestProductEditPageSavesDefaultImage 主图保存：隐藏域**恒在表单里**，
+// 所以「提交空串」= 用户点了移除，「字段缺失」= 本次不改。三种形态都要判 ——
+// 处理器漏读它的失效模式是「编辑页能选、保存后又回到旧图」，不报错也不崩。
+func TestProductEditPageSavesDefaultImage(t *testing.T) {
+	engine, f := newVariantPageEngine(t)
+	if engine == nil {
+		return
+	}
+	ctx := context.Background()
+	price := 99.0
+	created, err := f.svc.Create(ctx, &productdto.CreateReq{
+		ProjectID: f.projectID, Name: "主图保存", Slug: "default-image-save",
+		DefaultPrice: &price, DefaultImage: "/img/product-cover.jpg",
+	})
+	if err != nil {
+		t.Fatalf("创建商品失败: %v", err)
+	}
+	// 读回的值可能带 media base 前缀（upload.StorageURL 归一），所以只比对文件名片段。
+	readImage := func(stage string) string {
+		got, gerr := f.svc.Get(ctx, &productdto.GetReq{ID: created.ID, ProjectID: f.projectID})
+		if gerr != nil {
+			t.Fatalf("%s：读回商品失败: %v", stage, gerr)
+		}
+		return got.DefaultImage
+	}
+	base := func() url.Values {
+		return url.Values{"projectId": {f.projectID}, "id": {created.ID}, "name": {"主图保存"}}
+	}
+	baseVal := readImage("建后")
+	if !strings.Contains(baseVal, "product-cover.jpg") {
+		t.Fatalf("建商品时的主图没落库：%q", baseVal)
+	}
+
+	// 1. 字段缺失 → 本次不改（不能因为「表单没带」就把图擦掉）。
+	editSaveLocation(t, engine, base())
+	if keep := readImage("未提交主图"); keep != baseVal {
+		t.Fatalf("没提交主图不该改动：期望 %q，实际 %q", baseVal, keep)
+	}
+
+	// 2. 提交新值 → 落库（漏读这个字段的现场就在这里）。
+	form := base()
+	form.Set("defaultImage", "/img/product-cover-new.png")
+	editSaveLocation(t, engine, form)
+	if got := readImage("提交新主图"); !strings.Contains(got, "product-cover-new.png") {
+		t.Fatalf("主图未落库：实际 %q", got)
+	}
+
+	// 3. 提交空串 → 明确清空（媒体控件的「移除」按钮就是把隐藏域置空后提交）。
+	form = base()
+	form.Set("defaultImage", "")
+	editSaveLocation(t, engine, form)
+	if got := readImage("提交空主图"); got != "" {
+		t.Fatalf("提交空串应清空主图，实际 %q", got)
 	}
 }
 
