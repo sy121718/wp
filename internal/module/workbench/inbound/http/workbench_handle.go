@@ -10,6 +10,7 @@ package workbenchhttp
 import (
 	"context"
 	"go_wp/internal/middleware/builtin"
+	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"go_wp/internal/adminui"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
+	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 	seoscore "go_wp/internal/seo"
@@ -64,10 +66,12 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusServiceUnavailable, adminui.PageInternalText(c))
 		return
 	}
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	title := strings.TrimSpace(c.PostForm("title"))
-	path := strings.TrimSpace(c.PostForm("path"))
-	kind := strings.TrimSpace(c.PostForm("kind"))
+	req, ok := binding.Form[workbenchdto.NavigationCreateReq](c)
+	if !ok {
+		return
+	}
+	projectID, title := strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.Title)
+	path, kind := strings.TrimSpace(req.Path), strings.TrimSpace(req.Kind)
 	if projectID == "" || title == "" || path == "" || kind == "" {
 		response.ParamError(c)
 		return
@@ -102,12 +106,16 @@ func (h *Handle) navigationFacingText(c *gin.Context, err error) string {
 // SEOScore 计算草稿文档的 SEO 评分。
 // POST /workbench/seo-score（form: draftDocument, url）→ 评分结果 JSON。
 func (h *Handle) SEOScore(c *gin.Context) {
-	document := json.RawMessage(c.PostForm("draftDocument"))
+	req, ok := binding.Form[workbenchdto.SEOScoreReq](c)
+	if !ok {
+		return
+	}
+	document := json.RawMessage(req.DraftDocument)
 	if len(document) == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrDraftDocumentEmpty))
 		return
 	}
-	res, err := seoscore.ScoreDocument(document, c.PostForm("url"), requestScoreLang(c))
+	res, err := seoscore.ScoreDocument(document, req.URL, requestScoreLang(c))
 	if err != nil {
 		adminui.PageErrorBadRequest(c, "seo_score", err)
 		return

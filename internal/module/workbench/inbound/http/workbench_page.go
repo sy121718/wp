@@ -55,6 +55,7 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
+	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 	"go_wp/internal/templates"
@@ -1201,8 +1202,13 @@ func withPresets(c *gin.Context, snap overviewSnapshot) overviewSnapshot {
 
 // InspectorPanel 渲染选中节点的检查器面板片段。
 func (h *Handle) InspectorPanel(c *gin.Context) {
-	nodeID := strings.TrimSpace(c.PostForm("nodeId"))
-	node, err := workbenchservice.FindDocNode(json.RawMessage(c.PostForm("document")), nodeID)
+	req, err := binding.ParseForm[workbenchdto.InspectorPanelReq](c)
+	if err != nil {
+		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrPreviewParamsIncomplete))
+		return
+	}
+	nodeID := strings.TrimSpace(req.NodeID)
+	node, err := workbenchservice.FindDocNode(json.RawMessage(req.Document), nodeID)
 	if err != nil || node == nil {
 		// 空态分支同样经 PrepareBare：片段模板里的取词（workbench.ui.inspector.empty 等）
 		// 靠它注入的 t —— 漏注入时 Jet **静默**输出空串（不是报错、状态码 200、日志干净），
@@ -1213,8 +1219,8 @@ func (h *Handle) InspectorPanel(c *gin.Context) {
 		return
 	}
 	// tab：content / style（空 = 渲染全部，向后兼容旧调用）。
-	tab := strings.TrimSpace(c.PostForm("tab"))
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	tab := strings.TrimSpace(req.Tab)
+	projectID := strings.TrimSpace(req.ProjectID)
 	// 装配链（组件 schema 取数 → 解包 → 字段构造 → 分组桶 → 重复项面板）全在
 	// service.InspectorSections：任一步取数失败都以 error 出来，本函数只决定出口形态
 	//（保持 text/plain 不变 —— 前端是 fetch → r.text() → morphHTML，不检查 r.ok，
@@ -1239,11 +1245,12 @@ func (h *Handle) OutlineTree(c *gin.Context) {
 	var page struct {
 		Root []workbenchservice.OutlineNode `json:"root"`
 	}
-	if doc := c.PostForm("document"); doc != "" {
+	req, _ := binding.ParseForm[workbenchdto.OutlineTreeReq](c)
+	if doc := req.Document; doc != "" {
 		_ = json.Unmarshal([]byte(doc), &page)
 	}
-	selectedID := strings.TrimSpace(c.PostForm("selectedId"))
-	filter := strings.ToLower(strings.TrimSpace(c.PostForm("filter")))
+	selectedID := strings.TrimSpace(req.SelectedID)
+	filter := strings.ToLower(strings.TrimSpace(req.Filter))
 	// PrepareBare：与同目录另一个片段（inspector_panel）走同一个入口，片段自带取词函数
 	// 才有统一的形状。**本片段今天并不消费 t/tf** —— 树 HTML 整块由
 	// workbenchservice.RenderOutlineHTML 拼串产出（Go 拼串，取词在 service 侧经 tr 完成），
@@ -1652,13 +1659,14 @@ func (h *Handle) TemplatePreview(c *gin.Context) {
 // TemplatePreviewDraft 基于未保存 AST + 样例实体返回临时预览（POST，画布刷新）。
 // 结构模板同 TemplatePreview：走无实体模式，草稿文档直接编译。
 func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
-	templateID := strings.TrimSpace(c.PostForm("id"))
-	document := json.RawMessage(c.PostForm("draftDocument"))
+	req, _ := binding.ParseForm[workbenchdto.TemplatePreviewDraftReq](c)
+	templateID := strings.TrimSpace(req.ID)
+	document := json.RawMessage(req.DraftDocument)
 	if templateID == "" || len(document) == 0 {
 		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrPreviewParamsIncomplete))
 		return
 	}
-	projectID := c.PostForm("projectId")
+	projectID := req.ProjectID
 	tpl, ok := h.previewTemplateTarget(c, templateID, projectID)
 	if !ok {
 		return
@@ -1671,8 +1679,8 @@ func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
 		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplatePreviewNotAssembled))
 		return
 	}
-	entityType := strings.TrimSpace(c.PostForm("entityType"))
-	entityID := strings.TrimSpace(c.PostForm("entityId"))
+	entityType := strings.TrimSpace(req.EntityType)
+	entityID := strings.TrimSpace(req.EntityID)
 	if entityType == "" || entityID == "" {
 		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrPreviewParamsIncomplete))
 		return
@@ -1917,9 +1925,10 @@ func (h *Handle) BlockPreview(c *gin.Context) {
 
 // PreviewDraft 基于未保存 AST 返回临时预览，不持久化、不写 Artifact、不影响发布指针。
 func (h *Handle) PreviewDraft(c *gin.Context) {
-	pageID := strings.TrimSpace(c.PostForm("id"))
-	document := json.RawMessage(c.PostForm("draftDocument"))
-	version, err := strconv.ParseInt(c.PostForm("expectedVersion"), 10, 64)
+	req, _ := binding.ParseForm[workbenchdto.PreviewDraftReq](c)
+	pageID := strings.TrimSpace(req.ID)
+	document := json.RawMessage(req.DraftDocument)
+	version, err := strconv.ParseInt(strings.TrimSpace(req.ExpectedVersion), 10, 64)
 	if pageID == "" || err != nil || len(document) == 0 {
 		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrDraftDecodeFailed))
 		return
