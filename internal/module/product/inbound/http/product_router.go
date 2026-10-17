@@ -283,12 +283,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 属性组与属性值可跨商品复用，故独立页面。
 	// 值编辑器的增删行走 HTMX（编辑中的行只存在于 DOM，服务端参与归一与去重）。
 	pages.GET("/product-attributes", adminui.PageAuthz("/api/product/attribute/list"), productPages.ProductAttributesPage)
-	pages.POST("/product-attributes/create", builtin.CasbinMiddlewareForPath("/api/product/attribute/create"), productPages.ProductAttributesCreate)
-	pages.POST("/product-attributes/update", builtin.CasbinMiddlewareForPath("/api/product/attribute/update"), productPages.ProductAttributesUpdate)
-	pages.POST("/product-attributes/set-values", builtin.CasbinMiddlewareForPath("/api/product/attribute/set-values"), productPages.ProductAttributesSetValues)
-	pages.POST("/product-attributes/delete", builtin.CasbinMiddlewareForPath("/api/product/attribute/delete"), productPages.ProductAttributesDelete)
 	// 批量删除复用同一条删除路径与权限点：逐条校验，失败的那条不计入成功数。
-	pages.POST("/product-attributes/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/attribute/delete"), productPages.ProductAttributesBulkDelete)
 	// 值编辑器的行片段：纯表单操作，不落库，故不挂 Casbin（页面组已有 Session + CSRF）。
 	pages.POST("/product-attributes/value-rows", productPages.ProductAttributesValueRows)
 

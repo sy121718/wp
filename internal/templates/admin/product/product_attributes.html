@@ -9,7 +9,6 @@
 {{import "../partials/bulk_bar.html"}}
 {{block body()}}
 {{tr := .["t"]}}
-{{csrf := .["csrf_token"]}}
 {* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
    契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。正常渲染一律为空串。 *}
 {* 先判装载失败，再判空工程 / 空筛选：空态是「读到了、没有数据」，装载失败是「没读到」——
@@ -106,13 +105,24 @@
            工程里真的没有属性组 → 指到本页页头那个新建抽屉。 *}
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids（见 admin.js 的批量选择增强）。 *}
-        <form method="post" action="/admin/product-attributes/bulk-delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* 写动作走 ui/json_write.js：表单不声明端点，端点落在批量按钮上（基座按
+           「按钮优先、表单兜底」读属性）。data-list-bulk 是作用域锚点。 *}
+        <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete}}{{if len(.Attributes) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.product_attributes.bulkDeleteConfirm", "删除选中的属性组及其全部属性值？被商品引用的会被拒绝，其余照常删除。"), danger=true)}}
+                <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                        data-write-api="/api/product/attribute/bulk-delete" data-write-mode="bulk"
+                        data-msg-none-selected="{{tr("admin.product_attributes.bulk.noneSelected", "没有勾选任何属性组，列表未改动。")}}"
+                        data-msg-all-deleted="{{tr("admin.product_attributes.bulkDelete.allDeleted", "已删除 {count} 个属性组。")}}"
+                        data-msg-all-skipped="{{tr("admin.product_attributes.bulkDelete.allSkipped", "{count} 个属性组都未能删除。")}}"
+                        data-msg-partial="{{tr("admin.product_attributes.bulkDelete.partial", "已删除 {deleted} 个属性组，{skipped} 个未能删除。")}}"
+                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-refresh="{{tr("admin.product_attributes.bulkDelete.refresh", "刷新列表")}}"
+                        data-confirm="{{tr("admin.product_attributes.bulkDeleteConfirm", "删除选中的属性组及其全部属性值？被商品引用的会被拒绝，其余照常删除。")}}"
+                        data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_attributes.list.title", "属性组列表") }}">
@@ -184,6 +194,8 @@
             </table>
         </div>
         </form>
+        {* 批量动作的结果区（成功摘要 / 逐条失败原因）。 *}
+        <p class="form-hint" data-write-status role="status" hidden></p>
         {* 分页条（审计 D3 的属性页那一半）：原先一次取 Size:200 —— 第 201 个属性组
            静默消失且页面不给任何提示；现在按页渲染并给出「共 N 条」，
            单页或空数据时 handler 不注入 Pagination 事实（HasPagination() 为假），片段自然不渲染。 *}
@@ -193,10 +205,12 @@
     {* 行内删除表单与抽屉模板：放表格外（form 不能嵌套），按钮用 form="<id>" 关联。 *}
     {{range _, a := .Attributes}}
     {{if canDelete}}
-    <form id="attr-del-{{a.ID}}" class="hidden-form" method="post" action="/admin/product-attributes/delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
+    {* 单条删除：single 档只发 {id}（端点 DeleteAttributeReq 不带 projectId）。 *}
+    <form id="attr-del-{{a.ID}}" class="hidden-form"
+          data-write-api="/api/product/attribute/delete" data-write-mode="single"
+          data-msg-ok="{{ .["t"]("admin.product_attributes.list.deleted", "属性组已删除。") }}"
+          data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}"
           data-confirm="{{ .["t"]("admin.product_attributes.list.deleteConfirm", "删除该属性组及其全部属性值？被商品引用时会拒绝删除。") }}" data-confirm-danger>
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{a.ID}}">
     </form>
     {{end}}

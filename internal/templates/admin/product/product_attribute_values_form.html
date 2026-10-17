@@ -1,44 +1,36 @@
 {* admin/product/product_attribute_values_form.html — 属性值表单（保存属性值抽屉）。
 
-   与 product_attribute_group_form.html 同一契约（失败分档 / host 替换 / 抽屉申报），
-   差别只在：可见字段全是 values[n].* 的行，回填的**主体是 RowsCtx**（由 handler 用
-   attrEchoRowsFromForm 按提交位置与原值重建）而不是单值 FormEcho —— 后者只承载 projectId / id /
-   groupId 这几个隐藏域。行编辑器自身是 partials/product_attribute_rows.html（增删行走 HTMX）。
+   与 product_attribute_group_form.html 同一契约（声明式 JSON 写基座 / 抽屉 / 取词来源），
+   差别只在：可见字段全是 values[n].* 的行，整表一次提交（端点按「表单上已有的行就是全部值」
+   语义整体替换）。
 
-   服务端按 HX-Request 分档（见 product_attributes.go 的 attrValuesFormFail）：
-     · htmx 请求：200 + 本片段（错误槽 + 回填后的行）—— 换掉 data-attr-values-host；
-     · 原生请求：302 + ?err= 回列表页（既有行为一字不改）。
+   行编辑器自身是 product_attribute_rows.html（增删行走 HTMX 片段，仍留在服务端渲染）：
+   行容器的 class（.attr-value-row）与行内字段的索引名（values[N].key）是 data-write-rows
+   的取值依据 —— 基座按「一行一个容器」收行、按「.后缀」取字段、组装成 payload.values。
 
-   数据键：Csrf / Project / t / tf / Action / GroupID / RowsCtx / InDrawer / SubmitErr
-   （失败时另给 FormEcho（dto.AttrValueFormEcho）；首屏 vfFill 为假 → 读 .GroupID 初值）。
-   SubmitErr 收的是**事实**（adminui.Msg：key + 中文兜底 + `%s` 参数）：控制器不取词，
-   语言由本片段的 tf 按当前请求决定（缺 tf 声明 = 渲染中断 = 500，htmx 不 swap）。
-
-   表单字段名与 /admin/product-attributes/set-values 的绑定逐字一致，改这里等于改协议；
-   改 `name=` 必须同步改 dto.AttrValueFormEcho 的 form: 标签（双向对账见 product_attribute_form_fail_test.go）。 *}
-{{vfFill := isset(.FormEcho)}}
-{{vfTf := .["tf"]}}
-        <div data-attr-values-host>
-            {* 错误槽在**表单之外、host 之内**：放进表单里会被下一次提交一起换掉。 *}
-            {{if isset(.SubmitErr)}}{{if .SubmitErr.Key != "" || .SubmitErr.Fallback != ""}}
-            <p class="badge badge-warning" role="alert" data-attr-values-err>{{vfTf(.SubmitErr.Key, .SubmitErr.Fallback, .SubmitErr.Args)}}</p>
-            {{end}}{{end}}
-        <form method="post" action="{{.Action}}" class="form-stack" data-attr-values-form
-              hx-post="{{.Action}}" hx-target="closest [data-attr-values-host]" hx-swap="outerHTML">
-            <input type="hidden" name="csrf_token" value="{{.Csrf}}">
-            <input type="hidden" name="projectId" value="{{if vfFill}}{{.FormEcho.ProjectID}}{{else}}{{.Project}}{{end}}">
-            {* 抽屉形态申报（见片段顶部注释）：失败重渲染后「取消」按钮仍在抽屉里。 *}
-            {{if isset(.InDrawer)}}<input type="hidden" name="inDrawer" value="1">{{end}}
-            <input type="hidden" name="id" value="{{if vfFill}}{{.FormEcho.ID}}{{else}}{{.GroupID}}{{end}}">
-            <input type="hidden" name="groupId" value="{{if vfFill}}{{.FormEcho.GroupID}}{{else}}{{.GroupID}}{{end}}">
+   数据键：t / Project / GroupID / RowsCtx（t 由 adminui.PrepareBare 注入；缺它会静默变空串）。
+   表单字段名与 /api/product/attribute/set-values 的绑定逐字一致，改这里等于改协议。 *}
+{{vfTr := .["t"]}}
+        <div data-write-host>
+        <form class="form-stack" data-attr-values-form
+              data-write-api="/api/product/attribute/set-values"
+              data-write-mode="form"
+              data-write-number="sort"
+              data-write-bool="enabled"
+              data-write-rows=".attr-value-row;id,key,label,sort,enabled;values"
+              data-msg-ok="{{vfTr("admin.product_attributes.values.saved", "属性值已保存。")}}"
+              data-msg-failed="{{vfTr("ErrInternal", "操作失败，请稍后重试")}}">
+            <input type="hidden" name="projectId" value="{{.Project}}">
+            <input type="hidden" name="id" value="{{.GroupID}}">
             {* 容器 id 与 GroupID 同源：行内「添加 / 删除」按钮的 hx-include / hx-target 都靠它。
                include 路径相对**本文件所在目录**（Jet 不做模板根解析）：同目录片段直接写文件名。 *}
             <div class="attr-values" id="attr-values-{{.GroupID}}">
                 {{include "product_attribute_rows.html" .RowsCtx}}
             </div>
             <div class="action-row">
-                {{if isset(.InDrawer)}}<button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>{{end}}
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_attributes.list.saveValues", "保存属性值") }}</button>
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{vfTr("admin.common.action.cancel", "取消")}}</button>
+                <button type="submit" class="btn btn-primary">{{vfTr("admin.product_attributes.list.saveValues", "保存属性值")}}</button>
             </div>
         </form>
+        <p class="form-hint" data-write-status role="status" hidden></p>
         </div>

@@ -1,80 +1,58 @@
 {* admin/product/product_attribute_group_form.html — 属性组表单（新建 / 编辑共用片段）。
 
-   抽取原因：新建抽屉（tpl-attr-create）与列表每行的编辑抽屉（tpl-attr-edit-<id>）字段完全
-   同构（名称 / 标识 / 排序 / 参与变体），差别只有提交地址、id 隐藏域与「要不要带属性值行编辑器」。
+   新建抽屉（tpl-attr-create）与列表每行的编辑抽屉（tpl-attr-edit-<id>）字段完全同构
+   （名称 / 标识 / 排序 / 参与变体），差别只有提交地址、id 隐藏域与「要不要带属性值行编辑器」。
    两处各抄一份必然分叉，而分叉不会编译失败，只会在某一条入口上静默丢字段。
 
-   —— 提交失败的「原地留住输入」分档（路径 A 渐进增强，与商品建表单同形）——
-   表单保留原生 method/action（无 JS 时行为与从前一字不差），另加 hx-post：htmx 优先拦住
-   submit，服务端按 HX-Request 分档（见 product_attributes.go 的 attrGroupFormFail）：
-
-     · htmx 请求：200 + **本片段自身**（错误槽 + 回填后的表单）—— 换掉 data-attr-group-host；
-     · 原生请求：整页提示（shell.RenderJump）回列表页。
-
-   本片段的顶层容器 `<div data-attr-group-host>` 就是这个替换单元：抽屉（<template>）被
-   ui/drawer.js 克隆到 document 级之后，表单的 `closest [data-attr-group-host]` 找到的正是
-   克隆体内部的这个 div —— 两条入口都不必各自包一层（包两层会让「谁是被替换的那个」不一致）。
-
-   回填值来自 handler 注入的 **FormEcho**（dto.AttrGroupFormEcho 结构体指针，见 attrGroupFormFail）：
-   模板读的是**导出字段名**（`.FormEcho.Name`），与控件的 `name=` 由 form: 标签对齐。
-   带前缀是因为片段与页面共用一份键空间，而属性页的键空间里已有 `Mode` / `Rows` 这类名字。
-   首屏**不给**这个键（gfFill 为假 → 渲染 .Name / .Key / .Sort / .VariationChecked 初值）。
+   —— 写动作走 ui/json_write.js（声明式 JSON 写基座）——
+   · 表单不再有 method/action/csrf 隐藏域：端点由 data-write-api 声明，客户端序列化成 JSON，
+     csrf 走 X-CSRF-Token 头；
+   · 失败不再「原地重渲染整张表单」：基座把响应里的 message 写进 data-write-status，
+     用户已填的内容本来就还在 DOM 里（没有整页替换），输入一个字都不用重打；
+   · 「参与变体」是**同名隐藏域 0 + 复选框 1**：基座对同名取最后一个值（DOM 末尾是 checkbox），
+     勾选得 "1"、未勾选时 checkbox 不出现而 hidden 的 "0" 留下，再经 data-write-bool 转布尔；
+   · 属性值行编辑器只在新建形态渲染：它的行容器（.attr-value-row）就是 data-write-rows 的
+     「一行一个容器」，行内字段名带索引（values[0].key），基座按「.后缀」取字段、按第三个字段
+     组装成 payload.values。
 
    数据键：
-     · Csrf / Project / t / tf —— 片段是**带参数 include** 的，拿不到页面 data，取词函数与 token
-       都必须由 handler 随数据一起给（缺 tf 时 `tf(...)` 在那一行渲染失败、整块响应被丢弃成
-       500，而 htmx 不 swap 5xx：用户点保存后毫无反应；缺 t 时静默变空串）；
-     · Action / IsCreate / GroupID —— 提交地址、形态分支、值编辑器容器 id 的依据；
-     · Name / Key / Sort / VariationChecked —— 首屏初值（失败重渲染时让位给 FormEcho.*）；
-     · RowsCtx —— 属性值行编辑器的数据类（只在新形态渲染）；
-     · InDrawer —— 抽屉里为 true（渲染「取消」按钮）。提交失败重渲染时由**表单自己带过来的
-       隐藏域 inDrawer** 还原（见 handler），否则抽屉里失败一次，「取消」按钮就消失了；
-     · SubmitErr —— 仅失败重渲染时存在，收的是**事实**（adminui.Msg 的 key + 中文兜底 +
-       `%s` 参数），取词在本片段的 tf 里做（控制器不取词）。
+     · t —— adminui.PrepareBare 注入的取词函数（片段是带参数 include，拿不到页面 data）；
+     · IsCreate / GroupID —— 端点分支、id 隐藏域的依据；
+     · Project / Name / Key / Sort / VariationChecked —— 初值；
+     · RowsCtx —— 属性值行编辑器的数据类（只在新形态渲染）。
 
-   表单字段名与 /admin/product-attributes/{create,update} 的绑定逐字一致，改这里等于改协议；
-   改 `name=` 必须同步改 dto.AttrGroupFormEcho 的 form: 标签（双向对账见 product_attribute_form_fail_test.go）。 *}
-{{gfFill := isset(.FormEcho)}}
+   表单字段名与 /api/product/attribute/{create,update} 的绑定逐字一致，改这里等于改协议。 *}
 {{gfCreate := .IsCreate}}
-{* 占位文案两形态有别：新建给「例：颜色」的示例，编辑给中性的字段名 ——
-   合并成一份会在某条入口上降级（新建抽屉原本就是示例文案）。
-   取词函数先存进变量再调用：`.["t"](...)` 不能出现在**赋值右侧 / 参数位**（Jet 报
-   `unexpected node type .["t"] in unary expression`，与 yield 参数那条约束同源）。 *}
 {{gfTr := .["t"]}}
-{{gfTf := .["tf"]}}
 {{gfNamePh := gfTr("admin.product_attributes.ph.groupName", "属性组名称")}}
 {{gfKeyPh := gfTr("admin.product_attributes.ph.key", "标识")}}
 {{if gfCreate}}
 {{gfNamePh = gfTr("admin.product_attributes.ph.groupNameExample", "属性组名称（如 颜色）")}}
 {{gfKeyPh = gfTr("admin.product_attributes.ph.keyExample", "标识（留空自动生成，如 color）")}}
 {{end}}
-        <div data-attr-group-host>
-            {* 错误槽在**表单之外、host 之内**：放进表单里会被下一次提交一起换掉。 *}
-            {{if isset(.SubmitErr)}}{{if .SubmitErr.Key != "" || .SubmitErr.Fallback != ""}}
-            <p class="badge badge-warning" role="alert" data-attr-group-err>{{gfTf(.SubmitErr.Key, .SubmitErr.Fallback, .SubmitErr.Args)}}</p>
-            {{end}}{{end}}
-        <form method="post" action="{{.Action}}" class="form-stack" data-attr-group-form
-              hx-post="{{.Action}}" hx-target="closest [data-attr-group-host]" hx-swap="outerHTML">
-            <input type="hidden" name="csrf_token" value="{{.Csrf}}">
-            <input type="hidden" name="projectId" value="{{if gfFill}}{{.FormEcho.ProjectID}}{{else}}{{.Project}}{{end}}">
-            {* 抽屉形态申报（见上方注释）：失败重渲染后「取消」按钮仍在抽屉里。 *}
-            {{if isset(.InDrawer)}}<input type="hidden" name="inDrawer" value="1">{{end}}
+        <div data-write-host>
+        <form class="form-stack" data-attr-group-form
+              data-write-api="/api/product/attribute/{{if gfCreate}}create{{else}}update{{end}}"
+              data-write-mode="form"
+              data-write-number="sort"
+              data-write-bool="isVariation,enabled"
+              {{if gfCreate}}data-write-rows=".attr-value-row;id,key,label,sort,enabled;values"{{end}}
+              data-msg-ok="{{gfTr("admin.product_attributes.saved", "已保存。")}}"
+              data-msg-failed="{{gfTr("ErrInternal", "操作失败，请稍后重试")}}">
+            <input type="hidden" name="projectId" value="{{.Project}}">
             {{if gfCreate}}
             {* 新建：groupId=new 是值编辑器容器的 id 依据（attr-values-new）。 *}
             <input type="hidden" name="groupId" value="new">
             {{else}}
-            <input type="hidden" name="id" value="{{if gfFill}}{{.FormEcho.ID}}{{else}}{{.GroupID}}{{end}}">
+            <input type="hidden" name="id" value="{{.GroupID}}">
             {{end}}
             <div class="form-inline">
-                <input aria-label="{{gfNamePh}}" type="text" class="form-input" name="name" value="{{if gfFill}}{{.FormEcho.Name}}{{else}}{{.Name}}{{end}}" placeholder="{{gfNamePh}}" required>
-                <input aria-label="{{gfKeyPh}}" type="text" class="form-input" name="key" value="{{if gfFill}}{{.FormEcho.Key}}{{else}}{{.Key}}{{end}}" placeholder="{{gfKeyPh}}" autocomplete="off">
-                <input aria-label="{{ .["t"]("admin.product_attributes.ph.sort", "排序") }}" type="number" class="form-input" name="sort" value="{{if gfFill}}{{.FormEcho.Sort}}{{else}}{{.Sort}}{{end}}" placeholder="{{ .["t"]("admin.product_attributes.ph.sort", "排序") }}" inputmode="numeric" step="1">
+                <input aria-label="{{gfNamePh}}" type="text" class="form-input" name="name" value="{{.Name}}" placeholder="{{gfNamePh}}" required>
+                <input aria-label="{{gfKeyPh}}" type="text" class="form-input" name="key" value="{{.Key}}" placeholder="{{gfKeyPh}}" autocomplete="off">
+                <input aria-label="{{gfTr("admin.product_attributes.ph.sort", "排序")}}" type="number" class="form-input" name="sort" value="{{.Sort}}" placeholder="{{gfTr("admin.product_attributes.ph.sort", "排序")}}" inputmode="numeric" step="1">
                 <label class="attr-switch">
-                    {* 勾选回填：必须按**值**命中（FormEcho.IsVariation 里存在 "1"）——
-                       按 bool 或「首个值」判（同名隐藏域让它**每次提交都存在**）会把没勾的组判成勾上的，
-                       于是用户没勾的组在失败重渲染后变成勾上的（见 util 的 formValueHas）。 *}
                     <input type="hidden" name="isVariation" value="0">
-                    <input type="checkbox" name="isVariation" value="1"{{if gfFill}}{{range _, v := .FormEcho.IsVariation}}{{if v == "1"}} checked{{end}}{{end}}{{else}}{{if .VariationChecked}} checked{{end}}{{end}}> {{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}
+                    <input type="checkbox" name="isVariation" value="1"{{if .VariationChecked}} checked{{end}}> {{gfTr("admin.product_attributes.isVariation", "参与变体")}}
                 </label>
             </div>
             {* 属性值行编辑器只属于新建形态：编辑抽屉只改属性组本身，值走「属性值」抽屉。
@@ -86,8 +64,9 @@
             </div>
             {{end}}
             <div class="action-row">
-                {{if isset(.InDrawer)}}<button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>{{end}}
-                {{if gfCreate}}<button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_attributes.create.submit", "新建属性组") }}</button>{{else}}<button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_attributes.list.save", "保存属性组") }}</button>{{end}}
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{gfTr("admin.common.action.cancel", "取消")}}</button>
+                {{if gfCreate}}<button type="submit" class="btn btn-primary">{{gfTr("admin.product_attributes.create.submit", "新建属性组")}}</button>{{else}}<button type="submit" class="btn btn-primary">{{gfTr("admin.product_attributes.list.save", "保存属性组")}}</button>{{end}}
             </div>
         </form>
+        <p class="form-hint" data-write-status role="status" hidden></p>
         </div>

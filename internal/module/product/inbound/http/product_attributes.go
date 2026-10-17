@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"go_wp/internal/adminui"
-	"go_wp/internal/middleware/builtin"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
-	"go_wp/internal/shell"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
 	"net/http"
@@ -64,16 +62,13 @@ func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
 	// 抽屉表单的数据（编辑属性组 / 保存属性值 / 新建属性组）留在控制器：它们要 csrf
 	//（表单隐藏域）与 adminui.PrepareBare 注入的取词函数，读模型不认识 gin.Context。
 	// 行装配只在取数成功时做 —— 失败页渲染的是失败槽，装配出的行不会被读到。
-	csrf := attrFormCSRF(c)
-	listQuery := productQueryFromRequest(c, productAttrBackKeys...)
-	view.ListQuery = listQuery
-	view.AttrCreateForm = attrCreateDrawerForm(c, csrf, view.SelectedProject, listQuery)
+	view.AttrCreateForm = attrCreateDrawerForm(c, view.SelectedProject)
 	rows := make([]map[string]any, 0, len(view.AttributeDetails))
 	if err == nil {
 		for _, a := range view.AttributeDetails {
 			// 两个抽屉的数据与失败重渲染**同形**（同一个 attrRowDrawerForms）——两处各拼
 			// 一份必然分叉，而分叉只会在失败路径上缺键、静默截断整页。
-			editForm, valuesForm := attrRowDrawerForms(c, csrf, view.SelectedProject, listQuery, a)
+			editForm, valuesForm := attrRowDrawerForms(c, view.SelectedProject, a)
 			rows = append(rows, map[string]any{
 				"ID": a.ID, "Key": a.Key, "Name": a.Name,
 				"IsVariation": a.IsVariation, "Sort": a.Sort,
@@ -173,6 +168,9 @@ func attrFormRowIndexes(vals url.Values) []int {
 	return indexes
 }
 
+// attrEchoRowsFromForm 从当前表单的 values[n].* 重建有序行（值编辑器的 add / remove 用）。
+//
+// 行编辑只重建**原始值与位置**：归一 / 去重 / 排序仍由 service 在落库时决定。
 func attrEchoRowsFromForm(c *gin.Context) []productdto.AttrValueFormRow {
 	vals := attrFormValues(c)
 	rows := make([]productdto.AttrValueFormRow, 0)
@@ -255,103 +253,6 @@ func attrRowsFromForm(c *gin.Context) []productdto.AttributeValueReq {
 	return rows
 }
 
-// ProductAttributesCreate 新建属性组，完成后回到列表。
-//
-// 分档（路径 A 渐进增强，口径见 product_attribute_page_util.go）：
-//   - 失败：htmx 档 200 + 回填片段（错误槽 + 用户刚填的字段与值行），原生档整页提示；
-//   - 成功：整页提示（shell.RenderJump）—— htmx 走 HX-Redirect（XHR 会跟随 302，
-//     读不到 Location，整页 HTML 会被塞进抽屉里）。
-func (h *productPageHandle) ProductAttributesCreate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	req := &productdto.CreateAttributeReq{
-		ProjectID: projectID,
-		Key:       c.PostForm("key"),
-		Name:      c.PostForm("name"),
-		Sort:      parseIntOr(c.PostForm("sort"), 0),
-		Values:    attrRowsFromForm(c),
-	}
-	// 「参与变体」是**同名隐藏域打底 + 复选框**：浏览器把 hidden(0) 与 checkbox(1) 都提交，
-	// 按第一个值判（c.PostForm）会恒取到 "0" —— 用户的勾选被静默丢弃（页面照样 200）。
-	// 判据见 formValueHas（按值命中）。
-	isVariation := attrFormChecked(c, "isVariation")
-	req.IsVariation = &isVariation
-	if _, err := h.products.CreateAttribute(c.Request.Context(), req); err != nil {
-		h.attrGroupFormFail(c, attrGroupModeCreate, projectID, "new", productErrMsg(c, err))
-		return
-	}
-	productAttrJump(c, true, productActionDoneMsg)
-}
-
-// ProductAttributesUpdate 修改属性组本身（名称 / 标识 / 参与变体 / 排序）。
-//
-// 失败与成功的分档口径同 ProductAttributesCreate（编辑抽屉同样会丢用户刚改的字）。
-func (h *productPageHandle) ProductAttributesUpdate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	id := c.PostForm("id")
-	name := strings.TrimSpace(c.PostForm("name"))
-	key := strings.TrimSpace(c.PostForm("key"))
-	// 勾选判据同上（隐藏域打底，按值命中）。
-	isVariation := attrFormChecked(c, "isVariation")
-	sortV := parseIntOr(c.PostForm("sort"), 0)
-	req := &productdto.UpdateAttributeReq{
-		ID: id, Name: &name, Key: &key, IsVariation: &isVariation, Sort: &sortV,
-	}
-	if _, err := h.products.UpdateAttribute(c.Request.Context(), req); err != nil {
-		h.attrGroupFormFail(c, attrGroupModeEdit, projectID, id, productErrMsg(c, err))
-		return
-	}
-	productAttrJump(c, true, productActionDoneMsg)
-}
-
-// ProductAttributesSetValues 整体保存属性值（表单上已有的行就是全部值）。
-//
-// 失败时回填的是**用户刚编辑的那几行**（attrRowsFromForm 保序重建，与保存路径同一归一），
-// 而不是库里的旧值 —— 整表替换语义下，「库里旧值」正是用户想改掉的东西。
-func (h *productPageHandle) ProductAttributesSetValues(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	groupID := c.PostForm("id")
-	req := &productdto.SetAttributeValuesReq{
-		ID:     groupID,
-		Values: attrRowsFromForm(c),
-	}
-	if _, err := h.products.SetAttributeValues(c.Request.Context(), req); err != nil {
-		h.attrValuesFormFail(c, projectID, groupID, productErrMsg(c, err))
-		return
-	}
-	productAttrJump(c, true, productActionDoneMsg)
-}
-
-// ProductAttributesDelete 删除属性组（被商品引用时服务端拒绝）。
-func (h *productPageHandle) ProductAttributesDelete(c *gin.Context) {
-	if err := h.products.DeleteAttribute(c.Request.Context(), &productdto.DeleteAttributeReq{ID: c.PostForm("id")}); err != nil {
-		productAttrJump(c, false, productErrMsg(c, err))
-		return
-	}
-	productAttrJump(c, true, productBulkDoneMsg(productAttrBulkDone))
-}
-
-// ProductAttributesBulkDelete 批量删除属性组（连同其全部属性值，由外键级联）。
-//
-// 业务编排在 service.BulkDeleteProductAttributes（一次查回整批的引用面，可删的一条 DELETE +
-// 一次失效入队，同一事务）；本层只解析 id、调用例、映射结果。
-// 被商品引用的那些进「跳过」桶，结果按「已删 N 个 / 未成功 M 个」回带列表页。
-func (h *productPageHandle) ProductAttributesBulkDelete(c *gin.Context) {
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		productAttrJump(c, false, productBulkIDsMsg(c, berr))
-		return
-	}
-	res, err := h.products.BulkDeleteProductAttributes(c.Request.Context(), &productdto.BulkDeleteReq{IDs: ids})
-	if err != nil {
-		productAttrJump(c, false, productErrMsg(c, err))
-		return
-	}
-	ok, msg := productBulkDeleteResult(res.Succeeded, res.NotDone(), productAttrBulkPartial, productAttrBulkDone)
-	productAttrJump(c, ok, msg)
-}
-
-// parseIntOr 解析十进制整数，失败返回兜底值（后台表单容错，不因一个脏字段 500）。
 func parseIntOr(s string, fallback int) int {
 	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil {
@@ -380,27 +281,15 @@ const (
 	attrValuesAction      = "/admin/product-attributes/set-values"
 )
 
-// attrGroupFormAction 属性组表单按形态取提交地址。
-func attrGroupFormAction(mode string) string {
-	if mode == attrGroupModeEdit {
-		return attrGroupUpdateAction
-	}
-	return attrGroupCreateAction
-}
-
 // attrGroupFormOpts 属性组抽屉表单的数据入参。
 //
 // 用结构体而不是位置参数：这里连着两个 id（工程 / 属性组）与一个模式串，位置写反
 // （工程 id 塞进属性组槽）不会编译失败 —— 只会在失败片段里把工程 id 渲染进隐藏域，
 // 提交后回跳到一个不存在的工程，且只在失败路径上出现。
 type attrGroupFormOpts struct {
-	Csrf      string
 	ProjectID string
 	Mode      string
 	GroupID   string
-	// ListQuery 是属性页当前的筛选上下文（表单 action 的 query）——
-	// 写动作失败时由 shell.BackPath 从它读回，回跳列表页不丢筛选。
-	ListQuery string
 	// Name / Key / Sort 是**首屏**的初值（编辑抽屉取该组的当前值，新建给零值）；
 	// 失败重渲染时它们由片段的 else 分支让位给 FormEcho.*（模板里一眼可见）。
 	Name      string
@@ -423,50 +312,39 @@ type attrGroupFormOpts struct {
 // `.["t"](...)` 静默变空串（200、日志干净），缺了 tf 则是渲染中断（500，htmx 不 swap）。
 // **不注入 csrf_token**（PrepareBare 只管多语言），token 仍由 Csrf 键显式带。
 //
-// InDrawer 恒为 true：属性页的表单**只**存在于抽屉里（页面上没有行内属性表单）。
-// 失败重渲染时若表单没申报抽屉形态，它会由 attrGroupFormFail 删掉。
+// 键恒在：模板直接读它们，缺键会让 Jet 从那行截断整个片段。
 func attrGroupFormData(c *gin.Context, o attrGroupFormOpts) gin.H {
 	return adminui.PrepareBare(c, gin.H{
-		"Csrf": o.Csrf, "Project": o.ProjectID,
-		"Mode": o.Mode, "Action": withListQuery(attrGroupFormAction(o.Mode), o.ListQuery),
+		"Project": o.ProjectID,
 		"GroupID": o.GroupID, "IsCreate": o.Mode == attrGroupModeCreate,
-		// 首屏初值（三个键恒在：片段的 else 分支直接读它们，缺键会让 Jet 从那行截断）。
 		"Name": o.Name, "Key": o.Key, "Sort": o.Sort,
-		// 首屏勾选态（新建默认勾选、编辑取该组的当前值）；失败重渲染时模板走
-		// FormEchoMulti 的按值命中分支，这个键只是结构上必须在场（模板 else 分支要读它）。
 		"VariationChecked": o.Variation,
 		"RowsCtx":          o.RowsCtx,
-		"InDrawer":         true,
 	})
 }
 
 // attrValuesFormOpts 属性值抽屉表单的数据入参。
 type attrValuesFormOpts struct {
-	Csrf      string
 	ProjectID string
 	GroupID   string
-	// ListQuery 同 attrGroupFormOpts.ListQuery：失败回跳时保留列表筛选。
-	ListQuery string
 	RowsCtx   gin.H
 }
 
-// attrValuesFormData 属性值抽屉表单的渲染数据（首屏与失败重渲染共用）。
+// attrValuesFormData 属性值抽屉表单的渲染数据。
 //
-// 回填的**主体是 RowsCtx**（用户刚编辑的那几行，由 attrEchoRowsFromForm 保留位置和原值）；
-// FormEcho（*productdto.AttrValueFormEcho）只承载 projectId / id / groupId 这几个隐藏域 ——
-// 值表单的可见字段全是 values[n].*，没有单值字段可回填。t / tf 同 attrGroupFormData（PrepareBare 注入）。
+// 可见字段全是 values[n].*，行的现值由 RowsCtx 带出（attrRowsFromResp 组装）。
 func attrValuesFormData(c *gin.Context, o attrValuesFormOpts) gin.H {
 	return adminui.PrepareBare(c, gin.H{
-		"Csrf": o.Csrf, "Project": o.ProjectID,
-		"GroupID": o.GroupID, "Action": withListQuery(attrValuesAction, o.ListQuery),
-		"RowsCtx": o.RowsCtx, "InDrawer": true,
+		"Project": o.ProjectID,
+		"GroupID": o.GroupID,
+		"RowsCtx": o.RowsCtx,
 	})
 }
 
 // attrCreateDrawerForm 「新建属性组」抽屉的表单数据（页头与空态两个入口共用同一份）。
-func attrCreateDrawerForm(c *gin.Context, csrf, projectID, listQuery string) gin.H {
+func attrCreateDrawerForm(c *gin.Context, projectID string) gin.H {
 	return attrGroupFormData(c, attrGroupFormOpts{
-		Csrf: csrf, ProjectID: projectID, ListQuery: listQuery,
+		ProjectID: projectID,
 		// 新建时没有可继承的组：勾选态沿用既有默认（勾上「参与变体」）；
 		// 属性值行**首屏为空**（Rows: nil）：编辑器渲染 0 行 + 「还没有属性值…」的引导文案，
 		// 用户点「+ 添加值」后由 ProductAttributesValueRows 兜底保证至少一行。两者口径**不同**，
@@ -481,84 +359,25 @@ func attrCreateDrawerForm(c *gin.Context, csrf, projectID, listQuery string) gin
 // 两个抽屉的初值都从同一行数据来：编辑抽屉取该组的名称 / 标识 / 排序 / 参与变体，
 // 属性值抽屉取该组的属性值列表。它们与失败重渲染时的数据形状**逐键一致**
 // （差别只在 FormEcho* 三键与 SubmitErr 的有无），片段因此只有一套渲染分支。
-func attrRowDrawerForms(c *gin.Context, csrf, projectID, listQuery string,
+func attrRowDrawerForms(c *gin.Context, projectID string,
 	a *productdto.AttributeResp) (gin.H, gin.H) {
 
 	group := attrGroupFormData(c, attrGroupFormOpts{
-		Csrf: csrf, ProjectID: projectID, ListQuery: listQuery,
-		Mode: attrGroupModeEdit, GroupID: a.ID,
+		ProjectID: projectID,
+		Mode:      attrGroupModeEdit, GroupID: a.ID,
 		Name: a.Name, Key: a.Key, Sort: a.Sort, Variation: a.IsVariation,
 	})
 	values := attrValuesFormData(c, attrValuesFormOpts{
-		Csrf: csrf, ProjectID: projectID, GroupID: a.ID, ListQuery: listQuery,
+		ProjectID: projectID, GroupID: a.ID,
 		RowsCtx: attrRowsCtxData(c, a.ID, attrRowsFromResp(a.Values)),
 	})
 	return group, values
 }
 
-// attrGroupFormFail 属性组表单（新建 / 编辑）的失败出口。
-//
-//	· htmx 请求：200 + 片段（错误槽 + 回填后的表单）—— 抽屉原地留住已填内容；
-//	· 原生请求：整页提示（shell.RenderJump）回属性页 —— 取代原先的 302 + ?err=。
-//
-// **成功路径也走同一条出口**（调用点用 productAttrJump）：见本文件顶部注释。
-func (h *productPageHandle) attrGroupFormFail(c *gin.Context, mode, projectID, groupID string, msg productMsg) {
-	if !isHXRequest(c) {
-		productAttrJump(c, false, msg)
-		return
-	}
-	data := attrGroupFormData(c, attrGroupFormOpts{
-		Csrf: attrFormCSRF(c), ProjectID: projectID,
-		ListQuery: productQueryFromRequest(c, productAttrBackKeys...),
-		Mode:      mode, GroupID: groupID,
-		// 新建抽屉按本次提交的原始位置和值重建，编辑抽屉没有值编辑器。
-		RowsCtx: attrRowsCtxData(c, groupID, attrEchoRowsFromForm(c)),
-	})
-	// 错误槽收**事实**（productMsg），取词在 product_attribute_group_form.html 的 tf 里做。
-	data["SubmitErr"] = msg
-	// 回填值按**结构体字段**填（dto.AttrGroupFormEcho）：`form:` 标签就是那份字段清单，
-	// 不再手写字符串数组 —— 漏一个字段在编译期就不存在，而「模板改了 name、结构体没跟」
-	// 由 product_attribute_form_fail_test.go 的反射 + 模板源码双向对账钉住。
-	echo := &productdto.AttrGroupFormEcho{}
-	adminui.FillForm(echo, formEchoFrom(c).values)
-	data["FormEcho"] = echo
-	// 抽屉形态由**表单自己**申报（隐藏域 inDrawer）：抽屉内容被 ui/drawer.js 克隆到
-	// document 级，由渲染路径反推（HX-Target / Referer / 请求 URL）都不可靠；
-	// 一次表单提交能把这个事实原样带过来 —— 否则抽屉里失败一次，「取消」按钮就消失了。
-	if strings.TrimSpace(c.PostForm("inDrawer")) == "" {
-		delete(data, "InDrawer")
-	}
-	c.HTML(http.StatusOK, attrGroupFormTemplate, data)
-}
-
-// attrValuesFormFail 属性值表单的失败出口（分档口径与上面一致）。
-func (h *productPageHandle) attrValuesFormFail(c *gin.Context, projectID, groupID string, msg productMsg) {
-	if !isHXRequest(c) {
-		productAttrJump(c, false, msg)
-		return
-	}
-	data := attrValuesFormData(c, attrValuesFormOpts{
-		Csrf: attrFormCSRF(c), ProjectID: projectID,
-		GroupID:   groupID,
-		ListQuery: productQueryFromRequest(c, productAttrBackKeys...),
-		RowsCtx:   attrRowsCtxData(c, groupID, attrEchoRowsFromForm(c)),
-	})
-	// 错误槽收**事实**（productMsg），取词在 product_attribute_values_form.html 的 tf 里做。
-	data["SubmitErr"] = msg
-	// 回填值按结构体字段填（dto.AttrValueFormEcho），口径同 attrGroupFormFail。
-	echo := &productdto.AttrValueFormEcho{}
-	adminui.FillForm(echo, formEchoFrom(c).values)
-	data["FormEcho"] = echo
-	if strings.TrimSpace(c.PostForm("inDrawer")) == "" {
-		delete(data, "InDrawer")
-	}
-	c.HTML(http.StatusOK, attrValuesFormTemplate, data)
-}
-
 // formValueHas 判定同名多值里是否存在 want。
 //
 // **必须遍历全部值，不能用 url.Values.Get**：Get 返回第一个，而「同名隐藏域打底 +
-// 同名复选框」的形态（hidden "0" 在前、checkbox "1" 在后，见 partials/product_attribute_rows.html）
+// 同名复选框」的形态（hidden "0" 在前、checkbox "1" 在后，见 product_attribute_rows.html）
 // 让 Get 恒取到 "0" —— 于是「参与变体 / 启用」这类勾选**永远为假**，而且不报任何错：
 // 页面照样 200、值照样落库，只是用户的勾选被静默丢弃。属性页的勾选字段全部走这里。
 func formValueHas(vals url.Values, name, want string) bool {
@@ -602,29 +421,6 @@ func attrFormOptionalChecked(vals url.Values, name string) *bool {
 	return &v
 }
 
-// attrFormCSRF 抽屉表单里的 csrf token。
-//
-// 片段是**带参数 include** 的（数据是每个抽屉自己的数据类，不是页面 data），取不到
-// adminui.Prepare 注入的页面键，所以 token 由 handler 显式带进来 —— 两条取值路：
-//
-//  1. **失败重渲染**：token 就在这次提交的表单里（表单自带的 csrf_token 隐藏域）。
-//     优先用它，因为它一定非空 —— 回落到会话时若 session 读不到（存储未初始化等），
-//     片段里的表单会带着空 token，用户再点一次保存就是 403，而错误槽里什么都没说；
-//  2. **页面首屏**：走 adminui.Prepare 的**同一个**取值入口（builtin.GetCSRFToken），
-//     否则同一张表单在首屏与失败重渲染两条路径上会带着两个不同的 token。
-func attrFormCSRF(c *gin.Context) string {
-	if tok := strings.TrimSpace(c.PostForm("csrf_token")); tok != "" {
-		return tok
-	}
-	tok, err := builtin.GetCSRFToken(c)
-	if err != nil {
-		return ""
-	}
-	return tok
-}
-
-// attributeIDsFromForm 收商品表单里的属性组引用。
-//
 // 抽屉是勾选列表（同名多值，浏览器逐项提交），同时兼容老式的「逗号分隔单值」形态
 // （接口 / 脚本路径）—— 两种形态都归一到 splitIDs 解析（分隔符与去空白只有一份规则）。
 func attributeIDsFromForm(c *gin.Context) []string {

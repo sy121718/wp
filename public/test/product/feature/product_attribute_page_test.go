@@ -58,8 +58,6 @@ func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.GET("/admin/product-attributes", handle.ProductAttributesPage)
 	engine.POST("/admin/product-attributes/value-rows", handle.ProductAttributesValueRows)
-	engine.POST("/admin/product-attributes/create", handle.ProductAttributesCreate)
-	engine.POST("/admin/product-attributes/set-values", handle.ProductAttributesSetValues)
 	return engine, f
 }
 
@@ -157,39 +155,37 @@ func TestAttributeValueRowsFragmentAddRemove(t *testing.T) {
 	}
 }
 
-// TestAttributePageCreateAndSetValues 页面写链路：
-// 表单 POST 建组 + 整体保存值（服务端归一与排序），随后页面能看到结果。
+// TestAttributePageCreateAndSetValues 建组 + 整体保存值（服务端归一与排序）。
+//
+// 页面写链路已迁到 ui/json_write.js（模板直调 /api/product/attribute/{create,set-values}），
+// 这里直接验用例：形状（values[] 行数组）由 json_write.test.cjs 与页面渲染测试分别钉住。
 func TestAttributePageCreateAndSetValues(t *testing.T) {
 	engine, f := newAttrPageEngine(t)
 	if engine == nil {
 		return
 	}
-	form := url.Values{}
-	form.Set("projectId", f.projectID)
-	form.Set("name", "口味")
-	form.Set("key", "flavor")
-	form.Set("isVariation", "1")
-	form.Set("values[0].label", "原味")
-	form.Set("values[1].label", "香辣")
-	rec := postForm(engine, "/admin/product-attributes/create", form)
-	assertJumpOK(t, rec)
-
+	group, err := f.svc.CreateAttribute(t.Context(), &productdto.CreateAttributeReq{
+		ProjectID: f.projectID, Name: "口味", Key: "flavor", IsVariation: boolPtr(true),
+		Values: []productdto.AttributeValueReq{{Label: "原味"}, {Label: "香辣"}},
+	})
+	if err != nil {
+		t.Fatalf("建组失败: %v", err)
+	}
 	list, err := f.svc.ListAttributes(t.Context(), &productdto.ListAttributeReq{ProjectID: f.projectID})
 	if err != nil {
 		t.Fatalf("列表失败: %v", err)
 	}
 	if len(list) != 1 || list[0].Key != "flavor" || len(list[0].Values) != 2 {
-		t.Fatalf("表单建组结果不符：%+v", list)
+		t.Fatalf("建组结果不符：%+v", list)
 	}
 
 	// 整体保存值：只提交一行 → 库里应只剩一行。
-	form2 := url.Values{}
-	form2.Set("projectId", f.projectID)
-	form2.Set("id", list[0].ID)
-	form2.Set("values[0].label", "原味")
-	rec = postForm(engine, "/admin/product-attributes/set-values", form2)
-	assertJumpOK(t, rec)
-	got, err := f.svc.GetAttribute(t.Context(), &productdto.GetAttributeReq{ID: list[0].ID})
+	if _, err = f.svc.SetAttributeValues(t.Context(), &productdto.SetAttributeValuesReq{
+		ID: group.ID, Values: []productdto.AttributeValueReq{{Label: "原味"}},
+	}); err != nil {
+		t.Fatalf("保存属性值失败: %v", err)
+	}
+	got, err := f.svc.GetAttribute(t.Context(), &productdto.GetAttributeReq{ID: group.ID})
 	if err != nil {
 		t.Fatalf("读属性组失败: %v", err)
 	}

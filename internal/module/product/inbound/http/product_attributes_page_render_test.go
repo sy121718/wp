@@ -137,3 +137,55 @@ func TestProductAttributesPageNilViewIsGuarded(t *testing.T) {
 		t.Fatal("nil 视图兜底也必须是完整页壳")
 	}
 }
+
+// TestProductAttributesPageUsesJSONWriteBase 属性页的写动作必须声明在 JSON 写基座上。
+//
+// 本批把 create/update/set-values/delete/bulk-delete 五个页面 POST 换成同名的 /api 端点，
+// 页面侧只留下 data-write-* 声明。这类改动的失败模式是**静默**的：漏一处声明，按钮还在、
+// 点了没反应（基座不认这个表单），而没有任何一条既有判据会红 —— 原来守这五条 htmx 出口的
+// 用例（product_attribute_form_fail_test.go / product_attribute_form_fail_render_test.go）
+// 已随功能删除。
+func TestProductAttributesPageUsesJSONWriteBase(t *testing.T) {
+	view := productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
+		v.SelectedProject = "p1"
+		v.AttributeDetails = []*productdto.AttributeResp{
+			{ID: "a1", ProjectID: "p1", Key: "color", Name: "颜色", IsVariation: true, ValueCount: 3},
+		}
+		v.Total = 1
+	})
+	h, _ := attributesPageEnv(view, nil)
+
+	rec := attributesPageRequest(t, h, "/admin/product-attributes?project=p1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("正常档应为 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		// 列表级：批量表单容器 + 批量按钮的就地声明。
+		`data-list-bulk`,
+		`data-write-api="/api/product/attribute/bulk-delete"`,
+		`data-write-mode="bulk"`,
+		// 行级：单条删除（端点只吃 ID，所以不带 data-write-extra）。
+		`data-write-api="/api/product/attribute/delete"`,
+		`data-write-mode="single"`,
+		// 抽屉里的两条表单（编辑 = update、值编辑 = set-values）。
+		`data-write-api="/api/product/attribute/update"`,
+		`data-write-api="/api/product/attribute/set-values"`,
+		// 状态位：基座把失败/成功文案写进它。
+		`data-write-status`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("属性页缺少 %s —— 该写动作没接到 JSON 写基座上", want)
+		}
+	}
+	// 负向：三条已删的页面 POST 不能再出现在页面里（残留即「点了走整页跳转」）。
+	for _, gone := range []string{
+		"/admin/product-attributes/bulk-delete",
+		"/admin/product-attributes/delete",
+		"/admin/product-attributes/set-values",
+	} {
+		if strings.Contains(body, gone) {
+			t.Fatalf("属性页仍引用已删除的页面 POST %q", gone)
+		}
+	}
+}
