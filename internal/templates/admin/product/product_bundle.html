@@ -170,7 +170,10 @@
         {{end}}{{end}}{{end}}
 
         <div class="action-row">
-            <button type="button" class="btn btn-primary" data-bundle-resolve
+            {* 解析是 fetch 取数 + 追加 DOM 行（行为在 static/js/ui/bundle_members.js，经
+               partials/ui_scripts.html 的公共入口加载）：无 JS 时按钮按了不会有任何反应，
+               故按控件基座的门槛形态隐藏并禁用（data-requires-js 在基座初始化时解除）。 *}
+            <button type="button" class="btn btn-primary" data-bundle-resolve data-requires-js hidden disabled
                     data-panel="#bundle-source-panel"
                     data-url="{{if isset(.ResolveURL)}}{{.ResolveURL}}{{end}}"
                     data-project="{{selectedProject}}"
@@ -192,165 +195,6 @@
     </section>
     {{end}}
     {{end}}
-    {* 成员来源解析的交互（docs/14 §1.2）。三条决定这段脚本形态的规则：
-       1. 事件用 document 级委托 —— 行由 JS 追加，按钮与行可能在任何来源面板里；
-       2. 「解析」是一次**不落库**的取数：POST 到 /admin/products/bundle/members/resolve，
-          把返回的行按 <template data-bundle-member-tpl> 的同一种结构追加进成员清单
-          （与变体清单的「生成」同一形态）；
-       3. 文案一律从 data-msg-* 取（服务端按当前语言渲染），脚本里不写死中文。 *}
-    <script>
-    (function () {
-        'use strict';
-
-        function bundleHost() {
-            return document.querySelector('[data-bundle-form-host]');
-        }
-
-        function setStatus(text) {
-            document.querySelectorAll('[data-bundle-source-status]').forEach(function (el) {
-                el.textContent = text || '';
-            });
-        }
-
-        // 已存与追加行均使用隐藏身份，唯一候选行使用 select。
-        function existingVariantIds() {
-            var out = [];
-            var host = bundleHost();
-            if (!host) { return out; }
-            host.querySelectorAll('[data-bundle-member-list] [data-bundle-member-row]').forEach(function (tr) {
-                var sel = tr.querySelector('select[name=variantId]');
-                var hid = tr.querySelector('input[name=variantId]');
-                var v = sel ? sel.value : (hid ? hid.value : '');
-                if (v) { out.push(v); }
-            });
-            return out;
-        }
-
-        function appendMembers(members) {
-            var host = bundleHost();
-            var body = host && host.querySelector('[data-bundle-member-list]');
-            var tpl = host && host.querySelector('[data-bundle-member-tpl]');
-            if (!body || !tpl) { return 0; }
-            var present = new Set(existingVariantIds());
-            var added = 0;
-            var max = Number(body.getAttribute('data-bundle-max')) || 20;
-            members.forEach(function (m) {
-                if (!m.variantId || present.has(m.variantId) || present.size >= max) { return; }
-                var frag = tpl.content.cloneNode(true);
-                var tr = frag.querySelector('tr');
-                if (!tr) { return; }
-                var bind = function (sel, value) {
-                    var el = tr.querySelector(sel);
-                    if (el) { el.value = value || ''; }
-                };
-                bind('input[name=variantId]', m.variantId);
-                bind('input[name=sourceKind]', m.sourceKind);
-                bind('input[name=memberWarehouseId]', m.warehouseId);
-                bind('input[name=memberWarehouseSku]', m.warehouseSku);
-                bind('input[name=memberExternalSku]', m.externalSku);
-                var sku = tr.querySelector('[data-member-sku]');
-                if (sku) { sku.textContent = m.skuCode || m.variantId || ''; }
-                var src = tr.querySelector('[data-member-source]');
-                if (src) { src.textContent = m.sourceLabel || ''; }
-                var candidate = body.querySelector('[data-bundle-candidate]');
-                if (candidate && candidate.closest('tr')) {
-                    body.insertBefore(frag, candidate.closest('tr'));
-                } else {
-                    body.appendChild(frag);
-                }
-                present.add(m.variantId);
-                added++;
-            });
-            var candidate = body.querySelector('[data-bundle-candidate]');
-            if (candidate && present.size >= max) {
-                var blank = candidate.closest('tr');
-                blank.hidden = true;
-                blank.querySelectorAll('input, select').forEach(function (field) { field.disabled = true; });
-            }
-            return added;
-        }
-
-        document.addEventListener('change', function (e) {
-            var candidate = e.target.closest('[data-bundle-candidate]');
-            if (!candidate || !candidate.value) { return; }
-            var option = candidate.options[candidate.selectedIndex];
-            var id = candidate.value;
-            candidate.value = '';
-            appendMembers([{ variantId: id, skuCode: option ? option.textContent : '' }]);
-        });
-
-        document.addEventListener('click', function (e) {
-            var remove = e.target.closest('[data-bundle-member-remove]');
-            if (remove) {
-                var row = remove.closest('[data-bundle-member-row]');
-                if (row) { row.remove(); }
-                var host = bundleHost();
-                var body = host && host.querySelector('[data-bundle-member-list]');
-                if (body) {
-                    var candidate = body.querySelector('[data-bundle-candidate]');
-                    if (candidate && candidate.closest('tr').hidden) {
-                        candidate.closest('tr').hidden = false;
-                        candidate.closest('tr').querySelectorAll('input, select').forEach(function (field) { field.disabled = false; });
-                    } else if (!candidate) {
-                        var select = host.querySelector('[data-bundle-candidate-template]');
-                        if (select) { body.appendChild(select.content.cloneNode(true)); }
-                    }
-                }
-                return;
-            }
-            var trigger = e.target.closest('[data-bundle-resolve]');
-            if (!trigger) { return; }
-            var panel = document.querySelector(trigger.getAttribute('data-panel') || '');
-            if (!panel) { return; }
-            var fd = new FormData();
-            fd.append('projectId', trigger.getAttribute('data-project') || '');
-            fd.append('productId', trigger.getAttribute('data-product') || '');
-            var sourceSel = panel.querySelector('[data-bundle-source-select]');
-            fd.append('source', sourceSel ? sourceSel.value : '');
-            var productSel = panel.querySelector('select[name=sourceProduct]');
-            fd.append('sourceProductId', productSel ? productSel.value : '');
-            var whSel = panel.querySelector('select[name=sourceWarehouse]');
-            fd.append('sourceWarehouse', whSel ? whSel.value : '');
-            panel.querySelectorAll('input[name=warehouseSku]:checked').forEach(function (cb) {
-                fd.append('warehouseSku', cb.value);
-            });
-            panel.querySelectorAll('input[type=checkbox][name^="attr:"]:checked').forEach(function (cb) {
-                fd.append(cb.name, cb.value);
-            });
-            existingVariantIds().forEach(function (id) { fd.append('existingVariantId', id); });
-            setStatus('');
-            fetch(trigger.getAttribute('data-url') || '', {
-                method: 'POST',
-                headers: { 'X-CSRF-Token': trigger.getAttribute('data-csrf') || '' },
-                body: fd
-            }).then(function (res) {
-                return res.json().catch(function () { return null; });
-            }).then(function (data) {
-                if (!data || !data.ok) {
-                    var reason = data && data.message ? data.message : '';
-                    setStatus((trigger.getAttribute('data-msg-failed') || '') + reason);
-                    return;
-                }
-                var members = data.members || [];
-                var added = appendMembers(members);
-                var text = added
-                    ? (trigger.getAttribute('data-msg-added') || '').replace('%d', String(added))
-                    : (trigger.getAttribute('data-msg-none') || '');
-                var skips = data.skips || [];
-                if (skips.length) {
-                    var lines = skips.map(function (s) {
-                        return (s.label ? s.label + '：' : '') + (s.text || '');
-                    });
-                    text += ' ' + (trigger.getAttribute('data-msg-skipped') || '')
-                        .replace('%d', String(skips.length)) + lines.join('；');
-                }
-                setStatus(text);
-            }).catch(function () {
-                setStatus(trigger.getAttribute('data-msg-failed') || '');
-            });
-        });
-    })();
-    </script>
 </div>
 {{end}}
 {{end}}
