@@ -384,14 +384,23 @@ const (
 // --- 批量操作的结论文案（页面回执，不是错误白名单）---
 //
 // 与 admin / order 的 Bulk* 同口径：值 = sys_i18n 的 item_key，**不带 Err / Msg 前缀**。
-// 这些句子是 handler 按计数拼出的整句回执（由 shell.RenderJump 渲染成整页提示），
-// 不是 service 返回的错误，因此不进 productenums.ProductErrFallbacks 那套「错误 key → 展示原文」的表 ——
-// 它们的取词在 product_jump.go 的 productBulkTextOf（错误出口与提示页出口同一个文件）。
+// 这些句子是 handler 按计数拼出的整句回执，不是 service 返回的错误，因此不进
+// productenums.ProductErrFallbacks 那套「错误 key → 展示原文」的表。
 //
-// 中文原文全部留在 inbound/http/product_jump.go（与写侧共用的那份 bulkTemplate 表绑在一起），
-// 这里的常量只声明 key。
+// 传输已经改了：后台写动作走 ui/json_write.js 直调 /api/product/*，结论文案由基座取
+// data-msg-* / data-msg-template 属性或 handler 回的 message 承担，**不再**渲染整页提示页。
+// 因此下表多数常量已无 Go 消费者（见各分组的说明），但**词条与常量都留着**：
+// 词条在 sys_i18n 里由迁移落地，删词条属于数据变更、要另起迁移，而保留的成本只是一条
+// 无人读的行；常量留着则让「这句文案讲过什么」在代码里可检索。
+//
+// 还活着的只有两处：BulkPricingNoneSelected（空勾选守卫）与 BulkVariant*（变体清单保存
+// 的合成句，中文原文在 inbound/http/product_jump.go 的 productVariantSave* 里）。
 const (
 	// 批量删除：五个实体各一对（部分成功 / 全部成功）。
+	//
+	// Tag / Attr / Brand / Product 四组的 Go 消费者已随页面写路由删除（批量删除改直调
+	// /api/product/{delete,bulk-delete}，结论由 JSON 回执的 message 与 items 承担）；
+	// Category 一组更早迁移（见下方注释）。
 	BulkTagPartial  = "product.bulk.tagPartial"
 	BulkTagDone     = "product.bulk.tagDone"
 	BulkAttrPartial = "product.bulk.attrPartial"
@@ -408,6 +417,9 @@ const (
 	BulkProductDone     = "product.bulk.productDone"
 
 	// 批量改价：没勾选 / 四种结论。
+	//
+	// NoneSelected 是活的（BulkPricing 的空勾选守卫）；其余四条结论句改用 JSON 回执的
+	// message + data.skipped/items，Go 侧已无消费者。
 	BulkPricingNoneSelected = "product.bulk.pricingNoneSelected"
 	BulkPricingNoChange     = "product.bulk.pricingNoChange"
 	BulkPricingApplied      = "product.bulk.pricingApplied"

@@ -29,26 +29,27 @@ import (
 // 整页 GET 的「还没选商品 / 这条能力没接上」引导，与翻译工作台 GET 失败。写动作的成功
 // 结论走 JSON 回执（基座存 flash、刷新后显示一次），不再进这一族。
 
+// 只剩两个页面还需要「回跳地址」：整页 GET 的引导与 GET 失败出口（见文件头）。
+// 其余页面的路径常量随各自的 Back 助手一起删除 —— 删掉引用它们的写通道之后，
+// 留一个没人读的路径字面量只会让下一个人以为那条通道还活着。
 const (
 	productListPath         = "/admin/products"
-	productEditPath         = "/admin/products/edit"
-	productNewPath          = "/admin/products/new"
-	productAttrPath         = "/admin/product-attributes"
-	productBundlePath       = "/admin/products/bundle"
-	productTagsPath         = "/admin/product-tags"
-	productCategoriesPath   = "/admin/product-categories"
-	productBrandsPath       = "/admin/product-brands"
 	productTranslationsPath = "/admin/products/translations"
 )
 
-// 各页回跳筛选键。
+// 页面上下文的键表（每页一份）。
 //
 // 同一份键表服务两条路径：**渲染时**拼进表单 action 的 query、**POST 回来时**由
-// shell.BackPath 读回。两处分叉的表现是「写完跳回去筛选静默丢了」—— 页面不报错、
-// 日志也干净，所以键表必须是同一份（不要在两处各写一遍字面量）。
+// productQueryFromRequest 读回（列表与翻译页还要由 shell.BackPath 拼回跳地址）。
+// 两处分叉的表现是「写完跳回去筛选静默丢了」—— 页面不报错、日志也干净，
+// 所以键表必须是同一份（不要在两处各写一遍字面量）。
+//
+// 写动作迁到 JSON 之后，Tag / Categories / Brands / Bundle / Pricing 几组的键表只剩
+// 「渲染时拼进表单 action / 片段重渲时再拼一次」这一条用途，读回那一半随各自的
+// 页面写通道一起没了 —— 但**不能删**：删了表单 action 就不再带当前筛选，
+// 页面 POST 的预览端点回来会落到没有上下文的一页。
 var (
 	productListBackKeys         = []string{"project", "keyword", "status", "page", "limit"}
-	productAttrBackKeys         = []string{"project", "keyword", "variation", "page", "limit"}
 	productTagsBackKeys         = []string{"project", "keyword", "page", "limit"}
 	productCategoriesBackKeys   = []string{"project", "keyword", "page", "limit"}
 	productBrandsBackKeys       = []string{"project", "keyword", "page", "limit"}
@@ -103,22 +104,6 @@ func productListBack(c *gin.Context) string {
 	return back
 }
 
-func productAttrBack(c *gin.Context) string {
-	return shell.BackPath(c, productAttrPath, productAttrBackKeys...)
-}
-
-func productCategoriesBack(c *gin.Context) string {
-	return shell.BackPath(c, productCategoriesPath, productCategoriesBackKeys...)
-}
-
-func productBrandsBack(c *gin.Context) string {
-	return shell.BackPath(c, productBrandsPath, productBrandsBackKeys...)
-}
-
-func productBundleBack(c *gin.Context) string {
-	return shell.BackPath(c, productBundlePath, productBundleBackKeys...)
-}
-
 // productDetailTemplateBack 回详情页模板页：project / product 随表单提交（隐藏域），
 // 由服务端用 backpath.WithParams 拼 —— 与 BackPath 共用同一份参数编码。
 func productDetailTemplateBack(projectID, productID string) string {
@@ -132,34 +117,14 @@ func productTranslationsBack(c *gin.Context) string {
 	return shell.BackPath(c, productTranslationsPath, productTranslationsBackKeys...)
 }
 
-// productEditBack 回商品编辑页：project / product 本来就随表单提交（隐藏域），
-// 由服务端用 backpath.WithParams 拼 —— 与 BackPath 共用同一份参数编码。
-func productEditBack(projectID, productID string) string {
-	return backpath.WithParams(productEditPath, map[string]string{
-		"project": strings.TrimSpace(projectID),
-		"product": strings.TrimSpace(productID),
-	})
-}
-
-// productNewBack 回商品新建页：只有工程上下文。
-func productNewBack(projectID string) string {
-	return backpath.WithParams(productNewPath, map[string]string{"project": strings.TrimSpace(projectID)})
-}
-
 // —— 回跳链接文字（复用各页标题词条，不新增全站词条）——
 //
 // 全是静态的 key + 中文原文，所以是包级变量：**不需要 gin.Context** ——
 // 「这段文案属于哪个语言」由提示页模板取词时决定，与控制器无关（这正是本批的形状要求）。
 var (
 	productListBackMsg           = productMsg{Key: MsgProductsTitle, Fallback: "商品"}
-	productAttrBackMsg           = productMsg{Key: productenums.ProductAttributesTitle, Fallback: "商品属性"}
-	productCategoriesBackMsg     = productMsg{Key: productenums.ProductCategoriesTitle, Fallback: "商品分类"}
-	productBrandsBackMsg         = productMsg{Key: productenums.ProductBrandsTitle, Fallback: "商品品牌"}
-	productBundleBackMsg         = productMsg{Key: productenums.ProductBundleTitle, Fallback: "捆绑配置"}
 	productDetailTemplateBackMsg = productMsg{Key: productenums.ProductDetailTemplateTitle, Fallback: "商品详情页模板"}
 	productTranslationsBackMsg   = productMsg{Key: productenums.ProductTranslationsTitle, Fallback: "商品多语言"}
-	productEditBackMsg           = productMsg{Key: productenums.ProductsEditTitle, Fallback: "编辑商品"}
-	productNewBackMsg            = productMsg{Key: productenums.ProductsCreateSubmit, Fallback: "新建商品"}
 )
 
 // —— 提示页的一句结论 ——
@@ -202,11 +167,6 @@ func productListJump(c *gin.Context, ok bool, msg productMsg) {
 	productPageJump(c, ok, msg, productListBack(c), productListBackMsg)
 }
 
-// productAttrJump 回属性页的提示页出口。
-func productAttrJump(c *gin.Context, ok bool, msg productMsg) {
-	productPageJump(c, ok, msg, productAttrBack(c), productAttrBackMsg)
-}
-
 // productDetailTemplateJump 回详情页模板页的提示页出口（project / product 来自表单）。
 func productDetailTemplateJump(c *gin.Context, ok bool, projectID, productID string, msg productMsg) {
 	productPageJump(c, ok, msg, productDetailTemplateBack(projectID, productID), productDetailTemplateBackMsg)
@@ -215,11 +175,6 @@ func productDetailTemplateJump(c *gin.Context, ok bool, projectID, productID str
 // productTranslationsJump 回翻译工作台的提示页出口。
 func productTranslationsJump(c *gin.Context, ok bool, msg productMsg) {
 	productPageJump(c, ok, msg, productTranslationsBack(c), productTranslationsBackMsg)
-}
-
-// productEditJump 回商品编辑页的提示页出口（商品级写动作的**唯一**落点）。
-func productEditJump(c *gin.Context, ok bool, projectID, productID string, msg productMsg) {
-	productPageJump(c, ok, msg, productEditBack(projectID, productID), productEditBackMsg)
 }
 
 // —— 成功回执文案（key + 中文兜底；词条缺失时页面上仍是中文）——

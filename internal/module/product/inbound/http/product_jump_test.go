@@ -108,10 +108,6 @@ func TestProductBackHelpersKeepFilters(t *testing.T) {
 		want []string
 	}{
 		{"列表", productListBack(c), []string{"/admin/products?", "project=p1", "keyword=abc", "status=draft", "page=2"}},
-		{"属性", productAttrBack(c), []string{"/admin/product-attributes?", "project=p1", "variation=1"}},
-		{"分类", productCategoriesBack(c), []string{"/admin/product-categories?", "project=p1"}},
-		{"品牌", productBrandsBack(c), []string{"/admin/product-brands?", "project=p1"}},
-		{"捆绑", productBundleBack(c), []string{"/admin/products/bundle?", "project=p1", "product=prod1"}},
 		{"翻译", productTranslationsBack(c), []string{"/admin/products/translations?", "project=p1", "product=prod1", "lang=en-US"}},
 	}
 	for _, tc := range cases {
@@ -132,12 +128,9 @@ func TestProductBackHelpersKeepFilters(t *testing.T) {
 	if strings.Contains(productListBack(c), "source=") {
 		t.Error("列表回跳不该透传未列出的键 source")
 	}
-	// 编辑页 / 新建页的 id 随表单提交，用 WithParams 拼（与 BackPath 同一份参数编码）。
-	if got := productEditBack("p1", "prod1"); got != "/admin/products/edit?product=prod1&project=p1" {
-		t.Errorf("productEditBack = %q", got)
-	}
-	if got := productNewBack("p1"); got != "/admin/products/new?project=p1" {
-		t.Errorf("productNewBack = %q", got)
+	// 详情页模板页的 id 随表单提交，用 WithParams 拼（与 BackPath 同一份参数编码）。
+	if got := productDetailTemplateBack("p1", "prod1"); got != "/admin/products/template?product=prod1&project=p1" {
+		t.Errorf("productDetailTemplateBack = %q", got)
 	}
 }
 
@@ -151,7 +144,7 @@ func TestProductJumpBackTextFollowsPage(t *testing.T) {
 		msg  productMsg
 	}{
 		{"列表", productListBackMsg},
-		{"属性", productAttrBackMsg},
+		{"翻译", productTranslationsBackMsg},
 	} {
 		if strings.TrimSpace(tc.msg.Key) == "" {
 			t.Errorf("%s回跳链接文字必须带 i18n key", tc.name)
@@ -188,7 +181,7 @@ func TestProductQueryFromRequestDropsEmptyAndUnknown(t *testing.T) {
 // 是站内相对路径（以 / 开头、不带 scheme / host）。
 func TestProductJumpBackIsSameOrigin(t *testing.T) {
 	c, _ := newProductJumpContext(t, "", "project=p1", "")
-	for _, got := range []string{productListBack(c), productAttrBack(c), productEditBack("p1", "prod1")} {
+	for _, got := range []string{productListBack(c), productTranslationsBack(c), productDetailTemplateBack("p1", "prod1")} {
 		if !strings.HasPrefix(got, "/") || strings.HasPrefix(got, "//") {
 			t.Errorf("回跳地址应为站内相对路径，实际 %q", got)
 		}
