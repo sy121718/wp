@@ -120,9 +120,9 @@ func (h *Handle) Delete(c *gin.Context) {
 
 // BulkDelete 批量删除商品（POST /api/product/bulk-delete）。
 //
-// 与页面侧 ProductsBulkDelete 共用**同一个 service 方法与同一个权限点**
-// （permission.ProductDelete）：那条通道返回整页提示，这条返回 ui/json_write.js 基座读的
-// JSON 回执。两条通道并存是过渡态 —— 页面迁完之后页面 POST 就该删掉，而不是留两条永远同值。
+// 权限点与单条删除分开（product:bulk_delete / product:delete）：sys_permission 上
+// permission_code 唯一、超管策略由它逐行生成，一个权限点只能绑一条 API 路由 —— 复用会让
+// 其中一条路径拿不到策略而 403。批量删与单删本来也是两次授权决定。
 //
 // 逐条原因在这里取词：service 只回业务 key（ReasonKey），成品句由 productErrText 按请求
 // 语言给。取词只在 inbound 有，service 拿不到也不该拿。

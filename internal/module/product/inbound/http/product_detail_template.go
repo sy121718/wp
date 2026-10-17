@@ -54,90 +54,91 @@ var (
 
 var errModeUnavailable = errors.New("详情页双轨能力未装配")
 
-// modeWriteTarget 解析双轨写动作的目标（工程 / 商品 / 发布实例）。
+// ReapplyDetailTemplatePreset POST /api/product/detail-template/reapply-preset：
+// 重新套用预设 —— 放弃该商品实例的独立文档，回到跟随模板并重建（迁移 282 的另一半）。
 //
-// 实例定位一律经 GetByEntity（工程作用域内），失败按 ErrNotFound 回带 —— 与
-// 详情页其它写动作的失败口径一致（用户看到的是「商品不存在」，而不是内部错误）。
-func (h *productPageHandle) modeWriteTarget(c *gin.Context) (
-	projectID, productID string, inst *presentationcontract.InstanceResp, err error) {
-	if h.modePort == nil || h.templates == nil || h.instances == nil {
-		return "", "", nil, errModeUnavailable
+// 页面侧原先的 /admin/products/reapply-preset 随写通道一起删除：结论改成一行回执
+// （成功由 ui/json_write.js 存进 flash 再整页刷新 —— 模式徽标变了，必须重渲染）。
+func (h *Handle) ReapplyDetailTemplatePreset(c *gin.Context) {
+	req := &productdto.DetailTemplateModeReapplyReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
 	}
-	projectID = strings.TrimSpace(c.PostForm("projectId"))
-	productID = strings.TrimSpace(c.PostForm("productId"))
-	if projectID == "" || productID == "" {
-		return projectID, productID, nil, errors.New(presentationenums.ErrInvalidParam)
+	port, err := detailTemplateModePortFor(req.InstanceID)
+	if err != nil {
+		productDetailTemplateModeFail(c, err)
+		return
 	}
-	inst, ierr := h.instances.GetByEntity(c.Request.Context(), &presentationcontract.GetByEntityReq{
-		EntityType: productcontract.EntityTypeProduct, EntityID: productID, ProjectID: projectID,
-	})
-	if ierr != nil || inst == nil {
-		return projectID, productID, nil, errors.New(presentationenums.ErrNotFound)
+	if _, err = port.ReapplyPreset(c.Request.Context(), &presentationcontract.ReapplyPresetReq{
+		InstanceID: strings.TrimSpace(req.InstanceID),
+		ProjectID:  strings.TrimSpace(req.ProjectID),
+		TemplateID: strings.TrimSpace(req.TemplateID),
+	}); err != nil {
+		productDetailTemplateModeFail(c, err)
+		return
 	}
-	return projectID, productID, inst, nil
+	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), nil)
 }
 
-// modeRedirect 统一的落点：成功 / 失败都渲染整页提示（回商品编辑页）。
+// RollbackDetailTemplateDocument POST /api/product/detail-template/rollback-document：
+// 快照级文档回滚 —— 取历史快照的文档重新发布（实体数据仍取最新）。
 //
-// 取代原先的 302 + ?err=：那条通道要求读侧再判一次「这条提示是不是本仓给的」
-// （productNoticeTexts），而查询参数不是可信边界（见 product_jump.go 的文件头）。
-func modeRedirect(c *gin.Context, projectID, productID string, err error) {
-	if err != nil {
-		productEditJump(c, false, projectID, productID, productErrMsg(c, err))
+// 与上面的重新套用预设是**对称的两半**：一个放弃独立文档，一个把某份历史文档立为当前。
+// 两者都重建产物，所以成功之后页面必须刷新（产物指针与快照清单都变了）。
+func (h *Handle) RollbackDetailTemplateDocument(c *gin.Context) {
+	req := &productdto.DetailTemplateModeRollbackReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
-	productEditJump(c, true, projectID, productID, productActionDoneMsg)
+	port, err := detailTemplateModePortFor(req.InstanceID)
+	if err != nil {
+		productDetailTemplateModeFail(c, err)
+		return
+	}
+	if _, err = port.RollbackDocument(c.Request.Context(), &presentationcontract.RollbackDocumentReq{
+		InstanceID: strings.TrimSpace(req.InstanceID),
+		ProjectID:  strings.TrimSpace(req.ProjectID),
+		SnapshotID: strings.TrimSpace(req.SnapshotID),
+	}); err != nil {
+		productDetailTemplateModeFail(c, err)
+		return
+	}
+	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), nil)
 }
 
-// ProductsReapplyPreset 重新套用预设：放弃该商品独立文档，回到跟随模板。
-func (h *productPageHandle) ProductsReapplyPreset(c *gin.Context) {
-	projectID, productID, inst, err := h.modeWriteTarget(c)
-	if err != nil {
-		modeRedirect(c, projectID, productID, err)
-		return
+// detailTemplateModePortFor 取双轨能力并校验实例标识（两个端点的共同前置）。
+//
+// 端口是后置注入的（见 product_router.go 的 BindDetailTemplateModePort）：没注入 = 装配缺陷，
+// 走非业务错误出口（500 归口文案，说清楚是哪一类问题）；实例标识空 = 请求不合法 ——
+// binding 已拦一次，这里是服务端边界，不假设调用方一定经过模板。
+func detailTemplateModePortFor(instanceID string) (ProductDetailTemplateModePort, error) {
+	if detailTemplateModePort == nil {
+		return nil, errModeUnavailable
 	}
-	_, err = h.modePort.ReapplyPreset(c.Request.Context(), &presentationcontract.ReapplyPresetReq{
-		InstanceID: inst.ID, ProjectID: projectID,
-		// 可选：同时换一套模板（换底稿）。留空 = 沿用当前绑定。
-		TemplateID: strings.TrimSpace(c.PostForm("templateId")),
-	})
-	modeRedirect(c, projectID, productID, err)
+	if strings.TrimSpace(instanceID) == "" {
+		return nil, errors.New(presentationenums.ErrInvalidParam)
+	}
+	return detailTemplateModePort, nil
 }
 
-// ProductsRollbackDocument 快照级文档回滚：取历史快照的文档重发。
-func (h *productPageHandle) ProductsRollbackDocument(c *gin.Context) {
-	projectID, productID, inst, err := h.modeWriteTarget(c)
-	if err != nil {
-		modeRedirect(c, projectID, productID, err)
+// productDetailTemplateModeFail 双轨写动作的 JSON 失败出口。
+//
+// 两类失败分档：业务 key（本模块或 presentation 的 enums 常量）按成品文案回报，
+// 400 / 404 如实；非业务（装配缺失、驱动报错）交给 ErrorAuto —— 原文只进日志，对外 500
+// 归口文案。直接写 err.Error() 两条都不满足：裸 key 运营看不懂，库表细节又不该出去。
+func productDetailTemplateModeFail(c *gin.Context, err error) {
+	key := productErrKeyOf(err)
+	if key == "" {
+		response.ErrorAuto(c, http.StatusInternalServerError, productErrScene, err)
 		return
 	}
-	snapshotID := strings.TrimSpace(c.PostForm("snapshotId"))
-	if snapshotID == "" {
-		modeRedirect(c, projectID, productID, errors.New(presentationenums.ErrInvalidParam))
-		return
+	status := http.StatusBadRequest
+	if key == presentationenums.ErrNotFound {
+		status = http.StatusNotFound
 	}
-	_, err = h.modePort.RollbackDocument(c.Request.Context(), &presentationcontract.RollbackDocumentReq{
-		InstanceID: inst.ID, ProjectID: projectID, SnapshotID: snapshotID,
-	})
-	modeRedirect(c, projectID, productID, err)
-}
-
-// ProductsRollbackArtifact 产物指针回滚（秒级，不重新编译）。
-func (h *productPageHandle) ProductsRollbackArtifact(c *gin.Context) {
-	projectID, productID, inst, err := h.modeWriteTarget(c)
-	if err != nil {
-		modeRedirect(c, projectID, productID, err)
-		return
-	}
-	targetHash := strings.TrimSpace(c.PostForm("targetHash"))
-	if targetHash == "" {
-		modeRedirect(c, projectID, productID, errors.New(presentationenums.ErrInvalidParam))
-		return
-	}
-	_, err = h.modePort.RollbackArtifact(c.Request.Context(), &presentationcontract.RollbackArtifactReq{
-		InstanceID: inst.ID, ProjectID: projectID, TargetHash: targetHash,
-	})
-	modeRedirect(c, projectID, productID, err)
+	response.ErrorWithMessage(c, status, productMsgText(c, productErrMsg(c, err)))
 }
 
 // 详情页模板与发布实例都以实体类型为键：取值用 productcontract.EntityTypeProduct

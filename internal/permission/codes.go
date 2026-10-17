@@ -527,7 +527,9 @@ const (
 	// 详情页改 URL（POST /api/presentation/update-url）
 	PresentationUpdateURL Perm = "presentation:update_url"
 
-	// —— product（43）——
+	// —— product（54）——
+	// 属性组批量删除（POST /api/product/attribute/bulk-delete）
+	ProductAttributeBulkDelete Perm = "product:attribute_bulk_delete"
 	// 属性组创建（POST /api/product/attribute/create）
 	ProductAttributeCreate Perm = "product:attribute_create"
 	// 属性组删除（POST /api/product/attribute/delete）
@@ -540,6 +542,8 @@ const (
 	ProductAttributeSetValues Perm = "product:attribute_set_values"
 	// 属性组更新（POST /api/product/attribute/update）
 	ProductAttributeUpdate Perm = "product:attribute_update"
+	// 商品品牌批量删除（POST /api/product/brand/bulk-delete）
+	ProductBrandBulkDelete Perm = "product:brand_bulk_delete"
 	// 商品品牌创建（POST /api/product/brand/create）
 	ProductBrandCreate Perm = "product:brand_create"
 	// 商品品牌删除（POST /api/product/brand/delete）
@@ -558,6 +562,12 @@ const (
 	ProductBundleSkus Perm = "product:bundle_skus"
 	// 捆绑整单校验（POST /api/product/bundle/validate）
 	ProductBundleValidate Perm = "product:bundle_validate"
+	// 商品批量删除（POST /api/product/bulk-delete）
+	ProductBulkDelete Perm = "product:bulk_delete"
+	// 批量改价（POST /api/product/bulk-pricing）
+	ProductBulkPricing Perm = "product:bulk_pricing"
+	// 商品分类批量删除（POST /api/product/category/bulk-delete）
+	ProductCategoryBulkDelete Perm = "product:category_bulk_delete"
 	// 商品分类创建（POST /api/product/category/create）
 	ProductCategoryCreate Perm = "product:category_create"
 	// 商品分类删除（POST /api/product/category/delete）
@@ -572,6 +582,10 @@ const (
 	ProductCreate Perm = "product:create"
 	// 商品删除（POST /api/product/delete）
 	ProductDelete Perm = "product:delete"
+	// 详情页模板重新套用预设（POST /api/product/detail-template/reapply-preset）
+	ProductDetailTemplateReapply Perm = "product:detail_template_reapply"
+	// 详情页模板回滚到快照（POST /api/product/detail-template/rollback-document）
+	ProductDetailTemplateRollback Perm = "product:detail_template_rollback"
 	// 商品详情（GET /api/product/get）
 	ProductGet Perm = "product:get"
 	// 商品列表（GET /api/product/list）
@@ -588,6 +602,12 @@ const (
 	ProductPricingRoundings Perm = "product:pricing_roundings"
 	// 定价规则类型（GET /api/product/pricing/rules）
 	ProductPricingRules Perm = "product:pricing_rules"
+	// 商品评分新增（POST /api/product/rating/add）
+	ProductRatingAdd Perm = "product:rating_add"
+	// 商品评分删除（POST /api/product/rating/delete）
+	ProductRatingDelete Perm = "product:rating_delete"
+	// 商品标签批量删除（POST /api/product/tag/bulk-delete）
+	ProductTagBulkDelete Perm = "product:tag_bulk_delete"
 	// 商品标签创建（POST /api/product/tag/create）
 	ProductTagCreate Perm = "product:tag_create"
 	// 商品标签删除（POST /api/product/tag/delete）
@@ -612,6 +632,8 @@ const (
 	ProductVariantDelete Perm = "product:variant_delete"
 	// 变体组合生成（POST /api/product/variant/generate）
 	ProductVariantGenerate Perm = "product:variant_generate"
+	// 变体清单整表保存（POST /api/product/variant/save）
+	ProductVariantSave Perm = "product:variant_save"
 	// 变体更新（POST /api/product/variant/update）
 	ProductVariantUpdate Perm = "product:variant_update"
 
@@ -1026,49 +1048,60 @@ var specs = map[Perm]spec{
 	PresentationUpdateURL:   {module: "presentation", name: "详情页改 URL"},
 
 	// —— product ——
-	ProductAttributeCreate:    {module: "product", name: "属性组创建"},
-	ProductAttributeDelete:    {module: "product", name: "属性组删除"},
-	ProductAttributeGet:       {module: "product", name: "属性组详情"},
-	ProductAttributeList:      {module: "product", name: "属性组列表"},
-	ProductAttributeSetValues: {module: "product", name: "属性值保存"},
-	ProductAttributeUpdate:    {module: "product", name: "属性组更新"},
-	ProductBrandCreate:        {module: "product", name: "商品品牌创建"},
-	ProductBrandDelete:        {module: "product", name: "商品品牌删除"},
-	ProductBrandGet:           {module: "product", name: "商品品牌详情"},
-	ProductBrandList:          {module: "product", name: "商品品牌列表"},
-	ProductBrandUpdate:        {module: "product", name: "商品品牌更新"},
-	ProductBundleGet:          {module: "product", name: "捆绑配置读取"},
-	ProductBundleSet:          {module: "product", name: "捆绑配置保存"},
-	ProductBundleSkus:         {module: "product", name: "捆绑可选 SKU"},
-	ProductBundleValidate:     {module: "product", name: "捆绑整单校验"},
-	ProductCategoryCreate:     {module: "product", name: "商品分类创建"},
-	ProductCategoryDelete:     {module: "product", name: "商品分类删除"},
-	ProductCategoryGet:        {module: "product", name: "商品分类详情"},
-	ProductCategoryList:       {module: "product", name: "商品分类列表"},
-	ProductCategoryUpdate:     {module: "product", name: "商品分类更新"},
-	ProductCreate:             {module: "product", name: "商品创建"},
-	ProductDelete:             {module: "product", name: "商品删除"},
-	ProductGet:                {module: "product", name: "商品详情"},
-	ProductList:               {module: "product", name: "商品列表"},
-	ProductPricingAdjustment:  {module: "product", name: "定价留痕详情"},
-	ProductPricingApply:       {module: "product", name: "定价应用落库"},
-	ProductPricingHistory:     {module: "product", name: "定价留痕列表"},
-	ProductPricingPreview:     {module: "product", name: "定价试算预览"},
-	ProductPricingRoundings:   {module: "product", name: "定价尾数处理"},
-	ProductPricingRules:       {module: "product", name: "定价规则类型"},
-	ProductTagCreate:          {module: "product", name: "商品标签创建"},
-	ProductTagDelete:          {module: "product", name: "商品标签删除"},
-	ProductTagGet:             {module: "product", name: "商品标签详情"},
-	ProductTagList:            {module: "product", name: "商品标签列表"},
-	ProductTagProducts:        {module: "product", name: "商品标签命中商品"},
-	ProductTagRecalc:          {module: "product", name: "商品标签重算"},
-	ProductTagRuleTypes:       {module: "product", name: "商品标签规则类型"},
-	ProductTagUpdate:          {module: "product", name: "商品标签更新"},
-	ProductUpdate:             {module: "product", name: "商品更新"},
-	ProductVariantCreate:      {module: "product", name: "变体创建"},
-	ProductVariantDelete:      {module: "product", name: "变体删除"},
-	ProductVariantGenerate:    {module: "product", name: "变体组合生成"},
-	ProductVariantUpdate:      {module: "product", name: "变体更新"},
+	ProductAttributeBulkDelete:    {module: "product", name: "属性组批量删除"},
+	ProductAttributeCreate:        {module: "product", name: "属性组创建"},
+	ProductAttributeDelete:        {module: "product", name: "属性组删除"},
+	ProductAttributeGet:           {module: "product", name: "属性组详情"},
+	ProductAttributeList:          {module: "product", name: "属性组列表"},
+	ProductAttributeSetValues:     {module: "product", name: "属性值保存"},
+	ProductAttributeUpdate:        {module: "product", name: "属性组更新"},
+	ProductBrandBulkDelete:        {module: "product", name: "商品品牌批量删除"},
+	ProductBrandCreate:            {module: "product", name: "商品品牌创建"},
+	ProductBrandDelete:            {module: "product", name: "商品品牌删除"},
+	ProductBrandGet:               {module: "product", name: "商品品牌详情"},
+	ProductBrandList:              {module: "product", name: "商品品牌列表"},
+	ProductBrandUpdate:            {module: "product", name: "商品品牌更新"},
+	ProductBundleGet:              {module: "product", name: "捆绑配置读取"},
+	ProductBundleSet:              {module: "product", name: "捆绑配置保存"},
+	ProductBundleSkus:             {module: "product", name: "捆绑可选 SKU"},
+	ProductBundleValidate:         {module: "product", name: "捆绑整单校验"},
+	ProductBulkDelete:             {module: "product", name: "商品批量删除"},
+	ProductBulkPricing:            {module: "product", name: "批量改价"},
+	ProductCategoryBulkDelete:     {module: "product", name: "商品分类批量删除"},
+	ProductCategoryCreate:         {module: "product", name: "商品分类创建"},
+	ProductCategoryDelete:         {module: "product", name: "商品分类删除"},
+	ProductCategoryGet:            {module: "product", name: "商品分类详情"},
+	ProductCategoryList:           {module: "product", name: "商品分类列表"},
+	ProductCategoryUpdate:         {module: "product", name: "商品分类更新"},
+	ProductCreate:                 {module: "product", name: "商品创建"},
+	ProductDelete:                 {module: "product", name: "商品删除"},
+	ProductDetailTemplateReapply:  {module: "product", name: "详情页模板套用预设"},
+	ProductDetailTemplateRollback: {module: "product", name: "详情页模板回滚快照"},
+	ProductGet:                    {module: "product", name: "商品详情"},
+	ProductList:                   {module: "product", name: "商品列表"},
+	ProductPricingAdjustment:      {module: "product", name: "定价留痕详情"},
+	ProductPricingApply:           {module: "product", name: "定价应用落库"},
+	ProductPricingHistory:         {module: "product", name: "定价留痕列表"},
+	ProductPricingPreview:         {module: "product", name: "定价试算预览"},
+	ProductPricingRoundings:       {module: "product", name: "定价尾数处理"},
+	ProductPricingRules:           {module: "product", name: "定价规则类型"},
+	ProductRatingAdd:              {module: "product", name: "商品评分新增"},
+	ProductRatingDelete:           {module: "product", name: "商品评分删除"},
+	ProductTagBulkDelete:          {module: "product", name: "商品标签批量删除"},
+	ProductTagCreate:              {module: "product", name: "商品标签创建"},
+	ProductTagDelete:              {module: "product", name: "商品标签删除"},
+	ProductTagGet:                 {module: "product", name: "商品标签详情"},
+	ProductTagList:                {module: "product", name: "商品标签列表"},
+	ProductTagProducts:            {module: "product", name: "商品标签命中商品"},
+	ProductTagRecalc:              {module: "product", name: "商品标签重算"},
+	ProductTagRuleTypes:           {module: "product", name: "商品标签规则类型"},
+	ProductTagUpdate:              {module: "product", name: "商品标签更新"},
+	ProductUpdate:                 {module: "product", name: "商品更新"},
+	ProductVariantCreate:          {module: "product", name: "变体创建"},
+	ProductVariantDelete:          {module: "product", name: "变体删除"},
+	ProductVariantGenerate:        {module: "product", name: "变体组合生成"},
+	ProductVariantSave:            {module: "product", name: "变体清单保存"},
+	ProductVariantUpdate:          {module: "product", name: "变体更新"},
 
 	// —— project ——
 	ProjectCreate:        {module: "project", name: "新建项目"},

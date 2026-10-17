@@ -80,7 +80,7 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/delete", permission.ProductDelete, handle.Delete)
 	// 批量删除：与单条同一个权限点、同一个 service 方法，回执从「整页提示」换成
 	// JSON（ui/json_write.js 基座消费 data.deleted / data.skipped / data.items[].message）。
-	g.POST("/bulk-delete", permission.ProductDelete, handle.BulkDelete)
+	g.POST("/bulk-delete", permission.ProductBulkDelete, handle.BulkDelete)
 	g.POST("/variant/create", permission.ProductVariantCreate, handle.CreateVariant)
 	// 组合生成（issue #8）：勾选属性值 → 笛卡尔积写变体（幂等，超上限整体拒绝）。
 	g.POST("/variant/generate", permission.ProductVariantGenerate, handle.GenerateVariants)
@@ -88,11 +88,19 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/variant/delete", permission.ProductVariantDelete, handle.DeleteVariant)
 	// 清单保存（整张清单一次提交，前端从清单 DOM 组装 rows）：权限点复用组合生成 ——
 	// 页面侧原先的 /admin/products/variant/save 挂的就是它，保存与生成本就是同一批人。
-	g.POST("/variant/save", permission.ProductVariantGenerate, handle.SaveVariantList)
+	g.POST("/variant/save", permission.ProductVariantSave, handle.SaveVariantList)
 	// 评分是商品的子资源（issue #33）：补录 / 删除各一条记录，不碰商品自己的列。
 	// 权限点沿用「改这个商品」（update）—— 页面侧原先挂的就是它。
-	g.POST("/rating/add", permission.ProductUpdate, handle.AddRating)
-	g.POST("/rating/delete", permission.ProductUpdate, handle.DeleteRating)
+	g.POST("/rating/add", permission.ProductRatingAdd, handle.AddRating)
+	g.POST("/rating/delete", permission.ProductRatingDelete, handle.DeleteRating)
+
+	// —— 详情页双轨写动作（迁移 282）——
+	// 作用对象是商品的发布实例：重新套用预设（放弃独立文档）与文档级回滚（取历史快照重发）。
+	// 页面侧原先在 /admin/products/{reapply-preset,rollback-document} 两条页面 POST 上，
+	// 权限点沿用商品更新（同一改动面：改的都是这个商品详情页的呈现），不新增权限点。
+	// 能力由 presentation 提供，装配点见文件末尾的 BindDetailTemplateModePort。
+	g.POST("/detail-template/reapply-preset", permission.ProductDetailTemplateReapply, handle.ReapplyDetailTemplatePreset)
+	g.POST("/detail-template/rollback-document", permission.ProductDetailTemplateRollback, handle.RollbackDetailTemplateDocument)
 
 	// —— 属性组与属性值（issue #7）——
 	// 属性组可跨商品复用，故独立于商品资源。
@@ -105,7 +113,7 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/attribute/delete", permission.ProductAttributeDelete, handle.DeleteAttribute)
 	// 批量删除：与单条同一个权限点（删的都是属性组，只是形状从 {id} 变成 {ids}），
 	// 回执形状与商品批量删除逐字一致（json_write.js 按 outcome=delete 读 data.deleted）。
-	g.POST("/attribute/bulk-delete", permission.ProductAttributeDelete, handle.BulkDeleteAttributes)
+	g.POST("/attribute/bulk-delete", permission.ProductAttributeBulkDelete, handle.BulkDeleteAttributes)
 
 	// —— 分类与品牌（issue #10）——
 	// 分类是树（list 返回树、get 取单节点），品牌是平铺列表。
@@ -115,13 +123,13 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/category/create", permission.ProductCategoryCreate, handle.CreateCategory)
 	g.POST("/category/update", permission.ProductCategoryUpdate, handle.UpdateCategory)
 	g.POST("/category/delete", permission.ProductCategoryDelete, handle.DeleteCategory)
-	g.POST("/category/bulk-delete", permission.ProductCategoryDelete, handle.BulkDeleteCategories)
+	g.POST("/category/bulk-delete", permission.ProductCategoryBulkDelete, handle.BulkDeleteCategories)
 	g.GET("/brand/list", permission.ProductBrandList, handle.ListBrands)
 	g.GET("/brand/get", permission.ProductBrandGet, handle.GetBrand)
 	g.POST("/brand/create", permission.ProductBrandCreate, handle.CreateBrand)
 	g.POST("/brand/update", permission.ProductBrandUpdate, handle.UpdateBrand)
 	g.POST("/brand/delete", permission.ProductBrandDelete, handle.DeleteBrand)
-	g.POST("/brand/bulk-delete", permission.ProductBrandDelete, handle.BulkDeleteBrands)
+	g.POST("/brand/bulk-delete", permission.ProductBrandBulkDelete, handle.BulkDeleteBrands)
 
 	// —— 标签与自动规则（issue #11）——
 	// 手工标签手工挂载，自动标签按内置规则类型 + 参数维护，归属由明确的重算时机更新；
@@ -133,7 +141,7 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/tag/create", permission.ProductTagCreate, handle.CreateTag)
 	g.POST("/tag/update", permission.ProductTagUpdate, handle.UpdateTag)
 	g.POST("/tag/delete", permission.ProductTagDelete, handle.DeleteTag)
-	g.POST("/tag/bulk-delete", permission.ProductTagDelete, handle.BulkDeleteTags)
+	g.POST("/tag/bulk-delete", permission.ProductTagBulkDelete, handle.BulkDeleteTags)
 	g.POST("/tag/recalc", permission.ProductTagRecalc, handle.RecalcTags)
 
 	// —— 捆绑品（issue #20）——
@@ -154,7 +162,7 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/pricing/apply", permission.ProductPricingApply, handle.ApplyPricing)
 	// 批量改价（商品列表的「按规则改价」抽屉）：作用对象是勾选出来的商品集，权限点复用
 	// 商品更新（改的都是商品变体的售价，与页面侧 /admin/products/bulk-pricing 同一个）。
-	g.POST("/bulk-pricing", permission.ProductUpdate, handle.BulkPricing)
+	g.POST("/bulk-pricing", permission.ProductBulkPricing, handle.BulkPricing)
 	g.GET("/pricing/history", permission.ProductPricingHistory, handle.ListPriceAdjustments)
 	g.GET("/pricing/adjustment", permission.ProductPricingAdjustment, handle.GetPriceAdjustment)
 	return svc, svc
@@ -232,12 +240,11 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/products/bulk-pricing", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsBulkPricing)
 	// 商品引用的属性组整体替换（issue #7）：复用商品更新权限点（同一改动面）。
 	pages.POST("/products/attributes", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsAttributesSet)
-	// 双轨写动作（迁移 282，docs/04-C-instance-override.md）：只改这一个商品的呈现。
-	// 权限复用商品更新（同一改动面：改的都是这个商品详情页的内容），不新增权限点。
-	// 成功不写额外回执（页面上的模式徽标就是结果），失败走白名单文案 + 整页提示。
-	pages.POST("/products/reapply-preset", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsReapplyPreset)
-	pages.POST("/products/rollback-document", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRollbackDocument)
-	pages.POST("/products/rollback-artifact", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRollbackArtifact)
+	// 双轨写动作（迁移 282）没有页面 POST：模板用 ui/json_write.js 直调
+	// /api/product/detail-template/*（见上面接口面那一节）。
+	// 产物指针回滚（rollback-artifact）连页面入口一起**删除**：它要求调用方手上有一个
+	// 产物 hash，而后台上没有任何地方给出这个事实（模板里从来没渲染过这个表单），
+	// 留着就是一条「有路由、无入口」的死端点。
 	// 商品评分（issue #33）：评分是独立明细表（#30），增删复用商品更新权限点 ——
 	// 评分属商品维护，不另立权限点与菜单。
 
@@ -341,4 +348,22 @@ func SetupProductTranslationRoutes(adminPages *gin.RouterGroup,
 	adminPages.POST("/products/translations/save",
 		builtin.CasbinMiddlewareForPath("/api/product/update"), handle.SaveProductTranslations)
 	return handle
+}
+
+// ══ 后置注入（装配顺序倒不过来的一条依赖）══
+
+// detailTemplateModePort 双轨能力（迁移 282）在**接口面**的注入点：装配期写一次，之后只读。
+//
+// 为什么是包级变量而不是构造参数：product 的接口面在 assembly.go 里装配，而 presentation
+// （提供双轨能力的那个模块）在 assembly_publish.go 才建出来 —— 顺序反不过来。
+// 与 inventoryhttp.SetProductCatalog 同一手法（跨模块循环依赖在装配期的唯一解法）。
+//
+// 未注入时两个端点回 500 归口文案：装配缺陷必须可见，不能静默成功。真实装配里
+// assembly_publish.go 紧跟 presentation 建好之后调 BindDetailTemplateModePort，
+// 漏了就是启动期接线错误，而不是运行期的空操作。
+var detailTemplateModePort presentationcontract.DetailTemplateModePort
+
+// BindDetailTemplateModePort 绑定双轨能力（装配期调用一次）。
+func BindDetailTemplateModePort(port presentationcontract.DetailTemplateModePort) {
+	detailTemplateModePort = port
 }

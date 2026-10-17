@@ -246,6 +246,10 @@ func (a *assembly) buildPublishingModules() {
 	}
 
 	a.presentationSvc = presentationSvc
+	// 商品详情页的双轨写动作（迁移 282）在**接口面**也要用同一份 presentation 能力：
+	// product 的接口面早于本段装配（assembly.go 的 SetupProductRoutes），所以是后置绑定
+	// 而不是构造参数。漏接的表现是两个端点回 500（装配缺陷可见），不是静默成功。
+	producthttp.BindDetailTemplateModePort(a.presentationSvc)
 	a.pluginSvc = pluginSvc
 	a.collectionResolver = collectionResolver
 	a.pageService = pageService

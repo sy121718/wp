@@ -92,6 +92,9 @@
     {{p := .Product}}
     {* id 是页头保存按钮的关联目标（form="product-edit-main"）：字段全部留在这个表单里，
        页头只放按钮。 *}
+    {* 详情页模板的两个动作（重新套用预设 / 回滚文档）成功后整页刷新，结论经 flash 带过来。
+       落点固定在本页顶部：那两个表单所在的折叠区默认收起着，结论放在折叠体里刷新后看不见。 *}
+    <p class="form-hint badge" data-write-flash-target="product-detail-mode" role="status" hidden></p>
     {* 两栏：左编辑（表单） / 右预览（详情页真实形态）。预览只在有商品时才有意义 ——
        新建走的是另一个页面，这里 HasProduct 为假时右栏给一句说明。 *}
     <div class="product-edit-panes">
@@ -473,25 +476,31 @@
         {{if .TplPanel.IsDocumentMode}}
         <p class="hint">{{ .["t"]("admin.product_detail.template.docHint", "这是该商品自己的文档：改动只影响这一个商品，模板更新不会同步过来。") }}</p>
         {{if isset(.TplPanel.PresetUpdated)}}<p class="hint">{{ .["t"]("admin.product_detail.template.presetUpdated", "模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。") }}</p>{{end}}
-        <form method="post" action="/admin/products/reapply-preset" class="form-inline">
+        {* 提交走 JSON 写基座：实例 ID 与工程随请求显式回传（端点是实例级的，不再按商品反查）；
+           按钮在 JS 放出之前是 hidden + disabled —— 没有 JS 就没有可用端点，不能留一个点了没反应的原生提交。 *}
+        <form class="form-inline" data-write-api="/api/product/detail-template/reapply-preset"
+              data-write-mode="form" data-write-flash="product-detail-mode">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-            <input type="hidden" name="productId" value="{{.ProductID}}">
-            <button type="submit" class="btn btn-ghost">{{ .["t"]("admin.product_detail.template.reapplyPreset", "重新套用预设（回到跟随模板）") }}</button>
+            <input type="hidden" name="instanceId" value="{{.TplPanel.InstanceID}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <button type="submit" class="btn btn-ghost" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail.template.reapplyPreset", "重新套用预设（回到跟随模板）") }}</button>
         </form>
         {{if isset(.TplPanel.Snapshots)}}
         {{if len(.TplPanel.Snapshots) > 0}}
-        <form method="post" action="/admin/products/rollback-document" class="form-inline">
+        <form class="form-inline" data-write-api="/api/product/detail-template/rollback-document"
+              data-write-mode="form" data-write-flash="product-detail-mode">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
-            <input type="hidden" name="productId" value="{{.ProductID}}">
+            <input type="hidden" name="instanceId" value="{{.TplPanel.InstanceID}}">
             <label class="form-label" for="rollback-snapshot">{{ .["t"]("admin.product_detail.template.rollbackLabel", "回滚到历史版本") }}</label>
             <select class="form-select" id="rollback-snapshot" name="snapshotId">
                 {{range _, snap := .TplPanel.Snapshots}}
                 <option value="{{snap.ID}}">{{snap.CreatedAt}}</option>
                 {{end}}
             </select>
-            <button type="submit" class="btn btn-ghost">{{ .["t"]("admin.product_detail.template.rollbackSubmit", "回滚文档并重发") }}</button>
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <button type="submit" class="btn btn-ghost" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail.template.rollbackSubmit", "回滚文档并重发") }}</button>
         </form>
         <p class="hint">{{ .["t"]("admin.product_detail.template.rollbackHint", "回滚取该历史版本的文档重新发布（实体数据取最新）。") }}</p>
         {{end}}

@@ -236,8 +236,8 @@ func (h *Handle) ApplyPricing(c *gin.Context) {
 
 // BulkPricing 批量「按规则改价」（POST /api/product/bulk-pricing）。
 //
-// 与页面侧 ProductsBulkPricing 共用同一个 service 方法（BulkApplyPricing）与同一个权限点
-// （permission.ProductUpdate）：那条通道返回整页提示，这条返回 ui/json_write.js 读的 JSON 回执。
+// 权限点独立（product:bulk_pricing）：一个权限点只能绑一条 API 路由（sys_permission 上
+// permission_code 唯一），复用 product:update 会让其中一条路径拿不到策略而 403。
 //
 // 规则参数**平铺在顶层**（ruleType / multiplier / amount / margin / rounding），不套一层 rule
 // 对象：页面表单本来就是一个平铺表单（pricing_rule_fields.html），而「哪个规则用哪个参数」的

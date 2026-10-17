@@ -11,7 +11,8 @@
 //
 // 三层分工，互为兜底：
 //  1. 编译期：RouteGroup.GET/POST 的第二个参数是 Perm，漏写就是编译错误；
-//  2. 装配期：Declare 校验 perm 必须是已登记的常量（拼错 → panic），同一路由重复声明 → panic；
+//  2. 装配期：Declare 校验 perm 必须是已登记的常量（拼错 → panic），同一路由重复声明 → panic，
+//     同一权限点绑定到**多条 API 路由** → panic（见 Declare 里的说明）；
 //     装配末尾 SyncToDB 把声明幂等 upsert 进 sys_permission 与超管策略；
 //  3. 运行时：scripts/check-permission-gaps.sh 仍保留，抓「路由表与库不一致」（例如人工在
 //     库里删了某条权限点），与声明式注册互补。
@@ -20,6 +21,7 @@ package permission
 import (
 	"cmp"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -56,6 +58,17 @@ var (
 	declared     []RouteSpec
 	declaredKeys map[string]Perm
 	exemptRoutes []string
+	// apiPermPaths 权限点 → 已绑定的第一条 /api/ 路由（"METHOD PATH"）。
+	//
+	// 为什么需要它：sys_permission 上有 uk_sys_permission_code（permission_code 唯一），
+	// 而 Casbin 中间件按**实际请求路径** enforce、策略行由 insertSuperadminPolicies 从
+	// sys_permission 逐行生成 —— 于是一个权限点只能有一条路径进策略，同一 code 挂上的
+	// 其余 API 路由拿不到任何匹配 → **含超管在内全员 403**（实测：product:update 同时挂在
+	// /api/product/update 与 /api/product/rating/add 等 6 条路径，最终库里的 api_path
+	// 被 fixPermissionRoutes 改成最后一条，编辑主表单直接 403）。
+	// 页面路由（/admin/...）复用同一权限点是合法的（PageAuthz 走 RoutesOf 逐条试），所以
+	// 这条校验只看 /api/ 前缀。
+	apiPermPaths map[Perm]string
 )
 
 // Declare 登记一条授权路由（由 RouteGroup 的 GET/POST 调用，业务代码不直接调）。
@@ -99,6 +112,17 @@ func Declare(method, path string, p Perm) {
 	if !ok {
 		panic("权限点未登记：路由 " + key + " 声明了 " + string(p) +
 			"，但 internal/permission/codes.go 里没有这条常量（拼写错误？新增权限点要同时加常量）")
+	}
+	if strings.HasPrefix(path, "/api/") {
+		if apiPermPaths == nil {
+			apiPermPaths = map[Perm]string{}
+		}
+		if prev, used := apiPermPaths[p]; used && prev != key {
+			panic("同一权限点绑定到多条 API 路由：" + string(p) + " → " + prev + " / " + key +
+				"（sys_permission.permission_code 唯一，只有一条路径能生成超管策略，" +
+				"其余路径对所有人 403 —— 每条 API 路由要各自一个权限点）")
+		}
+		apiPermPaths[p] = key
 	}
 	declaredKeys[key] = p
 	declared = append(declared, RouteSpec{Method: method, Path: path, Perm: p, Module: s.module, Name: s.name})
@@ -203,4 +227,5 @@ func Reset() {
 	declared = nil
 	declaredKeys = nil
 	exemptRoutes = nil
+	apiPermPaths = nil
 }

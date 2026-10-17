@@ -96,9 +96,20 @@ func productEditStack(t *testing.T, root *html.Node) *html.Node {
 }
 
 // productEditFormByAction 按 action 找页面上的表单（用来定位两块折叠区）。
+//
+// 写动作迁到 JSON 写基座之后 action 就不再存在了，新页面一律用
+// productEditFormByWriteAPI；这个还留着是因为「原生提交」仍是合法形态
+// （例如整页 GET 的筛选表单），按 action 找它们没有替代品。
 func productEditFormByAction(root *html.Node, action string) []*html.Node {
 	return peAll(root, func(n *html.Node) bool {
 		return peEl(n, "form") && peAttr(n, "action") == action
+	})
+}
+
+// productEditFormByWriteAPI 按 data-write-api 找页面上的表单（写动作的定位依据）。
+func productEditFormByWriteAPI(root *html.Node, api string) []*html.Node {
+	return peAll(root, func(n *html.Node) bool {
+		return peEl(n, "form") && peAttr(n, "data-write-api") == api
 	})
 }
 
@@ -193,10 +204,21 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 	}
 
 	// 详情页模板：两个 form-inline（重新套用预设 / 回滚文档）都在同一个折叠区内。
-	reapply := productEditFormByAction(stack, "/admin/products/reapply-preset")
-	rollback := productEditFormByAction(stack, "/admin/products/rollback-document")
+	// 判据从 action 换成 data-write-api：两个动作已迁到 JSON 写基座，表单不再有页面端点。
+	reapply := productEditFormByWriteAPI(stack, "/api/product/detail-template/reapply-preset")
+	rollback := productEditFormByWriteAPI(stack, "/api/product/detail-template/rollback-document")
 	if len(reapply) != 1 || len(rollback) != 1 {
 		t.Fatalf("详情页模板应有「重新套用预设」与「回滚文档」两个表单，实际 %d / %d 个", len(reapply), len(rollback))
+	}
+	// 两份声明并存时浏览器会按原生表单提交，而那条页面端点在服务端已经删了 ——
+	// 用户看到的是 404，不是结果。
+	for _, fr := range append(append([]*html.Node{}, reapply...), rollback...) {
+		if a := peAttr(fr, "action"); a != "" {
+			t.Fatalf("详情页模板表单同时声明了 action=%q：原生提交会打到已删除的页面端点", a)
+		}
+		if peAttr(fr, "data-write-flash") != "product-detail-mode" {
+			t.Fatalf("两个动作成功后都要整页刷新，结论必须经 data-write-flash 带过刷新（实际 %q）", peAttr(fr, "data-write-flash"))
+		}
 	}
 	tplFold := peUp(reapply[0], func(n *html.Node) bool { return peEl(n, "details") && peClass(n, "section-fold") })
 	if tplFold == nil {
@@ -215,8 +237,8 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 	if peUp(selects[0], func(n *html.Node) bool { return n == tplFold }) == nil {
 		t.Fatal("版本下拉被折叠边界切到了外面：收起时它与按钮不同区，展开后也选不到")
 	}
-	submitInFold(t, tplFold, "/admin/products/reapply-preset")
-	submitInFold(t, tplFold, "/admin/products/rollback-document")
+	submitInFold(t, tplFold, "/api/product/detail-template/reapply-preset")
+	submitInFold(t, tplFold, "/api/product/detail-template/rollback-document")
 
 	// 折叠边界不得切开任何表单：折叠区内的 `form=` 关联只能指向**同一个折叠区内**的表单
 	// （指向区外的表单意味着字段与按钮分处折叠两侧：看得见按钮时填不了字段，反之亦然）。
@@ -363,20 +385,25 @@ func TestProductEditEveryContentCardHasTitle(t *testing.T) {
 }
 
 // submitInFold 断言某个 action 的表单，与它的提交按钮同处一个折叠区里。
-func submitInFold(t *testing.T, fold *html.Node, action string) {
+func submitInFold(t *testing.T, fold *html.Node, api string) {
 	t.Helper()
-	forms := productEditFormByAction(fold, action)
+	forms := productEditFormByWriteAPI(fold, api)
 	if len(forms) != 1 {
-		t.Fatalf("折叠区内应恰好一个 action=%s 的表单，实际 %d 个", action, len(forms))
+		t.Fatalf("折叠区内应恰好一个 data-write-api=%s 的表单，实际 %d 个", api, len(forms))
 	}
 	btns := peAll(forms[0], func(n *html.Node) bool {
 		return peEl(n, "button") && strings.EqualFold(peAttr(n, "type"), "submit")
 	})
 	if len(btns) != 1 {
-		t.Fatalf("折叠区内的 action=%s 表单应恰好一个提交按钮，实际 %d 个", action, len(btns))
+		t.Fatalf("折叠区内的 data-write-api=%s 表单应恰好一个提交按钮，实际 %d 个", api, len(btns))
+	}
+	// 无 JS 时按钮必须是 hidden + disabled：表单没有原生端点，按得动就等于「点了没反应」。
+	// 三个都是布尔属性（值为空串），存在性用 peHasAttr 判，不能拿 peAttr 的返回值当判据。
+	if !peHasAttr(btns[0], "data-requires-js") || !peHasAttr(btns[0], "disabled") || !peHasAttr(btns[0], "hidden") {
+		t.Fatalf("data-write-api=%s 的提交按钮缺少 data-requires-js/hidden/disabled", api)
 	}
 	if peUp(btns[0], func(n *html.Node) bool { return n == fold }) == nil {
-		t.Fatalf("action=%s 的提交按钮不在折叠区内：收起时它就点不到了", action)
+		t.Fatalf("data-write-api=%s 的提交按钮不在折叠区内：收起时它就点不到了", api)
 	}
 }
 
@@ -390,6 +417,17 @@ func peIsFormControl(n *html.Node) bool {
 // peEl 判断元素节点且标签名匹配（小写标签名）。
 func peEl(n *html.Node, tag string) bool {
 	return n.Type == html.ElementNode && n.Data == tag
+}
+
+// peHasAttr 属性是否存在。布尔属性（data-requires-js / hidden / disabled）的值是空串，
+// 用 peAttr 的返回值判存在会把「有属性」读成「没有」。
+func peHasAttr(n *html.Node, key string) bool {
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 // peAttr 取属性值，缺失给空串。
