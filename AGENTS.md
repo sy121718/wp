@@ -215,12 +215,16 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   `*.ErrorWithMessage`）；② 重定向 query（`?err=` 里塞 `err.Error()`）；③ 模板数据（`data.Errors = …`）。
   走页面出口 `internal/adminui` 的 `PageErrorBadRequest` / `PageError`（500，仅剩 order 停区在用）或 `pkg/response` + enums。门禁 `bash scripts/check-no-internal-error-leak.sh`，
   配**带理由的豁免清单**（条目不再命中即失败，禁止只增不减）。
-- **每个模块要有「错误文案三件套」**：① 可透出业务文案的**白名单**（`XxxFacingMessages`，与 enums 常量
-  一一对应，用 AST 对账测试钉住）；② **归口文案**（未命中时返回的可翻译 key，如 `adminenums.ErrInternal`；
-  `sys_i18n` 主键是 `(item_key, lang)`）；③ **结构化日志**（原文只进日志，带场景与 user_id）。
-  样板见 `internal/module/navigation/inbound/http/navigation_err.go`、`orderFacingText`；admin 那一份已
-  换成共享判据（`internal/adminui` 的形态判定 + 归口 + 结构化日志，见
-  `internal/module/admin/inbound/http/admin_err.go`）。
+- **业务错误的对外文案跟声明处走，判据只有一份**：错误在**声明处**同时给出 i18n key 与中文兜底
+  （`pkg/facing.New(key, "一句话")`；模块侧用 `enums.Err(key)` 工厂从兜底表取值），service 的复合错误
+  一律 `fmt.Errorf("%w: %s", err, 明细)`。出口只调一次共享判据 `pkg/facing.FactOf`
+  （页面 `adminui.PageErrorFact`、JSON `response.ErrorAuto` 都是它的转发），**不再有模块自带的
+  `XxxFacingMessages` 白名单与逐条 switch** —— 那是第二份真相：service 换措辞、或某个 key 改由别的模块
+  提供时就静默失配，症状是把业务文案吞成归口、或把内部错误当文案透出，两边都不报错。
+  未命中判据的错误对外只给归口文案（可翻译 key，`sys_i18n` 主键 `(item_key, lang)`），原文只进结构化
+  日志（场景 + user_id）。样板：`internal/module/product/enums/product_err_fallbacks.go` 的 `Err` 工厂、
+  `internal/module/page/service/page_lang.go` 的 `facing.New`。
+  存量模块若仍写着「错误文案三件套」（白名单 + 归口 + 日志），按此形态迁：白名单删掉，兜底搬回声明处。
 - 判据是**形状**不是字面量：新增 handler 先问「这个 err 会不会进响应」，而不是等门禁逐个堵接收方别名。
 
 ### JSON（唯一入口 pkg/jsonx）
