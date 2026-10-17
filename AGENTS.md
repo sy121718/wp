@@ -300,6 +300,12 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
 - **新增 `authorizedAPI` 下的接口：加权限点常量 + 在路由注册处声明，不写 seed 迁移**（常量加在
   `internal/permission/codes.go`，作为 `RouteGroup.GET/POST` 第二个参数）。漏权限点会让**含超管在内全员
   403**。另跑 `bash scripts/check-permission-gaps.sh` 抓注册期看不见的缺口。
+  · **每条 API 路由一个独立权限点，不得复用**：`sys_permission` 上 `permission_code` 唯一
+  （`uk_sys_permission_code`），超管策略由该表逐行生成，而 Casbin 按**实际请求路径** enforce ——
+  一个 code 挂两条 API 路由时只有一条能进策略，其余路径对所有人 403。实测：`product:update` 被
+  6 条路由共用，`fixPermissionRoutes` 把 api_path 改成最后声明的那条，商品编辑主表单直接 403。
+  `Declare` 现在会在第二条 `/api/` 路由复用同一权限点时 panic。**页面路由（`/admin/...`）复用同一
+  权限点仍合法** —— 页面 GET 走 `adminui` 的 PageAuthz（`permission.RoutesOf` 逐条 Enforce）。
 - **迁移**：`public/migrations/` 版本化 SQL（幂等），`register.go` 注册；seed 用 ConditionSQL。
   · **删能力时要连 seed 的 SQL 与幂等条件一起收口** —— Migrations 台账先跑、Seeds 台账后跑，
   停在 `register` 里的「删除」会被 `registerSeed` 的 seed 赢回去（122/104 的真实故障）。
