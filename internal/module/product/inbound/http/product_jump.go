@@ -105,10 +105,6 @@ func productAttrBack(c *gin.Context) string {
 	return shell.BackPath(c, productAttrPath, productAttrBackKeys...)
 }
 
-func productTagsBack(c *gin.Context) string {
-	return shell.BackPath(c, productTagsPath, productTagsBackKeys...)
-}
-
 func productCategoriesBack(c *gin.Context) string {
 	return shell.BackPath(c, productCategoriesPath, productCategoriesBackKeys...)
 }
@@ -159,7 +155,6 @@ func productNewBack(projectID string) string {
 var (
 	productListBackMsg           = productMsg{Key: MsgProductsTitle, Fallback: "商品"}
 	productAttrBackMsg           = productMsg{Key: productenums.ProductAttributesTitle, Fallback: "商品属性"}
-	productTagsBackMsg           = productMsg{Key: productenums.ProductTagsTitle, Fallback: "商品标签"}
 	productCategoriesBackMsg     = productMsg{Key: productenums.ProductCategoriesTitle, Fallback: "商品分类"}
 	productBrandsBackMsg         = productMsg{Key: productenums.ProductBrandsTitle, Fallback: "商品品牌"}
 	productBundleBackMsg         = productMsg{Key: productenums.ProductBundleTitle, Fallback: "捆绑配置"}
@@ -213,11 +208,6 @@ func productListJump(c *gin.Context, ok bool, msg productMsg) {
 // productAttrJump 回属性页的提示页出口。
 func productAttrJump(c *gin.Context, ok bool, msg productMsg) {
 	productPageJump(c, ok, msg, productAttrBack(c), productAttrBackMsg)
-}
-
-// productTagsJump 回标签页的提示页出口。
-func productTagsJump(c *gin.Context, ok bool, msg productMsg) {
-	productPageJump(c, ok, msg, productTagsBack(c), productTagsBackMsg)
 }
 
 // productBundleJump 回捆绑配置页的提示页出口。

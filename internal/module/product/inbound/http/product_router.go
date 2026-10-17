@@ -309,8 +309,6 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 不叠加 Casbin（页面组已有 Session + CSRF；凭空加权限点反而会造出「有路由无权限点 ⇒
 	// 含超管全员 403」那种缺口）。
 	pages.GET("/product-tags/hits", adminui.PageAuthz("/api/product/tag/list"), productPages.ProductTagHitsFragment)
-	pages.POST("/product-tags/create", builtin.CasbinMiddlewareForPath("/api/product/tag/create"), productPages.ProductTagsCreate)
-	pages.POST("/product-tags/update", builtin.CasbinMiddlewareForPath("/api/product/tag/update"), productPages.ProductTagsUpdate)
 	// 商品挂手工标签：属于商品更新，复用商品更新权限点（自动标签不在这份表单里）。
 	pages.POST("/products/tags", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTagsSet)
 

@@ -148,6 +148,10 @@ func TestTagPageUsesJSONWriteBase(t *testing.T) {
 			ID: "t2", Name: "自动标签", Slug: "auto",
 			Kind: productenums.TagKindRule, RuleType: productenums.TagRuleNewArrival,
 		})
+		// 规则下拉必须带参数键清单：它是表单组装 ruleParams 的唯一依据（前端不另抄一份映射）。
+		v.RuleTypes = []*productdto.TagRuleTypeResp{{
+			Type: productenums.TagRuleNewArrival, Name: "新品", ParamKeys: []string{"days"},
+		}}
 	})})
 	rec := taxonomyJSONWriteRequest(t, h, "/admin/product-tags", "/admin/product-tags?project=p1", taxonomyAllButtons())
 	if rec.Code != http.StatusOK {
@@ -169,6 +173,11 @@ func TestTagPageUsesJSONWriteBase(t *testing.T) {
 		`data-write-mode="form"`,
 		`id="tag-recalc-all"`,
 		`id="tag-recalc-t2"`,
+		// 新建 / 编辑抽屉：整表单档 + 规则参数的嵌套对象声明
+		`data-write-api="/api/product/tag/create"`,
+		`data-write-api="/api/product/tag/update"`,
+		`data-write-object=".tag-rule-fields;ruleParams;ruleType;kind=rule"`,
+		`data-rule-keys="days"`,
 		// 结果区（失败时才有内容）
 		"data-write-status",
 	})
@@ -176,5 +185,8 @@ func TestTagPageUsesJSONWriteBase(t *testing.T) {
 		`action="/admin/product-tags/bulk-delete"`,
 		`action="/admin/product-tags/delete"`,
 		`action="/admin/product-tags/recalc"`,
+		// 标签 create/update 的页面 POST 本批删除：残留 = 按钮点了走整页跳转或者 404。
+		`action="/admin/product-tags/create"`,
+		`action="/admin/product-tags/update"`,
 	})
 }

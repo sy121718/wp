@@ -63,6 +63,12 @@ type TagRuleTypeResp struct {
 	Name string `json:"name"`
 	// Params 参数说明（人类可读，如「days：1~365 的整数」）。
 	Params string `json:"params"`
+	// ParamKeys 本规则接受的参数键（如 days / minPrice,maxPrice；无参规则为空）。
+	//
+	// 它是后台表单**组装 ruleParams 的唯一依据**：切换规则类型时要发的键跟着变，而服务端
+	// 用白名单严格拒多余键（rejectUnknownRuleKeys）—— 前端写死一份映射就会与规则表漂移，
+	// 症状是「切了类型保存就报参数不合法」。
+	ParamKeys []string `json:"paramKeys"`
 }
 
 // RecalcTagsResp 一次重算的结果。

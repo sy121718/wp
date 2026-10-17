@@ -111,7 +111,6 @@ func TestProductBackHelpersKeepFilters(t *testing.T) {
 	}{
 		{"列表", productListBack(c), []string{"/admin/products?", "project=p1", "keyword=abc", "status=draft", "page=2"}},
 		{"属性", productAttrBack(c), []string{"/admin/product-attributes?", "project=p1", "variation=1"}},
-		{"标签", productTagsBack(c), []string{"/admin/product-tags?", "project=p1", "keyword=abc"}},
 		{"分类", productCategoriesBack(c), []string{"/admin/product-categories?", "project=p1"}},
 		{"品牌", productBrandsBack(c), []string{"/admin/product-brands?", "project=p1"}},
 		{"捆绑", productBundleBack(c), []string{"/admin/products/bundle?", "project=p1", "product=prod1"}},

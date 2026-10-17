@@ -814,6 +814,9 @@ type tagRule struct {
 	// ParamsKey / Params 参数说明（后台展示，也是调用方唯一的参数文档来源）。
 	ParamsKey string
 	Params    string
+	// ParamKeys 本规则接受的参数键：后台表单按它组装 ruleParams（见 dto.TagRuleTypeResp）。
+	// 与 Normalize 里的白名单**必须一致** —— 这里多写一个键，表单就会发一个必被拒的字段。
+	ParamKeys []string
 	// Normalize 校验并归一参数（nil / 空对象按各规则自己的必需性判定）。
 	Normalize func(params json.RawMessage) (json.RawMessage, error)
 	// Describe 归一后的参数 → 当前语言的人类可读描述（tr 由调用点给）。
@@ -846,6 +849,7 @@ const (
 var tagRules = []*tagRule{
 	{
 		Type:      productenums.TagRuleNewArrival,
+		ParamKeys: []string{"days"},
 		NameKey:   tagKeyNewArrivalName,
 		Name:      "新品（上架 N 天内）",
 		ParamsKey: tagKeyNewArrivalParams,
@@ -900,6 +904,7 @@ var tagRules = []*tagRule{
 	},
 	{
 		Type:      productenums.TagRulePriceRange,
+		ParamKeys: []string{"minPrice", "maxPrice"},
 		NameKey:   tagKeyPriceRangeName,
 		Name:      "价格区间（存在启用变体落在区间内）",
 		ParamsKey: tagKeyPriceRangeParams,
@@ -998,7 +1003,8 @@ var tagRules = []*tagRule{
 		},
 	},
 	{
-		Type:      productenums.TagRuleOnSale,
+		Type: productenums.TagRuleOnSale,
+		// 无参规则：ParamKeys 留空 —— 表单据此发 {} 而不是编造一个键。
 		NameKey:   tagKeyOnSaleName,
 		Name:      "促销（有划线价）",
 		ParamsKey: tagKeyOnSaleParams,
@@ -1039,6 +1045,7 @@ func tagRuleTypeOptions(tr TranslateFunc) (out []*productdto.TagRuleTypeResp) {
 	for _, r := range tagRules {
 		out = append(out, &productdto.TagRuleTypeResp{
 			Type: r.Type, Name: tr(r.NameKey, r.Name), Params: tr(r.ParamsKey, r.Params),
+			ParamKeys: r.ParamKeys,
 		})
 	}
 	return out

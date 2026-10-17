@@ -323,6 +323,29 @@ function setup(config) {
             form.appendChild(div);
         });
     }
+    // objBox：data-write-object 的容器（一个 div，里面是驱动 select 与若干输入框）。
+    // options 上的 data-rule-keys 是**键清单的真源**：同一容器里的输入框服务不同子类型，
+    // 哪些键进对象由当前选中项决定。
+    if (cfg.objBox) {
+        const div = makeEl('div', { class: cfg.objBox.cls || 'rule-fields' });
+        const sel = makeEl('select', { name: cfg.objBox.driver });
+        const options = (cfg.objBox.options || []).map((opt) => {
+            const o = makeEl('option', opt.keys ? { 'data-rule-keys': opt.keys } : {});
+            o.value = opt.value;
+            o.selected = !!opt.selected;
+            return o;
+        });
+        sel.options = options;
+        sel.selectedOptions = options.filter((o) => o.selected);
+        sel.value = (sel.selectedOptions[0] || options[0] || { value: '' }).value;
+        div.appendChild(sel);
+        Object.keys(cfg.objBox.fields || {}).forEach((name) => {
+            const el = makeEl('input', { name }, { type: 'text' });
+            el.value = cfg.objBox.fields[name];
+            div.appendChild(el);
+        });
+        form.appendChild(div);
+    }
     const submit = makeEl('button', {}, { type: 'submit' });
     form.appendChild(submit);
     // buttons：一个表单里并排的多个动作（批量删除 / 改状态 / 打标签）。
@@ -1662,5 +1685,90 @@ test('missing or throwing payload builder blocks fetch and releases lock', async
         env.fire();
         await tick();
         assert.equal(env.requests.length, 1);
+    }
+});
+
+// —— data-write-object：声明式嵌套对象（ruleParams 这类结构参数） ——
+
+test('data-write-object：容器字段按驱动选项的 data-rule-keys 收成对象，容器内字段不进顶层', async () => {
+    const env = setup({
+        attrs: {
+            'data-write-api': '/api/product/tag/create',
+            'data-write-mode': 'create',
+            'data-write-object': '.tag-rule-fields;ruleParams;ruleType;kind=rule',
+            'data-write-number': 'sort',
+        },
+        createFields: [
+            { name: 'name', value: '新品' },
+            { name: 'slug', value: 'new' },
+            { name: 'kind', value: 'rule' },
+            { name: 'sort', value: '3' },
+        ],
+        objBox: {
+            cls: 'tag-rule-fields',
+            driver: 'ruleType',
+            options: [
+                { value: '', selected: true },
+                { value: 'new_arrival', keys: 'days' },
+                { value: 'price_range', keys: 'minPrice,maxPrice' },
+            ],
+            fields: { days: '30', minPrice: '', maxPrice: '' },
+        },
+        respond: { code: 200, data: { id: 't1' } },
+    });
+    // 选中「新品」那一项（桩里 selectedOptions 是数组，直接改它就是真实浏览器的等价动作）。
+    const box = env.form.querySelector('.tag-rule-fields');
+    const sel = box.querySelectorAll('[name]').find((el) => el.getAttribute('name') === 'ruleType');
+    sel.options.forEach((o) => { o.selected = o.value === 'new_arrival'; });
+    sel.selectedOptions = sel.options.filter((o) => o.selected);
+    sel.value = 'new_arrival';
+
+    env.fire(); await tick();
+    assert.deepEqual(env.requests[0].body, {
+        name: '新品', slug: 'new', kind: 'rule', sort: 3,
+        ruleType: 'new_arrival', ruleParams: { days: 30 },
+    });
+    // 容器内没点名的输入框（minPrice/maxPrice 空）既不进对象也不进顶层。
+    assert.equal('minPrice' in env.requests[0].body, false);
+    assert.equal('days' in env.requests[0].body, false);
+});
+
+
+test('data-write-object：条件不满足时对象与驱动字段一起不发（手工标签带 ruleType 会被服务端拒）', async () => {
+    for (const kind of ['manual', 'rule']) {
+        const env = setup({
+            attrs: {
+                'data-write-api': '/api/product/tag/update',
+                'data-write-mode': 'create',
+                'data-write-object': '.tag-rule-fields;ruleParams;ruleType;kind=rule',
+            },
+            createFields: [
+                { name: 'id', value: 't1' },
+                { name: 'name', value: '促销' },
+                { name: 'kind', value: kind },
+            ],
+            objBox: {
+                cls: 'tag-rule-fields',
+                driver: 'ruleType',
+                options: [
+                    { value: '', keys: '', selected: true },
+                    { value: 'on_sale', keys: '' },
+                ],
+                fields: { days: '7' },
+            },
+            respond: { code: 200, data: {} },
+        });
+        env.fire(); await tick();
+        const body = env.requests[0].body;
+        if (kind === 'manual') {
+            assert.equal('ruleType' in body, false);
+            assert.equal('ruleParams' in body, false);
+        } else {
+            // on_sale 无参数：仍然发空对象 —— 缺 ruleParams 是「没给规则定义」，空对象才是「无参规则」。
+            assert.equal(body.ruleType, '');
+            assert.deepEqual(body.ruleParams, {});
+        }
+        // 容器内的 days 任何情况下都不进顶层。
+        assert.equal('days' in body, false);
     }
 });

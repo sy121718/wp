@@ -483,8 +483,6 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/product-tags", handle.ProductTagsPage)
 	// 命中商品片段（PERF-02）：标签页首屏只给数量，展开时按页取这一段。
 	engine.GET("/admin/product-tags/hits", handle.ProductTagHitsFragment)
-	engine.POST("/admin/product-tags/create", handle.ProductTagsCreate)
-	engine.POST("/admin/product-tags/update", handle.ProductTagsUpdate)
 	engine.GET("/admin/products", handle.ProductsPage)
 	// 商品级表单（含手工标签勾选）已整块移到商品详情页，这里一并注册。
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
@@ -499,27 +497,33 @@ func TestTagAdminPages(t *testing.T) {
 	if engine == nil {
 		return
 	}
-	// 建手工标签 + 自动标签（表单只给本规则用得到的参数）。
-	rec := postForm(engine, "/admin/product-tags/create", url.Values{
-		"projectId": {f.projectID}, "name": {"清仓"}, "slug": {"clearance"}, "kind": {"manual"},
-	})
-	assertJumpOK(t, rec)
-	rec = postForm(engine, "/admin/product-tags/create", url.Values{
-		"projectId": {f.projectID}, "name": {"新品"}, "slug": {"new-arrival"},
-		"kind": {"rule"}, "ruleType": {productenums.TagRuleNewArrival}, "days": {"30"},
-	})
-	assertJumpOK(t, rec)
+	// 建手工标签 + 自动标签。标签的 create/update 页面出口已随写动作迁到 JSON 基座删除
+	// （模板直调 /api/product/tag/{create,update}），所以这里直调 service —— 本用例验的是
+	// 「标签能建、规则参数受白名单约束、页面能读」，不是那条已被删除的转发链路。
+	if _, err := f.svc.CreateTag(context.Background(), &productdto.CreateTagReq{
+		ProjectID: f.projectID, Name: "清仓", Slug: "clearance", Kind: productenums.TagKindManual,
+	}); err != nil {
+		t.Fatalf("建手工标签失败: %v", err)
+	}
+	if _, err := f.svc.CreateTag(context.Background(), &productdto.CreateTagReq{
+		ProjectID: f.projectID, Name: "新品", Slug: "new-arrival",
+		Kind: productenums.TagKindRule, RuleType: productenums.TagRuleNewArrival,
+		RuleParams: json.RawMessage(`{"days":30}`),
+	}); err != nil {
+		t.Fatalf("建自动标签失败: %v", err)
+	}
 	tags, err := f.svc.ListTags(context.Background(), &productdto.ListTagReq{ProjectID: f.projectID})
 	if err != nil || len(tags) != 2 {
 		t.Fatalf("应建成 2 个标签，实际 %v %+v", err, tags)
 	}
 
-	// 非法规则参数经表单提交 → 失败态提示页，且不落库。
-	rec = postForm(engine, "/admin/product-tags/create", url.Values{
-		"projectId": {f.projectID}, "name": {"错误规则"}, "kind": {"rule"},
-		"ruleType": {productenums.TagRuleNewArrival}, "days": {"999"},
-	})
-	assertJumpErr(t, rec)
+	// 非法规则参数（days 超上界）→ 拒绝，且不落库。
+	if _, err := f.svc.CreateTag(context.Background(), &productdto.CreateTagReq{
+		ProjectID: f.projectID, Name: "错误规则", Kind: productenums.TagKindRule,
+		RuleType: productenums.TagRuleNewArrival, RuleParams: json.RawMessage(`{"days":999}`),
+	}); err == nil {
+		t.Fatal("非法规则参数应被拒绝")
+	}
 	tags, _ = f.svc.ListTags(context.Background(), &productdto.ListTagReq{ProjectID: f.projectID})
 	if len(tags) != 2 {
 		t.Fatalf("被拒的标签不应落库，实际 %d 个", len(tags))
@@ -535,7 +539,7 @@ func TestTagAdminPages(t *testing.T) {
 		t.Fatalf("上架失败: %v", err)
 	}
 	manualID := tagIDByName(t, f, "清仓")
-	rec = postForm(engine, "/admin/products/tags", url.Values{
+	rec := postForm(engine, "/admin/products/tags", url.Values{
 		"projectId": {f.projectID}, "id": {p.ID}, "tagIds": {manualID},
 	})
 	assertJumpOK(t, rec)

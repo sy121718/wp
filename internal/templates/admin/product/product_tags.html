@@ -15,7 +15,6 @@
 {{import "../partials/bulk_bar.html"}}
 {{block body()}}
 {{tr := .["t"]}}
-{{csrf := .["csrf_token"]}}
 {* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
    契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。正常渲染一律为空串。 *}
 {* 先判装载失败，再判空工程 / 空筛选：空态是「读到了、没有数据」，装载失败是「没读到」——
@@ -287,8 +286,10 @@
     {{if canUpdate}}
     <template id="tpl-tag-edit-{{t.ID}}">
         {{if isset(t.EditForm)}}{{include "product_tag_form.html" t.EditForm}}{{else}}
-        <form method="post" action="/admin/product-tags/update" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* 兜底形态：抽屉数据没装配（读取失败页）时也必须是**能用的**表单 —— 指向已删除的
+           页面 POST 会让按钮 404，而失败页上没人会去查它为什么没反应。 *}
+        <form class="form-stack" data-write-api="/api/product/tag/update" data-write-mode="form"
+              data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{t.ID}}">
             <input class="form-input" name="name" value="{{t.Name}}" required>
@@ -302,8 +303,8 @@
     {{if canCreate}}
     <template id="tpl-tag-create">
         {{if isset(.TagCreateForm)}}{{include "product_tag_form.html" .TagCreateForm}}{{else}}
-        <form method="post" action="/admin/product-tags/create" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form class="form-stack" data-write-api="/api/product/tag/create" data-write-mode="form"
+              data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input class="form-input" name="name" required>
             <button type="submit">{{ .["t"]("admin.product_tags.create.submit", "新建标签") }}</button>

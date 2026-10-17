@@ -404,15 +404,121 @@
         return names;
     }
 
+    // objectSpecOf 解析 data-write-object="<容器选择器>;<payload 键名>;<驱动控件名>[;<条件 name=值>]"。
+    //
+    // 它解决的是**嵌套对象**这一类：端点的身体里有 {ruleParams:{days:30}} 这种子对象，
+    // 而 DOM 里只有扁平的 name=days。与 data-write-rows 的差别是「一个对象」而不是「一组行」，
+    // 而且**哪些键进对象由驱动控件当前选项声明**（option 的 data-rule-keys）—— 同一个容器里的
+    // 输入框服务不同子类型，多发一个键就会被服务端的白名单整条拒掉
+    // （product 的 rejectUnknownRuleKeys：新品只要 days、价格区间只要 minPrice/maxPrice）。
+    // 第四段是启用条件：不满足时整个对象**连同驱动字段**都不发
+    //（手工标签带 ruleType 会被服务端明确拒绝，而类型是运行期选的，模板决定不了）。
+    function objectSpecOf(form, submitter) {
+        var spec = attrFrom(form, submitter, 'data-write-object');
+        if (!spec) { return null; }
+        var parts = String(spec).split(';');
+        var selector = String(parts[0] || '').trim();
+        var key = String(parts[1] || '').trim();
+        var driver = String(parts[2] || '').trim();
+        var when = String(parts[3] || '').trim();
+        if (!selector || !key || !driver) { return null; }
+        var cond = null;
+        if (when) {
+            var eq = when.indexOf('=');
+            if (eq > 0) { cond = { name: when.slice(0, eq).trim(), value: when.slice(eq + 1).trim() }; }
+        }
+        return { selector: selector, key: key, driver: driver, when: cond };
+    }
+
+    // namedField 在容器里按**精确名**找一个具名控件（不用属性选择器：字段名可能带点）。
+    function namedField(box, name) {
+        var found = null;
+        Array.prototype.forEach.call(box.querySelectorAll('[name]'), function (el) {
+            if (el.getAttribute('name') === name) { found = el; }
+        });
+        return found;
+    }
+
+    // selectedOptionOf 取 select 的当前选中项（selectedOptions 缺失时退回逐个看 selected）。
+    function selectedOptionOf(el) {
+        if (el.selectedOptions && el.selectedOptions.length) { return el.selectedOptions[0]; }
+        var opts = el.options || [];
+        for (var i = 0; i < opts.length; i++) { if (opts[i].selected) { return opts[i]; } }
+        return null;
+    }
+
+    // objectOf 把容器里「驱动控件当前选项点名的键」收成一个对象。
+    //
+    // 空值不发（与顶层同口径）：价格区间只填了一个价时另一个键根本不该出现 ——
+    // 发 "" 会被解码成 0，于是命中集合整个错掉而没有任何报错。
+    // objScalar 嵌套对象里的值按 JSON 数字发（能完整解析成十进制数才转）。
+    //
+    // ruleParams 这类**结构参数**的值天然是数字：发 "30" 会被服务端的 ruleInt 当字符串拒掉，
+    // 症状是「保存没反应」。但也不能一律 Number()：认不出的取值（"abc"、"1e3"）原样发字符串，
+    // 由严格 API 报参数错误 —— 页面替调用方猜一次类型，就是替它造了一个它没说的值。
+    function objScalar(raw) {
+        if (typeof raw !== 'string') { return raw; }
+        var v = raw.trim();
+        if (!/^-?\d+(\.\d+)?$/.test(v)) { return raw; }
+        var n = Number(v);
+        return isFinite(n) ? n : raw;
+    }
+
+    function objectOf(form, spec) {
+        if (spec.when) {
+            var cond = namedField(form, spec.when.name);
+            var condValue = cond ? String(cond.value == null ? '' : cond.value).trim() : '';
+            if (condValue !== spec.when.value) { return null; }
+        }
+        var box = form.querySelector(spec.selector);
+        if (!box) { return null; }
+        var driver = namedField(box, spec.driver) || namedField(form, spec.driver);
+        if (!driver) { return null; }
+        var option = selectedOptionOf(driver);
+        var keys = option ? String(option.getAttribute('data-rule-keys') || '') : '';
+        var out = {};
+        keys.split(',').forEach(function (rawKey) {
+            var name = String(rawKey || '').trim();
+            if (!name) { return; }
+            var el = namedField(box, name);
+            if (!el) { return; }
+            var value = fieldValue(el);
+            if (value === null) { return; }
+            if (typeof value === 'string' && value.trim() === '') { return; }
+            out[name] = objScalar(value);
+        });
+        return {
+            driver: spec.driver,
+            driverValue: String(driver.value == null ? '' : driver.value).trim(),
+            value: out
+        };
+    }
+
+    // objectNamesOf 容器里的**全部**具名控件都不进顶层标量（与 rowNamesOf 同一条理由：
+    // 同一个 name 交给端点两次，严格白名单只能整条请求拒掉）。
+    function objectNamesOf(form, spec) {
+        var names = {};
+        if (!spec) { return names; }
+        var box = form.querySelector(spec.selector);
+        if (!box) { return names; }
+        Array.prototype.forEach.call(box.querySelectorAll('[name]'), function (el) {
+            var name = el.getAttribute('name');
+            if (name) { names[name] = true; }
+        });
+        return names;
+    }
+
     function createPayload(form, submitter) {
         var spec = rowsSpecOf(form, submitter);
+        var objSpec = objectSpecOf(form, submitter);
         var rowNames = rowNamesOf(form, spec);
+        var objNames = objectNamesOf(form, objSpec);
         var payload = {};
         Array.prototype.forEach.call(form.querySelectorAll('[name]'), function (el) {
             var name = el.getAttribute('name');
             if (!name || name === 'csrf_token') { return; }
             // 行内字段不是顶层字段：同一个 name 交给端点两次，严格白名单只能整条请求拒掉。
-            if (rowNames[name]) { return; }
+            if (rowNames[name] || objNames[name]) { return; }
             var tag = (el.tagName || '').toUpperCase();
             var type = (el.type || '').toLowerCase();
             if ((type === 'checkbox' || type === 'radio') && !el.checked) { return; }
@@ -425,6 +531,15 @@
         var numberNames = numberFields(form, submitter);
         var boolNames = boolFields(form, submitter);
         if (spec) { payload[spec.key] = rowObjectsOf(form, spec, numberNames, boolNames); }
+        if (objSpec) {
+            var obj = objectOf(form, objSpec);
+            // 对象与驱动字段同进同出：条件不满足时两者都不发（只发一半 = 端点收到
+            // 「有类型没参数」或「有参数没类型」，两种都是整条 400）。
+            if (obj) {
+                payload[objSpec.key] = obj.value;
+                payload[obj.driver] = obj.driverValue;
+            }
+        }
         payload = applyNumberFields(payload, numberNames);
         return applyBoolFields(payload, boolNames);
     }

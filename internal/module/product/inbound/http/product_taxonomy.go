@@ -2,9 +2,7 @@ package producthttp
 
 import (
 	"context"
-	"errors"
 	"go_wp/internal/adminui"
-	"go_wp/internal/middleware/builtin"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
@@ -612,16 +610,6 @@ func (h *Handle) DeleteBrand(c *gin.Context) {
 //  3. **留痕**（验收 4）：页面下半部分是调价台账，每个批次可展开看到逐变体「原价 → 新价」。
 //
 // ==========================================================================
-type tagForm struct {
-	name     string
-	slug     string
-	kind     string
-	ruleType string
-	params   json.RawMessage
-	sort     int
-}
-
-// 本页承载本票的验收 1 / 2 / 4：
 //
 //	· 建手工标签并挂到商品（挂载表单在商品**详情页**的「商品标签」区块 ——
 //	  标签归属是商品的属性，列表页只回答「有哪些商品」，见 admin-ui-logic §1）；
@@ -739,14 +727,11 @@ func (h *productPageHandle) ProductTagHitsFragment(c *gin.Context) {
 // 不在片段装配里重复查契约。取词走 adminui.PrepareBare（片段不经整份
 // Prepare，但模板要 t/tf；漏注入不报错 —— 取词全变空串、200、日志干净）。
 func (h *productPageHandle) tagDrawerData(c *gin.Context, mode, projectID string, row gin.H, ruleTypes []*productdto.TagRuleTypeResp) gin.H {
-	csrf, _ := builtin.GetCSRFToken(c)
 	data := gin.H{
-		"Mode": mode, "Project": projectID, "Csrf": csrf,
+		"Mode": mode, "Project": projectID,
 		"RuleTypes": ruleTypes,
 		"ID":        "", "Name": "", "Slug": "", "IsRule": false, "Sort": 0,
 		"RuleType": "", "RuleDays": "", "RuleMinPrice": "", "RuleMaxPrice": "",
-		// ListQuery：表单 action 的筛选上下文（失败回跳时 shell.BackPath 读回）。
-		"ListQuery": productQueryFromRequest(c, productTagsBackKeys...),
 	}
 	if row != nil {
 		for _, key := range []string{"ID", "Name", "Slug", "IsRule", "Sort", "RuleType", "RuleDays", "RuleMinPrice", "RuleMaxPrice"} {
@@ -754,76 +739,6 @@ func (h *productPageHandle) tagDrawerData(c *gin.Context, mode, projectID string
 		}
 	}
 	return adminui.PrepareBare(c, data)
-}
-
-// tagFormFail 写失败分档：htmx 请求 200 + 片段自身（错误槽 + 原值回填），
-// 原生提交渲染整页提示（取代原先的 302 + ?err= 回本页）—— 用户输入比错误文案贵，
-// 两种档都不丢字段。
-func rawDrawerEcho(c *gin.Context, fields []string) gin.H {
-	_ = c.Request.ParseMultipartForm(formEchoMemory)
-	out := gin.H{}
-	for _, key := range fields {
-		out[key] = ""
-		if values := c.Request.PostForm[key]; len(values) > 0 {
-			out[key] = values[0]
-		}
-	}
-	return out
-}
-
-func (h *productPageHandle) tagFormFail(c *gin.Context, mode string, err error) {
-	projectID := c.PostForm("projectId")
-	msg := productErrMsg(c, err)
-	if !isHXRequest(c) {
-		productTagsJump(c, false, msg)
-		return
-	}
-	data := h.tagDrawerData(c, mode, projectID, nil, h.products.ListTagRuleTypes(c.Request.Context()))
-	data["FormEcho"] = rawDrawerEcho(c, []string{"projectId", "id", "name", "slug", "kind", "sort", "ruleType", "days", "minPrice", "maxPrice"})
-	data["SubmitErr"] = msg
-	c.HTML(http.StatusOK, "admin/product/product_tag_form.html", data)
-}
-
-// tagFormSuccess 写成功出口：整页提示（htmx 由 shell.RenderJump 输出 HX-Redirect）。
-func tagFormSuccess(c *gin.Context, projectID string) {
-	productTagsJump(c, true, productActionDoneMsg)
-}
-
-// ProductTagsCreate 新建标签（手工 / 自动；自动标签建好即按规则重算一次）。
-func (h *productPageHandle) ProductTagsCreate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	form := readTagForm(c)
-	req := &productdto.CreateTagReq{
-		ProjectID: projectID, Name: form.name, Slug: form.slug,
-		Kind: form.kind, RuleType: form.ruleType, RuleParams: form.params, Sort: form.sort,
-	}
-	if _, err := h.products.CreateTag(c.Request.Context(), req); err != nil {
-		h.tagFormFail(c, "create", err)
-		return
-	}
-	tagFormSuccess(c, projectID)
-}
-
-// ProductTagsUpdate 修改标签（改名 / 换 slug / 换类型 / 改规则参数 / 排序）。
-func (h *productPageHandle) ProductTagsUpdate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	form := readTagForm(c)
-	req := &productdto.UpdateTagReq{
-		ProjectID: projectID,
-		ID:        c.PostForm("id"), Name: &form.name, Slug: &form.slug,
-		Kind: &form.kind, Sort: &form.sort,
-	}
-	// 只有自动标签才带规则定义：手工标签提交时规则字段一律不传，
-	// 服务端据此把 rule→manual 的切换收敛成「清掉规则定义」。
-	if form.kind == productenums.TagKindRule {
-		req.RuleType = &form.ruleType
-		req.RuleParams = form.params
-	}
-	if _, err := h.products.UpdateTag(c.Request.Context(), req); err != nil {
-		h.tagFormFail(c, "update", err)
-		return
-	}
-	tagFormSuccess(c, projectID)
 }
 
 // ProductsTagsSet 整体替换某商品的手工标签（issue #11 验收 1 的后台入口）。
@@ -843,74 +758,6 @@ func (h *productPageHandle) ProductsTagsSet(c *gin.Context) {
 		return
 	}
 	productEditJump(c, true, projectID, req.ID, productActionDoneMsg)
-}
-
-// readTagForm 读标签表单。
-//
-// 规则参数只在 kind=rule 时构造：手工标签即使表单里残留了 days / 价格输入也不带过去，
-// 否则「切回手工」会被参数校验挡住（服务端对手工标签带规则是明确拒绝的）。
-func readTagForm(c *gin.Context) tagForm {
-	form := tagForm{
-		name: strings.TrimSpace(c.PostForm("name")),
-		slug: strings.TrimSpace(c.PostForm("slug")),
-		kind: strings.TrimSpace(c.PostForm("kind")),
-		sort: parseIntOr(c.PostForm("sort"), 0),
-	}
-	if form.kind == "" {
-		form.kind = productenums.TagKindManual
-	}
-	if form.kind != productenums.TagKindRule {
-		return form
-	}
-	form.ruleType = strings.TrimSpace(c.PostForm("ruleType"))
-	params, err := tagRuleParamsFromForm(c, form.ruleType)
-	if err != nil {
-		// 参数解析失败时给空对象：真正的校验（键 / 类型 / 取值范围）在 service，
-		// 由它给出统一的业务错误，这里不重复一套规则。
-		params = json.RawMessage("{}")
-	}
-	form.params = params
-	return form
-}
-
-// tagRuleParamsFromForm 按规则类型从表单拼参数对象。
-//
-// 三个输入框（days / minPrice / maxPrice）与规则类型一一对应，服务端只取本类型用得到的键 ——
-// 「自动标签只接受内置参数」在后台这一侧同样成立（多余输入不会进 params）。
-// 非法数字（如 days=abc）返回错误，由调用方落成空对象交给 service 报参数错误。
-func tagRuleParamsFromForm(c *gin.Context, ruleType string) (raw json.RawMessage, err error) {
-	params := map[string]any{}
-	switch ruleType {
-	case productenums.TagRuleNewArrival:
-		// 三个输入框（days / minPrice / maxPrice）的绑定语义在 dto（空串 = 不给这个参数键，
-		// 非法数字 = 绑定期错误）；这里的分档是**报错**（与定价页的「不给键」不同，是既有语义：
-		// 这是自动标签的规则参数，值域由 service 判，但「不是数字」当场就能说清楚）。
-		if n, perr := productdto.OptInt("days", c.PostForm("days")); perr != nil {
-			return nil, errors.New(productenums.ErrTagRuleParamsInvalid)
-		} else if n != nil {
-			params["days"] = *n
-		}
-	case productenums.TagRulePriceRange:
-		minPrice, perr := productdto.OptFloat("minPrice", c.PostForm("minPrice"))
-		if perr != nil {
-			return nil, errors.New(productenums.ErrTagRuleParamsInvalid)
-		}
-		if minPrice != nil {
-			params["minPrice"] = *minPrice
-		}
-		maxPrice, perr := productdto.OptFloat("maxPrice", c.PostForm("maxPrice"))
-		if perr != nil {
-			return nil, errors.New(productenums.ErrTagRuleParamsInvalid)
-		}
-		if maxPrice != nil {
-			params["maxPrice"] = *maxPrice
-		}
-	case productenums.TagRuleOnSale:
-		// 无参数规则：空对象即可（给了也不会有其它键）。
-	default:
-		// 未知规则类型：参数留空，由 service 给出「规则类型不合法」。
-	}
-	return json.Marshal(params)
 }
 
 // tagPageRow 标签 → 模板行（规则描述与命中数都由服务端算好，模板不做第二套解释；

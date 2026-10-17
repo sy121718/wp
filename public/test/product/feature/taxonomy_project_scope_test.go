@@ -1,15 +1,11 @@
 package feature
 
 import (
-	"net/url"
 	"testing"
 
 	productdto "go_wp/internal/module/product/dto"
-	producthttp "go_wp/internal/module/product/inbound/http"
+	productenums "go_wp/internal/module/product/enums"
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/internal/templates"
-
-	"github.com/gin-gonic/gin"
 )
 
 // 两个工程时不能靠 service 的单工程回退；表单读到的 projectId 必须贯穿写入契约。
@@ -22,14 +18,9 @@ func TestTaxonomyFormsCarryProjectScope(t *testing.T) {
 	if _, err := f.projects.Create(ctx, &projectdto.CreateReq{Name: "另一个工程"}); err != nil {
 		t.Fatal(err)
 	}
-	h := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
-	router := gin.New()
-	// 写成功走 shell.RenderJump，没有渲染器会在 c.HTML 处 panic。
-	router.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	// 分类与品牌的页面 POST 都已随写动作迁移删除（模板直调 /api/product/{category,brand}/*，
-	// projectId 由 data-write-extra 声明带出）—— 这里只剩标签还能测「表单字段贯穿
-	// 写入契约」这件事。
-	router.POST("/tag/update", h.ProductTagsUpdate)
+	// 分类 / 品牌 / 标签的页面 POST 都已随写动作迁移删除（模板直调
+	// /api/product/{category,brand,tag}/*，projectId 由 data-write-extra 声明带出）——
+	// 本用例改直调 service：它验的是**工程作用域**（写入落在本工程），不是那条转发链路。
 	brand, err := f.svc.CreateBrand(ctx, &productdto.CreateBrandReq{ProjectID: f.projectID, Name: "品牌", Slug: "scope-brand"})
 	if err != nil {
 		t.Fatal(err)
@@ -42,15 +33,14 @@ func TestTaxonomyFormsCarryProjectScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ kind, id string }{{"tag", tag.ID}} {
-		t.Run(tc.kind, func(t *testing.T) {
-			// 编辑仍走页面 POST（标签的新建/编辑下一批才迁）；删除已改模板直调
-			// /api/product/tag/delete，页面那条路不存在了。
-			form := url.Values{"projectId": {f.projectID}, "id": {tc.id}, "name": {"修改后"}, "slug": {"scope-" + tc.kind}, "kind": {"manual"}, "seoTitle": {"修改后的标题"}}
-			rec := postForm(router, "/"+tc.kind+"/update", form)
-			// 写动作的结论走 shell.RenderJump：成功态提示页（不再 302 + ?err=）。
-			assertJumpOK(t, rec)
-		})
+	name, slug, kind := "修改后", "scope-tag", productenums.TagKindManual
+	if _, err := f.svc.UpdateTag(ctx, &productdto.UpdateTagReq{
+		ProjectID: f.projectID, ID: tag.ID, Name: &name, Slug: &slug, Kind: &kind,
+	}); err != nil {
+		t.Fatalf("改标签失败: %v", err)
+	}
+	if got, err := f.svc.GetTag(ctx, &productdto.GetTagReq{ProjectID: f.projectID, ID: tag.ID}); err != nil || got.Name != name {
+		t.Fatalf("标签改名未生效: %v %+v", err, got)
 	}
 	if err := f.svc.DeleteTag(ctx, &productdto.DeleteTagReq{ProjectID: f.projectID, ID: tag.ID}); err != nil {
 		t.Fatalf("删标签失败: %v", err)

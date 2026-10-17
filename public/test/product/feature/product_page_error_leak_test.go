@@ -122,7 +122,7 @@ func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.POST("/admin/products/delete", handle.ProductsDelete)
-	engine.POST("/admin/products/tags/create", handle.ProductTagsCreate)
+	engine.POST("/admin/products/update", handle.ProductsUpdate)
 	engine.POST("/admin/products/bulk-delete", handle.ProductsBulkDelete)
 	return engine, f
 }
@@ -163,11 +163,12 @@ func TestProductPageKeepsBusinessErrorText(t *testing.T) {
 	if engine == nil {
 		return
 	}
-	// 标签名为空 → service 返回 productenums.ErrTagNameRequired（在白名单里）。
-	body := productNoticeBody(t, postProductForm(engine, "/admin/products/tags/create",
-		url.Values{"projectId": {f.projectID}, "name": {""}}))
+	// 商品名为空 → productenums.ErrNameRequired（在白名单里）。标签 create 的页面出口已随
+	// 写动作迁到 JSON 基座删除，这里换成同一族里仍走页面出口的商品保存。
+	body := productNoticeBody(t, postProductForm(engine, "/admin/products/update",
+		url.Values{"projectId": {f.projectID}, "id": {"11111111-1111-1111-1111-111111111111"}, "name": {""}}))
 	assertNoProductInternalLeak(t, "提示页", body)
-	if !strings.Contains(body, "标签名称必填") {
+	if !strings.Contains(body, "商品名称必填") {
 		t.Fatalf("业务文案必须原样可见，body=%s", body)
 	}
 }
