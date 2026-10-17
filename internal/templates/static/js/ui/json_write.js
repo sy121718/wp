@@ -408,6 +408,21 @@
         return applyBoolFields(payload, boolFields(form, submitter));
     }
 
+    // idsScope 解析 data-write-ids-scope：ids 装在**别的表单**里的场景。
+    //
+    // 现有唯一用例是商品列表的「按规则改价」抽屉：抽屉内容被克隆到 document 级，而勾选框留在
+    // 页面那个批量表单里 —— 在抽屉表单内部找 [name=ids] 永远是空数组，表现是「点了应用调价，
+    // 什么也没发生」（基座只回一句「没勾选任何项」，把人指向错误的原因）。
+    //
+    // 不声明时仍收本表单内的，与从前逐字一致；声明了但选择器打错 / 目标还没渲染时**退回本表单**，
+    // 也不静默变成空数组。
+    function idsScope(form, submitter) {
+        var spec = attrFrom(form, submitter, 'data-write-ids-scope');
+        if (!spec) { return form; }
+        var root = global.document.querySelector(String(spec));
+        return root || form;
+    }
+
     // bulkIDs 收集已勾选的 id：trim → 去空 → 去重保序（与 shell.BulkIDs 的口径一致）。
     //
     // 只认两种载体：**已勾选的复选框**（表格行选择）与**隐藏域**（页面按筛选条件预置的 id 列表）。
@@ -416,7 +431,7 @@
     function bulkIDs(form, submitter) {
         var name = attrFrom(form, submitter, 'data-write-ids') || 'ids';
         var seen = {}, out = [];
-        Array.prototype.forEach.call(form.querySelectorAll('[name="' + name + '"]'), function (el) {
+        Array.prototype.forEach.call(idsScope(form, submitter).querySelectorAll('[name="' + name + '"]'), function (el) {
             var type = (el.type || '').toLowerCase();
             if (type === 'checkbox' ? !el.checked : type !== 'hidden') { return; }
             var v = String(el.value == null ? '' : el.value).trim();
@@ -603,7 +618,8 @@
                 // 服务端是唯一的成功真源：按它的结果移除行，而不是按我们发出去的 ids。
                 reasons.items.forEach(function (item) {
                     if (!item || !item.deleted) { return; }
-                    var row = rowOfID(form, item.id);
+                    // 行在 ids 的来源作用域里（跨表单场景下它不在本表单内）。
+                    var row = rowOfID(idsScope(form, submitter), item.id);
                     if (row && row.parentNode) { row.parentNode.removeChild(row); }
                 });
             }

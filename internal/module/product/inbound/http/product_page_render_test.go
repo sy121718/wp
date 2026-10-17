@@ -28,6 +28,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/adminctx"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -473,6 +474,25 @@ func productPageRequest(t *testing.T, h *productPageHandle, target string) *http
 	return rec
 }
 
+// productPageRequestWith 同 productPageRequest，但允许挂中间件。
+//
+// 「页面上有没有这个入口」取决于按钮码（模板写 {{if isset(.Buttons["product.update"])}}），
+// 而按钮码来自中间件注入的 adminctx.ButtonsKey —— 不挂就一律渲染成「无权限」，
+// 于是断言「抽屉在不在」的测试会永远看不到抽屉。
+func productPageRequestWith(t *testing.T, h *productPageHandle, target string, mw ...gin.HandlerFunc) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
+	for _, m := range mw {
+		engine.Use(m)
+	}
+	engine.GET("/admin/products", h.ProductsPage)
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+	return rec
+}
+
 // productPageRequestFor 把**指定路径**挂到一条最小引擎上并发一个 GET（真 Jet 渲染器）。
 //
 // 与 productPageRequest 同一手法，区别只在注册的路径：属性页等已下沉的屏不在那三条固定路由里。
@@ -850,6 +870,42 @@ func TestProductsListBulkDeleteUsesJSONWriteBase(t *testing.T) {
 	}
 	if strings.Contains(body, `action="/admin/products/bulk-delete"`) {
 		t.Fatal("批量删除入口仍是页面 POST（半迁移）：应只剩 data-write-api 一种提交方式")
+	}
+}
+
+// TestProductsListBulkPricingUsesJSONWriteBase 按规则改价走 ui/json_write.js 基座。
+//
+// 这条表单与其它批量动作不同：它在抽屉里（<template> 克隆到 document 级），勾选框却在
+// 批量表单里。所以除了 mode=bulk，还必须声明 data-write-ids-scope —— 少了它基座在本表单内
+// 收 ids 恒为空，表现是「点了应用调价什么也没发生」。
+func TestProductsListBulkPricingUsesJSONWriteBase(t *testing.T) {
+	view := func() *productdto.ProductListPageView {
+		return productListPageViewStub(func(v *productdto.ProductListPageView) {
+			v.Products = []productdto.ProductRow{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
+		})
+	}
+	h := &productPageHandle{
+		products: &productPageReaderStub{listView: view()},
+		reader:   &productPageReaderStub{listView: view()},
+	}
+	// 改价抽屉在 {{if canUpdate}} 里：不注入按钮码，整段模板不渲染，断言会假绿。
+	rec := productPageRequestWith(t, h, "/admin/products", func(c *gin.Context) {
+		c.Set(adminctx.ButtonsKey, map[string]bool{"product.update": true})
+	})
+	body := rec.Body.String()
+	for _, want := range []string{
+		`data-write-api="/api/product/bulk-pricing"`,
+		`data-write-mode="bulk"`,
+		`data-write-outcome="update"`,
+		`data-write-ids-scope="[data-list-bulk]"`,
+		"data-list-bulk",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("按规则改价缺少 %q（未接入 JSON 写基座或 ids 作用域没声明）；body=%s", want, headOf(body))
+		}
+	}
+	if strings.Contains(body, `hx-post="/admin/products/bulk-pricing`) {
+		t.Fatal("按规则改价仍是 htmx 提交（半迁移）：应只剩 data-write-api 一种提交方式")
 	}
 }
 

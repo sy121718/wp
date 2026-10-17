@@ -124,7 +124,7 @@
            而是就地显示「删了几条 + 哪几条没删掉、为什么」（data-write-status 区）。
            keyword / status / page 三个隐藏域随旧通道一起去掉：基座只发 data-write-extra
            点名的字段，留着它们永远不会被发送 —— 而且列表筛选由整页刷新自然保留。 *}
-        <form data-write-api="/api/product/bulk-delete" data-write-mode="bulk"
+        <form data-list-bulk data-write-api="/api/product/bulk-delete" data-write-mode="bulk"
               data-write-extra="projectId"
               data-msg-none-selected="{{tr("admin.common.bulk.noneSelected", "没有勾选任何商品，列表未改动。")}}"
               data-msg-all-deleted="{{tr("admin.products.bulkResult.allDeleted", "已删除 {count} 个商品及其全部变体。")}}"
@@ -319,13 +319,23 @@
        筛选条件（keyword / status / page）用 hx-include 一并带上：服务端据此回跳原列表视图。 *}
     {{if canUpdate}}
     <template id="tpl-product-pricing">
-        <form class="form-stack" method="post" action="/admin/products/bulk-pricing{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
-              hx-post="/admin/products/bulk-pricing{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-include="[name='ids']" hx-swap="none">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* ids 在**另一个表单**里（批量表单），抽屉内容被克隆到 document 级 —— 所以这里靠
+           data-write-ids-scope 指回去。不写这一条，基座在本表单内收 ids 恒为空数组，
+           症状是「点了应用调价什么也没发生」，而提示只会说「没勾选任何项」。 *}
+        <form class="form-stack"
+              data-write-api="/api/product/bulk-pricing" data-write-mode="bulk"
+              data-write-outcome="update"
+              data-write-ids-scope="[data-list-bulk]"
+              data-write-extra="projectId,ruleType,multiplier,amount,margin,rounding,note"
+              data-msg-none-selected="{{ .["t"]("admin.products.bulkPricing.noneSelected", "没有勾选任何商品，调价未执行。") }}"
+              data-msg-all-updated="{{ .["t"]("admin.products.bulkPricing.allUpdated", "已按规则改价 {count} 个商品。") }}"
+              data-msg-all-skipped="{{ .["t"]("admin.products.bulkPricing.allSkipped", "{count} 个商品都未能改价，价格未改动。") }}"
+              data-msg-partial="{{ .["t"]("admin.products.bulkPricing.partial", "已改价 {updated} 个，{skipped} 个未能改价（可能已被删除或不在本工程）。") }}"
+              data-msg-too-many="{{ .["t"]("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行") }}"
+              data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}"
+              data-msg-refresh="{{ .["t"]("admin.common.write.refresh", "刷新列表") }}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="keyword" value="{{fKeyword}}">
-            <input type="hidden" name="status" value="{{fStatus}}">
-            <input type="hidden" name="page" value="{{fPage}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <p class="hint">{{ .["t"]("admin.products.bulkPricing.scopeHint", "作用范围是列表里勾选的商品：每个商品的全部变体都按同一条规则改价。只想改一部分时，先回列表取消勾选那几个。") }}</p>
             <p class="hint">{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}{{ .["t"]("admin.products.bulkPricing.previewHintLead", "想先看每个 SKU 的「原价 → 新价」，去") }}<a href="/admin/product-pricing?project={{selectedProject}}">{{ .["t"]("admin.product_pricing.title", "定价工具") }}</a>{{ .["t"]("admin.products.bulkPricing.previewHintTail", "页试算（不落库）。") }}</p>
             {{if isset(.Rules)}}{{include "pricing_rule_fields.html"}}{{end}}

@@ -139,6 +139,9 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.GET("/pricing/roundings", permission.ProductPricingRoundings, handle.ListPricingRoundingOptions)
 	g.POST("/pricing/preview", permission.ProductPricingPreview, handle.PreviewPricing)
 	g.POST("/pricing/apply", permission.ProductPricingApply, handle.ApplyPricing)
+	// 批量改价（商品列表的「按规则改价」抽屉）：作用对象是勾选出来的商品集，权限点复用
+	// 商品更新（改的都是商品变体的售价，与页面侧 /admin/products/bulk-pricing 同一个）。
+	g.POST("/bulk-pricing", permission.ProductUpdate, handle.BulkPricing)
 	g.GET("/pricing/history", permission.ProductPricingHistory, handle.ListPriceAdjustments)
 	g.GET("/pricing/adjustment", permission.ProductPricingAdjustment, handle.GetPriceAdjustment)
 	return svc, svc

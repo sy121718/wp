@@ -151,8 +151,11 @@ func (h *Handle) BulkDelete(c *gin.Context) {
 // productBulkItemView 逐条回执的对外形状。键名与 json_write.js 的 failureLine 对齐：
 // 它读 item.message / item.deleted / item.id，少一个就只剩「跳过 N 条」没有原因。
 type productBulkItemView struct {
-	ID      string `json:"id"`
-	Deleted bool   `json:"deleted"`
+	ID string `json:"id"`
+	// Deleted / Updated 二选一（与 dto.BulkItem 同义）：删除用前者、改价用后者，
+	// 基座按 outcome 读对应的那个键。
+	Deleted bool   `json:"deleted,omitempty"`
+	Updated bool   `json:"updated,omitempty"`
 	Message string `json:"message,omitempty"`
 }
 

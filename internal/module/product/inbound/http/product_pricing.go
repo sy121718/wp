@@ -8,9 +8,11 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/shell"
+	"go_wp/pkg/bulkids"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -230,6 +232,99 @@ func (h *Handle) ApplyPricing(c *gin.Context) {
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgPricingApplySuccess, res)
+}
+
+// BulkPricing 批量「按规则改价」（POST /api/product/bulk-pricing）。
+//
+// 与页面侧 ProductsBulkPricing 共用同一个 service 方法（BulkApplyPricing）与同一个权限点
+// （permission.ProductUpdate）：那条通道返回整页提示，这条返回 ui/json_write.js 读的 JSON 回执。
+//
+// 规则参数**平铺在顶层**（ruleType / multiplier / amount / margin / rounding），不套一层 rule
+// 对象：页面表单本来就是一个平铺表单（pricing_rule_fields.html），而「哪个规则用哪个参数」的
+// 判定全在 pricingParamsFromForm —— 在这里另写一套装配，就会出现「抽屉填的 amount 被当成
+// multiplier」这类只在一个入口发生的错。
+func (h *Handle) BulkPricing(c *gin.Context) {
+	req := &productBulkPricingReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// 归一口径与其余批量端点同一个纯函数：去空白 / 去重 / 上限 MaxIDs，超限整批拒绝。
+	ids, err := bulkids.Normalize(req.IDs)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	form := productdto.PricingForm{
+		ProjectID:  req.ProjectID,
+		RuleType:   req.RuleType,
+		Multiplier: req.Multiplier,
+		Amount:     req.Amount,
+		Margin:     req.Margin,
+		Rounding:   req.Rounding,
+		Note:       req.Note,
+	}
+	res, err := h.svc.BulkApplyPricing(c.Request.Context(), &productdto.BulkPricingReq{
+		IDs:        ids,
+		ProjectID:  req.ProjectID,
+		Note:       req.Note,
+		OperatorID: operatorFromContext(c),
+		Rule: productdto.PricingRuleReq{
+			ProjectID:  req.ProjectID,
+			RuleType:   req.RuleType,
+			Rounding:   req.Rounding,
+			Scope:      productenums.PricingScopeProduct,
+			RuleParams: pricingParamsFromForm(form),
+		},
+	})
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgPricingApplySuccess, productBulkPricedView(c, res))
+}
+
+// productBulkPricingReq 批量改价的 JSON 入参（规则字段平铺，理由见 BulkPricing）。
+type productBulkPricingReq struct {
+	IDs        []string `json:"ids"`
+	ProjectID  string   `json:"projectId"`
+	Note       string   `json:"note"`
+	RuleType   string   `json:"ruleType"`
+	Multiplier string   `json:"multiplier"`
+	Amount     string   `json:"amount"`
+	Margin     string   `json:"margin"`
+	Rounding   string   `json:"rounding"`
+}
+
+// productBulkPricedView 批量改价的回执。
+//
+// 成功键是 updated 而不是 deleted：json_write.js 的 okKeyOf 按 outcome=update 读
+// data.updated —— 「它被改过了」与「把它从列表里删掉」不是同一件事（基座据此决定要不要
+// 把行从表格里移除；改价后商品还在，移掉会让人以为商品没了）。
+type productBulkPricingView struct {
+	Updated int                   `json:"updated"`
+	Changed int                   `json:"changedVariants"`
+	Skipped int                   `json:"skipped"`
+	Items   []productBulkItemView `json:"items"`
+}
+
+// productBulkPricedView 把 service 的计数 + 业务 key 转成基座要的形状（与删除那一份同源，
+// 只是成功键不同）。
+func productBulkPricedView(c *gin.Context, res *productdto.BulkPricingResult) productBulkPricingView {
+	view := productBulkPricingView{
+		Updated: res.Succeeded,
+		Changed: res.ChangedVariants,
+		Skipped: res.NotDone(),
+		Items:   make([]productBulkItemView, 0, len(res.Items)),
+	}
+	for _, it := range res.Items {
+		row := productBulkItemView{ID: it.ID, Updated: it.Updated}
+		if !it.Updated && it.ReasonKey != "" {
+			row.Message = productErrText(c, errors.New(it.ReasonKey))
+		}
+		view.Items = append(view.Items, row)
+	}
+	return view
 }
 
 // ListPriceAdjustments 调价留痕列表（按工程）。

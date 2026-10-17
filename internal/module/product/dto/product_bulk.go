@@ -33,8 +33,13 @@ type BulkResult struct {
 // 「成功了」又表示「把它从列表里删掉」（基座按 outcome 读不同的键，见 json_write.js 的
 // okKeyOf）。
 type BulkItem struct {
-	ID        string `json:"id"`
-	Deleted   bool   `json:"deleted"`
+	ID string `json:"id"`
+	// Deleted / Updated 两个键**互斥**，按用例取其一：破坏动作（删除）用 Deleted，
+	// 非破坏动作（改价 / 改状态 / 打标签）用 Updated。一个字段同时承担两义会让
+	// 「把它从列表里删掉」与「它被改过了」变成同一句话（json_write.js 的 okKeyOf
+	// 就是按这个区分摘要句的）。
+	Deleted   bool   `json:"deleted,omitempty"`
+	Updated   bool   `json:"updated,omitempty"`
 	ReasonKey string `json:"reasonKey,omitempty"`
 }
 

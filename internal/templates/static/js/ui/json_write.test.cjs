@@ -284,6 +284,19 @@ function setup(config) {
             rows.push(tr);
         });
     }
+    // scopeRows：ids 装在**本表单之外**的容器里（data-write-ids-scope 的用例）。
+    // 现实形态是商品列表的「按规则改价」抽屉：抽屉内容克隆到 document 级，
+    // 勾选框留在页面那个批量表单里。
+    if (cfg.scopeRows) {
+        const scope = makeEl('div', { class: 'ids-scope' });
+        cfg.scopeRows.forEach((row) => {
+            const box = makeEl('input', { name: 'ids' }, { type: 'checkbox' });
+            box.value = row.id;
+            box.checked = !!row.checked;
+            scope.appendChild(box);
+        });
+        body.appendChild(scope);
+    }
     // rowBoxes：data-write-rows 的容器（一行一个 div，里面是该行的具名字段）。
     // 用真实的 class 选择器（.nav-tr-row）而不是给桩开后门：选择器解析本身就是被测契约的一部分。
     if (cfg.rowBoxes) {
@@ -483,6 +496,39 @@ test('single 可带点名额外字段：id 最后写、点名的才发、csrf_to
 });
 
 // —— 分支 3：bulk（批量删除） ——
+
+test('bulk：data-write-ids-scope 让 ids 从本表单之外收（抽屉里的批量动作）', async () => {
+    // 商品列表「按规则改价」：表单在 <template> 里、打开时克隆到 document 级，
+    // 勾选框留在页面那个批量表单里。不收作用域的话 ids 恒为空 ——
+    // 症状是「点了应用调价什么也没发生」，而基座只会说「没勾选任何项」。
+    const env = setup({
+        attrs: {
+            'data-write-api': '/api/product/bulk-pricing', 'data-write-mode': 'bulk',
+            'data-write-ids-scope': '.ids-scope', 'data-write-extra': 'projectId',
+        },
+        scopeRows: [{ id: 'p1', checked: true }, { id: 'p2', checked: false }, { id: 'p3', checked: true }],
+        createFields: [{ name: 'projectId', value: 'proj-1' }],
+        respond: { code: 200, data: { deleted: 2, skipped: 0, items: [] } },
+    });
+    env.fire(); await tick();
+    assert.equal(env.requests.length, 1);
+    assert.deepEqual(env.requests[0].body, { projectId: 'proj-1', ids: ['p1', 'p3'] });
+});
+
+test('bulk：ids-scope 指向不存在的选择器时退回本表单，不发空 ids', async () => {
+    // 选择器打错 / 目标还没渲染：退回本表单内收，而不是发一个空 ids ——
+    // 那样服务端会回「没勾选任何项」，把人指向错误的原因。
+    const env = setup({
+        attrs: {
+            'data-write-api': '/api/product/bulk-pricing', 'data-write-mode': 'bulk',
+            'data-write-ids-scope': '.not-rendered-yet',
+        },
+        bulkRows: [{ id: 'p9', checked: true }],
+        respond: { code: 200, data: { deleted: 1, skipped: 0, items: [] } },
+    });
+    env.fire(); await tick();
+    assert.deepEqual(env.requests[0].body.ids, ['p9']);
+});
 
 test('bulk 去重保序后提交，成功按服务端结果移除行并给出计数、原因与刷新入口', async () => {
     const env = setup({
