@@ -9,7 +9,7 @@ package builder
 //  3. 组件在注册表与模板注册表里（组件库可见性依赖 core.Types()）。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"regexp"
 	"strings"
 	"testing"

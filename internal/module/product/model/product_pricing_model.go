@@ -10,7 +10,7 @@ package productmodel
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"time"
 
 	"gorm.io/gorm"

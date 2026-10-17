@@ -7,7 +7,7 @@ package builder
 // 线上按钮点了没反应」的成因。所以这里断言的是产物 HTML 里真的有什么。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

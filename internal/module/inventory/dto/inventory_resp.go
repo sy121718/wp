@@ -1,7 +1,7 @@
 // inventory_resp.go — inventory 模块出参。
 package inventorydto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // SourceResp 货源（含类型与关联方标志，两者共同构成报表区分维度）。
 //

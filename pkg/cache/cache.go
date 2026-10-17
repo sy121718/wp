@@ -8,8 +8,8 @@ package cache
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"math/rand"
 	"strings"
 	"time"

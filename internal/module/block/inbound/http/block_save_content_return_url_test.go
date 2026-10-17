@@ -13,7 +13,7 @@ package blockhttp
 // 没传 returnUrl（或传空串）不跳，走 200 JSON 成功回执 —— 保存后留在工作台。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"strings"

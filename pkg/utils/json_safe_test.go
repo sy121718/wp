@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 )
 

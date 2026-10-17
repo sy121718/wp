@@ -17,8 +17,8 @@ package productservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"strings"
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"

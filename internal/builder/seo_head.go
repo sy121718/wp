@@ -1,9 +1,9 @@
 package builder
 
 import (
-	"encoding/json"
 	"fmt"
 	"go_wp/pkg/i18n"
+	json "go_wp/pkg/jsonx"
 	"html"
 	"net/url"
 	"os"

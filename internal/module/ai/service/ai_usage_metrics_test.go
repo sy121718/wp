@@ -8,7 +8,7 @@ package aiservice
 // 两者在页面上长得一样的话，最该被看见的那条信息就被抹掉了。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 )
 

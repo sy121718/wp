@@ -223,6 +223,24 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   `internal/module/admin/inbound/http/admin_err.go`）。
 - 判据是**形状**不是字面量：新增 handler 先问「这个 err 会不会进响应」，而不是等门禁逐个堵接收方别名。
 
+### JSON（唯一入口 pkg/jsonx）
+
+**全仓 JSON 一律走 `go_wp/pkg/jsonx`**，import 写 `json "go_wp/pkg/jsonx"`（导出与 `encoding/json`
+同名 API，调用点零改动）。直接 import 标准库 `encoding/json` 家族（v1 / `encoding/json/v2` /
+`encoding/json/jsontext`）会被 `internal/architecture/json_import_boundary_test.go` 判失败，
+白名单只有 `pkg/jsonx` 自己。
+
+- 底层是 `encoding/json/v2` + `jsontext`，`pkg/jsonx` 用一组选项把 v1 的可观察行为逐条还原：
+  `Deterministic`（map 键排序）、`MatchCaseInsensitiveNames`、`FormatNilSliceAsNull` /
+  `FormatNilMapAsNull`、`EscapeForHTML` **+** `EscapeForJS`（U+2028/2029 只有后者管，
+  只加 HTML 不够）、`AllowDuplicateNames`。**v2 默认与 v1 不同的六处**（nil 切片 / nil 映射、
+  HTML 字符、行分隔符、重复键、字段名大小写、错误文案）逐条列在 `pkg/jsonx` 包注释里。
+- 唯一**不可**还原的是错误文案：分流未知字段一律判错误值
+  （`jsonx.RejectUnknownMembers(true)` + `errors.Is(err, jsonx.ErrUnknownName)`），
+  不要 `strings.Contains(err.Error(), "unknown field")` —— v1 与 v2 的文案不同，靠文案分流
+  在切换后必然静默失效。
+- 需要 v2 原生语义（流式 `MarshalWrite` 的尾换行、`jsontext.Encoder`、严格默认模式）时，
+  **在 `pkg/jsonx` 里加导出函数**，不要在业务包里直连标准库。
 ### AI 工具（MCP）开发
 
 工具定义在 `internal/module/<mod>/inbound/mcp/`，读用 `mcp.New`、写用 `mcp.NewWrite`

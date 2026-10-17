@@ -1,6 +1,6 @@
 package aidto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // ai_chat.go — ai 模块的对话入口形状（inbound ↔ service）。
 //

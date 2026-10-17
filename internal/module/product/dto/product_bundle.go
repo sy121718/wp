@@ -12,7 +12,7 @@
 // 用 0 表示「不设上限」比 null 少一层分支。
 package productdto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // —— 服务端护栏常量 ——
 

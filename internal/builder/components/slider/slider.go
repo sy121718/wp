@@ -14,8 +14,8 @@ package slider
 
 import (
 	_ "embed" // enhance.js 经 //go:embed 打进二进制
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"strconv"
 
 	"go_wp/internal/builder/core"

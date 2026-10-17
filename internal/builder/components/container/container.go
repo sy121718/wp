@@ -7,9 +7,9 @@ package container
 
 import (
 	_ "embed" // container.css 经 //go:embed 打进二进制
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"regexp"
 	"strconv"
 	"strings"

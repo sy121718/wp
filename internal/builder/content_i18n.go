@@ -19,7 +19,7 @@ package builder
 import (
 	"bytes"
 	"cmp"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"slices"
 	"sort"
 	"strings"

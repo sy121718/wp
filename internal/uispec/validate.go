@@ -2,10 +2,9 @@ package uispec
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"unicode/utf8"
 )
@@ -58,31 +57,27 @@ func reject(kind, where, format string, args ...any) *Reject {
 //
 // 三层一起做，缺一层都会漏：
 //
-//	① 语法（JSON 合法、没有两个对象拼在一起）；
-//	② 形状（字段名全在白名单里 —— DisallowUnknownFields，模型自创字段一律拒绝）；
+//	① 语法（JSON 合法、没有两个对象拼在一起、没有尾随内容）；
+//	② 形状（字段名全在白名单里 —— RejectUnknownMembers，模型自创字段一律拒绝）；
 //	③ 界限（组件数 / 长度 / 行数上限）。
+//
+// 尾随内容不需要单独再 Decode 一趟：jsonx.Unmarshal 走 jsontext 语法层，要求输入是
+// **恰好一个 JSON 值**，`{"a":1}{"b":2}` 与 `{"a":1} trailing` 都直接报错（实测）。
 func Parse(raw []byte) (*Spec, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
 		return nil, reject(KindMalformed, "", "输入为空")
 	}
-	dec := json.NewDecoder(bytes.NewReader(trimmed))
-	dec.DisallowUnknownFields()
+	// 未知字段与语法错误共用同一个返回点，但它们是**两类**原因，上层要分开处置：
+	// 语法错多半是模型输出截断（可重试），未知字段是协议外的东西（要进诊断、看模型在
+	// 发明什么）。分流走**错误值**而不是文案 —— v1 与 v2 的错误文案不同，靠
+	// strings.Contains(err.Error(), "unknown field") 判定在切到 encoding/json/v2 后必然失效。
 	var s Spec
-	if err := dec.Decode(&s); err != nil {
-		// DisallowUnknownFields 与语法错误共用同一个返回点，但它们是**两类**原因，
-		// 上层要分开处置：语法错多半是模型输出截断（可重试），未知字段是协议外的东西
-		// （要进诊断、看模型在发明什么）。所以这里按 encoding/json 的文案分流 ——
-		// 这是唯一一处依赖标准库错误文案的地方，测试把它钉住了（改动会让用例红）。
-		if strings.Contains(err.Error(), "unknown field") {
+	if err := json.Unmarshal(trimmed, &s, json.RejectUnknownMembers(true)); err != nil {
+		if errors.Is(err, json.ErrUnknownName) {
 			return nil, reject(KindUnknownField, "", "出现白名单之外的字段: %v", err)
 		}
 		return nil, reject(KindMalformed, "", "JSON 解析失败: %v", err)
-	}
-	// 尾随内容：模型偶尔会「先出 spec 再补一段」，Go 的 Decode 只吃第一个值，
-	// 不检查就会把后半段静默丢掉 —— 那半个回答去哪了将无从查起。
-	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return nil, reject(KindMalformed, "", "JSON 之后还有多余内容")
 	}
 	if err := Validate(&s); err != nil {
 		return nil, err

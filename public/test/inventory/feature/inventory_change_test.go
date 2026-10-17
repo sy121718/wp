@@ -15,9 +15,9 @@ package feature
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

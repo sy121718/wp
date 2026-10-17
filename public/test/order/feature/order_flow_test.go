@@ -15,7 +15,7 @@ package feature
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	"gorm.io/gorm"

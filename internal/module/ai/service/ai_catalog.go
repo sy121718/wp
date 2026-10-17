@@ -59,17 +59,17 @@ package aiservice
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"io"
 	"net/http"
 	"slices"
 	"sort"
 	"strings"
 
-	"go_wp/internal/module/ai/dto"
-	"go_wp/internal/module/ai/enums"
-	"go_wp/internal/module/ai/model"
+	aidto "go_wp/internal/module/ai/dto"
+	aienums "go_wp/internal/module/ai/enums"
+	aimodel "go_wp/internal/module/ai/model"
 	"go_wp/pkg/logger"
 )
 

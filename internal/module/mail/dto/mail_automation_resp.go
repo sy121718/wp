@@ -2,7 +2,7 @@ package maildto
 
 // mail_automation_resp.go — 自动化流程响应（issue #38 P3）。
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // AutomationNodeItem 节点（回显用，原样透传 params）。
 type AutomationNodeItem struct {

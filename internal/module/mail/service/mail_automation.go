@@ -81,9 +81,9 @@ package mailservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"strconv"
 	"strings"
 	"sync"
@@ -91,8 +91,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/mail/dto"
-	"go_wp/internal/module/mail/enums"
+	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"

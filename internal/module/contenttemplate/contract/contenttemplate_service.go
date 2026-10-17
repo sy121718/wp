@@ -3,11 +3,11 @@ package contenttemplatecontract
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 
 	blockcontract "go_wp/internal/module/block/contract"
-	"go_wp/internal/module/contenttemplate/dto"
+	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 )
 
 // 模板角色（审计 EDT-004）。

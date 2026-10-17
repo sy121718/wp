@@ -3,8 +3,8 @@ package pagecontract
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 
 	blockcontract "go_wp/internal/module/block/contract"
 	pagedto "go_wp/internal/module/page/dto"

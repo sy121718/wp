@@ -40,16 +40,16 @@ package mailservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"math"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/mail/dto"
-	"go_wp/internal/module/mail/enums"
+	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/internal/retention"
 	"go_wp/pkg/logger"

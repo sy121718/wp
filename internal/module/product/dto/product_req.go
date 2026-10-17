@@ -1,7 +1,7 @@
 // product_req.go — product 模块入参（inbound 绑定用）。
 package productdto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // CreateReq 新建商品。
 //

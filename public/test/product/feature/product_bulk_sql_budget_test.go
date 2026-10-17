@@ -11,8 +11,8 @@ package feature
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"sync"
 	"testing"

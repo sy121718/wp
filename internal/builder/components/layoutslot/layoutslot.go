@@ -18,8 +18,8 @@ package layoutslot
 
 import (
 	_ "embed" // layoutslot.jet 经 //go:embed 打进二进制
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"strings"
 
 	"go_wp/internal/builder/components/globalref"

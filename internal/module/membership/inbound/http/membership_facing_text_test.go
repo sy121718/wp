@@ -14,7 +14,7 @@ package membershiphttp
 // 都会立刻暴露。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"strings"

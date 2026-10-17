@@ -9,7 +9,7 @@ package feature
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

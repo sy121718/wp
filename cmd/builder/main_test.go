@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"os"
 	"path/filepath"
 	"testing"

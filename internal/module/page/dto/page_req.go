@@ -1,6 +1,6 @@
 package pagedto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // CreateReq 创建手工 Page。
 type CreateReq struct {

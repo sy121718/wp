@@ -1,7 +1,7 @@
 package response
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"net/http/httptest"
 	"strings"
 	"sync"

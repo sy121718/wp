@@ -6,7 +6,7 @@ package contenttemplateservice
 // hashDocument 决定「改原文后旧译文/旧快照是否失效」，算错等于静默沿用旧内容。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"

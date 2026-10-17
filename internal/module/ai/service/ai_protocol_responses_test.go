@@ -8,8 +8,8 @@ package aiservice
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"testing"
 

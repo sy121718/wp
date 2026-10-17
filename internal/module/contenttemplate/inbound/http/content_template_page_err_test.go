@@ -14,8 +14,8 @@ package contenttemplatehttp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -147,7 +147,7 @@ func TestContentTemplatesPageProjectListFailureRenders500(t *testing.T) {
 		rawErr.Error(),                    // 驱动原文只进日志 —— 原样
 		html.EscapeString(rawErr.Error()), // 以及 HTML 转义形态（Jet 把 `"` 渲染成 &#34;）
 		"还没有内容模板",                         // 空态误导：不是「没有模板」，是没读出来
-		"内容模板能力未装配，本页暂不可用。", // 误报：能力装着呢，是这一次没读到工程
+		"内容模板能力未装配，本页暂不可用。",               // 误报：能力装着呢，是这一次没读到工程
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("失败页面不应出现 %q", forbidden)

@@ -13,7 +13,7 @@ package builder
 //     —— 恒真的断言等于没有断言（见 TestPaletteCoverageGapsDetectsMissing）。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"sort"
 	"testing"
 

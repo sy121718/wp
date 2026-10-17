@@ -27,8 +27,8 @@ package feature
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"io"
 	"net/http"
 	"net/http/httptest"

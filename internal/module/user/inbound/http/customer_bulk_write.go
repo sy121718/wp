@@ -1,20 +1,21 @@
 package userhttp
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"go_wp/internal/adminui"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
+
+	"github.com/gin-gonic/gin"
 )
 
 type customerBulkItem struct {

@@ -63,9 +63,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"io"
 	"net/http"
 	"strconv"
@@ -74,9 +74,9 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/webhook/dto"
-	"go_wp/internal/module/webhook/enums"
-	"go_wp/internal/module/webhook/model"
+	webhookdto "go_wp/internal/module/webhook/dto"
+	webhookenums "go_wp/internal/module/webhook/enums"
+	webhookmodel "go_wp/internal/module/webhook/model"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )

@@ -2,17 +2,18 @@ package contenttemplatehttp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
+
+	"github.com/gin-gonic/gin"
 )
 
 type ctDeleteStub struct {

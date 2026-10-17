@@ -93,9 +93,9 @@ package mailhttp
 // 所以历史行在排障页上显示的还是当年那句话。
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"html"
 	"net/http"
 	"net/url"
@@ -108,9 +108,9 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/builder/core"
-	"go_wp/internal/module/mail/contract"
-	"go_wp/internal/module/mail/dto"
-	"go_wp/internal/module/mail/enums"
+	mailcontract "go_wp/internal/module/mail/contract"
+	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"

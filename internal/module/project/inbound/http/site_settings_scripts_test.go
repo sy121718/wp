@@ -15,7 +15,7 @@ package projecthttp
 // 这里不重复它 —— 那条判据的唯一出口是 builder.NormalizeHeadScripts / NormalizeBodyScripts。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

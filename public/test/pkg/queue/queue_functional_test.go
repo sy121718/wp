@@ -2,7 +2,7 @@ package queue_test
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"net"
 	"strconv"
 	"testing"

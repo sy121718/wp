@@ -20,7 +20,7 @@ package feature
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"io"
 	"net/http"
 	"net/http/httptest"

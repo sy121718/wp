@@ -8,7 +8,7 @@ package aihttp
 //   · 标识与图数量对不上 → 界面把 A 图的名字画在 B 图下面（比没有名字更难发现）。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

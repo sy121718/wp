@@ -17,8 +17,8 @@ package adminhttp
 // 「key 真的走到了取词层」，而不是「本模块把中文原文写进了响应」。
 
 import (
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"strings"

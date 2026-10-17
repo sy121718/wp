@@ -7,8 +7,8 @@ package richdoc
 // 装不下组件树里的全部信息，这一点必须让调用方知道（有损的导出拿去覆盖原文就会真的丢东西）。
 
 import (
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	stdhtml "html"
 	"strings"
 

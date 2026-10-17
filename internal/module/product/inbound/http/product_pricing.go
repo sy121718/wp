@@ -1,7 +1,7 @@
 package producthttp
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"

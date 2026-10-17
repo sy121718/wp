@@ -4,7 +4,7 @@ package plugincomp
 // InspectorSchema 确定性。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

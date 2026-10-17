@@ -1,7 +1,7 @@
 package builder
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 
 	"go_wp/internal/builder/core"
 

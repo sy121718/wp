@@ -7,7 +7,7 @@ package source
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 
 	blockcontract "go_wp/internal/module/block/contract"

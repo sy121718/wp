@@ -23,8 +23,8 @@ package productservice
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"slices"
 	"strings"
 	"time"
@@ -32,10 +32,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/product/contract"
-	"go_wp/internal/module/product/dto"
-	"go_wp/internal/module/product/enums"
-	"go_wp/internal/module/product/model"
+	productcontract "go_wp/internal/module/product/contract"
+	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
+	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/rls"
 )
 

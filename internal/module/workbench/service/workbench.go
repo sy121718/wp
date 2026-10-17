@@ -59,9 +59,9 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"html"
 	"net/url"
 	"os"
@@ -72,16 +72,16 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
-	"go_wp/internal/module/block/contract"
-	"go_wp/internal/module/block/dto"
-	"go_wp/internal/module/contenttemplate/dto"
-	"go_wp/internal/module/contenttemplate/enums"
-	"go_wp/internal/module/navigation/dto"
-	"go_wp/internal/module/page/contract"
-	"go_wp/internal/module/plugin/contract"
-	"go_wp/internal/module/presentation/enums"
-	"go_wp/internal/module/product/contract"
-	"go_wp/internal/module/workbench/enums"
+	blockcontract "go_wp/internal/module/block/contract"
+	blockdto "go_wp/internal/module/block/dto"
+	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
+	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
+	navigationdto "go_wp/internal/module/navigation/dto"
+	pagecontract "go_wp/internal/module/page/contract"
+	plugincontract "go_wp/internal/module/plugin/contract"
+	presentationenums "go_wp/internal/module/presentation/enums"
+	productcontract "go_wp/internal/module/product/contract"
+	workbenchenums "go_wp/internal/module/workbench/enums"
 )
 
 // PageByID 按 id 读取页面（画布 / 预览共用同一取数口径）。

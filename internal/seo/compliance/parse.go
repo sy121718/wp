@@ -7,7 +7,7 @@ package compliance
 // 了一条标签），校验会跟着错的那份逻辑一起绿 —— 审计要的正是「证明产物本身正确」。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"html"
 	"net/url"
 	"path"

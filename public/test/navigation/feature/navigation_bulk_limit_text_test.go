@@ -19,8 +19,8 @@ package feature
 // 这条路径本来就不该碰数据库（碰了就 panic，而不是悄悄跑通）。
 
 import (
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"strconv"

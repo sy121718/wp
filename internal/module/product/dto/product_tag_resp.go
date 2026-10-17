@@ -1,7 +1,7 @@
 // product_tag_resp.go — 商品标签出参（issue #11，service 返回）。
 package productdto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // TagResp 标签。
 //

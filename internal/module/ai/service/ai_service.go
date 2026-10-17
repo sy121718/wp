@@ -30,8 +30,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"net"
 	"net/http"
 	"net/url"
@@ -40,10 +40,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"go_wp/internal/module/ai/contract"
-	"go_wp/internal/module/ai/dto"
-	"go_wp/internal/module/ai/enums"
-	"go_wp/internal/module/ai/model"
+	aicontract "go_wp/internal/module/ai/contract"
+	aidto "go_wp/internal/module/ai/dto"
+	aienums "go_wp/internal/module/ai/enums"
+	aimodel "go_wp/internal/module/ai/model"
 	"go_wp/pkg/crypto"
 	"go_wp/pkg/utils"
 )

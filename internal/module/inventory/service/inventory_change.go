@@ -38,8 +38,8 @@ package inventoryservice
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"math"
 	"slices"
 	"strconv"
@@ -49,9 +49,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/inventory/dto"
-	"go_wp/internal/module/inventory/enums"
-	"go_wp/internal/module/inventory/model"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
+	inventorymodel "go_wp/internal/module/inventory/model"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"

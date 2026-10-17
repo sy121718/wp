@@ -10,7 +10,7 @@ package feature
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	maildto "go_wp/internal/module/mail/dto"

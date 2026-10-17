@@ -17,7 +17,7 @@ package builder
 //（hx-* / data-* 只在某些配置下才输出，只跑默认 props 覆盖不到）。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"sort"
 	"strings"
 	"testing"

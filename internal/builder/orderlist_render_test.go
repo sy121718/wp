@@ -7,7 +7,7 @@ package builder
 // 页面上却什么都没有」的成因。所以这里断言的是产物 HTML 里真的有什么。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

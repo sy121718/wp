@@ -5,7 +5,7 @@
 // （未知键、类型不符、越界一律拒绝 —— 不接受自由表达式）。
 package productdto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // CreateTagReq 新建标签。
 type CreateTagReq struct {

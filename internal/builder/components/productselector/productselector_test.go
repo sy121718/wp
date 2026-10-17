@@ -6,8 +6,8 @@ package productselector
 // 模板渲染（实时库存片段的变体 id 与兜底文案）。
 
 import (
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

@@ -16,8 +16,8 @@ package navigationhttp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"strings"

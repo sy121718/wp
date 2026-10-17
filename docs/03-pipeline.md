@@ -135,7 +135,7 @@ Source Map 只用于 Preview 和构建诊断，不发布到公共目录。后端
 **必须项**：
 
 - 所有影响输出的集合遍历必须先转 slice + 显式排序再遍历。包括但不限于：CSS 合并顺序、Jet 模板 `{{ range }}` 遍历、Dependency 收集、Asset 收集。
-- manifest 的 `dependencies` 数组按 `(kind, key)` 排序；`files` 对象由 Go `encoding/json` 自动按 key 排序（标准库保证），无需额外处理。
+- manifest 的 `dependencies` 数组按 `(kind, key)` 排序；`files` 对象由 `pkg/jsonx` 按 key 排序（= 显式开启的 `Deterministic` 选项；`encoding/json/v2` **默认不排序**），无需额外处理 —— 改 JSON 入口时这条就是判据：直接换成裸 `encoding/json/v2` 会让 manifest 字节漂移。
 - AST 遍历使用深度优先 + children 数组有序遍历，单线程顺序执行；只在加载不可变外部数据（如 Global Component）时允许并发，收集结果后按 AST 顺序组装。
 - 所有 ID 来自 Page Document 本身，构建过程中不生成任何新 ID。
 - BuildMedia 的 URL 必须是稳定的相对路径（如 `/objects/{content-hash}.css`），不包含 presigned URL、CDN 域名或时间戳参数。

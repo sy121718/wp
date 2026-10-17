@@ -2,7 +2,7 @@ package maildto
 
 // mail_automation_req.go — 自动化流程请求（issue #38 P3）。
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // SaveAutomationReq 新建 / 更新流程。
 //

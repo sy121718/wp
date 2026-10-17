@@ -1,7 +1,7 @@
 // Package presentationdto presentation 模块请求/响应结构。
 package presentationdto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // CreateInstanceReq 创建自动发布实例。
 type CreateInstanceReq struct {

@@ -15,7 +15,7 @@ package workbenchhttp
 // 它们 —— 一旦有人把文案来源退回裸 key、或把 503 退回 c.String，没有任何东西会失败。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"os"

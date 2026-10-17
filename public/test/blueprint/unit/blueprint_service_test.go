@@ -5,7 +5,7 @@ package unit
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	"github.com/google/uuid"

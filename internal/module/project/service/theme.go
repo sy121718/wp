@@ -18,8 +18,8 @@ package projectservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"time"
 
@@ -27,9 +27,9 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/builder"
-	"go_wp/internal/module/project/dto"
-	"go_wp/internal/module/project/enums"
-	"go_wp/internal/module/project/model"
+	projectdto "go_wp/internal/module/project/dto"
+	projectenums "go_wp/internal/module/project/enums"
+	projectmodel "go_wp/internal/module/project/model"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )

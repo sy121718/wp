@@ -1,7 +1,7 @@
 // inventory_req.go — inventory 模块入参（inbound 绑定用）。
 package inventorydto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // WarehouseThirdPartyReq 第三方仓的对接配置（迁移 240）。
 //

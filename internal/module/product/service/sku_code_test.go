@@ -12,7 +12,7 @@ package productservice
 // 这几条都是纯函数，不碰数据库，所以放在模块内就近跑（毫秒级）。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

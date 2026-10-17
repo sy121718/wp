@@ -17,7 +17,7 @@ package richdoc
 // 这类自造 props 与组件定义分叉的问题。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

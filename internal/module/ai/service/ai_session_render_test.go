@@ -3,7 +3,7 @@ package aiservice_test
 import (
 	"cmp"
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"slices"
 	"strings"
 	"testing"

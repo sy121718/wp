@@ -1,7 +1,7 @@
 // Package contenttemplatedto contenttemplate 模块请求/响应结构。
 package contenttemplatedto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // CreateReq 创建模板。
 type CreateReq struct {

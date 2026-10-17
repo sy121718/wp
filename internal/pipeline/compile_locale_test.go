@@ -2,7 +2,7 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	"go_wp/internal/builder"

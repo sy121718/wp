@@ -2,7 +2,7 @@ package unit
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	artifactdto "go_wp/internal/module/artifact/dto"

@@ -1,7 +1,7 @@
 package faq
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"regexp"
 	"strings"
 
@@ -17,7 +17,7 @@ import (
 //     「页面上改了答案、结构化数据里还是旧的」这种看不见的分歧。
 //
 //  2. **注入形态与 seo_head 一致**：同样的 <script type="application/ld+json"> 包裹 +
-//     encoding/json 序列化。json.Marshal 会把 < > & 转成 < 等转义序列，
+//     jsonx 序列化（底层 encoding/json/v2 + v1 兼容选项）。jsonx.Marshal 会把 < > & 转成 < 等转义序列，
 //     因此答案里就算写了 </script> 也逃不出字符串（不需要再手工过滤）。
 //
 //  3. **答案是纯文本**：可见侧答案经 RichTextHTML 白名单清洗成 HTML 片段，

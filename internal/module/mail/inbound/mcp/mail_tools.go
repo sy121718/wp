@@ -42,14 +42,14 @@ package mailmcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"strings"
 
 	"go_wp/internal/mcp"
-	"go_wp/internal/module/mail/contract"
-	"go_wp/internal/module/mail/dto"
+	mailcontract "go_wp/internal/module/mail/contract"
+	maildto "go_wp/internal/module/mail/dto"
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/internal/permission"
 )

@@ -14,8 +14,8 @@ package blockhttp
 //  3. 无明细的普通业务错误完全不受影响（仍走原出口）。
 
 import (
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"strings"

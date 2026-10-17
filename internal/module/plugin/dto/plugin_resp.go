@@ -1,6 +1,6 @@
 package plugindto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // PluginResp 插件列表/详情行。
 type PluginResp struct {

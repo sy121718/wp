@@ -9,7 +9,7 @@ package projecthttp
 //     「已设置的密码」清成空串（客户端文档里的哈希被空值覆盖）。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

@@ -12,7 +12,7 @@ package mediamodel
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 
 	"gorm.io/gorm"
 )

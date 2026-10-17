@@ -10,8 +10,8 @@ package productcard
 //	4. 越界 / 解析失败必须上抛，不静默出空卡。
 
 import (
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

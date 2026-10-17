@@ -1,7 +1,7 @@
 // product_pricing_req.go — 定价工具入参（issue #13）。
 package productdto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // PricingRuleReq 定价工具的规则与作用范围（试算与落库共用同一份入参）。
 //

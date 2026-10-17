@@ -43,9 +43,9 @@ package presentationservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"regexp"
 	"strconv"
 	"strings"
@@ -57,10 +57,10 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
-	"go_wp/internal/module/contenttemplate/contract"
-	"go_wp/internal/module/presentation/enums"
-	"go_wp/internal/module/presentation/model"
-	"go_wp/internal/module/product/contract"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	presentationenums "go_wp/internal/module/presentation/enums"
+	presentationmodel "go_wp/internal/module/presentation/model"
+	productcontract "go_wp/internal/module/product/contract"
 	"go_wp/internal/pipeline"
 	seoutil "go_wp/internal/seo"
 	"go_wp/pkg/i18n"

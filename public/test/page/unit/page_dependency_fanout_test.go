@@ -9,7 +9,7 @@ package unit
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	blockdto "go_wp/internal/module/block/dto"

@@ -33,8 +33,8 @@ package mailhttp
 // 两个动作的摘要句用模板里的 data-msg-* 成品文案（按动作各写一套），计数口径因而无需基座特判。
 
 import (
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strconv"
 	"strings"

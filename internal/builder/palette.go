@@ -12,8 +12,8 @@ package builder
 //     可以用注入反例验证它真的会失败（见 palette_contract_test.go）。
 
 import (
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"sort"
 
 	"go_wp/internal/builder/core"

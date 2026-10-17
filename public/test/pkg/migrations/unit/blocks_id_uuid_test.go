@@ -14,7 +14,7 @@ package unit
 // 而这条迁移恰恰是「列名 / 类型猜错就全错」的那类。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

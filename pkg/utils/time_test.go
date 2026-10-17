@@ -3,7 +3,7 @@ package utils
 // time_test.go — 对外 JSON 时间的口径（存储微秒、输出到秒）。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 	"time"
 )

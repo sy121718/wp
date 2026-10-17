@@ -9,17 +9,17 @@ package workbenchhttp
 
 import (
 	"context"
-	"encoding/json"
 	"go_wp/internal/middleware/builtin"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/module/navigation/contract"
-	"go_wp/internal/module/navigation/dto"
-	"go_wp/internal/module/workbench/enums"
+	navigationcontract "go_wp/internal/module/navigation/contract"
+	navigationdto "go_wp/internal/module/navigation/dto"
+	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 	seoscore "go_wp/internal/seo"
 	"go_wp/pkg/logger"

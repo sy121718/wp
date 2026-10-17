@@ -23,7 +23,7 @@ package mailhttp
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -34,7 +34,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/module/mail/contract"
+	mailcontract "go_wp/internal/module/mail/contract"
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/internal/permission"

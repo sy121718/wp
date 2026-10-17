@@ -1,6 +1,6 @@
 package projectdto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // CreateReq 创建站点工程请求。
 type CreateReq struct {

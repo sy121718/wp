@@ -4,7 +4,7 @@ package builder
 // 正常页面 3~6 层通过，超限（globalref 内联叠加、插件预设失控场景）拒绝。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

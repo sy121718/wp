@@ -6,7 +6,7 @@ package compliance
 // 规则 id（不是「有没有结论」）—— 只断言「有结论」的测试在规则写错时会照样绿。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 )

@@ -13,7 +13,7 @@ package producthttp
 // 不碰数据库：这一组全是纯函数与模板渲染，与模块内就近单测的定位一致。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"os"
 	"strings"
 	"testing"

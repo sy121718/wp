@@ -11,7 +11,7 @@ package feature
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	pagedto "go_wp/internal/module/page/dto"

@@ -2,8 +2,8 @@
 package templates
 
 import (
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"os"
 	"os/exec"
 	"path/filepath"

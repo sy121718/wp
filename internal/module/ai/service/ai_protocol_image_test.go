@@ -7,7 +7,7 @@ package aiservice
 // 「看不到图」。所以这里逐个字段钉住，而不是只断言「有个数组」。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	aidto "go_wp/internal/module/ai/dto"

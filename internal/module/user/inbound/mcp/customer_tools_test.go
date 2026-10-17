@@ -16,8 +16,8 @@ package usermcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

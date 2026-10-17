@@ -15,7 +15,7 @@ package core
 // plugincontract.Assembly 解析），插件那一路继续由调用方按 asm.Specs 处理。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"sort"
 	"strings"
 )

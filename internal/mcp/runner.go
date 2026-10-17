@@ -9,9 +9,9 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"strings"
 
 	"go_wp/internal/permission"

@@ -2,20 +2,21 @@ package commenthttp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	commentdto "go_wp/internal/module/comment/dto"
 	commentenums "go_wp/internal/module/comment/enums"
 	commentmodel "go_wp/internal/module/comment/model"
 	commentservice "go_wp/internal/module/comment/service"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
+
+	"github.com/gin-gonic/gin"
 )
 
 type reviewHTTPStub struct {

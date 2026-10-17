@@ -1,7 +1,7 @@
 // product_resp.go — product 模块出参（service 返回）。
 package productdto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // ProductResp 商品详情（含变体列表）。
 type ProductResp struct {

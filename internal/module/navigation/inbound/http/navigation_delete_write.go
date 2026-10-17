@@ -19,9 +19,9 @@ package navigationhttp
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 
 	"github.com/gin-gonic/gin"

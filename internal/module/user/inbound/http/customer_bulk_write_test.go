@@ -1,15 +1,16 @@
 package userhttp
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	userdto "go_wp/internal/module/user/dto"
 	"go_wp/pkg/bulkids"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestCustomerStatusRequiresExplicitTarget(t *testing.T) {

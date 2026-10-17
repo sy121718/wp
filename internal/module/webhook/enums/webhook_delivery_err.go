@@ -22,7 +22,7 @@ package webhookenums
 // 跨模块共用需要一个公共包，那超出本次改动范围，留待后续按需沉淀。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"regexp"
 	"strings"
 )

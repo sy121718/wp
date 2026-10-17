@@ -12,7 +12,7 @@ package workbenchhttp
 // 不靠字符串猜测），并且被拒的值一个字符都不许出现在整页正文里。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

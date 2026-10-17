@@ -6,7 +6,7 @@ package builder
 // Jet 里一个写错的变量通常渲染成空串而不是报错。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

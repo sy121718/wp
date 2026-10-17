@@ -6,8 +6,8 @@ package mcp
 // 多传一个字段、把整数写成小数、把枚举值写成别的词，都必须被拒绝。
 
 import (
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 )

@@ -2,10 +2,10 @@
 package contenttemplatehttp
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"go_wp/pkg/i18n"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strconv"
 	"strings"

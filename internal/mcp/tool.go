@@ -9,7 +9,7 @@ package mcp
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 
 	"go_wp/internal/permission"
 )

@@ -48,8 +48,8 @@ package pubservice
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"io"
 	"net/url"
 	"os"
@@ -59,7 +59,7 @@ import (
 
 	"golang.org/x/net/html"
 
-	"go_wp/internal/module/publication/model"
+	pubmodel "go_wp/internal/module/publication/model"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/seo"
 	"go_wp/pkg/i18n"

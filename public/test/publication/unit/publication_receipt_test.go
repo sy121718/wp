@@ -2,7 +2,7 @@ package unit
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	pubdto "go_wp/internal/module/publication/dto"

@@ -13,8 +13,8 @@ package richdoc
 // 再要求第 2 条会把"有损但稳定"误判成缺陷。
 
 import (
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"sort"
 	"strings"
 	"testing"

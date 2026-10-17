@@ -12,8 +12,8 @@ package userhttp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	ordercontract "go_wp/internal/module/order/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	usercontract "go_wp/internal/module/user/contract"
@@ -33,6 +32,8 @@ import (
 	userenums "go_wp/internal/module/user/enums"
 	"go_wp/internal/templates"
 	"go_wp/pkg/utils"
+
+	"github.com/gin-gonic/gin"
 )
 
 // customerTestLayoutData 补齐 layout 需要的键（与线上 adminui.Prepare 注入的一致）。

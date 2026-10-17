@@ -22,8 +22,8 @@ package productservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	presentationcontract "go_wp/internal/module/presentation/contract"

@@ -1,7 +1,7 @@
 // Package blueprintdto blueprint 模块请求/响应结构。
 package blueprintdto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // CreateReq 创建 Blueprint。
 type CreateReq struct {

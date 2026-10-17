@@ -1,7 +1,6 @@
 package producthttp
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"go_wp/internal/adminui"
@@ -12,6 +11,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/shell"
+	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"

@@ -6,7 +6,7 @@ package unit
 // 主题日后改了字体，页面没覆盖过的字体项要跟着变、覆盖过的项保持不变。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

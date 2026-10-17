@@ -32,7 +32,7 @@ package mailenums
 // 照抄的是它的两条渲染判据：**缺参丢弃整条**、**残留占位符丢弃整条**。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"regexp"
 	"strings"
 )

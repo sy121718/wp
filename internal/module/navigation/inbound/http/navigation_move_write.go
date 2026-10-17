@@ -24,7 +24,7 @@
 package navigationhttp
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 
 	"github.com/gin-gonic/gin"
 

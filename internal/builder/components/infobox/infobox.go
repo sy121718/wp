@@ -4,8 +4,8 @@ package infobox
 
 import (
 	_ "embed" // infobox.css 经 //go:embed 打进二进制
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 
 	"go_wp/internal/builder/core"
 )

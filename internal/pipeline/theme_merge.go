@@ -7,8 +7,8 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 
 	"go_wp/internal/builder"
 	projectcontract "go_wp/internal/module/project/contract"

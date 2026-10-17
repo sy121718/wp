@@ -8,7 +8,7 @@ package breadcrumb
 //  3. JSON-LD（开启时）与可见项逐项同源 —— 同一份 Items 序列化出来，两处不会分叉。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

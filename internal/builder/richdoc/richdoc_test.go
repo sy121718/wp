@@ -10,7 +10,7 @@ package richdoc
 //     结构体与组件定义漂移时，前两层测试照样全绿）。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

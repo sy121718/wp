@@ -14,7 +14,7 @@ package feature
 
 import (
 	"context"
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"os"
 	"path/filepath"
 	"strings"

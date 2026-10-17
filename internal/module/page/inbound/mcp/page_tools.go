@@ -24,14 +24,14 @@ package pagemcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"strings"
 
 	"go_wp/internal/mcp"
-	"go_wp/internal/module/page/contract"
-	"go_wp/internal/module/page/dto"
+	pagecontract "go_wp/internal/module/page/contract"
+	pagedto "go_wp/internal/module/page/dto"
 	"go_wp/internal/permission"
 )
 

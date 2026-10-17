@@ -14,8 +14,8 @@ package aiservice_test
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"io"
 	"net"
 	"net/http"

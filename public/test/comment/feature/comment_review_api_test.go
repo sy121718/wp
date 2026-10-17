@@ -2,18 +2,19 @@ package commentfeature
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	commentdto "go_wp/internal/module/comment/dto"
 	commenthttp "go_wp/internal/module/comment/inbound/http"
 	commentmodel "go_wp/internal/module/comment/model"
 	commentservice "go_wp/internal/module/comment/service"
+
+	"github.com/gin-gonic/gin"
 )
 
 func reviewViaAPI(t *testing.T, svc *commentservice.Service, id int64, status string, reviewer int64) commentdto.ReviewResp {

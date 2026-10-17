@@ -28,15 +28,15 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"strconv"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/mail/dto"
+	maildto "go_wp/internal/module/mail/dto"
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/pkg/queue"
 )

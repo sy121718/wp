@@ -18,8 +18,8 @@ package cardstack
 
 import (
 	_ "embed" // enhance.js 经 //go:embed 打进二进制
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"math"
 	"strconv"
 	"strings"

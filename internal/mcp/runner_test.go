@@ -4,8 +4,8 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	"go_wp/internal/permission"

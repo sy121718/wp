@@ -17,8 +17,8 @@ package aimodel
 import (
 	"context"
 	"database/sql/driver"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"time"
 
 	"gorm.io/gorm"

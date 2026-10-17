@@ -8,9 +8,9 @@ package mcp
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"sort"
 	"strings"
 )
@@ -45,10 +45,11 @@ func validate(schema Schema, raw json.RawMessage) error {
 	if len(body) == 0 {
 		body = []byte("{}")
 	}
+	// 值是 jsonx.RawMessage（= jsontext.Value）：**原始字节**，数字字面量原样保留，
+	// 所以不需要 v1 那套 UseNumber（那是给 map[string]any 用的；目标是 RawMessage
+	// 时本就冗余 —— v1 下也是）。
 	var fields map[string]json.RawMessage
-	dec := json.NewDecoder(bytes.NewReader(body))
-	dec.UseNumber()
-	if err := dec.Decode(&fields); err != nil {
+	if err := json.Unmarshal(body, &fields); err != nil {
 		return &ArgsError{Msg: "参数必须是 JSON 对象: " + err.Error()}
 	}
 
@@ -111,7 +112,7 @@ func validateValue(schema Schema, raw json.RawMessage) error {
 		}
 		return nil
 	case "number":
-		// 这里不需要 isJSONNumberLiteral 守卫：目标是 float64，encoding/json 自己
+		// 这里不需要 isJSONNumberLiteral 守卫：目标是 float64，jsonx（v2 语义）自己
 		// 就会拒掉字符串（只有 json.Number 那个 string-kind 的类型会被字符串骗过去）。
 		var f float64
 		if err := json.Unmarshal(raw, &f); err != nil {

@@ -8,7 +8,7 @@ package builder
 // 也要跟着变。所以合并必须在**键级别**做，而不是整份替换。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 )
 

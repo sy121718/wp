@@ -14,9 +14,9 @@ package feature
 // 这一份是**接口级**（超限时页面上到底显示了什么）。
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

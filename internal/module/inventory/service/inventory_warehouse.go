@@ -26,8 +26,8 @@ package inventoryservice
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"time"
 	"unicode"
@@ -35,9 +35,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/inventory/dto"
-	"go_wp/internal/module/inventory/enums"
-	"go_wp/internal/module/inventory/model"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
+	inventorymodel "go_wp/internal/module/inventory/model"
 	"go_wp/pkg/crypto"
 )
 

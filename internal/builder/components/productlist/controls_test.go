@@ -8,8 +8,8 @@ package productlist
 
 import (
 	"context"
-	"encoding/json"
 	"go_wp/internal/templates"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

@@ -19,7 +19,7 @@ package feature
 // 排查方向从第一次就错了（模板漏声明 data-write-extra 时的真实现象）。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"strconv"

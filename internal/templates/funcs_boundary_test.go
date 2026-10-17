@@ -26,8 +26,8 @@ package templates
 // json.RawMessage 直出、typed nil 直出、越界字面量。
 
 import (
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"net/url"
 	"strings"
 	"testing"
@@ -283,7 +283,7 @@ func TestBoundaryJSONRawMessageIsRenderedUnvalidated(t *testing.T) {
 	// （判据在 internal/module/product/service/product_seo_score_input_test.go）。
 	// 若哪天这里开始报错，就是渲染层多了一层没人要求的校验 —— 本用例会红。
 	//
-	// Go 1.27 起 encoding/json.RawMessage 成了 jsontext.Value 的别名（jsonv2 默认开启），该类型自带
+	// Go 1.27 起 RawMessage 就是 jsontext.Value 的别名（jsonx.RawMessage = jsontext.Value），该类型自带
 	// String()：Jet 原先按 []byte 直出的那条分支不再命中，改用 String() —— 于是 **nil 值从空串变成
 	// "null"**（1.26 与 GOEXPERIMENT=nojsonv2 下仍是空串，实测对照）。渲染层「不校验 JSON」的契约不变，
 	// 变的只是空值的文本形态；在 JSON 语境里 "null" 比空串更准确。生产模板不直接渲染这个类型

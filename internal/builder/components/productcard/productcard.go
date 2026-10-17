@@ -26,8 +26,8 @@ package productcard
 
 import (
 	_ "embed" // productcard.css 经 //go:embed 打进二进制
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"math"
 	"regexp"
 	"strconv"

@@ -11,7 +11,7 @@ package pipeline
 //     全都看不出来（访问面只能一直走内置兜底页）。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"os"
 	"path/filepath"
 	"strings"

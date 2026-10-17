@@ -1,7 +1,7 @@
 // product_pricing_resp.go — 定价工具出参（issue #13）。
 package productdto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // PricingRuleTypeResp 内置定价规则类型（后台下拉、参数说明与规则描述的唯一定义来源）。
 type PricingRuleTypeResp struct {

@@ -4,8 +4,8 @@ package unit
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	blockcontract "go_wp/internal/module/block/contract"

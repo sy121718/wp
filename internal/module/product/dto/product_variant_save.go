@@ -16,7 +16,7 @@
 // 本文件只放形状；判定与落库在 service（product_variant.go）。
 package productdto
 
-import "encoding/json"
+import json "go_wp/pkg/jsonx"
 
 // VariantListRow 前端清单里的一行（保存请求的输入）。
 //

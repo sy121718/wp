@@ -7,7 +7,7 @@ package workbenchhttp
 // 或空白），属于静默缺陷。本测试把「未被任何渲染分支覆盖的 kind」直接暴露出来。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"sort"
 	"testing"
 

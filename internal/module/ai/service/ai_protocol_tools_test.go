@@ -8,7 +8,7 @@ package aiservice
 // 写错位置不会报错，只会表现为「模型看得见工具却从不调用」—— 所以逐字段钉住。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	aidto "go_wp/internal/module/ai/dto"

@@ -73,8 +73,8 @@ func TestParseRejectsUnknownField(t *testing.T) {
 
 // TestParseAcceptsFieldNameCaseVariants 记录一个**实测事实**，不是设计选择。
 //
-// encoding/json 匹配字段名时大小写不敏感（文档明写），所以 `{"Type":"table"}` 会被正确
-// 解到 Type 字段上、而不是被 DisallowUnknownFields 拒掉。原本以为「大小写不同 = 未知字段」，
+// JSON 解码器匹配字段名时大小写不敏感（jsonx 显式开启 MatchCaseInsensitiveNames —— v2 默认**敏感**），所以 `{"Type":"table"}` 会被正确
+// 解到 Type 字段上、而不是被 RejectUnknownMembers 拒掉。原本以为「大小写不同 = 未知字段」，
 // 写用例时才发现不是 —— 留在这里免得下次又按想象写一遍。
 //
 // 不为此写自定义解码器：值完全一样，严格化的收益（协议只有一种写法）抵不上多一层解析代码

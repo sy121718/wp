@@ -18,7 +18,7 @@ package backref
 // 每个用例自带 logger.Init + t.Cleanup(logger.Close)，用例之间不共享日志目录。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
 	"os"

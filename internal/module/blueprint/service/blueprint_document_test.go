@@ -6,8 +6,8 @@ package blueprintservice
 // 存进库的文档形状不合法，要到构建期才炸，而那时离写入已经很远。
 
 import (
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	blueprintenums "go_wp/internal/module/blueprint/enums"

@@ -6,8 +6,8 @@
 package builder
 
 import (
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 
 	"go_wp/internal/builder/core"
 )

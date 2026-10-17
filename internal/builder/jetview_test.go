@@ -11,9 +11,9 @@
 package builder
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"os"
 	"path/filepath"
 	"testing"

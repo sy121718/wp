@@ -6,8 +6,8 @@ package accordion
 
 import (
 	_ "embed" // accordion.css 经 //go:embed 打进二进制
-	"encoding/json"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 
 	"go_wp/internal/builder/core"
 )

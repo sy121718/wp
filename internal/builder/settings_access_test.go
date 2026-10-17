@@ -9,7 +9,7 @@ package builder
 //     直接放给所有人，不可逆。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"testing"
 

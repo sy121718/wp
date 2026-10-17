@@ -64,8 +64,8 @@ package aihttp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strconv"
 	"strings"
@@ -76,12 +76,12 @@ import (
 
 	"go_wp/internal/mcp"
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/module/ai/contract"
-	"go_wp/internal/module/ai/dto"
-	"go_wp/internal/module/ai/enums"
-	"go_wp/internal/module/ai/model"
-	"go_wp/internal/module/ai/service"
-	"go_wp/internal/module/sysconfig/contract"
+	aicontract "go_wp/internal/module/ai/contract"
+	aidto "go_wp/internal/module/ai/dto"
+	aienums "go_wp/internal/module/ai/enums"
+	aimodel "go_wp/internal/module/ai/model"
+	aiservice "go_wp/internal/module/ai/service"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
