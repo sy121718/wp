@@ -19,6 +19,7 @@ package binding
 
 import (
 	"net/url"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -51,6 +52,15 @@ func Query[T any](c *gin.Context) (*T, bool) {
 		return nil, false
 	}
 	return &req, true
+}
+
+// Field 读取**跨表单共享的隐藏域**（next / returnUrl / requestId 这类）。
+//
+// 它不是「手工读取业务字段」的后门：业务字段一律进 DTO 的 form tag。
+// 存在的理由是这些键**不属于任何一张表单** —— 同一个 next 会跟着登录、注册、
+// 重置密码三张表单走，给每个 DTO 都抄一遍只会让三处各自漂移。
+func Field(c *gin.Context, key string) string {
+	return strings.TrimSpace(c.PostForm(key))
 }
 
 // ParseJSON 绑定 JSON 请求体，**不写响应**，把失败原样交回调用方。

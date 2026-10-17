@@ -111,7 +111,6 @@ var pendingControllerBinding = map[string]bool{
 	"internal/module/page/inbound/http/pages_handle.go":            true,
 	"internal/module/project/inbound/http/project_page.go":         true,
 	"internal/module/publication/inbound/http/seo_audit_result.go": true,
-	"internal/module/user/inbound/http/user_page.go":               true,
 	"internal/module/workbench/inbound/http/workbench_handle.go":   true,
 	"internal/module/workbench/inbound/http/workbench_page.go":     true,
 }

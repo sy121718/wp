@@ -69,6 +69,44 @@ func TestFormRunsBindFormAfterReflection(t *testing.T) {
 	}
 }
 
+// TestParseFormKeepsPartialValuesOnError 页面出口要**就地回显表单**：
+// 漏填一个必填项时，已经绑上的字段必须还在（否则整张表单在用户眼前被清空）。
+// 这条与 Form 的区别只有一处 —— 谁写响应 —— 但判据完全不同。
+func TestParseFormKeepsPartialValuesOnError(t *testing.T) {
+	c, rec := newContext(http.MethodPost, "/x", "name=abc")
+	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	req, err := ParseForm[requiredNameReq](c)
+	if err == nil {
+		t.Fatal("缺必填项应报错（由调用方决定怎么渲染，包内不写响应）")
+	}
+	if req == nil || req.Name != "abc" {
+		t.Fatalf("失败时也要回已绑上的字段，实际 %+v", req)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("ParseForm 不该写响应，实际 %s", rec.Body.String())
+	}
+}
+
+// TestFieldReadsSharedHidden 跨表单共享的隐藏域（next / returnUrl）。
+func TestFieldReadsSharedHidden(t *testing.T) {
+	c, _ := newContext(http.MethodPost, "/x", "next=+%2Fuser%2Faccount+&other=1")
+	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if got := Field(c, "next"); got != "/user/account" {
+		t.Fatalf("应去空白后返回，实际 %q", got)
+	}
+	if got := Field(c, "missing"); got != "" {
+		t.Fatalf("缺省键应返回空串，实际 %q", got)
+	}
+}
+
+// requiredNameReq 两个字段：title 必填、name 可空 —— 提交只有 name 的表单，
+// 用来验证「失败时已绑上的字段仍然返回」。
+type requiredNameReq struct {
+	Name  string `form:"name"`
+	Title string `form:"title" binding:"required"`
+}
+
 func newContext(method, target, body string) (*gin.Context, *httptest.ResponseRecorder) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

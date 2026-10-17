@@ -104,6 +104,7 @@ import (
 	"go_wp/internal/shell"
 	"go_wp/internal/templates"
 	"go_wp/pkg/auth"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/crypto"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -2102,45 +2103,6 @@ func userKeyText(c *gin.Context, key string) string {
 	return adminui.MsgText(c, adminui.InternalMsg())
 }
 
-// formValue 取表单字段并去空白（访客页面的表单字段全部是文本）。
-func formValue(c *gin.Context, key string) string {
-	return strings.TrimSpace(c.PostForm(key))
-}
-
-// formBool 取复选框（HTML 表单未勾选时不提交该字段）。
-func formBool(c *gin.Context, key string) bool {
-	v := strings.ToLower(strings.TrimSpace(c.PostForm(key)))
-	switch v {
-	case "1", "true", "on", "yes":
-		return true
-	default:
-		return false
-	}
-}
-
-// formInt 取整数字段，解析失败按默认值处理。
-//
-// 静默兜底在别处是坏味道，在这里是刻意的：这些字段（性别 / 每页条数）由页面上的
-// 固定选项产生，能收到非法值只可能是手工构造的请求。为它返回一句「参数不合法」
-// 不如直接用默认值 —— 真正的取值合法性由 service 兜底（每页条数越界会被拒）。
-func formInt(c *gin.Context, key string, def int) int {
-	v := strings.TrimSpace(c.PostForm(key))
-	if v == "" {
-		return def
-	}
-	n := 0
-	for i := 0; i < len(v); i++ {
-		if v[i] < '0' || v[i] > '9' {
-			return def
-		}
-		n = n*10 + int(v[i]-'0')
-		if n > 1<<30 {
-			return def
-		}
-	}
-	return n
-}
-
 // clientIP 取访客真实 IP。
 //
 // 用 c.ClientIP()（gin 依据 TrustedProxies 决定是否采信 X-Forwarded-For）：
@@ -2706,7 +2668,7 @@ func customerPageDayEnd(raw string) *time.Time {
 //   - 不得含控制字符（换行会污染响应头）；
 //   - 长度封顶，避免把超长串带进 Location。
 func accountNextTarget(c *gin.Context) string {
-	next := strings.TrimSpace(c.PostForm("next"))
+	next := binding.Field(c, "next")
 	if next == "" || len(next) > 512 {
 		return ""
 	}
@@ -2775,25 +2737,14 @@ func (h *Handle) DoUpdateProfile(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/user/login")
 		return
 	}
-	err := h.svc.UpdateProfile(c.Request.Context(), &userdto.UpdateProfileReq{
-		UserID:    sess.UserID,
-		Nickname:  formValue(c, "nickname"),
-		FirstName: formValue(c, "firstName"),
-		LastName:  formValue(c, "lastName"),
-		Gender:    formInt(c, "gender", 0),
-		Birthday:  formValue(c, "birthday"),
-		Bio:       formValue(c, "bio"),
-		Website:   formValue(c, "website"),
-		Locale:    formValue(c, "locale"),
-		Timezone:  formValue(c, "timezone"),
-		Country:   formValue(c, "country"),
-		Province:  formValue(c, "province"),
-		City:      formValue(c, "city"),
-		Address:   formValue(c, "address"),
-		Postcode:  formValue(c, "postcode"),
-		Phone:     formValue(c, "phone"),
-		Company:   formValue(c, "company"),
-	})
+	req, err := binding.ParseForm[userdto.UpdateProfileReq](c)
+	if err != nil {
+		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
+		return
+	}
+	// 归属账号只认登录态：表单里没有、也不该有 userID。
+	req.UserID = sess.UserID
+	err = h.svc.UpdateProfile(c.Request.Context(), req)
 	if err != nil {
 		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
 		return
@@ -2811,17 +2762,13 @@ func (h *Handle) DoUpdatePreference(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/user/login")
 		return
 	}
-	err := h.svc.UpdatePreference(c.Request.Context(), &userdto.UpdatePreferenceReq{
-		UserID:            sess.UserID,
-		Theme:             formValue(c, "theme"),
-		Locale:            formValue(c, "locale"),
-		Timezone:          formValue(c, "timezone"),
-		PageSize:          formInt(c, "pageSize", 20),
-		EmailNotify:       formBool(c, "emailNotify"),
-		SmsNotify:         formBool(c, "smsNotify"),
-		ProfileVisibility: formValue(c, "profileVisibility"),
-		ShowOnline:        formBool(c, "showOnline"),
-	})
+	req, err := binding.ParseForm[userdto.UpdatePreferenceReq](c)
+	if err != nil {
+		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
+		return
+	}
+	req.UserID = sess.UserID
+	err = h.svc.UpdatePreference(c.Request.Context(), req)
 	if err != nil {
 		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
 		return
@@ -2843,11 +2790,13 @@ func (h *Handle) DoChangePassword(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/user/login")
 		return
 	}
-	err := h.svc.ChangePassword(c.Request.Context(), &userdto.ChangePasswordReq{
-		UserID:      sess.UserID,
-		OldPassword: c.PostForm("oldPassword"),
-		NewPassword: c.PostForm("newPassword"),
-	})
+	req, err := binding.ParseForm[userdto.ChangePasswordReq](c)
+	if err != nil {
+		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
+		return
+	}
+	req.UserID = sess.UserID
+	err = h.svc.ChangePassword(c.Request.Context(), req)
 	if err != nil {
 		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
 		return
@@ -2865,7 +2814,12 @@ func (h *Handle) DoRevokeSession(c *gin.Context) {
 		return
 	}
 	// 设备标识是会话令牌的 sha256（Redis 索引成员），不是数据库行 id —— 会话不落库。
-	sessionHash := strings.TrimSpace(formValue(c, "id"))
+	req, err := binding.ParseForm[userdto.RevokeSessionReq](c)
+	if err != nil {
+		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
+		return
+	}
+	sessionHash := strings.TrimSpace(req.ID)
 	if sessionHash == "" {
 		h.renderAccount(c, http.StatusBadRequest, userKeyText(c, userenums.ErrSessionNotFound))
 		return
@@ -2943,19 +2897,19 @@ func (h *Handle) ShowRegister(c *gin.Context) {
 
 // DoRegister 提交注册。
 func (h *Handle) DoRegister(c *gin.Context) {
-	form := gin.H{
-		"username": formValue(c, "username"),
-		"email":    formValue(c, "email"),
-		"nickname": formValue(c, "nickname"),
+	req, err := binding.ParseForm[userdto.RegisterReq](c)
+	if err != nil {
+		h.render(c, http.StatusBadRequest, "user/register", gin.H{
+			"error": userPageMessage(c, err),
+			"form":  emptyRegisterForm(),
+		})
+		return
 	}
-	req := &userdto.RegisterReq{
-		Username:   form["username"].(string),
-		Email:      form["email"].(string),
-		Password:   c.PostForm("password"),
-		Nickname:   form["nickname"].(string),
-		RegisterIP: clientIP(c),
-		Locale:     locale(c),
-	}
+	// 回显用的三档只有这三个字段（密码不回显）。
+	form := gin.H{"username": req.Username, "email": req.Email, "nickname": req.Nickname}
+	// 注册来源与语言由服务端取，表单里没有这两档。
+	req.RegisterIP = clientIP(c)
+	req.Locale = locale(c)
 	res, err := h.svc.Register(c.Request.Context(), req)
 	if err != nil {
 		// 失败时**回填已填内容**（不含密码）：让人重新把所有字段打一遍是最容易劝退的一步。
@@ -2976,15 +2930,18 @@ func (h *Handle) DoRegister(c *gin.Context) {
 
 // Activate 邮箱验证（GET，链接来自邮件）。
 func (h *Handle) Activate(c *gin.Context) {
-	key := formValue(c, "key")
-	if key == "" {
+	// GET 链接：参数在查询串里。gin 的 ShouldBind 对 GET 绑查询串，
+	// 与 POST 共用同一份 DTO 与同一个入口。
+	req, err := binding.ParseForm[userdto.ActivateEmailReq](c)
+	if err != nil {
+		req = &userdto.ActivateEmailReq{}
+	}
+	if req.Key == "" {
 		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgActivationInvalidTitle), userKeyText(c, userenums.ErrActivationInvalid))
 		return
 	}
-	res, err := h.svc.ActivateEmail(c.Request.Context(), &userdto.ActivateEmailReq{
-		Key:    key,
-		Locale: locale(c),
-	})
+	req.Locale = locale(c)
+	res, err := h.svc.ActivateEmail(c.Request.Context(), req)
 	if err != nil {
 		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgActivationFailedTitle), userPageMessage(c, err))
 		return
@@ -2995,15 +2952,18 @@ func (h *Handle) Activate(c *gin.Context) {
 
 // DoResendActivation 重发验证邮件。
 func (h *Handle) DoResendActivation(c *gin.Context) {
-	email := formValue(c, "email")
+	req, err := binding.ParseForm[userdto.ResendActivationReq](c)
+	if err != nil {
+		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgResendFailedTitle), userKeyText(c, userenums.ErrEmailRequired))
+		return
+	}
+	email := req.Email
 	if email == "" {
 		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgResendFailedTitle), userKeyText(c, userenums.ErrEmailRequired))
 		return
 	}
-	if err := h.svc.ResendActivation(c.Request.Context(), &userdto.ResendActivationReq{
-		Email:  email,
-		Locale: locale(c),
-	}); err != nil {
+	req.Locale = locale(c)
+	if err := h.svc.ResendActivation(c.Request.Context(), req); err != nil {
 		// 与密码重置不同，这里**如实报错**：重发接口要求填的邮箱本身就能通过注册接口
 		// 探测出是否被占用，在这里沉默不会多保护任何信息，只会让「邮箱打错了」的人
 		// 盯着「已发送」干等。
@@ -3028,14 +2988,15 @@ func (h *Handle) ShowLogin(c *gin.Context) {
 
 // DoLogin 提交登录。
 func (h *Handle) DoLogin(c *gin.Context) {
-	account := formValue(c, "account")
-	next := safeNext(c.PostForm("next"), "/user/account")
+	req, err := binding.ParseForm[userdto.LoginReq](c)
+	if err != nil {
+		req = &userdto.LoginReq{}
+	}
+	account := req.Account
+	// next 是跨表单共享的隐藏域（登录 / 注册 / 重置都带），不进 LoginReq。
+	next := safeNext(binding.Field(c, "next"), "/user/account")
 
-	res, err := h.svc.Login(c.Request.Context(), &userdto.LoginReq{
-		Account:    account,
-		Password:   c.PostForm("password"),
-		RememberMe: formBool(c, "remember"),
-	}, userservice.SessionMeta{
+	res, err := h.svc.Login(c.Request.Context(), req, userservice.SessionMeta{
 		IP:        clientIP(c),
 		UserAgent: c.Request.UserAgent(),
 	})
@@ -3048,7 +3009,7 @@ func (h *Handle) DoLogin(c *gin.Context) {
 		return
 	}
 
-	if werr := writeUserToken(c, res.Token, formBool(c, "remember")); werr != nil {
+	if werr := writeUserToken(c, res.Token, req.RememberMe); werr != nil {
 		// cookie 写不进去 → 会话虽然是真建了的，但这个浏览器拿不到令牌。
 		// 提示重新登录比「看着像登录成功、下一页又回到登录页」好排查。
 		//
@@ -3100,7 +3061,11 @@ func (h *Handle) ShowForgot(c *gin.Context) {
 // **无论邮箱是否存在都显示同一句成功文案**：这个接口是匿名的、只需一个字段，
 // 如实报错就等于提供了一个「查这个邮箱注册过没有」的接口。
 func (h *Handle) DoForgot(c *gin.Context) {
-	email := formValue(c, "email")
+	req, err := binding.ParseForm[userdto.PasswordResetReqRequest](c)
+	if err != nil {
+		req = &userdto.PasswordResetReqRequest{}
+	}
+	email := req.Email
 	if email == "" {
 		// 同上：裸 key 进直接渲染的槽位等于把 item_key 摆给访客看。
 		h.render(c, http.StatusBadRequest, "user/forgot", gin.H{
@@ -3109,10 +3074,8 @@ func (h *Handle) DoForgot(c *gin.Context) {
 		})
 		return
 	}
-	if err := h.svc.RequestPasswordReset(c.Request.Context(), &userdto.PasswordResetReqRequest{
-		Email:  email,
-		Locale: locale(c),
-	}); err != nil {
+	req.Locale = locale(c)
+	if err := h.svc.RequestPasswordReset(c.Request.Context(), req); err != nil {
 		h.render(c, http.StatusBadRequest, "user/forgot", gin.H{
 			"error": userPageMessage(c, err),
 			"email": email,
@@ -3124,8 +3087,8 @@ func (h *Handle) DoForgot(c *gin.Context) {
 
 // ShowReset 重置密码页（链接来自邮件，带 email + key）。
 func (h *Handle) ShowReset(c *gin.Context) {
-	email := formValue(c, "email")
-	key := formValue(c, "key")
+	req, _ := binding.Form[userdto.ResetLinkReq](c)
+	email, key := req.Email, req.Key
 	if email == "" || key == "" {
 		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgLinkInvalidTitle), userKeyText(c, userenums.ErrActivationInvalid))
 		return
@@ -3138,15 +3101,12 @@ func (h *Handle) ShowReset(c *gin.Context) {
 
 // DoReset 提交新密码。
 func (h *Handle) DoReset(c *gin.Context) {
-	email := formValue(c, "email")
-	key := formValue(c, "key")
-	form := gin.H{"email": email, "key": key}
-
-	err := h.svc.ResetPassword(c.Request.Context(), &userdto.ResetPasswordReq{
-		Email:       email,
-		Key:         key,
-		NewPassword: c.PostForm("password"),
-	})
+	req, err := binding.ParseForm[userdto.ResetPasswordReq](c)
+	if err != nil {
+		req = &userdto.ResetPasswordReq{}
+	}
+	email, key := req.Email, req.Key
+	err = h.svc.ResetPassword(c.Request.Context(), req)
 	if err != nil {
 		h.render(c, http.StatusBadRequest, "user/reset", gin.H{
 			"error": userPageMessage(c, err),
@@ -3155,7 +3115,6 @@ func (h *Handle) DoReset(c *gin.Context) {
 		})
 		return
 	}
-	_ = form
 	h.renderMessage(c, http.StatusOK, true, userTextOf(c, userMsgPasswordResetTitle), userTextOf(c, userMsgPasswordResetBody))
 }
 
