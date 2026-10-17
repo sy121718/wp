@@ -222,7 +222,7 @@
                        而 33 个候选一个也勾不动时提交，用户收到的是「请至少勾选一项要加入菜单的内容」
                        —— 那句提示在这个场景里是误导（他一个都勾不了）。判据由页面数据给出
                        （navSourceGroup.Usable = 本组至少一个候选有公开路径）。 *}
-                    <button type="submit" class="btn btn-primary"{{if !g.Usable}} disabled
+                    <button data-requires-js hidden type="submit" class="btn btn-primary"{{if !g.Usable}} disabled
                             title="{{tr("admin.navigations.add_to_menu_disabled", "本组没有可加入的内容：都还没有公开路径，先发布后再添加。")}}"{{end}}>{{tr("admin.navigations.add_to_menu", "加入菜单")}}</button>
                 </div>
             </form>

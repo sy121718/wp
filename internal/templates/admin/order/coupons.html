@@ -225,8 +225,8 @@
                     {* 停用 / 启用走同一个更新接口：表单把券的全部可改字段回送一遍 ——
                        服务端是整体更新，漏送的字段会被写成零值（把门槛悄悄清零）。
                        表单在表格外用 form="<id>" 关联，避免行内嵌套 form。 *}
-                    <button type="submit" form="coupon-toggle-{{cp.ID}}" class="btn btn-sm">{{if cp.Status == 1}}{{tr("admin.coupons.form.disabled", "停用")}}{{else}}{{tr("admin.coupons.form.enabled", "启用")}}{{end}}</button>
-                    <button type="submit" form="coupon-del-{{cp.ID}}" class="btn btn-sm btn-danger">{{tr("admin.coupons.action.delete", "删除")}}</button>
+                    <button data-requires-js hidden type="submit" form="coupon-toggle-{{cp.ID}}" class="btn btn-sm">{{if cp.Status == 1}}{{tr("admin.coupons.form.disabled", "停用")}}{{else}}{{tr("admin.coupons.form.enabled", "启用")}}{{end}}</button>
+                    <button data-requires-js hidden type="submit" form="coupon-del-{{cp.ID}}" class="btn btn-sm btn-danger">{{tr("admin.coupons.action.delete", "删除")}}</button>
                 </td>
             </tr>
             {{end}}

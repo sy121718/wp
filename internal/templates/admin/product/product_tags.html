@@ -69,7 +69,7 @@
                 </select>
             </form>
             {{end}}
-            <button type="submit" form="tag-recalc-all" class="btn">{{ .["t"]("admin.product_tags.recalcAll", "重算本工程全部自动标签") }}</button>
+            <button data-requires-js hidden type="submit" form="tag-recalc-all" class="btn">{{ .["t"]("admin.product_tags.recalcAll", "重算本工程全部自动标签") }}</button>
             {{if canCreate}}
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-tag-create" data-drawer-title="{{ .["t"]("admin.product_tags.create.title", "新建标签") }}">＋ {{ .["t"]("admin.product_tags.create.title", "新建标签") }}</button>
             {{end}}
@@ -204,10 +204,10 @@
                         <button type="button" class="btn btn-sm" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
                         {{end}}
                         {{if t.IsRule}}
-                        <button type="submit" form="tag-recalc-{{t.ID}}" class="btn btn-sm">{{ .["t"]("admin.product_tags.list.recalc", "重算") }}</button>
+                        <button data-requires-js hidden type="submit" form="tag-recalc-{{t.ID}}" class="btn btn-sm">{{ .["t"]("admin.product_tags.list.recalc", "重算") }}</button>
                         {{end}}
                         {{if canDelete}}
-                        <button type="submit" form="tag-del-{{t.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                        <button data-requires-js hidden type="submit" form="tag-del-{{t.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
                         {{end}}
                     </td>
                 </tr>
@@ -293,7 +293,7 @@
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{t.ID}}">
             <input class="form-input" name="name" value="{{t.Name}}" required>
-            <button type="submit">{{ .["t"]("admin.product_tags.list.save", "保存标签") }}</button>
+            <button data-requires-js hidden type="submit">{{ .["t"]("admin.product_tags.list.save", "保存标签") }}</button>
         </form>
         {{end}}
     </template>
@@ -307,7 +307,7 @@
               data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input class="form-input" name="name" required>
-            <button type="submit">{{ .["t"]("admin.product_tags.create.submit", "新建标签") }}</button>
+            <button data-requires-js hidden type="submit">{{ .["t"]("admin.product_tags.create.submit", "新建标签") }}</button>
         </form>
         {{end}}
     </template>

@@ -16,9 +16,14 @@ package routers
 //  1. 模板声明的写端点必须在 testdata/routes.snapshot 里且方法为 POST；
 //  2. `data-write-mode` 取值必须是基座真的实现了的那四档 —— 写错档位时基座**静默降级**
 //     成 single（只发 id，其余字段全丢），端点收到一个「看着有 id 但什么都没改」的身体；
-//  3. 带 data-write-mode 的按钮必须带 `data-requires-js`：无 JS 时模板里这些按钮是
-//     hidden + disabled，靠基座起来后摘掉；漏写这一个属性 = 无 JS 环境下按钮可见可点，
-//     点下去什么都不会发生。
+//  3. 写按钮必须带 `data-requires-js`：无 JS 时模板里这些按钮是 hidden + disabled，
+//     靠基座起来后摘掉；漏写这一个属性 = 无 JS 环境下按钮可见可点，点下去什么都不会
+//     发生。**判据按 DOM 归属判**，不是只看按钮自己 ——
+//     · 按钮自身带 `data-write-mode`（submitter 级声明），或
+//     · 按钮所属的 <form> 带 `data-write-api`（表单级声明：商品批量调价、单行删除、
+//     订单流转、退货审批、优惠券启停都是这一形态），或
+//     · 按钮的**任一祖先**带 `data-requires-js`（navigation 的 ↑↓ 用 <span> 包住按钮）。
+//     只扫按钮自身时，表单级声明下的提交按钮一个都扫不到 —— 而那正是本仓的主流形态。
 //
 // 只读文件，不需要数据库（不装配路由）：快照就是路由表的权威复本，模板改了没重写
 // 快照的漂移由 TestRouteSnapshotStable 负责抓。
@@ -146,27 +151,170 @@ func TestWriteModeValuesAreSupported(t *testing.T) {
 	}
 }
 
-// TestWriteButtonsRequireJS 带 data-write-mode 的按钮必须带 data-requires-js。
+// TestWriteButtonsRequireJS 写按钮（自身或所属表单声明了写端点）必须带 data-requires-js。
 //
 // 无 JS 时这些按钮在模板里是 hidden + disabled，由基座起来后摘掉；漏写这个属性，
 // 无 JS 环境下按钮可见可点，点下去什么都不会发生（表单提交被 data-write-api 的 JS 交接
 // 假定接管，而 JS 根本不在）。
+//
+// 判据按 DOM 归属，见文件头第 3 条。两个刻意的豁免：
+//
+//	· 表单另带 method="post" + action（原生提交有兜底，如商品预览的 target=_blank）；
+//	· 按钮带**静态** disabled（无 JS 时按不动，浏览器也不会拿它做隐式提交）。
+//	  {{if …}}disabled{{end}} 这种条件态不算静态 —— 条件不成立时它完全可用。
 func TestWriteButtonsRequireJS(t *testing.T) {
-	var checked int
+	var checked, exemptNative, exemptDisabled int
 	for rel, body := range loadAdminTemplates(t) {
-		for _, tag := range buttonTagRe.FindAllString(body, -1) {
-			if !strings.Contains(tag, "data-write-mode=") {
+		formAttrs := map[string]string{}
+		for _, tok := range scanTags(body) {
+			if tok.closing || tok.name != "form" {
+				continue
+			}
+			if id := attrValue(tok.attrs, "id"); id != "" && !strings.Contains(id, "{{") {
+				formAttrs[id] = tok.attrs
+			}
+		}
+
+		stack := []htmlFrame{}
+		for _, tok := range scanTags(body) {
+			if tok.closing {
+				stack = popFrame(stack, tok.name)
+				continue
+			}
+			if tok.name != "button" || !strings.Contains(tok.attrs, "type=\"submit\"") {
+				if !isVoidTag(tok.name) {
+					stack = append(stack, htmlFrame{name: tok.name, attrs: tok.attrs, requiresJS: strings.Contains(tok.attrs, "data-requires-js")})
+				}
+				continue
+			}
+
+			owner, found := owningForm(tok.attrs, stack, formAttrs)
+			if !found || !strings.Contains(owner, "data-write-api") {
 				continue
 			}
 			checked++
-			if !strings.Contains(tag, "data-requires-js") {
-				flat := strings.Join(strings.Fields(tag), " ")
-				t.Errorf("%s: 写按钮缺 data-requires-js：%s", rel, flat)
+			if hasNativeFallback(owner) {
+				exemptNative++
+				continue
 			}
+			if hasStaticDisabled(tok.attrs) {
+				exemptDisabled++
+				continue
+			}
+			if strings.Contains(tok.attrs, "data-requires-js") || anyFrameRequiresJS(stack) {
+				continue
+			}
+			flat := strings.Join(strings.Fields(tok.attrs), " ")
+			t.Errorf("%s: 写表单的提交按钮缺 data-requires-js：%s", rel, flat)
 		}
 	}
 	if checked == 0 {
-		t.Fatal("没有扫到带 data-write-mode 的按钮：模板约定或本测试的匹配串已经漂移")
+		t.Fatal("没有扫到写表单的提交按钮：模板约定或本测试的匹配串已经漂移")
 	}
-	t.Logf("写按钮防呆：%d 个", checked)
+	t.Logf("写按钮防呆：%d 个（原生兜底 %d 个、静态 disabled %d 个豁免）", checked, exemptNative, exemptDisabled)
 }
+
+// htmlFrame 标签栈的一层：只记判据需要的两件事（是否 form / 是否带 data-requires-js）。
+type htmlFrame struct {
+	name       string
+	attrs      string
+	requiresJS bool
+}
+
+// htmlToken 一个起始 / 结束标签。
+type htmlToken struct {
+	closing bool
+	name    string
+	attrs   string
+}
+
+// tagTokenRe 逐标签扫描。属性值里允许出现 > （title="a > b"），所以引号内单独处理。
+var tagTokenRe = regexp.MustCompile(`<(/?)([a-zA-Z][a-zA-Z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>`)
+
+// jetCommentRe Jet 注释 —— 注释里写的示例标签不该参与扫描（本仓注释大量引用 <form>/<button>）。
+var jetCommentRe = regexp.MustCompile(`\{\*[\s\S]*?\*\}`)
+
+// voidTags 没有结束标签的元素：不入栈（入栈会让后续 pop 错位）。
+var voidTags = map[string]bool{"area": true, "base": true, "br": true, "col": true, "embed": true,
+	"hr": true, "img": true, "input": true, "link": true, "meta": true, "param": true,
+	"source": true, "track": true, "wbr": true}
+
+// scanTags 把模板正文扫成标签序列（先剥 Jet 注释）。
+func scanTags(body string) []htmlToken {
+	body = jetCommentRe.ReplaceAllString(body, "")
+	var out []htmlToken
+	for _, m := range tagTokenRe.FindAllStringSubmatch(body, -1) {
+		out = append(out, htmlToken{closing: m[1] == "/", name: strings.ToLower(m[2]), attrs: m[3]})
+	}
+	return out
+}
+
+// attrValue 取属性值（只认双引号写法 —— 模板里的属性值全部带引号）。
+func attrValue(attrs, name string) string {
+	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `="([^"]*)"`)
+	if m := re.FindStringSubmatch(attrs); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// popFrame 关标签时弹栈。按名字回退找最近同名层：HTML 允许隐式闭合（<li>/<p> 不写结束标签），
+// 只弹栈顶会在遇到这种写法时把祖先层一起吃掉，之后的归属判定全错。
+func popFrame(stack []htmlFrame, name string) []htmlFrame {
+	for i := len(stack) - 1; i >= 0; i-- {
+		if stack[i].name == name {
+			return stack[:i]
+		}
+	}
+	return stack
+}
+
+// anyFrameRequiresJS 祖先里有没有 data-requires-js（navigation 的 ↑↓ 用 <span> 包按钮）。
+func anyFrameRequiresJS(stack []htmlFrame) bool {
+	for _, f := range stack {
+		if f.requiresJS {
+			return true
+		}
+	}
+	return false
+}
+
+// owningForm 按钮归属的 form：form="<id>" 优先（值可以是模板变量前缀，按前缀匹配），
+// 否则取最近的祖先 <form>。
+func owningForm(buttonAttrs string, stack []htmlFrame, forms map[string]string) (string, bool) {
+	if raw := attrValue(buttonAttrs, "form"); raw != "" {
+		if strings.Contains(raw, "{{") {
+			prefix := raw[:strings.Index(raw, "{{")]
+			for id, attrs := range forms {
+				if prefix != "" && strings.HasPrefix(id, prefix) {
+					return attrs, true
+				}
+			}
+			return "", false
+		}
+		attrs, ok := forms[raw]
+		return attrs, ok
+	}
+	for i := len(stack) - 1; i >= 0; i-- {
+		if stack[i].name == "form" {
+			return stack[i].attrs, true
+		}
+	}
+	return "", false
+}
+
+// hasNativeFallback 表单自带原生提交兜底（method=post + action），不需要 JS 交接。
+func hasNativeFallback(formAttrs string) bool {
+	return strings.Contains(formAttrs, "method=\"post\"") || strings.Contains(formAttrs, "action=\"")
+}
+
+// hasStaticDisabled 按钮带**静态** disabled（不含模板条件）—— 无 JS 时按不动。
+func hasStaticDisabled(buttonAttrs string) bool {
+	if !regexp.MustCompile(`\bdisabled\b`).MatchString(buttonAttrs) {
+		return false
+	}
+	return !strings.Contains(buttonAttrs, "{{if")
+}
+
+// isVoidTag 见 voidTags。
+func isVoidTag(name string) bool { return voidTags[name] }

@@ -117,9 +117,9 @@
            （批量动作与勾选框必须同属一个 form，见 permissions.html 的同一手法）。 *}
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。
-           操作列里的按钮都带 form="<id>"，不会误触发这个批量表单。
-           action 上的 ListQuery 把「用户当时在看什么」（关键词 / 状态 / 页码）随 query 提交：
-           写动作的结论由 shell.RenderJump 渲染提示页，回跳列表时按它恢复筛选与页码。 *}
+           操作列里的按钮都带 form="<id>"，各自归属自己的隐藏表单、不会误触发这个批量表单：
+           单行删除的隐藏表单声明 data-write-api（走 ui/json_write.js），
+           预览的隐藏表单是原生 POST + target="_blank"（只读、开新标签，不需要基座）。 *}
         {* 批量删除走 ui/json_write.js（与单行删除同一个基座）：结论不再靠整页提示页，
            而是就地显示「删了几条 + 哪几条没删掉、为什么」（data-write-status 区）。
            keyword / status / page 三个隐藏域随旧通道一起去掉：基座只发 data-write-extra
@@ -263,7 +263,7 @@
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/admin/products/edit?project={{selectedProject}}&amp;product={{p.ID}}">{{ .["t"]("admin.products.row.edit", "编辑") }}</a>
                         <button type="submit" form="product-preview-{{p.ID}}" class="btn btn-sm">{{ .["t"]("admin.products.row.preview", "预览") }}</button>
-                        <button type="submit" form="product-del-{{p.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                        <button data-requires-js hidden type="submit" form="product-del-{{p.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
                     </td>
                 </tr>
                 {{end}}
@@ -306,17 +306,16 @@
        将来若要把新建放回抽屉，注意同时恢复 handler 侧的 `InDrawer` 键与片段里的 inDrawer
        隐藏域 —— 提交失败重渲染时靠那个隐藏域还原抽屉形态（见 product_create_form.html）。 *}
 
-    {* ===== 按规则改价抽屉（本批）：勾选若干商品后按内置规则批量改价 =====
-       为什么必须是 htmx 而不是普通表单提交：抽屉内容被克隆到 document 级（见 ui/drawer.js），
-       而勾选框在**批量表单**里 —— 普通提交一个字都带不上来。hx-include="[name='ids']"
-       把全页勾选的 ids 并进这次请求（htmx 自己会跳过未勾选项），服务端回 HX-Redirect
-       让浏览器整页跳转回列表页（htmx 跟随 302 后读不到 Location，只能靠这个响应头）。
-       这里**不写 data-confirm**：htmx 不理会 preventDefault（它自己发请求），配上项目的
-       确认弹窗会出现「确认框还开着、调价已经落库」；原生 hx-confirm 的 window.confirm
-       又与 ui/confirm.js 的替代方案相悖。改为把「售价会立刻写库」作为可见提示行呈现，
+    {* ===== 按规则改价抽屉：勾选若干商品后按内置规则批量改价 =====
+       为什么不能用普通表单提交：抽屉内容被克隆到 document 级（见 ui/drawer.js），
+       而勾选框在**批量表单**里 —— 原生提交一个字都带不上来。所以这里声明
+       data-write-ids-scope="[data-list-bulk]" 把勾选的 ids 指回那个表单，
+       提交由 ui/json_write.js 发 JSON（data-write-api + data-write-mode=bulk），
+       结论就地写进 data-write-status 区 —— 不再有 HX-Redirect 那种整页跳转技巧。
+       这里**不写 data-confirm**：把「售价会立刻写库」作为可见提示行呈现，
        抽屉本身的填写与点击就是那次确认。
        「规则 + 尾数」两行与定价工具页共用同一片段，字段名不会分叉。
-       筛选条件（keyword / status / page）用 hx-include 一并带上：服务端据此回跳原列表视图。 *}
+       列表筛选（keyword / status / page）不随请求发送：结论行就地显示，整页刷新自然保留筛选。 *}
     {{if canUpdate}}
     <template id="tpl-product-pricing">
         {* ids 在**另一个表单**里（批量表单），抽屉内容被克隆到 document 级 —— 所以这里靠
@@ -344,7 +343,7 @@
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_pricing.apply.submit", "应用调价（落库）") }}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.product_pricing.apply.submit", "应用调价（落库）") }}</button>
             </div>
         </form>
     </template>

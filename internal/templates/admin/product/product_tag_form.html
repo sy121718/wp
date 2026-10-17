@@ -62,7 +62,7 @@
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-                <button type="submit" class="btn btn-primary">{{if create}}{{tr("admin.product_tags.create.submit", "新建标签")}}{{else}}{{tr("admin.product_tags.list.save", "保存标签")}}{{end}}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-primary">{{if create}}{{tr("admin.product_tags.create.submit", "新建标签")}}{{else}}{{tr("admin.product_tags.list.save", "保存标签")}}{{end}}</button>
             </div>
         </form>
         <p class="form-hint" data-write-status role="status" hidden></p>

@@ -161,7 +161,7 @@
                 {{tr("admin.returns.auto_receive.short", "同意并立即完成入库 + 退款")}}
             </label>
             <div class="action-row">
-                <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.returns.action.approve", "同意退货")}}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-sm btn-primary">{{tr("admin.returns.action.approve", "同意退货")}}</button>
             </div>
         </form>
         {* 拒绝：理由必填由服务端的 400 兜底（缺 / 空 / null 一律整条拒绝，
@@ -171,7 +171,7 @@
               data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}" class="form-inline">
             <input type="hidden" name="returnId" value="{{r.ID}}">
             <input type="text" class="form-input" name="remark" placeholder="{{tr("admin.returns.ph.reject_remark", "拒绝原因（必填，客户要知道为什么）")}}" required autocomplete="off">
-            <button type="submit" class="btn btn-sm">{{tr("admin.returns.action.reject", "拒绝申请")}}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-sm">{{tr("admin.returns.action.reject", "拒绝申请")}}</button>
             <p class="form-hint" data-write-status role="status" hidden></p>
         </form>
         {{end}}
@@ -193,7 +193,7 @@
                 <input type="text" class="form-input" name="remark" placeholder="{{tr("admin.returns.ph.remark_optional", "备注（可选，如「外箱破损已拍照」）")}}" autocomplete="off">
             </div>
             <div class="action-row">
-                <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.returns.action.receive", "确认收货并退货（先入库、后退款）")}}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-sm btn-primary">{{tr("admin.returns.action.receive", "确认收货并退货（先入库、后退款）")}}</button>
             </div>
         </form>
         {{end}}
@@ -212,7 +212,7 @@
                 <input type="text" class="form-input" name="remark" placeholder="{{tr("admin.returns.ph.remark_short", "备注（可选）")}}" autocomplete="off">
             </div>
             <div class="action-row">
-                <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.returns.action.retry_refund", "补退款")}}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-sm btn-primary">{{tr("admin.returns.action.retry_refund", "补退款")}}</button>
             </div>
         </form>
         {{end}}

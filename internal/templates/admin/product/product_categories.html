@@ -200,7 +200,7 @@
                             <button type="button" class="btn btn-sm" data-drawer-open="#tpl-category-edit-{{row.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
                             {{end}}
                             {{if canDelete}}
-                            <button type="submit" form="category-del-{{row.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
+                            <button data-requires-js hidden type="submit" form="category-del-{{row.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
                             {{end}}
                         </td>
                     </tr>
@@ -241,7 +241,7 @@
             <button type="button" hx-post="/admin/product-categories/seo-score" hx-include="closest form" hx-target="#category-seo-score-{{row.ID}}">{{ .["t"]("admin.product_categories.seoScore", "SEO 评分") }}</button>
             <div id="category-seo-score-{{row.ID}}"></div>
             <p class="form-hint" data-write-status role="status" hidden></p>
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.list.save", "保存分类") }}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.list.save", "保存分类") }}</button>
         </form>
         {{end}}
     </template>
@@ -252,7 +252,7 @@
     {{if canCreate}}
     <template id="tpl-category-create">
         {{if isset(.CategoryCreateForm)}}{{include "product_category_form.html" .CategoryCreateForm}}{{else}}
-        <form data-write-api="/api/product/category/create" data-write-mode="form"><input type="hidden" name="projectId" value="{{selectedProject}}"><select class="form-select" name="parentId"><option value="">{{ .["t"]("admin.product_categories.option.topLevel", "（顶级分类）") }}</option></select><input class="form-input" name="name" required><p class="form-hint" data-write-status role="status" hidden></p><button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.create.submit", "新建分类") }}</button></form>
+        <form data-write-api="/api/product/category/create" data-write-mode="form"><input type="hidden" name="projectId" value="{{selectedProject}}"><select class="form-select" name="parentId"><option value="">{{ .["t"]("admin.product_categories.option.topLevel", "（顶级分类）") }}</option></select><input class="form-input" name="name" required><p class="form-hint" data-write-status role="status" hidden></p><button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.create.submit", "新建分类") }}</button></form>
         {{end}}
     </template>
     {{end}}

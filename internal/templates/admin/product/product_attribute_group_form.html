@@ -65,7 +65,7 @@
             {{end}}
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{gfTr("admin.common.action.cancel", "取消")}}</button>
-                {{if gfCreate}}<button type="submit" class="btn btn-primary">{{gfTr("admin.product_attributes.create.submit", "新建属性组")}}</button>{{else}}<button type="submit" class="btn btn-primary">{{gfTr("admin.product_attributes.list.save", "保存属性组")}}</button>{{end}}
+                {{if gfCreate}}<button data-requires-js hidden type="submit" class="btn btn-primary">{{gfTr("admin.product_attributes.create.submit", "新建属性组")}}</button>{{else}}<button data-requires-js hidden type="submit" class="btn btn-primary">{{gfTr("admin.product_attributes.list.save", "保存属性组")}}</button>{{end}}
             </div>
         </form>
         <p class="form-hint" data-write-status role="status" hidden></p>

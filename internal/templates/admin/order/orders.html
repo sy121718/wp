@@ -318,7 +318,7 @@
                 {{if head.Status == "shipped"}}<option value="completed">{{statusLabel("completed")}}</option>{{end}}
             </select>
             <input type="text" class="form-input input-wide" name="remark" placeholder="{{tr("admin.orders.ph.transition_remark", "流转备注（可选，如「已联系快递」）")}}" autocomplete="off">
-            <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.orders.action.transition", "流转状态")}}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-sm btn-primary">{{tr("admin.orders.action.transition", "流转状态")}}</button>
         </form>
         {{else}}
         <p class="hint">{{tr("admin.orders.no_transition", "当前状态没有可用的通用流转目标（已取消与已退款是终态，不能再改）。")}}</p>
@@ -330,7 +330,7 @@
               data-write-number="orderId" data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
             <input type="hidden" name="orderId" value="{{head.ID}}">
             <input type="text" class="form-input input-wide" name="reason" placeholder="{{tr("admin.orders.ph.cancel_reason", "取消原因（必填）")}}" required autocomplete="off">
-            <button type="submit" class="btn btn-sm">{{tr("admin.orders.action.cancel", "取消订单")}}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-sm">{{tr("admin.orders.action.cancel", "取消订单")}}</button>
         </form>
         {{end}}
 
@@ -341,7 +341,7 @@
             <input type="hidden" name="orderId" value="{{head.ID}}">
             <input type="text" class="form-input input-wide" name="reason" placeholder="{{tr("admin.orders.ph.refund_reason", "退款原因（必填）")}}" required autocomplete="off">
             <input type="text" class="form-input input-wide" name="transactionId" placeholder="{{tr("admin.orders.ph.txn_optional", "通道流水号（可选，留空则沿用原流水号）")}}" autocomplete="off">
-            <button type="submit" class="btn btn-sm">{{tr("admin.orders.action.refund", "退款")}}</button>
+            <button data-requires-js hidden type="submit" class="btn btn-sm">{{tr("admin.orders.action.refund", "退款")}}</button>
         </form>
         {{end}}
         </div>
@@ -359,7 +359,7 @@
             <input type="hidden" name="orderId" value="{{head.ID}}">
             <textarea class="form-input" name="adminNote" rows="3" maxlength="500" placeholder="{{tr("admin.orders.ph.admin_note", "例如：客户电话说改地址，已同步仓库")}}">{{head.AdminNote}}</textarea>
             <div class="action-row">
-                <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.orders.action.save_note", "保存备注")}}</button>
+                <button data-requires-js hidden type="submit" class="btn btn-sm btn-primary">{{tr("admin.orders.action.save_note", "保存备注")}}</button>
             </div>
         </form>
         </div>
