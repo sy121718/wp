@@ -7,9 +7,10 @@ package productdto
 // 业务跳过几个、内部失败几个）。把计数塞进 Outcome 会让「状态」与「统计」两种语义混在一个
 // 类型里，读侧也就无法再按状态分支 —— dd.txt §5.2 的原话：不要扩成万能容器。
 //
-// 刻意没有「逐项错误明细」（BulkItemError 只是方案里的示意）：现有的提示页协议只展示
-// 「已删 N / 未成功 M」这一句，逐项明细没有任何消费方；先造一份没人读的明细，
-// 等于给同一件事留第二份真相。
+// 逐项明细（BulkItem）是**后加的**，原因写在这里：当初的提示页协议只展示「已删 N / 未成功 M」
+// 这一句，明细没有消费方。改走 ui/json_write.js 之后消费方出现了 —— 基座逐条渲染失败原因，
+// 只有计数时操作者看到「跳过 3 条」而无从下手（哪三条、为什么）。判定口径仍归 service：
+// 明细里存的是**业务 key**，成品句由 inbound 取词，不在 service 拼中文。
 
 // BulkResult 批量用例的结果（四个桶，合计恒等于 Requested）。
 type BulkResult struct {
@@ -21,6 +22,20 @@ type BulkResult struct {
 	Skipped int `json:"skipped"`
 	// Failed 内部失败的项数（数据库错误这类）。只计数，原文进日志、不进响应。
 	Failed int `json:"failed"`
+	// Items 逐条回执（与三个计数同源：同一批归一后的 id 顺序）。
+	// 未成功的那条带 ReasonKey（业务 key，由 inbound 取词成句子）。
+	Items []BulkItem `json:"items,omitempty"`
+}
+
+// BulkItem 批量里的一条回执。
+//
+// Deleted 是**破坏动作**的键：非破坏动作（改价 / 打标签）用 Updated，同一个键不能既表示
+// 「成功了」又表示「把它从列表里删掉」（基座按 outcome 读不同的键，见 json_write.js 的
+// okKeyOf）。
+type BulkItem struct {
+	ID        string `json:"id"`
+	Deleted   bool   `json:"deleted"`
+	ReasonKey string `json:"reasonKey,omitempty"`
 }
 
 // NotDone 未成功的项数（业务跳过 + 内部失败）。
@@ -43,11 +58,12 @@ type BulkPricingResult struct {
 
 // BulkDeleteReq 五个批量删除用例共用的入参。
 type BulkDeleteReq struct {
-	// IDs 目标 id 清单（inbound 已过 shell.BulkIDs：去空白 / 去重 / 上限 200；
-	// service 侧仍会再归一一次，见 normalizeBulkIDs）。
-	IDs []string
+	// IDs 目标 id 清单（inbound 已过 shell.BulkIDs / 批量 JSON 端点自行归一：去空白 /
+	// 去重 / 上限 200；service 侧仍会再归一一次，见 normalizeBulkIDs）。
+	IDs []string `json:"ids"`
 	// ProjectID 工程作用域；为空时由 service 走「唯一工程」兜底。
-	ProjectID string
+	// 多工程部署下必须带：空着只剩「唯一工程」兜底一条路，否则 ErrInvalidParam。
+	ProjectID string `json:"projectId"`
 }
 
 // BulkPricingReq 批量改价的入参。

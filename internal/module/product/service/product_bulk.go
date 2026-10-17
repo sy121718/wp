@@ -93,6 +93,9 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 		return nil, err
 	}
 	deleted := 0
+	// lockedSet 声明在事务外：提交后还要按它逐条判「这条删没删掉」（逐条回执。
+	// 事务内声明的话，出了闭包就只剩一个总数 —— 而 json_write 基座要的是「哪几条没删掉」）。
+	lockedSet := make(map[string]bool, len(ids))
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := rls.ScopeTx(tx, projectID); serr != nil {
 			return serr
@@ -101,7 +104,6 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 		if lerr != nil {
 			return lerr
 		}
-		lockedSet := make(map[string]bool, len(locked))
 		for _, id := range locked {
 			lockedSet[id] = true
 		}
@@ -146,7 +148,26 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 	// 并发删掉的行不该算成本次的成功项。
 	res.Succeeded = deleted
 	res.Skipped = len(ids) - deleted
+	res.Items = productBulkDeleteItems(ids, lockedSet)
 	return res, nil
+}
+
+// productBulkDeleteItems 逐条回执：锁到的是删掉了，没锁到的统一回 ErrNotFound。
+//
+// 为什么统一成一个原因而不是细分「不存在 / 跨工程 / 并发已删」：LockProductsTx 只回
+// 「锁到了哪些」，区分不出这三种；要区分就得再查一次，而那个查询与加锁之间的距离
+// 又会让结论重新失效。宁可给一个诚实的粗口径（这条没删掉、它不在本工程或已不在），
+// 也不给一个看起来更精确、实际靠推断的原因。
+func productBulkDeleteItems(ids []string, locked map[string]bool) []productdto.BulkItem {
+	items := make([]productdto.BulkItem, 0, len(ids))
+	for _, id := range ids {
+		if locked[id] {
+			items = append(items, productdto.BulkItem{ID: id, Deleted: true})
+			continue
+		}
+		items = append(items, productdto.BulkItem{ID: id, ReasonKey: productenums.ErrNotFound})
+	}
+	return items
 }
 
 // BulkDeleteProductCategories 批量删除分类。

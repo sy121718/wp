@@ -818,6 +818,41 @@ func TestProductsListDeleteUsesJSONWriteBase(t *testing.T) {
 	}
 }
 
+// TestProductsListBulkDeleteUsesJSONWriteBase 批量删除走 ui/json_write.js 基座。
+//
+// 与单行删除是同一条迁移的两半：单行成功后整页刷新（列表派生列由服务端重算），
+// 批量删完要**就地**告诉操作者「删了几条、哪几条没删掉、为什么」—— 旧通道是整页提示页，
+// 一次只能给一句汇总。判据：「两者互斥」（data-write-api 与旧 action 不能同时出现）
+// + 三个关键声明（mode=bulk 决定读 data.items、extra 决定 projectId 会不会被带上）。
+func TestProductsListBulkDeleteUsesJSONWriteBase(t *testing.T) {
+	view := func() *productdto.ProductListPageView {
+		return productListPageViewStub(func(v *productdto.ProductListPageView) {
+			v.Products = []productdto.ProductRow{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
+		})
+	}
+	h := &productPageHandle{
+		products: &productPageReaderStub{listView: view()},
+		reader:   &productPageReaderStub{listView: view()},
+	}
+	rec := productPageRequest(t, h, "/admin/products")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("列表页应 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`data-write-api="/api/product/bulk-delete"`,
+		`data-write-mode="bulk"`,
+		`data-write-extra="projectId"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("批量删除入口缺少 %q（批量删除未接入 JSON 写基座）；body=%s", want, headOf(body))
+		}
+	}
+	if strings.Contains(body, `action="/admin/products/bulk-delete"`) {
+		t.Fatal("批量删除入口仍是页面 POST（半迁移）：应只剩 data-write-api 一种提交方式")
+	}
+}
+
 // TestProductNewPageUnknownProjectIsBadRequest 新建页的参数档：?project=<不存在的 id>。
 //
 // 出口仍是同一档：整页 + 400 + no-store（页壳完整、不泄漏驱动原文）。

@@ -91,6 +91,27 @@ func TestBulkDeleteBuckets(t *testing.T) {
 		if rowCount(t, f.db, "products", other[0]) != 1 {
 			t.Fatal("别的工程的商品不能被删（工程作用域必须生效）")
 		}
+		// 逐条回执：三个计数是给摘要句的，items 是给「哪几条没删掉、为什么」的。
+		// 两者必须同源 —— 只有计数时操作者看到「跳过 2 条」而无从下手（ui/json_write.js
+		// 的 failureLine 逐条渲染 item.message）。
+		if len(res.Items) != res.Requested {
+			t.Fatalf("逐条回执 %d 条，want %d（与归一去重后的 id 清单一一对应）", len(res.Items), res.Requested)
+		}
+		for _, it := range res.Items {
+			switch it.ID {
+			case ids[0], ids[1]:
+				if !it.Deleted {
+					t.Errorf("%s 已删掉，回执却标为未成功", it.ID)
+				}
+			case missingUUID, other[0]:
+				if it.Deleted {
+					t.Errorf("%s 没删掉，回执却标为已删除", it.ID)
+				}
+				if it.ReasonKey == "" {
+					t.Errorf("%s 未删掉却没有原因 key（基座只能显示「跳过 N 条」，说不出为什么）", it.ID)
+				}
+			}
+		}
 	})
 
 	t.Run("分类：有子级 / 被主分类引用 / 可删", func(t *testing.T) {

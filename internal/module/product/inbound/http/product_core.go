@@ -11,6 +11,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/shell"
+	"go_wp/pkg/bulkids"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
@@ -115,6 +116,71 @@ func (h *Handle) Delete(c *gin.Context) {
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
+}
+
+// BulkDelete 批量删除商品（POST /api/product/bulk-delete）。
+//
+// 与页面侧 ProductsBulkDelete 共用**同一个 service 方法与同一个权限点**
+// （permission.ProductDelete）：那条通道返回整页提示，这条返回 ui/json_write.js 基座读的
+// JSON 回执。两条通道并存是过渡态 —— 页面迁完之后页面 POST 就该删掉，而不是留两条永远同值。
+//
+// 逐条原因在这里取词：service 只回业务 key（ReasonKey），成品句由 productErrText 按请求
+// 语言给。取词只在 inbound 有，service 拿不到也不该拿。
+func (h *Handle) BulkDelete(c *gin.Context) {
+	req := &productdto.BulkDeleteReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// 归一口径与表单侧（shell.BulkIDs）同一个纯函数：去空白 / 去重 / 上限 MaxIDs。
+	// **超限整批拒绝，不静默截断** —— 截断会让操作者以为「勾的全删了」。
+	ids, err := bulkids.Normalize(req.IDs)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	req.IDs = ids
+	res, err := h.svc.BulkDeleteProducts(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, productBulkDeletedView(c, res))
+}
+
+// productBulkItemView 逐条回执的对外形状。键名与 json_write.js 的 failureLine 对齐：
+// 它读 item.message / item.deleted / item.id，少一个就只剩「跳过 N 条」没有原因。
+type productBulkItemView struct {
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
+	Message string `json:"message,omitempty"`
+}
+
+// productBulkResultView 批量删除的回执：两个计数给摘要句，items 给逐条原因。
+type productBulkResultView struct {
+	Deleted int                   `json:"deleted"`
+	Skipped int                   `json:"skipped"`
+	Items   []productBulkItemView `json:"items"`
+}
+
+// productBulkDeletedView 把 service 的计数 + 业务 key 转成基座要的形状。
+//
+// 成功键叫 deleted 而不是 succeeded：json_write.js 的 okKeyOf 按 outcome=delete 读
+// data.deleted —— 对不上时摘要句恒为「已删除 0 项」，而删除其实成功了。
+func productBulkDeletedView(c *gin.Context, res *productdto.BulkResult) productBulkResultView {
+	view := productBulkResultView{
+		Deleted: res.Succeeded,
+		Skipped: res.NotDone(),
+		Items:   make([]productBulkItemView, 0, len(res.Items)),
+	}
+	for _, it := range res.Items {
+		row := productBulkItemView{ID: it.ID, Deleted: it.Deleted}
+		if !it.Deleted && it.ReasonKey != "" {
+			row.Message = productErrText(c, errors.New(it.ReasonKey))
+		}
+		view.Items = append(view.Items, row)
+	}
+	return view
 }
 
 // CreateVariant 新增变体（未填字段由商品级默认值补齐）。

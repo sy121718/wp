@@ -78,6 +78,9 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/create", permission.ProductCreate, handle.Create)
 	g.POST("/update", permission.ProductUpdate, handle.Update)
 	g.POST("/delete", permission.ProductDelete, handle.Delete)
+	// 批量删除：与单条同一个权限点、同一个 service 方法，回执从「整页提示」换成
+	// JSON（ui/json_write.js 基座消费 data.deleted / data.skipped / data.items[].message）。
+	g.POST("/bulk-delete", permission.ProductDelete, handle.BulkDelete)
 	g.POST("/variant/create", permission.ProductVariantCreate, handle.CreateVariant)
 	// 组合生成（issue #8）：勾选属性值 → 笛卡尔积写变体（幂等，超上限整体拒绝）。
 	g.POST("/variant/generate", permission.ProductVariantGenerate, handle.GenerateVariants)

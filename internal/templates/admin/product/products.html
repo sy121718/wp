@@ -120,12 +120,21 @@
            操作列里的按钮都带 form="<id>"，不会误触发这个批量表单。
            action 上的 ListQuery 把「用户当时在看什么」（关键词 / 状态 / 页码）随 query 提交：
            写动作的结论由 shell.RenderJump 渲染提示页，回跳列表时按它恢复筛选与页码。 *}
-        <form method="post" action="/admin/products/bulk-delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* 批量删除走 ui/json_write.js（与单行删除同一个基座）：结论不再靠整页提示页，
+           而是就地显示「删了几条 + 哪几条没删掉、为什么」（data-write-status 区）。
+           keyword / status / page 三个隐藏域随旧通道一起去掉：基座只发 data-write-extra
+           点名的字段，留着它们永远不会被发送 —— 而且列表筛选由整页刷新自然保留。 *}
+        <form data-write-api="/api/product/bulk-delete" data-write-mode="bulk"
+              data-write-extra="projectId"
+              data-msg-none-selected="{{tr("admin.common.bulk.noneSelected", "没有勾选任何商品，列表未改动。")}}"
+              data-msg-all-deleted="{{tr("admin.products.bulkResult.allDeleted", "已删除 {count} 个商品及其全部变体。")}}"
+              data-msg-all-skipped="{{tr("admin.products.bulkResult.allSkipped", "{count} 个商品都未能删除，列表未改动。")}}"
+              data-msg-partial="{{tr("admin.products.bulkResult.partial", "已删除 {deleted} 个，{skipped} 个未能删除（可能已被删除或不在本工程）。")}}"
+              data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+              data-msg-refresh="{{tr("admin.common.write.refresh", "刷新列表")}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <input type="hidden" name="keyword" value="{{fKeyword}}">
-            <input type="hidden" name="status" value="{{fStatus}}">
-            <input type="hidden" name="page" value="{{fPage}}">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete || canUpdate}}{{if len(.Products) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
