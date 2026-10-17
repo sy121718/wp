@@ -752,6 +752,11 @@ func (a *assembly) mountAdminPages() {
 		membershipAdmin, membershipTiers)
 	producthttp.SetupProductPages(a.adminPages, a.productSvc, a.productReader, a.projectService,
 		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)
+	// 商品译文工作台：整页 GET 挂 /admin 组，保存挂 authorizedAPI 组（模板用 ui/json_write.js 提交）。
+	// 两条路由由同一个函数注册 —— 保存是接口端点，而页面组与接口组分别由 assembly.go（接口）
+	// 与这里（页面）持有，只有这一处两个都在手上。
+	producthttp.SetupProductTranslationRoutes(a.authorizedAPI, a.adminPages,
+		a.productSvc, a.projectService, a.pageService, a.presentationSvc)
 	// 页面读模型的两条只读端口在模块内部转交（SetInventoryDeps / SetDetailTemplateDeps 收到
 	// 依赖后同时给处理器与 service 读模型）：装配段只记录「这两条依赖到达过」，
 	// 于是漏接时启动自检能报出来，而不是等运营发现「新建页没有仓库下拉」。

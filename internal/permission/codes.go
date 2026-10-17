@@ -527,7 +527,7 @@ const (
 	// 详情页改 URL（POST /api/presentation/update-url）
 	PresentationUpdateURL Perm = "presentation:update_url"
 
-	// —— product（58）——
+	// —— product（59）——
 	// 属性组批量删除（POST /api/product/attribute/bulk-delete）
 	ProductAttributeBulkDelete Perm = "product:attribute_bulk_delete"
 	// 属性组创建（POST /api/product/attribute/create）
@@ -582,6 +582,8 @@ const (
 	ProductCreate Perm = "product:create"
 	// 商品删除（POST /api/product/delete）
 	ProductDelete Perm = "product:delete"
+	// 商品译文保存（POST /api/product/translations/save）
+	ProductTranslationsSave Perm = "product:translations_save"
 	// 详情页模板新建（POST /api/product/detail-template/create）
 	ProductDetailTemplateCreate Perm = "product:detail_template_create"
 	// 详情页模板首次发布（POST /api/product/detail-template/publish）
@@ -1083,6 +1085,7 @@ var specs = map[Perm]spec{
 	ProductCategoryUpdate:          {module: "product", name: "商品分类更新"},
 	ProductCreate:                  {module: "product", name: "商品创建"},
 	ProductDelete:                  {module: "product", name: "商品删除"},
+	ProductTranslationsSave:        {module: "product", name: "商品译文保存"},
 	ProductDetailTemplateCreate:    {module: "product", name: "商品详情模板新建"},
 	ProductDetailTemplatePublish:   {module: "product", name: "商品详情模板发布"},
 	ProductDetailTemplateApply:     {module: "product", name: "商品详情模板切换"},

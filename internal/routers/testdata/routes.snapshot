@@ -380,7 +380,6 @@ POST /admin/products/seo-score
 POST /admin/products/tags
 POST /admin/products/taxonomy
 POST /admin/products/template/preview
-POST /admin/products/translations/save
 POST /admin/products/variant/preview
 POST /admin/projects/create
 POST /admin/roles/bulk-delete
@@ -579,6 +578,7 @@ POST /api/product/tag/create
 POST /api/product/tag/delete
 POST /api/product/tag/recalc
 POST /api/product/tag/update
+POST /api/product/translations/save
 POST /api/product/update
 POST /api/product/variant/create
 POST /api/product/variant/delete

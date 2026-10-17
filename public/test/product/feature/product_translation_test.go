@@ -17,7 +17,6 @@ import (
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -192,7 +191,8 @@ func trWorkbench(t *testing.T, f *trFixture) *gin.Engine {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	engine.GET("/admin/products/translations", handle.ProductTranslations)
-	engine.POST("/admin/products/translations/save", handle.SaveProductTranslations)
+	// 保存已改接口端点（页面走 ui/json_write.js），页面 POST 已下线。
+	engine.POST("/api/product/translations/save", handle.SaveProductTranslations)
 	return engine
 }
 
@@ -662,16 +662,17 @@ func TestProductTranslationInvalidatedAfterSourceChange(t *testing.T) {
 	}
 
 	// 以旧指纹提交 → 明确提示「原文已变更」，且不写库。
-	rec := postForm(engine, "/admin/products/translations/save", url.Values{
-		"project": {f.projectID}, "product": {created.ID}, "lang": {"en-US"},
-		"rowContext": {"product.name"}, "rowHash": {i18n.ContentHash("夏季衬衫")},
-		"rowTarget": {"Spring Shirt"},
+	rec := postJSON(t, engine, "/api/product/translations/save", map[string]any{
+		"projectId": f.projectID, "productId": created.ID, "lang": "en-US",
+		"rowContext": []string{"product.name"}, "rowHash": []string{i18n.ContentHash("夏季衬衫")},
+		"rowTarget": []string{"Spring Shirt"},
 	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("指纹不符应回渲染工作台（200），实际 %d", rec.Code)
+	// 失败不再是「重渲工作台」，而是 400 + 逐行结论拼成的一条 message（含字段语境与原因）。
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("指纹不符应回 400，实际 %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "原文已变更") {
-		t.Fatalf("应提示原文已变更 %s", rec.Body.String())
+	if env := decodeJSONEnvelope(t, rec); !strings.Contains(env.Message, "原文已变更") {
+		t.Fatalf("应提示原文已变更，实际 %q", env.Message)
 	}
 	if n := trTranslationCount(t, f.db, "en-US"); n != 1 {
 		t.Fatalf("旧指纹提交不应写库（应仍只有最初 1 条），实际 %d", n)
@@ -710,16 +711,18 @@ func TestProductTranslationWorkbenchSaveAndStaleMarking(t *testing.T) {
 		}
 	}
 
-	form := url.Values{
-		"project": {f.projectID}, "product": {created.ID}, "lang": {"en-US"},
-		"rowContext": {"product.name"}, "rowHash": {i18n.ContentHash("夏季衬衫")},
-		"rowTarget": {"Summer Shirt"},
+	form := map[string]any{
+		"projectId": f.projectID, "productId": created.ID, "lang": "en-US",
+		"rowContext": []string{"product.name"}, "rowHash": []string{i18n.ContentHash("夏季衬衫")},
+		"rowTarget": []string{"Summer Shirt"},
 	}
-	saved := postForm(engine, "/admin/products/translations/save", form)
-	savedBody := saved.Body.String()
-	assertJumpOK(t, saved)
-	if !strings.Contains(savedBody, "1 条译文") {
-		t.Fatalf("成功回执应含写入条数，body=%s", savedBody)
+	saved := postJSON(t, engine, "/api/product/translations/save", form)
+	savedEnv := decodeJSONEnvelope(t, saved)
+	if savedEnv.Code != http.StatusOK {
+		t.Fatalf("保存应成功，实际 %d：%s", savedEnv.Code, savedEnv.Message)
+	}
+	if !strings.Contains(savedEnv.Message, "1 条译文") {
+		t.Fatalf("成功回执应含写入条数，实际 %q", savedEnv.Message)
 	}
 	// 原文与译文分列存放（验收 1）。
 	target, engineName := trTranslationOf(t, f.db, "夏季衬衫", "product.name", "en-US")
@@ -739,11 +742,13 @@ func TestProductTranslationWorkbenchSaveAndStaleMarking(t *testing.T) {
 	if err := f.db.Exec("UPDATE pages SET stale = false WHERE id = ?", pageID).Error; err != nil {
 		t.Fatalf("复位 stale 失败: %v", err)
 	}
-	again := postForm(engine, "/admin/products/translations/save", form)
-	againBody := again.Body.String()
-	assertJumpOK(t, again)
-	if !strings.Contains(againBody, "没有需要写入的变化") {
-		t.Fatalf("幂等保存应给「没有变化」回执，body=%s", againBody)
+	again := postJSON(t, engine, "/api/product/translations/save", form)
+	againEnv := decodeJSONEnvelope(t, again)
+	if againEnv.Code != http.StatusOK {
+		t.Fatalf("幂等保存应成功，实际 %d：%s", againEnv.Code, againEnv.Message)
+	}
+	if !strings.Contains(againEnv.Message, "没有需要写入的变化") {
+		t.Fatalf("幂等保存应给「没有变化」回执，实际 %q", againEnv.Message)
 	}
 	if trPageStale(t, f.db, pageID) {
 		t.Fatal("译文未变化不应触发重建标记")
@@ -788,14 +793,16 @@ func TestProductTranslationStalesPresentationInstances(t *testing.T) {
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.POST("/admin/products/translations/save", handle.SaveProductTranslations)
+	engine.POST("/api/product/translations/save", handle.SaveProductTranslations)
 
-	saved := postForm(engine, "/admin/products/translations/save", url.Values{
-		"project": {f.projectID}, "product": {productID}, "lang": {"en-US"},
-		"rowContext": {"product.name"}, "rowHash": {i18n.ContentHash("夏季衬衫")},
-		"rowTarget": {"Summer Shirt"},
+	saved := postJSON(t, engine, "/api/product/translations/save", map[string]any{
+		"projectId": f.projectID, "productId": productID, "lang": "en-US",
+		"rowContext": []string{"product.name"}, "rowHash": []string{i18n.ContentHash("夏季衬衫")},
+		"rowTarget": []string{"Summer Shirt"},
 	})
-	assertJumpOK(t, saved)
+	if env := decodeJSONEnvelope(t, saved); env.Code != http.StatusOK {
+		t.Fatalf("保存应成功，实际 %d：%s", env.Code, env.Message)
+	}
 	if !trInstanceStale(t, f.db, inst.ID) {
 		t.Fatalf("译文变更应标记该商品的自动发布实例待重建")
 	}

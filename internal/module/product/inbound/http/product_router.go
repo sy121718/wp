@@ -331,30 +331,32 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/product-pricing/apply", builtin.CasbinMiddlewareForPath("/api/product/pricing/apply"), productPages.ProductPricingApply)
 
 	// —— 商品域翻译工作台（issue #12）——
-	// 入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。保存写 sys_translation
-	// （engine=manual）并标记待重建，鉴权由 SetupProductTranslationRoutes 在函数内挂定
-	// 商品更新权限点（同一改动面）。
-	SetupProductTranslationRoutes(pages, products, projects, pageSvc, presentations)
+	// 入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。路由在装配层同时挂到
+	// 页面组与 /api 组（见 assembly_publish 的 SetupProductTranslationRoutes 调用）：
+	// 保存已经是接口端点，而页面组与接口组在这两个函数里不可能同时拿到。
+
 	return productPages
 }
 
-// SetupProductTranslationRoutes 注册商品域翻译页路由（挂 /admin 页面组）。
+// SetupProductTranslationRoutes 注册商品域翻译工作台的两条路由：页面组 GET + /api/product 组保存。
 //
-// 保存端点的鉴权在函数内挂定：页面组（internal/routers/assembly.go 的 adminPages）
-// 只有 Session + CSRF + 权限上下文，没有鉴权判定能力 —— 页面写端点必须各自显式挂
-// Casbin 中间件。保存改的是商品的展示文本，复用商品更新权限点（与页面翻译工作台
-// 同一口径）；GET 属安全方法，页面组已有 Session + CSRF。
+// 为什么同时要两个组：页面（整页 GET）挂在 /admin 组，而保存已经是接口端点（模板用
+// ui/json_write.js 提交），必须挂在 authorizedAPI 的声明式组上才拿得到 Session + CSRF + Casbin
+// 三层链。两个组分别由 assembly.go 与 assembly_publish.go 持有，所以这个函数由装配层调用，
+// **不**由 SetupProductPages 代劳。
 //
-// 这里刻意不再接受「由调用方注入 guard」的参数：审计发现参数为 nil 时会静默注册成
-// 「登录即可写」的 fail-open 分支，而静态门禁也看不见参数化注入的真实取值。
-// 权限点定死在函数内，漏挂无处可藏。
-func SetupProductTranslationRoutes(adminPages *gin.RouterGroup,
+// 权限点定死在函数内：参数为 nil 的注入式 guard 会静默注册成「登录即可写」的 fail-open
+// 分支，静态门禁也看不见真实取值（审计 SEC-011 的结论）。GET 属安全方法，
+// 页面组已有 Session + CSRF，权限点声明走 PageAuthz。
+func SetupProductTranslationRoutes(apiRoot *permission.RouteGroup, adminPages *gin.RouterGroup,
 	products productcontract.ProductService, projects projectcontract.ProjectService, pages pagecontract.PageService,
 	instances ProductTranslationInstancePort) *productTranslationHandle {
 	handle := NewProductTranslationHandle(products, projects, pages, instances)
 	adminPages.GET("/products/translations", adminui.PageAuthz("/api/product/list"), handle.ProductTranslations)
-	adminPages.POST("/products/translations/save",
-		builtin.CasbinMiddlewareForPath("/api/product/update"), handle.SaveProductTranslations)
+	// 前缀在这里定死（/api/product），与 SetupProductRoutes 的 g 同形：装配层只递根组，
+	// 端点路径不散落到装配层 —— 否则一处写 /translations/save 就成了 /api/translations/save，
+	// 权限点与页面写的端点对不上，而两边都不报错。
+	apiRoot.Group("/product").POST("/translations/save", permission.ProductTranslationsSave, handle.SaveProductTranslations)
 	return handle
 }
 
