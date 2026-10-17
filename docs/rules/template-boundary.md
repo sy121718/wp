@@ -194,7 +194,7 @@ URL 仍由 Go 拼（模板不拼查询串：保留哪些筛选条件是请求上
 ## 渲染出口：控制器只交视图，摊平与失败档交给基建
 
 整页 / 片段不再在控制器里手工拼 `gin.H`、也不再由控制器编排「哪个失败点用哪个状态码」。
-渲染入口都在 `internal/adminui/`（本仓实测，样板见 `internal/module/product/dto/product_view.go`）：
+渲染入口都在 `internal/adminui/`（本仓实测，样板见 `internal/module/product/dto/product_page_resp.go`）：
 
 | 入口 | 用途 |
 |---|---|

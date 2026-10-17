@@ -110,7 +110,7 @@ module_name/
   · 这一屏要哪些数据、按什么口径取（工程列表 + 仓库选项 + 属性组选项 + 模板清单 + 每仓 SKU 候选…）
     → service 的**读模型方法**（`ProductNewPage(ctx, req) (*dto.ProductNewPageView, error)`），
     它持有各契约端口；分档（400 参数不合法 / 500 取数失败）也由它给出的错误决定；
-  · 行的形状、标签事实、失败槽 → 同一个 dto 视图（`dto/product_view.go` 那类纯数据 struct）；
+  · 行的形状、标签事实、失败槽 → 同一个 dto 回执（`dto/product_page_resp.go` 那类纯数据 struct）；
   · 控制器只剩：读参数 → **请求边界**校验（工程是否存在、参数格式）→ 调 service →
     决定状态码 / no-store → `c.HTML(status, tpl, adminui.PrepareView(c, view))`。
   实测判据：控制器里出现 `gin.H{...}` 装配、`[]gin.H` 行构造、`warehouseOptions/attributeOptions`
@@ -119,13 +119,17 @@ module_name/
     模板的 `{{.Projects}}` 写法不变；不要在 handler 里手写 `gin.H{"Projects": …, …}`。
   · **表单回填的字段清单不再手写**：原先靠 `var productCreateFormFields = []string{...}` + 按名字
     补零值键（漏一个就是渲染期 500、htmx 不 swap），视图结构体本身就是那份清单（字段即契约）。
-- **渲染视图与表单回显形状放 `dto`（第三类）**：页面/片段按字段读的形状（`ScoreView`、`AttrValueFormRow`
+- **渲染视图与表单回显形状放 `dto`（第三类）**：页面/片段按字段读的形状（`ScoreResp`、`AttrValueFormRow`
   这类纯数据 struct）与表单取值回显形状进 `dto/`，**不要写在 handle 文件里**。
+  · **dto 目录的形状规则**（门禁 `dto/dto_naming_test.go`）：每个域最多两份文件 ——
+    `<域>_req.go`（接手）/ `<域>_resp.go`（返回），导出类型一律以 `Req` / `Resp` 结尾；
+    两个方向共用的形状（持久化 JSON、表单回填值、绑定原语）登记进 `dtoValueObjects` 并写明理由，
+    登记表双向判定（登记了却不存在同样变红）。
   理由是复用面：它与 handle、模板、测试三处逐字段对齐，留在控制器里，任何想复用或断言它的地方都得
   import `inbound/http`（带着全部 handler）；放进 dto 后与 `XxxReq` / `XxxResp` 同级。
   边界：**带装配方法的聚合**（产出 gin.H 的 `templateMap()`）与**解析/装配选项**
   （`attrGroupFormOpts` / `formEcho` 这类带未导出字段和读取器的）留在 handle —— 它们调 gin、拼模板 data，
-  不是纯数据。样板：`product/dto/product_view.go`（文件头写了三类分工与判据）、
+  不是纯数据。样板：`product/dto/product_page_resp.go`（文件头写了回执与模板契约）、
   `page/dto/page_view.go`（10 个行形状从 `page/inbound/http` 搬入，判据 `page_view_boundary_test.go`）。
   · 跨模块形状**不另造一份**：缺译报告的行直接复用契约里的 `pagedto.TranslationMissRow`，
     不为了「视图字段叫 Path 更顺」再声明一个逐字段等价的类型（两份等价定义 = 静默分叉）。

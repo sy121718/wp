@@ -101,7 +101,7 @@
 | 主体 SKU = 仓短码_商品侧编码；仓库侧是裸码 | ✅ 已按 §1.1 收口（商品侧 `SZ_…`、仓库侧裸码）；早期是 `{仓短码}_{商品码}_{序号}` 且**仓库侧也带前缀**（实测 `SZ_DUPX` 两边同名） | `product_variant.go` 的 `buildProductContainerSKU` / `stripWarehousePrefix` |
 | 变体 SKU 以 _V 结尾 | 无后缀约定 | 同上 |
 | 捆绑 SKU 以 _B 结尾 | 无后缀约定 | `internal/module/product/service/product_bundle.go` |
-| 捆绑成员可为仓库 SKU | 成员模型只有 `options[].variantId`（变体 ID） | `internal/module/product/dto/product_bundle.go:30-51` |
+| 捆绑成员可为仓库 SKU | 成员模型只有 `options[].variantId`（变体 ID） | `internal/module/product/dto/product_bundle_req.go`（BundleOption） |
 | 生产成本归仓库 | 成本在 `product_variants.cost_price`（变体级）；`inventory_stocks` **没有任何成本列** | information_schema 实测；`inventory_stocks(warehouse_id, variant_id, sku_code, quantity, metadata)` |
 | 商品本体只有原价/促销价 | 目前本体有 `default_price / default_compare_price / default_cost_price` 三个字段 | `internal/module/product/model/product_model.go`（products 表） |
 | BOM 按 SKU | `inventory_bom_items` 是 variant 维度（parent_variant_id / component_variant_id + sku_code 冗余） | 实测表结构 |
