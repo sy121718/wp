@@ -188,28 +188,47 @@
     function onResolve(event, trigger) {
         var panel = document.querySelector(trigger.getAttribute('data-panel') || '');
         if (!panel) { return; }
-        var body = new FormData();
-        body.append('projectId', trigger.getAttribute('data-project') || '');
-        body.append('productId', trigger.getAttribute('data-product') || '');
+        // 提交形状与接口面同一套 JSON 字段（productdto.ResolveBundleMembersReq）：
+        // 表单编码只在这一个端点存在过，字段名一改就是静默收空串。
+        var body = {
+            projectId: trigger.getAttribute('data-project') || '',
+            productId: trigger.getAttribute('data-product') || '',
+            source: '',
+            sourceProductId: '',
+            warehouseId: '',
+            warehouseSkus: [],
+            selections: [],
+            existingVariantIds: existingVariantIds(hostOf(document))
+        };
         var sourceSelect = panel.querySelector('[data-bundle-source-select]');
-        body.append('source', sourceSelect ? sourceSelect.value : '');
+        body.source = sourceSelect ? sourceSelect.value : '';
         var productSelect = panel.querySelector('select[name="sourceProduct"]');
-        body.append('sourceProductId', productSelect ? productSelect.value : '');
+        body.sourceProductId = productSelect ? productSelect.value : '';
         var warehouseSelect = panel.querySelector('select[name="sourceWarehouse"]');
-        // 字段名与 handler 的 c.PostForm("sourceWarehouse") 逐字一致 —— 这里写错只会让服务端收到空串。
-        body.append('sourceWarehouse', warehouseSelect ? warehouseSelect.value : '');
+        body.warehouseId = warehouseSelect ? warehouseSelect.value : '';
         var picked = panel.querySelectorAll('input[name="warehouseSku"]:checked');
-        for (var i = 0; i < picked.length; i++) { body.append('warehouseSku', picked[i].value); }
+        for (var i = 0; i < picked.length; i++) { body.warehouseSkus.push(picked[i].value); }
         var attrs = panel.querySelectorAll('input[type="checkbox"][name^="attr:"]:checked');
-        for (var j = 0; j < attrs.length; j++) { body.append(attrs[j].name, attrs[j].value); }
-        var existing = existingVariantIds(hostOf(document));
-        for (var k = 0; k < existing.length; k++) { body.append('existingVariantId', existing[k]); }
+        var byAttr = {};
+        for (var j = 0; j < attrs.length; j++) {
+            var attrId = attrs[j].name.slice('attr:'.length);
+            if (!attrId) { continue; }
+            (byAttr[attrId] = byAttr[attrId] || []).push(attrs[j].value);
+        }
+        for (var attrId in byAttr) {
+            if (Object.prototype.hasOwnProperty.call(byAttr, attrId)) {
+                body.selections.push({ attributeId: attrId, valueIds: byAttr[attrId] });
+            }
+        }
 
         setStatus(document, '');
         fetch(trigger.getAttribute('data-url') || '', {
             method: 'POST',
-            headers: { 'X-CSRF-Token': trigger.getAttribute('data-csrf') || '' },
-            body: body
+            headers: {
+                'X-CSRF-Token': trigger.getAttribute('data-csrf') || '',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
         }).then(function (res) {
             return res.json().catch(function () { return null; });
         }).then(function (data) {

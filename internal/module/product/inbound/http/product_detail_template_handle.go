@@ -16,6 +16,7 @@ import (
 	dtoutbound "go_wp/internal/module/product/outbound/detailtemplate"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	"net/http"
 	"strings"
@@ -51,9 +52,8 @@ var errModeUnavailable = errors.New("详情页双轨能力未装配")
 // 页面侧原先的 /admin/products/reapply-preset 随写通道一起删除：结论改成一行回执
 // （成功由 ui/json_write.js 存进 flash 再整页刷新 —— 模式徽标变了，必须重渲染）。
 func (h *ProductHandle) ReapplyDetailTemplatePreset(c *gin.Context) {
-	req := &productdto.DetailTemplateModeReapplyReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DetailTemplateModeReapplyReq](c)
+	if !ok {
 		return
 	}
 	port, err := detailTemplateModePortFor(req.InstanceID)
@@ -78,9 +78,8 @@ func (h *ProductHandle) ReapplyDetailTemplatePreset(c *gin.Context) {
 // 与上面的重新套用预设是**对称的两半**：一个放弃独立文档，一个把某份历史文档立为当前。
 // 两者都重建产物，所以成功之后页面必须刷新（产物指针与快照清单都变了）。
 func (h *ProductHandle) RollbackDetailTemplateDocument(c *gin.Context) {
-	req := &productdto.DetailTemplateModeRollbackReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DetailTemplateModeRollbackReq](c)
+	if !ok {
 		return
 	}
 	port, err := detailTemplateModePortFor(req.InstanceID)
@@ -132,9 +131,8 @@ func detailTemplateWriteFail(c *gin.Context, status int, msg productMsg) {
 //
 // 模板内容编辑不在这里：新建只给出一个可被工作台打开的结构，改文档走 /workbench?template=…。
 func (h *ProductHandle) CreateDetailTemplate(c *gin.Context) {
-	req := &productdto.DetailTemplateCreateReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DetailTemplateCreateReq](c)
+	if !ok {
 		return
 	}
 	deps, err := detailTemplateWriteDepsOrErr()
@@ -163,9 +161,8 @@ func (h *ProductHandle) CreateDetailTemplate(c *gin.Context) {
 // 两类失败走**两张不同的文案表**：取商品失败（product 的 enums）与建实例失败
 // （presentation 的 enums）合成一句会把「商品不存在」说成「还没有详情页实例」。
 func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
-	req := &productdto.DetailTemplatePublishReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DetailTemplatePublishReq](c)
+	if !ok {
 		return
 	}
 	deps, err := detailTemplateWriteDepsOrErr()
@@ -194,9 +191,8 @@ func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
 // projectID 显式回传，不走 presentation 的「工程唯一时取该工程」兜底：多工程站点上
 // 兜底会落到另一个工程，改的是别的站点的页面而这里仍回成功。
 func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
-	req := &productdto.DetailTemplateApplyReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DetailTemplateApplyReq](c)
+	if !ok {
 		return
 	}
 	deps, err := detailTemplateWriteDepsOrErr()
@@ -216,9 +212,8 @@ func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
 // UpdateDetailTemplateURL POST /api/product/detail-template/update-url：
 // 修改商品详情页的线上路径（内容、模板绑定、产物内容完全不动）。
 func (h *ProductHandle) UpdateDetailTemplateURL(c *gin.Context) {
-	req := &productdto.DetailTemplateUpdateURLReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DetailTemplateUpdateURLReq](c)
+	if !ok {
 		return
 	}
 	deps, err := detailTemplateWriteDepsOrErr()
@@ -443,8 +438,12 @@ func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 		h.detailTemplateDepsMissingPage(c)
 		return
 	}
+	req, ok := binding.Form[productdto.DetailTemplatePreviewReq](c)
+	if !ok {
+		return
+	}
 	res, err := productservice.PreviewDetailTemplate(c.Request.Context(), h.instances,
-		c.PostForm("projectId"), c.PostForm("productId"), strings.TrimSpace(c.PostForm("templateId")))
+		req.ProjectID, req.ProductID, req.TemplateID)
 	if err != nil {
 		// 「预览失败」对作者是可用信息，原因（模板不存在 / 文档非法 / 渲染出错）只进日志。
 		adminui.PageErrorBadRequest(c, "product_detail_template", err)

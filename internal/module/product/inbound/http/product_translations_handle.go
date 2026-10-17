@@ -10,6 +10,7 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/shell"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -127,10 +128,8 @@ func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) {
 // 「逐行结论」为什么不进 data：基座只渲染 message。把事实在这里取词拼好，
 // 与模板注入的 tf 是同一份实现（adminui.MsgText），两条出口不会给出不同的句子。
 func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
-	req := &productdto.TranslationSaveReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productMsgText(c, productMsg{
-			Key: productenums.ErrInvalidParam, Fallback: "参数不合法"}))
+	req, ok := binding.JSON[productdto.TranslationSaveReq](c)
+	if !ok {
 		return
 	}
 	projectID := strings.TrimSpace(req.ProjectID)

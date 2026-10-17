@@ -9,11 +9,11 @@ package producthttp
 import (
 	"errors"
 	"fmt"
+	"go_wp/pkg/binding"
 	"html"
 	"net/http"
 	"net/url"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -50,9 +50,8 @@ import (
 // ==========================================================================
 // Create 新建商品（自动生成首个变体）。
 func (h *ProductHandle) Create(c *gin.Context) {
-	req := &productdto.CreateReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.CreateReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
@@ -67,9 +66,8 @@ func (h *ProductHandle) Create(c *gin.Context) {
 
 // Update 修改商品。
 func (h *ProductHandle) Update(c *gin.Context) {
-	req := &productdto.UpdateReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.UpdateReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
@@ -84,9 +82,8 @@ func (h *ProductHandle) Update(c *gin.Context) {
 
 // Get 商品详情（含变体与价格区间）。
 func (h *ProductHandle) Get(c *gin.Context) {
-	req := &productdto.GetReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.GetReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -99,9 +96,8 @@ func (h *ProductHandle) Get(c *gin.Context) {
 
 // List 商品列表。
 func (h *ProductHandle) List(c *gin.Context) {
-	req := &productdto.ListReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.ListReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
@@ -114,9 +110,8 @@ func (h *ProductHandle) List(c *gin.Context) {
 
 // Delete 删除商品。
 func (h *ProductHandle) Delete(c *gin.Context) {
-	req := &productdto.DeleteReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DeleteReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
@@ -137,9 +132,8 @@ func (h *ProductHandle) Delete(c *gin.Context) {
 // 逐条原因在这里取词：service 只回业务 key（ReasonKey），成品句由 productErrText 按请求
 // 语言给。取词只在 inbound 有，service 拿不到也不该拿。
 func (h *ProductHandle) BulkDelete(c *gin.Context) {
-	req := &productdto.BulkDeleteReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.BulkDeleteReq](c)
+	if !ok {
 		return
 	}
 	// 归一口径与其余批量端点同一个纯函数（bulkids.Normalize，经 productBulkIDs）：
@@ -204,9 +198,8 @@ func productBulkDeletedView(c *gin.Context, res *productdto.BulkResult) productB
 
 // CreateVariant 新增变体（未填字段由商品级默认值补齐）。
 func (h *ProductHandle) CreateVariant(c *gin.Context) {
-	req := &productdto.CreateVariantReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.CreateVariantReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
@@ -221,9 +214,8 @@ func (h *ProductHandle) CreateVariant(c *gin.Context) {
 
 // UpdateVariant 修改变体（编辑路径不做默认值填充）。
 func (h *ProductHandle) UpdateVariant(c *gin.Context) {
-	req := &productdto.UpdateVariantReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.UpdateVariantReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
@@ -238,9 +230,8 @@ func (h *ProductHandle) UpdateVariant(c *gin.Context) {
 
 // DeleteVariant 删除变体。
 func (h *ProductHandle) DeleteVariant(c *gin.Context) {
-	req := &productdto.DeleteVariantReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DeleteVariantReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
@@ -257,9 +248,8 @@ func (h *ProductHandle) DeleteVariant(c *gin.Context) {
 // 未勾选任何属性值（或 selections 缺省）= 无表单路径：按商品全部参与变体的
 // 属性组与其启用值生成；新变体逐字段继承商品级默认值。
 func (h *ProductHandle) GenerateVariants(c *gin.Context) {
-	req := &productdto.GenerateVariantsReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.GenerateVariantsReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
@@ -703,32 +693,6 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 	adminui.RenderPage(c, productDetailPageTemplate, view)
 }
 
-// variantSelectionFromForm 收「生成组合」表单里按前缀提交的勾选（attr:<属性组 id> → 值 id）。
-//
-// 生成（落库路径）、预览（不落库）两条 handler 共用它：字段名与收拢规则只有一份，
-// 两处各写一遍必然分叉（一个认 attr: 前缀、另一个漏读，表现为「预览有行、保存却没数据」）。
-func variantSelectionFromForm(c *gin.Context) []productdto.VariantSelectionReq {
-	_ = c.Request.ParseForm()
-	keys := make([]string, 0, len(c.Request.PostForm))
-	for key := range c.Request.PostForm {
-		if strings.HasPrefix(key, variantSelectionPrefix) {
-			keys = append(keys, key)
-		}
-	}
-	sort.Strings(keys)
-	out := make([]productdto.VariantSelectionReq, 0, len(keys))
-	for _, key := range keys {
-		attrID := strings.TrimPrefix(key, variantSelectionPrefix)
-		if attrID == "" {
-			continue
-		}
-		out = append(out, productdto.VariantSelectionReq{
-			AttributeID: attrID, ValueIDs: c.Request.PostForm[key],
-		})
-	}
-	return out
-}
-
 // variantPreviewRow 预览行的 JSON 形状：前端拿它渲染清单里的一行。
 //
 // Spec 是**服务端**拼的可读规格文本（与详情页表格同一份 specLabel），
@@ -752,15 +716,19 @@ type variantPreviewRow struct {
 // 失败回 400 + 可读文案（走 productErrText 取词，不把 enums 裸 key 或 PG 报错铺给前端）。
 func (h *ProductPageHandle) ProductsVariantPreview(c *gin.Context) {
 	ctx := c.Request.Context()
-	productID := strings.TrimSpace(c.PostForm("productId"))
+	form, ok := binding.Form[productdto.VariantPreviewFormReq](c)
+	if !ok {
+		return
+	}
+	productID := form.ProductID
 	req := &productdto.PreviewVariantReq{
 		ProductID:   productID,
-		ProjectID:   strings.TrimSpace(c.PostForm("projectId")),
-		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
-		Selections:  variantSelectionFromForm(c),
+		ProjectID:   form.ProjectID,
+		WarehouseID: form.WarehouseID,
+		Selections:  form.Selections,
 	}
 	// 清单里已有的组合原样回传（每行一条）：由服务端归一去重，前端不需要懂 optionKey。
-	for _, raw := range c.PostFormArray("optionValues") {
+	for _, raw := range form.OptionValues {
 		if trimmed := strings.TrimSpace(raw); trimmed != "" {
 			req.ExistingOptionValues = append(req.ExistingOptionValues, json.RawMessage(trimmed))
 		}
@@ -847,9 +815,8 @@ func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) product
 // message 回给页面；页面用 data-write-flash 把它带过保存后的整页刷新 —— 清单刷新后才是库里的
 // 样子，被跳过的那几行也才会重新出现在清单里（它们本来就是「没能写进去」的那些行）。
 func (h *ProductHandle) SaveVariantList(c *gin.Context) {
-	req := &productdto.SaveVariantListReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.SaveVariantListReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
@@ -867,9 +834,8 @@ func (h *ProductHandle) SaveVariantList(c *gin.Context) {
 // 评分是**独立明细表**（#30），所以这是「加一条记录」而不是「改商品字段」——
 // 分值范围由 service 与数据库 CHECK 双重兜底（service 对越界给「评分必须是 0~5 的数字」）。
 func (h *ProductHandle) AddRating(c *gin.Context) {
-	req := &productdto.AddRatingReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.AddRatingReq](c)
+	if !ok {
 		return
 	}
 	req.OperatorID = builtin.OperatorName(c)
@@ -886,9 +852,8 @@ func (h *ProductHandle) AddRating(c *gin.Context) {
 // 请求里的 id 是**评分 id**；工程随请求显式回传（DB-009：product_ratings 有 FORCE 策略，
 // 删一条评分要在工程作用域里）。
 func (h *ProductHandle) DeleteRating(c *gin.Context) {
-	req := &productdto.DeleteRatingReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DeleteRatingReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.DeleteRating(c.Request.Context(), req); err != nil {
@@ -1095,18 +1060,11 @@ func bundleQueryParam(c *gin.Context, names ...string) string {
 // 失败回 400 + 可读文案（走 productErrText，不把 enums 裸 key 或 PG 报错铺给前端）。
 func (h *ProductPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
 	ctx := c.Request.Context()
-	req := &productdto.ResolveBundleMembersReq{
-		ProductID:       strings.TrimSpace(c.PostForm("productId")),
-		ProjectID:       strings.TrimSpace(c.PostForm("projectId")),
-		Source:          strings.TrimSpace(c.PostForm("source")),
-		SourceProductID: strings.TrimSpace(c.PostForm("sourceProductId")),
-		WarehouseID:     strings.TrimSpace(c.PostForm("sourceWarehouse")),
-		WarehouseSKUs:   c.PostFormArray("warehouseSku"),
-		// 属性组合的勾选用生成组合抽屉的同一套字段名（attr:<属性组 id>=值 id）：
-		// 收拢规则只有一份，两个入口不会一个认前缀、另一个漏读。
-		Selections: variantSelectionFromForm(c),
-		// 前端清单里已有的成员：服务端据此去重（同一变体只出现一次）。
-		ExistingVariantIDs: c.PostFormArray("existingVariantId"),
+	// 属性组合的勾选用生成组合抽屉的同一套字段名（attr:<属性组 id>=值 id）：
+	// 收拢规则只有一份（dto.SelectionsFromForm），两个入口不会一个认前缀、另一个漏读。
+	req, ok := binding.JSON[productdto.ResolveBundleMembersReq](c)
+	if !ok {
+		return
 	}
 	res, err := h.products.ResolveBundleMembers(ctx, req)
 	if err != nil {
@@ -1324,9 +1282,8 @@ const bundlePanelReadFailedFallback = "配置读取失败：商品不存在，�
 // ==========================================================================
 // GetBundleConfig 读某商品的捆绑配置（含每项 SKU 快照与真源可用量）。
 func (h *ProductHandle) GetBundleConfig(c *gin.Context) {
-	req := &productdto.GetBundleConfigReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.GetBundleConfigReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetBundleConfig(c.Request.Context(), req)
@@ -1339,9 +1296,8 @@ func (h *ProductHandle) GetBundleConfig(c *gin.Context) {
 
 // SetBundleConfig 保存捆绑配置（整体替换）。
 func (h *ProductHandle) SetBundleConfig(c *gin.Context) {
-	req := &productdto.SetBundleConfigReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.SetBundleConfigReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：配置变更要落主数据变更记录，操作人只能来自会话。
@@ -1356,9 +1312,8 @@ func (h *ProductHandle) SetBundleConfig(c *gin.Context) {
 
 // ValidateBundleSelection 整单硬校验 + 算价（纯读，不写库）。
 func (h *ProductHandle) ValidateBundleSelection(c *gin.Context) {
-	req := &productdto.ValidateBundleSelectionReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.ValidateBundleSelectionReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.ValidateBundleSelection(c.Request.Context(), req)
@@ -1371,9 +1326,8 @@ func (h *ProductHandle) ValidateBundleSelection(c *gin.Context) {
 
 // ListBundleSKUs 可挑选的 SKU 清单（跨商品，后台配置器的下拉数据源）。
 func (h *ProductHandle) ListBundleSKUs(c *gin.Context) {
-	req := &productdto.ListBundleSKUReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.ListBundleSKUReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListBundleSKUs(c.Request.Context(), req)
@@ -1408,8 +1362,12 @@ func (h *ProductPageHandle) ProductPricingPage(c *gin.Context) {
 
 // ProductPricingPreview 试算（不落库、不留痕），结果渲染回同一页。
 func (h *ProductPageHandle) ProductPricingPreview(c *gin.Context) {
-	form, req := readPricingForm(c)
-	preview, err := h.products.PreviewPricing(c.Request.Context(), &productdto.PricingPreviewReq{PricingRuleReq: *req})
+	req, ok := binding.Form[productdto.PricingFormReq](c)
+	if !ok {
+		return
+	}
+	form := req.Form()
+	preview, err := h.products.PreviewPricing(c.Request.Context(), &productdto.PricingPreviewReq{PricingRuleReq: *req.Rule()})
 	if err != nil {
 		// 试算失败不重定向：用户填的表单要留在眼前，否则「哪一项填错了」无从改起。
 		// 试算失败的原文（含 PG 原文）只进日志，页面上给可读文案。
@@ -1455,84 +1413,6 @@ func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productd
 	adminui.RenderPage(c, productPricingPageTemplate, view)
 }
 
-// readPricingForm 读定价表单并归一为 service 入参。
-//
-// 规则参数只在规则类型对应的输入框里取（与标签页同一手法）：
-// 「只接受内置参数」在后台这一侧同样成立，多余输入不会进 params。
-// 数字解析失败时给空对象，由 service 给出统一的可读错误，这里不重复一套校验。
-func readPricingForm(c *gin.Context) (form productdto.PricingForm, req *productdto.PricingRuleReq) {
-	form = productdto.PricingForm{
-		ProjectID:  strings.TrimSpace(c.PostForm("projectId")),
-		RuleType:   strings.TrimSpace(c.PostForm("ruleType")),
-		Multiplier: strings.TrimSpace(c.PostForm("multiplier")),
-		Amount:     strings.TrimSpace(c.PostForm("amount")),
-		Margin:     strings.TrimSpace(c.PostForm("margin")),
-		Rounding:   strings.TrimSpace(c.PostForm("rounding")),
-		Scope:      strings.TrimSpace(c.PostForm("scope")),
-		TargetID:   strings.TrimSpace(c.PostForm("targetId")),
-		Status:     strings.TrimSpace(c.PostForm("status")),
-		Keyword:    strings.TrimSpace(c.PostForm("keyword")),
-		CategoryID: strings.TrimSpace(c.PostForm("categoryId")),
-		BrandID:    strings.TrimSpace(c.PostForm("brandId")),
-		TagID:      strings.TrimSpace(c.PostForm("tagId")),
-		Note:       strings.TrimSpace(c.PostForm("note")),
-	}
-	req = &productdto.PricingRuleReq{
-		ProjectID:  form.ProjectID,
-		RuleType:   form.RuleType,
-		Rounding:   form.Rounding,
-		Scope:      form.Scope,
-		TargetID:   form.TargetID,
-		Status:     form.Status,
-		Keyword:    form.Keyword,
-		CategoryID: form.CategoryID,
-		BrandID:    form.BrandID,
-		TagID:      form.TagID,
-		RuleParams: pricingParamsFromForm(form),
-	}
-	return form, req
-}
-
-// pricingRuleReqFromForm 读「按规则改价」表单并套上指定的作用范围。
-//
-// 两个入口共用：独立定价页（/admin/product-pricing/preview|apply，范围由表单的 scope /
-// targetId 决定）与商品列表的批量改价抽屉（逐个商品套 scope=product + 该商品 id）。
-// 规则类型、规则参数、尾数的解析只有一份（readPricingForm + pricingParamsFromForm）——
-// 抽屉若另抄一份，最先出问题的是「填了 amount 却被当成 multiplier」这类静默错配。
-func pricingRuleReqFromForm(c *gin.Context, scope, targetID string) (req *productdto.PricingRuleReq) {
-	_, req = readPricingForm(c)
-	req.Scope = scope
-	req.TargetID = targetID
-	return req
-}
-
-// pricingParamsFromForm 按规则类型从表单拼规则参数（只取本类型用得到的键）。
-func pricingParamsFromForm(form productdto.PricingForm) json.RawMessage {
-	params := map[string]any{}
-	switch form.RuleType {
-	case productenums.PricingRuleCostMultiple:
-		// 空串 = 本次不给这个参数（与既有的「非空才解析」前置判据同义）；非法数字**不给键** ——
-		// service 会统一报「参数缺失或不是数字」，这里不重复一套校验（见函数头注释）。
-		// NaN / 正负无穷归入非法：它们进了算价会得到一整批 NaN 价格。
-		if v, err := productdto.OptFloat("multiplier", form.Multiplier); err == nil && v != nil {
-			params["multiplier"] = *v
-		}
-	case productenums.PricingRuleCostMarkup, productenums.PricingRuleFixedPrice:
-		if v, err := productdto.OptFloat("amount", form.Amount); err == nil && v != nil {
-			params["amount"] = *v
-		}
-	case productenums.PricingRuleTargetMargin:
-		if v, err := productdto.OptFloat("margin", form.Margin); err == nil && v != nil {
-			params["margin"] = *v
-		}
-	}
-	raw, err := json.Marshal(params)
-	if err != nil {
-		return json.RawMessage("{}")
-	}
-	return raw
-}
-
 // ==========================================================================
 // 定价接口：JSON 入参、pkg/response 出参、消息取 enums。
 // 本层只做绑定、覆盖操作人与转发：规则校验、算价、落库与留痕一律在 service。
@@ -1549,9 +1429,8 @@ func (h *ProductHandle) ListPricingRoundingOptions(c *gin.Context) {
 
 // PreviewPricing 按规则试算（不落库、不留痕）。
 func (h *ProductHandle) PreviewPricing(c *gin.Context) {
-	req := &productdto.PricingPreviewReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.PricingPreviewReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.PreviewPricing(c.Request.Context(), req)
@@ -1575,26 +1454,9 @@ func (h *ProductHandle) PreviewPricing(c *gin.Context) {
 // ruleParams 是 json.RawMessage，DOM 里只有字符串，{"multiplier":"1.2"} 会被
 // ruleFloat 当成 "1.2" 去 ParseFloat（带引号）而判成「不是数字」。
 func (h *ProductHandle) ApplyPricing(c *gin.Context) {
-	req := &productPricingApplyReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productPricingApplyReq](c)
+	if !ok {
 		return
-	}
-	form := productdto.PricingForm{
-		ProjectID:  req.ProjectID,
-		RuleType:   req.RuleType,
-		Multiplier: req.Multiplier,
-		Amount:     req.Amount,
-		Margin:     req.Margin,
-		Rounding:   req.Rounding,
-		Scope:      req.Scope,
-		TargetID:   req.TargetID,
-		Status:     req.Status,
-		Keyword:    req.Keyword,
-		CategoryID: req.CategoryID,
-		BrandID:    req.BrandID,
-		TagID:      req.TagID,
-		Note:       req.Note,
 	}
 	res, err := h.svc.ApplyPricing(c.Request.Context(), &productdto.PricingApplyReq{
 		PricingRuleReq: productdto.PricingRuleReq{
@@ -1602,7 +1464,7 @@ func (h *ProductHandle) ApplyPricing(c *gin.Context) {
 			Scope: req.Scope, TargetID: req.TargetID,
 			Status: req.Status, Keyword: req.Keyword, CategoryID: req.CategoryID,
 			BrandID: req.BrandID, TagID: req.TagID,
-			RuleParams: pricingParamsFromForm(form),
+			RuleParams: productdto.PricingParams(req.RuleType, req.Multiplier, req.Amount, req.Margin),
 		},
 		Note: strings.TrimSpace(req.Note),
 		// 操作人取自会话，客户端传什么都不作数（留痕的操作人不可伪造）。
@@ -1651,9 +1513,8 @@ type productPricingApplyReq struct {
 // 判定全在 pricingParamsFromForm —— 在这里另写一套装配，就会出现「抽屉填的 amount 被当成
 // multiplier」这类只在一个入口发生的错。
 func (h *ProductHandle) BulkPricing(c *gin.Context) {
-	req := &productBulkPricingReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productBulkPricingReq](c)
+	if !ok {
 		return
 	}
 	// 归一口径与其余批量端点同一个纯函数：去空白 / 去重 / 上限 MaxIDs，超限整批拒绝
@@ -1669,15 +1530,6 @@ func (h *ProductHandle) BulkPricing(c *gin.Context) {
 			Key: productenums.BulkPricingNoneSelected, Fallback: "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"}))
 		return
 	}
-	form := productdto.PricingForm{
-		ProjectID:  req.ProjectID,
-		RuleType:   req.RuleType,
-		Multiplier: req.Multiplier,
-		Amount:     req.Amount,
-		Margin:     req.Margin,
-		Rounding:   req.Rounding,
-		Note:       req.Note,
-	}
 	res, err := h.svc.BulkApplyPricing(c.Request.Context(), &productdto.BulkPricingReq{
 		IDs:        ids,
 		ProjectID:  req.ProjectID,
@@ -1688,7 +1540,7 @@ func (h *ProductHandle) BulkPricing(c *gin.Context) {
 			RuleType:   req.RuleType,
 			Rounding:   req.Rounding,
 			Scope:      productenums.PricingScopeProduct,
-			RuleParams: pricingParamsFromForm(form),
+			RuleParams: productdto.PricingParams(req.RuleType, req.Multiplier, req.Amount, req.Margin),
 		},
 	})
 	if err != nil {
@@ -1743,9 +1595,8 @@ func productBulkPricedView(c *gin.Context, res *productdto.BulkPricingResult) pr
 
 // ListPriceAdjustments 调价留痕列表（按工程）。
 func (h *ProductHandle) ListPriceAdjustments(c *gin.Context) {
-	req := &productdto.ListPriceAdjustmentReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.ListPriceAdjustmentReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListPriceAdjustments(c.Request.Context(), req)
@@ -1758,9 +1609,8 @@ func (h *ProductHandle) ListPriceAdjustments(c *gin.Context) {
 
 // GetPriceAdjustment 单批次留痕详情（含逐变体「原价 → 新价」明细）。
 func (h *ProductHandle) GetPriceAdjustment(c *gin.Context) {
-	req := &productdto.GetPriceAdjustmentReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.GetPriceAdjustmentReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetPriceAdjustment(c.Request.Context(), req)

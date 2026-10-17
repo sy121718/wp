@@ -6,6 +6,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
 	"net/http"
@@ -256,9 +257,8 @@ func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.
 // ==========================================================================
 
 func (h *ProductHandle) CreateCategory(c *gin.Context) {
-	req := &productdto.CreateCategoryReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.CreateCategoryReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.CreateCategory(c.Request.Context(), req)
@@ -271,9 +271,8 @@ func (h *ProductHandle) CreateCategory(c *gin.Context) {
 
 // UpdateCategory 修改分类（改名 / 换父级 / 排序 / SEO 字段）。
 func (h *ProductHandle) UpdateCategory(c *gin.Context) {
-	req := &productdto.UpdateCategoryReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.UpdateCategoryReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.UpdateCategory(c.Request.Context(), req)
@@ -286,9 +285,8 @@ func (h *ProductHandle) UpdateCategory(c *gin.Context) {
 
 // GetCategory 分类详情。
 func (h *ProductHandle) GetCategory(c *gin.Context) {
-	req := &productdto.GetCategoryReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.GetCategoryReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetCategory(c.Request.Context(), req)
@@ -301,9 +299,8 @@ func (h *ProductHandle) GetCategory(c *gin.Context) {
 
 // ListCategories 分类树。
 func (h *ProductHandle) ListCategories(c *gin.Context) {
-	req := &productdto.ListCategoryReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.ListCategoryReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListCategories(c.Request.Context(), req)
@@ -316,9 +313,8 @@ func (h *ProductHandle) ListCategories(c *gin.Context) {
 
 // DeleteCategory 删除分类（有子级或被商品引用时拒绝）。
 func (h *ProductHandle) DeleteCategory(c *gin.Context) {
-	req := &productdto.DeleteCategoryReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DeleteCategoryReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.DeleteCategory(c.Request.Context(), req); err != nil {
@@ -350,9 +346,8 @@ func (h *ProductHandle) BulkDeleteBrands(c *gin.Context) {
 
 // **超限整批拒绝，不静默截断** —— 截断会让操作者以为「勾的全删了」，而实际只删了前 200 条。
 func (h *ProductHandle) bulkDeleteByIDs(c *gin.Context, del func(context.Context, *productdto.BulkDeleteReq) (*productdto.BulkResult, error)) {
-	req := &productdto.BulkDeleteReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.BulkDeleteReq](c)
+	if !ok {
 		return
 	}
 	ids, ok := productBulkIDs(c, req.IDs)
@@ -370,9 +365,8 @@ func (h *ProductHandle) bulkDeleteByIDs(c *gin.Context, del func(context.Context
 
 // CreateBrand 新建品牌。
 func (h *ProductHandle) CreateBrand(c *gin.Context) {
-	req := &productdto.CreateBrandReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.CreateBrandReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.CreateBrand(c.Request.Context(), req)
@@ -385,9 +379,8 @@ func (h *ProductHandle) CreateBrand(c *gin.Context) {
 
 // UpdateBrand 修改品牌。
 func (h *ProductHandle) UpdateBrand(c *gin.Context) {
-	req := &productdto.UpdateBrandReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.UpdateBrandReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.UpdateBrand(c.Request.Context(), req)
@@ -400,9 +393,8 @@ func (h *ProductHandle) UpdateBrand(c *gin.Context) {
 
 // GetBrand 品牌详情。
 func (h *ProductHandle) GetBrand(c *gin.Context) {
-	req := &productdto.GetBrandReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.GetBrandReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetBrand(c.Request.Context(), req)
@@ -415,9 +407,8 @@ func (h *ProductHandle) GetBrand(c *gin.Context) {
 
 // ListBrands 品牌列表。
 func (h *ProductHandle) ListBrands(c *gin.Context) {
-	req := &productdto.ListBrandReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.ListBrandReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListBrands(c.Request.Context(), req)
@@ -430,9 +421,8 @@ func (h *ProductHandle) ListBrands(c *gin.Context) {
 
 // DeleteBrand 删除品牌（被商品引用时拒绝）。
 func (h *ProductHandle) DeleteBrand(c *gin.Context) {
-	req := &productdto.DeleteBrandReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DeleteBrandReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.DeleteBrand(c.Request.Context(), req); err != nil {

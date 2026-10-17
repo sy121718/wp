@@ -19,6 +19,7 @@ import (
 	seoscore "go_wp/internal/seo"
 	"go_wp/internal/seo/scoring"
 	"go_wp/internal/shell"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/response"
@@ -88,40 +89,38 @@ func scoreEmptyView(c *gin.Context, empty productservice.SeoScoreEmpty) productd
 
 // ProductScorePanel 商品详情页的编辑期评分（POST /admin/products/seo-score）。
 func (h *ProductPageHandle) ProductScorePanel(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindProduct,
-		strings.TrimSpace(c.PostForm("productId")), projectID)
-	if in == nil {
-		// 判据是 in == nil（「没取到实体」），**不是** emptyView.OK ——
-		// 成功路径返回的也是零值 productdto.ScoreView（OK=false），用它分流会把每次成功都判成空态。
-		renderScoreView(c, emptyView)
+	req, ok := binding.Form[productdto.ScorePanelReq](c)
+	if !ok {
 		return
 	}
-	h.renderEntityScore(c, in, projectID, selfID)
+	h.renderScorePanel(c, scoring.KindProduct, req.ProductID, req.ProjectID)
 }
 
 // ProductCategoryScorePanel 商品分类页的编辑期评分（POST /admin/product-categories/seo-score）。
 func (h *ProductPageHandle) ProductCategoryScorePanel(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindCategory,
-		strings.TrimSpace(c.PostForm("id")), projectID)
-	if in == nil {
-		// 判据是 in == nil（「没取到实体」），**不是** emptyView.OK ——
-		// 成功路径返回的也是零值 productdto.ScoreView（OK=false），用它分流会把每次成功都判成空态。
-		renderScoreView(c, emptyView)
+	req, ok := binding.Form[productdto.ScorePanelReq](c)
+	if !ok {
 		return
 	}
-	h.renderEntityScore(c, in, projectID, selfID)
+	h.renderScorePanel(c, scoring.KindCategory, req.ID, req.ProjectID)
 }
 
 // ProductBrandScorePanel 品牌页的编辑期评分（POST /admin/product-brands/seo-score）。
 func (h *ProductPageHandle) ProductBrandScorePanel(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindBrand,
-		strings.TrimSpace(c.PostForm("id")), projectID)
+	req, ok := binding.Form[productdto.ScorePanelReq](c)
+	if !ok {
+		return
+	}
+	h.renderScorePanel(c, scoring.KindBrand, req.ID, req.ProjectID)
+}
+
+// renderScorePanel 三个评分面板的唯一流程：取输入 → 取不到渲染空态 → 取到出片段。
+//
+// 判据是 in == nil（「没取到实体」），**不是** emptyView.OK —— 成功路径返回的也是零值
+// productdto.ScoreView（OK=false），用它分流会把每次成功都判成空态。
+func (h *ProductPageHandle) renderScorePanel(c *gin.Context, kind scoring.PageKind, id, projectID string) {
+	in, selfID, emptyView := h.scoreInputOf(c, kind, id, projectID)
 	if in == nil {
-		// 判据是 in == nil（「没取到实体」），**不是** emptyView.OK ——
-		// 成功路径返回的也是零值 productdto.ScoreView（OK=false），用它分流会把每次成功都判成空态。
 		renderScoreView(c, emptyView)
 		return
 	}

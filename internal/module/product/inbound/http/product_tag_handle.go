@@ -9,6 +9,7 @@ import (
 	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
@@ -28,9 +29,8 @@ const productTagsPageTemplate = "admin/product/product_tags.html"
 // ==========================================================================
 
 func (h *ProductHandle) CreateTag(c *gin.Context) {
-	req := &productdto.CreateTagReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.CreateTagReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.CreateTag(c.Request.Context(), req)
@@ -43,9 +43,8 @@ func (h *ProductHandle) CreateTag(c *gin.Context) {
 
 // UpdateTag 修改标签（改名 / 换 slug / 换类型 / 改规则参数 / 排序）。
 func (h *ProductHandle) UpdateTag(c *gin.Context) {
-	req := &productdto.UpdateTagReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.UpdateTagReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.UpdateTag(c.Request.Context(), req)
@@ -58,9 +57,8 @@ func (h *ProductHandle) UpdateTag(c *gin.Context) {
 
 // GetTag 标签详情（含命中商品列表）。
 func (h *ProductHandle) GetTag(c *gin.Context) {
-	req := &productdto.GetTagReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.GetTagReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetTag(c.Request.Context(), req)
@@ -73,9 +71,8 @@ func (h *ProductHandle) GetTag(c *gin.Context) {
 
 // ListTags 标签列表（工程内；每个标签带当前归属数量）。
 func (h *ProductHandle) ListTags(c *gin.Context) {
-	req := &productdto.ListTagReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.ListTagReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListTags(c.Request.Context(), req)
@@ -88,9 +85,8 @@ func (h *ProductHandle) ListTags(c *gin.Context) {
 
 // ListTagProducts 某标签命中的商品（验收 4）。
 func (h *ProductHandle) ListTagProducts(c *gin.Context) {
-	req := &productdto.ListTagProductsReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.ListTagProductsReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListTagProducts(c.Request.Context(), req)
@@ -108,9 +104,8 @@ func (h *ProductHandle) ListTagRuleTypes(c *gin.Context) {
 
 // DeleteTag 删除标签（连同它在商品上的引用一起解绑）。
 func (h *ProductHandle) DeleteTag(c *gin.Context) {
-	req := &productdto.DeleteTagReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DeleteTagReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.DeleteTag(c.Request.Context(), req); err != nil {
@@ -122,9 +117,8 @@ func (h *ProductHandle) DeleteTag(c *gin.Context) {
 
 // RecalcTags 手动触发重算（重算时机之一：可按标签或按工程整体重算）。
 func (h *ProductHandle) RecalcTags(c *gin.Context) {
-	req := &productdto.RecalcTagsReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.RecalcTagsReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.RecalcTags(c.Request.Context(), req)

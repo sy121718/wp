@@ -2,16 +2,15 @@ package producthttp
 
 import (
 	"context"
-	"fmt"
 	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -23,17 +22,7 @@ import (
 // 属性分两组形态：**规格属性**（isVariation，参与变体生成）与普通属性（只作展示与筛选）。
 // 属性值行（ProductAttributesValueRows）是 HTMX 片段，商品编辑页与新建页都复用它。
 
-// attrRowPrefix 属性值行的表单字段前缀（values[0].id → "values[0]."）。
-//
 // 接口面（原先的 product_handle.go 属性段）在前，后台页面在后。
-
-const attrRowPrefix = "values["
-
-// formParseMemory 解析提交表单时的内存上限（与 gin 的 MaxMultipartMemory 默认值一致）。
-//
-// 手工调 ParseMultipartForm 的地方共用它：gin 的 PostForm 缓存是惰性填充的，
-// 直接读 c.Request.PostForm 在未触发解析时是空 map。
-const formParseMemory = 32 << 20
 
 // ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
 // productAttributesPageTemplate 属性库整页模板名。
@@ -114,9 +103,12 @@ func attributeListFilterQuery(projectID, keyword, variation string) url.Values {
 //
 // 行编辑只重建原始表单值与位置；落库时的归一 / 去重 / 排序仍由 service 负责。
 func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) {
-	rows := attrEchoRowsFromForm(c)
-	action := strings.TrimSpace(c.PostForm("action"))
-	switch action {
+	req, ok := binding.Form[productdto.AttributeRowsFormReq](c)
+	if !ok {
+		return
+	}
+	rows := req.Rows
+	switch strings.TrimSpace(req.Action) {
 	case "add":
 		index := 0
 		if len(rows) > 0 {
@@ -124,7 +116,7 @@ func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) {
 		}
 		rows = append(rows, productdto.AttrValueFormRow{Index: index, Enabled: true})
 	case "remove":
-		if idx := parseIntOr(c.PostForm("removeIndex"), -1); idx >= 0 && idx < len(rows) {
+		if idx := req.RemoveIndexValue(); idx >= 0 && idx < len(rows) {
 			rows = append(rows[:idx], rows[idx+1:]...)
 		}
 	}
@@ -132,7 +124,7 @@ func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) {
 	if len(rows) == 0 {
 		rows = []productdto.AttrValueFormRow{{Enabled: true}}
 	}
-	groupID := strings.TrimSpace(c.PostForm("groupId"))
+	groupID := strings.TrimSpace(req.GroupID)
 	if groupID == "" {
 		groupID = "new"
 	}
@@ -146,63 +138,6 @@ func attrRowsFromResp(rows []productdto.AttributeValueResp) []productdto.AttrVal
 			Index: i, ID: row.ID, Key: row.Key, Label: row.Label,
 			Sort: strconv.Itoa(row.Sort), Enabled: row.Enabled,
 		})
-	}
-	return out
-}
-
-// attrFormRowIndexes 按数值顺序排列提交的行索引，避免 map 遍历顺序改变行序。
-func attrFormRowIndexes(vals url.Values) []int {
-	indexes := make([]int, 0, 8)
-	seen := make(map[int]bool)
-	for key := range vals {
-		if !strings.HasPrefix(key, attrRowPrefix) {
-			continue
-		}
-		rest := key[len(attrRowPrefix):]
-		close := strings.IndexByte(rest, ']')
-		if close <= 0 || !strings.HasPrefix(rest[close:], "].") {
-			continue
-		}
-		idx, err := strconv.Atoi(rest[:close])
-		if err != nil || idx < 0 || seen[idx] {
-			continue
-		}
-		seen[idx] = true
-		indexes = append(indexes, idx)
-	}
-	sort.Ints(indexes)
-	return indexes
-}
-
-// attrEchoRowsFromForm 从当前表单的 values[n].* 重建有序行（值编辑器的 add / remove 用）。
-//
-// 行编辑只重建**原始值与位置**：归一 / 去重 / 排序仍由 service 在落库时决定。
-func attrEchoRowsFromForm(c *gin.Context) []productdto.AttrValueFormRow {
-	vals := attrFormValues(c)
-	rows := make([]productdto.AttrValueFormRow, 0)
-	for _, idx := range attrFormRowIndexes(vals) {
-		base := fmt.Sprintf("values[%d].", idx)
-		rows = append(rows, productdto.AttrValueFormRow{
-			Index: idx, ID: vals.Get(base + "id"), Key: vals.Get(base + "key"),
-			Label: vals.Get(base + "label"), Sort: vals.Get(base + "sort"),
-			Enabled: formValueHas(vals, base+"enabled", "1"),
-		})
-	}
-	return rows
-}
-
-// splitIDs 解析「逗号 / 空白 / 换行分隔」的 id 串（后台文本框输入）。
-//
-// 与 values[n] 数组表单不同，商品页的属性引用是一个文本框：粘一行 id 即可绑定，
-// 避免为「勾选 N 个属性组」再造一套动态表单。
-func splitIDs(raw string) []string {
-	out := []string{}
-	for _, part := range strings.FieldsFunc(raw, func(r rune) bool {
-		return r == ',' || r == '，' || r == ' ' || r == '\n' || r == '\t' || r == '\r'
-	}) {
-		if part = strings.TrimSpace(part); part != "" {
-			out = append(out, part)
-		}
 	}
 	return out
 }
@@ -221,42 +156,6 @@ func splitIDs(raw string) []string {
 // （与 values_form / group_form 两个片段同形）。
 func attrRowsCtxData(c *gin.Context, groupID string, rows []productdto.AttrValueFormRow) gin.H {
 	return adminui.PrepareBare(c, gin.H{"GroupID": groupID, "Rows": rows})
-}
-
-// attrRowsFromForm 从表单的 values[n].* 字段构造写入请求（空行忽略、数值解析）。
-//
-// n 不保证连续（删了中间一行再提交），故先收集出现过的索引再按**数值升序**取行，
-// 而不是按 0..n-1 硬编码、也不是按 map 的遍历顺序 —— PostForm 是 map，
-// Go 的 range 顺序随机，直接按遍历顺序收集会让「删中间一行再提交」后的行序随机跳变
-// （实测：同一份表单两次提交得到不同的行序，编辑器的行会莫名其妙换位）。
-func attrRowsFromForm(c *gin.Context) []productdto.AttributeValueReq {
-	// 显式解析表单：gin 的 PostForm 缓存由 GetPostForm 系列惰性填充，
-	// 直接读 c.Request.PostForm 在未触发解析时是空 map（实测 HTMX 片段路由）。
-	// 这里自己兜一次 ParseForm，语义与 gin 的 PostForm 一致（application/x-www-form-urlencoded）。
-	if c.Request.PostForm == nil {
-		_ = c.Request.ParseForm()
-	}
-	reqs := c.Request.PostForm
-	indexes := attrFormRowIndexes(reqs)
-	rows := make([]productdto.AttributeValueReq, 0, len(indexes))
-	for _, idx := range indexes {
-		base := fmt.Sprintf("values[%d].", idx)
-		label := strings.TrimSpace(reqs.Get(base + "label"))
-		id := strings.TrimSpace(reqs.Get(base + "id"))
-		key := strings.TrimSpace(reqs.Get(base + "key"))
-		if label == "" && id == "" && key == "" {
-			continue
-		}
-		// enabled 也是「同名隐藏域打底 + 复选框」（hidden "0" 恒在，勾选时再追加 "1"）：
-		// 判据必须是**值里存在 "1"**，按「字段是否存在」判会恒真、禁用永远不生效；
-		// 字段完全没出现时保持 nil，交由 service 兜底为启用（见 attrFormOptionalChecked）。
-		rows = append(rows, productdto.AttributeValueReq{
-			ID: id, Key: key, Label: label,
-			Sort:    parseIntOr(reqs.Get(base+"sort"), 0),
-			Enabled: attrFormOptionalChecked(reqs, base+"enabled"),
-		})
-	}
-	return rows
 }
 
 func parseIntOr(s string, fallback int) int {
@@ -376,74 +275,6 @@ func attrRowDrawerForms(c *gin.Context, projectID string,
 	return group, values
 }
 
-// formValueHas 判定同名多值里是否存在 want。
-//
-// **必须遍历全部值，不能用 url.Values.Get**：Get 返回第一个，而「同名隐藏域打底 +
-// 同名复选框」的形态（hidden "0" 在前、checkbox "1" 在后，见 product_attribute_rows.html）
-// 让 Get 恒取到 "0" —— 于是「参与变体 / 启用」这类勾选**永远为假**，而且不报任何错：
-// 页面照样 200、值照样落库，只是用户的勾选被静默丢弃。属性页的勾选字段全部走这里。
-func formValueHas(vals url.Values, name, want string) bool {
-	for _, v := range vals[name] {
-		if strings.TrimSpace(v) == want {
-			return true
-		}
-	}
-	return false
-}
-
-// attrFormValues 这次请求的**全部**表单值（gin 的 PostForm 只给单值口）。
-//
-// 自己兜一次解析：gin 的 PostForm 缓存是惰性填充的，直接读 c.Request.PostForm 在未触发
-// 解析时是空 map（与 attrRowsFromForm 同一手法、同一理由）。
-func attrFormValues(c *gin.Context) url.Values {
-	if c == nil || c.Request == nil {
-		return url.Values{}
-	}
-	if c.Request.PostForm == nil {
-		_ = c.Request.ParseMultipartForm(formParseMemory)
-	}
-	return c.Request.PostForm
-}
-
-// attrFormChecked 表单里「勾选态」的判据：提交里存在值等于 "1" 的那一项。
-func attrFormChecked(c *gin.Context, name string) bool {
-	return formValueHas(attrFormValues(c), name, "1")
-}
-
-// attrFormOptionalChecked 同上，但**字段完全没出现**时返回 nil（「没给」≠「明确没勾」）。
-//
-// 供 values[n].enabled 这类「缺省即启用」的字段用：service 对 Enabled == nil 兜底为 true
-// （sanitizeAttributeValues），所以「表单没带这个字段」必须保持 nil，不能压成 false ——
-// 压成 false 会让不经浏览器表单的调用方（API / 脚本）提交的属性值全部变成「已禁用」。
-func attrFormOptionalChecked(vals url.Values, name string) *bool {
-	if _, ok := vals[name]; !ok {
-		return nil
-	}
-	v := formValueHas(vals, name, "1")
-	return &v
-}
-
-// 抽屉是勾选列表（同名多值，浏览器逐项提交），同时兼容老式的「逗号分隔单值」形态
-// （接口 / 脚本路径）—— 两种形态都归一到 splitIDs 解析（分隔符与去空白只有一份规则）。
-func attributeIDsFromForm(c *gin.Context) []string {
-	values := c.PostFormArray("attributeIds")
-	if len(values) == 0 {
-		return splitIDs(c.PostForm("attributeIds"))
-	}
-	out := make([]string, 0, len(values))
-	seen := make(map[string]bool, len(values))
-	for _, raw := range values {
-		for _, id := range splitIDs(raw) {
-			if id == "" || seen[id] {
-				continue
-			}
-			seen[id] = true
-			out = append(out, id)
-		}
-	}
-	return out
-}
-
 // attributeOptions 属性组勾选列表（新建抽屉 / 编辑页；本批起不再让人手打 UUID）。
 //
 // 取数与标签口径（名字 + 标识 key，只给名字会在同名属性组之间选错）唯一一份在
@@ -472,9 +303,8 @@ func (h *ProductPageHandle) attributeOptions(ctx context.Context, projectID stri
 // ==========================================================================
 // CreateAttribute 新建属性组（可同时带初始属性值）。
 func (h *ProductHandle) CreateAttribute(c *gin.Context) {
-	req := &productdto.CreateAttributeReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.CreateAttributeReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.CreateAttribute(c.Request.Context(), req)
@@ -487,9 +317,8 @@ func (h *ProductHandle) CreateAttribute(c *gin.Context) {
 
 // UpdateAttribute 修改属性组本身（值走 SetAttributeValues）。
 func (h *ProductHandle) UpdateAttribute(c *gin.Context) {
-	req := &productdto.UpdateAttributeReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.UpdateAttributeReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.UpdateAttribute(c.Request.Context(), req)
@@ -502,9 +331,8 @@ func (h *ProductHandle) UpdateAttribute(c *gin.Context) {
 
 // SetAttributeValues 整体保存属性值（全量替换：请求里没有的值被删除）。
 func (h *ProductHandle) SetAttributeValues(c *gin.Context) {
-	req := &productdto.SetAttributeValuesReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.SetAttributeValuesReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.SetAttributeValues(c.Request.Context(), req)
@@ -517,9 +345,8 @@ func (h *ProductHandle) SetAttributeValues(c *gin.Context) {
 
 // GetAttribute 属性组详情。
 func (h *ProductHandle) GetAttribute(c *gin.Context) {
-	req := &productdto.GetAttributeReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.GetAttributeReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetAttribute(c.Request.Context(), req)
@@ -532,9 +359,8 @@ func (h *ProductHandle) GetAttribute(c *gin.Context) {
 
 // ListAttributes 属性组列表。
 func (h *ProductHandle) ListAttributes(c *gin.Context) {
-	req := &productdto.ListAttributeReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.Query[productdto.ListAttributeReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListAttributes(c.Request.Context(), req)
@@ -547,9 +373,8 @@ func (h *ProductHandle) ListAttributes(c *gin.Context) {
 
 // DeleteAttribute 删除属性组（被商品引用时拒绝）。
 func (h *ProductHandle) DeleteAttribute(c *gin.Context) {
-	req := &productdto.DeleteAttributeReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	req, ok := binding.JSON[productdto.DeleteAttributeReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.DeleteAttribute(c.Request.Context(), req); err != nil {

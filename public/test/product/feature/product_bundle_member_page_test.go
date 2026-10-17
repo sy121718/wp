@@ -14,7 +14,6 @@ import (
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -233,12 +232,13 @@ func TestBundleMemberSourceResolveEndpoint(t *testing.T) {
 	if warehouseSKU == "" {
 		t.Fatalf("该仓里没有变体 %s 的货（创建商品时应自动建行）", v.ID)
 	}
-	rec := postForm(engine, "/admin/products/bundle/members/resolve", url.Values{
-		"projectId":       {f.projectID},
-		"productId":       {bundle.ID},
-		"source":          {productenums.BundleSourceWarehouse},
-		"sourceWarehouse": {f.warehouse.ID},
-		"warehouseSku":    {warehouseSKU, "NOPE-10"},
+	// 端点收 JSON（与页面 JS 同一套字段名）；表单编码在 245 之前就已被移除。
+	rec := postJSON(t, engine, "/admin/products/bundle/members/resolve", map[string]any{
+		"projectId":     f.projectID,
+		"productId":     bundle.ID,
+		"source":        productenums.BundleSourceWarehouse,
+		"warehouseId":   f.warehouse.ID,
+		"warehouseSkus": []string{warehouseSKU, "NOPE-10"},
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("解析应 200，实际 %d：%s", rec.Code, rec.Body.String())
@@ -325,12 +325,14 @@ func TestBundleMemberSourceResolveEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建来源商品失败: %v", err)
 	}
-	missing := postForm(engine, "/admin/products/bundle/members/resolve", url.Values{
-		"projectId":        {f.projectID},
-		"productId":        {bundle.ID},
-		"source":           {productenums.BundleSourceAttributes},
-		"sourceProductId":  {tasteSrc.ID},
-		"attr:" + color.ID: {color.Values[0].ID},
+	missing := postJSON(t, engine, "/admin/products/bundle/members/resolve", map[string]any{
+		"projectId":       f.projectID,
+		"productId":       bundle.ID,
+		"source":          productenums.BundleSourceAttributes,
+		"sourceProductId": tasteSrc.ID,
+		"selections": []map[string]any{
+			{"attributeId": color.ID, "valueIds": []string{color.Values[0].ID}},
+		},
 	})
 	if missing.Code != http.StatusOK {
 		t.Fatalf("属性来源解析应 200，实际 %d：%s", missing.Code, missing.Body.String())

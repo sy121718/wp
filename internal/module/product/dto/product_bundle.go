@@ -12,6 +12,8 @@
 // 用 0 表示「不设上限」比 null 少一层分支。
 package productdto
 
+import "net/url"
+
 import json "go_wp/pkg/jsonx"
 
 // —— 服务端护栏常量 ——
@@ -189,22 +191,30 @@ type BundleSelectedItem struct {
 //	                并逐条回带原因（BundleMemberNotOnProduct，提示先去商品上生成该规格的变体）。
 type ResolveBundleMembersReq struct {
 	// ProductID 捆绑容器（成员挂到它身上）。
-	ProductID string `json:"productId" binding:"required"`
+	ProductID string `json:"productId" form:"productId" binding:"required"`
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
-	ProjectID string `json:"projectId"`
+	ProjectID string `json:"projectId" form:"projectId"`
 	// Source 来源（productdto 之外只认 productenums.BundleSource* 三个值）。
-	Source string `json:"source"`
+	Source string `json:"source" form:"source"`
 	// SourceProductID 来源商品（product / attributes 两种来源必填）。
-	SourceProductID string `json:"sourceProductId"`
+	SourceProductID string `json:"sourceProductId" form:"sourceProductId"`
 	// WarehouseID / WarehouseSKUs 仓库来源：仓 + 该仓的仓库 SKU 编码（服务端按
 	// (仓库, SKU) 复核，前端提交的只是线索 —— 与新建商品「从仓库选」同一口径）。
-	WarehouseID   string   `json:"warehouseId"`
-	WarehouseSKUs []string `json:"warehouseSkus"`
+	WarehouseID   string   `json:"warehouseId" form:"sourceWarehouse"`
+	WarehouseSKUs []string `json:"warehouseSkus" form:"warehouseSku"`
 	// Selections 属性组合来源的勾选（属性组 id → 属性值 id，多值）。
-	Selections []VariantSelectionReq `json:"selections"`
+	//
+	// 表单里没有对应键：页面按 attr:<属性组 id> 提交，由 BindForm 收。
+	Selections []VariantSelectionReq `json:"selections" form:"-"`
 	// ExistingVariantIDs 前端清单里已有的成员变体 id：服务端据此去重（同一变体只出现一次），
 	// 前端提交的形状一律不作数 —— 它只影响「哪些行不再追加」。
-	ExistingVariantIDs []string `json:"existingVariantIds"`
+	ExistingVariantIDs []string `json:"existingVariantIds" form:"existingVariantId"`
+}
+
+// BindForm 收表单里按 attr: 前缀提交的属性组合勾选（页面「解析成员」入口）。
+func (r *ResolveBundleMembersReq) BindForm(vals url.Values) error {
+	r.Selections = SelectionsFromForm(vals)
+	return nil
 }
 
 // BundleMemberDraft 解析出的一条候选成员（尚未落库；前端把它追加进成员清单）。
