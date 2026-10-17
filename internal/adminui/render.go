@@ -23,8 +23,8 @@ import (
 //
 // 由 dto 视图实现（值接收者，零值即「200 且可缓存」）：
 //
-//	func (v ProductNewPageView) PageStatus() int    { return v.status }
-//	func (v ProductNewPageView) PageNoStore() bool  { return v.Failed }
+//	func (v ProductNewPageResp) PageStatus() int    { return v.status }
+//	func (v ProductNewPageResp) PageNoStore() bool  { return v.Failed }
 //
 // 不实现该接口的视图按「200 + 可缓存」处理 —— 存量 handler 迁移期不必一次改完。
 type PageResult interface {

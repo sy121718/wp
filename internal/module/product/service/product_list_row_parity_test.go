@@ -42,16 +42,16 @@ import (
 // parityWarehousePortStub 页面「归属仓」端口桩（库存列的分仓明细按工程仓库清单展开）。
 type parityWarehousePortStub struct {
 	productcontract.WarehouseOptionsPort
-	options []productdto.WarehouseOptionView
+	options []productdto.WarehouseOptionResp
 }
 
-func (s parityWarehousePortStub) WarehouseOptions(context.Context, string) ([]productdto.WarehouseOptionView, error) {
+func (s parityWarehousePortStub) WarehouseOptions(context.Context, string) ([]productdto.WarehouseOptionResp, error) {
 	return s.options, nil
 }
 
 // WarehouseSKUOptions 列表页还会取「从仓库选」的候选分组：桩给空（本用例的判据不是它）。
-func (s parityWarehousePortStub) WarehouseSKUOptions(context.Context, string, []productdto.WarehouseOptionView) ([]productdto.WarehouseSKUGroupView, error) {
-	return []productdto.WarehouseSKUGroupView{}, nil
+func (s parityWarehousePortStub) WarehouseSKUOptions(context.Context, string, []productdto.WarehouseOptionResp) ([]productdto.WarehouseSKUGroupResp, error) {
+	return []productdto.WarehouseSKUGroupResp{}, nil
 }
 
 // parityStockPortStub 库存端口桩：给了批次一致的库存事实（fillProductStock 的输入）。
@@ -136,7 +136,7 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 		rows: []projectdto.ProjectResp{{ID: projectID, Name: "行对账"}},
 	})
 	s.SetWarehouseOptionsPort(parityWarehousePortStub{
-		options: []productdto.WarehouseOptionView{{ID: parityWarehouseID, Label: "主仓"}},
+		options: []productdto.WarehouseOptionResp{{ID: parityWarehouseID, Label: "主仓"}},
 	})
 	s.SetInventoryService(parityStockPortStub{rows: []inventorydto.ProductWarehouseStock{
 		{ProductID: fx.variantProduct, WarehouseID: parityWarehouseID, WarehouseName: "主仓",

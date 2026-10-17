@@ -26,12 +26,12 @@ import (
 
 // 跨模块形状：本模块页面的选项视图（dto 的重导出，不另造一组等价的定义）。
 type (
-	// WarehouseOptionView 仓库下拉 / 勾选项（含「默认仓」后缀的词条 key）。
-	WarehouseOptionView = productdto.WarehouseOptionView
-	// WarehouseSKUGroupView 一个仓的候选货集合。
-	WarehouseSKUGroupView = productdto.WarehouseSKUGroupView
-	// WarehouseSKUItemView 一个候选货（裸码 + 对方编码）。
-	WarehouseSKUItemView = productdto.WarehouseSKUItemView
+	// WarehouseOptionResp 仓库下拉 / 勾选项（含「默认仓」后缀的词条 key）。
+	WarehouseOptionResp = productdto.WarehouseOptionResp
+	// WarehouseSKUGroupResp 一个仓的候选货集合。
+	WarehouseSKUGroupResp = productdto.WarehouseSKUGroupResp
+	// WarehouseSKUItemResp 一个候选货（裸码 + 对方编码）。
+	WarehouseSKUItemResp = productdto.WarehouseSKUItemResp
 )
 
 // WarehouseOptionsPort 仓库清单与每仓 SKU 候选的只读端口（由库存模块实现）。
@@ -41,10 +41,10 @@ type (
 // 逐字一致。
 type WarehouseOptionsPort interface {
 	// WarehouseOptions 某工程的仓库下拉项（默认仓在最前并标注）。
-	WarehouseOptions(ctx context.Context, projectID string) (out []WarehouseOptionView, err error)
+	WarehouseOptions(ctx context.Context, projectID string) (out []WarehouseOptionResp, err error)
 	// WarehouseSKUOptions 每仓的候选货（迁移 251 的「从仓库选」）。
 	//
 	// warehouses 由调用方传入而不是端口自己再查一次：调用方刚读过同一份仓库清单，
 	// 让端口重查会把一次读取放大成两次往返。
-	WarehouseSKUOptions(ctx context.Context, projectID string, warehouses []WarehouseOptionView) (out []WarehouseSKUGroupView, err error)
+	WarehouseSKUOptions(ctx context.Context, projectID string, warehouses []WarehouseOptionResp) (out []WarehouseSKUGroupResp, err error)
 }

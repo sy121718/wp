@@ -54,7 +54,7 @@ func (f *memberSrcFixture) changeStock(t *testing.T, v *productdto.VariantResp, 
 }
 
 // saveListRaw 以清单为准保存变体（返回结论，不改判失败）。
-func (f *memberSrcFixture) saveListRaw(t *testing.T, productID string, rows []productdto.VariantListRow) (*productdto.SaveVariantListResp, error) {
+func (f *memberSrcFixture) saveListRaw(t *testing.T, productID string, rows []productdto.VariantListResp) (*productdto.SaveVariantListResp, error) {
 	t.Helper()
 	return f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{
 		ProductID: productID, ProjectID: f.projectID, WarehouseID: f.sz.ID,
@@ -102,7 +102,7 @@ func TestVariantDeleteGuardFourReasons(t *testing.T) {
 	f.changeStock(t, movedOnly, inventoryenums.DirectionOut, 2)
 
 	// 清单里一个都不保留 → 四个变体全在删除范围内，四种原因各一条。
-	res, err := f.saveListRaw(t, p.ID, []productdto.VariantListRow{})
+	res, err := f.saveListRaw(t, p.ID, []productdto.VariantListResp{})
 	if err != nil {
 		t.Fatalf("保存空清单应只在逐条跳过里体现（不整批失败），实际报错: %v", err)
 	}

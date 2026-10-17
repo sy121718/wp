@@ -24,11 +24,11 @@ import (
 )
 
 // ProductEditPage 商品编辑整页的读模型（取数编排 + 页级事实）。
-func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (res *productdto.ProductEditPageView, err error) {
-	view := &productdto.ProductEditPageView{
+func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (res *productdto.ProductEditPageResp, err error) {
+	view := &productdto.ProductEditPageResp{
 		Projects:         []projectdto.ProjectResp{},
-		WarehouseOptions: []productdto.WarehouseOptionView{},
-		AttributeOptions: []productdto.AttributeOptionView{},
+		WarehouseOptions: []productdto.WarehouseOptionResp{},
+		AttributeOptions: []productdto.AttributeOptionResp{},
 		Categories:       []*productdto.CategoryResp{},
 		Brands:           []*productdto.BrandResp{},
 		Tags:             []*productdto.TagResp{},

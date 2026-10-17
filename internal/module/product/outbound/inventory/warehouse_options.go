@@ -53,8 +53,8 @@ var _ productcontract.WarehouseOptionsPort = (*Options)(nil)
 //
 // 除展示用的 Label 外还带上 Code 与 Name：列表「库存」列的分仓明细要按**工程仓库清单**
 // 逐仓显示三态（服务端只返回有库存行的仓，「这个仓没有这一行」= 未入库，是页面才知道的事实）。
-func (o *Options) WarehouseOptions(ctx context.Context, projectID string) (out []productdto.WarehouseOptionView, err error) {
-	out = []productdto.WarehouseOptionView{}
+func (o *Options) WarehouseOptions(ctx context.Context, projectID string) (out []productdto.WarehouseOptionResp, err error) {
+	out = []productdto.WarehouseOptionResp{}
 	if o.svc == nil || strings.TrimSpace(projectID) == "" {
 		return out, nil
 	}
@@ -66,7 +66,7 @@ func (o *Options) WarehouseOptions(ctx context.Context, projectID string) (out [
 		if w == nil {
 			continue
 		}
-		out = append(out, productdto.WarehouseOptionView{
+		out = append(out, productdto.WarehouseOptionResp{
 			ID:                    w.ID,
 			Code:                  w.Code,
 			Name:                  w.Name,
@@ -83,8 +83,8 @@ func (o *Options) WarehouseOptions(ctx context.Context, projectID string) (out [
 //
 // 逐仓取：一次取全库再在内存分组会把整张表拉进内存；每仓上限见 warehouseSKUOptionSize。
 // 没有货的仓整组跳过（模板据 len 判断，不给空 optgroup）。
-func (o *Options) WarehouseSKUOptions(ctx context.Context, projectID string, warehouses []productdto.WarehouseOptionView) (out []productdto.WarehouseSKUGroupView, err error) {
-	out = []productdto.WarehouseSKUGroupView{}
+func (o *Options) WarehouseSKUOptions(ctx context.Context, projectID string, warehouses []productdto.WarehouseOptionResp) (out []productdto.WarehouseSKUGroupResp, err error) {
+	out = []productdto.WarehouseSKUGroupResp{}
 	if o.svc == nil || strings.TrimSpace(projectID) == "" {
 		return out, nil
 	}
@@ -101,7 +101,7 @@ func (o *Options) WarehouseSKUOptions(ctx context.Context, projectID string, war
 		if len(rows) == 0 {
 			continue
 		}
-		items := make([]productdto.WarehouseSKUItemView, 0, len(rows))
+		items := make([]productdto.WarehouseSKUItemResp, 0, len(rows))
 		warehouseCode := ""
 		for _, r := range rows {
 			// 候选一律取**裸码**（仓库侧的名字，不带仓码前缀）：前端把它填进「SKU 编码」框时
@@ -116,11 +116,11 @@ func (o *Options) WarehouseSKUOptions(ctx context.Context, projectID string, war
 			if warehouseCode == "" {
 				warehouseCode = r.WarehouseCode
 			}
-			items = append(items, productdto.WarehouseSKUItemView{
+			items = append(items, productdto.WarehouseSKUItemResp{
 				SKUCode: code, ExternalSKU: r.ExternalSKU, Label: label,
 			})
 		}
-		out = append(out, productdto.WarehouseSKUGroupView{
+		out = append(out, productdto.WarehouseSKUGroupResp{
 			WarehouseID:   w.ID,
 			WarehouseCode: warehouseCode,
 			Label:         w.Label,

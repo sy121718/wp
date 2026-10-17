@@ -37,7 +37,7 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 		Page:      productPageNumber(c.Query("page")),
 	})
 	if view == nil {
-		view = &productdto.ProductCategoriesPageView{
+		view = &productdto.ProductCategoriesPageResp{
 			Title: productenums.ProductCategoriesTitle, Menu: "product-categories",
 			HTTPStatus: http.StatusInternalServerError,
 		}
@@ -130,7 +130,7 @@ func categoryOptionIDs(options []map[string]any) map[string]struct{} {
 //
 // ParentOutOfScope 是列表行上的徽章：父级属于别的工程（或父级行已不存在）时置真 ——
 // 这类行的 ParentID 指向本工程之外，操作者只看分类名看不出来，得有个可见标记。
-func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []map[string]any, searching bool, parentLabels map[string]productdto.CategoryParentInfo) []map[string]any {
+func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []map[string]any, searching bool, parentLabels map[string]productdto.CategoryParentInfoResp) []map[string]any {
 	// 判据取 missingParentIDs（父级不在候选列表）而**不是** parentLabels：后者只收
 	// 「名称读得到」的那些父级，RLS 切非超级角色后跨工程父级读不到名称会被它漏掉，
 	// 而那时恰恰最该让操作者看见异常。两者共用同一个判定函数，不另起一份候选集合逻辑。
@@ -165,7 +165,7 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 		Page:      productPageNumber(c.Query("page")),
 	})
 	if view == nil {
-		view = &productdto.ProductBrandsPageView{
+		view = &productdto.ProductBrandsPageResp{
 			Title: productenums.ProductBrandsTitle, Menu: "product-brands",
 			HTTPStatus: http.StatusInternalServerError,
 		}
@@ -201,11 +201,11 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 //
 // 纯逻辑部分单独成函数：候选集合的判定（不是 service 读）才是「谁会走模板那条额外分支」
 // 的判据，单测在没有数据库时也能把它钉住。
-// productdto.CategoryParentInfo 「父级不在候选列表里」那一项的**事实**：名称是数据，跨工程是布尔。
+// productdto.CategoryParentInfoResp 「父级不在候选列表里」那一项的**事实**：名称是数据，跨工程是布尔。
 //
 // 拆成两个字段而不是一个拼好的串（原 categoryParentText 的形态）：跨工程那句说明是文案，
 // 必须在渲染期按请求语言取词（en-US 后台下也该是英文）—— 控制器里拼串等于把它钉死在中文。
-func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []map[string]any, parentLabels map[string]productdto.CategoryParentInfo) gin.H {
+func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []map[string]any, parentLabels map[string]productdto.CategoryParentInfoResp) gin.H {
 	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": adminui.Prepare(c, gin.H{})["csrf_token"],
 		// ListQuery：表单 action 的筛选上下文（抽屉里的表单提交要带着它回去）。
 		"ListQuery": productQueryFromRequest(c, productCategoriesBackKeys...)}
@@ -345,7 +345,7 @@ func (h *ProductHandle) BulkDeleteBrands(c *gin.Context) {
 }
 
 // **超限整批拒绝，不静默截断** —— 截断会让操作者以为「勾的全删了」，而实际只删了前 200 条。
-func (h *ProductHandle) bulkDeleteByIDs(c *gin.Context, del func(context.Context, *productdto.BulkDeleteReq) (*productdto.BulkResult, error)) {
+func (h *ProductHandle) bulkDeleteByIDs(c *gin.Context, del func(context.Context, *productdto.BulkDeleteReq) (*productdto.BulkResultResp, error)) {
 	req, ok := binding.JSON[productdto.BulkDeleteReq](c)
 	if !ok {
 		return

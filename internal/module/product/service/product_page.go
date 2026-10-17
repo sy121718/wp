@@ -6,7 +6,7 @@
 // （早期形态 6 行 × 18 处），改一处必然漏一处。
 //
 // 控制器因此只剩三件事：读参数 → 调这里 → 把视图交给 adminui.RenderPage。视图自带
-// 档位（adminui.PageResult）与模板键（dto 的 ProductNewPageView），控制器不再碰 gin.H。
+// 档位（adminui.PageResult）与模板键（dto 的 ProductNewPageResp），控制器不再碰 gin.H。
 //
 // 依赖方向：本文件只认识本模块的 contract（端口）与 dto；跨模块的实现由装配期注入，
 // 且端口上**只有读方法**（见 contract/warehouse_options.go 的文件头）。
@@ -66,8 +66,8 @@ func ProjectExists(projects []projectdto.ProjectResp, id string) bool {
 //
 // 标签口径（名字 + 标识 key）只此一处：商品详情页与属性页都按 key 指代属性组，
 // 只给名字会在同名属性组之间选错。三处各拼一遍时，「带上 key」这条规则改一处就漏两处。
-func AttributeOptionViews(list []*productdto.AttributeResp) []productdto.AttributeOptionView {
-	out := make([]productdto.AttributeOptionView, 0, len(list))
+func AttributeOptionViews(list []*productdto.AttributeResp) []productdto.AttributeOptionResp {
+	out := make([]productdto.AttributeOptionResp, 0, len(list))
 	for _, a := range list {
 		if a == nil {
 			continue
@@ -76,7 +76,7 @@ func AttributeOptionViews(list []*productdto.AttributeResp) []productdto.Attribu
 		if key := strings.TrimSpace(a.Key); key != "" {
 			label = a.Name + "（" + key + "）"
 		}
-		out = append(out, productdto.AttributeOptionView{ID: a.ID, Label: label, IsVariation: a.IsVariation})
+		out = append(out, productdto.AttributeOptionResp{ID: a.ID, Label: label, IsVariation: a.IsVariation})
 	}
 	return out
 }
@@ -111,16 +111,16 @@ var _ productcontract.ProductPageReader = (*Service)(nil)
 // 失败之后**一条派生取数都不发**：在已被判非法的工程上继续查，会把「工程不存在」
 // 渲染成「这个工程下没有可选项」—— 参数错误看起来成了空态。所以每步都套
 // `firstErr == nil`，而不是把错误收集起来最后一并报。
-func (s *Service) ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (res *productdto.ProductNewPageView, err error) {
-	view := &productdto.ProductNewPageView{
+func (s *Service) ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (res *productdto.ProductNewPageResp, err error) {
+	view := &productdto.ProductNewPageResp{
 		// Title 放 i18n key 而不是译文：译文按请求语言取，取词在渲染期（adminui.Prepare）。
 		Title:               productenums.ProductsCreateSubmit,
 		Menu:                "products",
 		Projects:            []projectdto.ProjectResp{},
-		WarehouseOptions:    []productdto.WarehouseOptionView{},
-		AttributeOptions:    []productdto.AttributeOptionView{},
-		WarehouseSKUOptions: []productdto.WarehouseSKUGroupView{},
-		Templates:           []productdto.EntityTemplateOptionView{},
+		WarehouseOptions:    []productdto.WarehouseOptionResp{},
+		AttributeOptions:    []productdto.AttributeOptionResp{},
+		WarehouseSKUOptions: []productdto.WarehouseSKUGroupResp{},
+		Templates:           []productdto.EntityTemplateOptionResp{},
 		HTTPStatus:          200,
 	}
 	// firstErr 只记**第一处**失败：后面的步骤据此跳过，末尾据此给失败槽与档位。
@@ -151,7 +151,7 @@ func (s *Service) ProductNewPage(ctx context.Context, req *productdto.ProductNew
 
 	// 查询串不是可信边界：`?project=<不存在的 id>` 一路渲染下去会得到「这个工程下没有
 	// 可选项」—— 把「工程不存在」说成了「工程是空的」。参数级失败仍是**页面请求**：
-	// 整页 + 400 + no-store（档位由视图带出，见 dto.ProductNewPageView.PageStatus）。
+	// 整页 + 400 + no-store（档位由视图带出，见 dto.ProductNewPageResp.PageStatus）。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)

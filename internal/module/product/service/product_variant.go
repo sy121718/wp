@@ -1266,7 +1266,7 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 		}
 		seen[optionKey(decodeOptionPairs(raw))] = true
 	}
-	res = &productdto.PreviewVariantResp{OK: true, ProductID: p.ID, Total: total, Rows: []*productdto.VariantPreviewRow{}}
+	res = &productdto.PreviewVariantResp{OK: true, ProductID: p.ID, Total: total, Rows: []*productdto.VariantPreviewResp{}}
 	for _, pairs := range expandCombinations(dims) {
 		key := optionKey(pairs)
 		if seen[key] {
@@ -1278,7 +1278,7 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 		raw := encodeOptionPairs(pairs)
 		code := uniqueVariantSKU(variantSKUCode(container, raw, groupOrder), taken)
 		taken[code] = true
-		res.Rows = append(res.Rows, &productdto.VariantPreviewRow{
+		res.Rows = append(res.Rows, &productdto.VariantPreviewResp{
 			OptionValues: raw, OptionKey: key, SKUCode: code,
 			// 规格文本在这里算：属性组是本次请求已经查过的那一份，控制器不必再查一次
 			// （再查的那次可以静默拿到空 attrs，于是页面上规格列整列变空而不报错）。
@@ -1339,7 +1339,7 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		}
 	}
 	now := time.Now().UTC()
-	res = &productdto.SaveVariantListResp{ProductID: p.ID, Skipped: []productdto.VariantSaveSkip{}}
+	res = &productdto.SaveVariantListResp{ProductID: p.ID, Skipped: []productdto.VariantSaveSkipResp{}}
 	kept := make(map[string]bool, len(req.Rows))
 	seenKeys := make(map[string]bool, len(req.Rows))
 	var updated, created []*productmodel.VariantEntity
@@ -1349,7 +1349,7 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 			v := byID[vid]
 			if v == nil {
 				// 清单里的既有变体已经被别处删掉（并发删除）：跳过并说明，不当成新增行。
-				res.Skipped = append(res.Skipped, productdto.VariantSaveSkip{
+				res.Skipped = append(res.Skipped, productdto.VariantSaveSkipResp{
 					VariantID: vid, Reason: productenums.VariantSkipVariantMissing,
 				})
 				continue
@@ -1392,7 +1392,7 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		raw := encodeOptionPairs(pairs)
 		key := optionKey(pairs)
 		if seenKeys[key] {
-			res.Skipped = append(res.Skipped, productdto.VariantSaveSkip{
+			res.Skipped = append(res.Skipped, productdto.VariantSaveSkipResp{
 				SKUCode: strings.TrimSpace(row.SKUCode), OptionValues: raw,
 				Reason: productenums.VariantSkipDuplicated,
 			})
@@ -1495,11 +1495,11 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 // Reason 只承载受控原因枚举（提示页直接展示）；自由文本若拼进 Reason 会让提示页出现
 // 不可控内容，所以明细只能走响应体里的 Detail，不能拼进 Reason。反之单条删除路径
 // （DeleteVariant）返回的是错误，那里按 key：detail 的既有形态拼接，明细照常可见。
-func variantSkipOf(v *productmodel.VariantEntity, reason, detail string) productdto.VariantSaveSkip {
+func variantSkipOf(v *productmodel.VariantEntity, reason, detail string) productdto.VariantSaveSkipResp {
 	if v == nil {
-		return productdto.VariantSaveSkip{Reason: reason, Detail: detail}
+		return productdto.VariantSaveSkipResp{Reason: reason, Detail: detail}
 	}
-	return productdto.VariantSaveSkip{
+	return productdto.VariantSaveSkipResp{
 		VariantID: v.ID, SKUCode: v.SKUCode,
 		OptionValues: orJSON(v.OptionValues, "{}"), Reason: reason, Detail: detail,
 	}

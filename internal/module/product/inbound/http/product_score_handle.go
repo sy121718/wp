@@ -73,18 +73,18 @@ func (h *ProductPageHandle) seoTitleSources() productservice.SeoTitleExtraSource
 // （res.Err 非空）。两者的现状出口都是那句空态文案（与拆分前逐字一致），但**绝不是 0 分**；
 // 判据与将来换出口（例如读取失败回 500）的位置都在 service 的 SeoScoreInputResult 注释里。
 func (h *ProductPageHandle) scoreInputOf(c *gin.Context, kind scoring.PageKind,
-	id, projectID string) (in *scoring.EntityPageInput, selfID string, emptyView productdto.ScoreView) {
+	id, projectID string) (in *scoring.EntityPageInput, selfID string, emptyView productdto.ScoreResp) {
 	res := productservice.SeoScoreInputOf(c.Request.Context(), h.products, h.instances,
 		kind, id, projectID, requestScoreLang(c))
 	if res.Input == nil {
 		return nil, "", scoreEmptyView(c, res.Empty)
 	}
-	return res.Input, res.SelfID, productdto.ScoreView{}
+	return res.Input, res.SelfID, productdto.ScoreResp{}
 }
 
 // scoreEmptyView 空态片段视图：文案是「key + 中文兜底」的事实（service 给出），取值在 HTTP 层。
-func scoreEmptyView(c *gin.Context, empty productservice.SeoScoreEmpty) productdto.ScoreView {
-	return productdto.ScoreView{Empty: shell.TranslateFor(c)(empty.Key, empty.Fallback)}
+func scoreEmptyView(c *gin.Context, empty productservice.SeoScoreEmpty) productdto.ScoreResp {
+	return productdto.ScoreResp{Empty: shell.TranslateFor(c)(empty.Key, empty.Fallback)}
 }
 
 // ProductScorePanel 商品详情页的编辑期评分（POST /admin/products/seo-score）。
@@ -117,7 +117,7 @@ func (h *ProductPageHandle) ProductBrandScorePanel(c *gin.Context) {
 // renderScorePanel 三个评分面板的唯一流程：取输入 → 取不到渲染空态 → 取到出片段。
 //
 // 判据是 in == nil（「没取到实体」），**不是** emptyView.OK —— 成功路径返回的也是零值
-// productdto.ScoreView（OK=false），用它分流会把每次成功都判成空态。
+// productdto.ScoreResp（OK=false），用它分流会把每次成功都判成空态。
 func (h *ProductPageHandle) renderScorePanel(c *gin.Context, kind scoring.PageKind, id, projectID string) {
 	in, selfID, emptyView := h.scoreInputOf(c, kind, id, projectID)
 	if in == nil {
@@ -132,7 +132,7 @@ func (h *ProductPageHandle) renderScorePanel(c *gin.Context, kind scoring.PageKi
 // 算分与冲突判定本身都在 productservice（SeoEntityScore / SeoTitleIndex）：
 // 这里只把请求侧的取词函数与依赖交进去，再组装片段视图。
 func (h *ProductPageHandle) entityScoreViewOf(ctx context.Context, c *gin.Context,
-	in *scoring.EntityPageInput, projectID, selfID string) productdto.ScoreView {
+	in *scoring.EntityPageInput, projectID, selfID string) productdto.ScoreResp {
 	tr := shell.TranslateFor(c)
 	res, dups := productservice.SeoEntityScore(in,
 		productservice.SeoTitleIndex(ctx, h.products, h.seoTitleSources(), projectID, tr), selfID)
@@ -148,14 +148,14 @@ func (h *ProductPageHandle) renderEntityScore(c *gin.Context, in *scoring.Entity
 }
 
 // renderScoreView 渲染评分片段（空态与结果共用同一份模板：片段按 Score.OK 分流）。
-func renderScoreView(c *gin.Context, sv productdto.ScoreView) {
+func renderScoreView(c *gin.Context, sv productdto.ScoreResp) {
 	c.HTML(http.StatusOK, "fragments/seo_score", adminui.PrepareBare(c, gin.H{"Score": sv}))
 }
 
 // entityScoreView 评分结果 → 片段视图（含页型回显与 title 冲突清单）。
 func entityScoreView(tr func(key, fallback string) string, in *scoring.EntityPageInput, res *scoring.Result,
-	dups []scoring.TitleEntry) productdto.ScoreView {
-	sv := productdto.ScoreView{OK: true}
+	dups []scoring.TitleEntry) productdto.ScoreResp {
+	sv := productdto.ScoreResp{OK: true}
 	if res != nil {
 		sv.Total = res.Total
 		sv.Grade = res.Grade
@@ -169,7 +169,7 @@ func entityScoreView(tr func(key, fallback string) string, in *scoring.EntityPag
 		// 由词条决定（英文的冒号与括号与中文不同），命名占位符 + FillTranslate 负责填充
 		//（词条被写坏时自动回落下面那句中文兜底）。
 		for _, sec := range res.Sections {
-			item := productdto.ScoreSectionView{
+			item := productdto.ScoreSectionResp{
 				Label: sec.Label, Color: sec.Color, Score: sec.Score, Max: sec.Max,
 				ColorLabel: seoscore.ScoreGradeText(tr, sec.Color),
 			}
@@ -177,7 +177,7 @@ func entityScoreView(tr func(key, fallback string) string, in *scoring.EntityPag
 				if ck.Score >= ck.Max {
 					continue
 				}
-				item.Issues = append(item.Issues, productdto.ScoreIssueView{
+				item.Issues = append(item.Issues, productdto.ScoreIssueResp{
 					Text: i18n.FillTranslate(tr, productenums.SEOIssueLine,
 						"{label}：{actual}（基准 {benchmark}）→ {hint}",
 						map[string]string{

@@ -162,7 +162,7 @@ func (h *ProductHandle) BulkDelete(c *gin.Context) {
 // 它读 item.message / item.deleted / item.id，少一个就只剩「跳过 N 条」没有原因。
 type productBulkItemView struct {
 	ID string `json:"id"`
-	// Deleted / Updated 二选一（与 dto.BulkItem 同义）：删除用前者、改价用后者，
+	// Deleted / Updated 二选一（与 dto.BulkItemResp 同义）：删除用前者、改价用后者，
 	// 基座按 outcome 读对应的那个键。
 	Deleted bool   `json:"deleted,omitempty"`
 	Updated bool   `json:"updated,omitempty"`
@@ -180,7 +180,7 @@ type productBulkResultView struct {
 //
 // 成功键叫 deleted 而不是 succeeded：json_write.js 的 okKeyOf 按 outcome=delete 读
 // data.deleted —— 对不上时摘要句恒为「已删除 0 项」，而删除其实成功了。
-func productBulkDeletedView(c *gin.Context, res *productdto.BulkResult) productBulkResultView {
+func productBulkDeletedView(c *gin.Context, res *productdto.BulkResultResp) productBulkResultView {
 	view := productBulkResultView{
 		Deleted: res.Succeeded,
 		Skipped: res.NotDone(),
@@ -301,7 +301,7 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) {
 	if view == nil {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
 		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
-		view = &productdto.ProductListPageView{
+		view = &productdto.ProductListPageResp{
 			Title: MsgProductsTitle, Menu: "products", Limit: productListPageSize,
 			HTTPStatus: http.StatusInternalServerError,
 		}
@@ -398,12 +398,12 @@ func productListFilterURL(projectID, keyword, status string) string {
 //
 // 状态维度**只有这一种入口**：不另配状态徽章筛选 —— 同一维度两套控件时，
 // 用户会怀疑它们是否等价（admin-ui-logic §2）。
-func productStatusOptions(current string) []productdto.StatusOptionView {
+func productStatusOptions(current string) []productdto.StatusOptionResp {
 	values := []string{"", productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}
-	out := make([]productdto.StatusOptionView, 0, len(values))
+	out := make([]productdto.StatusOptionResp, 0, len(values))
 	for _, value := range values {
 		key, fallback := productenums.StatusLabel(value)
-		out = append(out, productdto.StatusOptionView{
+		out = append(out, productdto.StatusOptionResp{
 			Value:         value,
 			LabelKey:      key,
 			LabelFallback: fallback,
@@ -455,7 +455,7 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) {
 	if view == nil {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
 		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
-		view = &productdto.ProductNewPageView{
+		view = &productdto.ProductNewPageResp{
 			Title: productenums.ProductsCreateSubmit, Menu: "products", HTTPStatus: http.StatusInternalServerError,
 		}
 	}
@@ -515,7 +515,7 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	})
 	if view == nil {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键）：真出现 nil 时兜一个空视图。
-		view = &productdto.ProductEditPageView{
+		view = &productdto.ProductEditPageResp{
 			Title: MsgProductsTitle, Menu: "products", HTTPStatus: http.StatusInternalServerError,
 		}
 	}
@@ -597,13 +597,13 @@ func nullableNumberText(v *float64) string {
 
 // checkedAttributeOptions 属性组勾选列表：给每组补一个 Checked（商品是否引用它）。
 //
-// 内嵌 AttributeOptionView 而不是复制键：标签口径仍只有 service 一处，
+// 内嵌 AttributeOptionResp 而不是复制键：标签口径仍只有 service 一处，
 // 这里只加「这一行在本次商品上是什么状态」。
-func checkedAttributeOptions(options []productdto.AttributeOptionView, selected []string) []productdto.AttributeCheckOptionView {
-	out := make([]productdto.AttributeCheckOptionView, 0, len(options))
+func checkedAttributeOptions(options []productdto.AttributeOptionResp, selected []string) []productdto.AttributeCheckOptionResp {
+	out := make([]productdto.AttributeCheckOptionResp, 0, len(options))
 	for _, o := range options {
-		out = append(out, productdto.AttributeCheckOptionView{
-			AttributeOptionView: o,
+		out = append(out, productdto.AttributeCheckOptionResp{
+			AttributeOptionResp: o,
 			Checked:             slices.Contains(selected, o.ID),
 		})
 	}
@@ -655,7 +655,7 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 	})
 	if view == nil {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键）：真出现 nil 时兜一个空视图。
-		view = &productdto.ProductDetailPageView{
+		view = &productdto.ProductDetailPageResp{
 			Title: productenums.ProductDetailTitle, Menu: "products",
 			HTTPStatus: http.StatusInternalServerError,
 		}
@@ -984,7 +984,7 @@ func (h *ProductPageHandle) renderBundlePage(c *gin.Context) {
 //
 // 用 ViewMap 而不是 adminui.RenderPage：视图自己已经实现 PageResult —— 状态码与 no-store
 // 按页面的结论给，视图与控制器侧那两样键在这里合成一份数据。
-func bundlePageData(c *gin.Context, view *productdto.ProductBundlePageView, extra gin.H) gin.H {
+func bundlePageData(c *gin.Context, view *productdto.ProductBundlePageResp, extra gin.H) gin.H {
 	data := adminui.ViewMap(view)
 	for k, v := range extra {
 		data[k] = v
@@ -993,19 +993,19 @@ func bundlePageData(c *gin.Context, view *productdto.ProductBundlePageView, extr
 }
 
 // bundlePageFailureView 失败档的视图（给齐模板必需键，避免失败分支只设了错误键）。
-func bundlePageFailureView(status int) productdto.ProductBundlePageView {
-	return productdto.ProductBundlePageView{
+func bundlePageFailureView(status int) productdto.ProductBundlePageResp {
+	return productdto.ProductBundlePageResp{
 		Title:            productenums.ProductBundleTitle,
 		Menu:             "products",
 		Projects:         []projectdto.ProjectResp{},
 		Products:         []*productdto.ProductResp{},
 		Skus:             []*productdto.BundleSKUResp{},
-		Rows:             []productdto.BundleOptionRow{},
-		CandidateSKUs:    []productdto.BundleCandidateView{},
+		Rows:             []productdto.BundleOptionResp{},
+		CandidateSKUs:    []productdto.BundleCandidateResp{},
 		Sources:          []map[string]any{},
 		SourceProducts:   []map[string]any{},
 		SourceAttributes: []*productdto.AttributeResp{},
-		SourceWarehouses: []productdto.BundleSourceWarehouseGroupView{},
+		SourceWarehouses: []productdto.BundleSourceWarehouseGroupResp{},
 		MaxOptions:       productdto.BundleMaxOptionsLimit,
 		SaveBlocked:      true,
 		LoadFailed:       status != http.StatusOK,
@@ -1096,7 +1096,7 @@ func bundleSourceLabel(tr func(key, fallback string) string, o productdto.Bundle
 //
 // SKU 已被删除时配置里只剩 variantId（SKUCode 为空），照常出一行并标注 ——
 // 静默丢项会让人以为配置里本来就没有这一项，也就不会去修它。
-func bundlePanelRows(options []*productdto.BundleOptionDetail) []gin.H {
+func bundlePanelRows(options []*productdto.BundleOptionDetailResp) []gin.H {
 	rows := make([]gin.H, 0, len(options))
 	for _, o := range options {
 		if o == nil {
@@ -1301,7 +1301,7 @@ func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productd
 		ErrMsg:    errMsg,
 	})
 	if view == nil {
-		view = &productdto.ProductPricingPageView{
+		view = &productdto.ProductPricingPageResp{
 			Title: productenums.ProductPricingTitle, Menu: "product-pricing",
 			HTTPStatus: http.StatusInternalServerError,
 		}
@@ -1479,7 +1479,7 @@ type productBulkPricingView struct {
 
 // productBulkPricedView 把 service 的计数 + 业务 key 转成基座要的形状（与删除那一份同源，
 // 只是成功键不同）。
-func productBulkPricedView(c *gin.Context, res *productdto.BulkPricingResult) productBulkPricingView {
+func productBulkPricedView(c *gin.Context, res *productdto.BulkPricingResultResp) productBulkPricingView {
 	view := productBulkPricingView{
 		Updated: res.Succeeded,
 		Changed: res.ChangedVariants,

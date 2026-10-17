@@ -7,7 +7,7 @@ package productservice
 // N ×（逐条校验 + 删除 + 失效入队）。这里把 N 压成一个用例：
 //   · 校验阶段批量化（一次查回整批：存在性 / 子级 / 引用面）；
 //   · 删除阶段一条 DELETE ... WHERE id IN (...)，在**同一个事务**里连同失效事件提交；
-//   · 结果用 productdto.BulkResult 回给控制器（控制器不再累加任何计数）。
+//   · 结果用 productdto.BulkResultResp 回给控制器（控制器不再累加任何计数）。
 //
 // 语义刻意保留的部分（dd.txt §5.3）：
 //   · 「逐项成功逐项失败」仍然成立 —— 校验阶段被判掉的项（不存在 / 有子级 / 被引用 /
@@ -69,12 +69,12 @@ func normalizeBulkIDs(ids []string) []string {
 //
 // 行锁：删除集合是先「锁定 + 读快照」再删 —— LockProductsTx 按 id 升序 FOR UPDATE，
 // 锁住的行就是本次要删的行；锁之后行数对不上（被并发删掉）即整批回滚，不留半截状态。
-func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error) {
+func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkResult{Requested: len(ids)}
+	res = &productdto.BulkResultResp{Requested: len(ids)}
 	if len(ids) == 0 {
 		return res, nil
 	}
@@ -157,14 +157,14 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 // 「锁到了哪些」，区分不出这三种；要区分就得再查一次，而那个查询与加锁之间的距离
 // 又会让结论重新失效。宁可给一个诚实的粗口径（这条没删掉、它不在本工程或已不在），
 // 也不给一个看起来更精确、实际靠推断的原因。
-func productBulkDeleteItems(ids []string, locked map[string]bool) []productdto.BulkItem {
-	items := make([]productdto.BulkItem, 0, len(ids))
+func productBulkDeleteItems(ids []string, locked map[string]bool) []productdto.BulkItemResp {
+	items := make([]productdto.BulkItemResp, 0, len(ids))
 	for _, id := range ids {
 		if locked[id] {
-			items = append(items, productdto.BulkItem{ID: id, Deleted: true})
+			items = append(items, productdto.BulkItemResp{ID: id, Deleted: true})
 			continue
 		}
-		items = append(items, productdto.BulkItem{ID: id, ReasonKey: productenums.ErrNotFound})
+		items = append(items, productdto.BulkItemResp{ID: id, ReasonKey: productenums.ErrNotFound})
 	}
 	return items
 }
@@ -176,12 +176,12 @@ func productBulkDeleteItems(ids []string, locked map[string]bool) []productdto.B
 //	① 不存在 → Skipped；
 //	② 仍有子级 → Skipped（外键是 SET NULL，会把子级静默提升为顶级，层级信息就丢了）；
 //	③ 仍被**任何工程**的商品引用（附属 category_ids 或主分类 primary_category_id）→ Skipped。
-func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error) {
+func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkResult{Requested: len(ids)}
+	res = &productdto.BulkResultResp{Requested: len(ids)}
 	if len(ids) == 0 {
 		return res, nil
 	}
@@ -246,12 +246,12 @@ func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productd
 //
 // 与单条版（DeleteBrand）一致：被**任何工程**的商品引用即拒绝（外键 ON DELETE SET NULL
 // 会静默解绑别的工程那个商品的品牌 —— 没有任何信号，这正是品牌守卫存在的理由）。
-func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error) {
+func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkResult{Requested: len(ids)}
+	res = &productdto.BulkResultResp{Requested: len(ids)}
 	if len(ids) == 0 {
 		return res, nil
 	}
@@ -312,12 +312,12 @@ func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.B
 //
 // 与单条版（DeleteAttribute）一致：被任何工程的商品引用即拒绝 —— attribute_ids 是 JSON
 // 数组、没有数据库级外键兜底，删掉就会留下悬空引用。
-func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error) {
+func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkResult{Requested: len(ids)}
+	res = &productdto.BulkResultResp{Requested: len(ids)}
 	if len(ids) == 0 {
 		return res, nil
 	}
@@ -381,12 +381,12 @@ func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productd
 //
 // 写作用域是**标签自己的工程**（与单条版一致）：分组后逐工程切换 rls 作用域，
 // 每组建一次解绑 + 失效入队 + 删行，全部在同一事务里。
-func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error) {
+func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkResult{Requested: len(ids)}
+	res = &productdto.BulkResultResp{Requested: len(ids)}
 	if len(ids) == 0 {
 		return res, nil
 	}

@@ -392,7 +392,7 @@ func (s *Service) bundleConfigResp(ctx context.Context, e *productmodel.ProductE
 		ProductName: e.Name,
 		BasePrice:   s.bundleBasePrice(ctx, e),
 		Config:      cfg,
-		Options:     make([]*productdto.BundleOptionDetail, 0, len(cfg.Options)),
+		Options:     make([]*productdto.BundleOptionDetailResp, 0, len(cfg.Options)),
 	}
 	if len(cfg.Options) == 0 {
 		return res, nil
@@ -424,7 +424,7 @@ func (s *Service) bundleConfigResp(ctx context.Context, e *productmodel.ProductE
 		return nil, aerr
 	}
 	for _, o := range cfg.Options {
-		d := &productdto.BundleOptionDetail{BundleOption: o}
+		d := &productdto.BundleOptionDetailResp{BundleOption: o}
 		if v := byID[o.VariantID]; v != nil {
 			d.SKUCode, d.ProductID, d.ProductName = v.SKUCode, v.ProductID, nameOf[v.ProductID]
 			d.ItemPrice, d.CostPrice, d.Enabled = v.Price, v.CostPrice, v.Enabled
@@ -521,7 +521,7 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 	}
 	res = &productdto.ResolveBundleMembersResp{
 		ProductID: container.ID, Source: source,
-		Members: []*productdto.BundleMemberDraft{}, Skipped: []productdto.BundleMemberSkip{},
+		Members: []*productdto.BundleMemberResp{}, Skipped: []productdto.BundleMemberSkipResp{},
 	}
 	// 去重集合：前端清单里已有的 + 本批已解析出来的（服务端自己维护，前端传的形状不作数）。
 	seen := make(map[string]bool, len(req.ExistingVariantIDs)+maxOptions)
@@ -535,7 +535,7 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 	add := func(v *productmodel.VariantEntity, src productdto.BundleMemberSource, optRaw json.RawMessage) {
 		res.Total++
 		if v == nil {
-			res.Skipped = append(res.Skipped, productdto.BundleMemberSkip{
+			res.Skipped = append(res.Skipped, productdto.BundleMemberSkipResp{
 				Reason: productenums.BundleMemberNotOnProduct, OptionValues: optRaw,
 			})
 			return
@@ -552,7 +552,7 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 			return
 		}
 		seen[v.ID] = true
-		res.Members = append(res.Members, &productdto.BundleMemberDraft{
+		res.Members = append(res.Members, &productdto.BundleMemberResp{
 			VariantID: v.ID, SKUCode: v.SKUCode, ProductID: v.ProductID, Enabled: v.Enabled,
 			OptionValues: orJSON(v.OptionValues, "{}"),
 			Source:       src,
@@ -603,7 +603,7 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 					return nil, perr
 				}
 				res.Total++
-				res.Skipped = append(res.Skipped, productdto.BundleMemberSkip{
+				res.Skipped = append(res.Skipped, productdto.BundleMemberSkipResp{
 					WarehouseID: warehouseID, WarehouseSKU: code,
 					Reason: productenums.BundleMemberWarehouseSKUMissing,
 				})
@@ -616,7 +616,7 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 			v, gerr := s.m.GetVariant(ctx, picked.VariantID)
 			if gerr != nil {
 				res.Total++
-				res.Skipped = append(res.Skipped, productdto.BundleMemberSkip{
+				res.Skipped = append(res.Skipped, productdto.BundleMemberSkipResp{
 					WarehouseID: warehouseID, WarehouseSKU: code,
 					Reason: productenums.BundleMemberWarehouseSKUMissing,
 				})
@@ -714,8 +714,8 @@ func normalizeBundleWarehouseSKUs(codes []string) (out []string) {
 }
 
 // bundleMemberSkipOf 组装「跳过一条成员」的回带信息（原因取 enums 常量 = i18n key）。
-func bundleMemberSkipOf(v *productmodel.VariantEntity, optRaw json.RawMessage, reason string) productdto.BundleMemberSkip {
-	out := productdto.BundleMemberSkip{Reason: reason, OptionValues: optRaw}
+func bundleMemberSkipOf(v *productmodel.VariantEntity, optRaw json.RawMessage, reason string) productdto.BundleMemberSkipResp {
+	out := productdto.BundleMemberSkipResp{Reason: reason, OptionValues: optRaw}
 	if v != nil {
 		out.VariantID, out.SKUCode = v.ID, v.SKUCode
 	}
@@ -723,7 +723,7 @@ func bundleMemberSkipOf(v *productmodel.VariantEntity, optRaw json.RawMessage, r
 }
 
 // fillBundleMemberProductNames 回填候选成员的商品名（一次批量取，避免逐行查）。
-func (s *Service) fillBundleMemberProductNames(ctx context.Context, projectID string, drafts []*productdto.BundleMemberDraft) (err error) {
+func (s *Service) fillBundleMemberProductNames(ctx context.Context, projectID string, drafts []*productdto.BundleMemberResp) (err error) {
 	if len(drafts) == 0 {
 		return nil
 	}
@@ -835,7 +835,7 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 	}
 
 	// 逐项校验 + 汇总总件数。
-	selected := make([]productdto.BundleSelectItem, 0, len(cfg.Options))
+	selected := make([]productdto.BundleSelectItemResp, 0, len(cfg.Options))
 	total := 0
 	for _, o := range cfg.Options {
 		qty, ok := chosen[o.VariantID]
@@ -856,7 +856,7 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 			return nil, productenums.Err(productenums.ErrBundleQtyAboveMax)
 		}
 		total += qty
-		selected = append(selected, productdto.BundleSelectItem{VariantID: o.VariantID, Qty: qty})
+		selected = append(selected, productdto.BundleSelectItemResp{VariantID: o.VariantID, Qty: qty})
 	}
 	if total < cfg.MinTotalQty {
 		return nil, productenums.Err(productenums.ErrBundleTotalBelowMin)
@@ -887,7 +887,7 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 	}
 	res = &productdto.BundleSelectionResp{
 		ProductID:  e.ID,
-		Items:      make([]*productdto.BundleSelectedItem, 0, len(selected)),
+		Items:      make([]*productdto.BundleSelectedItemResp, 0, len(selected)),
 		TotalQty:   total,
 		TotalPrice: s.bundleBasePrice(ctx, e),
 	}
@@ -909,8 +909,8 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 //
 // projectID 由调用方给出（ValidateBundleSelection 已解析）：SKU 快照要回填商品名，
 // 读的是 products（迁移 215 名单），缺作用域时商品名整列为空。
-func (s *Service) bundleSelectedItems(ctx context.Context, projectID string, variantIDs []string, avail map[string]int) (out map[string]*productdto.BundleSelectedItem, err error) {
-	out = make(map[string]*productdto.BundleSelectedItem, len(variantIDs))
+func (s *Service) bundleSelectedItems(ctx context.Context, projectID string, variantIDs []string, avail map[string]int) (out map[string]*productdto.BundleSelectedItemResp, err error) {
+	out = make(map[string]*productdto.BundleSelectedItemResp, len(variantIDs))
 	if len(variantIDs) == 0 {
 		return out, nil
 	}
@@ -931,13 +931,13 @@ func (s *Service) bundleSelectedItems(ctx context.Context, projectID string, var
 		nameOf[p.ID] = p.Name
 	}
 	for _, v := range variants {
-		out[v.ID] = &productdto.BundleSelectedItem{
+		out[v.ID] = &productdto.BundleSelectedItemResp{
 			VariantID:   v.ID,
 			SKUCode:     v.SKUCode,
 			ProductName: nameOf[v.ProductID],
 			// 成员单价恒为 0：成员价**不参与任何对外金额**（套餐只有容器价，见产品类型不变量）。
 			// 这里不是「查不到价」，而是「成员在套餐里没有价」—— 订单行照此快照即天然不会
-			// 把成员价加进合计；成员原价只在后台配置器（BundleOptionDetail.ItemPrice）可见。
+			// 把成员价加进合计；成员原价只在后台配置器（BundleOptionDetailResp.ItemPrice）可见。
 			UnitPrice: 0,
 			// 成员挂牌价单独放 MemberPrice：它只是参考值，绝不参与金额计算。
 			MemberPrice: v.Price,
@@ -1027,7 +1027,7 @@ func (s *Service) fillBundleMemberDisplay(ctx context.Context, projectID string,
 
 // bundleMemberSkipLabel 跳过的行要能被认出来：SKU 优先，其次仓库 SKU，
 // 再落到变体 id；有规格文本时接在后面（「从规格组合来的」那一批才有）。
-func bundleMemberSkipLabel(skip productdto.BundleMemberSkip, attrs []*productdto.AttributeResp) string {
+func bundleMemberSkipLabel(skip productdto.BundleMemberSkipResp, attrs []*productdto.AttributeResp) string {
 	label := strings.TrimSpace(skip.SKUCode)
 	if label == "" {
 		label = strings.TrimSpace(skip.WarehouseSKU)

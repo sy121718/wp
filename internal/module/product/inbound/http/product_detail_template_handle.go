@@ -410,7 +410,7 @@ func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 //
 // Ready 为假 → 模板走「详情页模板能力未装配」那一块；不给 LoadFailed —— 那是
 // 「取数没读到」的槽，两者混用会让「没装配」被说成「数据读不出来」，而前者要人去查装配。
-func detailTemplateUnassembledView() productdto.ProductDetailTemplatePageView {
+func detailTemplateUnassembledView() productdto.ProductDetailTemplatePageResp {
 	view := detailTemplateLoadFailureView(http.StatusOK)
 	view.Title = productenums.ProductDetailTemplateTitle
 	view.Menu = "products"
@@ -418,12 +418,12 @@ func detailTemplateUnassembledView() productdto.ProductDetailTemplatePageView {
 }
 
 // detailTemplateLoadFailureView 失败档的视图（给齐模板必需键，避免失败分支只设了错误键）。
-func detailTemplateLoadFailureView(status int) productdto.ProductDetailTemplatePageView {
-	return productdto.ProductDetailTemplatePageView{
+func detailTemplateLoadFailureView(status int) productdto.ProductDetailTemplatePageResp {
+	return productdto.ProductDetailTemplatePageResp{
 		Title:      productenums.ProductDetailTemplateTitle,
 		Menu:       "products",
 		Projects:   []projectdto.ProjectResp{},
-		Templates:  []productdto.DetailTemplateOptionView{},
+		Templates:  []productdto.DetailTemplateOptionResp{},
 		LoadFailed: status != http.StatusOK,
 		HTTPStatus: status,
 	}

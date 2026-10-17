@@ -46,7 +46,7 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
 	if view == nil {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
 		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
-		view = &productdto.ProductAttributesPageView{
+		view = &productdto.ProductAttributesPageResp{
 			Title: productenums.ProductAttributesTitle, Menu: "product-attributes",
 			HTTPStatus: http.StatusInternalServerError,
 		}
@@ -283,8 +283,8 @@ func attrRowDrawerForms(c *gin.Context, projectID string,
 //
 // 上限同样取 service 的常量：抽屉与新建页是同一类「一屏全量勾选」，两处各写一个 200
 // 时改一处会静默分叉。
-func (h *ProductPageHandle) attributeOptions(ctx context.Context, projectID string) (out []productdto.AttributeOptionView, err error) {
-	out = []productdto.AttributeOptionView{}
+func (h *ProductPageHandle) attributeOptions(ctx context.Context, projectID string) (out []productdto.AttributeOptionResp, err error) {
+	out = []productdto.AttributeOptionResp{}
 	if strings.TrimSpace(projectID) == "" {
 		return out, nil
 	}

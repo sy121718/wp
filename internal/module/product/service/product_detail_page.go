@@ -29,10 +29,10 @@ import (
 // 顺序与原控制器逐字对齐（工程 → 参数档位 → 仓库清单 → 商品详情 → 分类 / 品牌 / 标签），
 // 因为「谁先失败」决定了用户看到哪一档：工程清单读不到是 500，`?project=<不存在的 id>` 是
 // 400，商品不存在是 404，三者都能让后面的取数失败，但只有第一处原因会被说出来。
-func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.ProductDetailPageReq) (res *productdto.ProductDetailPageView, err error) {
-	view := &productdto.ProductDetailPageView{
+func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.ProductDetailPageReq) (res *productdto.ProductDetailPageResp, err error) {
+	view := &productdto.ProductDetailPageResp{
 		Projects:         []projectdto.ProjectResp{},
-		WarehouseOptions: []productdto.WarehouseOptionView{},
+		WarehouseOptions: []productdto.WarehouseOptionResp{},
 		Categories:       []*productdto.CategoryResp{},
 		Brands:           []*productdto.BrandResp{},
 		Tags:             []*productdto.TagResp{},

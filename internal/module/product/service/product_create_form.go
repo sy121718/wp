@@ -4,7 +4,7 @@
 // 那一段 HTML** —— 首屏整页与提交失败后的重渲染共用同一份装配，所以取数编排只有这里一处。
 //
 // 与四个整页读模型同一形态：视图恒非 nil、失败带 LoadFailed 与 HTTPStatus、失败后不再发派生取数。
-// 两处不同，都写在 ProductCreateFormView 的文件注释里（没有工程清单；多一组请求边界的回填值）。
+// 两处不同，都写在 ProductCreateFormResp 的文件注释里（没有工程清单；多一组请求边界的回填值）。
 package productservice
 
 import (
@@ -18,11 +18,11 @@ import (
 //
 // 顺序有意保留为串行（每仓 SKU 候选依赖上一步拿到的仓库清单）：并发化会让「仓库读失败」
 // 与「SKU 读失败」同时发生时的结论变得不确定，而这里要的是**第一处失败**。
-func (s *Service) ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormView, error) {
-	view := &productdto.ProductCreateFormView{
-		WarehouseOptions:    []productdto.WarehouseOptionView{},
-		AttributeOptions:    []productdto.AttributeOptionView{},
-		WarehouseSKUOptions: []productdto.WarehouseSKUGroupView{},
+func (s *Service) ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormResp, error) {
+	view := &productdto.ProductCreateFormResp{
+		WarehouseOptions:    []productdto.WarehouseOptionResp{},
+		AttributeOptions:    []productdto.AttributeOptionResp{},
+		WarehouseSKUOptions: []productdto.WarehouseSKUGroupResp{},
 		HTTPStatus:          200,
 	}
 	projectID := ""
@@ -62,7 +62,7 @@ func (s *Service) ProductCreateForm(ctx context.Context, req *productdto.Product
 //
 // **不把 err 写进 LoadError**：视图是往模板去的形状，驱动原文只该经 err 返回值进日志
 // （渲染方拿到 err 就知道失败，不必读视图里的字符串 —— 写进去只会给将来「顺手渲染它」留个口子）。
-func failedCreateForm(view *productdto.ProductCreateFormView) *productdto.ProductCreateFormView {
+func failedCreateForm(view *productdto.ProductCreateFormResp) *productdto.ProductCreateFormResp {
 	view.LoadFailed = true
 	view.HTTPStatus = 500
 	return view

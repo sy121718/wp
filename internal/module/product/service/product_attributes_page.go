@@ -52,8 +52,8 @@ func ClampPageToTotal(page, size int, total int64) int {
 // variation 的归一在这里（不是控制器）：它只认 "1"（参与变体）/ "0"（不参与）/ 其余当全部，
 // 与 service 的 ListAttributeReq.Variation 是同一套值，也与表格「变体」列的口径一致 ——
 // 归一写在控制器时，筛选回显与过滤条件会各拿一份原始串。
-func (s *Service) ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (res *productdto.ProductAttributesPageView, err error) {
-	view := &productdto.ProductAttributesPageView{
+func (s *Service) ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (res *productdto.ProductAttributesPageResp, err error) {
+	view := &productdto.ProductAttributesPageResp{
 		// Title / Menu / AttributeRows / AttrCreateForm / Pagination / ListQuery 由控制器填
 		//（行装配与抽屉数据要 gin.Context，见文件头）。这里只写**取数结果**。
 		Projects:         []projectdto.ProjectResp{},

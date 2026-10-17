@@ -63,7 +63,7 @@ func TestProductVariantSaveNoticeFollowsRequestLanguage(t *testing.T) {
 	// 2) 跳过段：前缀 + 逐条原因都要按当前语言。
 	withSkip := adminui.MsgText(en, variantSaveMsg(en, &productdto.SaveVariantListResp{
 		Created: 1,
-		Skipped: []productdto.VariantSaveSkip{{Reason: productenums.VariantSkipHasStock}},
+		Skipped: []productdto.VariantSaveSkipResp{{Reason: productenums.VariantSkipHasStock}},
 	}))
 	if !strings.HasPrefix(withSkip, "EN-VARIANT 1 0 0 EN-VARIANT-SKIP 1 ") {
 		t.Errorf("变体清单保存（含跳过）应按当前语言拼装，实际 %q", withSkip)

@@ -70,8 +70,8 @@ func PricingSelectedProject(req *productdto.ProductPricingPageReq, projects []pr
 //     试算/应用失败后回到本页时，用户看的是刚才那个工程，不能悄悄跳回默认工程；
 //   - **表单初值**：本次提交过就用提交值（表单要留在眼前，否则「哪一项填错了」无从改起），
 //     没提交过才用库里的默认初值。
-func (s *Service) ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageView, error) {
-	view := &productdto.ProductPricingPageView{
+func (s *Service) ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageResp, error) {
+	view := &productdto.ProductPricingPageResp{
 		Title:          productenums.ProductPricingTitle,
 		Menu:           "product-pricing",
 		Projects:       []projectdto.ProjectResp{},

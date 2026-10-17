@@ -20,7 +20,7 @@ type ProductTranslationsReader interface {
 	//
 	// 其余取数各自降级：语言清单不可读回退站点默认语言、译文明细读不到按「全部未译」渲染 ——
 	// 它们不构成「这一页打不开」，只是少了一部分内容。
-	ProductTranslationsPage(ctx context.Context, req *productdto.ProductTranslationsPageReq) (res *productdto.ProductTranslationsPageView, err error)
+	ProductTranslationsPage(ctx context.Context, req *productdto.ProductTranslationsPageReq) (res *productdto.ProductTranslationsPageResp, err error)
 
 	// SaveProductTranslations 保存译文（整表提交）的编排：重建数据 → 目标语言白名单校验 →
 	// 逐行校验（全部通过才写库，不留「部分成功」的中间态）→ 变更判定（幂等，重复保存零写入）
@@ -28,5 +28,5 @@ type ProductTranslationsReader interface {
 	//
 	// 返回的视图里 Saved / Written 是保存结论（控制器据此走提示页），Errors 是逐行结论
 	//（非空时控制器重渲本页）。只有「重建数据」失败才返回 error。
-	SaveProductTranslations(ctx context.Context, req *productdto.SaveProductTranslationsReq) (res *productdto.ProductTranslationsPageView, err error)
+	SaveProductTranslations(ctx context.Context, req *productdto.SaveProductTranslationsReq) (res *productdto.ProductTranslationsPageResp, err error)
 }

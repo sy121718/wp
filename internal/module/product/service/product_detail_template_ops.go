@@ -4,7 +4,7 @@ package productservice
 //
 // 与同目录 product_detail_template_page.go 的分工（两个文件名像、职责不同，改之前先看这段）：
 //   - product_detail_template_page.go = **整页读模型**：GET /admin/products/template 的候选模板
-//     清单 / 默认模板 / 绑定实例 → productdto.ProductDetailTemplatePageView（含分页、失败槽）；
+//     清单 / 默认模板 / 绑定实例 → productdto.ProductDetailTemplatePageResp（含分页、失败槽）；
 //   - 本文件 = **写动作与预览的编排**：模板文档组装、首次发布、切换模板重新发布、改 URL、
 //     发布前预览。不返回任何页面视图，也不渲染 HTML —— 渲染与错误映射留在 HTTP 层。
 //

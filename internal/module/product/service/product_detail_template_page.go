@@ -33,10 +33,10 @@ import (
 // 顺序与原控制器逐字对齐（工程清单 → 工程存在性 → 商品 → 模板清单 → 默认 / 绑定 / 路径），
 // 因为「谁先失败」决定用户看到哪一档：工程清单读不到 500，`?project=<不存在的 id>` 400，
 // 商品不存在 404，模板清单读不到 500。
-func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageView, error) {
-	view := &productdto.ProductDetailTemplatePageView{
+func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageResp, error) {
+	view := &productdto.ProductDetailTemplatePageResp{
 		Projects:  []projectdto.ProjectResp{},
-		Templates: []productdto.DetailTemplateOptionView{},
+		Templates: []productdto.DetailTemplateOptionResp{},
 	}
 	var firstErr error
 	fail := func(e error) {
@@ -117,9 +117,9 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 				// 没有实例 = 还没发布过：显示上按「当前生效的那套」标，而不是留空。
 				boundID = defaultID
 			}
-			options := make([]productdto.DetailTemplateOptionView, 0, len(candidates))
+			options := make([]productdto.DetailTemplateOptionResp, 0, len(candidates))
 			for _, c := range candidates {
-				options = append(options, productdto.DetailTemplateOptionView{
+				options = append(options, productdto.DetailTemplateOptionResp{
 					ID:           c.ID,
 					Name:         c.Name,
 					DraftVersion: c.DraftVersion,
@@ -128,7 +128,7 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 					IsDefault:    c.ID == defaultID,
 				})
 			}
-			view.Product = productdto.DetailTemplateProductView{
+			view.Product = productdto.DetailTemplateProductResp{
 				ID:   product.ID,
 				Name: product.Name,
 				Slug: product.Slug,

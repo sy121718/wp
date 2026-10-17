@@ -5,7 +5,7 @@
 // service」是本模块的既定分工（见 internal/module/CLAUDE.md §inbound/http）。现在行在这里
 // 产出，控制器只做四件事：绑定校验 → 调读模型 → 装配模板 data(事实) → 渲染。
 //
-// 三个**不改**的形状约定（改行形状前先读 dto.ProductRow 的文件头）：
+// 三个**不改**的形状约定（改行形状前先读 dto.ProductRowResp 的文件头）：
 //   - 嵌套值保持 map[string]any / []map[string]any —— 模板对可选项用 isset 判「键在不在」，
 //     而 Jet 对 struct 的标量字段 isset 恒真；
 //   - 只在部分路径出现的整块数据用**可 nil 的 map**（Bundle：nil 才让模板整块跳过）；
@@ -45,7 +45,7 @@ import (
 // 入参 detail 为 nil 是畸形调用，返回 (nil, nil) —— 调用方本来就有「详情非 nil 才装配」的守卫。
 func (s *Service) productRow(ctx context.Context, selected string, flat []*productdto.CategoryResp,
 	brands []*productdto.BrandResp, tags []*productdto.TagResp,
-	warehouses []productdto.WarehouseOptionView, detail *productdto.ProductResp) (*productdto.ProductRow, error) {
+	warehouses []productdto.WarehouseOptionResp, detail *productdto.ProductResp) (*productdto.ProductRowResp, error) {
 	if detail == nil {
 		return nil, nil
 	}
@@ -66,8 +66,8 @@ func (s *Service) productRow(ctx context.Context, selected string, flat []*produ
 // 由调用方批量备齐，装配只做纯计算。
 func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.CategoryResp,
 	brands []*productdto.BrandResp, tags []*productdto.TagResp,
-	warehouses []productdto.WarehouseOptionView, detail *productdto.ProductResp,
-	rating *productdto.RatingResp) *productdto.ProductRow {
+	warehouses []productdto.WarehouseOptionResp, detail *productdto.ProductResp,
+	rating *productdto.RatingResp) *productdto.ProductRowResp {
 	if detail == nil {
 		return nil
 	}
@@ -85,7 +85,7 @@ func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.C
 	// 标签与自动标签各算一次（列表列的取值与详情页的勾选态共用同一份结果）。
 	tagChecks := checkedTagOptions(tags, detail.TagIDs)
 	autoTags := attachedAutoTags(tags, detail.TagIDs)
-	return &productdto.ProductRow{
+	return &productdto.ProductRowResp{
 		ID:   detail.ID,
 		Name: detail.Name,
 		Slug: detail.Slug,
@@ -158,11 +158,11 @@ func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.C
 //
 // 明细段（Subtitle / Unit / DescriptionHTML / Variants / Attributes / Ratings 明细 /
 // PrimaryOptions / BrandOptions）在列表路径**刻意为空**：列表模板（products.html）只读
-// 汇总段，为它加载完整详情对象正是这次要消掉的开销（见 dto.ProductRow 的两段划分）。
+// 汇总段，为它加载完整详情对象正是这次要消掉的开销（见 dto.ProductRowResp 的两段划分）。
 func (s *Service) productRowFromList(ctx context.Context, flat []*productdto.CategoryResp,
 	brands []*productdto.BrandResp, tags []*productdto.TagResp,
-	warehouses []productdto.WarehouseOptionView, item *productdto.ProductResp,
-	agg productmodel.RatingAgg) *productdto.ProductRow {
+	warehouses []productdto.WarehouseOptionResp, item *productdto.ProductResp,
+	agg productmodel.RatingAgg) *productdto.ProductRowResp {
 	if item == nil {
 		return nil
 	}
@@ -188,8 +188,8 @@ func ratingRespOfAgg(agg productmodel.RatingAgg) *productdto.RatingResp {
 // 静默失效（少一行却仍写着「共 N 条」，用户据此以为商品被删了）。
 func (s *Service) productRowsFromList(ctx context.Context, projectID string, flat []*productdto.CategoryResp,
 	brands []*productdto.BrandResp, tags []*productdto.TagResp,
-	warehouses []productdto.WarehouseOptionView, items []*productdto.ProductResp) ([]productdto.ProductRow, error) {
-	rows := make([]productdto.ProductRow, 0, len(items))
+	warehouses []productdto.WarehouseOptionResp, items []*productdto.ProductResp) ([]productdto.ProductRowResp, error) {
+	rows := make([]productdto.ProductRowResp, 0, len(items))
 	ids := make([]string, 0, len(items))
 	for _, item := range items {
 		if item != nil && item.ID != "" {
@@ -334,7 +334,7 @@ func productDescriptionHTML(raw json.RawMessage) string {
 //
 // 文案（∞ / 未入库）留在模板侧用 tr() 取词，这里只给出状态与数字：
 // 一种语言一个值，别把中文拼进数据层（接口调用方拿到的会是中文）。
-func productStockCell(detail *productdto.ProductResp, warehouses []productdto.WarehouseOptionView) map[string]any {
+func productStockCell(detail *productdto.ProductResp, warehouses []productdto.WarehouseOptionResp) map[string]any {
 	cell := map[string]any{
 		"State": productenums.StockStateNone,
 		"Total": 0,

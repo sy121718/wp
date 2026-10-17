@@ -60,7 +60,7 @@ var taxonomyPages = []taxonomyPage{
 		basePath: "/admin/product-tags",
 		success:  func() *productPageReaderStub { return &productPageReaderStub{tagsView: productTagsPageViewStub(nil)} },
 		empty: func() *productPageReaderStub {
-			return &productPageReaderStub{tagsView: &productdto.ProductTagsPageView{SelectedProject: "p1", HTTPStatus: http.StatusOK}}
+			return &productPageReaderStub{tagsView: &productdto.ProductTagsPageResp{SelectedProject: "p1", HTTPStatus: http.StatusOK}}
 		},
 		rendered: []string{"手工标签"},
 	},
@@ -73,7 +73,7 @@ var taxonomyPages = []taxonomyPage{
 			return &productPageReaderStub{categoriesView: productCategoriesPageViewStub(nil)}
 		},
 		empty: func() *productPageReaderStub {
-			return &productPageReaderStub{categoriesView: &productdto.ProductCategoriesPageView{SelectedProject: "p1", HTTPStatus: http.StatusOK}}
+			return &productPageReaderStub{categoriesView: &productdto.ProductCategoriesPageResp{SelectedProject: "p1", HTTPStatus: http.StatusOK}}
 		},
 		rendered: []string{"男装"},
 	},
@@ -86,7 +86,7 @@ var taxonomyPages = []taxonomyPage{
 			return &productPageReaderStub{brandsView: productBrandsPageViewStub(nil)}
 		},
 		empty: func() *productPageReaderStub {
-			return &productPageReaderStub{brandsView: &productdto.ProductBrandsPageView{SelectedProject: "p1", HTTPStatus: http.StatusOK}}
+			return &productPageReaderStub{brandsView: &productdto.ProductBrandsPageResp{SelectedProject: "p1", HTTPStatus: http.StatusOK}}
 		},
 		rendered: []string{"品牌一"},
 	},

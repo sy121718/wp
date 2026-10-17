@@ -15,7 +15,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-// pricingPageData 定价页的渲染数据（与 ProductPricingPageView 同形）。
+// pricingPageData 定价页的渲染数据（与 ProductPricingPageResp 同形）。
 //
 // HasPreview=false：本测试只钉写通道的接线，试算表那一段与它无关，
 // 少一份假明细就少一处「模板字段改了却没人发现」的假绿来源。

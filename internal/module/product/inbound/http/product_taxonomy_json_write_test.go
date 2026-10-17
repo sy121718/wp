@@ -143,7 +143,7 @@ func TestBrandPageUsesJSONWriteBase(t *testing.T) {
 // Tags 里必须有一行**自动标签**（IsRule）：单条「重算」表单只在自动标签行上渲染，
 // 只给手工标签时那条断言会因为表单根本不存在而假绿。
 func TestTagPageUsesJSONWriteBase(t *testing.T) {
-	h := taxonomyHandle(&productPageReaderStub{tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageView) {
+	h := taxonomyHandle(&productPageReaderStub{tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageResp) {
 		v.TagDetails = append(v.TagDetails, &productdto.TagResp{
 			ID: "t2", Name: "自动标签", Slug: "auto",
 			Kind: productenums.TagKindRule, RuleType: productenums.TagRuleNewArrival,

@@ -90,121 +90,121 @@ func (s productPageProjectsStub) List(context.Context) ([]projectdto.ProjectResp
 // 桩返回的是**完整的视图**（键给齐）：控制器不再补任何键，缺一个就是渲染中断。
 type productPageReaderStub struct {
 	productcontract.ProductService
-	view *productdto.ProductNewPageView
+	view *productdto.ProductNewPageResp
 	err  error
 	// reqs 记录控制器转下来的入参：参数读丢了要能看出来。
 	reqs []*productdto.ProductNewPageReq
 
 	// 列表页 / 详情页 / 编辑页 / 建表单的桩：同一个接口的另外六个方法，用例各自只填自己那一份。
 	// **七个方法都要在** —— 接口是一个整体，少一个就是断言失败、整包 500。
-	listView *productdto.ProductListPageView
+	listView *productdto.ProductListPageResp
 	listErr  error
 	listReqs []*productdto.ProductListPageReq
 
-	detailView *productdto.ProductDetailPageView
+	detailView *productdto.ProductDetailPageResp
 	detailErr  error
 	detailReqs []*productdto.ProductDetailPageReq
 
-	editView *productdto.ProductEditPageView
+	editView *productdto.ProductEditPageResp
 	editErr  error
 	editReqs []*productdto.ProductEditPageReq
 
-	createFormView *productdto.ProductCreateFormView
+	createFormView *productdto.ProductCreateFormResp
 	createFormErr  error
 	createFormReqs []*productdto.ProductCreateFormReq
 
-	pricingView *productdto.ProductPricingPageView
+	pricingView *productdto.ProductPricingPageResp
 	pricingErr  error
 	pricingReqs []*productdto.ProductPricingPageReq
 
-	attributesPageView *productdto.ProductAttributesPageView
+	attributesPageView *productdto.ProductAttributesPageResp
 	attributesPageErr  error
 	attributesPageReqs []*productdto.ProductAttributesPageReq
 
-	detailTemplatePageView *productdto.ProductDetailTemplatePageView
+	detailTemplatePageView *productdto.ProductDetailTemplatePageResp
 	detailTemplatePageErr  error
 	detailTemplatePageReqs []*productdto.ProductDetailTemplatePageReq
 
-	bundleView *productdto.ProductBundlePageView
+	bundleView *productdto.ProductBundlePageResp
 	bundleErr  error
 	bundleReqs []*productdto.ProductBundlePageReq
 
-	categoriesView *productdto.ProductCategoriesPageView
+	categoriesView *productdto.ProductCategoriesPageResp
 	categoriesErr  error
 	categoriesReqs []*productdto.ProductCategoriesPageReq
 
-	brandsView *productdto.ProductBrandsPageView
+	brandsView *productdto.ProductBrandsPageResp
 	brandsErr  error
 	brandsReqs []*productdto.ProductBrandsPageReq
 
-	tagsView *productdto.ProductTagsPageView
+	tagsView *productdto.ProductTagsPageResp
 	tagsErr  error
 	tagsReqs []*productdto.ProductTagsPageReq
 }
 
-func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
+func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageResp, error) {
 	s.reqs = append(s.reqs, req)
 	return s.view, s.err
 }
 
-func (s *productPageReaderStub) ProductListPage(_ context.Context, req *productdto.ProductListPageReq) (*productdto.ProductListPageView, error) {
+func (s *productPageReaderStub) ProductListPage(_ context.Context, req *productdto.ProductListPageReq) (*productdto.ProductListPageResp, error) {
 	s.listReqs = append(s.listReqs, req)
 	return s.listView, s.listErr
 }
 
-func (s *productPageReaderStub) ProductDetailPage(_ context.Context, req *productdto.ProductDetailPageReq) (*productdto.ProductDetailPageView, error) {
+func (s *productPageReaderStub) ProductDetailPage(_ context.Context, req *productdto.ProductDetailPageReq) (*productdto.ProductDetailPageResp, error) {
 	s.detailReqs = append(s.detailReqs, req)
 	return s.detailView, s.detailErr
 }
 
-func (s *productPageReaderStub) ProductEditPage(_ context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageView, error) {
+func (s *productPageReaderStub) ProductEditPage(_ context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageResp, error) {
 	s.editReqs = append(s.editReqs, req)
 	return s.editView, s.editErr
 }
 
-func (s *productPageReaderStub) ProductCreateForm(_ context.Context, req *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormView, error) {
+func (s *productPageReaderStub) ProductCreateForm(_ context.Context, req *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormResp, error) {
 	s.createFormReqs = append(s.createFormReqs, req)
 	return s.createFormView, s.createFormErr
 }
 
-func (s *productPageReaderStub) ProductPricingPage(_ context.Context, req *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageView, error) {
+func (s *productPageReaderStub) ProductPricingPage(_ context.Context, req *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageResp, error) {
 	s.pricingReqs = append(s.pricingReqs, req)
 	return s.pricingView, s.pricingErr
 }
 
-func (s *productPageReaderStub) ProductAttributesPage(_ context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageView, error) {
+func (s *productPageReaderStub) ProductAttributesPage(_ context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageResp, error) {
 	s.attributesPageReqs = append(s.attributesPageReqs, req)
 	return s.attributesPageView, s.attributesPageErr
 }
 
-func (s *productPageReaderStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageView, error) {
+func (s *productPageReaderStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageResp, error) {
 	s.detailTemplatePageReqs = append(s.detailTemplatePageReqs, req)
 	return s.detailTemplatePageView, s.detailTemplatePageErr
 }
 
-func (s *productPageReaderStub) ProductBundlePage(_ context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageView, error) {
+func (s *productPageReaderStub) ProductBundlePage(_ context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageResp, error) {
 	s.bundleReqs = append(s.bundleReqs, req)
 	return s.bundleView, s.bundleErr
 }
 
-func (s *productPageReaderStub) ProductCategoriesPage(_ context.Context, req *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageView, error) {
+func (s *productPageReaderStub) ProductCategoriesPage(_ context.Context, req *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageResp, error) {
 	s.categoriesReqs = append(s.categoriesReqs, req)
 	return s.categoriesView, s.categoriesErr
 }
 
-func (s *productPageReaderStub) ProductBrandsPage(_ context.Context, req *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageView, error) {
+func (s *productPageReaderStub) ProductBrandsPage(_ context.Context, req *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageResp, error) {
 	s.brandsReqs = append(s.brandsReqs, req)
 	return s.brandsView, s.brandsErr
 }
 
-func (s *productPageReaderStub) ProductTagsPage(_ context.Context, req *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageView, error) {
+func (s *productPageReaderStub) ProductTagsPage(_ context.Context, req *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageResp, error) {
 	s.tagsReqs = append(s.tagsReqs, req)
 	return s.tagsView, s.tagsErr
 }
 
 // productCategoriesPageViewStub 分类页成功档视图（键给齐，与 service 同型）。
-func productCategoriesPageViewStub(mutate func(*productdto.ProductCategoriesPageView)) *productdto.ProductCategoriesPageView {
-	v := &productdto.ProductCategoriesPageView{
+func productCategoriesPageViewStub(mutate func(*productdto.ProductCategoriesPageResp)) *productdto.ProductCategoriesPageResp {
+	v := &productdto.ProductCategoriesPageResp{
 		Title: productenums.ProductCategoriesTitle, Menu: "product-categories",
 		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
 		CategoryDetails: []*productdto.CategoryResp{{ID: "c1", ProjectID: "p1", Name: "男装", Slug: "men"}},
@@ -218,8 +218,8 @@ func productCategoriesPageViewStub(mutate func(*productdto.ProductCategoriesPage
 }
 
 // productBrandsPageViewStub 品牌页成功档视图。
-func productBrandsPageViewStub(mutate func(*productdto.ProductBrandsPageView)) *productdto.ProductBrandsPageView {
-	v := &productdto.ProductBrandsPageView{
+func productBrandsPageViewStub(mutate func(*productdto.ProductBrandsPageResp)) *productdto.ProductBrandsPageResp {
+	v := &productdto.ProductBrandsPageResp{
 		Title: productenums.ProductBrandsTitle, Menu: "product-brands",
 		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
 		BrandDetails: []*productdto.BrandResp{{ID: "b1", Name: "品牌一", Slug: "brand-1"}},
@@ -232,8 +232,8 @@ func productBrandsPageViewStub(mutate func(*productdto.ProductBrandsPageView)) *
 }
 
 // productTagsPageViewStub 标签页成功档视图。
-func productTagsPageViewStub(mutate func(*productdto.ProductTagsPageView)) *productdto.ProductTagsPageView {
-	v := &productdto.ProductTagsPageView{
+func productTagsPageViewStub(mutate func(*productdto.ProductTagsPageResp)) *productdto.ProductTagsPageResp {
+	v := &productdto.ProductTagsPageResp{
 		Title: productenums.ProductTagsTitle, Menu: "product-tags",
 		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
 		TagDetails: []*productdto.TagResp{{ID: "t1", Name: "手工标签", Slug: "manual", Kind: productenums.TagKindManual}},
@@ -249,8 +249,8 @@ func productTagsPageViewStub(mutate func(*productdto.ProductTagsPageView)) *prod
 //
 // Rows 给一行**已配置成员**（不是空白行）：成员表是这一屏里最贵的内容，
 // 渲染用例要能看出「行真的装出来了」——只给空白行时，把装配整段删掉也照样绿。
-func productBundlePageViewStub(mutate func(*productdto.ProductBundlePageView)) *productdto.ProductBundlePageView {
-	v := &productdto.ProductBundlePageView{
+func productBundlePageViewStub(mutate func(*productdto.ProductBundlePageResp)) *productdto.ProductBundlePageResp {
+	v := &productdto.ProductBundlePageResp{
 		Title:           productenums.ProductBundleTitle,
 		Menu:            "products",
 		Projects:        []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
@@ -259,19 +259,19 @@ func productBundlePageViewStub(mutate func(*productdto.ProductBundlePageView)) *
 		SelectedProduct: "prod1",
 		Detail:          &productdto.BundleConfigResp{ProductID: "prod1", ProductName: "商品一"},
 		Skus:            []*productdto.BundleSKUResp{},
-		Rows: []productdto.BundleOptionRow{{
+		Rows: []productdto.BundleOptionResp{{
 			VariantID: "v1", SKULabel: "商品一 · SKU-1", Required: true,
 			DefaultQty: 2, MinQty: 1, MaxQty: 5, Available: 9,
 			SourceParts: []productdto.BundleSourcePart{{LabelKey: productenums.ProductBundleSourceExternalSKULabel, LabelFallback: "外部编码", Value: "EXT-1"}},
 		}},
-		CandidateSKUs:    []productdto.BundleCandidateView{{ID: "v1", Label: "商品一 · SKU-1"}},
+		CandidateSKUs:    []productdto.BundleCandidateResp{{ID: "v1", Label: "商品一 · SKU-1"}},
 		SkuCount:         1,
 		MaxOptions:       productdto.BundleMaxOptionsLimit,
 		Sources:          []map[string]any{{"Value": productenums.BundleSourceProduct, "LabelKey": productenums.ProductBundleSourceProduct, "LabelFallback": "从商品导入", "Selected": true}},
 		Source:           productenums.BundleSourceProduct,
 		SourceProducts:   []map[string]any{{"ID": "", "LabelKey": productenums.ProductBundleOptionNone, "LabelFallback": "— 不选 —", "Selected": true}},
 		SourceAttributes: []*productdto.AttributeResp{},
-		SourceWarehouses: []productdto.BundleSourceWarehouseGroupView{},
+		SourceWarehouses: []productdto.BundleSourceWarehouseGroupResp{},
 	}
 	if mutate != nil {
 		mutate(v)
@@ -280,15 +280,15 @@ func productBundlePageViewStub(mutate func(*productdto.ProductBundlePageView)) *
 }
 
 // detailTemplatePageViewStub 「详情页模板」整页的成功档视图（键给齐，与 service 同型）。
-func detailTemplatePageViewStub(mutate func(*productdto.ProductDetailTemplatePageView)) *productdto.ProductDetailTemplatePageView {
-	v := &productdto.ProductDetailTemplatePageView{
+func detailTemplatePageViewStub(mutate func(*productdto.ProductDetailTemplatePageResp)) *productdto.ProductDetailTemplatePageResp {
+	v := &productdto.ProductDetailTemplatePageResp{
 		Title:             productenums.ProductDetailTemplateTitle,
 		Menu:              "products",
 		Projects:          []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
 		SelectedProject:   "p1",
 		Ready:             true,
-		Product:           productdto.DetailTemplateProductView{ID: "prod-1", Name: "商品一", Slug: "p1"},
-		Templates:         []productdto.DetailTemplateOptionView{{ID: "tpl-1", Name: "默认详情模板", DraftVersion: 3, IsBound: true, IsDefault: true}},
+		Product:           productdto.DetailTemplateProductResp{ID: "prod-1", Name: "商品一", Slug: "p1"},
+		Templates:         []productdto.DetailTemplateOptionResp{{ID: "tpl-1", Name: "默认详情模板", DraftVersion: 3, IsBound: true, IsDefault: true}},
 		TemplateCount:     1,
 		BoundTemplateID:   "tpl-1",
 		DefaultTemplateID: "tpl-1",
@@ -310,16 +310,16 @@ func (s *productPageReaderStub) ListRatings(context.Context, *productdto.ListRat
 
 // productNewPageViewStub 成功档视图（与 service 产出的同型：列表键一律给空列表而不是缺键）。
 // mutate 用于把某个用例改成失败档（改档位 / 失败槽）。
-func productNewPageViewStub(mutate func(*productdto.ProductNewPageView)) *productdto.ProductNewPageView {
-	v := &productdto.ProductNewPageView{
+func productNewPageViewStub(mutate func(*productdto.ProductNewPageResp)) *productdto.ProductNewPageResp {
+	v := &productdto.ProductNewPageResp{
 		Title:               productenums.ProductsCreateSubmit,
 		Menu:                "products",
 		Projects:            []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
 		SelectedProject:     "p1",
-		WarehouseOptions:    []productdto.WarehouseOptionView{},
-		AttributeOptions:    []productdto.AttributeOptionView{},
-		WarehouseSKUOptions: []productdto.WarehouseSKUGroupView{},
-		Templates:           []productdto.EntityTemplateOptionView{},
+		WarehouseOptions:    []productdto.WarehouseOptionResp{},
+		AttributeOptions:    []productdto.AttributeOptionResp{},
+		WarehouseSKUOptions: []productdto.WarehouseSKUGroupResp{},
+		Templates:           []productdto.EntityTemplateOptionResp{},
 		HTTPStatus:          http.StatusOK,
 	}
 	if mutate != nil {
@@ -332,15 +332,15 @@ func productNewPageViewStub(mutate func(*productdto.ProductNewPageView)) *produc
 // 而不是缺键 —— 控制器不再补任何键）。
 //
 // 分页条只由 total / page / limit 三个事实决定，所以「25 条 → 两页」这类用例只改 Total。
-func productListPageViewStub(mutate func(*productdto.ProductListPageView)) *productdto.ProductListPageView {
-	v := &productdto.ProductListPageView{
+func productListPageViewStub(mutate func(*productdto.ProductListPageResp)) *productdto.ProductListPageResp {
+	v := &productdto.ProductListPageResp{
 		Projects:            []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
 		SelectedProject:     "p1",
 		Page:                1,
 		Limit:               productListPageSize,
-		WarehouseOptions:    []productdto.WarehouseOptionView{},
-		AttributeOptions:    []productdto.AttributeOptionView{},
-		WarehouseSKUOptions: []productdto.WarehouseSKUGroupView{},
+		WarehouseOptions:    []productdto.WarehouseOptionResp{},
+		AttributeOptions:    []productdto.AttributeOptionResp{},
+		WarehouseSKUOptions: []productdto.WarehouseSKUGroupResp{},
 		RowDetails:          []*productdto.ProductResp{},
 		Categories:          []*productdto.CategoryResp{},
 		Brands:              []*productdto.BrandResp{},
@@ -357,14 +357,14 @@ func productListPageViewStub(mutate func(*productdto.ProductListPageView)) *prod
 
 // productDetailPageViewStub 详情页视图桩（默认「读到、正常」档；失败 / 空态由用例改）：
 // 列表键一律给空列表而不是缺键 —— 控制器不再补任何键。
-func productDetailPageViewStub(mutate func(*productdto.ProductDetailPageView)) *productdto.ProductDetailPageView {
-	v := &productdto.ProductDetailPageView{
+func productDetailPageViewStub(mutate func(*productdto.ProductDetailPageResp)) *productdto.ProductDetailPageResp {
+	v := &productdto.ProductDetailPageResp{
 		Title:            productenums.ProductDetailTitle,
 		Menu:             "products",
 		Projects:         []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
 		SelectedProject:  "p1",
 		ProductID:        "prod-1",
-		WarehouseOptions: []productdto.WarehouseOptionView{},
+		WarehouseOptions: []productdto.WarehouseOptionResp{},
 		Categories:       []*productdto.CategoryResp{},
 		Brands:           []*productdto.BrandResp{},
 		Tags:             []*productdto.TagResp{},
@@ -387,8 +387,8 @@ func productDetailPageViewStub(mutate func(*productdto.ProductDetailPageView)) *
 // 与详情页同一口径：列表键一律给空列表而不是缺键 —— 控制器不再补任何键。
 // Detail 给一条最小商品，行（Product）由本桩按读模型口径补（见 return 前那段）；
 // 图集文本 / 价格文本这类表单字段仍由控制器算。
-func productEditPageViewStub(mutate func(*productdto.ProductEditPageView)) *productdto.ProductEditPageView {
-	v := &productdto.ProductEditPageView{
+func productEditPageViewStub(mutate func(*productdto.ProductEditPageResp)) *productdto.ProductEditPageResp {
+	v := &productdto.ProductEditPageResp{
 		Title:            MsgProductsTitle,
 		Menu:             "products",
 		Projects:         []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
@@ -396,8 +396,8 @@ func productEditPageViewStub(mutate func(*productdto.ProductEditPageView)) *prod
 		ProductID:        "prod1",
 		HasProduct:       true,
 		Detail:           &productdto.ProductResp{ID: "prod1", Name: "商品一", Slug: "prod-1"},
-		WarehouseOptions: []productdto.WarehouseOptionView{},
-		AttributeOptions: []productdto.AttributeOptionView{},
+		WarehouseOptions: []productdto.WarehouseOptionResp{},
+		AttributeOptions: []productdto.AttributeOptionResp{},
 		Categories:       []*productdto.CategoryResp{},
 		Brands:           []*productdto.BrandResp{},
 		Tags:             []*productdto.TagResp{},
@@ -418,12 +418,12 @@ func productEditPageViewStub(mutate func(*productdto.ProductEditPageView)) *prod
 
 // productCreateFormViewStub 建表单视图桩（默认「取数成功」档；回填值由调用方填）。
 // 与其它视图桩同一口径：列表键给空列表而不是缺键。
-func productCreateFormViewStub(mutate func(*productdto.ProductCreateFormView)) *productdto.ProductCreateFormView {
-	v := &productdto.ProductCreateFormView{
+func productCreateFormViewStub(mutate func(*productdto.ProductCreateFormResp)) *productdto.ProductCreateFormResp {
+	v := &productdto.ProductCreateFormResp{
 		SelectedProject:     "p1",
-		WarehouseOptions:    []productdto.WarehouseOptionView{},
-		AttributeOptions:    []productdto.AttributeOptionView{},
-		WarehouseSKUOptions: []productdto.WarehouseSKUGroupView{},
+		WarehouseOptions:    []productdto.WarehouseOptionResp{},
+		AttributeOptions:    []productdto.AttributeOptionResp{},
+		WarehouseSKUOptions: []productdto.WarehouseSKUGroupResp{},
 		HTTPStatus:          http.StatusOK,
 	}
 	if mutate != nil {
@@ -434,8 +434,8 @@ func productCreateFormViewStub(mutate func(*productdto.ProductCreateFormView)) *
 
 // productPricingPageViewStub 定价页视图的最小形状：本页三处取数各自降级、没有失败档，
 // 所以默认档就是 200 + 空集合（键要给齐 —— 控制器不再补任何键，缺一个就是渲染中断）。
-func productPricingPageViewStub(mutate func(*productdto.ProductPricingPageView)) *productdto.ProductPricingPageView {
-	view := &productdto.ProductPricingPageView{
+func productPricingPageViewStub(mutate func(*productdto.ProductPricingPageResp)) *productdto.ProductPricingPageResp {
+	view := &productdto.ProductPricingPageResp{
 		Title: productenums.ProductPricingTitle, Menu: "product-pricing",
 		Projects: []projectdto.ProjectResp{}, PreviewSummary: map[string]any{},
 		PreviewRows: []map[string]any{}, History: []map[string]any{},
@@ -449,8 +449,8 @@ func productPricingPageViewStub(mutate func(*productdto.ProductPricingPageView))
 
 // productAttributesPageViewStub 属性库视图的最小形状：取数结果给空集合、装配产物留空
 // （控制器会补 Title / Menu / Attributes / AttrCreateForm / Pagination / ListQuery）。
-func productAttributesPageViewStub(mutate func(*productdto.ProductAttributesPageView)) *productdto.ProductAttributesPageView {
-	view := &productdto.ProductAttributesPageView{
+func productAttributesPageViewStub(mutate func(*productdto.ProductAttributesPageResp)) *productdto.ProductAttributesPageResp {
+	view := &productdto.ProductAttributesPageResp{
 		Projects: []projectdto.ProjectResp{}, AttributeDetails: []*productdto.AttributeResp{},
 		Limit: 20, HTTPStatus: http.StatusOK,
 	}
@@ -573,13 +573,13 @@ func headOf(body string) string {
 func TestProductsPageLoadFailureRendersSamePage(t *testing.T) {
 	h := &ProductPageHandle{
 		products: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 				v.HTTPStatus = http.StatusInternalServerError
 				v.LoadFailed = true
 			}),
 			listErr: errors.New(`pq: relation "products" does not exist`),
 		}, reader: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 				v.HTTPStatus = http.StatusInternalServerError
 				v.LoadFailed = true
 			}),
@@ -598,13 +598,13 @@ func TestProductsPageLoadFailureRendersSamePage(t *testing.T) {
 func TestProductsPageBadProjectParamIsFullPage(t *testing.T) {
 	h := &ProductPageHandle{
 		products: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 				v.HTTPStatus = http.StatusBadRequest
 				v.LoadFailed = true
 			}),
 			listErr: productenums.Err(productenums.ErrInvalidParam),
 		}, reader: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 				v.HTTPStatus = http.StatusBadRequest
 				v.LoadFailed = true
 			}),
@@ -624,14 +624,14 @@ func TestProductsPageBadProjectParamIsFullPage(t *testing.T) {
 func TestProductsPageRowDetailFailureIsNotSwallowed(t *testing.T) {
 	h := &ProductPageHandle{
 		products: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 				v.Total = 1
 				v.HTTPStatus = http.StatusInternalServerError
 				v.LoadFailed = true
 			}),
 			listErr: errors.New(`pq: canceling statement due to statement timeout`),
 		}, reader: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 				v.Total = 1
 				v.HTTPStatus = http.StatusInternalServerError
 				v.LoadFailed = true
@@ -646,7 +646,7 @@ func TestProductsPageRowDetailFailureIsNotSwallowed(t *testing.T) {
 // TestProductNewPageLoadFailureRendersSamePage 新建页主数据没读到：同页 + 500 + no-store。
 func TestProductNewPageLoadFailureRendersSamePage(t *testing.T) {
 	reader := &productPageReaderStub{
-		view: productNewPageViewStub(func(v *productdto.ProductNewPageView) {
+		view: productNewPageViewStub(func(v *productdto.ProductNewPageResp) {
 			v.HTTPStatus = http.StatusInternalServerError
 			v.LoadFailed = true
 		}),
@@ -709,12 +709,12 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 				// 取数编排已下沉到 service（读模型）：桩给**读模型的产出**（档位 + 是否抛错），
 				// 不再 mock Get / ListCategories 这些方法（它们已不在这条渲染路径上）。
 				products: &productPageReaderStub{
-					detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageView) {
+					detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageResp) {
 						v.HTTPStatus = tc.status
 					}),
 					detailErr: tc.readerErr,
 				}, reader: &productPageReaderStub{
-					detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageView) {
+					detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageResp) {
 						v.HTTPStatus = tc.status
 					}),
 					detailErr: tc.readerErr,
@@ -736,15 +736,15 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 // TestProductDetailPageRendersProductWhenDetailReadable 成功档回归：详情取到了就正常渲染。
 //
 // 只断言「不再是失败页」这一层：整页 200、页壳完整、失败槽与 404 空态都不出现。
-// （字段级明细由 ProductRow ↔ 模板的对账判据覆盖，见 product_row_template_test.go；
+// （字段级明细由 ProductRowResp ↔ 模板的对账判据覆盖，见 product_row_template_test.go；
 // 这里要钉的是失败出口没有把成功路径一起改坏。）
 func TestProductDetailPageRendersProductWhenDetailReadable(t *testing.T) {
 	h := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: &productPageReaderStub{detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageView) {
+		products: &productPageReaderStub{detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageResp) {
 			v.HasProduct = true
 			v.Detail = &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"}
-		})}, reader: &productPageReaderStub{detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageView) {
+		})}, reader: &productPageReaderStub{detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageResp) {
 			v.HasProduct = true
 			v.Detail = &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"}
 		})},
@@ -775,11 +775,11 @@ func TestProductDetailPageRendersProductWhenDetailReadable(t *testing.T) {
 // 这里刻意用「零工程」这个真实空态（不是「没读到」）覆盖「空态不是失败」这一条。
 func TestProductsPageSuccessRendersPage(t *testing.T) {
 	h := &ProductPageHandle{
-		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 			// 「零工程」这个真实空态：不是「没读到」，是读到了、一个都没有。
 			v.Projects = []projectdto.ProjectResp{}
 			v.SelectedProject = ""
-		})}, reader: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+		})}, reader: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 			// 「零工程」这个真实空态：不是「没读到」，是读到了、一个都没有。
 			v.Projects = []projectdto.ProjectResp{}
 			v.SelectedProject = ""
@@ -809,9 +809,9 @@ func TestProductsPageSuccessRendersPage(t *testing.T) {
 // 点名的 projectId 单独判：service 的 resolveProjectID 在它为空时只肯走「唯一工程」兜底，
 // 多工程部署下删除直接回 ErrInvalidParam —— 那是「点了没反应」而不是报错的那种故障。
 func TestProductsListDeleteUsesJSONWriteBase(t *testing.T) {
-	view := func() *productdto.ProductListPageView {
-		return productListPageViewStub(func(v *productdto.ProductListPageView) {
-			v.Products = []productdto.ProductRow{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
+	view := func() *productdto.ProductListPageResp {
+		return productListPageViewStub(func(v *productdto.ProductListPageResp) {
+			v.Products = []productdto.ProductRowResp{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
 		})
 	}
 	h := &ProductPageHandle{
@@ -845,9 +845,9 @@ func TestProductsListDeleteUsesJSONWriteBase(t *testing.T) {
 // 一次只能给一句汇总。判据：「两者互斥」（data-write-api 与旧 action 不能同时出现）
 // + 三个关键声明（mode=bulk 决定读 data.items、extra 决定 projectId 会不会被带上）。
 func TestProductsListBulkDeleteUsesJSONWriteBase(t *testing.T) {
-	view := func() *productdto.ProductListPageView {
-		return productListPageViewStub(func(v *productdto.ProductListPageView) {
-			v.Products = []productdto.ProductRow{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
+	view := func() *productdto.ProductListPageResp {
+		return productListPageViewStub(func(v *productdto.ProductListPageResp) {
+			v.Products = []productdto.ProductRowResp{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
 		})
 	}
 	h := &ProductPageHandle{
@@ -879,9 +879,9 @@ func TestProductsListBulkDeleteUsesJSONWriteBase(t *testing.T) {
 // 批量表单里。所以除了 mode=bulk，还必须声明 data-write-ids-scope —— 少了它基座在本表单内
 // 收 ids 恒为空，表现是「点了应用调价什么也没发生」。
 func TestProductsListBulkPricingUsesJSONWriteBase(t *testing.T) {
-	view := func() *productdto.ProductListPageView {
-		return productListPageViewStub(func(v *productdto.ProductListPageView) {
-			v.Products = []productdto.ProductRow{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
+	view := func() *productdto.ProductListPageResp {
+		return productListPageViewStub(func(v *productdto.ProductListPageResp) {
+			v.Products = []productdto.ProductRowResp{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
 		})
 	}
 	h := &ProductPageHandle{
@@ -918,7 +918,7 @@ func TestProductsListBulkPricingUsesJSONWriteBase(t *testing.T) {
 // TestProductNewPageInvalidProjectStopsBeforeFanout 承担（桩端口计调用次数）。
 func TestProductNewPageUnknownProjectIsBadRequest(t *testing.T) {
 	reader := &productPageReaderStub{
-		view: productNewPageViewStub(func(v *productdto.ProductNewPageView) {
+		view: productNewPageViewStub(func(v *productdto.ProductNewPageResp) {
 			v.HTTPStatus = http.StatusBadRequest
 			v.LoadFailed = true
 			v.SelectedProject = "does-not-exist"

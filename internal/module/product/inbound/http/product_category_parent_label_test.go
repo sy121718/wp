@@ -56,7 +56,7 @@ func parentLabelRow() *productdto.CategoryResp {
 }
 
 // renderCategoryDrawer 用**真实 Jet 模板**渲染一次编辑抽屉（parentLabels 由调用点给）。
-func renderCategoryDrawer(t *testing.T, parentLabels map[string]productdto.CategoryParentInfo) string {
+func renderCategoryDrawer(t *testing.T, parentLabels map[string]productdto.CategoryParentInfoResp) string {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -76,7 +76,7 @@ func renderCategoryDrawer(t *testing.T, parentLabels map[string]productdto.Categ
 
 // TestCategoryDrawerParentLabelRendered 父级不在候选列表时，那一项显示分类名。
 func TestCategoryDrawerParentLabelRendered(t *testing.T) {
-	body := renderCategoryDrawer(t, map[string]productdto.CategoryParentInfo{parentLabelParentID: {Name: "男装"}})
+	body := renderCategoryDrawer(t, map[string]productdto.CategoryParentInfoResp{parentLabelParentID: {Name: "男装"}})
 	match := categoryParentOption(parentLabelParentID).FindStringSubmatch(body)
 	if match == nil {
 		t.Fatalf("抽屉里找不到「父级缺失」的那一项（value=%s selected）", parentLabelParentID)
@@ -89,7 +89,7 @@ func TestCategoryDrawerParentLabelRendered(t *testing.T) {
 // TestCategoryDrawerParentLabelNoNameFallsBackToID 名称取不到时退回原始 ID —— 这是**有意降级**：
 // 父级行真的不存在（或不在本工程作用域内）时，显示一个编造的父级名比显示 ID 更危险。
 func TestCategoryDrawerParentLabelNoNameFallsBackToID(t *testing.T) {
-	for name, labels := range map[string]map[string]productdto.CategoryParentInfo{"nil": nil, "空名": {parentLabelParentID: {}}} {
+	for name, labels := range map[string]map[string]productdto.CategoryParentInfoResp{"nil": nil, "空名": {parentLabelParentID: {}}} {
 		t.Run(name, func(t *testing.T) {
 			body := renderCategoryDrawer(t, labels)
 			match := categoryParentOption(parentLabelParentID).FindStringSubmatch(body)
@@ -184,7 +184,7 @@ func TestCategoryTreeRowsThreadsParentLabels(t *testing.T) {
 	c, _, _ := newAttrCaptureContext(t, "", "")
 	rows := categoryTreeRows(c, parentLabelProjectID,
 		[]*productdto.CategoryResp{parentLabelRow()}, parentLabelOptions(), false,
-		map[string]productdto.CategoryParentInfo{parentLabelParentID: {Name: "男装"}})
+		map[string]productdto.CategoryParentInfoResp{parentLabelParentID: {Name: "男装"}})
 	if len(rows) != 1 {
 		t.Fatalf("应有一行，实际 %d", len(rows))
 	}
@@ -239,7 +239,7 @@ func TestFilterCategoriesInProject(t *testing.T) {
 // product_category_form.html 的父级缺失项）。原 categoryParentText 已随死代码删除，
 // 这条断言因此从「Go 拼串」挪到「渲染结果」（判据同一件事，落点换到取词该在的那一层）。
 func TestCategoryParentOutOfScopeNoteRenders(t *testing.T) {
-	body := renderCategoryDrawer(t, map[string]productdto.CategoryParentInfo{
+	body := renderCategoryDrawer(t, map[string]productdto.CategoryParentInfoResp{
 		parentLabelParentID: {Name: "男装", OutOfScope: true},
 	})
 	match := categoryParentOption(parentLabelParentID).FindStringSubmatch(body)

@@ -148,9 +148,9 @@ func (f *memberSrcFixture) generateAll(t *testing.T, productID string) []*produc
 	if err != nil {
 		t.Fatalf("预览组合失败: %v", err)
 	}
-	rows := make([]productdto.VariantListRow, 0, len(pv.Rows))
+	rows := make([]productdto.VariantListResp, 0, len(pv.Rows))
 	for _, row := range pv.Rows {
-		rows = append(rows, productdto.VariantListRow{OptionValues: row.OptionValues})
+		rows = append(rows, productdto.VariantListResp{OptionValues: row.OptionValues})
 	}
 	if _, err = f.products.SaveVariantList(ctx, &productdto.SaveVariantListReq{
 		ProductID: productID, ProjectID: f.projectID, WarehouseID: f.sz.ID,
@@ -459,9 +459,9 @@ func TestBundleMemberSourceAttributesRejectsMissingCombo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("预览组合失败: %v", err)
 	}
-	rows := make([]productdto.VariantListRow, 0, len(pv.Rows))
+	rows := make([]productdto.VariantListResp, 0, len(pv.Rows))
 	for _, row := range pv.Rows {
-		rows = append(rows, productdto.VariantListRow{OptionValues: row.OptionValues})
+		rows = append(rows, productdto.VariantListResp{OptionValues: row.OptionValues})
 	}
 	if _, err = f.products.SaveVariantList(ctx, &productdto.SaveVariantListReq{
 		ProductID: src.ID, ProjectID: f.projectID, WarehouseID: f.sz.ID, OperatorID: "tester", Rows: rows,

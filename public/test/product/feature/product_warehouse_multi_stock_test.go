@@ -505,7 +505,7 @@ func TestSaveVariantListRollsBackOnFailure(t *testing.T) {
 	f.products.SetMasterDataChanges(&failingChangesPort{err: errors.New("留痕端口故障（故障注入）")})
 	_, err = f.products.SaveVariantList(ctx, &productdto.SaveVariantListReq{
 		ProductID: p.ID, ProjectID: f.projectID,
-		Rows: []productdto.VariantListRow{
+		Rows: []productdto.VariantListResp{
 			// 清单里只有这个新组合：既要求新建它，也要求删掉清单外的无规格占位变体。
 			{SKUCode: "LIST-1_RED_V", OptionValues: json.RawMessage(`{"color":"red"}`)},
 		},

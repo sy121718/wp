@@ -145,3 +145,74 @@ type ListResp struct {
 	VariantCount int      `json:"variantCount"`
 	UpdatedAt    string   `json:"updatedAt"`
 }
+
+// ProductRowResp 商品行的渲染视图（列表页的一行 / 详情页 / 编辑页的同一个商品）。
+//
+// 汇总段（VariantCount / PriceMin / PriceMax / HasRating / RatingAvg / RatingCount /
+// CategoryCell / CategoryOthers / BrandName / TagLabel）只回答「有哪些商品」，列表页只用这一段；
+// 明细段（Variants / Ratings / CategoryChecks / TagChecks / AutoTags / VariationAttributes …）
+// 是某个商品的子资源，详情页与编辑页用。两页共用**同一份组装**：同一个值在两处各算一遍，
+// 分叉时没有任何东西会报错。
+type ProductRowResp struct {
+	ID   string
+	Name string
+	Slug string
+	// SKUCode 主体 SKU（products.sku_code）：详情页基本信息区只读展示 + 一句话说明唯一性范围。
+	SKUCode string
+	Status  string
+
+	// Subtitle / Unit / DescriptionHTML 只有编辑表单读（列表与详情页不需要，
+	// 所以它们不进「汇总段」那批共用取值）。
+	Subtitle string
+	Unit     string
+	// DescriptionHTML 商品描述在库里是 {"html": "..."}（jsonb 对象），富文本字段要的是裸 HTML。
+	DescriptionHTML string
+	// DefaultImage 主图（编辑页的单图媒体控件）：与 ProductResp.DefaultImage 同源，
+	// 已归一为存储 URL（upload.StorageURL）。**必须与详情响应一起赋值**：编辑页保存时
+	// 基座会把表单里的隐藏域整份发成 UpdateReq.DefaultImage，所以「这里空着」与
+	// 「保存时清空」是同一件事。
+	DefaultImage string
+
+	PriceMin string
+	PriceMax string
+
+	VariantCount int
+	// Variants 变体清单行（docs/14 §8）：种子是库里已有的变体，行上带可编辑的 SKU 与
+	// 规范化后的 option_values（保存时原样回传）。
+	Variants []map[string]any
+
+	// Attributes 引用的属性组（同一属性组可被多个商品共用，这里只展示引用与属性值）；
+	// VariationAttributes 只列参与变体的组（组合生成面板用）。
+	Attributes          []*AttributeResp
+	VariationAttributes []*AttributeResp
+
+	// 分类与品牌：勾选态 / 选中态都由 service 算好，模板只做展示。
+	CategoryChecks []map[string]any
+	// CategoryCell / CategoryOthers 是列表列要的「一个值 + 其余数量」：
+	// 一列一个概念，单元格放值，不把「挂载 N 个分类 · 主分类 X」拼成一句话。
+	CategoryCell   string
+	CategoryOthers int
+	// PrimaryOptions / BrandOptions 是「含空项的下拉」的选项事实：空项带词条 key + 中文兜底，
+	// 数据项只给名字 —— 取词在模板（见 service 的 productPickOptions）。
+	PrimaryOptions []map[string]any
+	BrandOptions   []map[string]any
+	BrandName      string
+
+	// 标签：TagChecks 手工标签勾选挂载，AutoTags 是只读的自动标签（归属由规则重算维护）；
+	// TagLabel 是列表列要的单个值（手工 + 自动合并的标签名）。
+	TagChecks []map[string]any
+	AutoTags  []map[string]any
+	TagLabel  string
+
+	// 评分：明细 + 投影值。没有评分时 HasRating=false —— 空态与「评分 0」是两回事。
+	Ratings     []map[string]any
+	HasRating   bool
+	RatingAvg   string
+	RatingCount int
+
+	// Stock 库存列（三态 + 分仓明细）；恒非空。
+	Stock map[string]any
+
+	// Bundle 捆绑构成面板（只在 type=bundle 时给，nil = 模板整块跳过）。
+	Bundle map[string]any
+}

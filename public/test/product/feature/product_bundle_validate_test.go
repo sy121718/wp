@@ -10,7 +10,7 @@ import (
 )
 
 // validateErr 调校验并断言被拒，返回错误文本。
-func (f *bundleFixture) validateErr(t *testing.T, productID string, items ...productdto.BundleSelectItem) string {
+func (f *bundleFixture) validateErr(t *testing.T, productID string, items ...productdto.BundleSelectItemResp) string {
 	t.Helper()
 	_, err := f.products.ValidateBundleSelection(context.Background(), &productdto.ValidateBundleSelectionReq{
 		ProductID: productID, Items: items,
@@ -47,38 +47,38 @@ func TestBundleSelectionBackendHardValidation(t *testing.T) {
 	f.setBundleConfig(t, main.ID, cfg)
 
 	// 漏填必选项 → 拒。
-	if got := f.validateErr(t, main.ID, productdto.BundleSelectItem{VariantID: vb.ID, Qty: 1}); got != productenums.ErrBundleOptionRequired {
+	if got := f.validateErr(t, main.ID, productdto.BundleSelectItemResp{VariantID: vb.ID, Qty: 1}); got != productenums.ErrBundleOptionRequired {
 		t.Fatalf("漏必选应被拒（%s），实际 %q", productenums.ErrBundleOptionRequired, got)
 	}
 	// 单项超上限（3 > maxQty 2）→ 拒。
-	if got := f.validateErr(t, main.ID, productdto.BundleSelectItem{VariantID: va.ID, Qty: 3}); got != productenums.ErrBundleQtyAboveMax {
+	if got := f.validateErr(t, main.ID, productdto.BundleSelectItemResp{VariantID: va.ID, Qty: 3}); got != productenums.ErrBundleQtyAboveMax {
 		t.Fatalf("超单项上限应被拒（%s），实际 %q", productenums.ErrBundleQtyAboveMax, got)
 	}
 	// 低于整单最小总件数（1 < 2）→ 拒。
-	if got := f.validateErr(t, main.ID, productdto.BundleSelectItem{VariantID: va.ID, Qty: 1}); got != productenums.ErrBundleTotalBelowMin {
+	if got := f.validateErr(t, main.ID, productdto.BundleSelectItemResp{VariantID: va.ID, Qty: 1}); got != productenums.ErrBundleTotalBelowMin {
 		t.Fatalf("低于整单下限应被拒（%s），实际 %q", productenums.ErrBundleTotalBelowMin, got)
 	}
 	// 数量非法（负数）→ 拒。
-	if got := f.validateErr(t, main.ID, productdto.BundleSelectItem{VariantID: va.ID, Qty: -1}); got != productenums.ErrBundleQtyInvalid {
+	if got := f.validateErr(t, main.ID, productdto.BundleSelectItemResp{VariantID: va.ID, Qty: -1}); got != productenums.ErrBundleQtyInvalid {
 		t.Fatalf("负数应被拒（%s），实际 %q", productenums.ErrBundleQtyInvalid, got)
 	}
 	// 配置之外的 SKU → 拒（不静默忽略）。
 	stray := f.mkProduct(t, "无关商品", "stray-product", nil)
 	vs := f.firstVariant(t, stray.ID)
-	if got := f.validateErr(t, main.ID, productdto.BundleSelectItem{VariantID: vs.ID, Qty: 2}); got != productenums.ErrBundleVariantNotInConfig {
+	if got := f.validateErr(t, main.ID, productdto.BundleSelectItemResp{VariantID: vs.ID, Qty: 2}); got != productenums.ErrBundleVariantNotInConfig {
 		t.Fatalf("配置外 SKU 应被拒（%s），实际 %q", productenums.ErrBundleVariantNotInConfig, got)
 	}
 	// 同一 SKU 重复提交 → 拒（数量必须一项一条）。
 	dup := f.validateErr(t, main.ID,
-		productdto.BundleSelectItem{VariantID: va.ID, Qty: 1},
-		productdto.BundleSelectItem{VariantID: va.ID, Qty: 1})
+		productdto.BundleSelectItemResp{VariantID: va.ID, Qty: 1},
+		productdto.BundleSelectItemResp{VariantID: va.ID, Qty: 1})
 	if dup != productenums.ErrBundleVariantDuplicated {
 		t.Fatalf("重复 SKU 应被拒（%s），实际 %q", productenums.ErrBundleVariantDuplicated, dup)
 	}
 	// 合法的整单：必选 1 + 可选 1 = 2 件，正好达到下限。
 	res, err := f.products.ValidateBundleSelection(context.Background(), &productdto.ValidateBundleSelectionReq{
 		ProductID: main.ID,
-		Items: []productdto.BundleSelectItem{
+		Items: []productdto.BundleSelectItemResp{
 			{VariantID: va.ID, Qty: 1}, {VariantID: vb.ID, Qty: 1},
 		},
 	})
@@ -107,12 +107,12 @@ func TestBundleSelectionConstrainedByRealStock(t *testing.T) {
 	f.setBundleConfig(t, main.ID, cfg)
 
 	// 真源只有 3 件：选 4 件被拒。
-	if got := f.validateErr(t, main.ID, productdto.BundleSelectItem{VariantID: v.ID, Qty: 4}); got != productenums.ErrBundleQtyAboveStock {
+	if got := f.validateErr(t, main.ID, productdto.BundleSelectItemResp{VariantID: v.ID, Qty: 4}); got != productenums.ErrBundleQtyAboveStock {
 		t.Fatalf("超真源可用量应被拒（%s），实际 %q", productenums.ErrBundleQtyAboveStock, got)
 	}
 
 	// 把商品侧展示缓存改成 999（脏数据 / 并发滞后）：结论必须完全不变。
-	if got := f.validateErr(t, main.ID, productdto.BundleSelectItem{VariantID: v.ID, Qty: 99}); got != productenums.ErrBundleQtyAboveStock {
+	if got := f.validateErr(t, main.ID, productdto.BundleSelectItemResp{VariantID: v.ID, Qty: 99}); got != productenums.ErrBundleQtyAboveStock {
 		t.Fatalf("可用量必须只读真源，缓存 999 不得放行，实际 %q", got)
 	}
 
@@ -128,7 +128,7 @@ func TestBundleSelectionConstrainedByRealStock(t *testing.T) {
 	// 真源补到 4 件后，选 4 件通过。
 	f.addStock(t, v, 1)
 	res, err := f.products.ValidateBundleSelection(context.Background(), &productdto.ValidateBundleSelectionReq{
-		ProductID: main.ID, Items: []productdto.BundleSelectItem{{VariantID: v.ID, Qty: 4}},
+		ProductID: main.ID, Items: []productdto.BundleSelectItemResp{{VariantID: v.ID, Qty: 4}},
 	})
 	if err != nil {
 		t.Fatalf("真源足够时不应被拒: %v", err)
@@ -161,7 +161,7 @@ func TestBundlePriceIsBasePriceCostKept(t *testing.T) {
 	f.setBundleConfig(t, main.ID, bundleWith(v.ID, true, 2, 1, 0, 0, 0))
 
 	res, err := f.products.ValidateBundleSelection(context.Background(), &productdto.ValidateBundleSelectionReq{
-		ProductID: main.ID, Items: []productdto.BundleSelectItem{{VariantID: v.ID, Qty: 2}},
+		ProductID: main.ID, Items: []productdto.BundleSelectItemResp{{VariantID: v.ID, Qty: 2}},
 	})
 	if err != nil {
 		t.Fatalf("校验失败: %v", err)

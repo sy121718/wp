@@ -34,19 +34,19 @@ const BundlePageProductSize = 100
 // 顺序与原控制器逐字对齐（工程清单 → 工程存在性 → 工程商品 → 捆绑配置三档 → 候选 SKU
 // → 来源属性 → 仓库清单 → 逐仓 SKU 候选），因为「谁先失败」决定用户看到哪一档：
 // 工程清单读不到 500、`?project=<不存在的 id>` 400、配置读不到三档各自不同（见下面）。
-func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageView, error) {
-	view := &productdto.ProductBundlePageView{
+func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageResp, error) {
+	view := &productdto.ProductBundlePageResp{
 		Title:            productenums.ProductBundleTitle,
 		Menu:             "products",
 		Projects:         []projectdto.ProjectResp{},
 		Products:         []*productdto.ProductResp{},
 		Skus:             []*productdto.BundleSKUResp{},
-		Rows:             []productdto.BundleOptionRow{},
-		CandidateSKUs:    []productdto.BundleCandidateView{},
+		Rows:             []productdto.BundleOptionResp{},
+		CandidateSKUs:    []productdto.BundleCandidateResp{},
 		Sources:          []map[string]any{},
 		SourceProducts:   []map[string]any{},
 		SourceAttributes: []*productdto.AttributeResp{},
-		SourceWarehouses: []productdto.BundleSourceWarehouseGroupView{},
+		SourceWarehouses: []productdto.BundleSourceWarehouseGroupResp{},
 		MaxOptions:       productdto.BundleMaxOptionsLimit,
 	}
 	var firstErr error
@@ -151,7 +151,7 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 		attrs := s.BundleSourceAttributes(ctx, selectedProject, sourceProductID)
 		view.SourceAttributes = attrs
 	}
-	warehouses := []productdto.WarehouseOptionView{}
+	warehouses := []productdto.WarehouseOptionResp{}
 	if firstErr == nil {
 		var werr error
 		if warehouses, werr = s.BundlePageWarehouses(ctx, selectedProject); werr != nil {
@@ -160,7 +160,7 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 	}
 	// 仓库 SKU 候选**按仓分组**逐仓取（复用「从仓库选」的既有能力）：一次取全库再在内存分组
 	// 会把整张库存表拉进内存，而这里只需要「最近常用的一屏」。
-	warehouseGroups := []productdto.WarehouseSKUGroupView{}
+	warehouseGroups := []productdto.WarehouseSKUGroupResp{}
 	if firstErr == nil {
 		var gerr error
 		if warehouseGroups, gerr = s.BundlePageWarehouseSKUs(ctx, selectedProject, warehouses); gerr != nil {
@@ -216,17 +216,17 @@ func (s *Service) BundleSourceAttributes(ctx context.Context, projectID, product
 }
 
 // BundlePageWarehouses 本工程的仓库清单（端口未注入 = 空清单，与接线前同一档降级）。
-func (s *Service) BundlePageWarehouses(ctx context.Context, projectID string) ([]productdto.WarehouseOptionView, error) {
+func (s *Service) BundlePageWarehouses(ctx context.Context, projectID string) ([]productdto.WarehouseOptionResp, error) {
 	if s.pageWarehouses == nil {
-		return []productdto.WarehouseOptionView{}, nil
+		return []productdto.WarehouseOptionResp{}, nil
 	}
 	return s.pageWarehouses.WarehouseOptions(ctx, projectID)
 }
 
 // BundlePageWarehouseSKUs 每仓一屏的仓库 SKU 候选（端口未注入 = 空分组）。
-func (s *Service) BundlePageWarehouseSKUs(ctx context.Context, projectID string, warehouses []productdto.WarehouseOptionView) ([]productdto.WarehouseSKUGroupView, error) {
+func (s *Service) BundlePageWarehouseSKUs(ctx context.Context, projectID string, warehouses []productdto.WarehouseOptionResp) ([]productdto.WarehouseSKUGroupResp, error) {
 	if s.pageWarehouses == nil {
-		return []productdto.WarehouseSKUGroupView{}, nil
+		return []productdto.WarehouseSKUGroupResp{}, nil
 	}
 	return s.pageWarehouses.WarehouseSKUOptions(ctx, projectID, warehouses)
 }
@@ -258,8 +258,8 @@ func BundleSourceParts(o productdto.BundleOption) []productdto.BundleSourcePart 
 // 零自定义 JS 就能表达「一行的多个字段」—— 不用 JSON 字符串塞进隐藏域，
 // 也就没有「前端拼 JSON 出错但服务端照单全收」的缝隙。
 // 并行数组靠 DOM 顺序对齐，少一个字段就会让后面所有行的索引错位。
-func bundleConfigRows(detail *productdto.BundleConfigResp, skus []*productdto.BundleSKUResp) []productdto.BundleOptionRow {
-	rows := make([]productdto.BundleOptionRow, 0, productdto.BundleMaxOptionsLimit)
+func bundleConfigRows(detail *productdto.BundleConfigResp, skus []*productdto.BundleSKUResp) []productdto.BundleOptionResp {
+	rows := make([]productdto.BundleOptionResp, 0, productdto.BundleMaxOptionsLimit)
 	// 已配置项的可用量来自配置详情（service 已按真源批量取好），
 	// 新加的空白行没有可用量可言（还没选 SKU）。
 	skuByID := make(map[string]string, len(skus))
@@ -290,12 +290,12 @@ func bundleConfigRows(detail *productdto.BundleConfigResp, skus []*productdto.Bu
 }
 
 // bundleRow 构造一行数据；候选 SKU 列表仅供唯一空白行使用。
-func bundleRow(o productdto.BundleOption, available int, sourceParts []productdto.BundleSourcePart, skuLabel string) productdto.BundleOptionRow {
+func bundleRow(o productdto.BundleOption, available int, sourceParts []productdto.BundleSourcePart, skuLabel string) productdto.BundleOptionResp {
 	if sourceParts == nil {
 		// 空白行（还没选 SKU）没有来源可言：给空切片而不是 nil，模板侧只按 len 判断。
 		sourceParts = []productdto.BundleSourcePart{}
 	}
-	return productdto.BundleOptionRow{
+	return productdto.BundleOptionResp{
 		VariantID:    o.VariantID,
 		SKULabel:     skuLabel,
 		Required:     o.Required,
@@ -312,11 +312,11 @@ func bundleRow(o productdto.BundleOption, available int, sourceParts []productdt
 }
 
 // bundleCandidateOptions 候选 SKU 下拉项。
-func bundleCandidateOptions(skus []*productdto.BundleSKUResp) []productdto.BundleCandidateView {
-	options := make([]productdto.BundleCandidateView, 0, len(skus))
+func bundleCandidateOptions(skus []*productdto.BundleSKUResp) []productdto.BundleCandidateResp {
+	options := make([]productdto.BundleCandidateResp, 0, len(skus))
 	for _, s := range skus {
 		if s != nil {
-			options = append(options, productdto.BundleCandidateView{ID: s.VariantID, Label: s.ProductName + " · " + s.SKUCode})
+			options = append(options, productdto.BundleCandidateResp{ID: s.VariantID, Label: s.ProductName + " · " + s.SKUCode})
 		}
 	}
 	return options
@@ -367,10 +367,10 @@ func bundleSourceProductOptions(products []*productdto.ProductResp, selected str
 //
 // 复用「从仓库选」的既有投影：每个仓一屏候选，选中即代表「这条货在这个仓」——
 // 服务端解析时仍会回该仓复核（前端只是线索）。
-func bundleSourceWarehouseGroups(groups []productdto.WarehouseSKUGroupView, selectedWarehouseID string) []productdto.BundleSourceWarehouseGroupView {
-	out := make([]productdto.BundleSourceWarehouseGroupView, 0, len(groups))
+func bundleSourceWarehouseGroups(groups []productdto.WarehouseSKUGroupResp, selectedWarehouseID string) []productdto.BundleSourceWarehouseGroupResp {
+	out := make([]productdto.BundleSourceWarehouseGroupResp, 0, len(groups))
 	for _, g := range groups {
-		out = append(out, productdto.BundleSourceWarehouseGroupView{
+		out = append(out, productdto.BundleSourceWarehouseGroupResp{
 			WarehouseID: g.WarehouseID,
 			Label:       g.Label,
 			IsDefault:   g.IsDefault,

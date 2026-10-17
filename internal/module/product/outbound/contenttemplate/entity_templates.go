@@ -34,8 +34,8 @@ var _ productcontract.EntityTemplatePort = (*Options)(nil)
 // ListReq 带上调用方给的工程（ListReq.ProjectID）：内容模板表带 FORCE 工程策略，
 // 工程留空时对方的 resolveProjectID 只能回落「唯一工程」，多工程部署下回 ErrProjectRequired
 // —— 调用方按降级处理（空清单），于是「配置读不到」被渲染成「这一屏没有候选」。
-func (o *Options) EntityTemplates(ctx context.Context, projectID, entityType string) (out []productdto.EntityTemplateOptionView, err error) {
-	out = []productdto.EntityTemplateOptionView{}
+func (o *Options) EntityTemplates(ctx context.Context, projectID, entityType string) (out []productdto.EntityTemplateOptionResp, err error) {
+	out = []productdto.EntityTemplateOptionResp{}
 	if o.svc == nil {
 		return out, nil
 	}
@@ -47,7 +47,7 @@ func (o *Options) EntityTemplates(ctx context.Context, projectID, entityType str
 		if row == nil {
 			continue
 		}
-		out = append(out, productdto.EntityTemplateOptionView{ID: row.ID, Name: row.Name})
+		out = append(out, productdto.EntityTemplateOptionResp{ID: row.ID, Name: row.Name})
 	}
 	return out, nil
 }

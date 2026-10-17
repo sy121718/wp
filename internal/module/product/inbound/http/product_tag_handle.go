@@ -168,7 +168,7 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 		Page:      productPageNumber(c.Query("page")),
 	})
 	if view == nil {
-		view = &productdto.ProductTagsPageView{
+		view = &productdto.ProductTagsPageResp{
 			Title: productenums.ProductTagsTitle, Menu: "product-tags",
 			HTTPStatus: http.StatusInternalServerError,
 		}

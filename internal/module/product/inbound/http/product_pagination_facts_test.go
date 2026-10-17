@@ -79,12 +79,12 @@ func TestTaxonomyPagesPaginationFactsRenderLinks(t *testing.T) {
 	t.Run("属性页", func(t *testing.T) {
 		h := &ProductPageHandle{
 			projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-			products: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
+			products: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageResp) {
 				v.SelectedProject = "p1"
 				v.Total = rows
 				v.FilterKeyword = "pg"
 				v.FilterVariation = "1"
-			})}, reader: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
+			})}, reader: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageResp) {
 				v.SelectedProject = "p1"
 				v.Total = rows
 				v.FilterKeyword = "pg"
@@ -117,23 +117,23 @@ func TestTaxonomyPagesPaginationFactsRenderLinks(t *testing.T) {
 			h := &ProductPageHandle{
 				projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 				products: &productPageReaderStub{
-					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageView) {
+					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageResp) {
 						v.SelectedProject, v.Total, v.FilterKeyword = "p1", rows, "pg"
 					}),
-					brandsView: productBrandsPageViewStub(func(v *productdto.ProductBrandsPageView) {
+					brandsView: productBrandsPageViewStub(func(v *productdto.ProductBrandsPageResp) {
 						v.SelectedProject, v.Total, v.FilterKeyword = "p1", rows, "pg"
 					}),
-					tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageView) {
+					tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageResp) {
 						v.SelectedProject, v.Total, v.FilterKeyword = "p1", rows, "pg"
 					}),
 				}, reader: &productPageReaderStub{
-					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageView) {
+					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageResp) {
 						v.SelectedProject, v.Total, v.FilterKeyword = "p1", rows, "pg"
 					}),
-					brandsView: productBrandsPageViewStub(func(v *productdto.ProductBrandsPageView) {
+					brandsView: productBrandsPageViewStub(func(v *productdto.ProductBrandsPageResp) {
 						v.SelectedProject, v.Total, v.FilterKeyword = "p1", rows, "pg"
 					}),
-					tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageView) {
+					tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageResp) {
 						v.SelectedProject, v.Total, v.FilterKeyword = "p1", rows, "pg"
 					}),
 				},
@@ -183,23 +183,23 @@ func TestTaxonomyPagesSinglePageRendersNoPagination(t *testing.T) {
 			h := &ProductPageHandle{
 				projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 				products: &productPageReaderStub{
-					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageView) {
+					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageResp) {
 						v.SelectedProject, v.Total = "p1", 3
 					}),
-					brandsView: productBrandsPageViewStub(func(v *productdto.ProductBrandsPageView) {
+					brandsView: productBrandsPageViewStub(func(v *productdto.ProductBrandsPageResp) {
 						v.SelectedProject, v.Total = "p1", 3
 					}),
-					tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageView) {
+					tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageResp) {
 						v.SelectedProject, v.Total = "p1", 3
 					}),
 				}, reader: &productPageReaderStub{
-					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageView) {
+					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageResp) {
 						v.SelectedProject, v.Total = "p1", 3
 					}),
-					brandsView: productBrandsPageViewStub(func(v *productdto.ProductBrandsPageView) {
+					brandsView: productBrandsPageViewStub(func(v *productdto.ProductBrandsPageResp) {
 						v.SelectedProject, v.Total = "p1", 3
 					}),
-					tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageView) {
+					tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageResp) {
 						v.SelectedProject, v.Total = "p1", 3
 					}),
 				},
@@ -215,10 +215,10 @@ func TestTaxonomyPagesSinglePageRendersNoPagination(t *testing.T) {
 	t.Run("属性页", func(t *testing.T) {
 		h := &ProductPageHandle{
 			projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-			products: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
+			products: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageResp) {
 				v.SelectedProject = "p1"
 				v.Total = 3
-			})}, reader: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
+			})}, reader: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageResp) {
 				v.SelectedProject = "p1"
 				v.Total = 3
 			})},
@@ -237,11 +237,11 @@ func TestProductsPagePaginationFactsRenderLinks(t *testing.T) {
 	// 不再 mock List / CountProducts / Get（那些方法已不在这条渲染路径上）。
 	h := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 			v.Total = rows
 			v.FilterKeyword = "abc"
 			v.FilterStatus = "draft"
-		})}, reader: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+		})}, reader: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 			v.Total = rows
 			v.FilterKeyword = "abc"
 			v.FilterStatus = "draft"
@@ -276,14 +276,14 @@ func TestProductsPageFailureAfterTotalKeepsFailureShape(t *testing.T) {
 	h := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 				v.Total = rows
 				v.LoadFailed = true
 				v.HTTPStatus = http.StatusInternalServerError
 			}),
 			listErr: errors.New("读取商品详情失败"),
 		}, reader: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 				v.Total = rows
 				v.LoadFailed = true
 				v.HTTPStatus = http.StatusInternalServerError
@@ -303,9 +303,9 @@ func TestProductsPageFailureAfterTotalKeepsFailureShape(t *testing.T) {
 	// 这条对照让「失败页没有分页条」不至于被误读成「分页坏了」。
 	ok := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 			v.Total = rows
-		})}, reader: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
+		})}, reader: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
 			v.Total = rows
 		})},
 	}

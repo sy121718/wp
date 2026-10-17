@@ -176,7 +176,7 @@ func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 //
 // 前缀复用页面错误槽的标题词条（同一句话在页面上与回执里长得一样），
 // 每行是「字段/语境：原因」，行间用分号 —— message 只有一行，换行在结论行里会挤成空白。
-func productTranslationErrorsText(c *gin.Context, errs []productdto.TranslationRowError) string {
+func productTranslationErrorsText(c *gin.Context, errs []productdto.TranslationRowErrorResp) string {
 	if len(errs) == 0 {
 		return ""
 	}

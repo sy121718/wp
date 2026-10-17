@@ -36,7 +36,7 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 	}
 	ctx := context.Background()
 	price := 99.0
-	// 主图参建：编辑页必须把它回填进媒体控件的隐藏域 —— ProductRow 漏赋值时控件恒空，
+	// 主图参建：编辑页必须把它回填进媒体控件的隐藏域 —— ProductRowResp 漏赋值时控件恒空，
 	// 而保存路径会读那个隐藏域（三种形态见 TestProductEditPageSavesDefaultImage）。
 	// 注意归一：/img/x 会被 upload.StorageURL 变成 /storage/img/x，所以只比对文件名片段。
 	coverImage := "/img/product-cover.jpg"
@@ -259,7 +259,7 @@ func (s failedAttributeListService) ListAttributes(context.Context, *productdto.
 	return nil, errors.New("injected attribute list failure: internal detail")
 }
 
-func (s failedAttributeListService) ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageView, error) {
+func (s failedAttributeListService) ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageResp, error) {
 	view, err := s.reader.ProductEditPage(ctx, req)
 	if view != nil {
 		view.AttributeOptionsErr = errors.New("injected attribute list failure: internal detail")
@@ -270,47 +270,47 @@ func (s failedAttributeListService) ProductEditPage(ctx context.Context, req *pr
 
 // 读模型接口是一个整体：本桩只覆盖 ProductEditPage 一条，其余几条也必须在 —— 少一条就编译不过
 // （reader 是构造实参的静态类型，不再有运行期断言 → 500 兜底页这条路径）。
-func (s failedAttributeListService) ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
+func (s failedAttributeListService) ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageResp, error) {
 	return s.reader.ProductNewPage(ctx, req)
 }
 
-func (s failedAttributeListService) ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (*productdto.ProductListPageView, error) {
+func (s failedAttributeListService) ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (*productdto.ProductListPageResp, error) {
 	return s.reader.ProductListPage(ctx, req)
 }
 
-func (s failedAttributeListService) ProductDetailPage(ctx context.Context, req *productdto.ProductDetailPageReq) (*productdto.ProductDetailPageView, error) {
+func (s failedAttributeListService) ProductDetailPage(ctx context.Context, req *productdto.ProductDetailPageReq) (*productdto.ProductDetailPageResp, error) {
 	return s.reader.ProductDetailPage(ctx, req)
 }
 
-func (s failedAttributeListService) ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormView, error) {
+func (s failedAttributeListService) ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormResp, error) {
 	return s.reader.ProductCreateForm(ctx, req)
 }
 
-func (s failedAttributeListService) ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageView, error) {
+func (s failedAttributeListService) ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageResp, error) {
 	return s.reader.ProductPricingPage(ctx, req)
 }
 
-func (s failedAttributeListService) ProductDetailTemplatePage(context.Context, *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageView, error) {
+func (s failedAttributeListService) ProductDetailTemplatePage(context.Context, *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageResp, error) {
 	return nil, nil
 }
 
-func (s failedAttributeListService) ProductBundlePage(context.Context, *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageView, error) {
+func (s failedAttributeListService) ProductBundlePage(context.Context, *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageResp, error) {
 	return nil, nil
 }
 
-func (s failedAttributeListService) ProductCategoriesPage(ctx context.Context, req *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageView, error) {
+func (s failedAttributeListService) ProductCategoriesPage(ctx context.Context, req *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageResp, error) {
 	return s.reader.ProductCategoriesPage(ctx, req)
 }
 
-func (s failedAttributeListService) ProductBrandsPage(ctx context.Context, req *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageView, error) {
+func (s failedAttributeListService) ProductBrandsPage(ctx context.Context, req *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageResp, error) {
 	return s.reader.ProductBrandsPage(ctx, req)
 }
 
-func (s failedAttributeListService) ProductTagsPage(ctx context.Context, req *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageView, error) {
+func (s failedAttributeListService) ProductTagsPage(ctx context.Context, req *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageResp, error) {
 	return s.reader.ProductTagsPage(ctx, req)
 }
 
-func (s failedAttributeListService) ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageView, error) {
+func (s failedAttributeListService) ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageResp, error) {
 	return s.reader.ProductAttributesPage(ctx, req)
 }
 

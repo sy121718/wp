@@ -55,7 +55,7 @@ func attributesPageRequest(t *testing.T, h *ProductPageHandle, target string) *h
 }
 
 // attributesPageEnv 读模型桩 + 工程清单（与 taxonomyEnv 同形，只是读模型走视图）。
-func attributesPageEnv(view *productdto.ProductAttributesPageView, err error) (*ProductPageHandle, *productPageReaderStub) {
+func attributesPageEnv(view *productdto.ProductAttributesPageResp, err error) (*ProductPageHandle, *productPageReaderStub) {
 	reader := &productPageReaderStub{attributesPageView: view, attributesPageErr: err}
 	h := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
@@ -66,7 +66,7 @@ func attributesPageEnv(view *productdto.ProductAttributesPageView, err error) (*
 
 // TestProductAttributesPageSuccessRendersRowsAndDrawers 正常档：行、两个抽屉模板、参数转发一次到位。
 func TestProductAttributesPageSuccessRendersRowsAndDrawers(t *testing.T) {
-	view := productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
+	view := productAttributesPageViewStub(func(v *productdto.ProductAttributesPageResp) {
 		v.SelectedProject = "p1"
 		v.AttributeDetails = []*productdto.AttributeResp{
 			{ID: "a1", ProjectID: "p1", Key: "color", Name: "颜色", IsVariation: true, ValueCount: 3},
@@ -105,7 +105,7 @@ func TestProductAttributesPageSuccessRendersRowsAndDrawers(t *testing.T) {
 
 // TestProductAttributesPageUnknownProjectIsBadRequest 未知工程：400 + no-store，仍是「这一页」。
 func TestProductAttributesPageUnknownProjectIsBadRequest(t *testing.T) {
-	view := productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
+	view := productAttributesPageViewStub(func(v *productdto.ProductAttributesPageResp) {
 		v.LoadFailed = true
 		v.HTTPStatus = http.StatusBadRequest
 	})
@@ -146,7 +146,7 @@ func TestProductAttributesPageNilViewIsGuarded(t *testing.T) {
 // 用例（product_attribute_form_fail_test.go / product_attribute_form_fail_render_test.go）
 // 已随功能删除。
 func TestProductAttributesPageUsesJSONWriteBase(t *testing.T) {
-	view := productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
+	view := productAttributesPageViewStub(func(v *productdto.ProductAttributesPageResp) {
 		v.SelectedProject = "p1"
 		v.AttributeDetails = []*productdto.AttributeResp{
 			{ID: "a1", ProjectID: "p1", Key: "color", Name: "颜色", IsVariation: true, ValueCount: 3},

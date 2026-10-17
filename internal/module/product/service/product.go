@@ -1376,10 +1376,10 @@ func (s *Service) ratingRespOf(ctx context.Context, projectID, productID string)
 		return nil, err
 	}
 	items := make([]productmodel.ProductRatingEntity, 0, len(rows))
-	out := make([]productdto.RatingItem, 0, len(rows))
+	out := make([]productdto.RatingItemResp, 0, len(rows))
 	for _, row := range rows {
 		items = append(items, *row)
-		out = append(out, productdto.RatingItem{
+		out = append(out, productdto.RatingItemResp{
 			ID: row.ID, ProductID: row.ProductID, Score: row.Score, Source: row.Source,
 			CreatedAt: row.CreatedAt.UTC().Format(time.RFC3339),
 		})

@@ -28,12 +28,12 @@ import (
 //
 // 规则的作用范围恒为「单个商品的全部变体」（scope=product、TargetID=当前商品 id）：
 // 入口语义就是「对勾选的这几个商品各做一次改价」，调用方不必（也不该）传 Scope / TargetID。
-func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPricingReq) (res *productdto.BulkPricingResult, err error) {
+func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPricingReq) (res *productdto.BulkPricingResultResp, err error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkPricingResult{BulkResult: productdto.BulkResult{Requested: len(ids)}}
+	res = &productdto.BulkPricingResultResp{BulkResultResp: productdto.BulkResultResp{Requested: len(ids)}}
 	if len(ids) == 0 {
 		return res, nil
 	}
@@ -50,7 +50,7 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 		present[p.ID] = true
 	}
 	// 逐条回执：基座按 outcome=update 读 item.updated（与删除读 item.deleted 同形）。
-	res.Items = make([]productdto.BulkItem, 0, len(ids))
+	res.Items = make([]productdto.BulkItemResp, 0, len(ids))
 	for _, id := range ids {
 		if !present[id] {
 			// 商品不存在（或不属于这个工程）：与改造前一致 —— ApplyPricing 会返回
@@ -59,7 +59,7 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 			if res.SkipReasonKey == "" {
 				res.SkipReasonKey = productenums.ErrPricingTargetNotFound
 			}
-			res.Items = append(res.Items, productdto.BulkItem{ID: id, ReasonKey: productenums.ErrPricingTargetNotFound})
+			res.Items = append(res.Items, productdto.BulkItemResp{ID: id, ReasonKey: productenums.ErrPricingTargetNotFound})
 			continue
 		}
 		rule := req.Rule
@@ -75,18 +75,18 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 			if ap != nil {
 				res.ChangedVariants += ap.ChangedCount
 			}
-			res.Items = append(res.Items, productdto.BulkItem{ID: id, Updated: true})
+			res.Items = append(res.Items, productdto.BulkItemResp{ID: id, Updated: true})
 		case strings.TrimSpace(aerr.Error()) == productenums.ErrPricingNothingChanged:
 			// 本来就在目标价上：不是失败（service 不写空台账），单独计数。
 			// 回执里仍算「改过」—— 否则基座会把这条列进失败原因（它没错，只是无需改动）。
 			res.UnchangedProducts++
-			res.Items = append(res.Items, productdto.BulkItem{ID: id, Updated: true})
+			res.Items = append(res.Items, productdto.BulkItemResp{ID: id, Updated: true})
 		default:
 			res.Skipped++
 			if res.SkipReasonKey == "" {
 				res.SkipReasonKey = bulkSkipReasonKey(aerr)
 			}
-			res.Items = append(res.Items, productdto.BulkItem{ID: id, ReasonKey: bulkSkipReasonKey(aerr)})
+			res.Items = append(res.Items, productdto.BulkItemResp{ID: id, ReasonKey: bulkSkipReasonKey(aerr)})
 		}
 	}
 	// 自动标签重算：整批一次（重算是全工程全量的幂等操作，逐商品重算只是重复劳动）。

@@ -161,7 +161,7 @@ func renderBundleConfiguratorCheck(ctx context.Context, r *Request) (string, err
 	}
 	ids := r.Values["variantId"]
 	qtys := r.Values["qty"]
-	items := make([]productdto.BundleSelectItem, 0, len(ids))
+	items := make([]productdto.BundleSelectItemResp, 0, len(ids))
 	for i, vid := range ids {
 		qty := 0
 		if i < len(qtys) {
@@ -177,7 +177,7 @@ func renderBundleConfiguratorCheck(ctx context.Context, r *Request) (string, err
 				qty = n
 			}
 		}
-		items = append(items, productdto.BundleSelectItem{VariantID: strings.TrimSpace(vid), Qty: qty})
+		items = append(items, productdto.BundleSelectItemResp{VariantID: strings.TrimSpace(vid), Qty: qty})
 	}
 	res, err := deps.BundleProvider.ValidateBundleSelection(ctx, &productdto.ValidateBundleSelectionReq{
 		ProductID: productID,

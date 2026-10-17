@@ -54,9 +54,9 @@ func bundleDetailPage(t *testing.T, bundle gin.H) string {
 
 // bundleEditPage 渲染商品编辑页 —— 捆绑构成的**编辑入口**在这里（详情页只读）。
 //
-// 行形状是 dto.ProductRow（读模型装配的产物，service/product_row.go）：struct 的零值就是
+// 行形状是 dto.ProductRowResp（读模型装配的产物，service/product_row.go）：struct 的零值就是
 // 「字段在、值为空」—— 模板 `{{.Product.Subtitle}}` 照样读到空串，不再需要给 map 补键。
-func bundleEditPage(t *testing.T, product *productdto.ProductRow) string {
+func bundleEditPage(t *testing.T, product *productdto.ProductRowResp) string {
 	t.Helper()
 	return renderAdminTemplate(t, "admin/product/product_edit.html", productPageLayoutData(gin.H{
 		"title": "编辑商品", "menu": "products",
@@ -207,7 +207,7 @@ func TestProductDetailBundlePanelAbsentForVariant(t *testing.T) {
 func TestBundlePanelRowsBackofficePriceShape(t *testing.T) {
 	cost := 20.0
 	// 来源标签已改交事实（Key + 兜底），取词在模板里 —— 本用例只断言价格口径。
-	rows := bundlePanelRows([]*productdto.BundleOptionDetail{
+	rows := bundlePanelRows([]*productdto.BundleOptionDetailResp{
 		{SKUCode: "A1", ItemPrice: 45.5, CostPrice: &cost, Enabled: true},
 		{SKUCode: "A2", ItemPrice: 10, CostPrice: nil, Enabled: false},
 		{SKUCode: "", ItemPrice: 0, CostPrice: nil, Enabled: false},

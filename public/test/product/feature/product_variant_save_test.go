@@ -159,7 +159,7 @@ func (f *variantListFixture) previewAll(t *testing.T, productID string, existing
 }
 
 // save 以清单为准保存（失败即测试失败）。
-func (f *variantListFixture) save(t *testing.T, productID string, rows []productdto.VariantListRow) *productdto.SaveVariantListResp {
+func (f *variantListFixture) save(t *testing.T, productID string, rows []productdto.VariantListResp) *productdto.SaveVariantListResp {
 	t.Helper()
 	res, err := f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{
 		ProductID: productID, ProjectID: f.projectID, WarehouseID: f.warehouse.ID,
@@ -172,7 +172,7 @@ func (f *variantListFixture) save(t *testing.T, productID string, rows []product
 }
 
 // saveErr 以清单为准保存并返回错误文案（期望失败时用）。
-func (f *variantListFixture) saveErr(t *testing.T, productID string, rows []productdto.VariantListRow) string {
+func (f *variantListFixture) saveErr(t *testing.T, productID string, rows []productdto.VariantListResp) string {
 	t.Helper()
 	_, err := f.products.SaveVariantList(context.Background(), &productdto.SaveVariantListReq{
 		ProductID: productID, ProjectID: f.projectID, WarehouseID: f.warehouse.ID,
@@ -273,9 +273,9 @@ func TestVariantPreviewSkipsExistingAndReappears(t *testing.T) {
 	p := f.mkProduct(t, "外套", "coat-preview", []string{color.ID, size.ID})
 
 	pv := f.previewAll(t, p.ID)
-	rows := make([]productdto.VariantListRow, 0, len(pv.Rows))
+	rows := make([]productdto.VariantListResp, 0, len(pv.Rows))
 	for _, row := range pv.Rows {
-		rows = append(rows, productdto.VariantListRow{OptionValues: row.OptionValues})
+		rows = append(rows, productdto.VariantListResp{OptionValues: row.OptionValues})
 	}
 	if res := f.save(t, p.ID, rows); res.Created != 4 {
 		t.Fatalf("首次保存应新增 4 个组合，实际 %d", res.Created)
@@ -301,9 +301,9 @@ func TestVariantPreviewSkipsExistingAndReappears(t *testing.T) {
 
 	// 把其中一行移出清单（= 前端删除）并保存：库里少一个组合。
 	dropped := stored[0]
-	keep := make([]productdto.VariantListRow, 0, len(stored)-1)
+	keep := make([]productdto.VariantListResp, 0, len(stored)-1)
 	for _, v := range stored[1:] {
-		keep = append(keep, productdto.VariantListRow{VariantID: v.ID, SKUCode: v.SKUCode, OptionValues: v.OptionValues})
+		keep = append(keep, productdto.VariantListResp{VariantID: v.ID, SKUCode: v.SKUCode, OptionValues: v.OptionValues})
 	}
 	if res := f.save(t, p.ID, keep); res.Deleted != 1 {
 		t.Fatalf("清单外的那一行应被删除，实际 deleted=%d", res.Deleted)
@@ -332,7 +332,7 @@ func TestVariantSaveAddsUpdatesAndDeletes(t *testing.T) {
 
 	pv := f.previewAll(t, p.ID)
 	// 第一段：只保留前两个组合。
-	first := []productdto.VariantListRow{
+	first := []productdto.VariantListResp{
 		{OptionValues: pv.Rows[0].OptionValues},
 		{OptionValues: pv.Rows[1].OptionValues},
 	}
@@ -343,7 +343,7 @@ func TestVariantSaveAddsUpdatesAndDeletes(t *testing.T) {
 	// 第二段：保留第一行但改 SKU；丢弃第二行；补上另外两个组合。
 	v1 := variantByOption(t, f, p.ID, pv.Rows[0].OptionValues)
 	custom := "SZ_CUSTOM_RED_S_V"
-	second := []productdto.VariantListRow{
+	second := []productdto.VariantListResp{
 		{VariantID: v1.ID, SKUCode: custom, OptionValues: pv.Rows[0].OptionValues},
 		{OptionValues: pv.Rows[2].OptionValues},
 		{OptionValues: pv.Rows[3].OptionValues},
@@ -385,9 +385,9 @@ func TestVariantSaveSkipsStockAndBOM(t *testing.T) {
 	p := f.mkProduct(t, "夹克", "jacket-skip", []string{color.ID, size.ID})
 
 	pv := f.previewAll(t, p.ID)
-	rows := make([]productdto.VariantListRow, 0, len(pv.Rows))
+	rows := make([]productdto.VariantListResp, 0, len(pv.Rows))
 	for _, row := range pv.Rows {
-		rows = append(rows, productdto.VariantListRow{OptionValues: row.OptionValues})
+		rows = append(rows, productdto.VariantListResp{OptionValues: row.OptionValues})
 	}
 	f.save(t, p.ID, rows)
 
@@ -406,7 +406,7 @@ func TestVariantSaveSkipsStockAndBOM(t *testing.T) {
 	}
 
 	// 清单只留一个：其余三个都在删除范围内（两个被守卫拦下，一个真的删掉）。
-	res := f.save(t, p.ID, []productdto.VariantListRow{{
+	res := f.save(t, p.ID, []productdto.VariantListResp{{
 		VariantID: kept.ID, SKUCode: kept.SKUCode, OptionValues: kept.OptionValues,
 	}})
 	if res.Deleted != 1 {
@@ -452,55 +452,55 @@ func TestVariantSaveRejectsIllegalCombinationAndEmptySKU(t *testing.T) {
 	p := f.mkProduct(t, "长裤", "pants-guard", []string{color.ID, size.ID})
 
 	// 属性组不在该商品上（前端塞了一个别的组）。
-	msg := f.saveErr(t, p.ID, []productdto.VariantListRow{{
+	msg := f.saveErr(t, p.ID, []productdto.VariantListResp{{
 		OptionValues: json.RawMessage(`{"nope":"x"}`),
 	}})
 	if !strings.Contains(msg, productenums.ErrVariationAttributeInvalid) {
 		t.Fatalf("非法属性组应报 %s，实际 %q", productenums.ErrVariationAttributeInvalid, msg)
 	}
 	// 取值不在该属性组内（停用 / 不存在的值）。
-	msg = f.saveErr(t, p.ID, []productdto.VariantListRow{{
+	msg = f.saveErr(t, p.ID, []productdto.VariantListResp{{
 		OptionValues: json.RawMessage(`{"color":"purple","size":"s"}`),
 	}})
 	if !strings.Contains(msg, productenums.ErrVariationValueInvalid) {
 		t.Fatalf("非法取值应报 %s，实际 %q", productenums.ErrVariationValueInvalid, msg)
 	}
 	// 新增行没有规格组合：空组合不是「无规格变体」的入口（占位变体只由商品创建产生）。
-	msg = f.saveErr(t, p.ID, []productdto.VariantListRow{{OptionValues: json.RawMessage(`{}`)}})
+	msg = f.saveErr(t, p.ID, []productdto.VariantListResp{{OptionValues: json.RawMessage(`{}`)}})
 	if !strings.Contains(msg, productenums.ErrVariantOptionsInvalid) {
 		t.Fatalf("空组合应报 %s，实际 %q", productenums.ErrVariantOptionsInvalid, msg)
 	}
 
 	// 新增行没填 SKU：由系统按变体 SKU 规则生成（不是错误）。
 	pv := f.previewAll(t, p.ID)
-	saved := f.save(t, p.ID, []productdto.VariantListRow{{OptionValues: pv.Rows[0].OptionValues}})
+	saved := f.save(t, p.ID, []productdto.VariantListResp{{OptionValues: pv.Rows[0].OptionValues}})
 	if saved.Created != 1 {
 		t.Fatalf("新增行应落库 1 个变体，实际 %d", saved.Created)
 	}
 
 	// 既有行把 SKU 清空（含只填了空段）：明确报错，而不是静默补一个系统编码。
 	stored := variantByOption(t, f, p.ID, pv.Rows[0].OptionValues)
-	msg = f.saveErr(t, p.ID, []productdto.VariantListRow{{
+	msg = f.saveErr(t, p.ID, []productdto.VariantListResp{{
 		VariantID: stored.ID, SKUCode: "   ", OptionValues: stored.OptionValues,
 	}})
 	if !strings.Contains(msg, productenums.ErrVariantSKUEmpty) {
 		t.Fatalf("空 SKU 应报 %s，实际 %q", productenums.ErrVariantSKUEmpty, msg)
 	}
-	msg = f.saveErr(t, p.ID, []productdto.VariantListRow{{
+	msg = f.saveErr(t, p.ID, []productdto.VariantListResp{{
 		VariantID: stored.ID, SKUCode: "SZ__RED_V", OptionValues: stored.OptionValues,
 	}})
 	if !strings.Contains(msg, productenums.ErrVariantSKUEmpty) {
 		t.Fatalf("规范化后为空段应报 %s，实际 %q", productenums.ErrVariantSKUEmpty, msg)
 	}
 	// 新增行直接抄库里的 SKU：唯一性按 product_id + sku_code 判，明确拒绝（前端提交的值不作数）。
-	msg = f.saveErr(t, p.ID, []productdto.VariantListRow{{
+	msg = f.saveErr(t, p.ID, []productdto.VariantListResp{{
 		SKUCode: stored.SKUCode, OptionValues: pv.Rows[1].OptionValues,
 	}})
 	if !strings.Contains(msg, productenums.ErrSkuTaken) {
 		t.Fatalf("抄用已占用的 SKU 应报 %s，实际 %q", productenums.ErrSkuTaken, msg)
 	}
 	// 同一个变体在清单里出现两次：第二行按「跳过」处理并回带原因（不整批失败、不重复写）。
-	dup := f.save(t, p.ID, []productdto.VariantListRow{{
+	dup := f.save(t, p.ID, []productdto.VariantListResp{{
 		VariantID: stored.ID, SKUCode: stored.SKUCode, OptionValues: stored.OptionValues,
 	}, {
 		VariantID: stored.ID, SKUCode: stored.SKUCode, OptionValues: stored.OptionValues,
@@ -636,7 +636,7 @@ func TestVariantListSeedFromStoredVariants(t *testing.T) {
 		t.Fatalf("前置条件：2×2 应有 4 个组合，实际 %d", len(pv.Rows))
 	}
 	// 只保存前两个组合：后两个仍是「已预览、未保存」。
-	f.save(t, p.ID, []productdto.VariantListRow{
+	f.save(t, p.ID, []productdto.VariantListResp{
 		{OptionValues: pv.Rows[0].OptionValues},
 		{OptionValues: pv.Rows[1].OptionValues},
 	})

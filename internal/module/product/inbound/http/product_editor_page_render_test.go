@@ -76,15 +76,15 @@ type editorStub struct {
 
 	// 编辑页已改走读模型（ProductPageReader）：这一页的取数编排与档位都在 service，
 	// 桩只负责交回一份视图 / 一个失败 —— 原来的 getErr / categoriesErr 那一族对编辑页不再生效。
-	editView *productdto.ProductEditPageView
+	editView *productdto.ProductEditPageResp
 	editErr  error
 
 	// 「详情页模板」整页同样改走读模型（2026-10-11，第九个方法）。
-	detailTemplatePageView *productdto.ProductDetailTemplatePageView
+	detailTemplatePageView *productdto.ProductDetailTemplatePageResp
 	detailTemplatePageErr  error
 
 	// 捆绑配置页也改走读模型（第十个方法）。
-	bundlePageView *productdto.ProductBundlePageView
+	bundlePageView *productdto.ProductBundlePageResp
 	bundlePageErr  error
 
 	calls []string
@@ -111,38 +111,38 @@ func (s *editorStub) Get(context.Context, *productdto.GetReq) (*productdto.Produ
 // 读模型接口（ProductPageReader）是一个整体：编辑页虽然只用到 ProductEditPage，
 // 但**另外几屏的方法必须在** —— 少一个这里就编译不过（reader 是构造实参的静态类型，
 // 不再有运行期断言兜底）。这三条在本文件里不会被调用，存在只是为了让 editorStub 满足接口。
-func (s *editorStub) ProductNewPage(context.Context, *productdto.ProductNewPageReq) (*productdto.ProductNewPageView, error) {
+func (s *editorStub) ProductNewPage(context.Context, *productdto.ProductNewPageReq) (*productdto.ProductNewPageResp, error) {
 	s.record("ProductNewPage")
 	return productNewPageViewStub(nil), nil
 }
 
-func (s *editorStub) ProductListPage(context.Context, *productdto.ProductListPageReq) (*productdto.ProductListPageView, error) {
+func (s *editorStub) ProductListPage(context.Context, *productdto.ProductListPageReq) (*productdto.ProductListPageResp, error) {
 	s.record("ProductListPage")
 	return productListPageViewStub(nil), nil
 }
 
-func (s *editorStub) ProductDetailPage(context.Context, *productdto.ProductDetailPageReq) (*productdto.ProductDetailPageView, error) {
+func (s *editorStub) ProductDetailPage(context.Context, *productdto.ProductDetailPageReq) (*productdto.ProductDetailPageResp, error) {
 	s.record("ProductDetailPage")
 	return productDetailPageViewStub(nil), nil
 }
 
-func (s *editorStub) ProductCreateForm(context.Context, *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormView, error) {
+func (s *editorStub) ProductCreateForm(context.Context, *productdto.ProductCreateFormReq) (*productdto.ProductCreateFormResp, error) {
 	s.record("ProductCreateForm")
 	return productCreateFormViewStub(nil), nil
 }
 
-func (s *editorStub) ProductPricingPage(context.Context, *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageView, error) {
+func (s *editorStub) ProductPricingPage(context.Context, *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageResp, error) {
 	s.record("ProductPricingPage")
 	return productPricingPageViewStub(nil), nil
 }
 
 // ProductBundlePage 读模型桩：只负责给出契约形状的视图（页面装载只回答「库里配了什么」——
 // 保存已迁到 JSON 写基座，没有提交快照这一档）。
-func (s *editorStub) ProductBundlePage(_ context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageView, error) {
+func (s *editorStub) ProductBundlePage(_ context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageResp, error) {
 	s.record("ProductBundlePage")
 	view := s.bundlePageView
 	if view == nil {
-		view = productBundlePageViewStub(func(v *productdto.ProductBundlePageView) {
+		view = productBundlePageViewStub(func(v *productdto.ProductBundlePageResp) {
 			if req != nil {
 				v.SelectedProject = req.ProjectID
 				v.SelectedProduct = req.ProductID
@@ -157,11 +157,11 @@ func (s *editorStub) ProductBundlePage(_ context.Context, req *productdto.Produc
 	return view, s.bundlePageErr
 }
 
-func (s *editorStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageView, error) {
+func (s *editorStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageResp, error) {
 	s.record("ProductDetailTemplatePage")
 	view := s.detailTemplatePageView
 	if view == nil {
-		view = detailTemplatePageViewStub(func(v *productdto.ProductDetailTemplatePageView) {
+		view = detailTemplatePageViewStub(func(v *productdto.ProductDetailTemplatePageResp) {
 			if req != nil {
 				v.SelectedProject = req.ProjectID
 				// 菜单入口不带 product：读模型据此置 NoProduct，控制器走引导出口。
@@ -169,7 +169,7 @@ func (s *editorStub) ProductDetailTemplatePage(_ context.Context, req *productdt
 					v.NoProduct = true
 					v.Ready = false
 				} else {
-					v.Product = productdto.DetailTemplateProductView{ID: req.ProductID, Name: "商品一", Slug: "prod-1"}
+					v.Product = productdto.DetailTemplateProductResp{ID: req.ProductID, Name: "商品一", Slug: "prod-1"}
 				}
 			}
 			if s.detailTemplatePageErr != nil {
@@ -182,33 +182,33 @@ func (s *editorStub) ProductDetailTemplatePage(_ context.Context, req *productdt
 	return view, s.detailTemplatePageErr
 }
 
-func (s *editorStub) ProductAttributesPage(context.Context, *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageView, error) {
+func (s *editorStub) ProductAttributesPage(context.Context, *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageResp, error) {
 	s.record("ProductAttributesPage")
 	return productAttributesPageViewStub(nil), nil
 }
 
 // 分类 / 品牌 / 标签三页的读模型（同为接口的一部分，见上面那段注释）。
-func (s *editorStub) ProductCategoriesPage(context.Context, *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageView, error) {
+func (s *editorStub) ProductCategoriesPage(context.Context, *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageResp, error) {
 	s.record("ProductCategoriesPage")
 	return productCategoriesPageViewStub(nil), nil
 }
 
-func (s *editorStub) ProductBrandsPage(context.Context, *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageView, error) {
+func (s *editorStub) ProductBrandsPage(context.Context, *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageResp, error) {
 	s.record("ProductBrandsPage")
 	return productBrandsPageViewStub(nil), nil
 }
 
-func (s *editorStub) ProductTagsPage(context.Context, *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageView, error) {
+func (s *editorStub) ProductTagsPage(context.Context, *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageResp, error) {
 	s.record("ProductTagsPage")
 	return productTagsPageViewStub(nil), nil
 }
 
-func (s *editorStub) ProductEditPage(_ context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageView, error) {
+func (s *editorStub) ProductEditPage(_ context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageResp, error) {
 	s.record("ProductEditPage")
 	view := s.editView
 	if view == nil {
 		// 契约：视图恒非 nil（失败也要给齐模板必需键）—— 失败档只置档位，键留桩的默认值。
-		view = productEditPageViewStub(func(v *productdto.ProductEditPageView) {
+		view = productEditPageViewStub(func(v *productdto.ProductEditPageResp) {
 			if req != nil {
 				v.ProductID = req.ProductID
 				if req.ProjectID != "" {
@@ -511,7 +511,7 @@ func TestBundleConfigErrorGrades(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h, stub, _, _ := editorEnv()
-			stub.bundlePageView = productBundlePageViewStub(func(v *productdto.ProductBundlePageView) {
+			stub.bundlePageView = productBundlePageViewStub(func(v *productdto.ProductBundlePageResp) {
 				v.HTTPStatus = tc.status
 				v.LoadFailed = true
 				v.SaveBlocked = true
@@ -530,8 +530,8 @@ func TestBundleConfigErrorGrades(t *testing.T) {
 // 原样传出视图带的档位（不自己改判）+ 按这一次的 err 归口**当前语言**的失败槽文案。
 func TestEditProductErrorGrades(t *testing.T) {
 	// failedEditView 读模型交回来的失败档（键给齐：契约上视图恒非 nil）。
-	failedEditView := func(status int) *productdto.ProductEditPageView {
-		return productEditPageViewStub(func(v *productdto.ProductEditPageView) {
+	failedEditView := func(status int) *productdto.ProductEditPageResp {
+		return productEditPageViewStub(func(v *productdto.ProductEditPageResp) {
 			v.HTTPStatus = status
 			v.LoadFailed = true
 			v.HasProduct = false

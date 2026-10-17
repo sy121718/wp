@@ -19,8 +19,8 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 )
 
-// EntityTemplateOptionView 模板候选的渲染视图（dto 的重导出）。
-type EntityTemplateOptionView = productdto.EntityTemplateOptionView
+// EntityTemplateOptionResp 模板候选的渲染视图（dto 的重导出）。
+type EntityTemplateOptionResp = productdto.EntityTemplateOptionResp
 
 // EntityTemplatePort 某实体类型的模板清单与当前模板的只读端口（由内容模板模块实现）。
 //
@@ -35,7 +35,7 @@ type EntityTemplatePort interface {
 	// 空串语义与其余读口一致：= 唯一工程。
 
 	// EntityTemplates 该实体类型的模板清单（entityType 见 EntityTypeProduct）。
-	EntityTemplates(ctx context.Context, projectID, entityType string) (out []EntityTemplateOptionView, err error)
+	EntityTemplates(ctx context.Context, projectID, entityType string) (out []EntityTemplateOptionResp, err error)
 	// DefaultEntityTemplate 该实体类型的当前模板 id（未绑定 / 无模板时返回空串）。
 	DefaultEntityTemplate(ctx context.Context, projectID, entityType string) (templateID string, err error)
 }

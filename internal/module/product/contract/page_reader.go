@@ -39,7 +39,7 @@ type ProductPageReader interface {
 	//     err 同时返回（供控制器按当前语言归口失败槽文案与记日志）；
 	//   · 失败后**一条派生取数都不发**（在非法工程上继续查只会把「工程不存在」渲染成
 	//     「这个工程下没有可选项」）。
-	ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (res *productdto.ProductNewPageView, err error)
+	ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (res *productdto.ProductNewPageResp, err error)
 
 	// ProductListPage 商品列表整页的读模型：工程清单 → 工程存在性校验 → 分类树 / 品牌 /
 	// 标签 / 仓库清单 → 列表与总数（同一份过滤条件）→ 逐行详情 → 属性组选项 / 每仓 SKU
@@ -48,7 +48,7 @@ type ProductPageReader interface {
 	// 契约同上（视图恒非 nil / 失败带 LoadFailed 与 HTTPStatus / 失败后不发派生取数），
 	// 另加一条：**逐行详情取不到就整页失败**，不做静默跳过 —— 少一行而仍写着「共 N 条」，
 	// 用户会以为商品被删了。
-	ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (res *productdto.ProductListPageView, err error)
+	ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (res *productdto.ProductListPageResp, err error)
 
 	// ProductDetailPage 商品详情整页的读模型：工程清单 → 工程存在性校验 → 仓库清单 →
 	// 商品详情 → 分类树 / 品牌 / 标签，并给出这一屏的档位。
@@ -58,7 +58,7 @@ type ProductPageReader interface {
 	//     仍然 no-store（商品可能刚被建回来，重试要真的回到服务端）；
 	//   · 400 参数不合法（?project=<不存在的 id> / id 形态不对）—— 进失败槽 + no-store；
 	//   · 500 其余（数据库 / 连接 / 超时 / 畸形返回）—— 进失败槽 + no-store。
-	ProductDetailPage(ctx context.Context, req *productdto.ProductDetailPageReq) (res *productdto.ProductDetailPageView, err error)
+	ProductDetailPage(ctx context.Context, req *productdto.ProductDetailPageReq) (res *productdto.ProductDetailPageResp, err error)
 
 	// ProductEditPage 商品编辑整页的读模型：工程清单 → 工程存在性校验 → 分类树 / 品牌 /
 	// 标签 / 仓库清单 → 商品详情（三档，判据同 ProductDetailPage）→ 属性组候选，
@@ -69,7 +69,7 @@ type ProductPageReader interface {
 	//
 	// 没有回填槽：保存的失败入口是 JSON 写基座（原页 fetch + 结果区），
 	// 不会带着「这次提交的值」回到服务端重渲染。
-	ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (res *productdto.ProductEditPageView, err error)
+	ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (res *productdto.ProductEditPageResp, err error)
 
 	// ProductCreateForm 商品建表单的取数：仓库清单 → 属性组候选 → 每仓 SKU 候选。
 	//
@@ -78,7 +78,7 @@ type ProductPageReader interface {
 	//
 	// 契约同上面四条（视图恒非 nil / 失败带 LoadFailed 与 HTTPStatus），但没有三档：
 	// 主数据读不到就是这个表单撑不起来，调用方退回整页提示 —— 不留半个表单给用户重填。
-	ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (res *productdto.ProductCreateFormView, err error)
+	ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (res *productdto.ProductCreateFormResp, err error)
 
 	// ProductPricingPage 定价工具页的读模型：工程清单 → 规则与尾数处理参考表 →
 	// 改价表单初值（或本次提交的回显值）→ 试算结果 → 留痕台账。
@@ -89,7 +89,7 @@ type ProductPageReader interface {
 	// 装配缺陷（控制器那一半给 500 + no-store），正常路径恒 200 且可缓存。
 	//
 	// Form / Preview / ErrMsg 由控制器填（它们是写路径的产物，读模型不认识 gin.Context）。
-	ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (res *productdto.ProductPricingPageView, err error)
+	ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (res *productdto.ProductPricingPageResp, err error)
 	// ProductAttributesPage 属性库整页的读模型：工程清单 → 工程存在性校验 → 计数 →
 	// 页码收敛 → 取页，并给出这一屏的档位。
 	//
@@ -99,7 +99,7 @@ type ProductPageReader interface {
 	//
 	// 行装配不在这里：每行的两个抽屉表单要 csrf 与取词函数（gin.Context 的产物），
 	// 所以只交原料（AttributeDetails），成品行由控制器装（同 ProductListPage）。
-	ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (res *productdto.ProductAttributesPageView, err error)
+	ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (res *productdto.ProductAttributesPageResp, err error)
 
 	// ProductDetailTemplatePage 「详情页模板」整页的读模型：工程清单 → 工程存在性校验 →
 	// 商品详情（三档）→ 模板清单（主数据）→ 默认模板与绑定实例的标注，并给出这一屏的档位。
@@ -112,21 +112,21 @@ type ProductPageReader interface {
 	//     否则发布链路一抖整页就红，而页面此时正需要让人点「首次发布」；
 	//   · 没给 product 参数时置 NoProduct 并**停止取数**（菜单入口形态，控制器据此走
 	//     引导出口；它不是 400 —— 本页本来就有「还没选商品」的入口）。
-	ProductDetailTemplatePage(ctx context.Context, req *productdto.ProductDetailTemplatePageReq) (res *productdto.ProductDetailTemplatePageView, err error)
+	ProductDetailTemplatePage(ctx context.Context, req *productdto.ProductDetailTemplatePageReq) (res *productdto.ProductDetailTemplatePageResp, err error)
 
 	// ProductCategoriesPage 分类管理页的读模型：工程清单 → 参数档位 → 本页分类树（已 DFS 扁平）
 	// → 工程内全量分类（父级下拉的原料）→ 缺失父级的事实。
 	//
 	// 两块分类原料**分开交**（CategoryDetails 与 PickFlat）：页面表格要本页的树，父级下拉要
 	// 全量 —— 树状列表之后没有面包屑兜底，缺项会直接表现为「新建子分类时选不到父级」。
-	ProductCategoriesPage(ctx context.Context, req *productdto.ProductCategoriesPageReq) (res *productdto.ProductCategoriesPageView, err error)
+	ProductCategoriesPage(ctx context.Context, req *productdto.ProductCategoriesPageReq) (res *productdto.ProductCategoriesPageResp, err error)
 
 	// ProductBrandsPage 品牌管理页的读模型：工程清单 → 参数档位 → 计数 → 页码收敛 → 取页。
-	ProductBrandsPage(ctx context.Context, req *productdto.ProductBrandsPageReq) (res *productdto.ProductBrandsPageView, err error)
+	ProductBrandsPage(ctx context.Context, req *productdto.ProductBrandsPageReq) (res *productdto.ProductBrandsPageResp, err error)
 
 	// ProductTagsPage 标签管理页的读模型：工程清单 → 参数档位 → 规则类型清单（全页一次）→
 	// 计数 → 页码收敛 → 取页。命中商品**不在首屏取**（审计 PERF-02），由展开区按页拉片段。
-	ProductTagsPage(ctx context.Context, req *productdto.ProductTagsPageReq) (res *productdto.ProductTagsPageView, err error)
+	ProductTagsPage(ctx context.Context, req *productdto.ProductTagsPageReq) (res *productdto.ProductTagsPageResp, err error)
 
 	// ProductBundlePage 捆绑配置整页的读模型：工程清单 → 工程存在性校验 → 工程商品 →
 	// 捆绑配置（三档）→ 候选 SKU → 来源属性 / 仓库清单 / 逐仓 SKU 候选，并给出这一屏的档位。
@@ -140,5 +140,5 @@ type ProductPageReader interface {
 	//
 	// Submitted 由控制器填（写路径产物，在请求体里，读模型不认识 gin.Context）：
 	// 非 nil 时成员清单一律按它渲染，而不是按库里读回来的配置。
-	ProductBundlePage(ctx context.Context, req *productdto.ProductBundlePageReq) (res *productdto.ProductBundlePageView, err error)
+	ProductBundlePage(ctx context.Context, req *productdto.ProductBundlePageReq) (res *productdto.ProductBundlePageResp, err error)
 }

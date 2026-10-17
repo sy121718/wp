@@ -1,21 +1,14 @@
-// product_view.go — 渲染视图与表单回显形状（dto 里的第三类：既不是入参也不是出参，
-// 但同样是**模块内跨层的纯数据形状**）。
+// product_page_resp.go — 后台页面的回执形状（页面视图 / 片段视图 / 行与选项值对象）。
 //
-// 为什么放在 dto 而不是 handle：这些类型是模板按字段读的形状（`{{.Score.OK}}`、`{{r.Label}}`）
-// 与表单取值回显的形状，与 handle / 模板 / 测试三处共同对齐，改形状要同时改三处。
-// 留在 handle 里时任何想复用或断言它的地方都得 import 控制器包（`inbound/http`），
-// 而那个包带着全部 handler；放进 dto 后它与 `XxxReq` / `XxxResp` 同级 —— 模块内的纯数据
-// 形状集中一处，谁都不必认识控制器。
+// 与 product_page_req.go 成对：入参一边、回执一边。原先的 product_view.go 把两边混在一个文件里，
+// 定位一个类型要先读它是进还是出；拆开之后「页面 GET 的入参」与「渲染用的整页数据」各自只有一处。
 //
-// 三类分工（本文件是第二类）：
-//   · `XxxReq` / `XxxResp` —— 接口与 service 的入参 / 出参；
-//   · **本文件** —— 页面与片段的渲染视图、表单回显形状（只有字段，没有方法）；
-//   · 留在 handle —— 带装配方法的聚合（`productTranslationsData.templateMap()`，产出 gin.H）、
-//     解析与装配选项（`attrGroupFormOpts` / `attrValuesFormOpts`）、
-//     以及 HTTP JSON 响应行（`variantPreviewRow`：dto 行 + 展示用规格串）。
+// **导出字段名就是模板契约**：internal/templates/admin 下 product*.jet 里的 .Field 必须在这里有
+// 同名导出字段，字段被改名或删掉 = 渲染期 500（htmx 不 swap，点一下没反应），
+// 双向对账由 inbound/http 下的 *_template_test.go 用反射 + 模板源码钉住。
 //
-// **字段名是模板契约**：改名等于改模板（struct 上取不到字段会让渲染中断，见
-// internal/templates/CLAUDE.md）。
+// 页面出口用 PageStatus() / PageNoStore() 两个方法给状态（见 internal/adminui.PageResult）：
+// 零值 = 「200 且可缓存」，实现它们的是**失败态为 nil-safe 的整页视图**。
 
 package productdto
 
@@ -23,34 +16,11 @@ import (
 	"net/http"
 
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/pkg/facing"
 	"go_wp/pkg/pagination"
 )
 
-// ==========================================================================
-// 商品后台页的读模型（一屏一个读模型，取数编排与视图装配在 service）。
-//
-// 这一组形状与 handle 的对应关系：service 的读模型方法产出它，控制器只把它交给
-// adminui.RenderPage —— 控制器里不再有 gin.H 装配、取数助手与「每个失败点各写一遍
-// 失败页」的编排（internal/module/CLAUDE.md §inbound/http）。
-//
-// 视图同时承担两件事：
-//   · **模板契约** —— 字段名就是模板读的键（`{{.Projects}}` / `{{.LoadError}}`）；
-//   · **渲染结论** —— 实现 adminui.PageResult（`PageStatus` / `PageNoStore`），
-//     状态码与 no-store 由视图带出来，控制器不再自己判档。
-//
-// 这两个方法是本文件唯一的例外（其余类型只有字段）：档位是「这一屏的结论」，
-// 属于视图而不是控制器，理由见 internal/adminui/render.go 的文件头。
-// ==========================================================================
-
-// ProductNewPageReq 商品新建整页的取数入参。
-type ProductNewPageReq struct {
-	// ProjectID 查询串里的工程 id（控制器只做去空白）；空串 = 取工程清单的第一个。
-	ProjectID string
-}
-
-// ProductNewPageView 商品新建整页的渲染视图。
-type ProductNewPageView struct {
+// ProductNewPageResp 商品新建整页的渲染视图。
+type ProductNewPageResp struct {
 	// Title / Menu 是 layout 的小写壳键（`{{.title}}` / `{{.menu}}`）。
 	// Title 放 enums 的 i18n key，翻译由 adminui.Prepare 做（放 key 而不是译文，
 	// 是因为译文按请求语言取）。
@@ -64,14 +34,14 @@ type ProductNewPageView struct {
 	SelectedProject string
 
 	// —— 建表单片段要的三份选项（事实 + 词条 key，取词在渲染期）——
-	WarehouseOptions    []WarehouseOptionView
-	AttributeOptions    []AttributeOptionView
-	WarehouseSKUOptions []WarehouseSKUGroupView
+	WarehouseOptions    []WarehouseOptionResp
+	AttributeOptions    []AttributeOptionResp
+	WarehouseSKUOptions []WarehouseSKUGroupResp
 
 	// —— 右侧模板卡片区 ——
 	// TemplatesAvail 为假 = 模板能力未装配（未注入端口）；为真而 Templates 为空 =
 	// 「读到了、没有模板」。两档在页面上是两句不同的提示，不能合并。
-	Templates         []EntityTemplateOptionView
+	Templates         []EntityTemplateOptionResp
 	DefaultTemplateID string
 	TemplatesAvail    bool
 
@@ -88,25 +58,12 @@ type ProductNewPageView struct {
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductNewPageView) PageStatus() int { return v.HTTPStatus }
+func (v ProductNewPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
-func (v ProductNewPageView) PageNoStore() bool { return v.LoadFailed }
+func (v ProductNewPageResp) PageNoStore() bool { return v.LoadFailed }
 
-// ProductListPageReq 商品列表整页的取数入参。
-//
-// Page 是**已归一**的页码：控制器用跨页共用的 productPageNumber 归一（`?page=abc` /
-// `?page=-3` 已经退回 1），本方法只做下限保护。归一不在这里做，是为了不让同一份规则
-// 在 service 与控制器各写一遍（那三个页面的页码归一与这里的必须同口径）。
-type ProductListPageReq struct {
-	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
-	ProjectID string
-	Keyword   string
-	Status    string
-	Page      int
-}
-
-// ProductListPageView 商品列表整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值）。
+// ProductListPageResp 商品列表整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值）。
 //
 // 它是这一屏**唯一的模板数据源**（`adminui.RenderPage(c, tpl, view)` 没有额外的 args 参数），
 // 因此字段分三类，各自有明确的写者：
@@ -119,8 +76,8 @@ type ProductListPageReq struct {
 //     **Products（成品行）不在此列** —— 行装配已下沉进读模型（service/product_row.go），
 //     控制器不再拼行；只服务行装配的分类树扁平行（Flat）随之下沉，视图不再有那个字段；
 //   - **控制器在失败时写**：LoadError（按当前语言归口；LoadFailed / HTTPStatus 由读模型给）。
-type ProductListPageView struct {
-	// Title 放 enums 的 i18n key（取词在渲染期，理由同 ProductNewPageView）。
+type ProductListPageResp struct {
+	// Title 放 enums 的 i18n key（取词在渲染期，理由同 ProductNewPageResp）。
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
 
@@ -132,7 +89,7 @@ type ProductListPageView struct {
 	// **事实**（基地址与翻页链接由 ListQuery + Pagination 承载，本层不拼 URL）。
 	FilterKeyword string
 	FilterStatus  string
-	Statuses      []StatusOptionView
+	Statuses      []StatusOptionResp
 	Page          int
 	Limit         int
 	Total         int64
@@ -148,19 +105,19 @@ type ProductListPageView struct {
 	Tags       []*TagResp
 
 	// 页面上三处抽屉/表单要的选项（事实 + 词条 key，取词在渲染期）。
-	WarehouseOptions    []WarehouseOptionView
-	AttributeOptions    []AttributeOptionView
-	WarehouseSKUOptions []WarehouseSKUGroupView
+	WarehouseOptions    []WarehouseOptionResp
+	AttributeOptions    []AttributeOptionResp
+	WarehouseSKUOptions []WarehouseSKUGroupResp
 
 	// 批量改价抽屉的规则清单、尾数处理清单与表单初值。
 	Rules     []*PricingRuleTypeResp
 	Roundings []*PricingRoundingOptionResp
 	Form      PricingForm
 
-	// Products 成品行（读模型装配，形状见 ProductRow）；Pagination 分页条事实；
+	// Products 成品行（读模型装配，形状见 ProductRowResp）；Pagination 分页条事实；
 	// ListQuery 筛选上下文（表单 action 的 query，写动作失败时由 pkg/backpath 读回，
 	// 见 product_jump.go 的 productListBackKeys）。
-	Products   []ProductRow
+	Products   []ProductRowResp
 	Pagination pagination.Page
 	ListQuery  string
 
@@ -170,38 +127,30 @@ type ProductListPageView struct {
 	LoadError  string
 
 	// HTTPStatus 这一屏的档位：200 读到 / 400 参数不合法 / 500 主数据没读到（导出理由同
-	// ProductNewPageView.HTTPStatus）。
+	// ProductNewPageResp.HTTPStatus）。
 	HTTPStatus int
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductListPageView) PageStatus() int { return v.HTTPStatus }
+func (v ProductListPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
-func (v ProductListPageView) PageNoStore() bool { return v.LoadFailed }
+func (v ProductListPageResp) PageNoStore() bool { return v.LoadFailed }
 
-// StatusOptionView 状态下拉的一项（值 + 词条 key + 是否选中）。
+// StatusOptionResp 状态下拉的一项（值 + 词条 key + 是否选中）。
 //
-// LabelKey / LabelFallback 而不是成品译文的理由同 WarehouseOptionView：取词在渲染期，
+// LabelKey / LabelFallback 而不是成品译文的理由同 WarehouseOptionResp：取词在渲染期，
 // 控制器提前翻好就把这一句锁死在一种语言（英文界面上留中文，不报错、门禁也不红）。
-type StatusOptionView struct {
+type StatusOptionResp struct {
 	Value         string
 	LabelKey      string
 	LabelFallback string
 	Selected      bool
 }
 
-// ProductDetailPageReq 商品详情整页的取数入参。
-type ProductDetailPageReq struct {
-	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
-	ProjectID string
-	// ProductID 查询串里的商品 id；空串 = 没给参数（与「商品已被删除」同一档：404）。
-	ProductID string
-}
-
-// ProductDetailPageView 商品详情整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值）。
+// ProductDetailPageResp 商品详情整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值）。
 //
-// 字段的写者与 ProductListPageView 同一套约定：
+// 字段的写者与 ProductListPageResp 同一套约定：
 //   - **service 写**：Projects / SelectedProject / ProductID / HasProduct / WarehouseOptions /
 //     Detail / Categories / Brands / Tags（取数结果）；
 //   - **控制器写**：Title / Menu（页壳）、BackURL（URL 形状属 HTTP）、Bundle / TplPanel
@@ -209,7 +158,7 @@ type ProductDetailPageReq struct {
 //   - **读模型写行**：Product 成品行由 service 的行装配产出（service/product_row.go），
 //     控制器只在 type=bundle 时往里补 Bundle；
 //   - **控制器在失败时写**：LoadError。
-type ProductDetailPageView struct {
+type ProductDetailPageResp struct {
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
 
@@ -222,7 +171,7 @@ type ProductDetailPageView struct {
 
 	// WarehouseOptions 行数据组装（库存列）要按工程仓库清单补齐未入库的仓 —— 与列表页 /
 	// 编辑页共用同一份组装，取数口径不能分叉。
-	WarehouseOptions []WarehouseOptionView
+	WarehouseOptions []WarehouseOptionResp
 
 	// —— 行装配原料与成品 ——
 	// Detail 是这一行的商品详情；Categories 是**分类树**（分类选择器按树读）；行本身由读模型
@@ -235,7 +184,7 @@ type ProductDetailPageView struct {
 	// —— 装配的产物 ——
 	// Product 是成品行（读模型写）；Bundle 只在 type=bundle 时给（模板据 isset 整块跳过）；
 	// TplPanel 是详情模板面板（控制器组装）。
-	Product  *ProductRow
+	Product  *ProductRowResp
 	Bundle   map[string]any
 	TplPanel map[string]any
 	// BackURL 回列表的链接（带工程上下文，不掉回默认工程）。
@@ -247,35 +196,25 @@ type ProductDetailPageView struct {
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductDetailPageView) PageStatus() int { return v.HTTPStatus }
+func (v ProductDetailPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 非 200 的档位都不该被缓存 —— **404 也一样**：商品可能刚被删，也可能刚被建回来，
 // 重试必须真的回到服务端确认。这与「失败页」不是同一件事：404 走的是模板自带的空态分支
 // （那是「读到了、库里没有」，不是「没读到」）。
-func (v ProductDetailPageView) PageNoStore() bool {
+func (v ProductDetailPageResp) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
-// ProductEditPageReq 商品编辑整页的取数入参。
-type ProductEditPageReq struct {
-	// ProjectID 查询串 / 表单里的工程 id；空串 = 取工程清单的第一个。
-	ProjectID string
-	// ProductID 要编辑的商品 id；空串 = 没给参数 → **200 空表单**（不是 404）：
-	// 编辑页是写入口，让运营看到一个空表单比看到一个 404 有用（详情页反过来）。
-	// 给了 id 但库里没有才是 404（与详情页同一档：空态、不进失败槽）。
-	ProductID string
-}
-
-// ProductEditPageView 商品编辑整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值与回显）。
+// ProductEditPageResp 商品编辑整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值与回显）。
 //
-// 与 ProductDetailPageView 的两点不同：
+// 与 ProductDetailPageResp 的两点不同：
 //   - 多一组 AttributeOptions —— 编辑表单的勾选列表用属性组候选，详情页用的是逗号分隔的 id 输入框；
 //   - 多一个**控制器侧**的字段：EditBlocked（属性组读不到时撤掉保存入口）。它回答的是
 //     「能不能改」，不是「库里有什么」，本层不参与。
 //
 // **没有表单回显（echo）**：保存已迁到 JSON 写基座，失败只在原页的结果区出现，
 // 用户的输入从头到尾没离开过 DOM —— 服务端不再有「拿这次提交覆盖读回来的值」这一层。
-type ProductEditPageView struct {
+type ProductEditPageResp struct {
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
 
@@ -285,8 +224,8 @@ type ProductEditPageView struct {
 	// HasProduct 为假 = 没读到商品：模板据此走空态分支（与详情页同一档）。
 	HasProduct bool
 
-	WarehouseOptions []WarehouseOptionView
-	AttributeOptions []AttributeOptionView
+	WarehouseOptions []WarehouseOptionResp
+	AttributeOptions []AttributeOptionResp
 
 	// —— 行装配原料与成品 ——
 	// Detail 是这一行的商品详情；Categories 是**分类树**（分类选择器按树读）；行本身由读模型
@@ -298,7 +237,7 @@ type ProductEditPageView struct {
 
 	// —— 装配的产物 ——
 	// Product 是成品行（读模型写）；TplPanel 是详情模板面板。
-	Product  *ProductRow
+	Product  *ProductRowResp
 	TplPanel map[string]any
 	BackURL  string
 
@@ -314,8 +253,8 @@ type ProductEditPageView struct {
 	// —— 表单字段的回填文本与勾选态（控制器算；echo=true 时用**这次提交的值**覆盖）——
 	// Statuses 当前选中档；AttributeChecks 属性组勾选列表；四个 *Text 是图集与数值字段的
 	// 文本形态（表单里是 textarea / input，库里是可空数值与切片）。
-	Statuses         []StatusOptionView
-	AttributeChecks  []AttributeCheckOptionView
+	Statuses         []StatusOptionResp
+	AttributeChecks  []AttributeCheckOptionResp
 	ImagesText       string
 	ImageAltsText    string
 	WeightText       string
@@ -330,18 +269,18 @@ type ProductEditPageView struct {
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductEditPageView) PageStatus() int { return v.HTTPStatus }
+func (v ProductEditPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
 //
 // 判据与详情页一致：**非 200 一律 no-store**。404「商品不存在」不走失败槽（那是「读到了、
 // 库里没有」，模板给的是空态），但它同样是一次不该被缓存的结果 —— 商品刚被建回来时，
 // 缓存的 404 会把运营挡在门外。
-func (v ProductEditPageView) PageNoStore() bool {
+func (v ProductEditPageResp) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
-// WarehouseOptionView 仓库下拉 / 勾选项的渲染视图。
+// WarehouseOptionResp 仓库下拉 / 勾选项的渲染视图。
 //
 // Label 只拼**数据**（仓名 + 编码）；「默认仓」后缀是词条，用 DefaultSuffixKey +
 // DefaultSuffixFallback 交给模板取词 —— 控制器提前翻好就等于把这一句锁死在一种语言
@@ -349,7 +288,7 @@ func (v ProductEditPageView) PageNoStore() bool {
 //
 // DefaultSuffixKey 的词条真源在库存模块（enums 与词条都只有一条）：两个页面显示
 // 同一个后缀，改词条要两处同步。
-type WarehouseOptionView struct {
+type WarehouseOptionResp struct {
 	ID        string
 	Code      string
 	Name      string
@@ -360,8 +299,8 @@ type WarehouseOptionView struct {
 	DefaultSuffixFallback string
 }
 
-// WarehouseSKUItemView 「从仓库选」的一个候选货。
-type WarehouseSKUItemView struct {
+// WarehouseSKUItemResp 「从仓库选」的一个候选货。
+type WarehouseSKUItemResp struct {
 	// SKUCode 一律是**裸码**（仓库侧的名字，不带仓码前缀）：前端把它填进「SKU 编码」框时，
 	// 服务端按 (仓, 裸码) 复核并复用那一行 —— 带上前缀会被当成一条新货去建行。
 	SKUCode string
@@ -371,18 +310,18 @@ type WarehouseSKUItemView struct {
 	Label string
 }
 
-// WarehouseSKUGroupView 一个仓的候选货集合（模板按仓分组渲染 optgroup / datalist）。
-type WarehouseSKUGroupView struct {
+// WarehouseSKUGroupResp 一个仓的候选货集合（模板按仓分组渲染 optgroup / datalist）。
+type WarehouseSKUGroupResp struct {
 	WarehouseID string
 	// WarehouseCode 仓短码：前端预览「将要生成的主体 SKU」用（服务端才是真源）。
 	WarehouseCode string
 	Label         string
 	IsDefault     bool
-	Items         []WarehouseSKUItemView
+	Items         []WarehouseSKUItemResp
 }
 
-// AttributeOptionView 属性组勾选列表的一项。
-type AttributeOptionView struct {
+// AttributeOptionResp 属性组勾选列表的一项。
+type AttributeOptionResp struct {
 	ID string
 	// Label 名字 + 标识 key：商品详情页与属性页都按 key 指代属性组，
 	// 只给名字会在同名属性组之间选错。
@@ -390,34 +329,34 @@ type AttributeOptionView struct {
 	IsVariation bool
 }
 
-// EntityTemplateOptionView 商品详情模板候选的一项（卡片区只展示名字与「默认」徽标）。
-type EntityTemplateOptionView struct {
+// EntityTemplateOptionResp 商品详情模板候选的一项（卡片区只展示名字与「默认」徽标）。
+type EntityTemplateOptionResp struct {
 	ID   string
 	Name string
 }
 
-// AttributeCheckOptionView 带勾选态的属性组项（商品编辑页的勾选列表）。
+// AttributeCheckOptionResp 带勾选态的属性组项（商品编辑页的勾选列表）。
 //
-// 与 AttributeOptionView 是**两个形状**而不是给它加一个 Checked 字段：勾选态是
+// 与 AttributeOptionResp 是**两个形状**而不是给它加一个 Checked 字段：勾选态是
 // 「这一屏 + 这一行数据」的结论（新建页没有它），塞进公共项会让新页的视图里多出一个
 // 恒为假的字段，读者要在两处之间确认它到底谁在写。
 //
 // 内嵌而不是复制字段：模板里 `{{a.ID}}` / `{{a.Label}}` / `{{if a.Checked}}` 的写法不变，
-// 「标签口径」仍然只有 AttributeOptionView 一处。Jet 走 reflect.FieldByName，**提升字段
+// 「标签口径」仍然只有 AttributeOptionResp 一处。Jet 走 reflect.FieldByName，**提升字段
 // 照常可读**（已实测；端到端判据是 public/test/product/feature/product_edit_page_test.go
 // 的 TestProductEditPageRejectsInvalidNumbersWithoutPartialWrite，它断言渲染结果里出现
 // `value="<属性组 id>" checked`）—— 若哪天这条断了，那条用例当场变红。
-type AttributeCheckOptionView struct {
-	AttributeOptionView
+type AttributeCheckOptionResp struct {
+	AttributeOptionResp
 	Checked bool
 }
 
-// ScoreView SEO 评分视图（服务端渲染，客户端只处理「点击建议跳转」）。
-type ScoreView struct {
+// ScoreResp SEO 评分视图（服务端渲染，客户端只处理「点击建议跳转」）。
+type ScoreResp struct {
 	OK       bool
 	Total    int
 	Grade    string
-	Sections []ScoreSectionView
+	Sections []ScoreSectionResp
 	// ProfileType / ProfileReason 本次评分所用的页型与调权理由（审计 SEO-016）。
 	// 文档要求调权在结果里回显（docs/02-E1 §5）：不显示的话，编辑者看到同一份内容
 	// 在商品页比文章页高几分时无从解释。空 = 用默认权重。
@@ -434,31 +373,31 @@ type ScoreView struct {
 	SerpDesc  string
 }
 
-// ScoreSectionView 单个评分维度。
-type ScoreSectionView struct {
+// ScoreSectionResp 单个评分维度。
+type ScoreSectionResp struct {
 	Label      string
 	Color      string
 	ColorLabel string
 	Score      int
 	Max        int
-	Issues     []ScoreIssueView
+	Issues     []ScoreIssueResp
 }
 
-// ScoreIssueView 单条未达标检查（Target 非空表示可点击定位）。
-type ScoreIssueView struct {
+// ScoreIssueResp 单条未达标检查（Target 非空表示可点击定位）。
+type ScoreIssueResp struct {
 	Text   string
 	Target string
 }
 
-// TranslationLangOption 工作台语言下拉项。
-type TranslationLangOption struct {
+// TranslationLangOptionResp 工作台语言下拉项。
+type TranslationLangOptionResp struct {
 	Code   string
 	Label  string
 	Active bool
 }
 
-// ProductTranslationRow 工作台一行（一个可翻译取值）。
-type ProductTranslationRow struct {
+// ProductTranslationResp 工作台一行（一个可翻译取值）。
+type ProductTranslationResp struct {
 	Context    string
 	Field      string
 	FieldLabel string
@@ -474,8 +413,8 @@ type ProductTranslationRow struct {
 	Rich bool
 }
 
-// ProductTranslationGroup 按实体分组的行集合。
-type ProductTranslationGroup struct {
+// ProductTranslationGroupResp 按实体分组的行集合。
+type ProductTranslationGroupResp struct {
 	Key string
 	// EntityType / EntityID 该组对应的实体（译文保存后据此精确标记自动发布实例）。
 	EntityType string
@@ -488,73 +427,17 @@ type ProductTranslationGroup struct {
 	TitleKey      string
 	TitleFallback string
 	Subtitle      string
-	Rows          []ProductTranslationRow
+	Rows          []ProductTranslationResp
 }
 
-// ProjectTranslationOption 工程下拉项。
-type ProjectTranslationOption struct {
+// ProjectTranslationOptionResp 工程下拉项。
+type ProjectTranslationOptionResp struct {
 	ID       string
 	Name     string
 	Selected bool
 }
 
-// TranslationRowError 译文工作台的一行错误：Label 是「哪一行」（语境名，可空 = 页面级），
-// Msg 是结论事实。
-//
-// 不把 Label 拼进 Msg.Fallback：拼了就成成品串，模板再取词也救不回来
-// （中文永远粘在英文词条前面）。也不把 Label 塞进 Msg.Args —— 那个位置留给词条自身的 `%s`。
-type TranslationRowError struct {
-	Label string
-	Msg   facing.Msg
-}
-
-// AttrValueFormRow 留存失败回显所需的原始索引与控件值；写入解析仍保持原有的空行过滤。
-type AttrValueFormRow struct {
-	Index   int
-	ID      string
-	Key     string
-	Label   string
-	Sort    string
-	Enabled bool
-}
-
-// BundleSourcePart 成员来源快照的**一段**（词条 + 可选的数据值）。
-//
-// 拆成段而不是在 Go 侧拼成一句话：那句话里的「从仓库选」「仓库 SKU」是词条，
-// 拼好就等于把语言锁死在一种（英文界面上留中文）。段交给模板，分隔符「·」与取值
-// 都在渲染期决定 —— 数据（SKU 编码）原样带上，它翻不了也不需要翻。
-type BundleSourcePart struct {
-	LabelKey      string
-	LabelFallback string
-	// Value 数据（仓库 SKU 编码 / 外部编码）；纯标签段留空 —— 空值段不渲染。
-	Value string
-}
-
-// PricingForm 定价表单的取值（试算后要原样回填，用户接着点应用）。
-type PricingForm struct {
-	ProjectID  string
-	RuleType   string
-	Multiplier string
-	Amount     string
-	Margin     string
-	Rounding   string
-	Scope      string
-	TargetID   string
-	Status     string
-	Keyword    string
-	CategoryID string
-	BrandID    string
-	TagID      string
-	Note       string
-}
-
-// ProductCreateFormReq 商品建表单的取数入参。
-type ProductCreateFormReq struct {
-	// ProjectID 表单里的工程 id；空串 = 没给，候选一律给空列表（表单照常渲染）。
-	ProjectID string
-}
-
-// ProductCreateFormView 商品建表单的渲染视图（本模块第五个读模型，与四个整页同一形态）。
+// ProductCreateFormResp 商品建表单的渲染视图（本模块第五个读模型，与四个整页同一形态）。
 //
 // 「表单」不是另一种响应形态：后端给数据、Jet 渲染 HTML —— 这份视图撑的就是**用数据渲染出来的
 // 那一段 HTML**（首屏整页里用，提交失败重渲染时也用同一份），两者共用同一个装配助手，
@@ -564,12 +447,12 @@ type ProductCreateFormReq struct {
 //   - 没有工程清单（不渲染工程下拉）：工程来自表单字段，这里只带 id；
 //   - 没有回填槽（SubmitErr / FormEcho）：提交已迁到 JSON 写基座（fetch 提交、失败时原页
 //     保留输入），服务端不再重渲染表单，「本次提交了什么」也不再需要进视图。
-type ProductCreateFormView struct {
+type ProductCreateFormResp struct {
 	SelectedProject string
 
-	WarehouseOptions    []WarehouseOptionView
-	AttributeOptions    []AttributeOptionView
-	WarehouseSKUOptions []WarehouseSKUGroupView
+	WarehouseOptions    []WarehouseOptionResp
+	AttributeOptions    []AttributeOptionResp
+	WarehouseSKUOptions []WarehouseSKUGroupResp
 
 	// LoadFailed 取数失败：渲染方据此退回整页提示（这一段 HTML 撑不起来时不留半个表单）。
 	// 这里**没有 LoadError** —— 失败不留在这份视图里，驱动原文只走 err 返回值进日志。
@@ -578,38 +461,20 @@ type ProductCreateFormView struct {
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductCreateFormView) PageStatus() int { return v.HTTPStatus }
+func (v ProductCreateFormResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 取数失败时不该被缓存：重试必须真的回到服务端。
-func (v ProductCreateFormView) PageNoStore() bool {
+func (v ProductCreateFormResp) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
-// ProductPricingPageReq 定价工具页的取数入参。
-//
-// 三个字段都是**写路径的产物**（试算失败要原地重渲染，把用户填的表单与试算结果带回来）：
-// 读模型不认识 gin.Context，提交值只能由控制器读出来后经这里传进去 —— 与编辑页的表单回显
-// 同一分工（service 只认数据，不认请求）。
-type ProductPricingPageReq struct {
-	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
-	// Form.ProjectID 非空时以表单为准（试算/应用路径带着它提交）。
-	ProjectID string
-	// Form 表单回显（试算路径给本次提交值；首次 GET 为 nil = 用默认初值）。
-	Form *PricingForm
-	// Preview 试算结果（只有试算路径给；nil = 还没试算过）。
-	Preview *PricingPreviewResp
-	// ErrMsg 试算失败的**成品串**（例外形态：这一句来自 productErrText，已按当前语言翻好，
-	// 与「提示页出口」同类 —— 表单要留在眼前，所以不跳转）。
-	ErrMsg string
-}
-
-// ProductPricingPageView 定价工具页的渲染视图（本模块第六个读模型）。
+// ProductPricingPageResp 定价工具页的渲染视图（本模块第六个读模型）。
 //
 // 这一屏**没有失败档**：三处取数各自降级（工程清单读不到 → 空下拉；规则与尾数处理是
 // 注册表快照，本身无 error；留痕台账读不到 → 空台账），页面主体（改价表单）始终撑得起来。
 // 但仍实现 adminui.PageResult：装配缺陷那一条 500 要靠它传出去
 // （PageStatus 返回 0 时渲染出口按 200 处理，所以正常档不必显式设码）。
-type ProductPricingPageView struct {
+type ProductPricingPageResp struct {
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
 
@@ -641,19 +506,7 @@ type ProductPricingPageView struct {
 	HTTPStatus int
 }
 
-// ProductAttributesPageReq 属性库整页的取数入参（四个都是查询串参数）。
-//
-// Variation 的归一不在这里（`?variation=yes` 会被归一成「全部」，见 service 的读模型）：
-// 归一写在控制器时，筛选回显与过滤条件会各拿一份原始串。
-type ProductAttributesPageReq struct {
-	ProjectID string
-	Keyword   string
-	Variation string
-	// Page 已由控制器归一（productPageNumber 是跨页共用工具）；读模型还会按总数收敛一次。
-	Page int
-}
-
-// ProductAttributesPageView 属性库整页的渲染视图。
+// ProductAttributesPageResp 属性库整页的渲染视图。
 //
 // 两类字段分得很清楚：
 //   - **取数结果**（AttributeDetails / Total / Projects …）由 service 写；
@@ -661,9 +514,9 @@ type ProductAttributesPageReq struct {
 //     由控制器写 —— 行里挂着两个抽屉表单的数据，它们要 csrf 与取词函数（gin.Context 的产物）。
 //
 // 为什么用 AttributeDetails 而不是让 Attributes 直接装 []*AttributeResp：模板读的
-// `.Attributes` 是有 `EditForm` / `ValuesForm` 两键的**成品行**（同 ProductListPageView 的
+// `.Attributes` 是有 `EditForm` / `ValuesForm` 两键的**成品行**（同 ProductListPageResp 的
 // RowDetails → Products 分工）。两个键混用会让「原料」与「成品」在模板里看起来是同一件事。
-type ProductAttributesPageView struct {
+type ProductAttributesPageResp struct {
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
 
@@ -703,29 +556,21 @@ type ProductAttributesPageView struct {
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductAttributesPageView) PageStatus() int { return v.HTTPStatus }
+func (v ProductAttributesPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
-func (v ProductAttributesPageView) PageNoStore() bool { return v.LoadFailed }
+func (v ProductAttributesPageResp) PageNoStore() bool { return v.LoadFailed }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductPricingPageView) PageStatus() int { return v.HTTPStatus }
+func (v ProductPricingPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 装配缺陷页不该被缓存：重试必须真的回到服务端。
-func (v ProductPricingPageView) PageNoStore() bool {
+func (v ProductPricingPageResp) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
-// ProductDetailTemplatePageReq 「详情页模板」整页的取数入参（两个查询串参数）。
-type ProductDetailTemplatePageReq struct {
-	// ProjectID 工程 id；空串 = 取工程清单的第一个。
-	ProjectID string
-	// ProductID 商品 id；空串 = 还没选商品（菜单入口），控制器据此走引导出口。
-	ProductID string
-}
-
-// DetailTemplateProductView 这一屏展示的商品（只四个字段，不给整份商品）。
-type DetailTemplateProductView struct {
+// DetailTemplateProductResp 这一屏展示的商品（只四个字段，不给整份商品）。
+type DetailTemplateProductResp struct {
 	ID   string
 	Name string
 	Slug string
@@ -734,12 +579,12 @@ type DetailTemplateProductView struct {
 	URLPath string
 }
 
-// DetailTemplateOptionView 模板候选的渲染行。
+// DetailTemplateOptionResp 模板候选的渲染行。
 //
 // IsBound / IsDefault 由**本屏**算出（实例实际绑的那一套 / 当前解析到的默认那一套），
 // 不复用内容模板模块的 IsDefault：那是 (工程, 类型) 作用域的生效标记，
 // 与「这个商品的实例绑在谁身上」不是一回事，两者混用会让「已绑定」被显示成「类型默认」。
-type DetailTemplateOptionView struct {
+type DetailTemplateOptionResp struct {
 	ID           string
 	Name         string
 	DraftVersion int64
@@ -748,12 +593,12 @@ type DetailTemplateOptionView struct {
 	IsDefault    bool
 }
 
-// ProductDetailTemplatePageView 「详情页模板」整页的渲染视图（本模块第八个读模型）。
+// ProductDetailTemplatePageResp 「详情页模板」整页的渲染视图（本模块第八个读模型）。
 //
 // Ready 与 LoadFailed 是两件事：Ready = 「能不能给这一屏干活」（缺模板能力时为假，
 // 走页内提示而不是失败页），LoadFailed = 「取数没读到」（失败槽）。两者混成一个布尔时
 // 「未装配」会被显示成「数据读不出来」，而前者要人去查装配、后者重试就好。
-type ProductDetailTemplatePageView struct {
+type ProductDetailTemplatePageResp struct {
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
 
@@ -764,8 +609,8 @@ type ProductDetailTemplatePageView struct {
 	// 「缺商品」两个出口，不渲染模板清单。
 	Ready bool
 
-	Product           DetailTemplateProductView
-	Templates         []DetailTemplateOptionView
+	Product           DetailTemplateProductResp
+	Templates         []DetailTemplateOptionResp
 	TemplateCount     int
 	BoundTemplateID   string
 	DefaultTemplateID string
@@ -783,75 +628,34 @@ type ProductDetailTemplatePageView struct {
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductDetailTemplatePageView) PageStatus() int { return v.HTTPStatus }
+func (v ProductDetailTemplatePageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端。
-func (v ProductDetailTemplatePageView) PageNoStore() bool {
+func (v ProductDetailTemplatePageResp) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
-// ProductBundlePageReq 捆绑配置页的取数入参。
-//
-// 五个上下文字段（全部来自 query，页面用 GET 重新渲染）：
-//
-//	· ProjectID / ProductID 页面的两个选择器（入口有两套字段名，控制器认完再传进来）；
-//	· Source / SourceProductID / SourceWarehouseID 成员来源面板的当前上下文
-//	  （用 GET 重新渲染，不是前端拼参数 —— 属性值勾选清单与仓库 SKU 候选都由服务端给）。
-//
-// 没有「提交快照」这一档：保存已迁到 JSON 写基座，基座在原页发 fetch、失败只写结果区，
-// 用户的输入从未离开 DOM，因此页面装载只回答「库里配了什么」。
-type ProductBundlePageReq struct {
-	ProjectID       string
-	ProductID       string
-	Source          string
-	SourceProductID string
-	// SourceWarehouseID 选中来源仓（仓库来源面板据此只列那个仓的一屏候选）。
-	SourceWarehouseID string
-}
-
-// BundleOptionRow 成员表的一行（渲染行，非原始配置）。
-//
-// 与原始 BundleOption 分开：Available（真源可用量）与 SKULabel 都是这一屏才算得出的，
-// 混进配置结构会让「配置里存的字段」与「页面显示的字段」看起来是同一件事。
-type BundleOptionRow struct {
-	VariantID  string
-	SKULabel   string
-	Required   bool
-	DefaultQty int
-	MinQty     int
-	MaxQty     int
-	// Available 真源可用量；新增的空白行没有可用量可言（还没选 SKU），恒为 0。
-	Available int
-	// 来源快照（仅作溯源与展示，不是身份）：四个字段原样回填进隐藏域；
-	// 标签已拆成事实段（SourceParts，取词在模板）。
-	SourceKind   string
-	WarehouseID  string
-	WarehouseSKU string
-	ExternalSKU  string
-	SourceParts  []BundleSourcePart
-}
-
-// BundleCandidateView 候选 SKU 下拉项（id + 可读标签）。
-type BundleCandidateView struct {
+// BundleCandidateResp 候选 SKU 下拉项（id + 可读标签）。
+type BundleCandidateResp struct {
 	ID    string
 	Label string
 }
 
-// BundleSourceWarehouseGroupView 来源仓下拉项 + 该仓的仓库 SKU 勾选清单。
-type BundleSourceWarehouseGroupView struct {
+// BundleSourceWarehouseGroupResp 来源仓下拉项 + 该仓的仓库 SKU 勾选清单。
+type BundleSourceWarehouseGroupResp struct {
 	WarehouseID string
 	Label       string
 	IsDefault   bool
 	Selected    bool
-	Items       []WarehouseSKUItemView
+	Items       []WarehouseSKUItemResp
 }
 
-// ProductBundlePageView 捆绑配置页的渲染视图（本模块第九个读模型）。
+// ProductBundlePageResp 捆绑配置页的渲染视图（本模块第九个读模型）。
 //
 // 取数原料与装配产物分开命名：Detail / Skus / Warehouses / WarehouseGroups / Products
 // 是读回来的，Rows / CandidateSKUs / Sources / SourceProducts / SourceWarehouses 是装出来的。
 // 混在一个字段名下会让人以为模板里看到的就是库里的东西。
-type ProductBundlePageView struct {
+type ProductBundlePageResp struct {
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
 
@@ -865,8 +669,8 @@ type ProductBundlePageView struct {
 	Skus []*BundleSKUResp
 
 	// Rows 成员表行；CandidateSKUs 候选下拉；SkuCount 候选条数（模板提示用）。
-	Rows          []BundleOptionRow
-	CandidateSKUs []BundleCandidateView
+	Rows          []BundleOptionResp
+	CandidateSKUs []BundleCandidateResp
 	SkuCount      int
 	// MaxOptions 成员数上限（表单约束 + 空行补齐的判据）。
 	MaxOptions int
@@ -877,7 +681,7 @@ type ProductBundlePageView struct {
 	SourceProducts []map[string]any
 	// SourceAttributes 与 SourceWarehouses 的选择依据分别是「选中来源商品」与「选中来源仓」。
 	SourceAttributes  []*AttributeResp
-	SourceWarehouses  []BundleSourceWarehouseGroupView
+	SourceWarehouses  []BundleSourceWarehouseGroupResp
 	SourceWarehouseID string
 
 	// Cfg* 配置数值的回填源（库里的配置；读不出来时是零值 + SaveBlocked）。
@@ -897,27 +701,20 @@ type ProductBundlePageView struct {
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductBundlePageView) PageStatus() int { return v.HTTPStatus }
+func (v ProductBundlePageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端。
-func (v ProductBundlePageView) PageNoStore() bool {
+func (v ProductBundlePageResp) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
-// ProductTranslationsPageReq 商品译文工作台的取数入参（工程 / 商品 / 目标语言，三者都可空）。
-type ProductTranslationsPageReq struct {
-	ProjectID string
-	ProductID string
-	Lang      string
-}
-
-// ProductTranslationsPageView 商品译文工作台的一屏。
+// ProductTranslationsPageResp 商品译文工作台的一屏。
 //
 // 取数结果（ProjectOptions / Langs / SourceLang / Groups）与保存结论（Saved / Written /
 // LangInvalid / Errors）合在一份视图里：保存路径**先重建这一屏再校验**，两者本来就是
 // 同一次取数的产物 —— 拆成两份会让「保存失败后重渲的那一页」与「GET 出来的那一页」
 // 慢慢长成两个形状。
-type ProductTranslationsPageView struct {
+type ProductTranslationsPageResp struct {
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
 	// ProjectID / ProductID / Lang 实际生效的三个上下文（空工程已回退到第一个工程、
@@ -925,20 +722,20 @@ type ProductTranslationsPageView struct {
 	ProjectID string
 	ProductID string
 	Lang      string
-	Langs     []TranslationLangOption
+	Langs     []TranslationLangOptionResp
 	// SourceLang 站点源语言（= 站点默认语言）；判定依据见 service 的 translationSourceLang。
 	SourceLang string
 	// NoTargetLang 没有任何「非源语言」的启用语言：没有可翻译的目标，页面给可行动空态。
 	NoTargetLang   bool
-	Groups         []ProductTranslationGroup
+	Groups         []ProductTranslationGroupResp
 	RowCount       int
 	Done           int
 	Total          int
-	ProjectOptions []ProjectTranslationOption
+	ProjectOptions []ProjectTranslationOptionResp
 
 	// Errors 逐行 / 页面级错误（校验或写入失败时重渲本页）。元素是**事实**
 	//（哪一行 + 词条 key + 中文兜底），取词留给页面的 tf。
-	Errors []TranslationRowError
+	Errors []TranslationRowErrorResp
 	// LangInvalid 目标语言不在站点启用清单里（保存被拒，页面重渲并列出结论）。
 	LangInvalid bool
 	// Saved 这次保存已经落库（或确认无变化）：控制器据此走提示页出口。
@@ -947,36 +744,17 @@ type ProductTranslationsPageView struct {
 	Written int
 }
 
-// SaveProductTranslationsReq 保存提交：三组并行数组按行一一对应（与表单字段同形）。
-//
-// 数组原样带过来，长度对齐与逐行校验都在读模型侧做 —— 控制器只负责把表单读成数组。
-type SaveProductTranslationsReq struct {
-	ProjectID string
-	ProductID string
-	Lang      string
-	Contexts  []string
-	Hashes    []string
-	Targets   []string
-}
-
-// CategoryParentInfo 「父级不在候选列表里」那一项的**事实**：名称是数据，跨工程是布尔。
+// CategoryParentInfoResp 「父级不在候选列表里」那一项的**事实**：名称是数据，跨工程是布尔。
 //
 // 拆成两个字段而不是一个拼好的串：跨工程那句说明是文案，必须在渲染期按请求语言取词
 // （en-US 后台下也该是英文）—— 在 Go 里拼串等于把它钉死在中文。
-type CategoryParentInfo struct {
+type CategoryParentInfoResp struct {
 	Name       string
 	OutOfScope bool
 }
 
-// ProductCategoriesPageReq 分类管理页的取数入参。
-type ProductCategoriesPageReq struct {
-	ProjectID string
-	Keyword   string
-	Page      int
-}
-
-// ProductCategoriesPageView 分类管理页的一屏。
-type ProductCategoriesPageView struct {
+// ProductCategoriesPageResp 分类管理页的一屏。
+type ProductCategoriesPageResp struct {
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
 
@@ -995,9 +773,9 @@ type ProductCategoriesPageView struct {
 	// 不是当前这一页 —— 树状列表之后没有面包屑兜底，缺项会直接表现为
 	//「新建子分类时选不到父级」。
 	PickFlat []*CategoryResp
-	// ParentLabels 「父级不在候选列表里」的那些分类 → 父级事实（见 CategoryParentInfo）。
+	// ParentLabels 「父级不在候选列表里」的那些分类 → 父级事实（见 CategoryParentInfoResp）。
 	// 只对本页里真正缺失的那几个父级查一次库。
-	ParentLabels map[string]CategoryParentInfo
+	ParentLabels map[string]CategoryParentInfoResp
 
 	// MatchTotal 是**命中条数**（提示文案用）；Total（= 命中所属的根分类数）给分页条算总页数。
 	// Categories 成品行（模板 `{{range .Categories}}` 读 ID / Name / Slug / Label / ParentID /
@@ -1027,23 +805,16 @@ type ProductCategoriesPageView struct {
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductCategoriesPageView) PageStatus() int { return v.HTTPStatus }
+func (v ProductCategoriesPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
 // 404 空态同样标 no-store —— 分类可能刚被建回来，缓存的 404 会把运营挡在门外。
-func (v ProductCategoriesPageView) PageNoStore() bool {
+func (v ProductCategoriesPageResp) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
-// ProductBrandsPageReq 品牌管理页的取数入参。
-type ProductBrandsPageReq struct {
-	ProjectID string
-	Keyword   string
-	Page      int
-}
-
-// ProductBrandsPageView 品牌管理页的一屏。
-type ProductBrandsPageView struct {
+// ProductBrandsPageResp 品牌管理页的一屏。
+type ProductBrandsPageResp struct {
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
 
@@ -1070,22 +841,15 @@ type ProductBrandsPageView struct {
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductBrandsPageView) PageStatus() int { return v.HTTPStatus }
+func (v ProductBrandsPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 非 200 的档位都不该被缓存：重试必须真的回到服务端。
-func (v ProductBrandsPageView) PageNoStore() bool {
+func (v ProductBrandsPageResp) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
-// ProductTagsPageReq 标签管理页的取数入参。
-type ProductTagsPageReq struct {
-	ProjectID string
-	Keyword   string
-	Page      int
-}
-
-// ProductTagsPageView 标签管理页的一屏。
-type ProductTagsPageView struct {
+// ProductTagsPageResp 标签管理页的一屏。
+type ProductTagsPageResp struct {
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
 
@@ -1115,9 +879,9 @@ type ProductTagsPageView struct {
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
-func (v ProductTagsPageView) PageStatus() int { return v.HTTPStatus }
+func (v ProductTagsPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 非 200 的档位都不该被缓存：重试必须真的回到服务端。
-func (v ProductTagsPageView) PageNoStore() bool {
+func (v ProductTagsPageResp) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }

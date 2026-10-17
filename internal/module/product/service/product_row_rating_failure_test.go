@@ -98,7 +98,7 @@ func seedRatingFailureFixture(t *testing.T, db *gorm.DB, projectID string) ratin
 }
 
 // assertNoRatingRow 「确实没有评分」档：行装配出来了，且是零评分（不是失败）。
-func assertNoRatingRow(t *testing.T, page string, view *productdto.ProductRow, loadFailed bool, err error) {
+func assertNoRatingRow(t *testing.T, page string, view *productdto.ProductRowResp, loadFailed bool, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("%s：确实没有评分不该判失败，实际 error=%v", page, err)
@@ -116,7 +116,7 @@ func assertNoRatingRow(t *testing.T, page string, view *productdto.ProductRow, l
 }
 
 // assertRatedRow 「有评分」档：均值与条数照常。
-func assertRatedRow(t *testing.T, page string, view *productdto.ProductRow, loadFailed bool, err error) {
+func assertRatedRow(t *testing.T, page string, view *productdto.ProductRowResp, loadFailed bool, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("%s：有评分的商品不该判失败，实际 error=%v", page, err)
@@ -130,7 +130,7 @@ func assertRatedRow(t *testing.T, page string, view *productdto.ProductRow, load
 }
 
 // assertRatingReadFailure 「评分读不到」档：error + 500 失败页 + 不留半截行。
-func assertRatingReadFailure(t *testing.T, page string, loadFailed bool, httpStatus int, row *productdto.ProductRow, err error) {
+func assertRatingReadFailure(t *testing.T, page string, loadFailed bool, httpStatus int, row *productdto.ProductRowResp, err error) {
 	t.Helper()
 	if err == nil {
 		t.Fatalf("%s：评分读不到时必须返回 error（否则页面会把数据库故障渲染成「暂无评分」，"+

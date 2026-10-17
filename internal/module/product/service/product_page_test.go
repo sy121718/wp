@@ -42,17 +42,17 @@ type productPageWarehousePortStub struct {
 	err error
 }
 
-func (s *productPageWarehousePortStub) WarehouseOptions(context.Context, string) ([]productdto.WarehouseOptionView, error) {
+func (s *productPageWarehousePortStub) WarehouseOptions(context.Context, string) ([]productdto.WarehouseOptionResp, error) {
 	s.calls++
 	if s.err != nil {
 		return nil, s.err
 	}
-	return []productdto.WarehouseOptionView{}, nil
+	return []productdto.WarehouseOptionResp{}, nil
 }
 
-func (s *productPageWarehousePortStub) WarehouseSKUOptions(context.Context, string, []productdto.WarehouseOptionView) ([]productdto.WarehouseSKUGroupView, error) {
+func (s *productPageWarehousePortStub) WarehouseSKUOptions(context.Context, string, []productdto.WarehouseOptionResp) ([]productdto.WarehouseSKUGroupResp, error) {
 	s.calls++
-	return []productdto.WarehouseSKUGroupView{}, nil
+	return []productdto.WarehouseSKUGroupResp{}, nil
 }
 
 // productPageTemplatePortStub 模板端口桩：同上。
@@ -60,9 +60,9 @@ type productPageTemplatePortStub struct {
 	calls int
 }
 
-func (s *productPageTemplatePortStub) EntityTemplates(context.Context, string, string) ([]productdto.EntityTemplateOptionView, error) {
+func (s *productPageTemplatePortStub) EntityTemplates(context.Context, string, string) ([]productdto.EntityTemplateOptionResp, error) {
 	s.calls++
-	return []productdto.EntityTemplateOptionView{}, nil
+	return []productdto.EntityTemplateOptionResp{}, nil
 }
 
 func (s *productPageTemplatePortStub) DefaultEntityTemplate(context.Context, string, string) (string, error) {

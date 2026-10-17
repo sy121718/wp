@@ -18,7 +18,7 @@
 //   - **行装配在本方法里完成**：每个商品一行（service/product_row.go），与详情页 / 编辑页
 //     共用同一份组装。原料（RowDetails / Categories / Brands / Tags / WarehouseOptions）
 //     仍留在视图里 —— 分类选择器按树读，行本身则已经装配进 Products；嵌套值保持
-//     map[string]any 的形状（模板的 isset 判据依赖它，见 dto.ProductRow 的文件头）；
+//     map[string]any 的形状（模板的 isset 判据依赖它，见 dto.ProductRowResp 的文件头）；
 //   - **分页条只给事实**：Total / Page / Limit 由本方法给，基地址与链接由控制器按当前
 //     请求拼（基地址带筛选条件，翻页不丢条件）。
 //
@@ -48,15 +48,15 @@ const ProductListPageSize = 20
 // → 逐行详情 → 属性组选项 / 仓库候选 → 定价规则清单），因为「谁先失败」决定了用户看到哪一句：
 // 工程清单读不到是 500，`?project=<不存在的 id>` 是 400，两者都能让后面的取数失败，
 // 但只有第一处失败原因会被说出来。
-func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (res *productdto.ProductListPageView, err error) {
-	view := &productdto.ProductListPageView{
+func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (res *productdto.ProductListPageResp, err error) {
+	view := &productdto.ProductListPageResp{
 		// Title / Menu / Form / Statuses / Pagination / ListQuery 都由控制器填：title 的
 		// i18n key 常量在 http 包（MsgProductsTitle），派生值的计算工具还被别的页面共用。
 		// Products（成品行）由本方法末尾装配，Flat 已随行装配下沉、视图不再有那个字段。
 		Projects:            []projectdto.ProjectResp{},
-		WarehouseOptions:    []productdto.WarehouseOptionView{},
-		AttributeOptions:    []productdto.AttributeOptionView{},
-		WarehouseSKUOptions: []productdto.WarehouseSKUGroupView{},
+		WarehouseOptions:    []productdto.WarehouseOptionResp{},
+		AttributeOptions:    []productdto.AttributeOptionResp{},
+		WarehouseSKUOptions: []productdto.WarehouseSKUGroupResp{},
 		Categories:          []*productdto.CategoryResp{},
 		Brands:              []*productdto.BrandResp{},
 		Tags:                []*productdto.TagResp{},
@@ -94,7 +94,7 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 
 	// 查询串不是可信边界：`?project=<不存在的 id>` 一路渲染下去会得到「这个工程下没有商品」
 	// —— 把「工程不存在」说成了「工程是空的」。参数级失败仍是**页面请求**：整页 + 400 +
-	// no-store（档位由视图带出，见 dto.ProductListPageView.PageStatus）。
+	// no-store（档位由视图带出，见 dto.ProductListPageResp.PageStatus）。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)

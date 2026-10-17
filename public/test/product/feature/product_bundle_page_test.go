@@ -282,20 +282,20 @@ type bundlePageFailReader struct {
 	status int
 }
 
-func (r *bundlePageFailReader) ProductBundlePage(context.Context, *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageView, error) {
+func (r *bundlePageFailReader) ProductBundlePage(context.Context, *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageResp, error) {
 	// 契约：视图恒非 nil，失败也要给齐模板必需键（空切片而不是缺键）。
-	return &productdto.ProductBundlePageView{
+	return &productdto.ProductBundlePageResp{
 		Title:            "捆绑配置",
 		Menu:             "products",
 		Projects:         []projectdto.ProjectResp{},
 		Products:         []*productdto.ProductResp{},
 		Skus:             []*productdto.BundleSKUResp{},
-		Rows:             []productdto.BundleOptionRow{},
-		CandidateSKUs:    []productdto.BundleCandidateView{},
+		Rows:             []productdto.BundleOptionResp{},
+		CandidateSKUs:    []productdto.BundleCandidateResp{},
 		Sources:          []map[string]any{},
 		SourceProducts:   []map[string]any{},
 		SourceAttributes: []*productdto.AttributeResp{},
-		SourceWarehouses: []productdto.BundleSourceWarehouseGroupView{},
+		SourceWarehouses: []productdto.BundleSourceWarehouseGroupResp{},
 		MaxOptions:       productdto.BundleMaxOptionsLimit,
 		SaveBlocked:      true,
 		LoadFailed:       true,

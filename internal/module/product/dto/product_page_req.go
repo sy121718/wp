@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	productenums "go_wp/internal/module/product/enums"
+	"go_wp/pkg/facing"
 	json "go_wp/pkg/jsonx"
 )
 
@@ -237,4 +238,216 @@ func (r *PricingFormReq) Rule() *PricingRuleReq {
 		CategoryID: r.CategoryID, BrandID: r.BrandID, TagID: r.TagID,
 		RuleParams: PricingParams(r.RuleType, r.Multiplier, r.Amount, r.Margin),
 	}
+}
+
+// ProductNewPageReq 商品新建整页的取数入参。
+type ProductNewPageReq struct {
+	// ProjectID 查询串里的工程 id（控制器只做去空白）；空串 = 取工程清单的第一个。
+	ProjectID string
+}
+
+// ProductListPageReq 商品列表整页的取数入参。
+//
+// Page 是**已归一**的页码：控制器用跨页共用的 productPageNumber 归一（`?page=abc` /
+// `?page=-3` 已经退回 1），本方法只做下限保护。归一不在这里做，是为了不让同一份规则
+// 在 service 与控制器各写一遍（那三个页面的页码归一与这里的必须同口径）。
+type ProductListPageReq struct {
+	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
+	ProjectID string
+	Keyword   string
+	Status    string
+	Page      int
+}
+
+// ProductDetailPageReq 商品详情整页的取数入参。
+type ProductDetailPageReq struct {
+	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
+	ProjectID string
+	// ProductID 查询串里的商品 id；空串 = 没给参数（与「商品已被删除」同一档：404）。
+	ProductID string
+}
+
+// ProductEditPageReq 商品编辑整页的取数入参。
+type ProductEditPageReq struct {
+	// ProjectID 查询串 / 表单里的工程 id；空串 = 取工程清单的第一个。
+	ProjectID string
+	// ProductID 要编辑的商品 id；空串 = 没给参数 → **200 空表单**（不是 404）：
+	// 编辑页是写入口，让运营看到一个空表单比看到一个 404 有用（详情页反过来）。
+	// 给了 id 但库里没有才是 404（与详情页同一档：空态、不进失败槽）。
+	ProductID string
+}
+
+// TranslationRowErrorResp 译文工作台的一行错误：Label 是「哪一行」（语境名，可空 = 页面级），
+// Msg 是结论事实。
+//
+// 不把 Label 拼进 Msg.Fallback：拼了就成成品串，模板再取词也救不回来
+// （中文永远粘在英文词条前面）。也不把 Label 塞进 Msg.Args —— 那个位置留给词条自身的 `%s`。
+type TranslationRowErrorResp struct {
+	Label string
+	Msg   facing.Msg
+}
+
+// AttrValueFormRow 留存失败回显所需的原始索引与控件值；写入解析仍保持原有的空行过滤。
+type AttrValueFormRow struct {
+	Index   int
+	ID      string
+	Key     string
+	Label   string
+	Sort    string
+	Enabled bool
+}
+
+// BundleSourcePart 成员来源快照的**一段**（词条 + 可选的数据值）。
+//
+// 拆成段而不是在 Go 侧拼成一句话：那句话里的「从仓库选」「仓库 SKU」是词条，
+// 拼好就等于把语言锁死在一种（英文界面上留中文）。段交给模板，分隔符「·」与取值
+// 都在渲染期决定 —— 数据（SKU 编码）原样带上，它翻不了也不需要翻。
+type BundleSourcePart struct {
+	LabelKey      string
+	LabelFallback string
+	// Value 数据（仓库 SKU 编码 / 外部编码）；纯标签段留空 —— 空值段不渲染。
+	Value string
+}
+
+// PricingForm 定价表单的取值（试算后要原样回填，用户接着点应用）。
+type PricingForm struct {
+	ProjectID  string
+	RuleType   string
+	Multiplier string
+	Amount     string
+	Margin     string
+	Rounding   string
+	Scope      string
+	TargetID   string
+	Status     string
+	Keyword    string
+	CategoryID string
+	BrandID    string
+	TagID      string
+	Note       string
+}
+
+// ProductCreateFormReq 商品建表单的取数入参。
+type ProductCreateFormReq struct {
+	// ProjectID 表单里的工程 id；空串 = 没给，候选一律给空列表（表单照常渲染）。
+	ProjectID string
+}
+
+// ProductPricingPageReq 定价工具页的取数入参。
+//
+// 三个字段都是**写路径的产物**（试算失败要原地重渲染，把用户填的表单与试算结果带回来）：
+// 读模型不认识 gin.Context，提交值只能由控制器读出来后经这里传进去 —— 与编辑页的表单回显
+// 同一分工（service 只认数据，不认请求）。
+type ProductPricingPageReq struct {
+	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
+	// Form.ProjectID 非空时以表单为准（试算/应用路径带着它提交）。
+	ProjectID string
+	// Form 表单回显（试算路径给本次提交值；首次 GET 为 nil = 用默认初值）。
+	Form *PricingForm
+	// Preview 试算结果（只有试算路径给；nil = 还没试算过）。
+	Preview *PricingPreviewResp
+	// ErrMsg 试算失败的**成品串**（例外形态：这一句来自 productErrText，已按当前语言翻好，
+	// 与「提示页出口」同类 —— 表单要留在眼前，所以不跳转）。
+	ErrMsg string
+}
+
+// ProductAttributesPageReq 属性库整页的取数入参（四个都是查询串参数）。
+//
+// Variation 的归一不在这里（`?variation=yes` 会被归一成「全部」，见 service 的读模型）：
+// 归一写在控制器时，筛选回显与过滤条件会各拿一份原始串。
+type ProductAttributesPageReq struct {
+	ProjectID string
+	Keyword   string
+	Variation string
+	// Page 已由控制器归一（productPageNumber 是跨页共用工具）；读模型还会按总数收敛一次。
+	Page int
+}
+
+// ProductDetailTemplatePageReq 「详情页模板」整页的取数入参（两个查询串参数）。
+type ProductDetailTemplatePageReq struct {
+	// ProjectID 工程 id；空串 = 取工程清单的第一个。
+	ProjectID string
+	// ProductID 商品 id；空串 = 还没选商品（菜单入口），控制器据此走引导出口。
+	ProductID string
+}
+
+// ProductBundlePageReq 捆绑配置页的取数入参。
+//
+// 五个上下文字段（全部来自 query，页面用 GET 重新渲染）：
+//
+//	· ProjectID / ProductID 页面的两个选择器（入口有两套字段名，控制器认完再传进来）；
+//	· Source / SourceProductID / SourceWarehouseID 成员来源面板的当前上下文
+//	  （用 GET 重新渲染，不是前端拼参数 —— 属性值勾选清单与仓库 SKU 候选都由服务端给）。
+//
+// 没有「提交快照」这一档：保存已迁到 JSON 写基座，基座在原页发 fetch、失败只写结果区，
+// 用户的输入从未离开 DOM，因此页面装载只回答「库里配了什么」。
+type ProductBundlePageReq struct {
+	ProjectID       string
+	ProductID       string
+	Source          string
+	SourceProductID string
+	// SourceWarehouseID 选中来源仓（仓库来源面板据此只列那个仓的一屏候选）。
+	SourceWarehouseID string
+}
+
+// BundleOptionResp 成员表的一行（渲染行，非原始配置）。
+//
+// 与原始 BundleOption 分开：Available（真源可用量）与 SKULabel 都是这一屏才算得出的，
+// 混进配置结构会让「配置里存的字段」与「页面显示的字段」看起来是同一件事。
+type BundleOptionResp struct {
+	VariantID  string
+	SKULabel   string
+	Required   bool
+	DefaultQty int
+	MinQty     int
+	MaxQty     int
+	// Available 真源可用量；新增的空白行没有可用量可言（还没选 SKU），恒为 0。
+	Available int
+	// 来源快照（仅作溯源与展示，不是身份）：四个字段原样回填进隐藏域；
+	// 标签已拆成事实段（SourceParts，取词在模板）。
+	SourceKind   string
+	WarehouseID  string
+	WarehouseSKU string
+	ExternalSKU  string
+	SourceParts  []BundleSourcePart
+}
+
+// ProductTranslationsPageReq 商品译文工作台的取数入参（工程 / 商品 / 目标语言，三者都可空）。
+type ProductTranslationsPageReq struct {
+	ProjectID string
+	ProductID string
+	Lang      string
+}
+
+// SaveProductTranslationsReq 保存提交：三组并行数组按行一一对应（与表单字段同形）。
+//
+// 数组原样带过来，长度对齐与逐行校验都在读模型侧做 —— 控制器只负责把表单读成数组。
+type SaveProductTranslationsReq struct {
+	ProjectID string
+	ProductID string
+	Lang      string
+	Contexts  []string
+	Hashes    []string
+	Targets   []string
+}
+
+// ProductCategoriesPageReq 分类管理页的取数入参。
+type ProductCategoriesPageReq struct {
+	ProjectID string
+	Keyword   string
+	Page      int
+}
+
+// ProductBrandsPageReq 品牌管理页的取数入参。
+type ProductBrandsPageReq struct {
+	ProjectID string
+	Keyword   string
+	Page      int
+}
+
+// ProductTagsPageReq 标签管理页的取数入参。
+type ProductTagsPageReq struct {
+	ProjectID string
+	Keyword   string
+	Page      int
 }

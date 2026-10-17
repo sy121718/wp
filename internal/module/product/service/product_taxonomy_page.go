@@ -102,8 +102,8 @@ func MissingParentIDs(nodes []*productdto.CategoryResp, known map[string]struct{
 
 // ProductCategoriesPage 分类管理页的读模型：工程清单 → 参数档位 → 本页树 → 全量候选 →
 // 缺失父级的事实，并给出这一屏的档位。
-func (s *Service) ProductCategoriesPage(ctx context.Context, req *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageView, error) {
-	view := &productdto.ProductCategoriesPageView{
+func (s *Service) ProductCategoriesPage(ctx context.Context, req *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageResp, error) {
+	view := &productdto.ProductCategoriesPageResp{
 		Projects:        []projectdto.ProjectResp{},
 		CategoryDetails: []*productdto.CategoryResp{},
 		PickFlat:        []*productdto.CategoryResp{},
@@ -205,7 +205,7 @@ func (s *Service) ProductCategoriesPage(ctx context.Context, req *productdto.Pro
 //
 // 名称都读不到（父级行没了 / RLS 切角色后跨工程行不可见）时**不登记**这一项，模板退回显示
 // 原始 ID —— 显示裸 ID 也比编一个父级名安全。逐个父级查一次库：只对本页里真正缺失的那几个发生。
-func (s *Service) categoryParentLabels(ctx context.Context, projectID string, nodes []*productdto.CategoryResp, candidates []*productdto.CategoryResp) map[string]productdto.CategoryParentInfo {
+func (s *Service) categoryParentLabels(ctx context.Context, projectID string, nodes []*productdto.CategoryResp, candidates []*productdto.CategoryResp) map[string]productdto.CategoryParentInfoResp {
 	known := make(map[string]struct{}, len(candidates))
 	for _, node := range candidates {
 		if node != nil {
@@ -222,18 +222,18 @@ func (s *Service) categoryParentLabels(ctx context.Context, projectID string, no
 // 读库那一步做成参数（load）是为了让这条判据在没有数据库时也能被钉住：
 // 它真正管的是「同一父级只读一次」「读不到就不写键」（模板因此退回裸 ID），
 // 而不是 SQL 本身。ids 的顺序即查询顺序。
-func CategoryParentFacts(ids []string, projectID string, load func(id string) (*productdto.CategoryResp, error)) map[string]productdto.CategoryParentInfo {
+func CategoryParentFacts(ids []string, projectID string, load func(id string) (*productdto.CategoryResp, error)) map[string]productdto.CategoryParentInfoResp {
 	if len(ids) == 0 {
 		return nil
 	}
-	labels := make(map[string]productdto.CategoryParentInfo, len(ids))
+	labels := make(map[string]productdto.CategoryParentInfoResp, len(ids))
 	for _, parentID := range ids {
 		parent, err := load(parentID)
 		if err != nil || parent == nil {
 			// 读不到（父级行没了 / 不在作用域内）就不登记：模板退回显示原始 ID。
 			continue
 		}
-		labels[parentID] = productdto.CategoryParentInfo{Name: parent.Name, OutOfScope: parent.ProjectID != projectID}
+		labels[parentID] = productdto.CategoryParentInfoResp{Name: parent.Name, OutOfScope: parent.ProjectID != projectID}
 	}
 	return labels
 }
@@ -243,8 +243,8 @@ func CategoryParentFacts(ids []string, projectID string, load func(id string) (*
 // 品牌列表**分页下推到 service**（审计 D12 收口）：请求类型自带 Page/Size，总数由契约的
 // CountBrands 给出 —— 不再「全量取回再切片」，翻到第 N 页也只从库里取那一页。
 // 关键词过滤仍在查询里（与计数同一份过滤条件）。
-func (s *Service) ProductBrandsPage(ctx context.Context, req *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageView, error) {
-	view := &productdto.ProductBrandsPageView{
+func (s *Service) ProductBrandsPage(ctx context.Context, req *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageResp, error) {
+	view := &productdto.ProductBrandsPageResp{
 		Projects:     []projectdto.ProjectResp{},
 		BrandDetails: []*productdto.BrandResp{},
 		Limit:        ProductSubListPageSize,
@@ -323,8 +323,8 @@ func (s *Service) ProductBrandsPage(ctx context.Context, req *productdto.Product
 // 标签列表**分页下推到 service**（审计 D13 收口）：总数由契约的 CountTags 给出（与 ListTags
 // 同一份过滤条件）。命中数仍是 service 的一次批量聚合（审计 PERF-02）——分页后只聚合当页标签，
 // 页面 SQL 条数与标签总数无关这一条不变。
-func (s *Service) ProductTagsPage(ctx context.Context, req *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageView, error) {
-	view := &productdto.ProductTagsPageView{
+func (s *Service) ProductTagsPage(ctx context.Context, req *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageResp, error) {
+	view := &productdto.ProductTagsPageResp{
 		Projects:   []projectdto.ProjectResp{},
 		TagDetails: []*productdto.TagResp{},
 		RuleTypes:  []*productdto.TagRuleTypeResp{},

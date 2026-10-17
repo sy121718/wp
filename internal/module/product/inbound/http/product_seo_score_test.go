@@ -96,7 +96,7 @@ func TestSeoScoreFragmentRendersProfileAndDuplicates(t *testing.T) {
 // TestSeoScoreFragmentRendersEntityEmptyState 读不到实体时给一句可读的话，不是空白面板。
 func TestSeoScoreFragmentRendersEntityEmptyState(t *testing.T) {
 	body := renderAdminTemplate(t, "fragments/seo_score",
-		gin.H{"Score": productdto.ScoreView{Empty: "读不到这个商品，无法评分"}, "t": testTranslateFunc()})
+		gin.H{"Score": productdto.ScoreResp{Empty: "读不到这个商品，无法评分"}, "t": testTranslateFunc()})
 	if !strings.Contains(body, "读不到这个商品，无法评分") {
 		t.Fatalf("空态应显示传入的文案，实际输出：%s", body)
 	}
@@ -174,12 +174,12 @@ func testTranslateFunc() func(key, fallback string) string {
 
 // productRowForRender 商品行数据的渲染用例夹具（详情页 / 编辑页 / 捆绑区块 / 评分片段共用）。
 //
-// 行由读模型装配（service/product_row.go），形状是 dto.ProductRow —— 本夹具与它逐字段对齐。
+// 行由读模型装配（service/product_row.go），形状是 dto.ProductRowResp —— 本夹具与它逐字段对齐。
 // 模板读 `p.X` 时 struct 缺字段会**渲染期报错**（map 缺键只是 nil），所以这个夹具同时充当
 // 「模板 ↔ 结构体」的渲染守卫；字段级双向对账见 product_row_template_test.go。
-func productRowForRender() *productdto.ProductRow {
+func productRowForRender() *productdto.ProductRowResp {
 	attr := &productdto.AttributeResp{ID: "a1", Name: "颜色", IsVariation: true}
-	return &productdto.ProductRow{
+	return &productdto.ProductRowResp{
 		ID: "p1", Name: "纯棉 T 恤", Slug: "tee", Status: "published",
 		PriceMin: "59", PriceMax: "99", VariantCount: 1,
 		Variants: []map[string]any{{
@@ -209,7 +209,7 @@ func productRowForRender() *productdto.ProductRow {
 // hx-target 不一致、缺 csrf 隐藏域），用户点开抽屉会看到一个按不动的按钮 —— 页面测试全绿。
 func TestProductSeoDrawerFragmentRenders(t *testing.T) {
 	body := renderAdminTemplate(t, "admin/product/entity_seo_drawer.html", productPageLayoutData(gin.H{
-		"Score":        productdto.ScoreView{OK: true, Total: 72, Grade: "C"},
+		"Score":        productdto.ScoreResp{OK: true, Total: 72, Grade: "C"},
 		"ScoreURL":     "/admin/products/seo-score",
 		"TargetID":     "product-seo-score-p1",
 		"HiddenFields": []seoHiddenField{{"projectId", "proj-1"}, {"productId", "p1"}},
