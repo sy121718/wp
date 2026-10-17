@@ -45,6 +45,10 @@
         </div>
     </header>
 
+    {* 写动作的结论行：成功由 ui/json_write.js 存进 flash、整页刷新后在这里显示一次。
+       四个写动作都会改变「有没有实例 / 绑的是哪套模板 / 线上路径」，所以一律整页刷新。 *}
+    <p class="form-hint badge" data-write-flash-target="product-detail-template" role="status" hidden></p>
+
     {{if loadError}}
     {* 失败优先于「未装配」：先判「没读到」，再判装配缺陷 ——
        两者都是这一页不能用，但原因和处置完全不同。 *}
@@ -99,8 +103,8 @@
         </form>
 
         {{if .InstanceExists}}
-        <form method="post" action="/admin/products/template/apply" class="form-inline">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form data-write-api="/api/product/detail-template/apply" data-write-mode="form"
+              data-write-flash="product-detail-template" class="form-inline">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
             <label>{{ .["t"]("admin.product_detail_template.label.useTemplate", "使用模板") }}
@@ -110,22 +114,25 @@
                     {{end}}
                 </select>
             </label>
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_detail_template.applySubmit", "切换模板并重新发布") }}</button>
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail_template.applySubmit", "切换模板并重新发布") }}</button>
         </form>
 
-        <form method="post" action="/admin/products/template/url" class="form-inline">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form data-write-api="/api/product/detail-template/update-url" data-write-mode="form"
+              data-write-bool="withRedirect"
+              data-write-flash="product-detail-template" class="form-inline">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
             <label>{{ .["t"]("admin.product_detail_template.label.changeURL", "改 URL") }}
                 <input type="text" class="form-input" name="newPath" value="{{.InstanceURL}}" required>
             </label>
             <label class="checkbox"><input type="checkbox" name="withRedirect" value="1" checked> {{ .["t"]("admin.product_detail_template.keepRedirect", "旧链接 301") }}</label>
-            <button type="submit" class="btn">{{ .["t"]("admin.product_detail_template.changeURLSubmit", "改 URL") }}</button>
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <button type="submit" class="btn" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail_template.changeURLSubmit", "改 URL") }}</button>
         </form>
         {{else}}
-        <form method="post" action="/admin/products/template/publish" class="form-inline">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form data-write-api="/api/product/detail-template/publish" data-write-mode="form"
+              data-write-flash="product-detail-template" class="form-inline">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
             <label>{{ .["t"]("admin.product_detail_template.label.useTemplate", "使用模板") }}
@@ -136,7 +143,8 @@
                 </select>
             </label>
             <input type="text" class="form-input" name="urlPath" placeholder="{{ .["t"]("admin.product_detail_template.ph.publishURLLead", "发布 URL（留空按商品 slug 生成 ") }}{{.Product.URLPath}}{{ .["t"]("admin.product_detail_template.ph.publishURLTail", "）") }}">
-            <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_detail_template.publishSubmit", "发布详情页") }}</button>
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail_template.publishSubmit", "发布详情页") }}</button>
         </form>
         {{end}}
     </section>
@@ -185,8 +193,8 @@
     {* 新建命名模板：复制一套现有模板的文档作为起点（内容编辑仍属模板/工作台侧）。 *}
     {{if canCreateTemplate}}
     <template id="tpl-detail-template-create">
-        <form method="post" action="/admin/products/template/create" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form data-write-api="/api/product/detail-template/create" data-write-mode="form"
+              data-write-flash="product-detail-template" class="form-stack">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
             <div class="form-row">
@@ -203,9 +211,10 @@
                     </select>
                 </div>
             </div>
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_detail_template.named.create", "新建命名模板") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail_template.named.create", "新建命名模板") }}</button>
             </div>
         </form>
     </template>

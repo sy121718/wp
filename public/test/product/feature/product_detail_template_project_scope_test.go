@@ -1,21 +1,21 @@
 // product_detail_template_project_scope_test.go —— 「详情页模板」三个写入口的**工程作用域**（P167 / P168）。
 //
-// 被钉住的缺陷形态：internal/module/product/inbound/http/product_detail_template.go 的两个写入口
-// 读出了表单里的 projectId 却没往下传 —— UpdateURLReq.ProjectID / RebuildReq.ProjectID 收到空串，
+// 被钉住的缺陷形态：internal/module/product/inbound/http/product_detail_template.go 的三个写入口
+// 读出了请求里的 projectId 却没往下传 —— UpdateURLReq.ProjectID / RebuildReq.ProjectID 收到空串，
 // presentation 侧只能走「工程唯一时取该工程」的兜底
 // （internal/module/presentation/service/presentation_render.go:503 的 resolveProjectID）。
 //
 // 为什么既有用例照不出它：既有 feature 用例都跑在**单工程**夹具上，兜底解析出的那个工程恰好
 // 就是唯一的那个，于是「传了」与「没传」行为等价，差异不可观测。本文件造**两个工程**：
 // 工程不唯一 -> resolveProjectID 直接回 ErrProjectRequired -> 漏传时写操作走不到实例定位，
-// 端点渲染失败态提示页（data-jump-state="err"）。
+// 接口回失败态（归口文案 + 非 200 业务码）。
 //
 // 钉住的接线（变红实验就是把这几处实参改成 ""）：
-// 1) POST /admin/products/template/url -> ProductDetailTemplateUpdateURL 的 projectID 实参
+// 1) POST /api/product/detail-template/update-url -> UpdateDetailTemplateURL 的 projectID 实参
 // -> productservice.UpdateDetailTemplateURL -> UpdateURLReq.ProjectID -> Service.UpdateURL；
-// 2) POST /admin/products/template/apply -> ProductDetailTemplateApply 的 projectID 实参
+// 2) POST /api/product/detail-template/apply -> ApplyDetailTemplate 的 projectID 实参
 // -> productservice.ApplyDetailTemplate -> RebuildReq.ProjectID -> Service.Rebuild；
-// 3) POST /admin/products/template/publish（**不传 urlPath**）-> PublishDetailTemplate 里
+// 3) POST /api/product/detail-template/publish（**不传 urlPath**）-> PublishDetailTemplate 里
 // 「取商品拿 slug」那一跳的 GetReq.ProjectID -> product 侧 resolveProjectID
 // （工程不唯一即回 ErrInvalidParam）—— 它不落在 presentation，而在 product 自己这一跳。
 //
@@ -26,7 +26,7 @@ package feature
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
-	"net/url"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -36,6 +36,7 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
+	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/siteurl"
 	"go_wp/internal/templates"
@@ -59,7 +60,7 @@ type projectScopeFixture struct {
 	instA, instB                string
 }
 
-// newProjectScopeEngine 装配双工程引擎：只挂「详情页模板」的三个写入口。
+// newProjectScopeEngine 装配双工程引擎：只挂「详情页模板」的三个写接口。
 //
 // 不挂鉴权中间件（与 product_detail_template_choice_test.go 的页面引擎同一取舍）：
 // 本文件验的是工程作用域，不是权限链。
@@ -80,11 +81,14 @@ func newProjectScopeEngine(t *testing.T) (*gin.Engine, *projectScopeFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	handle := producthttp.NewProductPageHandle(base.products, base.products, base.projects)
-	handle.SetDetailTemplateDeps(base.templates, base.pres)
-	engine.POST("/admin/products/template/url", handle.ProductDetailTemplateUpdateURL)
-	engine.POST("/admin/products/template/apply", handle.ProductDetailTemplateApply)
-	engine.POST("/admin/products/template/publish", handle.ProductDetailTemplatePublish)
+	// 改 URL / 切换模板 / 首次发布三个写动作已从页面 POST 迁到 /api/product/detail-template/*。
+	producthttp.BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
+		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
+	})
+	api := producthttp.NewHandle(base.products)
+	engine.POST("/api/product/detail-template/update-url", api.UpdateDetailTemplateURL)
+	engine.POST("/api/product/detail-template/apply", api.ApplyDetailTemplate)
+	engine.POST("/api/product/detail-template/publish", api.PublishDetailTemplate)
 	return engine, scope
 }
 
@@ -186,13 +190,14 @@ func TestProductDetailTemplateUpdateURLKeepsProjectScope(t *testing.T) {
 		t.Fatalf("B 站初始产物应使用 B 站版式模板：%s", bBefore)
 	}
 
-	rec := postForm(engine, "/admin/products/template/url", url.Values{
-		"projectId": {f.projectID}, "productId": {f.productA},
-		"newPath": {scopePathANew},
+	rec := postJSON(t, engine, "/api/product/detail-template/update-url", map[string]any{
+		"projectId": f.projectID, "productId": f.productA, "newPath": scopePathANew,
 	})
 	// 漏传工程作用域时这里就是红的：工程不唯一 -> resolveProjectID 回 ErrProjectRequired
-	// -> 端点渲染失败态提示页而不是成功态。
-	assertJumpOK(t, rec)
+	// -> 端点失败 + 归口文案，而不是成功。
+	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
+		t.Fatalf("改 URL 应成功，实际 %d：%s", env.Code, env.Message)
+	}
 
 	// A 站：实例路径真的改了，新路径上有产物。
 	if got := f.instanceOf(t, f.projectID, f.productA).URLPath; got != scopePathANew {
@@ -232,11 +237,13 @@ func TestProductDetailTemplateApplyKeepsProjectScope(t *testing.T) {
 		t.Fatalf("B 站初始产物应使用 B 站版式模板：%s", bBefore)
 	}
 
-	rec := postForm(engine, "/admin/products/template/apply", url.Values{
-		"projectId": {f.projectID}, "productId": {f.productA}, "templateId": {f.tplASwitch},
+	rec := postJSON(t, engine, "/api/product/detail-template/apply", map[string]any{
+		"projectId": f.projectID, "productId": f.productA, "templateId": f.tplASwitch,
 	})
 	// 同 UpdateURL：漏传工程作用域时这一步红。
-	assertJumpOK(t, rec)
+	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
+		t.Fatalf("切换模板应成功，实际 %d：%s", env.Code, env.Message)
+	}
 
 	// A 站：绑定换成切换目标，产物随模板变化（旧标记消失）。
 	if got := instanceTemplateID(t, f.detailFixture, f.instA); got != f.tplASwitch {
@@ -284,10 +291,12 @@ func TestProductDetailTemplatePublishKeepsProjectScope(t *testing.T) {
 	}
 
 	// 刻意**不传 urlPath**：让服务端按站点 URL 规则派生（这正是漏传工程作用域的那条分支）。
-	rec := postForm(engine, "/admin/products/template/publish", url.Values{
-		"projectId": {f.projectID}, "productId": {pubA}, "templateId": {f.tplAFirst},
+	rec := postJSON(t, engine, "/api/product/detail-template/publish", map[string]any{
+		"projectId": f.projectID, "productId": pubA, "templateId": f.tplAFirst,
 	})
-	assertJumpOK(t, rec)
+	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
+		t.Fatalf("首次发布应成功，实际 %d：%s", env.Code, env.Message)
+	}
 
 	// 期望值用 siteurl 同参数自己算一遍（不硬编码模式），并确认它确实在 A 站落成了产物 ——
 	// 只比 URLPath 的话，「派生对了但产物没激活」仍然是绿的。

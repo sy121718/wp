@@ -379,11 +379,7 @@ POST /admin/products/delete
 POST /admin/products/seo-score
 POST /admin/products/tags
 POST /admin/products/taxonomy
-POST /admin/products/template/apply
-POST /admin/products/template/create
 POST /admin/products/template/preview
-POST /admin/products/template/publish
-POST /admin/products/template/url
 POST /admin/products/translations/save
 POST /admin/products/variant/preview
 POST /admin/projects/create
@@ -568,8 +564,12 @@ POST /api/product/category/delete
 POST /api/product/category/update
 POST /api/product/create
 POST /api/product/delete
+POST /api/product/detail-template/apply
+POST /api/product/detail-template/create
+POST /api/product/detail-template/publish
 POST /api/product/detail-template/reapply-preset
 POST /api/product/detail-template/rollback-document
+POST /api/product/detail-template/update-url
 POST /api/product/pricing/apply
 POST /api/product/pricing/preview
 POST /api/product/rating/add

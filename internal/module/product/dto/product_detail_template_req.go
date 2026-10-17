@@ -25,3 +25,43 @@ type DetailTemplateModeRollbackReq struct {
 	ProjectID  string `json:"projectId"`
 	SnapshotID string `json:"snapshotId" binding:"required"`
 }
+
+// 以下四条是详情页模板页的写动作（新建命名模板 / 首次发布 / 切换模板 / 改 URL）。
+//
+// 入参用**商品 ID**（不是实例 ID）：发布之前根本没有实例，四个动作的定位依据都是
+// 「哪件商品、哪个工程」。projectId 照旧显式回传 —— 工程作用域来自页面上用户选中的
+// 那个站点，presentation 侧「工程唯一时取该工程」的兜底在多工程站会落到别的站点。
+
+// DetailTemplateCreateReq 新建一套命名模板（复制指定模板或默认模板的文档，初始 v1）。
+type DetailTemplateCreateReq struct {
+	ProjectID string `json:"projectId"`
+	ProductID string `json:"productId" binding:"required"`
+	Name      string `json:"name" binding:"required"`
+	// CopyFrom 复制来源模板 ID；留空 = 该类型的默认模板。
+	CopyFrom string `json:"copyFrom"`
+}
+
+// DetailTemplatePublishReq 首次为该商品建立发布实例并发布（URLPath 留空按商品 slug 派生）。
+type DetailTemplatePublishReq struct {
+	ProjectID  string `json:"projectId"`
+	ProductID  string `json:"productId" binding:"required"`
+	TemplateID string `json:"templateId"`
+	URLPath    string `json:"urlPath"`
+}
+
+// DetailTemplateApplyReq 把商品切换到选中模板并重新发布。
+type DetailTemplateApplyReq struct {
+	ProjectID  string `json:"projectId"`
+	ProductID  string `json:"productId" binding:"required"`
+	TemplateID string `json:"templateId"`
+}
+
+// DetailTemplateUpdateURLReq 修改线上路径（不动内容与模板绑定）。
+type DetailTemplateUpdateURLReq struct {
+	ProjectID string `json:"projectId"`
+	ProductID string `json:"productId" binding:"required"`
+	NewPath   string `json:"newPath" binding:"required"`
+	// WithRedirect 勾选时旧链接 301 到新路径。未勾选时客户端根本不发这个键，
+	// 于是零值 false —— 与页面表单「复选框不勾即不提交」同一语义。
+	WithRedirect bool `json:"withRedirect"`
+}

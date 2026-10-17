@@ -34,6 +34,7 @@ import (
 	presentationenums "go_wp/internal/module/presentation/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	producthttp "go_wp/internal/module/product/inbound/http"
+	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
 
@@ -478,11 +479,18 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	})
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetDetailTemplateDeps(f.templates, f.pres)
+	// 新建 / 首次发布 / 切换三个写动作已从页面 POST 迁到 /api/product/detail-template/*：
+	// 页面表单走 ui/json_write.js 直调接口，页面只剩下整页 GET 与只读预览。
+	// 写动作的依赖在装配层后置注入（SetupProductPages 里那一次），这里照同一形状注入一遍。
+	producthttp.BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
+		Templates: f.templates, Instances: f.pres, Products: f.products, Projects: f.projects,
+	})
 	engine.GET("/admin/products/template", handle.ProductDetailTemplatePage)
-	engine.POST("/admin/products/template/create", handle.ProductDetailTemplateCreate)
-	engine.POST("/admin/products/template/publish", handle.ProductDetailTemplatePublish)
-	engine.POST("/admin/products/template/apply", handle.ProductDetailTemplateApply)
 	engine.POST("/admin/products/template/preview", handle.ProductDetailTemplatePreview)
+	api := producthttp.NewHandle(f.products)
+	engine.POST("/api/product/detail-template/create", api.CreateDetailTemplate)
+	engine.POST("/api/product/detail-template/publish", api.PublishDetailTemplate)
+	engine.POST("/api/product/detail-template/apply", api.ApplyDetailTemplate)
 	return engine, f
 }
 
@@ -539,11 +547,13 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	}
 
 	// 3) 页面新建命名模板：类型下多出一套，页面立刻能选到它。
-	rec = postForm(engine, "/admin/products/template/create", url.Values{
-		"projectId": {f.projectID}, "productId": {productID},
-		"name": {"节庆详情页"}, "copyFrom": {first.ID},
+	rec = postJSON(t, engine, "/api/product/detail-template/create", map[string]any{
+		"projectId": f.projectID, "productId": productID,
+		"name": "节庆详情页", "copyFrom": first.ID,
 	})
-	assertJumpOK(t, rec)
+	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
+		t.Fatalf("新建命名模板应成功，实际 %d：%s", env.Code, env.Message)
+	}
 	list, err := f.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: "product"})
 	if err != nil {
 		t.Fatalf("列模板失败: %v", err)
@@ -553,10 +563,12 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	}
 
 	// 4) 页面发布：不带 urlPath 时按商品 slug 派生，产物进访问面。
-	rec = postForm(engine, "/admin/products/template/publish", url.Values{
-		"projectId": {f.projectID}, "productId": {productID}, "templateId": {first.ID},
+	rec = postJSON(t, engine, "/api/product/detail-template/publish", map[string]any{
+		"projectId": f.projectID, "productId": productID, "templateId": first.ID,
 	})
-	assertJumpOK(t, rec)
+	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
+		t.Fatalf("首次发布应成功，实际 %d：%s", env.Code, env.Message)
+	}
 	if !strings.Contains(activeHTML(t, "/products/summer-shirt"), "活动版式") {
 		t.Fatalf("页面发布应使用选中模板")
 	}
@@ -576,10 +588,12 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	}
 
 	// 5) 页面切换模板并重新发布：产物随之变化。
-	rec = postForm(engine, "/admin/products/template/apply", url.Values{
-		"projectId": {f.projectID}, "productId": {productID}, "templateId": {second.ID},
+	rec = postJSON(t, engine, "/api/product/detail-template/apply", map[string]any{
+		"projectId": f.projectID, "productId": productID, "templateId": second.ID,
 	})
-	assertJumpOK(t, rec)
+	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
+		t.Fatalf("切换模板应成功，实际 %d：%s", env.Code, env.Message)
+	}
 	html := activeHTML(t, "/products/summer-shirt")
 	if !strings.Contains(html, "极简版式") || strings.Contains(html, "活动版式") {
 		t.Fatalf("切换后产物应换成第二套模板: %s", html)

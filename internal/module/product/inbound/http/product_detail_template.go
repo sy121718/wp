@@ -108,6 +108,147 @@ func (h *Handle) RollbackDetailTemplateDocument(c *gin.Context) {
 	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), nil)
 }
 
+// detailTemplateWriteDeps 详情页模板页四个写动作的依赖（装配期**后置**注入）。
+//
+// 为什么不让 Handle 在构造时持有：这四个动作要 contenttemplate 与 presentation 两个契约，
+// 而 SetupProductRoutes 只拿得到 database 与 project —— 内容模板与发布服务在
+// assembly_publish 那一段才建好（同 BindDetailTemplateModePort 的时序，见 product_router.go 末尾）。
+// 未注入 = 装配缺陷，走 errModeUnavailable → 500 归口文案，而不是让请求在空指针上崩。
+var detailTemplateWriteDeps *productservice.DetailTemplateDeps
+
+// BindDetailTemplateWriteDeps 注入四个写动作的依赖（装配期调用一次）。
+func BindDetailTemplateWriteDeps(deps productservice.DetailTemplateDeps) {
+	detailTemplateWriteDeps = &deps
+}
+
+func detailTemplateWriteDepsOrErr() (productservice.DetailTemplateDeps, error) {
+	if detailTemplateWriteDeps == nil {
+		return productservice.DetailTemplateDeps{}, errModeUnavailable
+	}
+	return *detailTemplateWriteDeps, nil
+}
+
+// detailTemplateWriteFail 四个写动作的 JSON 失败出口。
+//
+// 文案已经由 detailTemplate*Msg 系列收口（presentation / contenttemplate 的 enums → 人话），
+// 这里只决定状态码：参数与业务状态问题 400、对象不存在 404。
+func detailTemplateWriteFail(c *gin.Context, status int, msg productMsg) {
+	response.ErrorWithMessage(c, status, productMsgText(c, msg))
+}
+
+// CreateDetailTemplate POST /api/product/detail-template/create：
+// 新建一套命名模板（复制指定模板或默认模板的文档），初始版本 v1。
+//
+// 模板内容编辑不在这里：新建只给出一个可被工作台打开的结构，改文档走 /workbench?template=…。
+func (h *Handle) CreateDetailTemplate(c *gin.Context) {
+	req := &productdto.DetailTemplateCreateReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	deps, err := detailTemplateWriteDepsOrErr()
+	if err != nil {
+		productDetailTemplateModeFail(c, err)
+		return
+	}
+	// binding 只拦空串，拦不住「全是空格」的名字；判据必须在 TrimSpace 之后。
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		detailTemplateWriteFail(c, http.StatusBadRequest, productDetailTemplateNameRequiredMsg)
+		return
+	}
+	// 顺序：**先取文档、再建模板**（取不到复制来源就不建空的）。
+	if err = productservice.CreateDetailTemplate(c.Request.Context(), deps,
+		strings.TrimSpace(req.ProjectID), name, strings.TrimSpace(req.CopyFrom)); err != nil {
+		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateTemplateMsg(c, err))
+		return
+	}
+	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), nil)
+}
+
+// PublishDetailTemplate POST /api/product/detail-template/publish：
+// 首次为该商品建立发布实例并发布（URLPath 留空时按站点 URL 规则从商品 slug 派生）。
+//
+// 两类失败走**两张不同的文案表**：取商品失败（product 的 enums）与建实例失败
+// （presentation 的 enums）合成一句会把「商品不存在」说成「还没有详情页实例」。
+func (h *Handle) PublishDetailTemplate(c *gin.Context) {
+	req := &productdto.DetailTemplatePublishReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	deps, err := detailTemplateWriteDepsOrErr()
+	if err != nil {
+		productDetailTemplateModeFail(c, err)
+		return
+	}
+	err = productservice.PublishDetailTemplate(c.Request.Context(), deps,
+		strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID),
+		strings.TrimSpace(req.TemplateID), strings.TrimSpace(req.URLPath))
+	if err != nil {
+		var lookup *productservice.DetailTemplateProductLookupError
+		if errors.As(err, &lookup) {
+			detailTemplateWriteFail(c, http.StatusNotFound, productErrMsg(c, lookup.Err))
+			return
+		}
+		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateFacingMsg(c, err))
+		return
+	}
+	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), nil)
+}
+
+// ApplyDetailTemplate POST /api/product/detail-template/apply：
+// 把商品切换（或确认）到选中的模板并重新发布 —— 产物随模板变化。
+//
+// projectID 显式回传，不走 presentation 的「工程唯一时取该工程」兜底：多工程站点上
+// 兜底会落到另一个工程，改的是别的站点的页面而这里仍回成功。
+func (h *Handle) ApplyDetailTemplate(c *gin.Context) {
+	req := &productdto.DetailTemplateApplyReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	deps, err := detailTemplateWriteDepsOrErr()
+	if err != nil {
+		productDetailTemplateModeFail(c, err)
+		return
+	}
+	if err = productservice.ApplyDetailTemplate(c.Request.Context(), deps.Instances,
+		strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID),
+		strings.TrimSpace(req.TemplateID)); err != nil {
+		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateFacingMsg(c, err))
+		return
+	}
+	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), nil)
+}
+
+// UpdateDetailTemplateURL POST /api/product/detail-template/update-url：
+// 修改商品详情页的线上路径（内容、模板绑定、产物内容完全不动）。
+func (h *Handle) UpdateDetailTemplateURL(c *gin.Context) {
+	req := &productdto.DetailTemplateUpdateURLReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	deps, err := detailTemplateWriteDepsOrErr()
+	if err != nil {
+		productDetailTemplateModeFail(c, err)
+		return
+	}
+	newPath := strings.TrimSpace(req.NewPath)
+	if newPath == "" {
+		detailTemplateWriteFail(c, http.StatusBadRequest, productDetailTemplatePathRequiredMsg)
+		return
+	}
+	if err = productservice.UpdateDetailTemplateURL(c.Request.Context(), deps.Instances,
+		strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID), newPath,
+		req.WithRedirect); err != nil {
+		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateFacingMsg(c, err))
+		return
+	}
+	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), nil)
+}
+
 // detailTemplateModePortFor 取双轨能力并校验实例标识（两个端点的共同前置）。
 //
 // 端口是后置注入的（见 product_router.go 的 BindDetailTemplateModePort）：没注入 = 装配缺陷，
@@ -314,114 +455,6 @@ func detailTemplateLoadFailureView(status int) productdto.ProductDetailTemplateP
 		LoadFailed: status != http.StatusOK,
 		HTTPStatus: status,
 	}
-}
-
-// productDetailPath 商品详情页的默认 URL（与商品 slug 一致；发布实例按它激活静态产物）。
-// ProductDetailTemplateCreate POST /admin/products/template/create：
-// 新建一套命名模板（复制指定模板或当前默认模板的文档），初始版本 v1。
-//
-// 不在本页做模板可视化编辑：模板内容编辑走 /workbench?template=…；本页解决的是
-// 「同一个商品类型下有多套命名模板可选、各自版本化」的落地与选择。
-func (h *productPageHandle) ProductDetailTemplateCreate(c *gin.Context) {
-	if h.templates == nil {
-		h.detailTemplateDepsMissingRedirect(c)
-		return
-	}
-	projectID := c.PostForm("projectId")
-	productID := c.PostForm("productId")
-	name := strings.TrimSpace(c.PostForm("name"))
-	copyFrom := strings.TrimSpace(c.PostForm("copyFrom"))
-	if name == "" {
-		productDetailTemplateJump(c, false, projectID, productID,
-			productDetailTemplateNameRequiredMsg)
-		return
-	}
-	// 顺序与拆分前一致（dd 6.3 ⑤）：**先取文档、再建模板**（取不到复制来源就不建空的）。
-	// 两处失败走同一张 contenttemplate 文案表，故 service 只回一个 error。
-	if err := productservice.CreateDetailTemplate(c.Request.Context(), h.detailTemplateDeps(),
-		projectID, name, copyFrom); err != nil {
-		productDetailTemplateJump(c, false, projectID, productID, detailTemplateTemplateMsg(c, err))
-		return
-	}
-	productDetailTemplateJump(c, true, projectID, productID, productActionDoneMsg)
-}
-
-// ProductDetailTemplatePublish POST /admin/products/template/publish：
-// 首次为该商品建立发布实例并发布（可指定模板），激活静态产物。
-func (h *productPageHandle) ProductDetailTemplatePublish(c *gin.Context) {
-	if h.instances == nil {
-		h.detailTemplateDepsMissingRedirect(c)
-		return
-	}
-	projectID := c.PostForm("projectId")
-	productID := c.PostForm("productId")
-	// 编排（URLPath 为空时先按站点 URL 规则派生路径）在 service，顺序与拆分前一致（dd 6.3 ⑤⑥）：
-	// 先取商品拿 slug，取不到就直接报错，不继续建实例。
-	// 路径派生口径见 internal/siteurl：这里只是把表单预填好，用户填了就用用户的。
-	err := productservice.PublishDetailTemplate(c.Request.Context(), h.detailTemplateDeps(),
-		projectID, productID,
-		strings.TrimSpace(c.PostForm("templateId")), strings.TrimSpace(c.PostForm("urlPath")))
-	if err != nil {
-		// 两类失败走**两张不同的文案表**：取商品失败（product 的 enums）与建实例失败
-		// （presentation 的 enums）拆分前各自调用 productErrMsg / detailTemplateFacingMsg。
-		// 合成一句会把「商品不存在」说成「这个商品还没有详情页实例」—— 用户据此会去发布一次。
-		var lookup *productservice.DetailTemplateProductLookupError
-		if errors.As(err, &lookup) {
-			productDetailTemplateJump(c, false, projectID, productID, productErrMsg(c, lookup.Err))
-			return
-		}
-		productDetailTemplateJump(c, false, projectID, productID, detailTemplateFacingMsg(c, err))
-		return
-	}
-	productDetailTemplateJump(c, true, projectID, productID, productActionDoneMsg)
-}
-
-// ProductDetailTemplateUpdateURL POST /admin/products/template/url：
-// 修改商品详情页的线上路径（改 URL）。
-//
-// 内容（商品字段、模板绑定、产物内容）完全不动 —— 路径是站点事实而不是内容
-// 的一部分：改它的代价是重建产物 + 处置旧链接，不是重新编辑商品。
-func (h *productPageHandle) ProductDetailTemplateUpdateURL(c *gin.Context) {
-	if h.instances == nil {
-		h.detailTemplateDepsMissingRedirect(c)
-		return
-	}
-	projectID := c.PostForm("projectId")
-	productID := c.PostForm("productId")
-	newPath := strings.TrimSpace(c.PostForm("newPath"))
-	if newPath == "" {
-		productDetailTemplateJump(c, false, projectID, productID,
-			productDetailTemplatePathRequiredMsg)
-		return
-	}
-	// 规范化、唯一性检查与冲突行为都在 presentation 侧（service 只透传 projectID / NewPath /
-	// WithRedirect）。工程作用域必须由这里传下去：它来自表单里用户选中的工程，是页面上
-	// 「当前站点」的唯一来源，presentation 侧的「工程唯一时取该工程」兜底在多工程站点上
-	// 会落到另一个工程（改的是别的站点的路径，页面仍回成功）。
-	if err := productservice.UpdateDetailTemplateURL(c.Request.Context(), h.instances, projectID, productID, newPath,
-		c.PostForm("withRedirect") != ""); err != nil {
-		productDetailTemplateJump(c, false, projectID, productID, detailTemplateFacingMsg(c, err))
-		return
-	}
-	productDetailTemplateJump(c, true, projectID, productID, productActionDoneMsg)
-}
-
-// ProductDetailTemplateApply POST /admin/products/template/apply：
-// 把商品切换（或确认）到选中的模板并重新发布 —— 产物随模板变化（验收 4）。
-func (h *productPageHandle) ProductDetailTemplateApply(c *gin.Context) {
-	if h.instances == nil {
-		h.detailTemplateDepsMissingRedirect(c)
-		return
-	}
-	projectID := c.PostForm("projectId")
-	productID := c.PostForm("productId")
-	// projectID 同 ProductDetailTemplateUpdateURL：工程作用域由页面传入，不走 presentation 的兜底。
-	if err := productservice.ApplyDetailTemplate(c.Request.Context(), h.instances, projectID, productID,
-		strings.TrimSpace(c.PostForm("templateId"))); err != nil {
-		productDetailTemplateJump(c, false, projectID, productID, detailTemplateFacingMsg(c, err))
-		return
-	}
-	productDetailTemplateJump(c, true, projectID, productID, productActionDoneMsg)
 }
 
 // ProductDetailTemplatePreview POST /admin/products/template/preview：

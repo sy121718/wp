@@ -29,7 +29,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -41,6 +40,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	dtoutbound "go_wp/internal/module/product/outbound/detailtemplate"
+	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
 )
@@ -77,8 +77,12 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 	// 多工程下端口读不到工程时回的是**错误**这件事就被掩盖掉了。
 	port := &detailTemplateRecordingPort{inner: dtoutbound.New(base.templates, base.pres)}
 	base.products.SetDetailTemplatePort(port)
+	// 「新建模板」已迁到 /api/product/detail-template/create（页面表单走 ui/json_write.js）。
+	producthttp.BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
+		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
+	})
 	engine.GET("/admin/products/template", handle.ProductDetailTemplatePage)
-	engine.POST("/admin/products/template/create", handle.ProductDetailTemplateCreate)
+	engine.POST("/api/product/detail-template/create", producthttp.NewHandle(base.products).CreateDetailTemplate)
 	return engine, scope, port
 }
 
@@ -285,10 +289,12 @@ func TestProductDetailTemplateCreateWithoutCopySourceScopesToProject(t *testing.
 
 	// 刻意**不传 copyFrom**：缺省来源 = 该工程下 product 类型的详情模板 —— 这正是原先走无工程
 	// ResolveTemplate 的那条分支（多工程下 ErrProjectRequired -> 失败态提示页）。
-	rec := postForm(engine, "/admin/products/template/create", url.Values{
-		"projectId": {f.projectID}, "productId": {f.productA}, "name": {"多工程复制默认模板"},
+	rec := postJSON(t, engine, "/api/product/detail-template/create", map[string]any{
+		"projectId": f.projectID, "productId": f.productA, "name": "多工程复制默认模板",
 	})
-	assertJumpOK(t, rec)
+	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
+		t.Fatalf("多工程站点上新建模板应成功，实际 %d：%s", env.Code, env.Message)
+	}
 
 	afterA := templateScopeTemplateCount(t, f, f.projectID)
 	afterB := templateScopeTemplateCount(t, f, f.projectB)

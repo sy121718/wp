@@ -86,21 +86,27 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/variant/generate", permission.ProductVariantGenerate, handle.GenerateVariants)
 	g.POST("/variant/update", permission.ProductVariantUpdate, handle.UpdateVariant)
 	g.POST("/variant/delete", permission.ProductVariantDelete, handle.DeleteVariant)
-	// 清单保存（整张清单一次提交，前端从清单 DOM 组装 rows）：权限点复用组合生成 ——
-	// 页面侧原先的 /admin/products/variant/save 挂的就是它，保存与生成本就是同一批人。
+	// 清单保存（整张清单一次提交，前端从清单 DOM 组装 rows）：权限点与组合生成分开 ——
+	// API 组按实际请求路径 enforce，sys_permission 上 permission_code 唯一，复用会让其中
+	// 一条路径拿不到策略。
 	g.POST("/variant/save", permission.ProductVariantSave, handle.SaveVariantList)
 	// 评分是商品的子资源（issue #33）：补录 / 删除各一条记录，不碰商品自己的列。
-	// 权限点沿用「改这个商品」（update）—— 页面侧原先挂的就是它。
+	// 两个动作各自的权限点（理由同上：一个 code 只能绑一条 API 路由）。
 	g.POST("/rating/add", permission.ProductRatingAdd, handle.AddRating)
 	g.POST("/rating/delete", permission.ProductRatingDelete, handle.DeleteRating)
 
-	// —— 详情页双轨写动作（迁移 282）——
-	// 作用对象是商品的发布实例：重新套用预设（放弃独立文档）与文档级回滚（取历史快照重发）。
-	// 页面侧原先在 /admin/products/{reapply-preset,rollback-document} 两条页面 POST 上，
-	// 权限点沿用商品更新（同一改动面：改的都是这个商品详情页的呈现），不新增权限点。
-	// 能力由 presentation 提供，装配点见文件末尾的 BindDetailTemplateModePort。
+	// —— 详情页模板的写动作（页面 /admin/products/template）——
+	// 双轨（迁移 282）：重新套用预设（放弃独立文档）与文档级回滚（取历史快照重发）；
+	// 外加页面上的新建命名模板 / 首次发布 / 切换模板 / 改 URL。
+	// 每个动作一条独立权限点：API 组按实际请求路径 enforce，而 sys_permission 上
+	// permission_code 唯一 —— 一个 code 挂两条路径会把其中一条挤出策略（含超管全员 403）。
+	// 能力由已注入的 deps 提供，装配点见文件末尾的 Bind*。
 	g.POST("/detail-template/reapply-preset", permission.ProductDetailTemplateReapply, handle.ReapplyDetailTemplatePreset)
 	g.POST("/detail-template/rollback-document", permission.ProductDetailTemplateRollback, handle.RollbackDetailTemplateDocument)
+	g.POST("/detail-template/create", permission.ProductDetailTemplateCreate, handle.CreateDetailTemplate)
+	g.POST("/detail-template/publish", permission.ProductDetailTemplatePublish, handle.PublishDetailTemplate)
+	g.POST("/detail-template/apply", permission.ProductDetailTemplateApply, handle.ApplyDetailTemplate)
+	g.POST("/detail-template/update-url", permission.ProductDetailTemplateUpdateURL, handle.UpdateDetailTemplateURL)
 
 	// —— 属性组与属性值（issue #7）——
 	// 属性组可跨商品复用，故独立于商品资源。
@@ -210,6 +216,12 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 「断言失败 → 静默降级」这条路径。presentations 的静态类型 PresentationService
 	// 已嵌入该端口，接口→接口赋值成立。
 	productPages.SetDetailTemplateModePort(presentations)
+	// 详情页模板的四个写动作（新建 / 首次发布 / 切换 / 改 URL）挂在 /api/product 组，
+	// 而那两个契约在 SetupProductRoutes 里还拿不到 —— 同一批依赖在这里后置注入
+	//（与文件末尾 BindDetailTemplateModePort 同一个理由，见 product_detail_template.go）。
+	BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
+		Templates: contentTemplates, Instances: presentations, Products: products, Projects: projects,
+	})
 	// 编辑期 title 唯一性检查的全站数据源（审计 SEO-018）：页面草稿与文章标题
 	// 必须和商品域在同一份索引里，否则跨内容的重复标题检不出来。两份契约都可空。
 	productPages.SetSeoTitleSources(pageSvc, contentSvc)
@@ -266,15 +278,11 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// —— 详情页模板（issue #14）+ 捆绑配置（issue #20）——
 	// 商品详情页模板：一个商品类型下可建多套命名模板，商品发布时可选一套、
 	// 发布前可预览（预览只读渲染，不落库不激活）。
-	// 写动作分别复用内容模板创建 / 实例创建 / 实例重建 / 实例预览四个 API 权限点。
+	// 页面上只剩两条页面入口：整页 GET 与**预览**（预览开新标签页看渲染字节，本质是只读）。
+	// 新建 / 首次发布 / 切换模板 / 改 URL 四个写动作已迁到 /api/product/detail-template/*，
+	// 页面前端走 ui/json_write.js。
 	pages.GET("/products/template", adminui.PageAuthz("/api/product/get"), productPages.ProductDetailTemplatePage)
-	pages.POST("/products/template/create", builtin.CasbinMiddlewareForPath("/api/contenttemplate/create"), productPages.ProductDetailTemplateCreate)
-	pages.POST("/products/template/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), productPages.ProductDetailTemplatePublish)
-	pages.POST("/products/template/apply", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), productPages.ProductDetailTemplateApply)
 	pages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), productPages.ProductDetailTemplatePreview)
-	// 改 URL：详情页发布后换路径（新路径激活 + 旧路径 301 或取消激活）。
-	// 权限点独立于创建/重建：改 URL 会动旧链接的未来行为，是不同影响面的动作。
-	pages.POST("/products/template/url", builtin.CasbinMiddlewareForPath("/api/presentation/update-url"), productPages.ProductDetailTemplateUpdateURL)
 	// 捆绑配置：配置页 + 保存（保存复用 /api/product/bundle/set 的权限点）。
 	pages.GET("/products/bundle", adminui.PageAuthz("/api/product/list"), productPages.ProductBundlePage)
 	// 成员来源解析（docs/14 §1.2 的三种来源，本批）：只解析、**不落库** ——
