@@ -55,12 +55,15 @@
  *       认不出的取值（"maybe" / "2"）原样发字符串，由严格 API 自己回 400：
  *       页面替调用方猜一次类型，就是替它造了一个它没说的值。未勾选的 checkbox 根本不在
  *       payload 里 —— 点名也只处理**已经存在的**字段。
- *     · data-write-rows=".nav-tr-row;context,hash,target"：**声明式行数组**（只在 create 档生效）。
- *       分号前是「一行一个容器」的选择器，分号后是这一行的字段名：每个容器收成一个对象，按 DOM
- *       顺序组装成 payload.rows（容器里缺某个字段就跳过该字段，三个字段全缺的容器整行跳过）。
- *       点名的字段名**不参与顶层标量** —— 同一个 name 既是行内字段又是顶层字段时，严格白名单
- *       的端点只会拒。它**不改**「重复 name」的单值语义（顶层重名仍是后者覆盖）：整表提交要的是
- *       「行」，不是「一个字段多个值」。rows 最后写，行数组不可能被其它字段覆盖。
+ *     · data-write-rows=".nav-tr-row;context,hash,target;rows"：**声明式行数组**（只在 create 档生效）。
+ *       分号前是「一行一个容器」的选择器，第二段是这一行的字段名，**第三段是 payload 的键名**
+ *       （可省，缺省 rows）：每个容器收成一个对象，按 DOM 顺序组装成 payload[key]（容器里缺某个
+ *       字段就跳过该字段，字段全缺的容器整行跳过）。
+ *       字段名按**精确名**取，取不到再按「.后缀」取 —— 属性值编辑器那种 values[0].key 的扁平带
+ *       索引名，容器里每一行的下标都不同，用不了固定 name。
+ *       容器内**所有**具名控件都不参与顶层标量（不再只看点名的几个）：同一个 name 交给端点两次，
+ *       严格白名单只能整条请求拒掉。它**不改**「重复 name」的单值语义（顶层重名仍是后者覆盖）：
+ *       整表提交要的是「行」，不是「一个字段多个值」。行数组最后写，不可能被其它字段覆盖。
  *   - mode=create：payload = 表单全部具名字段（+ data-write-rows 的行数组）。成功 → location.assign(nav)。
  *     **别名 form**：语义与 create 逐字相同（发整张表单、成功后导航或整页刷新），名字表明
  *     「这是一张编辑/新建表单」。新建抽屉与编辑抽屉的表单形状本来就一样（只差一个 id 隐藏域），
@@ -317,10 +320,10 @@
         return applyNumberFields(payload, numberFields(form, submitter));
     }
 
-    // rowsSpecOf 解析 data-write-rows="<容器选择器>;<字段名>,<字段名>…"。
+    // rowsSpecOf 解析 data-write-rows="<容器选择器>;<字段名>,<字段名>…[;<payload 键名>]"。
     //
     // 解析不出来（缺选择器 / 缺字段名）返回 null：那时按「没声明」处理，与不带该属性一样，
-    // 而不是发一个形状可疑的 rows 给端点。
+    // 而不是发一个形状可疑的行数组给端点。
     function rowsSpecOf(form, submitter) {
         var spec = attrFrom(form, submitter, 'data-write-rows');
         if (!spec) { return null; }
@@ -329,21 +332,54 @@
         var fields = String(parts[1] || '').split(',').map(function (name) {
             return String(name || '').trim();
         }).filter(function (name) { return !!name; });
+        var key = String(parts[2] || '').trim() || 'rows';
         if (!selector || fields.length === 0) { return null; }
-        return { selector: selector, fields: fields };
+        return { selector: selector, fields: fields, key: key };
+    }
+
+    // rowElementsOf 收行容器（一个容器 = 一行）。
+    function rowElementsOf(form, spec) {
+        return Array.prototype.slice.call(form.querySelectorAll(spec.selector));
+    }
+
+    // rowFieldValue 取一行里的一个字段：先按**精确名**找，找不到再按「.后缀」找
+    //（values[0].key 这种带索引的扁平名每行下标都不同，固定 name 匹配不到）。
+    //
+    // 命中多个时取**最后一个有效值**：hidden(0) + checkbox(1) 同名打底时，勾选后 checkbox 在
+    // DOM 末尾，于是勾选得 "1"、未勾选时 checkbox 返回 null 而 hidden 的 "0" 留下。
+    function rowFieldValue(box, name) {
+        var suffix = '.' + name;
+        var value = null;
+        // 一次遍历同时认「精确名」与「.后缀名」：后者服务 values[0].key 这种带索引的扁平名。
+        // 不用 [name$=".key"] 这类选择器 —— 名字里带点，属性选择器要靠引号内的字面点，
+        // 而它的解析依赖浏览器实现细节；遍历比较是同一件事的直白写法。
+        Array.prototype.forEach.call(box.querySelectorAll('[name]'), function (el) {
+            var n = el.getAttribute('name') || '';
+            if (n !== name && n.slice(-suffix.length) !== suffix) { return; }
+            var v = fieldValue(el);
+            if (v !== null) { value = v; }
+        });
+        return value;
     }
 
     // rowObjectsOf 按容器选择器收行：一个容器 = 一个对象，字段按点名的顺序取。
-    function rowObjectsOf(form, spec) {
+    //
+    // 行内字段同样吃 data-write-number / data-write-bool 的点名：DOM 里的值都是字符串，
+    // 而 dto 里 values[].sort 是 int、enabled 是 *bool —— 顶层转、行内不转，端点收到的
+    // 是 "0" 与 "1"，严格解码整条 400（症状是「保存没反应」）。
+    function rowObjectsOf(form, spec, numberNames, boolNames) {
         var rows = [];
-        Array.prototype.forEach.call(form.querySelectorAll(spec.selector), function (box) {
+        rowElementsOf(form, spec).forEach(function (box) {
             var row = {};
             var found = false;
             spec.fields.forEach(function (name) {
-                var el = box.querySelector('[name="' + name + '"]');
-                if (!el) { return; }
-                var value = fieldValue(el);
+                var value = rowFieldValue(box, name);
                 if (value === null) { return; }   // 未勾选的 checkbox/radio 不发（与顶层同口径）
+                if (numberNames && numberNames[name]) {
+                    value = numericValue(value);
+                } else if (boolNames && boolNames[name]) {
+                    value = boolValue(value);
+                }
                 row[name] = value;
                 found = true;
             });
@@ -352,15 +388,31 @@
         return rows;
     }
 
+    // rowNamesOf 收集行容器里的**全部**具名控件 —— 它们都不进顶层标量。
+    //
+    // 判据用容器而不是「点名的字段名」：容器里没点名的字段（values[0].id 这种）若漏到顶层，
+    // 端点按严格白名单只能整条拒掉，而错在模板、症状却是「保存没反应」。
+    function rowNamesOf(form, spec) {
+        var names = {};
+        if (!spec) { return names; }
+        rowElementsOf(form, spec).forEach(function (box) {
+            Array.prototype.forEach.call(box.querySelectorAll('[name]'), function (el) {
+                var name = el.getAttribute('name');
+                if (name) { names[name] = true; }
+            });
+        });
+        return names;
+    }
+
     function createPayload(form, submitter) {
         var spec = rowsSpecOf(form, submitter);
-        var rowNames = spec ? spec.fields : [];
+        var rowNames = rowNamesOf(form, spec);
         var payload = {};
         Array.prototype.forEach.call(form.querySelectorAll('[name]'), function (el) {
             var name = el.getAttribute('name');
             if (!name || name === 'csrf_token') { return; }
             // 行内字段不是顶层字段：同一个 name 交给端点两次，严格白名单只能整条请求拒掉。
-            if (rowNames.indexOf(name) >= 0) { return; }
+            if (rowNames[name]) { return; }
             var tag = (el.tagName || '').toUpperCase();
             var type = (el.type || '').toLowerCase();
             if ((type === 'checkbox' || type === 'radio') && !el.checked) { return; }
@@ -370,9 +422,11 @@
             }
             payload[name] = el.value;
         });
-        if (spec) { payload.rows = rowObjectsOf(form, spec); }
-        payload = applyNumberFields(payload, numberFields(form, submitter));
-        return applyBoolFields(payload, boolFields(form, submitter));
+        var numberNames = numberFields(form, submitter);
+        var boolNames = boolFields(form, submitter);
+        if (spec) { payload[spec.key] = rowObjectsOf(form, spec, numberNames, boolNames); }
+        payload = applyNumberFields(payload, numberNames);
+        return applyBoolFields(payload, boolNames);
     }
 
     function formBool(raw) {

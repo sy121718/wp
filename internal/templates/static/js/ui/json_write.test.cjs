@@ -97,16 +97,29 @@ function classesOf(el) {
 }
 
 function matches(el, selector) {
-    return selector.trim().split(/(?=\[|\.)/).every((part) => {
+    // 引号里的点不是分隔符：[name$=".key"] 的 ".key" 必须整段留在属性选择器里，
+    // 否则会被下面的 split 拆成两段，永远不命中。
+    const safe = String(selector).replace(/"[^"]*"/g, (s) => s.replace(/\./g, '@@DOT@@'));
+    return safe.trim().split(/(?=\[|\.)/).every((rawPart) => {
+        const part = rawPart.split('@@DOT@@').join('.');
         if (!part) { return true; }
         if (part.startsWith('.')) { return classesOf(el).indexOf(part.slice(1)) >= 0; }
         if (part.startsWith('[')) {
-            const m = part.match(/^\[([^\]=]+)(?:="([^"]*)")?\]$/);
+            // 属性选择器的操作符（$= / ^= / *=）与引号内的点：真实浏览器都认，
+            // 桩不认就等于让用到它们的契约永远测不到（假绿）。
+            // 属性名不能把操作符吃进去：[^\]=]+ 贪婪匹配会把 name$ 整个当成名字，
+            // 于是 [name$=".id"] 退化成「属性 name$ 等于 .id」—— 永远不命中。
+            const m = part.match(/^\[([^\]=$^*]+)([$^*]?)(?:="([^"]*)")?\]$/);
             if (!m) { return false; }
-            const [, name, want] = m;
+            const [, name, op, want] = m;
             const has = el.hasAttribute(name);
             if (!has) { return false; }
-            return want === undefined || String(el.getAttribute(name)) === want;
+            if (want === undefined) { return true; }
+            const actual = String(el.getAttribute(name));
+            if (op === '$=') { return actual.endsWith(want); }
+            if (op === '^=') { return actual.startsWith(want); }
+            if (op === '*=') { return actual.indexOf(want) >= 0; }
+            return actual === want;
         }
         return el.tagName === part.toUpperCase();
     });
@@ -1243,6 +1256,34 @@ test('data-write-rows：容器一行一对象、行字段不进顶层标量、�
             { context: 'navigation.label', hash: 'h-3' },
         ],
     }, '行数组按 DOM 顺序；空译文照发（服务端把空译文当「不改动」）；缺字段的行只带有的字段；全缺的容器不出现');
+});
+
+
+// 属性值编辑器那种行：name 是 values[0].key 这种**带索引的扁平名**，每行下标都不同 ——
+// 固定 name 匹配不到。payload 的键也不是 rows（端点要 values），由第三个字段指定。
+test('data-write-rows：带索引的扁平名按 .后缀取字段、第三段改名 payload 键、行内 sort 转数字', async () => {
+    const env = setup({
+        attrs: {
+            'data-write-api': '/api/product/attribute/create', 'data-write-mode': 'form',
+            'data-write-rows': '.attr-row;id,key,label,sort,enabled;values',
+            'data-write-number': 'sort', 'data-write-bool': 'enabled',
+        },
+        createFields: [{ name: 'name', value: '颜色' }, { name: 'projectId', value: 'p1' }],
+        rowBoxes: [
+            { cls: 'attr-row', fields: { 'values[0].id': '', 'values[0].key': 'red', 'values[0].label': '红色', 'values[0].sort': '0', 'values[0].enabled': '1' } },
+            { cls: 'attr-row', fields: { 'values[1].id': 'v-2', 'values[1].key': 'blue', 'values[1].label': '蓝色', 'values[1].sort': '3', 'values[1].enabled': '0' } },
+        ],
+        respond: { code: 200, data: { id: 'g1' } },
+    });
+    env.fire();
+    await tick();
+    assert.deepEqual(env.requests[0].body, {
+        name: '颜色', projectId: 'p1',
+        values: [
+            { id: '', key: 'red', label: '红色', sort: 0, enabled: true },
+            { id: 'v-2', key: 'blue', label: '蓝色', sort: 3, enabled: false },
+        ],
+    }, '带索引的名字按 .后缀取字段；索引名一律不进顶层标量；行内 sort/enabled 按点名转类型');
 });
 
 test('没有 data-write-rows：create 档一个字节都不变（重复 name 仍是后者覆盖、不发 rows）', async () => {
