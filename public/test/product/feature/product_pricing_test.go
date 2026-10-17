@@ -827,7 +827,7 @@ func newPricingPageEngine(t *testing.T) (*gin.Engine, *pricingFixture) {
 	engine.GET("/admin/product-pricing", handle.ProductPricingPage)
 	engine.POST("/admin/product-pricing/preview", handle.ProductPricingPreview)
 	// 应用调价已改接口端点（页面走 ui/json_write.js）；试算保留页面 POST（结果是表格）。
-	engine.POST("/api/product/pricing/apply", producthttp.NewHandle(f.svc).ApplyPricing)
+	engine.POST("/api/product/pricing/apply", producthttp.NewProductHandle(f.svc).ApplyPricing)
 	return engine, f
 }
 

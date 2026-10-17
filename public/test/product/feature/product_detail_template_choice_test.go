@@ -487,7 +487,7 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	})
 	engine.GET("/admin/products/template", handle.ProductDetailTemplatePage)
 	engine.POST("/admin/products/template/preview", handle.ProductDetailTemplatePreview)
-	api := producthttp.NewHandle(f.products)
+	api := producthttp.NewProductHandle(f.products)
 	engine.POST("/api/product/detail-template/create", api.CreateDetailTemplate)
 	engine.POST("/api/product/detail-template/publish", api.PublishDetailTemplate)
 	engine.POST("/api/product/detail-template/apply", api.ApplyDetailTemplate)

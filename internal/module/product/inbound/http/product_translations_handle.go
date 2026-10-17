@@ -45,8 +45,8 @@ type ProductTranslationInstancePort = productservice.ProductTranslationInstanceP
 // productTranslationsTemplate 工作台整页模板。
 const productTranslationsTemplate = "admin/product/product_translations.html"
 
-// productTranslationHandle 商品域翻译页处理器。
-type productTranslationHandle struct {
+// ProductTranslationHandle 商品域翻译页处理器。
+type ProductTranslationHandle struct {
 	products productcontract.ProductService
 }
 
@@ -62,7 +62,7 @@ type productTranslationWiring interface {
 // 取数已由 service 自己经 project 契约完成；pages 在这里转交给 service 做「保存后标记
 // 手工页面待重建」（收窄成只要 MarkStaleForI18n 的端口）。
 func NewProductTranslationHandle(products productcontract.ProductService, projects projectcontract.ProjectService,
-	pages pagecontract.PageService, instances ProductTranslationInstancePort) *productTranslationHandle {
+	pages pagecontract.PageService, instances ProductTranslationInstancePort) *ProductTranslationHandle {
 	_ = projects
 	if w, ok := products.(productTranslationWiring); ok {
 		w.SetTranslationInstances(instances)
@@ -70,14 +70,14 @@ func NewProductTranslationHandle(products productcontract.ProductService, projec
 			w.SetI18nStaleMarker(pages)
 		}
 	}
-	return &productTranslationHandle{products: products}
+	return &ProductTranslationHandle{products: products}
 }
 
 // SetContentTranslationStore 注入译文读写端口（测试用；生产走默认库）。
 //
 // 转发给商品 service：端口与保存编排住在那里。转交失败说明 products 不是本模块的 service
 // 实现（装配缺陷），此时保存会退回默认库 —— 测试里表现为写库断言失败，不会静默通过。
-func (h *productTranslationHandle) SetContentTranslationStore(port productTranslationPort) {
+func (h *ProductTranslationHandle) SetContentTranslationStore(port productTranslationPort) {
 	if s, ok := h.products.(interface {
 		SetTranslationStore(productservice.ProductTranslationStorePort)
 	}); ok {
@@ -86,7 +86,7 @@ func (h *productTranslationHandle) SetContentTranslationStore(port productTransl
 }
 
 // translationsReader 取这一屏的读模型（保存编排与整屏取数在同一个接口里）。
-func (h *productTranslationHandle) translationsReader() (productcontract.ProductTranslationsReader, error) {
+func (h *ProductTranslationHandle) translationsReader() (productcontract.ProductTranslationsReader, error) {
 	reader, ok := h.products.(productcontract.ProductTranslationsReader)
 	if !ok {
 		return nil, errors.New("商品译文工作台读模型未注入（装配缺陷）")
@@ -95,7 +95,7 @@ func (h *productTranslationHandle) translationsReader() (productcontract.Product
 }
 
 // ProductTranslations GET /admin/products/translations：商品域翻译工作台。
-func (h *productTranslationHandle) ProductTranslations(c *gin.Context) {
+func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) {
 	projectID := strings.TrimSpace(c.Query("project"))
 	productID := strings.TrimSpace(c.Query("product"))
 
@@ -126,7 +126,7 @@ func (h *productTranslationHandle) ProductTranslations(c *gin.Context) {
 //
 // 「逐行结论」为什么不进 data：基座只渲染 message。把事实在这里取词拼好，
 // 与模板注入的 tf 是同一份实现（adminui.MsgText），两条出口不会给出不同的句子。
-func (h *productTranslationHandle) SaveProductTranslations(c *gin.Context) {
+func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	req := &productdto.TranslationSaveReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productMsgText(c, productMsg{

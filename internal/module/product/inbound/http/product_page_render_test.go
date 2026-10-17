@@ -461,7 +461,7 @@ func productAttributesPageViewStub(mutate func(*productdto.ProductAttributesPage
 }
 
 // productPageRequest 挂上三个整页 GET（真 Jet + 真模板）并发一个 GET，返回 recorder。
-func productPageRequest(t *testing.T, h *productPageHandle, target string) *httptest.ResponseRecorder {
+func productPageRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -479,7 +479,7 @@ func productPageRequest(t *testing.T, h *productPageHandle, target string) *http
 // 「页面上有没有这个入口」取决于按钮码（模板写 {{if isset(.Buttons["product.update"])}}），
 // 而按钮码来自中间件注入的 adminctx.ButtonsKey —— 不挂就一律渲染成「无权限」，
 // 于是断言「抽屉在不在」的测试会永远看不到抽屉。
-func productPageRequestWith(t *testing.T, h *productPageHandle, target string, mw ...gin.HandlerFunc) *httptest.ResponseRecorder {
+func productPageRequestWith(t *testing.T, h *ProductPageHandle, target string, mw ...gin.HandlerFunc) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -496,7 +496,7 @@ func productPageRequestWith(t *testing.T, h *productPageHandle, target string, m
 // productPageRequestFor 把**指定路径**挂到一条最小引擎上并发一个 GET（真 Jet 渲染器）。
 //
 // 与 productPageRequest 同一手法，区别只在注册的路径：属性页等已下沉的屏不在那三条固定路由里。
-func productPageRequestFor(t *testing.T, h *productPageHandle, route, target string) *httptest.ResponseRecorder {
+func productPageRequestFor(t *testing.T, h *ProductPageHandle, route, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -571,7 +571,7 @@ func headOf(body string) string {
 // 列表页的取数编排已下沉到 service（读模型）：这里验的是**控制器**拿失败视图之后的出口
 // （档位 / no-store / 同页形状），取数失败本身的判据在 service 的用例里。
 func TestProductsPageLoadFailureRendersSamePage(t *testing.T) {
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		products: &productPageReaderStub{
 			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
 				v.HTTPStatus = http.StatusInternalServerError
@@ -596,7 +596,7 @@ func TestProductsPageLoadFailureRendersSamePage(t *testing.T) {
 // 「工程是空的」，运营照着这句话去建商品，就建到另一个工程上了。
 // 档位由读模型带出（service 判「工程不存在」= 400），控制器只把它交给渲染出口。
 func TestProductsPageBadProjectParamIsFullPage(t *testing.T) {
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		products: &productPageReaderStub{
 			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
 				v.HTTPStatus = http.StatusBadRequest
@@ -622,7 +622,7 @@ func TestProductsPageBadProjectParamIsFullPage(t *testing.T) {
 // 判据现在在 service 侧（逐行取详情失败即整页失败，见 service.ProductListPage），
 // 控制器这一层验的是它透出来的档位。
 func TestProductsPageRowDetailFailureIsNotSwallowed(t *testing.T) {
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		products: &productPageReaderStub{
 			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
 				v.Total = 1
@@ -652,7 +652,7 @@ func TestProductNewPageLoadFailureRendersSamePage(t *testing.T) {
 		}),
 		err: errors.New(`pq: relation "products" does not exist`),
 	}
-	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
+	h := &ProductPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products/new")
 	assertProductPageFailure(t, "新建页主数据失败", rec, http.StatusInternalServerError, "这一页的数据没能读出来")
 }
@@ -704,7 +704,7 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h := &productPageHandle{
+			h := &ProductPageHandle{
 				projects: productPageProjectsStub{rows: projectRows},
 				// 取数编排已下沉到 service（读模型）：桩给**读模型的产出**（档位 + 是否抛错），
 				// 不再 mock Get / ListCategories 这些方法（它们已不在这条渲染路径上）。
@@ -739,7 +739,7 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 // （字段级明细由 ProductRow ↔ 模板的对账判据覆盖，见 product_row_template_test.go；
 // 这里要钉的是失败出口没有把成功路径一起改坏。）
 func TestProductDetailPageRendersProductWhenDetailReadable(t *testing.T) {
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: &productPageReaderStub{detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageView) {
 			v.HasProduct = true
@@ -774,7 +774,7 @@ func TestProductDetailPageRendersProductWhenDetailReadable(t *testing.T) {
 // 与失败档的区别要能一眼看出来：200、不标 no-store、失败卡不出现、页壳完整。
 // 这里刻意用「零工程」这个真实空态（不是「没读到」）覆盖「空态不是失败」这一条。
 func TestProductsPageSuccessRendersPage(t *testing.T) {
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
 			// 「零工程」这个真实空态：不是「没读到」，是读到了、一个都没有。
 			v.Projects = []projectdto.ProjectResp{}
@@ -814,7 +814,7 @@ func TestProductsListDeleteUsesJSONWriteBase(t *testing.T) {
 			v.Products = []productdto.ProductRow{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
 		})
 	}
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		products: &productPageReaderStub{listView: view()},
 		reader:   &productPageReaderStub{listView: view()},
 	}
@@ -850,7 +850,7 @@ func TestProductsListBulkDeleteUsesJSONWriteBase(t *testing.T) {
 			v.Products = []productdto.ProductRow{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
 		})
 	}
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		products: &productPageReaderStub{listView: view()},
 		reader:   &productPageReaderStub{listView: view()},
 	}
@@ -884,7 +884,7 @@ func TestProductsListBulkPricingUsesJSONWriteBase(t *testing.T) {
 			v.Products = []productdto.ProductRow{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
 		})
 	}
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		products: &productPageReaderStub{listView: view()},
 		reader:   &productPageReaderStub{listView: view()},
 	}
@@ -925,7 +925,7 @@ func TestProductNewPageUnknownProjectIsBadRequest(t *testing.T) {
 		}),
 		err: productenums.Err(productenums.ErrInvalidParam),
 	}
-	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
+	h := &ProductPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products/new?project=does-not-exist")
 	assertProductPageFailure(t, "新建页 ?project=不存在的 id", rec, http.StatusBadRequest, "请求参数无效")
 }
@@ -937,7 +937,7 @@ func TestProductNewPageUnknownProjectIsBadRequest(t *testing.T) {
 // （永远读默认工程）也能全绿，而症状是「切换工程后新建页仍然是第一个工程的数据」。
 func TestProductNewPageForwardsProjectToReader(t *testing.T) {
 	reader := &productPageReaderStub{view: productNewPageViewStub(nil)}
-	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
+	h := &ProductPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products/new?project=p1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("合法工程应 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
@@ -953,7 +953,7 @@ func TestProductNewPageForwardsProjectToReader(t *testing.T) {
 // TestProductNewPageSuccessRendersPage 成功档回归（新建页）：同一份模板 + 同一份页数据。
 func TestProductNewPageSuccessRendersPage(t *testing.T) {
 	reader := &productPageReaderStub{view: productNewPageViewStub(nil)}
-	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
+	h := &ProductPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products/new")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("新建页读到数据时应 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))

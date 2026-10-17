@@ -82,7 +82,7 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
 	})
 	engine.GET("/admin/products/template", handle.ProductDetailTemplatePage)
-	engine.POST("/api/product/detail-template/create", producthttp.NewHandle(base.products).CreateDetailTemplate)
+	engine.POST("/api/product/detail-template/create", producthttp.NewProductHandle(base.products).CreateDetailTemplate)
 	return engine, scope, port
 }
 

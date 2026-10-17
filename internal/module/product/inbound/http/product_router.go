@@ -47,6 +47,7 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
+	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 )
 
@@ -68,7 +69,7 @@ import (
 func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectcontract.ProjectService) (productcontract.ProductService, productcontract.ProductPageReader) {
 	svc := productservice.NewService(productmodel.NewModel(db), project)
 	svc.SetContentStore(i18n.NewDBContentStore(db))
-	handle := NewHandle(svc)
+	handle := NewProductHandle(svc)
 
 	g := rg.Group("/product")
 	// 取词注入：service 层的展示文案（内置规则名 / 描述等）按请求语言渲染。
@@ -195,7 +196,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 	presentations presentationcontract.PresentationService,
 	inventories inventorycontract.InventoryService,
 	pageSvc pagecontract.PageService,
-	contentSvc contentcontract.ContentService) *productPageHandle {
+	contentSvc contentcontract.ContentService) *ProductPageHandle {
 	if pages == nil {
 		return nil
 	}
@@ -347,7 +348,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 // 页面组已有 Session + CSRF，权限点声明走 PageAuthz。
 func SetupProductTranslationRoutes(apiRoot *permission.RouteGroup, adminPages *gin.RouterGroup,
 	products productcontract.ProductService, projects projectcontract.ProjectService, pages pagecontract.PageService,
-	instances ProductTranslationInstancePort) *productTranslationHandle {
+	instances ProductTranslationInstancePort) *ProductTranslationHandle {
 	handle := NewProductTranslationHandle(products, projects, pages, instances)
 	adminPages.GET("/products/translations", adminui.PageAuthz("/api/product/list"), handle.ProductTranslations)
 	// 前缀在这里定死（/api/product），与 SetupProductRoutes 的 g 同形：装配层只递根组，
@@ -387,8 +388,8 @@ func BindDetailTemplateModePort(port presentationcontract.DetailTemplateModePort
 // 提交时按前缀收拢成 service 的 selections。
 const variantSelectionPrefix = "attr:"
 
-// productPageHandle 商品后台页处理器。
-type productPageHandle struct {
+// ProductPageHandle 商品后台页处理器。
+type ProductPageHandle struct {
 	products productcontract.ProductService
 	// reader 读模型（contract.ProductPageReader）：与 products 是**同一个实现的两个静态类型**，
 	// 由 SetupProductRoutes 一次产出、装配期一起交进来。
@@ -442,8 +443,8 @@ type productPagePortWiring interface {
 // reader 必须显式给出（哪怕它与 products 是同一个值）：它承载的是「这一份实现能不能读
 // 页面读模型」这个事实，装配期说清楚比请求期断言强 —— 两个参数类型不同，漏给读模型
 // 在编译期就报错。
-func NewProductPageHandle(products productcontract.ProductService, reader productcontract.ProductPageReader, projects projectcontract.ProjectService) *productPageHandle {
-	return &productPageHandle{products: products, reader: reader, projects: projects}
+func NewProductPageHandle(products productcontract.ProductService, reader productcontract.ProductPageReader, projects projectcontract.ProjectService) *ProductPageHandle {
+	return &ProductPageHandle{products: products, reader: reader, projects: projects}
 }
 
 // SetInventoryDeps 注入仓库清单依赖（issue #15，装配期调用）。
@@ -451,7 +452,7 @@ func NewProductPageHandle(products productcontract.ProductService, reader produc
 // 两个去向，同一次注入：① 本处理器的老路径（编辑页 / 详情页 / 捆绑页抽屉）拿走端口；
 // ② 交给本模块 service 的读模型（新建页 / 列表页），否则新页会静默少掉仓库下拉。
 // 未注入时两处都是「没有仓库」的降级（不是失败）。
-func (h *productPageHandle) SetInventoryDeps(inventory inventorycontract.InventoryService) {
+func (h *ProductPageHandle) SetInventoryDeps(inventory inventorycontract.InventoryService) {
 	port := inventoryoutbound.New(inventory)
 	h.warehouses = port
 	if wiring, ok := h.products.(productPagePortWiring); ok {
@@ -461,14 +462,33 @@ func (h *productPageHandle) SetInventoryDeps(inventory inventorycontract.Invento
 
 // ==========================================================================
 // 接口面处理器（JSON handler 的接收者）。
-// 页面面处理器是 productPageHandle（见 product_page.go）。
+// 页面面处理器是 ProductPageHandle（见 product_page.go）。
 // ==========================================================================
-// Handle product 接口处理器。
-type Handle struct {
+// ProductHandle product 接口处理器。
+type ProductHandle struct {
 	svc productcontract.ProductService
 }
 
-// NewHandle 构造。
-func NewHandle(svc productcontract.ProductService) *Handle {
-	return &Handle{svc: svc}
+// NewProductHandle 构造。
+func NewProductHandle(svc productcontract.ProductService) *ProductHandle {
+	return &ProductHandle{svc: svc}
+}
+
+// productTranslateMiddleware 让本模块的 service 能按请求语言取词。
+//
+// service 层没有语言上下文（语言来自后台 Cookie / Accept-Language，只有 gin.Context
+// 知道），而它要产出**展示文案**：内置定价 / 标签规则的展示名与描述、筛选条件的可读
+// 标签、调价行的状态与原因。这里把 shell.TranslateFor(c) 放进 Request 的 Context，
+// handler 里 `ctx := c.Request.Context()` 因此自带取词函数 ——
+// 既不必给每个 contract 方法加 tr 参数，也不会漏掉任何一个调用点（漏一个的表现是
+// 那句话在英文界面上还是中文，且没有任何测试会红）。
+//
+// 未挂本中间件的路径（单测直调 service）行为不变：取词函数缺失时 service 回落中文兜底
+// （见 service/product_translate.go 的 translateFrom）。
+func productTranslateMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tr := productservice.TranslateFunc(shell.TranslateFor(c))
+		c.Request = c.Request.WithContext(productservice.WithTranslate(c.Request.Context(), tr))
+		c.Next()
+	}
 }

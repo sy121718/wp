@@ -487,7 +487,7 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
 	engine.GET("/admin/products/edit", handle.ProductEditPage)
 	// 挂手工标签没有页面 POST：编辑页表单走 /api/product/update（ui/json_write.js）。
-	engine.POST("/api/product/update", producthttp.NewHandle(f.svc).Update)
+	engine.POST("/api/product/update", producthttp.NewProductHandle(f.svc).Update)
 	return engine, f
 }
 

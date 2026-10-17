@@ -52,13 +52,13 @@ func requestScoreLang(c *gin.Context) string {
 // 页面与文章是同一个站点的其它页面，做 title 唯一性时必须在同一份索引里 ——
 // 只比商品域的话，商品标题与文章标题撞车照样检不出来。两份契约都可空：
 // 未注入时索引退化成商品 / 分类 / 品牌三域，评分本身照常（缺依赖不该变成 500）。
-func (h *productPageHandle) SetSeoTitleSources(pages pagecontract.PageService, contents contentcontract.ContentService) {
+func (h *ProductPageHandle) SetSeoTitleSources(pages pagecontract.PageService, contents contentcontract.ContentService) {
 	h.seoPages = pages
 	h.seoContents = contents
 }
 
 // seoTitleSources 标题索引所需的另外两份只读契约（未注入时是零值 = 索引退化成三域）。
-func (h *productPageHandle) seoTitleSources() productservice.SeoTitleExtraSources {
+func (h *ProductPageHandle) seoTitleSources() productservice.SeoTitleExtraSources {
 	return productservice.SeoTitleExtraSources{Pages: h.seoPages, Contents: h.seoContents}
 }
 
@@ -71,7 +71,7 @@ func (h *productPageHandle) seoTitleSources() productservice.SeoTitleExtraSource
 // in == nil 表示**没取到实体**：可能是数据缺失（没传 id / 库里没有），也可能是读取失败
 // （res.Err 非空）。两者的现状出口都是那句空态文案（与拆分前逐字一致），但**绝不是 0 分**；
 // 判据与将来换出口（例如读取失败回 500）的位置都在 service 的 SeoScoreInputResult 注释里。
-func (h *productPageHandle) scoreInputOf(c *gin.Context, kind scoring.PageKind,
+func (h *ProductPageHandle) scoreInputOf(c *gin.Context, kind scoring.PageKind,
 	id, projectID string) (in *scoring.EntityPageInput, selfID string, emptyView productdto.ScoreView) {
 	res := productservice.SeoScoreInputOf(c.Request.Context(), h.products, h.instances,
 		kind, id, projectID, requestScoreLang(c))
@@ -87,7 +87,7 @@ func scoreEmptyView(c *gin.Context, empty productservice.SeoScoreEmpty) productd
 }
 
 // ProductScorePanel 商品详情页的编辑期评分（POST /admin/products/seo-score）。
-func (h *productPageHandle) ProductScorePanel(c *gin.Context) {
+func (h *ProductPageHandle) ProductScorePanel(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindProduct,
 		strings.TrimSpace(c.PostForm("productId")), projectID)
@@ -101,7 +101,7 @@ func (h *productPageHandle) ProductScorePanel(c *gin.Context) {
 }
 
 // ProductCategoryScorePanel 商品分类页的编辑期评分（POST /admin/product-categories/seo-score）。
-func (h *productPageHandle) ProductCategoryScorePanel(c *gin.Context) {
+func (h *ProductPageHandle) ProductCategoryScorePanel(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindCategory,
 		strings.TrimSpace(c.PostForm("id")), projectID)
@@ -115,7 +115,7 @@ func (h *productPageHandle) ProductCategoryScorePanel(c *gin.Context) {
 }
 
 // ProductBrandScorePanel 品牌页的编辑期评分（POST /admin/product-brands/seo-score）。
-func (h *productPageHandle) ProductBrandScorePanel(c *gin.Context) {
+func (h *ProductPageHandle) ProductBrandScorePanel(c *gin.Context) {
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
 	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindBrand,
 		strings.TrimSpace(c.PostForm("id")), projectID)
@@ -132,7 +132,7 @@ func (h *productPageHandle) ProductBrandScorePanel(c *gin.Context) {
 //
 // 算分与冲突判定本身都在 productservice（SeoEntityScore / SeoTitleIndex）：
 // 这里只把请求侧的取词函数与依赖交进去，再组装片段视图。
-func (h *productPageHandle) entityScoreViewOf(ctx context.Context, c *gin.Context,
+func (h *ProductPageHandle) entityScoreViewOf(ctx context.Context, c *gin.Context,
 	in *scoring.EntityPageInput, projectID, selfID string) productdto.ScoreView {
 	tr := shell.TranslateFor(c)
 	res, dups := productservice.SeoEntityScore(in,
@@ -141,7 +141,7 @@ func (h *productPageHandle) entityScoreViewOf(ctx context.Context, c *gin.Contex
 }
 
 // renderEntityScore 算分 + 查 title 重复 + 渲染片段（三个 POST 入口共用）。
-func (h *productPageHandle) renderEntityScore(c *gin.Context, in *scoring.EntityPageInput, projectID, selfID string) {
+func (h *ProductPageHandle) renderEntityScore(c *gin.Context, in *scoring.EntityPageInput, projectID, selfID string) {
 	// 取词交 adminui.PrepareBare：片段不经整份 Prepare，但模板要 t —— 漏注入时 Jet 把
 	// 取词调用求值成空串（不报错、不 500、不记日志），整片提示会变成空白。
 	c.HTML(http.StatusOK, "fragments/seo_score", adminui.PrepareBare(c,
@@ -230,7 +230,7 @@ func entityScoreView(tr func(key, fallback string) string, in *scoring.EntityPag
 //
 // 打开即算：抽屉本来就是「我要看分」这个动作的落点，不该再要用户先点一次「开始评分」
 // （行内按钮需要那一步，是因为它没有「打开」这个动作）。
-func (h *productPageHandle) EntitySeoDrawer(c *gin.Context) {
+func (h *ProductPageHandle) EntitySeoDrawer(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	id := strings.TrimSpace(c.Query("productId"))
 	projectID := strings.TrimSpace(c.Query("project"))

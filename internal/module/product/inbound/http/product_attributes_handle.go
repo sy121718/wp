@@ -29,14 +29,20 @@ import (
 
 const attrRowPrefix = "values["
 
+// formParseMemory 解析提交表单时的内存上限（与 gin 的 MaxMultipartMemory 默认值一致）。
+//
+// 手工调 ParseMultipartForm 的地方共用它：gin 的 PostForm 缓存是惰性填充的，
+// 直接读 c.Request.PostForm 在未触发解析时是空 map。
+const formParseMemory = 32 << 20
+
 // ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
 // productAttributesPageTemplate 属性库整页模板名。
 const productAttributesPageTemplate = "admin/product/product_attributes.html"
 
 // ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
-func (h *productPageHandle) ProductAttributesPage(c *gin.Context) {
+func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
 	// 取参数 → 调读模型（取数编排在 service：取哪些数据、按什么顺序、哪条失败算 400 /
@@ -107,7 +113,7 @@ func attributeListFilterQuery(projectID, keyword, variation string) url.Values {
 // ProductAttributesValueRows 值编辑器片段：add / remove 一次，回渲染整段行列表。
 //
 // 行编辑只重建原始表单值与位置；落库时的归一 / 去重 / 排序仍由 service 负责。
-func (h *productPageHandle) ProductAttributesValueRows(c *gin.Context) {
+func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) {
 	rows := attrEchoRowsFromForm(c)
 	action := strings.TrimSpace(c.PostForm("action"))
 	switch action {
@@ -446,7 +452,7 @@ func attributeIDsFromForm(c *gin.Context) []string {
 //
 // 上限同样取 service 的常量：抽屉与新建页是同一类「一屏全量勾选」，两处各写一个 200
 // 时改一处会静默分叉。
-func (h *productPageHandle) attributeOptions(ctx context.Context, projectID string) (out []productdto.AttributeOptionView, err error) {
+func (h *ProductPageHandle) attributeOptions(ctx context.Context, projectID string) (out []productdto.AttributeOptionView, err error) {
 	out = []productdto.AttributeOptionView{}
 	if strings.TrimSpace(projectID) == "" {
 		return out, nil
@@ -465,7 +471,7 @@ func (h *productPageHandle) attributeOptions(ctx context.Context, projectID stri
 // 本层只做绑定与转发：值组的归一 / 去重 / 排序、引用校验一律在 service。
 // ==========================================================================
 // CreateAttribute 新建属性组（可同时带初始属性值）。
-func (h *Handle) CreateAttribute(c *gin.Context) {
+func (h *ProductHandle) CreateAttribute(c *gin.Context) {
 	req := &productdto.CreateAttributeReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -480,7 +486,7 @@ func (h *Handle) CreateAttribute(c *gin.Context) {
 }
 
 // UpdateAttribute 修改属性组本身（值走 SetAttributeValues）。
-func (h *Handle) UpdateAttribute(c *gin.Context) {
+func (h *ProductHandle) UpdateAttribute(c *gin.Context) {
 	req := &productdto.UpdateAttributeReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -495,7 +501,7 @@ func (h *Handle) UpdateAttribute(c *gin.Context) {
 }
 
 // SetAttributeValues 整体保存属性值（全量替换：请求里没有的值被删除）。
-func (h *Handle) SetAttributeValues(c *gin.Context) {
+func (h *ProductHandle) SetAttributeValues(c *gin.Context) {
 	req := &productdto.SetAttributeValuesReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -510,7 +516,7 @@ func (h *Handle) SetAttributeValues(c *gin.Context) {
 }
 
 // GetAttribute 属性组详情。
-func (h *Handle) GetAttribute(c *gin.Context) {
+func (h *ProductHandle) GetAttribute(c *gin.Context) {
 	req := &productdto.GetAttributeReq{}
 	if err := c.ShouldBindQuery(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -525,7 +531,7 @@ func (h *Handle) GetAttribute(c *gin.Context) {
 }
 
 // ListAttributes 属性组列表。
-func (h *Handle) ListAttributes(c *gin.Context) {
+func (h *ProductHandle) ListAttributes(c *gin.Context) {
 	req := &productdto.ListAttributeReq{}
 	if err := c.ShouldBindQuery(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -540,7 +546,7 @@ func (h *Handle) ListAttributes(c *gin.Context) {
 }
 
 // DeleteAttribute 删除属性组（被商品引用时拒绝）。
-func (h *Handle) DeleteAttribute(c *gin.Context) {
+func (h *ProductHandle) DeleteAttribute(c *gin.Context) {
 	req := &productdto.DeleteAttributeReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -557,6 +563,6 @@ func (h *Handle) DeleteAttribute(c *gin.Context) {
 //
 // 入口与三套归类共用（bulkDeleteByIDs）：归一、上限、回执键名必须逐字同口径，
 // 否则超限那批会被静默截断、或摘要句恒为「已删除 0 项」。
-func (h *Handle) BulkDeleteAttributes(c *gin.Context) {
+func (h *ProductHandle) BulkDeleteAttributes(c *gin.Context) {
 	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductAttributes)
 }

@@ -50,7 +50,7 @@ var errModeUnavailable = errors.New("详情页双轨能力未装配")
 //
 // 页面侧原先的 /admin/products/reapply-preset 随写通道一起删除：结论改成一行回执
 // （成功由 ui/json_write.js 存进 flash 再整页刷新 —— 模式徽标变了，必须重渲染）。
-func (h *Handle) ReapplyDetailTemplatePreset(c *gin.Context) {
+func (h *ProductHandle) ReapplyDetailTemplatePreset(c *gin.Context) {
 	req := &productdto.DetailTemplateModeReapplyReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -77,7 +77,7 @@ func (h *Handle) ReapplyDetailTemplatePreset(c *gin.Context) {
 //
 // 与上面的重新套用预设是**对称的两半**：一个放弃独立文档，一个把某份历史文档立为当前。
 // 两者都重建产物，所以成功之后页面必须刷新（产物指针与快照清单都变了）。
-func (h *Handle) RollbackDetailTemplateDocument(c *gin.Context) {
+func (h *ProductHandle) RollbackDetailTemplateDocument(c *gin.Context) {
 	req := &productdto.DetailTemplateModeRollbackReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -101,7 +101,7 @@ func (h *Handle) RollbackDetailTemplateDocument(c *gin.Context) {
 
 // detailTemplateWriteDeps 详情页模板页四个写动作的依赖（装配期**后置**注入）。
 //
-// 为什么不让 Handle 在构造时持有：这四个动作要 contenttemplate 与 presentation 两个契约，
+// 为什么不让 ProductHandle 在构造时持有：这四个动作要 contenttemplate 与 presentation 两个契约，
 // 而 SetupProductRoutes 只拿得到 database 与 project —— 内容模板与发布服务在
 // assembly_publish 那一段才建好（同 BindDetailTemplateModePort 的时序，见 product_router.go 末尾）。
 // 未注入 = 装配缺陷，走 errModeUnavailable → 500 归口文案，而不是让请求在空指针上崩。
@@ -131,7 +131,7 @@ func detailTemplateWriteFail(c *gin.Context, status int, msg productMsg) {
 // 新建一套命名模板（复制指定模板或默认模板的文档），初始版本 v1。
 //
 // 模板内容编辑不在这里：新建只给出一个可被工作台打开的结构，改文档走 /workbench?template=…。
-func (h *Handle) CreateDetailTemplate(c *gin.Context) {
+func (h *ProductHandle) CreateDetailTemplate(c *gin.Context) {
 	req := &productdto.DetailTemplateCreateReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -162,7 +162,7 @@ func (h *Handle) CreateDetailTemplate(c *gin.Context) {
 //
 // 两类失败走**两张不同的文案表**：取商品失败（product 的 enums）与建实例失败
 // （presentation 的 enums）合成一句会把「商品不存在」说成「还没有详情页实例」。
-func (h *Handle) PublishDetailTemplate(c *gin.Context) {
+func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
 	req := &productdto.DetailTemplatePublishReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -193,7 +193,7 @@ func (h *Handle) PublishDetailTemplate(c *gin.Context) {
 //
 // projectID 显式回传，不走 presentation 的「工程唯一时取该工程」兜底：多工程站点上
 // 兜底会落到另一个工程，改的是别的站点的页面而这里仍回成功。
-func (h *Handle) ApplyDetailTemplate(c *gin.Context) {
+func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
 	req := &productdto.DetailTemplateApplyReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -215,7 +215,7 @@ func (h *Handle) ApplyDetailTemplate(c *gin.Context) {
 
 // UpdateDetailTemplateURL POST /api/product/detail-template/update-url：
 // 修改商品详情页的线上路径（内容、模板绑定、产物内容完全不动）。
-func (h *Handle) UpdateDetailTemplateURL(c *gin.Context) {
+func (h *ProductHandle) UpdateDetailTemplateURL(c *gin.Context) {
 	req := &productdto.DetailTemplateUpdateURLReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -319,7 +319,7 @@ type ProductDetailTemplateModePort = presentationcontract.DetailTemplateModePort
 // 实参静态类型 presentationcontract.PresentationService 已嵌入该端口，装配处直接传值、
 // 无需类型断言。仍然保留 setter：页面测试按两参数构造商品页 handle，
 // 不注入时详情页降级为只有基础面板（绑定 / 预览 / 发布），降级可见。
-func (h *productPageHandle) SetDetailTemplateModePort(port ProductDetailTemplateModePort) {
+func (h *ProductPageHandle) SetDetailTemplateModePort(port ProductDetailTemplateModePort) {
 	h.modePort = port
 }
 
@@ -327,7 +327,7 @@ func (h *productPageHandle) SetDetailTemplateModePort(port ProductDetailTemplate
 //
 // 用 setter 而非构造参数：既有装配（含页面测试）按两参数构造商品页 handle，
 // 详情模板是增量能力；未注入时页面明确提示，而不是整体不可用。
-func (h *productPageHandle) SetDetailTemplateDeps(templates contenttemplatecontract.ContentTemplateService,
+func (h *ProductPageHandle) SetDetailTemplateDeps(templates contenttemplatecontract.ContentTemplateService,
 	instances ProductDetailTemplatePort) {
 	h.templates = templates
 	h.instances = instances
@@ -356,7 +356,7 @@ func (h *productPageHandle) SetDetailTemplateDeps(templates contenttemplatecontr
 // 为什么不直接让 handler 持有 service 实例：本包测试用 fake 实现 productcontract.ProductService
 // 构造 handler（NewProductPageHandle(fake, nil, nil)），handler 一旦要求具体的 service 实例，
 // 这些 fake 场景就全部用不了。装配照旧在 product_router.go，这里只把同一批依赖换个形状交出去。
-func (h *productPageHandle) detailTemplateDeps() productservice.DetailTemplateDeps {
+func (h *ProductPageHandle) detailTemplateDeps() productservice.DetailTemplateDeps {
 	return productservice.DetailTemplateDeps{
 		Templates: h.templates, Instances: h.instances, Products: h.products, Projects: h.projects,
 	}
@@ -374,7 +374,7 @@ const productDetailTemplatePageTemplate = "admin/product/product_detail_template
 //
 //	· 依赖未装配 → 200 的就地说明（不是装载失败：区别是「没读到」与「这条能力没接上」）；
 //	· 还没选商品 → 302 回商品列表（本页没有「还没选商品」的就地形态）。
-func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
+func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	// 未装配（缺内容模板 / 自动发布契约）是**装配缺陷的可见提示**，不是装载失败：
 	// 与「没读到数据」分开，仍然是 200 的就地说明（先于取数判断 —— 否则两个出口会互相盖住）。
 	if h.templates == nil || h.instances == nil {
@@ -382,7 +382,7 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 		adminui.RenderPage(c, productDetailTemplatePageTemplate, &unassembled)
 		return
 	}
-	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
 	view, err := reader.ProductDetailTemplatePage(c.Request.Context(), &productdto.ProductDetailTemplatePageReq{
@@ -436,7 +436,7 @@ func detailTemplateLoadFailureView(status int) productdto.ProductDetailTemplateP
 // ProductDetailTemplatePreview POST /admin/products/template/preview：
 // 发布前预览模板渲染效果 —— 只读渲染，直接把构建结果的 HTML 输出到新标签页；
 // 响应头带上实际使用的模板与版本，便于核对「预览的是哪一套」。
-func (h *productPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
+func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 	if h.instances == nil {
 		// 装配缺陷也走「整页提示回来源页」这一条出口（原先是一行 http.StatusBadRequest
 		// 的纯文本：脱壳、不翻译、也没有回去的地方）。
@@ -529,7 +529,7 @@ var detailTemplateDepsMissingMsg = productMsg{Key: productenums.ProductDetailTem
 // 又没走 i18n，预览标签页里是一块白底黑字。也不用提示页 —— 装配缺陷不该把人送到另一个
 // 页面去读一句话。这里把同一页的失败槽填上（LoadFailed + LoadError），模板就地说明
 // 「详情页模板能力未装配」，运营看到的是页壳 + 一句话，而不是白屏。
-func (h *productPageHandle) detailTemplateDepsMissingPage(c *gin.Context) {
+func (h *ProductPageHandle) detailTemplateDepsMissingPage(c *gin.Context) {
 	view := detailTemplateLoadFailureView(http.StatusInternalServerError)
 	view.LoadFailed = true
 	view.LoadError = productMsgText(c, detailTemplateDepsMissingMsg)
@@ -557,7 +557,7 @@ var (
 // 三态：未绑定（引导首次发布）/ 已绑定（预览 + 进入自定义）/ 能力未装配（降级提示）。
 // 未装配模板能力（templates / instances 未注入）或没给商品 id 时，只回 {"Avail": false}，
 // 模板据 isset 给降级提示，页面照常渲染。
-func (h *productPageHandle) detailTemplatePanel(ctx context.Context, selected, productID string) gin.H {
+func (h *ProductPageHandle) detailTemplatePanel(ctx context.Context, selected, productID string) gin.H {
 	tplPanel := gin.H{"Avail": false}
 	if h.templates == nil || h.instances == nil || strings.TrimSpace(productID) == "" {
 		return tplPanel

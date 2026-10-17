@@ -31,7 +31,7 @@ import (
 )
 
 // attributesPageRequest 挂上属性页并 GET 一次（真 Jet 渲染器 + 真模板）。
-func attributesPageRequest(t *testing.T, h *productPageHandle, target string) *httptest.ResponseRecorder {
+func attributesPageRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -55,9 +55,9 @@ func attributesPageRequest(t *testing.T, h *productPageHandle, target string) *h
 }
 
 // attributesPageEnv 读模型桩 + 工程清单（与 taxonomyEnv 同形，只是读模型走视图）。
-func attributesPageEnv(view *productdto.ProductAttributesPageView, err error) (*productPageHandle, *productPageReaderStub) {
+func attributesPageEnv(view *productdto.ProductAttributesPageView, err error) (*ProductPageHandle, *productPageReaderStub) {
 	reader := &productPageReaderStub{attributesPageView: view, attributesPageErr: err}
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: reader, reader: reader,
 	}
@@ -114,7 +114,7 @@ func TestProductAttributesPageUnknownProjectIsBadRequest(t *testing.T) {
 	assertProductPageFailure(t, "属性页未知工程", rec, http.StatusBadRequest, "这一页的数据没能读出来")
 }
 
-// 读模型没接上这一档已从运行期消失：读模型是构造实参（productPageHandle.reader），
+// 读模型没接上这一档已从运行期消失：读模型是构造实参（ProductPageHandle.reader），
 // 漏接 = 编译错误，判据见 product_reader_injection_test.go —— 运行期不再有
 // 「类型断言失败 → 500 兜底」这条路径，所以这里不再有对应用例。
 
@@ -125,7 +125,7 @@ func TestProductAttributesPageUnknownProjectIsBadRequest(t *testing.T) {
 func TestProductAttributesPageNilViewIsGuarded(t *testing.T) {
 	reader := &productPageReaderStub{}
 	reader.attributesPageView = nil
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: reader, reader: reader,
 	}

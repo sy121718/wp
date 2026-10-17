@@ -27,7 +27,7 @@ const productTagsPageTemplate = "admin/product/product_tags.html"
 // 本层只做绑定与转发：规则类型白名单、参数校验与重算时机一律在 service。
 // ==========================================================================
 
-func (h *Handle) CreateTag(c *gin.Context) {
+func (h *ProductHandle) CreateTag(c *gin.Context) {
 	req := &productdto.CreateTagReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -42,7 +42,7 @@ func (h *Handle) CreateTag(c *gin.Context) {
 }
 
 // UpdateTag 修改标签（改名 / 换 slug / 换类型 / 改规则参数 / 排序）。
-func (h *Handle) UpdateTag(c *gin.Context) {
+func (h *ProductHandle) UpdateTag(c *gin.Context) {
 	req := &productdto.UpdateTagReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -57,7 +57,7 @@ func (h *Handle) UpdateTag(c *gin.Context) {
 }
 
 // GetTag 标签详情（含命中商品列表）。
-func (h *Handle) GetTag(c *gin.Context) {
+func (h *ProductHandle) GetTag(c *gin.Context) {
 	req := &productdto.GetTagReq{}
 	if err := c.ShouldBindQuery(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -72,7 +72,7 @@ func (h *Handle) GetTag(c *gin.Context) {
 }
 
 // ListTags 标签列表（工程内；每个标签带当前归属数量）。
-func (h *Handle) ListTags(c *gin.Context) {
+func (h *ProductHandle) ListTags(c *gin.Context) {
 	req := &productdto.ListTagReq{}
 	if err := c.ShouldBindQuery(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -87,7 +87,7 @@ func (h *Handle) ListTags(c *gin.Context) {
 }
 
 // ListTagProducts 某标签命中的商品（验收 4）。
-func (h *Handle) ListTagProducts(c *gin.Context) {
+func (h *ProductHandle) ListTagProducts(c *gin.Context) {
 	req := &productdto.ListTagProductsReq{}
 	if err := c.ShouldBindQuery(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -102,12 +102,12 @@ func (h *Handle) ListTagProducts(c *gin.Context) {
 }
 
 // ListTagRuleTypes 内置规则类型清单（后台规则下拉的唯一来源）。
-func (h *Handle) ListTagRuleTypes(c *gin.Context) {
+func (h *ProductHandle) ListTagRuleTypes(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, h.svc.ListTagRuleTypes(c.Request.Context()))
 }
 
 // DeleteTag 删除标签（连同它在商品上的引用一起解绑）。
-func (h *Handle) DeleteTag(c *gin.Context) {
+func (h *ProductHandle) DeleteTag(c *gin.Context) {
 	req := &productdto.DeleteTagReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -121,7 +121,7 @@ func (h *Handle) DeleteTag(c *gin.Context) {
 }
 
 // RecalcTags 手动触发重算（重算时机之一：可按标签或按工程整体重算）。
-func (h *Handle) RecalcTags(c *gin.Context) {
+func (h *ProductHandle) RecalcTags(c *gin.Context) {
 	req := &productdto.RecalcTagsReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
@@ -137,7 +137,7 @@ func (h *Handle) RecalcTags(c *gin.Context) {
 
 // CreateCategory 新建分类（parentId 为空即顶级）。
 
-func (h *Handle) BulkDeleteTags(c *gin.Context) {
+func (h *ProductHandle) BulkDeleteTags(c *gin.Context) {
 	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductTags)
 }
 
@@ -164,8 +164,8 @@ func (h *Handle) BulkDeleteTags(c *gin.Context) {
 // ==========================================================================
 
 // ProductTagsPage 标签管理页：工程切换 + 筛选栏 + 新建表单 + 规则类型说明 + 标签列表（含命中商品）。
-func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
-	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
+	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
 	view, err := reader.ProductTagsPage(c.Request.Context(), &productdto.ProductTagsPageReq{
@@ -222,7 +222,7 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 //
 // 失败也回 200 的片段（不是整页错误页）：它替换的是页面里的一小块，
 // 回整页 HTML 会把展开区之外的内容一起换掉；错误文案过 productErrText 白名单。
-func (h *productPageHandle) ProductTagHitsFragment(c *gin.Context) {
+func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	req := &productdto.ListTagProductsPageReq{
 		TagID:     strings.TrimSpace(c.Query("id")),
 		ProjectID: strings.TrimSpace(c.Query("project")),
@@ -268,7 +268,7 @@ func (h *productPageHandle) ProductTagHitsFragment(c *gin.Context) {
 // ruleTypes 由调用方传入：页面装配时取一次全行共享，失败分支自己取一次，
 // 不在片段装配里重复查契约。取词走 adminui.PrepareBare（片段不经整份
 // Prepare，但模板要 t/tf；漏注入不报错 —— 取词全变空串、200、日志干净）。
-func (h *productPageHandle) tagDrawerData(c *gin.Context, mode, projectID string, row gin.H, ruleTypes []*productdto.TagRuleTypeResp) gin.H {
+func (h *ProductPageHandle) tagDrawerData(c *gin.Context, mode, projectID string, row gin.H, ruleTypes []*productdto.TagRuleTypeResp) gin.H {
 	data := gin.H{
 		"Mode": mode, "Project": projectID,
 		"RuleTypes": ruleTypes,

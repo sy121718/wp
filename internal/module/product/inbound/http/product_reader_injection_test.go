@@ -5,7 +5,7 @@ package producthttp
 // 背景（本批之前）：控制器持有的是 ProductService，读模型不在它的能力面上，于是 12 处处理器
 // 各自写 reader, ok := h.products.(productcontract.ProductPageReader) 兜底 —— 漏接在编译期
 // 与门禁里都看不见，只有运营点开那一页才得到 500。现在读模型是**构造实参**
-//（productPageHandle.reader）与 SetupProductRoutes 的**第二个返回值**：漏接 = 编译错误。
+//（ProductPageHandle.reader）与 SetupProductRoutes 的**第二个返回值**：漏接 = 编译错误。
 //
 // 本文件钉三件事：① 构造函数第 2 个形参就是读模型（删掉 / 挪位 / 换成 ProductService 都变红）；
 // ② 装配链两端（接口面产出 → 页面面收下）的类型一致；③ 控制器源码里不再出现运行期断言。

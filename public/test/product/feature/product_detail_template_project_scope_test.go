@@ -85,7 +85,7 @@ func newProjectScopeEngine(t *testing.T) (*gin.Engine, *projectScopeFixture) {
 	producthttp.BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
 	})
-	api := producthttp.NewHandle(base.products)
+	api := producthttp.NewProductHandle(base.products)
 	engine.POST("/api/product/detail-template/update-url", api.UpdateDetailTemplateURL)
 	engine.POST("/api/product/detail-template/apply", api.ApplyDetailTemplate)
 	engine.POST("/api/product/detail-template/publish", api.PublishDetailTemplate)

@@ -124,7 +124,7 @@ func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	handle := producthttp.NewHandle(f.svc)
+	handle := producthttp.NewProductHandle(f.svc)
 	engine.POST("/api/product/delete", handle.Delete)
 	engine.POST("/api/product/bulk-delete", handle.BulkDelete)
 	return engine, f

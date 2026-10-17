@@ -5,7 +5,7 @@ package producthttp
 // 这一屏**没有取数失败档**（三处取数各自降级）：正常档必须真的把页面渲染出来，且入参
 //（表单 / 试算结果）原样转发到读模型。
 //
-// 曾经的「装配缺陷 → 500」那一档已从运行期消失：读模型是构造实参（productPageHandle.reader），
+// 曾经的「装配缺陷 → 500」那一档已从运行期消失：读模型是构造实参（ProductPageHandle.reader），
 // 漏接 = 编译错误，判据见 product_reader_injection_test.go。
 
 import (
@@ -21,7 +21,7 @@ import (
 )
 
 // pricingPageRequest 挂上定价页并 GET 一次（真 Jet 渲染器 + 真模板）。
-func pricingPageRequest(t *testing.T, h *productPageHandle, target string) *httptest.ResponseRecorder {
+func pricingPageRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -36,7 +36,7 @@ func pricingPageRequest(t *testing.T, h *productPageHandle, target string) *http
 // TestProductPricingPageRendersThroughReadModel 正常档：渲染完整页，查询串里的工程 id 转发给读模型。
 func TestProductPricingPageRendersThroughReadModel(t *testing.T) {
 	reader := &productPageReaderStub{pricingView: productPricingPageViewStub(nil)}
-	h := &productPageHandle{products: reader, reader: reader}
+	h := &ProductPageHandle{products: reader, reader: reader}
 
 	rec := pricingPageRequest(t, h, "/admin/product-pricing?project=p1")
 	if rec.Code != http.StatusOK {
@@ -66,6 +66,6 @@ func TestProductPricingPageRendersThroughReadModel(t *testing.T) {
 	}
 }
 
-// 读模型没接上这一档已从运行期消失：读模型是构造实参（productPageHandle.reader），
+// 读模型没接上这一档已从运行期消失：读模型是构造实参（ProductPageHandle.reader），
 // 漏接 = 编译错误，判据见 product_reader_injection_test.go —— 运行期不再有
 // 「类型断言失败 → 500 兜底」这条路径，所以这里不再有对应用例。

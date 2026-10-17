@@ -27,7 +27,7 @@ import (
 //
 // 不注入按钮码时模板里的 {{if canDelete}} 一律为假，整段写入口不渲染 —— 断言会假绿
 // （在「页面没有入口」与「入口用了旧动作」两种完全不同的缺陷上同时通过）。
-func taxonomyJSONWriteRequest(t *testing.T, h *productPageHandle, route, target string, mw gin.HandlerFunc) *httptest.ResponseRecorder {
+func taxonomyJSONWriteRequest(t *testing.T, h *ProductPageHandle, route, target string, mw gin.HandlerFunc) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

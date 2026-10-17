@@ -539,7 +539,7 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	engine.POST("/admin/products/variant/preview", handle.ProductsVariantPreview)
 	// 保存是 JSON 端点（页面声明 data-write-api + 基座发起 fetch）：表单 POST 已不存在。
-	engine.POST("/api/product/variant/save", producthttp.NewHandle(f.products).SaveVariantList)
+	engine.POST("/api/product/variant/save", producthttp.NewProductHandle(f.products).SaveVariantList)
 
 	rec := postForm(engine, "/admin/products/variant/preview", url.Values{
 		"projectId": {f.projectID}, "productId": {p.ID}, "warehouseId": {f.warehouse.ID},

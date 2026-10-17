@@ -93,8 +93,8 @@ var taxonomyPages = []taxonomyPage{
 }
 
 // taxonomyHandle 一页的处理器（工程清单桩与属性页共用同一份形状）。
-func taxonomyHandle(stub *productPageReaderStub) *productPageHandle {
-	return &productPageHandle{
+func taxonomyHandle(stub *productPageReaderStub) *ProductPageHandle {
+	return &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: stub, reader: stub,
 	}
@@ -246,7 +246,7 @@ func TestTaxonomyPagesFailureSlotIsNotAnEmptyState(t *testing.T) {
 	}
 }
 
-// 读模型没接上这一档已从运行期消失：读模型是构造实参（productPageHandle.reader），
+// 读模型没接上这一档已从运行期消失：读模型是构造实参（ProductPageHandle.reader），
 // 漏接 = 编译错误，判据见 product_reader_injection_test.go —— 运行期不再有
 // 「类型断言失败 → 500 兜底」这条路径，所以这里不再有对应用例。
 

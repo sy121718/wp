@@ -385,14 +385,14 @@ var editorPages = []editorPage{
 
 // editorEnv 三页共用的环境：一个工程 p1、一个商品 prod1、一份可读的捆绑配置，
 // 并注入模板 / 实例端口（详情页模板页缺这两个会走「未装配」档，那是另一条判据）。
-func editorEnv() (*productPageHandle, *editorStub, *editorTemplatesStub, *editorInstancesStub) {
+func editorEnv() (*ProductPageHandle, *editorStub, *editorTemplatesStub, *editorInstancesStub) {
 	stub := &editorStub{
 		getRes: &productdto.ProductResp{ID: "prod1", Name: "商品一", Slug: "prod-1"},
 		config: &productdto.BundleConfigResp{ProductID: "prod1", ProductName: "商品一", BasePrice: 9.9},
 	}
 	tpls := &editorTemplatesStub{rows: []*contenttemplatecontract.TemplateResp{{ID: "tpl1", Name: "默认模板"}}}
 	insts := &editorInstancesStub{}
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		projects: &editorProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: stub, reader: stub,
 		templates: tpls,
@@ -402,7 +402,7 @@ func editorEnv() (*productPageHandle, *editorStub, *editorTemplatesStub, *editor
 }
 
 // editorRequest 真实引擎 + 真实 Jet 渲染三个整页 GET（失败档只有把模板渲染出来才看得见）。
-func editorRequest(t *testing.T, h *productPageHandle, target string) *httptest.ResponseRecorder {
+func editorRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

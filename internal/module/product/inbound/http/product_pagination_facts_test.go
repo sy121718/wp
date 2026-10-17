@@ -77,7 +77,7 @@ func TestTaxonomyPagesPaginationFactsRenderLinks(t *testing.T) {
 	// 四页的取数编排都已下沉读模型：分页事实由 service 给、控制器只补基地址，
 	// 桩因此一律给**视图**（不再 mock Count*/List* 那些方法 —— 它们已不在这条渲染路径上）。
 	t.Run("属性页", func(t *testing.T) {
-		h := &productPageHandle{
+		h := &ProductPageHandle{
 			projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 			products: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
 				v.SelectedProject = "p1"
@@ -114,7 +114,7 @@ func TestTaxonomyPagesPaginationFactsRenderLinks(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h := &productPageHandle{
+			h := &ProductPageHandle{
 				projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 				products: &productPageReaderStub{
 					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageView) {
@@ -180,7 +180,7 @@ func TestTaxonomyPagesSinglePageRendersNoPagination(t *testing.T) {
 		{name: "品牌页", path: "/admin/product-brands?project=p1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h := &productPageHandle{
+			h := &ProductPageHandle{
 				projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 				products: &productPageReaderStub{
 					categoriesView: productCategoriesPageViewStub(func(v *productdto.ProductCategoriesPageView) {
@@ -213,7 +213,7 @@ func TestTaxonomyPagesSinglePageRendersNoPagination(t *testing.T) {
 
 	// 属性页同一条判据（读模型给的总数只有 3 条 → Facts 的 HasPagination 为假 → 控制器不注入）。
 	t.Run("属性页", func(t *testing.T) {
-		h := &productPageHandle{
+		h := &ProductPageHandle{
 			projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 			products: &productPageReaderStub{attributesPageView: productAttributesPageViewStub(func(v *productdto.ProductAttributesPageView) {
 				v.SelectedProject = "p1"
@@ -235,7 +235,7 @@ func TestProductsPagePaginationFactsRenderLinks(t *testing.T) {
 	const rows = 25
 	// 列表页的取数编排在 service（读模型）里，控制器只调它 —— 桩因此给**视图**，
 	// 不再 mock List / CountProducts / Get（那些方法已不在这条渲染路径上）。
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
 			v.Total = rows
@@ -273,7 +273,7 @@ func TestProductsPageFailureAfterTotalKeepsFailureShape(t *testing.T) {
 	// 列表页取数编排在 service（读模型）：桩给视图，total 与失败档都由视图带出
 	//（「total 已确定后行详情失败」在 service 侧就是「视图带 LoadFailed 且 Total 仍 >0」）。
 	const rows = 25
-	h := &productPageHandle{
+	h := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: &productPageReaderStub{
 			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
@@ -301,7 +301,7 @@ func TestProductsPageFailureAfterTotalKeepsFailureShape(t *testing.T) {
 	}
 	// 成功页仍有分页条（同一份数据、同一个 total，只是模板分支不同）：
 	// 这条对照让「失败页没有分页条」不至于被误读成「分页坏了」。
-	ok := &productPageHandle{
+	ok := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
 			v.Total = rows
@@ -329,7 +329,7 @@ func (s *tagHitsStub) ListTagProductsPage(context.Context, *productdto.ListTagPr
 }
 
 // tagHitsRequest 把片段挂到最小引擎上，用真实 Jet 渲染器跑完整个请求。
-func tagHitsRequest(t *testing.T, h *productPageHandle, target string) *httptest.ResponseRecorder {
+func tagHitsRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -357,7 +357,7 @@ func tagHitsRows(n int) []*productdto.TagProductResp {
 func TestTagHitsFragmentPaginationIsFactsDriven(t *testing.T) {
 	t.Run("第二页三行", func(t *testing.T) {
 		// reader 不给：本片段（命中商品）不走读模型，读模型那一份由整页的用例覆盖。
-		h := &productPageHandle{products: &tagHitsStub{resp: &productdto.TagProductsPageResp{
+		h := &ProductPageHandle{products: &tagHitsStub{resp: &productdto.TagProductsPageResp{
 			TagID: "t1", TagName: "标签", Total: 45, Page: 2, PageSize: 20, TotalPage: 3,
 			Items: tagHitsRows(3),
 		}}}
@@ -389,7 +389,7 @@ func TestTagHitsFragmentPaginationIsFactsDriven(t *testing.T) {
 	})
 
 	t.Run("单页非空仍渲染两个禁用按钮", func(t *testing.T) {
-		h := &productPageHandle{products: &tagHitsStub{resp: &productdto.TagProductsPageResp{
+		h := &ProductPageHandle{products: &tagHitsStub{resp: &productdto.TagProductsPageResp{
 			TagID: "t1", TagName: "标签", Total: 5, Page: 1, PageSize: 20, TotalPage: 1,
 			Items: tagHitsRows(5),
 		}}}

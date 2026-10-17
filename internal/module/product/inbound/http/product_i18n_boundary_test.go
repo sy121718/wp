@@ -25,12 +25,12 @@ func TestControllerI18nBoundary(t *testing.T) {
 	allow := map[string]string{
 		"product_jump.go": "JSON 出口成品串：多段合成句（productBulkTextOf）+ Tail 复合形态（productErrMsgOf）；" +
 			"失败回执的成品串取词（productMsgText）",
-		"product_page_util.go": "中间件：productTranslateMiddleware 把取词函数放进 Request Context 给 " +
+		"product_router.go": "中间件：productTranslateMiddleware 把取词函数放进 Request Context 给 " +
 			"service 用（service 要产出展示文案，语言只有 gin.Context 知道）",
-		"product_translations.go": "具名占位符：i18n.FillTranslate 的 {n} 句式（同上）",
-		"product_score.go": "评分等级文案：seoscore.ScoreGradeText 只接受 tr；空态文案是 service 给的 " +
+		"product_translations_handle.go": "具名占位符：i18n.FillTranslate 的 {n} 句式（同上）",
+		"product_score_handle.go": "评分等级文案：seoscore.ScoreGradeText 只接受 tr；空态文案是 service 给的 " +
 			"key + 兜底事实，取值在 HTTP 层（scoreEmptyView）",
-		"product_subject.go": "三处成品串出口：变体清单保存的复合句（Tail 拼接）、定价回执的三段拼句、" +
+		"product_subject_handle.go": "三处成品串出口：变体清单保存的复合句（Tail 拼接）、定价回执的三段拼句、" +
 			"ProductsBundleMembersResolve 的响应体字面量（来源标签）；外加 ProductPreviewFrame 直接 " +
 			"c.Data 返回 iframe HTML（没有模板取词层）",
 	}
