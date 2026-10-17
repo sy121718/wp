@@ -113,7 +113,6 @@ func TestProductBackHelpersKeepFilters(t *testing.T) {
 		{"分类", productCategoriesBack(c), []string{"/admin/product-categories?", "project=p1"}},
 		{"品牌", productBrandsBack(c), []string{"/admin/product-brands?", "project=p1"}},
 		{"捆绑", productBundleBack(c), []string{"/admin/products/bundle?", "project=p1", "product=prod1"}},
-		{"定价", productPricingBack(c), []string{"/admin/product-pricing?", "project=p1"}},
 		{"翻译", productTranslationsBack(c), []string{"/admin/products/translations?", "project=p1", "product=prod1", "lang=en-US"}},
 	}
 	for _, tc := range cases {
@@ -124,6 +123,11 @@ func TestProductBackHelpersKeepFilters(t *testing.T) {
 				}
 			}
 		})
+	}
+	// 定价页的提示页出口随写动作迁接口一并删除（结论改为 flash 结论行），但表单 action 上
+	// 仍要带 project 上下文 —— 键表还在，钉住它别被顺手清空。
+	if got := productQueryFromRequest(c, productPricingBackKeys...); !strings.Contains(got, "project=p1") {
+		t.Errorf("定价页上下文键表应保留 project，实际 %q", got)
 	}
 	// 不该透传的键（不在白名单里）一个都不带。
 	if strings.Contains(productListBack(c), "source=") {
@@ -149,7 +153,6 @@ func TestProductJumpBackTextFollowsPage(t *testing.T) {
 	}{
 		{"列表", productListBackMsg},
 		{"属性", productAttrBackMsg},
-		{"定价", productPricingBackMsg},
 	} {
 		if strings.TrimSpace(tc.msg.Key) == "" {
 			t.Errorf("%s回跳链接文字必须带 i18n key", tc.name)

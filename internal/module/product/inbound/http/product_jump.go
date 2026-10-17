@@ -35,7 +35,6 @@ const (
 	productTagsPath         = "/admin/product-tags"
 	productCategoriesPath   = "/admin/product-categories"
 	productBrandsPath       = "/admin/product-brands"
-	productPricingPath      = "/admin/product-pricing"
 	productTranslationsPath = "/admin/products/translations"
 )
 
@@ -126,10 +125,6 @@ func productDetailTemplateBack(projectID, productID string) string {
 	})
 }
 
-func productPricingBack(c *gin.Context) string {
-	return shell.BackPath(c, productPricingPath, productPricingBackKeys...)
-}
-
 func productTranslationsBack(c *gin.Context) string {
 	return shell.BackPath(c, productTranslationsPath, productTranslationsBackKeys...)
 }
@@ -159,7 +154,6 @@ var (
 	productBrandsBackMsg         = productMsg{Key: productenums.ProductBrandsTitle, Fallback: "商品品牌"}
 	productBundleBackMsg         = productMsg{Key: productenums.ProductBundleTitle, Fallback: "捆绑配置"}
 	productDetailTemplateBackMsg = productMsg{Key: productenums.ProductDetailTemplateTitle, Fallback: "商品详情页模板"}
-	productPricingBackMsg        = productMsg{Key: productenums.ProductPricingTitle, Fallback: "定价工具"}
 	productTranslationsBackMsg   = productMsg{Key: productenums.ProductTranslationsTitle, Fallback: "商品多语言"}
 	productEditBackMsg           = productMsg{Key: productenums.ProductsEditTitle, Fallback: "编辑商品"}
 	productNewBackMsg            = productMsg{Key: productenums.ProductsCreateSubmit, Fallback: "新建商品"}
@@ -213,11 +207,6 @@ func productAttrJump(c *gin.Context, ok bool, msg productMsg) {
 // productDetailTemplateJump 回详情页模板页的提示页出口（project / product 来自表单）。
 func productDetailTemplateJump(c *gin.Context, ok bool, projectID, productID string, msg productMsg) {
 	productPageJump(c, ok, msg, productDetailTemplateBack(projectID, productID), productDetailTemplateBackMsg)
-}
-
-// productPricingJump 回定价工具页的提示页出口。
-func productPricingJump(c *gin.Context, ok bool, msg productMsg) {
-	productPageJump(c, ok, msg, productPricingBack(c), productPricingBackMsg)
 }
 
 // productTranslationsJump 回翻译工作台的提示页出口。

@@ -42,11 +42,14 @@
         </div>
     </header>
 
+    {* 应用调价的结论行：成功由 ui/json_write.js 存 flash、整页刷新后在这里显示一次
+       （刷新是为了让下方留痕台账与变体价格跟着变）。 *}
+    <p class="form-hint badge" data-write-flash-target="product-pricing" role="status" hidden></p>
+
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_pricing.lastError", "上一次操作未完成：") }}{{.Err}}</p>
     {{end}}{{end}}
-    {* 应用调价的结论不在本页回显（走 shell.RenderJump 渲染提示页，见 product_jump.go）；
-       本页的 Err 只剩「试算失败原地重渲染」这一条来源。 *}
+    {* 本页的 Err 只剩「试算失败原地重渲染」这一条来源；应用调价的结论走结论行（flash）。 *}
 
     {* ===== 主区：改价表单 + 试算预览（预览是提交的直接结果，同卡紧邻） ===== *}
     <section class="card card-body">
@@ -90,10 +93,19 @@
                 <input type="text" class="form-input" name="note" value="{{form.Note}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phNote", "备注（写进留痕台账，如「国庆前提价」）") }}" autocomplete="off">
             </div>
             <div class="action-row">
+                {* 两个按钮两条出口：试算是**只读**且结果是一张表格，只有整页重渲才渲染得出来，
+                   所以它保持原生提交（不挂 data-write-api）；应用调价是写动作，交给
+                   ui/json_write.js 直调接口，落库后整页刷新看台账。
+                   表单本身不能挂 data-write-api —— 那会把试算也拦进 fetch（表格就没了）。 *}
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_pricing.apply.preview", "预览试算（不落库）") }}</button>
-                <button type="submit" class="btn" formaction="/admin/product-pricing/apply{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
+                <button type="submit" class="btn"
+                        data-write-api="/api/product/pricing/apply" data-write-mode="form"
+                        data-write-flash="product-pricing"
+                        data-requires-js hidden disabled
                         data-confirm="{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}">{{ .["t"]("admin.product_pricing.apply.submit", "应用调价（落库）") }}</button>
             </div>
+            {* 结论行必须在 form 内：基座只在表单里（或 data-write-host 容器里）找 [data-write-status]。 *}
+            <p class="form-hint" data-write-status role="status" hidden></p>
         </form>
 
         {{if .HasPreview}}

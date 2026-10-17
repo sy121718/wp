@@ -369,7 +369,6 @@ POST /admin/plugins/install
 POST /admin/product-attributes/value-rows
 POST /admin/product-brands/seo-score
 POST /admin/product-categories/seo-score
-POST /admin/product-pricing/apply
 POST /admin/product-pricing/preview
 POST /admin/products/attributes
 POST /admin/products/bulk-delete

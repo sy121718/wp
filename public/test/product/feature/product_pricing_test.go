@@ -826,7 +826,8 @@ func newPricingPageEngine(t *testing.T) (*gin.Engine, *pricingFixture) {
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.GET("/admin/product-pricing", handle.ProductPricingPage)
 	engine.POST("/admin/product-pricing/preview", handle.ProductPricingPreview)
-	engine.POST("/admin/product-pricing/apply", handle.ProductPricingApply)
+	// 应用调价已改接口端点（页面走 ui/json_write.js）；试算保留页面 POST（结果是表格）。
+	engine.POST("/api/product/pricing/apply", producthttp.NewHandle(f.svc).ApplyPricing)
 	return engine, f
 }
 
@@ -891,13 +892,21 @@ func TestPricingAdminPages(t *testing.T) {
 		t.Fatalf("页面上不应出现 enums 裸 key，实际 %s", rec.Body.String())
 	}
 
-	// 应用：成功态提示页（回执含本次改动数），价格落库、留痕可见。
+	// 应用：接口回执（含本次改动数），价格落库、留痕可见。
 	form.Set("note", "后台改价")
-	rec = postForm(engine, "/admin/product-pricing/apply", form)
-	appliedBody := rec.Body.String()
-	assertJumpOK(t, rec)
-	if !strings.Contains(appliedBody, "1 个变体") {
-		t.Fatalf("应用成功回执应含本次改动数，body=%s", appliedBody)
+	applyBody := map[string]any{}
+	for k, vals := range form {
+		if len(vals) > 0 {
+			applyBody[k] = vals[0]
+		}
+	}
+	rec = postJSON(t, engine, "/api/product/pricing/apply", applyBody)
+	appliedEnv := decodeJSONEnvelope(t, rec)
+	if appliedEnv.Code != http.StatusOK {
+		t.Fatalf("应用调价应成功，实际 %d：%s", appliedEnv.Code, appliedEnv.Message)
+	}
+	if !strings.Contains(appliedEnv.Message, "1 个变体") {
+		t.Fatalf("应用成功回执应含本次改动数，实际 %q", appliedEnv.Message)
 	}
 	if got := pfPriceOf(t, f, pfGetProduct(t, f, p.ID).Variants[0].SKUCode); got != 66.99 {
 		t.Fatalf("应用后库里应为 66.99，实际 %v", got)
@@ -910,7 +919,9 @@ func TestPricingAdminPages(t *testing.T) {
 		}
 	}
 
-	// 无改动时应用：失败态提示页（不写空台账）。
-	rec = postForm(engine, "/admin/product-pricing/apply", form)
-	assertJumpErr(t, rec)
+	// 无改动时应用：失败回执（不写空台账）。
+	rec = postJSON(t, engine, "/api/product/pricing/apply", applyBody)
+	if got := decodeJSONEnvelope(t, rec); got.Code == http.StatusOK || strings.TrimSpace(got.Message) == "" {
+		t.Fatalf("无改动时应用应回失败 + 可读文案，实际 %d：%q", got.Code, got.Message)
+	}
 }

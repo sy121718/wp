@@ -327,8 +327,10 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 四种内置规则 + 尾数处理，对单个 SKU / 单商品全部变体 / 筛选集批量改价。
 	// 试算走预览权限点（不落库），应用走应用权限点（落库 + 留痕）。
 	pages.GET("/product-pricing", adminui.PageAuthz("/api/product/list"), productPages.ProductPricingPage)
+	// 试算保留页面 POST：结果是**一张表格**（逐变体的成本 / 原价 / 新价 / 差值 / 结果），
+	// 只有整页重渲才渲染得出来；它不落库，没有写动作要迁。应用调价已迁到
+	// /api/product/pricing/apply（页面走 ui/json_write.js，落库后整页刷新看台账）。
 	pages.POST("/product-pricing/preview", builtin.CasbinMiddlewareForPath("/api/product/pricing/preview"), productPages.ProductPricingPreview)
-	pages.POST("/product-pricing/apply", builtin.CasbinMiddlewareForPath("/api/product/pricing/apply"), productPages.ProductPricingApply)
 
 	// —— 商品域翻译工作台（issue #12）——
 	// 入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。路由在装配层同时挂到

@@ -4,7 +4,6 @@ import (
 	json "go_wp/pkg/jsonx"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/middleware/builtin"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/shell"
@@ -47,31 +46,6 @@ func (h *productPageHandle) ProductPricingPreview(c *gin.Context) {
 		return
 	}
 	h.renderPricingPageWith(c, &form, preview, "")
-}
-
-// ProductPricingApply 应用调价（落库 + 留痕 + 顺带重算自动标签）。
-func (h *productPageHandle) ProductPricingApply(c *gin.Context) {
-	_, req := readPricingForm(c)
-	res, err := h.products.ApplyPricing(c.Request.Context(), &productdto.PricingApplyReq{
-		PricingRuleReq: *req,
-		Note:           strings.TrimSpace(c.PostForm("note")),
-		// 操作人取自会话，客户端的表单字段不作数（留痕不可伪造）。
-		OperatorID: builtin.CurrentUserIDText(c),
-	})
-	if err != nil {
-		productPricingJump(c, false, productErrMsg(c, err))
-		return
-	}
-	// 成功回执：保留原先页面上那句话（「本次改动 N 个变体，明细见下方留痕台账」），
-	// 但改由提示页渲染（取代 ?applied= 计数 + 页内提示条）。
-	// **例外 2（提示页出口）**：shell.RenderJump 那条链要的是成品串（见 product_jump.go
-	// 的 productPageJump → shell.RenderJump），这里取词一次交给它，不在页面上再取。
-	// 三段拼一句（前缀 + 计数 + 后缀）：模板注入的 tf 只有 %s 位置参数，收成一条 %s 整句
-	// 要改 seed，而 public/migrations/** 不在本批写范围内（page 模块按迁移 613 收过同类，
-	// product 这两条 key 还是两段式）。
-	tr := shell.TranslateFor(c)
-	productPricingJump(c, true, productMsg{Fallback: tr(productenums.ProductPricingAppliedLead, "已应用调价：本次改动 ") +
-		strconv.Itoa(res.ChangedCount) + tr(productenums.ProductPricingAppliedTail, " 个变体，明细见下方留痕台账。")})
 }
 
 // productPricingPageTemplate 定价页模板名（与「提示页出口」同处本文件）。
@@ -217,21 +191,83 @@ func (h *Handle) PreviewPricing(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgPricingPreviewSuccess, res)
 }
 
-// ApplyPricing 应用调价（算价 → 写回 product_variants.price → 留痕）。
+// ApplyPricing 应用调价（POST /api/product/pricing/apply）：算价 → 写回 product_variants.price
+// → 留痕（同一事务）→ 顺带重算自动标签。
+//
+// 入参**平铺**（ruleType / multiplier / amount / margin / rounding / scope / …），不套
+// ruleParams 子对象：页面表单本来就是平铺的（partials/pricing_rule_fields.html），而
+// 「哪个规则用哪个参数」的判定只有 pricingParamsFromForm 一份 —— 在这里另写一套装配，
+// 就会出现「填了 amount 却被当成 multiplier」这类只在一个入口发生的静默错配
+// （与 BulkPricing 同一条理由）。
+//
+// 页面调用它时提交的字符串值也说明了为什么不能直接用 PricingApplyReq：
+// ruleParams 是 json.RawMessage，DOM 里只有字符串，{"multiplier":"1.2"} 会被
+// ruleFloat 当成 "1.2" 去 ParseFloat（带引号）而判成「不是数字」。
 func (h *Handle) ApplyPricing(c *gin.Context) {
-	req := &productdto.PricingApplyReq{}
+	req := &productPricingApplyReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
-	// 操作人取自会话，客户端传什么都不作数（留痕的操作人不可伪造）。
-	req.OperatorID = operatorFromContext(c)
-	res, err := h.svc.ApplyPricing(c.Request.Context(), req)
+	form := productdto.PricingForm{
+		ProjectID:  req.ProjectID,
+		RuleType:   req.RuleType,
+		Multiplier: req.Multiplier,
+		Amount:     req.Amount,
+		Margin:     req.Margin,
+		Rounding:   req.Rounding,
+		Scope:      req.Scope,
+		TargetID:   req.TargetID,
+		Status:     req.Status,
+		Keyword:    req.Keyword,
+		CategoryID: req.CategoryID,
+		BrandID:    req.BrandID,
+		TagID:      req.TagID,
+		Note:       req.Note,
+	}
+	res, err := h.svc.ApplyPricing(c.Request.Context(), &productdto.PricingApplyReq{
+		PricingRuleReq: productdto.PricingRuleReq{
+			ProjectID: req.ProjectID, RuleType: req.RuleType, Rounding: req.Rounding,
+			Scope: req.Scope, TargetID: req.TargetID,
+			Status: req.Status, Keyword: req.Keyword, CategoryID: req.CategoryID,
+			BrandID: req.BrandID, TagID: req.TagID,
+			RuleParams: pricingParamsFromForm(form),
+		},
+		Note: strings.TrimSpace(req.Note),
+		// 操作人取自会话，客户端传什么都不作数（留痕的操作人不可伪造）。
+		OperatorID: operatorFromContext(c),
+	})
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgPricingApplySuccess, res)
+	// 回执沿用页面原本那句话（「本次改动 N 个变体，明细见下方留痕台账」）：三段拼一句
+	// （前缀 + 计数 + 后缀）—— 两条词条还是两段式，收成一条 %s 整句要改 seed。
+	tr := shell.TranslateFor(c)
+	response.SuccessWithMessage(c, tr(productenums.ProductPricingAppliedLead, "已应用调价：本次改动 ")+
+		strconv.Itoa(res.ChangedCount)+tr(productenums.ProductPricingAppliedTail, " 个变体，明细见下方留痕台账。"))
+}
+
+// productPricingApplyReq 定价页应用调价的 JSON 入参（规则字段平铺，理由见 ApplyPricing）。
+//
+// 与 productBulkPricingReq 刻意分成两个类型：那个带 ids 且 scope/targetId 由 service
+// 逐商品覆盖，这个由表单的 scope/targetId 决定范围。合成一个会让批量入口悄悄接受
+// 「scope=filter」这种它并不支持的形状（值被忽略，用户以为生效了）。
+type productPricingApplyReq struct {
+	ProjectID  string `json:"projectId"`
+	Note       string `json:"note"`
+	RuleType   string `json:"ruleType"`
+	Multiplier string `json:"multiplier"`
+	Amount     string `json:"amount"`
+	Margin     string `json:"margin"`
+	Rounding   string `json:"rounding"`
+	Scope      string `json:"scope"`
+	TargetID   string `json:"targetId"`
+	Status     string `json:"status"`
+	Keyword    string `json:"keyword"`
+	CategoryID string `json:"categoryId"`
+	BrandID    string `json:"brandId"`
+	TagID      string `json:"tagId"`
 }
 
 // BulkPricing 批量「按规则改价」（POST /api/product/bulk-pricing）。
