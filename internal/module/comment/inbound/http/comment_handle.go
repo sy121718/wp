@@ -16,10 +16,12 @@ import (
 	"strconv"
 	"strings"
 
+	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 
-	"github.com/gin-gonic/gin"
 	"go_wp/internal/middleware/builtin"
+
+	"github.com/gin-gonic/gin"
 
 	commentcontract "go_wp/internal/module/comment/contract"
 	commentdto "go_wp/internal/module/comment/dto"
@@ -37,9 +39,8 @@ func NewHandle(svc commentcontract.CommentService) *Handle { return &Handle{svc:
 
 // AdminList 审核队列（分页 + 状态 / 实体类型 / 关键词筛选）。
 func (h *Handle) AdminList(c *gin.Context) {
-	req := &commentdto.AdminListReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[commentdto.AdminListReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.AdminList(c.Request.Context(), req)
@@ -55,9 +56,8 @@ func (h *Handle) AdminList(c *gin.Context) {
 // 审核人取自**会话**（builtin.CurrentUserID），不从请求体读：让请求方能填操作人
 // 等于把审计留痕变成可伪造字段。
 func (h *Handle) Review(c *gin.Context) {
-	req := &commentdto.ReviewReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.JSON[commentdto.ReviewReq](c)
+	if !ok {
 		return
 	}
 	req.ReviewerID = builtin.CurrentUserID(c)

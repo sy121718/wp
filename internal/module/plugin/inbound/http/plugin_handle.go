@@ -10,6 +10,7 @@ import (
 	plugincontract "go_wp/internal/module/plugin/contract"
 	plugindto "go_wp/internal/module/plugin/dto"
 	pluginenums "go_wp/internal/module/plugin/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 )
 
@@ -57,9 +58,8 @@ func (h *Handle) List(c *gin.Context) {
 
 // Toggle 启停插件。
 func (h *Handle) Toggle(c *gin.Context) {
-	req := &plugindto.ToggleReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, pluginenums.ErrInvalidParam)
+	req, ok := binding.Form[plugindto.ToggleReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.Toggle(c.Request.Context(), req); err != nil {
@@ -73,9 +73,8 @@ func (h *Handle) Toggle(c *gin.Context) {
 
 // Uninstall 卸载插件。
 func (h *Handle) Uninstall(c *gin.Context) {
-	req := &plugindto.UninstallReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, pluginenums.ErrInvalidParam)
+	req, ok := binding.Form[plugindto.UninstallReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.Uninstall(c.Request.Context(), req); err != nil {
@@ -87,9 +86,8 @@ func (h *Handle) Uninstall(c *gin.Context) {
 
 // Detail 插件详情。
 func (h *Handle) Detail(c *gin.Context) {
-	req := &plugindto.DetailReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, pluginenums.ErrInvalidParam)
+	req, ok := binding.Form[plugindto.DetailReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Detail(c.Request.Context(), req)

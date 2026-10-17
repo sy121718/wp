@@ -4,6 +4,7 @@ package contenttemplatehttp
 import (
 	"errors"
 	"fmt"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
 	"net/http"
@@ -32,9 +33,8 @@ func NewHandle(svc contenttemplatecontract.ContentTemplateService) *Handle {
 
 // Create 新建模板。
 func (h *Handle) Create(c *gin.Context) {
-	req := &contenttemplatedto.CreateReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, contenttemplateenums.ErrInvalidParam)
+	req, ok := binding.JSON[contenttemplatedto.CreateReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Create(c.Request.Context(), req)
@@ -48,9 +48,8 @@ func (h *Handle) Create(c *gin.Context) {
 // Update 更新模板。
 // Activate 切换生效模板（POST /api/contenttemplate/activate）。
 func (h *Handle) Activate(c *gin.Context) {
-	req := &contenttemplatedto.ActivateReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, contenttemplateenums.ErrInvalidParam)
+	req, ok := binding.JSON[contenttemplatedto.ActivateReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Activate(c.Request.Context(), req)
@@ -62,9 +61,8 @@ func (h *Handle) Activate(c *gin.Context) {
 }
 
 func (h *Handle) Update(c *gin.Context) {
-	req := &contenttemplatedto.UpdateReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, contenttemplateenums.ErrInvalidParam)
+	req, ok := binding.JSON[contenttemplatedto.UpdateReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Update(c.Request.Context(), req)
@@ -77,15 +75,19 @@ func (h *Handle) Update(c *gin.Context) {
 
 // Delete accepts one identifier or a normalized batch and reports each result.
 func (h *Handle) Delete(c *gin.Context) {
-	var raw map[string]json.RawMessage
-	if err := c.ShouldBindJSON(&raw); err != nil || raw == nil {
+	raw, ok := binding.JSON[map[string]json.RawMessage](c)
+	if !ok {
+		return
+	}
+	if *raw == nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, contenttemplateenums.ErrInvalidParam)
 		return
 	}
+	fields := *raw
 	var ids []string
-	idValue, single := raw["id"]
-	idsValue, batch := raw["ids"]
-	if single == batch || len(raw) != 1 {
+	idValue, single := fields["id"]
+	idsValue, batch := fields["ids"]
+	if single == batch || len(fields) != 1 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, contenttemplateenums.ErrInvalidParam)
 		return
 	}
@@ -128,9 +130,8 @@ func (h *Handle) Delete(c *gin.Context) {
 
 // Get 模板详情。
 func (h *Handle) Get(c *gin.Context) {
-	req := &contenttemplatedto.GetReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, contenttemplateenums.ErrInvalidParam)
+	req, ok := binding.Form[contenttemplatedto.GetReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -143,9 +144,8 @@ func (h *Handle) Get(c *gin.Context) {
 
 // List 模板列表。
 func (h *Handle) List(c *gin.Context) {
-	req := &contenttemplatedto.ListReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, contenttemplateenums.ErrInvalidParam)
+	req, ok := binding.Form[contenttemplatedto.ListReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)

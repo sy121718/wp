@@ -10,6 +10,7 @@ import (
 	buildcontract "go_wp/internal/module/build/contract"
 	builddto "go_wp/internal/module/build/dto"
 	buildenums "go_wp/internal/module/build/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 )
 
@@ -43,12 +44,11 @@ func (h *Handle) Queue(c *gin.Context) {
 // project 可选：不带它时是全队列视角（运维排查用），带上就只看该工程的任务 ——
 // 这条是本表唯一的工程过滤入口（build_jobs 没有 RLS 策略，见 build/model 包注释）。
 func (h *Handle) List(c *gin.Context) {
-	var req builddto.ListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c, buildenums.ErrInvalidParam)
+	req, ok := binding.Query[builddto.ListReq](c)
+	if !ok {
 		return
 	}
-	list, err := h.svc.List(c.Request.Context(), &req)
+	list, err := h.svc.List(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorInternal(c, "build", err)
 		return
@@ -66,8 +66,11 @@ type retryReq struct {
 
 // Retry 重试失败任务（POST /api/build/retry）。
 func (h *Handle) Retry(c *gin.Context) {
-	var req retryReq
-	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.ID) == "" {
+	req, ok := binding.JSON[retryReq](c)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(req.ID) == "" {
 		response.ParamError(c, buildenums.ErrInvalidParam)
 		return
 	}

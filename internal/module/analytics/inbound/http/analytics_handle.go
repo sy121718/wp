@@ -20,6 +20,7 @@ import (
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	analyticsenums "go_wp/internal/module/analytics/enums"
 	analyticsservice "go_wp/internal/module/analytics/service"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -75,12 +76,11 @@ func (h *Handle) Collect(c *gin.Context) {
 
 // Summary 访问统计聚合查询（GET /api/analytics/summary，后台只读）。
 func (h *Handle) Summary(c *gin.Context) {
-	var req analyticsdto.SummaryReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c, analyticsenums.ErrInvalidParam)
+	req, ok := binding.Query[analyticsdto.SummaryReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.Summary(c.Request.Context(), &req)
+	res, err := h.svc.Summary(c.Request.Context(), req)
 	if err != nil {
 		analyticsError(c, err)
 		return

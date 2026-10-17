@@ -13,10 +13,10 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/module/content/contract"
-	"go_wp/internal/module/contenttemplate/contract"
-	"go_wp/internal/module/product/contract"
-	"go_wp/internal/module/project/contract"
+	contentcontract "go_wp/internal/module/content/contract"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	productcontract "go_wp/internal/module/product/contract"
+	projectcontract "go_wp/internal/module/project/contract"
 )
 
 // SetupContentTemplatePages 注册内容模板后台页面（/admin 组，中间件链由装配层统一挂好）。

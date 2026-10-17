@@ -17,10 +17,10 @@ import (
 
 	"go_wp/config"
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/module/analytics/contract"
-	"go_wp/internal/module/analytics/model"
-	"go_wp/internal/module/analytics/service"
-	"go_wp/internal/module/project/contract"
+	analyticscontract "go_wp/internal/module/analytics/contract"
+	analyticsmodel "go_wp/internal/module/analytics/model"
+	analyticsservice "go_wp/internal/module/analytics/service"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
 	"go_wp/pkg/logger"
 )

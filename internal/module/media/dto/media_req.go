@@ -1,5 +1,10 @@
 package mediadto
 
+import (
+	"strconv"
+	"strings"
+)
+
 // CategoryCreateReq 新建文件分类（无限级，ParentID=0 为顶级）。
 type CategoryCreateReq struct {
 	ParentID     uint64 `form:"parent_id" json:"parent_id"`
@@ -91,4 +96,30 @@ type DeleteReq struct {
 // VariantsGenerateReq 重新生成图片变体（POST /api/media/variants/generate）。
 type VariantsGenerateReq struct {
 	ID uint64 `json:"id" binding:"required"`
+}
+
+// UploadReq 上传附件的表单入参（multipart，file 由 c.FormFile 单独取）。
+//
+// CategoryID 收成字符串再归一：表单里的空串表示「不指定分类」，而 *uint64 直接绑空串
+// 会按转换失败报 400 —— 那是历史行为的倒退（上传时分类本来就是可选的）。
+type UploadReq struct {
+	CategoryID string `form:"category_id"`
+}
+
+// CategoryIDValue 归一为 *uint64（空串 / 非法数字都按「未指定」处理，与历史行为一致）。
+func (r *UploadReq) CategoryIDValue() *uint64 {
+	raw := strings.TrimSpace(r.CategoryID)
+	if raw == "" {
+		return nil
+	}
+	id, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || id == 0 {
+		return nil
+	}
+	return &id
+}
+
+// ReplaceReq 换图的表单入参（multipart，file 由 c.FormFile 单独取）。
+type ReplaceReq struct {
+	ID uint64 `form:"id"`
 }

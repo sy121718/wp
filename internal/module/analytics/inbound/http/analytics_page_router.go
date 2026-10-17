@@ -16,8 +16,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/module/analytics/contract"
-	"go_wp/internal/module/project/contract"
+	analyticscontract "go_wp/internal/module/analytics/contract"
+	projectcontract "go_wp/internal/module/project/contract"
 )
 
 // setupAnalyticsPageRoutes 注册访问统计页与 SEO 控制台（pages = /admin 页面组；

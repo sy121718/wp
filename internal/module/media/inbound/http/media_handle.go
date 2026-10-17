@@ -14,6 +14,7 @@ import (
 	mediacontract "go_wp/internal/module/media/contract"
 	mediadto "go_wp/internal/module/media/dto"
 	mediaenums "go_wp/internal/module/media/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -39,15 +40,11 @@ func (h *Handle) Upload(c *gin.Context) {
 		return
 	}
 
-	var categoryID *uint64
-	if raw := c.PostForm("category_id"); raw != "" {
-		id, err := strconv.ParseUint(raw, 10, 64)
-		if err == nil {
-			categoryID = &id
-		}
+	form, ok := binding.Form[mediadto.UploadReq](c)
+	if !ok {
+		return
 	}
-
-	att, err := h.svc.Upload(c.Request.Context(), file, categoryID)
+	att, err := h.svc.Upload(c.Request.Context(), file, form.CategoryIDValue())
 	if err != nil {
 		response.ErrorAuto(c, http.StatusInternalServerError, "media", err)
 		return
@@ -57,13 +54,12 @@ func (h *Handle) Upload(c *gin.Context) {
 
 // List 分页查询附件列表。
 func (h *Handle) List(c *gin.Context) {
-	var req mediadto.ListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[mediadto.ListReq](c)
+	if !ok {
 		return
 	}
 
-	resp, err := h.svc.List(c.Request.Context(), &req)
+	resp, err := h.svc.List(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusInternalServerError, "media", err)
 		return
@@ -73,13 +69,12 @@ func (h *Handle) List(c *gin.Context) {
 
 // Detail 查询附件详情。
 func (h *Handle) Detail(c *gin.Context) {
-	var req mediadto.DetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[mediadto.DetailReq](c)
+	if !ok {
 		return
 	}
 
-	att, err := h.svc.Detail(c.Request.Context(), &req)
+	att, err := h.svc.Detail(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusNotFound, "media", err)
 		return
@@ -89,13 +84,12 @@ func (h *Handle) Detail(c *gin.Context) {
 
 // Delete 删除附件。
 func (h *Handle) Delete(c *gin.Context) {
-	var req mediadto.DeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.JSON[mediadto.DeleteReq](c)
+	if !ok {
 		return
 	}
 
-	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusNotFound, "media", err)
 		return
 	}
@@ -105,11 +99,15 @@ func (h *Handle) Delete(c *gin.Context) {
 // Replace 换图（POST /api/media/replace，multipart：id + file）。
 // 保持 /storage/<id>.<ext> 不变、内容替换、generation+1；被引用不影响换图（只影响删除）。
 func (h *Handle) Replace(c *gin.Context) {
-	id, err := strconv.ParseUint(strings.TrimSpace(c.PostForm("id")), 10, 64)
-	if err != nil || id == 0 {
+	form, ok := binding.Form[mediadto.ReplaceReq](c)
+	if !ok {
+		return
+	}
+	if form.ID == 0 {
 		response.ParamError(c, mediaenums.MsgBadRequest)
 		return
 	}
+	id := form.ID
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.ParamError(c, mediaenums.ErrUploadEmpty)
@@ -150,12 +148,11 @@ func (h *Handle) CategoryTree(c *gin.Context) {
 
 // CategoryCreate 新建分类（POST /api/media/category/create）。
 func (h *Handle) CategoryCreate(c *gin.Context) {
-	var req mediadto.CategoryCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[mediadto.CategoryCreateReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.CreateCategory(c.Request.Context(), &req)
+	res, err := h.svc.CreateCategory(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
@@ -165,12 +162,11 @@ func (h *Handle) CategoryCreate(c *gin.Context) {
 
 // CategoryUpdate 更新分类（POST /api/media/category/update）。
 func (h *Handle) CategoryUpdate(c *gin.Context) {
-	var req mediadto.CategoryUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[mediadto.CategoryUpdateReq](c)
+	if !ok {
 		return
 	}
-	if err := h.svc.UpdateCategory(c.Request.Context(), &req); err != nil {
+	if err := h.svc.UpdateCategory(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
 	}
@@ -179,12 +175,11 @@ func (h *Handle) CategoryUpdate(c *gin.Context) {
 
 // CategoryDelete 删除分类（POST /api/media/category/delete）。
 func (h *Handle) CategoryDelete(c *gin.Context) {
-	var req mediadto.CategoryDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[mediadto.CategoryDeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.svc.DeleteCategory(c.Request.Context(), &req); err != nil {
+	if err := h.svc.DeleteCategory(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
 	}
@@ -193,12 +188,11 @@ func (h *Handle) CategoryDelete(c *gin.Context) {
 
 // UpdateAttachment 更新附件元数据（POST /api/media/update）。
 func (h *Handle) UpdateAttachment(c *gin.Context) {
-	var req mediadto.AttachmentUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[mediadto.AttachmentUpdateReq](c)
+	if !ok {
 		return
 	}
-	if err := h.svc.UpdateAttachment(c.Request.Context(), &req); err != nil {
+	if err := h.svc.UpdateAttachment(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "media", err)
 		return
 	}
@@ -208,9 +202,8 @@ func (h *Handle) UpdateAttachment(c *gin.Context) {
 // GenerateVariants 同步生成/重新生成指定附件的全部变体（POST /api/media/variants/generate）。
 // 返回生成后的变体状态列表（含 failed 降级结果），前端据此刷新徽标。
 func (h *Handle) GenerateVariants(c *gin.Context) {
-	var req mediadto.VariantsGenerateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[mediadto.VariantsGenerateReq](c)
+	if !ok {
 		return
 	}
 	variants, err := h.svc.GenerateVariants(c.Request.Context(), req.ID)

@@ -9,6 +9,7 @@ import (
 	"go_wp/internal/module/webhook/contract"
 	"go_wp/internal/module/webhook/dto"
 	"go_wp/internal/module/webhook/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
@@ -35,9 +36,8 @@ func (h *Handle) EndpointList(c *gin.Context) {
 //
 // 密钥只在这一刻以明文进来，service 立即加密落库；此后再没有任何接口能读回它。
 func (h *Handle) EndpointSave(c *gin.Context) {
-	var req webhookdto.SaveEndpointReq
-	if err := c.ShouldBind(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, webhookenums.ErrInvalidParam)
+	req, ok := binding.JSON[webhookdto.SaveEndpointReq](c)
+	if !ok {
 		return
 	}
 	var (
@@ -45,9 +45,9 @@ func (h *Handle) EndpointSave(c *gin.Context) {
 		err  error
 	)
 	if req.ID > 0 {
-		item, err = h.svc.UpdateEndpoint(c.Request.Context(), &req)
+		item, err = h.svc.UpdateEndpoint(c.Request.Context(), req)
 	} else {
-		item, err = h.svc.CreateEndpoint(c.Request.Context(), &req)
+		item, err = h.svc.CreateEndpoint(c.Request.Context(), req)
 	}
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "webhook", err)
@@ -72,8 +72,11 @@ func (h *Handle) EndpointDelete(c *gin.Context) {
 
 // EndpointStatus 启停端点。
 func (h *Handle) EndpointStatus(c *gin.Context) {
-	var req webhookdto.SetEndpointStatusReq
-	if err := c.ShouldBind(&req); err != nil || req.ID == 0 {
+	req, ok := binding.JSON[webhookdto.SetEndpointStatusReq](c)
+	if !ok {
+		return
+	}
+	if req.ID == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, webhookenums.ErrInvalidParam)
 		return
 	}
@@ -86,13 +89,12 @@ func (h *Handle) EndpointStatus(c *gin.Context) {
 
 // DeliveryList 投递日志（排障）。
 func (h *Handle) DeliveryList(c *gin.Context) {
-	var req webhookdto.DeliveryListReq
-	// GET 用 ShouldBindQuery：ShouldBind 对 GET 走 form 绑定，query 参数会被漏掉。
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, webhookenums.ErrInvalidParam)
+	// GET 走 binding.Query：ShouldBind 对 GET 走 form 绑定，query 参数会被漏掉。
+	req, ok := binding.Query[webhookdto.DeliveryListReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.ListDeliveries(c.Request.Context(), &req)
+	res, err := h.svc.ListDeliveries(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "webhook", err)
 		return

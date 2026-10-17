@@ -9,6 +9,7 @@ import (
 	membershipcontract "go_wp/internal/module/membership/contract"
 	membershipdto "go_wp/internal/module/membership/dto"
 	membershipenums "go_wp/internal/module/membership/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 )
 
@@ -24,9 +25,8 @@ func NewHandle(svc membershipcontract.MembershipService) *Handle {
 
 // ListTiers 列出某工程的等级（含各自权益）。
 func (h *Handle) ListTiers(c *gin.Context) {
-	req := &membershipdto.ListTiersReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[membershipdto.ListTiersReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListTiers(c.Request.Context(), req)
@@ -39,9 +39,8 @@ func (h *Handle) ListTiers(c *gin.Context) {
 
 // GetTier 等级详情（含权益）。
 func (h *Handle) GetTier(c *gin.Context) {
-	req := &membershipdto.GetTierReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[membershipdto.GetTierReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetTier(c.Request.Context(), req)
@@ -54,9 +53,8 @@ func (h *Handle) GetTier(c *gin.Context) {
 
 // CreateTier 新建等级（可一次带上权益）。
 func (h *Handle) CreateTier(c *gin.Context) {
-	req := &membershipdto.CreateTierReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[membershipdto.CreateTierReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.CreateTier(c.Request.Context(), req)
@@ -69,9 +67,8 @@ func (h *Handle) CreateTier(c *gin.Context) {
 
 // UpdateTier 更新等级（指针字段 = 只在非 nil 时改）。
 func (h *Handle) UpdateTier(c *gin.Context) {
-	req := &membershipdto.UpdateTierReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[membershipdto.UpdateTierReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.UpdateTier(c.Request.Context(), req)
@@ -84,9 +81,8 @@ func (h *Handle) UpdateTier(c *gin.Context) {
 
 // DeleteTier 删除等级（软删；仍挂着归属时被拒）。
 func (h *Handle) DeleteTier(c *gin.Context) {
-	req := &membershipdto.DeleteTierReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[membershipdto.DeleteTierReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.DeleteTier(c.Request.Context(), req); err != nil {
@@ -98,9 +94,8 @@ func (h *Handle) DeleteTier(c *gin.Context) {
 
 // SaveEntitlements 全量保存某等级的权益。
 func (h *Handle) SaveEntitlements(c *gin.Context) {
-	req := &membershipdto.SaveEntitlementsReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[membershipdto.SaveEntitlementsReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.SaveEntitlements(c.Request.Context(), req)
@@ -113,9 +108,8 @@ func (h *Handle) SaveEntitlements(c *gin.Context) {
 
 // ListAssignments 列出某工程的会员归属（分页 + 筛选，与计数同一组条件）。
 func (h *Handle) ListAssignments(c *gin.Context) {
-	req := &membershipdto.ListAssignmentsReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[membershipdto.ListAssignmentsReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListAssignments(c.Request.Context(), req)
@@ -135,9 +129,8 @@ func (h *Handle) ListAssignments(c *gin.Context) {
 
 // AssignSet 手工指定某访客的等级。
 func (h *Handle) AssignSet(c *gin.Context) {
-	req := &membershipdto.AssignManualReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[membershipdto.AssignManualReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.AssignManual(c.Request.Context(), req)
@@ -150,9 +143,8 @@ func (h *Handle) AssignSet(c *gin.Context) {
 
 // AssignUnlock 取消手工锁定。
 func (h *Handle) AssignUnlock(c *gin.Context) {
-	req := &membershipdto.UnlockManualReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[membershipdto.UnlockManualReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.UnlockManual(c.Request.Context(), req); err != nil {
@@ -164,9 +156,8 @@ func (h *Handle) AssignUnlock(c *gin.Context) {
 
 // Resolve 解析某访客在某工程的会员身份（消费侧读接口）。
 func (h *Handle) Resolve(c *gin.Context) {
-	req := &membershipdto.ResolveReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[membershipdto.ResolveReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Resolve(c.Request.Context(), req)
@@ -183,9 +174,8 @@ func (h *Handle) Resolve(c *gin.Context) {
 // （「归属重算不可用」），而不是一个 Scanned = 0 的「成功」结果 ——
 // 后者会让人以为「这个工程没人消费过」，从而往完全错误的方向排查。
 func (h *Handle) Recalc(c *gin.Context) {
-	req := &membershipdto.RecalcProjectReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[membershipdto.RecalcProjectReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.RecalcProject(c.Request.Context(), req)

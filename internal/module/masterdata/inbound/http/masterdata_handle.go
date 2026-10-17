@@ -15,6 +15,7 @@ import (
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdatadto "go_wp/internal/module/masterdata/dto"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 )
 
@@ -28,9 +29,8 @@ func NewHandle(svc masterdatacontract.MasterDataService) *Handle { return &Handl
 
 // ListChanges 按条件查字段级变更（实体类型 / 实体 id / 字段 / 动作 / 操作人 / 时间窗）。
 func (h *Handle) ListChanges(c *gin.Context) {
-	req := &masterdatadto.ListChangeReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, masterdataenums.ErrInvalidParam)
+	req, ok := binding.Query[masterdatadto.ListChangeReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListChanges(c.Request.Context(), req)
@@ -43,9 +43,8 @@ func (h *Handle) ListChanges(c *gin.Context) {
 
 // CountChanges 同条件的总条数（分页用）。
 func (h *Handle) CountChanges(c *gin.Context) {
-	req := &masterdatadto.ListChangeReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, masterdataenums.ErrInvalidParam)
+	req, ok := binding.Query[masterdatadto.ListChangeReq](c)
+	if !ok {
 		return
 	}
 	total, err := h.svc.CountChanges(c.Request.Context(), req)
@@ -58,9 +57,8 @@ func (h *Handle) CountChanges(c *gin.Context) {
 
 // ListEntities 按实体聚合的变更历史清单（验收 4 的入口）。
 func (h *Handle) ListEntities(c *gin.Context) {
-	req := &masterdatadto.ListEntityReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, masterdataenums.ErrInvalidParam)
+	req, ok := binding.Query[masterdatadto.ListEntityReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListEntities(c.Request.Context(), req)
@@ -73,9 +71,8 @@ func (h *Handle) ListEntities(c *gin.Context) {
 
 // EntityTimeline 单个实体的完整变更历史（实体类型 + 实体 id）。
 func (h *Handle) EntityTimeline(c *gin.Context) {
-	req := &masterdatadto.EntityTimelineReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, masterdataenums.ErrInvalidParam)
+	req, ok := binding.Query[masterdatadto.EntityTimelineReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.EntityTimeline(c.Request.Context(), req)
