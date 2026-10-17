@@ -198,7 +198,7 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 	}
 	if err != nil {
 		view.LoadFailed = true
-		view.LoadError = productErrPageText(c, err)
+		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	adminui.RenderPage(c, productTagsPageTemplate, view)
 }
@@ -229,7 +229,7 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	}
 	res, err := h.products.ListTagProductsPage(c.Request.Context(), req)
 	if err != nil {
-		data["Err"] = productErrText(c, err)
+		data["Err"] = response.MessageOf(c, "product", err)
 		c.HTML(http.StatusOK, "admin/product/product_tag_hits.html", adminui.Prepare(c, data))
 		return
 	}

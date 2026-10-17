@@ -64,7 +64,7 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 	}
 	if err != nil {
 		view.LoadFailed = true
-		view.LoadError = productErrPageText(c, err)
+		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	adminui.RenderPage(c, productCategoriesPageTemplate, view)
 }
@@ -192,7 +192,7 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 	}
 	if err != nil {
 		view.LoadFailed = true
-		view.LoadError = productErrPageText(c, err)
+		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	adminui.RenderPage(c, productBrandsPageTemplate, view)
 }

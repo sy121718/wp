@@ -139,7 +139,7 @@ func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	if rerr != nil {
 		logger.Scene("product").With("project", projectID).With("product", productID).
 			Error(rerr, "商品翻译工作台保存前重建数据失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, productMsgText(c, adminui.InternalMsg()))
+		response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgText(c, adminui.InternalMsg()))
 		return
 	}
 	// 三组并行数组原样带过去：长度对齐与逐行校验都在读模型侧做（那里才有候选原文）。
@@ -154,7 +154,7 @@ func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	if err != nil {
 		logger.Scene("product").With("project", projectID).With("product", productID).
 			Error(err, "商品翻译工作台保存失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, productMsgText(c, adminui.InternalMsg()))
+		response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgText(c, adminui.InternalMsg()))
 		return
 	}
 	if !view.Saved {
@@ -164,12 +164,12 @@ func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 		if text == "" {
 			// 没有逐行事实却也没保存成功 = 读模型侧的意外状态：按内部错误归口，不给空 message。
 			status = http.StatusInternalServerError
-			text = productMsgText(c, adminui.InternalMsg())
+			text = adminui.MsgText(c, adminui.InternalMsg())
 		}
 		response.ErrorWithMessage(c, status, text)
 		return
 	}
-	response.SuccessWithMessage(c, productMsgText(c, productTranslationsSavedMsg(c, view.Written)))
+	response.SuccessWithMessage(c, adminui.MsgText(c, productTranslationsSavedMsg(c, view.Written)))
 }
 
 // productTranslationErrorsText 把逐行错误事实拼成一条可读结论。

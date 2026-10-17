@@ -84,7 +84,7 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
 		// 视图已带 LoadFailed / HTTPStatus（400 参数不合法 / 500 取数失败）。
 		// 这里只补**当前语言**的失败槽文案：原始的 err 只进日志。
 		view.LoadFailed = true
-		view.LoadError = productErrPageText(c, err)
+		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
 	adminui.RenderPage(c, productAttributesPageTemplate, view)

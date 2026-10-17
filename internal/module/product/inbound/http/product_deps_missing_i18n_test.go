@@ -1,6 +1,7 @@
 package producthttp
 
 import (
+	"go_wp/internal/adminui"
 	"net/http"
 	"strings"
 	"testing"
@@ -21,7 +22,7 @@ func TestProductDepsMissingFacing(t *testing.T) {
 	if strings.TrimSpace(detailTemplateDepsMissingMsg.Key) == "" {
 		t.Fatal("这条提示必须带 i18n key：写侧只交事实，取词在渲染期")
 	}
-	if got := strings.TrimSpace(productMsgText(c, detailTemplateDepsMissingMsg)); got == "" {
+	if got := strings.TrimSpace(adminui.MsgText(c, detailTemplateDepsMissingMsg)); got == "" {
 		t.Fatal("写侧产出了空文案：页面提示不能是空白")
 	}
 	view := detailTemplateLoadFailureView(http.StatusInternalServerError)

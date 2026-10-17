@@ -11,7 +11,6 @@ package producthttp
 //     守卫在本文件（漏登一条 = 页面上出现裸 key）。
 
 import (
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -23,6 +22,8 @@ import (
 	"testing"
 
 	productenums "go_wp/internal/module/product/enums"
+	"go_wp/pkg/facing"
+	"go_wp/pkg/response"
 )
 
 // enumsStringConstants 扫 product enums 包里全部字符串常量：取值 → 常量名。
@@ -120,31 +121,37 @@ func TestSkipReasonFallbacksCoverEnumsSkipKeys(t *testing.T) {
 	}
 }
 
-// TestUnregisteredBusinessKeyNeverShowsBareKey 「有业务形态、但没有展示原文」时不许把裸 key 摆到页面上。
+// TestBusinessErrTextKeepsDeclarationFallback 业务错误的成品串来自**声明处**的兜底。
 //
-// 这是 §7.3 ⑥ 的「未知错误保留稳定兜底」：归宿只有两条 —— 登记进表（守卫保证），
-// 或者给一句稳定文案 + 一条带 err_key 的 warn 日志。回落成裸 key 是最糟的第三种（运营只会以为后台坏了）。
-func TestUnregisteredBusinessKeyNeverShowsBareKey(t *testing.T) {
+// service 用 productenums.Err(key) 返回，兜底随错误经 pkg/facing 带出；出口只读事实
+// （pkg/response.businessText），i18n 里没有该词条时退回这句中文 —— 页面上不会出现裸 key。
+func TestBusinessErrTextKeepsDeclarationFallback(t *testing.T) {
 	c, _ := newProductJumpContext(t, "", "", "")
-	const unregistered = "ErrNotRegisteredInThisRepo"
-	msg := productErrMsgQuiet(c, errors.New(unregistered))
-	if msg.Key != unregistered {
-		t.Fatalf("事实的 key 应保持原样（取词要按它查词条），得到 %q", msg.Key)
+	key := productenums.ErrNameRequired
+	want := productenums.ProductErrFallbacks[key]
+	if want == "" {
+		t.Fatalf("%q 在 enums 兜底表里没有登记", key)
 	}
-	if msg.Fallback == unregistered {
-		t.Fatalf("未登记的业务 key 回落成了裸 key：%q", msg.Fallback)
+	fact, ok := facing.FactOf(productenums.Err(key))
+	if !ok || !fact.Business {
+		t.Fatalf("应判为业务错误，fact=%+v ok=%v", fact, ok)
 	}
-	if msg.Fallback != productErrUnregisteredFallback {
-		t.Fatalf("未登记的业务 key 应给稳定兜底 %q，得到 %q", productErrUnregisteredFallback, msg.Fallback)
+	if fact.Fallback != want {
+		t.Errorf("事实兜底 = %q，want %q（由 productenums.Err 随错误带出）", fact.Fallback, want)
+	}
+	if got := response.MessageOf(c, "product", productenums.Err(key)); got != want {
+		t.Errorf("成品串 = %q，want %q", got, want)
 	}
 }
 
-// TestBusinessErrFactKeepsRegisteredTextAndTail 已登记的业务错误：key 原样、兜底取表、明细带出来。
-func TestBusinessErrFactKeepsRegisteredTextAndTail(t *testing.T) {
-	c, _ := newProductJumpContext(t, "", "", "")
-	err := fmt.Errorf("%w: %s", productenums.Err(productenums.ErrNameRequired), "第 3 行")
-	fact := productErrFactQuiet(c, err)
-	if !fact.Business {
+// TestBusinessErrDetailStaysInTail 复合错误的明细段不参与取词判定（key 仍可识别）。
+//
+// service 的复合错误一律 fmt.Errorf("%w: 明细")，判据只看冒号前那一段 —— 明细里带冒号、
+// 带中文、带 SQL 都不影响「这是哪条业务错误」。
+func TestBusinessErrDetailStaysInTail(t *testing.T) {
+	err := fmt.Errorf("%w: 第 3 行", productenums.Err(productenums.ErrNameRequired))
+	fact, ok := facing.FactOf(err)
+	if !ok || !fact.Business {
 		t.Fatalf("应判为业务错误，fact=%+v", fact)
 	}
 	if fact.Key != productenums.ErrNameRequired {
@@ -153,21 +160,16 @@ func TestBusinessErrFactKeepsRegisteredTextAndTail(t *testing.T) {
 	if fact.Tail != "第 3 行" {
 		t.Fatalf("明细 = %q，want %q", fact.Tail, "第 3 行")
 	}
-	want := productenums.ProductErrFallbacks[productenums.ErrNameRequired]
-	if fact.Fallback != want {
-		t.Fatalf("兜底 = %q，want %q（由 enums 的表提供）", fact.Fallback, want)
-	}
-	if msg := productErrMsgQuiet(c, err); msg.Fallback == productenums.ErrNameRequired {
-		t.Fatal("业务错误的成品串不许是裸 key")
-	}
 }
 
 // TestForeignFallbacksDoNotShadowProductKeys 跨模块那张表不许遮住本模块的 key，且没有死条目。
+//
+// 表的清理条件写在 product_foreign_err.go 的文件头：对端补上兜底表后整体删除。
 func TestForeignFallbacksDoNotShadowProductKeys(t *testing.T) {
-	if len(productErrForeignFallbacks) == 0 {
+	if len(productForeignErrFallbacks) == 0 {
 		t.Fatal("跨模块兜底表空了 —— 若关键条目已搬回各自模块，请连这张表一起删掉")
 	}
-	for key, text := range productErrForeignFallbacks {
+	for key, text := range productForeignErrFallbacks {
 		if strings.TrimSpace(text) == "" {
 			t.Errorf("跨模块兜底 %q 是空串", key)
 		}
@@ -177,27 +179,15 @@ func TestForeignFallbacksDoNotShadowProductKeys(t *testing.T) {
 		if productenums.ProductErrFallbacks[key] != "" {
 			t.Errorf("key %q 同时出现在本模块表与跨模块表里（查表顺序会决定文案）", key)
 		}
-		if got := productErrForeignFallbackText(key); got != text {
-			t.Errorf("productErrForeignFallbackText(%q) = %q，want %q", key, got, text)
+		if got := productForeignFallback(key); got != text {
+			t.Errorf("productForeignFallback(%q) = %q，want %q", key, got, text)
 		}
 	}
-}
-
-// TestProductErrFallbackComesFromDeclaration 本模块 key 的兜底跟声明处走（不查出口的表）。
-//
-// service 用 productenums.Err(key) 返回，兜底随错误经 pkg/facing 带出 —— 出口只读事实。
-func TestProductErrFallbackComesFromDeclaration(t *testing.T) {
-	c, _ := newProductJumpContext(t, "", "", "")
-	key := productenums.ErrNameRequired
-	want := productenums.ProductErrFallbacks[key]
-	if want == "" {
-		t.Fatalf("%q 在 enums 兜底表里没有登记", key)
-	}
-	fact := productErrFactQuiet(c, productenums.Err(key))
-	if fact.Fallback != want {
-		t.Errorf("事实兜底 = %q，want %q（由 productenums.Err 随错误带出）", fact.Fallback, want)
-	}
-	if got := productErrForeignFallbackText(""); got != "" {
+	if got := productForeignFallback(""); got != "" {
 		t.Errorf("空 key 应返回空串，得到 %q", got)
+	}
+	fact := facing.Fact{Key: "", Fallback: ""}
+	if got := productTextFallback(fact); got != "" {
+		t.Errorf("空事实应返回空串，得到 %q", got)
 	}
 }

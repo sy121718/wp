@@ -189,7 +189,7 @@ func productBulkDeletedView(c *gin.Context, res *productdto.BulkResult) productB
 	for _, it := range res.Items {
 		row := productBulkItemView{ID: it.ID, Deleted: it.Deleted}
 		if !it.Deleted && it.ReasonKey != "" {
-			row.Message = productErrText(c, productenums.Err(it.ReasonKey))
+			row.Message = response.MessageOf(c, "product", productenums.Err(it.ReasonKey))
 		}
 		view.Items = append(view.Items, row)
 	}
@@ -338,7 +338,7 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) {
 		// 视图已带 LoadFailed / HTTPStatus（400 参数不合法 / 500 取数失败）。
 		// 这里只补**当前语言**的失败槽文案：原始的 err 只进日志。
 		view.LoadFailed = true
-		view.LoadError = productErrPageText(c, err)
+		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
 	adminui.RenderPage(c, productListPageTemplate, view)
@@ -463,7 +463,7 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) {
 		// 视图已带 LoadFailed / HTTPStatus（400 参数不合法 / 500 取数失败）。
 		// 这里只补**当前语言**的失败槽文案：原始的 err 只进日志。
 		view.LoadFailed = true
-		view.LoadError = productErrPageText(c, err)
+		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	adminui.RenderPage(c, productNewPageTemplate, view)
 }
@@ -531,7 +531,7 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	if view.AttributeOptionsErr != nil {
 		view.EditBlocked = true
 		if view.Err == "" {
-			view.Err = productInternalText(c, view.AttributeOptionsErr)
+			view.Err = productPageInternalText(c, view.AttributeOptionsErr)
 		}
 	}
 	// 状态下拉：先按「全部状态」那一档给默认值 —— 商品读不出来时页面仍完整；读到了会覆盖。
@@ -562,7 +562,7 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 		// 视图已带 LoadFailed / HTTPStatus；这里只补**当前语言**的失败槽文案：
 		// 驱动原文与原始错误只进日志。
 		view.LoadFailed = true
-		view.LoadError = productErrPageText(c, err)
+		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
 	adminui.RenderPage(c, productEditPageTemplate, view)
@@ -688,7 +688,7 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 	// 重试必须真的回到服务端确认商品是否又出现了。
 	if err != nil {
 		view.LoadFailed = true
-		view.LoadError = productErrPageText(c, err)
+		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	adminui.RenderPage(c, productDetailPageTemplate, view)
 }
@@ -735,7 +735,7 @@ func (h *ProductPageHandle) ProductsVariantPreview(c *gin.Context) {
 	}
 	res, err := h.products.PreviewVariantCombinations(ctx, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "message": productErrText(c, err)})
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "message": response.MessageOf(c, "product", err)})
 		return
 	}
 	// 取属性组那一跳带作用域（req.ProjectID 上面已从表单读出）：多工程部署下不带它
@@ -826,7 +826,7 @@ func (h *ProductHandle) SaveVariantList(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, productMsgText(c, variantSaveMsg(c, res)), res)
+	response.SuccessWithMessage(c, adminui.MsgText(c, variantSaveMsg(c, res)), res)
 }
 
 // AddRating 补录一条商品评分（issue #33）。
@@ -844,7 +844,7 @@ func (h *ProductHandle) AddRating(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), res)
+	response.SuccessWithMessage(c, adminui.MsgText(c, productActionDoneMsg), res)
 }
 
 // DeleteRating 删掉一条评分（issue #33）：录错了能撤掉。
@@ -860,7 +860,7 @@ func (h *ProductHandle) DeleteRating(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), nil)
+	response.SuccessWithMessage(c, adminui.MsgText(c, productActionDoneMsg), nil)
 }
 
 // ProductPreviewFrame 商品详情页的真实预览帧（GET /admin/products/preview-frame?productId=&project=）。
@@ -986,7 +986,7 @@ func (h *ProductPageHandle) renderBundlePage(c *gin.Context) {
 	}
 	if err != nil {
 		// 归口文案（中英 / 缺词 fallback 都在里面）；驱动原文与原始错误只进日志。
-		view.LoadError = productErrPageText(c, err)
+		view.LoadError = response.MessageOf(c, "product", err)
 	}
 
 	// 剩下两样都只由控制器给：两个 URL 形状（ResolveURL / ListQuery）。
@@ -1068,7 +1068,7 @@ func (h *ProductPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
 	}
 	res, err := h.products.ResolveBundleMembers(ctx, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "message": productErrText(c, err)})
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "message": response.MessageOf(c, "product", err)})
 		return
 	}
 	// 例外（JSON 出口的成品串）：这个端点的响应体是给前端直接渲染的（sourceLabel / skips.text），
@@ -1248,7 +1248,7 @@ func (h *ProductPageHandle) bundlePanel(c *gin.Context, projectID, productID str
 		ProjectID: projectID,
 	})
 	if err != nil || detail == nil {
-		panel["ErrorText"] = productMsgText(c, bundlePanelReadFailedMsg)
+		panel["ErrorText"] = adminui.MsgText(c, bundlePanelReadFailedMsg)
 		return panel
 	}
 	rows := bundlePanelRows(detail.Options)
@@ -1371,7 +1371,7 @@ func (h *ProductPageHandle) ProductPricingPreview(c *gin.Context) {
 	if err != nil {
 		// 试算失败不重定向：用户填的表单要留在眼前，否则「哪一项填错了」无从改起。
 		// 试算失败的原文（含 PG 原文）只进日志，页面上给可读文案。
-		h.renderPricingPageWith(c, &form, nil, productErrText(c, err))
+		h.renderPricingPageWith(c, &form, nil, response.MessageOf(c, "product", err))
 		return
 	}
 	h.renderPricingPageWith(c, &form, preview, "")
@@ -1526,7 +1526,7 @@ func (h *ProductHandle) BulkPricing(c *gin.Context) {
 	// 没勾选就提交：明确拒绝，不是「0 个改动」的成功回执。页面侧原有这条守卫，随页面 POST
 	// 一起消失 —— 判据搬到这里，否则删掉页面通道后「空勾选静默成功」就没人拦了。
 	if len(ids) == 0 {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productMsgText(c, productMsg{
+		response.ErrorWithMessage(c, http.StatusBadRequest, adminui.MsgText(c, productMsg{
 			Key: productenums.BulkPricingNoneSelected, Fallback: "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"}))
 		return
 	}
@@ -1586,7 +1586,7 @@ func productBulkPricedView(c *gin.Context, res *productdto.BulkPricingResult) pr
 	for _, it := range res.Items {
 		row := productBulkItemView{ID: it.ID, Updated: it.Updated}
 		if !it.Updated && it.ReasonKey != "" {
-			row.Message = productErrText(c, productenums.Err(it.ReasonKey))
+			row.Message = response.MessageOf(c, "product", productenums.Err(it.ReasonKey))
 		}
 		view.Items = append(view.Items, row)
 	}

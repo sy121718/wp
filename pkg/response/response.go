@@ -96,8 +96,8 @@ func IsBusinessError(err error) bool {
 //
 // scene 用于日志定位（如 "presentation"），业务错误路径不记日志（它是预期内的分支）。
 func ErrorAuto(c *gin.Context, code int, scene string, err error) {
-	if IsBusinessError(err) {
-		ErrorWithMessage(c, code, err.Error())
+	if fact, ok := facing.FactOf(err); ok && fact.Business {
+		ErrorWithMessage(c, code, businessText(c, scene, fact))
 		return
 	}
 	if err != nil {
@@ -110,6 +110,46 @@ func ErrorAuto(c *gin.Context, code int, scene string, err error) {
 	// 那是按「预期内的业务失败」选的；既然实际是内部错误，状态码就该如实地是 500，
 	// 否则客户端与监控都会把内部故障当成参数问题。
 	ErrorWithMessage(c, http.StatusInternalServerError, msgInternalError)
+}
+
+// businessText 事实 → 当前语言文案；i18n 命不中时退回**声明处给的兜底**。
+//
+// 两条出口（ErrorAuto / MessageOf）都走这一个函数：各写一份的失败形态是「接口给了原因、
+// 页面只说服务器内部错误」或「页面显示中文、接口显示裸 key」，而两边都不报错。
+func businessText(c *gin.Context, scene string, fact facing.Fact) string {
+	out := translate(c, fact.Key)
+	if out != fact.Key {
+		return out
+	}
+	// 声明处给了中文兜底（facing.New(key, "一句话") / enums.Err 工厂）→ 用兜底。
+	if fact.Fallback != "" && fact.Fallback != fact.Key {
+		return fact.Fallback
+	}
+	// 两样都没有：key 与兜底同形（errors.New("some.business.key") 这类裸 key）。
+	// 交回 translate 的结果 —— 本框架不替模块决定「未登记 key 显示什么」，
+	// 登记与兜底是声明方的事（模块 enums 的 Err 工厂 + 覆盖测试）。
+	return out
+}
+
+// MessageOf 只算一个错误的对外文案，不写响应、不设状态码。
+//
+// 供「要文案但不要出口」的地方使用：整页失败槽、片段里的一行结论文案。
+// 判据与 ErrorAuto **是同一个**（IsBusinessError）—— 出口各写一份判定，症状是同一条错误
+// 在接口上给了具体原因、在页面上只说「服务器内部错误」，而两边都不报错。
+//
+// scene 用于日志定位；业务错误是预期内分支，不记日志。err 为 nil 时返回空串。
+func MessageOf(c *gin.Context, scene string, err error) string {
+	if err == nil {
+		return ""
+	}
+	if fact, ok := facing.FactOf(err); ok && fact.Business {
+		return businessText(c, scene, fact)
+	}
+	if scene == "" {
+		scene = "http"
+	}
+	logger.Scene(scene).Error(err, "handler 内部错误")
+	return translate(c, msgInternalError)
 }
 
 func ParamError(c *gin.Context, msg ...string) {

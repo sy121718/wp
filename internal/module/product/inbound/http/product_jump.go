@@ -102,11 +102,6 @@ func withListQuery(action, listQuery string) string {
 // 迟早分叉，而症状是「某个页面的提示偶尔少一个数字」，既不报错也不记日志。
 type productMsg = adminui.Msg
 
-// productMsgText 把一句结论取成当前语言文本（片段槽位 / JSON 出口没有模板取词时用）。
-func productMsgText(c *gin.Context, m productMsg) string {
-	return adminui.MsgText(c, m)
-}
-
 // productBulkIDs 批量 id 的归一 + 超限出口（商品批量删除 / 批量改价 / 四套归类删除共用）。
 //
 // 超限**必须**把「上限」与「本次条数」两个数字给出来：只说「请求参数无效」时操作者不知道
@@ -236,25 +231,8 @@ var (
 // 所以「多了一句稳定文案、少了一句该有的话」在日志里看得见。
 const productErrUnregisteredFallback = "操作失败，请稍后重试（细节只进日志）"
 
-// productErrPageText 页面出口的成品文案（片段槽位 / 整页失败槽用）。
-//
-// 判定与日志都在 productErrMsg（见 product_page.go 的 productErrFact）：命中业务错误取
-// 当前语言（缺词条走 productErrFallbackText 查到的中文兜底）；未命中记一条日志并给归口文案。
-func productErrPageText(c *gin.Context, err error) string {
-	return productMsgText(c, productErrMsg(c, err))
-}
-
 // productPageScene 页面装载失败的日志场景名（与 shell.PageError 的 page 场景同源，便于检索）。
 const productPageScene = "page"
-
-// productErrKeyOf err → 业务错误 key（非业务错误 / nil 一律空串）。
-//
-// 页面出口用它分流「不存在」(404) 与「不合法」(400)：两者都是**业务事实**，
-// 由 service 的 enums 常量判定，不靠匹配驱动报错原文（那会随 PG 版本改字面量）。
-func productErrKeyOf(err error) string {
-	key, _, _ := productErrFactOf(err)
-	return key
-}
 
 // productErrForeignFallbacks 别模块业务 key 的展示兜底（key 的归属不在本模块，表暂由本层带着）。
 //
@@ -282,180 +260,20 @@ var productErrForeignFallbacks = map[string]string{
 	presentationenums.ErrSnapshotMismatch:          "该版本不属于这个商品，不能用来回滚",
 }
 
-// productErrForeignFallbackText 别模块 key → 展示兜底（本模块 key 的兜底由 pkg/facing 随错误带出）。
-//
-// 本模块 service 一律用 productenums.Err(key) 返回**自带中文兜底**的错误（声明处见
-// productenums.ProductErrFallbacks），出口经 facing.FactOf 直接拿到 Fallback，不再查表。
-// 这条函数只剩「对端 enums 还没有兜底表」的那一批 key（inventory / presentation）——
-// 对方补上 ErrFallbacks 后本表清空、本函数与 productErrForeignFallbacks 一起删。
-func productErrForeignFallbackText(key string) string {
-	if key == "" {
-		return ""
-	}
-	return productErrForeignFallbacks[key]
-}
-
-// productErrFactOf 业务错误的判定与拆分（**纯事实**，不记日志）。
-//
-// 判据只有一条：pkg/facing.FactOf（adminui.BusinessErrFact 是它的转发）——三档入参形态
-// 都在那里判：自带文案（facing.New）→ 单段 key → `key: 明细`（%w 包装）。
-//
-// service 侧只用前两档与 `fmt.Errorf("%w: %s", productenums.Err(key), 明细)`：
-// 全角冒号的复合形态已在本批全部改掉（facing 只按 ASCII 冒号切口），所以这里不再补切。
-//
-// 明细段（tail）原样带出，由 productErrDetailText 解码成当前语言。
-func productErrFactOf(err error) (key, tail string, business bool) {
-	if err == nil {
-		return "", "", false
-	}
-	if f, ok := adminui.BusinessErrFact(err); ok {
-		return f.Key, f.Tail, true
-	}
-	return "", "", false
-}
-
-// productErrFact 判定 + 归口（**记日志**）：给「调用点没有更具体的日志」的地方用。
-func productErrFact(c *gin.Context, err error) adminui.ErrFact {
-	return productErrFactWith(c, err, true)
-}
-
-// productErrFactQuiet 同 productErrFact，但**不记日志** —— 给「调用点已经记过一条更具体的日志
-// （带 productId / project 等）」的地方用，免得同一个错误在日志里出现两遍。
-func productErrFactQuiet(c *gin.Context, err error) adminui.ErrFact {
-	return productErrFactWith(c, err, false)
-}
-
-func productErrFactWith(c *gin.Context, err error, logIt bool) adminui.ErrFact {
-	if err == nil {
-		return adminui.ErrFact{}
-	}
-	if fact, business := adminui.BusinessErrFact(err); business {
-		key, tail := fact.Key, fact.Tail
-		fb := productErrFallbackOf(key, fact.Fallback)
-		if fb == productErrUnregisteredFallback {
-			// 「有业务形态、但没有展示原文」的 key：对外给稳定的一句兜底（绝不显示裸 key），
-			// 对内记一条 warn 带上 key —— 否则「页面上少了一句该有的话」没有任何信号。
-			// 本模块 key 已由 productenums.Err 随错误带出兜底，走到这里的只有别模块的新 key。
-			if logIt {
-				logger.Scene(productErrScene).
-					With("path", c.Request.URL.Path).
-					With("user_id", builtin.CurrentUserID(c)).
-					With("err_key", key).
-					Warn("业务错误 key 未登记中文兜底（补进 productenums.ProductErrFallbacks）")
-			}
-			fb = productErrUnregisteredFallback
-		}
-		return adminui.ErrFact{Key: key, Fallback: fb, Tail: tail, Business: true}
-	}
-	if logIt {
-		logger.Scene(productErrScene).
-			With("path", c.Request.URL.Path).
-			With("user_id", builtin.CurrentUserID(c)).
-			Error(err, "商品后台页操作失败（非业务错误，只对外给归口文案）")
-	}
-	return adminui.InternalErrorFact()
-}
-
-// productErrMsg 业务错误 → 一句结论事实（判定见 productErrFact）。
-func productErrMsg(c *gin.Context, err error) productMsg {
-	return productErrMsgOf(c, productErrFact(c, err))
-}
-
-// productErrMsgQuiet 同 productErrMsg，但不记日志。
-func productErrMsgQuiet(c *gin.Context, err error) productMsg {
-	return productErrMsgOf(c, productErrFactQuiet(c, err))
-}
-
-// productErrMsgOf 事实 → 一句结论（key + 中文兜底；带明细时给成品串）。
-func productErrMsgOf(c *gin.Context, f adminui.ErrFact) productMsg {
-	if f.Key == "" {
-		return productMsg{}
-	}
-	fb := productErrFallbackOf(f.Key, f.Fallback)
-	if f.Tail != "" {
-		if detail := productErrDetailText(shell.TranslateFor(c), f.Tail); detail != "" {
-			// 明细是「词条 + 具名参数」的多段结构，一段 key 表达不了它 ——
-			// 这一档给成品串（与迁入前逐字一致；明细本身仍随语言变化）。
-			return productMsg{Fallback: adminui.TranslateArgs(c, f.Key, fb, nil) + "：" + detail}
-		}
-	}
-	return productMsg{Key: f.Key, Fallback: fb}
-}
-
-// productErrFallbackOf key → 中文兜底（缺词条时的展示原文，不是可透出性判据）。
-//
-// 顺序：**事实自带的兜底优先**（本模块 service 经 productenums.Err 声明，facing 随错误带出），
-// 再查别模块那张表（对端 enums 还没有兜底表），都取不到时给**归口文案** ——
-// 不回落到裸 key：页面上出现 ErrBundlePriceRequired 这种串，运营只会以为后台坏了。
-//
-// def == key 说明「事实没有自带文案」（facing 对单段 key 会把 Fallback 填成 key 本身）。
-func productErrFallbackOf(key, def string) string {
-	if fb := strings.TrimSpace(def); fb != "" && fb != key {
-		return fb
-	}
-	if fb := productErrForeignFallbackText(key); fb != "" {
-		return fb
-	}
-	if strings.TrimSpace(def) != "" && def == key {
-		return productErrUnregisteredFallback
-	}
-	return adminui.InternalErrorFact().Fallback
-}
-
 // productErrScene 日志场景名（与 product 模块其它 logger.Scene("product") 一致）。
 const productErrScene = "product"
 
-// productInternalText 未命中业务判据时的统一出口（错误文案三件套的第三件）：
-// 原文只进日志（场景 + user_id + 原始错误），对外只给归口文案。
+// productPageInternalText 页面槽位（片段里的一行结论 / 整页失败槽）的归口文案。
 //
-// 页面上出现 "pq: duplicate key value violates unique constraint" 既看不懂，
-// 也把库表结构泄了出去 —— 响应（含提示页文案与模板数据）不是可信边界。
-func productInternalText(c *gin.Context, err error) string {
+// 与 JSON 出口的 response.MessageOf 只差**一句话的措辞**：页面上用的是带 i18n 词条的
+// 「系统内部错误，请稍后重试」（MsgInternalError），接口用的是 pkg/response 的常量
+// 「服务器内部错误，请稍后重试」。两者都在 sys_i18n 里各有词条，所以这里不合并；
+// 判据（什么算业务错误、要不要记日志）仍然只有一份，在 pkg/facing 与 pkg/response。
+func productPageInternalText(c *gin.Context, err error) string {
 	if err != nil {
 		logger.Scene(productErrScene).
 			With("user_id", builtin.CurrentUserID(c)).
-			Error(err, "商品后台页操作失败（非业务错误，只对外给归口文案）")
+			Error(err, "商品后台页取数失败（非业务错误，只对页面给归口文案）")
 	}
 	return adminui.PageInternalText(c)
-}
-
-// productErrText 业务错误 → 当前语言文案（**片段槽位 / JSON 出口**用：那边模板不取词）。
-//
-// 写侧与整页失败出口不再用它 —— 那些地方传**事实**（productErrMsg），取词在渲染期发生。
-// 与 block 模块的 blockErrText 同一形状：页面上的错误必须是能读的一句话，
-// 而不是 ErrBundlePriceRequired 这样的裸 key，也不是 GORM / PG 的原始报错。
-func productErrText(c *gin.Context, err error) string {
-	if err == nil {
-		return ""
-	}
-	return productMsgText(c, productErrMsg(c, err))
-}
-
-// productErrDetailText 业务错误的**补充说明** → 当前语言文案。
-//
-// 补充说明有两种形态：
-//
-//  1. i18n.ErrorDetail 的产物（控制字符开头的「明细词条 key + 具名参数」，可多段）——
-//     service 用它把「为什么被拒」的上下文（哪个属性组 / 超了多少 / 被哪个商品占用）
-//     也词条化，于是整句按当前语言取词并填 {name} 占位符；
-//  2. 其余（受控提示、历史形态的纯文本）—— 原样透出，行为与本通道引入前一致。
-//
-// 未登记的明细 key（拼错 / 新加漏登记）跳过该段并记一条日志：少一句补充说明，
-// 好过把编码串或半截占位符摆到页面上。
-func productErrDetailText(tr func(key, fallback string) string, tail string) string {
-	parts, ok := i18n.ParseErrorDetails(tail)
-	if !ok {
-		return tail
-	}
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		fallback, registered := productenums.ErrDetailFallbacks[p.Key]
-		if !registered || fallback == "" {
-			logger.Scene(productErrScene).With("detail_key", p.Key).
-				Warn("业务错误的补充说明词条未登记，已省略该段")
-			continue
-		}
-		out = append(out, i18n.FillTranslate(tr, p.Key, fallback, p.Args))
-	}
-	return strings.Join(out, "；")
 }
