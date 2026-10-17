@@ -205,19 +205,19 @@ func TestBundleProductsBundlePage(t *testing.T) {
 		}
 	}
 
-	// 保存（并行数组表单）：一行真实选项 + 一行留空。
-	written := postForm(engine, "/admin/products/bundle/save", url.Values{
-		"productId":   {main.ID},
-		"maxOptions":  {"20"},
-		"minTotalQty": {"1"},
-		"maxTotalQty": {"0"},
-		"variantId":   {v.ID, ""},
-		"required":    {"1", "1"},
-		"defaultQty":  {"2", "1"},
-		"minQty":      {"1", "1"},
-		"maxQty":      {"3", "0"},
+	// 保存：基座组装出的 JSON（一行真实选项；空行由 builder 跳过，不提交）。
+	written := postJSON(t, engine, "/api/product/bundle/set", map[string]any{
+		"productId": main.ID,
+		"config": map[string]any{
+			"maxOptions": 20, "minTotalQty": 1, "maxTotalQty": 0,
+			"options": []map[string]any{{
+				"variantId": v.ID, "required": true, "defaultQty": 2, "minQty": 1, "maxQty": 3,
+			}},
+		},
 	})
-	assertJumpOK(t, written)
+	if env := decodeJSONEnvelope(t, written); env.Code != http.StatusOK {
+		t.Fatalf("保存应成功，实际 HTTP %d code=%d message=%s", written.Code, env.Code, env.Message)
+	}
 	detail, err := f.products.GetBundleConfig(context.Background(), &productdto.GetBundleConfigReq{ProductID: main.ID})
 	if err != nil {
 		t.Fatalf("读回配置失败: %v", err)
@@ -229,21 +229,22 @@ func TestBundleProductsBundlePage(t *testing.T) {
 		t.Fatalf("落库内容与表单不一致: %+v", detail.Options[0])
 	}
 
-	// 非法配置（整单下限不可达）→ 原请求 200 回填，且不落库。
-	badWrite := postForm(engine, "/admin/products/bundle/save", url.Values{
-		"productId":   {main.ID},
-		"maxOptions":  {"20"},
-		"minTotalQty": {"9"},
-		"maxTotalQty": {"0"},
-		"variantId":   {v.ID},
-		"required":    {"1"},
-		"defaultQty":  {"1"},
-		"minQty":      {"1"},
-		"maxQty":      {"1"},
+	// 非法配置（整单下限不可达）→ JSON 400 + 可读原因，且不落库。
+	badWrite := postJSON(t, engine, "/api/product/bundle/set", map[string]any{
+		"productId": main.ID,
+		"config": map[string]any{
+			"maxOptions": 20, "minTotalQty": 9, "maxTotalQty": 0,
+			"options": []map[string]any{{
+				"variantId": v.ID, "required": true, "defaultQty": 1, "minQty": 1, "maxQty": 1,
+			}},
+		},
 	})
-	if badWrite.Code != http.StatusOK || !strings.Contains(badWrite.Body.String(), `role="alert"`) ||
-		!strings.Contains(badWrite.Body.String(), `value="9"`) {
-		t.Fatalf("非法配置应原请求 200 回填并提示，实际 %d", badWrite.Code)
+	if env := decodeJSONEnvelope(t, badWrite); env.Code == http.StatusOK || strings.TrimSpace(env.Message) == "" {
+		t.Fatalf("非法配置应被拒并带原因，实际 HTTP %d body=%s", badWrite.Code, badWrite.Body.String())
+	}
+	if kept, err := f.products.GetBundleConfig(context.Background(), &productdto.GetBundleConfigReq{ProductID: main.ID}); err != nil ||
+		len(kept.Options) != 1 || kept.Config.MinTotalQty != 1 {
+		t.Fatalf("非法配置不该落库，实际 %v %+v", err, kept)
 	}
 
 	// 未选商品时页面仍然可渲染（骨架 + 选择下拉）。
@@ -266,7 +267,8 @@ func newBundlePageEngine(t *testing.T) (*gin.Engine, *bundleFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	engine.GET("/admin/products/bundle", handle.ProductBundlePage)
-	engine.POST("/admin/products/bundle/save", handle.ProductBundleSave)
+	// 保存走 JSON 写基座（页面声明 data-write-api）：页面端 /admin/products/bundle/save 已删除。
+	engine.POST("/api/product/bundle/set", producthttp.NewHandle(f.products).SetBundleConfig)
 	return engine, f
 }
 

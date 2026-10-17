@@ -60,16 +60,16 @@ func productDetailBody(t *testing.T, engine *gin.Engine, projectID, productID st
 	return rec.Body.String()
 }
 
-// ratingEnvelope 是 pkg/response 的外壳：基座按 code >= 400 判失败，200 即成功。
-type ratingEnvelope struct {
+// jsonEnvelope 是 pkg/response 的外壳：基座按 code >= 400 判失败，200 即成功。
+type jsonEnvelope struct {
 	Code    int            `json:"code"`
 	Message string         `json:"message"`
 	Data    map[string]any `json:"data"`
 }
 
-func decodeRatingEnvelope(t *testing.T, rec *httptest.ResponseRecorder) ratingEnvelope {
+func decodeJSONEnvelope(t *testing.T, rec *httptest.ResponseRecorder) jsonEnvelope {
 	t.Helper()
-	var env ratingEnvelope
+	var env jsonEnvelope
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 		t.Fatalf("响应不是 JSON（HTTP %d）：%s", rec.Code, rec.Body.String())
 	}
@@ -157,7 +157,7 @@ func TestProductRatingAddAndDeleteViaJSON(t *testing.T) {
 	rec := postJSON(t, engine, "/api/product/rating/add", map[string]any{
 		"projectId": f.projectID, "productId": product, "score": 4.5,
 	})
-	if env := decodeRatingEnvelope(t, rec); env.Code != http.StatusOK {
+	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
 		t.Fatalf("添加评分应成功，实际 HTTP %d code=%d message=%s", rec.Code, env.Code, env.Message)
 	}
 	body := productDetailBody(t, engine, f.projectID, product)
@@ -173,7 +173,7 @@ func TestProductRatingAddAndDeleteViaJSON(t *testing.T) {
 	rec = postJSON(t, engine, "/api/product/rating/delete", map[string]any{
 		"projectId": f.projectID, "id": res.Items[0].ID,
 	})
-	if env := decodeRatingEnvelope(t, rec); env.Code != http.StatusOK {
+	if env := decodeJSONEnvelope(t, rec); env.Code != http.StatusOK {
 		t.Fatalf("删除评分应成功，实际 HTTP %d code=%d message=%s", rec.Code, env.Code, env.Message)
 	}
 	body = productDetailBody(t, engine, f.projectID, product)
@@ -197,7 +197,7 @@ func TestProductRatingPageRejectsInvalidScore(t *testing.T) {
 		rec := postJSON(t, engine, "/api/product/rating/add", map[string]any{
 			"projectId": f.projectID, "productId": product, "score": bad,
 		})
-		env := decodeRatingEnvelope(t, rec)
+		env := decodeJSONEnvelope(t, rec)
 		if env.Code == http.StatusOK {
 			t.Fatalf("非法分值 %v 应被拒绝，实际成功：%s", bad, rec.Body.String())
 		}

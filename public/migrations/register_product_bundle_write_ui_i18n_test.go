@@ -11,13 +11,13 @@ import (
 
 // 599 的门槛判据必须覆盖「中文在、英文缺」的状态。
 //
-// 缺陷形态（与 review-sol 在 task-33 对 598 抓到的 P2 同源）：判据只数 lang='zh-CN' 的 3 行 →
+// 缺陷形态（与 review-sol 在 task-33 对 598 抓到的 P2 同源）：判据只数 lang='zh-CN' 的 2 行 →
 // 运营库里任意一条 en-US 缺失（历史库缺行、有人手工删过英文、或本批 SQL 曾半途失败）时，
 // 中文计数已经满足，判据返回 1 → RunSeeds 直接跳过 → 缺的英文**永远补不上**，英文界面回退到
 // 组件包内的中文兜底（错得安静：没有异常、没有日志）。AGENTS.md §数据库 的定则是
 // 「判据的偏差方向要刻意选**宁可重跑，不可静默跳过**」。
 //
-// 修法：判据枚举本批 3 个 key × 2 种语言 = 6 个 (item_key, lang) 组合，缺任意一项即为 0；
+// 修法：判据枚举本批 2 个 key × 2 种语言 = 4 个 (item_key, lang) 组合，缺任意一项即为 0；
 // SQL 是 ON CONFLICT (item_key, lang) DO NOTHING，重跑只补缺行、不覆盖运营改过的值。
 //
 // 三个用例分别钉住：判据与 SQL 的组合集合一致（静态）、中文齐英文缺一必须重跑、
@@ -30,8 +30,8 @@ func TestBundleWriteUISeedGuardCoversBothLanguages(t *testing.T) {
 	seed := findSeedByVersion(t, "599-product-bundle-write-ui-i18n")
 
 	pairs := seedPairs(t, seed.SQL)
-	if len(pairs) != 6 {
-		t.Fatalf("599 的 SQL 应有 6 个 (key, lang) 组合（3 key × 2 语言），实际 %d 个：%v", len(pairs), pairs)
+	if len(pairs) != 4 {
+		t.Fatalf("599 的 SQL 应有 4 个 (key, lang) 组合（2 key × 2 语言），实际 %d 个：%v", len(pairs), pairs)
 	}
 	langs := map[string]int{}
 	keys := map[string]bool{}
@@ -39,11 +39,11 @@ func TestBundleWriteUISeedGuardCoversBothLanguages(t *testing.T) {
 		langs[p.lang]++
 		keys[p.key] = true
 	}
-	if langs["zh-CN"] != 3 || langs["en-US"] != 3 || len(langs) != 2 {
-		t.Fatalf("599 的 SQL 语言分布应为 zh-CN 3 / en-US 3，实际 %v", langs)
+	if langs["zh-CN"] != 2 || langs["en-US"] != 2 || len(langs) != 2 {
+		t.Fatalf("599 的 SQL 语言分布应为 zh-CN 2 / en-US 2，实际 %v", langs)
 	}
-	if len(keys) != 3 {
-		t.Fatalf("599 的 SQL 应覆盖 3 个 key，实际 %d 个：%v", len(keys), sortedKeys(keys))
+	if len(keys) != 2 {
+		t.Fatalf("599 的 SQL 应覆盖 2 个 key，实际 %d 个：%v", len(keys), sortedKeys(keys))
 	}
 
 	guardKeys := productBundleKeysMentionedIn(t, seed.ConditionSQL)
@@ -59,8 +59,8 @@ func TestBundleWriteUISeedGuardCoversBothLanguages(t *testing.T) {
 		t.Fatalf("判据不得用前缀 LIKE（AGENTS.md §数据库）：%s", seed.ConditionSQL)
 	}
 	// 上界必须等于 SQL 真正落下的组合数：写成「少一项也算齐」会在缺一行的库里静默跳过。
-	if !strings.Contains(seed.ConditionSQL, "COUNT(*) >= 6") {
-		t.Fatalf("判据的上界应为本批的 6 个组合，实际：%s", seed.ConditionSQL)
+	if !strings.Contains(seed.ConditionSQL, "COUNT(*) >= 4") {
+		t.Fatalf("判据的上界应为本批的 4 个组合，实际：%s", seed.ConditionSQL)
 	}
 }
 
@@ -81,8 +81,8 @@ func TestBundleWriteUISeedSkipsWhenAllSixPairsPresent(t *testing.T) {
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("首轮 RunSeeds（599 的 SQL 会在这里真执行）：%v", err)
 	}
-	if got := countPairs(t, db, keys, ""); got != 6 {
-		t.Fatalf("首轮后 599 的 6 行应齐全，实际 %d 行", got)
+	if got := countPairs(t, db, keys, ""); got != 4 {
+		t.Fatalf("首轮后 599 的 4 行应齐全，实际 %d 行", got)
 	}
 	if applied := guardValue(t, db, seed); applied != 1 {
 		t.Fatalf("六项齐时判据应为 1（跳过），实际 %d", applied)
@@ -101,8 +101,8 @@ func TestBundleWriteUISeedSkipsWhenAllSixPairsPresent(t *testing.T) {
 		if applied := guardValue(t, db, seed); applied != 1 {
 			t.Fatalf("第 %d 轮后判据应仍为 1，实际 %d", round, applied)
 		}
-		if got := countPairs(t, db, keys, ""); got != 6 {
-			t.Errorf("第 %d 轮后本批行数应仍为 6（判据为 1 时不再写库），实际 %d", round, got)
+		if got := countPairs(t, db, keys, ""); got != 4 {
+			t.Errorf("第 %d 轮后本批行数应仍为 4（判据为 1 时不再写库），实际 %d", round, got)
 		}
 		if got := valueOf(t, db, "admin.product_bundle.reload", "zh-CN"); got != operatorValue {
 			t.Errorf("第 %d 轮后运营值被改写：实际 %q", round, got)
@@ -131,11 +131,11 @@ func TestBundleWriteUISeedRunsWhenOneEnglishIsMissing(t *testing.T) {
 		t.Fatal("首轮后 cfg.saveBlocked/en-US 应有值")
 	}
 
-	// 缺陷形态：中文三行齐全（判据若只看中文就是「已齐」），英文少一行。
+	// 缺陷形态：中文两行齐全（判据若只看中文就是「已齐」），英文少一行。
 	mustExec(t, db, "DELETE FROM sys_i18n WHERE item_key = ? AND lang = 'en-US'",
 		"admin.product_bundle.cfg.saveBlocked")
-	if got := countPairs(t, db, keys, "zh-CN"); got != 3 {
-		t.Fatalf("造场景失败：中文应齐全（3 行），实际 %d 行", got)
+	if got := countPairs(t, db, keys, "zh-CN"); got != 2 {
+		t.Fatalf("造场景失败：中文应齐全（2 行），实际 %d 行", got)
 	}
 	if applied := guardValue(t, db, seed); applied != 0 {
 		t.Fatalf("中文齐、英文缺一条时判据必须为 0（否则会静默跳过、缺的英文补不上），实际 %d", applied)
@@ -147,8 +147,8 @@ func TestBundleWriteUISeedRunsWhenOneEnglishIsMissing(t *testing.T) {
 	if got := valueOf(t, db, "admin.product_bundle.cfg.saveBlocked", "en-US"); got != seedEN {
 		t.Errorf("缺的英文应被补回 %q，实际 %q", seedEN, got)
 	}
-	if got := countPairs(t, db, keys, ""); got != 6 {
-		t.Errorf("补种后应回到 6 行，实际 %d 行", got)
+	if got := countPairs(t, db, keys, ""); got != 4 {
+		t.Errorf("补种后应回到 4 行，实际 %d 行", got)
 	}
 	if applied := guardValue(t, db, seed); applied != 1 {
 		t.Errorf("补种后判据应翻成 1，实际 %d", applied)
@@ -175,7 +175,7 @@ func TestBundleWriteUISeedBackfillPreservesOperatorValues(t *testing.T) {
 	const operatorValue = "运营改过的中文（不得被 seed 覆盖）"
 	const operatorJA = "運営が入れた日本語"
 	mustExec(t, db, "UPDATE sys_i18n SET item_value = ? WHERE item_key = ? AND lang = 'zh-CN'",
-		operatorValue, "admin.product_bundle.reloadFailedKeepInput")
+		operatorValue, "admin.product_bundle.reload")
 	mustExec(t, db, "DELETE FROM sys_i18n WHERE item_key = ? AND lang = 'en-US'",
 		"admin.product_bundle.reload")
 	mustExec(t, db, `INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
@@ -190,7 +190,7 @@ func TestBundleWriteUISeedBackfillPreservesOperatorValues(t *testing.T) {
 		if err := migrations.RunSeeds(db); err != nil {
 			t.Fatalf("第 %d 轮补种 RunSeeds：%v", round, err)
 		}
-		if got := valueOf(t, db, "admin.product_bundle.reloadFailedKeepInput", "zh-CN"); got != operatorValue {
+		if got := valueOf(t, db, "admin.product_bundle.reload", "zh-CN"); got != operatorValue {
 			t.Errorf("第 %d 轮后运营改过的中文值被覆盖：实际 %q（ON CONFLICT DO NOTHING 下不该发生）", round, got)
 		}
 		if got := valueOf(t, db, "admin.product_bundle.reload", "en-US"); got == "" {
@@ -199,9 +199,9 @@ func TestBundleWriteUISeedBackfillPreservesOperatorValues(t *testing.T) {
 		if got := valueOf(t, db, "admin.product_bundle.reload", "ja-JP"); got != operatorJA {
 			t.Errorf("第 %d 轮后第三语言行被动了：实际 %q", round, got)
 		}
-		// 6 行（3 key × 中英）+ 运营自加的 ja-JP 1 行。
-		if got := countPairs(t, db, keys, ""); got != 7 {
-			t.Errorf("第 %d 轮后本批应有 7 行（6 + 第三语言 1），实际 %d 行", round, got)
+		// 4 行（2 key × 中英）+ 运营自加的 ja-JP 1 行。
+		if got := countPairs(t, db, keys, ""); got != 5 {
+			t.Errorf("第 %d 轮后本批应有 5 行（4 + 第三语言 1），实际 %d 行", round, got)
 		}
 		if got := countPairs(t, db, keys, "ja-JP"); got != 1 {
 			t.Errorf("第 %d 轮后第三语言行数应仍为 1，实际 %d（seed 只写中英两种语言）", round, got)

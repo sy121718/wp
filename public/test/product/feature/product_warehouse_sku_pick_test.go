@@ -460,10 +460,12 @@ func TestProductCreateMissingStockPortRejectsExternalSKU(t *testing.T) {
 	}
 }
 
-// TestProductsPageRendersWarehouseSKUPicker 新建抽屉的「从仓库选」入口（页面侧，验收 3）：
-// 服务端把该仓的候选按仓分组渲染进去，**字段名与 ProductsCreate 读取的完全一致** ——
-// 抽屉里的字段名一旦分叉，运营选的货就会静默丢失（提交上去没人读，服务端按自己创建处理）。
-func TestProductsPageRendersWarehouseSKUPicker(t *testing.T) {
+// TestNewPageRendersWarehouseSKUCatalog 新建表单的仓库候选目录（页面侧，验收 3）：
+// 服务端把该仓的候选按仓分组渲染进一个**不参与提交**的 select（data-sku-catalog），
+// 前端的 combobox 与「复用预览」都从它取数。它必须没有 name —— 新增表单的提交路径只认
+// externalSku；skuSource / warehouseSku 这两条「从仓库选」的来路已从页面撤掉
+// （服务端 dto.CreateReq 仍接受它们，那是接口面，不是这张表单）。
+func TestNewPageRendersWarehouseSKUCatalog(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
 		return
@@ -488,11 +490,17 @@ func TestProductsPageRendersWarehouseSKUPicker(t *testing.T) {
 	}
 	page := rec.Body.String()
 	for _, want := range []string{
-		`name="skuSource"`, `name="warehouseSku"`, `name="externalSku"`,
+		`name="externalSku"`, `data-sku-catalog`,
 		`value="PICK-777"`, `data-warehouse="` + f.sh.ID + `"`, `data-warehouse-sku`,
 	} {
 		if !strings.Contains(page, want) {
-			t.Fatalf("新建抽屉缺少 %q（「从仓库选」入口没渲染出来）", want)
+			t.Fatalf("新建表单缺少 %q（仓库候选目录没渲染出来）", want)
+		}
+	}
+	// 目录本身不参与提交：带了 name 就会把运营选的货静默带进表单，而提交路径并不读它。
+	for _, unwanted := range []string{`name="skuSource"`, `name="warehouseSku"`} {
+		if strings.Contains(page, unwanted) {
+			t.Fatalf("新建表单不该再有 %q（这两条来路已从页面撤掉）", unwanted)
 		}
 	}
 }

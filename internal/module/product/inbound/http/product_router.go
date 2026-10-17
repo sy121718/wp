@@ -270,7 +270,6 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/products/template/url", builtin.CasbinMiddlewareForPath("/api/presentation/update-url"), productPages.ProductDetailTemplateUpdateURL)
 	// 捆绑配置：配置页 + 保存（保存复用 /api/product/bundle/set 的权限点）。
 	pages.GET("/products/bundle", adminui.PageAuthz("/api/product/list"), productPages.ProductBundlePage)
-	pages.POST("/products/bundle/save", builtin.CasbinMiddlewareForPath("/api/product/bundle/set"), productPages.ProductBundleSave)
 	// 成员来源解析（docs/14 §1.2 的三种来源，本批）：只解析、**不落库** ——
 	// 与 /products/variant/preview 同一先例（页面组已有 Session + CSRF，端点落不了任何库），
 	// 因此不叠加 Casbin 权限点，也就不会出现「有路由、无权限点」的全员 403。

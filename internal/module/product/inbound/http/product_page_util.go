@@ -19,9 +19,8 @@ import (
 // 没离开过 DOM。字段归一化口径现在在 static/js/ui/json_write.js，由
 // public/test/product/json_write.test.cjs 覆盖。
 //
-// 剩下的分档判据只有 isHXRequest 一处实现：仍在 htmx 路径上的写动作（捆绑页等）靠它决定
-// 「回片段还是整页」，两个出口必须认同同一个信号，否则会出现「片段按 htmx 走、跳转按原生走」
-// 这种自相矛盾的档位。
+// 商品模块的页面写动作已全部迁到 JSON 写基座，因此这边不再有「回片段还是整页」的分档判据 ——
+// 基座在原页发 fetch、失败只写结果区（与成片段 / 整页无关）。
 
 // formProductID 取表单里的商品 id：优先 productId，再回落 id。
 //
@@ -38,13 +37,6 @@ func formProductID(c *gin.Context) string {
 		return id
 	}
 	return strings.TrimSpace(c.PostForm("id"))
-}
-
-// isHXRequest 这次请求是否由 htmx 发起（HX-Request: true）。
-//
-// 大小写不敏感、去首尾空白：与 pkg/reqparams 的请求头判据同口径。
-func isHXRequest(c *gin.Context) bool {
-	return strings.EqualFold(strings.TrimSpace(c.GetHeader("HX-Request")), "true")
 }
 
 // formParseMemory 解析提交表单时的内存上限（与 gin 的 MaxMultipartMemory 默认值一致）。

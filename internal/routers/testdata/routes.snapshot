@@ -393,7 +393,6 @@ POST /admin/products/attributes
 POST /admin/products/bulk-delete
 POST /admin/products/bulk-pricing
 POST /admin/products/bundle/members/resolve
-POST /admin/products/bundle/save
 POST /admin/products/delete
 POST /admin/products/reapply-preset
 POST /admin/products/rollback-artifact

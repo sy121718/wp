@@ -27,7 +27,7 @@ func registerProductBundleWriteUII18nSeed() {
 	//     中文兜底（错得安静：没有异常、没有日志）。review-sol 在 task-33 对 598 抓到的
 	//     就是这条 P2，本批同源。
 	// 定则来自 AGENTS.md §数据库：「判据的偏差方向要刻意选**宁可重跑，不可静默跳过**」。
-	// 6 项齐全时判据为 1（跳过）；缺任意一 (key, lang) 即为 0（重跑）—— 而 SQL 是
+	// 4 项齐全时判据为 1（跳过）；缺任意一 (key, lang) 即为 0（重跑）—— 而 SQL 是
 	// ON CONFLICT (item_key, lang) DO NOTHING，重跑只补缺行、不覆盖运营改过的值，
 	// 所以这个偏差方向没有副作用。
 	//
@@ -36,11 +36,10 @@ func registerProductBundleWriteUII18nSeed() {
 	registerSeed(Seed{
 		Version:   "599-product-bundle-write-ui-i18n",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 6 THEN 1 ELSE 0 END FROM sys_i18n " +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 4 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
 			"'admin.product_bundle.reload', " +
-			"'admin.product_bundle.cfg.saveBlocked', " +
-			"'admin.product_bundle.reloadFailedKeepInput')",
+			"'admin.product_bundle.cfg.saveBlocked')",
 		SQL: mustSQL("599_product_bundle_write_ui_i18n.sql"),
 	})
 }

@@ -46,7 +46,8 @@ func newBundleMemberPageEngine(t *testing.T) (*gin.Engine, *bundleFixture) {
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
 	engine.GET("/admin/products/bundle", handle.ProductBundlePage)
-	engine.POST("/admin/products/bundle/save", handle.ProductBundleSave)
+	// 保存走 JSON 写基座（页面声明 data-write-api）：页面端 /admin/products/bundle/save 已删除。
+	engine.POST("/api/product/bundle/set", producthttp.NewHandle(f.products).SetBundleConfig)
 	engine.POST("/admin/products/bundle/members/resolve", handle.ProductsBundleMembersResolve)
 	return engine, f
 }
@@ -271,23 +272,23 @@ func TestBundleMemberSourceResolveEndpoint(t *testing.T) {
 		t.Fatalf("跳过项应带可读文案，实际 %+v", skip)
 	}
 
-	// 保存：并行数组（含四个来源字段）→ 落库并可回显。
-	written := postForm(engine, "/admin/products/bundle/save", url.Values{
-		"productId":          {bundle.ID},
-		"maxOptions":         {"20"},
-		"minTotalQty":        {"1"},
-		"maxTotalQty":        {"0"},
-		"variantId":          {v.ID},
-		"required":           {"1"},
-		"defaultQty":         {"1"},
-		"minQty":             {"1"},
-		"maxQty":             {"0"},
-		"sourceKind":         {productenums.BundleSourceWarehouse},
-		"memberWarehouseId":  {f.warehouse.ID},
-		"memberWarehouseSku": {"PANEL-SKU-10"},
-		"memberExternalSku":  {memberPanelExternalSKU},
+	// 保存：基座组装出的 JSON（成员行含四个来源字段）→ 落库并可回显。
+	written := postJSON(t, engine, "/api/product/bundle/set", map[string]any{
+		"productId": bundle.ID,
+		"config": map[string]any{
+			"maxOptions": 20, "minTotalQty": 1, "maxTotalQty": 0,
+			"options": []map[string]any{{
+				"variantId": v.ID, "required": true, "defaultQty": 1, "minQty": 1, "maxQty": 0,
+				"sourceKind":   productenums.BundleSourceWarehouse,
+				"warehouseId":  f.warehouse.ID,
+				"warehouseSku": "PANEL-SKU-10",
+				"externalSku":  memberPanelExternalSKU,
+			}},
+		},
 	})
-	assertJumpOK(t, written)
+	if env := decodeJSONEnvelope(t, written); env.Code != http.StatusOK {
+		t.Fatalf("保存应成功，实际 HTTP %d code=%d message=%s", written.Code, env.Code, env.Message)
+	}
 	detail, err := f.products.GetBundleConfig(ctx, &productdto.GetBundleConfigReq{
 		ProductID: bundle.ID, ProjectID: f.projectID,
 	})

@@ -3,7 +3,6 @@ package producthttp
 import (
 	"errors"
 	"go_wp/internal/adminui"
-	"go_wp/internal/middleware/builtin"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
@@ -12,7 +11,6 @@ import (
 	"go_wp/internal/shell"
 	"go_wp/pkg/response"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -40,21 +38,17 @@ import (
 //
 // 接口面（原先的 product_handle.go 捆绑段）在前，后台页面在后。
 
-// productBundlePageTemplate / productBundleFormTemplate 整页与不带页壳两档的模板。
+// productBundlePageTemplate 整页模板（只剩这一档）。
 //
-// 同一份装配、同一份视图，区别只在套不套页壳（htmx 换的是页面里那一块，把整页塞进去
-// 会把外层结构一起换掉）。不是两种响应形态：后端给数据、Jet 渲染 HTML。
+// 保存已迁到 JSON 写基座：基座在原页发 fetch、失败只写结果区，不再有「htmx 写失败换片段」
+// 这种响应形态，页面装配也因此只有一处出口。
 const productBundlePageTemplate = "admin/product/product_bundle.html"
-const productBundleFormTemplate = "admin/product/product_bundle_form.html"
 
 // bundleResolveURL 成员来源面板的解析接口（URL 形状属 HTTP，控制器给）。
 const bundleResolveURL = "/admin/products/bundle/members/resolve"
 
 // ProductBundlePage 捆绑配置页。
 // 与商品页同族（挂在 productPageHandle 上）：选工程 → 选商品 → 配选项规则 → 保存。
-// 表单是**原生并行数组**（variantId / required / defaultQty / minQty / maxQty 各自多值），
-// 零自定义 JS 就能表达「一行的多个字段」—— 不用 JSON 字符串塞进隐藏域，
-// 也就没有「前端拼 JSON 出错但服务端照单全收」的缝隙。
 //
 // 页面底部内嵌前台配置器片段（hx-get /_fragments/bundleConfigurator）：
 // 运营在这里看到的就是访客看到的那一份渲染。
@@ -63,40 +57,17 @@ const bundleResolveURL = "/admin/products/bundle/members/resolve"
 // 候选按仓分组、每仓有上限、未接库存契约时整块降级为空。与商品页其余部分（列表 / 详情 /
 // 抽屉业务字段）没有耦合，放在一起只会让两边互相牵制。
 //
-// 接口面（原先的 product_handle.go 捆绑段）在前，后台页面在后。
+// 保存走 JSON 写基座（表单声明 data-write-api=/api/product/bundle/set）：成员行由
+// static/js/ui/product_bundle_write.js 组装成 {productId, config:{...}}，页面只负责渲染。
 func (h *productPageHandle) ProductBundlePage(c *gin.Context) {
-	h.renderBundlePage(c, nil, "", false)
+	h.renderBundlePage(c)
 }
 
-// bundleSubmittedFormFromRequest 把本次提交的成员表**原样**读出来（并行数组 + 三个配置数值）。
+// renderBundlePage 整页出口（只有这一处）。
 //
-// 与保存路径读的是同一批字段，但这里**不清理也不跳过空白行**：渲染要保住空行占的位置
-// （行与数组按 DOM 顺序一一对应，摘掉空行会让它后面的成员整体上移）。
-func bundleSubmittedFormFromRequest(c *gin.Context) *productdto.BundleSubmittedForm {
-	form := &productdto.BundleSubmittedForm{
-		VariantIDs:    c.PostFormArray("variantId"),
-		Required:      c.PostFormArray("required"),
-		DefaultQty:    c.PostFormArray("defaultQty"),
-		MinQty:        c.PostFormArray("minQty"),
-		MaxQty:        c.PostFormArray("maxQty"),
-		SourceKinds:   c.PostFormArray("sourceKind"),
-		WarehouseIDs:  c.PostFormArray("memberWarehouseId"),
-		WarehouseSKUs: c.PostFormArray("memberWarehouseSku"),
-		ExternalSKUs:  c.PostFormArray("memberExternalSku"),
-		MinTotalQty:   atoiOrZero(c.PostForm("minTotalQty")),
-		MaxTotalQty:   atoiOrZero(c.PostForm("maxTotalQty")),
-	}
-	// 选项上限：空串 / 非法 / ≤0 一律**保持默认值**（service 侧另有取值域校验）——
-	// 与既有行为一致，只是把「空串 = 未提交」这条语义收进 dto.OptInt。
-	if v, aerr := productdto.OptInt("maxOptions", c.PostForm("maxOptions")); aerr == nil && v != nil && *v > 0 {
-		form.MaxOptions = *v
-	}
-	return form
-}
-
-func (h *productPageHandle) renderBundlePage(c *gin.Context, submitted *productdto.BundleSubmittedForm, failure string, fragment bool) {
-	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+// 不再有「请求期断言失败 → 500 兜底」这条路径。
+func (h *productPageHandle) renderBundlePage(c *gin.Context) {
 	reader := h.reader
 	view, err := reader.ProductBundlePage(c.Request.Context(), &productdto.ProductBundlePageReq{
 		ProjectID:         bundleQueryParam(c, "project", "projectId"),
@@ -104,8 +75,6 @@ func (h *productPageHandle) renderBundlePage(c *gin.Context, submitted *productd
 		Source:            c.Query("source"),
 		SourceProductID:   c.Query("sourceProduct"),
 		SourceWarehouseID: c.Query("sourceWarehouse"),
-		// Submitted 是**写路径的产物**：它在请求体里，读模型不认识 gin.Context。
-		Submitted: submitted,
 	})
 	if view == nil {
 		// 契约上视图恒非 nil；契约是约定而不是类型保证，这一层兜底必须存在。
@@ -118,45 +87,24 @@ func (h *productPageHandle) renderBundlePage(c *gin.Context, submitted *productd
 		view.LoadError = productErrPageText(c, err)
 	}
 
-	// 剩下三样都只由控制器给：写失败的成品串（Err）、两个 URL 形状（ResolveURL / ListQuery）。
+	// 剩下两样都只由控制器给：两个 URL 形状（ResolveURL / ListQuery）。
 	// 它们要么来自请求，要么是 HTTP 侧的形状 —— 都不是取数结论。
 	extra := gin.H{
-		"Err":        failure,
 		"ResolveURL": bundleResolveURL,
-		// 页面上下文（表单 action 的 query）：保存失败 / 成功时由 shell.BackPath 读回。
+		// 页面上下文（页面链接的 query）。
 		"ListQuery": productQueryFromRequest(c, productBundleBackKeys...),
 	}
 	// 这一屏不是可缓存的成功页：重试必须真的回到服务端（判据由视图给，见 PageNoStore）。
 	if view.PageNoStore() {
 		c.Header("Cache-Control", "no-store")
 	}
-	if fragment {
-		// 不带页壳档（htmx 写失败重渲染）：换的是页面里那一块，整页 HTML 塞进这一块
-		// 会把外层结构一起换掉 —— 所以这一档**仍是 200**。
-		// 失败信息进两个槽：Err 是这次保存没成功的原因（调用方给），LoadError 是「这一页
-		// 没能重建出来」；有提交快照时照样渲染回填表单（保存禁用），
-		// 否则 hx-swap=outerHTML 会把用户整块表单换成一句提示。
-		c.HTML(http.StatusOK, productBundleFormTemplate, bundlePageData(c, view, extra))
-		return
-	}
-	if err != nil && submitted != nil {
-		// 原生 POST 写失败 + 重读也失败：整页把提交快照渲染回来。
-		//
-		// 状态码保持 200：这不是「整页 GET 读不出来」（那一条是 500 + 失败槽），而是
-		// 「写没成功、页面重建失败」—— 响应本身是完整可用的页面（表单在、保存禁用、
-		// 给了「重新载入」入口），把用户刚输入的内容换成一个失败槽才是更坏的结果。
-		c.HTML(http.StatusOK, productBundlePageTemplate, bundlePageData(c, view, extra))
-		return
-	}
-	// 整页档：出口只有这一处（页面成败都走它）。没有提交快照的装载失败 = 失败槽 + 状态码。
 	c.HTML(view.PageStatus(), productBundlePageTemplate, bundlePageData(c, view, extra))
 }
 
-// bundlePageData 摊平视图 + 叠加控制器那三样键（写失败的成品串与两个 URL 形状）。
+// bundlePageData 摊平视图 + 叠加控制器那两样键（两个 URL 形状）。
 //
-// 用 ViewMap 而不是 adminui.RenderPage：这一屏有三个出口（两个 200 + 一档跟随视图档位），
-// 而视图自己已经实现 PageResult —— 状态码与 no-store 按页面的结论给，
-// 视图与控制器侧那三样键在这里合成一份数据。
+// 用 ViewMap 而不是 adminui.RenderPage：视图自己已经实现 PageResult —— 状态码与 no-store
+// 按页面的结论给，视图与控制器侧那两样键在这里合成一份数据。
 func bundlePageData(c *gin.Context, view *productdto.ProductBundlePageView, extra gin.H) gin.H {
 	data := adminui.ViewMap(view)
 	for k, v := range extra {
@@ -184,90 +132,6 @@ func bundlePageFailureView(status int) productdto.ProductBundlePageView {
 		LoadFailed:       status != http.StatusOK,
 		HTTPStatus:       status,
 	}
-}
-
-// productBundleNoProductText 捆绑页的参数级提示（未选商品就提交保存），走整页提示页。
-//
-// key + 中文兜底：写侧取词（英文站点不再显示中文）。
-const productBundleNoProductFallback = "请先选择商品"
-
-// productBundleNoProductMsg 上面那条提示的**事实**（key + 中文兜底，取词在提示页模板里）。
-var productBundleNoProductMsg = productMsg{Key: productenums.ProductBundleNoProduct, Fallback: productBundleNoProductFallback}
-
-// strAt 取并行数组的第 i 个字符串（缺失一律空串）。
-//
-// 与 atoiAt 同一手法：这里不承担校验 —— 来源字段的白名单与清理在 service
-// （未知来源会被明确拒绝，不是在这里静默丢弃）。
-func strAt(values []string, i int) string {
-	if i < 0 || i >= len(values) {
-		return ""
-	}
-	return strings.TrimSpace(values[i])
-}
-
-// ProductBundleSave 保存捆绑配置；失败在当前请求回填，HX 成功整页跳转。
-func (h *productPageHandle) ProductBundleSave(c *gin.Context) {
-	ctx := c.Request.Context()
-	productID := strings.TrimSpace(c.PostForm("productId"))
-	if productID == "" {
-		productBundleJump(c, false, productBundleNoProductMsg)
-		return
-	}
-	cfg := productdto.NewEmptyBundleConfig()
-	if v, aerr := productdto.OptInt("maxOptions", c.PostForm("maxOptions")); aerr == nil && v != nil && *v > 0 {
-		cfg.MaxOptions = *v
-	}
-	cfg.MinTotalQty = atoiOrZero(c.PostForm("minTotalQty"))
-	cfg.MaxTotalQty = atoiOrZero(c.PostForm("maxTotalQty"))
-	ids := c.PostFormArray("variantId")
-	required := c.PostFormArray("required")
-	defaults := c.PostFormArray("defaultQty")
-	mins := c.PostFormArray("minQty")
-	maxes := c.PostFormArray("maxQty")
-	// 来源快照是**并行数组**（与上面五个同一种形态）：成员表的每一行都提交这四个字段，
-	// 因此索引与 variantId 一一对应。来源只作溯源与展示，服务端仍按白名单归一
-	//（未知来源在 service 里被拒，非仓库来源的仓库字段被清空）。
-	sourceKinds := c.PostFormArray("sourceKind")
-	warehouseIDs := c.PostFormArray("memberWarehouseId")
-	warehouseSKUs := c.PostFormArray("memberWarehouseSku")
-	externalSKUs := c.PostFormArray("memberExternalSku")
-	for i, vid := range ids {
-		vid = strings.TrimSpace(vid)
-		if vid == "" {
-			continue
-		}
-		cfg.Options = append(cfg.Options, productdto.BundleOption{
-			VariantID:  vid,
-			Required:   atoiAt(required, i) == 1,
-			DefaultQty: atoiAt(defaults, i),
-			MinQty:     atoiAt(mins, i),
-			MaxQty:     atoiAt(maxes, i),
-
-			SourceKind:   strAt(sourceKinds, i),
-			WarehouseID:  strAt(warehouseIDs, i),
-			WarehouseSKU: strAt(warehouseSKUs, i),
-			ExternalSKU:  strAt(externalSKUs, i),
-		})
-	}
-	if _, err := h.products.SetBundleConfig(ctx, &productdto.SetBundleConfigReq{
-		ProductID: productID,
-		Config:    cfg,
-		// 操作人只从会话取（主数据变更记录要记「谁改的」）。
-		OperatorID: builtin.GetUsername(c),
-	}); err != nil {
-		// 失败**原地重渲染**（保留用户刚配的成员清单），不跳提示页：
-		// 成员表是这一屏里最贵的内容，跳走等于让它整屏消失（见 internal/templates/CLAUDE.md
-		// 「写表单失败时原地留住输入」）。htmx 档换片段、原生档换整页。
-		q := url.Values{"product": {productID}}
-		if project := strings.TrimSpace(c.PostForm("projectId")); project != "" {
-			q.Set("project", project)
-		}
-		c.Request.URL.RawQuery = q.Encode()
-		h.renderBundlePage(c, bundleSubmittedFormFromRequest(c), productErrText(c, err), isHXRequest(c))
-		return
-	}
-	// 成功走整页提示（htmx 由 shell.RenderJump 输出 HX-Redirect）——取代原先的 302 / HX-Redirect。
-	productBundleJump(c, true, productActionDoneMsg)
 }
 
 // bundleQueryParam 取本页的上下文参数（工程 / 商品），按候选名依次认第一个非空值。
@@ -389,27 +253,6 @@ var bundleMemberSkipFallbacks = map[string]string{
 	productenums.BundleMemberVariantDisabled:     "该变体已停用，未加入（停用的 SKU 挂进套餐会变成前台选不了又躲不开的必选项）",
 	productenums.BundleMemberOptionsExceeded:     "已达该捆绑配置的选项数量上限，未加入（可先调大上限再解析）",
 	productenums.ErrBundleSelfReference:          "该 SKU 属于这个捆绑容器自己，未加入（不能自引用）",
-}
-
-// atoiAt 取并行数组的第 i 个并转整数（缺失 / 非法一律 0）。
-//
-// 不用「解析失败即报错」：这里的 0 会进入 service 的配置校验，
-// 该拒的（负数、必选数量为 0 等）由那边统一给出可读原因，前端只负责搬运。
-func atoiAt(values []string, i int) int {
-	if i < 0 || i >= len(values) {
-		return 0
-	}
-	return atoiOrZero(values[i])
-}
-
-// atoiOrZero 解析整数，非法一律 0。
-//
-// 语义（空串 = 0、「0」有效、非法 = 0 + 错误事实）在 dto.FormInt，本函数只是把错误**刻意丢掉**：
-// 捆绑成员表的每一格都可能是空行与半填的数字，「逐格报错」会让「表格还没填完」变成一片红。
-// 该拒的（负数、必选数量为 0 等）由 service 的配置校验统一给出可读原因，前端只负责搬运。
-func atoiOrZero(s string) int {
-	n, _ := productdto.FormInt("bundleQty", s, 0)
-	return n
 }
 
 // isBundleProduct 商品类型是否为捆绑容器（详情页据此决定要不要渲染「捆绑构成」）。

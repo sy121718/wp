@@ -8,8 +8,8 @@
 //	· 成员行的「来源」列给的是**事实段**（词条 + 数据），取词与分段拼接在模板；
 //	· 来源下拉的三项、来源商品下拉、来源仓分组全是 `BundleSourceLabel` 的同一份映射。
 //
-// 留在控制器的只有两样：写路径产物 Submitted（请求体里的东西，读模型不认识 gin.Context）
-// 与两个 URL 形状（ResolveURL / ListQuery）。
+// 留在控制器的只有两个 URL 形状（ResolveURL / ListQuery）—— 那是 HTTP 侧的形状，
+// 不是取数结论（保存已迁到 JSON 写基座，不再有写失败回填这回事）。
 //
 // 下拉项里 Sources / SourceProducts 刻意**仍是 map 而不是结构体**：它们的判据是
 // 「LabelKey 键在不在」—— 空项给词条、数据项整键省略，模板用 isset 分两条取值链。
@@ -20,7 +20,6 @@ package productservice
 import (
 	"context"
 	"errors"
-	"strconv"
 	"strings"
 
 	productdto "go_wp/internal/module/product/dto"
@@ -67,14 +66,12 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 		view.Projects = projects
 	}
 
-	var submitted *productdto.BundleSubmittedForm
 	source := ""
 	sourceProductID := ""
 	sourceWarehouseID := ""
 	selectedProject := ""
 	selectedProduct := ""
 	if req != nil {
-		submitted = req.Submitted
 		selectedProject = strings.TrimSpace(req.ProjectID)
 		selectedProduct = strings.TrimSpace(req.ProductID)
 		source = strings.TrimSpace(req.Source)
@@ -130,12 +127,6 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 			detail = cfg
 		}
 	}
-	if submitted != nil && detail != nil {
-		// 配置数值也从提交快照走（成员留下了、数值却回到 0，用户会以为配置被改过）。
-		detail.Config.MaxOptions = submitted.MaxOptions
-		detail.Config.MinTotalQty = submitted.MinTotalQty
-		detail.Config.MaxTotalQty = submitted.MaxTotalQty
-	}
 	view.Detail = detail
 
 	if firstErr == nil {
@@ -183,28 +174,14 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 
 	// —— 以下装配在**失败档也要做**（逐字对齐原控制器）——
 	//
-	// 失败页上这一屏仍有表单：用户刚配的东西不能因为一次读失败就消失，保存入口则撤掉
-	//（SaveBlocked）。只置 LoadFailed 而不给这些键，模板会在缺键上断渲染。
-	if submitted != nil {
-		// 有提交快照就一律用它渲染（**不再要求 detail 也在**）：写失败之后重读又失败时，
-		// 成员清单是这一屏里最贵的内容，不能因为页面重建失败就把它丢掉。
-		// 配置数值也跟同一份快照走：成员留下了、数值却回到 0，用户会以为配置被改过。
-		view.Rows = bundleSubmittedRows(detail, view.Skus, submitted)
-		view.CfgMaxOptions, view.CfgMinTotalQty, view.CfgMaxTotalQty =
-			submitted.MaxOptions, submitted.MinTotalQty, submitted.MaxTotalQty
-	} else {
-		view.Rows = bundleConfigRows(detail, view.Skus)
-		if detail != nil {
-			view.CfgMaxOptions, view.CfgMinTotalQty, view.CfgMaxTotalQty =
-				detail.Config.MaxOptions, detail.Config.MinTotalQty, detail.Config.MaxTotalQty
-		}
-	}
+	// 失败页上这一屏仍有配置内容：读失败不该让「这个商品配了什么」整屏消失，
+	// 保存入口则撤掉（SaveBlocked）。只置 LoadFailed 而不给这些键，模板会在缺键上断渲染。
+	view.Rows = bundleConfigRows(detail, view.Skus)
 	view.CandidateSKUs = bundleCandidateOptions(view.Skus)
 	view.SkuCount = len(view.Skus)
 	view.Sources = bundleSourceOptions(source)
 	view.SourceProducts = bundleSourceProductOptions(view.Products, sourceProductID)
-	view.Submitted = submitted != nil
-	// 页面重建失败时禁止保存：配置读不出来就无法保证这次提交的是完整配置，
+	// 配置读不出来时禁止保存：无法保证这次提交的是完整配置，
 	// 宁可让用户先「重新载入」，也不要缺配置误写。
 	view.SaveBlocked = firstErr != nil
 	view.LoadFailed = firstErr != nil
@@ -333,77 +310,6 @@ func bundleRow(o productdto.BundleOption, available int, sourceParts []productdt
 		ExternalSKU:  o.ExternalSKU,
 		SourceParts:  sourceParts,
 	}
-}
-
-// bundleSubmittedRows 从**本次提交**的原始数组重建行，而不是从库里读回来的配置。
-//
-// 与保存路径的分工：保存时空白行被跳过（它不是一个成员），渲染时空白行必须**原样占位** ——
-// 行与数组按 DOM 顺序一一对应，摘掉空行会让后面的成员整体上移。
-func bundleSubmittedRows(detail *productdto.BundleConfigResp, skus []*productdto.BundleSKUResp, form *productdto.BundleSubmittedForm) []productdto.BundleOptionRow {
-	labels := make(map[string]string, len(skus))
-	for _, s := range skus {
-		if s != nil {
-			labels[s.VariantID] = s.ProductName + " · " + s.SKUCode
-		}
-	}
-	// detail 可能为 nil：写失败重渲染时配置又读不出来（双失败档），此时仍要用
-	// 提交快照把成员清单渲染回来 —— SKU 标签退回「从候选 / 配置里能拿到的部分」。
-	if detail != nil {
-		for _, o := range detail.Options {
-			if o != nil && labels[o.VariantID] == "" && o.SKUCode != "" {
-				labels[o.VariantID] = strings.TrimSpace(o.ProductName + " · " + o.SKUCode)
-			}
-		}
-	}
-	ids := form.VariantIDs
-	rows := make([]productdto.BundleOptionRow, 0, len(ids)+1)
-	hasBlank := false
-	for i, rawID := range ids {
-		id := strings.TrimSpace(rawID)
-		if id == "" {
-			hasBlank = true
-		}
-		option := productdto.BundleOption{
-			VariantID: id, Required: bundleAtoiAt(form.Required, i) == 1,
-			DefaultQty: bundleAtoiAt(form.DefaultQty, i), MinQty: bundleAtoiAt(form.MinQty, i),
-			MaxQty:     bundleAtoiAt(form.MaxQty, i),
-			SourceKind: bundleStrAt(form.SourceKinds, i), WarehouseID: bundleStrAt(form.WarehouseIDs, i),
-			WarehouseSKU: bundleStrAt(form.WarehouseSKUs, i), ExternalSKU: bundleStrAt(form.ExternalSKUs, i),
-		}
-		label := labels[id]
-		if label == "" && id != "" {
-			// 库与候选都给不出标签时退回 id：让运营至少看得出这一行是哪一条。
-			label = id
-		}
-		rows = append(rows, bundleRow(option, 0, BundleSourceParts(option), label))
-	}
-	if len(rows) < productdto.BundleMaxOptionsLimit && !hasBlank {
-		rows = append(rows, bundleRow(productdto.BundleOption{Required: true, DefaultQty: 1, MinQty: 1}, 0, nil, ""))
-	}
-	return rows
-}
-
-// bundleStrAt 取并行数组的第 i 个字符串（缺失一律空串）。
-//
-// 这里不承担校验 —— 来源字段的白名单与清理在保存路径上（未知来源会被明确拒绝，
-// 不是在这里静默丢弃）。与控制器侧的同名助手是同一手法。
-func bundleStrAt(values []string, i int) string {
-	if i < 0 || i >= len(values) {
-		return ""
-	}
-	return strings.TrimSpace(values[i])
-}
-
-// bundleAtoiAt 取并行数组的第 i 个整数（缺失 / 非数字一律 0）。
-func bundleAtoiAt(values []string, i int) int {
-	if i < 0 || i >= len(values) {
-		return 0
-	}
-	n, err := strconv.Atoi(strings.TrimSpace(values[i]))
-	if err != nil {
-		return 0
-	}
-	return n
 }
 
 // bundleCandidateOptions 候选 SKU 下拉项。

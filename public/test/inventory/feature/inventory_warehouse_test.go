@@ -645,8 +645,8 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	}
 	body := rec.Body.String()
 	// 独立页 include product_create_form.html；断言仓库选项处于创建表单之内，
-	// 而非误命中页面上其他位置的仓库名。
-	formStart := strings.Index(body, `<form method="post" action="/admin/products/create"`)
+	// 而非误命中页面上其他位置的仓库名。表单已迁 JSON 写基座，句柄是 id + data-write-api。
+	formStart := strings.Index(body, `<form id="product-create-form"`)
 	if formStart < 0 {
 		t.Fatalf("商品新建页缺少创建表单")
 	}
@@ -684,7 +684,7 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	var created struct {
 		Code int `json:"code"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil || created.Code != 0 {
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil || created.Code != http.StatusOK {
 		t.Fatalf("新建变体应回成功 JSON，实际 %v：%s", err, rec.Body.String())
 	}
 	if after := countVariants(t, f, p.ID); after != before+1 {

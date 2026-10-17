@@ -210,27 +210,6 @@ func productAttrJump(c *gin.Context, ok bool, msg productMsg) {
 	productPageJump(c, ok, msg, productAttrBack(c), productAttrBackMsg)
 }
 
-// productBundleJump 回捆绑配置页的提示页出口。
-//
-// 商品 id 随隐藏域 productId 提交，不依赖 action query：htmx 成功要 HX-Redirect 回
-// 「这一个商品」的捆绑页，query 上没有 product 时不能落到空骨架。
-func productBundleJump(c *gin.Context, ok bool, msg productMsg) {
-	back := productBundleBack(c)
-	if !strings.Contains(back, "product=") {
-		project := ""
-		product := ""
-		if c != nil {
-			project = strings.TrimSpace(c.PostForm("projectId"))
-			product = strings.TrimSpace(c.PostForm("productId"))
-		}
-		back = backpath.WithParams(productBundlePath, map[string]string{
-			"project": project,
-			"product": product,
-		})
-	}
-	productPageJump(c, ok, msg, back, productBundleBackMsg)
-}
-
 // productDetailTemplateJump 回详情页模板页的提示页出口（project / product 来自表单）。
 func productDetailTemplateJump(c *gin.Context, ok bool, projectID, productID string, msg productMsg) {
 	productPageJump(c, ok, msg, productDetailTemplateBack(projectID, productID), productDetailTemplateBackMsg)

@@ -6,39 +6,37 @@
 {{maxOptions := .MaxOptions}}
 {{candidateSKUs := .Rows}}
 {{if isset(.CandidateSKUs)}}{{candidateSKUs = .CandidateSKUs}}{{end}}
-{* 片段档的装载失败：这一档**仍是片段**（200）—— htmx 用它替换页面里那一块，
-   整页失败页塞进片段槽会把外层结构一起换掉。LoadError 由 Go 侧置入。 *}
+{* 装载失败：表单仍要渲染（配置读不出来不等于这一屏没有内容），只撤掉保存入口。 *}
 {{loadError := .["LoadError"]}}
-{* 这三个键只在「写失败重渲染」这条路径上有值（Go 侧 product_page.go 填）；
-   片段也可能被别的调用方/测试单独渲染，所以缺键按「没有提交快照、不禁止保存」处理
-   —— 直接 .Key 在缺键时会抛 Jet Runtime Error，实测会整块响应被丢弃。 *}
-{{submitted := false}}{{saveBlocked := false}}
-{{if isset(.Submitted)}}{{submitted = .Submitted}}{{end}}
+{{saveBlocked := false}}
 {{if isset(.SaveBlocked)}}{{saveBlocked = .SaveBlocked}}{{end}}
 {{cfgMaxOptions := 0}}{{cfgMinTotalQty := 0}}{{cfgMaxTotalQty := 0}}
 {{if isset(.CfgMaxOptions)}}{{cfgMaxOptions = .CfgMaxOptions}}{{end}}
 {{if isset(.CfgMinTotalQty)}}{{cfgMinTotalQty = .CfgMinTotalQty}}{{end}}
 {{if isset(.CfgMaxTotalQty)}}{{cfgMaxTotalQty = .CfgMaxTotalQty}}{{end}}
 <div data-bundle-form-host>
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_bundle.saveError", "保存未完成：") }}{{.Err}}</p>
-    {{end}}{{end}}
     {{if loadError}}
-    {* 装载失败要说清「发生了什么」，但**不能吞掉表单**：这条路径是写失败重渲染，
-       hx-swap=outerHTML 会用这一段替换用户整块表单 —— 有提交快照时表单必须留在下面
-       （先把用户的输入留住，再谈报错）。 *}
+    {* 装载失败要说清「发生了什么」，但**不能吞掉页面骨架**：保存入口由 SaveBlocked 撤掉
+       （配置读不出来就无法保证提交的是完整配置），成员表照常渲染库里已有的配置。 *}
     <p class="badge badge-danger" role="alert">{{loadError}}</p>
     <p class="page-sub">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
-    <p class="hint">{{if submitted}}{{ .["t"]("admin.product_bundle.reloadFailedKeepInput", "下面是你刚提交的成员清单与数值：本次禁止保存（配置没读出来，保存会把不完整的配置写进去），网络恢复后点「重新载入」再保存。") }}{{else}}{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}{{end}}</p>
+    <p class="hint">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
     {{end}}
     <section class="card card-body">
         <h2>{{ .["t"]("admin.product_bundle.rule.title", "选项规则") }}{{if .Detail}} · {{.Detail.ProductName}}{{end}}</h2>
         {{if .Detail}}
         <p><span class="badge">{{ .["t"]("admin.product_bundle.rule.basePriceLead", "套餐价（主体自定价）：") }}{{.Detail.BasePrice}}</span></p>
         {{end}}
-        {{if .Detail || submitted}}
-        <form method="post" action="/admin/products/bundle/save{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-post="/admin/products/bundle/save{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-target="closest [data-bundle-form-host]" hx-swap="outerHTML">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {{if .Detail}}
+        {* 保存走 JSON 写基座：成员行由 static/js/ui/product_bundle_write.js 组装成
+           {productId, config:{maxOptions,minTotalQty,maxTotalQty,options:[…]}}（行内具名字段不进顶层）。
+           CSRF 走请求头，表单里不再有隐藏域。 *}
+        <form data-write-api="/api/product/bundle/set" data-write-mode="form"
+              data-write-builder="product-bundle-config"
+              data-write-rows="[data-bundle-member-row];variantId,required,defaultQty,minQty,maxQty,sourceKind,memberWarehouseId,memberWarehouseSku,memberExternalSku;memberRows"
+              data-write-flash="product-bundle-config">
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <p class="form-hint badge" data-write-flash-target="product-bundle-config" role="status" hidden></p>
             <input type="hidden" name="productId" value="{{selectedProduct}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <div class="form-inline">
@@ -160,7 +158,7 @@
                 <a class="btn btn-ghost" href="/admin/products/bundle{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">{{ .["t"]("admin.product_bundle.reload", "重新载入") }}</a>
                 <button type="submit" class="btn btn-primary" disabled>{{ .["t"]("admin.product_bundle.cfg.saveBlocked", "保存配置（页面数据未读出）") }}</button>
                 {{else}}
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_bundle.cfg.save", "保存配置") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.product_bundle.cfg.save", "保存配置") }}</button>
                 {{end}}
             </div>
         </form>

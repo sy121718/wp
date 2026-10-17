@@ -792,15 +792,14 @@ func (v ProductDetailTemplatePageView) PageNoStore() bool {
 
 // ProductBundlePageReq 捆绑配置页的取数入参。
 //
-// 六个上下文字段 + 一个写路径产物：
+// 五个上下文字段（全部来自 query，页面用 GET 重新渲染）：
 //
 //	· ProjectID / ProductID 页面的两个选择器（入口有两套字段名，控制器认完再传进来）；
 //	· Source / SourceProductID / SourceWarehouseID 成员来源面板的当前上下文
-//	  （用 GET 重新渲染，不是前端拼参数 —— 属性值勾选清单与仓库 SKU 候选都由服务端给）；
-//	· Submitted 写失败原地重渲染时的提交快照（成员清单 + 配置数值）。
+//	  （用 GET 重新渲染，不是前端拼参数 —— 属性值勾选清单与仓库 SKU 候选都由服务端给）。
 //
-// Submitted 为什么由控制器传而不是读模型自己去读：它在**请求体**里，读模型不认识
-// gin.Context（与定价页的 Form / 预览结果、编辑页的表单回显同一分工）。
+// 没有「提交快照」这一档：保存已迁到 JSON 写基座，基座在原页发 fetch、失败只写结果区，
+// 用户的输入从未离开 DOM，因此页面装载只回答「库里配了什么」。
 type ProductBundlePageReq struct {
 	ProjectID       string
 	ProductID       string
@@ -808,33 +807,6 @@ type ProductBundlePageReq struct {
 	SourceProductID string
 	// SourceWarehouseID 选中来源仓（仓库来源面板据此只列那个仓的一屏候选）。
 	SourceWarehouseID string
-	// Submitted nil = 首屏 GET（成员清单与配置数值都取库里的配置）；
-	// 非 nil = 写失败重渲染，**成员清单一律按它渲染**。
-	Submitted *BundleSubmittedForm
-}
-
-// BundleSubmittedForm 写失败重渲染时带回来的**原始提交**（成员表的并行数组 + 三个配置数值）。
-//
-// 为什么不是 BundleConfig：配置里没有空白行（保存时 `if vid == "" { continue }` 跳过了它），
-// 而渲染必须保住空行占的那个位置 —— 成员表的行与这些数组按 DOM 顺序一一对应，
-// 摘掉空行会让它后面的成员整体上移，用户看到的是「我插在中间那一行没了，顺序也变了」。
-//
-// 数组字段名与表单字段一一对应（VariantIDs ↔ variantId …），控制器从 PostForm 原样取出，
-// 不在这里做任何清理：校验与归一在 service 的保存路径上（这里是**渲染**输入）。
-type BundleSubmittedForm struct {
-	VariantIDs    []string
-	Required      []string
-	DefaultQty    []string
-	MinQty        []string
-	MaxQty        []string
-	SourceKinds   []string
-	WarehouseIDs  []string
-	WarehouseSKUs []string
-	ExternalSKUs  []string
-	// 三个配置数值（与数组同一份提交）：成员留下了、数值却回到 0，用户会以为配置被改过。
-	MaxOptions  int
-	MinTotalQty int
-	MaxTotalQty int
 }
 
 // BundleOptionRow 成员表的一行（渲染行，非原始配置）。
@@ -908,15 +880,13 @@ type ProductBundlePageView struct {
 	SourceWarehouses  []BundleSourceWarehouseGroupView
 	SourceWarehouseID string
 
-	// Cfg* 配置数值的回填源（提交快照优先，其次才是库里的配置）。
+	// Cfg* 配置数值的回填源（库里的配置；读不出来时是零值 + SaveBlocked）。
 	CfgMaxOptions  int
 	CfgMinTotalQty int
 	CfgMaxTotalQty int
 
-	// Submitted 这一屏有「用户刚提交的快照」（写失败重渲染）。
-	// SaveBlocked 页面重建失败时禁止保存：配置读不出来就无法保证这次提交的是完整配置，
+	// SaveBlocked 配置读不出来时禁止保存：无法保证这次提交的是完整配置，
 	// 宁可让用户先「重新载入」，也不要缺配置误写。
-	Submitted   bool
 	SaveBlocked bool
 
 	// LoadError 由控制器按当前语言归口后填（与前八屏同一分工：文案是 HTTP 侧的取词）。

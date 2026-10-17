@@ -594,7 +594,7 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 		t.Fatalf("保存响应不是合法 JSON: %v（%s）", err, rec.Body.String())
 	}
 	// 成功回执是一句复合句（计数 + 跳过原因），页面用 data-write-flash 把它带过整页刷新。
-	if saved.Code != 0 || !strings.Contains(saved.Message, "新增 2 个") || saved.Data.Created != 2 {
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Message, "新增 2 个") || saved.Data.Created != 2 {
 		t.Fatalf("回执应含新增计数与计数本身，实际 code=%d message=%q created=%d", saved.Code, saved.Message, saved.Data.Created)
 	}
 	if got := f.variantsOf(t, p.ID); len(got) != 2 {

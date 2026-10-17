@@ -29,8 +29,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -138,10 +136,8 @@ func (s *editorStub) ProductPricingPage(context.Context, *productdto.ProductPric
 	return productPricingPageViewStub(nil), nil
 }
 
-// ProductBundlePage 读模型桩：**按契约**把提交快照渲染回来（Submitted 非 nil 时成员行与
-// 配置数值一律取它）。契约本身（快照优先于库里的配置）的判据在真实库的
-// public/test/product/feature/product_bundle_page_test.go（那里「非法配置 → 原请求 200 +
-// value=9 回填」跑的是真 service）；本桩只保证控制器那一层拿到的是契约形状的视图。
+// ProductBundlePage 读模型桩：只负责给出契约形状的视图（页面装载只回答「库里配了什么」——
+// 保存已迁到 JSON 写基座，没有提交快照这一档）。
 func (s *editorStub) ProductBundlePage(_ context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageView, error) {
 	s.record("ProductBundlePage")
 	view := s.bundlePageView
@@ -150,13 +146,6 @@ func (s *editorStub) ProductBundlePage(_ context.Context, req *productdto.Produc
 			if req != nil {
 				v.SelectedProject = req.ProjectID
 				v.SelectedProduct = req.ProductID
-				if req.Submitted != nil {
-					v.Rows = stubSubmittedRows(req.Submitted)
-					v.CfgMaxOptions = req.Submitted.MaxOptions
-					v.CfgMinTotalQty = req.Submitted.MinTotalQty
-					v.CfgMaxTotalQty = req.Submitted.MaxTotalQty
-					v.Submitted = true
-				}
 			}
 			if s.bundlePageErr != nil {
 				v.HTTPStatus = http.StatusInternalServerError
@@ -166,46 +155,6 @@ func (s *editorStub) ProductBundlePage(_ context.Context, req *productdto.Produc
 		})
 	}
 	return view, s.bundlePageErr
-}
-
-// stubSubmittedRows 把提交快照摊成渲染行，与读模型的装配同形（含**原样占位**的空白行与尾部空槽）。
-func stubSubmittedRows(form *productdto.BundleSubmittedForm) []productdto.BundleOptionRow {
-	rows := make([]productdto.BundleOptionRow, 0, len(form.VariantIDs)+1)
-	hasBlank := false
-	for i, rawID := range form.VariantIDs {
-		id := strings.TrimSpace(rawID)
-		if id == "" {
-			hasBlank = true
-		}
-		rows = append(rows, productdto.BundleOptionRow{
-			VariantID: id, Required: stubAt(form.Required, i) == "1",
-			DefaultQty: stubAtoi(form.DefaultQty, i), MinQty: stubAtoi(form.MinQty, i), MaxQty: stubAtoi(form.MaxQty, i),
-			SourceKind: stubAt(form.SourceKinds, i), WarehouseID: stubAt(form.WarehouseIDs, i),
-			WarehouseSKU: stubAt(form.WarehouseSKUs, i), ExternalSKU: stubAt(form.ExternalSKUs, i),
-			SourceParts: []productdto.BundleSourcePart{},
-		})
-	}
-	if len(rows) < productdto.BundleMaxOptionsLimit && !hasBlank {
-		rows = append(rows, productdto.BundleOptionRow{
-			Required: true, DefaultQty: 1, MinQty: 1, SourceParts: []productdto.BundleSourcePart{},
-		})
-	}
-	return rows
-}
-
-func stubAt(values []string, i int) string {
-	if i < 0 || i >= len(values) {
-		return ""
-	}
-	return strings.TrimSpace(values[i])
-}
-
-func stubAtoi(values []string, i int) int {
-	n, err := strconv.Atoi(stubAt(values, i))
-	if err != nil {
-		return 0
-	}
-	return n
 }
 
 func (s *editorStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageView, error) {
@@ -461,58 +410,8 @@ func editorRequest(t *testing.T, h *productPageHandle, target string) *httptest.
 	engine.GET("/admin/products/bundle", h.ProductBundlePage)
 	engine.GET("/admin/products/edit", h.ProductEditPage)
 	engine.GET("/admin/products/template", h.ProductDetailTemplatePage)
-	engine.POST("/admin/products/bundle/save", h.ProductBundleSave)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
-	return rec
-}
-
-// editorSaveRequest 走真实的保存入口（写失败原地重渲染）：htmx 档换片段、原生档换整页。
-func editorSaveRequest(t *testing.T, h *productPageHandle, htmx bool) *httptest.ResponseRecorder {
-	return editorSaveRequestWith(t, h, htmx, editorSubmittedForm())
-}
-
-// editorSubmittedForm 两个成员 + 三个配置数值 + 来源字段：重渲染必须把它们**逐字**带回，
-// 所以这里刻意让每一列的值都不相同（同值会让「少回填一列」测不出来）。
-func editorSubmittedForm() url.Values {
-	form := url.Values{}
-	form.Set("csrf_token", "t")
-	form.Set("productId", "prod1")
-	form.Set("projectId", "p1")
-	form.Set("maxOptions", "7")
-	form.Set("minTotalQty", "2")
-	form.Set("maxTotalQty", "9")
-	// 一个成员一行：成员清单就是这几个并行数组（顺序即 DOM 顺序）。
-	for _, m := range []struct{ id, required, def, min, max, kind, warehouse, wsku, esku string }{
-		{"v1", "1", "2", "1", "3", "BundleSourceProduct", "", "", "SKU-EXT-1"},
-		{"v2", "0", "1", "0", "5", "BundleSourceWarehouse", "wh1", "WSKU-1", ""},
-	} {
-		form.Add("variantId", m.id)
-		form.Add("required", m.required)
-		form.Add("defaultQty", m.def)
-		form.Add("minQty", m.min)
-		form.Add("maxQty", m.max)
-		form.Add("sourceKind", m.kind)
-		form.Add("memberWarehouseId", m.warehouse)
-		form.Add("memberWarehouseSku", m.wsku)
-		form.Add("memberExternalSku", m.esku)
-	}
-	return form
-}
-
-func editorSaveRequestWith(t *testing.T, h *productPageHandle, htmx bool, form url.Values) *httptest.ResponseRecorder {
-	t.Helper()
-	gin.SetMode(gin.TestMode)
-	engine := gin.New()
-	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.POST("/admin/products/bundle/save", h.ProductBundleSave)
-	req := httptest.NewRequest(http.MethodPost, "/admin/products/bundle/save", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if htmx {
-		req.Header.Set("HX-Request", "true")
-	}
-	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, req)
 	return rec
 }
 
@@ -746,199 +645,6 @@ func TestDetailTemplateNoProductIsGuidance(t *testing.T) {
 	// 读模型**会被调一次**（「没给 product」这个结论由它给：它是取数编排的一部分，
 	// 顺带还判了工程存在性）。不该发生的是它之下的派生取数 —— 那条判据在 service。
 	assertCalls(t, "菜单入口", stub.calls, []string{"ProductDetailTemplatePage"})
-}
-
-// TestBundleSaveFailureKeepsFragmentBoundary 写失败原地重渲染的**响应边界**：
-//
-//	htmx 请求  → 200 + 片段（不是整页失败页；成员清单原样带回来）；
-//	原生请求  → 200 + 整页（页壳完整）。
-//
-// 这两档由同一个 renderBundlePage 输出（fragment 形参），所以边界写错不会编译失败 —— 只会让
-// 运营点一次保存之后整页被换掉、或者片段槽里塞进一整张页面。
-func TestBundleSaveFailureKeepsFragmentBoundary(t *testing.T) {
-	t.Run("htmx 档保持片段", func(t *testing.T) {
-		h, stub, _, _ := editorEnv()
-		stub.setErr = errors.New(productenums.ErrBundlePriceRequired)
-		rec := editorSaveRequest(t, h, true)
-		body := rec.Body.String()
-		if rec.Code != http.StatusOK {
-			t.Fatalf("写失败重渲染是 200（就地留住输入），实际 %d，body=%s", rec.Code, headOf(body))
-		}
-		if strings.Contains(body, "</html>") {
-			t.Fatalf("htmx 档必须是片段，实际渲染了整页，body=%s", headOf(body))
-		}
-		if !strings.Contains(body, "data-bundle-form-host") {
-			t.Fatalf("片段必须保留宿主元素（hx-target 靠它定位），body=%s", headOf(body))
-		}
-		if !strings.Contains(body, `name="variantId" value="v1"`) {
-			t.Fatalf("重渲染必须把用户刚配的成员清单带回来，body=%s", headOf(body))
-		}
-		assertSubmittedSnapshot(t, "htmx 写失败", body, false)
-		if strings.Contains(body, "LoadError") || strings.Contains(body, "LoadFailed") {
-			t.Fatalf("装载成功、只是保存没通过：不该出现装载失败槽，body=%s", headOf(body))
-		}
-	})
-
-	t.Run("原生档整页", func(t *testing.T) {
-		h, stub, _, _ := editorEnv()
-		stub.setErr = errors.New(productenums.ErrBundlePriceRequired)
-		rec := editorSaveRequest(t, h, false)
-		body := rec.Body.String()
-		if rec.Code != http.StatusOK {
-			t.Fatalf("原生档写失败也是 200（整页重渲染），实际 %d，body=%s", rec.Code, headOf(body))
-		}
-		for _, want := range []string{"<html", "</body>", "</html>", `name="variantId" value="v1"`} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("原生档应整页重渲染且带回成员清单，缺 %q，body=%s", want, headOf(body))
-			}
-		}
-		assertSubmittedSnapshot(t, "原生写失败", body, false)
-	})
-
-	t.Run("片段档装载也失败时仍是片段", func(t *testing.T) {
-		h, stub, _, _ := editorEnv()
-		stub.setErr = errors.New(productenums.ErrBundlePriceRequired)
-		// 保存失败之后重建页面又读不到配置：这一档最容易写成「整页失败页 + 500」，
-		// 而它必须仍是片段（200）：否则 htmx 会因为 5xx 不 swap，用户看到的是「点了没反应」。
-		stub.bundlePageErr = errors.New(editorDriverText)
-		rec := editorSaveRequest(t, h, true)
-		body := rec.Body.String()
-		if rec.Code != http.StatusOK {
-			t.Fatalf("片段档装载失败仍是 200（片段响应边界优先），实际 %d，body=%s", rec.Code, headOf(body))
-		}
-		if strings.Contains(body, "</html>") {
-			t.Fatalf("片段档必须是片段，实际渲染了整页，body=%s", headOf(body))
-		}
-		if !strings.Contains(body, "data-bundle-form-host") {
-			t.Fatalf("片段必须保留宿主元素，body=%s", headOf(body))
-		}
-		if !strings.Contains(body, "这一页的数据没能读出来") {
-			t.Fatalf("片段里要说清是装载失败，body=%s", headOf(body))
-		}
-		// 关键：读不出来**不等于**可以把用户整块表单换掉 —— 提交快照必须原样回来。
-		assertSubmittedSnapshot(t, "双失败片段", body, true)
-		if !strings.Contains(body, "下面是你刚提交的成员清单与数值") {
-			t.Fatalf("双失败档要说清「输入已留下、但本次不能保存」，body=%s", headOf(body))
-		}
-		for _, bad := range productPageLeakMarkers {
-			if strings.Contains(body, bad) {
-				t.Fatalf("片段里出现了不该出现的内容 %q，body=%s", bad, headOf(body))
-			}
-		}
-	})
-}
-
-// TestBundleSaveNativeDoubleFailureKeepsSubmittedSnapshot 原生 POST 写失败 + 重读也失败：
-// 整页把提交快照渲染回来（表单在、保存禁用、给了重新载入入口），不是把整块表单换成一句提示。
-func TestBundleSaveNativeDoubleFailureKeepsSubmittedSnapshot(t *testing.T) {
-	h, stub, _, _ := editorEnv()
-	stub.setErr = errors.New(productenums.ErrBundlePriceRequired)
-	stub.bundlePageErr = errors.New(editorDriverText)
-	rec := editorSaveRequest(t, h, false)
-	body := rec.Body.String()
-	if rec.Code != http.StatusOK {
-		t.Fatalf("原生双失败应整页重渲染（200），实际 %d，body=%s", rec.Code, headOf(body))
-	}
-	for _, want := range []string{"<html", "</body>", "</html>"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("原生档必须是整页，缺 %q，body=%s", want, headOf(body))
-		}
-	}
-	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("装载失败的响应不该被缓存，Cache-Control=%q", got)
-	}
-	assertSubmittedSnapshot(t, "原生双失败", body, true)
-	if strings.Contains(body, "data-bundle-form-host") == false {
-		t.Fatalf("整页里也要有片段宿主（表单就在里面），body=%s", headOf(body))
-	}
-}
-
-// assertSubmittedSnapshot 断言「用户提交的内容原样回到页面上」：三个配置数值（来自提交，
-// 不是库里的旧值）、成员行的**全部并行字段与次序**、保存禁用 + 重新载入入口、以及为什么禁止保存。
-func assertSubmittedSnapshot(t *testing.T, step, body string, saveBlocked bool) {
-	t.Helper()
-	for _, re := range []*regexp.Regexp{reCfgMaxOptions, reCfgMinTotalQty, reCfgMaxTotalQty} {
-		if !re.MatchString(body) {
-			t.Fatalf("%s：配置数值应由提交快照回填（%s），body=%s", step, re.String(), headOf(body))
-		}
-	}
-	if !strings.Contains(body, "保存未完成") {
-		t.Fatalf("%s：这次保存为什么没通过也要留在页面上，body=%s", step, headOf(body))
-	}
-	if saveBlocked {
-		// 装载也失败：保存必须禁用（否则会把不完整配置写进去），并给一条现有通道的重新载入入口。
-		if !reDisabledSubmit.MatchString(body) {
-			t.Fatalf("%s：配置没读出来时保存必须禁用，body=%s", step, headOf(body))
-		}
-		for _, want := range []string{"重新载入", "本次禁止保存", "/admin/products/bundle?"} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("%s：双重失败档缺 %q，body=%s", step, want, headOf(body))
-			}
-		}
-	} else if reDisabledSubmit.MatchString(body) {
-		t.Fatalf("%s：装载成功、只是保存没通过时不该禁用保存（重试就该能再提交），body=%s", step, headOf(body))
-	}
-	got := submittedMemberRows(body)
-	want := []string{
-		"v1|1|2|1|3|BundleSourceProduct|||SKU-EXT-1",
-		"v2|0|1|0|5|BundleSourceWarehouse|wh1|WSKU-1|",
-	}
-	if strings.Join(got, " ; ") != strings.Join(want, " ; ") {
-		t.Fatalf("%s：成员行（次序 + 每个并行字段）应为 %v，实际 %v", step, want, got)
-	}
-}
-
-var (
-	reCfgMaxOptions  = regexp.MustCompile(`name="maxOptions"[^>]*value="7"`)
-	reCfgMinTotalQty = regexp.MustCompile(`name="minTotalQty"[^>]*value="2"`)
-	reCfgMaxTotalQty = regexp.MustCompile(`name="maxTotalQty"[^>]*value="9"`)
-	reDisabledSubmit = regexp.MustCompile(`<button type="submit" class="btn btn-primary" disabled>`)
-
-	reMemberRow      = regexp.MustCompile(`(?s)<tr data-bundle-member-row>(.*?)</tr>`)
-	reVariantValue   = regexp.MustCompile(`name="variantId" value="([^"]*)"`)
-	reSourceValue    = regexp.MustCompile(`name="sourceKind" value="([^"]*)"`)
-	reWarehouseValue = regexp.MustCompile(`name="memberWarehouseId" value="([^"]*)"`)
-	reWarehouseSku   = regexp.MustCompile(`name="memberWarehouseSku" value="([^"]*)"`)
-	reExternalSku    = regexp.MustCompile(`name="memberExternalSku" value="([^"]*)"`)
-	reRequiredSelect = regexp.MustCompile(`(?s)name="required"[\s\S]*?</select>`)
-	reSelectedOne    = regexp.MustCompile(`value="1"\s*selected`)
-)
-
-// submittedMemberRows 按 DOM 顺序抽出成员行的全部并行字段：
-// 「提交了什么、就以什么次序回来」是这条 P2 的判据本体，只看「片段在」证明不了它。
-func submittedMemberRows(body string) []string {
-	var out []string
-	for _, chunk := range reMemberRow.FindAllStringSubmatch(body, -1) {
-		row := chunk[1]
-		id := reVariantValue.FindStringSubmatch(row)
-		if id == nil || id[1] == "" {
-			// 尾部那一行空槽（「再追加一个成员」）的 variantId 是空值：它不是成员，
-			// 报回去也会被服务端跳过（product_page.go 的 `if vid == "" { continue }`）。
-			continue
-		}
-		required := "0"
-		if sel := reRequiredSelect.FindString(row); sel != "" && reSelectedOne.MatchString(sel) {
-			required = "1"
-		}
-		out = append(out, strings.Join([]string{
-			id[1], required,
-			numberValue(row, "defaultQty"), numberValue(row, "minQty"), numberValue(row, "maxQty"),
-			firstValue(reSourceValue, row), firstValue(reWarehouseValue, row),
-			firstValue(reWarehouseSku, row), firstValue(reExternalSku, row),
-		}, "|"))
-	}
-	return out
-}
-
-func numberValue(row, name string) string {
-	return firstValue(regexp.MustCompile(`name="`+name+`"[^>]*value="([^"]*)"`), row)
-}
-
-func firstValue(re *regexp.Regexp, row string) string {
-	if m := re.FindStringSubmatch(row); m != nil {
-		return m[1]
-	}
-	return ""
 }
 
 // containsCall 判断取数序列里是否发生过某次调用。
