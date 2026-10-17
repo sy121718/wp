@@ -1,10 +1,5 @@
 package commentdto
 
-// comment_resp.go — comment 模块的响应结构。
-//
-// 时间字段一律 utils.JSONTime（AGENTS.md：对外 JSON 只到秒）。
-// 展示用的格式化（"2006-01-02 15:04"）留在页面 / 片段层 —— dto 是数据，不是文案。
-
 import "go_wp/pkg/utils"
 
 // Item 公开列表里的一条评论（含它的一级回复）。

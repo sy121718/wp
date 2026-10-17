@@ -1,5 +1,7 @@
 package plugindto
 
+// Package plugindto 插件模块请求/响应结构。
+
 import json "go_wp/pkg/jsonx"
 
 // PluginResp 插件列表/详情行。

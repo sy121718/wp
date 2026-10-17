@@ -1,9 +1,5 @@
 package pubdto
 
-import (
-	"go_wp/pkg/utils"
-)
-
 // ActivateReq 激活请求：把 reserved 占用升级为 active 并绑定产物。
 //
 // 归属者二选一：PageID（手工页面）或 PresentationID（自动发布实例）。
@@ -58,18 +54,6 @@ type RenameReservedReq struct {
 	OnlyReserved bool `json:"onlyReserved"`
 }
 
-// RouteResp 路由占用投影。
-type RouteResp struct {
-	ProjectID string  `json:"projectId"`
-	Path      string  `json:"path"`
-	PageID    *string `json:"pageId,omitempty"`
-	// PresentationID 展示实例归属（页面占用的行此字段为空）。
-	PresentationID *string        `json:"presentationId,omitempty"`
-	RouteKind      string         `json:"routeKind"`
-	ArtifactID     *string        `json:"artifactId,omitempty"`
-	UpdatedAt      utils.JSONTime `json:"updatedAt"`
-}
-
 // ReserveReq 创建草稿路径 reserved 占用（页面创建时预留）。
 type ReserveReq struct {
 	ProjectID string `json:"projectId" binding:"required"`
@@ -115,4 +99,48 @@ type ListActivePathsByPresentationReq struct {
 type DeleteRoutesByPresentationReq struct {
 	ProjectID      string `json:"projectId" binding:"required"`
 	PresentationID string `json:"presentationId" binding:"required"`
+}
+
+// BeginPublishReceiptReq 登记一条「即将切换访问面」的发布回执。
+//
+// FromArtifactID 是本次发布前该语言的活跃产物（首次发布为空）；ToArtifactID 是本次
+// 要激活的产物。恢复流程靠它们判断「符号链接现在指着谁」，因此两者都要如实填写。
+type BeginPublishReceiptReq struct {
+	ProjectID string `json:"projectId" binding:"required"`
+	Path      string `json:"path" binding:"required"`
+	// PageID / PresentationID 二选一：手工页面发布走前者，自动发布实例走后者。
+	PageID         string `json:"pageId"`
+	PresentationID string `json:"presentationId"`
+	FromArtifactID string `json:"fromArtifactId"`
+	// ToArtifactID 本次要激活的产物行 id。
+	//
+	// 例外：Action 为 update_url 时允许为空 —— 改 URL 的产物是**按新路径**现编译的
+	// （canonicalPath 进 Manifest 并参与 hash），登记回执时（切换之前）拿不到它的
+	// 产物行 id。该形态的恢复改用「新路径上的产物 canonicalPath 是否等于新路径」判定。
+	ToArtifactID string `json:"toArtifactId"`
+	// Lang 构建语言（多语言站点一个页面每个语言一条回执）。
+	Lang   string `json:"lang"`
+	Action string `json:"action"`
+	// OldPath 切换前该语言的线上路径（改 URL 的旧路径 / 回滚前的路径）。
+	//
+	// 放进回执是因为恢复要用它处置旧路径（301 或下线）：从新路径反推不出来，
+	// 而那一刻数据库里的激活记录还是旧值也会随时间被后续操作改掉。
+	OldPath string `json:"oldPath"`
+	// Redirect 旧路径是否应登记为 301 重定向（update_url 专用）。
+	Redirect bool `json:"redirect"`
+}
+
+// ReceiptsQueryReq 领取 / 统计未结案回执的过滤条件（收敛例程与可观测接口共用同一口径）。
+//
+// 过滤条件为什么由调用方传：同一张表上叠着多套恢复职责 —— 手工页面（page）与自动发布
+// 实例（presentation）各自的补齐例程认得的动作不同，路由回执（activate / redirect）
+// 又由各自的事务内结案处理。领到不属于自己的回执只会被反复领取再跳过，还会把真正
+// 待办的行挤出单批上限（饥饿）—— 所以「领取口径」必须与「谁能收敛」严格一致。
+type ReceiptsQueryReq struct {
+	// SourceType 回执归属（'page' / 'presentation'）；空 = 不限。
+	SourceType string `json:"sourceType"`
+	// Actions 认得的动作名；空 = 不限（不筛就领到全部，谨慎使用）。
+	Actions []string `json:"actions"`
+	// Limit 单批上限（领取用；统计忽略）。<= 0 视为「不领任何行」。
+	Limit int `json:"limit"`
 }

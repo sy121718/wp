@@ -1,12 +1,5 @@
 package cartdto
 
-// cart_req.go — 购物车模块请求。
-//
-// 购物车的状态在**客户端 cookie** 里（访客未登录也要能加购，所以不能依赖会话）。
-// 因此本模块的每个请求都带一个 Cookie 字段：那是请求里购物车 cookie 的原始值，
-// 由 inbound 取出来交给本模块，由本模块负责解码、验签、重新签名后交回 inbound 写回响应。
-// 这样「cookie 的格式与真伪」只有一处实现，HTTP 层只做搬运。
-
 import ordercontract "go_wp/internal/module/order/contract"
 
 // TrackCookies 访客追踪 cookie 的原始值（流量来源 / 首触 / 会话 / 浏览轨迹）。

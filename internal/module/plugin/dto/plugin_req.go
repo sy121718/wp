@@ -1,5 +1,6 @@
-// Package plugindto 插件模块请求/响应结构。
 package plugindto
+
+// Package plugindto 插件模块请求/响应结构。
 
 // ToggleReq 启停插件。
 type ToggleReq struct {

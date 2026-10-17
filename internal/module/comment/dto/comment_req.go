@@ -1,10 +1,5 @@
 package commentdto
 
-// comment_req.go — comment 模块的请求结构（数据流 inbound -> service -> inbound）。
-//
-// 全部字段都是**不可变值**：dto 跨模块传递（runtimefragment 构造 ListReq / SubmitReq 传进来），
-// 消费方不得持有并改写。刻意不放 gin / gorm 相关类型：dto 要能被片段层与后台页共用。
-
 // ListReq 公开列表请求（片段 commentList 与后台页共用同一套分页口径）。
 type ListReq struct {
 	// ProjectID 工程 id（必填：评论按工程隔离）。

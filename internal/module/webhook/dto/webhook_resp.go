@@ -1,11 +1,5 @@
 package webhookdto
 
-// webhook_endpoint_resp.go — webhook 端点与投递的响应。
-//
-// 两张响应结构都**不含密钥**：EndpointItem 只给 HasSecret 布尔，
-// 投递日志只给负载预览。签名密钥是出站请求的可信凭证，读得回来就等于
-// 「任何拿到后台读权限的人都能伪造我们的请求」。
-
 import (
 	"go_wp/pkg/utils"
 )

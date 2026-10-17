@@ -1,5 +1,6 @@
-// membership_req.go — membership 模块的请求结构（数据流 inbound → service → inbound）。
 package membershipdto
+
+// membership_req.go — membership 模块的请求结构（数据流 inbound → service → inbound）。
 
 // ListTiersReq 列出某工程的等级（含各自权益）。
 type ListTiersReq struct {

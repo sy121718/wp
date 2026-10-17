@@ -1,7 +1,5 @@
 package webhookdto
 
-// webhook_endpoint_req.go — webhook 端点管理与投递查询的请求。
-
 // SaveEndpointReq 新建 / 更新端点（ID 为 0 即新建）。
 //
 // Secret 是**明文**签名密钥，只在保存这一刻出现：service 立即加密落库，

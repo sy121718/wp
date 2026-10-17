@@ -1,7 +1,6 @@
-// membership_resp.go — membership 模块的响应结构。
-//
-// 时间字段一律 utils.JSONTime（AGENTS.md §数据库：对外 JSON 只到秒）。
 package membershipdto
+
+// membership_req.go — membership 模块的请求结构（数据流 inbound → service → inbound）。
 
 import "go_wp/pkg/utils"
 

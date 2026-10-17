@@ -1,10 +1,5 @@
 package cartdto
 
-// cart_resp.go — 购物车模块响应。
-//
-// 金额一律以**分**为单位（与订单域一致）；同时给出 ¥ 前缀的展示串 —— 拼展示串这种事
-// 只该有一处实现，散在模板里就会出现「有的地方两位小数、有的地方没有」。
-
 // CartItem 购物车中的一行：商品事实 + 数量 + 行小计 + 可用量。
 type CartItem struct {
 	VariantID    string

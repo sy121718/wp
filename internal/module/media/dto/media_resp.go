@@ -1,5 +1,12 @@
 package mediadto
 
+// AttachmentRefResp 附件的一条引用记录（构建期写入 extra_info.refs 的条目）。
+type AttachmentRefResp struct {
+	Kind  string `json:"kind"`            // 引用方类型：page / block / ...
+	ID    string `json:"id"`              // 引用方标识
+	Title string `json:"title,omitempty"` // 引用方标题（删除拦截提示展示）
+}
+
 // AttachmentResp 附件响应。
 type AttachmentResp struct {
 	ID          uint64  `json:"id"`
