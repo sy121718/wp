@@ -234,13 +234,13 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		"/admin/products/translations?project=pr1&amp;product=p1",
 		// 详情入口也在：改完去看只读的构成（变体 / 评分 / 捆绑）。
 		"/admin/products/detail?project=pr1&amp;product=p1",
-		// 变体 / 评分的写协议与搬页前逐字相同（改版式不改协议）。
+		// 变体 / 评分的写入口都在 JSON 写基座上（变体清单整张提交、评分增删各一条）。
 		`data-write-api="/api/product/variant/save"`,
 		`data-write-builder="product-variant-rows"`,
 		`data-preview-url="/admin/products/variant/preview"`,
 		`data-write-api="/api/product/variant/create"`,
-		`action="/admin/products/rating/add"`,
-		`action="/admin/products/rating/delete"`,
+		`data-write-api="/api/product/rating/add"`,
+		`data-write-api="/api/product/rating/delete"`,
 		// SEO 评分已移入抽屉：编辑页只留入口，评分按钮与结果容器在
 		// admin/product/entity_seo_drawer.html（该片段由模块内的用例守着）。
 		`data-drawer-url="/admin/products/seo/drawer?productId=p1`,
@@ -293,8 +293,8 @@ func TestGroupDProductDetailPageRenders(t *testing.T) {
 		`action="/admin/products/seo-score"`,
 		`data-write-api="/api/product/variant/save"`,
 		`data-write-api="/api/product/variant/create"`,
-		`action="/admin/products/rating/add"`,
-		`action="/admin/products/rating/delete"`,
+		`data-write-api="/api/product/rating/add"`,
+		`data-write-api="/api/product/rating/delete"`,
 		`action="/admin/products/reapply-preset"`,
 		`action="/admin/products/rollback-document"`,
 		`action="/admin/products/delete"`,

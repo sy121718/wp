@@ -89,6 +89,10 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	// 清单保存（整张清单一次提交，前端从清单 DOM 组装 rows）：权限点复用组合生成 ——
 	// 页面侧原先的 /admin/products/variant/save 挂的就是它，保存与生成本就是同一批人。
 	g.POST("/variant/save", permission.ProductVariantGenerate, handle.SaveVariantList)
+	// 评分是商品的子资源（issue #33）：补录 / 删除各一条记录，不碰商品自己的列。
+	// 权限点沿用「改这个商品」（update）—— 页面侧原先挂的就是它。
+	g.POST("/rating/add", permission.ProductUpdate, handle.AddRating)
+	g.POST("/rating/delete", permission.ProductUpdate, handle.DeleteRating)
 
 	// —— 属性组与属性值（issue #7）——
 	// 属性组可跨商品复用，故独立于商品资源。
@@ -236,8 +240,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.POST("/products/rollback-artifact", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRollbackArtifact)
 	// 商品评分（issue #33）：评分是独立明细表（#30），增删复用商品更新权限点 ——
 	// 评分属商品维护，不另立权限点与菜单。
-	pages.POST("/products/rating/add", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRatingAdd)
-	pages.POST("/products/rating/delete", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsRatingDelete)
+
 	// SEO 评分（审计 SEO-016）：商品 / 分类 / 品牌页的编辑期评分，按页型自动选权重档案。
 	// **只读计算**（不写库、不写产物、不激活 URL），因此与文章编辑页的评分侧栏一样
 	// 不叠加 Casbin 权限点 —— 页面组已有 Session + CSRF；评分是提示性的，不拦保存。

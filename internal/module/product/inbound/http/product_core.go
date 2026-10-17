@@ -847,47 +847,40 @@ func (h *Handle) SaveVariantList(c *gin.Context) {
 	response.SuccessWithMessage(c, productMsgText(c, variantSaveMsg(c, res)), res)
 }
 
-// productRatingInvalidMsg 评分非数字的提示事实（0~5 的范围由 service 与 DB CHECK 兜底）。
-var productRatingInvalidMsg = productMsg{Key: productenums.ProductsRatingInvalid, Fallback: "评分必须是 0~5 的数字"}
-
-// ProductsRatingAdd 补录一条商品评分（issue #33）。
+// AddRating 补录一条商品评分（issue #33）。
 //
 // 评分是**独立明细表**（#30），所以这是「加一条记录」而不是「改商品字段」——
-// 分值范围由 service 与数据库 CHECK 双重兜底，这里只把非数字提前拦下并给出可读文案。
-func (h *productPageHandle) ProductsRatingAdd(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	productID := c.PostForm("productId")
-	score, perr := strconv.ParseFloat(strings.TrimSpace(c.PostForm("score")), 64)
-	if perr != nil {
-		productEditJump(c, false, projectID, productID, productRatingInvalidMsg)
+// 分值范围由 service 与数据库 CHECK 双重兜底（service 对越界给「评分必须是 0~5 的数字」）。
+func (h *Handle) AddRating(c *gin.Context) {
+	req := &productdto.AddRatingReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
-	if _, err := h.products.AddRating(c.Request.Context(), &productdto.AddRatingReq{
-		ProductID:  productID,
-		Score:      score,
-		OperatorID: builtin.GetUsername(c),
-	}); err != nil {
-		productEditJump(c, false, projectID, productID, productErrMsg(c, err))
+	req.OperatorID = operatorFromContext(c)
+	res, err := h.svc.AddRating(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
-	productEditJump(c, true, projectID, productID, productActionDoneMsg)
+	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), res)
 }
 
-// ProductsRatingDelete 删掉一条评分（issue #33）：录错了能撤掉。
+// DeleteRating 删掉一条评分（issue #33）：录错了能撤掉。
 //
-// 表单里的 id 是**评分 id**，回详情的商品 id 只能取 productId 隐藏域（不给 id 回落的机会）。
-func (h *productPageHandle) ProductsRatingDelete(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	productID := c.PostForm("productId")
-	if err := h.products.DeleteRating(c.Request.Context(), &productdto.DeleteRatingReq{
-		ID: c.PostForm("id"),
-		// 工程显式回传（DB-009）：product_ratings 有 FORCE 策略，删一条评分要在工程作用域里。
-		ProjectID: projectID,
-	}); err != nil {
-		productEditJump(c, false, projectID, productID, productErrMsg(c, err))
+// 请求里的 id 是**评分 id**；工程随请求显式回传（DB-009：product_ratings 有 FORCE 策略，
+// 删一条评分要在工程作用域里）。
+func (h *Handle) DeleteRating(c *gin.Context) {
+	req := &productdto.DeleteRatingReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
-	productEditJump(c, true, projectID, productID, productActionDoneMsg)
+	if err := h.svc.DeleteRating(c.Request.Context(), req); err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), nil)
 }
 
 // ProductsAttributesSet 整体替换某商品引用的属性组（issue #7）。

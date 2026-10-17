@@ -1301,7 +1301,9 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
-	if req.Score < 0 || req.Score > maxRatingScore {
+	// 0 分是合法评分，只有「没传」与越界才拒：dto 上 Score 是 *float64，
+	// 页面的 input[type=number][min=0][max=5] 是前一道（更早、也更具体）的拦截。
+	if req.Score == nil || *req.Score < 0 || *req.Score > maxRatingScore {
 		return nil, errors.New(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
@@ -1320,7 +1322,7 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 		ID:        uuid.NewString(),
 		ProjectID: product.ProjectID,
 		ProductID: product.ID,
-		Score:     req.Score,
+		Score:     *req.Score,
 		Source:    source,
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),

@@ -395,7 +395,7 @@
     </section>
 
     {* ==== 评分：子资源表 + 它的入口（添加评分） ==== *}
-    <section class="card list-card">
+    <section class="card list-card" data-write-host>
         <div class="list-toolbar">
             <span class="card-title">{{ .["t"]("admin.products.rating.label", "评分") }}</span>
             <span class="badge badge-mute">{{if p.HasRating}}{{p.RatingAvg}}{{ .["t"]("admin.products.rating.sep", " · ") }}{{p.RatingCount}}{{ .["t"]("admin.products.ratings.countTail", " 条") }}{{else}}—{{end}}</span>
@@ -404,6 +404,9 @@
             <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-rating-add-{{p.ID}}" data-drawer-title="{{ .["t"]("admin.products.rating.add", "添加评分") }}">＋ {{ .["t"]("admin.products.rating.add", "添加评分") }}</button>
             {{end}}
         </div>
+        {* 删除按钮挂在表格外的隐藏表单上（按钮用 form="<id>" 关联）：失败原因要落在卡片里，
+           否则请求在原地静默失败、用户只看到「点了没反应」。 *}
+        <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.products.ratings.aria", "商品评分") }}">
             <table class="data-table">
                 <thead><tr><th>{{ .["t"]("admin.products.rating.label", "评分") }}</th><th>{{ .["t"]("admin.products.ratings.colSource", "来源") }}</th><th>{{ .["t"]("admin.products.ratings.colTime", "时间") }}</th><th class="col-actions">{{ .["t"]("admin.products.col.actions", "操作") }}</th></tr></thead>
@@ -424,6 +427,16 @@
                 </tbody>
             </table>
         </div>
+        {* 行内删除表单必须留在卡片内：基座失败时把原因写进最近的 [data-write-host] 结果槽，
+           放到卡片外面就落不进那个槽（症状是「点了删除没反应」）。 *}
+        {{range _, r := p.Ratings}}
+        <form id="rating-del-{{r.ID}}" class="hidden-form"
+              data-write-api="/api/product/rating/delete" data-write-mode="single" data-write-extra="projectId"
+              data-confirm="{{ .["t"]("admin.products.rating.deleteConfirm", "删除该条评分？商品的平均分与条数会随之重算。") }}" data-confirm-danger>
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{r.ID}}">
+        </form>
+        {{end}}
     </section>
 
     {* ==== SEO 检查：已收进抽屉（入口在页头）====
@@ -507,18 +520,6 @@
     </section>
     {{end}}{{end}}
 
-    {* ==== 行内表单：全部放表格外，按钮用 form="<id>" 关联 ==== *}
-    {{range _, r := p.Ratings}}
-    <form id="rating-del-{{r.ID}}" class="hidden-form" method="post" action="/admin/products/rating/delete"
-          data-confirm="{{ .["t"]("admin.products.rating.deleteConfirm", "删除该条评分？商品的平均分与条数会随之重算。") }}" data-confirm-danger>
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
-        <input type="hidden" name="projectId" value="{{selectedProject}}">
-        <input type="hidden" name="id" value="{{r.ID}}">
-        {* id 是评分 id，回跳的商品由 productId 给出。 *}
-        <input type="hidden" name="productId" value="{{p.ID}}">
-    </form>
-    {{end}}
-
     {* ==== 抽屉 ==== *}
     <template id="tpl-variant-create-{{p.ID}}">
         <form class="form-stack" data-write-api="/api/product/variant/create" data-write-mode="form"
@@ -588,14 +589,15 @@
     {{end}}
 
     <template id="tpl-rating-add-{{p.ID}}">
-        <form method="post" action="/admin/products/rating/add" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form class="form-stack" data-write-api="/api/product/rating/add" data-write-mode="form"
+              data-write-float="score" data-write-skip-empty="score">
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{p.ID}}">
             <input type="number" class="form-input" name="score" min="0" max="5" step="0.01" inputmode="decimal" placeholder="{{ .["t"]("admin.products.rating.phScore", "评分 0~5") }}" required>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.products.rating.add", "添加评分") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.products.rating.add", "添加评分") }}</button>
             </div>
         </form>
     </template>

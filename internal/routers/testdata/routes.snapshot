@@ -395,8 +395,6 @@ POST /admin/products/bulk-pricing
 POST /admin/products/bundle/members/resolve
 POST /admin/products/bundle/save
 POST /admin/products/delete
-POST /admin/products/rating/add
-POST /admin/products/rating/delete
 POST /admin/products/reapply-preset
 POST /admin/products/rollback-artifact
 POST /admin/products/rollback-document
@@ -589,6 +587,8 @@ POST /api/product/create
 POST /api/product/delete
 POST /api/product/pricing/apply
 POST /api/product/pricing/preview
+POST /api/product/rating/add
+POST /api/product/rating/delete
 POST /api/product/tag/create
 POST /api/product/tag/delete
 POST /api/product/tag/recalc

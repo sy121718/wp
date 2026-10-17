@@ -20,7 +20,7 @@ func setRatings(t *testing.T, f *detailFixture, productID string, scores ...floa
 	t.Helper()
 	for _, score := range scores {
 		if _, err := f.products.AddRating(context.Background(), &productdto.AddRatingReq{
-			ProductID: productID, Score: score,
+			ProductID: productID, Score: &score,
 		}); err != nil {
 			t.Fatalf("写入评分失败: %v", err)
 		}

@@ -33,7 +33,6 @@ const (
 	ProductsActionDone            = "admin.products.actionDone"
 	ProductsBulkNoneSelected      = "admin.products.bulk.noneSelected"
 	ProductsCreateQuantityInvalid = "admin.products.create.quantityInvalid"
-	ProductsRatingInvalid         = "admin.products.rating.invalid"
 	ProductsPreviewNeedSave       = "admin.products.preview.needSave"
 	ProductsPreviewUnavailable    = "admin.products.preview.unavailable"
 	ProductsPreviewFailed         = "admin.products.preview.failed"

@@ -10,7 +10,8 @@ type AddRatingReq struct {
 	ProductID string `json:"productId" binding:"required"`
 	ProjectID string `json:"projectId"`
 	// Score 评分 0~5（含端）；越界即拒绝（数据库还有 CHECK 兜底）。
-	Score float64 `json:"score" binding:"required"`
+	// 用指针是为了区分「没传」与「传了 0」：0 分是合法评分，不能让零值冒充缺失。
+	Score *float64 `json:"score" binding:"required"`
 	// Source 来源：空 = manual（运营补录）；将来评论域写 review。
 	Source string `json:"source"`
 	// OperatorID 操作人：由 inbound 从会话覆盖写入，客户端不可指定。
