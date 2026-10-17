@@ -1,6 +1,8 @@
 package projectdto
 
-import json "go_wp/pkg/jsonx"
+import (
+	json "go_wp/pkg/jsonx"
+)
 
 // SiteSettings 站点级设置（projects.settings 这一列 JSON 对象的结构化视图）。
 //

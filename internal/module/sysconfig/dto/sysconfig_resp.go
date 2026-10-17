@@ -1,6 +1,6 @@
 package sysconfigdto
 
-// sysconfig_dict.go — 字典下拉的展示形状（数据流 model → service → inbound）。
+import "go_wp/pkg/utils"
 
 // DictOption 一个字典下拉项。
 type DictOption struct {
@@ -31,13 +31,20 @@ type CountryOption struct {
 	Label string `json:"label"`
 }
 
-// SetGroupsReq 多组一次保存（同一事务）。
-//
-// 为什么不是「循环调 SetGroup」：系统设置页一张表单同时改 i18n 与 trade 两组，
-// 逐组独立提交会出现「语言改了、货币没改」的半截状态，而界面上它们是一次提交。
-type SetGroupsReq struct {
-	// Groups 要保存的组（每组自带 version 乐观锁前置条件与完整数据）。
-	Groups []SetGroupReq
-	// UpdateBy 操作人 ID（0 = 系统 / 未登录）。
-	UpdateBy int64
+// Group 一个配置分组（后台一次保存的单元）。
+type Group struct {
+	// Key 分组键（唯一）。
+	Key string `json:"key"`
+	// Name 分组显示名（后台页面展示）。
+	Name string `json:"name"`
+	// Data 整组配置的 JSON 对象。
+	Data map[string]any `json:"data"`
+	// Remark 备注。
+	Remark string `json:"remark"`
+	// Status 状态：1 启用 / 0 禁用。
+	Status int `json:"status"`
+	// Version 乐观锁版本号：保存时必须带上读到的值，库内已变则拒绝。
+	Version int64 `json:"version"`
+	// UpdateTime 最后修改时间（对外只到秒）。
+	UpdateTime utils.JSONTime `json:"updateTime"`
 }

@@ -1,43 +1,5 @@
 package orderdto
 
-// order_sales_overview.go — 「销售概览」页的请求与响应（订单模块 /admin/orders/overview）。
-//
-// 口径来源是 Laravel CRM 的 Reports/SalesProductSummary + UnitsOrdered + OverviewAnalysisService
-// （那套 sales dashboard 的卡片与图）—— **只搬口径不搬实现**：
-//   - 那边把「订单商品行数」与「销售件数」放两个接口分两次取，两次之间落的单会让
-//     「平均每单 1.8 件」这种派生值自相矛盾；这里一条查询一次回，派生值只在本包算一次。
-//   - 那边的筛选栏有 Marketplace（国家）与 Created Via（下单来源）两个下拉，本系统的运营面
-//     从来没有这两种入口（订单列表页只有工程 / 状态 / 关键词 / 支付方式），所以不做。
-//   - 那边按邮箱判客户，同一个人换邮箱会变成两个客户；这里一律按 user_id。
-//
-// **本文件只放事实，不放展示串**：金额一律整数分、比率一律 float64，
-// 「¥1,234.50」「+12.5%」「10月」这些串全部由 inbound/http 的视图层生成 ——
-// 金额换算与千分位只有一处（`orderMoneyLabel` / `orderAmountText`），
-// 同一份 dto 若自带 Label，AI 工具与页面两条消费路径就会各格式化一次并迟早分叉。
-
-// SalesOverviewReq 销售概览的请求。
-//
-// 时间用**字符串**而不是 time.Time：同一份结构既服务后台原生表单（form）也要服务 JSON 接口，
-// 表单里的日期天生是文本。解析只发生在 service，非法格式在那里统一报错。
-//
-// From / To 都是 YYYY-MM-DD、**含当天**；两者都必须给 —— 留空则走「静默默认窗口」，
-// 那是「我看到的是哪一段」说不清楚的一类数字，宁可让调用方显式传。
-type SalesOverviewReq struct {
-	ProjectID string `form:"projectId" json:"projectId"`
-	From      string `form:"from" json:"from"`
-	To        string `form:"to" json:"to"`
-	// Status 订单状态筛选（白名单：paid / shipped / completed 的任意组合，逗号分隔）；
-	// 空 = 全部计入消费的状态（与「净销售额」同口径的那三个）。
-	//
-	// 这里**刻意不给 cancelled / refunded**：本页所有数字都是「卖了多少钱」，
-	// 把取消单算进来会得到一个没人要的口径（那属于「下了多少单」，订单列表页已经在回答）。
-	Status string `form:"status" json:"status"`
-	// Monthly 趋势回看的月数（1~24，默认 6）：趋势图看的是「近半年卖得怎么样」，
-	// 而卡片看的是筛选区间 —— 两者口径不同才会问出不同的问题，
-	// 若趋势也跟着 from/to 走，选一个「今天」就只剩一个点。
-	Monthly int `form:"monthly" json:"monthly"`
-}
-
 // SalesOverviewResp 销售概览的全部结论。
 type SalesOverviewResp struct {
 	ProjectID string `json:"projectId"`

@@ -1,16 +1,5 @@
 package orderdto
 
-// order_attr.go — 归因与轨迹快照（orders.attribution 这一 JSONB 列的**形状定义**）。
-//
-// 字段名与语义对照 WooCommerce 核心的 _wc_order_attribution_* 系列，以及它背后的
-// Sourcebuster.js（wp 侧的 sbjs_* cookie 就是它写的）。参考的是**字段清单**，
-// 不是它的存法：WC 把这些拆成十几行 postmeta，这里集中在一列 JSON 里 —— 它们只用于
-// 分析与对账，不参与业务条件查询，拆表只会长出一张 key-value 表。
-//
-// 为什么必须**冗余**（而不是下单时去关联查）：归因数据天生是快照且会变 ——
-// cookie 会过期、UTM 参数会被随手改、访客下次来的来源可能完全不同。订单要留下的是
-// **下单那一刻看到的那份**，事后任何变动都不该改写历史订单的来源。
-
 // Attribution 归因与轨迹快照。
 type Attribution struct {
 	// SourceType 来源类型：utm / referral / typein / organic（对齐 WC 的同名字段）。

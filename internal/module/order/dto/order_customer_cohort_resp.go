@@ -1,21 +1,5 @@
 package orderdto
 
-// order_customer_cohort.go — 群组留存（Cohort 分析页）。
-//
-// 矩阵的形状：行 = 群（首单所在月），列 = 相对月序号（0 = 首单当月，恒为 100%）。
-// 每一格 = 该群在第 N 个月有购买的人数与占比。
-
-// CustomerCohortReq 按「工程 + 分群区间」取群组留存矩阵。
-//
-// 时间字段约定与 CustomerGrowthReq 一致（YYYY-MM-DD、含当天、两者必填、解析只在 service）。
-type CustomerCohortReq struct {
-	ProjectID string `form:"projectId" json:"projectId"`
-	From      string `form:"from" json:"from"`
-	To        string `form:"to" json:"to"`
-	// Months 展示的列数上限（从首单当月算起）。0 = 用 service 的默认值。
-	Months int `form:"months" json:"months"`
-}
-
 // CustomerCohortCell 矩阵里的一格。
 //
 // 空的格**不出现在 Cells 里**（而不是给一个 0）：第 3 个月还没到与第 3 个月没人来

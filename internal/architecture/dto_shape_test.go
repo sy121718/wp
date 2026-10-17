@@ -20,26 +20,7 @@ import (
 
 // pendingDTOFiles 还没收口的存量 dto 文件（收到一个删一条）。
 var pendingDTOFiles = map[string]bool{
-	"internal/module/admin/dto/dept_dto.go": true,
-	"internal/module/admin/dto/menu_dto.go": true,
-	"internal/module/ai/dto/ai_chat.go": true,
-	"internal/module/ai/dto/ai_session_dto.go": true,
-	"internal/module/ai/dto/ai_token_dto.go": true,
-	"internal/module/mail/dto/mail_tracking.go": true,
-	"internal/module/order/dto/order_attr.go": true,
-	"internal/module/order/dto/order_coupon_audit.go": true,
-	"internal/module/order/dto/order_customer_cohort.go": true,
-	"internal/module/order/dto/order_customer_growth.go": true,
-	"internal/module/order/dto/order_customer_rfm.go": true,
-	"internal/module/order/dto/order_customer_segment.go": true,
-	"internal/module/order/dto/order_sales_overview.go": true,
-	"internal/module/project/dto/locale_dto.go": true,
-	"internal/module/project/dto/shipping_policy_dto.go": true,
-	"internal/module/project/dto/site_settings_dto.go": true,
-	"internal/module/project/dto/theme_dto.go": true,
-	"internal/module/sysconfig/dto/sysconfig_dict.go": true,
-	"internal/module/sysconfig/dto/sysconfig_dto.go": true,
-	"internal/module/user/dto/user_guest.go": true,
+	// 已全部收口（2026-10-18）：新写的 dto 文件一律直接按 <域>_req.go / <域>_resp.go 命名。
 }
 
 var dtoFileName = regexp.MustCompile(`^[a-z0-9_]+_(req|resp)\.go$`)

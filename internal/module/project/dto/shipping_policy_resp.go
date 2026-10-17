@@ -1,20 +1,5 @@
 package projectdto
 
-// shipping_policy_dto.go — 站点级运费规则（projects.settings 里的两个键）。
-//
-// 两个决定写在这里，因为它们决定了整个功能的可用性：
-//
-//  1. **库内单位是分**（与 orders 表同口径）。元只出现在后台表单边界，
-//     换算只有 ParseYuanToCents / FormatCentsAsYuan 两个函数，且全程整数拆分 ——
-//     `int64(math.Round(ParseFloat(s)*100))` 在 0.29 这类值上会因二进制浮点表示
-//     偶尔差 1 分（0.29*100 = 28.999999999999996），而「运费偶尔多一分」没有任何
-//     可解释的成因，排查只能靠猜。
-//
-//  2. **判据单源**：保存（后台表单）与读取（结算路径的运费端口）都经
-//     NormalizeShippingPolicy。两边各写一份校验必然分叉，而分叉的表现是
-//     「后台存进去了、结算时却按不收运费处理」这种不报错、不记日志的静默失效
-//     （形态照 builder.NormalizeGA4MeasurementID 的既有样板：保存与注入同一判据）。
-
 import (
 	"errors"
 	"fmt"

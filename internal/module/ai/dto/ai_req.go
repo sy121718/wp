@@ -54,3 +54,32 @@ type ProviderActionReq struct {
 	Version    int64
 	UpdateBy   int64
 }
+
+// ChatReq 一次最小对话请求。provider_key + model 二元组即「用了哪个第三方」的标识。
+type ChatReq struct {
+	ProviderKey     string `json:"provider_key" form:"provider_key" binding:"required,max=50"`
+	Model           string `json:"model"        form:"model"        binding:"required,max=200"`
+	Input           string `json:"input"        form:"input"        binding:"required,max=200000"`
+	MaxOutputTokens int64  `json:"max_output_tokens" form:"max_output_tokens"`
+
+	// SessionID / UserID 是这次调用的**归属**，只用于写调用流水（ai_call_log），不进出站请求。
+	//
+	// 两个都由服务端填，**不接受调用方自报**：会话层填自己正在续写的那条会话与发起人，
+	// 对外接口把 UserID 覆盖成当前登录账号、SessionID 清零（否则日志里的「谁调用的」可被伪造）。
+	// 0 表示未记录。
+	SessionID int64 `json:"session_id" form:"session_id"`
+	UserID    int64 `json:"user_id"    form:"user_id"`
+
+	// Messages 完整的出站消息序列（优先于 Input）；为空时按 Input 构造一条 user 消息。
+	//
+	// 与 Input 并存是**过渡期的两个入口**：一问一答（provider 连通性探测、模型列表校验）
+	// 只需要一句文本，而带工具的轮次需要「历史 + 工具往返」这种序列。
+	// 让两者都走同一条出站路径，比给带工具的调用另开一个函数更省事 —— 后者会把
+	// 协议分派、SSRF 校验、自定义头、密钥解密这一整串再复制一遍。
+	//
+	// **不接受调用方自报**（同 SessionID/UserID 的纪律）：出站消息由服务端拼，
+	// 对外接口不提供注入任意消息的通道。
+	Messages []ChatMessage `json:"-" form:"-"`
+	// Tools 本次可用的工具声明；为空表示不带工具（服务端填，同上不接受自报）。
+	Tools []ToolSpec `json:"-" form:"-"`
+}
