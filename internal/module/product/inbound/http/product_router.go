@@ -243,15 +243,9 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 而这个端点落不了任何库）。返回的行由前端追加进清单，用户点保存才落库。
 	// 变体的四个写动作（新建 / 生成 / 删除 / 清单保存）已全部在 /api/product/variant/* 。
 	pages.POST("/products/variant/preview", productPages.ProductsVariantPreview)
-	pages.POST("/products/delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsDelete)
-	// 批量删除：与单条删除共用同一个权限点与同一条 service 路径，逐条处理、单条失败不整批回滚。
-	pages.POST("/products/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/delete"), productPages.ProductsBulkDelete)
-	// 批量「按规则改价」（本批）：定价工具的入口收进商品列表的批量操作，作用对象就是
-	// 勾选出来的商品集。权限点复用商品更新（同一改动面：改的都是商品变体的售价），
-	// 不新增权限点 —— /api/product/update 该路径已有策略，超管与拥有该权限的角色都能用。
-	pages.POST("/products/bulk-pricing", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsBulkPricing)
-	// 商品引用的属性组整体替换（issue #7）：复用商品更新权限点（同一改动面）。
-	pages.POST("/products/attributes", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsAttributesSet)
+	// 删除 / 批量删除 / 批量改价 / 挂属性组**都没有页面 POST**：模板用 ui/json_write.js 直调
+	// /api/product/{delete,bulk-delete,bulk-pricing,update}。页面组只剩读入口与三个只算不写的
+	// 预览端点（变体组合、评分面板、SEO 抽屉）。
 	// 双轨写动作（迁移 282）没有页面 POST：模板用 ui/json_write.js 直调
 	// /api/product/detail-template/*（见上面接口面那一节）。
 	// 产物指针回滚（rollback-artifact）连页面入口一起**删除**：它要求调用方手上有一个
@@ -308,8 +302,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 页面组只剩两个读入口（列表页与父级候选搜索）。
 	pages.GET("/product-brands", adminui.PageAuthz("/api/product/brand/list"), productPages.ProductBrandsPage)
 	// 品牌的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/brand/*。
-	// 商品挂载分类（多个 + 主分类）与品牌：属于商品更新，复用商品更新权限点。
-	pages.POST("/products/taxonomy", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTaxonomySet)
+	// 商品挂载分类（多个 + 主分类）与品牌也没有：属于商品更新，走 /api/product/update。
 
 	// —— 标签库（issue #11）——
 	// 手工标签 + 内置规则的自动标签（规则只接受白名单参数）。
@@ -320,8 +313,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 不叠加 Casbin（页面组已有 Session + CSRF；凭空加权限点反而会造出「有路由无权限点 ⇒
 	// 含超管全员 403」那种缺口）。
 	pages.GET("/product-tags/hits", adminui.PageAuthz("/api/product/tag/list"), productPages.ProductTagHitsFragment)
-	// 商品挂手工标签：属于商品更新，复用商品更新权限点（自动标签不在这份表单里）。
-	pages.POST("/products/tags", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTagsSet)
+	// 商品挂手工标签同样走 /api/product/update（自动标签不在这份表单里）。
 
 	// —— 定价工具（issue #13）——
 	// 四种内置规则 + 尾数处理，对单个 SKU / 单商品全部变体 / 筛选集批量改价。

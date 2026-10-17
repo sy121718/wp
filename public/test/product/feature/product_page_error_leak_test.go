@@ -111,7 +111,8 @@ func postProductForm(engine *gin.Engine, path string, form url.Values) *httptest
 }
 
 // newProductErrorLeakEnv 装配只挂两个写端点的测试引擎（真实 service + 真实 PG）。
-// 商品保存已迁到 JSON 写基座直调 /api/product/update，页面那条 POST 不存在了。
+// 商品保存已迁到 JSON 写基座直调 /api/product/update，页面那条 POST 不存在了；
+// 删除 / 批量删除同理，唯一出口是 JSON 回执 —— 判据也跟着搬到 message 上。
 func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 	t.Helper()
 	f := newAttrFixture(t)
@@ -121,9 +122,9 @@ func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
-	engine.POST("/admin/products/delete", handle.ProductsDelete)
-	engine.POST("/admin/products/bulk-delete", handle.ProductsBulkDelete)
+	handle := producthttp.NewHandle(f.svc)
+	engine.POST("/api/product/delete", handle.Delete)
+	engine.POST("/api/product/bulk-delete", handle.BulkDelete)
 	return engine, f
 }
 
@@ -149,11 +150,15 @@ func TestProductPageHidesInternalError(t *testing.T) {
 		t.Fatalf("反证失败：原始错误不含表名 / SQLSTATE：%v", rawErr)
 	}
 
-	body := productNoticeBody(t, postProductForm(engine, "/admin/products/delete",
-		url.Values{"projectId": {f.projectID}, "id": {pid}}))
-	assertNoProductInternalLeak(t, "提示页", body)
-	if !strings.Contains(body, "系统内部错误") {
-		t.Fatalf("内部错误应给归口文案，body=%s", body)
+	env := decodeJSONEnvelope(t, postJSON(t, engine, "/api/product/delete", map[string]any{
+		"projectId": f.projectID, "id": pid,
+	}))
+	if env.Code == http.StatusOK {
+		t.Fatalf("内部错误不该回成功")
+	}
+	assertNoProductInternalLeak(t, "JSON 回执", env.Message)
+	if !strings.Contains(env.Message, "系统内部错误") {
+		t.Fatalf("内部错误应给归口文案，message=%s", env.Message)
 	}
 }
 
@@ -166,11 +171,15 @@ func TestProductPageKeepsBusinessErrorText(t *testing.T) {
 	// 删不存在的商品 → productenums.ErrNotFound（在白名单里，文案「商品或变体不存在」）。
 	// 商品保存 / 标签 create 的页面出口已随写动作迁到 JSON 基座，页面出口仍走提示页的只剩
 	// 删除 / 批量删除这一族。
-	body := productNoticeBody(t, postProductForm(engine, "/admin/products/delete",
-		url.Values{"projectId": {f.projectID}, "id": {"11111111-1111-1111-1111-111111111111"}}))
-	assertNoProductInternalLeak(t, "提示页", body)
-	if !strings.Contains(body, "商品或变体不存在") {
-		t.Fatalf("业务文案必须原样可见，body=%s", body)
+	env := decodeJSONEnvelope(t, postJSON(t, engine, "/api/product/delete", map[string]any{
+		"projectId": f.projectID, "id": "11111111-1111-1111-1111-111111111111",
+	}))
+	if env.Code == http.StatusOK {
+		t.Fatalf("删不存在的商品应失败")
+	}
+	assertNoProductInternalLeak(t, "JSON 回执", env.Message)
+	if !strings.Contains(env.Message, "商品或变体不存在") {
+		t.Fatalf("业务文案必须原样可见，message=%s", env.Message)
 	}
 }
 

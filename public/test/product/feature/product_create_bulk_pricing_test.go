@@ -13,6 +13,7 @@ package feature
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -43,7 +44,8 @@ func newCreateFlowEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products", handle.ProductsPage)
 	engine.GET("/admin/products/new", handle.ProductNewPage)
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
-	engine.POST("/admin/products/bulk-pricing", handle.ProductsBulkPricing)
+	// 批量改价没有页面 POST：列表抽屉走 /api/product/bulk-pricing（ui/json_write.js）。
+	engine.POST("/api/product/bulk-pricing", producthttp.NewHandle(f.svc).BulkPricing)
 	return engine, f
 }
 
@@ -218,29 +220,40 @@ func TestProductsBulkPricing(t *testing.T) {
 	cfSetVariantCost(t, f, p1.Variants[0].ID, price1, 40)
 	cfSetVariantCost(t, f, p2.Variants[0].ID, price2, 100)
 
-	// 一个都没勾选：明确拒绝，不动任何价格。
-	none := postForm(engine, "/admin/products/bulk-pricing", url.Values{
-		"projectId": {f.projectID}, "ruleType": {productenums.PricingRuleCostMultiple}, "multiplier": {"2"},
+	// 一个都没勾选：明确拒绝，不动任何价格（回执给可读文案，不是空消息）。
+	none := postJSON(t, engine, "/api/product/bulk-pricing", map[string]any{
+		"projectId": f.projectID, "ruleType": productenums.PricingRuleCostMultiple, "multiplier": "2",
 	})
-	if body := assertJumpErr(t, none); !strings.Contains(body, "没有勾选") {
-		t.Fatalf("未勾选应渲染提示页并明确提示，body=%s", body)
+	if env := decodeJSONEnvelope(t, none); env.Code == http.StatusOK || strings.TrimSpace(env.Message) == "" {
+		t.Fatalf("未勾选应被拒绝并给出可读文案，实际 %d：%q", env.Code, env.Message)
 	}
 
-	rec := postForm(engine, "/admin/products/bulk-pricing", url.Values{
-		"projectId":  {f.projectID},
-		"ids":        {p1.ID, p2.ID, bundle.ID},
-		"ruleType":   {productenums.PricingRuleCostMultiple},
-		"multiplier": {"2"},
-		"rounding":   {productenums.PricingRoundingNone},
-		"note":       {"批量改价：成本翻倍"},
+	rec := postJSON(t, engine, "/api/product/bulk-pricing", map[string]any{
+		"projectId":  f.projectID,
+		"ids":        []string{p1.ID, p2.ID, bundle.ID},
+		"ruleType":   productenums.PricingRuleCostMultiple,
+		"multiplier": "2",
+		"rounding":   productenums.PricingRoundingNone,
+		"note":       "批量改价：成本翻倍",
 	})
-	// 有跳过 → 走失败态提示页（更显眼），并说清跳过几个（不静默的部分成功）。
-	body := assertJumpErr(t, rec)
-	if back := jumpBackHref(t, rec); !strings.HasPrefix(back, "/admin/products?") {
-		t.Fatalf("批量改价应回商品列表，实际回跳=%q", back)
+	env := decodeJSONEnvelope(t, rec)
+	if env.Code != http.StatusOK {
+		t.Fatalf("批量改价应成功，实际 %d：%s", env.Code, env.Message)
 	}
-	if !strings.Contains(body, "1 个商品被跳过") || !strings.Contains(body, "捆绑容器只有容器价") {
-		t.Fatalf("捆绑容器没有变体应被计入跳过并说明原因，body=%s", body)
+	// 有跳过就必须说清跳过几个 + 逐条原因（不静默的部分成功）。
+	if got, _ := env.Data["skipped"].(float64); int(got) != 1 {
+		t.Fatalf("应跳过 1 个商品（捆绑容器没有变体），实际 %v（data=%v）", env.Data["skipped"], env.Data)
+	}
+	items, _ := env.Data["items"].([]any)
+	reasonSeen := false
+	for _, raw := range items {
+		row, _ := raw.(map[string]any)
+		if msg, _ := row["message"].(string); strings.Contains(msg, "捆绑容器只有容器价") {
+			reasonSeen = true
+		}
+	}
+	if !reasonSeen {
+		t.Fatalf("逐条回执应带捆绑容器的跳过原因，items=%v", items)
 	}
 
 	got1, serr := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p1.ID})

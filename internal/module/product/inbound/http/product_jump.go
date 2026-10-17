@@ -9,12 +9,10 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/shell"
 	"go_wp/pkg/backpath"
-	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -232,42 +230,6 @@ const productActionDoneFallback = "操作已完成"
 // productActionDoneMsg 单条写动作（新建 / 修改 / 保存）的成功回执事实。
 var productActionDoneMsg = productMsg{Key: productenums.ProductsActionDone, Fallback: productActionDoneFallback}
 
-// productOutcomeMsg 把 enums 的结论（productenums.Outcome）转成提示页要的**事实**。
-//
-// 控制器只做这一次转换：选句与参数装配都在 enums（internal/module/CLAUDE.md §enums）。
-func productOutcomeMsg(o productenums.Outcome) productMsg {
-	m := productMsg{Key: o.Key, Fallback: o.Fallback}
-	if len(o.Args) > 0 {
-		m = m.WithArgs(o.Args...)
-	}
-	return m
-}
-
-// productBulkSentence 把控制器侧的结论文案（productBulkText）转成 enums 的句子载体。
-//
-// 各实体自己的那两句（「已删除 %s 个」/「…%s 个未能删除」）仍住在调用方附近 —— 它们是
-// 该实体的措辞；enums 只负责从这两句里挑一句并填计数。
-func productBulkSentence(t productBulkText) productenums.Outcome {
-	return productenums.Outcome{Key: t.key, Fallback: t.fallback}
-}
-
-// productBulkDoneMsg 单条删除的成功回执：复用该实体的批量结论文案（计数 1）。
-//
-// 「删一个」与「批量删一个」说的是同一句话 —— 两处各写一句的下场是同一个动作在
-// 两种入口下措辞不同（与 block 模块 allDeleted 的取舍一致）。
-func productBulkDoneMsg(tpl productBulkText) productMsg {
-	return tpl.fact("1")
-}
-
-// productBulkDeleteResult 批量删除的结论（成功 N / 跳过 M）→ 提示页的 ok 与**事实**。
-//
-// 逐条失败不中断整批的语义由调用方保证（已算好 deleted / skipped）；选句与计数装配在
-// productenums.BulkDeleteOutcome（控制器不再按计数挑文案）。
-func productBulkDeleteResult(deleted, skipped int, partial, done productBulkText) (ok bool, msg productMsg) {
-	ok, out := productenums.BulkDeleteOutcome(deleted, skipped, productBulkSentence(partial), productBulkSentence(done))
-	return ok, productOutcomeMsg(out)
-}
-
 // ==========================================================================
 // 商品后台页**写侧**回执文案与**整页 GET 失败出口**的收口。
 //
@@ -321,24 +283,6 @@ func productBulkTextOf(c *gin.Context, t productBulkText) string {
 	return text
 }
 
-// 批量删除：五个实体各一对（部分成功 / 全部成功）。%s 是计数（Go 侧 strconv.Itoa 后填入）。
-var (
-	productAttrBulkPartial = productBulkText{productenums.BulkAttrPartial, "已删除 %s 个，%s 个未能删除（属性组不存在或被商品引用）"}
-	productAttrBulkDone    = productBulkText{productenums.BulkAttrDone, "已删除 %s 个属性组（连同其全部属性值）"}
-	productBulkPartial     = productBulkText{productenums.BulkProductPartial, "已删除 %s 个，%s 个未能删除（商品不存在或被其它数据引用）"}
-	productBulkDone        = productBulkText{productenums.BulkProductDone, "已删除 %s 个商品（连同其全部变体）"}
-)
-
-// —— 列表页 / 详情页的自造回执文案 ——
-
-// 批量改价的结论文案模板（%s 是计数或跳过原因）。
-var (
-	productPricingNoChange = productBulkText{productenums.BulkPricingNoChange, "按该规则算下来没有价格变化：%s 个商品已是目标价，未写入调价记录。"}
-	productPricingApplied  = productBulkText{productenums.BulkPricingApplied, "已按规则改价：共改 %s 个变体（%s 个商品已是目标价）。"}
-	productPricingAllSkip  = productBulkText{productenums.BulkPricingAllSkip, "没有可改价的变体：%s 个商品被跳过（%s）。"}
-	productPricingPartial  = productBulkText{productenums.BulkPricingPartial, "已改 %s 个变体，另有 %s 个商品被跳过（%s）。"}
-)
-
 // 变体清单保存的结论文案（详情页提示页）。
 var (
 	productVariantSaveNoChange = productBulkText{productenums.BulkVariantNoChange, "变体清单与库里一致，没有需要保存的变化。"}
@@ -348,22 +292,6 @@ var (
 
 // 商品编辑页保存成功的回执已随页面 POST 一起消失：写动作交给 ui/json_write.js 直调
 // /api/product/update，成功后基座 reload 编辑页（字段值就是刚落库的那一份）。
-
-// —— 批量 id 超限的受控事实 ——
-
-// productBulkIDsMsg 批量 id 超限的受控**事实**（**类型**判定，不比对文案）。
-//
-// 此前 product 侧按当前语言拼前缀再拿 err.Error() 比对（productErrControlledMessages）：
-// 上游改措辞或换语言即静默失配，超限提示退化成归口文案，运营看不到「请分批进行」。
-// 判据改为类型事实（*bulkids.IDsError 携 Max / Count），文案走共享词条。
-func productBulkIDsMsg(c *gin.Context, err error) productMsg {
-	var tooMany *bulkids.IDsError
-	if !errors.As(err, &tooMany) {
-		return adminui.InternalMsg()
-	}
-	return productMsg{Key: bulkids.MsgTooMany, Fallback: bulkids.TooManyTemplate}.
-		WithArgs(strconv.Itoa(tooMany.Max), strconv.Itoa(tooMany.Count))
-}
 
 // —— 整页 GET 的失败出口：文案归口 ——
 //

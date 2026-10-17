@@ -13,6 +13,7 @@ package feature
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -44,7 +45,8 @@ func newBundleSKUEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products", handle.ProductsPage)
 	engine.GET("/admin/products/new", handle.ProductNewPage)
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
-	engine.POST("/admin/products/taxonomy", handle.ProductsTaxonomySet)
+	// 挂分类 / 品牌没有页面 POST：编辑页表单走 /api/product/update（ui/json_write.js）。
+	engine.POST("/api/product/update", producthttp.NewHandle(f.svc).Update)
 	return engine, f
 }
 
@@ -160,12 +162,14 @@ func TestBundleUpdateWithoutSKUKeyIsNotBlocked(t *testing.T) {
 	}
 	productID := created.ID
 
-	// ① HTTP 页面路径：不带 sku 键的更新不被必填规则拦住。
-	upd := postForm(engine, "/admin/products/taxonomy", url.Values{
-		"projectId": {f.projectID}, "id": {productID}, "primaryCategoryId": {""}, "brandId": {""},
+	// ① HTTP 路径：不带 sku 键的更新不被必填规则拦住。
+	upd := postJSON(t, engine, "/api/product/update", map[string]any{
+		"projectId": f.projectID, "id": productID, "primaryCategoryId": "", "brandId": "",
 	})
-	// 成功 → 成功态提示页；不改 SKU 的更新不该被必填规则拦住（页面上不该出现错误文案）。
-	assertJumpOK(t, upd)
+	// 成功 → 200 回执；不改 SKU 的更新不该被必填规则拦住。
+	if got := decodeJSONEnvelope(t, upd); got.Code != http.StatusOK {
+		t.Fatalf("不带 sku 键的更新应成功，实际 %d：%s", got.Code, got.Message)
+	}
 	detail, err := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: productID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)

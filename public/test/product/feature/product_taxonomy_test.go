@@ -18,7 +18,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -482,7 +481,8 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	// 商品级表单（分类 / 品牌 / 标签）已整块移到商品详情页，这里一并注册。
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
 	engine.GET("/admin/products/edit", handle.ProductEditPage)
-	engine.POST("/admin/products/taxonomy", handle.ProductsTaxonomySet)
+	// 挂分类 / 品牌没有页面 POST：编辑页表单走 /api/product/update（ui/json_write.js）。
+	engine.POST("/api/product/update", producthttp.NewHandle(f.svc).Update)
 	return engine, f
 }
 
@@ -556,15 +556,18 @@ func TestTaxonomyAdminPages(t *testing.T) {
 	if err != nil || len(brands) != 1 {
 		t.Fatalf("品牌列表异常: %v %+v", err, brands)
 	}
-	form := url.Values{"projectId": {f.projectID}, "id": {p.ID}, "brandId": {brands[0].ID}}
-	// 只勾父级，主分类却选子级 —— 服务端应把主分类自动纳入挂载列表。
-	form.Add("categoryIds", rootID)
 	childID := treeIDByName(t, f, "衬衫")
-	form.Set("primaryCategoryId", childID)
-	rec = postForm(engine, "/admin/products/taxonomy", form)
-	assertJumpOK(t, rec)
-	// 保存后留在该商品的**编辑页**（表单隐藏域是 id，其值就是商品 id）。
-	assertEditRedirect(t, jumpBackHref(t, rec), f.projectID, p.ID)
+	// 只勾父级，主分类却选子级 —— 服务端应把主分类自动纳入挂载列表。
+	rec = postJSON(t, engine, "/api/product/update", map[string]any{
+		"projectId":         f.projectID,
+		"id":                p.ID,
+		"brandId":           brands[0].ID,
+		"categoryIds":       []string{rootID},
+		"primaryCategoryId": childID,
+	})
+	if got := decodeJSONEnvelope(t, rec); got.Code != http.StatusOK {
+		t.Fatalf("挂分类 / 品牌应成功，实际 %d：%s", got.Code, got.Message)
+	}
 	got, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: p.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)

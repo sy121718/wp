@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"go_wp/internal/adminui"
-	"go_wp/internal/middleware/builtin"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -136,6 +135,12 @@ func (h *Handle) BulkDelete(c *gin.Context) {
 	// **超限整批拒绝，不静默截断** —— 截断会让操作者以为「勾的全删了」。
 	ids, err := bulkids.Normalize(req.IDs)
 	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功）。与批量改价同一判据 —— 这条守卫
+	// 原先只在页面 handler 里，随页面 POST 删除一并搬到这里。
+	if len(ids) == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
@@ -883,43 +888,6 @@ func (h *Handle) DeleteRating(c *gin.Context) {
 	response.SuccessWithMessage(c, productMsgText(c, productActionDoneMsg), nil)
 }
 
-// ProductsAttributesSet 整体替换某商品引用的属性组（issue #7）。
-//
-// 引用的组必须是同一工程内真实存在的组（service 校验）；提交空数组即解绑全部。
-//
-// 表单的隐藏域是 id（值就是商品 id），formProductID 优先认 productId。
-func (h *productPageHandle) ProductsAttributesSet(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	req := &productdto.UpdateReq{
-		ID:           formProductID(c),
-		AttributeIDs: splitIDs(c.PostForm("attributeIds")),
-	}
-	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
-		productEditJump(c, false, projectID, req.ID, productErrMsg(c, err))
-		return
-	}
-	productEditJump(c, true, projectID, req.ID, productActionDoneMsg)
-}
-
-// ProductsDelete 删除商品（连带变体）。
-//
-// **例外：只有这个端点成功后仍回列表页** —— 商品已经不存在了，回详情页只会看到一个
-// 「商品不存在」的空态，用户还得再点一次返回列表。
-func (h *productPageHandle) ProductsDelete(c *gin.Context) {
-	// projectId 必须带上：模板一直渲染着这个隐藏域，但这里曾经没读它 ——
-	// service 的 resolveProjectID 在它为空时只肯走「唯一工程」兜底，
-	// 多工程部署下删除直接回 ErrInvalidParam（页面不报错、只是删不掉）。
-	req := &productdto.DeleteReq{
-		ID:        strings.TrimSpace(c.PostForm("id")),
-		ProjectID: strings.TrimSpace(c.PostForm("projectId")),
-	}
-	if err := h.products.Delete(c.Request.Context(), req); err != nil {
-		productListJump(c, false, productErrMsg(c, err))
-		return
-	}
-	productListJump(c, true, productBulkDoneMsg(productBulkDone))
-}
-
 // ProductPreviewFrame 商品详情页的真实预览帧（GET /admin/products/preview-frame?productId=&project=）。
 //
 // 与文章编辑页的同类帧同构：用**详情页模板**渲染一份不写库、不激活的预览（PreviewInstance），
@@ -973,106 +941,4 @@ func productPreviewFrameNotice(c *gin.Context, text string) {
 		`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>`+
 			`body{margin:0;padding:24px;font:14px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;`+
 			`color:#57606a;background:#fff;}p{margin:0;}</style></head><body><p>`+html.EscapeString(text)+`</p></body></html>`))
-}
-
-// ==========================================================================
-// 列表页的批量写动作：批量改价与批量删除。
-//
-// 结论一律「成功 N / 跳过 M」都说清楚（只报「操作完成」会把部分成功静默成全部成功）。
-
-// bulkPricingNothingSelected 没勾选就提交的意见（与批量删除同一口径：说清怎么继续）。
-//
-// 与其它批量回执同一个形状（key + 中文原文）：写侧 productBulkTextOf 取当前语言，
-// 提示页直接渲染成品文案（不再经 URL）。
-//
-// 本节起是原先的 product_bulk_ops.go（列表页的批量改价与批删）。
-// ==========================================================================
-var bulkPricingNothingSelected = productBulkText{productenums.BulkPricingNoneSelected, "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"}
-
-// ProductsBulkPricing 批量「按规则改价」（POST /admin/products/bulk-pricing）。
-//
-// 入口为什么搬到商品列表：定价工具的作用对象本来就是「筛选出的商品集 / 标签 / SKU」，
-// 而运营是在列表上圈出要改的那几个的；独立页 /admin/product-pricing 保留可用
-// （它能对单个 SKU / 筛选集改价，也是唯一能试算的地方），本端点补上「按勾选批量应用」。
-//
-// 语义与其它批量操作一致（见 internal/module/CLAUDE.md §inbound/http）：
-//
-//	· id 一律经 shell.BulkIDs（去空白 / 去重 / 上限），超限**整批拒绝**并说明原因；
-//	· 逐条走**单商品的应用路径**（scope=product），一条失败不中断整批；
-//	· 结论按「改价 N 个变体 / 跳过 M 个商品」回带列表页，不做静默的部分成功。
-//
-// 规则解析与校验完全复用定价工具那一份（pricingRuleReqFromForm → readPricingForm /
-// pricingParamsFromForm）：复制一份就会出现「抽屉填的 amount 被当成 multiplier」这类
-// 只在一个入口发生的错。
-func (h *productPageHandle) ProductsBulkPricing(c *gin.Context) {
-	ctx := c.Request.Context()
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		// 受控提示（一次最多操作 N 项）保持可见，但同样经归口助手判定来源。
-		productListJump(c, false, productBulkIDsMsg(c, berr))
-		return
-	}
-	if len(ids) == 0 {
-		productListJump(c, false, bulkPricingNothingSelected.fact())
-		return
-	}
-	// 规则解析与校验完全复用定价工具那一份（readPricingForm / pricingParamsFromForm）：
-	// 复制一份就会出现「抽屉填的 amount 被当成 multiplier」这类只在一个入口发生的错。
-	// 范围恒为「单个商品的全部变体」，TargetID 由 service 逐商品注入。
-	rule := pricingRuleReqFromForm(c, productenums.PricingScopeProduct, "")
-	res, aerr := h.products.BulkApplyPricing(ctx, &productdto.BulkPricingReq{
-		IDs: ids,
-		// 操作人取自会话，表单字段不作数（调价留痕的操作人不可伪造）。
-		Note:       strings.TrimSpace(c.PostForm("note")),
-		OperatorID: builtin.CurrentUserIDText(c),
-		Rule:       *rule,
-	})
-	if aerr != nil {
-		productListJump(c, false, productErrMsg(c, aerr))
-		return
-	}
-	mark := true
-	if res.NotDone() > 0 || res.ChangedVariants == 0 {
-		// 有跳过或一个变体都没改：走失败态（更显眼），用户下次会去看剩下的那些。
-		mark = false
-	}
-	// 跳过原因由 service 回**业务 key**；取词（按请求语言翻成整句）留在这一层。
-	reason := ""
-	if res.SkipReasonKey != "" {
-		reason = productErrText(c, errors.New(res.SkipReasonKey))
-	}
-	productListJump(c, mark, bulkPricingResultMsg(res.ChangedVariants, res.UnchangedProducts, res.NotDone(), reason))
-}
-
-// bulkPricingResultMsg 批量改价的结论**事实**（四类结果各一条词条 + `%s` 参数）。
-//
-// 选句与计数装配在 productenums.PricingBulkOutcome（控制器不再按计数挑文案）；
-// reason 是**已取词的成品串**（逐商品的跳过原因），作为 `%s` 参数填入 —— 它是数据不是结论，
-// 所以由调用方先取好（productErrText 在 JSON/片段出口仍在使用）。
-func bulkPricingResultMsg(changedVariants, unchangedProducts, skipped int, reason string) productMsg {
-	if strings.TrimSpace(reason) == "" {
-		reason = productErrFallbackText(productenums.ErrPricingTargetNotFound)
-	}
-	return productOutcomeMsg(productenums.PricingBulkOutcome(changedVariants, unchangedProducts, skipped, reason))
-}
-
-// ProductsBulkDelete 批量删除商品（连同其全部变体，由 service 保证）。
-//
-// 逐条走同一条删除路径：失败的那条（已不存在 / 被其它数据引用）由服务端拒绝，其余照常删除
-// —— 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
-// 结果按「已删 N 个 / 跳过 M 个」渲染提示页，避免静默的部分成功。
-func (h *productPageHandle) ProductsBulkDelete(c *gin.Context) {
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		productListJump(c, false, productBulkIDsMsg(c, berr))
-		return
-	}
-	res, err := h.products.BulkDeleteProducts(c.Request.Context(), &productdto.BulkDeleteReq{IDs: ids})
-	if err != nil {
-		productListJump(c, false, productErrMsg(c, err))
-		return
-	}
-	ok, msg := productBulkDeleteResult(res.Succeeded, res.NotDone(), productBulkPartial, productBulkDone)
-	productListJump(c, ok, msg)
 }

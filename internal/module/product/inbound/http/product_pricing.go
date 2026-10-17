@@ -291,6 +291,13 @@ func (h *Handle) BulkPricing(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
+	// 没勾选就提交：明确拒绝，不是「0 个改动」的成功回执。页面侧原有这条守卫，随页面 POST
+	// 一起消失 —— 判据搬到这里，否则删掉页面通道后「空勾选静默成功」就没人拦了。
+	if len(ids) == 0 {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productMsgText(c, productMsg{
+			Key: productenums.BulkPricingNoneSelected, Fallback: "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"}))
+		return
+	}
 	form := productdto.PricingForm{
 		ProjectID:  req.ProjectID,
 		RuleType:   req.RuleType,

@@ -370,14 +370,8 @@ POST /admin/product-attributes/value-rows
 POST /admin/product-brands/seo-score
 POST /admin/product-categories/seo-score
 POST /admin/product-pricing/preview
-POST /admin/products/attributes
-POST /admin/products/bulk-delete
-POST /admin/products/bulk-pricing
 POST /admin/products/bundle/members/resolve
-POST /admin/products/delete
 POST /admin/products/seo-score
-POST /admin/products/tags
-POST /admin/products/taxonomy
 POST /admin/products/template/preview
 POST /admin/products/variant/preview
 POST /admin/projects/create

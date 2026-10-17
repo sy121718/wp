@@ -17,7 +17,6 @@ import (
 	"context"
 	json "go_wp/pkg/jsonx"
 	"net/http"
-	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -487,7 +486,8 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	// 商品级表单（含手工标签勾选）已整块移到商品详情页，这里一并注册。
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
 	engine.GET("/admin/products/edit", handle.ProductEditPage)
-	engine.POST("/admin/products/tags", handle.ProductsTagsSet)
+	// 挂手工标签没有页面 POST：编辑页表单走 /api/product/update（ui/json_write.js）。
+	engine.POST("/api/product/update", producthttp.NewHandle(f.svc).Update)
 	return engine, f
 }
 
@@ -539,12 +539,12 @@ func TestTagAdminPages(t *testing.T) {
 		t.Fatalf("上架失败: %v", err)
 	}
 	manualID := tagIDByName(t, f, "清仓")
-	rec := postForm(engine, "/admin/products/tags", url.Values{
-		"projectId": {f.projectID}, "id": {p.ID}, "tagIds": {manualID},
+	rec := postJSON(t, engine, "/api/product/update", map[string]any{
+		"projectId": f.projectID, "id": p.ID, "tagIds": []string{manualID},
 	})
-	assertJumpOK(t, rec)
-	// 保存后留在该商品的**编辑页**（表单隐藏域是 id，其值就是商品 id）。
-	assertEditRedirect(t, jumpBackHref(t, rec), f.projectID, p.ID)
+	if got := decodeJSONEnvelope(t, rec); got.Code != http.StatusOK {
+		t.Fatalf("挂手工标签应成功，实际 %d：%s", got.Code, got.Message)
+	}
 
 	// 标签页：标签名、类型、规则描述、重算时间都要渲染出来；命中商品**不在首屏**
 	// （审计 PERF-02）：首屏只给数量与展开入口，商品行由片段端点按需给。

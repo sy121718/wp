@@ -199,33 +199,6 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 	adminui.RenderPage(c, productBrandsPageTemplate, view)
 }
 
-// ProductsTaxonomySet 整体替换某商品挂的分类与品牌（issue #10）。
-//
-// 分类勾选框一个都没勾时浏览器不发该字段，而「一个都不勾」在这里是明确的
-// 「解绑全部分类」，故把 nil 归一成空切片 —— 与其它表单的「整体替换」语义一致。
-// 主分类由 select 提交（空值 = 不指定）；它在列表里时服务端自动纳入附属分类。
-func (h *productPageHandle) ProductsTaxonomySet(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	categoryIDs := c.PostFormArray("categoryIds")
-	if categoryIDs == nil {
-		categoryIDs = []string{}
-	}
-	primary := strings.TrimSpace(c.PostForm("primaryCategoryId"))
-	brand := strings.TrimSpace(c.PostForm("brandId"))
-	req := &productdto.UpdateReq{
-		ProjectID:         projectID,
-		ID:                formProductID(c),
-		CategoryIDs:       categoryIDs,
-		PrimaryCategoryID: &primary,
-		BrandID:           &brand,
-	}
-	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
-		productEditJump(c, false, projectID, req.ID, productErrMsg(c, err))
-		return
-	}
-	productEditJump(c, true, projectID, req.ID, productActionDoneMsg)
-}
-
 // missingParentIDs 挑出本页里「父级不在候选列表」的那些父级 id（去重、保持出现顺序）。
 //
 // 纯逻辑部分单独成函数：候选集合的判定（不是 service 读）才是「谁会走模板那条额外分支」
@@ -739,25 +712,6 @@ func (h *productPageHandle) tagDrawerData(c *gin.Context, mode, projectID string
 		}
 	}
 	return adminui.PrepareBare(c, data)
-}
-
-// ProductsTagsSet 整体替换某商品的手工标签（issue #11 验收 1 的后台入口）。
-//
-// 一个都不勾时浏览器不发该字段，而这里「一个都不勾」是明确的「解绑全部手工标签」，
-// 故把 nil 归一成空切片（与分类的「整体替换」语义一致）。自动标签不在这份表单里：
-// 它们的归属由重算维护，服务端也不会接受手工挂载。
-func (h *productPageHandle) ProductsTagsSet(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	tagIDs := c.PostFormArray("tagIds")
-	if tagIDs == nil {
-		tagIDs = []string{}
-	}
-	req := &productdto.UpdateReq{ProjectID: projectID, ID: formProductID(c), TagIDs: tagIDs}
-	if _, err := h.products.Update(c.Request.Context(), req); err != nil {
-		productEditJump(c, false, projectID, req.ID, productErrMsg(c, err))
-		return
-	}
-	productEditJump(c, true, projectID, req.ID, productActionDoneMsg)
 }
 
 // tagPageRow 标签 → 模板行（规则描述与命中数都由服务端算好，模板不做第二套解释；
