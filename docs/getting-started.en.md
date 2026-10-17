@@ -4,7 +4,7 @@ This guide covers the shortest supported development path. For the broader proje
 
 ## Prerequisites
 
-- Go 1.26 or newer, matching the version declared in `go.mod`
+- Go 1.27 or newer, matching the version declared in `go.mod`
 - PostgreSQL 18 or newer running locally (CI tests against the `postgres:16` container image; older releases are unverified)
 - Redis 7 or newer running locally
 - GNU Make

@@ -53,7 +53,7 @@
 
 `/home/sky/project/seo/dashboard/` 是一个**独立单二进制看板**：
 
-- 后端 Go 1.26 + `CloudyKit/jet/v6` 模板（`go:embed`）+ ECharts 5（已本地化，不依赖 CDN）
+- 后端 Go 1.27 + `CloudyKit/jet/v6` 模板（`go:embed`）+ ECharts 5（已本地化，不依赖 CDN）
 - 存储 SQLite（`modernc.org/sqlite`，无 CGO）；构建用 GoReleaser
 - 两个命令：`serve`（看板 + API）、`upload`（读工作区 JSON 打包上传，Bearer token 鉴权）
 

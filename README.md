@@ -38,11 +38,11 @@ ArtifactStore → PublicationStore 激活 → Static Server / CDN
 
 Page 是手工页面；PresentationInstance 是由内容与展示模板生成的自动发布实例。两者共享编译与发布管线。Blueprint 只初始化页面，后续修改不传播。
 
-技术栈为 Go 1.26、Gin、Jet、PostgreSQL、Redis、Session + Cookie 和 Casbin。后台由 Jet 渲染 HTML，交互使用原生 JavaScript 与 HTMX，没有独立前端打包工程。Redis 是必需的关键组件。
+技术栈为 Go 1.27、Gin、Jet、PostgreSQL、Redis、Session + Cookie 和 Casbin。后台由 Jet 渲染 HTML，交互使用原生 JavaScript 与 HTMX，没有独立前端打包工程。Redis 是必需的关键组件。
 
 ## 快速开始
 
-需要 Go 1.26+、GNU Make、本机 PostgreSQL 与 Redis。开发阶段不依赖 Docker。三条命令：
+需要 Go 1.27+、GNU Make、本机 PostgreSQL 与 Redis。开发阶段不依赖 Docker。三条命令：
 
 ```bash
 make migrate   # 使用管理连接执行结构迁移与 seed
