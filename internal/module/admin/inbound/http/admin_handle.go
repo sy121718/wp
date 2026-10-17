@@ -4,11 +4,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/module/admin/contract"
-	"go_wp/internal/module/admin/dto"
-	"go_wp/internal/module/admin/enums"
-	"go_wp/internal/module/admin/service"
+	admincontract "go_wp/internal/module/admin/contract"
+	admindto "go_wp/internal/module/admin/dto"
+	adminenums "go_wp/internal/module/admin/enums"
+	adminservice "go_wp/internal/module/admin/service"
 	"go_wp/pkg/auth"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
 	r "go_wp/pkg/response"
 )
@@ -50,13 +51,12 @@ func NewHandleWithDeps(
 
 // AdminList 管理员分页列表。
 func (h *Handle) AdminList(c *gin.Context) {
-	var req admindto.AdminListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.AdminListReq](c)
+	if !ok {
 		return
 	}
 
-	res, err := h.admin.AdminList(c.Request.Context(), &req)
+	res, err := h.admin.AdminList(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -67,13 +67,12 @@ func (h *Handle) AdminList(c *gin.Context) {
 
 // AdminLogin 管理员登录
 func (h *Handle) AdminLogin(c *gin.Context) {
-	var req admindto.AdminLoginReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.AdminLoginReq](c)
+	if !ok {
 		return
 	}
 
-	res, err := h.admin.AdminLogin(c.Request.Context(), &req, c.ClientIP())
+	res, err := h.admin.AdminLogin(c.Request.Context(), req, c.ClientIP())
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -168,12 +167,11 @@ func (h *Handle) AdminProfile(c *gin.Context) {
 
 // AdminCreate 新增管理员
 func (h *Handle) AdminCreate(c *gin.Context) {
-	var req admindto.AdminCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.AdminCreateReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.admin.AdminCreate(c.Request.Context(), &req)
+	res, err := h.admin.AdminCreate(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -183,12 +181,11 @@ func (h *Handle) AdminCreate(c *gin.Context) {
 
 // AdminEdit 修改管理员
 func (h *Handle) AdminEdit(c *gin.Context) {
-	var req admindto.AdminEditReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.AdminEditReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.admin.AdminEdit(c.Request.Context(), &req)
+	res, err := h.admin.AdminEdit(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -198,13 +195,12 @@ func (h *Handle) AdminEdit(c *gin.Context) {
 
 // AdminDetail 管理员详情
 func (h *Handle) AdminDetail(c *gin.Context) {
-	var req admindto.AdminDetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.AdminDetailReq](c)
+	if !ok {
 		return
 	}
 
-	res, err := h.admin.AdminDetail(c.Request.Context(), &req)
+	res, err := h.admin.AdminDetail(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -215,9 +211,8 @@ func (h *Handle) AdminDetail(c *gin.Context) {
 
 // AdminDelete 删除管理员
 func (h *Handle) AdminDelete(c *gin.Context) {
-	var req admindto.AdminDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.AdminDeleteReq](c)
+	if !ok {
 		return
 	}
 
@@ -229,7 +224,7 @@ func (h *Handle) AdminDelete(c *gin.Context) {
 	}
 	req.OperatorID = uid
 
-	res, err := h.admin.AdminDelete(c.Request.Context(), &req)
+	res, err := h.admin.AdminDelete(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -240,12 +235,11 @@ func (h *Handle) AdminDelete(c *gin.Context) {
 
 // AdminRoleList 查询用户绑定的角色列表。
 func (h *Handle) AdminRoleList(c *gin.Context) {
-	var req admindto.AdminRoleListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.AdminRoleListReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.admin.AdminRoleList(c.Request.Context(), &req)
+	res, err := h.admin.AdminRoleList(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -255,9 +249,8 @@ func (h *Handle) AdminRoleList(c *gin.Context) {
 
 // AdminRoleSave 保存用户角色绑定。
 func (h *Handle) AdminRoleSave(c *gin.Context) {
-	var req admindto.AdminRoleSaveReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.AdminRoleSaveReq](c)
+	if !ok {
 		return
 	}
 	// 注入当前操作者（超管保护判定依据，禁止前端伪造）；取不到即视为未登录。
@@ -267,7 +260,7 @@ func (h *Handle) AdminRoleSave(c *gin.Context) {
 		return
 	}
 	req.OperatorID = uid
-	res, err := h.admin.AdminRoleSave(c.Request.Context(), &req)
+	res, err := h.admin.AdminRoleSave(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -277,12 +270,11 @@ func (h *Handle) AdminRoleSave(c *gin.Context) {
 
 // AdminMenuList 查询用户直接额外菜单。
 func (h *Handle) AdminMenuList(c *gin.Context) {
-	var req admindto.AdminMenuListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.AdminMenuListReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.admin.AdminMenuList(c.Request.Context(), &req)
+	res, err := h.admin.AdminMenuList(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -292,9 +284,8 @@ func (h *Handle) AdminMenuList(c *gin.Context) {
 
 // AdminMenuSave 保存用户直接额外权限。
 func (h *Handle) AdminMenuSave(c *gin.Context) {
-	var req admindto.AdminMenuSaveReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.AdminMenuSaveReq](c)
+	if !ok {
 		return
 	}
 	// 注入当前操作者（超管保护判定依据，禁止前端伪造）；取不到即视为未登录。
@@ -304,7 +295,7 @@ func (h *Handle) AdminMenuSave(c *gin.Context) {
 		return
 	}
 	req.OperatorID = uid
-	res, err := h.admin.AdminMenuSave(c.Request.Context(), &req)
+	res, err := h.admin.AdminMenuSave(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -314,12 +305,11 @@ func (h *Handle) AdminMenuSave(c *gin.Context) {
 
 // RuleList 数据规则分页列表。
 func (h *Handle) RuleList(c *gin.Context) {
-	var req admindto.RuleListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.RuleListReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.rule.RuleList(c.Request.Context(), &req)
+	res, err := h.rule.RuleList(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -329,12 +319,11 @@ func (h *Handle) RuleList(c *gin.Context) {
 
 // RuleDetail 数据规则详情。
 func (h *Handle) RuleDetail(c *gin.Context) {
-	var req admindto.RuleDetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.RuleDetailReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.rule.RuleDetail(c.Request.Context(), &req)
+	res, err := h.rule.RuleDetail(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -344,12 +333,11 @@ func (h *Handle) RuleDetail(c *gin.Context) {
 
 // RuleCreate 新建数据规则。
 func (h *Handle) RuleCreate(c *gin.Context) {
-	var req admindto.RuleCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.RuleCreateReq](c)
+	if !ok {
 		return
 	}
-	if err := h.rule.RuleCreate(c.Request.Context(), &req); err != nil {
+	if err := h.rule.RuleCreate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -358,12 +346,11 @@ func (h *Handle) RuleCreate(c *gin.Context) {
 
 // RuleUpdate 更新数据规则。
 func (h *Handle) RuleUpdate(c *gin.Context) {
-	var req admindto.RuleUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.RuleUpdateReq](c)
+	if !ok {
 		return
 	}
-	if err := h.rule.RuleUpdate(c.Request.Context(), &req); err != nil {
+	if err := h.rule.RuleUpdate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -372,12 +359,11 @@ func (h *Handle) RuleUpdate(c *gin.Context) {
 
 // RuleDelete 批量删除数据规则。
 func (h *Handle) RuleDelete(c *gin.Context) {
-	var req admindto.RuleDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.RuleDeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.rule.RuleDelete(c.Request.Context(), &req); err != nil {
+	if err := h.rule.RuleDelete(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -396,12 +382,11 @@ func (h *Handle) RuleSchemaList(c *gin.Context) {
 
 // RuleSchemaDetail 返回 domain 的字段白名单详情。
 func (h *Handle) RuleSchemaDetail(c *gin.Context) {
-	var req admindto.RuleSchemaDetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.RuleSchemaDetailReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.rule.RuleSchemaDetail(c.Request.Context(), &req)
+	res, err := h.rule.RuleSchemaDetail(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -415,12 +400,11 @@ func (h *Handle) RuleSchemaDetail(c *gin.Context) {
 
 // RuleAssignmentList 查询规则分配列表。
 func (h *Handle) RuleAssignmentList(c *gin.Context) {
-	var req admindto.RuleAssignmentListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.RuleAssignmentListReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.rule.RuleAssignmentList(c.Request.Context(), &req)
+	res, err := h.rule.RuleAssignmentList(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -430,12 +414,11 @@ func (h *Handle) RuleAssignmentList(c *gin.Context) {
 
 // RuleAssignmentSave 批量保存规则分配。
 func (h *Handle) RuleAssignmentSave(c *gin.Context) {
-	var req admindto.RuleAssignmentSaveReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.RuleAssignmentSaveReq](c)
+	if !ok {
 		return
 	}
-	if err := h.rule.RuleAssignmentSave(c.Request.Context(), &req); err != nil {
+	if err := h.rule.RuleAssignmentSave(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -454,12 +437,11 @@ func (h *Handle) DeptTree(c *gin.Context) {
 
 // DeptDetail 查询部门详情（GET 参数 id）。
 func (h *Handle) DeptDetail(c *gin.Context) {
-	var req admindto.DeptDetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.DeptDetailReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.dept.DeptDetail(c.Request.Context(), &req)
+	res, err := h.dept.DeptDetail(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -469,12 +451,11 @@ func (h *Handle) DeptDetail(c *gin.Context) {
 
 // DeptCreate 新建部门（JSON body）。
 func (h *Handle) DeptCreate(c *gin.Context) {
-	var req admindto.DeptCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.DeptCreateReq](c)
+	if !ok {
 		return
 	}
-	if err := h.dept.DeptCreate(c.Request.Context(), &req); err != nil {
+	if err := h.dept.DeptCreate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -483,12 +464,11 @@ func (h *Handle) DeptCreate(c *gin.Context) {
 
 // DeptUpdate 更新部门信息，支持移动父节点（JSON body）。
 func (h *Handle) DeptUpdate(c *gin.Context) {
-	var req admindto.DeptUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.DeptUpdateReq](c)
+	if !ok {
 		return
 	}
-	if err := h.dept.DeptUpdate(c.Request.Context(), &req); err != nil {
+	if err := h.dept.DeptUpdate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -497,12 +477,11 @@ func (h *Handle) DeptUpdate(c *gin.Context) {
 
 // DeptDelete 删除部门（JSON body id）。
 func (h *Handle) DeptDelete(c *gin.Context) {
-	var req admindto.DeptDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.DeptDeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.dept.DeptDelete(c.Request.Context(), &req); err != nil {
+	if err := h.dept.DeptDelete(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -511,12 +490,11 @@ func (h *Handle) DeptDelete(c *gin.Context) {
 
 // DeptUserList 查询部门下的用户列表（GET 参数）。
 func (h *Handle) DeptUserList(c *gin.Context) {
-	var req admindto.DeptUserListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.DeptUserListReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.dept.DeptUserList(c.Request.Context(), &req)
+	res, err := h.dept.DeptUserList(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -526,12 +504,11 @@ func (h *Handle) DeptUserList(c *gin.Context) {
 
 // DeptUserSave 批量分配用户到部门（JSON body）。
 func (h *Handle) DeptUserSave(c *gin.Context) {
-	var req admindto.DeptUserSaveReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.DeptUserSaveReq](c)
+	if !ok {
 		return
 	}
-	if err := h.dept.DeptUserSave(c.Request.Context(), &req); err != nil {
+	if err := h.dept.DeptUserSave(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -540,13 +517,12 @@ func (h *Handle) DeptUserSave(c *gin.Context) {
 
 // MenuTree 菜单树查询接口。
 func (h *Handle) MenuTree(c *gin.Context) {
-	var req admindto.MenuTreeReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.MenuTreeReq](c)
+	if !ok {
 		return
 	}
 
-	list, err := h.menu.MenuTree(c.Request.Context(), &req)
+	list, err := h.menu.MenuTree(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -556,13 +532,12 @@ func (h *Handle) MenuTree(c *gin.Context) {
 
 // MenuDetail 菜单详情接口。
 func (h *Handle) MenuDetail(c *gin.Context) {
-	var req admindto.MenuDetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.MenuDetailReq](c)
+	if !ok {
 		return
 	}
 
-	res, err := h.menu.MenuDetail(c.Request.Context(), &req)
+	res, err := h.menu.MenuDetail(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -572,13 +547,12 @@ func (h *Handle) MenuDetail(c *gin.Context) {
 
 // MenuCreate 新建菜单接口。
 func (h *Handle) MenuCreate(c *gin.Context) {
-	var req admindto.MenuCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.MenuCreateReq](c)
+	if !ok {
 		return
 	}
 
-	if err := h.menu.MenuCreate(c.Request.Context(), &req); err != nil {
+	if err := h.menu.MenuCreate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -587,13 +561,12 @@ func (h *Handle) MenuCreate(c *gin.Context) {
 
 // MenuUpdate 更新菜单接口。
 func (h *Handle) MenuUpdate(c *gin.Context) {
-	var req admindto.MenuUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.MenuUpdateReq](c)
+	if !ok {
 		return
 	}
 
-	if err := h.menu.MenuUpdate(c.Request.Context(), &req); err != nil {
+	if err := h.menu.MenuUpdate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -602,13 +575,12 @@ func (h *Handle) MenuUpdate(c *gin.Context) {
 
 // MenuDelete 批量删除菜单接口。
 func (h *Handle) MenuDelete(c *gin.Context) {
-	var req admindto.MenuDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.MenuDeleteReq](c)
+	if !ok {
 		return
 	}
 
-	if err := h.menu.MenuDelete(c.Request.Context(), &req); err != nil {
+	if err := h.menu.MenuDelete(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -617,13 +589,12 @@ func (h *Handle) MenuDelete(c *gin.Context) {
 
 // PermList 权限点分页列表接口。
 func (h *Handle) PermList(c *gin.Context) {
-	var req admindto.PermListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.PermListReq](c)
+	if !ok {
 		return
 	}
 
-	res, err := h.perm.PermList(c.Request.Context(), &req)
+	res, err := h.perm.PermList(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -633,13 +604,12 @@ func (h *Handle) PermList(c *gin.Context) {
 
 // PermDetail 权限点详情接口。
 func (h *Handle) PermDetail(c *gin.Context) {
-	var req admindto.PermDetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.PermDetailReq](c)
+	if !ok {
 		return
 	}
 
-	res, err := h.perm.PermDetail(c.Request.Context(), &req)
+	res, err := h.perm.PermDetail(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -649,13 +619,12 @@ func (h *Handle) PermDetail(c *gin.Context) {
 
 // PermOptions 启用权限选项接口。
 func (h *Handle) PermOptions(c *gin.Context) {
-	var req admindto.PermOptionsReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.PermOptionsReq](c)
+	if !ok {
 		return
 	}
 
-	res, err := h.perm.PermOptions(c.Request.Context(), &req)
+	res, err := h.perm.PermOptions(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -665,13 +634,12 @@ func (h *Handle) PermOptions(c *gin.Context) {
 
 // PermCreate 新建权限点接口。
 func (h *Handle) PermCreate(c *gin.Context) {
-	var req admindto.PermCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.PermCreateReq](c)
+	if !ok {
 		return
 	}
 
-	res, err := h.perm.PermCreate(c.Request.Context(), &req)
+	res, err := h.perm.PermCreate(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -681,13 +649,12 @@ func (h *Handle) PermCreate(c *gin.Context) {
 
 // PermUpdate 更新权限点接口。
 func (h *Handle) PermUpdate(c *gin.Context) {
-	var req admindto.PermUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.PermUpdateReq](c)
+	if !ok {
 		return
 	}
 
-	res, err := h.perm.PermUpdate(c.Request.Context(), &req)
+	res, err := h.perm.PermUpdate(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -697,13 +664,12 @@ func (h *Handle) PermUpdate(c *gin.Context) {
 
 // PermDelete 批量删除权限点接口。
 func (h *Handle) PermDelete(c *gin.Context) {
-	var req admindto.PermDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.PermDeleteReq](c)
+	if !ok {
 		return
 	}
 
-	res, err := h.perm.PermDelete(c.Request.Context(), &req)
+	res, err := h.perm.PermDelete(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -713,12 +679,11 @@ func (h *Handle) PermDelete(c *gin.Context) {
 
 // RoleList 角色分页列表接口。
 func (h *Handle) RoleList(c *gin.Context) {
-	var req admindto.RoleListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.RoleListReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.role.RoleList(c.Request.Context(), &req)
+	res, err := h.role.RoleList(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -728,12 +693,11 @@ func (h *Handle) RoleList(c *gin.Context) {
 
 // RoleDetail 角色详情接口。
 func (h *Handle) RoleDetail(c *gin.Context) {
-	var req admindto.RoleDetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.RoleDetailReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.role.RoleDetail(c.Request.Context(), &req)
+	res, err := h.role.RoleDetail(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -743,12 +707,11 @@ func (h *Handle) RoleDetail(c *gin.Context) {
 
 // RoleCreate 新建角色接口。
 func (h *Handle) RoleCreate(c *gin.Context) {
-	var req admindto.RoleCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.RoleCreateReq](c)
+	if !ok {
 		return
 	}
-	if err := h.role.RoleCreate(c.Request.Context(), &req); err != nil {
+	if err := h.role.RoleCreate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -757,12 +720,11 @@ func (h *Handle) RoleCreate(c *gin.Context) {
 
 // RoleUpdate 更新角色接口。
 func (h *Handle) RoleUpdate(c *gin.Context) {
-	var req admindto.RoleUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.RoleUpdateReq](c)
+	if !ok {
 		return
 	}
-	if err := h.role.RoleUpdate(c.Request.Context(), &req); err != nil {
+	if err := h.role.RoleUpdate(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -771,12 +733,11 @@ func (h *Handle) RoleUpdate(c *gin.Context) {
 
 // RoleDelete 删除角色接口。
 func (h *Handle) RoleDelete(c *gin.Context) {
-	var req admindto.RoleDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.RoleDeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.role.RoleDelete(c.Request.Context(), &req); err != nil {
+	if err := h.role.RoleDelete(c.Request.Context(), req); err != nil {
 		adminFail(c, err)
 		return
 	}
@@ -785,12 +746,11 @@ func (h *Handle) RoleDelete(c *gin.Context) {
 
 // RoleMenuList 角色拥有的菜单 ID 列表接口。
 func (h *Handle) RoleMenuList(c *gin.Context) {
-	var req admindto.RoleMenuListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.RoleMenuListReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.role.RoleMenuList(c.Request.Context(), &req)
+	res, err := h.role.RoleMenuList(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -800,9 +760,8 @@ func (h *Handle) RoleMenuList(c *gin.Context) {
 
 // RoleMenuSave 保存角色菜单授权接口。
 func (h *Handle) RoleMenuSave(c *gin.Context) {
-	var req admindto.RoleMenuSaveReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.RoleMenuSaveReq](c)
+	if !ok {
 		return
 	}
 	// 注入当前操作者（超管保护判定依据，禁止前端伪造）；取不到即视为未登录。
@@ -812,7 +771,7 @@ func (h *Handle) RoleMenuSave(c *gin.Context) {
 		return
 	}
 	req.OperatorID = uid
-	res, err := h.role.RoleMenuSave(c.Request.Context(), &req)
+	res, err := h.role.RoleMenuSave(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -822,12 +781,11 @@ func (h *Handle) RoleMenuSave(c *gin.Context) {
 
 // RoleUserList 角色下的用户列表接口。
 func (h *Handle) RoleUserList(c *gin.Context) {
-	var req admindto.RoleUserListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.Query[admindto.RoleUserListReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.role.RoleUserList(c.Request.Context(), &req)
+	res, err := h.role.RoleUserList(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return
@@ -837,9 +795,8 @@ func (h *Handle) RoleUserList(c *gin.Context) {
 
 // RoleUserSave 保存角色用户绑定接口。
 func (h *Handle) RoleUserSave(c *gin.Context) {
-	var req admindto.RoleUserSaveReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		adminBindFail(c, err)
+	req, ok := binding.JSON[admindto.RoleUserSaveReq](c)
+	if !ok {
 		return
 	}
 	// 注入当前操作者（超管保护判定依据，禁止前端伪造）；取不到即视为未登录。
@@ -849,7 +806,7 @@ func (h *Handle) RoleUserSave(c *gin.Context) {
 		return
 	}
 	req.OperatorID = uid
-	res, err := h.role.RoleUserSave(c.Request.Context(), &req)
+	res, err := h.role.RoleUserSave(c.Request.Context(), req)
 	if err != nil {
 		adminFail(c, err)
 		return

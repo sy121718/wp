@@ -30,7 +30,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/binding"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	"go_wp/internal/middleware/builtin"
 	orderenums "go_wp/internal/module/order/enums"
@@ -50,7 +50,7 @@ const orderWriteMaxBodyBytes = 1 << 20
 
 // orderWriteBody 读一次请求体、解析顶层键值，并**把 body 复位**。
 //
-// 复位是刻意的：单档仍旧走 c.ShouldBind（gin 按 Content-Type 选绑定器，form 与 json
+// 复位是刻意的：单档仍旧走 pkg/binding 的 Form（gin 按 Content-Type 选绑定器，form 与 json
 // 两种绑定语义、binding:"required" 的校验都逐字不变），而 ShouldBind 要重新读同一个 body。
 // 读一次判形状、再把 body 交还给 gin，比「自己实现一份绑定」少一整套漂移面。
 //
@@ -82,7 +82,7 @@ func orderWriteBody(c *gin.Context) (map[string]json.RawMessage, bool) {
 	}
 	c.Request.Body = io.NopCloser(bytes.NewReader(body))
 	// 非 JSON 的体（表单编码、空体）：形状未知 → 单档，交给 gin 自己的绑定器。
-	if c.ContentType() != binding.MIMEJSON {
+	if c.ContentType() != ginbinding.MIMEJSON {
 		return nil, true
 	}
 	var raw map[string]json.RawMessage

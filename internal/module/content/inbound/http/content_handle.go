@@ -30,12 +30,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/builder/core"
-	"go_wp/internal/module/content/contract"
-	"go_wp/internal/module/content/dto"
-	"go_wp/internal/module/content/enums"
-	"go_wp/internal/module/presentation/contract"
+	contentcontract "go_wp/internal/module/content/contract"
+	contentdto "go_wp/internal/module/content/dto"
+	contentenums "go_wp/internal/module/content/enums"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	seoscore "go_wp/internal/seo/scoring"
 	"go_wp/internal/shell"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 )
 
@@ -156,9 +157,8 @@ func (h *Handle) SetCollectionSchemas(p core.CollectionSchemaProvider) { h.colle
 
 // Create 新建内容。
 func (h *Handle) Create(c *gin.Context) {
-	req := &contentdto.CreateReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, contentenums.ErrInvalidParam)
+	req, ok := binding.JSON[contentdto.CreateReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Create(c.Request.Context(), req)
@@ -171,9 +171,8 @@ func (h *Handle) Create(c *gin.Context) {
 
 // Update 更新内容。
 func (h *Handle) Update(c *gin.Context) {
-	req := &contentdto.UpdateReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, contentenums.ErrInvalidParam)
+	req, ok := binding.JSON[contentdto.UpdateReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Update(c.Request.Context(), req)
@@ -186,9 +185,8 @@ func (h *Handle) Update(c *gin.Context) {
 
 // Get 内容详情。
 func (h *Handle) Get(c *gin.Context) {
-	req := &contentdto.GetReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, contentenums.ErrInvalidParam)
+	req, ok := binding.Form[contentdto.GetReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -201,9 +199,8 @@ func (h *Handle) Get(c *gin.Context) {
 
 // List 内容列表。
 func (h *Handle) List(c *gin.Context) {
-	req := &contentdto.ListReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, contentenums.ErrInvalidParam)
+	req, ok := binding.Form[contentdto.ListReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
@@ -264,9 +261,8 @@ func localizeCollectionLabels(c *gin.Context, items []core.CollectionSchema) []c
 
 // Delete 删除内容。
 func (h *Handle) Delete(c *gin.Context) {
-	req := &contentdto.DeleteReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, contentenums.ErrInvalidParam)
+	req, ok := binding.Form[contentdto.DeleteReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), req); err != nil {

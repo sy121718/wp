@@ -19,8 +19,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/module/order/enums"
-	"go_wp/internal/module/sysconfig/contract"
+	orderenums "go_wp/internal/module/order/enums"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/reqparams"

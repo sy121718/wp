@@ -14,9 +14,9 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/builder/core"
-	"go_wp/internal/module/content/contract"
-	"go_wp/internal/module/content/model"
-	"go_wp/internal/module/content/service"
+	contentcontract "go_wp/internal/module/content/contract"
+	contentmodel "go_wp/internal/module/content/model"
+	contentservice "go_wp/internal/module/content/service"
 	"go_wp/internal/permission"
 	"go_wp/pkg/i18n"
 )

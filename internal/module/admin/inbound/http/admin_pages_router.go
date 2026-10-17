@@ -14,9 +14,9 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/module/admin/contract"
-	"go_wp/internal/module/page/contract"
-	"go_wp/internal/module/sysconfig/contract"
+	admincontract "go_wp/internal/module/admin/contract"
+	pagecontract "go_wp/internal/module/page/contract"
+	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/internal/permission"
 )
 

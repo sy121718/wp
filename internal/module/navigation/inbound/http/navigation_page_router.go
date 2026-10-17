@@ -15,10 +15,10 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/module/block/contract"
-	"go_wp/internal/module/navigation/contract"
-	"go_wp/internal/module/page/contract"
-	"go_wp/internal/module/project/contract"
+	blockcontract "go_wp/internal/module/block/contract"
+	navigationcontract "go_wp/internal/module/navigation/contract"
+	pagecontract "go_wp/internal/module/page/contract"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"
 )
 

@@ -24,7 +24,6 @@ package blockhttp
 
 import (
 	"context"
-	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strings"
 	"time"
@@ -33,10 +32,12 @@ import (
 
 	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
+	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
 	blockmodel "go_wp/internal/module/block/model"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"go_wp/pkg/safepath"
@@ -180,17 +181,9 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 // 工作台块编辑的保存入口：保存后由 block service 统一编排 stale
 // （传播器已在装配层注入，REST /api/block/update 与本保存路径同源传播）。
 func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
-	var req struct {
-		ID       string          `json:"id" binding:"required"`
-		Name     string          `json:"name"`
-		Document json.RawMessage `json:"document"`
-		// ReturnURL 保存成功后的回跳目标（站内相对路径）。
-		//
-		// 来源：菜单页「新建面板块并编辑」跳到 /workbench?block=ID&returnUrl=...，
-		// 工作台把它随保存请求体带回来 —— 块存完能直接回到菜单编辑器并重新展开那一项。
-		ReturnURL string `json:"returnUrl"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
+	// 请求体形状（含 ReturnURL 的来源与语义）在 blockdto.SaveContentReq。
+	req, err := binding.ParseJSON[blockdto.SaveContentReq](c)
+	if err != nil {
 		// JSON 端点：出口必须是 JSON。调用方是工作台的 saveDraft，它对响应做 r.json()、
 		// 再按 code >= 400 取 message 弹提示；原先的 c.String(400, "参数不合法") 是纯文本，
 		// r.json() 直接 reject 落入 catch —— 用户只看到保存状态变红，一句话提示都没有。

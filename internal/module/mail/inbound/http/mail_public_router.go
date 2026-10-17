@@ -12,7 +12,7 @@ package mailhttp
 import (
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/module/mail/contract"
+	mailcontract "go_wp/internal/module/mail/contract"
 )
 
 // SetupTrackingRoutes 挂载追踪路由（公开）。

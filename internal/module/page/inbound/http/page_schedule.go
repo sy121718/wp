@@ -40,6 +40,7 @@ import (
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
 	"go_wp/internal/shell"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	"go_wp/pkg/sitetz"
@@ -48,14 +49,13 @@ import (
 
 // SetSchedule 排定一次到点动作（JSON）。
 func (h *Handle) SetSchedule(c *gin.Context) {
-	var req pagedto.ScheduleSetReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.JSON[pagedto.ScheduleSetReq](c)
+	if !ok {
 		return
 	}
 	// 发起人由服务端填，不从请求体读（审计字段不能由请求方自报）。
 	req.CreateBy = int64(builtin.CurrentUserID(c))
-	res, err := h.svc.SetPageSchedule(c.Request.Context(), &req)
+	res, err := h.svc.SetPageSchedule(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
@@ -66,12 +66,11 @@ func (h *Handle) SetSchedule(c *gin.Context) {
 
 // CancelSchedule 取消一条尚未执行的排定（JSON）。
 func (h *Handle) CancelSchedule(c *gin.Context) {
-	var req pagedto.ScheduleCancelReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.JSON[pagedto.ScheduleCancelReq](c)
+	if !ok {
 		return
 	}
-	if err := h.svc.CancelPageSchedule(c.Request.Context(), &req); err != nil {
+	if err := h.svc.CancelPageSchedule(c.Request.Context(), req); err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
@@ -80,12 +79,11 @@ func (h *Handle) CancelSchedule(c *gin.Context) {
 
 // ListSchedules 列出某页面的排定（JSON）。
 func (h *Handle) ListSchedules(c *gin.Context) {
-	var req pagedto.ScheduleListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.Query[pagedto.ScheduleListReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.ListPageSchedules(c.Request.Context(), &req)
+	res, err := h.svc.ListPageSchedules(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return

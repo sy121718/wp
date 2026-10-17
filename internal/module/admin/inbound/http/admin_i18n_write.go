@@ -49,6 +49,7 @@ package adminhttp
 import (
 	"errors"
 	"fmt"
+	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strings"
@@ -183,11 +184,12 @@ func adminI18nWriteIDsOf(raw map[string]json.RawMessage, key string) ([]string, 
 // adminI18nWriteReqOf 解析并**严格校验**请求体：成功返回归一后的请求，
 // 失败时已写出 400 响应（调用方直接 return）。
 func adminI18nWriteReqOf(c *gin.Context) (adminI18nWriteReq, bool) {
-	var raw map[string]json.RawMessage
-	if err := c.ShouldBindJSON(&raw); err != nil {
+	rawMap, err := binding.ParseJSON[map[string]json.RawMessage](c)
+	if err != nil {
 		adminBindFail(c, err)
 		return adminI18nWriteReq{}, false
 	}
+	raw := *rawMap
 
 	var req adminI18nWriteReq
 	action := ""
@@ -228,7 +230,6 @@ func adminI18nWriteReqOf(c *gin.Context) (adminI18nWriteReq, bool) {
 		return req, true
 	}
 
-	var err error
 	if req.Key, err = adminI18nWriteStringOf(raw, "key"); err != nil {
 		adminBindFail(c, err)
 		return adminI18nWriteReq{}, false

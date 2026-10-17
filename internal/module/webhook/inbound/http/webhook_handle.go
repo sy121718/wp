@@ -6,9 +6,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/module/webhook/contract"
-	"go_wp/internal/module/webhook/dto"
-	"go_wp/internal/module/webhook/enums"
+	webhookcontract "go_wp/internal/module/webhook/contract"
+	webhookdto "go_wp/internal/module/webhook/dto"
+	webhookenums "go_wp/internal/module/webhook/enums"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"

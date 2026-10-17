@@ -23,6 +23,7 @@ import (
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
@@ -124,9 +125,8 @@ func (h *AdminHandle) SystemPage(c *gin.Context) {
 
 // APISystemSave saves the system form through one atomic aggregate JSON request.
 func (h *AdminHandle) APISystemSave(c *gin.Context) {
-	var req sysconfigdto.SystemSaveReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, sysconfigenums.ErrInvalidParam)
+	req, ok := binding.JSON[sysconfigdto.SystemSaveReq](c)
+	if !ok {
 		return
 	}
 	ctx := c.Request.Context()

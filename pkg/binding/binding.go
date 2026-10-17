@@ -53,6 +53,43 @@ func Query[T any](c *gin.Context) (*T, bool) {
 	return &req, true
 }
 
+// ParseJSON 绑定 JSON 请求体，**不写响应**，把失败原样交回调用方。
+//
+// 失败时返回值**不是 nil**：要求是「就地回显表单」的页面出口要拿已经绑上的字段
+// （漏填目标路径时仍要显示已填的源路径），把 nil 传进去会清空整张表单。
+// 调用方判失败只看 error，不要把返回值当 nil 判据。
+//
+// 只给出口不是「400 + pkg/response 报文」的形态用，三种真实场景：
+//   - JSON-RPC（失败的响应体是 rpc error 对象，不是 {code,message,data}）
+//   - 页面片段（失败要渲染进整页 / 片段提示，不是甩一个 JSON）
+//   - 绑定成功后还要按形状再分流（顶层键白名单、去 null 后判空）
+//
+// 其余一律用 JSON / Query / Form —— 那些形态的 400 文案与状态码只有一份。
+func ParseJSON[T any](c *gin.Context) (*T, error) {
+	var req T
+	return &req, c.ShouldBindJSON(&req)
+}
+
+// ParseQuery 绑定查询串，不写响应。语义见 ParseJSON。
+func ParseQuery[T any](c *gin.Context) (*T, error) {
+	var req T
+	return &req, c.ShouldBindQuery(&req)
+}
+
+// ParseForm 绑定表单体（urlencoded 或 multipart），不写响应；DTO 实现 FormBinder 时同样补一遍。
+func ParseForm[T any](c *gin.Context) (*T, error) {
+	var req T
+	if err := c.ShouldBind(&req); err != nil {
+		return &req, err
+	}
+	if b, ok := any(&req).(FormBinder); ok {
+		if err := b.BindForm(c.Request.PostForm); err != nil {
+			return &req, err
+		}
+	}
+	return &req, nil
+}
+
 // Form 绑定表单体（urlencoded 或 multipart），并在 DTO 实现 FormBinder 时补一遍。
 func Form[T any](c *gin.Context) (*T, bool) {
 	var req T

@@ -3,6 +3,7 @@ package userhttp
 import (
 	"errors"
 	"fmt"
+	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strconv"
@@ -38,11 +39,12 @@ type customerBulkResult struct {
 
 // The boundary accepts numeric identifiers only; normalization precedes the limit.
 func customerBulkBody(c *gin.Context, withStatus bool) ([]uint64, int, bool) {
-	var raw map[string]json.RawMessage
-	if err := c.ShouldBindJSON(&raw); err != nil || raw == nil {
+	rawMap, err := binding.ParseJSON[map[string]json.RawMessage](c)
+	if err != nil || *rawMap == nil {
 		response.ErrorWithMessage(c, 400, userenums.ErrInvalidParam)
 		return nil, 0, false
 	}
+	raw := *rawMap
 	for key, value := range raw {
 		if (key != "ids" && (!withStatus || key != "status")) || strings.TrimSpace(string(value)) == "null" {
 			response.ErrorWithMessage(c, 400, userenums.ErrInvalidParam)

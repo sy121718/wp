@@ -6,10 +6,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/module/project/contract"
-	"go_wp/internal/module/project/dto"
-	"go_wp/internal/module/project/enums"
-	"go_wp/internal/module/project/service"
+	projectcontract "go_wp/internal/module/project/contract"
+	projectdto "go_wp/internal/module/project/dto"
+	projectenums "go_wp/internal/module/project/enums"
+	projectservice "go_wp/internal/module/project/service"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -26,12 +27,11 @@ func NewHandle(svc projectcontract.ProjectService) *Handle {
 
 // Create 创建站点工程。
 func (h *Handle) Create(c *gin.Context) {
-	var req projectdto.CreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, projectenums.ErrInvalidName)
+	req, ok := binding.JSON[projectdto.CreateReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), &req)
+	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		projectError(c, err)
 		return
@@ -51,12 +51,11 @@ func (h *Handle) List(c *gin.Context) {
 
 // Detail 查询站点工程。
 func (h *Handle) Detail(c *gin.Context) {
-	var req projectdto.DetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Query[projectdto.DetailReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.Detail(c.Request.Context(), &req)
+	res, err := h.svc.Detail(c.Request.Context(), req)
 	if err != nil {
 		projectError(c, err)
 		return
@@ -66,12 +65,11 @@ func (h *Handle) Detail(c *gin.Context) {
 
 // Update 更新站点工程与 SiteSettings。
 func (h *Handle) Update(c *gin.Context) {
-	var req projectdto.UpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.JSON[projectdto.UpdateReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.Update(c.Request.Context(), &req)
+	res, err := h.svc.Update(c.Request.Context(), req)
 	if err != nil {
 		projectError(c, err)
 		return
@@ -136,12 +134,11 @@ func (h *ThemeHandle) List(c *gin.Context) {
 
 // Create 新建主题。
 func (h *ThemeHandle) Create(c *gin.Context) {
-	var req projectdto.ThemeCreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[projectdto.ThemeCreateReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.CreateTheme(c.Request.Context(), &req)
+	res, err := h.svc.CreateTheme(c.Request.Context(), req)
 	if err != nil {
 		themeError(c, err)
 		return
@@ -151,12 +148,11 @@ func (h *ThemeHandle) Create(c *gin.Context) {
 
 // Update 更新主题(设置/名称)。
 func (h *ThemeHandle) Update(c *gin.Context) {
-	var req projectdto.ThemeUpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[projectdto.ThemeUpdateReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.UpdateTheme(c.Request.Context(), &req)
+	res, err := h.svc.UpdateTheme(c.Request.Context(), req)
 	if err != nil {
 		themeError(c, err)
 		return
@@ -166,12 +162,11 @@ func (h *ThemeHandle) Update(c *gin.Context) {
 
 // Activate 激活主题(整站前端切换)。
 func (h *ThemeHandle) Activate(c *gin.Context) {
-	var req projectdto.ThemeActivateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[projectdto.ThemeActivateReq](c)
+	if !ok {
 		return
 	}
-	if err := h.svc.ActivateTheme(c.Request.Context(), &req); err != nil {
+	if err := h.svc.ActivateTheme(c.Request.Context(), req); err != nil {
 		themeError(c, err)
 		return
 	}
@@ -180,9 +175,8 @@ func (h *ThemeHandle) Activate(c *gin.Context) {
 
 // Delete 删除主题。
 func (h *ThemeHandle) Delete(c *gin.Context) {
-	var req projectdto.ThemeActivateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[projectdto.ThemeActivateReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.DeleteTheme(c.Request.Context(), req.ID); err != nil {

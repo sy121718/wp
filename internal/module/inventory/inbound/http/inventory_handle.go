@@ -14,9 +14,10 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/module/inventory/contract"
-	"go_wp/internal/module/inventory/dto"
-	"go_wp/internal/module/inventory/enums"
+	inventorycontract "go_wp/internal/module/inventory/contract"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 )
 
@@ -59,9 +60,8 @@ func NewHandle(svc inventorycontract.InventoryService) *Handle { return &Handle{
 
 // CreateSource 新建货源（issue #17 验收 1/2）。
 func (h *Handle) CreateSource(c *gin.Context) {
-	req := &inventorydto.CreateSourceReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.CreateSourceReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
@@ -76,9 +76,8 @@ func (h *Handle) CreateSource(c *gin.Context) {
 
 // UpdateSource 修改货源（验收 1/2）。
 func (h *Handle) UpdateSource(c *gin.Context) {
-	req := &inventorydto.UpdateSourceReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.UpdateSourceReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
@@ -93,9 +92,8 @@ func (h *Handle) UpdateSource(c *gin.Context) {
 
 // GetSource 货源详情。
 func (h *Handle) GetSource(c *gin.Context) {
-	req := &inventorydto.GetSourceReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.GetSourceReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetSource(c.Request.Context(), req)
@@ -108,9 +106,8 @@ func (h *Handle) GetSource(c *gin.Context) {
 
 // ListSources 货源列表（验收 4：关联方标志是可筛选的报表维度）。
 func (h *Handle) ListSources(c *gin.Context) {
-	req := &inventorydto.ListSourceReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.ListSourceReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListSources(c.Request.Context(), req)
@@ -123,9 +120,8 @@ func (h *Handle) ListSources(c *gin.Context) {
 
 // DeleteSource 删除货源。
 func (h *Handle) DeleteSource(c *gin.Context) {
-	req := &inventorydto.DeleteSourceReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.DeleteSourceReq](c)
+	if !ok {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
@@ -139,9 +135,8 @@ func (h *Handle) DeleteSource(c *gin.Context) {
 
 // SourceSummary 货源关联方统计（验收 4）。
 func (h *Handle) SourceSummary(c *gin.Context) {
-	req := &inventorydto.SourceSummaryReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.SourceSummaryReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.SourceSummary(c.Request.Context(), req)
@@ -154,9 +149,8 @@ func (h *Handle) SourceSummary(c *gin.Context) {
 
 // CreateWarehouse 新建仓库（验收 1）。
 func (h *Handle) CreateWarehouse(c *gin.Context) {
-	req := &inventorydto.CreateWarehouseReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.CreateWarehouseReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.CreateWarehouse(c.Request.Context(), req)
@@ -169,9 +163,8 @@ func (h *Handle) CreateWarehouse(c *gin.Context) {
 
 // UpdateWarehouse 修改仓库（含切换默认仓）。
 func (h *Handle) UpdateWarehouse(c *gin.Context) {
-	req := &inventorydto.UpdateWarehouseReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.UpdateWarehouseReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.UpdateWarehouse(c.Request.Context(), req)
@@ -184,9 +177,8 @@ func (h *Handle) UpdateWarehouse(c *gin.Context) {
 
 // GetWarehouse 仓库详情。
 func (h *Handle) GetWarehouse(c *gin.Context) {
-	req := &inventorydto.GetWarehouseReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.GetWarehouseReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetWarehouse(c.Request.Context(), req)
@@ -199,9 +191,8 @@ func (h *Handle) GetWarehouse(c *gin.Context) {
 
 // ListWarehouses 仓库列表。
 func (h *Handle) ListWarehouses(c *gin.Context) {
-	req := &inventorydto.ListWarehouseReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.ListWarehouseReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListWarehouses(c.Request.Context(), req)
@@ -214,9 +205,8 @@ func (h *Handle) ListWarehouses(c *gin.Context) {
 
 // DeleteWarehouse 删除仓库（默认仓 / 有非零库存时拒绝）。
 func (h *Handle) DeleteWarehouse(c *gin.Context) {
-	req := &inventorydto.DeleteWarehouseReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.DeleteWarehouseReq](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.DeleteWarehouse(c.Request.Context(), req); err != nil {
@@ -228,9 +218,8 @@ func (h *Handle) DeleteWarehouse(c *gin.Context) {
 
 // EnsureStock 确保某 SKU 在某仓有库存记录（初始 0；未指定仓兜底默认仓）。
 func (h *Handle) EnsureStock(c *gin.Context) {
-	req := &inventorydto.EnsureStockReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.EnsureStockReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.EnsureStock(c.Request.Context(), req)
@@ -243,9 +232,8 @@ func (h *Handle) EnsureStock(c *gin.Context) {
 
 // GetStock 单条库存记录（按 id 或 变体 × 仓库）。
 func (h *Handle) GetStock(c *gin.Context) {
-	req := &inventorydto.GetStockReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.GetStockReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetStock(c.Request.Context(), req)
@@ -258,9 +246,8 @@ func (h *Handle) GetStock(c *gin.Context) {
 
 // ListStocksBySKU 某 SKU 在各仓的库存（验收 3/4）。
 func (h *Handle) ListStocksBySKU(c *gin.Context) {
-	req := &inventorydto.ListStockBySKUReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.ListStockBySKUReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListStocksBySKU(c.Request.Context(), req)
@@ -273,9 +260,8 @@ func (h *Handle) ListStocksBySKU(c *gin.Context) {
 
 // ListStocks 库存记录列表（按工程 / 仓 / 商品 / 变体 / SKU 过滤 + 分页）。
 func (h *Handle) ListStocks(c *gin.Context) {
-	req := &inventorydto.ListStockReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.ListStockReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListStocks(c.Request.Context(), req)
@@ -290,9 +276,8 @@ func (h *Handle) ListStocks(c *gin.Context) {
 
 // ChangeStock 按 SKU 增减库存（验收 1/2/3/4）：方向 + 数量 + 原因 + 来源引用。
 func (h *Handle) ChangeStock(c *gin.Context) {
-	req := &inventorydto.ChangeStockReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.ChangeStockReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.ChangeStock(c.Request.Context(), req)
@@ -305,9 +290,8 @@ func (h *Handle) ChangeStock(c *gin.Context) {
 
 // DeductStock 按 SKU 扣减（验收 1/5）：不足即整体拒绝，可展开物料清单。
 func (h *Handle) DeductStock(c *gin.Context) {
-	req := &inventorydto.DeductStockReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.DeductStockReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.DeductStock(c.Request.Context(), req)
@@ -320,9 +304,8 @@ func (h *Handle) DeductStock(c *gin.Context) {
 
 // ListMovements 库存流水列表（验收 3）。
 func (h *Handle) ListMovements(c *gin.Context) {
-	req := &inventorydto.ListMovementReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.ListMovementReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListMovements(c.Request.Context(), req)
@@ -335,9 +318,8 @@ func (h *Handle) ListMovements(c *gin.Context) {
 
 // ListReasons 变动原因字典列表（验收 4）。
 func (h *Handle) ListReasons(c *gin.Context) {
-	req := &inventorydto.ListReasonReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.ListReasonReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListReasons(c.Request.Context(), req)
@@ -350,9 +332,8 @@ func (h *Handle) ListReasons(c *gin.Context) {
 
 // CreateReason 新建自定义变动原因（验收 4）。
 func (h *Handle) CreateReason(c *gin.Context) {
-	req := &inventorydto.CreateReasonReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.CreateReasonReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.CreateReason(c.Request.Context(), req)
@@ -365,9 +346,8 @@ func (h *Handle) CreateReason(c *gin.Context) {
 
 // UpdateReason 修改自定义变动原因（内置原因拒绝）。
 func (h *Handle) UpdateReason(c *gin.Context) {
-	req := &inventorydto.UpdateReasonReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.UpdateReasonReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.UpdateReason(c.Request.Context(), req)
@@ -380,9 +360,8 @@ func (h *Handle) UpdateReason(c *gin.Context) {
 
 // SetBOM 全量替换某个父 SKU 的物料清单（验收 5）。
 func (h *Handle) SetBOM(c *gin.Context) {
-	req := &inventorydto.SetBOMReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.SetBOMReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.SetBOM(c.Request.Context(), req)
@@ -395,9 +374,8 @@ func (h *Handle) SetBOM(c *gin.Context) {
 
 // GetBOM 查看某个父 SKU 的物料清单。
 func (h *Handle) GetBOM(c *gin.Context) {
-	req := &inventorydto.GetBOMReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.GetBOMReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetBOM(c.Request.Context(), req)
@@ -410,9 +388,8 @@ func (h *Handle) GetBOM(c *gin.Context) {
 
 // CreatePurchaseOrder 新建采购单（验收 1）。
 func (h *Handle) CreatePurchaseOrder(c *gin.Context) {
-	req := &inventorydto.CreatePurchaseOrderReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.CreatePurchaseOrderReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.CreatePurchaseOrder(c.Request.Context(), req)
@@ -425,9 +402,8 @@ func (h *Handle) CreatePurchaseOrder(c *gin.Context) {
 
 // UpdatePurchaseOrder 修改采购单。
 func (h *Handle) UpdatePurchaseOrder(c *gin.Context) {
-	req := &inventorydto.UpdatePurchaseOrderReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.UpdatePurchaseOrderReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.UpdatePurchaseOrder(c.Request.Context(), req)
@@ -440,9 +416,8 @@ func (h *Handle) UpdatePurchaseOrder(c *gin.Context) {
 
 // GetPurchaseOrder 采购单详情（含全部采购行）。
 func (h *Handle) GetPurchaseOrder(c *gin.Context) {
-	req := &inventorydto.GetPurchaseOrderReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.GetPurchaseOrderReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.GetPurchaseOrder(c.Request.Context(), req)
@@ -455,9 +430,8 @@ func (h *Handle) GetPurchaseOrder(c *gin.Context) {
 
 // ListPurchaseOrders 采购单列表。
 func (h *Handle) ListPurchaseOrders(c *gin.Context) {
-	req := &inventorydto.ListPurchaseOrderReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.ListPurchaseOrderReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListPurchaseOrders(c.Request.Context(), req)
@@ -470,9 +444,8 @@ func (h *Handle) ListPurchaseOrders(c *gin.Context) {
 
 // RegisterReceipt 登记采购收货（验收 3/4）：库存增加 + 流水 + 成本价更新一次完成。
 func (h *Handle) RegisterReceipt(c *gin.Context) {
-	req := &inventorydto.RegisterReceiptReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.RegisterReceiptReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.RegisterReceipt(c.Request.Context(), req)
@@ -485,9 +458,8 @@ func (h *Handle) RegisterReceipt(c *gin.Context) {
 
 // RegisterProductionInbound 自家工厂生产入库（验收 5）。
 func (h *Handle) RegisterProductionInbound(c *gin.Context) {
-	req := &inventorydto.ProductionInboundReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.JSON[inventorydto.ProductionInboundReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.RegisterProductionInbound(c.Request.Context(), req)
@@ -500,9 +472,8 @@ func (h *Handle) RegisterProductionInbound(c *gin.Context) {
 
 // ListPurchaseHistory 某 SKU 的进货历史（验收 6）。
 func (h *Handle) ListPurchaseHistory(c *gin.Context) {
-	req := &inventorydto.ListPurchaseHistoryReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, inventoryenums.ErrInvalidParam)
+	req, ok := binding.Query[inventorydto.ListPurchaseHistoryReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.ListPurchaseHistory(c.Request.Context(), req)

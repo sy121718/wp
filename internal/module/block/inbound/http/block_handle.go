@@ -14,6 +14,7 @@ import (
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
 	blockservice "go_wp/internal/module/block/service"
+	"go_wp/pkg/binding"
 	bulkids "go_wp/pkg/bulkids"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -41,12 +42,11 @@ func (h *Handle) List(c *gin.Context) {
 
 // Detail 块详情。
 func (h *Handle) Detail(c *gin.Context) {
-	var req blockdto.DetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.Query[blockdto.DetailReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.Detail(c.Request.Context(), &req)
+	res, err := h.svc.Detail(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
 		return
@@ -56,12 +56,11 @@ func (h *Handle) Detail(c *gin.Context) {
 
 // Create 新建块。
 func (h *Handle) Create(c *gin.Context) {
-	var req blockdto.CreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[blockdto.CreateReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), &req)
+	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
 		return
@@ -71,12 +70,11 @@ func (h *Handle) Create(c *gin.Context) {
 
 // Update 更新块。
 func (h *Handle) Update(c *gin.Context) {
-	var req blockdto.UpdateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[blockdto.UpdateReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.Update(c.Request.Context(), &req)
+	res, err := h.svc.Update(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
 		return
@@ -89,12 +87,11 @@ func (h *Handle) Update(c *gin.Context) {
 // 被拒（409）时用 blockRefErrorMessage：与批量删除逐条原因同一套文案 ——
 // 「哪些页面/资源挡住了」是操作者唯一能据此行动的信息，不能只剩一句「不能删除」。
 func (h *Handle) Delete(c *gin.Context) {
-	var req blockdto.DeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[blockdto.DeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
 		response.ErrorWithMessage(c, blockErrorStatus(err), blockRefErrorMessage(c, err))
 		return
 	}
@@ -113,9 +110,8 @@ func (h *Handle) Delete(c *gin.Context) {
 //   - 单条失败**不中断**整批（整批回滚会让用户以为「一个都没删」然后反复重试）；
 //   - 部分成功回 200 + 真实计数，不伪装成整批失败。
 func (h *Handle) BulkDelete(c *gin.Context) {
-	var req blockdto.BulkDeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[blockdto.BulkDeleteReq](c)
+	if !ok {
 		return
 	}
 	ids, nerr := bulkids.Normalize(req.IDs)
@@ -167,12 +163,11 @@ func bulkTooManyMessage(err error) string {
 
 // CloneAST 复制块 AST（编辑器「插入-复制」动作）：返回与源块脱钩的独立文档。
 func (h *Handle) CloneAST(c *gin.Context) {
-	var req blockdto.CloneReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		paramBindFail(c, err)
+	req, ok := binding.JSON[blockdto.CloneReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.CloneAST(c.Request.Context(), &req)
+	res, err := h.svc.CloneAST(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
 		return

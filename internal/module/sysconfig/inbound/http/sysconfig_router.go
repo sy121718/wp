@@ -15,6 +15,7 @@ import (
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
 	"go_wp/internal/permission"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 )
 
@@ -45,13 +46,12 @@ func (h *AdminHandle) APIList(c *gin.Context) {
 
 // APISave POST /api/sysconfig/save：整组保存（JSON 出口）。
 func (h *AdminHandle) APISave(c *gin.Context) {
-	var req sysconfigdto.SetGroupReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, sysconfigenums.ErrInvalidParam)
+	req, ok := binding.JSON[sysconfigdto.SetGroupReq](c)
+	if !ok {
 		return
 	}
 	req.UpdateBy = int64(builtin.CurrentUserID(c))
-	res, err := h.svc.SetGroup(c.Request.Context(), &req)
+	res, err := h.svc.SetGroup(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusConflict, sysconfigErrText(c, err))
 		return

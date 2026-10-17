@@ -9,9 +9,9 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/config"
-	"go_wp/internal/module/mail/contract"
+	mailcontract "go_wp/internal/module/mail/contract"
 	mailmodel "go_wp/internal/module/mail/model"
-	"go_wp/internal/module/mail/service"
+	mailservice "go_wp/internal/module/mail/service"
 	"go_wp/internal/permission"
 )
 

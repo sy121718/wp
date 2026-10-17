@@ -6,8 +6,8 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/module/admin/contract"
-	"go_wp/internal/module/admin/service"
+	admincontract "go_wp/internal/module/admin/contract"
+	adminservice "go_wp/internal/module/admin/service"
 	"go_wp/internal/permission"
 )
 

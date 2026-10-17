@@ -16,24 +16,26 @@ package aidto
 // 用零值 int 会让「没提交状态字段」被读成「停用」—— 新建抽屉里没有状态字段，
 // 那样建出来的供应商一出生就是停用，且看不出哪里错了。
 type SaveProviderReq struct {
-	ID          int64
-	ProviderKey string
-	DisplayName string
-	BaseURL     string
-	Protocol    string
-	APIKey      string
-	Status      *int
-	Sort        int
-	Version     int64
-	UpdateBy    int64
+	ID          int64  `json:"id"`
+	ProviderKey string `json:"providerKey"`
+	DisplayName string `json:"displayName"`
+	BaseURL     string `json:"baseUrl"`
+	Protocol    string `json:"protocol"`
+	APIKey      string `json:"apiKey"`
+	Status      *int   `json:"status"`
+	Sort        int    `json:"sort"`
+	Version     int64  `json:"version"`
+
+	// UpdateBy 由服务端填（当前登录账号），json:"-" 让请求体无法自报操作人。
+	UpdateBy int64 `json:"-"`
 }
 
 // SetStatusReq 启停一个供应商（卡片上的状态点）。
 type SetStatusReq struct {
-	ID       int64
-	Status   int
-	Version  int64
-	UpdateBy int64
+	ID       int64 `json:"id"`
+	Status   int   `json:"status"`
+	Version  int64 `json:"version"`
+	UpdateBy int64 `json:"-"`
 }
 
 // SaveModelsReq 整组保存模型目录（config_data.models 的整组替换）。
@@ -42,17 +44,17 @@ type SetStatusReq struct {
 // 不做「逐行 diff」—— 行没有自己的身份（id 是模型 ID，由用户填），逐行合并
 // 会把「删掉一行」变成无法表达的操作。
 type SaveModelsReq struct {
-	ProviderID int64
-	Version    int64
-	Models     []ModelEntry
-	UpdateBy   int64
+	ProviderID int64        `json:"providerId"`
+	Version    int64        `json:"version"`
+	Models     []ModelEntry `json:"models"`
+	UpdateBy   int64        `json:"-"`
 }
 
 // ProviderActionReq 「恢复默认模型」「获取可用模型」这类整组动作的入参。
 type ProviderActionReq struct {
-	ProviderID int64
-	Version    int64
-	UpdateBy   int64
+	ProviderID int64 `json:"providerId"`
+	Version    int64 `json:"version"`
+	UpdateBy   int64 `json:"-"`
 }
 
 // ChatReq 一次最小对话请求。provider_key + model 二元组即「用了哪个第三方」的标识。

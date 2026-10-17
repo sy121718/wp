@@ -16,7 +16,7 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/module/mail/contract"
+	mailcontract "go_wp/internal/module/mail/contract"
 	"go_wp/internal/permission"
 )
 

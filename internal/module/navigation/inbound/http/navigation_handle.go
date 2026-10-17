@@ -5,11 +5,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/binding"
+	ginbinding "github.com/gin-gonic/gin/binding"
 
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 )
 
@@ -50,7 +51,7 @@ func (h *Handle) Create(c *gin.Context) {
 		return
 	}
 	req := &navigationdto.CreateReq{}
-	if err := binding.JSON.BindBody(body, req); err != nil {
+	if err := ginbinding.JSON.BindBody(body, req); err != nil {
 		response.ParamError(c)
 		return
 	}
@@ -100,7 +101,7 @@ func (h *Handle) Update(c *gin.Context) {
 	req := &navigationdto.UpdateReq{}
 	// 走 gin 的 binding 而不是裸 json.Unmarshal：binding:"required" 的校验与指针字段的
 	// nil / 空语义必须与迁移前一致（json.Unmarshal 会静默跳过 required）。
-	if err := binding.JSON.BindBody(body, req); err != nil {
+	if err := ginbinding.JSON.BindBody(body, req); err != nil {
 		response.ParamError(c)
 		return
 	}
@@ -114,9 +115,8 @@ func (h *Handle) Update(c *gin.Context) {
 
 // Get 导航项详情。
 func (h *Handle) Get(c *gin.Context) {
-	req := &navigationdto.GetReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[navigationdto.GetReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
@@ -129,9 +129,8 @@ func (h *Handle) Get(c *gin.Context) {
 
 // List 导航项列表。
 func (h *Handle) List(c *gin.Context) {
-	req := &navigationdto.ListReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ParamError(c)
+	req, ok := binding.Form[navigationdto.ListReq](c)
+	if !ok {
 		return
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
@@ -170,7 +169,7 @@ func (h *Handle) Delete(c *gin.Context) {
 	}
 	req := &navigationdto.DeleteReq{}
 	// 走 gin 的 binding 而不是裸 json.Unmarshal：binding:"required" 的校验必须与迁移前一致。
-	if err := binding.JSON.BindBody(body, req); err != nil {
+	if err := ginbinding.JSON.BindBody(body, req); err != nil {
 		response.ParamError(c)
 		return
 	}

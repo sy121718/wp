@@ -2,7 +2,11 @@ package presentationdto
 
 // Package presentationdto presentation 模块请求/响应结构。
 
-import json "go_wp/pkg/jsonx"
+import (
+	"strings"
+
+	json "go_wp/pkg/jsonx"
+)
 
 // CreateInstanceReq 创建自动发布实例。
 type CreateInstanceReq struct {
@@ -55,6 +59,28 @@ type SaveOverrideReq struct {
 	// 判据是文档**结构真的变了**，只有服务端算得准（前端拿不到生效底稿的权威字节），
 	// 因此先请求、未带确认时服务端回 ErrDetachConfirmRequired，前端据此弹确认再重试。
 	ConfirmDetach bool `json:"confirmDetach"`
+}
+
+// WorkbenchSaveReq 工作台实例模式保存请求体（POST /admin/workbench/instance/save-override）。
+//
+// 键名与 SaveOverrideReq 不同是**前端既有契约**：工作台对 page / block / template
+// 三种目标一律发 id + draftDocument（见 workbench_page.go 的 TargetSaveBody），
+// 改成 instanceId/document 会静默拿到空文档。语义完全一致，转换收在 Override() 里。
+type WorkbenchSaveReq struct {
+	ID            string          `json:"id"`
+	ProjectID     string          `json:"projectId"`
+	DraftDocument json.RawMessage `json:"draftDocument"`
+	ConfirmDetach bool            `json:"confirmDetach"`
+}
+
+// Override 转成 service 的入参形状（去空白由这里负责，调用方不再各自 TrimSpace）。
+func (r *WorkbenchSaveReq) Override() *SaveOverrideReq {
+	return &SaveOverrideReq{
+		InstanceID:    strings.TrimSpace(r.ID),
+		ProjectID:     r.ProjectID,
+		Document:      r.DraftDocument,
+		ConfirmDetach: r.ConfirmDetach,
+	}
 }
 
 // ClearOverrideReq 清除实例级文档覆盖（放弃自定义，按模板重建）。

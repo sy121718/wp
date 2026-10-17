@@ -65,6 +65,15 @@ type CustomerStatusReq struct {
 	Status     int
 }
 
+// CustomerStatusSetReq 启用 / 停用接口的请求体。
+//
+// Status 故意是**指针**：0 是「已停用」这个有效取值，用 int 兜「没传」会把
+// 「漏传状态」读成「停用账号」，一次手滑就把人踢下线。
+type CustomerStatusSetReq struct {
+	CustomerID uint64 `json:"customerId"`
+	Status     *int   `json:"status"`
+}
+
 // CustomerUnlockReq 解除登录锁定（清 locked_until_time 与失败计数）。
 type CustomerUnlockReq struct {
 	CustomerID uint64

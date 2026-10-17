@@ -31,6 +31,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/url"
@@ -1843,23 +1844,12 @@ func (h *Handle) InstanceSave(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"code": 503, "message": adminui.PageInternalText(c)})
 		return
 	}
-	var body struct {
-		ID            string          `json:"id"`
-		ProjectID     string          `json:"projectId"`
-		DraftDoc      json.RawMessage `json:"draftDocument"`
-		ConfirmDetach bool            `json:"confirmDetach"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil || strings.TrimSpace(body.ID) == "" || len(body.DraftDoc) == 0 {
+	body, err := binding.ParseJSON[presentationdto.WorkbenchSaveReq](c)
+	if err != nil || body.Override().InstanceID == "" || len(body.DraftDocument) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": workbenchShortText(c, workbenchenums.ErrSaveParamsIncomplete)})
 		return
 	}
-	req := &presentationdto.SaveOverrideReq{
-		InstanceID: strings.TrimSpace(body.ID),
-		ProjectID:  body.ProjectID,
-		Document:   body.DraftDoc,
-		// 前端在收到 409（会放弃模板同步）并确认后重试时带上它。
-		ConfirmDetach: body.ConfirmDetach,
-	}
+	req := body.Override()
 	res, err := h.instances.SaveOverrideDocument(c.Request.Context(), req)
 	if err != nil {
 		// 需要确认才能转入独立文档：回 409 + JSON，由前端弹确认后重试。

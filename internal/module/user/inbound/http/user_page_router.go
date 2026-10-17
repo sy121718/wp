@@ -16,10 +16,10 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/module/membership/contract"
-	"go_wp/internal/module/order/contract"
-	"go_wp/internal/module/project/contract"
-	"go_wp/internal/module/user/contract"
+	membershipcontract "go_wp/internal/module/membership/contract"
+	ordercontract "go_wp/internal/module/order/contract"
+	projectcontract "go_wp/internal/module/project/contract"
+	usercontract "go_wp/internal/module/user/contract"
 )
 
 // SetupCustomerPages 注册后台客户管理页（pages = /admin 后台页面组）。

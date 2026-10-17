@@ -26,9 +26,9 @@ import (
 	"gorm.io/gorm"
 
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/module/user/contract"
+	usercontract "go_wp/internal/module/user/contract"
 	usermodel "go_wp/internal/module/user/model"
-	"go_wp/internal/module/user/service"
+	userservice "go_wp/internal/module/user/service"
 	"go_wp/internal/permission"
 )
 

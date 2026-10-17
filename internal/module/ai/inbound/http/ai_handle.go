@@ -65,6 +65,7 @@ package aihttp
 import (
 	"context"
 	"errors"
+	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strconv"
@@ -92,9 +93,8 @@ import (
 // 绑定失败归口 ErrInvalidParam；供应商不存在归 404，其余业务错误归 400。
 // 上游报文的原文不出现在响应里（service 侧只回 enums key，原文进日志）。
 func (h *Handle) Chat(c *gin.Context) {
-	var req aidto.ChatReq
-	if err := c.ShouldBind(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	req, ok := binding.Form[aidto.ChatReq](c)
+	if !ok {
 		return
 	}
 	// 归属由服务端定，**不采信请求体**：调用流水里的「谁调用的」如果来自请求参数，
@@ -102,7 +102,7 @@ func (h *Handle) Chat(c *gin.Context) {
 	// （会话页的发消息走 SendMessage，那边由会话层填自己正在续写的那条）。
 	req.UserID = userID(c)
 	req.SessionID = 0
-	result, err := h.svc.Chat(c.Request.Context(), &req)
+	result, err := h.svc.Chat(c.Request.Context(), req)
 	if err != nil {
 		code := http.StatusBadRequest
 		if errors.Is(err, aiservice.ErrProviderNotFound) {
@@ -282,40 +282,13 @@ func (h *Handle) GetProvider(c *gin.Context) {
 	response.Success(c, provider)
 }
 
-// saveProviderBody POST /api/ai/provider/save 的请求体。
-type saveProviderBody struct {
-	ID          int64  `json:"id"`
-	ProviderKey string `json:"providerKey"`
-	DisplayName string `json:"displayName"`
-	BaseURL     string `json:"baseUrl"`
-	Protocol    string `json:"protocol"`
-	APIKey      string `json:"apiKey"`
-	Status      *int   `json:"status"`
-	Sort        *int   `json:"sort"`
-	Version     int64  `json:"version"`
-}
-
 // SaveProvider POST /api/ai/provider/save → 新建（id 缺省 / 0）或按版本号更新。
 func (h *Handle) SaveProvider(c *gin.Context) {
-	var body saveProviderBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	req, ok := binding.JSON[aidto.SaveProviderReq](c)
+	if !ok {
 		return
 	}
-	req := &aidto.SaveProviderReq{
-		ID:          body.ID,
-		ProviderKey: body.ProviderKey,
-		DisplayName: body.DisplayName,
-		BaseURL:     body.BaseURL,
-		Protocol:    body.Protocol,
-		APIKey:      body.APIKey,
-		Status:      body.Status,
-		Version:     body.Version,
-		UpdateBy:    userID(c),
-	}
-	if body.Sort != nil {
-		req.Sort = *body.Sort
-	}
+	req.UpdateBy = userID(c)
 	provider, err := h.svc.SaveProvider(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
@@ -338,26 +311,14 @@ func (h *Handle) DeleteProvider(c *gin.Context) {
 	response.SuccessWithMessage(c, aienums.MsgDeleted, nil)
 }
 
-// setStatusBody POST /api/ai/provider/status 的请求体。
-type setStatusBody struct {
-	ID      int64 `json:"id"`
-	Status  int   `json:"status"`
-	Version int64 `json:"version"`
-}
-
 // SetProviderStatus POST /api/ai/provider/status → 启停供应商。
 func (h *Handle) SetProviderStatus(c *gin.Context) {
-	var body setStatusBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	req, ok := binding.JSON[aidto.SetStatusReq](c)
+	if !ok {
 		return
 	}
-	provider, err := h.svc.SetProviderStatus(c.Request.Context(), &aidto.SetStatusReq{
-		ID:       body.ID,
-		Status:   body.Status,
-		Version:  body.Version,
-		UpdateBy: userID(c),
-	})
+	req.UpdateBy = userID(c)
+	provider, err := h.svc.SetProviderStatus(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
 		return
@@ -380,26 +341,14 @@ func (h *Handle) ListModels(c *gin.Context) {
 	response.Success(c, gin.H{"providerId": provider.ID, "list": provider.Models})
 }
 
-// saveModelsBody POST /api/ai/provider/models/save 的请求体。
-type saveModelsBody struct {
-	ProviderID int64              `json:"providerId"`
-	Version    int64              `json:"version"`
-	Models     []aidto.ModelEntry `json:"models"`
-}
-
 // SaveModels POST /api/ai/provider/models/save → 整组保存模型目录。
 func (h *Handle) SaveModels(c *gin.Context) {
-	var body saveModelsBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	req, ok := binding.JSON[aidto.SaveModelsReq](c)
+	if !ok {
 		return
 	}
-	provider, err := h.svc.SaveModels(c.Request.Context(), &aidto.SaveModelsReq{
-		ProviderID: body.ProviderID,
-		Version:    body.Version,
-		Models:     body.Models,
-		UpdateBy:   userID(c),
-	})
+	req.UpdateBy = userID(c)
+	provider, err := h.svc.SaveModels(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
 		return
@@ -407,24 +356,14 @@ func (h *Handle) SaveModels(c *gin.Context) {
 	response.SuccessWithMessage(c, aienums.MsgModelsSaved, provider)
 }
 
-// providerActionBody 「恢复默认模型」「获取可用模型」的请求体。
-type providerActionBody struct {
-	ProviderID int64 `json:"providerId"`
-	Version    int64 `json:"version"`
-}
-
 // RestoreDefaultModels POST /api/ai/provider/models/restore → 用内置清单替换模型目录。
 func (h *Handle) RestoreDefaultModels(c *gin.Context) {
-	var body providerActionBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	req, ok := binding.JSON[aidto.ProviderActionReq](c)
+	if !ok {
 		return
 	}
-	provider, err := h.svc.RestoreDefaultModels(c.Request.Context(), &aidto.ProviderActionReq{
-		ProviderID: body.ProviderID,
-		Version:    body.Version,
-		UpdateBy:   userID(c),
-	})
+	req.UpdateBy = userID(c)
+	provider, err := h.svc.RestoreDefaultModels(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
 		return
@@ -434,16 +373,12 @@ func (h *Handle) RestoreDefaultModels(c *gin.Context) {
 
 // FetchAvailableModels POST /api/ai/provider/models/fetch → 调 {base_url}/models 拉候选并合并。
 func (h *Handle) FetchAvailableModels(c *gin.Context) {
-	var body providerActionBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	req, ok := binding.JSON[aidto.ProviderActionReq](c)
+	if !ok {
 		return
 	}
-	result, err := h.svc.FetchAvailableModels(c.Request.Context(), &aidto.ProviderActionReq{
-		ProviderID: body.ProviderID,
-		Version:    body.Version,
-		UpdateBy:   userID(c),
-	})
+	req.UpdateBy = userID(c)
+	result, err := h.svc.FetchAvailableModels(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "ai", err)
 		return
@@ -586,8 +521,8 @@ func (e *McpEndpoint) Handle(c *gin.Context) {
 	}
 
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, mcpMaxBodyBytes)
-	var req rpcRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	req, err := binding.ParseJSON[rpcRequest](c)
+	if err != nil {
 		writeRPCError(c, nil, rpcParseError, "请求不是合法的 JSON-RPC 报文")
 		return
 	}
@@ -614,7 +549,7 @@ func (e *McpEndpoint) Handle(c *gin.Context) {
 	case "tools/list":
 		writeRPCResult(c, req.ID, gin.H{"tools": e.toolsFor(c.Request.Context(), identity)})
 	case "tools/call":
-		e.callTool(c, req, identity)
+		e.callTool(c, *req, identity)
 	default:
 		if notification {
 			// 未知通知按协议静默忽略（回错误反而干扰客户端）。

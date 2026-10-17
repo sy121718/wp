@@ -19,6 +19,7 @@ package pagehttp
 import (
 	"context"
 	"errors"
+	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strconv"
@@ -519,12 +520,11 @@ func NewHandle(svc pagecontract.PageService) *Handle {
 
 // Create 创建 Page、初始 Draft 和初始 Revision。
 func (h *Handle) Create(c *gin.Context) {
-	var req pagedto.CreateReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.JSON[pagedto.CreateReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.Create(c.Request.Context(), &req)
+	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
@@ -534,12 +534,11 @@ func (h *Handle) Create(c *gin.Context) {
 
 // Detail 查询 Page 当前草稿。
 func (h *Handle) Detail(c *gin.Context) {
-	var req pagedto.DetailReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.Query[pagedto.DetailReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.Detail(c.Request.Context(), &req)
+	res, err := h.svc.Detail(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
@@ -549,12 +548,11 @@ func (h *Handle) Detail(c *gin.Context) {
 
 // List 列出全部页面摘要。
 func (h *Handle) List(c *gin.Context) {
-	var req pagedto.ListReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.Query[pagedto.ListReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.List(c.Request.Context(), &req)
+	res, err := h.svc.List(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, pageErrorMessage(c, err))
 		return
@@ -564,12 +562,11 @@ func (h *Handle) List(c *gin.Context) {
 
 // SaveDraft 保存完整 Page AST 并追加不可变 Revision。
 func (h *Handle) SaveDraft(c *gin.Context) {
-	var req pagedto.SaveDraftReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.JSON[pagedto.SaveDraftReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.SaveDraft(c.Request.Context(), &req)
+	res, err := h.svc.SaveDraft(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
@@ -579,12 +576,11 @@ func (h *Handle) SaveDraft(c *gin.Context) {
 
 // Build 基于当前草稿构建并暂存产物。
 func (h *Handle) Build(c *gin.Context) {
-	var req pagedto.BuildReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.JSON[pagedto.BuildReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.Build(c.Request.Context(), &req)
+	res, err := h.svc.Build(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
@@ -594,15 +590,14 @@ func (h *Handle) Build(c *gin.Context) {
 
 // Publish 激活暂存产物；allLangs=true 时一键发布全部启用语言（按语言逐条聚合结果）。
 func (h *Handle) Publish(c *gin.Context) {
-	var req pagedto.PublishReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.JSON[pagedto.PublishReq](c)
+	if !ok {
 		return
 	}
 	if req.AllLangs {
 		// 一键发布全部启用语言：进了编排就返回 200，失败明细按语言逐条在
 		// results 里（单语言失败不阻断其余语言，与 rebuildPage 同一口径）。
-		res, err := h.svc.PublishAllLanguages(c.Request.Context(), &req)
+		res, err := h.svc.PublishAllLanguages(c.Request.Context(), req)
 		if err != nil {
 			response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 			return
@@ -610,7 +605,7 @@ func (h *Handle) Publish(c *gin.Context) {
 		response.SuccessWithMessage(c, pageenums.MsgPublished, res)
 		return
 	}
-	res, err := h.svc.Publish(c.Request.Context(), &req)
+	res, err := h.svc.Publish(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
@@ -620,12 +615,11 @@ func (h *Handle) Publish(c *gin.Context) {
 
 // RebuildArtifact 按产物元数据重建丢失的产物文件（灾难恢复）。
 func (h *Handle) RebuildArtifact(c *gin.Context) {
-	var req pagedto.RebuildArtifactReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.JSON[pagedto.RebuildArtifactReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.RebuildArtifact(c.Request.Context(), &req)
+	res, err := h.svc.RebuildArtifact(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
@@ -635,12 +629,11 @@ func (h *Handle) RebuildArtifact(c *gin.Context) {
 
 // GarbageCollectArtifacts 回收超期且无引用的产物文件（默认 dryRun，先看再删）。
 func (h *Handle) GarbageCollectArtifacts(c *gin.Context) {
-	var req pagedto.GCArtifactsReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		// 允许空 body：全部走默认值（30 天保留窗口 + dryRun）
-		req = pagedto.GCArtifactsReq{}
+	req, ok := binding.JSON[pagedto.GCArtifactsReq](c)
+	if !ok {
+		return
 	}
-	res, err := h.svc.GarbageCollectArtifacts(c.Request.Context(), &req)
+	res, err := h.svc.GarbageCollectArtifacts(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
@@ -651,12 +644,11 @@ func (h *Handle) GarbageCollectArtifacts(c *gin.Context) {
 // SEOPatrol 站点 SEO 合规巡检（审计 SEO-01）：只读，按激活清单逐份校验产物字节，
 // 返回 URL / 规则 / 证据 / ArtifactHash 齐备的报告。
 func (h *Handle) SEOPatrol(c *gin.Context) {
-	var req pagedto.SEOPatrolReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.Query[pagedto.SEOPatrolReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.SEOPatrol(c.Request.Context(), &req)
+	res, err := h.svc.SEOPatrol(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
@@ -676,12 +668,11 @@ func (h *Handle) AuditPublication(c *gin.Context) {
 
 // Rollback 回滚到历史产物。
 func (h *Handle) Rollback(c *gin.Context) {
-	var req pagedto.RollbackReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.JSON[pagedto.RollbackReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.Rollback(c.Request.Context(), &req)
+	res, err := h.svc.Rollback(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
@@ -691,12 +682,11 @@ func (h *Handle) Rollback(c *gin.Context) {
 
 // UpdateURL 修改访问路径，旧路径 301 或取消激活。
 func (h *Handle) UpdateURL(c *gin.Context) {
-	var req pagedto.UpdateURLReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.JSON[pagedto.UpdateURLReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.UpdateURL(c.Request.Context(), &req)
+	res, err := h.svc.UpdateURL(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
@@ -706,12 +696,11 @@ func (h *Handle) UpdateURL(c *gin.Context) {
 
 // Delete 软删页面并释放其全部路径占用。
 func (h *Handle) Delete(c *gin.Context) {
-	var req pagedto.DeleteReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.JSON[pagedto.DeleteReq](c)
+	if !ok {
 		return
 	}
-	if err := h.svc.Delete(c.Request.Context(), &req); err != nil {
+	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
@@ -720,12 +709,11 @@ func (h *Handle) Delete(c *gin.Context) {
 
 // ListRevisions 查询 Page 草稿修订历史。
 func (h *Handle) ListRevisions(c *gin.Context) {
-	var req pagedto.RevisionReq
-	if err := c.ShouldBindQuery(&req); err != nil {
-		response.ParamError(c, pageenums.ErrInvalidParam)
+	req, ok := binding.Query[pagedto.RevisionReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.ListRevisions(c.Request.Context(), &req)
+	res, err := h.svc.ListRevisions(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return

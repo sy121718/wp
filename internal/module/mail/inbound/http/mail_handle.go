@@ -8,22 +8,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/module/mail/contract"
-	"go_wp/internal/module/mail/dto"
-	"go_wp/internal/module/mail/enums"
+	mailcontract "go_wp/internal/module/mail/contract"
+	maildto "go_wp/internal/module/mail/dto"
+	mailenums "go_wp/internal/module/mail/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
 
 // AutomationSave 新建 / 更新流程（保存前校验图：无环 + 可达 + 形状）。
 func (h *Handle) AutomationSave(c *gin.Context) {
-	var req maildto.SaveAutomationReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+	req, ok := binding.JSON[maildto.SaveAutomationReq](c)
+	if !ok {
 		return
 	}
 	req.OperatorID = builtin.CurrentUserID(c)
-	item, err := h.svc.SaveAutomation(c.Request.Context(), &req)
+	item, err := h.svc.SaveAutomation(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
@@ -35,12 +35,11 @@ func (h *Handle) AutomationSave(c *gin.Context) {
 //
 // 与 AutomationSave 分开：位置不是流程语义，不该推进版本号。见 service 里的说明。
 func (h *Handle) AutomationLayout(c *gin.Context) {
-	var req maildto.SaveAutomationLayoutReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+	req, ok := binding.JSON[maildto.SaveAutomationLayoutReq](c)
+	if !ok {
 		return
 	}
-	if err := h.svc.SaveAutomationLayout(c.Request.Context(), &req); err != nil {
+	if err := h.svc.SaveAutomationLayout(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
@@ -73,13 +72,12 @@ func (h *Handle) AutomationGet(c *gin.Context) {
 
 // AutomationStatus 启用 / 暂停 / 退回草稿（启用时会再校验一遍图）。
 func (h *Handle) AutomationStatus(c *gin.Context) {
-	var req maildto.SetAutomationStatusReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+	req, ok := binding.JSON[maildto.SetAutomationStatusReq](c)
+	if !ok {
 		return
 	}
 	req.OperatorID = builtin.CurrentUserID(c)
-	if err := h.svc.SetAutomationStatus(c.Request.Context(), &req); err != nil {
+	if err := h.svc.SetAutomationStatus(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
@@ -100,9 +98,8 @@ func (h *Handle) AutomationDelete(c *gin.Context) {
 // 已在流程中时返回明确错误而不是静默成功 —— 静默成功会让运营以为「加进去了」，
 // 实际上那个人正走在上一轮流程里。
 func (h *Handle) AutomationStartRun(c *gin.Context) {
-	var req maildto.AutomationRunReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+	req, ok := binding.JSON[maildto.AutomationRunReq](c)
+	if !ok {
 		return
 	}
 	req.OperatorID = builtin.CurrentUserID(c)
@@ -176,9 +173,8 @@ func (h *Handle) AccountList(c *gin.Context) {
 
 // AccountSave 新建 / 更新账号（id 为 0 即新建）。
 func (h *Handle) AccountSave(c *gin.Context) {
-	var req maildto.SaveAccountReq
-	if err := c.ShouldBind(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+	req, ok := binding.Form[maildto.SaveAccountReq](c)
+	if !ok {
 		return
 	}
 	var (
@@ -186,9 +182,9 @@ func (h *Handle) AccountSave(c *gin.Context) {
 		err  error
 	)
 	if req.ID > 0 {
-		item, err = h.svc.UpdateAccount(c.Request.Context(), &req)
+		item, err = h.svc.UpdateAccount(c.Request.Context(), req)
 	} else {
-		item, err = h.svc.CreateAccount(c.Request.Context(), &req)
+		item, err = h.svc.CreateAccount(c.Request.Context(), req)
 	}
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
@@ -227,13 +223,12 @@ func (h *Handle) AccountSetDefault(c *gin.Context) {
 
 // AccountTestSend 用指定账号发测试邮件。
 func (h *Handle) AccountTestSend(c *gin.Context) {
-	var req maildto.TestSendReq
-	if err := c.ShouldBind(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+	req, ok := binding.Form[maildto.TestSendReq](c)
+	if !ok {
 		return
 	}
 	req.Lang = response.RequestLanguage(c)
-	res, err := h.svc.TestSend(c.Request.Context(), &req)
+	res, err := h.svc.TestSend(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
@@ -253,12 +248,11 @@ func (h *Handle) TemplateList(c *gin.Context) {
 
 // TemplateSave 新建 / 覆盖模板。
 func (h *Handle) TemplateSave(c *gin.Context) {
-	var req maildto.SaveTemplateReq
-	if err := c.ShouldBind(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+	req, ok := binding.Form[maildto.SaveTemplateReq](c)
+	if !ok {
 		return
 	}
-	item, err := h.svc.UpsertTemplate(c.Request.Context(), &req)
+	item, err := h.svc.UpsertTemplate(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
@@ -322,12 +316,11 @@ func (h *Handle) ContactImport(c *gin.Context) {
 
 // ContactStatus 改联系人状态（后台手工订阅 / 退订）。
 func (h *Handle) ContactStatus(c *gin.Context) {
-	var req maildto.UpdateContactStatusReq
-	if err := c.ShouldBind(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+	req, ok := binding.Form[maildto.UpdateContactStatusReq](c)
+	if !ok {
 		return
 	}
-	if err := h.svc.UpdateContactStatus(c.Request.Context(), &req); err != nil {
+	if err := h.svc.UpdateContactStatus(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
 	}
@@ -360,12 +353,11 @@ func (h *Handle) CampaignGet(c *gin.Context) {
 
 // CampaignSave 新建 / 更新活动。
 func (h *Handle) CampaignSave(c *gin.Context) {
-	var req maildto.SaveCampaignReq
-	if err := c.ShouldBind(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+	req, ok := binding.Form[maildto.SaveCampaignReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.SaveCampaign(c.Request.Context(), &req)
+	res, err := h.svc.SaveCampaign(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return
@@ -384,12 +376,11 @@ func (h *Handle) CampaignDelete(c *gin.Context) {
 
 // CampaignStart 启动群发（HTTP 秒回，收件人展开在后台分批进行）。
 func (h *Handle) CampaignStart(c *gin.Context) {
-	var req maildto.StartCampaignReq
-	if err := c.ShouldBind(&req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
+	req, ok := binding.Form[maildto.StartCampaignReq](c)
+	if !ok {
 		return
 	}
-	res, err := h.svc.StartCampaign(c.Request.Context(), &req)
+	res, err := h.svc.StartCampaign(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "mail", err)
 		return

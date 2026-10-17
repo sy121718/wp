@@ -27,10 +27,10 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/module/order/contract"
-	"go_wp/internal/module/order/dto"
-	"go_wp/internal/module/order/enums"
-	"go_wp/internal/module/project/contract"
+	ordercontract "go_wp/internal/module/order/contract"
+	orderdto "go_wp/internal/module/order/dto"
+	orderenums "go_wp/internal/module/order/enums"
+	projectcontract "go_wp/internal/module/project/contract"
 )
 
 // orderSalesPageHandle 销售概览页的 handler。

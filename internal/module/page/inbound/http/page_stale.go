@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
@@ -13,6 +12,8 @@ import (
 	"go_wp/pkg/utils"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // receiptBacklogObserver 收敛积压的只读观测（page service 实现）。

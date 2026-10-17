@@ -34,6 +34,7 @@ package mailhttp
 
 import (
 	"errors"
+	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"strconv"
@@ -111,11 +112,12 @@ func mailContactIsExplicitNull(body json.RawMessage) bool {
 // mailContactBody 解析并严格校验请求体：顶层必须是对象、字段必须在白名单内、不得出现显式 null。
 // 失败时已写出 400（受控文案），调用方直接 return。
 func mailContactBody(c *gin.Context, allowed map[string]bool) (map[string]json.RawMessage, bool) {
-	var raw map[string]json.RawMessage
-	if err := c.ShouldBindJSON(&raw); err != nil {
+	rawMap, err := binding.ParseJSON[map[string]json.RawMessage](c)
+	if err != nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)
 		return nil, false
 	}
+	raw := *rawMap
 	for key, body := range raw {
 		if !allowed[key] || mailContactIsExplicitNull(body) {
 			response.ErrorWithMessage(c, http.StatusBadRequest, mailenums.ErrInvalidParam)

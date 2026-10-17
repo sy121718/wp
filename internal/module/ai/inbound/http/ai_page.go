@@ -54,6 +54,7 @@ import (
 	"context"
 	"go_wp/internal/middleware/adminctx"
 	"go_wp/internal/middleware/builtin"
+	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/url"
@@ -364,13 +365,12 @@ func (h *McpPageHandle) Page(c *gin.Context) {
 // 回片段而不是 PRG：明文不能进 query（浏览器历史 / 访问日志 / Referer 都会带走它），
 // 而片段是唯一能「只在这一屏出现一次」的通道。
 func (h *McpPageHandle) TokenCreate(c *gin.Context) {
-	var req aidto.TokenCreateReq
-	if err := c.ShouldBind(&req); err != nil {
-		h.renderTokens(c, "", aiMsgText(c, aienums.ErrInvalidParam, "参数不正确"), "")
+	req, ok := binding.Form[aidto.TokenCreateReq](c)
+	if !ok {
 		return
 	}
 	req.UserID = userID(c)
-	res, err := h.tokens.Create(c.Request.Context(), &req)
+	res, err := h.tokens.Create(c.Request.Context(), req)
 	if err != nil {
 		// 业务错误按 key 转当前语言；未登记的 key 原样显示（缺陷可见，而不是吞掉）。
 		h.renderTokens(c, "", aiMsgText(c, err.Error(), err.Error()), "")
@@ -385,10 +385,8 @@ func (h *McpPageHandle) TokenCreate(c *gin.Context) {
 // —— 每行一个表单不是合法 HTML。片段替换整块既绕开这个限制，也让「撤销后状态列立刻变」
 // 与创建后「列表多一行」共用同一份渲染路径。
 func (h *McpPageHandle) TokenRevoke(c *gin.Context) {
-	var form struct {
-		ID int64 `form:"id"`
-	}
-	if err := c.ShouldBind(&form); err != nil || form.ID <= 0 {
+	form, err := binding.ParseForm[aidto.TokenRevokeReq](c)
+	if err != nil || form.ID <= 0 {
 		h.renderTokens(c, "", aiMsgText(c, aienums.ErrInvalidParam, "参数不正确"), "")
 		return
 	}

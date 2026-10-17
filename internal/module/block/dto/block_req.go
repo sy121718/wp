@@ -24,6 +24,17 @@ type UpdateReq struct {
 	Document  json.RawMessage `json:"document"`
 }
 
+// SaveContentReq 工作台保存块内容（POST /admin/blocks/save-content）的请求体。
+//
+// 与 UpdateReq 的区别只在用途：工作台只改文档，名称留空表示沿用现值；
+// ReturnURL 是保存后的站内回跳目标（菜单页新建面板块时带回来，普通块编辑为空）。
+type SaveContentReq struct {
+	ID        string          `json:"id" binding:"required"`
+	Name      string          `json:"name"`
+	Document  json.RawMessage `json:"document"`
+	ReturnURL string          `json:"returnUrl"`
+}
+
 // DetailReq 按 ID 查询块请求。
 type DetailReq struct {
 	ProjectID string `form:"projectId" json:"projectId" binding:"required"`

@@ -21,6 +21,7 @@ import (
 	pageservice "go_wp/internal/module/page/service"
 	"go_wp/internal/shell"
 	"go_wp/internal/templates"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -51,13 +52,15 @@ func (h *Handle) RedirectPage(c *gin.Context) {
 // 留住输入」的例外（同 content 的文章保存，见 internal/templates/CLAUDE.md）。
 // 成功走整页提示（shell.RenderJump）：结论不再经 302 + ?ok= 回带。
 func (h *Handle) RedirectCreate(c *gin.Context) {
-	var req pagedto.RedirectCreateReq
-	if err := c.ShouldBind(&req); err != nil {
-		h.redirectCreateFailure(c, &req, pageenums.RedirectErrInvalid)
+	// 绑定失败要**就地回显表单**（漏填目标路径时仍显示已填的源路径），
+	// 所以走 ParseForm 拿部分值，而不是 Form 直接甩 400 JSON。
+	req, bindErr := binding.ParseForm[pagedto.RedirectCreateReq](c)
+	if bindErr != nil {
+		h.redirectCreateFailure(c, req, pageenums.RedirectErrInvalid)
 		return
 	}
-	if _, err := h.svc.CreateRedirect(c.Request.Context(), &req); err != nil {
-		h.redirectCreateFailure(c, &req, redirectErrKey(err))
+	if _, err := h.svc.CreateRedirect(c.Request.Context(), req); err != nil {
+		h.redirectCreateFailure(c, req, redirectErrKey(err))
 		return
 	}
 	redirectJump(c, true, redirectOkMsg(pageenums.RedirectResultCreated))
@@ -80,12 +83,12 @@ func (h *Handle) redirectCreateFailure(c *gin.Context, req *pagedto.RedirectCrea
 
 // RedirectDelete 删除一条重定向。结论走整页提示（成功 1 秒后回本页）。
 func (h *Handle) RedirectDelete(c *gin.Context) {
-	var req pagedto.RedirectDeleteReq
-	if err := c.ShouldBind(&req); err != nil {
+	req, bindErr := binding.ParseForm[pagedto.RedirectDeleteReq](c)
+	if bindErr != nil {
 		redirectJump(c, false, redirectErrMsg(pageenums.RedirectErrInvalid))
 		return
 	}
-	if err := h.svc.DeleteRedirect(c.Request.Context(), &req); err != nil {
+	if err := h.svc.DeleteRedirect(c.Request.Context(), req); err != nil {
 		redirectJump(c, false, redirectErrMsg(redirectErrKey(err)))
 		return
 	}
@@ -94,12 +97,12 @@ func (h *Handle) RedirectDelete(c *gin.Context) {
 
 // RedirectMerge 把一条重定向的跳转链合并为直达。结论走整页提示。
 func (h *Handle) RedirectMerge(c *gin.Context) {
-	var req pagedto.RedirectMergeReq
-	if err := c.ShouldBind(&req); err != nil {
+	req, bindErr := binding.ParseForm[pagedto.RedirectMergeReq](c)
+	if bindErr != nil {
 		redirectJump(c, false, redirectErrMsg(pageenums.RedirectErrInvalid))
 		return
 	}
-	if _, err := h.svc.MergeRedirectChain(c.Request.Context(), &req); err != nil {
+	if _, err := h.svc.MergeRedirectChain(c.Request.Context(), req); err != nil {
 		redirectJump(c, false, redirectErrMsg(redirectErrKey(err)))
 		return
 	}
@@ -122,8 +125,8 @@ type redirectBulkDeleteReq struct {
 // 结果按「已删除 N 条 / 跳过 M 条」渲染进整页提示（有跳过走失败档，不自动跳）：
 // 结论文案由服务端按计数重新拼装，不进 URL。
 func (h *Handle) RedirectBulkDelete(c *gin.Context) {
-	var req redirectBulkDeleteReq
-	if err := c.ShouldBind(&req); err != nil {
+	req, err := binding.ParseForm[redirectBulkDeleteReq](c)
+	if err != nil {
 		redirectJump(c, false, redirectErrMsg(pageenums.RedirectErrInvalid))
 		return
 	}

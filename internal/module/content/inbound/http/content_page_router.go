@@ -16,11 +16,11 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/module/content/contract"
-	"go_wp/internal/module/contenttemplate/contract"
-	"go_wp/internal/module/page/contract"
-	"go_wp/internal/module/presentation/contract"
-	"go_wp/internal/module/project/contract"
+	contentcontract "go_wp/internal/module/content/contract"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	pagecontract "go_wp/internal/module/page/contract"
+	presentationcontract "go_wp/internal/module/presentation/contract"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/i18n"
 )
 

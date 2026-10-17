@@ -19,14 +19,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	usercontract "go_wp/internal/module/user/contract"
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	"go_wp/pkg/sitetz"
 	"go_wp/pkg/utils"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 // customerDayLayout 筛选用的日期格式（与后台页面的 date 输入一致）。
@@ -117,15 +119,15 @@ func (h *CustomerHandle) GetCustomer(c *gin.Context) {
 
 // SetCustomerStatus 启用 / 停用账号（POST /api/customer/status）。
 func (h *CustomerHandle) SetCustomerStatus(c *gin.Context) {
-	var input struct {
-		CustomerID uint64 `json:"customerId"`
-		Status     *int   `json:"status"`
+	body, ok := binding.JSON[userdto.CustomerStatusSetReq](c)
+	if !ok {
+		return
 	}
-	if err := c.ShouldBindJSON(&input); err != nil || input.Status == nil {
+	if body.Status == nil {
 		response.ErrorWithMessage(c, http.StatusBadRequest, userenums.ErrInvalidParam)
 		return
 	}
-	req := &userdto.CustomerStatusReq{CustomerID: input.CustomerID, Status: *input.Status}
+	req := &userdto.CustomerStatusReq{CustomerID: body.CustomerID, Status: *body.Status}
 	if req.CustomerID == 0 || (req.Status != userenums.StatusActive && req.Status != userenums.StatusDisabled) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, userenums.ErrCustomerStatusInvalid)
 		return
@@ -146,9 +148,8 @@ func (h *CustomerHandle) SetCustomerStatus(c *gin.Context) {
 
 // UnlockCustomer 解除登录锁定（POST /api/customer/unlock）。
 func (h *CustomerHandle) UnlockCustomer(c *gin.Context) {
-	req := &userdto.CustomerUnlockReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, userenums.ErrInvalidParam)
+	req, ok := binding.JSON[userdto.CustomerUnlockReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.UnlockCustomer(c.Request.Context(), req)

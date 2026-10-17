@@ -11,9 +11,9 @@ import (
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
-	"go_wp/internal/module/block/contract"
-	"go_wp/internal/module/page/contract"
-	"go_wp/internal/module/project/contract"
+	blockcontract "go_wp/internal/module/block/contract"
+	pagecontract "go_wp/internal/module/page/contract"
+	projectcontract "go_wp/internal/module/project/contract"
 )
 
 // SetupBlockPages 注册全局块管理页（/admin 组，中间件链由装配层统一挂好）。

@@ -15,6 +15,7 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 )
@@ -54,9 +55,8 @@ func operatorFromContext(c *gin.Context) (id uint64, name string) {
 
 // CreateOrder 建单。
 func (h *Handle) CreateOrder(c *gin.Context) {
-	req := &orderdto.CreateOrderReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.JSON[orderdto.CreateOrderReq](c)
+	if !ok {
 		return
 	}
 	// 来源与操作人由服务端写入。
@@ -76,8 +76,11 @@ func (h *Handle) CreateOrder(c *gin.Context) {
 
 // GetOrder 订单详情。
 func (h *Handle) GetOrder(c *gin.Context) {
-	req := &orderdto.GetOrderReq{}
-	if err := c.ShouldBindQuery(req); err != nil || req.OrderID == 0 {
+	req, ok := binding.Query[orderdto.GetOrderReq](c)
+	if !ok {
+		return
+	}
+	if req.OrderID == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 		return
 	}
@@ -91,9 +94,8 @@ func (h *Handle) GetOrder(c *gin.Context) {
 
 // ListOrders 订单列表。
 func (h *Handle) ListOrders(c *gin.Context) {
-	req := &orderdto.ListOrderReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Query[orderdto.ListOrderReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.ListOrders(c.Request.Context(), req)
@@ -118,9 +120,8 @@ func (h *Handle) ChangeStatus(c *gin.Context) {
 		h.orderStatusBulk(c, raw)
 		return
 	}
-	req := &orderdto.ChangeStatusReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.JSON[orderdto.ChangeStatusReq](c)
+	if !ok {
 		return
 	}
 	req.OperatorID, req.OperatorName = operatorFromContext(c)
@@ -144,9 +145,8 @@ func (h *Handle) CancelOrder(c *gin.Context) {
 		h.orderCancelBulk(c, raw)
 		return
 	}
-	req := &orderdto.CancelOrderReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.JSON[orderdto.CancelOrderReq](c)
+	if !ok {
 		return
 	}
 	req.OperatorID, req.OperatorName = operatorFromContext(c)
@@ -163,9 +163,8 @@ func (h *Handle) CancelOrder(c *gin.Context) {
 
 // RefundOrder 退款。
 func (h *Handle) RefundOrder(c *gin.Context) {
-	req := &orderdto.RefundOrderReq{}
-	if err := c.ShouldBindJSON(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.JSON[orderdto.RefundOrderReq](c)
+	if !ok {
 		return
 	}
 	req.OperatorID, req.OperatorName = operatorFromContext(c)
@@ -179,8 +178,11 @@ func (h *Handle) RefundOrder(c *gin.Context) {
 
 // ListItems 某单的订单项。
 func (h *Handle) ListItems(c *gin.Context) {
-	req := &orderdto.GetOrderReq{}
-	if err := c.ShouldBindQuery(req); err != nil || req.OrderID == 0 {
+	req, ok := binding.Query[orderdto.GetOrderReq](c)
+	if !ok {
+		return
+	}
+	if req.OrderID == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 		return
 	}
@@ -194,8 +196,11 @@ func (h *Handle) ListItems(c *gin.Context) {
 
 // ListLogs 某单的状态流转流水。
 func (h *Handle) ListLogs(c *gin.Context) {
-	req := &orderdto.GetOrderReq{}
-	if err := c.ShouldBindQuery(req); err != nil || req.OrderID == 0 {
+	req, ok := binding.Query[orderdto.GetOrderReq](c)
+	if !ok {
+		return
+	}
+	if req.OrderID == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 		return
 	}
@@ -216,9 +221,8 @@ func (h *Handle) ListLogs(c *gin.Context) {
 
 // ListCoupons 优惠码列表。
 func (h *Handle) ListCoupons(c *gin.Context) {
-	req := &orderdto.CouponListReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Query[orderdto.CouponListReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.ListCoupons(c.Request.Context(), req)
@@ -246,9 +250,8 @@ func (h *Handle) GetCoupon(c *gin.Context) {
 
 // CreateCoupon 新建优惠码。
 func (h *Handle) CreateCoupon(c *gin.Context) {
-	req := &orderdto.CouponSaveReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Form[orderdto.CouponSaveReq](c)
+	if !ok {
 		return
 	}
 	// 时间窗：控件形态（带 T）→ 服务端认的写法。浏览器的 datetime-local 只能给 T 形态，
@@ -282,9 +285,8 @@ func (h *Handle) UpdateCoupon(c *gin.Context) {
 		h.couponToggleBulk(c, raw)
 		return
 	}
-	req := &orderdto.CouponSaveReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Form[orderdto.CouponSaveReq](c)
+	if !ok {
 		return
 	}
 	// 时间窗归口与新建同源（见 couponTimeInputValue）：编辑抽屉与行内启停表单都是
@@ -351,9 +353,8 @@ func (h *Handle) DeleteCoupon(c *gin.Context) {
 
 // ValidateCoupon 优惠码试算（纯读，不占次数）。
 func (h *Handle) ValidateCoupon(c *gin.Context) {
-	req := &orderdto.CouponValidateReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Query[orderdto.CouponValidateReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.ValidateCoupon(c.Request.Context(), req)
@@ -366,9 +367,8 @@ func (h *Handle) ValidateCoupon(c *gin.Context) {
 
 // ListCouponRedemptions 核销记录列表。
 func (h *Handle) ListCouponRedemptions(c *gin.Context) {
-	req := &orderdto.CouponRedemptionListReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Query[orderdto.CouponRedemptionListReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.ListCouponRedemptions(c.Request.Context(), req)
@@ -382,9 +382,8 @@ func (h *Handle) ListCouponRedemptions(c *gin.Context) {
 // AuditCouponCounts 券计数对账（DB-021）：used_count（投影）对核销明细（真源）。
 // 只读入口，供运维巡检；发现偏差时照常返回结果，由人判断怎么处理。
 func (h *Handle) AuditCouponCounts(c *gin.Context) {
-	req := &orderdto.CouponCountAuditReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Query[orderdto.CouponCountAuditReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.AuditCouponCounts(c.Request.Context(), req)
@@ -420,9 +419,8 @@ func localizeReturnLabels(c *gin.Context, resps ...*orderdto.ReturnResp) {
 
 // ListReturns 退货申请列表 + 各状态计数。
 func (h *Handle) ListReturns(c *gin.Context) {
-	req := &orderdto.ReturnListReq{}
-	if err := c.ShouldBindQuery(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Query[orderdto.ReturnListReq](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.ListReturns(c.Request.Context(), req)
@@ -473,9 +471,8 @@ func (h *Handle) ApproveReturn(c *gin.Context) {
 		h.returnBulkApprove(c, raw)
 		return
 	}
-	req := &orderdto.ReturnReviewReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Form[orderdto.ReturnReviewReq](c)
+	if !ok {
 		return
 	}
 	applyReturnOperator(c, req)
@@ -500,9 +497,8 @@ func (h *Handle) RejectReturn(c *gin.Context) {
 		h.returnBulkReject(c, raw)
 		return
 	}
-	req := &orderdto.ReturnReviewReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Form[orderdto.ReturnReviewReq](c)
+	if !ok {
 		return
 	}
 	applyReturnOperator(c, req)
@@ -517,9 +513,8 @@ func (h *Handle) RejectReturn(c *gin.Context) {
 
 // ReceiveReturn 确认收货：**先入库、后退款**。
 func (h *Handle) ReceiveReturn(c *gin.Context) {
-	req := &orderdto.ReturnReceiveReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Form[orderdto.ReturnReceiveReq](c)
+	if !ok {
 		return
 	}
 	id, name := operatorFromContext(c)
@@ -537,9 +532,8 @@ func (h *Handle) ReceiveReturn(c *gin.Context) {
 
 // UpdateOrderNote 改订单的后台备注（adminNote）。
 func (h *Handle) UpdateOrderNote(c *gin.Context) {
-	req := &orderdto.UpdateOrderNoteReq{}
-	if err := c.ShouldBind(req); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	req, ok := binding.Form[orderdto.UpdateOrderNoteReq](c)
+	if !ok {
 		return
 	}
 	id, name := operatorFromContext(c)

@@ -625,7 +625,7 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	engine.GET("/admin/products", handle.ProductsPage)
 	engine.GET("/admin/products/new", handle.ProductNewPage)
 	// 新建变体是 JSON 端点（页面声明 data-write-api + 基座发起 fetch）。
-	engine.POST("/api/product/variant/create", producthttp.NewHandle(f.products).CreateVariant)
+	engine.POST("/api/product/variant/create", producthttp.NewProductHandle(f.products).CreateVariant)
 
 	rec := httptestGet(engine, "/admin/products?project="+f.projectID)
 	if rec.Code != http.StatusOK {
