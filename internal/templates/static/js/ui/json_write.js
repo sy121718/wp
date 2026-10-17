@@ -633,7 +633,51 @@
         return names;
     }
 
+    // isDisabled 判「这个控件会不会随表单提交」：浏览器**不发** disabled 控件，
+    // 也不发 <fieldset disabled> 里的控件。基座是手动遍历，必须模拟同一条规则 ——
+    // 否则「不跟踪库存」时那个 disabled 的 quantity 空输入会被发成 ""，
+    // 严格解码的数值字段收到空串直接 400，而页面上只看到「保存失败」，
+    // 字段本身看起来完全正常。
+    function isDisabled(el) {
+        if (el.disabled) { return true; }
+        if (typeof el.closest !== 'function') { return false; }
+        return !!el.closest('fieldset[disabled]');
+    }
+
+    // assertFieldDeclarations 检查「同一字段被两档声明点名」——语义不确定，必须当场炸。
+    //
+    // 以前的行为是「按流水线顺序走，后一个赢」：错序不报错，症状是某个字段悄悄按另一种
+    // 形状发了出去（既点 array 又点 lines，得到 ["整段文本"]，合法、不报错、也不是想要的）。
+    // skip-empty 不在这条检查里：它是**发送策略**（空就不发），与任何一档都可叠加 ——
+    // defaultPrice「按小数发 + 留空就不发」是刻意组合。
+    function assertFieldDeclarations(form, submitter) {
+        var groups = [
+            { attr: 'data-write-array', names: arrayFields(form, submitter) },
+            { attr: 'data-write-lines', names: linesFields(form, submitter) },
+            { attr: 'data-write-html', names: htmlFields(form, submitter) },
+            { attr: 'data-write-number', names: numberFields(form, submitter) },
+            { attr: 'data-write-float', names: floatFields(form, submitter) },
+            { attr: 'data-write-bool', names: boolFields(form, submitter) }
+        ];
+        var seen = {};
+        for (var i = 0; i < groups.length; i++) {
+            var names = groups[i].names;
+            for (var name in names) {
+                if (!Object.prototype.hasOwnProperty.call(names, name)) { continue; }
+                if (seen[name]) {
+                    throw new Error('表单字段 "' + name + '" 被 ' + seen[name] + ' 与 ' +
+                        groups[i].attr + ' 同时点名（端点 ' +
+                        (attrFrom(form, submitter, 'data-write-api') || '未声明') +
+                        '）：不知道该按哪种形状发');
+                }
+                seen[name] = groups[i].attr;
+            }
+        }
+    }
+
     function createPayload(form, submitter) {
+        // 声明冲突在组装之前就炸：发出去的身体只能是「用户点的那个意思」的一种解释。
+        assertFieldDeclarations(form, submitter);
         var spec = rowsSpecOf(form, submitter);
         var objSpec = objectSpecOf(form, submitter);
         var rowNames = rowNamesOf(form, spec);
@@ -646,6 +690,9 @@
         Array.prototype.forEach.call(form.querySelectorAll('[name]'), function (el) {
             var name = el.getAttribute('name');
             if (!name || name === 'csrf_token') { return; }
+            // disabled 控件不随表单提交（原生表单同理）：漏掉这一条，被 JS 关掉的输入
+            // 会带着空值发给端点，而用户看到的是「字段明明填过」。
+            if (isDisabled(el)) { return; }
             // 行内字段不是顶层字段：同一个 name 交给端点两次，严格白名单只能整条请求拒掉。
             if (rowNames[name] || objNames[name]) { return; }
             var tag = (el.tagName || '').toUpperCase();
@@ -710,6 +757,8 @@
     // fieldValue 读一个表单字段成 payload 值：与 createPayload 同口径（未勾选的
     // checkbox/radio 不发、多选 select 发数组），只是按点名的 name 取。
     function fieldValue(el) {
+        // 与 createPayload 同一条规则：不提交的控件不给值（返回 null = 不进 payload）。
+        if (isDisabled(el)) { return null; }
         var type = (el.type || '').toLowerCase();
         if ((type === 'checkbox' || type === 'radio') && !el.checked) { return null; }
         if ((el.tagName || '').toUpperCase() === 'SELECT' && el.multiple) {
@@ -990,6 +1039,11 @@
         var payload;
         try { payload = buildPayload(form, submitter, createPayload(form, submitter)); }
         catch (err) {
+            // 组装失败的现场只进控制台（声明冲突 / 自定义 builder 抛错）：结果区给通用文案，
+            // 否则一次模板写错会表现成「保存一直失败、原因不明」。
+            if (global.console && global.console.error) {
+                global.console.error('[json_write] 载荷组装失败', err);
+            }
             setStatus(form, attrMsg(form, submitter, 'failed'), 'error');
             finishWrite(form, submitter);
             return;

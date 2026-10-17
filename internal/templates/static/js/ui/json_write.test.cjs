@@ -274,6 +274,8 @@ function setup(config) {
             const el = makeEl(f.tag || 'input', { name: f.name }, { type: f.type || 'text' });
             el.value = f.value;
             el.checked = !!f.checked;
+            // disabled 的真实语义是「不随表单提交」，桩必须能表达它（商品新建的 quantity 就是）。
+            el.disabled = !!f.disabled;
             el.tagName = (f.tag || 'input').toUpperCase();
             form.appendChild(el);
         });
@@ -1877,6 +1879,66 @@ test('data-write-html：裸 HTML 包成 {html: …} 写到目标键，原键消�
     });
     empty.fire(); await tick();
     assert.deepEqual(empty.requests[0].body.description, { html: '' });
+});
+
+test('disabled 控件不进 payload：原生表单不提交它，基座手动遍历必须同样跳过', async () => {
+    const env = setup({
+        attrs: { 'data-write-api': '/api/product/create', 'data-write-mode': 'create' },
+        createFields: [
+            { name: 'name', value: '商品' },
+            { name: 'trackQuantity', value: '1', type: 'checkbox', checked: true },
+            // 未勾选「跟踪库存」时模板会把它 disabled 掉：它的空值不能被发成 ""
+            // （端点收到空串会整条 400，而用户看到的是「字段明明填过」）。
+            { name: 'quantity', value: '', disabled: true },
+            { name: 'skuSource', value: 'warehouse' },
+        ],
+        respond: { code: 200, data: {} },
+    });
+    env.fire(); await tick();
+    assert.equal('quantity' in env.requests[0].body, false);
+    assert.equal(env.requests[0].body.name, '商品');
+    assert.equal(env.requests[0].body.skuSource, 'warehouse');
+});
+
+test('同一字段被两档声明点名：当场报错且不发请求（不再按流水线顺序静默覆盖）', async () => {
+    const conflicts = [
+        { 'data-write-number': 'sort', 'data-write-float': 'sort' },
+        { 'data-write-array': 'ids', 'data-write-lines': 'ids' },
+        { 'data-write-html': 'desc:description', 'data-write-lines': 'desc' },
+    ];
+    for (const extra of conflicts) {
+        const env = setup({
+            attrs: Object.assign({
+                'data-write-api': '/api/product/update',
+                'data-write-mode': 'form',
+                'data-msg-failed': '保存失败',
+            }, extra),
+            createFields: [{ name: 'name', value: '商品' }],
+            respond: { code: 200, data: {} },
+        });
+        // 组装期抛错会被 runCreate 接住：结果区拿通用失败文案，请求一条都不发。
+        // 控制台那条错误由基座打（排查时才看得见）—— 测试里静音，别把用例输出刷满。
+        const origError = env.sandbox.console.error;
+        env.sandbox.console.error = () => {};
+        try { env.fire(); await tick(); } finally { env.sandbox.console.error = origError; }
+        assert.equal(env.requests.length, 0, JSON.stringify(extra) + ' 应阻断请求');
+        assert.equal(env.status.getAttribute('data-write-state'), 'error');
+        assert.equal(env.status.textContent, '保存失败');
+    }
+    // 合法叠加不受影响：float + skip-empty 是刻意组合（按小数发 + 留空就不发）。
+    const ok = setup({
+        attrs: {
+            'data-write-api': '/api/product/update',
+            'data-write-mode': 'form',
+            'data-write-float': 'defaultPrice',
+            'data-write-skip-empty': 'defaultPrice',
+        },
+        createFields: [{ name: 'defaultPrice', value: '' }],
+        respond: { code: 200, data: {} },
+    });
+    ok.fire(); await tick();
+    assert.equal(ok.requests.length, 1);
+    assert.equal('defaultPrice' in ok.requests[0].body, false);
 });
 
 test('data-write-float 认不出的取值原样发字符串（交给严格 API 报错，而不是变成 0 或 NaN）', async () => {
