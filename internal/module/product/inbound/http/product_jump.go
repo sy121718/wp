@@ -21,8 +21,13 @@ import (
 // product_jump.go — product 后台页的**共享出口原语**：整页提示（shell.RenderJump）、回跳地址、
 // 回执文案事实，以及**错误事实与文案出口**（原先的 product_err.go 并进来的那一半）。
 //
-// 两半是同一类东西：各页写动作的结论都要经这里落成响应（提示页或 JSON），
+// 两半是同一类东西：各页的结论都要经这里落成响应（提示页或 JSON），
 // 所以它们是「共享出口」而不是某个页面的功能 —— 单独一个文件，与业务功能文件分开。
+//
+// 提示页这一半已经缩到很小：后台写动作全部走 ui/json_write.js 直调 /api/product/*，
+// 页面组只剩三个「只算不写」的预览端点，所以 shell.RenderJump 现在只服务两种情况 ——
+// 整页 GET 的「还没选商品 / 这条能力没接上」引导，与翻译工作台 GET 失败。写动作的成功
+// 结论走 JSON 回执（基座存 flash、刷新后显示一次），不再进这一族。
 
 const (
 	productListPath         = "/admin/products"
@@ -231,10 +236,11 @@ const productActionDoneFallback = "操作已完成"
 var productActionDoneMsg = productMsg{Key: productenums.ProductsActionDone, Fallback: productActionDoneFallback}
 
 // ==========================================================================
-// 商品后台页**写侧**回执文案与**整页 GET 失败出口**的收口。
+// 商品后台页**回执事实**与**整页 GET 失败出口**的收口。
 //
-// 传输通道已改为 shell.RenderJump 渲染整页提示（见 product_jump.go）：写动作的结论走
-// 响应体，**不再**经 302/303 + `?err=` / `?done=` / `?applied=` / `?saved=` 回带列表页。
+// 传输通道已改为响应体：写动作的结论走 JSON 回执（ui/json_write.js 提交 + flash 结论行），
+// **不再**经 302/303 + `?err=` / `?done=` / `?applied=` / `?saved=` 回带列表页；
+// 也不再经 shell.RenderJump 渲染整页提示页 —— 后者只剩整页 GET 的引导与失败出口还在用。
 //
 // **读侧（?err= / ?done= 的受控文案集合与判定）已整批删除**：那条通道的代价是本模块要维护
 // 一份「受控文案 + 数字归一模板」来证明提示出自本仓（productPageErr / productPageDone /
@@ -243,7 +249,7 @@ var productActionDoneMsg = productMsg{Key: productenums.ProductsActionDone, Fall
 // 就是那套），而查询参数不是可信边界（任何人手拼一个 /admin/products?err=任意文案 就能往
 // 页面上塞一条伪造消息）。文案走响应体之后，那套判定随之不需要了。
 //
-// 本文件剩下的都是**写侧**与**整页 GET 的失败出口**：把 service 的错误 / 计数结论渲染成
+// 本文件剩下的都是**回执事实**与**整页 GET 的失败出口**：把 service 的错误 / 计数结论渲染成
 // 「一句结论的事实」（key + 中文兜底 + `%s` 参数）或可展示的成品文案。
 //
 // **错误判定只有一条**：pkg/response.IsBusinessError（`a.b.c` key 或 `Err*` / `Msg*` 常量名），
