@@ -97,6 +97,10 @@ func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.C
 		Unit:     detail.Unit,
 		// 富文本字段要的是裸 HTML，库里存的是 {"html": "..."}（jsonb 对象）。
 		DescriptionHTML: productDescriptionHTML(detail.Description),
+		// 主图（编辑页的单图媒体控件）：与详情响应同一个值（ProductResp.DefaultImage，
+		// 已经过 upload.StorageURL 归一）。漏赋值的后果不是「少显示一张图」——
+		// 控件空着，保存时表单把这个空值原样提交，等于**静默清掉库里已有的主图**。
+		DefaultImage: detail.DefaultImage,
 
 		PriceMin: money.FormatYuan(detail.PriceMin),
 		PriceMax: money.FormatYuan(detail.PriceMax),

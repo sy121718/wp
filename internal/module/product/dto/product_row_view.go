@@ -43,9 +43,9 @@ type ProductRow struct {
 	Unit     string
 	// DescriptionHTML 商品描述在库里是 {"html": "..."}（jsonb 对象），富文本字段要的是裸 HTML。
 	DescriptionHTML string
-	// DefaultImage 主图（编辑页的单图媒体控件）。**当前值恒为空**：编辑页的保存路径
-	// 还没读 defaultImage（见 product_edit.html 的注释与 inbound/http 的 ProductsUpdate），
-	// 本批只做结构转换，不顺带改行为。
+	// DefaultImage 主图（编辑页的单图媒体控件）：与 ProductResp.DefaultImage 同源，
+	// 已归一为存储 URL（upload.StorageURL）。**必须与详情响应一起赋值** —— 控件空着时
+	// 保存会把这个空值原样提交，静默清掉库里已有的主图。
 	DefaultImage string
 
 	PriceMin string

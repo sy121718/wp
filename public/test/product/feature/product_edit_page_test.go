@@ -44,8 +44,13 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 	}
 	ctx := context.Background()
 	price := 99.0
+	// 主图参建（不经 /storage/ 前缀，StorageURL 会原样返回）：编辑页必须把它回填进
+	// 媒体控件的隐藏域 —— 之前 ProductRow 漏赋值，控件恒空，保存时表单把这个空值
+	// 原样提交，等于静默清掉库里已有的主图。
+	coverImage := "/img/product-cover.jpg"
 	created, err := f.svc.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "编辑前", Slug: "before-edit", DefaultPrice: &price,
+		DefaultImage: coverImage,
 	})
 	if err != nil {
 		t.Fatalf("创建商品失败: %v", err)
@@ -60,6 +65,21 @@ func TestProductEditPageRoundTrip(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Fatalf("编辑页缺少回填内容 %q；页面尾部：%s", want, tailOfPage(page, 700))
 		}
+	}
+	// 主图回显单独判：空态渲染出来也是 name="defaultImage" value=""（前缀一模一样），
+	// 所以只查「字段名出现」会假绿 —— 要判的是**值非空、且是建商品时写的那张**。
+	// URL 会被 upload.StorageURL 归一（可能带 media base 前缀），因此只比对文件名片段。
+	const imgMarker = `name="defaultImage" value="`
+	imgIdx := strings.Index(page, imgMarker)
+	if imgIdx < 0 {
+		t.Fatalf("编辑页没有主图控件；页面尾部：%s", tailOfPage(page, 700))
+	}
+	imgVal := page[imgIdx+len(imgMarker):]
+	if end := strings.IndexByte(imgVal, '"'); end >= 0 {
+		imgVal = imgVal[:end]
+	}
+	if !strings.Contains(imgVal, "product-cover.jpg") {
+		t.Fatalf("编辑页未回显主图（隐藏域值 = %q）；页面尾部：%s", imgVal, tailOfPage(page, 700))
 	}
 
 	// 2. 保存：一次提交把各类字段都改一遍。
