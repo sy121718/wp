@@ -22,7 +22,7 @@ import (
 )
 
 func TestPageRowUpdatedAtCarriesTimeFact(t *testing.T) {
-	field, ok := reflect.TypeOf(pagedto.PageRow{}).FieldByName("UpdatedAt")
+	field, ok := reflect.TypeOf(pagedto.PageRowResp{}).FieldByName("UpdatedAt")
 	if !ok || field.Type != reflect.TypeOf(utils.JSONTime{}) {
 		t.Fatalf("UpdatedAt must carry JSONTime, got %v", field.Type)
 	}
@@ -40,7 +40,7 @@ func TestPagePresentationHasNoBackendUIHelpers(t *testing.T) {
 			return true
 		}
 		ident, ok := lit.Type.(*ast.Ident)
-		if !ok || ident.Name != "pagedto.ScheduleRow" {
+		if !ok || ident.Name != "pagedto.ScheduleResp" {
 			return true
 		}
 		for _, elt := range lit.Elts {
@@ -79,7 +79,7 @@ func TestSiteSlotBindLabelsFromFacts(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			candidates := []pagecontract.PageResp{{ID: "pg", DraftPath: "/a"}}
-			slots := &pagecontract.SiteSlotListResp{Total: 1, Items: []pagecontract.SiteSlotItem{{Slot: "cart", Bound: bound, PageID: "pg"}}}
+			slots := &pagecontract.SiteSlotListResp{Total: 1, Items: []pagecontract.SiteSlotItemResp{{Slot: "cart", Bound: bound, PageID: "pg"}}}
 			data := siteSlotPageData([]projectcontract.ProjectResp{{ID: "pr", Name: "site"}}, "pr", candidates, slots, pageMsg{})
 			siteSlotApplyBindPanel(data, candidates, slots, "cart")
 			if _, ok := data["BindLabel"]; ok {
@@ -123,7 +123,7 @@ func TestSiteSlotBindLabelsFromFacts(t *testing.T) {
 }
 
 func TestTranslationProjectionCarriesFacts(t *testing.T) {
-	typ := reflect.TypeOf(pagedto.TranslationRow{})
+	typ := reflect.TypeOf(pagedto.TranslationRowResp{})
 	if _, ok := typ.FieldByName("ReuseHint"); ok {
 		t.Fatal("ReuseHint is UI text")
 	}

@@ -636,7 +636,7 @@ func pageExcludesLang(page *pagemodel.PageEntity, lang string) bool {
 //
 // 只列站点启用语言：排除一个不在清单里的语言没有意义（它本来就不产出），
 // 而展示它会让面板看起来像「还差一件事没做」。
-func (s *Service) PageLangStates(ctx context.Context, pageID string) (rows []pagedto.PageLangState, err error) {
+func (s *Service) PageLangStates(ctx context.Context, pageID string) (rows []pagedto.PageLangStateResp, err error) {
 	page, err := s.getExistingPage(ctx, pageID)
 	if err != nil {
 		return nil, err
@@ -651,9 +651,9 @@ func (s *Service) PageLangStates(ctx context.Context, pageID string) (rows []pag
 	for i := range pubs {
 		published[strings.TrimSpace(pubs[i].Lang)] = strings.TrimSpace(pubs[i].ActivePath) != ""
 	}
-	rows = make([]pagedto.PageLangState, 0, len(langs))
+	rows = make([]pagedto.PageLangStateResp, 0, len(langs))
 	for _, lang := range langs {
-		rows = append(rows, pagedto.PageLangState{
+		rows = append(rows, pagedto.PageLangStateResp{
 			Lang:      lang,
 			IsDefault: lang == def,
 			Excluded:  pageExcludesLang(page, lang),
@@ -1010,7 +1010,7 @@ var _ projectcontract.LocaleRetirePort = (*Service)(nil)
 // 已排除该语言的页面**不出现在报告里**：排除之后这一页不再产出该语言，
 // 也就不存在「缺译」——继续列出来会让运营以为「点了取消但它还在」，
 // 于是反复点（而第二次会得到「已被排除」的提示）。
-func (s *Service) UntranslatedPageLangs(ctx context.Context, projectID string) (rows []pagedto.TranslationMissRow, err error) {
+func (s *Service) UntranslatedPageLangs(ctx context.Context, projectID string) (rows []pagedto.TranslationMissResp, err error) {
 	pid := strings.TrimSpace(projectID)
 	if pid == "" {
 		return nil, ErrInvalidParam
@@ -1039,20 +1039,20 @@ func (s *Service) UntranslatedPageLangs(ctx context.Context, projectID string) (
 	if err != nil {
 		return nil, err
 	}
-	rows = make([]pagedto.TranslationMissRow, 0, len(raw))
+	rows = make([]pagedto.TranslationMissResp, 0, len(raw))
 	for i := range raw {
 		r := raw[i]
 		if excluded[r.PageID][strings.TrimSpace(r.Lang)] {
 			continue
 		}
-		rows = append(rows, pagedto.TranslationMissRow{
+		rows = append(rows, pagedto.TranslationMissResp{
 			PageID: r.PageID, DraftPath: pathOf[r.PageID], Lang: r.Lang,
 			Misses: r.Misses, Candidates: r.Candidates,
 		})
 	}
 	// 排序口径与原 SQL 一致（misses 降序，再 draft_path / lang 升序）——契约只保证
 	// 「每页每语言一行」，顺序由调用方按展示需要定，那里才有 draft_path。
-	slices.SortStableFunc(rows, func(a, b pagedto.TranslationMissRow) int {
+	slices.SortStableFunc(rows, func(a, b pagedto.TranslationMissResp) int {
 		return cmp.Or(
 			cmp.Compare(b.Misses, a.Misses),
 			cmp.Compare(a.DraftPath, b.DraftPath),

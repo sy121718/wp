@@ -1,31 +1,6 @@
 package pagedto
 
-// page_stale_dto.go — 待重建（stale）页面**只读反查**的请求/响应形状。
-//
-// 为什么单独一组 DTO：只读反查面与既有的 PageResp（列表投影）是两件事 ——
-// 反查面的消费者要的是「这一次改动影响了哪几页、它们叫什么、什么时候被标记的」，
-// 不需要草稿文档、暂存指针这些编辑态字段；而 PageResp 也不带标题与标记时间。
-// 把它们塞进 PageResp 会让列表接口的响应多出几个大部分时候为空的字段。
-//
-// 跨模块：这三个结构经 page/contract 重导出，调用方不必 import page/dto
-// （对齐 module/CLAUDE.md「跨模块只传契约与不可变 DTO」）。
-
 import "go_wp/pkg/utils"
-
-// StalePageListReq 待重建清单的只读请求。
-//
-// Limit 与 OrderBy 由调用方给出：本包不写死「取前几条」「按什么排」——
-// 那是调用方的口径（列表页取 8 条、日志摘要取 5 条）。
-type StalePageListReq struct {
-	// ProjectID 工程作用域；空 = 全部工程（service 逐工程各设一次作用域后合并）。
-	ProjectID string
-	// Limit 条数上限；<=0 取默认，超上限封顶（口径见 pagemodel.NormalizeStaleListLimit）。
-	Limit int
-	// OrderBy 排序键（pagemodel.StaleOrder*）；空 = 标记时间。
-	OrderBy string
-	// Descending 是否降序；「最近被标记的在前」用 true。
-	Descending bool
-}
 
 // StalePageResp 待重建页面的只读投影（列表项）。
 //
@@ -72,12 +47,12 @@ type StalePageListResp struct {
 	Truncated bool            `json:"truncated"`
 }
 
-// StaleImpactSummary 一次写操作的影响面摘要（写侧回执 / 结构化日志共用）。
+// StaleImpactSummaryResp 一次写操作的影响面摘要（写侧回执 / 结构化日志共用）。
 //
 // Total 是本次受影响的页面总数，Pages 是其中最多 Limit 条（按标记时间降序）的
 // 人类可读样本 —— 只有总数时读的人不知道「是哪些页面」；只有样本时又会把
 // 样本长度当成总数。
-type StaleImpactSummary struct {
+type StaleImpactSummaryResp struct {
 	Total     int             `json:"total"`
 	Pages     []StalePageResp `json:"pages"`
 	Limit     int             `json:"limit"`

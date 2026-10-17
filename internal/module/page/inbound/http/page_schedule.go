@@ -60,7 +60,7 @@ func (h *Handle) SetSchedule(c *gin.Context) {
 		response.ErrorWithMessage(c, pageErrorStatus(err), pageErrorMessage(c, err))
 		return
 	}
-	fillScheduleFailureText(c, []*pagedto.ScheduleItem{res})
+	fillScheduleFailureText(c, []*pagedto.ScheduleItemResp{res})
 	response.SuccessWithMessage(c, pageenums.MsgScheduleSet, res)
 }
 
@@ -91,7 +91,7 @@ func (h *Handle) ListSchedules(c *gin.Context) {
 		return
 	}
 	if res != nil {
-		items := make([]*pagedto.ScheduleItem, 0, len(res.Items))
+		items := make([]*pagedto.ScheduleItemResp, 0, len(res.Items))
 		for i := range res.Items {
 			items = append(items, &res.Items[i])
 		}
@@ -104,7 +104,7 @@ func (h *Handle) ListSchedules(c *gin.Context) {
 //
 // 未登记的 key 落到归口文案而不是裸 key：那一列的值由 service 写、读侧才知道词条，
 // 两边对不上时用户看到的该是「排定执行失败」而不是一串常量名。
-func fillScheduleFailureText(c *gin.Context, items []*pagedto.ScheduleItem) {
+func fillScheduleFailureText(c *gin.Context, items []*pagedto.ScheduleItemResp) {
 	tr := shell.TranslateFor(c)
 	for _, item := range items {
 		if item == nil || strings.TrimSpace(item.LastError) == "" {
@@ -167,7 +167,7 @@ func (h *pagesAdminHandle) schedulePanelData(c *gin.Context, pageID string, errM
 			}
 		}
 	}
-	rows := []pagedto.ScheduleRow{}
+	rows := []pagedto.ScheduleResp{}
 	if pageID != "" && h.pages != nil {
 		res, lerr := h.pages.ListPageSchedules(c.Request.Context(), &pagedto.ScheduleListReq{PageID: pageID})
 		if lerr != nil {
@@ -176,7 +176,7 @@ func (h *pagesAdminHandle) schedulePanelData(c *gin.Context, pageID string, errM
 			for i := range res.Items {
 				item := res.Items[i]
 				failure := scheduleFailureFact(item.LastError)
-				rows = append(rows, pagedto.ScheduleRow{
+				rows = append(rows, pagedto.ScheduleResp{
 					ID: item.ID, Action: item.Action, Lang: item.Lang,
 					ScheduledAt:  item.ScheduledAt,
 					Status:       item.Status,
@@ -205,12 +205,12 @@ func (h *pagesAdminHandle) schedulePanelData(c *gin.Context, pageID string, errM
 // 格式化交给模板的 siteDateTime()（站点时区、到分钟）。
 //
 // 时区口径：库里的 scheduled_at 是绝对时刻，而「几点上线」是**面向人**的口径
-// （pkg/sitetz 是它的唯一声明点）。注意排定**面板**的行（pagedto.ScheduleRow.ScheduledAt →
+// （pkg/sitetz 是它的唯一声明点）。注意排定**面板**的行（pagedto.ScheduleResp.ScheduledAt →
 // 模板 dateTime()）仍按服务器本地时区显示 —— 两处口径不同是存量事实，本卡只把格式化挪到
 // 模板，**不统一口径**（统一属行为变更，另卡 + 真库证据）。
 //
 // nil / 零值返回 nil：模板用 {{if isset(...)}} + 格式化后判空串两档，徽标不显示。
-func schedulePendingAt(item *pagedto.ScheduleItem) *utils.JSONTime {
+func schedulePendingAt(item *pagedto.ScheduleItemResp) *utils.JSONTime {
 	if item == nil {
 		return nil
 	}

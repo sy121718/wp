@@ -39,11 +39,11 @@ func TestRedirectPageDataCarriesCountsNotTones(t *testing.T) {
 
 // TestTranslationRowCarriesEngineNotTone 译文行只交 engine 事实，字段名即契约（反射：删字段/改名都会红）。
 func TestTranslationRowCarriesEngineNotTone(t *testing.T) {
-	typ := reflect.TypeOf(pagedto.TranslationRow{})
+	typ := reflect.TypeOf(pagedto.TranslationRowResp{})
 	if _, ok := typ.FieldByName("Engine"); !ok {
-		t.Fatal("pagedto.TranslationRow.Engine 是模板选档依据的事实，不能删")
+		t.Fatal("pagedto.TranslationRowResp.Engine 是模板选档依据的事实，不能删")
 	}
 	if _, ok := typ.FieldByName("EngineTone"); ok {
-		t.Fatal("pagedto.TranslationRow.EngineTone 又回来了：档位由模板按 r.Engine 选（internal/templates/admin/page/page_translations.html:154）")
+		t.Fatal("pagedto.TranslationRowResp.EngineTone 又回来了：档位由模板按 r.Engine 选（internal/templates/admin/page/page_translations.html:154）")
 	}
 }

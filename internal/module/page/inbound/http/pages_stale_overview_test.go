@@ -206,6 +206,6 @@ func barePagesMap() gin.H {
 	return gin.H{
 		"title": "页面管理", "menu": "pages",
 		"Projects": []projectcontract.ProjectResp{{ID: "p1", Name: "官网"}},
-		"Pages":    []pagedto.PageRow{},
+		"Pages":    []pagedto.PageRowResp{},
 	}
 }

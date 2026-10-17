@@ -1,20 +1,9 @@
 package pagedto
 
-// page_seo_dto.go — 构建期 SEO 合规巡检的请求 / 响应形状（审计 SEO-01 前半段）。
-//
-// 报告验收要求每条结论都带 **URL / 规则 / 证据 / ArtifactHash** 四要素，
-// 本文件的字段就是这四要素的载体：少任何一项，结论都无法被复核（说不出「哪一页、
-// 哪个规则、看到什么字节、哪一份产物」）。
-
 import "go_wp/pkg/utils"
 
-// SEOPatrolReq 站点 SEO 合规巡检请求（按工程）。
-type SEOPatrolReq struct {
-	ProjectID string `form:"projectId" json:"projectId" binding:"required"`
-}
-
-// SEOFindingItem 一条巡检结论。
-type SEOFindingItem struct {
+// SEOFindingItemResp 一条巡检结论。
+type SEOFindingItemResp struct {
 	// URL 命中的页面访问路径（可定位）。
 	URL string `json:"url"`
 	// Lang 该产物的构建语言（多语言站点用来把结论落到具体语言版本）。
@@ -31,8 +20,8 @@ type SEOFindingItem struct {
 	Expect string `json:"expect"`
 }
 
-// SEOArtifactItem 单份产物的巡检结论。
-type SEOArtifactItem struct {
+// SEOArtifactItemResp 单份产物的巡检结论。
+type SEOArtifactItemResp struct {
 	URL          string `json:"url"`
 	Lang         string `json:"lang,omitempty"`
 	ArtifactHash string `json:"artifactHash,omitempty"`
@@ -45,14 +34,14 @@ type SEOArtifactItem struct {
 	RobotsExplicit bool   `json:"robotsExplicit"`
 	Robots         string `json:"robots,omitempty"`
 	// Findings 命中该产物的结论（无结论 = 该产物合规）。
-	Findings []SEOFindingItem `json:"findings"`
+	Findings []SEOFindingItemResp `json:"findings"`
 }
 
-// SEOUncheckedRoute 没能参与巡检的激活路由。
+// SEOUncheckedRouteResp 没能参与巡检的激活路由。
 //
 // 显式列出而不是静默跳过：巡检报告的可用性取决于「它漏了什么」也是可见的
 // （自动发布实例的产物不在 page 模块的产物表里，本轮未纳入）。
-type SEOUncheckedRoute struct {
+type SEOUncheckedRouteResp struct {
 	URL    string `json:"url"`
 	Reason string `json:"reason"`
 }
@@ -74,10 +63,10 @@ type SEOPatrolResp struct {
 	// ChecksPerArtifact 单份产物上评估的规则条目数（跨产物规则另计两条）。
 	ChecksPerArtifact int `json:"checksPerArtifact"`
 	// Artifacts 逐产物的结论，按 URL 升序。
-	Artifacts []SEOArtifactItem `json:"artifacts"`
+	Artifacts []SEOArtifactItemResp `json:"artifacts"`
 	// CrossFindings 跨产物结论（互指不成立 / 互指目标语言与事实不符）。
 	// 它们不只属于某一份产物，而是两份产物之间的事实，故单独成列，URL 指向声明方。
-	CrossFindings []SEOFindingItem `json:"crossFindings"`
+	CrossFindings []SEOFindingItemResp `json:"crossFindings"`
 	// Unchecked 未纳入巡检的激活路由（如实列出原因）。
-	Unchecked []SEOUncheckedRoute `json:"unchecked"`
+	Unchecked []SEOUncheckedRouteResp `json:"unchecked"`
 }

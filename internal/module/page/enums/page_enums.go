@@ -133,7 +133,7 @@ type SiteSlotDef struct {
 	// NameKey 展示名的 i18n key；Name 是**中文兜底**（词条缺失时页面上显示的原文）。
 	//
 	// 为什么表里同时留 key 与兜底：本表在 enums 包里、没有请求语言，
-	// contract 的 SiteSlotItem.SlotName 承载的是 **key**（见 page/service/page_slot.go），
+	// contract 的 SiteSlotItemResp.SlotName 承载的是 **key**（见 page/service/page_slot.go），
 	// 取词落在后台页面层（page/inbound/http/site_slot_handle.go）。把中文写进 contract
 	// 就等于把一种语言焊进跨模块数据。
 	NameKey string

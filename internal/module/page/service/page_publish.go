@@ -268,13 +268,13 @@ func (s *Service) PublishAllLanguages(ctx context.Context, req *pagedto.PublishR
 	}
 	res = &pagedto.PublishAllResp{
 		PageID:  page.ID,
-		Results: make([]pagedto.LangPublishResult, 0, len(langs)),
+		Results: make([]pagedto.LangPublishResp, 0, len(langs)),
 	}
 	logger.Scene("publication").With("pageId", page.ID).
 		With("langs", strings.Join(langs, ",")).Info("一键发布全部启用语言")
 	for _, lang := range langs {
 		if cerr := ctx.Err(); cerr != nil {
-			res.Results = append(res.Results, pagedto.LangPublishResult{
+			res.Results = append(res.Results, pagedto.LangPublishResp{
 				Lang: lang, Status: "failed", Error: cerr.Error(),
 			})
 			break
@@ -282,14 +282,14 @@ func (s *Service) PublishAllLanguages(ctx context.Context, req *pagedto.PublishR
 		// 页面级语言排除：跳过而不是失败 —— 作者主动把这一页从该语言撤下来是正常决策，
 		// 记 skipped 让回执如实反映「这一批发了哪几种、跳了哪几种」，不伪装成错误。
 		if pageExcludesLang(page, lang) {
-			res.Results = append(res.Results, pagedto.LangPublishResult{Lang: lang, Status: langPublishSkipped})
+			res.Results = append(res.Results, pagedto.LangPublishResp{Lang: lang, Status: langPublishSkipped})
 			res.Skipped++
 			continue
 		}
 		if _, berr := s.Build(ctx, &pagedto.BuildReq{ID: req.ID, Lang: lang}); berr != nil {
 			logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
 				Error(berr, "一键发布：语言构建失败")
-			res.Results = append(res.Results, pagedto.LangPublishResult{
+			res.Results = append(res.Results, pagedto.LangPublishResp{
 				Lang: lang, Status: "failed", Error: berr.Error(),
 			})
 			continue
@@ -298,12 +298,12 @@ func (s *Service) PublishAllLanguages(ctx context.Context, req *pagedto.PublishR
 		if perr != nil {
 			logger.Scene("publication").With("pageId", page.ID).With("lang", lang).
 				Error(perr, "一键发布：语言发布失败")
-			res.Results = append(res.Results, pagedto.LangPublishResult{
+			res.Results = append(res.Results, pagedto.LangPublishResp{
 				Lang: lang, Status: "failed", Error: perr.Error(),
 			})
 			continue
 		}
-		item := pagedto.LangPublishResult{Lang: lang, Status: "ok"}
+		item := pagedto.LangPublishResp{Lang: lang, Status: "ok"}
 		if pr != nil {
 			item.ActiveHash = pr.ActiveHash
 		}
@@ -1467,7 +1467,7 @@ func (s *Service) SetExternalArtifactOwners(provider func(ctx context.Context) (
 }
 
 // auditOrphanArtifacts 反向对账：磁盘有、无人认领的产物目录（只报告，不删除）。
-func (s *Service) auditOrphanArtifacts(ctx context.Context) (orphans []pagedto.OrphanArtifact, checked int, err error) {
+func (s *Service) auditOrphanArtifacts(ctx context.Context) (orphans []pagedto.OrphanArtifactResp, checked int, err error) {
 	if s == nil || s.store == nil {
 		return nil, 0, nil
 	}
@@ -1483,10 +1483,10 @@ func (s *Service) auditOrphanArtifacts(ctx context.Context) (orphans []pagedto.O
 	if aerr != nil {
 		return nil, n, aerr
 	}
-	orphans = make([]pagedto.OrphanArtifact, 0, len(found))
+	orphans = make([]pagedto.OrphanArtifactResp, 0, len(found))
 	var bytes int64
 	for _, o := range found {
-		orphans = append(orphans, pagedto.OrphanArtifact{Hash: o.Hash, Path: o.Path, Bytes: o.Bytes, Files: o.Files})
+		orphans = append(orphans, pagedto.OrphanArtifactResp{Hash: o.Hash, Path: o.Path, Bytes: o.Bytes, Files: o.Files})
 		bytes += o.Bytes
 	}
 	if len(orphans) > 0 {
@@ -2749,9 +2749,9 @@ func (s *Service) AuditPublication(ctx context.Context) (res *pagedto.Publicatio
 		return nil, aerr
 	}
 	res = &pagedto.PublicationAuditResp{Checked: checked, Healthy: len(issues) == 0}
-	res.Issues = make([]pagedto.PublicationIssue, 0, len(issues))
+	res.Issues = make([]pagedto.PublicationIssueResp, 0, len(issues))
 	for _, it := range issues {
-		res.Issues = append(res.Issues, pagedto.PublicationIssue{URLPath: it.URLPath, Link: it.Link, Reason: it.Reason})
+		res.Issues = append(res.Issues, pagedto.PublicationIssueResp{URLPath: it.URLPath, Link: it.Link, Reason: it.Reason})
 	}
 	// 反向对账（IDX-015）：磁盘上的产物目录是否都有人认领。
 	// 失败不影响正向结论 —— 正向异常是「线上已经 404」，必须先给出来。
@@ -2842,7 +2842,7 @@ func (s *Service) GarbageCollectArtifacts(ctx context.Context, req *pagedto.GCAr
 	}
 	res.Scanned = len(cands)
 	for _, c := range cands {
-		item := pagedto.GCRecoveredArtifact{ID: c.ID, ArtifactHash: c.ArtifactHash, Lang: c.Lang}
+		item := pagedto.GCRecoveredArtifactResp{ID: c.ID, ArtifactHash: c.ArtifactHash, Lang: c.Lang}
 		others, cerr := s.artifacts.CountOtherAvailableByHash(ctx, c.ArtifactHash, c.ID)
 		if cerr != nil {
 			item.Action, item.Reason = "skipped", "同 hash 引用检查失败: "+cerr.Error()
@@ -3041,7 +3041,7 @@ func (s *Service) SEOPatrol(ctx context.Context, req *pagedto.SEOPatrolReq) (res
 		SampledAt: utils.NewJSONTime(time.Now().UTC()),
 	}
 	unchecked := func(url, reason string) {
-		res.Unchecked = append(res.Unchecked, pagedto.SEOUncheckedRoute{URL: url, Reason: reason})
+		res.Unchecked = append(res.Unchecked, pagedto.SEOUncheckedRouteResp{URL: url, Reason: reason})
 	}
 	for _, rt := range routes {
 		url := seo.CanonicalPublicPath(rt.Path)
@@ -3079,9 +3079,9 @@ func (s *Service) SEOPatrol(ctx context.Context, req *pagedto.SEOPatrolReq) (res
 	res.Healthy = site.Healthy()
 	res.Errors = site.ErrorCount()
 	res.Warnings = site.WarnCount()
-	res.Artifacts = make([]pagedto.SEOArtifactItem, 0, len(site.Reports))
+	res.Artifacts = make([]pagedto.SEOArtifactItemResp, 0, len(site.Reports))
 	for _, r := range site.Reports {
-		item := pagedto.SEOArtifactItem{
+		item := pagedto.SEOArtifactItemResp{
 			URL: r.URL, Lang: r.Lang, ArtifactHash: r.ArtifactHash, Checks: r.Checks,
 			Index: r.Index.Index, Follow: r.Index.Follow,
 			RobotsExplicit: r.Index.Explicit, Robots: r.Index.Raw,
@@ -3103,8 +3103,8 @@ func (s *Service) SEOPatrol(ctx context.Context, req *pagedto.SEOPatrolReq) (res
 }
 
 // toSEOFindingItem 结论 → DTO（字段一一对应，四要素不丢）。
-func toSEOFindingItem(f compliance.Finding) pagedto.SEOFindingItem {
-	return pagedto.SEOFindingItem{
+func toSEOFindingItem(f compliance.Finding) pagedto.SEOFindingItemResp {
+	return pagedto.SEOFindingItemResp{
 		URL: f.URL, Lang: f.Lang, ArtifactHash: f.ArtifactHash,
 		Rule: f.Rule, Level: string(f.Level), Evidence: f.Evidence, Expect: f.Expect,
 	}

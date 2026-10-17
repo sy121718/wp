@@ -117,14 +117,14 @@ func (h *pagesAdminHandle) pageLangsPanelData(c *gin.Context, pageID string, err
 	}
 	pid := strings.TrimSpace(pageID)
 	path := ""
-	rows := []pagedto.PageLangRow{}
+	rows := []pagedto.PageLangResp{}
 	if pid != "" && h.pages != nil {
 		states, lerr := h.pages.PageLangStates(c.Request.Context(), pid)
 		if lerr != nil {
 			errMsg = pageErrMsg(c, lerr)
 		} else {
 			for _, st := range states {
-				row := pagedto.PageLangRow{
+				row := pagedto.PageLangResp{
 					Lang: st.Lang, IsDefault: st.IsDefault, Excluded: st.Excluded, Published: st.Published,
 				}
 				// 三档状态的取值与文案都归 pageenums（LangStatusOf 派生取值、

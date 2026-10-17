@@ -103,7 +103,7 @@ const (
 // 而不是等到半夜到点才失败）。
 //
 // 时间口径：入参按**站点时区**解释，落库一律 UTC（列是 timestamptz）。
-func (s *Service) SetPageSchedule(ctx context.Context, req *pagedto.ScheduleSetReq) (res *pagedto.ScheduleItem, err error) {
+func (s *Service) SetPageSchedule(ctx context.Context, req *pagedto.ScheduleSetReq) (res *pagedto.ScheduleItemResp, err error) {
 	if req == nil || strings.TrimSpace(req.PageID) == "" {
 		return nil, ErrInvalidParam
 	}
@@ -236,7 +236,7 @@ func (s *Service) ListPageSchedules(ctx context.Context, req *pagedto.ScheduleLi
 	if err != nil {
 		return nil, err
 	}
-	items := make([]pagedto.ScheduleItem, 0, len(rows))
+	items := make([]pagedto.ScheduleItemResp, 0, len(rows))
 	for i := range rows {
 		items = append(items, scheduleItemOf(rows[i]))
 	}
@@ -256,8 +256,8 @@ var scheduleSummaryStatuses = []string{
 // 变成几十次查询。没有排定（或只有终态完成记录）的页面不出现在结果里。
 //
 // pageIDs 为空返回空 map（不是 nil）：调用方直接 range，无需额外判空。
-func (s *Service) ListSchedulesForPages(ctx context.Context, pageIDs []string) (res map[string]pagedto.SchedulePageSummary, err error) {
-	res = map[string]pagedto.SchedulePageSummary{}
+func (s *Service) ListSchedulesForPages(ctx context.Context, pageIDs []string) (res map[string]pagedto.SchedulePageSummaryResp, err error) {
+	res = map[string]pagedto.SchedulePageSummaryResp{}
 	if len(pageIDs) == 0 {
 		return res, nil
 	}
@@ -270,7 +270,7 @@ func (s *Service) ListSchedulesForPages(ctx context.Context, pageIDs []string) (
 		row := rows[i]
 		summary, ok := res[row.PageID]
 		if !ok {
-			summary = pagedto.SchedulePageSummary{PageID: row.PageID}
+			summary = pagedto.SchedulePageSummaryResp{PageID: row.PageID}
 		}
 		item := scheduleItemOf(row)
 		switch row.Status {
@@ -404,8 +404,8 @@ func scheduleFailureKey(err error) string {
 }
 
 // scheduleItemOf 把表行投影成对外的排定条目。
-func scheduleItemOf(e pagemodel.ScheduleEntity) pagedto.ScheduleItem {
-	item := pagedto.ScheduleItem{
+func scheduleItemOf(e pagemodel.ScheduleEntity) pagedto.ScheduleItemResp {
+	item := pagedto.ScheduleItemResp{
 		ID: e.ID, PageID: e.PageID, Lang: e.Lang, Action: e.Action, Status: e.Status,
 		Attempts:         e.Attempts,
 		ScheduledAt:      utils.NewJSONTime(e.ScheduledAt.UTC()),

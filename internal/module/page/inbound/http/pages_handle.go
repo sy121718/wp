@@ -109,7 +109,7 @@ type pagesPageData struct {
 	Title    string
 	Menu     string
 	Projects []projectcontract.ProjectResp
-	Pages    []pagedto.PageRow
+	Pages    []pagedto.PageRowResp
 	// Blueprints 蓝图候选（审计 VIS-010）：「从蓝图开始」是新建页面流程里的一个选项，
 	// 不是另一个需要先去的页面。
 	Blueprints []blueprintOption
@@ -246,7 +246,7 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 	// 排定投影（PIPE-7）：一次批量取回这批页面的待执行 / 最近失败记录。
 	// 读取失败只记日志、页面照常渲染：与回执观测同一口径 ——
 	// 一个附加观测不该让整张列表页 500（缺的是两个徽标，不是列表本身）。
-	schedules := map[string]pagecontract.SchedulePageSummary{}
+	schedules := map[string]pagecontract.SchedulePageSummaryResp{}
 	pageIDs := make([]string, 0, len(pages))
 	for i := range pages {
 		pageIDs = append(pageIDs, pages[i].ID)
@@ -259,9 +259,9 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 			schedules = got
 		}
 	}
-	rows := make([]pagedto.PageRow, 0, len(pages))
+	rows := make([]pagedto.PageRowResp, 0, len(pages))
 	for _, p := range pages {
-		row := pagedto.PageRow{
+		row := pagedto.PageRowResp{
 			ID: p.ID, ProjectID: p.ProjectID, Kind: p.Kind,
 			DraftPath: p.DraftPath, Active: p.ActiveArtifactID != nil,
 			Staged: p.StagedArtifactID != nil, Stale: p.Stale,
@@ -819,15 +819,15 @@ func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 	// Revisions 用空切片而非 nil：Jet 的 len() 不接受 nil（会渲染失败）。
 	// Error 交的是**事实**（key + 中文兜底），取词在片段模板里做 —— 片段不经
 	// adminui.Prepare，所以必须显式补 t / tf（漏了不会报错：模板取到 nil，整片取词变空串）。
-	data := adminui.PrepareBare(c, gin.H{"Revisions": []pagedto.HistoryRow{}, "Error": pageMsg{}})
+	data := adminui.PrepareBare(c, gin.H{"Revisions": []pagedto.HistoryRowResp{}, "Error": pageMsg{}})
 	if pageID != "" && h.pages != nil {
 		revs, err := h.pages.ListRevisions(c.Request.Context(), &pagecontract.RevisionReq{PageID: pageID})
 		if err != nil {
 			data["Error"] = pageMsg{Key: pageenums.HistoryLoadFailed, Fallback: "加载失败"}
 		} else {
-			views := make([]pagedto.HistoryRow, 0, len(revs))
+			views := make([]pagedto.HistoryRowResp, 0, len(revs))
 			for _, r := range revs {
-				views = append(views, pagedto.HistoryRow{
+				views = append(views, pagedto.HistoryRowResp{
 					Version: r.Version, Path: r.DraftPath,
 					CreatedAt: r.CreatedAt,
 				})

@@ -25,10 +25,10 @@ type (
 	DeleteReq     = pagedto.DeleteReq
 	PageResp      = pagedto.PageResp
 	PageDraftResp = pagedto.PageDraftResp
-	// PageLangState 页面级语言排除的状态投影（迁移 491），见 PageService.PageLangStates。
-	PageLangState = pagedto.PageLangState
-	// TranslationMissRow 缺译报告的一行（页面 × 语言），见 PageService.UntranslatedPageLangs。
-	TranslationMissRow = pagedto.TranslationMissRow
+	// PageLangStateResp 页面级语言排除的状态投影（迁移 491），见 PageService.PageLangStates。
+	PageLangStateResp = pagedto.PageLangStateResp
+	// TranslationMissResp 缺译报告的一行（页面 × 语言），见 PageService.UntranslatedPageLangs。
+	TranslationMissResp = pagedto.TranslationMissResp
 	// PageTitleResp 页面标题投影（不含 draft_document），见 PageService.ListPageTitles。
 	PageTitleResp = pagedto.PageTitleResp
 	BuildReq      = pagedto.BuildReq
@@ -44,39 +44,39 @@ type (
 	SiteSlotBindReq   = pagedto.SiteSlotBindReq
 	SiteSlotUnbindReq = pagedto.SiteSlotUnbindReq
 	SiteSlotListResp  = pagedto.SiteSlotListResp
-	SiteSlotItem      = pagedto.SiteSlotItem
+	SiteSlotItemResp      = pagedto.SiteSlotItemResp
 
 	// 待重建页面的只读反查（反查面）。跨模块调用方只依赖 contract，不直接 import page/dto。
 	StalePageListReq   = pagedto.StalePageListReq
 	StalePageListResp  = pagedto.StalePageListResp
 	StalePageResp      = pagedto.StalePageResp
-	StaleImpactSummary = pagedto.StaleImpactSummary
+	StaleImpactSummaryResp = pagedto.StaleImpactSummaryResp
 
 	// SEO 合规巡检（审计 SEO-01 前半段）。
 	SEOPatrolReq      = pagedto.SEOPatrolReq
 	SEOPatrolResp     = pagedto.SEOPatrolResp
-	SEOArtifactItem   = pagedto.SEOArtifactItem
-	SEOFindingItem    = pagedto.SEOFindingItem
-	SEOUncheckedRoute = pagedto.SEOUncheckedRoute
+	SEOArtifactItemResp   = pagedto.SEOArtifactItemResp
+	SEOFindingItemResp    = pagedto.SEOFindingItemResp
+	SEOUncheckedRouteResp = pagedto.SEOUncheckedRouteResp
 
 	// 重定向管理（审计 SEO-025）。
 	RedirectListReq       = pagedto.RedirectListReq
 	RedirectListResp      = pagedto.RedirectListResp
-	RedirectItem          = pagedto.RedirectItem
+	RedirectItemResp          = pagedto.RedirectItemResp
 	RedirectCreateReq     = pagedto.RedirectCreateReq
 	RedirectDeleteReq     = pagedto.RedirectDeleteReq
 	RedirectMergeReq      = pagedto.RedirectMergeReq
-	RedirectProjectOption = pagedto.RedirectProjectOption
+	RedirectProjectOptionResp = pagedto.RedirectProjectOptionResp
 
 	// 定时上下线（PIPE-7）。
 	ScheduleSetReq    = pagedto.ScheduleSetReq
 	ScheduleCancelReq = pagedto.ScheduleCancelReq
 	ScheduleListReq   = pagedto.ScheduleListReq
-	ScheduleItem      = pagedto.ScheduleItem
+	ScheduleItemResp      = pagedto.ScheduleItemResp
 	ScheduleListResp  = pagedto.ScheduleListResp
 	ScheduleRunResp   = pagedto.ScheduleRunResp
-	// SchedulePageSummary 列表页的行内排定投影（每页一条待执行 + 一条最近失败）。
-	SchedulePageSummary = pagedto.SchedulePageSummary
+	// SchedulePageSummaryResp 列表页的行内排定投影（每页一条待执行 + 一条最近失败）。
+	SchedulePageSummaryResp = pagedto.SchedulePageSummaryResp
 )
 
 // page_preview_problem.go — 预览编译失败里「作者可操作」的那一类，用**类型**标记（而不是错误文本）。
@@ -276,10 +276,10 @@ type PageService interface {
 	//
 	// 数据源是产物 Manifest 的 translationMisses（构建期事实），不是实时重算 ——
 	// 实时算会得出与线上字节不一致的第二份真相（译者补了译文但没重建）。
-	UntranslatedPageLangs(ctx context.Context, projectID string) (rows []TranslationMissRow, err error)
+	UntranslatedPageLangs(ctx context.Context, projectID string) (rows []TranslationMissResp, err error)
 
 	// PageLangStates 该页各启用语言的排除 / 发布状态（默认语言在前，后台面板展示用）。
-	PageLangStates(ctx context.Context, pageID string) (rows []PageLangState, err error)
+	PageLangStates(ctx context.Context, pageID string) (rows []PageLangStateResp, err error)
 	// ExcludePageLang 排除某语言：下线该语言产物 + 清发布/暂存/路由/计划（同一事务）+ 写排除列。
 	//
 	// 返回下线掉的路径数（0 = 该语言本来没发布过，仍是成功的排除）。
@@ -443,11 +443,11 @@ type PageService interface {
 	// ListRedirects 列出工程下全部重定向（含未生效条目、多跳与成环标记）。
 	ListRedirects(ctx context.Context, req *pagedto.RedirectListReq) (res *pagedto.RedirectListResp, err error)
 	// CreateRedirect 手动新增重定向：源路径须空闲、目标须已激活、且不得成环。
-	CreateRedirect(ctx context.Context, req *pagedto.RedirectCreateReq) (res *pagedto.RedirectItem, err error)
+	CreateRedirect(ctx context.Context, req *pagedto.RedirectCreateReq) (res *pagedto.RedirectItemResp, err error)
 	// DeleteRedirect 删除一条重定向（解除访问面激活 + 清占用账）。
 	DeleteRedirect(ctx context.Context, req *pagedto.RedirectDeleteReq) (err error)
 	// MergeRedirectChain 把多跳链合并为直达（A→B、B→C 合成 A→C）。
-	MergeRedirectChain(ctx context.Context, req *pagedto.RedirectMergeReq) (res *pagedto.RedirectItem, err error)
+	MergeRedirectChain(ctx context.Context, req *pagedto.RedirectMergeReq) (res *pagedto.RedirectItemResp, err error)
 
 	// ---- 定时上下线（PIPE-7）----
 	//
@@ -466,14 +466,14 @@ type PageService interface {
 	// 上线排定内含一次 Build：排定即冻结产物（没有暂存产物就无从「只切指针」），
 	// 「构建成功」同时是「这次排定可执行」的证明。
 	// 时间入参按**站点时区**解释，落库一律 UTC（列是 timestamptz）。
-	SetPageSchedule(ctx context.Context, req *pagedto.ScheduleSetReq) (res *pagedto.ScheduleItem, err error)
+	SetPageSchedule(ctx context.Context, req *pagedto.ScheduleSetReq) (res *pagedto.ScheduleItemResp, err error)
 	// CancelPageSchedule 取消一条尚未执行的排定（running 与终态的行按不存在处理）。
 	CancelPageSchedule(ctx context.Context, req *pagedto.ScheduleCancelReq) (err error)
 	// ListPageSchedules 列出某页面的排定（新到旧，带上限）。
 	ListPageSchedules(ctx context.Context, req *pagedto.ScheduleListReq) (res *pagedto.ScheduleListResp, err error)
 	// ListSchedulesForPages 批量取这批页面的排定投影（后台列表页的行内徽标）：
 	// 一次查询取回待执行与最近失败的记录，逐页问一次会把一次页面渲染变成几十次查询。
-	ListSchedulesForPages(ctx context.Context, pageIDs []string) (res map[string]pagedto.SchedulePageSummary, err error)
+	ListSchedulesForPages(ctx context.Context, pageIDs []string) (res map[string]pagedto.SchedulePageSummaryResp, err error)
 	// RunDueSchedules 执行一轮到点扫描：回收超时租约 → 分批认领 → 逐条执行
 	// （单条失败不中断整批）。调度器与运维手动触发共用这一个入口，
 	// 与 PurgeRetention 的「后台手动触发与定时任务共用」同一形状。

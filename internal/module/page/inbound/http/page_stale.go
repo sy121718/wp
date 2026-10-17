@@ -98,13 +98,13 @@ const staleOverviewLimit = 8
 // 而它自己拿不到 gin.Context。
 func (h *pagesAdminHandle) staleOverview(ctx context.Context) gin.H {
 	empty := gin.H{
-		"Available": true, "Total": 0, "Pages": []pagedto.StaleItem{},
+		"Available": true, "Total": 0, "Pages": []pagedto.StaleItemResp{},
 		// Limit 给真实口径（模板在空态下不读它，但零值会让「清单上限是多少」在两个分支里
 		// 出现两种答案 —— 将来若空态也要说一句「最多列 8 条」，零值就是错的）。
 		"Limit": staleOverviewLimit, "Truncated": false,
 	}
 	unavailable := gin.H{
-		"Available": false, "Total": 0, "Pages": []pagedto.StaleItem{},
+		"Available": false, "Total": 0, "Pages": []pagedto.StaleItemResp{},
 		"Limit": 0, "Truncated": false,
 	}
 	if h == nil || h.pages == nil {
@@ -130,10 +130,10 @@ func (h *pagesAdminHandle) staleOverview(ctx context.Context) gin.H {
 		logger.Scene("page").Warn("全站待重建清单返回空结果（契约实现异常）")
 		return unavailable
 	}
-	items := make([]pagedto.StaleItem, 0, len(res.Pages))
+	items := make([]pagedto.StaleItemResp, 0, len(res.Pages))
 	for i := range res.Pages {
 		stage, at := rebuildFailureFact(res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt)
-		items = append(items, pagedto.StaleItem{
+		items = append(items, pagedto.StaleItemResp{
 			ID:                  res.Pages[i].ID,
 			Path:                strings.TrimSpace(res.Pages[i].Path),
 			ProjectName:         strings.TrimSpace(res.Pages[i].ProjectName),

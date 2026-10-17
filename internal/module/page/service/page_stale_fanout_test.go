@@ -114,7 +114,7 @@ func TestPlanStaleImpactLog(t *testing.T) {
 		t.Fatalf("摘要不可用时应标记 NoSample 且不带样本，实际 %+v", plan)
 	}
 
-	impact := &pagedto.StaleImpactSummary{
+	impact := &pagedto.StaleImpactSummaryResp{
 		Total: 9, Limit: 2, Truncated: true,
 		Pages: []pagedto.StalePageResp{{Title: "关于我们", Path: "/about"}, {Path: "/contact"}},
 	}
@@ -133,7 +133,7 @@ func TestPlanStaleImpactLog(t *testing.T) {
 	}
 
 	// 总数取调用方给的事实值，不跟着（只读反查的）摘要一起变小。
-	plan = planStaleImpactLog(9, &pagedto.StaleImpactSummary{Total: 8})
+	plan = planStaleImpactLog(9, &pagedto.StaleImpactSummaryResp{Total: 8})
 	if plan.Total != 9 || plan.SampleShown != 0 || plan.Truncated {
 		t.Fatalf("总数应取调用方给的事实值：%+v", plan)
 	}

@@ -391,7 +391,7 @@ func (s *Service) ListSiteSlots(ctx context.Context, req *pagedto.SiteSlotListRe
 		activeOf[p.PageID] = p.ActivePath
 	}
 
-	res = &pagedto.SiteSlotListResp{Lang: lang, Total: len(pageenums.SiteSlotDefs), Items: make([]pagedto.SiteSlotItem, 0, len(pageenums.SiteSlotDefs))}
+	res = &pagedto.SiteSlotListResp{Lang: lang, Total: len(pageenums.SiteSlotDefs), Items: make([]pagedto.SiteSlotItemResp, 0, len(pageenums.SiteSlotDefs))}
 	boundOf := make(map[string]string, len(bindings))
 	for _, b := range bindings {
 		boundOf[b.Slot] = b.PageID
@@ -399,7 +399,7 @@ func (s *Service) ListSiteSlots(ctx context.Context, req *pagedto.SiteSlotListRe
 	for _, def := range pageenums.SiteSlotDefs {
 		// SlotName / Usage 承载的是 **i18n key**（见 pageenums.SiteSlotDef）：
 		// service 层拿不到请求语言，中文兜底留在 enums 表里，由后台页面层取词。
-		item := pagedto.SiteSlotItem{Slot: def.Key, SlotName: def.NameKey, Usage: def.UsageKey}
+		item := pagedto.SiteSlotItemResp{Slot: def.Key, SlotName: def.NameKey, Usage: def.UsageKey}
 		if pageID, ok := boundOf[def.Key]; ok {
 			item.Bound, item.PageID = true, pageID
 			if idx, found := pageOf[pageID]; found {

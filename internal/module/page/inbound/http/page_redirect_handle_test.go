@@ -24,7 +24,7 @@ type redirectCreateStub struct {
 	listed    string
 }
 
-func (s *redirectCreateStub) CreateRedirect(_ context.Context, _ *pagedto.RedirectCreateReq) (*pagedto.RedirectItem, error) {
+func (s *redirectCreateStub) CreateRedirect(_ context.Context, _ *pagedto.RedirectCreateReq) (*pagedto.RedirectItemResp, error) {
 	s.created++
 	return nil, s.createErr
 }
@@ -35,7 +35,7 @@ func (s *redirectCreateStub) ListRedirects(_ context.Context, req *pagedto.Redir
 		return nil, s.listErr
 	}
 	return &pagedto.RedirectListResp{
-		ProjectID: "p1", Projects: []pagedto.RedirectProjectOption{{ID: "p1", Name: "官网"}},
+		ProjectID: "p1", Projects: []pagedto.RedirectProjectOptionResp{{ID: "p1", Name: "官网"}},
 	}, nil
 }
 

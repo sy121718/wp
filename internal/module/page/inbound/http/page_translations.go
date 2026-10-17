@@ -167,11 +167,11 @@ func translationFact(msg string) pageMsg {
 //
 // 与逐行错误共用同一个切片类型，是因为模板只渲染一个列表、顺序就是发生顺序：
 // 分成两个列表会让「先校验行、再报页面级」的先后关系在页面上重排。
-func translationRowErrors(keys ...string) []pagedto.TranslationRowError {
-	out := make([]pagedto.TranslationRowError, 0, len(keys))
+func translationRowErrors(keys ...string) []pagedto.TranslationRowErrorResp {
+	out := make([]pagedto.TranslationRowErrorResp, 0, len(keys))
 	for _, k := range keys {
 		if fact := translationFact(k); !fact.Empty() {
-			out = append(out, pagedto.TranslationRowError{Msg: fact})
+			out = append(out, pagedto.TranslationRowErrorResp{Msg: fact})
 		}
 	}
 	return out
@@ -185,9 +185,9 @@ type pageTranslationsData struct {
 	PagePath  string
 	ProjectID string
 	Lang      string
-	Langs     []pagedto.TranslationLangOption
+	Langs     []pagedto.TranslationLangOptionResp
 	Filter    string
-	Groups    []pagedto.TranslationGroup
+	Groups    []pagedto.TranslationGroupResp
 	RowCount  int
 	PageDone  int
 	PageTotal int
@@ -199,7 +199,7 @@ type pageTranslationsData struct {
 	IsDefaultLang bool
 	// Errors 逐行错误（校验 / 写入失败时回渲本页，见 renderTranslationError）。
 	// 元素是**事实**（哪一行 + 词条），取词留给模板。
-	Errors []pagedto.TranslationRowError
+	Errors []pagedto.TranslationRowErrorResp
 	// LoadFailed / LoadError 主数据**没读到**（取数失败）：LoadFailed 为真时这一页没成立，
 	// LoadError 是归口后的那条词条事实（原文只进日志）。契约：docs/rules/template-boundary.md
 	// 的「整页 GET 的失败出口」；模板必须**先判失败、再判空态**。
@@ -309,7 +309,7 @@ func (h *pagesAdminHandle) renderTranslationsFailure(c *gin.Context, status int,
 	data := &pageTranslationsData{
 		Title: pageenums.MsgPageTranslationsTitle, Menu: translationsPageMenu,
 		PageID: f.pageID, Lang: f.lang,
-		Langs: []pagedto.TranslationLangOption{}, Groups: []pagedto.TranslationGroup{}, Errors: []pagedto.TranslationRowError{},
+		Langs: []pagedto.TranslationLangOptionResp{}, Groups: []pagedto.TranslationGroupResp{}, Errors: []pagedto.TranslationRowErrorResp{},
 	}
 	if !f.paramError.Empty() {
 		data.ParamInvalid, data.ParamError = true, f.paramError
@@ -364,7 +364,7 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 	}
 
 	// 第一步：逐行校验（全部通过才写库，避免「部分成功」的中间态）。
-	var rowErrors []pagedto.TranslationRowError
+	var rowErrors []pagedto.TranslationRowErrorResp
 	items := make([]i18n.ContentWriteItem, 0, len(contexts))
 	writeKeys := make([]string, 0, len(contexts))
 	queued := make(map[string]bool, len(contexts))
@@ -386,12 +386,12 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 		// 原文指纹必须与表单一致：不一致说明页面草稿已变或表单被篡改，
 		// 让编辑者刷新后重试，绝不按旧指纹写入。
 		if strings.TrimSpace(hashes[i]) != i18n.ContentHash(source) {
-			rowErrors = append(rowErrors, pagedto.TranslationRowError{Label: contextName,
+			rowErrors = append(rowErrors, pagedto.TranslationRowErrorResp{Label: contextName,
 				Msg: translationFact(pageenums.MsgTranslationStale)})
 			continue
 		}
 		if verr := builder.ValidateContentTarget(contextName, source, target); verr != nil {
-			rowErrors = append(rowErrors, pagedto.TranslationRowError{Label: contextName,
+			rowErrors = append(rowErrors, pagedto.TranslationRowErrorResp{Label: contextName,
 				Msg: pageTranslationRowFact(c, verr)})
 			continue
 		}
@@ -464,7 +464,7 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 }
 
 // renderTranslationError 校验/写入失败：回渲染工作台（200）并展示逐行错误，不落库。
-func (h *pagesAdminHandle) renderTranslationError(c *gin.Context, pageID, lang string, errs []pagedto.TranslationRowError) {
+func (h *pagesAdminHandle) renderTranslationError(c *gin.Context, pageID, lang string, errs []pagedto.TranslationRowErrorResp) {
 	data, err := h.buildPageTranslationsData(c.Request.Context(), pageID, lang, "")
 	if err != nil {
 		// 重渲失败：这次写动作已经没有可回的工作台（「原样留下输入」做不到），走**写侧**的整页提示
@@ -506,12 +506,12 @@ func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID
 		IsDefaultLang: lang == defaultLang,
 	}
 	for _, code := range langs {
-		data.Langs = append(data.Langs, pagedto.TranslationLangOption{Code: code, Label: code, Active: code == lang})
+		data.Langs = append(data.Langs, pagedto.TranslationLangOptionResp{Code: code, Label: code, Active: code == lang})
 	}
 
 	parsed, perr := builder.ParsePage(page.DraftDocument)
 	if perr != nil {
-		data.Errors = append(data.Errors, pagedto.TranslationRowError{Msg: translationFact(pageenums.MsgTranslationDocInvalid)})
+		data.Errors = append(data.Errors, pagedto.TranslationRowErrorResp{Msg: translationFact(pageenums.MsgTranslationDocInvalid)})
 		return data, nil
 	}
 	// 清单 = 本页文档候选 + 本页引用块（页眉/页脚绑定、core.globalref）内的候选。
@@ -555,7 +555,7 @@ func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID
 		data.SiteDone = h.countTranslated(ctx, page.ProjectID, lang, site)
 	}
 
-	groups := make([]pagedto.TranslationGroup, 0, 8)
+	groups := make([]pagedto.TranslationGroupResp, 0, 8)
 	for _, cand := range candidates {
 		component, field, ok := i18n.ParseContentContext(cand.Context)
 		if !ok {
@@ -564,7 +564,7 @@ func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID
 		key := i18n.ContentIndexKey(i18n.ContentHash(cand.Source), cand.Context)
 		meta, _ := core.TranslatableFieldMeta(component, field)
 		limit, _ := builder.ContentTargetLimit(cand.Context)
-		row := pagedto.TranslationRow{
+		row := pagedto.TranslationRowResp{
 			Context: cand.Context, Component: component, Field: field,
 			Source: cand.Source, SourceHash: i18n.ContentHash(cand.Source),
 			Rich: meta.Rich(), Limit: limit,
@@ -585,7 +585,7 @@ func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID
 			row.ReusePages, row.ReuseTotal = reuseCounts(row.ReusePaths, page.DraftPath)
 		}
 		if len(groups) == 0 || groups[len(groups)-1].Component != component {
-			groups = append(groups, pagedto.TranslationGroup{Component: component})
+			groups = append(groups, pagedto.TranslationGroupResp{Component: component})
 		}
 		groups[len(groups)-1].Rows = append(groups[len(groups)-1].Rows, row)
 	}
@@ -632,13 +632,13 @@ func (h *pagesAdminHandle) countTranslated(ctx context.Context, projectID, lang 
 }
 
 // filterTranslationGroups 按筛选条件裁剪行（空分组丢弃）。
-func filterTranslationGroups(groups []pagedto.TranslationGroup, filter string) []pagedto.TranslationGroup {
+func filterTranslationGroups(groups []pagedto.TranslationGroupResp, filter string) []pagedto.TranslationGroupResp {
 	if filter == translationFilterAll {
 		return groups
 	}
-	out := make([]pagedto.TranslationGroup, 0, len(groups))
+	out := make([]pagedto.TranslationGroupResp, 0, len(groups))
 	for _, g := range groups {
-		rows := make([]pagedto.TranslationRow, 0, len(g.Rows))
+		rows := make([]pagedto.TranslationRowResp, 0, len(g.Rows))
 		for _, row := range g.Rows {
 			switch filter {
 			case translationFilterMissing:
@@ -657,7 +657,7 @@ func filterTranslationGroups(groups []pagedto.TranslationGroup, filter string) [
 			rows = append(rows, row)
 		}
 		if len(rows) > 0 {
-			out = append(out, pagedto.TranslationGroup{Component: g.Component, Rows: rows})
+			out = append(out, pagedto.TranslationGroupResp{Component: g.Component, Rows: rows})
 		}
 	}
 	return out
@@ -1166,7 +1166,7 @@ func (h *pagesAdminHandle) TranslationMissesPage(c *gin.Context) {
 	// 工程：查询参数优先；只有一个工程时直接选中它（多工程且未选时给显式提示，
 	// 不静默取第一个 —— 那会让人看着 A 工程的报告以为是 B 的）。
 	projectID := strings.TrimSpace(c.Query("project"))
-	rows := []pagedto.TranslationMissRow{}
+	rows := []pagedto.TranslationMissResp{}
 	// errFact 是**事实**（key + 中文兜底），取词留给模板；空值表示本次没有错误。
 	var errFact pageMsg
 	if projectID == "" && h.projects != nil {
@@ -1182,7 +1182,7 @@ func (h *pagesAdminHandle) TranslationMissesPage(c *gin.Context) {
 	} else if list, lerr := h.pages.UntranslatedPageLangs(c.Request.Context(), projectID); lerr != nil {
 		errFact = pageErrMsg(c, lerr)
 	} else {
-		// 行的形状直接复用契约里的 TranslationMissRow（跨模块可见即入契约），
+		// 行的形状直接复用契约里的 TranslationMissResp（跨模块可见即入契约），
 		// 不再另造一份字段相同的渲染行 —— 两份必须逐字段等价的定义就是静默分叉的温床。
 		rows = append(rows, list...)
 	}
@@ -1209,7 +1209,7 @@ func (h *pagesAdminHandle) TranslationMissCancel(c *gin.Context) {
 //
 // 本页是不走 layout 的整页（自带 <!DOCTYPE html>），因此用 PrepareBare 补 t / tf ——
 // 与 adminui.Prepare 的区别只是少了 layout 需要的那些键（sidebarmenus / permset 等）。
-func (h *pagesAdminHandle) translationMissPageData(c *gin.Context, projectID string, rows []pagedto.TranslationMissRow, errFact pageMsg) gin.H {
+func (h *pagesAdminHandle) translationMissPageData(c *gin.Context, projectID string, rows []pagedto.TranslationMissResp, errFact pageMsg) gin.H {
 	token, terr := builtin.GetCSRFToken(c)
 	if terr != nil {
 		token = ""

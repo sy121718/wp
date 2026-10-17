@@ -89,15 +89,15 @@ func TestSiteSlotErrorsGoThroughSharedExit(t *testing.T) {
 // 这里钉反向面 —— 谁把 Badge / StateLabel 加回投影，就会出现「Go 与模板各写一套档位」的双真源：
 // 模板只读事实（改了档位规则却看不到 Go 那份），而 Go 那份没人读，两边悄悄分叉。
 func TestSiteSlotRowHasNoDisplayFields(t *testing.T) {
-	base := pagecontract.SiteSlotItem{DraftPath: "/checkout"}
+	base := pagecontract.SiteSlotItemResp{DraftPath: "/checkout"}
 	cases := []struct {
 		name string
-		it   pagecontract.SiteSlotItem
+		it   pagecontract.SiteSlotItemResp
 	}{
 		{name: "未绑定", it: base},
-		{name: "绑定但页面已删除", it: func() pagecontract.SiteSlotItem { it := base; it.Bound, it.PageDeleted = true, true; return it }()},
-		{name: "绑定且已发布", it: func() pagecontract.SiteSlotItem { it := base; it.Bound, it.Published = true, true; return it }()},
-		{name: "绑定但未发布", it: func() pagecontract.SiteSlotItem { it := base; it.Bound = true; return it }()},
+		{name: "绑定但页面已删除", it: func() pagecontract.SiteSlotItemResp { it := base; it.Bound, it.PageDeleted = true, true; return it }()},
+		{name: "绑定且已发布", it: func() pagecontract.SiteSlotItemResp { it := base; it.Bound, it.Published = true, true; return it }()},
+		{name: "绑定但未发布", it: func() pagecontract.SiteSlotItemResp { it := base; it.Bound = true; return it }()},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -123,7 +123,7 @@ func TestSiteSlotRowHasNoDisplayFields(t *testing.T) {
 func TestSiteSlotsPageDataHasNoToneFields(t *testing.T) {
 	slots := &pagecontract.SiteSlotListResp{
 		Total: 2, BoundCount: 1,
-		Items: []pagecontract.SiteSlotItem{
+		Items: []pagecontract.SiteSlotItemResp{
 			{Slot: "checkout", Bound: true, Published: true, DraftPath: "/checkout"},
 			{Slot: "cart", Bound: true, DraftPath: "/cart"},
 		},

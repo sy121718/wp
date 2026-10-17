@@ -658,7 +658,7 @@ func (s *Service) ListStalePages(ctx context.Context, req *pagedto.StalePageList
 // 返回 nil 表示「摘要不可用」（工程清单读不到 / 查询失败 / 空集合）——
 // **不是错误**：这是观测，不是业务结果。内容已经写成功了，一次只读查询失败
 // 绝不能反向影响写入结论；调用方按「没有摘要」继续即可。
-func (s *Service) StaleImpactOfIDs(ctx context.Context, ids []string) *pagedto.StaleImpactSummary {
+func (s *Service) StaleImpactOfIDs(ctx context.Context, ids []string) *pagedto.StaleImpactSummaryResp {
 	if s == nil || s.model == nil || len(ids) == 0 {
 		return nil
 	}
@@ -718,7 +718,7 @@ func (s *Service) StaleImpactOfIDs(ctx context.Context, ids []string) *pagedto.S
 	for i := range merged {
 		pages = append(pages, staleRowToDTO(merged[i], names))
 	}
-	return &pagedto.StaleImpactSummary{
+	return &pagedto.StaleImpactSummaryResp{
 		Total:     len(uniq),
 		Pages:     pages,
 		Limit:     limit,
@@ -776,7 +776,7 @@ type staleImpactLogPlan struct {
 // （这一次扇出真正返回了多少个不同页面），而 summary 是一次只读反查的产物 ——
 // 反查少了几行不该把日志里的总数也改小，那会让「日志说 3、实际标了 8」这种偏差
 // 永远查不出来。两者的口径由调用方保证一致（同一个归一化后的 id 集合）。
-func planStaleImpactLog(affected int, impact *pagedto.StaleImpactSummary) staleImpactLogPlan {
+func planStaleImpactLog(affected int, impact *pagedto.StaleImpactSummaryResp) staleImpactLogPlan {
 	plan := staleImpactLogPlan{Total: affected}
 	if impact == nil {
 		plan.NoSample = true

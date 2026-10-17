@@ -139,7 +139,7 @@ func TestToSEOFindingItemKeepsEvidence(t *testing.T) {
 		Evidence: "head 中有 2 条 canonical", Expect: "只能有一条 canonical",
 	}
 	got := toSEOFindingItem(in)
-	want := pagedto.SEOFindingItem{
+	want := pagedto.SEOFindingItemResp{
 		URL: "/about", Lang: "en-US", ArtifactHash: "hash-1",
 		Rule: compliance.RuleCanonicalMultiple, Level: "error",
 		Evidence: "head 中有 2 条 canonical", Expect: "只能有一条 canonical",

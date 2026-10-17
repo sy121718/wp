@@ -337,7 +337,7 @@ func (h *Handle) UnbindSiteSlot(c *gin.Context) {
 //	published    已绑定且已发布（链接生成方会输出链接）；
 //	unpublished  已绑定但未发布（**降级状态**：链接生成方跳过它，必须显眼）；
 //	deleted      绑定的页面已被删除（**必须立刻修**，红色 + 解绑入口）。
-func siteSlotRow(it pagecontract.SiteSlotItem, candidates []pagecontract.PageResp) gin.H {
+func siteSlotRow(it pagecontract.SiteSlotItemResp, candidates []pagecontract.PageResp) gin.H {
 	row := gin.H{
 		"Slot": it.Slot,
 		// 槽位名与用途的取值是**词条 key**（pageenums 的两张表就是词条键，值即中文兜底）：

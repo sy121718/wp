@@ -66,14 +66,14 @@ func (s *Service) ListRedirects(ctx context.Context, req *pagedto.RedirectListRe
 	if req == nil {
 		return nil, ErrInvalidParam
 	}
-	res = &pagedto.RedirectListResp{Projects: []pagedto.RedirectProjectOption{}, Items: []pagedto.RedirectItem{}}
+	res = &pagedto.RedirectListResp{Projects: []pagedto.RedirectProjectOptionResp{}, Items: []pagedto.RedirectItemResp{}}
 	if s.project != nil {
 		projects, lerr := s.project.List(ctx)
 		if lerr != nil {
 			return nil, lerr
 		}
 		for _, p := range projects {
-			res.Projects = append(res.Projects, pagedto.RedirectProjectOption{ID: p.ID, Name: p.Name})
+			res.Projects = append(res.Projects, pagedto.RedirectProjectOptionResp{ID: p.ID, Name: p.Name})
 		}
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
@@ -118,7 +118,7 @@ func (s *Service) ListRedirects(ctx context.Context, req *pagedto.RedirectListRe
 //  2. 目标路径存在 —— 目标是站内已达路径，指向不存在的路径等于把 404 换了层皮；
 //  3. 不成环 —— A→B→…→A 在浏览器上是 ERR_TOO_MANY_REDIRECTS；
 //  4. 目标若本身是重定向源，落点直接取链尾 —— 新加的这条不该是多跳链的中间环节。
-func (s *Service) CreateRedirect(ctx context.Context, req *pagedto.RedirectCreateReq) (res *pagedto.RedirectItem, err error) {
+func (s *Service) CreateRedirect(ctx context.Context, req *pagedto.RedirectCreateReq) (res *pagedto.RedirectItemResp, err error) {
 	if req == nil {
 		return nil, ErrInvalidParam
 	}
@@ -187,7 +187,7 @@ func (s *Service) CreateRedirect(ctx context.Context, req *pagedto.RedirectCreat
 	logger.Scene("page").With("source", source).With("target", tail).Info("重定向已新增")
 	// 直接构造返回条目，不复用 buildRedirectItem：它的输入是「列表读取时的快照」，
 	// 而这条重定向刚刚才写进去，快照里没有它。
-	return &pagedto.RedirectItem{
+	return &pagedto.RedirectItemResp{
 		SourcePath: source,
 		TargetPath: tail,
 		StatusCode: 301,
@@ -238,7 +238,7 @@ func (s *Service) DeleteRedirect(ctx context.Context, req *pagedto.RedirectDelet
 // 只改访问面产物（重写 redirect.json 并重新激活）：链的形态本来就只存在于产物里，
 // DB 行只记「这条路径是重定向」，不存目标 —— 不需要额外迁移就能合并。
 // 已经是直达时幂等返回（重复点一下不该报错）。
-func (s *Service) MergeRedirectChain(ctx context.Context, req *pagedto.RedirectMergeReq) (res *pagedto.RedirectItem, err error) {
+func (s *Service) MergeRedirectChain(ctx context.Context, req *pagedto.RedirectMergeReq) (res *pagedto.RedirectItemResp, err error) {
 	if req == nil {
 		return nil, ErrInvalidParam
 	}
@@ -390,14 +390,14 @@ func resolveRedirectTail(recs map[string]*redirectRecord, sourcePath, targetPath
 }
 
 // buildRedirectItem 组装一条列表条目（含多跳 / 环标记）。
-func buildRedirectItem(recs map[string]*redirectRecord, source string, ownerLabels map[string]string) pagedto.RedirectItem {
+func buildRedirectItem(recs map[string]*redirectRecord, source string, ownerLabels map[string]string) pagedto.RedirectItemResp {
 	rec, ok := recs[source]
 	if !ok || rec == nil {
 		// 调用方传了快照里没有的路径：返回空条目而不是 panic（列表渲染不该被一条
 		// 不一致的数据打崩）。
-		return pagedto.RedirectItem{SourcePath: source}
+		return pagedto.RedirectItemResp{SourcePath: source}
 	}
-	item := pagedto.RedirectItem{
+	item := pagedto.RedirectItemResp{
 		SourcePath: rec.sourcePath,
 		TargetPath: rec.targetPath,
 		StatusCode: rec.statusCode,
