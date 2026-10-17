@@ -96,6 +96,9 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/attribute/update", permission.ProductAttributeUpdate, handle.UpdateAttribute)
 	g.POST("/attribute/set-values", permission.ProductAttributeSetValues, handle.SetAttributeValues)
 	g.POST("/attribute/delete", permission.ProductAttributeDelete, handle.DeleteAttribute)
+	// 批量删除：与单条同一个权限点（删的都是属性组，只是形状从 {id} 变成 {ids}），
+	// 回执形状与商品批量删除逐字一致（json_write.js 按 outcome=delete 读 data.deleted）。
+	g.POST("/attribute/bulk-delete", permission.ProductAttributeDelete, handle.BulkDeleteAttributes)
 
 	// —— 分类与品牌（issue #10）——
 	// 分类是树（list 返回树、get 取单节点），品牌是平铺列表。
@@ -105,11 +108,13 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/category/create", permission.ProductCategoryCreate, handle.CreateCategory)
 	g.POST("/category/update", permission.ProductCategoryUpdate, handle.UpdateCategory)
 	g.POST("/category/delete", permission.ProductCategoryDelete, handle.DeleteCategory)
+	g.POST("/category/bulk-delete", permission.ProductCategoryDelete, handle.BulkDeleteCategories)
 	g.GET("/brand/list", permission.ProductBrandList, handle.ListBrands)
 	g.GET("/brand/get", permission.ProductBrandGet, handle.GetBrand)
 	g.POST("/brand/create", permission.ProductBrandCreate, handle.CreateBrand)
 	g.POST("/brand/update", permission.ProductBrandUpdate, handle.UpdateBrand)
 	g.POST("/brand/delete", permission.ProductBrandDelete, handle.DeleteBrand)
+	g.POST("/brand/bulk-delete", permission.ProductBrandDelete, handle.BulkDeleteBrands)
 
 	// —— 标签与自动规则（issue #11）——
 	// 手工标签手工挂载，自动标签按内置规则类型 + 参数维护，归属由明确的重算时机更新；
@@ -121,6 +126,7 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/tag/create", permission.ProductTagCreate, handle.CreateTag)
 	g.POST("/tag/update", permission.ProductTagUpdate, handle.UpdateTag)
 	g.POST("/tag/delete", permission.ProductTagDelete, handle.DeleteTag)
+	g.POST("/tag/bulk-delete", permission.ProductTagDelete, handle.BulkDeleteTags)
 	g.POST("/tag/recalc", permission.ProductTagRecalc, handle.RecalcTags)
 
 	// —— 捆绑品（issue #20）——
@@ -292,11 +298,8 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 写动作复用商品 API 权限点做 Casbin 鉴权。
 	pages.GET("/product-categories", adminui.PageAuthz("/api/product/category/list"), productPages.ProductCategoriesPage)
 	pages.GET("/product-categories/parents", adminui.PageAuthz("/api/product/category/list"), productPages.ProductCategoryParents)
-	pages.POST("/product-categories/create", builtin.CasbinMiddlewareForPath("/api/product/category/create"), productPages.ProductCategoriesCreate)
-	pages.POST("/product-categories/update", builtin.CasbinMiddlewareForPath("/api/product/category/update"), productPages.ProductCategoriesUpdate)
-	pages.POST("/product-categories/delete", builtin.CasbinMiddlewareForPath("/api/product/category/delete"), productPages.ProductCategoriesDelete)
-	// 批量删除复用同一条删除路径与权限点：逐条校验，失败的那条不计入成功数。
-	pages.POST("/product-categories/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/category/delete"), productPages.ProductCategoriesBulkDelete)
+	// 分类的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/category/*。
+	// 页面组只剩两个读入口（列表页与父级候选搜索）。
 	pages.GET("/product-brands", adminui.PageAuthz("/api/product/brand/list"), productPages.ProductBrandsPage)
 	pages.POST("/product-brands/create", builtin.CasbinMiddlewareForPath("/api/product/brand/create"), productPages.ProductBrandsCreate)
 	pages.POST("/product-brands/update", builtin.CasbinMiddlewareForPath("/api/product/brand/update"), productPages.ProductBrandsUpdate)

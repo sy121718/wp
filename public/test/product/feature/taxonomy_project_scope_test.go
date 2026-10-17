@@ -28,8 +28,9 @@ func TestTaxonomyFormsCarryProjectScope(t *testing.T) {
 	router.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	router.POST("/brand/update", h.ProductBrandsUpdate)
 	router.POST("/brand/delete", h.ProductBrandsDelete)
-	router.POST("/category/update", h.ProductCategoriesUpdate)
-	router.POST("/category/delete", h.ProductCategoriesDelete)
+	// 分类的两条页面 POST 已随写动作迁移删除（模板直调 /api/product/category/*，
+	// projectId 由 data-write-extra 声明带出）—— 这里只剩品牌与标签还能测「表单字段
+	// 贯穿写入契约」这件事。
 	router.POST("/tag/update", h.ProductTagsUpdate)
 	router.POST("/tag/delete", h.ProductTagsDelete)
 	brand, err := f.svc.CreateBrand(ctx, &productdto.CreateBrandReq{ProjectID: f.projectID, Name: "品牌", Slug: "scope-brand"})
@@ -44,7 +45,7 @@ func TestTaxonomyFormsCarryProjectScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ kind, id string }{{"brand", brand.ID}, {"category", category.ID}, {"tag", tag.ID}} {
+	for _, tc := range []struct{ kind, id string }{{"brand", brand.ID}, {"tag", tag.ID}} {
 		t.Run(tc.kind, func(t *testing.T) {
 			for _, action := range []string{"update", "delete"} {
 				form := url.Values{"projectId": {f.projectID}, "id": {tc.id}, "name": {"修改后"}, "slug": {"scope-" + tc.kind}, "kind": {"manual"}, "seoTitle": {"修改后的标题"}}
@@ -53,6 +54,10 @@ func TestTaxonomyFormsCarryProjectScope(t *testing.T) {
 				assertJumpOK(t, rec)
 			}
 		})
+	}
+	// 分类的删除改调用例：页面那条路已不存在。
+	if err := f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ProjectID: f.projectID, ID: category.ID}); err != nil {
+		t.Fatalf("删分类失败: %v", err)
 	}
 	if _, err := f.svc.GetBrand(ctx, &productdto.GetBrandReq{ProjectID: f.projectID, ID: brand.ID}); err == nil {
 		t.Fatal("品牌未删除")

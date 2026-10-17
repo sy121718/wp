@@ -1,6 +1,7 @@
 package producthttp
 
 import (
+	"context"
 	"errors"
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
@@ -8,6 +9,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/shell"
+	"go_wp/pkg/bulkids"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
@@ -155,86 +157,6 @@ func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.Cate
 		})
 	}
 	return rows
-}
-
-// ProductCategoriesCreate 新建分类。
-func (h *productPageHandle) ProductCategoriesCreate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	// SEO 标题 / 描述不再从表单读（2026-09-30 字段合并）：分类名即网页标题、
-	// 分类描述即 meta description，读侧统一映射（service 的 categoryValues、
-	// SEO 评分、构建期 SEO 头）。列保留但不再是任何 UI 的来源。
-	req := &productdto.CreateCategoryReq{
-		ProjectID:   projectID,
-		ParentID:    strings.TrimSpace(c.PostForm("parentId")),
-		Name:        strings.TrimSpace(c.PostForm("name")),
-		Slug:        strings.TrimSpace(c.PostForm("slug")),
-		Description: c.PostForm("description"),
-		Image:       strings.TrimSpace(c.PostForm("image")),
-		Sort:        parseIntOr(c.PostForm("sort"), 0),
-	}
-	if _, err := h.products.CreateCategory(c.Request.Context(), req); err != nil {
-		h.categoryFormFail(c, "create", productErrMsg(c, err))
-		return
-	}
-	categoryFormSuccess(c, projectID)
-}
-
-// ProductCategoriesUpdate 修改分类（改名 / 换父级 / 排序 / 描述与图）。
-func (h *productPageHandle) ProductCategoriesUpdate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	parentID := strings.TrimSpace(c.PostForm("parentId"))
-	name := strings.TrimSpace(c.PostForm("name"))
-	slug := strings.TrimSpace(c.PostForm("slug"))
-	description := c.PostForm("description")
-	image := strings.TrimSpace(c.PostForm("image"))
-	sortValue := parseIntOr(c.PostForm("sort"), 0)
-	// SEO 标题 / 描述**不提交**（req 里保持 nil = 不改）：库里可能有编辑者写过的
-	// 历史值，不动它就不会丢数据；而它们已经不是读侧口径。
-	req := &productdto.UpdateCategoryReq{
-		ProjectID: projectID,
-		ID:        c.PostForm("id"), ParentID: &parentID, Name: &name, Slug: &slug,
-		Description: &description, Image: &image, Sort: &sortValue,
-	}
-	if _, err := h.products.UpdateCategory(c.Request.Context(), req); err != nil {
-		h.categoryFormFail(c, "update", productErrMsg(c, err))
-		return
-	}
-	categoryFormSuccess(c, projectID)
-}
-
-// ProductCategoriesDelete 删除分类（有子级或被商品引用时服务端拒绝）。
-func (h *productPageHandle) ProductCategoriesDelete(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	if err := h.products.DeleteCategory(c.Request.Context(), &productdto.DeleteCategoryReq{ProjectID: projectID, ID: c.PostForm("id")}); err != nil {
-		productCategoriesJump(c, false, productErrMsg(c, err))
-		return
-	}
-	productCategoriesJump(c, true, productBulkDoneMsg(productCategoryBulkDone))
-}
-
-// ProductCategoriesBulkDelete 批量删除分类。
-//
-// 业务编排在 service.BulkDeleteProductCategories：一次查回整批（存在性 / 子级 / 引用面），
-// 可删的那些一条 DELETE + 一次失效入队，同一事务。本层只解析 id、调用例、映射结果 ——
-// 不再自己循环、也不再累加计数（dd.txt §5.5）。
-// 被拒绝的那些（有子分类 / 被商品引用 / 不存在）进「跳过」桶，结果按「已删 N 个 / 未成功 M 个」
-// 渲染提示页，避免静默的部分成功。
-func (h *productPageHandle) ProductCategoriesBulkDelete(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		productCategoriesJump(c, false, productBulkIDsMsg(c, berr))
-		return
-	}
-	res, err := h.products.BulkDeleteProductCategories(c.Request.Context(),
-		&productdto.BulkDeleteReq{ProjectID: projectID, IDs: ids})
-	if err != nil {
-		productCategoriesJump(c, false, productErrMsg(c, err))
-		return
-	}
-	ok, msg := productBulkDeleteResult(res.Succeeded, res.NotDone(), productCategoryBulkPartial, productCategoryBulkDone)
-	productCategoriesJump(c, ok, msg)
 }
 
 // ProductBrandsPage 品牌管理页：工程切换 + 筛选栏 + 品牌列表 + 内联新建表单。
@@ -435,36 +357,6 @@ func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.
 		data["SEOTitle"], data["SEODescription"] = "", ""
 	}
 	return adminui.PrepareBare(c, data)
-}
-
-func (h *productPageHandle) categoryFormFail(c *gin.Context, mode string, msg productMsg) {
-	if !isHXRequest(c) {
-		productCategoriesJump(c, false, msg)
-		return
-	}
-	data := categoryDrawerData(c, mode, c.PostForm("projectId"), nil, nil, nil)
-	if h.products != nil {
-		projectID := c.PostForm("projectId")
-		if page, err := h.products.ListCategoryPage(c.Request.Context(), &productdto.ListCategoryPageReq{ProjectID: projectID, Page: 1, Size: 100}); err == nil {
-			// 列表读的是树，父级下拉要的是扁平行 —— 不摊平的话下拉里只剩顶级分类。
-			options := productservice.FlattenCategoryTree(page.Items)
-			parentID := strings.TrimSpace(c.PostForm("parentId"))
-			if parentID != "" {
-				if parent, perr := h.products.GetCategory(c.Request.Context(), &productdto.GetCategoryReq{ProjectID: projectID, ID: parentID}); perr == nil {
-					options = append(options, parent)
-				}
-			}
-			data["Options"] = productservice.CategoryPickOptions(options)
-		}
-	}
-	data["FormEcho"] = rawDrawerEcho(c, []string{"projectId", "id", "name", "slug", "parentId", "sort", "image", "description", "seoTitle", "seoDescription"})
-	// 错误槽收**事实**（productMsg），取词在 product_category_form.html 的 tf 里做。
-	data["SubmitErr"] = msg
-	c.HTML(http.StatusOK, "admin/product/product_category_form.html", data)
-}
-
-func categoryFormSuccess(c *gin.Context, projectID string) {
-	productCategoriesJump(c, true, productActionDoneMsg)
 }
 
 func brandDrawerData(c *gin.Context, mode, projectID string, row *productdto.BrandResp) gin.H {
@@ -694,6 +586,55 @@ func (h *Handle) DeleteCategory(c *gin.Context) {
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
+}
+
+// —— 批量删除（JSON 端点）——
+//
+// 四套归类（分类 / 品牌 / 标签 / 属性组）的批量删除形状逐字相同：身体是 {ids, projectId}、
+// 权限点复用各自的单删、回执走同一个 productBulkDeletedView。所以只有一个入口
+// bulkDeleteByIDs，差别只在传给用例的**方法值**。
+//
+// 为什么抽公共入口而不是写三遍：三条路的每一行都必须同口径（归一函数、上限、回执键名），
+// 分开写迟早有一处漏了 bulkids.Normalize —— 症状是超限那批被静默截断，而操作者以为
+// 「勾的全删了」。这是本仓已发生过的一次真实故障（页面侧 shell.BulkIDs 与 API 侧各写一份）。
+
+// BulkDeleteCategories 批量删除分类（页面 /admin/product-categories/bulk-delete 的承接方）。
+func (h *Handle) BulkDeleteCategories(c *gin.Context) {
+	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductCategories)
+}
+
+// BulkDeleteBrands 批量删除品牌。
+func (h *Handle) BulkDeleteBrands(c *gin.Context) {
+	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductBrands)
+}
+
+// BulkDeleteTags 批量删除标签（手工与自动一视同仁，口径由用例决定）。
+func (h *Handle) BulkDeleteTags(c *gin.Context) {
+	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductTags)
+}
+
+// bulkDeleteByIDs 四套归类（分类 / 品牌 / 标签 / 属性组）的共用入口：解析 → 归一 → 调用例 → 映射回执。
+//
+// 归一口径与商品批量删除同一个纯函数（bulkids.Normalize）：去空白 / 去重 / 上限 MaxIDs，
+// **超限整批拒绝，不静默截断** —— 截断会让操作者以为「勾的全删了」，而实际只删了前 200 条。
+func (h *Handle) bulkDeleteByIDs(c *gin.Context, del func(context.Context, *productdto.BulkDeleteReq) (*productdto.BulkResult, error)) {
+	req := &productdto.BulkDeleteReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	ids, err := bulkids.Normalize(req.IDs)
+	if err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	req.IDs = ids
+	res, err := del(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, productBulkDeletedView(c, res))
 }
 
 // CreateBrand 新建品牌。

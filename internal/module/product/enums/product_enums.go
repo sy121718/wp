@@ -392,10 +392,14 @@ const (
 // 这里的常量只声明 key。
 const (
 	// 批量删除：五个实体各一对（部分成功 / 全部成功）。
-	BulkTagPartial      = "product.bulk.tagPartial"
-	BulkTagDone         = "product.bulk.tagDone"
-	BulkAttrPartial     = "product.bulk.attrPartial"
-	BulkAttrDone        = "product.bulk.attrDone"
+	BulkTagPartial  = "product.bulk.tagPartial"
+	BulkTagDone     = "product.bulk.tagDone"
+	BulkAttrPartial = "product.bulk.attrPartial"
+	BulkAttrDone    = "product.bulk.attrDone"
+	// BulkCategoryPartial / BulkCategoryDone 的 Go 消费者已随分类写动作迁移删除
+	// （页面 POST → /api/product/category/bulk-delete，结论句由 json_write.js 的
+	// data-msg-* 承担）。词条本身保留：它在 sys_i18n 里由迁移 283 落地，删词条属于
+	// 数据变更、要另起迁移，而保留的成本只是一条无人读的行。
 	BulkCategoryPartial = "product.bulk.categoryPartial"
 	BulkCategoryDone    = "product.bulk.categoryDone"
 	BulkBrandPartial    = "product.bulk.brandPartial"

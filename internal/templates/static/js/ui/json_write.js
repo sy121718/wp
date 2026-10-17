@@ -8,7 +8,7 @@
  * 契约（全部声明式，模板里不写内联 JS；无 JS 时这些控件是 hidden 的，见下）：
  *
  *   <form data-write-api="/api/block/create"
- *         data-write-mode="create"           single | bulk | create
+ *         data-write-mode="create"           single | bulk | create（别名 form）
  *         data-write-nav="/workbench?block={id}"   create 成功后的跳转（{id} 取响应 data.id）
  *         data-msg-…="…"                     文案由服务端 tr() 渲染后带进来（见下表）
  *         data-confirm="…">                  与 ui/confirm.js 共用确认框
@@ -62,6 +62,11 @@
  *       的端点只会拒。它**不改**「重复 name」的单值语义（顶层重名仍是后者覆盖）：整表提交要的是
  *       「行」，不是「一个字段多个值」。rows 最后写，行数组不可能被其它字段覆盖。
  *   - mode=create：payload = 表单全部具名字段（+ data-write-rows 的行数组）。成功 → location.assign(nav)。
+ *     **别名 form**：语义与 create 逐字相同（发整张表单、成功后导航或整页刷新），名字表明
+ *     「这是一张编辑/新建表单」。新建抽屉与编辑抽屉的表单形状本来就一样（只差一个 id 隐藏域），
+ *     分成两个 mode 会让模板作者以为 update 该用 single —— 而 single 只发 {id}，编辑表单的
+ *     字段会被整张丢掉（端点收到空 name 直接 400，看起来像「保存没反应」）。
+ *     保留 create 这个名字是因为它已在 order / mail / navigation 等 19 处模板里，改名的收益为零。
  *
  * 文案键（模板用 tr() 渲染好的成品句，占位符 {count}/{deleted}/{updated}/{added}/{skipped}/{max} 由本文件填）：
  *   data-msg-none-selected / data-msg-all-deleted / data-msg-all-updated / data-msg-all-added
@@ -699,7 +704,7 @@
         var mode = attrFrom(form, submitter, 'data-write-mode') || 'single';
         var outcome = attrFrom(form, submitter, 'data-write-outcome') || 'delete';
         if (mode === 'bulk') { runBulk(form, submitter, outcome); return; }
-        if (mode === 'create') { runCreate(form, submitter); return; }
+        if (mode === 'create' || mode === 'form') { runCreate(form, submitter); return; }
         runSingle(form, submitter);
     }, false);
 

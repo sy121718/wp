@@ -473,9 +473,9 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
+	// 分类的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/category/*，
+	// 页面组只剩 GET。用例里要建分类时直接调用例（下方），页面渲染照旧验证。
 	engine.GET("/admin/product-categories", handle.ProductCategoriesPage)
-	engine.POST("/admin/product-categories/create", handle.ProductCategoriesCreate)
-	engine.POST("/admin/product-categories/delete", handle.ProductCategoriesDelete)
 	engine.GET("/admin/product-brands", handle.ProductBrandsPage)
 	engine.POST("/admin/product-brands/create", handle.ProductBrandsCreate)
 	engine.GET("/admin/products", handle.ProductsPage)
@@ -492,22 +492,24 @@ func TestTaxonomyAdminPages(t *testing.T) {
 	if engine == nil {
 		return
 	}
-	// 表单建分类：顶级 + 子级（子级的 parentId 取自表单下拉里的 id）。
-	rec := postForm(engine, "/admin/product-categories/create", url.Values{
-		"projectId": {f.projectID}, "name": {"男装"}, "slug": {"men"},
-		"seoTitle": {"男装 SEO"}, "description": {"描述"},
-	})
-	assertJumpOK(t, rec)
+	// 建分类：顶级 + 子级（子级的 parentId 取自表单下拉里的 id）。走用例而不是页面 POST ——
+	// 写动作已迁到 /api/product/category/create，页面那条路不存在了。
+	if _, cerr := f.svc.CreateCategory(t.Context(), &productdto.CreateCategoryReq{
+		ProjectID: f.projectID, Name: "男装", Slug: "men", Description: "描述",
+	}); cerr != nil {
+		t.Fatalf("建分类失败: %v", cerr)
+	}
 	tree, err := f.svc.ListCategories(t.Context(), &productdto.ListCategoryReq{ProjectID: f.projectID})
 	if err != nil || len(tree) != 1 {
 		t.Fatalf("表单建分类失败: %v %+v", err, tree)
 	}
 	rootID := tree[0].ID
-	rec = postForm(engine, "/admin/product-categories/create", url.Values{
-		"projectId": {f.projectID}, "name": {"衬衫"}, "slug": {"shirts"}, "parentId": {rootID},
-	})
-	assertJumpOK(t, rec)
-	rec = httptestGet(engine, "/admin/product-categories?project="+f.projectID)
+	if _, cerr := f.svc.CreateCategory(t.Context(), &productdto.CreateCategoryReq{
+		ProjectID: f.projectID, Name: "衬衫", Slug: "shirts", ParentID: rootID,
+	}); cerr != nil {
+		t.Fatalf("建子分类失败: %v", cerr)
+	}
+	rec := httptestGet(engine, "/admin/product-categories?project="+f.projectID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("分类页应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}

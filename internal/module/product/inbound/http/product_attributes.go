@@ -760,3 +760,11 @@ func (h *Handle) DeleteAttribute(c *gin.Context) {
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
 }
+
+// BulkDeleteAttributes 批量删除属性组（页面 /admin/product-attributes/bulk-delete 的承接方）。
+//
+// 入口与三套归类共用（bulkDeleteByIDs）：归一、上限、回执键名必须逐字同口径，
+// 否则超限那批会被静默截断、或摘要句恒为「已删除 0 项」。
+func (h *Handle) BulkDeleteAttributes(c *gin.Context) {
+	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductAttributes)
+}

@@ -31,8 +31,6 @@ var productBulkInjectedEntries = map[string]map[string]string{
 	productenums.BulkTagPartial:          {"zh-CN": "已删除 %s 个，%s 个未能删除（标签不存在或已被删除）", "en-US": "EN-TAG-PART %s %s"},
 	productenums.BulkAttrDone:            {"zh-CN": "已删除 %s 个属性组（连同其全部属性值）", "en-US": "EN-ATTR %s"},
 	productenums.BulkAttrPartial:         {"zh-CN": "已删除 %s 个，%s 个未能删除（属性组不存在或被商品引用）", "en-US": "EN-ATTR-PART %s %s"},
-	productenums.BulkCategoryDone:        {"zh-CN": "已删除 %s 个分类", "en-US": "EN-CAT %s"},
-	productenums.BulkCategoryPartial:     {"zh-CN": "已删除 %s 个，%s 个未能删除（有子分类或被商品引用）", "en-US": "EN-CAT-PART %s %s"},
 	productenums.BulkBrandDone:           {"zh-CN": "已删除 %s 个品牌", "en-US": "EN-BRAND %s"},
 	productenums.BulkBrandPartial:        {"zh-CN": "已删除 %s 个，%s 个未能删除（品牌不存在或被商品引用）", "en-US": "EN-BRAND-PART %s %s"},
 	productenums.BulkProductDone:         {"zh-CN": "已删除 %s 个商品（连同其全部变体）", "en-US": "EN-PRODUCT %s"},
@@ -70,7 +68,6 @@ func TestProductBulkNoticeFollowsRequestLanguage(t *testing.T) {
 	for _, tpl := range []productBulkText{
 		productTagBulkPartial, productTagBulkDone,
 		productAttrBulkPartial, productAttrBulkDone,
-		productCategoryBulkPartial, productCategoryBulkDone,
 		productBrandBulkPartial, productBrandBulkDone,
 		productBulkPartial, productBulkDone,
 	} {

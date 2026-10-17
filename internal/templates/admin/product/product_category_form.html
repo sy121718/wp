@@ -1,22 +1,24 @@
 {{import "../partials/rich_editor.html"}}
 {{import "../partials/media_field.html"}}
-{{fill := isset(.FormEcho)}}
 {{tr := .["t"]}}
-{{tf := .["tf"]}}
 {{create := .Mode == "create"}}
 <div data-category-form-host>
-    {* SubmitErr 收的是**事实**（adminui.Msg：key + 中文兜底 + `%s` 参数）：控制器不取词，
-       语言由本片段的 tf 按当前请求决定（缺 tf 声明 = 渲染中断 = 500，htmx 不 swap）。 *}
-    {{if isset(.SubmitErr)}}{{if .SubmitErr.Key != "" || .SubmitErr.Fallback != ""}}<p class="badge badge-warning" role="alert">{{tf(.SubmitErr.Key, .SubmitErr.Fallback, .SubmitErr.Args)}}</p>{{end}}{{end}}
-    <form method="post" action="/admin/product-categories/{{if create}}create{{else}}update{{end}}{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" class="form-stack"
-          hx-post="/admin/product-categories/{{if create}}create{{else}}update{{end}}{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" hx-target="closest [data-category-form-host]" hx-swap="outerHTML">
-        <input type="hidden" name="csrf_token" value="{{.Csrf}}">
-        <input type="hidden" name="projectId" value="{{if fill}}{{.FormEcho.projectId}}{{else}}{{.Project}}{{end}}">
-        {{if !create}}<input type="hidden" name="id" value="{{if fill}}{{.FormEcho.id}}{{else}}{{.ID}}{{end}}">{{end}}
+    {* 写动作直接调 JSON 端点（data-write-api）：新建与修改共用**同一份字段清单**，只差一个 id
+       隐藏域，所以两档都是 mode=form（发整张表单、成功后整页刷新 —— 列表的父级路径与「不属于
+       本工程」徽章由服务端重算，就地改 DOM 会同源不上）。
+
+       失败时抽屉不关、已填内容一个字段都不动，基座只把原因点到结果区。这里不再有
+       「把 Errors 塞回模板重渲染整张表单」那条路径，也不再有 SubmitErr / FormEcho 两组回填字段
+       —— 那是「服务端渲染结论」时代的产物，而结论现在由接口回、由基座显示。 *}
+    <form data-write-api="/api/product/category/{{if create}}create{{else}}update{{end}}"
+          data-write-mode="form" data-write-number="sort"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+        <input type="hidden" name="projectId" value="{{.Project}}">
+        {{if !create}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
         <div class="form-inline">
-            <input aria-label="{{tr("admin.product_categories.label.name", "分类名称")}}" class="form-input" type="text" name="name" value="{{if fill}}{{.FormEcho.name}}{{else}}{{.Name}}{{end}}" placeholder="{{tr("admin.product_categories.label.name", "分类名称")}}" required>
-            <input aria-label="{{tr("admin.product_categories.label.slug", "URL 段")}}" class="form-input" type="text" name="slug" value="{{if fill}}{{.FormEcho.slug}}{{else}}{{.Slug}}{{end}}" placeholder="{{tr("admin.product_categories.label.slug", "URL 段")}}" autocomplete="off">
-            {{parent := .ParentID}}{{if fill}}{{parent = .FormEcho.parentId}}{{end}}
+            <input aria-label="{{tr("admin.product_categories.label.name", "分类名称")}}" class="form-input" type="text" name="name" value="{{.Name}}" placeholder="{{tr("admin.product_categories.label.name", "分类名称")}}" required>
+            <input aria-label="{{tr("admin.product_categories.label.slug", "URL 段")}}" class="form-input" type="text" name="slug" value="{{.Slug}}" placeholder="{{tr("admin.product_categories.label.slug", "URL 段")}}" autocomplete="off">
+            {{parent := .ParentID}}
             {{id := .ID}}
             <div data-category-parent-picker data-category-project="{{.Project}}">
             <label for="category-parent-search-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_categories.parentSearch.label", "搜索父级分类")}}</label>
@@ -32,10 +34,10 @@
             </select>
             <div data-category-parent-results role="status"></div>
             </div>
-            <input aria-label="{{tr("admin.product_categories.ph.sort", "排序")}}" class="form-input" type="number" name="sort" value="{{if fill}}{{.FormEcho.sort}}{{else}}{{.Sort}}{{end}}" inputmode="numeric" step="1">
+            <input aria-label="{{tr("admin.product_categories.ph.sort", "排序")}}" class="form-input" type="number" name="sort" value="{{.Sort}}" inputmode="numeric" step="1">
             {* 单图字段走媒体字段（缩略图 + 媒体库 + 清除）：上传与选择只从媒体库走，
                本页不持有文件输入 —— 与商品图集的多图控件同一条约定。 *}
-            {{imgValue := .Image}}{{if fill}}{{imgValue = .FormEcho.image}}{{end}}
+            {{imgValue := .Image}}
             {{yield mediaField(field="image", key="cat", value=imgValue,
                 pickLabel=tr("admin.common.media.pick", "媒体库"),
                 clearLabel=tr("admin.common.media.clear", "清除"))}}
@@ -44,14 +46,16 @@
            分类描述即 meta description，不再单开两个框让编辑者抄一遍。
            product_categories.seo_title / seo_description 两列保留但不再暴露。 *}
         <label class="form-label" for="rich-description-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_categories.label.description", "分类描述")}}</label>
-        {{desc := .Description}}{{if fill}}{{desc = .FormEcho.description}}{{end}}
         {{key := .ID}}{{if create}}{{key = "new"}}{{end}}
-        {{yield richEditor(field="description", key=key, value=desc)}}
+        {{descValue := .Description}}
+        {{yield richEditor(field="description", key=key, value=descValue)}}
+        {* 结果区在表单内：失败时抽屉不关、已填内容一个字段都不动，只在这里点出原因。 *}
+        <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="action-row">
             <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
             {{if !create}}<button type="button" class="btn" hx-post="/admin/product-categories/seo-score" hx-include="closest form" hx-target="#category-seo-score-{{.ID}}" hx-swap="innerHTML">{{tr("admin.product_categories.seoScore", "SEO 评分")}}</button>{{end}}
         {{if !create}}<div id="category-seo-score-{{.ID}}" class="wb-seo-panel"></div>{{end}}
-            <button type="submit" class="btn btn-primary">{{if create}}{{tr("admin.product_categories.create.submit", "新建分类")}}{{else}}{{tr("admin.product_categories.list.save", "保存分类")}}{{end}}</button>
+            <button type="submit" class="btn btn-primary" data-requires-js hidden>{{if create}}{{tr("admin.product_categories.create.submit", "新建分类")}}{{else}}{{tr("admin.product_categories.list.save", "保存分类")}}{{end}}</button>
         </div>
             </form>
 </div>
