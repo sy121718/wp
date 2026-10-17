@@ -2,6 +2,7 @@ package producthttp
 
 import (
 	"errors"
+	"fmt"
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -9,10 +10,13 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/shell"
 	"go_wp/pkg/backpath"
+	"go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -138,6 +142,29 @@ type productMsg = adminui.Msg
 // productMsgText 把一句结论取成当前语言文本（片段槽位 / JSON 出口没有模板取词时用）。
 func productMsgText(c *gin.Context, m productMsg) string {
 	return adminui.MsgText(c, m)
+}
+
+// productBulkIDs 批量 id 的归一 + 超限出口（商品批量删除 / 批量改价 / 四套归类删除共用）。
+//
+// 超限**必须**把「上限」与「本次条数」两个数字给出来：只说「请求参数无效」时操作者不知道
+// 该拆成几批，而这正是这条拒绝唯一可行动的信息。词条与模板都归 pkg/bulkids 所有（它的两个
+// %s 依次是上限与本次条数），这里只做「按请求语言取成品串 + 注入数字」。
+//
+// 返回 false 表示已写出响应、调用方直接 return。空列表**不在这里拦**：没勾选是各端点自己的
+// 语义（批量改价要一句专门的话，批量删除只要参数无效）。
+func productBulkIDs(c *gin.Context, raw []string) ([]string, bool) {
+	ids, err := bulkids.Normalize(raw)
+	if err == nil {
+		return ids, true
+	}
+	var limit *bulkids.IDsError
+	if errors.As(err, &limit) {
+		template := i18n.Translate(bulkids.MsgTooMany, bulkids.TooManyTemplate, response.RequestLanguage(c))
+		response.ErrorWithMessage(c, http.StatusBadRequest, fmt.Sprintf(template, strconv.Itoa(limit.Max), strconv.Itoa(limit.Count)))
+		return nil, false
+	}
+	response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	return nil, false
 }
 
 // —— 提示页出口 ——

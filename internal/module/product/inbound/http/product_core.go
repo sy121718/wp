@@ -10,7 +10,6 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/shell"
-	"go_wp/pkg/bulkids"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
@@ -131,11 +130,11 @@ func (h *Handle) BulkDelete(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
-	// 归一口径与表单侧（shell.BulkIDs）同一个纯函数：去空白 / 去重 / 上限 MaxIDs。
-	// **超限整批拒绝，不静默截断** —— 截断会让操作者以为「勾的全删了」。
-	ids, err := bulkids.Normalize(req.IDs)
-	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	// 归一口径与其余批量端点同一个纯函数（bulkids.Normalize，经 productBulkIDs）：
+	// 去空白 / 去重 / 上限 MaxIDs，**超限整批拒绝，不静默截断** —— 截断会让操作者
+	// 以为「勾的全删了」。超限回执带「上限 / 本次条数」两个数字（见 productBulkIDs）。
+	ids, ok := productBulkIDs(c, req.IDs)
+	if !ok {
 		return
 	}
 	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功）。与批量改价同一判据 —— 这条守卫

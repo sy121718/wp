@@ -6,7 +6,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
-	"go_wp/pkg/bulkids"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
@@ -475,9 +474,8 @@ func (h *Handle) bulkDeleteByIDs(c *gin.Context, del func(context.Context, *prod
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
-	ids, err := bulkids.Normalize(req.IDs)
-	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	ids, ok := productBulkIDs(c, req.IDs)
+	if !ok {
 		return
 	}
 	req.IDs = ids

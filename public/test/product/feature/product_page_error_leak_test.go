@@ -18,12 +18,14 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
 	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
@@ -157,7 +159,11 @@ func TestProductPageHidesInternalError(t *testing.T) {
 		t.Fatalf("内部错误不该回成功")
 	}
 	assertNoProductInternalLeak(t, "JSON 回执", env.Message)
-	if !strings.Contains(env.Message, "系统内部错误") {
+	// 归口文案是 pkg/response 的常量 msgInternalError（「服务器内部错误，请稍后重试」），
+	// 不经 i18n 查询 —— 未装配 i18n 的测试引擎里它也照样成立。
+	// 它**不是** internal/adminui 的「系统内部错误」：那是页面出口的另一份常量，
+	// JSON 出口走 response.ErrorAuto，两者不要互相套用断言。
+	if !strings.Contains(env.Message, "服务器内部错误") {
 		t.Fatalf("内部错误应给归口文案，message=%s", env.Message)
 	}
 }
@@ -178,8 +184,12 @@ func TestProductPageKeepsBusinessErrorText(t *testing.T) {
 		t.Fatalf("删不存在的商品应失败")
 	}
 	assertNoProductInternalLeak(t, "JSON 回执", env.Message)
-	if !strings.Contains(env.Message, "商品或变体不存在") {
-		t.Fatalf("业务文案必须原样可见，message=%s", env.Message)
+	// 这个 feature 包从不装配 i18n，pkg/response 的 translate 未命中时原样返回 key ——
+	// 所以在这个引擎上「业务文案」的可见形态就是 key 本身（同一口径见
+	// admin_err_response_test.go 的注释）。生产装配后它被译成「请求资源不存在」。
+	// 这里钉的是「业务错误不被归口成系统内部错误」：message 仍是可翻译的业务 key。
+	if env.Message != productenums.ErrNotFound {
+		t.Fatalf("业务错误应原样透出 key（未装配 i18n 的既定形态），message=%s", env.Message)
 	}
 }
 
@@ -190,14 +200,23 @@ func TestProductPageKeepsBulkLimitText(t *testing.T) {
 	if engine == nil {
 		return
 	}
-	form := url.Values{"projectId": {f.projectID}}
 	// 用高于上限一条即触发整批拒绝（不依赖 @10 这类经验数字）。
+	ids := make([]string, 0, bulkids.MaxIDs+1)
 	for i := 0; i < bulkids.MaxIDs+1; i++ {
-		form.Add("ids", fmt.Sprintf("00000000-0000-0000-0000-%012d", i))
+		ids = append(ids, fmt.Sprintf("00000000-0000-0000-0000-%012d", i))
 	}
-	body := productNoticeBody(t, postProductForm(engine, "/admin/products/bulk-delete", form))
-	assertNoProductInternalLeak(t, "提示页", body)
-	if !strings.Contains(body, "一次最多操作") {
-		t.Fatalf("受控提示应保持可见，body=%s", body)
+	env := decodeJSONEnvelope(t, postJSON(t, engine, "/api/product/bulk-delete", map[string]any{
+		"projectId": f.projectID, "ids": ids,
+	}))
+	if env.Code == http.StatusOK {
+		t.Fatalf("超限应整批拒绝，实际成功")
+	}
+	assertNoProductInternalLeak(t, "JSON 回执", env.Message)
+	// 受控提示必须带两个数字：只说「请求参数无效」时操作者不知道该拆成几批。
+	if !strings.Contains(env.Message, "一次最多操作") {
+		t.Fatalf("受控提示应保持可见，message=%s", env.Message)
+	}
+	if !strings.Contains(env.Message, strconv.Itoa(bulkids.MaxIDs)) || !strings.Contains(env.Message, strconv.Itoa(bulkids.MaxIDs+1)) {
+		t.Fatalf("受控提示应带上限与本次条数，message=%s", env.Message)
 	}
 }

@@ -7,7 +7,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/shell"
-	"go_wp/pkg/bulkids"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
@@ -285,10 +284,10 @@ func (h *Handle) BulkPricing(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
-	// 归一口径与其余批量端点同一个纯函数：去空白 / 去重 / 上限 MaxIDs，超限整批拒绝。
-	ids, err := bulkids.Normalize(req.IDs)
-	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+	// 归一口径与其余批量端点同一个纯函数：去空白 / 去重 / 上限 MaxIDs，超限整批拒绝
+	//（回执带「上限 / 本次条数」两个数字，见 productBulkIDs）。
+	ids, ok := productBulkIDs(c, req.IDs)
+	if !ok {
 		return
 	}
 	// 没勾选就提交：明确拒绝，不是「0 个改动」的成功回执。页面侧原有这条守卫，随页面 POST
