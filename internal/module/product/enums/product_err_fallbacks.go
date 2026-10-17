@@ -1,5 +1,7 @@
 package productenums
 
+import "go_wp/pkg/facing"
+
 // product_err_fallbacks.go — 商品域**业务错误**词条的 key 与「词条缺失时的中文原文」。
 //
 // 为什么住 enums 而不是控制器（product_jump.go）：key 的归属在本目录，「兜底原文与 key 是一对」；
@@ -27,7 +29,10 @@ package productenums
 
 // ProductErrFallbacks 商品域业务错误的展示兜底：key 是 enums 常量（取值即 sys_i18n 的 item_key）。
 //
-// 表里没有的 key（改到别处去的 / 别模块的）由调用方处理：
+// 本表只在 service 声明处被读：`productenums.Err(key)` 用它给错误配兜底（见文件末尾），
+// 出口（页面 / JSON / HTMX 片段）只认 pkg/facing.FactOf 交出来的事实，不查表。
+//
+// 表里没有的 key 由出口处理：
 //
 //	· inventory / presentation 的 key —— 兜底在 product 的 HTTP 层（见 product_jump.go 的
 //	  productErrForeignFallbacks，那边写明了为什么暂时留在这儿）；
@@ -129,4 +134,16 @@ var ProductErrFallbacks = map[string]string{
 	ErrAttrValueLabelMissing:   "属性值名称必填",                            // 迁移 430_i18n_enums_missing_keys.sql
 	ErrMissingProjectContext:   "构建期拿不到工程上下文，无法读取实体字段（属装配缺陷，请联系管理员）", // 迁移 430
 	ErrCommentPurchaseRequired: "购买过该商品才能发表评论",                       // 迁移 468_product_comment_policy_i18n.sql
+}
+
+// Err 把本包的 key 变成**自带中文兜底**的错误（兜底取 ProductErrFallbacks）。
+//
+// 兜底绑在声明处（本目录）之后，出口只调一次共享判据 pkg/facing.FactOf：
+// 页面出口 adminui.PageErrorFact / PageErrorText 与 JSON 出口 response.ErrorAuto
+// 读同一份事实，控制器不再各查一张表。加一条业务错误 = 本包加常量 + 表里加一句文案。
+//
+// 复合错误用 fmt.Errorf("%w: %s", Err(key), 明细)：facing.FactOf 按 ASCII 冒号切出明细段
+// （Tail），并保留 errors.As 能拿到的 key 与兜底。
+func Err(key string) error {
+	return facing.New(key, ProductErrFallbacks[key])
 }

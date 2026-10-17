@@ -32,7 +32,6 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	productdto "go_wp/internal/module/product/dto"
@@ -98,7 +97,7 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 	// no-store（档位由视图带出，见 dto.ProductListPageView.PageStatus）。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
-		firstErr = errors.New(productenums.ErrInvalidParam)
+		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
 	keyword := ""

@@ -192,7 +192,7 @@ func productBulkDeletedView(c *gin.Context, res *productdto.BulkResult) productB
 	for _, it := range res.Items {
 		row := productBulkItemView{ID: it.ID, Deleted: it.Deleted}
 		if !it.Deleted && it.ReasonKey != "" {
-			row.Message = productErrText(c, errors.New(it.ReasonKey))
+			row.Message = productErrText(c, productenums.Err(it.ReasonKey))
 		}
 		view.Items = append(view.Items, row)
 	}
@@ -1731,7 +1731,7 @@ func productBulkPricedView(c *gin.Context, res *productdto.BulkPricingResult) pr
 	for _, it := range res.Items {
 		row := productBulkItemView{ID: it.ID, Updated: it.Updated}
 		if !it.Updated && it.ReasonKey != "" {
-			row.Message = productErrText(c, errors.New(it.ReasonKey))
+			row.Message = productErrText(c, productenums.Err(it.ReasonKey))
 		}
 		view.Items = append(view.Items, row)
 	}

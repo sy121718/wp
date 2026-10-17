@@ -43,7 +43,7 @@ const maxCategoryDepth = 64
 // CreateCategory 新建分类（ParentID 为空即顶级）。
 func (s *Service) CreateCategory(ctx context.Context, req *productdto.CreateCategoryReq) (res *productdto.CategoryResp, err error) {
 	if req == nil || strings.TrimSpace(req.Name) == "" {
-		return nil, errors.New(productenums.ErrCategoryNameRequired)
+		return nil, productenums.Err(productenums.ErrCategoryNameRequired)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -59,7 +59,7 @@ func (s *Service) CreateCategory(ctx context.Context, req *productdto.CreateCate
 	if taken, serr := s.m.CategorySlugExists(ctx, projectID, slug, ""); serr != nil {
 		return nil, serr
 	} else if taken {
-		return nil, errors.New(productenums.ErrCategorySlugTaken)
+		return nil, productenums.Err(productenums.ErrCategorySlugTaken)
 	}
 	parentID, err := s.resolveCategoryParent(ctx, projectID, strings.TrimSpace(req.ParentID), "")
 	if err != nil {
@@ -138,7 +138,7 @@ func (s *Service) syncCategoryArchive(ctx context.Context, projectID, categoryID
 // （否则树上会出现自环或环，列表接口再也列不出这些节点）。
 func (s *Service) UpdateCategory(ctx context.Context, req *productdto.UpdateCategoryReq) (res *productdto.CategoryResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -151,19 +151,19 @@ func (s *Service) UpdateCategory(ctx context.Context, req *productdto.UpdateCate
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, errors.New(productenums.ErrCategoryNameRequired)
+			return nil, productenums.Err(productenums.ErrCategoryNameRequired)
 		}
 		e.Name = name
 	}
 	if req.Slug != nil {
 		slug := normalizeSlug(*req.Slug)
 		if slug == "" {
-			return nil, errors.New(productenums.ErrInvalidParam)
+			return nil, productenums.Err(productenums.ErrInvalidParam)
 		}
 		if taken, serr := s.m.CategorySlugExists(ctx, e.ProjectID, slug, e.ID); serr != nil {
 			return nil, serr
 		} else if taken {
-			return nil, errors.New(productenums.ErrCategorySlugTaken)
+			return nil, productenums.Err(productenums.ErrCategorySlugTaken)
 		}
 		e.Slug = slug
 	}
@@ -216,7 +216,7 @@ func (s *Service) UpdateCategory(ctx context.Context, req *productdto.UpdateCate
 // GetCategory 分类详情。
 func (s *Service) GetCategory(ctx context.Context, req *productdto.GetCategoryReq) (res *productdto.CategoryResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -251,7 +251,7 @@ func (s *Service) ListCategories(ctx context.Context, req *productdto.ListCatego
 // 旧的 ListCategories（全树契约）留给构建期与其它调用方，本方法管后台分页。
 func (s *Service) ListCategoryPage(ctx context.Context, req *productdto.ListCategoryPageReq) (res *productdto.CategoryPageResp, err error) {
 	if req == nil {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, strings.TrimSpace(req.ProjectID))
 	if err != nil {
@@ -320,7 +320,7 @@ func categoryFilter(req *productdto.ListCategoryReq) (projectID, keyword string)
 //  2. 仍被商品引用（附属或主分类）→ 拒绝，调用方需先解绑。
 func (s *Service) DeleteCategory(ctx context.Context, req *productdto.DeleteCategoryReq) (err error) {
 	if req == nil || req.ID == "" {
-		return errors.New(productenums.ErrInvalidParam)
+		return productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -332,7 +332,7 @@ func (s *Service) DeleteCategory(ctx context.Context, req *productdto.DeleteCate
 	if n, cerr := s.m.CountCategoryChildren(ctx, req.ID, projectID); cerr != nil {
 		return cerr
 	} else if n > 0 {
-		return errors.New(productenums.ErrCategoryHasChildren)
+		return productenums.Err(productenums.ErrCategoryHasChildren)
 	}
 	// 引用检查必须**跨工程**（审计 DB-03 §1.2 / §5.1 第 2 条）：此前的 ProductUsingCategory 把
 	// 作用域收在本工程，别的工程仍引用这条分类时命中 0 行 ⇒ 删除放行 ⇒ products.category_ids
@@ -369,18 +369,18 @@ func (s *Service) resolveCategoryParent(ctx context.Context, projectID, parentID
 	parent, err := s.m.GetCategory(ctx, parentID, projectID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(productenums.ErrCategoryNotFound)
+			return nil, productenums.Err(productenums.ErrCategoryNotFound)
 		}
 		return nil, err
 	}
 	if projectID != "" && parent.ProjectID != projectID {
-		return nil, errors.New(productenums.ErrCategoryParentMismatch)
+		return nil, productenums.Err(productenums.ErrCategoryParentMismatch)
 	}
 	if selfID != "" {
 		cur := parent
 		for depth := 0; depth < maxCategoryDepth && cur != nil; depth++ {
 			if cur.ID == selfID {
-				return nil, errors.New(productenums.ErrCategoryCycle)
+				return nil, productenums.Err(productenums.ErrCategoryCycle)
 			}
 			if cur.ParentID == nil || *cur.ParentID == "" {
 				break
@@ -442,12 +442,12 @@ func (s *Service) applyCategoryRefs(
 		row, gerr := s.m.GetCategory(ctx, value, projectID)
 		if gerr != nil {
 			if errors.Is(gerr, gorm.ErrRecordNotFound) {
-				return nil, nil, errors.New(productenums.ErrCategoryNotFound)
+				return nil, nil, productenums.Err(productenums.ErrCategoryNotFound)
 			}
 			return nil, nil, gerr
 		}
 		if projectID != "" && row.ProjectID != projectID {
-			return nil, nil, errors.New(productenums.ErrCategoryProjectMismatch)
+			return nil, nil, productenums.Err(productenums.ErrCategoryProjectMismatch)
 		}
 		if !containsID(ids, value) {
 			if explicit {
@@ -493,10 +493,10 @@ func (s *Service) validateCategoryIDs(ctx context.Context, projectID string, in 
 	for _, id := range dedup {
 		row, ok := byID[id]
 		if !ok {
-			return nil, errors.New(productenums.ErrCategoryNotFound)
+			return nil, productenums.Err(productenums.ErrCategoryNotFound)
 		}
 		if projectID != "" && row.ProjectID != projectID {
-			return nil, errors.New(productenums.ErrCategoryProjectMismatch)
+			return nil, productenums.Err(productenums.ErrCategoryProjectMismatch)
 		}
 		out = append(out, id)
 	}
@@ -597,7 +597,7 @@ func toCategoryResp(e *productmodel.ProductCategoryEntity) *productdto.CategoryR
 // CreateBrand 新建品牌。
 func (s *Service) CreateBrand(ctx context.Context, req *productdto.CreateBrandReq) (res *productdto.BrandResp, err error) {
 	if req == nil || strings.TrimSpace(req.Name) == "" {
-		return nil, errors.New(productenums.ErrBrandNameRequired)
+		return nil, productenums.Err(productenums.ErrBrandNameRequired)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -613,7 +613,7 @@ func (s *Service) CreateBrand(ctx context.Context, req *productdto.CreateBrandRe
 	if taken, serr := s.m.BrandSlugExists(ctx, projectID, slug, ""); serr != nil {
 		return nil, serr
 	} else if taken {
-		return nil, errors.New(productenums.ErrBrandSlugTaken)
+		return nil, productenums.Err(productenums.ErrBrandSlugTaken)
 	}
 	now := time.Now().UTC()
 	e := &productmodel.ProductBrandEntity{
@@ -643,7 +643,7 @@ func (s *Service) CreateBrand(ctx context.Context, req *productdto.CreateBrandRe
 // UpdateBrand 修改品牌（含改名 / 换 slug / 换 logo / 描述与 SEO 字段）。
 func (s *Service) UpdateBrand(ctx context.Context, req *productdto.UpdateBrandReq) (res *productdto.BrandResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -656,19 +656,19 @@ func (s *Service) UpdateBrand(ctx context.Context, req *productdto.UpdateBrandRe
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, errors.New(productenums.ErrBrandNameRequired)
+			return nil, productenums.Err(productenums.ErrBrandNameRequired)
 		}
 		e.Name = name
 	}
 	if req.Slug != nil {
 		slug := normalizeSlug(*req.Slug)
 		if slug == "" {
-			return nil, errors.New(productenums.ErrInvalidParam)
+			return nil, productenums.Err(productenums.ErrInvalidParam)
 		}
 		if taken, serr := s.m.BrandSlugExists(ctx, e.ProjectID, slug, e.ID); serr != nil {
 			return nil, serr
 		} else if taken {
-			return nil, errors.New(productenums.ErrBrandSlugTaken)
+			return nil, productenums.Err(productenums.ErrBrandSlugTaken)
 		}
 		e.Slug = slug
 	}
@@ -710,7 +710,7 @@ func (s *Service) UpdateBrand(ctx context.Context, req *productdto.UpdateBrandRe
 // GetBrand 品牌详情。
 func (s *Service) GetBrand(ctx context.Context, req *productdto.GetBrandReq) (res *productdto.BrandResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -766,7 +766,7 @@ func brandFilter(req *productdto.ListBrandReq) (projectID, keyword string) {
 // 而调用方（后台/接口）看不到任何信号。
 func (s *Service) DeleteBrand(ctx context.Context, req *productdto.DeleteBrandReq) (err error) {
 	if req == nil || req.ID == "" {
-		return errors.New(productenums.ErrInvalidParam)
+		return productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -810,12 +810,12 @@ func (s *Service) resolveBrandID(ctx context.Context, projectID, brandID string)
 	row, err := s.m.GetBrand(ctx, brandID, projectID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(productenums.ErrBrandNotFound)
+			return nil, productenums.Err(productenums.ErrBrandNotFound)
 		}
 		return nil, err
 	}
 	if projectID != "" && row.ProjectID != projectID {
-		return nil, errors.New(productenums.ErrBrandProjectMismatch)
+		return nil, productenums.Err(productenums.ErrBrandProjectMismatch)
 	}
 	return &row.ID, nil
 }

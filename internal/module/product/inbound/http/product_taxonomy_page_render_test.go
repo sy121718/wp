@@ -148,7 +148,7 @@ func TestTaxonomyPagesLoadFailureRendersSamePage(t *testing.T) {
 func TestTaxonomyPagesUnknownProjectIsBadRequest(t *testing.T) {
 	for _, p := range taxonomyPages {
 		t.Run(p.name, func(t *testing.T) {
-			rec := productPageRequestFor(t, taxonomyHandle(failTaxonomyView(p, http.StatusBadRequest, errors.New(productenums.ErrInvalidParam))), p.route, p.basePath+"?project=does-not-exist")
+			rec := productPageRequestFor(t, taxonomyHandle(failTaxonomyView(p, http.StatusBadRequest, productenums.Err(productenums.ErrInvalidParam))), p.route, p.basePath+"?project=does-not-exist")
 			assertProductPageFailure(t, p.name+"未知工程", rec, http.StatusBadRequest, "请求参数无效")
 		})
 	}

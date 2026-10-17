@@ -23,7 +23,6 @@ package productservice
 import (
 	"cmp"
 	"context"
-	"errors"
 	json "go_wp/pkg/jsonx"
 	"slices"
 	"strings"
@@ -45,7 +44,7 @@ import (
 // 未显式给工程时与商品一样取唯一工程兜底。
 func (s *Service) CreateAttribute(ctx context.Context, req *productdto.CreateAttributeReq) (res *productdto.AttributeResp, err error) {
 	if req == nil || strings.TrimSpace(req.Name) == "" {
-		return nil, errors.New(productenums.ErrAttrNameRequired)
+		return nil, productenums.Err(productenums.ErrAttrNameRequired)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -61,7 +60,7 @@ func (s *Service) CreateAttribute(ctx context.Context, req *productdto.CreateAtt
 	if taken, kerr := s.m.AttributeKeyExists(ctx, projectID, key, ""); kerr != nil {
 		return nil, kerr
 	} else if taken {
-		return nil, errors.New(productenums.ErrAttrKeyTaken)
+		return nil, productenums.Err(productenums.ErrAttrKeyTaken)
 	}
 
 	now := time.Now().UTC()
@@ -100,7 +99,7 @@ func (s *Service) CreateAttribute(ctx context.Context, req *productdto.CreateAtt
 // Key 允许改（属性组尚未被变体引用时确实存在改名需求），但工程内仍须唯一。
 func (s *Service) UpdateAttribute(ctx context.Context, req *productdto.UpdateAttributeReq) (res *productdto.AttributeResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -113,19 +112,19 @@ func (s *Service) UpdateAttribute(ctx context.Context, req *productdto.UpdateAtt
 	if req.Key != nil {
 		key := normalizeAttrToken(*req.Key)
 		if key == "" {
-			return nil, errors.New(productenums.ErrAttrKeyRequired)
+			return nil, productenums.Err(productenums.ErrAttrKeyRequired)
 		}
 		if taken, kerr := s.m.AttributeKeyExists(ctx, e.ProjectID, key, e.ID); kerr != nil {
 			return nil, kerr
 		} else if taken {
-			return nil, errors.New(productenums.ErrAttrKeyTaken)
+			return nil, productenums.Err(productenums.ErrAttrKeyTaken)
 		}
 		e.Key = key
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, errors.New(productenums.ErrAttrNameRequired)
+			return nil, productenums.Err(productenums.ErrAttrNameRequired)
 		}
 		e.Name = name
 	}
@@ -154,7 +153,7 @@ func (s *Service) UpdateAttribute(ctx context.Context, req *productdto.UpdateAtt
 // SetAttributeValues 整体保存属性组的值（全量替换语义，见 dto 注释）。
 func (s *Service) SetAttributeValues(ctx context.Context, req *productdto.SetAttributeValuesReq) (res *productdto.AttributeResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -186,7 +185,7 @@ func (s *Service) SetAttributeValues(ctx context.Context, req *productdto.SetAtt
 // GetAttribute 属性组详情。
 func (s *Service) GetAttribute(ctx context.Context, req *productdto.GetAttributeReq) (res *productdto.AttributeResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -250,7 +249,7 @@ func attributeFilter(req *productdto.ListAttributeReq) (projectID, keyword strin
 // 兜底，删掉就会留下悬空引用（商品详情页读到不存在的组）。调用方需先解绑。
 func (s *Service) DeleteAttribute(ctx context.Context, req *productdto.DeleteAttributeReq) (err error) {
 	if req == nil || req.ID == "" {
-		return errors.New(productenums.ErrInvalidParam)
+		return productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -402,10 +401,10 @@ func (s *Service) resolveAttributeIDs(ctx context.Context, projectID string, ids
 	for _, id := range dedup {
 		row, ok := byID[id]
 		if !ok {
-			return nil, errors.New(productenums.ErrAttrNotFound)
+			return nil, productenums.Err(productenums.ErrAttrNotFound)
 		}
 		if projectID != "" && row.ProjectID != projectID {
-			return nil, errors.New(productenums.ErrAttrProjectMismatch)
+			return nil, productenums.Err(productenums.ErrAttrProjectMismatch)
 		}
 		out = append(out, id)
 	}

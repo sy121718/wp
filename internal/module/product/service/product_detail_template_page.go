@@ -18,7 +18,6 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -68,7 +67,7 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
-		firstErr = errors.New(productenums.ErrInvalidParam)
+		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
 	if firstErr == nil && productID == "" {
@@ -92,7 +91,7 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 			view.HTTPStatus = 404
 		case isProductErrKey(derr, productenums.ErrInvalidParam):
 			view.HTTPStatus = 400
-			firstErr = errors.New(productenums.ErrInvalidParam)
+			firstErr = productenums.Err(productenums.ErrInvalidParam)
 		default:
 			// 其余（含 detail 为 nil 的畸形返回）= 500：「读不出来」与「不存在」必须分开。
 			if derr == nil {

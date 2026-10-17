@@ -107,7 +107,7 @@ func firstNonEmptyCode(values ...string) string {
 // 单变体商品在前台按普通商品呈现，不显示规格选择器。
 func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *productdto.ProductResp, err error) {
 	if req == nil || strings.TrimSpace(req.Name) == "" {
-		return nil, errors.New(productenums.ErrNameRequired)
+		return nil, productenums.Err(productenums.ErrNameRequired)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -124,7 +124,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if taken, serr := s.m.SlugExists(ctx, projectID, slug, ""); serr != nil {
 		return nil, serr
 	} else if taken {
-		return nil, errors.New(productenums.ErrSlugTaken)
+		return nil, productenums.Err(productenums.ErrSlugTaken)
 	}
 
 	// 属性引用先校验再落库（同一工程内 + 必须存在，见 resolveAttributeIDs）。
@@ -168,7 +168,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	// 捆绑容器必须自定价：成员价不参与计价，容器价为空就是「0 元套餐」——
 	// 列表与详情会显示 0.00，前台无从判断这是免费还是没配。
 	if productType == productmodel.TypeBundle && (req.DefaultPrice == nil || *req.DefaultPrice <= 0) {
-		return nil, errors.New(productenums.ErrBundlePriceRequired)
+		return nil, productenums.Err(productenums.ErrBundlePriceRequired)
 	}
 	// 「跟踪数量」开关与数量框的同组绑定（原 dto.TrackedQuantity 的语义，页面迁到 JSON 写基座后
 	// 归一到 service）：勾了跟踪却还没填数量 = 明确 0（没货），与「压根不跟踪 = 无限」是两件事。
@@ -359,7 +359,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 // Update 修改商品（含 slug 改名；变体走独立接口）。
 func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *productdto.ProductResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -378,26 +378,26 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 			return nil, terr
 		}
 		if want != e.Type {
-			return nil, errors.New(productenums.ErrProductTypeImmutable)
+			return nil, productenums.Err(productenums.ErrProductTypeImmutable)
 		}
 	}
 	// issue #19：改前快照必须在任何赋值之前取（之后的字段级 diff 以它为基准）。
 	before := productChangeSnapshot(e)
 	if req.Name != nil {
 		if strings.TrimSpace(*req.Name) == "" {
-			return nil, errors.New(productenums.ErrNameRequired)
+			return nil, productenums.Err(productenums.ErrNameRequired)
 		}
 		e.Name = strings.TrimSpace(*req.Name)
 	}
 	if req.Slug != nil {
 		slug := normalizeSlug(*req.Slug)
 		if slug == "" {
-			return nil, errors.New(productenums.ErrInvalidParam)
+			return nil, productenums.Err(productenums.ErrInvalidParam)
 		}
 		if taken, serr := s.m.SlugExists(ctx, e.ProjectID, slug, e.ID); serr != nil {
 			return nil, serr
 		} else if taken {
-			return nil, errors.New(productenums.ErrSlugTaken)
+			return nil, productenums.Err(productenums.ErrSlugTaken)
 		}
 		e.Slug = slug
 	}
@@ -502,7 +502,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		// 给了空串即拒绝：静默忽略会让运营以为改成功了（页面上又看不出差别）。
 		custom := strings.TrimSpace(*req.SKUCode)
 		if custom == "" {
-			return nil, errors.New(productenums.ErrContainerSkuInvalid)
+			return nil, productenums.Err(productenums.ErrContainerSkuInvalid)
 		}
 		// 编辑路径不补仓码前缀：仓码前缀是创建时按归属仓确定的，UpdateReq 没有仓上下文，
 		// 不在这里猜（要换主体编码的仓前缀，走新建商品）。
@@ -557,7 +557,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 // Get 商品详情（含变体与价格区间）。
 func (s *Service) Get(ctx context.Context, req *productdto.GetReq) (res *productdto.ProductResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -615,7 +615,7 @@ func (s *Service) List(ctx context.Context, req *productdto.ListReq) (list []*pr
 // 关键词与状态在此归一（TrimSpace）—— handler 传来的原始查询串不是可信边界。
 func (s *Service) CountProducts(ctx context.Context, req *productdto.ListReq) (n int64, err error) {
 	if req == nil {
-		return 0, errors.New(productenums.ErrInvalidParam)
+		return 0, productenums.Err(productenums.ErrInvalidParam)
 	}
 	return s.m.Count(ctx, req.ProjectID, strings.TrimSpace(req.Keyword), req.Status)
 }
@@ -623,7 +623,7 @@ func (s *Service) CountProducts(ctx context.Context, req *productdto.ListReq) (n
 // Delete 删除商品（变体连带删除）。
 func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err error) {
 	if req == nil || req.ID == "" {
-		return errors.New(productenums.ErrInvalidParam)
+		return productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, gerr := s.resolveProjectID(ctx, req.ProjectID)
 	if gerr != nil {
@@ -817,7 +817,7 @@ func (s *Service) ensureContainerSKUFree(ctx context.Context, projectID, skuCode
 		return qerr
 	}
 	if taken {
-		return errors.New(productenums.ErrContainerSKUTaken)
+		return productenums.Err(productenums.ErrContainerSKUTaken)
 	}
 	return nil
 }
@@ -832,11 +832,11 @@ func mapContainerSKUConflict(err error) error {
 		return nil
 	}
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
-		return errors.New(productenums.ErrContainerSKUTaken)
+		return productenums.Err(productenums.ErrContainerSKUTaken)
 	}
 	msg := err.Error()
 	if strings.Contains(msg, "23505") || strings.Contains(msg, "uq_products_project_sku_code") {
-		return errors.New(productenums.ErrContainerSKUTaken)
+		return productenums.Err(productenums.ErrContainerSKUTaken)
 	}
 	return err
 }
@@ -934,7 +934,7 @@ func (s *Service) resolveRelatedIDs(ctx context.Context, projectID, selfID strin
 		parts = append(parts, i18n.ErrorDetail(productenums.DetailRelatedCrossProject,
 			"n", strconv.Itoa(len(crossProject)), "ids", strings.Join(crossProject, "；")))
 	}
-	return nil, fmt.Errorf("%s：%s", productenums.ErrRelatedInvalid, i18n.JoinErrorDetails(parts...))
+	return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrRelatedInvalid), i18n.JoinErrorDetails(parts...))
 }
 
 // attributeRespByProduct 批量取各商品引用的属性组（列表页专用，零 N+1）。
@@ -1299,12 +1299,12 @@ const maxRatingScore = 5
 // 否则可以往别的工程的商品上写评分）。
 func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (res *productdto.RatingResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	// 0 分是合法评分，只有「没传」与越界才拒：dto 上 Score 是 *float64，
 	// 页面的 input[type=number][min=0][max=5] 是前一道（更早、也更具体）的拦截。
 	if req.Score == nil || *req.Score < 0 || *req.Score > maxRatingScore {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -1336,7 +1336,7 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 // ListRatings 取某商品的评分明细与投影值。
 func (s *Service) ListRatings(ctx context.Context, req *productdto.ListRatingsReq) (res *productdto.RatingResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -1351,7 +1351,7 @@ func (s *Service) ListRatings(ctx context.Context, req *productdto.ListRatingsRe
 // DeleteRating 删除一条评分（不存在即报找不到，不静默成功）。
 func (s *Service) DeleteRating(ctx context.Context, req *productdto.DeleteRatingReq) (err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return errors.New(productenums.ErrInvalidParam)
+		return productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -1463,7 +1463,7 @@ func (s *Service) AllowComment(ctx context.Context, req *commentcontract.PolicyR
 // UpdateVariantCost 写变体成本价（只动 cost_price 一列）并留痕。
 func (s *Service) UpdateVariantCost(ctx context.Context, projectID, variantID string, cost float64, operatorID string) (err error) {
 	if strings.TrimSpace(variantID) == "" {
-		return errors.New(productenums.ErrInvalidParam)
+		return productenums.Err(productenums.ErrInvalidParam)
 	}
 	// 留痕端口未注入（纯商品单测路径）时不读库、不写记录，只做成本价回写本身。
 	var (

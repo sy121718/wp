@@ -113,6 +113,11 @@ func (f *crossRefFixture) setProductRef(t *testing.T, productID, column, value s
 
 // refGuardErrKey 把「key：明细」形态的业务错误拆成 key 与明细（删除守卫的拒绝口径）。
 func refGuardErrKey(msg string) (key, tail string) {
+	// service 用 fmt.Errorf("%w: %s", …) 拼「key + 明细」（facing 只认 ASCII 冒号）；
+	// 全角那一档是历史形态的兼容读法，两处都能切开。
+	if i := strings.Index(msg, ": "); i >= 0 {
+		return msg[:i], strings.TrimSpace(msg[i+2:])
+	}
 	if i := strings.Index(msg, "："); i >= 0 {
 		return msg[:i], strings.TrimSpace(msg[i+len("："):])
 	}

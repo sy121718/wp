@@ -32,7 +32,6 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"strconv"
@@ -84,11 +83,11 @@ func normalizeBundleItems(raw json.RawMessage) (out json.RawMessage, err error) 
 		return defaultBundleItemsJSON, nil
 	}
 	if !strings.HasPrefix(trimmed, "{") {
-		return nil, errors.New(productenums.ErrBundleShapeInvalid)
+		return nil, productenums.Err(productenums.ErrBundleShapeInvalid)
 	}
 	var cfg productdto.BundleConfig
 	if uerr := json.Unmarshal(raw, &cfg); uerr != nil {
-		return nil, errors.New(productenums.ErrBundleShapeInvalid)
+		return nil, productenums.Err(productenums.ErrBundleShapeInvalid)
 	}
 	if cfg.MaxOptions <= 0 {
 		cfg.MaxOptions = productdto.BundleDefaultMaxOptions
@@ -125,7 +124,7 @@ func decodeBundleConfig(raw json.RawMessage) (cfg productdto.BundleConfig) {
 // GetBundleConfig 读某商品的捆绑配置（含每项的 SKU 快照与真源可用量）。
 func (s *Service) GetBundleConfig(ctx context.Context, req *productdto.GetBundleConfigReq) (res *productdto.BundleConfigResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -141,7 +140,7 @@ func (s *Service) GetBundleConfig(ctx context.Context, req *productdto.GetBundle
 // SetBundleConfig 保存捆绑配置（整体替换）+ 落主数据变更记录。
 func (s *Service) SetBundleConfig(ctx context.Context, req *productdto.SetBundleConfigReq) (res *productdto.BundleConfigResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -229,20 +228,20 @@ func (s *Service) ListBundleSKUs(ctx context.Context, req *productdto.ListBundle
 func (s *Service) validateBundleConfig(ctx context.Context, product *productmodel.ProductEntity, in productdto.BundleConfig) (out productdto.BundleConfig, err error) {
 	out = productdto.NewEmptyBundleConfig()
 	if in.MaxOptions < 0 || in.MaxOptions > productdto.BundleMaxOptionsLimit {
-		return out, errors.New(productenums.ErrBundleMaxOptionsInvalid)
+		return out, productenums.Err(productenums.ErrBundleMaxOptionsInvalid)
 	}
 	if in.MaxOptions > 0 {
 		out.MaxOptions = in.MaxOptions
 	}
 	if len(in.Options) > out.MaxOptions {
-		return out, errors.New(productenums.ErrBundleOptionsExceeded)
+		return out, productenums.Err(productenums.ErrBundleOptionsExceeded)
 	}
 	if in.MinTotalQty < 0 || in.MinTotalQty > productdto.BundleMaxQtyLimit ||
 		in.MaxTotalQty < 0 || in.MaxTotalQty > productdto.BundleMaxQtyLimit {
-		return out, errors.New(productenums.ErrBundleQtyInvalid)
+		return out, productenums.Err(productenums.ErrBundleQtyInvalid)
 	}
 	if in.MaxTotalQty > 0 && in.MinTotalQty > in.MaxTotalQty {
-		return out, errors.New(productenums.ErrBundleTotalRangeInvalid)
+		return out, productenums.Err(productenums.ErrBundleTotalRangeInvalid)
 	}
 	out.MinTotalQty, out.MaxTotalQty = in.MinTotalQty, in.MaxTotalQty
 
@@ -250,13 +249,13 @@ func (s *Service) validateBundleConfig(ctx context.Context, product *productmode
 	for _, o := range in.Options {
 		vid := strings.TrimSpace(o.VariantID)
 		if vid == "" {
-			return out, errors.New(productenums.ErrBundleVariantRequired)
+			return out, productenums.Err(productenums.ErrBundleVariantRequired)
 		}
 		if _, perr := uuid.Parse(vid); perr != nil {
-			return out, errors.New(productenums.ErrInvalidParam)
+			return out, productenums.Err(productenums.ErrInvalidParam)
 		}
 		if seen[vid] {
-			return out, errors.New(productenums.ErrBundleVariantDuplicated)
+			return out, productenums.Err(productenums.ErrBundleVariantDuplicated)
 		}
 		seen[vid] = true
 
@@ -276,7 +275,7 @@ func (s *Service) validateBundleConfig(ctx context.Context, product *productmode
 		if o.DefaultQty < 0 || o.MinQty < 0 || o.MaxQty < 0 ||
 			o.DefaultQty > productdto.BundleMaxQtyLimit || o.MaxQty > productdto.BundleMaxQtyLimit ||
 			o.MinQty > productdto.BundleMaxQtyLimit {
-			return out, errors.New(productenums.ErrBundleQtyInvalid)
+			return out, productenums.Err(productenums.ErrBundleQtyInvalid)
 		}
 		item.MinQty = o.MinQty
 		if o.Required && item.MinQty < 1 {
@@ -285,11 +284,11 @@ func (s *Service) validateBundleConfig(ctx context.Context, product *productmode
 		}
 		item.DefaultQty = o.DefaultQty
 		if item.DefaultQty < item.MinQty {
-			return out, errors.New(productenums.ErrBundleQtyRangeInvalid)
+			return out, productenums.Err(productenums.ErrBundleQtyRangeInvalid)
 		}
 		item.MaxQty = o.MaxQty
 		if item.MaxQty > 0 && (item.MaxQty < item.MinQty || item.MaxQty < item.DefaultQty) {
-			return out, errors.New(productenums.ErrBundleQtyRangeInvalid)
+			return out, productenums.Err(productenums.ErrBundleQtyRangeInvalid)
 		}
 		out.Options = append(out.Options, item)
 	}
@@ -305,7 +304,7 @@ func (s *Service) validateBundleConfig(ctx context.Context, product *productmode
 			return out, lerr
 		}
 		if len(variants) != len(ids) {
-			return out, errors.New(productenums.ErrBundleVariantNotFound)
+			return out, productenums.Err(productenums.ErrBundleVariantNotFound)
 		}
 		productIDs := make([]string, 0, len(variants))
 		for _, v := range variants {
@@ -323,10 +322,10 @@ func (s *Service) validateBundleConfig(ctx context.Context, product *productmode
 		}
 		for _, v := range variants {
 			if v.ProductID == product.ID {
-				return out, errors.New(productenums.ErrBundleSelfReference)
+				return out, productenums.Err(productenums.ErrBundleSelfReference)
 			}
 			if projectOf[v.ProductID] != product.ProjectID {
-				return out, errors.New(productenums.ErrBundleVariantProjectMismatch)
+				return out, productenums.Err(productenums.ErrBundleVariantProjectMismatch)
 			}
 		}
 	}
@@ -344,7 +343,7 @@ func (s *Service) validateBundleConfig(ctx context.Context, product *productmode
 			}
 		}
 		if reachable >= 0 && reachable < out.MinTotalQty {
-			return out, errors.New(productenums.ErrBundleTotalUnreachable)
+			return out, productenums.Err(productenums.ErrBundleTotalUnreachable)
 		}
 	}
 	// 整单上限不得低于必选项的最小量之和：低于时任何合法选择都超上限。
@@ -356,7 +355,7 @@ func (s *Service) validateBundleConfig(ctx context.Context, product *productmode
 			}
 		}
 		if requiredMin > out.MaxTotalQty {
-			return out, errors.New(productenums.ErrBundleTotalRangeInvalid)
+			return out, productenums.Err(productenums.ErrBundleTotalRangeInvalid)
 		}
 	}
 	return out, nil
@@ -374,7 +373,7 @@ func normalizeBundleMemberSource(o productdto.BundleOption) (src productdto.Bund
 		return src, nil
 	case productenums.BundleSourceProduct, productenums.BundleSourceWarehouse, productenums.BundleSourceAttributes:
 	default:
-		return src, errors.New(productenums.ErrBundleSourceInvalid)
+		return src, productenums.Err(productenums.ErrBundleSourceInvalid)
 	}
 	src.Kind = kind
 	if kind != productenums.BundleSourceWarehouse {
@@ -442,7 +441,7 @@ func (s *Service) bundleConfigResp(ctx context.Context, e *productmodel.ProductE
 // 拿不到权威值时的正确行为是拒绝，而不是猜。
 func (s *Service) availableQuantities(ctx context.Context, projectID string, variantIDs []string) (out map[string]int, err error) {
 	if s.availability == nil {
-		return nil, errors.New(productenums.ErrBundleStockUnavailable)
+		return nil, productenums.Err(productenums.ErrBundleStockUnavailable)
 	}
 	if len(variantIDs) == 0 {
 		return map[string]int{}, nil
@@ -498,7 +497,7 @@ const BundleMemberResolveLimit = 200
 // ResolveBundleMembers 解析一批候选成员（不落库；写入只发生在 SetBundleConfig）。
 func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.ResolveBundleMembersReq) (res *productdto.ResolveBundleMembersResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -512,7 +511,7 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 	switch source {
 	case productenums.BundleSourceProduct, productenums.BundleSourceWarehouse, productenums.BundleSourceAttributes:
 	default:
-		return nil, errors.New(productenums.ErrBundleSourceInvalid)
+		return nil, productenums.Err(productenums.ErrBundleSourceInvalid)
 	}
 	// 上限取该容器自己的配置（运营设的 maxOptions）：解析时就把超出的候选逐条列出来，
 	// 而不是先追加一屏、等保存时再整批报「选项数超过上限」。
@@ -583,12 +582,12 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 		// inventory_stocks.variant_id 是 NOT NULL，所以这条来路一定能定位到变体 ——
 		// 本实现刻意不造「无变体的成员」。
 		if s.invSvc == nil {
-			return nil, errors.New(productenums.ErrBundleStockUnavailable)
+			return nil, productenums.Err(productenums.ErrBundleStockUnavailable)
 		}
 		warehouseID := strings.TrimSpace(req.WarehouseID)
 		skus := normalizeBundleWarehouseSKUs(req.WarehouseSKUs)
 		if warehouseID == "" || len(skus) == 0 {
-			return nil, errors.New(productenums.ErrBundleSourceWarehouseRequired)
+			return nil, productenums.Err(productenums.ErrBundleSourceWarehouseRequired)
 		}
 		if len(skus) > BundleMemberResolveLimit {
 			skus = skus[:BundleMemberResolveLimit]
@@ -651,7 +650,7 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 		}
 		total := combinationCount(dims)
 		if total > MaxVariantCombinations {
-			return nil, fmt.Errorf("%s：%s", productenums.ErrVariationCountLimit,
+			return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrVariationCountLimit),
 				i18n.ErrorDetail(productenums.DetailVariationCountExceed,
 					"n", strconv.Itoa(total), "max", strconv.Itoa(MaxVariantCombinations)))
 		}
@@ -682,10 +681,10 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 func (s *Service) bundleSourceProduct(ctx context.Context, projectID, containerID, sourceProductID string) (p *productmodel.ProductEntity, err error) {
 	id := strings.TrimSpace(sourceProductID)
 	if id == "" {
-		return nil, errors.New(productenums.ErrBundleSourceProductRequired)
+		return nil, productenums.Err(productenums.ErrBundleSourceProductRequired)
 	}
 	if id == containerID {
-		return nil, errors.New(productenums.ErrBundleSelfReference)
+		return nil, productenums.Err(productenums.ErrBundleSelfReference)
 	}
 	p, err = s.m.Get(ctx, id, projectID)
 	if err != nil {
@@ -793,7 +792,7 @@ func (s *Service) BundleConfiguratorData(ctx context.Context, productID, project
 // 而不是被一个笼统的「选择不合法」盖住。
 func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.ValidateBundleSelectionReq) (res *productdto.BundleSelectionResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -805,7 +804,7 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 	}
 	cfg := decodeBundleConfig(e.BundleItems)
 	if len(cfg.Options) == 0 {
-		return nil, errors.New(productenums.ErrBundleNotConfigured)
+		return nil, productenums.Err(productenums.ErrBundleNotConfigured)
 	}
 
 	// 入参索引：同一 SKU 重复出现一律拒绝（数量必须是一项一条，避免「合并还是不合并」的歧义）。
@@ -813,13 +812,13 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 	for _, it := range req.Items {
 		vid := strings.TrimSpace(it.VariantID)
 		if vid == "" {
-			return nil, errors.New(productenums.ErrBundleVariantRequired)
+			return nil, productenums.Err(productenums.ErrBundleVariantRequired)
 		}
 		if _, dup := chosen[vid]; dup {
-			return nil, errors.New(productenums.ErrBundleVariantDuplicated)
+			return nil, productenums.Err(productenums.ErrBundleVariantDuplicated)
 		}
 		if it.Qty < 0 || it.Qty > productdto.BundleMaxQtyLimit {
-			return nil, errors.New(productenums.ErrBundleQtyInvalid)
+			return nil, productenums.Err(productenums.ErrBundleQtyInvalid)
 		}
 		chosen[vid] = it.Qty
 	}
@@ -829,7 +828,7 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 	}
 	for vid := range chosen {
 		if _, ok := optByVariant[vid]; !ok {
-			return nil, errors.New(productenums.ErrBundleVariantNotInConfig)
+			return nil, productenums.Err(productenums.ErrBundleVariantNotInConfig)
 		}
 	}
 
@@ -840,7 +839,7 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 		qty, ok := chosen[o.VariantID]
 		if !ok {
 			if o.Required {
-				return nil, errors.New(productenums.ErrBundleOptionRequired)
+				return nil, productenums.Err(productenums.ErrBundleOptionRequired)
 			}
 			continue
 		}
@@ -849,19 +848,19 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 			continue
 		}
 		if qty < o.MinQty {
-			return nil, errors.New(productenums.ErrBundleQtyBelowMin)
+			return nil, productenums.Err(productenums.ErrBundleQtyBelowMin)
 		}
 		if o.MaxQty > 0 && qty > o.MaxQty {
-			return nil, errors.New(productenums.ErrBundleQtyAboveMax)
+			return nil, productenums.Err(productenums.ErrBundleQtyAboveMax)
 		}
 		total += qty
 		selected = append(selected, productdto.BundleSelectItem{VariantID: o.VariantID, Qty: qty})
 	}
 	if total < cfg.MinTotalQty {
-		return nil, errors.New(productenums.ErrBundleTotalBelowMin)
+		return nil, productenums.Err(productenums.ErrBundleTotalBelowMin)
 	}
 	if cfg.MaxTotalQty > 0 && total > cfg.MaxTotalQty {
-		return nil, errors.New(productenums.ErrBundleTotalAboveMax)
+		return nil, productenums.Err(productenums.ErrBundleTotalAboveMax)
 	}
 
 	// 库存：可用量只读真源（端口未注入即 fail-closed，绝不按「无限制」放行）。
@@ -875,7 +874,7 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 	}
 	for _, it := range selected {
 		if it.Qty > avail[it.VariantID] {
-			return nil, errors.New(productenums.ErrBundleQtyAboveStock)
+			return nil, productenums.Err(productenums.ErrBundleQtyAboveStock)
 		}
 	}
 
@@ -893,7 +892,7 @@ func (s *Service) ValidateBundleSelection(ctx context.Context, req *productdto.V
 	for _, it := range selected {
 		d := details[it.VariantID]
 		if d == nil {
-			return nil, errors.New(productenums.ErrBundleVariantNotFound)
+			return nil, productenums.Err(productenums.ErrBundleVariantNotFound)
 		}
 		d.Qty = it.Qty
 		if d.CostPrice != nil {

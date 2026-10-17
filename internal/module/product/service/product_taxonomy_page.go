@@ -22,7 +22,6 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	productcontract "go_wp/internal/module/product/contract"
@@ -148,7 +147,7 @@ func (s *Service) ProductCategoriesPage(ctx context.Context, req *productdto.Pro
 	// 工程选择器同源。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
-		firstErr = errors.New(productenums.ErrInvalidParam)
+		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
 	// 每条取数都套 firstErr == nil：主数据或参数一旦判定失败，后面的派生查询一条都不发。
@@ -284,7 +283,7 @@ func (s *Service) ProductBrandsPage(ctx context.Context, req *productdto.Product
 
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
-		firstErr = errors.New(productenums.ErrInvalidParam)
+		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
 	// 过滤条件只构造一次（计数与列表各自复制、只给列表那份填 Page/Size）：两处口径分叉
@@ -365,7 +364,7 @@ func (s *Service) ProductTagsPage(ctx context.Context, req *productdto.ProductTa
 
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
-		firstErr = errors.New(productenums.ErrInvalidParam)
+		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
 	// RuleTypes 全页只查一次：行级编辑片段、页面级新建片段与页面下拉共享同一份清单，

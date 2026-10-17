@@ -161,15 +161,17 @@ var productActionDoneMsg = productMsg{Key: productenums.ProductsActionDone, Fall
 // 本文件剩下的都是**回执事实**：把 service 的错误 / 计数结论变成「一句结论的事实」
 // （key + 中文兜底 + `%s` 参数）或可展示的成品文案（productMsgText）。
 //
-// **错误判定只有一条**：pkg/response.IsBusinessError（`a.b.c` key 或 `Err*` / `Msg*` 常量名），
-// 与 JSON 出口（response.ErrorAuto）同一份。原先本模块自带的第二份真相 ——
+// **错误事实只有一条判据**：pkg/facing.FactOf（三档：自带文案 → 单段 key → `key: 明细`），
+// 与 JSON 出口（response.ErrorAuto）、页面出口（adminui）同一份。原先本模块自带的第二份真相 ——
 // `productErrSentinels` 白名单 + `productErrKey` 逐条比对常量 —— 已整个删除：
 // service 换了措辞、或某个 key 改由别的模块提供（如 inventory / presentation / contenttemplate
 // 的 enums），白名单就静默失配，症状是把业务文案吞成归口、或把内部错误当业务文案透出，
-// 两种都不报错。判定收口到 productErrFact 一处（见 product_page.go）。
+// 两种都不报错。
 //
-// 模块**保留**「key → 中文兜底」的表（productenums.ProductErrFallbacks 是本模块那半张、
-// 不是可透出性判据（与 page 模块的 pageenums.ErrDetailFallbacks 同一性质）。
+// **兜底绑在声明处**：本模块 service 一律 `productenums.Err(key)` 返回自带中文兜底的错误，
+// key 与那句文案同处声明（internal/module/product/enums）；出口经 facing 拿到 Fallback，
+// 不再查本模块的表。只剩「对端模块 enums 还没有兜底表」的那批 key 走
+// productErrForeignFallbacks（只减不增，对方补齐后连表一起删）。
 // ==========================================================================
 type productBulkText struct{ key, fallback string }
 
@@ -280,29 +282,26 @@ var productErrForeignFallbacks = map[string]string{
 	presentationenums.ErrSnapshotMismatch:          "该版本不属于这个商品，不能用来回滚",
 }
 
-// productErrFallbackText key → 已登记的中文兜底（未登记返回空串）。
+// productErrForeignFallbackText 别模块 key → 展示兜底（本模块 key 的兜底由 pkg/facing 随错误带出）。
 //
-// 两段查：先本模块 enums 的表（key 的归属与文案真源都在那儿，见 productenums.ProductErrFallbacks），
-// 再跨模块那张。查表顺序就是优先级，两张表不允许有交集
-// （product_err_fallback_tables_test.go 守着）。
-func productErrFallbackText(key string) string {
+// 本模块 service 一律用 productenums.Err(key) 返回**自带中文兜底**的错误（声明处见
+// productenums.ProductErrFallbacks），出口经 facing.FactOf 直接拿到 Fallback，不再查表。
+// 这条函数只剩「对端 enums 还没有兜底表」的那一批 key（inventory / presentation）——
+// 对方补上 ErrFallbacks 后本表清空、本函数与 productErrForeignFallbacks 一起删。
+func productErrForeignFallbackText(key string) string {
 	if key == "" {
 		return ""
-	}
-	if fb := productenums.ProductErrFallbacks[key]; fb != "" {
-		return fb
 	}
 	return productErrForeignFallbacks[key]
 }
 
 // productErrFactOf 业务错误的判定与拆分（**纯事实**，不记日志）。
 //
-// 判据只有一条：pkg/response.IsBusinessError（与 JSON 出口 response.ErrorAuto 同一份）。
-// 两种入参形态：
-//   - 单段：`ErrBundlePriceRequired` —— 整体就是 key；
-//   - 复合：service 用 fmt.Errorf("%s：%s", key, detail) 把「枚举 + 明细」拼成一整句，
-//     整体过不了锚定的形态判据，所以取**前段**判定。注意本模块用的是**全角冒号**：
-//     adminui.BusinessErrFact 只按 ASCII 冒号切，这里补一刀（判据仍是共享那一份）。
+// 判据只有一条：pkg/facing.FactOf（adminui.BusinessErrFact 是它的转发）——三档入参形态
+// 都在那里判：自带文案（facing.New）→ 单段 key → `key: 明细`（%w 包装）。
+//
+// service 侧只用前两档与 `fmt.Errorf("%w: %s", productenums.Err(key), 明细)`：
+// 全角冒号的复合形态已在本批全部改掉（facing 只按 ASCII 冒号切口），所以这里不再补切。
 //
 // 明细段（tail）原样带出，由 productErrDetailText 解码成当前语言。
 func productErrFactOf(err error) (key, tail string, business bool) {
@@ -311,14 +310,6 @@ func productErrFactOf(err error) (key, tail string, business bool) {
 	}
 	if f, ok := adminui.BusinessErrFact(err); ok {
 		return f.Key, f.Tail, true
-	}
-	raw := strings.TrimSpace(err.Error())
-	if idx := strings.Index(raw, "："); idx > 0 {
-		k := strings.TrimSpace(raw[:idx])
-		t := strings.TrimSpace(raw[idx+len("："):])
-		if k != "" && response.IsBusinessError(errors.New(k)) {
-			return k, t, true
-		}
 	}
 	return "", "", false
 }
@@ -338,11 +329,13 @@ func productErrFactWith(c *gin.Context, err error, logIt bool) adminui.ErrFact {
 	if err == nil {
 		return adminui.ErrFact{}
 	}
-	if key, tail, business := productErrFactOf(err); business {
-		fb := productErrFallbackText(key)
-		if fb == "" {
+	if fact, business := adminui.BusinessErrFact(err); business {
+		key, tail := fact.Key, fact.Tail
+		fb := productErrFallbackOf(key, fact.Fallback)
+		if fb == productErrUnregisteredFallback {
 			// 「有业务形态、但没有展示原文」的 key：对外给稳定的一句兜底（绝不显示裸 key），
 			// 对内记一条 warn 带上 key —— 否则「页面上少了一句该有的话」没有任何信号。
+			// 本模块 key 已由 productenums.Err 随错误带出兜底，走到这里的只有别模块的新 key。
 			if logIt {
 				logger.Scene(productErrScene).
 					With("path", c.Request.URL.Path).
@@ -391,14 +384,20 @@ func productErrMsgOf(c *gin.Context, f adminui.ErrFact) productMsg {
 
 // productErrFallbackOf key → 中文兜底（缺词条时的展示原文，不是可透出性判据）。
 //
-// def 是事实自带的兜底（adminui.ErrFact.Fallback）。都取不到时给**归口文案**（共享那一份），
+// 顺序：**事实自带的兜底优先**（本模块 service 经 productenums.Err 声明，facing 随错误带出），
+// 再查别模块那张表（对端 enums 还没有兜底表），都取不到时给**归口文案** ——
 // 不回落到裸 key：页面上出现 ErrBundlePriceRequired 这种串，运营只会以为后台坏了。
+//
+// def == key 说明「事实没有自带文案」（facing 对单段 key 会把 Fallback 填成 key 本身）。
 func productErrFallbackOf(key, def string) string {
-	if fb := productErrFallbackText(key); fb != "" {
+	if fb := strings.TrimSpace(def); fb != "" && fb != key {
 		return fb
 	}
-	if strings.TrimSpace(def) != "" {
-		return def
+	if fb := productErrForeignFallbackText(key); fb != "" {
+		return fb
+	}
+	if strings.TrimSpace(def) != "" && def == key {
+		return productErrUnregisteredFallback
 	}
 	return adminui.InternalErrorFact().Fallback
 }

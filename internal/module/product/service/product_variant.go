@@ -119,7 +119,7 @@ const (
 // 该 SKU 都会在归属仓生成一条库存记录（初始 0）—— 库存真源在仓库模块。
 func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVariantReq) (res *productdto.VariantResp, err error) {
 	if req == nil || req.ProductID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -141,7 +141,7 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 	if taken, serr := s.m.SKUExists(ctx, p.ID, v.SKUCode, ""); serr != nil {
 		return nil, serr
 	} else if taken {
-		return nil, errors.New(productenums.ErrSkuTaken)
+		return nil, productenums.Err(productenums.ErrSkuTaken)
 	}
 	// 变体行 + 该仓库存行 + 变更记录必须同事务：变体落了库、库存行没建起来
 	//（或留痕没写）就是半截状态，只能靠人工对账发现（AGENTS.md「写操作的事务与回滚」）。
@@ -181,7 +181,7 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 // 编辑路径不做默认值填充：调用方清空某字段就是清空，不回落商品级默认值。
 func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVariantReq) (res *productdto.VariantResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	v, err := s.m.GetVariant(ctx, req.ID)
 	if err != nil {
@@ -204,12 +204,12 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 	if req.SKUCode != nil {
 		code := strings.TrimSpace(*req.SKUCode)
 		if code == "" {
-			return nil, errors.New(productenums.ErrInvalidParam)
+			return nil, productenums.Err(productenums.ErrInvalidParam)
 		}
 		if taken, serr := s.m.SKUExists(ctx, v.ProductID, code, v.ID); serr != nil {
 			return nil, serr
 		} else if taken {
-			return nil, errors.New(productenums.ErrSkuTaken)
+			return nil, productenums.Err(productenums.ErrSkuTaken)
 		}
 		v.SKUCode = code
 	}
@@ -271,7 +271,7 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 // （变体不再存在即无货可存；库存流水与账目留给 issue #16 的流水表）。
 func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVariantReq) (err error) {
 	if req == nil || req.ID == "" {
-		return errors.New(productenums.ErrInvalidParam)
+		return productenums.Err(productenums.ErrInvalidParam)
 	}
 	v, gerr := s.m.GetVariant(ctx, req.ID)
 	if gerr != nil {
@@ -310,10 +310,10 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 		// 错误而不是页面回执，按既有的「key：明细」形态拼接即可（productErrKey 前缀识别），
 		// 运营因此能看到「被哪个工程的哪个商品引用」，而不是只有一句「被捆绑成员引用」。
 		if reason == productenums.VariantSkipHasStock {
-			return errors.New(productenums.ErrVariantHasStock)
+			return productenums.Err(productenums.ErrVariantHasStock)
 		}
 		if detail != "" {
-			return fmt.Errorf("%s：%s", reason, detail)
+			return fmt.Errorf("%w: %s", errors.New(reason), detail)
 		}
 		return errors.New(reason)
 	}
@@ -451,7 +451,7 @@ func (s *Service) uniqueSKUCode(ctx context.Context, productID, base string, tak
 			return candidate, nil
 		}
 	}
-	return "", errors.New(productenums.ErrSkuTaken)
+	return "", productenums.Err(productenums.ErrSkuTaken)
 }
 
 // containerSKUInput 容器主体 SKU 的解析输入（三处调用点共用的形状，本批合并）。
@@ -507,7 +507,7 @@ func buildContainerSKU(slug, custom, warehouseCode string) (string, error) {
 	if code == "" {
 		code = productCodeSegment(slug)
 		if code == "" {
-			return "", errors.New(productenums.ErrSkuContainerMissing)
+			return "", productenums.Err(productenums.ErrSkuContainerMissing)
 		}
 	}
 	return attachWarehousePrefix(code, warehouseCode), nil
@@ -582,7 +582,7 @@ func StripWarehousePrefix(code, warehouseCode string) string {
 func normalizeBundleSKU(custom string) (string, error) {
 	code := strings.TrimSpace(custom)
 	if code == "" {
-		return "", errors.New(productenums.ErrBundleSKURequired)
+		return "", productenums.Err(productenums.ErrBundleSKURequired)
 	}
 	if !strings.HasSuffix(strings.ToUpper(code), strings.ToUpper(BundleSKUSuffix)) {
 		code += BundleSKUSuffix
@@ -699,7 +699,7 @@ type variationDimension struct {
 // GenerateVariants 按勾选的属性值生成全部变体组合（幂等：已存在的组合跳过）。
 func (s *Service) GenerateVariants(ctx context.Context, req *productdto.GenerateVariantsReq) (res *productdto.GenerateVariantsResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, gerr := s.resolveProjectID(ctx, req.ProjectID)
 	if gerr != nil {
@@ -719,7 +719,7 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 	}
 	total := combinationCount(dims)
 	if total > MaxVariantCombinations {
-		return nil, fmt.Errorf("%s：%s", productenums.ErrVariationCountLimit,
+		return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrVariationCountLimit),
 			i18n.ErrorDetail(productenums.DetailVariationCountExceed,
 				"n", strconv.Itoa(total), "max", strconv.Itoa(MaxVariantCombinations)))
 	}
@@ -878,7 +878,7 @@ func buildVariationDimensions(p *productmodel.ProductEntity, attrs []*productmod
 		}
 		seenSel[id] = true
 		if a, ok := byID[id]; !ok || !a.IsVariation {
-			return nil, fmt.Errorf("%s：%s", productenums.ErrVariationAttributeInvalid,
+			return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrVariationAttributeInvalid),
 				i18n.ErrorDetail(productenums.DetailVariationAttributeUnreferenced, "attribute", id))
 		}
 	}
@@ -911,10 +911,10 @@ func buildVariationDimensions(p *productmodel.ProductEntity, attrs []*productmod
 		dims = append(dims, variationDimension{group: a, values: chosen})
 	}
 	if len(dims) == 0 {
-		return nil, errors.New(productenums.ErrVariationNoDimension)
+		return nil, productenums.Err(productenums.ErrVariationNoDimension)
 	}
 	if len(dims) > MaxVariationDimensions {
-		return nil, fmt.Errorf("%s：%s", productenums.ErrVariationDimensionLimit,
+		return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrVariationDimensionLimit),
 			i18n.ErrorDetail(productenums.DetailVariationDimensionExceed,
 				"n", strconv.Itoa(len(dims)), "max", strconv.Itoa(MaxVariationDimensions)))
 	}
@@ -947,7 +947,7 @@ func pickAttributeValues(a *productmodel.ProductAttributeEntity, enabled []produ
 			continue
 		}
 		if !enabledSet[id] {
-			return nil, fmt.Errorf("%s：%s", productenums.ErrVariationValueInvalid,
+			return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrVariationValueInvalid),
 				i18n.ErrorDetail(productenums.DetailVariationValueNotEnabled, "attribute", a.Key, "value", id))
 		}
 		want[id] = true
@@ -1213,7 +1213,7 @@ func shortHash(s string) string {
 // 预览里看到的 SKU 就是保存后落库的那个 SKU，两处各写一套必然分叉。
 func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdto.PreviewVariantReq) (res *productdto.PreviewVariantResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, gerr := s.resolveProjectID(ctx, req.ProjectID)
 	if gerr != nil {
@@ -1233,7 +1233,7 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 	}
 	total := combinationCount(dims)
 	if total > MaxVariantCombinations {
-		return nil, fmt.Errorf("%s：%s", productenums.ErrVariationCountLimit,
+		return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrVariationCountLimit),
 			i18n.ErrorDetail(productenums.DetailVariationCountExceed,
 				"n", strconv.Itoa(total), "max", strconv.Itoa(MaxVariantCombinations)))
 	}
@@ -1297,7 +1297,7 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 //     有过库存流水），命中任一即跳过该行并逐条回带原因，不整批失败。
 func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVariantListReq) (res *productdto.SaveVariantListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, gerr := s.resolveProjectID(ctx, req.ProjectID)
 	if gerr != nil {
@@ -1360,14 +1360,14 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 			kept[v.ID] = true
 			code := normalizeVariantSKU(row.SKUCode)
 			if code == "" {
-				return nil, errors.New(productenums.ErrVariantSKUEmpty)
+				return nil, productenums.Err(productenums.ErrVariantSKUEmpty)
 			}
 			if code == v.SKUCode {
 				// 没改 SKU：这一行一个字都不写（也不留痕）。
 				continue
 			}
 			if id, taken := owner[code]; taken && id != v.ID {
-				return nil, errors.New(productenums.ErrSkuTaken)
+				return nil, productenums.Err(productenums.ErrSkuTaken)
 			}
 			if old := strings.TrimSpace(v.SKUCode); old != "" {
 				delete(owner, old)
@@ -1402,10 +1402,10 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 			code = variantSKUCode(container, raw, groupOrder)
 		}
 		if strings.TrimSpace(code) == "" {
-			return nil, errors.New(productenums.ErrVariantSKUEmpty)
+			return nil, productenums.Err(productenums.ErrVariantSKUEmpty)
 		}
 		if _, taken := owner[code]; taken {
-			return nil, errors.New(productenums.ErrSkuTaken)
+			return nil, productenums.Err(productenums.ErrSkuTaken)
 		}
 		v, verr := s.newVariantFromDefaults(ctx, p, &productdto.CreateVariantReq{
 			ProductID: p.ID, OptionValues: raw,
@@ -1573,7 +1573,7 @@ func (s *Service) variantDeleteBlockReason(ctx context.Context, projectID string
 // 预览、生成、保存三条路径共用它：容器段一旦分叉，同一个组合会得到两种 SKU。
 func resolveContainerSKU(p *productmodel.ProductEntity, existing []*productmodel.VariantEntity, warehouseCode string) (string, error) {
 	if p == nil {
-		return "", errors.New(productenums.ErrInvalidParam)
+		return "", productenums.Err(productenums.ErrInvalidParam)
 	}
 	if container := strings.TrimSpace(p.SKUCode); container != "" {
 		return container, nil
@@ -1617,16 +1617,16 @@ func normalizeVariantSKU(raw string) string {
 func normalizeListOptionPairs(raw json.RawMessage, allowed map[string]map[string]bool, groupOrder map[string]int) ([]optionPair, error) {
 	pairs := decodeOptionPairs(raw)
 	if len(pairs) == 0 {
-		return nil, errors.New(productenums.ErrVariantOptionsInvalid)
+		return nil, productenums.Err(productenums.ErrVariantOptionsInvalid)
 	}
 	for _, p := range pairs {
 		values, ok := allowed[p.Key]
 		if !ok {
-			return nil, fmt.Errorf("%s：%s", productenums.ErrVariationAttributeInvalid,
+			return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrVariationAttributeInvalid),
 				i18n.ErrorDetail(productenums.DetailVariationAttributeNotInProduct, "attribute", p.Key))
 		}
 		if !values[p.Value] {
-			return nil, fmt.Errorf("%s：%s", productenums.ErrVariationValueInvalid,
+			return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrVariationValueInvalid),
 				i18n.ErrorDetail(productenums.DetailVariationValueNotEnabled, "attribute", p.Key, "value", p.Value))
 		}
 	}

@@ -504,8 +504,8 @@ func TestBundleConfigErrorGrades(t *testing.T) {
 		status   int
 		wantText string
 	}{
-		{"商品不存在", errors.New(productenums.ErrNotFound), http.StatusNotFound, "商品或变体不存在"},
-		{"参数非法", errors.New(productenums.ErrInvalidParam), http.StatusBadRequest, "请求参数无效"},
+		{"商品不存在", productenums.Err(productenums.ErrNotFound), http.StatusNotFound, "商品或变体不存在"},
+		{"参数非法", productenums.Err(productenums.ErrInvalidParam), http.StatusBadRequest, "请求参数无效"},
 		{"驱动错误", errors.New(editorDriverText), http.StatusInternalServerError, "这一页的数据没能读出来"},
 	}
 	for _, tc := range cases {
@@ -547,7 +547,7 @@ func TestEditProductErrorGrades(t *testing.T) {
 		{
 			name: "商品不存在",
 			setup: func(s *editorStub) {
-				s.editErr = errors.New(productenums.ErrNotFound)
+				s.editErr = productenums.Err(productenums.ErrNotFound)
 				s.editView = failedEditView(http.StatusNotFound)
 			},
 			wantStatus: http.StatusNotFound,
@@ -556,7 +556,7 @@ func TestEditProductErrorGrades(t *testing.T) {
 		{
 			name: "参数非法",
 			setup: func(s *editorStub) {
-				s.editErr = errors.New(productenums.ErrInvalidParam)
+				s.editErr = productenums.Err(productenums.ErrInvalidParam)
 				s.editView = failedEditView(http.StatusBadRequest)
 			},
 			wantStatus: http.StatusBadRequest,

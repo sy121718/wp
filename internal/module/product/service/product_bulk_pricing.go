@@ -17,11 +17,11 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"go_wp/internal/module/product/dto"
 	"go_wp/internal/module/product/enums"
+	"go_wp/pkg/facing"
 )
 
 // BulkApplyPricing 批量按规则改价（POST /api/product/bulk-pricing 的 service 入口）。
@@ -30,7 +30,7 @@ import (
 // 入口语义就是「对勾选的这几个商品各做一次改价」，调用方不必（也不该）传 Scope / TargetID。
 func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPricingReq) (res *productdto.BulkPricingResult, err error) {
 	if req == nil {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
 	res = &productdto.BulkPricingResult{BulkResult: productdto.BulkResult{Requested: len(ids)}}
@@ -104,16 +104,15 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 
 // bulkSkipReasonKey 从一次跳过里取**业务 key**（enums 常量值），而不是成品串。
 //
-// 错误形态两种：errors.New(key) 与 fmt.Errorf("%s：%s", key, 明细)（后者见
+// 错误形态两种：productenums.Err(key) 与 fmt.Errorf("%w: %s", productenums.Err(key), 明细)（后者见
 // crossProjectRefBlocked）。成品串要按请求语言取词，而取词只在 inbound 有
 // （productErrText）—— 所以 service 只回 key，由 inbound 翻成当前语言的整句。
 func bulkSkipReasonKey(err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := strings.TrimSpace(err.Error())
-	if key, _, ok := strings.Cut(msg, "："); ok {
-		return strings.TrimSpace(key)
+	if fact, ok := facing.FactOf(err); ok {
+		return fact.Key
 	}
-	return msg
+	return strings.TrimSpace(err.Error())
 }

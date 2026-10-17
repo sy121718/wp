@@ -7,7 +7,6 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	json "go_wp/pkg/jsonx"
 	"strings"
 
@@ -49,7 +48,7 @@ func (s *Service) resolveProjectID(ctx context.Context, projectID string) (id st
 		return "", err
 	}
 	if len(list) != 1 {
-		return "", errors.New(productenums.ErrInvalidParam)
+		return "", productenums.Err(productenums.ErrInvalidParam)
 	}
 	return list[0].ID, nil
 }
@@ -186,7 +185,7 @@ func normalizeProductType(raw string) (string, error) {
 	case productmodel.TypeBundle:
 		return productmodel.TypeBundle, nil
 	default:
-		return "", errors.New(productenums.ErrProductTypeInvalid)
+		return "", productenums.Err(productenums.ErrProductTypeInvalid)
 	}
 }
 

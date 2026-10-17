@@ -16,7 +16,6 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	productdto "go_wp/internal/module/product/dto"
@@ -64,7 +63,7 @@ func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEd
 
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
-		firstErr = errors.New(productenums.ErrInvalidParam)
+		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
 	// 分类树 / 品牌 / 标签 / 仓库各取一次：行数据复用同一个 productRow 组装 ——
@@ -115,11 +114,11 @@ func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEd
 			view.HTTPStatus = 404
 		case isProductErrKey(derr, productenums.ErrInvalidParam):
 			view.HTTPStatus = 400
-			firstErr = errors.New(productenums.ErrInvalidParam)
+			firstErr = productenums.Err(productenums.ErrInvalidParam)
 		default:
 			// 其余（数据库 / 连接 / 未知错误，以及 detail 为 nil 的畸形返回）：500 + no-store。
 			if derr == nil {
-				derr = errors.New(productenums.ErrNotFound)
+				derr = productenums.Err(productenums.ErrNotFound)
 			}
 			fail(derr)
 		}

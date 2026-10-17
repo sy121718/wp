@@ -16,7 +16,6 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -71,7 +70,7 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 	// 与列表页同一档参数校验：?project=<不存在的 id> 不该渲染成「这个工程下没有商品」。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
-		firstErr = errors.New(productenums.ErrInvalidParam)
+		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
 	// 仓库清单：只读页不用下拉，但行数据组装（productRow 的库存列）要按工程仓库清单
@@ -128,7 +127,7 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 		case isProductErrKey(derr, productenums.ErrInvalidParam):
 			// 参数本身不合法（id 形态不对等）：400 + 同一页。
 			view.HTTPStatus = 400
-			firstErr = errors.New(productenums.ErrInvalidParam)
+			firstErr = productenums.Err(productenums.ErrInvalidParam)
 		default:
 			// 其余（数据库 / 连接 / 未知错误，以及 detail 为 nil 的畸形返回）：500 + no-store。
 			// 「读不出来」与「不存在」必须分开：前者重试可能就成功了，后者再试也没用。
@@ -164,7 +163,7 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 
 // isProductErrKey 错误的业务 key 是否等于 want。
 //
-// 本模块的错误一律是 `errors.New(productenums.ErrXxx)`（错误 message 就是 i18n key，
+// 本模块的错误一律是 `productenums.Err(productenums.ErrXxx)`（错误 message 就是 i18n key，
 // 见 enums 的文件头），所以判据读 message。控制器侧的 productErrKeyOf 做的是同一件事
 // （它多一层「文案兜底表」用于渲染），两侧口径一致。
 //

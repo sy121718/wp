@@ -63,7 +63,7 @@ const (
 // CreateTag 新建标签（默认手工类型；规则型建好即按规则重算一次）。
 func (s *Service) CreateTag(ctx context.Context, req *productdto.CreateTagReq) (res *productdto.TagResp, err error) {
 	if req == nil || strings.TrimSpace(req.Name) == "" {
-		return nil, errors.New(productenums.ErrTagNameRequired)
+		return nil, productenums.Err(productenums.ErrTagNameRequired)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -83,7 +83,7 @@ func (s *Service) CreateTag(ctx context.Context, req *productdto.CreateTagReq) (
 	if taken, serr := s.m.TagSlugExists(ctx, projectID, slug, ""); serr != nil {
 		return nil, serr
 	} else if taken {
-		return nil, errors.New(productenums.ErrTagSlugTaken)
+		return nil, productenums.Err(productenums.ErrTagSlugTaken)
 	}
 	now := time.Now().UTC()
 	e := &productmodel.ProductTagEntity{
@@ -131,7 +131,7 @@ func (s *Service) CreateTag(ctx context.Context, req *productdto.CreateTagReq) (
 // rule → manual 清掉规则定义、保留当前命中为手工归属。
 func (s *Service) UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (res *productdto.TagResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -144,19 +144,19 @@ func (s *Service) UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, errors.New(productenums.ErrTagNameRequired)
+			return nil, productenums.Err(productenums.ErrTagNameRequired)
 		}
 		e.Name = name
 	}
 	if req.Slug != nil {
 		slug := normalizeSlug(*req.Slug)
 		if slug == "" {
-			return nil, errors.New(productenums.ErrInvalidParam)
+			return nil, productenums.Err(productenums.ErrInvalidParam)
 		}
 		if taken, serr := s.m.TagSlugExists(ctx, e.ProjectID, slug, e.ID); serr != nil {
 			return nil, serr
 		} else if taken {
-			return nil, errors.New(productenums.ErrTagSlugTaken)
+			return nil, productenums.Err(productenums.ErrTagSlugTaken)
 		}
 		e.Slug = slug
 	}
@@ -233,7 +233,7 @@ func applyTagShapeUpdate(e *productmodel.ProductTagEntity, req *productdto.Updat
 		e.Kind, e.RuleType, e.RuleParams = productenums.TagKindRule, ruleType, norm
 		return nil
 	default:
-		return errors.New(productenums.ErrTagKindInvalid)
+		return productenums.Err(productenums.ErrTagKindInvalid)
 	}
 }
 
@@ -247,7 +247,7 @@ func normalizeTagShapeOnCreate(kind, ruleType string, params json.RawMessage) (o
 	switch kind {
 	case productenums.TagKindManual:
 		if strings.TrimSpace(ruleType) != "" || hasRuleParams(params) {
-			return "", "", nil, errors.New(productenums.ErrTagRuleNotAllowed)
+			return "", "", nil, productenums.Err(productenums.ErrTagRuleNotAllowed)
 		}
 		return kind, "", json.RawMessage("{}"), nil
 	case productenums.TagKindRule:
@@ -257,7 +257,7 @@ func normalizeTagShapeOnCreate(kind, ruleType string, params json.RawMessage) (o
 		}
 		return kind, strings.TrimSpace(ruleType), norm, nil
 	default:
-		return "", "", nil, errors.New(productenums.ErrTagKindInvalid)
+		return "", "", nil, productenums.Err(productenums.ErrTagKindInvalid)
 	}
 }
 
@@ -270,7 +270,7 @@ func hasRuleParams(raw json.RawMessage) bool {
 // GetTag 标签详情（含命中商品列表 —— 验收 4）。
 func (s *Service) GetTag(ctx context.Context, req *productdto.GetTagReq) (res *productdto.TagResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -361,7 +361,7 @@ func tagListFilter(req *productdto.ListTagReq) (rawProjectID, kind, keyword stri
 // ListTagProducts 某标签命中的商品（验收 4：后台可查看某标签命中哪些商品）。
 func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagProductsReq) (list []*productdto.TagProductResp, err error) {
 	if req == nil || req.TagID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -394,7 +394,7 @@ func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagPr
 // 变成一条错误提示 —— 翻页本来就是可以走到头再点一下的操作。
 func (s *Service) ListTagProductsPage(ctx context.Context, req *productdto.ListTagProductsPageReq) (res *productdto.TagProductsPageResp, err error) {
 	if req == nil || req.TagID == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -455,7 +455,7 @@ func pagesOf(total, size int) int {
 // 也不该由本工程的删除动作替别的工程改数据（AGENTS.md「一律打回给人」）。
 func (s *Service) DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (err error) {
 	if req == nil || req.ID == "" {
-		return errors.New(productenums.ErrInvalidParam)
+		return productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -498,7 +498,7 @@ func (s *Service) ListTagRuleTypes(ctx context.Context) (list []*productdto.TagR
 // 手工标签不参与重算（命中数为 0，也不计进 Recalculated）。
 func (s *Service) RecalcTags(ctx context.Context, req *productdto.RecalcTagsReq) (res *productdto.RecalcTagsResp, err error) {
 	if req == nil {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	res = &productdto.RecalcTagsResp{Tags: []*productdto.TagResp{}}
 	projectID := strings.TrimSpace(req.ProjectID)
@@ -519,7 +519,7 @@ func (s *Service) RecalcTags(ctx context.Context, req *productdto.RecalcTagsReq)
 		}
 	} else {
 		if projectID == "" {
-			return nil, errors.New(productenums.ErrInvalidParam)
+			return nil, productenums.Err(productenums.ErrInvalidParam)
 		}
 		tags, err = s.m.ListTags(ctx, projectID, productenums.TagKindRule, "", 0, 0)
 		if err != nil {
@@ -578,13 +578,13 @@ func (s *Service) resolveTagIDs(ctx context.Context, projectID string, in []stri
 	for _, id := range dedup {
 		row, ok := byID[id]
 		if !ok {
-			return nil, errors.New(productenums.ErrTagNotFound)
+			return nil, productenums.Err(productenums.ErrTagNotFound)
 		}
 		if projectID != "" && row.ProjectID != projectID {
-			return nil, errors.New(productenums.ErrTagProjectMismatch)
+			return nil, productenums.Err(productenums.ErrTagProjectMismatch)
 		}
 		if row.Kind != productenums.TagKindManual {
-			return nil, errors.New(productenums.ErrTagNotManual)
+			return nil, productenums.Err(productenums.ErrTagNotManual)
 		}
 		out = append(out, id)
 	}
@@ -791,7 +791,7 @@ func toTagProductResps(rows []*productmodel.ProductEntity) []*productdto.TagProd
 // mapTagNotFound 把 gorm 的 not found 归一为标签不存在。
 func mapTagNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New(productenums.ErrTagNotFound)
+		return productenums.Err(productenums.ErrTagNotFound)
 	}
 	return err
 }
@@ -1142,14 +1142,14 @@ func formatRulePrice(v float64) string { return strconv.FormatFloat(v, 'f', -1, 
 
 // ruleParamsErr 参数错误的统一包装（消息带具体原因，便于后台直接显示）。
 func ruleParamsErr(detail string) error {
-	return fmt.Errorf("%s：%s", productenums.ErrTagRuleParamsInvalid, detail)
+	return fmt.Errorf("%w: %s", productenums.Err(productenums.ErrTagRuleParamsInvalid), detail)
 }
 
 // ruleTypeErr 规则类型错误的统一包装。
 func ruleTypeErr(ruleType string) error {
 	if strings.TrimSpace(ruleType) == "" {
-		return errors.New(productenums.ErrTagRuleTypeInvalid)
+		return productenums.Err(productenums.ErrTagRuleTypeInvalid)
 	}
-	return fmt.Errorf("%s：%s", productenums.ErrTagRuleTypeInvalid,
+	return fmt.Errorf("%w: %s", productenums.Err(productenums.ErrTagRuleTypeInvalid),
 		i18n.ErrorDetail(productenums.DetailTagUnknownRuleType, "type", ruleType))
 }

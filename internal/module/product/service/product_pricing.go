@@ -85,7 +85,7 @@ type pricingRequest struct {
 // computePricingLines），因此预览里看到的每个数字就是应用后会写进库的数字。
 func (s *Service) PreviewPricing(ctx context.Context, req *productdto.PricingPreviewReq) (res *productdto.PricingPreviewResp, err error) {
 	if req == nil {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	pr, err := normalizePricingRequest(&req.PricingRuleReq)
 	if err != nil {
@@ -146,7 +146,7 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 //   - 价格写回与留痕在同一事务里（半截状态「改了价却没有记录」是留痕功能的致命伤）。
 func (s *Service) applyPricingOnce(ctx context.Context, req *productdto.PricingApplyReq) (res *productdto.PricingApplyResp, err error) {
 	if req == nil {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	pr, err := normalizePricingRequest(&req.PricingRuleReq)
 	if err != nil {
@@ -161,7 +161,7 @@ func (s *Service) applyPricingOnce(ctx context.Context, req *productdto.PricingA
 		return nil, err
 	}
 	if counts.changed == 0 {
-		return nil, errors.New(productenums.ErrPricingNothingChanged)
+		return nil, productenums.Err(productenums.ErrPricingNothingChanged)
 	}
 
 	now := time.Now().UTC()
@@ -303,7 +303,7 @@ func (s *Service) ListPriceAdjustments(ctx context.Context, req *productdto.List
 // model.PriceAdjustmentItemEntity 的实体注释与迁移 134）。
 func (s *Service) GetPriceAdjustment(ctx context.Context, req *productdto.GetPriceAdjustmentReq) (res *productdto.PriceAdjustmentResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -312,7 +312,7 @@ func (s *Service) GetPriceAdjustment(ctx context.Context, req *productdto.GetPri
 	row, err := s.m.GetAdjustment(ctx, req.ID, projectID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(productenums.ErrPricingAdjustmentNotFound)
+			return nil, productenums.Err(productenums.ErrPricingAdjustmentNotFound)
 		}
 		return nil, err
 	}
@@ -445,7 +445,7 @@ func describePricingFilter(tr TranslateFunc, raw json.RawMessage) string {
 // normalizePricingRequest 归一化定价请求并做第一层校验。
 func normalizePricingRequest(req *productdto.PricingRuleReq) (pr *pricingRequest, err error) {
 	if req == nil {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	rule := lookupPricingRule(req.RuleType)
 	if rule == nil {
@@ -478,12 +478,12 @@ func normalizePricingRequest(req *productdto.PricingRuleReq) (pr *pricingRequest
 	switch scope {
 	case productenums.PricingScopeSKU, productenums.PricingScopeProduct:
 		if pr.targetID == "" {
-			return nil, errors.New(productenums.ErrPricingTargetRequired)
+			return nil, productenums.Err(productenums.ErrPricingTargetRequired)
 		}
 	case productenums.PricingScopeFilter:
 		// 筛选集必须指定工程：没有工程条件的批量改价会跨工程改到别人的商品上。
 		if pr.projectID == "" {
-			return nil, fmt.Errorf("%s：%s", productenums.ErrInvalidParam,
+			return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrInvalidParam),
 				i18n.ErrorDetail(productenums.DetailPricingFilterProjectRequired))
 		}
 		pr.filter.ProjectID = pr.projectID
@@ -491,7 +491,7 @@ func normalizePricingRequest(req *productdto.PricingRuleReq) (pr *pricingRequest
 		// 必须由调用方明确写出条件（状态 / 关键词 / 分类 / 品牌 / 标签至少一个）。
 		if pr.filter.Status == "" && pr.filter.Keyword == "" && pr.filter.CategoryID == "" &&
 			pr.filter.BrandID == "" && pr.filter.TagID == "" {
-			return nil, fmt.Errorf("%s：%s", productenums.ErrPricingFilterEmpty,
+			return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrPricingFilterEmpty),
 				i18n.ErrorDetail(productenums.DetailPricingFilterConditionRequired))
 		}
 	}
@@ -535,14 +535,14 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 		v, gerr := s.m.GetVariant(ctx, pr.targetID)
 		if gerr != nil {
 			if errors.Is(gerr, gorm.ErrRecordNotFound) {
-				return nil, errors.New(productenums.ErrPricingTargetNotFound)
+				return nil, productenums.Err(productenums.ErrPricingTargetNotFound)
 			}
 			return nil, gerr
 		}
 		p, perr := s.m.Get(ctx, v.ProductID, pr.projectID)
 		if perr != nil {
 			if errors.Is(perr, gorm.ErrRecordNotFound) {
-				return nil, errors.New(productenums.ErrPricingTargetNotFound)
+				return nil, productenums.Err(productenums.ErrPricingTargetNotFound)
 			}
 			return nil, perr
 		}
@@ -552,7 +552,7 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 		p, perr := s.m.Get(ctx, pr.targetID, pr.projectID)
 		if perr != nil {
 			if errors.Is(perr, gorm.ErrRecordNotFound) {
-				return nil, errors.New(productenums.ErrPricingTargetNotFound)
+				return nil, productenums.Err(productenums.ErrPricingTargetNotFound)
 			}
 			return nil, perr
 		}
@@ -561,7 +561,7 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 			return nil, verr
 		}
 		if len(variants) == 0 {
-			return nil, errors.New(productenums.ErrPricingTargetNotFound)
+			return nil, productenums.Err(productenums.ErrPricingTargetNotFound)
 		}
 		targets = make([]*pricingTarget, 0, len(variants))
 		for _, v := range variants {
@@ -575,10 +575,10 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 			return nil, lerr
 		}
 		if len(products) == 0 {
-			return nil, errors.New(productenums.ErrPricingFilterEmpty)
+			return nil, productenums.Err(productenums.ErrPricingFilterEmpty)
 		}
 		if len(products) > maxPricingProducts {
-			return nil, fmt.Errorf("%s：%s", productenums.ErrPricingTargetTooMany,
+			return nil, fmt.Errorf("%w: %s", productenums.Err(productenums.ErrPricingTargetTooMany),
 				i18n.ErrorDetail(productenums.DetailPricingTargetTooMany,
 					"n", strconv.Itoa(len(products)), "max", strconv.Itoa(maxPricingProducts)))
 		}
@@ -601,7 +601,7 @@ func (s *Service) resolvePricingTargets(ctx context.Context, pr *pricingRequest)
 			}
 		}
 		if len(targets) == 0 {
-			return nil, errors.New(productenums.ErrPricingFilterEmpty)
+			return nil, productenums.Err(productenums.ErrPricingFilterEmpty)
 		}
 		return targets, nil
 	}
@@ -1165,7 +1165,7 @@ func normalizePricingScope(scope string) (out string, err error) {
 	case productenums.PricingScopeFilter:
 		return productenums.PricingScopeFilter, nil
 	}
-	return "", errors.New(productenums.ErrPricingScopeInvalid)
+	return "", productenums.Err(productenums.ErrPricingScopeInvalid)
 }
 
 // describePricingScope 作用范围的可读名（当前语言）。
@@ -1214,23 +1214,23 @@ func formatPricingPercent(v float64) string { return formatPricingNumber(v*100) 
 
 // pricingParamsErr 参数错误的统一包装（消息带具体原因，便于后台直接显示）。
 func pricingParamsErr(detail string) error {
-	return fmt.Errorf("%s：%s", productenums.ErrPricingRuleParamsInvalid, detail)
+	return fmt.Errorf("%w: %s", productenums.Err(productenums.ErrPricingRuleParamsInvalid), detail)
 }
 
 // pricingRuleTypeErr 规则类型错误的统一包装。
 func pricingRuleTypeErr(ruleType string) error {
 	if strings.TrimSpace(ruleType) == "" {
-		return errors.New(productenums.ErrPricingRuleTypeInvalid)
+		return productenums.Err(productenums.ErrPricingRuleTypeInvalid)
 	}
-	return fmt.Errorf("%s：%s", productenums.ErrPricingRuleTypeInvalid,
+	return fmt.Errorf("%w: %s", productenums.Err(productenums.ErrPricingRuleTypeInvalid),
 		i18n.ErrorDetail(productenums.DetailPricingUnknownRuleType, "type", ruleType))
 }
 
 // pricingRoundingErr 尾数处理错误的统一包装。
 func pricingRoundingErr(rounding string) error {
 	if strings.TrimSpace(rounding) == "" {
-		return errors.New(productenums.ErrPricingRoundingInvalid)
+		return productenums.Err(productenums.ErrPricingRoundingInvalid)
 	}
-	return fmt.Errorf("%s：%s", productenums.ErrPricingRoundingInvalid,
+	return fmt.Errorf("%w: %s", productenums.Err(productenums.ErrPricingRoundingInvalid),
 		i18n.ErrorDetail(productenums.DetailPricingUnknownRounding, "value", rounding))
 }

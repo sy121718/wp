@@ -602,13 +602,13 @@ func TestProductsPageBadProjectParamIsFullPage(t *testing.T) {
 				v.HTTPStatus = http.StatusBadRequest
 				v.LoadFailed = true
 			}),
-			listErr: errors.New(productenums.ErrInvalidParam),
+			listErr: productenums.Err(productenums.ErrInvalidParam),
 		}, reader: &productPageReaderStub{
 			listView: productListPageViewStub(func(v *productdto.ProductListPageView) {
 				v.HTTPStatus = http.StatusBadRequest
 				v.LoadFailed = true
 			}),
-			listErr: errors.New(productenums.ErrInvalidParam),
+			listErr: productenums.Err(productenums.ErrInvalidParam),
 		},
 	}
 	rec := productPageRequest(t, h, "/admin/products?project=does-not-exist")
@@ -689,7 +689,7 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 			name:       "参数不合法 → 400",
 			target:     "/admin/products/detail?project=p1&product=not-a-uuid",
 			status:     http.StatusBadRequest,
-			readerErr:  errors.New(productenums.ErrInvalidParam),
+			readerErr:  productenums.Err(productenums.ErrInvalidParam),
 			wantStatus: http.StatusBadRequest,
 			wantText:   "请求参数无效",
 		},
@@ -923,7 +923,7 @@ func TestProductNewPageUnknownProjectIsBadRequest(t *testing.T) {
 			v.LoadFailed = true
 			v.SelectedProject = "does-not-exist"
 		}),
-		err: errors.New(productenums.ErrInvalidParam),
+		err: productenums.Err(productenums.ErrInvalidParam),
 	}
 	h := &productPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products/new?project=does-not-exist")

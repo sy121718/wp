@@ -83,13 +83,14 @@ func (s *Service) crossProjectRefs(ctx context.Context, scan func(projectIDs []s
 
 // crossProjectRefBlocked 命中引用时的统一出口（业务 key + 可定位明细）。
 //
-// 形态与 ErrRelatedInvalid 一致：key 与明细用全角冒号连接，读侧 productErrText 会把
-// key 翻成当前语言、明细原样接在后面；错误识别走 productErrKey 的前缀匹配。
+// 形态与 ErrRelatedInvalid 一致：`fmt.Errorf("%w: %s", productenums.Err(key), 明细)` ——
+// 出口经 pkg/facing.FactOf 拿 key（取词）、兜底（声明处那句中文）与明细段（原样接在后面），
+// 不需要读侧再按字符串前缀猜 key。
 func crossProjectRefBlocked(key string, ref *productmodel.CrossProjectRef) error {
 	if detail := refGuardDetail(ref); detail != "" {
-		return fmt.Errorf("%s：%s", key, detail)
+		return fmt.Errorf("%w: %s", productenums.Err(key), detail)
 	}
-	return errors.New(key)
+	return productenums.Err(key)
 }
 
 // refGuardDetail 跨工程引用的可定位明细。

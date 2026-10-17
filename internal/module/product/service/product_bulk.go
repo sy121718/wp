@@ -23,7 +23,6 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -72,7 +71,7 @@ func normalizeBulkIDs(ids []string) []string {
 // 锁住的行就是本次要删的行；锁之后行数对不上（被并发删掉）即整批回滚，不留半截状态。
 func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error) {
 	if req == nil {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
 	res = &productdto.BulkResult{Requested: len(ids)}
@@ -179,7 +178,7 @@ func productBulkDeleteItems(ids []string, locked map[string]bool) []productdto.B
 //	③ 仍被**任何工程**的商品引用（附属 category_ids 或主分类 primary_category_id）→ Skipped。
 func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error) {
 	if req == nil {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
 	res = &productdto.BulkResult{Requested: len(ids)}
@@ -249,7 +248,7 @@ func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productd
 // 会静默解绑别的工程那个商品的品牌 —— 没有任何信号，这正是品牌守卫存在的理由）。
 func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error) {
 	if req == nil {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
 	res = &productdto.BulkResult{Requested: len(ids)}
@@ -315,7 +314,7 @@ func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.B
 // 数组、没有数据库级外键兜底，删掉就会留下悬空引用。
 func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error) {
 	if req == nil {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
 	res = &productdto.BulkResult{Requested: len(ids)}
@@ -384,7 +383,7 @@ func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productd
 // 每组建一次解绑 + 失效入队 + 删行，全部在同一事务里。
 func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResult, err error) {
 	if req == nil {
-		return nil, errors.New(productenums.ErrInvalidParam)
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
 	res = &productdto.BulkResult{Requested: len(ids)}

@@ -20,7 +20,6 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	productdto "go_wp/internal/module/product/dto"
@@ -122,7 +121,7 @@ func (s *Service) ProductAttributesPage(ctx context.Context, req *productdto.Pro
 	// 工程选择器同源（判据唯一一份就是下面这个 ProjectExists，各页不再各写一遍）。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
-		firstErr = errors.New(productenums.ErrInvalidParam)
+		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
 	// 计数与列表**同一份过滤条件**：两处口径分叉（关键词 / variation 只归一在一侧）时

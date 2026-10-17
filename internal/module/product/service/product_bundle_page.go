@@ -19,7 +19,6 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	productdto "go_wp/internal/module/product/dto"
@@ -83,7 +82,7 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 	}
 	if firstErr == nil && selectedProject != "" && !ProjectExists(projects, selectedProject) {
 		view.HTTPStatus = 400
-		firstErr = errors.New(productenums.ErrInvalidParam)
+		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 	// 未选来源商品时给空值：来源属性候选是「来源商品的属性组」，
 	// 没选商品时它必然是空 —— 省掉面板一次无意义的查询（与接线前同一档：那时

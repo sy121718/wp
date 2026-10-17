@@ -14,7 +14,6 @@ package productservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	productcontract "go_wp/internal/module/product/contract"
@@ -155,7 +154,7 @@ func (s *Service) ProductNewPage(ctx context.Context, req *productdto.ProductNew
 	// 整页 + 400 + no-store（档位由视图带出，见 dto.ProductNewPageView.PageStatus）。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
 		view.HTTPStatus = 400
-		firstErr = errors.New(productenums.ErrInvalidParam)
+		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
 	if firstErr == nil && s.pageWarehouses != nil {

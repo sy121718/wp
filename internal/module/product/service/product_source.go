@@ -1089,7 +1089,7 @@ func (s *Service) RegisterEntityTypes(reg core.EntitySourceRegistry) error {
 // 并挂上译文，构建期只读内存；不存在的实体返回 ErrNotFound，类型不符返回 ErrInvalidType。
 func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) (r core.ContentResolver, err error) {
 	if !productcontract.IsValidType(entityType) {
-		return nil, errors.New(productenums.ErrInvalidType)
+		return nil, productenums.Err(productenums.ErrInvalidType)
 	}
 	lang := core.BuildLang(ctx)
 	// 工程作用域（审计 DB-009 第四批收口）：**必须**从构建上下文取，取不到就显式报错。
@@ -1160,7 +1160,7 @@ func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) 
 // mapNotFound gorm 未命中 → 模块统一的「不存在」错误（其余原样上抛）。
 func mapNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New(productenums.ErrNotFound)
+		return productenums.Err(productenums.ErrNotFound)
 	}
 	return err
 }

@@ -142,7 +142,7 @@ func TestUnregisteredBusinessKeyNeverShowsBareKey(t *testing.T) {
 // TestBusinessErrFactKeepsRegisteredTextAndTail 已登记的业务错误：key 原样、兜底取表、明细带出来。
 func TestBusinessErrFactKeepsRegisteredTextAndTail(t *testing.T) {
 	c, _ := newProductJumpContext(t, "", "", "")
-	err := fmt.Errorf("%s：%s", productenums.ErrNameRequired, "第 3 行")
+	err := fmt.Errorf("%w: %s", productenums.Err(productenums.ErrNameRequired), "第 3 行")
 	fact := productErrFactQuiet(c, err)
 	if !fact.Business {
 		t.Fatalf("应判为业务错误，fact=%+v", fact)
@@ -177,23 +177,27 @@ func TestForeignFallbacksDoNotShadowProductKeys(t *testing.T) {
 		if productenums.ProductErrFallbacks[key] != "" {
 			t.Errorf("key %q 同时出现在本模块表与跨模块表里（查表顺序会决定文案）", key)
 		}
-		if got := productErrFallbackText(key); got != text {
-			t.Errorf("productErrFallbackText(%q) = %q，want %q", key, got, text)
+		if got := productErrForeignFallbackText(key); got != text {
+			t.Errorf("productErrForeignFallbackText(%q) = %q，want %q", key, got, text)
 		}
 	}
 }
 
-// TestProductErrFallbackTextPrefersEnumsTable 查表先走本模块 enums，再走跨模块那张。
-func TestProductErrFallbackTextPrefersEnumsTable(t *testing.T) {
+// TestProductErrFallbackComesFromDeclaration 本模块 key 的兜底跟声明处走（不查出口的表）。
+//
+// service 用 productenums.Err(key) 返回，兜底随错误经 pkg/facing 带出 —— 出口只读事实。
+func TestProductErrFallbackComesFromDeclaration(t *testing.T) {
+	c, _ := newProductJumpContext(t, "", "", "")
 	key := productenums.ErrNameRequired
 	want := productenums.ProductErrFallbacks[key]
 	if want == "" {
 		t.Fatalf("%q 在 enums 兜底表里没有登记", key)
 	}
-	if got := productErrFallbackText(key); got != want {
-		t.Errorf("productErrFallbackText(%q) = %q，want %q", key, got, want)
+	fact := productErrFactQuiet(c, productenums.Err(key))
+	if fact.Fallback != want {
+		t.Errorf("事实兜底 = %q，want %q（由 productenums.Err 随错误带出）", fact.Fallback, want)
 	}
-	if got := productErrFallbackText(""); got != "" {
+	if got := productErrForeignFallbackText(""); got != "" {
 		t.Errorf("空 key 应返回空串，得到 %q", got)
 	}
 }
