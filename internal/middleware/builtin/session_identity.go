@@ -12,6 +12,7 @@ package builtin
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,4 +39,34 @@ func CurrentUserIDText(c *gin.Context) string {
 		return ""
 	}
 	return strconv.FormatUint(id, 10)
+}
+
+// OperatorName 取「可读的操作人」：优先登录名，缺失时退回 id 文本，都没有返回空串。
+//
+// 与 CurrentUserIDText 的分工：那个是**纯 id**（审计字段要的是稳定的数值归属）；
+// 这个是**留痕给人读**的写法 —— 变更记录 / 库存流水 / 定价留痕显示的就是它，
+// 所以登录名优先（一眼能读懂「谁改的」）。
+//
+// 登录名缺失时按原始值的形状文本化（int64 / int / string / uint64）：脚本与测试路径
+// 可能写入别的形状，只认 int64 会把它们判成「没有操作人」。这里只做展示文本化，
+// 不参与任何鉴权判断。
+func OperatorName(c *gin.Context) string {
+	if name := strings.TrimSpace(GetUsername(c)); name != "" {
+		return name
+	}
+	value, exists := c.Get("user_id")
+	if !exists {
+		return ""
+	}
+	switch v := value.(type) {
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case int:
+		return strconv.Itoa(v)
+	case string:
+		return v
+	case uint64:
+		return strconv.FormatUint(v, 10)
+	}
+	return ""
 }

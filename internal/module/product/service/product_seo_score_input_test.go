@@ -614,10 +614,10 @@ func TestProductPageImagesSkipsBlankSources(t *testing.T) {
 }
 
 func TestFirstNonEmptyTextAndSlashSlug(t *testing.T) {
-	if got := firstNonEmptyText("", "  ", " x "); got != "x" {
+	if got := firstNonEmpty("", "  ", " x "); got != "x" {
 		t.Fatalf("取第一个非空值并 trim，实际 %q", got)
 	}
-	if got := firstNonEmptyText("", "  "); got != "" {
+	if got := firstNonEmpty("", "  "); got != "" {
 		t.Fatalf("全空时返回空串，实际 %q", got)
 	}
 	if got := slashSlug("  water "); got != "/water" {

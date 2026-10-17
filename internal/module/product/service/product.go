@@ -91,8 +91,11 @@ func normalizeSKUSource(raw string) (string, error) {
 	}
 }
 
-// firstNonEmptyCode 取第一个非空串（去首尾空白）。
-func firstNonEmptyCode(values ...string) string {
+// firstNonEmpty 取第一个非空串（去首尾空白）。
+//
+// 本包的唯一实现（原 firstNonEmptyText / firstNonEmptyCode 是同逻辑的两份，已并到这里）：
+// 一处用于 SKU 取值回退，一处用于「实例路径 → 否则 slug 近似路径」。
+func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if code := strings.TrimSpace(v); code != "" {
 			return code
@@ -284,7 +287,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 			skuInput = stripWarehousePrefix(picked.SKUCode, picked.WarehouseCode)
 			// 外部编码：显式填的优先；否则带入那条货登记的编码，再否则就是它自己的 SKU ——
 			// 「从仓库选」这条来路本身就是在建立「我们的商品 ↔ 那条货」的映射（docs/14 §9.3）。
-			externalSKU = firstNonEmptyCode(req.ExternalSKU, picked.ExternalSKU, skuInput)
+			externalSKU = firstNonEmpty(req.ExternalSKU, picked.ExternalSKU, skuInput)
 		} else {
 			// 自己创建 + 回填：只在运营显式填了外码时才写（§9.3 的另一条来路），
 			// 不替他猜一个 —— 空串是合法状态（该仓用我们自己的 SKU）。

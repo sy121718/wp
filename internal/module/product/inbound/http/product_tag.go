@@ -199,7 +199,7 @@ func (h *productPageHandle) ProductTagsPage(c *gin.Context) {
 	view.Tags = rows
 	view.TagCreateForm = tagCreateForm
 	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
-		pg.Base = productListBaseURL("/admin/product-tags", listFilterQuery(view.SelectedProject, view.FilterKeyword))
+		pg.Base = pagination.BaseURL("/admin/product-tags", pagination.Query("project", view.SelectedProject, "keyword", view.FilterKeyword))
 		view.Pagination = pg
 	}
 	if err != nil {

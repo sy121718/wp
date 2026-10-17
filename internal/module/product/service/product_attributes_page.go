@@ -25,6 +25,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/pkg/pagination"
 )
 
 // ProductSubListPageSize 商品域后台**子列表**（属性 / 分类 / 标签 / 品牌）的每页条数。
@@ -39,23 +40,10 @@ const ProductSubListPageSize = 20
 // 直接传给取数层时，service 会老老实实返回一个空页，而分页条按收敛后的页码渲染 ——
 // 「表格为空、分页条却显示第 2 页」就是这么来的（product_list_paging_test.go 钉住这条）。
 //
-// 与 pkg/pagination.Facts 内部的收敛同一条规则（总页数由 total 与 size 算出），
-// 差别只在于这里发生在取数之前。
+// 唯一实现在 pkg/pagination.ClampPage（本函数只是模块内既有调用点的入口，不再自己算一遍）；
+// 差别只在于**调用时机**：这里发生在取数之前。
 func ClampPageToTotal(page, size int, total int64) int {
-	if size < 1 {
-		size = ProductSubListPageSize
-	}
-	if page < 1 {
-		page = 1
-	}
-	pages := int((total + int64(size) - 1) / int64(size))
-	if pages < 1 {
-		return 1
-	}
-	if page > pages {
-		return pages
-	}
-	return page
+	return pagination.ClampPage(page, size, total)
 }
 
 // ProductAttributesPage 属性库整页的读模型：工程清单 → 工程存在性校验 → 计数 →

@@ -12,6 +12,7 @@ import (
 	"html"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
+	"go_wp/internal/middleware/builtin"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -28,6 +30,7 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/money"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
@@ -53,7 +56,7 @@ func (h *Handle) Create(c *gin.Context) {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
-	req.OperatorID = operatorFromContext(c)
+	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
@@ -70,7 +73,7 @@ func (h *Handle) Update(c *gin.Context) {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
-	req.OperatorID = operatorFromContext(c)
+	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.Update(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
@@ -117,7 +120,7 @@ func (h *Handle) Delete(c *gin.Context) {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
-	req.OperatorID = operatorFromContext(c)
+	req.OperatorID = builtin.OperatorName(c)
 	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
@@ -207,7 +210,7 @@ func (h *Handle) CreateVariant(c *gin.Context) {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
-	req.OperatorID = operatorFromContext(c)
+	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.CreateVariant(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
@@ -224,7 +227,7 @@ func (h *Handle) UpdateVariant(c *gin.Context) {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
-	req.OperatorID = operatorFromContext(c)
+	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.UpdateVariant(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
@@ -241,7 +244,7 @@ func (h *Handle) DeleteVariant(c *gin.Context) {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
-	req.OperatorID = operatorFromContext(c)
+	req.OperatorID = builtin.OperatorName(c)
 	if err := h.svc.DeleteVariant(c.Request.Context(), req); err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
@@ -260,7 +263,7 @@ func (h *Handle) GenerateVariants(c *gin.Context) {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
-	req.OperatorID = operatorFromContext(c)
+	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.GenerateVariants(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
@@ -578,7 +581,7 @@ func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 func checkedProductEditOptions(options []map[string]any, selected []string) []map[string]any {
 	for _, option := range options {
 		id, _ := option["ID"].(string)
-		option["Checked"] = containsString(selected, id)
+		option["Checked"] = slices.Contains(selected, id)
 	}
 	return options
 }
@@ -593,7 +596,7 @@ func selectedProductEditOptions(options []map[string]any, selected string) []map
 
 // nullableNumberText 可空数值 → 输入框文本（未设置给空串，不是 0）。
 //
-// 与列表展示用的 formatNullableAmount（空显示为 —）分开：— 是**展示**符号，
+// 与列表展示用的 pkg/money.FormatYuanOrDash（空显示为 —）分开：— 是**展示**符号，
 // 填进 input 的 value 会变成一个待提交的非法值。
 func nullableNumberText(v *float64) string {
 	if v == nil {
@@ -611,7 +614,7 @@ func checkedAttributeOptions(options []productdto.AttributeOptionView, selected 
 	for _, o := range options {
 		out = append(out, productdto.AttributeCheckOptionView{
 			AttributeOptionView: o,
-			Checked:             containsString(selected, o.ID),
+			Checked:             slices.Contains(selected, o.ID),
 		})
 	}
 	return out
@@ -850,7 +853,7 @@ func (h *Handle) SaveVariantList(c *gin.Context) {
 		return
 	}
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
-	req.OperatorID = operatorFromContext(c)
+	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.SaveVariantList(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
@@ -869,7 +872,7 @@ func (h *Handle) AddRating(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
-	req.OperatorID = operatorFromContext(c)
+	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.AddRating(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
@@ -1241,7 +1244,7 @@ func bundlePanelRows(options []*productdto.BundleOptionDetail) []gin.H {
 		// Missing 表示配置指向的变体已经不存在（与「存在但被停用」是两回事，
 		// 状态文案与可行动作都不同，故不合并成一个 bool）。
 		missing := o.SKUCode == ""
-		itemPrice, costPrice := formatAmount(o.ItemPrice), formatNullableAmount(o.CostPrice)
+		itemPrice, costPrice := money.FormatYuan(o.ItemPrice), money.FormatYuanOrDash(o.CostPrice)
 		if missing {
 			// 变体没了，价格与成本都无从谈起：这里的 0 会被读成「这个成员不要钱」。
 			itemPrice, costPrice = "—", "—"
@@ -1292,7 +1295,7 @@ func (h *productPageHandle) bundlePanel(c *gin.Context, projectID, productID str
 	}
 	rows := bundlePanelRows(detail.Options)
 	panel["Loaded"] = true
-	panel["BasePrice"] = formatAmount(detail.BasePrice)
+	panel["BasePrice"] = money.FormatYuan(detail.BasePrice)
 	panel["Options"] = rows
 	panel["OptionCount"] = len(rows)
 	return panel
@@ -1342,7 +1345,7 @@ func (h *Handle) SetBundleConfig(c *gin.Context) {
 		return
 	}
 	// issue #19：配置变更要落主数据变更记录，操作人只能来自会话。
-	req.OperatorID = operatorFromContext(c)
+	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.SetBundleConfig(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
@@ -1603,7 +1606,7 @@ func (h *Handle) ApplyPricing(c *gin.Context) {
 		},
 		Note: strings.TrimSpace(req.Note),
 		// 操作人取自会话，客户端传什么都不作数（留痕的操作人不可伪造）。
-		OperatorID: operatorFromContext(c),
+		OperatorID: builtin.OperatorName(c),
 	})
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
@@ -1679,7 +1682,7 @@ func (h *Handle) BulkPricing(c *gin.Context) {
 		IDs:        ids,
 		ProjectID:  req.ProjectID,
 		Note:       req.Note,
-		OperatorID: operatorFromContext(c),
+		OperatorID: builtin.OperatorName(c),
 		Rule: productdto.PricingRuleReq{
 			ProjectID:  req.ProjectID,
 			RuleType:   req.RuleType,

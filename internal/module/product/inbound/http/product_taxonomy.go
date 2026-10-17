@@ -58,7 +58,7 @@ func (h *productPageHandle) ProductCategoriesPage(c *gin.Context) {
 	}
 	// 分页条：Go 只交事实，文案与链接由 admin/partials/pagination.html 渲染。
 	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
-		pg.Base = productListBaseURL("/admin/product-categories", listFilterQuery(view.SelectedProject, view.FilterKeyword))
+		pg.Base = pagination.BaseURL("/admin/product-categories", pagination.Query("project", view.SelectedProject, "keyword", view.FilterKeyword))
 		view.Pagination = pg
 	}
 	if err != nil {
@@ -79,7 +79,7 @@ func (h *productPageHandle) ProductCategoryParents(c *gin.Context) {
 	options := []gin.H{}
 	if keyword != "" {
 		page, err := h.products.ListCategoryPage(c.Request.Context(), &productdto.ListCategoryPageReq{
-			ProjectID: projectID, Keyword: keyword, Page: productPageNumber(c.Query("page")), Size: productSubListPageSize,
+			ProjectID: projectID, Keyword: keyword, Page: productPageNumber(c.Query("page")), Size: productservice.ProductSubListPageSize,
 		})
 		if err != nil {
 			c.Status(http.StatusInternalServerError)
@@ -186,7 +186,7 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 	}
 	view.Brands = brands
 	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
-		pg.Base = productListBaseURL("/admin/product-brands", listFilterQuery(view.SelectedProject, view.FilterKeyword))
+		pg.Base = pagination.BaseURL("/admin/product-brands", pagination.Query("project", view.SelectedProject, "keyword", view.FilterKeyword))
 		view.Pagination = pg
 	}
 	if err != nil {

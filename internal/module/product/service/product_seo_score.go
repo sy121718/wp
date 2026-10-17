@@ -142,7 +142,7 @@ func SeoScoreInputOf(ctx context.Context, r ProductReadPort, insts SeoInstancePa
 				SEOTitle:       node.Name,
 				SEODescription: StripEntityTags(node.Description),
 				Slug:           node.Slug,
-				URL:            firstNonEmptyText(instPath, slashSlug(node.Slug)),
+				URL:            firstNonEmpty(instPath, slashSlug(node.Slug)),
 				Images:         singleImage(node.Image, "hero"),
 				ChildNames:     CategoryChildNames(ctx, r, projectID, node.ID),
 				Locale:         lang,
@@ -171,7 +171,7 @@ func SeoScoreInputOf(ctx context.Context, r ProductReadPort, insts SeoInstancePa
 				SEOTitle:       brand.Name,
 				SEODescription: StripEntityTags(brand.Description),
 				Slug:           brand.Slug,
-				URL:            firstNonEmptyText(instPath, slashSlug(brand.Slug)),
+				URL:            firstNonEmpty(instPath, slashSlug(brand.Slug)),
 				Images:         singleImage(brand.Logo, "hero"),
 				Locale:         lang,
 				HasCanonical:   instPath != "",
@@ -205,7 +205,7 @@ func SeoScoreInputOf(ctx context.Context, r ProductReadPort, insts SeoInstancePa
 				SEOTitle:       detail.Name,
 				SEODescription: detail.Subtitle,
 				Slug:           detail.Slug,
-				URL:            firstNonEmptyText(instPath, slashSlug(detail.Slug)),
+				URL:            firstNonEmpty(instPath, slashSlug(detail.Slug)),
 				Images:         ProductPageImages(detail),
 				SpecNames:      VariationSpecNames(detail),
 				ChildNames:     ProductCategoryNames(detail),
@@ -501,19 +501,6 @@ func CategoryChildNames(ctx context.Context, r ProductReadPort, projectID, id st
 		}
 	}
 	return out
-}
-
-// firstNonEmptyText 取第一个非空值。
-//
-// 本文件的取数逻辑用它拼「实例路径 → 否则 slug 近似路径」。与 inbound/http 的 firstNonEmpty
-// 同逻辑但仍是两份实现（跨包不可见）—— 收敛另立一轮，不在本批。
-func firstNonEmptyText(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
 }
 
 // slashSlug URL 段 → 路径形态（空 slug 返回空串）。
