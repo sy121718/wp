@@ -226,8 +226,20 @@ type BundleMemberDraft struct {
 	Enabled     bool   `json:"enabled"`
 	// OptionValues 该变体的规格组合（jsonb 对象；前端据它展示可读规格）。
 	OptionValues json.RawMessage `json:"optionValues"`
-	// Source 来源快照（直接可落进 BundleOption 的四个字段）。
-	Source BundleMemberSource `json:"source"`
+	// Source 来源快照（服务内部的形态，直接可落进 BundleOption 的四个字段）。
+	// **不参与 JSON**：对外的四个键在下面平铺，见 SourceKind 的说明。
+	Source BundleMemberSource `json:"-"`
+	// 以下是来源快照的**平铺**形态：页面 JS 直接按这几个键取值（没有二次解包这一层）。
+	// 嵌套一个 source 对象时前端要写 data.source.warehouseSku，而少写一层不会报错 ——
+	// 只会拿到 undefined 并把成员来源存成空值。
+	SourceKind   string `json:"sourceKind"`
+	WarehouseID  string `json:"warehouseId,omitempty"`
+	WarehouseSKU string `json:"warehouseSku,omitempty"`
+	ExternalSKU  string `json:"externalSku,omitempty"`
+	// Spec 规格的可读文本（「颜色 红 · 尺码 L」），由 service 按来源商品的属性组算好。
+	Spec string `json:"spec"`
+	// SourceLabel 来源的可读文本（「从仓库选 · 主仓 WHS-01」），已按当前语言取词。
+	SourceLabel string `json:"sourceLabel"`
 }
 
 // BundleMemberSource 成员来源快照（不是身份，见 BundleOption 的说明）。
@@ -250,16 +262,24 @@ type BundleMemberSkip struct {
 	WarehouseSKU string          `json:"warehouseSku,omitempty"`
 	OptionValues json.RawMessage `json:"optionValues,omitempty"`
 	Reason       string          `json:"reason"`
+	// Text 跳过原因的可读文本（已按当前语言取词）。
+	Text string `json:"text"`
+	// Label 这一行的可读标识（SKU / 仓库 SKU / 规格文本）。
+	Label string `json:"label"`
 }
 
 // ResolveBundleMembersResp 来源解析结论：成功 N（Members）/ 跳过 M（Skipped）+ 逐条原因。
 type ResolveBundleMembersResp struct {
+	// OK 恒为 true（失败走 pkg/response 的错误体）：前端据它区分「解析过」与「没解析过」。
+	OK        bool   `json:"ok"`
 	ProductID string `json:"productId"`
 	Source    string `json:"source"`
 	// Members 本次解析出的候选成员（已去重，尚未落库）。
 	Members []*BundleMemberDraft `json:"members"`
 	// Skipped 没有加进来的那几条（原因逐条可读；一条失败不影响其余）。
-	Skipped []BundleMemberSkip `json:"skipped"`
+	// 键名是 skips：页面 JS 与回执同形（曾经这里叫 skipped，出口另拼一个 skips 数组，
+	// 于是「跳过几条」有两个来源，一个是计数一个是数组）。
+	Skipped []BundleMemberSkip `json:"skips"`
 	// Total 去重前的候选总数（含被跳过与已存在的）。
 	Total int `json:"total"`
 }

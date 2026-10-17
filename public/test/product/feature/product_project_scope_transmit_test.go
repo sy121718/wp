@@ -256,12 +256,14 @@ func TestBundleMembersResolveTransmitsProjectScope(t *testing.T) {
 	f.generateCombosFor(t, src.ID, attr.ID, valueID)
 	bundle := f.scopeTransmitProduct(t, "作用域成员套餐", "scope-transmit-member-bundle", nil)
 
-	rec := postForm(engine, "/admin/products/bundle/members/resolve", url.Values{
-		"projectId":       {f.projectID},
-		"productId":       {bundle.ID},
-		"source":          {productenums.BundleSourceAttributes},
-		"sourceProductId": {src.ID},
-		"attr:" + attr.ID: {valueID},
+	rec := postJSON(t, engine, "/admin/products/bundle/members/resolve", map[string]any{
+		"projectId":       f.projectID,
+		"productId":       bundle.ID,
+		"source":          productenums.BundleSourceAttributes,
+		"sourceProductId": src.ID,
+		"selections": []map[string]any{
+			{"attributeId": attr.ID, "valueIds": []string{valueID}},
+		},
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("成员解析应 200，实际 %d：%s", rec.Code, rec.Body.String())

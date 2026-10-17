@@ -184,12 +184,12 @@ func TestProductPageKeepsBusinessErrorText(t *testing.T) {
 		t.Fatalf("删不存在的商品应失败")
 	}
 	assertNoProductInternalLeak(t, "JSON 回执", env.Message)
-	// 这个 feature 包从不装配 i18n，pkg/response 的 translate 未命中时原样返回 key ——
-	// 所以在这个引擎上「业务文案」的可见形态就是 key 本身（同一口径见
-	// admin_err_response_test.go 的注释）。生产装配后它被译成「请求资源不存在」。
-	// 这里钉的是「业务错误不被归口成系统内部错误」：message 仍是可翻译的业务 key。
-	if env.Message != productenums.ErrNotFound {
-		t.Fatalf("业务错误应原样透出 key（未装配 i18n 的既定形态），message=%s", env.Message)
+	// 这个 feature 包从不装配 i18n，pkg/response 的 translate 未命中时退回**声明处的兜底**
+	// （productenums.Err 用 ProductErrFallbacks 给错误配的中文）—— 所以在这个引擎上
+	// 「业务文案」的可见形态就是那句中文，而不是裸 key。生产装配后它被译成对应语言的词条。
+	// 这里钉的是两件事：业务错误不被归口成系统内部错误；页面上不出现 ErrNotFound 这种串。
+	if env.Message != productenums.ProductErrFallbacks[productenums.ErrNotFound] {
+		t.Fatalf("业务错误应透出声明处的兜底文案，message=%s", env.Message)
 	}
 }
 

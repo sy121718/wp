@@ -93,7 +93,8 @@ func TestSkipReasonFallbacksCoverEnumsSkipKeys(t *testing.T) {
 		table  map[string]string
 	}{
 		{"variantSkipFallbacks", "VariantSkip", variantSkipFallbacks},
-		{"bundleMemberSkipFallbacks", "BundleMember", bundleMemberSkipFallbacks},
+		// 成员来源解析的跳过表随解析一起下沉到 service（product_bundle.go 的
+		// bundleMemberSkipFallbacks），覆盖面守卫在 service 包：这张表在那里是唯一真源。
 	}
 	for _, tc := range tables {
 		t.Run(tc.name, func(t *testing.T) {

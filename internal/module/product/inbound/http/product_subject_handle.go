@@ -697,13 +697,6 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 //
 // Spec 是**服务端**拼的可读规格文本（与详情页表格同一份 specLabel），
 // 前端不自己拼属性名 —— 属性值改名后前端那份就会显示旧名字。
-type variantPreviewRow struct {
-	SKUCode      string          `json:"skuCode"`
-	OptionValues json.RawMessage `json:"optionValues"`
-	OptionKey    string          `json:"optionKey"`
-	Spec         string          `json:"spec"`
-}
-
 // ProductsVariantPreview 组合生成的**预览**（POST /admin/products/variant/preview，不落库）。
 //
 // 用户口径（docs/14 §8）：「生产只是显示，并不会存入数据库，必须保存才行」。
@@ -735,29 +728,13 @@ func (h *ProductPageHandle) ProductsVariantPreview(c *gin.Context) {
 	}
 	res, err := h.products.PreviewVariantCombinations(ctx, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "message": response.MessageOf(c, "product", err)})
+		response.ErrorWithMessage(c, http.StatusBadRequest, response.MessageOf(c, productErrScene, err))
 		return
 	}
-	// 取属性组那一跳带作用域（req.ProjectID 上面已从表单读出）：多工程部署下不带它
-	// 会被 product 侧的 resolveProjectID 拒掉，attrs 退化为空 —— derr 被刻意忽略，
-	// 于是 spec 静默降级成 optionKey（「属性组：值」标签全丢），页面上看不出报错。
-	attrs := []*productdto.AttributeResp{}
-	if detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: productID, ProjectID: req.ProjectID}); derr == nil && detail != nil {
-		attrs = detail.Attributes
-	}
-	rows := make([]variantPreviewRow, 0, len(res.Rows))
-	for _, row := range res.Rows {
-		if row == nil {
-			continue
-		}
-		rows = append(rows, variantPreviewRow{
-			SKUCode: row.SKUCode, OptionValues: row.OptionValues,
-			OptionKey: row.OptionKey, Spec: productservice.SpecLabel(row.OptionValues, attrs),
-		})
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"ok": true, "total": res.Total, "skipped": res.Skipped, "rows": rows,
-	})
+	// 规格文本（Spec）由 service 用同一份属性组算出：控制器不再为了拼这句话回查一次商品
+	// （那次回查可以静默拿到空 attrs，于是整列规格变「—」而不报错）。
+	res.OK = true
+	c.JSON(http.StatusOK, res)
 }
 
 // variantSkipFallbacks 清单外删除被跳过时的中文兜底（key 见 productenums.VariantSkip*）。
@@ -1068,86 +1045,12 @@ func (h *ProductPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
 	}
 	res, err := h.products.ResolveBundleMembers(ctx, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "message": response.MessageOf(c, "product", err)})
+		response.ErrorWithMessage(c, http.StatusBadRequest, response.MessageOf(c, productErrScene, err))
 		return
 	}
-	// 例外（JSON 出口的成品串）：这个端点的响应体是给前端直接渲染的（sourceLabel / skips.text），
-	// 没有模板取词这一层 —— 与页面槽位不同，这里的字符串必须已经是当前语言的成品。
-	tr := shell.TranslateFor(c)
-	// 规格文本要用来源商品的属性组：「组合在商品侧没有对应变体」必须指得出是哪一组。
-	attrs := []*productdto.AttributeResp{}
-	if req.SourceProductID != "" {
-		// 同变体预览：取来源商品必须带作用域（req.ProjectID 上面已从表单读出），
-		// 否则多工程部署下这一跳被 resolveProjectID 拒掉、attrs 退化为空，
-		// spec 静默降级成 optionKey（derr 被忽略，不报错）。
-		if detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: req.SourceProductID, ProjectID: req.ProjectID}); derr == nil && detail != nil {
-			attrs = detail.Attributes
-		}
-	}
-	members := make([]gin.H, 0, len(res.Members))
-	for _, m := range res.Members {
-		if m == nil {
-			continue
-		}
-		// 键名一律小驼峰：gin.H 是 map，JSON 键就是这里的字面量 ——
-		// 页面 JS 按 variantId / sourceKind / warehouseSku 取值（与其余 JSON 接口同一口径），
-		// 写成 PascalCase 会让前端拿到 undefined 却看不出任何错。
-		members = append(members, gin.H{
-			"variantId":   m.VariantID,
-			"skuCode":     m.SKUCode,
-			"productId":   m.ProductID,
-			"productName": m.ProductName,
-			"spec":        productservice.SpecLabel(m.OptionValues, attrs),
-			"sourceKind":  m.Source.Kind,
-			"sourceLabel": bundleSourceLabel(tr, productdto.BundleOption{
-				SourceKind: m.Source.Kind, WarehouseID: m.Source.WarehouseID,
-				WarehouseSKU: m.Source.WarehouseSKU, ExternalSKU: m.Source.ExternalSKU,
-			}),
-			"warehouseId":  m.Source.WarehouseID,
-			"warehouseSku": m.Source.WarehouseSKU,
-			"externalSku":  m.Source.ExternalSKU,
-		})
-	}
-	skips := make([]gin.H, 0, len(res.Skipped))
-	for _, s := range res.Skipped {
-		// 跳过的行要能被认出来：「从规格组合来的」用可读规格文本，「从仓库来的」用仓库 SKU 文本。
-		label := strings.TrimSpace(s.SKUCode)
-		if label == "" {
-			label = strings.TrimSpace(s.WarehouseSKU)
-		}
-		if label == "" {
-			label = strings.TrimSpace(s.VariantID)
-		}
-		if spec := productservice.SpecLabel(s.OptionValues, attrs); spec != "" && spec != "—" {
-			if label == "" {
-				label = spec
-			} else {
-				label = label + " · " + spec
-			}
-		}
-		skips = append(skips, gin.H{
-			"reason": s.Reason,
-			"text":   tr(s.Reason, bundleMemberSkipFallbacks[s.Reason]),
-			"label":  label,
-		})
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"ok": true, "added": len(members), "skipped": len(skips),
-		"members": members, "skips": skips,
-	})
-}
-
-// bundleMemberSkipFallbacks 成员来源解析被跳过时的中文兜底（key 见 productenums.BundleMember*）。
-//
-// 与 variantSkipFallbacks 同一形态：词条缺失时页面上仍是可读的一句话，
-// 而不是裸 key。
-var bundleMemberSkipFallbacks = map[string]string{
-	productenums.BundleMemberNotOnProduct:        "该属性值组合在商品侧没有对应变体，未加入（请先到该商品上生成这个规格的变体）",
-	productenums.BundleMemberSkippedInList:       "该 SKU 已在成员清单里，未重复加入",
-	productenums.BundleMemberWarehouseSKUMissing: "该仓库里没有这条仓库 SKU，未加入（请确认仓库选对了，或先在该仓建好这条货）",
-	productenums.BundleMemberVariantDisabled:     "该变体已停用，未加入（停用的 SKU 挂进套餐会变成前台选不了又躲不开的必选项）",
-	productenums.BundleMemberOptionsExceeded:     "已达该捆绑配置的选项数量上限，未加入（可先调大上限再解析）",
-	productenums.ErrBundleSelfReference:          "该 SKU 属于这个捆绑容器自己，未加入（不能自引用）",
+	// 回执就是响应：行结构、规格文本、来源标签、跳过原因全部由 service 填好
+	// （属性组与取词函数它都有）—— 控制器不再为拼一句 spec 回查一次商品。
+	c.JSON(http.StatusOK, res)
 }
 
 // isBundleProduct 商品类型是否为捆绑容器（详情页据此决定要不要渲染「捆绑构成」）。

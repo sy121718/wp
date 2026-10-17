@@ -56,10 +56,16 @@ type VariantPreviewRow struct {
 	OptionKey string `json:"optionKey"`
 	// SKUCode 系统生成的 SKU（与保存路径同一套拼接规则，运营可在清单里改写）。
 	SKUCode string `json:"skuCode"`
+	// Spec 规格的可读文本（「颜色：红 · 尺码：L」），前端直接渲染。
+	// 由 service 用商品属性组算好：控制器再取一次属性只是为了拼这句，等于把同一份
+	// 判定分到两处（而其中一处是可以静默拿到空 attrs 的）。
+	Spec string `json:"spec"`
 }
 
 // PreviewVariantResp 组合生成预览结果。
 type PreviewVariantResp struct {
+	// OK 恒为 true（失败走 pkg/response 的错误体）：前端据它区分「生成过」与「没生成过」。
+	OK        bool   `json:"ok"`
 	ProductID string `json:"productId"`
 	// Total 本次笛卡尔积的组合总数（去重前）。
 	Total int `json:"total"`

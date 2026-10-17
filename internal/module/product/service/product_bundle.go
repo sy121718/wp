@@ -671,6 +671,8 @@ func (s *Service) ResolveBundleMembers(ctx context.Context, req *productdto.Reso
 	if err = s.fillBundleMemberProductNames(ctx, projectID, res.Members); err != nil {
 		return nil, err
 	}
+	s.fillBundleMemberDisplay(ctx, projectID, req, res)
+	res.OK = true
 	return res, nil
 }
 
@@ -958,3 +960,87 @@ var (
 		BundleConfiguratorData(ctx context.Context, productID, projectID string) (*productdto.BundleConfigResp, error)
 	} = (*Service)(nil)
 )
+
+// bundleSourceLabel 来源事实段 → 当前语言的成品串。
+//
+// 只有 JSON 出口用它（成员来源解析响应的 sourceLabel：前端直接显示，没有模板取词层）。
+// 模板侧一律用 BundleSourceParts 交事实、在模板里取词与拼接 —— 两条路径共用同一份
+// 「由哪几段组成」的定义（BundleSourceParts），不各拼一遍。
+func bundleSourceLabel(tr TranslateFunc, o productdto.BundleOption) string {
+	segments := make([]string, 0, 3)
+	for _, part := range BundleSourceParts(o) {
+		text := tr(part.LabelKey, part.LabelFallback)
+		if part.Value != "" {
+			text += " " + part.Value
+		}
+		segments = append(segments, text)
+	}
+	return strings.Join(segments, " · ")
+}
+
+// bundleMemberSkipFallbacks 成员来源解析被跳过时的中文兜底（key 见 productenums.BundleMember*）。
+//
+// 与 variantSkipFallbacks 同一形态：词条缺失时页面上仍是可读的一句话，而不是裸 key。
+var bundleMemberSkipFallbacks = map[string]string{
+	productenums.BundleMemberNotOnProduct:        "该属性值组合在商品侧没有对应变体，未加入（请先到该商品上生成这个规格的变体）",
+	productenums.BundleMemberSkippedInList:       "该 SKU 已在成员清单里，未重复加入",
+	productenums.BundleMemberWarehouseSKUMissing: "该仓库里没有这条仓库 SKU，未加入（请确认仓库选对了，或先在该仓建好这条货）",
+	productenums.BundleMemberVariantDisabled:     "该变体已停用，未加入（停用的 SKU 挂进套餐会变成前台选不了又躲不开的必选项）",
+	productenums.BundleMemberOptionsExceeded:     "已达该捆绑配置的选项数量上限，未加入（可先调大上限再解析）",
+	productenums.ErrBundleSelfReference:          "该 SKU 属于这个捆绑容器自己，未加入（不能自引用）",
+}
+
+// fillBundleMemberDisplay 逐行补齐展示文本：规格、来源标签、跳过原因与行标识。
+//
+// 这些字段此前在控制器里拼（每行一次字面量映射），而它们的输入（属性组、取词函数）
+// service 都有：控制器再查一次商品只为拼 spec，那次回查还能静默拿到空 attrs，
+// 于是规格列整列变「—」而不报错。
+func (s *Service) fillBundleMemberDisplay(ctx context.Context, projectID string, req *productdto.ResolveBundleMembersReq, res *productdto.ResolveBundleMembersResp) {
+	tr := translateFrom(ctx)
+	attrs := []*productdto.AttributeResp{}
+	if id := strings.TrimSpace(req.SourceProductID); id != "" {
+		if src, err := s.m.Get(ctx, id, projectID); err == nil && src != nil {
+			if list, aerr := s.m.ListAttributesByIDs(ctx, decodeStrings(src.AttributeIDs), projectID); aerr == nil {
+				attrs = attributeResps(list)
+			}
+		}
+	}
+	for _, m := range res.Members {
+		if m == nil {
+			continue
+		}
+		// 平铺字段与 Source 同源：两者都由这一次赋值给出，不会一半新一半旧。
+		m.SourceKind = m.Source.Kind
+		m.WarehouseID, m.WarehouseSKU, m.ExternalSKU = m.Source.WarehouseID, m.Source.WarehouseSKU, m.Source.ExternalSKU
+		m.Spec = SpecLabel(m.OptionValues, attrs)
+		m.SourceLabel = bundleSourceLabel(tr, productdto.BundleOption{
+			SourceKind: m.Source.Kind, WarehouseID: m.Source.WarehouseID,
+			WarehouseSKU: m.Source.WarehouseSKU, ExternalSKU: m.Source.ExternalSKU,
+		})
+	}
+	for i := range res.Skipped {
+		skip := &res.Skipped[i]
+		skip.Text = tr(skip.Reason, bundleMemberSkipFallbacks[skip.Reason])
+		skip.Label = bundleMemberSkipLabel(*skip, attrs)
+	}
+}
+
+// bundleMemberSkipLabel 跳过的行要能被认出来：SKU 优先，其次仓库 SKU，
+// 再落到变体 id；有规格文本时接在后面（「从规格组合来的」那一批才有）。
+func bundleMemberSkipLabel(skip productdto.BundleMemberSkip, attrs []*productdto.AttributeResp) string {
+	label := strings.TrimSpace(skip.SKUCode)
+	if label == "" {
+		label = strings.TrimSpace(skip.WarehouseSKU)
+	}
+	if label == "" {
+		label = strings.TrimSpace(skip.VariantID)
+	}
+	spec := SpecLabel(skip.OptionValues, attrs)
+	if spec == "" || spec == "—" {
+		return label
+	}
+	if label == "" {
+		return spec
+	}
+	return label + " · " + spec
+}

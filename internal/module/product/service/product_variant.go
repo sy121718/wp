@@ -1266,7 +1266,7 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 		}
 		seen[optionKey(decodeOptionPairs(raw))] = true
 	}
-	res = &productdto.PreviewVariantResp{ProductID: p.ID, Total: total, Rows: []*productdto.VariantPreviewRow{}}
+	res = &productdto.PreviewVariantResp{OK: true, ProductID: p.ID, Total: total, Rows: []*productdto.VariantPreviewRow{}}
 	for _, pairs := range expandCombinations(dims) {
 		key := optionKey(pairs)
 		if seen[key] {
@@ -1280,6 +1280,9 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 		taken[code] = true
 		res.Rows = append(res.Rows, &productdto.VariantPreviewRow{
 			OptionValues: raw, OptionKey: key, SKUCode: code,
+			// 规格文本在这里算：属性组是本次请求已经查过的那一份，控制器不必再查一次
+			// （再查的那次可以静默拿到空 attrs，于是页面上规格列整列变空而不报错）。
+			Spec: SpecLabel(raw, attributeResps(attrs)),
 		})
 	}
 	return res, nil
@@ -1901,6 +1904,18 @@ func normalizeVariantIDs(ids []string) []string {
 		if len(out) >= VariantAvailabilityLookupMaxIDs {
 			break
 		}
+	}
+	return out
+}
+
+// attributeResps 属性实体 → 响应形状（SpecLabel 吃 dto 形态；值列表与列表页同一份归一）。
+func attributeResps(entities []*productmodel.ProductAttributeEntity) []*productdto.AttributeResp {
+	out := make([]*productdto.AttributeResp, 0, len(entities))
+	for _, e := range entities {
+		if e == nil {
+			continue
+		}
+		out = append(out, toAttributeResp(e))
 	}
 	return out
 }
