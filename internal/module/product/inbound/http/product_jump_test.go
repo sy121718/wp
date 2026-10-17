@@ -23,7 +23,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/templates"
 )
 
@@ -142,25 +141,6 @@ func TestProductBackHelpersKeepFilters(t *testing.T) {
 // TestProductWriteHandlersJumpOnValidationFail 校验型失败（不碰 service）也走整页提示。
 func TestProductWriteHandlersJumpOnValidationFail(t *testing.T) {
 	h := &productPageHandle{}
-
-	t.Run("改商品缺名称", func(t *testing.T) {
-		c, rec := newProductJumpContext(t, "", "", "projectId=p1&productId=prod1&name=")
-		h.ProductsUpdate(c)
-		c.Writer.WriteHeaderNow()
-		if rec.Code != http.StatusOK {
-			t.Fatalf("状态码 = %d，want 200（提示页）", rec.Code)
-		}
-		body := rec.Body.String()
-		if !strings.Contains(body, `data-jump-state="err"`) {
-			t.Fatalf("应渲染 err 态提示页，body=%s", body)
-		}
-		if !strings.Contains(body, productErrFallbackText(productenums.ErrNameRequired)) {
-			t.Fatalf("提示页应含「商品名称必填」，body=%s", body)
-		}
-		if !strings.Contains(body, "/admin/products/edit?") || !strings.Contains(body, "product=prod1") {
-			t.Fatalf("回跳应回编辑页并带上商品，body=%s", body)
-		}
-	})
 
 	t.Run("生成变体未勾选", func(t *testing.T) {
 		c, rec := newProductJumpContext(t, "", "", "projectId=p1&productId=prod1")

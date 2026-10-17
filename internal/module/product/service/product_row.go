@@ -98,8 +98,8 @@ func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.C
 		// 富文本字段要的是裸 HTML，库里存的是 {"html": "..."}（jsonb 对象）。
 		DescriptionHTML: productDescriptionHTML(detail.Description),
 		// 主图（编辑页的单图媒体控件）：与详情响应同一个值（ProductResp.DefaultImage，
-		// 已经过 upload.StorageURL 归一）。它与保存路径是一对：ProductsUpdate 会读这个
-		// 隐藏域（GetPostForm），所以这里漏赋值 = 控件空着 = 下一次保存把主图静默清空。
+		// 已经过 upload.StorageURL 归一）。它与保存路径是一对：编辑页保存时基座把表单里的
+		// 隐藏域整份发成 UpdateReq.DefaultImage，所以这里漏赋值 = 控件空着 = 下一次保存把主图静默清空。
 		// 两处必须同时在位 —— 只有读没有回显，等于每次保存都擦图。
 		DefaultImage: detail.DefaultImage,
 

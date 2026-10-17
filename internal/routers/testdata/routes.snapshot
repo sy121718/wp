@@ -410,7 +410,6 @@ POST /admin/products/template/preview
 POST /admin/products/template/publish
 POST /admin/products/template/url
 POST /admin/products/translations/save
-POST /admin/products/update
 POST /admin/products/variant/create
 POST /admin/products/variant/delete
 POST /admin/products/variant/generate

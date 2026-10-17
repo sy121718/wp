@@ -66,7 +66,6 @@ func newVariantPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
 	// 商品自身字段（名称 / URL 段 / SKU / 状态 / 价格 / SEO / 图集）与多语言入口在编辑页。
 	engine.GET("/admin/products/edit", handle.ProductEditPage)
-	engine.POST("/admin/products/update", handle.ProductsUpdate)
 	engine.POST("/admin/products/variant/generate", handle.ProductsVariantGenerate)
 	return engine, f
 }

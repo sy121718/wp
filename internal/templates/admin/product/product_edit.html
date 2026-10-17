@@ -57,7 +57,9 @@
             {{if .HasProduct}}
             <a class="btn" href="/admin/products/detail?project={{selectedProject}}&amp;product={{.ProductID}}">{{ .["t"]("admin.products.row.detail", "详情") }}</a>
             <a class="btn" href="/admin/products/translations?project={{selectedProject}}&amp;product={{.ProductID}}">{{ .["t"]("admin.products.row.translations", "多语言") }}</a>
-            {{if !editBlocked}}<button type="submit" form="product-edit-main" class="btn btn-primary">{{ .["t"]("admin.common.action.save", "保存") }}</button>{{end}}
+            {* disabled + data-requires-js：无 JS 时表单没有可用端点（基座不接管，原生提交会落到
+               一个不存在的页面上），所以按钮在 JS 把它放出来之前是真的按不动。 *}
+            {{if !editBlocked}}<button type="submit" form="product-edit-main" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.common.action.save", "保存") }}</button>{{end}}
             {{end}}
         </div>
     </header>
@@ -93,10 +95,25 @@
     {* 两栏：左编辑（表单） / 右预览（详情页真实形态）。预览只在有商品时才有意义 ——
        新建走的是另一个页面，这里 HasProduct 为假时右栏给一句说明。 *}
     <div class="product-edit-panes">
-    {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form id="product-edit-main" method="post" action="/admin/products/update" class="card card-body form-stack">{{end}}
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
+    {* 提交走 JSON 写基座（static/js/ui/json_write.js）：data-write-mode=form 表示「整表单当
+       UpdateReq 发」。字段名与 dto.UpdateReq 的 json 标签逐字对齐，声明负责三件页面替不了的事：
+       · data-write-array：勾选组（属性组 / 分类 / 标签）收成数组，一个都不勾发空数组 = 解绑全部；
+       · data-write-float / data-write-skip-empty：价格与重量按小数发，留空表示「不设置」而不是 0；
+       · data-write-lines：图集与 alt 是「一个隐藏域 + 多行文本」，端点要的是 []string；
+       · data-write-html：富文本给的是裸 HTML，入库形态是 jsonb {"html": …}。
+       csrf 走请求头（基座自动带 X-CSRF-Token），表单里不再有隐藏域。 *}
+    {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form id="product-edit-main" class="card card-body form-stack"
+          data-write-api="/api/product/update"
+          data-write-mode="form"
+          data-write-array="attributeIds,categoryIds,tagIds"
+          data-write-float="defaultPrice,weight"
+          data-write-skip-empty="slug,sku,defaultPrice,weight"
+          data-write-lines="images,imageAlts"
+          data-write-html="descriptionHtml:description">{{end}}
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{p.ID}}">
+        {* 写结论落在表单最上方：保存按钮在页头，失败原因若出现在表单底部，视线根本走不到。 *}
+        <p class="form-hint" data-write-status role="status" hidden></p>
 
         <h2 class="card-title">{{ .["t"]("admin.product_detail.basic.title", "基本信息") }}</h2>
 
@@ -260,7 +277,8 @@
         {{end}}
         </details>
 
-        {* 主行动（保存）在页头：这里只留取消，避免同一个动作出现两个按钮。 *}
+        {* 主行动（保存）在页头：这里只留取消，避免同一个动作出现两个按钮。
+           写结论（失败原因 / 已保存）落在下面这行状态区：不再有「原地重渲染整张表单」这条出口。 *}
         <div class="action-row">
             <a class="btn btn-ghost" href="{{.BackURL}}">{{ .["t"]("admin.common.action.cancel", "取消") }}</a>
         </div>

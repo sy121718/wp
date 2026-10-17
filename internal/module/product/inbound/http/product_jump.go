@@ -391,11 +391,8 @@ var (
 	productVariantSaveSkipped  = productBulkText{productenums.BulkVariantSkipped, "跳过 %s 个：%s"}
 )
 
-// productSaved 商品编辑页保存成功的回执（无占位符）。
-//
-// 保存后页面刷新，字段值与保存前看起来一模一样 —— 没有这条提示，用户无法区分
-// 「保存成功了」与「按钮点了没反应」。
-var productSaved = productBulkText{productenums.MsgProductSaved, "商品已保存"}
+// 商品编辑页保存成功的回执已随页面 POST 一起消失：写动作交给 ui/json_write.js 直调
+// /api/product/update，成功后基座 reload 编辑页（字段值就是刚落库的那一份）。
 
 // —— 批量 id 超限的受控事实 ——
 

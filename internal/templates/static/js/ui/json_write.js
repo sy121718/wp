@@ -55,6 +55,22 @@
  *       认不出的取值（"maybe" / "2"）原样发字符串，由严格 API 自己回 400：
  *       页面替调用方猜一次类型，就是替它造了一个它没说的值。未勾选的 checkbox 根本不在
  *       payload 里 —— 点名也只处理**已经存在的**字段。
+ *     · data-write-array="tagIds,categoryIds"：**显式点名**「同名多值收成数组」的字段（create/form 档）。
+ *       多选 checkbox 组默认是「后者覆盖」，覆盖的失效模式是「勾了三个、只存最后一个」。
+ *       一个都没勾时发**空数组**（不是不发）：UpdateReq 里 nil = 本次不改、[] = 解绑全部，
+ *       而「一个都不勾」是明确的解绑意图。
+ *     · data-write-lines="images,imageAlts"：**显式点名**「按行切成字符串数组」的字段。
+ *       图集与 alt 在页面里是「一个隐藏域 + 多行文本」，端点要的却是 []string —— 整表单
+ *       直接把 "a\nb" 送过去，严格解码只回一句 400。空文本按空数组发（清空是明确意图）。
+ *     · data-write-html="descriptionHtml:description"：把裸 HTML 字段包成 {"html": "…"} 写到
+ *       目标键（冒号后可省，缺省 = 源字段名）。富文本控件的值是裸 HTML，而库里是 jsonb 对象；
+ *       这层包装原在 handler 里做，页面迁到基座后必须跟过来。不 trim：正文空白是排版。
+ *     · data-write-float="defaultPrice,weight"：**显式点名**「按小数发」的字段（与
+ *       data-write-number 分档：那个只认非负整数，id 类字段用它最安全）。只认十进制小数，
+ *       认不出的取值原样发字符串。
+ *     · data-write-skip-empty="slug,sku,defaultPrice"：**显式点名**「空就不发」的字段。
+ *       它守的是「留空即不改」：整表单提交会把没填的输入框发成 ""，于是「只改个名字」变成
+ *       「顺手把 URL 段置空」。过滤发生在类型转换之前。
  *     · data-write-rows=".nav-tr-row;context,hash,target;rows"：**声明式行数组**（只在 create 档生效）。
  *       分号前是「一行一个容器」的选择器，第二段是这一行的字段名，**第三段是 payload 的键名**
  *       （可省，缺省 rows）：每个容器收成一个对象，按 DOM 顺序组装成 payload[key]（容器里缺某个
@@ -275,6 +291,121 @@
     }
 
     // boolFields 解析 data-write-bool（**显式点名**的布尔字段），与 numberFields 同形。
+    // floatFields 解析 data-write-float="defaultPrice,weight"：**显式点名**「按小数发」的字段。
+    //
+    // 为什么不并进 data-write-number：那个档只转十进制**非负整数**（id 类字段用它最安全），
+    // 而金额 / 重量是小数。并档会让既有 19 处商品域外的调用点跟着改口径 —— 一个为金额加的
+    // 「接受小数点」会顺手让 block id 这类字段开始接受 "1.5"。
+    function floatFields(form, submitter) {
+        var spec = attrFrom(form, submitter, 'data-write-float');
+        var names = {};
+        if (!spec) { return names; }
+        String(spec).split(',').forEach(function (rawName) {
+            var name = String(rawName || '').trim();
+            if (name) { names[name] = true; }
+        });
+        return names;
+    }
+
+    // floatValue 十进制小数（含负数）才转数字；"1e3" / 空串 / "abc" 原样发，
+    // 由严格 API 自己回 400 —— 页面替调用方猜一次类型，就是替它造了一个它没说的值。
+    function floatValue(raw) {
+        if (typeof raw !== 'string') { return raw; }
+        var v = raw.trim();
+        if (!/^-?\d+(\.\d+)?$/.test(v)) { return raw; }
+        var n = Number(v);
+        return isFinite(n) ? n : raw;
+    }
+
+    function applyFloatFields(payload, names) {
+        Object.keys(names).forEach(function (name) {
+            if (!Object.prototype.hasOwnProperty.call(payload, name)) { return; }
+            payload[name] = floatValue(payload[name]);
+        });
+        return payload;
+    }
+
+    // arrayFields 解析 data-write-array="tagIds,categoryIds"：**显式点名**「收成数组」的字段。
+    //
+    // 默认同名控件是「后者覆盖」（单值语义），而多选 checkbox 组（分类 / 标签 / 属性组）必须
+    // 收成数组：覆盖的失效模式是「勾了三个、只存最后一个」，不报错、也不崩。
+    // 没勾任何一项时发**空数组**（不是不发）：UpdateReq 里 nil = 本次不改、[] = 解绑全部，
+    // 而「一个都没勾」是明确的解绑意图。
+    function arrayFields(form, submitter) {
+        var spec = attrFrom(form, submitter, 'data-write-array');
+        var names = {};
+        if (!spec) { return names; }
+        String(spec).split(',').forEach(function (rawName) {
+            var name = String(rawName || '').trim();
+            if (name) { names[name] = true; }
+        });
+        return names;
+    }
+
+    // linesFields 解析 data-write-lines="images,imageAlts"：**显式点名**「按行切成字符串数组」的字段。
+    //
+    // 图集与 alt 在页面里是「一个隐藏域 + 多行文本」（admin/partials/media_gallery.html），
+    // 而端点的 Images / ImageAlts 是 []string —— 整表单提交直接把 "a\nb" 送过去，
+    // 严格解码只回一句 400。空文本按空数组发（清空图集是明确意图，与「nil = 不改、[] = 清空」对齐）。
+    function linesFields(form, submitter) {
+        var spec = attrFrom(form, submitter, 'data-write-lines');
+        var names = {};
+        if (!spec) { return names; }
+        String(spec).split(',').forEach(function (rawName) {
+            var name = String(rawName || '').trim();
+            if (name) { names[name] = true; }
+        });
+        return names;
+    }
+
+    // splitLines 与 handler 侧 splitFormLines 同口径：统一换行、去首尾空白、丢弃空行。
+    function splitLines(raw) {
+        if (typeof raw !== 'string') { return []; }
+        var out = [];
+        raw.replace(/\r\n/g, '\n').split('\n').forEach(function (line) {
+            var v = line.trim();
+            if (v) { out.push(v); }
+        });
+        return out;
+    }
+
+    // skipEmptyFields 解析 data-write-skip-empty="slug,sku"：**显式点名**「空就不发」的字段。
+    //
+    // 它守的是「留空即不改」这条既有语义：端点的 slug / sku 是 *string，nil = 不改、
+    // 空串 = 非法参数（或清空）。整表单提交会把没填的输入框发成 ""，于是「只想改个名字」
+    // 变成「顺手把 URL 段置空」—— 400 还是好的，最坏是静默清空。
+    function skipEmptyFields(form, submitter) {
+        var spec = attrFrom(form, submitter, 'data-write-skip-empty');
+        var names = {};
+        if (!spec) { return names; }
+        String(spec).split(',').forEach(function (rawName) {
+            var name = String(rawName || '').trim();
+            if (name) { names[name] = true; }
+        });
+        return names;
+    }
+
+    // htmlFields 解析 data-write-html="descriptionHtml:description"：把裸 HTML 字段包成
+    // {"html": "..."} 写到目标键（冒号后可省略，缺省目标键 = 源字段名）。
+    //
+    // 商品描述在库里是 jsonb {"html": "..."}，富文本控件提交的却是裸 HTML 字符串 —— 这层包装
+    // 原来在 handler 里做（ProductsUpdate 的 json.Marshal），页面迁到基座后 handler 不再经手
+    // 表单，包装必须跟着落到这里。不 trim：正文里的空白是有意义的排版。
+    function htmlFields(form, submitter) {
+        var spec = attrFrom(form, submitter, 'data-write-html');
+        var pairs = {};
+        if (!spec) { return pairs; }
+        String(spec).split(',').forEach(function (rawPair) {
+            var pair = String(rawPair || '').trim();
+            if (!pair) { return; }
+            var colon = pair.indexOf(':');
+            var src = colon < 0 ? pair : pair.slice(0, colon).trim();
+            var target = colon < 0 ? src : pair.slice(colon + 1).trim();
+            if (src && target) { pairs[src] = target; }
+        });
+        return pairs;
+    }
+
     function boolFields(form, submitter) {
         var spec = attrFrom(form, submitter, 'data-write-bool');
         var names = {};
@@ -456,13 +587,7 @@
     // ruleParams 这类**结构参数**的值天然是数字：发 "30" 会被服务端的 ruleInt 当字符串拒掉，
     // 症状是「保存没反应」。但也不能一律 Number()：认不出的取值（"abc"、"1e3"）原样发字符串，
     // 由严格 API 报参数错误 —— 页面替调用方猜一次类型，就是替它造了一个它没说的值。
-    function objScalar(raw) {
-        if (typeof raw !== 'string') { return raw; }
-        var v = raw.trim();
-        if (!/^-?\d+(\.\d+)?$/.test(v)) { return raw; }
-        var n = Number(v);
-        return isFinite(n) ? n : raw;
-    }
+    function objScalar(raw) { return floatValue(raw); }
 
     function objectOf(form, spec) {
         if (spec.when) {
@@ -513,6 +638,10 @@
         var objSpec = objectSpecOf(form, submitter);
         var rowNames = rowNamesOf(form, spec);
         var objNames = objectNamesOf(form, objSpec);
+        var arrayNames = arrayFields(form, submitter);
+        var skipNames = skipEmptyFields(form, submitter);
+        var lineNames = linesFields(form, submitter);
+        var htmlNames = htmlFields(form, submitter);
         var payload = {};
         Array.prototype.forEach.call(form.querySelectorAll('[name]'), function (el) {
             var name = el.getAttribute('name');
@@ -524,6 +653,12 @@
             if ((type === 'checkbox' || type === 'radio') && !el.checked) { return; }
             if (tag === 'SELECT' && el.multiple) {
                 payload[name] = Array.prototype.slice.call(el.selectedOptions || []).map(function (o) { return o.value; });
+                return;
+            }
+            // 点名的数组字段：同名多值逐个收集（多选 checkbox 组），恒为数组。
+            if (arrayNames[name]) {
+                if (!Array.isArray(payload[name])) { payload[name] = []; }
+                payload[name].push(el.value);
                 return;
             }
             payload[name] = el.value;
@@ -540,8 +675,31 @@
                 payload[obj.driver] = obj.driverValue;
             }
         }
+        Object.keys(arrayNames).forEach(function (name) {
+            if (!Object.prototype.hasOwnProperty.call(payload, name)) { payload[name] = []; }
+        });
+        // 空值过滤在类型转换之前：留着空串去转数字只会得到 ""，再被删掉，白绕一圈。
+        Object.keys(skipNames).forEach(function (name) {
+            if (!Object.prototype.hasOwnProperty.call(payload, name)) { return; }
+            var v = payload[name];
+            if (typeof v === 'string' && v.trim() === '') { delete payload[name]; }
+        });
+        // 按行切分在空值过滤之后：点名的多行字段空着时**发空数组**（清空），不是消失。
+        Object.keys(lineNames).forEach(function (name) {
+            if (!Object.prototype.hasOwnProperty.call(payload, name)) { return; }
+            payload[name] = splitLines(payload[name]);
+        });
         payload = applyNumberFields(payload, numberNames);
-        return applyBoolFields(payload, boolNames);
+        payload = applyFloatFields(payload, floatFields(form, submitter));
+        payload = applyBoolFields(payload, boolNames);
+        // 富文本包装放最后：它读的是已经定型的标量，包装后原键消失（端点的键是 description）。
+        Object.keys(htmlNames).forEach(function (src) {
+            if (!Object.prototype.hasOwnProperty.call(payload, src)) { return; }
+            var html = { html: String(payload[src] == null ? '' : payload[src]) };
+            delete payload[src];
+            payload[htmlNames[src]] = html;
+        });
+        return payload;
     }
 
     function formBool(raw) {

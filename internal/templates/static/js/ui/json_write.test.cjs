@@ -1772,3 +1772,120 @@ test('data-write-object：条件不满足时对象与驱动字段一起不发（
         assert.equal('days' in body, false);
     }
 });
+
+// —— data-write-array / data-write-float / data-write-skip-empty：商品表单的三档字段 ——
+
+test('data-write-array：同名复选框收成数组（不再后者覆盖），一个都没勾时发空数组', async () => {
+    for (const picked of [['t1', 't2'], []]) {
+        const env = setup({
+            attrs: {
+                'data-write-api': '/api/product/update',
+                'data-write-mode': 'form',
+                'data-write-array': 'tagIds,categoryIds',
+            },
+            createFields: [
+                { name: 'name', value: '商品' },
+                ...['t1', 't2', 't3'].map((id) => ({ name: 'tagIds', value: id, type: 'checkbox', checked: picked.includes(id) })),
+            ],
+            respond: { code: 200, data: {} },
+        });
+        env.fire(); await tick();
+        assert.deepEqual(env.requests[0].body.tagIds, picked);
+        // 点名的数组字段恒存在：nil 是「本次不改」，[] 才是「解绑全部」。
+        assert.deepEqual(env.requests[0].body.categoryIds, []);
+        assert.equal(env.requests[0].body.name, '商品');
+    }
+});
+
+test('data-write-float 与 data-write-skip-empty：金额按小数发、点名的空字段不发、没点名的空串照发', async () => {
+    const env = setup({
+        attrs: {
+            'data-write-api': '/api/product/update',
+            'data-write-mode': 'form',
+            'data-write-float': 'defaultPrice',
+            'data-write-number': 'sort',
+            'data-write-skip-empty': 'slug,sku,defaultPrice',
+        },
+        createFields: [
+            { name: 'name', value: '商品' },
+            { name: 'slug', value: '   ' },
+            { name: 'sku', value: '' },
+            { name: 'defaultPrice', value: '12.50' },
+            { name: 'descriptionHtml', value: '' },
+            { name: 'sort', value: '7' },
+        ],
+        respond: { code: 200, data: {} },
+    });
+    env.fire(); await tick();
+    const body = env.requests[0].body;
+    assert.equal(body.defaultPrice, 12.5);
+    assert.equal('slug' in body, false);
+    assert.equal('sku' in body, false);
+    // 富文本没点名：空串是「清空正文」这个明确意图，不能一起被吞掉。
+    assert.equal(body.descriptionHtml, '');
+    assert.equal(body.sort, 7);
+});
+
+test('data-write-lines：多行文本藏域按行切成数组，空文本发空数组（清空而不是不发）', async () => {
+    for (const [raw, want] of [['a.jpg\n  b.jpg  \n\n', ['a.jpg', 'b.jpg']], ['', []]]) {
+        const env = setup({
+            attrs: {
+                'data-write-api': '/api/product/update',
+                'data-write-mode': 'form',
+                'data-write-lines': 'images,imageAlts',
+            },
+            createFields: [
+                { name: 'name', value: '商品' },
+                { name: 'images', value: raw },
+                { name: 'imageAlts', value: '第一张' },
+            ],
+            respond: { code: 200, data: {} },
+        });
+        env.fire(); await tick();
+        assert.deepEqual(env.requests[0].body.images, want);
+        assert.deepEqual(env.requests[0].body.imageAlts, ['第一张']);
+        assert.equal(env.requests[0].body.name, '商品');
+    }
+});
+
+test('data-write-html：裸 HTML 包成 {html: …} 写到目标键，原键消失且不 trim', async () => {
+    const env = setup({
+        attrs: {
+            'data-write-api': '/api/product/update',
+            'data-write-mode': 'form',
+            'data-write-html': 'descriptionHtml:description',
+        },
+        createFields: [
+            { name: 'name', value: '商品' },
+            { name: 'descriptionHtml', value: '  正文 <b>不加粗</b>\n' },
+        ],
+        respond: { code: 200, data: {} },
+    });
+    env.fire(); await tick();
+    const body = env.requests[0].body;
+    assert.deepEqual(body.description, { html: '  正文 <b>不加粗</b>\n' });
+    assert.equal('descriptionHtml' in body, false);
+    // 空正文也是「清空」这个明确意图，必须发出去。
+    const empty = setup({
+        attrs: {
+            'data-write-api': '/api/product/update',
+            'data-write-mode': 'form',
+            'data-write-html': 'descriptionHtml:description',
+        },
+        createFields: [{ name: 'descriptionHtml', value: '' }],
+        respond: { code: 200, data: {} },
+    });
+    empty.fire(); await tick();
+    assert.deepEqual(empty.requests[0].body.description, { html: '' });
+});
+
+test('data-write-float 认不出的取值原样发字符串（交给严格 API 报错，而不是变成 0 或 NaN）', async () => {
+    const env = setup({
+        attrs: { 'data-write-api': '/api/product/update', 'data-write-mode': 'form', 'data-write-float': 'weight' },
+        createFields: [{ name: 'weight', value: '1e3' }],
+        respond: { code: 200, data: {} },
+    });
+    env.fire(); await tick();
+    assert.equal(env.requests[0].body.weight, '1e3');
+});
+

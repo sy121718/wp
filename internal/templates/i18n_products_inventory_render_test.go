@@ -212,9 +212,17 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		"基本信息", "属性引用", "分类与品牌", "标签", "保存",
 		// 从详情页搬来的三块：变体 / 评分 / SEO 检查（详情页只读，编辑能力必须在这里）。
 		"变体", "保存变体清单", "生成组合", "添加评分", "SEO 评分")
-	// 表单协议：action 与字段名与 UpdateReq 的 json 标签逐字对齐（改字段名等于改协议）。
+	// 表单协议：字段名与 UpdateReq 的 json 标签逐字对齐（改字段名等于改协议）。
+	// 提交走 JSON 写基座（不再是 action=... 的页面 POST）—— 端点与四条字段声明一起钉住，
+	// 少了任意一条都会让「保存成功一半」：例如没有 data-write-lines 时图集整条 400。
 	for _, want := range []string{
-		`action="/admin/products/update"`,
+		`data-write-api="/api/product/update"`,
+		`data-write-mode="form"`,
+		`data-write-array="attributeIds,categoryIds,tagIds"`,
+		`data-write-float="defaultPrice,weight"`,
+		`data-write-skip-empty="slug,sku,defaultPrice,weight"`,
+		`data-write-lines="images,imageAlts"`,
+		`data-write-html="descriptionHtml:description"`,
 		`name="name"`, `name="subtitle"`, `name="slug"`, `name="sku"`, `name="status"`,
 		`name="defaultPrice"`, `name="unit"`, `name="weight"`,
 		// SEO 标题/描述已合并进商品名与副标题（2026-09-30）；表单现在多的是商品描述的富文本字段。
@@ -250,7 +258,8 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		"BackURL":          "/admin/products?project=pr1",
 	})
 	emptyOut := assertGroupDPage(t, "product_edit", empty, "商品不存在", "返回列表")
-	if strings.Contains(emptyOut, `action="/admin/products/update"`) {
+	// 保存表单的存在判据是它自己的 id（提交走 JSON 基座后不再有 action 属性可查）。
+	if strings.Contains(emptyOut, `id="product-edit-main"`) {
 		t.Fatalf("商品不存在时不该渲染保存表单")
 	}
 }

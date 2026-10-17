@@ -110,7 +110,8 @@ func postProductForm(engine *gin.Engine, path string, form url.Values) *httptest
 	return rec
 }
 
-// newProductErrorLeakEnv 装配只挂三个写端点的测试引擎（真实 service + 真实 PG）。
+// newProductErrorLeakEnv 装配只挂两个写端点的测试引擎（真实 service + 真实 PG）。
+// 商品保存已迁到 JSON 写基座直调 /api/product/update，页面那条 POST 不存在了。
 func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 	t.Helper()
 	f := newAttrFixture(t)
@@ -122,7 +123,6 @@ func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.POST("/admin/products/delete", handle.ProductsDelete)
-	engine.POST("/admin/products/update", handle.ProductsUpdate)
 	engine.POST("/admin/products/bulk-delete", handle.ProductsBulkDelete)
 	return engine, f
 }
@@ -163,12 +163,13 @@ func TestProductPageKeepsBusinessErrorText(t *testing.T) {
 	if engine == nil {
 		return
 	}
-	// 商品名为空 → productenums.ErrNameRequired（在白名单里）。标签 create 的页面出口已随
-	// 写动作迁到 JSON 基座删除，这里换成同一族里仍走页面出口的商品保存。
-	body := productNoticeBody(t, postProductForm(engine, "/admin/products/update",
-		url.Values{"projectId": {f.projectID}, "id": {"11111111-1111-1111-1111-111111111111"}, "name": {""}}))
+	// 删不存在的商品 → productenums.ErrNotFound（在白名单里，文案「商品或变体不存在」）。
+	// 商品保存 / 标签 create 的页面出口已随写动作迁到 JSON 基座，页面出口仍走提示页的只剩
+	// 删除 / 批量删除这一族。
+	body := productNoticeBody(t, postProductForm(engine, "/admin/products/delete",
+		url.Values{"projectId": {f.projectID}, "id": {"11111111-1111-1111-1111-111111111111"}}))
 	assertNoProductInternalLeak(t, "提示页", body)
-	if !strings.Contains(body, "商品名称必填") {
+	if !strings.Contains(body, "商品或变体不存在") {
 		t.Fatalf("业务文案必须原样可见，body=%s", body)
 	}
 }

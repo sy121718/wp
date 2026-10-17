@@ -26,7 +26,9 @@ import (
 // json 标签逐字对齐，见 product_edit_page.go 的文件头）：改字段名等于改协议，
 // 也因此是「页头保存按钮提交的东西与改造前一致」的可复算判据。
 var productEditProtocolFields = []string{
-	"csrf_token", "projectId", "id",
+	// csrf_token 不在清单里：它从表单隐藏域改成请求头（基座发 X-CSRF-Token），
+	// 表单里若又出现它，端点会把它当未知字段整条拒掉。
+	"projectId", "id",
 	"name", "subtitle", "slug", "sku", "status", "defaultPrice", "unit", "weight",
 	// seoTitle / seoDescription 已合并进 name 与 subtitle（2026-09-30），表单不再提交它们 ——
 	// 清单挪掉这两项是跟着**行为**走，不是放宽判据：其余字段一个都没少。
@@ -241,11 +243,18 @@ func TestProductEditSaveButtonRelatedToOutsideForm(t *testing.T) {
 		t.Fatalf("编辑表单应带 id=product-edit-main（页头按钮的关联目标），实际命中 %d 个", len(forms))
 	}
 	form := forms[0]
-	if got := peAttr(form, "action"); got != "/admin/products/update" {
-		t.Fatalf("编辑表单 action 应为 /admin/products/update，实际 %q", got)
+	// 提交走 JSON 写基座：端点与字段声明写在 data-write-* 上，模板不再有 action / method。
+	if got := peAttr(form, "data-write-api"); got != "/api/product/update" {
+		t.Fatalf("编辑表单 data-write-api 应为 /api/product/update，实际 %q", got)
 	}
-	if got := strings.ToLower(peAttr(form, "method")); got != "post" {
-		t.Fatalf("编辑表单 method 应为 post，实际 %q", got)
+	if got := peAttr(form, "data-write-mode"); got != "form" {
+		t.Fatalf("编辑表单 data-write-mode 应为 form，实际 %q", got)
+	}
+	// csrf 走请求头：表单里再留隐藏域会变成一条未知字段（严格白名单整条拒掉）。
+	for _, ctl := range peAll(form, peIsFormControl) {
+		if peAttr(ctl, "name") == "csrf_token" {
+			t.Fatal("编辑表单不该再有 csrf_token 隐藏域（基座把 token 放请求头）")
+		}
 	}
 
 	// 字段留在表单里：协议字段逐个钉住（少一个 = 保存不再落那个字段）。

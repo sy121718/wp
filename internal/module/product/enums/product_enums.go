@@ -419,8 +419,8 @@ const (
 	BulkVariantSaved    = "product.bulk.variantSaveSaved"
 	BulkVariantSkipped  = "product.bulk.variantSaveSkipped"
 
-	// 商品编辑页保存成功的回执（无占位符）。
-	//
-	// 由 shell.RenderJump 渲染成整页提示；取词见 product_jump.go 的 productSaved。
+	// 商品编辑页保存成功的回执已随页面 POST 消失（写动作走 ui/json_write.js 直调
+	// /api/product/update，成功后基座 reload 编辑页）—— 常量刻意保留：词条在 449 迁移里，
+	// 删它要连带删 seed，而这条回执正是基座将来要复用的一句。
 	MsgProductSaved = "product.msg.saved"
 )
