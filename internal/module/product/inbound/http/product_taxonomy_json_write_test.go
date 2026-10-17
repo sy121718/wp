@@ -18,6 +18,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/adminctx"
+	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/templates"
 )
 
@@ -133,5 +135,46 @@ func TestBrandPageUsesJSONWriteBase(t *testing.T) {
 		`action="/admin/product-brands/delete"`,
 		`action="/admin/product-brands/create"`,
 		`action="/admin/product-brands/update"`,
+	})
+}
+
+// TestTagPageUsesJSONWriteBase 标签页的删除 / 批量删除 / 重算都走 JSON 写基座。
+//
+// Tags 里必须有一行**自动标签**（IsRule）：单条「重算」表单只在自动标签行上渲染，
+// 只给手工标签时那条断言会因为表单根本不存在而假绿。
+func TestTagPageUsesJSONWriteBase(t *testing.T) {
+	h := taxonomyHandle(&productPageReaderStub{tagsView: productTagsPageViewStub(func(v *productdto.ProductTagsPageView) {
+		v.TagDetails = append(v.TagDetails, &productdto.TagResp{
+			ID: "t2", Name: "自动标签", Slug: "auto",
+			Kind: productenums.TagKindRule, RuleType: productenums.TagRuleNewArrival,
+		})
+	})})
+	rec := taxonomyJSONWriteRequest(t, h, "/admin/product-tags", "/admin/product-tags?project=p1", taxonomyAllButtons())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("整页 GET 状态码 = %d, want 200", rec.Code)
+	}
+	html := rec.Body.String()
+	assertContainsAll(t, html, []string{
+		// 批量删除：bulk 档 + 作用域锚点
+		"data-list-bulk",
+		`data-write-api="/api/product/tag/bulk-delete"`,
+		`data-write-mode="bulk"`,
+		`data-msg-partial`,
+		// 单条删除：single 档 + 多工程下的 projectId
+		`data-write-api="/api/product/tag/delete"`,
+		`data-write-mode="single"`,
+		`data-write-extra="projectId"`,
+		// 重算：整表单档（全量按钮与行内按钮共用一个端点，tagId 空即全工程）
+		`data-write-api="/api/product/tag/recalc"`,
+		`data-write-mode="form"`,
+		`id="tag-recalc-all"`,
+		`id="tag-recalc-t2"`,
+		// 结果区（失败时才有内容）
+		"data-write-status",
+	})
+	assertContainsNone(t, html, []string{
+		`action="/admin/product-tags/bulk-delete"`,
+		`action="/admin/product-tags/delete"`,
+		`action="/admin/product-tags/recalc"`,
 	})
 }

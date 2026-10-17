@@ -202,13 +202,13 @@ func TestProductJumpBackTextFollowsPage(t *testing.T) {
 func TestProductBulkDeleteResultSentences(t *testing.T) {
 	c, _ := newProductJumpContext(t, "", "", "")
 	for _, tc := range []struct{ deleted, skipped int }{{0, 0}, {3, 0}, {0, 3}, {2, 3}} {
-		_, m := productBulkDeleteResult(tc.deleted, tc.skipped, productTagBulkPartial, productTagBulkDone)
+		_, m := productBulkDeleteResult(tc.deleted, tc.skipped, productBulkPartial, productBulkDone)
 		if strings.TrimSpace(adminui.MsgText(c, m)) == "" {
 			t.Errorf("批量结论为空串（deleted=%d skipped=%d）", tc.deleted, tc.skipped)
 		}
 	}
 	// 单条删除复用批量结论文案（计数 1）：与批量入口措辞一致。
-	if got := adminui.MsgText(c, productBulkDoneMsg(productTagBulkDone)); !strings.Contains(got, "1") {
+	if got := adminui.MsgText(c, productBulkDoneMsg(productBulkDone)); !strings.Contains(got, "1") {
 		t.Errorf("单条删除结论 = %q，应含计数 1", got)
 	}
 }

@@ -485,8 +485,6 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/product-tags/hits", handle.ProductTagHitsFragment)
 	engine.POST("/admin/product-tags/create", handle.ProductTagsCreate)
 	engine.POST("/admin/product-tags/update", handle.ProductTagsUpdate)
-	engine.POST("/admin/product-tags/delete", handle.ProductTagsDelete)
-	engine.POST("/admin/product-tags/recalc", handle.ProductTagsRecalc)
 	engine.GET("/admin/products", handle.ProductsPage)
 	// 商品级表单（含手工标签勾选）已整块移到商品详情页，这里一并注册。
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
@@ -596,17 +594,17 @@ func TestTagAdminPages(t *testing.T) {
 		}
 	}
 
-	// 页面「重算」按钮：显式重算时机。
-	rec = postForm(engine, "/admin/product-tags/recalc", url.Values{
-		"projectId": {f.projectID}, "tagId": {tagIDByName(t, f, "新品")},
-	})
-	assertJumpOK(t, rec)
+	// 页面「重算」按钮已改模板直调 /api/product/tag/recalc —— 这里直接验用例本身。
+	if _, err = f.svc.RecalcTags(context.Background(), &productdto.RecalcTagsReq{
+		ProjectID: f.projectID, TagID: tagIDByName(t, f, "新品"),
+	}); err != nil {
+		t.Fatalf("重算标签失败: %v", err)
+	}
 
-	// 删除标签：成功提示页且连同引用一起解绑。
-	rec = postForm(engine, "/admin/product-tags/delete", url.Values{
-		"projectId": {f.projectID}, "id": {manualID},
-	})
-	assertJumpOK(t, rec)
+	// 删除标签（模板直调 /api/product/tag/delete）：连同引用一起解绑。
+	if err = f.svc.DeleteTag(context.Background(), &productdto.DeleteTagReq{ProjectID: f.projectID, ID: manualID}); err != nil {
+		t.Fatalf("删除标签失败: %v", err)
+	}
 	if _, err = f.svc.GetTag(context.Background(), &productdto.GetTagReq{ProjectID: f.projectID, ID: manualID}); err == nil {
 		t.Fatalf("删除后标签应不存在")
 	}

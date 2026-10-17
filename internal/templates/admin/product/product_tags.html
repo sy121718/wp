@@ -79,8 +79,12 @@
 
     {* 页级重算表单：与上面的「重算本工程全部自动标签」按钮用 form="<id>" 关联。
        action 上的 ListQuery 把筛选上下文随 query 提交，提示页回跳时恢复。 *}
-    <form id="tag-recalc-all" class="hidden-form" method="post" action="/admin/product-tags/recalc{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
+    {* 重算走 JSON 端点（/api/product/tag/recalc）：mode=form 发整张表单（这里就是 projectId），
+       成功后整页刷新 —— 命中数与「上次重算」时间都由服务端算，就地改 DOM 会同源不上。
+       csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头。 *}
+    <form id="tag-recalc-all" class="hidden-form"
+          data-write-api="/api/product/tag/recalc" data-write-mode="form"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
     </form>
 
@@ -111,15 +115,29 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的。
            勾选列只加在标签表上；下面的「命中的商品」是标签 × 商品的关系表（只读展示），
            它的删除入口属于商品，不在这里批量。 *}
-        <form method="post" action="/admin/product-tags/bulk-delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* 表单不声明 data-write-api：端点声明落在按钮/各自的表单上（json_write.js 的 attrFrom：
+           按钮优先、表单兜底）。data-list-bulk 是作用域锚点。 *}
+        <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete}}{{if len(.Tags) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.product_tags.bulkDeleteConfirm", "删除选中的标签？商品上的这些标签会被一并解绑。"), danger=true)}}
+                {* 就地写而不是用 bulkBtn：那个片段的属性名是冻结契约（admin.js 依赖），
+                   装不下一串 data-write-* 声明。 *}
+                <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                        data-write-api="/api/product/tag/bulk-delete" data-write-mode="bulk"
+                        data-msg-none-selected="{{tr("admin.product_tags.bulk.noneSelected", "没有勾选任何标签，列表未改动。")}}"
+                        data-msg-all-deleted="{{tr("admin.product_tags.bulkDelete.allDeleted", "已删除 {count} 个标签。")}}"
+                        data-msg-all-skipped="{{tr("admin.product_tags.bulkDelete.allSkipped", "{count} 个标签都未能删除。")}}"
+                        data-msg-partial="{{tr("admin.product_tags.bulkDelete.partial", "已删除 {deleted} 个标签，{skipped} 个未能删除。")}}"
+                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-refresh="{{tr("admin.product_tags.bulkDelete.refresh", "刷新列表")}}"
+                        data-confirm="{{tr("admin.product_tags.bulkDeleteConfirm", "删除选中的标签？商品上的这些标签会被一并解绑。")}}"
+                        data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
+            <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_tags.list.title", "标签列表") }}">
             <table class="data-table">
                 <thead>
@@ -247,16 +265,21 @@
     {* 行内表单与抽屉模板：放表格外（form 不能嵌套），按钮用 form="<id>" 关联。 *}
     {{range _, t := .Tags}}
     {{if t.IsRule}}
-    <form id="tag-recalc-{{t.ID}}" class="hidden-form" method="post" action="/admin/product-tags/recalc{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
+    {* mode=form 发整张表单（projectId + tagId），成功后整页刷新：命中数与「上次重算」
+       都是服务端算出来的，就地改 DOM 会与列表里的同一批数字不同源。 *}
+    <form id="tag-recalc-{{t.ID}}" class="hidden-form"
+          data-write-api="/api/product/tag/recalc" data-write-mode="form"
+          data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="tagId" value="{{t.ID}}">
     </form>
     {{end}}
     {{if canDelete}}
-    <form id="tag-del-{{t.ID}}" class="hidden-form" method="post" action="/admin/product-tags/delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
+    <form id="tag-del-{{t.ID}}" class="hidden-form"
+          data-write-api="/api/product/tag/delete" data-write-mode="single" data-write-extra="projectId"
+          data-msg-ok="{{ .["t"]("admin.product_tags.list.deleted", "标签已删除。") }}"
+          data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}"
           data-confirm="{{ .["t"]("admin.product_tags.list.deleteConfirm", "删除该标签？商品上的这个标签会被一并解绑。") }}" data-confirm-danger>
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{t.ID}}">
     </form>

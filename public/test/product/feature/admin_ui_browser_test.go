@@ -77,8 +77,6 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 	router.GET("/admin/product-tags", h.ProductTagsPage)
 	router.POST("/admin/product-tags/create", h.ProductTagsCreate)
 	router.POST("/admin/product-tags/update", h.ProductTagsUpdate)
-	router.POST("/admin/product-tags/delete", h.ProductTagsDelete)
-	router.POST("/admin/product-tags/recalc", h.ProductTagsRecalc)
 	router.Static("/static", attrTemplateRoot()+"/static")
 	return router
 }

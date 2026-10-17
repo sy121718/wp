@@ -8,7 +8,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
-	"go_wp/internal/shell"
 	"go_wp/pkg/bulkids"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/pagination"
@@ -825,54 +824,6 @@ func (h *productPageHandle) ProductTagsUpdate(c *gin.Context) {
 		return
 	}
 	tagFormSuccess(c, projectID)
-}
-
-// ProductTagsDelete 删除标签（服务端会把商品上的引用一起解绑）。
-func (h *productPageHandle) ProductTagsDelete(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	if err := h.products.DeleteTag(c.Request.Context(), &productdto.DeleteTagReq{ProjectID: projectID, ID: c.PostForm("id")}); err != nil {
-		productTagsJump(c, false, productErrMsg(c, err))
-		return
-	}
-	productTagsJump(c, true, productBulkDoneMsg(productTagBulkDone))
-}
-
-// ProductTagsBulkDelete 批量删除标签（手工 / 自动一视同仁：删除即解绑商品上的该标签）。
-//
-// 业务编排在 service.BulkDeleteProductTags：整批一次算引用面（本工程的引用解绑、别的工程的
-// 引用打回给人），可删的那些「解绑 + 失效入队 + 删行」在同一事务里按工程分组执行。
-// 本层只解析 id、调用例、映射结果。
-func (h *productPageHandle) ProductTagsBulkDelete(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		// 受控提示（一次最多操作 N 项）保持可见，但同样经归口助手判定来源。
-		productTagsJump(c, false, productBulkIDsMsg(c, berr))
-		return
-	}
-	res, err := h.products.BulkDeleteProductTags(c.Request.Context(),
-		&productdto.BulkDeleteReq{ProjectID: projectID, IDs: ids})
-	if err != nil {
-		productTagsJump(c, false, productErrMsg(c, err))
-		return
-	}
-	ok, msg := productBulkDeleteResult(res.Succeeded, res.NotDone(), productTagBulkPartial, productTagBulkDone)
-	productTagsJump(c, ok, msg)
-}
-
-// ProductTagsRecalc 手动重算（tagId 为空即重算该工程全部自动标签）。
-func (h *productPageHandle) ProductTagsRecalc(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	req := &productdto.RecalcTagsReq{
-		ProjectID: projectID,
-		TagID:     strings.TrimSpace(c.PostForm("tagId")),
-	}
-	if _, err := h.products.RecalcTags(c.Request.Context(), req); err != nil {
-		productTagsJump(c, false, productErrMsg(c, err))
-		return
-	}
-	productTagsJump(c, true, productActionDoneMsg)
 }
 
 // ProductsTagsSet 整体替换某商品的手工标签（issue #11 验收 1 的后台入口）。

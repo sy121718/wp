@@ -316,9 +316,6 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.GET("/product-tags/hits", adminui.PageAuthz("/api/product/tag/list"), productPages.ProductTagHitsFragment)
 	pages.POST("/product-tags/create", builtin.CasbinMiddlewareForPath("/api/product/tag/create"), productPages.ProductTagsCreate)
 	pages.POST("/product-tags/update", builtin.CasbinMiddlewareForPath("/api/product/tag/update"), productPages.ProductTagsUpdate)
-	pages.POST("/product-tags/delete", builtin.CasbinMiddlewareForPath("/api/product/tag/delete"), productPages.ProductTagsDelete)
-	pages.POST("/product-tags/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/tag/delete"), productPages.ProductTagsBulkDelete)
-	pages.POST("/product-tags/recalc", builtin.CasbinMiddlewareForPath("/api/product/tag/recalc"), productPages.ProductTagsRecalc)
 	// 商品挂手工标签：属于商品更新，复用商品更新权限点（自动标签不在这份表单里）。
 	pages.POST("/products/tags", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTagsSet)
 

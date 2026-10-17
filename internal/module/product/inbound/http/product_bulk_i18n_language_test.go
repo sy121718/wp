@@ -64,7 +64,6 @@ func TestProductBulkNoticeFollowsRequestLanguage(t *testing.T) {
 
 	// 1) 十个批量删除模板：写侧取到的必须是英文模板。
 	for _, tpl := range []productBulkText{
-		productTagBulkPartial, productTagBulkDone,
 		productAttrBulkPartial, productAttrBulkDone,
 		productBulkPartial, productBulkDone,
 	} {
@@ -113,16 +112,16 @@ func TestProductBulkNoticeFollowsRequestLanguage(t *testing.T) {
 	}
 
 	// 4) 批量删除结论（productBulkDeleteResult）。
-	if _, m := productBulkDeleteResult(3, 0, productTagBulkPartial, productTagBulkDone); adminui.MsgText(en, m) != "EN-TAG 3" {
+	if _, m := productBulkDeleteResult(3, 0, productBulkPartial, productBulkDone); adminui.MsgText(en, m) != "EN-PRODUCT 3" {
 		t.Errorf("批量删除结论应按当前语言，实际 %q", adminui.MsgText(en, m))
 	}
-	if _, m := productBulkDeleteResult(3, 2, productTagBulkPartial, productTagBulkDone); adminui.MsgText(en, m) != "EN-TAG-PART 3 2" {
+	if _, m := productBulkDeleteResult(3, 2, productBulkPartial, productBulkDone); adminui.MsgText(en, m) != "EN-PRODUCT-PART 3 2" {
 		t.Errorf("批量删除部分成功结论应按当前语言，实际 %q", adminui.MsgText(en, m))
 	}
 
 	// 5) 中文请求走中文词条。
 	zh := productBulkLangCtx(t, "zh-CN")
-	if text := productBulkTextOf(zh, productTagBulkDone); text != "已删除 %s 个标签" {
+	if text := productBulkTextOf(zh, productBulkDone); text != "已删除 %s 个商品（连同其全部变体）" {
 		t.Errorf("中文请求应取中文词条，实际 %q", text)
 	}
 }
