@@ -1216,7 +1216,14 @@ func (h *productPageHandle) ProductsAttributesSet(c *gin.Context) {
 // **例外：只有这个端点成功后仍回列表页** —— 商品已经不存在了，回详情页只会看到一个
 // 「商品不存在」的空态，用户还得再点一次返回列表。
 func (h *productPageHandle) ProductsDelete(c *gin.Context) {
-	if err := h.products.Delete(c.Request.Context(), &productdto.DeleteReq{ID: c.PostForm("id")}); err != nil {
+	// projectId 必须带上：模板一直渲染着这个隐藏域，但这里曾经没读它 ——
+	// service 的 resolveProjectID 在它为空时只肯走「唯一工程」兜底，
+	// 多工程部署下删除直接回 ErrInvalidParam（页面不报错、只是删不掉）。
+	req := &productdto.DeleteReq{
+		ID:        strings.TrimSpace(c.PostForm("id")),
+		ProjectID: strings.TrimSpace(c.PostForm("projectId")),
+	}
+	if err := h.products.Delete(c.Request.Context(), req); err != nil {
 		productListJump(c, false, productErrMsg(c, err))
 		return
 	}

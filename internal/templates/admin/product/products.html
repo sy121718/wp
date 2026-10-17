@@ -267,19 +267,28 @@
     </section>
 
     {* ==== 行内表单：全部放表格外，按钮用 form="<id>" 关联 ==== *}
+    {* 商品接入 ui/json_write.js 的第一个动作：删除走 JSON 接口，失败原因落在结果区、
+       成功整页刷新（列表的派生列由服务端重算，就地改 DOM 会同源不上）。
+       data-write-host 与结果区是这条链路的声明点，别的行内表单后续也往这里接。 *}
+    <div data-write-host>
+    <p class="form-hint" data-write-status role="status" hidden></p>
     {{range _, p := .Products}}
     <form id="product-preview-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/template/preview" target="_blank">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="productId" value="{{p.ID}}">
     </form>
-    <form id="product-del-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
+    <form id="product-del-{{p.ID}}" class="hidden-form" data-write-api="/api/product/delete"
+          data-write-mode="single" data-write-extra="projectId"
+          data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}"
           data-confirm="{{ .["t"]("admin.products.row.deleteConfirm", "删除该商品及其全部变体？") }}" data-confirm-danger>
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* projectId 必须点名带上：service 的 resolveProjectID 在它为空的只肯走「唯一工程」兜底，
+           多工程部署下直接拒。csrf_token 改走 X-CSRF-Token 头，隐藏域不再需要。 *}
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{p.ID}}">
     </form>
     {{end}}
+    </div>
 
     {* 建表单抽屉（`tpl-product-create`）已删除：新建商品是重表单（15 字段 + 属性组多选 +
        多仓多选 + 模板选择），已改为独立整页 /admin/products/new，本页两个入口都是整页链接。

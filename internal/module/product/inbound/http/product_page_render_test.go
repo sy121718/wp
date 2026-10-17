@@ -781,6 +781,43 @@ func TestProductsPageSuccessRendersPage(t *testing.T) {
 	}
 }
 
+// TestProductsListDeleteUsesJSONWriteBase 列表行的删除入口走 ui/json_write.js 基座。
+//
+// 迁移前是 method="post" action="/admin/products/delete"（页面 POST → 提示页）；迁移后是
+// data-write-api + data-write-mode="single" + 点名 projectId。判据取**两者互斥**：
+// 两个同时在就是半迁移，而按钮 form="<id>" 指到哪个表单都不对劲（一个发 JSON、一个发表单）。
+// 点名的 projectId 单独判：service 的 resolveProjectID 在它为空时只肯走「唯一工程」兜底，
+// 多工程部署下删除直接回 ErrInvalidParam —— 那是「点了没反应」而不是报错的那种故障。
+func TestProductsListDeleteUsesJSONWriteBase(t *testing.T) {
+	view := func() *productdto.ProductListPageView {
+		return productListPageViewStub(func(v *productdto.ProductListPageView) {
+			v.Products = []productdto.ProductRow{{ID: "prod-1", Name: "测试商品", SKUCode: "SKU-1"}}
+		})
+	}
+	h := &productPageHandle{
+		products: &productPageReaderStub{listView: view()},
+		reader:   &productPageReaderStub{listView: view()},
+	}
+	rec := productPageRequest(t, h, "/admin/products")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("列表页应 200，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		`data-write-api="/api/product/delete"`,
+		`data-write-mode="single"`,
+		`data-write-extra="projectId"`,
+		"data-write-host",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("删除入口缺少 %q（删除未接入 JSON 写基座）；body=%s", want, headOf(body))
+		}
+	}
+	if strings.Contains(body, `action="/admin/products/delete"`) {
+		t.Fatal("删除入口仍是页面 POST（半迁移）：应只剩 data-write-api 一种提交方式")
+	}
+}
+
 // TestProductNewPageUnknownProjectIsBadRequest 新建页的参数档：?project=<不存在的 id>。
 //
 // 出口仍是同一档：整页 + 400 + no-store（页壳完整、不泄漏驱动原文）。

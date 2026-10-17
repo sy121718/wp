@@ -19,16 +19,19 @@
  * 并排几个动作」的落点：改状态这类**没有 JSON 端点**的动作保持页面 POST，不会被邻居的声明
  * 拖进 fetch。回车提交没有 submitter，此时只认表单级声明（表单没声明就原生提交）。
  *
- *   - mode=single：payload = 表单里 name="id" 的隐藏域（+ 可选 force）。成功 → 整页刷新
+ *   - mode=single：payload = 表单里 name="id" 的隐藏域（+ 可选 force，+ data-write-extra
+ *     点名的额外字段，例如多工程下的 projectId）。成功 → 整页刷新
  *     （列表是服务端渲染的，刷新才能让「影响面 / 待重建」这些派生列同源）。
  *   - mode=bulk  ：payload = {ids:[…]}，ids 取自表单内已勾选的 [name=ids]；成功 → 页内结果区
  *     给出「已成功 N / 跳过 M + 逐条原因」，并在结果区放一个「刷新列表」入口（不自动刷新，
  *     避免结果一闪而过）。去重与 200 条上限在客户端先拦一次只为快速反馈，
  *     **服务端才是边界**（/api/block/bulk-delete 自己会去重与限量）。
  *     · data-write-extra="add,remove"：**显式点名**的额外字段（逗号分隔），从表单按 name 取值
- *       一起发。同名字段优先取本次 submitter 的值，其余从表单取。必须点名而不是
- *       「把表单字段全带上」：批量档的形状是 {ids} + 该动作自己的参数，
- *       多带字段会让端点收到两种互不认识的身体。ids 永远最后写，额外字段不可能覆盖它。
+ *       一起发，single 与 bulk 两档都生效。同名字段优先取本次 submitter 的值，其余从表单取。
+ *       必须点名而不是「把表单字段全带上」：single 的形状是 {id}、bulk 是 {ids} + 该动作自己的
+ *       参数，多带字段会让端点收到两种互不认识的身体。id / ids 永远最后写，额外字段不可能覆盖它。
+ *       它解决的正是「页面渲染了某个隐藏域、但端点需要它、而单值档只发 id」这一类：
+ *       例如商品删除在多工程部署下必须带 projectId，否则 service 只能走唯一工程兜底而被拒。
  *     · data-write-outcome="receipt"：显示服务端成品 message，按 skipped 标记部分失败，
  *       保留逐项失败原因与刷新入口；noop 不计失败，也不移除列表行。
  *     · data-write-outcome="review"：回执以服务端 message 成品为准，结果区保留刷新入口。
@@ -299,7 +302,9 @@
     }
 
     function singlePayload(form, submitter) {
-        var payload = {};
+        // 点名的额外字段先写、id 最后写：与 bulk 档「ids 永远最后写」同一口径 ——
+        // 声明出来的字段不可能覆盖掉这次操作的对象。
+        var payload = extraPayload(form, submitter);
         var id = submitter && submitter.getAttribute("name") === "id" ? submitter : form.querySelector('[name="id"]');
         payload.id = id ? String(id.value || '').trim() : '';
         var force = form.querySelector('[name="force"]');
@@ -381,7 +386,7 @@
         return el.value;
     }
 
-    // extraPayload 批量档的额外字段：`data-write-extra="add,remove"` 里点名的那几个。
+    // extraPayload single / bulk 两档的额外字段：`data-write-extra="add,remove"` 里点名的那几个。
     //
     // **只认点名的字段**：批量档的身体是 {ids:[…]} + 该动作自己的参数，若把表单字段一股脑带上，
     // 端点会同时收到「批量形状」和一堆单条字段，只能靠猜。ids 与 csrf_token 一律跳过

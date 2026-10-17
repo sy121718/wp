@@ -459,6 +459,29 @@ test('single 失败给受控文案且不刷新', async () => {
     assert.equal(env.calls.reload, 0);
 });
 
+test('single 可带点名额外字段：id 最后写、点名的才发、csrf_token 永不发', async () => {
+    // 多工程部署下的商品删除必须带 projectId：服务端 projectId 为空时只肯走「唯一工程」
+    // 兜底，多工程直接拒（product/service 的 resolveProjectID）。声明式点名是唯一能带上它
+    // 又不会把「表单里有什么就发什么」变成盲发的方式。
+    const env = setup({
+        attrs: {
+            'data-write-api': '/api/product/delete', 'data-write-mode': 'single',
+            'data-write-extra': 'projectId',
+        },
+        id: 'p-1',
+        createFields: [
+            { name: 'projectId', value: 'prj-9' },
+            { name: 'csrf_token', value: 'TOK' },
+            { name: 'unrelated', value: 'x' },
+        ],
+        respond: { code: 200, data: null },
+    });
+    env.fire();
+    await tick();
+    assert.deepEqual(env.requests[0].body, { projectId: 'prj-9', id: 'p-1' });
+    assert.equal(env.calls.reload, 1);
+});
+
 // —— 分支 3：bulk（批量删除） ——
 
 test('bulk 去重保序后提交，成功按服务端结果移除行并给出计数、原因与刷新入口', async () => {
