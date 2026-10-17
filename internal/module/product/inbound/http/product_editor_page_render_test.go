@@ -630,17 +630,18 @@ func TestDetailTemplateDepsMissingIsNotFailure(t *testing.T) {
 	}
 }
 
-// TestDetailTemplateNoProductIsGuidance 菜单入口（不带 product）是 200 的引导页，不是 400：
-// 本页本来就有「还没选商品」的入口形态。这条钉住「别把入口形态判成参数非法」。
-func TestDetailTemplateNoProductIsGuidance(t *testing.T) {
+// TestDetailTemplateNoProductRedirectsToList 菜单入口（不带 product）回商品列表，不是 400：
+// 本页没有「还没选商品」的就地形态，与其渲染一个空壳页，不如把人送到能选商品的地方。
+// 这条钉住「别把入口形态判成参数非法」。
+func TestDetailTemplateNoProductRedirectsToList(t *testing.T) {
 	h, stub, _, _ := editorEnv()
 	rec := editorRequest(t, h, "/admin/products/template?project=p1")
 	body := rec.Body.String()
-	if rec.Code != http.StatusOK {
-		t.Fatalf("菜单入口应为 200 的引导页，实际 %d，body=%s", rec.Code, headOf(body))
+	if rec.Code != http.StatusFound {
+		t.Fatalf("菜单入口应 302 回商品列表，实际 %d，body=%s", rec.Code, headOf(body))
 	}
-	if !strings.Contains(body, "请先从商品列表选择一件商品") {
-		t.Fatalf("菜单入口应给出「去哪选商品」的引导，body=%s", headOf(body))
+	if got := rec.Header().Get("Location"); got != productListPath {
+		t.Fatalf("Location = %q，want %q", got, productListPath)
 	}
 	// 读模型**会被调一次**（「没给 product」这个结论由它给：它是取数编排的一部分，
 	// 顺带还判了工程存在性）。不该发生的是它之下的派生取数 —— 那条判据在 service。

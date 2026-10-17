@@ -24,7 +24,7 @@ var controllerTranslatePattern = regexp.MustCompile(`adminui\.MsgText\(|adminui\
 func TestControllerI18nBoundary(t *testing.T) {
 	allow := map[string]string{
 		"product_jump.go": "JSON 出口成品串：多段合成句（productBulkTextOf）+ Tail 复合形态（productErrMsgOf）；" +
-			"提示页出口：RenderJump 那条链要成品串（productMsgText）",
+			"失败回执的成品串取词（productMsgText）",
 		"product_page_util.go": "中间件：productTranslateMiddleware 把取词函数放进 Request Context 给 " +
 			"service 用（service 要产出展示文案，语言只有 gin.Context 知道）",
 		"product_translations.go": "具名占位符：i18n.FillTranslate 的 {n} 句式（同上）",

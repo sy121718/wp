@@ -9,7 +9,6 @@ import (
 	presentationenums "go_wp/internal/module/presentation/enums"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/shell"
-	"go_wp/pkg/backpath"
 	"go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -22,18 +21,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// product_jump.go — product 后台页的**共享出口原语**：整页提示（shell.RenderJump）、回跳地址、
-// 回执文案事实，以及**错误事实与文案出口**（原先的 product_err.go 并进来的那一半）。
+// product_jump.go — product 后台页的**共享输出原语**：筛选上下文、批量回执文案，
+// 以及**错误事实与文案出口**（原先的 product_err.go 并进来的那一半）。
 //
-// 两半是同一类东西：各页的结论都要经这里落成响应（提示页或 JSON），
-// 所以它们是「共享出口」而不是某个页面的功能 —— 单独一个文件，与业务功能文件分开。
+// 提示页（shell.RenderJump）与回跳地址（shell.BackPath / backpath.WithParams）已经
+// **不在这一层**：写动作全部走 ui/json_write.js 直调 /api/product/*（结论进 flash 行），
+// 页面 GET 的失败也改成页内失败槽（LoadError）或 302 回列表 —— 控制器不再拼「回哪去」
+// 与「怎么回去」，那是壳层的事。剩下的是两件仍被生产代码用的东西：
 //
-// 提示页这一半已经缩到很小：后台写动作全部走 ui/json_write.js 直调 /api/product/*，
-// 页面组只剩三个「只算不写」的预览端点，所以 shell.RenderJump 现在只服务两种情况 ——
-// 整页 GET 的「还没选商品 / 这条能力没接上」引导，与翻译工作台 GET 失败。写动作的成功
-// 结论走 JSON 回执（基座存 flash、刷新后显示一次），不再进这一族。
+//  1. 各页的筛选上下文键表与读回（productQueryFromRequest / withListQuery）；
+//  2. 批量结论的文案事实（productBulkText 族）与超限出口（productBulkIDs）。
+//
+// 文件名保留 jump：错误文案那一半还没迁到 pkg/facing，迁完后本文件会只剩上面两条，
+// 届时并进 product_subject.go 或 util 即可。
 
-// 只剩两个页面还需要「回跳地址」：整页 GET 的引导与 GET 失败出口（见文件头）。
+// 两个页面的路径常量（GET 失败时的 302 落点与页面自身地址）。
 // 其余页面的路径常量随各自的 Back 助手一起删除 —— 删掉引用它们的写通道之后，
 // 留一个没人读的路径字面量只会让下一个人以为那条通道还活着。
 const (
@@ -44,8 +46,8 @@ const (
 // 页面上下文的键表（每页一份）。
 //
 // 同一份键表服务两条路径：**渲染时**拼进表单 action 的 query、**POST 回来时**由
-// productQueryFromRequest 读回（列表与翻译页还要由 shell.BackPath 拼回跳地址）。
-// 两处分叉的表现是「写完跳回去筛选静默丢了」—— 页面不报错、日志也干净，
+// productQueryFromRequest 读回（页面 POST 的预览/评分端点靠它保住上下文）。
+// 两处分叉的表现是「改完筛选再操作，回来静默丢了筛选」—— 页面不报错、日志也干净，
 // 所以键表必须是同一份（不要在两处各写一遍字面量）。
 //
 // 写动作迁到 JSON 之后，Tag / Categories / Brands / Bundle / Pricing 几组的键表只剩
@@ -92,48 +94,9 @@ func withListQuery(action, listQuery string) string {
 	return action + "?" + listQuery
 }
 
-// —— 回跳地址（每页一个，键表与上面同一份）——
+// —— 一句结论的事实 ——
 
-func productListBack(c *gin.Context) string {
-	back := shell.BackPath(c, productListPath, productListBackKeys...)
-	if strings.Contains(back, "?") || c == nil {
-		return back
-	}
-	// 列表写表单的工程在隐藏域 projectId 里。action 的 query 没带筛选时
-	// （测试直打端点、或表单没拼上 ListQuery）仍要回到这个工程，
-	// 否则提示页的返回链接落到不带工程的列表。
-	if project := strings.TrimSpace(c.PostForm("projectId")); project != "" {
-		return backpath.WithParams(productListPath, map[string]string{"project": project})
-	}
-	return back
-}
-
-// productDetailTemplateBack 回详情页模板页：project / product 随表单提交（隐藏域），
-// 由服务端用 backpath.WithParams 拼 —— 与 BackPath 共用同一份参数编码。
-func productDetailTemplateBack(projectID, productID string) string {
-	return backpath.WithParams(productDetailTemplatePath, map[string]string{
-		"project": strings.TrimSpace(projectID),
-		"product": strings.TrimSpace(productID),
-	})
-}
-
-func productTranslationsBack(c *gin.Context) string {
-	return shell.BackPath(c, productTranslationsPath, productTranslationsBackKeys...)
-}
-
-// —— 回跳链接文字（复用各页标题词条，不新增全站词条）——
-//
-// 全是静态的 key + 中文原文，所以是包级变量：**不需要 gin.Context** ——
-// 「这段文案属于哪个语言」由提示页模板取词时决定，与控制器无关（这正是本批的形状要求）。
-var (
-	productListBackMsg           = productMsg{Key: MsgProductsTitle, Fallback: "商品"}
-	productDetailTemplateBackMsg = productMsg{Key: productenums.ProductDetailTemplateTitle, Fallback: "商品详情页模板"}
-	productTranslationsBackMsg   = productMsg{Key: productenums.ProductTranslationsTitle, Fallback: "商品多语言"}
-)
-
-// —— 提示页的一句结论 ——
-
-// productMsg 提示页的一句结论 —— 就是共享形状 adminui.Msg（key + 中文兜底 + `%s` 参数）。
+// productMsg 一句结论的**事实** —— 就是共享形状 adminui.Msg（key + 中文兜底 + `%s` 参数）。
 //
 // 这里用别名而不是新造 struct：各模块各造一份同形类型就是多份契约，字段名与参数编码
 // 迟早分叉，而症状是「某个页面的提示偶尔少一个数字」，既不报错也不记日志。
@@ -167,43 +130,6 @@ func productBulkIDs(c *gin.Context, raw []string) ([]string, bool) {
 	return nil, false
 }
 
-// —— 提示页出口 ——
-
-// productPageJump 页面写动作的统一出口：整页提示（结论是**事实**，取词在模板里）。
-//
-// 成功 1 秒后自动跳（Seconds=1）；失败不自动跳（Seconds=0，运营必须看清原因）。
-func productPageJump(c *gin.Context, ok bool, msg productMsg, back string, backText productMsg) {
-	seconds := 0
-	if ok {
-		seconds = 1
-	}
-	shell.RenderJump(c, shell.Jump{
-		OK:          ok,
-		MsgKey:      msg.Key,
-		Msg:         msg.Fallback,
-		MsgArgs:     msg.Args,
-		Back:        back,
-		BackTextKey: backText.Key,
-		BackText:    backText.Fallback,
-		Seconds:     seconds,
-	})
-}
-
-// productListJump 回商品列表页的提示页出口（删除 / 批量删除 / 批量改价共用）。
-func productListJump(c *gin.Context, ok bool, msg productMsg) {
-	productPageJump(c, ok, msg, productListBack(c), productListBackMsg)
-}
-
-// productDetailTemplateJump 回详情页模板页的提示页出口（project / product 来自表单）。
-func productDetailTemplateJump(c *gin.Context, ok bool, projectID, productID string, msg productMsg) {
-	productPageJump(c, ok, msg, productDetailTemplateBack(projectID, productID), productDetailTemplateBackMsg)
-}
-
-// productTranslationsJump 回翻译工作台的提示页出口。
-func productTranslationsJump(c *gin.Context, ok bool, msg productMsg) {
-	productPageJump(c, ok, msg, productTranslationsBack(c), productTranslationsBackMsg)
-}
-
 // —— 成功回执文案（key + 中文兜底；词条缺失时页面上仍是中文）——
 
 // productActionDoneFallback 单条写动作的通用成功回执的中文兜底（key 在
@@ -218,11 +144,12 @@ const productActionDoneFallback = "操作已完成"
 var productActionDoneMsg = productMsg{Key: productenums.ProductsActionDone, Fallback: productActionDoneFallback}
 
 // ==========================================================================
-// 商品后台页**回执事实**与**整页 GET 失败出口**的收口。
+// 商品后台页**回执事实**的收口。
 //
 // 传输通道已改为响应体：写动作的结论走 JSON 回执（ui/json_write.js 提交 + flash 结论行），
 // **不再**经 302/303 + `?err=` / `?done=` / `?applied=` / `?saved=` 回带列表页；
-// 也不再经 shell.RenderJump 渲染整页提示页 —— 后者只剩整页 GET 的引导与失败出口还在用。
+// 也不再渲染整页提示页 —— 那个出口随写通道一起删了（页面 GET 的失败改走页内失败槽，
+// 缺参走 302 回列表，见 product_detail_template.go）。
 //
 // **读侧（?err= / ?done= 的受控文案集合与判定）已整批删除**：那条通道的代价是本模块要维护
 // 一份「受控文案 + 数字归一模板」来证明提示出自本仓（productPageErr / productPageDone /
@@ -231,8 +158,8 @@ var productActionDoneMsg = productMsg{Key: productenums.ProductsActionDone, Fall
 // 就是那套），而查询参数不是可信边界（任何人手拼一个 /admin/products?err=任意文案 就能往
 // 页面上塞一条伪造消息）。文案走响应体之后，那套判定随之不需要了。
 //
-// 本文件剩下的都是**回执事实**与**整页 GET 的失败出口**：把 service 的错误 / 计数结论渲染成
-// 「一句结论的事实」（key + 中文兜底 + `%s` 参数）或可展示的成品文案。
+// 本文件剩下的都是**回执事实**：把 service 的错误 / 计数结论变成「一句结论的事实」
+// （key + 中文兜底 + `%s` 参数）或可展示的成品文案（productMsgText）。
 //
 // **错误判定只有一条**：pkg/response.IsBusinessError（`a.b.c` key 或 `Err*` / `Msg*` 常量名），
 // 与 JSON 出口（response.ErrorAuto）同一份。原先本模块自带的第二份真相 ——
@@ -246,7 +173,8 @@ var productActionDoneMsg = productMsg{Key: productenums.ProductsActionDone, Fall
 // ==========================================================================
 type productBulkText struct{ key, fallback string }
 
-// fact 把一条结论文案变成**事实**（key + 中文兜底 + `%s` 参数），提示页在渲染期取词。
+// fact 把一条结论文案变成**事实**（key + 中文兜底 + `%s` 参数）：模板在渲染期取词，
+// JSON 出口用 productMsgText 取成品串。
 //
 // 参数一律 strconv 成字符串（模板侧的占位符是 `%s`，传 int 会渲染成 `%!s(int=3)`）；
 // 没有占位符的词条（如 productSaved）**不要**传参数 —— TranslateArgs 对多余参数会 Sprintf 出
@@ -271,7 +199,7 @@ func productBulkTextOf(c *gin.Context, t productBulkText) string {
 	return text
 }
 
-// 变体清单保存的结论文案（详情页提示页）。
+// 变体清单保存的结论文案（详情页编辑表单的回执）。
 var (
 	productVariantSaveNoChange = productBulkText{productenums.BulkVariantNoChange, "变体清单与库里一致，没有需要保存的变化。"}
 	productVariantSaveSaved    = productBulkText{productenums.BulkVariantSaved, "已保存变体清单：新增 %s 个、修改 SKU %s 个、删除 %s 个。"}

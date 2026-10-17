@@ -275,7 +275,7 @@ var _ = http.StatusOK
 // ==========================================================================
 // 商品列表页：筛选、分页、行内状态与分类/标签单元格。
 //
-// 筛选条与分页是全后台通用形态（GET 表单 + select），回跳地址与提示页出口在 product_jump.go。
+// 筛选条与分页是全后台通用形态（GET 表单 + select）；筛选上下文键表在 product_jump.go。
 
 // productListPageTemplate 商品列表整页模板（失败页与成功页渲染**同一份**模板）。
 //
@@ -337,9 +337,8 @@ func (h *productPageHandle) ProductsPage(c *gin.Context) {
 		pg.Base = productListFilterURL(view.SelectedProject, view.FilterKeyword, view.FilterStatus)
 		view.Pagination = pg
 	}
-	// 写动作的结论不在本页回显（走提示页渲染，见 product_jump.go），所以模板里的
-	// ?err= / ?done= 提示条已整批删除。ListQuery 是筛选上下文（表单 action 的 query）：
-	// 写动作失败时由 pkg/backpath 读回。
+	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行），模板里的 ?err= / ?done= 提示条
+	// 已整批删除。ListQuery 是筛选上下文（表单 action 的 query）：筛选条提交要带着它回去。
 	view.ListQuery = productQueryFromRequest(c, productListBackKeys...)
 
 	if err != nil {
@@ -529,7 +528,7 @@ func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	}
 	view.Title = MsgProductsTitle
 	view.Menu = "products"
-	// 写动作的结论不在本页回显（走提示页，见 product_jump.go）；只剩**原地重渲染**这一条路
+	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行）；只剩**原地重渲染**这一条路
 	// 会给 Err（表单校验失败 / 选项读取失败）。
 	view.Err = submitErr
 	// 回列表的链接与「取消」都回到用户来的地方（工程上下文保留）。
@@ -815,8 +814,8 @@ func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) product
 	if res.Created == 0 && res.Updated == 0 && res.Deleted == 0 && len(res.Skipped) == 0 {
 		return productVariantSaveNoChange.fact()
 	}
-	// 例外（提示页出口）：这条结论是**多段词条拼出来的复合句**（「已保存…」+「跳过 N 条：原因」），
-	// 一段 key 表达不了 —— 提示页出口（shell.RenderJump）本来就是「需要成品串」的那一类。
+	// 例外（需要成品串）：这条结论是**多段词条拼出来的复合句**（「已保存…」+「跳过 N 条：原因」），
+	// 一段 key 表达不了 —— 它回的是 Fallback 成品串（Key 留空），与 page 模块同一取舍。
 	tr := shell.TranslateFor(c)
 	// 数字一律 strconv.Itoa 成字符串后填入（词条只允许 %s）。
 	parts := []string{fmt.Sprintf(productBulkTextOf(c, productVariantSaveSaved),
@@ -1417,7 +1416,7 @@ func (h *productPageHandle) ProductPricingPreview(c *gin.Context) {
 	h.renderPricingPageWith(c, &form, preview, "")
 }
 
-// productPricingPageTemplate 定价页模板名（与「提示页出口」同处本文件）。
+// productPricingPageTemplate 定价页模板名（与定价接口面同处本文件）。
 const productPricingPageTemplate = "admin/product/product_pricing.html"
 
 // renderPricingPageWith 定价页的统一渲染入口（form / preview / errMsg 三者可空）。
@@ -1448,7 +1447,7 @@ func (h *productPageHandle) renderPricingPageWith(c *gin.Context, form *productd
 		logger.Scene("product").Error(err, "定价页取数失败")
 		view.HTTPStatus = http.StatusInternalServerError
 	}
-	// 表单 action 的 query：应用调价的提示页由 pkg/backpath 读回 —— URL 形状属 HTTP 边界。
+	// 表单 action 的 query：预览走页面 POST，筛选上下文要随表单带回来（URL 形状属 HTTP 边界）。
 	view.ListQuery = productQueryFromRequest(c, productPricingBackKeys...)
 	adminui.RenderPage(c, productPricingPageTemplate, view)
 }

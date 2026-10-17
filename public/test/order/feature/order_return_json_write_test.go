@@ -395,9 +395,11 @@ func TestReturnsTemplateDeclaresJSONWrites(t *testing.T) {
 			t.Errorf("第 %d 行的批量按钮声明了 autoReceive（批档不支持，会整批 400）：%s", i+1, strings.TrimSpace(line))
 		}
 	}
-	// 禁用 JS 时两个批量按钮必须是隐藏的（否则会退化成「GET 当前页」的空动作）。
-	if got := strings.Count(src, "data-requires-js"); got != 2 {
-		t.Errorf("两个批量按钮都应标记 data-requires-js，实际 %d", got)
+	// 禁用 JS 时**所有**依赖写基座的按钮都必须隐藏：四个单档表单的 submit + 两个批量按钮。
+	// 单档表单也不能漏 —— 它们没有原生兜底（action 是页面 POST 时代的写法，通道已删），
+	// 无 JS 时按下去等于什么都没发生，而用户看不出区别。
+	if got, want := strings.Count(src, "data-requires-js"), 6; got != want {
+		t.Errorf("四个单档按钮与两个批量按钮都应标记 data-requires-js，实际 %d，want %d", got, want)
 	}
 	if !strings.Contains(src, "<noscript>") {
 		t.Error("模板缺少 noscript 说明（禁用 JS 时写操作不可用要说清楚）")

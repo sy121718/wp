@@ -6,7 +6,7 @@ package producthttp
 //（formEchoFrom + 归一化口径）随实现一起删除。归一化口径现在在
 // static/js/ui/json_write.js，由 public/test/product/json_write.test.cjs 覆盖。
 //
-// 分档判据（isHXRequest）与出口（shell.RenderJump）的守卫在 product_jump_test.go。
+// 分档判据（isHXRequest）的守卫在 product_jump_test.go。
 
 import (
 	"net/http"

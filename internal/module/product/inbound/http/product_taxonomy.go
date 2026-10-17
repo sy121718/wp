@@ -206,7 +206,7 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 // 必须在渲染期按请求语言取词（en-US 后台下也该是英文）—— 控制器里拼串等于把它钉死在中文。
 func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []map[string]any, parentLabels map[string]productdto.CategoryParentInfo) gin.H {
 	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": adminui.Prepare(c, gin.H{})["csrf_token"],
-		// ListQuery：表单 action 的筛选上下文（失败回跳时 shell.BackPath 读回）。
+		// ListQuery：表单 action 的筛选上下文（抽屉里的表单提交要带着它回去）。
 		"ListQuery": productQueryFromRequest(c, productCategoriesBackKeys...)}
 	if row != nil {
 		data["ID"], data["Name"], data["Slug"], data["ParentID"] = row.ID, row.Name, row.Slug, row.ParentID

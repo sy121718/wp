@@ -30,7 +30,7 @@ import (
 // 保存前必须先重建这一屏（逐行校验要候选原文、变更判定要现有译文、标记要实体身份），
 // 两者是**同一次取数**，拆开就会各查一遍、且两条路径的视图慢慢长成两个形状。
 //
-// 控制器只剩三件事：读请求（查询串 / JSON 体）、调读模型、出口（整页渲染 / JSON 回执 / 跳提示页）。
+// 控制器只剩三件事：读请求（查询串 / JSON 体）、调读模型、出口（整页渲染 / JSON 回执）。
 // 译文读写端口与「标记待重建」端口也住在 service —— 装配层经构造函数转交，控制器不持有。
 //
 // 路由分两个组：整页 GET 在 /admin（页面组），保存 POST 在 /api/product（authorizedAPI 声明式组）。
@@ -101,9 +101,7 @@ func (h *productTranslationHandle) ProductTranslations(c *gin.Context) {
 
 	reader, rerr := h.translationsReader()
 	if rerr != nil {
-		logger.Scene("product").With("project", projectID).With("product", productID).
-			Error(rerr, "打开商品翻译工作台失败")
-		productTranslationsJump(c, false, adminui.InternalMsg())
+		adminui.PageErrorInternal(c, "product", rerr)
 		return
 	}
 	view, err := reader.ProductTranslationsPage(c.Request.Context(), &productdto.ProductTranslationsPageReq{
@@ -112,12 +110,11 @@ func (h *productTranslationHandle) ProductTranslations(c *gin.Context) {
 		Lang:      strings.TrimSpace(c.Query("lang")),
 	})
 	if err != nil {
-		logger.Scene("product").With("project", projectID).With("product", productID).
-			Error(err, "打开商品翻译工作台失败")
-		productTranslationsJump(c, false, adminui.InternalMsg())
+		adminui.PageErrorInternal(c, "product", err)
 		return
 	}
-	// 保存成功的回执不再经 ?saved=1&n=N 回带（那条读侧已整批删除）：结论由提示页渲染。
+	// 保存成功的回执不在这条 GET 上（?saved=1&n=N 那条读侧已整批删除）：结论由 JSON 回执
+	// 存进 flash 行，刷新后的这一屏只负责渲染当前译文。
 	c.HTML(http.StatusOK, productTranslationsTemplate, adminui.Prepare(c, adminui.ViewMap(view)))
 }
 
@@ -200,7 +197,7 @@ func productTranslationErrorsText(c *gin.Context, errs []productdto.TranslationR
 // productTranslationsSavedMsg 译文保存成功的回执（0 条 = 没有需要写入的变化）。
 //
 // 复用工作台原有的两条词条（ProductTranslationsSavedNote / SavedNone），措辞与改造前一致；
-// 出口从「提示页」换成 JSON 回执（页面基座把它显示在结论行里，再刷新整页）。
+// 出口是 JSON 回执（页面基座把它显示在结论行里，再刷新整页）。
 //
 // **例外 3（具名占位符句式）**：ProductTranslationsSavedNote 用的是具名占位符 `{n}`
 // （i18n.FillTranslate），不是 `%s`；而模板注入的 tf 只有 `%s` 位置参数，一段 key + Args

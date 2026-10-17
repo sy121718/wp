@@ -279,23 +279,6 @@ func productDetailTemplateModeFail(c *gin.Context, err error) {
 // productDetailTemplatePath 详情页模板页路径（列表行内入口）。
 const productDetailTemplatePath = "/admin/products/template"
 
-// productDetailTemplateNoProductPrompt 缺少 product 参数时的引导文案（经整页提示回带）。
-//
-// 侧栏菜单「内容 › 商品详情模板」的 path 是不带 product 的 productDetailTemplatePath，
-// 点进来必然命中缺参分支：原先只做裸 302 回列表，用户看到页面闪回且**毫无提示**，
-// 只会以为菜单坏了。引导必须指名**去哪选**（商品列表），否则「回到列表」与「操作失败」
-// 在用户眼里是同一件事。
-//
-// 这条文案由 productDetailTemplateNoProductPromptText 取词，直接渲染进提示页（成品文案）；
-// key 在 productenums.ProductDetailTemplateNoProductPrompt，这里只留中文兜底。
-const productDetailTemplateNoProductPromptFallback = "请先从商品列表选择一件商品，再配置它的详情页模板。"
-
-// productDetailTemplateNoProductPromptMsg 上面那条引导的**事实**（key + 中文兜底，取词在模板里）。
-var productDetailTemplateNoProductPromptMsg = productMsg{
-	Key:      productenums.ProductDetailTemplateNoProductPrompt,
-	Fallback: productDetailTemplateNoProductPromptFallback,
-}
-
 // ProductPagePorts 后台商品相关页面消费的自动发布能力：翻译工作台要「按依赖标记待重建」，
 // 详情页模板页要「读绑定 / 预览 / 发布 / 切换模板」。两个窄接口的并集作为装配参数类型，
 // 页面各自只持有自己需要的那一个（字段类型仍是对应窄接口）。
@@ -390,7 +373,7 @@ const productDetailTemplatePageTemplate = "admin/product/product_detail_template
 // 这一屏的两个出口判断留在控制器，因为它们都是**HTTP 出口**而不是取数结论：
 //
 //	· 依赖未装配 → 200 的就地说明（不是装载失败：区别是「没读到」与「这条能力没接上」）；
-//	· 还没选商品 → 整页引导提示（要指名去哪选，见上面 productDetailTemplateNoProductPromptMsg）。
+//	· 还没选商品 → 302 回商品列表（本页没有「还没选商品」的就地形态）。
 func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	// 未装配（缺内容模板 / 自动发布契约）是**装配缺陷的可见提示**，不是装载失败：
 	// 与「没读到数据」分开，仍然是 200 的就地说明（先于取数判断 —— 否则两个出口会互相盖住）。
@@ -414,7 +397,9 @@ func (h *productPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 		err = errors.New("商品详情页模板页的视图为空")
 	}
 	if view.NoProduct {
-		productListJump(c, false, productDetailTemplateNoProductPromptMsg)
+		// 侧栏菜单直接进本页时没有 product 参数：回商品列表挑一件，而不是渲染一个空壳页。
+		// 落点是本模块自己的路径常量（不带回跳参数）—— 提示页那一层已删，失败分支不再拼回跳串。
+		c.Redirect(http.StatusFound, productListPath)
 		return
 	}
 	if err != nil {
@@ -455,7 +440,7 @@ func (h *productPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 	if h.instances == nil {
 		// 装配缺陷也走「整页提示回来源页」这一条出口（原先是一行 http.StatusBadRequest
 		// 的纯文本：脱壳、不翻译、也没有回去的地方）。
-		h.detailTemplateDepsMissingRedirect(c)
+		h.detailTemplateDepsMissingPage(c)
 		return
 	}
 	res, err := productservice.PreviewDetailTemplate(c.Request.Context(), h.instances,
@@ -538,19 +523,17 @@ const errTemplateDepsMissing = "详情页模板能力未装配（缺少内容模
 // key 在 productenums.ProductDetailTemplateDepsMissing（迁移 407 登记中英词条）。
 var detailTemplateDepsMissingMsg = productMsg{Key: productenums.ProductDetailTemplateDepsMissing, Fallback: errTemplateDepsMissing}
 
-// detailTemplateDepsMissingRedirect 依赖未装配时的统一出口。
+// detailTemplateDepsMissingPage 依赖未装配时的统一出口：**原页失败态**（500 档）。
 //
-// 为什么不是 `c.String(400, errTemplateDepsMissing)`（本处原先的写法）：浏览器里没有页面，
-// 只有一行纯文本，且**没走 i18n**（英文站点上照样是中文）。预览又是 `target="_blank"` 打开的
-// 新标签页 —— 用户看到一块白底黑字，既不知道缺什么、也没有回去的地方。
-//
-// 整页提示（取代原先的 303 + ?err=）回详情页：这是 POST 表单提交失败，把人送回来源页
-// 改一处再试（提示页不自动跳转，避免刷新重复提交）。
-//
-// 回跳目标带 project / product，而不是裸 productDetailTemplatePath：后者落到页面 handler 的
-// 缺参分支，会**再**提示「请先从商品列表选择一件商品」—— 把装配缺陷说成用户没选商品。
-func (h *productPageHandle) detailTemplateDepsMissingRedirect(c *gin.Context) {
-	productDetailTemplateJump(c, false, c.PostForm("projectId"), c.PostForm("productId"), detailTemplateDepsMissingMsg)
+// 为什么不是 `c.String(400, errTemplateDepsMissing)`（更早的写法）：只有一行纯文本、
+// 又没走 i18n，预览标签页里是一块白底黑字。也不用提示页 —— 装配缺陷不该把人送到另一个
+// 页面去读一句话。这里把同一页的失败槽填上（LoadFailed + LoadError），模板就地说明
+// 「详情页模板能力未装配」，运营看到的是页壳 + 一句话，而不是白屏。
+func (h *productPageHandle) detailTemplateDepsMissingPage(c *gin.Context) {
+	view := detailTemplateLoadFailureView(http.StatusInternalServerError)
+	view.LoadFailed = true
+	view.LoadError = productMsgText(c, detailTemplateDepsMissingMsg)
+	adminui.RenderPage(c, productDetailTemplatePageTemplate, view)
 }
 
 // 本页的两个参数级提示的中文兜底（key 在 productenums.ProductDetailTemplate*Required）。
@@ -559,7 +542,7 @@ const (
 	productDetailTemplatePathRequiredFallback = "请填写新的访问路径。"
 )
 
-// 两个参数级提示的**事实**（取词在提示页模板里，控制器不再拼成品串）。
+// 两个参数级提示的**事实**（模板在渲染期取词，控制器不再拼成品串）。
 var (
 	productDetailTemplateNameRequiredMsg = productMsg{
 		Key: productenums.ProductDetailTemplateNameRequired, Fallback: productDetailTemplateNameRequiredFallback,
