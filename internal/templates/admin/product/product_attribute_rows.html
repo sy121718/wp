@@ -1,8 +1,10 @@
 {* admin/product/product_attribute_rows.html — 属性值编辑行（issue #7） *}
 {* 数据：Rows（原始表单行，含 Index / Sort 字符串）+ GroupID（所在组的 id）。
-   容器 id 按约定 attr-values-<GroupID>；按钮用 formaction 打回本片段，
+   容器 id 按约定 attr-values-<GroupID>；按钮用 hx-post 打回本片段，
    hx-include 带上整个表单（hx-include 不会把按钮自身算进去），
-   服务端重建有序行数据后回渲染，替换容器 innerHTML。 *}
+   服务端重建有序行数据后回渲染，替换容器 innerHTML。
+   按钮是 type="button"：它们只走 htmx，**没有**原生提交兜底 —— 原先并排写的
+   formaction / formmethod 是 htmx 迁移前的残留，浏览器对 type=button 根本不读它们。 *}
 {* 取词：本片段两条渲染路径（HTMX 片段端点 / 抽屉表单的 include）的渲染数据都由
    adminui.PrepareBare 注入 t（handler 的 attrRowsCtxData）—— 这里按 chain 索引取，
    不再走「struct 自带 Tr 函数字段」那套写法（struct 上的 `.["t"]` 会报 can't use t as
@@ -34,13 +36,13 @@
             <input type="checkbox" name="values[{{v.Index}}].enabled" value="1" {{if v.Enabled}}checked{{end}}> {{tr("admin.product_attributes.values.enabled", "启用")}}
         </label>
         <span class="attr-value-op">
-            <button type="button" class="btn btn-sm" formaction="/admin/product-attributes/value-rows" formmethod="post"
+            <button type="button" class="btn btn-sm"
                     hx-post="/admin/product-attributes/value-rows" hx-vals='{"action":"remove","removeIndex":"{{i}}"}'
                     hx-include="{{target}}" hx-target="{{target}}" hx-swap="innerHTML">{{tr("admin.common.action.delete", "删除")}}</button>
         </span>
     </div>
     {{end}}
 </div>
-<button type="button" class="btn btn-sm" formaction="/admin/product-attributes/value-rows" formmethod="post"
+<button type="button" class="btn btn-sm"
         hx-post="/admin/product-attributes/value-rows" hx-vals='{"action":"add"}'
         hx-include="{{target}}" hx-target="{{target}}" hx-swap="innerHTML">+ {{tr("admin.product_attributes.values.add", "添加值")}}</button>
