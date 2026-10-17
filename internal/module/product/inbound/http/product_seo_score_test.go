@@ -292,7 +292,8 @@ func TestTaxonomyFormsUseMediaField(t *testing.T) {
 		field string
 	}{
 		{"分类图", "../../../../../internal/templates/admin/product/product_category_form.html", "image"},
-		{"品牌 logo", "../../../../../internal/templates/admin/product/product_brand_form.html", "logo"},
+		// 品牌的编辑抽屉是列表页里的内联模板（不再有独立片段文件），logo 控件就在那里。
+		{"品牌 logo", "../../../../../internal/templates/admin/product/product_brands.html", "logo"},
 	}
 	for _, tc := range cases {
 		raw, err := os.ReadFile(tc.path)

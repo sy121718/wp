@@ -220,11 +220,6 @@ func productTagsJump(c *gin.Context, ok bool, msg productMsg) {
 	productPageJump(c, ok, msg, productTagsBack(c), productTagsBackMsg)
 }
 
-// productBrandsJump 回品牌页的提示页出口。
-func productBrandsJump(c *gin.Context, ok bool, msg productMsg) {
-	productPageJump(c, ok, msg, productBrandsBack(c), productBrandsBackMsg)
-}
-
 // productBundleJump 回捆绑配置页的提示页出口。
 //
 // 商品 id 随隐藏域 productId 提交，不依赖 action query：htmx 成功要 HX-Redirect 回
@@ -375,14 +370,12 @@ func productBulkTextOf(c *gin.Context, t productBulkText) string {
 
 // 批量删除：五个实体各一对（部分成功 / 全部成功）。%s 是计数（Go 侧 strconv.Itoa 后填入）。
 var (
-	productTagBulkPartial   = productBulkText{productenums.BulkTagPartial, "已删除 %s 个，%s 个未能删除（标签不存在或已被删除）"}
-	productTagBulkDone      = productBulkText{productenums.BulkTagDone, "已删除 %s 个标签"}
-	productAttrBulkPartial  = productBulkText{productenums.BulkAttrPartial, "已删除 %s 个，%s 个未能删除（属性组不存在或被商品引用）"}
-	productAttrBulkDone     = productBulkText{productenums.BulkAttrDone, "已删除 %s 个属性组（连同其全部属性值）"}
-	productBrandBulkPartial = productBulkText{productenums.BulkBrandPartial, "已删除 %s 个，%s 个未能删除（品牌不存在或被商品引用）"}
-	productBrandBulkDone    = productBulkText{productenums.BulkBrandDone, "已删除 %s 个品牌"}
-	productBulkPartial      = productBulkText{productenums.BulkProductPartial, "已删除 %s 个，%s 个未能删除（商品不存在或被其它数据引用）"}
-	productBulkDone         = productBulkText{productenums.BulkProductDone, "已删除 %s 个商品（连同其全部变体）"}
+	productTagBulkPartial  = productBulkText{productenums.BulkTagPartial, "已删除 %s 个，%s 个未能删除（标签不存在或已被删除）"}
+	productTagBulkDone     = productBulkText{productenums.BulkTagDone, "已删除 %s 个标签"}
+	productAttrBulkPartial = productBulkText{productenums.BulkAttrPartial, "已删除 %s 个，%s 个未能删除（属性组不存在或被商品引用）"}
+	productAttrBulkDone    = productBulkText{productenums.BulkAttrDone, "已删除 %s 个属性组（连同其全部属性值）"}
+	productBulkPartial     = productBulkText{productenums.BulkProductPartial, "已删除 %s 个，%s 个未能删除（商品不存在或被其它数据引用）"}
+	productBulkDone        = productBulkText{productenums.BulkProductDone, "已删除 %s 个商品（连同其全部变体）"}
 )
 
 // —— 列表页 / 详情页的自造回执文案 ——

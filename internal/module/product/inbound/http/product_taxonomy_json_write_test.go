@@ -61,7 +61,7 @@ func assertContainsAll(t *testing.T, html string, wants []string) {
 	t.Helper()
 	for _, want := range wants {
 		if !strings.Contains(html, want) {
-			t.Errorf("分类页缺少 %q（写入口会退化成原生提交或干脆没有）", want)
+			t.Errorf("页面缺少 %q（写入口会退化成原生提交或干脆没有）", want)
 		}
 	}
 }
@@ -70,7 +70,7 @@ func assertContainsNone(t *testing.T, html string, gones []string) {
 	t.Helper()
 	for _, gone := range gones {
 		if strings.Contains(html, gone) {
-			t.Errorf("分类页仍残留 %q：页面 POST 与 JSON 写端点并存，谁接管提交取决于属性顺序", gone)
+			t.Errorf("页面仍残留 %q：页面 POST 与 JSON 写端点并存，谁接管提交取决于属性顺序", gone)
 		}
 	}
 }
@@ -105,5 +105,33 @@ func TestCategoryPageUsesJSONWriteBase(t *testing.T) {
 		`action="/admin/product-categories/bulk-delete"`,
 		`action="/admin/product-categories/delete"`,
 		`action="/admin/product-categories/create"`,
+	})
+}
+
+func TestBrandPageUsesJSONWriteBase(t *testing.T) {
+	h := taxonomyHandle(&productPageReaderStub{brandsView: productBrandsPageViewStub(nil)})
+	rec := taxonomyJSONWriteRequest(t, h, "/admin/product-brands", "/admin/product-brands?project=p1", taxonomyAllButtons())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("整页 GET 状态码 = %d, want 200", rec.Code)
+	}
+	html := rec.Body.String()
+	assertContainsAll(t, html, []string{
+		"data-list-bulk",
+		`data-write-api="/api/product/brand/bulk-delete"`,
+		`data-write-api="/api/product/brand/delete"`,
+		`data-write-extra="projectId"`,
+		// 编辑抽屉与新建抽屉都是整表单档：两处字段清单相同，只差一个 id 隐藏域。
+		`data-write-api="/api/product/brand/update"`,
+		`data-write-api="/api/product/brand/create"`,
+		`data-write-mode="form"`,
+		`data-write-number="sort"`,
+		"data-write-status",
+		"data-write-host",
+	})
+	assertContainsNone(t, html, []string{
+		`action="/admin/product-brands/bulk-delete"`,
+		`action="/admin/product-brands/delete"`,
+		`action="/admin/product-brands/create"`,
+		`action="/admin/product-brands/update"`,
 	})
 }

@@ -187,12 +187,10 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 				"ID": b.ID, "Name": b.Name, "Slug": b.Slug, "Logo": b.Logo,
 				"Sort": b.Sort, "Description": b.Description,
 				"UpdatedAt": b.UpdatedAt,
-				"EditForm":  brandDrawerData(c, "update", view.SelectedProject, b),
 			})
 		}
 	}
 	view.Brands = brands
-	view.BrandCreateForm = brandDrawerData(c, "create", view.SelectedProject, nil)
 	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
 		pg.Base = productListBaseURL("/admin/product-brands", listFilterQuery(view.SelectedProject, view.FilterKeyword))
 		view.Pagination = pg
@@ -202,80 +200,6 @@ func (h *productPageHandle) ProductBrandsPage(c *gin.Context) {
 		view.LoadError = productErrPageText(c, err)
 	}
 	adminui.RenderPage(c, productBrandsPageTemplate, view)
-}
-
-// ProductBrandsCreate 新建品牌。
-func (h *productPageHandle) ProductBrandsCreate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	// SEO 标题 / 描述不再从表单读（2026-09-30 字段合并）：品牌名即网页标题、
-	// 品牌描述即 meta description（读侧统一映射，见 service 的 brandValues）。
-	req := &productdto.CreateBrandReq{
-		ProjectID:   projectID,
-		Name:        strings.TrimSpace(c.PostForm("name")),
-		Slug:        strings.TrimSpace(c.PostForm("slug")),
-		Logo:        strings.TrimSpace(c.PostForm("logo")),
-		Description: c.PostForm("description"),
-		Sort:        parseIntOr(c.PostForm("sort"), 0),
-	}
-	if _, err := h.products.CreateBrand(c.Request.Context(), req); err != nil {
-		h.brandFormFail(c, "create", productErrMsg(c, err))
-		return
-	}
-	brandFormSuccess(c, projectID)
-}
-
-// ProductBrandsUpdate 修改品牌。
-func (h *productPageHandle) ProductBrandsUpdate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	name := strings.TrimSpace(c.PostForm("name"))
-	slug := strings.TrimSpace(c.PostForm("slug"))
-	logo := strings.TrimSpace(c.PostForm("logo"))
-	description := c.PostForm("description")
-	sortValue := parseIntOr(c.PostForm("sort"), 0)
-	// SEO 标题 / 描述**不提交**（nil = 不改），理由同分类。
-	req := &productdto.UpdateBrandReq{
-		ProjectID: projectID,
-		ID:        c.PostForm("id"), Name: &name, Slug: &slug, Logo: &logo,
-		Description: &description, Sort: &sortValue,
-	}
-	if _, err := h.products.UpdateBrand(c.Request.Context(), req); err != nil {
-		h.brandFormFail(c, "update", productErrMsg(c, err))
-		return
-	}
-	brandFormSuccess(c, projectID)
-}
-
-// ProductBrandsDelete 删除品牌（被商品引用时服务端拒绝）。
-func (h *productPageHandle) ProductBrandsDelete(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	if err := h.products.DeleteBrand(c.Request.Context(), &productdto.DeleteBrandReq{ProjectID: projectID, ID: c.PostForm("id")}); err != nil {
-		productBrandsJump(c, false, productErrMsg(c, err))
-		return
-	}
-	productBrandsJump(c, true, productBulkDoneMsg(productBrandBulkDone))
-}
-
-// ProductBrandsBulkDelete 批量删除品牌。
-//
-// 业务编排在 service.BulkDeleteProductBrands（一次查回整批的引用面，可删的一条 DELETE +
-// 一次失效入队，同一事务）；本层只解析 id、调用例、映射结果。
-// 被商品引用的那些进「跳过」桶，结果按「已删 N 个 / 未成功 M 个」渲染提示页。
-func (h *productPageHandle) ProductBrandsBulkDelete(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
-	if berr != nil {
-		productBrandsJump(c, false, productBulkIDsMsg(c, berr))
-		return
-	}
-	res, err := h.products.BulkDeleteProductBrands(c.Request.Context(),
-		&productdto.BulkDeleteReq{ProjectID: projectID, IDs: ids})
-	if err != nil {
-		productBrandsJump(c, false, productErrMsg(c, err))
-		return
-	}
-	ok, msg := productBulkDeleteResult(res.Succeeded, res.NotDone(), productBrandBulkPartial, productBrandBulkDone)
-	productBrandsJump(c, ok, msg)
 }
 
 // ProductsTaxonomySet 整体替换某商品挂的分类与品牌（issue #10）。
@@ -357,48 +281,6 @@ func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.
 		data["SEOTitle"], data["SEODescription"] = "", ""
 	}
 	return adminui.PrepareBare(c, data)
-}
-
-func brandDrawerData(c *gin.Context, mode, projectID string, row *productdto.BrandResp) gin.H {
-	data := gin.H{"Mode": mode, "Project": projectID, "Csrf": adminui.Prepare(c, gin.H{})["csrf_token"],
-		// ListQuery：表单 action 的筛选上下文（失败回跳时 shell.BackPath 读回）。
-		"ListQuery": productQueryFromRequest(c, productBrandsBackKeys...)}
-	if row != nil {
-		data["ID"], data["Name"], data["Slug"], data["Logo"] = row.ID, row.Name, row.Slug, row.Logo
-		data["Sort"], data["Description"], data["SEOTitle"], data["SEODescription"] = row.Sort, row.Description, row.SEOTitle, row.SEODescription
-	} else {
-		data["ID"], data["Name"], data["Slug"], data["Logo"] = "", "", "", ""
-		data["Sort"], data["Description"], data["SEOTitle"], data["SEODescription"] = 0, "", "", ""
-	}
-	return adminui.PrepareBare(c, data)
-}
-
-func (h *productPageHandle) brandFormFail(c *gin.Context, mode string, msg productMsg) {
-	if !isHXRequest(c) {
-		productBrandsJump(c, false, msg)
-		return
-	}
-	data := brandDrawerData(c, mode, c.PostForm("projectId"), nil)
-	data["FormEcho"] = rawDrawerEcho(c, []string{"projectId", "id", "name", "slug", "sort", "logo", "description", "seoTitle", "seoDescription"})
-	// 错误槽收**事实**（productMsg），取词在 product_brand_form.html 的 tf 里做。
-	data["SubmitErr"] = msg
-	c.HTML(http.StatusOK, "admin/product/product_brand_form.html", data)
-}
-
-func brandFormSuccess(c *gin.Context, projectID string) {
-	productBrandsJump(c, true, productActionDoneMsg)
-}
-
-func rawDrawerEcho(c *gin.Context, fields []string) gin.H {
-	_ = c.Request.ParseMultipartForm(formEchoMemory)
-	out := gin.H{}
-	for _, key := range fields {
-		out[key] = ""
-		if values := c.Request.PostForm[key]; len(values) > 0 {
-			out[key] = values[0]
-		}
-	}
-	return out
 }
 
 // ==========================================================================
@@ -878,6 +760,18 @@ func (h *productPageHandle) tagDrawerData(c *gin.Context, mode, projectID string
 // tagFormFail 写失败分档：htmx 请求 200 + 片段自身（错误槽 + 原值回填），
 // 原生提交渲染整页提示（取代原先的 302 + ?err= 回本页）—— 用户输入比错误文案贵，
 // 两种档都不丢字段。
+func rawDrawerEcho(c *gin.Context, fields []string) gin.H {
+	_ = c.Request.ParseMultipartForm(formEchoMemory)
+	out := gin.H{}
+	for _, key := range fields {
+		out[key] = ""
+		if values := c.Request.PostForm[key]; len(values) > 0 {
+			out[key] = values[0]
+		}
+	}
+	return out
+}
+
 func (h *productPageHandle) tagFormFail(c *gin.Context, mode string, err error) {
 	projectID := c.PostForm("projectId")
 	msg := productErrMsg(c, err)

@@ -476,8 +476,8 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	// 分类的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/category/*，
 	// 页面组只剩 GET。用例里要建分类时直接调用例（下方），页面渲染照旧验证。
 	engine.GET("/admin/product-categories", handle.ProductCategoriesPage)
+	// 品牌同理：只有 GET 页，写动作走 /api/product/brand/*。
 	engine.GET("/admin/product-brands", handle.ProductBrandsPage)
-	engine.POST("/admin/product-brands/create", handle.ProductBrandsCreate)
 	engine.GET("/admin/products", handle.ProductsPage)
 	// 商品级表单（分类 / 品牌 / 标签）已整块移到商品详情页，这里一并注册。
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
@@ -530,12 +530,12 @@ func TestTaxonomyAdminPages(t *testing.T) {
 		t.Fatal("逐层导航已退役：列表本身就是树，不该再出现「进入父级」的链接")
 	}
 
-	// 品牌：表单建品牌 → 页面能看到 logo / slug / 描述。
-	rec = postForm(engine, "/admin/product-brands/create", url.Values{
-		"projectId": {f.projectID}, "name": {"山野"}, "slug": {"shanye"},
-		"logo": {"/img/logo.svg"}, "seoTitle": {"山野 SEO"},
-	})
-	assertJumpOK(t, rec)
+	// 品牌：建品牌 → 页面能看到 logo / slug / 描述（建走用例，页面的写入口已迁到 JSON 端点）。
+	if _, cerr := f.svc.CreateBrand(t.Context(), &productdto.CreateBrandReq{
+		ProjectID: f.projectID, Name: "山野", Slug: "shanye", Logo: "/img/logo.svg",
+	}); cerr != nil {
+		t.Fatalf("建品牌失败: %v", cerr)
+	}
 	rec = httptestGet(engine, "/admin/product-brands?project="+f.projectID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("品牌页应 200，实际 %d", rec.Code)

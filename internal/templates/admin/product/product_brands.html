@@ -103,15 +103,32 @@
            工程里真的没有品牌 → 指到本页页头那个新建抽屉。 *}
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids（见 admin.js 的批量选择增强）。 *}
-        <form method="post" action="/admin/product-brands/bulk-delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        {* 表单不声明 data-write-api：端点声明落在按钮/各自的表单上（json_write.js 的 attrFrom：
+           按钮优先、表单兜底）。data-list-bulk 是作用域锚点，给「勾选框在这里、动作在别处」留根。
+           csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头（基座跳过同名字段）。 *}
+        <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete}}{{if len(.Brands) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                {{yield bulkBtn(label=tr("admin.common.bulk.delete", "批量删除"), confirm=tr("admin.product_brands.bulkDeleteConfirm", "删除选中的品牌？被商品引用的会被拒绝，其余照常删除。"), danger=true)}}
+                {* 就地写而不是用 bulkBtn：那个片段的属性名是冻结契约（admin.js 依赖），
+                   装不下一串 data-write-* 声明。成功条目按 items[].deleted 就地移除行；
+                   批量档**刻意不自动刷新** —— 逐条原因一闪而过就看不完了。 *}
+                <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
+                        data-write-api="/api/product/brand/bulk-delete" data-write-mode="bulk"
+                        data-msg-none-selected="{{tr("admin.product_brands.bulk.noneSelected", "没有勾选任何品牌，列表未改动。")}}"
+                        data-msg-all-deleted="{{tr("admin.product_brands.bulkDelete.allDeleted", "已删除 {count} 个品牌。")}}"
+                        data-msg-all-skipped="{{tr("admin.product_brands.bulkDelete.allSkipped", "{count} 个品牌都未能删除（仍被商品引用）。")}}"
+                        data-msg-partial="{{tr("admin.product_brands.bulkDelete.partial", "已删除 {deleted} 个品牌，{skipped} 个未能删除（仍被商品引用）。")}}"
+                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
+                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-refresh="{{tr("admin.product_brands.bulkDelete.refresh", "刷新列表")}}"
+                        data-confirm="{{tr("admin.product_brands.bulkDeleteConfirm", "删除选中的品牌？被商品引用的会被拒绝，其余照常删除。")}}"
+                        data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
+            {* 批量结果区：与单条删除共用本表单内的这一个（基座先找表单内、再找 host 里的）。 *}
+            <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_brands.list.title", "品牌列表") }}">
             <table class="data-table">
                 <thead>
@@ -184,19 +201,25 @@
 
     {* 行内表单与抽屉模板必须放在表格外：HTML 不允许 form 嵌套，塞进 <td> 会被解析器
        提前闭合表格；按钮用 form="<id>" 关联到这里的隐藏表单。 *}
+    {* 这批隐藏表单共用一个结果区（基座先找表单内、找不到再找 closest('[data-write-host]')）：
+       单条删除成功后整页刷新，所以这段只在**失败**时才可见（被引用 / 网络故障）。 *}
+    <div data-write-host>
+    <p class="form-hint" data-write-status role="status" hidden></p>
     {{range _, b := .Brands}}
     {{if canDelete}}
-    <form id="brand-del-{{b.ID}}" class="hidden-form" method="post" action="/admin/product-brands/delete{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}"
+    {* single 档只发 {id} + data-write-extra 点名的字段：多工程下 projectId 必须带上。 *}
+    <form id="brand-del-{{b.ID}}" class="hidden-form"
+          data-write-api="/api/product/brand/delete" data-write-mode="single" data-write-extra="projectId"
+          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
           data-confirm="{{ .["t"]("admin.product_brands.list.deleteConfirm", "删除该品牌？被商品引用时会被拒绝。") }}" data-confirm-danger>
-        <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{b.ID}}">
     </form>
     {{end}}
     {{if canUpdate}}
     <template id="tpl-brand-edit-{{b.ID}}">
-        <form method="post" action="/admin/product-brands/update{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form data-write-api="/api/product/brand/update" data-write-mode="form" data-write-number="sort"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{b.ID}}">
             <div class="form-inline">
@@ -223,8 +246,10 @@
                 <button type="button" class="btn"
                         hx-post="/admin/product-brands/seo-score" hx-include="closest form"
                         hx-target="#brand-seo-score-{{b.ID}}" hx-swap="innerHTML">{{ .["t"]("admin.product_brands.seoScore", "SEO 评分") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_brands.list.save", "保存品牌") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden>{{ .["t"]("admin.product_brands.list.save", "保存品牌") }}</button>
             </div>
+            {* 结果区在表单内：失败时抽屉不关、已填内容一个字段都不动，只在这里点出原因。 *}
+            <p class="form-hint" data-write-status role="status" hidden></p>
             {* 评分结果容器：点「SEO 评分」后由片段填充（空容器不占位）。
                hx-target 指向它，少一个字符按钮就静默失效 —— 别在其中插空格。 *}
             <div id="brand-seo-score-{{b.ID}}" class="wb-seo-panel"></div>
@@ -233,10 +258,12 @@
     {{end}}
     {{end}}
 
+    </div>
+
     {{if canCreate}}
     <template id="tpl-brand-create">
-        <form method="post" action="/admin/product-brands/create{{if isset(.ListQuery)}}?{{.ListQuery}}{{end}}" class="form-stack">
-            <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <form data-write-api="/api/product/brand/create" data-write-mode="form" data-write-number="sort"
+              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-inline">
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" class="form-input" type="text" name="name" placeholder="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" required>
@@ -250,8 +277,9 @@
             {{yield richEditor(field="description", key="new", value="")}}
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
-                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_brands.create.submit", "新建品牌") }}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden>{{ .["t"]("admin.product_brands.create.submit", "新建品牌") }}</button>
             </div>
+            <p class="form-hint" data-write-status role="status" hidden></p>
         </form>
     </template>
     {{end}}

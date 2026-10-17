@@ -301,10 +301,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 分类的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/category/*。
 	// 页面组只剩两个读入口（列表页与父级候选搜索）。
 	pages.GET("/product-brands", adminui.PageAuthz("/api/product/brand/list"), productPages.ProductBrandsPage)
-	pages.POST("/product-brands/create", builtin.CasbinMiddlewareForPath("/api/product/brand/create"), productPages.ProductBrandsCreate)
-	pages.POST("/product-brands/update", builtin.CasbinMiddlewareForPath("/api/product/brand/update"), productPages.ProductBrandsUpdate)
-	pages.POST("/product-brands/delete", builtin.CasbinMiddlewareForPath("/api/product/brand/delete"), productPages.ProductBrandsDelete)
-	pages.POST("/product-brands/bulk-delete", builtin.CasbinMiddlewareForPath("/api/product/brand/delete"), productPages.ProductBrandsBulkDelete)
+	// 品牌的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/brand/*。
 	// 商品挂载分类（多个 + 主分类）与品牌：属于商品更新，复用商品更新权限点。
 	pages.POST("/products/taxonomy", builtin.CasbinMiddlewareForPath("/api/product/update"), productPages.ProductsTaxonomySet)
 
