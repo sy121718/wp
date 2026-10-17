@@ -170,6 +170,18 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if productType == productmodel.TypeBundle && (req.DefaultPrice == nil || *req.DefaultPrice <= 0) {
 		return nil, errors.New(productenums.ErrBundlePriceRequired)
 	}
+	// 「跟踪数量」开关与数量框的同组绑定（原 dto.TrackedQuantity 的语义，页面迁到 JSON 写基座后
+	// 归一到 service）：勾了跟踪却还没填数量 = 明确 0（没货），与「压根不跟踪 = 无限」是两件事。
+	// JSON 里这两种都是 quantity 缺失，区别只在开关上 —— 前端不做业务归一，所以必须在这里补。
+	// 反过来，页面不再经过原生表单校验（fetch 提交），负数能越过 min="0" 发到端点上，
+	// 这里补一条拒绝，否则它会一路落到库存建行、最后由 PG 的 CHECK 报一句原始错误。
+	if req.TrackQuantity && req.Quantity == nil {
+		zero := 0
+		req.Quantity = &zero
+	}
+	if req.Quantity != nil && *req.Quantity < 0 {
+		return nil, errors.New(inventoryenums.ErrStockQuantityInvalid)
+	}
 	// SKU 来源（docs/14 §1.1）：自己创建 / 从仓库选。空串按「自己创建」归一 ——
 	// 存量调用方与接口路径都不带这个字段。
 	skuSource, serr := normalizeSKUSource(req.SKUSource)

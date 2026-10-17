@@ -12,13 +12,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// product_page_util.go — 商品各页面共用的表单回显、分页与取值小工具。
+// product_page_util.go — 商品各页面共用的分页、取值与分档小工具。
 //
-// formEcho 一族是「写失败时原地留住输入」的底座：值从**本次提交**里读回，
-// 归一化口径（去首尾空白、丢空项、多值保序）就收在这里。
-// **怎么落进视图**不在这个文件：每个表单自己有 dto 的 `XxxFormEcho` 结构体（字段即清单），
-// 由 adminui.FillForm 按 `form:` 标签填 —— 回填键仍必须叫 `FormEcho` 并带前缀，
-// 片段与页面共用同一份渲染 data，通用键名（`Form`）会撞上页面已有键。
+// 写表单的失败回填（formEcho 一族 / 各表单的 XxxFormEcho 结构体 / 片段重渲染）已随商品页
+// 最后一批迁到 JSON 写基座而删除：基座在原页发 fetch、失败只写结果区，用户的输入从头到尾
+// 没离开过 DOM。字段归一化口径现在在 static/js/ui/json_write.js，由
+// public/test/product/json_write.test.cjs 覆盖。
+//
+// 剩下的分档判据只有 isHXRequest 一处实现：仍在 htmx 路径上的写动作（捆绑页等）靠它决定
+// 「回片段还是整页」，两个出口必须认同同一个信号，否则会出现「片段按 htmx 走、跳转按原生走」
+// 这种自相矛盾的档位。
 
 // formProductID 取表单里的商品 id：优先 productId，再回落 id。
 //
@@ -26,53 +29,9 @@ import (
 // 手工标签）用的隐藏域是 id（其值就是商品 id），子资源表单（变体 / 评分）用的是 productId。
 // 只适用于这两者都指向商品本身的地方 —— 变体删除 / 评分删除的 id 是**子资源 id**，
 // 那两个 handler 必须读 productId，绝不能走这里的回落。
-// 「提交失败原地留住输入」出口（路径 A 渐进增强）。
 //
-// 形状与口径**照批 1 的商品建表单**（product_core.go 的 productCreateFormView + admin/product/product_create_form.html），
-// 分档判据只有一份（product_page_util.go 的 isHXRequest / hxFragment / formEchoFrom）：
-//
-//	· htmx 请求：失败返 200 + 片段（错误槽 + 回填后的表单）—— 抽屉原地留住已填内容；
-//	· 原生请求：整页提示（shell.RenderJump）回列表页（取代原先的 302 + ?err=）；
-//	· 成功出口：一律整页提示 —— htmx 由 shell.RenderJump 输出 HX-Redirect（整页跳转），
-//	  原生渲染提示页。
-//
-// 为什么单独一个文件：属性页有三个抽屉表单（新建属性组 / 编辑属性组 / 保存属性值），
-// 每个抽屉的数据既要在**页面首屏**渲染（初值 = 库里当前值），又要在**提交失败**时由
-// handler 单独重渲染（值 = 用户刚打的字）。两处各拼一份 data 必然分叉，而分叉不会编译
-// 失败 —— 只会让失败重渲染缺一个键，于是 Jet 在那一行渲染失败、**整块响应被丢弃（500）**，
-// 而 htmx 把 5xx 判成不 swap：用户点「保存」后页面上毫无反应（比白页更难查）。
-// 因此组装只有 attrGroupFormData / attrValuesFormData 两个入口，首屏与失败共用。
-
-// redirectWhere 已提升到 product_page_util.go（同包共享，本文件仍可直接调用）。
-// 提升理由：它是「HTMX 写表单分档」的出口之一，写表单的失败片段再走同一个口径，
-// 两处各写一份头判断迟早会分叉。
-
-// —— HTMX 写表单的失败分档（各写表单共用）——
-//
-// 表单保留原生 `method="post" action=…`，另加 `hx-post`（htmx 优先拦住 submit）；
-// 服务端按 `HX-Request` **分档**：
-//
-//	· htmx 请求：失败返 **200 + 片段**（错误槽 + 回填后的表单）—— 抽屉 / 页面原地留住输入；
-//	· 原生请求：整页提示（shell.RenderJump）回来源页（取代原先的 302 + ?err=）。
-//
-// 分档判据只有 isHXRequest 一处实现：两个出口必须认同同一个信号，否则会出现
-// 「片段按 htmx 走、跳转按原生走」这种自相矛盾的档位。
-//
-// 原 redirectWhere / hxFragment 两个 helper 已删除：写动作的结论统一由 shell.RenderJump
-// 渲染（它对 htmx 自己发 HX-Redirect），回填片段分支由各 handler 就地 `c.HTML` 渲染。
-
-// product_view.go - 商品页的视图构造（变体行、规格标签、金额/评分格式化、仓库下拉
-// 与捆绑构成面板）。
-
-// ---------------------------------------------------------------------------
-// 商品域后台子列表（属性 / 分类 / 品牌 / 标签）共用的分页与取址助手。
-//
-// 为什么落在这个文件里：本批的独占文件清单只含三个 handler 与四个模板，共享助手所在的
-// product_page_util.go 不在其中（有并行任务在同包改别的页面，动它必然冲突）；同包内位置
-// 不影响可用性，四页都能直接调用。
-// ---------------------------------------------------------------------------
-//
-// 并进来的还有 product_handle.go 的 operatorFromContext（会话里的操作人）。
+// 本文件另有商品域后台子列表（属性 / 分类 / 品牌 / 标签）共用的分页与取址助手，
+// 以及 product_handle.go 并进来的 operatorFromContext（会话里的操作人）。
 
 func formProductID(c *gin.Context) string {
 	if id := strings.TrimSpace(c.PostForm("productId")); id != "" {
@@ -88,52 +47,11 @@ func isHXRequest(c *gin.Context) bool {
 	return strings.EqualFold(strings.TrimSpace(c.GetHeader("HX-Request")), "true")
 }
 
-// formEchoMemory 解析提交表单时的内存上限（与 gin 的 MaxMultipartMemory 默认值一致）。
-const formEchoMemory = 32 << 20
-
-// formEcho 这次请求的表单快照（失败片段回填用）。
+// formParseMemory 解析提交表单时的内存上限（与 gin 的 MaxMultipartMemory 默认值一致）。
 //
-// 值只来自**这次提交**，不回查数据库：回填要的是「用户刚打的字」，而不是「库里的旧值」
-// （新建路径上后者根本不存在）。
-type formEcho struct {
-	// values 归一化后的提交值：去首尾空白、丢空项（与 reqparams.FieldValue 同口径）。
-	// 多值字段保留**提交顺序** —— 顺序在本域有语义（「按本表顺序第一个勾中的仓是认领仓」），
-	// 排序或去重都会改掉它。
-	values url.Values
-}
-
-// formEchoFrom 取这次请求的表单快照。
-func formEchoFrom(c *gin.Context) formEcho {
-	vals := url.Values{}
-	if c == nil || c.Request == nil {
-		return formEcho{values: vals}
-	}
-	// 走标准库的解析入口（gin 的 PostForm 也走这里）：urlencoded 与 multipart 两条路径
-	// 都会把字段填进 req.PostForm。解析错误一律忽略 —— 解析失败就当「没提交」，
-	// 回填退化成空表单；提交本身合法与否由各 handler 的业务校验回答，不在这里变成 500。
-	_ = c.Request.ParseMultipartForm(formEchoMemory)
-	for key, list := range c.Request.PostForm {
-		for _, raw := range list {
-			if v := strings.TrimSpace(raw); v != "" {
-				vals.Add(key, v)
-			}
-		}
-	}
-	return formEcho{values: vals}
-}
-
-// value 取单值字段的回填值（缺失返回空串）：文本 / 下拉 / 隐藏域用。
-func (e formEcho) value(name string) string {
-	if list := e.values[name]; len(list) > 0 {
-		return list[0]
-	}
-	return ""
-}
-
-// list 取多值字段的完整回填值（复选框组 / 同名多次提交），保留提交顺序。
-func (e formEcho) list(name string) []string {
-	return e.values[name]
-}
+// 手工调 ParseMultipartForm 的地方共用它：gin 的 PostForm 缓存是惰性填充的，
+// 直接读 c.Request.PostForm 在未触发解析时是空 map。
+const formParseMemory = 32 << 20
 
 // formatAmount 数值 → 后台展示文本（整数不带小数尾巴）。
 //

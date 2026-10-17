@@ -11,7 +11,7 @@
 //   · `XxxReq` / `XxxResp` —— 接口与 service 的入参 / 出参；
 //   · **本文件** —— 页面与片段的渲染视图、表单回显形状（只有字段，没有方法）；
 //   · 留在 handle —— 带装配方法的聚合（`productTranslationsData.templateMap()`，产出 gin.H）、
-//     解析与装配选项（`attrGroupFormOpts` / `attrValuesFormOpts` / `formEcho`）、
+//     解析与装配选项（`attrGroupFormOpts` / `attrValuesFormOpts`）、
 //     以及 HTTP JSON 响应行（`variantPreviewRow`：dto 行 + 展示用规格串）。
 //
 // **字段名是模板契约**：改名等于改模板（struct 上取不到字段会让渲染中断，见
@@ -270,12 +270,11 @@ type ProductEditPageReq struct {
 //
 // 与 ProductDetailPageView 的两点不同：
 //   - 多一组 AttributeOptions —— 编辑表单的勾选列表用属性组候选，详情页用的是逗号分隔的 id 输入框；
-//   - 多两个**控制器侧**的字段：Err（原地重渲染的失败文案）与 EditBlocked（属性组读不到时撤掉
-//     保存入口）。两者回答的是「这次提交怎么样」，不是「库里有什么」，本层不参与。
+//   - 多一个**控制器侧**的字段：EditBlocked（属性组读不到时撤掉保存入口）。它回答的是
+//     「能不能改」，不是「库里有什么」，本层不参与。
 //
-// **表单回显（echo）不在本层**：校验失败重渲染时要用**用户刚提交的值**覆盖读回来的值，
-// 而提交值在请求体里 —— 那是控制器的事（inbound/http 的 formEchoFrom），
-// 也是这一屏与新建页 / 列表页 / 详情页唯一多出来的一层。
+// **没有表单回显（echo）**：保存已迁到 JSON 写基座，失败只在原页的结果区出现，
+// 用户的输入从头到尾没离开过 DOM —— 服务端不再有「拿这次提交覆盖读回来的值」这一层。
 type ProductEditPageView struct {
 	Title string `view:"title"`
 	Menu  string `view:"menu"`
@@ -563,8 +562,8 @@ type ProductCreateFormReq struct {
 //
 // 与四个整页视图的两点不同：
 //   - 没有工程清单（不渲染工程下拉）：工程来自表单字段，这里只带 id；
-//   - 多一个 FormEcho —— 那是**请求边界**的产物（本次提交了什么），不是库里的数据，
-//     所以由控制器填（同编辑页的表单回显：service 不认识 *gin.Context）。
+//   - 没有回填槽（SubmitErr / FormEcho）：提交已迁到 JSON 写基座（fetch 提交、失败时原页
+//     保留输入），服务端不再重渲染表单，「本次提交了什么」也不再需要进视图。
 type ProductCreateFormView struct {
 	SelectedProject string
 
@@ -572,85 +571,10 @@ type ProductCreateFormView struct {
 	AttributeOptions    []AttributeOptionView
 	WarehouseSKUOptions []WarehouseSKUGroupView
 
-	// SubmitErr 上一次提交的失败文案（当前语言；控制器按出口归口后填）。
-	SubmitErr string
-
-	// FormEcho 回填值（本次提交了什么），nil = **空表单**（首屏 / 首次进入）。
-	//
-	// 字段清单就是 ProductCreateFormEcho 这个结构体本身（原来是一份手写的 []string{13 个 name}）：
-	// 控制器用 adminui.FillForm 按字段名（或 `form:"名字"` 标签）从请求表单填，模板按**导出字段名**读。
-	// 那份手写清单漏一个字段的后果不是「少显示一格」，而是模板读不到键 → 整块渲染失败（500），
-	// 而 htmx 2.0.4 把 5xx 判成 swap:false —— 用户点了保存**什么都看不到**。
-	//
-	// 门控契约（改这里之前先看模板第一行）：模板用 `cfFill := isset(.FormEcho)` 区分
-	// 「空表单」与「回填表单」—— 判据是**这个字段是不是 nil 指针**。所以：
-	//   · 控制器那边无条件赋一个非 nil 的 &ProductCreateFormEcho{}（哪怕本次没提交任何字段）；
-	//   · 首屏视图（ProductNewPageView）不得有同名的**非 nil** 字段 —— 它进的是同一份模板。
-	// 两边任一被改动，门控就失效，症状是静默的：首屏显示上次提交的值，或失败后回填全丢。
-	FormEcho *ProductCreateFormEcho
-
 	// LoadFailed 取数失败：渲染方据此退回整页提示（这一段 HTML 撑不起来时不留半个表单）。
 	// 这里**没有 LoadError** —— 失败不留在这份视图里，驱动原文只走 err 返回值进日志。
 	LoadFailed bool
 	HTTPStatus int
-}
-
-// ProductCreateFormEcho 商品建表单的回填值：**字段清单本身**（模板与提交表单之间的协议）。
-//
-// 三个约定，缺一个都会静默失效：
-//
-//	· `form:"..."` 必须与该控件的 `name=` 逐字一致 —— 它是 FillForm 取值用的键，也是浏览器提交用的键，
-//	  两边不同就会「用户填了、失败后回填成空」，而页面看起来完全正常；
-//	· 类型表达控件形态（string = 文本框/下拉/隐藏域，bool = 复选框，[]string = 同名多值的勾选组）——
-//	  原来这些区别靠三份不同前缀的 map 表达（FormEcho / FormEchoChecked / FormEchoMulti），
-//	  现在由 Go 类型给出，模板不再需要判断「这个值该当串还是当布尔」；
-//	· 每个字段必须被模板真的读到，反之亦然 —— 双向一致性由
-//	  product_create_form_fail_test.go 用反射 + 模板源码对账钉住。
-type ProductCreateFormEcho struct {
-	ProjectID     string   `form:"projectId"`
-	Name          string   `form:"name"`
-	Type          string   `form:"type"`
-	Slug          string   `form:"slug"`
-	SkuSource     string   `form:"skuSource"`
-	SKU           string   `form:"sku"`
-	WarehouseSKU  string   `form:"warehouseSku"`
-	ExternalSKU   string   `form:"externalSku"`
-	DefaultPrice  string   `form:"defaultPrice"`
-	Quantity      string   `form:"quantity"`
-	TrackQuantity bool     `form:"trackQuantity"`
-	AttributeIDs  []string `form:"attributeIds"`
-	WarehouseIDs  []string `form:"warehouseIds"`
-}
-
-// AttrGroupFormEcho 属性组抽屉表单的回填值：字段清单本身（与 ProductCreateFormEcho 同一契约）。
-//
-// 三条约定与 ProductCreateFormEcho 一致（form 标签 ↔ 控件 name 逐字一致、类型表达控件形态、
-// 双向一致性由 product_attribute_form_fail_test.go 用反射 + 模板源码对账钉住），两处**形状**不同：
-//
-//   - `Sort` 是 string 而不是 int：回填的是**本次提交的原文**，解析失败也要原样还给用户
-//     （转 int 失败就只剩空框，用户填的东西被悄悄丢掉）；
-//   - `IsVariation` 是 []string 而不是 bool：「同名隐藏域打底 + 复选框」的控件每次提交都会带上
-//     隐藏域的 0，按 bool（字段是否存在 / 首个值）判会**永远为真**，必须按**值**命中（模板 range 找 "1"）——
-//     与 formValueHas 那条已修缺陷同源。
-//
-// 属性值行（values[n].*）不在任何回填结构体里：它们的回填走 RowsCtx
-// （attrEchoRowsFromForm 按原始索引重建），塞进这里只会得到一串没人读的字符串。
-type AttrGroupFormEcho struct {
-	ProjectID   string   `form:"projectId"`
-	ID          string   `form:"id"`
-	Name        string   `form:"name"`
-	Key         string   `form:"key"`
-	Sort        string   `form:"sort"`
-	IsVariation []string `form:"isVariation"`
-}
-
-// AttrValueFormEcho 属性值抽屉表单的回填值。
-//
-// 只有三个隐藏域：本表单的可见字段全是 values[n].* 的行，行回填走 RowsCtx（见 AttrGroupFormEcho）。
-type AttrValueFormEcho struct {
-	ProjectID string `form:"projectId"`
-	ID        string `form:"id"`
-	GroupID   string `form:"groupId"`
 }
 
 // PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。

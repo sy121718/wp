@@ -26,6 +26,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	inventoryenums "go_wp/internal/module/inventory/enums"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -386,9 +387,10 @@ func TestProductCreateReuseInSecondWarehouse(t *testing.T) {
 	}
 }
 
-// TestProductPageCreateContainerSKUTakenChineseError 后台新建抽屉的重复主体 SKU：
-// 页面必须给**可读的中文**结论，绝不出现索引名 / SQLSTATE / 裸 key（CQ-009 的实测缺陷）。
-func TestProductPageCreateContainerSKUTakenChineseError(t *testing.T) {
+// TestProductCreateContainerSKUTakenIsBusinessError 撞别人的主体 SKU：
+// service 必须交回能归口的业务 key —— 中文文案、以及「绝不出现索引名 / SQLSTATE」的泄漏判据
+// 都在端点白名单那一层（product_err_fallback_tables_test.go），这里钉的是「拒得对」。
+func TestProductCreateContainerSKUTakenIsBusinessError(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
 		return
@@ -400,29 +402,11 @@ func TestProductPageCreateContainerSKUTakenChineseError(t *testing.T) {
 		t.Fatalf("建占位商品失败: %v", err)
 	}
 
-	gin.SetMode(gin.TestMode)
-	engine := gin.New()
-	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
-	engine.POST("/admin/products/create", handle.ProductsCreate)
-
-	form := url.Values{
+	if _, err := cfCreateWith(f.products, url.Values{
 		"projectId": {f.projectID}, "name": {"重复编码的商品"}, "slug": {"taken-dup"},
 		"type": {"variant"}, "sku": {"TAKEN-1"},
-	}
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/admin/products/create", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	engine.ServeHTTP(rec, req)
-	body := assertJumpErr(t, rec)
-	if !strings.Contains(body, "已被其它商品占用") {
-		t.Fatalf("页面应给出可读的中文业务文案，body=%s", body)
-	}
-	for _, leak := range []string{"uq_products", "23505", "SQLSTATE", "ErrContainerSKUTaken", "duplicate key"} {
-		if strings.Contains(body, leak) {
-			t.Fatalf("提示页不得泄漏内部细节 %q：%s", leak, body)
-		}
+	}); err == nil || err.Error() != productenums.ErrContainerSKUTaken {
+		t.Fatalf("撞别人主体编码应返回 %s，实际 %v", productenums.ErrContainerSKUTaken, err)
 	}
 }
 
@@ -560,7 +544,6 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	// 建表单的落点已是独立整页（列表页抽屉退役，见 getProductsNewPage 的注释）——
 	// 断言表单控件存在与否的用例要把这条路由注册上，否则请求 404、页面为空、断言全红。
 	engine.GET("/admin/products/new", handle.ProductNewPage)
-	engine.POST("/admin/products/create", handle.ProductsCreate)
 
 	// 新建整页里的三组新控件必须真的渲染出来（字段名分叉在这里就会暴露）：
 	// 多仓勾选（同名多值）、数量开关与数量框、可搜索下拉的候选 datalist。
@@ -577,28 +560,17 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 		}
 	}
 
-	form := url.Values{
+	created, err := cfCreateWith(f.products, url.Values{
 		"projectId": {f.projectID}, "name": {"表单多仓"}, "slug": {"form-multi-wh"},
 		"type": {"variant"}, "sku": {"FORM-1"},
 		// 勾两个仓（同名多值）+ 显式跟踪数量 3。
 		"warehouseIds":  {f.sz.ID, f.sh.ID},
 		"trackQuantity": {"1"}, "quantity": {"3"},
+	})
+	if err != nil {
+		t.Fatalf("建商品失败（字段名分叉会让勾的仓与数量静默丢掉）: %v", err)
 	}
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/admin/products/create", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	engine.ServeHTTP(rec, req)
-	assertJumpOK(t, rec)
-	if back := jumpBackHref(t, rec); !strings.Contains(back, "/admin/products/edit") {
-		t.Fatalf("成功应去商品编辑页，实际回跳 %s", back)
-	}
-	var productID string
-	if derr := f.db.Raw("SELECT id FROM products WHERE slug = ?", "form-multi-wh").Scan(&productID).Error; derr != nil {
-		t.Fatalf("读商品失败: %v", derr)
-	}
-	if productID == "" {
-		t.Fatal("表单单仓字段分叉：商品没建出来")
-	}
+	productID := created.ID
 	rows := f.wstockRows(t, productID)
 	if len(rows) != 2 {
 		t.Fatalf("勾了两个仓应各建一行（表单字段名分叉会让数量静默丢掉），实际 %+v", rows)
@@ -619,13 +591,6 @@ func TestProductPageCreateUntrackedQuantityNeverPrefilled(t *testing.T) {
 	if f == nil {
 		return
 	}
-	gin.SetMode(gin.TestMode)
-	engine := gin.New()
-	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
-	grantProductPerms(engine)
-	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
-	engine.POST("/admin/products/create", handle.ProductsCreate)
-
 	post := func(name, slug, sku string, form url.Values) {
 		t.Helper()
 		form.Set("projectId", f.projectID)
@@ -633,13 +598,8 @@ func TestProductPageCreateUntrackedQuantityNeverPrefilled(t *testing.T) {
 		form.Set("slug", slug)
 		form.Set("sku", sku)
 		form.Set("type", "variant")
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/admin/products/create", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		engine.ServeHTTP(rec, req)
-		assertJumpOK(t, rec)
-		if back := jumpBackHref(t, rec); !strings.Contains(back, "/admin/products/edit") {
-			t.Fatalf("创建 %s 失败：回跳 %s", name, back)
+		if _, err := cfCreateWith(f.products, form); err != nil {
+			t.Fatalf("创建 %s 失败：%v", name, err)
 		}
 	}
 	productIDOf := func(slug string) string {
@@ -665,17 +625,15 @@ func TestProductPageCreateUntrackedQuantityNeverPrefilled(t *testing.T) {
 		t.Fatalf("跟踪但留空应写 0（明确没货），实际 %+v", rows)
 	}
 
-	// ③ 负数直接拒绝（不落库）。
-	rec := httptest.NewRecorder()
-	bad := url.Values{
+	// ③ 负数直接拒绝（不落库）。页面改 fetch 之后不再有原生表单的 min="0" 兜底，
+	// 这条守卫落在 service 上（product.go 的 Create）。
+	if _, err := cfCreateWith(f.products, url.Values{
 		"projectId": {f.projectID}, "name": {"负数"}, "slug": {"form-neg"},
 		"type": {"variant"}, "sku": {"FORM-N1"}, "warehouseIds": {f.sz.ID},
 		"trackQuantity": {"1"}, "quantity": {"-1"},
+	}); err == nil || err.Error() != inventoryenums.ErrStockQuantityInvalid {
+		t.Fatalf("负数数量应返回 %s，实际 %v", inventoryenums.ErrStockQuantityInvalid, err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/admin/products/create", strings.NewReader(bad.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	engine.ServeHTTP(rec, req)
-	assertJumpErr(t, rec)
 	if id := productIDOf("form-neg"); id != "" {
 		t.Fatalf("被拒的请求不该落库，实际商品 %s", id)
 	}

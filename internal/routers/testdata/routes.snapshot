@@ -394,7 +394,6 @@ POST /admin/products/bulk-delete
 POST /admin/products/bulk-pricing
 POST /admin/products/bundle/members/resolve
 POST /admin/products/bundle/save
-POST /admin/products/create
 POST /admin/products/delete
 POST /admin/products/rating/add
 POST /admin/products/rating/delete

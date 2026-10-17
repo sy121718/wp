@@ -409,14 +409,15 @@ func productStatusOptions(current string) []productdto.StatusOptionView {
 }
 
 // ==========================================================================
-// 商品新建页与它的表单契约。
+// 商品新建页。
 //
-// 回填字段清单就是 dto.ProductCreateFormEcho 结构体本身（不再是一份手写的 []string），
-// 与模板的正反双向断言见 product_create_form_fail_test.go：模板读了结构体没有的字段不是
-// 「页面截断」而是渲染失败 → htmx 不 swap（用户点了保存什么都看不到）。
+// 表单的提交已迁到 JSON 写基座（static/js/ui/json_write.js + /api/product/create），页面这边
+// 只剩「读数据 → 渲染」：没有回填槽、没有失败重渲染、也不再有页面的写 handler。
+// 字段名与 dto.CreateReq 的 json 标签的逐字对齐由 product_create_form_protocol_test.go 钉住
+// —— 模板写错一个 name 的后果是字段静默丢失（商品建出来了，某个字段是空的）。
 
-// productNewPageTemplate 新建商品整页模板（失败页与成功页渲染**同一份**模板）。
-// 左侧基础信息表单（字段名与原抽屉逐字一致，复用 /admin/products/create），
+// productNewPageTemplate 新建商品整页模板（失败页与正常页渲染**同一份**模板）。
+// 左侧基础信息表单（字段名与 dto.CreateReq 一致），
 // 右侧模板卡片区（默认模板 + 候选列表 + 预览入口）；模板绑定与可视化自定义
 // 在创建后的详情页继续（create 不落实例，绑定发生在首次发布）。
 
@@ -462,142 +463,12 @@ func (h *productPageHandle) ProductNewPage(c *gin.Context) {
 	adminui.RenderPage(c, productNewPageTemplate, view)
 }
 
-// productCreateFormTemplate 商品建表单模板（**不带页壳**：它被整页 include，也被单独渲染）。
-const productCreateFormTemplate = "admin/product/product_create_form.html"
-
-// productCreateFormView 建表单的渲染视图：取数来自读模型（service.ProductCreateForm），
-// 回填值是**请求边界**的产物（本次提交了什么），所以在这里填 —— service 不认识 *gin.Context。
-//
-// 回填的字段清单就是 dto.ProductCreateFormEcho 那个结构体（原来是一份手写的 13 项 []string）：
-// `adminui.FillForm` 按字段名 / `form:"名字"` 标签从**这次请求的表单值**里填，漏字段在编译期
-// 就不存在。这里喂的是 formEchoFrom 归一化后的值（去首尾空白、丢空项），而不是 c.Request.PostForm
-// 原样 —— 与各抽屉的回填口径保持同一份（否则同一段文字在不同表单里回填出的结果不同）。
-//
-// 表单门控：走到这里就是「回填表单」，所以恒给一个非 nil 的 echo —— 模板靠 `isset(.FormEcho)`
-// 区分空表单与回填表单，门控契约见 dto.ProductCreateFormView。
-func (h *productPageHandle) productCreateFormView(c *gin.Context, projectID, submitErr string) (*productdto.ProductCreateFormView, error) {
-	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
-	reader := h.reader
-	view, err := reader.ProductCreateForm(c.Request.Context(), &productdto.ProductCreateFormReq{
-		ProjectID: strings.TrimSpace(projectID),
-	})
-	if err != nil {
-		return view, err
-	}
-	if view == nil {
-		view = &productdto.ProductCreateFormView{}
-	}
-	view.SubmitErr = submitErr
-	echo := &productdto.ProductCreateFormEcho{}
-	adminui.FillForm(echo, formEchoFrom(c).values)
-	view.FormEcho = echo
-	return view, nil
-}
-
-// productCreateFail 商品建表单的失败出口（分档口径唯一，别在调用点各写一份头判断）。
-//
-//	· htmx 请求：200 + 回填后的表单 HTML —— 整页原地留住已填内容；
-//	· 原生请求：整页提示（shell.RenderJump）回本页（无 JS 环境：不跳走、错误可读）。
-//
-// **成功路径也走同一条出口**（ProductsCreate 用 productEditJump / productListJump）。
-func (h *productPageHandle) productCreateFail(c *gin.Context, projectID string, msg productMsg) {
-	if !isHXRequest(c) {
-		// 原生档：整页提示（取代原先的 302 + ?err= 回本页）。无 JS 环境下不跳走、错误可读。
-		productNewJump(c, false, projectID, msg)
-		return
-	}
-	// 失败槽位还没取词化（模板直接输出字符串）：这里取一次文本，报告里已登记。
-	view, err := h.productCreateFormView(c, projectID, productMsgText(c, msg))
-	if err != nil {
-		// 回填表单取数再失败：退回整页提示（错误仍可读），不把半个表单当成功返回。
-		logger.Scene("product").With("project", projectID).Error(err, "商品新建失败后重建表单视图失败，退回提示页")
-		productNewJump(c, false, projectID, msg)
-		return
-	}
-	adminui.RenderPage(c, productCreateFormTemplate, view)
-}
-
-// ProductsCreate 新建商品。
-//
-// 两条本批确定的语义：
-//
-//  1. **type 必须读**（迁移 238 的商品类型）：字段一旦漏读，service 会把空串兜底成
-//     variant —— 建「捆绑容器」得到的是一个带自己首个变体的常规商品，而且返回 302 成功、
-//     列表页也看得见，不留任何错误线索。
-//  2. **成功去商品详情页**，不是回列表：抽屉只有名称 / 类型 / URL 段 / 默认价 / 归属仓 /
-//     属性组几个字段，而 CreateReq 有 40+ 个字段（描述、图片、分类、品牌、标签、SEO…），
-//     商品详情页才是全量录入的地方。bundle 更明显 —— 它没有变体，回列表看不出任何进展。
-//     失败仍回新建页（表单所在处）并渲染整页提示：用户就在那里重填。
-func (h *productPageHandle) ProductsCreate(c *gin.Context) {
-	req := &productdto.CreateReq{
-		ProjectID: c.PostForm("projectId"),
-		Name:      c.PostForm("name"),
-		// 商品类型：variant（常规变体商品）｜bundle（捆绑容器，只有容器价）。
-		Type: strings.TrimSpace(c.PostForm("type")),
-		Slug: c.PostForm("slug"),
-		// 主体 SKU 编码（表单 name=sku，规则见 docs/14）：留空即派生（变体商品取 URL 段、
-		// 捆绑取 <商品段>_B）；填了且选了仓库 → 变体商品自动加仓库码前缀。
-		// **必须透传**：漏读等于运营填了个寂寞 —— 服务端会静默按 URL 段派生另一个编码，
-		// 建完看不出任何异常，直到与仓库对不上号。
-		SKUCode: strings.TrimSpace(c.PostForm("sku")),
-		// SKU 来源（docs/14 §1.1 的两条入口，迁移 251）：自己创建 / 从仓库选。
-		// **必须透传**：漏读就等于运营在抽屉里选了「从仓库选」却拿到一个按 URL 段
-		// 派生的商品，建完看不出任何异常 —— 与上面 sku 漏读是同一类静默失败。
-		SKUSource:    strings.TrimSpace(c.PostForm("skuSource")),
-		WarehouseSKU: strings.TrimSpace(c.PostForm("warehouseSku")),
-		ExternalSKU:  strings.TrimSpace(c.PostForm("externalSku")),
-		// 属性组：抽屉是勾选列表（同名多值），保留了逗号分隔单值的兼容形态。
-		AttributeIDs: attributeIDsFromForm(c),
-		// 归属仓：空值即兜底该工程的默认仓（单值形态保留，接口 / 脚本路径仍可用）。
-		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
-		// 多仓勾选（2026-09-19 口径）：勾了哪些仓就在哪些仓各建一行（裸码），
-		// 第一个仓是**认领仓**（决定主体 SKU 的仓码前缀）。同名多值 → PostFormArray，
-		// 一个都没勾时浏览器不提交这个字段（服务端按「默认仓」处理）。
-		WarehouseIDs: c.PostFormArray("warehouseIds"),
-	}
-	// 默认价：空串 = 本次不填；非法数字**按未填处理**（既有语义，不改 —— 新建抽屉只填
-	// 名称 / 类型 / URL 段 / 价格 / 归属仓，service 仍会按「没给价」给出它自己的结论）。
-	// NaN / 正负无穷归入非法（dto.OptFloat 的契约）：不是数字的值进了金额运算会污染整批数据。
-	if v, perr := productdto.OptFloat("defaultPrice", c.PostForm("defaultPrice")); perr == nil && v != nil {
-		req.DefaultPrice = v
-	}
-	// 数量（迁移 261 的口径）：**不填数量 = 不跟踪 = 无限**。模板是一个「跟踪数量」开关
-	// 加一个数量框：开关没勾时数量框禁用、不提交 ⇒ 这里读不到值 ⇒ Quantity 保持 nil。
-	// 开关勾了而数量框留空 ⇒ 写 0（0 是「明确没货」，与「没填」是两回事）。
-	// 数量（迁移 261 的口径）：开关与数量框的**同组绑定**语义收在 dto.TrackedQuantity ——
-	// 没勾开关 = 不跟踪 = 无限（nil）；勾了却留空 = 明确 0；非法 / 负数 = 绑定期错误。
-	if qty, qerr := productdto.TrackedQuantity(c.PostForm("trackQuantity"), c.PostForm("quantity")); qerr != nil {
-		// 数量非法也是**表单失败**：htmx 档留在原页（错误槽 + 回填），不能悄悄跳走 ——
-		// 用户为这一张表填了十几行内容，为一个数字问题全丢是最贵的一种失败。
-		h.productCreateFail(c, req.ProjectID, productQuantityInvalidMsg)
-		return
-	} else {
-		req.Quantity = qty
-	}
-	created, err := h.products.Create(c.Request.Context(), req)
-	if err != nil {
-		// 业务错误的 Error() 是 enums 常量（= i18n key），直接铺到页面上就是
-		// 「列表页显示 ErrBundlePriceRequired」的来源：统一经 productErrText 取词。
-		// 出口走分档：htmx 档 200 + 回填片段，原生档渲染整页提示（见 productCreateFail）。
-		h.productCreateFail(c, req.ProjectID, productErrMsg(c, err))
-		return
-	}
-	if created != nil && created.ID != "" {
-		// 成功也走同一条出口：htmx 由 shell.RenderJump 输出 HX-Redirect（整页跳转），
-		// 原生渲染提示页 —— 取代原先的 redirectWhere。
-		productEditJump(c, true, req.ProjectID, created.ID, productActionDoneMsg)
-		return
-	}
-	// 兜底：拿到商品 id 才谈得上「进详情继续编辑」，否则回列表而不是构造一个空详情页。
-	productListJump(c, true, productActionDoneMsg)
-}
-
 // ==========================================================================
-// 商品编辑页（整页 + 回显 + 校验失败原地留住输入）。
+// 商品编辑页（整页 + 回显）。
 //
-// 表单带原生 method/action（无 JS 也能提交），另加 hx-post；失败时服务端把刚提交的值
-// 原样送回（formEcho 一族在 product_page_util.go），用户的输入比错误文案贵。
+// 保存走 JSON 写基座（static/js/ui/json_write.js）：字段名与 /api/product/update 的
+// UpdateReq json 标签逐字一致，由 product_edit_form_protocol_test.go 对账；
+// 失败只在原页结果区出现，服务端不再有「把刚提交的值原样送回」那一层。
 
 // ProductEditPage GET /admin/products/edit：商品基本字段编辑页。
 // 为什么单独成页，而不是并进商品详情页：
@@ -675,35 +546,6 @@ func (h *productPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 		view.ImageAltsText = strings.Join(view.Detail.ImageAlts, "\n")
 		view.WeightText = nullableNumberText(view.Detail.Weight)
 		view.DefaultPriceText = nullableNumberText(view.Detail.DefaultPrice)
-		// 表单回显：校验失败重渲染时用**这次提交的值**覆盖上面读回来的值。
-		// 提交值只在请求体里，所以这一整段是控制器的事（service 不认识 gin.Context）。
-		if echo {
-			form := formEchoFrom(c)
-			// 文本字段逐项回填到行字段：行已是结构体，字段名由编译器对账，不再走
-			// 「表单名 → 行键」的映射表（改名会静默丢回显，且不报错）。
-			view.Product.Name = form.value("name")
-			view.Product.Subtitle = form.value("subtitle")
-			view.Product.Slug = form.value("slug")
-			view.Product.SKUCode = form.value("sku")
-			view.Product.Unit = form.value("unit")
-			view.ImagesText = c.PostForm("images")
-			view.ImageAltsText = c.PostForm("imageAlts")
-			view.WeightText = c.PostForm("weight")
-			view.DefaultPriceText = c.PostForm("defaultPrice")
-			view.Statuses = productStatusOptions(form.value("status"))
-			// 勾选态回填的**唯一**入口（见上）：一个都不给时按「已选中」渲染，
-			// 所以没提交参数时必须在这里挡掉。
-			//
-			// 属性勾选清单是具体类型 []productdto.AttributeCheckOptionView，
-			// `.([]gin.H)` / `.([]map[string]any)` 断言都会失败（ok=false）——
-			// 直接用值回填的选项清单重算，不要在已勾选的视图上改。
-			view.AttributeChecks = checkedAttributeOptions(view.AttributeOptions, form.list("attributeIds"))
-			view.Product.CategoryChecks = checkedProductEditOptions(view.Product.CategoryChecks, form.list("categoryIds"))
-			view.Product.TagChecks = checkedProductEditOptions(view.Product.TagChecks, form.list("tagIds"))
-			view.Product.PrimaryOptions = selectedProductEditOptions(view.Product.PrimaryOptions, form.value("primaryCategoryId"))
-			view.Product.BrandOptions = selectedProductEditOptions(view.Product.BrandOptions, form.value("brandId"))
-		}
-
 		// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
 		// 这里只给一个链接标记（type=variant 时为假，模板据 isset 整块跳过）。
 		view.IsBundle = isBundleProduct(view.Detail.Type)

@@ -1,13 +1,9 @@
 /* product-create-form.js — 商品建表单的「主体 SKU」增强（原内联在 products.html 页尾）。
-   触发点三处，缺任一处都会让某条入口静默失去增强：
-     · wbui:drawer-open —— 列表页抽屉形态（内容从 <template> 克隆进 document，只能在打开后取节点）；
-     · DOMContentLoaded —— 新建整页 /admin/products/new（表单直接在文档里，没有抽屉事件）；
-     · htmx:afterSwap —— 表单片段被 htmx 换进来（写失败返「错误槽 + 回填后的表单」，见下）。
-   第三个触发点为什么必须单独挂：htmx swap 后**两个旧事件都不会发生**（它只派发
-   htmx:afterSwap），而 WBUI.scan 只跑 WBUI.controls 里登记过的控件 —— 本脚本不是基座控件，
-   于是换进来的表单里「SKU 建议值预填 / 预览行 / 多仓候选过滤」会静默失效，且没有任何测试会红。
+   唯一触发点：DOMContentLoaded —— 表单就在 /admin/products/new 这一页的文档里。
+   提交走 JSON 写基座（fetch 提交、失败时原页保留输入）：片段不再被换进换出，所以既没有
+   抽屉打开事件、也没有 htmx swap 需要重新增强 —— 那两条监听随页面写 handler 一起撤掉了。
    背景：捆绑商品的主体 SKU 是**必填**的（服务端 ErrBundleSKURequired），但运营不该从零手打 ——
-   打开抽屉 / 类型切到 bundle 时按商品段预填建议值 <商品段>_B，可改、可一键重新生成；
+   类型切到 bundle 时按商品段预填建议值 <商品段>_B，可改、可一键重新生成；
    变体商品保持原状：不 required、不预填，留空仍由服务端按 URL 段派生。
    幂等：同一段内容只增强一次（dataset 标记，见 enhance），重复触发不会叠加监听。 */
 (function () {
@@ -93,12 +89,7 @@
             show(regen, bundle);
             show(hint, bundle);
             show(manual, bundle && want === '' && trim(input.value) === '');
-            if (sourceSelect) {
-                // 捆绑商品不存在于仓库：这个入口对 bundle 不成立（服务端同款硬拒兜底）。
-                // 禁用后浏览器不提交这个字段，服务端把空值归一成「自己创建」—— 正是想要的语义。
-                sourceSelect.disabled = bundle;
-                if (bundle) { sourceSelect.value = 'custom'; }
-            }
+
             applySource();
         }
 
@@ -106,7 +97,7 @@
         // 前端只做两件不涉及业务规则的事：把候选按**勾选的仓库**过滤、把结果预览出来。
         // 「编码在该仓已存在 → 复用那一行」「新码 → 建行」都由服务端按 (仓, 裸码) 判定，
         // 前端不参与命名决策 —— 预览骗人比没有预览更糟。
-        var sourceSelect = form.querySelector('[data-sku-source]');
+
         var warehouseChecks = Array.prototype.slice.call(form.querySelectorAll('[data-warehouse-check]'));
         var skuPick = form.querySelector('[data-warehouse-sku]');
         var candidateList = form.querySelector('[data-sku-candidates]');
@@ -219,19 +210,7 @@
             syncPreview();
         }
 
-        if (sourceSelect) {
-            sourceSelect.addEventListener('change', function () {
-                var fromWarehouse = sourceSelect.value === 'warehouse';
-                if (input) {
-                    // 「从仓库选」这条隐藏来路（接口 / 脚本仍在用）：主体 SKU 由服务端拼成，
-                    // 手填没有意义，所以置只读并清空（服务端在这条路径上不读 sku 字段）。
-                    input.readOnly = fromWarehouse;
-                    if (fromWarehouse) { input.value = ''; }
-                }
-                if (skuPick) { skuPick.required = fromWarehouse; }
-                applySource();
-            });
-        }
+
         warehouseChecks.forEach(function (box) {
             box.addEventListener('change', applySource);
         });
@@ -273,26 +252,10 @@
         if (nameInput) { nameInput.addEventListener('input', followSource); }
     }
 
-    document.addEventListener('wbui:drawer-open', function (event) {
-        var body = event.detail && event.detail.body;
-        if (!body) { return; }
-        enhance(body.querySelector('form[data-product-create-form]'));
-    });
+
     // 新建整页形态：表单直接在文档里（没有抽屉打开事件），DOM 就绪后增强一次。
     document.addEventListener('DOMContentLoaded', function () {
         enhance(document.querySelector('form[data-product-create-form]'));
     });
-    // htmx 局部替换后重新增强（第三个触发点，见文件头）。
-    // 挂法与 ui/index.js 完全一致：document 上听 htmx:afterSwap、以 e.target 为范围 ——
-    // 不新造一套（那里跑的是 WBUI.scan，只认基座控件；本脚本不是基座控件，所以自己听一次）。
-    document.addEventListener('htmx:afterSwap', function (event) {
-        var scope = (event && event.target) || document;
-        // 换进来的表单可能**就是** swap 目标本身（hx-target 打在 form 上 / hx-swap=outerHTML），
-        // 所以先看目标自己与它的祖先，再退到目标内部找；都没有时兜底查一次文档
-        //（htmx 对 outerHTML 替换派发 afterSwap 时，目标可能已经脱离文档）。
-        var form = scope.nodeType === 1 ? scope.closest('form[data-product-create-form]') : null;
-        if (!form && scope.querySelector) { form = scope.querySelector('form[data-product-create-form]'); }
-        if (!form) { form = document.querySelector('form[data-product-create-form]'); }
-        enhance(form);
-    });
+
 })();

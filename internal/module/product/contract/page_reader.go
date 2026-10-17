@@ -67,8 +67,8 @@ type ProductPageReader interface {
 	// 契约同上，另加一条：**属性组候选读失败不让整页失败** —— 它是表单里的一块选择器。
 	// 原始错误随视图带出（AttributeOptionsErr），由控制器决定撤掉保存入口并归口文案。
 	//
-	// 表单回显也不在这里：校验失败重渲染要用**这次提交的值**覆盖读回来的值，
-	// 而提交值在请求体里 —— 那是控制器的事（inbound/http 的 formEchoFrom）。
+	// 没有回填槽：保存的失败入口是 JSON 写基座（原页 fetch + 结果区），
+	// 不会带着「这次提交的值」回到服务端重渲染。
 	ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (res *productdto.ProductEditPageView, err error)
 
 	// ProductCreateForm 商品建表单的取数：仓库清单 → 属性组候选 → 每仓 SKU 候选。

@@ -22,8 +22,9 @@ package productdto
 // **不在这里做的事**（做了就是第二份真相，迟早与 service 分叉）：
 //   - 精度与上限：金额的小数位由 money 包与列类型决定，值域由各 service 用例判定；
 //   - 跨字段业务约束（如 minPrice <= maxPrice、minTotalQty <= maxTotalQty）：一律归 service；
-//     本文件只表达「同一组表单控件之间的**绑定**约束」（见 TrackedQuantity —— 那不是业务规则，
-//     而是「开关没勾时数量框不提交」这个 HTML 事实）。
+//     本文件只表达「同一组表单控件之间的**绑定**约束」（例如开关没勾时数量框不提交这个 HTML 事实）。
+//     商品建表单迁到 JSON 写基座后，「跟踪数量」开关与数量框的绑定归到了 service.Create
+//     （JSON 里两种意图都表现为 quantity 缺失，区别只在 TrackQuantity 上），本文件不再有那一档。
 
 import (
 	"math"
@@ -121,38 +122,6 @@ func FormInt(field, raw string, def int) (int, error) {
 		return def, &FieldValueError{Field: field, Kind: FieldKindNumber}
 	}
 	return v, nil
-}
-
-// TrackedQuantity 「跟踪数量」开关 + 数量框的**同组绑定**语义（CreateReq.Quantity）。
-//
-//	开关未提交（没勾）           → (nil, nil)          不跟踪 = 无限（模板里数量框同时被禁用，
-//	                                                  浏览器不提交它，读不到值）
-//	开关已提交 + 数量框空串      → (&0, nil)           勾了开关却留空 = **明确 0**（明确没货）
-//	开关已提交 + 非法 / 负数     → (nil, *FieldValueError)  调用方按表单失败处理（原地留住输入）
-//
-// 为什么单独一个 helper 而不是两次 OptInt：这两个控件的**绑定**耦合（没勾开关就没有数量），
-// 拆开写时「开关空 + 数量填了 5」这种组合会被误读成「跟踪 5 个」。这是 HTML 事实，不是业务规则 ——
-// 「数量为 0 是否允许」「上限是多少」仍在 service。
-//
-// 单独提交 quantity（没有开关）一律按未提交处理：与模板一致，也与 service 的
-// 「nil = 不跟踪」口径一致（送一个「有数量但没开关」的请求进去只会得到自相矛盾的状态）。
-func TrackedQuantity(trackRaw, qtyRaw string) (*int, error) {
-	if strings.TrimSpace(trackRaw) == "" {
-		return nil, nil
-	}
-	raw := strings.TrimSpace(qtyRaw)
-	if raw == "" {
-		zero := 0
-		return &zero, nil
-	}
-	v, err := strconv.Atoi(raw)
-	if err != nil {
-		return nil, &FieldValueError{Field: "quantity", Kind: FieldKindNumber}
-	}
-	if v < 0 {
-		return nil, &FieldValueError{Field: "quantity", Kind: FieldKindRange}
-	}
-	return &v, nil
 }
 
 // isNotFinite NaN 与正负无穷：都不是可参与金额 / 数量运算的数字，因此与「不是数字」同档。

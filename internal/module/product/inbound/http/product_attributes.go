@@ -290,8 +290,7 @@ type attrGroupFormOpts struct {
 	ProjectID string
 	Mode      string
 	GroupID   string
-	// Name / Key / Sort 是**首屏**的初值（编辑抽屉取该组的当前值，新建给零值）；
-	// 失败重渲染时它们由片段的 else 分支让位给 FormEcho.*（模板里一眼可见）。
+	// Name / Key / Sort 是抽屉的初值（编辑抽屉取该组的当前值，新建给零值）。
 	Name      string
 	Key       string
 	Sort      int
@@ -299,13 +298,11 @@ type attrGroupFormOpts struct {
 	RowsCtx   gin.H
 }
 
-// attrGroupFormData 属性组抽屉表单的渲染数据（**首屏与失败重渲染共用**）。
+// attrGroupFormData 属性组抽屉表单的渲染数据。
 //
-// 键分两类：
-//   - 结构性键（Csrf / Project / t / tf / Mode / Action / IsCreate / GroupID /
-//     VariationChecked / RowsCtx）—— 恒定给齐，片段在**任何**渲染路径下都能独立成立；
-//   - 回填键 FormEcho（*productdto.AttrGroupFormEcho）—— 只在失败重渲染时并入
-//     （见 attrGroupFormFail），片段以 `gfFill := isset(.FormEcho)` 区分首屏与回填。
+// 只有结构性键（Csrf / Project / t / tf / Mode / Action / IsCreate / GroupID /
+// VariationChecked / RowsCtx）—— 恒定给齐，片段在**任何**渲染路径下都能独立成立。
+// 没有回填键：抽屉的保存已迁 JSON 写基座，失败不再由服务端重渲染这一块。
 //
 // t / tf 由 adminui.PrepareBare 注入：片段是**带参数 include** 的（数据是每个抽屉
 // 自己的数据类，不是页面 data），拿不到 adminui.Prepare 注入的页面键 —— 缺了 t 片段里的
@@ -357,8 +354,7 @@ func attrCreateDrawerForm(c *gin.Context, projectID string) gin.H {
 // attrRowDrawerForms 属性组列表里**一行**对应的两个抽屉表单数据（页面首屏）。
 //
 // 两个抽屉的初值都从同一行数据来：编辑抽屉取该组的名称 / 标识 / 排序 / 参与变体，
-// 属性值抽屉取该组的属性值列表。它们与失败重渲染时的数据形状**逐键一致**
-// （差别只在 FormEcho* 三键与 SubmitErr 的有无），片段因此只有一套渲染分支。
+// 属性值抽屉取该组的属性值列表。
 func attrRowDrawerForms(c *gin.Context, projectID string,
 	a *productdto.AttributeResp) (gin.H, gin.H) {
 
@@ -398,7 +394,7 @@ func attrFormValues(c *gin.Context) url.Values {
 		return url.Values{}
 	}
 	if c.Request.PostForm == nil {
-		_ = c.Request.ParseMultipartForm(formEchoMemory)
+		_ = c.Request.ParseMultipartForm(formParseMemory)
 	}
 	return c.Request.PostForm
 }

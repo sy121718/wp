@@ -158,9 +158,13 @@ Jet 的 `if` 要求 bool，而缺失的 map 键求值成 nil —— 类型不符
 
 ## 非基座增强脚本必须自己挂 `htmx:afterSwap`
 
-增强脚本（如 `product-create-form.js`）若**不走 `WBUI.register`**，htmx 把片段 swap 进来后**不会**重新初始化
+增强脚本若**不走 `WBUI.register`**，htmx 把片段 swap 进来后**不会**重新初始化
 它 —— `WBUI.scan` 只跑 `WBUI.controls` 里登记过的控件。症状是「直接打开页面时正常、被 swap 后静默失效」，
 而且**没有任何测试会红**（藏在 JS 里、不编译、不被断言覆盖）。
+
+商品建表单（`product-create-form.js`）是**例外形态**：它的表单整页就在文档里、不再被 swap 进换出，
+所以只挂 `DOMContentLoaded`；把抽屉 / afterSwap 两个监听加回来等于把提交路径接回旧机制
+（fetch 与 htmx 同时提交会建两个商品）——`product_create_form_enhance_test.go` 用**负向断言**钉住。
 
 做法：自己挂 `htmx:afterSwap`，挂法照 `ui/index.js`（在 `document` 上听、以 `e.target` 为范围；
 注意 htmx 对 `outerHTML` 替换派发 afterSwap 时目标可能**已脱离文档**，要 `closest` → 目标内查找 →
@@ -197,11 +201,17 @@ document 兜底）。
 反向也要钉（结构体每个字段模板必须真的读）；另外 `form:"..."` 标签必须与该控件的 `name=` 逐字一致。
 对不上不是「页面截断」，而是渲染失败 → 500 → htmx 不 swap（用户点了保存**什么都看不到**）。
 
-样板：`admin/product/product_create_form.html` + `internal/module/product/dto/product_view.go` 的
-`ProductCreateFormEcho`（清单就是结构体本身，`adminui.FillForm` 按 `form:` 标签填）+
-`internal/module/product/inbound/http/` 的 `productCreateFail`；判据与浏览器实测见
-`docs/02-T-write-fail-echo-batch1.md`。
-属性组 / 属性值两个抽屉仍是 `formEchoData(c, 字段名…)` 的三键形态（未随本批改造）。
+**商品模块已不在这一档**：它的写表单全部迁到 JSON 写基座（`static/js/ui/json_write.js` + `/api/...`
+端点），失败只在原页结果区出现，服务端没有回填槽。那边的判据换成「模板里的每个 `name` 必须能在
+dto 的 json 标签里找到」：`internal/module/product/inbound/http/product_edit_form_protocol_test.go`
+与 `product_create_form_protocol_test.go`。**新增字段时两边一起改** —— 端点严格解码，
+多一个键整条 400、拼错一个键字段静默丢失（页面看起来完全正常，只是那一格永远是空的）。
+
+仍在 htmx 路径上的模块（inventory / order 等）沿用本节：inventory 是
+`FormEcho` / `FormEchoChecked` / `FormEchoMulti` 三个 map 键的形态，字段清单见
+`internal/module/inventory/inbound/http/inventory_page.go` 的文件头。`adminui.FillForm`
+（结构体 + `form:` 标签，比三键形态更严）目前**没有调用点** —— 下次迁写表单时优先用它，
+别再造第四种回填形态。
 
 ## Jet 模板内可以做简单计算
 

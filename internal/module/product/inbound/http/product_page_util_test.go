@@ -1,14 +1,12 @@
 package producthttp
 
-// product_page_util_test.go — HTMX 写表单「回填快照」的最小验证（本批铺设的地基）。
+// product_page_util_test.go — 分档判据的请求构造脚手架（newHXContext）。
 //
-// 只钉一件后续各写表单都要依赖、错了会**静默失效**的事：归一化后的字段值、多值顺序、
-// 去首尾空白、空值丢弃。（勾选态与「缺键补零」原由 formEchoData 的三个 map 键承担，
-// 现已换成 dto 的 XxxFormEcho 结构体 + adminui.FillForm —— 字段即清单、Go 类型即控件形态，
-// 那两件事由各表单自己的反射 + 模板源码对账判据钉住。）
+// 商品写表单已全部迁到 JSON 写基座：失败不再由服务端重渲染片段，于是「回填快照」那组用例
+//（formEchoFrom + 归一化口径）随实现一起删除。归一化口径现在在
+// static/js/ui/json_write.js，由 public/test/product/json_write.test.cjs 覆盖。
 //
-// 分档判据（isHXRequest）与出口（shell.RenderJump）的守卫在 product_jump_test.go：
-// 原 redirectWhere / hxFragment 两个 helper 已随「结论走 shell.RenderJump」删除。
+// 分档判据（isHXRequest）与出口（shell.RenderJump）的守卫在 product_jump_test.go。
 
 import (
 	"net/http"
@@ -62,35 +60,4 @@ func newHXContext(t *testing.T, hxHeader, body string) (*gin.Context, *httptest.
 		c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	return c, rec
-}
-
-// formEchoFrom：单值取首个、多值保序、空值丢弃 —— 所有失败回填共用的快照口径。
-//
-// 商品建表单与两个属性抽屉都把这个快照喂给 adminui.FillForm（结构体字段即清单），
-// 所以这里钉的是**所有**回填路径的输入：归一化口径一变，症状是「用户打的空格被原样回填 /
-// 多值顺序被改」，两边都不报错、页面看起来正常。
-func TestFormEchoSnapshotKeepsSubmittedValues(t *testing.T) {
-	c, _ := newHXContext(t, "true",
-		"name=%E5%95%86%E5%93%81&sku=%20ABC_B%20&attributeIds=a1&attributeIds=a2&empty=&warehouseIds=w1")
-	echo := formEchoFrom(c)
-
-	if got := echo.value("name"); got != "商品" {
-		t.Errorf("value(name) = %q，want 商品", got)
-	}
-	// 去首尾空白：回填进输入框的该是用户实际打的字，不是他误带的空格。
-	if got := echo.value("sku"); got != "ABC_B" {
-		t.Errorf("value(sku) = %q，want ABC_B（去首尾空白）", got)
-	}
-	// 没提交的字段给空串：调用方拿到的永远是能直接进视图的值（缺失不等于 panic）。
-	if got := echo.value("type"); got != "" {
-		t.Errorf("value(type) = %q，want 空串", got)
-	}
-	// 多值保序：顺序在本域有语义（「按本表顺序第一个勾中的仓是认领仓」）。
-	if got := echo.list("attributeIds"); len(got) != 2 || got[0] != "a1" || got[1] != "a2" {
-		t.Errorf("list(attributeIds) = %v，want [a1 a2]（保提交顺序）", got)
-	}
-	// 空值提交（empty=）等同没填：留着空串会让「填过」与「没填」在回填里混掉。
-	if got := echo.list("empty"); len(got) != 0 {
-		t.Errorf("list(empty) = %v，want 空（空值丢弃）", got)
-	}
 }

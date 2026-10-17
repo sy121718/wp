@@ -89,6 +89,13 @@ type CreateReq struct {
 	//     与 nil 严格区分 —— 这正是 CHECK (track_quantity OR quantity = 0) 要表达的事。
 	// 勾了几个仓就写几行，同一个数量应用到本次新建的每一行。
 	Quantity *int `json:"quantity"`
+	// TrackQuantity 「跟踪数量」开关（与 Quantity 成对；页面表单的复选框）。
+	//
+	// 它补的是 JSON 路径上**表达不出来的一种意图**：勾了跟踪却还没填数量 = 明确 0（没货），
+	// 与「压根不跟踪 = 无限」是两种状态。JSON 里这两种都是 quantity 缺失，区别只在开关上，
+	// 所以开关必须自己成一个字段；归一在 service.Create（勾了且 Quantity 为 nil → 0），
+	// 前端不做业务归一。
+	TrackQuantity bool `json:"trackQuantity"`
 	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
 	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
 	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。

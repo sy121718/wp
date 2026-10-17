@@ -15,7 +15,7 @@ package producthttp
 //	product_pricing.go            定价工具（预览 → 应用 → 台账）+ 定价接口面
 //	product_detail_template.go    详情页模板（双轨写入 / 回滚 / 预览）+ SEO 评分
 //	product_translations.go       商品译文工作台
-//	product_page_util.go          共用装配原语：formEcho 一族、下拉选项形状、分页与取值小工具
+//	product_page_util.go          共用装配原语：下拉选项形状、分页与取值小工具、分档判据
 //	product_jump.go               共享出口原语：回跳地址 / 提示页 / 回执文案 / 错误事实与文案出口
 //
 // 两个处理器各自只依赖 product / project 两个契约，以及自己那几个窄端口

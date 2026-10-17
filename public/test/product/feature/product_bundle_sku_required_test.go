@@ -13,7 +13,6 @@ package feature
 
 import (
 	"context"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -45,44 +44,33 @@ func newBundleSKUEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products", handle.ProductsPage)
 	engine.GET("/admin/products/new", handle.ProductNewPage)
 	engine.GET("/admin/products/detail", handle.ProductDetailPage)
-	engine.POST("/admin/products/create", handle.ProductsCreate)
 	engine.POST("/admin/products/taxonomy", handle.ProductsTaxonomySet)
 	return engine, f
 }
 
-// bsCreateBundle 走页面表单建一个捆绑商品，返回响应记录器。
-func bsCreateBundle(t *testing.T, engine *gin.Engine, projectID string, form url.Values) *httptest.ResponseRecorder {
+// bsCreateBundle 用新建表单的字段口径建一个捆绑商品（页面提交已迁 JSON 写基座，这里直调 service）。
+func bsCreateBundle(t *testing.T, f *attrFixture, form url.Values) (*productdto.ProductResp, error) {
 	t.Helper()
-	base := url.Values{"projectId": {projectID}, "name": {"捆绑套餐"}, "type": {"bundle"}, "defaultPrice": {"199"}}
+	base := url.Values{"projectId": {f.projectID}, "name": {"捆绑套餐"}, "type": {"bundle"}, "defaultPrice": {"199"}}
 	for key, values := range form {
 		base[key] = values
 	}
-	return postForm(engine, "/admin/products/create", base)
+	return cfCreate(f, base)
 }
 
-// TestBundleCreateWithoutSKUReportsChineseAndKeepsNothing 验收 1：
-// 不带 sku 建 bundle 被拒，渲染整页提示回新建页并给出中文结论 —— 不是裸 key，也不是「系统内部错误」。
-func TestBundleCreateWithoutSKUReportsChineseAndKeepsNothing(t *testing.T) {
-	engine, f := newBundleSKUEngine(t)
-	if engine == nil {
+// TestBundleCreateWithoutSKUIsRejectedAndKeepsNothing 验收 1：
+// 不带 sku 建 bundle 被 service 直接拒 —— 商品不落库，错误是能归口的业务 key。
+//
+// 中文文案不在这里断言：页面提交已改 JSON 写基座，错误文案由端点的白名单产出
+// （product_err_fallback_tables_test.go 钉住 key → 文案），这里钉的是「会不会被拒」。
+func TestBundleCreateWithoutSKUIsRejectedAndKeepsNothing(t *testing.T) {
+	_, f := newBundleSKUEngine(t)
+	if f == nil {
 		return
 	}
-	rec := bsCreateBundle(t, engine, f.projectID, url.Values{"slug": {"no-sku-bundle"}})
-	body := assertJumpErr(t, rec)
-	// 失败落点已从「回列表页」改为「回**新建页自身**」（批 1）：表单就在那一页；
-	// 回列表页会让用户以为「提交成功才跳走的」，还要重新找一遍新建入口（docs/02-T §5）。
-	if back := jumpBackHref(t, rec); !strings.HasPrefix(back, "/admin/products/new?") {
-		t.Fatalf("新建失败应回新建页（表单所在页），实际回跳=%q", back)
-	}
-	// 关键判据三条：是中文可读文案、不是裸 key、不是兜底的「系统内部错误」。
-	if strings.Contains(body, productenums.ErrBundleSKURequired) {
-		t.Fatalf("提示页不该出现裸 key，body=%s", body)
-	}
-	if strings.Contains(body, "系统内部错误") {
-		t.Fatalf("业务错误被当成系统错误兜底了（sentinel 白名单漏登记），body=%s", body)
-	}
-	if !strings.Contains(body, "必须填写主体 SKU") {
-		t.Fatalf("错误提示应说明「捆绑商品必须填写主体 SKU」，body=%s", body)
+	if _, err := bsCreateBundle(t, f, url.Values{"slug": {"no-sku-bundle"}}); err == nil ||
+		err.Error() != productenums.ErrBundleSKURequired {
+		t.Fatalf("建捆绑不带 sku 应返回 %s，实际 %v", productenums.ErrBundleSKURequired, err)
 	}
 	// 被拒的商品不落库：静默半截状态（商品在、编码空）是最难排查的一种。
 	list, err := f.svc.List(t.Context(), &productdto.ListReq{ProjectID: f.projectID, Size: 100})
@@ -97,8 +85,8 @@ func TestBundleCreateWithoutSKUReportsChineseAndKeepsNothing(t *testing.T) {
 // TestBundleCreateWithSKUKeepsValueAndSuffix 验收 2：
 // 填了就不动它的本体 —— 只补恒定的 _B 后缀（XX_1 → XX_1_B；XX_B 原样）。
 func TestBundleCreateWithSKUKeepsValueAndSuffix(t *testing.T) {
-	engine, f := newBundleSKUEngine(t)
-	if engine == nil {
+	_, f := newBundleSKUEngine(t)
+	if f == nil {
 		return
 	}
 	cases := []struct{ input, want string }{
@@ -110,16 +98,14 @@ func TestBundleCreateWithSKUKeepsValueAndSuffix(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.input, func(t *testing.T) {
-			rec := bsCreateBundle(t, engine, f.projectID, url.Values{
+			created, err := bsCreateBundle(t, f, url.Values{
 				"slug": {"bundle-" + strings.ToLower(strings.ReplaceAll(c.input, "_", "-"))},
 				"sku":  {c.input},
 			})
-			assertJumpOK(t, rec)
-			if back := jumpBackHref(t, rec); !strings.HasPrefix(back, "/admin/products/edit?") {
-				t.Fatalf("带 sku 的捆绑应建成功并进编辑页，实际回跳=%q", back)
+			if err != nil {
+				t.Fatalf("带 sku 的捆绑应建成功: %v", err)
 			}
-			productID := jumpBackQuery(t, rec, "product")
-			detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
+			detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: created.ID})
 			if err != nil {
 				t.Fatalf("读商品失败: %v", err)
 			}
@@ -135,20 +121,18 @@ func TestBundleCreateWithSKUKeepsValueAndSuffix(t *testing.T) {
 
 // TestVariantCreateWithoutSKUStillDerives 验收 3：变体商品保持现状 —— 不带 sku 可留空派生。
 func TestVariantCreateWithoutSKUStillDerives(t *testing.T) {
-	engine, f := newBundleSKUEngine(t)
-	if engine == nil {
+	_, f := newBundleSKUEngine(t)
+	if f == nil {
 		return
 	}
-	rec := postForm(engine, "/admin/products/create", url.Values{
+	created, err := cfCreate(f, url.Values{
 		"projectId": {f.projectID}, "name": {"留空主体"}, "slug": {"variant-empty"},
 		"type": {"variant"}, "defaultPrice": {"19.9"},
 	})
-	assertJumpOK(t, rec)
-	if back := jumpBackHref(t, rec); !strings.HasPrefix(back, "/admin/products/edit?") {
-		t.Fatalf("变体商品不带 sku 仍应建成功并进编辑页，实际回跳=%q", back)
+	if err != nil {
+		t.Fatalf("变体商品不带 sku 仍应建成功: %v", err)
 	}
-	productID := jumpBackQuery(t, rec, "product")
-	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
+	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: created.ID})
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}
@@ -170,9 +154,11 @@ func TestBundleUpdateWithoutSKUKeyIsNotBlocked(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	rec := bsCreateBundle(t, engine, f.projectID, url.Values{"slug": {"update-bundle"}, "sku": {"KEEP_B"}})
-	assertJumpOK(t, rec)
-	productID := jumpBackQuery(t, rec, "product")
+	created, err := bsCreateBundle(t, f, url.Values{"slug": {"update-bundle"}, "sku": {"KEEP_B"}})
+	if err != nil {
+		t.Fatalf("建捆绑失败: %v", err)
+	}
+	productID := created.ID
 
 	// ① HTTP 页面路径：不带 sku 键的更新不被必填规则拦住。
 	upd := postForm(engine, "/admin/products/taxonomy", url.Values{

@@ -135,54 +135,6 @@ func TestFormIntSemantics(t *testing.T) {
 	}
 }
 
-// TestTrackedQuantitySemantics 「跟踪数量」开关与数量框的同组绑定。
-func TestTrackedQuantitySemantics(t *testing.T) {
-	cases := []struct {
-		name     string
-		track    string
-		qty      string
-		wantNil  bool
-		wantInt  int
-		wantKind FieldKind
-	}{
-		{name: "开关未提交 = 不跟踪 = 无限", track: "", qty: "", wantNil: true},
-		{name: "开关未提交时数量框被忽略（模板会禁用该框）", track: "", qty: "5", wantNil: true},
-		{name: "开关已勾 + 数量留空 = 明确 0（明确没货）", track: "1", qty: "", wantInt: 0},
-		{name: "开关已勾 + 0 = 明确 0", track: "1", qty: "0", wantInt: 0},
-		{name: "开关已勾 + 正整数", track: "on", qty: " 12 ", wantInt: 12},
-		{name: "开关已勾 + 负数 = 区间不合法", track: "1", qty: "-1", wantKind: FieldKindRange},
-		{name: "开关已勾 + 非数字 = 不是数字", track: "1", qty: "abc", wantKind: FieldKindNumber},
-		{name: "开关已勾 + 小数 = 不是整数", track: "1", qty: "1.5", wantKind: FieldKindNumber},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := TrackedQuantity(tc.track, tc.qty)
-			if tc.wantKind != "" {
-				var fe *FieldValueError
-				if !errors.As(err, &fe) {
-					t.Fatalf("TrackedQuantity(%q,%q) 应返回 *FieldValueError，实际 err=%v", tc.track, tc.qty, err)
-				}
-				if fe.Kind != tc.wantKind || fe.Field != "quantity" {
-					t.Fatalf("错误事实 = {field:%q kind:%q}，want {quantity %s}", fe.Field, fe.Kind, tc.wantKind)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("TrackedQuantity(%q,%q) 不该报错：%v", tc.track, tc.qty, err)
-			}
-			if tc.wantNil {
-				if got != nil {
-					t.Fatalf("未跟踪应得到 nil，实际 %v", *got)
-				}
-				return
-			}
-			if got == nil || *got != tc.wantInt {
-				t.Fatalf("TrackedQuantity(%q,%q) = %v，want %d", tc.track, tc.qty, deref(got), tc.wantInt)
-			}
-		})
-	}
-}
-
 // TestFormTextTrims 文本字段：未提交与空串等价（都得到空串，由调用方按字段语义决定不改/清空）。
 func TestFormTextTrims(t *testing.T) {
 	if got := FormText(""); got != "" {

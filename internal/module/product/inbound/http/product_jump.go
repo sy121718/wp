@@ -251,11 +251,6 @@ func productEditJump(c *gin.Context, ok bool, projectID, productID string, msg p
 	productPageJump(c, ok, msg, productEditBack(projectID, productID), productEditBackMsg)
 }
 
-// productNewJump 回商品新建页的提示页出口（新建表单失败时的唯一落点）。
-func productNewJump(c *gin.Context, ok bool, projectID string, msg productMsg) {
-	productPageJump(c, ok, msg, productNewBack(projectID), productNewBackMsg)
-}
-
 // —— 成功回执文案（key + 中文兜底；词条缺失时页面上仍是中文）——
 
 // productActionDoneFallback 单条写动作的通用成功回执的中文兜底（key 在
@@ -368,14 +363,6 @@ var (
 
 // —— 列表页 / 详情页的自造回执文案 ——
 
-// productQuantityInvalidMsg 新建商品时数量字段的校验文案（**事实**：key + 中文兜底）。
-//
-// key + 中文兜底：取词发生在提示页模板里；词条缺失时页面上仍是中文。
-var productQuantityInvalidMsg = productMsg{
-	Key:      productenums.ProductsCreateQuantityInvalid,
-	Fallback: "数量必须是非负整数",
-}
-
 // 批量改价的结论文案模板（%s 是计数或跳过原因）。
 var (
 	productPricingNoChange = productBulkText{productenums.BulkPricingNoChange, "按该规则算下来没有价格变化：%s 个商品已是目标价，未写入调价记录。"}
@@ -469,6 +456,7 @@ var productErrForeignFallbacks = map[string]string{
 	inventoryenums.ErrWarehouseSKUBundleNotAllowed: "捆绑商品不存在于仓库，不能用「从仓库选」建主体 SKU，请改用自己的编码",
 	inventoryenums.ErrWarehouseSKUCodeTaken:        "该仓已有同一条 SKU 编码的库存行（我们自己的 SKU 在仓内唯一），请改用另一个仓库或另一个仓库 SKU",
 	inventoryenums.ErrExternalSKUInvalid:           "外部编码不合法：长度需在 128 个字符以内且不含控制字符",
+	inventoryenums.ErrStockQuantityInvalid:         "数量必须是非负整数",
 	inventoryenums.ErrExternalSKUProductConflict:   "该外部编码在本仓已挂在另一个商品上：同一个外部编码在同一仓库内只能属于同一个商品（同一商品的多个口味可以共用一个外部编码）",
 	inventoryenums.ErrWarehouseNotFound:            "仓库不存在",
 	inventoryenums.ErrWarehouseDisabled:            "已停用的仓库不能作为归属仓",

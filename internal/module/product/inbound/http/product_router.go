@@ -211,7 +211,6 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 页面 GET 走页面组（Session + CSRF，无 Casbin）；写动作复用商品更新权限点
 	//（与 /products/attributes、/products/taxonomy 同一改动面：改的都是这个商品本身）。
 	pages.GET("/products/edit", adminui.PageAuthzAs("/api/product/update", http.MethodPost), productPages.ProductEditPage)
-	pages.POST("/products/create", builtin.CasbinMiddlewareForPath("/api/product/create"), productPages.ProductsCreate)
 	pages.POST("/products/variant/create", builtin.CasbinMiddlewareForPath("/api/product/variant/create"), productPages.ProductsVariantCreate)
 	pages.POST("/products/variant/delete", builtin.CasbinMiddlewareForPath("/api/product/variant/delete"), productPages.ProductsVariantDelete)
 	// 变体组合生成（issue #8）：勾选属性值 → 笛卡尔积；不勾选则按全部启用值生成。
