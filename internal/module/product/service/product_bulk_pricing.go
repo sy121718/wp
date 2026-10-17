@@ -24,7 +24,7 @@ import (
 	"go_wp/internal/module/product/enums"
 )
 
-// BulkApplyPricing 批量按规则改价（POST /admin/products/bulk-pricing 的 service 入口）。
+// BulkApplyPricing 批量按规则改价（POST /api/product/bulk-pricing 的 service 入口）。
 //
 // 规则的作用范围恒为「单个商品的全部变体」（scope=product、TargetID=当前商品 id）：
 // 入口语义就是「对勾选的这几个商品各做一次改价」，调用方不必（也不该）传 Scope / TargetID。

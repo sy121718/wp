@@ -1582,8 +1582,9 @@ go test ./public/test/dashboard/feature/ -run "TestPageTranslationsListsBlockTex
   编排层在 `routes.go` 注入，标记按 `presentation_dependencies` 精确反查。
 
 **入口**：`GET /admin/products/translations?project=…[&product=…]` 与
-`POST /admin/products/translations/save`（整表提交 + PRG 回跳；保存复用 `/api/product/update`
-权限点，与页面工作台同口径，不做独立菜单）。
+`POST /api/product/translations/save`（JSON 回执 + 页内结论行，按钮带 `data-requires-js`；
+权限点是独立的 `product:translations_save`，不复用 `/api/product/update` —— 一条 API 路由一个
+权限点，共用会让其中一条路径永远进不了 Casbin 策略。菜单上仍不独立）。
 
 **改动文件**：
 

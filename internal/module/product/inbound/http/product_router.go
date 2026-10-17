@@ -166,8 +166,9 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.GET("/pricing/roundings", permission.ProductPricingRoundings, handle.ListPricingRoundingOptions)
 	g.POST("/pricing/preview", permission.ProductPricingPreview, handle.PreviewPricing)
 	g.POST("/pricing/apply", permission.ProductPricingApply, handle.ApplyPricing)
-	// 批量改价（商品列表的「按规则改价」抽屉）：作用对象是勾选出来的商品集，权限点复用
-	// 商品更新（改的都是商品变体的售价，与页面侧 /admin/products/bulk-pricing 同一个）。
+	// 批量改价（商品列表的「按规则改价」抽屉）：作用对象是勾选出来的商品集。
+	// 页面时代它曾与「商品更新」共用权限点，现已独立（permission.ProductBulkPricing）——
+	// 共用时 Casbin 只会给其中一条路径建策略，另一条对所有人 403。
 	g.POST("/bulk-pricing", permission.ProductBulkPricing, handle.BulkPricing)
 	g.GET("/pricing/history", permission.ProductPricingHistory, handle.ListPriceAdjustments)
 	g.GET("/pricing/adjustment", permission.ProductPricingAdjustment, handle.GetPriceAdjustment)

@@ -29,7 +29,7 @@ import (
 
 // newBundleSKUEngine 装配「列表 + 详情 + 新建 + 分类品牌」四个入口的测试引擎。
 //
-// 带上 /admin/products/taxonomy 是为了走一条**只带其它字段、不带 sku** 的真实页面更新路径
+// 带上 /api/product/update 是为了走一条**只带其它字段、不带 sku** 的真实页面更新路径
 // （UpdateReq.SKUCode 为 nil）——「捆绑必填」不该拦住任何不改 SKU 的更新。
 func newBundleSKUEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	t.Helper()
@@ -147,7 +147,7 @@ func TestVariantCreateWithoutSKUStillDerives(t *testing.T) {
 //
 // 三条分支都钉住：
 //   - 只带别的字段（SKUCode 为 nil）→ 照常成功，存量编码一个字不改；
-//     HTTP 侧走 /admin/products/taxonomy（页面真实路径，形态与分类品牌抽屉一致）；
+//     HTTP 侧走 /api/product/update（编辑页表单的真实路径，形态与分类品牌抽屉一致）；
 //   - 显式带 sku → 按捆绑规则补齐后缀；
 //   - 显式带空串 → 仍然明确拒绝（ErrContainerSkuInvalid），而不是被必填错误吞掉。
 func TestBundleUpdateWithoutSKUKeyIsNotBlocked(t *testing.T) {
