@@ -27,13 +27,12 @@ func TestControllerI18nBoundary(t *testing.T) {
 			"提示页出口：RenderJump 那条链要成品串（productMsgText）",
 		"product_page_util.go": "中间件：productTranslateMiddleware 把取词函数放进 Request Context 给 " +
 			"service 用（service 要产出展示文案，语言只有 gin.Context 知道）",
-		"product_detail_template.go": "具名占位符 + 共享评分基础设施：i18n.FillTranslate / seoscore.ScoreGradeText " +
-			"只接受 tr（模板 tf 只有 %s，没有具名 {label}）",
 		"product_translations.go": "具名占位符：i18n.FillTranslate 的 {n} 句式（同上）",
-		"product_pricing.go":      "提示页出口：三段拼串的整句（收成 %s 整句要改 seed 词条）",
-		"product_core.go": "Tail 复合句（提示页出口，变体清单保存）+ ProductPreviewFrame 直接 c.Data 返回 iframe " +
-			"HTML（没有模板取词层）",
-		"product_bundle.go": "JSON 出口：ProductsBundleMembersResolve 的响应体字面量（来源标签）",
+		"product_score.go": "评分等级文案：seoscore.ScoreGradeText 只接受 tr；空态文案是 service 给的 " +
+			"key + 兜底事实，取值在 HTTP 层（scoreEmptyView）",
+		"product_subject.go": "三处成品串出口：变体清单保存的复合句（Tail 拼接）、定价回执的三段拼句、" +
+			"ProductsBundleMembersResolve 的响应体字面量（来源标签）；外加 ProductPreviewFrame 直接 " +
+			"c.Data 返回 iframe HTML（没有模板取词层）",
 	}
 
 	hits := scanControllerTranslate(t)

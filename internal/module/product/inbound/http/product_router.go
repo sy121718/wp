@@ -8,10 +8,11 @@ package producthttp
 //     —— 都只在这个文件里声明。以前拆成 product_router.go（API）+ product_page_router.go
 //     （页面）两份，于是回答「这个模块一共暴露了哪些入口」要跨两个文件拼，而路由正是权限点 /
 //     CSRF / Casbin 的对账面：漏看一条的表现不是编译错误，而是「接口能删、页面删不掉」这类
-//     两边都不报错、测试也不红的分叉。**按功能拆的是控制器**（product_core.go 商品本体 /
-//     product_attributes.go 属性 / product_taxonomy.go 分类品牌标签 / product_bundle.go 捆绑 /
-//     product_pricing.go 定价 / product_detail_template.go 详情模板与评分 /
-//     product_translations.go 译文，共用原语在 product_page_util.go 与 product_jump.go）。
+//     两边都不报错、测试也不红的分叉。**按业务域拆的是控制器**（product_subject.go 商品主体：
+//     CRUD / 变体 / 列表与编辑页 / 捆绑配置 / 定价；product_taxonomy.go 分类与品牌；
+//     product_tag.go 标签；product_attributes.go 属性；product_detail_template.go 详情页模板；
+//     product_score.go SEO 评分；product_translations.go 译文；共用原语在 product_page_util.go
+//     与 product_jump.go）。同一域里接口面在前、页面面在后，所以找一个动作只需认一个文件。
 //
 //  2. **同一功能的页面与接口挨着写**。一个业务动作有两条通道：JSON 接口（工作台 / 脚本 /
 //     批量 / 构建期）与后台页面（运营）。它们在权限点路径、拒绝规则上必须同源，所以下面按
@@ -42,6 +43,7 @@ import (
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productmodel "go_wp/internal/module/product/model"
+	inventoryoutbound "go_wp/internal/module/product/outbound/inventory"
 	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
@@ -371,4 +373,102 @@ var detailTemplateModePort presentationcontract.DetailTemplateModePort
 // BindDetailTemplateModePort 绑定双轨能力（装配期调用一次）。
 func BindDetailTemplateModePort(port presentationcontract.DetailTemplateModePort) {
 	detailTemplateModePort = port
+}
+
+// ==========================================================================
+// 模块入口：两个处理器类型、构造与装配注入
+// ==========================================================================
+// 原先单独一个 product_page.go；它只放这两个类型，构造点与路由声明点分开没有收益 ——
+// 路由是「谁被暴露」，类型是「谁来处理」，两者是同一张表的两列。
+
+// variantSelectionPrefix 组合生成表单里「属性组 → 勾选值」的字段名前缀。
+
+// 字段名形如 attr:<属性组 id>（多选 checkbox），一个属性组一组值；
+// 提交时按前缀收拢成 service 的 selections。
+const variantSelectionPrefix = "attr:"
+
+// productPageHandle 商品后台页处理器。
+type productPageHandle struct {
+	products productcontract.ProductService
+	// reader 读模型（contract.ProductPageReader）：与 products 是**同一个实现的两个静态类型**，
+	// 由 SetupProductRoutes 一次产出、装配期一起交进来。
+	//
+	// 为什么不像以前那样在请求期 h.products.(ProductPageReader) 断言：断言把「装配漏接」
+	// 推迟到运营点开那一页时才暴露，只能给 500 兜底，漏接既不会编译报错也不会被门禁抓到；
+	// 现在漏接 = 构造处少一个实参 = 编译错误（判据见 product_reader_injection_test.go）。
+	reader   productcontract.ProductPageReader
+	projects projectcontract.ProjectService
+	// templates / instances 供「详情页模板」页（issue #14）消费：模板列表与版本、
+	// 商品发布实例的模板绑定与预览渲染。经 SetDetailTemplateDeps 注入 ——
+	// 未注入时该页给出装配提示，不影响商品列表页与既有测试的构造签名。
+	templates contenttemplatecontract.ContentTemplateService
+	instances ProductDetailTemplatePort
+	// modePort 双轨能力（迁移 282）：独立文档 / 重新套用预设 / 回滚 / 影响面计数。
+	// 单独字段而不是并入 instances：这六条动作属于另一条收窄端口
+	//（presentationcontract.DetailTemplateModePort），装配期直接注入（实参
+	// presentationSvc 已嵌入该端口，无需断言）；未注入时降级为只有基础面板。
+	modePort ProductDetailTemplateModePort
+	// inventories → 已随「整页 GET 取数下沉」拆成两条**页面只读端口**（见下面两个字段）：
+	// 页面处理器不再直接持有库存 / 内容模板的读写能力，只拿「这一屏要显示哪些选项」。
+	//
+	// warehouses / entityTemplates 是**还没走读模型的老路径**（编辑页、详情页、捆绑配置页
+	// 的抽屉）用的端口：那几屏的取数尚未下沉，这里先共用同一份口径（标签怎么拼、候选取
+	// 多少条都在 outbound 适配器里唯一一份），避免页面自己再拼一遍。
+	warehouses      productcontract.WarehouseOptionsPort
+	entityTemplates productcontract.EntityTemplatePort
+	// seoPages / seoContents 编辑期 title 唯一性检查的另外两个数据源（审计 SEO-018）：
+	// 页面草稿的 SEO 标题与文章标题都算「同站点已存在的内容」，只比商品域会漏掉
+	// 跨内容的重复。经 SetSeoTitleSources 注入 —— 可空，未注入时索引退化为商品域。
+	seoPages    pagecontract.PageService
+	seoContents contentcontract.ContentService
+}
+
+// productPagePortWiring 装配期把两条页面只读端口交到**本模块 service 读模型**的接线面。
+//
+// 为什么由页面处理器转交、而不是装配段直接调 service 的 Set*：这两条依赖的到达点本来就
+// 是 SetInventoryDeps / SetDetailTemplateDeps（既有装配与既有页面测试都只调它们），
+// 再加一条平行的「装配段直接注入 service」就是同一份接线两处写 —— 漏一处时表现是
+// 「新页看不到仓库下拉 / 模板候选」，不报错、门禁也不红。
+//
+// 不放进 contract：它不是「能力」，而是「装配动作」，只有本模块的页面处理器需要它。
+type productPagePortWiring interface {
+	SetWarehouseOptionsPort(productcontract.WarehouseOptionsPort)
+	SetEntityTemplatePort(productcontract.EntityTemplatePort)
+	SetDetailTemplatePort(productcontract.DetailTemplatePort)
+}
+
+// NewProductPageHandle 构造。
+//
+// reader 必须显式给出（哪怕它与 products 是同一个值）：它承载的是「这一份实现能不能读
+// 页面读模型」这个事实，装配期说清楚比请求期断言强 —— 两个参数类型不同，漏给读模型
+// 在编译期就报错。
+func NewProductPageHandle(products productcontract.ProductService, reader productcontract.ProductPageReader, projects projectcontract.ProjectService) *productPageHandle {
+	return &productPageHandle{products: products, reader: reader, projects: projects}
+}
+
+// SetInventoryDeps 注入仓库清单依赖（issue #15，装配期调用）。
+//
+// 两个去向，同一次注入：① 本处理器的老路径（编辑页 / 详情页 / 捆绑页抽屉）拿走端口；
+// ② 交给本模块 service 的读模型（新建页 / 列表页），否则新页会静默少掉仓库下拉。
+// 未注入时两处都是「没有仓库」的降级（不是失败）。
+func (h *productPageHandle) SetInventoryDeps(inventory inventorycontract.InventoryService) {
+	port := inventoryoutbound.New(inventory)
+	h.warehouses = port
+	if wiring, ok := h.products.(productPagePortWiring); ok {
+		wiring.SetWarehouseOptionsPort(port)
+	}
+}
+
+// ==========================================================================
+// 接口面处理器（JSON handler 的接收者）。
+// 页面面处理器是 productPageHandle（见 product_page.go）。
+// ==========================================================================
+// Handle product 接口处理器。
+type Handle struct {
+	svc productcontract.ProductService
+}
+
+// NewHandle 构造。
+func NewHandle(svc productcontract.ProductService) *Handle {
+	return &Handle{svc: svc}
 }

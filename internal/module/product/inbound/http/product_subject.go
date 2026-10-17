@@ -1,19 +1,14 @@
 package producthttp
 
+// product_subject.go — 商品主体：接口面 CRUD / 变体 / 评分、后台列表与编辑页、捆绑配置、定价。
+//
+// 为什么这三块在同一个文件：捆绑配置是 type=bundle 商品的一种编辑能力，定价是商品价格字段上的
+// 操作，两者都不是独立域。按子功能切文件的结果是「改一个商品的写入要在三个文件里找落点」，
+// 而路由表本身只按业务域分节（见 product_router.go）。
+
 import (
 	"errors"
 	"fmt"
-	"go_wp/internal/adminui"
-	presentationcontract "go_wp/internal/module/presentation/contract"
-	productcontract "go_wp/internal/module/product/contract"
-	productdto "go_wp/internal/module/product/dto"
-	productenums "go_wp/internal/module/product/enums"
-	productservice "go_wp/internal/module/product/service"
-	"go_wp/internal/shell"
-	json "go_wp/pkg/jsonx"
-	"go_wp/pkg/logger"
-	"go_wp/pkg/pagination"
-	"go_wp/pkg/response"
 	"html"
 	"net/http"
 	"net/url"
@@ -22,6 +17,20 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"go_wp/internal/adminui"
+	presentationcontract "go_wp/internal/module/presentation/contract"
+	productcontract "go_wp/internal/module/product/contract"
+	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
+	productmodel "go_wp/internal/module/product/model"
+	productservice "go_wp/internal/module/product/service"
+	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/internal/shell"
+	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/logger"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/response"
 )
 
 // product_core.go — 商品本体的控制器：接口面 CRUD / 变体 + 列表 / 新建 / 编辑 / 详情页 / 批量。
@@ -940,4 +949,822 @@ func productPreviewFrameNotice(c *gin.Context, text string) {
 		`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>`+
 			`body{margin:0;padding:24px;font:14px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;`+
 			`color:#57606a;background:#fff;}p{margin:0;}</style></head><body><p>`+html.EscapeString(text)+`</p></body></html>`))
+}
+
+// product_bundle.go — 捆绑商品（容器 + 可选组）：配置页、成员解析接口与详情页的捆绑面板。
+//
+// 可用量来自库存真源端口（warehouseOptions / warehouseSKUOptions）：捆绑的「可卖几份」
+// 由各成员的最小可用量决定，不在商品表里存。
+
+// ProductBundlePage 捆绑配置页。
+// 与商品页同族（挂在 productPageHandle 上）：选工程 → 选商品 → 配选项规则 → 保存。
+// 表单是**原生并行数组**（variantId / required / defaultQty / minQty / maxQty 各自多值），
+// 零自定义 JS 就能表达「一行的多个字段」—— 不用 JSON 字符串塞进隐藏域，
+// 也就没有「前端拼 JSON 出错但服务端照单全收」的缝隙。
+//
+// 页面底部内嵌前台配置器片段（hx-get /_fragments/bundleConfigurator）：
+// 运营在这里看到的就是访客看到的那一份渲染。
+
+// 为什么单独成文件：这一段是「仓库侧只回答这条货在这个仓叫什么」在商品页的唯一落点 ——
+// 候选按仓分组、每仓有上限、未接库存契约时整块降级为空。与商品页其余部分（列表 / 详情 /
+// 抽屉业务字段）没有耦合，放在一起只会让两边互相牵制。
+//
+// 前端只是便捷入口：ProductsCreate 会带着仓库 id 让 service 在**该仓**重新复核一遍。
+//
+// 接口面（原先的 product_handle.go 捆绑段）在前，后台页面在后。
+
+// productBundlePageTemplate 整页模板（只剩这一档）。
+//
+// 保存已迁到 JSON 写基座：基座在原页发 fetch、失败只写结果区，不再有「htmx 写失败换片段」
+// 这种响应形态，页面装配也因此只有一处出口。
+const productBundlePageTemplate = "admin/product/product_bundle.html"
+
+// bundleResolveURL 成员来源面板的解析接口（URL 形状属 HTTP，控制器给）。
+const bundleResolveURL = "/admin/products/bundle/members/resolve"
+
+// ProductBundlePage 捆绑配置页。
+// 与商品页同族（挂在 productPageHandle 上）：选工程 → 选商品 → 配选项规则 → 保存。
+//
+// 页面底部内嵌前台配置器片段（hx-get /_fragments/bundleConfigurator）：
+// 运营在这里看到的就是访客看到的那一份渲染。
+//
+// 为什么单独成文件：这一段是「仓库侧只回答这条货在这个仓叫什么」在商品页的唯一落点 ——
+// 候选按仓分组、每仓有上限、未接库存契约时整块降级为空。与商品页其余部分（列表 / 详情 /
+// 抽屉业务字段）没有耦合，放在一起只会让两边互相牵制。
+//
+// 保存走 JSON 写基座（表单声明 data-write-api=/api/product/bundle/set）：成员行由
+// static/js/ui/product_bundle_write.js 组装成 {productId, config:{...}}，页面只负责渲染。
+func (h *productPageHandle) ProductBundlePage(c *gin.Context) {
+	h.renderBundlePage(c)
+}
+
+// renderBundlePage 整页出口（只有这一处）。
+//
+// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+// 不再有「请求期断言失败 → 500 兜底」这条路径。
+func (h *productPageHandle) renderBundlePage(c *gin.Context) {
+	reader := h.reader
+	view, err := reader.ProductBundlePage(c.Request.Context(), &productdto.ProductBundlePageReq{
+		ProjectID:         bundleQueryParam(c, "project", "projectId"),
+		ProductID:         bundleQueryParam(c, "product", "productId"),
+		Source:            c.Query("source"),
+		SourceProductID:   c.Query("sourceProduct"),
+		SourceWarehouseID: c.Query("sourceWarehouse"),
+	})
+	if view == nil {
+		// 契约上视图恒非 nil；契约是约定而不是类型保证，这一层兜底必须存在。
+		failed := bundlePageFailureView(http.StatusInternalServerError)
+		view = &failed
+		err = errors.New("捆绑配置页的视图为空")
+	}
+	if err != nil {
+		// 归口文案（中英 / 缺词 fallback 都在里面）；驱动原文与原始错误只进日志。
+		view.LoadError = productErrPageText(c, err)
+	}
+
+	// 剩下两样都只由控制器给：两个 URL 形状（ResolveURL / ListQuery）。
+	// 它们要么来自请求，要么是 HTTP 侧的形状 —— 都不是取数结论。
+	extra := gin.H{
+		"ResolveURL": bundleResolveURL,
+		// 页面上下文（页面链接的 query）。
+		"ListQuery": productQueryFromRequest(c, productBundleBackKeys...),
+	}
+	// 这一屏不是可缓存的成功页：重试必须真的回到服务端（判据由视图给，见 PageNoStore）。
+	if view.PageNoStore() {
+		c.Header("Cache-Control", "no-store")
+	}
+	c.HTML(view.PageStatus(), productBundlePageTemplate, bundlePageData(c, view, extra))
+}
+
+// bundlePageData 摊平视图 + 叠加控制器那两样键（两个 URL 形状）。
+//
+// 用 ViewMap 而不是 adminui.RenderPage：视图自己已经实现 PageResult —— 状态码与 no-store
+// 按页面的结论给，视图与控制器侧那两样键在这里合成一份数据。
+func bundlePageData(c *gin.Context, view *productdto.ProductBundlePageView, extra gin.H) gin.H {
+	data := adminui.ViewMap(view)
+	for k, v := range extra {
+		data[k] = v
+	}
+	return adminui.Prepare(c, data)
+}
+
+// bundlePageFailureView 失败档的视图（给齐模板必需键，避免失败分支只设了错误键）。
+func bundlePageFailureView(status int) productdto.ProductBundlePageView {
+	return productdto.ProductBundlePageView{
+		Title:            productenums.ProductBundleTitle,
+		Menu:             "products",
+		Projects:         []projectdto.ProjectResp{},
+		Products:         []*productdto.ProductResp{},
+		Skus:             []*productdto.BundleSKUResp{},
+		Rows:             []productdto.BundleOptionRow{},
+		CandidateSKUs:    []productdto.BundleCandidateView{},
+		Sources:          []map[string]any{},
+		SourceProducts:   []map[string]any{},
+		SourceAttributes: []*productdto.AttributeResp{},
+		SourceWarehouses: []productdto.BundleSourceWarehouseGroupView{},
+		MaxOptions:       productdto.BundleMaxOptionsLimit,
+		SaveBlocked:      true,
+		LoadFailed:       status != http.StatusOK,
+		HTTPStatus:       status,
+	}
+}
+
+// bundleQueryParam 取本页的上下文参数（工程 / 商品），按候选名依次认第一个非空值。
+//
+// 参数名有两套且都合法：本页自己的两个选择器用 project / product；商品详情页的
+// 「编辑捆绑构成」入口用 projectId / productId（与商品页其余表单同一套字段名，
+// 直接复用商品 id 不会串）。两个都认，入口从哪来都能选中同一个商品 ——
+// 少认一个的表现是「点入口进来是空骨架」，而页面上看不出哪里不对。
+func bundleQueryParam(c *gin.Context, names ...string) string {
+	for _, name := range names {
+		if v := strings.TrimSpace(c.Query(name)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// 与变体清单的预览端点（/admin/products/variant/preview）同一形态：服务端把候选行与逐条
+// 跳过原因算好回 JSON，前端只负责把行**追加**进成员清单；「保存配置」才是落库动作。
+//
+// 为什么要 JSON 而不是服务端渲染的片段：成员清单是**未保存的前端状态**（与变体清单同理），
+// 服务端渲染的片段落不进那个状态里；这里回的行结构与服务端渲染的行结构逐字一致。
+//
+// 失败回 400 + 可读文案（走 productErrText，不把 enums 裸 key 或 PG 报错铺给前端）。
+func (h *productPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
+	ctx := c.Request.Context()
+	req := &productdto.ResolveBundleMembersReq{
+		ProductID:       strings.TrimSpace(c.PostForm("productId")),
+		ProjectID:       strings.TrimSpace(c.PostForm("projectId")),
+		Source:          strings.TrimSpace(c.PostForm("source")),
+		SourceProductID: strings.TrimSpace(c.PostForm("sourceProductId")),
+		WarehouseID:     strings.TrimSpace(c.PostForm("sourceWarehouse")),
+		WarehouseSKUs:   c.PostFormArray("warehouseSku"),
+		// 属性组合的勾选用生成组合抽屉的同一套字段名（attr:<属性组 id>=值 id）：
+		// 收拢规则只有一份，两个入口不会一个认前缀、另一个漏读。
+		Selections: variantSelectionFromForm(c),
+		// 前端清单里已有的成员：服务端据此去重（同一变体只出现一次）。
+		ExistingVariantIDs: c.PostFormArray("existingVariantId"),
+	}
+	res, err := h.products.ResolveBundleMembers(ctx, req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "message": productErrText(c, err)})
+		return
+	}
+	// 例外（JSON 出口的成品串）：这个端点的响应体是给前端直接渲染的（sourceLabel / skips.text），
+	// 没有模板取词这一层 —— 与页面槽位不同，这里的字符串必须已经是当前语言的成品。
+	tr := shell.TranslateFor(c)
+	// 规格文本要用来源商品的属性组：「组合在商品侧没有对应变体」必须指得出是哪一组。
+	attrs := []*productdto.AttributeResp{}
+	if req.SourceProductID != "" {
+		// 同变体预览：取来源商品必须带作用域（req.ProjectID 上面已从表单读出），
+		// 否则多工程部署下这一跳被 resolveProjectID 拒掉、attrs 退化为空，
+		// spec 静默降级成 optionKey（derr 被忽略，不报错）。
+		if detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: req.SourceProductID, ProjectID: req.ProjectID}); derr == nil && detail != nil {
+			attrs = detail.Attributes
+		}
+	}
+	members := make([]gin.H, 0, len(res.Members))
+	for _, m := range res.Members {
+		if m == nil {
+			continue
+		}
+		// 键名一律小驼峰：gin.H 是 map，JSON 键就是这里的字面量 ——
+		// 页面 JS 按 variantId / sourceKind / warehouseSku 取值（与其余 JSON 接口同一口径），
+		// 写成 PascalCase 会让前端拿到 undefined 却看不出任何错。
+		members = append(members, gin.H{
+			"variantId":   m.VariantID,
+			"skuCode":     m.SKUCode,
+			"productId":   m.ProductID,
+			"productName": m.ProductName,
+			"spec":        productservice.SpecLabel(m.OptionValues, attrs),
+			"sourceKind":  m.Source.Kind,
+			"sourceLabel": bundleSourceLabel(tr, productdto.BundleOption{
+				SourceKind: m.Source.Kind, WarehouseID: m.Source.WarehouseID,
+				WarehouseSKU: m.Source.WarehouseSKU, ExternalSKU: m.Source.ExternalSKU,
+			}),
+			"warehouseId":  m.Source.WarehouseID,
+			"warehouseSku": m.Source.WarehouseSKU,
+			"externalSku":  m.Source.ExternalSKU,
+		})
+	}
+	skips := make([]gin.H, 0, len(res.Skipped))
+	for _, s := range res.Skipped {
+		// 跳过的行要能被认出来：「从规格组合来的」用可读规格文本，「从仓库来的」用仓库 SKU 文本。
+		label := strings.TrimSpace(s.SKUCode)
+		if label == "" {
+			label = strings.TrimSpace(s.WarehouseSKU)
+		}
+		if label == "" {
+			label = strings.TrimSpace(s.VariantID)
+		}
+		if spec := productservice.SpecLabel(s.OptionValues, attrs); spec != "" && spec != "—" {
+			if label == "" {
+				label = spec
+			} else {
+				label = label + " · " + spec
+			}
+		}
+		skips = append(skips, gin.H{
+			"reason": s.Reason,
+			"text":   tr(s.Reason, bundleMemberSkipFallbacks[s.Reason]),
+			"label":  label,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"ok": true, "added": len(members), "skipped": len(skips),
+		"members": members, "skips": skips,
+	})
+}
+
+// bundleMemberSkipFallbacks 成员来源解析被跳过时的中文兜底（key 见 productenums.BundleMember*）。
+//
+// 与 variantSkipFallbacks 同一形态：词条缺失时页面上仍是可读的一句话，
+// 而不是裸 key。
+var bundleMemberSkipFallbacks = map[string]string{
+	productenums.BundleMemberNotOnProduct:        "该属性值组合在商品侧没有对应变体，未加入（请先到该商品上生成这个规格的变体）",
+	productenums.BundleMemberSkippedInList:       "该 SKU 已在成员清单里，未重复加入",
+	productenums.BundleMemberWarehouseSKUMissing: "该仓库里没有这条仓库 SKU，未加入（请确认仓库选对了，或先在该仓建好这条货）",
+	productenums.BundleMemberVariantDisabled:     "该变体已停用，未加入（停用的 SKU 挂进套餐会变成前台选不了又躲不开的必选项）",
+	productenums.BundleMemberOptionsExceeded:     "已达该捆绑配置的选项数量上限，未加入（可先调大上限再解析）",
+	productenums.ErrBundleSelfReference:          "该 SKU 属于这个捆绑容器自己，未加入（不能自引用）",
+}
+
+// isBundleProduct 商品类型是否为捆绑容器（详情页据此决定要不要渲染「捆绑构成」）。
+//
+// 判据只认类型本身，不看「bundle_items 是否非空」——后者是迁移 238 之前的旧口径，
+// 分不清「主体卖自己的 SKU」与「容器卖组合」（bundle 商品的价 0 变体就是这么来的）。
+func isBundleProduct(productType string) bool {
+	return productType == productmodel.TypeBundle
+}
+
+// bundleSourceParts 成员来源快照的**事实段**（仅用于展示 —— 来源不是身份）。
+//
+// 「从仓库选」再多带两段：仓库 SKU 与外部编码 —— 运营对账时手上可能是其中任意一个；
+// 仓库 id 留在 JSON 里做溯源，不搬上表格（uuid 对读的人没有含义）。
+//
+// 第一段恒存在（来源词条），后两段按数据有无增减 —— 模板据段数为 0 渲染「—」。
+// 来源 → (key, 兜底) 的映射在 productenums.BundleSourceLabel（空 kind = 历史配置 / 手工指定）。
+func bundleSourceParts(o productdto.BundleOption) []productdto.BundleSourcePart {
+	return productservice.BundleSourceParts(o)
+}
+
+// bundleSourceLabel 来源事实段 → 当前语言的成品串。
+//
+// **只有 JSON 出口用它**（ProductsBundleMembersResolve 的 `sourceLabel`：前端把它直接显示，
+// 没有模板取词这一层）—— 属于「JSON 出口的成品串」例外，调用点的 tr 同理。
+// 模板侧一律用 bundleSourceParts 交事实、在模板里取词与拼接。
+func bundleSourceLabel(tr func(key, fallback string) string, o productdto.BundleOption) string {
+	segments := make([]string, 0, 3)
+	for _, part := range bundleSourceParts(o) {
+		text := tr(part.LabelKey, part.LabelFallback)
+		if part.Value != "" {
+			text += " " + part.Value
+		}
+		segments = append(segments, text)
+	}
+	return strings.Join(segments, " · ")
+}
+
+// bundlePanelRows 捆绑构成表的行：成员 SKU 的规则、可用量与后台价格口径。
+//
+// 成员挂牌价（ItemPrice）在这里只作**参考**：套餐金额只由容器价得出，成员价不参与
+// 任何计价与前台展示（迁移 238 的类型不变量）；成员成本只进后台口径。
+//
+// SKU 已被删除时配置里只剩 variantId（SKUCode 为空），照常出一行并标注 ——
+// 静默丢项会让人以为配置里本来就没有这一项，也就不会去修它。
+func bundlePanelRows(options []*productdto.BundleOptionDetail) []gin.H {
+	rows := make([]gin.H, 0, len(options))
+	for _, o := range options {
+		if o == nil {
+			continue
+		}
+		// Missing 表示配置指向的变体已经不存在（与「存在但被停用」是两回事，
+		// 状态文案与可行动作都不同，故不合并成一个 bool）。
+		missing := o.SKUCode == ""
+		itemPrice, costPrice := formatAmount(o.ItemPrice), formatNullableAmount(o.CostPrice)
+		if missing {
+			// 变体没了，价格与成本都无从谈起：这里的 0 会被读成「这个成员不要钱」。
+			itemPrice, costPrice = "—", "—"
+		}
+		rows = append(rows, gin.H{
+			"VariantID":   o.VariantID,
+			"SKUCode":     o.SKUCode,
+			"ProductName": o.ProductName,
+			"Required":    o.Required,
+			"DefaultQty":  o.DefaultQty,
+			"MinQty":      o.MinQty,
+			"MaxQty":      o.MaxQty,
+			"Available":   o.Available,
+			"ItemPrice":   itemPrice,
+			"CostPrice":   costPrice,
+			"Enabled":     o.Enabled,
+			"Missing":     missing,
+			// 来源快照（仅展示）：事实段，取词与分段拼接在模板；空 = 手工指定 / 历史配置。
+			"SourceParts": bundleSourceParts(o.BundleOption),
+		})
+	}
+	return rows
+}
+
+// bundlePanel 商品详情页「捆绑构成」区块的数据（仅 type=bundle 调用）。
+//
+// 读不出配置时**不静默**：区块照常渲染并带一条可读原因（区块本身就是运维发现
+// 「配置读不出来」的地方，整块消失会让人以为这个商品不是捆绑品）。
+// 错误原因只给词条文案，不铺 err.Error()（内部包装文案对运营不可行动）。
+func (h *productPageHandle) bundlePanel(c *gin.Context, projectID, productID string) gin.H {
+	panel := gin.H{
+		"Loaded":    false,
+		"ErrorText": "",
+		// 容器价是套餐金额的唯一来源，读不出来时给 —（不拿成员价兜底：那是错的口径）。
+		"BasePrice":   "—",
+		"Options":     []gin.H{},
+		"OptionCount": 0,
+	}
+	detail, err := h.products.GetBundleConfig(c.Request.Context(), &productdto.GetBundleConfigReq{
+		ProductID: productID,
+		// 工程显式传下去（DB-009）：配置详情含库存可用量，走真源查询要在工程作用域里。
+		// 后台页不走 resolveProjectID 的唯一工程兜底（多工程下它会直接判参数错）。
+		ProjectID: projectID,
+	})
+	if err != nil || detail == nil {
+		panel["ErrorText"] = productMsgText(c, bundlePanelReadFailedMsg)
+		return panel
+	}
+	rows := bundlePanelRows(detail.Options)
+	panel["Loaded"] = true
+	panel["BasePrice"] = formatAmount(detail.BasePrice)
+	panel["Options"] = rows
+	panel["OptionCount"] = len(rows)
+	return panel
+}
+
+// bundlePanelReadFailedFallback 捆绑配置读取失败的中文兜底（key 在
+// productenums.ProductBundleDetailFailed）。
+//
+// 与捆绑配置页同一句：两处读的是同一份配置，失败原因也同一批（商品不存在 /
+// 库存真源端口未接入，后者拿不到可用量）。复用词条而不是另起一句，
+// 免得同一件事在两个页面上给出两种说法。
+// bundlePanelReadFailedMsg 上面那条提示的**事实**（片段槽位按文本渲染，见调用点注释）。
+var bundlePanelReadFailedMsg = productMsg{Key: productenums.ProductBundleDetailFailed, Fallback: bundlePanelReadFailedFallback}
+
+// bundlePanelReadFailedFallback 上述 key 的中文兜底（i18n 未初始化或词条缺失时用）。
+const bundlePanelReadFailedFallback = "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。"
+
+// warehouseSKUOptionSize 已随取数下沉搬到 outbound 适配器
+//（internal/module/product/outbound/inventory 的 warehouseSKUOptionSize）：
+// 每仓取多少条候选是**取数口径**，与页面怎么渲染无关。
+
+// ==========================================================================
+// 捆绑接口的四个出口：读配置、存配置、整单校验、SKU 数据源。
+// 整单校验在这里是**后端硬校验**：前端片段调的是同一个 service 方法，
+// 因此「构造请求绕过前端」得到的结论与前台一致（验收 4）。
+// ==========================================================================
+// GetBundleConfig 读某商品的捆绑配置（含每项 SKU 快照与真源可用量）。
+func (h *Handle) GetBundleConfig(c *gin.Context) {
+	req := &productdto.GetBundleConfigReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.GetBundleConfig(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
+}
+
+// SetBundleConfig 保存捆绑配置（整体替换）。
+func (h *Handle) SetBundleConfig(c *gin.Context) {
+	req := &productdto.SetBundleConfigReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// issue #19：配置变更要落主数据变更记录，操作人只能来自会话。
+	req.OperatorID = operatorFromContext(c)
+	res, err := h.svc.SetBundleConfig(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgBundleSaveSuccess, res)
+}
+
+// ValidateBundleSelection 整单硬校验 + 算价（纯读，不写库）。
+func (h *Handle) ValidateBundleSelection(c *gin.Context) {
+	req := &productdto.ValidateBundleSelectionReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.ValidateBundleSelection(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgBundleValidateSuccess, res)
+}
+
+// ListBundleSKUs 可挑选的 SKU 清单（跨商品，后台配置器的下拉数据源）。
+func (h *Handle) ListBundleSKUs(c *gin.Context) {
+	req := &productdto.ListBundleSKUReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	list, err := h.svc.ListBundleSKUs(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
+}
+
+// —— 定价工具（预览 → 应用 → 台账）——
+//
+// 预览与应用的输入是同一份表单解析（readPricingForm），只是前者不落库 —— 两条路径
+// 各解析一次的话，「预览说会变成 9.9、应用后变成 10.0」这种分叉不会报错。
+//
+// 与属性 / 分类 / 品牌页同一模式：GET 渲染完整页，只用 GET/POST。三个不同之处：
+//
+//  1. **预览**（验收 4）：POST /admin/product-pricing/preview 直接把试算结果渲染回同一页
+//     （200，不是提示页）—— 预览必须能看到明细，而明细只在这一次响应里；
+//     表单值原样回填，用户接着点「应用调价」用的就是刚刚预览过的那份参数。
+//     它是**只读**的，所以仍是页面 POST（原生表单 + csrf_token 隐藏域）。
+//  2. **应用**（验收 3）：POST /api/product/pricing/apply 走 service 落库 + 留痕，
+//     由 ui/json_write.js 提交，成功回执含本次改动的变体数（页面上是 flash 结论行）。
+//  3. **留痕**（验收 4）：页面下半部分是调价台账，每个批次可展开看到逐变体「原价 → 新价」。
+//
+// 接口面在前，后台页面在后。
+
+// ProductPricingPage 定价工具页：规则参考表 + 改价表单 + 留痕台账。
+func (h *productPageHandle) ProductPricingPage(c *gin.Context) {
+	h.renderPricingPageWith(c, nil, nil, "")
+}
+
+// ProductPricingPreview 试算（不落库、不留痕），结果渲染回同一页。
+func (h *productPageHandle) ProductPricingPreview(c *gin.Context) {
+	form, req := readPricingForm(c)
+	preview, err := h.products.PreviewPricing(c.Request.Context(), &productdto.PricingPreviewReq{PricingRuleReq: *req})
+	if err != nil {
+		// 试算失败不重定向：用户填的表单要留在眼前，否则「哪一项填错了」无从改起。
+		// 试算失败的原文（含 PG 原文）只进日志，页面上给可读文案。
+		h.renderPricingPageWith(c, &form, nil, productErrText(c, err))
+		return
+	}
+	h.renderPricingPageWith(c, &form, preview, "")
+}
+
+// productPricingPageTemplate 定价页模板名（与「提示页出口」同处本文件）。
+const productPricingPageTemplate = "admin/product/product_pricing.html"
+
+// renderPricingPageWith 定价页的统一渲染入口（form / preview / errMsg 三者可空）。
+//
+// 取数编排（工程清单 / 规则参考表 / 改价表单初值 / 留痕台账）与视图装配都在 service 的读模型
+// （`ProductService.ProductPricingPage`）—— 这里只剩三件事：读参数、调读模型、渲染。
+//
+// form / preview / errMsg 是**写路径的产物**（试算失败要原地重渲染，把用户填的表单与试算结果
+// 带回来）。service 不认识 gin.Context，所以由这里读出来经 Req 传进去。
+func (h *productPageHandle) renderPricingPageWith(c *gin.Context, form *productdto.PricingForm, preview *productdto.PricingPreviewResp, errMsg string) {
+	// 读模型在装配期注入（见 productPageHandle.reader）：漏接 = 编译错误，
+	// 不再有「请求期断言失败 → 500 兜底」这条路径。
+	reader := h.reader
+	view, err := reader.ProductPricingPage(c.Request.Context(), &productdto.ProductPricingPageReq{
+		ProjectID: strings.TrimSpace(c.Query("project")),
+		Form:      form,
+		Preview:   preview,
+		ErrMsg:    errMsg,
+	})
+	if view == nil {
+		view = &productdto.ProductPricingPageView{
+			Title: productenums.ProductPricingTitle, Menu: "product-pricing",
+			HTTPStatus: http.StatusInternalServerError,
+		}
+	}
+	if err != nil {
+		// 契约上本页恒不返回 error（三处取数各自降级）：真出现时按失败档渲染并留日志。
+		logger.Scene("product").Error(err, "定价页取数失败")
+		view.HTTPStatus = http.StatusInternalServerError
+	}
+	// 表单 action 的 query：应用调价的提示页由 pkg/backpath 读回 —— URL 形状属 HTTP 边界。
+	view.ListQuery = productQueryFromRequest(c, productPricingBackKeys...)
+	adminui.RenderPage(c, productPricingPageTemplate, view)
+}
+
+// readPricingForm 读定价表单并归一为 service 入参。
+//
+// 规则参数只在规则类型对应的输入框里取（与标签页同一手法）：
+// 「只接受内置参数」在后台这一侧同样成立，多余输入不会进 params。
+// 数字解析失败时给空对象，由 service 给出统一的可读错误，这里不重复一套校验。
+func readPricingForm(c *gin.Context) (form productdto.PricingForm, req *productdto.PricingRuleReq) {
+	form = productdto.PricingForm{
+		ProjectID:  strings.TrimSpace(c.PostForm("projectId")),
+		RuleType:   strings.TrimSpace(c.PostForm("ruleType")),
+		Multiplier: strings.TrimSpace(c.PostForm("multiplier")),
+		Amount:     strings.TrimSpace(c.PostForm("amount")),
+		Margin:     strings.TrimSpace(c.PostForm("margin")),
+		Rounding:   strings.TrimSpace(c.PostForm("rounding")),
+		Scope:      strings.TrimSpace(c.PostForm("scope")),
+		TargetID:   strings.TrimSpace(c.PostForm("targetId")),
+		Status:     strings.TrimSpace(c.PostForm("status")),
+		Keyword:    strings.TrimSpace(c.PostForm("keyword")),
+		CategoryID: strings.TrimSpace(c.PostForm("categoryId")),
+		BrandID:    strings.TrimSpace(c.PostForm("brandId")),
+		TagID:      strings.TrimSpace(c.PostForm("tagId")),
+		Note:       strings.TrimSpace(c.PostForm("note")),
+	}
+	req = &productdto.PricingRuleReq{
+		ProjectID:  form.ProjectID,
+		RuleType:   form.RuleType,
+		Rounding:   form.Rounding,
+		Scope:      form.Scope,
+		TargetID:   form.TargetID,
+		Status:     form.Status,
+		Keyword:    form.Keyword,
+		CategoryID: form.CategoryID,
+		BrandID:    form.BrandID,
+		TagID:      form.TagID,
+		RuleParams: pricingParamsFromForm(form),
+	}
+	return form, req
+}
+
+// pricingRuleReqFromForm 读「按规则改价」表单并套上指定的作用范围。
+//
+// 两个入口共用：独立定价页（/admin/product-pricing/preview|apply，范围由表单的 scope /
+// targetId 决定）与商品列表的批量改价抽屉（逐个商品套 scope=product + 该商品 id）。
+// 规则类型、规则参数、尾数的解析只有一份（readPricingForm + pricingParamsFromForm）——
+// 抽屉若另抄一份，最先出问题的是「填了 amount 却被当成 multiplier」这类静默错配。
+func pricingRuleReqFromForm(c *gin.Context, scope, targetID string) (req *productdto.PricingRuleReq) {
+	_, req = readPricingForm(c)
+	req.Scope = scope
+	req.TargetID = targetID
+	return req
+}
+
+// pricingParamsFromForm 按规则类型从表单拼规则参数（只取本类型用得到的键）。
+func pricingParamsFromForm(form productdto.PricingForm) json.RawMessage {
+	params := map[string]any{}
+	switch form.RuleType {
+	case productenums.PricingRuleCostMultiple:
+		// 空串 = 本次不给这个参数（与既有的「非空才解析」前置判据同义）；非法数字**不给键** ——
+		// service 会统一报「参数缺失或不是数字」，这里不重复一套校验（见函数头注释）。
+		// NaN / 正负无穷归入非法：它们进了算价会得到一整批 NaN 价格。
+		if v, err := productdto.OptFloat("multiplier", form.Multiplier); err == nil && v != nil {
+			params["multiplier"] = *v
+		}
+	case productenums.PricingRuleCostMarkup, productenums.PricingRuleFixedPrice:
+		if v, err := productdto.OptFloat("amount", form.Amount); err == nil && v != nil {
+			params["amount"] = *v
+		}
+	case productenums.PricingRuleTargetMargin:
+		if v, err := productdto.OptFloat("margin", form.Margin); err == nil && v != nil {
+			params["margin"] = *v
+		}
+	}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return raw
+}
+
+// ==========================================================================
+// 定价接口：JSON 入参、pkg/response 出参、消息取 enums。
+// 本层只做绑定、覆盖操作人与转发：规则校验、算价、落库与留痕一律在 service。
+// ==========================================================================
+// ListPricingRuleTypes 内置定价规则类型清单（后台下拉与参数说明的唯一来源）。
+func (h *Handle) ListPricingRuleTypes(c *gin.Context) {
+	response.SuccessWithMessage(c, productenums.MsgListSuccess, h.svc.ListPricingRuleTypes(c.Request.Context()))
+}
+
+// ListPricingRoundingOptions 尾数处理清单。
+func (h *Handle) ListPricingRoundingOptions(c *gin.Context) {
+	response.SuccessWithMessage(c, productenums.MsgListSuccess, h.svc.ListPricingRoundingOptions(c.Request.Context()))
+}
+
+// PreviewPricing 按规则试算（不落库、不留痕）。
+func (h *Handle) PreviewPricing(c *gin.Context) {
+	req := &productdto.PricingPreviewReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.PreviewPricing(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgPricingPreviewSuccess, res)
+}
+
+// ApplyPricing 应用调价（POST /api/product/pricing/apply）：算价 → 写回 product_variants.price
+// → 留痕（同一事务）→ 顺带重算自动标签。
+//
+// 入参**平铺**（ruleType / multiplier / amount / margin / rounding / scope / …），不套
+// ruleParams 子对象：页面表单本来就是平铺的（partials/pricing_rule_fields.html），而
+// 「哪个规则用哪个参数」的判定只有 pricingParamsFromForm 一份 —— 在这里另写一套装配，
+// 就会出现「填了 amount 却被当成 multiplier」这类只在一个入口发生的静默错配
+// （与 BulkPricing 同一条理由）。
+//
+// 页面调用它时提交的字符串值也说明了为什么不能直接用 PricingApplyReq：
+// ruleParams 是 json.RawMessage，DOM 里只有字符串，{"multiplier":"1.2"} 会被
+// ruleFloat 当成 "1.2" 去 ParseFloat（带引号）而判成「不是数字」。
+func (h *Handle) ApplyPricing(c *gin.Context) {
+	req := &productPricingApplyReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	form := productdto.PricingForm{
+		ProjectID:  req.ProjectID,
+		RuleType:   req.RuleType,
+		Multiplier: req.Multiplier,
+		Amount:     req.Amount,
+		Margin:     req.Margin,
+		Rounding:   req.Rounding,
+		Scope:      req.Scope,
+		TargetID:   req.TargetID,
+		Status:     req.Status,
+		Keyword:    req.Keyword,
+		CategoryID: req.CategoryID,
+		BrandID:    req.BrandID,
+		TagID:      req.TagID,
+		Note:       req.Note,
+	}
+	res, err := h.svc.ApplyPricing(c.Request.Context(), &productdto.PricingApplyReq{
+		PricingRuleReq: productdto.PricingRuleReq{
+			ProjectID: req.ProjectID, RuleType: req.RuleType, Rounding: req.Rounding,
+			Scope: req.Scope, TargetID: req.TargetID,
+			Status: req.Status, Keyword: req.Keyword, CategoryID: req.CategoryID,
+			BrandID: req.BrandID, TagID: req.TagID,
+			RuleParams: pricingParamsFromForm(form),
+		},
+		Note: strings.TrimSpace(req.Note),
+		// 操作人取自会话，客户端传什么都不作数（留痕的操作人不可伪造）。
+		OperatorID: operatorFromContext(c),
+	})
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	// 回执沿用页面原本那句话（「本次改动 N 个变体，明细见下方留痕台账」）：三段拼一句
+	// （前缀 + 计数 + 后缀）—— 两条词条还是两段式，收成一条 %s 整句要改 seed。
+	tr := shell.TranslateFor(c)
+	response.SuccessWithMessage(c, tr(productenums.ProductPricingAppliedLead, "已应用调价：本次改动 ")+
+		strconv.Itoa(res.ChangedCount)+tr(productenums.ProductPricingAppliedTail, " 个变体，明细见下方留痕台账。"))
+}
+
+// productPricingApplyReq 定价页应用调价的 JSON 入参（规则字段平铺，理由见 ApplyPricing）。
+//
+// 与 productBulkPricingReq 刻意分成两个类型：那个带 ids 且 scope/targetId 由 service
+// 逐商品覆盖，这个由表单的 scope/targetId 决定范围。合成一个会让批量入口悄悄接受
+// 「scope=filter」这种它并不支持的形状（值被忽略，用户以为生效了）。
+type productPricingApplyReq struct {
+	ProjectID  string `json:"projectId"`
+	Note       string `json:"note"`
+	RuleType   string `json:"ruleType"`
+	Multiplier string `json:"multiplier"`
+	Amount     string `json:"amount"`
+	Margin     string `json:"margin"`
+	Rounding   string `json:"rounding"`
+	Scope      string `json:"scope"`
+	TargetID   string `json:"targetId"`
+	Status     string `json:"status"`
+	Keyword    string `json:"keyword"`
+	CategoryID string `json:"categoryId"`
+	BrandID    string `json:"brandId"`
+	TagID      string `json:"tagId"`
+}
+
+// BulkPricing 批量「按规则改价」（POST /api/product/bulk-pricing）。
+//
+// 权限点独立（product:bulk_pricing）：一个权限点只能绑一条 API 路由（sys_permission 上
+// permission_code 唯一），复用 product:update 会让其中一条路径拿不到策略而 403。
+//
+// 规则参数**平铺在顶层**（ruleType / multiplier / amount / margin / rounding），不套一层 rule
+// 对象：页面表单本来就是一个平铺表单（pricing_rule_fields.html），而「哪个规则用哪个参数」的
+// 判定全在 pricingParamsFromForm —— 在这里另写一套装配，就会出现「抽屉填的 amount 被当成
+// multiplier」这类只在一个入口发生的错。
+func (h *Handle) BulkPricing(c *gin.Context) {
+	req := &productBulkPricingReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	// 归一口径与其余批量端点同一个纯函数：去空白 / 去重 / 上限 MaxIDs，超限整批拒绝
+	//（回执带「上限 / 本次条数」两个数字，见 productBulkIDs）。
+	ids, ok := productBulkIDs(c, req.IDs)
+	if !ok {
+		return
+	}
+	// 没勾选就提交：明确拒绝，不是「0 个改动」的成功回执。页面侧原有这条守卫，随页面 POST
+	// 一起消失 —— 判据搬到这里，否则删掉页面通道后「空勾选静默成功」就没人拦了。
+	if len(ids) == 0 {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productMsgText(c, productMsg{
+			Key: productenums.BulkPricingNoneSelected, Fallback: "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"}))
+		return
+	}
+	form := productdto.PricingForm{
+		ProjectID:  req.ProjectID,
+		RuleType:   req.RuleType,
+		Multiplier: req.Multiplier,
+		Amount:     req.Amount,
+		Margin:     req.Margin,
+		Rounding:   req.Rounding,
+		Note:       req.Note,
+	}
+	res, err := h.svc.BulkApplyPricing(c.Request.Context(), &productdto.BulkPricingReq{
+		IDs:        ids,
+		ProjectID:  req.ProjectID,
+		Note:       req.Note,
+		OperatorID: operatorFromContext(c),
+		Rule: productdto.PricingRuleReq{
+			ProjectID:  req.ProjectID,
+			RuleType:   req.RuleType,
+			Rounding:   req.Rounding,
+			Scope:      productenums.PricingScopeProduct,
+			RuleParams: pricingParamsFromForm(form),
+		},
+	})
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgPricingApplySuccess, productBulkPricedView(c, res))
+}
+
+// productBulkPricingReq 批量改价的 JSON 入参（规则字段平铺，理由见 BulkPricing）。
+type productBulkPricingReq struct {
+	IDs        []string `json:"ids"`
+	ProjectID  string   `json:"projectId"`
+	Note       string   `json:"note"`
+	RuleType   string   `json:"ruleType"`
+	Multiplier string   `json:"multiplier"`
+	Amount     string   `json:"amount"`
+	Margin     string   `json:"margin"`
+	Rounding   string   `json:"rounding"`
+}
+
+// productBulkPricedView 批量改价的回执。
+//
+// 成功键是 updated 而不是 deleted：json_write.js 的 okKeyOf 按 outcome=update 读
+// data.updated —— 「它被改过了」与「把它从列表里删掉」不是同一件事（基座据此决定要不要
+// 把行从表格里移除；改价后商品还在，移掉会让人以为商品没了）。
+type productBulkPricingView struct {
+	Updated int                   `json:"updated"`
+	Changed int                   `json:"changedVariants"`
+	Skipped int                   `json:"skipped"`
+	Items   []productBulkItemView `json:"items"`
+}
+
+// productBulkPricedView 把 service 的计数 + 业务 key 转成基座要的形状（与删除那一份同源，
+// 只是成功键不同）。
+func productBulkPricedView(c *gin.Context, res *productdto.BulkPricingResult) productBulkPricingView {
+	view := productBulkPricingView{
+		Updated: res.Succeeded,
+		Changed: res.ChangedVariants,
+		Skipped: res.NotDone(),
+		Items:   make([]productBulkItemView, 0, len(res.Items)),
+	}
+	for _, it := range res.Items {
+		row := productBulkItemView{ID: it.ID, Updated: it.Updated}
+		if !it.Updated && it.ReasonKey != "" {
+			row.Message = productErrText(c, errors.New(it.ReasonKey))
+		}
+		view.Items = append(view.Items, row)
+	}
+	return view
+}
+
+// ListPriceAdjustments 调价留痕列表（按工程）。
+func (h *Handle) ListPriceAdjustments(c *gin.Context) {
+	req := &productdto.ListPriceAdjustmentReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	list, err := h.svc.ListPriceAdjustments(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
+}
+
+// GetPriceAdjustment 单批次留痕详情（含逐变体「原价 → 新价」明细）。
+func (h *Handle) GetPriceAdjustment(c *gin.Context) {
+	req := &productdto.GetPriceAdjustmentReq{}
+	if err := c.ShouldBindQuery(req); err != nil {
+		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+		return
+	}
+	res, err := h.svc.GetPriceAdjustment(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, http.StatusNotFound, "product", err)
+		return
+	}
+	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
 }
