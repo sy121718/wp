@@ -1,14 +1,15 @@
 package commentenums
 
-// comment_enums_test.go — 对外文案白名单（CommentFacingMessages）与 enums 常量的逐条对账。
+// comment_enums_test.go — 业务错误的**声明处兜底**与 enums 常量的逐条对账。
 //
-// 为什么要这条测试：白名单是 handler 归口助手（inbound/http/comment_err.go）与
-// 契约出口（service.FacingText）共同的判据 —— **漏写一条**的后果是「该业务错误在页面上
-// 显示成一句通用提示」：功能不算坏，但没人会发现，而新增业务文案恰恰是每次改需求都会发生的事；
-// **多写一条**没有后果。所以把「本包有多少条对外错误文案常量」与「白名单里有几条」绑在一起：
-// 新增一条 Err* 却忘了进白名单，这里直接变红。
+// 判据：本包每个 Err* 常量都必须在 errFallbacks 里配一句中文，且表里不允许有已删常量的
+// 残留。理由是可运营性：兜底跟着 key 住同一个包，加一条业务错误 = 加常量 + 加一句话；
+// 忘了一句话的症状是「页面 / 接口上出现裸 key」，不报错、不记日志，只有肉眼能发现。
 //
-// 纯 AST 解析，不依赖数据库 / 装配，毫秒级。形态照 membership/enums 的同名测试。
+// 原先的白名单 CommentFacingMessages 已删除（那是第二份真相）。判据只剩一份：
+// pkg/facing.IsBusinessKey / FactOf。
+//
+// 纯 AST 解析，不依赖数据库 / 装配，毫秒级。
 //
 // 另外两条钉住「清单类断言」：
 //   - 状态白名单与四个常量一一对应（它是**封闭**的：状态机由本模块独占）；
@@ -18,6 +19,7 @@ package commentenums
 //     所以这里钉住 Go 侧的值本身，注释指向迁移行号。
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -25,28 +27,24 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"go_wp/pkg/facing"
 )
 
-// messageExclusions 不进白名单的常量 → 理由（必须写明；这张表本身也要能被审计）。
+// fallbackExclusions 不需要兜底的常量 → 理由（必须写明；这张表本身也要能被审计）。
 //
-// 成功回执（Msg*）不进白名单：白名单的语义是「未命中就记日志 + 归口」，
+// 成功回执（Msg*）不进兜底表：兜底表的语义是「业务错误在词条缺失时显示什么」，
 // 而 Msg* 永远不会作为错误响应返回（它们在 response.SuccessWithMessage 那一侧）。
-var messageExclusions = map[string]string{
+var fallbackExclusions = map[string]string{
 	"MsgSubmitPending":  "成功回执：永远不作为错误响应返回",
 	"MsgReviewApproved": "成功回执：永远不作为错误响应返回",
 	"MsgReviewRejected": "成功回执：永远不作为错误响应返回",
 	"MsgPageTitle":      "展示词条（页面标题与菜单标题共用）：只进模板与 sys_menus，不作为响应消息返回",
-	"ErrInternal":       "归口文案本身：它是未命中白名单时的返回值，不是业务文案",
 }
 
-// TestCommentFacingMessagesCoverAllEnums 本包每个 Err* 常量都必须落在白名单里
-// （或在 messageExclusions 里写明理由），且白名单里的值都必须真的是一条常量。
-func TestCommentFacingMessagesCoverAllEnums(t *testing.T) {
-	inWhitelist := make(map[string]bool, len(CommentFacingMessages))
-	for _, v := range CommentFacingMessages {
-		inWhitelist[v] = true
-	}
-
+// TestErrFallbacksCoverAllEnums 本包每个 Err* 常量都必须有中文兜底
+// （或在 fallbackExclusions 里写明理由），且兜底表里没有死条目。
+func TestErrFallbacksCoverAllEnums(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatalf("枚举本包源文件失败: %v", err)
@@ -88,27 +86,29 @@ func TestCommentFacingMessagesCoverAllEnums(t *testing.T) {
 					if uerr != nil {
 						t.Fatalf("%s 的 %s 取值失败: %v", file, name.Name, uerr)
 					}
-					checked++
 					declared[value] = name.Name
-					if inWhitelist[value] {
+					if !strings.HasPrefix(name.Name, "Err") {
 						continue
 					}
-					if _, ok := messageExclusions[name.Name]; ok {
+					if _, ok := fallbackExclusions[name.Name]; ok {
 						continue
 					}
-					t.Errorf("%s = %q 既不在 CommentFacingMessages 里，也没有在 messageExclusions 写明理由", name.Name, value)
+					checked++
+					if strings.TrimSpace(errFallbacks[value]) == "" {
+						t.Errorf("%s = %q 没有中文兜底（在 errFallbacks 里加一句，或在 fallbackExclusions 写明理由）", name.Name, value)
+					}
 				}
 			}
 		}
 	}
 	if checked == 0 {
-		t.Fatal("没有扫到任何 Err* / Msg* 常量：判据失效（源码结构变了？）")
+		t.Fatal("没有扫到任何 Err* 常量：判据失效（源码结构变了？）")
 	}
-	// 反向：白名单里的每一条都必须对应一条真实常量（防错别字 —— 写错一个字符的白名单条目
-	// 不会命中任何错误，于是那条业务文案永远走归口分支，且没有任何迹象）。
-	for _, v := range CommentFacingMessages {
-		if _, ok := declared[v]; !ok {
-			t.Errorf("白名单里的 %q 不对应本包任何 Err* / Msg* 常量（拼写错误？）", v)
+	// 反向：兜底表里的每一条都必须对应一条真实常量（防残留 —— 删了常量却没删兜底，
+	// 下一个人会以为那条错误还在用）。
+	for key := range errFallbacks {
+		if _, ok := declared[key]; !ok {
+			t.Errorf("errFallbacks 里的 %q 不对应本包任何常量（已删除？拼写错误？）", key)
 		}
 	}
 }
@@ -160,21 +160,19 @@ func TestBodyLimitMatchesMigrationCheck(t *testing.T) {
 	}
 }
 
-// TestHitFacingMessageIsExactMatch 白名单判定只认整串相等（防「拼过的串混进来」）。
-func TestHitFacingMessageIsExactMatch(t *testing.T) {
-	if _, ok := HitFacingMessage(ErrRateLimited); !ok {
-		t.Fatal("白名单里的值必须命中")
+// TestErrCarriesFallbackAndKey Err(key) 产出的错误同时带 key 与中文兜底
+// （判据 pkg/facing.FactOf 的两半），且 errors.Is 仍然认得它。
+func TestErrCarriesFallbackAndKey(t *testing.T) {
+	err := Err(ErrRateLimited)
+	if err.Error() != ErrRateLimited {
+		t.Fatalf("Err(%q).Error() = %q，want 原 key", ErrRateLimited, err.Error())
 	}
-	// 带前缀 / 后缀的串**不该**命中：命中白名单意味着「可以原样展示给前端」，
-	// 而拼过的串可能夹带内部细节（CQ-010 的教训）。
-	for _, bad := range []string{
-		ErrRateLimited + "：user 1024",
-		"prefix " + ErrRateLimited,
-		`pq: relation "comments" does not exist`,
-		"",
-	} {
-		if _, ok := HitFacingMessage(bad); ok {
-			t.Errorf("%q 不该命中白名单", bad)
-		}
+	fact, ok := facing.FactOf(err)
+	if !ok || !fact.Business || fact.Key != ErrRateLimited || fact.Fallback == "" {
+		t.Fatalf("FactOf 应给出业务事实（key + 中文兜底），实际 %+v ok=%v", fact, ok)
+	}
+	// 非业务错误不该被当成业务错误（否则内部细节会被当作文案透出 —— CQ-010 的教训）。
+	if _, ok := facing.FactOf(errors.New("pq: relation comments does not exist")); ok {
+		t.Fatal("内部错误不该被判成业务事实")
 	}
 }

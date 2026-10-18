@@ -19,9 +19,10 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 
-	"go_wp/internal/middleware/builtin"
-
 	"github.com/gin-gonic/gin"
+
+	"go_wp/internal/middleware/builtin"
+	"go_wp/pkg/facing"
 
 	commentcontract "go_wp/internal/module/comment/contract"
 	commentdto "go_wp/internal/module/comment/dto"
@@ -45,7 +46,7 @@ func (h *Handle) AdminList(c *gin.Context) {
 	}
 	res, err := h.svc.AdminList(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, commentErrStatus(err), commentErrText(c, err))
+		commentFail(c, err)
 		return
 	}
 	response.Success(c, res)
@@ -63,13 +64,31 @@ func (h *Handle) Review(c *gin.Context) {
 	req.ReviewerID = builtin.CurrentUserID(c)
 	res, err := h.svc.Review(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, commentErrStatus(err), commentErrText(c, err))
+		commentFail(c, err)
 		return
 	}
 	// 回执带服务端实际受影响条数；零行同样是成功回执，不推断未匹配的原因。
 	c.JSON(http.StatusOK, response.Response{
 		Code: http.StatusOK, Message: commentReviewMessage(c, res), Data: res,
 	})
+}
+
+// commentFail JSON 接口的失败出口（文案与状态码都只有这一处判定）。
+//
+// 文案走 response.MessageOf：业务错误按 key + 声明处兜底取词，其余归口并把原文写进日志。
+// 状态码分两档：评论能力未接入给 503（运维要看的是「配置没接上」，不是「你参数错了」），
+// 其余业务拒绝 400、内部错误 500。
+func commentFail(c *gin.Context, err error) {
+	status := http.StatusInternalServerError
+	fact, business := facing.FactOf(err)
+	switch {
+	case business && fact.Key == commentenums.ErrUnavailable:
+		// 评论能力未接入（配置缺失）：503 让运维一眼看出是「服务没准备好」。
+		status = http.StatusServiceUnavailable
+	case business:
+		status = http.StatusBadRequest
+	}
+	response.ErrorWithMessage(c, status, response.MessageOf(c, "comment", err))
 }
 
 // commentReviewMessage 只填后端确认的受影响条数；词条限定为单个 %d。

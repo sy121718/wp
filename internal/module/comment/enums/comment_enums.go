@@ -22,14 +22,15 @@
 // 与它的形状约束（长度上限），不抄一份取值表 —— 两份真源必然漂移
 // （AGENTS.md §数据库：白名单由拥有该表的实体声明；同型先例 pkg/datarule）。
 //
-// # 错误文案三件套
+// # 业务错误的文案
 //
-//   - ① 白名单：CommentFacingMessages（与下面的 Err* 常量一一对应，AST 对账测试钉住）；
-//   - ② 归口文案：ErrInternal（未命中时返回的可翻译 key）；
-//   - ③ 结构化日志：原文只进日志（见 inbound/http 的 comment_err.go）。
+// 兜底跟着**声明处**走：每个 Err* 常量在 errFallbacks 里配一句中文，service 用
+// Err(key) 产出错误（pkg/facing.New），出口只调一次共享判据 pkg/facing.FactOf。
+// 原先的白名单 CommentFacingMessages / HitFacingMessage 已删除 —— 那是第二份真相：
+// service 换措辞、或某个 key 改由别处产生时就静默失配。
 package commentenums
 
-import "strings"
+import "go_wp/pkg/facing"
 
 // —— 审核状态（与迁移 466 的 ck_comments_status 一一对应）——
 
@@ -161,10 +162,6 @@ const (
 	ErrNothingSelected = "comment.err.nothingSelected"
 	// ErrParentInvalid 回复目标不合法（不存在 / 不属于同一实体）。
 	ErrParentInvalid = "comment.err.parentInvalid"
-	// ErrInternal 未归类的内部错误（SQL / 表名 / 约束名等）对外归口文案。
-	//
-	// 值带模块前缀（点分）：裸 "ErrInternal" 已被 admin 批占用（迁移 268）。
-	ErrInternal = "comment.err.internal"
 )
 
 // 成功回执（同样是 i18n key）。
@@ -177,33 +174,32 @@ const (
 	MsgReviewRejected = "comment.msg.reviewRejected"
 )
 
-// CommentFacingMessages 可以原样展示给前端的评论业务文案（**白名单**）。
+// errFallbacks 业务错误的中文兜底（key → 一句完整的话）。
 //
-// 命中 → 原样透出（前端据此提示「这个类型的评论不支持」「评论太长了」「发太快了」）；
-// 未命中 → inbound/http 的 commentErrText 记结构化日志并返回 ErrInternal。
-// 方向是安全的：漏写一条只会让前端看到一句通用提示（一眼可见），
-// 而不会把 service 上抛的 PostgreSQL 原文（表名 / 约束名 / SQLSTATE）透出去。
-//
-// ErrInternal 本身不进白名单：它是未命中时的返回值，不是业务文案。
-// Msg* 也不进：它们是成功回执，永远不会作为错误响应返回（对账测试里逐条写明理由）。
-var CommentFacingMessages = []string{
-	ErrInvalidParam, ErrProjectRequired, ErrEntityTypeUnknown, ErrEntityIDInvalid,
-	ErrBodyRequired, ErrBodyTooLong, ErrRateLimited, ErrNotAllowed, ErrLoginRequired,
-	ErrCSRFRequired, ErrUnavailable, ErrNothingSelected, ErrParentInvalid,
+// 出口取词时按请求语言查 sys_i18n；查不到就用这里这句 —— 新装库尚未 seed 时页面
+// 也不能显示裸 key（运营只会以为后台坏了）。对账测试见 comment_enums_test.go：
+// Err* 常量没有兜底会变红，表里留下已删常量的死条目同样变红。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:      "参数不合法：请检查后重试。",
+	ErrProjectRequired:   "缺少工程：评论必须归属某个工程。",
+	ErrEntityTypeUnknown: "不支持这个评论对象类型。",
+	ErrEntityIDInvalid:   "评论对象不存在或标识不合法。",
+	ErrBodyRequired:      "评论内容不能为空。",
+	ErrBodyTooLong:       "评论太长了：请精简后再提交。",
+	ErrRateLimited:       "发得太快了：请稍后再试。",
+	ErrNotAllowed:        "当前不满足这条内容的评论条件。",
+	ErrLoginRequired:     "请先登录再发表评论。",
+	ErrCSRFRequired:      "页面已过期：请刷新后重试。",
+	ErrUnavailable:       "评论服务暂不可用：请联系管理员检查配置。",
+	ErrNothingSelected:   "请先勾选要审核的评论。",
+	ErrParentInvalid:     "回复的上级评论不存在或不属于同一条内容。",
 }
 
-// HitFacingMessage 判断一条错误文案是否命中白名单（整串相等）。
+// Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。
 //
-// 只做**整串相等**判定，不像 membership 那样支持 `key|param` / `key：定位` 两种附加形态：
-// 评论的业务错误不带定位信息（哪条评论被拒是日志的事，页面上不需要逐条回带）。
-func HitFacingMessage(msg string) (string, bool) {
-	msg = strings.TrimSpace(msg)
-	for _, m := range CommentFacingMessages {
-		if msg == m {
-			return msg, true
-		}
-	}
-	return "", false
+// 复合场景用 fmt.Errorf("%w：%s", Err(key), 明细)：判据按冒号切出明细段。
+func Err(key string) error {
+	return facing.New(key, errFallbacks[key])
 }
 
 // LabelPair 一组展示名取值：i18n key + 中文兜底。

@@ -24,6 +24,7 @@ import (
 	commentdto "go_wp/internal/module/comment/dto"
 	commentenums "go_wp/internal/module/comment/enums"
 	commentmodel "go_wp/internal/module/comment/model"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
@@ -143,12 +144,16 @@ func (s *Service) FacingText(lang string, err error) string {
 		}
 		return i18n.Translate(key, fallback, lang)
 	}
-	msg := err.Error()
-	if _, ok := commentenums.HitFacingMessage(msg); ok {
-		return i18n.Translate(msg, msg, lang)
+	// 业务错误的判据只有一份（pkg/facing.FactOf）：命中就按 key 取词、兜底用声明处那句；
+	// 未命中走下面的归口（原文只进日志）。
+	if fact, ok := facing.FactOf(err); ok && fact.Business {
+		return i18n.Translate(fact.Key, fact.Fallback, lang)
 	}
 	logger.Scene(errScene).Error(err, "comment 契约出口遇到未归类的错误（原文只进日志）")
-	return i18n.Translate(commentenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）", lang)
+	// 归口词条：这里给的是契约消费方（工作台 / 片段）能直接显示的最后一句话。
+	// key 只在本处使用，不再往 enums 里放常量 —— 放常量就会有人把它当业务错误返回，
+	// 而那会把「判定失败」这个故障说成参数问题（见 service/comment.go 的 policy 分支）。
+	return i18n.Translate("comment.err.internal", "操作失败，请稍后重试（细节只进日志）", lang)
 }
 
 // —— 内部：校验 ——
@@ -255,12 +260,7 @@ func normalizePaging(page, pageSize int) (int, int) {
 
 // errParam 构造一条**可展示**的业务错误（值即 enums 的 key）。
 //
-// 形态约定：白名单命中靠**整串相等**（见 enums.HitFacingMessage），
-// 所以业务错误一律用 errors.New(key)，不要 fmt.Errorf 拼上下文 ——
-// 拼过的串不再等于 key，会被归口成「系统内部错误」（CQ-010 的教训）。
-func errParam(key string) error { return &facingError{key: key} }
-
-// facingError 可对外的业务错误（值是一条命中白名单的 key）。
-type facingError struct{ key string }
-
-func (e *facingError) Error() string { return e.key }
+// 兜底绑在声明处（enums.Err）：出口经 pkg/facing.FactOf 同时拿到 key 与中文原文，
+// 不再查任何白名单。加明细用 fmt.Errorf("%w：%s", errParam(key), 明细) —— 判据按冒号
+// 切出明细段；直接拼成一条新串会让它退化成「系统内部错误」（CQ-010 的教训）。
+func errParam(key string) error { return commentenums.Err(key) }

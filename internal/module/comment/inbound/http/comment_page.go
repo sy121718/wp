@@ -134,7 +134,7 @@ func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 	projects, loadErr := h.listProjects(ctx)
 	if loadErr != nil {
 		data.Rows = []commentRow{}
-		data.LoadErr = commentErrPageText(c, loadErr)
+		data.LoadErr = response.MessageOf(c, "comment", loadErr)
 		h.render(c, data)
 		return
 	}
@@ -168,7 +168,7 @@ func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 	})
 	if listErr != nil {
 		if data.LoadErr == "" {
-			data.LoadErr = commentErrPageText(c, listErr)
+			data.LoadErr = response.MessageOf(c, "comment", listErr)
 		}
 		data.Rows = []commentRow{}
 		h.render(c, data)

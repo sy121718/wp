@@ -74,6 +74,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -361,7 +362,9 @@ func (s *Service) checkPolicy(ctx context.Context, req *commentdto.SubmitReq) er
 			With("entity_type", req.EntityType).
 			With("entity_id", req.EntityID).
 			Error(err, "评论差异化规则判定失败（端口实现报错）")
-		return errParam(commentenums.ErrInternal)
+		// 用**非业务**包装上抛：判定失败是故障而不是「不允许」，出口据此给 500 + 归口文案，
+		// 原文只进日志。返回一条业务 key 会让它变成一个可展示的 400，把故障说成参数问题。
+		return fmt.Errorf("评论差异化规则判定失败: %w", err)
 	}
 	if denial != nil {
 		// 拒绝文案由**消费方**给出（它的实体、它的措辞）：这里只搬运，

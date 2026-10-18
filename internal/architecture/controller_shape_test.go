@@ -36,7 +36,6 @@ var pendingControllerFiles = map[string]bool{
 	"internal/module/analytics/inbound/http/analytics_page.go":                true,
 	"internal/module/block/inbound/http/block_err.go":                         true,
 	"internal/module/block/inbound/http/block_page.go":                        true,
-	"internal/module/comment/inbound/http/comment_err.go":                     true,
 	"internal/module/comment/inbound/http/comment_page.go":                    true,
 	"internal/module/content/inbound/http/content_err.go":                     true,
 	"internal/module/content/inbound/http/content_page.go":                    true,
