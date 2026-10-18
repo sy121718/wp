@@ -107,22 +107,7 @@ type ProductListPageResp struct {
 	Roundings  []*PricingRoundingOptionResp
 	Products   []ProductRowResp
 	Pagination pagination.Page
-
-	// LoadFailed 本次请求**没读到**（不是「读到了、只是空的」）；LoadError 由控制器
-	// 按当前语言归口后填。
-	LoadFailed bool
-	LoadError  string
-
-	// HTTPStatus 这一屏的档位：200 读到 / 400 参数不合法 / 500 主数据没读到（导出理由同
-	// ProductNewPageResp.HTTPStatus）。
-	HTTPStatus int
 }
-
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductListPageResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
-func (v ProductListPageResp) PageNoStore() bool { return v.LoadFailed }
 
 // StatusOptionResp 状态下拉的一项（值 + 词条 key + 是否选中）。
 //

@@ -37,6 +37,7 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
+	json "go_wp/pkg/jsonx"
 )
 
 // productPageLayoutData 补齐 layout 需要的键（与线上 adminui.Prepare 注入的一致）。
@@ -354,7 +355,6 @@ func productListPageViewStub(mutate func(*productdto.ProductListPageResp)) *prod
 		Tags:                []*productdto.TagResp{},
 		Rules:               []*productdto.PricingRuleTypeResp{},
 		Roundings:           []*productdto.PricingRoundingOptionResp{},
-		HTTPStatus:          http.StatusOK,
 	}
 	if mutate != nil {
 		mutate(v)
@@ -528,6 +528,41 @@ var productPageLeakMarkers = []string{
 }
 
 // assertProductPageFailure 断言「整页失败出口」的形状（500 / 400 / 404 三档共用）。
+// assertProductJSONFailure 页面 GET 失败的唯一形状：{code,message,data} + 真实状态码。
+//
+// 页面失败不再渲染「同一页 + 失败槽」——模板里没有失败分支，出口是 adminui.Page 的
+// JSON 分支（业务错误 400 / 其余 500）。判据三件：状态码、Content-Type、message 文案；
+// 另外钉住两件不该出现的：HTML 页壳与驱动原文。
+func assertProductJSONFailure(t *testing.T, step string, rec *httptest.ResponseRecorder, wantStatus int, wantText string) string {
+	t.Helper()
+	body := rec.Body.String()
+	if rec.Code != wantStatus {
+		t.Fatalf("%s：状态码应为 %d，实际 %d，body=%s", step, wantStatus, rec.Code, headOf(body))
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("%s：失败出口必须是 JSON，Content-Type=%q", step, ct)
+	}
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatalf("%s：body 不是 {code,message,data}：%v，body=%s", step, err, headOf(body))
+	}
+	if !strings.Contains(resp.Message, wantText) {
+		t.Fatalf("%s：message 应含 %q，实际 %q", step, wantText, resp.Message)
+	}
+	if strings.Contains(body, "<html") {
+		t.Fatalf("%s：失败出口不该是页面，body=%s", step, headOf(body))
+	}
+	for _, bad := range []string{"pq:", "SQLSTATE", "does not exist", "duplicate key", "constraint", "relation ", "LoadError", "LoadFailed"} {
+		if strings.Contains(body, bad) {
+			t.Fatalf("%s：报文里出现了不该出现的内容 %q，body=%s", step, bad, headOf(body))
+		}
+	}
+	return body
+}
+
 func assertProductPageFailure(t *testing.T, step string, rec *httptest.ResponseRecorder, wantStatus int, wantText string) string {
 	t.Helper()
 	body := rec.Body.String()
@@ -572,24 +607,14 @@ func headOf(body string) string {
 //
 // 列表页的取数编排已下沉到 service（读模型）：这里验的是**控制器**拿失败视图之后的出口
 // （档位 / no-store / 同页形状），取数失败本身的判据在 service 的用例里。
-func TestProductsPageLoadFailureRendersSamePage(t *testing.T) {
-	h := &ProductPageHandle{
-		products: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
-				v.HTTPStatus = http.StatusInternalServerError
-				v.LoadFailed = true
-			}),
-			listErr: errors.New(`pq: relation "products" does not exist`),
-		}, reader: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
-				v.HTTPStatus = http.StatusInternalServerError
-				v.LoadFailed = true
-			}),
-			listErr: errors.New(`pq: relation "products" does not exist`),
-		},
+func TestProductsPageLoadFailureIsJSON(t *testing.T) {
+	reader := &productPageReaderStub{
+		listView: productListPageViewStub(nil),
+		listErr:  errors.New(`pq: relation "products" does not exist`),
 	}
+	h := &ProductPageHandle{products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products")
-	assertProductPageFailure(t, "列表页主数据失败", rec, http.StatusInternalServerError, "这一页的数据没能读出来")
+	assertProductJSONFailure(t, "列表页主数据失败", rec, http.StatusInternalServerError, "内部错误")
 }
 
 // TestProductsPageBadProjectParamIsFullPage 参数级失败：整页 + 400（不是 JSON，也不是裸文本）。
@@ -598,23 +623,13 @@ func TestProductsPageLoadFailureRendersSamePage(t *testing.T) {
 // 「工程是空的」，运营照着这句话去建商品，就建到另一个工程上了。
 // 档位由读模型带出（service 判「工程不存在」= 400），控制器只把它交给渲染出口。
 func TestProductsPageBadProjectParamIsFullPage(t *testing.T) {
-	h := &ProductPageHandle{
-		products: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
-				v.HTTPStatus = http.StatusBadRequest
-				v.LoadFailed = true
-			}),
-			listErr: productenums.Err(productenums.ErrInvalidParam),
-		}, reader: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
-				v.HTTPStatus = http.StatusBadRequest
-				v.LoadFailed = true
-			}),
-			listErr: productenums.Err(productenums.ErrInvalidParam),
-		},
+	reader := &productPageReaderStub{
+		listView: productListPageViewStub(nil),
+		listErr:  productenums.Err(productenums.ErrInvalidParam),
 	}
+	h := &ProductPageHandle{products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products?project=does-not-exist")
-	assertProductPageFailure(t, "列表页工程参数不合法", rec, http.StatusBadRequest, "请求参数无效")
+	assertProductJSONFailure(t, "列表页工程参数不合法", rec, http.StatusBadRequest, "请求参数无效")
 }
 
 // TestProductsPageRowDetailFailureIsNotSwallowed 单个商品详情读不出来：整页失败，不静默少一行。
@@ -624,25 +639,13 @@ func TestProductsPageBadProjectParamIsFullPage(t *testing.T) {
 // 判据现在在 service 侧（逐行取详情失败即整页失败，见 service.ProductListPage），
 // 控制器这一层验的是它透出来的档位。
 func TestProductsPageRowDetailFailureIsNotSwallowed(t *testing.T) {
-	h := &ProductPageHandle{
-		products: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
-				v.Total = 1
-				v.HTTPStatus = http.StatusInternalServerError
-				v.LoadFailed = true
-			}),
-			listErr: errors.New(`pq: canceling statement due to statement timeout`),
-		}, reader: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
-				v.Total = 1
-				v.HTTPStatus = http.StatusInternalServerError
-				v.LoadFailed = true
-			}),
-			listErr: errors.New(`pq: canceling statement due to statement timeout`),
-		},
+	reader := &productPageReaderStub{
+		listView: productListPageViewStub(func(v *productdto.ProductListPageResp) { v.Total = 1 }),
+		listErr:  errors.New(`pq: canceling statement due to statement timeout`),
 	}
+	h := &ProductPageHandle{products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products?project=p1")
-	assertProductPageFailure(t, "列表页某一行详情失败", rec, http.StatusInternalServerError, "这一页的数据没能读出来")
+	assertProductJSONFailure(t, "列表页某一行详情失败", rec, http.StatusInternalServerError, "内部错误")
 }
 
 // TestProductNewPageLoadFailureRendersSamePage 新建页主数据没读到：同页 + 500 + no-store。
@@ -972,59 +975,3 @@ func TestProductNewPageSuccessRendersPage(t *testing.T) {
 	}
 }
 
-// TestProductTemplatesSplitFailureFromEmpty 模板层：失败槽与空态是两个分支，先判失败。
-//
-// 三份模板都用同一份契约：{{if loadError}} … {{else if 空态}} … —— 顺序反了会出现
-// 「取数失败时页面显示『还没有数据』」，把失败说成了空。
-func TestProductTemplatesSplitFailureFromEmpty(t *testing.T) {
-	cases := []struct {
-		template string
-		data     gin.H
-		// 失败档渲染出来必须有的东西 / 必须没有的东西。
-		wantOnFailure []string
-	}{
-		{
-			template:      "admin/product/products.html",
-			data:          productPageLayoutData(gin.H{"title": "商品", "menu": "products"}),
-			wantOnFailure: []string{"这一页的数据没能读出来", `role="alert"`, "</html>"},
-		},
-		{
-			template:      "admin/product/products_new.html",
-			data:          productPageLayoutData(gin.H{"title": "新建商品", "menu": "products"}),
-			wantOnFailure: []string{"这一页的数据没能读出来", `role="alert"`, "</html>"},
-		},
-		{
-			template:      "admin/product/product_detail.html",
-			data:          productPageLayoutData(gin.H{"title": "商品详情", "menu": "products"}),
-			wantOnFailure: []string{"这一页的数据没能读出来", `role="alert"`, "</html>"},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.template, func(t *testing.T) {
-			// 失败档：只有页壳键 + 失败槽（与 Go 侧 productPageFailure 的零值数据同形）。
-			failed := gin.H{}
-			for k, v := range tc.data {
-				failed[k] = v
-			}
-			failed["LoadFailed"] = true
-			failed["LoadError"] = "操作失败，请稍后重试（细节只进日志）"
-			html := renderAdminTemplate(t, tc.template, failed)
-			for _, want := range tc.wantOnFailure {
-				if !strings.Contains(html, want) {
-					t.Fatalf("失败档应有 %q，html=%s", want, headOf(html))
-				}
-			}
-			// 失败档绝不能渲染成空态：空态是「读到了、没有数据」，两者混在一起
-			// 会让运营以为数据被删了。
-			for _, bad := range []string{"还没有站点工程", "商品不存在", "tpl-product-create"} {
-				if strings.Contains(html, bad) {
-					t.Fatalf("失败档渲染出了正常内容 %q —— 失败与空态没有分开，html=%s", bad, headOf(html))
-				}
-			}
-			// 反向（「正常档不该出现失败卡」）不在这里：三份模板的正常档需要各自完整的
-			// 页面数据（列表页要 Projects/Statuses/分页…），手搭一份就是第二份 handler。
-			// 那一层由 handler 级用例覆盖（TestProductsPageEmptyProjectsRendersPage、
-			// TestProductDetailPageRendersProductWhenDetailReadable）。
-		})
-	}
-}

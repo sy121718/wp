@@ -263,56 +263,25 @@ func TestProductsPagePaginationFactsRenderLinks(t *testing.T) {
 	}
 }
 
-// TestProductsPageFailureAfterTotalKeepsFailureShape total 已确定后行详情失败：失败页仍是失败页。
+// TestProductsPageFailureAfterTotalIsJSON total 已确定后行详情失败：出口仍是 JSON。
 //
-// 设计稿里我把这一档写成「失败页仍带分页条」，**实测不成立**：products.html 的分支是
-// `{{if loadError}} 失败槽 {{else}} …含分页条… {{end}}`，失败分支根本不 include 分页片段 ——
-// 事实键注入了也没被渲染。迁移前后同形（本批没动任何模板分支），这里把实测行为钉住：
-// 失败页有失败槽、没有分页条，且分页事实仍按 total 注入（旧 BuildPagination 拿到的也是同一个
-// total，行为逐字节不变）。谁把它改成别的样子，这里红。
-func TestProductsPageFailureAfterTotalKeepsFailureShape(t *testing.T) {
-	// 列表页取数编排在 service（读模型）：桩给视图，total 与失败档都由视图带出
-	//（「total 已确定后行详情失败」在 service 侧就是「视图带 LoadFailed 且 Total 仍 >0」）。
+// 失败页形态已废除（页面失败不渲染任何 HTML），分页事实（total）不跟着失败变成半张列表：
+// 报文里既没有分页条，也没有 HTML 页壳。
+func TestProductsPageFailureAfterTotalIsJSON(t *testing.T) {
 	const rows = 25
+	reader := &productPageReaderStub{
+		listView: productListPageViewStub(func(v *productdto.ProductListPageResp) { v.Total = rows }),
+		listErr:  errors.New("读取商品详情失败"),
+	}
 	h := &ProductPageHandle{
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
-				v.Total = rows
-				v.LoadFailed = true
-				v.HTTPStatus = http.StatusInternalServerError
-			}),
-			listErr: errors.New("读取商品详情失败"),
-		}, reader: &productPageReaderStub{
-			listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
-				v.Total = rows
-				v.LoadFailed = true
-				v.HTTPStatus = http.StatusInternalServerError
-			}),
-			listErr: errors.New("读取商品详情失败"),
-		},
+		products: reader,
+		reader:   reader,
 	}
 	rec := productPageRequest(t, h, "/admin/products?project=p1")
-	body := assertProductPageFailure(t, "行详情失败", rec, http.StatusInternalServerError, "这一页的数据没能读出来")
+	body := assertProductJSONFailure(t, "行详情失败", rec, http.StatusInternalServerError, "内部错误")
 	if strings.Contains(body, `class="pagination"`) {
-		t.Fatal("失败页出现了分页条：产品列表的失败分支不 include 分页片段（实测行为）")
-	}
-	if strings.Contains(body, "PaginationLinks") || strings.Contains(body, "PaginationInfo") {
-		t.Fatal("失败页出现了旧分页键")
-	}
-	// 成功页仍有分页条（同一份数据、同一个 total，只是模板分支不同）：
-	// 这条对照让「失败页没有分页条」不至于被误读成「分页坏了」。
-	ok := &ProductPageHandle{
-		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
-		products: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
-			v.Total = rows
-		})}, reader: &productPageReaderStub{listView: productListPageViewStub(func(v *productdto.ProductListPageResp) {
-			v.Total = rows
-		})},
-	}
-	okBody := productPageRequest(t, ok, "/admin/products?project=p1").Body.String()
-	if !strings.Contains(okBody, paginationElement("/admin/products?project=p1", 2, 20)) {
-		t.Fatal("对照失败：成功页的分页链接元素没渲染出来")
+		t.Fatal("失败报文里出现了分页条")
 	}
 }
 

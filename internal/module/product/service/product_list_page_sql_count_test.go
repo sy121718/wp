@@ -229,9 +229,6 @@ func TestProductListPageSQLCountIsConstantInProductCount(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s：列表页读模型失败：%v", label, err)
 		}
-		if view.LoadFailed {
-			t.Fatalf("%s：列表页被判失败", label)
-		}
 		if len(view.Products) != wantRows {
 			t.Fatalf("%s：成品行 %d 条，期望 %d", label, len(view.Products), wantRows)
 		}

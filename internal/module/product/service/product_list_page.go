@@ -63,15 +63,12 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 		Rules:               []*productdto.PricingRuleTypeResp{},
 		Roundings:           []*productdto.PricingRoundingOptionResp{},
 		Limit:               ProductListPageSize,
-		HTTPStatus:          200,
 	}
-	// firstErr 只记**第一处**失败：后面的步骤据此跳过，末尾据此给失败槽与档位。
+	// firstErr 只记**第一处**失败：后面的步骤据此跳过，末尾据此返回错误。
 	var firstErr error
 	fail := func(e error) {
 		if firstErr == nil {
 			firstErr = e
-			// 取数没读到 = 500。参数不合法是另一档（下面的工程校验）。
-			view.HTTPStatus = 500
 		}
 	}
 
@@ -92,10 +89,8 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 	view.SelectedProject = selected
 
 	// 查询串不是可信边界：`?project=<不存在的 id>` 一路渲染下去会得到「这个工程下没有商品」
-	// —— 把「工程不存在」说成了「工程是空的」。参数级失败仍是**页面请求**：整页 + 400 +
-	// no-store（档位由视图带出，见 dto.ProductListPageResp.PageStatus）。
+	// —— 把「工程不存在」说成了「工程是空的」。参数级失败照样返回错误，由页面出口决定档位。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
-		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
@@ -224,10 +219,9 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 	}
 
 	if firstErr != nil {
-		// 失败页给齐模板必需键：上面每个字段都有值（空列表而不是缺失），渲染不会断在
-		// 「失败分支只设了错误键」上（internal/templates/CLAUDE.md §错误分支也必须给齐必需键）。
-		view.LoadFailed = true
-		return view, firstErr
+		// 失败不交半截视图：页面出口是一条 JSON（adminui.Page 拿到 err 后写 {code,message,data}），
+		// 所以这里直接返回错误，模板里也没有失败分支。
+		return nil, firstErr
 	}
 	return view, nil
 }

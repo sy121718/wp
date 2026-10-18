@@ -253,44 +253,19 @@ var _ = http.StatusOK
 // 列表页的返回地址只需要工程一个条件（productListFilterURL）。
 
 // ProductsPage 商品管理页：工程切换 + 商品列表 + 每个商品的变体面板 + 内联新建表单。
+//
+// 三动作：绑参数 → 调读模型 → 返回视图。取数失败直接返回错误，页面出口由 adminui.Page
+// 统一写成 {code,message,data}（业务 400 / 其余 500），模板里没有失败分支。
 func (h *ProductPageHandle) ProductsPage(c *gin.Context) (any, error) {
-	ctx := c.Request.Context()
-	// 取数失败**不在这里出口**：整页 GET 只有一条渲染路径（函数末尾那次 c.HTML），
-	// 失败页与成功页渲染同一份模板、同一份页壳数据，差别只有状态码 / no-store / 失败槽
-	//（契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。
-	//
-	// 每个失败点各写一遍「渲染失败页」等于每页各有一份「失败页长什么样」的实现，
-	// 改一处必然漏一处；这里只记第一处失败的原因，末尾统一出口。
-	// httpStatus 与下面的筛选状态（status 查询串）不是一回事，名字分开避免撞车。
-	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
-	reader := h.reader
-	// 取参数交给 binding.Query（键名与去空白都在 DTO 一侧），取数编排在 service。
 	req, ok := binding.Query[productdto.ProductListPageReq](c)
 	if !ok {
 		return nil, response.ErrHandled
 	}
-	view, err := reader.ProductListPage(ctx, req)
-	if view == nil {
-		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
-		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
-		view = &productdto.ProductListPageResp{
-			Limit: productListPageSize, HTTPStatus: http.StatusInternalServerError,
-		}
-	}
-	// 上面的取数编排（分类树 / 品牌 / 标签 / 仓库清单 / 列表与总数 / 逐行详情 / 属性组选项 /
-	// 每仓候选 / 定价规则清单）全在 service 的读模型里；这里只做控制器负责的派生值与出口。
-	// —— 控制器负责的派生值 ——
-	fillProductListChrome(c, view)
-
+	view, err := h.reader.ProductListPage(c.Request.Context(), req)
 	if err != nil {
-		// 视图已带 LoadFailed / HTTPStatus（400 参数不合法 / 500 取数失败）。
-		// 这里只补**当前语言**的失败槽文案：原始的 err 只进日志。
-		view.LoadFailed = true
-		view.LoadError = response.MessageOf(c, "product", err)
+		return nil, err
 	}
-	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore），
-	// 渲染发生在 UI 线（router 里 adminui.Page 那一行）——控制器交视图，不碰模板名。
+	fillProductListChrome(c, view)
 	return view, nil
 }
 
