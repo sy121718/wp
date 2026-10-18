@@ -8,9 +8,9 @@ package analyticshttp
 // "Err"（analytics_page_handle.go）—— {{.Err}} 是**直接渲染**的文本、不经过 pkg/response
 // 的 translate，于是运营看到的是 `ErrInvalidRange` 这样的裸 key。
 //
-// 修法：判定保持唯一（analyticsFacingMessages），命中那一支多一层取词
-// （shell.TranslateFor），fallback 给归口兜底文案 —— 词条缺失时显示一句人话而不是裸 key。
-// 未命中的归口那一支不动（它早已经 analyticsInternalText 取词）。
+// 修法：判定只剩一份（pkg/facing.FactOf，兜底跟着 enums 的声明处走），命中那一支取词，
+// fallback 用声明处的中文兜底 —— 词条缺失时显示一句人话而不是裸 key。
+// 未命中的归口那一支不动（它早经 analyticsInternalText 取词）。
 //
 // 用 pkg/i18n.InjectForTest 直接塞内存词条（英文值带 EN- 前缀，与中文毫无相似度）：
 // 不建库、不起装配，任何一处没按当前语言取词都会立刻暴露。

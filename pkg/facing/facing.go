@@ -47,6 +47,19 @@ func New(key, fallback string) *Error {
 // Error 返回 i18n key（哨兵错误的既有形态：整条消息就是一个 key）。
 func (e *Error) Error() string { return e.key }
 
+// Is 让同 key 的两条哨兵互相匹配（errors.Is 按 key 判，而不是按指针）。
+//
+// 为什么需要：`Err(key)` 每调用一次就是一个新指针，而 service 既可能导出一个哨兵常量
+// （`var ErrInvalidRange = enums.Err(enums.ErrInvalidRange)`）、又可能在深处重新构造同一条
+// （`return nil, enums.Err(enums.ErrInvalidRange)`）。没有 Is 时两句之间 errors.Is 永远 false，
+// 调用方会静默走进 default 分支 —— 判据没错，比较方式错了。
+func (e *Error) Is(target error) bool {
+	if target == nil {
+		return false
+	}
+	return target.Error() == e.key
+}
+
 // Facing 对外文案事实（key, 中文兜底）。
 //
 // 接口的形状在**消费端**（adminui）声明，本包不反过来依赖任何出口 —— 模块只要

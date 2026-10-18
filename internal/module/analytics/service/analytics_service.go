@@ -10,7 +10,6 @@ import (
 	"crypto/hkdf"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"strings"
 	"time"
 
@@ -24,8 +23,8 @@ var _ analyticscontract.AnalyticsService = (*Service)(nil)
 
 // 业务错误哨兵（文案统一取 analyticsenums）。
 var (
-	ErrInvalidParam = errors.New(analyticsenums.ErrInvalidParam)
-	ErrInvalidRange = errors.New(analyticsenums.ErrInvalidRange)
+	ErrInvalidParam = analyticsenums.Err(analyticsenums.ErrInvalidParam)
+	ErrInvalidRange = analyticsenums.Err(analyticsenums.ErrInvalidRange)
 )
 
 // Service 访问统计服务。
@@ -76,7 +75,7 @@ func (s *Service) SetProjects(projects projectcontract.ProjectService) {
 // 没有工程需要清理」，那正是最难发现的一类失效（定时任务照常跑、日志一行异常都没有）。
 func (s *Service) projectIDs(ctx context.Context) ([]string, error) {
 	if s == nil || s.projects == nil {
-		return nil, errors.New(analyticsenums.ErrInvalidParam)
+		return nil, analyticsenums.Err(analyticsenums.ErrInvalidParam)
 	}
 	list, err := s.projects.List(ctx)
 	if err != nil {
@@ -89,7 +88,7 @@ func (s *Service) projectIDs(ctx context.Context) ([]string, error) {
 		}
 	}
 	if len(ids) == 0 {
-		return nil, errors.New(analyticsenums.ErrInvalidParam)
+		return nil, analyticsenums.Err(analyticsenums.ErrInvalidParam)
 	}
 	return ids, nil
 }

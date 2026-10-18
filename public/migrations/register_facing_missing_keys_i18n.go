@@ -11,7 +11,7 @@ import "sync"
 //
 // 共 4 个 key × 2 语言 = 8 行：
 //
-//	ErrInvalidRange  —— analytics 白名单（analyticsFacingMessages）命中后经 shell.TranslateFor 取词
+//	ErrInvalidRange  —— analytics 页面出口（analyticsFacingError，判据 pkg/facing.FactOf）取词
 //	ErrInvalidParent —— navigation 白名单（NavigationFacingMessages）命中后经 localizeFacing 取词
 //	ErrInvalidSlot   —— page 槽位页白名单（siteSlotFacingMessages）的键
 //	ErrSlotPageMiss  —— 同上（要绑定的页面不存在 / 不属于当前工程）

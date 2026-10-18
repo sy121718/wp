@@ -27,6 +27,7 @@ import (
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	analyticsenums "go_wp/internal/module/analytics/enums"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
@@ -68,16 +69,6 @@ func analyticsViewMode(c *gin.Context) string {
 	default:
 		return analyticsViewDaily
 	}
-}
-
-// analyticsFacingMessages 本页允许原样显示的**统计模块**文案白名单。
-//
-// 错误可能是任何东西（数据库连接断了、上下文超时），原样输出等于把内部细节摊给运营看；
-// 而「时间范围不合法」这类要告诉用户具体哪里错了，所以走白名单：
-// 认识的文案照原样显示，其余一律收敛为统一的内部错误提示并记日志。
-var analyticsFacingMessages = []string{
-	analyticsenums.ErrInvalidParam,
-	analyticsenums.ErrInvalidRange,
 }
 
 // analyticsPageHandle 访问统计页处理器。
@@ -235,29 +226,33 @@ func analyticsInternalText(c *gin.Context) string {
 	return i18n.TranslateFunc(response.RequestLanguage(c))(analyticsenums.ErrAnalyticsInternal, analyticsInternalFallback)
 }
 
-// analyticsFacingError 把统计错误映射为页面可显示的文案（白名单收口，见 analyticsFacingMessages）。
+// analyticsFacingError 把统计错误映射为页面可显示的文案（判据 = pkg/facing.FactOf）。
 //
-// 收 c 是因为两支都要取**当前语言**的译文：命中白名单的那一支要取业务文案，
+// 模块不再自带白名单：判据只有一份，兜底跟着错误的声明处走（enums.Err）。
+// 收 c 是因为两支都要取**当前语言**的译文：命中判据的那一支要取业务文案，
 // 未命中的那一支要取归口文案。只带 err 的话这一层就只能硬编码一句中文，
 // 英文界面上会整块回落中文。
 //
-// **命中那一支必须取词**：analyticsenums 的值是 i18n item_key（ErrInvalidParam /
-// ErrInvalidRange），而本页把返回值写进模板数据的 "Err"（:169）——{{.Err}} 是
-// **直接渲染**的文本、不经过 pkg/response 的 translate。原样 return allowed 的话，
-// 运营在页面上看到的是 `ErrInvalidRange` 这样的裸 key。fallback 给归口兜底文案：
+// **命中那一支必须取词**：本页把返回值写进模板数据的 "Err" —— {{.Err}} 是
+// **直接渲染**的文本、不经过 pkg/response 的 translate。原样 return key 的话，
+// 运营在页面上看到的是 `ErrInvalidRange` 这样的裸字符串。fallback 用声明处的中文兜底：
 // 词条缺失时页面显示一句人话，而不是把裸 key 摆出去。
 func analyticsFacingError(c *gin.Context, err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := err.Error()
-	for _, allowed := range analyticsFacingMessages {
-		if msg == allowed {
-			return i18n.TranslateFunc(response.RequestLanguage(c))(allowed, analyticsInternalFallback)
-		}
+	fact, ok := facing.FactOf(err)
+	if !ok || !fact.Business {
+		logger.Scene("analytics").Error(err, "访问统计查询失败")
+		return analyticsInternalText(c)
 	}
-	logger.Scene("analytics").Error(err, "访问统计查询失败")
-	return analyticsInternalText(c)
+	// 命中判据：按请求语言取词，词条缺席落到**声明处**给的中文兜底（不是归口句 ——
+	// 「时间范围不合法：起始日期不能晚于结束日期」这句要原样告诉运营）。
+	text := i18n.TranslateFunc(response.RequestLanguage(c))(fact.Key, fact.Fallback)
+	if fact.Tail != "" {
+		text += ": " + fact.Tail
+	}
+	return text
 }
 
 const seoPageTitle = "SEO 控制台"

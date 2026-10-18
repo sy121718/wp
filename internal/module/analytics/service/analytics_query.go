@@ -14,7 +14,6 @@ package analyticsservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -471,7 +470,7 @@ func (s *Service) PurgeExpiredViews(ctx context.Context) error {
 // 直接 `SELECT ... FROM projects WHERE analytics_retention_days > 0`，是越界读表。
 func (s *Service) retentionPolicies(ctx context.Context) ([]projectcontract.RetentionPolicyResp, error) {
 	if s == nil || s.retention == nil {
-		return nil, errors.New(analyticsenums.ErrInvalidParam)
+		return nil, analyticsenums.Err(analyticsenums.ErrInvalidParam)
 	}
 	return s.retention.ListRetentionPolicies(ctx)
 }
