@@ -24,6 +24,9 @@ import (
 	"go_wp/pkg/i18n"
 )
 
+// ContentPreviewNoticeTemplate 预览 iframe 的替代页（与商品预览共用同一份模板）。
+const ContentPreviewNoticeTemplate = "admin/preview_notice.html"
+
 // SetupContentPages 注册文章后台页面（/admin 组，中间件链由装配层统一挂好）。
 //
 // 为什么不像其它模块那样在 SetupContentRoutes 里顺带注册：文章页依赖
@@ -90,7 +93,7 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	pages.GET("/articles/seo/drawer", builtin.CasbinMiddlewareForPath("/api/content/list"), articlePages.ArticleSeoDrawer)
 	// 详情页真实预览帧（iframe 直接 src）：页面组鉴权（Session），**不挂 Casbin** ——
 	// 与评分抽屉同一取舍：它只读渲染、不落库，而 iframe 无法携带 CSRF 头。
-	pages.GET("/articles/preview-frame", articlePages.ArticlePreviewFrame)
+	pages.GET("/articles/preview-frame", adminui.Bare(ContentPreviewNoticeTemplate, articlePages.ArticlePreviewFrame))
 	// 内链建议（SEO-015）：同为只读计算（候选来自已上线路径解析端口），
 	// 权限策略与评分侧栏一致 —— Session + CSRF，不叠权限点。
 	pages.POST("/articles/link-suggestions", articlePages.ArticleLinkSuggestions)

@@ -142,6 +142,36 @@ Artifact ≠ 可编辑源码
 - 业务连接使用非超级角色时必须保持 `run_migrations: false`，迁移命令通过环境变量覆盖管理连接，避免把 DDL 权限交给运行服务。
 - `make dev` / `scripts/dev.sh` 不隐式修改数据库；是否让 air 自动迁移只由 `database.run_migrations` 配置决定。
 
+### 前后端分界（Go = 后端，Jet 模板 + HTML = 前端）
+
+**判据只有一句：Go 代码里出现 HTML 就是越界。** 后端 = `internal/module/**`、`internal/routers`、`pkg/**`
+的 Go 代码；前端 = `internal/templates/**`（`.jet` / `.html` 模板）与 `internal/templates/static/**`
+（浏览器侧 JS / CSS）。两者之间只有两种契约：**JSON `{code,message,data}`** 与**视图数据**（交给渲染器的
+dto 结构体 / 数据根 map）。
+
+后端允许的（这些不算「参与 HTML」）：
+
+- **交视图数据**：控制器 `return 视图, nil`，由 UI 线在路由装配处渲染 —— `adminui.Page`（整页）
+  / `adminui.Bare`（不带页壳的片段与整页）。模板名只出现在 `*_router.go`。
+- **交字节**：把**前端层产出的整份 HTML 原样交出**（构建器预览 `res.HTML`、runtime fragment 片段、
+  静态页兜底）。Go 里不拼标签，只搬运 `[]byte`，写完 `return nil, response.ErrHandled`。
+- **出站内容**：SMTP 正文、追踪像素、退订落地页属外发内容，不是后台界面。
+- **生成前端文件**：脚手架写进插件目录的 `.html` 模板内容。
+
+后端禁止的：
+
+- 拼 HTML 字符串（`"<div …"`、`"</tr>"`、`<span>` 之类），不管拼给谁看；把库里/用户输入直接拼进 HTML
+  更是一处存储型注入面（模板的 `{{ }}` 自带转义）。
+- `c.HTML(`；控制器里的 `adminui.RenderPage` / `adminui.RenderBare`；控制器里出现模板名。
+
+**非页面跳转（写动作、片段失败、JSON 接口）只有一种响应**：`{code,message,data}` + 真实 HTTP 状态码
+（业务 400 / 未找到 404 / 冲突 409 / 内部 500）。`c.String(500, …)` 这类纯文本响应是存量旧写法，
+改成 JSON。**页面 GET 成功**仍由 Jet 渲染整页（SSR 是架构），但渲染发生在前端层，控制器只给数据。
+
+门禁：`internal/architecture/html_boundary_test.go` 的 `TestNoHTMLLiteralsInBackend`（扫 Go 字符串字面量里的
+HTML 标签，白名单逐条写理由、**双向判定** —— 登记了却不再命中同样失败）+ `controller_shape_test.go` 的
+`TestControllerRenderExit`（非 router 控制器不得出现 `c.HTML` / `adminui.RenderPage` / `adminui.RenderBare`）。
+
 ### 模板渲染（Jet v6）
 
 - 后台页面由 Go 服务端 Jet v6 渲染，实现 `gin.HTMLRender` 包装为 Gin 标准 Render；模板位置

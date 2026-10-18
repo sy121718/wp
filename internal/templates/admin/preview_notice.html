@@ -1,0 +1,16 @@
+{* 预览 iframe 里的替代页（还没保存 / 还没有详情页模板）：一句人话，不套后台页壳。
+   数据只有两个键：.Text（已按请求语言取好的一句话）、.Lang（html lang 属性）。
+   结构与样式都在这里 —— Go 侧只给字符串，不拼 HTML。 *}
+<!doctype html>
+<html lang="{{ .Lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ .Text }}</title>
+<style>
+body{margin:0;padding:24px;font:14px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#57606a;background:#fff}
+p{margin:0}
+</style>
+</head>
+<body><p>{{ .Text }}</p></body>
+</html>

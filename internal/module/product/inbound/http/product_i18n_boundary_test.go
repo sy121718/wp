@@ -33,8 +33,8 @@ func TestControllerI18nBoundary(t *testing.T) {
 		"product_detail_template_handle.go": "JSON 出口成品串：写动作全部只回 JSON（没有模板取词层），" +
 			"另外一处是页面失败槽（detailTemplateDepsMissingMsg 只在这里取词）",
 		"product_subject_handle.go": "三处成品串出口：变体清单保存的复合句（Tail 拼接）、定价回执的三段拼句、" +
-			"ProductsBundleMembersResolve 的响应体字面量（来源标签）；外加 ProductPreviewFrame 直接 " +
-			"c.Data 返回 iframe HTML（没有模板取词层）",
+			"ProductsBundleMembersResolve 的响应体字面量（来源标签）；外加 ProductPreviewFrame 的替代页 " +
+			"取词（视图只收成品串，模板 admin/preview_notice.html 不取词）",
 	}
 
 	hits := scanControllerTranslate(t)

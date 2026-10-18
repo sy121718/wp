@@ -84,7 +84,6 @@ import (
 	"errors"
 	"go_wp/internal/middleware/builtin"
 	json "go_wp/pkg/jsonx"
-	"html"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -591,19 +590,19 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 // 为什么 iframe 直接 src 而不是前端取 HTML 塞 srcdoc：详情页是完整文档（自带样式与脚本），
 // 塞进 srcdoc 会与外层后台页面同源、脚本可能互扰；指一个页面组路由（Session 鉴权，不需 CSRF）
 // 既最省事也最隔离。
-func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
+//
+// 出口两个形态：预览就绪 → 直出构建器渲染好的整份 HTML（后端只搬字节）；还没就绪 → 交替代页视图
+// admin/preview_notice.html（与商品预览共用）。两种都不拼 HTML。
+func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) (any, error) {
 	c.Header("Cache-Control", "no-store")
-	// tr 只用来拼 iframe 里的替代页 HTML（c.Data 直出，**不经 Jet**）：那里没有渲染期，
-	// 取词只能在 Go 侧发生。本函数不进任何模板数据。
+	// 替代页是模板渲染，取词在这里先做掉：视图只给成品串。
 	tr := shell.TranslateFor(c)
 	id := strings.TrimSpace(c.Query("id"))
 	if id == "" {
-		articlePreviewFrameNotice(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。"))
-		return
+		return previewNoticeResp(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。")), nil
 	}
 	if h == nil || h.instances == nil {
-		articlePreviewFrameNotice(c, tr(contentenums.PreviewUnavailable, "预览不可用：发布能力未装配。"))
-		return
+		return previewNoticeResp(c, tr(contentenums.PreviewUnavailable, "预览不可用：发布能力未装配。")), nil
 	}
 	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
 		EntityType: articleEntityType, EntityID: id,
@@ -611,26 +610,19 @@ func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	if err != nil {
 		// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
 		logger.Scene("content").With("article_id", id).Error(err, "文章详情页预览渲染失败")
-		articlePreviewFrameNotice(c, tr(contentenums.PreviewFailed, "预览渲染失败（多半是这部文章还没有可用的详情页模板）。"))
-		return
+		return previewNoticeResp(c, tr(contentenums.PreviewFailed, "预览渲染失败（多半是这部文章还没有可用的详情页模板）。")), nil
 	}
 	if res == nil || strings.TrimSpace(res.HTML) == "" {
-		articlePreviewFrameNotice(c, tr(contentenums.PreviewEmpty, "还没有可渲染的详情页：先给 article 类型建一套内容模板。"))
-		return
+		return previewNoticeResp(c, tr(contentenums.PreviewEmpty, "还没有可渲染的详情页：先给 article 类型建一套内容模板。")), nil
 	}
-	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物），不是错误信息。
+	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物）：后端只搬运字节，不拼结构。
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
+	return nil, response.ErrHandled
 }
 
-// articlePreviewFrameNotice 预览不可用时的替代页（iframe 里的一句人话）。
-//
-// 不用 5xx：iframe 对 5xx 显示的是浏览器自带错误页，读的人只会以为「后台坏了」——
-// 而这里大多数情况是「还没保存」或「还没建模板」，都是正常状态。
-func articlePreviewFrameNotice(c *gin.Context, text string) {
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(
-		`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>`+
-			`body{margin:0;padding:24px;font:14px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;`+
-			`color:#57606a;background:#fff;}p{margin:0;}</style></head><body><p>`+html.EscapeString(text)+`</p></body></html>`))
+// previewNoticeResp 预览替代页的数据（结构与样式在 internal/templates/admin/preview_notice.html）。
+func previewNoticeResp(c *gin.Context, text string) contentdto.PreviewNoticeResp {
+	return contentdto.PreviewNoticeResp{Text: text, Lang: response.RequestLanguage(c)}
 }
 
 // —— 表单与视图 ——

@@ -77,6 +77,8 @@ const (
 	ProductTranslationsPageTemplate   = "admin/product/product_translations.html"
 	EntitySeoDrawerTemplate           = "admin/product/entity_seo_drawer.html"
 	SeoScoreFragmentTemplate          = "fragments/seo_score"
+	// ProductPreviewNoticeTemplate 预览 iframe 的替代页（商品与文章共用这一份）。
+	ProductPreviewNoticeTemplate = "admin/preview_notice.html"
 )
 
 // ══ 接口面装配（authorizedAPI 三层链）══
@@ -360,7 +362,7 @@ func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageH
 	pages.GET("/products/seo/drawer", adminui.Page(EntitySeoDrawerTemplate, productPages.EntitySeoDrawer))
 	// 详情页真实预览帧（iframe 直接 src）：页面组鉴权（Session），理由同上一行 ——
 	// 只读渲染、不落库，而 iframe 无法携带 CSRF 头。
-	pages.GET("/products/preview-frame", productPages.ProductPreviewFrame)
+	pages.GET("/products/preview-frame", adminui.Bare(ProductPreviewNoticeTemplate, productPages.ProductPreviewFrame))
 	pages.POST("/product-categories/seo-score", adminui.Bare(SeoScoreFragmentTemplate, productPages.ProductCategoryScorePanel))
 	pages.POST("/product-brands/seo-score", adminui.Bare(SeoScoreFragmentTemplate, productPages.ProductBrandScorePanel))
 }

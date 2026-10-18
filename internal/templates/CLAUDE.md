@@ -2,6 +2,21 @@
 
 后台页面与片段的 Jet 模板。渲染入口是 `NewJetHTMLRender`（内嵌文件系统，生产不依赖工作目录）。
 
+## 本目录是前端层：结构与样式只写在这里
+
+**后端（Go）不拼 HTML**，判据见根 `AGENTS.md`「前后端分界」。落到本目录的三条：
+
+1. 页面 / 片段 / iframe 替代页的**结构、class、内联样式**都写模板，Go 只给数据与文案字符串
+   （`admin/preview_notice.html` 是样板：它替换掉了 content 与 product 两个模块里各一份拼串函数）。
+2. 模板名前缀 `admin/` 是「后台整页或片段」；片段与 iframe 里的纯净整页同样放这里，用 `adminui.Bare`
+   渲染（不带页壳、恒定 200、注入 `t` / `tf`）。
+3. 值一律 `{{ .Field }}` 输出 —— Jet 默认转义。**只有**来自构建器的整份产物（`res.HTML`）才以字节形式
+   直出，那条路不经过本目录。
+
+门禁 `internal/architecture/html_boundary_test.go`：Go 字符串字面量里出现 HTML 标签即失败
+（出站邮件 / 脚手架生成的前端文件 / 工作台待迁部分在清单里写明理由）。
+
+
 ## 可选数据键必须用 isset 判断
 
 ```jet

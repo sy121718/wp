@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
-	"html"
 	"net/http"
 	"net/url"
 	"slices"
@@ -873,21 +872,21 @@ func (h *ProductHandle) DeleteRating(c *gin.Context) {
 //
 // 为什么 iframe 直接 src：详情页是完整文档（自带样式与脚本），塞进 srcdoc 会与后台页面同源、
 // 脚本可能互扰；指一个页面组路由（Session 鉴权、不需 CSRF）最省事也最隔离。
-func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) {
+//
+// 出口有两个形态：① 预览就绪 —— 直出构建器渲染好的整份 HTML（后端只搬运字节，见 AGENTS.md
+// 「前后端分界」）；② 还没就绪 —— 交替代页视图 admin/preview_notice.html（一句人话 + 那份模板里的样式）。
+// 两种都不拼 HTML：替代页曾经在这里拼字符串，结构与样式只存在于 Go 里，前端层改不到它。
+func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) (any, error) {
 	c.Header("Cache-Control", "no-store")
-	// 例外（非模板出口的成品串，同 JSON 出口那一类）：iframe 里直出的是**一段字面 HTML**
-	// （productPreviewFrameNotice），没有模板、也就没有渲染期取词这一层 ——
-	// 这里必须自己把事实取成当前语言的文本。
+	// 替代页是模板渲染（不走 adminui.Prepare 的页壳），取词在这里先做掉：视图只给成品串。
 	tr := shell.TranslateFor(c)
 	id := strings.TrimSpace(c.Query("productId"))
 	projectID := strings.TrimSpace(c.Query("project"))
 	if id == "" {
-		productPreviewFrameNotice(c, tr(productenums.ProductsPreviewNeedSave, "保存这个商品后，这里会显示它的详情页真实形态。"))
-		return
+		return previewNoticeResp(c, tr(productenums.ProductsPreviewNeedSave, "保存这个商品后，这里会显示它的详情页真实形态。")), nil
 	}
 	if h == nil || h.instances == nil {
-		productPreviewFrameNotice(c, tr(productenums.ProductsPreviewUnavailable, "预览不可用：发布能力未装配。"))
-		return
+		return previewNoticeResp(c, tr(productenums.ProductsPreviewUnavailable, "预览不可用：发布能力未装配。")), nil
 	}
 	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationcontract.PreviewInstanceReq{
 		EntityType: productcontract.EntityTypeProduct, EntityID: id, ProjectID: projectID,
@@ -895,27 +894,21 @@ func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) {
 	if err != nil {
 		// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
 		logger.Scene("product").With("product_id", id).Error(err, "商品详情页预览渲染失败")
-		productPreviewFrameNotice(c, tr(productenums.ProductsPreviewFailed, "预览渲染失败（多半是这个商品还没有可用的详情页模板）。"))
-		return
+		return previewNoticeResp(c, tr(productenums.ProductsPreviewFailed, "预览渲染失败（多半是这个商品还没有可用的详情页模板）。")), nil
 	}
 	if res == nil || strings.TrimSpace(res.HTML) == "" {
-		productPreviewFrameNotice(c, tr(productenums.ProductsPreviewEmpty, "还没有可渲染的详情页：先给 product 类型建一套内容模板。"))
-		return
+		return previewNoticeResp(c, tr(productenums.ProductsPreviewEmpty, "还没有可渲染的详情页：先给 product 类型建一套内容模板。")), nil
 	}
-	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物），不是错误信息。
+	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物）：后端只搬运字节，不拼结构。
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
+	return nil, response.ErrHandled
 }
 
-// productPreviewFrameNotice 预览不可用时的替代页（iframe 里的一句人话）。
+// previewNoticeResp 预览替代页的数据（结构与样式在 internal/templates/admin/preview_notice.html）。
 //
-// 与 content 模块那个同形但是两份：各自在自己的模块包里（跨模块共用要走契约，而这是纯展示装配）。
-// 不用 5xx：iframe 对 5xx 显示浏览器自带错误页，读的人只会以为后台坏了 —— 而这里大多数情况是
-// 「还没保存」或「还没建模板」，都是正常状态。
-func productPreviewFrameNotice(c *gin.Context, text string) {
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(
-		`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>`+
-			`body{margin:0;padding:24px;font:14px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;`+
-			`color:#57606a;background:#fff;}p{margin:0;}</style></head><body><p>`+html.EscapeString(text)+`</p></body></html>`))
+// 商品与文章两个预览帧共用同一份模板：占位页长得一样，没有理由各写一份。
+func previewNoticeResp(c *gin.Context, text string) productdto.PreviewNoticeResp {
+	return productdto.PreviewNoticeResp{Text: text, Lang: response.RequestLanguage(c)}
 }
 
 // product_bundle.go — 捆绑商品（容器 + 可选组）：配置页、成员解析接口与详情页的捆绑面板。
