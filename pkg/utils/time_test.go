@@ -1,6 +1,6 @@
 package utils
 
-// time_test.go — 对外 JSON 时间的口径（存储微秒、输出到秒）。
+// time_test.go — 对外 JSON 时间的口径（存储微秒、输出 unix 毫秒、回读吃两种形态）。
 
 import (
 	json "go_wp/pkg/jsonx"
@@ -8,16 +8,15 @@ import (
 	"time"
 )
 
-// TestJSONTimeMarshalTruncatesToSecond 输出必须**丢到秒**：这是这个类型存在的全部理由。
-func TestJSONTimeMarshalTruncatesToSecond(t *testing.T) {
-	// 带微秒的输入（库里的 timestamptz(6) 就是这种精度）。
+// TestJSONTimeMarshalIsUnixMilli 输出是**毫秒数字**：时刻归协议，形状归模板。
+func TestJSONTimeMarshalIsUnixMilli(t *testing.T) {
 	std := time.Date(2026, 9, 16, 13, 57, 50, 123456000, time.UTC)
 	b, err := json.Marshal(JSONTime(std))
 	if err != nil {
 		t.Fatalf("序列化失败: %v", err)
 	}
-	if got, want := string(b), `"2026-09-16T13:57:50Z"`; got != want {
-		t.Fatalf("应截到秒，得到 %s，期望 %s", got, want)
+	if got, want := string(b), "1789567070123"; got != want {
+		t.Fatalf("应输出 unix 毫秒，得到 %s，期望 %s", got, want)
 	}
 }
 
@@ -86,7 +85,7 @@ func TestJSONTimeUnmarshalAcceptsCommonLayouts(t *testing.T) {
 	}
 }
 
-// TestJSONTimeRoundTrip 反序列化后再序列化仍回到秒精度。
+// TestJSONTimeRoundTrip 毫秒是「截到毫秒」，回读后仍与毫秒精度相等。
 func TestJSONTimeRoundTrip(t *testing.T) {
 	orig := JSONTime(time.Date(2026, 1, 2, 3, 4, 5, 678901000, time.UTC))
 	b, _ := json.Marshal(orig)
@@ -94,7 +93,7 @@ func TestJSONTimeRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(b, &back); err != nil {
 		t.Fatalf("回读失败: %v", err)
 	}
-	if !back.Time().Equal(orig.Time().Truncate(time.Second)) {
+	if !back.Time().Equal(orig.Time().Truncate(time.Millisecond)) {
 		t.Fatalf("回读后应等于截到秒的原值：%v vs %v", back.Time(), orig.Time())
 	}
 }

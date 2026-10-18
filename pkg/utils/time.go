@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"database/sql/driver"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -85,13 +86,17 @@ func (t *JSONTime) TimeOrZero() time.Time {
 // IsZero 是否为零值。
 func (t JSONTime) IsZero() bool { return time.Time(t).IsZero() }
 
-// MarshalJSON 按 RFC3339 截到秒输出；零值给 null。
+// MarshalJSON 输出 **unix 毫秒**（int64）；零值给 null。
+//
+// 为什么是毫秒数字而不是 RFC3339 串：字符串把「时刻」和「形状」捆在一起 —— 前端要比较、
+// 排序、切时区都得先解析，解析失败还是静默的；换精度（秒 → 毫秒）时协议跟着变。数字只
+// 表示时刻，形状（"10-18 09:05" 还是 "2026-10-18"）由模板按 .Format / formatTime 决定。
 func (t JSONTime) MarshalJSON() ([]byte, error) {
 	std := time.Time(t)
 	if std.IsZero() {
 		return []byte("null"), nil
 	}
-	return []byte("\"" + std.Format(LayoutJSON) + "\""), nil
+	return []byte(strconv.FormatInt(std.UnixMilli(), 10)), nil
 }
 
 // UnmarshalJSON 解析外部传入的时间。
@@ -99,7 +104,7 @@ func (t JSONTime) MarshalJSON() ([]byte, error) {
 // 比标准 time.Time 宽松：除 RFC3339（带或不带小数秒）外，还接受空格分隔的
 // "2006-01-02 15:04:05" 与纯日期 "2006-01-02" —— 后台原生表单与既有客户端在用，
 // 标准库解析这两个会直接报错（此前 req 里的时间字段就有这个坑）。
-// 空串与 null 都当零值，不报错。
+// unix 毫秒数字也接受（本类型序列化出来就是它）。空串与 null 都当零值，不报错。
 func (t *JSONTime) UnmarshalJSON(b []byte) error {
 	s := strings.TrimSpace(string(b))
 	if s == "null" || s == `""` || s == "" {
@@ -107,6 +112,12 @@ func (t *JSONTime) UnmarshalJSON(b []byte) error {
 		return nil
 	}
 	s = strings.Trim(s, "\"")
+	// 本类型自己序列化出来的是 unix 毫秒数字，回读要能吃回去（否则「读回来再写出去」的
+	// 路径会在反序列化处静默失败）。
+	if ms, err := strconv.ParseInt(s, 10, 64); err == nil {
+		*t = JSONTime(time.UnixMilli(ms))
+		return nil
+	}
 	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, LayoutSecond, LayoutDay} {
 		if parsed, err := time.ParseInLocation(layout, s, time.Local); err == nil {
 			*t = JSONTime(parsed)

@@ -95,7 +95,7 @@ bash scripts/check-all.sh     # 门禁全集（--with-db 含需要库的那组�
 ## 数据库
 
 - 表只被一个模块读写；跨模块走 contract。model 不声明列型（internal/architecture/model_gorm_tag_test.go）。
-- 时间列：新表用 create_time/update_time；业务时刻沿用 *_at；timestamptz + time.Time；对外 JSON 到秒（utils.JSONTime）。软删除统一 deleted_at。
+- 时间列：新表用 create_time/update_time；业务时刻沿用 *_at；timestamptz + time.Time；对外 JSON 只给时刻（utils.JSONTime 输出 unix 毫秒；形状由模板决定）。软删除统一 deleted_at。
 - 迁移：版本化幂等 SQL + register.go；seed 门槛必须逐条枚举本批对象（禁用 LIKE/全库总量）；改列名同步触发器与 seed SQL；新 SQL 上线前 PREPARE 校验；Migrations 台账先跑、Seeds 后跑。
 - 裸 SQL 只减不增（raw_sql_boundary_test.go）；唯一 JSON 入口 pkg/jsonx（json_import_boundary_test.go）。
 - 主键：对外实体 uuid（应用层生成）；纯内部流水与字典 bigint identity；只增分区流水用 UUIDv7。
