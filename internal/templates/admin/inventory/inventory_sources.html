@@ -253,7 +253,7 @@
     {{if isset(.Buttons["inventory.source_create"])}}
     <template id="tpl-source-create">
         <div data-inventory-source-host>
-        <form method="post" action="/admin/inventory/sources/create?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/create?{{ .ListQuery }}" hx-target="closest [data-inventory-source-host]" hx-swap="outerHTML">
+        <form method="post" action="/admin/inventory/sources/create?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/create?{{ .ListQuery }}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
@@ -305,7 +305,7 @@
     {{range _, s := .Sources}}
     <template id="tpl-source-edit-{{s.ID}}">
         <div data-inventory-source-host>
-        <form method="post" action="/admin/inventory/sources/update?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/update?{{ .ListQuery }}" hx-target="closest [data-inventory-source-host]" hx-swap="outerHTML">
+        <form method="post" action="/admin/inventory/sources/update?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/update?{{ .ListQuery }}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{s.ID}}">

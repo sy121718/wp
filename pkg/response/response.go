@@ -120,6 +120,33 @@ func ErrorAuto(c *gin.Context, code int, scene string, err error) {
 	ErrorWithMessage(c, http.StatusInternalServerError, msgInternalError)
 }
 
+// 状态码分档的全仓口径（出口只读，不在出口重新判断）：
+//
+//	400 —— 参数不合法 / 业务拒绝（业务错误的默认档）
+//	404 —— 找不到：声明处用 facing.WithStatus(err, 404)
+//	409 —— 唯一性冲突、状态冲突、并发版本冲突：声明处用 facing.WithStatus(err, 409)
+//	500 —— 未识别的错误（一定记日志，对外只给归口文案）
+//
+// 为什么不在出口按错误文案猜「含 NotFound 就是 404」：分档会跟着文案走 ——
+// 改了措辞、换了语言，状态码就静默变成 400 或 500，而测试与日志都不报错。
+// 谁声明错误，谁声明状态（见 facing.Statused）。
+func ErrorStatus(err error) int {
+	if status, ok := facing.StatusOf(err); ok {
+		return status
+	}
+	if fact, ok := facing.FactOf(err); ok && fact.Business {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
+// ErrorStatusAuto 出口：状态码由 ErrorStatus 定，文案由 ErrorAuto 定（同一份判据）。
+//
+// 业务错误的内部错误分支仍强制 500 —— ErrorAuto 会覆盖传入的 code。
+func ErrorStatusAuto(c *gin.Context, scene string, err error) {
+	ErrorAuto(c, ErrorStatus(err), scene, err)
+}
+
 // businessText 事实 → 当前语言文案；i18n 命不中时退回**声明处给的兜底**。
 //
 // 两条出口（ErrorAuto / MessageOf）都走这一个函数：各写一份的失败形态是「接口给了原因、

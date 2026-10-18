@@ -1,16 +1,16 @@
-// 库存管理页：库存总览、流水筛选、分页，以及页面级共享助手（回跳、表单回显、HX 判定、词条标签）。
+// 库存管理页：库存总览、流水筛选、分页，以及页面级共享助手（回跳、HX 判定、词条标签）。
 package inventoryhttp
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"go_wp/internal/shell"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
@@ -39,7 +39,7 @@ type inventoryPageHandle struct {
 	inventory inventorycontract.InventoryService
 	projects  projectcontract.ProjectService
 	// products 只用于「选哪个 SKU 看库存」的下拉（商品 → 变体），不参与任何库存判断。
-	products productcontract.ProductService
+	products productcontract.VariantOptionsReader
 }
 
 // NewInventoryPageHandle 构造。
@@ -47,12 +47,12 @@ type inventoryPageHandle struct {
 // products 只用于「商品 → 变体」下拉：装配期传入 nil，装配收尾由 SetProductCatalog 补注
 // （商品模块与本模块互为依赖，装配顺序上无法在此时拿到商品契约）。
 func NewInventoryPageHandle(inventory inventorycontract.InventoryService,
-	projects projectcontract.ProjectService, products productcontract.ProductService) *inventoryPageHandle {
+	projects projectcontract.ProjectService, products productcontract.VariantOptionsReader) *inventoryPageHandle {
 	return &inventoryPageHandle{inventory: inventory, projects: projects, products: products}
 }
 
 // setProductCatalog 装配期补注商品契约（见 inventory_router.go 的 SetProductCatalog）。
-func (h *inventoryPageHandle) setProductCatalog(products productcontract.ProductService) {
+func (h *inventoryPageHandle) setProductCatalog(products catalogProduct) {
 	h.products = products
 }
 
@@ -389,12 +389,9 @@ func isHXRequest(c *gin.Context) bool {
 // 已经读不到 Location，只有响应头上的 HX-Redirect 能让它整页跳转（否则会把整页 HTML
 // 塞进抽屉里）。两条路的终点是同一个 URL，页面壳与提示位完全一致。
 //
-// 用法：把既有的 `c.Redirect(http.StatusFound, target)` 换成 `redirectWhere(c, target)` ——
-// 原生行为逐字不变，htmx 那一档才有正确的跳转；**不要**给写表单配 `hx-swap="none"`
-// 之外的 hx-* 目标（跳转由响应头决定，不由 swap 决定）。
-//
-// 写动作的**结论**出口是 inventoryJump（shell.RenderJump，见 inventory_notice_handle.go）：
-// 这里保留 redirectWhere 只为「没有选中任何 id」这类无提示的回列表分支。
+// 写动作只有两种结论（见 inventory_notice_handle.go）：成功 = 本函数回列表；失败 = JSON
+// （inventoryFail），不渲染任何模板 —— 所以写表单不需要 hx-target / hx-swap：
+// 成功由响应头 HX-Redirect 决定，失败 htmx 对 4xx/5xx 不 swap。
 func redirectWhere(c *gin.Context, target string) {
 	if isHXRequest(c) {
 		c.Header("HX-Redirect", target)
@@ -402,59 +399,4 @@ func redirectWhere(c *gin.Context, target string) {
 		return
 	}
 	c.Redirect(http.StatusFound, target)
-}
-
-// formEchoMemory 解析提交表单时的内存上限（与 gin 的 MaxMultipartMemory 默认值一致）。
-const formEchoMemory = 32 << 20
-
-// formEcho 这次请求的表单快照（失败片段回填用）。
-//
-// 值只来自**这次提交**，不回查数据库：回填要的是「用户刚打的字」，而不是「库里的旧值」
-// （新建 / 行内编辑路径上后者会把人刚改的内容顶掉，比不回填更糟）。
-type formEcho struct {
-	// values 归一化后的提交值：去首尾空白、丢空项（与 reqparams.FieldValue 同口径）。
-	// 多值字段保留**提交顺序** —— 顺序在本域有语义（多仓勾选按表内顺序取认领仓），
-	// 排序或去重都会改掉它。
-	values url.Values
-}
-
-// formEchoFrom 取这次请求的表单快照。
-func formEchoFrom(c *gin.Context) formEcho {
-	vals := url.Values{}
-	if c == nil || c.Request == nil {
-		return formEcho{values: vals}
-	}
-	// 走标准库的解析入口（gin 的 PostForm 也走这里）：urlencoded 与 multipart 两条路径
-	// 都会把字段填进 req.PostForm。解析错误一律忽略 —— 解析失败就当「没提交」，
-	// 回填退化成空表单；提交本身合法与否由各 handler 的业务校验回答，不在这里变成 500。
-	_ = c.Request.ParseMultipartForm(formEchoMemory)
-	for key, list := range c.Request.PostForm {
-		for _, raw := range list {
-			if v := strings.TrimSpace(raw); v != "" {
-				vals.Add(key, v)
-			}
-		}
-	}
-	return formEcho{values: vals}
-}
-
-// value 取单值字段的回填值（缺失返回空串）：文本 / 下拉 / 隐藏域用。
-func (e formEcho) value(name string) string {
-	if list := e.values[name]; len(list) > 0 {
-		return list[0]
-	}
-	return ""
-}
-
-// list 取多值字段的完整回填值（复选框组 / 同名多次提交），保留提交顺序。
-func (e formEcho) list(name string) []string {
-	return e.values[name]
-}
-
-// checked 该字段这次是否被提交过（复选框的回填判据）。
-//
-// 判据是「字段在提交里存在」：复选框只有被勾选才会提交 —— 所以勾选态用 checked，
-// 文本值用 value，两者不要混用（文本框的值可能是空串，那不代表「没填过」）。
-func (e formEcho) checked(name string) bool {
-	return len(e.values[name]) > 0
 }

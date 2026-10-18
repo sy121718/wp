@@ -304,6 +304,21 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 	return list, err
 }
 
+// ListForVariantOptions 工程内全部商品的 id + name（后台「选哪个 SKU」下拉用）。
+//
+// 与 List 的区别：**不分页**。下拉要的是全量（漏掉的商品在 select 里就是不存在），
+// 而 List 的 limit/offset 是为列表页准备的。只取两列，jsonb 与描述都不读
+// （下拉不渲染它们，读了就是白搬）。
+func (m *Model) ListForVariantOptions(ctx context.Context, projectID string) (list []*ProductEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Select("id, name").
+			Order("sort ASC, create_time DESC").
+			Find(&list).Error
+	})
+	return list, err
+}
+
 // idBatchSize 按 id 批量读（IN (...)）时的批次大小。
 //
 // PG 的绑定参数上限是 65535，这里取一个远小于它的值：一个批次就是一次往返，

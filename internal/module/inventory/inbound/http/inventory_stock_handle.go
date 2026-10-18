@@ -9,7 +9,6 @@ import (
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
-	productdto "go_wp/internal/module/product/dto"
 )
 
 // InventoryStockChange 后台「库存调整（盘点 / 报损）」。
@@ -117,38 +116,34 @@ func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
 	respond(nil)
 }
 
-// variantOptions 某工程全部商品的变体下拉项（SKU 查询的入口；上限 100 个商品，与商品页一致）。
-func (h *inventoryPageHandle) variantOptions(ctx context.Context, projectID string) (out []gin.H, err error) {
-	out = []gin.H{}
-	// 商品契约未注入（装配漏接）时下拉为空，页面照常渲染 —— 不因一处装配缺失 500。
+// variantOptions 某工程全部商品的变体下拉项（库存页「按 SKU 看库存」的入口）。
+//
+// 一次批量的读法：商品清单与变体各查一次，查询次数与商品数无关
+// （原先是「List 一页 + 逐个 Get」，100 个商品 = 101 次往返）。
+// 商品契约未注入（装配漏接）时下拉为空、页面照常渲染 —— 不因一处装配缺失 500。
+func (h *inventoryPageHandle) variantOptions(ctx context.Context, projectID string) (out []inventorydto.VariantOptionResp, err error) {
+	out = []inventorydto.VariantOptionResp{}
 	if projectID == "" || h.products == nil {
 		return out, nil
 	}
-	list, err := h.products.List(ctx, &productdto.ListReq{ProjectID: projectID, Size: 100})
+	options, err := h.products.ListVariantOptions(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	for _, p := range list {
-		detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: p.ID})
-		if derr != nil {
-			continue
-		}
-		for _, v := range detail.Variants {
-			out = append(out, gin.H{
-				"VariantID": v.ID, "ProductID": p.ID, "SKUCode": v.SKUCode,
-				"Label": detail.Name + " · " + v.SKUCode,
-			})
-		}
+	for _, o := range options {
+		out = append(out, inventorydto.VariantOptionResp{
+			VariantID: o.VariantID, ProductID: o.ProductID, SKUCode: o.SKUCode,
+			Label: o.ProductName + " · " + o.SKUCode,
+		})
 	}
 	return out, nil
 }
 
 // skuOfVariant 从下拉项里按变体 id 取 SKU 编码（找不到返回空串，页面提示无匹配）。
-func skuOfVariant(options []gin.H, variantID string) string {
+func skuOfVariant(options []inventorydto.VariantOptionResp, variantID string) string {
 	for _, o := range options {
-		if id, _ := o["VariantID"].(string); id == variantID {
-			code, _ := o["SKUCode"].(string)
-			return code
+		if o.VariantID == variantID {
+			return o.SKUCode
 		}
 	}
 	return ""

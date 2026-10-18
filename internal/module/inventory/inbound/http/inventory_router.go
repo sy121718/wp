@@ -16,9 +16,21 @@ import (
 	"go_wp/internal/permission"
 )
 
+// catalogProduct 装配期要注入的商品能力：
+//
+//   - VariantOptionsReader —— 页面「选哪个 SKU」下拉（一次批量，只读小口）；
+//   - ProductService —— 采购页要商品详情（成本价、变体）。
+//
+// 两个小接口都用得到，所以注入点收成一个组合接口：装配方只传一个商品服务，
+// 消费方各自只把自己需要的那个赋给字段（拿不到多余能力）。
+type catalogProduct interface {
+	productcontract.ProductService
+	productcontract.VariantOptionsReader
+}
+
 // productCatalogConsumer 需要商品契约做「商品 → 变体」下拉的后台页面处理器。
 type productCatalogConsumer interface {
-	setProductCatalog(products productcontract.ProductService)
+	setProductCatalog(products catalogProduct)
 }
 
 // pageCatalogConsumers 装配期登记的后台页面处理器（写一次，之后只读）。
@@ -31,8 +43,16 @@ var pageCatalogConsumers []productCatalogConsumer
 // 与本仓 runtimefragment.SetBundleProvider 同一手法：装配期注入一次，之后只读。
 // 未注入时页面照常渲染，只是下拉为空（handler 侧对 nil 做降级，不 panic）。
 func SetProductCatalog(products productcontract.ProductService) {
+	// 装配期类型断言而不是把 catalogProduct 写进参数：SetupProductRoutes 的返回值是
+	// ProductService 接口，实现方（product 的 Service）同时实现变体清单口。
+	// 断言失败是**两处接口不同步**（改了名字 / 换了实现），属于启动期该暴露的缺陷 ——
+	// 静默降级成「下拉空」会让运营以为「这个工程没有商品」。
+	catalog, ok := products.(catalogProduct)
+	if !ok {
+		panic("inventory.SetProductCatalog: 商品契约未实现 VariantOptionsReader（两处接口不同步）")
+	}
 	for _, consumer := range pageCatalogConsumers {
-		consumer.setProductCatalog(products)
+		consumer.setProductCatalog(catalog)
 	}
 }
 

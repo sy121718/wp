@@ -3,7 +3,8 @@ package inventoryhttp
 // 抽屉表单的失败出口：**4xx + JSON**，不重渲片段。
 //
 // 判据（改造前后各一条，都在这里）：
-//   1. 状态码分档 —— 业务错误 400、其余 500（与整页失败同一个 IsBusinessError）；
+//   1. 状态码分档 —— 声明处给过 404/409 就用它，业务错误默认 400，其余 500
+//      （pkg/response.ErrorStatus；判据与文案同一个事实来源 facing.FactOf）；
 //   2. 不渲染任何模板 —— htmx 对 4xx 不 swap，抽屉与用户输入原样保留，所以响应体里
 //      只有一句话，没有一个 HTML 字节（重渲那套回填通道已整体删除）。
 
@@ -56,21 +57,31 @@ func TestInventoryDrawerFailureReturnsJSON(t *testing.T) {
 		status int
 		want   string
 	}{
-		{"warehouse business", (&inventoryPageHandle{}).warehouseFormFail,
-			errors.New(inventoryenums.ErrWarehouseCodeTaken), http.StatusBadRequest,
-			inventoryenums.FallbackFor(inventoryenums.ErrWarehouseCodeTaken)},
-		{"reason business", (&inventoryPageHandle{}).reasonFormFail,
-			errors.New(inventoryenums.ErrReasonCodeTaken), http.StatusBadRequest,
-			inventoryenums.FallbackFor(inventoryenums.ErrReasonCodeTaken)},
+		// 400：参数不合法 / 业务拒绝（业务错误的默认档）。
 		{"reason edit business", (&inventoryPageHandle{}).reasonEditFormFail,
-			errors.New(inventoryenums.ErrReasonStatusInvalid), http.StatusBadRequest,
+			inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid), http.StatusBadRequest,
 			inventoryenums.FallbackFor(inventoryenums.ErrReasonStatusInvalid)},
 		{"source business", (&inventorySourcePageHandle{}).sourceFormFail,
-			errors.New(inventoryenums.ErrSourceSettleInvalid), http.StatusBadRequest,
+			inventoryenums.Err(inventoryenums.ErrSourceSettleInvalid), http.StatusBadRequest,
 			inventoryenums.FallbackFor(inventoryenums.ErrSourceSettleInvalid)},
 		{"purchase business", (&inventoryPurchasePageHandle{}).purchaseCreateFail,
-			errors.New(inventoryenums.ErrInvalidParam), http.StatusBadRequest,
+			inventoryenums.Err(inventoryenums.ErrInvalidParam), http.StatusBadRequest,
 			inventoryenums.FallbackFor(inventoryenums.ErrInvalidParam)},
+		// 404：找不到 —— 由声明处给（facing.WithStatus），出口只读。
+		{"warehouse not found", (&inventoryPageHandle{}).warehouseFormFail,
+			inventoryenums.Err(inventoryenums.ErrWarehouseNotFound), http.StatusNotFound,
+			inventoryenums.FallbackFor(inventoryenums.ErrWarehouseNotFound)},
+		// 409：唯一键冲突 / 状态不允许 —— 处置是刷新后重试或换个值，不是改输入格式。
+		{"warehouse code taken", (&inventoryPageHandle{}).warehouseFormFail,
+			inventoryenums.Err(inventoryenums.ErrWarehouseCodeTaken), http.StatusConflict,
+			inventoryenums.FallbackFor(inventoryenums.ErrWarehouseCodeTaken)},
+		{"reason code taken", (&inventoryPageHandle{}).reasonFormFail,
+			inventoryenums.Err(inventoryenums.ErrReasonCodeTaken), http.StatusConflict,
+			inventoryenums.FallbackFor(inventoryenums.ErrReasonCodeTaken)},
+		// 带明细的冲突：复合错误（%w + 半角冒号）同样要分到 409，不能退化成 500。
+		{"conflict with detail", (&inventoryPageHandle{}).warehouseFormFail,
+			inventoryenums.ErrDetail(inventoryenums.ErrWarehouseCodeTaken, "WH1"), http.StatusConflict,
+			inventoryenums.FallbackFor(inventoryenums.ErrWarehouseCodeTaken)},
 		{"warehouse internal", (&inventoryPageHandle{}).warehouseFormFail,
 			internal, http.StatusInternalServerError, "系统内部错误"},
 	}

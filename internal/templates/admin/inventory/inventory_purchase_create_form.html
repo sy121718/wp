@@ -2,7 +2,7 @@
 {* 抽屉失败走 4xx + JSON（htmx 不 swap）：抽屉与用户输入原样保留，所以这里不做服务端回填。*}
 <div data-purchase-create-host>
     <form method="post" action="/admin/inventory/purchases/create?{{ .ListQuery }}" class="form-stack"
-          hx-post="/admin/inventory/purchases/create?{{ .ListQuery }}" hx-target="closest [data-purchase-create-host]" hx-swap="outerHTML">
+          hx-post="/admin/inventory/purchases/create?{{ .ListQuery }}">
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         <input type="hidden" name="projectId" value="{{pcProject}}">
         <div class="form-group">

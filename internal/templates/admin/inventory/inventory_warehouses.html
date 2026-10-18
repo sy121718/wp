@@ -164,7 +164,7 @@
     {{if isset(.Buttons["inventory.warehouse_create"])}}
     <template id="tpl-warehouse-create">
         <div data-inventory-warehouse-host>
-        <form method="post" action="/admin/inventory/warehouse/create?{{ .ListQuery }}" hx-post="/admin/inventory/warehouse/create?{{ .ListQuery }}" hx-target="closest [data-inventory-warehouse-host]" hx-swap="outerHTML">
+        <form method="post" action="/admin/inventory/warehouse/create?{{ .ListQuery }}" hx-post="/admin/inventory/warehouse/create?{{ .ListQuery }}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
@@ -232,7 +232,7 @@
     {{range _, w := .Warehouses}}
     <template id="tpl-warehouse-edit-{{w.ID}}">
         <div data-inventory-warehouse-host>
-        <form method="post" action="/admin/inventory/warehouse/update?{{ .ListQuery }}" hx-post="/admin/inventory/warehouse/update?{{ .ListQuery }}" hx-target="closest [data-inventory-warehouse-host]" hx-swap="outerHTML">
+        <form method="post" action="/admin/inventory/warehouse/update?{{ .ListQuery }}" hx-post="/admin/inventory/warehouse/update?{{ .ListQuery }}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{w.ID}}">

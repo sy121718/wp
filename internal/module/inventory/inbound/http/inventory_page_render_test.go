@@ -34,7 +34,6 @@ import (
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	productcontract "go_wp/internal/module/product/contract"
-	productdto "go_wp/internal/module/product/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
 	"go_wp/pkg/auth"
@@ -126,15 +125,16 @@ func (s *inventoryPageRenderProjects) List(context.Context) ([]projectcontract.P
 // `variantOptions` 直接短路返回空 —— 那是「能力未装配」的既定降级，不是失败路径，
 // 拿它当覆盖等于没测到 `variantOptions` 的 err 分支。
 type inventoryPageRenderCatalog struct {
-	productcontract.ProductService
+	productcontract.VariantOptionsReader
+	options []productcontract.VariantOption
 	listErr error
 }
 
-func (s *inventoryPageRenderCatalog) List(context.Context, *productdto.ListReq) ([]*productdto.ProductResp, error) {
+func (s *inventoryPageRenderCatalog) ListVariantOptions(context.Context, string) ([]productcontract.VariantOption, error) {
 	if s.listErr != nil {
 		return nil, s.listErr
 	}
-	return nil, nil
+	return s.options, nil
 }
 
 // newInventoryPageTestRouter 装配与线上同一条渲染路径的测试路由（三页共用一份）。
@@ -142,7 +142,7 @@ func (s *inventoryPageRenderCatalog) List(context.Context, *productdto.ListReq) 
 // 不依赖数据库：库存与工程服务都是桩，页面壳与取词走 shell 的真实实现（所以取词用的就是请求语言）。
 // 成功路径与失败路径共用这份装配 —— 两处各装一次，失败路径的断言就会悄悄退化成「测了另一套中间件」。
 func newInventoryPageTestRouter(t *testing.T, inv inventorycontract.InventoryService,
-	projects projectcontract.ProjectService, catalog ...productcontract.ProductService) *gin.Engine {
+	projects projectcontract.ProjectService, catalog ...productcontract.VariantOptionsReader) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -182,7 +182,7 @@ func newInventoryPageTestRouter(t *testing.T, inv inventorycontract.InventorySer
 	})
 	// catalog 只给需要触发「SKU 下拉读不到」的用例：不传就是装配期未注入商品契约的形态
 	//（variantOptions 短路返回空、页面照常渲染），与本文件其余用例一致。
-	var products productcontract.ProductService
+	var products productcontract.VariantOptionsReader
 	if len(catalog) > 0 {
 		products = catalog[0]
 	}
@@ -255,7 +255,7 @@ func TestInventoryPagesLoadFailureRenderPage(t *testing.T) {
 		path      string
 		inv       *inventoryPageRenderStub
 		projects  projectcontract.ProjectService
-		catalog   productcontract.ProductService
+		catalog   productcontract.VariantOptionsReader
 		emptyText string
 	}{
 		{

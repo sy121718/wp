@@ -16,8 +16,9 @@ import (
 
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"go_wp/internal/text"
+
+	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/shell"
 	"go_wp/pkg/facing"
@@ -100,18 +101,13 @@ func inventoryDone(c *gin.Context, back string) {
 	redirectWhere(c, back)
 }
 
-// inventoryFail 写动作失败（按 error 判档）：业务错误 400、其余 500。
+// inventoryFail 写动作失败：状态码由错误自己声明（pkg/facing.Statused），文案走同一条链。
 //
-// 状态码与文案必须用**同一份判据**：这里判的是 facing.FactOf（与 inventoryErrMsg 相同），
-// 不是 response.IsBusinessError —— 后者的正则整串锚定，认不出模块用 fmt.Errorf("%w: 明细")
-// 拼出来的复合错误（ErrExternalSKUProductConflict: …），会把一条业务拒绝判成 500，
-// 而文案那一侧却已经把它渲染成了中文原因。判据分叉的症状正是「400 的句子配 500 的状态码」。
+// 分档口径见 pkg/response.ErrorStatus：声明处给过 404/409 就用它，业务错误默认 400，
+// 其余 500。**不在这里判文案** —— 判据与文案必须是同一份事实（facing.FactOf），
+// 分成两处就会出现「中文原因配 500」「找不到配 400」这类只在出事时才发现的偏差。
 func inventoryFail(c *gin.Context, err error) {
-	status := http.StatusInternalServerError
-	if fact, ok := facing.FactOf(err); ok && fact.Business {
-		status = http.StatusBadRequest
-	}
-	response.ErrorWithMessage(c, status, inventoryErrText(c, err))
+	response.ErrorWithMessage(c, response.ErrorStatus(err), inventoryErrText(c, err))
 }
 
 // inventoryFailMsg 写动作失败（结论已经是事实，不是 error）：批量部分成功、未选中任何行、

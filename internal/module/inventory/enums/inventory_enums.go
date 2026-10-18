@@ -6,6 +6,7 @@ package inventoryenums
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"go_wp/pkg/facing"
@@ -465,9 +466,47 @@ var errFallbacks = map[string]string{
 	ErrExternalSKUProductConflict:    "该外部编码在本仓已挂在另一个商品上：同一个外部编码在同一仓库内只能属于同一个商品（同一商品的多个口味可以共用一个外部编码）",
 }
 
+// errStatuses 业务错误对外的 HTTP 状态码（**只登记非 400 的档**）。
+//
+// 400 是业务错误的默认档（参数不合法、业务拒绝），所以这里只有两类：
+//
+//	404 —— 找不到：重试无用，调用方该换 id / 刷新列表；
+//	409 —— 冲突：唯一键占用、状态不允许、并发版本、超收 —— 处置是「刷新后重试」或换个值。
+//
+// 全部压成 400 的代价是前端与监控分不清「输错了」与「这条路现在不通」：
+// 后者要重试或换路径，前者只要改输入。判据在**声明处**，出口只读
+// facing.StatusOf（见 pkg/facing.Statused），绝不按错误文案猜。
+var errStatuses = map[string]int{
+	// —— 404 找不到 ——
+	ErrWarehouseNotFound:     http.StatusNotFound,
+	ErrWarehouseSKUNotFound:  http.StatusNotFound,
+	ErrStockNotFound:         http.StatusNotFound,
+	ErrReasonNotFound:        http.StatusNotFound,
+	ErrSourceNotFound:        http.StatusNotFound,
+	ErrPurchaseOrderNotFound: http.StatusNotFound,
+	ErrPurchaseLineNotFound:  http.StatusNotFound,
+
+	// —— 409 冲突 / 当前状态不允许 ——
+	ErrWarehouseCodeTaken:         http.StatusConflict,
+	ErrWarehouseSKUCodeTaken:      http.StatusConflict,
+	ErrWarehouseIsDefault:         http.StatusConflict,
+	ErrWarehouseHasStock:          http.StatusConflict,
+	ErrWarehouseDisabled:          http.StatusConflict,
+	ErrStockInsufficient:          http.StatusConflict,
+	ErrReasonCodeTaken:            http.StatusConflict,
+	ErrReasonBuiltin:              http.StatusConflict,
+	ErrSourceCodeTaken:            http.StatusConflict,
+	ErrPurchaseCodeTaken:          http.StatusConflict,
+	ErrPurchaseSourceDisabled:     http.StatusConflict,
+	ErrPurchaseLinesLocked:        http.StatusConflict,
+	ErrReceiptOverReceive:         http.StatusConflict,
+	ErrReceiptOrderDone:           http.StatusConflict,
+	ErrExternalSKUProductConflict: http.StatusConflict,
+}
+
 // Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。
 func Err(key string) error {
-	return facing.New(key, errFallbacks[key])
+	return facing.WithStatus(facing.New(key, errFallbacks[key]), errStatuses[key])
 }
 
 // ErrDetail 声明一条带明细的业务错误：明细拼在半角冒号之后。

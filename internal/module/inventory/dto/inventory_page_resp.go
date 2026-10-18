@@ -230,6 +230,18 @@ type WarehouseOptionViewResp struct {
 	IsDefault bool
 }
 
+// VariantOptionResp 库存页「按 SKU 看库存」的下拉项（商品名 · SKU 编码）。
+//
+// 与采购页的 VariantOptionViewResp 分开：那一项还要带仓库侧裸码与成本后缀
+// （采购要落库、要看成本），这里只要「选哪条货」。合成一个类型会让库存页
+// 平白多出两个永远为空的字段，而空字段渲染出来就是空白。
+type VariantOptionResp struct {
+	VariantID string
+	ProductID string
+	SKUCode   string
+	Label     string
+}
+
 // VariantOptionViewResp 采购行 SKU 下拉项。
 //
 // BareSKU 是**仓库侧裸码**（inventory_stocks.sku_code）：采购行的 sku_code 必须按裸码落库，

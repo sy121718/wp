@@ -164,9 +164,23 @@ dto 结构体 / 数据根 map）。
   更是一处存储型注入面（模板的 `{{ }}` 自带转义）。
 - `c.HTML(`；控制器里的 `adminui.RenderPage` / `adminui.RenderBare`；控制器里出现模板名。
 
-**非页面跳转（写动作、片段失败、JSON 接口）只有一种响应**：`{code,message,data}` + 真实 HTTP 状态码
+**非页面跳转（片段失败、JSON 接口）只有一种响应**：`{code,message,data}` + 真实 HTTP 状态码
 （业务 400 / 未找到 404 / 冲突 409 / 内部 500）。`c.String(500, …)` 这类纯文本响应是存量旧写法，
 改成 JSON。**页面 GET 成功**仍由 Jet 渲染整页（SSR 是架构），但渲染发生在前端层，控制器只给数据。
+
+状态码**在声明处给**（模块 enums 的 `Err` 工厂里 `facing.WithStatus(err, 404/409)`），出口只读
+`pkg/response.ErrorStatus`。不在出口按文案猜「含 NotFound 就是 404」—— 分档会跟着措辞走，
+改文案或换语言后状态码静默变成 400/500，而测试与日志都不报错。
+
+**写动作成功 = PRG（Post/Redirect/Get），这是有意选择，不是遗漏。** 后台写表单（整页或抽屉）成功时
+回到列表：htmx 请求 `200 + HX-Redirect: <list URL>`，原生表单 `302 + Location`。理由：
+
+- 列表已经因为这次写入变了，**回列表本身就是回执**；再渲染一页「操作成功」既有第二份模板要维护，
+  又比不过「看见那一行真的改了」。
+- 回哪个 URL **是服务端的结论**（带哪个工程、哪组筛选、第几页）—— 前端没有路由表，让它自己拼就是把
+  业务地址复制进 JS，正好是本节要禁止的那件事。
+- 失败不走跳转：4xx/5xx + JSON，htmx 对 4xx/5xx 不 swap，抽屉与输入原样保留，`admin.js` 把
+  `body.message` 弹成 toast。所以写表单**不需要** `hx-target` / `hx-swap`（成功由响应头决定）。
 
 
 **模板只做展示判断，不做业务逻辑**（三条纪律，对应 `internal/templates` 里的 `.jet` / `.html`）：
