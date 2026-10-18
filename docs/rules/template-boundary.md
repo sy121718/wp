@@ -103,7 +103,7 @@
 - **失败优先于空态**：模板先判失败、再判空态 —— `{{if loadError}} … {{else if len(.Projects) == 0}}`（`internal/templates/admin/navigation/navigations.html:23-31`）。两档混在一起，运营会以为数据被删了，然后去重建一遍。
 - `LoadFailed` 是既有形态（`masterdata_page.go:242-245`、`membership_page.go:264-268`、`inventory_page.go:1801-1804`、`order_create_page.go:292-293`；模板样板 `internal/templates/admin/membership/membership.html:46` 的 `{{if .LoadFailed}}` + `role="alert"`）—— 上面这几处按各自模块注释仍属**降级 200**，对应上表最后一行（可选辅助：工程上下文缺省，但页面主体照读）。
 - **判据不是「用了哪个键」，而是这一支在失败时是否已经把页面赖以成立的主数据读完**。反例（同一个键、相反的档）：`internal/module/contenttemplate/inbound/http/contenttemplate_page.go:75-111` 的工程列表失败 —— 那一支在 `Impact` / `templates.List` 之前就 `return`，**列表主体根本没读**，因此是**主数据失败 = 500 + no-store**（`:109-110`）。它早期被错记为「可选辅助降级 200」的示例，2026-10 按短路证据纠正；任何模块出现「同样在列表查询之前 return」的同类分支，都按这条改判为 500。回归钉死 `internal/module/contenttemplate/inbound/http/content_template_page_err_test.go` 的 `TestContentTemplatesPageProjectListFailureRenders500`：500 + `text/html` + `no-store` + 页壳完整 + 筛选 `entityType` 回显 + 无行级入口/批量动作 + 引用面/清单/样例实体查询计数全 0 + 原文只进日志。
-- `LoadError` 是归口文字槽：文字由 Go 按**当前请求语言**归好（`navigationErrPageText` → `shell.TranslateFor`），缺词落模块内受控 fallback（`internal/module/navigation/inbound/http/navigation_err.go` 的 `navigationFacingFallbacks`）；模板只把它摆出来，不取词、不拼句。
+- `LoadError` 是归口文字槽：事实由 Go 给（`internal/module/navigation/inbound/http/navigation_err.go` 的 `navigationErrMsg` → `adminui.Msg`），缺词落 `enums.errFallbacks` 的中文兜底；**取词发生在渲染期**，模板只把它摆出来，不拼句。判据是 `pkg/facing.FactOf`，模块不再自带白名单。
 
 ### 整页 GET 的失败出口不许用这四种
 

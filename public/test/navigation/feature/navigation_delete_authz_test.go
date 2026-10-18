@@ -116,7 +116,7 @@ func navFindBulkItem(t *testing.T, items []interface{}, id string) map[string]in
 // navAssertNoLeak 逐条原因既不得出现数据库/内部细节，也不得是内部归口 key。
 func navAssertNoLeak(t *testing.T, message string) {
 	t.Helper()
-	for _, tok := range []string{"SQLSTATE", "pg_", "constraint", "record not found", navigationenums.ErrInternal} {
+	for _, tok := range []string{"SQLSTATE", "pg_", "constraint", "record not found", navInternalKey} {
 		if strings.Contains(message, tok) {
 			t.Errorf("逐条原因泄漏内部细节 %q：%q", tok, message)
 		}
@@ -482,11 +482,11 @@ func TestNavigationDeleteBulkReasonsFollowRequestLanguage(t *testing.T) {
 
 	i18n.InjectForTest(map[string]map[string]string{
 		navigationenums.ErrNotFound: {"zh-CN": "合成-导航项不存在", "en-US": "synth-navigation-item-missing"},
-		navigationenums.ErrInternal: {"zh-CN": "合成-操作失败", "en-US": "synth-operation-failed"},
+		navInternalKey: {"zh-CN": "合成-操作失败", "en-US": "synth-operation-failed"},
 	}, map[string]int{})
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
-	// 非 uuid：库层解析 uuid 失败（22P02）→ service 原样上抛 → 归口到 ErrInternal。
+	// 非 uuid：库层解析 uuid 失败（22P02）→ service 原样上抛 → 归口到 navigation.err.internal。
 	const badID = "not-a-uuid"
 	// 合法但不存在：Absent → ErrNotFound。
 	const missing = "00000000-0000-0000-0000-0000000000fd"

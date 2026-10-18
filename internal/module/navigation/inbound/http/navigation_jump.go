@@ -10,7 +10,7 @@ package navigationhttp
 // 三条边界（同 shell.RenderJump 的注释）：
 //   · 文案是**事实**（key + 中文兜底 + `%s` 参数），不是拼好的句子 —— 控制器不取词，
 //     取词由提示页注入的 tf 做（见 adminui.Prepare）。事实的形状是本文件的 `navText`；
-//     错误事实的判定统一在 navigation_err.go 的 navigationErrMsg（本模块白名单 + 归口）；
+//     错误事实的判定统一在 navigation_err.go 的 navigationErrMsg（pkg/facing 判据 + 归口）；
 //   · 回跳地址由 backref.BackPath 从**表单 action 的 query** 按白名单读回（服务端自己拼，
 //     不读隐藏域里的整串 URL）；
 //   · 结论不进 URL —— 成功 / 失败只体现在提示页的响应体里。

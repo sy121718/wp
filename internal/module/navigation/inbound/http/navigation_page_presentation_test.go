@@ -213,7 +213,7 @@ func renderNavigationsPageBody(t *testing.T, nav navigationcontract.NavigationSe
 //  1. 响应形态是页面：有页壳（layout 的 admin-layout）与 Content-Type: text/html ——
 //     此前这里是 response.ErrorWithMessage，浏览器拿到的是一段 JSON，DOM 里没有标题栏与菜单；
 //  2. 状态码是 500 且 no-store：200 会让失败看起来像成功、监控也看不见；失败页不该被缓存；
-//  3. 文案已归口且按请求语言取：白名单未命中 → navigationenums.ErrInternal 的当前语言译文；
+//  3. 文案已归口且按请求语言取：白名单未命中 → navigationInternalKey 的当前语言译文；
 //     数据库原文（这里是 `pq: relation "navigations" does not exist`）只进日志、不进响应体；
 //  4. 与「还没有站点工程」两档分开：装载失败不渲染空工程引导（那是「读到了、列表为空」）。
 func TestNavigationsPageLoadFailureRendersPageWithErrorSlot(t *testing.T) {
@@ -231,7 +231,7 @@ func TestNavigationsPageLoadFailureRendersPageWithErrorSlot(t *testing.T) {
 			name:       "zh-CN",
 			acceptLang: "zh-CN",
 			entries: map[string]map[string]string{
-				navigationenums.ErrInternal:         {"zh-CN": "操作失败，请稍后重试", "en-US": "Operation failed, please try again later"},
+				navigationInternalKey:         {"zh-CN": "操作失败，请稍后重试", "en-US": "Operation failed, please try again later"},
 				"admin.common.list.loadFailedTitle": {"zh-CN": "这一页的数据没能读出来", "en-US": "This list could not be loaded"},
 			},
 			wantMsg:   "操作失败，请稍后重试",
@@ -241,7 +241,7 @@ func TestNavigationsPageLoadFailureRendersPageWithErrorSlot(t *testing.T) {
 			name:       "en-US",
 			acceptLang: "en-US",
 			entries: map[string]map[string]string{
-				navigationenums.ErrInternal:         {"zh-CN": "操作失败，请稍后重试", "en-US": "Operation failed, please try again later"},
+				navigationInternalKey:         {"zh-CN": "操作失败，请稍后重试", "en-US": "Operation failed, please try again later"},
 				"admin.common.list.loadFailedTitle": {"zh-CN": "这一页的数据没能读出来", "en-US": "This list could not be loaded"},
 			},
 			wantMsg:   "Operation failed, please try again later",
@@ -302,8 +302,8 @@ func TestNavigationsPageLoadFailureRendersPageWithErrorSlot(t *testing.T) {
 				t.Errorf("取数失败不应再返回 JSON 报文：%s", body)
 			}
 			// 裸 key 不能出现在页面上（词条在场的取词路径与缺席的兜底路径都走过）。
-			if strings.Contains(body, navigationenums.ErrInternal) {
-				t.Errorf("页面上漏出了 i18n key %q：%s", navigationenums.ErrInternal, body)
+			if strings.Contains(body, navigationInternalKey) {
+				t.Errorf("页面上漏出了 i18n key %q：%s", navigationInternalKey, body)
 			}
 			// 与「还没有站点工程」两档分开：装载失败不是「工程列表为空」。
 			if strings.Contains(body, "还没有站点工程") {
@@ -320,8 +320,7 @@ func TestNavigationsPageLoadFailureRendersPageWithErrorSlot(t *testing.T) {
 // （前端可判，那条链有自己的兜底）；而页面出口的产物要塞进 HTML，裸 key 就是
 // 「页面上出现一串英文常量」—— 与本模块文件头记的 `c.String(500, MsgInternalError)` 同症状。
 func TestNavigationsPageFacingErrorTextResolvesPerRequestLanguage(t *testing.T) {
-	// 写侧拼定位信息用的全角分隔符（enums.FacingDetailSep）。
-	detail := navigationenums.FacingDetailSep
+	// 写侧拼定位信息走 enums.ErrDetail（ASCII「: 」分隔），页面出口再按语言换全角/半角。
 
 	for _, tc := range []struct {
 		name       string
@@ -363,7 +362,7 @@ func TestNavigationsPageFacingErrorTextResolvesPerRequestLanguage(t *testing.T) 
 			name:       "key+定位 / 词条缺席 → 中文兜底 + 全角定位",
 			acceptLang: "zh-CN",
 			entries:    nil,
-			err:        errors.New(navigationenums.ErrStaleVersion + detail + "首页"),
+			err:        navigationenums.ErrDetail(navigationenums.ErrStaleVersion, "首页"),
 			want:       "该菜单项已被其他窗口修改，请刷新后重试：首页",
 			absent:     []string{"ErrStaleVersion"},
 		},
@@ -373,7 +372,7 @@ func TestNavigationsPageFacingErrorTextResolvesPerRequestLanguage(t *testing.T) 
 			entries: map[string]map[string]string{
 				navigationenums.ErrStaleVersion: {"zh-CN": "该菜单项已被其他窗口修改，请刷新后重试", "en-US": "This menu item was changed in another window; refresh and try again"},
 			},
-			err:    errors.New(navigationenums.ErrStaleVersion + detail + "首页"),
+			err:    navigationenums.ErrDetail(navigationenums.ErrStaleVersion, "首页"),
 			want:   "This menu item was changed in another window; refresh and try again: 首页",
 			absent: []string{"ErrStaleVersion"},
 		},
@@ -403,18 +402,6 @@ func TestNavigationsPageFacingErrorTextResolvesPerRequestLanguage(t *testing.T) 
 				}
 			}
 		})
-	}
-}
-
-// TestNavigationFacingFallbacksCoverWhitelist 白名单与页面兜底表必须一一对应。
-//
-// 缺一条的后果不是报错：页面会退回通用内部错误文案（不空、不裸 key，但用户看不到
-// 「哪一项不合法」）。这条元测试让「漏登记」在提交时就红，而不是等运营反馈。
-func TestNavigationFacingFallbacksCoverWhitelist(t *testing.T) {
-	for _, key := range navigationenums.NavigationFacingMessages {
-		if strings.TrimSpace(navigationFacingFallbacks[key]) == "" {
-			t.Errorf("白名单 key %q 没有登记页面中文兜底（navigationFacingFallbacks）", key)
-		}
 	}
 }
 

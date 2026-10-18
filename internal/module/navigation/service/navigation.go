@@ -213,7 +213,7 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 			return nil, serr
 		}
 		if rows == 0 {
-			return nil, errors.New(staleVersionMessage(s.staleTitle(ctx, e)))
+			return nil, staleVersionMessage(s.staleTitle(ctx, e))
 		}
 	}
 	// 失效派发放在写成功之后、回读之前：回读失败不该让「已经提交的导航变更」漏掉派发。

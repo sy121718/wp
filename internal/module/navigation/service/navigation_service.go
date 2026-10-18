@@ -53,6 +53,7 @@ import (
 	"go_wp/internal/module/navigation/enums"
 	"go_wp/internal/module/navigation/model"
 	"go_wp/internal/module/project/contract"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
@@ -195,14 +196,13 @@ func parseExpectedUpdatedAt(raw *string) (*time.Time, error) {
 	return nil, errors.New(navigationenums.ErrInvalidParam)
 }
 
-// staleVersionMessage 乐观锁冲突的对外文案：白名单 key + 「：<定位>」。
+// staleVersionMessage 乐观锁冲突的业务错误：ErrStaleVersion + 定位信息（撞了的菜单项标题）。
 //
-// 用「：」而不是带参的 key|param 形态：定位信息是菜单项标题（任意文本）。
-// 页面出口（localizeFacing）按 enums.SplitFacingDetail 的读法拆出 key 与定位、
-// 只翻 key —— 结论现在走提示页响应体（shell.RenderJump），不再经 ?err= 回带，
-// 但「key：定位」这条拆分协议两侧仍同源。
-func staleVersionMessage(title string) string {
-	return navigationenums.ErrStaleVersion + "：" + compactLocation(title)
+// 用 ErrDetail 而不是带参的 key|param 形态：定位信息是菜单项标题（任意文本，可能是任意长度）。
+// 明细按 ASCII「: 」拼 —— pkg/facing 的复合形态判据只认这一种；出口拿到 Fact.Tail 后
+// 按语言决定渲染用的分隔符（中文全角、其余半角）。
+func staleVersionMessage(title string) error {
+	return navigationenums.ErrDetail(navigationenums.ErrStaleVersion, compactLocation(title))
 }
 
 // compactLocation 定位信息（菜单项标题）的收敛：去控制字符、限长。
@@ -240,31 +240,34 @@ var _ navigationcontract.FacingTexter = (*Service)(nil)
 
 // FacingText 把本模块业务错误转成指定语言下可直接展示的一句话（契约 FacingTexter）。
 //
-// 与 inbound/http 的两个出口同源：同一份白名单、同一个「key：定位」拆法（判据都在 enums），
-// 差别只在取词入口 —— 这里走 pkg/i18n.Translate（消费者拿不到 *gin.Context），
-// 那里走 pkg/response 的取词。两处说法因此不会漂。
+// 判据只有一份：pkg/facing.FactOf。事实给出 key（决定语言）、Fallback（词条缺席时的中文）
+// 与 Tail（`key: 定位` 里的定位数据 —— 撞了的那条菜单项标题）。本模块不再自带白名单与拆分函数：
+// 那是第二份真相，service 换措辞或某条错误改由别的模块提供时就静默失配。
+//
+// 取词入口与 inbound/http 的出口不同（这里拿不到 *gin.Context，走 pkg/i18n.Translate），
+// 但两者读的是同一个事实，说法因此不会漂。
 func (s *Service) FacingText(lang string, err error) string {
 	tr := func(key, fallback string) string { return i18n.Translate(key, fallback, lang) }
-	if err != nil {
-		if msg, ok := navigationenums.HitFacingMessage(err.Error()); ok {
-			if key, detail, hasDetail := navigationenums.SplitFacingDetail(msg); hasDetail {
-				return tr(key, key) + facingDetailSepForLang(lang) + detail
-			}
-			if key, param, hasParam := strings.Cut(msg, "|"); hasParam {
-				// 带参形态：%s 由这里填（pkg/i18n 只做取词，不做占位符替换）。
-				return strings.Replace(tr(key, key), "%s", param, 1)
-			}
-			return tr(msg, msg)
-		}
+	fact, business := facing.FactOf(err)
+	if err == nil || !business {
+		return tr("navigation.err.internal", "操作失败，请稍后重试（细节只进日志）")
 	}
-	return tr(navigationenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）")
+	if key, param, hasParam := strings.Cut(fact.Key, "|"); hasParam {
+		// 带参形态：%s 由这里填（pkg/i18n 只做取词，不做占位符替换）。
+		return strings.Replace(tr(key, fact.Fallback), "%s", param, 1)
+	}
+	text := tr(fact.Key, fact.Fallback)
+	if fact.Tail != "" {
+		return text + facingDetailSepForLang(lang) + fact.Tail
+	}
+	return text
 }
 
 // facingDetailSepForLang 定位信息的分隔符按语言取（中文全角，其余「: 」）。
 // 与 inbound/http 的 facingDetailSep 同一取值口径：提示条最终是给人看的一句话。
 func facingDetailSepForLang(lang string) string {
 	if strings.HasPrefix(strings.TrimSpace(lang), "zh") {
-		return navigationenums.FacingDetailSep
+		return "："
 	}
 	return ": "
 }

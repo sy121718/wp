@@ -1,7 +1,12 @@
 // Package navigationenums 统一管理 navigation 模块响应消息（0-C）。
 package navigationenums
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"go_wp/pkg/facing"
+)
 
 // 成功消息（未接 i18n 前中文常量）。
 const (
@@ -32,8 +37,8 @@ const (
 	//
 	// 后台菜单页与工作台检查器是同一份数据的两个入口，两处同时改此前是静默覆盖
 	//（last-write-wins）。冲突一律**打回给人**：不自动合并、不加后缀、不丢弃其中一方。
-	// 文案后接「：<菜单项标题>」的定位信息（页面出口经 enums.SplitFacingDetail 拆出
-	// key 与定位、只翻 key，所以本词条内不带 %s 占位符）。
+	// 文案后接「: <菜单项标题>」的定位信息（定位走 pkg/facing 的 Tail：只翻 key、定位原样
+	// 拼回，所以本词条内不带 %s 占位符）。写侧一律 enums.ErrDetail。
 	ErrStaleVersion = "ErrStaleVersion"
 	// ErrSortTied 同级排序值并列（重复），交换两行取值不产生任何位移。
 	//
@@ -42,61 +47,49 @@ const (
 	// 等于什么都没换（并列由 id ASC 决胜），所以显式**不位移**并回这句，而不是回一个
 	// 「已完成」把没发生的事说成发生了。零写零失效：不进事务、不派发 stale。
 	ErrSortTied = "ErrSortTied"
-	// ErrInternal 未归类的内部错误（SQL / 表名 / 约束名 / 文件路径等）对外归口文案。
-	//
-	// 值刻意带模块前缀：sys_i18n 的主键是 (item_key, lang)，裸 key "ErrInternal" 已被
-	// admin 批占用（迁移 268）；形态与 cart / user 的 "cart.err.internal" 一致。
-	ErrInternal = "navigation.err.internal" // 操作失败，请稍后重试（细节只进日志）
 )
 
-// NavigationFacingMessages 可以原样展示给前端的导航业务文案（**白名单**）。
+// errFallbacks 错误兜底（对外文案的中文那一半）：与常量同处声明，出口只调一次 pkg/facing.FactOf。
 //
-// 命中 → 原样透出（前端据此提示「哪一项不合法」「路径已被占用」）；
-// 未命中 → inbound/http 的 navigationErrText 记结构化日志并返回 ErrInternal。
-// 方向是安全的：漏写一个常量只会让前端看到一句通用提示（一眼可见），
-// 而不会把 service 上抛的 PostgreSQL 原文（表名 / 约束名 / SQLSTATE）透出去。
+// 为什么不再有白名单（`var NavigationFacingMessages []string` + 逐条 switch + 两个拆分函数）：
+// 那是第二份真相 —— service 换措辞、或某条错误改由别的模块提供时白名单静默失配，
+// 症状是把业务文案吞成归口、或把内部错误当文案透出，两边都不报错。
+// 现在「能不能对外说」由 facing.Fact 的形状判定，「说什么」由这里的一句话给。
 //
-// ErrInternal 本身不进白名单：它是未命中时的返回值，不是业务文案。
-var NavigationFacingMessages = []string{
-	ErrInvalidParam, ErrNotFound, ErrInvalidKind, ErrPathTaken,
-	ErrInvalidSource, ErrInvalidTarget, ErrInvalidParent, ErrProjectRequired,
-	ErrStaleVersion, ErrSortTied,
+// 取值与 sys_i18n 的 zh-CN 词条**逐字一致**（迁移 058 / 290 / 403 / 429 / 602，含同 key 被别的
+// 模块先登记的那几条）：兜底只在词条缺席时可见，与词条不一致会让人以为「词条坏了」。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:    "请求参数无效",
+	ErrNotFound:        "请求资源不存在",
+	ErrInvalidKind:     "不支持的页面类型",
+	ErrPathTaken:       "同工程同类型下已存在相同路径的导航项",
+	ErrInvalidSource:   "非法的菜单项来源，仅支持 custom/page/article/product/category/block，且非 custom 必须指定来源实体",
+	ErrInvalidTarget:   "非法的打开方式，仅支持 self 或 blank",
+	ErrInvalidParent:   "父级菜单不合法：父项必须存在、与本项属于同一工程与同一类型，且不能形成循环",
+	ErrProjectRequired: "请先选择要操作的站点工程",
+	ErrStaleVersion:    "该菜单项已被其他窗口修改，请刷新后重试",
+	ErrSortTied:        "同一级里存在重复的排序值，本次没有产生位移；请先把这一级的顺序理顺",
 }
 
-// —— 白名单的两种读法（本模块内共享，别在各处再抄一份判据）——
+// Err 声明一条自带对外文案的导航业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// ErrDetail 把业务错误与**定位数据**拼成一条（key + 明细）。
 //
-// 白名单命中判定与「key + 定位信息」的拆分此前只存在于 inbound/http 的一处循环里；
-// 消费者侧（工作台检查器要就地建菜单项）需要的正是同一份判据 —— 它拿不到本模块的
-// enums，只能经 contract 的出口取文案。把判据放在白名单旁边，两侧就不会各判一套。
-
-// FacingDetailSep 业务文案与定位信息的分隔符（写侧固定用全角「：」）。
-// 半角「: 」只出现在读侧（shell.FacingNotice 的形态 3 两种都认）。
-const FacingDetailSep = "："
-
-// HitFacingMessage 判定错误文本是否命中白名单，命中返回原文。
-// 三种形态：整串相等 / key|param 带参 / key：<定位信息>。
-func HitFacingMessage(msg string) (string, bool) {
-	for _, m := range NavigationFacingMessages {
-		if msg == m || strings.HasPrefix(msg, m+"|") ||
-			strings.HasPrefix(msg, m+FacingDetailSep) || strings.HasPrefix(msg, m+": ") {
-			return msg, true
-		}
+// 明细是给操作者用的数据（冲突的那一条菜单项标题），由本模块自己构造，不含表名 / SQLSTATE。
+// 分隔符必须用 ASCII「: 」：pkg/facing 的复合形态判据只认这一种，写成全角「：」会让整条
+// 过不了判据、被当成内部错误打成 500（页面与接口同时失去「哪一条撞了」这句定位）。
+func ErrDetail(key, detail string) error {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return Err(key)
 	}
-	return "", false
+	return fmt.Errorf("%w: %s", Err(key), detail)
 }
 
-// SplitFacingDetail 从白名单文案里拆出「key + 定位信息」；不是该形态返回 ok=false。
-func SplitFacingDetail(msg string) (key, detail string, ok bool) {
-	for _, m := range NavigationFacingMessages {
-		if rest, found := strings.CutPrefix(msg, m+FacingDetailSep); found {
-			return m, rest, true
-		}
-		if rest, found := strings.CutPrefix(msg, m+": "); found {
-			return m, rest, true
-		}
-	}
-	return "", "", false
-}
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }
 
 // —— 点分 key 常量（新式）——
 //
@@ -131,6 +124,11 @@ const (
 	ActionDone           = "admin.navigations.actionDone"            // 操作已完成
 	NoPublicPath         = "admin.navigations.no_public_path"        // （暂无公开路径，先发布后再添加）
 	NoticeNoSourcePicked = "admin.navigations.notice.noSourcePicked" // 请至少勾选一项要加入菜单的内容。
+
+	// 归口文案 key：**未归类失败**（SQL / 表名 / 约束名 / 文件路径）在出口处取这一条，
+	// 业务失败一律走 errFallbacks。它不是错误哨兵 —— 不要在 service 里拿它构造 error
+	// （那会把内部故障伪装成业务拒绝）。
+	InternalKey = "navigation.err.internal" // 操作失败，请稍后重试（细节只进日志）
 
 	// 导航类型标题（译文工作台按位置分组）。
 	KindFooter = "admin.navigations.kind.footer" // 页脚导航

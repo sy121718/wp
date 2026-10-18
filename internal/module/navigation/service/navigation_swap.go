@@ -16,6 +16,7 @@ package navigationservice
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -111,9 +112,9 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 	if err != nil {
 		var conflict *navigationmodel.SwapConflictError
 		if errors.As(err, &conflict) {
-			return nil, errors.New(staleVersionMessage(s.staleTitle(ctx,
+			return nil, staleVersionMessage(s.staleTitle(ctx,
 				&navigationmodel.NavigationEntity{ProjectID: item.ProjectID, ID: conflict.ID,
-					Title: snapshotTitle(nodes, conflict.ID)})))
+					Title: snapshotTitle(nodes, conflict.ID)}))
 		}
 		return nil, err
 	}
@@ -136,7 +137,9 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 func parseSnapshotToken(raw string) (time.Time, error) {
 	t, err := time.ParseInLocation(time.RFC3339Nano, strings.TrimSpace(raw), time.Local)
 	if err != nil {
-		return time.Time{}, errors.New(navigationenums.ErrInternal)
+		// 内部不一致（服务端自己写下的 token 解析不回来）→ 归口成真内部错误：
+		// 不是业务文案，出口给 500 + 通用提示，原文进日志。
+		return time.Time{}, fmt.Errorf("导航树快照 token 解析失败: %w", err)
 	}
 	return t, nil
 }

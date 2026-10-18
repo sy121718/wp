@@ -211,7 +211,7 @@ func TestNavigationDeleteBulkReasonsFollowRequestLanguage(t *testing.T) {
 //
 // pkg/response 的 translate 在词条缺席时回落传入的 key 原文（pkg/response/response.go:321）——
 // 那对顶层 message 是可接受的协议，但列表里的「原因」是显示给人看的成品句：裸 key 与数据库
-// 原文同属泄漏面。四种形态都要挡住：白名单 key、key|param、key: <定位>、未归口的内部错误。
+// 原文同属泄漏面。四种形态都要挡住：业务 key、key|param、key: <定位>、未归口的内部错误。
 func TestNavigationDeleteBulkReasonsFallBackWhenEntryMissing(t *testing.T) {
 	clearNavigationEntries(t)
 	initNavigationDeleteLogger(t)
@@ -224,27 +224,27 @@ func TestNavigationDeleteBulkReasonsFallBackWhenEntryMissing(t *testing.T) {
 		wantGone []string
 	}{
 		{
-			name:     "白名单 key",
+			name:     "业务 key",
 			err:      errors.New(navigationenums.ErrNotFound),
-			want:     navigationFacingFallbacks[navigationenums.ErrNotFound],
+			want:     navigationenums.FallbackFor(navigationenums.ErrNotFound),
 			wantGone: []string{navigationenums.ErrNotFound},
 		},
 		{
 			name:     "带参形态",
 			err:      errors.New(navigationenums.ErrPathTaken + "|/about"),
-			want:     navigationFacingFallbacks[navigationenums.ErrPathTaken],
+			want:     navigationenums.FallbackFor(navigationenums.ErrPathTaken),
 			wantGone: []string{navigationenums.ErrPathTaken, "|", "/about"},
 		},
 		{
 			name:     "带定位形态",
-			err:      errors.New(navigationenums.ErrStaleVersion + navigationenums.FacingDetailSep + detail),
-			want:     navigationFacingFallbacks[navigationenums.ErrStaleVersion] + ": " + detail,
+			err:      navigationenums.ErrDetail(navigationenums.ErrStaleVersion, detail),
+			want:     navigationenums.FallbackFor(navigationenums.ErrStaleVersion) + ": " + detail,
 			wantGone: []string{navigationenums.ErrStaleVersion},
 		},
 		{
 			name:     "未归口的内部错误",
 			err:      errors.New("SQLSTATE 42P01: relation \"navigations\" does not exist"),
-			want:     navigationErrPageFallback,
+			want:     navigationInternalFallback,
 			wantGone: []string{"SQLSTATE", "42P01", "relation", "navigations"},
 		},
 	}

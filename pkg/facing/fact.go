@@ -33,7 +33,7 @@ var businessErrKey = regexp.MustCompile(`^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z
 // `ErrSourceFilterInvalid = "ErrSourceFilterInvalid"`。判据只认 key 形态时，这些模块的**全部**
 // 业务错误都会被判成内部错误 → 一律 500 + 通用文案，与 CQ-010 自己声明的「业务错误透出消息」
 // 恰好相反。这一层把常量名形态补上（全仓 429 个此类常量），形态判定零成本且不需要改动 170 处调用。
-var businessErrConstant = regexp.MustCompile(`^(Err|Msg)[A-Z][A-Za-z0-9]*$`)
+var businessErrConstant = regexp.MustCompile(`^(Err|Msg)[A-Z][A-Za-z0-9]*(\|.*)?$`)
 
 // IsBusinessKey 一个**字符串**（错误消息 / enums 取值）是否是业务错误的形态。
 //
@@ -41,6 +41,9 @@ var businessErrConstant = regexp.MustCompile(`^(Err|Msg)[A-Z][A-Za-z0-9]*$`)
 //  1. key 形态 `模块.类别.语义`（已迁模块，如 cart.err.outOfStock）；参数化协议（key|param）
 //     也算业务错误 —— 翻译层会把 | 后面的部分当参数填进模板；
 //  2. enums 常量名形态 `ErrXxx` / `MsgXxx`（仍是「常量名即消息」的模块，如 ErrSourceFilterInvalid）。
+//
+// 两层都接受参数化后缀 `|param`：翻译层把 | 后面当参数填模板。缺了它，未迁模块的
+// `ErrInvalidParam|/about` 会被判成内部错误 —— 症状是该条业务文案被吞成 500 通用句。
 func IsBusinessKey(msg string) bool {
 	return businessErrKey.MatchString(msg) || businessErrConstant.MatchString(msg)
 }

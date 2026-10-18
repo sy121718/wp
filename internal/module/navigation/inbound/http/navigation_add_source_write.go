@@ -143,7 +143,7 @@ func (h *Handle) createFromSource(c *gin.Context, raw map[string]json.RawMessage
 		// 读候选失败与「候选为空」必须分开：前者零写入并归口 500（否则用户会看到
 		// 「已加入 0 项」以为勾错了），后者是合法的空结果，逐条计入 skipped。
 		logger.Scene(navigationErrScene).With("project", projectID).Error(gerr, "加载导航来源候选失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, navigationenums.ErrInternal)
+		response.ErrorWithMessage(c, http.StatusInternalServerError, navigationInternalKey)
 		return
 	}
 
@@ -183,7 +183,7 @@ func (h *Handle) createFromSource(c *gin.Context, raw map[string]json.RawMessage
 			ProjectID: projectID, Title: title, Path: candidate.URL, Kind: kind,
 			SourceType: sourceType, SourceID: &sourceID,
 		}); cerr != nil {
-			// 逐条原因走与单条接口同一份白名单收口（未命中 → ErrInternal + 一条日志），
+			// 逐条原因走与单条接口同一份判据（未命中 → 归口 key + 一条日志），
 			// 再按请求语言转成品句、词条缺席时回落到受控中文兜底：回执是给人看的，
 			// 裸 key 就是「漏译」（与删除端点共用 navigationReasonText，见 navigation_err.go）。
 			logger.Scene(navigationErrScene).With("sourceType", sourceType).With("sourceId", id).

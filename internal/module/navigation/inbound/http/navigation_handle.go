@@ -181,22 +181,29 @@ func (h *Handle) Delete(c *gin.Context) {
 }
 
 // navigationErrorStatus 把业务错误映射为 HTTP 状态码。
+//
+// 判档读的是 pkg/facing 的**事实**（key 及其键集形状），不是 err.Error() 里有没有出现某个
+// 字面量：错误文案由声明处给（enums.Err / ErrDetail），service 加一句上下文不该改变状态码。
 func navigationErrorStatus(err error) int {
-	msg := err.Error()
-	switch {
-	case strings.Contains(msg, navigationenums.ErrNotFound):
+	fact, business := navigationFact(err)
+	if !business {
+		return http.StatusInternalServerError
+	}
+	// 带参形态的 key 是 key|param，判档只看键本身。
+	key, _, _ := strings.Cut(fact.Key, "|")
+	switch key {
+	case navigationenums.ErrNotFound:
 		return http.StatusNotFound
 	// 乐观锁冲突用 409：与「你填错了」（400）和「系统坏了」（500）都不同 ——
 	// 这一次请求本身没问题，是数据在这期间被别人改过，客户端该刷新后重做。
-	case strings.Contains(msg, navigationenums.ErrStaleVersion):
+	case navigationenums.ErrStaleVersion:
 		return http.StatusConflict
-	case strings.Contains(msg, navigationenums.ErrInvalidParam),
-		strings.Contains(msg, navigationenums.ErrInvalidKind),
-		strings.Contains(msg, navigationenums.ErrPathTaken):
-		return http.StatusBadRequest
-	// 同级排序并列同样是「你这次的请求有问题、但不是 500」：交换两行取值等于没换，
-	// service 显式早退（零写）。落进 default 会把它报成系统故障，让用户以为重试能好。
-	case strings.Contains(msg, navigationenums.ErrSortTied):
+	case navigationenums.ErrInvalidParam,
+		navigationenums.ErrInvalidKind,
+		navigationenums.ErrPathTaken,
+		// 同级排序并列同样是「你这次的请求有问题、但不是 500」：交换两行取值等于没换，
+		// service 显式早退（零写）。落进 default 会把它报成系统故障，让用户以为重试能好。
+		navigationenums.ErrSortTied:
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

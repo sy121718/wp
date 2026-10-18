@@ -12,7 +12,7 @@ package navigationhttp
 //   · 形状对 → 逐条核验候选并调用 service.Create，回执带 added/skipped/items[]；
 //   · 形状不对 → 400 且**一次都不调用 service.Create**（「没有猜」的可验证形态）；
 //   · 读候选失败 → 500 归口且零写入（与「候选为空」严格分开）；
-//   · 逐条原因必须是**本请求语言的成品句**，且不泄漏原始异常（走 enums 白名单收口）。
+//   · 逐条原因必须是**本请求语言的成品句**，且不泄漏原始异常（走 pkg/facing 判据收口）。
 
 import (
 	"context"
@@ -277,7 +277,7 @@ func TestNavigationAddSourceReasonsAreControlled(t *testing.T) {
 			t.Fatalf("回执泄漏了原始异常（%s）：%s", leak, rec.Body.String())
 		}
 	}
-	// 未命中白名单 → 归口 ErrInternal 的当前语言成品句；命中白名单 → 该 key 的译文。
+	// 未命中判据 → 归口句的当前语言成品句；命中判据 → 该 key 的译文。
 	if got := data.Items[0].Message; got == "" || got == rawErr.Error() {
 		t.Fatalf("第 1 条原因应归口，实际 %q", got)
 	}
@@ -381,7 +381,7 @@ func TestNavigationAddSourceGroupsFailureIs500(t *testing.T) {
 		t.Fatalf("读候选失败必须零写入，实际 %+v", stub.createCalls)
 	}
 	_, message, _ := navigationAddSourceResponse(t, rec)
-	if message != navigationenums.ErrInternal {
+	if message != navigationInternalKey {
 		t.Fatalf("应归口到 ErrInternal（key 形态，翻译交 response），实际 %q", message)
 	}
 	if strings.Contains(rec.Body.String(), "navigations") {
@@ -594,7 +594,7 @@ func addSourceItemMessage(t *testing.T, res navigationAddSourceResult, id string
 //
 // 本包默认没有词条（进程级缓存是空的），所以这些用例走的正是「缺词 → 受控中文兜底」那一支。
 // 五档各挡一种退化：
-//   - 白名单业务文案（Create 失败）→ 不能回落裸 key；
+//   - 业务文案（Create 失败）→ 不能回落裸 key；
 //   - 跳过类界面文案（候选暂无公开路径）→ 不能回落裸 key，也**不能**被说成「操作失败」；
 //   - 带定位 / 带参两种协议形态 → 兜底形态要与 JSON 出口一致（": " 拼接、参数丢弃）；
 //   - 未归口的内部错误 → 归口 ErrInternal + 只进日志，数据库原文不进响应。
@@ -615,11 +615,11 @@ func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
 		wantGone []string
 	}{
 		{
-			name:     "白名单业务文案",
+			name:     "业务文案",
 			source:   "page",
 			failFor:  map[string]error{"pg-1": errors.New(navigationenums.ErrPathTaken)},
 			ids:      []string{"pg-1"},
-			want:     map[string]string{"pg-1": navigationFacingFallbacks[navigationenums.ErrPathTaken]},
+			want:     map[string]string{"pg-1": navigationenums.FallbackFor(navigationenums.ErrPathTaken)},
 			wantGone: []string{navigationenums.ErrPathTaken},
 		},
 		{
@@ -629,22 +629,22 @@ func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
 			ids:     []string{"pg-2"},
 			want:    map[string]string{"pg-2": noPath},
 			// 既是界面文案 key，也不能是通用失败句：这是一条**正常跳过**的原因。
-			wantGone: []string{navigationAddSourceNoPathKey, navigationErrPageFallback},
+			wantGone: []string{navigationAddSourceNoPathKey, navigationInternalFallback},
 		},
 		{
 			name:     "带定位形态",
 			source:   "page",
-			failFor:  map[string]error{"pg-1": errors.New(navigationenums.ErrStaleVersion + navigationenums.FacingDetailSep + detail)},
+			failFor:  map[string]error{"pg-1": navigationenums.ErrDetail(navigationenums.ErrStaleVersion, detail)},
 			ids:      []string{"pg-1"},
-			want:     map[string]string{"pg-1": navigationFacingFallbacks[navigationenums.ErrStaleVersion] + ": " + detail},
-			wantGone: []string{navigationenums.ErrStaleVersion, navigationenums.FacingDetailSep},
+			want:     map[string]string{"pg-1": navigationenums.FallbackFor(navigationenums.ErrStaleVersion) + ": " + detail},
+			wantGone: []string{navigationenums.ErrStaleVersion},
 		},
 		{
 			name:     "带参形态",
 			source:   "page",
 			failFor:  map[string]error{"pg-1": errors.New(navigationenums.ErrPathTaken + "|/about")},
 			ids:      []string{"pg-1"},
-			want:     map[string]string{"pg-1": navigationFacingFallbacks[navigationenums.ErrPathTaken]},
+			want:     map[string]string{"pg-1": navigationenums.FallbackFor(navigationenums.ErrPathTaken)},
 			wantGone: []string{navigationenums.ErrPathTaken, "|", "/about"},
 		},
 		{
@@ -652,7 +652,7 @@ func TestNavigationAddSourceReasonsFallBackWhenEntryMissing(t *testing.T) {
 			source:  "article",
 			failFor: map[string]error{"ar-1": errors.New(`ERROR: duplicate key value violates unique constraint "uq_navigation_path" (SQLSTATE 23505)`)},
 			ids:     []string{"ar-1"},
-			want:    map[string]string{"ar-1": navigationErrPageFallback},
+			want:    map[string]string{"ar-1": navigationInternalFallback},
 			wantGone: []string{
 				"SQLSTATE", "23505", "uq_navigation_path", "constraint", "duplicate key",
 			},

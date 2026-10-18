@@ -171,8 +171,8 @@ func TestNavigationJSONErrorNormalizesDetailProtocol(t *testing.T) {
 		navigationenums.ErrStaleVersion: {"zh-CN": "词条-已被他人修改", "en-US": "entry-stale"},
 	})
 
-	// 写侧（service.staleVersionMessage）拼的就是全角「：」。
-	err := errors.New(navigationenums.ErrStaleVersion + "：产品详情页")
+	// 写侧（service.staleVersionMessage → enums.ErrDetail）按协议拼的是半角「: 」。
+	err := navigationenums.ErrDetail(navigationenums.ErrStaleVersion, "产品详情页")
 	engine := newNavigationErrRouter(t, &navigationErrStub{err: err})
 
 	for _, lang := range []struct{ accept, want string }{
@@ -207,11 +207,11 @@ func TestNavigationJSONErrorNormalizesDetailProtocol(t *testing.T) {
 // TestNavigationJSONErrorHidesInternalAndKeepsParamProtocol 内部错误归口 + 带参协议不重复实现。
 func TestNavigationJSONErrorHidesInternalAndKeepsParamProtocol(t *testing.T) {
 	injectNavigationEntries(t, map[string]map[string]string{
-		navigationenums.ErrInternal:     {"zh-CN": "词条-操作失败", "en-US": "entry-internal"},
+		navigationInternalKey:     {"zh-CN": "词条-操作失败", "en-US": "entry-internal"},
 		navigationenums.ErrInvalidParam: {"zh-CN": "词条-参数无效：%s", "en-US": "entry-invalid: %s"},
 	})
 
-	// 未命中白名单 = 内部错误：原文只进日志，响应是归口文案。
+	// 未命中判据 = 内部错误：原文只进日志，响应是归口文案。
 	raw := `sql: no rows in table "navigations" (SQLSTATE 42P01)`
 	engine := newNavigationErrRouter(t, &navigationErrStub{err: errors.New(raw)})
 	for _, lang := range []struct{ accept, want string }{
