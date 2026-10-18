@@ -18,7 +18,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
-	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
@@ -82,25 +81,13 @@ func (h *Handle) InspectorNavigationCreate(c *gin.Context) {
 	if err != nil || created == nil {
 		logger.Scene("workbench").With("user_id", builtin.CurrentUserID(c)).
 			With("project_id", projectID).Error(err, "检查器新建菜单项失败")
-		response.ErrorWithMessage(c, http.StatusBadRequest, h.navigationFacingText(c, err))
+		response.ErrorWithMessage(c, http.StatusBadRequest, response.MessageOf(c, "workbench", err))
 		return
 	}
 	response.Success(c, gin.H{
 		"id": created.ID, "title": created.Title, "path": created.Path,
 		"kind": created.Kind, "label": workbenchservice.NavigationKindLabel(created.Kind, workbenchTrFunc(c)) + " · " + created.Title,
 	})
-}
-
-// navigationFacingText 消费者侧的导航错误文案出口。
-//
-// 优先经契约的 FacingTexter（与导航模块自己的页面/接口出口同源：同一份白名单、同一份
-// 取词）；未实现时落归口文案 —— **绝不**直出 err.Error()（那会把 PostgreSQL 原文
-// 漏到检查器面板上）。
-func (h *Handle) navigationFacingText(c *gin.Context, err error) string {
-	if t, ok := h.svc.NavigationPicker().(navigationcontract.FacingTexter); ok {
-		return t.FacingText(response.RequestLanguage(c), err)
-	}
-	return workbenchenums.MsgInternalError
 }
 
 // SEOScore 计算草稿文档的 SEO 评分。

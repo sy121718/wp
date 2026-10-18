@@ -389,13 +389,12 @@ type customerPageHandle struct {
 	orders ordercontract.CustomerOrderSummaryReader
 	// projects 工程清单：订单摘要按工程统计，详情页要给出工程选择。
 	projects projectcontract.ProjectService
-	// membership 会员身份读取（BIZ-3 展示侧）；membershipFacing 是它的错误文案出口。
+	// membership 会员身份读取（BIZ-3 展示侧）。
 	//
 	// 二者经 SetMembershipDisplay 成对注入，允许都为 nil：详情页据此渲染一句
 	// 「会员模块尚未接入」，而不是一个空白块（缺能力降级成一句人话，同其它页面的口径）。
 	// 收窄到 Reader —— 客户页只读等级，没有改等级 / 解锁 / 重算的能力。
-	membership       membershipcontract.Reader
-	membershipFacing membershipcontract.FacingTexter
+	membership membershipcontract.Reader
 	// growth 区间客户增长（新客 / 复购 / 回头客）。
 	//
 	// 同样经 setter 注入（见 SetCustomerGrowth），理由与会员展示端口一样：
@@ -2457,12 +2456,11 @@ type customerMembershipView struct {
 //
 // 两个一起注入而不是两个 setter：它们服务的是同一块展示，只接一半的中间态
 // （读得到等级、错误却直出原文）没有任何部署理由，而分开注入一定会有人只接一半。
-func (h *customerPageHandle) SetMembershipDisplay(reader membershipcontract.Reader, texter membershipcontract.FacingTexter) {
+func (h *customerPageHandle) SetMembershipDisplay(reader membershipcontract.Reader) {
 	if h == nil {
 		return
 	}
 	h.membership = reader
-	h.membershipFacing = texter
 }
 
 // membershipView 取该客户在某工程下的会员展示数据。
@@ -2499,10 +2497,10 @@ func (h *customerPageHandle) membershipView(ctx context.Context, c *gin.Context,
 // 那是对方模块的边界（它自己知道哪些错误可透出），所以这里给 Key 为空、Fallback 为成品的
 // 结论 —— 本模块不再替它取词，也不会拿本模块的白名单去拦它。
 func (h *customerPageHandle) membershipFacingMsg(c *gin.Context, err error) customerMsg {
-	if h.membershipFacing == nil || err == nil {
+	if err == nil {
 		return customerMembershipFailedLabel.msg()
 	}
-	if text := h.membershipFacing.FacingText(response.RequestLanguage(c), err); text != "" {
+	if text := strings.TrimSpace(response.MessageOf(c, "user", err)); text != "" {
 		return customerMsg{Fallback: text}
 	}
 	return customerMembershipFailedLabel.msg()

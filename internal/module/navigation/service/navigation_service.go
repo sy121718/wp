@@ -48,13 +48,11 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/navigation/contract"
-	"go_wp/internal/module/navigation/dto"
-	"go_wp/internal/module/navigation/enums"
-	"go_wp/internal/module/navigation/model"
-	"go_wp/internal/module/project/contract"
-	"go_wp/pkg/facing"
-	"go_wp/pkg/i18n"
+	navigationcontract "go_wp/internal/module/navigation/contract"
+	navigationdto "go_wp/internal/module/navigation/dto"
+	navigationenums "go_wp/internal/module/navigation/enums"
+	navigationmodel "go_wp/internal/module/navigation/model"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
@@ -233,34 +231,6 @@ func (s *Service) staleTitle(ctx context.Context, e *navigationmodel.NavigationE
 		return cur.Title
 	}
 	return e.Title
-}
-
-// 编译期断言：业务错误文案出口（工作台检查器这类跨模块消费者用）。
-var _ navigationcontract.FacingTexter = (*Service)(nil)
-
-// FacingText 把本模块业务错误转成指定语言下可直接展示的一句话（契约 FacingTexter）。
-//
-// 判据只有一份：pkg/facing.FactOf。事实给出 key（决定语言）、Fallback（词条缺席时的中文）
-// 与 Tail（`key: 定位` 里的定位数据 —— 撞了的那条菜单项标题）。本模块不再自带白名单与拆分函数：
-// 那是第二份真相，service 换措辞或某条错误改由别的模块提供时就静默失配。
-//
-// 取词入口与 inbound/http 的出口不同（这里拿不到 *gin.Context，走 pkg/i18n.Translate），
-// 但两者读的是同一个事实，说法因此不会漂。
-func (s *Service) FacingText(lang string, err error) string {
-	tr := func(key, fallback string) string { return i18n.Translate(key, fallback, lang) }
-	fact, business := facing.FactOf(err)
-	if err == nil || !business {
-		return tr("navigation.err.internal", "操作失败，请稍后重试（细节只进日志）")
-	}
-	if key, param, hasParam := strings.Cut(fact.Key, "|"); hasParam {
-		// 带参形态：%s 由这里填（pkg/i18n 只做取词，不做占位符替换）。
-		return strings.Replace(tr(key, fact.Fallback), "%s", param, 1)
-	}
-	text := tr(fact.Key, fact.Fallback)
-	if fact.Tail != "" {
-		return text + facingDetailSepForLang(lang) + fact.Tail
-	}
-	return text
 }
 
 // facingDetailSepForLang 定位信息的分隔符按语言取（中文全角，其余「: 」）。

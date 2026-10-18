@@ -35,12 +35,12 @@ func (s *stubMembershipReader) Resolve(_ context.Context, _ *membershipdto.Resol
 
 var _ membershipcontract.Reader = (*stubMembershipReader)(nil)
 
-// stubFacingTexter 文案出口的替身（真实现是 membership service，测试里只关心「它被用到了」）。
-type stubFacingTexter struct{ text string }
+// facingErr 自带文案的业务错误（模拟 service 的 enums.Err：key + 兜底）。
+type facingErr struct{ key, fallback string }
 
-func (s *stubFacingTexter) FacingText(_ string, _ error) string { return s.text }
+func (e facingErr) Error() string { return e.key }
 
-var _ membershipcontract.FacingTexter = (*stubFacingTexter)(nil)
+func (e facingErr) Facing() (string, string) { return e.key, e.fallback }
 
 // callMembershipFragment 调一次会员片段，返回（状态码, 响应体）。
 func callMembershipFragment(t *testing.T, typeName, query string, visitorID uint64) (int, string) {
@@ -58,10 +58,10 @@ func callMembershipFragment(t *testing.T, typeName, query string, visitorID uint
 }
 
 // withMembershipPorts 临时注入端口并在测试结束时还原（包级状态，测试之间不能互相污染）。
-func withMembershipPorts(t *testing.T, reader membershipcontract.Reader, texter membershipcontract.FacingTexter) {
+func withMembershipPorts(t *testing.T, reader membershipcontract.Reader) {
 	t.Helper()
 	t.Cleanup(MutateDepsForTest(func(d *Deps) {
-		d.MembershipReader, d.MembershipFacingTexter = reader, texter
+		d.MembershipReader = reader
 	}))
 }
 
@@ -70,7 +70,7 @@ func TestMembershipFragmentsRenderTier(t *testing.T) {
 	withMembershipPorts(t, &stubMembershipReader{res: &membershipdto.MembershipResp{
 		UserID: 42, ProjectID: "p-1", TierID: 2, TierName: "黄金会员",
 		FreeShipping: true, DiscountPercent: 20,
-	}}, nil)
+	}})
 
 	for _, typeName := range []string{membershipFragmentBadge, membershipFragmentPanel} {
 		t.Run(typeName, func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestMembershipFragmentsRenderTier(t *testing.T) {
 func TestMembershipFragmentDefaultTierHint(t *testing.T) {
 	withMembershipPorts(t, &stubMembershipReader{res: &membershipdto.MembershipResp{
 		UserID: 42, ProjectID: "p-1", TierID: 1, TierName: "普通会员", IsDefaultTier: true,
-	}}, nil)
+	}})
 
 	_, body := callMembershipFragment(t, membershipFragmentPanel, "projectId=p-1", 42)
 	if !strings.Contains(body, "还不是会员") {
@@ -112,7 +112,7 @@ func TestMembershipFragmentDefaultTierHint(t *testing.T) {
 // 401 的后果不是「少一句话」：htmx 默认把 401 判成不替换，访客看到的是一个毫无变化的
 // 面板，完全不知道要做什么（同 ordersList / accountPanel 的取舍）。
 func TestMembershipFragmentGuestGetsPromptNot401(t *testing.T) {
-	withMembershipPorts(t, &stubMembershipReader{res: &membershipdto.MembershipResp{TierName: "黄金会员"}}, nil)
+	withMembershipPorts(t, &stubMembershipReader{res: &membershipdto.MembershipResp{TierName: "黄金会员"}})
 
 	code, body := callMembershipFragment(t, membershipFragmentPanel, "projectId=p-1", 0)
 	if code != http.StatusOK {
@@ -131,7 +131,7 @@ func TestMembershipFragmentGuestGetsPromptNot401(t *testing.T) {
 
 // TestMembershipFragmentWithoutPortIsVisible 端口未接入 → 可见文案 + 200。
 func TestMembershipFragmentWithoutPortIsVisible(t *testing.T) {
-	withMembershipPorts(t, nil, nil)
+	withMembershipPorts(t, nil)
 
 	code, body := callMembershipFragment(t, membershipFragmentPanel, "projectId=p-1", 42)
 	if code != http.StatusOK {
@@ -146,7 +146,7 @@ func TestMembershipFragmentWithoutPortIsVisible(t *testing.T) {
 //
 // 与「未登录」分开：工程缺失是页面作者的问题，让访客去登录也修不好它。
 func TestMembershipFragmentMissingProjectIsVisible(t *testing.T) {
-	withMembershipPorts(t, &stubMembershipReader{res: &membershipdto.MembershipResp{TierName: "黄金会员"}}, nil)
+	withMembershipPorts(t, &stubMembershipReader{res: &membershipdto.MembershipResp{TierName: "黄金会员"}})
 
 	code, body := callMembershipFragment(t, membershipFragmentBadge, "", 42)
 	if code != http.StatusOK {
@@ -157,14 +157,13 @@ func TestMembershipFragmentMissingProjectIsVisible(t *testing.T) {
 	}
 }
 
-// TestMembershipFragmentResolveFailureUsesFacingTexter 解析失败走契约文案出口，不 500。
+// TestMembershipFragmentResolveFailureShowsDeclaredText 解析失败按错误声明处文案展示，不 500。
 //
 // err.Error() 直出会把 PostgreSQL 原文（表名 / 约束名）漏到访客页面上；
 // 而返回 error 会让片段变 500（htmx 不 swap，面板毫无变化）。
-func TestMembershipFragmentResolveFailureUsesFacingTexter(t *testing.T) {
+func TestMembershipFragmentResolveFailureShowsDeclaredText(t *testing.T) {
 	withMembershipPorts(t,
-		&stubMembershipReader{err: errors.New(`pq: relation "membership_tiers" does not exist`)},
-		&stubFacingTexter{text: "该工程还没有默认等级，请先在后台建一个"})
+		&stubMembershipReader{err: facingErr{key: "membership.err.defaultTierMissing", fallback: "该工程还没有默认等级，请先在后台建一个"}})
 
 	code, body := callMembershipFragment(t, membershipFragmentPanel, "projectId=p-1", 42)
 	if code != http.StatusOK {
@@ -178,18 +177,19 @@ func TestMembershipFragmentResolveFailureUsesFacingTexter(t *testing.T) {
 	}
 }
 
-// TestMembershipFragmentWithoutFacingTexterFallsBack 没有文案出口时用本地兜底文案。
+// TestMembershipFragmentInternalErrorFallsToGatewayText 内部错误只给归口文案。
 //
-// 兜底文案**不是** err.Error()：装配缺一半时也不该把数据库原文漏出去。
-func TestMembershipFragmentWithoutFacingTexterFallsBack(t *testing.T) {
-	withMembershipPorts(t, &stubMembershipReader{err: errors.New(`pq: relation "membership_tiers" does not exist`)}, nil)
+// err.Error() 直出会把 PostgreSQL 原文（表名 / 约束名）漏到访客页面上；
+// 而返回 error 会让片段变 500（htmx 不 swap，面板毫无变化）。
+func TestMembershipFragmentInternalErrorFallsToGatewayText(t *testing.T) {
+	withMembershipPorts(t, &stubMembershipReader{err: errors.New(`pq: relation "membership_tiers" does not exist`)})
 
 	code, body := callMembershipFragment(t, membershipFragmentBadge, "projectId=p-1", 42)
 	if code != http.StatusOK {
 		t.Fatalf("应返回 200，实际 %d", code)
 	}
-	if !strings.Contains(body, "会员信息暂时读不出来") {
-		t.Fatalf("应给本地兜底文案；实际：%s", body)
+	if !strings.Contains(body, "系统内部错误") {
+		t.Fatalf("内部错误应给归口文案；实际：%s", body)
 	}
 	if strings.Contains(body, "membership_tiers") {
 		t.Fatalf("内部错误原文泄漏到响应里：%s", body)
@@ -201,7 +201,7 @@ func TestMembershipFragmentWithoutFacingTexterFallsBack(t *testing.T) {
 // 半截 HTML 在 htmx 的 outerHTML 替换下会把容器结构吃掉 —— 页面看起来「坏了一半」，
 // 而服务端既没报错也没有日志。
 func TestMembershipFragmentsCloseTheirRoot(t *testing.T) {
-	withMembershipPorts(t, &stubMembershipReader{res: &membershipdto.MembershipResp{TierName: "黄金会员"}}, nil)
+	withMembershipPorts(t, &stubMembershipReader{res: &membershipdto.MembershipResp{TierName: "黄金会员"}})
 
 	for _, tc := range []struct{ typeName, open, close string }{
 		{membershipFragmentBadge, `<div class="sky-membership-badge" data-fragment="membershipBadge">`, `</div>`},

@@ -47,18 +47,11 @@ func (s *stubCommentPort) Submit(context.Context, *commentdto.SubmitReq) (*comme
 
 var _ commentcontract.FragmentPort = (*stubCommentPort)(nil)
 
-// stubCommentFacing 文案出口替身（真实现是 comment service 的 FacingText）。
-type stubCommentFacing struct{ text string }
-
-func (s *stubCommentFacing) FacingText(string, error) string { return s.text }
-
-var _ commentcontract.FacingTexter = (*stubCommentFacing)(nil)
-
 // withCommentPorts 临时注入端口并在测试结束时还原（包级状态，测试之间不能互相污染）。
-func withCommentPorts(t *testing.T, port commentcontract.FragmentPort, facing commentcontract.FacingTexter) {
+func withCommentPorts(t *testing.T, port commentcontract.FragmentPort) {
 	t.Helper()
 	t.Cleanup(MutateDepsForTest(func(d *Deps) {
-		d.CommentPort, d.CommentFacingTexter = port, facing
+		d.CommentPort = port
 		d.CommentSourceHasher = func(ip string) string { return "hash:" + ip }
 	}))
 }
@@ -113,14 +106,14 @@ func submitForm(entityType, entityID, body, csrf string) string {
 // TestCommentFragmentDegradations 端口未接入 / 缺参数 / 未登录 / CSRF 不匹配一律给**可见文案**且 200。
 func TestCommentFragmentDegradations(t *testing.T) {
 	// 端口未注入：列表只说「评论功能暂时不可用」，不是 500。
-	withCommentPorts(t, nil, nil)
+	withCommentPorts(t, nil)
 	code, body := callCommentFragment(t, http.MethodGet, "commentList", listQuery("article", "post-1"), 0, "")
 	if code != http.StatusOK || !strings.Contains(body, "不可用") {
 		t.Fatalf("端口未注入应给可见文案 + 200，实际 %d：%s", code, body)
 	}
 
 	// 端口就位但参数缺失：指向页面作者的配置问题，不是「这站不让评论」。
-	withCommentPorts(t, &stubCommentPort{}, &stubCommentFacing{text: "读不出来"})
+	withCommentPorts(t, &stubCommentPort{})
 	code, body = callCommentFragment(t, http.MethodGet, "commentList", "entityType=article", 0, "")
 	if code != http.StatusOK || !strings.Contains(body, "站点工程") {
 		t.Fatalf("缺工程应给「还没指定站点工程」，实际 %d：%s", code, body)
@@ -150,8 +143,7 @@ func TestCommentFragmentDegradations(t *testing.T) {
 // TestCommentListRendersSubmitFormOnlyWhenLoggedIn 已登录 + 有 token 时才渲染提交表单。
 func TestCommentListRendersSubmitFormOnlyWhenLoggedIn(t *testing.T) {
 	withCommentPorts(t,
-		&stubCommentPort{list: &commentdto.ListResp{Items: []commentdto.Item{}, Page: 1, PageSize: 20}},
-		&stubCommentFacing{text: "读不出来"})
+		&stubCommentPort{list: &commentdto.ListResp{Items: []commentdto.Item{}, Page: 1, PageSize: 20}})
 
 	// 未登录：列表照常（评论是公开可读的），但不给表单。
 	_, guest := callCommentFragment(t, http.MethodGet, "commentList", listQuery("article", "post-form"), 0, "csrf-1")
@@ -173,8 +165,7 @@ func TestCommentSubmitRendersVisibleResult(t *testing.T) {
 	withCommentPorts(t,
 		// 状态与回执用字面量：本包的测试也不 import 评论模块的 enums
 		// （跨模块可传递类型只有 contract 与不可变 dto —— 生产代码与测试同一条判据）。
-		&stubCommentPort{sub: &commentdto.SubmitResp{ID: 1, Status: "pending", Message: "comment.msg.submitPending"}},
-		&stubCommentFacing{text: "读不出来"})
+		&stubCommentPort{sub: &commentdto.SubmitResp{ID: 1, Status: "pending", Message: "comment.msg.submitPending"}})
 
 	code, body := callCommentFragment(t, http.MethodPost, "commentSubmit",
 		submitForm("article", "post-1", "说点什么", "csrf-1"), 77, "csrf-1")
@@ -186,11 +177,10 @@ func TestCommentSubmitRendersVisibleResult(t *testing.T) {
 	}
 }
 
-// TestCommentSubmitShowsFacingTextOnBusinessError 业务错误由契约出口给文案（不是 500、不是裸 key）。
+// TestCommentSubmitShowsFacingTextOnBusinessError 业务错误按声明处文案展示（不是 500、不是裸 key）。
 func TestCommentSubmitShowsFacingTextOnBusinessError(t *testing.T) {
 	withCommentPorts(t,
-		&stubCommentPort{subEr: &stubErr{msg: "comment.err.notAllowed"}},
-		&stubCommentFacing{text: "这条内容需要先购买才能评论"})
+		&stubCommentPort{subEr: &stubErr{msg: "comment.err.notAllowed", fallback: "这条内容需要先购买才能评论"}})
 
 	code, body := callCommentFragment(t, http.MethodPost, "commentSubmit",
 		submitForm("product", "p-1", "没买过也想评", "csrf-1"), 55, "csrf-1")
@@ -202,7 +192,9 @@ func TestCommentSubmitShowsFacingTextOnBusinessError(t *testing.T) {
 	}
 }
 
-// stubErr 一个最简的 error（模拟 service 上抛的业务错误）。
-type stubErr struct{ msg string }
+// stubErr 一个自带文案的业务错误（模拟 service 的 enums.Err：key + 兜底）。
+type stubErr struct{ msg, fallback string }
+
+func (e *stubErr) Facing() (string, string) { return e.msg, e.fallback }
 
 func (e *stubErr) Error() string { return e.msg }

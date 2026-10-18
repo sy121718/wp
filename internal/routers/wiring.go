@@ -103,8 +103,6 @@ const (
 	portI18nValueLoader               = "i18n.SetValueLoader"
 	portDataRuleDeptResolver          = "builtin.SetDataRuleDeptResolver"
 	portInventoryProductCatalog       = "inventory.SetProductCatalog"
-	portRuntimeFragMembershipTexter   = "runtimefragment.SetDependencies.MembershipFacingTexter"
-	portRuntimeFragCommentTexter      = "runtimefragment.SetDependencies.CommentFacingTexter"
 	portRuntimeFragCommentHasher      = "runtimefragment.SetDependencies.CommentSourceHasher"
 	portRuntimeFragCountryLabel       = "runtimefragment.SetDependencies.CountryLabelReader"
 	portWorkbenchInstanceOverrideDeps = "workbench.SetInstanceOverrideDeps"
@@ -262,10 +260,6 @@ var wiringManifest = []wiringEntry{
 		"按部门的数据权限规则静默失效：该被拦的数据放行或被误拦，页面上看不出区别"},
 	{portInventoryProductCatalog, "product", "inventory（商品 → 变体下拉）", wiringOptionalDegraded,
 		"库存页的「商品 → 变体」下拉为空（用户看到空列表，不是错误）"},
-	{portRuntimeFragMembershipTexter, "membership", "runtimefragment", wiringOptionalDegraded,
-		"会员片段渲染「会员信息暂时不可用」这句可见文案（不是 500，片段照常 swap）"},
-	{portRuntimeFragCommentTexter, "comment", "runtimefragment", wiringOptionalDegraded,
-		"评论片段渲染「评论功能暂时不可用」这句可见文案"},
 	{portRuntimeFragCommentHasher, "装配层（盐来自配置）", "runtimefragment", wiringOptionalDegraded,
 		"评论来源 IP 哈希退化为无盐 / 会话密钥回退（resolvePurposeSecret 记 Warn）"},
 	{portRuntimeFragCountryLabel, "sysconfig（字典只读口）", "runtimefragment", wiringOptionalDegraded,

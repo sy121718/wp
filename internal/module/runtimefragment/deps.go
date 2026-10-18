@@ -47,14 +47,9 @@ type Deps struct {
 	CartProvider cartcontract.CartService
 	// MembershipReader 会员身份读取（membership；可缺 → 会员片段显示「功能暂不可用」）。
 	MembershipReader membershipcontract.Reader
-	// MembershipFacingTexter 会员业务错误的文案出口（membership；可缺 → 本地通用文案，
-	// 而不是把 err.Error() 里的表名 / 约束名 / SQLSTATE 抖到访客页面上）。
-	MembershipFacingTexter membershipcontract.FacingTexter
 	// CommentPort 评论读写端口（comment；可缺）。收窄到 FragmentPort：片段层拿不到
 	// 后台审核（通过 / 驳回）与审核队列 —— 越权防护靠接口形状，不靠调用方自觉。
 	CommentPort commentcontract.FragmentPort
-	// CommentFacingTexter 评论业务错误的文案出口（comment；可缺 → 本地通用文案）。
-	CommentFacingTexter commentcontract.FacingTexter
 	// CommentSourceHasher 来源 IP → 带盐哈希（装配层闭包；可缺 → 空哈希）。
 	//
 	// 做成**注入的函数**而不是在本包算：哈希口径（盐从哪来、怎么拼、用什么摘要）

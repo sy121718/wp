@@ -17,6 +17,7 @@ import (
 	membershipdto "go_wp/internal/module/membership/dto"
 	membershipenums "go_wp/internal/module/membership/enums"
 	membershipmodel "go_wp/internal/module/membership/model"
+	"go_wp/pkg/facing"
 )
 
 // tiersFixture 一份典型清单（model.ListTiers 的排序：sort_order 降序）。
@@ -267,30 +268,20 @@ func TestMapTierConflictMapsIndexNames(t *testing.T) {
 	}
 }
 
-// TestFacingTextThreeForms 契约出口的三种形态（消费方唯一的文案出口）。
-func TestFacingTextThreeForms(t *testing.T) {
-	svc := &Service{}
-	// 未命中 → 归口文案（原文只进日志）。
-	got := svc.FacingText("zh-CN", errors.New(`pq: relation "membership_tiers" does not exist`))
-	if got == "" || strings.Contains(got, "membership_tiers") {
-		t.Errorf("未命中应给归口文案且不含库原文，实际 %q", got)
+// TestErrorFactsAreDeclaredAtSource 错误事实在声明处成形：业务 / 明细 / 内部三档。
+//
+// 取词已不在 service（0.2）：这里只断言传给出口的事实。
+func TestErrorFactsAreDeclaredAtSource(t *testing.T) {
+	fact, ok := facing.FactOf(membershipenums.Err(membershipenums.ErrTierNameTaken))
+	if !ok || !fact.Business || fact.Fallback == "" {
+		t.Fatalf("业务错误应给出 key + 兜底，实际 %+v ok=%v", fact, ok)
 	}
-	// 命中（裸 key 形态）。
-	if got := svc.FacingText("zh-CN", membershipenums.Err(membershipenums.ErrTierNameTaken)); got == "" {
-		t.Errorf("命中应给文案")
+	detailed, ok := facing.FactOf(membershipenums.ErrDetail(membershipenums.ErrDefaultTierMissing, "p-1"))
+	if !ok || detailed.Tail != "p-1" {
+		t.Fatalf("明细应作为 Tail 带出，实际 %+v", detailed)
 	}
-	// 命中（带定位信息形态）：定位信息必须原样保留 —— 它是给操作者的数据。
-	detailed := svc.FacingText("en-US",
-		membershipenums.ErrDetail(membershipenums.ErrDefaultTierMissing, "p-1"))
-	if !strings.Contains(detailed, "p-1") {
-		t.Errorf("定位信息应保留，实际 %q", detailed)
-	}
-	if !strings.Contains(detailed, ": ") {
-		t.Errorf("非中文语言应用半角分隔符，实际 %q", detailed)
-	}
-	// nil → 空串（调用方不必先判空）。
-	if got := svc.FacingText("zh-CN", nil); got != "" {
-		t.Errorf("nil 应返回空串，实际 %q", got)
+	if _, ok := facing.FactOf(errors.New(`pq: relation "membership_tiers" does not exist`)); ok {
+		t.Fatal("内部错误不该给出业务事实")
 	}
 }
 

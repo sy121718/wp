@@ -8,7 +8,6 @@ package userhttp
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +15,7 @@ import (
 
 	membershipcontract "go_wp/internal/module/membership/contract"
 	membershipdto "go_wp/internal/module/membership/dto"
+	membershipenums "go_wp/internal/module/membership/enums"
 )
 
 // stubCustomerMembership 会员身份读取端口的替身。
@@ -30,18 +30,11 @@ func (s *stubCustomerMembership) Resolve(_ context.Context, _ *membershipdto.Res
 
 var _ membershipcontract.Reader = (*stubCustomerMembership)(nil)
 
-// stubCustomerMembershipFacing 文案出口的替身。
-type stubCustomerMembershipFacing struct{ text string }
-
-func (s *stubCustomerMembershipFacing) FacingText(_ string, _ error) string { return s.text }
-
-var _ membershipcontract.FacingTexter = (*stubCustomerMembershipFacing)(nil)
-
 // detailBodyWithMembership 组装一个挂了会员端口的客户详情页并请求一次。
-func detailBodyWithMembership(t *testing.T, reader membershipcontract.Reader, texter membershipcontract.FacingTexter) (int, string) {
+func detailBodyWithMembership(t *testing.T, reader membershipcontract.Reader) (int, string) {
 	t.Helper()
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{detail: customerSample()}, fakeOrderSummaryReader{res: detailSummary()}, fakeProjects{items: detailProjects()})
-	h.SetMembershipDisplay(reader, texter)
+	h.SetMembershipDisplay(reader)
 	engine := newCustomerTestEngine(h)
 
 	rec := httptest.NewRecorder()
@@ -54,7 +47,7 @@ func TestCustomerDetailShowsMembershipTier(t *testing.T) {
 	code, body := detailBodyWithMembership(t, &stubCustomerMembership{res: &membershipdto.MembershipResp{
 		UserID: 42, ProjectID: "p1", TierID: 3, TierName: "黄金会员",
 		FreeShipping: true, DiscountPercent: 20,
-	}}, nil)
+	}})
 
 	if code != http.StatusOK {
 		t.Fatalf("客户详情页返回 %d", code)
@@ -76,7 +69,7 @@ func TestCustomerDetailShowsMembershipTier(t *testing.T) {
 func TestCustomerDetailShowsDefaultTierBadge(t *testing.T) {
 	_, body := detailBodyWithMembership(t, &stubCustomerMembership{res: &membershipdto.MembershipResp{
 		UserID: 42, ProjectID: "p1", TierID: 1, TierName: "普通会员", IsDefaultTier: true,
-	}}, nil)
+	}})
 
 	if !strings.Contains(body, "普通会员") {
 		t.Fatalf("缺少等级名")
@@ -88,7 +81,7 @@ func TestCustomerDetailShowsDefaultTierBadge(t *testing.T) {
 
 // TestCustomerDetailMembershipUnavailableIsVisible 端口未接入 → 可见文案 + 页面完整。
 func TestCustomerDetailMembershipUnavailableIsVisible(t *testing.T) {
-	code, body := detailBodyWithMembership(t, nil, nil)
+	code, body := detailBodyWithMembership(t, nil)
 
 	if code != http.StatusOK {
 		t.Fatalf("端口未接入时返回 %d（会员是只读展示，不该把整页打红）", code)
@@ -101,17 +94,16 @@ func TestCustomerDetailMembershipUnavailableIsVisible(t *testing.T) {
 	}
 }
 
-// TestCustomerDetailMembershipFailureUsesFacingTexter 解析失败走文案出口，不漏内部原文。
-func TestCustomerDetailMembershipFailureUsesFacingTexter(t *testing.T) {
+// TestCustomerDetailMembershipFailureShowsDeclaredText 解析失败按错误声明处的文案展示，不漏内部原文。
+func TestCustomerDetailMembershipFailureShowsDeclaredText(t *testing.T) {
 	code, body := detailBodyWithMembership(t,
-		&stubCustomerMembership{err: errors.New(`pq: relation "membership_tiers" does not exist`)},
-		&stubCustomerMembershipFacing{text: "该工程还没有默认等级，请先建一个"})
+		&stubCustomerMembership{err: membershipenums.Err(membershipenums.ErrDefaultTierMissing)})
 
 	if code != http.StatusOK {
 		t.Fatalf("解析失败时返回 %d", code)
 	}
 	if !strings.Contains(body, "该工程还没有默认等级") {
-		t.Fatalf("应显示契约文案出口的那句话；实际：%s", body)
+		t.Fatalf("应显示错误声明处的兜底文案；实际：%s", body)
 	}
 	if strings.Contains(body, "membership_tiers") {
 		t.Fatalf("内部错误原文泄漏到页面上：%s", body)
@@ -122,7 +114,7 @@ func TestCustomerDetailMembershipFailureUsesFacingTexter(t *testing.T) {
 func TestCustomerDetailMembershipWithoutProjectIsVisible(t *testing.T) {
 	// fakeProjects 返回空清单 → selected 为空 → 走「还没有站点工程」那一支。
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{detail: customerSample()}, fakeOrderSummaryReader{}, fakeProjects{})
-	h.SetMembershipDisplay(&stubCustomerMembership{res: &membershipdto.MembershipResp{TierName: "黄金会员"}}, nil)
+	h.SetMembershipDisplay(&stubCustomerMembership{res: &membershipdto.MembershipResp{TierName: "黄金会员"}})
 	engine := newCustomerTestEngine(h)
 
 	rec := httptest.NewRecorder()

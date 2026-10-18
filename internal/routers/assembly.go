@@ -223,13 +223,7 @@ type assembly struct {
 	// membershipSvc 会员等级与权益（BIZ-3）。装配在 userSvc 之后、orderSvc 之前：
 	// 它依赖工程契约，而订单侧（折扣）是它的消费方。
 	membershipSvc membershipcontract.MembershipService
-	// membershipFacing 会员模块的文案出口（FacingTexter，装配期从 membershipSvc 断言取）。
-	//
-	// 单独存一份是因为它**不在 MembershipService 接口里**：那个接口是模块能力清单，
-	// 而文案出口只服务消费方（片段层 / 客户页拿不到 membership 的 enums 白名单）。
-	membershipFacing membershipcontract.FacingTexter
-
-	analyticsSvc analyticscontract.AnalyticsService
+	analyticsSvc  analyticscontract.AnalyticsService
 
 	presentationSvc    presentationcontract.PresentationService
 	pluginSvc          plugincontract.PluginService
@@ -651,15 +645,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 	//（见下面 order 段末尾的 SetPurchaseSource；不改成构造参数依赖：那会把
 	// 「order 依赖 membership 的折扣」与「membership 依赖 order 的消费额」变成构造环）。
 	membershipSvc := membershiphttp.SetupMembershipRoutes(authorizedAPI, a.adminPages, db, a.projectService)
-	// 文案出口不在 MembershipService 接口里（它只服务消费方，不是模块能力的一部分），
-	// 装配层断言一次：客户页与片段层都要用它 —— 缺了就只能一律通用提示，
-	// 把「这个工程还没配默认等级」这类可行动差异吞掉。
-	membershipFacing, membershipFacingOK := membershipSvc.(membershipcontract.FacingTexter)
-	if !membershipFacingOK {
-		panic("会员模块未实现 FacingTexter（消费方文案出口契约），装配缺陷")
-	}
 	a.membershipSvc = membershipSvc
-	a.membershipFacing = membershipFacing
 	// 营销追踪端点（#38 P1）：公开路由（访问面），无鉴权 —— 能力由 TrackingService 收窄。
 	mailhttp.SetupTrackingRoutes(router, mailSvc)
 	// webhook 外部集成通道（OSS-006 端点白名单 + SEC-015 SSRF 防护）：
@@ -1360,8 +1346,6 @@ func (a *assembly) wireRuntimeAccessFace() {
 	// 与文案出口。可选降级 —— 未注入时片段渲染「会员信息暂时不可用」这句**可见文案**，
 	// 而不是 500（片段端点把 error 变成 500，htmx 不 swap，用户什么都看不到）。
 	a.fragDeps.MembershipReader = a.membershipSvc
-	a.fragDeps.MembershipFacingTexter = a.membershipFacing
-	marks.mark(portRuntimeFragMembershipTexter)
 	marks.mark(portRuntimeFragMembership)
 	// 商品评论差异化规则的**输入**（order → product）：把「某访客买过某商品吗」交给
 	// 商品模块，由它实现 commentcontract.EntityPolicy（紧接着的下一段把它注入 comment）。
@@ -1386,8 +1370,6 @@ func (a *assembly) wireRuntimeAccessFace() {
 	// 可见文案，而不是 500（片段端点把 error 变成 500，htmx 不 swap，用户什么都看不到）。
 	if a.commentSvc != nil {
 		a.fragDeps.CommentPort = a.commentSvc
-		a.fragDeps.CommentFacingTexter = a.commentSvc
-		marks.mark(portRuntimeFragCommentTexter)
 		// 哈希口径留在评论模块（本包 import 它的 service 会被架构门禁拦下），
 		// 装配层只把「盐从哪来」这件事接上：按用途分离密钥（同 cart cookie / 支付回调的
 		// 既有手法），未配置时回退会话密钥并告警（resolvePurposeSecret 内部记 Warn）。

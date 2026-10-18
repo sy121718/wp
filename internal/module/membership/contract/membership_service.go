@@ -113,18 +113,6 @@ type RecalcPort interface {
 	RecalcProject(ctx context.Context, req *membershipdto.RecalcProjectReq) (res *membershipdto.RecalcResult, err error)
 }
 
-// FacingTexter 把本模块的业务错误转成「指定语言下可直接展示的一句话」。
-//
-// 为什么契约里要有它：消费方（结算页 / 客户页 / 工作台）只依赖 contract 与不可变 dto，
-// 拿不到本模块的 enums 白名单。没有这个出口，消费方只剩两条路 ——
-// 直出 err.Error()（把 PostgreSQL 原文漏出去）或一律通用提示
-// （把「这个工程还没配默认等级」这类可行动差异吞掉）；两条在本仓都踩过。
-//
-// 实现必须与 inbound/http 的出口同源（命中白名单 → 业务文案；未命中 → 归口文案，原文只进日志）。
-type FacingTexter interface {
-	FacingText(lang string, err error) string
-}
-
 // MembershipService 会员等级与权益的完整对外契约。
 //
 // 消费方**不要**直接依赖它 —— 按需要取上面那几个收窄接口之一

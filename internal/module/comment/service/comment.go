@@ -383,9 +383,9 @@ func (s *Service) checkPolicy(ctx context.Context, req *commentdto.SubmitReq) er
 
 // PolicyDeniedError 消费方的差异化规则给出的拒绝（i18n key + 中文兜底）。
 //
-// 它**不是**本模块的白名单文案（key 属于别的模块），所以 FacingText 单独识别它，
-// 走 i18n.Translate(key, fallback, lang) 取词 —— 而不是拿去撞本模块白名单：
-// 撞不上就会被归口成「操作失败」，把「买过才能评」这类**可行动**的原因吞掉。
+// 它**不是**本模块的白名单文案（key 属于别的模块），所以它自己实现 facing.Source：
+// 把 key + 中文兜底一起交给出口取词。不这样的话，兜底会丢（形态判据只能看到 key），
+// 「买过才能评」这类**可行动**的原因会被归口成「操作失败」。
 type PolicyDeniedError struct {
 	// Key 消费方的 i18n key（可能为空 —— 那就直接用 Fallback）。
 	Key string
@@ -393,9 +393,24 @@ type PolicyDeniedError struct {
 	Fallback string
 }
 
+// policyDeniedFallbackKey 消费方没给 key 时的事实形态（兜底仍是消费方原文）。
+const policyDeniedFallbackKey = "comment.err.policyDenied"
+
+// Facing 实现 facing.Source：key + 兜底一起交给响应出口取词。
+func (e *PolicyDeniedError) Facing() (key, fallback string) {
+	if e == nil {
+		return "", ""
+	}
+	key, fallback = strings.TrimSpace(e.Key), strings.TrimSpace(e.Fallback)
+	if key == "" {
+		key = policyDeniedFallbackKey
+	}
+	return key, fallback
+}
+
 // Error 实现 error（日志与 tests 用；值是 key，缺失时用兜底原文）。
 //
-// 注意它不是**可展示文案**：可展示文案由 FacingText 按请求语言取词后给出。
+// 注意它不是**可展示文案**：可展示文案由响应出口按请求语言取词后给出。
 func (e *PolicyDeniedError) Error() string {
 	if e == nil {
 		return ""

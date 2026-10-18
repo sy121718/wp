@@ -121,18 +121,6 @@ type FragmentPort interface {
 	Submit(ctx context.Context, req *commentdto.SubmitReq) (res *commentdto.SubmitResp, err error)
 }
 
-// FacingTexter 把本模块的业务错误转成一句**可展示**的文案。
-//
-// 为什么需要它：片段层 / 后台页只依赖 contract 与不可变 dto，**拿不到本模块 enums
-// 的白名单**（enums 是模块内部实现）。没有这个出口，消费方要么直出 err.Error()
-// （把 PostgreSQL 原文漏到页面上），要么一律通用提示（吞掉「这个类型不支持评论」
-// 这类可行动差异）。形态与 membershipcontract.FacingTexter 一致。
-type FacingTexter interface {
-	// FacingText 命中白名单 → 按 lang 取词的成品文案；未命中 → 记日志 + 归口文案。
-	// err 为 nil 时返回空串（调用方不必先判空）。
-	FacingText(lang string, err error) string
-}
-
 // CommentService comment 模块的完整契约（装配层持有；片段层只拿 FragmentPort）。
 type CommentService interface {
 	FragmentPort
@@ -146,6 +134,4 @@ type CommentService interface {
 	// IsRegisteredEntityType 实体类型是否已注册（后台筛选参数校验用，fail-closed）。
 	IsRegisteredEntityType(entityType string) bool
 
-	// FacingText 见 FacingTexter。
-	FacingText(lang string, err error) string
 }

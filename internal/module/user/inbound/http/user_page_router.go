@@ -37,7 +37,6 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	orders ordercontract.CustomerOrderSummaryReader,
 	projects projectcontract.ProjectService,
 	membership membershipcontract.Reader,
-	membershipFacing membershipcontract.FacingTexter,
 	growth ordercontract.CustomerGrowthReader,
 	segments ordercontract.CustomerSegmentReader,
 	rfm ordercontract.CustomerRfmReader,
@@ -54,7 +53,7 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	h := NewCustomerPageHandle(users, orders, projects)
 	// 会员展示端口（BIZ-3）：经 setter 注入而不是加进 NewCustomerPageHandle 的签名 ——
 	// 那个构造函数有 10+ 处直调（含渲染测试），为一块展示改签名会把它们全卷进来。
-	h.SetMembershipDisplay(membership, membershipFacing)
+	h.SetMembershipDisplay(membership)
 	h.SetCustomerGrowth(growth)
 	h.SetCustomerSegments(segments)
 	h.SetCustomerRfm(rfm)

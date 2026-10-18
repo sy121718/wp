@@ -748,7 +748,7 @@ func (a *assembly) mountAdminPages() {
 		panic("会员模块未实现 TierAdminPort（客户列表的等级下拉依赖它），装配缺陷")
 	}
 	userhttp.SetupCustomerPages(a.adminPages, a.userAdminSvc, a.orderSvc, a.projectService,
-		a.membershipSvc, a.membershipFacing, a.orderSvc, a.orderSvc, a.orderSvc, a.orderSvc,
+		a.membershipSvc, a.orderSvc, a.orderSvc, a.orderSvc, a.orderSvc,
 		membershipAdmin, membershipTiers)
 	producthttp.SetupProductPages(a.adminPages, a.productSvc, a.productReader, a.projectService,
 		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)

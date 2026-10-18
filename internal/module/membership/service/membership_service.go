@@ -35,8 +35,6 @@ import (
 	membershipmodel "go_wp/internal/module/membership/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/database"
-	"go_wp/pkg/facing"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
@@ -90,7 +88,6 @@ var (
 	_ membershipcontract.AssignmentAdminPort = (*Service)(nil)
 	_ membershipcontract.TierAdminPort       = (*Service)(nil)
 	_ membershipcontract.RecalcPort          = (*Service)(nil)
-	_ membershipcontract.FacingTexter        = (*Service)(nil)
 	_ membershipcontract.MembershipService   = (*Service)(nil)
 )
 
@@ -330,27 +327,6 @@ func uniqueViolationOn(err error, indexNames ...string) bool {
 }
 
 // —— 契约出口：文案 ——
-
-// FacingText 把本模块的错误转成指定语言下可直接展示的一句话（消费方唯一的文案出口）。
-//
-// 判据只有一份：pkg/facing.FactOf。事实给出 key（决定语言）、Fallback（词条缺失时的中文）
-// 与 Tail（`key: <定位>` 里的定位数据 —— 哪个 project_id、还剩几条归属）。
-// 出口只负责把三段拼成一句，不再有本模块自己的白名单与逐条 switch：
-// 那种写法是第二份真相，service 换措辞或某条错误改由别的模块提供时就静默失配。
-func (s *Service) FacingText(lang string, err error) string {
-	if err == nil {
-		return ""
-	}
-	if fact, ok := facing.FactOf(err); ok && fact.Business {
-		text := i18n.Translate(fact.Key, fact.Fallback, lang)
-		if fact.Tail != "" {
-			return text + facingDetailSep(lang) + fact.Tail
-		}
-		return text
-	}
-	logger.Scene(errScene).Error(err, "membership 契约出口遇到未归类的错误（原文只进日志）")
-	return i18n.Translate("membership.err.internal", "操作失败，请稍后重试（细节只进日志）", lang)
-}
 
 // facingDetailSep 定位信息的分隔符：中文用全角冒号，其余语言用「: 」。
 //

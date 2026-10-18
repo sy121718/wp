@@ -24,6 +24,7 @@ import (
 	commentdto "go_wp/internal/module/comment/dto"
 	commentenums "go_wp/internal/module/comment/enums"
 	commentmodel "go_wp/internal/module/comment/model"
+	"go_wp/pkg/facing"
 )
 
 // testEntityTypes 两个已注册的实体类型（与装配层注册的 article / product 同形）。
@@ -245,50 +246,22 @@ func TestReviewRejectsOversizedBatch(t *testing.T) {
 
 // —— 归口文案（三件套的读侧）——
 
-// TestFacingTextTranslatesPolicyDenial 消费方给的拒绝文案按**请求语言**取词，且绝不输出空串。
+// TestPolicyDeniedCarriesFacingFact 消费方给的拒绝文案是一条业务事实（key + 兜底 + 明细）。
 //
-// 这是「差异化规则的拒绝」这条链路的唯一出口：它必须能把 product 的词条
-// （`product.err.commentPurchaseRequired` 这类）翻成当前语言 —— 只给中文成品的话，
-// 英文站点会看到一句中文；而缺兜底时输出空串会让页面上出现一块空白。
-func TestFacingTextTranslatesPolicyDenial(t *testing.T) {
-	svc := newTestService()
-	// key + 中文兜底：i18n 未初始化（测试环境）时命中不了词条 → 出消费方给的兜底原文。
-	got := svc.FacingText("en-US", &PolicyDeniedError{
+// 取词已不在 service（0.2）：这里只断言事实形状，文案由响应出口按请求语言取一次。
+func TestPolicyDeniedCarriesFacingFact(t *testing.T) {
+	fact, ok := facing.FactOf(&PolicyDeniedError{
 		Key: "product.err.commentPurchaseRequired", Fallback: "购买过这件商品才能评论。",
 	})
-	if strings.TrimSpace(got) == "" {
-		t.Fatal("消费方给了兜底时不能输出空串")
+	if !ok || !fact.Business {
+		t.Fatal("消费方拒绝必须是业务事实")
 	}
-	if !strings.Contains(got, "购买过这件商品") {
-		t.Fatalf("未命中词条应回落到消费方给的中文兜底，实际 %q", got)
+	if fact.Key != "product.err.commentPurchaseRequired" || fact.Fallback != "购买过这件商品才能评论。" {
+		t.Fatalf("事实应原样带出 key 与兜底，实际 %+v", fact)
 	}
-	// 只有 key、没有兜底：回落本模块的归口业务文案（不是空串，也不是「系统内部错误」）。
-	got = svc.FacingText("en-US", &PolicyDeniedError{Key: "product.err.whatever"})
-	if strings.TrimSpace(got) == "" {
-		t.Fatal("缺兜底时不能输出空串")
-	}
-	if strings.Contains(got, "product.err") {
-		t.Fatalf("缺兜底时不该把消费方的裸 key 铺到页面上，实际 %q", got)
-	}
-	// 只有兜底（消费方直接给成品文案）：原样输出。
-	if got := svc.FacingText("zh-CN", &PolicyDeniedError{Fallback: "买过才能评。"}); got != "买过才能评。" {
-		t.Fatalf("只有兜底时应原样输出，实际 %q", got)
-	}
-}
-
-func TestFacingTextNeverLeaksInternalError(t *testing.T) {
-	svc := newTestService()
-	if got := svc.FacingText("zh-CN", nil); got != "" {
-		t.Fatalf("nil 应返回空串（调用方不必先判空），实际 %q", got)
-	}
-	internal := errors.New(`pq: relation "comments" does not exist`)
-	got := svc.FacingText("zh-CN", internal)
-	if got == "" || strings.Contains(got, "comments") {
-		t.Fatalf("未命中的错误必须归口且不含库原文，实际 %q", got)
-	}
-	// 命中白名单的业务错误按 key 返回（调用方再取词）。
-	if got := svc.FacingText("zh-CN", errors.New(commentenums.ErrRateLimited)); got == "" {
-		t.Fatal("命中的业务错误必须给出文案")
+	// 内部错误不得被判成业务事实（否则库原文会被当文案透出）。
+	if _, ok := facing.FactOf(errors.New(`pq: relation "comments" does not exist`)); ok {
+		t.Fatal("内部错误不该给出业务事实")
 	}
 }
 

@@ -199,38 +199,4 @@ func TestOrderDetailRendersCountryName(t *testing.T) {
 	detail := &orderdto.OrderDetailResp{
 		Head: &orderdto.OrderResp{
 			ID: 9, OrderNo: "NO-9", Status: "shipped", Total: 100,
-			ShipCountry: "CN", ShipCity: "深圳市", ShipAddress: "某某路 1 号",
-			CreateTime: utils.NewJSONTime(time.Now()),
-		},
-	}
-	deps.VisitorOrderReader = &fakeVisitorOrders{detail: detail}
-	deps.CountryLabelReader = &fakeCountryDict{}
-	t.Cleanup(func() {
-		deps.VisitorOrderReader = nil
-		deps.CountryLabelReader = nil
-	})
-
-	zh := callFragment(t, "orderDetail", "projectId=proj-1&orderId=9&lang=zh-CN", 5)
-	if !strings.Contains(zh, "中国 深圳市") {
-		t.Fatalf("中文界面应把 CN 渲染成国家名；实际：%s", zh)
-	}
-
-	en := callFragment(t, "orderDetail", "projectId=proj-1&orderId=9&lang=en-US", 5)
-	if !strings.Contains(en, "China 深圳市") {
-		t.Fatalf("英文界面应渲染英文国家名；实际：%s", en)
-	}
-
-	// 快照里的码不在字典里（未收录地区 / 字典还没补）→ 显示代码，不丢这一段地址。
-	detail.Head.ShipCountry = "ZZ"
-	unknown := callFragment(t, "orderDetail", "projectId=proj-1&orderId=9&lang=zh-CN", 5)
-	if !strings.Contains(unknown, "ZZ 深圳市") {
-		t.Fatalf("字典缺行时应回落显示代码；实际：%s", unknown)
-	}
-
-	// 未接入字典：显示代码，页面照常。
-	deps.CountryLabelReader = nil
-	noDict := callFragment(t, "orderDetail", "projectId=proj-1&orderId=9&lang=zh-CN", 5)
-	if !strings.Contains(noDict, "ZZ 深圳市") {
-		t.Fatalf("未接入字典时应回落显示代码；实际：%s", noDict)
-	}
-}
+... (+35 lines) [see remaining: rtk proxy git show 'HEAD:internal/module/runtimefragment/orders_test.go' | tail -n +202]

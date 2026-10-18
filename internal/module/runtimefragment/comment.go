@@ -346,13 +346,7 @@ func validCommentCSRF(r *Request) bool {
 // 但片段层不押注在调用方一定这么做 —— 一个 nil 结果静默渲染成空列表，
 // 访客会以为评论被删了）。
 func commentFacingText(r *Request, err error, fallback string) string {
-	if deps.CommentFacingTexter == nil || err == nil {
-		return fallback
-	}
-	if text := strings.TrimSpace(deps.CommentFacingTexter.FacingText(r.Lang, err)); text != "" {
-		return text
-	}
-	return fallback
+	return fragmentFacingText(r, err, fallback)
 }
 
 // commentItemViewsOf 把 dto 列表转成模板视图（组两级：顶层 + 它的一级回复）。

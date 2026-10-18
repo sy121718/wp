@@ -24,9 +24,6 @@ import (
 	commentdto "go_wp/internal/module/comment/dto"
 	commentenums "go_wp/internal/module/comment/enums"
 	commentmodel "go_wp/internal/module/comment/model"
-	"go_wp/pkg/facing"
-	"go_wp/pkg/i18n"
-	"go_wp/pkg/logger"
 )
 
 // errScene 结构化日志场景名（三件套的第三件：原文只进日志）。
@@ -115,45 +112,6 @@ func (s *Service) EntityTypeLabels(tr func(key, fallback string) string) []comme
 		out = append(out, commentdto.EntityType{Type: et.Type, Label: label})
 	}
 	return out
-}
-
-// FacingText 契约出口：把业务错误转成一句可展示文案（三件套的读侧）。
-//
-// 命中白名单 → 按 lang 取词；未命中 → 记结构化日志 + 归口文案（原文只进日志）。
-func (s *Service) FacingText(lang string, err error) string {
-	if err == nil {
-		return ""
-	}
-	// 消费方的差异化规则拒绝（PolicyDeniedError）：按**请求语言**取它自己的词条。
-	//
-	// 为什么不能拿去撞本模块白名单：那不是本模块的词条，一定撞不上，
-	// 最终会把「买过才能评」这类**可行动**的原因归口成「操作失败」。
-	// 为什么必须是「key + 兜底」而不是一个成品字符串：文案是消费方的、语言只有这里知道 ——
-	// 只给中文成品的话，英文站点会看到一句中文。
-	if denied, ok := asPolicyDenied(err); ok {
-		fallback := strings.TrimSpace(denied.Fallback)
-		key := strings.TrimSpace(denied.Key)
-		if fallback == "" {
-			// 消费方没给中文兜底：回落本模块的归口业务文案。
-			// 绝不返回空串（页面上会是一块空白），也不用 ErrInternal（吞掉可行动原因）。
-			fallback = i18n.Translate(commentenums.ErrNotAllowed, "当前不满足这条内容的评论条件。", lang)
-			key = ""
-		}
-		if key == "" {
-			return fallback
-		}
-		return i18n.Translate(key, fallback, lang)
-	}
-	// 业务错误的判据只有一份（pkg/facing.FactOf）：命中就按 key 取词、兜底用声明处那句；
-	// 未命中走下面的归口（原文只进日志）。
-	if fact, ok := facing.FactOf(err); ok && fact.Business {
-		return i18n.Translate(fact.Key, fact.Fallback, lang)
-	}
-	logger.Scene(errScene).Error(err, "comment 契约出口遇到未归类的错误（原文只进日志）")
-	// 归口词条：这里给的是契约消费方（工作台 / 片段）能直接显示的最后一句话。
-	// key 只在本处使用，不再往 enums 里放常量 —— 放常量就会有人把它当业务错误返回，
-	// 而那会把「判定失败」这个故障说成参数问题（见 service/comment.go 的 policy 分支）。
-	return i18n.Translate("comment.err.internal", "操作失败，请稍后重试（细节只进日志）", lang)
 }
 
 // —— 内部：校验 ——

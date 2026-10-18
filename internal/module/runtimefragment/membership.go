@@ -187,11 +187,5 @@ func renderMembershipFragment(ctx context.Context, r *Request, capability, templ
 // 但片段层不押注在调用方一定这么做 —— 一个 nil 会员静默渲染成空面板，
 // 访客会以为是自己的会员没了）。
 func membershipFacingText(r *Request, err error, fallback string) string {
-	if deps.MembershipFacingTexter == nil || err == nil {
-		return fallback
-	}
-	if text := strings.TrimSpace(deps.MembershipFacingTexter.FacingText(r.Lang, err)); text != "" {
-		return text
-	}
-	return fallback
+	return fragmentFacingText(r, err, fallback)
 }
