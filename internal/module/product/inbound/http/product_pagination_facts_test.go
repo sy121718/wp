@@ -386,6 +386,8 @@ func TestTagHitsFragmentPaginationIsFactsDriven(t *testing.T) {
 
 // tagHitsButtonElement 命中商品片段里翻页按钮的整段字节（键序 id → page → project，属性按 HTML 转义）。
 func tagHitsButtonElement(page int, label string) string {
+	// 基址来自请求串（去掉 page/id/project/size 后只剩路径），参数按 id → page → project 重新拼 ——
+	// 与迁移前逐字节一致，size 不跟翻页走（端点默认页容量）。
 	return `<button type="button" class="pagination-btn" hx-get="/admin/product-tags/hits?id=t1&amp;page=` +
 		strconv.Itoa(page) + `&amp;project=p1" hx-target="#tag-hits-panel" hx-swap="innerHTML">` + label + `</button>`
 }

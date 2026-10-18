@@ -55,6 +55,9 @@ func Inject(c *gin.Context, data map[string]any) map[string]any {
 		return i18n.FillTranslate(t, key, fallback, params)
 	}
 	data["langs"] = templates.LanguageOptions(lang)
+	// req_path：当前请求的路径 + 查询串（不含 scheme/host）。分页条据此拼翻页链接 ——
+	// 链接基址是**请求事实**，不是页面装配的产物，所以由注入层给，控制器不再算。
+	data["req_path"] = RequestURI(c)
 	data["lang_redirect"] = LangRedirect(c)
 
 	// 页面标题：enums 常量已是 key（如 MsgPagesTitle），此处按当前语言翻译；

@@ -190,10 +190,6 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) (any, error) {
 	}
 	view.Tags = rows
 	view.TagCreateForm = tagCreateForm
-	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
-		pg.Base = pagination.BaseURL("/admin/product-tags", pagination.Query("project", view.SelectedProject, "keyword", view.FilterKeyword))
-		view.Pagination = pg
-	}
 	return view, nil
 }
 
@@ -239,13 +235,10 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) (any, error) 
 	// 单页非空时仍要渲染两个禁用按钮，「还有没有下一页」是页面上可读的事实；
 	// 闸门只由模板的「有没有行」决定。
 	//
-	// KeepLimit=false：本端点只认 project/id/page/size 四个查询参数，翻页链接里不带 limit
-	//（旧 tagHitsURL 也不带）。Base 用**请求里的** project 值（不是 service 解析后的工程）：
-	// 链接必须原样回带用户点进来时的那一组参数，空值也保留成 `project=`。
-	// 键序 id → page → project 与旧实现的 url.Values.Encode() 逐字节一致（字典序）。
+	// KeepLimit=false：本端点只认 project/id/page/size 四个查询参数，翻页链接里不带 limit。
+	// 基址不再在这里拼：模板从请求串推基址（pageBase 去掉 page/limit，其余参数原样保留），
+	// 所以链接会自动带上用户点进来时的 project / id / size。
 	pg := pagination.Facts(int64(res.Total), res.Page, res.PageSize)
-	pg.Base = "/admin/product-tags/hits"
-	pg.PageParam = "page"
 	pg.KeepLimit = false
 	data["Pagination"] = pg
 	return data, nil

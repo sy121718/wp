@@ -38,6 +38,7 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/pagination"
 )
 
 // productPageLayoutData 补齐 layout 需要的键（与线上 adminui.Prepare 注入的一致）。
@@ -228,6 +229,7 @@ func productCategoriesPageViewStub(mutate func(*productdto.ProductCategoriesPage
 	if mutate != nil {
 		mutate(v)
 	}
+	v.Pagination = pagination.Facts(v.Total, v.Page, v.Limit)
 	return v
 }
 
@@ -241,6 +243,7 @@ func productBrandsPageViewStub(mutate func(*productdto.ProductBrandsPageResp)) *
 	if mutate != nil {
 		mutate(v)
 	}
+	v.Pagination = pagination.Facts(v.Total, v.Page, v.Limit)
 	return v
 }
 
@@ -254,6 +257,7 @@ func productTagsPageViewStub(mutate func(*productdto.ProductTagsPageResp)) *prod
 	if mutate != nil {
 		mutate(v)
 	}
+	v.Pagination = pagination.Facts(v.Total, v.Page, v.Limit)
 	return v
 }
 
@@ -358,6 +362,7 @@ func productListPageViewStub(mutate func(*productdto.ProductListPageResp)) *prod
 	if mutate != nil {
 		mutate(v)
 	}
+	v.Pagination = pagination.Facts(v.Total, v.Page, v.Limit)
 	return v
 }
 
@@ -454,6 +459,7 @@ func productAttributesPageViewStub(mutate func(*productdto.ProductAttributesPage
 	if mutate != nil {
 		mutate(view)
 	}
+	view.Pagination = pagination.Facts(view.Total, view.Page, view.Limit)
 	return view
 }
 

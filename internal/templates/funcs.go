@@ -65,6 +65,7 @@ func injectGlobals(set *jet.Set) {
 	set.AddGlobal("percentChangeDir", percentChangeDir)
 	set.AddGlobal("sprintf", sprintf)
 	set.AddGlobal("queryURL", queryURL)
+	set.AddGlobal("pageBase", pageBase)
 	set.AddGlobal("pageNumbers", pageNumbers)
 }
 
@@ -579,6 +580,34 @@ func queryURL(base string, kv ...any) string {
 		b.WriteString(url.QueryEscape(stringify(kv[i+1])))
 	}
 	return b.String()
+}
+
+// pageBase 把请求串压成「翻页基址」：保留全部筛选参数，只丢掉分页自己会写回的参数。
+//
+// 为什么需要它：分页链接由模板拼（queryURL 追加 page/limit），而模板拿到的当前请求串
+// 里**已经带着** page/limit —— 直接追加会出现两个 page 参数，浏览器取第一个，
+// 症状是「点了翻页没反应」。去掉之后再追加，语义与旧实现（控制器先拼好不含分页参数的
+// 基址）一致：同样走 url.Values.Encode 的字典序。
+//
+// raw 为空或解析失败时返回空串（调用点据此不渲染分页条）。drop 里写错的键名不报错：
+// 它只是「本来就不该保留的参数」，多删一个不存在的键没有副作用。
+func pageBase(raw string, drop ...string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	q := u.Query()
+	for _, k := range drop {
+		q.Del(k)
+	}
+	u.RawQuery = q.Encode()
+	if u.RawQuery == "" {
+		return u.Path
+	}
+	return u.Path + "?" + u.RawQuery
 }
 
 // pageNumbers 给出分页条要显示的**页码窗口**（win = 窗口宽度，含首尾固定位与省略位）。

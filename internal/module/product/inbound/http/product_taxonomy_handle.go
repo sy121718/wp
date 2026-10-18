@@ -8,7 +8,6 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/text"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
 	"strings"
 
@@ -54,11 +53,6 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) (any, error) {
 	// 行装配只在取数成功时做 —— 失败页渲染的是失败槽，装配出的行不会被读到。
 	{
 		view.Categories = categoryTreeRows(c, view.SelectedProject, view.CategoryDetails, options, view.Filtered, view.ParentLabels)
-	}
-	// 分页条：Go 只交事实，文案与链接由 admin/partials/pagination.html 渲染。
-	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
-		pg.Base = pagination.BaseURL("/admin/product-categories", pagination.Query("project", view.SelectedProject, "keyword", view.FilterKeyword))
-		view.Pagination = pg
 	}
 	return view, nil
 }
@@ -147,10 +141,6 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
 		}
 	}
 	view.Brands = brands
-	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
-		pg.Base = pagination.BaseURL("/admin/product-brands", pagination.Query("project", view.SelectedProject, "keyword", view.FilterKeyword))
-		view.Pagination = pg
-	}
 	return view, nil
 }
 

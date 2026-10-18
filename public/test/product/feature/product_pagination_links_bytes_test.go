@@ -56,10 +56,10 @@ func TestProductBrandsPaginationLinkBytes(t *testing.T) {
 	if nav == "" {
 		t.Fatal("超过一页却没渲染分页条")
 	}
-	// 关键词与工程都在基地址里（工程是缺省选中项，页面自己补的），加上 page/limit 才是完整链接。
+	// 基地址来自请求串（除 page/limit 外原样回带）：本请求没带 project，链接里也就没有 ——
+	// 不替用户补参数，缺省工程由服务端在取数时解析。
 	want := paginationElement("/admin/product-brands", url.Values{
 		"keyword": {"pg-links"},
-		"project": {f.projectID},
 	}, 2, 20)
 	if !strings.Contains(nav, want) {
 		t.Fatalf("翻页链接元素字节不对\n期望含: %s\n实际: %s", want, clip(nav, 600))

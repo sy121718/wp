@@ -37,6 +37,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/pkg/pagination"
 )
 
 // ProductListPageSize 商品列表每页条数（下沉前写在控制器，口径不变）。
@@ -223,5 +224,8 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 		// 所以这里直接返回错误，模板里也没有失败分支。
 		return nil, firstErr
 	}
+	// 分页条只给事实：总数 / 页码 / 每页条数。文案、页码窗口与链接（含筛选条件）在
+	// admin/partials/pagination.html 里由模板拼 —— 链接基址是请求事实，不在这里算。
+	view.Pagination = pagination.Facts(view.Total, view.Page, view.Limit)
 	return view, nil
 }

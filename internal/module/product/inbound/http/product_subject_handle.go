@@ -31,7 +31,6 @@ import (
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/money"
-	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
 )
 
@@ -264,30 +263,7 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	fillProductListChrome(c, view)
 	return view, nil
-}
-
-// fillProductListChrome 列表页的页壳与派生值（页头 / 状态下拉 / 改价表单初值 / 分页事实 /
-// 筛选上下文）。
-//
-// 全是**请求态**派生：title 是 i18n key、ListQuery 来自当前查询串、分页基地址要带筛选条件 ——
-// 所以留在控制器这一侧，读模型只交数据。
-func fillProductListChrome(c *gin.Context, view *productdto.ProductListPageResp) {
-	// 标题、菜单、状态下拉、改价表单初值都在模板；本函数只剩分页事实这一件要当前请求串的事。
-	// 分页条：Go 只交事实（总数 / 页码 / 每页条数 / 基地址），文案、页码窗口与链接由
-	// admin/partials/pagination.html 渲染。基地址带当前筛选条件，翻页不丢条件。
-	//
-	// **失败页仍会注入分页事实**：total 在 List/CountProducts 之后就已确定，若随后逐行取详情
-	// 失败，total 仍 >0，于是失败页拿到与成功页同一份分页事实 —— 这是迁移前的既有行为
-	//（旧 BuildPagination 拿到的就是同一个 total），本批**不改**它。
-	// 实测（task-109）：失败页**看不到**翻页入口 —— products.html 的分支是
-	// `{{if loadError}} 失败槽 {{else}} …含分页条… {{end}}`，失败分支不 include 分页片段；
-	// 注入的事实因此不被渲染。product_pagination_facts_test.go 把这两条同时钉住。
-	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
-		pg.Base = productListFilterURL(view.SelectedProject, view.FilterKeyword, view.FilterStatus)
-		view.Pagination = pg
-	}
 }
 
 // productListPageSize 商品列表每页条数（服务端分页）。
@@ -303,11 +279,10 @@ const productListPageSize = productservice.ProductListPageSize
 //
 // 查询串不是可信边界：page=abc、page=-3、page=999999 都会走到这里，
 // 服务端自行归一，绝不把非法页码透给取数层（负 offset 在 PG 上是错误）。
-// productListFilterURL 列表页的筛选基地址（**不含** page/limit：分页组件自己拼）。
+// productListFilterURL 列表页的筛选基地址（**不含** page/limit）。
 //
-// 分页链接由 pkg/pagination.BuildPagination 在这个基地址后追加 page/limit —— 把筛选条件
-// 拼进基地址，翻页时关键词与状态才不会丢；反过来说，若基地址里塞了 page，
-// 就会出现两个 page 参数，浏览器取第一个，翻页看起来「点了没反应」。
+// 现在只服务「详情页返回列表」那一个链接（BackURL）：分页条的链接由模板自己从请求串
+// 压出基址（pageBase 去掉 page/limit），控制器不再参与。
 func productListFilterURL(projectID, keyword, status string) string {
 	q := url.Values{}
 	if p := strings.TrimSpace(projectID); p != "" {

@@ -106,10 +106,11 @@ func b2bNewData(t *testing.T, c b2bCase) map[string]any {
 	data["Total"] = c.total
 	data["Items"] = b2bRows(c.rows)
 	pg := pagination.Facts(int64(c.total), c.page, c.size)
-	pg.Base = "/admin/product-tags/hits"
 	pg.PageParam = "page"
 	pg.KeepLimit = false
 	data["Pagination"] = pg
+	// 基址来自请求串（生产形态）：翻页链接由模板推出来，Pagination.Base 留空。
+	data["req_path"] = "/admin/product-tags/hits?id=t1&project=" + c.project + "&size=20"
 	return data
 }
 

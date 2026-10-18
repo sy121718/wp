@@ -8,9 +8,7 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/text"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -67,23 +65,7 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) (any, error) {
 		}
 	}
 	view.Attributes = rows
-	// 分页条：Go 只交事实（总数 / 页码 / 每页条数 / 基地址），文案、页码窗口与链接由
-	// admin/partials/pagination.html 渲染。基地址带上筛选条件，翻页不丢条件。
-	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
-		pg.Base = pagination.BaseURL("/admin/product-attributes",
-			attributeListFilterQuery(view.SelectedProject, view.FilterKeyword, view.FilterVariation))
-		view.Pagination = pg
-	}
 	return view, nil
-}
-
-// attributeListFilterQuery 属性页的筛选条件（project + keyword + variation）。
-func attributeListFilterQuery(projectID, keyword, variation string) url.Values {
-	q := pagination.Query("project", projectID, "keyword", keyword)
-	if variation != "" {
-		q.Set("variation", variation)
-	}
-	return q
 }
 
 // ProductAttributesValueRows 值编辑器片段：add / remove 一次，回渲染整段行列表。

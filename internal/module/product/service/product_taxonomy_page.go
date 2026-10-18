@@ -28,6 +28,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/pkg/pagination"
 )
 
 // FlattenCategoryTree 分类树 → DFS 扁平行（父在前、子紧随，模板按 Depth 缩进）。
@@ -189,6 +190,7 @@ func (s *Service) ProductCategoriesPage(ctx context.Context, req *productdto.Pro
 	if firstErr != nil {
 		return nil, firstErr
 	}
+	view.Pagination = pagination.Facts(view.Total, view.Page, view.Limit)
 	return view, nil
 }
 
@@ -305,6 +307,7 @@ func (s *Service) ProductBrandsPage(ctx context.Context, req *productdto.Product
 	if firstErr != nil {
 		return nil, firstErr
 	}
+	view.Pagination = pagination.Facts(view.Total, view.Page, view.Limit)
 	return view, nil
 }
 
@@ -390,6 +393,7 @@ func (s *Service) ProductTagsPage(ctx context.Context, req *productdto.ProductTa
 	if firstErr != nil {
 		return nil, firstErr
 	}
+	view.Pagination = pagination.Facts(view.Total, view.Page, view.Limit)
 	return view, nil
 }
 
