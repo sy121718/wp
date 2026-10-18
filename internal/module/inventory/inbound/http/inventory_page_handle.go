@@ -108,18 +108,13 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 			byWarehouse[r.WarehouseID] = r
 		}
 		for _, w := range warehouses {
-			warehouseID, _ := w["ID"].(string)
-			warehouseName, _ := w["Name"].(string)
-			warehouseCode, _ := w["Code"].(string)
-			r := byWarehouse[warehouseID]
+			r := byWarehouse[w.ID]
 			if r == nil {
 				// 未入库：该仓没有这条 SKU 的库存行。没有可编辑的对象，
 				// 因此数量列给提示、行内表单不渲染（表单要定位到一行）。
-				// 未入库：该仓没有这条 SKU 的库存行。没有可编辑的对象，
-				// 因此数量列给提示、行内表单不渲染（表单要定位到一行）。
 				stockRows = append(stockRows, inventorydto.StockByWarehouseRowResp{
-					WarehouseID: warehouseID, Present: false,
-					WarehouseName: warehouseName, WarehouseCode: warehouseCode,
+					WarehouseID: w.ID, Present: false,
+					WarehouseName: w.Name, WarehouseCode: w.Code,
 					SKUCode:       sku,
 					QuantityLabel: tr(inventoryenums.InventoryStockNotStocked, "未入库"),
 				})
@@ -128,7 +123,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 			// 字段含义见 inventorydto.StockByWarehouseRowResp（WarehouseID 是行内编辑的定位键，
 			// ExternalSKU 空串合法，TrackQuantity 与 Quantity 必须成对给出）。
 			stockRows = append(stockRows, inventorydto.StockByWarehouseRowResp{
-				WarehouseID: warehouseID, Present: true,
+				WarehouseID: w.ID, Present: true,
 				WarehouseName: r.WarehouseName, WarehouseCode: r.WarehouseCode,
 				VariantID: r.VariantID, SKUCode: r.SKUCode,
 				ExternalSKU:   r.ExternalSKU,

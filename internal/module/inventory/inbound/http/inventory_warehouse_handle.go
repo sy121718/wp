@@ -151,9 +151,9 @@ func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
 }
 
 // listWarehouses 某工程的仓库（模板直接渲染类型徽标、默认仓徽标与状态）。
-func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (out []gin.H, err error) {
+func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (out []inventorydto.WarehouseRowResp, err error) {
 	ctx := c.Request.Context()
-	out = []gin.H{}
+	out = []inventorydto.WarehouseRowResp{}
 	if projectID == "" {
 		return out, nil
 	}
@@ -163,33 +163,22 @@ func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (
 	}
 	tr := shell.TranslateFor(c)
 	for _, w := range rows {
-		// 第三方配置的各个键**恒存在**（非第三方仓给零值）：模板里直接取值不会因缺键中断
-		//（Jet 的缺失键会让整页从那一行起消失，而 HTTP 仍是 200 —— 见 templates/CLAUDE.md）。
-		item := gin.H{
-			"ID": w.ID, "Code": w.Code, "Name": w.Name, "Type": w.Type, "Status": w.Status,
-			"IsDefault": w.IsDefault, "Sort": w.Sort,
-			"StatusLabel":      statusLabel(tr, w.Status),
-			"TypeLabel":        warehouseTypeLabelText(tr, w.Type),
-			"HasThirdParty":    w.Type == inventoryenums.WarehouseTypeThirdParty,
-			"Provider":         "",
-			"ExternalCode":     "",
-			"Address":          "",
-			"Contact":          "",
-			"AllowsShipping":   false,
-			"HasCredential":    false,
-			"CredentialMasked": "",
-			"SecretRef":        "",
+		item := inventorydto.WarehouseRowResp{
+			ID: w.ID, Code: w.Code, Name: w.Name, Type: w.Type, Status: w.Status,
+			IsDefault: w.IsDefault, Sort: w.Sort,
+			StatusLabel:   statusLabel(tr, w.Status),
+			TypeLabel:     warehouseTypeLabelText(tr, w.Type),
+			HasThirdParty: w.Type == inventoryenums.WarehouseTypeThirdParty,
 		}
 		if w.ThirdParty != nil {
-			item["ThirdParty"] = w.ThirdParty
-			item["Provider"] = w.ThirdParty.Provider
-			item["ExternalCode"] = w.ThirdParty.ExternalCode
-			item["Address"] = w.ThirdParty.Address
-			item["Contact"] = w.ThirdParty.Contact
-			item["AllowsShipping"] = w.ThirdParty.AllowsShipping
-			item["HasCredential"] = w.ThirdParty.HasCredential
-			item["CredentialMasked"] = w.ThirdParty.CredentialMasked
-			item["SecretRef"] = w.ThirdParty.SecretRef
+			item.Provider = w.ThirdParty.Provider
+			item.ExternalCode = w.ThirdParty.ExternalCode
+			item.Address = w.ThirdParty.Address
+			item.Contact = w.ThirdParty.Contact
+			item.AllowsShipping = w.ThirdParty.AllowsShipping
+			item.HasCredential = w.ThirdParty.HasCredential
+			item.CredentialMasked = w.ThirdParty.CredentialMasked
+			item.SecretRef = w.ThirdParty.SecretRef
 		}
 		out = append(out, item)
 	}

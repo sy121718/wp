@@ -55,3 +55,31 @@ type MovementRowResp struct {
 	BatchID        string
 	CreatedAt      string
 }
+
+// WarehouseRowResp 仓库行（仓库管理页的表格与各页的仓库下拉共用）。
+//
+// 第三方配置的各个键**恒存在**（非第三方仓给零值）：模板里直接取值不会因缺键中断 ——
+// Jet 的缺失键会让整页从那一行起消失，而 HTTP 仍是 200（见 internal/templates/CLAUDE.md）。
+// HasThirdParty 是「要不要显示那一组字段」的分界，不要靠 Provider 是否为空去猜。
+type WarehouseRowResp struct {
+	ID        string
+	Code      string
+	Name      string
+	Type      string
+	Status    string
+	IsDefault bool
+	Sort      int
+
+	StatusLabel   string
+	TypeLabel     string
+	HasThirdParty bool
+
+	Provider         string
+	ExternalCode     string
+	Address          string
+	Contact          string
+	AllowsShipping   bool
+	HasCredential    bool
+	CredentialMasked string
+	SecretRef        string
+}
