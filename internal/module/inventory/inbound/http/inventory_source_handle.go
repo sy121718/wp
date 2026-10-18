@@ -42,9 +42,9 @@ func NewInventorySourcePageHandle(inventory inventorycontract.InventoryService,
 type inventorySourcesPageData struct {
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
-	Sources         []gin.H
+	Sources         []inventorydto.SourceRowResp
 	HasSummary      bool
-	Summary         gin.H
+	Summary         inventorydto.SourceSummaryView
 	FilterType      string
 	FilterRelated   string
 	FilterStatus    string
@@ -148,10 +148,10 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 		filterStatus = ""
 	}
 
-	sources := []gin.H{}
+	sources := []inventorydto.SourceRowResp{}
 	// 与 sourceSummary 的失败分支同形：模板只在 HasSummary 为真时读 Summary，
 	// 但键本身必须在（组内键缺失同样会中断渲染）。
-	summary := gin.H{"Groups": []gin.H{}}
+	summary := inventorydto.SourceSummaryView{Groups: []inventorydto.SourceSummaryGroupView{}}
 	hasSummary := false
 	var total int64
 	// 分页（审计 D3）：?page= / ?limit=，缺省每页 200 条。原先这一页写死 200 且没有分页条，
@@ -326,8 +326,8 @@ func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
 // sourceSummary 关联方统计（验收 4）。统计失败不阻断页面：置空并附带提示。
 // c 是给「错误文案三件套」用的（翻译 + 记日志时的 user_id）：取数失败要走 inventoryErrText，
 // 而不是把 err.Error() 铺进模板。
-func (h *inventorySourcePageHandle) sourceSummary(c *gin.Context, ctx context.Context, projectID string, pageErr *string) (out gin.H, ok bool) {
-	out = gin.H{"Groups": []gin.H{}}
+func (h *inventorySourcePageHandle) sourceSummary(c *gin.Context, ctx context.Context, projectID string, pageErr *string) (out inventorydto.SourceSummaryView, ok bool) {
+	out = inventorydto.SourceSummaryView{Groups: []inventorydto.SourceSummaryGroupView{}}
 	if projectID == "" {
 		return out, false
 	}
@@ -340,60 +340,60 @@ func (h *inventorySourcePageHandle) sourceSummary(c *gin.Context, ctx context.Co
 		}
 		return out, false
 	}
-	groups := make([]gin.H, 0, len(res.Groups))
+	groups := make([]inventorydto.SourceSummaryGroupView, 0, len(res.Groups))
 	tr := shell.TranslateFor(c)
 	for _, g := range res.Groups {
-		groups = append(groups, gin.H{
-			"Type": g.Type, "TypeLabel": sourceTypeLabel(tr, g.Type),
-			"RelatedParty": g.RelatedParty, "RelatedPartyLabel": sourceRelatedLabel(tr, g.RelatedParty),
-			"Count": g.Count,
+		groups = append(groups, inventorydto.SourceSummaryGroupView{
+			Type: g.Type, TypeLabel: sourceTypeLabel(tr, g.Type),
+			RelatedParty: g.RelatedParty, RelatedPartyLabel: sourceRelatedLabel(tr, g.RelatedParty),
+			Count: g.Count,
 		})
 	}
-	return gin.H{
-		"Total": res.Total, "Internal": res.Internal, "External": res.External,
-		"RelatedParty": res.RelatedParty, "Unrelated": res.Unrelated,
-		"SettlePriced": res.SettlePriced, "Groups": groups,
+	return inventorydto.SourceSummaryView{
+		Total: res.Total, Internal: res.Internal, External: res.External,
+		RelatedParty: res.RelatedParty, Unrelated: res.Unrelated,
+		SettlePriced: res.SettlePriced, Groups: groups,
 	}, true
 }
 
 // sourceRow 货源行 → 模板视图（金额与配置都先格式化，模板不做逻辑）。
-func sourceRow(tr func(key, fallback string) string, s *inventorydto.SourceResp) gin.H {
+func sourceRow(tr func(key, fallback string) string, s *inventorydto.SourceResp) inventorydto.SourceRowResp {
 	settlePrice := "—"
 	if s.SettlePrice != nil {
 		settlePrice = strconv.FormatFloat(*s.SettlePrice, 'f', 2, 64)
 	}
-	return gin.H{
-		"ID": s.ID, "Code": s.Code, "Name": s.Name,
-		"Type": s.Type, "TypeLabel": sourceTypeLabel(tr, s.Type),
-		"RelatedParty": s.RelatedParty, "RelatedPartyLabel": sourceRelatedLabel(tr, s.RelatedParty),
-		"Status": s.Status, "StatusLabel": statusLabel(tr, s.Status),
-		"SettlePrice": settlePrice, "HasSettlePrice": s.SettlePrice != nil,
-		"Config": prettyJSON(s.Config), "Sort": s.Sort, "UpdatedAt": s.UpdatedAt,
+	return inventorydto.SourceRowResp{
+		ID: s.ID, Code: s.Code, Name: s.Name,
+		Type: s.Type, TypeLabel: sourceTypeLabel(tr, s.Type),
+		RelatedParty: s.RelatedParty, RelatedPartyLabel: sourceRelatedLabel(tr, s.RelatedParty),
+		Status: s.Status, StatusLabel: statusLabel(tr, s.Status),
+		SettlePrice: settlePrice, HasSettlePrice: s.SettlePrice != nil,
+		Config: prettyJSON(s.Config), Sort: s.Sort, UpdatedAt: s.UpdatedAt,
 	}
 }
 
 // sourceTypeOptions 类型下拉（外部 / 内部）。
-func sourceTypeOptions(tr func(key, fallback string) string) []gin.H {
-	return []gin.H{
-		{"Value": inventoryenums.SourceTypeExternal, "Label": sourceTypeLabel(tr, inventoryenums.SourceTypeExternal)},
-		{"Value": inventoryenums.SourceTypeInternal, "Label": sourceTypeLabel(tr, inventoryenums.SourceTypeInternal)},
+func sourceTypeOptions(tr func(key, fallback string) string) []inventorydto.OptionResp {
+	return []inventorydto.OptionResp{
+		{Value: inventoryenums.SourceTypeExternal, Label: sourceTypeLabel(tr, inventoryenums.SourceTypeExternal)},
+		{Value: inventoryenums.SourceTypeInternal, Label: sourceTypeLabel(tr, inventoryenums.SourceTypeInternal)},
 	}
 }
 
 // sourceStatusOptions 状态下拉（启用 / 停用）。
-func sourceStatusOptions(tr func(key, fallback string) string) []gin.H {
-	return []gin.H{
-		{"Value": inventoryenums.SourceStatusActive, "Label": statusLabel(tr, inventoryenums.SourceStatusActive)},
-		{"Value": inventoryenums.SourceStatusDisabled, "Label": statusLabel(tr, inventoryenums.SourceStatusDisabled)},
+func sourceStatusOptions(tr func(key, fallback string) string) []inventorydto.OptionResp {
+	return []inventorydto.OptionResp{
+		{Value: inventoryenums.SourceStatusActive, Label: statusLabel(tr, inventoryenums.SourceStatusActive)},
+		{Value: inventoryenums.SourceStatusDisabled, Label: statusLabel(tr, inventoryenums.SourceStatusDisabled)},
 	}
 }
 
 // sourceRelatedOptions 关联方三态下拉：空值 = 按类型默认（编辑时 = 不改）。
-func sourceRelatedOptions(tr func(key, fallback string) string) []gin.H {
-	return []gin.H{
-		{"Value": "", "Label": tr(inventoryenums.InventorySourcesRelatedTypeDefault, "按类型默认 / 不改")},
-		{"Value": "true", "Label": sourceRelatedLabel(tr, true)},
-		{"Value": "false", "Label": sourceRelatedLabel(tr, false)},
+func sourceRelatedOptions(tr func(key, fallback string) string) []inventorydto.OptionResp {
+	return []inventorydto.OptionResp{
+		{Value: "", Label: tr(inventoryenums.InventorySourcesRelatedTypeDefault, "按类型默认 / 不改")},
+		{Value: "true", Label: sourceRelatedLabel(tr, true)},
+		{Value: "false", Label: sourceRelatedLabel(tr, false)},
 	}
 }
 

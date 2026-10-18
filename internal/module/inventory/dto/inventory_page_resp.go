@@ -108,3 +108,46 @@ type OptionResp struct {
 	Value string
 	Label string
 }
+
+// SourceRowResp 货源一行（金额与配置已格式化，模板不做逻辑）。
+type SourceRowResp struct {
+	ID   string
+	Code string
+	Name string
+	Type string
+	// TypeLabel / RelatedPartyLabel / StatusLabel 是已取词的展示文案，判断仍按 Type / Status。
+	TypeLabel         string
+	RelatedParty      bool
+	RelatedPartyLabel string
+	Status            string
+	StatusLabel       string
+	// SettlePrice 两位小数的金额；未设置时是 "—"（HasSettlePrice 为假才允许这样显示）。
+	SettlePrice    string
+	HasSettlePrice bool
+	Config         string
+	Sort           int
+	UpdatedAt      string
+}
+
+// SourceSummaryView 关联方统计（货源页顶部卡）。
+//
+// Groups 在装载失败时是空切片而不是 nil：模板读的是 len(...)，两者等价；
+// 但 nil 一旦被当成「没这项」就会导致模板里别的键被跳过，所以这里恒给非 nil。
+type SourceSummaryView struct {
+	Total        int64
+	Internal     int64
+	External     int64
+	RelatedParty int64
+	Unrelated    int64
+	SettlePriced int64
+	Groups       []SourceSummaryGroupView
+}
+
+// SourceSummaryGroupView 统计里的一组（类型 + 关联方）。
+type SourceSummaryGroupView struct {
+	Type              string
+	TypeLabel         string
+	RelatedParty      bool
+	RelatedPartyLabel string
+	Count             int64
+}
