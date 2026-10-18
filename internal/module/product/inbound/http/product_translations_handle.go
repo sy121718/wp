@@ -12,9 +12,11 @@ import (
 	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -160,7 +162,7 @@ func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 		response.ErrorWithMessage(c, status, body)
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, productservice.TranslationsSavedMsg(shell.TranslateFor(c), view.Written)))
+	response.SuccessWithMessage(c, text.MsgText(c, productTranslationsSavedMsg(c, view.Written)))
 }
 
 // productTranslationErrorsText 把逐行错误事实拼成一条可读结论。
@@ -182,4 +184,22 @@ func productTranslationErrorsText(c *gin.Context, errs []productdto.TranslationR
 	title := text.MsgText(c, facing.Msg{
 		Key: productenums.ProductTranslationsErrorsTitle, Fallback: "未保存：请先修正以下问题"})
 	return title + "：" + strings.Join(parts, "；")
+}
+
+// productTranslationsSavedMsg 译文保存成功的回执（0 条 = 没有需要写入的变化）。
+//
+// 复用工作台原有的两条词条（ProductTranslationsSavedNote / SavedNone），措辞与改造前一致；
+// 出口是 JSON 回执（页面基座把它显示在结论行里，再刷新整页）。
+//
+// **例外 3（具名占位符句式）**：ProductTranslationsSavedNote 用的是具名占位符 `{n}`
+// （i18n.FillTranslate），不是 `%s`；而模板注入的 tf 只有 `%s` 位置参数，一段 key + Args
+// 表达不了它。要收成一条 `%s` 词条属于独立的文案迁移（page 模块已按迁移 613 收掉了，
+// product 这一条还没做），不夹在「控制器不取词」这一步里做。
+func productTranslationsSavedMsg(c *gin.Context, written int) facing.Msg {
+	if written > 0 {
+		return facing.Msg{Fallback: i18n.FillTranslate(shell.TranslateFor(c), productenums.ProductTranslationsSavedNote,
+			"已保存 {n} 条译文；译文变更已标记待重建（下次构建生效）。",
+			map[string]string{"n": strconv.Itoa(written)})}
+	}
+	return facing.Msg{Key: productenums.ProductTranslationsSavedNone, Fallback: "没有需要写入的变化。"}
 }

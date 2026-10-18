@@ -13,13 +13,17 @@ import (
 	contentcontract "go_wp/internal/module/content/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
+	seoscore "go_wp/internal/seo"
 	"go_wp/internal/seo/scoring"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/response"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -32,7 +36,7 @@ import (
 // 下场是「同一个商品在两处分数不同」。本文件只剩请求绑定、取词、调用与渲染。
 
 // 评分等级文案（颜色 → 当前语言）的**唯一映射**在 seoscore.ScoreGradeText
-// （internal/seo/score_grade.go），调用点在 productservice.SeoEntityScoreView（product_score_view.go）。本文件此前自带一份
+// （internal/seo/score_grade.go），调用点在下面的 entityScoreView。本文件此前自带一份
 // key + 中文兜底表（与本模块 enums 里的 admin.seo.grade.* 常量配套），已按「同一批展示文案
 // 只能有一份定义」收编 —— 收编后 product 取到的是 content / project 用的同一批词条
 // admin.seo.score.grade.*。
@@ -72,9 +76,14 @@ func (h *ProductPageHandle) scoreInputOf(c *gin.Context, kind scoring.PageKind,
 	res := productservice.SeoScoreInputOf(c.Request.Context(), h.products, h.instances,
 		kind, id, projectID, requestScoreLang(c))
 	if res.Input == nil {
-		return nil, "", productservice.SeoEmptyView(shell.TranslateFor(c), res.Empty)
+		return nil, "", scoreEmptyView(c, res.Empty)
 	}
 	return res.Input, res.SelfID, productdto.ScoreResp{}
+}
+
+// scoreEmptyView 空态片段视图：文案是「key + 中文兜底」的事实（service 给出），取值在 HTTP 层。
+func scoreEmptyView(c *gin.Context, empty productservice.SeoScoreEmpty) productdto.ScoreResp {
+	return productdto.ScoreResp{Empty: shell.TranslateFor(c)(empty.Key, empty.Fallback)}
 }
 
 // ProductScorePanel 商品详情页的编辑期评分（POST /admin/products/seo-score）。
@@ -125,7 +134,7 @@ func (h *ProductPageHandle) entityScoreViewOf(ctx context.Context, c *gin.Contex
 	tr := shell.TranslateFor(c)
 	res, dups := productservice.SeoEntityScore(in,
 		productservice.SeoTitleIndex(ctx, h.products, h.seoTitleSources(), projectID, tr), selfID)
-	return productservice.SeoEntityScoreView(tr, in, res, dups)
+	return entityScoreView(tr, in, res, dups)
 }
 
 // renderEntityScore 算分 + 查 title 重复 + 渲染片段（三个 POST 入口共用）。
@@ -137,6 +146,91 @@ func (h *ProductPageHandle) renderEntityScore(c *gin.Context, in *scoring.Entity
 // renderScoreView 渲染评分片段（空态与结果共用同一份模板：片段按 Score.OK 分流）。
 func renderScoreView(sv productdto.ScoreResp) (any, error) {
 	return gin.H{"Score": sv}, nil
+}
+
+// entityScoreView 评分结果 → 片段视图（含页型回显与 title 冲突清单）。
+func entityScoreView(tr func(key, fallback string) string, in *scoring.EntityPageInput, res *scoring.Result,
+	dups []scoring.TitleEntry) productdto.ScoreResp {
+	sv := productdto.ScoreResp{OK: true}
+	if res != nil {
+		sv.Total = res.Total
+		sv.Grade = res.Grade
+		// 页型与调权理由回显（docs/02-E1 §5）：编辑者要能看出「这份分数是按商品页的
+		// 尺子量的」，否则同一段描述在商品页比文章页高几分会被当成评分器不稳。
+		if res.Profile != nil {
+			sv.ProfileType = res.Profile.Type
+			sv.ProfileReason = res.Profile.Reason
+		}
+		sv.Sections = scoreSections(tr, res.Sections)
+	}
+	title := scoring.EntityTitle(in)
+	fillSerp(&sv, tr, in, title)
+	fillDuplicateTitle(&sv, title, dups)
+	return sv
+}
+
+// scoreSections 评分分项 → 片段行（含未达标项的整句说明）。
+//
+// 未达标行的整句是**模板**：标签 / 实测 / 基准 / 建议四段都是数据，句子的语序与标点
+// 由词条决定（英文的冒号与括号与中文不同），命名占位符 + FillTranslate 负责填充
+// （词条被写坏时自动回落下面那句中文兜底）。
+func scoreSections(tr func(key, fallback string) string, sections []scoring.SectionResult) []productdto.ScoreSectionResp {
+	out := make([]productdto.ScoreSectionResp, 0, len(sections))
+	for _, sec := range sections {
+		item := productdto.ScoreSectionResp{
+			Label: sec.Label, Color: sec.Color, Score: sec.Score, Max: sec.Max,
+			ColorLabel: seoscore.ScoreGradeText(tr, sec.Color),
+		}
+		for _, ck := range sec.Checks {
+			if ck.Score >= ck.Max {
+				continue
+			}
+			item.Issues = append(item.Issues, productdto.ScoreIssueResp{
+				Text: i18n.FillTranslate(tr, productenums.SEOIssueLine,
+					"{label}：{actual}（基准 {benchmark}）→ {hint}",
+					map[string]string{
+						"label": ck.Label, "actual": ck.Actual,
+						"benchmark": ck.Benchmark, "hint": ck.Hint,
+					}),
+				Target: ck.Target,
+			})
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// fillSerp 搜索结果预览（标题 / 路径 / 描述）：空值给「未填写」那句文案事实。
+func fillSerp(sv *productdto.ScoreResp, tr func(key, fallback string) string, in *scoring.EntityPageInput, title string) {
+	sv.SerpTitle = title
+	if sv.SerpTitle == "" {
+		sv.SerpTitle = tr(productenums.SEOSerpTitleEmpty, "（未填写标题）")
+	} else {
+		sv.SerpTitle = seoscore.TruncateDisplayWidth(sv.SerpTitle, 60)
+	}
+	sv.SerpURL = in.URL
+	if sv.SerpURL == "" {
+		sv.SerpURL = tr(productenums.SEOSerpURLEmpty, "（线上路径未知）")
+	}
+	sv.SerpDesc = strings.TrimSpace(in.SEODescription)
+	if sv.SerpDesc == "" {
+		sv.SerpDesc = strings.TrimSpace(in.Description)
+	}
+	if sv.SerpDesc == "" {
+		sv.SerpDesc = tr(productenums.SEOSerpDescEmpty, "（未填写描述）")
+	}
+}
+
+// fillDuplicateTitle title 唯一性（SEO-018 编辑期轻量版）：结论形状与发布侧体检一致 ——
+// 列出全部冲突页面。
+func fillDuplicateTitle(sv *productdto.ScoreResp, title string, dups []scoring.TitleEntry) {
+	if len(dups) == 0 {
+		return
+	}
+	sv.DuplicateNote = scoring.DuplicateTitleMessage(title, dups)
+	for _, d := range dups {
+		sv.Duplicates = append(sv.Duplicates, d.Page)
+	}
 }
 
 // EntitySeoDrawer 商品 SEO 评分抽屉片段（GET /admin/products/seo/drawer?productId=&project=）。

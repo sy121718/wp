@@ -6,18 +6,121 @@ package producthttp
 //   · 本模块 Err* 的展示原文 → internal/module/product/enums 的 ProductErrFallbacks
 //     （覆盖面守卫在 productenums 包里）；
 //   · 别模块 key（inventory / presentation）→ 各自的 enums 兜底表（product 不再替对方留补丁表）；
-//   · 跳过原因（VariantSkip* / BundleMember*）→ variantSkipFallbacks / bundleMemberSkipFallbacks，
-//     两张表随合成逻辑一起在 service（取值过不了业务判据 pkg/facing.IsBusinessKey，只会从这两张表查）；
-//     覆盖面守卫在 service 包的 product_message_test.go / product_bundle_skip_test.go（漏登一条 = 页面上出现裸 key）。
+//   · 跳过原因（VariantSkip* / BundleMember*）→ variantSkipFallbacks / bundleMemberSkipFallbacks ——
+//     它们的取值过不了业务判据（pkg/facing.IsBusinessKey），所以只会从这两张表查，
+//     守卫在本文件（漏登一条 = 页面上出现裸 key）。
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )
+
+// enumsStringConstants 扫 product enums 包里全部字符串常量：取值 → 常量名。
+//
+// 直接从**源文件**取（而不是在测试里抄一份清单）：抄清单的话，新增一个跳过原因只要不同步改测试，
+// 守卫就一直绿 —— 那正是要拦的事。
+func enumsStringConstants(t *testing.T) map[string]string {
+	t.Helper()
+	dir := filepath.Join("..", "..", "enums")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("读 %s 失败: %v", dir, err)
+	}
+	fset := token.NewFileSet()
+	out := map[string]string{}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		f, perr := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
+		if perr != nil {
+			t.Fatalf("解析 %s 失败: %v", name, perr)
+		}
+		for _, decl := range f.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, id := range vs.Names {
+					if i >= len(vs.Values) {
+						continue
+					}
+					lit, ok := vs.Values[i].(*ast.BasicLit)
+					if !ok || lit.Kind != token.STRING {
+						continue
+					}
+					val, uerr := strconv.Unquote(lit.Value)
+					if uerr != nil {
+						t.Fatalf("常量 %s 的取值不是合法字符串: %v", id.Name, uerr)
+					}
+					out[val] = id.Name
+				}
+			}
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("没扫到任何字符串常量 —— 守卫本身失效了")
+	}
+	return out
+}
+
+// TestSkipReasonFallbacksCoverEnumsSkipKeys 每条跳过原因都要有出口层的展示原文。
+//
+// 跳过原因不走 productErrFactOf（取值过不了业务判据），所以 enums 那层没有它们的表 ——
+// 出口层这张表就是唯一真源，漏一条页面上就是裸 key（VariantSkipHasStock 这种串）。
+func TestSkipReasonFallbacksCoverEnumsSkipKeys(t *testing.T) {
+	all := enumsStringConstants(t)
+	tables := []struct {
+		name   string
+		prefix string
+		table  map[string]string
+	}{
+		{"variantSkipFallbacks", "VariantSkip", variantSkipFallbacks},
+		// 成员来源解析的跳过表随解析一起下沉到 service（product_bundle.go 的
+		// bundleMemberSkipFallbacks），覆盖面守卫在 service 包：这张表在那里是唯一真源。
+	}
+	for _, tc := range tables {
+		t.Run(tc.name, func(t *testing.T) {
+			for val, name := range all {
+				if !strings.HasPrefix(name, tc.prefix) {
+					continue
+				}
+				text := strings.TrimSpace(tc.table[val])
+				if text == "" {
+					t.Errorf("%s (=%q) 没有中文兜底，页面上会显示裸 key", name, val)
+					continue
+				}
+				if text == val {
+					t.Errorf("%s (=%q) 的兜底就是 key 本身 —— 等于没有兜底", name, val)
+				}
+			}
+			// 反向：表里的 key 必须仍是 enums 里声明的常量（改名后没同步 → 这张表就退化成死条目）。
+			// 这张表允许混入业务错误 key（ErrBundleSelfReference 就是一个跳过原因），所以只查「有没有声明」。
+			for key := range tc.table {
+				if _, ok := all[key]; !ok {
+					t.Errorf("兜底表里登记了不属于 product enums 的 key %q（改名后的旧 key？）", key)
+				}
+			}
+		})
+	}
+}
 
 // TestBusinessErrTextKeepsDeclarationFallback 业务错误的成品串来自**声明处**的兜底。
 //

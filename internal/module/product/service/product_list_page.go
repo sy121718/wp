@@ -4,9 +4,11 @@
 // 控制器只剩「读参数 → 调这里 → 渲染」。那一屏的完整理由（为什么取数编排属于业务结论、
 // 为什么失败之后一条派生取数都不发、为什么不写第二份失败页）在这里同样成立，不重复。
 //
-// **本方法既搬取数也搬行装配**（行装配见文件末尾与 service/product_row.go）。跨页共用的
-// 派生值也在本包：状态下拉与筛选基地址见 service/product_list_chrome.go，改价表单初值见
-// DefaultPricingForm，页码下限保护在本方法开头。控制器只剩「读参数 → 调这里 → 渲染」。
+// **本方法既搬取数也搬行装配**（行装配见文件末尾与 service/product_row.go）。仍留在控制器
+// 的只有两件跨页共用的工具：页码归一（productPageNumber，属性页 / 分类标签页同口径）与
+// 状态下拉（productStatusOptions，编辑页也用）。它们搬进本包等于让那几页各留一份或反向
+// import 控制器包，两条路都比留在原地差；改价表单初值已随定价页一起下沉进本包
+// （controller 拿 Rules / Roundings 调 DefaultPricingForm）。
 //
 // 这一屏与新建页的三个不同点：
 //   - **分页与筛选**：keyword / status / page 全走查询串（服务端渲染、零 JS）。页码由

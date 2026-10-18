@@ -8,9 +8,13 @@ package producthttp
 
 import (
 	"errors"
+	"fmt"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"net/http"
+	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -20,10 +24,12 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
 	"go_wp/internal/text"
+	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/money"
@@ -302,7 +308,7 @@ func fillProductListChrome(c *gin.Context, view *productdto.ProductListPageResp)
 	// 状态下拉与改价表单初值：两处的工具都被别的页面用着（详情页回显 / 独立定价页），
 	// 所以留在本包。分类扁平行与成品行**不在控制器**了 —— 两者只服务行装配，已随行下沉
 	// 进读模型（service/product_row.go），本页拿到的是排好序的 view.Products。
-	view.Statuses = productservice.ProductStatusOptions(view.FilterStatus)
+	view.Statuses = productStatusOptions(view.FilterStatus)
 	view.Form = productservice.DefaultPricingForm(view.Rules, view.Roundings)
 	// 分页条：Go 只交事实（总数 / 页码 / 每页条数 / 基地址），文案、页码窗口与链接由
 	// admin/partials/pagination.html 渲染。基地址带当前筛选条件，翻页不丢条件。
@@ -314,7 +320,7 @@ func fillProductListChrome(c *gin.Context, view *productdto.ProductListPageResp)
 	// `{{if loadError}} 失败槽 {{else}} …含分页条… {{end}}`，失败分支不 include 分页片段；
 	// 注入的事实因此不被渲染。product_pagination_facts_test.go 把这两条同时钉住。
 	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
-		pg.Base = productservice.ProductListFilterURL(view.SelectedProject, view.FilterKeyword, view.FilterStatus)
+		pg.Base = productListFilterURL(view.SelectedProject, view.FilterKeyword, view.FilterStatus)
 		view.Pagination = pg
 	}
 	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行），模板里的 ?err= / ?done= 提示条
@@ -335,6 +341,54 @@ const productListPageSize = productservice.ProductListPageSize
 //
 // 查询串不是可信边界：page=abc、page=-3、page=999999 都会走到这里，
 // 服务端自行归一，绝不把非法页码透给取数层（负 offset 在 PG 上是错误）。
+// productListFilterURL 列表页的筛选基地址（**不含** page/limit：分页组件自己拼）。
+//
+// 分页链接由 pkg/pagination.BuildPagination 在这个基地址后追加 page/limit —— 把筛选条件
+// 拼进基地址，翻页时关键词与状态才不会丢；反过来说，若基地址里塞了 page，
+// 就会出现两个 page 参数，浏览器取第一个，翻页看起来「点了没反应」。
+func productListFilterURL(projectID, keyword, status string) string {
+	q := url.Values{}
+	if p := strings.TrimSpace(projectID); p != "" {
+		q.Set("project", p)
+	}
+	if k := strings.TrimSpace(keyword); k != "" {
+		q.Set("keyword", k)
+	}
+	if s := strings.TrimSpace(status); s != "" {
+		q.Set("status", s)
+	}
+	if enc := q.Encode(); enc != "" {
+		return "/admin/products?" + enc
+	}
+	return "/admin/products"
+}
+
+// productStatusOptions 列表筛选 / 编辑页的状态下拉项（含「全部状态」）。
+//
+// 槽位收**事实**（Key + 中文兜底）而不是成品串：语言是请求级的，控制器提前翻等于把这一句
+// 锁死在一种语言（英文界面上仍是中文，不报错、门禁也不红）。取词由模板的 tr 在渲染期做
+// （products.html 的筛选项与状态徽章、product_edit.html 的状态下拉）。
+//
+// 「值 → (key, 兜底)」的映射在 productenums.StatusLabel：本函数只给**值域与顺序**
+// （这一屏就这四档），控制器不再自带一张手抄的三元表。
+//
+// 状态维度**只有这一种入口**：不另配状态徽章筛选 —— 同一维度两套控件时，
+// 用户会怀疑它们是否等价（admin-ui-logic §2）。
+func productStatusOptions(current string) []productdto.StatusOptionResp {
+	values := []string{"", productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}
+	out := make([]productdto.StatusOptionResp, 0, len(values))
+	for _, value := range values {
+		key, fallback := productenums.StatusLabel(value)
+		out = append(out, productdto.StatusOptionResp{
+			Value:         value,
+			LabelKey:      key,
+			LabelFallback: fallback,
+			Selected:      value == strings.TrimSpace(current),
+		})
+	}
+	return out
+}
+
 // ==========================================================================
 // 商品新建页。
 //
@@ -449,7 +503,7 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	// 会给 Err（表单校验失败 / 选项读取失败）。
 	view.Err = submitErr
 	// 回列表的链接与「取消」都回到用户来的地方（工程上下文保留）。
-	view.BackURL = productservice.ProductListFilterURL(view.SelectedProject, "", "")
+	view.BackURL = productListFilterURL(view.SelectedProject, "", "")
 	// 属性组候选读失败：撤掉保存入口并按当前语言归口 —— 「选择器缺失」与「用户主动取消了
 	// 全部引用」在 POST 上同形，读故障时不能装作后者。
 	if view.AttributeOptionsErr != nil {
@@ -458,7 +512,7 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 			view.Err = productPageInternalText(c, view.AttributeOptionsErr)
 		}
 	}
-	productservice.FillProductEditFormEcho(view)
+	fillEditFormEcho(view)
 	// 详情页模板面板：详情页只读展示绑定状态，写动作（进入自定义 / 编辑模板 / 重新套用预设 /
 	// 回滚）都在本页 —— 与详情页共用同一份组装。
 	view.TplPanel = h.detailTemplatePanel(ctx, view.SelectedProject, view.ProductID)
@@ -470,6 +524,62 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	}
 	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
 	return view, nil
+}
+
+// fillEditFormEcho 编辑表单的回显值（状态选中项、属性组勾选态、图集与数值字段的文本形态、
+// 捆绑容器标记）。
+//
+// 商品读不出来时页面仍要完整：状态按「全部状态」那一档给默认值，其余回显位保持零值，
+// 模板据此显示空表单而不是中断。
+func fillEditFormEcho(view *productdto.ProductEditPageResp) {
+	// 状态下拉：先按「全部状态」那一档给默认值 —— 商品读不出来时页面仍完整；读到了会覆盖。
+	view.Statuses = productStatusOptions("")
+	if !view.HasProduct || view.Detail == nil {
+		return
+	}
+	// 行已由读模型装配（service/product_row.go）：副标题 / 单位 / 描述 HTML 都是行上的
+	// 字段，控制器不再往行里补键 —— 这里只剩「编辑表单要、列表与详情页不要」的那几样。
+	view.Statuses = productStatusOptions(view.Detail.Status)
+	// 属性组勾选态（详情页用的是逗号分隔的 id 输入框，编辑页是勾选列表）：
+	// 可选值来自读模型给的候选，勾选态由商品已引用的 id 决定。
+	// 候选读失败那一档走 EditBlocked（AttributeChecks 保持为空）。
+	if view.AttributeOptionsErr == nil {
+		view.AttributeChecks = checkedAttributeOptions(view.AttributeOptions, view.Detail.AttributeIDs)
+	}
+	// 图集与数值字段：表单里是文本（textarea / input），按行与可空文本回填。
+	view.ImagesText = strings.Join(view.Detail.Images, "\n")
+	view.ImageAltsText = strings.Join(view.Detail.ImageAlts, "\n")
+	view.WeightText = nullableNumberText(view.Detail.Weight)
+	view.DefaultPriceText = nullableNumberText(view.Detail.DefaultPrice)
+	// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
+	// 这里只给一个链接标记（type=variant 时为假，模板据 isset 整块跳过）。
+	view.IsBundle = isBundleProduct(view.Detail.Type)
+}
+
+// nullableNumberText 可空数值 → 输入框文本（未设置给空串，不是 0）。
+//
+// 与列表展示用的 pkg/money.FormatYuanOrDash（空显示为 —）分开：— 是**展示**符号，
+// 填进 input 的 value 会变成一个待提交的非法值。
+func nullableNumberText(v *float64) string {
+	if v == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*v, 'f', -1, 64)
+}
+
+// checkedAttributeOptions 属性组勾选列表：给每组补一个 Checked（商品是否引用它）。
+//
+// 内嵌 AttributeOptionResp 而不是复制键：标签口径仍只有 service 一处，
+// 这里只加「这一行在本次商品上是什么状态」。
+func checkedAttributeOptions(options []productdto.AttributeOptionResp, selected []string) []productdto.AttributeCheckOptionResp {
+	out := make([]productdto.AttributeCheckOptionResp, 0, len(options))
+	for _, o := range options {
+		out = append(out, productdto.AttributeCheckOptionResp{
+			AttributeOptionResp: o,
+			Checked:             slices.Contains(selected, o.ID),
+		})
+	}
+	return out
 }
 
 // ==========================================================================
@@ -534,7 +644,7 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) (any, error) {
 		// 容器价才是套餐价。type=variant 时**不给这个字段**，模板据 isset 整块跳过
 		// —— 区块的入口就在详情页，不该再要求运营去另一个菜单页找它。
 		// （Bundle 保持可 nil：nil 才让 isset(p.Bundle) 为假、整块跳过。）
-		if productservice.IsBundleProduct(view.Detail.Type) {
+		if isBundleProduct(view.Detail.Type) {
 			view.Product.Bundle = h.bundlePanel(c, view.SelectedProject, view.Detail.ID)
 		}
 	}
@@ -597,6 +707,86 @@ func (h *ProductPageHandle) ProductsVariantPreview(c *gin.Context) {
 	c.JSON(http.StatusOK, res)
 }
 
+// variantSkipFallbacks 清单外删除被跳过时的中文兜底（key 见 productenums.VariantSkip*）。
+var variantSkipFallbacks = map[string]string{
+	productenums.VariantSkipHasStock:       "仍有库存，未删除（请先处理库存或改为停用）",
+	productenums.VariantSkipReferenced:     "被 BOM 清单引用，未删除（请先解除引用）",
+	productenums.VariantSkipDuplicated:     "与清单里前面的行重复，已忽略",
+	productenums.VariantSkipVariantMissing: "这一行对应的变体已不存在（可能已被别处删除）",
+	// 本批新增的两个引用面（迁移 259）：被捆绑成员引用 / 有过库存流水。
+	productenums.VariantSkipBundleReferenced: "被捆绑成员引用，未删除（请先在捆绑配置里解除引用）",
+	productenums.VariantSkipHasMovement:      "有过库存流水（已被订单或库存变动用过），未删除（请改为停用）",
+}
+
+// productBulkText 一条结论文案的事实（key + 中文兜底）。
+type productBulkText struct{ key, fallback string }
+
+// fact 把一条结论文案变成**事实**（key + 中文兜底 + %s 参数）：模板在渲染期取词，
+// JSON 出口用 text.MsgText 取成品串。
+//
+// 参数一律 strconv 成字符串（模板侧的占位符是 %s，传 int 会渲染成 %!s(int=3)）；
+// 没有占位符的词条**不要**传参数 —— TranslateArgs 对多余参数会 Sprintf 出 %!(EXTRA string=…)。
+func (t productBulkText) fact(args ...string) facing.Msg {
+	m := facing.Msg{Key: t.key, Fallback: t.fallback}
+	if len(args) > 0 {
+		m = m.WithArgs(args...)
+	}
+	return m
+}
+
+// productBulkTextOf 取一条批量结论文案的当前语言模板（**文本**形态，给「多段拼一句」的合成句用）。
+//
+// 词条混进 %d 之类协议外占位符时回落中文原文（模板一律只允许 %s，数字先经 strconv.Itoa）——
+// 否则 Sprintf 会把参数渲染成 int，而这条路直接给运营看。
+func productBulkTextOf(c *gin.Context, t productBulkText) string {
+	built := shell.TranslateFor(c)(t.key, t.fallback)
+	if !i18n.HasStringPlaceholdersOnly(built) {
+		return t.fallback
+	}
+	return built
+}
+
+// 变体清单保存的结论文案（详情页编辑表单的回执）。
+var (
+	productVariantSaveNoChange = productBulkText{productenums.BulkVariantNoChange, "变体清单与库里一致，没有需要保存的变化。"}
+	productVariantSaveSaved    = productBulkText{productenums.BulkVariantSaved, "已保存变体清单：新增 %s 个、修改 SKU %s 个、删除 %s 个。"}
+	productVariantSaveSkipped  = productBulkText{productenums.BulkVariantSkipped, "跳过 %s 个：%s"}
+)
+
+// variantSaveMsg 保存结果的回带结论（**事实**：单一情形给 key，多段拼接给成品串）。
+//
+// 「一条都没变」与「跳过若干」必须能区分：都写成「保存成功」时，用户无法判断是
+// 清单本来就与库里一致，还是有行被拦下了（被拦下的行下一次还会出现在清单里）。
+//
+// 带跳过明细时是「两句词条 + 逐条原因」拼起来的复合句，一段 key 表达不了 —— 这一档给
+// 成品串（Fallback，Key 为空），与 page 模块 pageTranslationsSavedMsg 同一取舍。
+func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) facing.Msg {
+	if res == nil {
+		return text.InternalMsg()
+	}
+	if res.Created == 0 && res.Updated == 0 && res.Deleted == 0 && len(res.Skipped) == 0 {
+		return productVariantSaveNoChange.fact()
+	}
+	// 例外（需要成品串）：这条结论是**多段词条拼出来的复合句**（「已保存…」+「跳过 N 条：原因」），
+	// 一段 key 表达不了 —— 它回的是 Fallback 成品串（Key 留空），与 page 模块同一取舍。
+	tr := shell.TranslateFor(c)
+	// 数字一律 strconv.Itoa 成字符串后填入（词条只允许 %s）。
+	parts := []string{fmt.Sprintf(productBulkTextOf(c, productVariantSaveSaved),
+		strconv.Itoa(res.Created), strconv.Itoa(res.Updated), strconv.Itoa(res.Deleted))}
+	if len(res.Skipped) > 0 {
+		// 只报**原因**，不再把「哪个 SKU / 什么规格」拼进结论：
+		// 受控形态下（每条原因都来自 variantSkipFallbacks 的枚举）文案可读且不泄漏。
+		// 被跳过的行本来就留在清单里，逐行 SKU 由页面本身呈现。
+		items := make([]string, 0, len(res.Skipped))
+		for _, skip := range res.Skipped {
+			items = append(items, tr(skip.Reason, variantSkipFallbacks[skip.Reason]))
+		}
+		parts = append(parts, fmt.Sprintf(productBulkTextOf(c, productVariantSaveSkipped),
+			strconv.Itoa(len(res.Skipped)), strings.Join(items, "；")))
+	}
+	return facing.Msg{Fallback: strings.Join(parts, " ")}
+}
+
 // SaveVariantList 以清单为准保存变体（POST /api/product/variant/save）——变体**唯一的落库动作**。
 //
 // rows 是整张清单（顺序即期望顺序）：行上只有 variantId（既有变体；新增行为空）、
@@ -618,7 +808,7 @@ func (h *ProductHandle) SaveVariantList(c *gin.Context) {
 		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, productservice.VariantSaveMsg(shell.TranslateFor(c), res)), res)
+	response.SuccessWithMessage(c, text.MsgText(c, variantSaveMsg(c, res)), res)
 }
 
 // AddRating 补录一条商品评分（issue #33）。
@@ -830,6 +1020,14 @@ func (h *ProductPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
 	// 回执就是响应：行结构、规格文本、来源标签、跳过原因全部由 service 填好
 	// （属性组与取词函数它都有）—— 控制器不再为拼一句 spec 回查一次商品。
 	c.JSON(http.StatusOK, res)
+}
+
+// isBundleProduct 商品类型是否为捆绑容器（详情页据此决定要不要渲染「捆绑构成」）。
+//
+// 判据只认类型本身，不看「bundle_items 是否非空」——后者是迁移 238 之前的旧口径，
+// 分不清「主体卖自己的 SKU」与「容器卖组合」（bundle 商品的价 0 变体就是这么来的）。
+func isBundleProduct(productType string) bool {
+	return productType == productmodel.TypeBundle
 }
 
 // bundleSourceParts 成员来源快照的**事实段**（仅用于展示 —— 来源不是身份）。
@@ -1143,8 +1341,11 @@ func (h *ProductHandle) ApplyPricing(c *gin.Context) {
 		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
-	// 回执文案由 service 合成（三段拼一句属于值的组装，不在控制器里做）。
-	response.SuccessWithMessage(c, productservice.PricingAppliedMsg(shell.TranslateFor(c), res.ChangedCount))
+	// 回执沿用页面原本那句话（「本次改动 N 个变体，明细见下方留痕台账」）：三段拼一句
+	// （前缀 + 计数 + 后缀）—— 两条词条还是两段式，收成一条 %s 整句要改 seed。
+	tr := shell.TranslateFor(c)
+	response.SuccessWithMessage(c, tr(productenums.ProductPricingAppliedLead, "已应用调价：本次改动 ")+
+		strconv.Itoa(res.ChangedCount)+tr(productenums.ProductPricingAppliedTail, " 个变体，明细见下方留痕台账。"))
 }
 
 // productPricingApplyReq 定价页应用调价的 JSON 入参（规则字段平铺，理由见 ApplyPricing）。
