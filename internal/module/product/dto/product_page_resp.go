@@ -309,9 +309,6 @@ type ProductTranslationResp struct {
 	Target     string
 	Engine     string
 	Translated bool
-	// EngineTone 译文来源的徽标分档（i18n.ContentEngineTone）：模板据此选 class，
-	// 不在模板里写 engine == "ai"（字符串字面量只该出现在常量定义处）。
-	EngineTone string
 	// Rich 富文本 / 多段文本字段（描述、属性值数组）：译文需与原文同形。
 	Rich bool
 }

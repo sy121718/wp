@@ -58,8 +58,6 @@ type TagRowResp struct {
 	// KindLabelKey/KindLabelFallback 类型标签的文案事实（productenums.TagKindLabel）。
 	KindLabelKey      string
 	KindLabelFallback string
-	// KindTone 徽标分档（rule → info，manual → mute）。
-	KindTone string
 	// IsRule/HasRuleParams 规则型标签（决定表单里规则字段显不显示）。
 	IsRule        bool
 	HasRuleParams bool

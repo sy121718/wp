@@ -162,7 +162,7 @@
                         </td>
                         <td>
                             {{if r.Engine}}
-                            <span class="badge badge-{{r.EngineTone}}">{{r.Engine}}</span>
+                            <span class="badge badge-{{if r.Engine == "ai"}}info{{else}}mute{{end}}">{{r.Engine}}</span>
                             {{else}}
                             <span class="text-mute">—</span>
                             {{end}}

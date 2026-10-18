@@ -339,9 +339,8 @@ func toAttributeResp(e *productmodel.ProductAttributeEntity) *productdto.Attribu
 		ID: e.ID, ProjectID: e.ProjectID, Key: e.Key, Name: e.Name,
 		IsVariation: e.IsVariation, Sort: e.Sort,
 		Values: values, ValueCount: len(values),
-		CreatedAt:     e.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:     e.UpdatedAt.Format(time.RFC3339),
-		VariationTone: variationTone(e.IsVariation),
+		CreatedAt: e.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}
 	for _, v := range values {
 		if v.Enabled {
@@ -356,16 +355,6 @@ func toAttributeResp(e *productmodel.ProductAttributeEntity) *productdto.Attribu
 func (s *Service) toAttributeDetail(ctx context.Context, e *productmodel.ProductAttributeEntity) (*productdto.AttributeResp, error) {
 	_ = ctx
 	return toAttributeResp(e), nil
-}
-
-// variationTone 属性组是否参与变体 → 徽标分档。
-//
-// 「参与变体」意味着改它会牵动 SKU 生成 → info；不参与的是普通展示属性 → 中性。
-func variationTone(isVariation bool) string {
-	if isVariation {
-		return "info"
-	}
-	return "mute"
 }
 
 // resolveAttributeIDs 校验并归一商品引用的属性组 id。

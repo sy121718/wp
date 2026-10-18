@@ -464,7 +464,6 @@ func translationGroups(cands []productcontract.TranslationCandidate, targets map
 			Source: c.SourceText, SourceHash: c.SourceHash,
 			Target: info.TargetText, Engine: info.Engine,
 			Translated: info.TargetText != "",
-			EngineTone: i18n.ContentEngineTone(info.Engine),
 			Rich:       c.Field == "description",
 		})
 	}

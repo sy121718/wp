@@ -12,7 +12,7 @@ import (
 
 // docsPointerBudget 是「指向已删除文档目录的存量引用」总数。
 // 双向判定：新增引用会让总数变大，清理后不同步下调会让总数变小 —— 两种都判失败。
-const docsPointerBudget = 255
+const docsPointerBudget = 254
 
 var docsPointerPattern = regexp.MustCompile("docs/[A-Za-z0-9._/\\-]+\\.(?:md|html|txt|sql)")
 

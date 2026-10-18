@@ -280,7 +280,6 @@ func tagPageRow(t *productdto.TagResp) productdto.TagRowResp {
 		KindLabelKey: kindKey, KindLabelFallback: kindFallback,
 		IsRule:        t.Kind == productenums.TagKindRule,
 		HasRuleParams: t.Kind == productenums.TagKindRule,
-		KindTone:      tagKindTone(t.Kind),
 		KindRule:      productenums.TagKindRule,
 		KindManual:    productenums.TagKindManual,
 		RuleType:      t.RuleType,
@@ -291,14 +290,6 @@ func tagPageRow(t *productdto.TagResp) productdto.TagRowResp {
 		RuleMinPrice: ruleParamText(t.RuleParams, "minPrice"),
 		RuleMaxPrice: ruleParamText(t.RuleParams, "maxPrice"),
 	}
-}
-
-// tagKindTone 标签类型 → 徽标分档（规则型标签 → info，普通标签中性）。
-func tagKindTone(kind string) string {
-	if kind == productenums.TagKindRule {
-		return "info"
-	}
-	return "mute"
 }
 
 // ruleParamText 从规则参数里取某个键的文本（缺失返回空串，用于表单回填）。
