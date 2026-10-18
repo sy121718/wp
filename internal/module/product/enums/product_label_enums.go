@@ -18,29 +18,9 @@ package productenums
 import "strconv"
 
 // —— 商品状态（products.status）——
-
-// StatusLabel 商品状态 → 文案事实。
 //
-// 空值 = 列表筛选下拉的「全部状态」项（不筛选），不是某个状态 —— 它只出现在筛选控件里，
-// 状态徽章那一侧拿到的永远是三个实取值之一。
-//
-// 未知状态回落到**原值**（key 与兜底都给原值）：状态是封闭集合，出现别的值说明数据或 seed
-// 漂移了，页面上直接显示那个值至少能让人去查；套一个错的档（比如把未知当草稿）会让运营
-// 按错的结论办事。
-func StatusLabel(value string) (key, fallback string) {
-	switch value {
-	case StatusDraft:
-		return ProductsStatusDraft, "草稿"
-	case StatusPublished:
-		return ProductsStatusPublished, "已上架"
-	case StatusArchived:
-		return ProductsStatusArchived, "已下架"
-	case "":
-		return ProductsStatusAll, "全部状态"
-	default:
-		return value, value
-	}
-}
+// 三档显示名与筛选下拉的「全部状态」都只出现在模板里（products.html / product_edit.html
+// 按取值分支取词）：后端只给取值与选中态，不再有「取值 → 文案」的映射表。
 
 // —— 标签类型（tags.kind）——
 //

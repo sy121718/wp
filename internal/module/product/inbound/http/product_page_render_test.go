@@ -281,11 +281,9 @@ func productBundlePageViewStub(mutate func(*productdto.ProductBundlePageResp)) *
 		CandidateSKUs: []productdto.BundleCandidateResp{{ID: "v1", Label: "商品一 · SKU-1"}},
 		SkuCount:      1,
 		MaxOptions:    productdto.BundleMaxOptionsLimit,
-		Sources: []productdto.PickOptionResp{{Value: productenums.BundleSourceProduct,
-			LabelKey: productenums.ProductBundleSourceProduct, LabelFallback: "从商品导入", Selected: true}},
+		Sources: []productdto.PickOptionResp{{Value: productenums.BundleSourceProduct, Selected: true}},
 		Source: productenums.BundleSourceProduct,
-		SourceProducts: []productdto.PickOptionResp{{LabelKey: productenums.ProductBundleOptionNone,
-			LabelFallback: "— 不选 —", Selected: true, IsNone: true}},
+		SourceProducts: []productdto.PickOptionResp{{Selected: true, IsNone: true}},
 		SourceAttributes: []*productdto.AttributeResp{},
 		SourceWarehouses: []productdto.BundleSourceWarehouseGroupResp{},
 	}

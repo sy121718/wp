@@ -145,9 +145,8 @@
             <label for="product-edit-status">{{ .["t"]("admin.products.col.status", "状态") }}
                 <select class="form-select" id="product-edit-status" name="status">
                     {{range _, o := .Statuses}}
-                    {* 状态项收的是事实（Key + 中文兜底）而不是成品串：凭 Key 在渲染期取词；
-                       缺事实字段的老数据原样输出 Label（gojet 对 map 缺键取值会报错，故先 isset）。 *}
-                    <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if isset(o.LabelKey)}}{{tr(o.LabelKey, o.LabelFallback)}}{{else}}{{o.Label}}{{end}}</option>
+                    {* 显示名按取值取词（后端只给值域与选中态）；未知取值原样输出，不静默改写。 *}
+                    <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.Value == ""}}{{tr("admin.products.status.all", "全部状态")}}{{else if o.Value == "draft"}}{{tr("admin.products.status.draft", "草稿")}}{{else if o.Value == "published"}}{{tr("admin.products.status.published", "已上架")}}{{else if o.Value == "archived"}}{{tr("admin.products.status.archived", "已下架")}}{{else}}{{o.Value}}{{end}}</option>
                     {{end}}
                 </select>
             </label>
@@ -236,14 +235,14 @@
                     {* 选项两条取值链：带事实字段的（「（不指定主分类）」）走 tr 取词；数据项给分类名
                        （含层级缩进），原样输出 —— 翻不了的数据与要按语言取词的文案不能混成一条。 *}
                     {{range _, o := p.PrimaryOptions}}
-                    <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.IsNone}}{{tr(o.LabelKey, o.LabelFallback)}}{{else}}{{o.Label}}{{end}}</option>
+                    <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.IsNone}}{{tr("admin.products.option.noPrimaryCategory", "（不指定主分类）")}}{{else}}{{o.Label}}{{end}}</option>
                     {{end}}
                 </select>
             </label>
             <label for="product-edit-brand">{{ .["t"]("admin.products.taxonomy.brandLabel", "品牌") }}
                 <select class="form-select" id="product-edit-brand" name="brandId">
                     {{range _, o := p.BrandOptions}}
-                    <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.IsNone}}{{tr(o.LabelKey, o.LabelFallback)}}{{else}}{{o.Label}}{{end}}</option>
+                    <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.IsNone}}{{tr("admin.products.option.noBrand", "（不指定品牌）")}}{{else}}{{o.Label}}{{end}}</option>
                     {{end}}
                 </select>
             </label>

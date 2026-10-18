@@ -58,24 +58,18 @@ func TestScoreKindMirrorsScoring(t *testing.T) {
 	}
 }
 
-// TestStatusLabel 商品状态：三档 + 筛选下拉的空档，未知值回落原值。
-func TestStatusLabel(t *testing.T) {
-	cases := []struct {
-		value    string
-		key      string
-		fallback string
-	}{
-		{productenums.StatusDraft, productenums.ProductsStatusDraft, "草稿"},
-		{productenums.StatusPublished, productenums.ProductsStatusPublished, "已上架"},
-		{productenums.StatusArchived, productenums.ProductsStatusArchived, "已下架"},
-		{"", productenums.ProductsStatusAll, "全部状态"},
-		{"plan2", "plan2", "plan2"},
-	}
-	for _, tc := range cases {
-		key, fallback := productenums.StatusLabel(tc.value)
-		if key != tc.key || fallback != tc.fallback {
-			t.Errorf("StatusLabel(%q) = (%q, %q)，期望 (%q, %q)",
-				tc.value, key, fallback, tc.key, tc.fallback)
+// 商品状态的显示名已归模板（products.html 筛选与徽章、product_edit.html 状态下拉）：
+// 后端只给取值，映射表不得被加回来。
+func TestProductStatusLabelsStayedInTemplate(t *testing.T) {
+	for _, name := range []string{"products.html", "product_edit.html"} {
+		src, err := os.ReadFile(filepath.Join("..", "..", "..", "templates", "admin", "product", name))
+		if err != nil {
+			t.Fatalf("读模板 %s 失败：%v", name, err)
+		}
+		for _, want := range []string{"admin.products.status.draft", "admin.products.status.published", "admin.products.status.archived"} {
+			if !strings.Contains(string(src), want) {
+				t.Errorf("模板 %s 缺少 %q —— 状态显示名必须由模板取词", name, want)
+			}
 		}
 	}
 }

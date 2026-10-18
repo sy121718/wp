@@ -261,17 +261,13 @@ type AutoTagRowResp struct {
 
 // PickOptionResp 下拉选项的一行（「含空项的下拉」共用这一份形状）。
 //
-// 两条取值链只在**空项**上分叉：空项的文案是事实（Key + 中文兜底，渲染期按请求语言取词），
-// 数据项是数据（分类名 / 品牌名 / 商品名，翻不了）。用显式 IsNone 区分，而不是「LabelKey
-// 这个键在不在」—— 后者让「缺键」与「空串」同形，数据行误给一个空串就会被当成空项走取词
-// 分支，渲染出一排空白 option（不报错，也没人发现）。
+// 空项与数据项只差一个 IsNone：空项那一行的文案由模板按用途取词（主分类 / 品牌 / 捆绑来源
+// 各是各的句子），数据项给名字（分类名 / 品牌名 / 商品名，翻不了）。
 type PickOptionResp struct {
-	Value         string
-	Label         string
-	LabelKey      string
-	LabelFallback string
-	Selected      bool
-	IsNone        bool
+	Value    string
+	Label    string
+	Selected bool
+	IsNone   bool
 }
 
 // RatingRowResp 评分明细的一行。

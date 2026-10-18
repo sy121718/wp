@@ -77,15 +77,13 @@ type ProductListPageResp struct {
 	Pagination pagination.Page
 }
 
-// StatusOptionResp 状态下拉的一项（值 + 词条 key + 是否选中）。
+// StatusOptionResp 状态下拉的一项：只有**取值**与选中态。
 //
-// LabelKey / LabelFallback 而不是成品译文的理由同 WarehouseOptionResp：取词在渲染期，
-// 控制器提前翻好就把这一句锁死在一种语言（英文界面上留中文，不报错、门禁也不红）。
+// 取值到显示名的那一步在模板里（product_edit.html 按 Value 分支取词）——
+// 后端带任何一句成品串，都会把这一档锁死在一种语言里。
 type StatusOptionResp struct {
-	Value         string
-	LabelKey      string
-	LabelFallback string
-	Selected      bool
+	Value    string
+	Selected bool
 }
 
 // ProductDetailPageResp 商品详情整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值）。

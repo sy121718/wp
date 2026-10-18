@@ -77,8 +77,8 @@
             <label>{{ .["t"]("admin.product_bundle.source.kind", "来源") }}
                 <select class="form-select" name="source" data-bundle-source-select onchange="this.form.submit()">
                     {{if isset(.Sources)}}{{range _, s := .Sources}}
-                    {* 来源项收的是事实（Key + 中文兜底）：凭 Key 在渲染期取词，缺事实的老数据原样输出 Label。 *}
-                    <option value="{{s.Value}}" {{if s.Selected}}selected{{end}}>{{tr(s.LabelKey, s.LabelFallback)}}</option>
+                    {* 显示名按来源取值取词（后端只给取值与选中态）；未知取值原样输出。 *}
+                    <option value="{{s.Value}}" {{if s.Selected}}selected{{end}}>{{if s.Value == "BundleSourceProduct"}}{{tr("admin.product_bundle.source.product", "从商品导入")}}{{else if s.Value == "BundleSourceWarehouse"}}{{tr("admin.product_bundle.source.warehouse", "从仓库选")}}{{else if s.Value == "BundleSourceAttributes"}}{{tr("admin.product_bundle.source.attributes", "自选属性组合")}}{{else}}{{tr("admin.product_bundle.source.none", "手工指定")}}{{end}}</option>
                     {{end}}{{end}}
                 </select>
             </label>
@@ -95,8 +95,8 @@
             <label>{{ .["t"]("admin.product_bundle.source.productLabel", "来源商品") }}
                 <select class="form-select" name="sourceProduct" onchange="this.form.submit()">
                     {{if isset(.SourceProducts)}}{{range _, p := .SourceProducts}}
-                    {* 首项「— 不选 —」是词条事实（LabelKey），商品项是数据（Label）；两条取值链二选一。 *}
-                    <option value="{{p.Value}}" {{if p.Selected}}selected{{end}}>{{if p.IsNone}}{{tr(p.LabelKey, p.LabelFallback)}}{{else}}{{p.Label}}{{end}}</option>
+                    {* 首项「— 不选 —」的文案在模板，商品项是数据（商品名）。 *}
+                    <option value="{{p.Value}}" {{if p.Selected}}selected{{end}}>{{if p.IsNone}}{{tr("admin.product_bundle.option.none", "— 不选 —")}}{{else}}{{p.Label}}{{end}}</option>
                     {{end}}{{end}}
                 </select>
             </label>

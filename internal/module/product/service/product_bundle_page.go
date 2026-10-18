@@ -331,13 +331,7 @@ func bundleSourceOptions(selected string) []productdto.PickOptionResp {
 	}
 	out := make([]productdto.PickOptionResp, 0, len(values))
 	for _, value := range values {
-		key, fallback := productenums.BundleSourceLabel(value)
-		out = append(out, productdto.PickOptionResp{
-			Value:         value,
-			LabelKey:      key,
-			LabelFallback: fallback,
-			Selected:      value == selected,
-		})
+		out = append(out, productdto.PickOptionResp{Value: value, Selected: value == selected})
 	}
 	return out
 }
@@ -356,7 +350,7 @@ func bundleSourceProductOptions(products []*productdto.ProductResp, selected str
 		}
 		data = append(data, productdto.PickOptionResp{Value: p.ID, Label: p.Name})
 	}
-	return productPickOptions(productenums.ProductBundleOptionNone, "— 不选 —", selected, data)
+	return productPickOptions(selected, data)
 }
 
 // bundleSourceWarehouseGroups 来源仓下拉 + 各仓的仓库 SKU 勾选清单。

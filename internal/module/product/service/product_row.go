@@ -123,10 +123,8 @@ func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.C
 		CategoryOthers: categoryOthers,
 		// 主分类 / 品牌下拉：数据项给名字，「（不指定…）」空项给词条 + 中文兜底（事实），
 		// 取词在模板 —— 见 productPickOptions。
-		PrimaryOptions: productPickOptions(productenums.ProductsOptionNoPrimaryCategory,
-			"（不指定主分类）", detail.PrimaryCategoryID, CategoryPickOptions(flat)),
-		BrandOptions: productPickOptions(productenums.ProductsOptionNoBrand,
-			"（不指定品牌）", detail.BrandID, productBrandNameOptions(brands)),
+		PrimaryOptions: productPickOptions(detail.PrimaryCategoryID, CategoryPickOptions(flat)),
+		BrandOptions:   productPickOptions(detail.BrandID, productBrandNameOptions(brands)),
 		BrandName: brandNameByID(brands, detail.BrandID),
 
 		// 标签（issue #11）：手工标签勾选挂载（勾选态服务端算好）；自动标签只读展示 ——
@@ -477,24 +475,14 @@ func tagCellNames(tagChecks []productdto.TagCheckRowResp, autoTags []productdto.
 	return names
 }
 
-// productPickOptions 「含空项的下拉」的选项事实：空项给词条（Key + 中文兜底），
-// 数据项给名字（分类名 / 品牌名）。
-//
-// 两条取值链并行而不是二选一的兜底：分类名与品牌名翻不了（它们不是文案），
-// 而「（不指定主分类）」必须按请求语言在渲染期取词。
-//
-// **数据行不给空的 LabelKey / LabelFallback 键**（不是给空串）：模板的判据是
-// isset(o.LabelKey) —— 这是「键在不在」的判定，空串也算在，于是数据行会走取词分支、
-// 渲染成一片空白（TestTaxonomyAdminPages 实测：编辑页的品牌下拉只剩空 option）。
-// 数据行只给 Label，让 isset 落到 else 分支。
+// productPickOptions 「含空项的下拉」的选项：「—」那一行只有 IsNone，文案由模板按用途取词
+// （主分类 / 品牌 / 捆绑来源各是各的句子）；其余行给名字（分类名 / 品牌名 / 商品名）。
 //
 // data 只放**数据项**：分类侧用 CategoryPickOptions（分类名带层级缩进的真源只有一处），
 // 品牌侧由 productBrandNameOptions 给出同一个形状。
-func productPickOptions(noneKey, noneFallback, selected string, data []productdto.PickOptionResp) []productdto.PickOptionResp {
+func productPickOptions(selected string, data []productdto.PickOptionResp) []productdto.PickOptionResp {
 	out := make([]productdto.PickOptionResp, 0, len(data)+1)
-	out = append(out, productdto.PickOptionResp{
-		LabelKey: noneKey, LabelFallback: noneFallback, Selected: selected == "", IsNone: true,
-	})
+	out = append(out, productdto.PickOptionResp{Selected: selected == "", IsNone: true})
 	for _, item := range data {
 		item.Selected = item.Value == selected
 		out = append(out, item)

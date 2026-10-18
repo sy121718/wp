@@ -300,28 +300,19 @@ func productListFilterURL(projectID, keyword, status string) string {
 	return "/admin/products"
 }
 
-// productStatusOptions 列表筛选 / 编辑页的状态下拉项（含「全部状态」）。
+// productStatusOptions 编辑页状态下拉的**值域与顺序**（含「全部状态」这一档）。
 //
-// 槽位收**事实**（Key + 中文兜底）而不是成品串：语言是请求级的，控制器提前翻等于把这一句
-// 锁死在一种语言（英文界面上仍是中文，不报错、门禁也不红）。取词由模板的 tr 在渲染期做
-// （products.html 的筛选项与状态徽章、product_edit.html 的状态下拉）。
-//
-// 「值 → (key, 兜底)」的映射在 productenums.StatusLabel：本函数只给**值域与顺序**
-// （这一屏就这四档），控制器不再自带一张手抄的三元表。
+// 显示名由模板按取值取词（product_edit.html）：后端带成品串就会把这一句锁死在一种语言，
+// 英文界面上仍是中文，不报错、门禁也不红。
 //
 // 状态维度**只有这一种入口**：不另配状态徽章筛选 —— 同一维度两套控件时，
 // 用户会怀疑它们是否等价（admin-ui-logic §2）。
 func productStatusOptions(current string) []productdto.StatusOptionResp {
 	values := []string{"", productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}
 	out := make([]productdto.StatusOptionResp, 0, len(values))
+	current = strings.TrimSpace(current)
 	for _, value := range values {
-		key, fallback := productenums.StatusLabel(value)
-		out = append(out, productdto.StatusOptionResp{
-			Value:         value,
-			LabelKey:      key,
-			LabelFallback: fallback,
-			Selected:      value == strings.TrimSpace(current),
-		})
+		out = append(out, productdto.StatusOptionResp{Value: value, Selected: value == current})
 	}
 	return out
 }

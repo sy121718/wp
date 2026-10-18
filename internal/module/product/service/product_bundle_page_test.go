@@ -68,24 +68,24 @@ func TestProductBundlePageNoProjectIsFiveHundred(t *testing.T) {
 
 // TestBundleSourceProductOptionsShape 来源商品下拉的形状契约（与 productPickOptions 同一判据）。
 //
-// 空项与数据项的分野由 IsNone 显式表达：空项的文案是事实（LabelKey + 兜底，渲染期取词），
-// 数据项是数据（商品名，翻不了）。这条判据两个方向都守 —— 空项必须 IsNone 且有 LabelKey，
-// 数据项必须不是 IsNone 且没有 LabelKey，否则模板会把商品名当词条 key 去取词、渲染出空白 option。
+// 空项与数据项的分野由 IsNone 显式表达：空项的文案由模板按用途取词，数据项是数据（商品名，
+// 翻不了）。两个方向都守 —— 空项必须 IsNone 且不带 Label，数据项必须不是 IsNone 且 Label 非空；
+// 反过来（空项带 Label / 数据项 IsNone）都会让下拉渲染出空白或一串商品名当空项。
 func TestBundleSourceProductOptionsShape(t *testing.T) {
 	products := []*productdto.ProductResp{{ID: "p-1", Name: "衬衫 A"}, {ID: "p-2", Name: "裤装 B"}}
 	out := bundleSourceProductOptions(products, "p-2")
 	if len(out) != 3 {
 		t.Fatalf("应为「空项 + 2 个商品」，实际 %d 项", len(out))
 	}
-	if !out[0].IsNone || out[0].LabelKey == "" {
-		t.Fatalf("空项必须以 IsNone 标记并给非空 LabelKey，实际 %+v", out[0])
+	if !out[0].IsNone || out[0].Label != "" {
+		t.Fatalf("空项必须以 IsNone 标记且不带数据 Label，实际 %+v", out[0])
 	}
 	if out[0].Selected {
 		t.Fatal("选了 p-2 时空项不该是选中态")
 	}
 	for i, row := range out[1:] {
-		if row.IsNone || row.LabelKey != "" {
-			t.Fatalf("数据项 %d 不该是空项、也不该带 LabelKey，实际 %+v", i, row)
+		if row.IsNone {
+			t.Fatalf("数据项 %d 不该是空项，实际 %+v", i, row)
 		}
 		if row.Label != products[i].Name {
 			t.Fatalf("数据项 %d 的 Label 应为 %q，实际 %q", i, products[i].Name, row.Label)
@@ -96,7 +96,7 @@ func TestBundleSourceProductOptionsShape(t *testing.T) {
 	}
 }
 
-// TestBundleSourceOptionsShape 来源下拉三项：值即 enums 常量，标签交事实（key + 兜底）。
+// TestBundleSourceOptionsShape 来源下拉三项：值即 enums 常量，显示名在模板按取值取词。
 //
 // 值写错的表现是「保存后来源被服务端按未知来源拒绝」——页面上看不出哪里不对。
 func TestBundleSourceOptionsShape(t *testing.T) {
@@ -113,11 +113,8 @@ func TestBundleSourceOptionsShape(t *testing.T) {
 		if out[i].Value != want {
 			t.Fatalf("第 %d 项的值应为 %q，实际 %q", i, want, out[i].Value)
 		}
-		if out[i].LabelKey == "" {
-			t.Fatalf("第 %d 项必须给非空 LabelKey（取词在模板）", i)
-		}
-		if out[i].LabelFallback == "" {
-			t.Fatalf("第 %d 项必须给中文兜底（缺词时不能渲染成空白）", i)
+		if out[i].IsNone || out[i].Label != "" {
+			t.Fatalf("第 %d 项只该带取值与选中态（显示名在模板）", i)
 		}
 	}
 	// 选中态只跟着传进来的那一个值走。
