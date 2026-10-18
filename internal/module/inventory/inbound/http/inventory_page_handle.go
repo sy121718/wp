@@ -52,7 +52,7 @@ func NewInventoryPageHandle(inventory inventorycontract.InventoryService,
 }
 
 // setProductCatalog 装配期补注商品契约（见 inventory_router.go 的 SetProductCatalog）。
-func (h *inventoryPageHandle) setProductCatalog(products catalogProduct) {
+func (h *inventoryPageHandle) setProductCatalog(products productcontract.VariantOptionsReader) {
 	h.products = products
 }
 

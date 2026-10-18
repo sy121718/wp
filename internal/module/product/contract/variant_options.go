@@ -19,6 +19,11 @@ type VariantOption struct {
 	ProductID   string
 	SKUCode     string
 	ProductName string
+	// CostPrice 变体的成本价（nil = 尚未核算，不是 0）。
+	//
+	// 带在这里是因为采购下拉要显示「这一条货的成本」：让它再按 id 逐个回查一次
+	// 会把刚消掉的 N+1 原样加回来。
+	CostPrice *float64
 }
 
 // VariantOptionsReader 全工程变体清单（按商品 sort、变体 sort 排序）。

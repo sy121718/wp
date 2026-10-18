@@ -203,6 +203,36 @@ func (s *Service) ListStocksBySKU(ctx context.Context, req *inventorydto.ListSto
 	return toStockRespList(rows), nil
 }
 
+// BareSKUsByVariant 工程内「变体 → 仓库侧裸码」的一次性映射（后台采购下拉用）。
+//
+// 查询只有一次、与变体数无关（原先的调用方按商品逐个查库存行）。
+//
+// 取值规则**只在实现里写一份**：按 model 的固定顺序（默认仓优先、再按仓 sort / code），
+// 同一个变体在多个仓各有一条不同裸码时取第一条非空。
+// 调用方不要自己再挑一遍 —— 挑法两处各写一份，入库时就会按另一个仓的编码落库，
+// 而两边都不报错。
+func (s *Service) BareSKUsByVariant(ctx context.Context, projectID string) (map[string]string, error) {
+	pid, err := s.resolveProjectID(ctx, strings.TrimSpace(projectID))
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.m.ListStockRows(ctx, inventorymodel.StockFilter{ProjectID: pid}, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(rows))
+	for _, r := range rows {
+		if r == nil || r.VariantID == "" || r.SKUCode == "" {
+			continue
+		}
+		if _, seen := out[r.VariantID]; seen {
+			continue
+		}
+		out[r.VariantID] = r.SKUCode
+	}
+	return out, nil
+}
+
 // ListStocks 库存记录列表（按工程 / 仓 / 商品 / 变体 / SKU 过滤 + 分页）。
 func (s *Service) ListStocks(ctx context.Context, req *inventorydto.ListStockReq) (list []*inventorydto.StockResp, err error) {
 	page, size := pageArgs(req)

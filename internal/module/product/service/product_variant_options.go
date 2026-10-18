@@ -44,7 +44,7 @@ func (s *Service) ListVariantOptions(ctx context.Context, projectID string) ([]p
 			continue
 		}
 		byProduct[v.ProductID] = append(byProduct[v.ProductID], productcontract.VariantOption{
-			VariantID: v.ID, ProductID: v.ProductID, SKUCode: v.SKUCode,
+			VariantID: v.ID, ProductID: v.ProductID, SKUCode: v.SKUCode, CostPrice: v.CostPrice,
 		})
 	}
 	out := make([]productcontract.VariantOption, 0, len(variants))

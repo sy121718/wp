@@ -51,6 +51,12 @@ type InventoryService interface {
 	ListStocksBySKU(ctx context.Context, req *inventorydto.ListStockBySKUReq) (list []*inventorydto.StockResp, err error)
 	// ListStocks 库存记录列表（后台核对用，按工程 / 仓 / 商品 / 变体 / SKU / 外部编码过滤 + 分页）。
 	ListStocks(ctx context.Context, req *inventorydto.ListStockReq) (list []*inventorydto.StockResp, err error)
+	// BareSKUsByVariant 工程内「变体 → 仓库侧裸码」的一次性映射（后台采购下拉用）。
+	//
+	// 与 ListStocks 的区别是**用途**而不是形状：这里只回答「这条货在仓库里叫什么」，
+	// 一次拿全工程（查询次数与变体数无关）。取值规则（多仓不同码时取哪条）由实现方定义一处，
+	// 调用方不要自己再挑。
+	BareSKUsByVariant(ctx context.Context, projectID string) (map[string]string, error)
 
 	// —— 无限库存与分仓聚合（迁移 261，库存域第一批）——
 

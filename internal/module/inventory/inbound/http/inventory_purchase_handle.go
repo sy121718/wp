@@ -18,7 +18,6 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	productcontract "go_wp/internal/module/product/contract"
-	productdto "go_wp/internal/module/product/dto"
 	projectcontract "go_wp/internal/module/project/contract"
 )
 
@@ -65,10 +64,6 @@ const (
 	inventoryPurchaseHistorySize = 50
 	// inventoryPurchaseDraftLines 新建采购单表单的行数（原生表单：固定几行）。
 	inventoryPurchaseDraftLines = 3
-	// inventoryPurchaseStockProbeSize 取「该商品各仓库存行」的上限（扒仓库侧裸码用）。
-	// 与库存列表的 maxPageSize 同量级：它的用途只是给下拉的每一项配一个裸码，
-	// 一个商品的变体数不会接近这个量级。
-	inventoryPurchaseStockProbeSize = 200
 )
 
 // inventoryPurchasePageHandle 采购入库页处理器。
@@ -76,7 +71,8 @@ type inventoryPurchasePageHandle struct {
 	inventory inventorycontract.InventoryService
 	projects  projectcontract.ProjectService
 	// products 只用于 SKU 下拉（商品 → 变体），不参与任何库存 / 采购判断。
-	products productcontract.ProductService
+	// 只读小口：本页要商品名、变体、成本价，不要商品的写能力。
+	products productcontract.VariantOptionsReader
 }
 
 // NewInventoryPurchasePageHandle 构造。
@@ -84,12 +80,12 @@ type inventoryPurchasePageHandle struct {
 // products 只用于 SKU 下拉：装配期传入 nil，装配收尾由 SetProductCatalog 补注
 // （商品模块与本模块互为依赖，装配顺序上无法在此时拿到商品契约）。
 func NewInventoryPurchasePageHandle(inventory inventorycontract.InventoryService,
-	projects projectcontract.ProjectService, products productcontract.ProductService) *inventoryPurchasePageHandle {
+	projects projectcontract.ProjectService, products productcontract.VariantOptionsReader) *inventoryPurchasePageHandle {
 	return &inventoryPurchasePageHandle{inventory: inventory, projects: projects, products: products}
 }
 
 // setProductCatalog 装配期补注商品契约（见 inventory_router.go 的 SetProductCatalog）。
-func (h *inventoryPurchasePageHandle) setProductCatalog(products catalogProduct) {
+func (h *inventoryPurchasePageHandle) setProductCatalog(products productcontract.VariantOptionsReader) {
 	h.products = products
 }
 
@@ -463,8 +459,11 @@ func (h *inventoryPurchasePageHandle) purchaseWarehouseOptions(ctx context.Conte
 // 每一项额外带 **BareSKU（仓库侧裸码）**：采购行的 sku_code 是仓库侧快照，必须按裸码落库
 // （仓库里的 SKU 永远不带仓码前缀，见 docs/14 §1.1 与迁移 262）。裸码取自本模块自己的
 // 库存真源（inventory_stocks.sku_code）—— 它就是「这条货在仓库里叫什么」的权威答案，
-// 商品侧的 v.SKUCode 只是它加了认领仓前缀的投影。没有库存行的变体退回商品侧编码，
+// 商品侧的 SKUCode 只是它加了认领仓前缀的投影。没有库存行的变体退回商品侧编码，
 // 由服务端在入库入口按目标仓短码归一（inventory_stock.go）。
+//
+// 查询次数与商品数无关：变体清单一次（商品契约的只读口），裸码映射一次（本模块库存真源）。
+// 原先是「每个商品 Get 一次 + 每商品查一次库存行」，N 个商品就是 2N 次往返。
 func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context, projectID string,
 	tr func(key, fallback string) string) (out []inventorydto.VariantOptionViewResp) {
 	out = []inventorydto.VariantOptionViewResp{}
@@ -472,9 +471,15 @@ func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context
 	if projectID == "" || h.products == nil {
 		return out
 	}
-	list, err := h.products.List(ctx, &productdto.ListReq{ProjectID: projectID, Size: 100})
+	options, err := h.products.ListVariantOptions(ctx, projectID)
 	if err != nil {
 		return out
+	}
+	// 裸码读失败只降级（退回商品侧编码），不把整页打空：下拉仍然可用，
+	// 入库入口会按目标仓短码归一。
+	bare, berr := h.inventory.BareSKUsByVariant(ctx, projectID)
+	if berr != nil {
+		bare = map[string]string{}
 	}
 	// 成本后缀是一句带命名占位符的文案：取词后用 {value} 填充（词条被写坏时 FillTranslate
 	// 自动回落下面那句中文兜底，页面上不会出现 {value} 这样的字面量）。
@@ -483,48 +488,19 @@ func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context
 			map[string]string{"value": cost})
 	}
 	unsetCost := tr(inventoryenums.InventoryPurchasesOptionCostUnset, "未填")
-	for _, p := range list {
-		detail, derr := h.products.Get(ctx, &productdto.GetReq{ID: p.ID})
-		if derr != nil {
-			continue
+	for _, o := range options {
+		cost := unsetCost
+		if o.CostPrice != nil {
+			cost = strconv.FormatFloat(*o.CostPrice, 'f', 2, 64)
 		}
-		bare := h.productBareSKUs(ctx, projectID, p.ID)
-		for _, v := range detail.Variants {
-			cost := unsetCost
-			if v.CostPrice != nil {
-				cost = strconv.FormatFloat(*v.CostPrice, 'f', 2, 64)
-			}
-			sku := bare[v.ID]
-			if sku == "" {
-				sku = v.SKUCode
-			}
-			out = append(out, inventorydto.VariantOptionViewResp{
-				VariantID: v.ID, ProductID: p.ID, SKUCode: v.SKUCode, BareSKU: sku,
-				Label: detail.Name + " · " + v.SKUCode + costSuffix(cost),
-			})
+		sku := bare[o.VariantID]
+		if sku == "" {
+			sku = o.SKUCode
 		}
-	}
-	return out
-}
-
-// productBareSKUs 某商品全部变体的**仓库侧裸码**（变体 id → inventory_stocks.sku_code）。
-//
-// 一次取回该商品在各仓的库存行（按商品过滤，与页面既有的「逐商品取详情」同量级），
-// 变体在哪个仓有行都算 —— 裸码是变体的仓库侧身份，与具体哪个仓无关。
-// 读失败不抛给页面（返回空 map，调用方退回商品侧编码）：采购页不该因为一次展示取数
-// 失败而 500，真正的守门在入库入口的归一路径上。
-func (h *inventoryPurchasePageHandle) productBareSKUs(ctx context.Context, projectID, productID string) map[string]string {
-	out := map[string]string{}
-	rows, err := h.inventory.ListStocks(ctx, &inventorydto.ListStockReq{
-		ProjectID: projectID, ProductID: productID, Size: inventoryPurchaseStockProbeSize,
-	})
-	if err != nil {
-		return out
-	}
-	for _, r := range rows {
-		if r.VariantID != "" && r.SKUCode != "" {
-			out[r.VariantID] = r.SKUCode
-		}
+		out = append(out, inventorydto.VariantOptionViewResp{
+			VariantID: o.VariantID, ProductID: o.ProductID, SKUCode: o.SKUCode, BareSKU: sku,
+			Label: o.ProductName + " · " + o.SKUCode + costSuffix(cost),
+		})
 	}
 	return out
 }

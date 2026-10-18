@@ -16,21 +16,11 @@ import (
 	"go_wp/internal/permission"
 )
 
-// catalogProduct 装配期要注入的商品能力：
-//
-//   - VariantOptionsReader —— 页面「选哪个 SKU」下拉（一次批量，只读小口）；
-//   - ProductService —— 采购页要商品详情（成本价、变体）。
-//
-// 两个小接口都用得到，所以注入点收成一个组合接口：装配方只传一个商品服务，
-// 消费方各自只把自己需要的那个赋给字段（拿不到多余能力）。
-type catalogProduct interface {
-	productcontract.ProductService
-	productcontract.VariantOptionsReader
-}
-
+// 页面下拉只需要商品的**只读**变体清单口（VariantOptionsReader）：
+// 两页都不该拿到商品的写能力，也不该为了「取一个变体」把详情整份读出来。
 // productCatalogConsumer 需要商品契约做「商品 → 变体」下拉的后台页面处理器。
 type productCatalogConsumer interface {
-	setProductCatalog(products catalogProduct)
+	setProductCatalog(products productcontract.VariantOptionsReader)
 }
 
 // pageCatalogConsumers 装配期登记的后台页面处理器（写一次，之后只读）。
@@ -47,7 +37,7 @@ func SetProductCatalog(products productcontract.ProductService) {
 	// ProductService 接口，实现方（product 的 Service）同时实现变体清单口。
 	// 断言失败是**两处接口不同步**（改了名字 / 换了实现），属于启动期该暴露的缺陷 ——
 	// 静默降级成「下拉空」会让运营以为「这个工程没有商品」。
-	catalog, ok := products.(catalogProduct)
+	catalog, ok := products.(productcontract.VariantOptionsReader)
 	if !ok {
 		panic("inventory.SetProductCatalog: 商品契约未实现 VariantOptionsReader（两处接口不同步）")
 	}

@@ -3,7 +3,6 @@ package inventoryhttp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,7 +14,6 @@ import (
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	productcontract "go_wp/internal/module/product/contract"
-	productdto "go_wp/internal/module/product/dto"
 	"go_wp/internal/templates"
 )
 
@@ -42,14 +40,14 @@ func (s *purchaseCreateFailService) ListWarehouses(context.Context, *inventorydt
 	return []*inventorydto.WarehouseResp{{ID: "warehouse-1", Code: "WH", Name: "主仓"}}, nil
 }
 
-type purchaseCreateCatalog struct{ productcontract.ProductService }
+// purchaseCreateCatalog 只实现页面下拉需要的那个只读口（一次批量，没有 List/Get）。
+type purchaseCreateCatalog struct{ productcontract.VariantOptionsReader }
 
-func (purchaseCreateCatalog) List(context.Context, *productdto.ListReq) ([]*productdto.ProductResp, error) {
-	return []*productdto.ProductResp{{ID: "product-1"}, {ID: "product-2"}}, nil
-}
-
-func (purchaseCreateCatalog) Get(_ context.Context, req *productdto.GetReq) (*productdto.ProductResp, error) {
-	return &productdto.ProductResp{ID: req.ID, Name: req.ID, Variants: []*productdto.VariantResp{{ID: strings.Replace(req.ID, "product", "variant", 1), SKUCode: fmt.Sprintf("SKU%s", strings.TrimPrefix(req.ID, "product-"))}}}, nil
+func (purchaseCreateCatalog) ListVariantOptions(context.Context, string) ([]productcontract.VariantOption, error) {
+	return []productcontract.VariantOption{
+		{VariantID: "variant-1", ProductID: "product-1", SKUCode: "SKU1", ProductName: "product-1"},
+		{VariantID: "variant-2", ProductID: "product-2", SKUCode: "SKU2", ProductName: "product-2"},
+	}, nil
 }
 
 func purchaseCreateContext(t *testing.T, hx string, values url.Values) (*gin.Context, *httptest.ResponseRecorder) {
