@@ -18,7 +18,7 @@ package membershiphttp
 // 会让「改门槛」与「查某个人」互相干扰 —— 与库存域把「变动原因字典」从库存页拆出去
 // 是同一轮设计评审的结论。
 //
-// GET 渲染整页，写动作直调 JSON API；错误由 membership_err.go 归口。
+// GET 渲染整页，写动作直调 JSON API；错误走 pkg/facing 的同一份判据（membershipFail / membershipText）。
 
 // 与 membership_page_handle.go 分开：那个文件是「页面怎么组装」，本文件是「一个行 / 一个选项
 // 长什么样」。行视图在这里定型的好处是列表与筛选栏不会各造一份形状
@@ -204,7 +204,7 @@ func (h *membershipPageHandle) MembershipPage(c *gin.Context) {
 	loadFailed := loadErr != nil
 	if loadFailed {
 		projects = nil
-		loadErrText = membershipErrPageText(c, loadErr)
+		loadErrText = membershipText(c, loadErr)
 	}
 
 	selected := ""
@@ -218,7 +218,7 @@ func (h *membershipPageHandle) MembershipPage(c *gin.Context) {
 		list, lerr := h.svc.ListTiers(ctx, &membershipdto.ListTiersReq{ProjectID: selected})
 		if lerr != nil {
 			if loadErrText == "" {
-				loadErrText = membershipErrPageText(c, lerr)
+				loadErrText = membershipText(c, lerr)
 			}
 		} else {
 			for _, tier := range list {
@@ -319,7 +319,7 @@ func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 	loadFailed := loadErr != nil
 	if loadFailed {
 		projects = nil
-		loadErrText = membershipErrPageText(c, loadErr)
+		loadErrText = membershipText(c, loadErr)
 	}
 
 	selected := ""
@@ -342,7 +342,7 @@ func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 		tiers, terr := h.svc.ListTiers(ctx, &membershipdto.ListTiersReq{ProjectID: selected})
 		if terr != nil {
 			if loadErrText == "" {
-				loadErrText = membershipErrPageText(c, terr)
+				loadErrText = membershipText(c, terr)
 			}
 		} else {
 			tierOptions = membershipTierOptions(tiers, filterTier)
@@ -353,7 +353,7 @@ func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 		})
 		if cerr != nil {
 			if loadErrText == "" {
-				loadErrText = membershipErrPageText(c, cerr)
+				loadErrText = membershipText(c, cerr)
 			}
 		} else {
 			total = n
@@ -364,7 +364,7 @@ func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 			})
 			if lerr != nil {
 				if loadErrText == "" {
-					loadErrText = membershipErrPageText(c, lerr)
+					loadErrText = membershipText(c, lerr)
 				}
 			} else {
 				for _, item := range list {

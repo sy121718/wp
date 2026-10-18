@@ -276,12 +276,12 @@ func TestFacingTextThreeForms(t *testing.T) {
 		t.Errorf("未命中应给归口文案且不含库原文，实际 %q", got)
 	}
 	// 命中（裸 key 形态）。
-	if got := svc.FacingText("zh-CN", errors.New(membershipenums.ErrTierNameTaken)); got == "" {
+	if got := svc.FacingText("zh-CN", membershipenums.Err(membershipenums.ErrTierNameTaken)); got == "" {
 		t.Errorf("命中应给文案")
 	}
 	// 命中（带定位信息形态）：定位信息必须原样保留 —— 它是给操作者的数据。
-	detailed := svc.FacingText("en-US", errors.New(
-		membershipenums.WithDetail(membershipenums.ErrDefaultTierMissing, "p-1")))
+	detailed := svc.FacingText("en-US",
+		membershipenums.ErrDetail(membershipenums.ErrDefaultTierMissing, "p-1"))
 	if !strings.Contains(detailed, "p-1") {
 		t.Errorf("定位信息应保留，实际 %q", detailed)
 	}

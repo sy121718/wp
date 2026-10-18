@@ -35,6 +35,7 @@ import (
 	membershipmodel "go_wp/internal/module/membership/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/database"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
@@ -110,7 +111,7 @@ func (s *Service) SetPurchaseSource(port membershipcontract.PurchaseSource) {
 // requireProject 校验工程 id 非空。
 func requireProject(projectID string) error {
 	if strings.TrimSpace(projectID) == "" {
-		return errors.New(membershipenums.ErrProjectRequired)
+		return membershipenums.Err(membershipenums.ErrProjectRequired)
 	}
 	return nil
 }
@@ -118,7 +119,7 @@ func requireProject(projectID string) error {
 // requireUser 校验访客 id 有效（0 是无效 id，静默当成「没有归属」会让调用方以为解析成功）。
 func requireUser(userID uint64) error {
 	if userID == 0 {
-		return errors.New(membershipenums.ErrUserRequired)
+		return membershipenums.Err(membershipenums.ErrUserRequired)
 	}
 	return nil
 }
@@ -126,7 +127,7 @@ func requireUser(userID uint64) error {
 // requireTier 校验等级 id 有效。
 func requireTier(tierID int64) error {
 	if tierID <= 0 {
-		return errors.New(membershipenums.ErrInvalidParam)
+		return membershipenums.Err(membershipenums.ErrInvalidParam)
 	}
 	return nil
 }
@@ -135,10 +136,10 @@ func requireTier(tierID int64) error {
 func normalizeTierName(raw string) (name string, err error) {
 	name = strings.TrimSpace(raw)
 	if name == "" {
-		return "", errors.New(membershipenums.ErrInvalidParam)
+		return "", membershipenums.Err(membershipenums.ErrInvalidParam)
 	}
 	if len([]rune(name)) > tierNameMaxLen {
-		return "", errors.New(membershipenums.ErrInvalidParam)
+		return "", membershipenums.Err(membershipenums.ErrInvalidParam)
 	}
 	return name, nil
 }
@@ -147,7 +148,7 @@ func normalizeTierName(raw string) (name string, err error) {
 func normalizeRemark(raw string) (string, error) {
 	remark := strings.TrimSpace(raw)
 	if len([]rune(remark)) > remarkMaxLen {
-		return "", errors.New(membershipenums.ErrInvalidParam)
+		return "", membershipenums.Err(membershipenums.ErrInvalidParam)
 	}
 	return remark, nil
 }
@@ -155,7 +156,7 @@ func normalizeRemark(raw string) (string, error) {
 // validateThreshold 校验门槛（单位分，不允许负数）。
 func validateThreshold(amount int64) error {
 	if amount < 0 {
-		return errors.New(membershipenums.ErrThresholdInvalid)
+		return membershipenums.Err(membershipenums.ErrThresholdInvalid)
 	}
 	return nil
 }
@@ -192,14 +193,14 @@ func normalizeEntitlements(items []membershipdto.EntitlementReq) (rows []*member
 		switch kind {
 		case membershipenums.KindFreeShipping:
 			if item.ValueInt != 0 && item.ValueInt != 1 {
-				return nil, errors.New(membershipenums.ErrEntitlementValue)
+				return nil, membershipenums.Err(membershipenums.ErrEntitlementValue)
 			}
 		case membershipenums.KindDiscount:
 			if item.ValueInt < 1 || item.ValueInt > 100 {
-				return nil, errors.New(membershipenums.ErrEntitlementValue)
+				return nil, membershipenums.Err(membershipenums.ErrEntitlementValue)
 			}
 		default:
-			return nil, errors.New(membershipenums.ErrEntitlementKind)
+			return nil, membershipenums.Err(membershipenums.ErrEntitlementKind)
 		}
 		byKind[kind] = item.ValueInt
 	}
@@ -332,29 +333,23 @@ func uniqueViolationOn(err error, indexNames ...string) bool {
 
 // FacingText 把本模块的错误转成指定语言下可直接展示的一句话（消费方唯一的文案出口）。
 //
-// 三种形态（与 enums 的判据一一对应）：
-//
-//   - 命中白名单 → 按语言取词（key|param 形态交给 i18n.FillTranslate 之外的取词层，
-//     本模块的带参形态是 `key：<定位>`，见下一条）；
-//   - `key：<定位>` → 翻译 key 再拼回定位信息（定位信息是**数据**：
-//     哪个 project_id、还剩几条归属；不是内部错误原文）；
-//   - 未命中 → 记结构化日志（原文只进日志）并返回归口文案。
-//
-// 实现与 inbound/http 的 membershipErrText **同一份判据**（enums.HitFacingMessage）：
-// 页面出口与契约出口对「什么能对外说」不会产生分歧。
+// 判据只有一份：pkg/facing.FactOf。事实给出 key（决定语言）、Fallback（词条缺失时的中文）
+// 与 Tail（`key: <定位>` 里的定位数据 —— 哪个 project_id、还剩几条归属）。
+// 出口只负责把三段拼成一句，不再有本模块自己的白名单与逐条 switch：
+// 那种写法是第二份真相，service 换措辞或某条错误改由别的模块提供时就静默失配。
 func (s *Service) FacingText(lang string, err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := err.Error()
-	if key, detail, ok := membershipenums.SplitFacingDetail(msg); ok {
-		return i18n.Translate(key, key, lang) + facingDetailSep(lang) + detail
-	}
-	if _, ok := membershipenums.HitFacingMessage(msg); ok {
-		return i18n.Translate(msg, msg, lang)
+	if fact, ok := facing.FactOf(err); ok && fact.Business {
+		text := i18n.Translate(fact.Key, fact.Fallback, lang)
+		if fact.Tail != "" {
+			return text + facingDetailSep(lang) + fact.Tail
+		}
+		return text
 	}
 	logger.Scene(errScene).Error(err, "membership 契约出口遇到未归类的错误（原文只进日志）")
-	return i18n.Translate(membershipenums.ErrInternal, "操作失败，请稍后重试（细节只进日志）", lang)
+	return i18n.Translate("membership.err.internal", "操作失败，请稍后重试（细节只进日志）", lang)
 }
 
 // facingDetailSep 定位信息的分隔符：中文用全角冒号，其余语言用「: 」。
@@ -362,7 +357,7 @@ func (s *Service) FacingText(lang string, err error) string {
 // 读侧（shell.FacingNotice 的形态 3）两种都认，所以写读两侧不会因语言切换而失配。
 func facingDetailSep(lang string) string {
 	if strings.HasPrefix(strings.ToLower(lang), "zh") {
-		return membershipenums.FacingDetailSep
+		return "："
 	}
 	return ": "
 }
@@ -383,7 +378,7 @@ func (s *Service) projectExists(ctx context.Context, projectID string) error {
 		return err
 	}
 	if !exists {
-		return errors.New(membershipenums.ErrProjectRequired)
+		return membershipenums.Err(membershipenums.ErrProjectRequired)
 	}
 	return nil
 }
@@ -481,8 +476,8 @@ func (s *Service) resolveTierTx(ctx context.Context, tx *gorm.DB, projectID stri
 		if isNotFound(derr) {
 			// 打回给人：错误里带 project_id（可定位的数据）。
 			// 这里**不**退回 sort_order 最小的那一档 —— 那一档可能是运营已停用的。
-			return nil, "", nil, false, errors.New(
-				membershipenums.WithDetail(membershipenums.ErrDefaultTierMissing, projectID))
+			return nil, "", nil, false, membershipenums.ErrDetail(
+				membershipenums.ErrDefaultTierMissing, projectID)
 		}
 		return nil, "", nil, false, derr
 	}

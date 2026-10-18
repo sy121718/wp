@@ -26,6 +26,7 @@ import (
 	membershipmodel "go_wp/internal/module/membership/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/utils"
 )
@@ -394,27 +395,29 @@ func TestMembershipPageIgnoresForgedErrQuery(t *testing.T) {
 	}
 }
 
-// TestMembershipErrStatusMapsBusinessKeys 状态码映射按业务 key（含带定位信息的形态）。
+// TestMembershipErrStatusMapsBusinessKeys 状态码映射按业务 key（判据是 pkg/facing.FactOf 给出的 Key）。
+//
+// 内部错误不在这张表里：membershipFail 对它一律走 response.ErrorInternal（500 + 通用文案），
+// 覆盖在 membership_facing_text_test.go 的 TestMembershipJSONInternalErrorUsesFacingKey。
 func TestMembershipErrStatusMapsBusinessKeys(t *testing.T) {
 	cases := []struct {
 		err  error
 		want int
 	}{
-		{errString("membership.err.notFound：tier_id=3"), http.StatusNotFound},
-		{errString("membership.err.tierNameTaken：白银会员"), http.StatusConflict},
-		{errString("membership.err.defaultTierRequired"), http.StatusConflict},
-		{errString("membership.err.defaultTierMissing：p-1"), http.StatusBadRequest},
-		{errString("membership.err.recalcUnavailable"), http.StatusServiceUnavailable},
-		{errString("pq: relation \"membership_tiers\" does not exist"), http.StatusInternalServerError},
+		{membershipenums.ErrDetail(membershipenums.ErrNotFound, "tier_id=3"), http.StatusNotFound},
+		{membershipenums.ErrDetail(membershipenums.ErrTierNameTaken, "白银会员"), http.StatusConflict},
+		{membershipenums.Err(membershipenums.ErrDefaultTierRequired), http.StatusConflict},
+		{membershipenums.ErrDetail(membershipenums.ErrDefaultTierMissing, "p-1"), http.StatusBadRequest},
+		{membershipenums.Err(membershipenums.ErrRecalcUnavailable), http.StatusServiceUnavailable},
+		{membershipenums.Err(membershipenums.ErrInvalidParam), http.StatusBadRequest},
 	}
 	for _, tc := range cases {
-		if got := membershipErrStatus(tc.err); got != tc.want {
+		fact, ok := facing.FactOf(tc.err)
+		if !ok || !fact.Business {
+			t.Fatalf("%v 未被判成业务错误", tc.err)
+		}
+		if got := membershipErrStatus(fact); got != tc.want {
 			t.Errorf("%v → %d，期望 %d", tc.err, got, tc.want)
 		}
 	}
 }
-
-// errString 最小 error 实现（测试里造带定位信息的业务错误）。
-type errString string
-
-func (e errString) Error() string { return string(e) }

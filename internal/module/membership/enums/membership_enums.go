@@ -8,7 +8,12 @@
 // （cart / user 同形），裸 key 是历史形态，新模块不沿用。
 package membershipenums
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"go_wp/pkg/facing"
+)
 
 // 成功回执（Msg* 常量名 + 点分 key，两套命名不可互换：老式形态的值就是常量名本身）。
 const (
@@ -72,10 +77,6 @@ const (
 	// 显式报错而不是给一个 Scanned = 0 的结果：后者看起来像「大家都没消费」，
 	// 而这两个状态的处置方式完全相反（一个等订单侧接线，一个去查订单状态口径）。
 	ErrRecalcUnavailable = "membership.err.recalcUnavailable"
-	// ErrInternal 未归类的内部错误（SQL / 表名 / 约束名 / 索引名等）对外归口文案。
-	//
-	// 值带模块前缀（点分）：裸 "ErrInternal" 已被 admin 批占用（迁移 268）。
-	ErrInternal = "membership.err.internal"
 )
 
 // 权益类型（与迁移 462 的 ck_membership_entitlements_value 一一对应）。
@@ -115,61 +116,42 @@ const (
 // 与 462a 的词条，三处漏一处都会在运行时暴露）。
 var EntitlementKinds = []string{KindFreeShipping, KindDiscount}
 
-// MembershipFacingMessages 可以原样展示给前端的会员业务文案（**白名单**）。
+// errFallbacks 错误兜底（对外文案的中文那一半）：与常量同处声明，出口只调一次 pkg/facing.FactOf。
 //
-// 命中 → 原样透出（前端据此提示「门槛撞了」「这个工程没配默认等级」）；
-// 未命中 → inbound/http 的 membershipErrText 记结构化日志并返回 ErrInternal。
-// 方向是安全的：漏写一条只会让前端看到一句通用提示（一眼可见），
-// 而不会把 service 上抛的 PostgreSQL 原文（表名 / 约束名 / SQLSTATE）透出去。
-//
-// ErrInternal 本身不进白名单：它是未命中时的返回值，不是业务文案。
-// Msg* 也不进：它们是成功回执，永远不会作为错误响应返回（对账测试里逐条写明理由）。
-var MembershipFacingMessages = []string{
-	ErrInvalidParam, ErrNotFound, ErrTierNameTaken, ErrThresholdTaken,
-	ErrDefaultTierExists, ErrDefaultTierRequired, ErrDefaultTierMissing, ErrTierInUse,
-	ErrEntitlementKind, ErrEntitlementValue, ErrThresholdInvalid,
-	ErrUserRequired, ErrProjectRequired, ErrManualNotLocked, ErrRecalcUnavailable,
+// 为什么不再有白名单（`var MembershipFacingMessages []string` + 逐条 switch）：
+// 那是第二份真相 —— service 换了措辞、或某条错误改由别的模块提供时，白名单静默失配，
+// 症状是把业务文案吞成归口、或把内部错误当文案透出，两边都不报错。
+// 现在「能不能对外说」由 facing.Fact 的形状判定，「说什么」由这里的一句话给。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:        "参数不合法：请检查后重试。",
+	ErrNotFound:            "会员记录不存在：可能已被删除。",
+	ErrTierNameTaken:       "等级名已被占用：同工程内不能重名。",
+	ErrThresholdTaken:      "门槛值已被占用：同一工程内两个等级不能同门槛。",
+	ErrDefaultTierExists:   "该工程已有默认等级：请先取消原有的默认等级。",
+	ErrDefaultTierRequired: "该工程必须保留一个默认等级：请先把另一档设为默认。",
+	ErrDefaultTierMissing:  "该工程还没有默认等级：请先在等级设置里指定一个。",
+	ErrTierInUse:           "等级上还挂着会员归属：请先转移或解除这些归属再删除。",
+	ErrEntitlementKind:     "权益类型不在支持范围内：只支持免运费与折扣。",
+	ErrEntitlementValue:    "权益取值越界：免运费只接受 0/1，折扣只接受 1..100。",
+	ErrThresholdInvalid:    "门槛值不合法：不能是负数。",
+	ErrUserRequired:        "缺少会员账号：请重新选择后再操作。",
+	ErrProjectRequired:     "缺少工程：等级与归属都按工程划分，请先选定工程。",
+	ErrManualNotLocked:     "该归属不是手工指定的：没有可解除的锁定。",
+	ErrRecalcUnavailable:   "归属重算暂不可用：订单侧消费额聚合尚未就绪，请稍后重试。",
 }
 
-// FacingDetailSep 业务文案与定位信息的分隔符（写侧固定用全角「：」）。
-//
-// 半角「: 」只出现在读侧（shell.FacingNotice 的形态 3 两种都认）——写读两侧都不必
-// 因为语言切换而失配。
-const FacingDetailSep = "："
+// Err 声明一条自带对外文案的会员业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
 
-// WithDetail 把业务 key 与定位信息拼成一条可回带的文案（key：<定位>）。
+// ErrDetail 把业务错误与**定位数据**拼成一条（key + 明细）。
 //
-// 定位信息是**给操作者用的数据**（哪个 project_id、哪个等级名、还剩几条归属），
-// 不是内部错误原文：它由本模块自己构造，不含表名 / SQLSTATE。原文只进日志。
-func WithDetail(key, detail string) string {
+// 明细是给操作者用的数据（哪个 project_id、哪个等级名、还剩几条归属），由本模块自己构造，
+// 不含表名 / SQLSTATE。分隔符必须用 ASCII「: 」：pkg/facing 的复合形态判据只认这一种，
+// 写成全角「：」会让整条过不了判据、被当成内部错误打成 500。
+func ErrDetail(key, detail string) error {
 	detail = strings.TrimSpace(detail)
 	if detail == "" {
-		return key
+		return Err(key)
 	}
-	return key + FacingDetailSep + detail
-}
-
-// HitFacingMessage 判定错误文本是否命中白名单，命中返回原文。
-// 三种形态：整串相等 / key|param 带参 / key：<定位信息>（半角「: 」也认，兼容读侧归一）。
-func HitFacingMessage(msg string) (string, bool) {
-	for _, m := range MembershipFacingMessages {
-		if msg == m || strings.HasPrefix(msg, m+"|") ||
-			strings.HasPrefix(msg, m+FacingDetailSep) || strings.HasPrefix(msg, m+": ") {
-			return msg, true
-		}
-	}
-	return "", false
-}
-
-// SplitFacingDetail 从白名单文案里拆出「key + 定位信息」；不是该形态返回 ok=false。
-func SplitFacingDetail(msg string) (key, detail string, ok bool) {
-	for _, m := range MembershipFacingMessages {
-		if rest, found := strings.CutPrefix(msg, m+FacingDetailSep); found {
-			return m, rest, true
-		}
-		if rest, found := strings.CutPrefix(msg, m+": "); found {
-			return m, rest, true
-		}
-	}
-	return "", "", false
+	return fmt.Errorf("%w: %s", Err(key), detail)
 }

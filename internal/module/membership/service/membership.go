@@ -21,7 +21,6 @@ package membershipservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -100,13 +99,13 @@ func (s *Service) UnlockManual(ctx context.Context, req *membershipdto.UnlockMan
 			return uerr
 		}
 		if n == 0 {
-			return errors.New(membershipenums.WithDetail(membershipenums.ErrManualNotLocked,
-				formatUser(req.UserID)))
+			return membershipenums.ErrDetail(membershipenums.ErrManualNotLocked,
+				formatUser(req.UserID))
 		}
 		return nil
 	})
 	if isNotFound(err) {
-		return errors.New(membershipenums.WithDetail(membershipenums.ErrNotFound, formatUser(req.UserID)))
+		return membershipenums.ErrDetail(membershipenums.ErrNotFound, formatUser(req.UserID))
 	}
 	if err != nil {
 		return err
@@ -193,7 +192,7 @@ func (s *Service) recalcProject(ctx context.Context, projectID string) (res *mem
 	if s.purchases == nil {
 		// 显式不可用：说清是「订单侧的批量聚合端口还没接」，
 		// 而不是给一个 Scanned = 0 的结果让人以为没人消费过。
-		return nil, errors.New(membershipenums.ErrRecalcUnavailable)
+		return nil, membershipenums.Err(membershipenums.ErrRecalcUnavailable)
 	}
 
 	totals, terr := s.purchases.SpentTotalsByUser(ctx, projectID)
@@ -215,7 +214,7 @@ func (s *Service) recalcProject(ctx context.Context, projectID string) (res *mem
 		// 没有默认等级 → 无法给「还没达到任何档」的人兜底。打回给人（带 project_id），
 		// 不静默跳过整个工程：跳过的表现是「重算跑了但谁都没变」，
 		// 而运营在页面上看不到任何原因。
-		return nil, errors.New(membershipenums.WithDetail(membershipenums.ErrDefaultTierMissing, projectID))
+		return nil, membershipenums.ErrDetail(membershipenums.ErrDefaultTierMissing, projectID)
 	}
 
 	result := &membershipdto.RecalcResult{Scanned: len(totals)}
@@ -310,10 +309,10 @@ func (s *Service) RecalcReady() bool {
 func (s *Service) RecalcAllProjects(ctx context.Context) (total *membershipdto.RecalcResult, err error) {
 	total = &membershipdto.RecalcResult{}
 	if s.purchases == nil {
-		return total, errors.New(membershipenums.ErrRecalcUnavailable)
+		return total, membershipenums.Err(membershipenums.ErrRecalcUnavailable)
 	}
 	if s.projects == nil {
-		return total, errors.New(membershipenums.ErrProjectRequired)
+		return total, membershipenums.Err(membershipenums.ErrProjectRequired)
 	}
 	projects, perr := s.projects.List(ctx)
 	if perr != nil {

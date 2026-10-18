@@ -49,7 +49,6 @@ var pendingControllerFiles = map[string]bool{
 	"internal/module/mail/inbound/http/mail_jump.go":                          true,
 	"internal/module/mail/inbound/http/mail_page.go":                          true,
 	"internal/module/masterdata/inbound/http/masterdata_page.go":              true,
-	"internal/module/membership/inbound/http/membership_err.go":               true,
 	"internal/module/membership/inbound/http/membership_page.go":              true,
 	"internal/module/navigation/inbound/http/navigation_add_source_write.go":  true,
 	"internal/module/navigation/inbound/http/navigation_delete_write.go":      true,

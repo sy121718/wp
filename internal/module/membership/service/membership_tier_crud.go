@@ -10,7 +10,6 @@ package membershipservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 
@@ -112,7 +111,7 @@ func (s *Service) CreateTier(ctx context.Context, req *membershipdto.CreateTierR
 		if n, cerr := s.model.CountByNameTx(ctx, tx, req.ProjectID, name, 0); cerr != nil {
 			return cerr
 		} else if n > 0 {
-			return errors.New(membershipenums.WithDetail(membershipenums.ErrTierNameTaken, name))
+			return membershipenums.ErrDetail(membershipenums.ErrTierNameTaken, name)
 		}
 		isDefault := req.IsDefault
 		if len(tiers) == 0 {
@@ -128,13 +127,13 @@ func (s *Service) CreateTier(ctx context.Context, req *membershipdto.CreateTierR
 			if n, cerr := s.model.CountDefaultTx(ctx, tx, req.ProjectID, 0); cerr != nil {
 				return cerr
 			} else if n > 0 {
-				return errors.New(membershipenums.ErrDefaultTierExists)
+				return membershipenums.Err(membershipenums.ErrDefaultTierExists)
 			}
 		} else if n, cerr := s.model.CountByThresholdTx(ctx, tx, req.ProjectID, req.ThresholdAmount, 0); cerr != nil {
 			return cerr
 		} else if n > 0 {
-			return errors.New(membershipenums.WithDetail(
-				membershipenums.ErrThresholdTaken, formatAmount(req.ThresholdAmount)))
+			return membershipenums.ErrDetail(
+				membershipenums.ErrThresholdTaken, formatAmount(req.ThresholdAmount))
 		}
 
 		row := &membershipmodel.TierEntity{
@@ -213,15 +212,15 @@ func (s *Service) UpdateTier(ctx context.Context, req *membershipdto.UpdateTierR
 			if n, cerr := s.model.CountByNameTx(ctx, tx, req.ProjectID, name, req.TierID); cerr != nil {
 				return cerr
 			} else if n > 0 {
-				return errors.New(membershipenums.WithDetail(membershipenums.ErrTierNameTaken, name))
+				return membershipenums.ErrDetail(membershipenums.ErrTierNameTaken, name)
 			}
 		}
 		if req.ThresholdAmount != nil && !current.IsDefault {
 			if n, cerr := s.model.CountByThresholdTx(ctx, tx, req.ProjectID, *req.ThresholdAmount, req.TierID); cerr != nil {
 				return cerr
 			} else if n > 0 {
-				return errors.New(membershipenums.WithDetail(
-					membershipenums.ErrThresholdTaken, formatAmount(*req.ThresholdAmount)))
+				return membershipenums.ErrDetail(
+					membershipenums.ErrThresholdTaken, formatAmount(*req.ThresholdAmount))
 			}
 		}
 		if req.IsDefault != nil {
@@ -236,7 +235,7 @@ func (s *Service) UpdateTier(ctx context.Context, req *membershipdto.UpdateTierR
 				// 取消默认：工程必须始终有且只有一个默认等级。
 				// 打回给人而不是自动把另一档提上来 —— 「哪一档该接替」是运营的决定，
 				// 猜错会让所有未归属访客的等级在一夜之间变化而没人知道为什么。
-				return errors.New(membershipenums.ErrDefaultTierRequired)
+				return membershipenums.Err(membershipenums.ErrDefaultTierRequired)
 			}
 		}
 		n, uerr := s.model.UpdateTierFieldsTx(ctx, tx, req.ProjectID, req.TierID, fields)
@@ -277,8 +276,8 @@ func (s *Service) DeleteTier(ctx context.Context, req *membershipdto.DeleteTierR
 		if n, cerr := s.model.CountByTierTx(ctx, tx, req.ProjectID, req.TierID); cerr != nil {
 			return cerr
 		} else if n > 0 {
-			return errors.New(membershipenums.WithDetail(membershipenums.ErrTierInUse,
-				fmt.Sprintf("%s×%d", current.Name, n)))
+			return membershipenums.ErrDetail(membershipenums.ErrTierInUse,
+				fmt.Sprintf("%s×%d", current.Name, n))
 		}
 		if current.IsDefault {
 			// 删掉默认等级还有别的档时，工程会立刻进入「没有默认等级」状态 ——
@@ -289,7 +288,7 @@ func (s *Service) DeleteTier(ctx context.Context, req *membershipdto.DeleteTierR
 				return lerr
 			}
 			if len(others) > 1 {
-				return errors.New(membershipenums.ErrDefaultTierRequired)
+				return membershipenums.Err(membershipenums.ErrDefaultTierRequired)
 			}
 		}
 		if _, derr := s.model.SoftDeleteTierTx(ctx, tx, req.ProjectID, req.TierID); derr != nil {
@@ -369,18 +368,18 @@ func (s *Service) mapTierConflict(err error) error {
 	}
 	switch {
 	case uniqueViolationOn(err, indexTierName):
-		return errors.New(membershipenums.ErrTierNameTaken)
+		return membershipenums.Err(membershipenums.ErrTierNameTaken)
 	case uniqueViolationOn(err, indexTierThreshold):
-		return errors.New(membershipenums.ErrThresholdTaken)
+		return membershipenums.Err(membershipenums.ErrThresholdTaken)
 	case uniqueViolationOn(err, indexTierDefault):
-		return errors.New(membershipenums.ErrDefaultTierExists)
+		return membershipenums.Err(membershipenums.ErrDefaultTierExists)
 	}
 	return err
 }
 
 // tierNotFound 等级不存在的业务错误（带上 tier_id，让调用方能定位）。
 func tierNotFound(tierID int64) error {
-	return errors.New(membershipenums.WithDetail(membershipenums.ErrNotFound, fmt.Sprintf("tier_id=%d", tierID)))
+	return membershipenums.ErrDetail(membershipenums.ErrNotFound, fmt.Sprintf("tier_id=%d", tierID))
 }
 
 // tierIDsOf 抽出等级 id 列表（批量查权益用）。
