@@ -8,7 +8,6 @@ package producthttp
 
 import (
 	"errors"
-	"fmt"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"net/http"
@@ -29,7 +28,6 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
 	"go_wp/internal/text"
-	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/money"
@@ -707,86 +705,6 @@ func (h *ProductPageHandle) ProductsVariantPreview(c *gin.Context) {
 	c.JSON(http.StatusOK, res)
 }
 
-// variantSkipFallbacks 清单外删除被跳过时的中文兜底（key 见 productenums.VariantSkip*）。
-var variantSkipFallbacks = map[string]string{
-	productenums.VariantSkipHasStock:       "仍有库存，未删除（请先处理库存或改为停用）",
-	productenums.VariantSkipReferenced:     "被 BOM 清单引用，未删除（请先解除引用）",
-	productenums.VariantSkipDuplicated:     "与清单里前面的行重复，已忽略",
-	productenums.VariantSkipVariantMissing: "这一行对应的变体已不存在（可能已被别处删除）",
-	// 本批新增的两个引用面（迁移 259）：被捆绑成员引用 / 有过库存流水。
-	productenums.VariantSkipBundleReferenced: "被捆绑成员引用，未删除（请先在捆绑配置里解除引用）",
-	productenums.VariantSkipHasMovement:      "有过库存流水（已被订单或库存变动用过），未删除（请改为停用）",
-}
-
-// productBulkText 一条结论文案的事实（key + 中文兜底）。
-type productBulkText struct{ key, fallback string }
-
-// fact 把一条结论文案变成**事实**（key + 中文兜底 + %s 参数）：模板在渲染期取词，
-// JSON 出口用 text.MsgText 取成品串。
-//
-// 参数一律 strconv 成字符串（模板侧的占位符是 %s，传 int 会渲染成 %!s(int=3)）；
-// 没有占位符的词条**不要**传参数 —— TranslateArgs 对多余参数会 Sprintf 出 %!(EXTRA string=…)。
-func (t productBulkText) fact(args ...string) facing.Msg {
-	m := facing.Msg{Key: t.key, Fallback: t.fallback}
-	if len(args) > 0 {
-		m = m.WithArgs(args...)
-	}
-	return m
-}
-
-// productBulkTextOf 取一条批量结论文案的当前语言模板（**文本**形态，给「多段拼一句」的合成句用）。
-//
-// 词条混进 %d 之类协议外占位符时回落中文原文（模板一律只允许 %s，数字先经 strconv.Itoa）——
-// 否则 Sprintf 会把参数渲染成 int，而这条路直接给运营看。
-func productBulkTextOf(c *gin.Context, t productBulkText) string {
-	built := shell.TranslateFor(c)(t.key, t.fallback)
-	if !i18n.HasStringPlaceholdersOnly(built) {
-		return t.fallback
-	}
-	return built
-}
-
-// 变体清单保存的结论文案（详情页编辑表单的回执）。
-var (
-	productVariantSaveNoChange = productBulkText{productenums.BulkVariantNoChange, "变体清单与库里一致，没有需要保存的变化。"}
-	productVariantSaveSaved    = productBulkText{productenums.BulkVariantSaved, "已保存变体清单：新增 %s 个、修改 SKU %s 个、删除 %s 个。"}
-	productVariantSaveSkipped  = productBulkText{productenums.BulkVariantSkipped, "跳过 %s 个：%s"}
-)
-
-// variantSaveMsg 保存结果的回带结论（**事实**：单一情形给 key，多段拼接给成品串）。
-//
-// 「一条都没变」与「跳过若干」必须能区分：都写成「保存成功」时，用户无法判断是
-// 清单本来就与库里一致，还是有行被拦下了（被拦下的行下一次还会出现在清单里）。
-//
-// 带跳过明细时是「两句词条 + 逐条原因」拼起来的复合句，一段 key 表达不了 —— 这一档给
-// 成品串（Fallback，Key 为空），与 page 模块 pageTranslationsSavedMsg 同一取舍。
-func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) facing.Msg {
-	if res == nil {
-		return text.InternalMsg()
-	}
-	if res.Created == 0 && res.Updated == 0 && res.Deleted == 0 && len(res.Skipped) == 0 {
-		return productVariantSaveNoChange.fact()
-	}
-	// 例外（需要成品串）：这条结论是**多段词条拼出来的复合句**（「已保存…」+「跳过 N 条：原因」），
-	// 一段 key 表达不了 —— 它回的是 Fallback 成品串（Key 留空），与 page 模块同一取舍。
-	tr := shell.TranslateFor(c)
-	// 数字一律 strconv.Itoa 成字符串后填入（词条只允许 %s）。
-	parts := []string{fmt.Sprintf(productBulkTextOf(c, productVariantSaveSaved),
-		strconv.Itoa(res.Created), strconv.Itoa(res.Updated), strconv.Itoa(res.Deleted))}
-	if len(res.Skipped) > 0 {
-		// 只报**原因**，不再把「哪个 SKU / 什么规格」拼进结论：
-		// 受控形态下（每条原因都来自 variantSkipFallbacks 的枚举）文案可读且不泄漏。
-		// 被跳过的行本来就留在清单里，逐行 SKU 由页面本身呈现。
-		items := make([]string, 0, len(res.Skipped))
-		for _, skip := range res.Skipped {
-			items = append(items, tr(skip.Reason, variantSkipFallbacks[skip.Reason]))
-		}
-		parts = append(parts, fmt.Sprintf(productBulkTextOf(c, productVariantSaveSkipped),
-			strconv.Itoa(len(res.Skipped)), strings.Join(items, "；")))
-	}
-	return facing.Msg{Fallback: strings.Join(parts, " ")}
-}
-
 // SaveVariantList 以清单为准保存变体（POST /api/product/variant/save）——变体**唯一的落库动作**。
 //
 // rows 是整张清单（顺序即期望顺序）：行上只有 variantId（既有变体；新增行为空）、
@@ -808,7 +726,7 @@ func (h *ProductHandle) SaveVariantList(c *gin.Context) {
 		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, variantSaveMsg(c, res)), res)
+	response.SuccessWithMessage(c, text.MsgText(c, productservice.VariantSaveMsg(shell.TranslateFor(c), res)), res)
 }
 
 // AddRating 补录一条商品评分（issue #33）。
@@ -1341,11 +1259,8 @@ func (h *ProductHandle) ApplyPricing(c *gin.Context) {
 		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
-	// 回执沿用页面原本那句话（「本次改动 N 个变体，明细见下方留痕台账」）：三段拼一句
-	// （前缀 + 计数 + 后缀）—— 两条词条还是两段式，收成一条 %s 整句要改 seed。
-	tr := shell.TranslateFor(c)
-	response.SuccessWithMessage(c, tr(productenums.ProductPricingAppliedLead, "已应用调价：本次改动 ")+
-		strconv.Itoa(res.ChangedCount)+tr(productenums.ProductPricingAppliedTail, " 个变体，明细见下方留痕台账。"))
+	// 回执文案由 service 合成（三段拼一句属于值的组装，不在控制器里做）。
+	response.SuccessWithMessage(c, productservice.PricingAppliedMsg(shell.TranslateFor(c), res.ChangedCount))
 }
 
 // productPricingApplyReq 定价页应用调价的 JSON 入参（规则字段平铺，理由见 ApplyPricing）。
