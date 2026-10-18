@@ -198,7 +198,7 @@ func TestInventoryPurchaseCreateFieldsMatchTemplate(t *testing.T) {
 	if len(seen) == 0 {
 		t.Fatal("模板中没有回填字段，字段清单检查空转")
 	}
-	for _, field := range purchaseCreateFormFields {
+	for _, field := range inventorydto.PurchaseCreateEchoFields {
 		if !seen[field] {
 			t.Errorf("字段 %s 在清单中但模板未读取", field)
 		}

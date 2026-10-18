@@ -8,6 +8,7 @@ import (
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/shell"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
@@ -23,36 +24,29 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 )
 
-// purchaseCreateFormFields 是单值字段的回填契约；三列同名采购行保留位置单独处理。
-var purchaseCreateFormFields = []string{"projectId", "code", "sourceId", "warehouseId", "remark"}
-
 // purchaseCreateFail 在抽屉内回显原始输入，采购行的空位也不压缩。
-func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, projectID string, err error) {
+func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, form *inventorydto.PurchaseCreateFormReq, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
 		return
 	}
 	// htmx 分支原样保留：失败在抽屉里重渲片段（错误槽 + 回填后的表单），不丢用户输入。
-	// 直接读取 PostForm：通用 formEcho 会剔除空项、修剪首尾空白，导致空行错位。
-	_ = c.Request.ParseMultipartForm(formEchoMemory)
-	values := c.Request.PostForm
-	fields := make(gin.H, len(purchaseCreateFormFields))
-	for _, key := range purchaseCreateFormFields {
-		fields[key] = values.Get(key)
+	// 回显吃 DTO 的**原始值**（不修剪、不剔除空项）：通用 formEcho 会修剪空白，
+	// 那样空行会错位，行号与用户看到的对不上。
+	fields := gin.H{}
+	for key, value := range form.EchoFields() {
+		fields[key] = value
 	}
 	rows := make([]gin.H, inventoryPurchaseDraftLines)
 	for i := range rows {
-		rows[i] = gin.H{
-			"Index":     i,
-			"SKU":       formArrayAtRaw(values["lineSku"], i),
-			"Quantity":  formArrayAtRaw(values["lineQuantity"], i),
-			"UnitPrice": formArrayAtRaw(values["lineUnitPrice"], i),
-		}
+		sku, quantity, unitPrice := form.LineAt(i)
+		rows[i] = gin.H{"Index": i, "SKU": sku, "Quantity": quantity, "UnitPrice": unitPrice}
 	}
 	// 候选项由当前工程重取，表单值只取此次提交。
 	ctx := c.Request.Context()
 	tr := shell.TranslateFor(c)
+	projectID := strings.TrimSpace(form.ProjectID)
 	data := gin.H{
 		"FormEcho": fields, "SelectedProject": projectID, "DraftLines": rows,
 		"Sources":        sourceOptions(ctx, h.inventory, projectID, "", tr),
@@ -64,93 +58,7 @@ func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, project
 	c.HTML(http.StatusOK, "admin/inventory/inventory_purchase_create_form.html", adminui.Prepare(c, data))
 }
 
-func formArrayAtRaw(values []string, index int) string {
-	if index >= 0 && index < len(values) {
-		return values[index]
-	}
-	return ""
-}
-
 // inventory_purchase_page_form.go - 采购入库表单解析（收货明细行、草稿行与数值解析）。
-
-// purchaseLineSkuField 采购行 SKU 选择器的表单字段名（模板与解析共用同一个字面量）。
-//
-// 它承载的是三段拼接的引用 —— "<变体ID>|<商品ID>|<仓库侧裸码>"，不是裸的 SKU 编码：
-// 本页不引入自定义 JS（多端契约要求交互全走原生控件），一个 <select> 只能提交一个值，
-// 而一行的变体 / 商品 / 仓库侧 SKU 必须**同源**（都取自候选列表的同一行）。
-// 字段名与值形状两边（模板 + 本文件）必须一起改 —— 历史上正是「handler 读 lineSKUCode、
-// 模板却根本没有这个字段」让空串静默通过了校验，见 parsePurchaseSkuRef 的注释。
-const purchaseLineSkuField = "lineSku"
-
-// purchaseLinesForm 解析新建表单里的固定几行（空行跳过）。
-//
-// 驱动数组是 purchaseLineSkuField（未选 SKU 的行整行跳过，数量 / 单价各按同一序号取值）——
-// 与改造前用 lineVariantId 驱动是同一个形状，只是那个字段名当时在模板里并不存在。
-// SKUCode 为空**不在这里兜底**：归一旦校验在 service（normalizeStockSKU），
-// 这条路径只把表单原样翻译成入参（含空值），让唯一的规则在唯一的入口上生效。
-func purchaseLinesForm(c *gin.Context) (lines []inventorydto.PurchaseLineReq) {
-	refs := c.PostFormArray(purchaseLineSkuField)
-	quantities := c.PostFormArray("lineQuantity")
-	prices := c.PostFormArray("lineUnitPrice")
-	lines = make([]inventorydto.PurchaseLineReq, 0, len(refs))
-	for i, raw := range refs {
-		variantID, productID, skuCode := parsePurchaseSkuRef(raw)
-		if variantID == "" {
-			continue
-		}
-		line := inventorydto.PurchaseLineReq{
-			VariantID: variantID,
-			ProductID: productID,
-			SKUCode:   skuCode,
-			Quantity:  parseIntOr(formArrayAt(quantities, i), 0),
-			Sort:      i,
-		}
-		if price, ok := parseFloatOK(formArrayAt(prices, i)); ok {
-			line.UnitPrice = price
-		}
-		lines = append(lines, line)
-	}
-	return lines
-}
-
-// parsePurchaseSkuRef 拆开采购行 SKU 选择器的值 "<变体ID>|<商品ID>|<仓库侧裸码>"。
-//
-// 按 SplitN(…, 3) 拆：前两段是 uuid（不含 '|'），第三段（SKU 编码）原样收下 ——
-// 运营自定义的编码里若真的出现 '|'，也只会在最后一段里，不会被误切。
-// 段数不足时后面的段为空串（模板不会这么渲染，但**不能因此 panic 或静默错位**：
-// 空值会一路走到 service 的归一校验并被明确拒绝）。
-func parsePurchaseSkuRef(raw string) (variantID, productID, skuCode string) {
-	parts := strings.SplitN(strings.TrimSpace(raw), "|", 3)
-	variantID = strings.TrimSpace(parts[0])
-	if len(parts) > 1 {
-		productID = strings.TrimSpace(parts[1])
-	}
-	if len(parts) > 2 {
-		skuCode = strings.TrimSpace(parts[2])
-	}
-	return variantID, productID, skuCode
-}
-
-// formArrayAt 取数组第 i 项（越界返回空串，表单行数与数组长度不一致时不 panic）。
-func formArrayAt(values []string, index int) string {
-	if index < 0 || index >= len(values) {
-		return ""
-	}
-	return strings.TrimSpace(values[index])
-}
-
-// parseFloatOK 解析可空小数（空串 / 非法返回 ok=false，交给服务端报参数错误）。
-func parseFloatOK(raw string) (value float64, ok bool) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return 0, false
-	}
-	parsed, err := strconv.ParseFloat(trimmed, 64)
-	if err != nil {
-		return 0, false
-	}
-	return parsed, true
-}
 
 // purchaseDraftLines 新建窗体里的空行（模板 range 用）。
 func purchaseDraftLines() []gin.H {
@@ -371,18 +279,13 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 
 // InventoryPurchaseCreate 新建采购单（单头 + 结构化行）。
 func (h *inventoryPurchasePageHandle) InventoryPurchaseCreate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	req := &inventorydto.CreatePurchaseOrderReq{
-		ProjectID:   projectID,
-		Code:        strings.TrimSpace(c.PostForm("code")),
-		SourceID:    strings.TrimSpace(c.PostForm("sourceId")),
-		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
-		Remark:      strings.TrimSpace(c.PostForm("remark")),
-		OperatorID:  builtin.GetUsername(c),
-		Lines:       purchaseLinesForm(c),
+	form, ok := binding.Form[inventorydto.PurchaseCreateFormReq](c)
+	if !ok {
+		return
 	}
+	req := form.CreateReq(builtin.GetUsername(c))
 	if _, err := h.inventory.CreatePurchaseOrder(c.Request.Context(), req); err != nil {
-		h.purchaseCreateFail(c, projectID, err)
+		h.purchaseCreateFail(c, form, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
@@ -392,23 +295,11 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseCreate(c *gin.Context) {
 //
 // 表单是「按行提交」：每行一个独立表单，因此这里只需处理一行；接口侧的批量收货运维用。
 func (h *inventoryPurchasePageHandle) InventoryPurchaseReceipt(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	quantity := parseIntOr(c.PostForm("quantity"), 0)
-	req := &inventorydto.RegisterReceiptReq{
-		ProjectID:  projectID,
-		OrderID:    c.PostForm("orderId"),
-		RequestID:  strings.TrimSpace(c.PostForm("requestId")),
-		Remark:     strings.TrimSpace(c.PostForm("remark")),
-		OperatorID: builtin.GetUsername(c),
-		Lines: []inventorydto.ReceiptLineReq{{
-			LineID:   strings.TrimSpace(c.PostForm("lineId")),
-			Quantity: quantity,
-		}},
+	form, ok := binding.Form[inventorydto.PurchaseReceiptFormReq](c)
+	if !ok {
+		return
 	}
-	if price, ok := parseFloatOK(c.PostForm("unitPrice")); ok {
-		req.Lines[0].UnitPrice = &price
-	}
-	if _, err := h.inventory.RegisterReceipt(c.Request.Context(), req); err != nil {
+	if _, err := h.inventory.RegisterReceipt(c.Request.Context(), form.RegisterReq(builtin.GetUsername(c))); err != nil {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
 		return
 	}
@@ -422,24 +313,11 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseReceipt(c *gin.Context) {
 // "<变体ID>|<商品ID>|仓库侧裸码>" 拼成一个值 —— 与新建采购单的采购行逐字同一口径，
 // 解析也用同一个 parsePurchaseSkuRef。字段名两边（模板 + 本文件）必须一起改。
 func (h *inventoryPurchasePageHandle) InventoryPurchaseProduction(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	variantID, productID, skuCode := parsePurchaseSkuRef(c.PostForm(purchaseLineSkuField))
-	req := &inventorydto.ProductionInboundReq{
-		ProjectID:   projectID,
-		SourceID:    strings.TrimSpace(c.PostForm("sourceId")),
-		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
-		VariantID:   variantID,
-		ProductID:   productID,
-		SKUCode:     skuCode,
-		Quantity:    parseIntOr(c.PostForm("quantity"), 0),
-		RequestID:   strings.TrimSpace(c.PostForm("requestId")),
-		Remark:      strings.TrimSpace(c.PostForm("remark")),
-		OperatorID:  builtin.GetUsername(c),
+	form, ok := binding.Form[inventorydto.ProductionFormReq](c)
+	if !ok {
+		return
 	}
-	if cost, ok := parseFloatOK(c.PostForm("unitCost")); ok {
-		req.UnitCost = &cost
-	}
-	if _, err := h.inventory.RegisterProductionInbound(c.Request.Context(), req); err != nil {
+	if _, err := h.inventory.RegisterProductionInbound(c.Request.Context(), form.ProductionReq(builtin.GetUsername(c))); err != nil {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
 		return
 	}
