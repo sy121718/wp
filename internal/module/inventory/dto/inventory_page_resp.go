@@ -83,3 +83,28 @@ type WarehouseRowResp struct {
 	CredentialMasked string
 	SecretRef        string
 }
+
+// ReasonRowResp 变动原因一行（原因管理页表格与各页的原因下拉共用）。
+//
+// Name 是**已取词**的文案：name 列存的是 i18n key，页面永远不该出现
+// inventory.reason.purchase_in 这样的裸 key；取不到词条时回退到 Code。
+type ReasonRowResp struct {
+	ID             string
+	Code           string
+	Name           string
+	Direction      string
+	DirectionLabel string
+	IsBuiltin      bool
+	Status         string
+	StatusLabel    string
+	Sort           int
+}
+
+// OptionResp 下拉项：值 + 已取词的文案。
+//
+// 与 PickOptionResp（product 模块）刻意不共用：那边要表达「空项 / 数据项」，
+// 这里的下拉没有空项语义，多出来的字段只会让人猜哪些键有意义。
+type OptionResp struct {
+	Value string
+	Label string
+}
