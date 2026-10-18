@@ -143,7 +143,13 @@ func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 		writeFabStreamError(c, fabText(aienums.MsgFabNoModel))
 		return
 	}
-	input := strings.TrimSpace(c.PostForm("input"))
+	// ParseForm 而不是 Form：悬浮球的失败必须变成面板里的一条事件，不能甩 400 JSON。
+	form, ferr := binding.ParseForm[aidto.FabAskFormReq](c)
+	if ferr != nil {
+		writeFabStreamError(c, fabText(aienums.MsgFabEmptyInput))
+		return
+	}
+	input := strings.TrimSpace(form.Input)
 	if input == "" {
 		writeFabStreamError(c, fabText(aienums.MsgFabEmptyInput))
 		return
@@ -155,7 +161,7 @@ func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 	}
 
 	// 图片：前端把文件读成 data URI 传上来（服务端不去取任何地址，理由见 ai_fab_image.go）。
-	images, imageLabels, imgErr := parseFabImages(c.PostForm("images"), c.PostForm("imageLabels"))
+	images, imageLabels, imgErr := parseFabImages(form.Images, form.ImageLabels)
 	if imgErr != nil {
 		writeFabStreamError(c, fabText(imgErr.Key))
 		return
@@ -391,7 +397,7 @@ func bindID(c *gin.Context) (int64, error) {
 	if id := parseInt64(c.Query("id")); id > 0 {
 		return id, nil
 	}
-	if id := parseInt64(c.PostForm("id")); id > 0 {
+	if id := parseInt64(binding.Field(c, "id")); id > 0 {
 		return id, nil
 	}
 	return 0, errors.New(aienums.ErrInvalidParam)
@@ -804,9 +810,8 @@ func (h *SessionHandle) Events(c *gin.Context) {
 
 // Append POST /api/ai/session/append：追加一条事件（会话层唯一的写入口）。
 func (h *SessionHandle) Append(c *gin.Context) {
-	var body sessionAppendBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	body, ok := binding.JSON[sessionAppendBody](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.AppendEvent(c.Request.Context(), aidto.AppendEventReq{
@@ -830,9 +835,8 @@ func (h *SessionHandle) Append(c *gin.Context) {
 
 // Rename POST /api/ai/session/rename：改标题 / 换当前模型（乐观锁）。
 func (h *SessionHandle) Rename(c *gin.Context) {
-	var body sessionRenameBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	body, ok := binding.JSON[sessionRenameBody](c)
+	if !ok {
 		return
 	}
 	status := int16(-1)
@@ -860,9 +864,8 @@ func (h *SessionHandle) Rename(c *gin.Context) {
 // 单独开一个端点而不是让调用方自己拼 status：归档是「只往前、不回头地停写」这个语义，
 // 把它做成具名动作，接口读起来才是那个意思。
 func (h *SessionHandle) Archive(c *gin.Context) {
-	var body sessionRenameBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	body, ok := binding.JSON[sessionRenameBody](c)
+	if !ok {
 		return
 	}
 	archived := int16(aienums.SessionArchived)
@@ -882,9 +885,8 @@ func (h *SessionHandle) Archive(c *gin.Context) {
 
 // FoldPlan POST /api/ai/session/fold/plan：算建议折叠区间与净收益（只读）。
 func (h *SessionHandle) FoldPlan(c *gin.Context) {
-	var body sessionFoldPlanBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	body, ok := binding.JSON[sessionFoldPlanBody](c)
+	if !ok {
 		return
 	}
 	plan, err := h.svc.FoldPlan(c.Request.Context(), aidto.FoldPlanReq{
@@ -900,9 +902,8 @@ func (h *SessionHandle) FoldPlan(c *gin.Context) {
 
 // Fold POST /api/ai/session/fold：提交一次折叠（区间 + 摘要）。
 func (h *SessionHandle) Fold(c *gin.Context) {
-	var body sessionFoldBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	body, ok := binding.JSON[sessionFoldBody](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Fold(c.Request.Context(), aidto.FoldReq{
@@ -976,9 +977,8 @@ func (h *TokenHandle) Create(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, aienums.ErrInternal)
 		return
 	}
-	var body tokenCreateBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	body, ok := binding.JSON[tokenCreateBody](c)
+	if !ok {
 		return
 	}
 	res, err := h.svc.Create(c.Request.Context(), &aidto.TokenCreateReq{
@@ -1001,9 +1001,8 @@ func (h *TokenHandle) Revoke(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, aienums.ErrInternal)
 		return
 	}
-	var body tokenRevokeBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, aienums.ErrInvalidParam)
+	body, ok := binding.JSON[tokenRevokeBody](c)
+	if !ok {
 		return
 	}
 	if err := h.svc.Revoke(c.Request.Context(), body.ID); err != nil {

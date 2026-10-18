@@ -290,20 +290,25 @@ func (h *Handle) ContactList(c *gin.Context) {
 
 // ContactImport 导入联系人（原始内容放正文，或表单字段 content）。
 func (h *Handle) ContactImport(c *gin.Context) {
-	content := c.PostForm("content")
+	form, ok := binding.Form[maildto.ContactImportFormReq](c)
+	if !ok {
+		return
+	}
+	content := form.Content
 	if content == "" {
-		// 也支持直接 POST 原始文本（import 用 curl / 脚本灌数据时更方便）。
+		// 也支持直接 POST 原始文本（import 用 curl / 脚本灌数据时更方便）：
+		// 那种请求没有表单体，GetRawData 才是正解 —— 不是手工解析字段。
 		if raw, err := c.GetRawData(); err == nil {
 			content = string(raw)
 		}
 	}
 	req := &maildto.ImportContactsReq{
 		Content:         []byte(content),
-		ConsentDeclared: c.PostForm("consentDeclared") == "true",
-		ConsentSource:   c.PostForm("consentSource"),
-		UpdateExisting:  c.PostForm("updateExisting") == "true",
+		ConsentDeclared: form.ConsentDeclared == "true",
+		ConsentSource:   form.ConsentSource,
+		UpdateExisting:  form.UpdateExisting == "true",
 	}
-	if tags := strings.TrimSpace(c.PostForm("tags")); tags != "" {
+	if tags := strings.TrimSpace(form.Tags); tags != "" {
 		req.DefaultTags = splitCSV(tags)
 	}
 	res, err := h.svc.ImportContacts(c.Request.Context(), req)

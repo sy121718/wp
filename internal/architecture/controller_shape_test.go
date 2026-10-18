@@ -78,12 +78,10 @@ var pendingControllerFiles = map[string]bool{
 // pendingControllerBinding 还没换成 pkg/binding 的文件（c.ShouldBind* / c.PostForm）。
 var pendingControllerBinding = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":                  true,
-	"internal/module/ai/inbound/http/ai_handle.go":                      true,
 	"internal/module/ai/inbound/http/ai_page.go":                        true,
 	"internal/module/content/inbound/http/content_handle.go":            true,
 	"internal/module/content/inbound/http/content_page.go":              true,
 	"internal/module/inventory/inbound/http/inventory_page.go":          true,
-	"internal/module/mail/inbound/http/mail_handle.go":                  true,
 	"internal/module/mail/inbound/http/mail_page.go":                    true,
 	"internal/module/navigation/inbound/http/navigation_page_handle.go": true,
 	"internal/module/order/inbound/http/order_create_page.go":           true,
