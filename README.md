@@ -1,6 +1,6 @@
 # go_wp
 
-[English contributor documentation](docs/README.en.md) · [中文贡献指南](CONTRIBUTING.md)
+[中文贡献指南](CONTRIBUTING.md)
 
 go_wp 是 CMS、可视化建站工具与静态发布引擎。后台编辑页面文档和内容，构建器把它们编译为不可变 HTML/CSS/JS，发布存储负责激活 URL。普通静态访问不执行模板、不查数据库；需要实时数据的功能经独立的受限 Runtime Fragment 端点提供。
 
@@ -20,7 +20,7 @@ go_wp 是 CMS、可视化建站工具与静态发布引擎。后台编辑页面�
 - **站点运营**：SEO 评分、sitemap、结构化数据、内链建议、多语言站、多主题、访问统计、邮件、访客账号。
 - **治理**：Casbin 三层鉴权链、权限点与菜单 seed、主数据字段级审计（append-only）、构建任务队列。
 
-各模块的完整职责与边界见 [docs/13-module-inventory.md](docs/13-module-inventory.md)。
+各模块的完整职责与边界见 [`AGENTS.md`](AGENTS.md) 与各模块目录下的 `CLAUDE.md`。
 
 ## 架构
 
@@ -75,7 +75,6 @@ make dev       # 开发模式，air 热重载
 | `pkg/` | 基础设施能力 |
 | `public/migrations/` | 数据迁移 |
 | `public/test/` | 功能、集成测试与测试支撑 |
-| `docs/` | 架构、协议、开发指南 |
 
 组件模板与样式、部分构建输入通过 `go:embed` 打入二进制。后台模板和 `/static` 当前仍从文件系统提供；部署不能只复制一个二进制后假定后台资产齐全。
 
@@ -144,23 +143,16 @@ GOWP_REPEATER_BROWSER=1 go test ./public/test/dashboard/feature \
 
 ## 阅读入口
 
-第一次进入这个仓库，先读 [docs/01-overview.md](docs/01-overview.md)：它给出产品定位、核心边界与冻结边界，是全部文档的入口。准备动手改代码，再读 [docs/contributing/](docs/contributing/) 的三篇（[架构](docs/contributing/architecture.md)、[新增模块](docs/contributing/extend-a-module.md)、[门禁](docs/contributing/gates.md)）。
+第一次进入这个仓库，先读 [`AGENTS.md`](AGENTS.md)：分层判据、架构不变量与开发红线都在那里。准备动手改代码，再读 [`CONTRIBUTING.md`](CONTRIBUTING.md) 与各目录下的 `CLAUDE.md`（模块分层、模板约定、测试组织）。
 
-- `docs/11-foundation-and-open-source.md`：2026-09-12 基础体系审视、本轮优化、开源准备与后续验收。
-- `docs/01-overview.md`：产品定位与冻结边界。
-- `docs/02-domain.md`、`docs/03-pipeline.md`：领域模型、发布与恢复。
-- `docs/02-F-ui-kit.md`：公共控件、视觉与投递边界。
-- `docs/04-B-dynamic-development-guide.md`：动态领域与构建期数据源接入。
-- `docs/13-module-inventory.md`：模块实现清单（每个模块的完整职责、不变量与落地细节）。
-- `docs/README.en.md`：英文贡献者文档入口（快速开始、架构、插件开发、贡献指南）。
-- `AGENTS.md` 及目录规则：仓库开发约定（红线清单、命名约束、迁移与 seed 纪律）。
+- `AGENTS.md`：分层判据、架构不变量、命名约束、迁移与 seed 纪律。
 - `CONTRIBUTING.md`：本地起步、门禁、测试与提交约定（面向首次接触本仓库的开发者）。
-
+- `internal/module/CLAUDE.md`、`internal/templates/CLAUDE.md`、`pkg/CLAUDE.md`、`public/test/CLAUDE.md`：目录级规则。
 ## 许可与贡献
 
 本仓库以 MIT 许可证发布，全文见 [LICENSE](LICENSE)。
 
 发现安全漏洞请按 [SECURITY.md](SECURITY.md) 私下报告，**勿开公开 Issue**；报告范围与响应目标写在那份文件里。
-改动纪律、评审期望与验证方式见 [CONTRIBUTING.md](CONTRIBUTING.md)（中文）、[docs/contributing.en.md](docs/contributing.en.md)（英文）与 [AGENTS.md](AGENTS.md)；架构、新增模块与门禁的细节见 [docs/contributing/](docs/contributing/)。
+改动纪律、评审期望与验证方式见 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [AGENTS.md](AGENTS.md)。
 
 开源发行仍待补的是可复现发行包与更完整的自动检查 —— 这些不由已有业务模块数量替代。

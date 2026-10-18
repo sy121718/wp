@@ -29,7 +29,6 @@ package runtimefragment
 // # 端口与降级
 //
 //	deps.CommentPort    —— 评论模块的收窄契约（只读列表 + 提交，拿不到审核能力）
-//	deps.CommentFacingTexter  —— 把评论模块的业务错误转成可展示文案（片段层拿不到它的 enums 白名单）
 //	deps.CommentSourceHasher —— 来源 IP 的带盐哈希函数（**算法与盐都留在评论模块**，装配期注入）
 //
 // 任一端口未注入或参数缺失一律渲染**可见文案**，绝不 500：片段端点把 error 变成

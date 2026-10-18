@@ -2,7 +2,6 @@
 
 面向第一次拿到这个仓库的人。读完这份能把项目跑起来、改一处代码、跑对门禁、把改动提出来。
 
-英文摘要见 [docs/contributing.en.md](docs/contributing.en.md)；本文件是中文完整版，两者内容重叠但本文件更细。
 
 ## 1. 动代码前必读
 
@@ -12,9 +11,6 @@
 | [`internal/module/CLAUDE.md`](internal/module/CLAUDE.md) | 模块分层与契约：目录骨架、contract 三段分工、service 不得持 `*gorm.DB`、装配与 datarule 注册 |
 | [`internal/templates/CLAUDE.md`](internal/templates/CLAUDE.md) | Jet 模板约定：可选键必须 `isset`、缺键的两种后果、CSRF 取值链 |
 | [`public/test/CLAUDE.md`](public/test/CLAUDE.md) | 测试目录组织、命名约定、测试配置与执行边界 |
-| [`docs/rules/`](docs/rules/README.md) | 规则细则：`database.md`、`testing.md`、`frontend.md`、`i18n.md` —— 需要「为什么这么定」时读 |
-
-`AGENTS.md` 只放判据与指针；判据背后的论证、实测数据与踩坑实例在 `docs/rules/`，按需读，不必通读。
 
 ## 2. 本地起步
 
@@ -26,7 +22,7 @@
 - **Redis**（必需组件，不是可选缓存 —— 会话依赖它）
 - **Node.js**（仅 `scripts/check-workbench.sh` 需要；不参与生产资产构建）
 
-版本基线见 [docs/getting-started.en.md](docs/getting-started.en.md)：开发与生产按 **PostgreSQL 18+ / Redis 7+** 准备；CI 的测试容器用的是 `postgres:16` / `redis:7`（`.github/workflows/go-test.yml`），更早的版本未经验证。`go.mod` 不表达数据库版本，示例配置见 [`config.yaml.example`](config.yaml.example)。
+版本基线：开发与生产按 **PostgreSQL 18+ / Redis 7+** 准备；CI 的测试容器用的是 `postgres:16` / `redis:7`（`.github/workflows/go-test.yml`），更早的版本未经验证。`go.mod` 不表达数据库版本，示例配置见 [`config.yaml.example`](config.yaml.example)。
 
 ### 2.2 配置
 
@@ -57,7 +53,7 @@ make migrate
 - seed 用 `registerSeed(Seed{Version, TableName, ConditionSQL, SQL})`，`ConditionSQL` 是幂等判据（「本批对象是否已存在」，**不要**写成宽泛的前缀判断）。
 - `TestEmbeddedSQLFilesAllRegistered` 对磁盘 `.sql` 与注册台账做双向一一对应校验 —— 写了 SQL 却忘了注册会被测试抓住。
 
-> 迁移编号取现有最大值之后的号（当前最大为 `510`）。命名与判据写法见 [`docs/rules/database.md`](docs/rules/database.md)。
+> 迁移编号取现有最大值之后的号（当前最大为 `510`）。命名与判据写法见 [`AGENTS.md`](AGENTS.md) 的数据库一节。
 
 ### 2.4 起服务
 
@@ -111,7 +107,7 @@ scripts/check-dto-immutability.sh
 scripts/check-permission-gaps.sh
 ```
 
-每个脚本拦什么、判据是什么、豁免怎么记账 → [docs/contributing/gates.md](docs/contributing/gates.md)。
+每个脚本拦什么、判据是什么、豁免怎么记账 → 见各脚本文件头的注释与 `scripts/check-all.sh`。
 
 `scripts/` 下还有不入门禁的脚本：`dev.sh`（`make dev` 调用）、`rls-role-setup.sh`（建非超级角色并授权）、`index-usage-report.sh`（索引使用量快照）、`site-preview.py`、`audit-*.py`，以及 `build-all.*` / `build-frontend.*` / `prepare-embed.*` / `deploy.sh` —— **最后这一批属历史脚本**，缺少它们依赖的前端源码与发布产物定义，不要拿来发版（见 [`scripts/README.md`](scripts/README.md)）。
 
@@ -174,7 +170,7 @@ make test                                                    # 全量
 - **一次改动一个主题**：不与无关清理、依赖升级、大范围格式化混在一起，diff 才可读、可 review。
 - **拆分大文件要说明等价性**：证明「只切段、不改行为」的证据是仓库里已有的路由清单快照测试（`internal/routers` 的路由快照用例，`WP_DUMP_ROUTES=1` 可输出装配出的路由表）——装配是线性的，重排等于引入编译期看不见的顺序漂移。
 - **新增门禁脚本要接进 `scripts/check-all.sh`**：无外部依赖的进 `PLAIN_SCRIPTS`，需要 PostgreSQL 的进 `DB_SCRIPTS`。散在 `scripts/` 下不被任何入口调用的门禁等于没有门禁（当前这个入口本身就是为此补的）。
-- **改动某模块的落地细节时，同批更新 `docs/13-module-inventory.md`**（模块落地后同步该文件是它的明文要求）。
+- **改动某模块的落地细节时，同批更新该模块的 `CLAUDE.md`**。
 - **提交前跑**：
 
 ```bash

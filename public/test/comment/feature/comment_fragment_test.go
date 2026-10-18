@@ -55,7 +55,6 @@ func setupCommentService(t *testing.T) (*commentservice.Service, *gorm.DB) {
 	// 哈希函数由装配层注入（算法与盐留在评论模块）；测试里给一个可辨认的实现。
 	t.Cleanup(runtimefragment.MutateDepsForTest(func(d *runtimefragment.Deps) {
 		d.CommentPort = svc
-		d.CommentFacingTexter = svc
 		d.CommentSourceHasher = func(ip string) string { return "hash:" + ip }
 	}))
 	return svc, db
