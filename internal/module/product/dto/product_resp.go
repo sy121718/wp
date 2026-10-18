@@ -214,5 +214,5 @@ type ProductRowResp struct {
 	Stock map[string]any
 
 	// Bundle 捆绑构成面板（只在 type=bundle 时给，nil = 模板整块跳过）。
-	Bundle map[string]any
+	Bundle *BundlePanelResp
 }

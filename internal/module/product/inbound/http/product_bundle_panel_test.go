@@ -24,25 +24,23 @@ import (
 const bundlePanelEditLink = "href=\"/admin/products/bundle?projectId=proj-1&amp;productId=p1\""
 
 // bundlePanelRow 造一行区块视图数据（默认一个正常成员，按需覆盖字段）。
-func bundlePanelRow(over map[string]any) gin.H {
-	row := gin.H{
-		"VariantID": "v1", "SKUCode": "ADDON_001", "ProductName": "配件包",
-		"Required": true, "DefaultQty": 2, "MinQty": 1, "MaxQty": 3,
-		"Available": 6, "ItemPrice": "45.5", "CostPrice": "20", "Enabled": true, "Missing": false,
+func bundlePanelRow(over func(*productdto.BundlePanelRowResp)) productdto.BundlePanelRowResp {
+	row := productdto.BundlePanelRowResp{
+		VariantID: "v1", SKUCode: "ADDON_001", ProductName: "配件包",
+		Required: true, DefaultQty: 2, MinQty: 1, MaxQty: 3,
+		Available: 6, ItemPrice: "45.5", CostPrice: "20", Enabled: true,
 	}
-	for k, v := range over {
-		row[k] = v
+	if over != nil {
+		over(&row)
 	}
 	return row
 }
 
 // bundleDetailPage 渲染商品详情页（bundle 为 nil 表示不给 Bundle 键 = variant 商品）。
-func bundleDetailPage(t *testing.T, bundle gin.H) string {
+func bundleDetailPage(t *testing.T, bundle *productdto.BundlePanelResp) string {
 	t.Helper()
 	product := productRowForRender()
-	if bundle != nil {
-		product.Bundle = map[string]any(bundle)
-	}
+	product.Bundle = bundle
 	return renderAdminTemplate(t, "admin/product/product_detail.html", productPageLayoutData(gin.H{
 		"title": "商品详情", "menu": "products",
 		"Projects": []gin.H{}, "SelectedProject": "proj-1",
@@ -72,16 +70,16 @@ func bundleEditPage(t *testing.T, product *productdto.ProductRowResp) string {
 
 // TestProductDetailBundlePanelRenders 区块的数据面：容器价、成员规则、成本与参考价。
 func TestProductDetailBundlePanelRenders(t *testing.T) {
-	out := bundleDetailPage(t, gin.H{
-		"Loaded": true, "ErrorText": "", "BasePrice": "199",
-		"Options": []gin.H{
+	out := bundleDetailPage(t, &productdto.BundlePanelResp{
+		Loaded: true, BasePrice: "199",
+		Options: []productdto.BundlePanelRowResp{
 			bundlePanelRow(nil),
-			bundlePanelRow(map[string]any{
-				"VariantID": "v2", "SKUCode": "ADDON_002", "ProductName": "赠品杯",
-				"Required": false, "DefaultQty": 0, "MinQty": 0, "MaxQty": 0, "Available": 9,
+			bundlePanelRow(func(r *productdto.BundlePanelRowResp) {
+				r.VariantID, r.SKUCode, r.ProductName = "v2", "ADDON_002", "赠品杯"
+				r.Required, r.DefaultQty, r.MinQty, r.MaxQty, r.Available = false, 0, 0, 0, 9
 			}),
 		},
-		"OptionCount": 2,
+		OptionCount: 2,
 	})
 	for _, want := range []string{
 		"捆绑构成",
@@ -120,9 +118,9 @@ func TestProductDetailBundlePanelRenders(t *testing.T) {
 
 // TestProductDetailBundlePanelEmptyAndBroken 空配置与读不出配置都要有可读提示。
 func TestProductDetailBundlePanelEmptyAndBroken(t *testing.T) {
-	empty := bundleDetailPage(t, gin.H{
-		"Loaded": true, "ErrorText": "", "BasePrice": "199",
-		"Options": []gin.H{}, "OptionCount": 0,
+	empty := bundleDetailPage(t, &productdto.BundlePanelResp{
+		Loaded: true, BasePrice: "199",
+		Options: []productdto.BundlePanelRowResp{}, OptionCount: 0,
 	})
 	for _, want := range []string{"捆绑构成", "还没有配置捆绑构成"} {
 		if !strings.Contains(empty, want) {
@@ -144,9 +142,9 @@ func TestProductDetailBundlePanelEmptyAndBroken(t *testing.T) {
 	// 读取失败（库存真源未接入 / 商品读不出来）：区块留在页面上并说明原因，
 	// 容器价不拿成员价兜底（那是错的口径），只给 —。
 	const reason = "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。"
-	broken := bundleDetailPage(t, gin.H{
-		"Loaded": false, "ErrorText": reason, "BasePrice": "—",
-		"Options": []gin.H{}, "OptionCount": 0,
+	broken := bundleDetailPage(t, &productdto.BundlePanelResp{
+		ErrorText: reason, BasePrice: "—",
+		Options: []productdto.BundlePanelRowResp{}, OptionCount: 0,
 	})
 	if !strings.Contains(broken, reason) || !strings.Contains(broken, "role=\"alert\"") {
 		t.Fatalf("读取失败应有可读提示（role=alert），实际 %s", broken)
@@ -161,17 +159,19 @@ func TestProductDetailBundlePanelEmptyAndBroken(t *testing.T) {
 
 // TestProductDetailBundlePanelMissingAndDisabled 已删除 / 已停用的成员都不能静默丢项。
 func TestProductDetailBundlePanelMissingAndDisabled(t *testing.T) {
-	out := bundleDetailPage(t, gin.H{
-		"Loaded": true, "ErrorText": "", "BasePrice": "199",
-		"Options": []gin.H{
+	out := bundleDetailPage(t, &productdto.BundlePanelResp{
+		Loaded: true, BasePrice: "199",
+		Options: []productdto.BundlePanelRowResp{
 			// 变体已被删除：读模型里只剩 variantId（SKUCode 为空）。
-			bundlePanelRow(map[string]any{
-				"VariantID": "v-dead", "SKUCode": "", "ProductName": "",
-				"ItemPrice": "—", "CostPrice": "—", "Available": 0, "Enabled": false, "Missing": true,
+			bundlePanelRow(func(r *productdto.BundlePanelRowResp) {
+				r.VariantID, r.SKUCode, r.ProductName = "v-dead", "", ""
+				r.ItemPrice, r.CostPrice, r.Available, r.Enabled, r.Missing = "—", "—", 0, false, true
 			}),
-			bundlePanelRow(map[string]any{"VariantID": "v-off", "SKUCode": "ADDON_OFF", "Enabled": false}),
+			bundlePanelRow(func(r *productdto.BundlePanelRowResp) {
+				r.VariantID, r.SKUCode, r.Enabled = "v-off", "ADDON_OFF", false
+			}),
 		},
-		"OptionCount": 2,
+		OptionCount: 2,
 	})
 	for _, want := range []string{"成员 SKU 已删除", "v-dead", "ADDON_OFF", "停用", "启用"} {
 		if !strings.Contains(out, want) {
@@ -216,13 +216,13 @@ func TestBundlePanelRowsBackofficePriceShape(t *testing.T) {
 	if len(rows) != 3 {
 		t.Fatalf("nil 项应被跳过，实际 %d 行", len(rows))
 	}
-	if rows[0]["ItemPrice"] != "45.5" || rows[0]["CostPrice"] != "20" {
+	if rows[0].ItemPrice != "45.5" || rows[0].CostPrice != "20" {
 		t.Fatalf("正常成员的价格口径不对：%+v", rows[0])
 	}
-	if rows[1]["CostPrice"] != "—" || rows[1]["Missing"] != false || rows[1]["Enabled"] != false {
+	if rows[1].CostPrice != "—" || rows[1].Missing || rows[1].Enabled {
 		t.Fatalf("成本缺失应显示 —，且停用与删除要能分开：%+v", rows[1])
 	}
-	if rows[2]["Missing"] != true || rows[2]["ItemPrice"] != "—" || rows[2]["CostPrice"] != "—" {
+	if !rows[2].Missing || rows[2].ItemPrice != "—" || rows[2].CostPrice != "—" {
 		t.Fatalf("已删除的成员应标 Missing 且价格全为 —：%+v", rows[2])
 	}
 }

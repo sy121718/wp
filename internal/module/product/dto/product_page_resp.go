@@ -182,10 +182,9 @@ type ProductDetailPageResp struct {
 	Tags       []*TagResp
 
 	// —— 装配的产物 ——
-	// Product 是成品行（读模型写）；Bundle 只在 type=bundle 时给（模板据 isset 整块跳过）；
+	// Product 是成品行（读模型写，其中的 Bundle 面板由控制器在 type=bundle 时补）；
 	// TplPanel 是详情模板面板（控制器组装）。
 	Product  *ProductRowResp
-	Bundle   map[string]any
 	TplPanel map[string]any
 	// BackURL 回列表的链接（带工程上下文，不掉回默认工程）。
 	BackURL string
@@ -884,4 +883,42 @@ func (v ProductTagsPageResp) PageStatus() int { return v.HTTPStatus }
 // PageNoStore 非 200 的档位都不该被缓存：重试必须真的回到服务端。
 func (v ProductTagsPageResp) PageNoStore() bool {
 	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
+}
+
+// BundlePanelResp 商品详情页「捆绑构成」区块的数据（只读表）。
+//
+// 这是**片段根**的下一层，字段按模板的读法命名（b.Loaded / b.Options / o.SKUCode），
+// 所以它是 struct 而不是 map：根 map 只为了 .["t"] 取词，区块自身没有这个诉求。
+type BundlePanelResp struct {
+	Loaded bool
+	// ErrorText 配置读不出来时的可读原因（区块留在页面上并说明，不是整块消失）。
+	ErrorText string
+	// BasePrice 容器价（套餐金额的唯一来源），读不出来时给 —。
+	BasePrice   string
+	Options     []BundlePanelRowResp
+	OptionCount int
+}
+
+// BundlePanelRowResp 构成表的一行：成员 SKU 的规则、可用量与后台价格口径。
+//
+// 成员挂牌价（ItemPrice）只作**参考**：套餐金额只由容器价得出，成员价不参与
+// 任何计价与前台展示（迁移 238 的类型不变量）；成员成本只进后台口径。
+type BundlePanelRowResp struct {
+	VariantID   string
+	SKUCode     string
+	ProductName string
+	Required    bool
+	DefaultQty  int
+	MinQty      int
+	MaxQty      int
+	Available   int
+	ItemPrice   string
+	CostPrice   string
+	Enabled     bool
+	// Missing 配置指向的变体已不存在（与「存在但被停用」是两回事：状态文案与
+	// 可行动作都不同，故不合并成一个 bool）。
+	Missing bool
+	// SourceParts 来源快照（仅展示）：词条 Key + 兜底 + 可选数据值，取词与分段
+	// 拼接在模板；空 = 手工指定 / 历史配置。
+	SourceParts []BundleSourcePart
 }

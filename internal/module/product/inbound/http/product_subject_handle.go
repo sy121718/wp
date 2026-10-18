@@ -1147,8 +1147,8 @@ func bundleSourceLabel(tr func(key, fallback string) string, o productdto.Bundle
 //
 // SKU 已被删除时配置里只剩 variantId（SKUCode 为空），照常出一行并标注 ——
 // 静默丢项会让人以为配置里本来就没有这一项，也就不会去修它。
-func bundlePanelRows(options []*productdto.BundleOptionDetailResp) []gin.H {
-	rows := make([]gin.H, 0, len(options))
+func bundlePanelRows(options []*productdto.BundleOptionDetailResp) []productdto.BundlePanelRowResp {
+	rows := make([]productdto.BundlePanelRowResp, 0, len(options))
 	for _, o := range options {
 		if o == nil {
 			continue
@@ -1161,21 +1161,20 @@ func bundlePanelRows(options []*productdto.BundleOptionDetailResp) []gin.H {
 			// 变体没了，价格与成本都无从谈起：这里的 0 会被读成「这个成员不要钱」。
 			itemPrice, costPrice = "—", "—"
 		}
-		rows = append(rows, gin.H{
-			"VariantID":   o.VariantID,
-			"SKUCode":     o.SKUCode,
-			"ProductName": o.ProductName,
-			"Required":    o.Required,
-			"DefaultQty":  o.DefaultQty,
-			"MinQty":      o.MinQty,
-			"MaxQty":      o.MaxQty,
-			"Available":   o.Available,
-			"ItemPrice":   itemPrice,
-			"CostPrice":   costPrice,
-			"Enabled":     o.Enabled,
-			"Missing":     missing,
-			// 来源快照（仅展示）：事实段，取词与分段拼接在模板；空 = 手工指定 / 历史配置。
-			"SourceParts": bundleSourceParts(o.BundleOption),
+		rows = append(rows, productdto.BundlePanelRowResp{
+			VariantID:   o.VariantID,
+			SKUCode:     o.SKUCode,
+			ProductName: o.ProductName,
+			Required:    o.Required,
+			DefaultQty:  o.DefaultQty,
+			MinQty:      o.MinQty,
+			MaxQty:      o.MaxQty,
+			Available:   o.Available,
+			ItemPrice:   itemPrice,
+			CostPrice:   costPrice,
+			Enabled:     o.Enabled,
+			Missing:     missing,
+			SourceParts: bundleSourceParts(o.BundleOption),
 		})
 	}
 	return rows
@@ -1186,14 +1185,13 @@ func bundlePanelRows(options []*productdto.BundleOptionDetailResp) []gin.H {
 // 读不出配置时**不静默**：区块照常渲染并带一条可读原因（区块本身就是运维发现
 // 「配置读不出来」的地方，整块消失会让人以为这个商品不是捆绑品）。
 // 错误原因只给词条文案，不铺 err.Error()（内部包装文案对运营不可行动）。
-func (h *ProductPageHandle) bundlePanel(c *gin.Context, projectID, productID string) gin.H {
-	panel := gin.H{
-		"Loaded":    false,
-		"ErrorText": "",
+func (h *ProductPageHandle) bundlePanel(c *gin.Context, projectID, productID string) *productdto.BundlePanelResp {
+	panel := &productdto.BundlePanelResp{
+		Loaded: false,
 		// 容器价是套餐金额的唯一来源，读不出来时给 —（不拿成员价兜底：那是错的口径）。
-		"BasePrice":   "—",
-		"Options":     []gin.H{},
-		"OptionCount": 0,
+		BasePrice:   "—",
+		Options:     []productdto.BundlePanelRowResp{},
+		OptionCount: 0,
 	}
 	detail, err := h.products.GetBundleConfig(c.Request.Context(), &productdto.GetBundleConfigReq{
 		ProductID: productID,
@@ -1202,14 +1200,14 @@ func (h *ProductPageHandle) bundlePanel(c *gin.Context, projectID, productID str
 		ProjectID: projectID,
 	})
 	if err != nil || detail == nil {
-		panel["ErrorText"] = adminui.MsgText(c, bundlePanelReadFailedMsg)
+		panel.ErrorText = adminui.MsgText(c, bundlePanelReadFailedMsg)
 		return panel
 	}
 	rows := bundlePanelRows(detail.Options)
-	panel["Loaded"] = true
-	panel["BasePrice"] = money.FormatYuan(detail.BasePrice)
-	panel["Options"] = rows
-	panel["OptionCount"] = len(rows)
+	panel.Loaded = true
+	panel.BasePrice = money.FormatYuan(detail.BasePrice)
+	panel.Options = rows
+	panel.OptionCount = len(rows)
 	return panel
 }
 
