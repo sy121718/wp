@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/response"
 	"strconv"
 	"strings"
 
@@ -60,7 +61,7 @@ func (h *inventoryPageHandle) InventoryReasonCreate(c *gin.Context) {
 		h.reasonFormFail(c, err)
 		return
 	}
-	inventoryDone(c, inventoryReasonBack(c))
+	response.Success(c, nil)
 }
 
 // InventoryReasonUpdate 后台表单修改自定义变动原因（改名 / 停用 / 排序）。
@@ -75,7 +76,7 @@ func (h *inventoryPageHandle) InventoryReasonUpdate(c *gin.Context) {
 		h.reasonEditFormFail(c, err)
 		return
 	}
-	inventoryDone(c, inventoryReasonBack(c))
+	response.Success(c, nil)
 }
 
 // InventoryReasonsBulkStatus 按现有更新权限逐条切换原因状态，不触碰名称和排序。
@@ -85,7 +86,6 @@ func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
 		return
 	}
 	projectID := form.ProjectID
-	back := inventoryReasonBack(c)
 	if !form.ValidStatus() {
 		inventoryFail(c, inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid))
 		return
@@ -116,9 +116,9 @@ func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
 	case skipped > 0:
 		inventoryFailMsg(c, inventoryBulkReasonPartial.WithArgs(strconv.Itoa(updated), strconv.Itoa(skipped)))
 	case updated > 0:
-		inventoryDone(c, back)
+		response.Success(c, nil)
 	default:
-		redirectWhere(c, back)
+		response.Success(c, nil)
 	}
 }
 

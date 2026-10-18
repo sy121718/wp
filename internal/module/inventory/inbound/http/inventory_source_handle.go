@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/response"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"strconv"
@@ -244,7 +245,7 @@ func (h *inventorySourcePageHandle) InventorySourceCreate(c *gin.Context) {
 		h.sourceFormFail(c, err)
 		return
 	}
-	inventoryDone(c, inventorySourceBack(c))
+	response.Success(c, nil)
 }
 
 // InventorySourceUpdate 修改货源（表单即最终状态：结算价留空 = 清空）。
@@ -263,7 +264,7 @@ func (h *inventorySourcePageHandle) InventorySourceUpdate(c *gin.Context) {
 		h.sourceFormFail(c, err)
 		return
 	}
-	inventoryDone(c, inventorySourceBack(c))
+	response.Success(c, nil)
 }
 
 // InventorySourceDelete 删除货源。
@@ -278,7 +279,7 @@ func (h *inventorySourcePageHandle) InventorySourceDelete(c *gin.Context) {
 		inventoryFail(c, err)
 		return
 	}
-	inventoryDone(c, inventorySourceBack(c))
+	response.Success(c, nil)
 }
 
 // InventorySourcesBulkDelete 批量删除货源。
@@ -291,7 +292,6 @@ func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	back := inventorySourceBack(c)
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := bulkids.Normalize(form.IDs)
 	if berr != nil {
@@ -313,10 +313,10 @@ func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
 	case skipped > 0:
 		inventoryFailMsg(c, inventoryBulkSourcePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		inventoryDone(c, back)
+		response.Success(c, nil)
 	default:
 		// 没有选中任何 id（批量条在无勾选时不会提交）：回列表。
-		redirectWhere(c, back)
+		response.Success(c, nil)
 	}
 }
 

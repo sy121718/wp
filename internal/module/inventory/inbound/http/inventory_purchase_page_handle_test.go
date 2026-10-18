@@ -118,7 +118,11 @@ func TestInventoryPurchaseCreateFailedSubmission(t *testing.T) {
 	}
 }
 
-func TestInventoryPurchaseCreateSuccessRedirect(t *testing.T) {
+// TestInventoryPurchaseCreateSuccessIsJSON 成功 = 200 + JSON，两种请求形态都一样。
+//
+// 后端不给跳转地址（不回 302 / HX-Redirect）：导航由模板的 data-write-nav 决定，
+// 页码与筛选本来就完整在地址栏里，服务端再算一遍就是第二份真相。
+func TestInventoryPurchaseCreateSuccessIsJSON(t *testing.T) {
 	for _, tc := range []struct {
 		name, hx string
 	}{
@@ -129,24 +133,17 @@ func TestInventoryPurchaseCreateSuccessRedirect(t *testing.T) {
 			c, rec := purchaseCreateContext(t, tc.hx, url.Values{"projectId": {"project-1"}})
 			(&inventoryPurchasePageHandle{inventory: &purchaseCreateFailService{}}).InventoryPurchaseCreate(c)
 			c.Writer.WriteHeaderNow()
-			if tc.hx != "" && rec.Code != http.StatusOK {
-				t.Errorf("htmx 状态码 = %d，want 200", rec.Code)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("成功状态码 = %d，want 200（%s）", rec.Code, rec.Body.String())
 			}
-			if tc.hx == "" && rec.Code != http.StatusFound {
-				t.Errorf("原生状态码 = %d，want 302", rec.Code)
+			if got := rec.Header().Get("HX-Redirect"); got != "" {
+				t.Errorf("成功不该给 HX-Redirect = %q", got)
 			}
-			if tc.hx != "" {
-				if got := rec.Header().Get("HX-Redirect"); got != inventoryPurchasesPath {
-					t.Errorf("htmx 成功跳转 = %q，want %q", got, inventoryPurchasesPath)
-				}
-				if rec.Header().Get("Location") != "" {
-					t.Error("htmx 成功不应使用 Location")
-				}
-				return
+			if got := rec.Header().Get("Location"); got != "" {
+				t.Errorf("成功不该给 Location = %q", got)
 			}
-			// 原生成功：302 回列表（PRG），不再渲染提示页。
-			if loc := rec.Header().Get("Location"); loc != inventoryPurchasesPath {
-				t.Errorf("原生成功 Location = %q，want %q", loc, inventoryPurchasesPath)
+			if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+				t.Errorf("Content-Type = %q，want application/json", ct)
 			}
 		})
 	}

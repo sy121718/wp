@@ -58,30 +58,3 @@ func newHXContext(t *testing.T, hxHeader, body string) (*gin.Context, *httptest.
 	return c, rec
 }
 
-// redirectWhere：htmx 档走 HX-Redirect + 200（不写 Location），原生档维持 302 + Location。
-func TestRedirectWhereSplitsHtmxAndNative(t *testing.T) {
-	const target = "/admin/inventory/warehouses?project=p1&err=x"
-
-	c, rec := newHXContext(t, "true", "")
-	redirectWhere(c, target)
-	if got := rec.Header().Get("HX-Redirect"); got != target {
-		t.Errorf("htmx 档 HX-Redirect = %q，want %q", got, target)
-	}
-	if loc := rec.Header().Get("Location"); loc != "" {
-		t.Errorf("htmx 档不该写 Location = %q", loc)
-	}
-	c.Writer.WriteHeaderNow() // 刷出延迟写的状态码（见上一条测试的说明）
-	if rec.Code != http.StatusOK {
-		t.Errorf("htmx 档状态码 = %d，want 200", rec.Code)
-	}
-
-	c2, rec2 := newHXContext(t, "", "")
-	redirectWhere(c2, target)
-	if got := rec2.Header().Get("Location"); got != target {
-		t.Errorf("原生档 Location = %q，want %q", got, target)
-	}
-	c2.Writer.WriteHeaderNow()
-	if rec2.Code != http.StatusFound {
-		t.Errorf("原生档状态码 = %d，want 302", rec2.Code)
-	}
-}

@@ -55,7 +55,7 @@
             <span class="card-title">{{if len(.Reasons) > 0}}{{ .["t"]("admin.inventory.reasons.titleLead", "变动原因字典（") }}{{len(.Reasons)}}{{ .["t"]("admin.inventory.reasons.titleTail", "）") }}{{else}}{{ .["t"]("admin.inventory.reasons.title", "变动原因字典") }}{{end}}</span>
         </div>
         {* 空数据仍保留表头；空态横跨勾选、六个数据列和操作列。 *}
-        <form method="post" action="/admin/inventory/reasons/bulk-status?{{ .ListQuery }}">
+        <form method="post" action="/admin/inventory/reasons/bulk-status?{{ .ListQuery }}" hx-post="/admin/inventory/reasons/bulk-status?{{ .ListQuery }}" hx-swap="none" data-write-nav>
         <input type="hidden" name="csrf_token" value="{{csrf}}"><input type="hidden" name="projectId" value="{{selectedProject}}">
         {{if isset(.Buttons["inventory.reason_update"])}}{{if len(.Reasons) > 0}}
         <div class="bulk-bar" data-bulk-bar hidden><span data-bulk-count data-bulk-template="{{ .["t"]("admin.common.bulk.selected", "已选 {n} 项") }}">{{ .["t"]("admin.common.bulk.selected", "已选 {n} 项") }}</span>
@@ -109,13 +109,13 @@
 
     {{if isset(.Buttons["inventory.reason_update"])}}
     {{range _, r := .Reasons}}
-    <form id="reason-status-{{r.ID}}" method="post" action="/admin/inventory/reason/update?{{ .ListQuery }}" hidden>
+    <form id="reason-status-{{r.ID}}" method="post" action="/admin/inventory/reason/update?{{ .ListQuery }}" hidden hx-post="/admin/inventory/reason/update?{{ .ListQuery }}" hx-swap="none" data-write-nav>
         <input type="hidden" name="csrf_token" value="{{csrf}}"><input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{r.ID}}"><input type="hidden" name="status" value="{{if r.Status == "active"}}disabled{{else}}active{{end}}">
     </form>
     <template id="tpl-reason-edit-{{r.ID}}">
         <div data-inventory-reason-host>
-            <form method="post" action="/admin/inventory/reason/update?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/reason/update?{{ .ListQuery }}">
+            <form method="post" action="/admin/inventory/reason/update?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/reason/update?{{ .ListQuery }}" hx-swap="none" data-write-nav>
                 <input type="hidden" name="csrf_token" value="{{csrf}}"><input type="hidden" name="projectId" value="{{selectedProject}}"><input type="hidden" name="id" value="{{r.ID}}"><input type="hidden" name="builtin" value="{{if r.IsBuiltin}}1{{else}}0{{end}}">
                 {{if !r.IsBuiltin}}<div class="form-group"><label class="form-label req">{{ .["t"]("admin.inventory.reasons.labelName", "原因名称") }}</label><input type="text" class="form-input" name="name" value="{{r.Name}}" required></div>{{end}}
                 <div class="form-group"><label class="form-label">{{ .["t"]("admin.inventory.ph.sort", "排序") }}</label><input type="number" class="form-input" name="sort" value="{{r.Sort}}" step="1"></div>
@@ -129,7 +129,7 @@
     {{if isset(.Buttons["inventory.reason_create"])}}
     <template id="tpl-reason-create">
         <div data-inventory-reason-host>
-        <form method="post" action="/admin/inventory/reason/create?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/reason/create?{{ .ListQuery }}">
+        <form method="post" action="/admin/inventory/reason/create?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/reason/create?{{ .ListQuery }}" hx-swap="none" data-write-nav>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">

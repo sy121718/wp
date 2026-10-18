@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/response"
 	"strconv"
 	"strings"
 
@@ -57,7 +58,7 @@ func (h *inventoryPageHandle) InventoryWarehouseCreate(c *gin.Context) {
 		h.warehouseFormFail(c, err)
 		return
 	}
-	inventoryDone(c, inventoryWarehouseBack(c))
+	response.Success(c, nil)
 }
 
 // InventoryWarehouseUpdate 修改仓库（名称 / 短码 / 类型 / 排序 / 状态 / 第三方对接配置）。
@@ -70,7 +71,7 @@ func (h *inventoryPageHandle) InventoryWarehouseUpdate(c *gin.Context) {
 		h.warehouseFormFail(c, err)
 		return
 	}
-	inventoryDone(c, inventoryWarehouseBack(c))
+	response.Success(c, nil)
 }
 
 // InventoryWarehouseDefault 切换默认仓（同工程唯一；「未指定仓库」的兜底）。
@@ -85,7 +86,7 @@ func (h *inventoryPageHandle) InventoryWarehouseDefault(c *gin.Context) {
 		inventoryFail(c, err)
 		return
 	}
-	inventoryDone(c, inventoryWarehouseBack(c))
+	response.Success(c, nil)
 }
 
 // InventoryWarehouseDelete 删除仓库（默认仓 / 有非零库存时服务端拒绝）。
@@ -99,7 +100,7 @@ func (h *inventoryPageHandle) InventoryWarehouseDelete(c *gin.Context) {
 		inventoryFail(c, err)
 		return
 	}
-	inventoryDone(c, inventoryWarehouseBack(c))
+	response.Success(c, nil)
 }
 
 // InventoryWarehousesBulkDelete 批量删除仓库。
@@ -113,7 +114,6 @@ func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
 		return
 	}
 	projectID := form.ProjectID
-	back := inventoryWarehouseBack(c)
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := bulkids.Normalize(form.IDs)
 	if berr != nil {
@@ -137,11 +137,11 @@ func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
 	case skipped > 0:
 		inventoryFailMsg(c, inventoryBulkWarehousePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		inventoryDone(c, back)
+		response.Success(c, nil)
 	default:
 		// 没有选中任何 id（批量条在无勾选时不会提交）：回列表，不渲染提示页 ——
 		// 与改造前一致，且提示页不能显示空串（RenderJump 会把空串落成归口文案）。
-		redirectWhere(c, back)
+		response.Success(c, nil)
 	}
 }
 

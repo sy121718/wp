@@ -140,7 +140,7 @@ func sameCostPtr(a, b *float64) bool {
 	return *a == *b
 }
 
-// TestExternalSKUEditSavesAndRenders 判据 1：合法外码写入成功、PRG 回列表、页面回显新值。
+// TestExternalSKUEditSavesAndRenders 判据 1：合法外码写入成功（JSON）、页面回显新值。
 func TestExternalSKUEditSavesAndRenders(t *testing.T) {
 	engine, f := newExternalSKUEditEngine(t)
 	if engine == nil {
@@ -152,12 +152,8 @@ func TestExternalSKUEditSavesAndRenders(t *testing.T) {
 	bare := bareSKU(v.SKUCode, wh.Code)
 
 	rec := postExternalSKU(engine, f.projectID, wh.ID, v.ID, bare, "EXT-EDIT-1")
-	// 成功：回列表（302 + Location），不再有提示页。
+	// 成功：200 + JSON，不跳转 —— 页面自己重载回当前地址，上下文（工程 / SKU）天然还在。
 	assertInventoryJump(t, rec, "ok")
-	// 回跳地址保留工程与当前 SKU 上下文（表单 action 带回来、BackPath 读回）。
-	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "project="+f.projectID) || !strings.Contains(loc, "sku="+url.QueryEscape(bare)) {
-		t.Fatalf("成功回跳应保留工程与当前 SKU 上下文（裸码 %q）：%s", bare, loc)
-	}
 	if got := externalSKUOf(t, f, v.ID, wh.ID); got != "EXT-EDIT-1" {
 		t.Fatalf("真源外码应写为 EXT-EDIT-1，实际 %q", got)
 	}

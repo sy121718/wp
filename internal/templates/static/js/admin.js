@@ -319,6 +319,23 @@
         document.body.addEventListener('htmx:responseError', function (e) { report(e, 'response'); });
         document.body.addEventListener('htmx:sendError', function (e) { report(e, 'network'); });
         document.body.addEventListener('htmx:timeout', function (e) { report(e, 'timeout'); });
+
+        // 写动作成功：后端只回 {code,message,data}，**不跳转、不给 URL**。导航是前端的事 ——
+        // 写表单在模板里用 data-write-nav 声明结果：有值就去那个地址，空值就重载当前页。
+        // 为什么不让服务端算回跳地址：页码与筛选本来就完整在地址栏里，那是用户眼里的当前
+        // 状态；服务端按同一批键再推一遍，等于把前端已有的东西实现第二遍，两处迟早分叉。
+        // hx-swap="none" 与之配套：成功响应是 JSON，不能让 htmx 把它 swap 进目标节点。
+        document.body.addEventListener('htmx:afterRequest', function (e) {
+            var detail = (e && e.detail) || {};
+            var xhr = detail.xhr;
+            var elt = detail.elt;
+            if (!xhr || !elt || xhr.status < 200 || xhr.status >= 300) return;
+            var holder = elt.closest ? elt.closest('[data-write-nav]') : null;
+            if (!holder) return;
+            var nav = holder.getAttribute('data-write-nav') || '';
+            if (!nav) { window.location.reload(); return; }
+            window.location.assign(nav);
+        });
     })();
 })();
 

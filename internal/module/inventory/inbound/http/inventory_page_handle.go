@@ -6,7 +6,6 @@ import (
 	"go_wp/internal/shell"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -381,22 +380,4 @@ func parseIntOr(s string, fallback int) int {
 // 两个出口必须认同同一个信号 —— 各写一份就会出现「某个模块的失败分档静默失效」。
 func isHXRequest(c *gin.Context) bool {
 	return reqparams.IsHXRequest(c)
-}
-
-// redirectWhere 页面写动作的 PRG 出口。
-//
-// 原生表单走 302；HTMX 请求走 **HX-Redirect**：htmx 的 XHR 会自己跟随 302，最终响应里
-// 已经读不到 Location，只有响应头上的 HX-Redirect 能让它整页跳转（否则会把整页 HTML
-// 塞进抽屉里）。两条路的终点是同一个 URL，页面壳与提示位完全一致。
-//
-// 写动作只有两种结论（见 inventory_notice_handle.go）：成功 = 本函数回列表；失败 = JSON
-// （inventoryFail），不渲染任何模板 —— 所以写表单不需要 hx-target / hx-swap：
-// 成功由响应头 HX-Redirect 决定，失败 htmx 对 4xx/5xx 不 swap。
-func redirectWhere(c *gin.Context, target string) {
-	if isHXRequest(c) {
-		c.Header("HX-Redirect", target)
-		c.Status(http.StatusOK)
-		return
-	}
-	c.Redirect(http.StatusFound, target)
 }

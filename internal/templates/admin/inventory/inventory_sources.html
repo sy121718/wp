@@ -105,7 +105,7 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，提交时浏览器直接
            带上所有勾中的 ids。行内删除表单因此挪到表格外 —— HTML 不允许 form 嵌套，
            嵌套时浏览器会丢弃内层 form 的开始标签。 *}
-        <form method="post" action="/admin/inventory/sources/bulk-delete?{{ .ListQuery }}">
+        <form method="post" action="/admin/inventory/sources/bulk-delete?{{ .ListQuery }}" hx-post="/admin/inventory/sources/bulk-delete?{{ .ListQuery }}" hx-swap="none" data-write-nav>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
@@ -197,7 +197,7 @@
         {* 行内删除表单放表格外（同一个 form 内不能再嵌 form），按钮用 form="<id>" 关联。 *}
         {{range _, s := .Sources}}
         {{if isset(.Buttons["inventory.source_delete"])}}
-        <form id="src-del-{{s.ID}}" method="post" action="/admin/inventory/sources/delete?{{ .ListQuery }}" class="hidden-form">
+        <form id="src-del-{{s.ID}}" method="post" action="/admin/inventory/sources/delete?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/sources/delete?{{ .ListQuery }}" hx-swap="none" data-write-nav>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{s.ID}}">
@@ -253,7 +253,7 @@
     {{if isset(.Buttons["inventory.source_create"])}}
     <template id="tpl-source-create">
         <div data-inventory-source-host>
-        <form method="post" action="/admin/inventory/sources/create?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/create?{{ .ListQuery }}">
+        <form method="post" action="/admin/inventory/sources/create?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/create?{{ .ListQuery }}" hx-swap="none" data-write-nav>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
@@ -305,7 +305,7 @@
     {{range _, s := .Sources}}
     <template id="tpl-source-edit-{{s.ID}}">
         <div data-inventory-source-host>
-        <form method="post" action="/admin/inventory/sources/update?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/update?{{ .ListQuery }}">
+        <form method="post" action="/admin/inventory/sources/update?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/sources/update?{{ .ListQuery }}" hx-swap="none" data-write-nav>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{s.ID}}">

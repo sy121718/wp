@@ -204,7 +204,7 @@
                 <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.unitPrice", "单价") }} {{l.UnitPrice}}</span>
             </div>
             {{if l.Open}}
-            <form method="post" action="/admin/inventory/purchases/receipt?{{ .ListQuery }}" class="form-inline">
+            <form method="post" action="/admin/inventory/purchases/receipt?{{ .ListQuery }}" class="form-inline" hx-post="/admin/inventory/purchases/receipt?{{ .ListQuery }}" hx-swap="none" data-write-nav>
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
                 <input type="hidden" name="orderId" value="{{o.ID}}">
@@ -238,7 +238,7 @@
        成本价必填且非负（服务端同样拒绝：ErrProductionCostInvalid），数量为正整数。 *}
     {{if isset(.Buttons["inventory.purchase_production"])}}
     <template id="tpl-production-inbound">
-        <form method="post" action="/admin/inventory/purchases/production?{{ .ListQuery }}" class="form-stack">
+        <form method="post" action="/admin/inventory/purchases/production?{{ .ListQuery }}" class="form-stack" hx-post="/admin/inventory/purchases/production?{{ .ListQuery }}" hx-swap="none" data-write-nav>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="requestId" value="{{.ProductionRequestID}}">

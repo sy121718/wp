@@ -20,6 +20,7 @@ import (
 	ginrender "github.com/gin-gonic/gin/render"
 
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	"go_wp/pkg/response"
 	json "go_wp/pkg/jsonx"
 )
 
@@ -122,30 +123,39 @@ func TestInventoryDrawerFailureReturnsJSON(t *testing.T) {
 	}
 }
 
-// TestInventoryWriteSuccessRedirects 成功回列表：htmx 走 HX-Redirect，原生走 302 + Location。
+// TestInventoryWriteSuccessIsJSON 写动作成功 = {code:200,...}，两种请求形态都一样。
 //
-// 成功不再渲染提示页 —— 列表已经变了，回列表本身就是回执。
-func TestInventoryWriteSuccessRedirects(t *testing.T) {
-	back := inventoryWarehousesPath + "?project=p1"
-
-	c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, true)
-	inventoryDone(c, back)
-	c.Writer.WriteHeaderNow()
-	if rec.Code != http.StatusOK || rec.Header().Get("HX-Redirect") != back {
-		t.Fatalf("htmx 成功跳转: %d %q", rec.Code, rec.Header().Get("HX-Redirect"))
-	}
-	if view.name != "" {
-		t.Fatalf("成功不该渲染模板，实际 %q", view.name)
-	}
-
-	c2, rec2, view2 := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, false)
-	inventoryDone(c2, back)
-	c2.Writer.WriteHeaderNow()
-	if rec2.Code != http.StatusFound || rec2.Header().Get("Location") != back {
-		t.Fatalf("原生成功跳转: %d %q", rec2.Code, rec2.Header().Get("Location"))
-	}
-	if view2.name != "" {
-		t.Fatalf("成功不该渲染模板（原生），实际 %q", view2.name)
+// 后端不给 URL：导航是前端的事（模板 data-write-nav，无值 = 重载当前页）。
+// 服务端算「回哪个 URL」等于把筛选与页码再实现一遍，而那两份状态本来就在地址栏里。
+func TestInventoryWriteSuccessIsJSON(t *testing.T) {
+	for _, hx := range []bool{true, false} {
+		c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, hx)
+		response.Success(c, nil)
+		c.Writer.WriteHeaderNow()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("hx=%v 成功状态码 = %d，want 200", hx, rec.Code)
+		}
+		if got := rec.Header().Get("HX-Redirect"); got != "" {
+			t.Fatalf("hx=%v 成功不该给跳转地址，HX-Redirect = %q", hx, got)
+		}
+		if got := rec.Header().Get("Location"); got != "" {
+			t.Fatalf("hx=%v 成功不该给 Location = %q", hx, got)
+		}
+		if view.name != "" {
+			t.Fatalf("hx=%v 成功不该渲染模板，实际 %q", hx, view.name)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+			t.Fatalf("hx=%v Content-Type = %q，want application/json", hx, ct)
+		}
+		var body struct {
+			Code int `json:"code"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("hx=%v 响应体不是 JSON：%v（%q）", hx, err, rec.Body.String())
+		}
+		if body.Code != 200 {
+			t.Fatalf("hx=%v code = %d，want 200", hx, body.Code)
+		}
 	}
 }
 

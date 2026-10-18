@@ -8,6 +8,7 @@ import (
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/response"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
@@ -259,7 +260,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseCreate(c *gin.Context) {
 		h.purchaseCreateFail(c, err)
 		return
 	}
-	inventoryDone(c, inventoryPurchaseBack(c))
+	response.Success(c, nil)
 }
 
 // InventoryPurchaseReceipt 登记某一行（或多行）采购收货。
@@ -274,7 +275,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseReceipt(c *gin.Context) {
 		inventoryFail(c, err)
 		return
 	}
-	inventoryDone(c, inventoryPurchaseBack(c))
+	response.Success(c, nil)
 }
 
 // InventoryPurchaseProduction 自家工厂生产入库（无采购单，成本价手工填写）。
@@ -292,7 +293,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseProduction(c *gin.Context
 		inventoryFail(c, err)
 		return
 	}
-	inventoryDone(c, inventoryPurchaseBack(c))
+	response.Success(c, nil)
 }
 
 // —— 页面取数（视图组装：模板不做逻辑）——

@@ -20,7 +20,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/shell"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )
@@ -57,28 +56,6 @@ func inventoryQueryFromRequest(c *gin.Context, keys ...string) string {
 	return out.Encode()
 }
 
-// —— 回跳地址（每页一个，键表与上面同一份）——
-
-func inventoryStockBack(c *gin.Context) string {
-	return shell.BackPath(c, inventoryPagePath, inventoryStockBackKeys...)
-}
-
-func inventoryWarehouseBack(c *gin.Context) string {
-	return shell.BackPath(c, inventoryWarehousesPath, inventoryWarehouseBackKeys...)
-}
-
-func inventoryReasonBack(c *gin.Context) string {
-	return shell.BackPath(c, inventoryReasonsPath, inventoryReasonBackKeys...)
-}
-
-func inventorySourceBack(c *gin.Context) string {
-	return shell.BackPath(c, inventorySourcesPath, inventorySourceBackKeys...)
-}
-
-func inventoryPurchaseBack(c *gin.Context) string {
-	return shell.BackPath(c, inventoryPurchasesPath, inventoryPurchaseBackKeys...)
-}
-
 // inventoryMsgText 把一句文案的事实取成当前语言文本（页面槽位 / 片段槽位用）。
 func inventoryMsgText(c *gin.Context, m facing.Msg) string { return text.MsgText(c, m) }
 
@@ -86,8 +63,10 @@ func inventoryMsgText(c *gin.Context, m facing.Msg) string { return text.MsgText
 //
 // 两种形态，都由本文件给出，控制器里没有第三种：
 //
-//   · **成功**：回到列表（redirectWhere）—— htmx 走 HX-Redirect、原生走 302。
-//     列表本身已经变了，这就是回执；不再有「成功提示页」那一跳。
+//   · **成功**：{code:200,message,data}（response.Success）—— **不跳转、不给 URL**。
+//     导航是前端的事：写表单在模板里用 data-write-nav 声明结果（无值 = 重载当前页），
+//     admin.js 在 htmx:afterRequest 里照办。服务端算「回哪个 URL」等于把筛选与页码
+//     再实现一遍 —— 而浏览器地址栏里本来就有那一份，且它才是用户眼里的当前状态。
 //   · **失败**：4xx / 5xx + JSON（{code,message,data}）。业务错误 400、其余 500，
 //     内部原文只进日志、对外只给归口文案。
 //
@@ -95,11 +74,6 @@ func inventoryMsgText(c *gin.Context, m facing.Msg) string { return text.MsgText
 // （OK / Msg / MsgArgs / Back / BackText 五个字段，每个写动作各填一遍），而它承载的信息
 // 与「回列表」完全重合。失败也不需要它 —— htmx 对 4xx 不 swap，admin.js 弹 toast，
 // 抽屉与输入原样保留。
-
-// inventoryDone 写动作成功：回列表（不渲染任何页面）。
-func inventoryDone(c *gin.Context, back string) {
-	redirectWhere(c, back)
-}
 
 // inventoryFail 写动作失败：状态码由错误自己声明（pkg/facing.Statused），文案走同一条链。
 //

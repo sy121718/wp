@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/response"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -30,7 +31,7 @@ func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
 			inventoryFail(c, err)
 			return
 		}
-		inventoryDone(c, inventoryStockBack(c))
+		response.Success(c, nil)
 	}
 
 	if !form.ValidDirection() {
@@ -71,7 +72,7 @@ func (h *inventoryPageHandle) InventoryExternalSKUUpdate(c *gin.Context) {
 		inventoryFail(c, err)
 		return
 	}
-	inventoryDone(c, inventoryStockBack(c))
+	response.Success(c, nil)
 }
 
 // InventoryStockTrackingUpdate 库存页行内编辑：切换某 (仓库, 变体) 行的跟踪开关并写入数量。
@@ -100,7 +101,7 @@ func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
 			inventoryFail(c, err)
 			return
 		}
-		inventoryDone(c, inventoryStockBack(c))
+		response.Success(c, nil)
 	}
 
 	// 跟踪态必须显式给数量：无限态的数量框是 disabled 的（浏览器不提交该字段），
