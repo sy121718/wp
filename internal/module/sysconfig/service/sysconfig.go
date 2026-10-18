@@ -8,7 +8,6 @@ package sysconfigservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -106,7 +105,7 @@ func groupOf(e *sysconfigmodel.SysConfigEntity) *sysconfigdto.Group {
 func (s *Service) GetGroup(ctx context.Context, groupKey string) (res *sysconfigdto.Group, err error) {
 	key := strings.TrimSpace(groupKey)
 	if key == "" {
-		return nil, errors.New(sysconfigenums.ErrInvalidParam)
+		return nil, sysconfigenums.Err(sysconfigenums.ErrInvalidParam)
 	}
 	e, err := s.m.FindByKey(ctx, key)
 	if err != nil {
@@ -144,15 +143,15 @@ func (s *Service) ListGroups(ctx context.Context) (res []sysconfigdto.Group, err
 // 归因查询发生在写失败之后、只用于措辞，不参与任何写决策。
 func (s *Service) SetGroup(ctx context.Context, req *sysconfigdto.SetGroupReq) (res *sysconfigdto.Group, err error) {
 	if req == nil {
-		return nil, errors.New(sysconfigenums.ErrInvalidParam)
+		return nil, sysconfigenums.Err(sysconfigenums.ErrInvalidParam)
 	}
 	key := strings.TrimSpace(req.GroupKey)
 	if key == "" || len(req.Data) == 0 {
-		return nil, errors.New(sysconfigenums.ErrInvalidParam)
+		return nil, sysconfigenums.Err(sysconfigenums.ErrInvalidParam)
 	}
 	if req.Version <= 0 {
 		// 不带版本 = 用手里这份覆盖别人的改动，直接拒绝而不是「省略即强制覆盖」。
-		return nil, errors.New(sysconfigenums.ErrVersionRequired)
+		return nil, sysconfigenums.Err(sysconfigenums.ErrVersionRequired)
 	}
 
 	rows, err := s.m.UpdateDataWithVersion(ctx, key, req.Version, sysconfigmodel.JSONMap(req.Data), req.UpdateBy)
@@ -194,7 +193,7 @@ func (s *Service) reportNoRows(ctx context.Context, groupKey string, expectedVer
 	current, found, err := s.m.VersionOf(ctx, groupKey)
 	if err != nil {
 		logger.Scene("sysconfig").With("group", groupKey).Error(err, "系统配置保存冲突归因失败（按版本冲突处理）")
-		return errors.New(sysconfigenums.ErrVersionConflict)
+		return sysconfigenums.Err(sysconfigenums.ErrVersionConflict)
 	}
 	if !found {
 		return sysconfigcontract.ErrGroupNotFound
@@ -204,7 +203,7 @@ func (s *Service) reportNoRows(ctx context.Context, groupKey string, expectedVer
 		With("expectedVersion", expectedVersion).
 		With("currentVersion", current).
 		Warn("系统配置保存被乐观锁拒绝（库内版本已变，需重新读取后提交）")
-	return errors.New(sysconfigenums.ErrVersionConflict)
+	return sysconfigenums.Err(sysconfigenums.ErrVersionConflict)
 }
 
 // SetGroups 一次保存多组配置（**单事务**）。
@@ -217,17 +216,17 @@ func (s *Service) reportNoRows(ctx context.Context, groupKey string, expectedVer
 // 冲突一律打回给人（「刷新后重试」），不自动合并、不静默覆盖、不重试。
 func (s *Service) SetGroups(ctx context.Context, req *sysconfigdto.SetGroupsReq) (res []sysconfigdto.Group, err error) {
 	if req == nil || len(req.Groups) == 0 {
-		return nil, errors.New(sysconfigenums.ErrInvalidParam)
+		return nil, sysconfigenums.Err(sysconfigenums.ErrInvalidParam)
 	}
 	keys := make([]string, 0, len(req.Groups))
 	for i := range req.Groups {
 		g := &req.Groups[i]
 		key := strings.TrimSpace(g.GroupKey)
 		if key == "" || len(g.Data) == 0 {
-			return nil, errors.New(sysconfigenums.ErrInvalidParam)
+			return nil, sysconfigenums.Err(sysconfigenums.ErrInvalidParam)
 		}
 		if g.Version <= 0 {
-			return nil, errors.New(sysconfigenums.ErrVersionRequired)
+			return nil, sysconfigenums.Err(sysconfigenums.ErrVersionRequired)
 		}
 		keys = append(keys, key)
 	}
@@ -247,12 +246,12 @@ func (s *Service) SetGroups(ctx context.Context, req *sysconfigdto.SetGroupsReq)
 				_, found, verr := s.m.VersionOfTx(tx, key)
 				if verr != nil {
 					logger.Scene("sysconfig").With("group", key).Error(verr, "多组保存冲突归因失败（按版本冲突处理）")
-					return errors.New(sysconfigenums.ErrVersionConflict)
+					return sysconfigenums.Err(sysconfigenums.ErrVersionConflict)
 				}
 				if !found {
-					return errors.New(sysconfigenums.ErrGroupNotFound)
+					return sysconfigenums.Err(sysconfigenums.ErrGroupNotFound)
 				}
-				return errors.New(sysconfigenums.ErrVersionConflict)
+				return sysconfigenums.Err(sysconfigenums.ErrVersionConflict)
 			}
 		}
 		return nil

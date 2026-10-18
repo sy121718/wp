@@ -5,6 +5,8 @@
 // 调用点按 key 取词失败即回落到中文兜底。
 package sysconfigenums
 
+import "go_wp/pkg/facing"
+
 // 成功消息。
 const (
 	// MsgGroupSaved 配置保存成功。
@@ -30,11 +32,6 @@ const (
 	// 冲突一律**打回给人**：不自动合并、不静默覆盖、不重试 —— 两个管理员改同一组
 	// 的不同键时，后写者静默胜出正是本列要消灭的故障（迁移 484 文件头）。
 	ErrVersionConflict = "ErrVersionConflict"
-	// ErrInternal 未归类的内部错误（SQL / 表名 / 约束名等）对外归口文案。
-	//
-	// 值刻意带模块前缀：sys_i18n 的主键是 (item_key, lang)，裸 key "ErrInternal"
-	// 已被别的批占用。
-	ErrInternal = "sysconfig.err.internal" // 操作失败，请稍后重试（细节只进日志）
 )
 
 // 页面标题（layout 的 <title>）：值为 sys_i18n key，词条由迁移 520 seed。
@@ -57,12 +54,26 @@ const (
 	AdminSystemErrCountryUnknown = "admin.system.err.country_unknown"
 )
 
-// SysConfigFacingMessages 可以原样展示给前端的业务文案（**白名单**）。
+// errFallbacks 业务错误的**中文兜底**：声明处与 key 成对给出，出口只调一次共享判据
+// pkg/facing.FactOf。
 //
-// 命中 → 原样透出；未命中 → inbound 的归口助手记结构化日志并返回 ErrInternal。
-// 方向是安全的：漏写一条只会让前端看到一句通用提示（一眼可见），而不会把 PostgreSQL
-// 原文（表名 / 约束名 / SQLSTATE）透出去。ErrInternal 本身不进白名单 —— 它是未命中时的
-// 返回值，不是业务文案。对账测试见 sysconfig_enums_test.go。
-var SysConfigFacingMessages = []string{
-	ErrInvalidParam, ErrVersionRequired, ErrGroupNotFound, ErrVersionConflict,
+// 为什么绑在声明处：兜底原文写在出口那一层时，「加一条业务错误」要改两个包，而第二个包
+// （inbound/http）在 service 里完全看不见 —— 二开的人加完常量，页面上显示的是裸 key，
+// 还不知道该去哪补那句话。原先的那份 SysConfigFacingMessages 白名单就是这个形态，
+// 已删除：可透出性判据只有一份（pkg/facing.IsBusinessKey），本表只回答「显示什么」。
+//
+// 表与本人只增不减：新增一个 Err* 常量必须同时给一句中文，由 sysconfig_enums_test.go 对账。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:    "参数不合法：请检查后重试。",
+	ErrVersionRequired: "缺少版本号：整组保存必须带上当前版本，避免覆盖别人的改动。",
+	ErrGroupNotFound:   "配置分组不存在",
+	ErrVersionConflict: "配置已被其他管理员改过：请刷新后重新提交。",
+}
+
+// Err 声明一条自带对外文案的业务错误。
+//
+// 复合错误用 fmt.Errorf("%w: %s", Err(key), 明细)：facing.FactOf 按 ASCII 冒号切出明细段，
+// 并保留 errors.Is / errors.As 能拿到的 key 与兜底。
+func Err(key string) error {
+	return facing.New(key, errFallbacks[key])
 }

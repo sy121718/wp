@@ -82,7 +82,6 @@ var pendingControllerFiles = map[string]bool{
 	"internal/module/project/inbound/http/project_page.go":                    true,
 	"internal/module/publication/inbound/http/seo_audit_result.go":            true,
 	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":         true,
-	"internal/module/sysconfig/inbound/http/sysconfig_err.go":                 true,
 	"internal/module/user/inbound/http/customer_bulk_write.go":                true,
 	"internal/module/user/inbound/http/user_page.go":                          true,
 	"internal/module/workbench/inbound/http/router.go":                        true,

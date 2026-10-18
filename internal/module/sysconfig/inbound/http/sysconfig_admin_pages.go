@@ -104,11 +104,11 @@ func (h *AdminHandle) SystemPage(c *gin.Context) {
 	if errText == "" {
 		switch {
 		case lerr != nil:
-			errText = sysconfigErrText(c, lerr)
+			errText = response.MessageOf(c, "sysconfig", lerr)
 		case cerr != nil:
-			errText = sysconfigErrText(c, cerr)
+			errText = response.MessageOf(c, "sysconfig", cerr)
 		case coerr != nil:
-			errText = sysconfigErrText(c, coerr)
+			errText = response.MessageOf(c, "sysconfig", coerr)
 		}
 	}
 	c.HTML(http.StatusOK, "admin/system/settings", adminui.Prepare(c, gin.H{
@@ -167,11 +167,14 @@ func (h *AdminHandle) APISystemSave(c *gin.Context) {
 		},
 		UpdateBy: int64(builtin.CurrentUserID(c)),
 	}); err != nil {
+		// 业务拒绝（参数 / 版本 / 分组不存在 / 乐观锁冲突）给 409：页面要告诉操作者
+		// 「这不是系统坏了，是你手里的版本和库里不一致」；其余（SQL / 约束名等）一律 500，
+		// 原文只进日志。判据用共享的那一份，不再按 key 查表。
 		status := http.StatusInternalServerError
-		if sysconfigFacingMessages[err.Error()] {
+		if response.IsBusinessError(err) {
 			status = http.StatusConflict
 		}
-		response.ErrorWithMessage(c, status, sysconfigErrText(c, err))
+		response.ErrorWithMessage(c, status, response.MessageOf(c, "sysconfig", err))
 		return
 	}
 	response.SuccessWithMessage(c, i18n.Translate(sysconfigenums.AdminSystemSaved, "系统设置已保存（全局默认值立即对读取方生效）", response.RequestLanguage(c)))
@@ -186,7 +189,7 @@ func (h *AdminHandle) loadGroup(c *gin.Context, key string) (groupView, string) 
 			return groupView{Key: key, Data: map[string]any{}},
 				i18n.TranslateFunc(response.RequestLanguage(c))(sysconfigenums.AdminSystemGroupMissing, "配置分组缺失，请先执行数据库迁移（make migrate）后再打开本页")
 		}
-		return groupView{Key: key, Data: map[string]any{}}, sysconfigErrText(c, err)
+		return groupView{Key: key, Data: map[string]any{}}, response.MessageOf(c, "sysconfig", err)
 	}
 	return groupView{Key: g.Key, Version: g.Version, Data: g.Data}, ""
 }
@@ -218,21 +221,21 @@ func (h *AdminHandle) validateOptions(c *gin.Context, lang, mode, country, curre
 	}
 	langs, err := h.dict.ListDictOptions(ctx, "language")
 	if err != nil {
-		return http.StatusInternalServerError, sysconfigErrText(c, err)
+		return http.StatusInternalServerError, response.MessageOf(c, "sysconfig", err)
 	}
 	if !hasCode(langs, lang) {
 		return http.StatusBadRequest, t(sysconfigenums.AdminSystemErrLangUnknown, "选择的默认语言不在字典里（可能已被停用），请重新选择")
 	}
 	currencies, err := h.dict.ListDictOptions(ctx, "currency")
 	if err != nil {
-		return http.StatusInternalServerError, sysconfigErrText(c, err)
+		return http.StatusInternalServerError, response.MessageOf(c, "sysconfig", err)
 	}
 	if !hasCode(currencies, currency) {
 		return http.StatusBadRequest, t(sysconfigenums.AdminSystemErrCurrencyUnknown, "选择的默认货币不在字典里（可能已被停用），请重新选择")
 	}
 	countries, err := h.dict.ListCountryOptions(ctx, response.RequestLanguage(c))
 	if err != nil {
-		return http.StatusInternalServerError, sysconfigErrText(c, err)
+		return http.StatusInternalServerError, response.MessageOf(c, "sysconfig", err)
 	}
 	if !hasCode2(countries, country) {
 		return http.StatusBadRequest, t(sysconfigenums.AdminSystemErrCountryUnknown, "选择的默认国家不在字典里（可能已被停用），请重新选择")
