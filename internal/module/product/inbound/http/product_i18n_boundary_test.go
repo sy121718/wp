@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-var controllerTranslatePattern = regexp.MustCompile(`adminui\.MsgText\(|adminui\.TranslateArgs\(|shell\.TranslateFor\(`)
+var controllerTranslatePattern = regexp.MustCompile(`text\.MsgText\(|text\.TranslateArgs\(|shell\.TranslateFor\(`)
 
 // TestControllerI18nBoundary 商品模块控制器取词边界（internal/module/CLAUDE.md §inbound/http）。
 //
 // 判据：控制器只交**文案事实**（`adminui.Msg` = `adminui.Msg{Key, Fallback, Args}`），
-// 取词在模板里（`{{tr := .["t"]}}` / `{{tf := .["tf"]}}`）；片段一律经 `adminui.PrepareBare`。
+// 取词在模板里（`{{tr := .["t"]}}` / `{{tf := .["tf"]}}`）；片段一律经 `text.Inject`。
 // 理由是二开：后台是 Go 渲染、词条在 sys_i18n 里，控制器里写「错误 → 文案」的映射，
 // 等于加一门语言要回头改控制器（这是本模块 41 处取词收口时的起点）。
 //
@@ -41,7 +41,7 @@ func TestControllerI18nBoundary(t *testing.T) {
 	for file, lines := range hits {
 		if _, ok := allow[file]; !ok {
 			t.Errorf("%s 出现控制器取词（第 %s 行）—— 控制器只交事实、取词在模板（片段经 "+
-				"adminui.PrepareBare）；确属例外就登记进 allow 并写明属于哪一类",
+				"text.Inject）；确属例外就登记进 allow 并写明属于哪一类",
 				file, strings.Join(lines, ", "))
 		}
 	}

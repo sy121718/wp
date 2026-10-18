@@ -2,7 +2,6 @@ package producthttp
 
 import (
 	"errors"
-	"go_wp/internal/adminui"
 	pagecontract "go_wp/internal/module/page/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -10,7 +9,9 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/shell"
+	"go_wp/internal/text"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -121,7 +122,7 @@ func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) (any, err
 // 失败 → 400 + 逐行结论拼成的一条 message，就地显示在这张表单的结论行里。
 //
 // 「逐行结论」为什么不进 data：基座只渲染 message。把事实在这里取词拼好，
-// 与模板注入的 tf 是同一份实现（adminui.MsgText），两条出口不会给出不同的句子。
+// 与模板注入的 tf 是同一份实现（text.MsgText），两条出口不会给出不同的句子。
 func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	req, ok := binding.JSON[productdto.TranslationSaveReq](c)
 	if !ok {
@@ -134,7 +135,7 @@ func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	if rerr != nil {
 		logger.Scene("product").With("project", projectID).With("product", productID).
 			Error(rerr, "商品翻译工作台保存前重建数据失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgText(c, adminui.InternalMsg()))
+		response.ErrorWithMessage(c, http.StatusInternalServerError, text.MsgText(c, text.InternalMsg()))
 		return
 	}
 	// 三组并行数组原样带过去：长度对齐与逐行校验都在读模型侧做（那里才有候选原文）。
@@ -149,22 +150,22 @@ func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	if err != nil {
 		logger.Scene("product").With("project", projectID).With("product", productID).
 			Error(err, "商品翻译工作台保存失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgText(c, adminui.InternalMsg()))
+		response.ErrorWithMessage(c, http.StatusInternalServerError, text.MsgText(c, text.InternalMsg()))
 		return
 	}
 	if !view.Saved {
 		// 校验没过 / 语言不在启用清单 / 写入失败：三种都由读模型折成逐行（或页面级）事实。
 		status := http.StatusBadRequest
-		text := productTranslationErrorsText(c, view.Errors)
-		if text == "" {
+		body := productTranslationErrorsText(c, view.Errors)
+		if body == "" {
 			// 没有逐行事实却也没保存成功 = 读模型侧的意外状态：按内部错误归口，不给空 message。
 			status = http.StatusInternalServerError
-			text = adminui.MsgText(c, adminui.InternalMsg())
+			body = text.MsgText(c, text.InternalMsg())
 		}
-		response.ErrorWithMessage(c, status, text)
+		response.ErrorWithMessage(c, status, body)
 		return
 	}
-	response.SuccessWithMessage(c, adminui.MsgText(c, productTranslationsSavedMsg(c, view.Written)))
+	response.SuccessWithMessage(c, text.MsgText(c, productTranslationsSavedMsg(c, view.Written)))
 }
 
 // productTranslationErrorsText 把逐行错误事实拼成一条可读结论。
@@ -177,13 +178,13 @@ func productTranslationErrorsText(c *gin.Context, errs []productdto.TranslationR
 	}
 	parts := make([]string, 0, len(errs))
 	for _, e := range errs {
-		text := adminui.MsgText(c, e.Msg)
+		body := text.MsgText(c, e.Msg)
 		if e.Label != "" {
-			text = e.Label + "：" + text
+			body = e.Label + "：" + body
 		}
-		parts = append(parts, text)
+		parts = append(parts, body)
 	}
-	title := adminui.MsgText(c, adminui.Msg{
+	title := text.MsgText(c, facing.Msg{
 		Key: productenums.ProductTranslationsErrorsTitle, Fallback: "未保存：请先修正以下问题"})
 	return title + "：" + strings.Join(parts, "；")
 }
@@ -197,11 +198,11 @@ func productTranslationErrorsText(c *gin.Context, errs []productdto.TranslationR
 // （i18n.FillTranslate），不是 `%s`；而模板注入的 tf 只有 `%s` 位置参数，一段 key + Args
 // 表达不了它。要收成一条 `%s` 词条属于独立的文案迁移（page 模块已按迁移 613 收掉了，
 // product 这一条还没做），不夹在「控制器不取词」这一步里做。
-func productTranslationsSavedMsg(c *gin.Context, written int) adminui.Msg {
+func productTranslationsSavedMsg(c *gin.Context, written int) facing.Msg {
 	if written > 0 {
-		return adminui.Msg{Fallback: i18n.FillTranslate(shell.TranslateFor(c), productenums.ProductTranslationsSavedNote,
+		return facing.Msg{Fallback: i18n.FillTranslate(shell.TranslateFor(c), productenums.ProductTranslationsSavedNote,
 			"已保存 {n} 条译文；译文变更已标记待重建（下次构建生效）。",
 			map[string]string{"n": strconv.Itoa(written)})}
 	}
-	return adminui.Msg{Key: productenums.ProductTranslationsSavedNone, Fallback: "没有需要写入的变化。"}
+	return facing.Msg{Key: productenums.ProductTranslationsSavedNone, Fallback: "没有需要写入的变化。"}
 }

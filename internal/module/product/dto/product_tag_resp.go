@@ -48,7 +48,7 @@ type TagProductResp struct {
 // 映射表放在这里，控制器就只剩「读一页 → 填行 → 渲染」。
 //
 // EditForm 是抽屉片段的数据（product_tag_form.html 的数据根）。它必须留在
-// **渲染期**装配：里面要 csrf_token（请求态）与 t/tf（由 adminui.PrepareBare 注入），
+// **渲染期**装配：里面要 csrf_token（请求态）与 t/tf（由 text.Inject 注入），
 // 而 Jet 在 struct 上不支持 `.["t"]`，所以那一层只能是 map。
 type TagRowResp struct {
 	ID   string

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go_wp/internal/adminui"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationenums "go_wp/internal/module/presentation/enums"
@@ -15,6 +14,7 @@ import (
 	dtoutbound "go_wp/internal/module/product/outbound/detailtemplate"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
@@ -69,7 +69,7 @@ func (h *ProductHandle) ReapplyDetailTemplatePreset(c *gin.Context) {
 		productDetailTemplateModeFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, adminui.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
 }
 
 // RollbackDetailTemplateDocument POST /api/product/detail-template/rollback-document：
@@ -95,7 +95,7 @@ func (h *ProductHandle) RollbackDetailTemplateDocument(c *gin.Context) {
 		productDetailTemplateModeFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, adminui.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
 }
 
 // detailTemplateWriteDeps 详情页模板页四个写动作的依赖（装配期**后置**注入）。
@@ -122,8 +122,8 @@ func detailTemplateWriteDepsOrErr() (productservice.DetailTemplateDeps, error) {
 //
 // 文案已经由 detailTemplate*Msg 系列收口（presentation / contenttemplate 的 enums → 人话），
 // 这里只决定状态码：参数与业务状态问题 400、对象不存在 404。
-func detailTemplateWriteFail(c *gin.Context, status int, msg adminui.Msg) {
-	response.ErrorWithMessage(c, status, adminui.MsgText(c, msg))
+func detailTemplateWriteFail(c *gin.Context, status int, msg facing.Msg) {
+	response.ErrorWithMessage(c, status, text.MsgText(c, msg))
 }
 
 // CreateDetailTemplate POST /api/product/detail-template/create：
@@ -152,7 +152,7 @@ func (h *ProductHandle) CreateDetailTemplate(c *gin.Context) {
 		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateTemplateMsg(c, err))
 		return
 	}
-	response.SuccessWithMessage(c, adminui.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
 }
 
 // PublishDetailTemplate POST /api/product/detail-template/publish：
@@ -182,7 +182,7 @@ func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
 		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateFacingMsg(c, err))
 		return
 	}
-	response.SuccessWithMessage(c, adminui.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
 }
 
 // ApplyDetailTemplate POST /api/product/detail-template/apply：
@@ -206,7 +206,7 @@ func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
 		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateFacingMsg(c, err))
 		return
 	}
-	response.SuccessWithMessage(c, adminui.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
 }
 
 // UpdateDetailTemplateURL POST /api/product/detail-template/update-url：
@@ -232,7 +232,7 @@ func (h *ProductHandle) UpdateDetailTemplateURL(c *gin.Context) {
 		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateFacingMsg(c, err))
 		return
 	}
-	response.SuccessWithMessage(c, adminui.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
 }
 
 // detailTemplateModePortFor 取双轨能力并校验实例标识（两个端点的共同前置）。
@@ -265,7 +265,7 @@ func productDetailTemplateModeFail(c *gin.Context, err error) {
 	if fact.Key == presentationenums.ErrNotFound {
 		status = http.StatusNotFound
 	}
-	response.ErrorWithMessage(c, status, adminui.MsgText(c, adminui.Msg{Key: fact.Key, Fallback: productservice.ErrText(fact)}))
+	response.ErrorWithMessage(c, status, text.MsgText(c, facing.Msg{Key: fact.Key, Fallback: productservice.ErrText(fact)}))
 }
 
 // 详情页模板与发布实例都以实体类型为键：取值用 productcontract.EntityTypeProduct
@@ -454,23 +454,23 @@ func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) (any, e
 //
 // 表格不在这里：跨模块错误的展示兜底归 service（product_foreign_text.go 同一条理由），
 // 控制器只拿「事实」（key + 兜底），取词在渲染期。
-func detailTemplateFacingMsg(c *gin.Context, err error) adminui.Msg {
+func detailTemplateFacingMsg(c *gin.Context, err error) facing.Msg {
 	return detailTemplateErrMsg(err, productservice.PresentationErrText)
 }
 
 // detailTemplateTemplateMsg 模板契约（contenttemplate）错误 → 一句结论事实。
-func detailTemplateTemplateMsg(c *gin.Context, err error) adminui.Msg {
+func detailTemplateTemplateMsg(c *gin.Context, err error) facing.Msg {
 	return detailTemplateErrMsg(err, productservice.ContentTemplateErrText)
 }
 
 // detailTemplateErrMsg 把业务错误收敛成一条事实：key 原样给模板，兜底由 fallbackOf 决定
 // （本页的错误来自两个对端，各自一张补丁表，理由见 service 侧的注释）。
-func detailTemplateErrMsg(err error, fallbackOf func(facing.Fact) string) adminui.Msg {
+func detailTemplateErrMsg(err error, fallbackOf func(facing.Fact) string) facing.Msg {
 	fact, ok := facing.FactOf(err)
 	if !ok || !fact.Business {
-		return adminui.Msg{}
+		return facing.Msg{}
 	}
-	return adminui.Msg{Key: fact.Key, Fallback: fallbackOf(fact)}
+	return facing.Msg{Key: fact.Key, Fallback: fallbackOf(fact)}
 }
 
 // errTemplateDepsMissing 详情模板契约未装配时的提示（装配缺陷，页面可见）。
@@ -482,7 +482,7 @@ const errTemplateDepsMissing = "详情页模板能力未装配（缺少内容模
 
 // detailTemplateDepsMissingMsg 「依赖未装配」提示的**事实**（key + 中文兜底）。
 // key 在 productenums.ProductDetailTemplateDepsMissing（迁移 407 登记中英词条）。
-var detailTemplateDepsMissingMsg = adminui.Msg{Key: productenums.ProductDetailTemplateDepsMissing, Fallback: errTemplateDepsMissing}
+var detailTemplateDepsMissingMsg = facing.Msg{Key: productenums.ProductDetailTemplateDepsMissing, Fallback: errTemplateDepsMissing}
 
 // detailTemplateDepsMissingPage 依赖未装配时的统一出口：**原页失败态**（500 档）。
 //
@@ -493,7 +493,7 @@ var detailTemplateDepsMissingMsg = adminui.Msg{Key: productenums.ProductDetailTe
 func (h *ProductPageHandle) detailTemplateDepsMissingPage(c *gin.Context) (any, error) {
 	view := detailTemplateLoadFailureView(http.StatusInternalServerError)
 	view.LoadFailed = true
-	view.LoadError = adminui.MsgText(c, detailTemplateDepsMissingMsg)
+	view.LoadError = text.MsgText(c, detailTemplateDepsMissingMsg)
 	return view, nil
 }
 
@@ -505,10 +505,10 @@ const (
 
 // 两个参数级提示的**事实**（模板在渲染期取词，控制器不再拼成品串）。
 var (
-	productDetailTemplateNameRequiredMsg = adminui.Msg{
+	productDetailTemplateNameRequiredMsg = facing.Msg{
 		Key: productenums.ProductDetailTemplateNameRequired, Fallback: productDetailTemplateNameRequiredFallback,
 	}
-	productDetailTemplatePathRequiredMsg = adminui.Msg{
+	productDetailTemplatePathRequiredMsg = facing.Msg{
 		Key: productenums.ProductDetailTemplatePathRequired, Fallback: productDetailTemplatePathRequiredFallback,
 	}
 )

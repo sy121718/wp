@@ -1,4 +1,4 @@
-// controller_shape_test.go — 控制器（inbound/http）的四条形状门禁。
+// controller_shape_test.go — 控制器（inbound/http）的五条形状门禁。
 //
 // 口径（2026-10-18 用户拍板，「控制器瘦身是必然的」）：
 //
@@ -12,9 +12,11 @@
 //  4. **渲染出口**：方法里不出现 c.HTML / adminui.RenderPage / adminui.RenderBare。
 //     控制器交「视图 + 错误」，渲染由 *_router.go 的 adminui.Page / adminui.Bare 装配
 //     —— 模板名归路由，失败一律 JSON，成功页才走 Jet。
+//  5. **UI 线依赖**：控制器不 import internal/adminui。取词走 internal/text、
+//     读请求上下文走 pkg/binding、响应走 pkg/response —— 三条线各归各的包。
 //
 // **pending 是必须缩小的清单**（双向判定：登记了却已消失同样变红）：
-// 四条门禁各自登记此刻的存量，收一个删一条。新写的控制器直接命门禁，不要往 pending 里加。
+// 五条门禁各自登记此刻的存量，收一个删一条。新写的控制器直接命门禁，不要往 pending 里加。
 package architecture
 
 import (
@@ -397,6 +399,112 @@ func TestControllerRenderExit(t *testing.T) {
 	for rel := range pendingControllerRenderExit {
 		if !seen[rel] {
 			t.Errorf("pendingControllerRenderExit 登记了 %s，但该文件已无渲染出口 —— 请删掉这条登记", rel)
+		}
+	}
+}
+
+// ── UI 线依赖门禁 ──
+//
+// 控制器**不 import internal/adminui**。adminui 是 UI 线：页壳装配、渲染实现、拒绝出口、
+// 导航树、权限码注入。控制器只需要三样东西，各有各的归属：
+//
+//	取词          → internal/text   （文案线；与渲染无关）
+//	读请求上下文    → pkg/binding     （ListQuery / CSRFToken / JSON|Form|Query）
+//	响应出口       → pkg/response    （{code,message,data}）
+//
+// 让控制器 import adminui 的连带代价是它顺手就会拿到 c.HTML / RenderPage / Prepare 这些东西，
+// 于是「控制器不渲染」那条门禁只能靠自觉。本门禁管的是**依赖**，上一条管的是**调用点**。
+//
+// router 文件豁免：它是装配点，页壳与渲染就在那里接上。
+
+// pendingControllerUIImport 还在 import adminui 的控制器文件。**只减不增**。
+var pendingControllerUIImport = map[string]bool{
+	"internal/module/admin/inbound/http/admin_err.go":                           true,
+	"internal/module/admin/inbound/http/admin_jump.go":                          true,
+	"internal/module/admin/inbound/http/admin_page.go":                          true,
+	"internal/module/ai/inbound/http/ai_err.go":                                 true,
+	"internal/module/ai/inbound/http/ai_page.go":                                true,
+	"internal/module/analytics/inbound/http/analytics_page.go":                  true,
+	"internal/module/block/inbound/http/block_err.go":                           true,
+	"internal/module/block/inbound/http/block_page.go":                          true,
+	"internal/module/comment/inbound/http/comment_page.go":                      true,
+	"internal/module/content/inbound/http/content_page.go":                      true,
+	"internal/module/contenttemplate/inbound/http/content_template_err.go":      true,
+	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go":      true,
+	"internal/module/inventory/inbound/http/inventory_err.go":                   true,
+	"internal/module/inventory/inbound/http/inventory_jump.go":                  true,
+	"internal/module/inventory/inbound/http/inventory_page.go":                  true,
+	"internal/module/mail/inbound/http/mail_err.go":                             true,
+	"internal/module/mail/inbound/http/mail_jump.go":                            true,
+	"internal/module/mail/inbound/http/mail_page.go":                            true,
+	"internal/module/masterdata/inbound/http/masterdata_page.go":                true,
+	"internal/module/media/inbound/http/media_page_handle.go":                   true,
+	"internal/module/membership/inbound/http/membership_page.go":                true,
+	"internal/module/navigation/inbound/http/navigation_error_handle.go":        true,
+	"internal/module/navigation/inbound/http/navigation_page_handle.go":         true,
+	"internal/module/navigation/inbound/http/navigation_translations_handle.go": true,
+	"internal/module/order/inbound/http/coupon_page.go":                         true,
+	"internal/module/order/inbound/http/order_create_page.go":                   true,
+	"internal/module/order/inbound/http/order_list_page.go":                     true,
+	"internal/module/order/inbound/http/order_shared.go":                        true,
+	"internal/module/order/inbound/http/return_page.go":                         true,
+	"internal/module/order/inbound/http/sales_page.go":                          true,
+	"internal/module/page/inbound/http/page_jump.go":                            true,
+	"internal/module/page/inbound/http/page_langs_handle.go":                    true,
+	"internal/module/page/inbound/http/page_schedule_handle.go":                 true,
+	"internal/module/page/inbound/http/pages_handle.go":                         true,
+	"internal/module/page/inbound/http/page_site_slot_handle.go":                true,
+	"internal/module/page/inbound/http/page_translations_handle.go":             true,
+	"internal/module/plugin/inbound/http/plugin_err.go":                         true,
+	"internal/module/plugin/inbound/http/plugin_page_handle.go":                 true,
+	"internal/module/project/inbound/http/project_jump.go":                      true,
+	"internal/module/project/inbound/http/project_page.go":                      true,
+	"internal/module/publication/inbound/http/seo_audit_result.go":              true,
+	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":           true,
+	"internal/module/user/inbound/http/customer_bulk_write.go":                  true,
+	"internal/module/user/inbound/http/user_page.go":                            true,
+	"internal/module/workbench/inbound/http/workbench_err.go":                   true,
+	"internal/module/workbench/inbound/http/workbench_handle.go":                true,
+	"internal/module/workbench/inbound/http/workbench_page.go":                  true,
+}
+
+const controllerUIImportPath = "go_wp/internal/adminui"
+
+func TestControllerNoUILineImport(t *testing.T) {
+	root := repoRoot(t)
+	seen := map[string]bool{}
+	fset := token.NewFileSet()
+	for _, dir := range controllerDirs(t) {
+		pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
+			return !strings.HasSuffix(fi.Name(), "_test.go")
+		}, 0)
+		if err != nil {
+			t.Fatalf("解析 %s 失败: %v", dir, err)
+		}
+		for _, pkg := range pkgs {
+			for path, file := range pkg.Files {
+				if controllerIsRouter(filepath.Base(path)) {
+					continue
+				}
+				rel, _ := filepath.Rel(root, path)
+				rel = filepath.ToSlash(rel)
+				for _, imp := range file.Imports {
+					if imp.Path == nil || imp.Path.Value != "\""+controllerUIImportPath+"\"" {
+						continue
+					}
+					seen[rel] = true
+					if !pendingControllerUIImport[rel] {
+						t.Errorf("%s:%d：控制器不 import internal/adminui —— 取词走 internal/text、"+
+							"读请求走 pkg/binding、响应走 pkg/response",
+							rel, fset.Position(imp.Pos()).Line)
+					}
+				}
+			}
+		}
+	}
+	for rel := range pendingControllerUIImport {
+		if !seen[rel] {
+			t.Errorf("pendingControllerUIImport 登记了 %s，但该文件已不 import adminui —— 请删掉这条登记", rel)
 		}
 	}
 }

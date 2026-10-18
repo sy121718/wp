@@ -27,6 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/text"
 	"go_wp/pkg/reqparams"
 )
 
@@ -34,7 +35,7 @@ const (
 	// adminLoginPath 后台登录页：未登录的**页面**请求 302 到这里（API 请求返回 401 JSON）。
 	adminLoginPath = "/admin/login"
 	// adminHomePath 控制面首页：拒绝页的「回到首页」与 htmx 的 HX-Redirect 目标。
-	adminHomePath = "/admin"
+	adminHomePath = text.AdminHomePath
 	// backToAdminKey 「返回后台」词条：复用 page_redirects 页已有的那一条，
 	// 不为一次拒绝提示新增全站词条（新增 key 必须同时补 seed，否则 i18n 门禁判失败）。
 	backToAdminKey = "admin.redirect.back"

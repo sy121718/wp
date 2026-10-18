@@ -1,43 +1,25 @@
 package adminui
 
-// listquery.go — 页面上下文（筛选条件）在「渲染时拼进表单 action」与「提交回来时读回」之间
-// 共用的一份实现。
+// listquery.go — 页面上下文（筛选条件）的兼容出口。
 //
-// 两处若各写一遍，分叉的症状是「改完筛选再操作，回来静默丢了筛选」—— 页面不报错、日志也干净。
-// 所以键表由各页自己声明（每页一份），取读实现只有这一份。
+// 实现在 **pkg/binding**（与「控制器读请求参数」同处）：它跟渲染无关，只是请求 query 的
+// 白名单读取；挂在 adminui 上时，只想读筛选串的控制器得 import 整个后台壳。
+//
+// 本文件保留为别名，存量调用点按模块批次迁到 binding.ListQuery / binding.WithListQuery，
+// 迁完即删（门禁：控制器不得 import adminui）。
 
 import (
-	"net/url"
-	"strings"
-
 	"github.com/gin-gonic/gin"
+
+	"go_wp/pkg/binding"
 )
 
-// ListQuery 本次请求 query 里**白名单内**的页面上下文（空值丢弃、键有序）。
-//
-// keys 是那一页的筛选键表：渲染时把它拼进表单 action，提交回来时按同一份表读回。
-// 不在表里的键一律不透传 —— 页面表单不该把无关参数（例如 source=bundle）带回服务端。
+// ListQuery 本次请求 query 里白名单内的页面上下文（空值丢弃、键有序）。
 func ListQuery(c *gin.Context, keys ...string) string {
-	if c == nil || c.Request == nil || c.Request.URL == nil {
-		return ""
-	}
-	in := c.Request.URL.Query()
-	out := url.Values{}
-	for _, k := range keys {
-		if v := strings.TrimSpace(in.Get(k)); v != "" {
-			out.Set(k, v)
-		}
-	}
-	return out.Encode()
+	return binding.ListQuery(c, keys...)
 }
 
-// WithListQuery 把页面上下文拼到地址后面（空上下文原样返回，不留悬空的 ?）。
+// WithListQuery 把页面上下文拼到地址后面（空上下文原样返回）。
 func WithListQuery(action, listQuery string) string {
-	if strings.TrimSpace(listQuery) == "" {
-		return action
-	}
-	if strings.Contains(action, "?") {
-		return action + "&" + listQuery
-	}
-	return action + "?" + listQuery
+	return binding.WithListQuery(action, listQuery)
 }

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/facing"
 	"html"
 	"net/http"
 	"net/url"
@@ -19,7 +20,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	productcontract "go_wp/internal/module/product/contract"
@@ -29,6 +29,7 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
+	"go_wp/internal/text"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/money"
@@ -65,7 +66,7 @@ func productPageInternalText(c *gin.Context, err error) string {
 			With("user_id", builtin.CurrentUserID(c)).
 			Error(err, "商品后台页取数失败（非业务错误，只对页面给归口文案）")
 	}
-	return adminui.PageInternalText(c)
+	return text.Internal(c)
 }
 
 // product_core.go — 商品本体的控制器：接口面 CRUD / 变体 + 列表 / 新建 / 编辑 / 详情页 / 批量。
@@ -377,7 +378,7 @@ func fillProductListChrome(c *gin.Context, view *productdto.ProductListPageResp)
 	}
 	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行），模板里的 ?err= / ?done= 提示条
 	// 已整批删除。ListQuery 是筛选上下文（表单 action 的 query）：筛选条提交要带着它回去。
-	view.ListQuery = adminui.ListQuery(c, productListBackKeys...)
+	view.ListQuery = binding.ListQuery(c, productListBackKeys...)
 }
 
 // productListPageSize 商品列表每页条数（服务端分页）。
@@ -476,7 +477,7 @@ func productStatusOptions(current string) []productdto.StatusOptionResp {
 // 三个具体后果：
 //
 //	· 控制器里不再有 gin.H 装配与取数助手调用 —— 页面数据只有一个来源（dto 视图）；
-//	· 状态码与 no-store 由视图带出来（adminui.PageResult），不再在这里判档，
+//	· 状态码与 no-store 由视图带出来（view.Result），不再在这里判档，
 //	  于是「失败页长什么样」不再有第二种写法；
 //	· 失败槽文案（LoadError）仍在这里取词：取词是**请求级**的（按当前语言），
 //	  交给 service 就等于把语言钉进业务层。
@@ -793,9 +794,9 @@ var variantSkipFallbacks = map[string]string{
 //
 // 带跳过明细时是「两句词条 + 逐条原因」拼起来的复合句，一段 key 表达不了 —— 这一档给
 // 成品串（Fallback，Key 为空），与 page 模块 pageTranslationsSavedMsg 同一取舍。
-func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) adminui.Msg {
+func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) facing.Msg {
 	if res == nil {
-		return adminui.InternalMsg()
+		return text.InternalMsg()
 	}
 	if res.Created == 0 && res.Updated == 0 && res.Deleted == 0 && len(res.Skipped) == 0 {
 		return productVariantSaveNoChange.fact()
@@ -817,7 +818,7 @@ func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) adminui
 		parts = append(parts, fmt.Sprintf(productBulkTextOf(c, productVariantSaveSkipped),
 			strconv.Itoa(len(res.Skipped)), strings.Join(items, "；")))
 	}
-	return adminui.Msg{Fallback: strings.Join(parts, " ")}
+	return facing.Msg{Fallback: strings.Join(parts, " ")}
 }
 
 // SaveVariantList 以清单为准保存变体（POST /api/product/variant/save）——变体**唯一的落库动作**。
@@ -841,7 +842,7 @@ func (h *ProductHandle) SaveVariantList(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, adminui.MsgText(c, variantSaveMsg(c, res)), res)
+	response.SuccessWithMessage(c, text.MsgText(c, variantSaveMsg(c, res)), res)
 }
 
 // AddRating 补录一条商品评分（issue #33）。
@@ -859,7 +860,7 @@ func (h *ProductHandle) AddRating(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, adminui.MsgText(c, productActionDoneMsg), res)
+	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), res)
 }
 
 // DeleteRating 删掉一条评分（issue #33）：录错了能撤掉。
@@ -875,7 +876,7 @@ func (h *ProductHandle) DeleteRating(c *gin.Context) {
 		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, adminui.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
 }
 
 // ProductPreviewFrame 商品详情页的真实预览帧（GET /admin/products/preview-frame?productId=&project=）。
@@ -1005,7 +1006,7 @@ func (h *ProductPageHandle) renderBundlePage(c *gin.Context) (any, error) {
 	// 它们要么来自请求，要么是 HTTP 侧的形状 —— 都不是取数结论。
 	// 状态码 / no-store 由视图的 PageStatus / PageNoStore 带出，渲染在 UI 线。
 	view.ResolveURL = bundleResolveURL
-	view.ListQuery = adminui.ListQuery(c, productBundleBackKeys...)
+	view.ListQuery = binding.ListQuery(c, productBundleBackKeys...)
 	return view, nil
 }
 
@@ -1097,11 +1098,11 @@ func bundleSourceParts(o productdto.BundleOption) []productdto.BundleSourcePart 
 func bundleSourceLabel(tr func(key, fallback string) string, o productdto.BundleOption) string {
 	segments := make([]string, 0, 3)
 	for _, part := range bundleSourceParts(o) {
-		text := tr(part.LabelKey, part.LabelFallback)
+		seg := tr(part.LabelKey, part.LabelFallback)
 		if part.Value != "" {
-			text += " " + part.Value
+			seg += " " + part.Value
 		}
-		segments = append(segments, text)
+		segments = append(segments, seg)
 	}
 	return strings.Join(segments, " · ")
 }
@@ -1166,7 +1167,7 @@ func (h *ProductPageHandle) bundlePanel(c *gin.Context, projectID, productID str
 		ProjectID: projectID,
 	})
 	if err != nil || detail == nil {
-		panel.ErrorText = adminui.MsgText(c, bundlePanelReadFailedMsg)
+		panel.ErrorText = text.MsgText(c, bundlePanelReadFailedMsg)
 		return panel
 	}
 	rows := bundlePanelRows(detail.Options)
@@ -1184,7 +1185,7 @@ func (h *ProductPageHandle) bundlePanel(c *gin.Context, projectID, productID str
 // 库存真源端口未接入，后者拿不到可用量）。复用词条而不是另起一句，
 // 免得同一件事在两个页面上给出两种说法。
 // bundlePanelReadFailedMsg 上面那条提示的**事实**（片段槽位按文本渲染，见调用点注释）。
-var bundlePanelReadFailedMsg = adminui.Msg{Key: productenums.ProductBundleDetailFailed, Fallback: bundlePanelReadFailedFallback}
+var bundlePanelReadFailedMsg = facing.Msg{Key: productenums.ProductBundleDetailFailed, Fallback: bundlePanelReadFailedFallback}
 
 // bundlePanelReadFailedFallback 上述 key 的中文兜底（i18n 未初始化或词条缺失时用）。
 const bundlePanelReadFailedFallback = "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。"
@@ -1323,7 +1324,7 @@ func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productd
 		view.HTTPStatus = http.StatusInternalServerError
 	}
 	// 表单 action 的 query：预览走页面 POST，筛选上下文要随表单带回来（URL 形状属 HTTP 边界）。
-	view.ListQuery = adminui.ListQuery(c, productPricingBackKeys...)
+	view.ListQuery = binding.ListQuery(c, productPricingBackKeys...)
 	return view, nil
 }
 
@@ -1440,7 +1441,7 @@ func (h *ProductHandle) BulkPricing(c *gin.Context) {
 	// 没勾选就提交：明确拒绝，不是「0 个改动」的成功回执。页面侧原有这条守卫，随页面 POST
 	// 一起消失 —— 判据搬到这里，否则删掉页面通道后「空勾选静默成功」就没人拦了。
 	if len(ids) == 0 {
-		response.ErrorWithMessage(c, http.StatusBadRequest, adminui.MsgText(c, adminui.Msg{
+		response.ErrorWithMessage(c, http.StatusBadRequest, text.MsgText(c, facing.Msg{
 			Key: productenums.BulkPricingNoneSelected, Fallback: "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"}))
 		return
 	}

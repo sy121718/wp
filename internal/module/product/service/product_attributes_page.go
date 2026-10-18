@@ -5,7 +5,7 @@
 // 为什么失败之后一条派生取数都不发、为什么不写第二份失败页）在这里同样成立，不重复。
 //
 // **本方法只搬取数，不搬纯函数**：属性行的两个抽屉表单（编辑属性组 / 保存属性值）由控制器
-// 用 `attrRowDrawerForms` 组装 —— 它们要 `*gin.Context`（csrf 取值 + adminui.PrepareBare
+// 用 `attrRowDrawerForms` 组装 —— 它们要 `*gin.Context`（csrf 取值 + text.Inject
 // 注入取词函数 + 失败回填三键），而读模型不认识请求。所以这里交**原料**
 // （`Attributes []*AttributeResp`），不做行装配。
 //

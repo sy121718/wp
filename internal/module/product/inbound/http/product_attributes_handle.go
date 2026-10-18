@@ -2,10 +2,10 @@ package producthttp
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
+	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
@@ -53,7 +53,7 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) (any, error) {
 	view.Title = productenums.ProductAttributesTitle
 	view.Menu = "product-attributes"
 	// 抽屉表单的数据（编辑属性组 / 保存属性值 / 新建属性组）留在控制器：它们要 csrf
-	//（表单隐藏域）与 adminui.PrepareBare 注入的取词函数，读模型不认识 gin.Context。
+	//（表单隐藏域）与 text.Inject 注入的取词函数，读模型不认识 gin.Context。
 	// 行装配只在取数成功时做 —— 失败页渲染的是失败槽，装配出的行不会被读到。
 	view.AttrCreateForm = attrCreateDrawerForm(c, view.SelectedProject)
 	rows := make([]map[string]any, 0, len(view.AttributeDetails))
@@ -151,10 +151,10 @@ func attrRowsFromResp(rows []productdto.AttributeValueResp) []productdto.AttrVal
 // 返回值、抽屉表单 include 传 .RowsCtx）都要**按请求语言取词**，而 Jet 在 struct 上不支持
 // `.["t"]`（渲染时报 can't use t as field name in struct type）。曾经这里给 struct 挂
 // `Tr func(key, fallback string) string` 字段由控制器填 shell.TranslateFor(c) —— 那是
-// 控制器取词。改成 gin.H 之后 t / tf 由 adminui.PrepareBare 注入，取词统一回到渲染期
+// 控制器取词。改成 gin.H 之后 t / tf 由 text.Inject 注入，取词统一回到渲染期
 // （与 values_form / group_form 两个片段同形）。
 func attrRowsCtxData(c *gin.Context, groupID string, rows []productdto.AttrValueFormRow) gin.H {
-	return adminui.PrepareBare(c, gin.H{"GroupID": groupID, "Rows": rows})
+	return text.Inject(c, gin.H{"GroupID": groupID, "Rows": rows})
 }
 
 func parseIntOr(s string, fallback int) int {
@@ -208,14 +208,14 @@ type attrGroupFormOpts struct {
 // VariationChecked / RowsCtx）—— 恒定给齐，片段在**任何**渲染路径下都能独立成立。
 // 没有回填键：抽屉的保存已迁 JSON 写基座，失败不再由服务端重渲染这一块。
 //
-// t / tf 由 adminui.PrepareBare 注入：片段是**带参数 include** 的（数据是每个抽屉
-// 自己的数据类，不是页面 data），拿不到 adminui.Prepare 注入的页面键 —— 缺了 t 片段里的
+// t / tf 由 text.Inject 注入：片段是**带参数 include** 的（数据是每个抽屉
+// 自己的数据类，不是页面 data），拿不到页面壳（adminui.Prepare）注入的页面键 —— 缺了 t 片段里的
 // `.["t"](...)` 静默变空串（200、日志干净），缺了 tf 则是渲染中断（500，htmx 不 swap）。
-// **不注入 csrf_token**（PrepareBare 只管多语言），token 仍由 Csrf 键显式带。
+// **不注入 csrf_token**（text.Inject 只管多语言），token 仍由 Csrf 键显式带。
 //
 // 键恒在：模板直接读它们，缺键会让 Jet 从那行截断整个片段。
 func attrGroupFormData(c *gin.Context, o attrGroupFormOpts) gin.H {
-	return adminui.PrepareBare(c, gin.H{
+	return text.Inject(c, gin.H{
 		"Project": o.ProjectID,
 		"GroupID": o.GroupID, "IsCreate": o.Mode == attrGroupModeCreate,
 		"Name": o.Name, "Key": o.Key, "Sort": o.Sort,
@@ -235,7 +235,7 @@ type attrValuesFormOpts struct {
 //
 // 可见字段全是 values[n].*，行的现值由 RowsCtx 带出（attrRowsFromResp 组装）。
 func attrValuesFormData(c *gin.Context, o attrValuesFormOpts) gin.H {
-	return adminui.PrepareBare(c, gin.H{
+	return text.Inject(c, gin.H{
 		"Project": o.ProjectID,
 		"GroupID": o.GroupID,
 		"RowsCtx": o.RowsCtx,

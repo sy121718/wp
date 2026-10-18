@@ -12,7 +12,7 @@
 // 自相矛盾组合。
 //
 // **本文件只搬取数，不搬纯渲染**：行装配与三个抽屉（分类 / 品牌 / 标签的编辑片段）留在控制器 ——
-// 它们要 `*gin.Context`（csrf 取值 + adminui.PrepareBare 注入取词函数），读模型不认识请求。
+// 它们要 `*gin.Context`（csrf 取值 + text.Inject 注入取词函数），读模型不认识请求。
 // 所以这里交**原料**（CategoryDetails / BrandDetails / TagDetails），不做成品行。
 //
 // 分类树的两块原料**分开**交（CategoryDetails 与 PickFlat）：页面表格要的是本页的树

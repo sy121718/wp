@@ -19,11 +19,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/adminctx"
-	"go_wp/internal/middleware/builtin"
 	admindto "go_wp/internal/module/admin/dto"
-	"go_wp/internal/templates"
-	"go_wp/pkg/response"
-	"go_wp/pkg/safepath"
+	"go_wp/internal/text"
+	"go_wp/pkg/binding"
 )
 
 // 侧栏状态 cookie 名（随装配一起迁入，取值语义见 sidebarOpen / sidebarPinned）。
@@ -37,10 +35,7 @@ const (
 // 单独的取值口是给「只需要 token 的那一块片段数据」用的（抽屉表单的隐藏域）：
 // 那些地方不该为了一个 token 去装配整份页壳。
 func CSRF(c *gin.Context) string {
-	if tok, err := builtin.GetCSRFToken(c); err == nil {
-		return tok
-	}
-	return ""
+	return binding.CSRFToken(c)
 }
 
 // Prepare 为页面模板数据补上外壳所需的全部键，所有后台页面渲染入口统一调用。
@@ -57,7 +52,7 @@ func Prepare(c *gin.Context, data gin.H) gin.H {
 		data = gin.H{}
 	}
 
-	data = injectI18n(c, data)
+	data = text.Inject(c, data)
 
 	data["csrf_token"] = CSRF(c)
 
@@ -173,48 +168,16 @@ func ViewMap(view any) gin.H {
 // 控制器因此被迫在 Go 侧提前取词、把成品串塞进槽位；接上本函数之后槽位可以只放事实
 // （adminui.Msg），取词统一回到渲染期。
 func PrepareBare(c *gin.Context, data gin.H) gin.H {
-	if data == nil {
-		data = gin.H{}
-	}
-	return injectI18n(c, data)
-}
-
-// injectI18n 注入多语言键（lang / t / tf / langs / lang_redirect，标题是 i18n key 时翻译）。
-//
-// t 的签名是 func(key, fallback string) string，模板用 {{ .["t"]("shell.brand", "管理后台") }}。
-// 实测取翻译路径的取舍见 internal/templates/i18n_jet_test.go。
-func injectI18n(c *gin.Context, data gin.H) gin.H {
-	lang := response.RequestLanguage(c)
-	t := templates.TranslateFunc(lang)
-
-	data["lang"] = lang
-	data["t"] = t
-	// tf 是「取词 + `%s` 占位符填充」：签名 func(key, fallback string, args []string) string。
-	//
-	// 为什么需要它：跳转提示页的结论文案带计数（「已删除 %s 个页面。」），而 Go 侧不再
-	// 拼整句 —— 控制器只给 key + 兜底 + 参数（见 internal/shell/jump.go 的 Jump）。
-	// 走 data 注入而不是 Set.AddGlobal：语言是**请求级**的，全局函数拿不到当前语言，
-	// 按请求切语言就得改共享状态（并发下 -race 报 DATA RACE），理由同 t。
-	data["tf"] = func(key, fallback string, args []string) string {
-		return TranslateArgs(c, key, fallback, args)
-	}
-	data["langs"] = templates.LanguageOptions(lang)
-	// 语言切换表单的 redirect 隐藏域：当前页 URI 经 langRedirect 收敛
-	//（判据在 pkg/safepath，本函数只负责「不合法时回落当前请求路径、再回落控制面首页」）。
-	data["lang_redirect"] = langRedirect(c)
-
-	// 页面标题：enums 常量已是 key（如 MsgPagesTitle），此处按当前语言翻译；
-	// 非 key 的字面量标题（如登录页）走 fallback 原样返回，不改变行为。
-	if title, ok := data["title"].(string); ok && title != "" {
-		data["title"] = t(title, title)
-	}
-	return data
+	return text.Inject(c, data)
 }
 
 // translateFor 返回 Go 侧文案翻译函数（分页条等由 Go 拼接、不经模板的文案）。
 // c 为 nil 时按默认语言返回，绝不 panic。
+//
+// 实现在 internal/text（与模板注入的 t 同一份）：文案线要能被业务模块直接调用，
+// 挂在 adminui 上会逼着每个控制器 import 整个后台壳。
 func translateFor(c *gin.Context) func(key, fallback string) string {
-	return templates.TranslateFunc(response.RequestLanguage(c))
+	return text.TranslateFunc(c)
 }
 
 // navTreeOf 取本请求的授权菜单树；未注入（未登录 / 构建失败 / 非页面路由）时返回 nil。
@@ -230,46 +193,12 @@ func navTreeOf(c *gin.Context) []admindto.MenuTreeNode {
 	return nil
 }
 
-// langRedirect 语言切换表单 redirect 隐藏域的取值（渲染侧）。
+// requestURIOf 当前请求的站内 URI（含 query）；异常时回控制面首页。
 //
-// 判据只有一份，在 pkg/safepath.LangRedirectPath（task-75 迁出，两侧共用）：站内相对路径
-// 且不超过 MaxReturnPathBytes 才通过。本函数只补渲染侧的两级兜底 —— 丢弃整个 URI（含超长
-// query）回落到当前请求的**路径**；路径本身也异常时回控制面首页。
-//
-// 当前取值链：layout 的 redirect 隐藏域 → Prepare → injectI18n → 本函数；
-// GET /admin/lang 的 adminSafeLangRedirect 再校验 query。shell 的零消费者包装已删除；
-// 日志仍用 shell.requestURI 记录真实 URI，不应复用隐藏域的收敛值。
-func langRedirect(c *gin.Context) string {
-	if c == nil {
-		return adminHomePath
-	}
-	if p := safepath.LangRedirectPath(requestURIOf(c)); p != "" {
-		return p
-	}
-	return requestPathOrAdminHome(c)
-}
-
-// requestPathOrAdminHome 回落到当前请求的路径（丢掉 query）：回跳仍回到发起页；
-// 路径本身异常（空 / 非同源 / 超长）时回控制面首页。
-func requestPathOrAdminHome(c *gin.Context) string {
-	if c != nil && c.Request != nil && c.Request.URL != nil {
-		if p := c.Request.URL.Path; safepath.IsSameOriginPath(p) && len(p) <= safepath.MaxReturnPathBytes {
-			return p
-		}
-	}
-	return adminHomePath
-}
-
-// requestURIOf 返回当前请求的站内 URI（含 query）；异常时回控制面首页。
+// 实现在 internal/text（语言回跳与日志都要它）：日志要真实 URI，语言回跳要经
+// LangRedirect 收敛后的值 —— 两者不能共用一份（拿日志值当回跳目标就是开放重定向）。
 func requestURIOf(c *gin.Context) string {
-	if c == nil || c.Request == nil || c.Request.URL == nil {
-		return adminHomePath
-	}
-	uri := c.Request.URL.RequestURI()
-	if uri == "" {
-		return adminHomePath
-	}
-	return uri
+	return text.RequestURI(c)
 }
 
 // hasActiveDirGroup 判断导航树中是否存在「当前页所在的目录分组」（有二级内容的组）。

@@ -9,10 +9,10 @@ package producthttp
 import (
 	"errors"
 	"fmt"
-	"go_wp/internal/adminui"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/shell"
 	"go_wp/pkg/bulkids"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 	"net/http"
@@ -48,12 +48,12 @@ func productBulkIDs(c *gin.Context, raw []string) ([]string, bool) {
 type productBulkText struct{ key, fallback string }
 
 // fact 把一条结论文案变成**事实**（key + 中文兜底 + %s 参数）：模板在渲染期取词，
-// JSON 出口用 adminui.MsgText 取成品串。
+// JSON 出口用 text.MsgText 取成品串。
 //
 // 参数一律 strconv 成字符串（模板侧的占位符是 %s，传 int 会渲染成 %!s(int=3)）；
 // 没有占位符的词条**不要**传参数 —— TranslateArgs 对多余参数会 Sprintf 出 %!(EXTRA string=…)。
-func (t productBulkText) fact(args ...string) adminui.Msg {
-	m := adminui.Msg{Key: t.key, Fallback: t.fallback}
+func (t productBulkText) fact(args ...string) facing.Msg {
+	m := facing.Msg{Key: t.key, Fallback: t.fallback}
 	if len(args) > 0 {
 		m = m.WithArgs(args...)
 	}
@@ -65,11 +65,11 @@ func (t productBulkText) fact(args ...string) adminui.Msg {
 // 词条混进 %d 之类协议外占位符时回落中文原文（模板一律只允许 %s，数字先经 strconv.Itoa）——
 // 否则 Sprintf 会把参数渲染成 int，而这条路直接给运营看。
 func productBulkTextOf(c *gin.Context, t productBulkText) string {
-	text := shell.TranslateFor(c)(t.key, t.fallback)
-	if !i18n.HasStringPlaceholdersOnly(text) {
+	built := shell.TranslateFor(c)(t.key, t.fallback)
+	if !i18n.HasStringPlaceholdersOnly(built) {
 		return t.fallback
 	}
-	return text
+	return built
 }
 
 // productActionDoneFallback 单条写动作的通用成功回执的中文兜底（key 在
@@ -81,7 +81,7 @@ func productBulkTextOf(c *gin.Context, t productBulkText) string {
 const productActionDoneFallback = "操作已完成"
 
 // productActionDoneMsg 单条写动作（新建 / 修改 / 保存）的成功回执事实。
-var productActionDoneMsg = adminui.Msg{Key: productenums.ProductsActionDone, Fallback: productActionDoneFallback}
+var productActionDoneMsg = facing.Msg{Key: productenums.ProductsActionDone, Fallback: productActionDoneFallback}
 
 // 变体清单保存的结论文案（详情页编辑表单的回执）。
 var (

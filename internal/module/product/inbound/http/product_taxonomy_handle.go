@@ -3,10 +3,10 @@ package producthttp
 import (
 	"context"
 	"errors"
-	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
+	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
@@ -49,7 +49,7 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) (any, error) {
 	// —— 控制器负责的部分：行装配与抽屉 ——
 	view.Title = productenums.ProductCategoriesTitle
 	view.Menu = "product-categories"
-	view.ListQuery = adminui.ListQuery(c, productCategoriesBackKeys...)
+	view.ListQuery = binding.ListQuery(c, productCategoriesBackKeys...)
 	// 候选列表**只收本工程**的分类（判据与理由见 service.CategoriesInProject）。
 	options := productservice.CategoryPickOptions(productservice.CategoriesInProject(view.PickFlat, view.SelectedProject))
 	view.Options = options
@@ -175,7 +175,7 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
 	// —— 控制器负责的部分：行装配（每行的编辑抽屉要 csrf 与取词函数）——
 	view.Title = productenums.ProductBrandsTitle
 	view.Menu = "product-brands"
-	view.ListQuery = adminui.ListQuery(c, productBrandsBackKeys...)
+	view.ListQuery = binding.ListQuery(c, productBrandsBackKeys...)
 	brands := make([]productdto.BrandRowResp, 0, len(view.BrandDetails))
 	if err == nil {
 		for _, b := range view.BrandDetails {
@@ -207,9 +207,9 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
 // 拆成两个字段而不是一个拼好的串（原 categoryParentText 的形态）：跨工程那句说明是文案，
 // 必须在渲染期按请求语言取词（en-US 后台下也该是英文）—— 控制器里拼串等于把它钉死在中文。
 func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []map[string]any, parentLabels map[string]productdto.CategoryParentInfoResp) gin.H {
-	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": adminui.CSRF(c),
+	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": binding.CSRFToken(c),
 		// ListQuery：表单 action 的筛选上下文（抽屉里的表单提交要带着它回去）。
-		"ListQuery": adminui.ListQuery(c, productCategoriesBackKeys...)}
+		"ListQuery": binding.ListQuery(c, productCategoriesBackKeys...)}
 	if row != nil {
 		data["ID"], data["Name"], data["Slug"], data["ParentID"] = row.ID, row.Name, row.Slug, row.ParentID
 		if row.ParentID != "" {
@@ -249,7 +249,7 @@ func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.
 		data["Sort"], data["Image"], data["Description"] = 0, "", ""
 		data["SEOTitle"], data["SEODescription"] = "", ""
 	}
-	return adminui.PrepareBare(c, data)
+	return text.Inject(c, data)
 }
 
 // ==========================================================================

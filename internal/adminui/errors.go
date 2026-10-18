@@ -28,6 +28,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/text"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -39,7 +40,7 @@ import (
 // i18n key 是字符串协议 —— 模板、词条表与各模块自己的同名常量都按字面量取值，
 // TestMsgInternalErrorIsTheKeyLiteral 钉住这个字面量本身；词条本体见
 // public/migrations/058_i18n_seed_enums.sql（en-US 由 407 补齐）。
-const MsgInternalError = "MsgInternalError"
+const MsgInternalError = text.InternalKey
 
 // PageErrorBadRequest 参数错误出口：同样不直出原文（参数错误也可能带出内部结构），
 // 但状态码用 400，前端脚本能据此区分「你填错了」与「系统出问题了」。
@@ -98,11 +99,11 @@ func AdminWriteFailedText(c *gin.Context, text string) {
 // 中文兜底与 058 的 zh-CN 词条**逐字相同**，所以「命中词条」与「回落兜底」返回同一个
 // 字符串；只有兜底被改措辞、或词条被改成别的说法时才会不等 —— 那正是该被测试拦下的漂移。
 func PageInternalText(c *gin.Context) string {
-	return translateFor(c)(MsgInternalError, internalErrorFallback)
+	return text.Internal(c)
 }
 
 // internalErrorFallback 归口文案的中文原文（与 058 的 zh-CN 词条逐字相同）。
 //
 // 单独取名是因为它有两个消费者：本文件的 PageInternalText，与 page_error.go 里
 // 「未命中业务错误判据」时构造的 ErrFact —— 两处必须是同一句话，抄第二遍必然漂移。
-const internalErrorFallback = "系统内部错误，请稍后重试"
+const internalErrorFallback = text.InternalFallback

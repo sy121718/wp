@@ -7,7 +7,7 @@
 // 同名导出字段，字段被改名或删掉 = 渲染期 500（htmx 不 swap，点一下没反应），
 // 双向对账由 inbound/http 下的 *_template_test.go 用反射 + 模板源码钉住。
 //
-// 页面出口用 PageStatus() / PageNoStore() 两个方法给状态（见 internal/adminui.PageResult）：
+// 页面出口用 PageStatus() / PageNoStore() 两个方法给状态（见 internal/view.Result）：
 // 零值 = 「200 且可缓存」，实现它们的是**失败态为 nil-safe 的整页视图**。
 
 package productdto
@@ -57,7 +57,7 @@ type ProductNewPageResp struct {
 	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductNewPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
@@ -131,7 +131,7 @@ type ProductListPageResp struct {
 	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductListPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
@@ -194,7 +194,7 @@ type ProductDetailPageResp struct {
 	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductDetailPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 非 200 的档位都不该被缓存 —— **404 也一样**：商品可能刚被删，也可能刚被建回来，
@@ -267,7 +267,7 @@ type ProductEditPageResp struct {
 	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductEditPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
@@ -459,7 +459,7 @@ type ProductCreateFormResp struct {
 	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductCreateFormResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 取数失败时不该被缓存：重试必须真的回到服务端。
@@ -471,7 +471,7 @@ func (v ProductCreateFormResp) PageNoStore() bool {
 //
 // 这一屏**没有失败档**：三处取数各自降级（工程清单读不到 → 空下拉；规则与尾数处理是
 // 注册表快照，本身无 error；留痕台账读不到 → 空台账），页面主体（改价表单）始终撑得起来。
-// 但仍实现 adminui.PageResult：装配缺陷那一条 500 要靠它传出去
+// 但仍实现 view.Result：装配缺陷那一条 500 要靠它传出去
 // （PageStatus 返回 0 时渲染出口按 200 处理，所以正常档不必显式设码）。
 type ProductPricingPageResp struct {
 	Title string `view:"title"`
@@ -554,13 +554,13 @@ type ProductAttributesPageResp struct {
 	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductAttributesPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
 func (v ProductAttributesPageResp) PageNoStore() bool { return v.LoadFailed }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductPricingPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 装配缺陷页不该被缓存：重试必须真的回到服务端。
@@ -626,7 +626,7 @@ type ProductDetailTemplatePageResp struct {
 	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductDetailTemplatePageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端。
@@ -704,7 +704,7 @@ type ProductBundlePageResp struct {
 	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductBundlePageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端。
@@ -785,7 +785,7 @@ type ProductCategoriesPageResp struct {
 	// Categories 成品行（模板 `{{range .Categories}}` 读 ID / Name / Slug / Label / ParentID /
 	// Sort / Depth / HasChildren / Matched / SearchMode / ParentOutOfScope / EditForm）；
 	// CategoryCreateForm 「新建分类」抽屉的表单数据（页头与空态两个入口共用同一份）。
-	// 两者都由控制器装配（抽屉要 csrf 与 adminui.PrepareBare 注入的取词函数）。
+	// 两者都由控制器装配（抽屉要 csrf 与 text.Inject 注入的取词函数）。
 	Categories         []CategoryRowResp
 	CategoryCreateForm map[string]any
 	// Options 父级下拉的选项（本工程分类的扁平列表 + 层级缩进标签）：列表页的筛选区与
@@ -810,7 +810,7 @@ type ProductCategoriesPageResp struct {
 	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductCategoriesPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
@@ -846,7 +846,7 @@ type ProductBrandsPageResp struct {
 	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductBrandsPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 非 200 的档位都不该被缓存：重试必须真的回到服务端。
@@ -884,7 +884,7 @@ type ProductTagsPageResp struct {
 	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（adminui.PageResult）；零值 = 200。
+// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
 func (v ProductTagsPageResp) PageStatus() int { return v.HTTPStatus }
 
 // PageNoStore 非 200 的档位都不该被缓存：重试必须真的回到服务端。
@@ -946,7 +946,7 @@ type BrandRowResp struct {
 // 与 CategoryResp 的区别：那边是**取数结果**（service 读出树的节点），这边是**成品行**
 // （含编辑抽屉的表单数据、命中标记、跨工程徽章），装配在控制器、由模板直接读。
 //
-// EditForm 仍是 map：抽屉模板的数据根必须支持 .["t"] 索引（adminui.PrepareBare 注入的
+// EditForm 仍是 map：抽屉模板的数据根必须支持 .["t"] 索引（text.Inject 注入的
 // 取词函数），根是 struct 时 Jet 的索引写法渲染失败 —— 行元素可以是 struct，根不行。
 type CategoryRowResp struct {
 	ID, Name, Slug, Label, ParentID string

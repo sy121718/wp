@@ -19,13 +19,11 @@ package adminui
 // 模块自己的 enums 里（如 pageenums.ErrDetailFallbacks），共享层不替它保管。
 
 import (
-	"fmt"
-
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/middleware/builtin"
+	"go_wp/internal/text"
 	"go_wp/pkg/facing"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
 
@@ -105,15 +103,7 @@ func InternalErrorFact() ErrFact {
 // 词条里混进 %d 等协议外占位符时回落中文原文：Sprintf 会把参数渲染成 int 而这条路径
 // 直接给运营看（原文见迁移前的 pageBulkTextOf）。参数为空时不走 Sprintf。
 func TranslateArgs(c *gin.Context, key, fallback string, args []string) string {
-	tr := translateFor(c)
-	text := tr(key, fallback)
-	if len(args) == 0 {
-		return text
-	}
-	if !i18n.HasStringPlaceholdersOnly(text) {
-		text = fallback
-	}
-	return fmt.Sprintf(text, toAnyStrings(args)...)
+	return text.TranslateArgs(c, key, fallback, args)
 }
 
 // TranslateFill 取词 + `{name}` 具名占位符填充（MsgText 的具名档走这里）。
@@ -125,7 +115,7 @@ func TranslateArgs(c *gin.Context, key, fallback string, args []string) string {
 // 降级同口径：词条缺席或占位符被改坏时回落中文兜底再填一次，绝不把 `{n}` 这样的字面量
 // 摆给运营看（这层回落实现在 pkg/i18n.FillTranslate）。
 func TranslateFill(c *gin.Context, key, fallback string, params map[string]string) string {
-	return i18n.FillTranslate(translateFor(c), key, fallback, params)
+	return text.TranslateFill(c, key, fallback, params)
 }
 
 // toAnyStrings 把 []string 摊成 []any 交给 fmt.Sprintf（`%s` 对 string 原样输出）。

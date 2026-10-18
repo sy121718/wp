@@ -6,9 +6,9 @@ package producthttp
 // 与分类 / 品牌（product_taxonomy.go）分开：标签有规则注册表与重算时机，改动频率与归类树完全不同。
 
 import (
-	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/pagination"
@@ -177,7 +177,7 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) (any, error) {
 	// —— 控制器负责的部分：行装配与两个标签抽屉（要 csrf 与取词函数）——
 	view.Title = productenums.ProductTagsTitle
 	view.Menu = "product-tags"
-	view.ListQuery = adminui.ListQuery(c, productTagsBackKeys...)
+	view.ListQuery = binding.ListQuery(c, productTagsBackKeys...)
 	rows := []productdto.TagRowResp{}
 	tagCreateForm := map[string]any{}
 	if err == nil {
@@ -261,7 +261,7 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) (any, error) 
 
 // tagDrawerData 装配标签编辑片段数据（create 时 row 为 nil）。
 // ruleTypes 由调用方传入：页面装配时取一次全行共享，失败分支自己取一次，
-// 不在片段装配里重复查契约。取词走 adminui.PrepareBare（片段不经整份
+// 不在片段装配里重复查契约。取词走 text.Inject（片段不经整份
 // Prepare，但模板要 t/tf；漏注入不报错 —— 取词全变空串、200、日志干净）。
 func (h *ProductPageHandle) tagDrawerData(c *gin.Context, mode, projectID string, row *productdto.TagRowResp, ruleTypes []*productdto.TagRuleTypeResp) map[string]any {
 	data := map[string]any{
@@ -277,7 +277,7 @@ func (h *ProductPageHandle) tagDrawerData(c *gin.Context, mode, projectID string
 		data["IsRule"], data["Sort"], data["RuleType"] = row.IsRule, row.Sort, row.RuleType
 		data["RuleDays"], data["RuleMinPrice"], data["RuleMaxPrice"] = row.RuleDays, row.RuleMinPrice, row.RuleMaxPrice
 	}
-	return adminui.PrepareBare(c, data)
+	return text.Inject(c, data)
 }
 
 // tagPageRow 标签 → 模板行（规则描述与命中数都由服务端算好，模板不做第二套解释；
@@ -321,7 +321,7 @@ func tagKindTone(kind string) string {
 // 时间戳在窄屏折叠行里连成不可断行的 token 把卡片撑破。
 // 时间是数据（格式固定，走第一个返回值），只有「没重算过」那句话是文案 ——
 // 给 key + 中文兜底（productenums.TagRecalcLabel），取词在 product_tags.html 的 tr 里做。
-func recalcFact(at string) (text, key, fallback string) {
+func recalcFact(at string) (label, key, fallback string) {
 	key, fallback = productenums.TagRecalcLabel(at)
 	return recalcAtText(at), key, fallback
 }

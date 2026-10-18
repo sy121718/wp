@@ -139,7 +139,7 @@ func (h *ProductPageHandle) entityScoreViewOf(ctx context.Context, c *gin.Contex
 
 // renderEntityScore 算分 + 查 title 重复 + 渲染片段（三个 POST 入口共用）。
 func (h *ProductPageHandle) renderEntityScore(c *gin.Context, in *scoring.EntityPageInput, projectID, selfID string) (any, error) {
-	// 片段数据根交出去：取词函数由 UI 线注入（adminui.Bare 走 PrepareBare）。
+	// 片段数据根交出去：取词函数由 UI 线注入（adminui.Bare 走 text.Inject）。
 	return gin.H{"Score": h.entityScoreViewOf(c.Request.Context(), c, in, projectID, selfID)}, nil
 }
 
