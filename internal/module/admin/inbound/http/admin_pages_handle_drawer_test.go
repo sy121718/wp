@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/CloudyKit/jet/v6"
 	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
@@ -12,10 +11,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/CloudyKit/jet/v6"
+
 	admincontract "go_wp/internal/module/admin/contract"
 	admindto "go_wp/internal/module/admin/dto"
 	"go_wp/internal/templates"
+
+	"github.com/gin-gonic/gin"
 )
 
 type drawerMenuService struct {

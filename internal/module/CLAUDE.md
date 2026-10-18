@@ -112,6 +112,17 @@ module_name/
     错误声明处，出口只读 `facing.StatusOf`）。门禁 `TestControllerNoNormalization`
     （`internal/architecture/controller_shape_test.go` 第 6 条，判据是 `bulkids.Normalize` 的**调用**）。
   判据：控制器里出现 `switch` 时问一句「这是在挑文案，还是在做业务判断」——挑文案就是走错了层。
+- **读请求参数只有一个入口**：写动作 `binding.JSON[T](c)`、表单 `binding.Form[T](c)`、
+  查询串 `binding.Query[T](c)`（跨路由共享的隐藏域才用 `binding.Field`）。键名属于**请求形状**，
+  写在 dto 的 `form` tag 上；同一个参数有两套键名（`project` / `projectId`）时由 dto 实现
+  `binding.QueryBinder` 的 `BindQuery(url.Values)`，仍然不回到控制器。
+  · **DTO 不带 `form` tag = 静默绑零值**：gin 按 tag 取键，缺 tag 时它去查键 ""，于是整段绑定
+    返回零值且不报错（Page 恒 0、Keyword 恒空）——看起来就像「前端没传」。
+  · 禁止 `c.Query` / `c.DefaultQuery` / `c.Param` / `c.ShouldBind*` / `c.PostForm*`，
+    门禁 `TestControllerBindingEntry`（请求体）与 `TestControllerQueryBinding`（查询串），
+    带双向判定的存量清单；商品模块两类都已清零。
+  · 页码这类下限保护在下游做（service 的 `optionalPaging`），控制器不写
+    `productPageNumber(c.Query("page"))` 这类归一助手 —— 那正是「控制器在算东西」。
 - **一屏的取数编排与视图装配也在 service，不在控制器**（§dto 那条「展示串在 service 组装响应时写进
   dto」的落地形态）：
   · 这一屏要哪些数据、按什么口径取（工程列表 + 仓库选项 + 属性组选项 + 模板清单 + 每仓 SKU 候选…）

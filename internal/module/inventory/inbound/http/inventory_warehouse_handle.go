@@ -2,12 +2,13 @@
 package inventoryhttp
 
 import (
-	"github.com/gin-gonic/gin"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	"strconv"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -44,7 +45,7 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) (any, erro
 		"WarehouseTypes":      warehouseTypeOptions(c),
 		"WarehouseCreateForm": warehouseFormData(c, selected, false, nil),
 		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
-		"ListQuery": inventoryQueryFromRequest(c, inventoryWarehouseBackKeys...),
+		"ListQuery": binding.ListQuery(c, inventoryWarehouseBackKeys...),
 	}, nil
 }
 

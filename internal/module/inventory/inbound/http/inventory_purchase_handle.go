@@ -3,17 +3,18 @@ package inventoryhttp
 
 import (
 	"context"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/response"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
+	"go_wp/pkg/response"
 	"strconv"
 	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
@@ -146,7 +147,7 @@ func (d *inventoryPurchasesPageData) templateMap(c *gin.Context) gin.H {
 		"Err":                 d.Err,
 		"LoadFailed":          d.LoadFailed,
 		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
-		"ListQuery": inventoryQueryFromRequest(c, inventoryPurchaseBackKeys...),
+		"ListQuery": binding.ListQuery(c, inventoryPurchaseBackKeys...),
 	}
 	// 分页条事实交给 partial 决定：零值（单页）与装载失败两条路 HasPagination 都为假，
 	// 片段自然不渲染。

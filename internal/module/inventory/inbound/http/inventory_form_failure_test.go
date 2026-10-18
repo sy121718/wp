@@ -20,8 +20,8 @@ import (
 	ginrender "github.com/gin-gonic/gin/render"
 
 	inventoryenums "go_wp/internal/module/inventory/enums"
-	"go_wp/pkg/response"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/response"
 )
 
 // inventoryCaptureRender 记录「渲染了哪个模板」：本测试的正面判据是**一次都没渲染**。

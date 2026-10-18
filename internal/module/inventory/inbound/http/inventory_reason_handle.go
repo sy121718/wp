@@ -2,12 +2,13 @@
 package inventoryhttp
 
 import (
-	"github.com/gin-gonic/gin"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	"strconv"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -45,7 +46,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) (any, error) 
 		"Directions":       directionOptions(tr),
 		"ReasonCreateForm": reasonFormData(c, selected),
 		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
-		"ListQuery": inventoryQueryFromRequest(c, inventoryReasonBackKeys...),
+		"ListQuery": binding.ListQuery(c, inventoryReasonBackKeys...),
 	}, nil
 }
 

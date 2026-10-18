@@ -5,7 +5,12 @@
 // （未知键、类型不符、越界一律拒绝 —— 不接受自由表达式）。
 package productdto
 
-import json "go_wp/pkg/jsonx"
+import (
+	"net/url"
+	"strings"
+
+	json "go_wp/pkg/jsonx"
+)
 
 // CreateTagReq 新建标签。
 type CreateTagReq struct {
@@ -72,11 +77,19 @@ type ListTagProductsReq struct {
 // 标签页首屏不再内联命中商品，展开某个标签时按页拉一段，页面 SQL 条数与标签数无关。
 type ListTagProductsPageReq struct {
 	TagID     string `form:"id"`
-	ProjectID string `form:"projectId"`
+	ProjectID string `form:"project"`
 	// Page 从 1 开始（<=0 归一为 1）。
 	Page int `form:"page"`
 	// Size 每页条数（<=0 用服务端默认；超过上限按上限截断，不由调用方决定）。
 	Size int `form:"size"`
+}
+
+// BindQuery 兼容两套工程键名：标签页的片段链接给 project，接口调用方给 projectId。
+func (r *ListTagProductsPageReq) BindQuery(q url.Values) error {
+	if r.ProjectID == "" {
+		r.ProjectID = strings.TrimSpace(q.Get("projectId"))
+	}
+	return nil
 }
 
 // DeleteTagReq 删除标签（连同它在商品上的引用一起解绑）。

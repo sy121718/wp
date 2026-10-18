@@ -25,8 +25,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 
-	"go_wp/internal/module/admin/contract"
-	"go_wp/internal/module/admin/dto"
+	admincontract "go_wp/internal/module/admin/contract"
+	admindto "go_wp/internal/module/admin/dto"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/cache"
 	"go_wp/pkg/logger"

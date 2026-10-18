@@ -57,4 +57,3 @@ func newHXContext(t *testing.T, hxHeader, body string) (*gin.Context, *httptest.
 	}
 	return c, rec
 }
-

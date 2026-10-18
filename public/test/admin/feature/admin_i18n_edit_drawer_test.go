@@ -148,7 +148,8 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 	for _, want := range []string{
 		`data-drawer-url="/admin/i18n/edit?key=drawer.exact.test&amp;lang=en-US"`,
 		`data-write-api="/api/i18n/save"`, `data-write-mode="bulk"`,
-		"data-msg-none-selected", "data-msg-partial", "data-msg-too-many",
+		// 批量只有「全成 / 全败」两档：没有「部分成功」可报，data-msg-partial 已随该语义删除。
+		"data-msg-none-selected", "data-msg-too-many",
 		`name="action" value="delete"`, `name="action" value="create"`,
 	} {
 		if !strings.Contains(page, want) {

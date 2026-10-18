@@ -95,18 +95,15 @@ func (h *ProductTranslationHandle) translationsReader() (productcontract.Product
 
 // ProductTranslations GET /admin/products/translations：商品域翻译工作台。
 func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) (any, error) {
-	projectID := strings.TrimSpace(c.Query("project"))
-	productID := strings.TrimSpace(c.Query("product"))
-
+	req, ok := binding.Query[productdto.ProductTranslationsPageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
 	reader, rerr := h.translationsReader()
 	if rerr != nil {
 		return nil, rerr
 	}
-	view, err := reader.ProductTranslationsPage(c.Request.Context(), &productdto.ProductTranslationsPageReq{
-		ProjectID: projectID,
-		ProductID: productID,
-		Lang:      strings.TrimSpace(c.Query("lang")),
-	})
+	view, err := reader.ProductTranslationsPage(c.Request.Context(), req)
 	if err != nil {
 		return nil, err
 	}

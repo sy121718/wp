@@ -141,4 +141,10 @@ type ProductPageReader interface {
 	// Submitted 由控制器填（写路径产物，在请求体里，读模型不认识 gin.Context）：
 	// 非 nil 时成员清单一律按它渲染，而不是按库里读回来的配置。
 	ProductBundlePage(ctx context.Context, req *productdto.ProductBundlePageReq) (res *productdto.ProductBundlePageResp, err error)
+
+	// CategoryParentOptions 分类抽屉「父级」候选的一屏（搜索式）。
+	//
+	// 参数级判据在服务端给：工程不存在 / 没给工程一律返回业务错误（出口给 400），
+	// 关键词为空返回空候选（不是错误）—— 控制器据此只搬视图，不判断任何一档。
+	CategoryParentOptions(ctx context.Context, req *productdto.ProductCategoryParentsReq) (res productdto.CategoryParentOptionsResp, err error)
 }

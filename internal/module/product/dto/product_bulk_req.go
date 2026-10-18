@@ -12,7 +12,7 @@ package productdto
 // （重试会把成功过的再走一遍），而库里已经是他看不懂的中间态 —— 一个表改了一个表没改，
 // 这种账没人能对。
 
-import "go_wp/internal/module/product/enums"
+import productenums "go_wp/internal/module/product/enums"
 
 // BulkDeleteReq 五个批量删除用例共用的入参。
 type BulkDeleteReq struct {

@@ -387,10 +387,11 @@ func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) (any, erro
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
-	view, err := reader.ProductDetailTemplatePage(c.Request.Context(), &productdto.ProductDetailTemplatePageReq{
-		ProjectID: c.Query("project"),
-		ProductID: c.Query("product"),
-	})
+	req, ok := binding.Query[productdto.ProductDetailTemplatePageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
+	view, err := reader.ProductDetailTemplatePage(c.Request.Context(), req)
 	if view == nil {
 		// 契约上视图恒非 nil；契约是约定而不是类型保证，这一层兜底必须存在，
 		// 否则一次实现失误会让整页 500 且没有页壳。

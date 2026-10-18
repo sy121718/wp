@@ -21,8 +21,8 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/product/dto"
-	"go_wp/internal/module/product/enums"
+	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/facing"
 )
 

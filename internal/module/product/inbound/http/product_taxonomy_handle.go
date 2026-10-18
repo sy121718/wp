@@ -2,7 +2,6 @@ package producthttp
 
 import (
 	"context"
-	"errors"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
@@ -32,13 +31,13 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
-	// 取参数 → 调读模型（取数编排在 service：取哪些、按什么顺序、哪条失败算 400 /
+	// 取参数交给 binding.Query，取数编排在 service（取哪些、按什么顺序、哪条失败算 400 /
 	// 哪条只降级，都是业务结论。见 service.ProductCategoriesPage）。
-	view, err := reader.ProductCategoriesPage(c.Request.Context(), &productdto.ProductCategoriesPageReq{
-		ProjectID: strings.TrimSpace(c.Query("project")),
-		Keyword:   strings.TrimSpace(c.Query("keyword")),
-		Page:      productPageNumber(c.Query("page")),
-	})
+	req, ok := binding.Query[productdto.ProductCategoriesPageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
+	view, err := reader.ProductCategoriesPage(c.Request.Context(), req)
 	if view == nil {
 		view = &productdto.ProductCategoriesPageResp{
 			Title: productenums.ProductCategoriesTitle, Menu: "product-categories",
@@ -73,44 +72,15 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) (any, error) {
 }
 
 // ProductCategoryParents is a bounded, project-scoped parent picker search.
+//
+// 工程存在性判定、关键词为空给空候选、候选形状（PickOptionResp）全在 service 的
+// CategoryParentOptions 里 —— 这一层只做绑定与转交。
 func (h *ProductPageHandle) ProductCategoryParents(c *gin.Context) (any, error) {
-	projectID := strings.TrimSpace(c.Query("project"))
-	if !h.categoryProjectExists(c, projectID) {
-		// 工程不存在是**参数**问题（下拉到底来自哪个工程），不是服务故障：400 + 文案。
-		return nil, errors.New(productenums.ErrMissingProjectContext)
+	req, ok := binding.Query[productdto.ProductCategoryParentsReq](c)
+	if !ok {
+		return nil, response.ErrHandled
 	}
-	keyword := strings.TrimSpace(c.Query("keyword"))
-	options := []gin.H{}
-	if keyword != "" {
-		page, err := h.products.ListCategoryPage(c.Request.Context(), &productdto.ListCategoryPageReq{
-			ProjectID: projectID, Keyword: keyword, Page: productPageNumber(c.Query("page")), Size: productservice.ProductSubListPageSize,
-		})
-		if err != nil {
-			return nil, err
-		}
-		for _, item := range productservice.FlattenCategoryTree(page.Items) {
-			if item.Matched {
-				options = append(options, gin.H{"ID": item.ID, "Label": productservice.CategoryLabel(item)})
-			}
-		}
-	}
-	return gin.H{"Options": options}, nil
-}
-
-func (h *ProductPageHandle) categoryProjectExists(c *gin.Context, projectID string) bool {
-	if projectID == "" {
-		return false
-	}
-	projects, err := h.projects.List(c.Request.Context())
-	if err != nil {
-		return false
-	}
-	for _, project := range projects {
-		if project.ID == projectID {
-			return true
-		}
-	}
-	return false
+	return h.reader.CategoryParentOptions(c.Request.Context(), req)
 }
 
 // categoryOptionIDs 父级候选下拉里出现过的分类 id（MissingParentIDs 的「已知集合」）。
@@ -160,11 +130,11 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
-	view, err := reader.ProductBrandsPage(c.Request.Context(), &productdto.ProductBrandsPageReq{
-		ProjectID: strings.TrimSpace(c.Query("project")),
-		Keyword:   strings.TrimSpace(c.Query("keyword")),
-		Page:      productPageNumber(c.Query("page")),
-	})
+	req, ok := binding.Query[productdto.ProductBrandsPageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
+	view, err := reader.ProductBrandsPage(c.Request.Context(), req)
 	if view == nil {
 		view = &productdto.ProductBrandsPageResp{
 			Title: productenums.ProductBrandsTitle, Menu: "product-brands",

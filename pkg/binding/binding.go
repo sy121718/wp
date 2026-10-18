@@ -44,12 +44,27 @@ func JSON[T any](c *gin.Context) (*T, bool) {
 	return &req, true
 }
 
-// Query 绑定查询串（GET 的参数）。
+// QueryBinder 是查询串里反射绑定覆盖不到的形态的补充入口。
+//
+// 典型场景只有一类：**同一个参数有两套键名**（页面入口同时接受 project 与 projectId），
+// 而结构体字段只能挂一个 tag。键名兼容属于「请求形状」，留在 DTO 里；
+// 放控制器就等于每加一个入口再抄一遍。
+type QueryBinder interface {
+	BindQuery(url.Values) error
+}
+
+// Query 绑定查询串（GET 的参数），并在 DTO 实现 QueryBinder 时补一遍。
 func Query[T any](c *gin.Context) (*T, bool) {
 	var req T
 	if err := c.ShouldBindQuery(&req); err != nil {
 		response.ParamError(c)
 		return nil, false
+	}
+	if b, ok := any(&req).(QueryBinder); ok {
+		if err := b.BindQuery(c.Request.URL.Query()); err != nil {
+			response.ParamError(c)
+			return nil, false
+		}
 	}
 	return &req, true
 }
@@ -83,7 +98,15 @@ func ParseJSON[T any](c *gin.Context) (*T, error) {
 // ParseQuery 绑定查询串，不写响应。语义见 ParseJSON。
 func ParseQuery[T any](c *gin.Context) (*T, error) {
 	var req T
-	return &req, c.ShouldBindQuery(&req)
+	if err := c.ShouldBindQuery(&req); err != nil {
+		return &req, err
+	}
+	if b, ok := any(&req).(QueryBinder); ok {
+		if err := b.BindQuery(c.Request.URL.Query()); err != nil {
+			return &req, err
+		}
+	}
+	return &req, nil
 }
 
 // ParseForm 绑定表单体（urlencoded 或 multipart），不写响应；DTO 实现 FormBinder 时同样补一遍。

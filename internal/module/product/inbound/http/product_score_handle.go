@@ -246,8 +246,11 @@ func fillDuplicateTitle(sv *productdto.ScoreResp, title string, dups []scoring.T
 // （行内按钮需要那一步，是因为它没有「打开」这个动作）。
 func (h *ProductPageHandle) EntitySeoDrawer(c *gin.Context) (any, error) {
 	c.Header("Cache-Control", "no-store")
-	id := strings.TrimSpace(c.Query("productId"))
-	projectID := strings.TrimSpace(c.Query("project"))
+	req, ok := binding.Query[productdto.ProductSeoDrawerReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
+	id, projectID := req.ProductID, req.ProjectID
 	if h == nil || h.products == nil {
 		c.Status(http.StatusNotFound)
 		return nil, response.ErrHandled

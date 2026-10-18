@@ -162,11 +162,11 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
-	view, err := reader.ProductTagsPage(c.Request.Context(), &productdto.ProductTagsPageReq{
-		ProjectID: strings.TrimSpace(c.Query("project")),
-		Keyword:   strings.TrimSpace(c.Query("keyword")),
-		Page:      productPageNumber(c.Query("page")),
-	})
+	req, ok := binding.Query[productdto.ProductTagsPageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
+	view, err := reader.ProductTagsPage(c.Request.Context(), req)
 	if view == nil {
 		view = &productdto.ProductTagsPageResp{
 			Title: productenums.ProductTagsTitle, Menu: "product-tags",
@@ -217,11 +217,9 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) (any, error) {
 // 失败也回 200 的片段（不是整页错误页）：它替换的是页面里的一小块，
 // 回整页 HTML 会把展开区之外的内容一起换掉；错误文案过 productErrText 白名单。
 func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) (any, error) {
-	req := &productdto.ListTagProductsPageReq{
-		TagID:     strings.TrimSpace(c.Query("id")),
-		ProjectID: strings.TrimSpace(c.Query("project")),
-		Page:      parseIntOr(c.Query("page"), 1),
-		Size:      parseIntOr(c.Query("size"), 0),
+	req, ok := binding.Query[productdto.ListTagProductsPageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
 	}
 	data := gin.H{
 		"TagID":     req.TagID,

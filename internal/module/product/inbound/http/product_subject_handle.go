@@ -266,15 +266,12 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
-	// 取参数 → 调读模型（取数编排在 service：取哪些数据、按什么顺序、哪条失败算 400 /
-	// 哪条只降级，都是业务结论。见 service.ProductListPage）。
-	// 页码归一用跨页共用的 productPageNumber（属性页 / 分类标签页同口径）。
-	view, err := reader.ProductListPage(ctx, &productdto.ProductListPageReq{
-		ProjectID: strings.TrimSpace(c.Query("project")),
-		Keyword:   strings.TrimSpace(c.Query("keyword")),
-		Status:    strings.TrimSpace(c.Query("status")),
-		Page:      productPageNumber(c.Query("page")),
-	})
+	// 取参数交给 binding.Query（键名与去空白都在 DTO 一侧），取数编排在 service。
+	req, ok := binding.Query[productdto.ProductListPageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
+	view, err := reader.ProductListPage(ctx, req)
 	if view == nil {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
 		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
@@ -344,14 +341,6 @@ const productListPageSize = productservice.ProductListPageSize
 //
 // 查询串不是可信边界：page=abc、page=-3、page=999999 都会走到这里，
 // 服务端自行归一，绝不把非法页码透给取数层（负 offset 在 PG 上是错误）。
-func productPageNumber(raw string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || n < 1 {
-		return 1
-	}
-	return n
-}
-
 // productListFilterURL 列表页的筛选基地址（**不含** page/limit：分页组件自己拼）。
 //
 // 分页链接由 pkg/pagination.BuildPagination 在这个基地址后追加 page/limit —— 把筛选条件
@@ -435,7 +424,10 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
-	req := &productdto.ProductNewPageReq{ProjectID: strings.TrimSpace(c.Query("project"))}
+	req, ok := binding.Query[productdto.ProductNewPageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
 	view, err := reader.ProductNewPage(c.Request.Context(), req)
 	if view == nil {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
@@ -482,7 +474,11 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) (any, error) {
 // ==========================================================================
 
 func (h *ProductPageHandle) ProductEditPage(c *gin.Context) (any, error) {
-	return h.renderProductEditPage(c, strings.TrimSpace(c.Query("project")), strings.TrimSpace(c.Query("product")), "", false)
+	req, ok := binding.Query[productdto.ProductEditPageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
+	return h.renderProductEditPage(c, req.ProjectID, req.ProductID, "", false)
 }
 
 func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, echo bool) (any, error) {
@@ -622,10 +618,11 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
-	view, err := reader.ProductDetailPage(ctx, &productdto.ProductDetailPageReq{
-		ProjectID: strings.TrimSpace(c.Query("project")),
-		ProductID: strings.TrimSpace(c.Query("product")),
-	})
+	req, ok := binding.Query[productdto.ProductDetailPageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
+	view, err := reader.ProductDetailPage(ctx, req)
 	if view == nil {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键）：真出现 nil 时兜一个空视图。
 		view = &productdto.ProductDetailPageResp{
@@ -864,10 +861,13 @@ func (h *ProductHandle) DeleteRating(c *gin.Context) {
 // 两种都不拼 HTML：替代页曾经在这里拼字符串，结构与样式只存在于 Go 里，前端层改不到它。
 func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) (any, error) {
 	c.Header("Cache-Control", "no-store")
+	req, ok := binding.Query[productdto.ProductPreviewFrameReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
 	// 替代页是模板渲染（不走 adminui.Prepare 的页壳），取词在这里先做掉：视图只给成品串。
 	tr := shell.TranslateFor(c)
-	id := strings.TrimSpace(c.Query("productId"))
-	projectID := strings.TrimSpace(c.Query("project"))
+	id, projectID := req.ProductID, req.ProjectID
 	if id == "" {
 		return previewNoticeResp(c, tr(productenums.ProductsPreviewNeedSave, "保存这个商品后，这里会显示它的详情页真实形态。")), nil
 	}
@@ -947,13 +947,11 @@ func (h *ProductPageHandle) ProductBundlePage(c *gin.Context) (any, error) {
 // 不再有「请求期断言失败 → 500 兜底」这条路径。
 func (h *ProductPageHandle) renderBundlePage(c *gin.Context) (any, error) {
 	reader := h.reader
-	view, err := reader.ProductBundlePage(c.Request.Context(), &productdto.ProductBundlePageReq{
-		ProjectID:         bundleQueryParam(c, "project", "projectId"),
-		ProductID:         bundleQueryParam(c, "product", "productId"),
-		Source:            c.Query("source"),
-		SourceProductID:   c.Query("sourceProduct"),
-		SourceWarehouseID: c.Query("sourceWarehouse"),
-	})
+	req, ok := binding.Query[productdto.ProductBundlePageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
+	view, err := reader.ProductBundlePage(c.Request.Context(), req)
 	if view == nil {
 		// 契约上视图恒非 nil；契约是约定而不是类型保证，这一层兜底必须存在。
 		failed := bundlePageFailureView(http.StatusInternalServerError)
@@ -999,16 +997,6 @@ func bundlePageFailureView(status int) productdto.ProductBundlePageResp {
 // 参数名有两套且都合法：本页自己的两个选择器用 project / product；商品详情页的
 // 「编辑捆绑构成」入口用 projectId / productId（与商品页其余表单同一套字段名，
 // 直接复用商品 id 不会串）。两个都认，入口从哪来都能选中同一个商品 ——
-// 少认一个的表现是「点入口进来是空骨架」，而页面上看不出哪里不对。
-func bundleQueryParam(c *gin.Context, names ...string) string {
-	for _, name := range names {
-		if v := strings.TrimSpace(c.Query(name)); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 // 与变体清单的预览端点（/admin/products/variant/preview）同一形态：服务端把候选行与逐条
 // 跳过原因算好回 JSON，前端只负责把行**追加**进成员清单；「保存配置」才是落库动作。
 //
@@ -1269,12 +1257,13 @@ func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productd
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
-	view, err := reader.ProductPricingPage(c.Request.Context(), &productdto.ProductPricingPageReq{
-		ProjectID: strings.TrimSpace(c.Query("project")),
-		Form:      form,
-		Preview:   preview,
-		ErrMsg:    errMsg,
-	})
+	req, ok := binding.Query[productdto.ProductPricingPageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
+	// 表单回显与试算结果是**写路径的产物**（本次请求里已经在内存中），不来自查询串。
+	req.Form, req.Preview, req.ErrMsg = form, preview, errMsg
+	view, err := reader.ProductPricingPage(c.Request.Context(), req)
 	if view == nil {
 		view = &productdto.ProductPricingPageResp{
 			Title: productenums.ProductPricingTitle, Menu: "product-pricing",

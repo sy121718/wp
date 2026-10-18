@@ -112,6 +112,58 @@ var pendingControllerBinding = map[string]bool{
 	"internal/module/project/inbound/http/project_page.go":              true,
 }
 
+// pendingControllerQuery 还没换成 pkg/binding 的查询串读取（c.Query / c.DefaultQuery / c.Param）。
+//
+// 为什么与 pendingControllerBinding 分表：那三条（ShouldBind / PostForm）说的是「请求体」，
+// 这三条说的是「查询串」。商品模块两类都已清零，但存量模块的查询串读取量大（约 300 处），
+// 混在一张表里会让「已登记 = 这个文件可违反两类规则」的误读。
+var pendingControllerQuery = map[string]bool{
+	"internal/module/admin/inbound/http/admin_page.go":                     true,
+	"internal/module/ai/inbound/http/ai_handle.go":                         true,
+	"internal/module/ai/inbound/http/ai_page.go":                           true,
+	"internal/module/analytics/inbound/http/analytics_page.go":             true,
+	"internal/module/artifact/inbound/http/artifact_router.go":             true,
+	"internal/module/block/inbound/http/block_handle.go":                   true,
+	"internal/module/block/inbound/http/block_page.go":                     true,
+	"internal/module/build/inbound/http/build_handle.go":                   true,
+	"internal/module/cart/inbound/http/cart_router.go":                     true,
+	"internal/module/comment/inbound/http/comment_page.go":                 true,
+	"internal/module/content/inbound/http/content_page.go":                 true,
+	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go": true,
+	"internal/module/inventory/inbound/http/inventory_page_handle.go":      true,
+	"internal/module/inventory/inbound/http/inventory_purchase_handle.go":  true,
+	"internal/module/inventory/inbound/http/inventory_reason_handle.go":    true,
+	"internal/module/inventory/inbound/http/inventory_source_handle.go":    true,
+	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go": true,
+	"internal/module/mail/inbound/http/mail_err.go":                        true,
+	"internal/module/mail/inbound/http/mail_handle.go":                     true,
+	"internal/module/mail/inbound/http/mail_page.go":                       true,
+	"internal/module/masterdata/inbound/http/masterdata_page.go":           true,
+	"internal/module/media/inbound/http/media_handle.go":                   true,
+	"internal/module/membership/inbound/http/membership_page.go":           true,
+	"internal/module/navigation/inbound/http/navigation_page_handle.go":    true,
+	"internal/module/order/inbound/http/coupon_page.go":                    true,
+	"internal/module/order/inbound/http/order_create_page.go":              true,
+	"internal/module/order/inbound/http/order_handle.go":                   true,
+	"internal/module/order/inbound/http/order_list_page.go":                true,
+	"internal/module/order/inbound/http/order_shared.go":                   true,
+	"internal/module/order/inbound/http/return_page.go":                    true,
+	"internal/module/order/inbound/http/sales_page.go":                     true,
+	"internal/module/page/inbound/http/page_langs_handle.go":               true,
+	"internal/module/page/inbound/http/page_redirect.go":                   true,
+	"internal/module/page/inbound/http/page_schedule_handle.go":            true,
+	"internal/module/page/inbound/http/pages_handle.go":                    true,
+	"internal/module/page/inbound/http/page_site_slot_handle.go":           true,
+	"internal/module/page/inbound/http/page_translations_handle.go":        true,
+	"internal/module/project/inbound/http/project_handle.go":               true,
+	"internal/module/project/inbound/http/project_page.go":                 true,
+	"internal/module/publication/inbound/http/seo_audit_result.go":         true,
+	"internal/module/user/inbound/http/user_customer_admin_handle.go":      true,
+	"internal/module/user/inbound/http/user_page.go":                       true,
+	"internal/module/webhook/inbound/http/webhook_handle.go":               true,
+	"internal/module/workbench/inbound/http/workbench_page.go":             true,
+}
+
 // pendingControllerMethods 超过 60 行的控制器方法（"文件:方法名"）。
 var pendingControllerMethods = map[string]bool{
 	"internal/module/admin/inbound/http/admin_i18n_write.go:adminI18nWriteReqOf":                  true,
@@ -190,6 +242,11 @@ var (
 		"ShouldBind": true, "ShouldBindJSON": true, "ShouldBindQuery": true,
 		"ShouldBindUri": true, "ShouldBindHeader": true, "ShouldBindBodyWith": true,
 		"PostForm": true, "GetPostForm": true, "PostFormArray": true, "GetPostFormArray": true,
+	}
+	// controllerQueryMethods 是「读查询串」的三个入口，与请求体的四个分开判：查询串一律
+	// binding.Query[T]（键名与去空白在 DTO），跨路由共享的隐藏域才用 binding.Field。
+	controllerQueryMethods = map[string]bool{
+		"Query": true, "DefaultQuery": true, "Param": true,
 	}
 )
 
@@ -271,6 +328,58 @@ func TestControllerBindingEntry(t *testing.T) {
 	for rel := range pendingControllerBinding {
 		if !seen[rel] {
 			t.Errorf("pendingControllerBinding 登记了 %s，但该文件已无手工绑定 —— 请删掉这条登记", rel)
+		}
+	}
+}
+
+// TestControllerQueryBinding 控制器不直读查询串。
+//
+// 判据只有一条：页面 / 接口的参数键名属于请求形状，声明在 dto 的 form tag 上；控制器里出现
+// c.Query / c.DefaultQuery / c.Param 就意味着键名散落在代码里（改一处必然漏一处）。
+// 与 TestControllerBindingEntry 同一台机器，只是读的方向不同。
+func TestControllerQueryBinding(t *testing.T) {
+	root := repoRoot(t)
+	seen := map[string]bool{}
+	fset := token.NewFileSet()
+	for _, dir := range controllerDirs(t) {
+		pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
+			return !strings.HasSuffix(fi.Name(), "_test.go")
+		}, 0)
+		if err != nil {
+			t.Fatalf("解析 %s 失败: %v", dir, err)
+		}
+		for _, pkg := range pkgs {
+			for path, file := range pkg.Files {
+				rel, _ := filepath.Rel(root, path)
+				rel = filepath.ToSlash(rel)
+				ast.Inspect(file, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					sel, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok || !controllerQueryMethods[sel.Sel.Name] {
+						return true
+					}
+					// 只认接收者是 gin.Context 的惯用变量 c：pagination.Query(...) 是拼查询串的
+					// 纯函数、c.Request.URL.Query() 是 net/url 的解析口，两者都不是「读参数」。
+					// 判据收在这里而不是名单里，否则门禁会因为同名方法误报，最后被调宽到没有意义。
+					if id, isIdent := sel.X.(*ast.Ident); !isIdent || id.Name != "c" {
+						return true
+					}
+					seen[rel] = true
+					if !pendingControllerQuery[rel] {
+						t.Errorf("%s:%d：控制器不直读查询串 %s —— 入参走 pkg/binding 的 Query[T]（键名写在 dto 的 form tag）",
+							rel, fset.Position(call.Pos()).Line, sel.Sel.Name)
+					}
+					return true
+				})
+			}
+		}
+	}
+	for rel := range pendingControllerQuery {
+		if !seen[rel] {
+			t.Errorf("pendingControllerQuery 登记了 %s，但该文件已无手工读查询串 —— 请删掉这条登记", rel)
 		}
 	}
 }

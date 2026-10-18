@@ -11,9 +11,6 @@ package inventoryhttp
 // 然后是整页提示页（又一个要维护的模板 + 五个要填的事实字段），现在是响应体：
 // 成功回列表、失败 {code,message,data}。
 import (
-	"net/url"
-	"strings"
-
 	"net/http"
 
 	"go_wp/internal/text"
@@ -36,25 +33,6 @@ var (
 	inventorySourceBackKeys    = []string{"project", "type", "relatedParty", "status", "keyword", "page", "limit"}
 	inventoryPurchaseBackKeys  = []string{"project", "status", "sourceId", "keyword", "page", "limit"}
 )
-
-// inventoryQueryFromRequest 本次请求 query 里的列表上下文（表单 action 上带回来的那一段）。
-//
-// 同一份实现同时服务「渲染时拼进表单 action」与「失败重渲片段时再拼一次」：
-// 两者产出的形状必须一致，否则会出现「首屏表单 action 带 A、失败重渲后带 B」。
-// 空值丢弃、编码走 url.Values（键有序、产物稳定）。
-func inventoryQueryFromRequest(c *gin.Context, keys ...string) string {
-	if c == nil || c.Request == nil || c.Request.URL == nil {
-		return ""
-	}
-	in := c.Request.URL.Query()
-	out := url.Values{}
-	for _, k := range keys {
-		if v := strings.TrimSpace(in.Get(k)); v != "" {
-			out.Set(k, v)
-		}
-	}
-	return out.Encode()
-}
 
 // inventoryMsgText 把一句文案的事实取成当前语言文本（页面槽位 / 片段槽位用）。
 func inventoryMsgText(c *gin.Context, m facing.Msg) string { return text.MsgText(c, m) }

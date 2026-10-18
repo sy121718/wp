@@ -41,7 +41,9 @@ func (s *purchaseCreateFailService) ListWarehouses(context.Context, *inventorydt
 }
 
 // purchaseCreateCatalog 只实现页面下拉需要的那个只读口（一次批量，没有 List/Get）。
-type purchaseCreateCatalog struct{ productcontract.VariantOptionsReader }
+type purchaseCreateCatalog struct {
+	productcontract.VariantOptionsReader
+}
 
 func (purchaseCreateCatalog) ListVariantOptions(context.Context, string) ([]productcontract.VariantOption, error) {
 	return []productcontract.VariantOption{

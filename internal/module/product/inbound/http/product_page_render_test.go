@@ -141,6 +141,19 @@ type productPageReaderStub struct {
 	tagsView *productdto.ProductTagsPageResp
 	tagsErr  error
 	tagsReqs []*productdto.ProductTagsPageReq
+
+	// 父级候选片段：控制器只绑定 + 转交，取数与判据在 service —— 桩只记入参。
+	parentOptions    productdto.CategoryParentOptionsResp
+	parentOptionsErr error
+	parentOptionReqs []*productdto.ProductCategoryParentsReq
+}
+
+func (s *productPageReaderStub) CategoryParentOptions(_ context.Context, req *productdto.ProductCategoryParentsReq) (productdto.CategoryParentOptionsResp, error) {
+	s.parentOptionReqs = append(s.parentOptionReqs, req)
+	if s.parentOptions != nil || s.parentOptionsErr != nil {
+		return s.parentOptions, s.parentOptionsErr
+	}
+	return productdto.CategoryParentOptionsResp{"Options": []productdto.PickOptionResp{}}, nil
 }
 
 func (s *productPageReaderStub) ProductNewPage(_ context.Context, req *productdto.ProductNewPageReq) (*productdto.ProductNewPageResp, error) {

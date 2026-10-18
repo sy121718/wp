@@ -32,15 +32,13 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
-	// 取参数 → 调读模型（取数编排在 service：取哪些数据、按什么顺序、哪条失败算 400 /
+	// 取参数交给 binding.Query，取数编排在 service（取哪些数据、按什么顺序、哪条失败算 400 /
 	// 哪条只降级，都是业务结论。见 service.ProductAttributesPage）。
-	view, err := reader.ProductAttributesPage(ctx, &productdto.ProductAttributesPageReq{
-		ProjectID: strings.TrimSpace(c.Query("project")),
-		Keyword:   strings.TrimSpace(c.Query("keyword")),
-		Variation: strings.TrimSpace(c.Query("variation")),
-		// 页码归一用跨页共用的 productPageNumber（商品列表页 / 分类标签页同口径）。
-		Page: productPageNumber(c.Query("page")),
-	})
+	req, ok := binding.Query[productdto.ProductAttributesPageReq](c)
+	if !ok {
+		return nil, response.ErrHandled
+	}
+	view, err := reader.ProductAttributesPage(ctx, req)
 	if view == nil {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
 		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
@@ -155,14 +153,6 @@ func attrRowsFromResp(rows []productdto.AttributeValueResp) []productdto.AttrVal
 // （与 values_form / group_form 两个片段同形）。
 func attrRowsCtxData(c *gin.Context, groupID string, rows []productdto.AttrValueFormRow) gin.H {
 	return text.Inject(c, gin.H{"GroupID": groupID, "Rows": rows})
-}
-
-func parseIntOr(s string, fallback int) int {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil {
-		return fallback
-	}
-	return n
 }
 
 // 属性组表单的两种形态：新建（页头 / 空态打开的抽屉 tpl-attr-create）

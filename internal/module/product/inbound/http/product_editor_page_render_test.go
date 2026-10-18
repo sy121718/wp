@@ -204,6 +204,12 @@ func (s *editorStub) ProductTagsPage(context.Context, *productdto.ProductTagsPag
 	return productTagsPageViewStub(nil), nil
 }
 
+// CategoryParentOptions 父级候选片段走读模型（第十四个方法）；本文件不会调到它。
+func (s *editorStub) CategoryParentOptions(context.Context, *productdto.ProductCategoryParentsReq) (productdto.CategoryParentOptionsResp, error) {
+	s.record("CategoryParentOptions")
+	return productdto.CategoryParentOptionsResp{"Options": []productdto.PickOptionResp{}}, nil
+}
+
 func (s *editorStub) ProductEditPage(_ context.Context, req *productdto.ProductEditPageReq) (*productdto.ProductEditPageResp, error) {
 	s.record("ProductEditPage")
 	view := s.editView

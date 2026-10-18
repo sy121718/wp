@@ -311,6 +311,10 @@ func (s failedAttributeListService) ProductTagsPage(ctx context.Context, req *pr
 	return s.reader.ProductTagsPage(ctx, req)
 }
 
+func (s failedAttributeListService) CategoryParentOptions(ctx context.Context, req *productdto.ProductCategoryParentsReq) (productdto.CategoryParentOptionsResp, error) {
+	return s.reader.CategoryParentOptions(ctx, req)
+}
+
 func (s failedAttributeListService) ProductAttributesPage(ctx context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageResp, error) {
 	return s.reader.ProductAttributesPage(ctx, req)
 }

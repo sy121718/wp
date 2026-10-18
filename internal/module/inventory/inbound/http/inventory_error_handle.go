@@ -9,7 +9,6 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"go_wp/internal/shell"
 	"go_wp/internal/text"
 	"go_wp/pkg/facing"
@@ -17,6 +16,8 @@ import (
 	"go_wp/pkg/logger"
 	"strconv"
 	"strings"
+
+	"github.com/gin-gonic/gin"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"

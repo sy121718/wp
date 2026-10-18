@@ -3,10 +3,11 @@ package inventoryhttp
 
 import (
 	"context"
-	"github.com/gin-gonic/gin"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
+
+	"github.com/gin-gonic/gin"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"

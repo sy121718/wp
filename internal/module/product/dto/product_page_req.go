@@ -242,39 +242,38 @@ func (r *PricingFormReq) Rule() *PricingRuleReq {
 
 // ProductNewPageReq 商品新建整页的取数入参。
 type ProductNewPageReq struct {
-	// ProjectID 查询串里的工程 id（控制器只做去空白）；空串 = 取工程清单的第一个。
-	ProjectID string
+	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
+	ProjectID string `form:"project"`
 }
 
 // ProductListPageReq 商品列表整页的取数入参。
 //
-// Page 是**已归一**的页码：控制器用跨页共用的 productPageNumber 归一（`?page=abc` /
-// `?page=-3` 已经退回 1），本方法只做下限保护。归一不在这里做，是为了不让同一份规则
-// 在 service 与控制器各写一遍（那三个页面的页码归一与这里的必须同口径）。
+// Page 是**请求给的原始页码**：`?page=abc` 在绑定期就是 400（类型不合法是参数问题），
+// `?page=-3` / 缺省 0 由读模型的下限保护退回 1 —— 页码归一只有一处，在 service。
 type ProductListPageReq struct {
 	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
-	ProjectID string
-	Keyword   string
-	Status    string
-	Page      int
+	ProjectID string `form:"project"`
+	Keyword   string `form:"keyword"`
+	Status    string `form:"status"`
+	Page      int    `form:"page"`
 }
 
 // ProductDetailPageReq 商品详情整页的取数入参。
 type ProductDetailPageReq struct {
 	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
-	ProjectID string
+	ProjectID string `form:"project"`
 	// ProductID 查询串里的商品 id；空串 = 没给参数（与「商品已被删除」同一档：404）。
-	ProductID string
+	ProductID string `form:"product"`
 }
 
 // ProductEditPageReq 商品编辑整页的取数入参。
 type ProductEditPageReq struct {
 	// ProjectID 查询串 / 表单里的工程 id；空串 = 取工程清单的第一个。
-	ProjectID string
+	ProjectID string `form:"project"`
 	// ProductID 要编辑的商品 id；空串 = 没给参数 → **200 空表单**（不是 404）：
 	// 编辑页是写入口，让运营看到一个空表单比看到一个 404 有用（详情页反过来）。
 	// 给了 id 但库里没有才是 404（与详情页同一档：空态、不进失败槽）。
-	ProductID string
+	ProductID string `form:"product"`
 }
 
 // TranslationRowErrorResp 译文工作台的一行错误：Label 是「哪一行」（语境名，可空 = 页面级），
@@ -341,7 +340,7 @@ type ProductCreateFormReq struct {
 type ProductPricingPageReq struct {
 	// ProjectID 查询串里的工程 id；空串 = 取工程清单的第一个。
 	// Form.ProjectID 非空时以表单为准（试算/应用路径带着它提交）。
-	ProjectID string
+	ProjectID string `form:"project"`
 	// Form 表单回显（试算路径给本次提交值；首次 GET 为 nil = 用默认初值）。
 	Form *PricingForm
 	// Preview 试算结果（只有试算路径给；nil = 还没试算过）。
@@ -356,19 +355,19 @@ type ProductPricingPageReq struct {
 // Variation 的归一不在这里（`?variation=yes` 会被归一成「全部」，见 service 的读模型）：
 // 归一写在控制器时，筛选回显与过滤条件会各拿一份原始串。
 type ProductAttributesPageReq struct {
-	ProjectID string
-	Keyword   string
-	Variation string
-	// Page 已由控制器归一（productPageNumber 是跨页共用工具）；读模型还会按总数收敛一次。
-	Page int
+	ProjectID string `form:"project"`
+	Keyword   string `form:"keyword"`
+	Variation string `form:"variation"`
+	// Page 原始页码；下限保护与按总数收敛都在读模型里。
+	Page int `form:"page"`
 }
 
 // ProductDetailTemplatePageReq 「详情页模板」整页的取数入参（两个查询串参数）。
 type ProductDetailTemplatePageReq struct {
 	// ProjectID 工程 id；空串 = 取工程清单的第一个。
-	ProjectID string
+	ProjectID string `form:"project"`
 	// ProductID 商品 id；空串 = 还没选商品（菜单入口），控制器据此走引导出口。
-	ProductID string
+	ProductID string `form:"product"`
 }
 
 // ProductBundlePageReq 捆绑配置页的取数入参。
@@ -382,12 +381,25 @@ type ProductDetailTemplatePageReq struct {
 // 没有「提交快照」这一档：保存已迁到 JSON 写基座，基座在原页发 fetch、失败只写结果区，
 // 用户的输入从未离开 DOM，因此页面装载只回答「库里配了什么」。
 type ProductBundlePageReq struct {
-	ProjectID       string
-	ProductID       string
-	Source          string
-	SourceProductID string
+	ProjectID       string `form:"project"`
+	ProductID       string `form:"product"`
+	Source          string `form:"source"`
+	SourceProductID string `form:"sourceProduct"`
 	// SourceWarehouseID 选中来源仓（仓库来源面板据此只列那个仓的一屏候选）。
-	SourceWarehouseID string
+	SourceWarehouseID string `form:"sourceWarehouse"`
+}
+
+// BindQuery 兼容捆绑页入口的两套键名：菜单与列表页给 project/product，
+// 片段与旧链接给 projectId/productId（见 ProductBundlePageReq 的注释）。
+// 两套都空时保持空串 —— 页面回落到工程清单的第一个。
+func (r *ProductBundlePageReq) BindQuery(q url.Values) error {
+	if r.ProjectID == "" {
+		r.ProjectID = strings.TrimSpace(q.Get("projectId"))
+	}
+	if r.ProductID == "" {
+		r.ProductID = strings.TrimSpace(q.Get("productId"))
+	}
+	return nil
 }
 
 // BundleOptionResp 成员表的一行（渲染行，非原始配置）。
@@ -414,9 +426,9 @@ type BundleOptionResp struct {
 
 // ProductTranslationsPageReq 商品译文工作台的取数入参（工程 / 商品 / 目标语言，三者都可空）。
 type ProductTranslationsPageReq struct {
-	ProjectID string
-	ProductID string
-	Lang      string
+	ProjectID string `form:"project"`
+	ProductID string `form:"product"`
+	Lang      string `form:"lang"`
 }
 
 // SaveProductTranslationsReq 保存提交：三组并行数组按行一一对应（与表单字段同形）。
@@ -431,23 +443,47 @@ type SaveProductTranslationsReq struct {
 	Targets   []string
 }
 
+// ProductCategoryParentsReq 分类抽屉「父级」候选的查询串参数（搜索式，一屏一页）。
+type ProductCategoryParentsReq struct {
+	ProjectID string `form:"project"`
+	Keyword   string `form:"keyword"`
+	Page      int    `form:"page"`
+}
+
+// CategoryParentOptionsResp 父级候选片段的数据根。
+//
+// 是 map 而不是结构体：片段模板用 .["t"] 取词，Jet 的索引写法只对 map 生效。
+type CategoryParentOptionsResp map[string]any
+
+// ProductPreviewFrameReq 商品预览帧的查询串参数（键名沿用编辑页里的 productId）。
+type ProductPreviewFrameReq struct {
+	ProjectID string `form:"project"`
+	ProductID string `form:"productId"`
+}
+
+// ProductSeoDrawerReq 商品 SEO 抽屉的查询串参数（与预览帧同形）。
+type ProductSeoDrawerReq struct {
+	ProjectID string `form:"project"`
+	ProductID string `form:"productId"`
+}
+
 // ProductCategoriesPageReq 分类管理页的取数入参。
 type ProductCategoriesPageReq struct {
-	ProjectID string
-	Keyword   string
-	Page      int
+	ProjectID string `form:"project"`
+	Keyword   string `form:"keyword"`
+	Page      int    `form:"page"`
 }
 
 // ProductBrandsPageReq 品牌管理页的取数入参。
 type ProductBrandsPageReq struct {
-	ProjectID string
-	Keyword   string
-	Page      int
+	ProjectID string `form:"project"`
+	Keyword   string `form:"keyword"`
+	Page      int    `form:"page"`
 }
 
 // ProductTagsPageReq 标签管理页的取数入参。
 type ProductTagsPageReq struct {
-	ProjectID string
-	Keyword   string
-	Page      int
+	ProjectID string `form:"project"`
+	Keyword   string `form:"keyword"`
+	Page      int    `form:"page"`
 }

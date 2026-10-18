@@ -406,6 +406,51 @@ func (s *Service) ProductTagsPage(ctx context.Context, req *productdto.ProductTa
 	return view, nil
 }
 
+// CategoryParentOptions 分类抽屉里「父级」候选的一屏（搜索式，服务端只给一页）。
+//
+// 两个判据为什么在 service 而不是控制器：工程不存在属**参数**问题（400，不是「没有候选」），
+// 「关键词为空就一个都不给」是取数口径 —— 两者都是结论，控制器只搬视图。
+func (s *Service) CategoryParentOptions(ctx context.Context, req *productdto.ProductCategoryParentsReq) (productdto.CategoryParentOptionsResp, error) {
+	view := productdto.CategoryParentOptionsResp{"Options": []productdto.PickOptionResp{}}
+	projectID, keyword, page := "", "", 1
+	if req != nil {
+		projectID = strings.TrimSpace(req.ProjectID)
+		keyword = strings.TrimSpace(req.Keyword)
+		if req.Page > 0 {
+			page = req.Page
+		}
+	}
+	if projectID == "" {
+		return view, productenums.Err(productenums.ErrInvalidParam)
+	}
+	projects, err := s.project.List(ctx)
+	if err != nil {
+		return view, err
+	}
+	if !ProjectExists(projects, projectID) {
+		return view, productenums.Err(productenums.ErrInvalidParam)
+	}
+	if keyword == "" {
+		return view, nil
+	}
+	res, err := s.ListCategoryPage(ctx, &productdto.ListCategoryPageReq{
+		ProjectID: projectID, Keyword: keyword, Page: page, Size: ProductSubListPageSize,
+	})
+	if err != nil {
+		return view, err
+	}
+	options := []productdto.PickOptionResp{}
+	if res != nil {
+		for _, item := range FlattenCategoryTree(res.Items) {
+			if item.Matched {
+				options = append(options, productdto.PickOptionResp{Value: item.ID, Label: CategoryLabel(item)})
+			}
+		}
+	}
+	view["Options"] = options
+	return view, nil
+}
+
 // 编译期断言：本文件新增的三个读模型必须留在 ProductPageReader 里（接口是整体，
 // 少实现一个方法就是处理器侧的运行期断言失败 → 整页静默走兜底出口）。
 var _ productcontract.ProductPageReader = (*Service)(nil)

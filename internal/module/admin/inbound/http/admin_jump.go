@@ -18,15 +18,14 @@ package adminhttp
 //   · 结论不进 URL —— 成功 / 失败只体现在提示页的响应体里。
 
 import (
-	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
 	adminenums "go_wp/internal/module/admin/enums"
 	"go_wp/internal/shell"
+	"go_wp/pkg/binding"
 )
 
 // 后台列表页路径（回跳目标）。edit 页（数据规则）另拼 id，不在这里。
@@ -53,31 +52,13 @@ var (
 	adminDatarulesBackKeys = []string{"domain", "page", "limit"}
 )
 
-// adminQueryString 把一组键值拼成查询串（空值丢弃、编码走 url.Values：键有序、产物稳定）。
-func adminQueryString(values map[string]string) string {
-	q := url.Values{}
-	for k, v := range values {
-		if strings.TrimSpace(v) != "" {
-			q.Set(k, v)
-		}
-	}
-	return q.Encode()
-}
-
 // adminListQuery 本次请求 query 里的列表上下文（表单 action 上带回来的那一段）。
 //
-// 同一份实现同时服务「渲染时拼进表单 action」与「失败重渲片段时再拼一次」：两者产出的形状
-// 必须一致，否则会出现「首屏表单 action 带 A、失败重渲后带 B」。
+// 实现只有一份：pkg/binding.ListQuery（白名单 / 去空白 / 空值丢弃 / 键有序）。
+// 本包此前有一份同形的手写实现，与它逐字等价 —— 两份的分叉症状是「首屏表单 action 带 A、
+// 失败重渲后带 B」，而页面不报错。
 func adminListQuery(c *gin.Context, keys ...string) string {
-	if c == nil || c.Request == nil || c.Request.URL == nil {
-		return ""
-	}
-	in := c.Request.URL.Query()
-	values := make(map[string]string, len(keys))
-	for _, k := range keys {
-		values[k] = strings.TrimSpace(in.Get(k))
-	}
-	return adminQueryString(values)
+	return binding.ListQuery(c, keys...)
 }
 
 // adminPageRef 一个后台列表页的出口上下文：回跳路径、链接文字、筛选键表。
