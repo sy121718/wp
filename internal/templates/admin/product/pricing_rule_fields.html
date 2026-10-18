@@ -6,7 +6,8 @@
 
    数据契约（调用点必须先备好，否则 include 会渲染成空下拉）：
      · Rules / Roundings —— service 给的内置清单（唯一来源，不要在模板里写死选项）
-     · Form              —— 表单初值：RuleType / Multiplier / Amount / Margin / Rounding
+     · Form              —— 可选：表单初值（RuleType / Multiplier / Amount / Margin / Rounding）。
+                            没有就按空表单渲染（列表页的批量改价抽屉：初值就是空白）。
    include 共享调用点作用域，故这里直接用 .["t"] 取词；变量名带 pf 前缀，
    避免与调用点自己的 form / rules 同名（Jet 同作用域重复声明会报错）。
 
@@ -17,7 +18,7 @@
    aria-label 保留，与调用点 scope / 筛选集两行的写法一致。 *}
 {{pfRules := .Rules}}
 {{pfRoundings := .Roundings}}
-{{pfForm := .Form}}
+{{pfForm := map("RuleType", "", "Multiplier", "", "Amount", "", "Margin", "", "Rounding", "")}}{{if isset(.Form)}}{{pfForm = .Form}}{{end}}
 <div class="form-inline">
     <label class="form-label" for="pricing-rule-type">{{ .["t"]("admin.product_pricing.apply.labelRule", "规则") }}</label>
     <select class="form-select" id="pricing-rule-type" name="ruleType" aria-label="{{ .["t"]("admin.product_pricing.apply.ruleTypeAria", "定价规则类型") }}">

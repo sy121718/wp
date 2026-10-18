@@ -45,7 +45,6 @@ const productListPath = "/admin/products"
 // 两处分叉的表现是「改完筛选再操作，回来静默丢了筛选」—— 页面不报错、日志也干净，
 // 所以键表只留这一份，不要在两处各写字面量。
 var (
-	productListBackKeys    = []string{"project", "keyword", "status", "page", "limit"}
 	productBundleBackKeys  = []string{"project", "product"}
 	productPricingBackKeys = []string{"project"}
 )
@@ -250,7 +249,8 @@ var _ = http.StatusOK
 // ==========================================================================
 // 商品列表页：筛选、分页、行内状态与分类/标签单元格。
 //
-// 筛选条与分页是全后台通用形态（GET 表单 + select）；筛选上下文键表是本文件的 productListBackKeys。
+// 筛选条与分页是全后台通用形态（GET 表单 + select）；本页不拼筛选上下文 query ——
+// 列表页的返回地址只需要工程一个条件（productListFilterURL）。
 
 // ProductsPage 商品管理页：工程切换 + 商品列表 + 每个商品的变体面板 + 内联新建表单。
 func (h *ProductPageHandle) ProductsPage(c *gin.Context) (any, error) {
@@ -300,10 +300,7 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) (any, error) {
 // 全是**请求态**派生：title 是 i18n key、ListQuery 来自当前查询串、分页基地址要带筛选条件 ——
 // 所以留在控制器这一侧，读模型只交数据。
 func fillProductListChrome(c *gin.Context, view *productdto.ProductListPageResp) {
-	// 改价表单初值：工具还被独立定价页用着，所以留在本包。标题与菜单在模板（layout 的
-	// pageTitle / topbarTitle block），状态下拉的选项形状也在模板；分类扁平行与成品行
-	// 已随行下沉进读模型（service/product_row.go），本页拿到的是排好序的 view.Products。
-	view.Form = productservice.DefaultPricingForm(view.Rules, view.Roundings)
+	// 标题、菜单、状态下拉、改价表单初值都在模板；本函数只剩分页事实这一件要当前请求串的事。
 	// 分页条：Go 只交事实（总数 / 页码 / 每页条数 / 基地址），文案、页码窗口与链接由
 	// admin/partials/pagination.html 渲染。基地址带当前筛选条件，翻页不丢条件。
 	//
@@ -317,9 +314,6 @@ func fillProductListChrome(c *gin.Context, view *productdto.ProductListPageResp)
 		pg.Base = productListFilterURL(view.SelectedProject, view.FilterKeyword, view.FilterStatus)
 		view.Pagination = pg
 	}
-	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行），模板里的 ?err= / ?done= 提示条
-	// 已整批删除。ListQuery 是筛选上下文（表单 action 的 query）：筛选条提交要带着它回去。
-	view.ListQuery = binding.ListQuery(c, productListBackKeys...)
 }
 
 // productListPageSize 商品列表每页条数（服务端分页）。

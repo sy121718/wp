@@ -104,17 +104,12 @@ type ProductListPageResp struct {
 	AttributeOptions    []AttributeOptionResp
 	WarehouseSKUOptions []WarehouseSKUGroupResp
 
-	// 批量改价抽屉的规则清单、尾数处理清单与表单初值。
-	Rules     []*PricingRuleTypeResp
-	Roundings []*PricingRoundingOptionResp
-	Form      PricingForm
-
-	// Products 成品行（读模型装配，形状见 ProductRowResp）；Pagination 分页条事实；
-	// ListQuery 筛选上下文（GET 表单 action 的 query，键表见
-	// product_subject_handle.go 的 productListBackKeys）。
+	// 批量改价抽屉的规则清单与尾数处理清单（模板 include pricing_rule_fields.html）；
+	// 表单初值在模板里写（空白表单）。Products 成品行由读模型装配；Pagination 分页条事实。
+	Rules      []*PricingRuleTypeResp
+	Roundings  []*PricingRoundingOptionResp
 	Products   []ProductRowResp
 	Pagination pagination.Page
-	ListQuery  string
 
 	// LoadFailed 本次请求**没读到**（不是「读到了、只是空的」）；LoadError 由控制器
 	// 按当前语言归口后填。

@@ -29,10 +29,6 @@ func newFilterKeyContext(t *testing.T, rawQuery string) *gin.Context {
 func TestProductFilterKeysKeepContext(t *testing.T) {
 	c := newFilterKeyContext(t, "project=p1&keyword=abc&product=prod1&lang=en-US&source=BundleSourceProduct")
 
-	if got := adminui.ListQuery(c, productListBackKeys...); !strings.Contains(got, "project=p1") ||
-		!strings.Contains(got, "keyword=abc") || strings.Contains(got, "source=") {
-		t.Errorf("列表键表 = %q（应含 project/keyword、不含未列出的 source）", got)
-	}
 	if got := adminui.ListQuery(c, productPricingBackKeys...); !strings.Contains(got, "project=p1") {
 		t.Errorf("定价键表 = %q（应保留 project）", got)
 	}
