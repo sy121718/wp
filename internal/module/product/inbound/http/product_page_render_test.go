@@ -20,6 +20,7 @@ package producthttp
 import (
 	"context"
 	"errors"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -466,9 +467,9 @@ func productPageRequest(t *testing.T, h *ProductPageHandle, target string) *http
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/products", h.ProductsPage)
-	engine.GET("/admin/products/new", h.ProductNewPage)
-	engine.GET("/admin/products/detail", h.ProductDetailPage)
+	engine.GET("/admin/products", adminui.Page(ProductListPageTemplate, h.ProductsPage))
+	engine.GET("/admin/products/new", adminui.Page(ProductNewPageTemplate, h.ProductNewPage))
+	engine.GET("/admin/products/detail", adminui.Page(ProductDetailPageTemplate, h.ProductDetailPage))
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec
@@ -487,7 +488,7 @@ func productPageRequestWith(t *testing.T, h *ProductPageHandle, target string, m
 	for _, m := range mw {
 		engine.Use(m)
 	}
-	engine.GET("/admin/products", h.ProductsPage)
+	engine.GET("/admin/products", adminui.Page(ProductListPageTemplate, h.ProductsPage))
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec
@@ -504,13 +505,13 @@ func productPageRequestFor(t *testing.T, h *ProductPageHandle, route, target str
 	// 按路径分派到对应的整页 handler：调用点只给「这是哪一页」，不必再各自搭一个引擎。
 	switch route {
 	case "/admin/product-attributes":
-		engine.GET(route, h.ProductAttributesPage)
+		engine.GET(route, adminui.Page(ProductAttributesPageTemplate, h.ProductAttributesPage))
 	case "/admin/product-categories":
-		engine.GET(route, h.ProductCategoriesPage)
+		engine.GET(route, adminui.Page(ProductCategoriesPageTemplate, h.ProductCategoriesPage))
 	case "/admin/product-brands":
-		engine.GET(route, h.ProductBrandsPage)
+		engine.GET(route, adminui.Page(ProductBrandsPageTemplate, h.ProductBrandsPage))
 	case "/admin/product-tags":
-		engine.GET(route, h.ProductTagsPage)
+		engine.GET(route, adminui.Page(ProductTagsPageTemplate, h.ProductTagsPage))
 	default:
 		t.Fatalf("productPageRequestFor 不认识这条路由 %q", route)
 	}

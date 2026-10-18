@@ -302,14 +302,8 @@ var _ = http.StatusOK
 //
 // 筛选条与分页是全后台通用形态（GET 表单 + select）；筛选上下文键表在 product_jump.go。
 
-// productListPageTemplate 商品列表整页模板（失败页与成功页渲染**同一份**模板）。
-//
-// 本节起是原先的 product_list.go（列表页）。
-// ==========================================================================
-const productListPageTemplate = "admin/product/products.html"
-
 // ProductsPage 商品管理页：工程切换 + 商品列表 + 每个商品的变体面板 + 内联新建表单。
-func (h *ProductPageHandle) ProductsPage(c *gin.Context) {
+func (h *ProductPageHandle) ProductsPage(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 	// 取数失败**不在这里出口**：整页 GET 只有一条渲染路径（函数末尾那次 c.HTML），
 	// 失败页与成功页渲染同一份模板、同一份页壳数据，差别只有状态码 / no-store / 失败槽
@@ -349,8 +343,9 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) {
 		view.LoadFailed = true
 		view.LoadError = response.MessageOf(c, "product", err)
 	}
-	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
-	adminui.RenderPage(c, productListPageTemplate, view)
+	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore），
+	// 渲染发生在 UI 线（router 里 adminui.Page 那一行）——控制器交视图，不碰模板名。
+	return view, nil
 }
 
 // fillProductListChrome 列表页的页壳与派生值（页头 / 状态下拉 / 改价表单初值 / 分页事实 /
@@ -462,7 +457,6 @@ func productStatusOptions(current string) []productdto.StatusOptionResp {
 // 字段名与 dto.CreateReq 的 json 标签的逐字对齐由 product_create_form_protocol_test.go 钉住
 // —— 模板写错一个 name 的后果是字段静默丢失（商品建出来了，某个字段是空的）。
 
-// productNewPageTemplate 新建商品整页模板（失败页与正常页渲染**同一份**模板）。
 // 左侧基础信息表单（字段名与 dto.CreateReq 一致），
 // 右侧模板卡片区（默认模板 + 候选列表 + 预览入口）；模板绑定与可视化自定义
 // 在创建后的详情页继续（create 不落实例，绑定发生在首次发布）。
@@ -471,7 +465,6 @@ func productStatusOptions(current string) []productdto.StatusOptionResp {
 //
 // 本节起是原先的 product_create.go（新建页与它的表单字段协议）。
 // ==========================================================================
-const productNewPageTemplate = "admin/product/products_new.html"
 
 // ProductNewPage GET /admin/products/new：商品新建整页。
 //
@@ -487,7 +480,7 @@ const productNewPageTemplate = "admin/product/products_new.html"
 //	  于是「失败页长什么样」不再有第二种写法；
 //	· 失败槽文案（LoadError）仍在这里取词：取词是**请求级**的（按当前语言），
 //	  交给 service 就等于把语言钉进业务层。
-func (h *ProductPageHandle) ProductNewPage(c *gin.Context) {
+func (h *ProductPageHandle) ProductNewPage(c *gin.Context) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
@@ -506,7 +499,7 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) {
 		view.LoadFailed = true
 		view.LoadError = response.MessageOf(c, "product", err)
 	}
-	adminui.RenderPage(c, productNewPageTemplate, view)
+	return view, nil
 }
 
 // ==========================================================================
@@ -537,14 +530,11 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) {
 // 本节起是原先的 product_edit.go（编辑页，字段名与 UpdateReq 的 json 标签逐字对齐）。
 // ==========================================================================
 
-// productEditPageTemplate 商品编辑整页模板（失败页与成功页渲染**同一份**模板）。
-const productEditPageTemplate = "admin/product/product_edit.html"
-
-func (h *ProductPageHandle) ProductEditPage(c *gin.Context) {
-	h.renderProductEditPage(c, strings.TrimSpace(c.Query("project")), strings.TrimSpace(c.Query("product")), "", false)
+func (h *ProductPageHandle) ProductEditPage(c *gin.Context) (any, error) {
+	return h.renderProductEditPage(c, strings.TrimSpace(c.Query("project")), strings.TrimSpace(c.Query("product")), "", false)
 }
 
-func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, echo bool) {
+func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, echo bool) (any, error) {
 	ctx := c.Request.Context()
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
@@ -586,7 +576,7 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
-	adminui.RenderPage(c, productEditPageTemplate, view)
+	return view, nil
 }
 
 // fillEditFormEcho 编辑表单的回显值（状态选中项、属性组勾选态、图集与数值字段的文本形态、
@@ -673,11 +663,8 @@ func checkedAttributeOptions(options []productdto.AttributeOptionResp, selected 
 // 列表页上，等于让列表页承载实体详情 —— 商品一多，变体表与评分表就是两份与商品表错位的
 // 长表，改一个商品要跨三处找入口。
 //
-// productDetailPageTemplate 商品详情整页模板（失败页与成功页渲染**同一份**模板）。
-//
 // 本节起是原先的 product_detail_page.go（详情页）。
 // ==========================================================================
-const productDetailPageTemplate = "admin/product/product_detail.html"
 
 // 本页只**看**：基本信息 / 属性引用 / 分类与品牌 / 标签 / 捆绑构成 / 变体清单 / 评分 /
 // 详情页模板的绑定状态。全部写动作（含变体与评分）在 ProductEditPage ——
@@ -695,7 +682,7 @@ const productDetailPageTemplate = "admin/product/product_detail.html"
 //
 // 取数编排（工程 / 仓库 / 商品 / 分类 / 品牌 / 标签）与上面三档的判定都在 service 的读模型里
 // （service.ProductDetailPage）；本函数只剩「取参数 → 调读模型 → 补控制器负责的派生值 → 一个出口」。
-func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
+func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
@@ -741,7 +728,7 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 		view.LoadFailed = true
 		view.LoadError = response.MessageOf(c, "product", err)
 	}
-	adminui.RenderPage(c, productDetailPageTemplate, view)
+	return view, nil
 }
 
 // variantPreviewRow 预览行的 JSON 形状：前端拿它渲染清单里的一行。
@@ -968,11 +955,8 @@ func productPreviewFrameNotice(c *gin.Context, text string) {
 //
 // 接口面（原先的 product_handle.go 捆绑段）在前，后台页面在后。
 
-// productBundlePageTemplate 整页模板（只剩这一档）。
-//
 // 保存已迁到 JSON 写基座：基座在原页发 fetch、失败只写结果区，不再有「htmx 写失败换片段」
 // 这种响应形态，页面装配也因此只有一处出口。
-const productBundlePageTemplate = "admin/product/product_bundle.html"
 
 // bundleResolveURL 成员来源面板的解析接口（URL 形状属 HTTP，控制器给）。
 const bundleResolveURL = "/admin/products/bundle/members/resolve"
@@ -989,15 +973,15 @@ const bundleResolveURL = "/admin/products/bundle/members/resolve"
 //
 // 保存走 JSON 写基座（表单声明 data-write-api=/api/product/bundle/set）：成员行由
 // static/js/ui/product_bundle_write.js 组装成 {productId, config:{...}}，页面只负责渲染。
-func (h *ProductPageHandle) ProductBundlePage(c *gin.Context) {
-	h.renderBundlePage(c)
+func (h *ProductPageHandle) ProductBundlePage(c *gin.Context) (any, error) {
+	return h.renderBundlePage(c)
 }
 
 // renderBundlePage 整页出口（只有这一处）。
 //
 // 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 // 不再有「请求期断言失败 → 500 兜底」这条路径。
-func (h *ProductPageHandle) renderBundlePage(c *gin.Context) {
+func (h *ProductPageHandle) renderBundlePage(c *gin.Context) (any, error) {
 	reader := h.reader
 	view, err := reader.ProductBundlePage(c.Request.Context(), &productdto.ProductBundlePageReq{
 		ProjectID:         bundleQueryParam(c, "project", "projectId"),
@@ -1019,28 +1003,10 @@ func (h *ProductPageHandle) renderBundlePage(c *gin.Context) {
 
 	// 剩下两样都只由控制器给：两个 URL 形状（ResolveURL / ListQuery）。
 	// 它们要么来自请求，要么是 HTTP 侧的形状 —— 都不是取数结论。
-	extra := gin.H{
-		"ResolveURL": bundleResolveURL,
-		// 页面上下文（页面链接的 query）。
-		"ListQuery": adminui.ListQuery(c, productBundleBackKeys...),
-	}
-	// 这一屏不是可缓存的成功页：重试必须真的回到服务端（判据由视图给，见 PageNoStore）。
-	if view.PageNoStore() {
-		c.Header("Cache-Control", "no-store")
-	}
-	c.HTML(view.PageStatus(), productBundlePageTemplate, bundlePageData(c, view, extra))
-}
-
-// bundlePageData 摊平视图 + 叠加控制器那两样键（两个 URL 形状）。
-//
-// 用 ViewMap 而不是 adminui.RenderPage：视图自己已经实现 PageResult —— 状态码与 no-store
-// 按页面的结论给，视图与控制器侧那两样键在这里合成一份数据。
-func bundlePageData(c *gin.Context, view *productdto.ProductBundlePageResp, extra gin.H) gin.H {
-	data := adminui.ViewMap(view)
-	for k, v := range extra {
-		data[k] = v
-	}
-	return adminui.Prepare(c, data)
+	// 状态码 / no-store 由视图的 PageStatus / PageNoStore 带出，渲染在 UI 线。
+	view.ResolveURL = bundleResolveURL
+	view.ListQuery = adminui.ListQuery(c, productBundleBackKeys...)
+	return view, nil
 }
 
 // bundlePageFailureView 失败档的视图（给齐模板必需键，避免失败分支只设了错误键）。
@@ -1308,29 +1274,25 @@ func (h *ProductHandle) ListBundleSKUs(c *gin.Context) {
 // 接口面在前，后台页面在后。
 
 // ProductPricingPage 定价工具页：规则参考表 + 改价表单 + 留痕台账。
-func (h *ProductPageHandle) ProductPricingPage(c *gin.Context) {
-	h.renderPricingPageWith(c, nil, nil, "")
+func (h *ProductPageHandle) ProductPricingPage(c *gin.Context) (any, error) {
+	return h.renderPricingPageWith(c, nil, nil, "")
 }
 
 // ProductPricingPreview 试算（不落库、不留痕），结果渲染回同一页。
-func (h *ProductPageHandle) ProductPricingPreview(c *gin.Context) {
+func (h *ProductPageHandle) ProductPricingPreview(c *gin.Context) (any, error) {
 	req, ok := binding.Form[productdto.PricingFormReq](c)
 	if !ok {
-		return
+		return nil, response.ErrHandled
 	}
 	form := req.Form()
 	preview, err := h.products.PreviewPricing(c.Request.Context(), &productdto.PricingPreviewReq{PricingRuleReq: *req.Rule()})
 	if err != nil {
 		// 试算失败不重定向：用户填的表单要留在眼前，否则「哪一项填错了」无从改起。
 		// 试算失败的原文（含 PG 原文）只进日志，页面上给可读文案。
-		h.renderPricingPageWith(c, &form, nil, response.MessageOf(c, "product", err))
-		return
+		return h.renderPricingPageWith(c, &form, nil, response.MessageOf(c, "product", err))
 	}
-	h.renderPricingPageWith(c, &form, preview, "")
+	return h.renderPricingPageWith(c, &form, preview, "")
 }
-
-// productPricingPageTemplate 定价页模板名（与定价接口面同处本文件）。
-const productPricingPageTemplate = "admin/product/product_pricing.html"
 
 // renderPricingPageWith 定价页的统一渲染入口（form / preview / errMsg 三者可空）。
 //
@@ -1339,7 +1301,7 @@ const productPricingPageTemplate = "admin/product/product_pricing.html"
 //
 // form / preview / errMsg 是**写路径的产物**（试算失败要原地重渲染，把用户填的表单与试算结果
 // 带回来）。service 不认识 gin.Context，所以由这里读出来经 Req 传进去。
-func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productdto.PricingForm, preview *productdto.PricingPreviewResp, errMsg string) {
+func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productdto.PricingForm, preview *productdto.PricingPreviewResp, errMsg string) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
@@ -1362,7 +1324,7 @@ func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productd
 	}
 	// 表单 action 的 query：预览走页面 POST，筛选上下文要随表单带回来（URL 形状属 HTTP 边界）。
 	view.ListQuery = adminui.ListQuery(c, productPricingBackKeys...)
-	adminui.RenderPage(c, productPricingPageTemplate, view)
+	return view, nil
 }
 
 // ==========================================================================

@@ -27,6 +27,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -81,7 +82,7 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 	producthttp.BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
 	})
-	engine.GET("/admin/products/template", handle.ProductDetailTemplatePage)
+	engine.GET("/admin/products/template", adminui.Page(producthttp.ProductDetailTemplatePageTemplate, handle.ProductDetailTemplatePage))
 	engine.POST("/api/product/detail-template/create", producthttp.NewProductHandle(base.products).CreateDetailTemplate)
 	return engine, scope, port
 }

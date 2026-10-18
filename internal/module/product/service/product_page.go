@@ -5,8 +5,9 @@
 // 结论。留在控制器里时它们与「怎么渲染」交织在一起，于是每个失败点各写一遍失败页
 // （早期形态 6 行 × 18 处），改一处必然漏一处。
 //
-// 控制器因此只剩三件事：读参数 → 调这里 → 把视图交给 adminui.RenderPage。视图自带
-// 档位（adminui.PageResult）与模板键（dto 的 ProductNewPageResp），控制器不再碰 gin.H。
+// 控制器因此只剩三件事：读参数 → 调这里 → 把视图与错误交回（return view, nil）。视图自带
+// 档位（pkg/view.Result）与模板键（dto 的 ProductNewPageResp），控制器不再碰 gin.H，
+// 也不碰模板：渲染由路由装配处的 adminui.Page / adminui.Bare 决定。
 //
 // 依赖方向：本文件只认识本模块的 contract（端口）与 dto；跨模块的实现由装配期注入，
 // 且端口上**只有读方法**（见 contract/warehouse_options.go 的文件头）。

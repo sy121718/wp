@@ -43,9 +43,6 @@ type productTranslationPort = productservice.ProductTranslationStorePort
 // ProductTranslationInstancePort 译文变更后需要失效的自动发布实例端口（= service 侧端口别名）。
 type ProductTranslationInstancePort = productservice.ProductTranslationInstancePort
 
-// productTranslationsTemplate 工作台整页模板。
-const productTranslationsTemplate = "admin/product/product_translations.html"
-
 // ProductTranslationHandle 商品域翻译页处理器。
 type ProductTranslationHandle struct {
 	products productcontract.ProductService
@@ -96,14 +93,13 @@ func (h *ProductTranslationHandle) translationsReader() (productcontract.Product
 }
 
 // ProductTranslations GET /admin/products/translations：商品域翻译工作台。
-func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) {
+func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) (any, error) {
 	projectID := strings.TrimSpace(c.Query("project"))
 	productID := strings.TrimSpace(c.Query("product"))
 
 	reader, rerr := h.translationsReader()
 	if rerr != nil {
-		adminui.PageErrorInternal(c, "product", rerr)
-		return
+		return nil, rerr
 	}
 	view, err := reader.ProductTranslationsPage(c.Request.Context(), &productdto.ProductTranslationsPageReq{
 		ProjectID: projectID,
@@ -111,12 +107,11 @@ func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) {
 		Lang:      strings.TrimSpace(c.Query("lang")),
 	})
 	if err != nil {
-		adminui.PageErrorInternal(c, "product", err)
-		return
+		return nil, err
 	}
 	// 保存成功的回执不在这条 GET 上（?saved=1&n=N 那条读侧已整批删除）：结论由 JSON 回执
 	// 存进 flash 行，刷新后的这一屏只负责渲染当前译文。
-	c.HTML(http.StatusOK, productTranslationsTemplate, adminui.Prepare(c, adminui.ViewMap(view)))
+	return view, nil
 }
 
 // SaveProductTranslations POST /api/product/translations/save：保存译文（整表提交）。

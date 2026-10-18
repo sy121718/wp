@@ -10,7 +10,6 @@ package producthttp
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	contentcontract "go_wp/internal/module/content/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -88,43 +87,42 @@ func scoreEmptyView(c *gin.Context, empty productservice.SeoScoreEmpty) productd
 }
 
 // ProductScorePanel 商品详情页的编辑期评分（POST /admin/products/seo-score）。
-func (h *ProductPageHandle) ProductScorePanel(c *gin.Context) {
+func (h *ProductPageHandle) ProductScorePanel(c *gin.Context) (any, error) {
 	req, ok := binding.Form[productdto.ScorePanelReq](c)
 	if !ok {
-		return
+		return nil, response.ErrHandled
 	}
-	h.renderScorePanel(c, scoring.KindProduct, req.ProductID, req.ProjectID)
+	return h.renderScorePanel(c, scoring.KindProduct, req.ProductID, req.ProjectID)
 }
 
 // ProductCategoryScorePanel 商品分类页的编辑期评分（POST /admin/product-categories/seo-score）。
-func (h *ProductPageHandle) ProductCategoryScorePanel(c *gin.Context) {
+func (h *ProductPageHandle) ProductCategoryScorePanel(c *gin.Context) (any, error) {
 	req, ok := binding.Form[productdto.ScorePanelReq](c)
 	if !ok {
-		return
+		return nil, response.ErrHandled
 	}
-	h.renderScorePanel(c, scoring.KindCategory, req.ID, req.ProjectID)
+	return h.renderScorePanel(c, scoring.KindCategory, req.ID, req.ProjectID)
 }
 
 // ProductBrandScorePanel 品牌页的编辑期评分（POST /admin/product-brands/seo-score）。
-func (h *ProductPageHandle) ProductBrandScorePanel(c *gin.Context) {
+func (h *ProductPageHandle) ProductBrandScorePanel(c *gin.Context) (any, error) {
 	req, ok := binding.Form[productdto.ScorePanelReq](c)
 	if !ok {
-		return
+		return nil, response.ErrHandled
 	}
-	h.renderScorePanel(c, scoring.KindBrand, req.ID, req.ProjectID)
+	return h.renderScorePanel(c, scoring.KindBrand, req.ID, req.ProjectID)
 }
 
 // renderScorePanel 三个评分面板的唯一流程：取输入 → 取不到渲染空态 → 取到出片段。
 //
 // 判据是 in == nil（「没取到实体」），**不是** emptyView.OK —— 成功路径返回的也是零值
 // productdto.ScoreResp（OK=false），用它分流会把每次成功都判成空态。
-func (h *ProductPageHandle) renderScorePanel(c *gin.Context, kind scoring.PageKind, id, projectID string) {
+func (h *ProductPageHandle) renderScorePanel(c *gin.Context, kind scoring.PageKind, id, projectID string) (any, error) {
 	in, selfID, emptyView := h.scoreInputOf(c, kind, id, projectID)
 	if in == nil {
-		renderScoreView(c, emptyView)
-		return
+		return renderScoreView(emptyView)
 	}
-	h.renderEntityScore(c, in, projectID, selfID)
+	return h.renderEntityScore(c, in, projectID, selfID)
 }
 
 // entityScoreViewOf 算分 + 查 title 重复 → 片段视图（三个 POST 端点与抽屉共用同一段流程）。
@@ -140,16 +138,14 @@ func (h *ProductPageHandle) entityScoreViewOf(ctx context.Context, c *gin.Contex
 }
 
 // renderEntityScore 算分 + 查 title 重复 + 渲染片段（三个 POST 入口共用）。
-func (h *ProductPageHandle) renderEntityScore(c *gin.Context, in *scoring.EntityPageInput, projectID, selfID string) {
-	// 取词交 adminui.PrepareBare：片段不经整份 Prepare，但模板要 t —— 漏注入时 Jet 把
-	// 取词调用求值成空串（不报错、不 500、不记日志），整片提示会变成空白。
-	c.HTML(http.StatusOK, "fragments/seo_score", adminui.PrepareBare(c,
-		gin.H{"Score": h.entityScoreViewOf(c.Request.Context(), c, in, projectID, selfID)}))
+func (h *ProductPageHandle) renderEntityScore(c *gin.Context, in *scoring.EntityPageInput, projectID, selfID string) (any, error) {
+	// 片段数据根交出去：取词函数由 UI 线注入（adminui.Bare 走 PrepareBare）。
+	return gin.H{"Score": h.entityScoreViewOf(c.Request.Context(), c, in, projectID, selfID)}, nil
 }
 
 // renderScoreView 渲染评分片段（空态与结果共用同一份模板：片段按 Score.OK 分流）。
-func renderScoreView(c *gin.Context, sv productdto.ScoreResp) {
-	c.HTML(http.StatusOK, "fragments/seo_score", adminui.PrepareBare(c, gin.H{"Score": sv}))
+func renderScoreView(sv productdto.ScoreResp) (any, error) {
+	return gin.H{"Score": sv}, nil
 }
 
 // entityScoreView 评分结果 → 片段视图（含页型回显与 title 冲突清单）。
@@ -248,13 +244,13 @@ func fillDuplicateTitle(sv *productdto.ScoreResp, title string, dups []scoring.T
 //
 // 打开即算：抽屉本来就是「我要看分」这个动作的落点，不该再要用户先点一次「开始评分」
 // （行内按钮需要那一步，是因为它没有「打开」这个动作）。
-func (h *ProductPageHandle) EntitySeoDrawer(c *gin.Context) {
+func (h *ProductPageHandle) EntitySeoDrawer(c *gin.Context) (any, error) {
 	c.Header("Cache-Control", "no-store")
 	id := strings.TrimSpace(c.Query("productId"))
 	projectID := strings.TrimSpace(c.Query("project"))
 	if h == nil || h.products == nil {
 		c.Status(http.StatusNotFound)
-		return
+		return nil, response.ErrHandled
 	}
 	data := gin.H{
 		"ScoreURL":     "/admin/products/seo-score",
@@ -266,11 +262,10 @@ func (h *ProductPageHandle) EntitySeoDrawer(c *gin.Context) {
 		// 读不到实体：仍给 200 + 片段（里面就是那句空态文案）—— 这不是「加载失败」，
 		// 抽屉的失败重试界面会把「这个商品读不到」伪装成网络问题。
 		data["Score"] = emptyView
-		c.HTML(http.StatusOK, "admin/product/entity_seo_drawer.html", adminui.Prepare(c, data))
-		return
+		return data, nil
 	}
 	data["Score"] = h.entityScoreViewOf(c.Request.Context(), c, in, projectID, selfID)
-	c.HTML(http.StatusOK, "admin/product/entity_seo_drawer.html", adminui.Prepare(c, data))
+	return data, nil
 }
 
 // productScoreHiddenFields 商品评分端点的隐藏字段（与页面上那个 POST 端点同一口径）。

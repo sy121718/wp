@@ -1,4 +1,4 @@
-// controller_shape_test.go — 控制器（inbound/http）的三条形状门禁。
+// controller_shape_test.go — 控制器（inbound/http）的四条形状门禁。
 //
 // 口径（2026-10-18 用户拍板，「控制器瘦身是必然的」）：
 //
@@ -9,9 +9,12 @@
 //  2. **绑定入口**：方法里不出现 c.ShouldBind* / c.PostForm / c.GetPostForm。
 //     入参一律走 pkg/binding 的 JSON / Form / Query（DTO 声明字段，失败统一 400 JSON）。
 //  3. **方法长度**：单个方法 ≤60 行。超长 = 装配、取数或逐行映射还留在控制器里。
+//  4. **渲染出口**：方法里不出现 c.HTML / adminui.RenderPage / adminui.RenderBare。
+//     控制器交「视图 + 错误」，渲染由 *_router.go 的 adminui.Page / adminui.Bare 装配
+//     —— 模板名归路由，失败一律 JSON，成功页才走 Jet。
 //
 // **pending 是必须缩小的清单**（双向判定：登记了却已消失同样变红）：
-// 三条门禁各自登记此刻的存量，收一个删一条。新写的控制器直接命门禁，不要往 pending 里加。
+// 四条门禁各自登记此刻的存量，收一个删一条。新写的控制器直接命门禁，不要往 pending 里加。
 package architecture
 
 import (
@@ -290,6 +293,110 @@ func TestControllerMethodSize(t *testing.T) {
 	for key := range pendingControllerMethods {
 		if !seen[key] {
 			t.Errorf("pendingControllerMethods 登记了 %s，但该方法已达标或不存在 —— 请删掉这条登记", key)
+		}
+	}
+}
+
+// ── 渲染出口门禁 ──
+//
+// 控制器**不渲染**：它只交出视图（any）与错误，模板选择、页壳装配、状态码由 UI 线
+// （adminui.Page / adminui.Bare）在路由装配处决定。理由：渲染入口长在控制器里时
+// 「这一屏用什么模板」与「这一屏取什么数」耦在一个文件里，于是同一份视图既可能被
+// 当整页渲、又可能被当片段渲，而两种渲法的注入键（页壳 / 仅取词）与失败形态都不同 ——
+// 出错时表现为「片段拿整页壳」「错误被当 200 渲出去」，都不报错。
+//
+// 判据只看**调用点**（c.HTML / adminui.RenderPage / adminui.RenderBare），不看 import：
+// 文案注入（adminui.Prepare*）、取词（MsgText）、表单上下文（ListQuery）仍在控制器里，
+// 那是另一条线（文案线）的归属。router 文件是装配点，允许调用。
+
+// pendingControllerRenderExit 还没把渲染出口交出去的控制器文件。
+// **只减不增**：收一个删一条；登记了却已无渲染出口同样变红。
+var pendingControllerRenderExit = map[string]bool{
+	"internal/module/admin/inbound/http/admin_page.go":                     true,
+	"internal/module/ai/inbound/http/ai_page.go":                           true,
+	"internal/module/analytics/inbound/http/analytics_page.go":             true,
+	"internal/module/block/inbound/http/block_page.go":                     true,
+	"internal/module/comment/inbound/http/comment_page.go":                 true,
+	"internal/module/content/inbound/http/content_page.go":                 true,
+	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go": true,
+	"internal/module/inventory/inbound/http/inventory_err.go":              true,
+	"internal/module/inventory/inbound/http/inventory_page.go":             true,
+	"internal/module/mail/inbound/http/mail_page.go":                       true,
+	"internal/module/masterdata/inbound/http/masterdata_page.go":           true,
+	"internal/module/media/inbound/http/media_page_handle.go":              true,
+	"internal/module/membership/inbound/http/membership_page.go":           true,
+	"internal/module/navigation/inbound/http/navigation_page_handle.go":    true,
+	"internal/module/order/inbound/http/coupon_page.go":                    true,
+	"internal/module/order/inbound/http/order_create_page.go":              true,
+	"internal/module/order/inbound/http/order_list_page.go":                true,
+	"internal/module/order/inbound/http/return_page.go":                    true,
+	"internal/module/order/inbound/http/sales_page.go":                     true,
+	"internal/module/page/inbound/http/page_langs_handle.go":               true,
+	"internal/module/page/inbound/http/page_redirect.go":                   true,
+	"internal/module/page/inbound/http/page_schedule_handle.go":            true,
+	"internal/module/page/inbound/http/pages_handle.go":                    true,
+	"internal/module/page/inbound/http/page_site_slot_handle.go":           true,
+	"internal/module/page/inbound/http/page_translations_handle.go":        true,
+	"internal/module/plugin/inbound/http/plugin_page_handle.go":            true,
+	"internal/module/project/inbound/http/project_page.go":                 true,
+	"internal/module/publication/inbound/http/seo_audit_result.go":         true,
+	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":      true,
+	"internal/module/user/inbound/http/user_page.go":                       true,
+	"internal/module/workbench/inbound/http/workbench_page.go":             true,
+}
+
+// controllerRenderCalls 渲染出口的方法名（接收者不限：c / h / 变量都可能）。
+var controllerRenderCalls = map[string]bool{
+	"HTML":       true, // c.HTML(status, tpl, data)
+	"RenderPage": true, // adminui.RenderPage
+	"RenderBare": true, // adminui.RenderBare
+}
+
+// controllerIsRouter 路由装配文件（唯一允许调用渲染出口的地方）。
+func controllerIsRouter(name string) bool {
+	return name == "router.go" || strings.HasSuffix(name, "_router.go")
+}
+
+func TestControllerRenderExit(t *testing.T) {
+	root := repoRoot(t)
+	seen := map[string]bool{}
+	fset := token.NewFileSet()
+	for _, dir := range controllerDirs(t) {
+		pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
+			return !strings.HasSuffix(fi.Name(), "_test.go")
+		}, 0)
+		if err != nil {
+			t.Fatalf("解析 %s 失败: %v", dir, err)
+		}
+		for _, pkg := range pkgs {
+			for path, file := range pkg.Files {
+				if controllerIsRouter(filepath.Base(path)) {
+					continue
+				}
+				rel, _ := filepath.Rel(root, path)
+				rel = filepath.ToSlash(rel)
+				ast.Inspect(file, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					sel, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok || !controllerRenderCalls[sel.Sel.Name] {
+						return true
+					}
+					seen[rel] = true
+					if !pendingControllerRenderExit[rel] {
+						t.Errorf("%s:%d：控制器不渲染 —— 返回视图（any, error），由 *_router.go 用 adminui.Page / adminui.Bare 装配",
+							rel, fset.Position(call.Pos()).Line)
+					}
+					return true
+				})
+			}
+		}
+	}
+	for rel := range pendingControllerRenderExit {
+		if !seen[rel] {
+			t.Errorf("pendingControllerRenderExit 登记了 %s，但该文件已无渲染出口 —— 请删掉这条登记", rel)
 		}
 	}
 }

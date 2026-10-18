@@ -20,9 +20,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 标签页模板名（页面成败都走它）。
-const productTagsPageTemplate = "admin/product/product_tags.html"
-
 // 标签页的筛选上下文键表：渲染时拼进表单 action，提交回来时按同一份表读回。
 var productTagsBackKeys = []string{"project", "keyword", "page", "limit"}
 
@@ -161,7 +158,7 @@ func (h *ProductHandle) BulkDeleteTags(c *gin.Context) {
 // ==========================================================================
 
 // ProductTagsPage 标签管理页：工程切换 + 筛选栏 + 新建表单 + 规则类型说明 + 标签列表（含命中商品）。
-func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
+func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
@@ -203,7 +200,7 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 		view.LoadFailed = true
 		view.LoadError = response.MessageOf(c, "product", err)
 	}
-	adminui.RenderPage(c, productTagsPageTemplate, view)
+	return view, nil
 }
 
 // ProductTagHitsFragment 标签「命中商品」片段（审计 PERF-02 的展开区）。
@@ -219,7 +216,7 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 //
 // 失败也回 200 的片段（不是整页错误页）：它替换的是页面里的一小块，
 // 回整页 HTML 会把展开区之外的内容一起换掉；错误文案过 productErrText 白名单。
-func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
+func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) (any, error) {
 	req := &productdto.ListTagProductsPageReq{
 		TagID:     strings.TrimSpace(c.Query("id")),
 		ProjectID: strings.TrimSpace(c.Query("project")),
@@ -233,8 +230,7 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	res, err := h.products.ListTagProductsPage(c.Request.Context(), req)
 	if err != nil {
 		data["Err"] = response.MessageOf(c, "product", err)
-		c.HTML(http.StatusOK, "admin/product/product_tag_hits.html", adminui.Prepare(c, data))
-		return
+		return data, nil
 	}
 	data["TagName"] = res.TagName
 	data["Total"] = res.Total
@@ -260,7 +256,7 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	pg.PageParam = "page"
 	pg.KeepLimit = false
 	data["Pagination"] = pg
-	c.HTML(http.StatusOK, "admin/product/product_tag_hits.html", adminui.Prepare(c, data))
+	return data, nil
 }
 
 // tagDrawerData 装配标签编辑片段数据（create 时 row 为 nil）。

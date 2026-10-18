@@ -21,6 +21,8 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
+
 	"github.com/gin-gonic/gin"
 
 	productcontract "go_wp/internal/module/product/contract"
@@ -76,12 +78,12 @@ func (f *fakeProductService) GetBrand(_ context.Context, req *productdto.GetBran
 }
 
 // postScorePanel 向评分端点发一个表单 POST 并返回响应 HTML。
-func postScorePanel(t *testing.T, handler gin.HandlerFunc, form url.Values) string {
+func postScorePanel(t *testing.T, handler adminui.ViewHandler, form url.Values) string {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.POST("/score", handler)
+	engine.POST("/score", adminui.Bare(SeoScoreFragmentTemplate, handler))
 	req := httptest.NewRequest(http.MethodPost, "/score", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()

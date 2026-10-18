@@ -52,7 +52,7 @@ type ProductNewPageResp struct {
 
 	// HTTPStatus 这一屏的 HTTP 档位：200 读到 / 400 参数不合法 / 500 主数据没读到。
 	// 导出是因为写它的 service 在另一个包（dto 的写者只有 service 的读模型）。
-	// 它会被 adminui.ViewMap 摊平成一个模板键，但没有任何模板读它 —— 摊平的键
+	// 它会被 UI 线的 ViewMap 摊平成一个模板键，但没有任何模板读它 —— 摊平的键
 	// 多一个不影响渲染，页面上也不会出现它。
 	HTTPStatus int
 }
@@ -65,7 +65,7 @@ func (v ProductNewPageResp) PageNoStore() bool { return v.LoadFailed }
 
 // ProductListPageResp 商品列表整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值）。
 //
-// 它是这一屏**唯一的模板数据源**（`adminui.RenderPage(c, tpl, view)` 没有额外的 args 参数），
+// 它是这一屏**唯一的模板数据源**（UI 线的 `adminui.Page(tpl, h)` 只收这一份视图，没有额外 args），
 // 因此字段分三类，各自有明确的写者：
 //   - **service 的读模型写**：Projects / SelectedProject / Filter* / Page / Limit / Total /
 //     RowDetails / Categories / Brands / Tags / 三组选项 / Rules / Roundings（取数结果）；
@@ -691,6 +691,11 @@ type ProductBundlePageResp struct {
 	// SaveBlocked 配置读不出来时禁止保存：无法保证这次提交的是完整配置，
 	// 宁可让用户先「重新载入」，也不要缺配置误写。
 	SaveBlocked bool
+
+	// ResolveURL / ListQuery 两个 URL 形状（HTTP 边界，控制器给）：成员来源面板的解析接口、
+	// 以及页面链接要带回的筛选上下文。名字即模板键。
+	ResolveURL string
+	ListQuery  string
 
 	// LoadError 由控制器按当前语言归口后填（与前八屏同一分工：文案是 HTTP 侧的取词）。
 	LoadFailed bool

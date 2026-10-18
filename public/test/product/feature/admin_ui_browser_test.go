@@ -2,6 +2,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -72,9 +73,9 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 	})
 	router.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	h := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
-	router.GET("/admin/product-brands", h.ProductBrandsPage)
-	router.GET("/admin/product-categories", h.ProductCategoriesPage)
-	router.GET("/admin/product-tags", h.ProductTagsPage)
+	router.GET("/admin/product-brands", adminui.Page(producthttp.ProductBrandsPageTemplate, h.ProductBrandsPage))
+	router.GET("/admin/product-categories", adminui.Page(producthttp.ProductCategoriesPageTemplate, h.ProductCategoriesPage))
+	router.GET("/admin/product-tags", adminui.Page(producthttp.ProductTagsPageTemplate, h.ProductTagsPage))
 	router.Static("/static", attrTemplateRoot()+"/static")
 	return router
 }

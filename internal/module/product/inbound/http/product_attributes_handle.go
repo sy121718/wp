@@ -25,11 +25,9 @@ import (
 // 接口面（原先的 product_handle.go 属性段）在前，后台页面在后。
 
 // ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
-// productAttributesPageTemplate 属性库整页模板名。
-const productAttributesPageTemplate = "admin/product/product_attributes.html"
 
 // ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
-func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
+func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
@@ -87,7 +85,7 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
 		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
-	adminui.RenderPage(c, productAttributesPageTemplate, view)
+	return view, nil
 }
 
 // attributeListFilterQuery 属性页的筛选条件（project + keyword + variation）。
@@ -102,10 +100,10 @@ func attributeListFilterQuery(projectID, keyword, variation string) url.Values {
 // ProductAttributesValueRows 值编辑器片段：add / remove 一次，回渲染整段行列表。
 //
 // 行编辑只重建原始表单值与位置；落库时的归一 / 去重 / 排序仍由 service 负责。
-func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) {
+func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) (any, error) {
 	req, ok := binding.Form[productdto.AttributeRowsFormReq](c)
 	if !ok {
-		return
+		return nil, response.ErrHandled
 	}
 	rows := req.Rows
 	switch strings.TrimSpace(req.Action) {
@@ -128,7 +126,8 @@ func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) {
 	if groupID == "" {
 		groupID = "new"
 	}
-	c.HTML(http.StatusOK, "admin/product/product_attribute_rows.html", attrRowsCtxData(c, groupID, rows))
+	// 片段数据根交出去：取词注入在 UI 线（adminui.Bare），这里只给数据。
+	return gin.H{"GroupID": groupID, "Rows": rows}, nil
 }
 
 func attrRowsFromResp(rows []productdto.AttributeValueResp) []productdto.AttrValueFormRow {

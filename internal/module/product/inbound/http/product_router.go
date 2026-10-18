@@ -51,6 +51,34 @@ import (
 	"go_wp/pkg/i18n"
 )
 
+// ── 页面模板清单（UI 线的装配参数）──
+//
+// 模板名归**路由**而不是控制器：控制器只交出视图（any），渲染与模板选择由 adminui.Page /
+// adminui.Bare 这一侧决定。于是「这个模块有哪些页面」在本文件里能一次读全，
+// 而 handle 文件里不再出现模板字符串（门禁 TestControllerShape 的 exit 项）。
+//
+// 导出是给测试用的：feature 测试自己起 gin 引擎注册路由，包一层 adminui.Page 时
+// 需要同一份模板名 —— 让测试抄一遍字符串就会与生产漂移。
+const (
+	ProductListPageTemplate           = "admin/product/products.html"
+	ProductNewPageTemplate            = "admin/product/products_new.html"
+	ProductEditPageTemplate           = "admin/product/product_edit.html"
+	ProductDetailPageTemplate         = "admin/product/product_detail.html"
+	ProductBundlePageTemplate         = "admin/product/product_bundle.html"
+	ProductPricingPageTemplate        = "admin/product/product_pricing.html"
+	ProductDetailTemplatePageTemplate = "admin/product/product_detail_template.html"
+	ProductAttributesPageTemplate     = "admin/product/product_attributes.html"
+	ProductAttributeRowsTemplate      = "admin/product/product_attribute_rows.html"
+	ProductCategoriesPageTemplate     = "admin/product/product_categories.html"
+	ProductCategoryParentsTemplate    = "admin/product/product_category_parent_options.html"
+	ProductBrandsPageTemplate         = "admin/product/product_brands.html"
+	ProductTagsPageTemplate           = "admin/product/product_tags.html"
+	ProductTagHitsTemplate            = "admin/product/product_tag_hits.html"
+	ProductTranslationsPageTemplate   = "admin/product/product_translations.html"
+	EntitySeoDrawerTemplate           = "admin/product/entity_seo_drawer.html"
+	SeoScoreFragmentTemplate          = "fragments/seo_score"
+)
+
 // ══ 接口面装配（authorizedAPI 三层链）══
 
 // SetupProductRoutes 装配 product 模块**接口面**（`/api/product/*`），返回模块契约。
@@ -294,17 +322,17 @@ func SetupProductPages(pages *gin.RouterGroup,
 // 页面 GET 走 /admin 组认证（Session + CSRF）并按需 PageAuthz；写动作复用既有 API 权限点。
 func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 	// —— 商品列表 / 新建 / 详情 / 编辑 ——
-	pages.GET("/products", adminui.PageAuthz("/api/product/list"), productPages.ProductsPage)
+	pages.GET("/products", adminui.PageAuthz("/api/product/list"), adminui.Page(ProductListPageTemplate, productPages.ProductsPage))
 	// 商品新建整页（docs/04-C §5，弃抽屉）：左表单右模板卡片。
-	pages.GET("/products/new", adminui.PageAuthzAs("/api/product/create", http.MethodPost), productPages.ProductNewPage)
+	pages.GET("/products/new", adminui.PageAuthzAs("/api/product/create", http.MethodPost), adminui.Page(ProductNewPageTemplate, productPages.ProductNewPage))
 	// 商品详情页：变体与评分是某个商品的子资源，连同四个商品级表单一起从列表页拆出来。
 	// 页面 GET 同样走页面组（Session+CSRF，无 Casbin）；页内写动作复用各自既有权限点。
-	pages.GET("/products/detail", adminui.PageAuthz("/api/product/list"), productPages.ProductDetailPage)
+	pages.GET("/products/detail", adminui.PageAuthz("/api/product/list"), adminui.Page(ProductDetailPageTemplate, productPages.ProductDetailPage))
 	// 商品基本字段编辑页（名称 / URL 段 / SKU / 状态 / 价格 / 单位 / 重量 / SEO / 图集）
 	// 与商品域翻译工作台（多语言）的入口：详情页是子资源维护页，基本字段此前只有创建时能填。
 	// 页面 GET 走页面组（Session + CSRF，无 Casbin）；写动作复用商品更新权限点
 	//（与 /products/attributes、/products/taxonomy 同一改动面：改的都是这个商品本身）。
-	pages.GET("/products/edit", adminui.PageAuthzAs("/api/product/update", http.MethodPost), productPages.ProductEditPage)
+	pages.GET("/products/edit", adminui.PageAuthzAs("/api/product/update", http.MethodPost), adminui.Page(ProductEditPageTemplate, productPages.ProductEditPage))
 	// 变体清单的组合预览（docs/14 §8 的「预览—保存」模型）：**只算不写** —— 纯计算，
 	// 因此不挂 Casbin（与 /product-attributes/value-rows 同一先例：页面组已有 Session + CSRF，
 	// 而这个端点落不了任何库）。返回的行由前端追加进清单，用户点保存才落库。
@@ -324,17 +352,17 @@ func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageH
 	// SEO 评分（审计 SEO-016）：商品 / 分类 / 品牌页的编辑期评分，按页型自动选权重档案。
 	// **只读计算**（不写库、不写产物、不激活 URL），因此与文章编辑页的评分侧栏一样
 	// 不叠加 Casbin 权限点 —— 页面组已有 Session + CSRF；评分是提示性的，不拦保存。
-	pages.POST("/products/seo-score", productPages.ProductScorePanel)
+	pages.POST("/products/seo-score", adminui.Bare(SeoScoreFragmentTemplate, productPages.ProductScorePanel))
 	// SEO 评分抽屉片段（商品 / 分类 / 品牌共用一个）：四处入口（商品编辑页、两个表单页、
 	// 两个列表页的行内按钮）统一落到这里。与上面两个 POST 端点**同一取舍** ——
 	// 只读计算（不写库、不写产物），页面组已有 Session + CSRF，不叠加 Casbin 权限点；
 	// 给一个只读片段单独挂权限点，会让「能看编辑页却打不开评分」这种状态冒出来。
-	pages.GET("/products/seo/drawer", productPages.EntitySeoDrawer)
+	pages.GET("/products/seo/drawer", adminui.Page(EntitySeoDrawerTemplate, productPages.EntitySeoDrawer))
 	// 详情页真实预览帧（iframe 直接 src）：页面组鉴权（Session），理由同上一行 ——
 	// 只读渲染、不落库，而 iframe 无法携带 CSRF 头。
 	pages.GET("/products/preview-frame", productPages.ProductPreviewFrame)
-	pages.POST("/product-categories/seo-score", productPages.ProductCategoryScorePanel)
-	pages.POST("/product-brands/seo-score", productPages.ProductBrandScorePanel)
+	pages.POST("/product-categories/seo-score", adminui.Bare(SeoScoreFragmentTemplate, productPages.ProductCategoryScorePanel))
+	pages.POST("/product-brands/seo-score", adminui.Bare(SeoScoreFragmentTemplate, productPages.ProductBrandScorePanel))
 }
 
 // registerProductTemplatePages 注册详情页模板（issue #14）+ 捆绑配置（issue #20）的页面路由。
@@ -347,10 +375,10 @@ func registerProductTemplatePages(pages *gin.RouterGroup, productPages *ProductP
 	// 页面上只剩两条页面入口：整页 GET 与**预览**（预览开新标签页看渲染字节，本质是只读）。
 	// 新建 / 首次发布 / 切换模板 / 改 URL 四个写动作已迁到 /api/product/detail-template/*，
 	// 页面前端走 ui/json_write.js。
-	pages.GET("/products/template", adminui.PageAuthz("/api/product/get"), productPages.ProductDetailTemplatePage)
-	pages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), productPages.ProductDetailTemplatePreview)
+	pages.GET("/products/template", adminui.PageAuthz("/api/product/get"), adminui.Page(ProductDetailTemplatePageTemplate, productPages.ProductDetailTemplatePage))
+	pages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), adminui.Page(ProductDetailTemplatePageTemplate, productPages.ProductDetailTemplatePreview))
 	// 捆绑配置：配置页 + 保存（保存复用 /api/product/bundle/set 的权限点）。
-	pages.GET("/products/bundle", adminui.PageAuthz("/api/product/list"), productPages.ProductBundlePage)
+	pages.GET("/products/bundle", adminui.PageAuthz("/api/product/list"), adminui.Page(ProductBundlePageTemplate, productPages.ProductBundlePage))
 	// 成员来源解析（docs/14 §1.2 的三种来源，本批）：只解析、**不落库** ——
 	// 与 /products/variant/preview 同一先例（页面组已有 Session + CSRF，端点落不了任何库），
 	// 因此不叠加 Casbin 权限点，也就不会出现「有路由、无权限点」的全员 403。
@@ -364,10 +392,10 @@ func registerProductAttributePages(pages *gin.RouterGroup, productPages *Product
 	// —— 属性库（issue #7）——
 	// 属性组与属性值可跨商品复用，故独立页面。
 	// 值编辑器的增删行走 HTMX（编辑中的行只存在于 DOM，服务端参与归一与去重）。
-	pages.GET("/product-attributes", adminui.PageAuthz("/api/product/attribute/list"), productPages.ProductAttributesPage)
+	pages.GET("/product-attributes", adminui.PageAuthz("/api/product/attribute/list"), adminui.Page(ProductAttributesPageTemplate, productPages.ProductAttributesPage))
 	// 批量删除复用同一条删除路径与权限点：逐条校验，失败的那条不计入成功数。
 	// 值编辑器的行片段：纯表单操作，不落库，故不挂 Casbin（页面组已有 Session + CSRF）。
-	pages.POST("/product-attributes/value-rows", productPages.ProductAttributesValueRows)
+	pages.POST("/product-attributes/value-rows", adminui.Bare(ProductAttributeRowsTemplate, productPages.ProductAttributesValueRows))
 }
 
 // registerProductTaxonomyPages 注册分类与品牌（issue #10）的页面路由。
@@ -378,11 +406,11 @@ func registerProductTaxonomyPages(pages *gin.RouterGroup, productPages *ProductP
 	// 分类是树（父子层级 / 排序 / slug / SEO 字段），列表一次渲染整棵树，按树根分页 ——
 	// 没有「子级懒加载」端点。品牌是独立实体（logo / 描述 / slug / SEO 字段）。
 	// 写动作复用商品 API 权限点做 Casbin 鉴权。
-	pages.GET("/product-categories", adminui.PageAuthz("/api/product/category/list"), productPages.ProductCategoriesPage)
-	pages.GET("/product-categories/parents", adminui.PageAuthz("/api/product/category/list"), productPages.ProductCategoryParents)
+	pages.GET("/product-categories", adminui.PageAuthz("/api/product/category/list"), adminui.Page(ProductCategoriesPageTemplate, productPages.ProductCategoriesPage))
+	pages.GET("/product-categories/parents", adminui.PageAuthz("/api/product/category/list"), adminui.Bare(ProductCategoryParentsTemplate, productPages.ProductCategoryParents))
 	// 分类的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/category/*。
 	// 页面组只剩两个读入口（列表页与父级候选搜索）。
-	pages.GET("/product-brands", adminui.PageAuthz("/api/product/brand/list"), productPages.ProductBrandsPage)
+	pages.GET("/product-brands", adminui.PageAuthz("/api/product/brand/list"), adminui.Page(ProductBrandsPageTemplate, productPages.ProductBrandsPage))
 	// 品牌的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/brand/*。
 	// 商品挂载分类（多个 + 主分类）与品牌也没有：属于商品更新，走 /api/product/update。
 }
@@ -394,12 +422,12 @@ func registerProductTagPages(pages *gin.RouterGroup, productPages *ProductPageHa
 	// —— 标签库（issue #11）——
 	// 手工标签 + 内置规则的自动标签（规则只接受白名单参数）。
 	// 写动作复用商品标签 API 权限点做 Casbin 鉴权；「重算」是显式重算时机之一。
-	pages.GET("/product-tags", adminui.PageAuthz("/api/product/tag/list"), productPages.ProductTagsPage)
+	pages.GET("/product-tags", adminui.PageAuthz("/api/product/tag/list"), adminui.Page(ProductTagsPageTemplate, productPages.ProductTagsPage))
 	// 命中商品片段（审计 PERF-02）：标签页首屏不再逐标签内联命中商品，展开时按页取。
 	// 只读渲染、不落库，故与同组的 /products/seo-score、/products/variant/preview 同一先例
 	// 不叠加 Casbin（页面组已有 Session + CSRF；凭空加权限点反而会造出「有路由无权限点 ⇒
 	// 含超管全员 403」那种缺口）。
-	pages.GET("/product-tags/hits", adminui.PageAuthz("/api/product/tag/list"), productPages.ProductTagHitsFragment)
+	pages.GET("/product-tags/hits", adminui.PageAuthz("/api/product/tag/list"), adminui.Page(ProductTagHitsTemplate, productPages.ProductTagHitsFragment))
 	// 商品挂手工标签同样走 /api/product/update（自动标签不在这份表单里）。
 }
 
@@ -410,11 +438,11 @@ func registerProductPricingPages(pages *gin.RouterGroup, productPages *ProductPa
 	// —— 定价工具（issue #13）——
 	// 四种内置规则 + 尾数处理，对单个 SKU / 单商品全部变体 / 筛选集批量改价。
 	// 试算走预览权限点（不落库），应用走应用权限点（落库 + 留痕）。
-	pages.GET("/product-pricing", adminui.PageAuthz("/api/product/list"), productPages.ProductPricingPage)
+	pages.GET("/product-pricing", adminui.PageAuthz("/api/product/list"), adminui.Page(ProductPricingPageTemplate, productPages.ProductPricingPage))
 	// 试算保留页面 POST：结果是**一张表格**（逐变体的成本 / 原价 / 新价 / 差值 / 结果），
 	// 只有整页重渲才渲染得出来；它不落库，没有写动作要迁。应用调价已迁到
 	// /api/product/pricing/apply（页面走 ui/json_write.js，落库后整页刷新看台账）。
-	pages.POST("/product-pricing/preview", builtin.CasbinMiddlewareForPath("/api/product/pricing/preview"), productPages.ProductPricingPreview)
+	pages.POST("/product-pricing/preview", builtin.CasbinMiddlewareForPath("/api/product/pricing/preview"), adminui.Page(ProductPricingPageTemplate, productPages.ProductPricingPreview))
 
 	// —— 商品域翻译工作台（issue #12）——
 	// 入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。路由在装配层同时挂到
@@ -436,7 +464,7 @@ func SetupProductTranslationRoutes(apiRoot *permission.RouteGroup, adminPages *g
 	products productcontract.ProductService, projects projectcontract.ProjectService, pages pagecontract.PageService,
 	instances ProductTranslationInstancePort) *ProductTranslationHandle {
 	handle := NewProductTranslationHandle(products, projects, pages, instances)
-	adminPages.GET("/products/translations", adminui.PageAuthz("/api/product/list"), handle.ProductTranslations)
+	adminPages.GET("/products/translations", adminui.PageAuthz("/api/product/list"), adminui.Page(ProductTranslationsPageTemplate, handle.ProductTranslations))
 	// 前缀在这里定死（/api/product），与 SetupProductRoutes 的 g 同形：装配层只递根组，
 	// 端点路径不散落到装配层 —— 否则一处写 /translations/save 就成了 /api/translations/save，
 	// 权限点与页面写的端点对不上，而两边都不报错。

@@ -25,6 +25,7 @@ package producthttp
 import (
 	"context"
 	"errors"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -407,9 +408,9 @@ func editorRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/products/bundle", h.ProductBundlePage)
-	engine.GET("/admin/products/edit", h.ProductEditPage)
-	engine.GET("/admin/products/template", h.ProductDetailTemplatePage)
+	engine.GET("/admin/products/bundle", adminui.Page(ProductBundlePageTemplate, h.ProductBundlePage))
+	engine.GET("/admin/products/edit", adminui.Page(ProductEditPageTemplate, h.ProductEditPage))
+	engine.GET("/admin/products/template", adminui.Page(ProductDetailTemplatePageTemplate, h.ProductDetailTemplatePage))
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec

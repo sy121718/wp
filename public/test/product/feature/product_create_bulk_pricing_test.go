@@ -13,6 +13,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/url"
 	"strings"
@@ -41,9 +42,9 @@ func newCreateFlowEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
-	engine.GET("/admin/products", handle.ProductsPage)
-	engine.GET("/admin/products/new", handle.ProductNewPage)
-	engine.GET("/admin/products/detail", handle.ProductDetailPage)
+	engine.GET("/admin/products", adminui.Page(producthttp.ProductListPageTemplate, handle.ProductsPage))
+	engine.GET("/admin/products/new", adminui.Page(producthttp.ProductNewPageTemplate, handle.ProductNewPage))
+	engine.GET("/admin/products/detail", adminui.Page(producthttp.ProductDetailPageTemplate, handle.ProductDetailPage))
 	// 批量改价没有页面 POST：列表抽屉走 /api/product/bulk-pricing（ui/json_write.js）。
 	engine.POST("/api/product/bulk-pricing", producthttp.NewProductHandle(f.svc).BulkPricing)
 	return engine, f

@@ -17,22 +17,22 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"go_wp/pkg/view"
 )
 
 // PageResult 视图自带的渲染结论（HTTP 分档 + 缓存策略）。
 //
+// 形状定义在 pkg/view.Result —— 实现它的是业务 dto 的整页视图，dto 不该 import 渲染层。
+// 本包只留这个别名给存量调用点（渲染出口、注释与测试），**新代码用 view.Result**。
+//
 // 由 dto 视图实现（值接收者，零值即「200 且可缓存」）：
 //
-//	func (v ProductNewPageResp) PageStatus() int    { return v.status }
-//	func (v ProductNewPageResp) PageNoStore() bool  { return v.Failed }
+//	func (v ProductNewPageResp) PageStatus() int    { return v.HTTPStatus }
+//	func (v ProductNewPageResp) PageNoStore() bool  { return v.LoadFailed }
 //
-// 不实现该接口的视图按「200 + 可缓存」处理 —— 存量 handler 迁移期不必一次改完。
-type PageResult interface {
-	// PageStatus 返回 HTTP 状态码；返回 0 视为 200。
-	PageStatus() int
-	// PageNoStore 为 true 时设置 Cache-Control: no-store。
-	PageNoStore() bool
-}
+// 不实现该接口的视图按「200 + 可缓存」处理。
+type PageResult = view.Result
 
 // RenderPage 后台整页渲染出口：视图 → 状态码 / 缓存头 / 取词注入 → c.HTML。
 func RenderPage(c *gin.Context, tpl string, view any) {

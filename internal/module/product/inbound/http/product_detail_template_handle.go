@@ -357,9 +357,6 @@ func (h *ProductPageHandle) detailTemplateDeps() productservice.DetailTemplateDe
 	}
 }
 
-// productDetailTemplatePageTemplate 这一屏的模板（整页 GET，成功 / 失败 / 未装配同模板同页壳）。
-const productDetailTemplatePageTemplate = "admin/product/product_detail_template.html"
-
 // ProductDetailTemplatePage GET /admin/products/template：某商品的详情页模板选择与预览页。
 //
 // 取数失败**不在这里出口**：整页 GET 只有末尾那一次渲染（成功 / 失败同模板同页壳，
@@ -369,13 +366,12 @@ const productDetailTemplatePageTemplate = "admin/product/product_detail_template
 //
 //	· 依赖未装配 → 200 的就地说明（不是装载失败：区别是「没读到」与「这条能力没接上」）；
 //	· 还没选商品 → 302 回商品列表（本页没有「还没选商品」的就地形态）。
-func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
+func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) (any, error) {
 	// 未装配（缺内容模板 / 自动发布契约）是**装配缺陷的可见提示**，不是装载失败：
 	// 与「没读到数据」分开，仍然是 200 的就地说明（先于取数判断 —— 否则两个出口会互相盖住）。
 	if h.templates == nil || h.instances == nil {
 		unassembled := detailTemplateUnassembledView()
-		adminui.RenderPage(c, productDetailTemplatePageTemplate, &unassembled)
-		return
+		return &unassembled, nil
 	}
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
@@ -395,14 +391,14 @@ func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 		// 侧栏菜单直接进本页时没有 product 参数：回商品列表挑一件，而不是渲染一个空壳页。
 		// 落点是本模块自己的路径常量（不带回跳参数）—— 提示页那一层已删，失败分支不再拼回跳串。
 		c.Redirect(http.StatusFound, productListPath)
-		return
+		return nil, response.ErrHandled
 	}
 	if err != nil {
 		view.LoadFailed = true
 		// 归口文案（中英 / 缺词 fallback 都在里面）；驱动原文与原始错误只进日志。
 		view.LoadError = response.MessageOf(c, "product", err)
 	}
-	adminui.RenderPage(c, productDetailTemplatePageTemplate, view)
+	return view, nil
 }
 
 // detailTemplateUnassembledView 模板能力未装配时的视图（200，就地说明）。
@@ -431,28 +427,27 @@ func detailTemplateLoadFailureView(status int) productdto.ProductDetailTemplateP
 // ProductDetailTemplatePreview POST /admin/products/template/preview：
 // 发布前预览模板渲染效果 —— 只读渲染，直接把构建结果的 HTML 输出到新标签页；
 // 响应头带上实际使用的模板与版本，便于核对「预览的是哪一套」。
-func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
+func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) (any, error) {
 	if h.instances == nil {
 		// 装配缺陷也走「整页提示回来源页」这一条出口（原先是一行 http.StatusBadRequest
 		// 的纯文本：脱壳、不翻译、也没有回去的地方）。
-		h.detailTemplateDepsMissingPage(c)
-		return
+		return h.detailTemplateDepsMissingPage(c)
 	}
 	req, ok := binding.Form[productdto.DetailTemplatePreviewReq](c)
 	if !ok {
-		return
+		return nil, response.ErrHandled
 	}
 	res, err := productservice.PreviewDetailTemplate(c.Request.Context(), h.instances,
 		req.ProjectID, req.ProductID, req.TemplateID)
 	if err != nil {
 		// 「预览失败」对作者是可用信息，原因（模板不存在 / 文档非法 / 渲染出错）只进日志。
-		adminui.PageErrorBadRequest(c, "product_detail_template", err)
-		return
+		return nil, err
 	}
 	if res.TemplateName != "" {
 		c.Header("X-Preview-Template", fmt.Sprintf("%s@v%d", res.TemplateName, res.TemplateVersion))
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
+	return nil, response.ErrHandled
 }
 
 // detailTemplateFacingMsg presentation 的错误 → 一句结论事实。
@@ -495,11 +490,11 @@ var detailTemplateDepsMissingMsg = adminui.Msg{Key: productenums.ProductDetailTe
 // 又没走 i18n，预览标签页里是一块白底黑字。也不用提示页 —— 装配缺陷不该把人送到另一个
 // 页面去读一句话。这里把同一页的失败槽填上（LoadFailed + LoadError），模板就地说明
 // 「详情页模板能力未装配」，运营看到的是页壳 + 一句话，而不是白屏。
-func (h *ProductPageHandle) detailTemplateDepsMissingPage(c *gin.Context) {
+func (h *ProductPageHandle) detailTemplateDepsMissingPage(c *gin.Context) (any, error) {
 	view := detailTemplateLoadFailureView(http.StatusInternalServerError)
 	view.LoadFailed = true
 	view.LoadError = adminui.MsgText(c, detailTemplateDepsMissingMsg)
-	adminui.RenderPage(c, productDetailTemplatePageTemplate, view)
+	return view, nil
 }
 
 // 本页的两个参数级提示的中文兜底（key 在 productenums.ProductDetailTemplate*Required）。

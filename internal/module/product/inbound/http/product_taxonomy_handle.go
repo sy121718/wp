@@ -2,6 +2,7 @@ package producthttp
 
 import (
 	"context"
+	"errors"
 	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -21,17 +22,13 @@ import (
 // 都有 slug / 引用守卫 / 批量删除，改一处口径另一处必须跟着看。
 // 标签是第三种归类，但它有规则注册表与重算时机、改动频率完全不同，所以单独一份（product_tag.go）。
 
-// 两页的模板名：出口只有一处（页面成败都走它）。
-const productCategoriesPageTemplate = "admin/product/product_categories.html"
-const productBrandsPageTemplate = "admin/product/product_brands.html"
-
 // 两页的筛选上下文键表：渲染时拼进表单 action，提交回来时按同一份表读回。
 var (
 	productCategoriesBackKeys = []string{"project", "keyword", "page", "limit"}
 	productBrandsBackKeys     = []string{"project", "keyword", "page", "limit"}
 )
 
-func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
+func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
@@ -72,15 +69,15 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 		view.LoadFailed = true
 		view.LoadError = response.MessageOf(c, "product", err)
 	}
-	adminui.RenderPage(c, productCategoriesPageTemplate, view)
+	return view, nil
 }
 
 // ProductCategoryParents is a bounded, project-scoped parent picker search.
-func (h *ProductPageHandle) ProductCategoryParents(c *gin.Context) {
+func (h *ProductPageHandle) ProductCategoryParents(c *gin.Context) (any, error) {
 	projectID := strings.TrimSpace(c.Query("project"))
 	if !h.categoryProjectExists(c, projectID) {
-		c.Status(http.StatusNotFound)
-		return
+		// 工程不存在是**参数**问题（下拉到底来自哪个工程），不是服务故障：400 + 文案。
+		return nil, errors.New(productenums.ErrMissingProjectContext)
 	}
 	keyword := strings.TrimSpace(c.Query("keyword"))
 	options := []gin.H{}
@@ -89,8 +86,7 @@ func (h *ProductPageHandle) ProductCategoryParents(c *gin.Context) {
 			ProjectID: projectID, Keyword: keyword, Page: productPageNumber(c.Query("page")), Size: productservice.ProductSubListPageSize,
 		})
 		if err != nil {
-			c.Status(http.StatusInternalServerError)
-			return
+			return nil, err
 		}
 		for _, item := range productservice.FlattenCategoryTree(page.Items) {
 			if item.Matched {
@@ -98,8 +94,7 @@ func (h *ProductPageHandle) ProductCategoryParents(c *gin.Context) {
 			}
 		}
 	}
-	c.HTML(http.StatusOK, "admin/product/product_category_parent_options.html",
-		adminui.PrepareBare(c, gin.H{"Options": options}))
+	return gin.H{"Options": options}, nil
 }
 
 func (h *ProductPageHandle) categoryProjectExists(c *gin.Context, projectID string) bool {
@@ -161,7 +156,7 @@ func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.Cate
 }
 
 // ProductBrandsPage 品牌管理页：工程切换 + 筛选栏 + 品牌列表 + 内联新建表单。
-func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
+func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
@@ -200,7 +195,7 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 		view.LoadFailed = true
 		view.LoadError = response.MessageOf(c, "product", err)
 	}
-	adminui.RenderPage(c, productBrandsPageTemplate, view)
+	return view, nil
 }
 
 // missingParentIDs 挑出本页里「父级不在候选列表」的那些父级 id（去重、保持出现顺序）。
@@ -212,7 +207,7 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 // 拆成两个字段而不是一个拼好的串（原 categoryParentText 的形态）：跨工程那句说明是文案，
 // 必须在渲染期按请求语言取词（en-US 后台下也该是英文）—— 控制器里拼串等于把它钉死在中文。
 func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []map[string]any, parentLabels map[string]productdto.CategoryParentInfoResp) gin.H {
-	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": adminui.Prepare(c, gin.H{})["csrf_token"],
+	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": adminui.CSRF(c),
 		// ListQuery：表单 action 的筛选上下文（抽屉里的表单提交要带着它回去）。
 		"ListQuery": adminui.ListQuery(c, productCategoriesBackKeys...)}
 	if row != nil {

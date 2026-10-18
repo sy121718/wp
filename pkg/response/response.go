@@ -1,6 +1,7 @@
 package response
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,6 +14,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// ErrHandled 处理器已经把响应写完了（SSE 流、文件下载、302、空状态码），
+// 上层的渲染出口看到它就**不要再写第二次**。
+//
+// 为什么是哨兵而不是「返回 nil 视图」：nil 视图是编程错误（视图恒非 nil），
+// 两者混用会让「这页渲染崩了」被当成「这页自己写过了」静默吞掉。
+var ErrHandled = errors.New("response already written")
 
 type Response struct {
 	Code    int         `json:"code"`

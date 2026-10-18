@@ -32,6 +32,17 @@ const (
 	sidebarCookiePinned = "sidebar_pinned"
 )
 
+// CSRF 当前请求的 CSRF token；取不到时返回空串（提交会被中间件拒，与其它后台页一致）。
+//
+// 单独的取值口是给「只需要 token 的那一块片段数据」用的（抽屉表单的隐藏域）：
+// 那些地方不该为了一个 token 去装配整份页壳。
+func CSRF(c *gin.Context) string {
+	if tok, err := builtin.GetCSRFToken(c); err == nil {
+		return tok
+	}
+	return ""
+}
+
 // Prepare 为页面模板数据补上外壳所需的全部键，所有后台页面渲染入口统一调用。
 //
 // 注入内容：lang / t / tf / langs / lang_redirect（多语言，标题为 i18n key 时一并翻译；tf 带
@@ -48,11 +59,7 @@ func Prepare(c *gin.Context, data gin.H) gin.H {
 
 	data = injectI18n(c, data)
 
-	if tok, err := builtin.GetCSRFToken(c); err == nil {
-		data["csrf_token"] = tok
-	} else {
-		data["csrf_token"] = ""
-	}
+	data["csrf_token"] = CSRF(c)
 
 	set := map[string]bool{}
 	if v, ok := c.Get(adminctx.PermSetKey); ok {

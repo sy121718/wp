@@ -16,6 +16,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -474,13 +475,13 @@ func newTaxonomyPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	// 分类的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/category/*，
 	// 页面组只剩 GET。用例里要建分类时直接调用例（下方），页面渲染照旧验证。
-	engine.GET("/admin/product-categories", handle.ProductCategoriesPage)
+	engine.GET("/admin/product-categories", adminui.Page(producthttp.ProductCategoriesPageTemplate, handle.ProductCategoriesPage))
 	// 品牌同理：只有 GET 页，写动作走 /api/product/brand/*。
-	engine.GET("/admin/product-brands", handle.ProductBrandsPage)
-	engine.GET("/admin/products", handle.ProductsPage)
+	engine.GET("/admin/product-brands", adminui.Page(producthttp.ProductBrandsPageTemplate, handle.ProductBrandsPage))
+	engine.GET("/admin/products", adminui.Page(producthttp.ProductListPageTemplate, handle.ProductsPage))
 	// 商品级表单（分类 / 品牌 / 标签）已整块移到商品详情页，这里一并注册。
-	engine.GET("/admin/products/detail", handle.ProductDetailPage)
-	engine.GET("/admin/products/edit", handle.ProductEditPage)
+	engine.GET("/admin/products/detail", adminui.Page(producthttp.ProductDetailPageTemplate, handle.ProductDetailPage))
+	engine.GET("/admin/products/edit", adminui.Page(producthttp.ProductEditPageTemplate, handle.ProductEditPage))
 	// 挂分类 / 品牌没有页面 POST：编辑页表单走 /api/product/update（ui/json_write.js）。
 	engine.POST("/api/product/update", producthttp.NewProductHandle(f.svc).Update)
 	return engine, f

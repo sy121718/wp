@@ -13,6 +13,7 @@ package feature
 import (
 	"context"
 	"errors"
+	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -485,8 +486,8 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	producthttp.BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: f.templates, Instances: f.pres, Products: f.products, Projects: f.projects,
 	})
-	engine.GET("/admin/products/template", handle.ProductDetailTemplatePage)
-	engine.POST("/admin/products/template/preview", handle.ProductDetailTemplatePreview)
+	engine.GET("/admin/products/template", adminui.Page(producthttp.ProductDetailTemplatePageTemplate, handle.ProductDetailTemplatePage))
+	engine.POST("/admin/products/template/preview", adminui.Page(producthttp.ProductDetailTemplatePageTemplate, handle.ProductDetailTemplatePreview))
 	api := producthttp.NewProductHandle(f.products)
 	engine.POST("/api/product/detail-template/create", api.CreateDetailTemplate)
 	engine.POST("/api/product/detail-template/publish", api.PublishDetailTemplate)

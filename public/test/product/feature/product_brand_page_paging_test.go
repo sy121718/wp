@@ -15,6 +15,7 @@ package feature
 import (
 	"context"
 	"fmt"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/url"
 	"strings"
@@ -61,7 +62,7 @@ func newBrandPagingEnv(t *testing.T) (*gin.Engine, *gorm.DB, *projectservice.Ser
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	h := producthttp.NewProductPageHandle(svc, svc, projects)
-	engine.GET("/admin/product-brands", h.ProductBrandsPage)
+	engine.GET("/admin/product-brands", adminui.Page(producthttp.ProductBrandsPageTemplate, h.ProductBrandsPage))
 	return engine, db, projects
 }
 

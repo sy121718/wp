@@ -12,6 +12,7 @@ package feature
 import (
 	"context"
 	"errors"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -479,8 +480,8 @@ func TestNewPageRendersWarehouseSKUCatalog(t *testing.T) {
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", handle.ProductsPage)
-	engine.GET("/admin/products/new", handle.ProductNewPage)
+	engine.GET("/admin/products", adminui.Page(producthttp.ProductListPageTemplate, handle.ProductsPage))
+	engine.GET("/admin/products/new", adminui.Page(producthttp.ProductNewPageTemplate, handle.ProductNewPage))
 
 	rec := httptest.NewRecorder()
 	// 落点是新建整页：建表单的抽屉已退役（见 getProductsNewPage 的注释）。
