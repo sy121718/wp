@@ -98,7 +98,7 @@ func groupDProductRow() map[string]any {
 		"PrimaryOptions": []map[string]any{{"ID": "c1", "Label": "男装", "Selected": true}},
 		"BrandOptions":   []map[string]any{{"ID": "b1", "Label": "山野", "Selected": true}},
 		"TagChecks":      []map[string]any{{"ID": "t1", "Name": "新品", "Checked": true}},
-		"AutoTags":       []map[string]any{{"Name": "热销", "RuleLabel": "销量前 10"}},
+		"AutoTags":       []map[string]any{{"Name": "热销", "RuleType": "new_arrival", "RuleValues": map[string]any{"Days": 10, "HasDays": true}}},
 	}
 }
 
@@ -418,11 +418,11 @@ func TestGroupDCategoriesPageRenders(t *testing.T) {
 func TestGroupDTagsPageRenders(t *testing.T) {
 	data := groupDData(map[string]any{
 		"Err": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"RuleTypes": []map[string]any{{"Type": "new", "Name": "新品", "Params": "days"}},
+		"RuleTypes": []map[string]any{{"Type": "new_arrival", "ParamKeys": []string{"days"}}},
 		"Tags": []map[string]any{{
 			"ID": "t1", "Name": "新品", "Slug": "new", "IsRule": true,
 			"KindLabelKey": "", "KindLabelFallback": "自动标签",
-			"RuleLabel": "新品（days）", "ProductCount": 1, "RecalcAt": "2026-01-01", "Sort": 0,
+			"RuleValues": map[string]any{"Days": 30, "HasDays": true}, "ProductCount": 1, "RecalcAt": "2026-01-01", "Sort": 0,
 			"RecalcLabelKey": "", "RecalcLabelFallback": "",
 			"RuleType": "new", "RuleDays": "30", "RuleMinPrice": "", "RuleMaxPrice": "",
 			"Products": []map[string]any{{"Name": "商品一", "Slug": "p-one", "Status": "draft"}},

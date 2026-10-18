@@ -375,8 +375,12 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读自动标签失败: %v", err)
 	}
-	if autoDetail.RecalcAt == "" || autoDetail.RuleLabel != "上架 30 天内" {
-		t.Fatalf("自动标签应带重算时间与规则描述，实际 %+v", autoDetail)
+	// 规则的措辞在模板（tag_rule_text.html），接口只回类型与取值。
+	if autoDetail.RecalcAt == "" || autoDetail.RuleType != productenums.TagRuleNewArrival {
+		t.Fatalf("自动标签应带重算时间与规则类型，实际 %+v", autoDetail)
+	}
+	if !autoDetail.RuleValues.HasDays || autoDetail.RuleValues.Days != 30 {
+		t.Fatalf("自动标签应带回规则取值（days=30），实际 %+v", autoDetail.RuleValues)
 	}
 
 	// ⑦ 跨工程隔离：别的工程里同价格的商品不该被本工程标签命中。

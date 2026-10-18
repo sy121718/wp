@@ -277,7 +277,7 @@ func tagPageRow(t *productdto.TagResp) productdto.TagRowResp {
 		KindRule:      productenums.TagKindRule,
 		KindManual:    productenums.TagKindManual,
 		RuleType:      t.RuleType,
-		RuleLabel:     t.RuleLabel,
+		RuleValues:    t.RuleValues,
 		RecalcAt:      strings.TrimSpace(t.RecalcAt),
 		ProductCount:  t.ProductCount, Sort: t.Sort,
 		RuleDays:     ruleParamText(t.RuleParams, "days"),

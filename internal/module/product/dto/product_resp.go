@@ -254,9 +254,11 @@ type TagCheckRowResp struct {
 
 // AutoTagRowResp 自动标签（只读展示：归属由规则重算维护，手工改会被下一次重算覆盖）。
 type AutoTagRowResp struct {
-	ID        string
-	Name      string
-	RuleLabel string
+	ID   string
+	Name string
+	// RuleType / RuleValues 自动标签的规则（措辞在 tag_rule_text.html）。
+	RuleType   string
+	RuleValues RuleValuesResp
 }
 
 // PickOptionResp 下拉选项的一行（「含空项的下拉」共用这一份形状）。

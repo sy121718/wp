@@ -14,7 +14,7 @@
 {{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}{{end}}
 {{block topbarTitle()}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}
 {{block body()}}
-{{tr := .["t"]}}
+{{tr := .["t"]}}{{tnf := .["tn"]}}
 {{csrf := .["csrf_token"]}}
 {* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
    契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。正常渲染一律为空串。
@@ -89,7 +89,7 @@
         <fieldset class="var-group">
             <legend>{{ .["t"]("admin.products.tags.legendAuto", "自动标签（按规则重算维护，不能手工改动）") }}</legend>
             {{range _, t := p.AutoTags}}
-            <span class="var-value">{{t.Name}}{{if t.RuleLabel != ""}}（{{t.RuleLabel}}）{{end}}</span>
+            <span class="var-value">{{t.Name}}{{if t.RuleType != ""}}（{{include "tag_rule_text.html" map("rt", t.RuleType, "rv", t.RuleValues, "t", tr, "tn", tnf)}}）{{end}}</span>
             {{end}}
         </fieldset>
         {{end}}

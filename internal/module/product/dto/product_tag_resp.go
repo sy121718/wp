@@ -5,8 +5,8 @@ import json "go_wp/pkg/jsonx"
 
 // TagResp 标签。
 //
-// RuleLabel 是规则参数翻成的人类可读描述（如「上架 30 天内」），由服务端算好 ——
-// 后台不需要自己解释规则参数，也就不会出现第二套规则语义。
+// 规则的**措辞**不在 Go 里：这里只回 RuleType 与 RuleParams（取值），
+// 「上架 30 天内」这类句子由模板按规则类型取词拼出。
 // Products 只在详情接口（GetTag）里带上（验收 4）；列表接口只给 ProductCount。
 type TagResp struct {
 	ID        string `json:"id"`
@@ -19,8 +19,8 @@ type TagResp struct {
 	RuleType string `json:"ruleType"`
 	// RuleParams 规则参数原样回读（归一化后的形态）。
 	RuleParams json.RawMessage `json:"ruleParams"`
-	// RuleLabel 规则的可读描述（手工标签为空串）。
-	RuleLabel string `json:"ruleLabel"`
+	// RuleValues 规则参数的取值（数字与「有没有」），不做任何措辞。
+	RuleValues RuleValuesResp `json:"ruleValues"`
 	// RecalcAt 最近一次按规则重算的时间（手工标签为空串）。
 	RecalcAt string `json:"recalcAt"`
 	// ProductCount 当前命中/挂载的商品数。
@@ -61,7 +61,8 @@ type TagRowResp struct {
 	KindRule   string
 	KindManual string
 	RuleType   string
-	RuleLabel  string
+	// RuleValues 规则参数的取值（数字与「有没有」），措辞在 tag_rule_text.html。
+	RuleValues RuleValuesResp
 	// RecalcAt 上次重算的原样时间串（未重算过时为空串）。
 	RecalcAt string
 	// RuleDays/RuleMinPrice/RuleMaxPrice 规则参数的回填文本。
@@ -92,11 +93,11 @@ type TagProductsPageResp struct {
 }
 
 // TagRuleTypeResp 内置规则类型（后台规则下拉与参数说明的唯一来源）。
+//
+// 规则的展示名与参数说明都是**文案**，按 Type 写在模板里（product_tags.html 的
+// 规则表、product_tag_form.html 的下拉），这里只回类型与它接受的参数键。
 type TagRuleTypeResp struct {
 	Type string `json:"type"`
-	Name string `json:"name"`
-	// Params 参数说明（人类可读，如「days：1~365 的整数」）。
-	Params string `json:"params"`
 	// ParamKeys 本规则接受的参数键（如 days / minPrice,maxPrice；无参规则为空）。
 	//
 	// 它是后台表单**组装 ruleParams 的唯一依据**：切换规则类型时要发的键跟着变，而服务端

@@ -18,7 +18,7 @@
 {{block topbarTitle()}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
-{{tr := .["t"]}}
+{{tr := .["t"]}}{{tnf := .["tn"]}}
 {{selectedProject := .SelectedProject}}
 {{warehouseOptions := .WarehouseOptions}}
 {{canUpdate := isset(.Buttons["product.update"])}}
@@ -267,7 +267,7 @@
         <fieldset class="var-group">
             <legend>{{ .["t"]("admin.products.tags.legendAuto", "自动标签（按规则重算维护，不能手工改动）") }}</legend>
             {{range _, t := p.AutoTags}}
-            <span class="var-value">{{t.Name}}{{if t.RuleLabel != ""}}（{{t.RuleLabel}}）{{end}}</span>
+            <span class="var-value">{{t.Name}}{{if t.RuleType != ""}}（{{include "tag_rule_text.html" map("rt", t.RuleType, "rv", t.RuleValues, "t", tr, "tn", tnf)}}）{{end}}</span>
             {{end}}
         </fieldset>
         {{end}}

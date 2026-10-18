@@ -54,7 +54,7 @@
             <div class="form-inline tag-rule-fields">
                 <select class="form-select" name="ruleType" aria-label="{{tr("admin.product_tags.label.rule", "规则")}}">
                     <option value="" {{if .RuleType == ""}}selected{{end}}>{{tr("admin.product_tags.ruleEmpty", "（手工标签留空）")}}</option>
-                    {{range i, r := .RuleTypes}}<option value="{{r.Type}}" data-rule-keys="{{range j, k := r.ParamKeys}}{{if j}},{{end}}{{k}}{{end}}" {{if r.Type == .RuleType}}selected{{end}}>{{r.Name}}</option>{{end}}
+                    {{range i, r := .RuleTypes}}<option value="{{r.Type}}" data-rule-keys="{{range j, k := r.ParamKeys}}{{if j}},{{end}}{{k}}{{end}}" {{if r.Type == .RuleType}}selected{{end}}>{{if r.Type == "new_arrival"}}{{tr("admin.product_tags.rule.newArrival.name", "新品（上架 N 天内）")}}{{else if r.Type == "price_range"}}{{tr("admin.product_tags.rule.priceRange.name", "价格区间（存在启用变体落在区间内）")}}{{else if r.Type == "on_sale"}}{{tr("admin.product_tags.rule.onSale.name", "促销（有划线价）")}}{{else}}{{r.Type}}{{end}}</option>{{end}}
                 </select>
                 <input aria-label="{{tr("admin.product_tags.ph.days", "days（上架 N 天内，1~365）")}}" class="form-input" type="number" name="days" value="{{.RuleDays}}" placeholder="{{tr("admin.product_tags.ph.daysShort", "days（1~365）")}}" inputmode="numeric" min="1" max="365" step="1">
                 <input aria-label="minPrice" class="form-input" type="text" name="minPrice" value="{{.RuleMinPrice}}" placeholder="minPrice" inputmode="decimal" autocomplete="off">

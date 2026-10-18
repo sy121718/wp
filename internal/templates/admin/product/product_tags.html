@@ -16,7 +16,7 @@
 {{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_tags.title", "商品标签") }}{{end}}{{else}}{{ .["t"]("admin.product_tags.title", "商品标签") }}{{end}}{{end}}
 {{block topbarTitle()}}{{ .["t"]("admin.product_tags.title", "商品标签") }}{{end}}
 {{block body()}}
-{{tr := .["t"]}}
+{{tr := .["t"]}}{{tnf := .["tn"]}}
 {* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
    契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。正常渲染一律为空串。 *}
 {* 先判装载失败，再判空工程 / 空筛选：空态是「读到了、没有数据」，装载失败是「没读到」——
@@ -165,7 +165,7 @@
                     <td>{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{t.Name}}</strong></button>{{else}}<strong>{{t.Name}}</strong>{{end}}</td>
                     <td>{{if t.Slug != ""}}<code>{{t.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td><span class="badge badge-{{if t.IsRule}}info{{else}}mute{{end}}">{{if t.IsRule}}{{tr("admin.product_tags.kind.rule", "自动")}}{{else if t.Kind == "manual"}}{{tr("admin.product_tags.kind.manual", "手工")}}{{else}}{{t.Kind}}{{end}}</span></td>
-                    <td>{{if t.RuleLabel != ""}}{{t.RuleLabel}}{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    <td>{{if t.IsRule}}{{include "tag_rule_text.html" map("rt", t.RuleType, "rv", t.RuleValues, "t", tr, "tn", tnf)}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                     {* 命中数按需展开（审计 PERF-02）：首屏只给数量（一次批量聚合算出），
                        点它才去片段端点取这一页商品 —— 首屏 SQL 条数与标签数无关，
                        命中数据也不会把首屏撑大。0 个商品时没有可看的内容，不做成按钮。 *}
@@ -231,8 +231,8 @@
                     {{range _, r := ruleTypes}}
                     <tr>
                         <td><code>{{r.Type}}</code></td>
-                        <td>{{r.Name}}</td>
-                        <td>{{r.Params}}</td>
+                        <td>{{if r.Type == "new_arrival"}}{{tr("admin.product_tags.rule.newArrival.name", "新品（上架 N 天内）")}}{{else if r.Type == "price_range"}}{{tr("admin.product_tags.rule.priceRange.name", "价格区间（存在启用变体落在区间内）")}}{{else if r.Type == "on_sale"}}{{tr("admin.product_tags.rule.onSale.name", "促销（有划线价）")}}{{else}}{{r.Type}}{{end}}</td>
+                        <td>{{if r.Type == "new_arrival"}}{{tr("admin.product_tags.rule.newArrival.params", "days：必填，1~365 的整数（上架时间以 products.published_at 为准）")}}{{else if r.Type == "price_range"}}{{tr("admin.product_tags.rule.priceRange.params", "minPrice / maxPrice：至少给一个，0~1000000000 的非负数，minPrice ≤ maxPrice")}}{{else if r.Type == "on_sale"}}{{tr("admin.product_tags.rule.onSale.params", "无参数（留空即 {}）；命中条件为存在启用变体且对比价高于售价")}}{{end}}</td>
                     </tr>
                     {{end}}
                     </tbody>

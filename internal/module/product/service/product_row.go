@@ -432,7 +432,9 @@ func attachedAutoTags(tags []*productdto.TagResp, attached []string) []productdt
 		if t == nil || t.Kind != productenums.TagKindRule || !have[t.ID] {
 			continue
 		}
-		out = append(out, productdto.AutoTagRowResp{ID: t.ID, Name: t.Name, RuleLabel: t.RuleLabel})
+		out = append(out, productdto.AutoTagRowResp{
+			ID: t.ID, Name: t.Name, RuleType: t.RuleType, RuleValues: t.RuleValues,
+		})
 	}
 	return out
 }

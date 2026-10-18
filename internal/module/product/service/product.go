@@ -1188,7 +1188,7 @@ func (s *Service) fillRelated(ctx context.Context, resp *productdto.ProductResp,
 		}
 		for _, id := range tagIDs {
 			if row, ok := byID[id]; ok {
-				resp.Tags = append(resp.Tags, toTagResp(translateFrom(ctx), row))
+				resp.Tags = append(resp.Tags, toTagResp(row))
 			}
 		}
 	}

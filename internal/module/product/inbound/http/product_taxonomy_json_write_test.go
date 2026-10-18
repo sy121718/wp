@@ -150,7 +150,7 @@ func TestTagPageUsesJSONWriteBase(t *testing.T) {
 		})
 		// 规则下拉必须带参数键清单：它是表单组装 ruleParams 的唯一依据（前端不另抄一份映射）。
 		v.RuleTypes = []*productdto.TagRuleTypeResp{{
-			Type: productenums.TagRuleNewArrival, Name: "新品", ParamKeys: []string{"days"},
+			Type: productenums.TagRuleNewArrival, ParamKeys: []string{"days"},
 		}}
 	})})
 	rec := taxonomyJSONWriteRequest(t, h, "/admin/product-tags", "/admin/product-tags?project=p1", taxonomyAllButtons())
