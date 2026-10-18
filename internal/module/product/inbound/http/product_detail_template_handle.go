@@ -465,7 +465,7 @@ func detailTemplateErrMsg(err error) facing.Msg {
 
 // errTemplateDepsMissing 详情模板契约未装配时的提示（装配缺陷，页面可见）。
 //
-// 中文原文**兼作取词兜底**（与 product_jump.go 的 key + 兜底形态一致）：词条缺失时页面显示
+// 中文原文**兼作取词兜底**（与 product_bulk_handle.go 的 productBulkText 同形）：词条缺失时页面显示
 // 这句话，而不是裸 key（页面上出现 `admin.product_detail_template.depsMissing` 这种串，
 // 运营只会以为后台坏了）。
 const errTemplateDepsMissing = "详情页模板能力未装配（缺少内容模板或自动发布契约）"

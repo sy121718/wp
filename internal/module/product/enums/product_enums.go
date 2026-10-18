@@ -394,7 +394,7 @@ const (
 // 无人读的行；常量留着则让「这句文案讲过什么」在代码里可检索。
 //
 // 还活着的只有两处：BulkPricingNoneSelected（空勾选守卫）与 BulkVariant*（变体清单保存
-// 的合成句，中文原文在 inbound/http/product_jump.go 的 productVariantSave* 里）。
+// 的合成句，中文原文在 inbound/http/product_bulk_handle.go 的 productVariantSave* 里）。
 const (
 	// 批量删除：五个实体各一对（部分成功 / 全部成功）。
 	//

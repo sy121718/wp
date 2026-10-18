@@ -5,7 +5,7 @@ package producthttp
 // 三张表各有归属，守卫也各在各处：
 //   · 本模块 Err* 的展示原文 → internal/module/product/enums 的 ProductErrFallbacks
 //     （覆盖面守卫在 productenums 包里）；
-//   · 别模块 key（inventory / presentation）→ 本目录的 productErrForeignFallbacks；
+//   · 别模块 key（inventory / presentation）→ 各自的 enums 兜底表（product 不再替对方留补丁表）；
 //   · 跳过原因（VariantSkip* / BundleMember*）→ variantSkipFallbacks / bundleMemberSkipFallbacks ——
 //     它们的取值过不了业务判据（pkg/facing.IsBusinessKey），所以只会从这两张表查，
 //     守卫在本文件（漏登一条 = 页面上出现裸 key）。

@@ -300,7 +300,7 @@ var _ = http.StatusOK
 // ==========================================================================
 // 商品列表页：筛选、分页、行内状态与分类/标签单元格。
 //
-// 筛选条与分页是全后台通用形态（GET 表单 + select）；筛选上下文键表在 product_jump.go。
+// 筛选条与分页是全后台通用形态（GET 表单 + select）；筛选上下文键表是本文件的 productListBackKeys。
 
 // ProductsPage 商品管理页：工程切换 + 商品列表 + 每个商品的变体面板 + 内联新建表单。
 func (h *ProductPageHandle) ProductsPage(c *gin.Context) (any, error) {

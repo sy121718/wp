@@ -115,8 +115,8 @@ type ProductListPageResp struct {
 	Form      PricingForm
 
 	// Products 成品行（读模型装配，形状见 ProductRowResp）；Pagination 分页条事实；
-	// ListQuery 筛选上下文（表单 action 的 query，写动作失败时由 pkg/backpath 读回，
-	// 见 product_jump.go 的 productListBackKeys）。
+	// ListQuery 筛选上下文（GET 表单 action 的 query，键表见
+	// product_subject_handle.go 的 productListBackKeys）。
 	Products   []ProductRowResp
 	Pagination pagination.Page
 	ListQuery  string
@@ -495,7 +495,7 @@ type ProductPricingPageResp struct {
 	History []map[string]any
 	Err     string
 
-	// ListQuery 页面上下文（表单 action 的 query，写动作的提示页由 pkg/backpath 读回）：
+	// ListQuery 页面上下文（GET 表单 action 的 query，提交后保留当前筛选）：
 	// URL 形状属 HTTP，由控制器填。
 	ListQuery string
 
@@ -543,8 +543,8 @@ type ProductAttributesPageResp struct {
 	Limit      int
 	Pagination pagination.Page
 
-	// ListQuery 筛选上下文（表单 action 的 query）：写动作失败时由 pkg/backpath 读回，
-	// 回跳列表页不丢关键词 / 变体筛选 / 页码。URL 形状属 HTTP，由控制器填。
+	// ListQuery 筛选上下文（GET 表单 action 的 query）：提交后保留关键词 / 变体筛选 / 页码。
+	// URL 形状属 HTTP，由控制器填。
 	ListQuery string
 
 	// LoadFailed 本次请求**没读到**（不是「读到了、只是空的」）；LoadError 由控制器按

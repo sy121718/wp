@@ -11,8 +11,9 @@ package producthttp
 //     两边都不报错、测试也不红的分叉。**按业务域拆的是控制器**（product_subject.go 商品主体：
 //     CRUD / 变体 / 列表与编辑页 / 捆绑配置 / 定价；product_taxonomy.go 分类与品牌；
 //     product_tag.go 标签；product_attributes.go 属性；product_detail_template.go 详情页模板；
-//     product_score.go SEO 评分；product_translations.go 译文；共用原语在 product_page_util.go
-//     与 product_jump.go）。同一域里接口面在前、页面面在后，所以找一个动作只需认一个文件。
+//     product_score_handle.go SEO 评分；product_translations_handle.go 译文；
+//     product_bulk_handle.go 批量回执文案与 id 归一）。同一域里接口面在前、页面面在后，
+//     所以找一个动作只需认一个文件。
 //
 //  2. **同一功能的页面与接口挨着写**。一个业务动作有两条通道：JSON 接口（工作台 / 脚本 /
 //     批量 / 构建期）与后台页面（运营）。它们在权限点路径、拒绝规则上必须同源，所以下面按

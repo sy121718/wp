@@ -4,7 +4,7 @@ import "go_wp/pkg/facing"
 
 // product_err_fallbacks.go — 商品域**业务错误**词条的 key 与「词条缺失时的中文原文」。
 //
-// 为什么住 enums 而不是控制器（product_jump.go）：key 的归属在本目录，「兜底原文与 key 是一对」；
+// 为什么住 enums 而不是控制器：key 的归属在本目录，「兜底原文与 key 是一对」；
 // 分两处住时改一句文案要动控制器，而控制器只该交**事实**。同形先例见本目录的
 // product_translation_fallbacks.go 与 product_err_detail.go（page 模块的 pageenums.ErrDetailFallbacks
 // 是同一形态的样板）。
@@ -34,8 +34,8 @@ import "go_wp/pkg/facing"
 //
 // 表里没有的 key 由出口处理：
 //
-//	· inventory / presentation 的 key —— 兜底在 product 的 HTTP 层（见 product_jump.go 的
-//	  productErrForeignFallbacks，那边写明了为什么暂时留在这儿）；
+//	· inventory / presentation 的 key —— 兜底在对端模块的 enums（各自的 errFallbacks）；
+//	  product 不再替对方留补丁表（同名 key 在对端含义不同，第二份表迟早漂移）；
 //	· 没登记的业务 key —— 出口给稳定的一句归口文案并记一条日志，绝不把裸 key 摆到页面上。
 var ProductErrFallbacks = map[string]string{
 	ErrInvalidParam:                  "请求参数无效",

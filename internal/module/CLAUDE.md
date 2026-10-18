@@ -142,10 +142,11 @@ module_name/
   样板：`page/inbound/http/`（**8 个控制器文件 + 1 个 router**：`pages_handle.go` 页面本体两面 +
   版本历史、`page_translations_handle.go` 译文三件套、`page_langs_handle.go` / `page_schedule_handle.go` /
   `page_redirect.go` / `page_site_slot_handle.go` / `page_stale.go` 各一功能、`page_jump.go` 共享出口原语）、
-  `product/inbound/http/`（**10 个控制器文件 + 1 个 router**：`product_page.go` 处理器与文件索引、
-  `product_core.go` 商品本体 / `product_attributes.go` 属性 / `product_taxonomy.go` 分类品牌标签 /
-  `product_bundle.go` 捆绑 / `product_pricing.go` 定价 / `product_detail_template.go` 详情模板与评分 /
-  `product_translations.go` 译文、`product_page_util.go` 共用装配原语、`product_jump.go` 共享出口原语）。
+  `product/inbound/http/`（**8 个控制器文件 + 1 个 router**：`product_subject_handle.go` 商品主体
+  （CRUD / 变体 / 列表与编辑页 / 捆绑 / 定价）、`product_taxonomy_handle.go` 分类与品牌、
+  `product_tag_handle.go` 标签、`product_attributes_handle.go` 属性、
+  `product_detail_template_handle.go` 详情模板、`product_score_handle.go` SEO 评分与评分面板、
+  `product_translations_handle.go` 译文、`product_bulk_handle.go` 批量回执文案与 id 归一）。
   · 反面教材（本仓实测）：product 曾拆到 19 个、page 曾 13 个 —— 按**UI 屏**（list / create / edit /
     detail / bulk）或按**API 面 / 页面面**分家，都不满足「一个文件 = 一个业务功能」；
     同功能内再按屏拆文件 = 拆过头（一个业务域几个屏 = 一个文件）。
