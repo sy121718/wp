@@ -781,10 +781,12 @@ type ProductCategoriesPageResp struct {
 	// Sort / Depth / HasChildren / Matched / SearchMode / ParentOutOfScope / EditForm）；
 	// CategoryCreateForm 「新建分类」抽屉的表单数据（页头与空态两个入口共用同一份）。
 	// 两者都由控制器装配（抽屉要 csrf 与 adminui.PrepareBare 注入的取词函数）。
-	Categories         []map[string]any
+	Categories         []CategoryRowResp
 	CategoryCreateForm map[string]any
 	// Options 父级下拉的选项（本工程分类的扁平列表 + 层级缩进标签）：列表页的筛选区与
 	// 抽屉里都读它。**只收本工程**的分类（见 service.CategoriesInProject）。
+	// Options 父级下拉的选项（map：它和品牌下拉共用产品行下拉的渲染（productPickOptions），
+	// 形状由那套「ID / Label / LabelKey / LabelFallback / Selected」统一决定，不是分类专有）。
 	Options []map[string]any
 
 	MatchTotal int64
@@ -825,7 +827,7 @@ type ProductBrandsPageResp struct {
 	// BrandDetails 本页品牌：行装配的原料（每行的编辑抽屉要 csrf 与取词函数，留控制器）。
 	BrandDetails []*BrandResp
 	// Brands 成品行（含每行的 EditForm）；BrandCreateForm 内联新建表单的数据。
-	Brands          []map[string]any
+	Brands          []BrandRowResp
 	BrandCreateForm map[string]any
 
 	Total      int64
@@ -921,4 +923,30 @@ type BundlePanelRowResp struct {
 	// SourceParts 来源快照（仅展示）：词条 Key + 兜底 + 可选数据值，取词与分段
 	// 拼接在模板；空 = 手工指定 / 历史配置。
 	SourceParts []BundleSourcePart
+}
+
+// BrandRowResp 品牌列表的一行（成品行：模板直接读字段）。
+//
+// 与 BrandResp 的区别同分类那对：BrandResp 是取数结果，这边是列表页要展示的那几列。
+// EditForm 与 CategoryRowResp 同一理由留在 map（抽屉模板的数据根要支持 .["t"] 索引）。
+type BrandRowResp struct {
+	ID, Name, Slug, Logo, Description string
+	UpdatedAt                         string
+	Sort                              int
+	EditForm                          map[string]any
+}
+
+// CategoryRowResp 分类列表的一行。
+//
+// 与 CategoryResp 的区别：那边是**取数结果**（service 读出树的节点），这边是**成品行**
+// （含编辑抽屉的表单数据、命中标记、跨工程徽章），装配在控制器、由模板直接读。
+//
+// EditForm 仍是 map：抽屉模板的数据根必须支持 .["t"] 索引（adminui.PrepareBare 注入的
+// 取词函数），根是 struct 时 Jet 的索引写法渲染失败 —— 行元素可以是 struct，根不行。
+type CategoryRowResp struct {
+	ID, Name, Slug, Label, ParentID string
+	Sort, Depth                     int
+	HasChildren, Matched            bool
+	SearchMode, ParentOutOfScope    bool
+	EditForm                        map[string]any
 }

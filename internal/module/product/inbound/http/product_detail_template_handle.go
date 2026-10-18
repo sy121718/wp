@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"go_wp/internal/adminui"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
-	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	productcontract "go_wp/internal/module/product/contract"
@@ -456,60 +455,27 @@ func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
 }
 
-// detailTemplateFacingMessages 详情页模板页可展示的失败文案（键是 presentation 的 enums 常量值）。
-//
-// presentation 返回的错误是 enums key（ErrPathOccupied 这种），直接回显到页面
-// 等于让运营看常量名 —— 而改 URL 最常见的失败恰恰是「路径撞车」，必须说人话。
-// 发布 / 切换模板 / 改 URL 三个写动作共用同一张表。
-var detailTemplateFacingMessages = map[string]string{
-	presentationenums.ErrInvalidParam:         "参数不完整，请检查工程、商品与路径。",
-	presentationenums.ErrNotFound:             "这个商品还没有详情页实例，先发布一次。",
-	presentationenums.ErrNoTemplate:           "该类型没有可用的内容模板，先建一套商品详情模板。",
-	presentationenums.ErrBuildFailed:          "构建失败，请检查模板与商品数据后重试。",
-	presentationenums.ErrTemplateTypeMismatch: "这套模板不是商品类型的，换一套再试。",
-	presentationenums.ErrInvalidPath:          "访问路径不合法：必须以 / 开头，且不含空格、引号与 .. 路径段。",
-	presentationenums.ErrSamePath:             "新路径与当前路径相同，没有需要修改的地方。",
-	presentationenums.ErrPathOccupied:         "这个路径已被其他页面或详情页占用，换一个再试。",
-}
-
-// detailTemplateTemplateMessages 模板契约（contenttemplate）的业务错误 → 可展示文案。
-//
-// 这一页的 err 来自三个依赖（product / contenttemplate / presentation），三份白名单
-// **分开**查：同名 key 在各自语境下含义不同（contenttemplate 的 ErrNotFound 是「模板不存在」，
-// product 的是「商品不存在」），合并成一张表必然吃掉一边。
-var detailTemplateTemplateMessages = map[string]string{
-	contenttemplateenums.ErrInvalidParam:        "参数不完整，请检查工程、模板名与复制来源。",
-	contenttemplateenums.ErrNotFound:            "这套模板不存在，可能已被删除。",
-	contenttemplateenums.ErrTemplateInUse:       "这套模板仍被自动发布实例引用，不能删除。",
-	contenttemplateenums.ErrInvalidType:         "不支持的内容类型（本页只处理商品详情模板）。",
-	contenttemplateenums.ErrDataInvalid:         "模板文档格式非法：请回到工作台重新保存后再复制。",
-	contenttemplateenums.ErrFieldBindingInvalid: "模板里的字段绑定越界：请回到工作台改用本模板数据源内的字段。",
-	contenttemplateenums.ErrProjectRequired:     "站点里有多个工程，请显式选择这套模板所属的工程。",
-	contenttemplateenums.ErrProjectNotFound:     "选择的站点工程不存在，请刷新后重试。",
-}
-
 // detailTemplateFacingMsg presentation 的错误 → 一句结论事实。
+//
+// 表格不在这里：跨模块错误的展示兜底归 service（product_foreign_text.go 同一条理由），
+// 控制器只拿「事实」（key + 兜底），取词在渲染期。
 func detailTemplateFacingMsg(c *gin.Context, err error) adminui.Msg {
-	return detailTemplateErrMsg(c, err, detailTemplateFacingMessages)
+	return detailTemplateErrMsg(err, productservice.PresentationErrText)
 }
 
 // detailTemplateTemplateMsg 模板契约（contenttemplate）错误 → 一句结论事实。
 func detailTemplateTemplateMsg(c *gin.Context, err error) adminui.Msg {
-	return detailTemplateErrMsg(c, err, detailTemplateTemplateMessages)
+	return detailTemplateErrMsg(err, productservice.ContentTemplateErrText)
 }
 
-// detailTemplateErrMsg 事实来自 facing.FactOf，中文兜底按依赖挑表（表里没有则回落
-// 声明处兜底 / 别模块补丁表）。
-func detailTemplateErrMsg(c *gin.Context, err error, table map[string]string) adminui.Msg {
+// detailTemplateErrMsg 把业务错误收敛成一条事实：key 原样给模板，兜底由 fallbackOf 决定
+// （本页的错误来自两个对端，各自一张补丁表，理由见 service 侧的注释）。
+func detailTemplateErrMsg(err error, fallbackOf func(facing.Fact) string) adminui.Msg {
 	fact, ok := facing.FactOf(err)
 	if !ok || !fact.Business {
 		return adminui.Msg{}
 	}
-	fb := table[fact.Key]
-	if fb == "" {
-		fb = productservice.ErrText(fact)
-	}
-	return adminui.Msg{Key: fact.Key, Fallback: fb}
+	return adminui.Msg{Key: fact.Key, Fallback: fallbackOf(fact)}
 }
 
 // errTemplateDepsMissing 详情模板契约未装配时的提示（装配缺陷，页面可见）。

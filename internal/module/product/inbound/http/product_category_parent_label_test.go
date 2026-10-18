@@ -117,7 +117,7 @@ func TestCategoryTreeRowsFlagsOutOfScopeParent(t *testing.T) {
 	if len(flagged) != 1 {
 		t.Fatalf("应有一行，实际 %d", len(flagged))
 	}
-	if out, _ := flagged[0]["ParentOutOfScope"].(bool); !out {
+	if !flagged[0].ParentOutOfScope {
 		t.Fatalf("父级 %s 不在候选列表里，该行应标记 ParentOutOfScope", parentLabelParentID)
 	}
 
@@ -126,7 +126,7 @@ func TestCategoryTreeRowsFlagsOutOfScopeParent(t *testing.T) {
 	inScope.ParentID = "pr1cat1"
 	clean := categoryTreeRows(c, parentLabelProjectID,
 		[]*productdto.CategoryResp{inScope}, parentLabelOptions(), false, nil)
-	if out, _ := clean[0]["ParentOutOfScope"].(bool); out {
+	if clean[0].ParentOutOfScope {
 		t.Fatalf("父级在本工程候选列表里，不该标记 ParentOutOfScope")
 	}
 
@@ -135,7 +135,7 @@ func TestCategoryTreeRowsFlagsOutOfScopeParent(t *testing.T) {
 	root.ParentID = ""
 	top := categoryTreeRows(c, parentLabelProjectID,
 		[]*productdto.CategoryResp{root}, parentLabelOptions(), false, nil)
-	if out, _ := top[0]["ParentOutOfScope"].(bool); out {
+	if top[0].ParentOutOfScope {
 		t.Fatalf("顶级分类没有父级，不该标记 ParentOutOfScope")
 	}
 }
@@ -188,9 +188,9 @@ func TestCategoryTreeRowsThreadsParentLabels(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("应有一行，实际 %d", len(rows))
 	}
-	editForm, ok := rows[0]["EditForm"].(gin.H)
-	if !ok {
-		t.Fatalf("EditForm 类型 = %T，want gin.H", rows[0]["EditForm"])
+	editForm := rows[0].EditForm
+	if editForm == nil {
+		t.Fatal("EditForm 为空：抽屉会渲染不出父级回显")
 	}
 	if editForm["ParentMissing"] != true {
 		t.Errorf("父级不在候选列表时应标记 ParentMissing=true，实际 %v", editForm["ParentMissing"])
@@ -248,5 +248,35 @@ func TestCategoryParentOutOfScopeNoteRenders(t *testing.T) {
 	}
 	if got := strings.TrimSpace(match[1]); !strings.Contains(got, "男装") || !strings.Contains(got, "不属于本工程") {
 		t.Fatalf("跨工程父级应渲染成「男装（不属于本工程）」，实际 %q", got)
+	}
+}
+
+// TestCategoryRowStructRenders 行类型化（productdto.CategoryRowResp）之后模板仍然要渲染正确。
+//
+// 上面几条用例传的是 gin.H（map）行 —— 那是「模板单测直接造数据」的形态，不是生产形态；
+// 生产走的是 struct。两条路径对 Jet 的差异就在 isset / 缺键语义上：map 缺键 → isset 假，
+// struct 一定有字段 → 值恒为 true。这条用例用 struct 行渲染，钉住生产形态。
+func TestCategoryRowStructRenders(t *testing.T) {
+	html := renderAdminTemplate(t, "admin/product/product_categories.html", productPageLayoutData(gin.H{
+		"title": "商品分类", "menu": "product-categories",
+		"Projects": []gin.H{}, "SelectedProject": parentLabelProjectID, "Options": []gin.H{},
+		"Categories": []productdto.CategoryRowResp{{
+			ID: "c1", Name: "夹克", Slug: "jackets", Label: "夹克",
+			ParentID: parentLabelParentID, Depth: 1, ParentOutOfScope: true,
+			EditForm: gin.H{"Mode": "update", "ID": "c1", "Name": "夹克"},
+		}},
+		"Buttons": map[string]any{},
+		"Err":     "",
+	}))
+	rowRE := regexp.MustCompile(`(?s)<tr data-category-row data-category-id="c1".*?</tr>`)
+	row := rowRE.FindString(html)
+	if row == "" {
+		t.Fatal("struct 行没有渲出来：类型化之后模板读不到字段")
+	}
+	if !strings.Contains(row, `aria-level="2"`) {
+		t.Errorf("Depth=1 应渲成 aria-level=2，实际那一行：%s", row)
+	}
+	if !strings.Contains(row, "badge badge-warning") {
+		t.Errorf("ParentOutOfScope=true 应渲出徽章，实际那一行：%s", row)
 	}
 }

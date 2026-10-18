@@ -61,7 +61,7 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 	if err == nil {
 		view.Categories = categoryTreeRows(c, view.SelectedProject, view.CategoryDetails, options, view.Filtered, view.ParentLabels)
 	} else {
-		view.Categories = []map[string]any{}
+		view.Categories = []productdto.CategoryRowResp{}
 	}
 	// 分页条：Go 只交事实，文案与链接由 admin/partials/pagination.html 渲染。
 	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
@@ -136,7 +136,7 @@ func categoryOptionIDs(options []map[string]any) map[string]struct{} {
 //
 // ParentOutOfScope 是列表行上的徽章：父级属于别的工程（或父级行已不存在）时置真 ——
 // 这类行的 ParentID 指向本工程之外，操作者只看分类名看不出来，得有个可见标记。
-func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []map[string]any, searching bool, parentLabels map[string]productdto.CategoryParentInfoResp) []map[string]any {
+func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []map[string]any, searching bool, parentLabels map[string]productdto.CategoryParentInfoResp) []productdto.CategoryRowResp {
 	// 判据取 missingParentIDs（父级不在候选列表）而**不是** parentLabels：后者只收
 	// 「名称读得到」的那些父级，RLS 切非超级角色后跨工程父级读不到名称会被它漏掉，
 	// 而那时恰恰最该让操作者看见异常。两者共用同一个判定函数，不另起一份候选集合逻辑。
@@ -144,17 +144,17 @@ func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.Cate
 	for _, parentID := range productservice.MissingParentIDs(nodes, categoryOptionIDs(options)) {
 		outOfScope[parentID] = struct{}{}
 	}
-	rows := make([]map[string]any, 0, len(nodes))
+	rows := make([]productdto.CategoryRowResp, 0, len(nodes))
 	for _, node := range nodes {
 		_, flagged := outOfScope[node.ParentID]
-		rows = append(rows, gin.H{
-			"ID": node.ID, "Name": node.Name, "Slug": node.Slug, "Label": node.Name,
-			"ParentID": node.ParentID, "Sort": node.Sort, "Depth": node.Depth,
-			"HasChildren":      node.HasChildren,
-			"Matched":          node.Matched,
-			"SearchMode":       searching,
-			"ParentOutOfScope": flagged,
-			"EditForm":         categoryDrawerData(c, "update", projectID, node, options, parentLabels),
+		rows = append(rows, productdto.CategoryRowResp{
+			ID: node.ID, Name: node.Name, Slug: node.Slug, Label: node.Name,
+			ParentID: node.ParentID, Sort: node.Sort, Depth: node.Depth,
+			HasChildren:      node.HasChildren,
+			Matched:          node.Matched,
+			SearchMode:       searching,
+			ParentOutOfScope: flagged,
+			EditForm:         categoryDrawerData(c, "update", projectID, node, options, parentLabels),
 		})
 	}
 	return rows
@@ -181,13 +181,13 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 	view.Title = productenums.ProductBrandsTitle
 	view.Menu = "product-brands"
 	view.ListQuery = adminui.ListQuery(c, productBrandsBackKeys...)
-	brands := make([]map[string]any, 0, len(view.BrandDetails))
+	brands := make([]productdto.BrandRowResp, 0, len(view.BrandDetails))
 	if err == nil {
 		for _, b := range view.BrandDetails {
-			brands = append(brands, gin.H{
-				"ID": b.ID, "Name": b.Name, "Slug": b.Slug, "Logo": b.Logo,
-				"Sort": b.Sort, "Description": b.Description,
-				"UpdatedAt": b.UpdatedAt,
+			brands = append(brands, productdto.BrandRowResp{
+				ID: b.ID, Name: b.Name, Slug: b.Slug, Logo: b.Logo,
+				Sort: b.Sort, Description: b.Description,
+				UpdatedAt: b.UpdatedAt,
 			})
 		}
 	}
