@@ -9,6 +9,8 @@
 {{import "../partials/bulk_bar.html"}}
 {{import "../partials/media_field.html"}}
 {{import "../partials/rich_editor.html"}}
+{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_brands.title", "商品品牌") }}{{end}}{{else}}{{ .["t"]("admin.product_brands.title", "商品品牌") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.product_brands.title", "商品品牌") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}

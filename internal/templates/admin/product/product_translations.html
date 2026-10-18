@@ -11,6 +11,8 @@
      · 语言下拉只列**目标语言**（源语言 = 站点默认语言，由 handler 从启用语言里剔掉）：
        只剩源语言一种时整页走可行动空态，把「去哪儿加语言」指向站点设置的语言清单。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_translations.title", "商品多语言") }}{{end}}{{else}}{{ .["t"]("admin.product_translations.title", "商品多语言") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.product_translations.title", "商品多语言") }}{{end}}
 {{block body()}}
 {* 取词：本页是**整页**（经 adminui.Prepare），t / tf 都由它注入。
    槽位收的是**事实**（productMsg：key + 中文兜底 + `%s` 参数）而不是拼好的句子 ——

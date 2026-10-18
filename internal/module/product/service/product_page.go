@@ -115,8 +115,6 @@ var _ productcontract.ProductPageReader = (*Service)(nil)
 func (s *Service) ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (res *productdto.ProductNewPageResp, err error) {
 	view := &productdto.ProductNewPageResp{
 		// Title 放 i18n key 而不是译文：译文按请求语言取，取词在渲染期（adminui.Prepare）。
-		Title:               productenums.ProductsCreateSubmit,
-		Menu:                "products",
 		Projects:            []projectdto.ProjectResp{},
 		WarehouseOptions:    []productdto.WarehouseOptionResp{},
 		AttributeOptions:    []productdto.AttributeOptionResp{},

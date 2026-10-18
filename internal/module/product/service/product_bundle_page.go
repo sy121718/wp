@@ -36,8 +36,6 @@ const BundlePageProductSize = 100
 // 工程清单读不到 500、`?project=<不存在的 id>` 400、配置读不到三档各自不同（见下面）。
 func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageResp, error) {
 	view := &productdto.ProductBundlePageResp{
-		Title:            productenums.ProductBundleTitle,
-		Menu:             "products",
 		Projects:         []projectdto.ProjectResp{},
 		Products:         []*productdto.ProductResp{},
 		Skus:             []*productdto.BundleSKUResp{},

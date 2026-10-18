@@ -219,7 +219,6 @@ func (s *productPageReaderStub) ProductTagsPage(_ context.Context, req *productd
 // productCategoriesPageViewStub 分类页成功档视图（键给齐，与 service 同型）。
 func productCategoriesPageViewStub(mutate func(*productdto.ProductCategoriesPageResp)) *productdto.ProductCategoriesPageResp {
 	v := &productdto.ProductCategoriesPageResp{
-		Title: productenums.ProductCategoriesTitle, Menu: "product-categories",
 		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
 		CategoryDetails: []*productdto.CategoryResp{{ID: "c1", ProjectID: "p1", Name: "男装", Slug: "men"}},
 		PickFlat:        []*productdto.CategoryResp{{ID: "c1", ProjectID: "p1", Name: "男装", Slug: "men"}},
@@ -234,7 +233,6 @@ func productCategoriesPageViewStub(mutate func(*productdto.ProductCategoriesPage
 // productBrandsPageViewStub 品牌页成功档视图。
 func productBrandsPageViewStub(mutate func(*productdto.ProductBrandsPageResp)) *productdto.ProductBrandsPageResp {
 	v := &productdto.ProductBrandsPageResp{
-		Title: productenums.ProductBrandsTitle, Menu: "product-brands",
 		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
 		BrandDetails: []*productdto.BrandResp{{ID: "b1", Name: "品牌一", Slug: "brand-1"}},
 		Total:        1, Limit: productservice.ProductSubListPageSize, HTTPStatus: 200,
@@ -248,7 +246,6 @@ func productBrandsPageViewStub(mutate func(*productdto.ProductBrandsPageResp)) *
 // productTagsPageViewStub 标签页成功档视图。
 func productTagsPageViewStub(mutate func(*productdto.ProductTagsPageResp)) *productdto.ProductTagsPageResp {
 	v := &productdto.ProductTagsPageResp{
-		Title: productenums.ProductTagsTitle, Menu: "product-tags",
 		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
 		TagDetails: []*productdto.TagResp{{ID: "t1", Name: "手工标签", Slug: "manual", Kind: productenums.TagKindManual}},
 		Total:      1, Limit: productservice.ProductSubListPageSize, HTTPStatus: 200,
@@ -265,8 +262,6 @@ func productTagsPageViewStub(mutate func(*productdto.ProductTagsPageResp)) *prod
 // 渲染用例要能看出「行真的装出来了」——只给空白行时，把装配整段删掉也照样绿。
 func productBundlePageViewStub(mutate func(*productdto.ProductBundlePageResp)) *productdto.ProductBundlePageResp {
 	v := &productdto.ProductBundlePageResp{
-		Title:           productenums.ProductBundleTitle,
-		Menu:            "products",
 		Projects:        []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
 		SelectedProject: "p1",
 		Products:        []*productdto.ProductResp{{ID: "prod1", Name: "商品一"}},
@@ -298,8 +293,6 @@ func productBundlePageViewStub(mutate func(*productdto.ProductBundlePageResp)) *
 // detailTemplatePageViewStub 「详情页模板」整页的成功档视图（键给齐，与 service 同型）。
 func detailTemplatePageViewStub(mutate func(*productdto.ProductDetailTemplatePageResp)) *productdto.ProductDetailTemplatePageResp {
 	v := &productdto.ProductDetailTemplatePageResp{
-		Title:             productenums.ProductDetailTemplateTitle,
-		Menu:              "products",
 		Projects:          []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
 		SelectedProject:   "p1",
 		Ready:             true,
@@ -328,8 +321,6 @@ func (s *productPageReaderStub) ListRatings(context.Context, *productdto.ListRat
 // mutate 用于把某个用例改成失败档（改档位 / 失败槽）。
 func productNewPageViewStub(mutate func(*productdto.ProductNewPageResp)) *productdto.ProductNewPageResp {
 	v := &productdto.ProductNewPageResp{
-		Title:               productenums.ProductsCreateSubmit,
-		Menu:                "products",
 		Projects:            []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
 		SelectedProject:     "p1",
 		WarehouseOptions:    []productdto.WarehouseOptionResp{},
@@ -375,8 +366,6 @@ func productListPageViewStub(mutate func(*productdto.ProductListPageResp)) *prod
 // 列表键一律给空列表而不是缺键 —— 控制器不再补任何键。
 func productDetailPageViewStub(mutate func(*productdto.ProductDetailPageResp)) *productdto.ProductDetailPageResp {
 	v := &productdto.ProductDetailPageResp{
-		Title:            productenums.ProductDetailTitle,
-		Menu:             "products",
 		Projects:         []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
 		SelectedProject:  "p1",
 		ProductID:        "prod-1",
@@ -405,8 +394,6 @@ func productDetailPageViewStub(mutate func(*productdto.ProductDetailPageResp)) *
 // 图集文本 / 价格文本这类表单字段仍由控制器算。
 func productEditPageViewStub(mutate func(*productdto.ProductEditPageResp)) *productdto.ProductEditPageResp {
 	v := &productdto.ProductEditPageResp{
-		Title:            MsgProductsTitle,
-		Menu:             "products",
 		Projects:         []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
 		SelectedProject:  "p1",
 		ProductID:        "prod1",
@@ -452,7 +439,6 @@ func productCreateFormViewStub(mutate func(*productdto.ProductCreateFormResp)) *
 // 所以默认档就是 200 + 空集合（键要给齐 —— 控制器不再补任何键，缺一个就是渲染中断）。
 func productPricingPageViewStub(mutate func(*productdto.ProductPricingPageResp)) *productdto.ProductPricingPageResp {
 	view := &productdto.ProductPricingPageResp{
-		Title: productenums.ProductPricingTitle, Menu: "product-pricing",
 		Projects: []projectdto.ProjectResp{}, PreviewSummary: map[string]any{},
 		PreviewRows: []map[string]any{}, History: []map[string]any{},
 		HTTPStatus: http.StatusOK,

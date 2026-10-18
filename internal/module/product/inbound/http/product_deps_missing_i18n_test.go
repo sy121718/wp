@@ -29,7 +29,4 @@ func TestProductDepsMissingFacing(t *testing.T) {
 	if !view.LoadFailed || view.HTTPStatus != http.StatusInternalServerError {
 		t.Fatalf("依赖未装配应是 500 失败态，实际 LoadFailed=%v status=%d", view.LoadFailed, view.HTTPStatus)
 	}
-	if view.Title == "" || view.Menu == "" {
-		t.Fatal("失败视图必须给齐模板必需键（Title / Menu），否则整页渲染失败")
-	}
 }

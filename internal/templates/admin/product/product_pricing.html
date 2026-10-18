@@ -12,6 +12,8 @@
    键盘（Tab 进组、回车提交）都可用。 *}
 {* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_pricing.title", "定价工具") }}{{end}}{{else}}{{ .["t"]("admin.product_pricing.title", "定价工具") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.product_pricing.title", "定价工具") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}

@@ -169,14 +169,12 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) (any, error) {
 	view, err := reader.ProductTagsPage(c.Request.Context(), req)
 	if view == nil {
 		view = &productdto.ProductTagsPageResp{
-			Title: productenums.ProductTagsTitle, Menu: "product-tags",
+
 			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
 
 	// —— 控制器负责的部分：行装配与两个标签抽屉（要 csrf 与取词函数）——
-	view.Title = productenums.ProductTagsTitle
-	view.Menu = "product-tags"
 	view.ListQuery = binding.ListQuery(c, productTagsBackKeys...)
 	rows := []productdto.TagRowResp{}
 	tagCreateForm := map[string]any{}

@@ -24,9 +24,6 @@ type ProductNewPageResp struct {
 	// Title / Menu 是 layout 的小写壳键（`{{.title}}` / `{{.menu}}`）。
 	// Title 放 enums 的 i18n key，翻译由 adminui.Prepare 做（放 key 而不是译文，
 	// 是因为译文按请求语言取）。
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
-
 	// Projects 工程清单与本次选中的工程：整页的工程上下文（失败页也带着它，
 	// 模板的失败分支不读，但页壳与返回链接的上下文不因此缺一块）。
 	// 形状与工程契约的 List 返回值一致（不为了「视图里用指针」多转一趟）。
@@ -149,9 +146,6 @@ type StatusOptionResp struct {
 //     控制器只在 type=bundle 时往里补 Bundle；
 //   - **控制器在失败时写**：LoadError。
 type ProductDetailPageResp struct {
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
-
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
 	ProductID       string
@@ -204,9 +198,6 @@ func (v ProductDetailPageResp) PageNoStore() bool {
 // **没有表单回显（echo）**：保存已迁到 JSON 写基座，失败只在原页的结果区出现，
 // 用户的输入从头到尾没离开过 DOM —— 服务端不再有「拿这次提交覆盖读回来的值」这一层。
 type ProductEditPageResp struct {
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
-
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
 	ProductID       string
@@ -464,9 +455,6 @@ func (v ProductCreateFormResp) PageNoStore() bool {
 // 但仍实现 view.Result：装配缺陷那一条 500 要靠它传出去
 // （PageStatus 返回 0 时渲染出口按 200 处理，所以正常档不必显式设码）。
 type ProductPricingPageResp struct {
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
-
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
 
@@ -506,9 +494,6 @@ type ProductPricingPageResp struct {
 // `.Attributes` 是有 `EditForm` / `ValuesForm` 两键的**成品行**（同 ProductListPageResp 的
 // RowDetails → Products 分工）。两个键混用会让「原料」与「成品」在模板里看起来是同一件事。
 type ProductAttributesPageResp struct {
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
-
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
 
@@ -588,9 +573,6 @@ type DetailTemplateOptionResp struct {
 // 走页内提示而不是失败页），LoadFailed = 「取数没读到」（失败槽）。两者混成一个布尔时
 // 「未装配」会被显示成「数据读不出来」，而前者要人去查装配、后者重试就好。
 type ProductDetailTemplatePageResp struct {
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
-
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
 
@@ -654,9 +636,6 @@ type PreviewNoticeResp struct {
 // 是读回来的，Rows / CandidateSKUs / Sources / SourceProducts / SourceWarehouses 是装出来的。
 // 混在一个字段名下会让人以为模板里看到的就是库里的东西。
 type ProductBundlePageResp struct {
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
-
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
 	Products        []*ProductResp
@@ -719,8 +698,6 @@ func (v ProductBundlePageResp) PageNoStore() bool {
 // 同一次取数的产物 —— 拆成两份会让「保存失败后重渲的那一页」与「GET 出来的那一页」
 // 慢慢长成两个形状。
 type ProductTranslationsPageResp struct {
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
 	// ProjectID / ProductID / Lang 实际生效的三个上下文（空工程已回退到第一个工程、
 	// 空语言已落到第一个目标语言）—— 表单回填与保存校验都用它们，不用请求里那个原始值。
 	ProjectID string
@@ -759,9 +736,6 @@ type CategoryParentInfoResp struct {
 
 // ProductCategoriesPageResp 分类管理页的一屏。
 type ProductCategoriesPageResp struct {
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
-
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
 
@@ -821,9 +795,6 @@ func (v ProductCategoriesPageResp) PageNoStore() bool {
 
 // ProductBrandsPageResp 品牌管理页的一屏。
 type ProductBrandsPageResp struct {
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
-
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
 	FilterKeyword   string
@@ -856,9 +827,6 @@ func (v ProductBrandsPageResp) PageNoStore() bool {
 
 // ProductTagsPageResp 标签管理页的一屏。
 type ProductTagsPageResp struct {
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
-
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
 	FilterKeyword   string

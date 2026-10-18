@@ -43,13 +43,11 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) (any, error) {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
 		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
 		view = &productdto.ProductAttributesPageResp{
-			Title: productenums.ProductAttributesTitle, Menu: "product-attributes",
+
 			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
 	// —— 控制器负责的部分 ——
-	view.Title = productenums.ProductAttributesTitle
-	view.Menu = "product-attributes"
 	// 抽屉表单的数据（编辑属性组 / 保存属性值 / 新建属性组）留在控制器：它们要 csrf
 	//（表单隐藏域）与 text.Inject 注入的取词函数，读模型不认识 gin.Context。
 	// 行装配只在取数成功时做 —— 失败页渲染的是失败槽，装配出的行不会被读到。

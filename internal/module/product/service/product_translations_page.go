@@ -82,8 +82,6 @@ func (s *Service) ProductTranslationsPage(ctx context.Context, req *productdto.P
 	view := &productdto.ProductTranslationsPageResp{
 		// Title 存**词条 key**（不是取好词的中文）：页壳的 Prepare 会把 title 按当前请求语言
 		// 翻一次（fallback 就是 key 本身，与 page 模块的翻译工作台同一形态）。
-		Title:          productenums.ProductTranslationsTitle,
-		Menu:           "products",
 		ProjectID:      strings.TrimSpace(req.ProjectID),
 		ProductID:      strings.TrimSpace(req.ProductID),
 		Langs:          []productdto.TranslationLangOptionResp{},

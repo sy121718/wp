@@ -11,6 +11,8 @@
    唯一的 POST 是「预览」：它渲染前台效果、不写任何库。 *}
 {* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}{{else}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.product_detail.title", "商品详情") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}

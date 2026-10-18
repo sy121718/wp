@@ -7,6 +7,8 @@
    include 的数据类是本方法构造的 struct（Jet 没有 dict() 全局函数）。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_attributes.title", "商品属性") }}{{end}}{{else}}{{ .["t"]("admin.product_attributes.title", "商品属性") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.product_attributes.title", "商品属性") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，

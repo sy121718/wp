@@ -40,14 +40,12 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) (any, error) {
 	view, err := reader.ProductCategoriesPage(c.Request.Context(), req)
 	if view == nil {
 		view = &productdto.ProductCategoriesPageResp{
-			Title: productenums.ProductCategoriesTitle, Menu: "product-categories",
+
 			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
 
 	// —— 控制器负责的部分：行装配与抽屉 ——
-	view.Title = productenums.ProductCategoriesTitle
-	view.Menu = "product-categories"
 	view.ListQuery = binding.ListQuery(c, productCategoriesBackKeys...)
 	// 候选列表**只收本工程**的分类（判据与理由见 service.CategoriesInProject）。
 	options := productservice.CategoryPickOptions(productservice.CategoriesInProject(view.PickFlat, view.SelectedProject))
@@ -137,14 +135,12 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
 	view, err := reader.ProductBrandsPage(c.Request.Context(), req)
 	if view == nil {
 		view = &productdto.ProductBrandsPageResp{
-			Title: productenums.ProductBrandsTitle, Menu: "product-brands",
+
 			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
 
 	// —— 控制器负责的部分：行装配（每行的编辑抽屉要 csrf 与取词函数）——
-	view.Title = productenums.ProductBrandsTitle
-	view.Menu = "product-brands"
 	view.ListQuery = binding.ListQuery(c, productBrandsBackKeys...)
 	brands := make([]productdto.BrandRowResp, 0, len(view.BrandDetails))
 	if err == nil {

@@ -8,6 +8,8 @@
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
 {{import "../partials/rich_editor.html"}}
+{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_categories.title", "商品分类") }}{{end}}{{else}}{{ .["t"]("admin.product_categories.title", "商品分类") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.product_categories.title", "商品分类") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}

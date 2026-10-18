@@ -72,8 +72,6 @@ func PricingSelectedProject(req *productdto.ProductPricingPageReq, projects []pr
 //     没提交过才用库里的默认初值。
 func (s *Service) ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageResp, error) {
 	view := &productdto.ProductPricingPageResp{
-		Title:          productenums.ProductPricingTitle,
-		Menu:           "product-pricing",
 		Projects:       []projectdto.ProjectResp{},
 		PreviewSummary: map[string]any{},
 		PreviewRows:    []map[string]any{},

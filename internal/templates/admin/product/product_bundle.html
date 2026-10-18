@@ -5,6 +5,8 @@
      · 单工程时不渲染工程下拉（唯一选项的下拉是纯占位）。 *}
 {* 表单按 DOM 顺序提交九组并行数组；表格外层 .table-wrap 在窄屏可横向滚动。 *}
 {{extends "../layout.html"}}
+{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_bundle.title", "捆绑配置") }}{{end}}{{else}}{{ .["t"]("admin.product_bundle.title", "捆绑配置") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.product_bundle.title", "捆绑配置") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}

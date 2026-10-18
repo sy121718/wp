@@ -286,8 +286,6 @@ type bundlePageFailReader struct {
 func (r *bundlePageFailReader) ProductBundlePage(context.Context, *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageResp, error) {
 	// 契约：视图恒非 nil，失败也要给齐模板必需键（空切片而不是缺键）。
 	return &productdto.ProductBundlePageResp{
-		Title:            "捆绑配置",
-		Menu:             "products",
 		Projects:         []projectdto.ProjectResp{},
 		Products:         []*productdto.ProductResp{},
 		Skus:             []*productdto.BundleSKUResp{},

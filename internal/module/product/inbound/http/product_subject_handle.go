@@ -421,7 +421,7 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) (any, error) {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
 		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
 		view = &productdto.ProductNewPageResp{
-			Title: productenums.ProductsCreateSubmit, Menu: "products", HTTPStatus: http.StatusInternalServerError,
+			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
 	if err != nil {
@@ -482,11 +482,9 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	if view == nil {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键）：真出现 nil 时兜一个空视图。
 		view = &productdto.ProductEditPageResp{
-			Title: MsgProductsTitle, Menu: "products", HTTPStatus: http.StatusInternalServerError,
+			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
-	view.Title = MsgProductsTitle
-	view.Menu = "products"
 	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行）；只剩**原地重渲染**这一条路
 	// 会给 Err（表单校验失败 / 选项读取失败）。
 	view.Err = submitErr
@@ -614,15 +612,13 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) (any, error) {
 	if view == nil {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键）：真出现 nil 时兜一个空视图。
 		view = &productdto.ProductDetailPageResp{
-			Title: productenums.ProductDetailTitle, Menu: "products",
+
 			HTTPStatus: http.StatusInternalServerError,
 		}
 	}
 	// 仓库清单 / 商品详情 / 分类树 / 品牌 / 标签的取数编排全在 service 的读模型里
 	//（service.ProductDetailPage，含 404 / 400 / 500 三档）；这里只做控制器负责的派生值与出口。
 	// —— 控制器负责的派生值 ——
-	view.Title = productenums.ProductDetailTitle
-	view.Menu = "products"
 	// 返回列表带上工程上下文：回到列表时不会掉回默认工程。
 	view.BackURL = "/admin/products?project=" + view.SelectedProject
 	// 行已由读模型装配（service/product_row.go）—— 控制器只补详情页独有的面板；
@@ -962,8 +958,6 @@ func (h *ProductPageHandle) renderBundlePage(c *gin.Context) (any, error) {
 // bundlePageFailureView 失败档的视图（给齐模板必需键，避免失败分支只设了错误键）。
 func bundlePageFailureView(status int) productdto.ProductBundlePageResp {
 	return productdto.ProductBundlePageResp{
-		Title:            productenums.ProductBundleTitle,
-		Menu:             "products",
 		Projects:         []projectdto.ProjectResp{},
 		Products:         []*productdto.ProductResp{},
 		Skus:             []*productdto.BundleSKUResp{},
@@ -1254,7 +1248,7 @@ func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productd
 	view, err := reader.ProductPricingPage(c.Request.Context(), req)
 	if view == nil {
 		view = &productdto.ProductPricingPageResp{
-			Title: productenums.ProductPricingTitle, Menu: "product-pricing",
+
 			HTTPStatus: http.StatusInternalServerError,
 		}
 	}

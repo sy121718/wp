@@ -14,6 +14,8 @@
 {{import "../partials/media_gallery.html"}}
 {{import "../partials/media_field.html"}}
 {{import "../partials/rich_editor.html"}}
+{{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}{{else}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.products.edit.title", "编辑商品") }}{{end}}
 {{block body()}}
 {{csrf := .["csrf_token"]}}
 {{tr := .["t"]}}
