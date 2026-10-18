@@ -33,6 +33,7 @@ import (
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/pipeline"
+	"go_wp/pkg/utils"
 )
 
 // systemCreator 版本行 created_by 的占位（NOT NULL uuid 列）。
@@ -122,7 +123,7 @@ func toResp(e *contenttemplatemodel.TemplateEntity) *contenttemplatedto.Template
 		IsDefault:     e.IsDefault,
 		DraftVersion:  e.DraftVersion,
 		DraftDocument: e.DraftDocument,
-		UpdatedAt:     e.UpdatedAt.Format("2006-01-02 15:04"),
+		UpdatedAt:     utils.NewJSONTime(e.UpdatedAt),
 	}
 }
 

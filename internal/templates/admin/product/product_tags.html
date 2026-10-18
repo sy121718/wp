@@ -176,9 +176,9 @@
                                 hx-target="#tag-hits-panel" hx-swap="innerHTML">{{t.ProductCount}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</button>
                         {{else}}<span class="text-mute">0{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</span>{{end}}
                     </td>
-                    {* RecalcAt 是数据（原样时间串，显示格式由 formatTime 决定）；「未重算过」这句话只在这里出现 ——
+                    {* RecalcAt 是数据（时间值，显示格式由 formatTime 决定）；「未重算过」这句话只在这里出现 ——
                        后端不再带文案事实。 *}
-                    <td>{{if t.RecalcAt != ""}}{{formatTime(t.RecalcAt)}}{{else}}{{tr("admin.product_tags.recalcNone", "未按规则重算过")}}{{end}}</td>
+                    <td>{{if t.RecalcAt}}{{formatTime(t.RecalcAt)}}{{else}}{{tr("admin.product_tags.recalcNone", "未按规则重算过")}}{{end}}</td>
                     <td class="col-actions">
                         {{if canUpdate}}
                         <button type="button" class="btn btn-sm" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>

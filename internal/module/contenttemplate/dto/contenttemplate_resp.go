@@ -2,7 +2,10 @@ package contenttemplatedto
 
 // Package contenttemplatedto contenttemplate 模块请求/响应结构。
 
-import json "go_wp/pkg/jsonx"
+import (
+	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/utils"
+)
 
 // BulkDeleteItemResult 批量删除的一条结果；失败 message 是当前请求语言的受控成品文案。
 type BulkDeleteItemResult struct {
@@ -78,5 +81,5 @@ type TemplateResp struct {
 	IsDefault     bool            `json:"isDefault"`
 	DraftVersion  int64           `json:"draftVersion"`
 	DraftDocument json.RawMessage `json:"draftDocument"`
-	UpdatedAt     string          `json:"updatedAt"`
+	UpdatedAt     utils.JSONTime  `json:"updatedAt"`
 }

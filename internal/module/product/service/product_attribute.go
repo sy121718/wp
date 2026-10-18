@@ -24,6 +24,7 @@ import (
 	"cmp"
 	"context"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/utils"
 	"slices"
 	"strings"
 	"time"
@@ -339,8 +340,8 @@ func toAttributeResp(e *productmodel.ProductAttributeEntity) *productdto.Attribu
 		ID: e.ID, ProjectID: e.ProjectID, Key: e.Key, Name: e.Name,
 		IsVariation: e.IsVariation, Sort: e.Sort,
 		Values: values, ValueCount: len(values),
-		CreatedAt: e.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
+		CreatedAt: utils.NewJSONTime(e.CreatedAt),
+		UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
 	}
 	for _, v := range values {
 		if v.Enabled {

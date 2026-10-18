@@ -18,6 +18,7 @@ package productcontract
 
 import (
 	"context"
+	"time"
 )
 
 // DetailTemplateCandidateView 一套命名模板在这一屏上的渲染原料。
@@ -29,7 +30,7 @@ type DetailTemplateCandidateView struct {
 	ID           string
 	Name         string
 	DraftVersion int64
-	UpdatedAt    string
+	UpdatedAt    time.Time
 }
 
 // BoundTemplateView 商品当前绑定的发布实例（读模型据此算 IsBound 与发布状态）。

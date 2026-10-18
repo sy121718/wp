@@ -278,7 +278,7 @@ func tagPageRow(t *productdto.TagResp) productdto.TagRowResp {
 		KindManual:    productenums.TagKindManual,
 		RuleType:      t.RuleType,
 		RuleValues:    t.RuleValues,
-		RecalcAt:      strings.TrimSpace(t.RecalcAt),
+		RecalcAt:      t.RecalcAt.TimeOrZero(),
 		ProductCount:  t.ProductCount, Sort: t.Sort,
 		RuleDays:     ruleParamText(t.RuleParams, "days"),
 		RuleMinPrice: ruleParamText(t.RuleParams, "minPrice"),

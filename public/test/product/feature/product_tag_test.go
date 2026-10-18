@@ -288,7 +288,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读商品失败: %v", err)
 	}
-	if got.PublishedAt == "" {
+	if got.PublishedAt.IsZero() {
 		t.Fatalf("上架后应记录 published_at")
 	}
 	if !containsString(tagProductIDs(t, f, newArrival.ID), p.ID) {
@@ -376,7 +376,7 @@ func TestTagAutoRecalcMembership(t *testing.T) {
 		t.Fatalf("读自动标签失败: %v", err)
 	}
 	// 规则的措辞在模板（tag_rule_text.html），接口只回类型与取值。
-	if autoDetail.RecalcAt == "" || autoDetail.RuleType != productenums.TagRuleNewArrival {
+	if autoDetail.RecalcAt.IsZero() || autoDetail.RuleType != productenums.TagRuleNewArrival {
 		t.Fatalf("自动标签应带重算时间与规则类型，实际 %+v", autoDetail)
 	}
 	if !autoDetail.RuleValues.HasDays || autoDetail.RuleValues.Days != 30 {

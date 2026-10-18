@@ -1,7 +1,10 @@
 // product_pricing_resp.go — 定价工具出参（issue #13）。
 package productdto
 
-import json "go_wp/pkg/jsonx"
+import (
+	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/utils"
+)
 
 // PricingRuleTypeResp 内置定价规则类型（后台下拉、参数说明与规则描述的唯一定义来源）。
 type PricingRuleTypeResp struct {
@@ -90,8 +93,8 @@ type PriceAdjustmentItemResp struct {
 	OldPrice    float64 `json:"oldPrice"`
 	NewPrice    float64 `json:"newPrice"`
 	// Diff 差值（新价 - 原价），正数为涨价。
-	Diff      float64 `json:"diff"`
-	CreatedAt string  `json:"createdAt"`
+	Diff      float64        `json:"diff"`
+	CreatedAt utils.JSONTime `json:"createdAt"`
 }
 
 // PriceAdjustmentResp 调价批次（留痕台账，后台可回看「谁按哪条规则改了什么价」）。
@@ -101,18 +104,18 @@ type PriceAdjustmentResp struct {
 	RuleType   string          `json:"ruleType"`
 	RuleParams json.RawMessage `json:"ruleParams"`
 	// RuleValues 规则参数的取值；规则的措辞在模板里。
-	RuleValues   RuleValuesResp  `json:"ruleValues"`
-	Rounding     string          `json:"rounding"`
-	Scope        string          `json:"scope"`
-	TargetID     string          `json:"targetId"`
-	Filter json.RawMessage `json:"filter"`
+	RuleValues RuleValuesResp  `json:"ruleValues"`
+	Rounding   string          `json:"rounding"`
+	Scope      string          `json:"scope"`
+	TargetID   string          `json:"targetId"`
+	Filter     json.RawMessage `json:"filter"`
 	// FilterParts 筛选条件的逐项取值（键 + 值）；条件名与标点在模板。
-	FilterParts []PricingFilterPartResp `json:"filterParts"`
-	VariantCount int             `json:"variantCount"`
-	ChangedCount int             `json:"changedCount"`
-	Note         string          `json:"note"`
-	OperatorID   string          `json:"operatorId"`
-	CreatedAt    string          `json:"createdAt"`
+	FilterParts  []PricingFilterPartResp `json:"filterParts"`
+	VariantCount int                     `json:"variantCount"`
+	ChangedCount int                     `json:"changedCount"`
+	Note         string                  `json:"note"`
+	OperatorID   string                  `json:"operatorId"`
+	CreatedAt    utils.JSONTime          `json:"createdAt"`
 	// Items 逐变体明细（仅详情接口填充；列表接口为 nil）。
 	Items []*PriceAdjustmentItemResp `json:"items,omitempty"`
 }

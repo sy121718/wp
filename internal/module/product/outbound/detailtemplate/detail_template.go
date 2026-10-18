@@ -65,7 +65,7 @@ func (p *Port) DetailTemplateCandidates(ctx context.Context, projectID, entityTy
 			ID:           row.ID,
 			Name:         row.Name,
 			DraftVersion: row.DraftVersion,
-			UpdatedAt:    row.UpdatedAt,
+			UpdatedAt:    row.UpdatedAt.TimeOrZero(),
 		})
 	}
 	return out, nil

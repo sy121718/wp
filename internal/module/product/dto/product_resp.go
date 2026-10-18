@@ -1,7 +1,11 @@
 // product_resp.go — product 模块出参（service 返回）。
 package productdto
 
-import json "go_wp/pkg/jsonx"
+import (
+	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/utils"
+	"time"
+)
 
 // ProductResp 商品详情（含变体列表）。
 type ProductResp struct {
@@ -20,13 +24,13 @@ type ProductResp struct {
 	Type string `json:"type"`
 	// PublishedAt 上架时间（issue #11，RFC3339；未上架为空串）：
 	// 自动标签的「新品」规则以它为判定基准。
-	PublishedAt    string   `json:"publishedAt"`
-	Sort           int      `json:"sort"`
-	Unit           string   `json:"unit"`
-	Weight         *float64 `json:"weight"`
-	SEOTitle       string   `json:"seoTitle"`
-	SEODescription string   `json:"seoDescription"`
-	Images         []string `json:"images"`
+	PublishedAt    utils.JSONTime `json:"publishedAt"`
+	Sort           int            `json:"sort"`
+	Unit           string         `json:"unit"`
+	Weight         *float64       `json:"weight"`
+	SEOTitle       string         `json:"seoTitle"`
+	SEODescription string         `json:"seoDescription"`
+	Images         []string       `json:"images"`
 	// ImageAlts 图集 alt 文本（issue #12）：与 Images 逐位对应，元素可为空串。
 	ImageAlts []string `json:"imageAlts"`
 	// AttributeIDs 商品引用的属性组 id（issue #7）。
@@ -58,9 +62,9 @@ type ProductResp struct {
 	// Brand 商品指定的品牌（同上，未指定为 nil）。
 	Brand *BrandResp `json:"brand,omitempty"`
 	// Tags 商品挂载/命中的标签（同上）。
-	Tags      []*TagResp `json:"tags,omitempty"`
-	CreatedAt string     `json:"createdAt"`
-	UpdatedAt string     `json:"updatedAt"`
+	Tags      []*TagResp     `json:"tags,omitempty"`
+	CreatedAt utils.JSONTime `json:"createdAt"`
+	UpdatedAt utils.JSONTime `json:"updatedAt"`
 
 	// —— 库存聚合（商品列表「库存」列，docs/14 §1.4，2026-09-19 口径）——
 	//
@@ -114,8 +118,8 @@ type VariantResp struct {
 	Enabled      bool            `json:"enabled"`
 	Sort         int             `json:"sort"`
 	StockTotal   int             `json:"stockTotal"`
-	CreatedAt    string          `json:"createdAt"`
-	UpdatedAt    string          `json:"updatedAt"`
+	CreatedAt    utils.JSONTime  `json:"createdAt"`
+	UpdatedAt    utils.JSONTime  `json:"updatedAt"`
 }
 
 // GenerateVariantsResp 变体组合生成结果（issue #8）。
@@ -135,15 +139,15 @@ type GenerateVariantsResp struct {
 
 // ListResp 商品列表项（不含变体明细与 metadata —— metadata 默认查询不取）。
 type ListResp struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Slug         string   `json:"slug"`
-	Status       string   `json:"status"`
-	Images       []string `json:"images"`
-	PriceMin     float64  `json:"priceMin"`
-	PriceMax     float64  `json:"priceMax"`
-	VariantCount int      `json:"variantCount"`
-	UpdatedAt    string   `json:"updatedAt"`
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	Slug         string         `json:"slug"`
+	Status       string         `json:"status"`
+	Images       []string       `json:"images"`
+	PriceMin     float64        `json:"priceMin"`
+	PriceMax     float64        `json:"priceMax"`
+	VariantCount int            `json:"variantCount"`
+	UpdatedAt    utils.JSONTime `json:"updatedAt"`
 }
 
 // ProductRowResp 商品行的渲染视图（列表页的一行 / 详情页 / 编辑页的同一个商品）。
@@ -277,7 +281,7 @@ type RatingRowResp struct {
 	ID        string
 	Score     string
 	Source    string
-	CreatedAt string
+	CreatedAt time.Time
 }
 
 // StockCellResp 库存列（三态 + 分仓明细）。

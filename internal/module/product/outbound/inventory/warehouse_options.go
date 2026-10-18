@@ -60,9 +60,9 @@ func (o *Options) WarehouseOptions(ctx context.Context, projectID string) (out [
 			continue
 		}
 		out = append(out, productdto.WarehouseOptionResp{
-			ID:                    w.ID,
-			Code:                  w.Code,
-			Name:                  w.Name,
+			ID:        w.ID,
+			Code:      w.Code,
+			Name:      w.Name,
 			Label:     w.Name + "（" + w.Code + "）",
 			IsDefault: w.IsDefault,
 		})

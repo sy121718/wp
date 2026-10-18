@@ -78,7 +78,7 @@ func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.C
 	for _, it := range rating.Items {
 		ratingRows = append(ratingRows, productdto.RatingRowResp{
 			ID: it.ID, Score: formatScore(it.Score),
-			Source: it.Source, CreatedAt: it.CreatedAt,
+			Source: it.Source, CreatedAt: it.CreatedAt.Time(),
 		})
 	}
 	categoryCell, categoryOthers := categoryCellLabel(flat, detail.CategoryIDs, detail.PrimaryCategoryID)
@@ -125,7 +125,7 @@ func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.C
 		// 取词在模板 —— 见 productPickOptions。
 		PrimaryOptions: productPickOptions(detail.PrimaryCategoryID, CategoryPickOptions(flat)),
 		BrandOptions:   productPickOptions(detail.BrandID, productBrandNameOptions(brands)),
-		BrandName: brandNameByID(brands, detail.BrandID),
+		BrandName:      brandNameByID(brands, detail.BrandID),
 
 		// 标签（issue #11）：手工标签勾选挂载（勾选态服务端算好）；自动标签只读展示 ——
 		// 归属由规则重算维护，手工改会被下一次重算覆盖，故不提供勾选框。

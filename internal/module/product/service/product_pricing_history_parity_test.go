@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/utils"
 	"reflect"
 	"testing"
 
@@ -120,11 +121,14 @@ func TestProductPricingHistoryRowsMatchPerBatchDetailPath(t *testing.T) {
 	named, blank, total := 0, 0, 0
 	for i, row := range view.History {
 		where := fmt.Sprintf("第 %d 行", i+1)
-		for _, field := range []string{"RuleType", "Scope", "Rounding", "CreatedAt"} {
+		for _, field := range []string{"RuleType", "Scope", "Rounding"} {
 			text, _ := row[field].(string)
 			if text == "" {
 				t.Fatalf("夹具自检失败：%s 的 %s 是空文本（%q）", where, field, text)
 			}
+		}
+		if at, ok := row["CreatedAt"].(utils.JSONTime); !ok || at.IsZero() {
+			t.Fatalf("夹具自检失败：%s 的 CreatedAt 是零值（%v）", where, row["CreatedAt"])
 		}
 		if note, _ := row["Note"].(string); note == "" {
 			t.Fatalf("夹具自检失败：%s 的备注是空文本", where)

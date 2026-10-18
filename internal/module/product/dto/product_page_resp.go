@@ -15,6 +15,7 @@ package productdto
 import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/pkg/pagination"
+	"time"
 )
 
 // ProductNewPageResp 商品新建整页的渲染视图。
@@ -434,7 +435,7 @@ type DetailTemplateOptionResp struct {
 	ID           string
 	Name         string
 	DraftVersion int64
-	UpdatedAt    string
+	UpdatedAt    time.Time
 	IsBound      bool
 	IsDefault    bool
 }
@@ -711,7 +712,7 @@ type BundlePanelRowResp struct {
 // EditForm 与 CategoryRowResp 同一理由留在 map（抽屉模板的数据根要支持 .["t"] 索引）。
 type BrandRowResp struct {
 	ID, Name, Slug, Logo, Description string
-	UpdatedAt                         string
+	UpdatedAt                         time.Time
 	Sort                              int
 	EditForm                          map[string]any
 }

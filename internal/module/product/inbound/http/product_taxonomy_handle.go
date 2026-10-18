@@ -136,7 +136,7 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
 			brands = append(brands, productdto.BrandRowResp{
 				ID: b.ID, Name: b.Name, Slug: b.Slug, Logo: b.Logo,
 				Sort: b.Sort, Description: b.Description,
-				UpdatedAt: b.UpdatedAt,
+				UpdatedAt: b.UpdatedAt.TimeOrZero(),
 			})
 		}
 	}

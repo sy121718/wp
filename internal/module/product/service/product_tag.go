@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/utils"
 	"sort"
 	"strconv"
 	"strings"
@@ -762,11 +763,13 @@ func toTagResp(e *productmodel.ProductTagEntity) *productdto.TagResp {
 		RuleParams: orJSON(e.RuleParams, "{}"),
 		RuleValues: tagRuleValues(e.RuleParams),
 		Sort:       e.Sort,
-		CreatedAt:  e.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:  e.UpdatedAt.Format(time.RFC3339),
+		CreatedAt:  utils.NewJSONTime(e.CreatedAt),
+		UpdatedAt:  utils.NewJSONTime(e.UpdatedAt),
 	}
 	if e.RecalcAt != nil {
-		resp.RecalcAt = e.RecalcAt.Format(time.RFC3339)
+		if e.RecalcAt != nil {
+			resp.RecalcAt = utils.NewJSONTime(*e.RecalcAt)
+		}
 	}
 	return resp
 }

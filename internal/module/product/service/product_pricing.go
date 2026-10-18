@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/utils"
 	"math"
 	"sort"
 	"strconv"
@@ -424,7 +425,7 @@ func toAdjustmentResp(tr TranslateFunc, e *productmodel.PriceAdjustmentEntity, i
 		ChangedCount: e.ChangedCount,
 		Note:         e.Note,
 		OperatorID:   e.OperatorID,
-		CreatedAt:    e.CreatedAt.Format(time.RFC3339),
+		CreatedAt:    utils.NewJSONTime(e.CreatedAt),
 	}
 	if e.TargetID != nil {
 		resp.TargetID = *e.TargetID
@@ -446,7 +447,7 @@ func adjustmentItemResps(rows []*productmodel.PriceAdjustmentItemEntity, names m
 			ID: r.ID, ProductID: r.ProductID, ProductName: names[r.ProductID],
 			VariantID: r.VariantID, SKUCode: r.SKUCode,
 			OldPrice: r.OldPrice, NewPrice: r.NewPrice, Diff: r.NewPrice - r.OldPrice,
-			CreatedAt: r.CreatedAt.Format(time.RFC3339),
+			CreatedAt: utils.NewJSONTime(r.CreatedAt),
 		})
 	}
 	return out

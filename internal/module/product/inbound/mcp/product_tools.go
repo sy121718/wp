@@ -41,8 +41,8 @@ import (
 	"strings"
 
 	"go_wp/internal/mcp"
-	"go_wp/internal/module/product/dto"
-	"go_wp/internal/module/product/enums"
+	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/permission"
 )
 
@@ -562,8 +562,8 @@ func describeProduct(res *productdto.ProductResp) string {
 		writeLine(&b, "库存", "未入库（任何仓库都没有该商品的库存行）")
 	}
 	// 上架时间：用户会问「什么时候上的架」，而「新品」的判断也靠它。
-	writeLine(&b, "创建时间", res.CreatedAt)
-	writeLine(&b, "上架时间", res.PublishedAt)
+	writeLine(&b, "创建时间", res.CreatedAt.String())
+	writeLine(&b, "上架时间", res.PublishedAt.String())
 	return b.String()
 }
 

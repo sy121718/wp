@@ -61,6 +61,7 @@ import (
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/rls"
+	"go_wp/pkg/utils"
 )
 
 // 新建商品的 SKU 来源（docs/14 §1.1 的两条入口）。
@@ -1009,7 +1010,9 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 	}
 	resp.TagIDs = decodeStrings(e.TagIDs)
 	if e.PublishedAt != nil {
-		resp.PublishedAt = e.PublishedAt.Format(time.RFC3339)
+		if e.PublishedAt != nil {
+			resp.PublishedAt = utils.NewJSONTime(*e.PublishedAt)
+		}
 	}
 	resp.RelatedIDs = decodeStrings(e.RelatedIDs)
 	resp.BundleItems = orJSON(e.BundleItems, string(defaultBundleItemsJSON))
@@ -1206,7 +1209,7 @@ func (s *Service) toListResp(e *productmodel.ProductEntity) *productdto.ProductR
 		SKUCode: e.SKUCode, Type: e.Type,
 		Status: e.Status, Sort: e.Sort, Images: mediaURLs(decodeStrings(e.Images)),
 		ImageAlts: decodeStrings(e.ImageAlts),
-		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
+		CreatedAt: utils.NewJSONTime(e.CreatedAt), UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
 	}
 	if len(resp.Images) == 0 {
 		resp.Images = []string{}
@@ -1281,7 +1284,7 @@ func toVariantResp(v *productmodel.VariantEntity) *productdto.VariantResp {
 		Price: v.Price, ComparePrice: v.ComparePrice, CostPrice: v.CostPrice,
 		Image: v.Image, OptionValues: orJSON(v.OptionValues, "{}"),
 		Enabled: v.Enabled, Sort: v.Sort,
-		CreatedAt: v.CreatedAt.Format(time.RFC3339), UpdatedAt: v.UpdatedAt.Format(time.RFC3339),
+		CreatedAt: utils.NewJSONTime(v.CreatedAt), UpdatedAt: utils.NewJSONTime(v.UpdatedAt),
 	}
 }
 
@@ -1381,7 +1384,7 @@ func (s *Service) ratingRespOf(ctx context.Context, projectID, productID string)
 		items = append(items, *row)
 		out = append(out, productdto.RatingItemResp{
 			ID: row.ID, ProductID: row.ProductID, Score: row.Score, Source: row.Source,
-			CreatedAt: row.CreatedAt.UTC().Format(time.RFC3339),
+			CreatedAt: utils.NewJSONTime(row.CreatedAt),
 		})
 	}
 	res = &productdto.RatingResp{Items: out}

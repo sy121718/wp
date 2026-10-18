@@ -1,14 +1,16 @@
 package productdto
 
+import "go_wp/pkg/utils"
+
 // product_rating_resp.go — 商品评分响应（issue #30）。
 
 // RatingItemResp 一条评分明细。
 type RatingItemResp struct {
-	ID        string  `json:"id"`
-	ProductID string  `json:"productId"`
-	Score     float64 `json:"score"`
-	Source    string  `json:"source"`
-	CreatedAt string  `json:"createdAt"`
+	ID        string         `json:"id"`
+	ProductID string         `json:"productId"`
+	Score     float64        `json:"score"`
+	Source    string         `json:"source"`
+	CreatedAt utils.JSONTime `json:"createdAt"`
 }
 
 // RatingResp 评分写入 / 查询的统一返回：明细 + 该商品的**投影值**。

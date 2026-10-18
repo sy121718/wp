@@ -1,7 +1,11 @@
 // product_tag_resp.go — 商品标签出参（issue #11，service 返回）。
 package productdto
 
-import json "go_wp/pkg/jsonx"
+import (
+	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/utils"
+	"time"
+)
 
 // TagResp 标签。
 //
@@ -22,14 +26,14 @@ type TagResp struct {
 	// RuleValues 规则参数的取值（数字与「有没有」），不做任何措辞。
 	RuleValues RuleValuesResp `json:"ruleValues"`
 	// RecalcAt 最近一次按规则重算的时间（手工标签为空串）。
-	RecalcAt string `json:"recalcAt"`
+	RecalcAt utils.JSONTime `json:"recalcAt"`
 	// ProductCount 当前命中/挂载的商品数。
 	ProductCount int `json:"productCount"`
 	Sort         int `json:"sort"`
 	// Products 命中商品（仅详情接口）。
 	Products  []*TagProductResp `json:"products,omitempty"`
-	CreatedAt string            `json:"createdAt"`
-	UpdatedAt string            `json:"updatedAt"`
+	CreatedAt utils.JSONTime    `json:"createdAt"`
+	UpdatedAt utils.JSONTime    `json:"updatedAt"`
 }
 
 // TagProductResp 标签命中的商品（验收 4 的展示单元）。
@@ -64,7 +68,7 @@ type TagRowResp struct {
 	// RuleValues 规则参数的取值（数字与「有没有」），措辞在 tag_rule_text.html。
 	RuleValues RuleValuesResp
 	// RecalcAt 上次重算的原样时间串（未重算过时为空串）。
-	RecalcAt string
+	RecalcAt time.Time
 	// RuleDays/RuleMinPrice/RuleMaxPrice 规则参数的回填文本。
 	RuleDays     string
 	RuleMinPrice string

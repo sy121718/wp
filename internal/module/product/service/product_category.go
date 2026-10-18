@@ -34,6 +34,7 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/rls"
+	"go_wp/pkg/utils"
 )
 
 // maxCategoryDepth 分类层级兜底上限：正常数据不会到这个深度，
@@ -585,8 +586,8 @@ func toCategoryResp(e *productmodel.ProductCategoryEntity) *productdto.CategoryR
 		ID: e.ID, ProjectID: e.ProjectID,
 		Name: e.Name, Slug: e.Slug, Description: e.Description, Image: e.Image,
 		SEOTitle: e.SEOTitle, SEODescription: e.SEODescription, Sort: e.Sort,
-		CreatedAt: e.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
+		CreatedAt: utils.NewJSONTime(e.CreatedAt),
+		UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
 	}
 	if e.ParentID != nil {
 		resp.ParentID = *e.ParentID
@@ -826,7 +827,7 @@ func toBrandResp(e *productmodel.ProductBrandEntity) *productdto.BrandResp {
 		ID: e.ID, ProjectID: e.ProjectID,
 		Name: e.Name, Slug: e.Slug, Logo: mediaURL(e.Logo), Description: e.Description,
 		SEOTitle: e.SEOTitle, SEODescription: e.SEODescription, Sort: e.Sort,
-		CreatedAt: e.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
+		CreatedAt: utils.NewJSONTime(e.CreatedAt),
+		UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
 	}
 }
