@@ -204,7 +204,7 @@
                     <strong>{{a.RuleLabel}}</strong>
                     <span class="badge badge-mute">{{a.ScopeLabel}}</span>
                     <span class="badge badge-mute">{{a.RoundingLabel}}</span>
-                    <span class="hint">{{ .["t"]("admin.product_pricing.history.changedLead", "改动 ") }}{{a.ChangedCount}}/{{a.VariantCount}}{{ .["t"]("admin.product_pricing.history.changedTail", " 个变体 · ") }}{{a.CreatedAtText}}{{if a.OperatorID != ""}}{{ .["t"]("admin.product_pricing.history.operatorLead", " · 操作人 ") }}{{a.OperatorID}}{{end}}</span>
+                    <span class="hint">{{ .["t"]("admin.product_pricing.history.changedLead", "改动 ") }}{{a.ChangedCount}}/{{a.VariantCount}}{{ .["t"]("admin.product_pricing.history.changedTail", " 个变体 · ") }}{{formatTime(a.CreatedAt)}}{{if a.OperatorID != ""}}{{ .["t"]("admin.product_pricing.history.operatorLead", " · 操作人 ") }}{{a.OperatorID}}{{end}}</span>
                 </summary>
                 {{if a.FilterLabel != ""}}<p class="hint">{{ .["t"]("admin.product_pricing.history.filterLead", "筛选条件：") }}{{a.FilterLabel}}</p>{{end}}
                 {{if a.Note != ""}}<p class="hint">{{ .["t"]("admin.product_pricing.history.noteLead", "备注：") }}{{a.Note}}</p>{{end}}

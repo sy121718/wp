@@ -11,7 +11,6 @@ package productservice
 import (
 	"context"
 	"strings"
-	"time"
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -201,7 +200,7 @@ func pricingHistoryRow(a *productdto.PriceAdjustmentResp) map[string]any {
 		"RoundingLabel": a.RoundingLabel, "FilterLabel": a.FilterLabel,
 		"ChangedCount": a.ChangedCount, "VariantCount": a.VariantCount,
 		"Note": a.Note, "OperatorID": a.OperatorID,
-		"CreatedAtText": pricingTimeLabel(a.CreatedAt),
+		"CreatedAt":    a.CreatedAt,
 		"Items":         items,
 	}
 }
@@ -252,16 +251,6 @@ func pricingSignedAmount(v float64) string {
 	return money.FormatYuan(v)
 }
 
-// pricingTimeLabel RFC3339 → 后台展示文本（同样的压轴规则见标签页的重算时间）。
-func pricingTimeLabel(at string) string {
-	if strings.TrimSpace(at) == "" {
-		return "—"
-	}
-	if t, err := time.Parse(time.RFC3339, at); err == nil {
-		return t.Local().Format("2006-01-02 15:04")
-	}
-	return at
-}
 
 // pricingLineTone 价格行状态 → 徽标分档。
 //

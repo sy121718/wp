@@ -215,7 +215,7 @@
                 <tr>
                     <td>{{r.Score}}</td>
                     <td>{{r.Source}}</td>
-                    <td>{{r.CreatedAt}}</td>
+                    <td>{{if isset(r.CreatedAt)}}{{formatTime(r.CreatedAt)}}{{end}}</td>
                 </tr>
                 {{end}}
                 </tbody>

@@ -5,8 +5,8 @@ package productservice_test
 //
 // 改造把 pricingHistory 的「每批一次 GetPriceAdjustment」换成「一次批量读明细 + 按
 // adjustment_id 分组装配」，风险是**行内容悄悄变了**：模板 product_pricing.html 读的是
-// RuleLabel / ScopeLabel / RoundingLabel / ChangedCount / VariantCount / CreatedAtText /
-// OperatorID / FilterLabel / Note，以及明细逐条的 ProductName / SKUCode / OldPrice /
+// RuleLabel / ScopeLabel / RoundingLabel / ChangedCount / VariantCount / CreatedAt（原样
+// RFC3339，格式化在模板）/ OperatorID / FilterLabel / Note，以及明细逐条的 ProductName / SKUCode / OldPrice /
 // NewPrice / Diff。少任何一项都不报错，只会让某一列变空。
 //
 // 对账单位是**整行**（含 Items 逐条）：①读模型 view.History；②按原实现在测试内重建
@@ -25,9 +25,7 @@ import (
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"reflect"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -45,17 +43,6 @@ func formatSignedYuan(v float64) string {
 		return "+" + money.FormatYuan(v)
 	}
 	return money.FormatYuan(v)
-}
-
-// formatTimeLabel RFC3339 → 后台展示文本 —— 同上，复述台账的时间口径。
-func formatTimeLabel(at string) string {
-	if strings.TrimSpace(at) == "" {
-		return "—"
-	}
-	if parsed, err := time.Parse(time.RFC3339, at); err == nil {
-		return parsed.Local().Format("2006-01-02 15:04")
-	}
-	return at
 }
 
 // referencePricingHistoryRows 按**原实现**（逐批次 Get 明细）重建台账行。
@@ -89,8 +76,8 @@ func referencePricingHistoryRows(t *testing.T, s *productservice.Service, ctx co
 			"RoundingLabel": src.RoundingLabel, "FilterLabel": src.FilterLabel,
 			"ChangedCount": src.ChangedCount, "VariantCount": src.VariantCount,
 			"Note": src.Note, "OperatorID": src.OperatorID,
-			"CreatedAtText": formatTimeLabel(src.CreatedAt),
-			"Items":         items,
+			"CreatedAt": src.CreatedAt,
+			"Items":     items,
 		})
 	}
 	return rows
@@ -133,9 +120,9 @@ func TestProductPricingHistoryRowsMatchPerBatchDetailPath(t *testing.T) {
 	named, blank, total := 0, 0, 0
 	for i, row := range view.History {
 		where := fmt.Sprintf("第 %d 行", i+1)
-		for _, field := range []string{"RuleLabel", "ScopeLabel", "RoundingLabel", "CreatedAtText"} {
+		for _, field := range []string{"RuleLabel", "ScopeLabel", "RoundingLabel", "CreatedAt"} {
 			text, _ := row[field].(string)
-			if text == "" || text == "—" {
+			if text == "" {
 				t.Fatalf("夹具自检失败：%s 的 %s 是空文本（%q）", where, field, text)
 			}
 		}

@@ -415,7 +415,7 @@
                 <tr>
                     <td>{{r.Score}}</td>
                     <td>{{r.Source}}</td>
-                    <td>{{r.CreatedAt}}</td>
+                    <td>{{if isset(r.CreatedAt)}}{{formatTime(r.CreatedAt)}}{{end}}</td>
                     <td class="col-actions">
                         <button data-requires-js hidden type="submit" form="rating-del-{{r.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
                     </td>
@@ -490,7 +490,7 @@
             <label class="form-label" for="rollback-snapshot">{{ .["t"]("admin.product_detail.template.rollbackLabel", "回滚到历史版本") }}</label>
             <select class="form-select" id="rollback-snapshot" name="snapshotId">
                 {{range _, snap := .TplPanel.Snapshots}}
-                <option value="{{snap.ID}}">{{snap.CreatedAt}}</option>
+                <option value="{{snap.ID}}">{{if isset(snap.CreatedAt)}}{{formatTime(snap.CreatedAt)}}{{end}}</option>
                 {{end}}
             </select>
             <p class="form-hint" data-write-status role="status" hidden></p>

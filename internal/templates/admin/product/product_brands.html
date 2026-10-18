@@ -158,7 +158,7 @@
                     </td>
                     <td>{{if b.Slug != ""}}<code>{{b.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td>{{b.Sort}}</td>
-                    <td class="text-mute text-sm">{{b.UpdatedAt}}</td>
+                    <td class="text-mute text-sm">{{if isset(b.UpdatedAt)}}{{formatTime(b.UpdatedAt)}}{{end}}</td>
                     <td class="col-actions">
                         {{if canUpdate}}
                         <button type="button" class="btn btn-sm" data-drawer-open="#tpl-brand-edit-{{b.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>

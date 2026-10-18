@@ -15,7 +15,6 @@ import (
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -269,11 +268,13 @@ func (h *ProductPageHandle) tagDrawerData(c *gin.Context, mode, projectID string
 // 命中商品本身不在这里，展开时才由 ProductTagHitsFragment 给 —— 审计 PERF-02）。
 //
 // 文案槽给**事实**（key + 中文兜底），取词在 product_tags.html 的 tr 里做：控制器不取词。
-// RecalcAt 是**数据**（已格式化的时间串，未重算时为空），「未重算过」那句话才是文案。
+// RecalcAt 原样交数据层的时间串（未重算时为空串），显示格式由模板的 formatTime 决定；
+// 「未重算过」那句才是文案。
 func tagPageRow(t *productdto.TagResp) productdto.TagRowResp {
 	// 类型 → 文案事实的映射在 productenums.TagKindLabel（控制器不再挑文案）。
 	kindKey, kindFallback := productenums.TagKindLabel(t.Kind)
-	recalcAt, recalcKey, recalcFallback := recalcFact(t.RecalcAt)
+	recalcAt := strings.TrimSpace(t.RecalcAt)
+	recalcKey, recalcFallback := productenums.TagRecalcLabel(t.RecalcAt)
 	return productdto.TagRowResp{
 		ID: t.ID, Name: t.Name, Slug: t.Slug, Kind: t.Kind,
 		KindLabelKey: kindKey, KindLabelFallback: kindFallback,
@@ -298,32 +299,6 @@ func tagKindTone(kind string) string {
 		return "info"
 	}
 	return "mute"
-}
-
-// recalcFact 重算时间 → （数据串, 文案事实）。
-//
-// 输入是 RFC3339，这里压成「2006-01-02 15:04」：既好读，又不会因为那一长串
-// 时间戳在窄屏折叠行里连成不可断行的 token 把卡片撑破。
-// 时间是数据（格式固定，走第一个返回值），只有「没重算过」那句话是文案 ——
-// 给 key + 中文兜底（productenums.TagRecalcLabel），取词在 product_tags.html 的 tr 里做。
-func recalcFact(at string) (label, key, fallback string) {
-	key, fallback = productenums.TagRecalcLabel(at)
-	return recalcAtText(at), key, fallback
-}
-
-// recalcAtText 重算时间的数据串：RFC3339 → 「2006-01-02 15:04」。
-//
-// 空值给空串（模板据它渲染「—」那一档），不可解析时**原样返回** —— 至少把原值显示出来，
-// 留白会让人以为「没有这个数据」。
-func recalcAtText(at string) string {
-	at = strings.TrimSpace(at)
-	if at == "" {
-		return ""
-	}
-	if t, err := time.Parse(time.RFC3339, at); err == nil {
-		return t.Local().Format("2006-01-02 15:04")
-	}
-	return at
 }
 
 // ruleParamText 从规则参数里取某个键的文本（缺失返回空串，用于表单回填）。

@@ -178,7 +178,7 @@
                     </td>
                     {* RecalcAt 是数据（已格式化的时间）；「未重算过」是文案事实，取词在这里做 ——
                        控制器不再拼成品串（见 tagPageRow 的 recalcFact）。 *}
-                    <td>{{if t.RecalcAt != ""}}{{t.RecalcAt}}{{else if t.RecalcLabelKey != "" || t.RecalcLabelFallback != ""}}{{tr(t.RecalcLabelKey, t.RecalcLabelFallback)}}{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    <td>{{if t.RecalcAt != ""}}{{formatTime(t.RecalcAt)}}{{else if t.RecalcLabelKey != "" || t.RecalcLabelFallback != ""}}{{tr(t.RecalcLabelKey, t.RecalcLabelFallback)}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td class="col-actions">
                         {{if canUpdate}}
                         <button type="button" class="btn btn-sm" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>

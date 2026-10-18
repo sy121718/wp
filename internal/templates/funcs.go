@@ -66,6 +66,7 @@ func injectGlobals(set *jet.Set) {
 	set.AddGlobal("sprintf", sprintf)
 	set.AddGlobal("queryURL", queryURL)
 	set.AddGlobal("pageBase", pageBase)
+	set.AddGlobal("formatTime", formatTime)
 	set.AddGlobal("pageNumbers", pageNumbers)
 }
 
@@ -608,6 +609,34 @@ func pageBase(raw string, drop ...string) string {
 		return u.Path
 	}
 	return u.Path + "?" + u.RawQuery
+}
+
+// formatTime 把数据层的时间渲染成页面上的分钟精度文本（本地时区）。
+//
+// 为什么放在模板这一层：时间「怎么显示」是视图的事（时区、精度、要不要秒），后端只该给
+// **数据**。四类输入都接：time.Time / *time.Time（dto 直传）、RFC3339 与
+// `2006-01-02 15:04:05` 字符串（既有接口面）。解析失败**原样返回** —— 至少把原值显示
+// 出来，留白会让人以为「没有这个数据」。空值返回空串：模板据此渲染「—」那一档。
+func formatTime(raw any) string {
+	switch v := raw.(type) {
+	case time.Time:
+		return v.Local().Format("2006-01-02 15:04")
+	case *time.Time:
+		if v == nil {
+			return ""
+		}
+		return v.Local().Format("2006-01-02 15:04")
+	}
+	s := strings.TrimSpace(stringify(raw))
+	if s == "" {
+		return ""
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.Local().Format("2006-01-02 15:04")
+		}
+	}
+	return s
 }
 
 // pageNumbers 给出分页条要显示的**页码窗口**（win = 窗口宽度，含首尾固定位与省略位）。

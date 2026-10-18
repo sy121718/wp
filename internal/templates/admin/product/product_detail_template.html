@@ -163,7 +163,7 @@
                 <tr>
                     <td><strong>{{t.Name}}</strong></td>
                     <td>v{{t.DraftVersion}}</td>
-                    <td>{{t.UpdatedAt}}</td>
+                    <td>{{if isset(t.UpdatedAt)}}{{formatTime(t.UpdatedAt)}}{{end}}</td>
                     <td>
                         {{if t.IsBound}}<span class="badge">{{ .["t"]("admin.product_detail_template.named.bound", "当前使用") }}</span>{{end}}
                         {{if t.IsDefault}}<span class="badge badge-info">{{ .["t"]("admin.product_detail_template.named.typeDefaultLabel", "类型默认") }}</span>{{end}}

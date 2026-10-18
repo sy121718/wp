@@ -337,7 +337,7 @@ func TestGroupDPricingPageRenders(t *testing.T) {
 		}},
 		"History": []map[string]any{{
 			"RuleLabel": "成本加价", "ScopeLabel": "单个 SKU", "RoundingLabel": "不处理",
-			"ChangedCount": 1, "VariantCount": 1, "CreatedAtText": "2026-01-01", "OperatorID": "u1",
+			"ChangedCount": 1, "VariantCount": 1, "CreatedAt": "2026-01-01T10:00:00Z", "OperatorID": "u1",
 			"FilterLabel": "", "Note": "国庆前提价",
 			"Items": []map[string]any{{
 				"ProductName": "商品一", "SKUCode": "SKU1", "OldPrice": "10.00", "NewPrice": "12.00", "Diff": "+2.00",
