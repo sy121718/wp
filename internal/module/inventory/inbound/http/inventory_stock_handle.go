@@ -5,7 +5,7 @@ import (
 	"context"
 	"github.com/gin-gonic/gin"
 	"go_wp/internal/middleware/builtin"
-	"strings"
+	"go_wp/pkg/binding"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -21,11 +21,10 @@ import (
 // 原因与备注**都必填**：调整是「没有单据承载」的写入口，没有原因与备注的调整
 // 在事后无法解释，等于把账目变成不可审计的。
 func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	direction := strings.TrimSpace(c.PostForm("direction"))
-	reasonCode := strings.TrimSpace(c.PostForm("reasonCode"))
-	remark := strings.TrimSpace(c.PostForm("remark"))
-	sku := strings.TrimSpace(c.PostForm("skuCode"))
+	form, ok := binding.Form[inventorydto.StockChangeFormReq](c)
+	if !ok {
+		return
+	}
 
 	respond := func(err error) {
 		if err != nil {
@@ -35,31 +34,15 @@ func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
 		inventoryJump(c, true, inventoryDoneMsg, inventoryStockBack(c), inventoryStockBackMsg)
 	}
 
-	if direction != inventoryenums.DirectionAdjust && direction != inventoryenums.DirectionOut {
+	if !form.ValidDirection() {
 		respond(inventoryenums.Err(inventoryenums.ErrStockDirectionInvalid))
 		return
 	}
-	if remark == "" {
+	if form.RemarkValue() == "" {
 		respond(inventoryenums.Err(inventoryenums.ErrStockRemarkRequired))
 		return
 	}
-	req := &inventorydto.ChangeStockReq{
-		ProjectID:   projectID,
-		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
-		Direction:   direction,
-		ReasonCode:  reasonCode,
-		SourceType:  strings.TrimSpace(c.PostForm("sourceType")),
-		SourceRef:   strings.TrimSpace(c.PostForm("sourceRef")),
-		Remark:      remark,
-		OperatorID:  builtin.GetUsername(c),
-		Lines: []inventorydto.StockChangeLineReq{{
-			VariantID: strings.TrimSpace(c.PostForm("variantId")),
-			SKUCode:   sku,
-			ProductID: strings.TrimSpace(c.PostForm("productId")),
-			Quantity:  parseIntOr(c.PostForm("quantity"), 0),
-		}},
-	}
-	if _, err := h.inventory.ChangeStock(c.Request.Context(), req); err != nil {
+	if _, err := h.inventory.ChangeStock(c.Request.Context(), form.ChangeReq(builtin.GetUsername(c))); err != nil {
 		respond(err)
 		return
 	}
@@ -81,14 +64,11 @@ func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
 // 权限：复用库存页既有写入口的权限点（inventory:stock_change，见 inventory_page_router.go），
 // 不新增权限点、不新增 authorizedAPI 路由。
 func (h *inventoryPageHandle) InventoryExternalSKUUpdate(c *gin.Context) {
-	req := &inventorydto.BindExternalSKUReq{
-		ProjectID:   c.PostForm("projectId"),
-		WarehouseID: strings.TrimSpace(c.PostForm("warehouseId")),
-		VariantID:   strings.TrimSpace(c.PostForm("variantId")),
-		// 这里不做任何加工：归一（去首尾空白 / 长度上限 / 控制字符）是 service 的唯一口径。
-		ExternalSKU: c.PostForm("externalSku"),
+	form, ok := binding.Form[inventorydto.ExternalSKUFormReq](c)
+	if !ok {
+		return
 	}
-	if _, err := h.inventory.BindExternalSKU(c.Request.Context(), req); err != nil {
+	if _, err := h.inventory.BindExternalSKU(c.Request.Context(), form.BindReq()); err != nil {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryStockBack(c), inventoryStockBackMsg)
 		return
 	}
@@ -111,9 +91,10 @@ func (h *inventoryPageHandle) InventoryExternalSKUUpdate(c *gin.Context) {
 // 权限：复用库存页既有写入口的权限点（inventory:stock_change，见 inventory_page_router.go），
 // 不新增权限点、不新增 authorizedAPI 路由。
 func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	track := c.PostForm("trackQuantity") != ""
-	rawQuantity := strings.TrimSpace(c.PostForm("quantity"))
+	form, ok := binding.Form[inventorydto.StockTrackingFormReq](c)
+	if !ok {
+		return
+	}
 
 	respond := func(err error) {
 		if err != nil {
@@ -125,18 +106,11 @@ func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
 
 	// 跟踪态必须显式给数量：无限态的数量框是 disabled 的（浏览器不提交该字段），
 	// 所以「空」在这里有两种来源，只有跟踪态下的空是错误。
-	if track && rawQuantity == "" {
+	if form.Tracked() && form.QuantityValue() == "" {
 		respond(inventoryenums.Err(inventoryenums.ErrStockQuantityRequired))
 		return
 	}
-	req := &inventorydto.UpdateStockTrackingReq{
-		ProjectID:     projectID,
-		WarehouseID:   strings.TrimSpace(c.PostForm("warehouseId")),
-		VariantID:     strings.TrimSpace(c.PostForm("variantId")),
-		TrackQuantity: track,
-		Quantity:      parseIntOr(rawQuantity, 0),
-	}
-	if _, err := h.inventory.UpdateStockTracking(c.Request.Context(), req); err != nil {
+	if _, err := h.inventory.UpdateStockTracking(c.Request.Context(), form.TrackingReq()); err != nil {
 		respond(err)
 		return
 	}
