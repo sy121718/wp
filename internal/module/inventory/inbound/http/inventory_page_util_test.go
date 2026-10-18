@@ -58,46 +58,6 @@ func newHXContext(t *testing.T, hxHeader, body string) (*gin.Context, *httptest.
 	return c, rec
 }
 
-// 带 HX-Request 的请求渲染片段并 200；其余一律不写响应，交调用方 302。
-func TestHXFragmentOnlyAnswersHtmxRequests(t *testing.T) {
-	data := gin.H{"Err": "仓库编码已存在"}
-
-	c, rec := newHXContext(t, "true", "code=WH1")
-	if !hxFragment(c, "admin/inventory/inventory_warehouse_form.html", data) {
-		t.Fatal("带 HX-Request: true 的请求应当走片段分支")
-	}
-	// gin 的状态码是**延迟写出**的（Context.Status 只记录，请求结束才刷）：测试没走
-	// engine.ServeHTTP，所以先显式刷一次，再断言真正写进 HTTP 的码 —— 直接读 rec.Code
-	// 会拿到 httptest 的默认 200，把「一个字没写」误判成「写了 200」。
-	c.Writer.WriteHeaderNow()
-	if rec.Code != http.StatusOK {
-		t.Errorf("片段分支状态码 = %d，want 200", rec.Code)
-	}
-	if got, want := rec.Body.String(), "FRAG:admin/inventory/inventory_warehouse_form.html"; got != want {
-		t.Errorf("片段分支渲染内容 = %q，want %q", got, want)
-	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Errorf("片段分支 Content-Type = %q，want 含 text/html", ct)
-	}
-
-	for _, tc := range []struct {
-		header string
-		htmx   bool
-	}{
-		{" TRUE ", true},
-		{"false", false},
-		{"", false},
-	} {
-		c2, rec2 := newHXContext(t, tc.header, "code=WH1")
-		if handled := hxFragment(c2, "admin/inventory/inventory_warehouse_form.html", data); handled != tc.htmx {
-			t.Errorf("HX-Request=%q：hxFragment = %v，want %v", tc.header, handled, tc.htmx)
-		}
-		if !tc.htmx && rec2.Body.Len() != 0 {
-			t.Errorf("HX-Request=%q：原生请求不该写响应体，实际 %q", tc.header, rec2.Body.String())
-		}
-	}
-}
-
 // redirectWhere：htmx 档走 HX-Redirect + 200（不写 Location），原生档维持 302 + Location。
 func TestRedirectWhereSplitsHtmxAndNative(t *testing.T) {
 	const target = "/admin/inventory/warehouses?project=p1&err=x"
@@ -123,45 +83,5 @@ func TestRedirectWhereSplitsHtmxAndNative(t *testing.T) {
 	c2.Writer.WriteHeaderNow()
 	if rec2.Code != http.StatusFound {
 		t.Errorf("原生档状态码 = %d，want 302", rec2.Code)
-	}
-}
-
-// formEchoData：单值取首个、多值保序、空值丢弃、复选框按「是否提交过」判定、列出即补零键。
-func TestFormEchoDataKeepsSubmittedValues(t *testing.T) {
-	c, _ := newHXContext(t, "true", "code=WH1&label=%E4%B8%BB%E4%BB%93&isDefault=1&empty=&warehouseIds=w1&warehouseIds=w2")
-	data := formEchoData(c, "code", "label", "remark", "warehouseIds", "isDefault", "empty")
-
-	form, ok := data["FormEcho"].(gin.H)
-	if !ok {
-		t.Fatal("data[\"FormEcho\"] 不是 gin.H")
-	}
-	if got := form["code"]; got != "WH1" {
-		t.Errorf("FormEcho.code = %v，want WH1", got)
-	}
-	if got := form["label"]; got != "主仓" {
-		t.Errorf("FormEcho.label = %v，want 主仓", got)
-	}
-	if got, exists := form["remark"]; !exists || got != "" {
-		t.Errorf("FormEcho.remark = %v（存在=%v），want 空串且键存在（Jet 缺键会中断渲染）", got, exists)
-	}
-
-	checked, ok := data["FormEchoChecked"].(gin.H)
-	if !ok {
-		t.Fatal("data[\"FormEchoChecked\"] 不是 gin.H")
-	}
-	if got := checked["isDefault"]; got != true {
-		t.Errorf("FormEchoChecked.isDefault = %v，want true", got)
-	}
-	if got := checked["empty"]; got != false {
-		t.Errorf("FormEchoChecked.empty = %v，want false（空值不算勾选）", got)
-	}
-
-	multi, ok := data["FormEchoMulti"].(gin.H)
-	if !ok {
-		t.Fatal("data[\"FormEchoMulti\"] 不是 gin.H")
-	}
-	list, _ := multi["warehouseIds"].([]string)
-	if len(list) != 2 || list[0] != "w1" || list[1] != "w2" {
-		t.Errorf("FormEchoMulti.warehouseIds = %v，want [w1 w2]（保提交顺序）", list)
 	}
 }

@@ -62,25 +62,6 @@ func (r *PurchaseCreateFormReq) CreateReq(operatorID string) *CreatePurchaseOrde
 	}
 }
 
-// PurchaseCreateEchoFields 单值回填字段清单（模板与测试对账用同一份，不在别处再抄一遍）。
-var PurchaseCreateEchoFields = []string{"projectId", "code", "sourceId", "warehouseId", "remark"}
-
-// EchoFields 失败重渲时的单值字段原值（**不做修剪**：抽屉要还原用户看到的输入）。
-func (r *PurchaseCreateFormReq) EchoFields() map[string]string {
-	values := map[string]string{
-		"projectId":   r.ProjectID,
-		"code":        r.Code,
-		"sourceId":    r.SourceID,
-		"warehouseId": r.WarehouseID,
-		"remark":      r.Remark,
-	}
-	out := make(map[string]string, len(PurchaseCreateEchoFields))
-	for _, key := range PurchaseCreateEchoFields {
-		out[key] = values[key]
-	}
-	return out
-}
-
 // LineAt 第 i 行的原始三列（越界给空串：表单行数与数组长度不一致时不 panic、不错位）。
 func (r *PurchaseCreateFormReq) LineAt(i int) (sku, quantity, unitPrice string) {
 	return formArrayAtRaw(r.LineSku, i), formArrayAtRaw(r.LineQuantity, i), formArrayAtRaw(r.LineUnitPrice, i)

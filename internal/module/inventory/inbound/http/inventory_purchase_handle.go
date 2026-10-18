@@ -5,14 +5,12 @@ import (
 	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -25,37 +23,14 @@ import (
 )
 
 // purchaseCreateFail 在抽屉内回显原始输入，采购行的空位也不压缩。
-func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, form *inventorydto.PurchaseCreateFormReq, err error) {
+func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
 		return
 	}
-	// htmx 分支原样保留：失败在抽屉里重渲片段（错误槽 + 回填后的表单），不丢用户输入。
-	// 回显吃 DTO 的**原始值**（不修剪、不剔除空项）：通用 formEcho 会修剪空白，
-	// 那样空行会错位，行号与用户看到的对不上。
-	fields := gin.H{}
-	for key, value := range form.EchoFields() {
-		fields[key] = value
-	}
-	rows := make([]inventorydto.DraftLineViewResp, inventoryPurchaseDraftLines)
-	for i := range rows {
-		sku, quantity, unitPrice := form.LineAt(i)
-		rows[i] = inventorydto.DraftLineViewResp{Index: i, SKU: sku, Quantity: quantity, UnitPrice: unitPrice}
-	}
-	// 候选项由当前工程重取，表单值只取此次提交。
-	ctx := c.Request.Context()
-	tr := shell.TranslateFor(c)
-	projectID := strings.TrimSpace(form.ProjectID)
-	data := gin.H{
-		"FormEcho": fields, "SelectedProject": projectID, "DraftLines": rows,
-		"Sources":        sourceOptions(ctx, h.inventory, projectID, "", tr),
-		"Warehouses":     h.purchaseWarehouseOptions(ctx, projectID, tr),
-		"VariantOptions": h.purchaseVariantOptions(ctx, projectID, tr),
-		"SubmitErr":      inventoryErrText(c, err),
-		"ListQuery":      inventoryQueryFromRequest(c, inventoryPurchaseBackKeys...),
-	}
-	c.HTML(http.StatusOK, "admin/inventory/inventory_purchase_create_form.html", adminui.Prepare(c, data))
+	// htmx 分支：4xx + JSON —— 抽屉不 swap，输入原样保留，admin.js 弹 toast。
+	inventoryFailDrawer(c, err)
 }
 
 // inventory_purchase_page_form.go - 采购入库表单解析（收货明细行、草稿行与数值解析）。
@@ -285,7 +260,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseCreate(c *gin.Context) {
 	}
 	req := form.CreateReq(builtin.GetUsername(c))
 	if _, err := h.inventory.CreatePurchaseOrder(c.Request.Context(), req); err != nil {
-		h.purchaseCreateFail(c, form, err)
+		h.purchaseCreateFail(c, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventoryPurchaseBack(c), inventoryPurchaseBackMsg)

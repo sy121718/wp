@@ -47,22 +47,6 @@ func WithListQuery(action, listQuery string) string {
 	return action + "?" + listQuery
 }
 
-// RawForm 按清单取表单**原值**（不修剪、不丢弃空串）。
-//
-// 只给「失败后原样回填表单」这一种场景：抽屉 / 片段的失败重渲要还原用户看到的输入，
-// 包括首尾空白与空行 —— 修剪过的值会让行号与用户看到的错位，而错位的回填比不回填更难查。
-// 业务字段一律走 DTO 的 form tag，不要借这个函数绕过去。
-func RawForm(c *gin.Context, fields ...string) gin.H {
-	values := make(gin.H, len(fields))
-	if c == nil || c.Request == nil {
-		return values
-	}
-	for _, field := range fields {
-		values[field] = c.PostForm(field)
-	}
-	return values
-}
-
 // CSRFToken 当前请求的 CSRF token；取不到时返回空串（提交会被中间件拒，与其它后台页一致）。
 //
 // 给「只需要一个 token」的片段数据（抽屉表单的隐藏域）用：那些地方不该为了一个 token

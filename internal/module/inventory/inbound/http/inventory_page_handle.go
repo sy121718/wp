@@ -404,25 +404,6 @@ func redirectWhere(c *gin.Context, target string) {
 	c.Redirect(http.StatusFound, target)
 }
 
-// hxFragment 只在 htmx 请求下渲染片段（200 + HTML），并报告「是否已经响应」。
-//
-// 用法（写表单失败分档的唯一写法）：
-//
-//	if hxFragment(c, "admin/<模块>/xxx_form.html", data) {   // 模块专属片段跟模块走（见 templates/CLAUDE.md）
-//		return
-//	}
-//	inventoryJump(c, false, inventoryErrMsg(c, err), back, backMsg)
-//
-// 片段模板必须**可独立渲染**（不带 extends layout，data 由调用点给齐），并且自带
-// htmx 需要的结构（错误槽 + 回填后的表单）—— 模板由各批自己建，本 helper 只管分档。
-func hxFragment(c *gin.Context, name string, data gin.H) bool {
-	if !isHXRequest(c) {
-		return false
-	}
-	c.HTML(http.StatusOK, name, data)
-	return true
-}
-
 // formEchoMemory 解析提交表单时的内存上限（与 gin 的 MaxMultipartMemory 默认值一致）。
 const formEchoMemory = 32 << 20
 
@@ -476,33 +457,4 @@ func (e formEcho) list(name string) []string {
 // 文本值用 value，两者不要混用（文本框的值可能是空串，那不代表「没填过」）。
 func (e formEcho) checked(name string) bool {
 	return len(e.values[name]) > 0
-}
-
-// formEchoData 把回填值摊成片段 data 可直接并入的三个键。
-//
-//	"FormEcho"        gin.H{字段名: string}   文本 / 下拉 / 隐藏域 → value="{{ .FormEcho.code }}"
-//	"FormEchoChecked" gin.H{字段名: bool}     复选框 → {{if .FormEchoChecked.isDefault}}checked{{end}}
-//	"FormEchoMulti"   gin.H{字段名: []string} 多值字段的完整提交值（保序）
-//
-// **键名带 FormEcho 前缀，不用裸 Form**：回填片段与页面共用同一份渲染 data，而页面
-// 自己的键空间里可能早已有 `Form`（商品列表页的 `Form` 是批量改价的 pricingForm **结构体**）。
-// 撞名时片段里的 `{{.Form.code}}` 会命中结构体，Jet 报 `can't use code as field name in
-// struct type` 并从那一行截断整页（HTTP 仍 200），且只在带那个键的渲染路径上炸。
-//
-// **字段名要逐个列出**：Jet 读 map 里缺失的键会抛运行时错误、整个片段渲染失败 ——
-// 渲染器先渲到 buffer，失败走 `http.Error(500, …)`（buffer 里的半截内容被丢弃），
-// 而 htmx 默认把 5xx 判成 `swap:false`：用户点了保存**什么都看不到**。
-// 所以列出的字段都被补成零值。模板里访问**未列出**的字段仍要用 isset 包裹
-// （见 internal/templates/CLAUDE.md 的「可选数据键必须用 isset 判断」）。
-func formEchoData(c *gin.Context, fields ...string) gin.H {
-	echo := formEchoFrom(c)
-	form := make(gin.H, len(fields))
-	checked := make(gin.H, len(fields))
-	multi := make(gin.H, len(fields))
-	for _, name := range fields {
-		form[name] = echo.value(name)
-		checked[name] = echo.checked(name)
-		multi[name] = echo.list(name)
-	}
-	return gin.H{"FormEcho": form, "FormEchoChecked": checked, "FormEchoMulti": multi}
 }

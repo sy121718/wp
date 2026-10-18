@@ -3,10 +3,8 @@ package inventoryhttp
 
 import (
 	"github.com/gin-gonic/gin"
-	"go_wp/internal/adminui"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -59,7 +57,7 @@ func (h *inventoryPageHandle) InventoryReasonCreate(c *gin.Context) {
 		return
 	}
 	if _, err := h.inventory.CreateReason(c.Request.Context(), form.CreateReq()); err != nil {
-		h.reasonFormFail(c, form.ProjectID, err)
+		h.reasonFormFail(c, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventoryReasonBack(c), inventoryReasonBackMsg)
@@ -74,7 +72,7 @@ func (h *inventoryPageHandle) InventoryReasonUpdate(c *gin.Context) {
 		return
 	}
 	if _, err := h.inventory.UpdateReason(c.Request.Context(), form.UpdateReq()); err != nil {
-		h.reasonEditFormFail(c, form.ProjectID, err)
+		h.reasonEditFormFail(c, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventoryReasonBack(c), inventoryReasonBackMsg)
@@ -208,10 +206,6 @@ func directionLabel(tr func(key, fallback string) string, direction string) stri
 	}
 }
 
-var reasonCreateFields = []string{"projectId", "code", "name", "direction", "sort"}
-
-var reasonEditFields = []string{"projectId", "id", "builtin", "name", "status", "sort"}
-
 func reasonFormData(c *gin.Context, projectID string) gin.H {
 	return gin.H{
 		"SelectedProject": projectID,
@@ -219,31 +213,22 @@ func reasonFormData(c *gin.Context, projectID string) gin.H {
 	}
 }
 
-func (h *inventoryPageHandle) reasonFormFail(c *gin.Context, projectID string, err error) {
+func (h *inventoryPageHandle) reasonFormFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryReasonBack(c), inventoryReasonBackMsg)
 		return
 	}
-	// htmx 分支原样保留：失败在抽屉里重渲片段。
-	data := reasonFormData(c, projectID)
-	data["FormEcho"] = binding.RawForm(c, reasonCreateFields...)
-	data["SubmitErr"] = inventoryErrText(c, err)
-	data["ListQuery"] = inventoryQueryFromRequest(c, inventoryReasonBackKeys...)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", adminui.Prepare(c, data))
+	// htmx 分支：4xx + JSON —— 抽屉不 swap，输入原样保留，admin.js 弹 toast。
+	inventoryFailDrawer(c, err)
 }
 
-func (h *inventoryPageHandle) reasonEditFormFail(c *gin.Context, projectID string, err error) {
+func (h *inventoryPageHandle) reasonEditFormFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryReasonBack(c), inventoryReasonBackMsg)
 		return
 	}
-	// htmx 分支原样保留：失败在抽屉里重渲片段。
-	data := reasonFormData(c, projectID)
-	data["Edit"] = true
-	data["FormEcho"] = binding.RawForm(c, reasonEditFields...)
-	data["SubmitErr"] = inventoryErrText(c, err)
-	data["ListQuery"] = inventoryQueryFromRequest(c, inventoryReasonBackKeys...)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", adminui.Prepare(c, data))
+	// htmx 分支：4xx + JSON —— 抽屉不 swap，输入原样保留，admin.js 弹 toast。
+	inventoryFailDrawer(c, err)
 }

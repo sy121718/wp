@@ -13,6 +13,7 @@ import (
 	"go_wp/internal/adminui"
 	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/response"
 	"go_wp/pkg/logger"
 	"strconv"
 	"strings"
@@ -63,6 +64,25 @@ func inventoryErrMsgOf(c *gin.Context, f adminui.ErrFact) adminui.Msg {
 		}
 	}
 	return adminui.Msg{Key: f.Key, Fallback: inventoryErrFallback(f.Key)}
+}
+
+// inventoryFailDrawer 抽屉 / 片段写动作的失败出口：**4xx + JSON**，不重渲片段。
+//
+// 为什么不是 200 + 重渲片段：htmx 对 2xx 一律 swap 到目标节点，重渲意味着「服务端得把
+// 用户刚输入的值原样搬回来」—— 一套平行的回填通道（EchoFields / RawForm / 片段里的
+// FormEcho 分支），每个字段三处对齐，漏一处就静默丢输入。而 htmx 对 4xx **不 swap**：
+// 抽屉保持打开、输入原样在，响应只需要一句话，由 admin.js 的 htmx:responseError 取
+// body.message 弹 toast。所以这里既不渲染 HTML，也不回 200（200 会被当成功并替换节点）。
+//
+// 状态码分档与整页失败同一份判据（pkg/response.IsBusinessError）：业务错误 400、
+// 其余 500；对外文案走 inventoryErrText（业务错误取词 + 兜底，内部错误只给归口文案，
+// 原文进结构化日志）。
+func inventoryFailDrawer(c *gin.Context, err error) {
+	status := http.StatusInternalServerError
+	if response.IsBusinessError(err) {
+		status = http.StatusBadRequest
+	}
+	response.ErrorWithMessage(c, status, inventoryErrText(c, err))
 }
 
 // inventoryErrText 一句结论的**文本**形态（片段槽位 / 页面提示条用：那边的模板直接渲染文本）。

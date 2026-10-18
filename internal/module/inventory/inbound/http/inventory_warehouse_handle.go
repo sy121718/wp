@@ -3,10 +3,8 @@ package inventoryhttp
 
 import (
 	"github.com/gin-gonic/gin"
-	"go_wp/internal/adminui"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -56,7 +54,7 @@ func (h *inventoryPageHandle) InventoryWarehouseCreate(c *gin.Context) {
 		return
 	}
 	if _, err := h.inventory.CreateWarehouse(c.Request.Context(), form.CreateReq()); err != nil {
-		h.warehouseFormFail(c, false, form.ProjectID, err)
+		h.warehouseFormFail(c, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
@@ -69,7 +67,7 @@ func (h *inventoryPageHandle) InventoryWarehouseUpdate(c *gin.Context) {
 		return
 	}
 	if _, err := h.inventory.UpdateWarehouse(c.Request.Context(), form.UpdateReq()); err != nil {
-		h.warehouseFormFail(c, true, form.ProjectID, err)
+		h.warehouseFormFail(c, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
@@ -211,10 +209,6 @@ func warehouseTypeLabelText(tr func(key, fallback string) string, typ string) st
 	}
 }
 
-var warehouseCreateFields = []string{"projectId", "code", "name", "sort", "isDefault", "type", "provider", "externalCode", "address", "contact", "allowsShipping", "apiCredential", "secretRef"}
-
-var warehouseEditFields = []string{"projectId", "id", "code", "name", "sort", "type", "provider", "externalCode", "address", "contact", "allowsShipping", "apiCredential", "secretRef", "status"}
-
 func warehouseFormData(c *gin.Context, projectID string, edit bool, row gin.H) gin.H {
 	return gin.H{
 		"IsEdit": edit, "Row": row, "SelectedProject": projectID,
@@ -222,20 +216,12 @@ func warehouseFormData(c *gin.Context, projectID string, edit bool, row gin.H) g
 	}
 }
 
-func (h *inventoryPageHandle) warehouseFormFail(c *gin.Context, edit bool, projectID string, err error) {
+func (h *inventoryPageHandle) warehouseFormFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
 		return
 	}
-	// htmx 分支原样保留：失败在抽屉里重渲片段（错误槽 + 回填后的表单），不丢用户输入。
-	data := warehouseFormData(c, projectID, edit, nil)
-	fields := warehouseCreateFields
-	if edit {
-		fields = warehouseEditFields
-	}
-	data["FormEcho"] = binding.RawForm(c, fields...)
-	data["SubmitErr"] = inventoryErrText(c, err)
-	data["ListQuery"] = inventoryQueryFromRequest(c, inventoryWarehouseBackKeys...)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_warehouse_form.html", adminui.Prepare(c, data))
+	// htmx 分支：4xx + JSON —— htmx 不 swap，抽屉与输入原样保留，admin.js 弹 toast。
+	inventoryFailDrawer(c, err)
 }

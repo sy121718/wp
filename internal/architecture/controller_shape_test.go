@@ -339,11 +339,6 @@ var pendingControllerRenderExit = map[string]bool{
 	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":      true,
 	"internal/module/user/inbound/http/user_page.go":                       true,
 	"internal/module/workbench/inbound/http/workbench_page.go":             true,
-	"internal/module/inventory/inbound/http/inventory_page_handle.go":      true,
-	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go": true,
-	"internal/module/inventory/inbound/http/inventory_reason_handle.go":    true,
-	"internal/module/inventory/inbound/http/inventory_purchase_handle.go":  true,
-	"internal/module/inventory/inbound/http/inventory_source_handle.go":    true,
 }
 
 // controllerRenderCalls 渲染出口的方法名（接收者不限：c / h / 变量都可能）。
@@ -462,11 +457,7 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/workbench/inbound/http/workbench_err.go":                   true,
 	"internal/module/workbench/inbound/http/workbench_handle.go":                true,
 	"internal/module/workbench/inbound/http/workbench_page.go":                  true,
-	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go":      true,
-	"internal/module/inventory/inbound/http/inventory_reason_handle.go":         true,
 	"internal/module/inventory/inbound/http/inventory_error_handle.go":          true,
-	"internal/module/inventory/inbound/http/inventory_purchase_handle.go":       true,
-	"internal/module/inventory/inbound/http/inventory_source_handle.go":         true,
 	"internal/module/inventory/inbound/http/inventory_notice_handle.go":         true,
 }
 

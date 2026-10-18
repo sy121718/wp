@@ -5,12 +5,10 @@ import (
 	"bytes"
 	"context"
 	"github.com/gin-gonic/gin"
-	"go_wp/internal/adminui"
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -239,11 +237,11 @@ func (h *inventorySourcePageHandle) InventorySourceCreate(c *gin.Context) {
 	}
 	req, ferr := form.CreateReq()
 	if ferr != nil {
-		h.sourceFormFail(c, form.ProjectID, false, ferr)
+		h.sourceFormFail(c, ferr)
 		return
 	}
 	if _, err := h.inventory.CreateSource(c.Request.Context(), req); err != nil {
-		h.sourceFormFail(c, form.ProjectID, false, err)
+		h.sourceFormFail(c, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventorySourceBack(c), inventorySourceBackMsg)
@@ -258,11 +256,11 @@ func (h *inventorySourcePageHandle) InventorySourceUpdate(c *gin.Context) {
 	// 表单是最终状态：留空即「这条货源没有结算价」，由 DTO 显式翻成 ClearSettlePrice。
 	req, ferr := form.UpdateReq()
 	if ferr != nil {
-		h.sourceFormFail(c, form.ProjectID, true, ferr)
+		h.sourceFormFail(c, ferr)
 		return
 	}
 	if _, err := h.inventory.UpdateSource(c.Request.Context(), req); err != nil {
-		h.sourceFormFail(c, form.ProjectID, true, err)
+		h.sourceFormFail(c, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventorySourceBack(c), inventorySourceBackMsg)
@@ -465,10 +463,6 @@ func prettyJSON(raw json.RawMessage) string {
 	return buf.String()
 }
 
-var sourceCreateFields = []string{"projectId", "code", "name", "type", "relatedParty", "settlePrice", "sort", "config"}
-
-var sourceEditFields = []string{"projectId", "id", "code", "name", "type", "relatedParty", "status", "settlePrice", "sort", "config"}
-
 func sourceFormData(c *gin.Context, projectID string, edit bool, row gin.H) gin.H {
 	tr := shell.TranslateFor(c)
 	return gin.H{
@@ -478,20 +472,12 @@ func sourceFormData(c *gin.Context, projectID string, edit bool, row gin.H) gin.
 	}
 }
 
-func (h *inventorySourcePageHandle) sourceFormFail(c *gin.Context, projectID string, edit bool, err error) {
+func (h *inventorySourcePageHandle) sourceFormFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventorySourceBack(c), inventorySourceBackMsg)
 		return
 	}
-	// htmx 分支原样保留：失败在抽屉里重渲片段。
-	fields := sourceCreateFields
-	if edit {
-		fields = sourceEditFields
-	}
-	data := sourceFormData(c, projectID, edit, nil)
-	data["FormEcho"] = binding.RawForm(c, fields...)
-	data["SubmitErr"] = inventoryErrText(c, err)
-	data["ListQuery"] = inventoryQueryFromRequest(c, inventorySourceBackKeys...)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_source_form.html", adminui.Prepare(c, data))
+	// htmx 分支：4xx + JSON —— 抽屉不 swap，输入原样保留，admin.js 弹 toast。
+	inventoryFailDrawer(c, err)
 }
