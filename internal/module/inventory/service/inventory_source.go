@@ -44,11 +44,11 @@ const (
 // CreateSource 新建货源（验收 1/2）。
 func (s *Service) CreateSource(ctx context.Context, req *inventorydto.CreateSourceReq) (res *inventorydto.SourceResp, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, errors.New(inventoryenums.ErrSourceNameRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrSourceNameRequired)
 	}
 	code, err := normalizeSourceCode(req.Code)
 	if err != nil {
@@ -81,7 +81,7 @@ func (s *Service) CreateSource(ctx context.Context, req *inventorydto.CreateSour
 	if taken, cerr := s.m.SourceCodeExists(ctx, projectID, code, ""); cerr != nil {
 		return nil, cerr
 	} else if taken {
-		return nil, errors.New(inventoryenums.ErrSourceCodeTaken)
+		return nil, inventoryenums.Err(inventoryenums.ErrSourceCodeTaken)
 	}
 	now := time.Now().UTC()
 	e := &inventorymodel.SourceEntity{
@@ -114,7 +114,7 @@ func (s *Service) CreateSource(ctx context.Context, req *inventorydto.CreateSour
 // UpdateSource 修改货源（逐字段可选；nil = 本次不改）。
 func (s *Service) UpdateSource(ctx context.Context, req *inventorydto.UpdateSourceReq) (res *inventorydto.SourceResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -133,7 +133,7 @@ func (s *Service) UpdateSource(ctx context.Context, req *inventorydto.UpdateSour
 		if taken, xerr := s.m.SourceCodeExists(ctx, projectID, code, req.ID); xerr != nil {
 			return nil, xerr
 		} else if taken {
-			return nil, errors.New(inventoryenums.ErrSourceCodeTaken)
+			return nil, inventoryenums.Err(inventoryenums.ErrSourceCodeTaken)
 		}
 		newCode = code
 	}
@@ -158,7 +158,7 @@ func (s *Service) UpdateSource(ctx context.Context, req *inventorydto.UpdateSour
 		if req.Name != nil {
 			name := strings.TrimSpace(*req.Name)
 			if name == "" {
-				return errors.New(inventoryenums.ErrSourceNameRequired)
+				return inventoryenums.Err(inventoryenums.ErrSourceNameRequired)
 			}
 			e.Name = name
 		}
@@ -181,15 +181,15 @@ func (s *Service) UpdateSource(ctx context.Context, req *inventorydto.UpdateSour
 		}
 		if req.SettlePrice != nil {
 			if sourceType != inventoryenums.SourceTypeInternal {
-				return errors.New(inventoryenums.ErrSourceSettleNotInternal)
+				return inventoryenums.Err(inventoryenums.ErrSourceSettleNotInternal)
 			}
 			if *req.SettlePrice < 0 {
-				return errors.New(inventoryenums.ErrSourceSettleInvalid)
+				return inventoryenums.Err(inventoryenums.ErrSourceSettleInvalid)
 			}
 			e.SettlePrice = req.SettlePrice
 		}
 		if sourceType != inventoryenums.SourceTypeInternal && e.SettlePrice != nil {
-			return errors.New(inventoryenums.ErrSourceSettleNotInternal)
+			return inventoryenums.Err(inventoryenums.ErrSourceSettleNotInternal)
 		}
 		if req.Status != nil {
 			status, serr := normalizeSourceStatus(*req.Status)
@@ -235,7 +235,7 @@ func (s *Service) UpdateSource(ctx context.Context, req *inventorydto.UpdateSour
 // GetSource 货源详情。
 func (s *Service) GetSource(ctx context.Context, req *inventorydto.GetSourceReq) (res *inventorydto.SourceResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -251,7 +251,7 @@ func (s *Service) GetSource(ctx context.Context, req *inventorydto.GetSourceReq)
 // DeleteSource 删除货源（硬删除；被采购单引用的守卫由 issue #18 在服务层补）。
 func (s *Service) DeleteSource(ctx context.Context, req *inventorydto.DeleteSourceReq) (err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return errors.New(inventoryenums.ErrInvalidParam)
+		return inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -421,16 +421,16 @@ func projectIDOfSummary(req *inventorydto.SourceSummaryReq) string {
 func normalizeSourceCode(code string) (out string, err error) {
 	out = strings.ToUpper(strings.TrimSpace(code))
 	if out == "" {
-		return "", errors.New(inventoryenums.ErrSourceCodeRequired)
+		return "", inventoryenums.Err(inventoryenums.ErrSourceCodeRequired)
 	}
 	if len(out) > maxSourceCodeLen {
-		return "", errors.New(inventoryenums.ErrSourceCodeInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrSourceCodeInvalid)
 	}
 	for _, r := range out {
 		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
 			continue
 		}
-		return "", errors.New(inventoryenums.ErrSourceCodeInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrSourceCodeInvalid)
 	}
 	return out, nil
 }
@@ -445,7 +445,7 @@ func normalizeSourceType(sourceType string) (out string, err error) {
 	case inventoryenums.SourceTypeInternal:
 		return inventoryenums.SourceTypeInternal, nil
 	default:
-		return "", errors.New(inventoryenums.ErrSourceTypeInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrSourceTypeInvalid)
 	}
 }
 
@@ -459,7 +459,7 @@ func normalizeSourceStatus(status string) (out string, err error) {
 	case inventoryenums.SourceStatusDisabled:
 		return inventoryenums.SourceStatusDisabled, nil
 	default:
-		return "", errors.New(inventoryenums.ErrSourceStatusInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrSourceStatusInvalid)
 	}
 }
 
@@ -470,7 +470,7 @@ func normalizeSourceStatus(status string) (out string, err error) {
 func resolveSourceRelatedParty(sourceType string, current bool, requested *bool) (out bool, err error) {
 	if sourceType == inventoryenums.SourceTypeInternal {
 		if requested != nil && !*requested {
-			return false, errors.New(inventoryenums.ErrSourceInternalNotRelated)
+			return false, inventoryenums.Err(inventoryenums.ErrSourceInternalNotRelated)
 		}
 		return true, nil
 	}
@@ -486,10 +486,10 @@ func normalizeSettlePrice(sourceType string, price *float64) (out *float64, err 
 		return nil, nil
 	}
 	if sourceType != inventoryenums.SourceTypeInternal {
-		return nil, errors.New(inventoryenums.ErrSourceSettleNotInternal)
+		return nil, inventoryenums.Err(inventoryenums.ErrSourceSettleNotInternal)
 	}
 	if *price < 0 {
-		return nil, errors.New(inventoryenums.ErrSourceSettleInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrSourceSettleInvalid)
 	}
 	return price, nil
 }
@@ -500,15 +500,15 @@ func normalizeSourceConfig(raw json.RawMessage) (out json.RawMessage, err error)
 		return json.RawMessage("{}"), nil
 	}
 	if len(raw) > maxSourceConfigBytes {
-		return nil, errors.New(inventoryenums.ErrSourceConfigInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrSourceConfigInvalid)
 	}
 	var obj map[string]json.RawMessage
 	if err = json.Unmarshal(raw, &obj); err != nil || obj == nil {
-		return nil, errors.New(inventoryenums.ErrSourceConfigInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrSourceConfigInvalid)
 	}
 	compact, merr := json.Marshal(obj)
 	if merr != nil {
-		return nil, errors.New(inventoryenums.ErrSourceConfigInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrSourceConfigInvalid)
 	}
 	return json.RawMessage(compact), nil
 }
@@ -528,14 +528,14 @@ func parseRelatedPartyFilter(value string) (out *bool, err error) {
 		no := false
 		return &no, nil
 	default:
-		return nil, errors.New(inventoryenums.ErrSourceFilterInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrSourceFilterInvalid)
 	}
 }
 
 // mapSourceNotFound 行不存在 → 业务错误，其余原样透出。
 func mapSourceNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New(inventoryenums.ErrSourceNotFound)
+		return inventoryenums.Err(inventoryenums.ErrSourceNotFound)
 	}
 	return err
 }

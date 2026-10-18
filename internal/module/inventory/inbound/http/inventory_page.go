@@ -491,11 +491,11 @@ func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
 	}
 
 	if direction != inventoryenums.DirectionAdjust && direction != inventoryenums.DirectionOut {
-		respond(errors.New(inventoryenums.ErrStockDirectionInvalid))
+		respond(inventoryenums.Err(inventoryenums.ErrStockDirectionInvalid))
 		return
 	}
 	if remark == "" {
-		respond(errors.New(inventoryenums.ErrStockRemarkRequired))
+		respond(inventoryenums.Err(inventoryenums.ErrStockRemarkRequired))
 		return
 	}
 	req := &inventorydto.ChangeStockReq{
@@ -581,7 +581,7 @@ func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
 	// 跟踪态必须显式给数量：无限态的数量框是 disabled 的（浏览器不提交该字段），
 	// 所以「空」在这里有两种来源，只有跟踪态下的空是错误。
 	if track && rawQuantity == "" {
-		respond(errors.New(inventoryenums.ErrStockQuantityRequired))
+		respond(inventoryenums.Err(inventoryenums.ErrStockQuantityRequired))
 		return
 	}
 	req := &inventorydto.UpdateStockTrackingReq{
@@ -646,7 +646,7 @@ func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
 	backMsg := inventoryReasonBackMsg
 	status := strings.TrimSpace(c.PostForm("status"))
 	if status != inventoryenums.StatusActive && status != inventoryenums.StatusDisabled {
-		inventoryJump(c, false, inventoryErrMsg(c, errors.New(inventoryenums.ErrReasonStatusInvalid)), back, backMsg)
+		inventoryJump(c, false, inventoryErrMsg(c, inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid)), back, backMsg)
 		return
 	}
 	ids, err := shell.BulkIDs(c)
@@ -1212,61 +1212,13 @@ func inventoryBulkIDsMsg(c *gin.Context, err error) adminui.Msg {
 		WithArgs(strconv.Itoa(tooMany.Max), strconv.Itoa(tooMany.Count))
 }
 
-// inventoryErrFallbacks 兜底文案（i18n 未初始化 / 该 key 还没有词条时用）。
+// inventoryErrFallback 取兜底文案：跟**错误声明处**走（inventoryenums 的 errFallbacks）。
 //
-// 它不是「第二份真相」：已 seed 的 key 在真实请求里走 sys_i18n，这里只在取不到词条时生效。
-// 登记范围是**页面直接铺出来的那几条**（外码行内编辑 / 跟踪与数量 / 采购收货与生产入库），
-// 不是「把 enums 全抄一遍」—— 全抄会与迁移里的 seed 分叉（改了 seed 忘改这里，
-// 桌面站点与英文站点就会显示两句不一样的话）；而漏登记的方向更糟：
-// inventoryErrFallback 会返回 key 本身，页面上出现 ErrReceiptOrderDone 这种裸 key。
-var inventoryErrFallbacks = map[string]string{
-	inventoryenums.ErrExternalSKUInvalid:         "外部编码不合法：长度需在 128 个字符以内且不含控制字符",
-	inventoryenums.ErrExternalSKUProductConflict: "该外部编码在本仓已挂在另一个商品上：同一个外部编码在同一仓库内只能属于同一个商品（同一商品的多个口味可以共用一个外部编码）",
-	// 无限库存行内编辑（迁移 261）直接暴露的两条（同上：只登记页面直接铺出来的那几条，
-	// 不在兜底表里重抄全部 key —— 那会与迁移里的 seed 分叉）。
-	inventoryenums.ErrStockQuantityRequired:  "跟踪库存时必须填写数量（0 表示已卖光，需要自己填出来，留空不等于 0）",
-	inventoryenums.ErrStockUntrackedQuantity: "不跟踪（无限）的库存行不允许带数量：要写具体数量请先切换成跟踪库存",
-	// 入库入口的 SKU 编码（迁移 270 已 seed 中英词条）：登记兜底是给
-	// 「i18n 未初始化 / 取词失败」那条降级路径用的，正常情况下仍走 sys_i18n。
-	inventoryenums.ErrStockSKURequired: "缺少仓库侧 SKU 编码：请传裸码（不带仓码前缀）",
-	// —— 采购单 / 收货 / 生产入库（issue #18）——
-	//
-	// 这一组是**采购页三个写入口直接铺出来的**业务错误（建单 / 收货 / 生产入库），
-	// 未登记时 inventoryErrFallback 会返回 key 本身 —— 页面上出现的是 ErrReceiptOrderDone
-	// 这种裸 key，既不中文也不是一句人能读的话。本批把采购页的错误回显从 err.Error()
-	// 收口到 inventoryErrText，兜底表同步补齐。
-	// 这批 key 的 sys_i18n 词条**尚未 seed**（242/243 收的是仓库 / 库存 / 原因三类），
-	// 所以兜底文案就是用户实际看到的那句话；词条落地后由词条接管，这里仍是降级路径。
-	inventoryenums.ErrSourceNotFound:              "货源不存在",
-	inventoryenums.ErrPurchaseOrderNotFound:       "采购单不存在",
-	inventoryenums.ErrPurchaseCodeRequired:        "采购单号必填",
-	inventoryenums.ErrPurchaseCodeInvalid:         "采购单号只允许大写字母 / 数字 / 下划线 / 连字符，且不超长",
-	inventoryenums.ErrPurchaseCodeTaken:           "同工程下采购单号已被占用",
-	inventoryenums.ErrPurchaseSourceRequired:      "采购单必须指定货源",
-	inventoryenums.ErrPurchaseSourceDisabled:      "已停用的货源不能下采购单（停用 = 不再选用）",
-	inventoryenums.ErrPurchaseLinesRequired:       "采购单至少要有一行",
-	inventoryenums.ErrPurchaseLinesTooMany:        "采购行数超过上限",
-	inventoryenums.ErrPurchaseLineRequired:        "采购行必须给出变体",
-	inventoryenums.ErrPurchaseLineDuplicate:       "同一采购单里同一个 SKU 重复出现",
-	inventoryenums.ErrPurchaseQuantityInvalid:     "采购数量必须为正整数",
-	inventoryenums.ErrPurchasePriceInvalid:        "采购单价必须为正数",
-	inventoryenums.ErrPurchaseStatusInvalid:       "状态筛选值不是未入库 / 部分入库 / 已入库",
-	inventoryenums.ErrPurchaseLinesLocked:         "已有入库数量的采购单不能再改采购行（改了状态推导就不成立）",
-	inventoryenums.ErrPurchaseLineNotFound:        "采购行不存在（或不属于该采购单）",
-	inventoryenums.ErrReceiptLinesRequired:        "入库清单不能为空",
-	inventoryenums.ErrReceiptLineDuplicate:        "同一入库请求里同一采购行只能出现一次",
-	inventoryenums.ErrReceiptQuantityInvalid:      "入库数量必须为正整数",
-	inventoryenums.ErrReceiptOverReceive:          "入库数量超过「采购数量 - 已入库数量」：超收不被接受",
-	inventoryenums.ErrReceiptOrderDone:            "采购单已全部入库，无需再收",
-	inventoryenums.ErrReceiptRequestInvalid:       "幂等键不合法（超长 / 非法字符）",
-	inventoryenums.ErrProductionSourceNotInternal: "生产入库只认内部货源（自家工厂 / 集团内关联公司）：外部供应商走采购单",
-	inventoryenums.ErrProductionVariantRequired:   "生产入库必须给出 SKU 变体",
-	inventoryenums.ErrProductionCostInvalid:       "生产入库的成本价必须手工填写且非负",
-}
-
-// inventoryErrFallback 取兜底文案；没有登记时退回 key（至少还能与 sys_i18n 里的词条对照）。
+// 这里不再有本模块的第二张表：enums 的 errFallbacks 与常量一一对账（inventory_enums_test.go），
+// 加了常量却忘了兜底会先在那条测试上变红，而不是等到某个页面把 ErrReceiptOrderDone 摆给运营看。
+// 未登记时退回 key —— 至少还能与 sys_i18n 里的词条对照。
 func inventoryErrFallback(key string) string {
-	if text, ok := inventoryErrFallbacks[key]; ok {
+	if text := inventoryenums.FallbackFor(key); text != "" {
 		return text
 	}
 	return key
@@ -2652,7 +2604,7 @@ func sourceSettleForm(value string) (out *float64, err error) {
 	}
 	parsed, perr := strconv.ParseFloat(raw, 64)
 	if perr != nil {
-		return nil, errors.New(inventoryenums.ErrSourceSettleInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrSourceSettleInvalid)
 	}
 	return &parsed, nil
 }

@@ -24,19 +24,18 @@ package inventoryservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/inventory/contract"
-	"go_wp/internal/module/inventory/dto"
-	"go_wp/internal/module/inventory/enums"
-	"go_wp/internal/module/inventory/model"
-	"go_wp/internal/module/masterdata/contract"
-	"go_wp/internal/module/masterdata/enums"
-	"go_wp/internal/module/product/contract"
-	"go_wp/internal/module/project/contract"
+	inventorycontract "go_wp/internal/module/inventory/contract"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
+	inventorymodel "go_wp/internal/module/inventory/model"
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
+	masterdataenums "go_wp/internal/module/masterdata/enums"
+	productcontract "go_wp/internal/module/product/contract"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/utils"
 )
 
@@ -131,7 +130,7 @@ func (s *Service) resolveProjectID(ctx context.Context, projectID string) (id st
 		return "", err
 	}
 	if len(list) != 1 {
-		return "", errors.New(inventoryenums.ErrInvalidParam)
+		return "", inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	return list[0].ID, nil
 }

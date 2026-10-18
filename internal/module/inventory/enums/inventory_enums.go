@@ -4,6 +4,13 @@
 // handler 与 service 一律引用本包，不硬编码文案。
 package inventoryenums
 
+import (
+	"fmt"
+	"strings"
+
+	"go_wp/pkg/facing"
+)
+
 // 响应消息。
 const (
 	MsgCreateSuccess = "MsgCreateSuccess"
@@ -356,6 +363,129 @@ const (
 	// MsgInventoryPurchasesTitle 采购入库页标题（issue #18）。同上，词条见迁移 217。
 	MsgInventoryPurchasesTitle = "MsgInventoryPurchasesTitle"
 )
+
+// errFallbacks 每个错误常量的中文兜底（与声明的 key 一起交给 pkg/facing.New）。
+//
+// 兜底是**声明处**的话：词条缺失 / i18n 未初始化时，出口至少能给出这句中文，而不是把
+// ErrReceiptOrderDone 这种标识符摆给运营看。措辞优先取 sys_i18n 里已种下的 zh-CN 词条
+// （两边同一句话，避免同一错误有两个版本），没种过的按常量注释成文。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:                  "请求参数无效",
+	ErrWarehouseNotFound:             "仓库不存在",
+	ErrWarehouseNameRequired:         "仓库名称必填",
+	ErrWarehouseCodeRequired:         "仓库短码必填",
+	ErrWarehouseCodeInvalid:          "短码只允许字母与数字（SKU 编码前缀只允许 A-Z 0-9）",
+	ErrWarehouseCodeTaken:            "同工程下短码已占用",
+	ErrWarehouseStatusInvalid:        "状态不是 active / disabled",
+	ErrWarehouseIsDefault:            "默认仓不能删除，也不能取消默认或停用",
+	ErrWarehouseHasStock:             "仓内仍有非零库存，不能删除",
+	ErrWarehouseDisabled:             "已停用的仓库不能作为归属仓",
+	ErrWarehouseProjectMismatch:      "仓库不属于该工程",
+	ErrWarehouseDefaultMissing:       "该工程没有默认仓可兜底，请先建一个仓库并设为默认仓",
+	ErrWarehouseTypeInvalid:          "仓库类型不合法（仅支持自营 / 第三方 / 虚拟）",
+	ErrWarehouseConfigInvalid:        "第三方仓对接配置不合法",
+	ErrWarehouseCredentialInvalid:    "API 凭据不合法（过长或含控制字符）",
+	ErrWarehouseCredentialKeyMissing: "未配置敏感配置加密密钥（app.secret），凭据不能保存；可改用凭据引用名",
+	ErrWarehouseTypeVirtualDefault:   "虚拟仓没有实体收发能力，不能作为默认仓",
+	ErrStockRemarkRequired:           "库存调整必须填写备注（说明这次调整的依据）",
+	ErrMovementTimeRangeInvalid:      "时间筛选不合法（格式不对，或起始晚于截止）",
+	ErrStockNotFound:                 "库存记录不存在",
+	ErrStockVariantRequired:          "生成库存记录必须给出变体",
+	ErrStockWarehouseNeeded:          "生成库存记录必须给出仓库（或可兜底的默认仓）",
+	ErrStockCostInvalid:              "成本价不合法（显式传入的成本必须是不小于 0 的数值）",
+	ErrStockLinesRequired:            "变动清单不能为空",
+	ErrStockLinesTooMany:             "变动清单行数超过单批上限",
+	ErrStockDirectionInvalid:         "方向不是 in / out / adjust",
+	ErrStockQuantityInvalid:          "数量不合法（入 / 出必须为正，调整不得为负）",
+	ErrStockProductRequired:          "变动必须能确定商品（行内 / 已有库存记录）",
+	ErrStockReasonRequired:           "变动原因必填",
+	ErrStockSKURequired:              "缺少仓库侧 SKU 编码：请传裸码（不带仓码前缀，如 DRAWERSMOKE_001）",
+	ErrStockInsufficient:             "可用量不足，扣减已整体拒绝",
+	ErrStockCachePortMissing:         "商品侧库存缓存端口未注入（装配缺陷 / 纯库存单测路径）。",
+	ErrStockQuantityRequired:         "跟踪库存时必须填写数量（0 表示已卖光，需要自己填出来，留空不等于 0）",
+	ErrStockUntrackedQuantity:        "不跟踪（无限）的库存行不允许带数量：要写具体数量请先切换成跟踪库存",
+	ErrReasonNotFound:                "变动原因不在字典里（不接受自由文本）",
+	ErrReasonDirectionMismatch:       "原因方向与本次变动方向不符",
+	ErrReasonCodeRequired:            "原因 code 必填",
+	ErrReasonCodeInvalid:             "原因 code 只允许小写字母 / 数字 / 下划线",
+	ErrReasonCodeTaken:               "同工程（或内置）下 code 已占用",
+	ErrReasonNameRequired:            "原因名称必填",
+	ErrReasonDirectionInvalid:        "原因方向必须是 in / out / adjust",
+	ErrReasonBuiltin:                 "内置原因不可改名（只能停用）",
+	ErrReasonStatusInvalid:           "原因状态不是 active / disabled",
+	ErrSourceNotFound:                "货源不存在",
+	ErrSourceNameRequired:            "货源名称必填",
+	ErrSourceCodeRequired:            "货源编码必填",
+	ErrSourceCodeInvalid:             "货源编码只允许大写字母 / 数字 / 下划线，且不超长",
+	ErrSourceCodeTaken:               "同工程下货源编码已占用",
+	ErrSourceTypeInvalid:             "类型只认 external / internal（决定是否按内部交易口径出报表）",
+	ErrSourceStatusInvalid:           "状态不是 active / disabled",
+	ErrSourceInternalNotRelated:      "内部货源必须标记关联方：内部交易必须能被关联方报表捕获。",
+	ErrSourceSettleNotInternal:       "结算价只属于内部货源（自产商品的成本口径，外部供应商走采购价）。",
+	ErrSourceSettleInvalid:           "结算价不能为负",
+	ErrSourceConfigInvalid:           "对接配置必须是 JSON 对象",
+	ErrSourceFilterInvalid:           "报表筛选参数不合法（关联方标志只认 true / false）",
+	ErrPurchaseOrderNotFound:         "采购单不存在",
+	ErrPurchaseCodeRequired:          "采购单号必填",
+	ErrPurchaseCodeInvalid:           "采购单号只允许大写字母 / 数字 / 下划线 / 连字符，且不超长",
+	ErrPurchaseCodeTaken:             "同工程下采购单号已占用",
+	ErrPurchaseSourceRequired:        "采购单必须指定货源（来源 = #17 的货源）",
+	ErrPurchaseSourceDisabled:        "已停用的货源不能下采购单（停用 = 不再选用）",
+	ErrPurchaseLinesRequired:         "采购单至少要有一行",
+	ErrPurchaseLinesTooMany:          "采购行数超过上限",
+	ErrPurchaseLineRequired:          "采购行必须给出变体",
+	ErrPurchaseLineDuplicate:         "同一采购单里同一个 SKU 重复出现",
+	ErrPurchaseQuantityInvalid:       "采购数量必须为正整数",
+	ErrPurchasePriceInvalid:          "采购单价必须为正数",
+	ErrPurchaseStatusInvalid:         "状态筛选值不是 pending / partial / received",
+	ErrPurchaseLinesLocked:           "已有入库数量的采购单不能再改行（改了状态推导就不成立）",
+	ErrPurchaseLineNotFound:          "采购行不存在（或不属于该采购单）",
+	ErrReceiptLinesRequired:          "入库清单不能为空",
+	ErrReceiptLineDuplicate:          "同一入库请求里同一采购行只能出现一次",
+	ErrReceiptQuantityInvalid:        "入库数量必须为正整数",
+	ErrReceiptOverReceive:            "入库数量超过「采购数量 - 已入库数量」：超收在数据层即不可能。",
+	ErrReceiptOrderDone:              "采购单已全部入库，无需再收",
+	ErrReceiptRequestInvalid:         "幂等键不合法（超长 / 非法字符）",
+	ErrProductionSourceNotInternal:   "生产入库只认内部货源（自家工厂）：外部供应商走采购单。",
+	ErrProductionVariantRequired:     "生产入库必须给出 SKU 变体",
+	ErrProductionCostInvalid:         "生产入库的成本价必须手工填写且非负",
+	ErrVariantCostPortMissing:        "商品侧成本价端口未注入（装配缺陷 / 纯库存单测路径）。",
+	ErrBOMQuantityInvalid:            "子项用量必须为正整数",
+	ErrBOMSelfReference:              "父项不能把自己列为子项",
+	ErrBOMDuplicateComponent:         "同一子项重复出现",
+	ErrBOMComponentRequired:          "子项必须给出变体",
+	ErrBOMCycle:                      "物料清单会形成环（A→B→A）",
+	ErrBOMDepthExceeded:              "展开层数超过上限",
+	ErrSKUSourceInvalid:              "SKU 来源取值不合法：只支持「自己创建」与「从仓库选」",
+	ErrWarehouseSKURequired:          "从仓库选 SKU 时必须先选仓库并指明该仓的那条仓库 SKU",
+	ErrWarehouseSKUNotFound:          "该仓库里没有这条仓库 SKU：请确认仓库选对了，或先在该仓建好这条货的库存记录",
+	ErrWarehouseSKUBundleNotAllowed:  "捆绑商品不存在于仓库，不能用「从仓库选」建主体 SKU，请改用自己的编码",
+	ErrWarehouseSKUCodeTaken:         "该仓已有同一条 SKU 编码的库存行（我们自己的 SKU 在仓内唯一），请改用另一个仓库或另一个仓库 SKU",
+	ErrExternalSKUInvalid:            "外部编码不合法：长度需在 128 个字符以内且不含控制字符",
+	ErrExternalSKUProductConflict:    "该外部编码在本仓已挂在另一个商品上：同一个外部编码在同一仓库内只能属于同一个商品（同一商品的多个口味可以共用一个外部编码）",
+}
+
+// Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。
+func Err(key string) error {
+	return facing.New(key, errFallbacks[key])
+}
+
+// ErrDetail 声明一条带明细的业务错误：明细拼在半角冒号之后。
+//
+// **必须半角**：pkg/facing.FactOf 只按 ": " 切明细段（inventory 的页面出口再按
+// i18n.ParseErrorDetails 解析明细词条），写全角「：」会让整条过不了判据，退化成内部错误。
+func ErrDetail(key, detail string) error {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return Err(key)
+	}
+	return fmt.Errorf("%w: %s", Err(key), detail)
+}
+
+// FallbackFor 取一个 key 的中文兜底（调用方只有 key、没有事实时用）。
+func FallbackFor(key string) string {
+	return errFallbacks[key]
+}
 
 // 业务错误**补充说明**的词条（key + 具名参数 + 中文兜底）。
 //

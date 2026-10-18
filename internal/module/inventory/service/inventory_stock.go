@@ -56,7 +56,6 @@ package inventoryservice
 import (
 	"context"
 	"errors"
-	"fmt"
 	json "go_wp/pkg/jsonx"
 	"strings"
 	"time"
@@ -77,7 +76,7 @@ import (
 // EnsureStock 幂等地确保某 SKU 在某仓有一条库存记录（初始 0）。
 func (s *Service) EnsureStock(ctx context.Context, req *inventorydto.EnsureStockReq) (res *inventorydto.StockResp, err error) {
 	if req == nil || strings.TrimSpace(req.VariantID) == "" {
-		return nil, errors.New(inventoryenums.ErrStockVariantRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrStockVariantRequired)
 	}
 	// quantity 传 nil：本条契约入口只说「确保这一行存在」这一步（新行 = 不跟踪 = 无限），
 	// 要落一个具体数量走变动契约（ChangeStock）或商品侧的 EnsureVariantStock。
@@ -146,7 +145,7 @@ func (s *Service) ensureStockRowWithExternalTx(ctx context.Context, tx *gorm.DB,
 	}
 	if quantity != nil {
 		if *quantity < 0 {
-			return nil, errors.New(inventoryenums.ErrStockQuantityInvalid)
+			return nil, inventoryenums.Err(inventoryenums.ErrStockQuantityInvalid)
 		}
 		// 给了一个具体数量 ⇒ 这行要跟踪（0 也一样：0 是「明确没货」，不是「没填」）。
 		row.TrackQuantity = true
@@ -162,7 +161,7 @@ func (s *Service) ensureStockRowWithExternalTx(ctx context.Context, tx *gorm.DB,
 // GetStock 单条库存记录（按 id，或按 变体 × 仓库）。
 func (s *Service) GetStock(ctx context.Context, req *inventorydto.GetStockReq) (res *inventorydto.StockResp, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -178,7 +177,7 @@ func (s *Service) GetStock(ctx context.Context, req *inventorydto.GetStockReq) (
 			return nil, mapStockNotFound(err)
 		}
 	} else {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	return s.toStockResp(ctx, e), nil
 }
@@ -189,7 +188,7 @@ func (s *Service) GetStock(ctx context.Context, req *inventorydto.GetStockReq) (
 // 多仓时同一个 SKU 会出现多行 —— 这正是「库存以 SKU × 仓库 为维度」的读取口径。
 func (s *Service) ListStocksBySKU(ctx context.Context, req *inventorydto.ListStockBySKUReq) (list []*inventorydto.StockResp, err error) {
 	if req == nil || strings.TrimSpace(req.SKUCode) == "" {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -336,14 +335,14 @@ func (s *Service) WarehouseStocksByProducts(ctx context.Context, projectID strin
 // 有变动必有流水）不能在「页面上的一个开关」上开口子。
 func (s *Service) UpdateStockTracking(ctx context.Context, req *inventorydto.UpdateStockTrackingReq) (res *inventorydto.StockResp, err error) {
 	if req == nil || strings.TrimSpace(req.WarehouseID) == "" || strings.TrimSpace(req.VariantID) == "" {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	if req.Quantity < 0 {
-		return nil, errors.New(inventoryenums.ErrStockQuantityInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrStockQuantityInvalid)
 	}
 	if !req.TrackQuantity && req.Quantity != 0 {
 		// 不跟踪（无限）不允许带数字：数量与开关是同一件事的两种表达。
-		return nil, errors.New(inventoryenums.ErrStockUntrackedQuantity)
+		return nil, inventoryenums.Err(inventoryenums.ErrStockUntrackedQuantity)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -405,7 +404,7 @@ func (s *Service) UpdateStockTracking(ctx context.Context, req *inventorydto.Upd
 // mapStockNotFound 行不存在 → 业务错误，其余原样透出。
 func mapStockNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New(inventoryenums.ErrStockNotFound)
+		return inventoryenums.Err(inventoryenums.ErrStockNotFound)
 	}
 	return err
 }
@@ -458,7 +457,7 @@ func (s *Service) ResolveVariantWarehouseCosts(ctx context.Context, projectID st
 	for _, r := range refs {
 		variantID := strings.TrimSpace(r.VariantID)
 		if variantID == "" {
-			return nil, errors.New(inventoryenums.ErrStockVariantRequired)
+			return nil, inventoryenums.Err(inventoryenums.ErrStockVariantRequired)
 		}
 		key := strings.TrimSpace(r.WarehouseID)
 		wh, ok := resolved[key]
@@ -531,7 +530,7 @@ func stripWarehousePrefix(code, warehouseCode string) string {
 func normalizeStockSKU(code, warehouseCode string) (bare string, err error) {
 	bare = stripWarehousePrefix(code, warehouseCode)
 	if bare == "" {
-		return "", errors.New(inventoryenums.ErrStockSKURequired)
+		return "", inventoryenums.Err(inventoryenums.ErrStockSKURequired)
 	}
 	return bare, nil
 }
@@ -593,10 +592,10 @@ func (s *Service) EnsureVariantStock(ctx context.Context, ref *productcontract.W
 // quantity / skuCode 的语义与非 Tx 版本完全一致（见 EnsureVariantStock）。
 func (s *Service) EnsureVariantStockTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode string, quantity *int) (err error) {
 	if ref == nil || strings.TrimSpace(ref.ID) == "" {
-		return errors.New(inventoryenums.ErrStockWarehouseNeeded)
+		return inventoryenums.Err(inventoryenums.ErrStockWarehouseNeeded)
 	}
 	if strings.TrimSpace(variantID) == "" {
-		return errors.New(inventoryenums.ErrStockVariantRequired)
+		return inventoryenums.Err(inventoryenums.ErrStockVariantRequired)
 	}
 	_, err = s.ensureStockRowTx(ctx, tx, ref.ProjectID, ref.ID, productID, variantID, skuCode, quantity)
 	return err
@@ -624,10 +623,10 @@ func (s *Service) EnsureVariantStockWithExternal(ctx context.Context, ref *produ
 // 外码的归一与校验（NormalizeExternalSKU）在这里先做，失败时不碰数据库。
 func (s *Service) EnsureVariantStockWithExternalTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode, externalSKU string, quantity *int) (err error) {
 	if ref == nil || strings.TrimSpace(ref.ID) == "" {
-		return errors.New(inventoryenums.ErrStockWarehouseNeeded)
+		return inventoryenums.Err(inventoryenums.ErrStockWarehouseNeeded)
 	}
 	if strings.TrimSpace(variantID) == "" {
-		return errors.New(inventoryenums.ErrStockVariantRequired)
+		return inventoryenums.Err(inventoryenums.ErrStockVariantRequired)
 	}
 	code, err := NormalizeExternalSKU(externalSKU)
 	if err != nil {
@@ -680,12 +679,12 @@ func NormalizeExternalSKU(raw string) (string, error) {
 		return "", nil
 	}
 	if utf8.RuneCountInString(code) > maxExternalSKULen {
-		return "", errors.New(inventoryenums.ErrExternalSKUInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrExternalSKUInvalid)
 	}
 	for _, r := range code {
 		// 控制字符（含换行 / 制表 / DEL）：编码是给对方系统解析的标识，不是自由文本。
 		if r < 0x20 || r == 0x7f {
-			return "", errors.New(inventoryenums.ErrExternalSKUInvalid)
+			return "", inventoryenums.Err(inventoryenums.ErrExternalSKUInvalid)
 		}
 	}
 	return code, nil
@@ -723,7 +722,7 @@ func (s *Service) ListWarehouseSKUs(ctx context.Context, req *inventorydto.ListW
 // 商品侧据此拒绝创建，运营拿到的是「换个仓库或先建这条货」这种可行动的提示。
 func (s *Service) GetWarehouseSKU(ctx context.Context, req *inventorydto.GetWarehouseSKUReq) (res *inventorydto.WarehouseSKUResp, err error) {
 	if req == nil || strings.TrimSpace(req.WarehouseID) == "" || strings.TrimSpace(req.SKUCode) == "" {
-		return nil, errors.New(inventoryenums.ErrWarehouseSKURequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseSKURequired)
 	}
 	var projectID string
 	if projectID, err = s.resolveProjectID(ctx, req.ProjectID); err != nil {
@@ -744,7 +743,7 @@ func (s *Service) GetWarehouseSKU(ctx context.Context, req *inventorydto.GetWare
 //  3. N:1 弱校验：同一仓内同一外码必须指向同一个商品（多口味共用合法，跨商品报错）。
 func (s *Service) BindExternalSKU(ctx context.Context, req *inventorydto.BindExternalSKUReq) (res *inventorydto.StockResp, err error) {
 	if req == nil || strings.TrimSpace(req.WarehouseID) == "" || strings.TrimSpace(req.VariantID) == "" {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	var projectID string
 	if projectID, err = s.resolveProjectID(ctx, req.ProjectID); err != nil {
@@ -769,7 +768,7 @@ func (s *Service) BindExternalSKU(ctx context.Context, req *inventorydto.BindExt
 	}
 	if affected == 0 {
 		// 行在读取与写入之间被删（或工程作用域不一致）：不谎报成功。
-		return nil, errors.New(inventoryenums.ErrStockNotFound)
+		return nil, inventoryenums.Err(inventoryenums.ErrStockNotFound)
 	}
 	row.ExternalSKU = code
 	return s.toStockResp(ctx, row), nil
@@ -798,7 +797,7 @@ func (s *Service) CheckStockSKUCodeFree(ctx context.Context, projectID, warehous
 		return err
 	}
 	if exists {
-		return errors.New(inventoryenums.ErrWarehouseSKUCodeTaken)
+		return inventoryenums.Err(inventoryenums.ErrWarehouseSKUCodeTaken)
 	}
 	return nil
 }
@@ -808,7 +807,7 @@ func (s *Service) lookupWarehouseSKU(ctx context.Context, projectID, warehouseID
 	e, err = s.m.FindStockByWarehouseSKU(ctx, projectID, warehouseID, skuCode)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(inventoryenums.ErrWarehouseSKUNotFound)
+			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseSKUNotFound)
 		}
 		return nil, err
 	}
@@ -832,7 +831,7 @@ func (s *Service) assertExternalSKUProductScope(ctx context.Context, projectID, 
 		// 做形态判定（adminui.BusinessErrFact 的判据是 pkg/response.IsBusinessError，正则锚定，
 		// 整串匹配不上）。写成全角「：」时切不开 —— 整条错误会被判成内部故障，用户拿到的
 		// 是「系统内部错误」，而明细里那句「被哪个商品占了」也一并丢掉。
-		return fmt.Errorf("%s: %s", inventoryenums.ErrExternalSKUProductConflict,
+		return inventoryenums.ErrDetail(inventoryenums.ErrExternalSKUProductConflict,
 			i18n.ErrorDetail(inventoryenums.DetailExternalSKUOwner, "name", owner))
 	}
 	return nil

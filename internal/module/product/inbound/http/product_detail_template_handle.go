@@ -252,7 +252,7 @@ func detailTemplateModePortFor(instanceID string) (ProductDetailTemplateModePort
 
 // productDetailTemplateModeFail 双轨写动作的 JSON 失败出口。
 //
-// 两类失败分档：业务 key（本模块或 presentation 的 enums 常量）按成品文案回报，
+// 两类失败分档：业务 key（本模块或 presentation 的 enums 常量，兜底各自跟着声明处走）按成品文案回报，
 // 400 / 404 如实；非业务（装配缺失、驱动报错）交给 ErrorAuto —— 原文只进日志，对外 500
 // 归口文案。直接写 err.Error() 两条都不满足：裸 key 运营看不懂，库表细节又不该出去。
 func productDetailTemplateModeFail(c *gin.Context, err error) {
@@ -265,7 +265,7 @@ func productDetailTemplateModeFail(c *gin.Context, err error) {
 	if fact.Key == presentationenums.ErrNotFound {
 		status = http.StatusNotFound
 	}
-	response.ErrorWithMessage(c, status, text.MsgText(c, facing.Msg{Key: fact.Key, Fallback: productservice.ErrText(fact)}))
+	response.ErrorWithMessage(c, status, text.MsgText(c, facing.Msg{Key: fact.Key, Fallback: fact.Fallback}))
 }
 
 // 详情页模板与发布实例都以实体类型为键：取值用 productcontract.EntityTypeProduct

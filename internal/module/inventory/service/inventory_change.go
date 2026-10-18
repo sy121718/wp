@@ -222,16 +222,16 @@ func (s *Service) changeStockTrackingTx(ctx context.Context, tx *gorm.DB, req *i
 func (s *Service) changeStockTrackingPolicyTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ChangeStockReq,
 	trackOverride map[stockKey]bool, policy stockPolicy) (out *changeOutcome, projectID, direction string, err error) {
 	if req == nil {
-		return nil, "", "", errors.New(inventoryenums.ErrInvalidParam)
+		return nil, "", "", inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	if direction, err = normalizeDirection(req.Direction); err != nil {
 		return nil, "", "", err
 	}
 	if len(req.Lines) == 0 {
-		return nil, "", "", errors.New(inventoryenums.ErrStockLinesRequired)
+		return nil, "", "", inventoryenums.Err(inventoryenums.ErrStockLinesRequired)
 	}
 	if len(req.Lines) > maxBatchLines {
-		return nil, "", "", errors.New(inventoryenums.ErrStockLinesTooMany)
+		return nil, "", "", inventoryenums.Err(inventoryenums.ErrStockLinesTooMany)
 	}
 	if projectID, err = s.resolveProjectID(ctx, req.ProjectID); err != nil {
 		return nil, "", "", err
@@ -277,13 +277,13 @@ func (s *Service) DeductStockTx(ctx context.Context, tx *gorm.DB, req *inventory
 func (s *Service) deductStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.DeductStockReq) (
 	out *changeOutcome, projectID string, err error) {
 	if req == nil {
-		return nil, "", errors.New(inventoryenums.ErrInvalidParam)
+		return nil, "", inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	if len(req.Lines) == 0 {
-		return nil, "", errors.New(inventoryenums.ErrStockLinesRequired)
+		return nil, "", inventoryenums.Err(inventoryenums.ErrStockLinesRequired)
 	}
 	if len(req.Lines) > maxBatchLines {
-		return nil, "", errors.New(inventoryenums.ErrStockLinesTooMany)
+		return nil, "", inventoryenums.Err(inventoryenums.ErrStockLinesTooMany)
 	}
 	if projectID, err = s.resolveProjectID(ctx, req.ProjectID); err != nil {
 		return nil, "", err
@@ -348,7 +348,7 @@ func (s *Service) CountMovements(ctx context.Context, req *inventorydto.ListMove
 // 按本地时区解析且上界补齐当日末刻、工程作用域必填（缺作用域在非超级角色下是静默空集）。
 func (s *Service) movementFilter(ctx context.Context, req *inventorydto.ListMovementReq) (filter inventorymodel.MovementFilter, err error) {
 	if req == nil {
-		return filter, errors.New(inventoryenums.ErrInvalidParam)
+		return filter, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	filter = inventorymodel.MovementFilter{
 		WarehouseID: strings.TrimSpace(req.WarehouseID),
@@ -372,7 +372,7 @@ func (s *Service) movementFilter(ctx context.Context, req *inventorydto.ListMove
 		return filter, err
 	}
 	if filter.TimeFrom != nil && filter.TimeTo != nil && filter.TimeTo.Before(*filter.TimeFrom) {
-		return filter, errors.New(inventoryenums.ErrMovementTimeRangeInvalid)
+		return filter, inventoryenums.Err(inventoryenums.ErrMovementTimeRangeInvalid)
 	}
 	if filter.ProjectID, err = s.resolveProjectID(ctx, strings.TrimSpace(req.ProjectID)); err != nil {
 		return filter, err
@@ -388,17 +388,17 @@ func (s *Service) buildChangeItems(ctx context.Context, projectID, direction, de
 		line := lines[i]
 		variantID := strings.TrimSpace(line.VariantID)
 		if variantID == "" {
-			return nil, errors.New(inventoryenums.ErrStockVariantRequired)
+			return nil, inventoryenums.Err(inventoryenums.ErrStockVariantRequired)
 		}
 		quantity := line.Quantity
 		switch direction {
 		case inventoryenums.DirectionIn, inventoryenums.DirectionOut:
 			if quantity <= 0 {
-				return nil, errors.New(inventoryenums.ErrStockQuantityInvalid)
+				return nil, inventoryenums.Err(inventoryenums.ErrStockQuantityInvalid)
 			}
 		case inventoryenums.DirectionAdjust:
 			if quantity < 0 {
-				return nil, errors.New(inventoryenums.ErrStockQuantityInvalid)
+				return nil, inventoryenums.Err(inventoryenums.ErrStockQuantityInvalid)
 			}
 		}
 		// 仓库逐级兜底：本行指定 → 请求级指定 → 该工程默认仓（缺默认仓显式报错）。
@@ -470,7 +470,7 @@ func (s *Service) applyStockChangesOn(ctx context.Context, tx *gorm.DB, projectI
 func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectID string, items []changeItem,
 	trackOverride map[stockKey]bool, policy stockPolicy) (out *changeOutcome, err error) {
 	if len(items) == 0 {
-		return nil, errors.New(inventoryenums.ErrStockLinesRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrStockLinesRequired)
 	}
 	now := time.Now().UTC()
 	out = &changeOutcome{
@@ -527,7 +527,7 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 				}
 			}
 			if productID == "" {
-				return errors.New(inventoryenums.ErrStockProductRequired)
+				return inventoryenums.Err(inventoryenums.ErrStockProductRequired)
 			}
 			pending = append(pending, &inventorymodel.StockEntity{
 				ID: uuid.NewString(), ProjectID: orString(item.projectID, projectID),
@@ -590,7 +590,7 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 			if after < 0 {
 				// 可用量不足：整体拒绝（事务回滚，不留半截扣减）。
 				// 只监跟踪行：不跟踪的行在上面已经跳过（它们没有「不足」这一说）。
-				return errors.New(inventoryenums.ErrStockInsufficient)
+				return inventoryenums.Err(inventoryenums.ErrStockInsufficient)
 			}
 			switched := false
 			if !e.TrackQuantity {
@@ -624,7 +624,7 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 			// CHECK (track_quantity OR quantity = 0) 的口径在这里提前兜住：不跟踪的行
 			// 不允许带数字。直接撞约束只会拿到一个没有上下文的 23514。
 			if !e.TrackQuantity && e.Quantity != 0 {
-				return errors.New(inventoryenums.ErrStockUntrackedQuantity)
+				return inventoryenums.Err(inventoryenums.ErrStockUntrackedQuantity)
 			}
 			if err := s.m.UpdateStockQuantityAndTrackingTx(ctx, tx, e.ID,
 				e.Quantity, e.TrackQuantity, now); err != nil {
@@ -784,7 +784,7 @@ func normalizeExplicitCost(raw *float64) (out *float64, err error) {
 	}
 	value := *raw
 	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 {
-		return nil, errors.New(inventoryenums.ErrStockCostInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrStockCostInvalid)
 	}
 	return &value, nil
 }
@@ -810,7 +810,7 @@ func normalizeDirection(direction string) (out string, err error) {
 	case inventoryenums.DirectionAdjust:
 		return inventoryenums.DirectionAdjust, nil
 	default:
-		return "", errors.New(inventoryenums.ErrStockDirectionInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrStockDirectionInvalid)
 	}
 }
 
@@ -861,7 +861,7 @@ func parseMovementTime(raw string, endOfDay bool) (out *time.Time, err error) {
 		}
 		return &t, nil
 	}
-	return nil, errors.New(inventoryenums.ErrMovementTimeRangeInvalid)
+	return nil, inventoryenums.Err(inventoryenums.ErrMovementTimeRangeInvalid)
 }
 
 // abs 整数绝对值。
@@ -928,11 +928,11 @@ func toMovementRespFromEntity(m *inventorymodel.MovementEntity) *inventorydto.Mo
 // SetBOM 全量替换某个父 SKU 的物料清单（验收 5）。
 func (s *Service) SetBOM(ctx context.Context, req *inventorydto.SetBOMReq) (res *inventorydto.BOMResp, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	parentVariantID := strings.TrimSpace(req.ParentVariantID)
 	if parentVariantID == "" {
-		return nil, errors.New(inventoryenums.ErrStockVariantRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrStockVariantRequired)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -944,16 +944,16 @@ func (s *Service) SetBOM(ctx context.Context, req *inventorydto.SetBOMReq) (res 
 	for _, item := range req.Items {
 		componentID := strings.TrimSpace(item.ComponentVariantID)
 		if componentID == "" {
-			return nil, errors.New(inventoryenums.ErrBOMComponentRequired)
+			return nil, inventoryenums.Err(inventoryenums.ErrBOMComponentRequired)
 		}
 		if componentID == parentVariantID {
-			return nil, errors.New(inventoryenums.ErrBOMSelfReference)
+			return nil, inventoryenums.Err(inventoryenums.ErrBOMSelfReference)
 		}
 		if item.Quantity <= 0 {
-			return nil, errors.New(inventoryenums.ErrBOMQuantityInvalid)
+			return nil, inventoryenums.Err(inventoryenums.ErrBOMQuantityInvalid)
 		}
 		if seen[componentID] {
-			return nil, errors.New(inventoryenums.ErrBOMDuplicateComponent)
+			return nil, inventoryenums.Err(inventoryenums.ErrBOMDuplicateComponent)
 		}
 		seen[componentID] = true
 		rows = append(rows, &inventorymodel.BOMItemEntity{
@@ -978,11 +978,11 @@ func (s *Service) SetBOM(ctx context.Context, req *inventorydto.SetBOMReq) (res 
 // GetBOM 某个父 SKU 的物料清单（无清单返回空 items，不是错误）。
 func (s *Service) GetBOM(ctx context.Context, req *inventorydto.GetBOMReq) (res *inventorydto.BOMResp, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	parentVariantID := strings.TrimSpace(req.ParentVariantID)
 	if parentVariantID == "" {
-		return nil, errors.New(inventoryenums.ErrStockVariantRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrStockVariantRequired)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -1040,7 +1040,7 @@ func (s *Service) assertBOMNoCycle(ctx context.Context, parentVariantID, project
 			}
 			for _, p := range parents {
 				if components[p.ParentVariantID] {
-					return errors.New(inventoryenums.ErrBOMCycle)
+					return inventoryenums.Err(inventoryenums.ErrBOMCycle)
 				}
 				stack = append(stack, p.ParentVariantID)
 			}
@@ -1092,7 +1092,7 @@ func (s *Service) expandBOM(ctx context.Context, projectID string, items []chang
 			}
 			for _, kid := range kids {
 				if n.chain[kid.ComponentVariantID] {
-					return nil, errors.New(inventoryenums.ErrBOMCycle)
+					return nil, inventoryenums.Err(inventoryenums.ErrBOMCycle)
 				}
 				chain := make(map[string]bool, len(n.chain)+1)
 				for id := range n.chain {
@@ -1113,7 +1113,7 @@ func (s *Service) expandBOM(ctx context.Context, projectID string, items []chang
 	}
 	if len(frontier) > 0 {
 		// 列表里不可能有环（维护入口已拒绝），这是数据异常的第二道防线。
-		return nil, errors.New(inventoryenums.ErrBOMDepthExceeded)
+		return nil, inventoryenums.Err(inventoryenums.ErrBOMDepthExceeded)
 	}
 	return out, nil
 }
@@ -1169,7 +1169,7 @@ func writeReasonText(ctx context.Context, key, text string) (ok bool) {
 // ListReasons 变动原因列表（工程自定义 + 全部内置）。
 func (s *Service) ListReasons(ctx context.Context, req *inventorydto.ListReasonReq) (list []*inventorydto.ReasonResp, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	filter := inventorymodel.ReasonFilter{
 		Keyword:         strings.TrimSpace(req.Keyword),
@@ -1195,11 +1195,11 @@ func (s *Service) ListReasons(ctx context.Context, req *inventorydto.ListReasonR
 // CreateReason 新建自定义变动原因（code 工程内唯一，方向一经确定不可改）。
 func (s *Service) CreateReason(ctx context.Context, req *inventorydto.CreateReasonReq) (res *inventorydto.ReasonResp, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, errors.New(inventoryenums.ErrReasonNameRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrReasonNameRequired)
 	}
 	code, err := normalizeReasonCode(req.Code)
 	if err != nil {
@@ -1207,7 +1207,7 @@ func (s *Service) CreateReason(ctx context.Context, req *inventorydto.CreateReas
 	}
 	direction, err := normalizeDirection(req.Direction)
 	if err != nil {
-		return nil, errors.New(inventoryenums.ErrReasonDirectionInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrReasonDirectionInvalid)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -1217,7 +1217,7 @@ func (s *Service) CreateReason(ctx context.Context, req *inventorydto.CreateReas
 	if taken, cerr := s.m.ReasonCodeExists(ctx, projectID, code, 0); cerr != nil {
 		return nil, cerr
 	} else if taken {
-		return nil, errors.New(inventoryenums.ErrReasonCodeTaken)
+		return nil, inventoryenums.Err(inventoryenums.ErrReasonCodeTaken)
 	}
 	// 原因行只存 i18n key，运营填的文案写成 sys_i18n 的一条词条。
 	// 顺序「先词条、后原因」：反过来会出现「原因已能选、页面却显示裸 key」的窗口。
@@ -1239,11 +1239,11 @@ func (s *Service) CreateReason(ctx context.Context, req *inventorydto.CreateReas
 // UpdateReason 修改自定义变动原因（内置原因一律拒绝）。
 func (s *Service) UpdateReason(ctx context.Context, req *inventorydto.UpdateReasonReq) (res *inventorydto.ReasonResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	rid, perr := strconv.ParseInt(strings.TrimSpace(req.ID), 10, 64)
 	if perr != nil {
-		return nil, errors.New(inventoryenums.ErrReasonNotFound)
+		return nil, inventoryenums.Err(inventoryenums.ErrReasonNotFound)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -1256,12 +1256,12 @@ func (s *Service) UpdateReason(ctx context.Context, req *inventorydto.UpdateReas
 	// 内置原因只读：它的名称就是系统按 code 派生的 key（inventory.reason.<code>），
 	// 允许改文案等于让「内置」名不副实 —— 停用 / 排序则允许（那是使用范围，不是身份）。
 	if e.IsBuiltin && req.Name != nil {
-		return nil, errors.New(inventoryenums.ErrReasonBuiltin)
+		return nil, inventoryenums.Err(inventoryenums.ErrReasonBuiltin)
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, errors.New(inventoryenums.ErrReasonNameRequired)
+			return nil, inventoryenums.Err(inventoryenums.ErrReasonNameRequired)
 		}
 		// key 不变（它派生自 code 与工程），改的是词条的值。
 		writeReasonText(ctx, e.Name, name)
@@ -1269,7 +1269,7 @@ func (s *Service) UpdateReason(ctx context.Context, req *inventorydto.UpdateReas
 	if req.Status != nil {
 		status := strings.ToLower(strings.TrimSpace(*req.Status))
 		if status != inventoryenums.StatusActive && status != inventoryenums.StatusDisabled {
-			return nil, errors.New(inventoryenums.ErrReasonStatusInvalid)
+			return nil, inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid)
 		}
 		e.Status = status
 	}
@@ -1287,14 +1287,14 @@ func (s *Service) UpdateReason(ctx context.Context, req *inventorydto.UpdateReas
 func (s *Service) resolveReason(ctx context.Context, projectID, code, direction string) (r *inventorymodel.ReasonEntity, err error) {
 	code = strings.TrimSpace(code)
 	if code == "" {
-		return nil, errors.New(inventoryenums.ErrStockReasonRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrStockReasonRequired)
 	}
 	e, ferr := s.m.FindReasonByCode(ctx, projectID, code)
 	if ferr != nil {
 		return nil, mapReasonNotFound(ferr)
 	}
 	if e.Direction != direction {
-		return nil, errors.New(inventoryenums.ErrReasonDirectionMismatch)
+		return nil, inventoryenums.Err(inventoryenums.ErrReasonDirectionMismatch)
 	}
 	return e, nil
 }
@@ -1303,10 +1303,10 @@ func (s *Service) resolveReason(ctx context.Context, projectID, code, direction 
 func normalizeReasonCode(code string) (out string, err error) {
 	out = strings.ToLower(strings.TrimSpace(code))
 	if out == "" {
-		return "", errors.New(inventoryenums.ErrReasonCodeRequired)
+		return "", inventoryenums.Err(inventoryenums.ErrReasonCodeRequired)
 	}
 	if len(out) > maxReasonCodeLen {
-		return "", errors.New(inventoryenums.ErrReasonCodeInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrReasonCodeInvalid)
 	}
 	for _, r := range out {
 		switch {
@@ -1314,7 +1314,7 @@ func normalizeReasonCode(code string) (out string, err error) {
 		case r >= '0' && r <= '9':
 		case r == '_':
 		default:
-			return "", errors.New(inventoryenums.ErrReasonCodeInvalid)
+			return "", inventoryenums.Err(inventoryenums.ErrReasonCodeInvalid)
 		}
 	}
 	return out, nil
@@ -1323,7 +1323,7 @@ func normalizeReasonCode(code string) (out string, err error) {
 // mapReasonNotFound 行不存在 → 业务错误，其余原样透出。
 func mapReasonNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New(inventoryenums.ErrReasonNotFound)
+		return inventoryenums.Err(inventoryenums.ErrReasonNotFound)
 	}
 	return err
 }

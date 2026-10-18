@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	productenums "go_wp/internal/module/product/enums"
-	productservice "go_wp/internal/module/product/service"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )
@@ -161,35 +160,5 @@ func TestBusinessErrDetailStaysInTail(t *testing.T) {
 	}
 	if fact.Tail != "第 3 行" {
 		t.Fatalf("明细 = %q，want %q", fact.Tail, "第 3 行")
-	}
-}
-
-// TestForeignFallbacksDoNotShadowProductKeys 跨模块那张表不许遮住本模块的 key，且没有死条目。
-//
-// 表的清理条件写在 product_foreign_err.go 的文件头：对端补上兜底表后整体删除。
-func TestForeignFallbacksDoNotShadowProductKeys(t *testing.T) {
-	if len(productservice.ForeignErrFallbacks) == 0 {
-		t.Fatal("跨模块兜底表空了 —— 若关键条目已搬回各自模块，请连这张表一起删掉")
-	}
-	for key, text := range productservice.ForeignErrFallbacks {
-		if strings.TrimSpace(text) == "" {
-			t.Errorf("跨模块兜底 %q 是空串", key)
-		}
-		if text == key {
-			t.Errorf("跨模块兜底 %q 就是 key 本身", key)
-		}
-		if productenums.ProductErrFallbacks[key] != "" {
-			t.Errorf("key %q 同时出现在本模块表与跨模块表里（查表顺序会决定文案）", key)
-		}
-		if got := productservice.ForeignErrText(key); got != text {
-			t.Errorf("productservice.ForeignErrText(%q) = %q，want %q", key, got, text)
-		}
-	}
-	if got := productservice.ForeignErrText(""); got != "" {
-		t.Errorf("空 key 应返回空串，得到 %q", got)
-	}
-	fact := facing.Fact{Key: "", Fallback: ""}
-	if got := productservice.ErrText(fact); got != "" {
-		t.Errorf("空事实应返回空串，得到 %q", got)
 	}
 }

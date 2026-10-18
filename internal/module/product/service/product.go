@@ -49,15 +49,15 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/comment/contract"
-	"go_wp/internal/module/inventory/contract"
-	"go_wp/internal/module/inventory/enums"
-	"go_wp/internal/module/masterdata/contract"
-	"go_wp/internal/module/masterdata/enums"
-	"go_wp/internal/module/product/contract"
-	"go_wp/internal/module/product/dto"
-	"go_wp/internal/module/product/enums"
-	"go_wp/internal/module/product/model"
+	commentcontract "go_wp/internal/module/comment/contract"
+	inventorycontract "go_wp/internal/module/inventory/contract"
+	inventoryenums "go_wp/internal/module/inventory/enums"
+	masterdatacontract "go_wp/internal/module/masterdata/contract"
+	masterdataenums "go_wp/internal/module/masterdata/enums"
+	productcontract "go_wp/internal/module/product/contract"
+	productdto "go_wp/internal/module/product/dto"
+	productenums "go_wp/internal/module/product/enums"
+	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/rls"
@@ -87,7 +87,7 @@ func normalizeSKUSource(raw string) (string, error) {
 	case skuSourceWarehouse:
 		return skuSourceWarehouse, nil
 	default:
-		return "", errors.New(inventoryenums.ErrSKUSourceInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrSKUSourceInvalid)
 	}
 }
 
@@ -183,7 +183,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		req.Quantity = &zero
 	}
 	if req.Quantity != nil && *req.Quantity < 0 {
-		return nil, errors.New(inventoryenums.ErrStockQuantityInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrStockQuantityInvalid)
 	}
 	// SKU 来源（docs/14 §1.1）：自己创建 / 从仓库选。空串按「自己创建」归一 ——
 	// 存量调用方与接口路径都不带这个字段。
@@ -194,7 +194,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	// 捆绑商品不存在于仓库：它的主体 SKU 一律自定义，「从仓库选」对它不成立。
 	// 前端已把该入口对 bundle 隐去，服务端仍硬拒 —— 前端只是便捷入口。
 	if productType == productmodel.TypeBundle && skuSource == skuSourceWarehouse {
-		return nil, errors.New(inventoryenums.ErrWarehouseSKUBundleNotAllowed)
+		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseSKUBundleNotAllowed)
 	}
 	// 容器主体 SKU 的正式输入通道（规则 A / B）：运营在新建抽屉里填的编码走
 	// CreateReq.SKUCode（json:"sku"）。变体商品留空即派生 —— 取商品 URL 段的 ASCII 段
@@ -302,7 +302,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		}
 		if s.invSvc == nil {
 			if externalSKU != "" {
-				return nil, errors.New(inventoryenums.ErrStockWarehouseNeeded)
+				return nil, inventoryenums.Err(inventoryenums.ErrStockWarehouseNeeded)
 			}
 		} else if externalSKU, werr = s.invSvc.NormalizeExternalSKU(externalSKU); werr != nil {
 			return nil, werr
@@ -681,7 +681,7 @@ func (s *Service) Delete(ctx context.Context, req *productdto.DeleteReq) (err er
 func (s *Service) pickWarehouseSKU(ctx context.Context, projectID string, ref *productcontract.WarehouseRef, warehouseSKU string) (res *inventorycontract.WarehouseSKUResp, err error) {
 	code := strings.TrimSpace(warehouseSKU)
 	if code == "" || s.invSvc == nil || ref == nil {
-		return nil, errors.New(inventoryenums.ErrWarehouseSKURequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseSKURequired)
 	}
 	return s.invSvc.GetWarehouseSKU(ctx, &inventorycontract.GetWarehouseSKUReq{
 		ProjectID: projectID, WarehouseID: ref.ID, SKUCode: code,

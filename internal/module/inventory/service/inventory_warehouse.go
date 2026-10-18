@@ -44,11 +44,11 @@ import (
 // CreateWarehouse 新建仓库（验收 1）。
 func (s *Service) CreateWarehouse(ctx context.Context, req *inventorydto.CreateWarehouseReq) (res *inventorydto.WarehouseResp, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, errors.New(inventoryenums.ErrWarehouseNameRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseNameRequired)
 	}
 	code, err := normalizeCode(req.Code)
 	if err != nil {
@@ -69,7 +69,7 @@ func (s *Service) CreateWarehouse(ctx context.Context, req *inventorydto.CreateW
 	if taken, cerr := s.m.CodeExists(ctx, projectID, code, ""); cerr != nil {
 		return nil, cerr
 	} else if taken {
-		return nil, errors.New(inventoryenums.ErrWarehouseCodeTaken)
+		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseCodeTaken)
 	}
 	// 工程内第一个仓自动成为默认仓：默认仓是「未指定仓库」的兜底，
 	// 让「建了仓却没有默认仓」这种中间态不可能出现。
@@ -80,7 +80,7 @@ func (s *Service) CreateWarehouse(ctx context.Context, req *inventorydto.CreateW
 	asDefault := req.IsDefault || len(existing) == 0
 	// 虚拟仓没有实体收发能力，不能当兜底仓：默认仓是「未指定仓库」时的落点。
 	if asDefault && typ == inventoryenums.WarehouseTypeVirtual {
-		return nil, errors.New(inventoryenums.ErrWarehouseTypeVirtualDefault)
+		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseTypeVirtualDefault)
 	}
 	config, err := s.applyThirdPartyConfig(typ, req.ThirdParty, nil)
 	if err != nil {
@@ -104,7 +104,7 @@ func (s *Service) CreateWarehouse(ctx context.Context, req *inventorydto.CreateW
 // UpdateWarehouse 修改仓库（逐字段可选；nil = 本次不改）。
 func (s *Service) UpdateWarehouse(ctx context.Context, req *inventorydto.UpdateWarehouseReq) (res *inventorydto.WarehouseResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -122,14 +122,14 @@ func (s *Service) UpdateWarehouse(ctx context.Context, req *inventorydto.UpdateW
 		if taken, xerr := s.m.CodeExists(ctx, e.ProjectID, code, e.ID); xerr != nil {
 			return nil, xerr
 		} else if taken {
-			return nil, errors.New(inventoryenums.ErrWarehouseCodeTaken)
+			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseCodeTaken)
 		}
 		e.Code = code
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, errors.New(inventoryenums.ErrWarehouseNameRequired)
+			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseNameRequired)
 		}
 		e.Name = name
 	}
@@ -140,7 +140,7 @@ func (s *Service) UpdateWarehouse(ctx context.Context, req *inventorydto.UpdateW
 		}
 		// 默认仓必须保持启用：停用默认仓等于抽掉「未指定仓库」的兜底。
 		if e.IsDefault && status != inventoryenums.StatusActive {
-			return nil, errors.New(inventoryenums.ErrWarehouseIsDefault)
+			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseIsDefault)
 		}
 		e.Status = status
 	}
@@ -154,7 +154,7 @@ func (s *Service) UpdateWarehouse(ctx context.Context, req *inventorydto.UpdateW
 		}
 		// 默认仓不能改成虚拟仓：那等于把「未指定仓库」的兜底挪到一个不出货的仓上。
 		if e.IsDefault && typ == inventoryenums.WarehouseTypeVirtual {
-			return nil, errors.New(inventoryenums.ErrWarehouseTypeVirtualDefault)
+			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseTypeVirtualDefault)
 		}
 		e.Type = typ
 	}
@@ -170,7 +170,7 @@ func (s *Service) UpdateWarehouse(ctx context.Context, req *inventorydto.UpdateW
 	}
 	// 取消默认标记被拒绝（先指定另一个默认仓）：兜底不能凭空消失。
 	if req.IsDefault != nil && !*req.IsDefault && e.IsDefault {
-		return nil, errors.New(inventoryenums.ErrWarehouseIsDefault)
+		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseIsDefault)
 	}
 	e.UpdatedAt = time.Now().UTC()
 	if err = s.m.UpdateWarehouse(ctx, e); err != nil {
@@ -188,7 +188,7 @@ func (s *Service) UpdateWarehouse(ctx context.Context, req *inventorydto.UpdateW
 // GetWarehouse 仓库详情。
 func (s *Service) GetWarehouse(ctx context.Context, req *inventorydto.GetWarehouseReq) (res *inventorydto.WarehouseResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -226,7 +226,7 @@ func (s *Service) ListWarehouses(ctx context.Context, req *inventorydto.ListWare
 // DeleteWarehouse 删除仓库（默认仓与仓内有非零库存时拒绝）。
 func (s *Service) DeleteWarehouse(ctx context.Context, req *inventorydto.DeleteWarehouseReq) (err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return errors.New(inventoryenums.ErrInvalidParam)
+		return inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -237,7 +237,7 @@ func (s *Service) DeleteWarehouse(ctx context.Context, req *inventorydto.DeleteW
 		return mapWarehouseNotFound(err)
 	}
 	if e.IsDefault {
-		return errors.New(inventoryenums.ErrWarehouseIsDefault)
+		return inventoryenums.Err(inventoryenums.ErrWarehouseIsDefault)
 	}
 	// 库存行随仓删除（外键级联）—— 有货被删掉就是静默丢账，必须先清货 / 调拨。
 	n, cerr := s.m.CountNonZeroStocks(ctx, e.ID, e.ProjectID)
@@ -245,7 +245,7 @@ func (s *Service) DeleteWarehouse(ctx context.Context, req *inventorydto.DeleteW
 		return cerr
 	}
 	if n > 0 {
-		return errors.New(inventoryenums.ErrWarehouseHasStock)
+		return inventoryenums.Err(inventoryenums.ErrWarehouseHasStock)
 	}
 	return s.m.DeleteWarehouse(ctx, e.ID, e.ProjectID)
 }
@@ -272,10 +272,10 @@ func (s *Service) resolveWarehouse(ctx context.Context, projectID, warehouseID s
 			return nil, mapWarehouseNotFound(err)
 		}
 		if e.ProjectID != pid {
-			return nil, errors.New(inventoryenums.ErrWarehouseProjectMismatch)
+			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseProjectMismatch)
 		}
 		if e.Status != inventoryenums.StatusActive {
-			return nil, errors.New(inventoryenums.ErrWarehouseDisabled)
+			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseDisabled)
 		}
 		return e, nil
 	}
@@ -286,12 +286,12 @@ func (s *Service) resolveWarehouse(ctx context.Context, projectID, warehouseID s
 	e, err = s.m.GetDefaultWarehouse(ctx, pid)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(inventoryenums.ErrWarehouseDefaultMissing)
+			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseDefaultMissing)
 		}
 		return nil, err
 	}
 	if e.Status != inventoryenums.StatusActive {
-		return nil, errors.New(inventoryenums.ErrWarehouseDisabled)
+		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseDisabled)
 	}
 	return e, nil
 }
@@ -303,16 +303,16 @@ func (s *Service) resolveWarehouse(ctx context.Context, projectID, warehouseID s
 func normalizeCode(code string) (out string, err error) {
 	out = strings.ToUpper(strings.TrimSpace(code))
 	if out == "" {
-		return "", errors.New(inventoryenums.ErrWarehouseCodeRequired)
+		return "", inventoryenums.Err(inventoryenums.ErrWarehouseCodeRequired)
 	}
 	if len(out) > maxWarehouseCodeLen {
-		return "", errors.New(inventoryenums.ErrWarehouseCodeInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrWarehouseCodeInvalid)
 	}
 	for _, r := range out {
 		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
 			continue
 		}
-		return "", errors.New(inventoryenums.ErrWarehouseCodeInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrWarehouseCodeInvalid)
 	}
 	return out, nil
 }
@@ -327,14 +327,14 @@ func normalizeStatus(status string) (out string, err error) {
 	case inventoryenums.StatusDisabled:
 		return inventoryenums.StatusDisabled, nil
 	default:
-		return "", errors.New(inventoryenums.ErrWarehouseStatusInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrWarehouseStatusInvalid)
 	}
 }
 
 // mapWarehouseNotFound 行不存在 → 业务错误，其余原样透出。
 func mapWarehouseNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New(inventoryenums.ErrWarehouseNotFound)
+		return inventoryenums.Err(inventoryenums.ErrWarehouseNotFound)
 	}
 	return err
 }
@@ -379,7 +379,7 @@ func normalizeWarehouseType(raw string) (out string, err error) {
 	case inventoryenums.WarehouseTypeVirtual:
 		return inventoryenums.WarehouseTypeVirtual, nil
 	default:
-		return "", errors.New(inventoryenums.ErrWarehouseTypeInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrWarehouseTypeInvalid)
 	}
 }
 
@@ -463,7 +463,7 @@ func (s *Service) applyThirdPartyConfig(typ string, in *inventorydto.WarehouseTh
 		// 非第三方仓不接受对接配置：类型是自营却存着别人家的凭据，是将来最容易出事的
 		// 那种「看起来配了、其实不生效」的配置。既有值不清空（类型可来回切换）。
 		if hasThirdPartyFields(in) {
-			return nil, errors.New(inventoryenums.ErrWarehouseConfigInvalid)
+			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseConfigInvalid)
 		}
 		return encodeConfigObject(cfg)
 	}
@@ -493,11 +493,11 @@ func (s *Service) applyCredential(cfg map[string]any, in *inventorydto.Warehouse
 		}
 		if strings.TrimSpace(s.cipherSecret) == "" {
 			// 没有密钥就**不写**：宁可让运营显式报错，也不能把明文落进 jsonb。
-			return errors.New(inventoryenums.ErrWarehouseCredentialKeyMissing)
+			return inventoryenums.Err(inventoryenums.ErrWarehouseCredentialKeyMissing)
 		}
 		cipherText, cerr := crypto.Encrypt(plain, s.cipherSecret)
 		if cerr != nil {
-			return errors.New(inventoryenums.ErrWarehouseCredentialInvalid)
+			return inventoryenums.Err(inventoryenums.ErrWarehouseCredentialInvalid)
 		}
 		cfg[inventoryenums.WarehouseConfigKeyAPICipher] = cipherText
 		delete(cfg, inventoryenums.WarehouseConfigKeySecretRef)
@@ -505,7 +505,7 @@ func (s *Service) applyCredential(cfg map[string]any, in *inventorydto.Warehouse
 	}
 	if ref := strings.TrimSpace(in.SecretRef); ref != "" {
 		if strings.ContainsRune(ref, 0) || len(ref) > maxCredentialLen {
-			return errors.New(inventoryenums.ErrWarehouseCredentialInvalid)
+			return inventoryenums.Err(inventoryenums.ErrWarehouseCredentialInvalid)
 		}
 		cfg[inventoryenums.WarehouseConfigKeySecretRef] = ref
 		delete(cfg, inventoryenums.WarehouseConfigKeyAPICipher)
@@ -518,11 +518,11 @@ func (s *Service) applyCredential(cfg map[string]any, in *inventorydto.Warehouse
 // validateCredential 凭据明文的形状校验（长度 + 不含控制字符 / NUL）。
 func validateCredential(plain string) error {
 	if len(plain) > maxCredentialLen {
-		return errors.New(inventoryenums.ErrWarehouseCredentialInvalid)
+		return inventoryenums.Err(inventoryenums.ErrWarehouseCredentialInvalid)
 	}
 	for _, r := range plain {
 		if r == 0 || (unicode.IsControl(r) && r != '\t') {
-			return errors.New(inventoryenums.ErrWarehouseCredentialInvalid)
+			return inventoryenums.Err(inventoryenums.ErrWarehouseCredentialInvalid)
 		}
 	}
 	return nil

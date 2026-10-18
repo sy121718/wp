@@ -48,9 +48,9 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/inventory/dto"
-	"go_wp/internal/module/inventory/enums"
-	"go_wp/internal/module/inventory/model"
+	inventorydto "go_wp/internal/module/inventory/dto"
+	inventoryenums "go_wp/internal/module/inventory/enums"
+	inventorymodel "go_wp/internal/module/inventory/model"
 	"go_wp/pkg/database"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
@@ -74,7 +74,7 @@ const (
 // CreatePurchaseOrder 新建采购单（验收 1：单头 + 结构化行）。
 func (s *Service) CreatePurchaseOrder(ctx context.Context, req *inventorydto.CreatePurchaseOrderReq) (res *inventorydto.PurchaseOrderResp, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -96,7 +96,7 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, req *inventorydto.Cre
 	if taken, cerr := s.m.PurchaseCodeExists(ctx, projectID, code, ""); cerr != nil {
 		return nil, cerr
 	} else if taken {
-		return nil, errors.New(inventoryenums.ErrPurchaseCodeTaken)
+		return nil, inventoryenums.Err(inventoryenums.ErrPurchaseCodeTaken)
 	}
 	// 单头 id 先定，行在同一事务里带着它一起写（外键 NOT NULL）。
 	orderID := uuid.NewString()
@@ -127,7 +127,7 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, req *inventorydto.Cre
 // UpdatePurchaseOrder 修改采购单（单头逐字段可选；行全量替换仅在未入库时允许）。
 func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *inventorydto.UpdatePurchaseOrderReq) (res *inventorydto.PurchaseOrderResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -196,7 +196,7 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *inventorydto.Upd
 			for _, line := range current {
 				if line.ReceivedQuantity > 0 {
 					// 已入库的行不可再改（改了「已入库 ≤ 采购数量」就不成立）。
-					return errors.New(inventoryenums.ErrPurchaseLinesLocked)
+					return inventoryenums.Err(inventoryenums.ErrPurchaseLinesLocked)
 				}
 			}
 			replaced, berr := buildPurchaseLines(projectID, order.ID, orderWarehouseCode, req.Lines)
@@ -220,7 +220,7 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *inventorydto.Upd
 // GetPurchaseOrder 采购单详情（含全部采购行）。
 func (s *Service) GetPurchaseOrder(ctx context.Context, req *inventorydto.GetPurchaseOrderReq) (res *inventorydto.PurchaseOrderResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -287,7 +287,7 @@ func (s *Service) CountPurchaseOrders(ctx context.Context, req *inventorydto.Lis
 // purchaseOrderFilter 把采购单列表请求归一成 model 过滤条件 + 分页参数（List / Count 共用）。
 func (s *Service) purchaseOrderFilter(ctx context.Context, req *inventorydto.ListPurchaseOrderReq) (filter inventorymodel.PurchaseOrderFilter, page, size int, err error) {
 	if req == nil {
-		return filter, page, size, errors.New(inventoryenums.ErrInvalidParam)
+		return filter, page, size, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	status, serr := normalizePurchaseStatusFilter(req.Status)
 	if serr != nil {
@@ -315,10 +315,10 @@ func (s *Service) purchaseOrderFilter(ctx context.Context, req *inventorydto.Lis
 // 一路带到登记入库，最后在库存真源上留下一条没有身份的货（或撞唯一约束）。
 func buildPurchaseLines(projectID, orderID, warehouseCode string, rows []inventorydto.PurchaseLineReq) (lines []*inventorymodel.PurchaseLineEntity, err error) {
 	if len(rows) == 0 {
-		return nil, errors.New(inventoryenums.ErrPurchaseLinesRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrPurchaseLinesRequired)
 	}
 	if len(rows) > maxPurchaseLines {
-		return nil, errors.New(inventoryenums.ErrPurchaseLinesTooMany)
+		return nil, inventoryenums.Err(inventoryenums.ErrPurchaseLinesTooMany)
 	}
 	now := time.Now().UTC()
 	seen := make(map[string]bool, len(rows))
@@ -326,18 +326,18 @@ func buildPurchaseLines(projectID, orderID, warehouseCode string, rows []invento
 	for i, row := range rows {
 		variantID := strings.TrimSpace(row.VariantID)
 		if variantID == "" {
-			return nil, errors.New(inventoryenums.ErrPurchaseLineRequired)
+			return nil, inventoryenums.Err(inventoryenums.ErrPurchaseLineRequired)
 		}
 		if seen[variantID] {
 			// 同一张单里同一个 SKU 只允许一行：已入库数量的归属必须不含糊。
-			return nil, errors.New(inventoryenums.ErrPurchaseLineDuplicate)
+			return nil, inventoryenums.Err(inventoryenums.ErrPurchaseLineDuplicate)
 		}
 		seen[variantID] = true
 		if row.Quantity <= 0 {
-			return nil, errors.New(inventoryenums.ErrPurchaseQuantityInvalid)
+			return nil, inventoryenums.Err(inventoryenums.ErrPurchaseQuantityInvalid)
 		}
 		if row.UnitPrice <= 0 {
-			return nil, errors.New(inventoryenums.ErrPurchasePriceInvalid)
+			return nil, inventoryenums.Err(inventoryenums.ErrPurchasePriceInvalid)
 		}
 		sortValue := row.Sort
 		if sortValue == 0 {
@@ -395,17 +395,17 @@ func derivePurchaseStatus(lines []*inventorymodel.PurchaseLineEntity) (status st
 func (s *Service) resolvePurchaseSource(ctx context.Context, projectID, sourceID string) (e *inventorymodel.SourceEntity, err error) {
 	id := strings.TrimSpace(sourceID)
 	if id == "" {
-		return nil, errors.New(inventoryenums.ErrPurchaseSourceRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrPurchaseSourceRequired)
 	}
 	e, err = s.m.GetSource(ctx, id, projectID)
 	if err != nil {
 		return nil, mapSourceNotFound(err)
 	}
 	if e.ProjectID != projectID {
-		return nil, errors.New(inventoryenums.ErrSourceNotFound)
+		return nil, inventoryenums.Err(inventoryenums.ErrSourceNotFound)
 	}
 	if e.Status != inventoryenums.SourceStatusActive {
-		return nil, errors.New(inventoryenums.ErrPurchaseSourceDisabled)
+		return nil, inventoryenums.Err(inventoryenums.ErrPurchaseSourceDisabled)
 	}
 	return e, nil
 }
@@ -484,16 +484,16 @@ func sumPurchaseLines(lines []*inventorymodel.PurchaseLineEntity) (total, receiv
 func normalizePurchaseCode(code string) (out string, err error) {
 	out = strings.ToUpper(strings.TrimSpace(code))
 	if out == "" {
-		return "", errors.New(inventoryenums.ErrPurchaseCodeRequired)
+		return "", inventoryenums.Err(inventoryenums.ErrPurchaseCodeRequired)
 	}
 	if len(out) > maxPurchaseCodeLen {
-		return "", errors.New(inventoryenums.ErrPurchaseCodeInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrPurchaseCodeInvalid)
 	}
 	for _, r := range out {
 		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
 			continue
 		}
-		return "", errors.New(inventoryenums.ErrPurchaseCodeInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrPurchaseCodeInvalid)
 	}
 	return out, nil
 }
@@ -507,7 +507,7 @@ func normalizePurchaseStatusFilter(status string) (out string, err error) {
 		inventoryenums.PurchaseStatusReceived:
 		return strings.ToLower(strings.TrimSpace(status)), nil
 	default:
-		return "", errors.New(inventoryenums.ErrPurchaseStatusInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrPurchaseStatusInvalid)
 	}
 }
 
@@ -538,7 +538,7 @@ func normalizeTime(t *time.Time) *time.Time {
 // mapPurchaseOrderNotFound 把仓储的「记录不存在」映射成业务错误。
 func mapPurchaseOrderNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New(inventoryenums.ErrPurchaseOrderNotFound)
+		return inventoryenums.Err(inventoryenums.ErrPurchaseOrderNotFound)
 	}
 	return err
 }
@@ -554,7 +554,7 @@ const (
 // RegisterReceipt 登记采购收货（验收 3/4）：按行累加已入库数量，一次可收多行。
 func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.RegisterReceiptReq) (res *inventorydto.ReceiptResp, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -576,10 +576,10 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 		return s.receiptResp(ctx, replay, true)
 	}
 	if len(req.Lines) == 0 {
-		return nil, errors.New(inventoryenums.ErrReceiptLinesRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrReceiptLinesRequired)
 	}
 	if len(req.Lines) > maxBatchLines {
-		return nil, errors.New(inventoryenums.ErrStockLinesTooMany)
+		return nil, inventoryenums.Err(inventoryenums.ErrStockLinesTooMany)
 	}
 	receivedAt, now := time.Now().UTC(), time.Now().UTC()
 	if req.ReceivedAt != nil {
@@ -598,7 +598,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 			return mapPurchaseOrderNotFound(lerr)
 		}
 		if locked.ProjectID != projectID {
-			return errors.New(inventoryenums.ErrPurchaseOrderNotFound)
+			return inventoryenums.Err(inventoryenums.ErrPurchaseOrderNotFound)
 		}
 		source, lerr := s.resolvePurchaseSource(ctx, projectID, locked.SourceID)
 		if lerr != nil {
@@ -618,7 +618,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 			return lerr
 		}
 		if len(lines) == 0 {
-			return errors.New(inventoryenums.ErrPurchaseLinesRequired)
+			return inventoryenums.Err(inventoryenums.ErrPurchaseLinesRequired)
 		}
 		byID := make(map[string]*inventorymodel.PurchaseLineEntity, len(lines))
 		outstanding := false
@@ -630,7 +630,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 		}
 		if !outstanding {
 			// 全部收满的单不再受理（状态已是 received）。
-			return errors.New(inventoryenums.ErrReceiptOrderDone)
+			return inventoryenums.Err(inventoryenums.ErrReceiptOrderDone)
 		}
 		receiptID := uuid.NewString()
 		seq, cerr := s.m.CountOrderReceiptsTx(ctx, tx, locked.ID, projectID)
@@ -643,15 +643,15 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 		for _, row := range req.Lines {
 			lineID := strings.TrimSpace(row.LineID)
 			if _, exists := seenLineIDs[lineID]; exists {
-				return errors.New(inventoryenums.ErrReceiptLineDuplicate)
+				return inventoryenums.Err(inventoryenums.ErrReceiptLineDuplicate)
 			}
 			seenLineIDs[lineID] = struct{}{}
 			line, ok := byID[lineID]
 			if !ok {
-				return errors.New(inventoryenums.ErrPurchaseLineNotFound)
+				return inventoryenums.Err(inventoryenums.ErrPurchaseLineNotFound)
 			}
 			if row.Quantity <= 0 {
-				return errors.New(inventoryenums.ErrReceiptQuantityInvalid)
+				return inventoryenums.Err(inventoryenums.ErrReceiptQuantityInvalid)
 			}
 			// 仓库侧编码归一旦校验（口径与理由见 inventory_stock.go）：采购行上的
 			// sku_code 是下单时的快照，本批收货的目标仓可能不是下单时的那个仓，
@@ -664,7 +664,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 			unitPrice := line.UnitPrice
 			if row.UnitPrice != nil {
 				if *row.UnitPrice <= 0 {
-					return errors.New(inventoryenums.ErrPurchasePriceInvalid)
+					return inventoryenums.Err(inventoryenums.ErrPurchasePriceInvalid)
 				}
 				unitPrice = *row.UnitPrice
 			}
@@ -674,7 +674,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 				return ierr
 			}
 			if affected == 0 {
-				return errors.New(inventoryenums.ErrReceiptOverReceive)
+				return inventoryenums.Err(inventoryenums.ErrReceiptOverReceive)
 			}
 			receiptLineID := line.ID
 			items = append(items, &inventorymodel.ReceiptItemEntity{
@@ -770,7 +770,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *inventorydto.Registe
 // 落到 (仓库, SKU) 的当前值上，与采购收货共用同一条写入路径。
 func (s *Service) RegisterProductionInbound(ctx context.Context, req *inventorydto.ProductionInboundReq) (res *inventorydto.ReceiptResp, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -791,14 +791,14 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *inventoryd
 	}
 	variantID := strings.TrimSpace(req.VariantID)
 	if variantID == "" {
-		return nil, errors.New(inventoryenums.ErrProductionVariantRequired)
+		return nil, inventoryenums.Err(inventoryenums.ErrProductionVariantRequired)
 	}
 	if req.Quantity <= 0 {
-		return nil, errors.New(inventoryenums.ErrReceiptQuantityInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrReceiptQuantityInvalid)
 	}
 	if req.UnitCost == nil || *req.UnitCost < 0 {
 		// 成本价必须手工填写：生产入库没有采购单价可引用，缺了就写不出成本口径。
-		return nil, errors.New(inventoryenums.ErrProductionCostInvalid)
+		return nil, inventoryenums.Err(inventoryenums.ErrProductionCostInvalid)
 	}
 	source, err := s.resolvePurchaseSource(ctx, projectID, req.SourceID)
 	if err != nil {
@@ -806,7 +806,7 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *inventoryd
 	}
 	if source.Type != inventoryenums.SourceTypeInternal {
 		// 外部供应商没有「无采购单的生产入库」这一说（它的路径是采购单）。
-		return nil, errors.New(inventoryenums.ErrProductionSourceNotInternal)
+		return nil, inventoryenums.Err(inventoryenums.ErrProductionSourceNotInternal)
 	}
 	wh, err := s.resolveWarehouse(ctx, projectID, req.WarehouseID)
 	if err != nil {
@@ -884,7 +884,7 @@ func (s *Service) RegisterProductionInbound(ctx context.Context, req *inventoryd
 // 可按货源或采购单收窄；每行带单价快照、来源、收货仓与时间。
 func (s *Service) ListPurchaseHistory(ctx context.Context, req *inventorydto.ListPurchaseHistoryReq) (list []*inventorydto.PurchaseHistoryResp, err error) {
 	if req == nil {
-		return nil, errors.New(inventoryenums.ErrInvalidParam)
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -1056,14 +1056,14 @@ func normalizeRequestID(raw string) (out string, err error) {
 		return "", nil
 	}
 	if len(out) > maxRequestIDLen {
-		return "", errors.New(inventoryenums.ErrReceiptRequestInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrReceiptRequestInvalid)
 	}
 	for _, r := range out {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
 			r == '_' || r == '-' {
 			continue
 		}
-		return "", errors.New(inventoryenums.ErrReceiptRequestInvalid)
+		return "", inventoryenums.Err(inventoryenums.ErrReceiptRequestInvalid)
 	}
 	return out, nil
 }

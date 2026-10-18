@@ -41,7 +41,8 @@ func TestInventoryReasonsBulkStatus(t *testing.T) {
 		wantTitle string
 	}{
 		{"partial", url.Values{"projectId": {"p1"}, "status": {"disabled"}, "ids": {"1", "2", "1"}}, "2", 2, "已更新"},
-		{"invalid status", url.Values{"projectId": {"p1"}, "status": {"unknown"}, "ids": {"1"}}, "", 0, inventoryenums.ErrReasonStatusInvalid},
+		// 无效状态给出的是声明处的中文兜底（原先兜底表不在 enums 里，页面上直接是裸 key）。
+		{"invalid status", url.Values{"projectId": {"p1"}, "status": {"unknown"}, "ids": {"1"}}, "", 0, inventoryenums.FallbackFor(inventoryenums.ErrReasonStatusInvalid)},
 		{"empty selection", url.Values{"projectId": {"p1"}, "status": {"active"}}, "", 0, "请选择要操作的原因"},
 		{"limit", func() url.Values {
 			v := url.Values{"projectId": {"p1"}, "status": {"active"}}
