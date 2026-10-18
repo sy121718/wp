@@ -48,11 +48,21 @@ yaml_db() {
     ' config.yaml
 }
 
-DB_HOST="${DB_HOST:-$(yaml_db host)}"
-DB_PORT="${DB_PORT:-$(yaml_db port)}"
-DB_USER="${DB_USER:-$(yaml_db user)}"
-DB_PASS="${DB_PASSWORD:-$(yaml_db password)}"
-DB_NAME="${DB_NAME:-$(yaml_db dbname)}"
+# 优先级：显式 DB_* 覆盖 → 应用的环境变量（config.envBindableKeys）→ config.yaml。
+# 中间那一层是必须的：CI 用 GOWP_DATABASE_PASSWORD 给**应用**注入口令，而 config.yaml 在
+# CI 里是从 config.yaml.example 复制来的 —— 只读 yaml 会拿到 example 的空口令，psql 就连不上。
+# 连接参数来自 config.yaml 的 database 段；缺文件时说清楚，别让 awk 打一行
+# "cannot open" 之后再用空值去连库（那时的报错离根因很远）。
+if [[ ! -f config.yaml ]]; then
+    echo "缺少 config.yaml（连接参数从 database 段读取；CI 由 config.yaml.example 复制）。" >&2
+    exit 2
+fi
+
+DB_HOST="${DB_HOST:-${GOWP_DATABASE_HOST:-$(yaml_db host)}}"
+DB_PORT="${DB_PORT:-${GOWP_DATABASE_PORT:-$(yaml_db port)}}"
+DB_USER="${DB_USER:-${GOWP_DATABASE_USER:-$(yaml_db user)}}"
+DB_PASS="${DB_PASSWORD:-${GOWP_DATABASE_PASSWORD:-$(yaml_db password)}}"
+DB_NAME="${DB_NAME:-${GOWP_DATABASE_DBNAME:-$(yaml_db dbname)}}"
 
 psql_run() {
     PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 "$@"

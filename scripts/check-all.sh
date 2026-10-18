@@ -37,8 +37,6 @@ PLAIN_SCRIPTS=(
   check-page-endpoint-authz.py
   check-multidevice-css.sh
   check-empty-state-table-head.sh
-  check-inventory-sku-format.sh
-  check-stock-sku-prefix-collisions.sh
   check-workbench.sh
   check-contract-deps.sh
   check-dto-immutability.sh
@@ -59,6 +57,11 @@ DB_SCRIPTS=(
   check-menu-page-binding.sh
   check-button-code-binding.sh
   check-page-get-authz.sh
+  # 这两条只读巡检库存侧 SKU 编码（存量格式 / 前缀冲突），连接参数来自 config.yaml，
+  # 且必须 psql 可连 —— 放 plain 组时 CI 的无服务 job 里只有 config.yaml.example、
+  # 没有 config.yaml，脚本以 exit 2 结束，整个 unit job 因此长期是红的（与代码无关）。
+  check-inventory-sku-format.sh
+  check-stock-sku-prefix-collisions.sh
 )
 
 declare -a SELECTED=()
