@@ -107,8 +107,8 @@ import (
 	presentationdto "go_wp/internal/module/presentation/dto"
 	presentationenums "go_wp/internal/module/presentation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
-	projectenums "go_wp/internal/module/project/enums"
 	seoscore "go_wp/internal/seo"
+	"go_wp/internal/seo/scoreview"
 	"go_wp/internal/seo/scoring"
 	"go_wp/internal/shell"
 	"go_wp/internal/siteurl"
@@ -1234,43 +1234,10 @@ func requestScoreLang(c *gin.Context) string {
 	return response.RequestLanguage(c)
 }
 
-// scoreView SEO 评分视图（服务端渲染，客户端只处理「点击建议跳转」）。
-type scoreView struct {
-	OK       bool
-	Total    int
-	Grade    string
-	Sections []scoreSectionView
-	// ProfileType / ProfileReason 本次评分所用的页型与调权理由（审计 SEO-016）。
-	// 文档要求调权在结果里回显（docs/02-E1 §5）：不显示的话，编辑者看到同一份内容
-	// 在商品页比文章页高几分时无从解释。空 = 用默认权重（页面草稿与文章）。
-	ProfileType   string
-	ProfileReason string
-	// Duplicates 与本页标题重复的其它页面（审计 SEO-018 编辑期轻量版）。
-	// **列出冲突页面本身**而不是只报数量：只报「有重复」运营不知道该去改哪一页。
-	Duplicates    []string
-	DuplicateNote string
-	// Empty 空态文案（读不到实体时给一句可读的话，而不是让面板整体不可用）。
-	Empty     string
-	SerpTitle string
-	SerpURL   string
-	SerpDesc  string
-}
-
-// scoreSectionView 单个评分维度。
-type scoreSectionView struct {
-	Label      string
-	Color      string
-	ColorLabel string
-	Score      int
-	Max        int
-	Issues     []scoreIssueView
-}
-
-// scoreIssueView 单条未达标检查（Target 非空表示可点击定位）。
-type scoreIssueView struct {
-	Text   string
-	Target string
-}
+// scoreView SEO 评分片段视图：与页面 / 商品共用同一份结构（internal/seo/scoreview）。
+//
+// 视图里只有事实，维度名 / 检查名 / 建议句 / 档位文案由 fragments/seo_score.html 按 key 取词。
+type scoreView = scoreview.View
 
 // 评分颜色 → 等级文案的映射**只有一份**，在 seoscore.ScoreGradeText（internal/seo/score_grade.go）。
 // 此前本文件与 project/inbound/http/settings_panel.go 各持一份逐字相同的副本，
@@ -1998,30 +1965,8 @@ func articlesPublished(ctx context.Context, port articlePublishPort, list []*con
 // scoreViewFromResult 评分结果 → 视图（不含 SERP 预览：那部分由调用方按自己的
 // 标题/描述来源填）。页面设置面板与文章编辑页共用这一份转换 —— 两处各写一遍的话，
 // 「哪些检查项算未达标」这种判断会分叉。
-func scoreViewFromResult(res *scoring.Result, trs ...func(key, fallback string) string) scoreView {
-	tr := articlePublishTr(trs)
-	if res == nil {
-		return scoreView{}
-	}
-	sv := scoreView{OK: true, Total: res.Total, Grade: res.Grade}
-	for _, sec := range res.Sections {
-		item := scoreSectionView{
-			Label: sec.Label, Color: sec.Color, Score: sec.Score, Max: sec.Max,
-			ColorLabel: seoscore.ScoreGradeText(tr, sec.Color),
-		}
-		for _, ck := range sec.Checks {
-			if ck.Score >= ck.Max {
-				continue
-			}
-			item.Issues = append(item.Issues, scoreIssueView{
-				Text: i18n.FillTranslate(tr, projectenums.SEOScoreIssueFormat, "{label}：{actual}（基准 {benchmark}）→ {hint}",
-					map[string]string{"label": ck.Label, "actual": ck.Actual, "benchmark": ck.Benchmark, "hint": ck.Hint}),
-				Target: ck.Target,
-			})
-		}
-		sv.Sections = append(sv.Sections, item)
-	}
-	return sv
+func scoreViewFromResult(res *scoring.Result, _ ...func(key, fallback string) string) scoreView {
+	return scoreview.Of(res)
 }
 
 // articleScoreViewOf 文章字段 → 评分视图（编辑页初始渲染与评分片段共用）。
@@ -2030,26 +1975,22 @@ func scoreViewFromResult(res *scoring.Result, trs ...func(key, fallback string) 
 // 由内容 / 商品 / 工程三处共用（各自持一份同形 scoreView），取词化要三份视图与模板同批改 ——
 // 模板不在本模块写权限内，本批只把数据注入统一到 PrepareBare（已登记待办）。
 func articleScoreViewOf(data map[string]any, articleURL, lang string,
-	trs ...func(key, fallback string) string) scoreView {
-	tr := articlePublishTr(trs)
-	sv := scoreViewFromResult(seoscore.ScoreArticle(data, articleURL, lang), tr)
+	_ ...func(key, fallback string) string) scoreView {
+	sv := scoreViewFromResult(seoscore.ScoreArticle(data, articleURL, lang))
 	if !sv.OK {
 		return sv
 	}
-	// SERP 预览取的就是标题与摘要（2026-09-30 字段合并）：seoTitle / seoDescription
-	// 已与它们合并，这里不再做「SEO 字段优先」的二段取值。
+	// SERP 预览取的就是标题与摘要（2026-09-30 字段合并）：只给「有没有填」，
+	// 占位文案在模板。
 	sv.SerpTitle = articleStr(data, "title")
-	if sv.SerpTitle == "" {
-		sv.SerpTitle = tr(contentenums.ScoreSerpTitleEmpty, "（未填写文章标题）")
-	}
+	sv.HasSerpTitle = strings.TrimSpace(sv.SerpTitle) != ""
 	sv.SerpDesc = articleStr(data, "excerpt")
-	if sv.SerpDesc == "" {
-		sv.SerpDesc = tr(contentenums.ScoreSerpDescEmpty, "（未填写摘要 / SEO 描述）")
-	}
+	sv.HasSerpDesc = strings.TrimSpace(sv.SerpDesc) != ""
 	sv.SerpURL = articleURL
-	if sv.SerpURL == "" {
+	if strings.TrimSpace(sv.SerpURL) == "" {
 		sv.SerpURL = articleBlogPathPrefix + "example"
 	}
+	sv.HasSerpURL = true
 	return sv
 }
 

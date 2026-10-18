@@ -1,0 +1,8 @@
+{* fragments/seo_dup_kind.html — 重复标题所在的页型前缀（值带尾随空格，与拼接形态一致）。数据：kind / t。 *}
+{{k := .["kind"]}}{{tr := .["tr"]}}
+{{if k == "product"}}{{tr("admin.seo.dup.kind.product", "商品 ")}}
+{{else if k == "category"}}{{tr("admin.seo.dup.kind.category", "分类 ")}}
+{{else if k == "brand"}}{{tr("admin.seo.dup.kind.brand", "品牌 ")}}
+{{else if k == "page"}}{{tr("admin.seo.dup.kind.page", "页面 ")}}
+{{else if k == "article"}}{{tr("admin.seo.dup.kind.article", "文章 ")}}
+{{else}}{{k}}{{end}}

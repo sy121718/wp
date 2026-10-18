@@ -53,21 +53,17 @@ type Input struct {
 
 // CheckResult 单项检查结果。
 type CheckResult struct {
-	Key       string
-	Label     string
-	Score     int
-	Max       int
-	Skipped   bool   // true = 不适用，不计入维度分母
-	Actual    string // 实测值描述
-	Benchmark string
-	Hint      string
-	Target    string // 改进位置（settings.seo.x / node:type），前端点击跳转
+	Key     string
+	Score   int
+	Max     int
+	Skipped bool   // true = 不适用，不计入维度分母
+	Actual  string // 实测值描述
+	Target  string // 改进位置（settings.seo.x / node:type），前端点击跳转
 }
 
 // SectionResult 维度结果（侧栏一个圆点）。
 type SectionResult struct {
 	Key     string
-	Label   string
 	Score   int
 	Max     int
 	Weight  float64
@@ -122,14 +118,14 @@ func Score(in *Input, profile *Profile) *Result {
 			w = sec.Weight
 		}
 		w = w / weightSum
-		sr := SectionResult{Key: sec.Key, Label: sec.Label, Weight: w}
+		sr := SectionResult{Key: sec.Key, Weight: w}
 		for _, ck := range sec.Checks {
 			score, actual := ck.Score(in)
 			skipped := score < 0
 			if skipped {
 				sr.Checks = append(sr.Checks, CheckResult{
-					Key: ck.Key, Label: ck.Label, Score: 0, Max: ck.Max, Skipped: true,
-					Actual: actual, Benchmark: ck.Benchmark, Hint: ck.Hint,
+					Key: ck.Key, Score: 0, Max: ck.Max, Skipped: true,
+					Actual: actual,
 					Target: TargetOf(ck.Key),
 				})
 				continue
@@ -140,8 +136,8 @@ func Score(in *Input, profile *Profile) *Result {
 			sr.Score += score
 			sr.Max += ck.Max
 			sr.Checks = append(sr.Checks, CheckResult{
-				Key: ck.Key, Label: ck.Label, Score: score, Max: ck.Max,
-				Actual: actual, Benchmark: ck.Benchmark, Hint: ck.Hint,
+				Key: ck.Key, Score: score, Max: ck.Max,
+				Actual: actual,
 				Target: TargetOf(ck.Key),
 			})
 		}

@@ -32,7 +32,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/seo/scoring"
-	"go_wp/pkg/i18n"
 )
 
 // ProductReadPort 商品域的只读面（productcontract.ProductService 满足它）。
@@ -250,8 +249,7 @@ func SeoEntityScore(in *scoring.EntityPageInput, index []scoring.TitleEntry, sel
 // 服务出去的 <title>，这里读的是实体字段（写之前就得能提示）。两者的差异写在
 // scoring.DuplicateTitles 的注释里，改任一处都要一起看。
 //
-// tr 是取词函数（HTTP 层用 shell.TranslateFor(c) 取来）：只有文章那一项要用它拼
-// 「文章 {slug}」——取词函数在 HTTP 层，故由调用方传入。
+// 索引里每一行只放实体种类与路径（Kind / Page），「文章 / 商品 …」这类前缀在模板取词。
 //
 // 「已发布」的判据按实体能力各自取：
 //   - 商品：status=published（草稿商品还没有线上页面，拿它判重复会让运营被一堆
@@ -260,7 +258,7 @@ func SeoEntityScore(in *scoring.EntityPageInput, index []scoring.TitleEntry, sel
 //   - 页面：草稿文档里看不出发布与否，按全部页面参与（宁可多提示一次，
 //     也不要漏掉一个即将上线的重复标题）。
 func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSources,
-	projectID string, tr func(key, fallback string) string) []scoring.TitleEntry {
+	projectID string) []scoring.TitleEntry {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return nil
@@ -277,6 +275,7 @@ func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSo
 				// 标题就是商品名（2026-09-30 合并后口径）：唯一性检查必须拿**会发布出去
 				// 的那个标题**比对，再读 seo_title 只会拿库里的残留旧值去比。
 				Title: p.Name,
+				Kind:  "product",
 				Page:  slashSlug(p.Slug),
 				ID:    p.ID,
 			})
@@ -289,6 +288,7 @@ func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSo
 			}
 			out = append(out, scoring.TitleEntry{
 				Title: cat.Name,
+				Kind:  "category",
 				Page:  slashSlug(cat.Slug),
 				ID:    cat.ID,
 			})
@@ -301,6 +301,7 @@ func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSo
 			}
 			out = append(out, scoring.TitleEntry{
 				Title: b.Name,
+				Kind:  "brand",
 				Page:  slashSlug(b.Slug),
 				ID:    b.ID,
 			})
@@ -315,7 +316,7 @@ func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSo
 					continue
 				}
 				if title := PageDraftTitle(d.DraftDocument); title != "" {
-					out = append(out, scoring.TitleEntry{Title: title, Page: slashSlug(d.DraftPath), ID: d.ID})
+					out = append(out, scoring.TitleEntry{Title: title, Kind: "page", Page: slashSlug(d.DraftPath), ID: d.ID})
 				}
 			}
 		}
@@ -336,9 +337,9 @@ func SeoTitleIndex(ctx context.Context, r ProductReadPort, extra SeoTitleExtraSo
 				// 也好过因为查不到而假报「没有重复」。
 				out = append(out, scoring.TitleEntry{
 					Title: title,
-					Page: i18n.FillTranslate(tr, productenums.SEOIndexArticle, "文章 {slug}",
-						map[string]string{"slug": row.Slug}),
-					ID: row.ID,
+					Kind:  "article",
+					Page:  slashSlug(row.Slug),
+					ID:    row.ID,
 				})
 			}
 		}

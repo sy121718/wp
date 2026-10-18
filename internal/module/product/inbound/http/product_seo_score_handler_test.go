@@ -133,7 +133,7 @@ func TestProductScorePanelListsTitleConflicts(t *testing.T) {
 	body := postScorePanel(t, h.ProductScorePanel, url.Values{
 		"projectId": {"proj-1"}, "productId": {"p1"},
 	})
-	for _, want := range []string{"标题重复", "/tee-b", "重复的 title（纯棉 T 恤）出现在 1 个页面：/tee-b"} {
+	for _, want := range []string{"标题重复", "/tee-b", "重复的 title（纯棉 T 恤）出现在 1 个页面"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("标题冲突应被检出并列出冲突页面，期望包含 %q，实际输出：%s", want, body)
 		}

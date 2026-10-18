@@ -22,8 +22,11 @@ import (
 // TitleEntry 一条已存在的 title 及其归属页面。
 type TitleEntry struct {
 	Title string // 已存在的标题（比较用原文）
-	Page  string // 归属页面的可读标识（优先线上路径 / 后台路径，其次实体名）
-	ID    string // 实体 id（用于排除自身；空表示无法排除）
+	// Kind 归属实体的种类（product / category / brand / page / article）：
+	// 给「重复出现在哪几个页面」那条提示按种类取词用，内核不产出「文章 xxx」这类成品串。
+	Kind string
+	Page string // 归属页面的路径（线上路径 / 后台路径），原样，不做文案包装
+	ID   string // 实体 id（用于排除自身；空表示无法排除）
 }
 
 // DuplicateTitles 返回与 target 重复的**其它**页面（无重复返回 nil）。
@@ -57,7 +60,7 @@ func DuplicateTitles(target string, entries []TitleEntry, selfID string) []Title
 			continue
 		}
 		seen[page] = true
-		out = append(out, TitleEntry{Title: target, Page: page, ID: e.ID})
+		out = append(out, TitleEntry{Title: target, Kind: e.Kind, Page: page, ID: e.ID})
 	}
 	slices.SortFunc(out, func(a, b TitleEntry) int { return cmp.Compare(a.Page, b.Page) })
 	return out

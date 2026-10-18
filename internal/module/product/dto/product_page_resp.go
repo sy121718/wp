@@ -14,6 +14,7 @@ package productdto
 
 import (
 	projectdto "go_wp/internal/module/project/dto"
+	"go_wp/internal/seo/scoreview"
 	"go_wp/pkg/pagination"
 	"time"
 )
@@ -246,43 +247,20 @@ type AttributeCheckOptionResp struct {
 	Checked bool
 }
 
-// ScoreResp SEO 评分视图（服务端渲染，客户端只处理「点击建议跳转」）。
-type ScoreResp struct {
-	OK       bool
-	Total    int
-	Grade    string
-	Sections []ScoreSectionResp
-	// ProfileType / ProfileReason 本次评分所用的页型与调权理由（审计 SEO-016）。
-	// 文档要求调权在结果里回显（docs/02-E1 §5）：不显示的话，编辑者看到同一份内容
-	// 在商品页比文章页高几分时无从解释。空 = 用默认权重。
-	ProfileType   string
-	ProfileReason string
-	// Duplicates 与本页标题重复的其它页面（审计 SEO-018 编辑期轻量版）。
-	// **列出冲突页面本身**而不是只报数量：只报「有重复」运营不知道该去改哪一页。
-	Duplicates    []string
-	DuplicateNote string
-	// Empty 空态文案（读不到实体时给一句可读的话，而不是让面板整体不可用）。
-	Empty     string
-	SerpTitle string
-	SerpURL   string
-	SerpDesc  string
-}
+// ScoreResp SEO 评分片段视图：与页面 / 文章共用同一份结构（internal/seo/scoreview）。
+//
+// 这里只是别名：三处各定义一份视图时「哪些检查项算未达标」会分叉，而分叉后每处单独看都对。
+// 视图里只有事实（维度 key、分数、实测值、跳转目标、冲突页面），文案在模板按 key 取词。
+type ScoreResp = scoreview.View
 
-// ScoreSectionResp 单个评分维度。
-type ScoreSectionResp struct {
-	Label      string
-	Color      string
-	ColorLabel string
-	Score      int
-	Max        int
-	Issues     []ScoreIssueResp
-}
+// ScoreSectionResp 评分维度（别名，见 ScoreResp）。
+type ScoreSectionResp = scoreview.Section
 
-// ScoreIssueResp 单条未达标检查（Target 非空表示可点击定位）。
-type ScoreIssueResp struct {
-	Text   string
-	Target string
-}
+// ScoreIssueResp 单条未达标检查（别名，见 ScoreResp）。
+type ScoreIssueResp = scoreview.Issue
+
+// ScoreDuplicateResp 标题重复的页面（别名，见 ScoreResp）。
+type ScoreDuplicateResp = scoreview.Duplicate
 
 // TranslationLangOptionResp 工作台语言下拉项。
 type TranslationLangOptionResp struct {

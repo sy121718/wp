@@ -1,0 +1,11 @@
+{* fragments/seo_section_name.html — 维度名（8 个维度）。数据：key / t。 *}
+{{k := .["key"]}}{{tr := .["tr"]}}
+{{if k == "title"}}{{tr("admin.seo.section.title", "标题标签")}}
+{{else if k == "meta"}}{{tr("admin.seo.section.meta", "元描述")}}
+{{else if k == "headings"}}{{tr("admin.seo.section.headings", "标题结构")}}
+{{else if k == "content"}}{{tr("admin.seo.section.content", "内容质量")}}
+{{else if k == "keywords"}}{{tr("admin.seo.section.keywords", "关键词优化")}}
+{{else if k == "links"}}{{tr("admin.seo.section.links", "内外链")}}
+{{else if k == "images"}}{{tr("admin.seo.section.images", "图片优化")}}
+{{else if k == "tech"}}{{tr("admin.seo.section.tech", "页面技术")}}
+{{else}}{{k}}{{end}}

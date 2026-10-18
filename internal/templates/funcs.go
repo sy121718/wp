@@ -30,6 +30,8 @@ import (
 	"strings"
 	"time"
 
+	seoscore "go_wp/internal/seo"
+
 	"github.com/CloudyKit/jet/v6"
 
 	"go_wp/pkg/i18n"
@@ -67,6 +69,7 @@ func injectGlobals(set *jet.Set) {
 	set.AddGlobal("queryURL", queryURL)
 	set.AddGlobal("pageBase", pageBase)
 	set.AddGlobal("formatTime", formatTime)
+	set.AddGlobal("truncateWidth", truncateWidth)
 	set.AddGlobal("pageNumbers", pageNumbers)
 }
 
@@ -617,12 +620,22 @@ func pageBase(raw string, drop ...string) string {
 // **数据**。四类输入都接：time.Time / *time.Time（dto 直传）、RFC3339 与
 // `2006-01-02 15:04:05` 字符串（既有接口面）。解析失败**原样返回** —— 至少把原值显示
 // 出来，留白会让人以为「没有这个数据」。空值返回空串：模板据此渲染「—」那一档。
+// truncateWidth 按**显示宽度**截断（CJK 算两格）：搜索结果的标题只显示约 60 单位。
+//
+// 放在模板层而不是后端：截多少、按什么单位算，是「怎么显示」的事；后端只该给完整值。
+func truncateWidth(raw any, width int) string {
+	return seoscore.TruncateDisplayWidth(stringify(raw), width)
+}
+
 func formatTime(raw any) string {
 	switch v := raw.(type) {
 	case time.Time:
+		if v.IsZero() {
+			return ""
+		}
 		return v.Local().Format("2006-01-02 15:04")
 	case *time.Time:
-		if v == nil {
+		if v == nil || v.IsZero() {
 			return ""
 		}
 		return v.Local().Format("2006-01-02 15:04")

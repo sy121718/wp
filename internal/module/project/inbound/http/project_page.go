@@ -56,6 +56,7 @@ import (
 	projectenums "go_wp/internal/module/project/enums"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	seoscore "go_wp/internal/seo"
+	"go_wp/internal/seo/scoreview"
 	"go_wp/internal/siteurl"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
@@ -150,43 +151,10 @@ func themePathString(obj map[string]any, path string) string {
 	return s
 }
 
-// scoreView SEO 评分视图（服务端渲染，客户端只处理「点击建议跳转」）。
-type scoreView struct {
-	OK       bool
-	Total    int
-	Grade    string
-	Sections []scoreSectionView
-	// ProfileType / ProfileReason 本次评分所用的页型与调权理由（审计 SEO-016）。
-	// 文档要求调权在结果里回显（docs/02-E1 §5）：不显示的话，编辑者看到同一份内容
-	// 在商品页比文章页高几分时无从解释。空 = 用默认权重（页面草稿与文章）。
-	ProfileType   string
-	ProfileReason string
-	// Duplicates 与本页标题重复的其它页面（审计 SEO-018 编辑期轻量版）。
-	// **列出冲突页面本身**而不是只报数量：只报「有重复」运营不知道该去改哪一页。
-	Duplicates    []string
-	DuplicateNote string
-	// Empty 空态文案（读不到实体时给一句可读的话，而不是让面板整体不可用）。
-	Empty     string
-	SerpTitle string
-	SerpURL   string
-	SerpDesc  string
-}
-
-// scoreSectionView 单个评分维度。
-type scoreSectionView struct {
-	Label      string
-	Color      string
-	ColorLabel string
-	Score      int
-	Max        int
-	Issues     []scoreIssueView
-}
-
-// scoreIssueView 单条未达标检查（Target 非空表示可点击定位）。
-type scoreIssueView struct {
-	Text   string
-	Target string
-}
+// scoreView SEO 评分片段视图：与页面 / 商品共用同一份结构（internal/seo/scoreview）。
+//
+// 视图里只有事实，维度名 / 检查名 / 建议句 / 档位文案由 fragments/seo_score.html 按 key 取词。
+type scoreView = scoreview.View
 
 // 评分颜色 → 等级文案的映射**只有一份**，在 seoscore.ScoreGradeText（internal/seo/score_grade.go）。
 // 此前本文件与 content/inbound/http/article_score_view.go 各持一份逐字相同的副本，
@@ -335,11 +303,7 @@ func settingsViewOf(doc json.RawMessage) settingsView {
 }
 
 // scoreViewOf 计算并转换 SEO 评分（文档为空/评分失败时返回 OK=false，模板显示空态）。
-func scoreViewOf(doc json.RawMessage, pageURL, lang string, trs ...func(key, fallback string) string) scoreView {
-	tr := func(_, fallback string) string { return fallback }
-	if len(trs) > 0 && trs[0] != nil {
-		tr = trs[0]
-	}
+func scoreViewOf(doc json.RawMessage, pageURL, lang string, _ ...func(key, fallback string) string) scoreView {
 	if len(doc) == 0 {
 		return scoreView{}
 	}
@@ -347,43 +311,18 @@ func scoreViewOf(doc json.RawMessage, pageURL, lang string, trs ...func(key, fal
 	if err != nil || res == nil {
 		return scoreView{}
 	}
-	sv := scoreView{OK: true, Total: res.Total, Grade: res.Grade}
-	for _, sec := range res.Sections {
-		item := scoreSectionView{
-			Label: sec.Label, Color: sec.Color, Score: sec.Score, Max: sec.Max,
-			ColorLabel: seoscore.ScoreGradeText(tr, sec.Color),
-		}
-		for _, ck := range sec.Checks {
-			if ck.Score >= ck.Max {
-				continue
-			}
-			item.Issues = append(item.Issues, scoreIssueView{
-				// 占位符是命名形态（{label}/{actual}/…）：词条可被运营在后台改，
-				// 裸 % 或中英参数错位都会让 Sprintf 静默输出乱码。
-				Text: i18n.FillTranslate(tr, projectenums.SEOScoreIssueFormat,
-					"{label}：{actual}（基准 {benchmark}）→ {hint}",
-					map[string]string{"label": ck.Label, "actual": ck.Actual,
-						"benchmark": ck.Benchmark, "hint": ck.Hint}),
-				Target: ck.Target,
-			})
-		}
-		sv.Sections = append(sv.Sections, item)
-	}
-	// SERP 预览取页面设置里的标题/描述（空则占位）。
-	sv.SerpTitle = settingsViewOf(doc).SEOTitle
-	if sv.SerpTitle == "" {
-		sv.SerpTitle = tr(projectenums.SEOScoreSerpTitleEmpty, "（未填写 SEO 标题）")
-	} else {
-		sv.SerpTitle = seoscore.TruncateDisplayWidth(sv.SerpTitle, 60)
-	}
-	sv.SerpDesc = settingsViewOf(doc).SEODescription
-	if sv.SerpDesc == "" {
-		sv.SerpDesc = tr(projectenums.SEOScoreSerpDescEmpty, "（未填写 SEO 描述）")
-	}
+	sv := scoreview.Of(res)
+	// SERP 预览取页面设置里的标题 / 描述：只给「有没有填」，占位文案与宽度截断在模板。
+	settings := settingsViewOf(doc)
+	sv.SerpTitle = settings.SEOTitle
+	sv.HasSerpTitle = strings.TrimSpace(settings.SEOTitle) != ""
+	sv.SerpDesc = settings.SEODescription
+	sv.HasSerpDesc = strings.TrimSpace(settings.SEODescription) != ""
 	sv.SerpURL = pageURL
-	if sv.SerpURL == "" {
+	if strings.TrimSpace(pageURL) == "" {
 		sv.SerpURL = "https://example.com/page"
 	}
+	sv.HasSerpURL = true
 	return sv
 }
 

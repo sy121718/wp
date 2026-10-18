@@ -1,18 +1,19 @@
-{* fragments/seo_score.html — SEO 评分区（HTMX 服务端渲染，docs/09 §3）
-   数据：Score（OK/Total/Grade/ProfileType/ProfileReason/Sections/Duplicates/DuplicateNote/Empty/Serp*）
+{* fragments/seo_score.html — SEO 评分区（HTMX 服务端渲染）
+   数据：Score（OK/Total/Grade/Profile*/Sections/Title/Duplicates/EmptyKey/EmptyFallback/Serp*/HasSerp*）
    建议项带 data-wb-jump 由客户端委托跳转。
 
-   被三处复用：页面设置面板、文章编辑页、商品 / 分类 / 品牌页（审计 SEO-016）。
-   共用同一份模板是刻意的：同一份评分结果不该有三种呈现方式 ——
-   「哪些检查项算未达标」在三个地方各写一遍，很快会给出三种答案。
-   取词：本片段不经整份 shell.Prepare，但模板要 t —— 调用点一律经 adminui.PrepareBare
-   注入（product / content 已切；project 仍手工塞 `"t": templates.TranslateFunc(...)`）。
-   漏注入不报错：取词调用求值成空串、200、日志干净，整片文案静默变空白。 *}
+   被三处复用：页面设置面板、文章编辑页、商品 / 分类 / 品牌页。共用同一份模板是刻意的：
+   同一份评分结果不该有三种呈现方式。
+
+   文案只在这里：维度名、检查项名、基准、建议、档位名、空态、SERP 占位都按 key 取词，
+   后端只给 key 与数值（「哪些检查项算未达标」的判据也在后端，一处）。
+   取词：本片段不经整份 shell.Prepare，但模板要 t / tn —— 调用点一律经 text.Inject 注入。 *}
 {{tr := .["t"]}}
+{{tn := .["tn"]}}
 {{if .Score.OK}}
 <div class="wb-seo-head">
     <span class="wb-seo-total">{{.Score.Total}}</span>
-    <span class="wb-seo-grade">{{.Score.Grade}}</span>
+    <span class="wb-seo-grade">{{include "seo_grade.html" map("color", .Score.Grade, "tr", tr)}}</span>
     <span class="wb-seo-tip">{{tr("workbench.ui.seo.totalTip", "SEO 评分（0-100）")}}</span>
 </div>
 {{if .Score.ProfileReason != ""}}
@@ -21,10 +22,10 @@
 {{if len(.Score.Duplicates) > 0}}
 <div class="wb-seo-dup">
     <p class="badge badge-warning">{{tr("workbench.ui.seo.dupPrefix", "标题重复：另有 ")}}{{len(.Score.Duplicates)}}{{tr("workbench.ui.seo.dupSuffix", " 个页面用了同一个标题")}}</p>
-    <p class="wb-seo-tip">{{.Score.DuplicateNote}}</p>
+    <p class="wb-seo-tip">{{tn("admin.seo.dup.line", "重复的 title（{title}）出现在 {count} 个页面", map("title", .Score.Title, "count", len(.Score.Duplicates)))}}</p>
     <ul class="wb-seo-issues">
-        {{range _, page := .Score.Duplicates}}
-        <li>{{page}}</li>
+        {{range _, d := .Score.Duplicates}}
+        <li>{{include "seo_dup_kind.html" map("kind", d.Kind, "tr", tr)}}{{d.Page}}</li>
         {{end}}
     </ul>
 </div>
@@ -32,22 +33,22 @@
 {{range _, sec := .Score.Sections}}
 <div class="wb-seo-sec">
     <span class="wb-seo-dot is-{{sec.Color}}"></span>
-    <span class="wb-seo-sec-name">{{sec.Label}}</span>
-    <span class="wb-seo-sec-val">{{sec.Score}}/{{sec.Max}} · {{sec.ColorLabel}}</span>
+    <span class="wb-seo-sec-name">{{include "seo_section_name.html" map("key", sec.Key, "tr", tr)}}</span>
+    <span class="wb-seo-sec-val">{{sec.Score}}/{{sec.Max}} · {{include "seo_grade.html" map("color", sec.Color, "tr", tr)}}</span>
 </div>
 {{if len(sec.Issues) > 0}}
 <ul class="wb-seo-issues">
     {{range _, issue := sec.Issues}}
-    <li{{if issue.Target != ""}} class="is-jump" data-wb-jump="{{issue.Target}}" title="{{tr("workbench.ui.seo.jumpHint", "点击定位到需要修改的位置")}}"{{end}}>{{issue.Text}}</li>
+    <li{{if issue.Target != ""}} class="is-jump" data-wb-jump="{{issue.Target}}" title="{{tr("workbench.ui.seo.jumpHint", "点击定位到需要修改的位置")}}"{{end}}>{{include "seo_issue_line.html" map("key", issue.Key, "actual", issue.Actual, "tr", tr, "tn", tn)}}</li>
     {{end}}
 </ul>
 {{end}}
 {{end}}
 <div class="wb-seo-serp">
-    <div class="wb-serp-title">{{.Score.SerpTitle}}</div>
-    <div class="wb-serp-url">{{.Score.SerpURL}}</div>
-    <div class="wb-serp-desc">{{.Score.SerpDesc}}</div>
+    <div class="wb-serp-title">{{if .Score.HasSerpTitle}}{{truncateWidth(.Score.SerpTitle, 60)}}{{else}}{{tr("admin.seo.serp.titleEmpty", "（未填写标题）")}}{{end}}</div>
+    <div class="wb-serp-url">{{if .Score.HasSerpURL}}{{.Score.SerpURL}}{{else}}{{tr("admin.seo.serp.urlEmpty", "（线上路径未知）")}}{{end}}</div>
+    <div class="wb-serp-desc">{{if .Score.HasSerpDesc}}{{.Score.SerpDesc}}{{else}}{{tr("admin.seo.serp.descEmpty", "（未填写描述）")}}{{end}}</div>
 </div>
 {{else}}
-<p class="wb-empty">{{if len(.Score.Empty) > 0}}{{.Score.Empty}}{{else}}{{tr("workbench.ui.seo.unavailable", "评分不可用（草稿为空或评分失败）")}}{{end}}</p>
+<p class="wb-empty">{{if .Score.EmptyKey}}{{tr(.Score.EmptyKey, .Score.EmptyFallback)}}{{else}}{{tr("workbench.ui.seo.unavailable", "评分不可用（草稿为空或评分失败）")}}{{end}}</p>
 {{end}}

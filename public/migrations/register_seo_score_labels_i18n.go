@@ -1,0 +1,19 @@
+package migrations
+
+// 616 — SEO 评分片段展示文案的词条化（89 个 key / 178 行）。
+//
+// 门槛判据逐条枚举本批自己的 item_key（上界封闭），不用 LIKE 前缀、也不用全库总量 ——
+// 依据 AGENTS.md 数据库·迁移 与 058 / 076 两次真实故障：前缀判据在「已有同前缀行」时
+// 计数虚高，本批被静默跳过；全库总量判据在将来新增同前缀 key 时永远追不平，每轮重跑。
+//
+// 行数 = key 数 x 2（中英各一行）：89 x 2 = 178。
+//
+// 模板侧对应文件：internal/templates/fragments/seo_section_name.html / seo_issue_line.html /
+// seo_dup_kind.html / seo_score.html —— 那里的字面 key 与中文兜底与本文件逐字一致。
+func init() {
+	registerSeed(Seed{
+		Version:      "616-seo-score-labels-i18n",
+		TableName:    "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 178 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key IN ('admin.seo.section.title', 'admin.seo.section.meta', 'admin.seo.section.headings', 'admin.seo.section.content', 'admin.seo.section.keywords', 'admin.seo.section.links', 'admin.seo.section.images', 'admin.seo.section.tech', 'admin.seo.check.title_present', 'admin.seo.check.title_present.benchmark', 'admin.seo.check.title_present.hint', 'admin.seo.check.title_length', 'admin.seo.check.title_length.benchmark', 'admin.seo.check.title_length.hint', 'admin.seo.check.title_keyword_first_half', 'admin.seo.check.title_keyword_first_half.benchmark', 'admin.seo.check.title_keyword_first_half.hint', 'admin.seo.check.meta_length', 'admin.seo.check.meta_length.benchmark', 'admin.seo.check.meta_length.hint', 'admin.seo.check.meta_has_cta', 'admin.seo.check.meta_has_cta.benchmark', 'admin.seo.check.meta_has_cta.hint', 'admin.seo.check.single_h1', 'admin.seo.check.single_h1.benchmark', 'admin.seo.check.single_h1.hint', 'admin.seo.check.h1_has_keyword', 'admin.seo.check.h1_has_keyword.benchmark', 'admin.seo.check.h1_has_keyword.hint', 'admin.seo.check.heading_hierarchy', 'admin.seo.check.heading_hierarchy.benchmark', 'admin.seo.check.heading_hierarchy.hint', 'admin.seo.check.content_length', 'admin.seo.check.content_length.benchmark', 'admin.seo.check.content_length.hint', 'admin.seo.check.paragraph_length', 'admin.seo.check.paragraph_length.benchmark', 'admin.seo.check.paragraph_length.hint', 'admin.seo.check.sentence_length', 'admin.seo.check.sentence_length.benchmark', 'admin.seo.check.sentence_length.hint', 'admin.seo.check.comparison_table', 'admin.seo.check.comparison_table.benchmark', 'admin.seo.check.comparison_table.hint', 'admin.seo.check.keyword_density', 'admin.seo.check.keyword_density.benchmark', 'admin.seo.check.keyword_density.hint', 'admin.seo.check.keyword_positions', 'admin.seo.check.keyword_positions.benchmark', 'admin.seo.check.keyword_positions.hint', 'admin.seo.check.secondary_keywords', 'admin.seo.check.secondary_keywords.benchmark', 'admin.seo.check.secondary_keywords.hint', 'admin.seo.check.internal_link_count', 'admin.seo.check.internal_link_count.benchmark', 'admin.seo.check.internal_link_count.hint', 'admin.seo.check.external_links', 'admin.seo.check.external_links.benchmark', 'admin.seo.check.external_links.hint', 'admin.seo.check.anchor_descriptive', 'admin.seo.check.anchor_descriptive.benchmark', 'admin.seo.check.anchor_descriptive.hint', 'admin.seo.check.alt_coverage', 'admin.seo.check.alt_coverage.benchmark', 'admin.seo.check.alt_coverage.hint', 'admin.seo.check.image_weight', 'admin.seo.check.image_weight.benchmark', 'admin.seo.check.image_weight.hint', 'admin.seo.check.image_format', 'admin.seo.check.image_format.benchmark', 'admin.seo.check.image_format.hint', 'admin.seo.check.url_clean', 'admin.seo.check.url_clean.benchmark', 'admin.seo.check.url_clean.hint', 'admin.seo.check.canonical', 'admin.seo.check.canonical.benchmark', 'admin.seo.check.canonical.hint', 'admin.seo.check.schema_present', 'admin.seo.check.schema_present.benchmark', 'admin.seo.check.schema_present.hint', 'admin.seo.check.https', 'admin.seo.check.https.benchmark', 'admin.seo.check.https.hint', 'admin.seo.dup.kind.product', 'admin.seo.dup.kind.category', 'admin.seo.dup.kind.brand', 'admin.seo.dup.kind.page', 'admin.seo.dup.kind.article', 'admin.seo.dup.line')",
+	})
+}

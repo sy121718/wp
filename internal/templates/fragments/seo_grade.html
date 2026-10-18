@@ -1,0 +1,8 @@
+{* fragments/seo_grade.html — 评分档位名。数据：color / t（词条 451 已 seed，兜底与 internal/seo/score_grade.go 同文）。 *}
+{{c := .["color"]}}{{tr := .["tr"]}}
+{{if c == "green"}}{{tr("admin.seo.score.grade.excellent", "优秀")}}
+{{else if c == "lightgreen"}}{{tr("admin.seo.score.grade.good", "良好")}}
+{{else if c == "yellow"}}{{tr("admin.seo.score.grade.needsWork", "需改进")}}
+{{else if c == "red"}}{{tr("admin.seo.score.grade.poor", "差")}}
+{{else if c == "red-blocking"}}{{tr("admin.seo.score.grade.missing", "缺失")}}
+{{else}}{{c}}{{end}}
