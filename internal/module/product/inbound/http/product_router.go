@@ -75,6 +75,21 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	// 取词注入：service 层的展示文案（内置规则名 / 描述等）按请求语言渲染。
 	g.Use(productTranslateMiddleware())
 
+	registerProductCoreAPI(g, handle)
+	registerProductDetailTemplateAPI(g, handle)
+	registerProductAttributeAPI(g, handle)
+	registerProductTaxonomyAPI(g, handle)
+	registerProductTagAPI(g, handle)
+	registerProductBundleAPI(g, handle)
+	registerProductPricingAPI(g, handle)
+	return svc, svc
+}
+
+// registerProductCoreAPI 注册 商品本体（含变体） 的接口路由。
+//
+// 权限点逐条独立：API 组按实际请求路径 enforce，而 sys_permission 上 permission_code
+// 唯一 —— 一个 code 挂两条路径会把其中一条挤出策略（含超管全员 403）。
+func registerProductCoreAPI(g *permission.RouteGroup, handle *ProductHandle) {
 	// —— 商品本体（含变体）——
 	g.GET("/list", permission.ProductList, handle.List)
 	g.GET("/get", permission.ProductGet, handle.Get)
@@ -97,7 +112,13 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	// 两个动作各自的权限点（理由同上：一个 code 只能绑一条 API 路由）。
 	g.POST("/rating/add", permission.ProductRatingAdd, handle.AddRating)
 	g.POST("/rating/delete", permission.ProductRatingDelete, handle.DeleteRating)
+}
 
+// registerProductDetailTemplateAPI 注册 详情页模板的写动作（页面 /admin/products/template） 的接口路由。
+//
+// 权限点逐条独立：API 组按实际请求路径 enforce，而 sys_permission 上 permission_code
+// 唯一 —— 一个 code 挂两条路径会把其中一条挤出策略（含超管全员 403）。
+func registerProductDetailTemplateAPI(g *permission.RouteGroup, handle *ProductHandle) {
 	// —— 详情页模板的写动作（页面 /admin/products/template）——
 	// 双轨（迁移 282）：重新套用预设（放弃独立文档）与文档级回滚（取历史快照重发）；
 	// 外加页面上的新建命名模板 / 首次发布 / 切换模板 / 改 URL。
@@ -110,7 +131,13 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/detail-template/publish", permission.ProductDetailTemplatePublish, handle.PublishDetailTemplate)
 	g.POST("/detail-template/apply", permission.ProductDetailTemplateApply, handle.ApplyDetailTemplate)
 	g.POST("/detail-template/update-url", permission.ProductDetailTemplateUpdateURL, handle.UpdateDetailTemplateURL)
+}
 
+// registerProductAttributeAPI 注册 属性组与属性值（issue #7） 的接口路由。
+//
+// 权限点逐条独立：API 组按实际请求路径 enforce，而 sys_permission 上 permission_code
+// 唯一 —— 一个 code 挂两条路径会把其中一条挤出策略（含超管全员 403）。
+func registerProductAttributeAPI(g *permission.RouteGroup, handle *ProductHandle) {
 	// —— 属性组与属性值（issue #7）——
 	// 属性组可跨商品复用，故独立于商品资源。
 	// 属性值用 set-values 整体保存（全量替换），比逐行接口少一半请求、也避免半截状态。
@@ -123,7 +150,13 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	// 批量删除：与单条同一个权限点（删的都是属性组，只是形状从 {id} 变成 {ids}），
 	// 回执形状与商品批量删除逐字一致（json_write.js 按 outcome=delete 读 data.deleted）。
 	g.POST("/attribute/bulk-delete", permission.ProductAttributeBulkDelete, handle.BulkDeleteAttributes)
+}
 
+// registerProductTaxonomyAPI 注册 分类与品牌（issue #10） 的接口路由。
+//
+// 权限点逐条独立：API 组按实际请求路径 enforce，而 sys_permission 上 permission_code
+// 唯一 —— 一个 code 挂两条路径会把其中一条挤出策略（含超管全员 403）。
+func registerProductTaxonomyAPI(g *permission.RouteGroup, handle *ProductHandle) {
 	// —— 分类与品牌（issue #10）——
 	// 分类是树（list 返回树、get 取单节点），品牌是平铺列表。
 	// 分类与品牌都可跨商品复用，故与商品资源并列而不是嵌在商品路径下。
@@ -139,7 +172,13 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/brand/update", permission.ProductBrandUpdate, handle.UpdateBrand)
 	g.POST("/brand/delete", permission.ProductBrandDelete, handle.DeleteBrand)
 	g.POST("/brand/bulk-delete", permission.ProductBrandBulkDelete, handle.BulkDeleteBrands)
+}
 
+// registerProductTagAPI 注册 标签与自动规则（issue #11） 的接口路由。
+//
+// 权限点逐条独立：API 组按实际请求路径 enforce，而 sys_permission 上 permission_code
+// 唯一 —— 一个 code 挂两条路径会把其中一条挤出策略（含超管全员 403）。
+func registerProductTagAPI(g *permission.RouteGroup, handle *ProductHandle) {
 	// —— 标签与自动规则（issue #11）——
 	// 手工标签手工挂载，自动标签按内置规则类型 + 参数维护，归属由明确的重算时机更新；
 	// products 是「某标签命中哪些商品」（后台核对）。标签可跨商品复用。
@@ -152,7 +191,13 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/tag/delete", permission.ProductTagDelete, handle.DeleteTag)
 	g.POST("/tag/bulk-delete", permission.ProductTagBulkDelete, handle.BulkDeleteTags)
 	g.POST("/tag/recalc", permission.ProductTagRecalc, handle.RecalcTags)
+}
 
+// registerProductBundleAPI 注册 捆绑品（issue #20） 的接口路由。
+//
+// 权限点逐条独立：API 组按实际请求路径 enforce，而 sys_permission 上 permission_code
+// 唯一 —— 一个 code 挂两条路径会把其中一条挤出策略（含超管全员 403）。
+func registerProductBundleAPI(g *permission.RouteGroup, handle *ProductHandle) {
 	// —— 捆绑品（issue #20）——
 	// 选项规则在 products.bundle_items，选项来自跨商品挑选的已存在 SKU。
 	// validate 是后端硬校验（与前台片段共用同一份校验逻辑），skus 是配置器的数据源。
@@ -160,7 +205,13 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/bundle/set", permission.ProductBundleSet, handle.SetBundleConfig)
 	g.POST("/bundle/validate", permission.ProductBundleValidate, handle.ValidateBundleSelection)
 	g.GET("/bundle/skus", permission.ProductBundleSkus, handle.ListBundleSKUs)
+}
 
+// registerProductPricingAPI 注册 定价工具（issue #13） 的接口路由。
+//
+// 权限点逐条独立：API 组按实际请求路径 enforce，而 sys_permission 上 permission_code
+// 唯一 —— 一个 code 挂两条路径会把其中一条挤出策略（含超管全员 403）。
+func registerProductPricingAPI(g *permission.RouteGroup, handle *ProductHandle) {
 	// —— 定价工具（issue #13）——
 	// 四种内置规则 + 尾数处理，可对单个 SKU / 单商品全部变体 / 筛选集批量应用。
 	// preview 与 apply 共用同一份规则入参（预览不落库，应用落库 + 留痕）。
@@ -175,7 +226,6 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	g.POST("/bulk-pricing", permission.ProductBulkPricing, handle.BulkPricing)
 	g.GET("/pricing/history", permission.ProductPricingHistory, handle.ListPriceAdjustments)
 	g.GET("/pricing/adjustment", permission.ProductPricingAdjustment, handle.GetPriceAdjustment)
-	return svc, svc
 }
 
 // ══ 页面面装配（/admin 组）══
@@ -230,6 +280,19 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 必须和商品域在同一份索引里，否则跨内容的重复标题检不出来。两份契约都可空。
 	productPages.SetSeoTitleSources(pageSvc, contentSvc)
 
+	registerProductListPages(pages, productPages)
+	registerProductTemplatePages(pages, productPages)
+	registerProductAttributePages(pages, productPages)
+	registerProductTaxonomyPages(pages, productPages)
+	registerProductTagPages(pages, productPages)
+	registerProductPricingPages(pages, productPages)
+	return productPages
+}
+
+// registerProductListPages 注册商品列表 / 新建 / 详情 / 编辑的页面路由。
+//
+// 页面 GET 走 /admin 组认证（Session + CSRF）并按需 PageAuthz；写动作复用既有 API 权限点。
+func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 	// —— 商品列表 / 新建 / 详情 / 编辑 ——
 	pages.GET("/products", adminui.PageAuthz("/api/product/list"), productPages.ProductsPage)
 	// 商品新建整页（docs/04-C §5，弃抽屉）：左表单右模板卡片。
@@ -272,7 +335,12 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.GET("/products/preview-frame", productPages.ProductPreviewFrame)
 	pages.POST("/product-categories/seo-score", productPages.ProductCategoryScorePanel)
 	pages.POST("/product-brands/seo-score", productPages.ProductBrandScorePanel)
+}
 
+// registerProductTemplatePages 注册详情页模板（issue #14）+ 捆绑配置（issue #20）的页面路由。
+//
+// 页面 GET 走 /admin 组认证（Session + CSRF）并按需 PageAuthz；写动作复用既有 API 权限点。
+func registerProductTemplatePages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 	// —— 详情页模板（issue #14）+ 捆绑配置（issue #20）——
 	// 商品详情页模板：一个商品类型下可建多套命名模板，商品发布时可选一套、
 	// 发布前可预览（预览只读渲染，不落库不激活）。
@@ -287,7 +355,12 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 与 /products/variant/preview 同一先例（页面组已有 Session + CSRF，端点落不了任何库），
 	// 因此不叠加 Casbin 权限点，也就不会出现「有路由、无权限点」的全员 403。
 	pages.POST("/products/bundle/members/resolve", productPages.ProductsBundleMembersResolve)
+}
 
+// registerProductAttributePages 注册属性库（issue #7）的页面路由。
+//
+// 页面 GET 走 /admin 组认证（Session + CSRF）并按需 PageAuthz；写动作复用既有 API 权限点。
+func registerProductAttributePages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 	// —— 属性库（issue #7）——
 	// 属性组与属性值可跨商品复用，故独立页面。
 	// 值编辑器的增删行走 HTMX（编辑中的行只存在于 DOM，服务端参与归一与去重）。
@@ -295,7 +368,12 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 批量删除复用同一条删除路径与权限点：逐条校验，失败的那条不计入成功数。
 	// 值编辑器的行片段：纯表单操作，不落库，故不挂 Casbin（页面组已有 Session + CSRF）。
 	pages.POST("/product-attributes/value-rows", productPages.ProductAttributesValueRows)
+}
 
+// registerProductTaxonomyPages 注册分类与品牌（issue #10）的页面路由。
+//
+// 页面 GET 走 /admin 组认证（Session + CSRF）并按需 PageAuthz；写动作复用既有 API 权限点。
+func registerProductTaxonomyPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 	// —— 分类与品牌（issue #10）——
 	// 分类是树（父子层级 / 排序 / slug / SEO 字段），列表一次渲染整棵树，按树根分页 ——
 	// 没有「子级懒加载」端点。品牌是独立实体（logo / 描述 / slug / SEO 字段）。
@@ -307,7 +385,12 @@ func SetupProductPages(pages *gin.RouterGroup,
 	pages.GET("/product-brands", adminui.PageAuthz("/api/product/brand/list"), productPages.ProductBrandsPage)
 	// 品牌的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/brand/*。
 	// 商品挂载分类（多个 + 主分类）与品牌也没有：属于商品更新，走 /api/product/update。
+}
 
+// registerProductTagPages 注册标签库（issue #11）的页面路由。
+//
+// 页面 GET 走 /admin 组认证（Session + CSRF）并按需 PageAuthz；写动作复用既有 API 权限点。
+func registerProductTagPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 	// —— 标签库（issue #11）——
 	// 手工标签 + 内置规则的自动标签（规则只接受白名单参数）。
 	// 写动作复用商品标签 API 权限点做 Casbin 鉴权；「重算」是显式重算时机之一。
@@ -318,7 +401,12 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 含超管全员 403」那种缺口）。
 	pages.GET("/product-tags/hits", adminui.PageAuthz("/api/product/tag/list"), productPages.ProductTagHitsFragment)
 	// 商品挂手工标签同样走 /api/product/update（自动标签不在这份表单里）。
+}
 
+// registerProductPricingPages 注册定价工具（issue #13）的页面路由。
+//
+// 页面 GET 走 /admin 组认证（Session + CSRF）并按需 PageAuthz；写动作复用既有 API 权限点。
+func registerProductPricingPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 	// —— 定价工具（issue #13）——
 	// 四种内置规则 + 尾数处理，对单个 SKU / 单商品全部变体 / 筛选集批量改价。
 	// 试算走预览权限点（不落库），应用走应用权限点（落库 + 留痕）。
@@ -332,8 +420,6 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 入口在商品列表行内「多语言」按钮（与页面翻译工作台同构）。路由在装配层同时挂到
 	// 页面组与 /api 组（见 assembly_publish 的 SetupProductTranslationRoutes 调用）：
 	// 保存已经是接口端点，而页面组与接口组在这两个函数里不可能同时拿到。
-
-	return productPages
 }
 
 // SetupProductTranslationRoutes 注册商品域翻译工作台的两条路由：页面组 GET + /api/product 组保存。

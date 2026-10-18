@@ -178,13 +178,13 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 	view.Title = productenums.ProductTagsTitle
 	view.Menu = "product-tags"
 	view.ListQuery = productQueryFromRequest(c, productTagsBackKeys...)
-	rows := []map[string]any{}
-	tagCreateForm := gin.H{}
+	rows := []productdto.TagRowResp{}
+	tagCreateForm := map[string]any{}
 	if err == nil {
-		rows = make([]map[string]any, 0, len(view.TagDetails))
+		rows = make([]productdto.TagRowResp, 0, len(view.TagDetails))
 		for _, tg := range view.TagDetails {
 			row := tagPageRow(tg)
-			row["EditForm"] = h.tagDrawerData(c, "update", view.SelectedProject, row, view.RuleTypes)
+			row.EditForm = h.tagDrawerData(c, "update", view.SelectedProject, &row, view.RuleTypes)
 			rows = append(rows, row)
 		}
 		// 新建抽屉的片段数据与行级片段同源：同一份规则清单、同一份模板。
@@ -238,7 +238,9 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	data["Page"] = res.Page
 	data["PageSize"] = res.PageSize
 	data["TotalPage"] = res.TotalPage
-	data["Items"] = tagProductRows(res.Items)
+	// 命中商品行就是 service 的 TagProductResp：模板读 p.Name/p.Slug/p.Status，
+	// 字段名与它一致，控制器不再逐行翻译一份（那些翻译只会与 service 漂移）。
+	data["Items"] = res.Items
 	// 分页交事实（总数 / 页码 / 每页条数 / 基地址），文案与翻页链接由
 	// admin/product/product_tag_hits.html 用同一套通用模板函数渲染。
 	//
@@ -262,17 +264,19 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
 // ruleTypes 由调用方传入：页面装配时取一次全行共享，失败分支自己取一次，
 // 不在片段装配里重复查契约。取词走 adminui.PrepareBare（片段不经整份
 // Prepare，但模板要 t/tf；漏注入不报错 —— 取词全变空串、200、日志干净）。
-func (h *ProductPageHandle) tagDrawerData(c *gin.Context, mode, projectID string, row gin.H, ruleTypes []*productdto.TagRuleTypeResp) gin.H {
-	data := gin.H{
+func (h *ProductPageHandle) tagDrawerData(c *gin.Context, mode, projectID string, row *productdto.TagRowResp, ruleTypes []*productdto.TagRuleTypeResp) map[string]any {
+	data := map[string]any{
 		"Mode": mode, "Project": projectID,
 		"RuleTypes": ruleTypes,
 		"ID":        "", "Name": "", "Slug": "", "IsRule": false, "Sort": 0,
 		"RuleType": "", "RuleDays": "", "RuleMinPrice": "", "RuleMaxPrice": "",
 	}
+	// 逐字段搬而不是按键名遍历：行类型改了名字这里会编译失败，键名写错则只有
+	// 模板里静默少一段初值。
 	if row != nil {
-		for _, key := range []string{"ID", "Name", "Slug", "IsRule", "Sort", "RuleType", "RuleDays", "RuleMinPrice", "RuleMaxPrice"} {
-			data[key] = row[key]
-		}
+		data["ID"], data["Name"], data["Slug"] = row.ID, row.Name, row.Slug
+		data["IsRule"], data["Sort"], data["RuleType"] = row.IsRule, row.Sort, row.RuleType
+		data["RuleDays"], data["RuleMinPrice"], data["RuleMaxPrice"] = row.RuleDays, row.RuleMinPrice, row.RuleMaxPrice
 	}
 	return adminui.PrepareBare(c, data)
 }
@@ -282,37 +286,26 @@ func (h *ProductPageHandle) tagDrawerData(c *gin.Context, mode, projectID string
 //
 // 文案槽给**事实**（key + 中文兜底），取词在 product_tags.html 的 tr 里做：控制器不取词。
 // RecalcAt 是**数据**（已格式化的时间串，未重算时为空），「未重算过」那句话才是文案。
-func tagPageRow(t *productdto.TagResp) gin.H {
+func tagPageRow(t *productdto.TagResp) productdto.TagRowResp {
 	// 类型 → 文案事实的映射在 productenums.TagKindLabel（控制器不再挑文案）。
 	kindKey, kindFallback := productenums.TagKindLabel(t.Kind)
 	recalcAt, recalcKey, recalcFallback := recalcFact(t.RecalcAt)
-	row := gin.H{
-		"ID": t.ID, "Name": t.Name, "Slug": t.Slug, "Kind": t.Kind,
-		"KindLabelKey": kindKey, "KindLabelFallback": kindFallback,
-		"IsRule":   t.Kind == productenums.TagKindRule,
-		"KindTone": tagKindTone(t.Kind),
-		"RuleType": t.RuleType, "RuleLabel": t.RuleLabel,
-		"RecalcAt":            recalcAt,
-		"RecalcLabelKey":      recalcKey,
-		"RecalcLabelFallback": recalcFallback,
-		"ProductCount":        t.ProductCount, "Sort": t.Sort,
-		"HasRuleParams": t.Kind == productenums.TagKindRule,
-		"RuleDays":      ruleParamText(t.RuleParams, "days"),
-		"RuleMinPrice":  ruleParamText(t.RuleParams, "minPrice"),
-		"RuleMaxPrice":  ruleParamText(t.RuleParams, "maxPrice"),
+	return productdto.TagRowResp{
+		ID: t.ID, Name: t.Name, Slug: t.Slug, Kind: t.Kind,
+		KindLabelKey: kindKey, KindLabelFallback: kindFallback,
+		IsRule:        t.Kind == productenums.TagKindRule,
+		HasRuleParams: t.Kind == productenums.TagKindRule,
+		KindTone:      tagKindTone(t.Kind),
+		KindRule:      productenums.TagKindRule,
+		KindManual:    productenums.TagKindManual,
+		RuleType:      t.RuleType,
+		RuleLabel:     t.RuleLabel,
+		RecalcAt:      recalcAt, RecalcLabelKey: recalcKey, RecalcLabelFallback: recalcFallback,
+		ProductCount: t.ProductCount, Sort: t.Sort,
+		RuleDays:     ruleParamText(t.RuleParams, "days"),
+		RuleMinPrice: ruleParamText(t.RuleParams, "minPrice"),
+		RuleMaxPrice: ruleParamText(t.RuleParams, "maxPrice"),
 	}
-	row["KindRule"] = productenums.TagKindRule
-	row["KindManual"] = productenums.TagKindManual
-	return row
-}
-
-// tagProductRows 命中商品 → 模板行。
-func tagProductRows(items []*productdto.TagProductResp) []gin.H {
-	out := make([]gin.H, 0, len(items))
-	for _, p := range items {
-		out = append(out, gin.H{"ID": p.ID, "Name": p.Name, "Slug": p.Slug, "Status": p.Status})
-	}
-	return out
 }
 
 // tagKindTone 标签类型 → 徽标分档（规则型标签 → info，普通标签中性）。

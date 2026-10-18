@@ -309,6 +309,24 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) {
 	// 上面的取数编排（分类树 / 品牌 / 标签 / 仓库清单 / 列表与总数 / 逐行详情 / 属性组选项 /
 	// 每仓候选 / 定价规则清单）全在 service 的读模型里；这里只做控制器负责的派生值与出口。
 	// —— 控制器负责的派生值 ——
+	fillProductListChrome(c, view)
+
+	if err != nil {
+		// 视图已带 LoadFailed / HTTPStatus（400 参数不合法 / 500 取数失败）。
+		// 这里只补**当前语言**的失败槽文案：原始的 err 只进日志。
+		view.LoadFailed = true
+		view.LoadError = response.MessageOf(c, "product", err)
+	}
+	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
+	adminui.RenderPage(c, productListPageTemplate, view)
+}
+
+// fillProductListChrome 列表页的页壳与派生值（页头 / 状态下拉 / 改价表单初值 / 分页事实 /
+// 筛选上下文）。
+//
+// 全是**请求态**派生：title 是 i18n key、ListQuery 来自当前查询串、分页基地址要带筛选条件 ——
+// 所以留在控制器这一侧，读模型只交数据。
+func fillProductListChrome(c *gin.Context, view *productdto.ProductListPageResp) {
 	// 页壳键：title 的 i18n key 常量在本包（MsgProductsTitle 是迁移 163 seed 的词条名）。
 	view.Title = MsgProductsTitle
 	view.Menu = "products"
@@ -333,15 +351,6 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) {
 	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行），模板里的 ?err= / ?done= 提示条
 	// 已整批删除。ListQuery 是筛选上下文（表单 action 的 query）：筛选条提交要带着它回去。
 	view.ListQuery = productQueryFromRequest(c, productListBackKeys...)
-
-	if err != nil {
-		// 视图已带 LoadFailed / HTTPStatus（400 参数不合法 / 500 取数失败）。
-		// 这里只补**当前语言**的失败槽文案：原始的 err 只进日志。
-		view.LoadFailed = true
-		view.LoadError = response.MessageOf(c, "product", err)
-	}
-	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
-	adminui.RenderPage(c, productListPageTemplate, view)
 }
 
 // productListPageSize 商品列表每页条数（服务端分页）。
@@ -534,27 +543,7 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 			view.Err = productPageInternalText(c, view.AttributeOptionsErr)
 		}
 	}
-	// 状态下拉：先按「全部状态」那一档给默认值 —— 商品读不出来时页面仍完整；读到了会覆盖。
-	view.Statuses = productStatusOptions("")
-	if err == nil && view.HasProduct && view.Detail != nil {
-		// 行已由读模型装配（service/product_row.go）：副标题 / 单位 / 描述 HTML 都是行上的
-		// 字段，控制器不再往行里补键 —— 这里只剩「编辑表单要、列表与详情页不要」的那几样。
-		view.Statuses = productStatusOptions(view.Detail.Status)
-		// 属性组勾选态（详情页用的是逗号分隔的 id 输入框，编辑页是勾选列表）：
-		// 可选值来自读模型给的候选，勾选态由商品已引用的 id 决定。
-		// 候选读失败那一档走上面的 EditBlocked（AttributeChecks 保持为空）。
-		if view.AttributeOptionsErr == nil {
-			view.AttributeChecks = checkedAttributeOptions(view.AttributeOptions, view.Detail.AttributeIDs)
-		}
-		// 图集与数值字段：表单里是文本（textarea / input），按行与可空文本回填。
-		view.ImagesText = strings.Join(view.Detail.Images, "\n")
-		view.ImageAltsText = strings.Join(view.Detail.ImageAlts, "\n")
-		view.WeightText = nullableNumberText(view.Detail.Weight)
-		view.DefaultPriceText = nullableNumberText(view.Detail.DefaultPrice)
-		// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
-		// 这里只给一个链接标记（type=variant 时为假，模板据 isset 整块跳过）。
-		view.IsBundle = isBundleProduct(view.Detail.Type)
-	}
+	fillEditFormEcho(view)
 	// 详情页模板面板：详情页只读展示绑定状态，写动作（进入自定义 / 编辑模板 / 重新套用预设 /
 	// 回滚）都在本页 —— 与详情页共用同一份组装。
 	view.TplPanel = h.detailTemplatePanel(ctx, view.SelectedProject, view.ProductID)
@@ -566,6 +555,36 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	}
 	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
 	adminui.RenderPage(c, productEditPageTemplate, view)
+}
+
+// fillEditFormEcho 编辑表单的回显值（状态选中项、属性组勾选态、图集与数值字段的文本形态、
+// 捆绑容器标记）。
+//
+// 商品读不出来时页面仍要完整：状态按「全部状态」那一档给默认值，其余回显位保持零值，
+// 模板据此显示空表单而不是中断。
+func fillEditFormEcho(view *productdto.ProductEditPageResp) {
+	// 状态下拉：先按「全部状态」那一档给默认值 —— 商品读不出来时页面仍完整；读到了会覆盖。
+	view.Statuses = productStatusOptions("")
+	if !view.HasProduct || view.Detail == nil {
+		return
+	}
+	// 行已由读模型装配（service/product_row.go）：副标题 / 单位 / 描述 HTML 都是行上的
+	// 字段，控制器不再往行里补键 —— 这里只剩「编辑表单要、列表与详情页不要」的那几样。
+	view.Statuses = productStatusOptions(view.Detail.Status)
+	// 属性组勾选态（详情页用的是逗号分隔的 id 输入框，编辑页是勾选列表）：
+	// 可选值来自读模型给的候选，勾选态由商品已引用的 id 决定。
+	// 候选读失败那一档走 EditBlocked（AttributeChecks 保持为空）。
+	if view.AttributeOptionsErr == nil {
+		view.AttributeChecks = checkedAttributeOptions(view.AttributeOptions, view.Detail.AttributeIDs)
+	}
+	// 图集与数值字段：表单里是文本（textarea / input），按行与可空文本回填。
+	view.ImagesText = strings.Join(view.Detail.Images, "\n")
+	view.ImageAltsText = strings.Join(view.Detail.ImageAlts, "\n")
+	view.WeightText = nullableNumberText(view.Detail.Weight)
+	view.DefaultPriceText = nullableNumberText(view.Detail.DefaultPrice)
+	// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
+	// 这里只给一个链接标记（type=variant 时为假，模板据 isset 整块跳过）。
+	view.IsBundle = isBundleProduct(view.Detail.Type)
 }
 
 func checkedProductEditOptions(options []map[string]any, selected []string) []map[string]any {

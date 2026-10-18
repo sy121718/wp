@@ -165,32 +165,47 @@ func entityScoreView(tr func(key, fallback string) string, in *scoring.EntityPag
 			sv.ProfileType = res.Profile.Type
 			sv.ProfileReason = res.Profile.Reason
 		}
-		// 未达标行的整句模板：标签 / 实测 / 基准 / 建议四段都是数据，句子的语序与标点
-		// 由词条决定（英文的冒号与括号与中文不同），命名占位符 + FillTranslate 负责填充
-		//（词条被写坏时自动回落下面那句中文兜底）。
-		for _, sec := range res.Sections {
-			item := productdto.ScoreSectionResp{
-				Label: sec.Label, Color: sec.Color, Score: sec.Score, Max: sec.Max,
-				ColorLabel: seoscore.ScoreGradeText(tr, sec.Color),
-			}
-			for _, ck := range sec.Checks {
-				if ck.Score >= ck.Max {
-					continue
-				}
-				item.Issues = append(item.Issues, productdto.ScoreIssueResp{
-					Text: i18n.FillTranslate(tr, productenums.SEOIssueLine,
-						"{label}：{actual}（基准 {benchmark}）→ {hint}",
-						map[string]string{
-							"label": ck.Label, "actual": ck.Actual,
-							"benchmark": ck.Benchmark, "hint": ck.Hint,
-						}),
-					Target: ck.Target,
-				})
-			}
-			sv.Sections = append(sv.Sections, item)
-		}
+		sv.Sections = scoreSections(tr, res.Sections)
 	}
 	title := scoring.EntityTitle(in)
+	fillSerp(&sv, tr, in, title)
+	fillDuplicateTitle(&sv, title, dups)
+	return sv
+}
+
+// scoreSections 评分分项 → 片段行（含未达标项的整句说明）。
+//
+// 未达标行的整句是**模板**：标签 / 实测 / 基准 / 建议四段都是数据，句子的语序与标点
+// 由词条决定（英文的冒号与括号与中文不同），命名占位符 + FillTranslate 负责填充
+// （词条被写坏时自动回落下面那句中文兜底）。
+func scoreSections(tr func(key, fallback string) string, sections []scoring.SectionResult) []productdto.ScoreSectionResp {
+	out := make([]productdto.ScoreSectionResp, 0, len(sections))
+	for _, sec := range sections {
+		item := productdto.ScoreSectionResp{
+			Label: sec.Label, Color: sec.Color, Score: sec.Score, Max: sec.Max,
+			ColorLabel: seoscore.ScoreGradeText(tr, sec.Color),
+		}
+		for _, ck := range sec.Checks {
+			if ck.Score >= ck.Max {
+				continue
+			}
+			item.Issues = append(item.Issues, productdto.ScoreIssueResp{
+				Text: i18n.FillTranslate(tr, productenums.SEOIssueLine,
+					"{label}：{actual}（基准 {benchmark}）→ {hint}",
+					map[string]string{
+						"label": ck.Label, "actual": ck.Actual,
+						"benchmark": ck.Benchmark, "hint": ck.Hint,
+					}),
+				Target: ck.Target,
+			})
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// fillSerp 搜索结果预览（标题 / 路径 / 描述）：空值给「未填写」那句文案事实。
+func fillSerp(sv *productdto.ScoreResp, tr func(key, fallback string) string, in *scoring.EntityPageInput, title string) {
 	sv.SerpTitle = title
 	if sv.SerpTitle == "" {
 		sv.SerpTitle = tr(productenums.SEOSerpTitleEmpty, "（未填写标题）")
@@ -208,14 +223,18 @@ func entityScoreView(tr func(key, fallback string) string, in *scoring.EntityPag
 	if sv.SerpDesc == "" {
 		sv.SerpDesc = tr(productenums.SEOSerpDescEmpty, "（未填写描述）")
 	}
-	// title 唯一性（SEO-018 编辑期轻量版）：结论形状与发布侧体检一致 —— 列出全部冲突页面。
-	if len(dups) > 0 {
-		sv.DuplicateNote = scoring.DuplicateTitleMessage(title, dups)
-		for _, d := range dups {
-			sv.Duplicates = append(sv.Duplicates, d.Page)
-		}
+}
+
+// fillDuplicateTitle title 唯一性（SEO-018 编辑期轻量版）：结论形状与发布侧体检一致 ——
+// 列出全部冲突页面。
+func fillDuplicateTitle(sv *productdto.ScoreResp, title string, dups []scoring.TitleEntry) {
+	if len(dups) == 0 {
+		return
 	}
-	return sv
+	sv.DuplicateNote = scoring.DuplicateTitleMessage(title, dups)
+	for _, d := range dups {
+		sv.Duplicates = append(sv.Duplicates, d.Page)
+	}
 }
 
 // EntitySeoDrawer 商品 SEO 评分抽屉片段（GET /admin/products/seo/drawer?productId=&project=）。

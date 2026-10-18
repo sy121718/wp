@@ -40,6 +40,48 @@ type TagProductResp struct {
 	Status string `json:"status"`
 }
 
+// TagRowResp 标签管理页的一行（模板直接渲染的成品行）。
+//
+// 为什么在 dto 里而不是控制器里拼 gin.H：行里的每一项都是**数据** ——
+// 文案只以「key + 中文兜底」的事实形态出现（KindLabelKey/KindLabelFallback、
+// RecalcLabelKey/RecalcLabelFallback），取词在 product_tags.html 的 tr 里做。
+// 映射表放在这里，控制器就只剩「读一页 → 填行 → 渲染」。
+//
+// EditForm 是抽屉片段的数据（product_tag_form.html 的数据根）。它必须留在
+// **渲染期**装配：里面要 csrf_token（请求态）与 t/tf（由 adminui.PrepareBare 注入），
+// 而 Jet 在 struct 上不支持 `.["t"]`，所以那一层只能是 map。
+type TagRowResp struct {
+	ID   string
+	Name string
+	Slug string
+	Kind string
+	// KindLabelKey/KindLabelFallback 类型标签的文案事实（productenums.TagKindLabel）。
+	KindLabelKey      string
+	KindLabelFallback string
+	// KindTone 徽标分档（rule → info，manual → mute）。
+	KindTone string
+	// IsRule/HasRuleParams 规则型标签（决定表单里规则字段显不显示）。
+	IsRule        bool
+	HasRuleParams bool
+	// KindRule/KindManual 两个类型常量的镜像：模板里 select 的选中判断用。
+	KindRule   string
+	KindManual string
+	RuleType   string
+	RuleLabel  string
+	// RecalcAt 上次重算时间的数据串；RecalcLabelKey/RecalcLabelFallback 是「没重算过」的文案事实。
+	RecalcAt            string
+	RecalcLabelKey      string
+	RecalcLabelFallback string
+	// RuleDays/RuleMinPrice/RuleMaxPrice 规则参数的回填文本。
+	RuleDays     string
+	RuleMinPrice string
+	RuleMaxPrice string
+	ProductCount int
+	Sort         int
+	// EditForm 行内编辑抽屉的片段数据（渲染期装配，见类型注释）。
+	EditForm map[string]any
+}
+
 // TagProductsPageResp 命中商品的一页（审计 PERF-02）。
 //
 // 分页元数据与商品行分开：后台展开区要能显示「共 N 条，第 X-Y 条」，而商品行本身

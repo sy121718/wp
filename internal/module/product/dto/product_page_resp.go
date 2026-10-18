@@ -864,7 +864,7 @@ type ProductTagsPageResp struct {
 	// RuleTypes 内置规则类型清单：全页只查一次，行级片段 / 页面级新建片段 / 规则说明共享同一份。
 	RuleTypes []*TagRuleTypeResp
 	// Tags 成品行（含每行的 EditForm）；TagCreateForm 新建抽屉的数据（与行级片段同源）。
-	Tags          []map[string]any
+	Tags          []TagRowResp
 	TagCreateForm map[string]any
 
 	Total      int64
