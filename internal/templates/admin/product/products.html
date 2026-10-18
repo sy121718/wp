@@ -15,6 +15,8 @@
 {* Jet 方言：range 用 range 关键字；extends 相对本目录；range 内访问外层值先存变量。 *}
 {{extends "../layout.html"}}
 {{import "../partials/bulk_bar.html"}}
+{{block pageTitle()}}{{ .["t"]("admin.products.title", "商品") }}{{end}}
+{{block topbarTitle()}}{{ .["t"]("admin.products.title", "商品") }}{{end}}
 {{block body()}}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
@@ -45,7 +47,6 @@
 {{else}}
 {{selectedProject := .SelectedProject}}
 {{warehouseOptions := .WarehouseOptions}}
-{{statusOptions := .Statuses}}
 {{fKeyword := .FilterKeyword}}
 {{fStatus := .FilterStatus}}
 {{fPage := .Page}}
@@ -96,12 +97,11 @@
                 <div class="filter-field">
                     <label for="products-filter-status">{{ .["t"]("admin.products.col.status", "状态") }}</label>
                     <select class="form-select" id="products-filter-status" name="status">
-                        {{range _, o := .Statuses}}
-                        {* 状态项收的是事实（Key + 中文兜底）而不是成品串：新形状走 tr 在渲染期取词，
-                           老形状（只有 Label）原样输出 —— gojet 对 map 缺键会在取值时报错，
-                           所以先 isset 再取，缺键不等于「没有值」而是「这条数据没有事实字段」。 *}
-                        <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if isset(o.LabelKey)}}{{tr(o.LabelKey, o.LabelFallback)}}{{else}}{{o.Label}}{{end}}</option>
-                        {{end}}
+                        {* 状态三档是商品域固定枚举，选项形状写在模板里；选中态比筛选值。 *}
+                        <option value=""{{if fStatus == ""}} selected{{end}}>{{tr("admin.products.status.all", "全部")}}</option>
+                        <option value="draft"{{if fStatus == "draft"}} selected{{end}}>{{tr("admin.products.status.draft", "草稿")}}</option>
+                        <option value="published"{{if fStatus == "published"}} selected{{end}}>{{tr("admin.products.status.published", "已发布")}}</option>
+                        <option value="archived"{{if fStatus == "archived"}} selected{{end}}>{{tr("admin.products.status.archived", "已归档")}}</option>
                     </select>
                 </div>
                 <div class="filter-actions">
@@ -205,7 +205,7 @@
                     <td><a class="row-title-link" href="/admin/products/detail?project={{selectedProject}}&amp;product={{p.ID}}"><strong>{{p.Name}}</strong></a></td>
                     {* 状态徽章：从同一份状态选项里取该值的**词条事实**再取词（避免在模板里另写一份
                        状态→文案的映射）；取不到（值不在选项里、或该条没有事实字段）时退回状态原值。 *}
-                    <td>{{status := p.Status}}{{statusLabel := status}}{{range _, o := statusOptions}}{{if o.Value == status}}{{if isset(o.LabelKey)}}{{statusLabel = tr(o.LabelKey, o.LabelFallback)}}{{else}}{{statusLabel = o.Label}}{{end}}{{end}}{{end}}<span class="badge">{{statusLabel}}</span></td>
+                    <td><span class="badge">{{tr("admin.products.status." + p.Status, p.Status)}}</span></td>
                     <td>{{p.VariantCount}}</td>
                     <td>{{p.PriceMin}} ~ {{p.PriceMax}}</td>
                     {* 库存列（docs/14 §1.4）：三态 + 分仓明细。

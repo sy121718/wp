@@ -77,19 +77,14 @@ func (v ProductNewPageResp) PageNoStore() bool { return v.LoadFailed }
 //     控制器不再拼行；只服务行装配的分类树扁平行（Flat）随之下沉，视图不再有那个字段；
 //   - **控制器在失败时写**：LoadError（按当前语言归口；LoadFailed / HTTPStatus 由读模型给）。
 type ProductListPageResp struct {
-	// Title 放 enums 的 i18n key（取词在渲染期，理由同 ProductNewPageResp）。
-	Title string `view:"title"`
-	Menu  string `view:"menu"`
-
 	// Projects 工程清单与本次选中的工程：整页的工程上下文（失败页也带着它）。
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
 
-	// FilterKeyword / FilterStatus 回显；Statuses 是下拉选项；Page / Limit / Total 是分页
-	// **事实**（基地址与翻页链接由 ListQuery + Pagination 承载，本层不拼 URL）。
+	// FilterKeyword / FilterStatus 回显；Page / Limit / Total 是分页**事实**。
+	// 状态下拉的选项形状与取词在模板（products.html 手写三档），本层只给筛选值与行状态值。
 	FilterKeyword string
 	FilterStatus  string
-	Statuses      []StatusOptionResp
 	Page          int
 	Limit         int
 	Total         int64

@@ -50,9 +50,8 @@ const ProductListPageSize = 20
 // 但只有第一处失败原因会被说出来。
 func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (res *productdto.ProductListPageResp, err error) {
 	view := &productdto.ProductListPageResp{
-		// Title / Menu / Form / Statuses / Pagination / ListQuery 都由控制器填：title 的
-		// i18n key 常量在 http 包（MsgProductsTitle），派生值的计算工具还被别的页面共用。
-		// Products（成品行）由本方法末尾装配，Flat 已随行装配下沉、视图不再有那个字段。
+		// Form / Pagination / ListQuery 由控制器填（要当前请求串）；标题、菜单、状态下拉、
+		// 分页链接与取词都在模板。Products（成品行）由本方法末尾装配。
 		Projects:            []projectdto.ProjectResp{},
 		WarehouseOptions:    []productdto.WarehouseOptionResp{},
 		AttributeOptions:    []productdto.AttributeOptionResp{},

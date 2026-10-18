@@ -275,8 +275,7 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) (any, error) {
 		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
 		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
 		view = &productdto.ProductListPageResp{
-			Title: MsgProductsTitle, Menu: "products", Limit: productListPageSize,
-			HTTPStatus: http.StatusInternalServerError,
+			Limit: productListPageSize, HTTPStatus: http.StatusInternalServerError,
 		}
 	}
 	// 上面的取数编排（分类树 / 品牌 / 标签 / 仓库清单 / 列表与总数 / 逐行详情 / 属性组选项 /
@@ -301,13 +300,9 @@ func (h *ProductPageHandle) ProductsPage(c *gin.Context) (any, error) {
 // 全是**请求态**派生：title 是 i18n key、ListQuery 来自当前查询串、分页基地址要带筛选条件 ——
 // 所以留在控制器这一侧，读模型只交数据。
 func fillProductListChrome(c *gin.Context, view *productdto.ProductListPageResp) {
-	// 页壳键：title 的 i18n key 常量在本包（MsgProductsTitle 是迁移 163 seed 的词条名）。
-	view.Title = MsgProductsTitle
-	view.Menu = "products"
-	// 状态下拉与改价表单初值：两处的工具都被别的页面用着（详情页回显 / 独立定价页），
-	// 所以留在本包。分类扁平行与成品行**不在控制器**了 —— 两者只服务行装配，已随行下沉
-	// 进读模型（service/product_row.go），本页拿到的是排好序的 view.Products。
-	view.Statuses = productStatusOptions(view.FilterStatus)
+	// 改价表单初值：工具还被独立定价页用着，所以留在本包。标题与菜单在模板（layout 的
+	// pageTitle / topbarTitle block），状态下拉的选项形状也在模板；分类扁平行与成品行
+	// 已随行下沉进读模型（service/product_row.go），本页拿到的是排好序的 view.Products。
 	view.Form = productservice.DefaultPricingForm(view.Rules, view.Roundings)
 	// 分页条：Go 只交事实（总数 / 页码 / 每页条数 / 基地址），文案、页码窗口与链接由
 	// admin/partials/pagination.html 渲染。基地址带当前筛选条件，翻页不丢条件。
