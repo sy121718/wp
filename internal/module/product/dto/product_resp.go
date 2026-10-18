@@ -199,10 +199,10 @@ type ProductRowResp struct {
 	BrandName      string
 
 	// 标签：TagChecks 手工标签勾选挂载，AutoTags 是只读的自动标签（归属由规则重算维护）；
-	// TagLabel 是列表列要的单个值（手工 + 自动合并的标签名）。
+	// TagNames 是列表列要的标签名（手工 + 自动合并，只给事实，不拼接、不计数）。
 	TagChecks []TagCheckRowResp
 	AutoTags  []AutoTagRowResp
-	TagLabel  string
+	TagNames  []string
 
 	// 评分：明细 + 投影值。没有评分时 HasRating=false —— 空态与「评分 0」是两回事。
 	Ratings     []RatingRowResp

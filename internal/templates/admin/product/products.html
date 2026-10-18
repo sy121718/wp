@@ -225,7 +225,9 @@
                     <td>{{if isset(p.BrandName)}}{{if p.BrandName != ""}}{{p.BrandName}}{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                     {* 标签列回答「这个商品挂了哪些标签」：列的是标签名（多于 3 个退化成数量），
                        不写「手工 N · 自动 N」—— 读这一列的人不关心来源分解，那是标签页的问题。 *}
-                    <td>{{if isset(p.TagLabel)}}{{if p.TagLabel != ""}}{{p.TagLabel}}{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    {* 标签列只放名字：多于 3 个时退化成数量词条（词条自己决定「{n} 个」/「{n} tags」的语序），
+                       拼接与取词都在模板这一侧完成 —— 后端只给 p.TagNames 这个事实。 *}
+                    <td>{{if isset(p.TagNames)}}{{if len(p.TagNames) > 3}}{{tn("admin.products.list.tagCount", "{n} 个", map("n", len(p.TagNames)))}}{{else if len(p.TagNames) > 0}}{{range i, n := p.TagNames}}{{if i > 0}}、{{end}}{{n}}{{end}}{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                     {* 平均分与评分条数分列；无评分不同于 0 分，平均分显示空值，条数保留 0。 *}
                     <td>{{if p.HasRating}}{{p.RatingAvg}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td>{{p.RatingCount}}</td>

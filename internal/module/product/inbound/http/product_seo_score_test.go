@@ -196,7 +196,7 @@ func productRowForRender() *productdto.ProductRowResp {
 		BrandName:           "—",
 		TagChecks:           []productdto.TagCheckRowResp{},
 		AutoTags:            []productdto.AutoTagRowResp{},
-		TagLabel:            "—",
+		TagNames:            []string{"—"},
 		Ratings:             []productdto.RatingRowResp{},
 		HasRating:           false,
 		RatingAvg:           "0.00",

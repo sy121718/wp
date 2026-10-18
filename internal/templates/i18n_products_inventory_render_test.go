@@ -93,7 +93,7 @@ func groupDProductRow() map[string]any {
 		"CategoryIDs": []string{"c1"}, "PrimaryCategoryName": "男装", "BrandName": "山野",
 		// 列表列只放值：分类列给一个分类名 + 其余分类数（+N 徽章），品牌列给品牌名，
 		// 标签列给标签名（多于 3 个退化成数量），不做「手工 N · 自动 N」的来源分解。
-		"CategoryCell": "男装", "CategoryOthers": 0, "TagLabel": "新品、热销",
+		"CategoryCell": "男装", "CategoryOthers": 0, "TagNames": []string{"新品", "热销"},
 		"CategoryChecks": []map[string]any{{"ID": "c1", "Label": "男装", "Checked": true}},
 		"PrimaryOptions": []map[string]any{{"ID": "c1", "Label": "男装", "Selected": true}},
 		"BrandOptions":   []map[string]any{{"ID": "b1", "Label": "山野", "Selected": true}},

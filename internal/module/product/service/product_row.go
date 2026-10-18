@@ -24,14 +24,13 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/money"
 )
 
 // productRow 组装单个商品的页面视图数据（列表页的一行 / 详情页 / 编辑页共用）。
 //
 // 键分两段：汇总段（VariantCount / PriceMin / PriceMax / HasRating / RatingAvg /
-// RatingCount / CategoryCell / CategoryOthers / BrandName / TagLabel）只回答「有哪些商品」，
+// RatingCount / CategoryCell / CategoryOthers / BrandName / TagNames）只回答「有哪些商品」，
 // 列表页只用这一段；明细段（Variants / Ratings / CategoryChecks / TagChecks / AutoTags /
 // VariationAttributes …）是某个商品的子资源，详情页与编辑页用。
 //
@@ -134,8 +133,9 @@ func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.C
 		// 归属由规则重算维护，手工改会被下一次重算覆盖，故不提供勾选框。
 		TagChecks: tagChecks,
 		AutoTags:  autoTags,
-		// TagLabel 是**列表列**要的单个值：这个商品挂了哪些标签（手工 + 自动合并的标签名）。
-		TagLabel: tagCellLabel(translateFrom(ctx), tagChecks, autoTags),
+		// TagNames 是**列表列**要的事实：这个商品挂了哪些标签（手工 + 自动合并的标签名）。
+		// 拼接、超量退化与取词都在模板侧（一列回答一个问题，句子归前端）。
+		TagNames: tagCellNames(tagChecks, autoTags),
 
 		// 评分（issue #30 / #33）：明细 + 投影值。**没有评分时 HasRating=false** ——
 		// 空态与「评分 0」是两回事，模板据它给出不同文案。
@@ -457,18 +457,11 @@ func categoryCellLabel(flat []*productdto.CategoryResp, attached []string, prima
 	return "", 0
 }
 
-// tagCellLabel 商品行「标签」列要显示的单个值（一列回答一个问题：这个商品挂什么标签）。
+// tagCellNames 商品行「标签」列的事实：这个商品挂了哪些标签（手工挂载 + 命中规则的自动标签）。
 //
-// 列的是**标签名**（手工挂载的 + 命中规则的自动标签，合并成一个名字列表），
-// 不做「手工 N · 自动 M」那种来源分解 —— 读这一列的人要知道「挂了哪些标签」，
-// 而不是「这些标签里有几个是手工建的」（那是标签管理页的问题）；两个数都是 0 时，
-// 那种分解更是纯噪声。名字多于 maxTagNames 时退化成数量，避免单元格被撑成一屏。
-//
-// tr 是**具名占位符句式**那一档：超量时的词条是「{n} 个」，走 i18n.FillTranslate；
-// 模板注入的 tf 是 TranslateArgs（只认 %s），拿同一个 key 会在页面上渲染成字面的
-// 「{n} 个」。所以这一处保留取词，取词函数从 ctx 拿（translateFrom），不由控制器传进来。
-func tagCellLabel(tr TranslateFunc, tagChecks []productdto.TagCheckRowResp, autoTags []productdto.AutoTagRowResp) string {
-	const maxTagNames = 3
+// 只给名字列表 —— 来源分解（手工 N / 自动 M）不属于这一列要回答的问题，拼接成一句话、
+// 超量时退化成数量、以及按请求语言取词，全部归模板（见 products.html 的标签列）。
+func tagCellNames(tagChecks []productdto.TagCheckRowResp, autoTags []productdto.AutoTagRowResp) []string {
 	names := make([]string, 0, len(tagChecks)+len(autoTags))
 	for _, t := range tagChecks {
 		if !t.Checked || t.Name == "" {
@@ -481,16 +474,7 @@ func tagCellLabel(tr TranslateFunc, tagChecks []productdto.TagCheckRowResp, auto
 			names = append(names, t.Name)
 		}
 	}
-	switch {
-	case len(names) == 0:
-		return ""
-	case len(names) > maxTagNames:
-		// 数量后缀是文案（中文「N 个」/ 英文「N tags」），不是数据：走词条而不是拼中文。
-		return i18n.FillTranslate(tr, productenums.ProductsListTagCount, "{n} 个",
-			map[string]string{"n": strconv.Itoa(len(names))})
-	default:
-		return strings.Join(names, "、")
-	}
+	return names
 }
 
 // productPickOptions 「含空项的下拉」的选项事实：空项给词条（Key + 中文兜底），

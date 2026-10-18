@@ -23,6 +23,7 @@ import (
 	"context"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -172,7 +173,7 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 		// 夹具自检：被比较的字段必须在详情行上非零 —— 否则「两边都空」也会相等。
 		nonEmpty := []struct{ name, value string }{
 			{"PriceMin", want.PriceMin}, {"PriceMax", want.PriceMax},
-			{"BrandName", want.BrandName}, {"TagLabel", want.TagLabel},
+			{"BrandName", want.BrandName}, {"TagNames", strings.Join(want.TagNames, ",")},
 		}
 		if detailView.Detail != nil && detailView.Detail.Type == productmodel.TypeVariant {
 			nonEmpty = append(nonEmpty,
@@ -196,7 +197,7 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 			{"PriceMax", got.PriceMax, want.PriceMax},
 			{"CategoryCell", got.CategoryCell, want.CategoryCell},
 			{"BrandName", got.BrandName, want.BrandName},
-			{"TagLabel", got.TagLabel, want.TagLabel},
+			{"TagNames", strings.Join(got.TagNames, ","), strings.Join(want.TagNames, ",")},
 			{"RatingAvg", got.RatingAvg, want.RatingAvg},
 			{"RatingCount", strconv.Itoa(got.RatingCount), strconv.Itoa(want.RatingCount)},
 		}

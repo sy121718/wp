@@ -10,9 +10,12 @@ package text
 // 所以整页（adminui.Prepare）与片段（本函数）都必须走这里，不能各写一份。
 
 import (
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/templates"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 	"go_wp/pkg/safepath"
 )
@@ -41,6 +44,15 @@ func Inject(c *gin.Context, data map[string]any) map[string]any {
 	// 需要它是因为结论文案带计数（「已删除 %s 个页面。」），而 Go 侧不再拼整句。
 	data["tf"] = func(key, fallback string, args []string) string {
 		return response.ArgsText(c, key, fallback, args)
+	}
+	// tn 是「取词 + {name} 具名占位符填充」：签名 func(key, fallback string, args map[string]any) string。
+	// 英文与中文的语序不同（「{n} 个」/「{n} tags」），具名占位符让词条自己决定位置。
+	data["tn"] = func(key, fallback string, args map[string]any) string {
+		params := make(map[string]string, len(args))
+		for k, v := range args {
+			params[k] = fmt.Sprint(v)
+		}
+		return i18n.FillTranslate(t, key, fallback, params)
 	}
 	data["langs"] = templates.LanguageOptions(lang)
 	data["lang_redirect"] = LangRedirect(c)
