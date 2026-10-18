@@ -1,5 +1,5 @@
 {* admin/page/page_translation_misses.html — 内容缺译报告（U2）。
-   数据（page/inbound/http/page_translations.go 的缺译报告一节（translationMissPageData））：
+   数据（page/inbound/http/page_translations_handle.go 的缺译报告一节（translationMissPageData））：
      t / tf / csrf_token / SelectedProject / Rows（[]translationMissRowView）/ Err（事实：key+兜底）
    分工（页面上也写明，避免把 U1 与 U2 混成一个开关）：
      · 站点级准入（U1）：语言在 sys_i18n 的启用词条数 > 0 才允许启用 —— 拦「语言整体没准备好」；

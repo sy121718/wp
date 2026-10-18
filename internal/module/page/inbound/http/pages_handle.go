@@ -64,7 +64,7 @@ type pagesAdminHandle struct {
 	// 可空：端口未注入时表单不显示蓝图选项，建页照常（blueprintOptions 返回空切片）。
 	blueprints blueprintcontract.BlueprintService
 	// siteIndex 全站可翻译内容索引缓存（跨页面复用提示 + 全站完成度，见
-	// 同模块的 page_translations.go）。
+	// 同模块的 page_translations_handle.go）。
 	siteIndex siteContentIndexCache
 	// contentStore 内容译文读写端口（翻译工作台）。
 	// 为 nil 时按默认实现（pkg/i18n.ContentWriter + 默认数据库）惰性构造；
@@ -343,7 +343,11 @@ func focusProjectID(projects []projectcontract.ProjectResp, want string) (id str
 // 为什么不是 `c.String(400, …)`：那会把用户导航到一块只有一行字的页面上，
 // 抽屉、页壳、他刚填的名称一并丢失。
 func (h *pagesAdminHandle) CreateProject(c *gin.Context) {
-	name := strings.TrimSpace(c.PostForm("name"))
+	req, ok := binding.Form[pagedto.ProjectCreateFormReq](c)
+	if !ok {
+		return
+	}
+	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		pageListJump(c, false, pagesLocalNoticeProjectNameRequired)
 		return
@@ -364,8 +368,12 @@ func (h *pagesAdminHandle) CreateProject(c *gin.Context) {
 //
 // 出口同 CreateProject：原生表单 + 整页提示（取代原先的 303 + ?err=）。
 func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	path := strings.TrimSpace(c.PostForm("draftPath"))
+	req, ok := binding.Form[pagedto.PageCreateFormReq](c)
+	if !ok {
+		return
+	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	path := strings.TrimSpace(req.DraftPath)
 	// 两条必填分开报，不合成一句「项目与页面路径不能为空」：合成句把「没选工程」
 	// 与「没填路径」说成同一件事，而两者的修法完全不同（选择器 vs 输入框）。
 	if projectID == "" {
@@ -388,7 +396,7 @@ func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
 		ContentTargetType: "none",
 		DraftPath:         path,
 		DraftDocument:     json.RawMessage(`{"settings":{"layout":{"mode":"full"}},"root":[]}`),
-		BlueprintID:       strings.TrimSpace(c.PostForm("blueprintId")),
+		BlueprintID:       strings.TrimSpace(req.BlueprintID),
 	}); err != nil {
 		logger.Scene("page").With("projectId", projectID).With("path", path).Error(err, "创建页面失败")
 		pageListJump(c, false, pageErrMsgQuiet(c, err))
@@ -404,7 +412,11 @@ func (h *pagesAdminHandle) CreatePage(c *gin.Context) {
 // （见 service/page_delete.go）。批量删除必须走这同一条路径 —— 单条拒绝 / 批量跳过的
 // 规则都由 service 决定，handler 不另立一套。
 func (h *pagesAdminHandle) DeletePage(c *gin.Context) {
-	id := strings.TrimSpace(c.PostForm("id"))
+	req, ok := binding.Form[pagedto.PageDeleteFormReq](c)
+	if !ok {
+		return
+	}
+	id := strings.TrimSpace(req.ID)
 	if id == "" {
 		pageListJump(c, false, pagesLocalNoticeMissingID)
 		return
@@ -803,7 +815,11 @@ func pageErrorMessage(c *gin.Context, err error) string {
 //
 // HistoryPanel 渲染修订历史列表片段。
 func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
-	pageID := strings.TrimSpace(c.PostForm("pageId"))
+	req, ok := binding.Form[pagedto.PageHistoryRestoreFormReq](c)
+	if !ok {
+		return
+	}
+	pageID := strings.TrimSpace(req.PageID)
 	// Revisions 用空切片而非 nil：Jet 的 len() 不接受 nil（会渲染失败）。
 	// Error 交的是**事实**（key + 中文兜底），取词在片段模板里做 —— 片段不经
 	// adminui.Prepare，所以必须显式补 t / tf（漏了不会报错：模板取到 nil，整片取词变空串）。
@@ -829,8 +845,12 @@ func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 // HistoryRestore 恢复指定修订到草稿（覆盖保存为新修订，由客户端随后整页刷新）。
 func (h *pagesAdminHandle) HistoryRestore(c *gin.Context) {
 	ctx := c.Request.Context()
-	pageID := strings.TrimSpace(c.PostForm("pageId"))
-	version, err := strconv.ParseInt(strings.TrimSpace(c.PostForm("version")), 10, 64)
+	req, ok := binding.Form[pagedto.PageHistoryRestoreFormReq](c)
+	if !ok {
+		return
+	}
+	pageID := strings.TrimSpace(req.PageID)
+	version, err := strconv.ParseInt(strings.TrimSpace(req.Version), 10, 64)
 	if pageID == "" || err != nil || h.pages == nil {
 		// 消息一律用模块 enums 的 key（pkg/response 按请求语言取词，中英各一条词条），
 		// 不写字面量中文 —— 这里硬编码过「参数错误」，英文后台下是唯一的中文出口。

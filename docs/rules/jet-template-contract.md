@@ -218,7 +218,7 @@ st.blocks / st.context`，但**任何跨 Execute 留在 Runtime 上的自定义�
 `PrepareBare` 两处，code-review-graph `callers_of injectI18n` 实测 2 条），配套出口
 `render.go:51-65` 的 `RenderBare` / `PrepareBareView`。片段侧调用点：`adminui.PrepareBare(` 21 处、
 `PrepareBareView(` 2 处；典型：`product/inbound/http/product_attributes.go:219`/`:432`/`:462`、
-`page/inbound/http/page_schedule.go:192`、`content/inbound/http/content_page.go:546`、
+`page/inbound/http/page_schedule_handle.go:192`、`content/inbound/http/content_page.go:546`、
 `workbench/inbound/http/workbench_page.go:1233`、`ai/inbound/http/ai_page.go:194`。**这部分已完成，本批不再动。**
 
 ### 4.7 并发不串语言怎么验

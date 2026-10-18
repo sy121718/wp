@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	"go_wp/internal/adminui"
+	pubdto "go_wp/internal/module/publication/dto"
 	pubenums "go_wp/internal/module/publication/enums"
 	pubservice "go_wp/internal/module/publication/service"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 
@@ -25,8 +27,13 @@ var pubAuditFailedMsg = adminui.Msg{Key: pubenums.ErrAuditFailed, Fallback: "SEO
 // seoAuditHandler keeps the existing JSON contract while serving HTML only to htmx.
 func seoAuditHandler(run func(context.Context, string) ([]pubservice.AuditIssue, int, error)) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		projectID := strings.TrimSpace(c.PostForm("project"))
+		req, ok := binding.Form[pubdto.SeoAuditReq](c)
+		if !ok {
+			return
+		}
+		projectID := strings.TrimSpace(req.Project)
 		if projectID == "" {
+			// hx-post 带表单、页面直链带查询串：两种来源都接受，字段口径由 DTO 定。
 			projectID = strings.TrimSpace(c.Query("project"))
 		}
 		issues, scanned, err := run(c.Request.Context(), projectID)

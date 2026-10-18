@@ -9,8 +9,8 @@ package pagehttp
 //     之后，回答「这个模块一共暴露了哪些入口」要跨九个文件拼，而路由正是权限点 /
 //     CSRF / Casbin 的对账面：漏看一条的表现不是编译错误，是「接口能删、页面上删不掉」
 //     这类两边都不报错、测试也不红的分叉。
-//     **按功能拆的是控制器**（`pages_handle.go` = 页面本体两面 + 版本历史、`page_translations.go` =
-//     译文三件套、`page_langs.go` / `page_schedule.go` / `page_redirect.go` / `page_site_slot.go` /
+//     **按功能拆的是控制器**（`pages_handle.go` = 页面本体两面 + 版本历史、`page_translations_handle.go` =
+//     译文三件套、`page_langs_handle.go` / `page_schedule_handle.go` / `page_redirect.go` / `page_site_slot_handle.go` /
 //     `page_stale.go` 各一个功能、`page_jump.go` = 共享出口原语；
 //     一个功能一个文件，里面既有页面 handler 也有 JSON 接口 handler），不是路由。
 //

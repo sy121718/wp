@@ -18,8 +18,8 @@ package pagehttp
 //
 // **本文件只放被多个功能共用**的那几件：pageJump 原语、页面列表的回跳（语言面板 / 排定面板 /
 // 翻译工作台写的都是列表页里的东西，回跳目标同一处）、以及错误取词。**每个功能自己的回跳地址、
-// 回跳文字、回执文案放在各自的功能文件里**（page_redirect.go / page_site_slot.go /
-// page_translations.go / pages_handle.go）—— 控制器按功能拆成多个文件
+// 回跳文字、回执文案放在各自的功能文件里**（page_redirect.go / page_site_slot_handle.go /
+// page_translations_handle.go / pages_handle.go）—— 控制器按功能拆成多个文件
 // 的意义就在这里：改重定向的回执不必翻一个装五个功能的杂物箱。
 
 import (

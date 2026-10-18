@@ -85,7 +85,7 @@ const (
 	// HistoryLoadFailed 修订历史面板读取失败（片段里的提示条）。
 	HistoryLoadFailed = "admin.pages.history.loadFailed"
 
-	// —— 语言产出范围面板（page_langs.go）——
+	// —— 语言产出范围面板（page_langs_handle.go）——
 	//
 	// LangRepublished 显式重新发布某语言成功。
 	LangRepublished = "admin.page.langs.republished"
@@ -96,7 +96,7 @@ const (
 	// LangNoteDefault 默认语言不可排除的原因（行内说明）。
 	LangNoteDefault = "admin.page.langs.note.default"
 
-	// —— 系统页面槽位页（page_site_slot.go）——
+	// —— 系统页面槽位页（page_site_slot_handle.go）——
 	//
 	// SiteSlotsTitle 页面标题（页头与回跳链接文字共用同一条词条）。
 	SiteSlotsTitle = "admin.site_slots.title"
@@ -114,7 +114,7 @@ const (
 	// RedirectTitle 页面标题（页头与回跳链接文字共用同一条词条）。
 	RedirectTitle = "admin.redirect.title"
 
-	// —— 翻译工作台与缺译报告（page_translations.go）——
+	// —— 翻译工作台与缺译报告（page_translations_handle.go）——
 	//
 	// TranslationsSaved 保存译文成功（无变更，%s = 写入条数）。
 	TranslationsSaved = "admin.page_translations.saved"

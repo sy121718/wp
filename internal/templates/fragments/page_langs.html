@@ -1,5 +1,5 @@
 {* fragments/page_langs.html — 页面级语言排除面板（迁移 491，HTMX 服务端渲染）
-   数据（由 page/inbound/http/page_langs.go 的 pageLangsPanelData 注入，**全部键总是存在**）：
+   数据（由 page/inbound/http/page_langs_handle.go 的 pageLangsPanelData 注入，**全部键总是存在**）：
      CSRFToken / PageID / Path / Items（[]pageLangRowView）/ Err / Done
    一行 = 一个**站点启用语言**在本页的产出状态。列语义：
      · 语言   —— 完整语言码

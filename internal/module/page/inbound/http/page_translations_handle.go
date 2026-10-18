@@ -1,6 +1,6 @@
 package pagehttp
 
-// page_translations.go — 译文（多语言）这一个业务功能的全部控制器：
+// page_translations_handle.go — 译文（多语言）这一个业务功能的全部控制器：
 // 翻译工作台（页面面）、支撑它的全站 (source_hash, context) 索引、缺译报告（兄弟页）。
 //
 // 为什么三者在一个文件（internal/module/CLAUDE.md §inbound/http「一个文件 = 一个业务功能」）：
@@ -38,6 +38,7 @@ import (
 	pageenums "go_wp/internal/module/page/enums"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
@@ -329,7 +330,11 @@ func (h *pagesAdminHandle) renderTranslationsFailure(c *gin.Context, status int,
 // 见 internal/templates/CLAUDE.md）。
 func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 	ctx := c.Request.Context()
-	pageID := strings.TrimSpace(c.PostForm("pageId"))
+	req, ok := binding.Form[pagedto.PageTranslationsSaveFormReq](c)
+	if !ok {
+		return
+	}
+	pageID := strings.TrimSpace(req.PageID)
 	if pageID == "" {
 		// 缺 pageId 是参数级失败（表单被裁剪 / 手拼提交）：回列表页的整页提示。
 		// 原先是 c.String(400, pageenums.MsgFieldRequired) —— 响应体是 i18n 的 key 本身，
@@ -341,7 +346,7 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 		pageListJump(c, false, pageInternalMsg())
 		return
 	}
-	lang := strings.TrimSpace(c.PostForm("lang"))
+	lang := strings.TrimSpace(req.Lang)
 
 	page, err := h.pageOf(c, pageID)
 	if err != nil {
@@ -354,10 +359,10 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 		return
 	}
 
-	contexts := c.PostFormArray("rowContext")
-	sources := c.PostFormArray("rowSource")
-	hashes := c.PostFormArray("rowHash")
-	targets := c.PostFormArray("rowTarget")
+	contexts := req.RowContext
+	sources := req.RowSource
+	hashes := req.RowHash
+	targets := req.RowTarget
 	if len(contexts) != len(sources) || len(contexts) != len(hashes) || len(contexts) != len(targets) {
 		h.renderTranslationError(c, pageID, lang, translationRowErrors(pageenums.MsgTranslationInvalid))
 		return
@@ -1195,8 +1200,12 @@ func (h *pagesAdminHandle) TranslationMissesPage(c *gin.Context) {
 // 结论走整页提示（成功 1 秒后回报告页）：不再原地重渲报告页 —— 写动作的结论统一
 // 由 shell.RenderJump 呈现（见 page_jump.go）。
 func (h *pagesAdminHandle) TranslationMissCancel(c *gin.Context) {
-	pageID := strings.TrimSpace(c.PostForm("pageId"))
-	lang := strings.TrimSpace(c.PostForm("lang"))
+	req, ok := binding.Form[pagedto.PageLangFormReq](c)
+	if !ok {
+		return
+	}
+	pageID := strings.TrimSpace(req.PageID)
+	lang := strings.TrimSpace(req.Lang)
 	if _, err := h.pages.ExcludePageLang(c.Request.Context(), pageID, lang); err != nil {
 		translationMissJump(c, false, pageErrMsg(c, err))
 		return

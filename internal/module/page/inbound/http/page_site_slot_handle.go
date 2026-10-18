@@ -235,15 +235,19 @@ func siteSlotApplyBindPanel(data gin.H, candidates []pagecontract.PageResp,
 // 表单只表达「这个槽位绑到哪一页」，绑第二次就是把绑定改成另一个页面。
 // 结论走整页提示（成功 1 秒后回本页）—— 不再经 302 + ?ok= / ?err= 回显。
 func (h *siteSlotPageHandle) SiteSlotBind(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	pageID := strings.TrimSpace(c.PostForm("pageId"))
+	req, ok := binding.Form[pagedto.SiteSlotBindFormReq](c)
+	if !ok {
+		return
+	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	pageID := strings.TrimSpace(req.PageID)
 	if pageID == "" {
 		siteSlotJump(c, false, siteSlotMsg(siteSlotNoPageText))
 		return
 	}
 	err := h.pages.BindSiteSlot(c.Request.Context(), &pagecontract.SiteSlotBindReq{
 		ProjectID: projectID,
-		Slot:      strings.TrimSpace(c.PostForm("slot")),
+		Slot:      strings.TrimSpace(req.Slot),
 		PageID:    pageID,
 	})
 	if err != nil {
@@ -258,10 +262,13 @@ func (h *siteSlotPageHandle) SiteSlotBind(c *gin.Context) {
 // 解绑是幂等的（本来没绑也返回成功），也是页面已删那种悬空绑定唯一的收场方式。
 // 结论走整页提示。
 func (h *siteSlotPageHandle) SiteSlotUnbind(c *gin.Context) {
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	req, ok := binding.Form[pagedto.SiteSlotUnbindFormReq](c)
+	if !ok {
+		return
+	}
 	err := h.pages.UnbindSiteSlot(c.Request.Context(), &pagecontract.SiteSlotUnbindReq{
-		ProjectID: projectID,
-		Slot:      strings.TrimSpace(c.PostForm("slot")),
+		ProjectID: strings.TrimSpace(req.ProjectID),
+		Slot:      strings.TrimSpace(req.Slot),
 	})
 	if err != nil {
 		siteSlotJump(c, false, pageErrMsgQuiet(c, err))

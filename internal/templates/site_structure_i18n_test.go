@@ -310,7 +310,7 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 // TestPageTranslationsSingleTableMergedGroups 翻译工作台的「按组件分段的多张表」已合并成一张表，
 // 且「每行的 textarea 与它自己的 3 个 hidden 同处一个 tr、四类字段顺序一致」这个形状被钉住。
 //
-// 为什么必须钉形状（而不是只看渲染成功）：保存端 page_translations.go 的
+// 为什么必须钉形状（而不是只看渲染成功）：保存端 page_translations_handle.go 的
 // SavePageTranslations 按**四个数组的下标**配对（rowContext / rowSource / rowHash / rowTarget），
 // 任一行的控件被拆散（分组行把数据行包起来、hidden 掉到 tr 外、某个字段被条件包裹）都会让长度不等，
 // 于是**整批拒绝**并回带 MsgTranslationInvalid —— 模板层看不出任何异常，用户看到的是「提交数据不完整」。

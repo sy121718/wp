@@ -249,7 +249,7 @@ var txBoundaryAllow = map[string]string{
 	// 候选不是新写出来的：这段编排原本在 inbound/http 的控制器里，扫描器只看 internal/module/*/service，
 	// 下沉之前它根本不在扫描范围内。下沉后照原样落地，写点两处：
 	// ① port.Upsert 写 sys_translation（i18n 包，默认库）；② MarkStaleForI18n 标 pages.stale。
-	"internal/module/product/service/product_translations_page.go#SaveProductTranslations": "可接受（跨模块的派生状态刷新，不是跨行不变量）：两处写在**不同存储边界**上 —— ① 译文落 sys_translation（pkg/i18n 的 ContentWriter，默认库连接），② 页面待重建标记走 page 契约的 MarkStaleForI18n。后者是**自足入口**（自己枚举工程、逐工程在各自的 rls.InProjectScope 事务里提交，见 page/service/page_lang.go），根本没法与外层共用一个事务；它标的是派生状态（pages.stale 一个布尔位），幂等、可重放，写顺序也已按「先落译文、后标重建」摆好 —— 失败只留结构化日志（含 project），不会让译文变成半截（译文要么整批写进去、要么整批被逐行校验挡在门外）。同形的先例就在隔壁：page 模块的翻译工作台（inbound/http/page_translations.go）保存后同样是「译文写入 + MarkStaleForI18n」，只是它还在控制器里、扫描器看不见。真要收口该做的是把这类「保存后扇出重建」统一下沉成 outbox（同 product_invalidation.go 的形态），那是独立一批，不夹在取数下沉里做",
+	"internal/module/product/service/product_translations_page.go#SaveProductTranslations": "可接受（跨模块的派生状态刷新，不是跨行不变量）：两处写在**不同存储边界**上 —— ① 译文落 sys_translation（pkg/i18n 的 ContentWriter，默认库连接），② 页面待重建标记走 page 契约的 MarkStaleForI18n。后者是**自足入口**（自己枚举工程、逐工程在各自的 rls.InProjectScope 事务里提交，见 page/service/page_lang.go），根本没法与外层共用一个事务；它标的是派生状态（pages.stale 一个布尔位），幂等、可重放，写顺序也已按「先落译文、后标重建」摆好 —— 失败只留结构化日志（含 project），不会让译文变成半截（译文要么整批写进去、要么整批被逐行校验挡在门外）。同形的先例就在隔壁：page 模块的翻译工作台（inbound/http/page_translations_handle.go）保存后同样是「译文写入 + MarkStaleForI18n」，只是它还在控制器里、扫描器看不见。真要收口该做的是把这类「保存后扇出重建」统一下沉成 outbox（同 product_invalidation.go 的形态），那是独立一批，不夹在取数下沉里做",
 }
 
 func TestServiceWritePathsHaveTransactionBoundary(t *testing.T) {

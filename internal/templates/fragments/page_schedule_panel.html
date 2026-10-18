@@ -1,5 +1,5 @@
 {* fragments/page_schedule_panel.html — 页面定时上下线面板（PIPE-7，HTMX 服务端渲染）
-   数据（由 page/inbound/http/page_schedule.go 的 schedulePanelData 注入，**全部键总是存在**）：
+   数据（由 page/inbound/http/page_schedule_handle.go 的 schedulePanelData 注入，**全部键总是存在**）：
      t / tf（取词函数，由数据注入）/ CSRFToken / PageID / Path / Items（[]scheduleRowView）/ Err / Done / DefaultAt
    字段全部来自**数据库**（page_schedules），不从页面文档猜 —— 文档里没有「排定」这件事。
    取词：本片段不经 Prepare，t / tf 由数据注入（Go 侧经 adminui.PrepareBare）。

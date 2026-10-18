@@ -140,8 +140,8 @@ module_name/
   handler + 查询 + 视图 + 回填 + 该功能自己的出口/回跳助手；多个功能共用的出口原语单独一个
   `<module>_jump.go`。判据仍是「另一个功能改一处，这个文件要不要跟着改」。
   样板：`page/inbound/http/`（**8 个控制器文件 + 1 个 router**：`pages_handle.go` 页面本体两面 +
-  版本历史、`page_translations.go` 译文三件套、`page_langs.go` / `page_schedule.go` /
-  `page_redirect.go` / `page_site_slot.go` / `page_stale.go` 各一功能、`page_jump.go` 共享出口原语）、
+  版本历史、`page_translations_handle.go` 译文三件套、`page_langs_handle.go` / `page_schedule_handle.go` /
+  `page_redirect.go` / `page_site_slot_handle.go` / `page_stale.go` 各一功能、`page_jump.go` 共享出口原语）、
   `product/inbound/http/`（**10 个控制器文件 + 1 个 router**：`product_page.go` 处理器与文件索引、
   `product_core.go` 商品本体 / `product_attributes.go` 属性 / `product_taxonomy.go` 分类品牌标签 /
   `product_bundle.go` 捆绑 / `product_pricing.go` 定价 / `product_detail_template.go` 详情模板与评分 /

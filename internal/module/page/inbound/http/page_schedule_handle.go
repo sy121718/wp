@@ -228,15 +228,13 @@ func (h *pagesAdminHandle) SchedulePanel(c *gin.Context) {
 
 // ScheduleSet 后台表单排定（form-urlencoded），成功后重新渲染面板片段。
 func (h *pagesAdminHandle) ScheduleSet(c *gin.Context) {
-	pageID := strings.TrimSpace(c.PostForm("pageId"))
-	req := &pagedto.ScheduleSetReq{
-		PageID:       pageID,
-		Lang:         strings.TrimSpace(c.PostForm("lang")),
-		Action:       strings.TrimSpace(c.PostForm("action")),
-		ScheduledAt:  strings.TrimSpace(c.PostForm("scheduledAt")),
-		RedirectPath: strings.TrimSpace(c.PostForm("redirectPath")),
-		CreateBy:     int64(builtin.CurrentUserID(c)),
+	req, ok := binding.Form[pagedto.ScheduleSetReq](c)
+	if !ok {
+		return
 	}
+	// CreateBy 由 handler 填：审计字段不从请求读（见 ScheduleSetReq 的注释）。
+	req.CreateBy = int64(builtin.CurrentUserID(c))
+	pageID := strings.TrimSpace(req.PageID)
 	var errMsg, doneMsg pageMsg
 	if h.pages == nil {
 		errMsg = pageInternalMsg()
@@ -250,8 +248,12 @@ func (h *pagesAdminHandle) ScheduleSet(c *gin.Context) {
 
 // ScheduleCancel 后台表单取消排定。
 func (h *pagesAdminHandle) ScheduleCancel(c *gin.Context) {
-	pageID := strings.TrimSpace(c.PostForm("pageId"))
-	id, perr := strconv.ParseInt(strings.TrimSpace(c.PostForm("id")), 10, 64)
+	req, ok := binding.Form[pagedto.ScheduleCancelFormReq](c)
+	if !ok {
+		return
+	}
+	pageID := strings.TrimSpace(req.PageID)
+	id, perr := strconv.ParseInt(strings.TrimSpace(req.ID), 10, 64)
 	var errMsg, doneMsg pageMsg
 	switch {
 	case h.pages == nil:

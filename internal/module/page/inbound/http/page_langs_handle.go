@@ -15,6 +15,7 @@ import (
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	pageservice "go_wp/internal/module/page/service"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/reqparams"
 )
 
@@ -48,8 +49,12 @@ func (h *pagesAdminHandle) PageLangRestore(c *gin.Context) {
 // 代价写在明处：单语言发布会让这次请求等一次编译。这与既有的「一键发布全部语言」同量级，
 // 不是新引入的行为；将来发布挪到队列 + 进度查询时，这里换成入队即可（面板已有结果槽）。
 func (h *pagesAdminHandle) PageLangRepublish(c *gin.Context) {
-	pageID := strings.TrimSpace(c.PostForm("pageId"))
-	lang := strings.TrimSpace(c.PostForm("lang"))
+	req, ok := binding.Form[pagedto.PageLangFormReq](c)
+	if !ok {
+		return
+	}
+	pageID := strings.TrimSpace(req.PageID)
+	lang := strings.TrimSpace(req.Lang)
 	var errMsg, doneMsg pageMsg
 	if lang == "" {
 		errMsg = pageErrMsg(c, pageservice.ErrInvalidParam)
@@ -70,8 +75,12 @@ func (h *pagesAdminHandle) PageLangRepublish(c *gin.Context) {
 // 不替换目标节点，返回错误码会让运营点了按钮却什么都没发生（面板不刷新、提示也看不到）。
 // 原生表单（禁 JS / 从源码提交）改走整页提示 —— 不能把裸片段当整页返回（与排定面板同一处理）。
 func (h *pagesAdminHandle) applyPageLangChange(c *gin.Context, restore bool) {
-	pageID := strings.TrimSpace(c.PostForm("pageId"))
-	lang := strings.TrimSpace(c.PostForm("lang"))
+	req, ok := binding.Form[pagedto.PageLangFormReq](c)
+	if !ok {
+		return
+	}
+	pageID := strings.TrimSpace(req.PageID)
+	lang := strings.TrimSpace(req.Lang)
 	var err error
 	if restore {
 		err = h.pages.RestorePageLang(c.Request.Context(), pageID, lang)

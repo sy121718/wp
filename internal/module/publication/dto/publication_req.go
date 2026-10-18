@@ -144,3 +144,13 @@ type ReceiptsQueryReq struct {
 	// Limit 单批上限（领取用；统计忽略）。<= 0 视为「不领任何行」。
 	Limit int `json:"limit"`
 }
+
+// SeoAuditReq SEO 体检片段的表单入参。
+//
+// 键是 `project`（前端 hx-vals 的老键名），不是 JSON 契约里的 projectId ——
+// 两者是不同的传输形态，不要合并成一个字段。
+//
+// 绑定失败时 binding.Form 已经写好 400 响应，调用方只 return。
+type SeoAuditReq struct {
+	Project string `form:"project"`
+}
