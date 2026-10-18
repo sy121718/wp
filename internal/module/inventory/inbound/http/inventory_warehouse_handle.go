@@ -160,20 +160,11 @@ func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (
 	for _, w := range rows {
 		item := inventorydto.WarehouseRowResp{
 			ID: w.ID, Code: w.Code, Name: w.Name, Type: w.Type, Status: w.Status,
-			IsDefault: w.IsDefault, Sort: w.Sort,
-			StatusLabel:   statusLabel(tr, w.Status),
-			TypeLabel:     warehouseTypeLabelText(tr, w.Type),
-			HasThirdParty: w.Type == inventoryenums.WarehouseTypeThirdParty,
-		}
-		if w.ThirdParty != nil {
-			item.Provider = w.ThirdParty.Provider
-			item.ExternalCode = w.ThirdParty.ExternalCode
-			item.Address = w.ThirdParty.Address
-			item.Contact = w.ThirdParty.Contact
-			item.AllowsShipping = w.ThirdParty.AllowsShipping
-			item.HasCredential = w.ThirdParty.HasCredential
-			item.CredentialMasked = w.ThirdParty.CredentialMasked
-			item.SecretRef = w.ThirdParty.SecretRef
+			IsDefault:   w.IsDefault,
+			Sort:        w.Sort,
+			StatusLabel: statusLabel(tr, w.Status),
+			TypeLabel:   warehouseTypeLabelText(tr, w.Type),
+			ThirdParty:  w.ThirdParty,
 		}
 		out = append(out, item)
 	}

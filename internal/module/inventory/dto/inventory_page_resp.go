@@ -74,18 +74,15 @@ type WarehouseRowResp struct {
 	IsDefault bool
 	Sort      int
 
-	StatusLabel   string
-	TypeLabel     string
-	HasThirdParty bool
+	StatusLabel string
+	TypeLabel   string
 
-	Provider         string
-	ExternalCode     string
-	Address          string
-	Contact          string
-	AllowsShipping   bool
-	HasCredential    bool
-	CredentialMasked string
-	SecretRef        string
+	// ThirdParty 第三方仓的对接配置（nil = 不是第三方仓）。
+	//
+	// 用接口面那个类型的指针而不是把字段拍平：拍平会让「凭据三件套」在页面 DTO 上出现第二份，
+	// 而它们的安全论证（明文不落库、密文不出接口、只回布尔与掩码）写在 WarehouseThirdPartyResp 上 ——
+	// 两份形状意味着两份论证，改一处不会让另一处报错。
+	ThirdParty *WarehouseThirdPartyResp
 }
 
 // ReasonRowResp 变动原因一行（原因管理页表格与各页的原因下拉共用）。
