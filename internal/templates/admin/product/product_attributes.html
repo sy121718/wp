@@ -109,15 +109,14 @@
            「按钮优先、表单兜底」读属性）。data-list-bulk 是作用域锚点。 *}
         <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <p class="form-hint" data-write-flash-target="product_attributes-bulk" role="status" hidden></p>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete}}{{if len(.Attributes) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
                         data-write-api="/api/product/attribute/bulk-delete" data-write-mode="bulk"
+                        data-write-flash="product_attributes-bulk"
                         data-msg-none-selected="{{tr("admin.product_attributes.bulk.noneSelected", "没有勾选任何属性组，列表未改动。")}}"
-                        data-msg-all-deleted="{{tr("admin.product_attributes.bulkDelete.allDeleted", "已删除 {count} 个属性组。")}}"
-                        data-msg-all-skipped="{{tr("admin.product_attributes.bulkDelete.allSkipped", "{count} 个属性组都未能删除。")}}"
-                        data-msg-partial="{{tr("admin.product_attributes.bulkDelete.partial", "已删除 {deleted} 个属性组，{skipped} 个未能删除。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
                         data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.product_attributes.bulkDelete.refresh", "刷新列表")}}"

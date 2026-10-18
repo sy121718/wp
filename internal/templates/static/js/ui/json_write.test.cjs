@@ -38,17 +38,18 @@ test('receipt partial failure shows each failed item and keeps noop out of reaso
 });
 
 
-test('bulk update and receipt identify customers with identical failure reasons', async () => {
-    for (const outcome of ['update', 'receipt']) {
-        const env = setup({
-            attrs: { 'data-write-api': '/api/customer/bulk-status', 'data-write-mode': 'bulk', 'data-write-outcome': outcome },
-            bulkRows: [{ id: '7', checked: true }, { id: '8', checked: true }],
-            respond: { code: 200, message: 'Partial result', data: { updated: 0, skipped: 2, items: [{ id: 7, message: 'Missing customer' }, { id: 8, message: 'Missing customer' }] } },
-        });
-        env.fire(); await tick();
-        const reasons = env.status.querySelector('[data-write-reasons]');
-        assert.deepEqual(reasons.children.map(item => item.textContent), ['7: Missing customer', '8: Missing customer']);
-    }
+test('receipt 通道：逐条失败原因按 id 列出，noop 不算失败', async () => {
+    // receipt 是**仍有逐条回执**的两条通道之一（另一条是 review）：它的端点一次处理多行、
+    // 每行的结局各自独立（无需解锁 / 客户不存在），所以逐条原因必须显示。
+    const env = setup({
+        attrs: { 'data-write-api': '/api/customer/bulk-unlock', 'data-write-mode': 'bulk', 'data-write-outcome': 'receipt', 'data-msg-refresh': '刷新' },
+        bulkRows: [{ id: '7', checked: true }, { id: '8', checked: true }],
+        respond: { code: 200, message: '部分完成', data: { skipped: 2, items: [{ id: 7, noop: true, message: '无需解锁' }, { id: 8, message: '客户不存在' }] } },
+    });
+    env.fire(); await tick();
+    const reasons = env.status.querySelector('[data-write-reasons]');
+    assert.deepEqual(reasons.children.map((item) => item.textContent), ['8: 客户不存在'], 'noop 不列进失败原因');
+    assert.equal(env.calls.reload, 0, 'receipt 通道就地给回执，不刷新');
 });
 
 test('customer template submits numeric status and unlock payloads', async () => {
@@ -590,40 +591,25 @@ test('bulk：ids-scope 指向不存在的选择器时退回本表单，不发空
     assert.deepEqual(env.requests[0].body.ids, ['p9']);
 });
 
-test('bulk 去重保序后提交，成功按服务端结果移除行并给出计数、原因与刷新入口', async () => {
+test('bulk 去重保序后提交；成功后只认服务端结论并整页刷新', async () => {
     const env = setup({
-        attrs: {
-            'data-write-api': '/api/block/bulk-delete', 'data-write-mode': 'bulk',
-            'data-msg-all-deleted': '已删除 {count} 个块。',
-            'data-msg-partial': '已删除 {deleted} 个，{skipped} 个未能删除（被引用的全局块需先解除引用）。',
-            'data-msg-refresh': '刷新列表',
-        },
+        attrs: { 'data-write-api': '/api/product/bulk-delete', 'data-write-mode': 'bulk', 'data-write-flash': 'bulk-ok' },
         bulkRows: [
-            { id: 'b1', checked: true, attrs: { 'data-write-row-name': '页眉' } },
-            { id: 'b1', checked: true, attrs: { 'data-write-row-name': '页眉' } },   // 重复勾选（同 id 两行）
-            { id: 'b2', checked: true, attrs: { 'data-write-row-name': '页脚' } },
-            { id: 'b3', checked: false, attrs: { 'data-write-row-name': '未勾选' } },
+            { id: 'b1', checked: true },
+            { id: 'b1', checked: true },   // 重复勾选（同 id 两行）
+            { id: 'b2', checked: true },
+            { id: 'b3', checked: false },
         ],
-        respond: {
-            code: 200,
-            data: {
-                deleted: 1, skipped: 1,
-                items: [
-                    { id: 'b1', deleted: true },
-                    { id: 'b2', deleted: false, message: '该区块仍被引用：页面 #42' },
-                ],
-            },
-        },
+        respond: { code: 200, message: '已删除 2 个商品。', data: { done: 2 } },
     });
     env.fire();
     await tick();
     assert.deepEqual(env.requests[0].body, { ids: ['b1', 'b2'] }, '去重保序：重复 id 只提交一次');
-    assert.match(env.status.textContent, /已删除 1 个，1 个未能删除/);
-    const rendered = env.status.children.map((c) => c.textContent).join(' | ');
-    assert.match(rendered, /该区块仍被引用：页面 #42/, '逐条原因要显示出来（否则运营不知道剩下去哪解引用）');
-    assert.equal(env.rows[0].parentNode, null, '成功的行应就地移除');
-    assert.ok(env.rows[2].parentNode, '未勾选 / 未删除的行不能被移除');
-    assert.ok(env.status.querySelector('[data-write-refresh]'), '批量结束要留一个刷新入口，结果不能一闪而过');
+    // 批量 = 整批一个事务：服务端只回一句结论 + 计数（data.done）。前端不推算「跳过几个」，
+    // 也不挑行 —— 哪几行还在、价格是多少只有服务端重算得对。
+    assert.equal(env.calls.reload, 1, '成功后整页刷新');
+    assert.ok(Object.values(env.calls.reloadStore).includes('已删除 2 个商品。'),
+        '结论必须在刷新之前进 flash，否则刷新一落地就没了');
 });
 
 test('bulk 超过 200 条在客户端就被拦下（不发请求），两种占位符形态都要填对', async () => {
@@ -701,13 +687,9 @@ test('破坏性提交：确认前不发请求；确认后恰好发一次并整�
 
 // —— 重复提交（in-flight）：连点两次只发一个请求 ——
 
-test('请求在飞时的重复提交被忽略；结束后锁、aria-busy、按钮状态全部释放', async () => {
+test('请求在飞时的重复提交被忽略；失败解锁后可再提交', async () => {
     const env = setup({
-        attrs: {
-            'data-write-api': '/api/block/bulk-delete', 'data-write-mode': 'bulk',
-            'data-msg-partial': '已删除 {deleted} 个，{skipped} 个未能删除。',
-        },
-        // 两行都勾着：第一笔结束后要留一行没被删掉的，才能验证「锁释放后还能再提交」。
+        attrs: { 'data-write-api': '/api/product/bulk-delete', 'data-write-mode': 'bulk' },
         bulkRows: [{ id: 'b1', checked: true }, { id: 'b2', checked: true }],
         deferFetch: true,
     });
@@ -718,50 +700,57 @@ test('请求在飞时的重复提交被忽略；结束后锁、aria-busy、按�
     assert.equal(env.submit.disabled, true, '在飞期间提交按钮禁用（视觉反馈）');
     assert.equal(env.form.getAttribute('aria-busy'), 'true', '在飞期间表单要标 aria-busy（读屏用户也要知道）');
 
-    // 用户等不及又点了一次（或按了回车）—— 这一次必须被丢掉，而不是变成第二个请求。
     env.fire();
     await tick(2);
     assert.equal(env.requests.length, 1, '请求在飞时重复提交只发一次（按钮禁用拦不住回车提交）');
 
-    env.resolveFetch({
-        code: 200,
-        data: {
-            deleted: 1, skipped: 1,
-            items: [{ id: 'b1', deleted: false, message: '仍被其它页面引用' }, { id: 'b2', deleted: true }],
-        },
-    });
+    // 失败：4xx + JSON。勾选与输入一律不动，只点一句错，并**解锁**（否则此后再也提交不了）。
+    env.resolveFetch({ code: 409, message: '批量操作未执行：其中有条目不能处理（明细见 data.items）。', data: [] });
     await tick();
-    assert.equal(env.submit.disabled, false, '结束后按钮必须恢复可点');
-    assert.equal(env.form.getAttribute('aria-busy'), null, '结束后 aria-busy 必须清掉');
-    assert.match(env.status.textContent, /^已删除 1 个，1 个未能删除。/);
-    assert.match(env.status.textContent, /仍被其它页面引用/, '逐条原因与计数在同一个结果区里');
-    assert.equal(env.rows[1].parentNode, null, '只有服务端确认删掉的行才移除');
+    assert.equal(env.calls.reload, 0, '失败不刷新');
+    assert.match(env.status.textContent, /批量操作未执行/);
+    assert.equal(env.submit.disabled, false, '失败后按钮必须恢复可点');
+    assert.equal(env.form.getAttribute('aria-busy'), null, '失败后 aria-busy 必须清掉');
+    assert.ok(env.rows.every((row) => row.parentNode && row.children[0].checked), '失败时勾选原样保留');
 
-    // 锁真的释放了：下一笔能正常发出去（这一条才是「释放」的验收，只看按钮状态会被骗过）。
     env.fire();
     await tick(2);
     assert.equal(env.requests.length, 2, '上一笔结束后必须能再次提交');
-    assert.deepEqual(env.requests[1].body, { ids: ['b1'] }, '未删掉的那一行还在，重提只带它');
 });
 
-test('批量逐条失败原因全部列出（截断到 3 条正好会丢掉最需要看的那几条）', async () => {
-    const items = [];
-    for (let i = 1; i <= 5; i += 1) { items.push({ id: 'b' + i, deleted: false, message: '第 ' + i + ' 个块仍被引用：页面 #' + i }); }
+test('批量失败：只显示服务端那一句结论，不刷新、不动勾选', async () => {
     const env = setup({
-        attrs: {
-            'data-write-api': '/api/block/bulk-delete', 'data-write-mode': 'bulk',
-            'data-msg-all-skipped': '没有块被删除（{skipped} 个未能删除）。',
+        attrs: { 'data-write-api': '/api/product/bulk-delete', 'data-write-mode': 'bulk' },
+        bulkRows: [{ id: 'b1', checked: true }, { id: 'b2', checked: true }],
+        respond: {
+            code: 409,
+            message: '批量操作未执行：其中有条目不能处理（明细见 data.items）。',
+            data: [{ id: 'b2', name: '亚麻衬衫', message: '仍有库存，不能删除' }],
         },
-        bulkRows: items.map((it) => ({ id: it.id, checked: true })),
-        respond: { code: 200, data: { deleted: 0, skipped: 5, items: items } },
     });
     env.fire();
     await tick();
-    const reasons = env.status.querySelector('[data-write-reasons]');
-    assert.ok(reasons, '逐条原因要有自己的容器（不能和计数挤成一行）');
-    assert.equal(reasons.children.length, 5, '5 条失败原因必须全部列出');
-    assert.ok(!env.status.textContent.includes('…'), '不许用省略号吞掉原因');
-    assert.match(env.status.textContent, /页面 #5/, '最后一条也要在（截断时丢掉的恰好是它）');
+    assert.equal(env.calls.reload, 0);
+    assert.match(env.status.textContent, /批量操作未执行/);
+    assert.equal(env.status.querySelector('[data-write-reasons]'), null,
+        '没有逐条回执可渲染：整批被拒时明细在 data.items 里，结果区只给那一句结论');
+    assert.ok(env.rows.every((row) => row.parentNode && row.children[0].checked),
+        '失败时勾选原样保留 —— 用户去掉那一条再试');
+});
+
+test('未声明 data-write-flash 的批量表单：结论就地显示 + 刷新入口，不立刻刷新', async () => {
+    // 没声明 flash 就没地方放结论，直接刷新等于用户什么都没看到。
+    const env = setup({
+        attrs: { 'data-write-api': '/api/block/bulk-delete', 'data-write-mode': 'bulk', 'data-msg-refresh': '刷新列表' },
+        bulkRows: [{ id: 'b1', checked: true }],
+        respond: { code: 200, message: '已删除 1 个块。', data: { done: 1 } },
+    });
+    env.fire();
+    await tick();
+    assert.equal(env.calls.reload, 0, '没有 flash 落点时不许把结论刷掉');
+    assert.equal(env.status.textContent.indexOf('已删除 1 个块。'), 0, '结论用服务端那一句');
+    assert.ok(env.status.querySelector('[data-write-refresh]'), '留一个刷新入口，让用户自己看最新数据');
+    assert.equal(env.form.getAttribute('aria-busy'), null, '结束后必须解锁');
 });
 
 test('本地拦下（一条没勾选）之后表单不能卡在「提交中」', async () => {
@@ -812,93 +801,56 @@ test('混合表单：没有声明端点的按钮与回车提交都保持原生�
     assert.equal(env.requests.length, 0);
 });
 
-test('多动作表单：按钮级声明覆盖表单级，各按钮发自己的端点与结果口径', async () => {
-    const env = setup({
-        attrs: {
-            'data-write-api': '/api/mail/contact/delete', 'data-write-mode': 'bulk',
-            'data-msg-all-deleted': '已删除 {count} 位联系人。',
-            'data-msg-refresh': '刷新列表',
-        },
+test('多动作表单：按钮级声明覆盖表单级，各按钮发自己的端点与额外字段', async () => {
+    const attrs = {
+        'data-write-api': '/api/mail/contact/delete', 'data-write-mode': 'bulk', 'data-write-flash': 'bulk-ok',
+    };
+    const shared = {
+        attrs,
         createFields: [{ name: 'add', value: 'vip' }],
         bulkRows: [{ id: 'c1', checked: true }, { id: 'c2', checked: true }],
         buttons: [
             { attrs: { formaction: '/admin/mail/contacts/bulk-status' } },
-            {
-                attrs: {
-                    'data-write-api': '/api/mail/contact/tag', 'data-write-outcome': 'update',
-                    'data-write-extra': 'add', 'data-msg-all-updated': '已为 {count} 位联系人更新标签。',
-                },
-            },
+            { attrs: { 'data-write-api': '/api/mail/contact/tag', 'data-write-outcome': 'update', 'data-write-extra': 'add' } },
         ],
-        respond: (req) => (req.url.indexOf('/tag') >= 0
-            ? { code: 200, data: { updated: 2, skipped: 0, items: [] } }
-            : { code: 200, data: { deleted: 2, skipped: 0, items: [{ id: 'c1', deleted: true }, { id: 'c2', deleted: true }] } }),
-    });
+        respond: { code: 200, message: '已处理 2 位联系人。', data: { done: 2 } },
+    };
 
-    // 打标签：用按钮自己的端点、自己的 outcome 与自己的文案，额外参数按名带上。
-    env.fireWith(env.buttons[1]);
+    // 打标签：按钮自己的端点、自己的 outcome、自己的额外参数。
+    const tagged = setup(shared);
+    tagged.fireWith(tagged.buttons[1]);
     await tick();
-    assert.equal(env.requests.length, 1);
-    assert.equal(env.requests[0].url, '/api/mail/contact/tag', '按钮级 data-write-api 覆盖表单级');
-    assert.deepEqual(env.requests[0].body, { add: 'vip', ids: ['c1', 'c2'] });
-    assert.equal(env.status.textContent.indexOf('已为 2 位联系人更新标签。'), 0, '摘要句用按钮级文案');
-    assert.ok(env.rows[0].parentNode && env.rows[1].parentNode, 'update 不是破坏性动作：一行都不许移除');
+    assert.equal(tagged.requests.length, 1);
+    assert.equal(tagged.requests[0].url, '/api/mail/contact/tag', '按钮级 data-write-api 覆盖表单级');
+    assert.deepEqual(tagged.requests[0].body, { add: 'vip', ids: ['c1', 'c2'] });
+    assert.equal(tagged.calls.reload, 1, '成功一律整页刷新（行还在不在由服务端决定）');
+    assert.ok(Object.values(tagged.calls.reloadStore).includes('已处理 2 位联系人。'));
 
-    // 默认提交按钮没有声明 → 回落表单级（删除），这是表单级作为「默认值」的验收。
-    env.fire();
+    // 默认提交按钮没有声明 → 回落表单级（删除）。成功后页面已走，所以另起一个环境。
+    const deleted = setup(shared);
+    deleted.fire();
     await tick();
-    assert.equal(env.requests.length, 2);
-    assert.equal(env.requests[1].url, '/api/mail/contact/delete');
-    assert.equal(env.status.textContent.indexOf('已删除 2 位联系人。'), 0, '回落表单级文案');
-    assert.equal(env.rows[0].parentNode, null, '删除口径下成功条目才移除行');
+    assert.equal(deleted.requests.length, 1);
+    assert.equal(deleted.requests[0].url, '/api/mail/contact/delete', '默认按钮回落表单级');
+    assert.deepEqual(deleted.requests[0].body, { ids: ['c1', 'c2'] }, '表单级没有 data-write-extra：只发 ids');
 });
 
-test('outcome=update：计数读 data.updated、逐条原因按 updated 判、缺 all-updated 时不给句子（不回落 all-deleted）', async () => {
-    const partial = setup({
+test('outcome=update：成功后同样只认服务端结论并整页刷新', async () => {
+    const env = setup({
         attrs: {
             'data-write-api': '/api/mail/contact/tag', 'data-write-mode': 'bulk', 'data-write-outcome': 'update',
             'data-write-extra': 'add',
-            'data-msg-partial': '已为 {updated} 位更新标签，{skipped} 位未能更新：',
-            'data-msg-all-skipped': '{count} 位都没有更新。',
+            'data-write-flash': 'bulk-ok',
         },
         createFields: [{ name: 'add', value: 'vip' }],
-        bulkRows: [{ id: 'c1', checked: true }, { id: 'c2', checked: true }, { id: 'c3', checked: true }],
-        respond: {
-            code: 200,
-            data: {
-                updated: 2, skipped: 1,
-                items: [
-                    { id: 'c1', updated: true },
-                    { id: 'c2', updated: true },
-                    { id: 'c3', updated: false, message: '联系人不存在' },
-                ],
-            },
-        },
+        bulkRows: [{ id: 'c1', checked: true }, { id: 'c2', checked: true }],
+        respond: { code: 200, message: '已为 2 位联系人更新标签。', data: { done: 2 } },
     });
-    partial.fire();
+    env.fire();
     await tick();
-    assert.equal(partial.status.textContent.indexOf('已为 2 位更新标签，1 位未能更新：'), 0, '计数必须读 data.updated（读 deleted 会显示 0）');
-    assert.match(partial.status.textContent, /联系人不存在/, '逐条原因按 items[].updated 判');
-    assert.ok(partial.rows.every((r) => r.parentNode), 'update 成功后任何一行都不移除');
-
-    // 缺 data-msg-all-updated：**不给句子**，也不许回落到 all-deleted。
-    // 打标签成功显示「已删除 N 位」会让操作者以为人没了，刷新才发现还在 —— 这是本属性
-    //（data-write-outcome）存在的全部理由，所以回落在这里等于把属性本身废掉。
-    const noSentence = setup({
-        attrs: {
-            'data-write-api': '/api/mail/contact/tag', 'data-write-mode': 'bulk', 'data-write-outcome': 'update',
-            'data-msg-all-deleted': '已删除 {count} 位（回落句）。',
-            'data-msg-refresh': '刷新列表',
-        },
-        bulkRows: [{ id: 'c1', checked: true }],
-        respond: { code: 200, data: { updated: 1, skipped: 0, items: [{ id: 'c1', updated: true }] } },
-    });
-    noSentence.fire();
-    await tick();
-    assert.equal(noSentence.status.textContent.indexOf('已删除'), -1, '缺 all-updated 时不许回落到 all-deleted');
-    assert.equal(noSentence.status.textContent.indexOf('回落句'), -1, '没有成品句就不给句子');
-    assert.ok(noSentence.status.querySelector('[data-write-refresh]'), '没有句子时刷新入口仍要在（否则结果区空白）');
-    assert.ok(noSentence.rows[0].parentNode, 'update 不移除行');
+    assert.deepEqual(env.requests[0].body, { add: 'vip', ids: ['c1', 'c2'] });
+    assert.equal(env.calls.reload, 1);
+    assert.ok(Object.values(env.calls.reloadStore).includes('已为 2 位联系人更新标签。'));
 });
 
 test('data-write-extra 只发点名字段：ids 与 csrf_token 不可能被覆盖，缺失/未勾选的也不发', async () => {
@@ -1426,19 +1378,17 @@ test('真模板 → payload：navigation_translations.html 整表提交发 rows�
 
 // —— 分支 3b：bulk + outcome=add（来源批量加入菜单） ——
 //
-// outcome 决定「成功计数键」与成品句槽：add 读 data.added 与 data-msg-all-added，
-// **绝不回落 all-deleted** —— 「已加入 3 项」显示成「已删除 3 项」正是这一档存在的理由。
-// 加入菜单是非破坏动作：服务端结果里即使每条都 added=true，也一**行都不许移除**。
+// 批量只有两种结局：整批成功（服务端给一句 message + 计数，前端存 flash 后整页刷新）
+// 与整批失败（4xx + JSON，勾选原样保留）。所以这里不再有「成功计数键」「部分成功成品句」，
+// outcome 只用来区分 review / receipt 两条仍有逐条回执的通道。
 
-test('outcome=add：计数读 data.added、摘要走 all-added 槽、且不移除任何行', async () => {
+test('outcome=add：额外字段按名带上，成功后整页刷新（不挑行、不读计数键）', async () => {
     const env = setup({
         attrs: {
             'data-write-api': '/api/navigation/create', 'data-write-mode': 'bulk',
             'data-write-outcome': 'add',
             'data-write-extra': 'action,projectId,kind,sourceType',
-            'data-msg-all-added': '已加入 {count} 项。',
-            'data-msg-all-deleted': '已删除 {count} 项。',   // 在场也不该被用（防回落）
-            'data-msg-refresh': '刷新列表',
+            'data-write-flash': 'bulk-ok',
         },
         createFields: [
             { name: 'action', value: 'addSource' },
@@ -1451,13 +1401,7 @@ test('outcome=add：计数读 data.added、摘要走 all-added 槽、且不移�
             { id: 'pg-2', checked: true },
             { id: 'pg-3', checked: false },
         ],
-        respond: {
-            code: 200,
-            data: {
-                added: 2, skipped: 0,
-                items: [{ id: 'pg-1', added: true }, { id: 'pg-2', added: true }],
-            },
-        },
+        respond: { code: 200, message: '已加入 2 项。', data: { done: 2 } },
     });
     env.fire();
     await tick();
@@ -1465,62 +1409,8 @@ test('outcome=add：计数读 data.added、摘要走 all-added 槽、且不移�
         action: 'addSource', projectId: 'p-1', kind: 'header', sourceType: 'page',
         ids: ['pg-1', 'pg-2'],
     }, '批量档：extra 点名的字段 + 恒为 ids 的批量主体（后写，不被覆盖）');
-    assert.equal(env.status.textContent.indexOf('已加入 2 项。'), 0, '摘要必须用 all-added 槽，而不是「已删除」');
-    assert.ok(!env.status.textContent.includes('已删除'), '哪怕 all-deleted 槽在场也不许回落');
-    assert.ok(env.rows[0].parentNode && env.rows[1].parentNode, 'add 是非破坏动作：行不能被移除');
-    assert.ok(env.status.querySelector('[data-write-refresh]'), '不自动刷新，留一个刷新的入口');
-});
-
-test('outcome=add 部分成功：{added}/{skipped} 都填对，逐条原因全部列出', async () => {
-    const env = setup({
-        attrs: {
-            'data-write-api': '/api/navigation/create', 'data-write-mode': 'bulk',
-            'data-write-outcome': 'add',
-            'data-msg-partial': '已加入 {added} 项，{skipped} 项未能加入。',
-        },
-        bulkRows: [{ id: 'pg-1', checked: true }, { id: 'pg-2', checked: true }, { id: 'pg-4', checked: true }],
-        respond: {
-            code: 200,
-            data: {
-                added: 1, skipped: 2,
-                items: [
-                    { id: 'pg-1', added: true },
-                    { id: 'pg-2', added: false, message: '（暂无公开路径，先发布后再添加）' },
-                    { id: 'pg-4', added: false, message: '请求资源不存在' },
-                ],
-            },
-        },
-    });
-    env.fire();
-    await tick();
-    assert.equal(env.status.textContent.indexOf('已加入 1 项，2 项未能加入。'), 0,
-        '计数必须同时读 added 与 skipped（读 deleted 会显示 0）');
-    assert.match(env.status.textContent, /暂无公开路径/, '逐条原因要显示出来（否则运营不知道哪几条没进菜单）');
-    assert.match(env.status.textContent, /请求资源不存在/);
-});
-
-test('outcome=add 全部被跳过：走 all-skipped 槽且 {count} 填的是总条数', async () => {
-    const env = setup({
-        attrs: {
-            'data-write-api': '/api/navigation/create', 'data-write-mode': 'bulk',
-            'data-write-outcome': 'add',
-            'data-msg-all-skipped': '{count} 项都未能加入，菜单未改动。',
-        },
-        bulkRows: [{ id: 'pg-2', checked: true }, { id: 'pg-4', checked: true }],
-        respond: {
-            code: 200,
-            data: {
-                added: 0, skipped: 2,
-                items: [
-                    { id: 'pg-2', added: false, message: '（暂无公开路径，先发布后再添加）' },
-                    { id: 'pg-4', added: false, message: '请求资源不存在' },
-                ],
-            },
-        },
-    });
-    env.fire();
-    await tick();
-    assert.equal(env.status.textContent.indexOf('2 项都未能加入，菜单未改动。'), 0);
+    assert.equal(env.calls.reload, 1);
+    assert.ok(Object.values(env.calls.reloadStore).includes('已加入 2 项。'));
 });
 
 test('outcome=add 一条都没勾：用 none-selected 槽就地提示，不发请求', async () => {
@@ -1537,25 +1427,6 @@ test('outcome=add 一条都没勾：用 none-selected 槽就地提示，不发�
     await tick();
     assert.equal(env.requests.length, 0, '本地就能判定的空批量不该发请求');
     assert.equal(env.status.textContent, '请至少勾选一项要加入菜单的内容。');
-});
-
-test('outcome=add 缺 all-added 槽时不给句子（宁可少说，也不回落成「已删除」）', async () => {
-    const env = setup({
-        attrs: {
-            'data-write-api': '/api/navigation/create', 'data-write-mode': 'bulk',
-            'data-write-outcome': 'add',
-            'data-msg-all-deleted': '已删除 {count} 项。',   // 唯一的成品句是「删除」口径
-            'data-msg-refresh': '刷新列表',
-        },
-        bulkRows: [{ id: 'pg-1', checked: true }],
-        respond: { code: 200, data: { added: 1, skipped: 0, items: [{ id: 'pg-1', added: true }] } },
-    });
-    env.fire();
-    await tick();
-    // 结果区只剩刷新入口的文字（textContent 会拼上按钮文本）：关键是**没有**「已删除」那句。
-    assert.equal(env.status.textContent, '刷新列表', '非破坏动作缺自己的成品句时不许借用删除的句子');
-    assert.ok(!env.status.textContent.includes('已删除'));
-    assert.ok(env.status.querySelector('[data-write-refresh]'), '结果区仍要留刷新入口，不能什么都不显示');
 });
 
 test('data-write-bool：点名的字段按布尔发（create 档），未勾选的不进 body，没点名的原样发字符串', async () => {

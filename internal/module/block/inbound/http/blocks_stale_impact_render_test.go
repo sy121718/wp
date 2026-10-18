@@ -143,7 +143,7 @@ func TestBlocksListKeepsSelectionAndDeleteWiring(t *testing.T) {
 		// 勾选框所在的批量表单：现在是「JSON 写表单」声明（前一版是页面 POST 的 action，
 		// 工程筛选不再进 action —— 批量只发 ids，结果由前端按当前 URL 刷新）。
 		`data-write-api="/api/block/bulk-delete"`, `data-write-mode="bulk"`,
-		`data-msg-none-selected`, `data-msg-partial`, `data-msg-refresh`,
+		`data-msg-none-selected`, `data-write-status`,
 		`name="ids"`, "data-check-item", "data-bulk-bar", "data-bulk-count",
 		"data-filter-input", "data-filter-text", "data-filter-empty",
 	} {

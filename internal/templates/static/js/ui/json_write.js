@@ -923,58 +923,18 @@
         lock(form, submitter, false);
     }
 
-    // okKeyOf 服务端结果里的「成功」计数键：删除是 data.deleted，非破坏动作是 data.updated
-    // 或 data.added（来源批量加入：加进菜单的两件不同的事 —— 加与删不能共用计数键，
-    // 否则「已加入 3 项」会被读成「已删除 3 项」）。
-    function okKeyOf(outcome) {
-        if (outcome === 'update') { return 'updated'; }
-        if (outcome === 'add') { return 'added'; }
-        return 'deleted';
-    }
-
-    // summaryText 拼摘要句：计数按 outcome 的口径读，文案里的 {deleted}/{updated}/{added}/{count}/{skipped}
-    // 都填同一个「成功数」——模板写 {count} 或 {deleted} 都行，两种写法在各页都出现过。
-    function summaryText(form, submitter, data, okKey) {
-        var ok = Number(data && data[okKey]) || 0;
-        var skipped = Number(data && data.skipped) || 0;
-        var params = { deleted: ok, updated: ok, added: ok, skipped: skipped, count: ok + skipped };
-        if (ok === 0 && skipped === 0) { return attrMsg(form, submitter, 'none-selected'); }
-        if (skipped === 0) {
-            // 非破坏动作只认自己的成品句：缺 data-msg-all-updated / data-msg-all-added 时
-            // **不给句子**（setStatus 只渲染逐条原因与刷新入口），而不是回落到 all-deleted ——
-            // 「成功了」与「把它从列表里删掉」不是同一件事，打标签成功却显示「已删除 N 位」
-            // 正是 data-write-outcome 要分开的东西。
-            var own = okKey === 'updated' ? 'all-updated' : (okKey === 'added' ? 'all-added' : 'all-deleted');
-            return fill(attrMsg(form, submitter, own), params);
-        }
-        if (ok === 0) { return fill(attrMsg(form, submitter, 'all-skipped'), params); }
-        return fill(attrMsg(form, submitter, 'partial'), params);
-    }
-
-    // failReasons 批量里每一条失败的原因：服务端给 `message`（当前请求语言成品句，
-    // 删除被拒时还带引用明细），没有 message 时退回 text / id。
+    // failureLine 逐条失败原因的一行：服务端给 `message`（当前请求语言成品句），
+    // 没有 message 时退回 text / id。
     //
-    // **一条都不省**：曾经只显示前 3 条加一个省略号，被省掉的恰恰是操作者最需要的东西 ——
-    // 「哪几个块没删掉、为什么」。全列不会撑破布局（结果区在页面里本来就可滚动），
-    // 而漏报会让人反复重试同一个必然失败的操作。
+    // 只剩 receipt 通道在用（review / receipt 仍有逐条回执）；批量删除 / 改价已经没有
+    // 逐条回执了 —— 整批被拒时明细在错误的 data.items 里，不在这里渲染。
     function failureLine(item) {
         var reason = String(item.message || item.text || '');
         var id = item.id === undefined || item.id === null ? '' : String(item.id);
         return id && reason ? id + ': ' + reason : (reason || id);
     }
 
-    function failReasons(data, okKey) {
-        var items = (data && data.items) || [];
-        var rows = [];
-        items.forEach(function (item) {
-            if (!item || item[okKey]) { return; }
-            rows.push(failureLine(item));
-        });
-        return { lines: rows, items: items };
-    }
-
     function runBulk(form, submitter, outcome) {
-        var okKey = okKeyOf(outcome);
         var ids = bulkIDs(form, submitter);
         // 本地就能判定的两种情况：给提示即可，但**必须释放提交锁** —— 否则表单会卡在
         // 「正在提交」，用户勾上再点反而没反应（本地返回没有请求，也就没有回调来解锁）。
@@ -1027,22 +987,23 @@
                 finishWrite(form, submitter);
                 return;
             }
-            var reasons = failReasons(data, okKey);
-            // 只有破坏性动作才按服务端结果移除行：update（打标签/改状态）成功后行还在，
-            // 删了会让人以为联系人没了，刷新才发现还在。
-            if (okKey === 'deleted') {
-                // 服务端是唯一的成功真源：按它的结果移除行，而不是按我们发出去的 ids。
-                reasons.items.forEach(function (item) {
-                    if (!item || !item.deleted) { return; }
-                    // 行在 ids 的来源作用域里（跨表单场景下它不在本表单内）。
-                    var row = rowOfID(idsScope(form, submitter), item.id);
-                    if (row && row.parentNode) { row.parentNode.removeChild(row); }
-                });
+            // 整批成功：服务端只回一条结论（message + data.done）。批量是**整批一个事务、
+            // 要么全成、要么全败** —— 没有逐条回执可渲染，也没有「跳过几个」可推算，
+            // 所以这里不拼摘要句。
+            //
+            // 落地方式取决于表单有没有声明 data-write-flash：声明了就把结论先存进
+            // sessionStorage 再整页刷新（行还在不在、价格是多少只有服务端重算得对，
+            // 就地改 DOM 会同源不上）；没声明就没地方放结论，此时留在原地给结论与
+            // 刷新入口 —— 直接刷新会让用户什么都没看到（服务端那一句被刷掉了）。
+            storeFlash(form, submitter, body.message || '');
+            if (attrFrom(form, submitter, 'data-write-flash')) {
+                global.location.reload();
+                return;
             }
-            setStatus(form, summaryText(form, submitter, data, okKey), (Number(data.skipped) || 0) > 0 ? 'error' : 'ok', reasons.lines);
-            var entry = refreshEntry(form, submitter);
-            var box = statusOf(form);
-            if (entry && box) { box.appendChild(entry); }
+            setStatus(form, body.message || '', 'ok');
+            var doneEntry = refreshEntry(form, submitter);
+            var doneBox = statusOf(form);
+            if (doneEntry && doneBox) { doneBox.appendChild(doneEntry); }
             finishWrite(form, submitter);
         }).catch(function () {
             // 网络层失败（断网 / 网关 5xx 落到 HTML）：输入与勾选一律不动，只点一句错。

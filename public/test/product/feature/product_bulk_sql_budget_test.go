@@ -234,7 +234,7 @@ func TestBulkOperationSQLBudget(t *testing.T) {
 				if err != nil {
 					t.Fatalf("批量删除商品失败：%v", err)
 				}
-				return res.Succeeded
+				return res.Done
 			},
 			loop: func(t *testing.T, id, projectID string) {
 				if err := f.svc.Delete(ctx, &productdto.DeleteReq{ID: id, ProjectID: projectID}); err != nil {
@@ -250,7 +250,7 @@ func TestBulkOperationSQLBudget(t *testing.T) {
 				if err != nil {
 					t.Fatalf("批量删除分类失败：%v", err)
 				}
-				return res.Succeeded
+				return res.Done
 			},
 			loop: func(t *testing.T, id, projectID string) {
 				if err := f.svc.DeleteCategory(ctx, &productdto.DeleteCategoryReq{ID: id, ProjectID: projectID}); err != nil {
@@ -266,7 +266,7 @@ func TestBulkOperationSQLBudget(t *testing.T) {
 				if err != nil {
 					t.Fatalf("批量删除品牌失败：%v", err)
 				}
-				return res.Succeeded
+				return res.Done
 			},
 			loop: func(t *testing.T, id, projectID string) {
 				if err := f.svc.DeleteBrand(ctx, &productdto.DeleteBrandReq{ID: id, ProjectID: projectID}); err != nil {
@@ -282,7 +282,7 @@ func TestBulkOperationSQLBudget(t *testing.T) {
 				if err != nil {
 					t.Fatalf("批量删除属性失败：%v", err)
 				}
-				return res.Succeeded
+				return res.Done
 			},
 			loop: func(t *testing.T, id, projectID string) {
 				if err := f.svc.DeleteAttribute(ctx, &productdto.DeleteAttributeReq{ID: id, ProjectID: projectID}); err != nil {
@@ -304,7 +304,7 @@ func TestBulkOperationSQLBudget(t *testing.T) {
 				if err != nil {
 					t.Fatalf("批量删除标签失败：%v", err)
 				}
-				return res.Succeeded
+				return res.Done
 			},
 			loop: func(t *testing.T, id, projectID string) {
 				if err := f.svc.DeleteTag(ctx, &productdto.DeleteTagReq{ID: id, ProjectID: projectID}); err != nil {
@@ -331,7 +331,7 @@ func TestBulkOperationSQLBudget(t *testing.T) {
 				if res.ChangedVariants != n {
 					t.Fatalf("批量改价应改动 %d 个变体，实际 %d（%+v）", n, res.ChangedVariants, res)
 				}
-				return res.Succeeded
+				return res.Done
 			},
 			loop: func(t *testing.T, id, projectID string) {
 				rule := pricingBudgetRule()

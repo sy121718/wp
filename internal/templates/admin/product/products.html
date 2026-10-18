@@ -125,15 +125,14 @@
            keyword / status / page 三个隐藏域随旧通道一起去掉：基座只发 data-write-extra
            点名的字段，留着它们永远不会被发送 —— 而且列表筛选由整页刷新自然保留。 *}
         <form data-list-bulk data-write-api="/api/product/bulk-delete" data-write-mode="bulk"
+              data-write-flash="product-list-bulk"
               data-write-extra="projectId"
               data-msg-none-selected="{{tr("admin.products.bulk.noneSelected", "没有勾选任何商品，列表未改动。")}}"
-              data-msg-all-deleted="{{tr("admin.products.bulkResult.allDeleted", "已删除 {count} 个商品及其全部变体。")}}"
-              data-msg-all-skipped="{{tr("admin.products.bulkResult.allSkipped", "{count} 个商品都未能删除，列表未改动。")}}"
-              data-msg-partial="{{tr("admin.products.bulkResult.partial", "已删除 {deleted} 个，{skipped} 个未能删除（可能已被删除或不在本工程）。")}}"
               data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
               data-msg-refresh="{{tr("admin.common.write.refresh", "刷新列表")}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <p class="form-hint badge" data-write-flash-target="product-list-bulk" role="status" hidden></p>
             <p class="form-hint" data-write-status role="status" hidden></p>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete || canUpdate}}{{if len(.Products) > 0}}
@@ -323,17 +322,16 @@
            症状是「点了应用调价什么也没发生」，而提示只会说「没勾选任何项」。 *}
         <form class="form-stack"
               data-write-api="/api/product/bulk-pricing" data-write-mode="bulk"
+              data-write-flash="product-pricing-bulk"
               data-write-outcome="update"
               data-write-ids-scope="[data-list-bulk]"
               data-write-extra="projectId,ruleType,multiplier,amount,margin,rounding,note"
               data-msg-none-selected="{{ .["t"]("admin.products.bulkPricing.noneSelected", "没有勾选任何商品，调价未执行。") }}"
-              data-msg-all-updated="{{ .["t"]("admin.products.bulkPricing.allUpdated", "已按规则改价 {count} 个商品。") }}"
-              data-msg-all-skipped="{{ .["t"]("admin.products.bulkPricing.allSkipped", "{count} 个商品都未能改价，价格未改动。") }}"
-              data-msg-partial="{{ .["t"]("admin.products.bulkPricing.partial", "已改价 {updated} 个，{skipped} 个未能改价（可能已被删除或不在本工程）。") }}"
               data-msg-too-many="{{ .["t"]("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行") }}"
               data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
               data-msg-refresh="{{ .["t"]("admin.common.write.refresh", "刷新列表") }}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <p class="form-hint badge" data-write-flash-target="product-pricing-bulk" role="status" hidden></p>
             <p class="form-hint" data-write-status role="status" hidden></p>
             <p class="hint">{{ .["t"]("admin.products.bulkPricing.scopeHint", "作用范围是列表里勾选的商品：每个商品的全部变体都按同一条规则改价。只想改一部分时，先回列表取消勾选那几个。") }}</p>
             <p class="hint">{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}{{ .["t"]("admin.products.bulkPricing.previewHintLead", "想先看每个 SKU 的「原价 → 新价」，去") }}<a href="/admin/product-pricing?project={{selectedProject}}">{{ .["t"]("admin.product_pricing.title", "定价工具") }}</a>{{ .["t"]("admin.products.bulkPricing.previewHintTail", "页试算（不落库）。") }}</p>

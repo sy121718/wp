@@ -33,6 +33,7 @@ var errStatuses = map[string]int{
 	ErrBundleVariantNotFound:     http.StatusNotFound,
 
 	// —— 409：唯一性 / 被引用 / 状态冲突 ——
+	ErrBulkRejected:         http.StatusConflict,
 	ErrSlugTaken:            http.StatusConflict,
 	ErrSkuTaken:             http.StatusConflict,
 	ErrContainerSKUTaken:    http.StatusConflict,

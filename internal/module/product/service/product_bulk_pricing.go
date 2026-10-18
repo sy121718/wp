@@ -2,22 +2,23 @@ package productservice
 
 // product_bulk_pricing.go — 批量改价用例（task-156，dd.txt §5.1/§5.3/§5.4）。
 //
-// 与另外五个批量删除不同，这一个**必须保留逐商品循环**：一次改价 = 一条 price_adjustments
-// 台账（含逐变体「原价 → 新价」明细）+ 一次按商品的变体留痕；把 N 个商品合并成一条台账，
-// 会让「按商品查调价历史」失去意义，也会让批次的 TargetID 语义含混。
-// dd.txt §5.4 允许这类保留（循环在 service 里、并写明业务原因），但要求**循环外该批量的都批量**：
-//   · 存在性检查：一次 ListProductsByIDs 查回整批（现状是逐条 ApplyPricing 各自查一遍，
-//     不存在的商品也要走完一整次调用才发现）；
-//   · 自动标签重算：整批结束后只跑一次（现状 N 个商品触发 N 次全工程全量重算）。
+// 与另外五个批量删除一样，这一个也**整批一个事务**：勾选的商品要么全改、要么一个都不改。
+// 任何一条不能处理（商品不在了 / 算价失败）就把整批退回，并在 data.items 里列出可定位的条目。
 //
-// 事务语义：每个商品的「写回价格 + 写台账 + 发失效 + 留痕」仍是**一个独立事务**
-//（applyPricingOnce 内部），与改造前逐商品调用完全一致 —— 一条失败不影响其它条。
-// 这里不做「整批一个事务」：改价是不可逆的经营动作，用户要的正是「成功几个、跳过几个」，
-// 而且一次给 200 个商品的价格加行锁会把并发改价彻底串行化。
+// 一条改价 = 一条 price_adjustments 台账（含逐变体「原价 → 新价」明细）+ 一次按商品的变体留痕 ——
+// 这个**按商品的粒度保持不变**：把 N 个商品合并成一条台账会让「按商品查调价历史」失去意义，
+// 也会让批次的 TargetID 语义含混。变的只是事务边界：N 条台账在同一个事务里写。
+//
+// 为什么必须整批：改价是不可逆的经营动作，而「成功 3 个、失败 2 个」留下的是**一半新价、
+// 一半旧价**的商品集合，用户拿到的数字没有任何东西能修回去（判据见 internal/module/CLAUDE.md
+// 「列表页批量操作」）。所以这里没有 skipped、没有逐项回执：成功只回一条结论 + 计数。
+//
+// 循环里该批量的仍然批量：存在性检查一次查回整批，自动标签重算整批只跑一次。
 
 import (
 	"context"
-	"strings"
+
+	"gorm.io/gorm"
 
 	"go_wp/internal/module/product/dto"
 	"go_wp/internal/module/product/enums"
@@ -33,7 +34,7 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkPricingResultResp{BulkResultResp: productdto.BulkResultResp{Requested: len(ids)}}
+	res = &productdto.BulkPricingResultResp{}
 	if len(ids) == 0 {
 		return res, nil
 	}
@@ -46,73 +47,74 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 		return nil, err
 	}
 	present := make(map[string]bool, len(existing))
+	names := make(map[string]string, len(existing))
 	for _, p := range existing {
 		present[p.ID] = true
+		names[p.ID] = p.Name
 	}
-	// 逐条回执：基座按 outcome=update 读 item.updated（与删除读 item.deleted 同形）。
-	res.Items = make([]productdto.BulkItemResp, 0, len(ids))
+	blocked := make([]productdto.BulkBlockedItemResp, 0)
 	for _, id := range ids {
 		if !present[id] {
-			// 商品不存在（或不属于这个工程）：与改造前一致 —— ApplyPricing 会返回
-			// ErrPricingTargetNotFound，控制器把它算进「跳过」。
-			res.Skipped++
-			if res.SkipReasonKey == "" {
-				res.SkipReasonKey = productenums.ErrPricingTargetNotFound
-			}
-			res.Items = append(res.Items, productdto.BulkItemResp{ID: id, ReasonKey: productenums.ErrPricingTargetNotFound})
-			continue
+			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrPricingTargetNotFound))
 		}
+	}
+	if len(blocked) > 0 {
+		return nil, bulkRejected(blocked)
+	}
+	// 先全部算完再写：算价不落库，任何一条算不出来（例如规则参数在这批数据上无解）
+	// 都能在写入之前把整批退回去。
+	plans := make([]*pricingPlan, 0, len(ids))
+	unchanged := 0
+	for _, id := range ids {
 		rule := req.Rule
 		rule.ProjectID = projectID
 		rule.Scope = productenums.PricingScopeProduct
 		rule.TargetID = id
-		ap, aerr := s.applyPricingOnce(ctx, &productdto.PricingApplyReq{
+		plan, perr := s.computePricingPlan(ctx, &productdto.PricingApplyReq{
 			PricingRuleReq: rule, Note: req.Note, OperatorID: req.OperatorID,
 		})
 		switch {
-		case aerr == nil:
-			res.Succeeded++
-			if ap != nil {
-				res.ChangedVariants += ap.ChangedCount
-			}
-			res.Items = append(res.Items, productdto.BulkItemResp{ID: id, Updated: true})
-		case strings.TrimSpace(aerr.Error()) == productenums.ErrPricingNothingChanged:
-			// 本来就在目标价上：不是失败（service 不写空台账），单独计数。
-			// 回执里仍算「改过」—— 否则基座会把这条列进失败原因（它没错，只是无需改动）。
-			res.UnchangedProducts++
-			res.Items = append(res.Items, productdto.BulkItemResp{ID: id, Updated: true})
+		case perr == nil:
+			plans = append(plans, plan)
+			res.ChangedVariants += plan.res.ChangedCount
+		case isPricingNothingChanged(perr):
+			// 本来就在目标价上：不是失败，不写空台账。整批全是这种情况时
+			// 一个事务都不开（见下面的 len(plans) == 0 分支）。
+			unchanged++
+		case pricingUnpriceable(perr):
+			// 「这个商品上没有可改价的变体」（捆绑容器只有容器价）是**这一条不能处理**，
+			// 不是规则整体无解：进 blocked，让报错能定位到具体商品；其它错误（规则参数
+			// 在这批数据上算不出来 / 读库失败）仍然整批退回。
+			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrPricingTargetNotFound))
 		default:
-			res.Skipped++
-			if res.SkipReasonKey == "" {
-				res.SkipReasonKey = bulkSkipReasonKey(aerr)
-			}
-			res.Items = append(res.Items, productdto.BulkItemResp{ID: id, ReasonKey: bulkSkipReasonKey(aerr)})
+			return nil, perr
 		}
 	}
-	// 自动标签重算：整批一次（重算是全工程全量的幂等操作，逐商品重算只是重复劳动）。
-	// 只有真改了价才重算 —— 改造前也是这个时机（一条改动都没有的那次调用早退了）。
-	if res.ChangedVariants > 0 {
+	if len(blocked) > 0 {
+		return nil, bulkRejected(blocked)
+	}
+	if len(plans) > 0 {
+		if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+			return s.writePricingPlansTx(ctx, tx, plans)
+		}); err != nil {
+			return nil, err
+		}
+		s.bumpFragmentCache(ctx, projectID)
+		// 自动标签重算：整批一次（重算是全工程全量的幂等操作，逐商品重算只是重复劳动）。
 		if _, rerr := s.recalcPricingAutoTags(ctx, projectID); rerr != nil {
 			return nil, rerr
 		}
 	}
-	// 注意 Failed 恒为 0：改造前控制器把所有非「无改动」的错误统一算进「跳过 M 个商品」，
-	// 批量用例保持同一个口径 —— 把内部错误从「跳过」里拆出来单独显示会改变用户看到的
-	// 数字，而提示页只有「改价 N 个变体 / 跳过 M 个商品」两个数字。
+	res.Done = len(ids)
+	res.UnchangedProducts = unchanged
 	return res, nil
 }
 
-// bulkSkipReasonKey 从一次跳过里取**业务 key**（enums 常量值），而不是成品串。
+// pricingUnpriceable 这个错是不是「该商品上没有可改价的变体」。
 //
-// 错误形态两种：productenums.Err(key) 与 fmt.Errorf("%w: %s", productenums.Err(key), 明细)（后者见
-// crossProjectRefBlocked）。成品串要按请求语言取词，而取词只在 inbound 有
-// （productErrText）—— 所以 service 只回 key，由 inbound 翻成当前语言的整句。
-func bulkSkipReasonKey(err error) string {
-	if err == nil {
-		return ""
-	}
-	if fact, ok := facing.FactOf(err); ok {
-		return fact.Key
-	}
-	return strings.TrimSpace(err.Error())
+// 判据取 fact.Key（声明处的 key），不比对文案、也不靠错误串包含判断：同一句兜底文案
+// 可能被别的 key 复用，按文案分流在改措辞后必然静默失效。
+func pricingUnpriceable(err error) bool {
+	fact, ok := facing.FactOf(err)
+	return ok && fact.Business && fact.Key == productenums.ErrPricingTargetNotFound
 }

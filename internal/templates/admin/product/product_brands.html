@@ -108,6 +108,7 @@
            csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头（基座跳过同名字段）。 *}
         <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <p class="form-hint" data-write-flash-target="product_brands-bulk" role="status" hidden></p>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete}}{{if len(.Brands) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
@@ -116,10 +117,8 @@
                    批量档**刻意不自动刷新** —— 逐条原因一闪而过就看不完了。 *}
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
                         data-write-api="/api/product/brand/bulk-delete" data-write-mode="bulk"
+                        data-write-flash="product_brands-bulk"
                         data-msg-none-selected="{{tr("admin.product_brands.bulk.noneSelected", "没有勾选任何品牌，列表未改动。")}}"
-                        data-msg-all-deleted="{{tr("admin.product_brands.bulkDelete.allDeleted", "已删除 {count} 个品牌。")}}"
-                        data-msg-all-skipped="{{tr("admin.product_brands.bulkDelete.allSkipped", "{count} 个品牌都未能删除（仍被商品引用）。")}}"
-                        data-msg-partial="{{tr("admin.product_brands.bulkDelete.partial", "已删除 {deleted} 个品牌，{skipped} 个未能删除（仍被商品引用）。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
                         data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.product_brands.bulkDelete.refresh", "刷新列表")}}"

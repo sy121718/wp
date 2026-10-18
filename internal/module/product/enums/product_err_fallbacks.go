@@ -39,6 +39,7 @@ import "go_wp/pkg/facing"
 //	· 没登记的业务 key —— 出口给稳定的一句归口文案并记一条日志，绝不把裸 key 摆到页面上。
 var ProductErrFallbacks = map[string]string{
 	ErrInvalidParam:                  "请求参数无效",
+	ErrBulkRejected:                  "批量操作未执行：其中有条目不能处理（明细见 data.items）。",
 	ErrNotFound:                      "商品或变体不存在",
 	ErrSlugTaken:                     "该 URL 段在本工程已被占用",
 	ErrSkuTaken:                      "该 SKU 编码在本商品下已被占用",

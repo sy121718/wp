@@ -23,8 +23,6 @@ var controllerTranslatePattern = regexp.MustCompile(`text\.MsgText\(|text\.Trans
 //	· 登记项不再命中 → 也失败（登记表退化成注释就没人看它了，与 rawSQLDebtList 同一判据）。
 func TestControllerI18nBoundary(t *testing.T) {
 	allow := map[string]string{
-		"product_bulk_handle.go": "批量结论的成品串：变体保存的复合句（新增/修改/跳过三段分别取词后拼接），" +
-			"模板只拿到拼好的整句（productBulkTextOf）",
 		"product_router.go": "中间件：productTranslateMiddleware 把取词函数放进 Request Context 给 " +
 			"service 用（service 要产出展示文案，语言只有 gin.Context 知道）",
 		"product_translations_handle.go": "具名占位符：i18n.FillTranslate 的 {n} 句式（同上）",

@@ -86,9 +86,6 @@
         {* 批量删除与行内启用共用表单，按钮声明覆盖 API 与写模式；成功刷新保留筛选参数。 *}
         <form data-write-api="/api/contenttemplate/delete" data-write-mode="bulk"
           data-msg-none-selected="{{tr("admin.content.templates.bulk.noneSelected", "请先选择内容模板。")}}"
-          data-msg-all-deleted="{{tr("admin.content.templates.bulk.allDeleted", "已删除 {deleted} 个模板。")}}"
-          data-msg-all-skipped="{{tr("admin.content.templates.bulk.allSkipped", "跳过 {skipped} 个模板。")}}"
-          data-msg-partial="{{tr("admin.content.templates.bulk.partial", "已删除 {deleted} 个，跳过 {skipped} 个模板。")}}"
           data-msg-failed="{{tr("admin.common.write.failed", "操作失败，请稍后重试。")}}"
           data-msg-refresh="{{tr("admin.content.templates.bulk.refresh", "刷新列表")}}"
           data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}">

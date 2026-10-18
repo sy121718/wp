@@ -41,7 +41,7 @@ internal/module/<模块>/
 
 ## 4. 写 inbound/http 与路由自装配
 
-`router.go` 是模块的唯一装配入口：自己创建 model 与 service、拿 `*permission.RouteGroup`、注册路由、返回契约。handler 只做三件事：绑定参数、调 service、输出响应。批量操作必须用 `shell.BulkIDs(c)` 取 id（去空白、去重、有数量上限），逐条走单条路径，单条失败不中断整批，结论按「成功 N / 跳过 M」回带。
+`router.go` 是模块的唯一装配入口：自己创建 model 与 service、拿 `*permission.RouteGroup`、注册路由、返回契约。handler 只做三件事：绑定参数、调 service、输出响应。批量操作必须用 `pkg/binding`（JSON 面）或 `shell.BulkIDs(c)`（页面面）取 id（去空白、去重、有数量上限），并且**整批落在一个事务里：要么全成、要么全败**。任何一条被拒就整批不生效，错误里列出可定位的条目与原因；不返回「成功 N / 跳过 M」这种部分成功回执。
 
 ```go
 func SetupXxxRoutes(rg *permission.RouteGroup, db *gorm.DB, /* 依赖的契约 */) xxxcontract.XxxService {

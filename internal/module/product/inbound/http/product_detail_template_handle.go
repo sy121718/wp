@@ -37,6 +37,17 @@ import (
 //
 // SEO 评分的视图层在 product_score.go（三个实体共用），不在本文件。
 
+// productActionDoneFallback 单条写动作的通用成功回执的中文兜底（key 在
+// productenums.ProductsActionDone）。
+//
+// 不复用 enums 的 MsgCreateSuccess / MsgUpdateSuccess：那几个 key 的值在词条表里是
+// 「Blueprint 创建成功」这类**蓝图域**的句子（058/430 早先 seed），商品页用它会显示成
+// 「Blueprint 创建成功」。这里另起一条商品域 key（登记前走中文兜底）。
+const productActionDoneFallback = "操作已完成"
+
+// productActionDoneMsg 单条写动作（新建 / 修改 / 保存）的成功回执事实。
+var productActionDoneMsg = facing.Msg{Key: productenums.ProductsActionDone, Fallback: productActionDoneFallback}
+
 // 编译期断言：service 用例声明的两个窄端口由本包这两个契约面满足 ——
 // 端口是「评分输入 / 模板编排真正需要什么」的形状，契约改宽改窄时这里先报错。
 var (

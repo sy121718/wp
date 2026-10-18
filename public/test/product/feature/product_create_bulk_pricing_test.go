@@ -229,9 +229,53 @@ func TestProductsBulkPricing(t *testing.T) {
 		t.Fatalf("未勾选应被拒绝并给出可读文案，实际 %d：%q", env.Code, env.Message)
 	}
 
-	rec := postJSON(t, engine, "/api/product/bulk-pricing", map[string]any{
+	// 夹着捆绑容器（没有变体可改价）：整批拒绝 —— 一行都不改，错误里点出是哪个商品。
+	blockedRec := postJSON(t, engine, "/api/product/bulk-pricing", map[string]any{
 		"projectId":  f.projectID,
 		"ids":        []string{p1.ID, p2.ID, bundle.ID},
+		"ruleType":   productenums.PricingRuleCostMultiple,
+		"multiplier": "2",
+		"rounding":   productenums.PricingRoundingNone,
+		"note":       "批量改价：成本翻倍",
+	})
+	benv := decodeJSONEnvelope(t, blockedRec)
+	if benv.Code != http.StatusConflict {
+		t.Fatalf("含不可处理条目应整批拒绝（409），实际 %d：%s", benv.Code, benv.Message)
+	}
+	blockedItems, _ := benv.Data["items"].([]any)
+	seenBundle := false
+	for _, raw := range blockedItems {
+		row, _ := raw.(map[string]any)
+		if id, _ := row["id"].(string); id != bundle.ID {
+			continue
+		}
+		seenBundle = true
+		if msg, _ := row["message"].(string); !strings.Contains(msg, "捆绑容器只有容器价") {
+			t.Fatalf("条目应说清原因，实际 %q", msg)
+		}
+	}
+	if !seenBundle {
+		t.Fatalf("拒绝条目里应点出捆绑容器，items=%v", blockedItems)
+	}
+	// 整批被拒 = 两个本来能改价的商品也一行没改。
+	for _, tc := range []struct {
+		id   string
+		want float64
+		name string
+	}{{p1.ID, price1, "衬衫"}, {p2.ID, price2, "外套"}} {
+		got, serr := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: tc.id})
+		if serr != nil {
+			t.Fatalf("读商品失败: %v", serr)
+		}
+		if got.Variants[0].Price != tc.want {
+			t.Fatalf("整批被拒时 %s 的价格不该被改，实际 %v（原 %v）", tc.name, got.Variants[0].Price, tc.want)
+		}
+	}
+
+	// 只勾能改价的两个：一次改完，回执只有一句结论 + 计数（没有 skipped 桶）。
+	rec := postJSON(t, engine, "/api/product/bulk-pricing", map[string]any{
+		"projectId":  f.projectID,
+		"ids":        []string{p1.ID, p2.ID},
 		"ruleType":   productenums.PricingRuleCostMultiple,
 		"multiplier": "2",
 		"rounding":   productenums.PricingRoundingNone,
@@ -241,20 +285,14 @@ func TestProductsBulkPricing(t *testing.T) {
 	if env.Code != http.StatusOK {
 		t.Fatalf("批量改价应成功，实际 %d：%s", env.Code, env.Message)
 	}
-	// 有跳过就必须说清跳过几个 + 逐条原因（不静默的部分成功）。
-	if got, _ := env.Data["skipped"].(float64); int(got) != 1 {
-		t.Fatalf("应跳过 1 个商品（捆绑容器没有变体），实际 %v（data=%v）", env.Data["skipped"], env.Data)
+	if got, _ := env.Data["done"].(float64); int(got) != 2 {
+		t.Fatalf("done 应为 2，实际 %v（data=%v）", env.Data["done"], env.Data)
 	}
-	items, _ := env.Data["items"].([]any)
-	reasonSeen := false
-	for _, raw := range items {
-		row, _ := raw.(map[string]any)
-		if msg, _ := row["message"].(string); strings.Contains(msg, "捆绑容器只有容器价") {
-			reasonSeen = true
-		}
+	if got, _ := env.Data["changedVariants"].(float64); int(got) != 2 {
+		t.Fatalf("changedVariants 应为 2，实际 %v", env.Data["changedVariants"])
 	}
-	if !reasonSeen {
-		t.Fatalf("逐条回执应带捆绑容器的跳过原因，items=%v", items)
+	if _, ok := env.Data["skipped"]; ok {
+		t.Fatalf("整批或零不该有 skipped 桶，data=%v", env.Data)
 	}
 
 	got1, serr := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: p1.ID})

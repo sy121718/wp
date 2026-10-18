@@ -24,6 +24,7 @@ package productservice
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ import (
 	"go_wp/internal/module/product/dto"
 	"go_wp/internal/module/product/enums"
 	"go_wp/internal/module/product/model"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/rls"
 )
 
@@ -74,7 +76,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkResultResp{Requested: len(ids)}
+	res = &productdto.BulkResultResp{}
 	if len(ids) == 0 {
 		return res, nil
 	}
@@ -91,10 +93,11 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 	if err != nil {
 		return nil, err
 	}
+	names := make(map[string]string, len(rows))
+	for _, e := range rows {
+		names[e.ID] = e.Name
+	}
 	deleted := 0
-	// lockedSet 声明在事务外：提交后还要按它逐条判「这条删没删掉」（逐条回执。
-	// 事务内声明的话，出了闭包就只剩一个总数 —— 而 json_write 基座要的是「哪几条没删掉」）。
-	lockedSet := make(map[string]bool, len(ids))
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := rls.ScopeTx(tx, projectID); serr != nil {
 			return serr
@@ -103,6 +106,23 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 		if lerr != nil {
 			return lerr
 		}
+		// 锁不到的 = 不存在 / 不属于本工程 / 已被并发删掉：**整批不删**。
+		// 逐条提交时这一条会被算进「跳过」，用户拿到的是「成功 49 / 跳过 1」——
+		// 他既不知道是哪一条，也没法只重试那一条。
+		if len(locked) != len(ids) {
+			lockedSet := make(map[string]bool, len(locked))
+			for _, id := range locked {
+				lockedSet[id] = true
+			}
+			blocked := make([]productdto.BulkBlockedItemResp, 0, len(ids)-len(locked))
+			for _, id := range ids {
+				if !lockedSet[id] {
+					blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrNotFound))
+				}
+			}
+			return bulkRejected(blocked)
+		}
+		lockedSet := make(map[string]bool, len(locked))
 		for _, id := range locked {
 			lockedSet[id] = true
 		}
@@ -143,30 +163,36 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 		return nil, err
 	}
 	s.bumpFragmentCache(ctx, projectID)
-	// Succeeded 取**真正删掉的行数**（锁定集合的大小），不拿「读到的行数」反推：
-	// 并发删掉的行不该算成本次的成功项。
-	res.Succeeded = deleted
-	res.Skipped = len(ids) - deleted
-	res.Items = productBulkDeleteItems(ids, lockedSet)
+	// Done 取真正删掉的行数（锁定集合大小，且已校验 == len(ids)）。
+	res.Done = deleted
 	return res, nil
 }
 
-// productBulkDeleteItems 逐条回执：锁到的是删掉了，没锁到的统一回 ErrNotFound。
+// bulkRejected 把「哪几条不能处理」包成整批拒绝的错误。
 //
-// 为什么统一成一个原因而不是细分「不存在 / 跨工程 / 并发已删」：LockProductsTx 只回
-// 「锁到了哪些」，区分不出这三种；要区分就得再查一次，而那个查询与加锁之间的距离
-// 又会让结论重新失效。宁可给一个诚实的粗口径（这条没删掉、它不在本工程或已不在），
-// 也不给一个看起来更精确、实际靠推断的原因。
-func productBulkDeleteItems(ids []string, locked map[string]bool) []productdto.BulkItemResp {
-	items := make([]productdto.BulkItemResp, 0, len(ids))
-	for _, id := range ids {
-		if locked[id] {
-			items = append(items, productdto.BulkItemResp{ID: id, Deleted: true})
-			continue
-		}
-		items = append(items, productdto.BulkItemResp{ID: id, ReasonKey: productenums.ErrNotFound})
+// 状态码 409（冲突）在**声明处**给：一条也不能处理是「当前数据状态不允许这次操作」，
+// 不是参数错（400），也不是内部故障（500）。出口照常读 pkg/facing.StatusOf，不认识这个类型。
+func bulkRejected(items []productdto.BulkBlockedItemResp) error {
+	return &productdto.BulkRejectedError{
+		Err: facing.WithStatus(
+			facing.New(productenums.ErrBulkRejected, productenums.ProductErrFallbacks[productenums.ErrBulkRejected]),
+			http.StatusConflict),
+		Items: items,
 	}
-	return items
+}
+
+// bulkBlocked 一条可定位的拒绝原因。名称拿不到时退 id（uuid 至少能让人去搜）。
+func bulkBlocked(id, name, reasonKey string) productdto.BulkBlockedItemResp {
+	return productdto.BulkBlockedItemResp{ID: id, Name: strings.TrimSpace(name), ReasonKey: reasonKey}
+}
+
+// bulkBlockedNames 整批 id 的「名称表」（拿不到名称的条目留空）。
+func bulkBlockedNames(ids []string, named map[string]string) map[string]string {
+	out := make(map[string]string, len(ids))
+	for _, id := range ids {
+		out[id] = named[id]
+	}
+	return out
 }
 
 // BulkDeleteProductCategories 批量删除分类。
@@ -181,7 +207,7 @@ func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productd
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkResultResp{Requested: len(ids)}
+	res = &productdto.BulkResultResp{}
 	if len(ids) == 0 {
 		return res, nil
 	}
@@ -204,41 +230,48 @@ func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productd
 		return nil, err
 	}
 	present := make(map[string]bool, len(rows))
+	names := make(map[string]string, len(rows))
 	for _, r := range rows {
 		present[r.ID] = true
+		names[r.ID] = r.Name
 	}
-	deletable := make([]string, 0, len(ids))
+	blocked := make([]productdto.BulkBlockedItemResp, 0)
 	for _, id := range ids {
-		if !present[id] || childCounts[id] > 0 || hits[id].Referenced() {
-			res.Skipped++
-			continue
+		switch {
+		case !present[id]:
+			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrNotFound))
+		case childCounts[id] > 0:
+			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrCategoryHasChildren))
+		case hits[id].Referenced():
+			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrCategoryInUse))
 		}
-		deletable = append(deletable, id)
 	}
-	if len(deletable) > 0 {
-		if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-			if serr := rls.ScopeTx(tx, projectID); serr != nil {
-				return serr
-			}
-			n, derr := s.m.DeleteCategoriesTx(ctx, tx, deletable)
-			if derr != nil {
-				return derr
-			}
-			if int(n) != len(deletable) {
-				return fmt.Errorf("product: 批量删除分类的行数对不上：计划 %d，删除 %d", len(deletable), n)
-			}
-			targets := make([]invalidationTarget, 0, len(deletable))
-			for _, id := range deletable {
-				targets = append(targets, invalidationTarget{
-					EntityType: productcontract.EntityTypeCategory, EntityID: id,
-				})
-			}
-			return s.enqueueInvalidationTx(ctx, tx, projectID, targets...)
-		}); err != nil {
-			return nil, err
+	if len(blocked) > 0 {
+		// 任何一条不能删 → **一条都不删**（判据见 internal/module/CLAUDE.md「列表页批量操作」）。
+		return nil, bulkRejected(blocked)
+	}
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
 		}
-		res.Succeeded = len(deletable)
+		n, derr := s.m.DeleteCategoriesTx(ctx, tx, ids)
+		if derr != nil {
+			return derr
+		}
+		if int(n) != len(ids) {
+			return fmt.Errorf("product: 批量删除分类的行数对不上：计划 %d，删除 %d", len(ids), n)
+		}
+		targets := make([]invalidationTarget, 0, len(ids))
+		for _, id := range ids {
+			targets = append(targets, invalidationTarget{
+				EntityType: productcontract.EntityTypeCategory, EntityID: id,
+			})
+		}
+		return s.enqueueInvalidationTx(ctx, tx, projectID, targets...)
+	}); err != nil {
+		return nil, err
 	}
+	res.Done = len(ids)
 	return res, nil
 }
 
@@ -251,7 +284,7 @@ func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.B
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkResultResp{Requested: len(ids)}
+	res = &productdto.BulkResultResp{}
 	if len(ids) == 0 {
 		return res, nil
 	}
@@ -270,41 +303,45 @@ func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.B
 		return nil, err
 	}
 	present := make(map[string]bool, len(rows))
+	names := make(map[string]string, len(rows))
 	for _, r := range rows {
 		present[r.ID] = true
+		names[r.ID] = r.Name
 	}
-	deletable := make([]string, 0, len(ids))
+	blocked := make([]productdto.BulkBlockedItemResp, 0)
 	for _, id := range ids {
-		if !present[id] || hits[id].Referenced() {
-			res.Skipped++
-			continue
+		switch {
+		case !present[id]:
+			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrNotFound))
+		case hits[id].Referenced():
+			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrBrandInUse))
 		}
-		deletable = append(deletable, id)
 	}
-	if len(deletable) > 0 {
-		if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-			if serr := rls.ScopeTx(tx, projectID); serr != nil {
-				return serr
-			}
-			n, derr := s.m.DeleteBrandsTx(ctx, tx, deletable)
-			if derr != nil {
-				return derr
-			}
-			if int(n) != len(deletable) {
-				return fmt.Errorf("product: 批量删除品牌的行数对不上：计划 %d，删除 %d", len(deletable), n)
-			}
-			targets := make([]invalidationTarget, 0, len(deletable))
-			for _, id := range deletable {
-				targets = append(targets, invalidationTarget{
-					EntityType: productcontract.EntityTypeBrand, EntityID: id,
-				})
-			}
-			return s.enqueueInvalidationTx(ctx, tx, projectID, targets...)
-		}); err != nil {
-			return nil, err
+	if len(blocked) > 0 {
+		return nil, bulkRejected(blocked)
+	}
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
 		}
-		res.Succeeded = len(deletable)
+		n, derr := s.m.DeleteBrandsTx(ctx, tx, ids)
+		if derr != nil {
+			return derr
+		}
+		if int(n) != len(ids) {
+			return fmt.Errorf("product: 批量删除品牌的行数对不上：计划 %d，删除 %d", len(ids), n)
+		}
+		targets := make([]invalidationTarget, 0, len(ids))
+		for _, id := range ids {
+			targets = append(targets, invalidationTarget{
+				EntityType: productcontract.EntityTypeBrand, EntityID: id,
+			})
+		}
+		return s.enqueueInvalidationTx(ctx, tx, projectID, targets...)
+	}); err != nil {
+		return nil, err
 	}
+	res.Done = len(ids)
 	return res, nil
 }
 
@@ -317,7 +354,7 @@ func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productd
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkResultResp{Requested: len(ids)}
+	res = &productdto.BulkResultResp{}
 	if len(ids) == 0 {
 		return res, nil
 	}
@@ -336,39 +373,43 @@ func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productd
 		return nil, err
 	}
 	present := make(map[string]bool, len(rows))
+	names := make(map[string]string, len(rows))
 	for _, r := range rows {
 		present[r.ID] = true
+		names[r.ID] = r.Name
 	}
-	deletable := make([]string, 0, len(ids))
+	blocked := make([]productdto.BulkBlockedItemResp, 0)
 	for _, id := range ids {
-		if !present[id] || hits[id].Referenced() {
-			res.Skipped++
-			continue
+		switch {
+		case !present[id]:
+			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrNotFound))
+		case hits[id].Referenced():
+			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrAttrInUse))
 		}
-		deletable = append(deletable, id)
 	}
-	if len(deletable) > 0 {
-		if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-			if serr := rls.ScopeTx(tx, projectID); serr != nil {
-				return serr
-			}
-			n, derr := s.m.DeleteAttributesTx(ctx, tx, deletable)
-			if derr != nil {
-				return derr
-			}
-			if int(n) != len(deletable) {
-				return fmt.Errorf("product: 批量删除属性组的行数对不上：计划 %d，删除 %d", len(deletable), n)
-			}
-			targets := make([]invalidationTarget, 0, len(deletable))
-			for _, id := range deletable {
-				targets = append(targets, attributeInvalidationEntityKey(id))
-			}
-			return s.enqueueInvalidationTx(ctx, tx, projectID, targets...)
-		}); err != nil {
-			return nil, err
+	if len(blocked) > 0 {
+		return nil, bulkRejected(blocked)
+	}
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
 		}
-		res.Succeeded = len(deletable)
+		n, derr := s.m.DeleteAttributesTx(ctx, tx, ids)
+		if derr != nil {
+			return derr
+		}
+		if int(n) != len(ids) {
+			return fmt.Errorf("product: 批量删除属性组的行数对不上：计划 %d，删除 %d", len(ids), n)
+		}
+		targets := make([]invalidationTarget, 0, len(ids))
+		for _, id := range ids {
+			targets = append(targets, attributeInvalidationEntityKey(id))
+		}
+		return s.enqueueInvalidationTx(ctx, tx, projectID, targets...)
+	}); err != nil {
+		return nil, err
 	}
+	res.Done = len(ids)
 	return res, nil
 }
 
@@ -386,7 +427,7 @@ func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.Bul
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	ids := normalizeBulkIDs(req.IDs)
-	res = &productdto.BulkResultResp{Requested: len(ids)}
+	res = &productdto.BulkResultResp{}
 	if len(ids) == 0 {
 		return res, nil
 	}
@@ -405,17 +446,26 @@ func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.Bul
 		return nil, err
 	}
 	owner := make(map[string]string, len(rows))
+	names := make(map[string]string, len(rows))
 	for _, r := range rows {
 		owner[r.ID] = r.ProjectID
+		names[r.ID] = r.Name
 	}
+	blocked := make([]productdto.BulkBlockedItemResp, 0)
 	groups := map[string][]string{}
 	for _, id := range ids {
 		pid, ok := owner[id]
-		if !ok || len(hits[id].Outside(pid)) > 0 {
-			res.Skipped++
-			continue
+		switch {
+		case !ok:
+			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrNotFound))
+		case len(hits[id].Outside(pid)) > 0:
+			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrTagCrossProject))
+		default:
+			groups[pid] = append(groups[pid], id)
 		}
-		groups[pid] = append(groups[pid], id)
+	}
+	if len(blocked) > 0 {
+		return nil, bulkRejected(blocked)
 	}
 	scopes := make([]string, 0, len(groups))
 	for pid := range groups {
@@ -449,13 +499,13 @@ func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.Bul
 				if int(n) != len(gids) {
 					return fmt.Errorf("product: 批量删除标签的行数对不上：计划 %d，删除 %d", len(gids), n)
 				}
-				res.Succeeded += len(gids)
 			}
 			return nil
 		}); err != nil {
 			return nil, err
 		}
 	}
+	res.Done = len(ids)
 	return res, nil
 }
 

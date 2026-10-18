@@ -169,11 +169,17 @@ module_name/
 - 取当前操作人一律用 `builtin.CurrentUserID(c)` / `builtin.CurrentUserIDText(c)`（内部走 `builtin.GetUserID`，
   带类型断言保护 —— 裸断言在类型异常时会把请求打成 500）。只有确实要区分「未登录 → 401」与
   「会话值类型异常 → 500」时才直接读 `c.Get("user_id")`，并写明理由。
-- **列表页批量操作（多选后删除 / 改状态 / 审批）必须成对遵守两条**：
-  · id 一律经 `shell.BulkIDs(c)` 读取，不要直接 `c.PostFormArray("ids")` —— 它负责去空白、去重与数量上限
-  （`MaxBulkIDs`），超限**整批拒绝**并把可展示的原因回带列表页。直接取数组等于把循环次数交给请求方决定。
-  · 逐条走各自的单条路径、**单条失败不中断整批** —— 一条失败就整批回滚会让人以为「一条都没删」然后反复
-  重试；结论按「成功 N / 跳过 M」回带，不允许静默的部分成功。
+- **列表页批量操作（多选后删除 / 改状态 / 审批）只有一条：整批 = 一个事务，要么全成、要么全败。**
+  · id 一律经 `pkg/binding`（JSON 面）或 `shell.BulkIDs(c)`（页面面）归一 —— 去空白、去重、数量上限
+  （`MaxBulkIDs`），超限**整批拒绝**并把「上限 / 本次条数」两个数字给出来。直接取数组等于把循环次数
+  交给请求方决定。
+  · **不许逐条独立提交**：任何一条被拒（不存在 / 被引用 / 仍有库存 / 跨工程）就整批不生效，回执只有
+  一个错误，里面**列出可定位的条目与原因**（哪几个 id、什么原因）。部分成功是数据状态不可解释的根源：
+  用户看到「成功 49 / 跳过 1」时既不知道是哪一条没成，也没法只重试那一条（重试会把 49 条再走一遍），
+  而库里已经是他看不懂的中间态。
+  · 成功只回一句成品 message（+ 计数）：不推算 skipped，不返回逐条 items。
+  · 存量：`page` 的批量删除仍带「成功 N / 跳过 M」（`PagesBulkDeleteOutcome(deleted, skipped)`），
+    改到那个模块时按本条收口；没改到的不动。
 
 ```go
 func SetupXxxRoutes(rg *gin.RouterGroup, db *gorm.DB, ...契约参数) {
@@ -310,11 +316,11 @@ DeptID uint64 `gorm:"column:dept_id" datarule:"label=所属部门;ops=EQ,NEQ,IN,
   · 未知值不要静默吞掉：回落到原值（页面上显示 `plan2` 至少能让人去查）或专门的 unknown 词条，
     并在函数注释里写明这个选择；
   · 控制器里出现「挑文案的 switch」= 走错层，门禁与评审都会打回（见 §inbound/http）。
-  · **按计数选整句**（批量删除报「成功 N / 跳过 M」）用扩展形状
-    `func XxxOutcome(n, m int) Outcome`，`type Outcome struct{ Key, Fallback string; Args []string }` ——
+  · **按计数选整句**（「已删除 N 项」这类）用扩展形状
+    `func XxxOutcome(n int) Outcome`，`type Outcome struct{ Key, Fallback string; Args []string }` ——
     候选句本身是常量，要选的是「哪一条 + 带哪几个计数」；`Args` 一律在 enums 里 strconv，
     控制器只做一次转换（`outcomeMsg`）。样板：`pageenums.PagesBulkDeleteOutcome` /
-    `RedirectBulkDeleteOutcome`（判据 `page_label_enums_test.go` 四分支各一条）。
+    `RedirectBulkDeleteOutcome`（判据 `page_label_enums_test.go` 各分支各一条）。
 - **key 字面量只出现在这里**：控制器、模板之外的 Go 代码引用词条一律走 `enums` 常量
   （老式 `MsgXxx = "MsgXxx"`，新式点分 key 常量组，按文件既有分组写）。
   门禁 `bash scripts/check-controller-i18n-literals.sh`（控制器出现字面量即失败；基线表为空＝终局零容忍）。

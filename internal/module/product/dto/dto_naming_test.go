@@ -36,6 +36,7 @@ var dtoValueObjects = map[string]string{
 	"AttrValueFormRow":   "表单行：属性值行，请求提交与页面回显是同一形状",
 	"FieldKind":          "绑定原语的类型事实（product_form_req.go）",
 	"FieldValueError":    "绑定原语的错误类型（product_form_req.go）",
+	"BulkRejectedError":  "错误包装：整批拒绝时把可定位条目带出 service（既不是入参也不是回执）",
 }
 
 var dtoFileName = regexp.MustCompile(`^[a-z0-9_]+_(req|resp)\.go$`)

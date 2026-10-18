@@ -11,7 +11,10 @@ const (
 	// MsgVariantGenerateSuccess 变体组合生成成功（issue #8）。
 	MsgVariantGenerateSuccess = "MsgVariantGenerateSuccess"
 
-	ErrInvalidParam    = "ErrInvalidParam"    // 参数错误
+	ErrInvalidParam = "ErrInvalidParam" // 参数错误
+	// ErrBulkRejected 批量操作里有条目不能处理：**整批不生效**（明细在错误的 data.items 里，
+	// 逐条给 id / 名称 / 原因 key）。
+	ErrBulkRejected    = "ErrBulkRejected"
 	ErrInvalidType     = "ErrInvalidType"     // 实体类型不合法（构建期字段解析）
 	ErrInvalidField    = "ErrInvalidField"    // 字段不在商品字段白名单内
 	ErrNotFound        = "ErrNotFound"        // 商品或变体不存在

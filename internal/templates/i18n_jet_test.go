@@ -464,7 +464,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		"filter-bar", "table-scroll", "data-table",
 		"site.component.gallery.prev", "Previous",
 		`data-write-api="/api/i18n/save"`, `data-write-mode="bulk"`,
-		"data-msg-all-deleted", "data-msg-refresh", "data-write-status",
+		"data-msg-refresh", "data-write-status",
 		`name="action" value="delete"`, `name="action" value="create"`,
 		"data-requires-js",
 		`data-drawer-open="#tpl-i18n-create"`, "tpl-i18n-create",

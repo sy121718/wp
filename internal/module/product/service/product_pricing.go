@@ -144,7 +144,32 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 //   - 只有**真正发生变化**的变体才写库、才留痕：无改动的行写一遍等于伪造「改动记录」；
 //   - 一条改动都没有时整体报错（ErrPricingNothingChanged），不写空批次 —— 空台账比没有台账更误导；
 //   - 价格写回与留痕在同一事务里（半截状态「改了价却没有记录」是留痕功能的致命伤）。
-func (s *Service) applyPricingOnce(ctx context.Context, req *productdto.PricingApplyReq) (res *productdto.PricingApplyResp, err error) {
+//
+// pricingPlan 一次调价的**计算结果**：算与写分开，批量改价才能把 N 条计算汇总到
+// 一个事务里写。逐条写（事务在循环里）= 第 3 条失败时前 2 条已提交，用户看到的数字
+// 与实际落库不一致，而这种不一致没有任何东西能修回来。
+type pricingPlan struct {
+	projectID    string
+	updated      []*productmodel.VariantEntity
+	changeInputs []*masterdatacontract.ChangeInput
+	adj          *productmodel.PriceAdjustmentEntity
+	items        []*productmodel.PriceAdjustmentItemEntity
+	res          *productdto.PricingApplyResp
+}
+
+// isPricingNothingChanged 判断「本来就在目标价上」。它不是失败：service 不写空台账，
+// 批量入口把它算进 unchanged 而不是 blocked。
+func isPricingNothingChanged(err error) bool {
+	return err != nil && strings.TrimSpace(err.Error()) == productenums.ErrPricingNothingChanged
+}
+
+// computePricingPlan 算价并组装待写清单（不落库、不发失效、不重算标签）。
+//
+// 三个决定性的语义（写在这里是因为它们决定 plan 的形状）：
+//   - 只有**真正发生变化**的变体才进 updated / items：无改动的行写一遍等于伪造「改动记录」；
+//   - 一条改动都没有时返回 ErrPricingNothingChanged，不产出空批次 —— 空台账比没有台账更误导；
+//   - adj / items / updated / changeInputs 在同一 plan 里，写入时必须同事务（见 writePricingPlansTx）。
+func (s *Service) computePricingPlan(ctx context.Context, req *productdto.PricingApplyReq) (*pricingPlan, error) {
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -213,45 +238,75 @@ func (s *Service) applyPricingOnce(ctx context.Context, req *productdto.PricingA
 	for _, it := range items {
 		it.AdjustmentID = adj.ID
 	}
-	// 价格写入与留痕写入是两个聚合：事务边界由 service 决定（model 只提供 tx 透传），
-	// 半截状态（改了价却没有记录）是留痕功能的致命伤，必须原子。
-	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-		if uerr := s.m.SaveVariantsTx(tx, updated, nil); uerr != nil {
+	return &pricingPlan{
+		projectID:    pr.projectID,
+		updated:      updated,
+		changeInputs: changeInputs,
+		adj:          adj,
+		items:        items,
+		res: &productdto.PricingApplyResp{
+			AdjustmentID:  adj.ID,
+			RuleType:      pr.rule.Type,
+			RuleParams:    pr.ruleParams,
+			RuleLabel:     pr.rule.Describe(translateFrom(ctx), pr.ruleParams),
+			Rounding:      pr.rounding,
+			RoundingLabel: describePricingRounding(translateFrom(ctx), pr.rounding),
+			Scope:         pr.scope,
+			ScopeLabel:    describePricingScope(translateFrom(ctx), pr.scope),
+			ProjectID:     pr.projectID,
+			TargetCount:   len(lines),
+			ChangedCount:  counts.changed,
+			SkippedCount:  counts.skipped,
+			Lines:         changedLines,
+		},
+	}, nil
+}
+
+// writePricingPlansTx 把若干 plan 写进**同一个事务**：变体价格、调价台账、失效事件、
+// 逐变体留痕四类写入不可拆（「价已改、审计没记」是留痕功能的致命伤）。
+func (s *Service) writePricingPlansTx(ctx context.Context, tx *gorm.DB, plans []*pricingPlan) error {
+	if len(plans) == 0 {
+		return nil
+	}
+	projectID := plans[0].projectID
+	targets := make([]invalidationTarget, 0, len(plans))
+	changes := make([]*masterdatacontract.ChangeInput, 0, len(plans))
+	for _, plan := range plans {
+		if uerr := s.m.SaveVariantsTx(tx, plan.updated, nil); uerr != nil {
 			return uerr
 		}
-		if cerr := s.m.CreateAdjustmentWithItemsTx(tx, adj, items); cerr != nil {
+		if cerr := s.m.CreateAdjustmentWithItemsTx(tx, plan.adj, plan.items); cerr != nil {
 			return cerr
 		}
-		// 静态产物失效（审计 ARCH-01）：批量改价一次可能覆盖多个商品，逐商品各发一条
-		//（失效目标是商品详情页与商品集合列表页；enqueueInvalidationTx 内部按实体去重）。
-		targets := make([]invalidationTarget, 0, len(updated))
-		for _, uv := range updated {
+		// 静态产物失效（审计 ARCH-01）：逐商品各发一条（enqueueInvalidationTx 内部按实体去重）。
+		for _, uv := range plan.updated {
 			targets = append(targets, productInvalidationTarget(uv.ProductID))
 		}
-		if xerr := s.enqueueInvalidationTx(ctx, tx, pr.projectID, targets...); xerr != nil {
-			return xerr
-		}
-		// issue #19：售价留痕与改价同事务，避免「价已改、审计没记」的半截状态（CQ-026）。
-		return s.recordChangesTx(ctx, tx, changeInputs...)
+		changes = append(changes, plan.changeInputs...)
+	}
+	if xerr := s.enqueueInvalidationTx(ctx, tx, projectID, targets...); xerr != nil {
+		return xerr
+	}
+	// issue #19：售价留痕与改价同事务，避免「价已改、审计没记」的半截状态（CQ-026）。
+	return s.recordChangesTx(ctx, tx, changes...)
+}
+
+// applyPricingOnce 一次调价的完整落库（算价 → 写回 → 留痕 → 失效），**不重算自动标签**。
+//
+// 拆出来只为一件事：让批量用例能把 N 次重算压成一次，同时不复制算价 / 事务 / 台账这份
+// 编排（复制一份就是第二份真相）。调用方负责收尾的重算。
+func (s *Service) applyPricingOnce(ctx context.Context, req *productdto.PricingApplyReq) (res *productdto.PricingApplyResp, err error) {
+	plan, err := s.computePricingPlan(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		return s.writePricingPlansTx(ctx, tx, []*pricingPlan{plan})
 	}); err != nil {
 		return nil, err
 	}
-	s.bumpFragmentCache(ctx, pr.projectID)
-	return &productdto.PricingApplyResp{
-		AdjustmentID:  adj.ID,
-		RuleType:      pr.rule.Type,
-		RuleParams:    pr.ruleParams,
-		RuleLabel:     pr.rule.Describe(translateFrom(ctx), pr.ruleParams),
-		Rounding:      pr.rounding,
-		RoundingLabel: describePricingRounding(translateFrom(ctx), pr.rounding),
-		Scope:         pr.scope,
-		ScopeLabel:    describePricingScope(translateFrom(ctx), pr.scope),
-		ProjectID:     pr.projectID,
-		TargetCount:   len(lines),
-		ChangedCount:  counts.changed,
-		SkippedCount:  counts.skipped,
-		Lines:         changedLines,
-	}, nil
+	s.bumpFragmentCache(ctx, plan.projectID)
+	return plan.res, nil
 }
 
 // ListPricingRuleTypes 内置定价规则清单（后台下拉与参数说明的唯一来源）。

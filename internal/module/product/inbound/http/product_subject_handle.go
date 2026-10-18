@@ -29,6 +29,8 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
 	"go_wp/internal/text"
+	"go_wp/pkg/bulkids"
+	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/money"
@@ -168,64 +170,60 @@ func (h *ProductHandle) BulkDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// 归一口径与其余批量端点同一个纯函数（bulkids.Normalize，经 productBulkIDs）：
-	// 去空白 / 去重 / 上限 MaxIDs，**超限整批拒绝，不静默截断** —— 截断会让操作者
-	// 以为「勾的全删了」。超限回执带「上限 / 本次条数」两个数字（见 productBulkIDs）。
-	ids, ok := productBulkIDs(c, req.IDs)
-	if !ok {
+	// 归一只在 dto 有一份（去空白 / 去空 / 去重 / 上限 200，**超限整批拒绝、不静默截断** ——
+	// 截断会让操作者以为「勾的全删了」）。
+	if err := req.NormalizeIDs(); err != nil {
+		bulkIDsFail(c, err)
 		return
 	}
-	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功）。与批量改价同一判据 —— 这条守卫
-	// 原先只在页面 handler 里，随页面 POST 删除一并搬到这里。
-	if len(ids) == 0 {
+	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功）。与批量改价同一判据。
+	if len(req.IDs) == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
 		return
 	}
-	req.IDs = ids
 	res, err := h.svc.BulkDeleteProducts(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+		bulkWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, productBulkDeletedView(c, res))
+	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, res)
 }
 
-// productBulkItemView 逐条回执的对外形状。键名与 json_write.js 的 failureLine 对齐：
-// 它读 item.message / item.deleted / item.id，少一个就只剩「跳过 N 条」没有原因。
-type productBulkItemView struct {
-	ID string `json:"id"`
-	// Deleted / Updated 二选一（与 dto.BulkItemResp 同义）：删除用前者、改价用后者，
-	// 基座按 outcome 读对应的那个键。
-	Deleted bool   `json:"deleted,omitempty"`
-	Updated bool   `json:"updated,omitempty"`
-	Message string `json:"message,omitempty"`
-}
-
-// productBulkResultView 批量删除的回执：两个计数给摘要句，items 给逐条原因。
-type productBulkResultView struct {
-	Deleted int                   `json:"deleted"`
-	Skipped int                   `json:"skipped"`
-	Items   []productBulkItemView `json:"items"`
-}
-
-// productBulkDeletedView 把 service 的计数 + 业务 key 转成基座要的形状。
+// bulkIDsFail 归一失败的出口：超限时把「上限 / 本次条数」两个数字给出来。
 //
-// 成功键叫 deleted 而不是 succeeded：json_write.js 的 okKeyOf 按 outcome=delete 读
-// data.deleted —— 对不上时摘要句恒为「已删除 0 项」，而删除其实成功了。
-func productBulkDeletedView(c *gin.Context, res *productdto.BulkResultResp) productBulkResultView {
-	view := productBulkResultView{
-		Deleted: res.Succeeded,
-		Skipped: res.NotDone(),
-		Items:   make([]productBulkItemView, 0, len(res.Items)),
+// 只说「请求参数无效」时操作者不知道该拆成几批，而这正是这条拒绝唯一可行动的信息。
+// 词条与模板归 pkg/bulkids 所有（两个 %s 依次是上限与本次条数），这里只做取词 + 注入数字。
+func bulkIDsFail(c *gin.Context, err error) {
+	var limit *bulkids.IDsError
+	if errors.As(err, &limit) {
+		template := i18n.Translate(bulkids.MsgTooMany, bulkids.TooManyTemplate, response.RequestLanguage(c))
+		response.ErrorWithMessage(c, http.StatusBadRequest,
+			fmt.Sprintf(template, strconv.Itoa(limit.Max), strconv.Itoa(limit.Count)))
+		return
 	}
-	for _, it := range res.Items {
-		row := productBulkItemView{ID: it.ID, Deleted: it.Deleted}
-		if !it.Deleted && it.ReasonKey != "" {
-			row.Message = response.MessageOf(c, "product", productenums.Err(it.ReasonKey))
+	response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
+}
+
+// bulkWriteFail 批量写动作的错误出口。
+//
+// 整批被拒时把可定位条目放进 data.items（id / name / message）：只说一句「批量操作未执行」
+// 时操作者不知道是哪几条拦住了他，而这条错误唯一可行动的信息就是「去掉哪几条再试」。
+// 其余错误照常走状态码判据（response.ErrorStatusAuto 只读错误声明处给的状态码）。
+func bulkWriteFail(c *gin.Context, err error) {
+	var rejected *productdto.BulkRejectedError
+	if errors.As(err, &rejected) {
+		items := make([]productdto.BulkBlockedItemResp, 0, len(rejected.Items))
+		for _, it := range rejected.Items {
+			row := it
+			row.Message = response.MessageOf(c, productErrScene, productenums.Err(it.ReasonKey))
+			items = append(items, row)
 		}
-		view.Items = append(view.Items, row)
+		// data 是个对象而不是裸数组：报文里还得留出别的位置（现在只有 items，将来
+		// 加计数或整批上下文都不用改形状），前端读 data.items 也不用区分两种类型。
+		response.ErrorWithData(c, response.ErrorStatus(err), response.MessageOf(c, productErrScene, err), gin.H{"items": items})
+		return
 	}
-	return view
+	response.ErrorStatusAuto(c, productErrScene, err)
 }
 
 // CreateVariant 新增变体（未填字段由商品级默认值补齐）。
@@ -769,6 +767,41 @@ var variantSkipFallbacks = map[string]string{
 	productenums.VariantSkipBundleReferenced: "被捆绑成员引用，未删除（请先在捆绑配置里解除引用）",
 	productenums.VariantSkipHasMovement:      "有过库存流水（已被订单或库存变动用过），未删除（请改为停用）",
 }
+
+// productBulkText 一条结论文案的事实（key + 中文兜底）。
+type productBulkText struct{ key, fallback string }
+
+// fact 把一条结论文案变成**事实**（key + 中文兜底 + %s 参数）：模板在渲染期取词，
+// JSON 出口用 text.MsgText 取成品串。
+//
+// 参数一律 strconv 成字符串（模板侧的占位符是 %s，传 int 会渲染成 %!s(int=3)）；
+// 没有占位符的词条**不要**传参数 —— TranslateArgs 对多余参数会 Sprintf 出 %!(EXTRA string=…)。
+func (t productBulkText) fact(args ...string) facing.Msg {
+	m := facing.Msg{Key: t.key, Fallback: t.fallback}
+	if len(args) > 0 {
+		m = m.WithArgs(args...)
+	}
+	return m
+}
+
+// productBulkTextOf 取一条批量结论文案的当前语言模板（**文本**形态，给「多段拼一句」的合成句用）。
+//
+// 词条混进 %d 之类协议外占位符时回落中文原文（模板一律只允许 %s，数字先经 strconv.Itoa）——
+// 否则 Sprintf 会把参数渲染成 int，而这条路直接给运营看。
+func productBulkTextOf(c *gin.Context, t productBulkText) string {
+	built := shell.TranslateFor(c)(t.key, t.fallback)
+	if !i18n.HasStringPlaceholdersOnly(built) {
+		return t.fallback
+	}
+	return built
+}
+
+// 变体清单保存的结论文案（详情页编辑表单的回执）。
+var (
+	productVariantSaveNoChange = productBulkText{productenums.BulkVariantNoChange, "变体清单与库里一致，没有需要保存的变化。"}
+	productVariantSaveSaved    = productBulkText{productenums.BulkVariantSaved, "已保存变体清单：新增 %s 个、修改 SKU %s 个、删除 %s 个。"}
+	productVariantSaveSkipped  = productBulkText{productenums.BulkVariantSkipped, "跳过 %s 个：%s"}
+)
 
 // variantSaveMsg 保存结果的回带结论（**事实**：单一情形给 key，多段拼接给成品串）。
 //
@@ -1405,25 +1438,24 @@ type productPricingApplyReq struct {
 // 判定全在 pricingParamsFromForm —— 在这里另写一套装配，就会出现「抽屉填的 amount 被当成
 // multiplier」这类只在一个入口发生的错。
 func (h *ProductHandle) BulkPricing(c *gin.Context) {
-	req, ok := binding.JSON[productBulkPricingReq](c)
+	req, ok := binding.JSON[productdto.BulkPricingJSONReq](c)
 	if !ok {
 		return
 	}
-	// 归一口径与其余批量端点同一个纯函数：去空白 / 去重 / 上限 MaxIDs，超限整批拒绝
-	//（回执带「上限 / 本次条数」两个数字，见 productBulkIDs）。
-	ids, ok := productBulkIDs(c, req.IDs)
-	if !ok {
+	// 归一与上限只在 dto 有一份（判据见 BulkDeleteReq.NormalizeIDs）。
+	if err := req.NormalizeIDs(); err != nil {
+		bulkIDsFail(c, err)
 		return
 	}
 	// 没勾选就提交：明确拒绝，不是「0 个改动」的成功回执。页面侧原有这条守卫，随页面 POST
 	// 一起消失 —— 判据搬到这里，否则删掉页面通道后「空勾选静默成功」就没人拦了。
-	if len(ids) == 0 {
+	if len(req.IDs) == 0 {
 		response.ErrorWithMessage(c, http.StatusBadRequest, text.MsgText(c, facing.Msg{
 			Key: productenums.BulkPricingNoneSelected, Fallback: "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"}))
 		return
 	}
 	res, err := h.svc.BulkApplyPricing(c.Request.Context(), &productdto.BulkPricingReq{
-		IDs:        ids,
+		IDs:        req.IDs,
 		ProjectID:  req.ProjectID,
 		Note:       req.Note,
 		OperatorID: builtin.OperatorName(c),
@@ -1436,53 +1468,10 @@ func (h *ProductHandle) BulkPricing(c *gin.Context) {
 		},
 	})
 	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+		bulkWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgPricingApplySuccess, productBulkPricedView(c, res))
-}
-
-// productBulkPricingReq 批量改价的 JSON 入参（规则字段平铺，理由见 BulkPricing）。
-type productBulkPricingReq struct {
-	IDs        []string `json:"ids"`
-	ProjectID  string   `json:"projectId"`
-	Note       string   `json:"note"`
-	RuleType   string   `json:"ruleType"`
-	Multiplier string   `json:"multiplier"`
-	Amount     string   `json:"amount"`
-	Margin     string   `json:"margin"`
-	Rounding   string   `json:"rounding"`
-}
-
-// productBulkPricedView 批量改价的回执。
-//
-// 成功键是 updated 而不是 deleted：json_write.js 的 okKeyOf 按 outcome=update 读
-// data.updated —— 「它被改过了」与「把它从列表里删掉」不是同一件事（基座据此决定要不要
-// 把行从表格里移除；改价后商品还在，移掉会让人以为商品没了）。
-type productBulkPricingView struct {
-	Updated int                   `json:"updated"`
-	Changed int                   `json:"changedVariants"`
-	Skipped int                   `json:"skipped"`
-	Items   []productBulkItemView `json:"items"`
-}
-
-// productBulkPricedView 把 service 的计数 + 业务 key 转成基座要的形状（与删除那一份同源，
-// 只是成功键不同）。
-func productBulkPricedView(c *gin.Context, res *productdto.BulkPricingResultResp) productBulkPricingView {
-	view := productBulkPricingView{
-		Updated: res.Succeeded,
-		Changed: res.ChangedVariants,
-		Skipped: res.NotDone(),
-		Items:   make([]productBulkItemView, 0, len(res.Items)),
-	}
-	for _, it := range res.Items {
-		row := productBulkItemView{ID: it.ID, Updated: it.Updated}
-		if !it.Updated && it.ReasonKey != "" {
-			row.Message = response.MessageOf(c, "product", productenums.Err(it.ReasonKey))
-		}
-		view.Items = append(view.Items, row)
-	}
-	return view
+	response.SuccessWithMessage(c, productenums.MsgPricingApplySuccess, res)
 }
 
 // ListPriceAdjustments 调价留痕列表（按工程）。

@@ -328,12 +328,12 @@ func (h *ProductHandle) DeleteCategory(c *gin.Context) {
 // —— 批量删除（JSON 端点）——
 //
 // 四套归类（分类 / 品牌 / 标签 / 属性组）的批量删除形状逐字相同：身体是 {ids, projectId}、
-// 权限点复用各自的单删、回执走同一个 productBulkDeletedView。所以只有一个入口
-// bulkDeleteByIDs，差别只在传给用例的**方法值**。
+// 权限点复用各自的单删、成功只回一条 JSON 回执。所以只有一个入口 bulkDeleteByIDs，
+// 差别只在传给用例的**方法值**。
 //
-// 为什么抽公共入口而不是写三遍：三条路的每一行都必须同口径（归一函数、上限、回执键名），
-// 分开写迟早有一处漏了 bulkids.Normalize —— 症状是超限那批被静默截断，而操作者以为
-// 「勾的全删了」。这是本仓已发生过的一次真实故障（页面侧 shell.BulkIDs 与 API 侧各写一份）。
+// 抽一个入口的理由只剩「同口径」：归一与上限在 dto（BulkDeleteReq.NormalizeIDs）、
+// 错误出口是 bulkWriteFail —— 分开写迟早有一处漏了其中一步，症状是超限那批被静默截断，
+// 而操作者以为「勾的全删了」。这是本仓已发生过的一次真实故障。
 
 // BulkDeleteCategories 批量删除分类（页面 /admin/product-categories/bulk-delete 的承接方）。
 func (h *ProductHandle) BulkDeleteCategories(c *gin.Context) {
@@ -351,17 +351,17 @@ func (h *ProductHandle) bulkDeleteByIDs(c *gin.Context, del func(context.Context
 	if !ok {
 		return
 	}
-	ids, ok := productBulkIDs(c, req.IDs)
-	if !ok {
+	// 归一与上限只在 dto 有一份（判据见 productdto.BulkDeleteReq.NormalizeIDs）。
+	if err := req.NormalizeIDs(); err != nil {
+		bulkIDsFail(c, err)
 		return
 	}
-	req.IDs = ids
 	res, err := del(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
+		bulkWriteFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, productBulkDeletedView(c, res))
+	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, res)
 }
 
 // CreateBrand 新建品牌。

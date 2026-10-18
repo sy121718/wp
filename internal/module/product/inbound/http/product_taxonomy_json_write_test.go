@@ -90,8 +90,7 @@ func TestCategoryPageUsesJSONWriteBase(t *testing.T) {
 		"data-list-bulk",
 		`data-write-api="/api/product/category/bulk-delete"`,
 		`data-write-mode="bulk"`,
-		`data-msg-all-deleted`,
-		`data-msg-partial`,
+		`data-write-flash`,
 		// 单条删除：single 档 + 多工程下的 projectId
 		`data-write-api="/api/product/category/delete"`,
 		`data-write-mode="single"`,
@@ -164,7 +163,7 @@ func TestTagPageUsesJSONWriteBase(t *testing.T) {
 		"data-list-bulk",
 		`data-write-api="/api/product/tag/bulk-delete"`,
 		`data-write-mode="bulk"`,
-		`data-msg-partial`,
+		`data-write-flash`,
 		// 单条删除：single 档 + 多工程下的 projectId
 		`data-write-api="/api/product/tag/delete"`,
 		`data-write-mode="single"`,

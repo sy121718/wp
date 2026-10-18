@@ -165,7 +165,7 @@
            提交时浏览器直接带上所有勾中的 ids（admin.js 只做计数与显隐，不注入字段）。
            行内写操作表单必须留在 </form> 之后 —— HTML 不允许 form 嵌套。 *}
         <form data-write-api="/api/customer/bulk-status" data-write-mode="bulk" data-write-outcome="update" data-write-number="ids,status" data-write-extra="status"
- data-msg-none-selected="{{tr("admin.customers.write.noneSelected", "请先选择客户。")}}" data-msg-all-updated="{{tr("admin.customers.write.allUpdated", "已更新 {updated} 个客户。")}}" data-msg-all-skipped="{{tr("admin.customers.write.allSkipped", "{skipped} 个客户未处理。")}}" data-msg-partial="{{tr("admin.customers.write.partial", "已更新 {updated} 个，{skipped} 个未处理。")}}" data-msg-refresh="{{tr("admin.customers.write.refresh", "刷新列表")}}" data-msg-failed="{{tr("admin.customers.write.failed", "操作失败，请稍后重试。")}}" data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}">
+ data-msg-none-selected="{{tr("admin.customers.write.noneSelected", "请先选择客户。")}}" data-msg-refresh="{{tr("admin.customers.write.refresh", "刷新列表")}}" data-msg-failed="{{tr("admin.customers.write.failed", "操作失败，请稍后重试。")}}" data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}">
  <p data-write-status role="status" aria-live="polite"></p>
  <noscript><p>{{tr("admin.customers.write.noJs", "修改客户状态和解除锁定需要 JavaScript。")}}</p></noscript>
             <input type="hidden" name="csrf_token" value="{{csrf}}">

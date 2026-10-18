@@ -103,9 +103,6 @@
         <form data-write-api="/api/i18n/save"
               data-write-mode="bulk"
               data-msg-none-selected="{{tr("admin.i18nBulk.noneSelected", "没有勾选任何词条，列表未改动。")}}"
-              data-msg-all-deleted="{{tr("admin.i18nWrite.bulkResult.allDeleted", "已删除 {count} 条词条（构建时回退到组件包内的中文兜底）。")}}"
-              data-msg-all-skipped="{{tr("admin.i18nWrite.bulkResult.allSkipped", "{count} 条词条都未能删除，列表未改动。")}}"
-              data-msg-partial="{{tr("admin.i18nWrite.bulkResult.partial", "已删除 {deleted} 条，{skipped} 条未能删除（可能已被删除）。")}}"
               data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
               data-msg-refresh="{{tr("admin.i18nWrite.refresh", "刷新列表")}}">

@@ -548,9 +548,7 @@ func TestNavigationAddSourceTemplateContract(t *testing.T) {
 		`<input type="hidden" name="action" value="addSource">`,
 		`name="ids"`,
 		`data-write-status`,
-		`admin.navigations.addSource.result.allAdded`,
-		`admin.navigations.addSource.result.allSkipped`,
-		`admin.navigations.addSource.result.partial`,
+		// 批量结论只有一句 message（由后端 JSON body 给）：模板不再按「全成/全跳/部分」分档取词。
 	} {
 		if !strings.Contains(tpl, want) {
 			t.Fatalf("模板应含 %q", want)

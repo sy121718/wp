@@ -1,61 +1,58 @@
 package productdto
 
-// product_bulk_req.go / product_bulk_resp.go — 批量用例的入参（Req）与回执（Resp）。
+// product_bulk_resp.go — 批量用例的回执（与 product_bulk_req.go 成对）。
 //
-// 文件按「入参 / 返回」成对出现：一个域只有这两份，类型名以 Req / Resp 结尾。
-// 为什么批量另起一套类型、而不是扩展现有的 productenums.Outcome：Outcome 表达的是**单条**
-// 操作的结局（成功 / 跳过 / 失败），批量用例需要的是**四个计数的分桶**（请求了 N 个、成了几个、
-// 业务跳过几个、内部失败几个）。把计数塞进 Outcome 会让「状态」与「统计」两种语义混在一个类型里。
+// 语义只有一种：**整批 = 一个事务，要么全成、要么全败**。
+// 所以这里没有「跳过 / 失败」两个桶，也没有逐条 items 明细 —— 只在整批被拒时给一个错误，
+// 错误里带可定位的条目（见 BulkRejectedError）。
 //
-// 逐项明细是后加的：提示页协议当初只展示一句计数，改走 ui/json_write.js 之后消费方出现了 ——
-// 基座逐条渲染失败原因，只有计数时操作者看到「跳过 3 条」而无从下手。判定口径仍归 service：
-// 明细里存的是**业务 key**，成品句由 inbound 取词，不在 service 拼中文。
+// 为什么不留「成功 N / 跳过 M」：用户看到那个回执时既不知道哪一条没成，也没法只重试那一条
+// （重试会把成功过的再走一遍），而库里已经是他看不懂的中间态 —— 一个表改了一个表没改，
+// 这种账没人能对。证据与判据在 internal/module/CLAUDE.md「列表页批量操作」那条。
 
-// BulkResultResp 批量用例的结果（四个桶，合计恒等于 Requested）。
+// BulkResultResp 批量用例的回执：整批完成时给一个计数。
 type BulkResultResp struct {
-	// Requested 请求处理的项数（去空白 / 去重之后）。
-	Requested int `json:"requested"`
-	// Succeeded 真正完成的项数。
-	Succeeded int `json:"succeeded"`
-	// Skipped 业务拒绝的项数（不存在 / 有子级 / 被引用 / 跨工程引用）。
-	Skipped int `json:"skipped"`
-	// Failed 内部失败的项数（数据库错误这类）。只计数，原文进日志、不进响应。
-	Failed int `json:"failed"`
-	// Items 逐条回执（与三个计数同源：同一批归一后的 id 顺序）。
-	// 未成功的那条带 ReasonKey（业务 key，由 inbound 取词成句子）。
-	Items []BulkItemResp `json:"items,omitempty"`
+	// Done 完成的项数（= 归一后的请求项数；整批失败时不会走到这里）。
+	Done int `json:"done"`
 }
 
-// BulkItemResp 批量里的一条回执。
+
+// BulkRejectedError 整批拒绝：一句话说结论，明细放 data.items。
 //
-// Deleted 是**破坏动作**的键：非破坏动作（改价 / 打标签）用 Updated，同一个键不能既表示
-// 「成功了」又表示「把它从列表里删掉」（基座按 outcome 读不同的键，见 json_write.js 的
-// okKeyOf）。
-type BulkItemResp struct {
-	ID string `json:"id"`
-	// Deleted / Updated 两个键**互斥**，按用例取其一：破坏动作（删除）用 Deleted，
-	// 非破坏动作（改价 / 改状态 / 打标签）用 Updated。一个字段同时承担两义会让
-	// 「把它从列表里删掉」与「它被改过了」变成同一句话（json_write.js 的 okKeyOf
-	// 就是按这个区分摘要句的）。
-	Deleted   bool   `json:"deleted,omitempty"`
-	Updated   bool   `json:"updated,omitempty"`
-	ReasonKey string `json:"reasonKey,omitempty"`
+// 包装而非另造一套：Err 是 facing 的常规业务错误（key + 兜底 + 声明的状态码 409），
+// Unwrap 让 pkg/facing.FactOf / StatusOf 沿链读到它们 —— 出口照常走 response.ErrorStatusAuto
+// 的同一套判据，不需要认识这个类型。
+//
+// 控制器要拿到 Items 时 errors.As 一下即可；拿不到时它退化成一个普通业务错误。
+type BulkRejectedError struct {
+	Err   error
+	Items []BulkBlockedItemResp
 }
 
-// NotDone 未成功的项数（业务跳过 + 内部失败）。
-//
-// 提示页只有「已删 N / 未成功 M」两个数字，M 由这里给出：让控制器自己把两个桶相加，
-// 等于把它不拥有的口径搬到控制器（dd.txt §5.5）。
-func (r BulkResultResp) NotDone() int { return r.Skipped + r.Failed }
+func (e *BulkRejectedError) Error() string { return e.Err.Error() }
 
-// BulkPricingResultResp 批量改价的结果（在 BulkResultResp 之上多两个改价专属计数）。
+func (e *BulkRejectedError) Unwrap() error { return e.Err }
+
+// BulkPricingResultResp 批量改价的回执（在 BulkResultResp 之上多两个改价专属计数）。
 type BulkPricingResultResp struct {
 	BulkResultResp
 	// ChangedVariants 真正改动的变体数（一次改价覆盖商品的多个变体）。
 	ChangedVariants int `json:"changedVariants"`
-	// UnchangedProducts 本来就在目标价上的商品数（service 不写空台账，故单独计数）。
+	// UnchangedProducts 本来就在目标价上的商品数（不是失败：service 不写空台账，故单独计数）。
 	UnchangedProducts int `json:"unchangedProducts"`
-	// SkipReasonKey 第一个跳过原因的**业务 key**（enums 常量值）。
-	// 存 key 不存成品串：成品串要按请求语言取词，而取词只在 inbound 有（productErrText）。
-	SkipReasonKey string `json:"skipReasonKey,omitempty"`
+}
+
+// BulkBlockedItemResp 整批被拒时的一条「为什么不行」（data.items 的元素）。
+//
+// 三个字段是**定位**所需：id（重试时勾哪一条）、name（人读）、为什么。
+// 名称优先展示：批量里给人看 uuid 等于没给信息。
+//
+// ReasonKey 与 Message 是同一件事的两端：service 只回业务 key（它拿不到也不该拿
+// 取词函数），出口把 key 翻成当前语言的 Message 再给前端；两者都带 omitempty，
+// 谁填了谁出现在 JSON 里。
+type BulkBlockedItemResp struct {
+	ID        string `json:"id"`
+	Name      string `json:"name,omitempty"`
+	ReasonKey string `json:"reasonKey,omitempty"`
+	Message   string `json:"message,omitempty"`
 }

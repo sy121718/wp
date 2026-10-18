@@ -159,9 +159,6 @@
     <form data-write-api="/api/block/bulk-delete"
           data-write-mode="bulk"
           data-msg-none-selected="{{tr("admin.blocks.bulkResult.noneSelected", "没有选中任何块，列表未改动。")}}"
-          data-msg-all-deleted="{{tr("admin.blocks.bulkResult.allDeleted", "已删除 {count} 个块。")}}"
-          data-msg-all-skipped="{{tr("admin.blocks.bulkResult.allSkipped", "{count} 个块都未能删除，列表未改动。")}}"
-          data-msg-partial="{{tr("admin.blocks.bulkResult.partial", "已删除 {deleted} 个，{skipped} 个未能删除（被引用的全局块需先解除引用）。")}}"
           data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-msg-refresh="{{tr("admin.blocks.write.refresh", "刷新列表")}}">

@@ -61,6 +61,19 @@ func ErrorWithMessage(c *gin.Context, code int, message string) {
 	})
 }
 
+// ErrorWithData 带明细的错误：message 一句话，data 放**可定位的结构化条目**。
+//
+// 用于「整批被拒」这类结论：一句话说不清是哪几条不行，而把它们塞进 message 又会让文案
+// 变成一段拼接的散文（既不可翻译、也没法让前端逐行展示）。判据是「这些数据是不是给人
+// 照着办下一个动作用的」—— 是就用 data，不是就写进 message。
+func ErrorWithData(c *gin.Context, code int, message string, data interface{}) {
+	c.JSON(code, Response{
+		Code:    code,
+		Message: translate(c, message),
+		Data:    data,
+	})
+}
+
 // msgInternalError 500 响应的统一对外文案。
 const msgInternalError = "服务器内部错误，请稍后重试"
 
