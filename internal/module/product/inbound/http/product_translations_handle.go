@@ -14,6 +14,7 @@ import (
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"strconv"
 	"strings"
@@ -93,22 +94,24 @@ func (h *ProductTranslationHandle) translationsReader() (productcontract.Product
 }
 
 // ProductTranslations GET /admin/products/translations：商品域翻译工作台。
-func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) (any, error) {
+func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) {
 	req, ok := binding.Query[productdto.ProductTranslationsPageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	reader, rerr := h.translationsReader()
 	if rerr != nil {
-		return nil, rerr
+		pageview.Fail(c, rerr)
+		return
 	}
 	view, err := reader.ProductTranslationsPage(c.Request.Context(), req)
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
 	// 保存成功的回执不在这条 GET 上（?saved=1&n=N 那条读侧已整批删除）：结论由 JSON 回执
 	// 存进 flash 行，刷新后的这一屏只负责渲染当前译文。
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // SaveProductTranslations POST /api/product/translations/save：保存译文（整表提交）。

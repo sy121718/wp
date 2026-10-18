@@ -32,6 +32,7 @@ import (
 	"go_wp/pkg/logger"
 	"go_wp/pkg/money"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 // 商品列表页的地址：详情页等整页 GET 在「资源已不在了」时 302 回列表。
@@ -254,16 +255,17 @@ var _ = http.StatusOK
 //
 // 三动作：绑参数 → 调读模型 → 返回视图。取数失败直接返回错误，页面出口由 adminui.Page
 // 统一写成 {code,message,data}（业务 400 / 其余 500），模板里没有失败分支。
-func (h *ProductPageHandle) ProductsPage(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductsPage(c *gin.Context) {
 	req, ok := binding.Query[productdto.ProductListPageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	view, err := h.reader.ProductListPage(c.Request.Context(), req)
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // productListPageSize 商品列表每页条数（服务端分页）。
@@ -348,19 +350,20 @@ func productStatusOptions(current string) []productdto.StatusOptionResp {
 //	  于是「失败页长什么样」不再有第二种写法；
 //	· 失败槽文案（LoadError）仍在这里取词：取词是**请求级**的（按当前语言），
 //	  交给 service 就等于把语言钉进业务层。
-func (h *ProductPageHandle) ProductNewPage(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductNewPage(c *gin.Context) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
 	req, ok := binding.Query[productdto.ProductNewPageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	view, err := reader.ProductNewPage(c.Request.Context(), req)
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // ==========================================================================
@@ -391,15 +394,15 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) (any, error) {
 // 本节起是原先的 product_edit.go（编辑页，字段名与 UpdateReq 的 json 标签逐字对齐）。
 // ==========================================================================
 
-func (h *ProductPageHandle) ProductEditPage(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductEditPage(c *gin.Context) {
 	req, ok := binding.Query[productdto.ProductEditPageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
-	return h.renderProductEditPage(c, req.ProjectID, req.ProductID, "", false)
+	h.renderProductEditPage(c, req.ProjectID, req.ProductID, "", false)
 }
 
-func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, echo bool) (any, error) {
+func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, echo bool) {
 	ctx := c.Request.Context()
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
@@ -410,7 +413,8 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 		ProjectID: selected, ProductID: productID,
 	})
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
 	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行）；只剩**原地重渲染**这一条路
 	// 会给 Err（表单校验失败 / 选项读取失败）。
@@ -429,7 +433,7 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	// 详情页模板面板：详情页只读展示绑定状态，写动作（进入自定义 / 编辑模板 / 重新套用预设 /
 	// 回滚）都在本页 —— 与详情页共用同一份组装。
 	view.TplPanel = h.detailTemplatePanel(ctx, view.SelectedProject, view.ProductID)
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // fillEditFormEcho 编辑表单的回显值（状态选中项、属性组勾选态、图集与数值字段的文本形态、
@@ -519,18 +523,19 @@ func checkedAttributeOptions(options []productdto.AttributeOptionResp, selected 
 //
 // 取数编排（工程 / 仓库 / 商品 / 分类 / 品牌 / 标签）与上面三档的判定都在 service 的读模型里
 // （service.ProductDetailPage）；本函数只剩「取参数 → 调读模型 → 补控制器负责的派生值 → 一个出口」。
-func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
 	req, ok := binding.Query[productdto.ProductDetailPageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	view, err := reader.ProductDetailPage(ctx, req)
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
 	// 仓库清单 / 商品详情 / 分类树 / 品牌 / 标签的取数编排全在 service 的读模型里
 	//（service.ProductDetailPage，含 404 / 400 / 500 三档）；这里只做控制器负责的派生值与出口。
@@ -556,7 +561,7 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) (any, error) {
 	// 非 200 一律 no-store）。「不存在」那一档没有失败槽 —— 模板自己的 .HasProduct=false
 	// 空态就是它的文案（读到了、库里没有这一条），但它与「没读到」一样 no-store：
 	// 重试必须真的回到服务端确认商品是否又出现了。
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // variantPreviewRow 预览行的 JSON 形状：前端拿它渲染清单里的一行。
@@ -755,20 +760,20 @@ func (h *ProductHandle) DeleteRating(c *gin.Context) {
 // 出口有两个形态：① 预览就绪 —— 直出构建器渲染好的整份 HTML（后端只搬运字节，见 AGENTS.md
 // 「前后端分界」）；② 还没就绪 —— 交替代页视图 admin/preview_notice.html（一句人话 + 那份模板里的样式）。
 // 两种都不拼 HTML：替代页曾经在这里拼字符串，结构与样式只存在于 Go 里，前端层改不到它。
-func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	req, ok := binding.Query[productdto.ProductPreviewFrameReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	// 替代页是模板渲染（不走 adminui.Prepare 的页壳），取词在这里先做掉：视图只给成品串。
 	tr := shell.TranslateFor(c)
 	id, projectID := req.ProductID, req.ProjectID
 	if id == "" {
-		return previewNoticeResp(c, tr(productenums.ProductsPreviewNeedSave, "保存这个商品后，这里会显示它的详情页真实形态。")), nil
+		pageview.Render(c, previewNoticeResp(c, tr(productenums.ProductsPreviewNeedSave, "保存这个商品后，这里会显示它的详情页真实形态。")))
 	}
 	if h == nil || h.instances == nil {
-		return previewNoticeResp(c, tr(productenums.ProductsPreviewUnavailable, "预览不可用：发布能力未装配。")), nil
+		pageview.Render(c, previewNoticeResp(c, tr(productenums.ProductsPreviewUnavailable, "预览不可用：发布能力未装配。")))
 	}
 	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationcontract.PreviewInstanceReq{
 		EntityType: productcontract.EntityTypeProduct, EntityID: id, ProjectID: projectID,
@@ -776,14 +781,14 @@ func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) (any, error) {
 	if err != nil {
 		// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
 		logger.Scene("product").With("product_id", id).Error(err, "商品详情页预览渲染失败")
-		return previewNoticeResp(c, tr(productenums.ProductsPreviewFailed, "预览渲染失败（多半是这个商品还没有可用的详情页模板）。")), nil
+		pageview.Render(c, previewNoticeResp(c, tr(productenums.ProductsPreviewFailed, "预览渲染失败（多半是这个商品还没有可用的详情页模板）。")))
 	}
 	if res == nil || strings.TrimSpace(res.HTML) == "" {
-		return previewNoticeResp(c, tr(productenums.ProductsPreviewEmpty, "还没有可渲染的详情页：先给 product 类型建一套内容模板。")), nil
+		pageview.Render(c, previewNoticeResp(c, tr(productenums.ProductsPreviewEmpty, "还没有可渲染的详情页：先给 product 类型建一套内容模板。")))
 	}
 	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物）：后端只搬运字节，不拼结构。
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
-	return nil, response.ErrHandled
+	return
 }
 
 // previewNoticeResp 预览替代页的数据（结构与样式在 internal/templates/admin/preview_notice.html）。
@@ -833,23 +838,24 @@ const bundleResolveURL = "/admin/products/bundle/members/resolve"
 //
 // 保存走 JSON 写基座（表单声明 data-write-api=/api/product/bundle/set）：成员行由
 // static/js/ui/product_bundle_write.js 组装成 {productId, config:{...}}，页面只负责渲染。
-func (h *ProductPageHandle) ProductBundlePage(c *gin.Context) (any, error) {
-	return h.renderBundlePage(c)
+func (h *ProductPageHandle) ProductBundlePage(c *gin.Context) {
+	h.renderBundlePage(c)
 }
 
 // renderBundlePage 整页出口（只有这一处）。
 //
 // 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 // 不再有「请求期断言失败 → 500 兜底」这条路径。
-func (h *ProductPageHandle) renderBundlePage(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) renderBundlePage(c *gin.Context) {
 	reader := h.reader
 	req, ok := binding.Query[productdto.ProductBundlePageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	view, err := reader.ProductBundlePage(c.Request.Context(), req)
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
 
 	// 剩下两样都只由控制器给：两个 URL 形状（ResolveURL / ListQuery）。
@@ -857,7 +863,7 @@ func (h *ProductPageHandle) renderBundlePage(c *gin.Context) (any, error) {
 	// 状态码 / no-store 由视图的 PageStatus / PageNoStore 带出，渲染在 UI 线。
 	view.ResolveURL = bundleResolveURL
 	view.ListQuery = binding.ListQuery(c, productBundleBackKeys...)
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // bundlePageFailureView 失败档的视图（给齐模板必需键，避免失败分支只设了错误键）。
@@ -1094,24 +1100,24 @@ func (h *ProductHandle) ListBundleSKUs(c *gin.Context) {
 // 接口面在前，后台页面在后。
 
 // ProductPricingPage 定价工具页：规则参考表 + 改价表单 + 留痕台账。
-func (h *ProductPageHandle) ProductPricingPage(c *gin.Context) (any, error) {
-	return h.renderPricingPageWith(c, nil, nil, "")
+func (h *ProductPageHandle) ProductPricingPage(c *gin.Context) {
+	h.renderPricingPageWith(c, nil, nil, "")
 }
 
 // ProductPricingPreview 试算（不落库、不留痕），结果渲染回同一页。
-func (h *ProductPageHandle) ProductPricingPreview(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductPricingPreview(c *gin.Context) {
 	req, ok := binding.Form[productdto.PricingFormReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	form := req.Form()
 	preview, err := h.products.PreviewPricing(c.Request.Context(), &productdto.PricingPreviewReq{PricingRuleReq: *req.Rule()})
 	if err != nil {
 		// 试算失败不重定向：用户填的表单要留在眼前，否则「哪一项填错了」无从改起。
 		// 试算失败的原文（含 PG 原文）只进日志，页面上给可读文案。
-		return h.renderPricingPageWith(c, &form, nil, response.MessageOf(c, "product", err))
+		h.renderPricingPageWith(c, &form, nil, response.MessageOf(c, "product", err))
 	}
-	return h.renderPricingPageWith(c, &form, preview, "")
+	h.renderPricingPageWith(c, &form, preview, "")
 }
 
 // renderPricingPageWith 定价页的统一渲染入口（form / preview / errMsg 三者可空）。
@@ -1121,23 +1127,24 @@ func (h *ProductPageHandle) ProductPricingPreview(c *gin.Context) (any, error) {
 //
 // form / preview / errMsg 是**写路径的产物**（试算失败要原地重渲染，把用户填的表单与试算结果
 // 带回来）。service 不认识 gin.Context，所以由这里读出来经 Req 传进去。
-func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productdto.PricingForm, preview *productdto.PricingPreviewResp, errMsg string) (any, error) {
+func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productdto.PricingForm, preview *productdto.PricingPreviewResp, errMsg string) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
 	req, ok := binding.Query[productdto.ProductPricingPageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	// 表单回显与试算结果是**写路径的产物**（本次请求里已经在内存中），不来自查询串。
 	req.Form, req.Preview, req.ErrMsg = form, preview, errMsg
 	view, err := reader.ProductPricingPage(c.Request.Context(), req)
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
 	// 表单 action 的 query：预览走页面 POST，筛选上下文要随表单带回来（URL 形状属 HTTP 边界）。
 	view.ListQuery = binding.ListQuery(c, productPricingBackKeys...)
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // ==========================================================================

@@ -1,10 +1,11 @@
 package contenthttp
 
 import (
-	"github.com/gin-gonic/gin"
 	contentdto "go_wp/internal/module/content/dto"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 // 文章列表页在「存在待重建页面」时的完整渲染回归。

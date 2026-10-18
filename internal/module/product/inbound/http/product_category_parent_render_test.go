@@ -32,7 +32,7 @@ func TestProductCategoryParentsRendersPickedOptions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/pick", adminui.Bare(ProductCategoryParentsTemplate, h.ProductCategoryParents))
+	engine.GET("/pick", adminui.BareSlot(ProductCategoryParentsTemplate), h.ProductCategoryParents)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/pick?project=p1&keyword=%E8%A1%A3&page=2", nil))

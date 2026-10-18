@@ -93,7 +93,7 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	pages.GET("/articles/seo/drawer", builtin.CasbinMiddlewareForPath("/api/content/list"), articlePages.ArticleSeoDrawer)
 	// 详情页真实预览帧（iframe 直接 src）：页面组鉴权（Session），**不挂 Casbin** ——
 	// 与评分抽屉同一取舍：它只读渲染、不落库，而 iframe 无法携带 CSRF 头。
-	pages.GET("/articles/preview-frame", adminui.Bare(ContentPreviewNoticeTemplate, articlePages.ArticlePreviewFrame))
+	pages.GET("/articles/preview-frame", adminui.BareSlot(ContentPreviewNoticeTemplate), articlePages.ArticlePreviewFrame)
 	// 内链建议（SEO-015）：同为只读计算（候选来自已上线路径解析端口），
 	// 权限策略与评分侧栏一致 —— Session + CSRF，不叠权限点。
 	pages.POST("/articles/link-suggestions", articlePages.ArticleLinkSuggestions)

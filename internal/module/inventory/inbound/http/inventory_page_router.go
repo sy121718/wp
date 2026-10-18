@@ -26,13 +26,13 @@ import (
 // 而不是在 handler 里再写一遍模板串 —— 失败与成功渲染的必须是同一张模板。
 func registerInventoryReadPages(pages *gin.RouterGroup, h *inventoryPageHandle) {
 	pages.GET("/inventory", adminui.PageAuthz("/api/inventory/warehouse/list"),
-		adminui.Page(InventoryListPageTemplate, h.InventoryPage))
+		adminui.PageSlot(InventoryListPageTemplate), h.InventoryPage)
 	// 拆页（2026-09 评审第三轮）：仓库与原因字典各自独立成页 —— 原先它们与
 	// 「手动改库存 / 看流水」挤在同一页靠 <details> 折叠，折叠不是解法。
 	pages.GET("/inventory/warehouses", adminui.PageAuthz("/api/inventory/warehouse/list"),
-		adminui.Page(InventoryWarehousesPageTemplate, h.InventoryWarehousesPage))
+		adminui.PageSlot(InventoryWarehousesPageTemplate), h.InventoryWarehousesPage)
 	pages.GET("/inventory/reasons", adminui.PageAuthz("/api/inventory/reason/list"),
-		adminui.Page(InventoryReasonsPageTemplate, h.InventoryReasonsPage))
+		adminui.PageSlot(InventoryReasonsPageTemplate), h.InventoryReasonsPage)
 }
 
 // 三个整页的模板名（与路由 / 权限点同处：一眼能看全这个模块渲染了哪些屏）。
@@ -80,7 +80,7 @@ func SetupInventoryPages(pages *gin.RouterGroup, svc inventorycontract.Inventory
 	// 货源管理页（issue #17）：类型与关联方两个结构化维度支撑报表区分。
 	sourcePages := NewInventorySourcePageHandle(svc, project)
 	pages.GET("/inventory/sources", adminui.PageAuthz("/api/inventory/source/list"),
-		adminui.Page(InventorySourcesPageTemplate, sourcePages.InventorySourcesPage))
+		adminui.PageSlot(InventorySourcesPageTemplate), sourcePages.InventorySourcesPage)
 	pages.POST("/inventory/sources/create", builtin.CasbinMiddlewareForPath("/api/inventory/source/create"), sourcePages.InventorySourceCreate)
 	pages.POST("/inventory/sources/update", builtin.CasbinMiddlewareForPath("/api/inventory/source/update"), sourcePages.InventorySourceUpdate)
 	pages.POST("/inventory/sources/delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), sourcePages.InventorySourceDelete)
@@ -90,7 +90,7 @@ func SetupInventoryPages(pages *gin.RouterGroup, svc inventorycontract.Inventory
 	purchasePages := NewInventoryPurchasePageHandle(svc, project, nil)
 	pageCatalogConsumers = append(pageCatalogConsumers, purchasePages)
 	pages.GET("/inventory/purchases", adminui.PageAuthz("/api/inventory/purchase/list"),
-		adminui.Page(InventoryPurchasesPageTemplate, purchasePages.InventoryPurchasesPage))
+		adminui.PageSlot(InventoryPurchasesPageTemplate), purchasePages.InventoryPurchasesPage)
 	pages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), purchasePages.InventoryPurchaseCreate)
 	pages.POST("/inventory/purchases/receipt", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/receipt"), purchasePages.InventoryPurchaseReceipt)
 	pages.POST("/inventory/purchases/production", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/production"), purchasePages.InventoryPurchaseProduction)

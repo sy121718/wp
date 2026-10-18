@@ -61,11 +61,11 @@ func newVariantPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
-	engine.GET("/admin/products", adminui.Page(producthttp.ProductListPageTemplate, handle.ProductsPage))
+	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
 	// 变体是商品的子资源，表格与生成入口都在商品详情页（列表页只回答「有哪些商品」）。
-	engine.GET("/admin/products/detail", adminui.Page(producthttp.ProductDetailPageTemplate, handle.ProductDetailPage))
+	engine.GET("/admin/products/detail", adminui.PageSlot(producthttp.ProductDetailPageTemplate), handle.ProductDetailPage)
 	// 商品自身字段（名称 / URL 段 / SKU / 状态 / 价格 / SEO / 图集）与多语言入口在编辑页。
-	engine.GET("/admin/products/edit", adminui.Page(producthttp.ProductEditPageTemplate, handle.ProductEditPage))
+	engine.GET("/admin/products/edit", adminui.PageSlot(producthttp.ProductEditPageTemplate), handle.ProductEditPage)
 	return engine, f
 }
 

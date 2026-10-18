@@ -9,6 +9,7 @@ import (
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 	"strconv"
 	"strings"
 
@@ -106,7 +107,7 @@ func (h *inventorySourcePageHandle) sourcesPageView(c *gin.Context, d *inventory
 }
 
 // InventorySourcesPage 货源管理页：工程切换 + 关联方统计 + 筛选 + 新建 + 列表（可编辑）。
-func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) (any, error) {
+func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// 写动作的结论不再回显在本页（出口见 inventory_notice_handle.go），
@@ -215,7 +216,7 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) (any, e
 		})
 	}
 
-	return h.sourcesPageView(c, &inventorySourcesPageData{
+	pageview.Render(c, h.sourcesPageView(c, &inventorySourcesPageData{
 		Projects:        projects,
 		SelectedProject: selected,
 		Sources:         sources,
@@ -228,7 +229,7 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) (any, e
 		Err:             pageErr,
 		LoadFailed:      loadFailed,
 		Pagination:      pg,
-	}), nil
+	}))
 }
 
 // InventorySourceCreate 新建货源（内部类型自动成为关联方）。

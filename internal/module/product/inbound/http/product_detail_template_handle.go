@@ -17,6 +17,7 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"strings"
 
@@ -376,34 +377,37 @@ func (h *ProductPageHandle) detailTemplateDeps() productservice.DetailTemplateDe
 //
 //	· 依赖未装配 → 200 的就地说明（不是装载失败：区别是「没读到」与「这条能力没接上」）；
 //	· 还没选商品 → 302 回商品列表（本页没有「还没选商品」的就地形态）。
-func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	// 未装配（缺内容模板 / 自动发布契约）是**装配缺陷的可见提示**，不是装载失败：
 	// 与「没读到数据」分开，仍然是 200 的就地说明（先于取数判断 —— 否则两个出口会互相盖住）。
 	if h.templates == nil || h.instances == nil {
 		unassembled := detailTemplateUnassembledView()
-		return &unassembled, nil
+		pageview.Render(c, &unassembled)
+		return
 	}
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
 	req, ok := binding.Query[productdto.ProductDetailTemplatePageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	view, err := reader.ProductDetailTemplatePage(c.Request.Context(), req)
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
 	if view.NoProduct {
 		// 侧栏菜单直接进本页时没有 product 参数：回商品列表挑一件，而不是渲染一个空壳页。
 		// 落点是本模块自己的路径常量（不带回跳参数）—— 提示页那一层已删，失败分支不再拼回跳串。
 		c.Redirect(http.StatusFound, productListPath)
-		return nil, response.ErrHandled
+		return
 	}
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // detailTemplateUnassembledView 模板能力未装配时的视图（200，就地说明）。
@@ -426,26 +430,28 @@ func detailTemplateLoadFailureView(status int) productdto.ProductDetailTemplateP
 // ProductDetailTemplatePreview POST /admin/products/template/preview：
 // 发布前预览模板渲染效果 —— 只读渲染，直接把构建结果的 HTML 输出到新标签页；
 // 响应头带上实际使用的模板与版本，便于核对「预览的是哪一套」。
-func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
 	if h.instances == nil {
 		// 装配缺陷：预览没有可渲染的契约，出口交给统一错误形状（对外是归口文案，原文只进日志）。
-		return nil, errors.New(errTemplateDepsMissing)
+		pageview.Fail(c, errors.New(errTemplateDepsMissing))
+		return
 	}
 	req, ok := binding.Form[productdto.DetailTemplatePreviewReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	res, err := productservice.PreviewDetailTemplate(c.Request.Context(), h.instances,
 		req.ProjectID, req.ProductID, req.TemplateID)
 	if err != nil {
 		// 「预览失败」对作者是可用信息，原因（模板不存在 / 文档非法 / 渲染出错）只进日志。
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
 	if res.TemplateName != "" {
 		c.Header("X-Preview-Template", fmt.Sprintf("%s@v%d", res.TemplateName, res.TemplateVersion))
 	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
-	return nil, response.ErrHandled
+	return
 }
 
 // detailTemplateErrMsg 把业务错误收敛成一条事实：key 与兜底都取自声明处。

@@ -46,7 +46,7 @@ bash scripts/check-all.sh     # 门禁全集（--with-db 含需要库的那组�
 
 | 包 | 只准 | 一律禁止 |
 |---|---|---|
-| routers | 装配、路由注册、页面出口（adminui.Page/Bare） | 业务逻辑、SQL |
+| routers | 装配、路由注册、页面出口（adminui.PageSlot / BareSlot） | 业务逻辑、SQL |
 | adminui | 后台渲染出口（Prepare / Page / Bare / 错误出口转发） | 业务语义、数据派生 |
 | text | 界面文案线（注入 t/tf、InternalMsg、FactOf） | 业务语义、读模型 |
 | builder/** | 构建期编译与组件 | 控制面 DB 写、访客请求处理 |
@@ -116,7 +116,7 @@ bash scripts/check-all.sh     # 门禁全集（--with-db 含需要库的那组�
 | 格 | 何时 | 形态 |
 |---|---|---|
 | JSON | 所有写动作、所有非页面请求、页面 GET 失败 | {code,message,data} + 真实状态码 |
-| 页面视图 | 页面 GET 成功 | 控制器 return 视图, nil；router 用 adminui.Page/Bare 渲染 Jet |
+| 页面视图 | 页面 GET 成功 | 控制器 pageview.Render(c, data)；router 用 adminui.PageSlot / BareSlot 渲染 Jet |
 | 字节流 | 构建器预览、runtime fragment、下载、SSE | 直接写 body 后 return nil, response.ErrHandled |
 
 - 状态码在错误声明处给（facing.WithStatus），出口只调 response.ErrorStatusAuto：400 参数 / 401 未登录 / 403 无权限 / 404 不存在 / 409 冲突与版本 / 500 其余。

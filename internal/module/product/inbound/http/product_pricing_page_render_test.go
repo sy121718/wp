@@ -28,7 +28,7 @@ func pricingPageRequest(t *testing.T, h *ProductPageHandle, target string) *http
 	engine := gin.New()
 	// 模板根目录相对包目录：internal/module/product/inbound/http → internal/templates。
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/product-pricing", adminui.Page(ProductPricingPageTemplate, h.ProductPricingPage))
+	engine.GET("/admin/product-pricing", adminui.PageSlot(ProductPricingPageTemplate), h.ProductPricingPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec

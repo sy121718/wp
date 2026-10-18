@@ -38,11 +38,11 @@ func taxonomyJSONWriteRequest(t *testing.T, h *ProductPageHandle, route, target 
 	}
 	switch route {
 	case "/admin/product-categories":
-		engine.GET(route, adminui.Page(ProductCategoriesPageTemplate, h.ProductCategoriesPage))
+		engine.GET(route, adminui.PageSlot(ProductCategoriesPageTemplate), h.ProductCategoriesPage)
 	case "/admin/product-brands":
-		engine.GET(route, adminui.Page(ProductBrandsPageTemplate, h.ProductBrandsPage))
+		engine.GET(route, adminui.PageSlot(ProductBrandsPageTemplate), h.ProductBrandsPage)
 	case "/admin/product-tags":
-		engine.GET(route, adminui.Page(ProductTagsPageTemplate, h.ProductTagsPage))
+		engine.GET(route, adminui.PageSlot(ProductTagsPageTemplate), h.ProductTagsPage)
 	}
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))

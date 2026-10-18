@@ -817,7 +817,7 @@ func newSourcePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 
 	})
 	handle := inventoryhttp.NewInventorySourcePageHandle(f.inventory, f.projects)
-	engine.GET("/admin/inventory/sources", adminui.Page(inventoryhttp.InventorySourcesPageTemplate, handle.InventorySourcesPage))
+	engine.GET("/admin/inventory/sources", adminui.PageSlot(inventoryhttp.InventorySourcesPageTemplate), handle.InventorySourcesPage)
 	engine.POST("/admin/inventory/sources/create", handle.InventorySourceCreate)
 	engine.POST("/admin/inventory/sources/update", handle.InventorySourceUpdate)
 	engine.POST("/admin/inventory/sources/delete", handle.InventorySourceDelete)

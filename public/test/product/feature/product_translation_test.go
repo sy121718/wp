@@ -191,7 +191,7 @@ func trWorkbench(t *testing.T, f *trFixture) *gin.Engine {
 	handle.SetContentTranslationStore(i18n.NewContentWriter(f.db))
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/admin/products/translations", adminui.Page(producthttp.ProductTranslationsPageTemplate, handle.ProductTranslations))
+	engine.GET("/admin/products/translations", adminui.PageSlot(producthttp.ProductTranslationsPageTemplate), handle.ProductTranslations)
 	// 保存已改接口端点（页面走 ui/json_write.js），页面 POST 已下线。
 	engine.POST("/api/product/translations/save", handle.SaveProductTranslations)
 	return engine

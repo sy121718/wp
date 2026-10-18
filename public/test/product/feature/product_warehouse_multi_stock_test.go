@@ -541,10 +541,10 @@ func TestProductPageCreateMultiWarehouseForm(t *testing.T) {
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", adminui.Page(producthttp.ProductListPageTemplate, handle.ProductsPage))
+	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
 	// 建表单的落点已是独立整页（列表页抽屉退役，见 getProductsNewPage 的注释）——
 	// 断言表单控件存在与否的用例要把这条路由注册上，否则请求 404、页面为空、断言全红。
-	engine.GET("/admin/products/new", adminui.Page(producthttp.ProductNewPageTemplate, handle.ProductNewPage))
+	engine.GET("/admin/products/new", adminui.PageSlot(producthttp.ProductNewPageTemplate), handle.ProductNewPage)
 
 	// 新建整页里的三组新控件必须真的渲染出来（字段名分叉在这里就会暴露）：
 	// 多仓勾选（同名多值）、数量开关与数量框、可搜索下拉的候选 datalist。
@@ -676,7 +676,7 @@ func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", adminui.Page(producthttp.ProductListPageTemplate, handle.ProductsPage))
+	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products?project="+f.projectID, nil))

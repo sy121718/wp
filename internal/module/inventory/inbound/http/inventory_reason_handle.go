@@ -5,6 +5,7 @@ import (
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 	"strconv"
 	"strings"
 
@@ -22,11 +23,12 @@ import (
 //
 // 文案来源：name 列存的是 i18n key，页面上显示的是取词结果；自定义原因的文案
 // 在保存时写进 sys_i18n（内容 → 文案词条），这里只负责把它取出来渲染。
-func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) (any, error) {
+func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		return inventoryPageErrorData(c, inventoryMetaReasons, err), nil
+		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaReasons, err))
+		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
 	if selected == "" && len(projects) > 0 {
@@ -34,10 +36,11 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) (any, error) 
 	}
 	reasons, err := h.listReasons(c, selected)
 	if err != nil {
-		return inventoryPageErrorData(c, inventoryMetaReasons, err), nil
+		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaReasons, err))
+		return
 	}
 	tr := shell.TranslateFor(c)
-	return gin.H{
+	pageview.Render(c, gin.H{
 		"title":            tr(inventoryenums.InventoryReasonsTitle, "变动原因字典"),
 		"menu":             "inventory-reasons",
 		"Projects":         projects,
@@ -47,7 +50,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) (any, error) 
 		"ReasonCreateForm": reasonFormData(c, selected),
 		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
 		"ListQuery": binding.ListQuery(c, inventoryReasonBackKeys...),
-	}, nil
+	})
 }
 
 // —— 写动作（仓库 / 原因 / 库存调整）——

@@ -14,6 +14,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -157,20 +158,22 @@ func (h *ProductHandle) BulkDeleteTags(c *gin.Context) {
 // ==========================================================================
 
 // ProductTagsPage 标签管理页：工程切换 + 筛选栏 + 新建表单 + 规则类型说明 + 标签列表（含命中商品）。
-func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
 	req, ok := binding.Query[productdto.ProductTagsPageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	view, err := reader.ProductTagsPage(c.Request.Context(), req)
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
 	if view == nil {
-		return nil, errors.New("页面读模型返回空视图")
+			pageview.Fail(c, errors.New("页面读模型返回空视图"))
+		return
 	}
 
 	// —— 控制器负责的部分：行装配与两个标签抽屉（要 csrf 与取词函数）——
@@ -189,7 +192,7 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) (any, error) {
 	}
 	view.Tags = rows
 	view.TagCreateForm = tagCreateForm
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // ProductTagHitsFragment 标签「命中商品」片段（审计 PERF-02 的展开区）。
@@ -205,10 +208,10 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) (any, error) {
 //
 // 失败也回 200 的片段（不是整页错误页）：它替换的是页面里的一小块，
 // 回整页 HTML 会把展开区之外的内容一起换掉；错误文案过 productErrText 白名单。
-func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	req, ok := binding.Query[productdto.ListTagProductsPageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	data := gin.H{
 		"TagID":     req.TagID,
@@ -217,7 +220,7 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) (any, error) 
 	res, err := h.products.ListTagProductsPage(c.Request.Context(), req)
 	if err != nil {
 		data["Err"] = response.MessageOf(c, "product", err)
-		return data, nil
+		pageview.Render(c, data)
 	}
 	data["TagName"] = res.TagName
 	data["Total"] = res.Total
@@ -240,7 +243,7 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) (any, error) 
 	pg := pagination.Facts(int64(res.Total), res.Page, res.PageSize)
 	pg.KeepLimit = false
 	data["Pagination"] = pg
-	return data, nil
+	pageview.Render(c, data)
 }
 
 // tagDrawerData 装配标签编辑片段数据（create 时 row 为 nil）。

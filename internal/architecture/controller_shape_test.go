@@ -684,3 +684,74 @@ func TestControllerNoNormalization(t *testing.T) {
 		}
 	}
 }
+
+// TestControllerPageExitSignature 页面出口只有一种形状（0.6 判据，零存量）：
+//
+//   - 处理器签名是 func(*gin.Context)，成功 pageview.Render(c, data)、失败 pageview.Fail(c, err)；
+//     不再有 `(any, error)` —— 那种形状让渲染时机由装配处决定，控制器永远说不清「我现在是交数据
+//     还是交错误」，也让「最后一句是封装调用」这条判据无法机械判定；
+//   - 模板名只在 *_router.go，且装配只认 adminui.PageSlot / BareSlot；
+//   - 非 router 控制器不出现 adminui.Page / adminui.Bare。
+//
+// 双向：这里没有 pending 清单 —— 迁移已完成，新写一个 (any, error) 处理器直接变红。
+func TestControllerPageExitSignature(t *testing.T) {
+	root := repoRoot(t)
+	mods, err := filepath.Glob(filepath.Join(root, "internal", "module", "*", "inbound", "http", "*.go"))
+	if err != nil || len(mods) == 0 {
+		t.Fatalf("找不到控制器目录: %v", err)
+	}
+	for _, path := range mods {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		rel, _ := filepath.Rel(root, path)
+		rel = filepath.ToSlash(rel)
+		fset := token.NewFileSet()
+		file, perr := parser.ParseFile(fset, path, nil, 0)
+		if perr != nil {
+			t.Fatalf("解析 %s 失败: %v", rel, perr)
+		}
+		router := controllerIsRouter(filepath.Base(path))
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch node := n.(type) {
+			case *ast.FuncDecl:
+				if isAnyErrorResult(node.Type.Results) {
+					t.Errorf("%s:%d：页面处理器不再交 (any, error) —— 签名改 func(*gin.Context)，"+
+						"成功 pageview.Render(c, data)、失败 pageview.Fail(c, err)",
+						rel, fset.Position(node.Pos()).Line)
+				}
+			case *ast.SelectorExpr:
+				if router {
+					return true
+				}
+				ident, ok := node.X.(*ast.Ident)
+				if !ok || ident.Name != "adminui" {
+					return true
+				}
+				if node.Sel.Name == "Page" || node.Sel.Name == "Bare" ||
+					node.Sel.Name == "RenderPage" || node.Sel.Name == "RenderBare" {
+					t.Errorf("%s:%d：控制器不装配页面出口（adminui.%s）—— 模板名与渲染归 *_router.go",
+						rel, fset.Position(node.Pos()).Line, node.Sel.Name)
+				}
+			}
+			return true
+		})
+	}
+}
+
+// isAnyErrorResult 判断结果列表是不是「任意值 + error」这两个（老页面处理器形状）。
+func isAnyErrorResult(results *ast.FieldList) bool {
+	if results == nil || len(results.List) != 2 {
+		return false
+	}
+	first, second := results.List[0], results.List[1]
+	if len(first.Names) > 1 || len(second.Names) > 1 {
+		return false
+	}
+	iface, ok := first.Type.(*ast.InterfaceType)
+	if !ok || iface.Methods == nil || len(iface.Methods.List) != 0 {
+		return false
+	}
+	errIdent, ok := second.Type.(*ast.Ident)
+	return ok && errIdent.Name == "error"
+}

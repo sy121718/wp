@@ -267,7 +267,7 @@ func newBundlePageEngine(t *testing.T) (*gin.Engine, *bundleFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
-	engine.GET("/admin/products/bundle", adminui.Page(producthttp.ProductBundlePageTemplate, handle.ProductBundlePage))
+	engine.GET("/admin/products/bundle", adminui.PageSlot(producthttp.ProductBundlePageTemplate), handle.ProductBundlePage)
 	// 保存走 JSON 写基座（页面声明 data-write-api）：页面端 /admin/products/bundle/save 已删除。
 	engine.POST("/api/product/bundle/set", producthttp.NewProductHandle(f.products).SetBundleConfig)
 	return engine, f
@@ -313,7 +313,7 @@ func TestBundlePageReadFailureIsFiveHundred(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(&bundlePageFailReader{Service: f.products, status: http.StatusInternalServerError}, &bundlePageFailReader{Service: f.products, status: http.StatusInternalServerError}, f.projects)
-	engine.GET("/admin/products/bundle", adminui.Page(producthttp.ProductBundlePageTemplate, handle.ProductBundlePage))
+	engine.GET("/admin/products/bundle", adminui.PageSlot(producthttp.ProductBundlePageTemplate), handle.ProductBundlePage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/products/bundle?project="+f.projectID, nil))

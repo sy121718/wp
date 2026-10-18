@@ -18,7 +18,7 @@
 ## 控制器
 - 文件名只有两种：`<mod>_router.go`、`<domain>_handle.go`；类型 `<Module>Handle` / `<Module><Domain>PageHandle`。
 - 方法体只允许：`binding.JSON/Form/Query/Field`、校验失败转响应、调 service、`return`、`response.*`。
-- 页面处理器签名 `func(*gin.Context) (any, error)`；模板名只出现在 router（`adminui.Page/Bare`）。
+- 页面处理器签名 `func(*gin.Context)`：成功 `pageview.Render(c, data)`、失败 `pageview.Fail(c, err)`；模板名只出现在 router（`adminui.PageSlot / BareSlot`）。
 - 一文件 = 一个业务功能；单方法 ≤60 行；不 import `internal/adminui`（router 除外）。
 
 ## service

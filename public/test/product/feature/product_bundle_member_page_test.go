@@ -45,7 +45,7 @@ func newBundleMemberPageEngine(t *testing.T) (*gin.Engine, *bundleFixture) {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products/bundle", adminui.Page(producthttp.ProductBundlePageTemplate, handle.ProductBundlePage))
+	engine.GET("/admin/products/bundle", adminui.PageSlot(producthttp.ProductBundlePageTemplate), handle.ProductBundlePage)
 	// 保存走 JSON 写基座（页面声明 data-write-api）：页面端 /admin/products/bundle/save 已删除。
 	engine.POST("/api/product/bundle/set", producthttp.NewProductHandle(f.products).SetBundleConfig)
 	engine.POST("/admin/products/bundle/members/resolve", handle.ProductsBundleMembersResolve)

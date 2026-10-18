@@ -406,9 +406,9 @@ func editorRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/products/bundle", adminui.Page(ProductBundlePageTemplate, h.ProductBundlePage))
-	engine.GET("/admin/products/edit", adminui.Page(ProductEditPageTemplate, h.ProductEditPage))
-	engine.GET("/admin/products/template", adminui.Page(ProductDetailTemplatePageTemplate, h.ProductDetailTemplatePage))
+	engine.GET("/admin/products/bundle", adminui.PageSlot(ProductBundlePageTemplate), h.ProductBundlePage)
+	engine.GET("/admin/products/edit", adminui.PageSlot(ProductEditPageTemplate), h.ProductEditPage)
+	engine.GET("/admin/products/template", adminui.PageSlot(ProductDetailTemplatePageTemplate), h.ProductDetailTemplatePage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec

@@ -119,6 +119,7 @@ import (
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 )
 
 const (
@@ -593,16 +594,16 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 //
 // 出口两个形态：预览就绪 → 直出构建器渲染好的整份 HTML（后端只搬字节）；还没就绪 → 交替代页视图
 // admin/preview_notice.html（与商品预览共用）。两种都不拼 HTML。
-func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) (any, error) {
+func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	// 替代页是模板渲染，取词在这里先做掉：视图只给成品串。
 	tr := shell.TranslateFor(c)
 	id := strings.TrimSpace(c.Query("id"))
 	if id == "" {
-		return previewNoticeResp(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。")), nil
+		pageview.Render(c, previewNoticeResp(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。")))
 	}
 	if h == nil || h.instances == nil {
-		return previewNoticeResp(c, tr(contentenums.PreviewUnavailable, "预览不可用：发布能力未装配。")), nil
+		pageview.Render(c, previewNoticeResp(c, tr(contentenums.PreviewUnavailable, "预览不可用：发布能力未装配。")))
 	}
 	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
 		EntityType: articleEntityType, EntityID: id,
@@ -610,14 +611,14 @@ func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) (any, error) {
 	if err != nil {
 		// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
 		logger.Scene("content").With("article_id", id).Error(err, "文章详情页预览渲染失败")
-		return previewNoticeResp(c, tr(contentenums.PreviewFailed, "预览渲染失败（多半是这部文章还没有可用的详情页模板）。")), nil
+		pageview.Render(c, previewNoticeResp(c, tr(contentenums.PreviewFailed, "预览渲染失败（多半是这部文章还没有可用的详情页模板）。")))
 	}
 	if res == nil || strings.TrimSpace(res.HTML) == "" {
-		return previewNoticeResp(c, tr(contentenums.PreviewEmpty, "还没有可渲染的详情页：先给 article 类型建一套内容模板。")), nil
+		pageview.Render(c, previewNoticeResp(c, tr(contentenums.PreviewEmpty, "还没有可渲染的详情页：先给 article 类型建一套内容模板。")))
 	}
 	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物）：后端只搬运字节，不拼结构。
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
-	return nil, response.ErrHandled
+	return
 }
 
 // previewNoticeResp 预览替代页的数据（结构与样式在 internal/templates/admin/preview_notice.html）。

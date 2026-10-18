@@ -12,6 +12,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	pageview "go_wp/pkg/view"
+
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -57,11 +59,12 @@ func (h *inventoryPageHandle) setProductCatalog(products productcontract.Variant
 }
 
 // InventoryPage 库存管理页：工程切换 + 流水筛选 + 某 SKU 各仓库存（只读） + 调整入口。
-func (h *inventoryPageHandle) InventoryPage(c *gin.Context) (any, error) {
+func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		return inventoryPageErrorData(c, inventoryMetaHome, err), nil
+		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, err))
+		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
 	if selected == "" && len(projects) > 0 {
@@ -70,11 +73,13 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) (any, error) {
 
 	warehouses, err := h.listWarehouses(c, selected)
 	if err != nil {
-		return inventoryPageErrorData(c, inventoryMetaHome, err), nil
+		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, err))
+		return
 	}
 	options, err := h.variantOptions(ctx, selected)
 	if err != nil {
-		return inventoryPageErrorData(c, inventoryMetaHome, err), nil
+		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, err))
+		return
 	}
 
 	// 查询目标：variantId 优先（下拉选变体），其次直接给 SKU 编码。
@@ -95,7 +100,8 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) (any, error) {
 			ProjectID: selected, SKUCode: sku,
 		})
 		if serr != nil {
-			return inventoryPageErrorData(c, inventoryMetaHome, serr), nil
+			pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, serr))
+			return
 		}
 		tr := shell.TranslateFor(c)
 		byWarehouse := make(map[string]*inventorydto.StockResp, len(rows))
@@ -131,7 +137,8 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) (any, error) {
 
 	reasons, err := h.listReasons(c, selected)
 	if err != nil {
-		return inventoryPageErrorData(c, inventoryMetaHome, err), nil
+		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, err))
+		return
 	}
 
 	// 流水筛选：SKU / 仓库 / 方向 / 原因 / 时间五个维度。原先挂在采购页的「进货历史」
@@ -146,7 +153,8 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) (any, error) {
 	movements, total, page, err := h.listMovements(c, selected, sku, filterWarehouse, filterDirection,
 		filterReason, filterTimeFrom, filterTimeTo, page, limit)
 	if err != nil {
-		return inventoryPageErrorData(c, inventoryMetaHome, err), nil
+		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, err))
+		return
 	}
 
 	tr := shell.TranslateFor(c)
@@ -195,7 +203,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) (any, error) {
 		})
 		pageData["Pagination"] = pg
 	}
-	return pageData, nil
+	pageview.Render(c, pageData)
 }
 
 // listMovements 库存流水列表（按 SKU / 仓库 / 方向 / 原因 / 时间过滤 + 分页）。
@@ -220,14 +228,14 @@ func (h *inventoryPageHandle) listMovements(c *gin.Context, projectID, sku, ware
 	// 先计数、收敛页码，再取当页数据（顺序不能反，见 clampInventoryPage）。
 	total, err = h.inventory.CountMovements(ctx, filterReq)
 	if err != nil {
-		return nil, 0, page, err
+		return nil, 0, 0, err
 	}
 	curPage = clampInventoryPage(page, limit, total)
 	listReq := *filterReq
 	listReq.Page, listReq.Size = curPage, limit
 	rows, err := h.inventory.ListMovements(ctx, &listReq)
 	if err != nil {
-		return nil, 0, curPage, err
+		return nil, 0, 0, err
 	}
 	tr := shell.TranslateFor(c)
 	for _, m := range rows {

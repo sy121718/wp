@@ -9,6 +9,7 @@ import (
 	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -26,7 +27,7 @@ var (
 	productBrandsBackKeys     = []string{"project", "keyword", "page", "limit"}
 )
 
-func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
@@ -34,14 +35,16 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) (any, error) {
 	// 哪条只降级，都是业务结论。见 service.ProductCategoriesPage）。
 	req, ok := binding.Query[productdto.ProductCategoriesPageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	view, err := reader.ProductCategoriesPage(c.Request.Context(), req)
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
 	if view == nil {
-		return nil, errors.New("页面读模型返回空视图")
+			pageview.Fail(c, errors.New("页面读模型返回空视图"))
+		return
 	}
 
 	// —— 控制器负责的部分：行装配与抽屉 ——
@@ -54,19 +57,24 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) (any, error) {
 	{
 		view.Categories = categoryTreeRows(c, view.SelectedProject, view.CategoryDetails, options, view.Filtered, view.ParentLabels)
 	}
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // ProductCategoryParents is a bounded, project-scoped parent picker search.
 //
 // 工程存在性判定、关键词为空给空候选、候选形状（PickOptionResp）全在 service 的
 // CategoryParentOptions 里 —— 这一层只做绑定与转交。
-func (h *ProductPageHandle) ProductCategoryParents(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductCategoryParents(c *gin.Context) {
 	req, ok := binding.Query[productdto.ProductCategoryParentsReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
-	return h.reader.CategoryParentOptions(c.Request.Context(), req)
+	data, err := h.reader.CategoryParentOptions(c.Request.Context(), req)
+	if err != nil {
+		pageview.Fail(c, err)
+		return
+	}
+	pageview.Render(c, data)
 }
 
 // categoryOptionIDs 父级候选下拉里出现过的分类 id（MissingParentIDs 的「已知集合」）。
@@ -112,20 +120,22 @@ func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.Cate
 }
 
 // ProductBrandsPage 品牌管理页：工程切换 + 筛选栏 + 品牌列表 + 内联新建表单。
-func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
 	reader := h.reader
 	req, ok := binding.Query[productdto.ProductBrandsPageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	view, err := reader.ProductBrandsPage(c.Request.Context(), req)
 	if err != nil {
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
 	if view == nil {
-		return nil, errors.New("页面读模型返回空视图")
+			pageview.Fail(c, errors.New("页面读模型返回空视图"))
+		return
 	}
 
 	// —— 控制器负责的部分：行装配（每行的编辑抽屉要 csrf 与取词函数）——
@@ -141,7 +151,7 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
 		}
 	}
 	view.Brands = brands
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // missingParentIDs 挑出本页里「父级不在候选列表」的那些父级 id（去重、保持出现顺序）。

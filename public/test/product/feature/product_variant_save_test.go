@@ -650,7 +650,7 @@ func TestVariantListSeedFromStoredVariants(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
-	engine.GET("/admin/products/edit", adminui.Page(producthttp.ProductEditPageTemplate, handle.ProductEditPage))
+	engine.GET("/admin/products/edit", adminui.PageSlot(producthttp.ProductEditPageTemplate), handle.ProductEditPage)
 	rec := httptest.NewRecorder()
 	// 变体清单在**编辑页**（详情页只读）：清单的初始行 / 保存入口都在那里。
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,

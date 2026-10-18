@@ -121,8 +121,8 @@ func newTagQueryFixture(t *testing.T) *tagPageFixture {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	h := producthttp.NewProductPageHandle(svc, svc, projects)
-	engine.GET("/admin/product-tags", adminui.Page(producthttp.ProductTagsPageTemplate, h.ProductTagsPage))
-	engine.GET("/admin/product-tags/hits", adminui.Page(producthttp.ProductTagHitsTemplate, h.ProductTagHitsFragment))
+	engine.GET("/admin/product-tags", adminui.PageSlot(producthttp.ProductTagsPageTemplate), h.ProductTagsPage)
+	engine.GET("/admin/product-tags/hits", adminui.PageSlot(producthttp.ProductTagHitsTemplate), h.ProductTagHitsFragment)
 	return &tagPageFixture{engine: engine, db: db, projects: projects, counter: counter}
 }
 

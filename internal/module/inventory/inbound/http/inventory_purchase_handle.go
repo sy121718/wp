@@ -10,6 +10,7 @@ import (
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 	"strconv"
 	"strings"
 
@@ -161,7 +162,7 @@ func (h *inventoryPurchasePageHandle) purchasesPageView(c *gin.Context, d *inven
 }
 
 // InventoryPurchasesPage 采购入库页：新建采购单 + 采购单列表（含逐行收货）+ 生产入库 + 进货历史。
-func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) (any, error) {
+func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 inventory_notice_handle.go），
@@ -233,7 +234,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) (an
 		})
 	}
 
-	return h.purchasesPageView(c, &inventoryPurchasesPageData{
+	pageview.Render(c, h.purchasesPageView(c, &inventoryPurchasesPageData{
 		Projects:        projects,
 		SelectedProject: selected,
 		Sources:         sources,
@@ -247,7 +248,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) (an
 		Err:             pageErr,
 		LoadFailed:      loadFailed,
 		Pagination:      pg,
-	}), nil
+	}))
 }
 
 // InventoryPurchaseCreate 新建采购单（单头 + 结构化行）。

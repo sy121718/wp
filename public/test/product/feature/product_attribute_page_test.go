@@ -57,8 +57,8 @@ func newAttrPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
-	engine.GET("/admin/product-attributes", adminui.Page(producthttp.ProductAttributesPageTemplate, handle.ProductAttributesPage))
-	engine.POST("/admin/product-attributes/value-rows", adminui.Bare(producthttp.ProductAttributeRowsTemplate, handle.ProductAttributesValueRows))
+	engine.GET("/admin/product-attributes", adminui.PageSlot(producthttp.ProductAttributesPageTemplate), handle.ProductAttributesPage)
+	engine.POST("/admin/product-attributes/value-rows", adminui.BareSlot(producthttp.ProductAttributeRowsTemplate), handle.ProductAttributesValueRows)
 	return engine, f
 }
 

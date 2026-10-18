@@ -623,8 +623,8 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	})
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", adminui.Page(producthttp.ProductListPageTemplate, handle.ProductsPage))
-	engine.GET("/admin/products/new", adminui.Page(producthttp.ProductNewPageTemplate, handle.ProductNewPage))
+	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
+	engine.GET("/admin/products/new", adminui.PageSlot(producthttp.ProductNewPageTemplate), handle.ProductNewPage)
 	// 新建变体是 JSON 端点（页面声明 data-write-api + 基座发起 fetch）。
 	engine.POST("/api/product/variant/create", producthttp.NewProductHandle(f.products).CreateVariant)
 
@@ -815,11 +815,11 @@ func newInventoryPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
-	engine.GET("/admin/inventory", adminui.Page(inventoryhttp.InventoryListPageTemplate, handle.InventoryPage))
+	engine.GET("/admin/inventory", adminui.PageSlot(inventoryhttp.InventoryListPageTemplate), handle.InventoryPage)
 	// 仓库管理与变动原因字典已按「配置不是日常操作」从库存主页拆成独立页，
 	// 相关断言随之搬家，这里同步注册这两个页面路由。
-	engine.GET("/admin/inventory/warehouses", adminui.Page(inventoryhttp.InventoryWarehousesPageTemplate, handle.InventoryWarehousesPage))
-	engine.GET("/admin/inventory/reasons", adminui.Page(inventoryhttp.InventoryReasonsPageTemplate, handle.InventoryReasonsPage))
+	engine.GET("/admin/inventory/warehouses", adminui.PageSlot(inventoryhttp.InventoryWarehousesPageTemplate), handle.InventoryWarehousesPage)
+	engine.GET("/admin/inventory/reasons", adminui.PageSlot(inventoryhttp.InventoryReasonsPageTemplate), handle.InventoryReasonsPage)
 	engine.POST("/admin/inventory/warehouse/create", handle.InventoryWarehouseCreate)
 	engine.POST("/admin/inventory/warehouse/update", handle.InventoryWarehouseUpdate)
 	engine.POST("/admin/inventory/warehouse/default", handle.InventoryWarehouseDefault)

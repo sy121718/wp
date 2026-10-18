@@ -304,7 +304,7 @@ func tagHitsRequest(t *testing.T, h *ProductPageHandle, target string) *httptest
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/product-tags/hits", adminui.Page(ProductTagHitsTemplate, h.ProductTagHitsFragment))
+	engine.GET("/admin/product-tags/hits", adminui.PageSlot(ProductTagHitsTemplate), h.ProductTagHitsFragment)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	return rec

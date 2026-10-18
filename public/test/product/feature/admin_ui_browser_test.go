@@ -73,9 +73,9 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 	})
 	router.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	h := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
-	router.GET("/admin/product-brands", adminui.Page(producthttp.ProductBrandsPageTemplate, h.ProductBrandsPage))
-	router.GET("/admin/product-categories", adminui.Page(producthttp.ProductCategoriesPageTemplate, h.ProductCategoriesPage))
-	router.GET("/admin/product-tags", adminui.Page(producthttp.ProductTagsPageTemplate, h.ProductTagsPage))
+	router.GET("/admin/product-brands", adminui.PageSlot(producthttp.ProductBrandsPageTemplate), h.ProductBrandsPage)
+	router.GET("/admin/product-categories", adminui.PageSlot(producthttp.ProductCategoriesPageTemplate), h.ProductCategoriesPage)
+	router.GET("/admin/product-tags", adminui.PageSlot(producthttp.ProductTagsPageTemplate), h.ProductTagsPage)
 	router.Static("/static", attrTemplateRoot()+"/static")
 	return router
 }

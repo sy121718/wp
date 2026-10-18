@@ -42,8 +42,8 @@ func newProductsPageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	api := producthttp.NewProductHandle(f.products)
 	// 评分是商品的子资源：明细表在**只读**的详情页，「添加评分 / 删除」在编辑页，
 	// 两者都经由 JSON 端点落库（页面表单由基座接管，不再有 /admin/products/rating/*）。
-	engine.GET("/admin/products/detail", adminui.Page(producthttp.ProductDetailPageTemplate, handle.ProductDetailPage))
-	engine.GET("/admin/products/edit", adminui.Page(producthttp.ProductEditPageTemplate, handle.ProductEditPage))
+	engine.GET("/admin/products/detail", adminui.PageSlot(producthttp.ProductDetailPageTemplate), handle.ProductDetailPage)
+	engine.GET("/admin/products/edit", adminui.PageSlot(producthttp.ProductEditPageTemplate), handle.ProductEditPage)
 	engine.POST("/api/product/rating/add", api.AddRating)
 	engine.POST("/api/product/rating/delete", api.DeleteRating)
 	return engine, f

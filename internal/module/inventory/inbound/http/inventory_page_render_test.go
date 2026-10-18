@@ -187,9 +187,9 @@ func newInventoryPageTestRouter(t *testing.T, inv inventorycontract.InventorySer
 		products = catalog[0]
 	}
 	h := NewInventoryPageHandle(inv, projects, products)
-	router.GET("/admin/inventory", adminui.Page(InventoryListPageTemplate, h.InventoryPage))
-	router.GET("/admin/inventory/warehouses", adminui.Page(InventoryWarehousesPageTemplate, h.InventoryWarehousesPage))
-	router.GET("/admin/inventory/reasons", adminui.Page(InventoryReasonsPageTemplate, h.InventoryReasonsPage))
+	router.GET("/admin/inventory", adminui.PageSlot(InventoryListPageTemplate), h.InventoryPage)
+	router.GET("/admin/inventory/warehouses", adminui.PageSlot(InventoryWarehousesPageTemplate), h.InventoryWarehousesPage)
+	router.GET("/admin/inventory/reasons", adminui.PageSlot(InventoryReasonsPageTemplate), h.InventoryReasonsPage)
 	return router
 }
 

@@ -9,6 +9,7 @@ import (
 	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 	"strconv"
 	"strings"
 
@@ -25,7 +26,7 @@ import (
 // ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
 
 // ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
-func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
@@ -34,16 +35,18 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) (any, error) {
 	// 哪条只降级，都是业务结论。见 service.ProductAttributesPage）。
 	req, ok := binding.Query[productdto.ProductAttributesPageReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	view, err := reader.ProductAttributesPage(ctx, req)
 	if err != nil {
 		// 失败出口是 JSON：不装配、不渲染同一页（档位由声明处给，见 productenums.StatusFor）。
-		return nil, err
+		pageview.Fail(c, err)
+		return
 	}
 	if view == nil {
 		// 契约上视图恒非 nil；真为空是编程错误，交出口按 500 处理而不是在这里解引用。
-		return nil, errors.New("属性页读模型返回空视图")
+		pageview.Fail(c, errors.New("属性页读模型返回空视图"))
+		return
 	}
 	// —— 控制器负责的部分 ——
 	// 抽屉表单的数据（编辑属性组 / 保存属性值 / 新建属性组）留在控制器：它们要 csrf
@@ -65,16 +68,16 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) (any, error) {
 		}
 	}
 	view.Attributes = rows
-	return view, nil
+	pageview.Render(c, view)
 }
 
 // ProductAttributesValueRows 值编辑器片段：add / remove 一次，回渲染整段行列表。
 //
 // 行编辑只重建原始表单值与位置；落库时的归一 / 去重 / 排序仍由 service 负责。
-func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) (any, error) {
+func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) {
 	req, ok := binding.Form[productdto.AttributeRowsFormReq](c)
 	if !ok {
-		return nil, response.ErrHandled
+		return
 	}
 	rows := req.Rows
 	switch strings.TrimSpace(req.Action) {
@@ -98,7 +101,7 @@ func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) (any, err
 		groupID = "new"
 	}
 	// 片段数据根交出去：取词注入在 UI 线（adminui.Bare），这里只给数据。
-	return gin.H{"GroupID": groupID, "Rows": rows}, nil
+	pageview.Render(c, gin.H{"GroupID": groupID, "Rows": rows})
 }
 
 func attrRowsFromResp(rows []productdto.AttributeValueResp) []productdto.AttrValueFormRow {
