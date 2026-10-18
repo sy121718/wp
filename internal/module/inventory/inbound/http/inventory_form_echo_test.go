@@ -63,17 +63,17 @@ func TestInventoryFormFailurePreservesRawInput(t *testing.T) {
 		{"reason create", "admin/inventory/inventory_reason_form.html", reasonCreateFields,
 			url.Values{"projectId": {"p1"}, "code": {"  reason  "}, "name": {"  原因  "}, "direction": {"out"}, "sort": {""}},
 			func(c *gin.Context) {
-				(&inventoryPageHandle{}).reasonFormFail(c, errors.New(inventoryenums.ErrReasonCodeTaken))
+				(&inventoryPageHandle{}).reasonFormFail(c, "p1", errors.New(inventoryenums.ErrReasonCodeTaken))
 			}},
 		{"reason builtin edit", "admin/inventory/inventory_reason_form.html", reasonEditFields,
 			url.Values{"projectId": {"p1"}, "id": {"7"}, "builtin": {"1"}, "sort": {" 12 "}},
 			func(c *gin.Context) {
-				(&inventoryPageHandle{}).reasonEditFormFail(c, errors.New(inventoryenums.ErrReasonStatusInvalid))
+				(&inventoryPageHandle{}).reasonEditFormFail(c, "p1", errors.New(inventoryenums.ErrReasonStatusInvalid))
 			}},
 		{"reason custom edit", "admin/inventory/inventory_reason_form.html", reasonEditFields,
 			url.Values{"projectId": {"p1"}, "id": {"8"}, "builtin": {"0"}, "name": {"  新原因  "}, "sort": {"3"}},
 			func(c *gin.Context) {
-				(&inventoryPageHandle{}).reasonEditFormFail(c, errors.New(inventoryenums.ErrReasonStatusInvalid))
+				(&inventoryPageHandle{}).reasonEditFormFail(c, "p1", errors.New(inventoryenums.ErrReasonStatusInvalid))
 			}},
 		{"source create", "admin/inventory/inventory_source_form.html", sourceCreateFields,
 			url.Values{"projectId": {"p1"}, "code": {"  SOURCE  "}, "name": {"  货源  "}, "type": {"internal"}, "relatedParty": {"false"}, "settlePrice": {""}, "sort": {""}, "config": {" {\"a\":1}  "}},

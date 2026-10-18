@@ -5,12 +5,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"go_wp/internal/adminui"
 	"go_wp/internal/shell"
+	"go_wp/pkg/binding"
 	"net/http"
 	"strconv"
 	"strings"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	bulkids "go_wp/pkg/bulkids"
 )
 
 // InventoryReasonsPage 变动原因字典页（从库存主页拆出）。
@@ -44,7 +46,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 		"SelectedProject":  selected,
 		"Reasons":          reasons,
 		"Directions":       directionOptions(tr),
-		"ReasonCreateForm": reasonFormData(c),
+		"ReasonCreateForm": reasonFormData(c, selected),
 		// 写动作表单 action 上带的筛选上下文（见 inventory_jump.go）。
 		"ListQuery": inventoryQueryFromRequest(c, inventoryReasonBackKeys...),
 	}))
@@ -54,16 +56,12 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 
 // InventoryReasonCreate 后台表单新建自定义变动原因（内置原因由迁移 seed，只读）。
 func (h *inventoryPageHandle) InventoryReasonCreate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	req := &inventorydto.CreateReasonReq{
-		ProjectID: projectID,
-		Code:      strings.TrimSpace(c.PostForm("code")),
-		Name:      strings.TrimSpace(c.PostForm("name")),
-		Direction: strings.TrimSpace(c.PostForm("direction")),
-		Sort:      parseIntOr(c.PostForm("sort"), 0),
+	form, ok := binding.Form[inventorydto.ReasonFormReq](c)
+	if !ok {
+		return
 	}
-	if _, err := h.inventory.CreateReason(c.Request.Context(), req); err != nil {
-		h.reasonFormFail(c, err)
+	if _, err := h.inventory.CreateReason(c.Request.Context(), form.CreateReq()); err != nil {
+		h.reasonFormFail(c, form.ProjectID, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventoryReasonBack(c), inventoryReasonBackMsg)
@@ -73,21 +71,12 @@ func (h *inventoryPageHandle) InventoryReasonCreate(c *gin.Context) {
 //
 // 内置原因只读：改名一律由服务端拒绝（它的 key 由系统按 code 派生），仅允许停用 / 启用。
 func (h *inventoryPageHandle) InventoryReasonUpdate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	req := &inventorydto.UpdateReasonReq{ProjectID: projectID, ID: c.PostForm("id")}
-	if rawName, submitted := c.GetPostForm("name"); submitted {
-		name := strings.TrimSpace(rawName)
-		req.Name = &name
+	form, ok := binding.Form[inventorydto.ReasonFormReq](c)
+	if !ok {
+		return
 	}
-	if status := strings.TrimSpace(c.PostForm("status")); status != "" {
-		req.Status = &status
-	}
-	if rawSort := strings.TrimSpace(c.PostForm("sort")); rawSort != "" {
-		sortValue := parseIntOr(rawSort, 0)
-		req.Sort = &sortValue
-	}
-	if _, err := h.inventory.UpdateReason(c.Request.Context(), req); err != nil {
-		h.reasonEditFormFail(c, err)
+	if _, err := h.inventory.UpdateReason(c.Request.Context(), form.UpdateReq()); err != nil {
+		h.reasonEditFormFail(c, form.ProjectID, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventoryReasonBack(c), inventoryReasonBackMsg)
@@ -95,15 +84,19 @@ func (h *inventoryPageHandle) InventoryReasonUpdate(c *gin.Context) {
 
 // InventoryReasonsBulkStatus 按现有更新权限逐条切换原因状态，不触碰名称和排序。
 func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
-	projectID := c.PostForm("projectId")
+	form, ok := binding.Form[inventorydto.ReasonBulkFormReq](c)
+	if !ok {
+		return
+	}
+	projectID := form.ProjectID
 	back := inventoryReasonBack(c)
 	backMsg := inventoryReasonBackMsg
-	status := strings.TrimSpace(c.PostForm("status"))
-	if status != inventoryenums.StatusActive && status != inventoryenums.StatusDisabled {
+	if !form.ValidStatus() {
 		inventoryJump(c, false, inventoryErrMsg(c, inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid)), back, backMsg)
 		return
 	}
-	ids, err := shell.BulkIDs(c)
+	status := form.StatusValue()
+	ids, err := bulkids.Normalize(form.IDs)
 	if err != nil {
 		inventoryJump(c, false, inventoryBulkIDsMsg(c, err), back, backMsg)
 		return
@@ -223,35 +216,35 @@ var reasonCreateFields = []string{"projectId", "code", "name", "direction", "sor
 
 var reasonEditFields = []string{"projectId", "id", "builtin", "name", "status", "sort"}
 
-func reasonFormData(c *gin.Context) gin.H {
+func reasonFormData(c *gin.Context, projectID string) gin.H {
 	return gin.H{
-		"SelectedProject": c.PostForm("projectId"),
+		"SelectedProject": projectID,
 		"Directions":      directionOptions(shell.TranslateFor(c)),
 	}
 }
 
-func (h *inventoryPageHandle) reasonFormFail(c *gin.Context, err error) {
+func (h *inventoryPageHandle) reasonFormFail(c *gin.Context, projectID string, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryReasonBack(c), inventoryReasonBackMsg)
 		return
 	}
 	// htmx 分支原样保留：失败在抽屉里重渲片段。
-	data := reasonFormData(c)
+	data := reasonFormData(c, projectID)
 	data["FormEcho"] = inventoryRawFormValues(c, reasonCreateFields)
 	data["SubmitErr"] = inventoryErrText(c, err)
 	data["ListQuery"] = inventoryQueryFromRequest(c, inventoryReasonBackKeys...)
 	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", adminui.Prepare(c, data))
 }
 
-func (h *inventoryPageHandle) reasonEditFormFail(c *gin.Context, err error) {
+func (h *inventoryPageHandle) reasonEditFormFail(c *gin.Context, projectID string, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryReasonBack(c), inventoryReasonBackMsg)
 		return
 	}
 	// htmx 分支原样保留：失败在抽屉里重渲片段。
-	data := reasonFormData(c)
+	data := reasonFormData(c, projectID)
 	data["Edit"] = true
 	data["FormEcho"] = inventoryRawFormValues(c, reasonEditFields)
 	data["SubmitErr"] = inventoryErrText(c, err)
