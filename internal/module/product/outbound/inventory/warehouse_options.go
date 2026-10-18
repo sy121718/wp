@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	inventorycontract "go_wp/internal/module/inventory/contract"
-	inventoryenums "go_wp/internal/module/inventory/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productservice "go_wp/internal/module/product/service"
@@ -25,12 +24,6 @@ import (
 // 候选是**快捷入口**：选不到的去库存页核对（那里有分页与关键字）。把整张库存表拉进内存，
 // 在仓库多 / 货多时是纯粹的浪费，而这里只需要「最近常用的一屏」。
 const warehouseSKUOptionSize = 100
-
-// defaultWarehouseSuffixFallback 「默认仓」后缀的中文兜底（词条 key 在库存模块 enums）。
-//
-// 词条与文案的真源在库存模块（enums 与词条都只有一条）：商品列表页与库存页显示同一个
-// 后缀，两处必须同步改。
-const defaultWarehouseSuffixFallback = "· 默认仓"
 
 // Options 实现 productcontract.WarehouseOptionsPort。
 type Options struct {
@@ -70,10 +63,8 @@ func (o *Options) WarehouseOptions(ctx context.Context, projectID string) (out [
 			ID:                    w.ID,
 			Code:                  w.Code,
 			Name:                  w.Name,
-			Label:                 w.Name + "（" + w.Code + "）",
-			IsDefault:             w.IsDefault,
-			DefaultSuffixKey:      inventoryenums.InventoryChangeWarehouseDefaultSuffix,
-			DefaultSuffixFallback: defaultWarehouseSuffixFallback,
+			Label:     w.Name + "（" + w.Code + "）",
+			IsDefault: w.IsDefault,
 		})
 	}
 	return out, nil

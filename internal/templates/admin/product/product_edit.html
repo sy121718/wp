@@ -366,7 +366,7 @@
                 <select class="form-select" id="variant-save-warehouse-{{p.ID}}" name="warehouseId">
                     <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
                     {{range _, w := warehouseOptions}}
-                    <option value="{{w.ID}}">{{w.Label}}{{if w.IsDefault}} {{tr(w.DefaultSuffixKey, w.DefaultSuffixFallback)}}{{end}}</option>
+                    <option value="{{w.ID}}">{{w.Label}}{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
                     {{end}}
                 </select>
                 {{end}}
@@ -536,7 +536,7 @@
             <select class="form-select" id="variant-warehouse-{{p.ID}}" name="warehouseId">
                 <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
                 {{range _, w := warehouseOptions}}
-                <option value="{{w.ID}}">{{w.Label}}{{if w.IsDefault}} {{tr(w.DefaultSuffixKey, w.DefaultSuffixFallback)}}{{end}}</option>
+                <option value="{{w.ID}}">{{w.Label}}{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
                 {{end}}
             </select>
             {{end}}
@@ -564,7 +564,7 @@
             <select class="form-select" id="generate-warehouse-{{p.ID}}" data-generate-warehouse>
                 <option value="">{{ .["t"]("admin.products.warehouse.defaultOption", "（默认仓）") }}</option>
                 {{range _, w := warehouseOptions}}
-                <option value="{{w.ID}}">{{w.Label}}{{if w.IsDefault}} {{tr(w.DefaultSuffixKey, w.DefaultSuffixFallback)}}{{end}}</option>
+                <option value="{{w.ID}}">{{w.Label}}{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}</option>
                 {{end}}
             </select>
             {{end}}

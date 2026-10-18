@@ -183,21 +183,14 @@ type ProductEditPageResp struct {
 
 // WarehouseOptionResp 仓库下拉 / 勾选项的渲染视图。
 //
-// Label 只拼**数据**（仓名 + 编码）；「默认仓」后缀是词条，用 DefaultSuffixKey +
-// DefaultSuffixFallback 交给模板取词 —— 控制器提前翻好就等于把这一句锁死在一种语言
-// （英文界面上留中文，不报错、门禁也不红）。
-//
-// DefaultSuffixKey 的词条真源在库存模块（enums 与词条都只有一条）：两个页面显示
-// 同一个后缀，改词条要两处同步。
+// Label 只拼**数据**（仓名 + 编码）；「· 默认仓」后缀由模板按 IsDefault 取词 ——
+// 后端带成品串就等于把这一句锁死在一种语言（英文界面上留中文，不报错、门禁也不红）。
 type WarehouseOptionResp struct {
 	ID        string
 	Code      string
 	Name      string
 	Label     string
 	IsDefault bool
-
-	DefaultSuffixKey      string
-	DefaultSuffixFallback string
 }
 
 // WarehouseSKUItemResp 「从仓库选」的一个候选货。
