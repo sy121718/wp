@@ -168,6 +168,19 @@ dto 结构体 / 数据根 map）。
 （业务 400 / 未找到 404 / 冲突 409 / 内部 500）。`c.String(500, …)` 这类纯文本响应是存量旧写法，
 改成 JSON。**页面 GET 成功**仍由 Jet 渲染整页（SSR 是架构），但渲染发生在前端层，控制器只给数据。
 
+
+**模板只做展示判断，不做业务逻辑**（三条纪律，对应 `internal/templates` 里的 `.jet` / `.html`）：
+
+1. **业务判断在 service，模板只按后端给的状态渲染。** `{{if .CanDelete}}` 可以；
+   `{{if .Status == "draft" && .Revision > 1}}` 不行 —— 后者是业务规则的第二份实现，service 改了模板
+   不会报错，只会安静地渲染出错误结论。要判「允不允许」，由 service 给一个布尔/枚举字段。
+2. **同一份事实只有一个来源。** 合计、均价、占比一律由 service 算好放进视图数据，模板只读。
+   模板里不得对金额 / 数量做乘除，也不得累计（`+=`）—— 视图自己算的那一份与接口算的那一份不会
+   报错，只会在某个角落对不上。门禁 `internal/architecture/template_logic_test.go`：
+   `TestTemplatesDoNotComputeMoney`（金额字段参与 `*` `/`，带存量登记）、`TestTemplatesDoNotAccumulate`
+   （`+=` 零容忍）。判据是启发式（字段名不在清单会漏），门禁绿不等于视图层干净。
+3. **JS 只做 HTMX 覆盖不到的事**（跳转、抽屉、画布、编辑器），且交互态不能只存在于内存里 ——
+   刷新或从别的页面跳回来会丢，依赖它的布局会重新铺开。存量清单见「交互方式（HTMX）」一节。
 门禁：`internal/architecture/html_boundary_test.go` 的 `TestNoHTMLLiteralsInBackend`（扫 Go 字符串字面量里的
 HTML 标签，白名单逐条写理由、**双向判定** —— 登记了却不再命中同样失败）+ `controller_shape_test.go` 的
 `TestControllerRenderExit`（非 router 控制器不得出现 `c.HTML` / `adminui.RenderPage` / `adminui.RenderBare`）。
