@@ -107,7 +107,7 @@
               data-msg-all-skipped="{{tr("admin.i18nWrite.bulkResult.allSkipped", "{count} 条词条都未能删除，列表未改动。")}}"
               data-msg-partial="{{tr("admin.i18nWrite.bulkResult.partial", "已删除 {deleted} 条，{skipped} 条未能删除（可能已被删除）。")}}"
               data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
               data-msg-refresh="{{tr("admin.i18nWrite.refresh", "刷新列表")}}">
             {* 结果区：批量结论（已删 N / 跳过 M + 逐条原因）就地显示在这里。 *}
             <p class="form-hint" data-write-status role="status" hidden></p>
@@ -176,7 +176,7 @@
         <p class="form-hint" data-write-status role="status" hidden></p>
         {{range i, e := entries}}
         <form id="i18n-del-{{i}}" class="hidden-form" data-write-api="/api/i18n/save" data-write-mode="create"
-              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
               data-confirm="{{tr("msg_delete_confirm", "确定要删除吗？")}}" data-confirm-danger>
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="key" value="{{e.Key}}">
@@ -192,7 +192,7 @@
     {{if canManage}}
     <template id="tpl-i18n-create">
         <form data-write-api="/api/i18n/save" data-write-mode="create"
-              data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}">
+              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
             <input type="hidden" name="action" value="create">
             {* 结果区：失败时写在这儿（表单内容原样保留），成功则整页刷新回列表。 *}
             <p class="form-hint" data-write-status role="status" hidden></p>

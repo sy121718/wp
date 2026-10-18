@@ -37,7 +37,7 @@
               data-write-number="sort"
               data-write-object=".tag-rule-fields;ruleParams;ruleType;kind=rule"
               data-msg-ok="{{tr("admin.product_tags.saved", "已保存。")}}"
-              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <input type="hidden" name="projectId" value="{{.Project}}">
             {{if !create}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
             <div class="form-inline">

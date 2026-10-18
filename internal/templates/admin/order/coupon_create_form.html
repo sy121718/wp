@@ -19,7 +19,7 @@
                   data-write-api="/api/order/coupon/create" data-write-mode="create"
                   data-write-number="discountValue,minSubtotal,maxUses,perUserLimit,status"
                   data-write-nav="/admin/coupons?{{.ListQuery}}"
-                  data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+                  data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
                 <input type="hidden" name="projectId" value="{{.SelectedProject}}">
                 {* 结果区：失败写在这儿（表单内容原样保留），成功则整页跳回列表。 *}
                 <p class="form-hint" data-write-status role="status" hidden></p>

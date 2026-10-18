@@ -19,7 +19,7 @@
               data-write-bool="enabled"
               data-write-rows=".attr-value-row;id,key,label,sort,enabled;values"
               data-msg-ok="{{vfTr("admin.product_attributes.values.saved", "属性值已保存。")}}"
-              data-msg-failed="{{vfTr("ErrInternal", "操作失败，请稍后重试")}}">
+              data-msg-failed="{{vfTr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <input type="hidden" name="projectId" value="{{.Project}}">
             <input type="hidden" name="id" value="{{.GroupID}}">
             {* 容器 id 与 GroupID 同源：行内「添加 / 删除」按钮的 hx-include / hx-target 都靠它。

@@ -129,7 +129,7 @@
                         data-msg-all-skipped="{{tr("admin.product_categories.bulkDelete.allSkipped", "{count} 个分类都未能删除（有子分类或仍被商品引用）。")}}"
                         data-msg-partial="{{tr("admin.product_categories.bulkDelete.partial", "已删除 {deleted} 个分类，{skipped} 个未能删除（有子分类或仍被商品引用）。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.product_categories.bulkDelete.refresh", "刷新列表")}}"
                         data-confirm="{{tr("admin.product_categories.bulkDeleteConfirm", "删除选中的分类？有子分类或被商品引用的会被拒绝，其余照常删除。")}}"
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
@@ -225,7 +225,7 @@
        否则 service 只能走「唯一工程」兜底，多于一个工程时直接 ErrInvalidParam。 *}
     <form id="category-del-{{row.ID}}" class="hidden-form"
           data-write-api="/api/product/category/delete" data-write-mode="single" data-write-extra="projectId"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{ .["t"]("admin.product_categories.list.deleteConfirm", "删除该分类？有子分类或被商品引用时会被拒绝。") }}" data-confirm-danger>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{row.ID}}">

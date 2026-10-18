@@ -137,7 +137,7 @@
                         data-msg-all-skipped="{{tr("admin.coupons.bulkToggle.allSkipped", "{count} 个优惠码都未能更新（不存在或不属于当前站点）。")}}"
                         data-msg-partial="{{tr("admin.coupons.bulkToggle.partial", "已更新 {updated} 个优惠码，{skipped} 个未能更新（不存在或不属于当前站点）。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.coupons.bulk.refresh", "刷新列表")}}"
                         data-confirm="{{tr("admin.coupons.bulkToggleConfirm", "把选中的优惠码改成上面选的状态？")}}">{{tr("admin.coupons.bulk.toggle", "批量启停")}}</button>
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
@@ -147,7 +147,7 @@
                         data-msg-all-skipped="{{tr("admin.coupons.bulkDelete.allSkipped", "{count} 个优惠码都未能删除（不存在或已有核销记录）。")}}"
                         data-msg-partial="{{tr("admin.coupons.bulkDelete.partial", "已删除 {deleted} 个优惠码，{skipped} 个未能删除（不存在或已有核销记录）。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.coupons.bulk.refresh", "刷新列表")}}"
                         data-confirm="{{tr("admin.coupons.bulkDeleteConfirm", "删除选中的优惠码？有核销记录的会被拒绝（请改用停用），其余照常删除。")}}"
                         data-confirm-danger>{{tr("admin.coupons.bulk.delete", "批量删除")}}</button>
@@ -288,7 +288,7 @@
     <form id="coupon-toggle-{{cp.ID}}" class="hidden-form"
           data-write-api="/api/order/coupon/update" data-write-mode="create"
           data-write-number="id,discountValue,minSubtotal,maxUses,perUserLimit,status"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
         <input type="hidden" name="id" value="{{cp.ID}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="name" value="{{cp.Name}}">
@@ -304,7 +304,7 @@
     </form>
     <form id="coupon-del-{{cp.ID}}" class="hidden-form"
           data-write-api="/api/order/coupon/delete" data-write-mode="single" data-write-number="id"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{tr("admin.coupons.list.deleteConfirm", "删除该优惠码？有核销记录的券会被拒绝，请改用停用。")}}" data-confirm-danger>
         <input type="hidden" name="id" value="{{cp.ID}}">
     </form>

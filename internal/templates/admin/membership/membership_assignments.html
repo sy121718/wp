@@ -48,7 +48,7 @@
     {{if isset(.Buttons["membership.assign_set"])}}
     <section class="card">
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.assign.setTitle", "手工指定等级") }}</span></div>
-        <form data-write-api="/api/membership/assign/set" data-write-mode="create" data-write-number="userId,tierId" data-write-nav="/admin/membership/assignments?{{listQuery}}" data-msg-failed="{{tr("membership.err.internal", "操作失败，请稍后重试")}}" class="form-stack">
+        <form data-write-api="/api/membership/assign/set" data-write-mode="create" data-write-number="userId,tierId" data-write-nav="/admin/membership/assignments?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -131,7 +131,7 @@
                 <td class="col-actions">
                     {{if r.Source == sourceManual}}
                     {{if isset(.Buttons["membership.assign_unlock"])}}
-                    <form data-write-api="/api/membership/assign/unlock" data-write-mode="create" data-write-number="userId" data-msg-failed="{{tr("membership.err.internal", "操作失败，请稍后重试")}}">
+                    <form data-write-api="/api/membership/assign/unlock" data-write-mode="create" data-write-number="userId" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
                         <input type="hidden" name="csrf_token" value="{{csrf}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
                         <input type="hidden" name="projectId" value="{{selectedProject}}">

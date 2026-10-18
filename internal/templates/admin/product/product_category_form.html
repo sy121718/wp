@@ -12,7 +12,7 @@
        —— 那是「服务端渲染结论」时代的产物，而结论现在由接口回、由基座显示。 *}
     <form data-write-api="/api/product/category/{{if create}}create{{else}}update{{end}}"
           data-write-mode="form" data-write-number="sort"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
         <input type="hidden" name="projectId" value="{{.Project}}">
         {{if !create}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
         <div class="form-inline">

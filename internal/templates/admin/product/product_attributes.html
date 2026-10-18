@@ -119,7 +119,7 @@
                         data-msg-all-skipped="{{tr("admin.product_attributes.bulkDelete.allSkipped", "{count} 个属性组都未能删除。")}}"
                         data-msg-partial="{{tr("admin.product_attributes.bulkDelete.partial", "已删除 {deleted} 个属性组，{skipped} 个未能删除。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.product_attributes.bulkDelete.refresh", "刷新列表")}}"
                         data-confirm="{{tr("admin.product_attributes.bulkDeleteConfirm", "删除选中的属性组及其全部属性值？被商品引用的会被拒绝，其余照常删除。")}}"
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
@@ -209,7 +209,7 @@
     <form id="attr-del-{{a.ID}}" class="hidden-form"
           data-write-api="/api/product/attribute/delete" data-write-mode="single"
           data-msg-ok="{{ .["t"]("admin.product_attributes.list.deleted", "属性组已删除。") }}"
-          data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}"
+          data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
           data-confirm="{{ .["t"]("admin.product_attributes.list.deleteConfirm", "删除该属性组及其全部属性值？被商品引用时会拒绝删除。") }}" data-confirm-danger>
         <input type="hidden" name="id" value="{{a.ID}}">
     </form>

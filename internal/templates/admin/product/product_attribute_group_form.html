@@ -38,7 +38,7 @@
               data-write-bool="isVariation,enabled"
               {{if gfCreate}}data-write-rows=".attr-value-row;id,key,label,sort,enabled;values"{{end}}
               data-msg-ok="{{gfTr("admin.product_attributes.saved", "已保存。")}}"
-              data-msg-failed="{{gfTr("ErrInternal", "操作失败，请稍后重试")}}">
+              data-msg-failed="{{gfTr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <input type="hidden" name="projectId" value="{{.Project}}">
             {{if gfCreate}}
             {* 新建：groupId=new 是值编辑器容器的 id 依据（attr-values-new）。 *}

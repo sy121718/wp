@@ -36,7 +36,7 @@
               data-write-float="defaultPrice"
               data-write-skip-empty="slug,sku,externalSku,defaultPrice,quantity"
               data-write-nav="/admin/products/edit?project={{cfProject}}&id={id}"
-              data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}"
+              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
               data-product-create-form>
             <input type="hidden" name="projectId" value="{{cfProject}}">
             {* 写结论落在表单最上方：保存按钮在表单底部，失败原因若出现在别处，视线根本走不到。 *}

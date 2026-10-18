@@ -131,7 +131,7 @@
               data-msg-all-skipped="{{tr("admin.products.bulkResult.allSkipped", "{count} 个商品都未能删除，列表未改动。")}}"
               data-msg-partial="{{tr("admin.products.bulkResult.partial", "已删除 {deleted} 个，{skipped} 个未能删除（可能已被删除或不在本工程）。")}}"
               data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
               data-msg-refresh="{{tr("admin.common.write.refresh", "刷新列表")}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
@@ -289,7 +289,7 @@
     </form>
     <form id="product-del-{{p.ID}}" class="hidden-form" data-write-api="/api/product/delete"
           data-write-mode="single" data-write-extra="projectId"
-          data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}"
+          data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
           data-confirm="{{ .["t"]("admin.products.row.deleteConfirm", "删除该商品及其全部变体？") }}" data-confirm-danger>
         {* projectId 必须点名带上：service 的 resolveProjectID 在它为空的只肯走「唯一工程」兜底，
            多工程部署下直接拒。csrf_token 改走 X-CSRF-Token 头，隐藏域不再需要。 *}
@@ -331,7 +331,7 @@
               data-msg-all-skipped="{{ .["t"]("admin.products.bulkPricing.allSkipped", "{count} 个商品都未能改价，价格未改动。") }}"
               data-msg-partial="{{ .["t"]("admin.products.bulkPricing.partial", "已改价 {updated} 个，{skipped} 个未能改价（可能已被删除或不在本工程）。") }}"
               data-msg-too-many="{{ .["t"]("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行") }}"
-              data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}"
+              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
               data-msg-refresh="{{ .["t"]("admin.common.write.refresh", "刷新列表") }}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <p class="form-hint" data-write-status role="status" hidden></p>

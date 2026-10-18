@@ -83,7 +83,7 @@
        csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头。 *}
     <form id="tag-recalc-all" class="hidden-form"
           data-write-api="/api/product/tag/recalc" data-write-mode="form"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
     </form>
 
@@ -130,7 +130,7 @@
                         data-msg-all-skipped="{{tr("admin.product_tags.bulkDelete.allSkipped", "{count} 个标签都未能删除。")}}"
                         data-msg-partial="{{tr("admin.product_tags.bulkDelete.partial", "已删除 {deleted} 个标签，{skipped} 个未能删除。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.product_tags.bulkDelete.refresh", "刷新列表")}}"
                         data-confirm="{{tr("admin.product_tags.bulkDeleteConfirm", "删除选中的标签？商品上的这些标签会被一并解绑。")}}"
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
@@ -268,7 +268,7 @@
        都是服务端算出来的，就地改 DOM 会与列表里的同一批数字不同源。 *}
     <form id="tag-recalc-{{t.ID}}" class="hidden-form"
           data-write-api="/api/product/tag/recalc" data-write-mode="form"
-          data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}">
+          data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="tagId" value="{{t.ID}}">
     </form>
@@ -277,7 +277,7 @@
     <form id="tag-del-{{t.ID}}" class="hidden-form"
           data-write-api="/api/product/tag/delete" data-write-mode="single" data-write-extra="projectId"
           data-msg-ok="{{ .["t"]("admin.product_tags.list.deleted", "标签已删除。") }}"
-          data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}"
+          data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
           data-confirm="{{ .["t"]("admin.product_tags.list.deleteConfirm", "删除该标签？商品上的这个标签会被一并解绑。") }}" data-confirm-danger>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{t.ID}}">
@@ -289,7 +289,7 @@
         {* 兜底形态：抽屉数据没装配（读取失败页）时也必须是**能用的**表单 —— 指向已删除的
            页面 POST 会让按钮 404，而失败页上没人会去查它为什么没反应。 *}
         <form class="form-stack" data-write-api="/api/product/tag/update" data-write-mode="form"
-              data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}">
+              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{t.ID}}">
             <input class="form-input" name="name" value="{{t.Name}}" required>
@@ -304,7 +304,7 @@
     <template id="tpl-tag-create">
         {{if isset(.TagCreateForm)}}{{include "product_tag_form.html" .TagCreateForm}}{{else}}
         <form class="form-stack" data-write-api="/api/product/tag/create" data-write-mode="form"
-              data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}">
+              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input class="form-input" name="name" required>
             <button data-requires-js hidden type="submit">{{ .["t"]("admin.product_tags.create.submit", "新建标签") }}</button>

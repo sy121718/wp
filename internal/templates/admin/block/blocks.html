@@ -98,7 +98,7 @@
         <form data-write-api="/api/block/create"
               data-write-mode="create"
               data-write-nav="/workbench?block={id}"
-              data-msg-failed="{{ .["t"]("ErrInternal", "操作失败，请稍后重试") }}">
+              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 结果区：失败时写在这儿（表单内容原样保留），成功则整页跳走。 *}
             <p class="form-hint" data-write-status role="status" hidden></p>
@@ -163,7 +163,7 @@
           data-msg-all-skipped="{{tr("admin.blocks.bulkResult.allSkipped", "{count} 个块都未能删除，列表未改动。")}}"
           data-msg-partial="{{tr("admin.blocks.bulkResult.partial", "已删除 {deleted} 个，{skipped} 个未能删除（被引用的全局块需先解除引用）。")}}"
           data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-msg-refresh="{{tr("admin.blocks.write.refresh", "刷新列表")}}">
     <section class="card list-card">
         {* 筛选栏（客户端过滤：输入即过滤行，不发请求、不刷新页面）。
@@ -248,21 +248,21 @@
     <p class="form-hint" data-write-status role="status" hidden></p>
     {{range _, b := .Headers}}
     <form id="block-del-{{b.ID}}" class="hidden-form" data-write-api="/api/block/delete" data-write-mode="single"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
         <input type="hidden" name="id" value="{{b.ID}}">
     </form>
     {{end}}
     {{range _, b := .Footers}}
     <form id="block-del-{{b.ID}}" class="hidden-form" data-write-api="/api/block/delete" data-write-mode="single"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix_bound", "」？绑定了它的主题下页面将重新构建。")}}" data-confirm-danger>
         <input type="hidden" name="id" value="{{b.ID}}">
     </form>
     {{end}}
     {{range _, b := .Blocks}}
     <form id="block-del-{{b.ID}}" class="hidden-form" data-write-api="/api/block/delete" data-write-mode="single"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{tr("admin.blocks.confirm_delete_prefix", "确定删除块「")}}{{b.Name|safeJs}}{{tr("admin.blocks.confirm_delete_suffix", "」？")}}" data-confirm-danger>
         <input type="hidden" name="id" value="{{b.ID}}">
     </form>

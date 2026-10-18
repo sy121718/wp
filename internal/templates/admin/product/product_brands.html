@@ -121,7 +121,7 @@
                         data-msg-all-skipped="{{tr("admin.product_brands.bulkDelete.allSkipped", "{count} 个品牌都未能删除（仍被商品引用）。")}}"
                         data-msg-partial="{{tr("admin.product_brands.bulkDelete.partial", "已删除 {deleted} 个品牌，{skipped} 个未能删除（仍被商品引用）。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.product_brands.bulkDelete.refresh", "刷新列表")}}"
                         data-confirm="{{tr("admin.product_brands.bulkDeleteConfirm", "删除选中的品牌？被商品引用的会被拒绝，其余照常删除。")}}"
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
@@ -210,7 +210,7 @@
     {* single 档只发 {id} + data-write-extra 点名的字段：多工程下 projectId 必须带上。 *}
     <form id="brand-del-{{b.ID}}" class="hidden-form"
           data-write-api="/api/product/brand/delete" data-write-mode="single" data-write-extra="projectId"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{ .["t"]("admin.product_brands.list.deleteConfirm", "删除该品牌？被商品引用时会被拒绝。") }}" data-confirm-danger>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{b.ID}}">
@@ -219,7 +219,7 @@
     {{if canUpdate}}
     <template id="tpl-brand-edit-{{b.ID}}">
         <form data-write-api="/api/product/brand/update" data-write-mode="form" data-write-number="sort"
-              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{b.ID}}">
             <div class="form-inline">
@@ -263,7 +263,7 @@
     {{if canCreate}}
     <template id="tpl-brand-create">
         <form data-write-api="/api/product/brand/create" data-write-mode="form" data-write-number="sort"
-              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-inline">
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" class="form-input" type="text" name="name" placeholder="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" required>

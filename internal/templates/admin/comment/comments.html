@@ -79,7 +79,7 @@
               data-write-number="ids" data-write-extra="projectId,status" data-write-outcome="review"
               data-msg-none-selected="{{tr("admin.comment.err.nothing_selected", "先勾选要审核的评论。")}}"
               data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
               data-msg-refresh="{{tr("admin.comment.write.refresh", "刷新列表")}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <p class="form-hint" data-write-status role="status" hidden></p>

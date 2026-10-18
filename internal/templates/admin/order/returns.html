@@ -143,7 +143,7 @@
         {{if r.Status == "requested"}}
         <form data-write-api="/api/order/return/approve" data-write-mode="create"
               data-write-number="returnId" data-write-bool="autoReceive"
-              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}" class="form-stack">
+              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="returnId" value="{{r.ID}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="form-inline">
@@ -168,7 +168,7 @@
            不再由页面先判一遍再渲染提示页）—— 页面侧只保留 required 这个快速反馈。 *}
         <form data-write-api="/api/order/return/reject" data-write-mode="create"
               data-write-number="returnId"
-              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}" class="form-inline">
+              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-inline">
             <input type="hidden" name="returnId" value="{{r.ID}}">
             <input type="text" class="form-input" name="remark" placeholder="{{tr("admin.returns.ph.reject_remark", "拒绝原因（必填，客户要知道为什么）")}}" required autocomplete="off">
             <button data-requires-js hidden type="submit" class="btn btn-sm">{{tr("admin.returns.action.reject", "拒绝申请")}}</button>
@@ -179,7 +179,7 @@
         {{if r.Status == "approved"}}
         <form data-write-api="/api/order/return/receive" data-write-mode="create"
               data-write-number="returnId"
-              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}" class="form-stack">
+              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="returnId" value="{{r.ID}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="form-inline">
@@ -204,7 +204,7 @@
            换一句提示」的补偿说明：刷新后行徽章就是结论，多点一次不会造成第二笔退款。 *}
         <form data-write-api="/api/order/return/receive" data-write-mode="create"
               data-write-number="returnId"
-              data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}" class="form-stack">
+              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="returnId" value="{{r.ID}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <div class="form-inline">
@@ -283,7 +283,7 @@
                         data-msg-all-skipped="{{tr("admin.returns.bulkApprove.allSkipped", "{count} 个退货申请都未能同意（已被审过或已不存在）。")}}"
                         data-msg-partial="{{tr("admin.returns.bulkApprove.partial", "已同意 {updated} 个退货申请，{skipped} 个未能同意（已被审过或已不存在）。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.returns.bulk.refresh", "刷新列表")}}">{{tr("admin.returns.bulk.approve", "批量同意")}}</button>
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
                         data-write-api="/api/order/return/reject" data-write-mode="bulk" data-write-outcome="update"
@@ -293,7 +293,7 @@
                         data-msg-all-skipped="{{tr("admin.returns.bulkReject.allSkipped", "{count} 个退货申请都未能拒绝（已被审过或已不存在）。")}}"
                         data-msg-partial="{{tr("admin.returns.bulkReject.partial", "已拒绝 {updated} 个退货申请，{skipped} 个未能拒绝（已被审过或已不存在）。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.returns.bulk.refresh", "刷新列表")}}"
                         data-confirm="{{tr("admin.returns.bulkRejectConfirm", "拒绝选中的退货申请？客户会看到拒绝结果，拒绝理由请先填在备注框里。")}}"
                         data-confirm-danger>{{tr("admin.returns.bulk.reject", "批量拒绝")}}</button>

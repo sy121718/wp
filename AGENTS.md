@@ -226,6 +226,14 @@ Cookie 属性：`HttpOnly`、`Secure`（release 自动启用）、`SameSite=Lax`
   `internal/module/page/service/page_lang.go` 的 `facing.New`。
   存量模块若仍写着「错误文案三件套」（白名单 + 归口 + 日志），按此形态迁：白名单删掉，兜底搬回声明处。
 - 判据是**形状**不是字面量：新增 handler 先问「这个 err 会不会进响应」，而不是等门禁逐个堵接收方别名。
+- **界面文案与响应文案分域**：响应文案由 `pkg/response` 走 `pkg/facing.FactOf` 产出（key 是模块
+  错误事实，形状 `{code,message,data}`）；界面文案由 `internal/text` 在渲染期取词（模板里的
+  `t` / `tf` / `tr`，key 是 UI 词条）。**错误 key 不得当界面词条用** —— 拿 `"ErrInternal"` 或
+  `<module>.err.*` 去取词，页面上会静默换一句话（换措辞、改 key、或 key 改由别的模块提供时都不报错）。
+  界面 key 只认 `admin.` / `shell.` / `user.` / `workbench.` / `site.` / `msg_` 前缀与归口文案的
+  `Msg*`（如 `MsgInternalError`）。门禁 `internal/architecture/text_domain_test.go`：
+  `TestTemplateTranslateKeysStayInUIDomain`（零容忍）、`TestMsgKeysStayInUIDomain`
+  （控制器 `Msg{Key: …}` 带登记清单，product 已清零）。
 
 ### JSON（唯一入口 pkg/jsonx）
 

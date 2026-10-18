@@ -142,7 +142,7 @@
                 data-msg-all-skipped="{{tr("admin.mail.contacts.bulkDelete.allSkipped", "{count} 位联系人都未能删除（可能已被删除）。")}}"
                 data-msg-partial="{{tr("admin.mail.contacts.bulkDelete.partial", "已删除 {deleted} 位联系人，{skipped} 位未能删除（可能已被删除）。")}}"
                 data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                 data-msg-refresh="{{tr("admin.mail.contacts.bulkDelete.refresh", "刷新列表")}}"
                 data-confirm="{{tr("admin.mail.marketing.bulk_delete_confirm", "删除选中的联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。")}}"
                 data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
@@ -161,7 +161,7 @@
                 data-msg-all-skipped="{{tr("admin.mail.contacts.bulkTag.allSkipped", "{count} 位联系人都未能更新标签（可能已被删除）。")}}"
                 data-msg-partial="{{tr("admin.mail.contacts.bulkTag.partial", "已为 {updated} 位联系人更新标签，{skipped} 位未能更新（可能已被删除）。")}}"
                 data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+                data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                 data-msg-refresh="{{tr("admin.mail.contacts.bulkTag.refresh", "刷新列表")}}"
                 data-confirm="{{tr("admin.mail.marketing.bulk_tag_confirm", "给选中的联系人打标签？填在「去掉」里的标签会从他们身上移除。")}}">{{tr("admin.mail.marketing.bulk_tag_submit", "批量打标签")}}</button>
         {{end}}
@@ -284,7 +284,7 @@
        id>0 即编辑 —— 与新建共用同一份字段清单（分开两个端点必然出现「新建加了字段、编辑忘了加」）。
        csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头（基座会跳过同名字段）。 *}
     <form data-write-api="/api/mail/contact/save" data-write-mode="create" data-write-number="id"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
       <input type="hidden" name="id" value="{{c.ID}}">
       <div class="form-field">
         <label class="form-label" for="ce-email-{{c.ID}}">{{tr("admin.mail.marketing.contact_form.email", "邮箱") }}</label>
@@ -334,7 +334,7 @@
      确认框仍归 ui/confirm.js（data-confirm 在表单上，按钮 form="…" 关联，提交依旧要确认）。 *}
   <form id="contact-del-{{c.ID}}" class="hidden-form" data-write-api="/api/mail/contact/delete" data-write-mode="single"
         data-write-number="id"
-        data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}"
+        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
         data-confirm="{{tr("admin.mail.marketing.contact_delete_confirm", "删除该联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。")}}" data-confirm-danger>
     <input type="hidden" name="id" value="{{c.ID}}">
   </form>
@@ -348,7 +348,7 @@
   <template id="tpl-contact-save">
     {* 新建：与编辑同一端点、同一形状（id=0 即新建），字段清单一致才不会出现「新建漏字段」。 *}
     <form data-write-api="/api/mail/contact/save" data-write-mode="create" data-write-number="id"
-          data-msg-failed="{{tr("ErrInternal", "操作失败，请稍后重试")}}">
+          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
       <input type="hidden" name="id" value="0">
       <div class="form-field">
         <label class="form-label" for="cn-email">{{tr("admin.mail.marketing.contact_form.email", "邮箱") }}</label>
