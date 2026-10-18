@@ -69,6 +69,16 @@ func ItemString(item map[string]any, key string) string {
 // 解析失败与缺失一律返回零值 + false：调用方据此判定「没有可排序的时间」，
 // 而不是把零值当成 0001 年参与比较。
 func ItemTime(item map[string]any, key string) (t time.Time, ok bool) {
+	if v, ok := item[key]; ok {
+		switch raw := v.(type) {
+		case int64:
+			return time.UnixMilli(raw), true
+		case float64:
+			return time.UnixMilli(int64(raw)), true
+		case int:
+			return time.UnixMilli(int64(raw)), true
+		}
+	}
 	s := strings.TrimSpace(ItemString(item, key))
 	if s == "" {
 		return time.Time{}, false

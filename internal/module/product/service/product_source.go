@@ -23,7 +23,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -466,8 +465,8 @@ func collectionItem(p *productmodel.ProductEntity, values map[string]string) map
 	item["id"] = p.ID
 	item["slug"] = p.Slug
 	item["images"] = imageURLsAny(p)
-	// createdAt 给 RFC3339（UTC）：组件要按时间排序，格式必须可解析且与时区无关。
-	item["createdAt"] = p.CreatedAt.UTC().Format(time.RFC3339)
+	// createdAt 给 unix 毫秒：组件要按时间排序，数字只表示时刻，与时区和显示形状无关。
+	item["createdAt"] = p.CreatedAt.UnixMilli()
 	// minPrice 给**数值**（issue #28）：priceRange 是给人看的字符串（"99 ~ 199"），
 	// 拿它排序会得到字典序（"199" < "99"）。没有启用变体的商品给 nil，
 	// 组件据此把它排到最后，而不是当成 0 元。

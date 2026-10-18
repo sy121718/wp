@@ -1288,14 +1288,6 @@ func toVariantResp(v *productmodel.VariantEntity) *productdto.VariantResp {
 	}
 }
 
-// formatTimePtr 可空时间 → RFC3339（nil → 空串）。
-func formatTimePtr(t *time.Time) string {
-	if t == nil {
-		return ""
-	}
-	return t.Format(time.RFC3339)
-}
-
 // maxRatingScore 评分上限（数据库 CHECK 也是 0~5，这里提前给出明确文案）。
 const maxRatingScore = 5
 
