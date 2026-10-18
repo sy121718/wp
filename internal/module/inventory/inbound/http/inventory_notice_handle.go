@@ -1,6 +1,6 @@
 package inventoryhttp
 
-// inventory_jump.go — 库存域后台页写动作的**出口**：整页提示（shell.RenderJump，
+// inventory_notice_handle.go — 库存域后台页写动作的**出口**：整页提示（shell.RenderJump，
 // 对应 ThinkPHP 的 success() / error()）。
 //
 // 取代原先的 302/303 + `?err=` / `?ok=` / `?done=` 回列表页：那条通道要求读侧再判一次

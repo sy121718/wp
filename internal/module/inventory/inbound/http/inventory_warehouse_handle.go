@@ -42,7 +42,7 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) (any, erro
 		"Warehouses":          warehouses,
 		"WarehouseTypes":      warehouseTypeOptions(c),
 		"WarehouseCreateForm": warehouseFormData(c, selected, false, nil),
-		// 写动作表单 action 上带的筛选上下文（见 inventory_jump.go）。
+		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
 		"ListQuery": inventoryQueryFromRequest(c, inventoryWarehouseBackKeys...),
 	}, nil
 }

@@ -128,7 +128,7 @@ func inventoryErrDetailText(tr func(key, fallback string) string, tail string) s
 // —— 结论文案（读侧回执已整批删除）——
 //
 // 写动作的结论不再经 `?err=` / `?ok=` / `?done=` 回列表页（改由 shell.RenderJump 在响应体里
-// 渲染提示页，见 inventory_jump.go），所以下面这套「证明提示出自本仓」的读侧判定整批删除：
+// 渲染提示页，见 inventory_notice_handle.go），所以下面这套「证明提示出自本仓」的读侧判定整批删除：
 // inventoryPageErr / inventoryPageOk / inventoryPageDone / inventoryNoticeSuccess /
 // inventoryNoticeTexts / inventoryNoticeToken / inventoryBulkNoticeTemplates。
 //
@@ -140,7 +140,7 @@ func inventoryErrDetailText(tr func(key, fallback string) string, tail string) s
 //
 // 词条见迁移 280（中英各一行）；取不到词条时回落这份中文（与仓库里其它
 // 「key + 中文兜底」的写法一致），中文环境的表现就是「操作已完成」。
-// 出口处的载体是 inventory_jump.go 的 inventoryDoneMsg（adminui.Msg）。
+// 出口处的载体是 inventory_notice_handle.go 的 inventoryDoneMsg（adminui.Msg）。
 const (
 	inventoryActionDoneKey      = inventoryenums.InventoryActionDone
 	inventoryActionDoneFallback = "操作已完成"

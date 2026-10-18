@@ -48,7 +48,7 @@ type inventorySourcesPageData struct {
 	FilterStatus    string
 	FilterKeyword   string
 	// Err 页面提示条：只剩一处来源 —— 本页取数失败（工程列表 / 货源列表 / 统计）。
-	// 写动作的结论不再回带（走 shell.RenderJump，见 inventory_jump.go）。
+	// 写动作的结论不再回带（走 shell.RenderJump，见 inventory_notice_handle.go）。
 	Err string
 	// LoadFailed 本次请求的工程列表没读出来（降级渲染）。
 	//
@@ -86,7 +86,7 @@ func (d *inventorySourcesPageData) templateMap(c *gin.Context) gin.H {
 		"FilterKeyword":   d.FilterKeyword,
 		"Err":             d.Err,
 		"LoadFailed":      d.LoadFailed,
-		// 写动作表单 action 上带的筛选上下文（见 inventory_jump.go）。
+		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
 		"ListQuery": inventoryQueryFromRequest(c, inventorySourceBackKeys...),
 	}
 	// 分页条事实交给 partial 决定：零值（单页）与装载失败两条路 HasPagination 都为假，
@@ -107,7 +107,7 @@ func (h *inventorySourcePageHandle) sourcesPageView(c *gin.Context, d *inventory
 func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 
-	// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 inventory_jump.go），
+	// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 inventory_notice_handle.go），
 	// 所以提示条只剩一处来源：本页取数失败（工程列表 / 货源列表 / 统计）。
 	pageErr := ""
 

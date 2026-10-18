@@ -43,7 +43,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) (any, error) 
 		"Reasons":          reasons,
 		"Directions":       directionOptions(tr),
 		"ReasonCreateForm": reasonFormData(c, selected),
-		// 写动作表单 action 上带的筛选上下文（见 inventory_jump.go）。
+		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
 		"ListQuery": inventoryQueryFromRequest(c, inventoryReasonBackKeys...),
 	}, nil
 }

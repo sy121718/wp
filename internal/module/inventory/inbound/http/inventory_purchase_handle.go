@@ -109,7 +109,7 @@ type inventoryPurchasesPageData struct {
 	FilterSource    string
 	FilterKeyword   string
 	// Err 页面提示条：只剩一处来源 —— 本页取数失败（工程列表 / 采购单列表）。
-	// 写动作的结论不再回带（走 shell.RenderJump，见 inventory_jump.go）。
+	// 写动作的结论不再回带（走 shell.RenderJump，见 inventory_notice_handle.go）。
 	Err string
 	// LoadFailed 本次请求的工程列表没读出来（降级渲染）：与 order 域订单页 / 退货页同名，
 	// 模板据此把「真的没有货源 / 没有采购单」与「这一次没读出来」分开 —— 前者引导去建一个，
@@ -148,7 +148,7 @@ func (d *inventoryPurchasesPageData) templateMap(c *gin.Context) gin.H {
 		"ProductionRequestID": uuid.NewString(),
 		"Err":                 d.Err,
 		"LoadFailed":          d.LoadFailed,
-		// 写动作表单 action 上带的筛选上下文（见 inventory_jump.go）。
+		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
 		"ListQuery": inventoryQueryFromRequest(c, inventoryPurchaseBackKeys...),
 	}
 	// 分页条事实交给 partial 决定：零值（单页）与装载失败两条路 HasPagination 都为假，
@@ -166,7 +166,7 @@ func (h *inventoryPurchasePageHandle) purchasesPageView(c *gin.Context, d *inven
 func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 
-	// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 inventory_jump.go），
+	// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 inventory_notice_handle.go），
 	// 所以提示条只剩一处来源：本页取数失败（工程列表 / 采购单列表）。
 	pageErr := ""
 

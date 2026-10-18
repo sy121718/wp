@@ -171,7 +171,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) (any, error) {
 		"FilterTimeFrom":   filterTimeFrom,
 		"FilterTimeTo":     filterTimeTo,
 		// 写动作表单的 action 上带的筛选上下文（服务端渲染时拼、POST 回来由 shell.BackPath
-		// 读回）：写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 inventory_jump.go）。
+		// 读回）：写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 inventory_notice_handle.go）。
 		"ListQuery": inventoryQueryFromRequest(c, inventoryStockBackKeys...),
 	}
 	// 分页条（shell 组件，服务端渲染）：基址带当前全部筛选维度（工程 / SKU / 变体 / 仓 /
@@ -341,7 +341,7 @@ func stockQuantityLabel(tr func(key, fallback string) string, track bool, quanti
 	return fmt.Sprintf("%d", quantity)
 }
 
-// —— 错误文案（回跳地址与提示页出口见 inventory_jump.go）——
+// —— 错误文案（回跳地址与提示页出口见 inventory_notice_handle.go）——
 //
 // 原先这一节还有 inventoryURL / inventoryConclusion / inventoryErrURL 三个函数：写动作的
 // 结论经 302 + `?err=` / `?ok=` / `?done=` 回列表页，回跳地址由 Go 拼。改成 shell.RenderJump
@@ -363,7 +363,7 @@ func parseIntOr(s string, fallback int) int {
 // `hx-post`（htmx 优先拦住 submit）；服务端按 `HX-Request` **分档**：
 //
 //	· htmx 请求：失败返 **200 + 片段**（错误槽 + 回填后的表单）—— 抽屉 / 页面原地留住输入；
-//	· 原生请求：失败渲染整页提示（inventoryJump / shell.RenderJump，见 inventory_jump.go）——
+//	· 原生请求：失败渲染整页提示（inventoryJump / shell.RenderJump，见 inventory_notice_handle.go）——
 //	  取代原先的 `302 + ?err=`，结论走响应体而不是 URL。
 //
 // 这是**另一个包**，不复用 producthttp 的同款 helper：两个页面包之间没有共享依赖，
@@ -393,7 +393,7 @@ func isHXRequest(c *gin.Context) bool {
 // 原生行为逐字不变，htmx 那一档才有正确的跳转；**不要**给写表单配 `hx-swap="none"`
 // 之外的 hx-* 目标（跳转由响应头决定，不由 swap 决定）。
 //
-// 写动作的**结论**出口是 inventoryJump（shell.RenderJump，见 inventory_jump.go）：
+// 写动作的**结论**出口是 inventoryJump（shell.RenderJump，见 inventory_notice_handle.go）：
 // 这里保留 redirectWhere 只为「没有选中任何 id」这类无提示的回列表分支。
 func redirectWhere(c *gin.Context, target string) {
 	if isHXRequest(c) {
