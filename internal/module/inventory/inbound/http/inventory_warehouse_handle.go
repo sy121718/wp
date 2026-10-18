@@ -247,7 +247,7 @@ func (h *inventoryPageHandle) warehouseFormFail(c *gin.Context, edit bool, proje
 	if edit {
 		fields = warehouseEditFields
 	}
-	data["FormEcho"] = inventoryRawFormValues(c, fields)
+	data["FormEcho"] = binding.RawForm(c, fields...)
 	data["SubmitErr"] = inventoryErrText(c, err)
 	data["ListQuery"] = inventoryQueryFromRequest(c, inventoryWarehouseBackKeys...)
 	c.HTML(http.StatusOK, "admin/inventory/inventory_warehouse_form.html", adminui.Prepare(c, data))

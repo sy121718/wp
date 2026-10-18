@@ -87,8 +87,6 @@ var pendingControllerBinding = map[string]bool{
 	"internal/module/navigation/inbound/http/navigation_page_handle.go": true,
 	"internal/module/order/inbound/http/order_create_page.go":           true,
 	"internal/module/project/inbound/http/project_page.go":              true,
-	"internal/module/inventory/inbound/http/inventory_error_handle.go":  true,
-	"internal/module/inventory/inbound/http/inventory_source_handle.go": true,
 }
 
 // pendingControllerMethods 超过 60 行的控制器方法（"文件:方法名"）。

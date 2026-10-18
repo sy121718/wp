@@ -184,15 +184,6 @@ func inventoryErrFallback(key string) string {
 	return key
 }
 
-// 原值快照保留空串和首尾空白；业务请求归一化不影响重新编辑的输入。
-func inventoryRawFormValues(c *gin.Context, fields []string) gin.H {
-	values := make(gin.H, len(fields))
-	for _, field := range fields {
-		values[field] = c.PostForm(field)
-	}
-	return values
-}
-
 // inventoryPageMeta 一个库存页的身份：失败渲染所需的模板名、侧栏高亮项与页面标题。
 //
 // 三页共用一份失败出口，差异只剩这四个值 —— 各 handler 只传 meta 与 err。

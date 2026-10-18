@@ -78,12 +78,12 @@ func TestInventoryFormFailurePreservesRawInput(t *testing.T) {
 		{"source create", "admin/inventory/inventory_source_form.html", sourceCreateFields,
 			url.Values{"projectId": {"p1"}, "code": {"  SOURCE  "}, "name": {"  货源  "}, "type": {"internal"}, "relatedParty": {"false"}, "settlePrice": {""}, "sort": {""}, "config": {" {\"a\":1}  "}},
 			func(c *gin.Context) {
-				(&inventorySourcePageHandle{}).sourceFormFail(c, false, errors.New(inventoryenums.ErrSourceSettleInvalid))
+				(&inventorySourcePageHandle{}).sourceFormFail(c, "p1", false, errors.New(inventoryenums.ErrSourceSettleInvalid))
 			}},
 		{"source edit", "admin/inventory/inventory_source_form.html", sourceEditFields,
 			url.Values{"projectId": {"p1"}, "id": {"s1"}, "code": {"  SOURCE  "}, "name": {"  货源  "}, "type": {"external"}, "relatedParty": {""}, "status": {"disabled"}, "settlePrice": {""}, "sort": {"0"}, "config": {"  {bad}  "}},
 			func(c *gin.Context) {
-				(&inventorySourcePageHandle{}).sourceFormFail(c, true, errors.New(inventoryenums.ErrSourceSettleInvalid))
+				(&inventorySourcePageHandle{}).sourceFormFail(c, "p1", true, errors.New(inventoryenums.ErrSourceSettleInvalid))
 			}},
 	}
 	for _, tt := range tests {

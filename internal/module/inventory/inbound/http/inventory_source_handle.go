@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go_wp/internal/adminui"
 	"go_wp/internal/shell"
+	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	projectcontract "go_wp/internal/module/project/contract"
+	bulkids "go_wp/pkg/bulkids"
 	json "go_wp/pkg/jsonx"
 )
 
@@ -99,7 +101,7 @@ func (d *inventorySourcesPageData) templateMap(c *gin.Context) gin.H {
 // 键集只有一处定义（降级分支不必「记得」补齐模板要的每一个键）。
 func (h *inventorySourcePageHandle) renderSourcesPage(c *gin.Context, d *inventorySourcesPageData) {
 	data := d.templateMap(c)
-	data["SourceCreateForm"] = sourceFormData(c, false, nil)
+	data["SourceCreateForm"] = sourceFormData(c, d.SelectedProject, false, nil)
 	c.HTML(http.StatusOK, "admin/inventory/inventory_sources.html", adminui.Prepare(c, data))
 }
 
@@ -231,25 +233,17 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 
 // InventorySourceCreate 新建货源（内部类型自动成为关联方）。
 func (h *inventorySourcePageHandle) InventorySourceCreate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	req := &inventorydto.CreateSourceReq{
-		ProjectID:    projectID,
-		Code:         strings.TrimSpace(c.PostForm("code")),
-		Name:         strings.TrimSpace(c.PostForm("name")),
-		Type:         strings.TrimSpace(c.PostForm("type")),
-		Status:       strings.TrimSpace(c.PostForm("status")),
-		RelatedParty: sourceRelatedForm(c.PostForm("relatedParty")),
-		Config:       sourceConfigForm(c.PostForm("config")),
-		Sort:         parseIntOr(c.PostForm("sort"), 0),
-	}
-	price, perr := sourceSettleForm(c.PostForm("settlePrice"))
-	if perr != nil {
-		h.sourceFormFail(c, false, perr)
+	form, ok := binding.Form[inventorydto.SourceFormReq](c)
+	if !ok {
 		return
 	}
-	req.SettlePrice = price
+	req, ferr := form.CreateReq()
+	if ferr != nil {
+		h.sourceFormFail(c, form.ProjectID, false, ferr)
+		return
+	}
 	if _, err := h.inventory.CreateSource(c.Request.Context(), req); err != nil {
-		h.sourceFormFail(c, false, err)
+		h.sourceFormFail(c, form.ProjectID, false, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventorySourceBack(c), inventorySourceBackMsg)
@@ -257,34 +251,18 @@ func (h *inventorySourcePageHandle) InventorySourceCreate(c *gin.Context) {
 
 // InventorySourceUpdate 修改货源（表单即最终状态：结算价留空 = 清空）。
 func (h *inventorySourcePageHandle) InventorySourceUpdate(c *gin.Context) {
-	code := strings.TrimSpace(c.PostForm("code"))
-	name := strings.TrimSpace(c.PostForm("name"))
-	sourceType := strings.TrimSpace(c.PostForm("type"))
-	status := strings.TrimSpace(c.PostForm("status"))
-	sortValue := parseIntOr(c.PostForm("sort"), 0)
-	req := &inventorydto.UpdateSourceReq{
-		ID:           c.PostForm("id"),
-		Code:         &code,
-		Name:         &name,
-		Type:         &sourceType,
-		Status:       &status,
-		Sort:         &sortValue,
-		RelatedParty: sourceRelatedForm(c.PostForm("relatedParty")),
-		Config:       sourceConfigForm(c.PostForm("config")),
-	}
-	// 表单是最终状态：留空即「这条货源没有结算价」，显式交给 service 清空。
-	price, perr := sourceSettleForm(c.PostForm("settlePrice"))
-	if perr != nil {
-		h.sourceFormFail(c, true, perr)
+	form, ok := binding.Form[inventorydto.SourceFormReq](c)
+	if !ok {
 		return
 	}
-	if price == nil {
-		req.ClearSettlePrice = true
-	} else {
-		req.SettlePrice = price
+	// 表单是最终状态：留空即「这条货源没有结算价」，由 DTO 显式翻成 ClearSettlePrice。
+	req, ferr := form.UpdateReq()
+	if ferr != nil {
+		h.sourceFormFail(c, form.ProjectID, true, ferr)
+		return
 	}
 	if _, err := h.inventory.UpdateSource(c.Request.Context(), req); err != nil {
-		h.sourceFormFail(c, true, err)
+		h.sourceFormFail(c, form.ProjectID, true, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventorySourceBack(c), inventorySourceBackMsg)
@@ -292,8 +270,12 @@ func (h *inventorySourcePageHandle) InventorySourceUpdate(c *gin.Context) {
 
 // InventorySourceDelete 删除货源。
 func (h *inventorySourcePageHandle) InventorySourceDelete(c *gin.Context) {
+	form, ok := binding.Form[inventorydto.SourceDeleteFormReq](c)
+	if !ok {
+		return
+	}
 	if err := h.inventory.DeleteSource(c.Request.Context(), &inventorydto.DeleteSourceReq{
-		ID: c.PostForm("id"),
+		ID: form.ID,
 	}); err != nil {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventorySourceBack(c), inventorySourceBackMsg)
 		return
@@ -307,10 +289,14 @@ func (h *inventorySourcePageHandle) InventorySourceDelete(c *gin.Context) {
 // 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
 // 结果按「已删 N 个 / 跳过 M 个」渲染成提示页，避免静默的部分成功（语义未变，只换传输通道）。
 func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
+	form, ok := binding.Form[inventorydto.SourceBulkFormReq](c)
+	if !ok {
+		return
+	}
 	back := inventorySourceBack(c)
 	backMsg := inventorySourceBackMsg
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
+	ids, berr := bulkids.Normalize(form.IDs)
 	if berr != nil {
 		// 超限是**受控错误**（pkg/bulkids 的 *IDsError：值域只有 Count/Max 两个整数，
 		// 装不下表名 / 约束名 / SQLSTATE），文案走受控结论出口 —— 它按当前语言给
@@ -483,16 +469,16 @@ var sourceCreateFields = []string{"projectId", "code", "name", "type", "relatedP
 
 var sourceEditFields = []string{"projectId", "id", "code", "name", "type", "relatedParty", "status", "settlePrice", "sort", "config"}
 
-func sourceFormData(c *gin.Context, edit bool, row gin.H) gin.H {
+func sourceFormData(c *gin.Context, projectID string, edit bool, row gin.H) gin.H {
 	tr := shell.TranslateFor(c)
 	return gin.H{
-		"IsEdit": edit, "Row": row, "SelectedProject": c.PostForm("projectId"),
+		"IsEdit": edit, "Row": row, "SelectedProject": projectID,
 		"TypeOptions": sourceTypeOptions(tr), "RelatedOptions": sourceRelatedOptions(tr),
 		"StatusOptions": sourceStatusOptions(tr),
 	}
 }
 
-func (h *inventorySourcePageHandle) sourceFormFail(c *gin.Context, edit bool, err error) {
+func (h *inventorySourcePageHandle) sourceFormFail(c *gin.Context, projectID string, edit bool, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventorySourceBack(c), inventorySourceBackMsg)
@@ -503,8 +489,8 @@ func (h *inventorySourcePageHandle) sourceFormFail(c *gin.Context, edit bool, er
 	if edit {
 		fields = sourceEditFields
 	}
-	data := sourceFormData(c, edit, nil)
-	data["FormEcho"] = inventoryRawFormValues(c, fields)
+	data := sourceFormData(c, projectID, edit, nil)
+	data["FormEcho"] = binding.RawForm(c, fields...)
 	data["SubmitErr"] = inventoryErrText(c, err)
 	data["ListQuery"] = inventoryQueryFromRequest(c, inventorySourceBackKeys...)
 	c.HTML(http.StatusOK, "admin/inventory/inventory_source_form.html", adminui.Prepare(c, data))

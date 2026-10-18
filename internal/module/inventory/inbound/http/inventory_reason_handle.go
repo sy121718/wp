@@ -231,7 +231,7 @@ func (h *inventoryPageHandle) reasonFormFail(c *gin.Context, projectID string, e
 	}
 	// htmx 分支原样保留：失败在抽屉里重渲片段。
 	data := reasonFormData(c, projectID)
-	data["FormEcho"] = inventoryRawFormValues(c, reasonCreateFields)
+	data["FormEcho"] = binding.RawForm(c, reasonCreateFields...)
 	data["SubmitErr"] = inventoryErrText(c, err)
 	data["ListQuery"] = inventoryQueryFromRequest(c, inventoryReasonBackKeys...)
 	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", adminui.Prepare(c, data))
@@ -246,7 +246,7 @@ func (h *inventoryPageHandle) reasonEditFormFail(c *gin.Context, projectID strin
 	// htmx 分支原样保留：失败在抽屉里重渲片段。
 	data := reasonFormData(c, projectID)
 	data["Edit"] = true
-	data["FormEcho"] = inventoryRawFormValues(c, reasonEditFields)
+	data["FormEcho"] = binding.RawForm(c, reasonEditFields...)
 	data["SubmitErr"] = inventoryErrText(c, err)
 	data["ListQuery"] = inventoryQueryFromRequest(c, inventoryReasonBackKeys...)
 	c.HTML(http.StatusOK, "admin/inventory/inventory_reason_form.html", adminui.Prepare(c, data))
