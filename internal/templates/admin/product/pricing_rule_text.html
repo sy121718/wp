@@ -1,0 +1,9 @@
+{* 定价规则的一句话描述：取值来自 dto.RuleValuesResp，措辞在这里。
+
+   数据是调用点给的一张 map（include 换掉了 . 的指向）：
+     rt —— 规则类型（cost_multiple / cost_markup / target_margin / fixed_price）
+     rv —— 取值（Value/HasValue）
+     t / tn —— 页面级取词函数（两参 / 带 {name} 具名占位符）
+   目标毛利率按百分比显示（0.3 → 30%）：格式化是视图的事，Go 侧只给小数。 *}
+{{rt := .["rt"]}}{{rv := .["rv"]}}{{tr := .["t"]}}{{tn := .["tn"]}}
+{{if rt == "cost_multiple"}}{{if rv.HasValue}}{{tn("admin.product_pricing.rule.costMultiple.describe", "成本 × {value}", map("value", rv.Value))}}{{else}}{{tr("admin.product_pricing.rule.paramsInvalid", "参数不合法")}}{{end}}{{else if rt == "cost_markup"}}{{if rv.HasValue}}{{tn("admin.product_pricing.rule.costMarkup.describe", "成本 + {value}", map("value", rv.Value))}}{{else}}{{tr("admin.product_pricing.rule.paramsInvalid", "参数不合法")}}{{end}}{{else if rt == "target_margin"}}{{if rv.HasValue}}{{tn("admin.product_pricing.rule.targetMargin.describe", "目标毛利率 {value}", map("value", percent(rv.Value * 100, 0)))}}{{else}}{{tr("admin.product_pricing.rule.paramsInvalid", "参数不合法")}}{{end}}{{else if rt == "fixed_price"}}{{if rv.HasValue}}{{tn("admin.product_pricing.rule.fixedPrice.describe", "统一售价 {value}", map("value", rv.Value))}}{{else}}{{tr("admin.product_pricing.rule.paramsInvalid", "参数不合法")}}{{end}}{{else}}{{tr("admin.product_pricing.rule.unknown", "未知定价规则：")}}{{rt}}{{end}}

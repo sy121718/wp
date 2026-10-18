@@ -197,8 +197,8 @@ func normalizeProductType(raw string) (string, error) {
 // 知道），因此取词函数只能由 inbound 传进来。
 //
 // 为什么用 ctx 而不是给每个方法加参数：
-//   - 这些文案散布在多层内部函数里（pricingStatusLabel → setPricingLineStatus →
-//     computePricingLines → PreviewPricing），逐层加到 contract 方法签名会把
+//   - 这些文案散布在多层内部函数里（bundle 成员规格与跳过原因 → fillBundleMemberDisplay →
+//     BundleMembers → BundlePage），逐层加到 contract 方法签名会把
 //     `tr func(...)` 写进一堆与展示无关的接口（预览、应用、留痕列表、抽屉数据…）；
 //   - 传播方向是单向的（inbound → service → 内部函数），与 ctx 的语义一致；
 //   - 未注入时的行为是**返回中文兜底**（不是裸 key），与 i18n 未初始化时的降级一致，

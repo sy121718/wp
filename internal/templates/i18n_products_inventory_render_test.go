@@ -1,10 +1,13 @@
 package templates
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/CloudyKit/jet/v6"
+
+	"go_wp/pkg/i18n"
 )
 
 // i18n_products_inventory_render_test.go — 组 D（商品 / 库存类后台模板）i18n 快照回归。
@@ -31,6 +34,14 @@ func groupDData(extra map[string]any) map[string]any {
 	d := map[string]any{
 		"lang": "zh-CN", "langs": LanguageOptions("zh-CN"),
 		"title": "组D", "t": TranslateFunc("zh-CN"), "csrf_token": "tok",
+		// tn 与 t 同源（{name} 具名占位符版）：片段里的规则描述要用它，运行时由 text.Inject 注入。
+		"tn": func(key, fallback string, args map[string]any) string {
+			params := make(map[string]string, len(args))
+			for k, v := range args {
+				params[k] = fmt.Sprint(v)
+			}
+			return i18n.FillTranslate(TranslateFunc("zh-CN"), key, fallback, params)
+		},
 		// 列表页的新建/编辑入口改走抽屉后，按钮按权限显隐（运行时由 adminui.Prepare 注入，
 		// 测试外壳给一份全集）：否则每加一个入口就要往各页数据里补一个权限码，
 		// 漏补的表现是「按钮不渲染、wants 断言红」，与模板本身无关。
@@ -324,21 +335,23 @@ func TestGroupDPricingPageRenders(t *testing.T) {
 			"Rounding": "none", "Scope": "sku", "TargetID": "", "Status": "",
 			"Keyword": "", "CategoryID": "", "BrandID": "", "TagID": "", "Note": "",
 		},
-		"Rules":      []map[string]any{{"Type": "markup", "Name": "成本加价", "RequiresCost": true, "Params": "amount"}},
-		"Roundings":  []map[string]any{{"Value": "none", "Name": "不处理"}},
+		"Rules":      []map[string]any{{"Type": "cost_markup", "RequiresCost": true}},
+		"Roundings":  []map[string]any{{"Value": "none"}},
 		"HasPreview": true,
 		"PreviewSummary": map[string]any{
-			"RuleLabel": "成本加价", "RoundingLabel": "不处理", "ScopeLabel": "单个 SKU（变体 id）",
+			"RuleType": "cost_markup", "RuleValues": map[string]any{"Value": 1.0, "HasValue": true},
+			"Rounding": "none", "Scope": "sku",
 			"TargetCount": 1, "ChangedCount": 1, "UnchangedCount": 0, "SkippedCount": 0,
 		},
 		"PreviewRows": []map[string]any{{
 			"ProductName": "商品一", "SKUCode": "SKU1", "CostPrice": "8.00", "OldPrice": "10.00",
-			"NewPrice": "12.00", "Diff": "+2.00", "IsChanged": true, "StatusLabel": "已改价", "ReasonLabel": "",
+			"NewPrice": "12.00", "Diff": "+2.00", "IsChanged": true, "Status": "changed", "Reason": "",
 		}},
 		"History": []map[string]any{{
-			"RuleLabel": "成本加价", "ScopeLabel": "单个 SKU", "RoundingLabel": "不处理",
+			"RuleType": "cost_markup", "RuleValues": map[string]any{"Value": 1.0, "HasValue": true},
+			"Scope": "sku", "Rounding": "none",
 			"ChangedCount": 1, "VariantCount": 1, "CreatedAt": "2026-01-01T10:00:00Z", "OperatorID": "u1",
-			"FilterLabel": "", "Note": "国庆前提价",
+			"FilterParts": []map[string]any{}, "Note": "国庆前提价",
 			"Items": []map[string]any{{
 				"ProductName": "商品一", "SKUCode": "SKU1", "OldPrice": "10.00", "NewPrice": "12.00", "Diff": "+2.00",
 			}},

@@ -90,9 +90,10 @@ func TestProductPricingPagePreviewFlagsPreviewBlock(t *testing.T) {
 	})
 	view, err := s.ProductPricingPage(context.Background(), &productdto.ProductPricingPageReq{
 		Preview: &productdto.PricingPreviewResp{
-			RuleLabel: "成本倍数",
+			RuleType:   "cost_multiple",
+			RuleValues: productdto.RuleValuesResp{Value: 1.5, HasValue: true},
 			Lines: []*productdto.PricingLineResp{
-				{ProductName: "样例商品", OldPrice: 100, NewPrice: 135, Status: "changed", StatusLabel: "会改"},
+				{ProductName: "样例商品", OldPrice: 100, NewPrice: 135, Status: "changed"},
 			},
 		},
 	})
@@ -105,7 +106,7 @@ func TestProductPricingPagePreviewFlagsPreviewBlock(t *testing.T) {
 	if len(view.PreviewRows) != 1 {
 		t.Fatalf("试算明细行应逐行转成模板行，实际 %d 行", len(view.PreviewRows))
 	}
-	if view.PreviewSummary == nil || view.PreviewSummary["RuleLabel"] != "成本倍数" {
+	if view.PreviewSummary == nil || view.PreviewSummary["RuleType"] != "cost_multiple" {
 		t.Fatalf("汇总行要给模板用，实际 %+v", view.PreviewSummary)
 	}
 }

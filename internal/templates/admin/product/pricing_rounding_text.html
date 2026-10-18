@@ -1,0 +1,3 @@
+{* 尾数处理的名字：数据是 map（v = 取值，t = 取词函数），未知取值原样显示。 *}
+{{v := .["v"]}}{{tr := .["t"]}}
+{{if v == "none"}}{{tr("admin.product_pricing.rounding.none", "不舍入（四舍五入到分）")}}{{else if v == "integer"}}{{tr("admin.product_pricing.rounding.integer", "向上取整到元")}}{{else if v == "end_9"}}{{tr("admin.product_pricing.rounding.end9", "尾数 9（向上取到角位为 9）")}}{{else if v == "end_99"}}{{tr("admin.product_pricing.rounding.end99", "尾数 99（向上取到分为 99）")}}{{else}}{{tr("admin.product_pricing.rounding.unknown", "未知尾数处理：")}}{{v}}{{end}}

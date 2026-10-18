@@ -5,8 +5,8 @@ package productservice_test
 //
 // 改造把 pricingHistory 的「每批一次 GetPriceAdjustment」换成「一次批量读明细 + 按
 // adjustment_id 分组装配」，风险是**行内容悄悄变了**：模板 product_pricing.html 读的是
-// RuleLabel / ScopeLabel / RoundingLabel / ChangedCount / VariantCount / CreatedAt（原样
-// RFC3339，格式化在模板）/ OperatorID / FilterLabel / Note，以及明细逐条的 ProductName / SKUCode / OldPrice /
+// RuleType / RuleValues / Scope / Rounding / FilterParts / ChangedCount / VariantCount /
+// CreatedAt（原样 RFC3339，格式化在模板）/ OperatorID / Note，以及明细逐条的 ProductName / SKUCode / OldPrice /
 // NewPrice / Diff。少任何一项都不报错，只会让某一列变空。
 //
 // 对账单位是**整行**（含 Items 逐条）：①读模型 view.History；②按原实现在测试内重建
@@ -72,8 +72,8 @@ func referencePricingHistoryRows(t *testing.T, s *productservice.Service, ctx co
 			})
 		}
 		rows = append(rows, map[string]any{
-			"ID": src.ID, "RuleLabel": src.RuleLabel, "ScopeLabel": src.ScopeLabel,
-			"RoundingLabel": src.RoundingLabel, "FilterLabel": src.FilterLabel,
+			"ID": src.ID, "RuleType": src.RuleType, "RuleValues": src.RuleValues,
+			"Scope": src.Scope, "Rounding": src.Rounding, "FilterParts": src.FilterParts,
 			"ChangedCount": src.ChangedCount, "VariantCount": src.VariantCount,
 			"Note": src.Note, "OperatorID": src.OperatorID,
 			"CreatedAt": src.CreatedAt,
@@ -120,7 +120,7 @@ func TestProductPricingHistoryRowsMatchPerBatchDetailPath(t *testing.T) {
 	named, blank, total := 0, 0, 0
 	for i, row := range view.History {
 		where := fmt.Sprintf("第 %d 行", i+1)
-		for _, field := range []string{"RuleLabel", "ScopeLabel", "RoundingLabel", "CreatedAt"} {
+		for _, field := range []string{"RuleType", "Scope", "Rounding", "CreatedAt"} {
 			text, _ := row[field].(string)
 			if text == "" {
 				t.Fatalf("夹具自检失败：%s 的 %s 是空文本（%q）", where, field, text)

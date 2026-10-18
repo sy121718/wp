@@ -1,0 +1,11 @@
+{* 标签规则的一句话描述：参数取值来自 dto.RuleValuesResp（数字 + 有没有），措辞在这里。
+
+   数据是调用点给的一张 map（include 的数据就是 . 本身）：
+     rt —— 规则类型（new_arrival / price_range / on_sale）
+     rv —— 取值（Days/HasDays、MinPrice/HasMinPrice、MaxPrice/HasMaxPrice）
+     t / tn —— 页面级取词函数（t 是两参、tn 带 {name} 具名占位符）
+   为什么必须把它们传进来：Jet 的 include 换掉了 . 的指向，页面顶部 let 出来的 tr 与
+   根数据里的 tn 在片段里都看不见（实测 identifier not available）。
+   未知规则类型不是错误：外部改库改坏时也要能看，显示类型原值即可。 *}
+{{rt := .["rt"]}}{{rv := .["rv"]}}{{tr := .["t"]}}{{tn := .["tn"]}}
+{{if rt == "new_arrival"}}{{if rv.HasDays}}{{tn("admin.product_tags.rule.newArrival.describe", "上架 {days} 天内", map("days", rv.Days))}}{{else}}{{tr("admin.product_tags.rule.paramsInvalid", "参数不合法")}}{{end}}{{else if rt == "price_range"}}{{if rv.HasMinPrice}}{{if rv.HasMaxPrice}}{{tn("admin.product_tags.rule.priceRange.describeBoth", "价格 {min} ~ {max}", map("min", rv.MinPrice, "max", rv.MaxPrice))}}{{else}}{{tn("admin.product_tags.rule.priceRange.describeMin", "价格 ≥ {min}", map("min", rv.MinPrice))}}{{end}}{{else if rv.HasMaxPrice}}{{tn("admin.product_tags.rule.priceRange.describeMax", "价格 ≤ {max}", map("max", rv.MaxPrice))}}{{else}}{{tr("admin.product_tags.rule.paramsInvalid", "参数不合法")}}{{end}}{{else if rt == "on_sale"}}{{tr("admin.product_tags.rule.onSale.describe", "有划线价（对比价高于售价）")}}{{else}}{{tr("admin.product_tags.rule.unknown", "未知规则类型：")}}{{rt}}{{end}}

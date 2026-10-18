@@ -15,7 +15,7 @@
 {{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_pricing.title", "定价工具") }}{{end}}{{else}}{{ .["t"]("admin.product_pricing.title", "定价工具") }}{{end}}{{end}}
 {{block topbarTitle()}}{{ .["t"]("admin.product_pricing.title", "定价工具") }}{{end}}
 {{block body()}}
-{{csrf := .["csrf_token"]}}
+{{csrf := .["csrf_token"]}}{{tr := .["t"]}}{{tnf := .["tn"]}}
 {{selectedProject := .SelectedProject}}
 {{form := .Form}}
 {{rules := .Rules}}
@@ -119,9 +119,9 @@
         </h3>
         {* 本次试算的参数与计数是**数据**，用徽章呈现，不再占一整段正文高度。 *}
         <div class="form-inline">
-            <span class="badge badge-mute">{{ .["t"]("admin.product_pricing.preview.summaryRule", "规则：") }}{{.PreviewSummary.RuleLabel}}</span>
-            <span class="badge badge-mute">{{ .["t"]("admin.product_pricing.preview.summaryRounding", "尾数：") }}{{.PreviewSummary.RoundingLabel}}</span>
-            <span class="badge badge-mute">{{ .["t"]("admin.product_pricing.preview.summaryScope", "范围：") }}{{.PreviewSummary.ScopeLabel}}</span>
+            <span class="badge badge-mute">{{ .["t"]("admin.product_pricing.preview.summaryRule", "规则：") }}{{include "pricing_rule_text.html" map("rt", .PreviewSummary.RuleType, "rv", .PreviewSummary.RuleValues, "t", tr, "tn", tnf)}}</span>
+            <span class="badge badge-mute">{{ .["t"]("admin.product_pricing.preview.summaryRounding", "尾数：") }}{{include "pricing_rounding_text.html" map("v", .PreviewSummary.Rounding, "t", tr)}}</span>
+            <span class="badge badge-mute">{{ .["t"]("admin.product_pricing.preview.summaryScope", "范围：") }}{{include "pricing_scope_text.html" map("v", .PreviewSummary.Scope, "t", tr)}}</span>
             <span class="badge">{{ .["t"]("admin.product_pricing.preview.summaryTargets", "参与 ") }}{{.PreviewSummary.TargetCount}}{{ .["t"]("admin.product_pricing.preview.summaryChanged", " 个变体（改价 ") }}{{.PreviewSummary.ChangedCount}}{{ .["t"]("admin.product_pricing.preview.summaryUnchanged", " / 价格不变 ") }}{{.PreviewSummary.UnchangedCount}}{{ .["t"]("admin.product_pricing.preview.summarySkipped", " / 跳过 ") }}{{.PreviewSummary.SkippedCount}}{{ .["t"]("admin.product_pricing.preview.summaryClose", "）") }}</span>
         </div>
         <div class="pricing-table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_pricing.preview.tableAria", "试算明细（可横向滚动查看）") }}">
@@ -147,8 +147,8 @@
                     <td><strong>{{l.NewPrice}}</strong></td>
                     <td>{{l.Diff}}</td>
                     <td>
-                        <span class="badge badge-{{l.StatusTone}}">{{l.StatusLabel}}</span>
-                        {{if l.ReasonLabel != ""}}<span class="hint">{{l.ReasonLabel}}</span>{{end}}
+                        <span class="badge badge-{{if l.IsChanged}}ok{{else if l.IsSkipped}}mute{{else}}mute{{end}}">{{if l.Status == "changed"}}{{tr("admin.product_pricing.line.changed", "改价")}}{{else if l.Status == "unchanged"}}{{tr("admin.product_pricing.line.unchanged", "价格不变")}}{{else if l.Status == "skipped"}}{{tr("admin.product_pricing.line.skipped", "跳过")}}{{else}}{{l.Status}}{{end}}</span>
+                        {{if l.Reason == "PricingSkipCostMissing"}}<span class="hint">{{tr("admin.product_pricing.skip.costMissing", "未填成本价，按成本类规则无法计算")}}</span>{{else if l.Reason == "PricingSkipOutOfRange"}}<span class="hint">{{tr("admin.product_pricing.skip.outOfRange", "计算结果为负或超过 9999999999.99")}}</span>{{end}}
                     </td>
                 </tr>
                 {{end}}
@@ -172,8 +172,8 @@
                 {{range _, r := rules}}
                 <tr>
                     <td><code>{{r.Type}}</code></td>
-                    <td>{{r.Name}}{{if r.RequiresCost}}{{ .["t"]("admin.product_pricing.rules.requiresCost", "（需要成本价）") }}{{end}}</td>
-                    <td>{{r.Params}}</td>
+                    <td>{{include "pricing_rule_name.html" map("rt", r.Type, "kind", "name", "t", tr)}}{{if r.RequiresCost}}{{ .["t"]("admin.product_pricing.rules.requiresCost", "（需要成本价）") }}{{end}}</td>
+                    <td>{{include "pricing_rule_name.html" map("rt", r.Type, "kind", "params", "t", tr)}}</td>
                 </tr>
                 {{end}}
                 </tbody>
@@ -201,12 +201,14 @@
             {{range _, a := .History}}
             <details class="disclosure">
                 <summary class="card-header">
-                    <strong>{{a.RuleLabel}}</strong>
-                    <span class="badge badge-mute">{{a.ScopeLabel}}</span>
-                    <span class="badge badge-mute">{{a.RoundingLabel}}</span>
+                    <strong>{{include "pricing_rule_text.html" map("rt", a.RuleType, "rv", a.RuleValues, "t", tr, "tn", tnf)}}</strong>
+                    <span class="badge badge-mute">{{include "pricing_scope_text.html" map("v", a.Scope, "t", tr)}}</span>
+                    <span class="badge badge-mute">{{include "pricing_rounding_text.html" map("v", a.Rounding, "t", tr)}}</span>
                     <span class="hint">{{ .["t"]("admin.product_pricing.history.changedLead", "改动 ") }}{{a.ChangedCount}}/{{a.VariantCount}}{{ .["t"]("admin.product_pricing.history.changedTail", " 个变体 · ") }}{{formatTime(a.CreatedAt)}}{{if a.OperatorID != ""}}{{ .["t"]("admin.product_pricing.history.operatorLead", " · 操作人 ") }}{{a.OperatorID}}{{end}}</span>
                 </summary>
-                {{if a.FilterLabel != ""}}<p class="hint">{{ .["t"]("admin.product_pricing.history.filterLead", "筛选条件：") }}{{a.FilterLabel}}</p>{{end}}
+                {{if len(a.FilterParts) > 0}}<p class="hint">{{ .["t"]("admin.product_pricing.history.filterLead", "筛选条件：") }}
+                    {{range i, f := a.FilterParts}}{{if i > 0}}；{{end}}{{if f.Key == "status"}}{{tr("admin.product_pricing.filter.status", "状态")}}{{else if f.Key == "keyword"}}{{tr("admin.product_pricing.filter.keyword", "关键词")}}{{else if f.Key == "categoryId"}}{{tr("admin.product_pricing.filter.categoryId", "分类")}}{{else if f.Key == "brandId"}}{{tr("admin.product_pricing.filter.brandId", "品牌")}}{{else if f.Key == "tagId"}}{{tr("admin.product_pricing.filter.tagId", "标签")}}{{else}}{{f.Key}}{{end}}={{f.Value}}{{end}}
+                </p>{{end}}
                 {{if a.Note != ""}}<p class="hint">{{ .["t"]("admin.product_pricing.history.noteLead", "备注：") }}{{a.Note}}</p>{{end}}
                 {{if len(a.Items) == 0}}
                 <p class="hint">{{ .["t"]("admin.product_pricing.history.noItems", "这一批没有逐变体明细。") }}</p>

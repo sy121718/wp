@@ -23,7 +23,7 @@
     <label class="form-label" for="pricing-rule-type">{{ .["t"]("admin.product_pricing.apply.labelRule", "规则") }}</label>
     <select class="form-select" id="pricing-rule-type" name="ruleType" aria-label="{{ .["t"]("admin.product_pricing.apply.ruleTypeAria", "定价规则类型") }}">
         {{range _, r := pfRules}}
-        <option value="{{r.Type}}" {{if r.Type == pfForm.RuleType}}selected{{end}}>{{r.Name}}</option>
+        <option value="{{r.Type}}" {{if r.Type == pfForm.RuleType}}selected{{end}}>{{include "pricing_rule_name.html" map("rt", r.Type, "kind", "name", "t", .["t"])}}</option>
         {{end}}
     </select>
     <input type="text" class="form-input" name="multiplier" value="{{pfForm.Multiplier}}" placeholder="{{ .["t"]("admin.product_pricing.apply.phMultiplier", "multiplier（成本乘倍数）") }}" inputmode="decimal" autocomplete="off">
@@ -34,7 +34,7 @@
     <label class="form-label" for="pricing-rounding">{{ .["t"]("admin.product_pricing.apply.labelRounding", "尾数") }}</label>
     <select class="form-select" id="pricing-rounding" name="rounding" aria-label="{{ .["t"]("admin.product_pricing.apply.roundingAria", "尾数处理") }}">
         {{range _, r := pfRoundings}}
-        <option value="{{r.Value}}" {{if r.Value == pfForm.Rounding}}selected{{end}}>{{r.Name}}</option>
+        <option value="{{r.Value}}" {{if r.Value == pfForm.Rounding}}selected{{end}}>{{include "pricing_rounding_text.html" map("v", r.Value, "t", .["t"])}}</option>
         {{end}}
     </select>
 </div>

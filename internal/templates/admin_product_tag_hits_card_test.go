@@ -34,7 +34,7 @@ func tagHitsPageData() map[string]any {
 		"Tags": []map[string]any{{
 			"ID": "t1", "Name": "清仓", "Slug": "clearance", "Kind": "manual",
 			"KindLabelKey": "", "KindLabelFallback": "手工",
-			"IsRule": false, "RuleLabel": "", "ProductCount": 3,
+			"IsRule": false, "ProductCount": 3,
 			"RecalcAt": "", "RecalcLabelKey": "admin.product_tags.recalc.none", "RecalcLabelFallback": "未按规则重算过",
 			"RuleType": "", "RuleDays": "", "RuleMinPrice": "", "RuleMaxPrice": "",
 		}},

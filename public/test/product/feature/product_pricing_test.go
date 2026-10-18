@@ -283,16 +283,16 @@ func TestPricingFourRulesAndRounding(t *testing.T) {
 		params   string
 		rounding string
 		want     float64
-		wantRule string
+		wantVal  float64
 	}{
-		{"成本乘倍数 不舍入", productenums.PricingRuleCostMultiple, "{\"multiplier\":1.2}", productenums.PricingRoundingNone, 12.34, "成本 × 1.2"},
-		{"成本乘倍数 取整到元", productenums.PricingRuleCostMultiple, "{\"multiplier\":1.2}", productenums.PricingRoundingInteger, 13, "成本 × 1.2"},
-		{"成本乘倍数 尾数 9", productenums.PricingRuleCostMultiple, "{\"multiplier\":1.2}", productenums.PricingRoundingEnd9, 12.90, "成本 × 1.2"},
-		{"成本乘倍数 尾数 99", productenums.PricingRuleCostMultiple, "{\"multiplier\":1.2}", productenums.PricingRoundingEnd99, 12.99, "成本 × 1.2"},
-		{"成本加价 不舍入", productenums.PricingRuleCostMarkup, "{\"amount\":4.72}", productenums.PricingRoundingNone, 15, "成本 + 4.72"},
-		{"成本加价 尾数 99", productenums.PricingRuleCostMarkup, "{\"amount\":4.72}", productenums.PricingRoundingEnd99, 15.99, "成本 + 4.72"},
-		{"目标毛利率", productenums.PricingRuleTargetMargin, "{\"margin\":0.2}", productenums.PricingRoundingNone, 12.85, "目标毛利率 20%"},
-		{"统一售价（不看成本）", productenums.PricingRuleFixedPrice, "{\"amount\":88.5}", productenums.PricingRoundingNone, 88.5, "统一售价 88.5"},
+		{"成本乘倍数 不舍入", productenums.PricingRuleCostMultiple, "{\"multiplier\":1.2}", productenums.PricingRoundingNone, 12.34, 1.2},
+		{"成本乘倍数 取整到元", productenums.PricingRuleCostMultiple, "{\"multiplier\":1.2}", productenums.PricingRoundingInteger, 13, 1.2},
+		{"成本乘倍数 尾数 9", productenums.PricingRuleCostMultiple, "{\"multiplier\":1.2}", productenums.PricingRoundingEnd9, 12.90, 1.2},
+		{"成本乘倍数 尾数 99", productenums.PricingRuleCostMultiple, "{\"multiplier\":1.2}", productenums.PricingRoundingEnd99, 12.99, 1.2},
+		{"成本加价 不舍入", productenums.PricingRuleCostMarkup, "{\"amount\":4.72}", productenums.PricingRoundingNone, 15, 4.72},
+		{"成本加价 尾数 99", productenums.PricingRuleCostMarkup, "{\"amount\":4.72}", productenums.PricingRoundingEnd99, 15.99, 4.72},
+		{"目标毛利率", productenums.PricingRuleTargetMargin, "{\"margin\":0.2}", productenums.PricingRoundingNone, 12.85, 0.2},
+		{"统一售价（不看成本）", productenums.PricingRuleFixedPrice, "{\"amount\":88.5}", productenums.PricingRoundingNone, 88.5, 88.5},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -300,8 +300,11 @@ func TestPricingFourRulesAndRounding(t *testing.T) {
 			if res.Lines[0].NewPrice != tc.want {
 				t.Fatalf("新价应为 %v，实际 %v", tc.want, res.Lines[0].NewPrice)
 			}
-			if res.RuleLabel != tc.wantRule {
-				t.Fatalf("规则描述应为 %q，实际 %q", tc.wantRule, res.RuleLabel)
+			if res.RuleType != tc.ruleType || !res.RuleValues.HasValue || res.RuleValues.Value != tc.wantVal {
+				t.Fatalf("规则只给取值：期望 %s/%v，实际 %s/%+v", tc.ruleType, tc.wantVal, res.RuleType, res.RuleValues)
+			}
+			if res.Rounding != tc.rounding {
+				t.Fatalf("尾数档应为 %q，实际 %q", tc.rounding, res.Rounding)
 			}
 			if res.ChangedCount != 1 {
 				t.Fatalf("应算出 1 条改动，实际 %d", res.ChangedCount)
@@ -340,7 +343,7 @@ func TestPricingFourRulesAndRounding(t *testing.T) {
 			skipLine = l
 		}
 	}
-	if skipLine == nil || skipLine.Reason != productenums.PricingSkipCostMissing || skipLine.ReasonLabel == "" {
+	if skipLine == nil || skipLine.Reason != productenums.PricingSkipCostMissing {
 		t.Fatalf("跳过行应带原因与可读说明，实际 %+v", skipLine)
 	}
 	fixed, err := f.svc.PreviewPricing(ctx, &productdto.PricingPreviewReq{
@@ -575,8 +578,8 @@ func TestPricingPreviewThenApplyWithAudit(t *testing.T) {
 	if preview.ChangedCount != 2 || preview.UnchangedCount != 0 || preview.SkippedCount != 0 {
 		t.Fatalf("预览计数不符：%+v", preview)
 	}
-	if preview.RoundingLabel == "" || preview.ScopeLabel == "" {
-		t.Fatalf("预览应带尾数与范围的可读标签：%+v", preview)
+	if preview.Rounding != req.Rounding || preview.Scope != req.Scope {
+		t.Fatalf("预览应带回尾数与范围的取值：%+v", preview)
 	}
 	byOld := map[float64]float64{}
 	for _, line := range preview.Lines {
@@ -614,8 +617,11 @@ func TestPricingPreviewThenApplyWithAudit(t *testing.T) {
 		t.Fatalf("应有 1 条留痕，实际 %v %+v", err, list)
 	}
 	batch := list[0]
-	if batch.RuleLabel != "成本 × 1.5" || batch.RoundingLabel == "" || batch.ScopeLabel != "单个商品的全部变体" {
-		t.Fatalf("留痕批次应带规则 / 尾数 / 范围描述：%+v", batch)
+	if batch.RuleType != productenums.PricingRuleCostMultiple || !batch.RuleValues.HasValue || batch.RuleValues.Value != 1.5 {
+		t.Fatalf("留痕批次应记录规则取值：%+v", batch)
+	}
+	if batch.Rounding == "" || batch.Scope != productenums.PricingScopeProduct {
+		t.Fatalf("留痕批次应记录尾数档与范围取值：%+v", batch)
 	}
 	if batch.Note != "成本上涨，整店上调" || batch.OperatorID != "42" {
 		t.Fatalf("留痕应记录操作人与备注：%+v", batch)

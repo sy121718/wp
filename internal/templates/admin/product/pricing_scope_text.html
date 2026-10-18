@@ -1,0 +1,3 @@
+{* 作用范围的名字：数据是 map（v = 取值，t = 取词函数）。 *}
+{{v := .["v"]}}{{tr := .["t"]}}
+{{if v == "sku"}}{{tr("admin.product_pricing.scope.sku", "单个 SKU")}}{{else if v == "product"}}{{tr("admin.product_pricing.scope.product", "单个商品的全部变体")}}{{else if v == "filter"}}{{tr("admin.product_pricing.scope.filter", "筛选出的商品集")}}{{else}}{{tr("admin.product_pricing.scope.unknown", "未知作用范围")}}{{end}}

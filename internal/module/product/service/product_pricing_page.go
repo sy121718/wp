@@ -185,7 +185,7 @@ func (s *Service) pricingHistoryItems(ctx context.Context, projectID string, adj
 	return grouped
 }
 
-// pricingHistoryRow 批次 → 模板行（时间压成可读文本，明细逐条列出原价与新价）。
+// pricingHistoryRow 批次 → 模板行（规则与时间只给取值，措辞与格式归模板；明细逐条列出原价与新价）。
 func pricingHistoryRow(a *productdto.PriceAdjustmentResp) map[string]any {
 	items := make([]map[string]any, 0, len(a.Items))
 	for _, it := range a.Items {
@@ -196,12 +196,12 @@ func pricingHistoryRow(a *productdto.PriceAdjustmentResp) map[string]any {
 		})
 	}
 	return map[string]any{
-		"ID": a.ID, "RuleLabel": a.RuleLabel, "ScopeLabel": a.ScopeLabel,
-		"RoundingLabel": a.RoundingLabel, "FilterLabel": a.FilterLabel,
+		"ID": a.ID, "RuleType": a.RuleType, "RuleValues": a.RuleValues,
+		"Scope": a.Scope, "Rounding": a.Rounding, "FilterParts": a.FilterParts,
 		"ChangedCount": a.ChangedCount, "VariantCount": a.VariantCount,
 		"Note": a.Note, "OperatorID": a.OperatorID,
-		"CreatedAt":    a.CreatedAt,
-		"Items":         items,
+		"CreatedAt": a.CreatedAt,
+		"Items":     items,
 	}
 }
 
@@ -216,12 +216,11 @@ func pricingLineRows(lines []*productdto.PricingLineResp) []map[string]any {
 			"ProductName": l.ProductName, "SKUCode": l.SKUCode,
 			"CostPrice": money.FormatYuanOrDash(l.CostPrice),
 			"OldPrice":  money.FormatYuan(l.OldPrice), "NewPrice": money.FormatYuan(l.NewPrice),
-			"Diff":   pricingSignedAmount(l.NewPrice - l.OldPrice),
-			"Status": l.Status, "StatusLabel": l.StatusLabel,
-			"IsChanged":   l.Status == productenums.PricingLineChanged,
-			"StatusTone":  pricingLineTone(l.Status),
-			"IsSkipped":   l.Status == productenums.PricingLineSkipped,
-			"ReasonLabel": l.ReasonLabel,
+			"Diff":      pricingSignedAmount(l.NewPrice - l.OldPrice),
+			"Status":    l.Status,
+			"IsChanged": l.Status == productenums.PricingLineChanged,
+			"IsSkipped": l.Status == productenums.PricingLineSkipped,
+			"Reason":    l.Reason,
 		})
 	}
 	return rows
@@ -233,9 +232,10 @@ func pricingPreviewSummary(p *productdto.PricingPreviewResp) map[string]any {
 		return map[string]any{}
 	}
 	return map[string]any{
-		"RuleLabel":      p.RuleLabel,
-		"RoundingLabel":  p.RoundingLabel,
-		"ScopeLabel":     p.ScopeLabel,
+		"RuleType":       p.RuleType,
+		"RuleValues":     p.RuleValues,
+		"Rounding":       p.Rounding,
+		"Scope":          p.Scope,
 		"TargetCount":    p.TargetCount,
 		"ChangedCount":   p.ChangedCount,
 		"UnchangedCount": p.UnchangedCount,
@@ -249,15 +249,4 @@ func pricingSignedAmount(v float64) string {
 		return "+" + money.FormatYuan(v)
 	}
 	return money.FormatYuan(v)
-}
-
-
-// pricingLineTone 价格行状态 → 徽标分档。
-//
-// 判据与模板里的 IsChanged 同源（productenums.PricingLineChanged）：改过的价格行要人复核 → info。
-func pricingLineTone(status string) string {
-	if status == productenums.PricingLineChanged {
-		return "info"
-	}
-	return "mute"
 }
