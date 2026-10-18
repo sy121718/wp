@@ -189,7 +189,7 @@ func productTranslationErrorsText(c *gin.Context, errs []productdto.TranslationR
 		parts = append(parts, text)
 	}
 	title := adminui.MsgText(c, adminui.Msg{
-		Key: "admin.product_translations.errorsTitle", Fallback: "未保存：请先修正以下问题"})
+		Key: productenums.ProductTranslationsErrorsTitle, Fallback: "未保存：请先修正以下问题"})
 	return title + "：" + strings.Join(parts, "；")
 }
 

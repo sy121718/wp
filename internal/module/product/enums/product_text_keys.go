@@ -42,6 +42,7 @@ const (
 	ProductTranslationsTitle                    = "admin.product_translations.title"
 	ProductTranslationsSavedNote                = "admin.product_translations.savedNote"
 	ProductTranslationsSavedNone                = "admin.product_translations.savedNone"
+	ProductTranslationsErrorsTitle              = "admin.product_translations.errorsTitle"
 	ProductTranslationsEntityTypeCategory       = "admin.product_translations.entityType.category"
 	ProductTranslationsEntityTypeBrand          = "admin.product_translations.entityType.brand"
 	ProductTranslationsEntityTypeTag            = "admin.product_translations.entityType.tag"
