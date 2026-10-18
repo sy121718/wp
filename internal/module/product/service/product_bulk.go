@@ -9,20 +9,24 @@ package productservice
 //   · 删除阶段一条 DELETE ... WHERE id IN (...)，在**同一个事务**里连同失效事件提交；
 //   · 结果用 productdto.BulkResultResp 回给控制器（控制器不再累加任何计数）。
 //
-// 语义刻意保留的部分（dd.txt §5.3）：
-//   · 「逐项成功逐项失败」仍然成立 —— 校验阶段被判掉的项（不存在 / 有子级 / 被引用 /
-//     跨工程引用）不进删除集合，其余项照常删除，用户看到的仍是「已删 N / 未成功 M」；
-//   · 真正要删的那些项落在**同一个事务**里：删除本身失败（约束冲突这类）时整批回滚并报错，
-//     而不是留一半 —— 这一点比改造前更强（改造前是 N 个独立事务，中途失败会留下
-//     「删了一半」而提示页只说「未成功 M 个」）；
-//   · 批量读取 / 守卫扫描本身失败一律**返回 error**（不再像改造前那样被控制器算进
-//     「跳过」的计数里 —— 内部错误与业务拒绝混在一个数字里，用户与运维都读不出区别）。
+// 语义（2026-10-18 用户拍板）：**整批 = 一个事务，要么全成、要么全败**。
+//
+//   · 校验阶段批量化（一次查回整批：存在性 / 子级 / 引用面）；
+//   · 任何一条不能处理就整批退回，错误里列出可定位条目（id / 名称 / 原因 key → BulkRejectedError）；
+//   · 全部可处理时，同一个事务删完全部（连同失效事件与留痕），任一步失败整体回滚。
+//
+// 为什么不留「成功 N / 跳过 M」：那个回执既说不出哪一条没成，也没法只重试那一条（重试会把
+// 成功过的再走一遍），而库里已经是他看不懂的中间态 —— 一个表改了一个表没改，这种账没人能对。
+//
+// 归一只在这里做（normalizeBulkIDs → pkg/bulkids）：入口不 trim、不去重、不数条数。
+// 批量读取 / 守卫扫描本身失败一律**返回 error**，不混进任何计数。
 //
 // 事务边界与作用域：每个用例一个事务；分类 / 品牌 / 属性 / 标签都带工程隔离
 // （rls.ScopeTx 逐工程设置），标签那条按「标签自己的工程」分组切换（见 DeleteTag 注释）。
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -37,27 +41,32 @@ import (
 	"go_wp/internal/module/product/dto"
 	"go_wp/internal/module/product/enums"
 	"go_wp/internal/module/product/model"
+	"go_wp/pkg/bulkids"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/rls"
 )
 
-// normalizeBulkIDs 归一批量 id 清单：去空白、去空、去重（保序）。
+// normalizeBulkIDs 归一批量 id 清单：去空白、去空、去重（保序）+ 上限。
 //
-// inbound 已经过 shell.BulkIDs（同样的归一 + 上限 200），这里再做一次是为了让用例**自己
-// 成立**：直接调 service（测试 / 其它入口）时也不能靠调用方保证「没有重复 id」——
-// 重复 id 会让 Requested 虚高，也会让「只该删一次」的操作被算两次。
-func normalizeBulkIDs(ids []string) []string {
-	out := make([]string, 0, len(ids))
-	seen := make(map[string]bool, len(ids))
-	for _, raw := range ids {
-		id := strings.TrimSpace(raw)
-		if id == "" || seen[id] {
-			continue
-		}
-		seen[id] = true
-		out = append(out, id)
+// 这里是**全链唯一**的归一：入口只把请求体交给 service，不 trim、不去重、也不数条数 ——
+// 控制器是编排出口，不做计算（那条判据见 internal/module/CLAUDE.md）。
+//
+// 超限返回 *bulkids.IDsError（带 Max / Count 两个数字），由 bulkIDsErr 转成业务错误：
+// **整批拒绝，不静默截断** —— 截断会让操作者以为「勾的全删了」，而实际只处理了前 200 条。
+func normalizeBulkIDs(ids []string) ([]string, error) {
+	return bulkids.Normalize(ids)
+}
+
+// bulkIDsErr 归一的失败 → 业务错误：超限带上「上限 / 本次条数」，其余按参数不合法。
+//
+// 判据是**类型**（*bulkids.IDsError），不是文案比对：提示里的两个数字只有这个类型知道，
+// 拿上限重算会算成「上限 / 上限」。
+func bulkIDsErr(err error) error {
+	var tooMany *bulkids.IDsError
+	if errors.As(err, &tooMany) {
+		return productenums.ErrIDsTooMany(tooMany)
 	}
-	return out
+	return productenums.Err(productenums.ErrInvalidParam)
 }
 
 // BulkDeleteProducts 批量删除商品（连同其全部变体、各仓库存行 —— 由外键级联）。
@@ -75,10 +84,14 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
-	ids := normalizeBulkIDs(req.IDs)
+	ids, nerr := normalizeBulkIDs(req.IDs)
+	if nerr != nil {
+		return nil, bulkIDsErr(nerr)
+	}
 	res = &productdto.BulkResultResp{}
+	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功回执）。
 	if len(ids) == 0 {
-		return res, nil
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -114,7 +127,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 			for _, id := range locked {
 				lockedSet[id] = true
 			}
-			blocked := make([]productdto.BulkBlockedItemResp, 0, len(ids)-len(locked))
+			blocked := make([]facing.BlockedItem, 0, len(ids)-len(locked))
 			for _, id := range ids {
 				if !lockedSet[id] {
 					blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrNotFound))
@@ -172,7 +185,7 @@ func (s *Service) BulkDeleteProducts(ctx context.Context, req *productdto.BulkDe
 //
 // 状态码 409（冲突）在**声明处**给：一条也不能处理是「当前数据状态不允许这次操作」，
 // 不是参数错（400），也不是内部故障（500）。出口照常读 pkg/facing.StatusOf，不认识这个类型。
-func bulkRejected(items []productdto.BulkBlockedItemResp) error {
+func bulkRejected(items []facing.BlockedItem) error {
 	return &productdto.BulkRejectedError{
 		Err: facing.WithStatus(
 			facing.New(productenums.ErrBulkRejected, productenums.ProductErrFallbacks[productenums.ErrBulkRejected]),
@@ -182,8 +195,12 @@ func bulkRejected(items []productdto.BulkBlockedItemResp) error {
 }
 
 // bulkBlocked 一条可定位的拒绝原因。名称拿不到时退 id（uuid 至少能让人去搜）。
-func bulkBlocked(id, name, reasonKey string) productdto.BulkBlockedItemResp {
-	return productdto.BulkBlockedItemResp{ID: id, Name: strings.TrimSpace(name), ReasonKey: reasonKey}
+func bulkBlocked(id, name, reasonKey string) facing.BlockedItem {
+	return facing.BlockedItem{
+		ID: id, Name: strings.TrimSpace(name), ReasonKey: reasonKey,
+		// 兜底跟声明处走：出口有语言（它翻 key），但它不该替声明方猜「词条缺了显示什么」。
+		Fallback: productenums.FallbackFor(reasonKey),
+	}
 }
 
 // bulkBlockedNames 整批 id 的「名称表」（拿不到名称的条目留空）。
@@ -206,10 +223,14 @@ func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productd
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
-	ids := normalizeBulkIDs(req.IDs)
+	ids, nerr := normalizeBulkIDs(req.IDs)
+	if nerr != nil {
+		return nil, bulkIDsErr(nerr)
+	}
 	res = &productdto.BulkResultResp{}
+	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功回执）。
 	if len(ids) == 0 {
-		return res, nil
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -235,7 +256,7 @@ func (s *Service) BulkDeleteProductCategories(ctx context.Context, req *productd
 		present[r.ID] = true
 		names[r.ID] = r.Name
 	}
-	blocked := make([]productdto.BulkBlockedItemResp, 0)
+	blocked := make([]facing.BlockedItem, 0)
 	for _, id := range ids {
 		switch {
 		case !present[id]:
@@ -283,10 +304,14 @@ func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.B
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
-	ids := normalizeBulkIDs(req.IDs)
+	ids, nerr := normalizeBulkIDs(req.IDs)
+	if nerr != nil {
+		return nil, bulkIDsErr(nerr)
+	}
 	res = &productdto.BulkResultResp{}
+	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功回执）。
 	if len(ids) == 0 {
-		return res, nil
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -308,7 +333,7 @@ func (s *Service) BulkDeleteProductBrands(ctx context.Context, req *productdto.B
 		present[r.ID] = true
 		names[r.ID] = r.Name
 	}
-	blocked := make([]productdto.BulkBlockedItemResp, 0)
+	blocked := make([]facing.BlockedItem, 0)
 	for _, id := range ids {
 		switch {
 		case !present[id]:
@@ -353,10 +378,14 @@ func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productd
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
-	ids := normalizeBulkIDs(req.IDs)
+	ids, nerr := normalizeBulkIDs(req.IDs)
+	if nerr != nil {
+		return nil, bulkIDsErr(nerr)
+	}
 	res = &productdto.BulkResultResp{}
+	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功回执）。
 	if len(ids) == 0 {
-		return res, nil
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -378,7 +407,7 @@ func (s *Service) BulkDeleteProductAttributes(ctx context.Context, req *productd
 		present[r.ID] = true
 		names[r.ID] = r.Name
 	}
-	blocked := make([]productdto.BulkBlockedItemResp, 0)
+	blocked := make([]facing.BlockedItem, 0)
 	for _, id := range ids {
 		switch {
 		case !present[id]:
@@ -426,10 +455,14 @@ func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.Bul
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
-	ids := normalizeBulkIDs(req.IDs)
+	ids, nerr := normalizeBulkIDs(req.IDs)
+	if nerr != nil {
+		return nil, bulkIDsErr(nerr)
+	}
 	res = &productdto.BulkResultResp{}
+	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功回执）。
 	if len(ids) == 0 {
-		return res, nil
+		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -451,7 +484,7 @@ func (s *Service) BulkDeleteProductTags(ctx context.Context, req *productdto.Bul
 		owner[r.ID] = r.ProjectID
 		names[r.ID] = r.Name
 	}
-	blocked := make([]productdto.BulkBlockedItemResp, 0)
+	blocked := make([]facing.BlockedItem, 0)
 	groups := map[string][]string{}
 	for _, id := range ids {
 		pid, ok := owner[id]

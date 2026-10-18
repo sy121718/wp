@@ -20,6 +20,7 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
+	"go_wp/pkg/facing"
 	json "go_wp/pkg/jsonx"
 )
 
@@ -65,7 +66,7 @@ func setUUIDCol(t *testing.T, db *gorm.DB, productID, col, value string) {
 const missingUUID = "11111111-1111-4111-8111-111111111111"
 
 // bulkRejected 取整批拒绝的条目；没有错误或不是整批拒绝都直接判失败。
-func bulkRejected(t *testing.T, err error) []productdto.BulkBlockedItemResp {
+func bulkRejected(t *testing.T, err error) []facing.BlockedItem {
 	t.Helper()
 	if err == nil {
 		t.Fatal("整批应被拒绝（夹着不能处理的条目），实际没有错误 —— 等于部分提交")
@@ -78,7 +79,7 @@ func bulkRejected(t *testing.T, err error) []productdto.BulkBlockedItemResp {
 }
 
 // reasonOf 取某条 id 的原因 key；不存在则判失败。
-func reasonOf(t *testing.T, items []productdto.BulkBlockedItemResp, id string) string {
+func reasonOf(t *testing.T, items []facing.BlockedItem, id string) string {
 	t.Helper()
 	for _, it := range items {
 		if it.ID == id {

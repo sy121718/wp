@@ -331,9 +331,9 @@ func (h *ProductHandle) DeleteCategory(c *gin.Context) {
 // 权限点复用各自的单删、成功只回一条 JSON 回执。所以只有一个入口 bulkDeleteByIDs，
 // 差别只在传给用例的**方法值**。
 //
-// 抽一个入口的理由只剩「同口径」：归一与上限在 dto（BulkDeleteReq.NormalizeIDs）、
-// 错误出口是 bulkWriteFail —— 分开写迟早有一处漏了其中一步，症状是超限那批被静默截断，
-// 而操作者以为「勾的全删了」。这是本仓已发生过的一次真实故障。
+// 抽一个入口的理由只剩「同口径」：四个端点共用一段「绑请求 → 调用例 → 写响应」，
+// 差别只在传给用例的**方法值**。归一与上限、空勾选判定、整批拒绝的明细都在 service ——
+// 入口不做计算（判据见 internal/module/CLAUDE.md 的控制器形状那条）。
 
 // BulkDeleteCategories 批量删除分类（页面 /admin/product-categories/bulk-delete 的承接方）。
 func (h *ProductHandle) BulkDeleteCategories(c *gin.Context) {
@@ -351,14 +351,9 @@ func (h *ProductHandle) bulkDeleteByIDs(c *gin.Context, del func(context.Context
 	if !ok {
 		return
 	}
-	// 归一与上限只在 dto 有一份（判据见 productdto.BulkDeleteReq.NormalizeIDs）。
-	if err := req.NormalizeIDs(); err != nil {
-		bulkIDsFail(c, err)
-		return
-	}
 	res, err := del(c.Request.Context(), req)
 	if err != nil {
-		bulkWriteFail(c, err)
+		response.ErrorStatusAuto(c, productErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, res)

@@ -12,32 +12,16 @@ package productdto
 // （重试会把成功过的再走一遍），而库里已经是他看不懂的中间态 —— 一个表改了一个表没改，
 // 这种账没人能对。
 
-import "go_wp/pkg/bulkids"
+import "go_wp/internal/module/product/enums"
 
 // BulkDeleteReq 五个批量删除用例共用的入参。
 type BulkDeleteReq struct {
-	// IDs 目标 id 清单。入参侧**必须**先过 NormalizeIDs（去空白 / 去重 / 上限 200），
-	// service 侧还会再归一一次（service 是唯一的真源，不能依赖调用方守规矩）。
+	// IDs 目标 id 清单，原样交进来即可：归一（去空白 / 去重 / 上限 200）在 service，
+	// 入口不做任何预处理 —— 归一判据只有一份，多了就有一处会漏（超限被静默截断）。
 	IDs []string `json:"ids"`
 	// ProjectID 工程作用域；为空时由 service 走「唯一工程」兜底。
 	// 多工程部署下必须带：空着只剩「唯一工程」兜底一条路，否则 ErrInvalidParam。
 	ProjectID string `json:"projectId"`
-}
-
-// NormalizeIDs 归一 IDs 并写回（去空白 / 去空 / 去重保序 / 上限 bulkids.MaxIDs）。
-//
-// 位置在 dto 而不是控制器：五个批量端点 + 页面通道曾经各写一份归一，其中一处漏了上限，
-// 超限那批被静默截断而操作者以为「勾的全删了」—— 这是本仓真实发生过的一次故障。
-// 归一的判据只能有一处，而且必须是与入参类型绑定的那一处。
-//
-// 返回的错误可能是 *bulkids.IDsError（超限，带 Max / Count 两个数字），由出口取词成整句。
-func (r *BulkDeleteReq) NormalizeIDs() error {
-	ids, err := bulkids.Normalize(r.IDs)
-	if err != nil {
-		return err
-	}
-	r.IDs = ids
-	return nil
 }
 
 // BulkPricingJSONReq 批量改价的 JSON 入参。
@@ -55,14 +39,25 @@ type BulkPricingJSONReq struct {
 	Rounding   string   `json:"rounding"`
 }
 
-// NormalizeIDs 归一 ids（判据同 BulkDeleteReq.NormalizeIDs）。
-func (r *BulkPricingJSONReq) NormalizeIDs() error {
-	ids, err := bulkids.Normalize(r.IDs)
-	if err != nil {
-		return err
+// ServiceReq 转成 service 的入参（形状转换放在 dto：控制器只做「绑定 → 调用 → 响应」，
+// 不在这里拼 Rule）。
+//
+// Scope 与 TargetID 不在这里给：批量入口恒为「单个商品的全部变体」，TargetID 由 service
+// 逐商品覆盖 —— 让调用方填等于给一个必须被忽略的字段。
+func (r *BulkPricingJSONReq) ServiceReq(operatorID string) *BulkPricingReq {
+	return &BulkPricingReq{
+		IDs:        r.IDs,
+		ProjectID:  r.ProjectID,
+		Note:       r.Note,
+		OperatorID: operatorID,
+		Rule: PricingRuleReq{
+			ProjectID:  r.ProjectID,
+			RuleType:   r.RuleType,
+			Rounding:   r.Rounding,
+			Scope:      productenums.PricingScopeProduct,
+			RuleParams: PricingParams(r.RuleType, r.Multiplier, r.Amount, r.Margin),
+		},
 	}
-	r.IDs = ids
-	return nil
 }
 
 // BulkPricingReq 批量改价的用例入参。
@@ -73,7 +68,7 @@ type BulkPricingReq struct {
 	ProjectID string
 	// Note 本次调价的备注（写进每一条留痕台账）。
 	Note string
-	// OperatorID 操作人（inbound 从会话覆盖写入，客户端传入的值被忽略 —— 调价留痕的操作人不可伪造）。
+	// OperatorID 操作人（入口从会话覆盖写入，客户端传入的值被忽略 —— 调价留痕的操作人不可伪造）。
 	OperatorID string
 	// Rule 定价规则。Scope 与 TargetID 由 service 逐商品覆盖（批量入口恒为
 	// 「单个商品的全部变体」，TargetID = 当前商品 id）。

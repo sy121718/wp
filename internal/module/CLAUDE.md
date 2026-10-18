@@ -97,13 +97,20 @@ module_name/
     （约 20 个模块），**不做批量合并** —— 改到哪个模块就把那个模块并成一份，没改到的不动。
 - `handle` 负责参数绑定、调用 service、**输出响应**。Jet 渲染在 handle，不在 router。
 - **控制器只做四件事**：绑定并校验请求 → 调 service → 把结果装配成模板 data（**事实**）→ 渲染/响应。
-  **不做**的三件事，各有归属：
+  更严格地说，它是**编排出口**：正常情况下只有「调用 dto（绑定 / 形状转换）+ 调用业务层 + 返回业务层
+  给的数据」。极端情况（一屏要多个 service）也只是**整合复用**，它自身不做任何动作 —— 2026-10-18
+  用户原话：「控制器自身不能有任何动作，这里只是个编排出口」。
+  **不做**的四件事，各有归属：
   · 「值 → 文案」的映射（`switch stage { case "plan": return {Key, Fallback} }` 这种）→ 进 `enums`
     （见下节），控制器只留一行调用；
   · i18n 词条 key 的字面量（`"admin.pages.impact.stage_plan"`）→ key 的归属是 `enums` 常量，
     控制器只引用常量。门禁 `bash scripts/check-controller-i18n-literals.sh`（控制器出现字面量即失败；
     基线表为空＝终局零容忍，任何模块再写一处字面量都会被判违规）；
-  · 业务判断（谁能删、状态能不能推进、金额怎么算）→ service。
+  · 业务判断（谁能删、状态能不能推进、金额怎么算）→ service；
+  · **任何计算**（批量 id 的去空白 / 去重 / 上限、条数累加、参数 → 业务入参的映射）→ service 或 dto
+    的转换方法。控制器不 trim、不数条数、不判「没勾选算不算错误」，也不替错误挑状态码（状态在
+    错误声明处，出口只读 `facing.StatusOf`）。门禁 `TestControllerNoNormalization`
+    （`internal/architecture/controller_shape_test.go` 第 6 条，判据是 `bulkids.Normalize` 的**调用**）。
   判据：控制器里出现 `switch` 时问一句「这是在挑文案，还是在做业务判断」——挑文案就是走错了层。
 - **一屏的取数编排与视图装配也在 service，不在控制器**（§dto 那条「展示串在 service 组装响应时写进
   dto」的落地形态）：
@@ -111,8 +118,8 @@ module_name/
     → service 的**读模型方法**（`ProductNewPage(ctx, req) (*dto.ProductNewPageView, error)`），
     它持有各契约端口；分档（400 参数不合法 / 500 取数失败）也由它给出的错误决定；
   · 行的形状、标签事实、失败槽 → 同一个 dto 回执（`dto/product_page_resp.go` 那类纯数据 struct）；
-  · 控制器只剩：读参数 → **请求边界**校验（工程是否存在、参数格式）→ 调 service →
-    决定状态码 / no-store → `c.HTML(status, tpl, adminui.PrepareView(c, view))`。
+  · 控制器只剩：绑定请求 → 调 service → 交 `(any, error)`（成功由 `*_router.go` 的
+    `adminui.Page` / `adminui.Bare` 渲染，失败走 `pkg/response` 的 JSON）。
   实测判据：控制器里出现 `gin.H{...}` 装配、`[]gin.H` 行构造、`warehouseOptions/attributeOptions`
   这类取数助手、或「每个失败点各写一遍失败页」的 `loadErr` 编排 —— 这一屏的读模型还没下沉。
   · **视图摊平只有一处实现**：`adminui.PrepareView(c, view)`（结构体 → 一层键 + t/tf/csrf），

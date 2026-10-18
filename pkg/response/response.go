@@ -118,6 +118,12 @@ func IsBusinessError(err error) bool {
 // scene 用于日志定位（如 "presentation"），业务错误路径不记日志（它是预期内的分支）。
 func ErrorAuto(c *gin.Context, code int, scene string, err error) {
 	if fact, ok := facing.FactOf(err); ok && fact.Business {
+		// 整批被拒的错误带可定位明细：明细进 data.items（逐条翻译），结论仍是一句话。
+		// 判据是接口形状（facing.BlockedError），不是某个模块的具体类型 —— 出口不认识业务类型。
+		if data, blocked := blockedDataOf(c, scene, err); blocked {
+			ErrorWithData(c, code, businessText(c, scene, fact), data)
+			return
+		}
 		ErrorWithMessage(c, code, businessText(c, scene, fact))
 		return
 	}
@@ -158,6 +164,28 @@ func ErrorStatus(err error) int {
 // 业务错误的内部错误分支仍强制 500 —— ErrorAuto 会覆盖传入的 code。
 func ErrorStatusAuto(c *gin.Context, scene string, err error) {
 	ErrorAuto(c, ErrorStatus(err), scene, err)
+}
+
+// blockedDataOf 整批拒绝的明细：{"items":[{id,name,reasonKey,message}]}。
+//
+// data 是对象而不是裸数组：报文里还得留出别的位置（现在只有 items，将来加计数或整批
+// 上下文都不用改形状），前端读 data.items 也不用区分两种类型。
+func blockedDataOf(c *gin.Context, scene string, err error) (gin.H, bool) {
+	var blocked facing.BlockedError
+	if !errors.As(err, &blocked) {
+		return nil, false
+	}
+	items := blocked.BlockedItems()
+	rows := make([]gin.H, 0, len(items))
+	for _, it := range items {
+		rows = append(rows, gin.H{
+			"id":        it.ID,
+			"name":      it.Name,
+			"reasonKey": it.ReasonKey,
+			"message":   businessText(c, scene, facing.Fact{Key: it.ReasonKey, Fallback: it.Fallback, Business: true}),
+		})
+	}
+	return gin.H{"items": rows}, true
 }
 
 // businessText 事实 → 当前语言文案；i18n 命不中时退回**声明处给的兜底**。

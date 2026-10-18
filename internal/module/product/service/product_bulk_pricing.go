@@ -17,6 +17,7 @@ package productservice
 
 import (
 	"context"
+	"net/http"
 
 	"gorm.io/gorm"
 
@@ -33,10 +34,17 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 	if req == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
-	ids := normalizeBulkIDs(req.IDs)
+	ids, nerr := normalizeBulkIDs(req.IDs)
+	if nerr != nil {
+		return nil, bulkIDsErr(nerr)
+	}
 	res = &productdto.BulkPricingResultResp{}
+	// 没勾选就提交：明确拒绝（不是「0 个改动」的成功回执）。判据在这里而不是入口 ——
+	// 控制器只交请求体，不判断业务上「这次提交算不算空操作」。
 	if len(ids) == 0 {
-		return res, nil
+		return nil, facing.WithStatus(
+			facing.New(productenums.BulkPricingNoneSelected, "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"),
+			http.StatusBadRequest)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -52,7 +60,7 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 		present[p.ID] = true
 		names[p.ID] = p.Name
 	}
-	blocked := make([]productdto.BulkBlockedItemResp, 0)
+	blocked := make([]facing.BlockedItem, 0)
 	for _, id := range ids {
 		if !present[id] {
 			blocked = append(blocked, bulkBlocked(id, names[id], productenums.ErrPricingTargetNotFound))

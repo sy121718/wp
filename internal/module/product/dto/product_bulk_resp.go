@@ -1,5 +1,7 @@
 package productdto
 
+import "go_wp/pkg/facing"
+
 // product_bulk_resp.go — 批量用例的回执（与 product_bulk_req.go 成对）。
 //
 // 语义只有一种：**整批 = 一个事务，要么全成、要么全败**。
@@ -16,7 +18,6 @@ type BulkResultResp struct {
 	Done int `json:"done"`
 }
 
-
 // BulkRejectedError 整批拒绝：一句话说结论，明细放 data.items。
 //
 // 包装而非另造一套：Err 是 facing 的常规业务错误（key + 兜底 + 声明的状态码 409），
@@ -26,12 +27,15 @@ type BulkResultResp struct {
 // 控制器要拿到 Items 时 errors.As 一下即可；拿不到时它退化成一个普通业务错误。
 type BulkRejectedError struct {
 	Err   error
-	Items []BulkBlockedItemResp
+	Items []facing.BlockedItem
 }
 
 func (e *BulkRejectedError) Error() string { return e.Err.Error() }
 
 func (e *BulkRejectedError) Unwrap() error { return e.Err }
+
+// BlockedItems 让出口按接口认形状（pkg/response 只认 facing.BlockedError，不认识本类型）。
+func (e *BulkRejectedError) BlockedItems() []facing.BlockedItem { return e.Items }
 
 // BulkPricingResultResp 批量改价的回执（在 BulkResultResp 之上多两个改价专属计数）。
 type BulkPricingResultResp struct {
@@ -40,19 +44,4 @@ type BulkPricingResultResp struct {
 	ChangedVariants int `json:"changedVariants"`
 	// UnchangedProducts 本来就在目标价上的商品数（不是失败：service 不写空台账，故单独计数）。
 	UnchangedProducts int `json:"unchangedProducts"`
-}
-
-// BulkBlockedItemResp 整批被拒时的一条「为什么不行」（data.items 的元素）。
-//
-// 三个字段是**定位**所需：id（重试时勾哪一条）、name（人读）、为什么。
-// 名称优先展示：批量里给人看 uuid 等于没给信息。
-//
-// ReasonKey 与 Message 是同一件事的两端：service 只回业务 key（它拿不到也不该拿
-// 取词函数），出口把 key 翻成当前语言的 Message 再给前端；两者都带 omitempty，
-// 谁填了谁出现在 JSON 里。
-type BulkBlockedItemResp struct {
-	ID        string `json:"id"`
-	Name      string `json:"name,omitempty"`
-	ReasonKey string `json:"reasonKey,omitempty"`
-	Message   string `json:"message,omitempty"`
 }

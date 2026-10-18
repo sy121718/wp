@@ -29,7 +29,6 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
 	"go_wp/internal/text"
-	"go_wp/pkg/bulkids"
 	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
@@ -170,60 +169,14 @@ func (h *ProductHandle) BulkDelete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// 归一只在 dto 有一份（去空白 / 去空 / 去重 / 上限 200，**超限整批拒绝、不静默截断** ——
-	// 截断会让操作者以为「勾的全删了」）。
-	if err := req.NormalizeIDs(); err != nil {
-		bulkIDsFail(c, err)
-		return
-	}
-	// 没勾选就提交：明确拒绝（不是「删除 0 个」的成功）。与批量改价同一判据。
-	if len(req.IDs) == 0 {
-		response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
-		return
-	}
+	// 归一（去重 / 上限）、空勾选判定、整批拒绝的明细全在 service 与 pkg/response ——
+	// 入口只绑请求、调用例、写响应，不做计算。
 	res, err := h.svc.BulkDeleteProducts(c.Request.Context(), req)
 	if err != nil {
-		bulkWriteFail(c, err)
+		response.ErrorStatusAuto(c, productErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, res)
-}
-
-// bulkIDsFail 归一失败的出口：超限时把「上限 / 本次条数」两个数字给出来。
-//
-// 只说「请求参数无效」时操作者不知道该拆成几批，而这正是这条拒绝唯一可行动的信息。
-// 词条与模板归 pkg/bulkids 所有（两个 %s 依次是上限与本次条数），这里只做取词 + 注入数字。
-func bulkIDsFail(c *gin.Context, err error) {
-	var limit *bulkids.IDsError
-	if errors.As(err, &limit) {
-		template := i18n.Translate(bulkids.MsgTooMany, bulkids.TooManyTemplate, response.RequestLanguage(c))
-		response.ErrorWithMessage(c, http.StatusBadRequest,
-			fmt.Sprintf(template, strconv.Itoa(limit.Max), strconv.Itoa(limit.Count)))
-		return
-	}
-	response.ErrorWithMessage(c, http.StatusBadRequest, productenums.ErrInvalidParam)
-}
-
-// bulkWriteFail 批量写动作的错误出口。
-//
-// 整批被拒时把可定位条目放进 data.items（id / name / message）：只说一句「批量操作未执行」
-// 时操作者不知道是哪几条拦住了他，而这条错误唯一可行动的信息就是「去掉哪几条再试」。
-// 其余错误照常走状态码判据（response.ErrorStatusAuto 只读错误声明处给的状态码）。
-func bulkWriteFail(c *gin.Context, err error) {
-	var rejected *productdto.BulkRejectedError
-	if errors.As(err, &rejected) {
-		items := make([]productdto.BulkBlockedItemResp, 0, len(rejected.Items))
-		for _, it := range rejected.Items {
-			row := it
-			row.Message = response.MessageOf(c, productErrScene, productenums.Err(it.ReasonKey))
-			items = append(items, row)
-		}
-		// data 是个对象而不是裸数组：报文里还得留出别的位置（现在只有 items，将来
-		// 加计数或整批上下文都不用改形状），前端读 data.items 也不用区分两种类型。
-		response.ErrorWithData(c, response.ErrorStatus(err), response.MessageOf(c, productErrScene, err), gin.H{"items": items})
-		return
-	}
-	response.ErrorStatusAuto(c, productErrScene, err)
 }
 
 // CreateVariant 新增变体（未填字段由商品级默认值补齐）。
@@ -1442,33 +1395,10 @@ func (h *ProductHandle) BulkPricing(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// 归一与上限只在 dto 有一份（判据见 BulkDeleteReq.NormalizeIDs）。
-	if err := req.NormalizeIDs(); err != nil {
-		bulkIDsFail(c, err)
-		return
-	}
-	// 没勾选就提交：明确拒绝，不是「0 个改动」的成功回执。页面侧原有这条守卫，随页面 POST
-	// 一起消失 —— 判据搬到这里，否则删掉页面通道后「空勾选静默成功」就没人拦了。
-	if len(req.IDs) == 0 {
-		response.ErrorWithMessage(c, http.StatusBadRequest, text.MsgText(c, facing.Msg{
-			Key: productenums.BulkPricingNoneSelected, Fallback: "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"}))
-		return
-	}
-	res, err := h.svc.BulkApplyPricing(c.Request.Context(), &productdto.BulkPricingReq{
-		IDs:        req.IDs,
-		ProjectID:  req.ProjectID,
-		Note:       req.Note,
-		OperatorID: builtin.OperatorName(c),
-		Rule: productdto.PricingRuleReq{
-			ProjectID:  req.ProjectID,
-			RuleType:   req.RuleType,
-			Rounding:   req.Rounding,
-			Scope:      productenums.PricingScopeProduct,
-			RuleParams: productdto.PricingParams(req.RuleType, req.Multiplier, req.Amount, req.Margin),
-		},
-	})
+	// 入参形状（含规则字段）由 dto 转成 service 的入参；操作人从会话取（客户端传入被忽略）。
+	res, err := h.svc.BulkApplyPricing(c.Request.Context(), req.ServiceReq(builtin.OperatorName(c)))
 	if err != nil {
-		bulkWriteFail(c, err)
+		response.ErrorStatusAuto(c, productErrScene, err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgPricingApplySuccess, res)

@@ -1,6 +1,13 @@
 package productenums
 
-import "go_wp/pkg/facing"
+import (
+	"fmt"
+	"net/http"
+	"strconv"
+
+	"go_wp/pkg/bulkids"
+	"go_wp/pkg/facing"
+)
 
 // product_err_fallbacks.go — 商品域**业务错误**词条的 key 与「词条缺失时的中文原文」。
 //
@@ -145,6 +152,34 @@ var ProductErrFallbacks = map[string]string{
 //
 // 复合错误用 fmt.Errorf("%w: %s", Err(key), 明细)：facing.FactOf 按 ASCII 冒号切出明细段
 // （Tail），并保留 errors.As 能拿到的 key 与兜底。
+// FallbackFor 取某个 key 的展示兜底（没有则空串）。
+//
+// 出口/服务在「要给一条明细配文案」时用它：判据是 key 本身，不比对文案 ——
+// service 侧没有语言，只交 key + 兜底，由出口决定最终显示哪句。
+func FallbackFor(key string) string {
+	return ProductErrFallbacks[key]
+}
+
 func Err(key string) error {
 	return facing.WithStatus(facing.New(key, ProductErrFallbacks[key]), errStatuses[key])
+}
+
+// ErrIDsTooMany 批量 id 超过上限（service 归一时产生）。
+//
+// 为什么不用 Err(key)：这条提示带两个数字（上限与本次条数），而这两个只有 *bulkids.IDsError
+// 知道（Count 是**去重后**的条数，拿上限重算会算错）。key 走参数化协议
+// `shell.err.bulkIdsTooMany|上限|条数`，出口按请求语言把 %s 填进去。
+//
+// 兜底是**填好数字的中文成品句**，不是模板：出口的 businessText 先取译文（词条见迁移 277，
+// 中英各一行），只有译文拿不到时才用兜底 —— 于是「i18n 未初始化 / 缺词条」的环境里显示的
+// 仍是可行动的一句话，而不是 key 原文。
+func ErrIDsTooMany(err *bulkids.IDsError) error {
+	if err == nil {
+		return Err(ErrInvalidParam)
+	}
+	max, count := strconv.Itoa(err.Max), strconv.Itoa(err.Count)
+	return facing.WithStatus(facing.New(
+		fmt.Sprintf("%s|%s|%s", bulkids.MsgTooMany, max, count),
+		fmt.Sprintf(bulkids.TooManyTemplate, max, count)),
+		http.StatusBadRequest)
 }

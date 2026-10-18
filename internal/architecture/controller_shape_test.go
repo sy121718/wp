@@ -14,6 +14,10 @@
 //     —— 模板名归路由，失败一律 JSON，成功页才走 Jet。
 //  5. **UI 线依赖**：控制器不 import internal/adminui。取词走 internal/text、
 //     读请求上下文走 pkg/binding、响应走 pkg/response —— 三条线各归各的包。
+//  6. **不做计算**：控制器里不出现 bulkids.Normalize —— 归一（去重 / 上限）是 service 的事。
+//     控制器只是编排出口：绑请求 → 调用例 → 写响应。它不 trim、不去重、不数条数、不判业务
+//     （「没勾选算不算错误」这类判断在 service），也不替错误挑状态码（状态在声明处）。
+//     2026-10-18 用户拍板：「控制器自身不能有任何动作，这里只是个编排出口」。
 //
 // **pending 是必须缩小的清单**（双向判定：登记了却已消失同样变红）：
 // 五条门禁各自登记此刻的存量，收一个删一条。新写的控制器直接命门禁，不要往 pending 里加。
@@ -29,6 +33,25 @@ import (
 	"strings"
 	"testing"
 )
+
+// pendingControllerNormalize 还在控制器里做批量 id 归一的文件（判据见第 6 条）。
+//
+// 收一个删一条：文件里最后一次 bulkids.Normalize 调用搬进 service 后，这条登记要一起删，
+// 否则本测试反向判定会报「登记了却已无命中」。
+var pendingControllerNormalize = map[string]bool{
+	"internal/module/admin/inbound/http/admin_i18n_write.go":                  true,
+	"internal/module/block/inbound/http/block_handle.go":                      true,
+	"internal/module/contenttemplate/inbound/http/contenttemplate_handle.go":  true,
+	"internal/module/inventory/inbound/http/inventory_reason_handle.go":       true,
+	"internal/module/inventory/inbound/http/inventory_source_handle.go":       true,
+	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go":    true,
+	"internal/module/mail/inbound/http/mail_contact_write.go":                 true,
+	"internal/module/mail/inbound/http/mail_page.go":                          true,
+	"internal/module/navigation/inbound/http/navigation_add_source_handle.go": true,
+	"internal/module/navigation/inbound/http/navigation_delete_handle.go":     true,
+	"internal/module/order/inbound/http/order_write.go":                       true,
+	"internal/module/user/inbound/http/customer_bulk_write.go":                true,
+}
 
 // pendingControllerFiles 还没按 <模块>_router.go / <域>_handle.go 命名的控制器文件。
 var pendingControllerFiles = map[string]bool{
@@ -496,6 +519,59 @@ func TestControllerNoUILineImport(t *testing.T) {
 	for rel := range pendingControllerUIImport {
 		if !seen[rel] {
 			t.Errorf("pendingControllerUIImport 登记了 %s，但该文件已不 import adminui —— 请删掉这条登记", rel)
+		}
+	}
+}
+
+// TestControllerNoNormalization 控制器不做归一（第 6 条）。
+//
+// 判据抓的是**调用**（bulkids.Normalize 的 CallExpr），不是 import：控制器引用
+// bulkids.MsgTooMany 之类只为了取词，那是文案，不在这里管。
+func TestControllerNoNormalization(t *testing.T) {
+	root := repoRoot(t)
+	seen := map[string]bool{}
+	fset := token.NewFileSet()
+	for _, dir := range controllerDirs(t) {
+		pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
+			return !strings.HasSuffix(fi.Name(), "_test.go")
+		}, 0)
+		if err != nil {
+			t.Fatalf("解析 %s 失败: %v", dir, err)
+		}
+		for _, pkg := range pkgs {
+			for path, file := range pkg.Files {
+				if controllerIsRouter(filepath.Base(path)) {
+					continue
+				}
+				rel, _ := filepath.Rel(root, path)
+				rel = filepath.ToSlash(rel)
+				ast.Inspect(file, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					sel, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok {
+						return true
+					}
+					pkgIdent, ok := sel.X.(*ast.Ident)
+					if !ok || pkgIdent.Name != "bulkids" || sel.Sel.Name != "Normalize" {
+						return true
+					}
+					seen[rel] = true
+					if !pendingControllerNormalize[rel] {
+						t.Errorf("%s:%d：控制器不做批量 id 归一 —— 归一（去重 / 上限）搬进 service，"+
+							"控制器只绑请求、调用例、写响应",
+							rel, fset.Position(call.Pos()).Line)
+					}
+					return true
+				})
+			}
+		}
+	}
+	for rel := range pendingControllerNormalize {
+		if !seen[rel] {
+			t.Errorf("pendingControllerNormalize 登记了 %s，但该文件已不做归一 —— 请删掉这条登记", rel)
 		}
 	}
 }
