@@ -12,7 +12,7 @@ var controllerTranslatePattern = regexp.MustCompile(`adminui\.MsgText\(|adminui\
 
 // TestControllerI18nBoundary 商品模块控制器取词边界（internal/module/CLAUDE.md §inbound/http）。
 //
-// 判据：控制器只交**文案事实**（`productMsg` = `adminui.Msg{Key, Fallback, Args}`），
+// 判据：控制器只交**文案事实**（`adminui.Msg` = `adminui.Msg{Key, Fallback, Args}`），
 // 取词在模板里（`{{tr := .["t"]}}` / `{{tf := .["tf"]}}`）；片段一律经 `adminui.PrepareBare`。
 // 理由是二开：后台是 Go 渲染、词条在 sys_i18n 里，控制器里写「错误 → 文案」的映射，
 // 等于加一门语言要回头改控制器（这是本模块 41 处取词收口时的起点）。
@@ -23,8 +23,8 @@ var controllerTranslatePattern = regexp.MustCompile(`adminui\.MsgText\(|adminui\
 //	· 登记项不再命中 → 也失败（登记表退化成注释就没人看它了，与 rawSQLDebtList 同一判据）。
 func TestControllerI18nBoundary(t *testing.T) {
 	allow := map[string]string{
-		"product_jump.go": "JSON 出口成品串：多段合成句（productBulkTextOf）+ Tail 复合形态（productErrMsgOf）；" +
-			"失败回执的成品串取词（productMsgText）",
+		"product_bulk_handle.go": "批量结论的成品串：变体保存的复合句（新增/修改/跳过三段分别取词后拼接），" +
+			"模板只拿到拼好的整句（productBulkTextOf）",
 		"product_router.go": "中间件：productTranslateMiddleware 把取词函数放进 Request Context 给 " +
 			"service 用（service 要产出展示文案，语言只有 gin.Context 知道）",
 		"product_translations_handle.go": "具名占位符：i18n.FillTranslate 的 {n} 句式（同上）",

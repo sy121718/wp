@@ -1,4 +1,19 @@
-package producthttp
+package productservice
+
+// product_foreign_text.go — 别模块业务 key 的展示兜底（**只剩对端还没有兜底表的那一批**）。
+//
+// 本模块 service 一律返回 productenums.Err(key) —— 中文兜底跟着错误声明处走，出口经
+// pkg/facing.FactOf 直接拿到 Fallback，不查任何表。inventory / presentation 的 key 还没有
+// 自己的 ErrFallbacks，FactOf 只能给出「兜底 = key」，出口便会把裸 key 摆到页面上；
+// 这张表就是补那一格。
+//
+// 为什么归 service 而不是控制器：这些 key 是**本模块 service 调用对端能力时**产生的
+// （建 SKU 调 inventory、挂模板调 presentation），谁产生这种错误谁就该说清它对运营是什么意思。
+// 控制器只负责取词与出口，不该自带一份跨模块的错误语义表。
+//
+// 清理条件：对端补上兜底表（enums 里再加一张 map，Err(key) 里取）之后本文件整体删除。
+// 它不该长大：新增一个 key 先问「这个错误是谁声明的」—— 本模块的兜底跟着声明处走，
+// 别模块的催对端补表或把它包成本模块的错误，别在这里续写第二份映射。
 
 import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -6,17 +21,8 @@ import (
 	"go_wp/pkg/facing"
 )
 
-// product_foreign_err.go — 别模块业务 key 的展示兜底（**只剩对端还没有兜底表的那一批**）。
-//
-// 本模块 service 一律返回 productenums.Err(key) —— 中文兜底跟着错误声明处走，出口经
-// pkg/facing.FactOf 直接拿到 Fallback，不查任何表。inventory / presentation 的 key 还没有
-// 自己的 ErrFallbacks，FactOf 只能给出「兜底 = key」，出口便会把裸 key 摆到页面上；
-// 这张表就是补那一格。
-//
-// 清理条件：对端补上兜底表（enums 里再加一张 map，Err(key) 里取）之后本文件整体删除。
-// 它不该长大：新增一个 key 先问「这个错误是谁声明的」—— 本模块的进 ProductErrFallbacks，
-// 别模块的催对端补表或把它包成本模块的错误，别在这里续写第二份映射。
-var productForeignErrFallbacks = map[string]string{
+// ForeignErrFallbacks 别模块 key → 展示兜底（只装「展示原文」，不含判定）。
+var ForeignErrFallbacks = map[string]string{
 	inventoryenums.ErrSKUSourceInvalid:             "SKU 来源取值不合法：只支持「自己创建」与「从仓库选」",
 	inventoryenums.ErrWarehouseSKURequired:         "从仓库选 SKU 时必须先选仓库并指明该仓的那条仓库 SKU",
 	inventoryenums.ErrWarehouseSKUNotFound:         "该仓库里没有这条仓库 SKU：请确认仓库选对了，或先在该仓建好这条货的库存记录",
@@ -35,19 +41,18 @@ var productForeignErrFallbacks = map[string]string{
 	presentationenums.ErrSnapshotMismatch:          "该版本不属于这个商品，不能用来回滚",
 }
 
-// productTextFallback 事实 → 展示用的中文兜底：本模块声明处的兜底优先，
-// 对端没有兜底表时用本包的补丁表（见上）。
-func productTextFallback(fact facing.Fact) string {
-	if fb := productForeignFallback(fact.Key); fb != "" {
-		return fb
-	}
-	return fact.Fallback
-}
-
-// productForeignFallback 别模块 key → 展示兜底（未登记 / 空 key 一律空串）。
-func productForeignFallback(key string) string {
+// ForeignErrText 别模块 key → 展示兜底（未登记 / 空 key 一律空串）。
+func ForeignErrText(key string) string {
 	if key == "" {
 		return ""
 	}
-	return productForeignErrFallbacks[key]
+	return ForeignErrFallbacks[key]
+}
+
+// ErrText 事实 → 展示用的中文兜底：本模块声明处的兜底优先，对端没有兜底表时用补丁表（见上）。
+func ErrText(fact facing.Fact) string {
+	if fb := ForeignErrText(fact.Key); fb != "" {
+		return fb
+	}
+	return fact.Fallback
 }

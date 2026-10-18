@@ -202,11 +202,11 @@ func productTranslationErrorsText(c *gin.Context, errs []productdto.TranslationR
 // （i18n.FillTranslate），不是 `%s`；而模板注入的 tf 只有 `%s` 位置参数，一段 key + Args
 // 表达不了它。要收成一条 `%s` 词条属于独立的文案迁移（page 模块已按迁移 613 收掉了，
 // product 这一条还没做），不夹在「控制器不取词」这一步里做。
-func productTranslationsSavedMsg(c *gin.Context, written int) productMsg {
+func productTranslationsSavedMsg(c *gin.Context, written int) adminui.Msg {
 	if written > 0 {
-		return productMsg{Fallback: i18n.FillTranslate(shell.TranslateFor(c), productenums.ProductTranslationsSavedNote,
+		return adminui.Msg{Fallback: i18n.FillTranslate(shell.TranslateFor(c), productenums.ProductTranslationsSavedNote,
 			"已保存 {n} 条译文；译文变更已标记待重建（下次构建生效）。",
 			map[string]string{"n": strconv.Itoa(written)})}
 	}
-	return productMsg{Key: productenums.ProductTranslationsSavedNone, Fallback: "没有需要写入的变化。"}
+	return adminui.Msg{Key: productenums.ProductTranslationsSavedNone, Fallback: "没有需要写入的变化。"}
 }

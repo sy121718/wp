@@ -123,7 +123,7 @@ func detailTemplateWriteDepsOrErr() (productservice.DetailTemplateDeps, error) {
 //
 // 文案已经由 detailTemplate*Msg 系列收口（presentation / contenttemplate 的 enums → 人话），
 // 这里只决定状态码：参数与业务状态问题 400、对象不存在 404。
-func detailTemplateWriteFail(c *gin.Context, status int, msg productMsg) {
+func detailTemplateWriteFail(c *gin.Context, status int, msg adminui.Msg) {
 	response.ErrorWithMessage(c, status, adminui.MsgText(c, msg))
 }
 
@@ -266,7 +266,7 @@ func productDetailTemplateModeFail(c *gin.Context, err error) {
 	if fact.Key == presentationenums.ErrNotFound {
 		status = http.StatusNotFound
 	}
-	response.ErrorWithMessage(c, status, adminui.MsgText(c, productMsg{Key: fact.Key, Fallback: productTextFallback(fact)}))
+	response.ErrorWithMessage(c, status, adminui.MsgText(c, adminui.Msg{Key: fact.Key, Fallback: productservice.ErrText(fact)}))
 }
 
 // 详情页模板与发布实例都以实体类型为键：取值用 productcontract.EntityTypeProduct
@@ -489,27 +489,27 @@ var detailTemplateTemplateMessages = map[string]string{
 }
 
 // detailTemplateFacingMsg presentation 的错误 → 一句结论事实。
-func detailTemplateFacingMsg(c *gin.Context, err error) productMsg {
+func detailTemplateFacingMsg(c *gin.Context, err error) adminui.Msg {
 	return detailTemplateErrMsg(c, err, detailTemplateFacingMessages)
 }
 
 // detailTemplateTemplateMsg 模板契约（contenttemplate）错误 → 一句结论事实。
-func detailTemplateTemplateMsg(c *gin.Context, err error) productMsg {
+func detailTemplateTemplateMsg(c *gin.Context, err error) adminui.Msg {
 	return detailTemplateErrMsg(c, err, detailTemplateTemplateMessages)
 }
 
 // detailTemplateErrMsg 事实来自 facing.FactOf，中文兜底按依赖挑表（表里没有则回落
 // 声明处兜底 / 别模块补丁表）。
-func detailTemplateErrMsg(c *gin.Context, err error, table map[string]string) productMsg {
+func detailTemplateErrMsg(c *gin.Context, err error, table map[string]string) adminui.Msg {
 	fact, ok := facing.FactOf(err)
 	if !ok || !fact.Business {
-		return productMsg{}
+		return adminui.Msg{}
 	}
 	fb := table[fact.Key]
 	if fb == "" {
-		fb = productTextFallback(fact)
+		fb = productservice.ErrText(fact)
 	}
-	return productMsg{Key: fact.Key, Fallback: fb}
+	return adminui.Msg{Key: fact.Key, Fallback: fb}
 }
 
 // errTemplateDepsMissing 详情模板契约未装配时的提示（装配缺陷，页面可见）。
@@ -521,7 +521,7 @@ const errTemplateDepsMissing = "详情页模板能力未装配（缺少内容模
 
 // detailTemplateDepsMissingMsg 「依赖未装配」提示的**事实**（key + 中文兜底）。
 // key 在 productenums.ProductDetailTemplateDepsMissing（迁移 407 登记中英词条）。
-var detailTemplateDepsMissingMsg = productMsg{Key: productenums.ProductDetailTemplateDepsMissing, Fallback: errTemplateDepsMissing}
+var detailTemplateDepsMissingMsg = adminui.Msg{Key: productenums.ProductDetailTemplateDepsMissing, Fallback: errTemplateDepsMissing}
 
 // detailTemplateDepsMissingPage 依赖未装配时的统一出口：**原页失败态**（500 档）。
 //
@@ -544,10 +544,10 @@ const (
 
 // 两个参数级提示的**事实**（模板在渲染期取词，控制器不再拼成品串）。
 var (
-	productDetailTemplateNameRequiredMsg = productMsg{
+	productDetailTemplateNameRequiredMsg = adminui.Msg{
 		Key: productenums.ProductDetailTemplateNameRequired, Fallback: productDetailTemplateNameRequiredFallback,
 	}
-	productDetailTemplatePathRequiredMsg = productMsg{
+	productDetailTemplatePathRequiredMsg = adminui.Msg{
 		Key: productenums.ProductDetailTemplatePathRequired, Fallback: productDetailTemplatePathRequiredFallback,
 	}
 )

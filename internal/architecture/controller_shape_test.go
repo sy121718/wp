@@ -77,8 +77,6 @@ var pendingControllerFiles = map[string]bool{
 	"internal/module/page/inbound/http/page_stale.go":                         true,
 	"internal/module/page/inbound/http/page_translations.go":                  true,
 	"internal/module/plugin/inbound/http/plugin_err.go":                       true,
-	"internal/module/product/inbound/http/product_foreign_err.go":             true,
-	"internal/module/product/inbound/http/product_jump.go":                    true,
 	"internal/module/project/inbound/http/project_err.go":                     true,
 	"internal/module/project/inbound/http/project_jump.go":                    true,
 	"internal/module/project/inbound/http/project_page.go":                    true,

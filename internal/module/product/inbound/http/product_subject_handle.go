@@ -36,6 +36,38 @@ import (
 	"go_wp/pkg/response"
 )
 
+// 商品列表页的地址：详情页等整页 GET 在「资源已不在了」时 302 回列表。
+const productListPath = "/admin/products"
+
+// 本文件各页的筛选上下文键表（每页一份）。
+//
+// 同一份键表服务两条路径：**渲染时**拼进表单 action 的 query、**提交回来时**按同一份表读回。
+// 两处分叉的表现是「改完筛选再操作，回来静默丢了筛选」—— 页面不报错、日志也干净，
+// 所以键表只留这一份，不要在两处各写字面量。
+var (
+	productListBackKeys    = []string{"project", "keyword", "status", "page", "limit"}
+	productBundleBackKeys  = []string{"project", "product"}
+	productPricingBackKeys = []string{"project"}
+)
+
+// productErrScene 日志场景名（与 product 模块其它 logger.Scene("product") 一致）。
+const productErrScene = "product"
+
+// productPageInternalText 页面槽位（片段里的一行结论 / 整页失败槽）的归口文案。
+//
+// 与 JSON 出口的 response.MessageOf 只差一句话的措辞：页面上用的是带 i18n 词条的
+// 「系统内部错误，请稍后重试」（MsgInternalError），接口用的是 pkg/response 的常量
+// 「服务器内部错误，请稍后重试」。两者在 sys_i18n 里各有词条，所以这里不合并；
+// 判据（什么算业务错误、要不要记日志）仍然只有一份，在 pkg/facing 与 pkg/response。
+func productPageInternalText(c *gin.Context, err error) string {
+	if err != nil {
+		logger.Scene(productErrScene).
+			With("user_id", builtin.CurrentUserID(c)).
+			Error(err, "商品后台页取数失败（非业务错误，只对页面给归口文案）")
+	}
+	return adminui.PageInternalText(c)
+}
+
 // product_core.go — 商品本体的控制器：接口面 CRUD / 变体 + 列表 / 新建 / 编辑 / 详情页 / 批量。
 //
 // 一个文件 = 一个业务功能（internal/module/CLAUDE.md §inbound/http）：同一功能的
@@ -350,7 +382,7 @@ func fillProductListChrome(c *gin.Context, view *productdto.ProductListPageResp)
 	}
 	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行），模板里的 ?err= / ?done= 提示条
 	// 已整批删除。ListQuery 是筛选上下文（表单 action 的 query）：筛选条提交要带着它回去。
-	view.ListQuery = productQueryFromRequest(c, productListBackKeys...)
+	view.ListQuery = adminui.ListQuery(c, productListBackKeys...)
 }
 
 // productListPageSize 商品列表每页条数（服务端分页）。
@@ -774,7 +806,7 @@ var variantSkipFallbacks = map[string]string{
 //
 // 带跳过明细时是「两句词条 + 逐条原因」拼起来的复合句，一段 key 表达不了 —— 这一档给
 // 成品串（Fallback，Key 为空），与 page 模块 pageTranslationsSavedMsg 同一取舍。
-func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) productMsg {
+func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) adminui.Msg {
 	if res == nil {
 		return adminui.InternalMsg()
 	}
@@ -798,7 +830,7 @@ func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) product
 		parts = append(parts, fmt.Sprintf(productBulkTextOf(c, productVariantSaveSkipped),
 			strconv.Itoa(len(res.Skipped)), strings.Join(items, "；")))
 	}
-	return productMsg{Fallback: strings.Join(parts, " ")}
+	return adminui.Msg{Fallback: strings.Join(parts, " ")}
 }
 
 // SaveVariantList 以清单为准保存变体（POST /api/product/variant/save）——变体**唯一的落库动作**。
@@ -990,7 +1022,7 @@ func (h *ProductPageHandle) renderBundlePage(c *gin.Context) {
 	extra := gin.H{
 		"ResolveURL": bundleResolveURL,
 		// 页面上下文（页面链接的 query）。
-		"ListQuery": productQueryFromRequest(c, productBundleBackKeys...),
+		"ListQuery": adminui.ListQuery(c, productBundleBackKeys...),
 	}
 	// 这一屏不是可缓存的成功页：重试必须真的回到服务端（判据由视图给，见 PageNoStore）。
 	if view.PageNoStore() {
@@ -1188,7 +1220,7 @@ func (h *ProductPageHandle) bundlePanel(c *gin.Context, projectID, productID str
 // 库存真源端口未接入，后者拿不到可用量）。复用词条而不是另起一句，
 // 免得同一件事在两个页面上给出两种说法。
 // bundlePanelReadFailedMsg 上面那条提示的**事实**（片段槽位按文本渲染，见调用点注释）。
-var bundlePanelReadFailedMsg = productMsg{Key: productenums.ProductBundleDetailFailed, Fallback: bundlePanelReadFailedFallback}
+var bundlePanelReadFailedMsg = adminui.Msg{Key: productenums.ProductBundleDetailFailed, Fallback: bundlePanelReadFailedFallback}
 
 // bundlePanelReadFailedFallback 上述 key 的中文兜底（i18n 未初始化或词条缺失时用）。
 const bundlePanelReadFailedFallback = "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。"
@@ -1331,7 +1363,7 @@ func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productd
 		view.HTTPStatus = http.StatusInternalServerError
 	}
 	// 表单 action 的 query：预览走页面 POST，筛选上下文要随表单带回来（URL 形状属 HTTP 边界）。
-	view.ListQuery = productQueryFromRequest(c, productPricingBackKeys...)
+	view.ListQuery = adminui.ListQuery(c, productPricingBackKeys...)
 	adminui.RenderPage(c, productPricingPageTemplate, view)
 }
 
@@ -1448,7 +1480,7 @@ func (h *ProductHandle) BulkPricing(c *gin.Context) {
 	// 没勾选就提交：明确拒绝，不是「0 个改动」的成功回执。页面侧原有这条守卫，随页面 POST
 	// 一起消失 —— 判据搬到这里，否则删掉页面通道后「空勾选静默成功」就没人拦了。
 	if len(ids) == 0 {
-		response.ErrorWithMessage(c, http.StatusBadRequest, adminui.MsgText(c, productMsg{
+		response.ErrorWithMessage(c, http.StatusBadRequest, adminui.MsgText(c, adminui.Msg{
 			Key: productenums.BulkPricingNoneSelected, Fallback: "批量改价：没有勾选任何商品，请先勾选左侧复选框再执行。"}))
 		return
 	}

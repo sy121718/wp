@@ -23,6 +23,9 @@ import (
 // 标签页模板名（页面成败都走它）。
 const productTagsPageTemplate = "admin/product/product_tags.html"
 
+// 标签页的筛选上下文键表：渲染时拼进表单 action，提交回来时按同一份表读回。
+var productTagsBackKeys = []string{"project", "keyword", "page", "limit"}
+
 // ==========================================================================
 // 标签的接口面：JSON 入参、pkg/response 出参、消息取 enums。
 // 本层只做绑定与转发：规则类型白名单、参数校验与重算时机一律在 service。
@@ -177,7 +180,7 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 	// —— 控制器负责的部分：行装配与两个标签抽屉（要 csrf 与取词函数）——
 	view.Title = productenums.ProductTagsTitle
 	view.Menu = "product-tags"
-	view.ListQuery = productQueryFromRequest(c, productTagsBackKeys...)
+	view.ListQuery = adminui.ListQuery(c, productTagsBackKeys...)
 	rows := []productdto.TagRowResp{}
 	tagCreateForm := map[string]any{}
 	if err == nil {

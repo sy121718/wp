@@ -18,7 +18,7 @@ import (
 //	· 提示文案取词必须非空（取词失败会让页面显示一句空话，用户以为操作成功了）；
 //	· 失败视图必须是 500 档 + LoadFailed，否则模板会把它渲染成「数据读不出来」。
 func TestProductDepsMissingFacing(t *testing.T) {
-	c, _ := newProductJumpContext(t, "", "", "")
+	c, _ := newHXContext(t, "", "")
 	if strings.TrimSpace(detailTemplateDepsMissingMsg.Key) == "" {
 		t.Fatal("这条提示必须带 i18n key：写侧只交事实，取词在渲染期")
 	}

@@ -25,6 +25,12 @@ import (
 const productCategoriesPageTemplate = "admin/product/product_categories.html"
 const productBrandsPageTemplate = "admin/product/product_brands.html"
 
+// 两页的筛选上下文键表：渲染时拼进表单 action，提交回来时按同一份表读回。
+var (
+	productCategoriesBackKeys = []string{"project", "keyword", "page", "limit"}
+	productBrandsBackKeys     = []string{"project", "keyword", "page", "limit"}
+)
+
 func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 	// 不再有「请求期断言失败 → 500 兜底」这条路径。
@@ -46,7 +52,7 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 	// —— 控制器负责的部分：行装配与抽屉 ——
 	view.Title = productenums.ProductCategoriesTitle
 	view.Menu = "product-categories"
-	view.ListQuery = productQueryFromRequest(c, productCategoriesBackKeys...)
+	view.ListQuery = adminui.ListQuery(c, productCategoriesBackKeys...)
 	// 候选列表**只收本工程**的分类（判据与理由见 service.CategoriesInProject）。
 	options := productservice.CategoryPickOptions(productservice.CategoriesInProject(view.PickFlat, view.SelectedProject))
 	view.Options = options
@@ -174,7 +180,7 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 	// —— 控制器负责的部分：行装配（每行的编辑抽屉要 csrf 与取词函数）——
 	view.Title = productenums.ProductBrandsTitle
 	view.Menu = "product-brands"
-	view.ListQuery = productQueryFromRequest(c, productBrandsBackKeys...)
+	view.ListQuery = adminui.ListQuery(c, productBrandsBackKeys...)
 	brands := make([]map[string]any, 0, len(view.BrandDetails))
 	if err == nil {
 		for _, b := range view.BrandDetails {
@@ -208,7 +214,7 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []map[string]any, parentLabels map[string]productdto.CategoryParentInfoResp) gin.H {
 	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": adminui.Prepare(c, gin.H{})["csrf_token"],
 		// ListQuery：表单 action 的筛选上下文（抽屉里的表单提交要带着它回去）。
-		"ListQuery": productQueryFromRequest(c, productCategoriesBackKeys...)}
+		"ListQuery": adminui.ListQuery(c, productCategoriesBackKeys...)}
 	if row != nil {
 		data["ID"], data["Name"], data["Slug"], data["ParentID"] = row.ID, row.Name, row.Slug, row.ParentID
 		if row.ParentID != "" {
