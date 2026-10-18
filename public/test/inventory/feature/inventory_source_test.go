@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -816,7 +817,7 @@ func newSourcePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 
 	})
 	handle := inventoryhttp.NewInventorySourcePageHandle(f.inventory, f.projects)
-	engine.GET("/admin/inventory/sources", handle.InventorySourcesPage)
+	engine.GET("/admin/inventory/sources", adminui.Page(inventoryhttp.InventorySourcesPageTemplate, handle.InventorySourcesPage))
 	engine.POST("/admin/inventory/sources/create", handle.InventorySourceCreate)
 	engine.POST("/admin/inventory/sources/update", handle.InventorySourceUpdate)
 	engine.POST("/admin/inventory/sources/delete", handle.InventorySourceDelete)

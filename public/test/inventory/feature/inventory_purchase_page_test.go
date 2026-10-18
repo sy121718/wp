@@ -59,7 +59,7 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 
 	})
 	handle := inventoryhttp.NewInventoryPurchasePageHandle(f.inventory, f.projects, f.products)
-	engine.GET("/admin/inventory/purchases", handle.InventoryPurchasesPage)
+	engine.GET("/admin/inventory/purchases", adminui.Page(inventoryhttp.InventoryPurchasesPageTemplate, handle.InventoryPurchasesPage))
 	engine.POST("/admin/inventory/purchases/create", handle.InventoryPurchaseCreate)
 	engine.POST("/admin/inventory/purchases/receipt", handle.InventoryPurchaseReceipt)
 	engine.POST("/admin/inventory/purchases/production", handle.InventoryPurchaseProduction)

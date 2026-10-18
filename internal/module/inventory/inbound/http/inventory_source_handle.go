@@ -97,16 +97,16 @@ func (d *inventorySourcesPageData) templateMap(c *gin.Context) gin.H {
 	return m
 }
 
-// renderSourcesPage 货源页的唯一渲染出口：正常与降级两条路都从这里出，
+// sourcesPageView 货源页的视图：正常与降级两条路都从这里出，
 // 键集只有一处定义（降级分支不必「记得」补齐模板要的每一个键）。
-func (h *inventorySourcePageHandle) renderSourcesPage(c *gin.Context, d *inventorySourcesPageData) {
+func (h *inventorySourcePageHandle) sourcesPageView(c *gin.Context, d *inventorySourcesPageData) gin.H {
 	data := d.templateMap(c)
 	data["SourceCreateForm"] = sourceFormData(c, d.SelectedProject, false, nil)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_sources.html", adminui.Prepare(c, data))
+	return data
 }
 
 // InventorySourcesPage 货源管理页：工程切换 + 关联方统计 + 筛选 + 新建 + 列表（可编辑）。
-func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
+func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 
 	// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 inventory_jump.go），
@@ -215,7 +215,7 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 		})
 	}
 
-	h.renderSourcesPage(c, &inventorySourcesPageData{
+	return h.sourcesPageView(c, &inventorySourcesPageData{
 		Projects:        projects,
 		SelectedProject: selected,
 		Sources:         sources,
@@ -228,7 +228,7 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 		Err:             pageErr,
 		LoadFailed:      loadFailed,
 		Pagination:      pg,
-	})
+	}), nil
 }
 
 // InventorySourceCreate 新建货源（内部类型自动成为关联方）。

@@ -182,13 +182,13 @@ func (d *inventoryPurchasesPageData) templateMap(c *gin.Context) gin.H {
 	return m
 }
 
-// renderPurchasesPage 采购页的唯一渲染出口（正常 / 装载失败两条路共用）。
-func (h *inventoryPurchasePageHandle) renderPurchasesPage(c *gin.Context, d *inventoryPurchasesPageData) {
-	c.HTML(http.StatusOK, "admin/inventory/inventory_purchases.html", adminui.Prepare(c, d.templateMap(c)))
+// purchasesPageView 采购页的视图（正常 / 装载失败两条路共用）。
+func (h *inventoryPurchasePageHandle) purchasesPageView(c *gin.Context, d *inventoryPurchasesPageData) any {
+	return d.templateMap(c)
 }
 
 // InventoryPurchasesPage 采购入库页：新建采购单 + 采购单列表（含逐行收货）+ 生产入库 + 进货历史。
-func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
+func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 
 	// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 inventory_jump.go），
@@ -260,7 +260,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 		})
 	}
 
-	h.renderPurchasesPage(c, &inventoryPurchasesPageData{
+	return h.purchasesPageView(c, &inventoryPurchasesPageData{
 		Projects:        projects,
 		SelectedProject: selected,
 		Sources:         sources,
@@ -274,7 +274,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 		Err:             pageErr,
 		LoadFailed:      loadFailed,
 		Pagination:      pg,
-	})
+	}), nil
 }
 
 // InventoryPurchaseCreate 新建采购单（单头 + 结构化行）。
