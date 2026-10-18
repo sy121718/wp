@@ -93,7 +93,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	//
 	// 三态（迁移 261）：∞ 无限（track_quantity = false）/ 数字（跟踪且有数量）/
 	// 未入库（这个仓没有这条 SKU 的库存行）。
-	stockRows := []gin.H{}
+	stockRows := []inventorydto.StockByWarehouseRowResp{}
 	if sku != "" {
 		rows, serr := h.inventory.ListStocksBySKU(ctx, &inventorydto.ListStockBySKUReq{
 			ProjectID: selected, SKUCode: sku,
@@ -109,40 +109,32 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		}
 		for _, w := range warehouses {
 			warehouseID, _ := w["ID"].(string)
+			warehouseName, _ := w["Name"].(string)
+			warehouseCode, _ := w["Code"].(string)
 			r := byWarehouse[warehouseID]
 			if r == nil {
 				// 未入库：该仓没有这条 SKU 的库存行。没有可编辑的对象，
 				// 因此数量列给提示、行内表单不渲染（表单要定位到一行）。
-				stockRows = append(stockRows, gin.H{
-					"WarehouseID": warehouseID, "Present": false,
-					"WarehouseName": w["Name"], "WarehouseCode": w["Code"],
-					"VariantID": "", "SKUCode": sku, "ExternalSKU": "",
-					"TrackQuantity": false, "Quantity": 0, "UpdatedAt": "",
-					"QuantityLabel": tr(inventoryenums.InventoryStockNotStocked, "未入库"),
-					"CostPrice":     nil, "CostLabel": stockCostLabel(tr, nil),
+				// 未入库：该仓没有这条 SKU 的库存行。没有可编辑的对象，
+				// 因此数量列给提示、行内表单不渲染（表单要定位到一行）。
+				stockRows = append(stockRows, inventorydto.StockByWarehouseRowResp{
+					WarehouseID: warehouseID, Present: false,
+					WarehouseName: warehouseName, WarehouseCode: warehouseCode,
+					SKUCode:       sku,
+					QuantityLabel: tr(inventoryenums.InventoryStockNotStocked, "未入库"),
 				})
 				continue
 			}
-			stockRows = append(stockRows, gin.H{
-				// WarehouseID 是行内编辑（登记外部编码 / 跟踪开关与数量）的定位键之一：
-				// (仓库, 变体) 才唯一确定一行。展示用不上它，但表单的 hidden 字段必须给出。
-				"WarehouseID": warehouseID, "Present": true,
-				"WarehouseName": r.WarehouseName, "WarehouseCode": r.WarehouseCode,
-				"VariantID": r.VariantID, "SKUCode": r.SKUCode,
-				// 外部编码（迁移 251）：这条货在该仓叫什么。空串 = 该仓用我们自己的 SKU，
-				// 模板渲染成 —（与成本同一个「空是合法状态」的口径）。
-				"ExternalSKU": r.ExternalSKU,
-				// 跟踪开关与数量（迁移 261）：两个都要进模板 ——
-				// 只给数量的话，无限（track=false，数量恒 0）与卖光（track=true，数量 0）
-				// 在页面上会是同一个 0。
-				"TrackQuantity": r.TrackQuantity,
-				"Quantity":      r.Quantity,
-				"QuantityLabel": stockQuantityLabel(tr, r.TrackQuantity, r.Quantity),
-				"UpdatedAt":     r.UpdatedAt,
-				// 成本是 (仓库, SKU) 的当前值（迁移 244）：CostPrice 给需要判空的场景
-				// （NULL = 尚未核算），CostLabel 是可直出的文案 —— 尚未核算与 0
-				//（合法的显式成本）必须能分开显示，所以不能用数字 0 兜底。
-				"CostPrice": r.CostPrice, "CostLabel": stockCostLabel(tr, r.CostPrice),
+			// 字段含义见 inventorydto.StockByWarehouseRowResp（WarehouseID 是行内编辑的定位键，
+			// ExternalSKU 空串合法，TrackQuantity 与 Quantity 必须成对给出）。
+			stockRows = append(stockRows, inventorydto.StockByWarehouseRowResp{
+				WarehouseID: warehouseID, Present: true,
+				WarehouseName: r.WarehouseName, WarehouseCode: r.WarehouseCode,
+				VariantID: r.VariantID, SKUCode: r.SKUCode,
+				ExternalSKU:   r.ExternalSKU,
+				TrackQuantity: r.TrackQuantity, Quantity: r.Quantity,
+				QuantityLabel: stockQuantityLabel(tr, r.TrackQuantity, r.Quantity),
+				UpdatedAt:     r.UpdatedAt,
 			})
 		}
 	}
@@ -223,9 +215,9 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 // total 是该过滤条件下的**真实总条数**（契约的 CountMovements，与 ListMovements 同一份
 // 过滤条件）；curPage 是**收敛后**的页码（page 越界时回落到末页）。out 只装本页数据。
 func (h *inventoryPageHandle) listMovements(c *gin.Context, projectID, sku, warehouseID,
-	direction, reasonCode, timeFrom, timeTo string, page, limit int) (out []gin.H, total int64, curPage int, err error) {
+	direction, reasonCode, timeFrom, timeTo string, page, limit int) (out []inventorydto.MovementRowResp, total int64, curPage int, err error) {
 	ctx := c.Request.Context()
-	out = []gin.H{}
+	out = []inventorydto.MovementRowResp{}
 	if projectID == "" {
 		return out, 0, 1, nil
 	}
@@ -251,14 +243,14 @@ func (h *inventoryPageHandle) listMovements(c *gin.Context, projectID, sku, ware
 	}
 	tr := shell.TranslateFor(c)
 	for _, m := range rows {
-		out = append(out, gin.H{
-			"ID": m.ID, "SKUCode": m.SKUCode, "WarehouseName": m.WarehouseName,
-			"WarehouseCode": m.WarehouseCode, "Direction": m.Direction,
-			"DirectionLabel": directionLabel(tr, m.Direction),
-			"Quantity":       m.Quantity, "QuantityBefore": m.QuantityBefore, "QuantityAfter": m.QuantityAfter,
-			"ReasonName": tr(m.ReasonName, m.ReasonCode), "ReasonCode": m.ReasonCode,
-			"SourceType": m.SourceType, "SourceRef": m.SourceRef, "Remark": m.Remark,
-			"OperatorID": m.OperatorID, "BatchID": m.BatchID, "CreatedAt": m.CreatedAt,
+		out = append(out, inventorydto.MovementRowResp{
+			ID: m.ID, SKUCode: m.SKUCode, WarehouseName: m.WarehouseName,
+			WarehouseCode: m.WarehouseCode, Direction: m.Direction,
+			DirectionLabel: directionLabel(tr, m.Direction),
+			Quantity:       m.Quantity, QuantityBefore: m.QuantityBefore, QuantityAfter: m.QuantityAfter,
+			ReasonName: tr(m.ReasonName, m.ReasonCode), ReasonCode: m.ReasonCode,
+			SourceType: m.SourceType, SourceRef: m.SourceRef, Remark: m.Remark,
+			OperatorID: m.OperatorID, BatchID: m.BatchID, CreatedAt: m.CreatedAt,
 		})
 	}
 	return out, total, curPage, nil
@@ -347,18 +339,6 @@ func statusLabel(tr func(key, fallback string) string, status string) string {
 		return tr(inventoryenums.InventoryStatusDisabled, "已停用")
 	}
 	return tr(inventoryenums.InventoryStatusActive, "启用中")
-}
-
-// stockCostLabel 库存行的成本展示文案（(仓库, SKU) 的当前成本价，迁移 244）。
-//
-// 空值不能显示成 0：成本列可空表示**尚未核算**（还没核算过 / 由外部核算后导入），
-// 而 0 是合法的显式成本（赠品 / 内部划拨）—— 两者混在一起，运营就再也分不清
-// 「这个仓这条 SKU 没成本」和「这条 SKU 不要钱」。
-func stockCostLabel(tr func(key, fallback string) string, cost *float64) string {
-	if cost == nil {
-		return tr(inventoryenums.InventoryCostUnknown, "未核算")
-	}
-	return fmt.Sprintf("%.2f", *cost)
 }
 
 // stockQuantityLabel 库存行的数量展示：三态里的前两态（∞ 无限 / 数字）。
