@@ -68,7 +68,9 @@ lang_self_name = re.compile('简体中文|繁體中文|日本語|한국어|Engli
 # 为什么不用变量名白名单：局部变量名是任意的 —— `product_attribute_group_form.html` 用的是
 # `{{gfTr := .["t"]}}` 之后 `gfTr("admin.x", "中文")`，白名单认不出 gfTr，那 4 行就被误算成
 # 「硬编码」（实测踩过）；而每加一个新变量名都要回来改正则，迟早再漏一次。
-t_call = re.compile(r'\(\s*"[a-z][a-zA-Z0-9_.]*\.[a-zA-Z0-9_.]+"\s*,\s*"')
+# key 的两种合法形态：点分 UI 词条（admin.x.y）与归口文案（MsgInternalError 这类 Msg* 常量；
+# Err* 不算 —— 错误 key 不得当界面词条用，那是 text_domain_test.go 的另一条门禁）。
+t_call = re.compile(r'\(\s*"(?:[a-z][a-zA-Z0-9_.]*\.[a-zA-Z0-9_.]+|Msg[A-Z][A-Za-z0-9]*)"\s*,\s*"')
 # 兜底形态：不带兜底文案的取词调用（t("key") / .["t"]("key")）。
 t_call_bare = re.compile(r'(?:\.\["t"\]|\btr)\(')
 rows = []
