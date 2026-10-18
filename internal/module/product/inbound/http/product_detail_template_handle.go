@@ -258,7 +258,7 @@ func detailTemplateModePortFor(instanceID string) (ProductDetailTemplateModePort
 func productDetailTemplateModeFail(c *gin.Context, err error) {
 	fact, ok := facing.FactOf(err)
 	if !ok || !fact.Business {
-		response.ErrorAuto(c, http.StatusInternalServerError, productErrScene, err)
+		response.ErrorStatusAuto(c, productErrScene, err)
 		return
 	}
 	status := http.StatusBadRequest

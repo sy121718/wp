@@ -308,7 +308,7 @@ func (h *ProductHandle) CreateAttribute(c *gin.Context) {
 	}
 	res, err := h.svc.CreateAttribute(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
@@ -322,7 +322,7 @@ func (h *ProductHandle) UpdateAttribute(c *gin.Context) {
 	}
 	res, err := h.svc.UpdateAttribute(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
@@ -336,7 +336,7 @@ func (h *ProductHandle) SetAttributeValues(c *gin.Context) {
 	}
 	res, err := h.svc.SetAttributeValues(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
@@ -350,7 +350,7 @@ func (h *ProductHandle) GetAttribute(c *gin.Context) {
 	}
 	res, err := h.svc.GetAttribute(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusNotFound, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
@@ -364,7 +364,7 @@ func (h *ProductHandle) ListAttributes(c *gin.Context) {
 	}
 	list, err := h.svc.ListAttributes(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
@@ -377,7 +377,7 @@ func (h *ProductHandle) DeleteAttribute(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteAttribute(c.Request.Context(), req); err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)

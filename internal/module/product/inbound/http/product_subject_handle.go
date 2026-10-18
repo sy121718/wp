@@ -90,7 +90,7 @@ func (h *ProductHandle) Create(c *gin.Context) {
 	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
@@ -106,7 +106,7 @@ func (h *ProductHandle) Update(c *gin.Context) {
 	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.Update(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
@@ -120,7 +120,7 @@ func (h *ProductHandle) Get(c *gin.Context) {
 	}
 	res, err := h.svc.Get(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusNotFound, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
@@ -134,7 +134,7 @@ func (h *ProductHandle) List(c *gin.Context) {
 	}
 	list, err := h.svc.List(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
@@ -149,7 +149,7 @@ func (h *ProductHandle) Delete(c *gin.Context) {
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
 	req.OperatorID = builtin.OperatorName(c)
 	if err := h.svc.Delete(c.Request.Context(), req); err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
@@ -184,7 +184,7 @@ func (h *ProductHandle) BulkDelete(c *gin.Context) {
 	req.IDs = ids
 	res, err := h.svc.BulkDeleteProducts(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, productBulkDeletedView(c, res))
@@ -238,7 +238,7 @@ func (h *ProductHandle) CreateVariant(c *gin.Context) {
 	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.CreateVariant(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
@@ -254,7 +254,7 @@ func (h *ProductHandle) UpdateVariant(c *gin.Context) {
 	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.UpdateVariant(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
@@ -269,7 +269,7 @@ func (h *ProductHandle) DeleteVariant(c *gin.Context) {
 	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
 	req.OperatorID = builtin.OperatorName(c)
 	if err := h.svc.DeleteVariant(c.Request.Context(), req); err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
@@ -288,7 +288,7 @@ func (h *ProductHandle) GenerateVariants(c *gin.Context) {
 	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.GenerateVariants(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgVariantGenerateSuccess, res)
@@ -750,7 +750,7 @@ func (h *ProductPageHandle) ProductsVariantPreview(c *gin.Context) {
 	}
 	res, err := h.products.PreviewVariantCombinations(ctx, req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, response.MessageOf(c, productErrScene, err))
+		response.ErrorStatusAuto(c, productErrScene, err)
 		return
 	}
 	// 规格文本（Spec）由 service 用同一份属性组算出：控制器不再为了拼这句话回查一次商品
@@ -822,7 +822,7 @@ func (h *ProductHandle) SaveVariantList(c *gin.Context) {
 	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.SaveVariantList(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, text.MsgText(c, variantSaveMsg(c, res)), res)
@@ -840,7 +840,7 @@ func (h *ProductHandle) AddRating(c *gin.Context) {
 	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.AddRating(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), res)
@@ -856,7 +856,7 @@ func (h *ProductHandle) DeleteRating(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteRating(c.Request.Context(), req); err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
@@ -1040,7 +1040,7 @@ func (h *ProductPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
 	}
 	res, err := h.products.ResolveBundleMembers(ctx, req)
 	if err != nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, response.MessageOf(c, productErrScene, err))
+		response.ErrorStatusAuto(c, productErrScene, err)
 		return
 	}
 	// 回执就是响应：行结构、规格文本、来源标签、跳过原因全部由 service 填好
@@ -1184,7 +1184,7 @@ func (h *ProductHandle) GetBundleConfig(c *gin.Context) {
 	}
 	res, err := h.svc.GetBundleConfig(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
@@ -1200,7 +1200,7 @@ func (h *ProductHandle) SetBundleConfig(c *gin.Context) {
 	req.OperatorID = builtin.OperatorName(c)
 	res, err := h.svc.SetBundleConfig(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgBundleSaveSuccess, res)
@@ -1214,7 +1214,7 @@ func (h *ProductHandle) ValidateBundleSelection(c *gin.Context) {
 	}
 	res, err := h.svc.ValidateBundleSelection(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgBundleValidateSuccess, res)
@@ -1228,7 +1228,7 @@ func (h *ProductHandle) ListBundleSKUs(c *gin.Context) {
 	}
 	list, err := h.svc.ListBundleSKUs(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
@@ -1327,7 +1327,7 @@ func (h *ProductHandle) PreviewPricing(c *gin.Context) {
 	}
 	res, err := h.svc.PreviewPricing(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgPricingPreviewSuccess, res)
@@ -1363,7 +1363,7 @@ func (h *ProductHandle) ApplyPricing(c *gin.Context) {
 		OperatorID: builtin.OperatorName(c),
 	})
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	// 回执沿用页面原本那句话（「本次改动 N 个变体，明细见下方留痕台账」）：三段拼一句
@@ -1436,7 +1436,7 @@ func (h *ProductHandle) BulkPricing(c *gin.Context) {
 		},
 	})
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgPricingApplySuccess, productBulkPricedView(c, res))
@@ -1493,7 +1493,7 @@ func (h *ProductHandle) ListPriceAdjustments(c *gin.Context) {
 	}
 	list, err := h.svc.ListPriceAdjustments(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
@@ -1507,7 +1507,7 @@ func (h *ProductHandle) GetPriceAdjustment(c *gin.Context) {
 	}
 	res, err := h.svc.GetPriceAdjustment(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusNotFound, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)

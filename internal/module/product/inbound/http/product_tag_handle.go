@@ -35,7 +35,7 @@ func (h *ProductHandle) CreateTag(c *gin.Context) {
 	}
 	res, err := h.svc.CreateTag(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgCreateSuccess, res)
@@ -49,7 +49,7 @@ func (h *ProductHandle) UpdateTag(c *gin.Context) {
 	}
 	res, err := h.svc.UpdateTag(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
@@ -63,7 +63,7 @@ func (h *ProductHandle) GetTag(c *gin.Context) {
 	}
 	res, err := h.svc.GetTag(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusNotFound, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
@@ -77,7 +77,7 @@ func (h *ProductHandle) ListTags(c *gin.Context) {
 	}
 	list, err := h.svc.ListTags(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
@@ -91,7 +91,7 @@ func (h *ProductHandle) ListTagProducts(c *gin.Context) {
 	}
 	list, err := h.svc.ListTagProducts(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
@@ -109,7 +109,7 @@ func (h *ProductHandle) DeleteTag(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteTag(c.Request.Context(), req); err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgDeleteSuccess, nil)
@@ -123,7 +123,7 @@ func (h *ProductHandle) RecalcTags(c *gin.Context) {
 	}
 	res, err := h.svc.RecalcTags(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)

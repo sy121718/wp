@@ -145,5 +145,5 @@ var ProductErrFallbacks = map[string]string{
 // 复合错误用 fmt.Errorf("%w: %s", Err(key), 明细)：facing.FactOf 按 ASCII 冒号切出明细段
 // （Tail），并保留 errors.As 能拿到的 key 与兜底。
 func Err(key string) error {
-	return facing.New(key, ProductErrFallbacks[key])
+	return facing.WithStatus(facing.New(key, ProductErrFallbacks[key]), errStatuses[key])
 }
