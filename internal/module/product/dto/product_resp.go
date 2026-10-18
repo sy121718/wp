@@ -179,7 +179,7 @@ type ProductRowResp struct {
 	VariantCount int
 	// Variants 变体清单行（docs/14 §8）：种子是库里已有的变体，行上带可编辑的 SKU 与
 	// 规范化后的 option_values（保存时原样回传）。
-	Variants []map[string]any
+	Variants []VariantListRowResp
 
 	// Attributes 引用的属性组（同一属性组可被多个商品共用，这里只展示引用与属性值）；
 	// VariationAttributes 只列参与变体的组（组合生成面板用）。
@@ -187,7 +187,7 @@ type ProductRowResp struct {
 	VariationAttributes []*AttributeResp
 
 	// 分类与品牌：勾选态 / 选中态都由 service 算好，模板只做展示。
-	CategoryChecks []map[string]any
+	CategoryChecks []CategoryCheckRowResp
 	// CategoryCell / CategoryOthers 是列表列要的「一个值 + 其余数量」：
 	// 一列一个概念，单元格放值，不把「挂载 N 个分类 · 主分类 X」拼成一句话。
 	CategoryCell   string
@@ -200,19 +200,89 @@ type ProductRowResp struct {
 
 	// 标签：TagChecks 手工标签勾选挂载，AutoTags 是只读的自动标签（归属由规则重算维护）；
 	// TagLabel 是列表列要的单个值（手工 + 自动合并的标签名）。
-	TagChecks []map[string]any
-	AutoTags  []map[string]any
+	TagChecks []TagCheckRowResp
+	AutoTags  []AutoTagRowResp
 	TagLabel  string
 
 	// 评分：明细 + 投影值。没有评分时 HasRating=false —— 空态与「评分 0」是两回事。
-	Ratings     []map[string]any
+	Ratings     []RatingRowResp
 	HasRating   bool
 	RatingAvg   string
 	RatingCount int
 
-	// Stock 库存列（三态 + 分仓明细）；恒非空。
-	Stock map[string]any
+	// Stock 库存列（三态 + 分仓明细）；nil = 这一行不带库存（模板整格跳过）。
+	Stock *StockCellResp
 
 	// Bundle 捆绑构成面板（只在 type=bundle 时给，nil = 模板整块跳过）。
 	Bundle *BundlePanelResp
+}
+
+// 行元素一律是结构体，只有**片段/抽屉的数据根**保持 map —— 后者是 Jet 的取值方式决定的：
+// 模板用 .["t"] 取词，索引语法只对 map 生效，struct 根会渲染失败。行元素没有这个约束
+// （模板一律用 .Field 读），结构体换来的是编译期保护与「字段改名模板没跟」的编译失败，
+// 而不是渲染期才暴露的空值。
+
+// VariantListRowResp 变体清单表的一行。
+//
+// OptionValues 是**规范化后的 JSON 文本**（空 / null 归一为 {}）：它同时是行上的 data 属性值
+// 与预览去重的入参，前端 JSON.parse 所以必须是合法 JSON；Spec 是服务端拼好的规格可读文本。
+type VariantListRowResp struct {
+	ID           string
+	SKUCode      string
+	Spec         string
+	OptionValues string
+	Price        string
+	ComparePrice string
+	CostPrice    string
+	Enabled      bool
+	StockTotal   int
+}
+
+// CategoryCheckRowResp 分类勾选框的一行（勾选态由服务端算好，模板不做集合运算）。
+type CategoryCheckRowResp struct {
+	ID      string
+	Label   string
+	Checked bool
+}
+
+// TagCheckRowResp 手工标签勾选框的一行。
+type TagCheckRowResp struct {
+	ID      string
+	Name    string
+	Checked bool
+}
+
+// AutoTagRowResp 自动标签（只读展示：归属由规则重算维护，手工改会被下一次重算覆盖）。
+type AutoTagRowResp struct {
+	ID        string
+	Name      string
+	RuleLabel string
+}
+
+// RatingRowResp 评分明细的一行。
+type RatingRowResp struct {
+	ID        string
+	Score     string
+	Source    string
+	CreatedAt string
+}
+
+// StockCellResp 库存列（三态 + 分仓明细）。
+//
+// 三态口径（docs/14 §1.4）：任一仓不跟踪 → infinite（**绝不求和**，求和等于把无限当 0）；
+// 全部跟踪 → 各仓数量之和；一个仓都没有这一行 → none（未入库）。
+type StockCellResp struct {
+	State string
+	Total int
+	// Rows 按**工程仓库清单**逐仓列出 —— 「某仓没有库存行」同样是一条信息，
+	// 只列有行的仓会让运营以为这个商品只在那几个仓。
+	Rows []StockRowResp
+}
+
+// StockRowResp 分仓明细的一行。
+type StockRowResp struct {
+	WarehouseID    string
+	WarehouseLabel string
+	State          string
+	Quantity       int
 }

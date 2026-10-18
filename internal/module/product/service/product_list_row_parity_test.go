@@ -252,8 +252,11 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 			if len(row.Ratings) != 0 {
 				t.Errorf("列表行不加载评分**明细**（只读投影值），实际 %d 条", len(row.Ratings))
 			}
-			if state, _ := row.Stock["State"].(string); state != productenums.StockStateTracked {
-				t.Errorf("变体商品的库存三态应为 %s，实际 %v", productenums.StockStateTracked, row.Stock["State"])
+			if row.Stock == nil {
+				t.Fatalf("变体商品应带库存单元格")
+			}
+			if row.Stock.State != productenums.StockStateTracked {
+				t.Errorf("变体商品的库存三态应为 %s，实际 %v", productenums.StockStateTracked, row.Stock.State)
 			}
 		case "容器商品":
 			if row.PriceMin != "88.5" || row.PriceMax != "88.5" {

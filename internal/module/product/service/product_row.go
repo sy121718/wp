@@ -5,10 +5,11 @@
 // service」是本模块的既定分工（见 internal/module/CLAUDE.md §inbound/http）。现在行在这里
 // 产出，控制器只做四件事：绑定校验 → 调读模型 → 装配模板 data(事实) → 渲染。
 //
-// 三个**不改**的形状约定（改行形状前先读 dto.ProductRowResp 的文件头）：
-//   - 嵌套值保持 map[string]any / []map[string]any —— 模板对可选项用 isset 判「键在不在」，
-//     而 Jet 对 struct 的标量字段 isset 恒真；
-//   - 只在部分路径出现的整块数据用**可 nil 的 map**（Bundle：nil 才让模板整块跳过）；
+// 两条形状约定（改行形状前先读 dto.ProductRowResp 的文件头）：
+//   - 行元素一律 dto 结构体（模板全用 .Field 读，结构体换来编译期保护）；只有**带可选键**的
+//     下拉选项仍是 map —— 它的语义是「LabelKey 这个键在不在」，而 Jet 对 struct 标量字段的
+//     isset 恒真，换成结构体就分不出「空项」与「数据项」；
+//   - 只在部分路径出现的整块数据用**可 nil 的指针**（Bundle / Stock：nil 才让模板整块跳过）；
 //   - 取词走 ctx（translateFrom），控制器不再往里传取词函数。
 package productservice
 
@@ -74,11 +75,11 @@ func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.C
 	if rating == nil {
 		rating = &productdto.RatingResp{}
 	}
-	ratingRows := make([]map[string]any, 0, len(rating.Items))
+	ratingRows := make([]productdto.RatingRowResp, 0, len(rating.Items))
 	for _, it := range rating.Items {
-		ratingRows = append(ratingRows, map[string]any{
-			"ID": it.ID, "Score": formatScore(it.Score),
-			"Source": it.Source, "CreatedAt": it.CreatedAt,
+		ratingRows = append(ratingRows, productdto.RatingRowResp{
+			ID: it.ID, Score: formatScore(it.Score),
+			Source: it.Source, CreatedAt: it.CreatedAt,
 		})
 	}
 	categoryCell, categoryOthers := categoryCellLabel(flat, detail.CategoryIDs, detail.PrimaryCategoryID)
@@ -277,16 +278,19 @@ func formatScore(v float64) string {
 // 关键语义（docs/14 §8「预览—保存」）：清单的种子是既有变体，**不是重算笛卡尔积** ——
 // 重算会让上次删掉的组合自己冒出来。OptionValues 是**规范化后的 JSON 文本**
 // （逐行原样回传服务端做组合去重与跳过提示），规格列的可读文本由服务端拼（SpecLabel）。
-func variantListRows(detail *productdto.ProductResp) []map[string]any {
-	rows := make([]map[string]any, 0, len(detail.Variants))
+func variantListRows(detail *productdto.ProductResp) []productdto.VariantListRowResp {
+	rows := make([]productdto.VariantListRowResp, 0, len(detail.Variants))
 	for _, v := range detail.Variants {
-		rows = append(rows, map[string]any{
-			"ID": v.ID, "SKUCode": v.SKUCode, "Spec": SpecLabel(v.OptionValues, detail.Attributes),
-			"OptionValues": optionValuesJSON(v.OptionValues),
-			"Price":        money.FormatYuan(v.Price),
-			"ComparePrice": money.FormatYuanOrDash(v.ComparePrice),
-			"CostPrice":    money.FormatYuanOrDash(v.CostPrice),
-			"Enabled":      v.Enabled, "StockTotal": v.StockTotal,
+		if v == nil {
+			continue
+		}
+		rows = append(rows, productdto.VariantListRowResp{
+			ID: v.ID, SKUCode: v.SKUCode, Spec: SpecLabel(v.OptionValues, detail.Attributes),
+			OptionValues: optionValuesJSON(v.OptionValues),
+			Price:        money.FormatYuan(v.Price),
+			ComparePrice: money.FormatYuanOrDash(v.ComparePrice),
+			CostPrice:    money.FormatYuanOrDash(v.CostPrice),
+			Enabled:      v.Enabled, StockTotal: v.StockTotal,
 		})
 	}
 	return rows
@@ -334,52 +338,50 @@ func productDescriptionHTML(raw json.RawMessage) string {
 //
 // 文案（∞ / 未入库）留在模板侧用 tr() 取词，这里只给出状态与数字：
 // 一种语言一个值，别把中文拼进数据层（接口调用方拿到的会是中文）。
-func productStockCell(detail *productdto.ProductResp, warehouses []productdto.WarehouseOptionResp) map[string]any {
-	cell := map[string]any{
-		"State": productenums.StockStateNone,
-		"Total": 0,
-		"Rows":  []map[string]any{},
+func productStockCell(detail *productdto.ProductResp, warehouses []productdto.WarehouseOptionResp) *productdto.StockCellResp {
+	cell := &productdto.StockCellResp{
+		State: productenums.StockStateNone,
+		Total: 0,
+		Rows:  make([]productdto.StockRowResp, 0, len(warehouses)),
 	}
 	if detail == nil {
 		return cell
 	}
 	if detail.StockState != "" {
-		cell["State"] = detail.StockState
+		cell.State = detail.StockState
 	}
-	cell["Total"] = detail.StockTotal
+	cell.Total = detail.StockTotal
 	byWarehouse := make(map[string]*productdto.ProductWarehouseStockResp, len(detail.StockWarehouses))
 	for _, row := range detail.StockWarehouses {
 		if row != nil {
 			byWarehouse[row.WarehouseID] = row
 		}
 	}
-	rows := make([]map[string]any, 0, len(warehouses))
 	for _, w := range warehouses {
-		item := map[string]any{"WarehouseID": w.ID, "WarehouseLabel": w.Label,
-			"State": productenums.StockStateNone, "Quantity": 0}
+		item := productdto.StockRowResp{WarehouseID: w.ID, WarehouseLabel: w.Label,
+			State: productenums.StockStateNone, Quantity: 0}
 		if row, ok := byWarehouse[w.ID]; ok {
-			item["State"] = row.State
-			item["Quantity"] = row.Quantity
-			if row.SKUCode != "" {
-				item["SKUCode"] = row.SKUCode
-			}
+			item.State = row.State
+			item.Quantity = row.Quantity
 		}
-		rows = append(rows, item)
+		cell.Rows = append(cell.Rows, item)
 	}
-	cell["Rows"] = rows
 	return cell
 }
 
 // checkedCategoryOptions 商品页的分类勾选框（勾选态由服务端算好，模板不做集合运算）。
-func checkedCategoryOptions(flat []*productdto.CategoryResp, checked []string) []map[string]any {
+func checkedCategoryOptions(flat []*productdto.CategoryResp, checked []string) []productdto.CategoryCheckRowResp {
 	picked := make(map[string]bool, len(checked))
 	for _, id := range checked {
 		picked[id] = true
 	}
-	out := make([]map[string]any, 0, len(flat))
+	out := make([]productdto.CategoryCheckRowResp, 0, len(flat))
 	for _, node := range flat {
-		out = append(out, map[string]any{
-			"ID": node.ID, "Label": CategoryLabel(node), "Checked": picked[node.ID],
+		if node == nil {
+			continue
+		}
+		out = append(out, productdto.CategoryCheckRowResp{
+			ID: node.ID, Label: CategoryLabel(node), Checked: picked[node.ID],
 		})
 	}
 	return out
@@ -406,33 +408,33 @@ func brandNameByID(brands []*productdto.BrandResp, id string) string {
 }
 
 // checkedTagOptions 商品行的手工标签勾选框（勾选态由服务端算好，模板不做集合运算）。
-func checkedTagOptions(tags []*productdto.TagResp, attached []string) []map[string]any {
+func checkedTagOptions(tags []*productdto.TagResp, attached []string) []productdto.TagCheckRowResp {
 	have := map[string]bool{}
 	for _, id := range attached {
 		have[id] = true
 	}
-	out := make([]map[string]any, 0, len(tags))
+	out := make([]productdto.TagCheckRowResp, 0, len(tags))
 	for _, t := range tags {
 		if t == nil || t.Kind != productenums.TagKindManual {
 			continue
 		}
-		out = append(out, map[string]any{"ID": t.ID, "Name": t.Name, "Checked": have[t.ID]})
+		out = append(out, productdto.TagCheckRowResp{ID: t.ID, Name: t.Name, Checked: have[t.ID]})
 	}
 	return out
 }
 
 // attachedAutoTags 商品已归属的自动标签（只读展示：归属由规则重算维护）。
-func attachedAutoTags(tags []*productdto.TagResp, attached []string) []map[string]any {
+func attachedAutoTags(tags []*productdto.TagResp, attached []string) []productdto.AutoTagRowResp {
 	have := map[string]bool{}
 	for _, id := range attached {
 		have[id] = true
 	}
-	out := make([]map[string]any, 0, len(tags))
+	out := make([]productdto.AutoTagRowResp, 0, len(tags))
 	for _, t := range tags {
 		if t == nil || t.Kind != productenums.TagKindRule || !have[t.ID] {
 			continue
 		}
-		out = append(out, map[string]any{"ID": t.ID, "Name": t.Name, "RuleLabel": t.RuleLabel})
+		out = append(out, productdto.AutoTagRowResp{ID: t.ID, Name: t.Name, RuleLabel: t.RuleLabel})
 	}
 	return out
 }
@@ -465,21 +467,18 @@ func categoryCellLabel(flat []*productdto.CategoryResp, attached []string, prima
 // tr 是**具名占位符句式**那一档：超量时的词条是「{n} 个」，走 i18n.FillTranslate；
 // 模板注入的 tf 是 TranslateArgs（只认 %s），拿同一个 key 会在页面上渲染成字面的
 // 「{n} 个」。所以这一处保留取词，取词函数从 ctx 拿（translateFrom），不由控制器传进来。
-func tagCellLabel(tr TranslateFunc, tagChecks, autoTags []map[string]any) string {
+func tagCellLabel(tr TranslateFunc, tagChecks []productdto.TagCheckRowResp, autoTags []productdto.AutoTagRowResp) string {
 	const maxTagNames = 3
 	names := make([]string, 0, len(tagChecks)+len(autoTags))
 	for _, t := range tagChecks {
-		checked, _ := t["Checked"].(bool)
-		if !checked {
+		if !t.Checked || t.Name == "" {
 			continue
 		}
-		if name, ok := t["Name"].(string); ok && name != "" {
-			names = append(names, name)
-		}
+		names = append(names, t.Name)
 	}
 	for _, t := range autoTags {
-		if name, ok := t["Name"].(string); ok && name != "" {
-			names = append(names, name)
+		if t.Name != "" {
+			names = append(names, t.Name)
 		}
 	}
 	switch {
