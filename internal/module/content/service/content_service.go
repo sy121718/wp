@@ -83,11 +83,11 @@ var _ contentcontract.ContentDataSource = (*Service)(nil)
 // Create 新建内容实体（revision=1）。
 func (s *Service) Create(ctx context.Context, req *contentdto.CreateReq) (res *contentdto.ContentResp, err error) {
 	if req == nil || !contentcontract.IsValidType(req.EntityType) || req.Slug == "" {
-		return nil, errors.New(contentenums.ErrInvalidParam)
+		return nil, contentenums.Err(contentenums.ErrInvalidParam)
 	}
 	// slug 唯一性（同类型内）。
 	if _, gerr := s.m.GetBySlug(ctx, req.EntityType, req.Slug); gerr == nil {
-		return nil, errors.New(contentenums.ErrSlugTaken)
+		return nil, contentenums.Err(contentenums.ErrSlugTaken)
 	} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
 		return nil, gerr
 	}
@@ -113,12 +113,12 @@ func (s *Service) Create(ctx context.Context, req *contentdto.CreateReq) (res *c
 // Update 更新内容（revision 递增）。
 func (s *Service) Update(ctx context.Context, req *contentdto.UpdateReq) (res *contentdto.ContentResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(contentenums.ErrInvalidParam)
+		return nil, contentenums.Err(contentenums.ErrInvalidParam)
 	}
 	e, err := s.m.Get(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contentenums.ErrNotFound)
+			return nil, contentenums.Err(contentenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -140,18 +140,18 @@ func (s *Service) Update(ctx context.Context, req *contentdto.UpdateReq) (res *c
 // Get 按 ID 查询。
 func (s *Service) Get(ctx context.Context, req *contentdto.GetReq) (res *contentdto.ContentResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(contentenums.ErrInvalidParam)
+		return nil, contentenums.Err(contentenums.ErrInvalidParam)
 	}
 	e, err := s.m.Get(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contentenums.ErrNotFound)
+			return nil, contentenums.Err(contentenums.ErrNotFound)
 		}
 		return nil, err
 	}
 	data := map[string]any{}
 	if err = json.Unmarshal(e.Data, &data); err != nil {
-		return nil, fmt.Errorf("%s: %w", contentenums.ErrDataInvalid, err)
+		return nil, contentenums.ErrDetail(contentenums.ErrDataInvalid, err.Error())
 	}
 	return toResp(e, data), nil
 }
@@ -210,7 +210,7 @@ func normalizeListFilter(req *contentdto.ListReq) (entityType, keyword string, e
 		return "", "", nil
 	}
 	if req.EntityType != "" && !contentcontract.IsValidType(req.EntityType) {
-		return "", "", errors.New(contentenums.ErrInvalidType)
+		return "", "", contentenums.Err(contentenums.ErrInvalidType)
 	}
 	return req.EntityType, strings.TrimSpace(req.Keyword), nil
 }
@@ -218,12 +218,12 @@ func normalizeListFilter(req *contentdto.ListReq) (entityType, keyword string, e
 // Delete 删除实体。
 func (s *Service) Delete(ctx context.Context, req *contentdto.DeleteReq) (err error) {
 	if req == nil || req.ID == "" {
-		return errors.New(contentenums.ErrInvalidParam)
+		return contentenums.Err(contentenums.ErrInvalidParam)
 	}
 	e, err := s.m.Get(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New(contentenums.ErrNotFound)
+			return contentenums.Err(contentenums.ErrNotFound)
 		}
 		return err
 	}
@@ -272,7 +272,7 @@ func validateData(entityType string, data map[string]any) (map[string]any, error
 	out := make(map[string]any, len(data))
 	for key, val := range data {
 		if !contentcontract.IsValidField(entityType, key) {
-			return nil, fmt.Errorf("%s: %q", contentenums.ErrInvalidField, key)
+			return nil, contentenums.ErrDetail(contentenums.ErrInvalidField, fmt.Sprintf("%q", key))
 		}
 		out[key] = val
 	}

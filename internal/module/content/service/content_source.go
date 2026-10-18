@@ -65,7 +65,7 @@ func (s *Service) ResolveCollectionPage(ctx context.Context, source string, q co
 func (s *Service) resolveCollection(ctx context.Context, source string, filter map[string]string, offset, limit int) (items []map[string]any, total int, err error) {
 	entityType, ok := strings.CutPrefix(source, collectionSourcePrefix)
 	if !ok || !contentcontract.IsValidType(entityType) {
-		return nil, 0, fmt.Errorf("%s: %q（期望 content:{product|article|category}）", contentenums.ErrInvalidType, source)
+		return nil, 0, contentenums.ErrDetail(contentenums.ErrInvalidType, fmt.Sprintf("%q（期望 content:{product|article|category}）", source))
 	}
 	// 列投影 + 筛选下推（审计 PERF-008）：此前先 List 取回 100 行**整行**（data 里含正文
 	// 全文）再在 Go 里过滤，等于为了渲染几张卡片把正文都读了一遍。
@@ -80,7 +80,7 @@ func (s *Service) resolveCollection(ctx context.Context, source string, filter m
 		out := map[string]any{}
 		if len(r.Fields) > 0 {
 			if uerr := json.Unmarshal(r.Fields, &out); uerr != nil {
-				return nil, 0, fmt.Errorf("%s: %w", contentenums.ErrDataInvalid, uerr)
+				return nil, 0, contentenums.ErrDetail(contentenums.ErrDataInvalid, uerr.Error())
 			}
 		}
 		// 复查（防御，不是主路径）：筛选已下推到 SQL，这里再比一次是为了让
@@ -155,12 +155,12 @@ var (
 // 取实体，把 Binding 字段解析为字面量（文档已解析，后续编译零依赖实体）。
 func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) (r core.ContentResolver, err error) {
 	if !contentcontract.IsValidType(entityType) {
-		return nil, errors.New(contentenums.ErrInvalidType)
+		return nil, contentenums.Err(contentenums.ErrInvalidType)
 	}
 	e, gerr := s.m.Get(ctx, entityID)
 	if gerr != nil {
 		if errors.Is(gerr, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contentenums.ErrNotFound)
+			return nil, contentenums.Err(contentenums.ErrNotFound)
 		}
 		return nil, gerr
 	}
@@ -169,7 +169,7 @@ func (s *Service) ResolverFor(ctx context.Context, entityType, entityID string) 
 	}
 	var data map[string]any
 	if err = json.Unmarshal(e.Data, &data); err != nil {
-		return nil, fmt.Errorf("%s: %w", contentenums.ErrDataInvalid, err)
+		return nil, contentenums.ErrDetail(contentenums.ErrDataInvalid, err.Error())
 	}
 	// 多语言（审计 I18N-006）：字段值按当前构建语言取译文。
 	//
@@ -213,14 +213,14 @@ type entityResolver struct {
 func (r *entityResolver) ResolveString(field string) (string, error) {
 	parts := strings.SplitN(field, ".", 2)
 	if len(parts) != 2 {
-		return "", fmt.Errorf("%s: %q（期望 entityType.field）", contentenums.ErrInvalidField, field)
+		return "", contentenums.ErrDetail(contentenums.ErrInvalidField, fmt.Sprintf("%q（期望 entityType.field）", field))
 	}
 	entityType, fieldName := parts[0], parts[1]
 	if entityType != r.entityType {
 		return "", fmt.Errorf("绑定字段 %q 类型 %q 与当前实体 %q 不符", field, entityType, r.entityType)
 	}
 	if !contentcontract.IsValidField(entityType, fieldName) {
-		return "", fmt.Errorf("%s: %q", contentenums.ErrInvalidField, fieldName)
+		return "", contentenums.ErrDetail(contentenums.ErrInvalidField, fmt.Sprintf("%q", fieldName))
 	}
 	v, ok := r.data[fieldName]
 	if !ok || v == nil {

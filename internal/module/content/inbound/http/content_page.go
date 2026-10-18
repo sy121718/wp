@@ -148,10 +148,10 @@ const (
 	articleBlogPathPrefix = "/blog/"
 )
 
-// 成功回执（常量值取自 contentenums，登记在 articleFacingMessages 里）。
+// 成功回执（常量值取自 contentenums，登记在 articleFallbacks 里）。
 //
 // 常量值取自 contentenums（key 的字面量只住 enums 包），中文兜底在同文件的
-// articleFacingMessages —— 两者成对。
+// articleFallbacks —— 两者成对。
 // 此前这里的常量值是中文本身、被当成 key 去查库，而库内没有中文 item_key，于是永远只显示中文。
 const (
 	articleCreatedText = contentenums.OkCreated
@@ -165,7 +165,7 @@ const (
 // 参数编码迟早分叉，而症状是「某个页面的提示偶尔少一个数字」，既不报错也不记日志。
 type articleMsg = adminui.Msg
 
-// articleFacingMessages 本页文案的**兜底表**（key → 中文原文）。
+// articleFallbacks 本页文案的**兜底表**（key → 中文原文）。
 //
 // **不是可透出性判据**：判定只有一条，在 adminui.PageErrorFact（pkg/response.IsBusinessError）——
 // 业务错误的取值本来就是 enums 常量、且常量名即 i18n key，所以「认得出形态 = 可以直接给用户看」。
@@ -173,22 +173,19 @@ type articleMsg = adminui.Msg
 //
 // 键是 i18n key（两类都是）：content 模块错误常量的值就是常量名、而常量名即词条 key；
 // 本页自造的成功 / 参数级文案的常量值也已经是 key。值是**中文兜底**。
-var articleFacingMessages = map[string]string{
-	contentenums.ErrInvalidParam: "提交的信息不完整，请检查标题与路径后重试。",
-	contentenums.ErrNotFound:     "这篇文章不存在，可能已被删除。",
-	contentenums.ErrInvalidType:  "内容类型不受支持（本页只处理文章）。",
-	contentenums.ErrInvalidField: "提交了不支持的字段，请刷新页面后重试。",
-	contentenums.ErrSlugTaken:    "这个路径（slug）已被另一篇文章占用，换一个。",
-	contentenums.ErrDataInvalid:  "文章数据格式异常，请联系管理员。",
-	articleCreatedText:           "文章已创建。写完正文后记得保存。",
-	articleSavedText:             "已保存。引用这篇文章的页面与已发布的详情页已标记待重建。",
-	articleDeletedText:           "文章已删除。",
-	articleMissingIDText:         "缺少文章标识，请回到列表页重试。",
-	articleMissingTitleText:      "请先填写文章标题。",
-	articleMissingSlugText:       "请先填写文章路径（slug）。",
+var articleFallbacks = map[string]string{
+	// contentenums 的错误**不在这张表里**：它们的兜底跟着声明处走（enums.errFallbacks，
+	// 经 pkg/facing.FactOf 的 fact.Fallback 到达本层）。这里只放本页自造的文案 ——
+	// 参数级提示与成功回执，它们没有 error 对象，兜底只能在这里给。
+	articleCreatedText:      "文章已创建。写完正文后记得保存。",
+	articleSavedText:        "已保存。引用这篇文章的页面与已发布的详情页已标记待重建。",
+	articleDeletedText:      "文章已删除。",
+	articleMissingIDText:    "缺少文章标识，请回到列表页重试。",
+	articleMissingTitleText: "请先填写文章标题。",
+	articleMissingSlugText:  "请先填写文章路径（slug）。",
 	// 导入流程的四条（键与词条见迁移 451 的 admin.article.import.err.*）。
 	//
-	// 此前它们登记在 articleImportFacingMessages 里、值写成了 key 本身 —— 即**没有中文兜底**：
+	// 此前它们登记在 articleImportFallbacks 里、值写成了 key 本身 —— 即**没有中文兜底**：
 	// 词条缺失时页面上显示的是 `admin.article.import.err.emptyBody` 这样一串标识符。
 	// 兜底是「缺词条时写什么」，写 key 等于把「缺词条」变成「给用户看内部标识符」。
 	articleImportEmptyBodyText: "这篇文章的正文是空的，没有可导入的内容。先写点东西再导入。",
@@ -199,7 +196,7 @@ var articleFacingMessages = map[string]string{
 }
 
 // 参数级错误（本页自造；同样登记兜底表 —— 自造文案不登记会在缺词条时显示裸 key）。
-// 值取自 contentenums，中文兜底见 articleFacingMessages。
+// 值取自 contentenums，中文兜底见 articleFallbacks。
 const (
 	articleMissingIDText    = contentenums.ErrMissingID
 	articleMissingTitleText = contentenums.ErrMissingTitle
@@ -208,7 +205,7 @@ const (
 
 // articleFacingMsgOf 本页自造文案的**事实**（key + 兜底表里的中文原文）。
 func articleFacingMsgOf(key string) articleMsg {
-	return articleMsg{Key: key, Fallback: articleFacingMessages[key]}
+	return articleMsg{Key: key, Fallback: articleFallbacks[key]}
 }
 
 // 本页自造的成功回执 / 参数级提示 —— 全是静态的 key + 中文原文，所以是包级变量：
@@ -279,7 +276,7 @@ func NewArticlePageHandle(contents contentcontract.ContentService, projects proj
 // 全量取数意味着 N 次跨模块查询，文章量级一涨就成倍放大（这正是上一轮否决该方案的理由）。
 func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	ctx := c.Request.Context()
-	// 写动作的结论走 shell.RenderJump 渲染整页提示（见 content_err.go），不再经
+	// 写动作的结论走 shell.RenderJump 渲染整页提示（见 content_error_handle.go），不再经
 	// ?err= / ?ok= / ?done= 回带 —— 那条通道要求读侧再判一次「这条提示是不是本仓给的」，
 	// 而查询参数不是可信边界。这里只剩一处提示来源：**列表取数失败**。
 	pageErr := articleMsg{}
@@ -304,7 +301,7 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	data["Keyword"] = keyword
 	data["Limit"] = limit
 	data["ClearFilterURL"] = reqparams.FilterBaseURL("/admin/articles", map[string]string{"limit": strconv.Itoa(limit)})
-	// 写动作的回跳要带上本次筛选（shell.BackPath 从表单 action 的 query 读回，见 content_err.go）：
+	// 写动作的回跳要带上本次筛选（shell.BackPath 从表单 action 的 query 读回，见 content_error_handle.go）：
 	// 预编码成成品 query 串（含前导 "?"）再交给模板 —— Jet 的 {{ }} 是 HTML 转义不是 URL 转义，
 	// 关键词里的 & 在模板里直接拼会切断 query；带 "?" 则空串时不留孤立的 "?"。
 	data["FilterQuery"] = "?" + url.Values{"keyword": {keyword}, "limit": {strconv.Itoa(limit)}}.Encode()
@@ -355,7 +352,7 @@ func articleClampPage(page, limit int, total int64) int {
 func (h *articlePageHandle) ArticleEditPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	id := strings.TrimSpace(c.Query("id"))
-	// 写动作的结论走 shell.RenderJump（见 content_err.go），不再经 ?err= / ?ok= 回带。
+	// 写动作的结论走 shell.RenderJump（见 content_error_handle.go），不再经 ?err= / ?ok= 回带。
 	pageErr := articleMsg{}
 
 	var item *contentdto.ContentResp
@@ -652,7 +649,7 @@ const (
 
 // 导入相关文案（登记在白名单里 —— 它们会作为提示页正文渲染）。
 //
-// 常量值取自 contentenums，中文兜底在 articleFacingMessages —— 两者成对，
+// 常量值取自 contentenums，中文兜底在 articleFallbacks —— 两者成对，
 // 取词统一走 articleImportTextMsg。
 const (
 	articleImportEmptyBodyText = contentenums.ImportErrEmptyBody
@@ -664,7 +661,7 @@ const (
 
 // articleImportTextMsg 本页文案的**事实**（key + 兜底表里的中文原文；导入区块用）。
 func articleImportTextMsg(key string) articleMsg {
-	return articleMsg{Key: key, Fallback: articleFacingMessages[key]}
+	return articleMsg{Key: key, Fallback: articleFallbacks[key]}
 }
 
 // articleImportText 组件类型 / 降级动作的词条：key + 中文兜底。
@@ -827,7 +824,7 @@ func (h *articlePageHandle) articleByID(c *gin.Context) (*contentdto.ContentResp
 	return h.contents.Get(c.Request.Context(), &contentdto.GetReq{ID: id})
 }
 
-// errArticleIDMissing 本页自造的参数错误（进白名单，见 articleFacingMessages 的补充）。
+// errArticleIDMissing 本页自造的参数错误（进白名单，见 articleFallbacks 的补充）。
 var errArticleIDMissing = &articleImportError{text: articleMissingIDText}
 
 // articleImportError 本页自造的简单错误（只为让文章页的错误判据认得它）。
@@ -915,15 +912,15 @@ func articleImportPreviewViewOf(res *richdoc.Result, trs ...func(key, fallback s
 
 // articleImportErrMsg 导入流程的错误 → 一句结论（判定在 adminui.PageErrorFact）。
 func articleImportErrMsg(c *gin.Context, err error) articleMsg {
-	return articleErrMsgOf(c, articleImportFacingMessages, err)
+	return articleErrMsgOf(c, articleImportFallbacks, err)
 }
 
-// articleImportFacingMessages 导入流程的**兜底表**（page 模块错误常量的值 → 中文原文）。
+// articleImportFallbacks 导入流程的**兜底表**（page 模块错误常量的值 → 中文原文）。
 //
 // 与文章页那份分开：presentation / page 的 ErrInvalidParam 与 content 的同名常量含义不同
 // （前两者说的是「工程与页面路径」，后者说的是「标题与路径」），合并成一张表必然吃掉一边。
-// 本页自造的那些 key 不在这里 —— 它们由 articleFacingMessages 兜底（见 articleErrFallback）。
-var articleImportFacingMessages = map[string]string{
+// 本页自造的那些 key 不在这里 —— 它们由 articleFallbacks 兜底（见 articleErrFallback）。
+var articleImportFallbacks = map[string]string{
 	pageenums.ErrInvalidParam:    "提交的信息不完整，请检查工程与页面路径后重试。",
 	pageenums.ErrProjectNotFound: "选择的站点工程不存在，请刷新页面后重试。",
 	pageenums.ErrInvalidKind:     "页面类型与内容目标不匹配（导入用的是普通页面类型），这是程序错误，请联系管理员。",
@@ -1004,7 +1001,7 @@ func (f articleForm) data() map[string]any {
 // articleListPageData 列表页渲染数据（纯函数：不取数、不依赖 gin.Context）。
 //
 // 只保留 Err 一处提示来源（列表取数失败）：写动作的结论走提示页，不再经
-// ?ok= / ?done= 回带（见 content_err.go）。Err 与行的状态文案都是**事实**不是拼好的句子 ——
+// ?ok= / ?done= 回带（见 content_error_handle.go）。Err 与行的状态文案都是**事实**不是拼好的句子 ——
 // 取词在模板里发生（见 articles.html）。因此本函数不需要取词函数参数：语言是请求级的，
 // 在这里提前翻等于替渲染期做决定。
 func articleListPageData(list []*contentdto.ContentResp, published map[string]string, pageErr articleMsg) gin.H {
@@ -1067,7 +1064,7 @@ func articleStateLabel(published bool) (key, fallback string) {
 // （pageErr 已带上原因），此时仍渲染空表单让编辑者能重新保存。
 //
 // Err 的写侧只剩一处：articleUpdateFailure 原地重渲时带回的保存错误。成功回执
-// 不再进模板（走提示页，见 content_err.go），所以没有 Ok 键。
+// 不再进模板（走提示页，见 content_error_handle.go），所以没有 Ok 键。
 //
 // pageErr 是**事实**（key + 中文兜底）不是拼好的句子：取词在模板里发生（见 article_edit.html）。
 //
@@ -2066,7 +2063,7 @@ func articleScoreViewOf(data map[string]any, articleURL, lang string,
 
 // —— 文案归口 ——
 //
-// 写动作的回跳与提示页出口在 content_err.go（articlePageJump / articleListJump /
+// 写动作的回跳与提示页出口在 content_error_handle.go（articlePageJump / articleListJump /
 // articleEditJump）；本段只保留错误 → 可展示文案的归口漏斗。
 // 原先的 articleRedirectList / articleRedirectEdit / articleRedirect（302 + ?err= / ?ok=）
 // 已整批删除：结论改由提示页在响应体里渲染。
@@ -2076,7 +2073,7 @@ func articleScoreViewOf(data map[string]any, articleURL, lang string,
 //
 // 页面上出现 "pq: duplicate key value violates unique constraint" 或
 // `relation "contents" does not exist` 既看不懂，也把库表结构泄了出去 ——
-// 写动作的结论现在由提示页在响应体里渲染（content_err.go），模板数据 Err 与
+// 写动作的结论现在由提示页在响应体里渲染（content_error_handle.go），模板数据 Err 与
 // 错误原文一样不是可信边界。
 func articleInternalMsg(c *gin.Context, err error) articleMsg {
 	if err != nil {
@@ -2089,13 +2086,13 @@ func articleInternalMsg(c *gin.Context, err error) articleMsg {
 
 // articleErrMsg 本页错误 → 一句结论（判定 + 日志在 adminui.PageErrorFact）。
 func articleErrMsg(c *gin.Context, err error) articleMsg {
-	return articleErrMsgOf(c, articleFacingMessages, err)
+	return articleErrMsgOf(c, articleFallbacks, err)
 }
 
 // articleErrMsgQuiet 同 articleErrMsg，但**不记日志** —— 给「调用点已经记过一条更具体的日志
 // （带 lang）」的地方用，免得同一个错误在日志里出现两遍。
 func articleErrMsgQuiet(c *gin.Context, err error) articleMsg {
-	return articleErrMsgOfFact(articleFacingMessages, adminui.PageErrorFactQuiet(c, articleErrScene, err))
+	return articleErrMsgOfFact(articleFallbacks, adminui.PageErrorFactQuiet(c, articleErrScene, err))
 }
 
 // articleFacingErrMsg content 写动作的错误 → 一句结论。
@@ -2122,7 +2119,7 @@ func articleErrMsgOfFact(scoped map[string]string, fact adminui.ErrFact) article
 	return articleMsg{Key: fact.Key, Fallback: articleErrFallback(scoped, fact.Key, fact.Fallback)}
 }
 
-// articleErrFallback 兜底链：调用场景表 → 本页通用表 → 事实自带兜底 → key。
+// articleErrFallback 兜底链：调用场景表 → 本页通用表 → 模块声明处兜底 → 事实自带兜底 → key。
 //
 // 展示原文**不参与**「能不能给用户看」的判定（判定在 adminui.BusinessErrFact）——
 // 这里只回答「缺词条时页面上写什么」。分层的理由是同一个 key 在不同场景各说各的：
@@ -2131,7 +2128,10 @@ func articleErrMsgOfFact(scoped map[string]string, fact adminui.ErrFact) article
 //
 // 末档回落 key：显示裸标识符一眼可见，好过空串让失败在页面上完全不可见。
 func articleErrFallback(scoped map[string]string, key, factFallback string) string {
-	for _, fb := range []string{scoped[key], articleFacingMessages[key], factFallback} {
+	// 模块声明处的兜底（enums.errFallbacks）排在事实自带兜底之前：裸 key 形态
+	// （errors.New(contentenums.ErrNotFound)）的事实兜底就是 key 本身，直接用它会让
+	// 页面上出现一串英文标识符 —— 那正是「缺词条时显示裸 key」的老症状。
+	for _, fb := range []string{scoped[key], articleFallbacks[key], contentenums.FallbackFor(key), factFallback} {
 		if fb = strings.TrimSpace(fb); fb != "" {
 			return fb
 		}
@@ -2167,7 +2167,7 @@ func articleBulkIDsJumpMsg(c *gin.Context, err error) articleMsg {
 }
 
 // 发布区块的提示文案（同样登记在白名单里，因为它们会作为提示页正文渲染）。
-// 本页文案的常量值是 **i18n key**，中文兜底在同文件的 articlePublishFacingMessages ——
+// 本页文案的常量值是 **i18n key**，中文兜底在同文件的 articlePublishFallbacks ——
 // 两者成对，取词统一走 articlePublishTextOf / articlePublishHintText。
 const (
 	articlePublishedText      = contentenums.PublishOkPublished
@@ -2193,7 +2193,7 @@ const (
 // 只留这一个取词入口：各写一份中文的下场是「词条改了、兜底没改」，
 // 页面上时而译文时而旧中文，而两处都不报错。
 func articlePublishTextMsg(key string) articleMsg {
-	return articleMsg{Key: key, Fallback: articlePublishFacingMessages[key]}
+	return articleMsg{Key: key, Fallback: articlePublishFallbacks[key]}
 }
 
 // articlePublishHintMsg 发布区块提示的**事实**（与 articlePublishTextMsg 同源）：
@@ -2211,11 +2211,11 @@ func articlePublishTr(trs []func(key, fallback string) string) func(key, fallbac
 	return func(_, fallback string) string { return fallback }
 }
 
-// articlePublishFacingMessages 发布流程可展示的文案白名单。
+// articlePublishFallbacks 发布流程可展示的文案白名单。
 //
 // 与文章页那份分开：presentation 的 ErrNotFound 指「实例不存在」，content 的同名常量
 // 指「文章不存在」—— 同一个 key 在两处含义不同，合并成一张表必然吃掉一边。
-var articlePublishFacingMessages = map[string]string{
+var articlePublishFallbacks = map[string]string{
 	presentationenums.ErrInvalidParam:         "发布参数不完整，请检查工程、路径与模板。",
 	presentationenums.ErrNotFound:             "这篇文章还没有详情页实例，先发布一次。",
 	presentationenums.ErrNoTemplate:           "该类型没有可用的内容模板，先建一套文章详情模板。",
@@ -2441,7 +2441,7 @@ func articleTemplateOptions(ctx context.Context, h *articlePageHandle) []gin.H {
 // presentation 的兜底表优先：它的 ErrNotFound 指「实例不存在」，content 的同名常量指
 // 「文章不存在」—— 同一个 key 在两处含义不同，合并成一张表必然吃掉一边。
 func articlePublishErrMsg(c *gin.Context, err error) articleMsg {
-	return articleErrMsgOf(c, articlePublishFacingMessages, err)
+	return articleErrMsgOf(c, articlePublishFallbacks, err)
 }
 
 // articlePublishURL 发布 / 重建表单的动作地址（当前页路径，集中一处便于改名）。

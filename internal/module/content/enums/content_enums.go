@@ -1,6 +1,13 @@
 // Package contentenums content 模块响应消息。
 package contentenums
 
+import (
+	"fmt"
+	"strings"
+
+	"go_wp/pkg/facing"
+)
+
 // 响应消息（未接 i18n 前中文常量）。
 const (
 	MsgCreateSuccess = "MsgCreateSuccess" // 内容创建成功
@@ -20,6 +27,43 @@ const (
 	// ErrCollectionUnsupported 当前内容服务未实现集合元数据契约。
 	ErrCollectionUnsupported = "ErrCollectionUnsupported"
 )
+
+// errFallbacks 错误兜底（对外文案的中文那一半）：与常量同处声明，出口只调一次 pkg/facing.FactOf。
+//
+// 为什么不再有控制器侧的白名单 + 逐条 switch：那是第二份真相 —— service 换措辞、或
+// 某条错误改由别的模块提供时静默失配，症状是把业务文案吞成归口、或把内部错误当文案
+// 透出，两边都不报错。现在「能不能对外说」由 facing.Fact 的形状判定，「说什么」由这里给。
+//
+// 取值与 sys_i18n 的 zh-CN 词条逐字一致（迁移 058 / 602 等）：兜底只在词条缺席时可见，
+// 与词条不一致会让人以为「词条坏了」。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:          "提交的信息不完整，请检查后重试。",
+	ErrNotFound:              "这篇文章不存在，可能已被删除。",
+	ErrInvalidType:           "内容类型不受支持。",
+	ErrInvalidField:          "提交了不支持的字段，请刷新页面后重试。",
+	ErrSlugTaken:             "这个路径（slug）已被另一条内容占用，换一个。",
+	ErrDataInvalid:           "内容数据格式异常，请联系管理员。",
+	ErrCollectionUnsupported: "当前内容服务未实现集合元数据契约。",
+}
+
+// Err 声明一条自带对外文案的内容业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// ErrDetail 把业务错误与**定位数据**拼成一条（key + 明细）。
+//
+// 明细是给操作者用的数据（哪个字段、哪个来源值），由本模块自己构造，不含表名 / SQLSTATE。
+// 分隔符必须用 ASCII「: 」：pkg/facing 的复合形态判据只认这一种，写成全角「：」会让整条
+// 过不了判据、被当成内部错误打成 500。
+func ErrDetail(key, detail string) error {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return Err(key)
+	}
+	return fmt.Errorf("%w: %s", Err(key), detail)
+}
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：页面回执、逐条原因）。
+func FallbackFor(key string) string { return errFallbacks[key] }
 
 // 批量操作的结论文案（页面回执，不是错误白名单）。
 //

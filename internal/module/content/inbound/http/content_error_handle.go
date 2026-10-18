@@ -1,6 +1,6 @@
 package contenthttp
 
-// content_err.go — 文章后台页写动作的**出口归口**（错误文案三件套 + 整页提示）。
+// content_error_handle.go — 文章后台页写动作的**出口归口**（错误文案三件套 + 整页提示）。
 //
 // 三件套（AGENTS.md §响应与错误处理，与 admin 的 admin_err.go / block 的 block_err.go 同形）：
 //
@@ -9,8 +9,8 @@ package contenthttp
 //	   或某个 key 改由别的模块提供，白名单就静默失配，而两种症状都不报错（有时把内部错误
 //	   当业务文案透出、有时把业务文案吞成归口）。三张表现在只剩一件事 ——
 //	   **key → 中文兜底**（缺词条时页面显示什么），不再是可透出性判据。
-//	   （表在 content_page.go：articleFacingMessages / articlePublishFacingMessages /
-//	   articleImportFacingMessages；存在价值只剩「同一个 key 在不同场景各说各的」。）
+//	   （表在 content_page.go：articleFallbacks / articlePublishFallbacks /
+//	   articleImportFallbacks；存在价值只剩「同一个 key 在不同场景各说各的」。）
 //	② 归口文案 —— 未命中时给 adminui.InternalMsg()（可翻译 key + 中文兜底）；
 //	③ 结构化日志 —— 原文只进日志，带 user_id（见 content_page.go 的 articleInternalMsg）。
 //

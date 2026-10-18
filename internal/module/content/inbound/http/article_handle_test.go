@@ -66,7 +66,7 @@ func TestArticleUpdateFailureEchoesSubmittedFields(t *testing.T) {
 		message string
 	}{
 		{name: "标题缺失", form: url.Values{"id": {"a1"}, "title": {""}, "body": {"<p>新正文 &amp; 更多</p>"}, "excerpt": {""}, "featuredImage": {"/storage/new.jpg"}, "seoTitle": {""}, "seoDescription": {"新描述 <>&\"'"}, "focusKeyword": {"新词"}}, message: articleMissingTitleMsg.Fallback},
-		{name: "业务拒绝", err: errors.New(contentenums.ErrInvalidField), form: url.Values{"id": {"a1"}, "title": {"新标题 & < > \" '"}, "body": {"<h2>新正文 &amp; 标题</h2><p>第二段</p>"}, "excerpt": {"新摘要\n第二行"}, "featuredImage": {"https://example.test/?x=1&y=2"}, "seoTitle": {"SEO 新标题"}, "seoDescription": {"新描述 <>&\"'"}, "focusKeyword": {"新词"}}, message: articleFacingMessages[contentenums.ErrInvalidField]},
+		{name: "业务拒绝", err: errors.New(contentenums.ErrInvalidField), form: url.Values{"id": {"a1"}, "title": {"新标题 & < > \" '"}, "body": {"<h2>新正文 &amp; 标题</h2><p>第二段</p>"}, "excerpt": {"新摘要\n第二行"}, "featuredImage": {"https://example.test/?x=1&y=2"}, "seoTitle": {"SEO 新标题"}, "seoDescription": {"新描述 <>&\"'"}, "focusKeyword": {"新词"}}, message: articleFallbacks[contentenums.ErrInvalidField]},
 		{name: "内部错误归口", err: errors.New("relation secret_table does not exist"), form: url.Values{"id": {"a1"}, "title": {"新标题"}, "body": {"<p>新正文</p>"}, "excerpt": {"新摘要"}, "featuredImage": {""}, "seoTitle": {""}, "seoDescription": {""}, "focusKeyword": {""}}, message: "系统内部错误"},
 	}
 	for _, tc := range cases {
@@ -168,7 +168,7 @@ func TestArticleUpdateSuccessRendersJumpPage(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		`data-jump-state="ok"`,
-		"已保存", // articleFacingMessages[articleSavedText] 的中文兜底
+		"已保存", // articleFallbacks[articleSavedText] 的中文兜底
 		"/admin/articles/edit?id=a1",
 	} {
 		if !strings.Contains(body, want) {
