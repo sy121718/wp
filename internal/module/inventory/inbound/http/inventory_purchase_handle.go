@@ -38,10 +38,10 @@ func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, form *i
 	for key, value := range form.EchoFields() {
 		fields[key] = value
 	}
-	rows := make([]gin.H, inventoryPurchaseDraftLines)
+	rows := make([]inventorydto.DraftLineViewResp, inventoryPurchaseDraftLines)
 	for i := range rows {
 		sku, quantity, unitPrice := form.LineAt(i)
-		rows[i] = gin.H{"Index": i, "SKU": sku, "Quantity": quantity, "UnitPrice": unitPrice}
+		rows[i] = inventorydto.DraftLineViewResp{Index: i, SKU: sku, Quantity: quantity, UnitPrice: unitPrice}
 	}
 	// 候选项由当前工程重取，表单值只取此次提交。
 	ctx := c.Request.Context()
@@ -61,10 +61,10 @@ func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, form *i
 // inventory_purchase_page_form.go - 采购入库表单解析（收货明细行、草稿行与数值解析）。
 
 // purchaseDraftLines 新建窗体里的空行（模板 range 用）。
-func purchaseDraftLines() []gin.H {
-	out := make([]gin.H, 0, inventoryPurchaseDraftLines)
+func purchaseDraftLines() []inventorydto.DraftLineViewResp {
+	out := make([]inventorydto.DraftLineViewResp, 0, inventoryPurchaseDraftLines)
 	for i := 0; i < inventoryPurchaseDraftLines; i++ {
-		out = append(out, gin.H{"Index": i})
+		out = append(out, inventorydto.DraftLineViewResp{Index: i})
 	}
 	return out
 }
@@ -125,11 +125,11 @@ func (h *inventoryPurchasePageHandle) setProductCatalog(products productcontract
 type inventoryPurchasesPageData struct {
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
-	Sources         []gin.H
-	InternalSources []gin.H
-	Warehouses      []gin.H
-	VariantOptions  []gin.H
-	Orders          []gin.H
+	Sources         []inventorydto.SourceOptionViewResp
+	InternalSources []inventorydto.SourceOptionViewResp
+	Warehouses      []inventorydto.WarehouseOptionViewResp
+	VariantOptions  []inventorydto.VariantOptionViewResp
+	Orders          []inventorydto.PurchaseOrderViewResp
 	FilterStatus    string
 	FilterSource    string
 	FilterKeyword   string
@@ -221,11 +221,11 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 	filterSource := strings.TrimSpace(c.Query("sourceId"))
 	filterKeyword := strings.TrimSpace(c.Query("keyword"))
 
-	sources := []gin.H{}
-	internalSources := []gin.H{}
-	warehouses := []gin.H{}
-	variants := []gin.H{}
-	orders := []gin.H{}
+	sources := []inventorydto.SourceOptionViewResp{}
+	internalSources := []inventorydto.SourceOptionViewResp{}
+	warehouses := []inventorydto.WarehouseOptionViewResp{}
+	variants := []inventorydto.VariantOptionViewResp{}
+	orders := []inventorydto.PurchaseOrderViewResp{}
 	var total int64
 	// 分页（审计 D3）：?page= / ?limit=，缺省每页 100 张单据。原先这一页写死 100 且
 	// 没有分页条 —— 第 101 张采购单静默消失，页面上没有任何提示。
@@ -336,9 +336,9 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseProduction(c *gin.Context
 // total 是该过滤条件下的**真实总张数**（契约的 CountPurchaseOrders，与 ListPurchaseOrders
 // 同一份过滤条件）；curPage 是**收敛后**的页码（page 越界时回落到末页）。out 只装本页数据。
 func (h *inventoryPurchasePageHandle) purchaseOrderRows(c *gin.Context, projectID, status, sourceID, keyword string,
-	page, limit int, pageErr *string) (out []gin.H, total int64, curPage int) {
+	page, limit int, pageErr *string) (out []inventorydto.PurchaseOrderViewResp, total int64, curPage int) {
 	ctx := c.Request.Context()
-	out = []gin.H{}
+	out = []inventorydto.PurchaseOrderViewResp{}
 	if projectID == "" {
 		return out, 0, 1
 	}
@@ -369,31 +369,29 @@ func (h *inventoryPurchasePageHandle) purchaseOrderRows(c *gin.Context, projectI
 	}
 	tr := shell.TranslateFor(c)
 	for _, o := range orders {
-		lines := make([]gin.H, 0, len(o.Lines))
+		lines := make([]inventorydto.PurchaseOrderLineViewResp, 0, len(o.Lines))
 		for _, l := range o.Lines {
-			lines = append(lines, gin.H{
-				"ID": l.ID, "SKUCode": l.SKUCode, "VariantID": l.VariantID,
-				"Quantity": l.Quantity, "ReceivedQuantity": l.ReceivedQuantity,
-				"OutstandingQuantity": l.OutstandingQuantity,
-				"UnitPrice":           strconv.FormatFloat(l.UnitPrice, 'f', 2, 64),
-				"Remark":              l.Remark,
-				// 还能收的行才给提交按钮：收满的行不再受理（服务端同样拒绝）。
-				"Open":            l.OutstandingQuantity > 0,
-				"OutstandingTone": outstandingTone(l.OutstandingQuantity),
+			lines = append(lines, inventorydto.PurchaseOrderLineViewResp{
+				ID: l.ID, SKUCode: l.SKUCode, VariantID: l.VariantID,
+				Quantity: l.Quantity, ReceivedQuantity: l.ReceivedQuantity,
+				OutstandingQuantity: l.OutstandingQuantity,
+				UnitPrice:           strconv.FormatFloat(l.UnitPrice, 'f', 2, 64),
+				Remark:              l.Remark,
+				Open:                l.OutstandingQuantity > 0,
+				OutstandingTone:     outstandingTone(l.OutstandingQuantity),
 			})
 		}
-		out = append(out, gin.H{
-			"ID": o.ID, "Code": o.Code,
-			"SourceName": o.SourceName, "SourceType": o.SourceType,
-			"SourceTypeLabel": sourceTypeLabel(tr, o.SourceType),
-			"WarehouseName":   o.WarehouseName,
-			"Status":          o.Status, "StatusLabel": purchaseStatusLabel(tr, o.Status),
-			"OrderedAt": o.OrderedAt, "ExpectedAt": o.ExpectedAt,
-			"Remark": o.Remark, "OperatorID": o.OperatorID,
-			"TotalQuantity": o.TotalQuantity, "ReceivedQuantity": o.ReceivedQuantity,
-			"Lines": lines,
-			// 每张单一个一次性幂等键（表单渲染时生成，重复提交命中同一张入库单）。
-			"RequestID": uuid.NewString(),
+		out = append(out, inventorydto.PurchaseOrderViewResp{
+			ID: o.ID, Code: o.Code,
+			SourceName: o.SourceName, SourceType: o.SourceType,
+			SourceTypeLabel: sourceTypeLabel(tr, o.SourceType),
+			WarehouseName:   o.WarehouseName,
+			Status:          o.Status, StatusLabel: purchaseStatusLabel(tr, o.Status),
+			OrderedAt: o.OrderedAt, ExpectedAt: o.ExpectedAt,
+			Remark: o.Remark, OperatorID: o.OperatorID,
+			TotalQuantity: o.TotalQuantity, ReceivedQuantity: o.ReceivedQuantity,
+			Lines:     lines,
+			RequestID: uuid.NewString(),
 		})
 	}
 	return out, total, curPage
@@ -404,9 +402,9 @@ func (h *inventoryPurchasePageHandle) purchaseOrderRows(c *gin.Context, projectI
 // 当前页面不再渲染这张表（「按 SKU 看过往入库」已并入库存管理页的流水筛选），
 // 但取数口保留：接口侧与将来的页面入口共用同一投影。错误回显同样走 inventoryErrText——
 // 留着 err.Error() 就等于在同一个文件里留了一条尚未被页面用到的泄漏路径。
-func (h *inventoryPurchasePageHandle) purchaseHistoryRows(c *gin.Context, projectID, sku string, pageErr *string) (out []gin.H) {
+func (h *inventoryPurchasePageHandle) purchaseHistoryRows(c *gin.Context, projectID, sku string, pageErr *string) (out []inventorydto.PurchaseHistoryViewResp) {
 	ctx := c.Request.Context()
-	out = []gin.H{}
+	out = []inventorydto.PurchaseHistoryViewResp{}
 	if projectID == "" {
 		return out
 	}
@@ -421,14 +419,14 @@ func (h *inventoryPurchasePageHandle) purchaseHistoryRows(c *gin.Context, projec
 	}
 	tr := shell.TranslateFor(c)
 	for _, r := range rows {
-		out = append(out, gin.H{
-			"ReceiptCode": r.ReceiptCode, "Kind": r.Kind, "KindLabel": receiptKindLabel(tr, r.Kind),
-			"OrderCode": r.OrderCode, "SourceName": r.SourceName,
-			"SourceTypeLabel": sourceTypeLabel(tr, r.SourceType),
-			"WarehouseName":   r.WarehouseName, "SKUCode": r.SKUCode,
-			"Quantity": r.Quantity, "UnitPrice": strconv.FormatFloat(r.UnitPrice, 'f', 2, 64),
-			"CostUpdated": r.CostUpdated, "Remark": r.Remark,
-			"OperatorID": r.OperatorID, "ReceivedAt": r.ReceivedAt,
+		out = append(out, inventorydto.PurchaseHistoryViewResp{
+			ReceiptCode: r.ReceiptCode, Kind: r.Kind, KindLabel: receiptKindLabel(tr, r.Kind),
+			OrderCode: r.OrderCode, SourceName: r.SourceName,
+			SourceTypeLabel: sourceTypeLabel(tr, r.SourceType),
+			WarehouseName:   r.WarehouseName, SKUCode: r.SKUCode,
+			Quantity: r.Quantity, UnitPrice: strconv.FormatFloat(r.UnitPrice, 'f', 2, 64),
+			CostUpdated: r.CostUpdated, Remark: r.Remark,
+			OperatorID: r.OperatorID, ReceivedAt: r.ReceivedAt,
 		})
 	}
 	return out
@@ -439,8 +437,8 @@ func (h *inventoryPurchasePageHandle) purchaseHistoryRows(c *gin.Context, projec
 // 包级函数而非某个 handler 的方法：库存管理与采购入库两个页面都要用 ——
 // 「生产入库」已从采购页归位到库存管理（它与采购单无关，本质是「手动改库存 + 写成本价」）。
 func sourceOptions(ctx context.Context, svc inventorycontract.InventoryService, projectID, sourceType string,
-	tr func(key, fallback string) string) (out []gin.H) {
-	out = []gin.H{}
+	tr func(key, fallback string) string) (out []inventorydto.SourceOptionViewResp) {
+	out = []inventorydto.SourceOptionViewResp{}
 	if projectID == "" {
 		return out
 	}
@@ -451,9 +449,9 @@ func sourceOptions(ctx context.Context, svc inventorycontract.InventoryService, 
 		return out
 	}
 	for _, s := range rows {
-		out = append(out, gin.H{
-			"ID": s.ID, "Code": s.Code, "Name": s.Name, "Type": s.Type,
-			"Label": sourceOptionLabel(tr, s),
+		out = append(out, inventorydto.SourceOptionViewResp{
+			ID: s.ID, Code: s.Code, Name: s.Name, Type: s.Type,
+			Label: sourceOptionLabel(tr, s),
 		})
 	}
 	return out
@@ -466,8 +464,8 @@ func sourceOptionLabel(tr func(key, fallback string) string, s *inventorydto.Sou
 
 // purchaseWarehouseOptions 收货仓下拉（默认仓标出来；未选即兜底默认仓）。
 func (h *inventoryPurchasePageHandle) purchaseWarehouseOptions(ctx context.Context, projectID string,
-	tr func(key, fallback string) string) (out []gin.H) {
-	out = []gin.H{}
+	tr func(key, fallback string) string) (out []inventorydto.WarehouseOptionViewResp) {
+	out = []inventorydto.WarehouseOptionViewResp{}
 	if projectID == "" {
 		return out
 	}
@@ -480,7 +478,7 @@ func (h *inventoryPurchasePageHandle) purchaseWarehouseOptions(ctx context.Conte
 		if w.IsDefault {
 			label += " " + tr(inventoryenums.InventoryChangeWarehouseDefaultSuffix, "· 默认仓")
 		}
-		out = append(out, gin.H{"ID": w.ID, "Label": label, "IsDefault": w.IsDefault})
+		out = append(out, inventorydto.WarehouseOptionViewResp{ID: w.ID, Label: label, IsDefault: w.IsDefault})
 	}
 	return out
 }
@@ -493,8 +491,8 @@ func (h *inventoryPurchasePageHandle) purchaseWarehouseOptions(ctx context.Conte
 // 商品侧的 v.SKUCode 只是它加了认领仓前缀的投影。没有库存行的变体退回商品侧编码，
 // 由服务端在入库入口按目标仓短码归一（inventory_stock.go）。
 func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context, projectID string,
-	tr func(key, fallback string) string) (out []gin.H) {
-	out = []gin.H{}
+	tr func(key, fallback string) string) (out []inventorydto.VariantOptionViewResp) {
+	out = []inventorydto.VariantOptionViewResp{}
 	// 商品契约未注入（装配漏接）时下拉为空，页面照常渲染 —— 不因一处装配缺失 500。
 	if projectID == "" || h.products == nil {
 		return out
@@ -525,9 +523,9 @@ func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context
 			if sku == "" {
 				sku = v.SKUCode
 			}
-			out = append(out, gin.H{
-				"VariantID": v.ID, "ProductID": p.ID, "SKUCode": v.SKUCode, "BareSKU": sku,
-				"Label": detail.Name + " · " + v.SKUCode + costSuffix(cost),
+			out = append(out, inventorydto.VariantOptionViewResp{
+				VariantID: v.ID, ProductID: p.ID, SKUCode: v.SKUCode, BareSKU: sku,
+				Label: detail.Name + " · " + v.SKUCode + costSuffix(cost),
 			})
 		}
 	}
@@ -559,11 +557,11 @@ func (h *inventoryPurchasePageHandle) productBareSKUs(ctx context.Context, proje
 // —— 表单与文案工具 ——
 
 // purchaseStatusOptions 状态筛选下拉（三种推导值）。
-func purchaseStatusOptions(tr func(key, fallback string) string) []gin.H {
-	return []gin.H{
-		{"Value": inventoryenums.PurchaseStatusPending, "Label": purchaseStatusLabel(tr, inventoryenums.PurchaseStatusPending)},
-		{"Value": inventoryenums.PurchaseStatusPartial, "Label": purchaseStatusLabel(tr, inventoryenums.PurchaseStatusPartial)},
-		{"Value": inventoryenums.PurchaseStatusReceived, "Label": purchaseStatusLabel(tr, inventoryenums.PurchaseStatusReceived)},
+func purchaseStatusOptions(tr func(key, fallback string) string) []inventorydto.OptionResp {
+	return []inventorydto.OptionResp{
+		{Value: inventoryenums.PurchaseStatusPending, Label: purchaseStatusLabel(tr, inventoryenums.PurchaseStatusPending)},
+		{Value: inventoryenums.PurchaseStatusPartial, Label: purchaseStatusLabel(tr, inventoryenums.PurchaseStatusPartial)},
+		{Value: inventoryenums.PurchaseStatusReceived, Label: purchaseStatusLabel(tr, inventoryenums.PurchaseStatusReceived)},
 	}
 }
 

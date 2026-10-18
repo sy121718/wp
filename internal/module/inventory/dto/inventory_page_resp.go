@@ -1,5 +1,9 @@
 package inventorydto
 
+import (
+	"go_wp/pkg/utils"
+)
+
 // inventory_page_resp.go — 后台库存页的行元素。
 //
 // 只放「一行就是一条事实」的结构：库存页的两张表（某 SKU 的各仓库存、库存流水）。
@@ -150,4 +154,103 @@ type SourceSummaryGroupView struct {
 	RelatedParty      bool
 	RelatedPartyLabel string
 	Count             int64
+}
+
+// PurchaseOrderViewResp 采购单一行（列表页，含逐行明细与一次性幂等键）。
+type PurchaseOrderViewResp struct {
+	ID   string
+	Code string
+
+	SourceName      string
+	SourceType      string
+	SourceTypeLabel string
+	WarehouseName   string
+	Status          string
+	StatusLabel     string
+
+	// OrderedAt / ExpectedAt 保持 utils.JSONTime：模板直接渲染时间字段，
+	// 转成字符串就丢掉了「对外 JSON 只到秒」的那份口径（见 AGENTS.md 时间列约定）。
+	OrderedAt  utils.JSONTime
+	ExpectedAt *utils.JSONTime
+	Remark     string
+	OperatorID string
+
+	TotalQuantity    int
+	ReceivedQuantity int
+	Lines            []PurchaseOrderLineViewResp
+	// RequestID 每张单一个一次性幂等键（渲染表单时生成，重复提交命中同一张入库单）。
+	RequestID string
+}
+
+// PurchaseOrderLineViewResp 采购单的一行明细。
+type PurchaseOrderLineViewResp struct {
+	ID        string
+	SKUCode   string
+	VariantID string
+
+	Quantity            int
+	ReceivedQuantity    int
+	OutstandingQuantity int
+	UnitPrice           string
+	Remark              string
+	// Open 还能收的行才给提交按钮：收满的行不再受理（服务端同样拒绝）。
+	Open bool
+	// OutstandingTone 未收数量的展示色调（模板按类名直出）。
+	OutstandingTone string
+}
+
+// PurchaseHistoryViewResp 进货历史一行（当前页面不渲染这张表，接口与将来的入口共用同一投影）。
+type PurchaseHistoryViewResp struct {
+	ReceiptCode     string
+	Kind            string
+	KindLabel       string
+	OrderCode       string
+	SourceName      string
+	SourceTypeLabel string
+	WarehouseName   string
+	SKUCode         string
+	Quantity        int
+	UnitPrice       string
+	CostUpdated     bool
+	Remark          string
+	OperatorID      string
+	ReceivedAt      utils.JSONTime
+}
+
+// SourceOptionViewResp 货源下拉项（Label 是「名称（编码）· 类型」的成品串）。
+type SourceOptionViewResp struct {
+	ID    string
+	Code  string
+	Name  string
+	Type  string
+	Label string
+}
+
+// WarehouseOptionViewResp 收货仓下拉项（默认仓在 Label 里标出来，IsDefault 供别的判断用）。
+type WarehouseOptionViewResp struct {
+	ID        string
+	Label     string
+	IsDefault bool
+}
+
+// VariantOptionViewResp 采购行 SKU 下拉项。
+//
+// BareSKU 是**仓库侧裸码**（inventory_stocks.sku_code）：采购行的 sku_code 必须按裸码落库，
+// 仓库里的 SKU 永远不带仓码前缀。没有库存行的变体退回商品侧编码，由服务端在入库入口归一。
+type VariantOptionViewResp struct {
+	VariantID string
+	ProductID string
+	SKUCode   string
+	BareSKU   string
+	Label     string
+}
+
+// DraftLineViewResp 新建采购单表单里的一个行槽位（固定几行原生表单）。
+//
+// 三个值来自失败重渲时的**原始提交值**（不修剪、不剔空行）：修剪会让行号与用户看到的错位。
+type DraftLineViewResp struct {
+	Index     int
+	SKU       string
+	Quantity  string
+	UnitPrice string
 }
