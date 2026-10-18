@@ -125,7 +125,7 @@ func publishFailedErr(err error) error {
 	if errors.As(err, &inputErr) {
 		return inputErr.err
 	}
-	return fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
+	return presentationenums.ErrDetail(presentationenums.ErrBuildFailed, err.Error())
 }
 
 // publishIntent 一次多语言发布的**意图**：与实例当前行无关的那部分输入。
@@ -175,7 +175,7 @@ type publishFreeze struct {
 func (s *Service) freezePublish(ctx context.Context, inst *presentationmodel.InstanceEntity,
 	intent publishIntent) (frozen *publishFreeze, timing phaseTiming, err error) {
 	if inst == nil || strings.TrimSpace(inst.ID) == "" {
-		return nil, timing, errors.New(presentationenums.ErrNotFound)
+		return nil, timing, presentationenums.Err(presentationenums.ErrNotFound)
 	}
 	lock := s.lockInstance(inst.EntityType, inst.EntityID)
 	waitStart := time.Now()
@@ -190,7 +190,7 @@ func (s *Service) freezePublish(ctx context.Context, inst *presentationmodel.Ins
 	fresh, gerr := s.m.GetInstance(ctx, inst.ProjectID, inst.ID)
 	if gerr != nil {
 		if errors.Is(gerr, gorm.ErrRecordNotFound) {
-			return nil, timing, errors.New(presentationenums.ErrNotFound)
+			return nil, timing, presentationenums.Err(presentationenums.ErrNotFound)
 		}
 		return nil, timing, gerr
 	}
@@ -271,7 +271,7 @@ func (s *Service) commitPublish(ctx context.Context, inst *presentationmodel.Ins
 	current, gerr := s.m.GetInstance(ctx, inst.ProjectID, inst.ID)
 	if gerr != nil {
 		if errors.Is(gerr, gorm.ErrRecordNotFound) {
-			return "", timing, errors.New(presentationenums.ErrNotFound)
+			return "", timing, presentationenums.Err(presentationenums.ErrNotFound)
 		}
 		return "", timing, gerr
 	}
@@ -482,7 +482,7 @@ func derefString(p *string) string {
 // Rebuild 实体数据更新后重建：重解析模板+实体 → 重新编译发布。
 func (s *Service) Rebuild(ctx context.Context, req *presentationdto.RebuildReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || req.EntityID == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	// 工程作用域（DB-009 第二批）：反查实例在本工程内进行。
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
@@ -492,7 +492,7 @@ func (s *Service) Rebuild(ctx context.Context, req *presentationdto.RebuildReq) 
 	// 反查实例（entity_id 匹配）。
 	inst, err := s.findByEntityID(ctx, projectID, req.EntityID)
 	if err != nil {
-		return nil, errors.New(presentationenums.ErrNotFound)
+		return nil, presentationenums.Err(presentationenums.ErrNotFound)
 	}
 	// req.TemplateID 非空 = 切换绑定并重新发布（验收 4：切换模板重新发布后产物随之变化）。
 	// 换底稿 = 放弃自定义（docs/04-C）：切换路径不应用实例文档，产物按新模板编译，

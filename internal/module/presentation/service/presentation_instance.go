@@ -75,7 +75,7 @@ import (
 // CreateInstance 创建自动发布实例：解析模板 → 编译 → 发布 → 记快照/产物/依赖。
 func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.CreateInstanceReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || req.EntityType == "" || req.EntityID == "" || req.URLPath == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	// 角色（审计 EDT-004）：空 = detail，既有调用方逐字不变。
 	role := strings.TrimSpace(req.InstanceRole)
@@ -83,7 +83,7 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 		role = presentationmodel.InstanceRoleDetail
 	}
 	if !presentationmodel.IsValidInstanceRole(role) {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	// 工程作用域先解析（DB-009 第二批）：presentation_instances 带 FORCE 策略，
 	// 幂等查询也在工程内进行 —— 跨工程按实体查会把别人的实例当成自己的返回。
@@ -128,7 +128,7 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 		// 两个路径，路由行指向的位置与实际内容不符。
 		path, perr := s.normalizeLogicalPath(ctx, projectID, req.URLPath)
 		if perr != nil {
-			return fmt.Errorf("%s: %w", presentationenums.ErrInvalidPath, perr)
+			return presentationenums.ErrDetail(presentationenums.ErrInvalidPath, perr.Error())
 		}
 		logicalPath = path
 		// 占用预检：逻辑路径下全部语言访问路径 + 逻辑路径本身。
@@ -168,7 +168,7 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 // GetByEntity 按内容实体查询实例（后台「详情页模板」页读当前绑定与发布状态）。
 func (s *Service) GetByEntity(ctx context.Context, req *presentationdto.GetByEntityReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || req.EntityType == "" || req.EntityID == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	// 工程作用域（DB-009 第二批）：实例表的读必须带 app.project_id，
 	// 否则换非超级角色后静默 0 行 —— 表现为「详情页模板显示未绑定」。
@@ -179,7 +179,7 @@ func (s *Service) GetByEntity(ctx context.Context, req *presentationdto.GetByEnt
 	inst, err := s.m.GetInstanceByEntity(ctx, projectID, req.EntityType, req.EntityID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(presentationenums.ErrNotFound)
+			return nil, presentationenums.Err(presentationenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -189,7 +189,7 @@ func (s *Service) GetByEntity(ctx context.Context, req *presentationdto.GetByEnt
 // Get 按 ID 查询。
 func (s *Service) Get(ctx context.Context, req *presentationdto.GetReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -198,7 +198,7 @@ func (s *Service) Get(ctx context.Context, req *presentationdto.GetReq) (res *pr
 	inst, err := s.m.GetInstance(ctx, projectID, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(presentationenums.ErrNotFound)
+			return nil, presentationenums.Err(presentationenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -232,7 +232,7 @@ func (s *Service) List(ctx context.Context, req *presentationdto.ListReq) (list 
 // Delete 删除实例（级联删本模块从属行 + 反激活 URL）。
 func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (err error) {
 	if req == nil || req.ID == "" {
-		return errors.New(presentationenums.ErrInvalidParam)
+		return presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -241,7 +241,7 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 	inst, err := s.m.GetInstance(ctx, projectID, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New(presentationenums.ErrNotFound)
+			return presentationenums.Err(presentationenums.ErrNotFound)
 		}
 		return err
 	}
@@ -408,7 +408,7 @@ func ArchivePathFor(entityType, slug string) string {
 // 调用方是实体侧（分类 / 标签 / 品牌的增删改）。幂等：已有归档实例时直接返回它。
 func (s *Service) EnsureArchiveInstance(ctx context.Context, req *presentationdto.EnsureArchiveReq) (res *presentationdto.EnsureArchiveResp, err error) {
 	if req == nil || strings.TrimSpace(req.EntityType) == "" || strings.TrimSpace(req.EntityID) == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	slug := strings.TrimSpace(req.Slug)
 	if slug == "" {
@@ -462,10 +462,10 @@ func (s *Service) EnsureArchiveInstance(ctx context.Context, req *presentationdt
 // （与快照/产物/指针一体），不是先写一列再发布 —— 理由见 instanceModePending 注释。
 func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto.SaveOverrideReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || strings.TrimSpace(req.InstanceID) == "" || len(req.Document) == 0 {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	if !json.Valid(req.Document) {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -473,7 +473,7 @@ func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto
 	}
 	inst, err := s.m.GetInstance(ctx, projectID, req.InstanceID)
 	if err != nil {
-		return nil, errors.New(presentationenums.ErrNotFound)
+		return nil, presentationenums.Err(presentationenums.ErrNotFound)
 	}
 	// 两个前置判定（幂等保存 / 转入独立的确认）是**只读**的，不再占实例锁（PERF-01）：
 	// 真正需要互斥的是随后的发布（它按自己的分段锁做版本分配与指针推进）。
@@ -494,7 +494,7 @@ func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto
 	// 从「跟随模板」转入「独立文档」必须显式确认：这是用户唯一会真的丢掉
 	// 「模板全局同步」能力的时刻，判据只有服务端算得准（见文件头注释）。
 	if !presentationmodel.IsDocumentMode(inst.RenderMode) && !req.ConfirmDetach {
-		return nil, errors.New(presentationenums.ErrDetachConfirmRequired)
+		return nil, presentationenums.Err(presentationenums.ErrDetachConfirmRequired)
 	}
 
 	mode := &instanceModePending{
@@ -527,7 +527,7 @@ func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto
 // 「模式已回 template、文档列还留着旧自定义」的矛盾行。
 func (s *Service) ReapplyPreset(ctx context.Context, req *presentationdto.ReapplyPresetReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || strings.TrimSpace(req.InstanceID) == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -535,7 +535,7 @@ func (s *Service) ReapplyPreset(ctx context.Context, req *presentationdto.Reappl
 	}
 	inst, err := s.m.GetInstance(ctx, projectID, req.InstanceID)
 	if err != nil {
-		return nil, errors.New(presentationenums.ErrNotFound)
+		return nil, presentationenums.Err(presentationenums.ErrNotFound)
 	}
 	// switchTo 非空 = 同时换一套模板（换底稿）；模板身份切换由发布事务内的
 	// UpdateInstanceTemplateTx 落库，这里只负责给出意图。
@@ -560,7 +560,7 @@ func (s *Service) ReapplyPreset(ctx context.Context, req *presentationdto.Reappl
 // （名字与双轨语义一致，避免「清覆盖」被读成「清空内容」）。
 func (s *Service) ClearOverride(ctx context.Context, req *presentationdto.ClearOverrideReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	return s.ReapplyPreset(ctx, &presentationdto.ReapplyPresetReq{
 		InstanceID: req.InstanceID, ProjectID: req.ProjectID, TemplateID: req.TemplateID,
@@ -570,7 +570,7 @@ func (s *Service) ClearOverride(ctx context.Context, req *presentationdto.ClearO
 // UpdateURL 修改已发布实例的线上路径（改 URL）。
 func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	// 工程作用域（DB-009 第二批）：实例表的定位、占用预检、锁内重读全部在本工程内进行。
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
@@ -583,7 +583,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 	}
 	newLogical, err := s.normalizeLogicalPath(ctx, inst.ProjectID, req.NewPath)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrInvalidPath, err)
+		return nil, presentationenums.ErrDetail(presentationenums.ErrInvalidPath, err.Error())
 	}
 	// 实例级互斥只覆盖「锁内重读 → 同路径判定 → 占用预检」这一段（PERF-01）：
 	// 它保护的是「同一条新路径不会被两个并发改 URL 同时抢到」。编译与产物落盘交给
@@ -600,12 +600,12 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 		// 锁内重读：等锁期间实例可能已被重建、改过 URL 或删除。
 		fresh, gerr := s.m.GetInstance(ctx, inst.ProjectID, inst.ID)
 		if gerr != nil {
-			return errors.New(presentationenums.ErrNotFound)
+			return presentationenums.Err(presentationenums.ErrNotFound)
 		}
 		inst = fresh
 		oldLogical = s.instanceLogicalPath(ctx, inst)
 		if newLogical == oldLogical {
-			return errors.New(presentationenums.ErrSamePath)
+			return presentationenums.Err(presentationenums.ErrSamePath)
 		}
 		oldPubs, _ = s.m.ListPublications(ctx, inst.ID)
 		// 预检：新逻辑路径下全部语言访问路径均空闲。
@@ -650,7 +650,7 @@ func (s *Service) locateInstance(ctx context.Context, projectID string, req *pre
 		inst, err := s.m.GetInstance(ctx, projectID, id)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, errors.New(presentationenums.ErrNotFound)
+				return nil, presentationenums.Err(presentationenums.ErrNotFound)
 			}
 			return nil, err
 		}
@@ -658,12 +658,12 @@ func (s *Service) locateInstance(ctx context.Context, projectID string, req *pre
 	}
 	entityType, entityID := strings.TrimSpace(req.EntityType), strings.TrimSpace(req.EntityID)
 	if entityType == "" || entityID == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	inst, err := s.m.GetInstanceByEntity(ctx, projectID, entityType, entityID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(presentationenums.ErrNotFound)
+			return nil, presentationenums.Err(presentationenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -689,18 +689,18 @@ func (s *Service) ensurePathFree(ctx context.Context, projectID, path, excludeIn
 		}
 		if occupied {
 			logger.Scene("build").With("url", path).Warn("详情页路径预检被拒绝：已被其他实体占用")
-			return errors.New(presentationenums.ErrPathOccupied)
+			return presentationenums.Err(presentationenums.ErrPathOccupied)
 		}
 	}
 	if _, err := s.m.FindInstanceByPath(ctx, projectID, path, excludeInstanceID); err == nil {
 		logger.Scene("build").With("url", path).Warn("详情页路径预检被拒绝：已被其他展示实例占用")
-		return errors.New(presentationenums.ErrPathOccupied)
+		return presentationenums.Err(presentationenums.ErrPathOccupied)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
 	if _, err := s.m.FindInstanceByActivePath(ctx, projectID, path, excludeInstanceID); err == nil {
 		logger.Scene("build").With("url", path).Warn("详情页路径预检被拒绝：已被其他展示实例的多语言路径占用")
-		return errors.New(presentationenums.ErrPathOccupied)
+		return presentationenums.Err(presentationenums.ErrPathOccupied)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}
@@ -959,7 +959,7 @@ func documentsEqual(a, b json.RawMessage) bool {
 // 最后在**一个事务**里落指针。
 func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.RollbackArtifactReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || strings.TrimSpace(req.InstanceID) == "" || strings.TrimSpace(req.TargetHash) == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -967,7 +967,7 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 	}
 	inst, err := s.m.GetInstance(ctx, projectID, req.InstanceID)
 	if err != nil {
-		return nil, errors.New(presentationenums.ErrNotFound)
+		return nil, presentationenums.Err(presentationenums.ErrNotFound)
 	}
 	// 产物指针回滚不重新编译，整段（查产物 → 校验文件在位 → 激活 → 切指针）都留在
 	// 实例锁内：它是纯粹的指针切换，与发布会话的两个锁内段共用同一把锁即可（PERF-01）。
@@ -977,7 +977,7 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 
 	art, aerr := s.m.GetArtifactByHash(ctx, inst.ID, req.TargetHash)
 	if aerr != nil {
-		return nil, errors.New(presentationenums.ErrRollbackTargetMiss)
+		return nil, presentationenums.Err(presentationenums.ErrRollbackTargetMiss)
 	}
 	// 文件不在位（误删 / 磁盘损坏）不能切指针：切了就是「路由指向不存在的文件」，
 	// 比拒绝回滚严重得多（线上直接 404，且审计里看不出原因）。
@@ -985,12 +985,12 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 	if verr := s.store.VerifyArtifact(loc, art.ArtifactHash); verr != nil {
 		logger.Scene("build").With("presentation_id", inst.ID).With("hash", art.ArtifactHash).
 			Warn("产物回滚目标文件不在位，拒绝回滚")
-		return nil, errors.New(presentationenums.ErrRollbackTargetMiss)
+		return nil, presentationenums.Err(presentationenums.ErrRollbackTargetMiss)
 	}
 	if aerr = s.publication.Activate(inst.URLPath, loc); aerr != nil {
 		logger.Scene("build").With("presentation_id", inst.ID).With("path", inst.URLPath).
 			Error(aerr, "产物回滚激活失败")
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrRollbackFailed, aerr)
+		return nil, presentationenums.ErrDetail(presentationenums.ErrRollbackFailed, aerr.Error())
 	}
 	now := time.Now().UTC()
 	artID := art.ID
@@ -1003,7 +1003,7 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 		return s.m.UpdateInstancePointersTx(tx, inst.ProjectID, inst)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrRollbackFailed, err)
+		return nil, presentationenums.ErrDetail(presentationenums.ErrRollbackFailed, err.Error())
 	}
 	return s.toResp(ctx, inst)
 }
@@ -1015,7 +1015,7 @@ func (s *Service) RollbackArtifact(ctx context.Context, req *presentationdto.Rol
 // ReapplyPreset（可反悔）。
 func (s *Service) RollbackDocument(ctx context.Context, req *presentationdto.RollbackDocumentReq) (res *presentationdto.InstanceResp, err error) {
 	if req == nil || strings.TrimSpace(req.InstanceID) == "" || strings.TrimSpace(req.SnapshotID) == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -1023,18 +1023,18 @@ func (s *Service) RollbackDocument(ctx context.Context, req *presentationdto.Rol
 	}
 	inst, err := s.m.GetInstance(ctx, projectID, req.InstanceID)
 	if err != nil {
-		return nil, errors.New(presentationenums.ErrNotFound)
+		return nil, presentationenums.Err(presentationenums.ErrNotFound)
 	}
 	// 快照读取与归属校验是只读的，不需要实例锁（PERF-01）：需要互斥的是随后的发布，
 	// 它按自己的分段锁完成版本分配、落库与指针推进。
 	snap, serr := s.m.GetSnapshot(ctx, req.SnapshotID)
 	if serr != nil {
-		return nil, errors.New(presentationenums.ErrRollbackTargetMiss)
+		return nil, presentationenums.Err(presentationenums.ErrRollbackTargetMiss)
 	}
 	// 归属校验：快照表没有 project_id，拿错实例的快照必须显式拒绝
 	//（否则会把别的商品的内容发布到这个商品的 URL 上）。
 	if snap.PresentationInstanceID != inst.ID {
-		return nil, errors.New(presentationenums.ErrSnapshotMismatch)
+		return nil, presentationenums.Err(presentationenums.ErrSnapshotMismatch)
 	}
 	mode := &instanceModePending{
 		renderMode: presentationmodel.RenderModeDocument,
@@ -1070,7 +1070,7 @@ func (s *Service) RollbackDocument(ctx context.Context, req *presentationdto.Rol
 func (s *Service) CountByTemplate(ctx context.Context, req *presentationdto.CountByTemplateReq) (
 	res *presentationdto.CountByTemplateResp, err error) {
 	if req == nil || strings.TrimSpace(req.TemplateID) == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -1088,7 +1088,7 @@ func (s *Service) CountByTemplate(ctx context.Context, req *presentationdto.Coun
 func (s *Service) ListSnapshots(ctx context.Context, req *presentationdto.ListSnapshotsReq) (
 	list []*presentationdto.SnapshotSummary, err error) {
 	if req == nil || strings.TrimSpace(req.InstanceID) == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -1096,7 +1096,7 @@ func (s *Service) ListSnapshots(ctx context.Context, req *presentationdto.ListSn
 	}
 	inst, err := s.m.GetInstance(ctx, projectID, req.InstanceID)
 	if err != nil {
-		return nil, errors.New(presentationenums.ErrNotFound)
+		return nil, presentationenums.Err(presentationenums.ErrNotFound)
 	}
 	rows, err := s.m.ListSnapshots(ctx, inst.ID, req.Limit)
 	if err != nil {

@@ -149,7 +149,7 @@ func (h *ProductHandle) CreateDetailTemplate(c *gin.Context) {
 	// 顺序：**先取文档、再建模板**（取不到复制来源就不建空的）。
 	if err = productservice.CreateDetailTemplate(c.Request.Context(), deps,
 		strings.TrimSpace(req.ProjectID), name, strings.TrimSpace(req.CopyFrom)); err != nil {
-		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateTemplateMsg(c, err))
+		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
 		return
 	}
 	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
@@ -176,10 +176,10 @@ func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
 	if err != nil {
 		var lookup *productservice.DetailTemplateProductLookupError
 		if errors.As(err, &lookup) {
-			detailTemplateWriteFail(c, http.StatusNotFound, detailTemplateFacingMsg(c, lookup.Err))
+			detailTemplateWriteFail(c, http.StatusNotFound, detailTemplateErrMsg(lookup.Err))
 			return
 		}
-		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateFacingMsg(c, err))
+		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
 		return
 	}
 	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
@@ -203,7 +203,7 @@ func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
 	if err = productservice.ApplyDetailTemplate(c.Request.Context(), deps.Instances,
 		strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID),
 		strings.TrimSpace(req.TemplateID)); err != nil {
-		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateFacingMsg(c, err))
+		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
 		return
 	}
 	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
@@ -229,7 +229,7 @@ func (h *ProductHandle) UpdateDetailTemplateURL(c *gin.Context) {
 	if err = productservice.UpdateDetailTemplateURL(c.Request.Context(), deps.Instances,
 		strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID), newPath,
 		req.WithRedirect); err != nil {
-		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateFacingMsg(c, err))
+		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
 		return
 	}
 	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
@@ -450,27 +450,17 @@ func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) (any, e
 	return nil, response.ErrHandled
 }
 
-// detailTemplateFacingMsg presentation 的错误 → 一句结论事实。
+// detailTemplateErrMsg 把业务错误收敛成一条事实：key 与兜底都取自声明处。
 //
-// 表格不在这里：跨模块错误的展示兜底归 service（product_foreign_text.go 同一条理由），
-// 控制器只拿「事实」（key + 兜底），取词在渲染期。
-func detailTemplateFacingMsg(c *gin.Context, err error) facing.Msg {
-	return detailTemplateErrMsg(err, productservice.PresentationErrText)
-}
-
-// detailTemplateTemplateMsg 模板契约（contenttemplate）错误 → 一句结论事实。
-func detailTemplateTemplateMsg(c *gin.Context, err error) facing.Msg {
-	return detailTemplateErrMsg(err, productservice.ContentTemplateErrText)
-}
-
-// detailTemplateErrMsg 把业务错误收敛成一条事实：key 原样给模板，兜底由 fallbackOf 决定
-// （本页的错误来自两个对端，各自一张补丁表，理由见 service 侧的注释）。
-func detailTemplateErrMsg(err error, fallbackOf func(facing.Fact) string) facing.Msg {
+// 这里没有「本页的错误来自哪个对端」的补丁表了：presentation 与 contenttemplate 的 enums
+// 现在各自带 errFallbacks（同 membership / content / navigation 的形态），FactOf 给出的事实
+// 本身就带着中文兜底，页面拿到的是一句能读的话，而不是 ErrPathOccupied 这种标识符。
+func detailTemplateErrMsg(err error) facing.Msg {
 	fact, ok := facing.FactOf(err)
 	if !ok || !fact.Business {
 		return facing.Msg{}
 	}
-	return facing.Msg{Key: fact.Key, Fallback: fallbackOf(fact)}
+	return facing.Msg{Key: fact.Key, Fallback: fact.Fallback}
 }
 
 // errTemplateDepsMissing 详情模板契约未装配时的提示（装配缺陷，页面可见）。

@@ -80,7 +80,7 @@ func (s *Service) resolveTemplate(ctx context.Context, projectID, entityType, te
 		// product 字段绑定在 article 数据源下必然越界，于是「类型抄错了」会被报成
 		// 「字段绑定越界」，把人引向改模板内容而不是换模板 —— 而文档内容本身没错。
 		if s.templateTypeMismatch(ctx, projectID, id, entityType) {
-			return nil, errors.New(presentationenums.ErrTemplateTypeMismatch)
+			return nil, presentationenums.Err(presentationenums.ErrTemplateTypeMismatch)
 		}
 		// 带工程作用域的解析：content_templates 带 FORCE 策略，
 		// 不设 app.project_id 的读取在非超级角色下会「模板不存在」。
@@ -250,7 +250,7 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 		return nil, err
 	}
 	if s.registry == nil {
-		return nil, errors.New(presentationenums.ErrRegistryMissing)
+		return nil, presentationenums.Err(presentationenums.ErrRegistryMissing)
 	}
 	// 字段绑定的数据源白名单校验（不变量 4）：模板保存时已校验一次，这里再校一次
 	// 是为了兜住「模板保存后才新增/改名数据源」与直连 service 的调用路径。
@@ -502,7 +502,7 @@ func (s *Service) resolveLang(ctx context.Context, projectID string) string {
 //     都跳过存在性校验直达写入 —— 装配缺口不该变成授权缺口，这里一律 fail closed。
 func (s *Service) resolveProjectID(ctx context.Context, explicit string) (string, error) {
 	if s.project == nil {
-		return "", errors.New(presentationenums.ErrProjectRequired)
+		return "", presentationenums.Err(presentationenums.ErrProjectRequired)
 	}
 	if id := strings.TrimSpace(explicit); id != "" {
 		ok, err := s.project.Exists(ctx, id)
@@ -510,7 +510,7 @@ func (s *Service) resolveProjectID(ctx context.Context, explicit string) (string
 			return "", err
 		}
 		if !ok {
-			return "", errors.New(presentationenums.ErrProjectNotFound)
+			return "", presentationenums.Err(presentationenums.ErrProjectNotFound)
 		}
 		return id, nil
 	}
@@ -519,7 +519,7 @@ func (s *Service) resolveProjectID(ctx context.Context, explicit string) (string
 		return "", err
 	}
 	if len(list) != 1 {
-		return "", errors.New(presentationenums.ErrProjectRequired)
+		return "", presentationenums.Err(presentationenums.ErrProjectRequired)
 	}
 	return list[0].ID, nil
 }
@@ -835,7 +835,7 @@ func (s *Service) ensureLogicalPathFree(ctx context.Context, projectID, logicalP
 	// 逻辑路径本身也不得与其他实例冲突（UNIQUE project_id + url_path）。
 	if _, err := s.m.FindInstanceByPath(ctx, projectID, logicalPath, excludeInstanceID); err == nil {
 		logger.Scene("build").With("url", logicalPath).Warn("详情页逻辑路径预检被拒绝：已被其他展示实例占用")
-		return errors.New(presentationenums.ErrPathOccupied)
+		return presentationenums.Err(presentationenums.ErrPathOccupied)
 	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return err
 	}

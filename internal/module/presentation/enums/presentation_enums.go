@@ -1,5 +1,17 @@
-// Package presentationenums presentation 模块响应消息。
+// Package presentationenums presentation 模块响应消息与错误兜底。
+//
+// 错误的对外文案跟**声明处**走：这里同时给出 i18n key（常量值）与中文兜底（errFallbacks），
+// 出口只调一次共享判据 pkg/facing.FactOf。原先只有 key、没有兜底，页面拿到的事实兜底就是
+// key 本身，只能显示 ErrPathOccupied 这种标识符 —— 于是每个消费方各补一张补丁表，
+// 同一个 key 在不同页面显示不同的话（product 详情模板页就补过两张，现已删除）。
 package presentationenums
+
+import (
+	"fmt"
+	"strings"
+
+	"go_wp/pkg/facing"
+)
 
 // 响应消息（未接 i18n 前中文常量）。
 const (
@@ -51,6 +63,51 @@ const (
 	// ErrSnapshotMismatch 目标快照不属于该实例（防止拿别人的快照回滚自己）。
 	ErrSnapshotMismatch = "presentation.err.snapshotMismatch"
 )
+
+// errFallbacks 每个错误常量的中文兜底（与声明的 key 一起交给 pkg/facing.New）。
+//
+// 兜底是**声明处**的话：写模块自己的口径，不写某个页面的口径 —— 同一个错误在列表页、
+// 详情页、AI 工具里的措辞应该一致，页面若需要更具体的话，由页面自己的文案补，不经错误事实。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:          "参数不合法：请检查后重试。",
+	ErrNotFound:              "实例不存在，可能已被删除。",
+	ErrNoTemplate:            "该内容类型没有可用的模板。",
+	ErrEntityMissing:         "内容实体不存在。",
+	ErrBuildFailed:           "实例构建失败，请稍后重试。",
+	ErrProjectRequired:       "请先选择站点工程。",
+	ErrProjectNotFound:       "选择的站点工程不存在。",
+	ErrRegistryMissing:       "内容实体类型未注册，无法构建。",
+	ErrTemplateTypeMismatch:  "这套模板与该内容类型不匹配，请换一套。",
+	ErrInvalidPath:           "访问路径不合法：必须以 / 开头，且不含空格与 .. 路径段。",
+	ErrSamePath:              "新旧路径相同，没有需要修改的地方。",
+	ErrPathOccupied:          "这个路径已被占用，换一个再试。",
+	ErrDetachConfirmRequired: "转入独立文档需要确认（会放弃模板同步）。",
+	ErrRollbackTargetMiss:    "回滚目标不存在，或产物文件已缺失。",
+	ErrRollbackFailed:        "回滚激活失败，线上版本保持不变。",
+	ErrSnapshotMismatch:      "目标快照不属于这个实例，不能用来回滚。",
+}
+
+// Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。
+func Err(key string) error {
+	return facing.New(key, errFallbacks[key])
+}
+
+// ErrDetail 声明一条带明细的业务错误：明细拼在半角冒号之后。
+//
+// **必须半角**：pkg/facing.FactOf 的复合形态只按 ": " 切明细段，写全角会让整条过不了判据，
+// 退化成内部错误（对外只剩归口文案）。
+func ErrDetail(key, detail string) error {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return Err(key)
+	}
+	return fmt.Errorf("%w: %s", Err(key), detail)
+}
+
+// FallbackFor 取一个 key 的中文兜底（调用方只有 key、没有事实时用）。
+func FallbackFor(key string) string {
+	return errFallbacks[key]
+}
 
 // 实例发布状态（由指针列推导，非表列）。
 const (

@@ -53,14 +53,14 @@ import (
 // Create 创建模板（初始 draft_version=1 并写入 version=1 快照）。
 func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq) (res *contenttemplatedto.TemplateResp, err error) {
 	if req == nil || !s.validEntityType(req.EntityType) || req.Name == "" {
-		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 	if !json.Valid(req.DraftDocument) {
-		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrDataInvalid)
 	}
 	// 合入激活主题快照（EDT-003：与手工 Page 保存同口径）。
 	merged, err := pipeline.MergeActiveThemeIntoDocument(ctx, s.project, projectID, req.DraftDocument)
@@ -79,7 +79,7 @@ func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq)
 		role = contenttemplatemodel.TemplateRoleDetail
 	}
 	if !contenttemplatemodel.IsValidTemplateRole(role) {
-		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam)
 	}
 	e := &contenttemplatemodel.TemplateEntity{
 		ID: uuid.NewString(), ProjectID: projectID, Name: req.Name, EntityType: req.EntityType,
@@ -102,7 +102,7 @@ func (s *Service) Create(ctx context.Context, req *contenttemplatedto.CreateReq)
 // Update 更新模板（draft_version 递增并写新不可变版本）。
 func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq) (res *contenttemplatedto.TemplateResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam)
 	}
 	// 工程作用域（DB-009 第二批起）：content_templates 带 FORCE 策略，按 id 取模板必须
 	// 带上工程。第三批把这里的「取唯一工程」换成逐工程定位 —— 多工程部署下不再是
@@ -110,12 +110,12 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 	e, err := s.locateTemplate(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contenttemplateenums.ErrNotFound)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
 		}
 		return nil, err
 	}
 	if !json.Valid(req.DraftDocument) {
-		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrDataInvalid)
 	}
 	merged, err := pipeline.MergeActiveThemeIntoDocument(ctx, s.project, e.ProjectID, req.DraftDocument)
 	if err != nil {
@@ -150,12 +150,12 @@ func (s *Service) Update(ctx context.Context, req *contenttemplatedto.UpdateReq)
 // 两份键），所以标记覆盖得到。
 func (s *Service) Activate(ctx context.Context, req *contenttemplatedto.ActivateReq) (res *contenttemplatedto.TemplateResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam)
 	}
 	e, err := s.locateTemplate(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contenttemplateenums.ErrNotFound)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -181,12 +181,12 @@ func (s *Service) Activate(ctx context.Context, req *contenttemplatedto.Activate
 // 既不把 SQL 原文透给调用方，也不顺手把实例一起删掉。
 func (s *Service) Delete(ctx context.Context, req *contenttemplatedto.DeleteReq) (err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return errors.New(contenttemplateenums.ErrInvalidParam)
+		return contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam)
 	}
 	e, err := s.locateTemplate(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New(contenttemplateenums.ErrNotFound)
+			return contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
 		}
 		return err
 	}
@@ -204,7 +204,7 @@ func (s *Service) Delete(ctx context.Context, req *contenttemplatedto.DeleteReq)
 			logger.Scene("contenttemplate").With("templateId", e.ID).With("refs", strings.Join(refs, "；")).
 				Warn("结构模板删除被拒绝：仍被其它模板绑定为结构槽位")
 			// 冒号前是可翻译 key（handler 的三件套按 key 取文案），冒号后是可定位数据。
-			return fmt.Errorf("%s: %s", contenttemplateenums.ErrStructureTemplateInUse, strings.Join(refs, "；"))
+			return contenttemplateenums.ErrDetail(contenttemplateenums.ErrStructureTemplateInUse, strings.Join(refs, "；"))
 		}
 	}
 	// 页面与自动发布实例的引用：页面文档的 settings.structure 绑定写在 JSONB 里，
@@ -222,11 +222,11 @@ func (s *Service) Delete(ctx context.Context, req *contenttemplatedto.DeleteReq)
 	if len(bindingRefs) > 0 {
 		logger.Scene("contenttemplate").With("templateId", e.ID).With("refs", strings.Join(bindingRefs, "；")).
 			Warn("模板删除被拒绝：仍被页面或实例引用")
-		return fmt.Errorf("%s: %s", contenttemplateenums.ErrTemplateInUse, strings.Join(bindingRefs, "；"))
+		return contenttemplateenums.ErrDetail(contenttemplateenums.ErrTemplateInUse, strings.Join(bindingRefs, "；"))
 	}
 	if err = s.m.DeleteWithHistory(ctx, e.ProjectID, e.ID); err != nil {
 		if isForeignKeyViolation(err) {
-			return errors.New(contenttemplateenums.ErrTemplateInUse)
+			return contenttemplateenums.Err(contenttemplateenums.ErrTemplateInUse)
 		}
 		logger.Scene("contenttemplate").With("templateId", e.ID).Error(err, "删除内容模板失败")
 		return err
@@ -305,14 +305,14 @@ func (s *Service) validateDocumentStrict(entityType string, raw json.RawMessage)
 func (s *Service) validateDocumentMode(entityType string, raw json.RawMessage, tolerant bool) (json.RawMessage, error) {
 	page, err := builder.ParsePage(raw)
 	if err != nil {
-		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrDataInvalid)
 	}
 	if tolerant {
 		if _, err = builder.ValidatePageTolerant(page); err != nil {
-			return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrDataInvalid)
 		}
 	} else if err = builder.ValidatePage(page); err != nil {
-		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrDataInvalid)
 	}
 	if contenttemplatemodel.IsStructureTemplateType(entityType) {
 		// 结构模板（页眉 / 页脚）不是内容实体：字段绑定在构建期会按**引用它的那个页面**
@@ -321,17 +321,17 @@ func (s *Service) validateDocumentMode(entityType string, raw json.RawMessage, t
 		//（跳过要等线上才看得出页眉串了数据）。
 		refs, rerr := builder.CollectFieldRefs(page)
 		if rerr != nil {
-			return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrDataInvalid)
 		}
 		if len(refs) > 0 {
-			return nil, errors.New(contenttemplateenums.ErrFieldBindingInvalid)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrFieldBindingInvalid)
 		}
 	} else if err = builder.ValidateFieldRefs(page, entityType, s.registry); err != nil {
-		return nil, fmt.Errorf("%s: %w", contenttemplateenums.ErrFieldBindingInvalid, err)
+		return nil, contenttemplateenums.ErrDetail(contenttemplateenums.ErrFieldBindingInvalid, err.Error())
 	}
 	doc, err := json.Marshal(page)
 	if err != nil {
-		return nil, errors.New(contenttemplateenums.ErrDataInvalid)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrDataInvalid)
 	}
 	return doc, nil
 }
@@ -375,12 +375,12 @@ func (s *Service) ListBlockSourceRefs(ctx context.Context, blockID string) (out 
 // 已经持有工程 id 的调用方走 GetScoped —— 少一次跨工程探测，语义也更直白。
 func (s *Service) Get(ctx context.Context, req *contenttemplatedto.GetReq) (res *contenttemplatedto.TemplateResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam)
 	}
 	e, err := s.locateTemplate(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contenttemplateenums.ErrNotFound)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -396,7 +396,7 @@ func (s *Service) GetScoped(ctx context.Context, projectID, id string) (res *con
 	e, err := s.m.Get(ctx, projectID, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contenttemplateenums.ErrNotFound)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -415,7 +415,7 @@ func (s *Service) List(ctx context.Context, req *contenttemplatedto.ListReq) (li
 		req = &contenttemplatedto.ListReq{}
 	}
 	if req.EntityType != "" && !s.validEntityType(req.EntityType) {
-		return nil, errors.New(contenttemplateenums.ErrInvalidType)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrInvalidType)
 	}
 	// 工程作用域优先用请求里显式给的那一个（后台页面手里就有），缺省才回落「唯一工程」。
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
@@ -457,7 +457,7 @@ func (s *Service) ResolveTemplate(ctx context.Context, entityType string) (res *
 // 撞上「需要显式指定工程」——而模板解析失败会让整次构建失败。
 func (s *Service) ResolveTemplateScoped(ctx context.Context, projectID, entityType string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
 	if entityType == "" || !s.validEntityType(entityType) {
-		return nil, errors.New(contenttemplateenums.ErrInvalidType)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrInvalidType)
 	}
 	// 只取详情角色（审计 EDT-004）：归档模板与详情模板可以同类型共存，
 	// 不过滤就会把归档模板当成详情模板取用。
@@ -483,17 +483,17 @@ func (s *Service) ResolveTemplateByRole(ctx context.Context, entityType, role st
 // ResolveTemplateByRoleScoped 在显式工程作用域内按实体类型与角色解析模板。
 func (s *Service) ResolveTemplateByRoleScoped(ctx context.Context, projectID, entityType, role string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
 	if entityType == "" || !s.validEntityType(entityType) {
-		return nil, errors.New(contenttemplateenums.ErrInvalidType)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrInvalidType)
 	}
 	if role != "" && !contenttemplatemodel.IsValidTemplateRole(role) {
-		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam)
 	}
 	rows, err := s.m.ListByRole(ctx, projectID, entityType, role)
 	if err != nil {
 		return nil, err
 	}
 	if len(rows) == 0 {
-		return nil, errors.New(contenttemplateenums.ErrNotFound)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
 	}
 	tpl := rows[0]
 	if !tpl.IsDefault {
@@ -503,7 +503,7 @@ func (s *Service) ResolveTemplateByRoleScoped(ctx context.Context, projectID, en
 	ver, err := s.m.LatestVersion(ctx, tpl.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contenttemplateenums.ErrNotFound)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -518,21 +518,21 @@ func (s *Service) ResolveTemplateByRoleScoped(ctx context.Context, projectID, en
 // 同一套模板改版式则产生新版本，两条路径都不需要调用方区分。
 func (s *Service) ResolveTemplateByID(ctx context.Context, templateID string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
 	if strings.TrimSpace(templateID) == "" {
-		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam)
 	}
 	// 逐工程定位（DB-009 第三批）：模板 id 是主键，逐工程探测的结果唯一；
 	// 已持有工程 id 的调用方（presentation 构建链）应走 ResolveTemplateByIDScoped。
 	tpl, err := s.locateTemplate(ctx, templateID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contenttemplateenums.ErrNotFound)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
 		}
 		return nil, err
 	}
 	ver, err := s.m.LatestVersion(ctx, tpl.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contenttemplateenums.ErrNotFound)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -542,19 +542,19 @@ func (s *Service) ResolveTemplateByID(ctx context.Context, templateID string) (r
 // ResolveTemplateByIDScoped 在显式工程作用域内按模板 ID 解析其当前版本。
 func (s *Service) ResolveTemplateByIDScoped(ctx context.Context, projectID, templateID string) (res *contenttemplatecontract.ResolvedTemplate, err error) {
 	if strings.TrimSpace(templateID) == "" {
-		return nil, errors.New(contenttemplateenums.ErrInvalidParam)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrInvalidParam)
 	}
 	tpl, err := s.m.Get(ctx, projectID, templateID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contenttemplateenums.ErrNotFound)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
 		}
 		return nil, err
 	}
 	ver, err := s.m.LatestVersion(ctx, tpl.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(contenttemplateenums.ErrNotFound)
+			return nil, contenttemplateenums.Err(contenttemplateenums.ErrNotFound)
 		}
 		return nil, err
 	}

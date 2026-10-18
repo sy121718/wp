@@ -14,7 +14,6 @@ package presentationservice
 import (
 	"context"
 	"errors"
-	"fmt"
 	json "go_wp/pkg/jsonx"
 	"os"
 	"strings"
@@ -46,7 +45,7 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 		return nil, nil
 	}
 	if s.project == nil {
-		return nil, errors.New(presentationenums.ErrProjectRequired)
+		return nil, presentationenums.Err(presentationenums.ErrProjectRequired)
 	}
 	projects, err := s.project.List(ctx)
 	if err != nil {
@@ -105,7 +104,7 @@ func (s *Service) MarkStaleByRegistryVersion(ctx context.Context, current string
 		return nil, nil
 	}
 	if s.project == nil {
-		return nil, errors.New(presentationenums.ErrProjectRequired)
+		return nil, presentationenums.Err(presentationenums.ErrProjectRequired)
 	}
 	currentArtifactIDs, err := s.m.ListCurrentArtifactIDs(ctx)
 	if err != nil {
@@ -244,7 +243,7 @@ func (s *Service) enqueueStaleRebuilds(ctx context.Context, ids []string) error 
 func (s *Service) RebuildInstance(ctx context.Context, instanceID string) error {
 	inst, err := s.findOneInstanceAnyProject(ctx, instanceID)
 	if err != nil {
-		return fmt.Errorf("%s: %w", presentationenums.ErrNotFound, err)
+		return presentationenums.ErrDetail(presentationenums.ErrNotFound, err.Error())
 	}
 	// 模板解析放在发布会话的锁内冻结阶段（PERF-01）：绑定与实例行必须同源。
 	_, err = s.rebuildInstance(ctx, inst, publishIntent{
@@ -285,10 +284,10 @@ func (s *Service) projectOfInstance(ctx context.Context, instanceID string) stri
 // 也比在数据层专门养一条 BYPASSRLS 连接安全（后者等于把隔离关掉）。
 func (s *Service) findOneInstanceAnyProject(ctx context.Context, instanceID string) (*presentationmodel.InstanceEntity, error) {
 	if ids := strings.TrimSpace(instanceID); ids == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	if s.project == nil {
-		return nil, errors.New(presentationenums.ErrProjectRequired)
+		return nil, presentationenums.Err(presentationenums.ErrProjectRequired)
 	}
 	projects, err := s.project.List(ctx)
 	if err != nil {
@@ -311,7 +310,7 @@ func (s *Service) findOneInstanceAnyProject(ctx context.Context, instanceID stri
 
 func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error) {
 	if req == nil || req.EntityType == "" || req.EntityID == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
@@ -323,7 +322,7 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 	}
 	if len(req.DraftDocument) > 0 {
 		if !json.Valid(req.DraftDocument) {
-			return nil, errors.New(presentationenums.ErrInvalidParam)
+			return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 		}
 		override := *tpl
 		override.Document = req.DraftDocument
@@ -340,7 +339,7 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 	html, err := s.renderHTML(ctx, req.EntityType, req.EntityID, "", projectID, "", nil, tpl, nil,
 		builder.CompileModePreview, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", presentationenums.ErrBuildFailed, err)
+		return nil, presentationenums.ErrDetail(presentationenums.ErrBuildFailed, err.Error())
 	}
 	return &presentationdto.PreviewInstanceResp{
 		HTML: string(html), EntityType: req.EntityType, EntityID: req.EntityID,
@@ -363,7 +362,7 @@ func (s *Service) RefKinds() []string { return []string{mediacontract.RefKindPre
 // 返回 RETURNING id 回读集合（真正命中的实例），不是入参回显；失败即失败，不吞。
 func (s *Service) MarkStaleByMediaRefs(ctx context.Context, refs []mediacontract.MediaRef) (marked []string, err error) {
 	if s == nil || s.m == nil {
-		return nil, errors.New(presentationenums.ErrProjectRequired)
+		return nil, presentationenums.Err(presentationenums.ErrProjectRequired)
 	}
 	ids := make([]string, 0, len(refs))
 	seen := map[string]bool{}
@@ -382,7 +381,7 @@ func (s *Service) MarkStaleByMediaRefs(ctx context.Context, refs []mediacontract
 		return nil, nil
 	}
 	if s.project == nil {
-		return nil, errors.New(presentationenums.ErrProjectRequired)
+		return nil, presentationenums.Err(presentationenums.ErrProjectRequired)
 	}
 	projects, err := s.project.List(ctx)
 	if err != nil {

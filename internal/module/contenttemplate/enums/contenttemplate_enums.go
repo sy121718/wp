@@ -1,5 +1,15 @@
-// Package contenttemplateenums contenttemplate 模块响应消息。
+// Package contenttemplateenums contenttemplate 模块响应消息与错误兜底。
+//
+// 错误的对外文案跟**声明处**走（同 presentation / membership / content 的形态）：常量值就是
+// i18n key，中文兜底在 errFallbacks，出口只调一次共享判据 pkg/facing.FactOf。
 package contenttemplateenums
+
+import (
+	"fmt"
+	"strings"
+
+	"go_wp/pkg/facing"
+)
 
 // 响应消息（未接 i18n 前中文常量）。
 const (
@@ -28,6 +38,38 @@ const (
 	// ErrProjectNotFound 显式指定的工程不存在。
 	ErrProjectNotFound = "ErrProjectNotFound"
 )
+
+// errFallbacks 每个错误常量的中文兜底（与声明的 key 一起交给 pkg/facing.New）。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:           "参数不合法：请检查名称、类型与文档后重试。",
+	ErrNotFound:               "模板不存在，可能已被删除。",
+	ErrTemplateInUse:          "这套模板仍被自动发布实例引用，不能删除。",
+	ErrStructureTemplateInUse: "这张结构模板仍被其它模板绑定为结构槽位，先到那里解绑再删。",
+	ErrInvalidType:            "不支持的内容类型。",
+	ErrDataInvalid:            "模板文档格式非法：请回到工作台重新保存后再试。",
+	ErrFieldBindingInvalid:    "模板里的字段绑定越界：只能用本模板数据源内的字段。",
+	ErrProjectRequired:        "请先选择站点工程。",
+	ErrProjectNotFound:        "选择的站点工程不存在。",
+}
+
+// Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。
+func Err(key string) error {
+	return facing.New(key, errFallbacks[key])
+}
+
+// ErrDetail 声明一条带明细的业务错误：明细拼在半角冒号之后（判据只认 ": "）。
+func ErrDetail(key, detail string) error {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return Err(key)
+	}
+	return fmt.Errorf("%w: %s", Err(key), detail)
+}
+
+// FallbackFor 取一个 key 的中文兜底（调用方只有 key、没有事实时用）。
+func FallbackFor(key string) string {
+	return errFallbacks[key]
+}
 
 // —— 点分 key 常量（新式）——
 //

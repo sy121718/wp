@@ -27,11 +27,11 @@ import (
 
 	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
-	"go_wp/internal/module/contenttemplate/contract"
-	"go_wp/internal/module/contenttemplate/dto"
-	"go_wp/internal/module/contenttemplate/enums"
-	"go_wp/internal/module/contenttemplate/model"
-	"go_wp/internal/module/project/contract"
+	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
+	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
+	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
+	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/pipeline"
 )
 
@@ -134,7 +134,7 @@ func toResp(e *contenttemplatemodel.TemplateEntity) *contenttemplatedto.Template
 // 静默 0 行，表现为「模板不存在」）。
 func (s *Service) fanoutProjectIDs(ctx context.Context) ([]string, error) {
 	if s == nil || s.project == nil {
-		return nil, errors.New(contenttemplateenums.ErrProjectRequired)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrProjectRequired)
 	}
 	list, err := s.project.List(ctx)
 	if err != nil {
@@ -147,7 +147,7 @@ func (s *Service) fanoutProjectIDs(ctx context.Context) ([]string, error) {
 		}
 	}
 	if len(ids) == 0 {
-		return nil, errors.New(contenttemplateenums.ErrProjectRequired)
+		return nil, contenttemplateenums.Err(contenttemplateenums.ErrProjectRequired)
 	}
 	return ids, nil
 }
@@ -195,20 +195,20 @@ func (s *Service) resolveProjectID(ctx context.Context, explicit string) (string
 				return "", err
 			}
 			if !ok {
-				return "", errors.New(contenttemplateenums.ErrProjectNotFound)
+				return "", contenttemplateenums.Err(contenttemplateenums.ErrProjectNotFound)
 			}
 		}
 		return id, nil
 	}
 	if s.project == nil {
-		return "", errors.New(contenttemplateenums.ErrProjectRequired)
+		return "", contenttemplateenums.Err(contenttemplateenums.ErrProjectRequired)
 	}
 	list, err := s.project.List(ctx)
 	if err != nil {
 		return "", err
 	}
 	if len(list) != 1 {
-		return "", errors.New(contenttemplateenums.ErrProjectRequired)
+		return "", contenttemplateenums.Err(contenttemplateenums.ErrProjectRequired)
 	}
 	return list[0].ID, nil
 }

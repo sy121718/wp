@@ -1,11 +1,11 @@
 package productservice
 
-// product_foreign_text.go — 别模块业务 key 的展示兜底（**只剩对端还没有兜底表的那一批**）。
+// product_foreign_text.go — 别模块业务 key 的展示兜底（**只剩 inventory 那一批**）。
 //
 // 本模块 service 一律返回 productenums.Err(key) —— 中文兜底跟着错误声明处走，出口经
-// pkg/facing.FactOf 直接拿到 Fallback，不查任何表。inventory / presentation 的 key 还没有
-// 自己的 ErrFallbacks，FactOf 只能给出「兜底 = key」，出口便会把裸 key 摆到页面上；
-// 这张表就是补那一格。
+// pkg/facing.FactOf 直接拿到 Fallback，不查任何表。presentation 与 contenttemplate 的 enums
+// 现在各自带 errFallbacks（本表原先的 4 条 presentation 补丁随那次迁移删除）；inventory 的
+// enums 还没有兜底表，FactOf 只能给出「兜底 = key」，会把裸 key 摆到页面上 —— 这张表只剩补那一格。
 //
 // 为什么归 service 而不是控制器：这些 key 是**本模块 service 调用对端能力时**产生的
 // （建 SKU 调 inventory、挂模板调 presentation），谁产生这种错误谁就该说清它对运营是什么意思。
@@ -17,7 +17,6 @@ package productservice
 
 import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
-	presentationenums "go_wp/internal/module/presentation/enums"
 	"go_wp/pkg/facing"
 )
 
@@ -35,10 +34,6 @@ var ForeignErrFallbacks = map[string]string{
 	inventoryenums.ErrWarehouseDisabled:            "已停用的仓库不能作为归属仓",
 	inventoryenums.ErrWarehouseProjectMismatch:     "仓库不属于该工程",
 	inventoryenums.ErrWarehouseDefaultMissing:      "该工程没有默认仓可兜底，请先建一个仓库并设为默认仓",
-	presentationenums.ErrDetachConfirmRequired:     "该操作会放弃模板同步（商品页转为独立文档），需要先确认",
-	presentationenums.ErrRollbackTargetMiss:        "回滚目标不存在：该版本不属于这个商品，或产物文件已缺失",
-	presentationenums.ErrRollbackFailed:            "回滚失败：线上版本保持不变",
-	presentationenums.ErrSnapshotMismatch:          "该版本不属于这个商品，不能用来回滚",
 }
 
 // ForeignErrText 别模块 key → 展示兜底（未登记 / 空 key 一律空串）。

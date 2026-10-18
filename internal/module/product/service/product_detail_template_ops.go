@@ -135,10 +135,12 @@ func detailTemplateDocEmpty(doc json.RawMessage) bool {
 //
 // DetailTemplateProductLookupError 包装「发布时取商品失败」这一条错误。
 //
-// 为什么需要它：拆分前 Publish 的两条失败路径走**两张不同的文案表** —— 取商品失败走
-// productErrMsg（product 的 enums），建实例失败走 detailTemplateFacingMsg（presentation 的
-// enums）。下沉到 service 后调用方只拿到一个 error，若不分流，商品取数失败会被按 presentation
-// 的口径翻译成「这个商品还没有详情页实例」—— 文案变了，用户据此会去发布一次（商品其实早已不在）。
+// 为什么需要它：两条失败路径的**声明处不同** —— 取商品失败是 product 的 enums（ErrNotFound 指
+// 「商品不存在」），建实例失败是 presentation 的 enums（同名 ErrNotFound 指「还没有发布实例」）。
+// 下沉到 service 后调用方只拿到一个 error，若不分流，商品取数失败会被按 presentation 的口径
+// 翻译成「实例不存在」—— 文案变了，用户据此会去发布一次（商品其实早已不在）。
+// 两边的兜底都跟着各自的声明处走（productenums.Err / presentationenums.Err），这里只需要保住
+// 「这条错误是谁声明的」。
 //
 // Unwrap 让调用方既能 errors.As 识别这一类，也能 errors.Is 到底层原因。
 type DetailTemplateProductLookupError struct{ Err error }
