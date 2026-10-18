@@ -134,6 +134,23 @@ func ViewMap(view any) gin.H {
 		}
 		rv = rv.Elem()
 	}
+	// 具名的 map 视图（例如 `type inventoryLoadFailedView gin.H`：同一份键集 + 自带
+	// PageStatus / PageNoStore 的落库判断）。只要底层仍是 map[string]…，按 map 处理 ——
+	// 否则「视图要带渲染结论」与「视图要能拼键」这两条就只能在控制器里二选一。
+	if rv.Kind() == reflect.Map && rv.Type().Key().Kind() == reflect.String {
+		out := make(gin.H, rv.Len())
+		iter := rv.MapRange()
+		for iter.Next() {
+			out[iter.Key().String()] = iter.Value().Interface()
+		}
+		return out
+	}
+	for rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return gin.H{}
+		}
+		rv = rv.Elem()
+	}
 	if rv.Kind() != reflect.Struct {
 		panic("adminui.ViewMap: 视图必须是结构体、结构体指针或 gin.H/map[string]any，" +
 			"收到 " + rv.Kind().String() + "（视图装配属于 dto，不要在控制器里手工拼 map）")

@@ -17,6 +17,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -635,7 +636,7 @@ func newTrackQuantityPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 		c.Set(adminctx.ButtonsKey, map[string]bool{"inventory.stock_change": true})
 	})
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
-	engine.GET("/admin/inventory", handle.InventoryPage)
+	engine.GET("/admin/inventory", adminui.Page(inventoryhttp.InventoryListPageTemplate, handle.InventoryPage))
 	engine.POST("/admin/inventory/stock/tracking", handle.InventoryStockTrackingUpdate)
 	return engine, f
 }

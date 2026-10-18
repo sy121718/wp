@@ -22,12 +22,11 @@ import (
 //
 // 文案来源：name 列存的是 i18n key，页面上显示的是取词结果；自定义原因的文案
 // 在保存时写进 sys_i18n（内容 → 文案词条），这里只负责把它取出来渲染。
-func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
+func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		inventoryPageError(c, inventoryMetaReasons, err)
-		return
+		return inventoryPageErrorData(c, inventoryMetaReasons, err), nil
 	}
 	selected := strings.TrimSpace(c.Query("project"))
 	if selected == "" && len(projects) > 0 {
@@ -35,11 +34,10 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 	}
 	reasons, err := h.listReasons(c, selected)
 	if err != nil {
-		inventoryPageError(c, inventoryMetaReasons, err)
-		return
+		return inventoryPageErrorData(c, inventoryMetaReasons, err), nil
 	}
 	tr := shell.TranslateFor(c)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_reasons.html", adminui.Prepare(c, gin.H{
+	return gin.H{
 		"title":            tr(inventoryenums.InventoryReasonsTitle, "变动原因字典"),
 		"menu":             "inventory-reasons",
 		"Projects":         projects,
@@ -49,7 +47,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 		"ReasonCreateForm": reasonFormData(c, selected),
 		// 写动作表单 action 上带的筛选上下文（见 inventory_jump.go）。
 		"ListQuery": inventoryQueryFromRequest(c, inventoryReasonBackKeys...),
-	}))
+	}, nil
 }
 
 // —— 写动作（仓库 / 原因 / 库存调整）——

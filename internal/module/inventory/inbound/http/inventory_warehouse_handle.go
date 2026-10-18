@@ -21,12 +21,11 @@ import (
 // 四件事压在同一页，靠 <details> 收纳 —— 折叠只是把「平铺」换成「叠起来」，
 // 一页装多了就该拆页。仓库是与货源同构的独立实体，配一次长期不动，
 // 不该占库存日常操作的版面（评审判据见 docs/02-H-admin-page-shell.md §7）。
-func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
+func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		inventoryPageError(c, inventoryMetaWarehouses, err)
-		return
+		return inventoryPageErrorData(c, inventoryMetaWarehouses, err), nil
 	}
 	selected := strings.TrimSpace(c.Query("project"))
 	if selected == "" && len(projects) > 0 {
@@ -34,11 +33,10 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 	}
 	warehouses, err := h.listWarehouses(c, selected)
 	if err != nil {
-		inventoryPageError(c, inventoryMetaWarehouses, err)
-		return
+		return inventoryPageErrorData(c, inventoryMetaWarehouses, err), nil
 	}
 	tr := shell.TranslateFor(c)
-	c.HTML(http.StatusOK, "admin/inventory/inventory_warehouses.html", adminui.Prepare(c, gin.H{
+	return gin.H{
 		"title":               tr(inventoryenums.InventoryWarehousesTitle, "仓库管理"),
 		"menu":                "inventory-warehouses",
 		"Projects":            projects,
@@ -48,7 +46,7 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 		"WarehouseCreateForm": warehouseFormData(c, selected, false, nil),
 		// 写动作表单 action 上带的筛选上下文（见 inventory_jump.go）。
 		"ListQuery": inventoryQueryFromRequest(c, inventoryWarehouseBackKeys...),
-	}))
+	}, nil
 }
 
 // InventoryWarehouseCreate 新建仓库（工程内第一个仓自动成为默认仓）。

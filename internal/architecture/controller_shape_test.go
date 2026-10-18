@@ -342,7 +342,6 @@ var pendingControllerRenderExit = map[string]bool{
 	"internal/module/inventory/inbound/http/inventory_page_handle.go":      true,
 	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go": true,
 	"internal/module/inventory/inbound/http/inventory_reason_handle.go":    true,
-	"internal/module/inventory/inbound/http/inventory_error_handle.go":     true,
 	"internal/module/inventory/inbound/http/inventory_purchase_handle.go":  true,
 	"internal/module/inventory/inbound/http/inventory_source_handle.go":    true,
 }
@@ -463,7 +462,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/workbench/inbound/http/workbench_err.go":                   true,
 	"internal/module/workbench/inbound/http/workbench_handle.go":                true,
 	"internal/module/workbench/inbound/http/workbench_page.go":                  true,
-	"internal/module/inventory/inbound/http/inventory_page_handle.go":           true,
 	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go":      true,
 	"internal/module/inventory/inbound/http/inventory_reason_handle.go":         true,
 	"internal/module/inventory/inbound/http/inventory_error_handle.go":          true,

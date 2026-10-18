@@ -815,11 +815,11 @@ func newInventoryPageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender(templateRoot(), true)
 	handle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
-	engine.GET("/admin/inventory", handle.InventoryPage)
+	engine.GET("/admin/inventory", adminui.Page(inventoryhttp.InventoryListPageTemplate, handle.InventoryPage))
 	// 仓库管理与变动原因字典已按「配置不是日常操作」从库存主页拆成独立页，
 	// 相关断言随之搬家，这里同步注册这两个页面路由。
-	engine.GET("/admin/inventory/warehouses", handle.InventoryWarehousesPage)
-	engine.GET("/admin/inventory/reasons", handle.InventoryReasonsPage)
+	engine.GET("/admin/inventory/warehouses", adminui.Page(inventoryhttp.InventoryWarehousesPageTemplate, handle.InventoryWarehousesPage))
+	engine.GET("/admin/inventory/reasons", adminui.Page(inventoryhttp.InventoryReasonsPageTemplate, handle.InventoryReasonsPage))
 	engine.POST("/admin/inventory/warehouse/create", handle.InventoryWarehouseCreate)
 	engine.POST("/admin/inventory/warehouse/update", handle.InventoryWarehouseUpdate)
 	engine.POST("/admin/inventory/warehouse/default", handle.InventoryWarehouseDefault)

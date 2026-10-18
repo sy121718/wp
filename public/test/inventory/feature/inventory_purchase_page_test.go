@@ -11,6 +11,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/url"
 	"os"
@@ -65,7 +66,7 @@ func newPurchasePageEngine(t *testing.T) (*gin.Engine, *invFixture) {
 	// 生产入库（自家工厂）的表单**在本页**（本批补回：路由与权限点一直在，缺的是页面入口）；
 	// 进货历史已并入库存流水的 SKU / 原因筛选，这里同步注册库存页路由供下面那段断言使用。
 	pageHandle := inventoryhttp.NewInventoryPageHandle(f.inventory, f.projects, f.products)
-	engine.GET("/admin/inventory", pageHandle.InventoryPage)
+	engine.GET("/admin/inventory", adminui.Page(inventoryhttp.InventoryListPageTemplate, pageHandle.InventoryPage))
 	return engine, f
 }
 

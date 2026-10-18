@@ -20,6 +20,13 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 )
 
+// 三个整页的模板名（与路由 / 权限点同处：一眼能看全这个模块渲染了哪些屏）。
+const (
+	InventoryListPageTemplate       = "admin/inventory/inventory.html"
+	InventoryWarehousesPageTemplate = "admin/inventory/inventory_warehouses.html"
+	InventoryReasonsPageTemplate    = "admin/inventory/inventory_reasons.html"
+)
+
 // SetupInventoryPages 注册库存域后台页面；pages 为 nil 时整体跳过。
 func SetupInventoryPages(pages *gin.RouterGroup, svc inventorycontract.InventoryService,
 	project projectcontract.ProjectService) {
@@ -29,11 +36,14 @@ func SetupInventoryPages(pages *gin.RouterGroup, svc inventorycontract.Inventory
 	// 商品契约（下拉数据源）留待装配收尾补注，见 SetProductCatalog。
 	inventoryPages := NewInventoryPageHandle(svc, project, nil)
 	pageCatalogConsumers = append(pageCatalogConsumers, inventoryPages)
-	pages.GET("/inventory", adminui.PageAuthz("/api/inventory/warehouse/list"), inventoryPages.InventoryPage)
+	pages.GET("/inventory", adminui.PageAuthz("/api/inventory/warehouse/list"),
+		adminui.Page(InventoryListPageTemplate, inventoryPages.InventoryPage))
 	// 拆页（2026-09 评审第三轮）：仓库与原因字典各自独立成页 —— 原先它们与
 	// 「手动改库存 / 看流水」挤在同一页靠 <details> 折叠，折叠不是解法。
-	pages.GET("/inventory/warehouses", adminui.PageAuthz("/api/inventory/warehouse/list"), inventoryPages.InventoryWarehousesPage)
-	pages.GET("/inventory/reasons", adminui.PageAuthz("/api/inventory/reason/list"), inventoryPages.InventoryReasonsPage)
+	pages.GET("/inventory/warehouses", adminui.PageAuthz("/api/inventory/warehouse/list"),
+		adminui.Page(InventoryWarehousesPageTemplate, inventoryPages.InventoryWarehousesPage))
+	pages.GET("/inventory/reasons", adminui.PageAuthz("/api/inventory/reason/list"),
+		adminui.Page(InventoryReasonsPageTemplate, inventoryPages.InventoryReasonsPage))
 	pages.POST("/inventory/warehouse/create", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/create"), inventoryPages.InventoryWarehouseCreate)
 	pages.POST("/inventory/warehouse/update", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), inventoryPages.InventoryWarehouseUpdate)
 	pages.POST("/inventory/warehouse/default", builtin.CasbinMiddlewareForPath("/api/inventory/warehouse/update"), inventoryPages.InventoryWarehouseDefault)
