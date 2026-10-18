@@ -99,11 +99,11 @@ func AdminWriteFailedText(c *gin.Context, text string) {
 // 中文兜底与 058 的 zh-CN 词条**逐字相同**，所以「命中词条」与「回落兜底」返回同一个
 // 字符串；只有兜底被改措辞、或词条被改成别的说法时才会不等 —— 那正是该被测试拦下的漂移。
 func PageInternalText(c *gin.Context) string {
-	return text.Internal(c)
+	return response.InternalText(c)
 }
 
 // internalErrorFallback 归口文案的中文原文（与 058 的 zh-CN 词条逐字相同）。
 //
 // 单独取名是因为它有两个消费者：本文件的 PageInternalText，与 page_error.go 里
 // 「未命中业务错误判据」时构造的 ErrFact —— 两处必须是同一句话，抄第二遍必然漂移。
-const internalErrorFallback = text.InternalFallback
+const internalErrorFallback = response.InternalFallback

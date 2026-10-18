@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/templates"
+	"go_wp/pkg/response"
 	"go_wp/pkg/safepath"
 )
 
@@ -39,7 +40,7 @@ func Inject(c *gin.Context, data map[string]any) map[string]any {
 	// tf 是「取词 + %s 占位符填充」：签名 func(key, fallback string, args []string) string。
 	// 需要它是因为结论文案带计数（「已删除 %s 个页面。」），而 Go 侧不再拼整句。
 	data["tf"] = func(key, fallback string, args []string) string {
-		return TranslateArgs(c, key, fallback, args)
+		return response.ArgsText(c, key, fallback, args)
 	}
 	data["langs"] = templates.LanguageOptions(lang)
 	data["lang_redirect"] = LangRedirect(c)

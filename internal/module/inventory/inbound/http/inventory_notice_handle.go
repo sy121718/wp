@@ -13,8 +13,6 @@ package inventoryhttp
 import (
 	"net/http"
 
-	"go_wp/internal/text"
-
 	"github.com/gin-gonic/gin"
 
 	"go_wp/pkg/facing"
@@ -35,7 +33,7 @@ var (
 )
 
 // inventoryMsgText 把一句文案的事实取成当前语言文本（页面槽位 / 片段槽位用）。
-func inventoryMsgText(c *gin.Context, m facing.Msg) string { return text.MsgText(c, m) }
+func inventoryMsgText(c *gin.Context, m facing.Msg) string { return response.MsgText(c, m) }
 
 // —— 写动作的出口 ——
 //
@@ -65,5 +63,5 @@ func inventoryFail(c *gin.Context, err error) {
 // inventoryFailMsg 写动作失败（结论已经是事实，不是 error）：批量部分成功、未选中任何行、
 // 批量 id 超限这类「参数与结果」都走这里，一律 400。
 func inventoryFailMsg(c *gin.Context, msg facing.Msg) {
-	response.ErrorWithMessage(c, http.StatusBadRequest, text.MsgText(c, msg))
+	response.ErrorMsg(c, http.StatusBadRequest, msg)
 }

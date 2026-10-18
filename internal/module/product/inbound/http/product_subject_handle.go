@@ -28,7 +28,6 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
-	"go_wp/internal/text"
 	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
@@ -66,7 +65,7 @@ func productPageInternalText(c *gin.Context, err error) string {
 			With("user_id", builtin.CurrentUserID(c)).
 			Error(err, "商品后台页取数失败（非业务错误，只对页面给归口文案）")
 	}
-	return text.Internal(c)
+	return response.InternalText(c)
 }
 
 // product_core.go — 商品本体的控制器：接口面 CRUD / 变体 + 列表 / 新建 / 编辑 / 详情页 / 批量。
@@ -762,7 +761,7 @@ var (
 // 成品串（Fallback，Key 为空），与 page 模块 pageTranslationsSavedMsg 同一取舍。
 func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) facing.Msg {
 	if res == nil {
-		return text.InternalMsg()
+		return response.InternalMsg()
 	}
 	if res.Created == 0 && res.Updated == 0 && res.Deleted == 0 && len(res.Skipped) == 0 {
 		return productVariantSaveNoChange.fact()
@@ -808,7 +807,7 @@ func (h *ProductHandle) SaveVariantList(c *gin.Context) {
 		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, variantSaveMsg(c, res)), res)
+	response.SuccessMsg(c, variantSaveMsg(c, res), res)
 }
 
 // AddRating 补录一条商品评分（issue #33）。
@@ -826,7 +825,7 @@ func (h *ProductHandle) AddRating(c *gin.Context) {
 		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), res)
+	response.SuccessMsg(c, productActionDoneMsg, res)
 }
 
 // DeleteRating 删掉一条评分（issue #33）：录错了能撤掉。
@@ -842,7 +841,7 @@ func (h *ProductHandle) DeleteRating(c *gin.Context) {
 		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessMsg(c, productActionDoneMsg)
 }
 
 // ProductPreviewFrame 商品详情页的真实预览帧（GET /admin/products/preview-frame?productId=&project=）。
@@ -1118,7 +1117,7 @@ func (h *ProductPageHandle) bundlePanel(c *gin.Context, projectID, productID str
 		ProjectID: projectID,
 	})
 	if err != nil || detail == nil {
-		panel.ErrorText = text.MsgText(c, bundlePanelReadFailedMsg)
+		panel.ErrorText = response.MsgText(c, bundlePanelReadFailedMsg)
 		return panel
 	}
 	rows := bundlePanelRows(detail.Options)

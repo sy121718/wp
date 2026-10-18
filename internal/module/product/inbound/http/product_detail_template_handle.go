@@ -14,7 +14,6 @@ import (
 	dtoutbound "go_wp/internal/module/product/outbound/detailtemplate"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
@@ -80,7 +79,7 @@ func (h *ProductHandle) ReapplyDetailTemplatePreset(c *gin.Context) {
 		productDetailTemplateModeFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessMsg(c, productActionDoneMsg)
 }
 
 // RollbackDetailTemplateDocument POST /api/product/detail-template/rollback-document：
@@ -106,7 +105,7 @@ func (h *ProductHandle) RollbackDetailTemplateDocument(c *gin.Context) {
 		productDetailTemplateModeFail(c, err)
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessMsg(c, productActionDoneMsg)
 }
 
 // detailTemplateWriteDeps 详情页模板页四个写动作的依赖（装配期**后置**注入）。
@@ -134,7 +133,7 @@ func detailTemplateWriteDepsOrErr() (productservice.DetailTemplateDeps, error) {
 // 文案已经由 detailTemplate*Msg 系列收口（presentation / contenttemplate 的 enums → 人话），
 // 这里只决定状态码：参数与业务状态问题 400、对象不存在 404。
 func detailTemplateWriteFail(c *gin.Context, status int, msg facing.Msg) {
-	response.ErrorWithMessage(c, status, text.MsgText(c, msg))
+	response.ErrorMsg(c, status, msg)
 }
 
 // CreateDetailTemplate POST /api/product/detail-template/create：
@@ -163,7 +162,7 @@ func (h *ProductHandle) CreateDetailTemplate(c *gin.Context) {
 		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessMsg(c, productActionDoneMsg)
 }
 
 // PublishDetailTemplate POST /api/product/detail-template/publish：
@@ -193,7 +192,7 @@ func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
 		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessMsg(c, productActionDoneMsg)
 }
 
 // ApplyDetailTemplate POST /api/product/detail-template/apply：
@@ -217,7 +216,7 @@ func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
 		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessMsg(c, productActionDoneMsg)
 }
 
 // UpdateDetailTemplateURL POST /api/product/detail-template/update-url：
@@ -243,7 +242,7 @@ func (h *ProductHandle) UpdateDetailTemplateURL(c *gin.Context) {
 		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, productActionDoneMsg), nil)
+	response.SuccessMsg(c, productActionDoneMsg)
 }
 
 // detailTemplateModePortFor 取双轨能力并校验实例标识（两个端点的共同前置）。
@@ -276,7 +275,7 @@ func productDetailTemplateModeFail(c *gin.Context, err error) {
 	if fact.Key == presentationenums.ErrNotFound {
 		status = http.StatusNotFound
 	}
-	response.ErrorWithMessage(c, status, text.MsgText(c, facing.Msg{Key: fact.Key, Fallback: fact.Fallback}))
+	response.ErrorMsg(c, status, facing.Msg{Key: fact.Key, Fallback: fact.Fallback})
 }
 
 // 详情页模板与发布实例都以实体类型为键：取值用 productcontract.EntityTypeProduct
@@ -495,7 +494,7 @@ var detailTemplateDepsMissingMsg = facing.Msg{Key: productenums.ProductDetailTem
 func (h *ProductPageHandle) detailTemplateDepsMissingPage(c *gin.Context) (any, error) {
 	view := detailTemplateLoadFailureView(http.StatusInternalServerError)
 	view.LoadFailed = true
-	view.LoadError = text.MsgText(c, detailTemplateDepsMissingMsg)
+	view.LoadError = response.MsgText(c, detailTemplateDepsMissingMsg)
 	return view, nil
 }
 

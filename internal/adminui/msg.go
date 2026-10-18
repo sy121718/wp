@@ -17,8 +17,8 @@ package adminui
 import (
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/text"
 	"go_wp/pkg/facing"
+	"go_wp/pkg/response"
 )
 
 // Msg 一句可展示文案的事实（定义与契约见 pkg/facing）。
@@ -32,7 +32,7 @@ type Msg = facing.Msg
 // 参数按**填了哪一种**分派：有具名参数走 TranslateFill（语序归词条），否则走 TranslateArgs
 // （`%s` 位置，语序归调用方）。分派不按 Key 是否为空判 —— 那是本文件开头记的那次分叉。
 func MsgText(c *gin.Context, m Msg) string {
-	return text.MsgText(c, m)
+	return response.MsgText(c, m)
 }
 
 // InternalMsg 归口文案的事实（拿不到具体 err 的失败分支用）：页面不能显示空串。

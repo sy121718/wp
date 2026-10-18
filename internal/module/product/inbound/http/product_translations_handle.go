@@ -9,7 +9,6 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/shell"
-	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
@@ -132,7 +131,7 @@ func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	if rerr != nil {
 		logger.Scene("product").With("project", projectID).With("product", productID).
 			Error(rerr, "商品翻译工作台保存前重建数据失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, text.MsgText(c, text.InternalMsg()))
+		response.ErrorWithMessage(c, http.StatusInternalServerError, response.InternalText(c))
 		return
 	}
 	// 三组并行数组原样带过去：长度对齐与逐行校验都在读模型侧做（那里才有候选原文）。
@@ -147,7 +146,7 @@ func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	if err != nil {
 		logger.Scene("product").With("project", projectID).With("product", productID).
 			Error(err, "商品翻译工作台保存失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, text.MsgText(c, text.InternalMsg()))
+		response.ErrorWithMessage(c, http.StatusInternalServerError, response.InternalText(c))
 		return
 	}
 	if !view.Saved {
@@ -157,12 +156,12 @@ func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 		if body == "" {
 			// 没有逐行事实却也没保存成功 = 读模型侧的意外状态：按内部错误归口，不给空 message。
 			status = http.StatusInternalServerError
-			body = text.MsgText(c, text.InternalMsg())
+			body = response.InternalText(c)
 		}
 		response.ErrorWithMessage(c, status, body)
 		return
 	}
-	response.SuccessWithMessage(c, text.MsgText(c, productTranslationsSavedMsg(c, view.Written)))
+	response.SuccessMsg(c, productTranslationsSavedMsg(c, view.Written))
 }
 
 // productTranslationErrorsText 把逐行错误事实拼成一条可读结论。
@@ -175,13 +174,13 @@ func productTranslationErrorsText(c *gin.Context, errs []productdto.TranslationR
 	}
 	parts := make([]string, 0, len(errs))
 	for _, e := range errs {
-		body := text.MsgText(c, e.Msg)
+		body := response.MsgText(c, e.Msg)
 		if e.Label != "" {
 			body = e.Label + "：" + body
 		}
 		parts = append(parts, body)
 	}
-	title := text.MsgText(c, facing.Msg{
+	title := response.MsgText(c, facing.Msg{
 		Key: productenums.ProductTranslationsErrorsTitle, Fallback: "未保存：请先修正以下问题"})
 	return title + "：" + strings.Join(parts, "；")
 }

@@ -14,6 +14,7 @@ import (
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 	"strconv"
 	"strings"
 
@@ -55,13 +56,13 @@ func inventoryErrMsgOf(c *gin.Context, f facing.Fact) facing.Msg {
 		return facing.Msg{}
 	}
 	if !f.Business {
-		return text.InternalMsg()
+		return response.InternalMsg()
 	}
 	if f.Tail != "" {
 		if detail := inventoryErrDetailText(shell.TranslateFor(c), f.Tail); detail != "" {
 			// 补充说明已按当前语言渲染：service 写进去的是「为什么被拒」的上下文
 			//（例如被哪个商品占了外码），吞掉它就等于让人去猜。
-			return facing.Msg{Fallback: text.TranslateArgs(c, f.Key, inventoryErrFallback(f.Key), nil) + "：" + detail}
+			return facing.Msg{Fallback: response.ArgsText(c, f.Key, inventoryErrFallback(f.Key), nil) + "：" + detail}
 		}
 	}
 	return facing.Msg{Key: f.Key, Fallback: inventoryErrFallback(f.Key)}
@@ -166,7 +167,7 @@ func inventoryBulkIDsMsg(c *gin.Context, err error) facing.Msg {
 				With("path", c.Request.URL.Path).
 				Error(err, "批量 id 读取失败：未命中受控错误，只对外给归口文案")
 		}
-		return text.InternalMsg()
+		return response.InternalMsg()
 	}
 	logger.Scene(inventoryErrScene).
 		With("path", c.Request.URL.Path).
