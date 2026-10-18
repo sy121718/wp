@@ -10,6 +10,9 @@ package productenums_test
 //     五类实体全叫「商品」、分类页的缺参说成「缺少商品」，都不报错。
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	productcontract "go_wp/internal/module/product/contract"
@@ -77,36 +80,19 @@ func TestStatusLabel(t *testing.T) {
 	}
 }
 
-// TestTagKindLabel 标签类型：未知值回落原值（不再一律说成「手工」）。
-func TestTagKindLabel(t *testing.T) {
-	cases := []struct {
-		value    string
-		key      string
-		fallback string
-	}{
-		{productenums.TagKindRule, productenums.ProductTagsKindRule, "自动"},
-		{productenums.TagKindManual, productenums.ProductTagsKindManual, "手工"},
-		{"auto2", "auto2", "auto2"},
+// 标签类型的显示名与「未重算过」这句话已归模板（product_tags.html 按 Kind 分支取词）：
+// 后端不再有映射函数，这两条断言随之删除 —— 留一条反向判据防止映射表被重新加回来。
+func TestTagLabelMappingsStayedInTemplate(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "..", "templates", "admin", "product", "product_tags.html"))
+	if err != nil {
+		t.Fatalf("读标签页模板失败：%v", err)
 	}
-	for _, tc := range cases {
-		key, fallback := productenums.TagKindLabel(tc.value)
-		if key != tc.key || fallback != tc.fallback {
-			t.Errorf("TagKindLabel(%q) = (%q, %q)，期望 (%q, %q)",
-				tc.value, key, fallback, tc.key, tc.fallback)
+	for _, want := range []string{"admin.product_tags.kind.rule", "admin.product_tags.kind.manual", "admin.product_tags.recalcNone"} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("标签页模板缺少 %q —— 类型名与「未重算过」必须由模板取词", want)
 		}
 	}
 }
-
-// TestTagRecalcLabel 只有「从没重算过」那一档有文案；有时间时展示的是时间本身。
-func TestTagRecalcLabel(t *testing.T) {
-	if key, fallback := productenums.TagRecalcLabel("  "); key != productenums.ProductTagsRecalcNone || fallback != "未按规则重算过" {
-		t.Errorf("TagRecalcLabel(空) = (%q, %q)，期望「未按规则重算过」那一条", key, fallback)
-	}
-	if key, fallback := productenums.TagRecalcLabel("2026-10-11T07:00:00+08:00"); key != "" || fallback != "" {
-		t.Errorf("TagRecalcLabel(有时间) = (%q, %q)，期望空事实（展示的是时间本身）", key, fallback)
-	}
-}
-
 // TestBundleSourceLabel 成员来源：三种来源 + 空 / 未知 = 手工指定，兜底与库内词条同句。
 func TestBundleSourceLabel(t *testing.T) {
 	cases := []struct {

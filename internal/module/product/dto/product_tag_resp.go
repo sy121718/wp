@@ -42,10 +42,9 @@ type TagProductResp struct {
 
 // TagRowResp 标签管理页的一行（模板直接渲染的成品行）。
 //
-// 为什么在 dto 里而不是控制器里拼 gin.H：行里的每一项都是**数据** ——
-// 文案只以「key + 中文兜底」的事实形态出现（KindLabelKey/KindLabelFallback、
-// RecalcLabelKey/RecalcLabelFallback），取词在 product_tags.html 的 tr 里做。
-// 映射表放在这里，控制器就只剩「读一页 → 填行 → 渲染」。
+// 为什么在 dto 里而不是控制器里拼 gin.H：行里的每一项都是**数据** —— 类型、规则、
+// 重算时间（原样时间串）。类型的中文名、「未重算过」这类**文案**一律在
+// product_tags.html 里按数据分支取词，dto 不带任何成品串。
 //
 // EditForm 是抽屉片段的数据（product_tag_form.html 的数据根）。它必须留在
 // **渲染期**装配：里面要 csrf_token（请求态）与 t/tf（由 text.Inject 注入），
@@ -55,9 +54,6 @@ type TagRowResp struct {
 	Name string
 	Slug string
 	Kind string
-	// KindLabelKey/KindLabelFallback 类型标签的文案事实（productenums.TagKindLabel）。
-	KindLabelKey      string
-	KindLabelFallback string
 	// IsRule/HasRuleParams 规则型标签（决定表单里规则字段显不显示）。
 	IsRule        bool
 	HasRuleParams bool
@@ -66,10 +62,8 @@ type TagRowResp struct {
 	KindManual string
 	RuleType   string
 	RuleLabel  string
-	// RecalcAt 上次重算时间的数据串；RecalcLabelKey/RecalcLabelFallback 是「没重算过」的文案事实。
-	RecalcAt            string
-	RecalcLabelKey      string
-	RecalcLabelFallback string
+	// RecalcAt 上次重算的原样时间串（未重算过时为空串）。
+	RecalcAt string
 	// RuleDays/RuleMinPrice/RuleMaxPrice 规则参数的回填文本。
 	RuleDays     string
 	RuleMinPrice string

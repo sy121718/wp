@@ -15,10 +15,7 @@ package productenums
 // key 常量在 product_text_keys.go（点分 key 组），中文兜底跟着映射走（就在这里）：
 // 「值 → (key, 兜底)」是一条完整的事实，拆到两个文件里改一半会静默回落中文。
 
-import (
-	"strconv"
-	"strings"
-)
+import "strconv"
 
 // —— 商品状态（products.status）——
 
@@ -46,34 +43,9 @@ func StatusLabel(value string) (key, fallback string) {
 }
 
 // —— 标签类型（tags.kind）——
-
-// TagKindLabel 标签类型 → 文案事实。
 //
-// 未知取值回落到**原值**：迁移前这里是「不是 rule 就是 manual」的兜底，等于把任何不认识的
-// 取值说成「手工」—— 而手工标签可以被直接挂载、自动标签的归属由重算维护，说错这一档会让
-// 运营去改一个不该改的东西。显示原值最多是看不懂，不会做错事。
-func TagKindLabel(kind string) (key, fallback string) {
-	switch kind {
-	case TagKindRule:
-		return ProductTagsKindRule, "自动"
-	case TagKindManual:
-		return ProductTagsKindManual, "手工"
-	default:
-		return kind, kind
-	}
-}
-
-// TagRecalcLabel 标签的重算时间 → 文案事实。
-//
-// 只有「从没按规则重算过」这一档有文案（at 为空）；有值时页面上展示的是**时间本身**
-// （数据，由调用点格式化），此时返回空 key + 空兜底 —— 这里的空不是「没有这条文案」的
-// 伪信号，而是「这一档的展示物是数据、不是文案」，调用点的槽位与模板的判空都按这个约定走。
-func TagRecalcLabel(at string) (key, fallback string) {
-	if strings.TrimSpace(at) == "" {
-		return ProductTagsRecalcNone, "未按规则重算过"
-	}
-	return "", ""
-}
+// 类型的显示名与「未重算过」这句话都只出现在模板里（product_tags.html 按 Kind 分支取词）：
+// 后端不再有「取值 → 文案」的映射表，也就不会出现第二份措辞。
 
 // —— 捆绑成员的来源（products.bundle_items.options[].sourceKind）——
 //

@@ -164,7 +164,7 @@
                     </td>
                     <td>{{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{t.Name}}</strong></button>{{else}}<strong>{{t.Name}}</strong>{{end}}</td>
                     <td>{{if t.Slug != ""}}<code>{{t.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
-                    <td><span class="badge badge-{{if t.IsRule}}info{{else}}mute{{end}}">{{tr(t.KindLabelKey, t.KindLabelFallback)}}</span></td>
+                    <td><span class="badge badge-{{if t.IsRule}}info{{else}}mute{{end}}">{{if t.IsRule}}{{tr("admin.product_tags.kind.rule", "自动")}}{{else if t.Kind == "manual"}}{{tr("admin.product_tags.kind.manual", "手工")}}{{else}}{{t.Kind}}{{end}}</span></td>
                     <td>{{if t.RuleLabel != ""}}{{t.RuleLabel}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                     {* 命中数按需展开（审计 PERF-02）：首屏只给数量（一次批量聚合算出），
                        点它才去片段端点取这一页商品 —— 首屏 SQL 条数与标签数无关，
@@ -176,9 +176,9 @@
                                 hx-target="#tag-hits-panel" hx-swap="innerHTML">{{t.ProductCount}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</button>
                         {{else}}<span class="text-mute">0{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</span>{{end}}
                     </td>
-                    {* RecalcAt 是数据（已格式化的时间）；「未重算过」是文案事实，取词在这里做 ——
-                       控制器不再拼成品串（见 tagPageRow 的 recalcFact）。 *}
-                    <td>{{if t.RecalcAt != ""}}{{formatTime(t.RecalcAt)}}{{else if t.RecalcLabelKey != "" || t.RecalcLabelFallback != ""}}{{tr(t.RecalcLabelKey, t.RecalcLabelFallback)}}{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    {* RecalcAt 是数据（原样时间串，显示格式由 formatTime 决定）；「未重算过」这句话只在这里出现 ——
+                       后端不再带文案事实。 *}
+                    <td>{{if t.RecalcAt != ""}}{{formatTime(t.RecalcAt)}}{{else}}{{tr("admin.product_tags.recalcNone", "未按规则重算过")}}{{end}}</td>
                     <td class="col-actions">
                         {{if canUpdate}}
                         <button type="button" class="btn btn-sm" data-drawer-open="#tpl-tag-edit-{{t.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>

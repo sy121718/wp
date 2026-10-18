@@ -267,25 +267,19 @@ func (h *ProductPageHandle) tagDrawerData(c *gin.Context, mode, projectID string
 // tagPageRow 标签 → 模板行（规则描述与命中数都由服务端算好，模板不做第二套解释；
 // 命中商品本身不在这里，展开时才由 ProductTagHitsFragment 给 —— 审计 PERF-02）。
 //
-// 文案槽给**事实**（key + 中文兜底），取词在 product_tags.html 的 tr 里做：控制器不取词。
-// RecalcAt 原样交数据层的时间串（未重算时为空串），显示格式由模板的 formatTime 决定；
-// 「未重算过」那句才是文案。
+// 行里只放数据：类型原值、规则参数、原样时间串。类型的中文名与「未重算过」这类文案
+// 由 product_tags.html 按数据分支取词（后端不带成品串）。
 func tagPageRow(t *productdto.TagResp) productdto.TagRowResp {
-	// 类型 → 文案事实的映射在 productenums.TagKindLabel（控制器不再挑文案）。
-	kindKey, kindFallback := productenums.TagKindLabel(t.Kind)
-	recalcAt := strings.TrimSpace(t.RecalcAt)
-	recalcKey, recalcFallback := productenums.TagRecalcLabel(t.RecalcAt)
 	return productdto.TagRowResp{
 		ID: t.ID, Name: t.Name, Slug: t.Slug, Kind: t.Kind,
-		KindLabelKey: kindKey, KindLabelFallback: kindFallback,
 		IsRule:        t.Kind == productenums.TagKindRule,
 		HasRuleParams: t.Kind == productenums.TagKindRule,
 		KindRule:      productenums.TagKindRule,
 		KindManual:    productenums.TagKindManual,
 		RuleType:      t.RuleType,
 		RuleLabel:     t.RuleLabel,
-		RecalcAt:      recalcAt, RecalcLabelKey: recalcKey, RecalcLabelFallback: recalcFallback,
-		ProductCount: t.ProductCount, Sort: t.Sort,
+		RecalcAt:      strings.TrimSpace(t.RecalcAt),
+		ProductCount:  t.ProductCount, Sort: t.Sort,
 		RuleDays:     ruleParamText(t.RuleParams, "days"),
 		RuleMinPrice: ruleParamText(t.RuleParams, "minPrice"),
 		RuleMaxPrice: ruleParamText(t.RuleParams, "maxPrice"),
