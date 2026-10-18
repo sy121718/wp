@@ -297,13 +297,10 @@ func (r *bundlePageFailReader) ProductBundlePage(context.Context, *productdto.Pr
 		SourceWarehouses: []productdto.BundleSourceWarehouseGroupResp{},
 		MaxOptions:       productdto.BundleMaxOptionsLimit,
 		SaveBlocked:      true,
-		LoadFailed:       true,
-		HTTPStatus:       r.status,
 	}, errors.New("bundle config read failed: internal detail")
 }
 
-// TestBundlePageReadFailureIsFiveHundred 主数据读不到：500 + no-store + 完整页壳 + 失败槽，
-// 且不直出内部错误；保存入口撤掉（读不出来就不该让人提交，否则会把不完整配置写进去）。
+// TestBundlePageReadFailureIsFiveHundred 主数据读不到：500 JSON，且不直出内部错误。
 //
 // 反面判据：把这一档写成「渲染成空骨架 + 200」最省事，但那样运营看到的是「这个套餐还没配
 // 成员」——他会开始重新配一遍，而真实原因是没读到；这条判据同时挡住内部错误原文泄漏。
@@ -323,17 +320,14 @@ func TestBundlePageReadFailureIsFiveHundred(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("主数据读不到应 500，实际 %d，body=%s", rec.Code, oneLine(rec.Body.String()))
 	}
-	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("失败页必须 no-store（重试要真的回到服务端），实际 %q", got)
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("失败出口必须是 JSON，Content-Type=%q", ct)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "</html>") {
-		t.Fatal("失败页也必须是完整页壳（不是裸错误文本）")
-	}
-	if !strings.Contains(body, "这一页的数据没能读出来") {
-		t.Fatalf("失败页应渲染失败槽，body=%s", oneLine(body))
+	if !strings.Contains(body, "内部错误") {
+		t.Fatalf("报文应给归口文案，body=%s", oneLine(body))
 	}
 	if strings.Contains(body, "internal detail") {
-		t.Fatal("失败页不得直出内部错误原文")
+		t.Fatal("报文不得直出内部错误原文")
 	}
 }

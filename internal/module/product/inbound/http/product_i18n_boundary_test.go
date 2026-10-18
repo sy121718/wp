@@ -31,7 +31,6 @@ func TestControllerI18nBoundary(t *testing.T) {
 			"具名占位符 {n} 句式；0.3 随视图槽删除",
 		"product_subject_handle.go": "复合句与视图槽：变体保存的 Tail 拼接、定价回执三段拼句、" +
 			"来源标签字面量、面板 ErrorText；0.3 随视图槽删除",
-		"product_detail_template_handle.go": "页面失败槽 LoadError（成品串交给模板槽）；0.3 随视图槽删除",
 	}
 
 	hits := scanControllerTranslate(t)

@@ -149,8 +149,6 @@ func (s *editorStub) ProductBundlePage(_ context.Context, req *productdto.Produc
 				v.SelectedProduct = req.ProductID
 			}
 			if s.bundlePageErr != nil {
-				v.HTTPStatus = http.StatusInternalServerError
-				v.LoadFailed = true
 				v.SaveBlocked = true
 			}
 		})
@@ -174,8 +172,6 @@ func (s *editorStub) ProductDetailTemplatePage(_ context.Context, req *productdt
 				}
 			}
 			if s.detailTemplatePageErr != nil {
-				v.HTTPStatus = http.StatusInternalServerError
-				v.LoadFailed = true
 				v.Ready = false
 			}
 		})
@@ -223,10 +219,6 @@ func (s *editorStub) ProductEditPage(_ context.Context, req *productdto.ProductE
 				}
 			}
 			if s.editErr != nil {
-				v.HTTPStatus = http.StatusInternalServerError
-				v.LoadFailed = true
-				v.HasProduct = false
-				v.Detail = nil
 			}
 		})
 	}
@@ -429,7 +421,7 @@ func TestEditorPagesLoadFailureRendersSamePage(t *testing.T) {
 			h, stub, _, _ := editorEnv()
 			p.breakLoad(stub)
 			rec := editorRequest(t, h, p.path)
-			assertProductPageFailure(t, p.name+"主数据失败", rec, http.StatusInternalServerError, p.marker)
+			assertProductJSONFailure(t, p.name+"主数据失败", rec, http.StatusInternalServerError, "内部错误")
 			assertCalls(t, p.name+"主数据失败", stub.calls, p.loadFailCalls)
 		})
 	}
@@ -445,7 +437,7 @@ func TestEditorPagesProjectListFailureSkipsDerivedQueries(t *testing.T) {
 			h, stub, tpls, insts := editorEnv()
 			h.projects = &editorProjectsStub{err: errors.New(editorDriverText)}
 			rec := editorRequest(t, h, p.path)
-			assertProductPageFailure(t, p.name+"工程清单失败", rec, http.StatusInternalServerError, p.marker)
+			assertProductJSONFailure(t, p.name+"工程清单失败", rec, http.StatusInternalServerError, "内部错误")
 			assertCalls(t, p.name+"工程清单失败", stub.calls, nil)
 			assertCalls(t, p.name+"工程清单失败", tpls.calls, nil)
 			assertCalls(t, p.name+"工程清单失败", insts.calls, nil)
@@ -462,7 +454,7 @@ func TestEditorPagesUnknownProjectIsBadRequest(t *testing.T) {
 		t.Run(p.name, func(t *testing.T) {
 			h, stub, _, _ := editorEnv()
 			rec := editorRequest(t, h, replaceProject(p.path, "does-not-exist"))
-			assertProductPageFailure(t, p.name+"未知工程", rec, http.StatusBadRequest, "请求参数无效")
+			assertProductJSONFailure(t, p.name+"未知工程", rec, http.StatusBadRequest, "请求参数无效")
 			assertCalls(t, p.name+"未知工程", stub.calls, nil)
 		})
 	}
@@ -486,7 +478,7 @@ func TestEditorPagesSuccessRendersPage(t *testing.T) {
 					t.Fatalf("%s：成功页缺 %q，body=%s", p.name, want, headOf(body))
 				}
 			}
-			if strings.Contains(body, "这一页的数据没能读出来") {
+			if strings.Contains(body, "内部错误") {
 				t.Fatalf("%s：成功档不该渲染失败槽，body=%s", p.name, headOf(body))
 			}
 			for _, want := range p.successCalls {
@@ -513,19 +505,17 @@ func TestBundleConfigErrorGrades(t *testing.T) {
 	}{
 		{"商品不存在", productenums.Err(productenums.ErrNotFound), http.StatusNotFound, "商品或变体不存在"},
 		{"参数非法", productenums.Err(productenums.ErrInvalidParam), http.StatusBadRequest, "请求参数无效"},
-		{"驱动错误", errors.New(editorDriverText), http.StatusInternalServerError, "这一页的数据没能读出来"},
+		{"驱动错误", errors.New(editorDriverText), http.StatusInternalServerError, "内部错误"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h, stub, _, _ := editorEnv()
 			stub.bundlePageView = productBundlePageViewStub(func(v *productdto.ProductBundlePageResp) {
-				v.HTTPStatus = tc.status
-				v.LoadFailed = true
 				v.SaveBlocked = true
 			})
 			stub.bundlePageErr = tc.err
 			rec := editorRequest(t, h, "/admin/products/bundle?project=p1&product=prod1")
-			assertProductPageFailure(t, tc.name, rec, tc.status, tc.wantText)
+			assertProductJSONFailure(t, tc.name, rec, tc.status, tc.wantText)
 			// 取数编排在 service：控制器只调一次读模型。
 			assertCalls(t, tc.name, stub.calls, []string{"ProductBundlePage"})
 		})
@@ -539,10 +529,6 @@ func TestEditProductErrorGrades(t *testing.T) {
 	// failedEditView 读模型交回来的失败档（键给齐：契约上视图恒非 nil）。
 	failedEditView := func(status int) *productdto.ProductEditPageResp {
 		return productEditPageViewStub(func(v *productdto.ProductEditPageResp) {
-			v.HTTPStatus = status
-			v.LoadFailed = true
-			v.HasProduct = false
-			v.Detail = nil
 		})
 	}
 	cases := []struct {
@@ -576,18 +562,18 @@ func TestEditProductErrorGrades(t *testing.T) {
 				s.editView = failedEditView(http.StatusInternalServerError)
 			},
 			wantStatus: http.StatusInternalServerError,
-			wantText:   "这一页的数据没能读出来",
+			wantText:   "内部错误",
 		},
 		{
 			name: "没有错误却没有行",
 			setup: func(s *editorStub) {
-				// 读模型给了 404 档但没给 err：这一档与详情页同一口径 ——
-				// 「读到了、库里没有」，页面渲染的是**空态**而不是失败槽，
-				// 所以断言的是空态文案，不是归口错误文案。
+				// 「读到了、库里没有」也要给错误（声明处 404）：否则控制器只能渲染空壳，
+				// 而真实原因是这一行不存在。
+				s.editErr = productenums.Err(productenums.ErrNotFound)
 				s.editView = failedEditView(http.StatusNotFound)
 			},
 			wantStatus: http.StatusNotFound,
-			wantText:   "商品不存在",
+			wantText:   "商品或变体不存在",
 		},
 	}
 	for _, tc := range cases {
@@ -595,7 +581,7 @@ func TestEditProductErrorGrades(t *testing.T) {
 			h, stub, _, _ := editorEnv()
 			tc.setup(stub)
 			rec := editorRequest(t, h, "/admin/products/edit?project=p1&product=prod1")
-			assertProductPageFailure(t, tc.name, rec, tc.wantStatus, tc.wantText)
+			assertProductJSONFailure(t, tc.name, rec, tc.wantStatus, tc.wantText)
 			// 取数编排在 service：控制器只调一次读模型（失败之后不会再发任何派生查询）。
 			assertCalls(t, tc.name, stub.calls, []string{"ProductEditPage"})
 		})
@@ -611,7 +597,7 @@ func TestDetailTemplateTemplateListFailure(t *testing.T) {
 	h, stub, _, _ := editorEnv()
 	stub.detailTemplatePageErr = errors.New(editorDriverText)
 	rec := editorRequest(t, h, "/admin/products/template?project=p1&product=prod1")
-	assertProductPageFailure(t, "模板清单失败", rec, http.StatusInternalServerError, "商品详情页模板")
+	assertProductJSONFailure(t, "模板清单失败", rec, http.StatusInternalServerError, "内部错误")
 	assertCalls(t, "模板清单失败", stub.calls, []string{"ProductDetailTemplatePage"})
 }
 

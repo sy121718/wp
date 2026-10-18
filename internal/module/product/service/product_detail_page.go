@@ -36,7 +36,6 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 		Categories:       []*productdto.CategoryResp{},
 		Brands:           []*productdto.BrandResp{},
 		Tags:             []*productdto.TagResp{},
-		HTTPStatus:       200,
 	}
 	// firstErr 只记**第一处**失败：后面的步骤据此跳过，末尾据此给失败槽与档位。
 	var firstErr error
@@ -44,7 +43,6 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 		if firstErr == nil {
 			firstErr = e
 			// 取数没读到 = 500。404 / 400 是另外两档，不经过这里。
-			view.HTTPStatus = 500
 		}
 	}
 
@@ -69,7 +67,6 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 
 	// 与列表页同一档参数校验：?project=<不存在的 id> 不该渲染成「这个工程下没有商品」。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
-		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
@@ -90,8 +87,8 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 		// 前面的取数已经失败：这一页的结论已定，不再为它取商品数据。
 	case productID == "":
 		// 没给 product 参数：这一页没有可读的对象，与「商品已被删除」是同一档（404）。
-		// 手输 URL、书签失效、商品刚被删都会走到这里；模板自带的空态就是它的文案。
-		view.HTTPStatus = 404
+		// 手输 URL、书签失效、商品刚被删都会走到这里：出口给 404 JSON。
+		firstErr = productenums.Err(productenums.ErrNotFound)
 	default:
 		// 取商品这一跳必须带上面已解析出的工程作用域：多工程部署下 product 侧的
 		// resolveProjectID 在「显式工程为空且工程数 != 1」时回 ErrInvalidParam，
@@ -121,12 +118,10 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 				view.HasProduct = true
 			}
 		case isProductErrKey(derr, productenums.ErrNotFound):
-			// 业务上明确的「不存在」：404 + 同一页 + 模板自带的空态。
-			// 不进失败槽（LoadFailed 保持为假）—— 那是「读到了、库里没有」，不是「没读到」。
-			view.HTTPStatus = 404
+			// 业务上明确的「不存在」：出口给 404 JSON（读到了、库里没有）。
+			firstErr = productenums.Err(productenums.ErrNotFound)
 		case isProductErrKey(derr, productenums.ErrInvalidParam):
 			// 参数本身不合法（id 形态不对等）：400 + 同一页。
-			view.HTTPStatus = 400
 			firstErr = productenums.Err(productenums.ErrInvalidParam)
 		default:
 			// 其余（数据库 / 连接 / 未知错误，以及 detail 为 nil 的畸形返回）：500 + no-store。
@@ -153,10 +148,7 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 		}
 	}
 	if firstErr != nil {
-		// 失败页给齐模板必需键：上面每个字段都有值（空列表而不是缺失），渲染不会断在
-		// 「失败分支只设了错误键」上（internal/templates/CLAUDE.md §错误分支也必须给齐必需键）。
-		view.LoadFailed = true
-		return view, firstErr
+		return nil, firstErr
 	}
 	return view, nil
 }

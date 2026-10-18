@@ -59,7 +59,6 @@ func (s *Service) ProductAttributesPage(ctx context.Context, req *productdto.Pro
 		Projects:         []projectdto.ProjectResp{},
 		AttributeDetails: []*productdto.AttributeResp{},
 		Limit:            ProductSubListPageSize,
-		HTTPStatus:       200,
 	}
 	// firstErr 只记**第一处**失败：后面的步骤据此跳过，末尾据此给失败槽与档位。
 	var firstErr error
@@ -67,7 +66,6 @@ func (s *Service) ProductAttributesPage(ctx context.Context, req *productdto.Pro
 		if firstErr == nil {
 			firstErr = e
 			// 取数没读到 = 500。参数不合法是另一档（下面的工程校验）。
-			view.HTTPStatus = 500
 		}
 	}
 
@@ -108,7 +106,6 @@ func (s *Service) ProductAttributesPage(ctx context.Context, req *productdto.Pro
 	// —— 把「工程不存在」说成了「工程是空的」。判据是**本次请求已加载的工程集合**，与页面里的
 	// 工程选择器同源（判据唯一一份就是下面这个 ProjectExists，各页不再各写一遍）。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
-		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
@@ -134,9 +131,7 @@ func (s *Service) ProductAttributesPage(ctx context.Context, req *productdto.Pro
 	}
 
 	if firstErr != nil {
-		// 失败页给齐模板必需键（空列表而不是缺失），渲染不会断在「失败分支只设了错误键」上。
-		view.LoadFailed = true
-		return view, firstErr
+		return nil, firstErr
 	}
 	return view, nil
 }

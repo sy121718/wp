@@ -43,7 +43,6 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 		if firstErr == nil {
 			firstErr = e
 			// 取数没读到 = 500。404 / 400 是另外两档，不经过这里。
-			view.HTTPStatus = 500
 		}
 	}
 
@@ -66,7 +65,6 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 	view.SelectedProject = selected
 
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
-		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
@@ -88,9 +86,8 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 		case derr == nil && detail != nil:
 			product = detail
 		case isProductErrKey(derr, productenums.ErrNotFound):
-			view.HTTPStatus = 404
+			firstErr = productenums.Err(productenums.ErrNotFound)
 		case isProductErrKey(derr, productenums.ErrInvalidParam):
-			view.HTTPStatus = 400
 			firstErr = productenums.Err(productenums.ErrInvalidParam)
 		default:
 			// 其余（含 detail 为 nil 的畸形返回）= 500：「读不出来」与「不存在」必须分开。
@@ -147,8 +144,7 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 	}
 
 	if firstErr != nil {
-		view.LoadFailed = true
-		return view, firstErr
+		return nil, firstErr
 	}
 	return view, nil
 }

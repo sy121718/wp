@@ -14,31 +14,11 @@
 {{selectedProduct := .SelectedProduct}}
 {* 整页装载失败的归口文案：只在 Go 侧失败路径上有值（500/400 + no-store），正常渲染为空串。
    契约见 docs/rules/template-boundary.md §整页 GET 的失败出口。 *}
-{{loadError := .["LoadError"]}}
 {{submitted := false}}{{if isset(.Submitted)}}{{submitted = .Submitted}}{{end}}
 
 {* 失败槽只在**没有提交快照**时用（整页 GET 读不出来）：原生 POST 写失败 + 重读也失败时，
    这一页要把用户刚提交的成员清单渲染回来（表单在、保存禁用、给了重新载入入口），
    把整块表单换成一句提示才是更坏的结果。 *}
-{{if loadError && !submitted}}
-<div class="stack">
-    <header class="page-head">
-        <div class="page-head-main">
-            <div class="page-title-row">
-                <h1>{{ .["t"]("admin.product_bundle.title", "捆绑配置") }}</h1>
-            </div>
-        </div>
-    </header>
-    {* 失败槽**不用** .empty-state：empty-state 是「读到了、没有数据」的形态；
-       这一档是「整页都没读到」，用 badge + page-sub + hint 说清楚
-       （与 scripts/check-empty-state-table-head.sh 的守卫口径一致）。 *}
-    <section class="card card-body">
-        <p class="badge badge-danger" role="alert">{{loadError}}</p>
-        <p class="page-sub">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
-        <p class="hint">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
-    </section>
-</div>
-{{else}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -198,5 +178,4 @@
     {{end}}
     {{end}}
 </div>
-{{end}}
 {{end}}

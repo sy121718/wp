@@ -7,7 +7,6 @@ package producthttp
 // 而路由表本身只按业务域分节（见 product_router.go）。
 
 import (
-	"errors"
 	"fmt"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
@@ -392,18 +391,8 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) (any, error) {
 		return nil, response.ErrHandled
 	}
 	view, err := reader.ProductNewPage(c.Request.Context(), req)
-	if view == nil {
-		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
-		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
-		view = &productdto.ProductNewPageResp{
-			HTTPStatus: http.StatusInternalServerError,
-		}
-	}
 	if err != nil {
-		// 视图已带 LoadFailed / HTTPStatus（400 参数不合法 / 500 取数失败）。
-		// 这里只补**当前语言**的失败槽文案：原始的 err 只进日志。
-		view.LoadFailed = true
-		view.LoadError = response.MessageOf(c, "product", err)
+		return nil, err
 	}
 	return view, nil
 }
@@ -454,11 +443,8 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	view, err := reader.ProductEditPage(ctx, &productdto.ProductEditPageReq{
 		ProjectID: selected, ProductID: productID,
 	})
-	if view == nil {
-		// 契约上视图恒非 nil（失败也要给齐模板必需键）：真出现 nil 时兜一个空视图。
-		view = &productdto.ProductEditPageResp{
-			HTTPStatus: http.StatusInternalServerError,
-		}
+	if err != nil {
+		return nil, err
 	}
 	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行）；只剩**原地重渲染**这一条路
 	// 会给 Err（表单校验失败 / 选项读取失败）。
@@ -477,13 +463,6 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 	// 详情页模板面板：详情页只读展示绑定状态，写动作（进入自定义 / 编辑模板 / 重新套用预设 /
 	// 回滚）都在本页 —— 与详情页共用同一份组装。
 	view.TplPanel = h.detailTemplatePanel(ctx, view.SelectedProject, view.ProductID)
-	if err != nil {
-		// 视图已带 LoadFailed / HTTPStatus；这里只补**当前语言**的失败槽文案：
-		// 驱动原文与原始错误只进日志。
-		view.LoadFailed = true
-		view.LoadError = response.MessageOf(c, "product", err)
-	}
-	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
 	return view, nil
 }
 
@@ -584,12 +563,8 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) (any, error) {
 		return nil, response.ErrHandled
 	}
 	view, err := reader.ProductDetailPage(ctx, req)
-	if view == nil {
-		// 契约上视图恒非 nil（失败也要给齐模板必需键）：真出现 nil 时兜一个空视图。
-		view = &productdto.ProductDetailPageResp{
-
-			HTTPStatus: http.StatusInternalServerError,
-		}
+	if err != nil {
+		return nil, err
 	}
 	// 仓库清单 / 商品详情 / 分类树 / 品牌 / 标签的取数编排全在 service 的读模型里
 	//（service.ProductDetailPage，含 404 / 400 / 500 三档）；这里只做控制器负责的派生值与出口。
@@ -598,7 +573,7 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) (any, error) {
 	view.BackURL = "/admin/products?project=" + view.SelectedProject
 	// 行已由读模型装配（service/product_row.go）—— 控制器只补详情页独有的面板；
 	// 「取数失败时不装配」由读模型自己保证（HasProduct / Detail 为假时它不建行）。
-	if err == nil && view.HasProduct && view.Detail != nil && view.Product != nil {
+	if view.HasProduct && view.Detail != nil && view.Product != nil {
 		// 捆绑容器（type=bundle）在详情页多一块「捆绑构成」编辑区：成员只作为选项与履约明细，
 		// 容器价才是套餐价。type=variant 时**不给这个字段**，模板据 isset 整块跳过
 		// —— 区块的入口就在详情页，不该再要求运营去另一个菜单页找它。
@@ -615,10 +590,6 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) (any, error) {
 	// 非 200 一律 no-store）。「不存在」那一档没有失败槽 —— 模板自己的 .HasProduct=false
 	// 空态就是它的文案（读到了、库里没有这一条），但它与「没读到」一样 no-store：
 	// 重试必须真的回到服务端确认商品是否又出现了。
-	if err != nil {
-		view.LoadFailed = true
-		view.LoadError = response.MessageOf(c, "product", err)
-	}
 	return view, nil
 }
 
@@ -911,15 +882,8 @@ func (h *ProductPageHandle) renderBundlePage(c *gin.Context) (any, error) {
 		return nil, response.ErrHandled
 	}
 	view, err := reader.ProductBundlePage(c.Request.Context(), req)
-	if view == nil {
-		// 契约上视图恒非 nil；契约是约定而不是类型保证，这一层兜底必须存在。
-		failed := bundlePageFailureView(http.StatusInternalServerError)
-		view = &failed
-		err = errors.New("捆绑配置页的视图为空")
-	}
 	if err != nil {
-		// 归口文案（中英 / 缺词 fallback 都在里面）；驱动原文与原始错误只进日志。
-		view.LoadError = response.MessageOf(c, "product", err)
+		return nil, err
 	}
 
 	// 剩下两样都只由控制器给：两个 URL 形状（ResolveURL / ListQuery）。
@@ -944,8 +908,6 @@ func bundlePageFailureView(status int) productdto.ProductBundlePageResp {
 		SourceWarehouses: []productdto.BundleSourceWarehouseGroupResp{},
 		MaxOptions:       productdto.BundleMaxOptionsLimit,
 		SaveBlocked:      true,
-		LoadFailed:       status != http.StatusOK,
-		HTTPStatus:       status,
 	}
 }
 
@@ -1221,16 +1183,8 @@ func (h *ProductPageHandle) renderPricingPageWith(c *gin.Context, form *productd
 	// 表单回显与试算结果是**写路径的产物**（本次请求里已经在内存中），不来自查询串。
 	req.Form, req.Preview, req.ErrMsg = form, preview, errMsg
 	view, err := reader.ProductPricingPage(c.Request.Context(), req)
-	if view == nil {
-		view = &productdto.ProductPricingPageResp{
-
-			HTTPStatus: http.StatusInternalServerError,
-		}
-	}
 	if err != nil {
-		// 契约上本页恒不返回 error（三处取数各自降级）：真出现时按失败档渲染并留日志。
-		logger.Scene("product").Error(err, "定价页取数失败")
-		view.HTTPStatus = http.StatusInternalServerError
+		return nil, err
 	}
 	// 表单 action 的 query：预览走页面 POST，筛选上下文要随表单带回来（URL 形状属 HTTP 边界）。
 	view.ListQuery = binding.ListQuery(c, productPricingBackKeys...)

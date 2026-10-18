@@ -60,7 +60,7 @@ var taxonomyPages = []taxonomyPage{
 		basePath: "/admin/product-tags",
 		success:  func() *productPageReaderStub { return &productPageReaderStub{tagsView: productTagsPageViewStub(nil)} },
 		empty: func() *productPageReaderStub {
-			return &productPageReaderStub{tagsView: &productdto.ProductTagsPageResp{SelectedProject: "p1", HTTPStatus: http.StatusOK}}
+			return &productPageReaderStub{tagsView: &productdto.ProductTagsPageResp{SelectedProject: "p1"}}
 		},
 		rendered: []string{"手工标签"},
 	},
@@ -73,7 +73,7 @@ var taxonomyPages = []taxonomyPage{
 			return &productPageReaderStub{categoriesView: productCategoriesPageViewStub(nil)}
 		},
 		empty: func() *productPageReaderStub {
-			return &productPageReaderStub{categoriesView: &productdto.ProductCategoriesPageResp{SelectedProject: "p1", HTTPStatus: http.StatusOK}}
+			return &productPageReaderStub{categoriesView: &productdto.ProductCategoriesPageResp{SelectedProject: "p1"}}
 		},
 		rendered: []string{"男装"},
 	},
@@ -86,7 +86,7 @@ var taxonomyPages = []taxonomyPage{
 			return &productPageReaderStub{brandsView: productBrandsPageViewStub(nil)}
 		},
 		empty: func() *productPageReaderStub {
-			return &productPageReaderStub{brandsView: &productdto.ProductBrandsPageResp{SelectedProject: "p1", HTTPStatus: http.StatusOK}}
+			return &productPageReaderStub{brandsView: &productdto.ProductBrandsPageResp{SelectedProject: "p1"}}
 		},
 		rendered: []string{"品牌一"},
 	},
@@ -105,15 +105,15 @@ func taxonomyHandle(stub *productPageReaderStub) *ProductPageHandle {
 //
 // 400 档要交**业务错误**（`productenums.ErrInvalidParam`）：控制器按「是不是业务 key」分流，
 // 交一个驱动原文得到的是内部兜底文案，那样测到的是兜底路径而不是参数档。
-func failTaxonomyView(p taxonomyPage, status int, err error) *productPageReaderStub {
+func failTaxonomyView(p taxonomyPage, err error) *productPageReaderStub {
 	stub := p.success()
 	switch {
 	case stub.categoriesView != nil:
-		stub.categoriesView.HTTPStatus, stub.categoriesErr = status, err
+		stub.categoriesErr = err
 	case stub.brandsView != nil:
-		stub.brandsView.HTTPStatus, stub.brandsErr = status, err
+		stub.brandsErr = err
 	default:
-		stub.tagsView.HTTPStatus, stub.tagsErr = status, err
+		stub.tagsErr = err
 	}
 	return stub
 }
@@ -124,8 +124,8 @@ func failTaxonomyView(p taxonomyPage, status int, err error) *productPageReaderS
 func TestTaxonomyPagesLoadFailureRendersSamePage(t *testing.T) {
 	for _, p := range taxonomyPages {
 		t.Run(p.name, func(t *testing.T) {
-			rec := productPageRequestFor(t, taxonomyHandle(failTaxonomyView(p, http.StatusInternalServerError, errors.New(taxonomyDriverText))), p.route, p.path)
-			body := assertProductPageFailure(t, p.name+"主数据没读到", rec, http.StatusInternalServerError, "这一页的数据没能读出来")
+			rec := productPageRequestFor(t, taxonomyHandle(failTaxonomyView(p, errors.New(taxonomyDriverText))), p.route, p.path)
+			body := assertProductJSONFailure(t, p.name+"主数据没读到", rec, http.StatusInternalServerError, "内部错误")
 			// 驱动原文（SQLSTATE / 关系名 / 驱动前缀）只进日志。
 			//
 			// 这里**不能**拿裸表名 `product_attributes` 当判据：改造后 title 交的是 i18n key
@@ -148,8 +148,8 @@ func TestTaxonomyPagesLoadFailureRendersSamePage(t *testing.T) {
 func TestTaxonomyPagesUnknownProjectIsBadRequest(t *testing.T) {
 	for _, p := range taxonomyPages {
 		t.Run(p.name, func(t *testing.T) {
-			rec := productPageRequestFor(t, taxonomyHandle(failTaxonomyView(p, http.StatusBadRequest, productenums.Err(productenums.ErrInvalidParam))), p.route, p.basePath+"?project=does-not-exist")
-			assertProductPageFailure(t, p.name+"未知工程", rec, http.StatusBadRequest, "请求参数无效")
+			rec := productPageRequestFor(t, taxonomyHandle(failTaxonomyView(p, productenums.Err(productenums.ErrInvalidParam))), p.route, p.basePath+"?project=does-not-exist")
+			assertProductJSONFailure(t, p.name+"未知工程", rec, http.StatusBadRequest, "请求参数无效")
 		})
 	}
 }
@@ -172,8 +172,8 @@ func TestTaxonomyPagesSuccessRendersPage(t *testing.T) {
 			if !strings.Contains(body, "</html>") {
 				t.Fatalf("%s 成功页页壳不完整，body=%s", p.name, headOf(body))
 			}
-			if strings.Contains(body, "这一页的数据没能读出来") {
-				t.Fatalf("%s 成功页渲染出了失败槽，body=%s", p.name, headOf(body))
+			if strings.HasPrefix(strings.TrimSpace(body), "{") {
+				t.Fatalf("%s 成功页输出了 JSON 报文，body=%s", p.name, headOf(body))
 			}
 			for _, want := range p.rendered {
 				if !strings.Contains(body, want) {
@@ -223,24 +223,24 @@ func TestTaxonomyPagesEmptyResultIsNotFailure(t *testing.T) {
 			if got := rec.Header().Get("Cache-Control"); got == "no-store" {
 				t.Fatalf("%s 空态不该标 no-store", p.name)
 			}
-			if strings.Contains(rec.Body.String(), "这一页的数据没能读出来") {
-				t.Fatalf("%s 空态渲染成了失败槽，body=%s", p.name, headOf(rec.Body.String()))
+			if strings.HasPrefix(strings.TrimSpace(rec.Body.String()), "{") {
+				t.Fatalf("%s 空态输出了 JSON 报文，body=%s", p.name, headOf(rec.Body.String()))
 			}
 		})
 	}
 }
 
-// TestTaxonomyPagesFailureSlotIsNotAnEmptyState 失败槽不是空态：不得出现空态容器与「新建」空态入口。
+// TestTaxonomyPagesFailureIsNeverAPage 失败档不再是页面：没有空态容器、没有「新建」入口。
 //
-// 空态说的是「读到了、没有数据」，失败槽说的是「没读到」——两者混用会让运营以为数据被删了
+// 空态说的是「读到了、没有数据」，失败说的是「没读到」——两者混用会让运营以为数据被删了
 // （并照着空态里的「新建」按钮再建一份）。
-func TestTaxonomyPagesFailureSlotIsNotAnEmptyState(t *testing.T) {
+func TestTaxonomyPagesFailureIsNeverAPage(t *testing.T) {
 	for _, p := range taxonomyPages {
 		t.Run(p.name, func(t *testing.T) {
-			rec := productPageRequestFor(t, taxonomyHandle(failTaxonomyView(p, http.StatusInternalServerError, errors.New(taxonomyDriverText))), p.route, p.path)
-			body := assertProductPageFailure(t, p.name+"失败槽形态", rec, http.StatusInternalServerError, "这一页的数据没能读出来")
+			rec := productPageRequestFor(t, taxonomyHandle(failTaxonomyView(p, errors.New(taxonomyDriverText))), p.route, p.path)
+			body := assertProductJSONFailure(t, p.name+"失败形态", rec, http.StatusInternalServerError, "内部错误")
 			if strings.Contains(body, "empty-state") {
-				t.Fatalf("%s：失败页里出现了空态容器（空态吃表头 / 与「没读到」混用），body=%s", p.name, headOf(body))
+				t.Fatalf("%s：失败报文里出现了空态容器，body=%s", p.name, headOf(body))
 			}
 		})
 	}

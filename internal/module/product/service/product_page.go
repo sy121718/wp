@@ -120,7 +120,6 @@ func (s *Service) ProductNewPage(ctx context.Context, req *productdto.ProductNew
 		AttributeOptions:    []productdto.AttributeOptionResp{},
 		WarehouseSKUOptions: []productdto.WarehouseSKUGroupResp{},
 		Templates:           []productdto.EntityTemplateOptionResp{},
-		HTTPStatus:          200,
 	}
 	// firstErr 只记**第一处**失败：后面的步骤据此跳过，末尾据此给失败槽与档位。
 	var firstErr error
@@ -128,7 +127,6 @@ func (s *Service) ProductNewPage(ctx context.Context, req *productdto.ProductNew
 		if firstErr == nil {
 			firstErr = e
 			// 取数没读到 = 500。参数不合法是另一档（下面的工程校验）。
-			view.HTTPStatus = 500
 		}
 	}
 
@@ -152,7 +150,6 @@ func (s *Service) ProductNewPage(ctx context.Context, req *productdto.ProductNew
 	// 可选项」—— 把「工程不存在」说成了「工程是空的」。参数级失败仍是**页面请求**：
 	// 整页 + 400 + no-store（档位由视图带出，见 dto.ProductNewPageResp.PageStatus）。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
-		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
@@ -200,10 +197,7 @@ func (s *Service) ProductNewPage(ctx context.Context, req *productdto.ProductNew
 	}
 
 	if firstErr != nil {
-		// 失败页给齐模板必需键：这里全部字段都有值（空列表而不是缺失），渲染不会断在
-		// 「失败分支只设了错误键」上（internal/templates/CLAUDE.md §错误分支也必须给齐必需键）。
-		view.LoadFailed = true
-		return view, firstErr
+		return nil, firstErr
 	}
 	return view, nil
 }

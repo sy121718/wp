@@ -52,7 +52,6 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 		if firstErr == nil {
 			firstErr = e
 			// 取数没读到 = 500。不是「还没配」——见下面捆绑配置那一档。
-			view.HTTPStatus = 500
 		}
 	}
 
@@ -79,7 +78,6 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 		selectedProject = projects[0].ID
 	}
 	if firstErr == nil && selectedProject != "" && !ProjectExists(projects, selectedProject) {
-		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 	// 未选来源商品时给空值：来源属性候选是「来源商品的属性组」，
@@ -112,10 +110,8 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 			detail = nil
 			switch {
 			case isProductErrKey(derr, productenums.ErrNotFound):
-				view.HTTPStatus = 404
 				firstErr = derr
 			case isProductErrKey(derr, productenums.ErrInvalidParam):
-				view.HTTPStatus = 400
 				firstErr = derr
 			default:
 				fail(derr)
@@ -180,10 +176,12 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 	view.SourceProducts = bundleSourceProductOptions(view.Products, sourceProductID)
 	// 配置读不出来时禁止保存：无法保证这次提交的是完整配置，
 	// 宁可让用户先「重新载入」，也不要缺配置误写。
-	view.SaveBlocked = firstErr != nil
-	view.LoadFailed = firstErr != nil
 	if firstErr != nil {
-		return view, firstErr
+		view.SaveBlocked = true
+		return nil, firstErr
+	}
+	if false {
+		return nil, firstErr
 	}
 	return view, nil
 }

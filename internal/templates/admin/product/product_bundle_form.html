@@ -6,22 +6,13 @@
 {{maxOptions := .MaxOptions}}
 {{candidateSKUs := .Rows}}
 {{if isset(.CandidateSKUs)}}{{candidateSKUs = .CandidateSKUs}}{{end}}
-{* 装载失败：表单仍要渲染（配置读不出来不等于这一屏没有内容），只撤掉保存入口。 *}
-{{loadError := .["LoadError"]}}
-{{saveBlocked := false}}
-{{if isset(.SaveBlocked)}}{{saveBlocked = .SaveBlocked}}{{end}}
+{* 表单初值：配置读不出来时退成零值，保存入口由 SaveBlocked 撤掉。 *}
 {{cfgMaxOptions := 0}}{{cfgMinTotalQty := 0}}{{cfgMaxTotalQty := 0}}
 {{if isset(.CfgMaxOptions)}}{{cfgMaxOptions = .CfgMaxOptions}}{{end}}
 {{if isset(.CfgMinTotalQty)}}{{cfgMinTotalQty = .CfgMinTotalQty}}{{end}}
 {{if isset(.CfgMaxTotalQty)}}{{cfgMaxTotalQty = .CfgMaxTotalQty}}{{end}}
+{{saveBlocked := false}}{{if isset(.SaveBlocked)}}{{saveBlocked = .SaveBlocked}}{{end}}
 <div data-bundle-form-host>
-    {{if loadError}}
-    {* 装载失败要说清「发生了什么」，但**不能吞掉页面骨架**：保存入口由 SaveBlocked 撤掉
-       （配置读不出来就无法保证提交的是完整配置），成员表照常渲染库里已有的配置。 *}
-    <p class="badge badge-danger" role="alert">{{loadError}}</p>
-    <p class="page-sub">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
-    <p class="hint">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
-    {{end}}
     <section class="card card-body">
         <h2>{{ .["t"]("admin.product_bundle.rule.title", "选项规则") }}{{if .Detail}} · {{.Detail.ProductName}}{{end}}</h2>
         {{if .Detail}}

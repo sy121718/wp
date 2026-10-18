@@ -13,7 +13,6 @@
 {{selectedProject := .SelectedProject}}
 {* 整页装载失败的归口文案（只在 Go 侧失败路径上有值：500/400 + no-store）；
    契约见 docs/rules/template-boundary.md §整页 GET 的失败出口。 *}
-{{loadError := .["LoadError"]}}
 {{canCreateTemplate := isset(.Buttons["contenttemplate.create"])}}
 <div class="stack">
     <header class="page-head">
@@ -47,29 +46,17 @@
         </div>
     </header>
 
+    {* 装配缺陷的可见提示：能力没接上时页面仍是 200，就地说明原因（文案属前端层）。 *}
+    {{if not .Ready}}
+    <section class="card card-body">
+        <p class="badge badge-warning">{{ .["t"]("admin.product_detail_template.depsMissing", "详情页模板能力未装配（缺少内容模板或自动发布契约）") }}</p>
+    </section>
+    {{end}}
+
     {* 写动作的结论行：成功由 ui/json_write.js 存进 flash、整页刷新后在这里显示一次。
        四个写动作都会改变「有没有实例 / 绑的是哪套模板 / 线上路径」，所以一律整页刷新。 *}
     <p class="form-hint badge" data-write-flash-target="product-detail-template" role="status" hidden></p>
 
-    {{if loadError}}
-    {* 失败优先于「未装配」：先判「没读到」，再判装配缺陷 ——
-       两者都是这一页不能用，但原因和处置完全不同。 *}
-    <section class="card card-body">
-        <p class="badge badge-danger" role="alert">{{loadError}}</p>
-        <p class="page-sub">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
-        <p class="hint">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
-    </section>
-    {{else if !.Ready}}
-    <section class="card card-body">
-        <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.product_detail_template.notReadyTitle", "详情页模板能力未装配") }}</p>
-            <p class="empty-desc">{{ .["t"]("admin.product_detail_template.notReady", "详情页模板能力未装配（缺少内容模板或自动发布契约），本页暂不可用。") }}</p>
-            <div class="empty-actions">
-                <a class="btn btn-primary" href="/admin/products?project={{selectedProject}}">{{ .["t"]("admin.product_detail_template.backToList", "返回商品列表") }}</a>
-            </div>
-        </div>
-    </section>
-    {{else}}
     <section class="card card-body">
         <h2>{{.Product.Name}}{{ .["t"]("admin.product_detail_template.detailSuffix", " · 详情页") }}</h2>
         <p>
@@ -220,7 +207,6 @@
             </div>
         </form>
     </template>
-    {{end}}
     {{end}}
 </div>
 {{end}}

@@ -12,6 +12,7 @@ package productservice
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 
 	productdto "go_wp/internal/module/product/dto"
@@ -26,9 +27,6 @@ func TestProductCreateFormWithoutProjectSkipsFetches(t *testing.T) {
 	}
 	if view == nil {
 		t.Fatal("视图恒非 nil")
-	}
-	if view.HTTPStatus != 200 || view.LoadFailed {
-		t.Fatalf("没给工程是空态不是失败：HTTPStatus=%d LoadFailed=%v", view.HTTPStatus, view.LoadFailed)
 	}
 	if wh.calls != 0 || tpl.calls != 0 {
 		t.Fatalf("没给工程不该发任何取数，实际仓库端口 %d 次、模板端口 %d 次", wh.calls, tpl.calls)
@@ -49,8 +47,8 @@ func TestProductCreateFormPortMissingIsDegraded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("端口未注入是降级不是失败，不该返回错误：%v", err)
 	}
-	if view == nil || view.LoadFailed || view.HTTPStatus != 200 {
-		t.Fatalf("降级档仍是 200 成功视图：%+v", view)
+	if view == nil {
+		t.Fatal("降级档仍要交成功视图")
 	}
 	if view.WarehouseOptions == nil || len(view.WarehouseOptions) != 0 {
 		t.Fatalf("降级档的选项键要给空切片而不是 nil：%v", view.WarehouseOptions)
@@ -69,13 +67,7 @@ func TestProductCreateFormWarehouseFailureStopsFanout(t *testing.T) {
 	if err == nil {
 		t.Fatal("仓库清单读失败必须返回错误（调用方据此退回整页提示，不留半个表单）")
 	}
-	if view == nil {
-		t.Fatal("失败路径的视图也必须非 nil")
-	}
-	if view.HTTPStatus != 500 || !view.LoadFailed || !view.PageNoStore() {
-		t.Fatalf("失败档必须 500 + LoadFailed + no-store：HTTPStatus=%d LoadFailed=%v",
-			view.HTTPStatus, view.LoadFailed)
-	}
+	wantPageFailure(t, "仓库清单读不到", view, err, http.StatusInternalServerError)
 	if wh.calls != 1 {
 		t.Fatalf("仓库读失败之后不该再发取数，实际仓库端口 %d 次（want 1：只有那次失败的调用）", wh.calls)
 	}

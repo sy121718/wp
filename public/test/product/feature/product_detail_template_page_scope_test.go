@@ -28,6 +28,7 @@ package feature
 import (
 	"context"
 	"go_wp/internal/adminui"
+	"go_wp/pkg/facing"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -221,8 +222,8 @@ func TestProductDetailTemplatePageServiceScopesProductLookup(t *testing.T) {
 	if view.SelectedProject != selected {
 		t.Fatalf("解析出的工程 = %q，want %q", view.SelectedProject, selected)
 	}
-	if view.HTTPStatus != 0 {
-		t.Fatalf("商品属于解析出的工程，HTTPStatus 应为 0（200），实际 %d（400 = 取商品那一跳没带作用域）", view.HTTPStatus)
+	if !view.Ready {
+		t.Fatalf("商品属于解析出的工程，页面应就绪（Ready=false 说明取数被参数档打断：取商品那一跳没带作用域）")
 	}
 	if !view.Ready || view.Product.ID != mine {
 		t.Fatalf("页面读模型未取到该商品：Ready=%v Product=%+v，want %s", view.Ready, view.Product, mine)
@@ -243,8 +244,9 @@ func TestProductDetailTemplatePageServiceScopesProductLookup(t *testing.T) {
 	if otherErr != nil {
 		t.Fatalf("读另一个工程的商品不该报参数错（那是「没带作用域」的症状）：%v", otherErr)
 	}
-	if otherView.HTTPStatus == http.StatusBadRequest {
-		t.Fatalf("HTTPStatus = 400：取商品那一跳没把解析出的工程传下去（多工程下 resolveProjectID 回 ErrInvalidParam）")
+	if _, business := facing.FactOf(otherErr); business {
+		_ = otherView
+		t.Fatalf("取商品那一跳没把解析出的工程传下去（多工程下 resolveProjectID 回业务参数错）")
 	}
 }
 

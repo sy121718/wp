@@ -10,6 +10,7 @@ package productservice
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 
 	productdto "go_wp/internal/module/product/dto"
@@ -29,18 +30,7 @@ func TestProductAttributesPageUnknownProjectStopsBeforeFanout(t *testing.T) {
 	if err == nil || err.Error() != productenums.ErrInvalidParam {
 		t.Fatalf("未知工程应返回 %s，实际 err=%v", productenums.ErrInvalidParam, err)
 	}
-	if view == nil {
-		t.Fatal("失败路径的视图也必须非 nil（控制器不再补 nil 判断）")
-	}
-	if view.HTTPStatus != 400 || view.PageStatus() != 400 {
-		t.Fatalf("未知工程应 400（参数不合法），实际 %d", view.HTTPStatus)
-	}
-	if !view.LoadFailed || !view.PageNoStore() {
-		t.Fatalf("失败页必须带 LoadFailed + no-store，实际 LoadFailed=%v", view.LoadFailed)
-	}
-	if view.AttributeDetails == nil {
-		t.Fatal("失败页也要给齐模板必需键（空切片而不是 nil）；成品行 Attributes 由控制器装配")
-	}
+	wantPageFailure(t, "未知工程", view, err, http.StatusBadRequest)
 }
 
 // TestProductAttributesPageProjectListFailureIsFiveHundred 工程清单读不到 = 500。
@@ -52,9 +42,7 @@ func TestProductAttributesPageProjectListFailureIsFiveHundred(t *testing.T) {
 	if err == nil {
 		t.Fatal("工程清单读不到必须返回错误")
 	}
-	if view == nil || view.HTTPStatus != 500 || !view.LoadFailed || !view.PageNoStore() {
-		t.Fatalf("工程清单失败应 500 + LoadFailed + no-store：%+v", view)
-	}
+	wantPageFailure(t, "工程清单读不到", view, err, http.StatusInternalServerError)
 }
 
 // TestProductAttributesPageVariationNormalization variation 只认 1 / 0，其余当「全部」。

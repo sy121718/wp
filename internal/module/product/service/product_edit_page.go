@@ -32,13 +32,11 @@ func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEd
 		Categories:       []*productdto.CategoryResp{},
 		Brands:           []*productdto.BrandResp{},
 		Tags:             []*productdto.TagResp{},
-		HTTPStatus:       200,
 	}
 	var firstErr error
 	fail := func(e error) {
 		if firstErr == nil {
 			firstErr = e
-			view.HTTPStatus = 500
 		}
 	}
 
@@ -62,7 +60,6 @@ func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEd
 	view.ProductID = productID
 
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
-		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
@@ -111,9 +108,8 @@ func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEd
 			view.Detail = detail
 			view.HasProduct = true
 		case isProductErrKey(derr, productenums.ErrNotFound):
-			view.HTTPStatus = 404
+			firstErr = productenums.Err(productenums.ErrNotFound)
 		case isProductErrKey(derr, productenums.ErrInvalidParam):
-			view.HTTPStatus = 400
 			firstErr = productenums.Err(productenums.ErrInvalidParam)
 		default:
 			// 其余（数据库 / 连接 / 未知错误，以及 detail 为 nil 的畸形返回）：500 + no-store。
@@ -149,10 +145,7 @@ func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEd
 		}
 	}
 	if firstErr != nil {
-		// 失败页给齐模板必需键：上面每个字段都有值（空列表而不是缺失），渲染不会断在
-		// 「失败分支只设了错误键」上（internal/templates/CLAUDE.md §错误分支也必须给齐必需键）。
-		view.LoadFailed = true
-		return view, firstErr
+		return nil, firstErr
 	}
 	return view, nil
 }

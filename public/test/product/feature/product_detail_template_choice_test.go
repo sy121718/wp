@@ -627,7 +627,7 @@ func (p *detailTemplateFailingPort) BoundDetailTemplate(context.Context, string,
 }
 
 // TestProductDetailTemplatePageTemplateListFailureStopsDerivedQueries 主数据读不到：
-// 500 + no-store + 完整页壳，且派生查询一条都不发。
+// 500 JSON，且派生查询一条都不发。
 //
 // 反面判据：把「清单失败」写成静默空清单，页面会显示成「这个商品还没有任何模板」——
 // 用户以为要去新建一套，而真实原因是没读到；这条判据同时挡住「失败后继续查默认模板」。
@@ -646,18 +646,15 @@ func TestProductDetailTemplatePageTemplateListFailureStopsDerivedQueries(t *test
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("模板清单读不到应 500，实际 %d，body=%s", rec.Code, headOfBody(rec.Body.String()))
 	}
-	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("失败页必须 no-store（重试要真的回到服务端），实际 %q", got)
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("失败出口必须是 JSON，Content-Type=%q", ct)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "</html>") {
-		t.Fatal("失败页也必须是完整页壳（不是裸错误文本）")
-	}
-	if !strings.Contains(body, "这一页的数据没能读出来") {
-		t.Fatalf("失败页应渲染失败槽，body=%s", headOfBody(body))
+	if !strings.Contains(body, "内部错误") {
+		t.Fatalf("报文应给归口文案，body=%s", headOfBody(body))
 	}
 	if strings.Contains(body, "template list unavailable") {
-		t.Fatal("失败页不得直出内部错误原文")
+		t.Fatal("报文不得直出内部错误原文")
 	}
 	if port.candidates != 1 {
 		t.Fatalf("模板清单应被读一次，实际 %d", port.candidates)
@@ -690,8 +687,8 @@ func TestProductDetailTemplatePageAnnotationFailuresStillRenderPage(t *testing.T
 	if !strings.Contains(body, "夏季衬衫") {
 		t.Fatalf("页面主体（商品）仍应渲染，body=%s", headOfBody(body))
 	}
-	if strings.Contains(body, "这一页的数据没能读出来") {
-		t.Fatal("标注类失败不该渲染失败槽")
+	if strings.HasPrefix(strings.TrimSpace(body), "{") {
+		t.Fatal("标注类失败仍应是页面，不是 JSON 报文")
 	}
 	// 没有实例 = 还没发布过：页面要据此提示「还没发布」，而不是留空让人猜。
 	if !strings.Contains(body, "未发布") {

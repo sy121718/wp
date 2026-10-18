@@ -16,8 +16,8 @@ package producthttp
 // 所以成功档必须断言**该取的数真的取了**（这里体现为读模型收到的入参）。
 
 import (
-	"errors"
 	"go_wp/internal/adminui"
+	productenums "go_wp/internal/module/product/enums"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -107,22 +107,20 @@ func TestProductAttributesPageSuccessRendersRowsAndDrawers(t *testing.T) {
 // TestProductAttributesPageUnknownProjectIsBadRequest 未知工程：400 + no-store，仍是「这一页」。
 func TestProductAttributesPageUnknownProjectIsBadRequest(t *testing.T) {
 	view := productAttributesPageViewStub(func(v *productdto.ProductAttributesPageResp) {
-		v.LoadFailed = true
-		v.HTTPStatus = http.StatusBadRequest
 	})
-	h, _ := attributesPageEnv(view, errors.New("product.invalidParam"))
+	h, _ := attributesPageEnv(view, productenums.Err(productenums.ErrInvalidParam))
 	rec := attributesPageRequest(t, h, "/admin/product-attributes?project=does-not-exist")
-	assertProductPageFailure(t, "属性页未知工程", rec, http.StatusBadRequest, "这一页的数据没能读出来")
+	assertProductJSONFailure(t, "属性页未知工程", rec, http.StatusBadRequest, "请求参数无效")
 }
 
 // 读模型没接上这一档已从运行期消失：读模型是构造实参（ProductPageHandle.reader），
 // 漏接 = 编译错误，判据见 product_reader_injection_test.go —— 运行期不再有
 // 「类型断言失败 → 500 兜底」这条路径，所以这里不再有对应用例。
 
-// TestProductAttributesPageNilViewIsGuarded 读模型返回 nil 视图：不 panic，兜成 500 页。
+// TestProductAttributesPageNilViewIsGuarded 读模型返回 nil 视图：不 panic，交 500 JSON。
 //
-// 契约上视图恒非 nil，但契约是**约定**而不是类型保证 —— 控制器那一层兜底必须存在，
-// 否则一次装配/实现失误会让整页 500 且没有页壳（用户只能手改地址栏）。
+// 契约上视图恒非 nil，但契约是**约定**而不是类型保证 —— 控制器那一层守卫必须存在，
+// 否则一次装配/实现失误会变成 nil 解引用（整个进程 recover 成一张无信息错误页）。
 func TestProductAttributesPageNilViewIsGuarded(t *testing.T) {
 	reader := &productPageReaderStub{}
 	reader.attributesPageView = nil
@@ -134,8 +132,8 @@ func TestProductAttributesPageNilViewIsGuarded(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("nil 视图应兜成 500，实际 %d，body=%s", rec.Code, headOf(rec.Body.String()))
 	}
-	if !strings.Contains(rec.Body.String(), "</html>") {
-		t.Fatal("nil 视图兜底也必须是完整页壳")
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("nil 视图兜底也走 JSON 出口，Content-Type=%q", ct)
 	}
 }
 

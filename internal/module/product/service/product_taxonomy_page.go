@@ -108,14 +108,12 @@ func (s *Service) ProductCategoriesPage(ctx context.Context, req *productdto.Pro
 		CategoryDetails: []*productdto.CategoryResp{},
 		PickFlat:        []*productdto.CategoryResp{},
 		Limit:           ProductSubListPageSize,
-		HTTPStatus:      200,
 	}
 	var firstErr error
 	fail := func(e error) {
 		if firstErr == nil {
 			firstErr = e
 			// 取数没读到 = 500。参数不合法是另一档（下面的工程校验）。
-			view.HTTPStatus = 500
 		}
 	}
 
@@ -146,7 +144,6 @@ func (s *Service) ProductCategoriesPage(ctx context.Context, req *productdto.Pro
 	// —— 把「工程不存在」说成了「工程是空的」。判据是**本次请求已加载的工程集合**，与页面里的
 	// 工程选择器同源。
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
-		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
@@ -190,9 +187,7 @@ func (s *Service) ProductCategoriesPage(ctx context.Context, req *productdto.Pro
 	}
 
 	if firstErr != nil {
-		// 失败页给齐模板必需键（空列表而不是缺失），渲染不会断在「失败分支只设了错误键」上。
-		view.LoadFailed = true
-		return view, firstErr
+		return nil, firstErr
 	}
 	return view, nil
 }
@@ -248,13 +243,11 @@ func (s *Service) ProductBrandsPage(ctx context.Context, req *productdto.Product
 		Projects:     []projectdto.ProjectResp{},
 		BrandDetails: []*productdto.BrandResp{},
 		Limit:        ProductSubListPageSize,
-		HTTPStatus:   200,
 	}
 	var firstErr error
 	fail := func(e error) {
 		if firstErr == nil {
 			firstErr = e
-			view.HTTPStatus = 500
 		}
 	}
 
@@ -282,7 +275,6 @@ func (s *Service) ProductBrandsPage(ctx context.Context, req *productdto.Product
 	view.Page = page
 
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
-		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
@@ -311,8 +303,7 @@ func (s *Service) ProductBrandsPage(ctx context.Context, req *productdto.Product
 	}
 
 	if firstErr != nil {
-		view.LoadFailed = true
-		return view, firstErr
+		return nil, firstErr
 	}
 	return view, nil
 }
@@ -329,13 +320,11 @@ func (s *Service) ProductTagsPage(ctx context.Context, req *productdto.ProductTa
 		TagDetails: []*productdto.TagResp{},
 		RuleTypes:  []*productdto.TagRuleTypeResp{},
 		Limit:      ProductSubListPageSize,
-		HTTPStatus: 200,
 	}
 	var firstErr error
 	fail := func(e error) {
 		if firstErr == nil {
 			firstErr = e
-			view.HTTPStatus = 500
 		}
 	}
 
@@ -363,7 +352,6 @@ func (s *Service) ProductTagsPage(ctx context.Context, req *productdto.ProductTa
 	view.Page = page
 
 	if firstErr == nil && selected != "" && !ProjectExists(projects, selected) {
-		view.HTTPStatus = 400
 		firstErr = productenums.Err(productenums.ErrInvalidParam)
 	}
 
@@ -400,8 +388,7 @@ func (s *Service) ProductTagsPage(ctx context.Context, req *productdto.ProductTa
 	}
 
 	if firstErr != nil {
-		view.LoadFailed = true
-		return view, firstErr
+		return nil, firstErr
 	}
 	return view, nil
 }

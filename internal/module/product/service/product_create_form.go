@@ -23,7 +23,6 @@ func (s *Service) ProductCreateForm(ctx context.Context, req *productdto.Product
 		WarehouseOptions:    []productdto.WarehouseOptionResp{},
 		AttributeOptions:    []productdto.AttributeOptionResp{},
 		WarehouseSKUOptions: []productdto.WarehouseSKUGroupResp{},
-		HTTPStatus:          200,
 	}
 	projectID := ""
 	if req != nil {
@@ -40,30 +39,20 @@ func (s *Service) ProductCreateForm(ctx context.Context, req *productdto.Product
 	}
 	warehouses, err := s.pageWarehouses.WarehouseOptions(ctx, projectID)
 	if err != nil {
-		return failedCreateForm(view), err
+		return nil, err
 	}
 	view.WarehouseOptions = warehouses
 
 	list, err := s.ListAttributes(ctx, &productdto.ListAttributeReq{ProjectID: projectID, Size: PageAttributeOptionSize})
 	if err != nil {
-		return failedCreateForm(view), err
+		return nil, err
 	}
 	view.AttributeOptions = AttributeOptionViews(list)
 
 	groups, err := s.pageWarehouses.WarehouseSKUOptions(ctx, projectID, warehouses)
 	if err != nil {
-		return failedCreateForm(view), err
+		return nil, err
 	}
 	view.WarehouseSKUOptions = groups
 	return view, nil
-}
-
-// failedCreateForm 取数失败档：视图仍非 nil（渲染方据此决定退回整页提示），列表键回退成空列表。
-//
-// **不把 err 写进 LoadError**：视图是往模板去的形状，驱动原文只该经 err 返回值进日志
-// （渲染方拿到 err 就知道失败，不必读视图里的字符串 —— 写进去只会给将来「顺手渲染它」留个口子）。
-func failedCreateForm(view *productdto.ProductCreateFormResp) *productdto.ProductCreateFormResp {
-	view.LoadFailed = true
-	view.HTTPStatus = 500
-	return view
 }

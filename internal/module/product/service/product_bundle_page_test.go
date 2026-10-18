@@ -34,23 +34,7 @@ func TestProductBundlePageUnknownProjectStopsBeforeFanout(t *testing.T) {
 	if err == nil || err.Error() != productenums.ErrInvalidParam {
 		t.Fatalf("未知工程应返回 %s，实际 err=%v", productenums.ErrInvalidParam, err)
 	}
-	if view == nil {
-		t.Fatal("失败路径的视图也必须非 nil（控制器不再补 nil 判断）")
-	}
-	if view.HTTPStatus != http.StatusBadRequest || view.PageStatus() != http.StatusBadRequest {
-		t.Fatalf("未知工程应 400，实际 %d", view.HTTPStatus)
-	}
-	if !view.PageNoStore() {
-		t.Fatal("400 档必须 no-store（重试要真的回到服务端）")
-	}
-	// 失败页上这一屏仍有表单：成员清单 / 候选 / 来源面板都得给齐键，保存入口撤掉。
-	if view.Rows == nil || view.CandidateSKUs == nil || view.Sources == nil ||
-		view.SourceProducts == nil || view.SourceWarehouses == nil {
-		t.Fatalf("失败页也要给齐模板必需键（空切片而不是 nil）：%+v", view)
-	}
-	if !view.SaveBlocked {
-		t.Fatal("取数失败时必须 SaveBlocked（否则运营会照着一张读不出来的空表提交，把配置写坏）")
-	}
+	wantPageFailure(t, "未知工程", view, err, http.StatusBadRequest)
 }
 
 // TestProductBundlePageProjectListFailureIsFiveHundred 工程清单读不到 = 500 + SaveBlocked。
@@ -62,12 +46,7 @@ func TestProductBundlePageProjectListFailureIsFiveHundred(t *testing.T) {
 	if err == nil {
 		t.Fatal("工程清单读不到必须返回错误")
 	}
-	if view.HTTPStatus != http.StatusInternalServerError || !view.PageNoStore() {
-		t.Fatalf("工程清单失败应 500 + no-store：%+v", view)
-	}
-	if !view.SaveBlocked {
-		t.Fatal("读不出来时必须禁止保存")
-	}
+	wantPageFailure(t, "工程清单读不到", view, err, http.StatusInternalServerError)
 }
 
 // TestProductBundlePageNoProjectIsFiveHundred 一条工程都没有时：**500**（既有行为，逐字保留）。
@@ -83,17 +62,8 @@ func TestProductBundlePageNoProjectIsFiveHundred(t *testing.T) {
 	if err == nil {
 		t.Fatal("（既有行为）没有工程时读候选 SKU 会返回参数错误，这条判据钉住它")
 	}
-	if view.HTTPStatus != http.StatusInternalServerError || !view.PageNoStore() {
-		t.Fatalf("（既有行为）应 500 + no-store，实际 %d", view.HTTPStatus)
-	}
-	if !view.SaveBlocked {
-		t.Fatal("读不出来时必须禁止保存")
-	}
-	// 来源面板的上下文与接线前一致（默认「从商品导入」，而不是被清空）：
-	// 清空会让面板在失败页上多一处「来源未知」，而它其实只是默认值。
-	if view.Source != productenums.BundleSourceProduct {
-		t.Fatalf("来源默认值应与接线前一致，实际 %q", view.Source)
-	}
+	// 空工程 id 落到 unresolved 参数错误（业务错误 → 400），与「工程清单读不到」分开。
+	wantPageFailure(t, "没有工程", view, err, http.StatusBadRequest)
 }
 
 // TestBundleSourceProductOptionsShape 来源商品下拉的形状契约（与 productPickOptions 同一判据）。

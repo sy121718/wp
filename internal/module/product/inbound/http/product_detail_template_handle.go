@@ -391,12 +391,8 @@ func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) (any, erro
 		return nil, response.ErrHandled
 	}
 	view, err := reader.ProductDetailTemplatePage(c.Request.Context(), req)
-	if view == nil {
-		// 契约上视图恒非 nil；契约是约定而不是类型保证，这一层兜底必须存在，
-		// 否则一次实现失误会让整页 500 且没有页壳。
-		failed := detailTemplateLoadFailureView(http.StatusInternalServerError)
-		view = &failed
-		err = errors.New("商品详情页模板页的视图为空")
+	if err != nil {
+		return nil, err
 	}
 	if view.NoProduct {
 		// 侧栏菜单直接进本页时没有 product 参数：回商品列表挑一件，而不是渲染一个空壳页。
@@ -405,9 +401,7 @@ func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) (any, erro
 		return nil, response.ErrHandled
 	}
 	if err != nil {
-		view.LoadFailed = true
-		// 归口文案（中英 / 缺词 fallback 都在里面）；驱动原文与原始错误只进日志。
-		view.LoadError = response.MessageOf(c, "product", err)
+		return nil, err
 	}
 	return view, nil
 }
@@ -424,10 +418,8 @@ func detailTemplateUnassembledView() productdto.ProductDetailTemplatePageResp {
 // detailTemplateLoadFailureView 失败档的视图（给齐模板必需键，避免失败分支只设了错误键）。
 func detailTemplateLoadFailureView(status int) productdto.ProductDetailTemplatePageResp {
 	return productdto.ProductDetailTemplatePageResp{
-		Projects:   []projectdto.ProjectResp{},
-		Templates:  []productdto.DetailTemplateOptionResp{},
-		LoadFailed: status != http.StatusOK,
-		HTTPStatus: status,
+		Projects:  []projectdto.ProjectResp{},
+		Templates: []productdto.DetailTemplateOptionResp{},
 	}
 }
 
@@ -436,9 +428,8 @@ func detailTemplateLoadFailureView(status int) productdto.ProductDetailTemplateP
 // 响应头带上实际使用的模板与版本，便于核对「预览的是哪一套」。
 func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) (any, error) {
 	if h.instances == nil {
-		// 装配缺陷也走「整页提示回来源页」这一条出口（原先是一行 http.StatusBadRequest
-		// 的纯文本：脱壳、不翻译、也没有回去的地方）。
-		return h.detailTemplateDepsMissingPage(c)
+		// 装配缺陷：预览没有可渲染的契约，出口交给统一错误形状（对外是归口文案，原文只进日志）。
+		return nil, errors.New(errTemplateDepsMissing)
 	}
 	req, ok := binding.Form[productdto.DetailTemplatePreviewReq](c)
 	if !ok {
@@ -480,19 +471,6 @@ const errTemplateDepsMissing = "详情页模板能力未装配（缺少内容模
 // detailTemplateDepsMissingMsg 「依赖未装配」提示的**事实**（key + 中文兜底）。
 // key 在 productenums.ProductDetailTemplateDepsMissing（迁移 407 登记中英词条）。
 var detailTemplateDepsMissingMsg = facing.Msg{Key: productenums.ProductDetailTemplateDepsMissing, Fallback: errTemplateDepsMissing}
-
-// detailTemplateDepsMissingPage 依赖未装配时的统一出口：**原页失败态**（500 档）。
-//
-// 为什么不是 `c.String(400, errTemplateDepsMissing)`（更早的写法）：只有一行纯文本、
-// 又没走 i18n，预览标签页里是一块白底黑字。也不用提示页 —— 装配缺陷不该把人送到另一个
-// 页面去读一句话。这里把同一页的失败槽填上（LoadFailed + LoadError），模板就地说明
-// 「详情页模板能力未装配」，运营看到的是页壳 + 一句话，而不是白屏。
-func (h *ProductPageHandle) detailTemplateDepsMissingPage(c *gin.Context) (any, error) {
-	view := detailTemplateLoadFailureView(http.StatusInternalServerError)
-	view.LoadFailed = true
-	view.LoadError = response.MsgText(c, detailTemplateDepsMissingMsg)
-	return view, nil
-}
 
 // 本页的两个参数级提示的中文兜底（key 在 productenums.ProductDetailTemplate*Required）。
 const (

@@ -3,6 +3,7 @@ package productservice
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 
 	productcontract "go_wp/internal/module/product/contract"
@@ -93,18 +94,7 @@ func TestProductNewPageInvalidProjectStopsBeforeFanout(t *testing.T) {
 	if err == nil || err.Error() != productenums.ErrInvalidParam {
 		t.Fatalf("非法工程应返回 %s，实际 err=%v", productenums.ErrInvalidParam, err)
 	}
-	if view == nil {
-		t.Fatal("失败路径的视图也必须非 nil（控制器不再补 nil 判断）")
-	}
-	if view.HTTPStatus != 400 || view.PageStatus() != 400 {
-		t.Fatalf("非法工程应 400（参数不合法），实际 %d", view.HTTPStatus)
-	}
-	if !view.LoadFailed || !view.PageNoStore() {
-		t.Fatalf("失败页必须带 LoadFailed + no-store，实际 LoadFailed=%v", view.LoadFailed)
-	}
-	if view.SelectedProject != "does-not-exist" {
-		t.Fatalf("回显的工程 id 应是请求里那个（页面据此重选），实际 %q", view.SelectedProject)
-	}
+	wantPageFailure(t, "非法工程", view, err, http.StatusBadRequest)
 	if wh.calls != 0 || tpl.calls != 0 {
 		t.Fatalf("非法工程不该发任何派生取数，实际仓库端口 %d 次、模板端口 %d 次", wh.calls, tpl.calls)
 	}
@@ -119,15 +109,7 @@ func TestProductNewPageProjectReadFailureIsFiveHundred(t *testing.T) {
 	if err == nil {
 		t.Fatal("工程清单读不出来必须返回错误")
 	}
-	if view == nil || view.HTTPStatus != 500 {
-		t.Fatalf("取数没读到应 500，实际 %+v", view)
-	}
-	if !view.LoadFailed {
-		t.Fatal("500 档必须带 LoadFailed（否则模板按成功渲染，失败说成空态）")
-	}
-	if len(view.Projects) != 0 || len(view.WarehouseOptions) != 0 || len(view.Templates) != 0 {
-		t.Fatalf("失败页的列表键必须是**空列表**而不是缺键：%+v", view)
-	}
+	wantPageFailure(t, "工程清单读不到", view, err, http.StatusInternalServerError)
 	if wh.calls != 0 || tpl.calls != 0 {
 		t.Fatalf("主数据失败后不该继续查，实际仓库端口 %d 次、模板端口 %d 次", wh.calls, tpl.calls)
 	}

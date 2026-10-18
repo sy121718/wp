@@ -2,6 +2,7 @@ package producthttp
 
 import (
 	"context"
+	"errors"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
@@ -9,7 +10,6 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -38,11 +38,11 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) (any, error) {
 		return nil, response.ErrHandled
 	}
 	view, err := reader.ProductCategoriesPage(c.Request.Context(), req)
+	if err != nil {
+		return nil, err
+	}
 	if view == nil {
-		view = &productdto.ProductCategoriesPageResp{
-
-			HTTPStatus: http.StatusInternalServerError,
-		}
+		return nil, errors.New("页面读模型返回空视图")
 	}
 
 	// —— 控制器负责的部分：行装配与抽屉 ——
@@ -52,19 +52,13 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) (any, error) {
 	view.Options = options
 	view.CategoryCreateForm = categoryDrawerData(c, "create", view.SelectedProject, nil, options, nil)
 	// 行装配只在取数成功时做 —— 失败页渲染的是失败槽，装配出的行不会被读到。
-	if err == nil {
+	{
 		view.Categories = categoryTreeRows(c, view.SelectedProject, view.CategoryDetails, options, view.Filtered, view.ParentLabels)
-	} else {
-		view.Categories = []productdto.CategoryRowResp{}
 	}
 	// 分页条：Go 只交事实，文案与链接由 admin/partials/pagination.html 渲染。
 	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
 		pg.Base = pagination.BaseURL("/admin/product-categories", pagination.Query("project", view.SelectedProject, "keyword", view.FilterKeyword))
 		view.Pagination = pg
-	}
-	if err != nil {
-		view.LoadFailed = true
-		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	return view, nil
 }
@@ -133,17 +127,17 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
 		return nil, response.ErrHandled
 	}
 	view, err := reader.ProductBrandsPage(c.Request.Context(), req)
+	if err != nil {
+		return nil, err
+	}
 	if view == nil {
-		view = &productdto.ProductBrandsPageResp{
-
-			HTTPStatus: http.StatusInternalServerError,
-		}
+		return nil, errors.New("页面读模型返回空视图")
 	}
 
 	// —— 控制器负责的部分：行装配（每行的编辑抽屉要 csrf 与取词函数）——
 	view.ListQuery = binding.ListQuery(c, productBrandsBackKeys...)
 	brands := make([]productdto.BrandRowResp, 0, len(view.BrandDetails))
-	if err == nil {
+	{
 		for _, b := range view.BrandDetails {
 			brands = append(brands, productdto.BrandRowResp{
 				ID: b.ID, Name: b.Name, Slug: b.Slug, Logo: b.Logo,
@@ -156,10 +150,6 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
 	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
 		pg.Base = pagination.BaseURL("/admin/product-brands", pagination.Query("project", view.SelectedProject, "keyword", view.FilterKeyword))
 		view.Pagination = pg
-	}
-	if err != nil {
-		view.LoadFailed = true
-		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	return view, nil
 }

@@ -13,8 +13,6 @@
 package productdto
 
 import (
-	"net/http"
-
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/pkg/pagination"
 )
@@ -41,38 +39,8 @@ type ProductNewPageResp struct {
 	Templates         []EntityTemplateOptionResp
 	DefaultTemplateID string
 	TemplatesAvail    bool
-
-	// LoadFailed 本次请求**没读到**（不是「读到了、只是空的」）；LoadError 是归口后的
-	// 当前语言文字，非空即这一页失败了。失败优先于空态（docs/rules/template-boundary.md）。
-	LoadFailed bool
-	LoadError  string
-
-	// HTTPStatus 这一屏的 HTTP 档位：200 读到 / 400 参数不合法 / 500 主数据没读到。
-	// 导出是因为写它的 service 在另一个包（dto 的写者只有 service 的读模型）。
-	// 它会被 UI 线的 ViewMap 摊平成一个模板键，但没有任何模板读它 —— 摊平的键
-	// 多一个不影响渲染，页面上也不会出现它。
-	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductNewPageResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
-func (v ProductNewPageResp) PageNoStore() bool { return v.LoadFailed }
-
-// ProductListPageResp 商品列表整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值）。
-//
-// 它是这一屏**唯一的模板数据源**（UI 线的 `adminui.Page(tpl, h)` 只收这一份视图，没有额外 args），
-// 因此字段分三类，各自有明确的写者：
-//   - **service 的读模型写**：Projects / SelectedProject / Filter* / Page / Limit / Total /
-//     RowDetails / Categories / Brands / Tags / 三组选项 / Rules / Roundings（取数结果）；
-//   - **控制器写**：Title / Menu（页壳键，title 的 i18n key 常量是 http 包的 MsgProductsTitle）、
-//     Form（改价表单初值）/ Statuses（状态下拉）/
-//     Pagination / ListQuery —— 这些的**计算工具还被别的页面共用**（详情页回显 / 独立定价页），
-//     搬进 service 等于让那几页各留一份，理由见 service/product_list_page.go 文件头；
-//     **Products（成品行）不在此列** —— 行装配已下沉进读模型（service/product_row.go），
-//     控制器不再拼行；只服务行装配的分类树扁平行（Flat）随之下沉，视图不再有那个字段；
-//   - **控制器在失败时写**：LoadError（按当前语言归口；LoadFailed / HTTPStatus 由读模型给）。
 type ProductListPageResp struct {
 	// Projects 工程清单与本次选中的工程：整页的工程上下文（失败页也带着它）。
 	Projects        []projectdto.ProjectResp
@@ -157,20 +125,6 @@ type ProductDetailPageResp struct {
 	TplPanel map[string]any
 	// BackURL 回列表的链接（带工程上下文，不掉回默认工程）。
 	BackURL string
-
-	LoadFailed bool
-	LoadError  string
-	HTTPStatus int
-}
-
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductDetailPageResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 非 200 的档位都不该被缓存 —— **404 也一样**：商品可能刚被删，也可能刚被建回来，
-// 重试必须真的回到服务端确认。这与「失败页」不是同一件事：404 走的是模板自带的空态分支
-// （那是「读到了、库里没有」，不是「没读到」）。
-func (v ProductDetailPageResp) PageNoStore() bool {
-	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
 // ProductEditPageResp 商品编辑整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值与回显）。
@@ -227,22 +181,6 @@ type ProductEditPageResp struct {
 	// IsBundle 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 —— 这里只给链接标记
 	//（type=variant 时为假，模板据 isset 整块跳过）。
 	IsBundle bool
-
-	LoadFailed bool
-	LoadError  string
-	HTTPStatus int
-}
-
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductEditPageResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
-//
-// 判据与详情页一致：**非 200 一律 no-store**。404「商品不存在」不走失败槽（那是「读到了、
-// 库里没有」，模板给的是空态），但它同样是一次不该被缓存的结果 —— 商品刚被建回来时，
-// 缓存的 404 会把运营挡在门外。
-func (v ProductEditPageResp) PageNoStore() bool {
-	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
 // WarehouseOptionResp 仓库下拉 / 勾选项的渲染视图。
@@ -418,19 +356,6 @@ type ProductCreateFormResp struct {
 	WarehouseOptions    []WarehouseOptionResp
 	AttributeOptions    []AttributeOptionResp
 	WarehouseSKUOptions []WarehouseSKUGroupResp
-
-	// LoadFailed 取数失败：渲染方据此退回整页提示（这一段 HTML 撑不起来时不留半个表单）。
-	// 这里**没有 LoadError** —— 失败不留在这份视图里，驱动原文只走 err 返回值进日志。
-	LoadFailed bool
-	HTTPStatus int
-}
-
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductCreateFormResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 取数失败时不该被缓存：重试必须真的回到服务端。
-func (v ProductCreateFormResp) PageNoStore() bool {
-	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
 // ProductPricingPageResp 定价工具页的渲染视图（本模块第六个读模型）。
@@ -461,11 +386,6 @@ type ProductPricingPageResp struct {
 	// ListQuery 页面上下文（GET 表单 action 的 query，提交后保留当前筛选）：
 	// URL 形状属 HTTP，由控制器填。
 	ListQuery string
-
-	// HTTPStatus 这一屏的档位：正常恒 200（本页三处取数各自降级，没有取数失败档）。
-	// 唯一的非 200 来源是**装配缺陷**（控制器断言不到读模型）——那时给 500，
-	// 让「没接上」与「这一屏本来就没数据」在页面上看得出区别。
-	HTTPStatus int
 }
 
 // ProductAttributesPageResp 属性库整页的渲染视图。
@@ -506,29 +426,8 @@ type ProductAttributesPageResp struct {
 	// ListQuery 筛选上下文（GET 表单 action 的 query）：提交后保留关键词 / 变体筛选 / 页码。
 	// URL 形状属 HTTP，由控制器填。
 	ListQuery string
-
-	// LoadFailed 本次请求**没读到**（不是「读到了、只是空的」）；LoadError 由控制器按
-	// 当前语言归口后填。HTTPStatus：200 读到 / 400 参数不合法 / 500 主数据没读到。
-	LoadFailed bool
-	LoadError  string
-	HTTPStatus int
 }
 
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductAttributesPageResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
-func (v ProductAttributesPageResp) PageNoStore() bool { return v.LoadFailed }
-
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductPricingPageResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 装配缺陷页不该被缓存：重试必须真的回到服务端。
-func (v ProductPricingPageResp) PageNoStore() bool {
-	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
-}
-
-// DetailTemplateProductResp 这一屏展示的商品（只四个字段，不给整份商品）。
 type DetailTemplateProductResp struct {
 	ID   string
 	Name string
@@ -577,18 +476,6 @@ type ProductDetailTemplatePageResp struct {
 	// NoProduct 没给 product 参数：控制器据此走引导出口（整页提示回列表）而不是渲染本页。
 	// 它不是参数非法 —— 本页本来就有「还没选商品」的入口形态。
 	NoProduct bool
-
-	LoadFailed bool
-	LoadError  string
-	HTTPStatus int
-}
-
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductDetailTemplatePageResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 失败页不该被缓存：重试必须真的回到服务端。
-func (v ProductDetailTemplatePageResp) PageNoStore() bool {
-	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
 // BundleCandidateResp 候选 SKU 下拉项（id + 可读标签）。
@@ -660,20 +547,6 @@ type ProductBundlePageResp struct {
 	// 以及页面链接要带回的筛选上下文。名字即模板键。
 	ResolveURL string
 	ListQuery  string
-
-	// LoadError 由控制器按当前语言归口后填（与前八屏同一分工：文案是 HTTP 侧的取词）。
-	LoadFailed bool
-	LoadError  string
-	// HTTPStatus 这一屏的档位；正常恒 200。
-	HTTPStatus int
-}
-
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductBundlePageResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 失败页不该被缓存：重试必须真的回到服务端。
-func (v ProductBundlePageResp) PageNoStore() bool {
-	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
 // ProductTranslationsPageResp 商品译文工作台的一屏。
@@ -761,21 +634,6 @@ type ProductCategoriesPageResp struct {
 
 	// ListQuery 筛选上下文（表单 action 的 query）：写动作失败时由 pkg/backpath 读回。
 	ListQuery string
-
-	// LoadFailed 本次请求**没读到**（不是「读到了、只是空的」）；LoadError 由控制器按当前
-	// 语言归口后填。HTTPStatus：200 读到 / 400 参数不合法 / 500 主数据没读到。
-	LoadFailed bool
-	LoadError  string
-	HTTPStatus int
-}
-
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductCategoriesPageResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 失败页不该被缓存：重试必须真的回到服务端（否则拿到的是缓存的失败页）。
-// 404 空态同样标 no-store —— 分类可能刚被建回来，缓存的 404 会把运营挡在门外。
-func (v ProductCategoriesPageResp) PageNoStore() bool {
-	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
 // ProductBrandsPageResp 品牌管理页的一屏。
@@ -796,18 +654,6 @@ type ProductBrandsPageResp struct {
 	Limit      int
 	Pagination pagination.Page
 	ListQuery  string
-
-	LoadFailed bool
-	LoadError  string
-	HTTPStatus int
-}
-
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductBrandsPageResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 非 200 的档位都不该被缓存：重试必须真的回到服务端。
-func (v ProductBrandsPageResp) PageNoStore() bool {
-	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
 // ProductTagsPageResp 标签管理页的一屏。
@@ -831,18 +677,6 @@ type ProductTagsPageResp struct {
 	Limit      int
 	Pagination pagination.Page
 	ListQuery  string
-
-	LoadFailed bool
-	LoadError  string
-	HTTPStatus int
-}
-
-// PageStatus 这一屏的 HTTP 档位（view.Result）；零值 = 200。
-func (v ProductTagsPageResp) PageStatus() int { return v.HTTPStatus }
-
-// PageNoStore 非 200 的档位都不该被缓存：重试必须真的回到服务端。
-func (v ProductTagsPageResp) PageNoStore() bool {
-	return v.HTTPStatus != 0 && v.HTTPStatus != http.StatusOK
 }
 
 // BundlePanelResp 商品详情页「捆绑构成」区块的数据（只读表）。

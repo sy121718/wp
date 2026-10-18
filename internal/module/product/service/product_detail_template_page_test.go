@@ -91,12 +91,7 @@ func TestDetailTemplatePageUnknownProjectStopsBeforeProductFetch(t *testing.T) {
 	if err == nil {
 		t.Fatal("未知工程必须返回错误")
 	}
-	if view.HTTPStatus != http.StatusBadRequest || view.PageStatus() != http.StatusBadRequest {
-		t.Fatalf("未知工程应 400，实际 %d", view.HTTPStatus)
-	}
-	if !view.LoadFailed || !view.PageNoStore() {
-		t.Fatalf("400 档必须带 LoadFailed + no-store，实际 LoadFailed=%v", view.LoadFailed)
-	}
+	wantPageFailure(t, "未知工程", view, err, http.StatusBadRequest)
 	if len(port.calls) != 0 {
 		t.Fatalf("非法工程上继续查模板只会把「工程不存在」渲染成「没有模板」，实际 %v", port.calls)
 	}
@@ -110,9 +105,7 @@ func TestDetailTemplatePageProjectListFailureIsFiveHundred(t *testing.T) {
 	if err == nil {
 		t.Fatal("工程清单读不到必须返回错误")
 	}
-	if view.HTTPStatus != http.StatusInternalServerError || !view.LoadFailed || !view.PageNoStore() {
-		t.Fatalf("工程清单失败应 500 + LoadFailed + no-store：%+v", view)
-	}
+	wantPageFailure(t, "工程清单读不到", view, err, http.StatusInternalServerError)
 	if len(port.calls) != 0 {
 		t.Fatalf("工程清单失败后一条派生取数都不该发，实际 %v", port.calls)
 	}

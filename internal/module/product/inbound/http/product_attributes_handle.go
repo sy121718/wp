@@ -2,6 +2,7 @@ package producthttp
 
 import (
 	"context"
+	"errors"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
@@ -9,7 +10,6 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -39,13 +39,13 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) (any, error) {
 		return nil, response.ErrHandled
 	}
 	view, err := reader.ProductAttributesPage(ctx, req)
+	if err != nil {
+		// 失败出口是 JSON：不装配、不渲染同一页（档位由声明处给，见 productenums.StatusFor）。
+		return nil, err
+	}
 	if view == nil {
-		// 契约上视图恒非 nil（失败也要给齐模板必需键，见 contract.ProductPageReader）：
-		// 真出现 nil 时兜一个空视图，而不是在这里 nil 下去 —— 缺键会让整页在那一行中断。
-		view = &productdto.ProductAttributesPageResp{
-
-			HTTPStatus: http.StatusInternalServerError,
-		}
+		// 契约上视图恒非 nil；真为空是编程错误，交出口按 500 处理而不是在这里解引用。
+		return nil, errors.New("属性页读模型返回空视图")
 	}
 	// —— 控制器负责的部分 ——
 	// 抽屉表单的数据（编辑属性组 / 保存属性值 / 新建属性组）留在控制器：它们要 csrf
@@ -53,7 +53,7 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) (any, error) {
 	// 行装配只在取数成功时做 —— 失败页渲染的是失败槽，装配出的行不会被读到。
 	view.AttrCreateForm = attrCreateDrawerForm(c, view.SelectedProject)
 	rows := make([]map[string]any, 0, len(view.AttributeDetails))
-	if err == nil {
+	{
 		for _, a := range view.AttributeDetails {
 			// 两个抽屉的数据与失败重渲染**同形**（同一个 attrRowDrawerForms）——两处各拼
 			// 一份必然分叉，而分叉只会在失败路径上缺键、静默截断整页。
@@ -74,13 +74,6 @@ func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) (any, error) {
 			attributeListFilterQuery(view.SelectedProject, view.FilterKeyword, view.FilterVariation))
 		view.Pagination = pg
 	}
-	if err != nil {
-		// 视图已带 LoadFailed / HTTPStatus（400 参数不合法 / 500 取数失败）。
-		// 这里只补**当前语言**的失败槽文案：原始的 err 只进日志。
-		view.LoadFailed = true
-		view.LoadError = response.MessageOf(c, "product", err)
-	}
-	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore）。
 	return view, nil
 }
 

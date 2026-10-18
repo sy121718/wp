@@ -6,6 +6,7 @@ package producthttp
 // 与分类 / 品牌（product_taxonomy.go）分开：标签有规则注册表与重算时机，改动频率与归类树完全不同。
 
 import (
+	"errors"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/text"
@@ -13,7 +14,6 @@ import (
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
-	"net/http"
 	"strings"
 	"time"
 
@@ -167,18 +167,18 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) (any, error) {
 		return nil, response.ErrHandled
 	}
 	view, err := reader.ProductTagsPage(c.Request.Context(), req)
+	if err != nil {
+		return nil, err
+	}
 	if view == nil {
-		view = &productdto.ProductTagsPageResp{
-
-			HTTPStatus: http.StatusInternalServerError,
-		}
+		return nil, errors.New("页面读模型返回空视图")
 	}
 
 	// —— 控制器负责的部分：行装配与两个标签抽屉（要 csrf 与取词函数）——
 	view.ListQuery = binding.ListQuery(c, productTagsBackKeys...)
 	rows := []productdto.TagRowResp{}
 	tagCreateForm := map[string]any{}
-	if err == nil {
+	{
 		rows = make([]productdto.TagRowResp, 0, len(view.TagDetails))
 		for _, tg := range view.TagDetails {
 			row := tagPageRow(tg)
@@ -193,10 +193,6 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) (any, error) {
 	if pg := pagination.Facts(view.Total, view.Page, view.Limit); pg.HasPagination() {
 		pg.Base = pagination.BaseURL("/admin/product-tags", pagination.Query("project", view.SelectedProject, "keyword", view.FilterKeyword))
 		view.Pagination = pg
-	}
-	if err != nil {
-		view.LoadFailed = true
-		view.LoadError = response.MessageOf(c, "product", err)
 	}
 	return view, nil
 }

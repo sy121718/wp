@@ -32,6 +32,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )
 
@@ -77,8 +78,12 @@ func wrapView(tpl string, h ViewHandler, render func(*gin.Context, string, any))
 // 原文只进结构化日志。htmp 的 4xx/5xx 不 swap，前端因此由 admin.js 统一接管
 // htmx:responseError 显示 message（不接管就是「点了没反应」）。
 func failView(c *gin.Context, tpl string, err error) {
+	// 档位在**声明处**：模块 enums 给 key 挂 404/409（pkg/facing.WithStatus），
+	// 未登记的按业务错误 400、其余 500。出口不再按接口猜（那会让同一个 err 换个接口就换含义）。
 	status := http.StatusInternalServerError
-	if response.IsBusinessError(err) {
+	if declared, ok := facing.StatusOf(err); ok {
+		status = declared
+	} else if response.IsBusinessError(err) {
 		status = http.StatusBadRequest
 	}
 	response.ErrorAuto(c, status, sceneOf(tpl), err)

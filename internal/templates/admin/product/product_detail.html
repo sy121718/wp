@@ -20,29 +20,6 @@
    契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。正常渲染一律为空串。
    注意它与下面 `.HasProduct` 为假的「商品不存在」空态是**两档**：
    这一档是「没读到」（数据库 / 超时 / 权限），那一档是「读到了、库里没有这一条」。 *}
-{{loadError := .["LoadError"]}}
-{{if loadError}}
-<div class="stack">
-    <header class="page-head">
-        <div class="page-head-main">
-            <div class="page-title-row">
-                <h1>{{ .["t"]("admin.product_detail.title", "商品详情") }}</h1>
-            </div>
-        </div>
-        <div class="page-actions">
-            <a class="btn btn-ghost" href="/admin/products">← {{ .["t"]("admin.product_detail_template.backToList", "返回商品列表") }}</a>
-        </div>
-    </header>
-    {* 失败槽用 badge + page-sub + hint（不是 .empty-state）：本页 .empty-state 是
-       「商品不存在」那一档（读到了、库里没有这一条），两档的文案与出口都不一样。 *}
-    <section class="card list-card">
-        <p class="badge badge-danger" role="alert">{{loadError}}</p>
-        <p class="page-sub">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
-        <p class="hint">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
-        <p><a class="btn" href="/admin/products">{{ .["t"]("admin.product_detail_template.backToList", "返回商品列表") }}</a></p>
-    </section>
-</div>
-{{else}}
 {{selectedProject := .SelectedProject}}
 <div class="stack">
     <header class="page-head">
@@ -276,5 +253,4 @@
 
     {{end}}
 </div>
-{{end}}
 {{end}}

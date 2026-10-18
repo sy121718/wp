@@ -5,29 +5,6 @@
 {{csrf := .["csrf_token"]}}
 {* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
    契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。正常渲染一律为空串。 *}
-{{loadError := .["LoadError"]}}
-{{if loadError}}
-<div class="stack">
-    <header class="page-head">
-        <div class="page-head-main">
-            <h1>{{ .["t"]("admin.products.create.submit", "新建商品") }}</h1>
-        </div>
-        <div class="page-actions">
-            <a class="btn btn-ghost" href="/admin/products">← {{ .["t"]("admin.product_detail_template.backToList", "返回商品列表") }}</a>
-        </div>
-    </header>
-    {* 失败页与空态的区别写在标题里：这一档是「没读到」（表单没装配起来），
-       不是「读到了、没有字段可填」。 *}
-    {* 失败槽用 badge + page-sub + hint（不是 .empty-state）：这一档是「表单的数据没读到」，
-       不是「读到了、没有字段可填」—— 两档的出口文案因此不会互相污染。 *}
-    <section class="card list-card">
-        <p class="badge badge-danger" role="alert">{{loadError}}</p>
-        <p class="page-sub">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
-        <p class="hint">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
-        <p><a class="btn" href="/admin/products">{{ .["t"]("admin.product_detail_template.backToList", "返回商品列表") }}</a></p>
-    </section>
-</div>
-{{else}}
 {{selectedProject := .["SelectedProject"]}}
 {{defaultTplID := .DefaultTemplateID}}
 {{warehouseOptions := .WarehouseOptions}}
@@ -77,5 +54,4 @@
     </div>
 </div>
 <script src="/static/js/product-create-form.js" defer></script>
-{{end}}
 {{end}}

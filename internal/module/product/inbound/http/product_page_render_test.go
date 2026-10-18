@@ -223,7 +223,7 @@ func productCategoriesPageViewStub(mutate func(*productdto.ProductCategoriesPage
 		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
 		CategoryDetails: []*productdto.CategoryResp{{ID: "c1", ProjectID: "p1", Name: "男装", Slug: "men"}},
 		PickFlat:        []*productdto.CategoryResp{{ID: "c1", ProjectID: "p1", Name: "男装", Slug: "men"}},
-		Total:           1, Limit: productservice.ProductSubListPageSize, HTTPStatus: 200,
+		Total:           1, Limit: productservice.ProductSubListPageSize,
 	}
 	if mutate != nil {
 		mutate(v)
@@ -236,7 +236,7 @@ func productBrandsPageViewStub(mutate func(*productdto.ProductBrandsPageResp)) *
 	v := &productdto.ProductBrandsPageResp{
 		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
 		BrandDetails: []*productdto.BrandResp{{ID: "b1", Name: "品牌一", Slug: "brand-1"}},
-		Total:        1, Limit: productservice.ProductSubListPageSize, HTTPStatus: 200,
+		Total:        1, Limit: productservice.ProductSubListPageSize,
 	}
 	if mutate != nil {
 		mutate(v)
@@ -249,7 +249,7 @@ func productTagsPageViewStub(mutate func(*productdto.ProductTagsPageResp)) *prod
 	v := &productdto.ProductTagsPageResp{
 		Projects: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}, SelectedProject: "p1",
 		TagDetails: []*productdto.TagResp{{ID: "t1", Name: "手工标签", Slug: "manual", Kind: productenums.TagKindManual}},
-		Total:      1, Limit: productservice.ProductSubListPageSize, HTTPStatus: 200,
+		Total:      1, Limit: productservice.ProductSubListPageSize,
 	}
 	if mutate != nil {
 		mutate(v)
@@ -328,7 +328,6 @@ func productNewPageViewStub(mutate func(*productdto.ProductNewPageResp)) *produc
 		AttributeOptions:    []productdto.AttributeOptionResp{},
 		WarehouseSKUOptions: []productdto.WarehouseSKUGroupResp{},
 		Templates:           []productdto.EntityTemplateOptionResp{},
-		HTTPStatus:          http.StatusOK,
 	}
 	if mutate != nil {
 		mutate(v)
@@ -373,7 +372,6 @@ func productDetailPageViewStub(mutate func(*productdto.ProductDetailPageResp)) *
 		Categories:       []*productdto.CategoryResp{},
 		Brands:           []*productdto.BrandResp{},
 		Tags:             []*productdto.TagResp{},
-		HTTPStatus:       http.StatusOK,
 	}
 	if mutate != nil {
 		mutate(v)
@@ -404,7 +402,6 @@ func productEditPageViewStub(mutate func(*productdto.ProductEditPageResp)) *prod
 		Categories:       []*productdto.CategoryResp{},
 		Brands:           []*productdto.BrandResp{},
 		Tags:             []*productdto.TagResp{},
-		HTTPStatus:       http.StatusOK,
 	}
 	if mutate != nil {
 		mutate(v)
@@ -427,7 +424,6 @@ func productCreateFormViewStub(mutate func(*productdto.ProductCreateFormResp)) *
 		WarehouseOptions:    []productdto.WarehouseOptionResp{},
 		AttributeOptions:    []productdto.AttributeOptionResp{},
 		WarehouseSKUOptions: []productdto.WarehouseSKUGroupResp{},
-		HTTPStatus:          http.StatusOK,
 	}
 	if mutate != nil {
 		mutate(v)
@@ -441,7 +437,6 @@ func productPricingPageViewStub(mutate func(*productdto.ProductPricingPageResp))
 	view := &productdto.ProductPricingPageResp{
 		Projects: []projectdto.ProjectResp{}, PreviewSummary: map[string]any{},
 		PreviewRows: []map[string]any{}, History: []map[string]any{},
-		HTTPStatus: http.StatusOK,
 	}
 	if mutate != nil {
 		mutate(view)
@@ -454,7 +449,7 @@ func productPricingPageViewStub(mutate func(*productdto.ProductPricingPageResp))
 func productAttributesPageViewStub(mutate func(*productdto.ProductAttributesPageResp)) *productdto.ProductAttributesPageResp {
 	view := &productdto.ProductAttributesPageResp{
 		Projects: []projectdto.ProjectResp{}, AttributeDetails: []*productdto.AttributeResp{},
-		Limit: 20, HTTPStatus: http.StatusOK,
+		Limit: 20,
 	}
 	if mutate != nil {
 		mutate(view)
@@ -521,13 +516,6 @@ func productPageRequestFor(t *testing.T, h *ProductPageHandle, route, target str
 	return rec
 }
 
-// productPageLeakMarkers 失败页上绝不能出现的内部片段与协议 key。
-var productPageLeakMarkers = []string{
-	"pq:", "SQLSTATE", "does not exist", "duplicate key", "constraint",
-	"relation", `"code":`, "LoadError", "LoadFailed",
-}
-
-// assertProductPageFailure 断言「整页失败出口」的形状（500 / 400 / 404 三档共用）。
 // assertProductJSONFailure 页面 GET 失败的唯一形状：{code,message,data} + 真实状态码。
 //
 // 页面失败不再渲染「同一页 + 失败槽」——模板里没有失败分支，出口是 adminui.Page 的
@@ -558,35 +546,6 @@ func assertProductJSONFailure(t *testing.T, step string, rec *httptest.ResponseR
 	for _, bad := range []string{"pq:", "SQLSTATE", "does not exist", "duplicate key", "constraint", "relation ", "LoadError", "LoadFailed"} {
 		if strings.Contains(body, bad) {
 			t.Fatalf("%s：报文里出现了不该出现的内容 %q，body=%s", step, bad, headOf(body))
-		}
-	}
-	return body
-}
-
-func assertProductPageFailure(t *testing.T, step string, rec *httptest.ResponseRecorder, wantStatus int, wantText string) string {
-	t.Helper()
-	body := rec.Body.String()
-	if rec.Code != wantStatus {
-		t.Fatalf("%s：状态码应为 %d，实际 %d，body=%s", step, wantStatus, rec.Code, headOf(body))
-	}
-	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
-		t.Fatalf("%s：失败页不该被缓存（重试必须真的回到服务端），Cache-Control=%q", step, got)
-	}
-	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
-		t.Fatalf("%s：失败出口必须是页面，Content-Type=%q", step, ct)
-	}
-	// 页壳完整：不是半截模板，也不是 JSON 报文。
-	for _, want := range []string{"<html", "</body>", "</html>"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("%s：页壳不完整，缺 %q，body=%s", step, want, headOf(body))
-		}
-	}
-	if !strings.Contains(body, wantText) {
-		t.Fatalf("%s：页面上应有 %q，body=%s", step, wantText, headOf(body))
-	}
-	for _, bad := range productPageLeakMarkers {
-		if strings.Contains(body, bad) {
-			t.Fatalf("%s：页面上出现了不该出现的内容 %q，body=%s", step, bad, headOf(body))
 		}
 	}
 	return body
@@ -652,14 +611,12 @@ func TestProductsPageRowDetailFailureIsNotSwallowed(t *testing.T) {
 func TestProductNewPageLoadFailureRendersSamePage(t *testing.T) {
 	reader := &productPageReaderStub{
 		view: productNewPageViewStub(func(v *productdto.ProductNewPageResp) {
-			v.HTTPStatus = http.StatusInternalServerError
-			v.LoadFailed = true
 		}),
 		err: errors.New(`pq: relation "products" does not exist`),
 	}
 	h := &ProductPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products/new")
-	assertProductPageFailure(t, "新建页主数据失败", rec, http.StatusInternalServerError, "这一页的数据没能读出来")
+	assertProductJSONFailure(t, "新建页主数据失败", rec, http.StatusInternalServerError, "内部错误")
 }
 
 // TestProductDetailPageFailureLadder 详情页四档：不存在 / 没给参数 / 参数不合法 / 读不出来。
@@ -671,29 +628,27 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 	cases := []struct {
 		name       string
 		target     string
-		status     int   // 读模型给出的档位（service 的产出）
-		readerErr  error // 读模型是否同时抛错：404 那一档**不抛**（「读到了、库里没有」）
+		readerErr  error // 读模型抛的错误：档位由它在声明处带出（404 / 400 / 500）
 		wantStatus int
-		wantText   string // 页面上应出现的文案
+		wantText   string // JSON 报文里应出现的中文兜底
 	}{
 		{
 			name:       "没给 product 参数 → 404",
 			target:     "/admin/products/detail",
-			status:     http.StatusNotFound,
+			readerErr:  productenums.Err(productenums.ErrNotFound),
 			wantStatus: http.StatusNotFound,
-			wantText:   "商品不存在",
+			wantText:   "商品或变体不存在",
 		},
 		{
 			name:       "业务上不存在 → 404",
 			target:     "/admin/products/detail?project=p1&product=prod-1",
-			status:     http.StatusNotFound,
+			readerErr:  productenums.Err(productenums.ErrNotFound),
 			wantStatus: http.StatusNotFound,
-			wantText:   "商品不存在",
+			wantText:   "商品或变体不存在",
 		},
 		{
 			name:       "参数不合法 → 400",
 			target:     "/admin/products/detail?project=p1&product=not-a-uuid",
-			status:     http.StatusBadRequest,
 			readerErr:  productenums.Err(productenums.ErrInvalidParam),
 			wantStatus: http.StatusBadRequest,
 			wantText:   "请求参数无效",
@@ -701,10 +656,9 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 		{
 			name:       "读不出来 → 500（不是「不存在」）",
 			target:     "/admin/products/detail?project=p1&product=prod-1",
-			status:     http.StatusInternalServerError,
 			readerErr:  errors.New(`pq: relation "products" does not exist`),
 			wantStatus: http.StatusInternalServerError,
-			wantText:   "这一页的数据没能读出来",
+			wantText:   "内部错误",
 		},
 	}
 	for _, tc := range cases {
@@ -715,24 +669,22 @@ func TestProductDetailPageFailureLadder(t *testing.T) {
 				// 不再 mock Get / ListCategories 这些方法（它们已不在这条渲染路径上）。
 				products: &productPageReaderStub{
 					detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageResp) {
-						v.HTTPStatus = tc.status
 					}),
 					detailErr: tc.readerErr,
 				}, reader: &productPageReaderStub{
 					detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageResp) {
-						v.HTTPStatus = tc.status
 					}),
 					detailErr: tc.readerErr,
 				},
 			}
 			rec := productPageRequest(t, h, tc.target)
-			body := assertProductPageFailure(t, tc.name, rec, tc.wantStatus, tc.wantText)
-			// 两档的文案不能互相串：404 说「商品不存在」，500 说「没能读出来」。
-			if tc.wantStatus == http.StatusNotFound && strings.Contains(body, "这一页的数据没能读出来") {
-				t.Fatalf("%s：404 档渲染成了装载失败卡 —— 「不存在」与「没读到」必须分开", tc.name)
+			body := assertProductJSONFailure(t, tc.name, rec, tc.wantStatus, tc.wantText)
+			// 两档的文案不能互相串：404 说「商品不存在」，500 只给归口（原文只进日志）。
+			if tc.wantStatus == http.StatusNotFound && strings.Contains(body, "内部错误") {
+				t.Fatalf("%s：404 档落成了归口错误 —— 声明处漏了 404 状态", tc.name)
 			}
 			if tc.wantStatus == http.StatusInternalServerError && strings.Contains(body, "商品不存在") {
-				t.Fatalf("%s：500 档渲染成了「商品不存在」空态 —— 读不出来被吞成了不存在", tc.name)
+				t.Fatalf("%s：500 档说成了「商品不存在」—— 读不出来被吞成了不存在", tc.name)
 			}
 		})
 	}
@@ -767,7 +719,7 @@ func TestProductDetailPageRendersProductWhenDetailReadable(t *testing.T) {
 			t.Fatalf("成功页缺 %q，body=%s", want, headOf(body))
 		}
 	}
-	for _, bad := range []string{"这一页的数据没能读出来", "商品不存在"} {
+	for _, bad := range []string{"内部错误", "商品或变体不存在"} {
 		if strings.Contains(body, bad) {
 			t.Fatalf("成功页出现了失败档文案 %q，body=%s", bad, headOf(body))
 		}
@@ -801,8 +753,8 @@ func TestProductsPageSuccessRendersPage(t *testing.T) {
 	if !strings.Contains(body, "</html>") {
 		t.Fatalf("成功页页壳不完整，body=%s", headOf(body))
 	}
-	if strings.Contains(body, "这一页的数据没能读出来") {
-		t.Fatalf("成功页渲染出了失败卡，body=%s", headOf(body))
+	if strings.HasPrefix(strings.TrimSpace(body), "{") {
+		t.Fatalf("成功页输出了 JSON 报文，body=%s", headOf(body))
 	}
 }
 
@@ -924,15 +876,13 @@ func TestProductsListBulkPricingUsesJSONWriteBase(t *testing.T) {
 func TestProductNewPageUnknownProjectIsBadRequest(t *testing.T) {
 	reader := &productPageReaderStub{
 		view: productNewPageViewStub(func(v *productdto.ProductNewPageResp) {
-			v.HTTPStatus = http.StatusBadRequest
-			v.LoadFailed = true
 			v.SelectedProject = "does-not-exist"
 		}),
 		err: productenums.Err(productenums.ErrInvalidParam),
 	}
 	h := &ProductPageHandle{projects: productPageProjectsStub{}, products: reader, reader: reader}
 	rec := productPageRequest(t, h, "/admin/products/new?project=does-not-exist")
-	assertProductPageFailure(t, "新建页 ?project=不存在的 id", rec, http.StatusBadRequest, "请求参数无效")
+	assertProductJSONFailure(t, "新建页 ?project=不存在的 id", rec, http.StatusBadRequest, "请求参数无效")
 }
 
 // TestProductNewPageForwardsProjectToReader 控制器把 query 里的工程原样交给读模型。
@@ -970,8 +920,7 @@ func TestProductNewPageSuccessRendersPage(t *testing.T) {
 	if !strings.Contains(body, "</html>") {
 		t.Fatalf("成功页页壳不完整，body=%s", headOf(body))
 	}
-	if strings.Contains(body, "这一页的数据没能读出来") {
-		t.Fatalf("成功页渲染出了失败卡，body=%s", headOf(body))
+	if strings.HasPrefix(strings.TrimSpace(body), "{") {
+		t.Fatalf("成功页输出了 JSON 报文，body=%s", headOf(body))
 	}
 }
-
