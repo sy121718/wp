@@ -10,11 +10,12 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"go_wp/internal/adminui"
 	"go_wp/internal/shell"
+	"go_wp/internal/text"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/response"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 	"strconv"
 	"strings"
 
@@ -29,18 +30,18 @@ const inventoryErrScene = "inventory"
 
 // inventoryErrMsg 业务错误 → 一句结论的**事实**（key + 中文兜底 + 参数）。
 //
-// 判据与归口只有一份实现：adminui.PageErrorFact → pkg/response.IsBusinessError（形态判据，
+// 判据与归口只有一份实现：text.FactOf → pkg/response.IsBusinessError（形态判据，
 // 与 JSON 出口 response.ErrorAuto 同一份）。本模块原先另持一份文案 key 白名单
 // （inventoryErrKeys，约 70 行），那是**第二份真相**：enums 新增一条业务错误时要记得在两处
 // 登记，而漏登记的方向还是「静默变成系统内部错误」—— 用户看到一句不可行动的提示，页面上
 // 看不到任何线索。白名单已删除；模块侧只剩**兜底表**（inventoryErrFallbacks：key → 中文原文），
 // 它只在词条缺失 / i18n 未初始化时生效，不是可透出性判据。
 //
-// 非业务错误对外只给共享归口文案（adminui.InternalMsg），**原文进结构化日志**
+// 非业务错误对外只给共享归口文案（text.InternalMsg），**原文进结构化日志**
 // （PageErrorFact 带场景 + path + user_id）—— 「不许直出内部错误」之后仍要留下可诊断性：
 // 谁在哪个页面撞上了哪条 SQL / 约束，只有日志能回答。
-func inventoryErrMsg(c *gin.Context, err error) adminui.Msg {
-	return inventoryErrMsgOf(c, adminui.PageErrorFact(c, inventoryErrScene, err))
+func inventoryErrMsg(c *gin.Context, err error) facing.Msg {
+	return inventoryErrMsgOf(c, text.FactOf(c, inventoryErrScene, err))
 }
 
 // inventoryErrMsgOf 把错误事实摊成一句结论。三档：
@@ -49,21 +50,21 @@ func inventoryErrMsg(c *gin.Context, err error) adminui.Msg {
 //	· 非业务错误 → 共享归口事实（key + 中文原文）；
 //	· 业务错误 → key + 模块兜底表的中文；带明细段时给成品串 ——「key + 明细」一段 key
 //	  表达不了（明细是多段「词条 + 具名参数」的编码）。
-func inventoryErrMsgOf(c *gin.Context, f adminui.ErrFact) adminui.Msg {
+func inventoryErrMsgOf(c *gin.Context, f facing.Fact) facing.Msg {
 	if f.Key == "" {
-		return adminui.Msg{}
+		return facing.Msg{}
 	}
 	if !f.Business {
-		return adminui.InternalMsg()
+		return text.InternalMsg()
 	}
 	if f.Tail != "" {
 		if detail := inventoryErrDetailText(shell.TranslateFor(c), f.Tail); detail != "" {
 			// 补充说明已按当前语言渲染：service 写进去的是「为什么被拒」的上下文
 			//（例如被哪个商品占了外码），吞掉它就等于让人去猜。
-			return adminui.Msg{Fallback: adminui.TranslateArgs(c, f.Key, inventoryErrFallback(f.Key), nil) + "：" + detail}
+			return facing.Msg{Fallback: text.TranslateArgs(c, f.Key, inventoryErrFallback(f.Key), nil) + "：" + detail}
 		}
 	}
-	return adminui.Msg{Key: f.Key, Fallback: inventoryErrFallback(f.Key)}
+	return facing.Msg{Key: f.Key, Fallback: inventoryErrFallback(f.Key)}
 }
 
 // inventoryFailDrawer 抽屉 / 片段写动作的失败出口：**4xx + JSON**，不重渲片段。
@@ -88,7 +89,7 @@ func inventoryFailDrawer(c *gin.Context, err error) {
 // inventoryErrText 一句结论的**文本**形态（片段槽位 / 页面提示条用：那边的模板直接渲染文本）。
 //
 // 这些槽位本批还没取词化（模板拿到的是成品文本而不是「key + 兜底」，因此它无法按请求语言
-// 自己取词）—— 清单见本批报告。新槽位一律传 adminui.Msg 并在模板里用 tf 取词。
+// 自己取词）—— 清单见本批报告。新槽位一律传 facing.Msg 并在模板里用 tf 取词。
 func inventoryErrText(c *gin.Context, err error) string {
 	return inventoryMsgText(c, inventoryErrMsg(c, err))
 }
@@ -102,7 +103,7 @@ func inventoryErrText(c *gin.Context, err error) string {
 //     整句按当前语言取词并填 {name} 占位符；
 //  2. 其余（历史形态的纯文本）—— 原样透出，行为与本通道引入前一致。
 //
-// tail 由 adminui.PageErrorFact 按 **ASCII 冒号** 从「业务 key: 明细」里切出来
+// tail 由 text.FactOf 按 **ASCII 冒号** 从「业务 key: 明细」里切出来
 // （见 pkg/response.IsBusinessError 的锚定形态判据）；写成全角「：」时切不开，
 // 整条错误会被判成内部故障、明细随之一并丢掉。
 //
@@ -132,7 +133,7 @@ func inventoryErrDetailText(tr func(key, fallback string) string, tail string) s
 // inventoryPageErr / inventoryPageOk / inventoryPageDone / inventoryNoticeSuccess /
 // inventoryNoticeTexts / inventoryNoticeToken / inventoryBulkNoticeTemplates。
 //
-// 留下的只有**事实**：单条回执与批量结论的 key + 中文兜底（adminui.Msg）。
+// 留下的只有**事实**：单条回执与批量结论的 key + 中文兜底（facing.Msg）。
 // 取词不再是本文件的事 —— 它在提示页渲染期由模板注入的 tf 完成（见 internal/adminui/prepare.go），
 // 所以「成功说的是哪句话」与「这是哪门语言」在两处各自回答一次，不再混在调用点里。
 
@@ -140,7 +141,7 @@ func inventoryErrDetailText(tr func(key, fallback string) string, tail string) s
 //
 // 词条见迁移 280（中英各一行）；取不到词条时回落这份中文（与仓库里其它
 // 「key + 中文兜底」的写法一致），中文环境的表现就是「操作已完成」。
-// 出口处的载体是 inventory_notice_handle.go 的 inventoryDoneMsg（adminui.Msg）。
+// 出口处的载体是 inventory_notice_handle.go 的 inventoryDoneMsg（facing.Msg）。
 const (
 	inventoryActionDoneKey      = inventoryenums.InventoryActionDone
 	inventoryActionDoneFallback = "操作已完成"
@@ -150,8 +151,8 @@ const (
 //
 // 原先这里是「模板结构体 inventoryBulkNoticeTemplate + inventoryBulkText 取词 + 调用点
 // fmt.Sprintf」的三件套：取词、语言判定、拼串都在 Go 侧完成，调用点还要自己记住
-// 「这条词条是 %d 还是 %s」的口径。收成 adminui.Msg 之后，调用点只给 strconv 过的数字，
-// 取词与占位符填充都在渲染期由模板注入的 tf 完成（同 adminui.TranslateArgs 一份实现）。
+// 「这条词条是 %d 还是 %s」的口径。收成 facing.Msg 之后，调用点只给 strconv 过的数字，
+// 取词与占位符填充都在渲染期由模板注入的 tf 完成（同 text.TranslateArgs 一份实现）。
 //
 // 兜底一律写 `%s`：TranslateArgs 只接受 `%s` 位置占位符，词条里混进 `%d` 时它会**丢弃词条**
 // 回落这里的兜底，而兜底若还是 `%d`、参数却是字符串，Sprintf 会产出 `%!d(string=2)` 这种
@@ -159,13 +160,13 @@ const (
 // 正是 `%d`（中英都是），它们需要一份把占位符改成 `%s` 的 i18n 迁移 —— 见本批报告。
 // 在那之前：中文界面输出逐字不变（词条与兜底同文），英文界面这两条会落中文兜底。
 var (
-	inventoryBulkWarehousePartial   = adminui.Msg{Key: inventoryenums.InventoryBulkWarehousePartial, Fallback: "已删除 %s 个，%s 个未能删除（默认仓或仓内仍有非零库存）"}
-	inventoryBulkWarehouseDone      = adminui.Msg{Key: inventoryenums.InventoryBulkWarehouseDone, Fallback: "已删除 %s 个仓库"}
-	inventoryBulkSourcePartial      = adminui.Msg{Key: inventoryenums.InventoryBulkSourcePartial, Fallback: "已删除 %s 个，%s 个未能删除（仍被采购单或历史流水引用）"}
-	inventoryBulkSourceDone         = adminui.Msg{Key: inventoryenums.InventoryBulkSourceDone, Fallback: "已删除 %s 个货源"}
-	inventoryBulkReasonPartial      = adminui.Msg{Key: inventoryenums.InventoryBulkReasonPartial, Fallback: "已更新 %s 个原因，%s 个未能更新"}
-	inventoryBulkReasonDone         = adminui.Msg{Key: inventoryenums.InventoryBulkReasonDone, Fallback: "已更新 %s 个原因"}
-	inventoryBulkReasonNoneSelected = adminui.Msg{Key: inventoryenums.InventoryBulkReasonNoneSelected, Fallback: "请选择要操作的原因"}
+	inventoryBulkWarehousePartial   = facing.Msg{Key: inventoryenums.InventoryBulkWarehousePartial, Fallback: "已删除 %s 个，%s 个未能删除（默认仓或仓内仍有非零库存）"}
+	inventoryBulkWarehouseDone      = facing.Msg{Key: inventoryenums.InventoryBulkWarehouseDone, Fallback: "已删除 %s 个仓库"}
+	inventoryBulkSourcePartial      = facing.Msg{Key: inventoryenums.InventoryBulkSourcePartial, Fallback: "已删除 %s 个，%s 个未能删除（仍被采购单或历史流水引用）"}
+	inventoryBulkSourceDone         = facing.Msg{Key: inventoryenums.InventoryBulkSourceDone, Fallback: "已删除 %s 个货源"}
+	inventoryBulkReasonPartial      = facing.Msg{Key: inventoryenums.InventoryBulkReasonPartial, Fallback: "已更新 %s 个原因，%s 个未能更新"}
+	inventoryBulkReasonDone         = facing.Msg{Key: inventoryenums.InventoryBulkReasonDone, Fallback: "已更新 %s 个原因"}
+	inventoryBulkReasonNoneSelected = facing.Msg{Key: inventoryenums.InventoryBulkReasonNoneSelected, Fallback: "请选择要操作的原因"}
 )
 
 // inventoryBulkIDsMsg 批量 id 读取失败的一句结论（事实形态，提示页出口用）。
@@ -174,7 +175,7 @@ var (
 // 数字（上限 Max 与**去重后**的本次条数 Count），拿 bulkids.MaxIDs 重算就丢了 Count。
 // 与 adminui.BulkIDsFacingText 同一判据、同一份词条 —— 差别只在这里交出去的是「key + 参数」
 // 而不是拼好的字符串（提示页要的是事实）。
-func inventoryBulkIDsMsg(c *gin.Context, err error) adminui.Msg {
+func inventoryBulkIDsMsg(c *gin.Context, err error) facing.Msg {
 	var tooMany *bulkids.IDsError
 	if !errors.As(err, &tooMany) {
 		// 未命中也接住：调用方几乎总是把批量读取的错误直接递进来，但判据必须是类型而不是
@@ -184,14 +185,14 @@ func inventoryBulkIDsMsg(c *gin.Context, err error) adminui.Msg {
 				With("path", c.Request.URL.Path).
 				Error(err, "批量 id 读取失败：未命中受控错误，只对外给归口文案")
 		}
-		return adminui.InternalMsg()
+		return text.InternalMsg()
 	}
 	logger.Scene(inventoryErrScene).
 		With("path", c.Request.URL.Path).
 		With("count", tooMany.Count).
 		With("max", tooMany.Max).
 		Warn("批量操作被拒：提交的 id 数量超过上限")
-	return adminui.Msg{Key: bulkids.MsgTooMany, Fallback: bulkids.TooManyTemplate}.
+	return facing.Msg{Key: bulkids.MsgTooMany, Fallback: bulkids.TooManyTemplate}.
 		WithArgs(strconv.Itoa(tooMany.Max), strconv.Itoa(tooMany.Count))
 }
 
@@ -236,7 +237,7 @@ var (
 // inventoryLoadFailedView 取数失败时的整页视图：同一张模板 + 全部键的零值 + 失败槽。
 //
 // 它是**视图**，不是错误出口：状态码与缓存策略由 PageStatus / PageNoStore 交给渲染层
-// （adminui.RenderPage 读 view.Result），控制器里没有 c.HTML、没有状态码分档。
+// （adminui.Page 在路由装配处读 view.Result），控制器里没有 c.HTML、没有状态码分档。
 // 500 + no-store 的理由没变：200 会让失败在监控里与正常页无从区分，且「重试」会从缓存
 // 里拿回同一份失败。
 type inventoryLoadFailedView gin.H
@@ -253,7 +254,7 @@ func (inventoryLoadFailedView) PageNoStore() bool { return true }
 // 多给的键不渲染，没有副作用。
 func inventoryPageErrorData(c *gin.Context, meta inventoryPageMeta, err error) inventoryLoadFailedView {
 	return inventoryLoadFailedView{
-		"title": inventoryMsgText(c, adminui.Msg{Key: meta.titleKey, Fallback: meta.titleFallback}),
+		"title": inventoryMsgText(c, facing.Msg{Key: meta.titleKey, Fallback: meta.titleFallback}),
 		"menu":  meta.menu,
 		// 页头里的工程上下文选择器读 .Projects（len + range）：零值 = 不渲染下拉。
 		"Projects":        []projectcontract.ProjectResp{},

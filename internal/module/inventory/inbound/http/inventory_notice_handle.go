@@ -9,10 +9,10 @@ package inventoryhttp
 // 文案改走响应体之后，读侧判定整批删除（见 inventory_page.go 的说明）。
 //
 // 四条边界（同 shell.RenderJump 的注释）：
-//   · **结论是事实、不是拼好的句子**：调用点给的是 adminui.Msg（key + 中文兜底 + `%s` 参数），
+//   · **结论是事实、不是拼好的句子**：调用点给的是 facing.Msg（key + 中文兜底 + `%s` 参数），
 //     取词由模板注入的 tf 在**渲染期**完成（见 internal/adminui/prepare.go）—— 所以调用点
 //     不需要知道当前是什么语言。本文件原先的 inventoryXxxBackText / inventoryDoneText 全是
-//     Go 侧取词（`shell.TranslateFor(c)(key, 兜底)`），已收成下面的包级 adminui.Msg 变量；
+//     Go 侧取词（`shell.TranslateFor(c)(key, 兜底)`），已收成下面的包级 facing.Msg 变量；
 //   · 文案必须**已过归口**（inventoryErrMsg / inventoryBulkIDsMsg / inventoryBulkXxx 的产物）
 //     —— 原文只进日志，换个页面呈现不等于可以把 err.Error() 铺上去；
 //   · 回跳地址由 shell.BackPath 从**表单 action 的 query** 按白名单读回（服务端自己拼，
@@ -24,10 +24,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"go_wp/internal/text"
 
-	"go_wp/internal/adminui"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	"go_wp/internal/shell"
+	"go_wp/pkg/facing"
 )
 
 // 各页回跳筛选键。
@@ -91,33 +92,33 @@ func inventoryPurchaseBack(c *gin.Context) string {
 // 原先写成函数时，每一处调用点都在 Go 侧把词取好、再当成品串交给提示页，等于把「这段文案
 // 属于哪个语言」在控制器里再审一遍。
 var (
-	inventoryStockBackMsg     = adminui.Msg{Key: inventoryenums.InventoryTitle, Fallback: "库存管理"}
-	inventoryWarehouseBackMsg = adminui.Msg{Key: inventoryenums.InventoryWarehousesTitle, Fallback: "仓库管理"}
-	inventoryReasonBackMsg    = adminui.Msg{Key: inventoryenums.InventoryReasonsTitle, Fallback: "变动原因字典"}
-	inventorySourceBackMsg    = adminui.Msg{Key: inventoryenums.MsgInventorySourcesTitle, Fallback: "货源管理"}
-	inventoryPurchaseBackMsg  = adminui.Msg{Key: inventoryenums.MsgInventoryPurchasesTitle, Fallback: "采购入库"}
+	inventoryStockBackMsg     = facing.Msg{Key: inventoryenums.InventoryTitle, Fallback: "库存管理"}
+	inventoryWarehouseBackMsg = facing.Msg{Key: inventoryenums.InventoryWarehousesTitle, Fallback: "仓库管理"}
+	inventoryReasonBackMsg    = facing.Msg{Key: inventoryenums.InventoryReasonsTitle, Fallback: "变动原因字典"}
+	inventorySourceBackMsg    = facing.Msg{Key: inventoryenums.MsgInventorySourcesTitle, Fallback: "货源管理"}
+	inventoryPurchaseBackMsg  = facing.Msg{Key: inventoryenums.MsgInventoryPurchasesTitle, Fallback: "采购入库"}
 )
 
 // inventoryDoneMsg 单条写动作的成功回执。
 //
 // 复用读侧时代就有的 admin.inventory.actionDone 词条（迁移 280）：改造只换传输通道与
 // 「谁取词」，不换「成功说的是哪句话」。
-var inventoryDoneMsg = adminui.Msg{Key: inventoryActionDoneKey, Fallback: inventoryActionDoneFallback}
+var inventoryDoneMsg = facing.Msg{Key: inventoryActionDoneKey, Fallback: inventoryActionDoneFallback}
 
 // inventoryMsgText 把一句结论取成当前语言文本（**片段槽位 / 页面提示条**用：那边的模板
 // 直接渲染文本、不取词）。
 //
 // 这一类槽位（SubmitErr / Err / LoadError）本批还没取词化 —— 见 inventory_page.go
-// 「错误文案」一节的说明；新槽位一律传 adminui.Msg 并在模板里用 tf 取词。
-func inventoryMsgText(c *gin.Context, m adminui.Msg) string { return adminui.MsgText(c, m) }
+// 「错误文案」一节的说明；新槽位一律传 facing.Msg 并在模板里用 tf 取词。
+func inventoryMsgText(c *gin.Context, m facing.Msg) string { return text.MsgText(c, m) }
 
 // —— 提示页出口 ——
 
 // inventoryJump 渲染整页提示：成功 1 秒后自动回列表，失败不自动跳（运营要看清楚原因）。
 //
-// 签名收的是事实（adminui.Msg）而不是成品串：正文与链接文字各一段 key + 兜底 + 参数，
+// 签名收的是事实（facing.Msg）而不是成品串：正文与链接文字各一段 key + 兜底 + 参数，
 // 填进 shell.Jump 后由提示页模板取词。
-func inventoryJump(c *gin.Context, ok bool, msg adminui.Msg, back string, backText adminui.Msg) {
+func inventoryJump(c *gin.Context, ok bool, msg facing.Msg, back string, backText facing.Msg) {
 	jump := shell.Jump{
 		OK:          ok,
 		MsgKey:      msg.Key,

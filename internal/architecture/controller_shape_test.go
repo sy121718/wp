@@ -457,8 +457,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/workbench/inbound/http/workbench_err.go":                   true,
 	"internal/module/workbench/inbound/http/workbench_handle.go":                true,
 	"internal/module/workbench/inbound/http/workbench_page.go":                  true,
-	"internal/module/inventory/inbound/http/inventory_error_handle.go":          true,
-	"internal/module/inventory/inbound/http/inventory_notice_handle.go":         true,
 }
 
 const controllerUIImportPath = "go_wp/internal/adminui"

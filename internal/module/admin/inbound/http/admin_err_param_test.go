@@ -121,8 +121,8 @@ func TestAdminErrParamInternalErrorIsCollected(t *testing.T) {
 	if !strings.Contains(logText, "uk_sys_i18n_key_lang") || !strings.Contains(logText, "SQLSTATE") {
 		t.Fatalf("内部错误原文必须进日志（收口 ≠ 吞掉），日志内容=%s", logText)
 	}
-	// 事件文案由共享出口 adminui.PageErrorFact 写（本模块不再自养一份日志文案）。
-	if !strings.Contains(logText, "后台页面操作失败") {
+	// 事件文案由共享出口 text.FactOf 写（本模块不再自养一份日志文案）。
+	if !strings.Contains(logText, "只对外给归口文案") {
 		t.Fatalf("日志里应能定位到场景与事件，日志内容=%s", logText)
 	}
 }

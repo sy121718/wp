@@ -18,9 +18,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/templates"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
 
@@ -34,6 +36,27 @@ const InternalKey = "MsgInternalError"
 // 单独取名是因为它有两个消费者：Internal()，与「未命中业务错误判据」时构造的事实。
 // 两处必须是同一句话，抄第二遍必然漂移。
 const InternalFallback = "系统内部错误，请稍后重试"
+
+// FactOf 判定一次并归口：业务错误原样给出事实；非业务错误记一条结构化日志后给归口文案。
+//
+// 判据在 pkg/facing（形态判据，JSON 出口与页面出口同一份）。本函数补的是「出口那一半」：
+// 请求上下文（日志里的 path / user_id）与归口文案。业务模块不再自己判、也不再自己拼归口。
+//
+// 为什么首页面出口在 adminui：出口不是渲染 —— 详情页的只读槽位、JSON 接口都会用到它，
+// 而那些调用点不该 import 整个后台壳（与取词线上移到本包是同一个理由）。
+func FactOf(c *gin.Context, scene string, err error) facing.Fact {
+	if err == nil {
+		return facing.Fact{}
+	}
+	if fact, ok := facing.FactOf(err); ok {
+		return fact
+	}
+	logger.Scene(scene).
+		With("path", RequestURI(c)).
+		With("user_id", builtin.CurrentUserID(c)).
+		Error(err, "操作失败（非业务错误，只对外给归口文案）")
+	return facing.Fact{Key: InternalKey, Fallback: InternalFallback}
+}
 
 // Lang 当前请求语言（BCP-47 的短码，如 zh-CN / en-US）。
 func Lang(c *gin.Context) string {

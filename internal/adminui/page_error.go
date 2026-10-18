@@ -21,10 +21,8 @@ package adminui
 import (
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/middleware/builtin"
 	"go_wp/internal/text"
 	"go_wp/pkg/facing"
-	"go_wp/pkg/logger"
 )
 
 // ErrFact 页面出口的错误事实（形状定义见 pkg/facing.Fact）。
@@ -34,30 +32,21 @@ type ErrFact = facing.Fact
 
 // PageErrorFact 判定 + 归口（**记日志**）：给「调用点没有更具体的日志」的地方用。
 func PageErrorFact(c *gin.Context, scene string, err error) ErrFact {
-	return pageErrorFact(c, scene, err, true)
+	return text.FactOf(c, scene, err)
 }
 
 // PageErrorFactQuiet 同 PageErrorFact，但**不记日志** —— 给「调用点已经记过一条更具体的日志
 // （带 pageId / lang 等）」的地方用。再记一次会让同一个错误在日志里出现两遍。
-func PageErrorFactQuiet(c *gin.Context, scene string, err error) ErrFact {
-	return pageErrorFact(c, scene, err, false)
-}
-
-func pageErrorFact(c *gin.Context, scene string, err error, logIt bool) ErrFact {
+func PageErrorFactQuiet(_ *gin.Context, _ string, err error) ErrFact {
 	if err == nil {
 		return ErrFact{}
 	}
 	if fact, ok := facing.FactOf(err); ok {
 		return fact
 	}
-	if logIt {
-		logger.Scene(scene).
-			With("path", requestURIOf(c)).
-			With("user_id", builtin.CurrentUserID(c)).
-			Error(err, "后台页面操作失败（非业务错误，只对外给归口文案）")
-	}
 	return ErrFact{Key: MsgInternalError, Fallback: internalErrorFallback}
 }
+
 
 // BusinessErrFact 把一条业务错误拆成 key + 明细段。
 //
