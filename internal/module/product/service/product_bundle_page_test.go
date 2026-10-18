@@ -98,34 +98,30 @@ func TestProductBundlePageNoProjectIsFiveHundred(t *testing.T) {
 
 // TestBundleSourceProductOptionsShape 来源商品下拉的形状契约（与 productPickOptions 同一判据）。
 //
-// 模板的判据是 `{{if isset(p.LabelKey)}}` —— isset 问的是**键在不在**，不是「值空不空」：
-// 数据行（商品名，它不是文案、没有词条）一旦带上 `LabelKey: ""`，isset 即为真，
-// 于是走取词分支渲染出**空白 option**：页面 200、结构完整、没有任何报错。
-// 这条判据两个方向都守：空项没给非空 LabelKey → 失败；数据行带上了键 → 也失败。
-//
-// 它随装配一起从控制器搬到这里（原来在 product_dropdown_option_shape_test.go），
-// 因为装配现在是这一层的职责。
+// 空项与数据项的分野由 IsNone 显式表达：空项的文案是事实（LabelKey + 兜底，渲染期取词），
+// 数据项是数据（商品名，翻不了）。这条判据两个方向都守 —— 空项必须 IsNone 且有 LabelKey，
+// 数据项必须不是 IsNone 且没有 LabelKey，否则模板会把商品名当词条 key 去取词、渲染出空白 option。
 func TestBundleSourceProductOptionsShape(t *testing.T) {
 	products := []*productdto.ProductResp{{ID: "p-1", Name: "衬衫 A"}, {ID: "p-2", Name: "裤装 B"}}
 	out := bundleSourceProductOptions(products, "p-2")
 	if len(out) != 3 {
 		t.Fatalf("应为「空项 + 2 个商品」，实际 %d 项", len(out))
 	}
-	if key, _ := out[0]["LabelKey"].(string); key == "" {
-		t.Fatal("空项必须给非空 LabelKey（它是一句词条，取词在模板）")
+	if !out[0].IsNone || out[0].LabelKey == "" {
+		t.Fatalf("空项必须以 IsNone 标记并给非空 LabelKey，实际 %+v", out[0])
 	}
-	if out[0]["Selected"] != false {
+	if out[0].Selected {
 		t.Fatal("选了 p-2 时空项不该是选中态")
 	}
 	for i, row := range out[1:] {
-		if _, ok := row["LabelKey"]; ok {
-			t.Fatalf("数据项 %d 带上了 LabelKey 键 —— 同 productPickOptions，整键省略", i)
+		if row.IsNone || row.LabelKey != "" {
+			t.Fatalf("数据项 %d 不该是空项、也不该带 LabelKey，实际 %+v", i, row)
 		}
-		if row["Label"] != products[i].Name {
-			t.Fatalf("数据项 %d 的 Label 应为 %q，实际 %v", i, products[i].Name, row["Label"])
+		if row.Label != products[i].Name {
+			t.Fatalf("数据项 %d 的 Label 应为 %q，实际 %q", i, products[i].Name, row.Label)
 		}
-		if row["Selected"] != (row["ID"] == "p-2") {
-			t.Fatalf("数据项 %d 的选中态不对：%v", i, row["Selected"])
+		if row.Selected != (row.Value == "p-2") {
+			t.Fatalf("数据项 %d 的选中态不对：%v", i, row.Selected)
 		}
 	}
 }
@@ -144,20 +140,20 @@ func TestBundleSourceOptionsShape(t *testing.T) {
 		productenums.BundleSourceAttributes,
 	}
 	for i, want := range wantValues {
-		if out[i]["Value"] != want {
-			t.Fatalf("第 %d 项的值应为 %q，实际 %v", i, want, out[i]["Value"])
+		if out[i].Value != want {
+			t.Fatalf("第 %d 项的值应为 %q，实际 %q", i, want, out[i].Value)
 		}
-		if key, _ := out[i]["LabelKey"].(string); key == "" {
+		if out[i].LabelKey == "" {
 			t.Fatalf("第 %d 项必须给非空 LabelKey（取词在模板）", i)
 		}
-		if fallback, _ := out[i]["LabelFallback"].(string); fallback == "" {
+		if out[i].LabelFallback == "" {
 			t.Fatalf("第 %d 项必须给中文兜底（缺词时不能渲染成空白）", i)
 		}
 	}
 	// 选中态只跟着传进来的那一个值走。
 	for i, want := range wantValues {
-		if out[i]["Selected"] != (want == productenums.BundleSourceWarehouse) {
-			t.Fatalf("第 %d 项选中态不对：%v", i, out[i]["Selected"])
+		if out[i].Selected != (want == productenums.BundleSourceWarehouse) {
+			t.Fatalf("第 %d 项选中态不对：%v", i, out[i].Selected)
 		}
 	}
 }

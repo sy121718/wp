@@ -506,17 +506,14 @@ func tagCellLabel(tr TranslateFunc, tagChecks []productdto.TagCheckRowResp, auto
 //
 // data 只放**数据项**：分类侧用 CategoryPickOptions（分类名带层级缩进的真源只有一处），
 // 品牌侧由 productBrandNameOptions 给出同一个形状。
-func productPickOptions(noneKey, noneFallback, selected string, data []map[string]any) []map[string]any {
-	out := make([]map[string]any, 0, len(data)+1)
-	out = append(out, map[string]any{
-		"ID": "", "LabelKey": noneKey, "LabelFallback": noneFallback, "Selected": selected == "",
+func productPickOptions(noneKey, noneFallback, selected string, data []productdto.PickOptionResp) []productdto.PickOptionResp {
+	out := make([]productdto.PickOptionResp, 0, len(data)+1)
+	out = append(out, productdto.PickOptionResp{
+		LabelKey: noneKey, LabelFallback: noneFallback, Selected: selected == "", IsNone: true,
 	})
 	for _, item := range data {
-		id, _ := item["ID"].(string)
-		out = append(out, map[string]any{
-			"ID": id, "Label": item["Label"],
-			"Selected": id == selected,
-		})
+		item.Selected = item.Value == selected
+		out = append(out, item)
 	}
 	return out
 }
@@ -525,11 +522,11 @@ func productPickOptions(noneKey, noneFallback, selected string, data []map[strin
 //
 // 与分类侧用 CategoryPickOptions 同一取舍：本函数只交**数据**，
 // 「（不指定品牌）」空项的词条由 productPickOptions 补。
-func productBrandNameOptions(brands []*productdto.BrandResp) []map[string]any {
-	out := make([]map[string]any, 0, len(brands))
+func productBrandNameOptions(brands []*productdto.BrandResp) []productdto.PickOptionResp {
+	out := make([]productdto.PickOptionResp, 0, len(brands))
 	for _, b := range brands {
 		if b != nil {
-			out = append(out, map[string]any{"ID": b.ID, "Label": b.Name})
+			out = append(out, productdto.PickOptionResp{Value: b.ID, Label: b.Name})
 		}
 	}
 	return out

@@ -57,10 +57,13 @@ func SpecLabel(raw json.RawMessage, attrs []*productdto.AttributeResp) string {
 // Selected / Checked 由调用方按行的 ParentID 或商品的取值比对得出，本函数只给
 // 「id + 带层级缩进的分类名」—— 层级缩进的真源只有 CategoryLabel 一处，
 // 树的扁平化同理（FlattenCategoryTree）。
-func CategoryPickOptions(flat []*productdto.CategoryResp) []map[string]any {
-	out := make([]map[string]any, 0, len(flat))
+func CategoryPickOptions(flat []*productdto.CategoryResp) []productdto.PickOptionResp {
+	out := make([]productdto.PickOptionResp, 0, len(flat))
 	for _, node := range flat {
-		out = append(out, map[string]any{"ID": node.ID, "Label": CategoryLabel(node)})
+		if node == nil {
+			continue
+		}
+		out = append(out, productdto.PickOptionResp{Value: node.ID, Label: CategoryLabel(node)})
 	}
 	return out
 }

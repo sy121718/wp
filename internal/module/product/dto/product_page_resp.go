@@ -675,9 +675,10 @@ type ProductBundlePageResp struct {
 	MaxOptions int
 
 	// 成员来源面板：三种来源 + 各自的候选数据。槽位收事实（Key + 中文兜底 / 数据名），取词在模板。
-	Sources        []map[string]any
+	// Sources / SourceProducts 与商品行的主分类 / 品牌下拉同一份形状（PickOptionResp）。
+	Sources        []PickOptionResp
 	Source         string
-	SourceProducts []map[string]any
+	SourceProducts []PickOptionResp
 	// SourceAttributes 与 SourceWarehouses 的选择依据分别是「选中来源商品」与「选中来源仓」。
 	SourceAttributes  []*AttributeResp
 	SourceWarehouses  []BundleSourceWarehouseGroupResp
@@ -790,9 +791,9 @@ type ProductCategoriesPageResp struct {
 	CategoryCreateForm map[string]any
 	// Options 父级下拉的选项（本工程分类的扁平列表 + 层级缩进标签）：列表页的筛选区与
 	// 抽屉里都读它。**只收本工程**的分类（见 service.CategoriesInProject）。
-	// Options 父级下拉的选项（map：它和品牌下拉共用产品行下拉的渲染（productPickOptions），
-	// 形状由那套「ID / Label / LabelKey / LabelFallback / Selected」统一决定，不是分类专有）。
-	Options []map[string]any
+	// Options 父级下拉的选项：与商品行的主分类 / 品牌下拉同一份形状（PickOptionResp），
+	// 由 productPickOptions 那套「空项收事实、数据项收名字」统一决定，不是分类专有。
+	Options []PickOptionResp
 
 	MatchTotal int64
 	Total      int64

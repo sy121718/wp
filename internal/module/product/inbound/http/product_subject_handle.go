@@ -610,22 +610,6 @@ func fillEditFormEcho(view *productdto.ProductEditPageResp) {
 	view.IsBundle = isBundleProduct(view.Detail.Type)
 }
 
-func checkedProductEditOptions(options []map[string]any, selected []string) []map[string]any {
-	for _, option := range options {
-		id, _ := option["ID"].(string)
-		option["Checked"] = slices.Contains(selected, id)
-	}
-	return options
-}
-
-func selectedProductEditOptions(options []map[string]any, selected string) []map[string]any {
-	for _, option := range options {
-		id, _ := option["ID"].(string)
-		option["Selected"] = id == selected
-	}
-	return options
-}
-
 // nullableNumberText 可空数值 → 输入框文本（未设置给空串，不是 0）。
 //
 // 与列表展示用的 pkg/money.FormatYuanOrDash（空显示为 —）分开：— 是**展示**符号，
@@ -1020,8 +1004,8 @@ func bundlePageFailureView(status int) productdto.ProductBundlePageResp {
 		Skus:             []*productdto.BundleSKUResp{},
 		Rows:             []productdto.BundleOptionResp{},
 		CandidateSKUs:    []productdto.BundleCandidateResp{},
-		Sources:          []map[string]any{},
-		SourceProducts:   []map[string]any{},
+		Sources:          []productdto.PickOptionResp{},
+		SourceProducts:   []productdto.PickOptionResp{},
 		SourceAttributes: []*productdto.AttributeResp{},
 		SourceWarehouses: []productdto.BundleSourceWarehouseGroupResp{},
 		MaxOptions:       productdto.BundleMaxOptionsLimit,

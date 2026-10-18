@@ -37,7 +37,6 @@
 </div>
 {{else}}
 {{selectedProject := .SelectedProject}}
-{{options := .Options}}
 {* chain 索引取筛选回显：模板单测可能不带该键，缺键时 chain 给 nil（不中断渲染）；
    直接 {{.FilterKeyword}} 在缺键时会报错中断整页（HTTP 仍 200，后面整块 HTML 消失）。 *}
 {{fKeyword := .["FilterKeyword"]}}

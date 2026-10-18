@@ -25,7 +25,7 @@
             <input id="category-parent-search-{{if create}}new{{else}}{{.ID}}{{end}}" type="search" class="form-input" autocomplete="off" placeholder="{{tr("admin.product_categories.parentSearch.placeholder", "按名称搜索父级")}}" data-category-parent-search>
             <select aria-label="{{tr("admin.product_categories.label.parent", "父级分类")}}" class="form-select" name="parentId" data-category-parent-select>
                 <option value="" {{if parent == ""}}selected{{end}}>{{tr("admin.product_categories.option.topLevel", "（顶级分类）")}}</option>
-                {{range _, o := .Options}}{{if o.ID != id}}<option value="{{o.ID}}" {{if o.ID == parent}}selected{{end}}>{{o.Label}}</option>{{end}}{{end}}
+                {{range _, o := .Options}}{{if o.Value != id}}<option value="{{o.Value}}" {{if o.Value == parent}}selected{{end}}>{{o.Label}}</option>{{end}}{{end}}
                 {* 父级不在候选列表里（跨工程遗留 / 父级行已不存在）：仍渲染当前选中项。
                    ParentLabel 是名称（数据）；ParentOutOfScope 为真时补一句说明 —— 这句是文案，
                    在渲染期取词（与 product_categories.html 的行徽章同一句，词条见迁移 508）。

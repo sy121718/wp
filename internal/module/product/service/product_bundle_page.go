@@ -43,8 +43,8 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 		Skus:             []*productdto.BundleSKUResp{},
 		Rows:             []productdto.BundleOptionResp{},
 		CandidateSKUs:    []productdto.BundleCandidateResp{},
-		Sources:          []map[string]any{},
-		SourceProducts:   []map[string]any{},
+		Sources:          []productdto.PickOptionResp{},
+		SourceProducts:   []productdto.PickOptionResp{},
 		SourceAttributes: []*productdto.AttributeResp{},
 		SourceWarehouses: []productdto.BundleSourceWarehouseGroupResp{},
 		MaxOptions:       productdto.BundleMaxOptionsLimit,
@@ -327,20 +327,20 @@ func bundleCandidateOptions(skus []*productdto.BundleSKUResp) []productdto.Bundl
 // 槽位收事实（Key + 中文兜底），取词在模板：控制器提前翻等于把这三句锁死成中文。
 // 事实本身来自 productenums.BundleSourceLabel —— 与成员清单的「来源」列**同一份映射**
 // （此前下拉自带一句更长的兜底「从商品导入（该商品的启用变体）」，与库内词条不是同一句）。
-func bundleSourceOptions(selected string) []map[string]any {
+func bundleSourceOptions(selected string) []productdto.PickOptionResp {
 	values := []string{
 		productenums.BundleSourceProduct,
 		productenums.BundleSourceWarehouse,
 		productenums.BundleSourceAttributes,
 	}
-	out := make([]map[string]any, 0, len(values))
+	out := make([]productdto.PickOptionResp, 0, len(values))
 	for _, value := range values {
 		key, fallback := productenums.BundleSourceLabel(value)
-		out = append(out, map[string]any{
-			"Value":         value,
-			"LabelKey":      key,
-			"LabelFallback": fallback,
-			"Selected":      value == selected,
+		out = append(out, productdto.PickOptionResp{
+			Value:         value,
+			LabelKey:      key,
+			LabelFallback: fallback,
+			Selected:      value == selected,
 		})
 	}
 	return out
@@ -352,13 +352,13 @@ func bundleSourceOptions(selected string) []map[string]any {
 // **不给空的 LabelKey 键**（模板判据是 isset，空串也会走取词分支渲染成空白）。
 // 这段形状只有一处实现 —— 两个构造点各写一遍时，改了一处不会报错，只会让其中一个下拉
 // 渲染出一排空白 option。
-func bundleSourceProductOptions(products []*productdto.ProductResp, selected string) []map[string]any {
-	data := make([]map[string]any, 0, len(products))
+func bundleSourceProductOptions(products []*productdto.ProductResp, selected string) []productdto.PickOptionResp {
+	data := make([]productdto.PickOptionResp, 0, len(products))
 	for _, p := range products {
 		if p == nil {
 			continue
 		}
-		data = append(data, map[string]any{"ID": p.ID, "Label": p.Name})
+		data = append(data, productdto.PickOptionResp{Value: p.ID, Label: p.Name})
 	}
 	return productPickOptions(productenums.ProductBundleOptionNone, "— 不选 —", selected, data)
 }

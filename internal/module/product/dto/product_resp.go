@@ -194,8 +194,8 @@ type ProductRowResp struct {
 	CategoryOthers int
 	// PrimaryOptions / BrandOptions 是「含空项的下拉」的选项事实：空项带词条 key + 中文兜底，
 	// 数据项只给名字 —— 取词在模板（见 service 的 productPickOptions）。
-	PrimaryOptions []map[string]any
-	BrandOptions   []map[string]any
+	PrimaryOptions []PickOptionResp
+	BrandOptions   []PickOptionResp
 	BrandName      string
 
 	// 标签：TagChecks 手工标签勾选挂载，AutoTags 是只读的自动标签（归属由规则重算维护）；
@@ -257,6 +257,21 @@ type AutoTagRowResp struct {
 	ID        string
 	Name      string
 	RuleLabel string
+}
+
+// PickOptionResp 下拉选项的一行（「含空项的下拉」共用这一份形状）。
+//
+// 两条取值链只在**空项**上分叉：空项的文案是事实（Key + 中文兜底，渲染期按请求语言取词），
+// 数据项是数据（分类名 / 品牌名 / 商品名，翻不了）。用显式 IsNone 区分，而不是「LabelKey
+// 这个键在不在」—— 后者让「缺键」与「空串」同形，数据行误给一个空串就会被当成空项走取词
+// 分支，渲染出一排空白 option（不报错，也没人发现）。
+type PickOptionResp struct {
+	Value         string
+	Label         string
+	LabelKey      string
+	LabelFallback string
+	Selected      bool
+	IsNone        bool
 }
 
 // RatingRowResp 评分明细的一行。

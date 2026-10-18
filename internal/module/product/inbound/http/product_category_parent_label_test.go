@@ -45,8 +45,8 @@ func categoryParentOption(parentID string) *regexp.Regexp {
 	return regexp.MustCompile(`<option value="` + regexp.QuoteMeta(parentID) + `" selected>([^<]*)</option>`)
 }
 
-func parentLabelOptions() []map[string]any {
-	return []map[string]any{{"ID": "pr1cat1", "Label": "女装"}, {"ID": "pr1cat2", "Label": "连衣裙"}}
+func parentLabelOptions() []productdto.PickOptionResp {
+	return []productdto.PickOptionResp{{Value: "pr1cat1", Label: "女装"}, {Value: "pr1cat2", Label: "连衣裙"}}
 }
 
 func parentLabelRow() *productdto.CategoryResp {

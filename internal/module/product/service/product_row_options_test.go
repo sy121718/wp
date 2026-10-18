@@ -9,27 +9,27 @@ package productservice
 import (
 	"testing"
 
+	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 )
 
 // TestDropdownOptionsSeparateFactsFromData 钉住「含空项的下拉」这种选项事实的形状契约。
 //
 // 消费它的模板（product_edit.html / products.html / product_bundle.html / product_bundle_form.html）
-// 判据是 `{{if isset(o.LabelKey)}}`：
+// 判据是 IsNone：
 //
-//	{{if isset(o.LabelKey)}}{{tr(o.LabelKey, o.LabelFallback)}}{{else}}{{o.Label}}{{end}}
+//	{{if o.IsNone}}{{tr(o.LabelKey, o.LabelFallback)}}{{else}}{{o.Label}}{{end}}
 //
-// isset 问的是**键在不在**，不是「值空不空」—— 数据行（分类名 / 品牌名 / 商品名，它们不是文案、
-// 没有词条）一旦带上 `LabelKey: ""` 这个键，isset 即为真，于是走取词分支渲染出**空白 option**：
-// 页面 200、结构完整、没有任何报错（实测 public/test/product/feature 的
-// TestTaxonomyAdminPages 报「商品编辑页缺少 "山野"」）。
+// 空项的文案是**事实**（Key + 中文兜底），数据项是**数据**（分类名 / 品牌名 / 商品名，翻不了）。
+// 两者用显式布尔量分开，而不是「LabelKey 这个键在不在」—— 后者让缺键与空串同形，数据行误给
+// 一个空串就会被当空项走取词分支，渲染成一片空白 option（页面 200、结构完整、没有任何报错）。
 //
-// 所以数据行只给 `Label`，**不给空的 LabelKey / LabelFallback 键**；这条判据两个方向都守：
-// 数据行带上键 → 失败；空项没给非空 LabelKey → 也失败。
+// 这条判据两个方向都守：空项必须 IsNone 且给非空 LabelKey/兜底；数据项必须不是 IsNone、
+// 且不带 LabelKey/LabelFallback。
 func TestDropdownOptionsSeparateFactsFromData(t *testing.T) {
-	data := []map[string]any{
-		{"ID": "cat-2", "Label": "衬衫"},
-		{"ID": "cat-3", "Label": "裤装"},
+	data := []productdto.PickOptionResp{
+		{Value: "cat-2", Label: "衬衫"},
+		{Value: "cat-3", Label: "裤装"},
 	}
 	opts := productPickOptions(productenums.ProductsOptionNoPrimaryCategory, "（不指定主分类）", "cat-2", data)
 	if len(opts) != len(data)+1 {
@@ -37,30 +37,31 @@ func TestDropdownOptionsSeparateFactsFromData(t *testing.T) {
 	}
 
 	none := opts[0]
-	if key, _ := none["LabelKey"].(string); key == "" {
+	if !none.IsNone {
+		t.Fatalf("首项必须是空项（IsNone）")
+	}
+	if none.LabelKey == "" {
 		t.Fatalf("空项必须给非空 LabelKey（否则空项也落进 else 分支，渲染成空白）")
 	}
-	if fallback, _ := none["LabelFallback"].(string); fallback == "" {
+	if none.LabelFallback == "" {
 		t.Fatalf("空项必须给中文兜底：词条缺失时页面要仍可读")
 	}
-	if _, ok := none["Label"]; ok {
-		t.Fatalf("空项是文案不是数据，不该带 Label")
+	if none.Label != "" {
+		t.Fatalf("空项是文案不是数据，不该带 Label（实际 %q）", none.Label)
 	}
 
 	for i, row := range opts[1:] {
-		// 键存在性：isset 的真假就取决于这一步，空串也算存在。
-		if _, ok := row["LabelKey"]; ok {
-			t.Fatalf("数据项 %d 带上了 LabelKey 键（值 %q）—— 模板 isset 会因此走取词分支渲染成空白；"+
-				"数据行只给 Label", i, row["LabelKey"])
+		if row.IsNone {
+			t.Fatalf("数据项 %d 被标成了空项", i)
 		}
-		if _, ok := row["LabelFallback"]; ok {
-			t.Fatalf("数据项 %d 带上了 LabelFallback 键 —— 同 LabelKey，必须整键省略", i)
+		if row.LabelKey != "" || row.LabelFallback != "" {
+			t.Fatalf("数据项 %d 带上了文案事实（key=%q fallback=%q）—— 模板会走取词分支渲染成空白", i, row.LabelKey, row.LabelFallback)
 		}
-		if row["Label"] != data[i]["Label"] {
-			t.Fatalf("数据项 %d 的 Label 应为 %v，实际 %v", i, data[i]["Label"], row["Label"])
+		if row.Label != data[i].Label {
+			t.Fatalf("数据项 %d 的 Label 应为 %q，实际 %q", i, data[i].Label, row.Label)
 		}
-		if row["Selected"] != (row["ID"] == "cat-2") {
-			t.Fatalf("数据项 %d 的选中态不对：%v", i, row["Selected"])
+		if row.Selected != (row.Value == "cat-2") {
+			t.Fatalf("数据项 %d 的选中态不对：%v", i, row.Selected)
 		}
 	}
 

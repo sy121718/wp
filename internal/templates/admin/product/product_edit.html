@@ -242,14 +242,14 @@
                     {* 选项两条取值链：带事实字段的（「（不指定主分类）」）走 tr 取词；数据项给分类名
                        （含层级缩进），原样输出 —— 翻不了的数据与要按语言取词的文案不能混成一条。 *}
                     {{range _, o := p.PrimaryOptions}}
-                    <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{if isset(o.LabelKey)}}{{tr(o.LabelKey, o.LabelFallback)}}{{else}}{{o.Label}}{{end}}</option>
+                    <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.IsNone}}{{tr(o.LabelKey, o.LabelFallback)}}{{else}}{{o.Label}}{{end}}</option>
                     {{end}}
                 </select>
             </label>
             <label for="product-edit-brand">{{ .["t"]("admin.products.taxonomy.brandLabel", "品牌") }}
                 <select class="form-select" id="product-edit-brand" name="brandId">
                     {{range _, o := p.BrandOptions}}
-                    <option value="{{o.ID}}" {{if o.Selected}}selected{{end}}>{{if isset(o.LabelKey)}}{{tr(o.LabelKey, o.LabelFallback)}}{{else}}{{o.Label}}{{end}}</option>
+                    <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{if o.IsNone}}{{tr(o.LabelKey, o.LabelFallback)}}{{else}}{{o.Label}}{{end}}</option>
                     {{end}}
                 </select>
             </label>

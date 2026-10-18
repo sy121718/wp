@@ -96,7 +96,7 @@
                 <select class="form-select" name="source" data-bundle-source-select onchange="this.form.submit()">
                     {{if isset(.Sources)}}{{range _, s := .Sources}}
                     {* 来源项收的是事实（Key + 中文兜底）：凭 Key 在渲染期取词，缺事实的老数据原样输出 Label。 *}
-                    <option value="{{s.Value}}" {{if s.Selected}}selected{{end}}>{{if isset(s.LabelKey)}}{{tr(s.LabelKey, s.LabelFallback)}}{{else}}{{s.Label}}{{end}}</option>
+                    <option value="{{s.Value}}" {{if s.Selected}}selected{{end}}>{{tr(s.LabelKey, s.LabelFallback)}}</option>
                     {{end}}{{end}}
                 </select>
             </label>
@@ -114,7 +114,7 @@
                 <select class="form-select" name="sourceProduct" onchange="this.form.submit()">
                     {{if isset(.SourceProducts)}}{{range _, p := .SourceProducts}}
                     {* 首项「— 不选 —」是词条事实（LabelKey），商品项是数据（Label）；两条取值链二选一。 *}
-                    <option value="{{p.ID}}" {{if p.Selected}}selected{{end}}>{{if isset(p.LabelKey)}}{{tr(p.LabelKey, p.LabelFallback)}}{{else}}{{p.Label}}{{end}}</option>
+                    <option value="{{p.Value}}" {{if p.Selected}}selected{{end}}>{{if p.IsNone}}{{tr(p.LabelKey, p.LabelFallback)}}{{else}}{{p.Label}}{{end}}</option>
                     {{end}}{{end}}
                 </select>
             </label>

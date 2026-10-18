@@ -39,6 +39,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	"go_wp/internal/templates"
@@ -622,8 +623,8 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	})
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetInventoryDeps(f.inventory)
-	engine.GET("/admin/products", handle.ProductsPage)
-	engine.GET("/admin/products/new", handle.ProductNewPage)
+	engine.GET("/admin/products", adminui.Page(producthttp.ProductListPageTemplate, handle.ProductsPage))
+	engine.GET("/admin/products/new", adminui.Page(producthttp.ProductNewPageTemplate, handle.ProductNewPage))
 	// 新建变体是 JSON 端点（页面声明 data-write-api + 基座发起 fetch）。
 	engine.POST("/api/product/variant/create", producthttp.NewProductHandle(f.products).CreateVariant)
 

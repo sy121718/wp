@@ -114,10 +114,10 @@ func (h *ProductPageHandle) categoryProjectExists(c *gin.Context, projectID stri
 }
 
 // categoryOptionIDs 父级候选下拉里出现过的分类 id（MissingParentIDs 的「已知集合」）。
-func categoryOptionIDs(options []map[string]any) map[string]struct{} {
+func categoryOptionIDs(options []productdto.PickOptionResp) map[string]struct{} {
 	known := make(map[string]struct{}, len(options))
 	for _, option := range options {
-		if id, ok := option["ID"].(string); ok {
+		if id := option.Value; id != "" {
 			known[id] = struct{}{}
 		}
 	}
@@ -131,7 +131,7 @@ func categoryOptionIDs(options []map[string]any) map[string]struct{} {
 //
 // ParentOutOfScope 是列表行上的徽章：父级属于别的工程（或父级行已不存在）时置真 ——
 // 这类行的 ParentID 指向本工程之外，操作者只看分类名看不出来，得有个可见标记。
-func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []map[string]any, searching bool, parentLabels map[string]productdto.CategoryParentInfoResp) []productdto.CategoryRowResp {
+func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []productdto.PickOptionResp, searching bool, parentLabels map[string]productdto.CategoryParentInfoResp) []productdto.CategoryRowResp {
 	// 判据取 missingParentIDs（父级不在候选列表）而**不是** parentLabels：后者只收
 	// 「名称读得到」的那些父级，RLS 切非超级角色后跨工程父级读不到名称会被它漏掉，
 	// 而那时恰恰最该让操作者看见异常。两者共用同一个判定函数，不另起一份候选集合逻辑。
@@ -206,7 +206,7 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) (any, error) {
 //
 // 拆成两个字段而不是一个拼好的串（原 categoryParentText 的形态）：跨工程那句说明是文案，
 // 必须在渲染期按请求语言取词（en-US 后台下也该是英文）—— 控制器里拼串等于把它钉死在中文。
-func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []map[string]any, parentLabels map[string]productdto.CategoryParentInfoResp) gin.H {
+func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []productdto.PickOptionResp, parentLabels map[string]productdto.CategoryParentInfoResp) gin.H {
 	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": binding.CSRFToken(c),
 		// ListQuery：表单 action 的筛选上下文（抽屉里的表单提交要带着它回去）。
 		"ListQuery": binding.ListQuery(c, productCategoriesBackKeys...)}
@@ -215,7 +215,7 @@ func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.
 		if row.ParentID != "" {
 			parentMissing := true
 			for _, option := range options {
-				if option["ID"] == row.ParentID {
+				if option.Value == row.ParentID {
 					parentMissing = false
 					break
 				}
