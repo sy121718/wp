@@ -1400,7 +1400,7 @@ func (h *SessionPageHandle) SessionsPage(c *gin.Context) {
 	if loadFailed {
 		// 会话清单是这一页的**主数据**：读不到就不该有这一页 —— 同页完整 HTML 500 + no-store
 		//（docs/rules/template-boundary.md §「整页 GET 的失败出口：失败也必须是『这一页』」，
-		// 样板 navigation_page.go:290-317）。
+		// 样板 navigation_page_handle.go:290-317）。
 		//
 		// 单点出口，所以内联：这一页只有列表这一处主数据失败，看板 / 供应商卡片 / 详情各有自己的
 		// 就地降级（attach*，200 + 就地提示条），语义与「整页没读出来」不同，不能混为一谈。

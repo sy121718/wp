@@ -15,7 +15,7 @@ package orderhttp
 // 数据，而删除没有撤销；显式 null 必须单独判 —— encoding/json 把 null 解进 string / []string /
 // uint64 都不报错（落到零值），不判原文就会静默变成「一次空批量」或「把字段清空」。
 //
-// 与 mail（mail_contact_write.go）和 navigation（navigation_delete_write.go）同形而**不是各写一套**：
+// 与 mail（mail_contact_write.go）和 navigation（navigation_delete_handle.go）同形而**不是各写一套**：
 // 前端基座只有一个（internal/templates/static/js/ui/json_write.js），它读 id / ids /
 // items[].deleted|updated / items[].message 这一套字段名，三个模块给三套写法就等于让基座
 // 维护三种协议。

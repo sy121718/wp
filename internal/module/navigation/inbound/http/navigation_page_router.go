@@ -3,7 +3,7 @@ package navigationhttp
 // navigation_page_router.go — 导航菜单后台页面的注册落点。
 //
 // 只做注册：`/admin` 组的中间件链（Session + CSRF + 权限上下文）由装配层统一挂好，
-// handler 在 navigation_page.go。路由注册只出现在 *_router.go，门禁
+// handler 在 navigation_page_handle.go。路由注册只出现在 *_router.go，门禁
 // scripts/check-route-registration-placement.sh 守这条。
 //
 // 与后台权限菜单（admin/menus）严格隔离：本页管理的是公开站点导航（navigations 表）。
@@ -47,7 +47,7 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/navigations/panel/create", builtin.CasbinMiddlewareForPath("/api/block/create"), h.PanelCreate)
 	adminPages.POST("/navigations/update", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.NavigationUpdate)
 	// 同级上移 / 下移已迁到真实 JSON 端点（POST /api/navigation/update，action="move"，
-	// 见 navigation_move_write.go）：页面这一侧不再保留它的 POST。
+	// 见 navigation_move_handle.go）：页面这一侧不再保留它的 POST。
 
 	// 导航译文工作台（审计 I18N-007）：菜单标签不在页面文档里，页面翻译工作台看不到它，
 	// 构建期靠 navigation.label 语境回填 —— 本页是那个语境的唯一维护入口。
@@ -70,7 +70,7 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	// 译文保存的写入口在真实 JSON 端点 POST /api/navigation/update（action="translations"）：
 	// 它由 SetupNavigationRoutes 注册，拿不到这里的 writer / marker / invalidator 端口，
 	// 所以把带端口的句柄交给包级写入口（未注入时该分支 fail closed，见
-	// navigation_translation_write.go）。
+	// navigation_translations_handle.go）。
 	SetNavigationTranslationWriter(translations)
 	adminPages.GET("/navigations/translations", adminui.PageAuthz("/api/navigation/list"), translations.NavigationTranslations)
 }

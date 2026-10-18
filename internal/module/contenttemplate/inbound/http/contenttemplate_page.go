@@ -139,7 +139,7 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	if err != nil {
 		// 模板清单是这一页的**主数据**：读不到就不该有这一页 —— 同页完整 HTML 500 + no-store
 		//（docs/rules/template-boundary.md §「整页 GET 的失败出口：失败也必须是『这一页』」，
-		// 样板 navigation_page.go:290-317）。
+		// 样板 navigation_page_handle.go:290-317）。
 		//
 		// 与上面 `projects.List` 失败那条的分界不在状态码（两条现在都是 500 + no-store），
 		// 而在**页面赖以成立的主数据是否已经读完**：工程列表失败时 `Impact` / `templates.List`

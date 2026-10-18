@@ -1,6 +1,6 @@
 package navigationhttp
 
-// navigation_err.go — 导航错误的对外口径（JSON 出口 + 页面出口 + 逐条原因），判据只有一份。
+// navigation_error_handle.go — 导航错误的对外口径（JSON 出口 + 页面出口 + 逐条原因），判据只有一份。
 //
 // 「这条错误能不能对外说、说什么」由 pkg/facing.FactOf 给出（key / Fallback / Tail /
 // Business）：模块不再自带白名单 + 拆分函数 + 逐条 switch —— 那是第二份真相，service
@@ -148,8 +148,8 @@ func navigationReasonFallback(key string) string {
 
 // navigationReasonText 把一条错误转成**逐条原因**（JSON 回执的 items[].message）要显示的成品句。
 //
-// 为什么归口到一处：删除端点（navigation_delete_write.go）与来源批量加入
-// （navigation_add_source_write.go）的逐条原因都要「按请求语言出成品句 + 缺词不裸 key」。
+// 为什么归口到一处：删除端点（navigation_delete_handle.go）与来源批量加入
+// （navigation_add_source_handle.go）的逐条原因都要「按请求语言出成品句 + 缺词不裸 key」。
 func navigationReasonText(c *gin.Context, err error) string {
 	fact, business := navigationFact(err)
 	if !business {

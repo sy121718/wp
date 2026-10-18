@@ -3,7 +3,7 @@ package aihttp
 // ai_sessions_page_render_test.go — AI 会话页整页失败出口的回归护栏。
 //
 // 被守的边界（docs/rules/template-boundary.md §「整页 GET 的失败出口：失败也必须是『这一页』」，
-// 规范样板 navigation_page.go:290-317）：
+// 规范样板 navigation_page_handle.go:290-317）：
 //
 //  1. 主数据（会话清单 ListSessionsFiltered）读不到时仍是**这一页**：500 + text/html +
 //     no-store + 完整页壳（此前走 shell.PageError → pkg/response 的 ErrorWithMessage，

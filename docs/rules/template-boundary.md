@@ -91,7 +91,7 @@
 - **500 而不是 200**：200 + 一句「加载失败」在监控里与正常页一模一样，失败会一直无声地发生；失败页也不该被缓存，否则「重试」只是把同一份失败从缓存里再拿回来。
 - **主数据 vs 可选辅助**必须分开：页面赖以成立的数据（列表、编辑对象、工程上下文）读不到 = 主数据失败 = 500；「有它更好」的候选数据（可选工程下拉、面板块候选、引用面提示）读不到 = 可选辅助 = 200 + 就地标出。
 
-样板（本仓库唯一完整落地）：`internal/module/navigation/inbound/http/navigation_page.go:290-317` —— 原文只进日志（`:310`）、零值数据 + `LoadError`（`:311-312`）、`no-store`（`:313`）、`c.HTML(500, 同一个模板, adminui.Prepare(c, failed))`（`:314`）。回归钉死四条（`internal/module/navigation/inbound/http/navigation_page_presentation_test.go:213-300`）：`Content-Type: text/html`；500 + `no-store`；页壳完整（`<!DOCTYPE` / `class="admin-layout"` / `</body>` / `</html>` / `id="adminRail"`）；**内部原文只进日志**（用例刻意用 `pq: relation "navigations" does not exist` 反证）。
+样板（本仓库唯一完整落地）：`internal/module/navigation/inbound/http/navigation_page_handle.go:290-317` —— 原文只进日志（`:310`）、零值数据 + `LoadError`（`:311-312`）、`no-store`（`:313`）、`c.HTML(500, 同一个模板, adminui.Prepare(c, failed))`（`:314`）。回归钉死四条（`internal/module/navigation/inbound/http/navigation_page_presentation_test.go:213-300`）：`Content-Type: text/html`；500 + `no-store`；页壳完整（`<!DOCTYPE` / `class="admin-layout"` / `</body>` / `</html>` / `id="adminRail"`）；**内部原文只进日志**（用例刻意用 `pq: relation "navigations" does not exist` 反证）。
 
 ### 失败槽：一个事实位 + 一句归口文字
 
@@ -103,7 +103,7 @@
 - **失败优先于空态**：模板先判失败、再判空态 —— `{{if loadError}} … {{else if len(.Projects) == 0}}`（`internal/templates/admin/navigation/navigations.html:23-31`）。两档混在一起，运营会以为数据被删了，然后去重建一遍。
 - `LoadFailed` 是既有形态（`masterdata_page.go:242-245`、`membership_page.go:264-268`、`inventory_page.go:1801-1804`、`order_create_page.go:292-293`；模板样板 `internal/templates/admin/membership/membership.html:46` 的 `{{if .LoadFailed}}` + `role="alert"`）—— 上面这几处按各自模块注释仍属**降级 200**，对应上表最后一行（可选辅助：工程上下文缺省，但页面主体照读）。
 - **判据不是「用了哪个键」，而是这一支在失败时是否已经把页面赖以成立的主数据读完**。反例（同一个键、相反的档）：`internal/module/contenttemplate/inbound/http/contenttemplate_page.go:75-111` 的工程列表失败 —— 那一支在 `Impact` / `templates.List` 之前就 `return`，**列表主体根本没读**，因此是**主数据失败 = 500 + no-store**（`:109-110`）。它早期被错记为「可选辅助降级 200」的示例，2026-10 按短路证据纠正；任何模块出现「同样在列表查询之前 return」的同类分支，都按这条改判为 500。回归钉死 `internal/module/contenttemplate/inbound/http/content_template_page_err_test.go` 的 `TestContentTemplatesPageProjectListFailureRenders500`：500 + `text/html` + `no-store` + 页壳完整 + 筛选 `entityType` 回显 + 无行级入口/批量动作 + 引用面/清单/样例实体查询计数全 0 + 原文只进日志。
-- `LoadError` 是归口文字槽：事实由 Go 给（`internal/module/navigation/inbound/http/navigation_err.go` 的 `navigationErrMsg` → `adminui.Msg`），缺词落 `enums.errFallbacks` 的中文兜底；**取词发生在渲染期**，模板只把它摆出来，不拼句。判据是 `pkg/facing.FactOf`，模块不再自带白名单。
+- `LoadError` 是归口文字槽：事实由 Go 给（`internal/module/navigation/inbound/http/navigation_error_handle.go` 的 `navigationErrMsg` → `adminui.Msg`），缺词落 `enums.errFallbacks` 的中文兜底；**取词发生在渲染期**，模板只把它摆出来，不拼句。判据是 `pkg/facing.FactOf`，模块不再自带白名单。
 
 ### 整页 GET 的失败出口不许用这四种
 
@@ -121,12 +121,12 @@
 - `title` —— 由每个页面 handler 自己放进数据，`adminui.Prepare` **不注入**；门禁 `scripts/check-page-title.sh` 按形状扫（整页模板集合 = 含 `extends "../layout.html"` 的模板；数据源没有 `"title"` 键即命中），豁免清单 `scripts/page-title-allow.txt`。
 - `menu` —— 侧栏哪一项高亮。
 - `adminui.Prepare`（`internal/adminui/prepare.go`，task-92 批 2a 自 `internal/shell` 迁入）统一注入：`t`（per-request 取词闭包）、`csrf_token`、`PermSet`、`Buttons`、`NavGroups`、`SidebarOpen` / `SidebarPinned` / `HasSubnav`。**侧栏视图构造与装配同包**：`internal/adminui.BuildNav` 把授权菜单树转成侧栏视图（task-72 起），`Prepare` 只做取值注入与当前页标记 —— 改侧栏视图形状要改 `internal/adminui/nav.go`，改注入键要改 `internal/adminui/prepare.go`。（order 五个生产文件六处调用已直引 `adminui.Prepare`；`internal/shell` 的 `Prepare` 过渡转发与 parity 测试同批删除，永久 AST 守卫钉住导出与调用点归零。）
-- **失败路径走同一份注入**：`adminui.Prepare(c, failed)`（`navigation_page.go:314`）。漏了 `menu` / `NavGroups` 的「失败页」不是失败页，是又一个坏页面。
+- **失败路径走同一份注入**：`adminui.Prepare(c, failed)`（`navigation_page_handle.go:314`）。漏了 `menu` / `NavGroups` 的「失败页」不是失败页，是又一个坏页面。
 
 ### 文案与语言的边界
 
 - **业务文案由 Go 按系统语言解析**（`Accept-Language` → `shell.TranslateFor` / `pkg/response.RequestLanguage`），缺词落**受控 fallback**（模块内中文原文；连兜底都没有时给 `ErrInternal` 归口句）。**页面上不许出现裸 key**。
-- **UI 取词仍归模板链**（`.["t"](key, 中文原文)`）：失败槽给的是「归口后的业务结论」，页壳上的按钮、标题、空态标题仍由模板取（`docs/rules/i18n.md` §五）。两条链的缺词行为各自明确（task-14 复审 P2 的口径，见 `navigation_err.go` 文件头）。
+- **UI 取词仍归模板链**（`.["t"](key, 中文原文)`）：失败槽给的是「归口后的业务结论」，页壳上的按钮、标题、空态标题仍由模板取（`docs/rules/i18n.md` §五）。两条链的缺词行为各自明确（task-14 复审 P2 的口径，见 `navigation_error_handle.go` 文件头）。
 - **JSON API 不受这里影响**：`/api/**` 的形态仍是 `pkg/response` 的 `{code,message,data}`（`docs/rules/response-shapes.md`）。页面出口改成「整页 HTML」时，同一个业务错误的 JSON 出口一行不动。
 
 ### 存量差异（登记，不在本契约的落地范围内）

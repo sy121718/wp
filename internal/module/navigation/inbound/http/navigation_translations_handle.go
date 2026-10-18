@@ -1,6 +1,6 @@
 package navigationhttp
 
-// navigation_translation_write.go — 导航译文保存的真实 JSON 写入口（POST /api/navigation/update）。
+// navigation_translations_handle.go — 导航译文保存的真实 JSON 写入口（POST /api/navigation/update）。
 //
 // 为什么并进 /api/navigation/update 而不是新开一条路径：sys_permission 里一个权限点只有一列
 // api_path / api_method，新路径就得新增权限点 + sys_menus 按钮行 + 一份迁移；而译文本来就是
@@ -466,7 +466,7 @@ func navigationFirstPlaceholder(tpl string) (int, int) {
 
 // navigationWriteErrorsText 把逐行错误并成一句话（每句都已按请求语言取好词）。
 //
-// 分号跟语言走：中文用全角「；」，其余语言用 "; "（与 navigation_err.go 的 facingDetailSep
+// 分号跟语言走：中文用全角「；」，其余语言用 "; "（与 navigation_error_handle.go 的 facingDetailSep
 // 同一口径）。
 func navigationWriteErrorsText(c *gin.Context, errs []string) string {
 	sep := "；"

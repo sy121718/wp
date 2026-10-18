@@ -51,7 +51,7 @@
 | 3 | `contenttemplate/.../contenttemplate_page.go` | 4 条注册 + `SetupContentTemplatePages` | 搬进 `contenttemplate_page_router.go` |
 | 4 | `mail/inbound/http/mail_page.go` | 3 条 `/_t/*` 注册 + `SetupTrackingRoutes`（**公开面**） | 搬进 `mail_public_router.go`（文件头写明与后台链路的差别） |
 | 5 | `media/.../media_page_handle.go` | 1 条注册 + `SetupMediaPages` | 搬进 `media_page_router.go` |
-| 6 | `navigation/.../navigation_page.go` | 12 条注册 + `SetupNavigationPages` | 搬进 `navigation_page_router.go` |
+| 6 | `navigation/.../navigation_page_handle.go` | 12 条注册 + `SetupNavigationPages` | 搬进 `navigation_page_router.go` |
 | 7 | `plugin/.../plugin_page_handle.go` | 4 条注册 + `SetupPluginPages` | 搬进 `plugin_page_router.go` |
 | 8 | `product/inbound/http/product_page.go` | 2 条翻译页注册 + `SetupProductTranslationRoutes` | **已定稿口径：路由只有一份** —— 全并进 `product_router.go`（唯一声明点，按业务域分节：商品本体 / 属性 / 分类品牌 / 标签 / 捆绑 / 定价 + 页面面；翻译页注册一并移入），`product_page_router.go` 已删除；按功能拆的是**控制器**（10 个文件：`product_core.go` 商品本体 / `product_attributes.go` / `product_taxonomy.go` / `product_bundle.go` / `product_pricing.go` / `product_detail_template.go` / `product_translations.go` + 入口与两个共用原语文件） |
 | 9 | `project/inbound/http/project_handle.go` | 6 条 `/api/theme/*` 注册 + `SetupThemeRoutes` | `SetupThemeRoutes` 搬进 `project_router.go`；`SetupProjectPages` 拆到 `project_page_router.go` |

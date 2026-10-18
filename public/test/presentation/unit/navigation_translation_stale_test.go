@@ -202,7 +202,7 @@ func saveNavTranslation(t *testing.T, f *presFixture, navSvc *navigationservice.
 	handle.SetContentWriter(i18n.NewContentWriter(f.db))
 	handle.SetMenuInvalidator(navSvc)
 	// 译文保存现在是真实 JSON 写接口：句柄的端口（writer / pages / menus）在这里注入，
-	// 端点那边只负责判别形状与转发（见 internal/module/navigation/inbound/http/navigation_translation_write.go）。
+	// 端点那边只负责判别形状与转发（见 internal/module/navigation/inbound/http/navigation_translations_handle.go）。
 	navigationhttp.SetNavigationTranslationWriter(handle)
 	t.Cleanup(func() { navigationhttp.SetNavigationTranslationWriter(nil) })
 

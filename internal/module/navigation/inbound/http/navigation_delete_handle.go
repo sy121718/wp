@@ -1,4 +1,4 @@
-// navigation_delete_write.go — 删除端点的**严格形状 union**（单档 / 批档）。
+// navigation_delete_handle.go — 删除端点的**严格形状 union**（单档 / 批档）。
 //
 // 导航列表页的「删除」与「批量删除」两条页面 POST（曾借同一个 /api/navigation/delete）已
 // 迁到真实 JSON 端点，两条动作**不拆成两条路径**：拆开会让「能删一个、不能删十个」这种
@@ -13,7 +13,7 @@
 //
 // 逐条失败原因（items[].message）在**这里**按请求语言成品化：service 只给事实（业务 key
 // 或原始错误），取词与缺词兜底都在 HTTP 出口做（见 navigationReasonText）。理由与
-// navigation_err.go 文件头的「两个出口取词归属不同」是同一件事：同一个错误在 JSON 接口、
+// navigation_error_handle.go 文件头的「两个出口取词归属不同」是同一件事：同一个错误在 JSON 接口、
 // 页面提示条、将来的邮件里都要各按各的语言渲染，service 里翻一遍等于把语言钉死在服务层。
 package navigationhttp
 
@@ -119,7 +119,7 @@ func navigationBulkTooManyMessage(err error) string {
 	return fmt.Sprintf("%s|%d|%d", bulkids.MsgTooMany, tooMany.Max, tooMany.Count)
 }
 
-// 逐条原因的成品句与缺词兜底统一归口在 navigation_err.go 的 navigationReasonText：
+// 逐条原因的成品句与缺词兜底统一归口在 navigation_error_handle.go 的 navigationReasonText：
 // 删除与「来源批量加入」两个动作的原因列是同一件事（按请求语言出成品句、缺词不裸 key），
 // 两份实现等于让同一件事有两个版本。本文件只负责把错误事实交给它。
 // deleteBulk 逐条删除：某一条失败只计入 skipped 并回带原因，整批不中断。

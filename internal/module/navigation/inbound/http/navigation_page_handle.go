@@ -7,7 +7,7 @@ package navigationhttp
 //     POST + shell.RenderJump 整页提示（成功 1 秒后自动回列表）；
 //   · 新建、来源批量加入与删除（单个、批量）已迁到真实 JSON 端点
 //     （POST /api/navigation/create：新建档 / action=addSource 档，见
-//     navigation_add_source_write.go；POST /api/navigation/delete，见 navigation_delete_write.go）：
+//     navigation_add_source_handle.go；POST /api/navigation/delete，见 navigation_delete_handle.go）：
 //     页面只把端点与文案写进
 //     data-write-*，请求由基座直接发出，成功整页刷新 —— 不再有无 JS 的页面 POST 兜底，
 //     相应的按钮因此是 [data-requires-js] hidden。
@@ -44,12 +44,14 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
+	"go_wp/internal/backref"
 	"go_wp/internal/middleware/builtin"
 	blockcontract "go_wp/internal/module/block/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
 	projectcontract "go_wp/internal/module/project/contract"
+	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 )
@@ -167,7 +169,7 @@ func (h *navigationPageHandle) navEditOwnedRow(c *gin.Context, echo navEditEcho)
 // 页面标题（i18n key，与原 dashboard 枚举同值）。
 //
 // 参数级提示不再用 MsgFieldRequired 这个通用 key 直出（原先 c.String(400, key) 把 key
-// 本身当响应体）：统一走 navigation_err.go 的 navInvalidParamText / navNoticeNoSourcePicked。
+// 本身当响应体）：统一走 navigation_error_handle.go 的 navInvalidParamText / navNoticeNoSourcePicked。
 const (
 	navigationsPageTitle = "MsgNavigationsTitle"
 )
@@ -225,7 +227,7 @@ type navMenuRow struct {
 //
 // 为什么在页面侧派生而不是加进 contract：它是**展示判据**（按钮禁用态），跨模块契约
 // 不该为了一个后台按钮多一个字段。判据只有一份 —— 候选 URL 非空才可加入，与 service
-// 「无公开路径的候选不提供添加」同源（见 navigation_page.go 的 NavigationAddSource）。
+// 「无公开路径的候选不提供添加」同源（见 navigation_page_handle.go 的 NavigationAddSource）。
 //
 // 为什么要有它：逐项 disabled 只挡住单个复选框，整组都不可用时按钮仍可点，用户提交后
 // 才拿到「请至少勾选一项要加入菜单的内容」—— 而 33 个项目里一个都勾不动，那句提示
@@ -305,7 +307,7 @@ func (h *navigationPageHandle) NavigationsPage(c *gin.Context) {
 		// 此前这里是 response.ErrorWithMessage(c, 500, adminui.MsgInternalError)：浏览器收到
 		// `{"code":500,…}`，DOM 里没有标题栏与左侧菜单，地址栏停在 /admin/navigations，
 		// 用户只能手改地址栏回去 —— 与「参数级失败返回 JSON」是同一类缺陷
-		//（navigation_err.go 的文件头记过那一类）。
+		//（navigation_error_handle.go 的文件头记过那一类）。
 		//
 		// 现在渲染**同一个列表模板** + 可选错误槽（.LoadError）：页壳 / 菜单 / 权限上下文
 		// 照旧，状态码仍是 500 —— 页面确实没取到数据，200 会让失败看起来像成功、监控也
@@ -380,7 +382,7 @@ func (h *navigationPageHandle) buildNavigationsData(c *gin.Context) (*navigation
 		Projects: projects, SelectedProject: selected, Kind: kind,
 		Rows: rows, ParentOptions: parents, SourceGroups: sourceGroups,
 		// 操作结论不再经 query 回带（PRG）：写动作的结论由 shell.RenderJump 渲染成
-		// 整页提示（见 navigation_jump.go），列表页不再从 query 读任何结论。
+		// 整页提示（见 navigation_page_handle.go），列表页不再从 query 读任何结论。
 		// 面板块保存后回菜单编辑器时要把对应那一项的抽屉重新打开（?menu=）。
 		MenuID: normalizeMenuFocus(c.Query("menu")),
 	}, nil
@@ -440,11 +442,11 @@ func normalizeNavKind(kind string) string {
 }
 
 // navListURL / navListURLWith / navListURLMenu 三个「列表页回跳地址构造点」已删除：
-// 回跳地址改由 shell.BackPath 从**表单 action 的 query** 按白名单读回（见 navigation_jump.go
+// 回跳地址改由 shell.BackPath 从**表单 action 的 query** 按白名单读回（见 navigation_page_handle.go
 // 的 navListBack / navListBackMenu），结论文案不再进 URL。菜单项的 `?menu=` 也走同一条读回链。
 
 // NavigationAddSource 已退役：来源批量加入菜单迁到 POST /api/navigation/create 的
-// action=addSource 档（见 navigation_add_source_write.go）—— 页面只留 data-write-* 声明，
+// action=addSource 档（见 navigation_add_source_handle.go）—— 页面只留 data-write-* 声明，
 // 请求由基座直接发出。这条页面 POST 曾借 /api/navigation/create 的权限对象，
 // 退役后「加一个菜单项」只剩一个接口出口，不会出现「能加普通的、加不了来源的」两套锚点。
 
@@ -501,7 +503,7 @@ func (h *navigationPageHandle) NavigationUpdate(c *gin.Context) {
 
 // 同级上移 / 下移原本是本文件的 NavigationMove（连调两次 Update，历史 P1 半交换）：
 // 原子交换在 task-84 落进 service.SwapMove，页面 POST 在 task-91 迁到真实 JSON 端点
-// （POST /api/navigation/update，action="move"，见 navigation_move_write.go）——
+// （POST /api/navigation/update，action="move"，见 navigation_move_handle.go）——
 // 这里不再有它的 handler。
 
 // errPanelUnavailable 块能力未装配（装配缺陷；对外只出通用文案）。
@@ -722,7 +724,7 @@ func (h *navigationTranslationHandle) NavigationTranslations(c *gin.Context) {
 }
 
 // 译文保存已迁到真实 JSON 写接口 POST /api/navigation/update（action="translations"，见
-// navigation_translation_write.go）：页面只发一次 JSON 请求，成功由前端跳回带筛选的 GET。
+// navigation_translations_handle.go）：页面只发一次 JSON 请求，成功由前端跳回带筛选的 GET。
 // 页面侧的写 handler（整表 form POST）与它的提示页（shell.RenderJump）随之退役。
 
 // navigationTranslationsData 页面数据。
@@ -973,4 +975,81 @@ func navKindTitle(tr func(key, fallback string) string, kind string) string {
 		return tr(navigationenums.KindFooter, "页脚导航")
 	}
 	return tr(navigationenums.KindHeader, "页眉导航")
+}
+
+// navigation_page_handle.go — 导航菜单页写动作的**出口**：整页提示（shell.RenderJump，
+// 对应 ThinkPHP 的 success() / error()）。
+//
+// 取代原先的 303 + `?err=` / `?done=` 回列表页：那条通道要求读侧再判一次「这条提示是不是
+// 本仓给的」（navigationNoticeTexts / navigationPageErr / navigationPageDone 就是那套），
+// 而查询参数不是可信边界。文案改走响应体之后，读侧判定整批删除（见 navigation_error_handle.go）。
+//
+// 三条边界（同 shell.RenderJump 的注释）：
+//   · 文案是**事实**（key + 中文兜底 + `%s` 参数），不是拼好的句子 —— 控制器不取词，
+//     取词由提示页注入的 tf 做（见 adminui.Prepare）。事实的形状是本文件的 `navText`；
+//     错误事实的判定统一在 navigation_error_handle.go 的 navigationErrMsg（pkg/facing 判据 + 归口）；
+//   · 回跳地址由 backref.BackPath 从**表单 action 的 query** 按白名单读回（服务端自己拼，
+//     不读隐藏域里的整串 URL）；
+//   · 结论不进 URL —— 成功 / 失败只体现在提示页的响应体里。
+//
+// 注意这条**不适用于删除链**：行内删除与批量删除已迁到 JSON 端点
+// （navigation_delete_handle.go），那里的原因是 navigationErrText 的成品句、超限是
+// `key|max|count` 协议；来源批量加入同理（navigation_add_source_handle.go，逐条原因随回执
+// 返回）。同级上移 / 下移也已迁走（同一条 JSON 端点，action="move"）。页面这一侧只剩
+// update / panel。
+
+// navigationListPath 导航菜单列表页（回跳目标）。
+const navigationListPath = "/admin/navigations"
+
+// navListBack 列表页回跳地址：从**本次请求的 query** 读回筛选上下文。
+//
+// 上下文随表单 action 的 query 一起提交（`action="/admin/navigations/update?project=…&kind=…`），
+// 服务端按调用点显式列出的键读回来 —— 不再由 Go 拼 ?err= / ?done=。
+func navListBack(c *gin.Context) string {
+	return backref.BackPath(c, navigationListPath, "project", "kind")
+}
+
+// navListBackMenu 同 navListBack，额外保留 `?menu=`（编辑 / 面板抽屉保存后要重新展开的那一项）。
+func navListBackMenu(c *gin.Context) string {
+	return backref.BackPath(c, navigationListPath, "project", "kind", "menu")
+}
+
+// —— 回跳链接文字与成功回执（key + 中文兜底，**不需要 gin.Context**）——
+//
+// 「这段文案属于哪个语言」由提示页取词时决定，与控制器无关 —— 这正是本批的形状要求：
+// 控制器曾经在这里调 shell.TranslateFor 把 key 提前翻成一句当前语言的成品串，而语言是
+// **请求级**的，每多一处就多一次「这句话属于哪个语言」的判断。
+var (
+	// navListBackTitle 列表页回跳链接文字（复用页面标题词条，不新增全站词条）。
+	navListBackTitle = navText{Key: navigationenums.Heading, Fallback: "导航菜单"}
+
+	// navDoneNotice 写动作成功回执（复用同一句话，不按动作细分；词条见迁移 590）。
+	navDoneNotice = navText{Key: navigationenums.ActionDone, Fallback: "操作已完成"}
+)
+
+// navJump 提示页出口：成功 1 秒后自动跳，失败不自动跳（运营要看清楚原因）。
+func navJump(c *gin.Context, ok bool, msg navText, back string, backText navText) {
+	j := shell.Jump{
+		MsgKey:      msg.Key,
+		Msg:         msg.Fallback,
+		MsgArgs:     msg.Args,
+		Back:        back,
+		BackTextKey: backText.Key,
+		BackText:    backText.Fallback,
+	}
+	if ok {
+		j.OK = true
+		j.Seconds = 1
+	}
+	shell.RenderJump(c, j)
+}
+
+// navJumpList 回列表页的提示页（保留工程 / 位置筛选）。
+func navJumpList(c *gin.Context, ok bool, msg navText) {
+	navJump(c, ok, msg, navListBack(c), navListBackTitle)
+}
+
+// navJumpListMenu 回列表页并重新展开某项抽屉的提示页（编辑 / 面板设置共用）。
+func navJumpListMenu(c *gin.Context, ok bool, msg navText) {
+	navJump(c, ok, msg, navListBackMenu(c), navListBackTitle)
 }

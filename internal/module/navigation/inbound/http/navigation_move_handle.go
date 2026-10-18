@@ -1,4 +1,4 @@
-// navigation_move_write.go — 同级上移 / 下移的**严格形状 union 分支**
+// navigation_move_handle.go — 同级上移 / 下移的**严格形状 union 分支**
 // （POST /api/navigation/update 的 action="move"）。
 //
 // 为什么并进 update 而不是另开端点：权限锚点。sys_permission 每个 code 只有一列

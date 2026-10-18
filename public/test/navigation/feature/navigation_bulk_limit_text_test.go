@@ -3,7 +3,7 @@ package feature
 // navigation_bulk_limit_text_test.go — 导航菜单页批量删除的 id 超限路径（JSON 通道）。
 //
 // 背景：批量删除已从页面 POST 迁到真实 JSON 端点（POST /api/navigation/delete，批档 = {"ids":[…]},
-// 见 internal/module/navigation/inbound/http/navigation_delete_write.go）。超限不再渲染整页提示，
+// 见 internal/module/navigation/inbound/http/navigation_delete_handle.go）。超限不再渲染整页提示，
 // 而是 400 + 受控 key 的**带参协议**（`shell.err.bulkIdsTooMany|上限|本次条数`），由 pkg/response
 // 的 translate 按 | 后的参数依次填 %s —— 与 block / 词条页 / 联系人页同一口径
 // （页面出口那条 shell.BulkIDsFacingText 已随页面 POST 退役，词条与两个数字仍是同一个真源：

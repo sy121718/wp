@@ -5,7 +5,7 @@ package navigationhttp
 //
 // 背景：导航列表页的「从已有内容添加」原来是页面 POST（/admin/navigations/add-source，
 // 借 /api/navigation/create 的权限对象），已迁到真实端点的 action 档
-// （见 navigation_add_source_write.go）。它与普通创建共用一条路径，靠 action 判别：
+// （见 navigation_add_source_handle.go）。它与普通创建共用一条路径，靠 action 判别：
 // **缺 action 就是普通创建，行为逐字不变**（那条契约的回归见本文件末尾的 Legacy 用例）。
 //
 // 全走无库路径（桩 service 记录调用），断言四件事：
@@ -535,7 +535,7 @@ func TestNavigationAddSourceTemplateContract(t *testing.T) {
 	if strings.Contains(router, "add-source") {
 		t.Fatalf("页面 add-source 路由应已退役：%s", router)
 	}
-	page := readFile("navigation_page.go")
+	page := readFile("navigation_page_handle.go")
 	if strings.Contains(page, "func (h *navigationPageHandle) NavigationAddSource") {
 		t.Fatalf("NavigationAddSource 页面 handler 应已退役")
 	}

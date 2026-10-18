@@ -1,4 +1,4 @@
-// navigation_add_source_write.go — 来源批量加入菜单的**严格形状 union 分支**。
+// navigation_add_source_handle.go — 来源批量加入菜单的**严格形状 union 分支**。
 //
 // 「从已有内容添加」原来是导航列表页的一条页面 POST（`/admin/navigations/add-source`，借
 // `/api/navigation/create` 的权限对象）。本批把它迁到真实端点 `/api/navigation/create`：
@@ -185,7 +185,7 @@ func (h *Handle) createFromSource(c *gin.Context, raw map[string]json.RawMessage
 		}); cerr != nil {
 			// 逐条原因走与单条接口同一份判据（未命中 → 归口 key + 一条日志），
 			// 再按请求语言转成品句、词条缺席时回落到受控中文兜底：回执是给人看的，
-			// 裸 key 就是「漏译」（与删除端点共用 navigationReasonText，见 navigation_err.go）。
+			// 裸 key 就是「漏译」（与删除端点共用 navigationReasonText，见 navigation_error_handle.go）。
 			logger.Scene(navigationErrScene).With("sourceType", sourceType).With("sourceId", id).
 				Error(cerr, "来源实体加入菜单失败")
 			item.Message = navigationReasonText(c, cerr)

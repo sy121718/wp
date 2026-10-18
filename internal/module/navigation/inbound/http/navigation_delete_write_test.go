@@ -3,7 +3,7 @@ package navigationhttp
 // navigation_delete_write_test.go — 删除端点（POST /api/navigation/delete）的严格形状 union。
 //
 // 背景：导航列表页的「行内删除」与「批量删除」两条页面 POST 已迁到同一个真实 JSON 端点
-// （见 navigation_delete_write.go 开头「为什么不拆成两条路径」）。两条档位靠**形状**判别：
+// （见 navigation_delete_handle.go 开头「为什么不拆成两条路径」）。两条档位靠**形状**判别：
 // 单档只认 id、批档只认 ids，混用 / 未知键 / 类型不对一律 400。
 //
 // 为什么值得逐条钉住：猜错分支的代价是**删错数据**，而删除没有撤销。这些用例全走无库路径

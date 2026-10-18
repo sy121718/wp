@@ -279,7 +279,7 @@ func TestNavigationUpdateMoveTemplateContract(t *testing.T) {
 	if strings.Contains(router, `/navigations/move`) {
 		t.Fatalf("页面 move 路由应已退役（净删 1）：%s", router)
 	}
-	if strings.Contains(readFile("navigation_page.go"), "func (h *navigationPageHandle) NavigationMove") {
+	if strings.Contains(readFile("navigation_page_handle.go"), "func (h *navigationPageHandle) NavigationMove") {
 		t.Fatalf("NavigationMove 页面 handler 应已退役")
 	}
 

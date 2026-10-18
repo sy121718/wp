@@ -7,7 +7,7 @@ package inventoryhttp
 // 这三页原先的取数失败走 shell.PageError → {code,message} JSON：浏览器停在 /admin/inventory 上，
 // 页壳、侧栏、标题全丢，地址栏还停在原处；监控里失败与正常页也长得一模一样（同为 200 的序列）。
 //
-// 现在的形态与规范样板 navigation_page.go:290-317 一致：
+// 现在的形态与规范样板 navigation_page_handle.go:290-317 一致：
 //   · LoadFailed(bool) —— 事实位：本次请求**没读到**（不是「读到了、只是空的」）；
 //   · LoadError(string) —— 非空即「这一页失败了」，内容是 inventoryErrText 交出的当前语言文字；
 //   · 500 + Cache-Control: no-store —— 失败页不该进缓存，否则「重试」拿回的还是同一份失败；

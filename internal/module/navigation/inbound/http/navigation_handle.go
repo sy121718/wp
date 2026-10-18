@@ -25,7 +25,7 @@ func NewHandle(svc navigationcontract.NavigationService) *Handle {
 }
 
 // Create 新建导航项；同时是**来源批量加入菜单的唯一写入口**（严格 tagged union，见
-// navigation_add_source_write.go）：缺 action 就是本来的创建请求，行为逐字不变
+// navigation_add_source_handle.go）：缺 action 就是本来的创建请求，行为逐字不变
 // （binding:"required"、指针字段、未知字段忽略都保持不变）。
 func (h *Handle) Create(c *gin.Context) {
 	body, raw, ok := navigationWriteBody(c)
@@ -64,7 +64,7 @@ func (h *Handle) Create(c *gin.Context) {
 }
 
 // Update 更新导航项；同时是**译文整表提交**与**同级上移 / 下移**的唯一写入口
-// （严格 tagged union，见 navigation_translation_write.go / navigation_move_write.go）：
+// （严格 tagged union，见 navigation_translations_handle.go / navigation_move_handle.go）：
 // 缺 action 就是本来的更新请求，行为逐字不变。
 func (h *Handle) Update(c *gin.Context) {
 	body, raw, ok := navigationWriteBody(c)
@@ -148,7 +148,7 @@ func (h *Handle) Delete(c *gin.Context) {
 		return
 	}
 	// 判别键是**形状**而不是 action 标签：单档只认 id（列表行内删除）、批档只认 ids
-	// （勾选后批量删除）。见 navigation_delete_write.go 开头「为什么不拆成两条路径」。
+	// （勾选后批量删除）。见 navigation_delete_handle.go 开头「为什么不拆成两条路径」。
 	hasID := navigationDeleteHasKey(raw, "id")
 	hasIDs := navigationDeleteHasKey(raw, "ids")
 	if hasID && hasIDs {

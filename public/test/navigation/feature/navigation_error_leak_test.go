@@ -4,13 +4,13 @@ package feature
 //
 // 此前 5 个接口都是 `response.ErrorWithMessage(c, navigationErrorStatus(err), err.Error())`，
 // 而 navigationErrorStatus 的 default 分支是 500 —— service 上抛的 PostgreSQL 原文会随 500
-// 原样直出（表名、唯一约束名、SQLSTATE）。现在统一走 navigation_err.go 的归口助手，
+// 原样直出（表名、唯一约束名、SQLSTATE）。现在统一走 navigation_error_handle.go 的归口助手，
 // 本文件是那条改造的回归门禁。
 //
 // 断言是**强**的：响应体里出现 SQLSTATE / uq_ / pg_ / uuid / 表名 / 约束名任一即失败。
 // 放宽成「只要出错就行」等于把这条回归重新交还给运气。
 //
-// navInternalKey 是归口词的 i18n key（navigation_err.go 的 navigationInternalKey）：
+// navInternalKey 是归口词的 i18n key（navigation_error_handle.go 的 navigationInternalKey）：
 // 未归类失败一律 500 + 这句，数据库原文只进日志。这里按字面量写而不是 import
 // inbound/http 的常量 —— 它是内部符号，测试断言的是**对外协议**。
 
@@ -28,7 +28,7 @@ import (
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 )
 
-// navInternalKey 归口失败的 i18n key（对外协议的一部分，与 navigation_err.go 保持一致）。
+// navInternalKey 归口失败的 i18n key（对外协议的一部分，与 navigation_error_handle.go 保持一致）。
 const navInternalKey = "navigation.err.internal"
 
 // internalLeakTokens 内部细节的指纹：出现任一即视为泄漏。

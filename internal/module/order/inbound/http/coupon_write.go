@@ -11,7 +11,7 @@ package orderhttp
 // **为什么不给批量单开一条路径**：sys_permission 每个 code 只有一列 api_path / api_method，
 // 再开一条 /api/order/coupon/bulk-delete 就必须新增权限点，而「新增权限点 = 已授权角色静默
 // 缩权」是本仓有案可查的事故（block_router.go / 迁移 521）。于是同一个删除权限只能有一个
-// 授权锚点，单条与批量共用它 —— 与 navigation_delete_write.go / mail_contact_write.go 同源。
+// 授权锚点，单条与批量共用它 —— 与 navigation_delete_handle.go / mail_contact_write.go 同源。
 //
 // 批档为什么逐条调用 service：前端基座（static/js/ui/json_write.js 的 bulk 档）要**逐条结果**
 //（items[].deleted|updated + items[].message）才能决定移除哪一行、并说清哪几个没成功。
