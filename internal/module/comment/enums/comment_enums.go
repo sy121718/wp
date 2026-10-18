@@ -30,7 +30,12 @@
 // service 换措辞、或某个 key 改由别处产生时就静默失配。
 package commentenums
 
-import "go_wp/pkg/facing"
+import (
+	"fmt"
+	"strings"
+
+	"go_wp/pkg/facing"
+)
 
 // —— 审核状态（与迁移 466 的 ck_comments_status 一一对应）——
 
@@ -180,13 +185,13 @@ const (
 // 也不能显示裸 key（运营只会以为后台坏了）。对账测试见 comment_enums_test.go：
 // Err* 常量没有兜底会变红，表里留下已删常量的死条目同样变红。
 var errFallbacks = map[string]string{
-	ErrInvalidParam:      "参数不合法：请检查后重试。",
-	ErrProjectRequired:   "缺少工程：评论必须归属某个工程。",
-	ErrEntityTypeUnknown: "不支持这个评论对象类型。",
-	ErrEntityIDInvalid:   "评论对象不存在或标识不合法。",
+	ErrInvalidParam:      "参数不合法。",
+	ErrProjectRequired:   "请先选择站点工程：评论按工程隔离。",
+	ErrEntityTypeUnknown: "这个实体类型不支持评论（它还没有注册到评论模块）。",
+	ErrEntityIDInvalid:   "评论对象 id 不合法。",
 	ErrBodyRequired:      "评论内容不能为空。",
-	ErrBodyTooLong:       "评论太长了：请精简后再提交。",
-	ErrRateLimited:       "发得太快了：请稍后再试。",
+	ErrBodyTooLong:       "评论太长了（最多 2000 字）。",
+	ErrRateLimited:       "评论提交太频繁，请稍后再试。",
 	ErrNotAllowed:        "当前不满足这条内容的评论条件。",
 	ErrLoginRequired:     "请先登录再发表评论。",
 	ErrCSRFRequired:      "页面已过期：请刷新后重试。",
@@ -195,9 +200,19 @@ var errFallbacks = map[string]string{
 	ErrParentInvalid:     "回复的上级评论不存在或不属于同一条内容。",
 }
 
+// ErrDetail 声明一条带明细的业务错误：对外文案取 key 的词条，明细拼在半角冒号之后。
+func ErrDetail(key, detail string) error {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return Err(key)
+	}
+	return fmt.Errorf("%w: %s", Err(key), detail)
+}
+
 // Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。
 //
-// 复合场景用 fmt.Errorf("%w：%s", Err(key), 明细)：判据按冒号切出明细段。
+// 复合场景用 ErrDetail(key, 明细)（内部 fmt.Errorf("%w: %s", …)）——**必须是半角冒号**：
+// pkg/facing.FactOf 的复合形态只按 ": " 切出明细段，写全角会让整条过不了判据、退化成内部错误。
 func Err(key string) error {
 	return facing.New(key, errFallbacks[key])
 }
