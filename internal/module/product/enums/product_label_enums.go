@@ -30,28 +30,9 @@ import "strconv"
 // —— 捆绑成员的来源（products.bundle_items.options[].sourceKind）——
 //
 // 三种来源都走同一条出口（ResolveBundleMembers），空值 = 迁移 238 之前的历史配置 /
-// 手工指定。取值常量见 product_enums.go 的 BundleSource*。
-
-// BundleSourceLabel 成员来源 → 文案事实。
-//
-// 兜底取**短形态**（与库内 zh-CN 词条逐字一致：迁移 259 的 `admin.product_bundle.source.product`
-// = 「从商品导入」）：配置页下拉此前自带一句更长的兜底（「从商品导入（该商品的启用变体）」），
-// 与词条值不是同一句 —— 词条缺失时两个入口会说两句话，且同一 key 两处兜底必然漂移。
-//
-// 空值与未知值都算「手工指定」：来源只是溯源，不是身份（身份恒为 variantId），
-// 说不出来源时「手工指定」是唯一不诱导操作的说法（与迁移前的默认分支逐字同判据）。
-func BundleSourceLabel(source string) (key, fallback string) {
-	switch source {
-	case BundleSourceProduct:
-		return ProductBundleSourceProduct, "从商品导入"
-	case BundleSourceWarehouse:
-		return ProductBundleSourceWarehouse, "从仓库选"
-	case BundleSourceAttributes:
-		return ProductBundleSourceAttributes, "自选属性组合"
-	default:
-		return ProductBundleSourceNone, "手工指定"
-	}
-}
+// 手工指定。取值常量见 product_enums.go 的 BundleSource*。显示名一律在渲染期按取值取词：
+// 模板（product_bundle.html / product_bundle_form.html）与 bundle_members.js 各按同一份
+// 取值分支走，后端不再有「取值 → 文案」的映射表。
 
 // —— 商品域实体类型（译文工作台的分组标题）——
 //

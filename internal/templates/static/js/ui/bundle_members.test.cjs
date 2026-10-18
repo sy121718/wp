@@ -38,6 +38,24 @@ test('receiptText 拼出追加数 + 跳过数与逐条原因', () => {
         '已追加 1 行 跳过 2 条：SKU-1：库存不足；已存在');
 });
 
+// sourceText：来源列三段事实拼成一句，词条来自模板的 data-msg-source-*（宿主元素自带
+// getAttribute）；空段不出现，来源种类未知时按「手工指定」那一档。
+test('sourceText 按 data-msg 拼来源、仓库 SKU 与外部编码', () => {
+    const host = {
+        getAttribute: (name) => ({
+            'data-msg-source-product': '从商品导入',
+            'data-msg-source-warehouse': '从仓库选',
+            'data-msg-source-none': '手工指定',
+            'data-msg-source-sku': '仓库 SKU',
+            'data-msg-source-external': '外部编码'
+        })[name] || null
+    };
+    assert.equal(m.sourceText(host, { sourceKind: 'BundleSourceWarehouse', warehouseSku: 'SKU-1', externalSku: 'EXT-2' }),
+        '从仓库选 · 仓库 SKU SKU-1 · 外部编码 EXT-2');
+    assert.equal(m.sourceText(host, { sourceKind: 'BundleSourceProduct' }), '从商品导入');
+    assert.equal(m.sourceText(host, { sourceKind: 'legacy', warehouseSku: '  ' }), '手工指定');
+});
+
 test('模块在无 document 环境下不抛错（SSR / 单测入口）', () => {
     assert.equal(typeof m.bind, 'function');
     assert.equal(typeof m.appendMembers, 'function');

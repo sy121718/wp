@@ -87,24 +87,17 @@ func TestTagLabelMappingsStayedInTemplate(t *testing.T) {
 		}
 	}
 }
-// TestBundleSourceLabel 成员来源：三种来源 + 空 / 未知 = 手工指定，兜底与库内词条同句。
-func TestBundleSourceLabel(t *testing.T) {
-	cases := []struct {
-		value    string
-		key      string
-		fallback string
-	}{
-		{productenums.BundleSourceProduct, productenums.ProductBundleSourceProduct, "从商品导入"},
-		{productenums.BundleSourceWarehouse, productenums.ProductBundleSourceWarehouse, "从仓库选"},
-		{productenums.BundleSourceAttributes, productenums.ProductBundleSourceAttributes, "自选属性组合"},
-		{"", productenums.ProductBundleSourceNone, "手工指定"},
-		{"legacy", productenums.ProductBundleSourceNone, "手工指定"},
+
+// 成员来源的显示名已归渲染期（product_bundle.html / product_bundle_form.html 与
+// bundle_members.js 按取值分支取词）：后端不得再加回「取值 → 文案」的映射。
+func TestBundleSourceLabelsStayedInTemplate(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "..", "..", "templates", "admin", "product", "product_bundle.html"))
+	if err != nil {
+		t.Fatalf("读捆绑页模板失败：%v", err)
 	}
-	for _, tc := range cases {
-		key, fallback := productenums.BundleSourceLabel(tc.value)
-		if key != tc.key || fallback != tc.fallback {
-			t.Errorf("BundleSourceLabel(%q) = (%q, %q)，期望 (%q, %q)",
-				tc.value, key, fallback, tc.key, tc.fallback)
+	for _, want := range []string{"admin.product_bundle.source.product", "admin.product_bundle.source.warehouse", "admin.product_bundle.source.attributes"} {
+		if !strings.Contains(string(src), want) {
+			t.Errorf("捆绑页模板缺少 %q —— 来源显示名必须由模板取词", want)
 		}
 	}
 }

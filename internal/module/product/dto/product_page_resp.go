@@ -707,8 +707,8 @@ type BundlePanelRowResp struct {
 	// Missing 配置指向的变体已不存在（与「存在但被停用」是两回事：状态文案与
 	// 可行动作都不同，故不合并成一个 bool）。
 	Missing bool
-	// SourceParts 来源快照（仅展示）：词条 Key + 兜底 + 可选数据值，取词与分段
-	// 拼接在模板；空 = 手工指定 / 历史配置。
+	// SourceParts 来源快照的段（种类 + 数据值）：词条与「·」分隔符都在模板
+	// （product_detail.html 的来源列）；空 = 手工指定 / 历史配置。
 	SourceParts []BundleSourcePart
 }
 

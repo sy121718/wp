@@ -961,23 +961,6 @@ var (
 	} = (*Service)(nil)
 )
 
-// bundleSourceLabel 来源事实段 → 当前语言的成品串。
-//
-// 只有 JSON 出口用它（成员来源解析响应的 sourceLabel：前端直接显示，没有模板取词层）。
-// 模板侧一律用 BundleSourceParts 交事实、在模板里取词与拼接 —— 两条路径共用同一份
-// 「由哪几段组成」的定义（BundleSourceParts），不各拼一遍。
-func bundleSourceLabel(tr TranslateFunc, o productdto.BundleOption) string {
-	segments := make([]string, 0, 3)
-	for _, part := range BundleSourceParts(o) {
-		text := tr(part.LabelKey, part.LabelFallback)
-		if part.Value != "" {
-			text += " " + part.Value
-		}
-		segments = append(segments, text)
-	}
-	return strings.Join(segments, " · ")
-}
-
 // bundleMemberSkipFallbacks 成员来源解析被跳过时的中文兜底（key 见 productenums.BundleMember*）。
 //
 // 与 variantSkipFallbacks 同一形态：词条缺失时页面上仍是可读的一句话，而不是裸 key。
@@ -1013,10 +996,6 @@ func (s *Service) fillBundleMemberDisplay(ctx context.Context, projectID string,
 		m.SourceKind = m.Source.Kind
 		m.WarehouseID, m.WarehouseSKU, m.ExternalSKU = m.Source.WarehouseID, m.Source.WarehouseSKU, m.Source.ExternalSKU
 		m.Spec = SpecLabel(m.OptionValues, attrs)
-		m.SourceLabel = bundleSourceLabel(tr, productdto.BundleOption{
-			SourceKind: m.Source.Kind, WarehouseID: m.Source.WarehouseID,
-			WarehouseSKU: m.Source.WarehouseSKU, ExternalSKU: m.Source.ExternalSKU,
-		})
 	}
 	for i := range res.Skipped {
 		skip := &res.Skipped[i]

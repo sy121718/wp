@@ -123,6 +123,28 @@
         }
     }
 
+    // sourceText 纯函数：来源列的三段事实（来源种类 / 仓库 SKU / 外部编码）拼成一句。
+    // 词条全部来自模板的 data-msg-source-*（按当前语言渲染），这里不写死中文；
+    // 空段不出现在结果里，一段都没有时给空串（模板的空态「—」由调用点决定）。
+    function sourceText(host, member) {
+        var msg = function (name, fallback) {
+            var value = host && host.getAttribute('data-msg-source-' + name);
+            return value ? value : fallback;
+        };
+        var kind = String(member.sourceKind || '');
+        var head;
+        if (kind === 'BundleSourceProduct') { head = msg('product', '从商品导入'); }
+        else if (kind === 'BundleSourceWarehouse') { head = msg('warehouse', '从仓库选'); }
+        else if (kind === 'BundleSourceAttributes') { head = msg('attributes', '自选属性组合'); }
+        else { head = msg('none', '手工指定'); }
+        var parts = [head];
+        var sku = String(member.warehouseSku || '').trim();
+        if (sku) { parts.push(msg('sku', '仓库 SKU') + ' ' + sku); }
+        var ext = String(member.externalSku || '').trim();
+        if (ext) { parts.push(msg('external', '外部编码') + ' ' + ext); }
+        return parts.join(' · ');
+    }
+
     function appendMembers(host, members) {
         if (!host) { return 0; }
         var body = host.querySelector('[data-bundle-member-list]');
@@ -144,7 +166,7 @@
             var sku = tr.querySelector('[data-member-sku]');
             if (sku) { sku.textContent = member.skuCode || member.variantId || ''; }
             var source = tr.querySelector('[data-member-source]');
-            if (source) { source.textContent = member.sourceLabel || ''; }
+            if (source) { source.textContent = sourceText(host, member); }
             if (beforeRow && beforeRow.parentNode === body) {
                 body.insertBefore(frag, beforeRow);
             } else {
@@ -264,6 +286,7 @@
     global.WPBundleMembers = {
         planAppend: planAppend,
         receiptText: receiptText,
+        sourceText: sourceText,
         appendMembers: appendMembers,
         bind: bind
     };

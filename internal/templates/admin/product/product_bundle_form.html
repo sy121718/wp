@@ -12,7 +12,13 @@
 {{if isset(.CfgMinTotalQty)}}{{cfgMinTotalQty = .CfgMinTotalQty}}{{end}}
 {{if isset(.CfgMaxTotalQty)}}{{cfgMaxTotalQty = .CfgMaxTotalQty}}{{end}}
 {{saveBlocked := false}}{{if isset(.SaveBlocked)}}{{saveBlocked = .SaveBlocked}}{{end}}
-<div data-bundle-form-host>
+<div data-bundle-form-host
+     data-msg-source-product="{{ .["t"]("admin.product_bundle.source.product", "从商品导入") }}"
+     data-msg-source-warehouse="{{ .["t"]("admin.product_bundle.source.warehouse", "从仓库选") }}"
+     data-msg-source-attributes="{{ .["t"]("admin.product_bundle.source.attributes", "自选属性组合") }}"
+     data-msg-source-none="{{ .["t"]("admin.product_bundle.source.none", "手工指定") }}"
+     data-msg-source-sku="{{ .["t"]("admin.product_bundle.source.warehouseSkuLabel", "仓库 SKU") }}"
+     data-msg-source-external="{{ .["t"]("admin.product_bundle.source.externalSkuLabel", "外部编码") }}">
     <section class="card card-body">
         <h2>{{ .["t"]("admin.product_bundle.rule.title", "选项规则") }}{{if .Detail}} · {{.Detail.ProductName}}{{end}}</h2>
         {{if .Detail}}
@@ -69,11 +75,9 @@
                                 <input type="hidden" name="memberWarehouseSku" value="{{if isset(row.WarehouseSKU)}}{{row.WarehouseSKU}}{{end}}">
                                 <input type="hidden" name="memberExternalSku" value="{{if isset(row.ExternalSKU)}}{{row.ExternalSKU}}{{end}}">
                             </td>
-                            {* 来源列：Go 侧给的是**事实段**（词条 Key + 兜底 + 可选数据值），
-                               分段拼接与取词都在这里 —— 控制器不再拼成品串。
-                               缺 SourceParts 的老形状（只有成品串 SourceLabel）原样输出，
-                               gojet 对 map 缺键取值会报错，所以先 isset 再取。 *}
-                            <td>{{if isset(row.SourceParts)}}{{if len(row.SourceParts) > 0}}<span data-member-source>{{range i, part := row.SourceParts}}{{if i > 0}} · {{end}}{{tr(part.LabelKey, part.LabelFallback)}}{{if part.Value != ""}} {{part.Value}}{{end}}{{end}}</span>{{else}}<span class="text-mute" data-member-source>—</span>{{end}}{{else if isset(row.SourceLabel)}}{{if row.SourceLabel != ""}}<span data-member-source>{{row.SourceLabel}}</span>{{else}}<span class="text-mute" data-member-source>—</span>{{end}}{{else}}<span class="text-mute" data-member-source>—</span>{{end}}</td>
+                            {* 来源列：Go 侧只给段（种类 + 数据值），词条与「·」分隔符都在这里。
+                               新增行由 bundle_members.js 按同一份 data-msg-* 拼，两处口径一致。 *}
+                            <td>{{if isset(row.SourceParts)}}{{if len(row.SourceParts) > 0}}<span data-member-source>{{range i, part := row.SourceParts}}{{if i > 0}} · {{end}}{{if part.Kind == "warehouseSku"}}{{ .["t"]("admin.product_bundle.source.warehouseSkuLabel", "仓库 SKU") }} {{part.Value}}{{else if part.Kind == "externalSku"}}{{ .["t"]("admin.product_bundle.source.externalSkuLabel", "外部编码") }} {{part.Value}}{{else if part.Value == "BundleSourceProduct"}}{{ .["t"]("admin.product_bundle.source.product", "从商品导入") }}{{else if part.Value == "BundleSourceWarehouse"}}{{ .["t"]("admin.product_bundle.source.warehouse", "从仓库选") }}{{else if part.Value == "BundleSourceAttributes"}}{{ .["t"]("admin.product_bundle.source.attributes", "自选属性组合") }}{{else}}{{ .["t"]("admin.product_bundle.source.none", "手工指定") }}{{end}}{{end}}</span>{{else}}<span class="text-mute" data-member-source>—</span>{{end}}{{else}}<span class="text-mute" data-member-source>—</span>{{end}}</td>
                             <td>
                                 <select class="form-select" name="required" aria-label="{{ .["t"]("admin.product_bundle.cfg.col.required", "必选") }}">
                                     <option value="1" {{if row.Required}}selected{{end}}>{{ .["t"]("admin.product_bundle.option.required", "必选") }}</option>

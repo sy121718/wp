@@ -94,8 +94,6 @@ type BundleMemberResp struct {
 	ExternalSKU  string `json:"externalSku,omitempty"`
 	// Spec 规格的可读文本（「颜色 红 · 尺码 L」），由 service 按来源商品的属性组算好。
 	Spec string `json:"spec"`
-	// SourceLabel 来源的可读文本（「从仓库选 · 主仓 WHS-01」），已按当前语言取词。
-	SourceLabel string `json:"sourceLabel"`
 }
 
 // BundleMemberSkipResp 本次没有加进来的那一条（不整批失败，逐条回带原因）。

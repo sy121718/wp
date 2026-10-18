@@ -232,18 +232,15 @@ func (s *Service) BundlePageWarehouseSKUs(ctx context.Context, projectID string,
 // 一行给出「来源种类 + 仓库 SKU + 外部编码」三段事实，取词与分段拼接在模板：
 // 控制器提前翻等于把这一列锁死成中文。
 func BundleSourceParts(o productdto.BundleOption) []productdto.BundleSourcePart {
-	key, fallback := productenums.BundleSourceLabel(strings.TrimSpace(o.SourceKind))
 	parts := make([]productdto.BundleSourcePart, 0, 3)
-	parts = append(parts, productdto.BundleSourcePart{LabelKey: key, LabelFallback: fallback})
+	parts = append(parts, productdto.BundleSourcePart{
+		Kind: productdto.BundleSourcePartSource, Value: strings.TrimSpace(o.SourceKind),
+	})
 	if sku := strings.TrimSpace(o.WarehouseSKU); sku != "" {
-		parts = append(parts, productdto.BundleSourcePart{
-			LabelKey: productenums.ProductBundleSourceWarehouseSKULabel, LabelFallback: "仓库 SKU", Value: sku,
-		})
+		parts = append(parts, productdto.BundleSourcePart{Kind: productdto.BundleSourcePartWarehouseSKU, Value: sku})
 	}
 	if ext := strings.TrimSpace(o.ExternalSKU); ext != "" {
-		parts = append(parts, productdto.BundleSourcePart{
-			LabelKey: productenums.ProductBundleSourceExternalSKULabel, LabelFallback: "外部编码", Value: ext,
-		})
+		parts = append(parts, productdto.BundleSourcePart{Kind: productdto.BundleSourcePartExternalSKU, Value: ext})
 	}
 	return parts
 }

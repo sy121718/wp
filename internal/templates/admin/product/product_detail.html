@@ -140,7 +140,7 @@
                        只展示，不参与任何计价与库存判定（成员身份恒为 variantId）。 *}
                     {* 来源列：Go 侧给的是**事实段**（词条 Key + 兜底 + 可选数据值），
                        分段拼接与取词都在这里 —— 控制器不再拼成品串。 *}
-                    <td>{{if len(o.SourceParts) > 0}}<span>{{range i, part := o.SourceParts}}{{if i > 0}} · {{end}}{{tr(part.LabelKey, part.LabelFallback)}}{{if part.Value != ""}} {{part.Value}}{{end}}{{end}}</span>{{else}}<span class="text-mute">—</span>{{end}}</td>
+                    <td>{{if len(o.SourceParts) > 0}}<span>{{range i, part := o.SourceParts}}{{if i > 0}} · {{end}}{{if part.Kind == "warehouseSku"}}{{ .["t"]("admin.product_bundle.source.warehouseSkuLabel", "仓库 SKU") }} {{part.Value}}{{else if part.Kind == "externalSku"}}{{ .["t"]("admin.product_bundle.source.externalSkuLabel", "外部编码") }} {{part.Value}}{{else if part.Value == "BundleSourceProduct"}}{{ .["t"]("admin.product_bundle.source.product", "从商品导入") }}{{else if part.Value == "BundleSourceWarehouse"}}{{ .["t"]("admin.product_bundle.source.warehouse", "从仓库选") }}{{else if part.Value == "BundleSourceAttributes"}}{{ .["t"]("admin.product_bundle.source.attributes", "自选属性组合") }}{{else}}{{ .["t"]("admin.product_bundle.source.none", "手工指定") }}{{end}}{{end}}</span>{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td>{{if o.ProductName != ""}}{{o.ProductName}}{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td>{{if o.Required}}<span class="badge badge-info">{{ .["t"]("admin.product_bundle.option.required", "必选") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.product_bundle.option.optional", "可选") }}</span>{{end}}</td>
                     <td>{{o.DefaultQty}}</td>

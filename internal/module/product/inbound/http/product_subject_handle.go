@@ -926,23 +926,6 @@ func bundleSourceParts(o productdto.BundleOption) []productdto.BundleSourcePart 
 	return productservice.BundleSourceParts(o)
 }
 
-// bundleSourceLabel 来源事实段 → 当前语言的成品串。
-//
-// **只有 JSON 出口用它**（ProductsBundleMembersResolve 的 `sourceLabel`：前端把它直接显示，
-// 没有模板取词这一层）—— 属于「JSON 出口的成品串」例外，调用点的 tr 同理。
-// 模板侧一律用 bundleSourceParts 交事实、在模板里取词与拼接。
-func bundleSourceLabel(tr func(key, fallback string) string, o productdto.BundleOption) string {
-	segments := make([]string, 0, 3)
-	for _, part := range bundleSourceParts(o) {
-		seg := tr(part.LabelKey, part.LabelFallback)
-		if part.Value != "" {
-			seg += " " + part.Value
-		}
-		segments = append(segments, seg)
-	}
-	return strings.Join(segments, " · ")
-}
-
 // bundlePanelRows 捆绑构成表的行：成员 SKU 的规则、可用量与后台价格口径。
 //
 // 成员挂牌价（ItemPrice）在这里只作**参考**：套餐金额只由容器价得出，成员价不参与

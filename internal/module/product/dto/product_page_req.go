@@ -296,17 +296,23 @@ type AttrValueFormRow struct {
 	Enabled bool
 }
 
-// BundleSourcePart 成员来源快照的**一段**（词条 + 可选的数据值）。
+// BundleSourcePart 成员来源快照的**一段**：段的种类 + 该段的数据值。
 //
-// 拆成段而不是在 Go 侧拼成一句话：那句话里的「从仓库选」「仓库 SKU」是词条，
-// 拼好就等于把语言锁死在一种（英文界面上留中文）。段交给模板，分隔符「·」与取值
-// 都在渲染期决定 —— 数据（SKU 编码）原样带上，它翻不了也不需要翻。
+// 段交给模板：分隔符「·」、每一段前面的词条（从仓库选 / 仓库 SKU / 外部编码）都在
+// 渲染期决定。后端只说「这是第几类段、值是什么」—— 拼成一句话就等于把语言锁死在一种。
 type BundleSourcePart struct {
-	LabelKey      string
-	LabelFallback string
-	// Value 数据（仓库 SKU 编码 / 外部编码）；纯标签段留空 —— 空值段不渲染。
+	// Kind 段种类：source（来源种类）/ warehouseSku（仓库 SKU）/ externalSku（外部编码）。
+	Kind string
+	// Value 该段的数据值（来源种类常量 / SKU 编码 / 对方编码）。
 	Value string
 }
+
+// BundleSourcePart 的段种类取值（模板按它选词条）。
+const (
+	BundleSourcePartSource       = "source"
+	BundleSourcePartWarehouseSKU = "warehouseSku"
+	BundleSourcePartExternalSKU  = "externalSku"
+)
 
 // PricingForm 定价表单的取值（试算后要原样回填，用户接着点应用）。
 type PricingForm struct {
@@ -416,7 +422,7 @@ type BundleOptionResp struct {
 	// Available 真源可用量；新增的空白行没有可用量可言（还没选 SKU），恒为 0。
 	Available int
 	// 来源快照（仅作溯源与展示，不是身份）：四个字段原样回填进隐藏域；
-	// 标签已拆成事实段（SourceParts，取词在模板）。
+	// SourceParts 是展示用的段（种类 + 数据值），词条在模板取。
 	SourceKind   string
 	WarehouseID  string
 	WarehouseSKU string
