@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -547,22 +546,11 @@ func fillEditFormEcho(view *productdto.ProductEditPageResp) {
 	// 图集与数值字段：表单里是文本（textarea / input），按行与可空文本回填。
 	view.ImagesText = strings.Join(view.Detail.Images, "\n")
 	view.ImageAltsText = strings.Join(view.Detail.ImageAlts, "\n")
-	view.WeightText = nullableNumberText(view.Detail.Weight)
-	view.DefaultPriceText = nullableNumberText(view.Detail.DefaultPrice)
+	view.WeightText = productservice.NullableNumberText(view.Detail.Weight)
+	view.DefaultPriceText = productservice.NullableNumberText(view.Detail.DefaultPrice)
 	// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
 	// 这里只给一个链接标记（type=variant 时为假，模板据 isset 整块跳过）。
 	view.IsBundle = isBundleProduct(view.Detail.Type)
-}
-
-// nullableNumberText 可空数值 → 输入框文本（未设置给空串，不是 0）。
-//
-// 与列表展示用的 pkg/money.FormatYuanOrDash（空显示为 —）分开：— 是**展示**符号，
-// 填进 input 的 value 会变成一个待提交的非法值。
-func nullableNumberText(v *float64) string {
-	if v == nil {
-		return ""
-	}
-	return strconv.FormatFloat(*v, 'f', -1, 64)
 }
 
 // checkedAttributeOptions 属性组勾选列表：给每组补一个 Checked（商品是否引用它）。

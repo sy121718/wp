@@ -21,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	productdto "go_wp/internal/module/product/dto"
+	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/seo/scoring"
 )
 
@@ -64,7 +65,7 @@ func TestEntityScoreViewCarriesDuplicatePages(t *testing.T) {
 		{Title: "纯棉 T 恤", Page: "/tee-b"},
 		{Title: "纯棉 T 恤", Page: "/tee-c"},
 	}
-	sv := entityScoreView(testTranslateFunc(), in, res, dups)
+	sv := productservice.SeoEntityScoreView(testTranslateFunc(), in, res, dups)
 	if len(sv.Duplicates) != 2 || sv.Duplicates[0] != "/tee-b" || sv.Duplicates[1] != "/tee-c" {
 		t.Fatalf("冲突页面应逐个列出，实际 %+v", sv.Duplicates)
 	}
@@ -80,7 +81,7 @@ func TestEntityScoreViewCarriesDuplicatePages(t *testing.T) {
 func TestSeoScoreFragmentRendersProfileAndDuplicates(t *testing.T) {
 	in := &scoring.EntityPageInput{Kind: scoring.KindProduct, Name: "纯棉 T 恤", Slug: "tee"}
 	res := scoring.ScoreEntityPage(in)
-	sv := entityScoreView(testTranslateFunc(), in, res, []scoring.TitleEntry{{Title: "纯棉 T 恤", Page: "/tee-b"}})
+	sv := productservice.SeoEntityScoreView(testTranslateFunc(), in, res, []scoring.TitleEntry{{Title: "纯棉 T 恤", Page: "/tee-b"}})
 	// t 必须给：fragments/seo_score 的 data 是 gin.H（不是 struct），模板用 .["t"] 取词；
 	// 缺 t 时 Jet 把取词调用求值成空串（不报错、不 500），下面这几条断言会看不到任何文案。
 	body := renderAdminTemplate(t, "fragments/seo_score", gin.H{"Score": sv, "t": testTranslateFunc()})

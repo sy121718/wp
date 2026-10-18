@@ -582,7 +582,7 @@ func (h *ProductPageHandle) detailTemplatePanel(ctx context.Context, selected, p
 // 下场是「同一个商品在两处分数不同」。本文件只剩请求绑定、取词、调用与渲染。
 
 // 评分等级文案（颜色 → 当前语言）的**唯一映射**在 seoscore.ScoreGradeText
-// （internal/seo/score_grade.go），调用点在下面的 entityScoreView。本文件此前自带一份
+// （internal/seo/score_grade.go），调用点在 productservice.SeoEntityScoreView（product_score_view.go）。本文件此前自带一份
 // key + 中文兜底表（与本模块 enums 里的 admin.seo.grade.* 常量配套），已按「同一批展示文案
 // 只能有一份定义」收编 —— 收编后 product 取到的是 content / project 用的同一批词条
 // admin.seo.score.grade.*。

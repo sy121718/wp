@@ -11,7 +11,6 @@ import (
 	"go_wp/pkg/response"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -126,17 +125,6 @@ func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) (any, err
 	}
 	// 片段数据根交出去：取词注入在 UI 线（adminui.Bare），这里只给数据。
 	return gin.H{"GroupID": groupID, "Rows": rows}, nil
-}
-
-func attrRowsFromResp(rows []productdto.AttributeValueResp) []productdto.AttrValueFormRow {
-	out := make([]productdto.AttrValueFormRow, 0, len(rows))
-	for i, row := range rows {
-		out = append(out, productdto.AttrValueFormRow{
-			Index: i, ID: row.ID, Key: row.Key, Label: row.Label,
-			Sort: strconv.Itoa(row.Sort), Enabled: row.Enabled,
-		})
-	}
-	return out
 }
 
 // attrRowsCtxData 属性值编辑片段（include）的渲染数据。
@@ -259,7 +247,7 @@ func attrRowDrawerForms(c *gin.Context, projectID string,
 	})
 	values := attrValuesFormData(c, attrValuesFormOpts{
 		ProjectID: projectID, GroupID: a.ID,
-		RowsCtx: attrRowsCtxData(c, a.ID, attrRowsFromResp(a.Values)),
+		RowsCtx: attrRowsCtxData(c, a.ID, productservice.AttrValueFormRows(a.Values)),
 	})
 	return group, values
 }
