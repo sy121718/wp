@@ -704,8 +704,11 @@ func TestSourceAPIChain(t *testing.T) {
 	}
 	// 非法筛选值：400 + 业务消息键（不静默当成全量）。
 	rec = httptestGet(engine, "/api/inventory/source/list?projectId="+f.projectID+"&relatedParty=yes")
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), inventoryenums.ErrSourceFilterInvalid) {
-		t.Fatalf("非法筛选值应 400 + %s，实际 %d：%s", inventoryenums.ErrSourceFilterInvalid, rec.Code, rec.Body.String())
+	// 对外文案跟声明处走（enums 兜底），响应里不该再出现裸 key。
+	filterText := inventoryenums.FallbackFor(inventoryenums.ErrSourceFilterInvalid)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), filterText) ||
+		strings.Contains(rec.Body.String(), inventoryenums.ErrSourceFilterInvalid) {
+		t.Fatalf("非法筛选值应 400 + %s，实际 %d：%s", filterText, rec.Code, rec.Body.String())
 	}
 	// 统计出口。
 	rec = httptestGet(engine, "/api/inventory/source/summary?projectId="+f.projectID)
@@ -724,8 +727,10 @@ func TestSourceAPIChain(t *testing.T) {
 		t.Fatalf("删除接口应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
 	rec = httptestGet(engine, "/api/inventory/source/get?id="+created.Data.ID)
-	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), inventoryenums.ErrSourceNotFound) {
-		t.Fatalf("删除后详情应 404 + %s，实际 %d", inventoryenums.ErrSourceNotFound, rec.Code)
+	notFoundText := inventoryenums.FallbackFor(inventoryenums.ErrSourceNotFound)
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), notFoundText) ||
+		strings.Contains(rec.Body.String(), inventoryenums.ErrSourceNotFound) {
+		t.Fatalf("删除后详情应 404 + %s，实际 %d：%s", notFoundText, rec.Code, rec.Body.String())
 	}
 }
 
