@@ -5,12 +5,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"go_wp/internal/adminui"
 	"go_wp/internal/shell"
+	"go_wp/pkg/binding"
 	"net/http"
 	"strconv"
 	"strings"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	bulkids "go_wp/pkg/bulkids"
 )
 
 // InventoryWarehousesPage 仓库管理页（从库存主页拆出）。
@@ -43,7 +45,7 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 		"SelectedProject":     selected,
 		"Warehouses":          warehouses,
 		"WarehouseTypes":      warehouseTypeOptions(c),
-		"WarehouseCreateForm": warehouseFormData(c, false, nil),
+		"WarehouseCreateForm": warehouseFormData(c, selected, false, nil),
 		// 写动作表单 action 上带的筛选上下文（见 inventory_jump.go）。
 		"ListQuery": inventoryQueryFromRequest(c, inventoryWarehouseBackKeys...),
 	}))
@@ -51,19 +53,12 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 
 // InventoryWarehouseCreate 新建仓库（工程内第一个仓自动成为默认仓）。
 func (h *inventoryPageHandle) InventoryWarehouseCreate(c *gin.Context) {
-	projectID := c.PostForm("projectId")
-	typ := strings.TrimSpace(c.PostForm("type"))
-	req := &inventorydto.CreateWarehouseReq{
-		ProjectID:  projectID,
-		Code:       strings.TrimSpace(c.PostForm("code")),
-		Name:       strings.TrimSpace(c.PostForm("name")),
-		Type:       typ,
-		IsDefault:  c.PostForm("isDefault") != "",
-		Sort:       parseIntOr(c.PostForm("sort"), 0),
-		ThirdParty: thirdPartyForm(c, typ),
+	form, ok := binding.Form[inventorydto.WarehouseFormReq](c)
+	if !ok {
+		return
 	}
-	if _, err := h.inventory.CreateWarehouse(c.Request.Context(), req); err != nil {
-		h.warehouseFormFail(c, false, err)
+	if _, err := h.inventory.CreateWarehouse(c.Request.Context(), form.CreateReq()); err != nil {
+		h.warehouseFormFail(c, false, form.ProjectID, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
@@ -71,24 +66,12 @@ func (h *inventoryPageHandle) InventoryWarehouseCreate(c *gin.Context) {
 
 // InventoryWarehouseUpdate 修改仓库（名称 / 短码 / 类型 / 排序 / 状态 / 第三方对接配置）。
 func (h *inventoryPageHandle) InventoryWarehouseUpdate(c *gin.Context) {
-	code := strings.TrimSpace(c.PostForm("code"))
-	name := strings.TrimSpace(c.PostForm("name"))
-	status := strings.TrimSpace(c.PostForm("status"))
-	typ := strings.TrimSpace(c.PostForm("type"))
-	sortValue := parseIntOr(c.PostForm("sort"), 0)
-	if status == "" {
-		status = inventoryenums.StatusActive
+	form, ok := binding.Form[inventorydto.WarehouseFormReq](c)
+	if !ok {
+		return
 	}
-	if typ == "" {
-		typ = inventoryenums.WarehouseTypeSelf
-	}
-	req := &inventorydto.UpdateWarehouseReq{
-		ID: c.PostForm("id"), Code: &code, Name: &name, Status: &status,
-		Type: &typ, Sort: &sortValue,
-		ThirdParty: thirdPartyForm(c, typ),
-	}
-	if _, err := h.inventory.UpdateWarehouse(c.Request.Context(), req); err != nil {
-		h.warehouseFormFail(c, true, err)
+	if _, err := h.inventory.UpdateWarehouse(c.Request.Context(), form.UpdateReq()); err != nil {
+		h.warehouseFormFail(c, true, form.ProjectID, err)
 		return
 	}
 	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
@@ -96,8 +79,12 @@ func (h *inventoryPageHandle) InventoryWarehouseUpdate(c *gin.Context) {
 
 // InventoryWarehouseDefault 切换默认仓（同工程唯一；「未指定仓库」的兜底）。
 func (h *inventoryPageHandle) InventoryWarehouseDefault(c *gin.Context) {
+	form, ok := binding.Form[inventorydto.WarehouseDefaultFormReq](c)
+	if !ok {
+		return
+	}
 	yes := true
-	req := &inventorydto.UpdateWarehouseReq{ID: c.PostForm("id"), IsDefault: &yes}
+	req := &inventorydto.UpdateWarehouseReq{ID: form.ID, IsDefault: &yes}
 	if _, err := h.inventory.UpdateWarehouse(c.Request.Context(), req); err != nil {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
 		return
@@ -107,8 +94,12 @@ func (h *inventoryPageHandle) InventoryWarehouseDefault(c *gin.Context) {
 
 // InventoryWarehouseDelete 删除仓库（默认仓 / 有非零库存时服务端拒绝）。
 func (h *inventoryPageHandle) InventoryWarehouseDelete(c *gin.Context) {
+	form, ok := binding.Form[inventorydto.WarehouseDeleteFormReq](c)
+	if !ok {
+		return
+	}
 	if err := h.inventory.DeleteWarehouse(c.Request.Context(),
-		&inventorydto.DeleteWarehouseReq{ID: c.PostForm("id"), ProjectID: c.PostForm("projectId")}); err != nil {
+		&inventorydto.DeleteWarehouseReq{ID: form.ID, ProjectID: form.ProjectID}); err != nil {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
 		return
 	}
@@ -121,11 +112,15 @@ func (h *inventoryPageHandle) InventoryWarehouseDelete(c *gin.Context) {
 // 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
 // 结果按「已删 N 个 / 跳过 M 个」渲染成提示页，避免静默的部分成功（语义未变，只换传输通道）。
 func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
-	projectID := c.PostForm("projectId")
+	form, ok := binding.Form[inventorydto.WarehouseBulkFormReq](c)
+	if !ok {
+		return
+	}
+	projectID := form.ProjectID
 	back := inventoryWarehouseBack(c)
 	backMsg := inventoryWarehouseBackMsg
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
-	ids, berr := shell.BulkIDs(c)
+	ids, berr := bulkids.Normalize(form.IDs)
 	if berr != nil {
 		// 超限是受控错误（值域只有 Count/Max）：走受控结论出口（inventoryBulkIDsMsg），
 		// 而不是把 err.Error() 拼进提示页（提示页不是可信边界，文案必须已归口）。
@@ -201,29 +196,6 @@ func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (
 	return out, nil
 }
 
-// thirdPartyForm 读取第三方仓对接配置表单。
-//
-// 只在类型是第三方仓时才认这些字段（其余类型传 nil）：非第三方仓带配置会被
-// service 判成 ErrWarehouseConfigInvalid —— 表单是它们的唯一来源，就在这里先分清。
-//
-// apiCredential 收到的是**明文**，且只在这一次请求里存在：service 立刻加密后落库，
-// 客户端拿到的回显永远是掩码。留空 / 传回掩码都表示「不改凭据」。
-func thirdPartyForm(c *gin.Context, typ string) *inventorydto.WarehouseThirdPartyReq {
-	if typ != inventoryenums.WarehouseTypeThirdParty {
-		return nil
-	}
-	return &inventorydto.WarehouseThirdPartyReq{
-		Provider:        strings.TrimSpace(c.PostForm("provider")),
-		ExternalCode:    strings.TrimSpace(c.PostForm("externalCode")),
-		Address:         strings.TrimSpace(c.PostForm("address")),
-		Contact:         strings.TrimSpace(c.PostForm("contact")),
-		AllowsShipping:  c.PostForm("allowsShipping") != "",
-		APICredential:   strings.TrimSpace(c.PostForm("apiCredential")),
-		ClearCredential: c.PostForm("clearCredential") != "",
-		SecretRef:       strings.TrimSpace(c.PostForm("secretRef")),
-	}
-}
-
 // —— 取词 / 文案 ——
 
 // warehouseTypeOptions 仓库类型下拉项（文案 key 见迁移 243 的 seed）。
@@ -256,21 +228,21 @@ var warehouseCreateFields = []string{"projectId", "code", "name", "sort", "isDef
 
 var warehouseEditFields = []string{"projectId", "id", "code", "name", "sort", "type", "provider", "externalCode", "address", "contact", "allowsShipping", "apiCredential", "secretRef", "status"}
 
-func warehouseFormData(c *gin.Context, edit bool, row gin.H) gin.H {
+func warehouseFormData(c *gin.Context, projectID string, edit bool, row gin.H) gin.H {
 	return gin.H{
-		"IsEdit": edit, "Row": row, "SelectedProject": c.PostForm("projectId"),
+		"IsEdit": edit, "Row": row, "SelectedProject": projectID,
 		"WarehouseTypes": warehouseTypeOptions(c),
 	}
 }
 
-func (h *inventoryPageHandle) warehouseFormFail(c *gin.Context, edit bool, err error) {
+func (h *inventoryPageHandle) warehouseFormFail(c *gin.Context, edit bool, projectID string, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
 		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
 		return
 	}
 	// htmx 分支原样保留：失败在抽屉里重渲片段（错误槽 + 回填后的表单），不丢用户输入。
-	data := warehouseFormData(c, edit, nil)
+	data := warehouseFormData(c, projectID, edit, nil)
 	fields := warehouseCreateFields
 	if edit {
 		fields = warehouseEditFields

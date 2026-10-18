@@ -53,12 +53,12 @@ func TestInventoryFormFailurePreservesRawInput(t *testing.T) {
 		{"warehouse create", "admin/inventory/inventory_warehouse_form.html", warehouseCreateFields,
 			url.Values{"projectId": {"p1"}, "code": {"  WH  "}, "name": {"  仓库  "}, "sort": {""}, "type": {"third_party"}, "provider": {"  vendor  "}, "apiCredential": {"secret"}, "isDefault": {"1"}},
 			func(c *gin.Context) {
-				(&inventoryPageHandle{}).warehouseFormFail(c, false, errors.New(inventoryenums.ErrWarehouseCodeTaken))
+				(&inventoryPageHandle{}).warehouseFormFail(c, false, "p1", errors.New(inventoryenums.ErrWarehouseCodeTaken))
 			}},
 		{"warehouse edit", "admin/inventory/inventory_warehouse_form.html", warehouseEditFields,
 			url.Values{"projectId": {"p1"}, "id": {"w1"}, "name": {"  新名  "}, "code": {"  WH  "}, "sort": {"7"}, "type": {"virtual"}, "status": {"disabled"}, "allowsShipping": {"1"}},
 			func(c *gin.Context) {
-				(&inventoryPageHandle{}).warehouseFormFail(c, true, errors.New(inventoryenums.ErrWarehouseCodeTaken))
+				(&inventoryPageHandle{}).warehouseFormFail(c, true, "p1", errors.New(inventoryenums.ErrWarehouseCodeTaken))
 			}},
 		{"reason create", "admin/inventory/inventory_reason_form.html", reasonCreateFields,
 			url.Values{"projectId": {"p1"}, "code": {"  reason  "}, "name": {"  原因  "}, "direction": {"out"}, "sort": {""}},
@@ -150,7 +150,7 @@ func TestInventoryFormSuccessJumpAndNativeFailure(t *testing.T) {
 	}
 	// 原生失败：渲染失败提示页（不再是 302 + ?err=）。
 	c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}, "code": {"bad"}}, false)
-	(&inventoryPageHandle{}).warehouseFormFail(c, false, errors.New(inventoryenums.ErrWarehouseCodeTaken))
+	(&inventoryPageHandle{}).warehouseFormFail(c, false, "p1", errors.New(inventoryenums.ErrWarehouseCodeTaken))
 	c.Writer.WriteHeaderNow()
 	if rec.Code != http.StatusOK || view.name != "admin/jump.html" {
 		t.Fatalf("原生失败提示页: %d %q", rec.Code, view.name)
