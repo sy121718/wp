@@ -38,8 +38,13 @@ func SetupSysConfigRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.
 func (h *AdminHandle) APIList(c *gin.Context) {
 	groups, err := h.svc.ListGroups(c.Request.Context())
 	if err != nil {
-		// 出口只有一份判据：业务错误透出（含中文兜底），其余归口 + 原文进日志。
-		response.ErrorAuto(c, http.StatusInternalServerError, "sysconfig", err)
+		// 出口只有一份判据（pkg/facing）：业务错误按 400 透出（含中文兜底），
+		// 其余由 ErrorAuto 归口成 500 + 原文进日志。
+		status := http.StatusInternalServerError
+		if response.IsBusinessError(err) {
+			status = http.StatusBadRequest
+		}
+		response.ErrorAuto(c, status, "sysconfig", err)
 		return
 	}
 	response.Success(c, gin.H{"groups": groups})
