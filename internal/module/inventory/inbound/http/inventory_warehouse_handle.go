@@ -57,7 +57,7 @@ func (h *inventoryPageHandle) InventoryWarehouseCreate(c *gin.Context) {
 		h.warehouseFormFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
+	inventoryDone(c, inventoryWarehouseBack(c))
 }
 
 // InventoryWarehouseUpdate 修改仓库（名称 / 短码 / 类型 / 排序 / 状态 / 第三方对接配置）。
@@ -70,7 +70,7 @@ func (h *inventoryPageHandle) InventoryWarehouseUpdate(c *gin.Context) {
 		h.warehouseFormFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
+	inventoryDone(c, inventoryWarehouseBack(c))
 }
 
 // InventoryWarehouseDefault 切换默认仓（同工程唯一；「未指定仓库」的兜底）。
@@ -82,10 +82,10 @@ func (h *inventoryPageHandle) InventoryWarehouseDefault(c *gin.Context) {
 	yes := true
 	req := &inventorydto.UpdateWarehouseReq{ID: form.ID, IsDefault: &yes}
 	if _, err := h.inventory.UpdateWarehouse(c.Request.Context(), req); err != nil {
-		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
+		inventoryFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
+	inventoryDone(c, inventoryWarehouseBack(c))
 }
 
 // InventoryWarehouseDelete 删除仓库（默认仓 / 有非零库存时服务端拒绝）。
@@ -96,10 +96,10 @@ func (h *inventoryPageHandle) InventoryWarehouseDelete(c *gin.Context) {
 	}
 	if err := h.inventory.DeleteWarehouse(c.Request.Context(),
 		&inventorydto.DeleteWarehouseReq{ID: form.ID, ProjectID: form.ProjectID}); err != nil {
-		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
+		inventoryFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
+	inventoryDone(c, inventoryWarehouseBack(c))
 }
 
 // InventoryWarehousesBulkDelete 批量删除仓库。
@@ -114,13 +114,12 @@ func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
 	}
 	projectID := form.ProjectID
 	back := inventoryWarehouseBack(c)
-	backMsg := inventoryWarehouseBackMsg
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := bulkids.Normalize(form.IDs)
 	if berr != nil {
 		// 超限是受控错误（值域只有 Count/Max）：走受控结论出口（inventoryBulkIDsMsg），
 		// 而不是把 err.Error() 拼进提示页（提示页不是可信边界，文案必须已归口）。
-		inventoryJump(c, false, inventoryBulkIDsMsg(c, berr), back, backMsg)
+		inventoryFailMsg(c, inventoryBulkIDsMsg(c, berr))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -136,9 +135,9 @@ func (h *inventoryPageHandle) InventoryWarehousesBulkDelete(c *gin.Context) {
 	// （传 int 会被 TranslateArgs 当字符串填，产出 `%!s(int=2)` 这种看起来「像一句结论」的垃圾）。
 	switch {
 	case skipped > 0:
-		inventoryJump(c, false, inventoryBulkWarehousePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)), back, backMsg)
+		inventoryFailMsg(c, inventoryBulkWarehousePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		inventoryJump(c, true, inventoryBulkWarehouseDone.WithArgs(strconv.Itoa(deleted)), back, backMsg)
+		inventoryDone(c, back)
 	default:
 		// 没有选中任何 id（批量条在无勾选时不会提交）：回列表，不渲染提示页 ——
 		// 与改造前一致，且提示页不能显示空串（RenderJump 会把空串落成归口文案）。
@@ -219,9 +218,9 @@ func warehouseFormData(c *gin.Context, projectID string, edit bool, row gin.H) g
 func (h *inventoryPageHandle) warehouseFormFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
-		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryWarehouseBack(c), inventoryWarehouseBackMsg)
+		inventoryFail(c, err)
 		return
 	}
 	// htmx 分支：4xx + JSON —— htmx 不 swap，抽屉与输入原样保留，admin.js 弹 toast。
-	inventoryFailDrawer(c, err)
+	inventoryFail(c, err)
 }

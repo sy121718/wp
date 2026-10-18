@@ -18,7 +18,6 @@ import (
 	"github.com/gin-gonic/gin"
 	ginrender "github.com/gin-gonic/gin/render"
 
-	"go_wp/internal/adminui"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	json "go_wp/pkg/jsonx"
 )
@@ -112,42 +111,45 @@ func TestInventoryDrawerFailureReturnsJSON(t *testing.T) {
 	}
 }
 
-func TestInventoryFormSuccessJumpAndNativeFailure(t *testing.T) {
+// TestInventoryWriteSuccessRedirects 成功回列表：htmx 走 HX-Redirect，原生走 302 + Location。
+//
+// 成功不再渲染提示页 —— 列表已经变了，回列表本身就是回执。
+func TestInventoryWriteSuccessRedirects(t *testing.T) {
 	back := inventoryWarehousesPath + "?project=p1"
-	// 成功：htmx 档走 HX-Redirect，原生档渲染提示页（结论走响应体，不再是 302 + ?ok=）。
-	//
-	// 出口收的是**事实**（adminui.Msg：key + 中文兜底），取词在渲染期由模板注入的 tf 完成 ——
-	// 所以这里断言的是「交出去的是哪条词条」，而不是「Go 拼好的那句话」。
-	for _, hx := range []bool{true, false} {
-		c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, hx)
-		inventoryJump(c, true, inventoryDoneMsg, back, inventoryWarehouseBackMsg)
-		c.Writer.WriteHeaderNow()
-		if hx {
-			if rec.Code != http.StatusOK || rec.Header().Get("HX-Redirect") != back {
-				t.Fatalf("HX 成功跳转: %d %q", rec.Code, rec.Header().Get("HX-Redirect"))
-			}
-			continue
-		}
-		if rec.Code != http.StatusOK || view.name != "admin/jump.html" {
-			t.Fatalf("原生成功提示页: %d %q", rec.Code, view.name)
-		}
-		jump, ok := view.data.(gin.H)["Jump"].(adminui.JumpView)
-		if !ok {
-			t.Fatalf("提示页数据里没有 Jump 视图: %T", view.data)
-		}
-		if jump.MsgKey != inventoryActionDoneKey || jump.Msg != inventoryActionDoneFallback {
-			t.Errorf("正文事实 = %q/%q，want %q/%q",
-				jump.MsgKey, jump.Msg, inventoryActionDoneKey, inventoryActionDoneFallback)
-		}
-		if jump.BackTextKey != inventoryenums.InventoryWarehousesTitle || jump.BackText != inventoryWarehouseBackMsg.Fallback {
-			t.Errorf("回跳文字事实 = %q/%q", jump.BackTextKey, jump.BackText)
-		}
+
+	c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, true)
+	inventoryDone(c, back)
+	c.Writer.WriteHeaderNow()
+	if rec.Code != http.StatusOK || rec.Header().Get("HX-Redirect") != back {
+		t.Fatalf("htmx 成功跳转: %d %q", rec.Code, rec.Header().Get("HX-Redirect"))
 	}
-	// 原生失败：渲染失败提示页（不再是 302 + ?err=）。
+	if view.name != "" {
+		t.Fatalf("成功不该渲染模板，实际 %q", view.name)
+	}
+
+	c2, rec2, view2 := inventoryFormContext(t, url.Values{"projectId": {"p1"}}, false)
+	inventoryDone(c2, back)
+	c2.Writer.WriteHeaderNow()
+	if rec2.Code != http.StatusFound || rec2.Header().Get("Location") != back {
+		t.Fatalf("原生成功跳转: %d %q", rec2.Code, rec2.Header().Get("Location"))
+	}
+	if view2.name != "" {
+		t.Fatalf("成功不该渲染模板（原生），实际 %q", view2.name)
+	}
+}
+
+// TestInventoryNativeWriteFailureIsJSON 原生分支的失败也是 JSON（不再有整页提示页）。
+func TestInventoryNativeWriteFailureIsJSON(t *testing.T) {
 	c, rec, view := inventoryFormContext(t, url.Values{"projectId": {"p1"}, "code": {"bad"}}, false)
 	(&inventoryPageHandle{}).warehouseFormFail(c, errors.New(inventoryenums.ErrWarehouseCodeTaken))
 	c.Writer.WriteHeaderNow()
-	if rec.Code != http.StatusOK || view.name != "admin/jump.html" {
-		t.Fatalf("原生失败提示页: %d %q", rec.Code, view.name)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("原生失败状态码 = %d，want 400", rec.Code)
+	}
+	if view.name != "" {
+		t.Fatalf("失败不该渲染模板，实际 %q", view.name)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("Content-Type = %q，want application/json", ct)
 	}
 }

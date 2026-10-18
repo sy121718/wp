@@ -26,11 +26,11 @@ import (
 func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
-		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
+		inventoryFail(c, err)
 		return
 	}
 	// htmx 分支：4xx + JSON —— 抽屉不 swap，输入原样保留，admin.js 弹 toast。
-	inventoryFailDrawer(c, err)
+	inventoryFail(c, err)
 }
 
 // inventory_purchase_page_form.go - 采购入库表单解析（收货明细行、草稿行与数值解析）。
@@ -263,7 +263,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseCreate(c *gin.Context) {
 		h.purchaseCreateFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
+	inventoryDone(c, inventoryPurchaseBack(c))
 }
 
 // InventoryPurchaseReceipt 登记某一行（或多行）采购收货。
@@ -275,10 +275,10 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseReceipt(c *gin.Context) {
 		return
 	}
 	if _, err := h.inventory.RegisterReceipt(c.Request.Context(), form.RegisterReq(builtin.GetUsername(c))); err != nil {
-		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
+		inventoryFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
+	inventoryDone(c, inventoryPurchaseBack(c))
 }
 
 // InventoryPurchaseProduction 自家工厂生产入库（无采购单，成本价手工填写）。
@@ -293,10 +293,10 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseProduction(c *gin.Context
 		return
 	}
 	if _, err := h.inventory.RegisterProductionInbound(c.Request.Context(), form.ProductionReq(builtin.GetUsername(c))); err != nil {
-		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
+		inventoryFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventoryPurchaseBack(c), inventoryPurchaseBackMsg)
+	inventoryDone(c, inventoryPurchaseBack(c))
 }
 
 // —— 页面取数（视图组装：模板不做逻辑）——

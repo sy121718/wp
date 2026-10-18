@@ -53,7 +53,7 @@ const (
 	InventoryPurchasesOptionCostLabel = "admin.inventory_purchases.option.costLabel"
 	InventoryPurchasesOptionCostUnset = "admin.inventory_purchases.option.costUnset"
 
-	// —— 单条与批量写动作的结论文案（提示页 / 片段回执的事实形态：key + 中文兜底 + `%s` 参数）——
+	// —— 单条与批量写动作的结论文案（失败出口的事实形态：key + 中文兜底 + `%s` 参数）——
 	InventoryActionDone             = "admin.inventory.actionDone"
 	InventoryBulkWarehousePartial   = "admin.inventory.bulk.partial"
 	InventoryBulkWarehouseDone      = "admin.inventory.bulk.deleted"

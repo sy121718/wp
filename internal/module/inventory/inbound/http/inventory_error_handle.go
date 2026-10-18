@@ -15,7 +15,6 @@ import (
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
-	"go_wp/pkg/response"
 	"strconv"
 	"strings"
 
@@ -46,7 +45,7 @@ func inventoryErrMsg(c *gin.Context, err error) facing.Msg {
 
 // inventoryErrMsgOf 把错误事实摊成一句结论。三档：
 //
-//	· Key 为空（err 为 nil）→ 空事实（提示页那边会把空正文落成归口文案）；
+//	· Key 为空（err 为 nil）→ 空事实（出口那边会把空正文落成归口文案）；
 //	· 非业务错误 → 共享归口事实（key + 中文原文）；
 //	· 业务错误 → key + 模块兜底表的中文；带明细段时给成品串 ——「key + 明细」一段 key
 //	  表达不了（明细是多段「词条 + 具名参数」的编码）。
@@ -65,25 +64,6 @@ func inventoryErrMsgOf(c *gin.Context, f facing.Fact) facing.Msg {
 		}
 	}
 	return facing.Msg{Key: f.Key, Fallback: inventoryErrFallback(f.Key)}
-}
-
-// inventoryFailDrawer 抽屉 / 片段写动作的失败出口：**4xx + JSON**，不重渲片段。
-//
-// 为什么不是 200 + 重渲片段：htmx 对 2xx 一律 swap 到目标节点，重渲意味着「服务端得把
-// 用户刚输入的值原样搬回来」—— 一套平行的回填通道（EchoFields / RawForm / 片段里的
-// FormEcho 分支），每个字段三处对齐，漏一处就静默丢输入。而 htmx 对 4xx **不 swap**：
-// 抽屉保持打开、输入原样在，响应只需要一句话，由 admin.js 的 htmx:responseError 取
-// body.message 弹 toast。所以这里既不渲染 HTML，也不回 200（200 会被当成功并替换节点）。
-//
-// 状态码分档与整页失败同一份判据（pkg/response.IsBusinessError）：业务错误 400、
-// 其余 500；对外文案走 inventoryErrText（业务错误取词 + 兜底，内部错误只给归口文案，
-// 原文进结构化日志）。
-func inventoryFailDrawer(c *gin.Context, err error) {
-	status := http.StatusInternalServerError
-	if response.IsBusinessError(err) {
-		status = http.StatusBadRequest
-	}
-	response.ErrorWithMessage(c, status, inventoryErrText(c, err))
 }
 
 // inventoryErrText 一句结论的**文本**形态（片段槽位 / 页面提示条用：那边的模板直接渲染文本）。
@@ -128,13 +108,13 @@ func inventoryErrDetailText(tr func(key, fallback string) string, tail string) s
 
 // —— 结论文案（读侧回执已整批删除）——
 //
-// 写动作的结论不再经 `?err=` / `?ok=` / `?done=` 回列表页（改由 shell.RenderJump 在响应体里
-// 渲染提示页，见 inventory_notice_handle.go），所以下面这套「证明提示出自本仓」的读侧判定整批删除：
+// 写动作的结论不再经 `?err=` / `?ok=` / `?done=` 回列表页（改由响应体承载：成功回列表、失败 JSON
+// 由响应体承载，见 inventory_notice_handle.go），所以下面这套「证明提示出自本仓」的读侧判定整批删除：
 // inventoryPageErr / inventoryPageOk / inventoryPageDone / inventoryNoticeSuccess /
 // inventoryNoticeTexts / inventoryNoticeToken / inventoryBulkNoticeTemplates。
 //
 // 留下的只有**事实**：单条回执与批量结论的 key + 中文兜底（facing.Msg）。
-// 取词不再是本文件的事 —— 它在提示页渲染期由模板注入的 tf 完成（见 internal/adminui/prepare.go），
+// 取词不再是本文件的事 —— 它在出口处按请求语言取（text.MsgText / response.MessageOf），
 // 所以「成功说的是哪句话」与「这是哪门语言」在两处各自回答一次，不再混在调用点里。
 
 // inventoryActionDoneKey / inventoryActionDoneFallback 单条写动作成功回执的 i18n key 与中文兜底。
@@ -169,12 +149,12 @@ var (
 	inventoryBulkReasonNoneSelected = facing.Msg{Key: inventoryenums.InventoryBulkReasonNoneSelected, Fallback: "请选择要操作的原因"}
 )
 
-// inventoryBulkIDsMsg 批量 id 读取失败的一句结论（事实形态，提示页出口用）。
+// inventoryBulkIDsMsg 批量 id 读取失败的一句结论（事实形态，失败出口用）。
 //
 // 判据是**类型事实**（*bulkids.IDsError）而不是文案比对：超限文案带两个只有错误类型知道的
 // 数字（上限 Max 与**去重后**的本次条数 Count），拿 bulkids.MaxIDs 重算就丢了 Count。
 // 与 adminui.BulkIDsFacingText 同一判据、同一份词条 —— 差别只在这里交出去的是「key + 参数」
-// 而不是拼好的字符串（提示页要的是事实）。
+// 而不是拼好的字符串（出口要的是事实）。
 func inventoryBulkIDsMsg(c *gin.Context, err error) facing.Msg {
 	var tooMany *bulkids.IDsError
 	if !errors.As(err, &tooMany) {

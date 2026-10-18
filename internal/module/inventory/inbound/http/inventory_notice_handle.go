@@ -1,34 +1,27 @@
 package inventoryhttp
 
-// inventory_notice_handle.go — 库存域后台页写动作的**出口**：整页提示（shell.RenderJump，
-// 对应 ThinkPHP 的 success() / error()）。
+// inventory_notice_handle.go — 库存域后台页写动作的出口（成功回列表、失败 JSON）。
 //
-// 取代原先的 302/303 + `?err=` / `?ok=` / `?done=` 回列表页：那条通道要求读侧再判一次
-// 「这条提示是不是本仓给的」（inventoryPageErr / inventoryPageOk / inventoryPageDone /
-// inventoryNoticeTexts / inventoryConclusion 就是那套），而查询参数不是可信边界。
-// 文案改走响应体之后，读侧判定整批删除（见 inventory_page.go 的说明）。
+// 两个出口函数在文件末尾：inventoryDone（成功）/ inventoryFail、inventoryFailMsg（失败）。
+// 本文件另一半是**回跳地址**：写表单的 action 上带着当前筛选，写完跳回同一批筛选。
+// 键表与渲染时的拼串用同一份（inventoryQueryFromRequest），两处分叉的表现是「写完跳回去
+// 筛选静默丢了」—— 页面不报错、日志也干净。
 //
-// 四条边界（同 shell.RenderJump 的注释）：
-//   · **结论是事实、不是拼好的句子**：调用点给的是 facing.Msg（key + 中文兜底 + `%s` 参数），
-//     取词由模板注入的 tf 在**渲染期**完成（见 internal/adminui/prepare.go）—— 所以调用点
-//     不需要知道当前是什么语言。本文件原先的 inventoryXxxBackText / inventoryDoneText 全是
-//     Go 侧取词（`shell.TranslateFor(c)(key, 兜底)`），已收成下面的包级 facing.Msg 变量；
-//   · 文案必须**已过归口**（inventoryErrMsg / inventoryBulkIDsMsg / inventoryBulkXxx 的产物）
-//     —— 原文只进日志，换个页面呈现不等于可以把 err.Error() 铺上去；
-//   · 回跳地址由 shell.BackPath 从**表单 action 的 query** 按白名单读回（服务端自己拼，
-//     不读隐藏域里的整串 URL）；
-//   · 结论不进 URL —— 成功 / 失败只体现在提示页的响应体里。
-
+// 结论的载体几经变化：先是 302 + ?err= / ?ok=（查询参数不是可信边界，废弃），
+// 然后是整页提示页（又一个要维护的模板 + 五个要填的事实字段），现在是响应体：
+// 成功回列表、失败 {code,message,data}。
 import (
 	"net/url"
 	"strings"
 
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"go_wp/internal/text"
 
-	inventoryenums "go_wp/internal/module/inventory/enums"
 	"go_wp/internal/shell"
 	"go_wp/pkg/facing"
+	"go_wp/pkg/response"
 )
 
 // 各页回跳筛选键。
@@ -85,51 +78,44 @@ func inventoryPurchaseBack(c *gin.Context) string {
 	return shell.BackPath(c, inventoryPurchasesPath, inventoryPurchaseBackKeys...)
 }
 
-// —— 回跳链接文字（复用各页标题词条，不新增全站词条）——
-//
-// 包级变量而不是 `func(c *gin.Context) string`：这些文案**只由「key + 中文兜底」决定**，
-// 与请求无关 —— 需要 gin.Context 的只有「取词」这一步，而取词属于渲染期（模板注入的 t）。
-// 原先写成函数时，每一处调用点都在 Go 侧把词取好、再当成品串交给提示页，等于把「这段文案
-// 属于哪个语言」在控制器里再审一遍。
-var (
-	inventoryStockBackMsg     = facing.Msg{Key: inventoryenums.InventoryTitle, Fallback: "库存管理"}
-	inventoryWarehouseBackMsg = facing.Msg{Key: inventoryenums.InventoryWarehousesTitle, Fallback: "仓库管理"}
-	inventoryReasonBackMsg    = facing.Msg{Key: inventoryenums.InventoryReasonsTitle, Fallback: "变动原因字典"}
-	inventorySourceBackMsg    = facing.Msg{Key: inventoryenums.MsgInventorySourcesTitle, Fallback: "货源管理"}
-	inventoryPurchaseBackMsg  = facing.Msg{Key: inventoryenums.MsgInventoryPurchasesTitle, Fallback: "采购入库"}
-)
-
-// inventoryDoneMsg 单条写动作的成功回执。
-//
-// 复用读侧时代就有的 admin.inventory.actionDone 词条（迁移 280）：改造只换传输通道与
-// 「谁取词」，不换「成功说的是哪句话」。
-var inventoryDoneMsg = facing.Msg{Key: inventoryActionDoneKey, Fallback: inventoryActionDoneFallback}
-
-// inventoryMsgText 把一句结论取成当前语言文本（**片段槽位 / 页面提示条**用：那边的模板
-// 直接渲染文本、不取词）。
-//
-// 这一类槽位（SubmitErr / Err / LoadError）本批还没取词化 —— 见 inventory_page.go
-// 「错误文案」一节的说明；新槽位一律传 facing.Msg 并在模板里用 tf 取词。
+// inventoryMsgText 把一句文案的事实取成当前语言文本（页面槽位 / 片段槽位用）。
 func inventoryMsgText(c *gin.Context, m facing.Msg) string { return text.MsgText(c, m) }
 
-// —— 提示页出口 ——
-
-// inventoryJump 渲染整页提示：成功 1 秒后自动回列表，失败不自动跳（运营要看清楚原因）。
+// —— 写动作的出口 ——
 //
-// 签名收的是事实（facing.Msg）而不是成品串：正文与链接文字各一段 key + 兜底 + 参数，
-// 填进 shell.Jump 后由提示页模板取词。
-func inventoryJump(c *gin.Context, ok bool, msg facing.Msg, back string, backText facing.Msg) {
-	jump := shell.Jump{
-		OK:          ok,
-		MsgKey:      msg.Key,
-		Msg:         msg.Fallback,
-		MsgArgs:     msg.Args,
-		Back:        back,
-		BackTextKey: backText.Key,
-		BackText:    backText.Fallback,
+// 两种形态，都由本文件给出，控制器里没有第三种：
+//
+//   · **成功**：回到列表（redirectWhere）—— htmx 走 HX-Redirect、原生走 302。
+//     列表本身已经变了，这就是回执；不再有「成功提示页」那一跳。
+//   · **失败**：4xx / 5xx + JSON（{code,message,data}）。业务错误 400、其余 500，
+//     内部原文只进日志、对外只给归口文案。
+//
+// 为什么把结论塞进响应体而不是渲染一页：提示页是「又一个要维护的模板 + 一套要传的事实」
+// （OK / Msg / MsgArgs / Back / BackText 五个字段，每个写动作各填一遍），而它承载的信息
+// 与「回列表」完全重合。失败也不需要它 —— htmx 对 4xx 不 swap，admin.js 弹 toast，
+// 抽屉与输入原样保留。
+
+// inventoryDone 写动作成功：回列表（不渲染任何页面）。
+func inventoryDone(c *gin.Context, back string) {
+	redirectWhere(c, back)
+}
+
+// inventoryFail 写动作失败（按 error 判档）：业务错误 400、其余 500。
+//
+// 状态码与文案必须用**同一份判据**：这里判的是 facing.FactOf（与 inventoryErrMsg 相同），
+// 不是 response.IsBusinessError —— 后者的正则整串锚定，认不出模块用 fmt.Errorf("%w: 明细")
+// 拼出来的复合错误（ErrExternalSKUProductConflict: …），会把一条业务拒绝判成 500，
+// 而文案那一侧却已经把它渲染成了中文原因。判据分叉的症状正是「400 的句子配 500 的状态码」。
+func inventoryFail(c *gin.Context, err error) {
+	status := http.StatusInternalServerError
+	if fact, ok := facing.FactOf(err); ok && fact.Business {
+		status = http.StatusBadRequest
 	}
-	if ok {
-		jump.Seconds = 1
-	}
-	shell.RenderJump(c, jump)
+	response.ErrorWithMessage(c, status, inventoryErrText(c, err))
+}
+
+// inventoryFailMsg 写动作失败（结论已经是事实，不是 error）：批量部分成功、未选中任何行、
+// 批量 id 超限这类「参数与结果」都走这里，一律 400。
+func inventoryFailMsg(c *gin.Context, msg facing.Msg) {
+	response.ErrorWithMessage(c, http.StatusBadRequest, text.MsgText(c, msg))
 }

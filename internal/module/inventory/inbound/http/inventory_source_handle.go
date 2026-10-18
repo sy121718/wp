@@ -48,7 +48,7 @@ type inventorySourcesPageData struct {
 	FilterStatus    string
 	FilterKeyword   string
 	// Err 页面提示条：只剩一处来源 —— 本页取数失败（工程列表 / 货源列表 / 统计）。
-	// 写动作的结论不再回带（走 shell.RenderJump，见 inventory_notice_handle.go）。
+	// 写动作的结论不再回带（出口见 inventory_notice_handle.go）。
 	Err string
 	// LoadFailed 本次请求的工程列表没读出来（降级渲染）。
 	//
@@ -107,7 +107,7 @@ func (h *inventorySourcePageHandle) sourcesPageView(c *gin.Context, d *inventory
 func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) (any, error) {
 	ctx := c.Request.Context()
 
-	// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 inventory_notice_handle.go），
+	// 写动作的结论不再回显在本页（出口见 inventory_notice_handle.go），
 	// 所以提示条只剩一处来源：本页取数失败（工程列表 / 货源列表 / 统计）。
 	pageErr := ""
 
@@ -244,7 +244,7 @@ func (h *inventorySourcePageHandle) InventorySourceCreate(c *gin.Context) {
 		h.sourceFormFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventorySourceBack(c), inventorySourceBackMsg)
+	inventoryDone(c, inventorySourceBack(c))
 }
 
 // InventorySourceUpdate 修改货源（表单即最终状态：结算价留空 = 清空）。
@@ -263,7 +263,7 @@ func (h *inventorySourcePageHandle) InventorySourceUpdate(c *gin.Context) {
 		h.sourceFormFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventorySourceBack(c), inventorySourceBackMsg)
+	inventoryDone(c, inventorySourceBack(c))
 }
 
 // InventorySourceDelete 删除货源。
@@ -275,31 +275,30 @@ func (h *inventorySourcePageHandle) InventorySourceDelete(c *gin.Context) {
 	if err := h.inventory.DeleteSource(c.Request.Context(), &inventorydto.DeleteSourceReq{
 		ID: form.ID,
 	}); err != nil {
-		inventoryJump(c, false, inventoryErrMsg(c, err), inventorySourceBack(c), inventorySourceBackMsg)
+		inventoryFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventorySourceBack(c), inventorySourceBackMsg)
+	inventoryDone(c, inventorySourceBack(c))
 }
 
 // InventorySourcesBulkDelete 批量删除货源。
 //
 // 逐条走同一条删除路径：被采购单等历史数据引用的那一条由服务端拒绝，其余照常删除 ——
 // 批量操作不能因为一条失败就整批回滚（用户会以为「一条都没删」，然后反复重试）。
-// 结果按「已删 N 个 / 跳过 M 个」渲染成提示页，避免静默的部分成功（语义未变，只换传输通道）。
+// 部分成功给的是「已删 N 个 / 跳过 M 个」这一句（400 + JSON，由前端 toast），避免静默。
 func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
 	form, ok := binding.Form[inventorydto.SourceBulkFormReq](c)
 	if !ok {
 		return
 	}
 	back := inventorySourceBack(c)
-	backMsg := inventorySourceBackMsg
 	// 批量 id 统一入口（去空白 / 去重 / 上限）：超限整批拒绝并说明原因，不静默截断。
 	ids, berr := bulkids.Normalize(form.IDs)
 	if berr != nil {
 		// 超限是**受控错误**（pkg/bulkids 的 *IDsError：值域只有 Count/Max 两个整数，
 		// 装不下表名 / 约束名 / SQLSTATE），文案走受控结论出口 —— 它按当前语言给
 		//「一次最多操作 N 项，当前 M 项，请分批进行」，不会把可行动提示抹成通用提示。
-		inventoryJump(c, false, inventoryBulkIDsMsg(c, berr), back, backMsg)
+		inventoryFailMsg(c, inventoryBulkIDsMsg(c, berr))
 		return
 	}
 	deleted, skipped := 0, 0
@@ -312,11 +311,11 @@ func (h *inventorySourcePageHandle) InventorySourcesBulkDelete(c *gin.Context) {
 	}
 	switch {
 	case skipped > 0:
-		inventoryJump(c, false, inventoryBulkSourcePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)), back, backMsg)
+		inventoryFailMsg(c, inventoryBulkSourcePartial.WithArgs(strconv.Itoa(deleted), strconv.Itoa(skipped)))
 	case deleted > 0:
-		inventoryJump(c, true, inventoryBulkSourceDone.WithArgs(strconv.Itoa(deleted)), back, backMsg)
+		inventoryDone(c, back)
 	default:
-		// 没有选中任何 id（批量条在无勾选时不会提交）：回列表，不渲染提示页。
+		// 没有选中任何 id（批量条在无勾选时不会提交）：回列表。
 		redirectWhere(c, back)
 	}
 }
@@ -475,9 +474,9 @@ func sourceFormData(c *gin.Context, projectID string, edit bool, row gin.H) gin.
 func (h *inventorySourcePageHandle) sourceFormFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
-		inventoryJump(c, false, inventoryErrMsg(c, err), inventorySourceBack(c), inventorySourceBackMsg)
+		inventoryFail(c, err)
 		return
 	}
 	// htmx 分支：4xx + JSON —— 抽屉不 swap，输入原样保留，admin.js 弹 toast。
-	inventoryFailDrawer(c, err)
+	inventoryFail(c, err)
 }

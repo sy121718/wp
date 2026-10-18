@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
-
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
@@ -57,17 +55,13 @@ func TestInventoryReasonsBulkStatus(t *testing.T) {
 			spy := &reasonUpdateSpy{failID: tc.failID}
 			(&inventoryPageHandle{inventory: spy}).InventoryReasonsBulkStatus(c)
 			c.Writer.WriteHeaderNow()
-			// 结论由提示页在响应体里渲染（取代原先的 302 + ?err= / ?done=）。
-			if rec.Code != http.StatusOK || view.name != "admin/jump.html" {
-				t.Fatalf("状态码 %d 模板 %q，want 200 admin/jump.html", rec.Code, view.name)
+			// 结论走响应体：失败一律 400 + JSON，不再渲染提示页。
+			if rec.Code != http.StatusBadRequest || view.name != "" {
+				t.Fatalf("状态码 %d 模板 %q，want 400 且不渲染", rec.Code, view.name)
 			}
-			data, ok := view.data.(gin.H)
-			if !ok {
-				t.Fatalf("提示页数据 %T", view.data)
-			}
-			title, _ := data["title"].(string)
-			if !strings.Contains(title, tc.wantTitle) {
-				t.Errorf("提示文案 %q 缺少 %q", title, tc.wantTitle)
+			body := rec.Body.String()
+			if !strings.Contains(body, tc.wantTitle) {
+				t.Errorf("响应文案 %q 缺少 %q", body, tc.wantTitle)
 			}
 			if len(spy.calls) != tc.wantCalls {
 				t.Fatalf("calls = %d, want %d", len(spy.calls), tc.wantCalls)

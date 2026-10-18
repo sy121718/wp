@@ -28,10 +28,10 @@ func (h *inventoryPageHandle) InventoryStockChange(c *gin.Context) {
 
 	respond := func(err error) {
 		if err != nil {
-			inventoryJump(c, false, inventoryErrMsg(c, err), inventoryStockBack(c), inventoryStockBackMsg)
+			inventoryFail(c, err)
 			return
 		}
-		inventoryJump(c, true, inventoryDoneMsg, inventoryStockBack(c), inventoryStockBackMsg)
+		inventoryDone(c, inventoryStockBack(c))
 	}
 
 	if !form.ValidDirection() {
@@ -69,10 +69,10 @@ func (h *inventoryPageHandle) InventoryExternalSKUUpdate(c *gin.Context) {
 		return
 	}
 	if _, err := h.inventory.BindExternalSKU(c.Request.Context(), form.BindReq()); err != nil {
-		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryStockBack(c), inventoryStockBackMsg)
+		inventoryFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventoryStockBack(c), inventoryStockBackMsg)
+	inventoryDone(c, inventoryStockBack(c))
 }
 
 // InventoryStockTrackingUpdate 库存页行内编辑：切换某 (仓库, 变体) 行的跟踪开关并写入数量。
@@ -98,10 +98,10 @@ func (h *inventoryPageHandle) InventoryStockTrackingUpdate(c *gin.Context) {
 
 	respond := func(err error) {
 		if err != nil {
-			inventoryJump(c, false, inventoryErrMsg(c, err), inventoryStockBack(c), inventoryStockBackMsg)
+			inventoryFail(c, err)
 			return
 		}
-		inventoryJump(c, true, inventoryDoneMsg, inventoryStockBack(c), inventoryStockBackMsg)
+		inventoryDone(c, inventoryStockBack(c))
 	}
 
 	// 跟踪态必须显式给数量：无限态的数量框是 disabled 的（浏览器不提交该字段），

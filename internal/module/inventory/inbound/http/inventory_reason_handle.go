@@ -60,7 +60,7 @@ func (h *inventoryPageHandle) InventoryReasonCreate(c *gin.Context) {
 		h.reasonFormFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventoryReasonBack(c), inventoryReasonBackMsg)
+	inventoryDone(c, inventoryReasonBack(c))
 }
 
 // InventoryReasonUpdate 后台表单修改自定义变动原因（改名 / 停用 / 排序）。
@@ -75,7 +75,7 @@ func (h *inventoryPageHandle) InventoryReasonUpdate(c *gin.Context) {
 		h.reasonEditFormFail(c, err)
 		return
 	}
-	inventoryJump(c, true, inventoryDoneMsg, inventoryReasonBack(c), inventoryReasonBackMsg)
+	inventoryDone(c, inventoryReasonBack(c))
 }
 
 // InventoryReasonsBulkStatus 按现有更新权限逐条切换原因状态，不触碰名称和排序。
@@ -86,19 +86,18 @@ func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
 	}
 	projectID := form.ProjectID
 	back := inventoryReasonBack(c)
-	backMsg := inventoryReasonBackMsg
 	if !form.ValidStatus() {
-		inventoryJump(c, false, inventoryErrMsg(c, inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid)), back, backMsg)
+		inventoryFail(c, inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid))
 		return
 	}
 	status := form.StatusValue()
 	ids, err := bulkids.Normalize(form.IDs)
 	if err != nil {
-		inventoryJump(c, false, inventoryBulkIDsMsg(c, err), back, backMsg)
+		inventoryFailMsg(c, inventoryBulkIDsMsg(c, err))
 		return
 	}
 	if len(ids) == 0 {
-		inventoryJump(c, false, inventoryBulkReasonNoneSelected, back, backMsg)
+		inventoryFailMsg(c, inventoryBulkReasonNoneSelected)
 		return
 	}
 	updated, skipped := 0, 0
@@ -115,9 +114,9 @@ func (h *inventoryPageHandle) InventoryReasonsBulkStatus(c *gin.Context) {
 	// （传 int 会被 TranslateArgs 当字符串填，产出 `%!s(int=2)` 这种看起来「像一句结论」的垃圾）。
 	switch {
 	case skipped > 0:
-		inventoryJump(c, false, inventoryBulkReasonPartial.WithArgs(strconv.Itoa(updated), strconv.Itoa(skipped)), back, backMsg)
+		inventoryFailMsg(c, inventoryBulkReasonPartial.WithArgs(strconv.Itoa(updated), strconv.Itoa(skipped)))
 	case updated > 0:
-		inventoryJump(c, true, inventoryBulkReasonDone.WithArgs(strconv.Itoa(updated)), back, backMsg)
+		inventoryDone(c, back)
 	default:
 		redirectWhere(c, back)
 	}
@@ -216,19 +215,19 @@ func reasonFormData(c *gin.Context, projectID string) gin.H {
 func (h *inventoryPageHandle) reasonFormFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
-		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryReasonBack(c), inventoryReasonBackMsg)
+		inventoryFail(c, err)
 		return
 	}
 	// htmx 分支：4xx + JSON —— 抽屉不 swap，输入原样保留，admin.js 弹 toast。
-	inventoryFailDrawer(c, err)
+	inventoryFail(c, err)
 }
 
 func (h *inventoryPageHandle) reasonEditFormFail(c *gin.Context, err error) {
 	// 原生分支（无 JS）：失败渲染整页提示（取代原先的 302 + ?err=）。
 	if !isHXRequest(c) {
-		inventoryJump(c, false, inventoryErrMsg(c, err), inventoryReasonBack(c), inventoryReasonBackMsg)
+		inventoryFail(c, err)
 		return
 	}
 	// htmx 分支：4xx + JSON —— 抽屉不 swap，输入原样保留，admin.js 弹 toast。
-	inventoryFailDrawer(c, err)
+	inventoryFail(c, err)
 }

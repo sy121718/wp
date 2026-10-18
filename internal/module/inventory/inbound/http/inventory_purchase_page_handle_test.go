@@ -79,7 +79,7 @@ func TestInventoryPurchaseCreateFailedSubmission(t *testing.T) {
 		status   int
 	}{
 		{"htmx", "true", http.StatusInternalServerError},
-		{"native", "", http.StatusOK},
+		{"native", "", http.StatusInternalServerError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, rec := purchaseCreateContext(t, tc.hx, values)
@@ -97,9 +97,12 @@ func TestInventoryPurchaseCreateFailedSubmission(t *testing.T) {
 				t.Error("内部错误与未转义的用户输入不应进入响应")
 			}
 			if tc.hx == "" {
-				// 原生失败：渲染失败提示页（取代原先的 302 + ?err=），内部错误只进日志。
-				if !strings.Contains(body, `data-jump-state="err"`) || !strings.Contains(body, "系统内部错误") {
-					t.Errorf("原生失败应渲染失败提示页，实际 %s", body)
+				// 原生失败：同样是 JSON（不再有整页提示页），内部错误只进日志。
+				if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+					t.Fatalf("原生失败 Content-Type = %q，want application/json", rec.Header().Get("Content-Type"))
+				}
+				if !strings.Contains(body, "系统内部错误") {
+					t.Errorf("原生失败应给出归口文案，实际 %s", body)
 				}
 				return
 			}
@@ -128,8 +131,11 @@ func TestInventoryPurchaseCreateSuccessRedirect(t *testing.T) {
 			c, rec := purchaseCreateContext(t, tc.hx, url.Values{"projectId": {"project-1"}})
 			(&inventoryPurchasePageHandle{inventory: &purchaseCreateFailService{}}).InventoryPurchaseCreate(c)
 			c.Writer.WriteHeaderNow()
-			if rec.Code != http.StatusOK {
-				t.Errorf("状态码 = %d，want 200", rec.Code)
+			if tc.hx != "" && rec.Code != http.StatusOK {
+				t.Errorf("htmx 状态码 = %d，want 200", rec.Code)
+			}
+			if tc.hx == "" && rec.Code != http.StatusFound {
+				t.Errorf("原生状态码 = %d，want 302", rec.Code)
 			}
 			if tc.hx != "" {
 				if got := rec.Header().Get("HX-Redirect"); got != inventoryPurchasesPath {
@@ -140,10 +146,9 @@ func TestInventoryPurchaseCreateSuccessRedirect(t *testing.T) {
 				}
 				return
 			}
-			// 原生成功：渲染成功提示页（取代原先的 302 + ?ok=），链接回列表页。
-			body := rec.Body.String()
-			if !strings.Contains(body, `data-jump-state="ok"`) || !strings.Contains(body, `href="`+inventoryPurchasesPath+`"`) {
-				t.Errorf("原生成功应渲染成功提示页并带回列表链接，实际 %s", body)
+			// 原生成功：302 回列表（PRG），不再渲染提示页。
+			if loc := rec.Header().Get("Location"); loc != inventoryPurchasesPath {
+				t.Errorf("原生成功 Location = %q，want %q", loc, inventoryPurchasesPath)
 			}
 		})
 	}

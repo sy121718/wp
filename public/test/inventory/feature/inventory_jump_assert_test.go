@@ -1,15 +1,12 @@
 package feature
 
-// inventory_jump_assert_test.go — 写动作提示页的共用断言。
+// inventory_jump_assert_test.go — 写动作出口的共用断言。
 //
-// 本批把「302 + ?err= / ?ok= / ?done= 回列表页」换成 shell.RenderJump 渲染整页提示
-//（对应 ThinkPHP 的 success() / error()），各用例的旧断言（302 + Location）随之改成断言
-// 提示页：HTTP 200 + data-jump-state 标记 + 渲染到布局尾部 + 指定文案。
+// 历史：这里曾断言「整页提示」（data-jump-state + </html>）。提示页已删除 —— 结论不再占一页：
+//   · 成功 = 回到列表（浏览器 302 + Location；htmx 请求是 200 + HX-Redirect）；
+//   · 失败 = 4xx / 5xx + JSON（{code,message,data}），htmx 对 4xx 不 swap，页面弹 toast。
 //
-// 三条一起断言，缺一条就会漏掉一类缺陷：
-//   · 状态码 200 —— 仍是 302 说明还走在旧通道上；
-//   · data-jump-state —— 提示页真的渲染了（不是别的页面）；
-//   · </html> —— 模板在某一行中断时 HTTP 仍 200、后半截整块消失（见 templates/CLAUDE.md）。
+// 所以本助手只认这两条形态，state 参数仍按 "ok" / "err" 传（调用点不改）。
 
 import (
 	"net/http"
@@ -18,22 +15,32 @@ import (
 	"testing"
 )
 
-// assertInventoryJump 断言一次写动作的响应是整页提示。
+// assertInventoryJump 断言一次写动作的响应形态。
+//
+//   - state = "ok"：302 + Location（原生）或 200 + HX-Redirect（htmx），必须落在列表地址上；
+//   - state = "err"：4xx/5xx + JSON，wants 逐条匹配响应体（即 message 的文案）。
 func assertInventoryJump(t *testing.T, rec *httptest.ResponseRecorder, state string, wants ...string) {
 	t.Helper()
-	if rec.Code != http.StatusOK {
-		t.Fatalf("提示页应为 200（不再是 302 + ?err=），实际 %d：%s", rec.Code, rec.Body.String())
+	if state == "ok" {
+		if rec.Code == http.StatusOK && rec.Header().Get("HX-Redirect") != "" {
+			return
+		}
+		if rec.Code == http.StatusFound && rec.Header().Get("Location") != "" {
+			return
+		}
+		t.Fatalf("成功应回列表（302 + Location 或 200 + HX-Redirect），实际 %d：%s",
+			rec.Code, rec.Body.String())
+	}
+	if rec.Code < 400 || rec.Code >= 500 {
+		t.Fatalf("失败应为 4xx/5xx + JSON，实际 %d：%s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("失败响应 Content-Type = %q，want application/json", ct)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="`+state+`"`) {
-		t.Fatalf("提示页缺少 data-jump-state=%q：%s", state, body)
-	}
-	if !strings.Contains(body, "</html>") {
-		t.Fatal("提示页未渲染到布局尾部（模板在某一行中断）")
-	}
 	for _, want := range wants {
 		if !strings.Contains(body, want) {
-			t.Errorf("提示页缺少 %q", want)
+			t.Errorf("响应缺少 %q：%s", want, body)
 		}
 	}
 }
