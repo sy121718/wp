@@ -1,37 +1,7 @@
-# public 目录说明
+# public 目录约定
 
-本目录存放项目的公共文件与运行产物，作为统一的公共文件聚合目录使用。
-
-## 目录结构
-
-```text
-public/
-├── docs/              # 项目文档
-├── logs/              # 运行日志目录
-├── migrations/        # 数据库版本化迁移 SQL（幂等，register.go 注册；见 AGENTS.md「数据库」）
-├── runtime/           # 运行时产物（激活站点等，勿手工修改）
-├── storage/           # 静态文件目录
-│   ├── document/      # 文档类文件
-│   └── image/         # 图片类文件
-├── test/              # 单元测试与用例测试目录
-├── backup/            # 备份产物
-└── wp/                # 构建/发布相关产物目录
-```
-
-## 目录职责
-
-- **docs/** - 项目文档目录，存放设计方案、说明文档、技术资料
-- **logs/** - 运行日志目录，存放应用运行日志、构建辅助日志等非代码产物
-- **storage/** - 静态文件目录
-  - **document/** - 文档类静态文件
-  - **image/** - 图片类静态文件
-- **test/** - 单元测试、用例测试相关目录
-
-## 使用约定
-
-- 涉及项目说明、设计方案、技术资料时，优先查看 `docs/`
-- 涉及运行日志、排查日志、输出文件时，优先放入 `logs/`
-- 涉及上传、访问、归档静态资源时，按文件类型放入 `storage/document/` 或 `storage/image/`
-- 涉及测试资源、测试用例、测试数据时，放入 `test/`
-- `public/` 目录用于聚合公共文件与运行产物，不放业务实现代码
-- `logs/` 与 `storage/` 分工不同：`logs/` 放运行日志，`storage/` 放业务可访问的静态资源
+- `migrations/`：版本化幂等 SQL + `register.go` 注册；seed 用 `ConditionSQL` 逐条枚举本批对象。**历史迁移 SQL 不改**，改列名时同步改新迁移、触发器函数体与 seed。
+- `test/`：feature / 链路测试（真实 PG）；进 CI，不进生产构建。细则见 `public/test/CLAUDE.md`。
+- `static/`：前端静态资源（HTMX 基座、`ui/json_write.js`、图片与样式）。属于前端层，不写业务计算。
+- `site/`：发布产物输出目录（PublicationStore 的 local provider）；只读语义，不要手改。
+- `runtime/` `logs/` `storage/` `backup/` `mockup/` `a/` `docs/`：运行期与资料目录，代码不得依赖其内容。
