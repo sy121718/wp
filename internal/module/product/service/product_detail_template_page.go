@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
@@ -185,6 +186,43 @@ func (s *Service) boundDetailTemplate(ctx context.Context, projectID, entityType
 		return productcontract.BoundTemplateView{}
 	}
 	return s.pageDetailTemplates.BoundDetailTemplate(ctx, projectID, entityType, entityID)
+}
+
+// detailTemplatePanel returns raw facts; Jet owns badges and links.
+func (s *Service) detailTemplatePanel(ctx context.Context, projectID, productID string) *productdto.DetailTemplatePanelResp {
+	panel := &productdto.DetailTemplatePanelResp{}
+	if s.pageDetailTemplates == nil || productID == "" {
+		return panel
+	}
+	facts := s.pageDetailTemplates.DetailTemplatePanel(ctx, projectID, productcontract.EntityTypeProduct, productID)
+	panel.Available = facts.Available
+	panel.InstanceID = facts.Bound.InstanceID
+	panel.TemplateID = facts.Bound.TemplateID
+	panel.Status = facts.Bound.Status
+	panel.RenderMode = facts.Bound.RenderMode
+	panel.SourceTemplateVersionID = facts.Bound.SourceTemplateVersionID
+	panel.CurrentTemplateVersionID = facts.CurrentTemplateVersionID
+	panel.AffectedTemplateCount = facts.AffectedTemplateCount
+	panel.HasAffectedTemplateCount = facts.HasAffectedTemplateCount
+	for _, snap := range facts.Snapshots {
+		panel.Snapshots = append(panel.Snapshots, productdto.DetailTemplateSnapshotResp{
+			ID:        snap.ID,
+			CreatedAt: parseSnapshotTime(snap.CreatedAt),
+		})
+	}
+	return panel
+}
+
+// parseSnapshotTime 快照时间是上游的 RFC3339 文本：解析失败按零值（模板 formatTime 对零值给空串）。
+func parseSnapshotTime(raw string) time.Time {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return time.Time{}
+	}
+	if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
+		return parsed
+	}
+	return time.Time{}
 }
 
 var _ = projectdto.ProjectResp{}

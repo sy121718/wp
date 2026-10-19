@@ -42,7 +42,25 @@ type BoundTemplateView struct {
 	// Status 实例状态（未发布 / 已发布 / …，按 presentation 模块的取值）。
 	Status string
 	// URLPath 实例已激活的路径（未发布时为空）。
-	URLPath string
+	URLPath                 string
+	InstanceID              string
+	RenderMode              string
+	SourceTemplateVersionID string
+}
+
+// DetailTemplatePanelFacts carries raw instance and template facts, not display strings.
+type DetailTemplatePanelFacts struct {
+	Available                bool
+	Bound                    BoundTemplateView
+	CurrentTemplateVersionID string
+	AffectedTemplateCount    int64
+	HasAffectedTemplateCount bool
+	Snapshots                []DetailTemplateSnapshotFacts
+}
+
+type DetailTemplateSnapshotFacts struct {
+	ID        string
+	CreatedAt string
 }
 
 // DetailTemplatePort 「详情页模板」整页的只读端口（两个上游模块的并集）。
@@ -66,4 +84,5 @@ type DetailTemplatePort interface {
 	// （显示还没发布 / 发布在哪个路径），不是前置条件 —— 实例读不出来时页面仍要能
 	// 让人去点「首次发布」。
 	BoundDetailTemplate(ctx context.Context, projectID, entityType, entityID string) (view BoundTemplateView)
+	DetailTemplatePanel(ctx context.Context, projectID, entityType, entityID string) DetailTemplatePanelFacts
 }

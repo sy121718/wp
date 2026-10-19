@@ -227,13 +227,13 @@
        两个模式的徽标与预览在这里；进入自定义 / 编辑模板 / 重新套用预设 / 回滚都在编辑页
        （它们会改文档，属写动作）。 *}
     {{if isset(.TplPanel)}}
-    {{if .TplPanel.Avail}}
+    {{if .TplPanel.Available}}
     <section class="card card-body">
-        <h2 class="card-title mb-lg">{{ tr("admin.products.row.detailTemplate", "详情页模板") }}{{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.IsDocumentMode}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}</h2>
+        <h2 class="card-title mb-lg">{{ tr("admin.products.row.detailTemplate", "详情页模板") }}{{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.RenderMode == "document"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}</h2>
         {{if isset(.TplPanel.InstanceID)}}
         <p class="kv"><span>{{ .["t"]("admin.product_detail.template.current", "当前模板") }}</span><span>{{.TplPanel.TemplateID}}</span></p>
-        {{if .TplPanel.Published}}
-        <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?{{.TplPanel.PreviewQS}}">{{ .["t"]("admin.common.action.preview", "预览") }}</a>
+        {{if .TplPanel.Status == "published" || .TplPanel.Status == "active"}}
+        <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?template={{.TplPanel.TemplateID}}&entityType=product&entityId={{.ProductID}}&projectId={{.SelectedProject}}">{{ .["t"]("admin.common.action.preview", "预览") }}</a>
         {{else}}
         <p class="hint">{{ .["t"]("admin.product_detail.template.unpublishedHint", "模板已绑定但尚未发布：先在详情页模板页完成首次发布。") }}</p>
         {{end}}

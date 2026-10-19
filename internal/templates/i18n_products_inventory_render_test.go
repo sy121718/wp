@@ -218,6 +218,11 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		"ImagesText":      "https://cdn.example.com/1.jpg",
 		"ImageAltsText":   "图一",
 		"WeightText":      "0.5", "DefaultPriceText": "10.00",
+		"TplPanel": map[string]any{
+			"Available": true, "InstanceID": "inst1", "TemplateID": "tpl1", "Status": "published",
+			"RenderMode": "template", "AffectedTemplateCount": 3, "HasAffectedTemplateCount": true,
+			"Snapshots": []map[string]any{},
+		},
 	})
 	out := assertGroupDPage(t, "product_edit", data,
 		"基本信息", "属性引用", "分类与品牌", "标签", "保存",
@@ -288,6 +293,10 @@ func TestGroupDProductDetailPageRenders(t *testing.T) {
 		"WarehouseOptions": []map[string]any{{"ID": "w1", "Label": "苏州仓"}},
 		"ProductID":        "p1", "HasProduct": true, "Product": groupDProductRow(),
 		"BackURL": "/admin/products?project=pr1",
+		"TplPanel": map[string]any{
+			"Available": true, "InstanceID": "inst1", "TemplateID": "tpl1", "Status": "published",
+			"RenderMode": "template",
+		},
 	})
 	out := assertGroupDPage(t, "product_detail", data,
 		"基本信息", "属性引用", "标签", "变体", "评分", "各仓库存",

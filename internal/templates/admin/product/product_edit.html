@@ -444,7 +444,7 @@
        影响面（影响 N 个商品）写在按钮上：不写就让用户凭猜，而猜错是整站一起变样。
        详情页只读展示绑定状态，写动作全部收在本页。 *}
     {{if isset(.TplPanel)}}
-    {{if .TplPanel.Avail}}
+    {{if .TplPanel.Available}}
     {* 低频：绑定状态与两个模式的写入口（重新套用预设 / 回滚）都是「配一次就不动」的，
        默认收起。卡内是两个 form-inline（按钮 + 隐藏域 + 回滚的版本下拉）——
        折起来不丢字段：版本下拉在展开后可选，且收起时折叠区内的内容仍在 DOM 里，
@@ -452,23 +452,23 @@
     <details class="section-fold card">
         <summary>
             <span class="fold-title">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}</span>
-            {{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.IsDocumentMode}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}
+            {{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.RenderMode == "document"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}
         </summary>
         <div class="fold-body">
         {{if isset(.TplPanel.InstanceID)}}
         <p class="kv"><span>{{ .["t"]("admin.product_detail.template.current", "当前模板") }}</span><span>{{.TplPanel.TemplateID}}</span></p>
-        {{if .TplPanel.Published}}
+        {{if .TplPanel.Status == "published" || .TplPanel.Status == "active"}}
         <div class="flex gap-sm">
-            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?{{.TplPanel.PreviewQS}}">{{ .["t"]("admin.common.action.preview", "预览") }}</a>
-            {{if .TplPanel.IsDocumentMode}}
+            <a class="btn btn-ghost" target="_blank" rel="noopener" href="/workbench/template/preview?template={{.TplPanel.TemplateID}}&entityType=product&entityId={{.ProductID}}&projectId={{.SelectedProject}}">{{ .["t"]("admin.common.action.preview", "预览") }}</a>
+            {{if .TplPanel.RenderMode == "document"}}
             <a class="btn btn-primary" href="/workbench?instance={{.TplPanel.InstanceID}}&projectId={{.SelectedProject}}">{{ .["t"]("admin.product_detail.template.customize", "进入自定义（仅此商品）") }}</a>
             {{else}}
-            <a class="btn btn-primary" target="_blank" rel="noopener" href="/workbench?template={{.TplPanel.TemplateID}}&entityType=product&entityId={{.ProductID}}&projectId={{.SelectedProject}}&editor=1">{{ .["t"]("admin.product_detail.template.edit", "编辑模板") }}{{if isset(.TplPanel.AffectedCount)}}{{ .["t"]("admin.product_detail.template.affectedLead", "（影响 ") }}{{.TplPanel.AffectedCount}}{{ .["t"]("admin.product_detail.template.affectedTail", " 个商品）") }}{{end}}</a>
+            <a class="btn btn-primary" target="_blank" rel="noopener" href="/workbench?template={{.TplPanel.TemplateID}}&entityType=product&entityId={{.ProductID}}&projectId={{.SelectedProject}}&editor=1">{{ .["t"]("admin.product_detail.template.edit", "编辑模板") }}{{if .TplPanel.HasAffectedTemplateCount}}{{ .["t"]("admin.product_detail.template.affectedLead", "（影响 ") }}{{.TplPanel.AffectedTemplateCount}}{{ .["t"]("admin.product_detail.template.affectedTail", " 个商品）") }}{{end}}</a>
             {{end}}
         </div>
-        {{if .TplPanel.IsDocumentMode}}
+        {{if .TplPanel.RenderMode == "document"}}
         <p class="hint">{{ .["t"]("admin.product_detail.template.docHint", "这是该商品自己的文档：改动只影响这一个商品，模板更新不会同步过来。") }}</p>
-        {{if isset(.TplPanel.PresetUpdated)}}<p class="hint">{{ .["t"]("admin.product_detail.template.presetUpdated", "模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。") }}</p>{{end}}
+        {{if .TplPanel.SourceTemplateVersionID != "" && .TplPanel.CurrentTemplateVersionID != "" && .TplPanel.SourceTemplateVersionID != .TplPanel.CurrentTemplateVersionID}}<p class="hint">{{ .["t"]("admin.product_detail.template.presetUpdated", "模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。") }}</p>{{end}}
         {* 提交走 JSON 写基座：实例 ID 与工程随请求显式回传（端点是实例级的，不再按商品反查）；
            按钮在 JS 放出之前是 hidden + disabled —— 没有 JS 就没有可用端点，不能留一个点了没反应的原生提交。 *}
         <form class="form-inline" data-write-api="/api/product/detail-template/reapply-preset"
@@ -479,7 +479,6 @@
             <p class="form-hint" data-write-status role="status" hidden></p>
             <button type="submit" class="btn btn-ghost" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail.template.reapplyPreset", "重新套用预设（回到跟随模板）") }}</button>
         </form>
-        {{if isset(.TplPanel.Snapshots)}}
         {{if len(.TplPanel.Snapshots) > 0}}
         <form class="form-inline" data-write-api="/api/product/detail-template/rollback-document"
               data-write-mode="form" data-write-flash="product-detail-mode">
@@ -489,14 +488,13 @@
             <label class="form-label" for="rollback-snapshot">{{ .["t"]("admin.product_detail.template.rollbackLabel", "回滚到历史版本") }}</label>
             <select class="form-select" id="rollback-snapshot" name="snapshotId">
                 {{range _, snap := .TplPanel.Snapshots}}
-                <option value="{{snap.ID}}">{{if isset(snap.CreatedAt)}}{{formatTime(snap.CreatedAt)}}{{end}}</option>
+                <option value="{{snap.ID}}">{{formatTime(snap.CreatedAt)}}</option>
                 {{end}}
             </select>
             <p class="form-hint" data-write-status role="status" hidden></p>
             <button type="submit" class="btn btn-ghost" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail.template.rollbackSubmit", "回滚文档并重发") }}</button>
         </form>
         <p class="hint">{{ .["t"]("admin.product_detail.template.rollbackHint", "回滚取该历史版本的文档重新发布（实体数据取最新）。") }}</p>
-        {{end}}
         {{end}}
         {{else}}
         <p class="hint">{{ .["t"]("admin.product_detail.template.presetModeHint", "布局改动请到模板编辑器：改一次，跟随该模板的商品一起更新。想把某个商品单独改，保存结构改动时会提示你转为独立文档。") }}</p>
@@ -508,6 +506,7 @@
         <p class="hint">{{ .["t"]("admin.product_detail.template.noPublicationHint", "该商品还没有发布详情页：完成首次发布后可在此预览与进入可视化自定义。") }}</p>
         {{end}}
         </div>
+    </details>
     </details>
     {{end}}
     {{end}}

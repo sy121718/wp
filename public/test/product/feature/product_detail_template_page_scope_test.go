@@ -113,6 +113,11 @@ func (p *detailTemplateRecordingPort) BoundDetailTemplate(ctx context.Context, p
 	return p.inner.BoundDetailTemplate(ctx, projectID, entityType, entityID)
 }
 
+func (p *detailTemplateRecordingPort) DetailTemplatePanel(ctx context.Context, projectID, entityType, entityID string) productcontract.DetailTemplatePanelFacts {
+	p.calls = append(p.calls, "Panel:"+projectID)
+	return p.inner.DetailTemplatePanel(ctx, projectID, entityType, entityID)
+}
+
 // reset 清掉调用记录（同一用例里第二次读页面时只断言这一次的取数）。
 func (p *detailTemplateRecordingPort) reset() { p.calls = nil }
 

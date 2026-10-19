@@ -15,6 +15,7 @@ import (
 
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
+	presentationdto "go_wp/internal/module/presentation/dto"
 	productcontract "go_wp/internal/module/product/contract"
 )
 
@@ -28,18 +29,29 @@ type instanceReader interface {
 	GetByEntity(ctx context.Context, req *presentationcontract.GetByEntityReq) (res *presentationcontract.InstanceResp, err error)
 }
 
+// modeReader is optional: absent mode support leaves the basic binding panel usable.
+type modeReader interface {
+	ListSnapshots(ctx context.Context, req *presentationcontract.ListSnapshotsReq) ([]*presentationdto.SnapshotSummary, error)
+	CountByTemplate(ctx context.Context, req *presentationcontract.CountByTemplateReq) (*presentationdto.CountByTemplateResp, error)
+}
+
 // Port 实现 productcontract.DetailTemplatePort。
 type Port struct {
 	templates contenttemplatecontract.ContentTemplateService
 	instances instanceReader
+	mode      modeReader
 }
 
 // New 构造适配器。
 //
 // 任一上游为 nil 时对应能力降级（模板清单空 / 默认模板空串 / 没有绑定实例）——
 // 与「装配未完成」那一档一致，页面据此显示「还没配模板」而不是报 500。
-func New(templates contenttemplatecontract.ContentTemplateService, instances instanceReader) *Port {
-	return &Port{templates: templates, instances: instances}
+func New(templates contenttemplatecontract.ContentTemplateService, instances instanceReader, mode ...modeReader) *Port {
+	p := &Port{templates: templates, instances: instances}
+	if len(mode) > 0 {
+		p.mode = mode[0]
+	}
+	return p
 }
 
 var _ productcontract.DetailTemplatePort = (*Port)(nil)
@@ -106,9 +118,48 @@ func (p *Port) BoundDetailTemplate(ctx context.Context, projectID, entityType, e
 		return productcontract.BoundTemplateView{}
 	}
 	return productcontract.BoundTemplateView{
-		Exists:     true,
-		TemplateID: inst.TemplateID,
-		Status:     inst.Status,
-		URLPath:    inst.URLPath,
+		Exists:                  true,
+		InstanceID:              inst.ID,
+		TemplateID:              inst.TemplateID,
+		Status:                  inst.Status,
+		URLPath:                 inst.URLPath,
+		RenderMode:              inst.RenderMode,
+		SourceTemplateVersionID: inst.SourceTemplateVersionID,
 	}
+}
+
+// DetailTemplatePanel reads only facts needed by both product pages.
+func (p *Port) DetailTemplatePanel(ctx context.Context, projectID, entityType, entityID string) productcontract.DetailTemplatePanelFacts {
+	out := productcontract.DetailTemplatePanelFacts{}
+	if p.templates == nil || p.instances == nil || entityID == "" {
+		return out
+	}
+	out.Available = true
+	out.Bound = p.BoundDetailTemplate(ctx, projectID, entityType, entityID)
+	if !out.Bound.Exists {
+		return out
+	}
+	if out.Bound.RenderMode == presentationcontract.RenderModeDocument && out.Bound.SourceTemplateVersionID != "" {
+		if tpl, err := p.templates.ResolveTemplateScoped(ctx, projectID, entityType); err == nil && tpl != nil {
+			out.CurrentTemplateVersionID = tpl.VersionID
+		}
+	}
+	if p.mode == nil {
+		return out
+	}
+	if out.Bound.RenderMode == presentationcontract.RenderModeDocument {
+		if snaps, err := p.mode.ListSnapshots(ctx, &presentationcontract.ListSnapshotsReq{InstanceID: out.Bound.InstanceID, ProjectID: projectID, Limit: 8}); err == nil {
+			out.Snapshots = make([]productcontract.DetailTemplateSnapshotFacts, 0, len(snaps))
+			for _, snap := range snaps {
+				if snap != nil {
+					out.Snapshots = append(out.Snapshots, productcontract.DetailTemplateSnapshotFacts{ID: snap.ID, CreatedAt: snap.CreatedAt})
+				}
+			}
+		}
+	}
+	if count, err := p.mode.CountByTemplate(ctx, &presentationcontract.CountByTemplateReq{TemplateID: out.Bound.TemplateID, ProjectID: projectID}); err == nil && count != nil {
+		out.HasAffectedTemplateCount = true
+		out.AffectedTemplateCount = count.TemplateMode
+	}
+	return out
 }

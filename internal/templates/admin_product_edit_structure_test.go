@@ -18,6 +18,7 @@ package templates
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/net/html"
 )
@@ -53,11 +54,11 @@ func productEditPageData() map[string]any {
 		// 捆绑商品：多渲染一张 .card（捆绑构成的编辑入口），卡片计数因此是 6。
 		"IsBundle": true,
 		"TplPanel": map[string]any{
-			"Avail": true, "InstanceID": "inst1", "TemplateID": "tpl1",
-			"RenderMode": "document", "IsDocumentMode": true, "Published": true,
-			"PreviewQS":     "instance=inst1",
-			"PresetUpdated": false,
-			"Snapshots":     []map[string]any{{"ID": "s1", "CreatedAt": "2026-01-01 10:00:00"}},
+			"Available": true, "InstanceID": "inst1", "TemplateID": "tpl1",
+			"Status": "published", "RenderMode": "document",
+			"SourceTemplateVersionID": "v1", "CurrentTemplateVersionID": "v2",
+			"HasAffectedTemplateCount": true, "AffectedTemplateCount": 3,
+			"Snapshots": []map[string]any{{"ID": "s1", "CreatedAt": time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)}},
 		},
 	})
 }

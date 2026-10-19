@@ -48,6 +48,11 @@ func (p *detailTemplatePortStub) BoundDetailTemplate(context.Context, string, st
 	return productcontract.BoundTemplateView{}
 }
 
+func (p *detailTemplatePortStub) DetailTemplatePanel(context.Context, string, string, string) productcontract.DetailTemplatePanelFacts {
+	p.calls = append(p.calls, "Panel")
+	return productcontract.DetailTemplatePanelFacts{}
+}
+
 // newDetailTemplateReadModel 读模型：只接工程清单与模板端口。
 func newDetailTemplateReadModel(projects []projectdto.ProjectResp, projectErr error, port productcontract.DetailTemplatePort) (*Service, *productPageProjectStub) {
 	ps := productPageProjectStub{rows: projects, err: projectErr}

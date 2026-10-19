@@ -319,6 +319,9 @@ type ProductDetailTemplateModePort = presentationcontract.DetailTemplateModePort
 // 不注入时详情页降级为只有基础面板（绑定 / 预览 / 发布），降级可见。
 func (h *ProductPageHandle) SetDetailTemplateModePort(port ProductDetailTemplateModePort) {
 	h.modePort = port
+	if wiring, ok := h.products.(productPagePortWiring); ok {
+		wiring.SetDetailTemplatePort(dtoutbound.New(h.templates, h.instances, port))
+	}
 }
 
 // SetDetailTemplateDeps 注入「详情页模板」页所需的两份契约（装配期调用）。
@@ -345,7 +348,7 @@ func (h *ProductPageHandle) SetDetailTemplateDeps(templates contenttemplatecontr
 	// 更新时间）与绑定实例，与上面的卡片端口宽度不同、失败语义也不同，所以是另一条
 	// （两条合成一条会让卡片区的降级把整页拖成 500）。
 	if wiring, ok := h.products.(productPagePortWiring); ok {
-		wiring.SetDetailTemplatePort(dtoutbound.New(templates, instances))
+		wiring.SetDetailTemplatePort(dtoutbound.New(templates, instances, h.modePort))
 	}
 }
 
@@ -483,65 +486,6 @@ var (
 		Key: productenums.ProductDetailTemplatePathRequired, Fallback: productDetailTemplatePathRequiredFallback,
 	}
 )
-
-// detailTemplatePanel 组装详情页模板面板的数据（docs/04-C-instance-override.md §5）。
-//
-// 三态：未绑定（引导首次发布）/ 已绑定（预览 + 进入自定义）/ 能力未装配（降级提示）。
-// 未装配模板能力（templates / instances 未注入）或没给商品 id 时，只回 {"Avail": false}，
-// 模板据 isset 给降级提示，页面照常渲染。
-func (h *ProductPageHandle) detailTemplatePanel(ctx context.Context, selected, productID string) gin.H {
-	tplPanel := gin.H{"Avail": false}
-	if h.templates == nil || h.instances == nil || strings.TrimSpace(productID) == "" {
-		return tplPanel
-	}
-	tplPanel["Avail"] = true
-	if inst, ierr := h.instances.GetByEntity(ctx, &presentationcontract.GetByEntityReq{
-		EntityType: productcontract.EntityTypeProduct, EntityID: productID, ProjectID: selected,
-	}); ierr == nil && inst != nil {
-		tplPanel["InstanceID"] = inst.ID
-		tplPanel["TemplateID"] = inst.TemplateID
-		tplPanel["Published"] = inst.Status == "published" || inst.Status == "active"
-		tplPanel["URLPath"] = inst.URLPath
-		tplPanel["PreviewQS"] = "template=" + inst.TemplateID + "&entityType=product&entityId=" +
-			productID + "&projectId=" + selected
-		// 双轨（迁移 282）：模式徽标 + 两个模式的入口分流。
-		// document：可进入自定义、可重新套用预设、可按历史快照回滚；
-		// template：布局的正确修改位置是模板 —— 按钮写成「编辑模板（影响 N 个商品）」，
-		// 影响面用真实计数（含该模板下 template 模式的实例数），不写就让用户凭猜。
-		isDoc := inst.RenderMode == presentationcontract.RenderModeDocument
-		tplPanel["RenderMode"] = presentationcontract.RenderModeTemplate
-		if isDoc {
-			tplPanel["RenderMode"] = presentationcontract.RenderModeDocument
-		}
-		tplPanel["IsDocumentMode"] = isDoc
-		// 「预设有新版本」：document 模式不会自动跟随模板，只能靠快照记录的
-		// 模板版本与模板最新版比对来提示（判定依据由 toResp 给出）。
-		if isDoc {
-			if tpl, rerr := h.templates.ResolveTemplate(ctx, productcontract.EntityTypeProduct); rerr == nil && tpl != nil &&
-				inst.SourceTemplateVersionID != "" && tpl.VersionID != inst.SourceTemplateVersionID {
-				tplPanel["PresetUpdated"] = true
-			}
-			if h.modePort != nil {
-				if snaps, serr := h.modePort.ListSnapshots(ctx, &presentationcontract.ListSnapshotsReq{
-					InstanceID: inst.ID, ProjectID: selected, Limit: 8,
-				}); serr == nil {
-					tplPanel["Snapshots"] = snaps
-				}
-			}
-		}
-		if h.modePort != nil {
-			if counts, cerr := h.modePort.CountByTemplate(ctx, &presentationcontract.CountByTemplateReq{
-				TemplateID: inst.TemplateID, ProjectID: selected,
-			}); cerr == nil && counts != nil {
-				tplPanel["AffectedCount"] = counts.TemplateMode
-			}
-		}
-	}
-	if rows, terr := h.templates.List(ctx, &contenttemplatecontract.ListReq{EntityType: productcontract.EntityTypeProduct}); terr == nil {
-		tplPanel["Templates"] = rows
-	}
-	return tplPanel
-}
 
 // ==========================================================================
 // SEO 评分：行内面板、抽屉与三个实体的取数入口（商品 / 分类 / 品牌）。

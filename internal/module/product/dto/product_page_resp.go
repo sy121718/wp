@@ -89,6 +89,25 @@ type StatusOptionResp struct {
 	Selected bool
 }
 
+// DetailTemplatePanelResp carries only facts used by the detail and edit templates.
+type DetailTemplatePanelResp struct {
+	Available                bool
+	InstanceID               string
+	TemplateID               string
+	Status                   string
+	RenderMode               string
+	SourceTemplateVersionID  string
+	CurrentTemplateVersionID string
+	AffectedTemplateCount    int64
+	HasAffectedTemplateCount bool
+	Snapshots                []DetailTemplateSnapshotResp
+}
+
+type DetailTemplateSnapshotResp struct {
+	ID        string
+	CreatedAt time.Time
+}
+
 // ProductDetailPageResp 商品详情整页的渲染视图（读模型产出 + 行装配原料 + 控制器补的派生值）。
 //
 // 字段的写者与 ProductListPageResp 同一套约定：
@@ -123,7 +142,7 @@ type ProductDetailPageResp struct {
 	// Product 是成品行（读模型写，其中的 Bundle 面板由控制器在 type=bundle 时补）；
 	// TplPanel 是详情模板面板（控制器组装）。
 	Product  *ProductRowResp
-	TplPanel map[string]any
+	TplPanel *DetailTemplatePanelResp
 	// BackURL 回列表的链接（带工程上下文，不掉回默认工程）。
 	BackURL string
 }
@@ -158,7 +177,7 @@ type ProductEditPageResp struct {
 	// —— 装配的产物 ——
 	// Product 是成品行（读模型写）；TplPanel 是详情模板面板。
 	Product  *ProductRowResp
-	TplPanel map[string]any
+	TplPanel *DetailTemplatePanelResp
 	BackURL  string
 
 	// Err 表单校验失败 / 选项读取失败的原地重渲染文案（控制器填）。

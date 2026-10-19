@@ -377,8 +377,6 @@ func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, prod
 			view.Err = response.MessageOf(c, "product", view.AttributeOptionsErr)
 		}
 	}
-	// 详情页模板面板：编辑页与详情页共用同一份组装（写动作都在编辑页这一屏）。
-	view.TplPanel = h.detailTemplatePanel(c.Request.Context(), view.SelectedProject, view.ProductID)
 	pageview.Render(c, view)
 }
 
@@ -424,8 +422,6 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 		pageview.Fail(c, err)
 		return
 	}
-	// 详情页模板面板：详情页只读展示绑定状态与预览入口，编辑动作在编辑页 —— 两页共用一份组装。
-	view.TplPanel = h.detailTemplatePanel(c.Request.Context(), view.SelectedProject, view.ProductID)
 	pageview.Render(c, view)
 }
 

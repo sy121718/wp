@@ -157,6 +157,9 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 	}
 	// 返回列表带上工程上下文：回到列表时不会掉回默认工程。
 	view.BackURL = ProductListFilterURL(selected, "", "")
+	if view.HasProduct {
+		view.TplPanel = s.detailTemplatePanel(ctx, selected, view.ProductID)
+	}
 	return view, nil
 }
 

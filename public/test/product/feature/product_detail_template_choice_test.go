@@ -626,6 +626,11 @@ func (p *detailTemplateFailingPort) BoundDetailTemplate(context.Context, string,
 	return productcontract.BoundTemplateView{}
 }
 
+func (p *detailTemplateFailingPort) DetailTemplatePanel(context.Context, string, string, string) productcontract.DetailTemplatePanelFacts {
+	p.derived++
+	return productcontract.DetailTemplatePanelFacts{}
+}
+
 // TestProductDetailTemplatePageTemplateListFailureStopsDerivedQueries 主数据读不到：
 // 500 JSON，且派生查询一条都不发。
 //
@@ -710,6 +715,10 @@ func (p *detailTemplateEmptyPort) DefaultDetailTemplate(context.Context, string,
 
 func (p *detailTemplateEmptyPort) BoundDetailTemplate(context.Context, string, string, string) productcontract.BoundTemplateView {
 	return productcontract.BoundTemplateView{}
+}
+
+func (p *detailTemplateEmptyPort) DetailTemplatePanel(context.Context, string, string, string) productcontract.DetailTemplatePanelFacts {
+	return productcontract.DetailTemplatePanelFacts{}
 }
 
 // headOfBody 失败诊断里的 body 前缀（失败时整页可能很长，只留开头足够定位）。
