@@ -7,7 +7,6 @@ package producthttp
 // 而路由表本身只按业务域分节（见 product_router.go）。
 
 import (
-	"fmt"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"net/http"
@@ -23,8 +22,6 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/internal/shell"
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
@@ -482,18 +479,6 @@ func (t productBulkText) fact(args ...string) facing.Msg {
 	return m
 }
 
-// productBulkTextOf 取一条批量结论文案的当前语言模板（**文本**形态，给「多段拼一句」的合成句用）。
-//
-// 词条混进 %d 之类协议外占位符时回落中文原文（模板一律只允许 %s，数字先经 strconv.Itoa）——
-// 否则 Sprintf 会把参数渲染成 int，而这条路直接给运营看。
-func productBulkTextOf(c *gin.Context, t productBulkText) string {
-	built := shell.TranslateFor(c)(t.key, t.fallback)
-	if !i18n.HasStringPlaceholdersOnly(built) {
-		return t.fallback
-	}
-	return built
-}
-
 // 变体清单保存的结论文案（详情页编辑表单的回执）。
 var (
 	productVariantSaveNoChange = productBulkText{productenums.BulkVariantNoChange, "变体清单与库里一致，没有需要保存的变化。"}
@@ -501,13 +486,11 @@ var (
 	productVariantSaveSkipped  = productBulkText{productenums.BulkVariantSkipped, "跳过 %s 个：%s"}
 )
 
-// variantSaveMsg 保存结果的回带结论（**事实**：单一情形给 key，多段拼接给成品串）。
+// variantSaveMsg 保存结果的回带结论（事实 + 原因 key，取词在响应出口一次完成）。
 //
 // 「一条都没变」与「跳过若干」必须能区分：都写成「保存成功」时，用户无法判断是
 // 清单本来就与库里一致，还是有行被拦下了（被拦下的行下一次还会出现在清单里）。
-//
-// 带跳过明细时是「两句词条 + 逐条原因」拼起来的复合句，一段 key 表达不了 —— 这一档给
-// 成品串（Fallback，Key 为空），与 page 模块 pageTranslationsSavedMsg 同一取舍。
+// 跳过明细只报原因 key（受控枚举），由响应出口按当前语言取词后再拼进结论。
 func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) facing.Msg {
 	if res == nil {
 		return response.InternalMsg()
@@ -515,24 +498,16 @@ func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) facing.
 	if res.Created == 0 && res.Updated == 0 && res.Deleted == 0 && len(res.Skipped) == 0 {
 		return productVariantSaveNoChange.fact()
 	}
-	// 例外（需要成品串）：这条结论是**多段词条拼出来的复合句**（「已保存…」+「跳过 N 条：原因」），
-	// 一段 key 表达不了 —— 它回的是 Fallback 成品串（Key 留空），与 page 模块同一取舍。
-	tr := shell.TranslateFor(c)
-	// 数字一律 strconv.Itoa 成字符串后填入（词条只允许 %s）。
-	parts := []string{fmt.Sprintf(productBulkTextOf(c, productVariantSaveSaved),
-		strconv.Itoa(res.Created), strconv.Itoa(res.Updated), strconv.Itoa(res.Deleted))}
-	if len(res.Skipped) > 0 {
-		// 只报**原因**，不再把「哪个 SKU / 什么规格」拼进结论：
-		// 受控形态下（每条原因都来自 variantSkipFallbacks 的枚举）文案可读且不泄漏。
-		// 被跳过的行本来就留在清单里，逐行 SKU 由页面本身呈现。
-		items := make([]string, 0, len(res.Skipped))
-		for _, skip := range res.Skipped {
-			items = append(items, tr(skip.Reason, variantSkipFallbacks[skip.Reason]))
-		}
-		parts = append(parts, fmt.Sprintf(productBulkTextOf(c, productVariantSaveSkipped),
-			strconv.Itoa(len(res.Skipped)), strings.Join(items, "；")))
+	reasons := make([]string, 0, len(res.Skipped))
+	for _, skip := range res.Skipped {
+		reasons = append(reasons, response.MsgText(c, facing.Msg{Key: skip.Reason, Fallback: variantSkipFallbacks[skip.Reason]}))
 	}
-	return facing.Msg{Fallback: strings.Join(parts, " ")}
+	args := []string{strconv.Itoa(res.Created), strconv.Itoa(res.Updated), strconv.Itoa(res.Deleted)}
+	built := response.MsgText(c, productVariantSaveSaved.fact(args...))
+	if len(reasons) > 0 {
+		built += " " + response.MsgText(c, productVariantSaveSkipped.fact(strconv.Itoa(len(res.Skipped)), strings.Join(reasons, "；")))
+	}
+	return facing.Msg{Fallback: built}
 }
 
 // SaveVariantList 以清单为准保存变体（POST /api/product/variant/save）——变体**唯一的落库动作**。
@@ -621,13 +596,12 @@ func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) {
 // 替代页是模板渲染（不走页壳），取词在这里先做掉；每一档都 return —— 之前少了 return，
 // 提示写完之后仍会继续去预览，响应里出现第二段内容。
 func (h *ProductPageHandle) renderPreviewFrame(c *gin.Context, req *productdto.ProductPreviewFrameReq) {
-	tr := shell.TranslateFor(c)
 	if req.ProductID == "" {
-		renderPreviewPlaceholder(c, tr, productenums.ProductsPreviewNeedSave, "保存这个商品后，这里会显示它的详情页真实形态。")
+		renderPreviewPlaceholder(c, productenums.ProductsPreviewNeedSave, "保存这个商品后，这里会显示它的详情页真实形态。")
 		return
 	}
 	if h.instances == nil {
-		renderPreviewPlaceholder(c, tr, productenums.ProductsPreviewUnavailable, "预览不可用：发布能力未装配。")
+		renderPreviewPlaceholder(c, productenums.ProductsPreviewUnavailable, "预览不可用：发布能力未装配。")
 		return
 	}
 	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationcontract.PreviewInstanceReq{
@@ -637,9 +611,9 @@ func (h *ProductPageHandle) renderPreviewFrame(c *gin.Context, req *productdto.P
 		if err != nil {
 			// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
 			logger.Scene("product").With("product_id", req.ProductID).Error(err, "商品详情页预览渲染失败")
-			renderPreviewPlaceholder(c, tr, productenums.ProductsPreviewFailed, "预览渲染失败（多半是这个商品还没有可用的详情页模板）。")
+			renderPreviewPlaceholder(c, productenums.ProductsPreviewFailed, "预览渲染失败（多半是这个商品还没有可用的详情页模板）。")
 		} else {
-			renderPreviewPlaceholder(c, tr, productenums.ProductsPreviewEmpty, "还没有可渲染的详情页：先给 product 类型建一套内容模板。")
+			renderPreviewPlaceholder(c, productenums.ProductsPreviewEmpty, "还没有可渲染的详情页：先给 product 类型建一套内容模板。")
 		}
 		return
 	}
@@ -648,17 +622,14 @@ func (h *ProductPageHandle) renderPreviewFrame(c *gin.Context, req *productdto.P
 }
 
 // renderPreviewPlaceholder 预览替代页（结构与样式在 admin/templates 的 preview_notice.html）。
-func renderPreviewPlaceholder(c *gin.Context, tr func(string, string) string, key, fallback string) {
-	pageview.Render(c, previewPlaceholderResp(c, tr(key, fallback)))
+// renderPreviewPlaceholder 预览替代页：只交 key + 兜底，取词由模板完成。
+func renderPreviewPlaceholder(c *gin.Context, key, fallback string) {
+	pageview.Render(c, productdto.PreviewNoticeResp{Key: key, Fallback: fallback, Lang: response.RequestLanguage(c)})
 }
 
 // previewPlaceholderResp 预览替代页的数据（结构与样式在 internal/templates/admin/preview_notice.html）。
 //
 // 商品与文章两个预览帧共用同一份模板：占位页长得一样，没有理由各写一份。
-func previewPlaceholderResp(c *gin.Context, text string) productdto.PreviewNoticeResp {
-	return productdto.PreviewNoticeResp{Text: text, Lang: response.RequestLanguage(c)}
-}
-
 // product_bundle.go — 捆绑商品（容器 + 可选组）：配置页、成员解析接口与详情页的捆绑面板。
 //
 // 可用量来自库存真源端口（warehouseOptions / warehouseSKUOptions）：捆绑的「可卖几份」
@@ -957,11 +928,12 @@ func (h *ProductHandle) ApplyPricing(c *gin.Context) {
 		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
-	// 回执沿用页面原本那句话（「本次改动 N 个变体，明细见下方留痕台账」）：三段拼一句
-	// （前缀 + 计数 + 后缀）—— 两条词条还是两段式，收成一条 %s 整句要改 seed。
-	tr := shell.TranslateFor(c)
-	response.SuccessWithMessage(c, tr(productenums.ProductPricingAppliedLead, "已应用调价：本次改动 ")+
-		strconv.Itoa(res.ChangedCount)+tr(productenums.ProductPricingAppliedTail, " 个变体，明细见下方留痕台账。"))
+	// 回执是业务事实（key + 计数）：取词只发生在响应出口一次。
+	response.SuccessMsg(c, facing.Msg{
+		Key:      productenums.ProductPricingApplied,
+		Fallback: "已应用调价：本次改动 %s 个变体，明细见下方留痕台账。",
+		Args:     []string{strconv.Itoa(res.ChangedCount)},
+	})
 }
 
 // productPricingApplyReq 定价页应用调价的 JSON 入参（规则字段平铺，理由见 ApplyPricing）。

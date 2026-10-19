@@ -74,9 +74,10 @@ func TestProductVariantSaveNoticeFollowsRequestLanguage(t *testing.T) {
 		t.Errorf("「没有需要保存的变化」应按当前语言，实际 %q", noChange)
 	}
 
-	// 4) 中文请求走中文词条（productBulkTextOf 的文本形态）。
+	// 4) 中文请求走中文词条（同一份事实换语言，取词仍在响应出口）。
 	zh := productBulkLangCtx(t, "zh-CN")
-	if text := productBulkTextOf(zh, productVariantSaveSaved); text != "已保存变体清单：新增 %s 个、修改 SKU %s 个、删除 %s 个。" {
-		t.Errorf("中文请求应取中文词条，实际 %q", text)
+	zhSaved := adminui.MsgText(zh, variantSaveMsg(zh, &productdto.SaveVariantListResp{Created: 1, Updated: 2, Deleted: 3}))
+	if zhSaved != "已保存变体清单：新增 1 个、修改 SKU 2 个、删除 3 个。" {
+		t.Errorf("中文请求应取中文词条，实际 %q", zhSaved)
 	}
 }

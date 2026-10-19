@@ -112,9 +112,8 @@ const (
 	ProductPricingFilterCategoryID = "admin.product_pricing.filter.categoryId"
 	ProductPricingFilterBrandID    = "admin.product_pricing.filter.brandId"
 	ProductPricingFilterTagID      = "admin.product_pricing.filter.tagId"
-	// 应用调价后的回执：三段拼一句（前缀 + 计数 + 后缀），词条还是两段式（见迁移）。
-	ProductPricingAppliedLead = "admin.product_pricing.applied.lead"
-	ProductPricingAppliedTail = "admin.product_pricing.applied.tail"
+	// 应用调价后的回执：一句带计数的整句，取词由响应出口完成。
+	ProductPricingApplied = "admin.product_pricing.applied"
 
 	// —— SEO 评分 ——
 	//
