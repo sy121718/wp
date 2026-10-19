@@ -215,7 +215,14 @@ func (s *productPageReaderStub) ProductBrandsPage(_ context.Context, req *produc
 
 func (s *productPageReaderStub) ProductTagsPage(_ context.Context, req *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageResp, error) {
 	s.tagsReqs = append(s.tagsReqs, req)
-	return s.tagsView, s.tagsErr
+	if s.tagsErr != nil || s.tagsView == nil {
+		return s.tagsView, s.tagsErr
+	}
+	// 行与抽屉初值在生产读模型里装（service.TagPageRows / TagCreateForm）；桩照同一形装一遍，
+	// 否则「页面有没有渲染出写入口」这类断言会因为桩跳过装配而假红。
+	s.tagsView.Tags = productservice.TagPageRows(s.tagsView.SelectedProject, s.tagsView.TagDetails, s.tagsView.RuleTypes)
+	s.tagsView.TagCreateForm = productservice.TagCreateForm(s.tagsView.SelectedProject, s.tagsView.RuleTypes)
+	return s.tagsView, nil
 }
 
 // productCategoriesPageViewStub 分类页成功档视图（键给齐，与 service 同型）。

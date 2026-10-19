@@ -9,13 +9,10 @@ import (
 	"errors"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	"go_wp/internal/text"
+	productservice "go_wp/internal/module/product/service"
 	"go_wp/pkg/binding"
-	json "go_wp/pkg/jsonx"
-	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -172,26 +169,13 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 		return
 	}
 	if view == nil {
-			pageview.Fail(c, errors.New("页面读模型返回空视图"))
+		pageview.Fail(c, errors.New("页面读模型返回空视图"))
 		return
 	}
 
-	// —— 控制器负责的部分：行装配与两个标签抽屉（要 csrf 与取词函数）——
+	// 行与两个抽屉的初值都在读模型里装好（TagPageRows / TagCreateForm）；这里只剩「回到本页的
+	// 筛选上下文」这一条请求事实 —— 它来自 current request，只有入口知道。
 	view.ListQuery = binding.ListQuery(c, productTagsBackKeys...)
-	rows := []productdto.TagRowResp{}
-	tagCreateForm := map[string]any{}
-	{
-		rows = make([]productdto.TagRowResp, 0, len(view.TagDetails))
-		for _, tg := range view.TagDetails {
-			row := tagPageRow(tg)
-			row.EditForm = h.tagDrawerData(c, "update", view.SelectedProject, &row, view.RuleTypes)
-			rows = append(rows, row)
-		}
-		// 新建抽屉的片段数据与行级片段同源：同一份规则清单、同一份模板。
-		tagCreateForm = h.tagDrawerData(c, "create", view.SelectedProject, nil, view.RuleTypes)
-	}
-	view.Tags = rows
-	view.TagCreateForm = tagCreateForm
 	pageview.Render(c, view)
 }
 
@@ -213,96 +197,14 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data := gin.H{
-		"TagID":     req.TagID,
-		"ProjectID": req.ProjectID,
-	}
 	res, err := h.products.ListTagProductsPage(c.Request.Context(), req)
-	if err != nil {
-		data["Err"] = response.MessageOf(c, "product", err)
-		pageview.Render(c, data)
-		return
+	// 行、总数与分页事实的形状在 service（纯函数）：控制器只把取回来的那一页交出去。
+	data, cause := productservice.TagHitsFragmentData(req, res, err)
+	if cause != nil {
+		data["Err"] = response.MessageOf(c, "product", cause)
 	}
-	data["TagName"] = res.TagName
-	data["Total"] = res.Total
-	data["Page"] = res.Page
-	data["PageSize"] = res.PageSize
-	data["TotalPage"] = res.TotalPage
-	// 命中商品行就是 service 的 TagProductResp：模板读 p.Name/p.Slug/p.Status，
-	// 字段名与它一致，控制器不再逐行翻译一份（那些翻译只会与 service 漂移）。
-	data["Items"] = res.Items
-	// 分页交事实（总数 / 页码 / 每页条数 / 基地址），文案与翻页链接由
-	// admin/product/product_tag_hits.html 用同一套通用模板函数渲染。
-	//
-	// 与五个整页站点的差别（有意为之）：这里**不**按 HasPagination() 设闸 —— 片段在
-	// 单页非空时仍要渲染两个禁用按钮，「还有没有下一页」是页面上可读的事实；
-	// 闸门只由模板的「有没有行」决定。
-	//
-	// KeepLimit=false：本端点只认 project/id/page/size 四个查询参数，翻页链接里不带 limit。
-	// 基址不再在这里拼：模板从请求串推基址（pageBase 去掉 page/limit，其余参数原样保留），
-	// 所以链接会自动带上用户点进来时的 project / id / size。
-	pg := pagination.Page{Total: int64(res.Total), Page: res.Page, Limit: res.PageSize, DropLimit: true}
-	data["Pagination"] = pg
+	// 行、总数与分页事实都由读模型摊好（TagHitsFragmentData）：命中商品行就是 service 的
+	// TagProductResp，模板读 p.Name/p.Slug/p.Status；片段不按 HasPagination 设闸
+	// （单页非空时也要渲染两个禁用按钮，「还有没有下一页」是页面上可读的事实）。
 	pageview.Render(c, data)
-}
-
-// tagDrawerData 装配标签编辑片段数据（create 时 row 为 nil）。
-// ruleTypes 由调用方传入：页面装配时取一次全行共享，失败分支自己取一次，
-// 不在片段装配里重复查契约。取词走 text.Inject（片段不经整份
-// Prepare，但模板要 t/tf；漏注入不报错 —— 取词全变空串、200、日志干净）。
-func (h *ProductPageHandle) tagDrawerData(c *gin.Context, mode, projectID string, row *productdto.TagRowResp, ruleTypes []*productdto.TagRuleTypeResp) map[string]any {
-	data := map[string]any{
-		"Mode": mode, "Project": projectID,
-		"RuleTypes": ruleTypes,
-		"ID":        "", "Name": "", "Slug": "", "IsRule": false, "Sort": 0,
-		"RuleType": "", "RuleDays": "", "RuleMinPrice": "", "RuleMaxPrice": "",
-	}
-	// 逐字段搬而不是按键名遍历：行类型改了名字这里会编译失败，键名写错则只有
-	// 模板里静默少一段初值。
-	if row != nil {
-		data["ID"], data["Name"], data["Slug"] = row.ID, row.Name, row.Slug
-		data["IsRule"], data["Sort"], data["RuleType"] = row.IsRule, row.Sort, row.RuleType
-		data["RuleDays"], data["RuleMinPrice"], data["RuleMaxPrice"] = row.RuleDays, row.RuleMinPrice, row.RuleMaxPrice
-	}
-	return text.Inject(c, data)
-}
-
-// tagPageRow 标签 → 模板行（规则描述与命中数都由服务端算好，模板不做第二套解释；
-// 命中商品本身不在这里，展开时才由 ProductTagHitsFragment 给 —— 审计 PERF-02）。
-//
-// 行里只放数据：类型原值、规则参数、原样时间串。类型的中文名与「未重算过」这类文案
-// 由 product_tags.html 按数据分支取词（后端不带成品串）。
-func tagPageRow(t *productdto.TagResp) productdto.TagRowResp {
-	return productdto.TagRowResp{
-		ID: t.ID, Name: t.Name, Slug: t.Slug, Kind: t.Kind,
-		IsRule:        t.Kind == productenums.TagKindRule,
-		HasRuleParams: t.Kind == productenums.TagKindRule,
-		KindRule:      productenums.TagKindRule,
-		KindManual:    productenums.TagKindManual,
-		RuleType:      t.RuleType,
-		RuleValues:    t.RuleValues,
-		RecalcAt:      t.RecalcAt.TimeOrZero(),
-		ProductCount:  t.ProductCount, Sort: t.Sort,
-		RuleDays:     ruleParamText(t.RuleParams, "days"),
-		RuleMinPrice: ruleParamText(t.RuleParams, "minPrice"),
-		RuleMaxPrice: ruleParamText(t.RuleParams, "maxPrice"),
-	}
-}
-
-// ruleParamText 从规则参数里取某个键的文本（缺失返回空串，用于表单回填）。
-func ruleParamText(params json.RawMessage, key string) string {
-	if len(params) == 0 {
-		return ""
-	}
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(params, &m); err != nil {
-		return ""
-	}
-	raw, ok := m[key]
-	if !ok {
-		return ""
-	}
-	s := strings.TrimSpace(string(raw))
-	s = strings.Trim(s, `"`)
-	return s
 }

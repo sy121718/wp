@@ -11,6 +11,7 @@ package text
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/gin-gonic/gin"
 
@@ -42,18 +43,20 @@ func Inject(c *gin.Context, data map[string]any) map[string]any {
 	data["t"] = t
 	// tf 是「取词 + %s 占位符填充」：签名 func(key, fallback string, args []string) string。
 	// 需要它是因为结论文案带计数（「已删除 %s 个页面。」），而 Go 侧不再拼整句。
-	data["tf"] = func(key, fallback string, args []string) string {
+	tfFn := func(key, fallback string, args []string) string {
 		return response.ArgsText(c, key, fallback, args)
 	}
+	data["tf"] = tfFn
 	// tn 是「取词 + {name} 具名占位符填充」：签名 func(key, fallback string, args map[string]any) string。
 	// 英文与中文的语序不同（「{n} 个」/「{n} tags」），具名占位符让词条自己决定位置。
-	data["tn"] = func(key, fallback string, args map[string]any) string {
+	tnFn := func(key, fallback string, args map[string]any) string {
 		params := make(map[string]string, len(args))
 		for k, v := range args {
 			params[k] = fmt.Sprint(v)
 		}
 		return i18n.FillTranslate(t, key, fallback, params)
 	}
+	data["tn"] = tnFn
 	data["langs"] = templates.LanguageOptions(lang)
 	// req_path：当前请求的路径 + 查询串（不含 scheme/host）。分页条据此拼翻页链接 ——
 	// 链接基址是**请求事实**，不是页面装配的产物，所以由注入层给，控制器不再算。
@@ -65,7 +68,55 @@ func Inject(c *gin.Context, data map[string]any) map[string]any {
 	if title, ok := data["title"].(string); ok && title != "" {
 		data["title"] = t(title, title)
 	}
+	// 嵌套的 include 数据（抽屉 / 片段 / 行内表单）同样是模板数据根：include 会换掉 . 的指向，
+	// 那些 map 里的 .["t"] 只能由渲染层给。递给模板的每一张 map 都补同一套键 ——
+	// 形状由 service 出，取词函数由渲染层出，控制器不再为了一个取词函数去搬数据。
+	seedNested(data, map[string]any{
+		"lang": lang, "t": t, "tf": tfFn, "tn": tnFn,
+		"langs": data["langs"], "lang_redirect": data["lang_redirect"], "req_path": data["req_path"],
+	}, 1)
 	return data
+}
+
+// seedNestedDepth 嵌套注入的最大深度（页面 → 行 → 片段 → 行内片段已到 6；留一倍余量）。
+const seedNestedDepth = 8
+
+// seedNested 给嵌套的 string-key map 补渲染期键（缺什么补什么，绝不覆盖已有值）。
+//
+// 判据是**键类型**而不是具体类型：gin.H / map[string]any / 具名 map 都是模板数据根；
+// 切片里的元素同样处理（行集合里的抽屉数据就是这一形）。结构体不处理 —— 行元素是 dto，
+// 模板按字段名读，不需要取词函数。
+func seedNested(v any, seed map[string]any, depth int) {
+	if depth > seedNestedDepth || v == nil || len(seed) == 0 {
+		return
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Map:
+		if rv.Type().Key().Kind() != reflect.String || rv.IsNil() {
+			return
+		}
+		keyType, elemType := rv.Type().Key(), rv.Type().Elem()
+		for name, value := range seed {
+			key := reflect.ValueOf(name).Convert(keyType)
+			if rv.MapIndex(key).IsValid() {
+				continue
+			}
+			// 强类型 map（map[string]XxxResp）塞不进函数值：只补元素类型是 interface 的 map，
+			// 模板数据根都是 map[string]any / gin.H 这一形。
+			if elemType.Kind() != reflect.Interface {
+				continue
+			}
+			rv.SetMapIndex(key, reflect.ValueOf(value))
+		}
+		for _, key := range rv.MapKeys() {
+			seedNested(rv.MapIndex(key).Interface(), seed, depth+1)
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < rv.Len(); i++ {
+			seedNested(rv.Index(i).Interface(), seed, depth+1)
+		}
+	}
 }
 
 // LangRedirect 语言切换表单 redirect 隐藏域的取值。

@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	"go_wp/pkg/pagination"
 	"go_wp/pkg/utils"
 	"sort"
 	"strconv"
@@ -433,6 +434,37 @@ func (s *Service) ListTagProductsPage(ctx context.Context, req *productdto.ListT
 		Total: int(total), Page: page, PageSize: size, TotalPage: totalPage,
 		Items: toTagProductResps(rows),
 	}, nil
+}
+
+// TagHitsFragmentData 标签「命中商品」片段的数据根（模板读 map：Items / Pagination / Err / TagID…）。
+//
+// 为什么数据根在这里而不是控制器：片段根必须是 map（模板用 .["t"] 取词，Jet 的索引只对
+// map 生效），而「把取回来的页摊成模板键」属于这一屏的形状 —— 形状只写一份，控制器只负责
+// 绑定、调它、出口。失败时返回**部分装配**的数据根（TagID / ProjectID / 空行集），
+// 调用方补一句 Err 文案即可渲染出「展开区里说明原因」—— 不是整页错误页。
+//
+// 入参是「取回来的那一页」而不是 Service：形状是纯函数（与查库无关），这样 handler 只多
+// 一条赋值，单测也能不接库直接钉住键集。
+func TagHitsFragmentData(req *productdto.ListTagProductsPageReq, res *productdto.TagProductsPageResp, err error) (data map[string]any, cause error) {
+	data = map[string]any{
+		"TagID": "", "ProjectID": "",
+		"Err": "", "Items": []*productdto.TagProductResp{},
+		"Total": 0, "Page": 1, "PageSize": tagProductsPageSize, "TotalPage": 1,
+	}
+	if req != nil {
+		data["TagID"], data["ProjectID"] = req.TagID, req.ProjectID
+	}
+	if err != nil || res == nil {
+		return data, err
+	}
+	data["TagName"], data["Total"], data["Page"] = res.TagName, res.Total, res.Page
+	data["PageSize"], data["TotalPage"], data["Items"] = res.PageSize, res.TotalPage, res.Items
+	// 分页只给事实（文案与翻页链接由模板的 pager()/queryURL() 出）；DropLimit：本端点只认
+	// project/id/page/size，翻页链接不带 limit。基址由模板从请求串推（pageBase 去掉 page/limit）。
+	data["Pagination"] = pagination.Page{
+		Total: int64(res.Total), Page: res.Page, Limit: res.PageSize, DropLimit: true,
+	}
+	return data, nil
 }
 
 // pagesOf 总页数（空列表也算 1 页：页面要显示「第 1 / 1 页」，而不是「第 1 / 0 页」）。

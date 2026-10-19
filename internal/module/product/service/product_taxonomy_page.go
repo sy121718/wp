@@ -393,6 +393,9 @@ func (s *Service) ProductTagsPage(ctx context.Context, req *productdto.ProductTa
 	if firstErr != nil {
 		return nil, firstErr
 	}
+	// 行与两个抽屉的初值在这里一次装好：控制器只把视图交出去（入口不做装配）。
+	view.Tags = TagPageRows(selected, view.TagDetails, view.RuleTypes)
+	view.TagCreateForm = TagCreateForm(selected, view.RuleTypes)
 	view.Pagination = pagination.Page{Total: view.Total, Page: view.Page, Limit: view.Limit}
 	return view, nil
 }
