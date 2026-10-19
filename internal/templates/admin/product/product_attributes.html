@@ -152,9 +152,9 @@
                     <td>{{if a.Key != ""}}<code>{{a.Key}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td>
                         {{if a.IsVariation}}
-                        <span class="badge badge-info">{{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}</span>
+                        {{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_attributes.isVariation", "参与变体"))}}
                         {{else}}
-                        <span class="badge badge-mute">{{ .["t"]("admin.product_attributes.notVariation", "不参与变体") }}</span>
+                        {{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_attributes.notVariation", "不参与变体"))}}
                         {{end}}
                     </td>
                     <td>{{a.ValueCount}}</td>

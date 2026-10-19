@@ -142,14 +142,14 @@
                        分段拼接与取词都在这里 —— 控制器不再拼成品串。 *}
                     <td>{{if len(o.SourceParts) > 0}}<span>{{range i, part := o.SourceParts}}{{if i > 0}} · {{end}}{{if part.Kind == "warehouseSku"}}{{ .["t"]("admin.product_bundle.source.warehouseSkuLabel", "仓库 SKU") }} {{part.Value}}{{else if part.Kind == "externalSku"}}{{ .["t"]("admin.product_bundle.source.externalSkuLabel", "外部编码") }} {{part.Value}}{{else if part.Value == "BundleSourceProduct"}}{{ .["t"]("admin.product_bundle.source.product", "从商品导入") }}{{else if part.Value == "BundleSourceWarehouse"}}{{ .["t"]("admin.product_bundle.source.warehouse", "从仓库选") }}{{else if part.Value == "BundleSourceAttributes"}}{{ .["t"]("admin.product_bundle.source.attributes", "自选属性组合") }}{{else}}{{ .["t"]("admin.product_bundle.source.none", "手工指定") }}{{end}}{{end}}</span>{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td>{{if o.ProductName != ""}}{{o.ProductName}}{{else}}<span class="text-mute">—</span>{{end}}</td>
-                    <td>{{if o.Required}}<span class="badge badge-info">{{ .["t"]("admin.product_bundle.option.required", "必选") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.product_bundle.option.optional", "可选") }}</span>{{end}}</td>
+                    <td>{{if o.Required}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_bundle.option.required", "必选"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_bundle.option.optional", "可选"))}}{{end}}</td>
                     <td>{{o.DefaultQty}}</td>
                     <td>{{o.MinQty}}</td>
                     <td>{{if o.MaxQty > 0}}{{o.MaxQty}}{{else}}<span class="text-mute">{{ .["t"]("admin.product_detail.bundle.noLimit", "不限") }}</span>{{end}}</td>
                     <td>{{if o.Missing}}<span class="text-mute">—</span>{{else}}{{o.Available}}{{end}}</td>
                     <td>{{amountDash(o.CostPrice)}}</td>
                     <td>{{amountDash(o.ItemPrice)}}</td>
-                    <td>{{if o.Missing}}<span class="badge badge-warning">{{ .["t"]("admin.product_detail.bundle.state.missing", "成员 SKU 已删除") }}</span>{{else}}{{if o.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.products.variant.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.products.variant.disabled", "停用") }}</span>{{end}}{{end}}</td>
+                    <td>{{if o.Missing}}{{include "../partials/badge.html" map("tone", "warning", "label", tr("admin.product_detail.bundle.state.missing", "成员 SKU 已删除"))}}{{else}}{{if o.Enabled}}{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.products.variant.enabled", "启用"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.products.variant.disabled", "停用"))}}{{end}}{{end}}</td>
                 </tr>
                 {{end}}
                 {{end}}
@@ -185,7 +185,7 @@
                     <td>{{amount(v.Price)}}</td>
                     <td>{{amountDash(v.ComparePrice)}}</td>
                     <td>{{amountDash(v.CostPrice)}}</td>
-                    <td>{{if v.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.products.variant.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.products.variant.disabled", "停用") }}</span>{{end}}</td>
+                    <td>{{if v.Enabled}}{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.products.variant.enabled", "启用"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.products.variant.disabled", "停用"))}}{{end}}</td>
                     <td>{{v.StockTotal}}</td>
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/admin/inventory?project={{selectedProject}}&amp;sku={{v.SKUCode}}">{{ .["t"]("admin.products.variant.stockLink", "各仓库存") }}</a>
@@ -229,7 +229,7 @@
     {{if isset(.TplPanel)}}
     {{if .TplPanel.Avail}}
     <section class="card card-body">
-        <h2 class="card-title mb-lg">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}{{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.IsDocumentMode}}<span class="badge badge-info">{{ .["t"]("admin.product_detail.template.mode.document", "独立文档") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.product_detail.template.mode.template", "跟随模板") }}</span>{{end}}{{end}}</h2>
+        <h2 class="card-title mb-lg">{{ tr("admin.products.row.detailTemplate", "详情页模板") }}{{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.IsDocumentMode}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}</h2>
         {{if isset(.TplPanel.InstanceID)}}
         <p class="kv"><span>{{ .["t"]("admin.product_detail.template.current", "当前模板") }}</span><span>{{.TplPanel.TemplateID}}</span></p>
         {{if .TplPanel.Published}}

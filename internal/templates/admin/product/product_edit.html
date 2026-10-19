@@ -205,7 +205,7 @@
             <legend>{{ .["t"]("admin.products.create.attributes", "引用的属性组（可多选，可留空）") }}</legend>
             {{range _, a := .AttributeChecks}}
             <label class="var-value">
-                <input type="checkbox" name="attributeIds" value="{{a.ID}}" {{if a.Checked}}checked{{end}}> {{a.Label}}{{if a.IsVariation}} <span class="badge badge-mute">{{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}</span>{{end}}
+                <input type="checkbox" name="attributeIds" value="{{a.ID}}" {{if a.Checked}}checked{{end}}> {{a.Label}}{{if a.IsVariation}} {{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_attributes.isVariation", "参与变体"))}}{{end}}
             </label>
             {{end}}
         </fieldset>
@@ -349,7 +349,7 @@
                         <td>{{amount(v.Price)}}</td>
                         <td>{{amountDash(v.ComparePrice)}}</td>
                         <td>{{amountDash(v.CostPrice)}}</td>
-                        <td>{{if v.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.products.variant.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.products.variant.disabled", "停用") }}</span>{{end}}</td>
+                        <td>{{if v.Enabled}}{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.products.variant.enabled", "启用"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.products.variant.disabled", "停用"))}}{{end}}</td>
                         <td>{{v.StockTotal}}</td>
                         <td class="col-actions">
                             <a class="btn btn-sm" href="/admin/inventory?project={{selectedProject}}&amp;sku={{v.SKUCode}}">{{ .["t"]("admin.products.variant.stockLink", "各仓库存") }}</a>
@@ -381,7 +381,7 @@
                 <td>—</td>
                 <td>—</td>
                 <td>—</td>
-                <td><span class="badge badge-mute">{{ .["t"]("admin.products.variant.pendingSave", "保存后生效") }}</span></td>
+                <td>{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.products.variant.pendingSave", "保存后生效"))}}</td>
                 <td>—</td>
                 <td class="col-actions">
                     <button type="button" class="btn btn-sm btn-danger" data-variant-remove>{{ .["t"]("admin.products.variant.remove", "移除") }}</button>
@@ -452,7 +452,7 @@
     <details class="section-fold card">
         <summary>
             <span class="fold-title">{{ .["t"]("admin.products.row.detailTemplate", "详情页模板") }}</span>
-            {{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.IsDocumentMode}}<span class="badge badge-info">{{ .["t"]("admin.product_detail.template.mode.document", "独立文档") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.product_detail.template.mode.template", "跟随模板") }}</span>{{end}}{{end}}
+            {{if isset(.TplPanel.RenderMode)}}{{if .TplPanel.IsDocumentMode}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail.template.mode.document", "独立文档"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail.template.mode.template", "跟随模板"))}}{{end}}{{end}}
         </summary>
         <div class="fold-body">
         {{if isset(.TplPanel.InstanceID)}}

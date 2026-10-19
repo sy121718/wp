@@ -1,3 +1,4 @@
+{{tr := .["t"]}}
 {* admin/product/product_create_form.html — 商品建表单片段（新建整页的唯一载体）。
    字段名、捆绑价的必填语义、仓库 SKU 候选与属性组勾选都只在这一份 markup 里。
 
@@ -125,7 +126,7 @@
                 <legend>{{ .["t"]("admin.products.create.attributes", "引用的属性组（可多选，可留空）") }}</legend>
                 {{range _, a := .AttributeOptions}}
                 <label class="var-value">
-                    <input type="checkbox" name="attributeIds" value="{{a.ID}}"> {{a.Label}}{{if a.IsVariation}} <span class="badge badge-mute">{{ .["t"]("admin.product_attributes.isVariation", "参与变体") }}</span>{{end}}
+                    <input type="checkbox" name="attributeIds" value="{{a.ID}}"> {{a.Label}}{{if a.IsVariation}} {{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_attributes.isVariation", "参与变体"))}}{{end}}
                 </label>
                 {{end}}
             </fieldset>

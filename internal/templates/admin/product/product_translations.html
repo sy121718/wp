@@ -155,9 +155,9 @@
                         </td>
                         <td>
                             {{if r.Translated}}
-                            <span class="badge badge-success">{{ .["t"]("admin.product_translations.state.translated", "已翻译") }}</span>
+                            {{include "../partials/badge.html" map("tone", "success", "label", tr("admin.product_translations.state.translated", "已翻译"))}}
                             {{else}}
-                            <span class="badge badge-warning">{{ .["t"]("admin.product_translations.state.missing", "缺失") }}</span>
+                            {{include "../partials/badge.html" map("tone", "warning", "label", tr("admin.product_translations.state.missing", "缺失"))}}
                             {{end}}
                         </td>
                         <td>

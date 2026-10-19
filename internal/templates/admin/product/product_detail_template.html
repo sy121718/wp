@@ -9,6 +9,7 @@
 {{block pageTitle()}}{{if isset(.HasProduct)}}{{if .HasProduct}}{{.Product.Name}}{{else}}{{ .["t"]("admin.product_detail_template.title", "商品详情页模板") }}{{end}}{{else}}{{ .["t"]("admin.product_detail_template.title", "商品详情页模板") }}{{end}}{{end}}
 {{block topbarTitle()}}{{ .["t"]("admin.product_detail_template.title", "商品详情页模板") }}{{end}}
 {{block body()}}
+{{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {* 整页装载失败的归口文案（只在 Go 侧失败路径上有值：500/400 + no-store）；
@@ -66,7 +67,7 @@
             <span class="badge">{{.InstanceStatus}}</span>
             <span>{{ .["t"]("admin.product_detail_template.published", "已发布") }}</span>
             {{else}}
-            <span class="badge badge-mute">{{ .["t"]("admin.product_detail_template.notPublished", "未发布") }}</span>
+            {{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.product_detail_template.notPublished", "未发布"))}}
             {{end}}
         </p>
         {{boundID := .BoundTemplateID}}
@@ -166,7 +167,7 @@
                     <td>{{if isset(t.UpdatedAt)}}{{formatTime(t.UpdatedAt)}}{{end}}</td>
                     <td>
                         {{if t.IsBound}}<span class="badge">{{ .["t"]("admin.product_detail_template.named.bound", "当前使用") }}</span>{{end}}
-                        {{if t.IsDefault}}<span class="badge badge-info">{{ .["t"]("admin.product_detail_template.named.typeDefaultLabel", "类型默认") }}</span>{{end}}
+                        {{if t.IsDefault}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.product_detail_template.named.typeDefaultLabel", "类型默认"))}}{{end}}
                     </td>
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/workbench?template={{t.ID}}&amp;entityType=product&amp;entityId={{.Product.ID}}&amp;projectId={{selectedProject}}">{{ .["t"]("admin.product_detail_template.named.visualEdit", "可视化编辑") }}</a>

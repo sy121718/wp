@@ -194,7 +194,7 @@
                         {{stock := p.Stock}}
                         <details class="stock-cell">
                             <summary aria-label="{{ .["t"]("admin.products.stock.expand", "展开分仓库存") }}">
-                                {{if stock.State == "infinite"}}<span class="badge badge-info">{{ .["t"]("admin.products.stock.infinite", "∞ 无限") }}</span>
+                                {{if stock.State == "infinite"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.products.stock.infinite", "∞ 无限"))}}
                                 {{else}}
                                     {{if stock.State == "tracked"}}{{stock.Total}}
                                     {{else}}<span class="text-mute">{{ .["t"]("admin.products.stock.none", "未入库") }}</span>{{end}}

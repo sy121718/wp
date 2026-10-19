@@ -154,7 +154,7 @@
                     </td>
                     <td>
                         {{if canUpdate}}<button type="button" class="row-title-link" data-drawer-open="#tpl-brand-edit-{{b.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}"><strong>{{b.Name}}</strong></button>{{else}}<strong>{{b.Name}}</strong>{{end}}
-                        {{if b.Logo != ""}}<span class="badge badge-mute">logo</span>{{end}}
+                        {{if b.Logo != ""}}{{include "../partials/badge.html" map("tone", "mute", "label", "logo")}}{{end}}
                     </td>
                     <td>{{if b.Slug != ""}}<code>{{b.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
                     <td>{{b.Sort}}</td>

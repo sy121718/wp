@@ -1,0 +1,10 @@
+{* 状态徽标：后台唯一形态（配色 + 文案）。
+
+   调用点：
+     {{include "../partials/badge.html" map("tone", 「success」, "label", tr(状态 key, 「启用」))}}
+
+   · tone 是**展示档位**（success / warning / mute / info / danger），由模板按状态选；
+     服务端不再给 Tone / Class 字段 —— 配色是视图的决定。
+   · label 是已取好词的文本：本片段不取词。
+   · 需要额外的类（例如 badge-btn）或图标时，不要往这里塞插槽：那说明它不是徽标形态。 *}
+<span class="badge badge-{{.tone}}">{{.label}}</span>
