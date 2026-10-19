@@ -478,6 +478,8 @@ type ProductCategoriesPageReq struct {
 	ProjectID string `form:"project"`
 	Keyword   string `form:"keyword"`
 	Page      int    `form:"page"`
+	// ListQuery 回到本页的筛选上下文（请求事实，入口填；读模型搬进视图后不再重算）。
+	ListQuery string `form:"-"`
 }
 
 // ProductBrandsPageReq 品牌管理页的取数入参。
@@ -485,11 +487,15 @@ type ProductBrandsPageReq struct {
 	ProjectID string `form:"project"`
 	Keyword   string `form:"keyword"`
 	Page      int    `form:"page"`
+	// ListQuery 回到本页的筛选上下文（请求事实，入口填）。
+	ListQuery string `form:"-"`
 }
 
 // ProductTagsPageReq 标签管理页的取数入参。
 type ProductTagsPageReq struct {
 	ProjectID string `form:"project"`
+	// ListQuery 回到本页的筛选上下文（请求事实，入口填）。
+	ListQuery string `form:"-"`
 	Keyword   string `form:"keyword"`
 	Page      int    `form:"page"`
 }

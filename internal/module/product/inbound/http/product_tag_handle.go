@@ -163,6 +163,7 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 	if !ok {
 		return
 	}
+	req.ListQuery = binding.ListQuery(c, productTagsBackKeys...)
 	view, err := reader.ProductTagsPage(c.Request.Context(), req)
 	if err != nil {
 		pageview.Fail(c, err)
@@ -173,9 +174,8 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 		return
 	}
 
-	// 行与两个抽屉的初值都在读模型里装好（TagPageRows / TagCreateForm）；这里只剩「回到本页的
-	// 筛选上下文」这一条请求事实 —— 它来自 current request，只有入口知道。
-	view.ListQuery = binding.ListQuery(c, productTagsBackKeys...)
+	// 行与两个抽屉的初值都在读模型里装好（TagPageRows / TagCreateForm）；筛选上下文作为请求
+	// 事实由入口塞进入参，读模型直接搬进视图。
 	pageview.Render(c, view)
 }
 

@@ -5,12 +5,9 @@ import (
 	"errors"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	productservice "go_wp/internal/module/product/service"
-	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -37,26 +34,19 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 	if !ok {
 		return
 	}
+	req.ListQuery = binding.ListQuery(c, productCategoriesBackKeys...)
 	view, err := reader.ProductCategoriesPage(c.Request.Context(), req)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
 	if view == nil {
-			pageview.Fail(c, errors.New("页面读模型返回空视图"))
+		pageview.Fail(c, errors.New("页面读模型返回空视图"))
 		return
 	}
 
-	// —— 控制器负责的部分：行装配与抽屉 ——
-	view.ListQuery = binding.ListQuery(c, productCategoriesBackKeys...)
-	// 候选列表**只收本工程**的分类（判据与理由见 service.CategoriesInProject）。
-	options := productservice.CategoryPickOptions(productservice.CategoriesInProject(view.PickFlat, view.SelectedProject))
-	view.Options = options
-	view.CategoryCreateForm = categoryDrawerData(c, "create", view.SelectedProject, nil, options, nil)
-	// 行装配只在取数成功时做 —— 失败页渲染的是失败槽，装配出的行不会被读到。
-	{
-		view.Categories = categoryTreeRows(c, view.SelectedProject, view.CategoryDetails, options, view.Filtered, view.ParentLabels)
-	}
+	// 候选下拉、新建抽屉与行都在读模型里装好（CategoryPickOptions / CategoryDrawerForm /
+	// CategoryTreeRows）；入口只把「回到本页的筛选上下文」这条请求事实填进入参。
 	pageview.Render(c, view)
 }
 
@@ -77,140 +67,22 @@ func (h *ProductPageHandle) ProductCategoryParents(c *gin.Context) {
 	pageview.Render(c, data)
 }
 
-// categoryOptionIDs 父级候选下拉里出现过的分类 id（MissingParentIDs 的「已知集合」）。
-func categoryOptionIDs(options []productdto.PickOptionResp) map[string]struct{} {
-	known := make(map[string]struct{}, len(options))
-	for _, option := range options {
-		if id := option.Value; id != "" {
-			known[id] = struct{}{}
-		}
-	}
-	return known
-}
-
-// categoryTreeRows 分类树 → 列表行；每行带自己的编辑抽屉数据。
-//
-// parentLabels 是「父级不在候选列表里」的分类 → 父级事实（见 service.categoryParentLabels），
-// 只用于抽屉里那一项的回显。传 nil 表示没有这类行（新建表单就走这条路）。
-//
-// ParentOutOfScope 是列表行上的徽章：父级属于别的工程（或父级行已不存在）时置真 ——
-// 这类行的 ParentID 指向本工程之外，操作者只看分类名看不出来，得有个可见标记。
-func categoryTreeRows(c *gin.Context, projectID string, nodes []*productdto.CategoryResp, options []productdto.PickOptionResp, searching bool, parentLabels map[string]productdto.CategoryParentInfoResp) []productdto.CategoryRowResp {
-	// 判据取 missingParentIDs（父级不在候选列表）而**不是** parentLabels：后者只收
-	// 「名称读得到」的那些父级，RLS 切非超级角色后跨工程父级读不到名称会被它漏掉，
-	// 而那时恰恰最该让操作者看见异常。两者共用同一个判定函数，不另起一份候选集合逻辑。
-	outOfScope := make(map[string]struct{})
-	for _, parentID := range productservice.MissingParentIDs(nodes, categoryOptionIDs(options)) {
-		outOfScope[parentID] = struct{}{}
-	}
-	rows := make([]productdto.CategoryRowResp, 0, len(nodes))
-	for _, node := range nodes {
-		_, flagged := outOfScope[node.ParentID]
-		rows = append(rows, productdto.CategoryRowResp{
-			ID: node.ID, Name: node.Name, Slug: node.Slug, Label: node.Name,
-			ParentID: node.ParentID, Sort: node.Sort, Depth: node.Depth,
-			HasChildren:      node.HasChildren,
-			Matched:          node.Matched,
-			SearchMode:       searching,
-			ParentOutOfScope: flagged,
-			EditForm:         categoryDrawerData(c, "update", projectID, node, options, parentLabels),
-		})
-	}
-	return rows
-}
-
 // ProductBrandsPage 品牌管理页：工程切换 + 筛选栏 + 品牌列表 + 内联新建表单。
 func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
-	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
-	reader := h.reader
 	req, ok := binding.Query[productdto.ProductBrandsPageReq](c)
 	if !ok {
 		return
 	}
-	view, err := reader.ProductBrandsPage(c.Request.Context(), req)
+	req.ListQuery = binding.ListQuery(c, productBrandsBackKeys...)
+	view, err := h.reader.ProductBrandsPage(c.Request.Context(), req)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	if view == nil {
-			pageview.Fail(c, errors.New("页面读模型返回空视图"))
-		return
-	}
-
-	// —— 控制器负责的部分：行装配（每行的编辑抽屉要 csrf 与取词函数）——
-	view.ListQuery = binding.ListQuery(c, productBrandsBackKeys...)
-	brands := make([]productdto.BrandRowResp, 0, len(view.BrandDetails))
-	{
-		for _, b := range view.BrandDetails {
-			brands = append(brands, productdto.BrandRowResp{
-				ID: b.ID, Name: b.Name, Slug: b.Slug, Logo: b.Logo,
-				Sort: b.Sort, Description: b.Description,
-				UpdatedAt: b.UpdatedAt.TimeOrZero(),
-			})
-		}
-	}
-	view.Brands = brands
+	// 行在读模型里装好（BrandPageRows）；入口只填请求事实 ListQuery。
 	pageview.Render(c, view)
 }
 
-// missingParentIDs 挑出本页里「父级不在候选列表」的那些父级 id（去重、保持出现顺序）。
-//
-// 纯逻辑部分单独成函数：候选集合的判定（不是 service 读）才是「谁会走模板那条额外分支」
-// 的判据，单测在没有数据库时也能把它钉住。
-// productdto.CategoryParentInfoResp 「父级不在候选列表里」那一项的**事实**：名称是数据，跨工程是布尔。
-//
-// 拆成两个字段而不是一个拼好的串（原 categoryParentText 的形态）：跨工程那句说明是文案，
-// 必须在渲染期按请求语言取词（en-US 后台下也该是英文）—— 控制器里拼串等于把它钉死在中文。
-func categoryDrawerData(c *gin.Context, mode, projectID string, row *productdto.CategoryResp, options []productdto.PickOptionResp, parentLabels map[string]productdto.CategoryParentInfoResp) gin.H {
-	data := gin.H{"Mode": mode, "Project": projectID, "Options": options, "Csrf": binding.CSRFToken(c),
-		// ListQuery：表单 action 的筛选上下文（抽屉里的表单提交要带着它回去）。
-		"ListQuery": binding.ListQuery(c, productCategoriesBackKeys...)}
-	if row != nil {
-		data["ID"], data["Name"], data["Slug"], data["ParentID"] = row.ID, row.Name, row.Slug, row.ParentID
-		if row.ParentID != "" {
-			parentMissing := true
-			for _, option := range options {
-				if option.Value == row.ParentID {
-					parentMissing = false
-					break
-				}
-			}
-			data["ParentMissing"] = parentMissing
-			// 父级在候选里时模板走 range 那一项；缺失时模板额外渲染一行，
-			// 它的文案**必须**是这个键（模板写 isset(.ParentLabel) 才用，否则退回裸 ID）。
-			//
-			// 可达性（2026-10 实测，别按「死代码」删）：修「孤儿分类丢行」之前这条分支**不可达** ——
-			// 悬空 parent_id 的分类既不是根（根条件是 parent_id IS NULL）也不在任何可见父节点的子树里，
-			// 整行不进列表；跨工程父级则被 ListCategories 一起带进候选，于是 ParentMissing 恒为 false。
-			// 现在两侧都收口了：根集合兜底读孤儿（model 的 categoryRootFilter）、候选只收本工程分类
-			// （service.CategoriesInProject）—— 分支因此真正走到，文案里还带上「不属于本工程」。
-			//
-			// 保留理由：RLS 切到非超级角色后（docs/rls-role-cutover.md 的顺序），GetCategory 会因
-			// 作用域读不到跨工程父级 → 名称取不到 → 这里退回模板的「原始 ID」出口。那是兜底，
-			// 不是新功能；不要因为「本地构造不出名称」就把整段删掉。
-			if parentMissing {
-				// ParentLabel 是**名称**（数据），ParentOutOfScope 是**布尔事实** ——
-				// 「（不属于本工程）」那句话由模板按当前语言取词（categoryParentOutOfScopeKey）。
-				if info, ok := parentLabels[row.ParentID]; ok && strings.TrimSpace(info.Name) != "" {
-					data["ParentLabel"] = info.Name
-					data["ParentOutOfScope"] = info.OutOfScope
-				}
-			}
-		}
-		data["Sort"], data["Image"], data["Description"] = row.Sort, row.Image, row.Description
-		data["SEOTitle"], data["SEODescription"] = row.SEOTitle, row.SEODescription
-	} else {
-		data["ID"], data["Name"], data["Slug"], data["ParentID"] = "", "", "", ""
-		data["Sort"], data["Image"], data["Description"] = 0, "", ""
-		data["SEOTitle"], data["SEODescription"] = "", ""
-	}
-	return text.Inject(c, data)
-}
-
-// ==========================================================================
-// 分类 / 品牌的接口面：JSON 入参、pkg/response 出参、消息取 enums。
-// 本层只做绑定与转发：规则校验、引用校验、slug 派生与判环一律在 service。
 // ==========================================================================
 
 func (h *ProductHandle) CreateCategory(c *gin.Context) {

@@ -212,12 +212,26 @@ func (s *productPageReaderStub) ProductBundlePage(_ context.Context, req *produc
 
 func (s *productPageReaderStub) ProductCategoriesPage(_ context.Context, req *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageResp, error) {
 	s.categoriesReqs = append(s.categoriesReqs, req)
-	return s.categoriesView, s.categoriesErr
+	if s.categoriesErr != nil || s.categoriesView == nil {
+		return s.categoriesView, s.categoriesErr
+	}
+	// 生产读模型在末尾装候选 / 新建抽屉 / 行；桩照同一形装一遍，否则行断言会因为桩跳过装配而假红。
+	v := s.categoriesView
+	v.ListQuery = req.ListQuery
+	v.Options = productservice.CategoryPickOptions(productservice.CategoriesInProject(v.PickFlat, v.SelectedProject))
+	v.CategoryCreateForm = productservice.CategoryDrawerForm("create", v.SelectedProject, nil, v.Options, nil)
+	v.Categories = productservice.CategoryTreeRows(v.SelectedProject, v.CategoryDetails, v.Options, v.Filtered, v.ParentLabels)
+	return v, nil
 }
 
 func (s *productPageReaderStub) ProductBrandsPage(_ context.Context, req *productdto.ProductBrandsPageReq) (*productdto.ProductBrandsPageResp, error) {
 	s.brandsReqs = append(s.brandsReqs, req)
-	return s.brandsView, s.brandsErr
+	if s.brandsErr != nil || s.brandsView == nil {
+		return s.brandsView, s.brandsErr
+	}
+	s.brandsView.ListQuery = req.ListQuery
+	s.brandsView.Brands = productservice.BrandPageRows(s.brandsView.BrandDetails)
+	return s.brandsView, nil
 }
 
 func (s *productPageReaderStub) ProductTagsPage(_ context.Context, req *productdto.ProductTagsPageReq) (*productdto.ProductTagsPageResp, error) {

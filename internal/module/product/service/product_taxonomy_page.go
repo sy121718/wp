@@ -127,6 +127,7 @@ func (s *Service) ProductCategoriesPage(ctx context.Context, req *productdto.Pro
 
 	selected, keyword, page := "", "", 1
 	if req != nil {
+		view.ListQuery = strings.TrimSpace(req.ListQuery)
 		selected = strings.TrimSpace(req.ProjectID)
 		keyword = strings.TrimSpace(req.Keyword)
 		if req.Page > 0 {
@@ -190,6 +191,10 @@ func (s *Service) ProductCategoriesPage(ctx context.Context, req *productdto.Pro
 	if firstErr != nil {
 		return nil, firstErr
 	}
+	// 候选与行在这里装好（含新建抽屉）：控制器只交视图，入口不做装配。
+	view.Options = CategoryPickOptions(CategoriesInProject(view.PickFlat, view.SelectedProject))
+	view.CategoryCreateForm = CategoryDrawerForm("create", view.SelectedProject, nil, view.Options, nil)
+	view.Categories = CategoryTreeRows(view.SelectedProject, view.CategoryDetails, view.Options, view.Filtered, view.ParentLabels)
 	view.Pagination = pagination.Page{Total: view.Total, Page: view.Page, Limit: view.Limit}
 	return view, nil
 }
@@ -262,6 +267,7 @@ func (s *Service) ProductBrandsPage(ctx context.Context, req *productdto.Product
 
 	selected, keyword, page := "", "", 1
 	if req != nil {
+		view.ListQuery = strings.TrimSpace(req.ListQuery)
 		selected = strings.TrimSpace(req.ProjectID)
 		keyword = strings.TrimSpace(req.Keyword)
 		if req.Page > 0 {
@@ -307,6 +313,7 @@ func (s *Service) ProductBrandsPage(ctx context.Context, req *productdto.Product
 	if firstErr != nil {
 		return nil, firstErr
 	}
+	view.Brands = BrandPageRows(view.BrandDetails)
 	view.Pagination = pagination.Page{Total: view.Total, Page: view.Page, Limit: view.Limit}
 	return view, nil
 }
@@ -340,6 +347,7 @@ func (s *Service) ProductTagsPage(ctx context.Context, req *productdto.ProductTa
 
 	selected, keyword, page := "", "", 1
 	if req != nil {
+		view.ListQuery = strings.TrimSpace(req.ListQuery)
 		selected = strings.TrimSpace(req.ProjectID)
 		keyword = strings.TrimSpace(req.Keyword)
 		if req.Page > 0 {

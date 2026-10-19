@@ -33,6 +33,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/templates"
+	"go_wp/internal/text"
 )
 
 const (
@@ -62,8 +63,9 @@ func renderCategoryDrawer(t *testing.T, parentLabels map[string]productdto.Categ
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/category-drawer", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "admin/product/product_category_form.html",
-			categoryDrawerData(c, "update", parentLabelProjectID, parentLabelRow(), parentLabelOptions(), parentLabels))
+		// 抽屉形状由读模型装（service.CategoryDrawerForm）；取词函数由渲染层注入。
+		data := productservice.CategoryDrawerForm("update", parentLabelProjectID, parentLabelRow(), parentLabelOptions(), parentLabels)
+		c.HTML(http.StatusOK, "admin/product/product_category_form.html", text.Inject(c, data))
 	})
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/category-drawer", nil))
@@ -110,9 +112,7 @@ func TestCategoryDrawerParentLabelNoNameFallsBackToID(t *testing.T) {
 // 不能用 parentLabels：后者只收「名称读得到」的父级，RLS 切非超级角色后跨工程父级读不到
 // 名称会被它漏掉，而那时恰恰最该让操作者看见异常。改成用 parentLabels 判，第一条断言直接红。
 func TestCategoryTreeRowsFlagsOutOfScopeParent(t *testing.T) {
-	c, _, _ := newAttrCaptureContext(t, "", "")
-
-	flagged := categoryTreeRows(c, parentLabelProjectID,
+	flagged := productservice.CategoryTreeRows(parentLabelProjectID,
 		[]*productdto.CategoryResp{parentLabelRow()}, parentLabelOptions(), false, nil)
 	if len(flagged) != 1 {
 		t.Fatalf("应有一行，实际 %d", len(flagged))
@@ -124,7 +124,7 @@ func TestCategoryTreeRowsFlagsOutOfScopeParent(t *testing.T) {
 	// 父级确实在候选列表里 → 不标。
 	inScope := parentLabelRow()
 	inScope.ParentID = "pr1cat1"
-	clean := categoryTreeRows(c, parentLabelProjectID,
+	clean := productservice.CategoryTreeRows(parentLabelProjectID,
 		[]*productdto.CategoryResp{inScope}, parentLabelOptions(), false, nil)
 	if clean[0].ParentOutOfScope {
 		t.Fatalf("父级在本工程候选列表里，不该标记 ParentOutOfScope")
@@ -133,7 +133,7 @@ func TestCategoryTreeRowsFlagsOutOfScopeParent(t *testing.T) {
 	// 顶级分类（无父级）→ 不标。
 	root := parentLabelRow()
 	root.ParentID = ""
-	top := categoryTreeRows(c, parentLabelProjectID,
+	top := productservice.CategoryTreeRows(parentLabelProjectID,
 		[]*productdto.CategoryResp{root}, parentLabelOptions(), false, nil)
 	if top[0].ParentOutOfScope {
 		t.Fatalf("顶级分类没有父级，不该标记 ParentOutOfScope")
@@ -181,8 +181,7 @@ func TestCategoryRowOutOfScopeBadgeRendered(t *testing.T) {
 // TestCategoryTreeRowsThreadsParentLabels categoryTreeRows → categoryDrawerData 的接线：
 // 名称必须真的进到每一行的 EditForm（模板读的就是 EditForm 里的 ParentLabel）。
 func TestCategoryTreeRowsThreadsParentLabels(t *testing.T) {
-	c, _, _ := newAttrCaptureContext(t, "", "")
-	rows := categoryTreeRows(c, parentLabelProjectID,
+	rows := productservice.CategoryTreeRows(parentLabelProjectID,
 		[]*productdto.CategoryResp{parentLabelRow()}, parentLabelOptions(), false,
 		map[string]productdto.CategoryParentInfoResp{parentLabelParentID: {Name: "男装"}})
 	if len(rows) != 1 {
@@ -209,7 +208,7 @@ func TestMissingParentIDs(t *testing.T) {
 		{ID: "d"},                      // 顶级分类：没有父级
 		{ID: "e", ParentID: "pr1cat1"}, // 父级在候选列表里 → 不算缺失
 	}
-	got := productservice.MissingParentIDs(nodes, categoryOptionIDs(parentLabelOptions()))
+	got := productservice.MissingParentIDs(nodes, productservice.CategoryOptionIDs(parentLabelOptions()))
 	if len(got) != 2 || got[0] != "p1" || got[1] != "p2" {
 		t.Fatalf("缺失父级应去重且保序为 [p1 p2]，实际 %v", got)
 	}
