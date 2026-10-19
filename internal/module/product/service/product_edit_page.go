@@ -147,5 +147,8 @@ func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEd
 	if firstErr != nil {
 		return nil, firstErr
 	}
+	// 回列表的链接与「取消」都回到用户来的地方（工程上下文保留）。
+	view.BackURL = ProductListFilterURL(selected, "", "")
+	FillProductEditFormEcho(view)
 	return view, nil
 }

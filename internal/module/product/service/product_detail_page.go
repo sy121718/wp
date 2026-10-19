@@ -150,6 +150,13 @@ func (s *Service) ProductDetailPage(ctx context.Context, req *productdto.Product
 	if firstErr != nil {
 		return nil, firstErr
 	}
+	// 捆绑容器（type=bundle）多一块「捆绑构成」：成员只作为选项与履约明细，容器价才是
+	// 套餐价。type=variant 时不给这个字段（nil 让模板 isset 整块跳过）。
+	if view.HasProduct && view.Detail != nil && view.Product != nil && IsBundleProduct(view.Detail.Type) {
+		view.Product.Bundle = s.BundlePanel(ctx, selected, view.Detail.ID)
+	}
+	// 返回列表带上工程上下文：回到列表时不会掉回默认工程。
+	view.BackURL = ProductListFilterURL(selected, "", "")
 	return view, nil
 }
 

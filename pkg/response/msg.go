@@ -13,6 +13,7 @@ package response
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -88,4 +89,25 @@ func lookupText(c *gin.Context, key, fallback string) string {
 		return fallback
 	}
 	return out
+}
+
+// ErrorRows 逐行事实的错误响应：标题 + 每行「标签：原因」，行间用分号连接。
+//
+// 多行结论只有这一种回执形态（批量与整表提交都走它）：message 是一行文本，换行在结论行里
+// 会挤成空白；逐行事实留在 rows 里，取词在这里发生一次。没有逐行事实时不拼空串 ——
+// 调用方据此走归口文案（空 message 会被前端的结论行吞掉）。
+func ErrorRows(c *gin.Context, code int, title facing.Msg, rows []facing.Labeled) {
+	parts := make([]string, 0, len(rows))
+	for _, r := range rows {
+		body := MsgText(c, r.Msg)
+		if r.Label != "" {
+			body = r.Label + "：" + body
+		}
+		parts = append(parts, body)
+	}
+	if len(parts) == 0 {
+		ErrorWithMessage(c, code, InternalText(c))
+		return
+	}
+	ErrorWithMessage(c, code, MsgText(c, title)+"："+strings.Join(parts, "；"))
 }

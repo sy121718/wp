@@ -11,8 +11,6 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/facing"
 	"net/http"
-	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -23,7 +21,6 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
@@ -280,44 +277,6 @@ const productListPageSize = productservice.ProductListPageSize
 //
 // 查询串不是可信边界：page=abc、page=-3、page=999999 都会走到这里，
 // 服务端自行归一，绝不把非法页码透给取数层（负 offset 在 PG 上是错误）。
-// productListFilterURL 列表页的筛选基地址（**不含** page/limit）。
-//
-// 现在只服务「详情页返回列表」那一个链接（BackURL）：分页条的链接由模板自己从请求串
-// 压出基址（pageBase 去掉 page/limit），控制器不再参与。
-func productListFilterURL(projectID, keyword, status string) string {
-	q := url.Values{}
-	if p := strings.TrimSpace(projectID); p != "" {
-		q.Set("project", p)
-	}
-	if k := strings.TrimSpace(keyword); k != "" {
-		q.Set("keyword", k)
-	}
-	if s := strings.TrimSpace(status); s != "" {
-		q.Set("status", s)
-	}
-	if enc := q.Encode(); enc != "" {
-		return "/admin/products?" + enc
-	}
-	return "/admin/products"
-}
-
-// productStatusOptions 编辑页状态下拉的**值域与顺序**（含「全部状态」这一档）。
-//
-// 显示名由模板按取值取词（product_edit.html）：后端带成品串就会把这一句锁死在一种语言，
-// 英文界面上仍是中文，不报错、门禁也不红。
-//
-// 状态维度**只有这一种入口**：不另配状态徽章筛选 —— 同一维度两套控件时，
-// 用户会怀疑它们是否等价（admin-ui-logic §2）。
-func productStatusOptions(current string) []productdto.StatusOptionResp {
-	values := []string{"", productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived}
-	out := make([]productdto.StatusOptionResp, 0, len(values))
-	current = strings.TrimSpace(current)
-	for _, value := range values {
-		out = append(out, productdto.StatusOptionResp{Value: value, Selected: value == current})
-	}
-	return out
-}
-
 // ==========================================================================
 // 商品新建页。
 //
@@ -401,94 +360,28 @@ func (h *ProductPageHandle) ProductEditPage(c *gin.Context) {
 	h.renderProductEditPage(c, req.ProjectID, req.ProductID, "", false)
 }
 
-func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, echo bool) {
-	ctx := c.Request.Context()
-	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
-	reader := h.reader
-	// 取数编排（工程 / 参数档 / 分类 / 品牌 / 标签 / 仓库 / 商品详情 / 属性组候选 + 三档判据）
-	// 全在 service 的读模型里；这里只剩控制器负责的派生值、**表单回显**与出口。
-	view, err := reader.ProductEditPage(ctx, &productdto.ProductEditPageReq{
+func (h *ProductPageHandle) renderProductEditPage(c *gin.Context, selected, productID, submitErr string, _ bool) {
+	// 取数编排、表单回显、返回地址全在读模型里（service.ProductEditPage 末尾调 FillProductEditFormEcho）。
+	view, err := h.reader.ProductEditPage(c.Request.Context(), &productdto.ProductEditPageReq{
 		ProjectID: selected, ProductID: productID,
 	})
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行）；只剩**原地重渲染**这一条路
-	// 会给 Err（表单校验失败 / 选项读取失败）。
+	// 写动作的结论不在本页回显（走 JSON 回执 + flash 行）；只剩原地重渲染这一条路会给 Err。
 	view.Err = submitErr
-	// 回列表的链接与「取消」都回到用户来的地方（工程上下文保留）。
-	view.BackURL = productListFilterURL(view.SelectedProject, "", "")
-	// 属性组候选读失败：撤掉保存入口并按当前语言归口 —— 「选择器缺失」与「用户主动取消了
+	// 属性组候选读失败：撤掉保存入口并按当前语言归口 ——「选择器缺失」与「用户主动取消了
 	// 全部引用」在 POST 上同形，读故障时不能装作后者。
 	if view.AttributeOptionsErr != nil {
 		view.EditBlocked = true
 		if view.Err == "" {
-			view.Err = productPageInternalText(c, view.AttributeOptionsErr)
+			view.Err = response.MessageOf(c, "product", view.AttributeOptionsErr)
 		}
 	}
-	fillEditFormEcho(view)
-	// 详情页模板面板：详情页只读展示绑定状态，写动作（进入自定义 / 编辑模板 / 重新套用预设 /
-	// 回滚）都在本页 —— 与详情页共用同一份组装。
-	view.TplPanel = h.detailTemplatePanel(ctx, view.SelectedProject, view.ProductID)
+	// 详情页模板面板：编辑页与详情页共用同一份组装（写动作都在编辑页这一屏）。
+	view.TplPanel = h.detailTemplatePanel(c.Request.Context(), view.SelectedProject, view.ProductID)
 	pageview.Render(c, view)
-}
-
-// fillEditFormEcho 编辑表单的回显值（状态选中项、属性组勾选态、图集与数值字段的文本形态、
-// 捆绑容器标记）。
-//
-// 商品读不出来时页面仍要完整：状态按「全部状态」那一档给默认值，其余回显位保持零值，
-// 模板据此显示空表单而不是中断。
-func fillEditFormEcho(view *productdto.ProductEditPageResp) {
-	// 状态下拉：先按「全部状态」那一档给默认值 —— 商品读不出来时页面仍完整；读到了会覆盖。
-	view.Statuses = productStatusOptions("")
-	if !view.HasProduct || view.Detail == nil {
-		return
-	}
-	// 行已由读模型装配（service/product_row.go）：副标题 / 单位 / 描述 HTML 都是行上的
-	// 字段，控制器不再往行里补键 —— 这里只剩「编辑表单要、列表与详情页不要」的那几样。
-	view.Statuses = productStatusOptions(view.Detail.Status)
-	// 属性组勾选态（详情页用的是逗号分隔的 id 输入框，编辑页是勾选列表）：
-	// 可选值来自读模型给的候选，勾选态由商品已引用的 id 决定。
-	// 候选读失败那一档走 EditBlocked（AttributeChecks 保持为空）。
-	if view.AttributeOptionsErr == nil {
-		view.AttributeChecks = checkedAttributeOptions(view.AttributeOptions, view.Detail.AttributeIDs)
-	}
-	// 图集与数值字段：表单里是文本（textarea / input），按行与可空文本回填。
-	view.ImagesText = strings.Join(view.Detail.Images, "\n")
-	view.ImageAltsText = strings.Join(view.Detail.ImageAlts, "\n")
-	view.WeightText = nullableNumberText(view.Detail.Weight)
-	view.DefaultPriceText = nullableNumberText(view.Detail.DefaultPrice)
-	// 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 /admin/products/bundle ——
-	// 这里只给一个链接标记（type=variant 时为假，模板据 isset 整块跳过）。
-	view.IsBundle = isBundleProduct(view.Detail.Type)
-}
-
-// nullableNumberText 可空数值 → 输入框文本（未设置给空串，不是 0）。
-//
-// 与列表展示用的 pkg/money.FormatYuanOrDash（空显示为 —）分开：— 是**展示**符号，
-// 填进 input 的 value 会变成一个待提交的非法值。
-func nullableNumberText(v *float64) string {
-	if v == nil {
-		return ""
-	}
-	return strconv.FormatFloat(*v, 'f', -1, 64)
-}
-
-// checkedAttributeOptions 属性组勾选列表：给每组补一个 Checked（商品是否引用它）。
-//
-// 内嵌 AttributeOptionResp 而不是复制键：标签口径仍只有 service 一处，
-// 这里只加「这一行在本次商品上是什么状态」。
-func checkedAttributeOptions(options []productdto.AttributeOptionResp, selected []string) []productdto.AttributeCheckOptionResp {
-	out := make([]productdto.AttributeCheckOptionResp, 0, len(options))
-	for _, o := range options {
-		out = append(out, productdto.AttributeCheckOptionResp{
-			AttributeOptionResp: o,
-			Checked:             slices.Contains(selected, o.ID),
-		})
-	}
-	return out
 }
 
 // ==========================================================================
@@ -523,43 +416,18 @@ func checkedAttributeOptions(options []productdto.AttributeOptionResp, selected 
 // 取数编排（工程 / 仓库 / 商品 / 分类 / 品牌 / 标签）与上面三档的判定都在 service 的读模型里
 // （service.ProductDetailPage）；本函数只剩「取参数 → 调读模型 → 补控制器负责的派生值 → 一个出口」。
 func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
-	ctx := c.Request.Context()
-	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
-	reader := h.reader
 	req, ok := binding.Query[productdto.ProductDetailPageReq](c)
 	if !ok {
 		return
 	}
-	view, err := reader.ProductDetailPage(ctx, req)
+	// 取数、三档判定、行装配、捆绑构成、返回地址全在 service.ProductDetailPage。
+	view, err := h.reader.ProductDetailPage(c.Request.Context(), req)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	// 仓库清单 / 商品详情 / 分类树 / 品牌 / 标签的取数编排全在 service 的读模型里
-	//（service.ProductDetailPage，含 404 / 400 / 500 三档）；这里只做控制器负责的派生值与出口。
-	// —— 控制器负责的派生值 ——
-	// 返回列表带上工程上下文：回到列表时不会掉回默认工程。
-	view.BackURL = "/admin/products?project=" + view.SelectedProject
-	// 行已由读模型装配（service/product_row.go）—— 控制器只补详情页独有的面板；
-	// 「取数失败时不装配」由读模型自己保证（HasProduct / Detail 为假时它不建行）。
-	if view.HasProduct && view.Detail != nil && view.Product != nil {
-		// 捆绑容器（type=bundle）在详情页多一块「捆绑构成」编辑区：成员只作为选项与履约明细，
-		// 容器价才是套餐价。type=variant 时**不给这个字段**，模板据 isset 整块跳过
-		// —— 区块的入口就在详情页，不该再要求运营去另一个菜单页找它。
-		// （Bundle 保持可 nil：nil 才让 isset(p.Bundle) 为假、整块跳过。）
-		if isBundleProduct(view.Detail.Type) {
-			view.Product.Bundle = h.bundlePanel(c, view.SelectedProject, view.Detail.ID)
-		}
-	}
-
-	// 详情页模板面板：详情页只读展示绑定状态与预览入口，编辑动作（进入自定义 / 编辑模板 /
-	// 重新套用预设 / 回滚）在编辑页 —— 两页共用 detailTemplatePanel 这一份组装。
-	view.TplPanel = h.detailTemplatePanel(ctx, view.SelectedProject, view.ProductID)
-	// 出口只有这一处（页面成败都走它）：档位与 no-store 由视图带出（PageStatus / PageNoStore，
-	// 非 200 一律 no-store）。「不存在」那一档没有失败槽 —— 模板自己的 .HasProduct=false
-	// 空态就是它的文案（读到了、库里没有这一条），但它与「没读到」一样 no-store：
-	// 重试必须真的回到服务端确认商品是否又出现了。
+	// 详情页模板面板：详情页只读展示绑定状态与预览入口，编辑动作在编辑页 —— 两页共用一份组装。
+	view.TplPanel = h.detailTemplatePanel(c.Request.Context(), view.SelectedProject, view.ProductID)
 	pageview.Render(c, view)
 }
 
@@ -911,108 +779,6 @@ func (h *ProductPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
 	// （属性组与取词函数它都有）—— 控制器不再为拼一句 spec 回查一次商品。
 	c.JSON(http.StatusOK, res)
 }
-
-// isBundleProduct 商品类型是否为捆绑容器（详情页据此决定要不要渲染「捆绑构成」）。
-//
-// 判据只认类型本身，不看「bundle_items 是否非空」——后者是迁移 238 之前的旧口径，
-// 分不清「主体卖自己的 SKU」与「容器卖组合」（bundle 商品的价 0 变体就是这么来的）。
-func isBundleProduct(productType string) bool {
-	return productType == productmodel.TypeBundle
-}
-
-// bundleSourceParts 成员来源快照的**事实段**（仅用于展示 —— 来源不是身份）。
-//
-// 「从仓库选」再多带两段：仓库 SKU 与外部编码 —— 运营对账时手上可能是其中任意一个；
-// 仓库 id 留在 JSON 里做溯源，不搬上表格（uuid 对读的人没有含义）。
-//
-// 第一段恒存在（来源词条），后两段按数据有无增减 —— 模板据段数为 0 渲染「—」。
-// 来源 → (key, 兜底) 的映射在 productenums.BundleSourceLabel（空 kind = 历史配置 / 手工指定）。
-func bundleSourceParts(o productdto.BundleOption) []productdto.BundleSourcePart {
-	return productservice.BundleSourceParts(o)
-}
-
-// bundlePanelRows 捆绑构成表的行：成员 SKU 的规则、可用量与后台价格口径。
-//
-// 成员挂牌价（ItemPrice）在这里只作**参考**：套餐金额只由容器价得出，成员价不参与
-// 任何计价与前台展示（迁移 238 的类型不变量）；成员成本只进后台口径。
-//
-// SKU 已被删除时配置里只剩 variantId（SKUCode 为空），照常出一行并标注 ——
-// 静默丢项会让人以为配置里本来就没有这一项，也就不会去修它。
-func bundlePanelRows(options []*productdto.BundleOptionDetailResp) []productdto.BundlePanelRowResp {
-	rows := make([]productdto.BundlePanelRowResp, 0, len(options))
-	for _, o := range options {
-		if o == nil {
-			continue
-		}
-		// Missing 表示配置指向的变体已经不存在（与「存在但被停用」是两回事，
-		// 状态文案与可行动作都不同，故不合并成一个 bool）。
-		missing := o.SKUCode == ""
-		itemPrice, costPrice := &o.ItemPrice, o.CostPrice
-		if missing {
-			// 变体没了，价格与成本都无从谈起：这里的 0 会被读成「这个成员不要钱」。
-			itemPrice, costPrice = nil, nil
-		}
-		rows = append(rows, productdto.BundlePanelRowResp{
-			VariantID:   o.VariantID,
-			SKUCode:     o.SKUCode,
-			ProductName: o.ProductName,
-			Required:    o.Required,
-			DefaultQty:  o.DefaultQty,
-			MinQty:      o.MinQty,
-			MaxQty:      o.MaxQty,
-			Available:   o.Available,
-			ItemPrice:   itemPrice,
-			CostPrice:   costPrice,
-			Enabled:     o.Enabled,
-			Missing:     missing,
-			SourceParts: bundleSourceParts(o.BundleOption),
-		})
-	}
-	return rows
-}
-
-// bundlePanel 商品详情页「捆绑构成」区块的数据（仅 type=bundle 调用）。
-//
-// 读不出配置时**不静默**：区块照常渲染并带一条可读原因（区块本身就是运维发现
-// 「配置读不出来」的地方，整块消失会让人以为这个商品不是捆绑品）。
-// 错误原因只给词条文案，不铺 err.Error()（内部包装文案对运营不可行动）。
-func (h *ProductPageHandle) bundlePanel(c *gin.Context, projectID, productID string) *productdto.BundlePanelResp {
-	panel := &productdto.BundlePanelResp{
-		Loaded: false,
-		// 容器价是套餐金额的唯一来源，读不出来时给 —（不拿成员价兜底：那是错的口径）。
-		BasePrice:   nil,
-		Options:     []productdto.BundlePanelRowResp{},
-		OptionCount: 0,
-	}
-	detail, err := h.products.GetBundleConfig(c.Request.Context(), &productdto.GetBundleConfigReq{
-		ProductID: productID,
-		// 工程显式传下去（DB-009）：配置详情含库存可用量，走真源查询要在工程作用域里。
-		// 后台页不走 resolveProjectID 的唯一工程兜底（多工程下它会直接判参数错）。
-		ProjectID: projectID,
-	})
-	if err != nil || detail == nil {
-		panel.ErrorText = response.MsgText(c, bundlePanelReadFailedMsg)
-		return panel
-	}
-	rows := bundlePanelRows(detail.Options)
-	panel.Loaded = true
-	panel.BasePrice = &detail.BasePrice
-	panel.Options = rows
-	panel.OptionCount = len(rows)
-	return panel
-}
-
-// bundlePanelReadFailedFallback 捆绑配置读取失败的中文兜底（key 在
-// productenums.ProductBundleDetailFailed）。
-//
-// 与捆绑配置页同一句：两处读的是同一份配置，失败原因也同一批（商品不存在 /
-// 库存真源端口未接入，后者拿不到可用量）。复用词条而不是另起一句，
-// 免得同一件事在两个页面上给出两种说法。
-// bundlePanelReadFailedMsg 上面那条提示的**事实**（片段槽位按文本渲染，见调用点注释）。
-var bundlePanelReadFailedMsg = facing.Msg{Key: productenums.ProductBundleDetailFailed, Fallback: bundlePanelReadFailedFallback}
-
-// bundlePanelReadFailedFallback 上述 key 的中文兜底（i18n 未初始化或词条缺失时用）。
-const bundlePanelReadFailedFallback = "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。"
 
 // warehouseSKUOptionSize 已随取数下沉搬到 outbound 适配器
 //（internal/module/product/outbound/inventory 的 warehouseSKUOptionSize）：

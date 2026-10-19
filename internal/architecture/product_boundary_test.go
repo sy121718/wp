@@ -102,9 +102,7 @@ func TestProductServiceDoesNotTranslate(t *testing.T) {
 
 // productControllerI18nBudget 控制器里还能直接取词的文件（登记的是「为什么现在还留着」）。
 // 双向判定：登记了不再命中同样失败。
-var productControllerI18nBudget = map[string]string{
-	"product_translations_handle.go": "多语言保存回执是 {n} 具名占位符（tf 只有 %s），要 FillTranslate 才能取；随回执改由 service 给结构化事实后删",
-}
+var productControllerI18nBudget = map[string]string{}
 
 // TestProductControllersAvoidTranslating 控制器不取词：响应文案由 pkg/response 取一次，界面文案由模板取。
 func TestProductControllersAvoidTranslating(t *testing.T) {

@@ -440,13 +440,18 @@ type ProductTranslationsPageReq struct {
 // SaveProductTranslationsReq 保存提交：三组并行数组按行一一对应（与表单字段同形）。
 //
 // 数组原样带过来，长度对齐与逐行校验都在读模型侧做 —— 控制器只负责把表单读成数组。
+// SaveProductTranslationsReq 整表提交的译文（JSON 体；字段名与表单一致，前端只声明 data-write-array）。
+//
+// 三组并行数组按行一一对应：长度对齐与逐行校验在读模型侧做（那里才有候选原文）。空 target
+// 表示「本行不写入」（不删除库中已有译文），因此数组里必须保留空串占位 —— 剔掉会让后面所有行
+// 错位一格，而错位在服务端看起来只是「这一行的译文与原文对不上」。
 type SaveProductTranslationsReq struct {
-	ProjectID string
-	ProductID string
-	Lang      string
-	Contexts  []string
-	Hashes    []string
-	Targets   []string
+	ProjectID string   `json:"projectId"`
+	ProductID string   `json:"productId" binding:"required"`
+	Lang      string   `json:"lang"`
+	Targets   []string `json:"rowTarget"`
+	Contexts  []string `json:"rowContext"`
+	Hashes    []string `json:"rowHash"`
 }
 
 // ProductCategoryParentsReq 分类抽屉「父级」候选的查询串参数（搜索式，一屏一页）。

@@ -65,3 +65,12 @@ func (e *Error) Is(target error) bool {
 // 接口的形状在**消费端**（adminui）声明，本包不反过来依赖任何出口 —— 模块只要
 // 用 New 声明错误，就自动被页面出口认出来，不需要 import 出口包。
 func (e *Error) Facing() (key, fallback string) { return e.key, e.fallback }
+
+// Labeled 一条带「哪一行」标签的文案事实（多行回执用：逐行结论、批量拒绝原因）。
+//
+// Label 是**已经定位到那一行**的名字（语境名 / SKU / 字段名），不是用户文案；Msg 是文案事实，
+// 取词只在出口发生一次。放在 pkg/facing 是因为业务层要产出它，而它不能依赖 gin。
+type Labeled struct {
+	Label string
+	Msg   Msg
+}

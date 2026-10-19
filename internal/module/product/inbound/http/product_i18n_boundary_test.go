@@ -25,8 +25,6 @@ func TestControllerI18nBoundary(t *testing.T) {
 	allow := map[string]string{
 		"product_router.go": "中间件：productTranslateMiddleware 把取词函数放进 Request Context 给 " +
 			"service 用（service 要产出展示文案，语言只有 gin.Context 知道）",
-		"product_translations_handle.go": "两处视图槽成品串（抽屉 body / 标题）+" +
-			"具名占位符 {n} 句式；0.3 随视图槽删除",
 		"product_subject_handle.go": "复合句与视图槽：变体保存的 Tail 拼接、定价回执三段拼句、" +
 			"来源标签字面量、面板 ErrorText；0.3 随视图槽删除",
 	}

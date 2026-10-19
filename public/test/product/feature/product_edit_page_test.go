@@ -344,7 +344,7 @@ func TestProductEditPageAttributeListFailure(t *testing.T) {
 	engine.ServeHTTP(page, httptest.NewRequest(http.MethodGet,
 		"/admin/products/edit?project="+f.projectID+"&product="+created.ID, nil))
 	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `role="alert"`) ||
-		!strings.Contains(page.Body.String(), "系统内部错误") ||
+		!strings.Contains(page.Body.String(), "内部错误，请稍后重试") ||
 		strings.Contains(page.Body.String(), `id="product-edit-main"`) ||
 		strings.Contains(page.Body.String(), `data-write-api="/api/product/variant/save"`) ||
 		strings.Contains(page.Body.String(), `data-write-api="/api/product/rating/add"`) ||

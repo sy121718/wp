@@ -5,19 +5,12 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
-	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/facing"
-	"go_wp/pkg/i18n"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -99,109 +92,64 @@ func (h *ProductTranslationHandle) ProductTranslations(c *gin.Context) {
 	if !ok {
 		return
 	}
-	reader, rerr := h.translationsReader()
-	if rerr != nil {
-		pageview.Fail(c, rerr)
-		return
-	}
-	view, err := reader.ProductTranslationsPage(c.Request.Context(), req)
+	h.renderPage(c, req)
+}
+
+// renderPage 取这一屏的读模型并渲染（失败走 JSON 出口）。
+func (h *ProductTranslationHandle) renderPage(c *gin.Context, req *productdto.ProductTranslationsPageReq) {
+	view, err := h.page(c, req)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-	// 保存成功的回执不在这条 GET 上（?saved=1&n=N 那条读侧已整批删除）：结论由 JSON 回执
-	// 存进 flash 行，刷新后的这一屏只负责渲染当前译文。
 	pageview.Render(c, view)
 }
 
 // SaveProductTranslations POST /api/product/translations/save：保存译文（整表提交）。
 //
-// 出口是 JSON 回执（页面表单已改由 ui/json_write.js 提交）：
-// 成功 → 基座存 flash 并刷新整页（译文状态 / 完成度 / 来源列都会变，只更新一行不够）；
-// 失败 → 400 + 逐行结论拼成的一条 message，就地显示在这张表单的结论行里。
-//
-// 「逐行结论」为什么不进 data：基座只渲染 message。把事实在这里取词拼好，
-// 与模板注入的 tf 是同一份实现（text.MsgText），两条出口不会给出不同的句子。
+// 出口是 JSON 回执（页面表单已改由 ui/json_write.js 提交）：成功 → 基座存 flash 并刷新整页；
+// 失败 → 逐行结论的 400（响应出口取词一次）。逐行校验、变更判定、写入与待重建标记都在读模型。
 func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
-	req, ok := binding.JSON[productdto.TranslationSaveReq](c)
+	req, ok := binding.JSON[productdto.SaveProductTranslationsReq](c)
 	if !ok {
 		return
 	}
-	projectID := strings.TrimSpace(req.ProjectID)
-	productID := strings.TrimSpace(req.ProductID)
+	h.saveAndReply(c, req)
+}
 
-	reader, rerr := h.translationsReader()
-	if rerr != nil {
-		logger.Scene("product").With("project", projectID).With("product", productID).
-			Error(rerr, "商品翻译工作台保存前重建数据失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, response.InternalText(c))
+// saveAndReply 保存并回执：成功一句事实文案；失败按「读模型报错 / 逐行拒绝」两档回（取词在出口发生一次）。
+func (h *ProductTranslationHandle) saveAndReply(c *gin.Context, req *productdto.SaveProductTranslationsReq) {
+	view, err := h.save(c, req)
+	if err != nil || !view.Saved {
+		replySaveRejected(c, view, err)
 		return
 	}
-	// 三组并行数组原样带过去：长度对齐与逐行校验都在读模型侧做（那里才有候选原文）。
-	view, err := reader.SaveProductTranslations(c.Request.Context(), &productdto.SaveProductTranslationsReq{
-		ProjectID: projectID,
-		ProductID: productID,
-		Lang:      strings.TrimSpace(req.Lang),
-		Contexts:  req.Contexts,
-		Hashes:    req.Hashes,
-		Targets:   req.Targets,
-	})
+	response.SuccessMsg(c, view.SaveMessage)
+}
+
+// replySaveRejected 保存失败的两种形状：读模型报错走统一失败出口，逐行拒绝给 400 + 逐行事实。
+func replySaveRejected(c *gin.Context, view *productdto.ProductTranslationsPageResp, err error) {
 	if err != nil {
-		logger.Scene("product").With("project", projectID).With("product", productID).
-			Error(err, "商品翻译工作台保存失败")
-		response.ErrorWithMessage(c, http.StatusInternalServerError, response.InternalText(c))
+		pageview.Fail(c, err)
 		return
 	}
-	if !view.Saved {
-		// 校验没过 / 语言不在启用清单 / 写入失败：三种都由读模型折成逐行（或页面级）事实。
-		status := http.StatusBadRequest
-		body := productTranslationErrorsText(c, view.Errors)
-		if body == "" {
-			// 没有逐行事实却也没保存成功 = 读模型侧的意外状态：按内部错误归口，不给空 message。
-			status = http.StatusInternalServerError
-			body = response.InternalText(c)
-		}
-		response.ErrorWithMessage(c, status, body)
-		return
-	}
-	response.SuccessMsg(c, productTranslationsSavedMsg(c, view.Written))
+	response.ErrorRows(c, http.StatusBadRequest, productservice.TranslationsErrorsTitle(), view.SaveRows)
 }
 
-// productTranslationErrorsText 把逐行错误事实拼成一条可读结论。
-//
-// 前缀复用页面错误槽的标题词条（同一句话在页面上与回执里长得一样），
-// 每行是「字段/语境：原因」，行间用分号 —— message 只有一行，换行在结论行里会挤成空白。
-func productTranslationErrorsText(c *gin.Context, errs []productdto.TranslationRowErrorResp) string {
-	if len(errs) == 0 {
-		return ""
+// page 取这一屏的读模型并调它（装配缺陷在这里变成错误，不是请求期的类型断言）。
+func (h *ProductTranslationHandle) page(c *gin.Context, req *productdto.ProductTranslationsPageReq) (*productdto.ProductTranslationsPageResp, error) {
+	reader, err := h.translationsReader()
+	if err != nil {
+		return nil, err
 	}
-	parts := make([]string, 0, len(errs))
-	for _, e := range errs {
-		body := response.MsgText(c, e.Msg)
-		if e.Label != "" {
-			body = e.Label + "：" + body
-		}
-		parts = append(parts, body)
-	}
-	title := response.MsgText(c, facing.Msg{
-		Key: productenums.ProductTranslationsErrorsTitle, Fallback: "未保存：请先修正以下问题"})
-	return title + "：" + strings.Join(parts, "；")
+	return reader.ProductTranslationsPage(c.Request.Context(), req)
 }
 
-// productTranslationsSavedMsg 译文保存成功的回执（0 条 = 没有需要写入的变化）。
-//
-// 复用工作台原有的两条词条（ProductTranslationsSavedNote / SavedNone），措辞与改造前一致；
-// 出口是 JSON 回执（页面基座把它显示在结论行里，再刷新整页）。
-//
-// **例外 3（具名占位符句式）**：ProductTranslationsSavedNote 用的是具名占位符 `{n}`
-// （i18n.FillTranslate），不是 `%s`；而模板注入的 tf 只有 `%s` 位置参数，一段 key + Args
-// 表达不了它。要收成一条 `%s` 词条属于独立的文案迁移（page 模块已按迁移 613 收掉了，
-// product 这一条还没做），不夹在「控制器不取词」这一步里做。
-func productTranslationsSavedMsg(c *gin.Context, written int) facing.Msg {
-	if written > 0 {
-		return facing.Msg{Fallback: i18n.FillTranslate(shell.TranslateFor(c), productenums.ProductTranslationsSavedNote,
-			"已保存 {n} 条译文；译文变更已标记待重建（下次构建生效）。",
-			map[string]string{"n": strconv.Itoa(written)})}
+// save 同 page，作用于保存编排。
+func (h *ProductTranslationHandle) save(c *gin.Context, req *productdto.SaveProductTranslationsReq) (*productdto.ProductTranslationsPageResp, error) {
+	reader, err := h.translationsReader()
+	if err != nil {
+		return nil, err
 	}
-	return facing.Msg{Key: productenums.ProductTranslationsSavedNone, Fallback: "没有需要写入的变化。"}
+	return reader.SaveProductTranslations(c.Request.Context(), req)
 }

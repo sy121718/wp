@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	productdto "go_wp/internal/module/product/dto"
+	productservice "go_wp/internal/module/product/service"
 )
 
 // bundlePanelEditLink 「编辑捆绑构成」的落点（含 HTML 转义后的 &）。
@@ -146,7 +147,7 @@ func TestProductDetailBundlePanelEmptyAndBroken(t *testing.T) {
 	// 容器价不拿成员价兜底（那是错的口径），只给 —。
 	const reason = "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。"
 	broken := bundleDetailPage(t, &productdto.BundlePanelResp{
-		ErrorText: reason, BasePrice: nil,
+		LoadFailed: true, BasePrice: nil,
 		Options: []productdto.BundlePanelRowResp{}, OptionCount: 0,
 	})
 	if !strings.Contains(broken, reason) || !strings.Contains(broken, "role=\"alert\"") {
@@ -210,7 +211,7 @@ func TestProductDetailBundlePanelAbsentForVariant(t *testing.T) {
 func TestBundlePanelRowsBackofficePriceShape(t *testing.T) {
 	cost := 20.0
 	// 来源标签已改交事实（Key + 兜底），取词在模板里 —— 本用例只断言价格口径。
-	rows := bundlePanelRows([]*productdto.BundleOptionDetailResp{
+	rows := productservice.BundlePanelRows([]*productdto.BundleOptionDetailResp{
 		{SKUCode: "A1", ItemPrice: 45.5, CostPrice: &cost, Enabled: true},
 		{SKUCode: "A2", ItemPrice: 10, CostPrice: nil, Enabled: false},
 		{SKUCode: "", ItemPrice: 0, CostPrice: nil, Enabled: false},

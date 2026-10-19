@@ -15,6 +15,7 @@ package productdto
 import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/seo/scoreview"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/pagination"
 	"time"
 )
@@ -549,6 +550,10 @@ type ProductTranslationsPageResp struct {
 	Saved bool
 	// Written 本次实际写入条数（0 = 没有需要写入的变化）。
 	Written int
+	// SaveRows 出口用的逐行事实（与 Errors 同一批，形状便于 pkg/response.ErrorRows 直接渲染）。
+	SaveRows []facing.Labeled
+	// SaveMessage 保存成功的回执事实（key + 中文兜底 + 具名参数），取词在响应出口发生一次。
+	SaveMessage facing.Msg
 }
 
 // CategoryParentInfoResp 「父级不在候选列表里」那一项的**事实**：名称是数据，跨工程是布尔。
@@ -653,8 +658,9 @@ type ProductTagsPageResp struct {
 // 所以它是 struct 而不是 map：根 map 只为了 .["t"] 取词，区块自身没有这个诉求。
 type BundlePanelResp struct {
 	Loaded bool
-	// ErrorText 配置读不出来时的可读原因（区块留在页面上并说明，不是整块消失）。
-	ErrorText string
+	// LoadFailed 配置读不出来（商品不存在 / 库存真源未接入）：区块留在页面上并说明
+	// 原因，不是整块消失。原因文案由模板取词渲染 —— 后端不带成品串。
+	LoadFailed bool
 	// BasePrice 容器价（套餐金额的唯一来源），读不出来时为 nil（模板渲染为 —）。
 	BasePrice   *float64
 	Options     []BundlePanelRowResp

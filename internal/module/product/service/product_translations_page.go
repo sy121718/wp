@@ -20,6 +20,7 @@ package productservice
 import (
 	"context"
 	"sort"
+	"strconv"
 	"strings"
 
 	productcontract "go_wp/internal/module/product/contract"
@@ -168,7 +169,17 @@ func (s *Service) translationCandidates(ctx context.Context, projectID, productI
 //  2. 变更判定：只有译文文本确实变化才写库并触发重建（幂等，重复保存零写入）；
 //  3. 译文变化 → 标记待重建：手工页面走全站 i18n 标记，自动发布实例按 direct_content
 //     键精确标记受影响实体（商品页面属这类）。少标一次的表现是「译好了但线上还是旧语言」。
-func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.SaveProductTranslationsReq) (*productdto.ProductTranslationsPageResp, error) {
+func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.SaveProductTranslationsReq) (res *productdto.ProductTranslationsPageResp, err error) {
+	// 出口要的两样（逐行事实与成功回执）在这里一次填好：取词在响应出口发生，业务层只给事实。
+	defer func() {
+		if res == nil {
+			return
+		}
+		res.SaveRows = saveRowsOf(res.Errors)
+		if res.Saved {
+			res.SaveMessage = TranslationsSavedMsg(res.Written)
+		}
+	}()
 	if req == nil {
 		req = &productdto.SaveProductTranslationsReq{}
 	}
@@ -585,4 +596,32 @@ func containsTranslationLang(langs []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// TranslationsSavedMsg 译文保存成功的回执事实（0 条 = 没有需要写入的变化）。
+//
+// 具名占位符 {n} 走 facing.Msg.Named（出口用 i18n.FillTranslate 填充，语序归词条）。
+func TranslationsSavedMsg(written int) facing.Msg {
+	if written > 0 {
+		return facing.Msg{
+			Key:      productenums.ProductTranslationsSavedNote,
+			Fallback: "已保存 {n} 条译文；译文变更已标记待重建（下次构建生效）。",
+			Named:    map[string]string{"n": strconv.Itoa(written)},
+		}
+	}
+	return facing.Msg{Key: productenums.ProductTranslationsSavedNone, Fallback: "没有需要写入的变化。"}
+}
+
+// TranslationsErrorsTitle 保存被拒时逐行结论的标题事实。
+func TranslationsErrorsTitle() facing.Msg {
+	return facing.Msg{Key: productenums.ProductTranslationsErrorsTitle, Fallback: "未保存：请先修正以下问题"}
+}
+
+// saveRowsOf 逐行错误 → 出口用的带标签事实。
+func saveRowsOf(errs []productdto.TranslationRowErrorResp) []facing.Labeled {
+	rows := make([]facing.Labeled, 0, len(errs))
+	for _, e := range errs {
+		rows = append(rows, facing.Labeled{Label: e.Label, Msg: e.Msg})
+	}
+	return rows
 }

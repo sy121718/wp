@@ -367,3 +367,69 @@ func bundleSourceWarehouseGroups(groups []productdto.WarehouseSKUGroupResp, sele
 	}
 	return out
 }
+
+// BundlePanel 商品详情页「捆绑构成」区块的数据（仅 type=bundle 调用）。
+//
+// 读不出配置时**不静默**：区块照常渲染并带 LoadFailed（区块本身就是运维发现
+//「配置读不出来」的地方，整块消失会让人以为这个商品不是捆绑品）。原因文案由模板取词，
+// 后端不带成品串。
+func (s *Service) BundlePanel(ctx context.Context, projectID, productID string) *productdto.BundlePanelResp {
+	panel := &productdto.BundlePanelResp{
+		Loaded:      false,
+		BasePrice:   nil,
+		Options:     []productdto.BundlePanelRowResp{},
+		OptionCount: 0,
+	}
+	detail, err := s.GetBundleConfig(ctx, &productdto.GetBundleConfigReq{
+		ProductID: productID,
+		ProjectID: projectID,
+	})
+	if err != nil || detail == nil {
+		panel.LoadFailed = true
+		return panel
+	}
+	rows := BundlePanelRows(detail.Options)
+	panel.Loaded = true
+	panel.BasePrice = &detail.BasePrice
+	panel.Options = rows
+	panel.OptionCount = len(rows)
+	return panel
+}
+
+// BundlePanelRows 捆绑构成表的行：成员 SKU 的规则、可用量与后台价格口径。
+//
+// 成员挂牌价（ItemPrice）只作**参考**：套餐金额只由容器价得出，成员价不参与任何计价与前台
+// 展示（迁移 238 的类型不变量）；成员成本只进后台口径。SKU 已被删除时配置里只剩 variantId
+//（SKUCode 为空），照常出一行并标注 —— 静默丢项会让人以为配置里本来就没有这一项。
+func BundlePanelRows(options []*productdto.BundleOptionDetailResp) []productdto.BundlePanelRowResp {
+	rows := make([]productdto.BundlePanelRowResp, 0, len(options))
+	for _, o := range options {
+		if o == nil {
+			continue
+		}
+		// Missing 表示配置指向的变体已经不存在（与「存在但被停用」是两回事，状态文案与
+		// 可行动作都不同，故不合并成一个 bool）。
+		missing := o.SKUCode == ""
+		itemPrice, costPrice := &o.ItemPrice, o.CostPrice
+		if missing {
+			// 变体没了，价格与成本都无从谈起：这里的 0 会被读成「这个成员不要钱」。
+			itemPrice, costPrice = nil, nil
+		}
+		rows = append(rows, productdto.BundlePanelRowResp{
+			VariantID:   o.VariantID,
+			SKUCode:     o.SKUCode,
+			ProductName: o.ProductName,
+			Required:    o.Required,
+			DefaultQty:  o.DefaultQty,
+			MinQty:      o.MinQty,
+			MaxQty:      o.MaxQty,
+			Available:   o.Available,
+			ItemPrice:   itemPrice,
+			CostPrice:   costPrice,
+			Enabled:     o.Enabled,
+			Missing:     missing,
+			SourceParts: BundleSourceParts(o.BundleOption),
+		})
+	}
+	return rows
+}
