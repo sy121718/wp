@@ -19,6 +19,7 @@ package binding
 
 import (
 	"net/url"
+	"reflect"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -66,6 +67,7 @@ func Query[T any](c *gin.Context) (*T, bool) {
 			return nil, false
 		}
 	}
+	ApplyListQuery(c, &req)
 	return &req, true
 }
 
@@ -137,4 +139,70 @@ func Form[T any](c *gin.Context) (*T, bool) {
 		}
 	}
 	return &req, true
+}
+
+// listQueryTagger 由带 ListQuery 字段的查询 DTO 实现（tag 形式给出「哪些键属于列表上下文」）。
+//
+// 为什么不在控制器里写 `req.ListQuery = binding.ListQuery(c, keys...)`：那是每个列表入口
+// 一行同样的装配，键表还得在控制器里再声明一次。键表属于「这一屏的请求形状」，落在 DTO 的
+// struct tag 上只有一份：
+//
+// \tListQuery string `form:"-" listquery:"project,keyword,page,limit"`
+//
+// binding.Query 绑定完查询串后按 tag 填好它，入口就不必再碰请求串。
+type listQueryTagger interface {
+	setListQuery(string)
+}
+
+// ListQueryTag 读 DTO 上的 listquery tag（键以逗号分隔，顺序即回填链接的顺序）。
+func ListQueryTag(req any) []string {
+	t := reflect.TypeOf(req)
+	if t == nil {
+		return nil
+	}
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+	f, ok := t.FieldByName("ListQuery")
+	if !ok {
+		return nil
+	}
+	return splitKeys(f.Tag.Get("listquery"))
+}
+
+// ApplyListQuery 按 DTO 的 listquery tag 填 ListQuery（tag 为空时什么都不做）。
+func ApplyListQuery(c *gin.Context, req any) {
+	keys := ListQueryTag(req)
+	if len(keys) == 0 {
+		return
+	}
+	rv := reflect.ValueOf(req)
+	if rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return
+		}
+		rv = rv.Elem()
+	}
+	if rv.Kind() != reflect.Struct {
+		return
+	}
+	f := rv.FieldByName("ListQuery")
+	if !f.IsValid() || f.Kind() != reflect.String || !f.CanSet() {
+		return
+	}
+	f.SetString(ListQuery(c, keys...))
+}
+
+func splitKeys(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if k := strings.TrimSpace(p); k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
 }

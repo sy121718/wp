@@ -25,17 +25,12 @@ import (
 
 // ProductAttributesPage 属性管理页：工程切换 + 筛选栏 + 属性组列表 + 值编辑器 + 内联新建表单。
 func (h *ProductPageHandle) ProductAttributesPage(c *gin.Context) {
-	ctx := c.Request.Context()
-	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
-	reader := h.reader
-	// 取参数交给 binding.Query，取数编排在 service（取哪些数据、按什么顺序、哪条失败算 400 /
-	// 哪条只降级，都是业务结论。见 service.ProductAttributesPage）。
 	req, ok := binding.Query[productdto.ProductAttributesPageReq](c)
 	if !ok {
 		return
 	}
-	view, err := reader.ProductAttributesPage(ctx, req)
+	// 取数编排、成品行与两个抽屉的初值都在 service.ProductAttributesPage。
+	view, err := h.reader.ProductAttributesPage(c.Request.Context(), req)
 	if err != nil {
 		// 失败出口是 JSON：不装配、不渲染同一页（档位由声明处给，见 productenums.StatusFor）。
 		pageview.Fail(c, err)
@@ -58,29 +53,7 @@ func (h *ProductPageHandle) ProductAttributesValueRows(c *gin.Context) {
 	if !ok {
 		return
 	}
-	rows := req.Rows
-	switch strings.TrimSpace(req.Action) {
-	case "add":
-		index := 0
-		if len(rows) > 0 {
-			index = rows[len(rows)-1].Index + 1
-		}
-		rows = append(rows, productdto.AttrValueFormRow{Index: index, Enabled: true})
-	case "remove":
-		if idx := req.RemoveIndexValue(); idx >= 0 && idx < len(rows) {
-			rows = append(rows[:idx], rows[idx+1:]...)
-		}
-	}
-	// 兜底：至少要有一行可编辑，空列表会让「添加」按钮无从下手。
-	if len(rows) == 0 {
-		rows = []productdto.AttrValueFormRow{{Enabled: true}}
-	}
-	groupID := strings.TrimSpace(req.GroupID)
-	if groupID == "" {
-		groupID = "new"
-	}
-	// 片段数据根交出去：取词注入在 UI 线（adminui.Bare），这里只给数据。
-	pageview.Render(c, gin.H{"GroupID": groupID, "Rows": rows})
+	pageview.Render(c, productservice.AttrValueRows(req))
 }
 
 // attributeOptions 属性组勾选列表（新建抽屉 / 编辑页；本批起不再让人手打 UUID）。

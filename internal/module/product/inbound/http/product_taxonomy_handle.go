@@ -34,7 +34,6 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	req.ListQuery = binding.ListQuery(c, productCategoriesBackKeys...)
 	view, err := reader.ProductCategoriesPage(c.Request.Context(), req)
 	if err != nil {
 		pageview.Fail(c, err)
@@ -73,7 +72,6 @@ func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	req.ListQuery = binding.ListQuery(c, productBrandsBackKeys...)
 	view, err := h.reader.ProductBrandsPage(c.Request.Context(), req)
 	if err != nil {
 		pageview.Fail(c, err)

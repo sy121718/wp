@@ -7,8 +7,10 @@ package productservice
 // 控制器因此只剩「绑定 → 调读模型 → 出口」。
 
 import (
-	productdto "go_wp/internal/module/product/dto"
 	"strconv"
+	"strings"
+
+	productdto "go_wp/internal/module/product/dto"
 )
 
 // 属性组表单的两种形态：新建（页头 / 空态打开的抽屉）与编辑（列表每行一个抽屉）。
@@ -37,7 +39,7 @@ func AttrRowsCtx(groupID string, rows []productdto.AttrValueFormRow) map[string]
 // AttrGroupFormOpts 属性组抽屉表单的初值。
 //
 // 用结构体而不是位置参数：这里连着两个 id（工程 / 属性组）与一个模式串，位置写反
-//（工程 id 塞进属性组槽）不会编译失败 —— 只会在抽屉里把工程 id 渲染进隐藏域。
+// （工程 id 塞进属性组槽）不会编译失败 —— 只会在抽屉里把工程 id 渲染进隐藏域。
 type AttrGroupFormOpts struct {
 	ProjectID string
 	Mode      string
@@ -109,4 +111,32 @@ func AttrPageRows(projectID string, details []*productdto.AttributeResp) []produ
 		})
 	}
 	return rows
+}
+
+// AttrValueRows 值编辑器片段的数据根（add / remove 一次，回渲染整段行列表）。
+//
+// 编辑器只重建**原始表单值与位置**：落库时的归一 / 去重 / 排序仍由保存路径负责。
+// 空列表兜一行 —— 没有行时「添加」按钮无从下手。
+func AttrValueRows(req *productdto.AttributeRowsFormReq) map[string]any {
+	rows := req.Rows
+	switch strings.TrimSpace(req.Action) {
+	case "add":
+		index := 0
+		if len(rows) > 0 {
+			index = rows[len(rows)-1].Index + 1
+		}
+		rows = append(rows, productdto.AttrValueFormRow{Index: index, Enabled: true})
+	case "remove":
+		if idx := req.RemoveIndexValue(); idx >= 0 && idx < len(rows) {
+			rows = append(rows[:idx], rows[idx+1:]...)
+		}
+	}
+	if len(rows) == 0 {
+		rows = []productdto.AttrValueFormRow{{Enabled: true}}
+	}
+	groupID := strings.TrimSpace(req.GroupID)
+	if groupID == "" {
+		groupID = "new"
+	}
+	return map[string]any{"GroupID": groupID, "Rows": rows}
 }

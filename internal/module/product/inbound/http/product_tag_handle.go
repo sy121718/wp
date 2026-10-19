@@ -163,7 +163,6 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	req.ListQuery = binding.ListQuery(c, productTagsBackKeys...)
 	view, err := reader.ProductTagsPage(c.Request.Context(), req)
 	if err != nil {
 		pageview.Fail(c, err)
