@@ -1,15 +1,12 @@
 {* admin/partials/pagination.html — 分页条（服务端渲染，零 JS）。
-   两种数据形态并存（迁移期）：
-     · 新：data["Pagination"] = pkg/pagination.Page（事实层）；本文件自己算信息行、按钮文字、
-       链接与选中态，用全局函数 sprintf / queryURL / pageNumbers。
-     · 旧：data["PaginationInfo"] / data["PaginationLinks"]（Go 预制成品）。
-   两者都在时**新形态优先**；无键 / 零值 / 单页时不渲染分页条。
-   REFACTOR(step P4): 删除旧 Info/Links 分支 —— 消费者全部迁移到事实层后，
-   本块与 pkg/pagination 的 BuildPagination/PageLink/PaginationData/TemplateKeys 一起删。
-   新分支正文里的「槽」注释行是「与旧正文逐字节相同」的缩进槽：每个条目在旧正文里是
-   「2 个缩进槽 + 标记行」，槽数变了页面字节就变了。改之前先跑
-   admin_pagination_dual_shape_p2_test.go 的逐字节断言（失败信息会给出首个差异偏移）。 *}
-{{if isset(.Pagination)}}{{pg := .Pagination}}{{base := pg.Base}}{{if !base}}{{if isset(.["req_path"])}}{{base = pageBase(.["req_path"], pg.PageParam, "limit")}}{{end}}{{end}}{{prev := 0}}{{tr := .["t"]}}{{if pg.HasPagination()}}
+   唯一数据形态：data["Pagination"] = pkg/pagination.Page，只有三件事实
+   （Total / Page / Limit）加上链接参数（PageParam / KeepLimit / Base）。
+   页数、区间句、页码窗口、上/下页按钮态与链接全部在这里算（全局函数
+   pager / sprintf / queryURL / pageNumbers），后端不预先拼任何展示串。
+   无键 / 单页 / 空集时不渲染分页条；Base 为空时从 req_path 推（去掉 page 与 limit）。
+   「槽」注释行是逐字节兼容的缩进标记，改缩进会改页面字节 —— 先跑
+   internal/templates 的分页渲染用例。 *}
+{{if isset(.Pagination)}}{{pg := pager(.Pagination)}}{{base := pg.Base}}{{if !base}}{{if isset(.["req_path"])}}{{base = pageBase(.["req_path"], pg.PageParam, "limit")}}{{end}}{{end}}{{prev := 0}}{{tr := .["t"]}}{{if pg.HasPagination()}}
 <nav class="pagination" aria-label="{{tr("shell.pagination.label", "分页") }}">
     <div class="pagination-info">{{sprintf(tr("shell.pagination.info", "共 %s 条，第 %s-%s 条"), pg.Total, pg.Start, pg.End)}}</div>
     <div class="pagination-pages">
@@ -32,19 +29,5 @@
            所以这里用字符串字面量把槽位写死。字面量只受 HTML 转义（< > & \" '），换行/空格原样发射。 *}
     </div>
 </nav>
-{{end}}{{else if .["PaginationLinks"]}}
-<nav class="pagination" aria-label="{{ .["t"]("shell.pagination.label", "分页") }}">
-    <div class="pagination-info">{{.["PaginationInfo"]}}</div>
-    <div class="pagination-pages">
-        {{range _, l := .["PaginationLinks"]}}
-        {{if l.Disabled}}
-        <span class="pagination-btn is-disabled">{{l.Label}}</span>
-        {{else if l.Active}}
-        <span class="pagination-btn is-active">{{l.Label}}</span>
-        {{else}}
-        <a class="pagination-btn" href="{{l.URL}}">{{l.Label}}</a>
-        {{end}}
-        {{end}}
-    </div>
-</nav>
+{{end}}
 {{end}}

@@ -190,7 +190,7 @@ func (s *Service) ProductCategoriesPage(ctx context.Context, req *productdto.Pro
 	if firstErr != nil {
 		return nil, firstErr
 	}
-	view.Pagination = pagination.Facts(view.Total, view.Page, view.Limit)
+	view.Pagination = pagination.Page{Total: view.Total, Page: view.Page, Limit: view.Limit}
 	return view, nil
 }
 
@@ -307,7 +307,7 @@ func (s *Service) ProductBrandsPage(ctx context.Context, req *productdto.Product
 	if firstErr != nil {
 		return nil, firstErr
 	}
-	view.Pagination = pagination.Facts(view.Total, view.Page, view.Limit)
+	view.Pagination = pagination.Page{Total: view.Total, Page: view.Page, Limit: view.Limit}
 	return view, nil
 }
 
@@ -393,7 +393,7 @@ func (s *Service) ProductTagsPage(ctx context.Context, req *productdto.ProductTa
 	if firstErr != nil {
 		return nil, firstErr
 	}
-	view.Pagination = pagination.Facts(view.Total, view.Page, view.Limit)
+	view.Pagination = pagination.Page{Total: view.Total, Page: view.Page, Limit: view.Limit}
 	return view, nil
 }
 

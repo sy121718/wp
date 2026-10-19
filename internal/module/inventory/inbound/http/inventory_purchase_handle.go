@@ -225,7 +225,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchasesPage(c *gin.Context) {
 	// 装载失败时不构造分页条：工程上下文没定下来，URL 上的 page 不是有效页码。
 	var pg pagination.Page
 	if !loadFailed {
-		pg = pagination.Facts(total, page, limit)
+		pg = pagination.Page{Total: total, Page: page, Limit: limit}
 		pg.Base = reqparams.FilterBaseURL(inventoryPurchasesPath, map[string]string{
 			"project":  selected,
 			"status":   filterStatus,

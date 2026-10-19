@@ -104,8 +104,8 @@ func (d *commentsPageData) templateMap(c *gin.Context) gin.H {
 		"NoProject":       d.NoProject,
 		"LoadErr":         d.LoadErr,
 	}
-	// 分页**事实**（pagination.Page，值语义）：零值＝没有分页，模板据 HasPagination()
-	// 决定渲不渲染分页条；文案与链接由 admin/partials/pagination.html 渲染。
+	// 分页**事实**（pagination.Page，值语义）：只给总数 / 页码 / 每页条数 / 基址；
+	// 页数与按钮态由 admin/partials/pagination.html 用模板层的 pager 算。
 	keys["Pagination"] = paginationFacts(d.Total, d.Page, d.FilterValues)
 	return keys
 }
@@ -367,9 +367,10 @@ func paginationFacts(total int64, page int, f commentFilterValues) pagination.Pa
 	if f.Keyword != "" {
 		q.Set("keyword", f.Keyword)
 	}
-	pg := pagination.Facts(total, page, commentsPageSize)
-	pg.Base = commentsPath + "?" + q.Encode()
-	return pg
+	return pagination.Page{
+		Total: total, Page: page, Limit: commentsPageSize,
+		Base: commentsPath + "?" + q.Encode(),
+	}
 }
 
 // queryInt 读一个非负整数查询参数（解析失败返回 0，由调用方决定默认值）。

@@ -105,9 +105,9 @@ func b2bNewData(t *testing.T, c b2bCase) map[string]any {
 	data["TagName"] = "标签"
 	data["Total"] = c.total
 	data["Items"] = b2bRows(c.rows)
-	pg := pagination.Facts(int64(c.total), c.page, c.size)
+	pg := pagination.Page{Total: int64(c.total), Page: c.page, Limit: c.size}
 	pg.PageParam = "page"
-	pg.KeepLimit = false
+	pg.DropLimit = true
 	data["Pagination"] = pg
 	// 基址来自请求串（生产形态）：翻页链接由模板推出来，Pagination.Base 留空。
 	data["req_path"] = "/admin/product-tags/hits?id=t1&project=" + c.project + "&size=20"
@@ -175,7 +175,7 @@ func TestB2bNavBytesMatchFrozenLegacy(t *testing.T) {
 			want := b2bLegacyNav(t, c)
 			got := b2bNavSection(b2bRender(t, b2bNewData(t, c)))
 			if want != got {
-				t.Errorf("nav 段与迁移前不一致：%s", p2FirstDiff(want, got))
+				t.Errorf("nav 段与迁移前不一致：\nwant=%q\ngot =%q", want, got)
 			}
 		})
 	}
@@ -212,7 +212,7 @@ func TestB2bSinglePageNonEmptyStillRendersNav(t *testing.T) {
 		t.Fatalf("info 行不对：%s", nav)
 	}
 	// 反面：若有人给这里加上 HasPagination 闸门，本用例立刻红（Pages=1）。
-	if pagination.Facts(5, 1, 20).HasPagination() {
+	if PagerOf(pagination.Page{Total: 5, Page: 1, Limit: 20}).HasPagination() {
 		t.Fatal("对照值不成立：total=5/size=20 不应有分页（证明本用例确实在挡 HasPagination 闸门）")
 	}
 }

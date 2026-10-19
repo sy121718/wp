@@ -184,8 +184,9 @@ func TestOrderListPagesPaginationWindowAndEmpty(t *testing.T) {
 				if wantTotal > 0 {
 					wantPage = 1
 				}
-				if !ok || pg.Total != wantTotal || pg.Page != wantPage || pg.Limit != tc.limit {
-					t.Fatalf("empty/single pagination facts = %+v", pg)
+				pager := templates.PagerOf(pg)
+				if !ok || pager.Total != wantTotal || pager.Page != wantPage || pager.Limit != tc.limit {
+					t.Fatalf("empty/single pagination facts = %+v（渲染值 %+v）", pg, pager)
 				}
 				if renderer.data["Page"] != tc.page || renderer.data["Limit"] != tc.limit {
 					t.Fatalf("window = %v/%v", renderer.data["Page"], renderer.data["Limit"])

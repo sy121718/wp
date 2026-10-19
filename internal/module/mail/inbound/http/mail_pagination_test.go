@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/templates"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 )
@@ -29,14 +30,14 @@ func TestMailListPaginationFacts(t *testing.T) {
 	if pg.Base != "/admin/mail" {
 		t.Fatalf("基址应原样带出，实际 %q", pg.Base)
 	}
-	if pg.KeepLimit {
-		t.Error("账号页每页固定，链接不得带 limit（KeepLimit 必须为 false）")
+	if !pg.DropLimit {
+		t.Error("账号页每页固定，链接不得带 limit（DropLimit 必须为 true）")
 	}
-	if !pg.HasPagination() || !pg.HasNext() || pg.HasPrev() {
+	if !templates.PagerOf(pg).HasPagination() || !templates.PagerOf(pg).HasNext() || templates.PagerOf(pg).HasPrev() {
 		t.Fatalf("45 条 / 每页 20：应成立且只有下一页，实际 %+v", pg)
 	}
-	if pg.Pages != 3 || pg.Page != 1 || pg.Start != 1 || pg.End != 20 {
-		t.Fatalf("事实算错：pages=%d page=%d start=%d end=%d", pg.Pages, pg.Page, pg.Start, pg.End)
+	if pg.Total != 45 || pg.Page != 1 || pg.Limit != mailListPageSize {
+		t.Fatalf("事实算错：total=%d page=%d limit=%d", pg.Total, pg.Page, pg.Limit)
 	}
 }
 
@@ -44,7 +45,8 @@ func TestMailListPaginationFacts(t *testing.T) {
 // 与迁移前 TemplateKeys 给空 map 的效果一致（模板侧 isset 守卫）。
 func TestMailListPaginationFactsSinglePage(t *testing.T) {
 	for _, total := range []int64{0, 1, int64(mailListPageSize)} {
-		if pg := mailListPaginationFacts(total, 1, "page", "/admin/mail/templates"); pg.HasPagination() {
+		pg := mailListPaginationFacts(total, 1, "page", "/admin/mail/templates")
+		if templates.PagerOf(pg).HasPagination() {
 			t.Fatalf("total=%d 不应成立分页，实际 %+v", total, pg)
 		}
 	}
@@ -105,7 +107,7 @@ func TestMailPaginationFiltersStayInBase(t *testing.T) {
 	base := reqparams.FilterBaseURL(mailContactsPath, map[string]string{
 		"keyword": "vip@example.com", "status": "subscribed",
 	})
-	pg := pagination.Facts(int64(mailContactsPageSize)+1, 1, mailContactsPageSize)
+	pg := pagination.Page{Total: int64(mailContactsPageSize)+1, Page: 1, Limit: mailContactsPageSize}
 	pg.Base = base
 	if pg.Base != base {
 		t.Fatalf("Base 应原样带出，实际 %q", pg.Base)
@@ -115,12 +117,12 @@ func TestMailPaginationFiltersStayInBase(t *testing.T) {
 			t.Errorf("基址 %q 缺少筛选 %q —— 翻页会回到未筛选的全量", pg.Base, want)
 		}
 	}
-	if !pg.HasPagination() || !pg.HasNext() {
+	if !templates.PagerOf(pg).HasPagination() || !templates.PagerOf(pg).HasNext() {
 		t.Fatalf("每页 %d 条、共 %d 条应超一页，实际 %+v", mailContactsPageSize, mailContactsPageSize+1, pg)
 	}
 	// 联系人页保留 limit（与账号页相反：那两页每页固定 20 条，从链接里去掉）。
-	if !pg.KeepLimit {
-		t.Error("联系人页链接应带 limit（KeepLimit 默认 true）")
+	if pg.DropLimit {
+		t.Error("联系人页链接应带 limit（DropLimit 默认 false）")
 	}
 }
 

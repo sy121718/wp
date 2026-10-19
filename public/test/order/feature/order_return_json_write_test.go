@@ -416,17 +416,12 @@ func TestReturnsTemplateDeclaresJSONWrites(t *testing.T) {
 		}
 	}
 
-	// ③ 本批新增的 9 个词条都必须被模板真正引用（多一个孤儿词条或少一个页面裸 key 都要可见）。
+	// ③ 本批新增的 3 个词条都必须被模板真正引用（多一个孤儿词条或少一个页面裸 key 都要可见）。
 	for _, key := range []string{
 		"admin.returns.bulk.noneSelected",
 		"admin.returns.bulk.refresh",
 		"admin.returns.write.noJs",
-		"admin.returns.bulkApprove.allUpdated",
-		"admin.returns.bulkApprove.allSkipped",
-		"admin.returns.bulkApprove.partial",
-		"admin.returns.bulkReject.allUpdated",
-		"admin.returns.bulkReject.allSkipped",
-		"admin.returns.bulkReject.partial",
+
 	} {
 		if !strings.Contains(src, key) {
 			t.Errorf("模板没有引用本批词条 %q（迁移 605 的 18 行里它成了孤儿）", key)

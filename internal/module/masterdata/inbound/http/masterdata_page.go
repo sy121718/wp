@@ -251,12 +251,9 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 		"RecordsViewURL":  base,
 		"EntitiesViewURL": base + "&view=" + masterDataViewEntities,
 	})
-	// 分页事实（值语义）：零值＝没有分页，单页与装载失败两条路都不渲染分页条。
-	// 文案与链接由 admin/partials/pagination.html 用通用模板函数渲染。
-	if pg := pagination.Facts(total, page, limit); pg.HasPagination() {
-		pg.Base = base
-		data["Pagination"] = pg
-	}
+	// 分页只给事实（总数 / 页码 / 每页条数 / 基址）：页数、区间句、页码窗口与链接由
+	// admin/partials/pagination.html 算。单页与空集时模板自然不渲染分页条。
+	data["Pagination"] = pagination.Page{Total: total, Page: page, Limit: limit, Base: base}
 	c.HTML(http.StatusOK, "admin/masterdata/masterdata_changes.html", data)
 }
 

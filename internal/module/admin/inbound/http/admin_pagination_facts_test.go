@@ -1,20 +1,16 @@
 package adminhttp
 
-// admin_pagination_facts_test.go — task-118（P3-B4）admin 模块 7 个整页分页站点迁事实层的证据。
+// admin_pagination_facts_test.go — admin 模块 7 个整页分页站点的数据形态与链接证据。
 //
-// 迁移把 7 个站点的
-//   for k, v := range pagination.BuildPagination(...).TemplateKeys() { data[k] = v }
-// 换成
-//   if pg := pagination.Facts(...); pg.HasPagination() { pg.Base = base; data["Pagination"] = pg }
-// （事实层；渲染交 admin/partials/pagination.html）。本文件钉三件事：
+// handler 只注入事实：
+//   data["Pagination"] = pagination.Page{Total, Page, Limit, Base}
+// 页数、区间句、页码窗口与链接由 admin/partials/pagination.html 用模板层的 pager 算。
+// 本文件钉两件事：
 //
-//  1. 数据形态：站点只注入事实键，旧成品键（PaginationInfo/PaginationLinks）在 admin 模块
-//     已无消费者；PageParam/KeepLimit 保持默认（?page=N&limit=M），Base 逐字等于旧实参。
-//  2. 逐字节相同：用「录制渲染器」拿到 handler 真实产出的 data，再把同一份 data 的
-//     Pagination 键换回旧成品键（用同一批旧实参 BuildPagination 重算），两份数据过真实
-//     Jet 模板渲染后整页字节相等 —— 这比只看分页片段更强：它同时覆盖了站点周围的正文。
-//  3. 链接字节：期望值用 url.Values 独立拼出（不复用 handler 的拼法），任何
-//     「Base 丢筛选 / KeepLimit 判错 / PageParam 改名 / size 写错」都会在这里红。
+//  1. 数据形态：只注入事实键（旧成品键 PaginationInfo / PaginationLinks 已无生产者）；
+//     PageParam 与「链接带 limit」由 pager 的默认值给出，Base 逐字等于站点实参。
+//  2. 链接字节：期望值用 url.Values 独立拼出（不复用 handler 的拼法），任何
+//     「Base 丢筛选 / 参数名改名 / size 写错」都会在这里红。
 //
 // i18n 站点（I18nEntriesPage）的分页走 pkg/i18n 真实读库，见同目录
 // admin_pagination_i18n_facts_test.go（外部测试包 + 真 PG）。
@@ -300,12 +296,12 @@ func TestAdminPaginationSitesInjectFactsOnly(t *testing.T) {
 			if pg.Base != s.baseWant() {
 				t.Fatalf("%s：Base 应为 %q，实际 %q", s.name, s.baseWant(), pg.Base)
 			}
-			if pg.PageParam != "page" || !pg.KeepLimit {
-				t.Fatalf("%s：默认参数应为 page/KeepLimit=true，实际 %q/%v", s.name, pg.PageParam, pg.KeepLimit)
+			if pager := templates.PagerOf(pg); pager.PageParam != "page" || !pager.KeepLimit {
+				t.Fatalf("%s：默认参数应为 page 且带 limit，实际 %q/keepLimit=%v", s.name, pager.PageParam, pager.KeepLimit)
 			}
-			if pg.Total != s.total || pg.Limit != s.limit || pg.Page != 1 || pg.Pages != 3 {
-				t.Fatalf("%s：事实应为 total=%d limit=%d page=1 pages=3，实际 %d/%d/%d/%d",
-					s.name, s.total, s.limit, pg.Total, pg.Limit, pg.Page, pg.Pages)
+			if pg.Total != s.total || pg.Limit != s.limit || pg.Page != 1 {
+				t.Fatalf("%s：事实应为 total=%d limit=%d page=1，实际 %d/%d/%d",
+					s.name, s.total, s.limit, pg.Total, pg.Limit, pg.Page)
 			}
 			for _, legacy := range []string{"PaginationInfo", "PaginationLinks"} {
 				if _, has := data[legacy]; has {
@@ -313,43 +309,6 @@ func TestAdminPaginationSitesInjectFactsOnly(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-// TestAdminPaginationSitesRenderByteIdenticalToLegacy 同一份 handler 数据：事实键渲染 == 旧成品键渲染。
-func TestAdminPaginationSitesRenderByteIdenticalToLegacy(t *testing.T) {
-	for _, s := range adminPaginationSites(45) {
-		for _, page := range []int{1, 2, 3} {
-			name := s.name + "/第" + strconv.Itoa(page) + "页"
-			t.Run(name, func(t *testing.T) {
-				target := s.path + "&page=" + strconv.Itoa(page)
-				tmpl, data := captureSiteData(t, s.name, s.total, target)
-				factsHTML := renderAdminPage(t, tmpl, data)
-
-				pc, ok := data["Pagination"].(pagination.Page)
-				if !ok {
-					t.Fatalf("%s：缺少事实键", name)
-				}
-				tr, ok := data["t"].(func(string, string) string)
-				if !ok {
-					t.Fatalf("%s：data[t] 不是取词函数（实际 %T）", name, data["t"])
-				}
-				// 旧实参：total/page/limit 与 base 全部来自站点表，不引用 handler 的中间量。
-				legacy := pagination.BuildPagination(s.total, pc.Page, s.limit, s.baseWant(), tr).TemplateKeys()
-				twin := gin.H{}
-				for k, v := range data {
-					twin[k] = v
-				}
-				delete(twin, "Pagination")
-				for k, v := range legacy {
-					twin[k] = v
-				}
-				legacyHTML := renderAdminPage(t, tmpl, twin)
-				if factsHTML != legacyHTML {
-					t.Fatalf("%s：事实层与旧成品键渲染不逐字节相同\n%s", name, paginationFirstDiff(legacyHTML, factsHTML))
-				}
-			})
-		}
 	}
 }
 
@@ -394,9 +353,6 @@ func TestAdminPaginationSitesNoNavWhenSinglePageOrEmpty(t *testing.T) {
 			s.total = total
 			t.Run(s.name+"/total="+strconv.FormatInt(total, 10), func(t *testing.T) {
 				tmpl, data := captureSiteData(t, s.name, total, s.path)
-				if _, has := data["Pagination"]; has {
-					t.Fatalf("%s：total=%d 时不应注入 Pagination（HasPagination 为假）", s.name, total)
-				}
 				got := renderAdminPage(t, tmpl, data)
 				if strings.Contains(got, navOpen) {
 					t.Fatalf("%s：total=%d 时不应渲染分页条\n%s", s.name, total, got)
@@ -443,7 +399,8 @@ func TestAdminI18nEntryFilterPageArithmetic(t *testing.T) {
 				t.Fatalf("反推页码应为 %d，实际 %d", tc.wantPage, page)
 			}
 			// 事实层的 size 必须是同一常量：链接里的 limit=50 就是从这里来的。
-			if pg := pagination.Facts(120, page, adminI18nEntryPageSize); pg.Limit != tc.wantLimit {
+			pg := pagination.Page{Total: 120, Page: page, Limit: adminI18nEntryPageSize}
+			if pg.Limit != tc.wantLimit {
 				t.Fatalf("事实层 limit 应为 %d，实际 %d", tc.wantLimit, pg.Limit)
 			}
 		})
@@ -456,89 +413,4 @@ func (s adminPaginationSite) withoutFilters() adminPaginationSite {
 	c.path = s.basePath
 	c.filters = nil
 	return c
-}
-
-// TestAdminPaginationSitesShapeMatrix 形态矩阵：单页 / 两页 / 多页双侧省略号 / 末页 / 无筛选 / 空集，
-// 逐形态「事实键渲染 == 旧成品键渲染」且分页条的可见性与选中态符合预期。
-func TestAdminPaginationSitesShapeMatrix(t *testing.T) {
-	type shape struct {
-		name     string
-		total    int64
-		page     int
-		wantNav  bool
-		wantDots int
-	}
-	shapes := []shape{
-		{name: "空集", total: 0, page: 1, wantNav: false},
-		{name: "单页", total: 20, page: 1, wantNav: false},
-		{name: "两页", total: 40, page: 2, wantNav: true},
-		{name: "多页中段双省略号", total: 1000, page: 25, wantNav: true, wantDots: 2},
-		{name: "多页末页", total: 1000, page: 50, wantNav: true, wantDots: 1},
-	}
-	for _, s := range adminPaginationSites(0) {
-		for _, variant := range []struct {
-			name string
-			site adminPaginationSite
-		}{
-			{"带筛选", s},
-			{"无筛选", s.withoutFilters()},
-		} {
-			for _, sh := range shapes {
-				site := variant.site
-				site.total = sh.total
-				label := s.name + "/" + variant.name + "/" + sh.name
-				t.Run(label, func(t *testing.T) {
-					target := site.path
-					if site.filters != nil {
-						target += "&page=" + strconv.Itoa(sh.page)
-					} else {
-						target += "?page=" + strconv.Itoa(sh.page)
-					}
-					tmpl, data := captureSiteData(t, site.name, site.total, target)
-					factsHTML := renderAdminPage(t, tmpl, data)
-
-					raw, hasFacts := data["Pagination"]
-					if hasFacts != sh.wantNav {
-						t.Fatalf("%s：注入事实键应为 %v，实际 %v", label, sh.wantNav, hasFacts)
-					}
-					tr, ok := data["t"].(func(string, string) string)
-					if !ok {
-						t.Fatalf("%s：data[t] 不是取词函数（实际 %T）", label, data["t"])
-					}
-					page := sh.page
-					if hasFacts {
-						pg := raw.(pagination.Page)
-						page = pg.Page
-					}
-					legacy := pagination.BuildPagination(site.total, page, site.limit, site.baseWant(), tr).TemplateKeys()
-					twin := gin.H{}
-					for k, v := range data {
-						twin[k] = v
-					}
-					delete(twin, "Pagination")
-					for k, v := range legacy {
-						twin[k] = v
-					}
-					legacyHTML := renderAdminPage(t, tmpl, twin)
-					if factsHTML != legacyHTML {
-						t.Fatalf("%s：事实层与旧成品键渲染不逐字节相同\n%s", label, paginationFirstDiff(legacyHTML, factsHTML))
-					}
-
-					gotNav := strings.Contains(factsHTML, navOpen)
-					if gotNav != sh.wantNav {
-						t.Fatalf("%s：分页条应出现=%v，实际=%v", label, sh.wantNav, gotNav)
-					}
-					if !sh.wantNav {
-						return
-					}
-					if n := strings.Count(factsHTML, ">…<"); n != sh.wantDots {
-						t.Fatalf("%s：省略号应为 %d 个，实际 %d 个", label, sh.wantDots, n)
-					}
-					if !strings.Contains(factsHTML, "<span class=\"pagination-btn is-active\">"+strconv.Itoa(page)+"</span>") {
-						t.Fatalf("%s：当前页 %d 应为 is-active", label, page)
-					}
-				})
-			}
-		}
-	}
 }

@@ -133,6 +133,6 @@ func (s *Service) ProductAttributesPage(ctx context.Context, req *productdto.Pro
 	if firstErr != nil {
 		return nil, firstErr
 	}
-	view.Pagination = pagination.Facts(view.Total, view.Page, view.Limit)
+	view.Pagination = pagination.Page{Total: view.Total, Page: view.Page, Limit: view.Limit}
 	return view, nil
 }

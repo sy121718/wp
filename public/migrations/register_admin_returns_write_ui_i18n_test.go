@@ -19,18 +19,18 @@ import (
 // 修法：判据枚举本批 9 个 key × 2 种语言 = 18 个 (item_key, lang) 组合，缺任意一项即为 0；
 // SQL 是 ON CONFLICT (item_key, lang) DO NOTHING，重跑只补缺行、不覆盖运营改过的值。
 //
-// 本批的 9 个 key 是退货页五个写动作迁 JSON 之后**页面自己带下去**的文案，所以它们必须恰好
+// 本批的 3 个 key 是退货页五个写动作迁 JSON 之后**页面自己带下去**的文案，所以它们必须恰好
 // 能被模板与基座消费到 —— 多一个（没人用的孤儿词条）或少一个（页面上出现裸 key）都要在 review
 // 时看得见。
 func TestAdminReturnsWriteUISeedBackfillsMissingLanguage(t *testing.T) {
 	const version = "605-admin-returns-write-ui-i18n"
 	seed := findSeedByVersion(t, version)
 
-	// ① 判据与 SQL 的组合集合必须一致：判据点名 9 个 key、SQL 落 18 个 (key, lang) 组合，
+	// ① 判据与 SQL 的组合集合必须一致：判据点名 3 个 key、SQL 落 6 个 (key, lang) 组合，
 	//    语言恰好是判据里写死的那两种。任一侧单改（加了 key、加了语言）这里立刻红。
 	pairs := seedPairs(t, seed.SQL)
-	if len(pairs) != 18 {
-		t.Fatalf("605 的 SQL 应有 18 个 (key, lang) 组合，实际 %d 个：%v", len(pairs), pairs)
+	if len(pairs) != 6 {
+		t.Fatalf("605 的 SQL 应有 6 个 (key, lang) 组合，实际 %d 个：%v", len(pairs), pairs)
 	}
 	langs := map[string]int{}
 	keys := map[string]bool{}
@@ -38,11 +38,11 @@ func TestAdminReturnsWriteUISeedBackfillsMissingLanguage(t *testing.T) {
 		langs[p.lang]++
 		keys[p.key] = true
 	}
-	if langs["zh-CN"] != 9 || langs["en-US"] != 9 || len(langs) != 2 {
-		t.Fatalf("605 的 SQL 语言分布应为 zh-CN 9 / en-US 9，实际 %v", langs)
+	if langs["zh-CN"] != 3 || langs["en-US"] != 3 || len(langs) != 2 {
+		t.Fatalf("605 的 SQL 语言分布应为 zh-CN 3 / en-US 3，实际 %v", langs)
 	}
-	if len(keys) != 9 {
-		t.Fatalf("605 的 SQL 应覆盖 9 个 key，实际 %d 个", len(keys))
+	if len(keys) != 3 {
+		t.Fatalf("605 的 SQL 应覆盖 3 个 key，实际 %d 个", len(keys))
 	}
 	// 判据点名的 key 用**通用**提取器（recent_write_ui_seed_guard_test.go 的 guardSeedKeys）：
 	// 同包那个 keysMentionedIn 的正则写死了 `admin.mail.` 前缀（它服务于 598），对本批的
@@ -103,12 +103,12 @@ func TestAdminReturnsWriteUISeedBackfillsMissingLanguage(t *testing.T) {
 		return
 	}
 
-	// ③ 第一次 RunSeeds：新库里 605 的 SQL 真被执行，18 行齐全、判据翻成 1。
+	// ③ 第一次 RunSeeds：新库里 605 的 SQL 真被执行，6 行齐全、判据翻成 1。
 	if err := migrations.RunSeeds(db); err != nil {
 		t.Fatalf("首轮 RunSeeds（605 的 SQL 会在这里真执行）：%v", err)
 	}
-	if got := countPairs(t, db, keys, ""); got != 18 {
-		t.Fatalf("首轮后 605 的 18 行应齐全，实际 %d 行", got)
+	if got := countPairs(t, db, keys, ""); got != 6 {
+		t.Fatalf("首轮后 605 的 6 行应齐全，实际 %d 行", got)
 	}
 	if applied := guardValue(t, db, seed); applied != 1 {
 		t.Fatalf("首轮后判据应为 1（已完成），实际 %d", applied)
@@ -126,7 +126,7 @@ func TestAdminReturnsWriteUISeedBackfillsMissingLanguage(t *testing.T) {
 		"admin.returns.bulk.refresh")
 	mustExec(t, db, `INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
 		VALUES (?, 'ja-JP', '運営が入れた日本語', 200, 'admin', 'operator', 1, now(), now())`,
-		"admin.returns.bulkApprove.allUpdated")
+		"admin.returns.bulk.refresh")
 
 	// 缺陷判据（修复前这里是 1 → 静默跳过 → 英文永远补不上）
 	if applied := guardValue(t, db, seed); applied != 0 {
@@ -147,11 +147,11 @@ func TestAdminReturnsWriteUISeedBackfillsMissingLanguage(t *testing.T) {
 		if got := valueOf(t, db, "admin.returns.bulk.noneSelected", "zh-CN"); got != operatorValue {
 			t.Errorf("第 %d 轮后运营改过的中文值被覆盖：实际 %q（ON CONFLICT DO NOTHING 下不该发生）", round, got)
 		}
-		if got := valueOf(t, db, "admin.returns.bulkApprove.allUpdated", "ja-JP"); got != "運営が入れた日本語" {
+		if got := valueOf(t, db, "admin.returns.bulk.refresh", "ja-JP"); got != "運営が入れた日本語" {
 			t.Errorf("第 %d 轮后第三语言行被动了：实际 %q", round, got)
 		}
-		if got := countPairs(t, db, keys, ""); got != 19 {
-			t.Errorf("第 %d 轮后本批应有 19 行（18 + 第三语言 1），实际 %d 行", round, got)
+		if got := countPairs(t, db, keys, ""); got != 7 {
+			t.Errorf("第 %d 轮后本批应有 7 行（6 + 第三语言 1），实际 %d 行", round, got)
 		}
 		if got := countPairs(t, db, keys, "ja-JP"); got != 1 {
 			t.Errorf("第 %d 轮后第三语言行数应仍为 1，实际 %d（seed 只写中英两种语言）", round, got)

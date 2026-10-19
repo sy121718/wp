@@ -737,10 +737,9 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 	// 分页条：handler 只交事实（pkg/pagination.Page），信息行与链接由
 	// admin/partials/pagination.html 用 sprintf / queryURL 现算；
 	// 单页 / 空集时 HasPagination 为假，片段自然不渲染。
-	if pg := pagination.Facts(customerTotal(list), page, limit); pg.HasPagination() {
-		pg.Base = reqparams.FilterBaseURL(customerListPath, customerFilterValues(filter))
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: customerTotal(list), Page: page, Limit: limit}
+	pg.Base = reqparams.FilterBaseURL(customerListPath, customerFilterValues(filter))
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/user/customers.html", data)
 }
 
@@ -1475,13 +1474,12 @@ func (h *customerPageHandle) CustomerRfmPage(c *gin.Context) {
 		rows, segment, page, limit, total, errMsg))
 	data["SegmentTabs"] = customerRfmSegmentTabs(res, segment, rng)
 	// 分页链接保留区间与分段：不带的话翻页会静默变成「全部区间 + 全部分段」。
-	if pg := pagination.Facts(total, page, limit); pg.HasPagination() {
-		pg.Base = customerRfmPath + "?" + customerRangeQuery(rng)
-		if segment != "" {
-			pg.Base += "&segment=" + segment
-		}
-		data["Pagination"] = pg
+	pg := pagination.Page{Total: total, Page: page, Limit: limit}
+	pg.Base = customerRfmPath + "?" + customerRangeQuery(rng)
+	if segment != "" {
+		pg.Base += "&segment=" + segment
 	}
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/user/customer_rfm", data)
 }
 

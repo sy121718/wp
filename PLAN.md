@@ -26,7 +26,7 @@ V 之外不出现「给用户看的字符串」，也不出现「字符串的形
 | dto 展示字段 | 49 处 | 0 |
 | 视图 dto / PageStatus / LoadFailed | 18 / 15 / 119 | 0 |
 | 控制器视图赋值 / gin.H | 88 / 277 | 0 |
-| 分页计算（pagination.Facts 等） | 12 处 | 0 |
+| 分页派生计算（Facts / Pages / Start / End） | 12 处 | 0（已清零） |
 | Go 里 .Format | 49 处（页面显示 30） | 只留出站内容 |
 | dto 时间 field：*At string / JSONTime | 64 / 98 | 时间类型 / unix 毫秒 |
 | (any, error) handler | 30 | 0 |
@@ -45,7 +45,7 @@ V 之外不出现「给用户看的字符串」，也不出现「字符串的形
 | 0.2 | service 44 处取词分档：删 `FacingText` 型（comment / membership / navigation）；出站内容（邮件正文、打包报告）收进显式出口并登记理由 | 模块内 `i18n.Translate` 只剩白名单条目 |
 | 0.3 | 删 dto 49 处展示字段 + 18 个视图 dto + 15 个 PageStatus；模板改为自己取词与分档 | dto 无展示字段、无 PageStatus |
 | 0.4 | 时间：`JSONTime.MarshalJSON` 输出 unix 毫秒；64 处 `*At string` 改回时间类型；49 处 `.Format` 分档 | dto 时间字段无 string；模块内 `.Format` 只剩白名单 |
-| 0.5 | 分页：12 处 `pagination.*` 清零；service 只交 Total/Page/Limit；`pkg/pagination` 只留 ClampPage | inbound/http 无 `pagination.` |
+| 0.5 ✅ | 分页：派生计算清零（`pagination.Facts` / `Pages` / `Start` / `End` / `HasPagination` 全删）；`pkg/pagination` 只剩 `Page` 事实（Total/Page/Limit/PageParam/DropLimit/Base）、`ClampPage`、`Slice`、`BaseURL`、`Query`；派生与链接在 `internal/templates/pager.go` + partial | `rg "pagination.Facts|HasPagination\(\)" -g "*.go"` = 0 |
 | 0.6 | 出口统一：30 个 `(any, error)` 改 `func(c *gin.Context)` + `view.Render` / `response.*`；删 wrapView / failView | 每方法最后一条语句是封装调用 |
 | 0.7 | 通用能力归位：`pkg/pagination` 只留 `ClampPage`；`pkg/money` 若只服务显示则删；状态徽标/空态/下拉在 partial 里唯一定义；Jet 侧补 `formatTime` / `money` / `statusBadge` | partial 与 js/ui 为唯一实现；`pkg` 无新增页面助手 |
 

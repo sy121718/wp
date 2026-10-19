@@ -22,6 +22,7 @@ import (
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	"go_wp/pkg/i18n"
+	"go_wp/internal/templates"
 	"go_wp/pkg/pagination"
 )
 
@@ -103,7 +104,7 @@ func inventoryFactsMapper(t *testing.T, target string) (*gin.Context, *httptest.
 func TestInventoryPurchasesMapperCarriesPaginationFacts(t *testing.T) {
 	c, _ := inventoryFactsMapper(t, "/admin/inventory/purchases?project=project-1")
 
-	pg := pagination.Facts(45, 2, 20)
+	pg := pagination.Page{Total: 45, Page: 2, Limit: 20}
 	pg.Base = "/admin/inventory/purchases?project=project-1"
 	m := (&inventoryPurchasesPageData{
 		SelectedProject: "project-1",
@@ -117,7 +118,7 @@ func TestInventoryPurchasesMapperCarriesPaginationFacts(t *testing.T) {
 	if got != pg {
 		t.Errorf("交出的事实与 handler 构造的不一致：%+v", got)
 	}
-	if !got.HasPagination() || got.Base != pg.Base {
+	if !templates.PagerOf(got).HasPagination() || got.Base != pg.Base {
 		t.Errorf("事实应带基址且为多页：%+v", got)
 	}
 	for _, legacy := range []string{"PaginationInfo", "PaginationLinks"} {
@@ -132,7 +133,7 @@ func TestInventoryPurchasesMapperCarriesPaginationFacts(t *testing.T) {
 func TestInventorySourcesMapperCarriesPaginationFacts(t *testing.T) {
 	c, _ := inventoryFactsMapper(t, "/admin/inventory/sources?project=project-1&type=internal")
 
-	pg := pagination.Facts(45, 2, 20)
+	pg := pagination.Page{Total: 45, Page: 2, Limit: 20}
 	pg.Base = "/admin/inventory/sources?project=project-1&type=internal"
 	m := (&inventorySourcesPageData{
 		SelectedProject: "project-1",
@@ -163,7 +164,7 @@ func TestInventoryPurchasesAndSourcesZeroFactsRenderNoPagination(t *testing.T) {
 		{
 			name: "采购单页/单页",
 			data: (&inventoryPurchasesPageData{SelectedProject: "project-1",
-				Pagination: pagination.Facts(5, 1, 20)}).templateMap(mustGinContext(t, "/admin/inventory/purchases?project=project-1")),
+				Pagination: pagination.Page{Total: 5, Page: 1, Limit: 20}}).templateMap(mustGinContext(t, "/admin/inventory/purchases?project=project-1")),
 		},
 		{
 			name: "货源页/装载失败（零值）",
@@ -176,7 +177,7 @@ func TestInventoryPurchasesAndSourcesZeroFactsRenderNoPagination(t *testing.T) {
 			if !ok {
 				t.Fatalf("模板键 Pagination 不是事实：%T", tc.data["Pagination"])
 			}
-			if pg.HasPagination() {
+			if templates.PagerOf(pg).HasPagination() {
 				t.Errorf("单页 / 零值事实不该判定为多页：%+v", pg)
 			}
 		})

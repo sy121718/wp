@@ -190,19 +190,18 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	// 单页或空数据时 HasPagination 为假，模板自然不渲染。
 	//
 	// 分页条只交事实：信息行 / 页码窗口 / 链接参数顺序由 partial 现算。
-	if pg := pagination.Facts(total, page, limit); pg.HasPagination() {
-		pg.Base = reqparams.FilterBaseURL(inventoryPagePath, map[string]string{
-			"project":     selected,
-			"sku":         sku,
-			"variantId":   variantID,
-			"warehouseId": filterWarehouse,
-			"direction":   filterDirection,
-			"reasonCode":  filterReason,
-			"timeFrom":    filterTimeFrom,
-			"timeTo":      filterTimeTo,
-		})
-		pageData["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: total, Page: page, Limit: limit}
+	pg.Base = reqparams.FilterBaseURL(inventoryPagePath, map[string]string{
+		"project":     selected,
+		"sku":         sku,
+		"variantId":   variantID,
+		"warehouseId": filterWarehouse,
+		"direction":   filterDirection,
+		"reasonCode":  filterReason,
+		"timeFrom":    filterTimeFrom,
+		"timeTo":      filterTimeTo,
+	})
+	pageData["Pagination"] = pg
 	pageview.Render(c, pageData)
 }
 

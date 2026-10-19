@@ -179,7 +179,7 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		"project": selected, "status": filter.Status, "keyword": filter.Keyword,
 		"paymentMethod": filter.PaymentMethod,
 	})
-	pg := pagination.Facts(total, page, limit)
+	pg := pagination.Page{Total: total, Page: page, Limit: limit}
 	pg.Base = base
 	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/order/orders.html", data)

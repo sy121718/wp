@@ -371,15 +371,14 @@ func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 					rows = append(rows, membershipAssignRowOf(item))
 				}
 			}
-			if p := pagination.Facts(total, page, limit); p.HasPagination() {
-				p.Base = reqparams.FilterBaseURL(membershipAssignmentsPath, map[string]string{
-					"project": selected,
-					"tierId":  itoa64(filterTier),
-					"source":  filterSource,
-					"userId":  itoaU64(filterUser),
-				})
-				pg = p
-			}
+			p := pagination.Page{Total: total, Page: page, Limit: limit}
+			p.Base = reqparams.FilterBaseURL(membershipAssignmentsPath, map[string]string{
+				"project": selected,
+				"tierId":  itoa64(filterTier),
+				"source":  filterSource,
+				"userId":  itoaU64(filterUser),
+			})
+			pg = p
 		}
 	}
 

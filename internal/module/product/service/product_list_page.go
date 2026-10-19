@@ -226,6 +226,6 @@ func (s *Service) ProductListPage(ctx context.Context, req *productdto.ProductLi
 	}
 	// 分页条只给事实：总数 / 页码 / 每页条数。文案、页码窗口与链接（含筛选条件）在
 	// admin/partials/pagination.html 里由模板拼 —— 链接基址是请求事实，不在这里算。
-	view.Pagination = pagination.Facts(view.Total, view.Page, view.Limit)
+	view.Pagination = pagination.Page{Total: view.Total, Page: view.Page, Limit: view.Limit}
 	return view, nil
 }

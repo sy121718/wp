@@ -229,7 +229,7 @@ func productCategoriesPageViewStub(mutate func(*productdto.ProductCategoriesPage
 	if mutate != nil {
 		mutate(v)
 	}
-	v.Pagination = pagination.Facts(v.Total, v.Page, v.Limit)
+	v.Pagination = pagination.Page{Total: v.Total, Page: v.Page, Limit: v.Limit}
 	return v
 }
 
@@ -243,7 +243,7 @@ func productBrandsPageViewStub(mutate func(*productdto.ProductBrandsPageResp)) *
 	if mutate != nil {
 		mutate(v)
 	}
-	v.Pagination = pagination.Facts(v.Total, v.Page, v.Limit)
+	v.Pagination = pagination.Page{Total: v.Total, Page: v.Page, Limit: v.Limit}
 	return v
 }
 
@@ -257,7 +257,7 @@ func productTagsPageViewStub(mutate func(*productdto.ProductTagsPageResp)) *prod
 	if mutate != nil {
 		mutate(v)
 	}
-	v.Pagination = pagination.Facts(v.Total, v.Page, v.Limit)
+	v.Pagination = pagination.Page{Total: v.Total, Page: v.Page, Limit: v.Limit}
 	return v
 }
 
@@ -360,7 +360,7 @@ func productListPageViewStub(mutate func(*productdto.ProductListPageResp)) *prod
 	if mutate != nil {
 		mutate(v)
 	}
-	v.Pagination = pagination.Facts(v.Total, v.Page, v.Limit)
+	v.Pagination = pagination.Page{Total: v.Total, Page: v.Page, Limit: v.Limit}
 	return v
 }
 
@@ -457,7 +457,7 @@ func productAttributesPageViewStub(mutate func(*productdto.ProductAttributesPage
 	if mutate != nil {
 		mutate(view)
 	}
-	view.Pagination = pagination.Facts(view.Total, view.Page, view.Limit)
+	view.Pagination = pagination.Page{Total: view.Total, Page: view.Page, Limit: view.Limit}
 	return view
 }
 

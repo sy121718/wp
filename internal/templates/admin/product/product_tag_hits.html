@@ -46,7 +46,7 @@
         </table>
     </div>
     <nav class="pagination" aria-label="{{ .["t"]("shell.pagination.label", "分页") }}">
-        {{pg := .Pagination}}{{tr := .["t"]}}{{base := pg.Base}}{{if !base}}{{if isset(.["req_path"])}}{{base = pageBase(.["req_path"], pg.PageParam, "id", "project", "size")}}{{end}}{{end}}{{from := (pg.Page - 1) * pg.Limit + 1}}{{to := from + len(.Items) - 1}}<div class="pagination-info">{{sprintf(tr("shell.pagination.info", "共 %s 条，第 %s-%s 条"), pg.Total, from, to)}}</div>
+        {{pg := pager(.Pagination)}}{{tr := .["t"]}}{{base := pg.Base}}{{if !base}}{{if isset(.["req_path"])}}{{base = pageBase(.["req_path"], pg.PageParam, "id", "project", "size")}}{{end}}{{end}}{{from := (pg.Page - 1) * pg.Limit + 1}}{{to := from + len(.Items) - 1}}<div class="pagination-info">{{sprintf(tr("shell.pagination.info", "共 %s 条，第 %s-%s 条"), pg.Total, from, to)}}</div>
         <div class="pagination-pages">
             {{if pg.HasPrev()}}<button type="button" class="pagination-btn" hx-get="{{queryURL(base, "id", .TagID, "page", pg.PrevPage(), "project", .ProjectID)}}" hx-target="#tag-hits-panel" hx-swap="innerHTML">{{ .["t"]("shell.pagination.prev", "上一页") }}</button>{{else}}<span class="pagination-btn is-disabled">{{ .["t"]("shell.pagination.prev", "上一页") }}</span>{{end}}
             {{if pg.HasNext()}}<button type="button" class="pagination-btn" hx-get="{{queryURL(base, "id", .TagID, "page", pg.NextPage(), "project", .ProjectID)}}" hx-target="#tag-hits-panel" hx-swap="innerHTML">{{ .["t"]("shell.pagination.next", "下一页") }}</button>{{else}}<span class="pagination-btn is-disabled">{{ .["t"]("shell.pagination.next", "下一页") }}</span>{{end}}

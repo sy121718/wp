@@ -467,14 +467,12 @@ func (h *AdminPagesHandle) AdministratorsPage(c *gin.Context) {
 		"Err":         adminListLoadErr(c, err),
 		"ListQuery":   adminAdminsPage.listQuery(c),
 	})
-	// 分页条交事实层（task-118）：只给「值是多少」，信息行/按钮/href/选中态由
-	// admin/partials/pagination.html 渲染。本模块的旧成品键（PaginationInfo/PaginationLinks）
-	// 到此已无消费者；pkg/pagination.BuildPagination 的删除属独立最后一步。
+	// 分页条只给事实（总数 / 页码 / 每页条数 / 基址）：信息行、按钮、href 与选中态由
+	// admin/partials/pagination.html 用模板层的 pager 算。
 	base := reqparams.FilterBaseURL("/admin/administrators", map[string]string{"name": name, "email": email})
-	if pg := pagination.Facts(res.Total, page, limit); pg.HasPagination() {
-		pg.Base = base
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
+	pg.Base = base
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/system/administrators", data)
 }
 
@@ -601,10 +599,9 @@ func (h *AdminPagesHandle) DatarulesPage(c *gin.Context) {
 		"ListQuery":    adminDatarulesPage.listQuery(c),
 	})
 	base := reqparams.FilterBaseURL("/admin/datarules", map[string]string{"domain": domain})
-	if pg := pagination.Facts(res.Total, page, limit); pg.HasPagination() {
-		pg.Base = base
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
+	pg.Base = base
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/system/datarules", data)
 }
 
@@ -829,10 +826,9 @@ func (h *AdminPagesHandle) DepartmentsPage(c *gin.Context) {
 		"ListQuery":     adminDeptsPage.listQuery(c),
 	})
 	base := reqparams.FilterBaseURL("/admin/departments", map[string]string{"keyword": keyword})
-	if pg := pagination.Facts(res.Total, page, limit); pg.HasPagination() {
-		pg.Base = base
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
+	pg.Base = base
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/system/departments", data)
 }
 
@@ -1138,10 +1134,9 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	})
 	// 本页每页条数是固定常量（不看 ?limit=），事实层照旧收这个 size；KeepLimit 保持默认 true
 	// —— 旧链接就是 ?page=N&limit=50，字节不能变（本页 handler 不读 limit，但它仍出现在链接里）。
-	if pg := pagination.Facts(total, page, adminI18nEntryPageSize); pg.HasPagination() {
-		pg.Base = base
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: total, Page: page, Limit: adminI18nEntryPageSize}
+	pg.Base = base
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/system/i18n", adminui.Prepare(c, data))
 }
 
@@ -1310,10 +1305,9 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 		"PermChoices": h.buildPermChoices(c, nil),
 	})
 	base := reqparams.FilterBaseURL("/admin/menus", map[string]string{"keyword": keyword})
-	if pg := pagination.Facts(res.Total, page, limit); pg.HasPagination() {
-		pg.Base = base
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
+	pg.Base = base
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/system/menus", data)
 }
 
@@ -1616,10 +1610,9 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 		"ListQuery":    adminPermsPage.listQuery(c),
 	})
 	base := reqparams.FilterBaseURL("/admin/permissions", map[string]string{"code": code, "module": module})
-	if pg := pagination.Facts(res.Total, page, limit); pg.HasPagination() {
-		pg.Base = base
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
+	pg.Base = base
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/system/permissions", data)
 }
 
@@ -1793,10 +1786,9 @@ func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
 		"ListQuery":     adminRolesPage.listQuery(c),
 	})
 	base := reqparams.FilterBaseURL("/admin/roles", map[string]string{"keyword": keyword})
-	if pg := pagination.Facts(res.Total, page, limit); pg.HasPagination() {
-		pg.Base = base
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
+	pg.Base = base
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/system/roles", data)
 }
 

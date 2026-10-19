@@ -27,6 +27,8 @@ import (
 	"testing"
 
 	"github.com/CloudyKit/jet/v6"
+
+	"go_wp/pkg/pagination"
 )
 
 // p0plusStandInPageNumbers 替身：签名与 task-94 计划的 `pageNumbers(page, pages, win int) []int` 一致。
@@ -149,7 +151,7 @@ func TestP0PlusGlobalsAreCallableInExpressions(t *testing.T) {
 		},
 		{
 			name: "sprintf 用结构体字段造句（真 int 入参）",
-			tpl:  `{{pg := .Pagination}}{{sprintf("共 %s 条，第 %s-%s 条", pg.Total, pg.Start, pg.End)}}`,
+			tpl:  `{{pg := pager(.Pagination)}}{{sprintf("共 %s 条，第 %s-%s 条", pg.Total, pg.Start, pg.End)}}`,
 			want: []string{"共 120 条，第 21-40 条"},
 		},
 		{
@@ -183,7 +185,7 @@ func TestP0PlusGlobalsAreCallableInExpressions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var data map[string]any
 			if strings.Contains(tc.tpl, ".Pagination") {
-				data = map[string]any{"Pagination": p0PageMirror{Total: 120, Page: 2, Limit: 20, Pages: 6, Start: 21, End: 40}}
+				data = map[string]any{"Pagination": pagination.Page{Total: 120, Page: 2, Limit: 20}}
 			}
 			out, err := p0plusRenderData(t, tc.tpl, data)
 			if err != nil {

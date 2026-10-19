@@ -179,12 +179,8 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 	base := reqparams.FilterBaseURL("/admin/analytics", map[string]string{
 		"project": selected, "from": from, "to": to, "view": analyticsViewPaths,
 	})
-	// 分页事实（值语义）：零值＝没有分页，单页与装载失败两条路都不渲染分页条。
-	// 文案与链接由 admin/partials/pagination.html 用通用模板函数渲染。
-	if pg := pagination.Facts(pathTotal, page, limit); pg.HasPagination() {
-		pg.Base = base
-		data["Pagination"] = pg
-	}
+	// 分页只给事实；页数、区间句、页码窗口与链接由 partial 算。
+	data["Pagination"] = pagination.Page{Total: pathTotal, Page: page, Limit: limit, Base: base}
 	c.HTML(http.StatusOK, "admin/analytics/analytics.html", data)
 }
 

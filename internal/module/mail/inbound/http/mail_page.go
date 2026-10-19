@@ -724,10 +724,9 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 	// 分页只给事实：总数 / 页码 / 每页 / 基址由本行注入，信息行、翻页按钮与链接
 	// 全部由 admin/partials/pagination.html 按请求语言渲染。单页 / 空数据不注入键
 	// （与迁移前的空 map 同义），片段里 isset 守卫自然跳过。
-	if pg := pagination.Facts(runs.Total, page, mailAutomationRunsPageSize); pg.HasPagination() {
-		pg.Base = base
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: runs.Total, Page: page, Limit: mailAutomationRunsPageSize}
+	pg.Base = base
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/mail/mail_automation_runs.html", adminui.Prepare(c, data))
 }
 
@@ -787,10 +786,9 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 		// 被弹回第 1 页。写动作的结论不在本页回显（走 shell.RenderJump 提示页）。
 		"ListQuery": mailPageQuery(page),
 	})
-	if pg := pagination.Facts(campaigns.Total, page, mailCampaignsPageSize); pg.HasPagination() {
-		pg.Base = "/admin/mail/campaigns"
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: campaigns.Total, Page: page, Limit: mailCampaignsPageSize}
+	pg.Base = "/admin/mail/campaigns"
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/mail/mail_campaigns.html", data)
 }
 
@@ -907,10 +905,9 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 	})
 	// 收件人明细的分页条：baseURL 带上 id，翻页时不会丢掉「在看哪条活动」。
 	// 键名与 partials/pagination.html 读的键一致（该片段在这里用无参 include 渲染）。
-	if pg := pagination.Facts(report.Total, page, mailCampaignsPageSize); pg.HasPagination() {
-		pg.Base = fmt.Sprintf("/admin/mail/campaign?id=%d", id)
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: report.Total, Page: page, Limit: mailCampaignsPageSize}
+	pg.Base = fmt.Sprintf("/admin/mail/campaign?id=%d", id)
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/mail/mail_campaign.html", data)
 }
 
@@ -1041,10 +1038,9 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 	})
 	// 基地址带上筛选，翻页才保留筛选条件（否则翻到第 2 页就回到全量）。
 	base := reqparams.FilterBaseURL(mailContactsPath, map[string]string{"keyword": keyword, "status": status, "tags": tags})
-	if pg := pagination.Facts(contacts.Total, page, mailContactsPageSize); pg.HasPagination() {
-		pg.Base = base
-		data["Pagination"] = pg
-	}
+	pg := pagination.Page{Total: contacts.Total, Page: page, Limit: mailContactsPageSize}
+	pg.Base = base
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/mail/mail_contacts.html", data)
 }
 
@@ -1248,10 +1244,10 @@ func mailPageNumber(raw string) int {
 // 的基址（翻页失效）。改为事实层后链接由 partial 用 Base + PageParam 生成，这一缺陷随
 // 旧路径一起消失 —— 属**有意的行为修复**，见 task-105 卡面与渲染测试的同名注释。
 func mailListPaginationFacts(total int64, page int, param, base string) pagination.Page {
-	pg := pagination.Facts(total, page, mailListPageSize)
+	pg := pagination.Page{Total: total, Page: page, Limit: mailListPageSize}
 	pg.Base = base
 	pg.PageParam = param
-	pg.KeepLimit = false
+	pg.DropLimit = true
 	return pg
 }
 
@@ -1287,9 +1283,8 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 	})
 	// 分页只注入事实；单页 / 空数据不注入键（与迁移前键缺失同义），
 	// 模板 include 里 isset 守卫自然跳过。
-	if pg := mailListPaginationFacts(accountTotal, accountPage, "account_page", "/admin/mail"); pg.HasPagination() {
-		data["Pagination"] = pg
-	}
+	pg := mailListPaginationFacts(accountTotal, accountPage, "account_page", "/admin/mail")
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/mail/mail.html", data)
 }
 
@@ -1555,9 +1550,8 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 		// Err 只由上面的取数失败分支注入。
 	})
 	// 分页只注入事实；单页 / 空数据不注入键，模板 include 的 isset 守卫自然跳过。
-	if pg := mailListPaginationFacts(total, page, "page", "/admin/mail/templates"); pg.HasPagination() {
-		data["Pagination"] = pg
-	}
+	pg := mailListPaginationFacts(total, page, "page", "/admin/mail/templates")
+	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/mail/mail_templates.html", data)
 }
 

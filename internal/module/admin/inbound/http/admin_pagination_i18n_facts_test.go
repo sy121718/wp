@@ -126,14 +126,14 @@ func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 	if pg.Limit != 50 || pg.Page != 2 {
 		t.Fatalf("事实应为 limit=50 page=2，实际 limit=%d page=%d", pg.Limit, pg.Page)
 	}
-	if pg.PageParam != "page" || !pg.KeepLimit {
-		t.Fatalf("默认参数应为 page/KeepLimit=true，实际 %q/%v", pg.PageParam, pg.KeepLimit)
+	if pager := templates.PagerOf(pg); pager.PageParam != "page" || !pager.KeepLimit {
+		t.Fatalf("默认参数应为 page 且带 limit，实际 %q/keepLimit=%v", pager.PageParam, pager.KeepLimit)
 	}
 	wantBase := "/admin/i18n?lang=zh-CN"
 	if pg.Base != wantBase {
 		t.Fatalf("Base 应为 %q，实际 %q", wantBase, pg.Base)
 	}
-	if !pg.HasPagination() {
+	if !templates.PagerOf(pg).HasPagination() {
 		t.Fatalf("库里 zh-CN 词条 %d 条 / 每页 50，应多于一页（否则本用例失去意义）", wantTotal)
 	}
 	for _, legacy := range []string{"PaginationInfo", "PaginationLinks"} {
@@ -163,28 +163,4 @@ func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 		t.Fatal("第 2 页应是 is-active 的 2")
 	}
 
-	// 逐字节差分：同一份 data 换成旧成品键（旧实参 = 本页站点表）后整页字节相等。
-	tr, ok := data["t"].(func(string, string) string)
-	if !ok {
-		t.Fatalf("data[t] 不是取词函数（实际 %T）", data["t"])
-	}
-	legacy := pagination.BuildPagination(wantTotal, pg.Page, 50, wantBase, tr).TemplateKeys()
-	twin := gin.H{}
-	for k, v := range data {
-		twin[k] = v
-	}
-	delete(twin, "Pagination")
-	for k, v := range legacy {
-		twin[k] = v
-	}
-	legacyRec := httptest.NewRecorder()
-	inst2 := renderer.Instance("admin/system/i18n", twin)
-	inst2.WriteContentType(legacyRec)
-	if err := inst2.Render(legacyRec); err != nil {
-		t.Fatalf("渲染旧形态词条页失败：%v", err)
-	}
-	if legacyHTML := legacyRec.Body.String(); legacyHTML != got {
-		t.Fatalf("词条页事实层与旧成品键渲染不逐字节相同（len 旧 %d / 新 %d）",
-			len(legacyHTML), len(got))
-	}
 }

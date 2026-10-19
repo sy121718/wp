@@ -71,6 +71,7 @@ func injectGlobals(set *jet.Set) {
 	set.AddGlobal("formatTime", formatTime)
 	set.AddGlobal("truncateWidth", truncateWidth)
 	set.AddGlobal("pageNumbers", pageNumbers)
+	set.AddGlobal("pager", PagerOf)
 }
 
 // money 金额（**整数分**）→ 展示串：符号 + 两位小数，如 ¥1234.50。

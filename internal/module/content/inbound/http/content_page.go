@@ -311,13 +311,11 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 		data["Total"] = total
 	}
 	// 分页条（服务端渲染）：handler 只交事实 pagination.Page —— 句子、页码窗口与链接
-	// 由 partial 现算；单页 / 空集时 HasPagination 为假，片段自然不渲染。
+	// 由 partial 现算；单页 / 空集时模板自然不渲染。
 	//
 	// 翻页保留关键词；写动作的结论不再经查询参数回带（走提示页），基地址上只有筛选。
-	if pg := pagination.Facts(total, page, limit); pg.HasPagination() {
-		pg.Base = reqparams.FilterBaseURL("/admin/articles", map[string]string{"keyword": keyword})
-		data["Pagination"] = pg
-	}
+	data["Pagination"] = pagination.Page{Total: total, Page: page, Limit: limit,
+		Base: reqparams.FilterBaseURL("/admin/articles", map[string]string{"keyword": keyword})}
 	// 依赖失效影响面（只读）：文章 / 块 / 主题 / 导航变更后，哪些页面正在等待重建。
 	// 本批只做可见性，不做自动重建（见 article_stale_impact.go）。
 	data["StaleImpact"] = articleStaleImpact(ctx, h)
@@ -1782,14 +1780,13 @@ func (h *articleTranslationHandle) build(c *gin.Context, lang, projectID, keywor
 			contentenums.TranslationsErrListFailed, "读取文章列表失败：{detail}", err)}
 		return data
 	}
-	if pg := pagination.Facts(total, page, limit); pg.HasPagination() {
-		// limit 由本页钉死（筛选表单会回带），基址显式带上：
-		// 旧链接会把它发射两次（值相同，gin 取首个），此处保持逐字节一致。
-		pg.Base = reqparams.FilterBaseURL("/admin/articles/translations", map[string]string{
-			"lang": lang, "project": projectID, "keyword": keyword, "limit": strconv.Itoa(limit),
-		})
-		data.Pagination = pg
-	}
+	pg := pagination.Page{Total: total, Page: page, Limit: limit}
+	// limit 由本页钉死（筛选表单会回带），基址显式带上：
+	// 旧链接会把它发射两次（值相同，gin 取首个），此处保持逐字节一致。
+	pg.Base = reqparams.FilterBaseURL("/admin/articles/translations", map[string]string{
+		"lang": lang, "project": projectID, "keyword": keyword, "limit": strconv.Itoa(limit),
+	})
+	data.Pagination = pg
 	fields := contentcontract.TranslatableFields("article")
 	// 记录每一行在工作台里的位置：回填译文时要按 (组下标, 行下标) 写回。
 	type rowRef struct {

@@ -191,10 +191,10 @@ func TestProductTagHitsAnchorStaysLiveRegion(t *testing.T) {
 
 // tagHitsFacts 命中商品片段的分页事实（与 handler 注入方式一致：Base 固定、KeepLimit=false）。
 func tagHitsFacts(total, page, size int, projectID string) pagination.Page {
-	pg := pagination.Facts(int64(total), page, size)
+	pg := pagination.Page{Total: int64(total), Page: page, Limit: size}
 	pg.Base = "/admin/product-tags/hits"
 	pg.PageParam = "page"
-	pg.KeepLimit = false
+	pg.DropLimit = true
 	_ = projectID
 	return pg
 }

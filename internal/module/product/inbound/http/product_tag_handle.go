@@ -221,6 +221,7 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	if err != nil {
 		data["Err"] = response.MessageOf(c, "product", err)
 		pageview.Render(c, data)
+		return
 	}
 	data["TagName"] = res.TagName
 	data["Total"] = res.Total
@@ -240,8 +241,7 @@ func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
 	// KeepLimit=false：本端点只认 project/id/page/size 四个查询参数，翻页链接里不带 limit。
 	// 基址不再在这里拼：模板从请求串推基址（pageBase 去掉 page/limit，其余参数原样保留），
 	// 所以链接会自动带上用户点进来时的 project / id / size。
-	pg := pagination.Facts(int64(res.Total), res.Page, res.PageSize)
-	pg.KeepLimit = false
+	pg := pagination.Page{Total: int64(res.Total), Page: res.Page, Limit: res.PageSize, DropLimit: true}
 	data["Pagination"] = pg
 	pageview.Render(c, data)
 }

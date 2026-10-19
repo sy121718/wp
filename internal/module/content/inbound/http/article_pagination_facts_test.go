@@ -14,13 +14,14 @@ package contenthttp
 import (
 	"testing"
 
+	"go_wp/internal/templates"
 	"go_wp/pkg/pagination"
 )
 
 // TestArticleTranslationsMapperCarriesPaginationFacts 译文工作台：映射层交出事实键，
 // 基址（含本页钉死的 limit）原样带出，旧成品键不存在。
 func TestArticleTranslationsMapperCarriesPaginationFacts(t *testing.T) {
-	pg := pagination.Facts(45, 2, 20)
+	pg := pagination.Page{Total: 45, Page: 2, Limit: 20}
 	pg.Base = "/admin/articles/translations?lang=zh-CN&project=p1&keyword=&limit=20"
 	d := &articleTranslationsData{
 		Title: "译文工作台", Menu: "content", Lang: "zh-CN",
@@ -37,7 +38,7 @@ func TestArticleTranslationsMapperCarriesPaginationFacts(t *testing.T) {
 	if got != pg {
 		t.Errorf("交出的事实与 handler 构造的不一致：%+v", got)
 	}
-	if !got.HasPagination() {
+	if !templates.PagerOf(got).HasPagination() {
 		t.Errorf("45 条 / 每页 20 ⇒ 三页，事实应判定为多页：%+v", got)
 	}
 	// 本页 limit 由筛选表单钉死，基址显式带上；partial 会再补一次 limit
@@ -65,7 +66,7 @@ func TestArticleTranslationsMapperNoDataRendersNoPagination(t *testing.T) {
 	if !ok {
 		t.Fatalf("模板键 Pagination 不是 pagination.Page 事实：%T", m["Pagination"])
 	}
-	if pg.HasPagination() {
+	if templates.PagerOf(pg).HasPagination() {
 		t.Errorf("零值事实不该判定为多页：%+v", pg)
 	}
 }

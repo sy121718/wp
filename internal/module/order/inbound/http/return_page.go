@@ -195,7 +195,7 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 	base := backpath.WithParams("/admin/returns", map[string]string{
 		"project": selected, "status": filter.Status, "keyword": filter.Keyword,
 	})
-	pg := pagination.Facts(total, page, limit)
+	pg := pagination.Page{Total: total, Page: page, Limit: limit}
 	pg.Base = base
 	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/order/returns.html", data)

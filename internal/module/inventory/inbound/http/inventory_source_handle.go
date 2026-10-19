@@ -206,7 +206,7 @@ func (h *inventorySourcePageHandle) InventorySourcesPage(c *gin.Context) {
 		if includeDisabled {
 			statusForLink = sourceStatusFilterAll
 		}
-		pg = pagination.Facts(total, page, limit)
+		pg = pagination.Page{Total: total, Page: page, Limit: limit}
 		pg.Base = reqparams.FilterBaseURL("/admin/inventory/sources", map[string]string{
 			"project":      selected,
 			"type":         filterType,

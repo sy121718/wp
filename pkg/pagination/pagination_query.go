@@ -14,7 +14,7 @@ import (
 
 // DefaultPageSize 列表页在调用方没给 size（或给了 <1）时的每页条数。
 //
-// 与 BuildPagination 的默认一致：两处不同值时会出现「表格每页 20、分页条按 10 算」。
+// 与模板层 pager 的默认一致：两处不同值时会出现「表格每页 20、分页条按 10 算」。
 const DefaultPageSize = 20
 
 // BaseURL 把筛选条件拼到页面路径上（**不含** page / limit：分页条自己拼）。

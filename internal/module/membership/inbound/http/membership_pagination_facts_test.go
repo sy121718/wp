@@ -3,7 +3,7 @@ package membershiphttp
 // membership_pagination_facts_test.go — task-116（P3-B3）：会员归属页的分页消费者迁到
 // pkg/pagination 事实层后的 handler 级判据。
 //
-// 判据是「渲染字节不变」：迁移前 handler 用 BuildPagination 预制成品（信息行句子 + 链接），
+// 判据是「数据与链接字节不变」：迁移前 handler 预制成品（信息行句子 + 链接），
 // 迁移后只交事实（pagination.Page），句子与链接由 admin/partials/pagination.html 渲染。
 // 期望值用 url.Values **独立**拼出（不拿生产 helper 的结果当期望）。
 //

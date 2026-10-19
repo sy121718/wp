@@ -33,7 +33,7 @@ import (
 // BulkIDs 读取批量操作的表单 id 列表（表单域 ids）—— 唯一留在壳层的原因是需要 gin。
 //
 // 归一化规则一行都不在这里：交给 pkg/bulkids 的同一个函数，表单与 JSON 两个入口共用一份判据。
-// 这属于**过渡转发**（与 pkg/pagination 的 BuildPagination 同一类）：旧页面写路径的调用方
+// 这属于**过渡转发**：旧页面写路径的调用方
 // 遍布十几个模块，等这些页面 POST 逐批下线、调用方归零后，本函数随之删除。
 func BulkIDs(c *gin.Context) ([]string, error) {
 	return bulkids.Normalize(c.PostFormArray("ids"))
