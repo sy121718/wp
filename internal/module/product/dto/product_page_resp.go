@@ -359,7 +359,8 @@ type ProductPricingPageResp struct {
 //
 // 两类字段分得很清楚：
 //   - **取数结果**（AttributeDetails / Total / Projects …）由 service 写；
-//   - **装配产物**（Attributes / AttrCreateForm / Pagination / ListQuery / LoadError）
+//   - **装配产物**（Attributes / AttrCreateForm / Pagination / ListQuery）—— 形状由 service 装，
+//     控制器不再拼
 //     由控制器写 —— 行里挂着两个抽屉表单的数据，它们要 csrf 与取词函数（gin.Context 的产物）。
 //
 // 为什么用 AttributeDetails 而不是让 Attributes 直接装 []*AttributeResp：模板读的
@@ -378,9 +379,9 @@ type ProductAttributesPageResp struct {
 	// AttributeDetails 本页每行的属性组（含属性值）：行装配的原料。
 	AttributeDetails []*AttributeResp
 	// Attributes 成品行（模板 `{{range .Attributes}}` 读 ID / Key / Name / IsVariation /
-	// Sort / ValueCount / EditForm / ValuesForm）。`map[string]any` 与 gin.H 同型，
-	// dto 因此不必 import gin。
-	Attributes []map[string]any
+	// Sort / ValueCount / EditForm / ValuesForm）：行是结构体，键名写错从「渲染成空白」
+	// 变成编译错误。
+	Attributes []AttributeRowResp
 	// AttrCreateForm 「新建属性组」抽屉的表单数据（页头与空态两个入口共用同一份）。
 	AttrCreateForm map[string]any
 
@@ -674,9 +675,9 @@ type BundlePanelRowResp struct {
 	MaxQty      int
 	Available   int
 	// 成员挂牌价与成本是原值（元）；变体已删除时为 nil。
-	ItemPrice   *float64
-	CostPrice   *float64
-	Enabled     bool
+	ItemPrice *float64
+	CostPrice *float64
+	Enabled   bool
 	// Missing 配置指向的变体已不存在（与「存在但被停用」是两回事：状态文案与
 	// 可行动作都不同，故不合并成一个 bool）。
 	Missing bool
@@ -709,4 +710,14 @@ type CategoryRowResp struct {
 	HasChildren, Matched            bool
 	SearchMode, ParentOutOfScope    bool
 	EditForm                        map[string]any
+}
+
+// AttributeRowResp 属性库列表的一行（含两个抽屉的初值）。
+//
+// EditForm / ValuesForm 是 map：它们本身是 include 的数据根，取词函数由渲染层递归注入。
+type AttributeRowResp struct {
+	ID, Key, Name        string
+	IsVariation          bool
+	Sort, ValueCount     int
+	EditForm, ValuesForm map[string]any
 }

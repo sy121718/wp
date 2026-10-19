@@ -116,6 +116,22 @@ func seedNested(v any, seed map[string]any, depth int) {
 		for i := 0; i < rv.Len(); i++ {
 			seedNested(rv.Index(i).Interface(), seed, depth+1)
 		}
+	case reflect.Pointer:
+		if rv.IsNil() {
+			return
+		}
+		seedNested(rv.Elem().Interface(), seed, depth+1)
+	case reflect.Struct:
+		// 行元素是 dto 结构体：模板按字段名读它们，但结构体里的**片段数据根**（抽屉的
+		// EditForm / ValuesForm）仍是 map，同样要拿到取词函数 —— 只看顶层 map 会漏掉它们，
+		// 症状是 include 里 .["t"] 缺键，取词调用在渲染期 panic。
+		for i := 0; i < rv.NumField(); i++ {
+			field := rv.Type().Field(i)
+			if !field.IsExported() {
+				continue
+			}
+			seedNested(rv.Field(i).Interface(), seed, depth+1)
+		}
 	}
 }
 

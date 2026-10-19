@@ -133,6 +133,9 @@ func (s *Service) ProductAttributesPage(ctx context.Context, req *productdto.Pro
 	if firstErr != nil {
 		return nil, firstErr
 	}
+	// 行与两个抽屉的初值在这里装好：控制器只把视图交出去（入口不做装配）。
+	view.Attributes = AttrPageRows(view.SelectedProject, view.AttributeDetails)
+	view.AttrCreateForm = AttrCreateDrawerForm(view.SelectedProject)
 	view.Pagination = pagination.Page{Total: view.Total, Page: view.Page, Limit: view.Limit}
 	return view, nil
 }

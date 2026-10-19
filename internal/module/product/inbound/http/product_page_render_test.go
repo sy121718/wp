@@ -190,7 +190,14 @@ func (s *productPageReaderStub) ProductPricingPage(_ context.Context, req *produ
 
 func (s *productPageReaderStub) ProductAttributesPage(_ context.Context, req *productdto.ProductAttributesPageReq) (*productdto.ProductAttributesPageResp, error) {
 	s.attributesPageReqs = append(s.attributesPageReqs, req)
-	return s.attributesPageView, s.attributesPageErr
+	if s.attributesPageErr != nil || s.attributesPageView == nil {
+		return s.attributesPageView, s.attributesPageErr
+	}
+	// 行与两个抽屉初值在生产读模型里装（service.AttrPageRows / AttrCreateDrawerForm）；桩照同一形装一遍，
+	// 否则抽屉 include 拿到空 map，模板报 there is no field or method 'IsCreate'。
+	s.attributesPageView.Attributes = productservice.AttrPageRows(s.attributesPageView.SelectedProject, s.attributesPageView.AttributeDetails)
+	s.attributesPageView.AttrCreateForm = productservice.AttrCreateDrawerForm(s.attributesPageView.SelectedProject)
+	return s.attributesPageView, nil
 }
 
 func (s *productPageReaderStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageResp, error) {
