@@ -223,7 +223,7 @@ func TestProductSeoDrawerFragmentRenders(t *testing.T) {
 	body := renderAdminTemplate(t, "admin/product/entity_seo_drawer.html", productPageLayoutData(gin.H{
 		"Score":        productdto.ScoreResp{OK: true, Total: 72, Grade: "C"},
 		"TargetID":     "product-seo-score-p1",
-		"HiddenFields": []seoHiddenField{{"projectId", "proj-1"}, {"productId", "p1"}},
+		"HiddenFields": []productdto.SeoHiddenFieldResp{{Name: "projectId", Value: "proj-1"}, {Name: "productId", Value: "p1"}},
 	}))
 	for _, want := range []string{
 		"data-drawer-fragment",

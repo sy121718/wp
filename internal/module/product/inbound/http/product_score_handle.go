@@ -137,12 +137,12 @@ func (h *ProductPageHandle) entityScoreViewOf(ctx context.Context,
 // renderEntityScore 算分 + 查 title 重复 + 渲染片段（三个 POST 入口共用）。
 func (h *ProductPageHandle) renderEntityScore(c *gin.Context, in *scoring.EntityPageInput, projectID, selfID string) {
 	// 片段数据根交出去：取词函数由 UI 线注入（adminui.Bare 走 text.Inject）。
-	pageview.Render(c, gin.H{"Score": h.entityScoreViewOf(c.Request.Context(), in, projectID, selfID)})
+	pageview.Render(c, renderScoreView(h.entityScoreViewOf(c.Request.Context(), in, projectID, selfID)))
 }
 
 // renderScoreView 渲染评分片段（空态与结果共用同一份模板：片段按 Score.OK 分流）。
 func renderScoreView(sv productdto.ScoreResp) any {
-	return gin.H{"Score": sv}
+	return productdto.ScoreFragmentResp{Score: sv}
 }
 
 // entityScoreView 评分结果 → 片段视图（含页型回显与 title 冲突清单）。
@@ -203,27 +203,24 @@ func (h *ProductPageHandle) EntitySeoDrawer(c *gin.Context) {
 //
 // 读不到实体时仍给 200 + 片段（里面就是那句空态文案）—— 这不是「加载失败」，
 // 抽屉的失败重试界面会把「这个商品读不到」伪装成网络问题。
-func (h *ProductPageHandle) seoDrawerData(c *gin.Context, req *productdto.ProductSeoDrawerReq) gin.H {
-	data := gin.H{
-		"TargetID":     "product-seo-score-" + req.ProductID,
-		"HiddenFields": productScoreHiddenFields(req.ProductID, req.ProjectID),
+func (h *ProductPageHandle) seoDrawerData(c *gin.Context, req *productdto.ProductSeoDrawerReq) productdto.SeoDrawerResp {
+	data := productdto.SeoDrawerResp{
+		TargetID:     "product-seo-score-" + req.ProductID,
+		HiddenFields: productScoreHiddenFields(req.ProductID, req.ProjectID),
 	}
 	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindProduct, req.ProductID, req.ProjectID)
 	if in == nil {
-		data["Score"] = emptyView
+		data.Score = emptyView
 		return data
 	}
-	data["Score"] = h.entityScoreViewOf(c.Request.Context(), in, req.ProjectID, selfID)
+	data.Score = h.entityScoreViewOf(c.Request.Context(), in, req.ProjectID, selfID)
 	return data
 }
 
 // productScoreHiddenFields 商品评分端点的隐藏字段（与页面上那个 POST 端点同一口径）。
-func productScoreHiddenFields(id, projectID string) []seoHiddenField {
-	return []seoHiddenField{{"projectId", projectID}, {"productId", id}}
+func productScoreHiddenFields(id, projectID string) []productdto.SeoHiddenFieldResp {
+	return []productdto.SeoHiddenFieldResp{{Name: "projectId", Value: projectID}, {Name: "productId", Value: id}}
 }
-
-// seoHiddenField 抽屉里「评分」表单的一个隐藏字段。
-type seoHiddenField struct{ Name, Value string }
 
 // pageDraftTitle 页面草稿的 SEO 标题（settings.seo.title）。
 //

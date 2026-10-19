@@ -89,6 +89,24 @@ type StatusOptionResp struct {
 	Selected bool
 }
 
+// ScoreFragmentResp 评分片段的数据根（片段按 Score.OK 分流）。
+type ScoreFragmentResp struct {
+	Score ScoreResp
+}
+
+// SeoDrawerResp SEO 抽屉片段的数据根：目标容器 id + 隐藏字段 + 评分视图。
+type SeoDrawerResp struct {
+	TargetID     string
+	HiddenFields []SeoHiddenFieldResp
+	Score        ScoreResp
+}
+
+// SeoHiddenFieldResp 抽屉「评分」表单的一个隐藏字段。
+type SeoHiddenFieldResp struct {
+	Name  string
+	Value string
+}
+
 // DetailTemplatePanelResp carries only facts used by the detail and edit templates.
 type DetailTemplatePanelResp struct {
 	Available                bool
