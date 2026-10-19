@@ -89,11 +89,11 @@ func groupDProjects() []map[string]any {
 func groupDProductRow() map[string]any {
 	return map[string]any{
 		"ID": "p1", "Name": "商品一", "Slug": "p-one", "Status": "draft",
-		"VariantCount": 1, "PriceMin": "10.00", "PriceMax": "20.00", "AttributeIDsCSV": "a1",
+		"VariantCount": 1, "PriceMin": 10.00, "PriceMax": 20.00, "AttributeIDsCSV": "a1",
 		"Attributes": []map[string]any{{"Name": "颜色", "IsVariation": true, "ValueCount": 2}},
 		"Variants": []map[string]any{{
-			"ID": "v1", "SKUCode": "SZ_TEE_001", "Spec": "红 / M", "Price": "19.00",
-			"ComparePrice": "29.00", "CostPrice": "8.00", "Enabled": true, "StockTotal": 5,
+			"ID": "v1", "SKUCode": "SZ_TEE_001", "Spec": "红 / M", "Price": 19.00,
+			"ComparePrice": 29.00, "CostPrice": 8.00, "Enabled": true, "StockTotal": 5,
 		}},
 		"HasRating": true, "RatingAvg": "4.50", "RatingCount": 2,
 		"Ratings": []map[string]any{{"ID": "r1", "Score": "5", "Source": "manual", "CreatedAt": "2026-01-01"}},
@@ -344,8 +344,8 @@ func TestGroupDPricingPageRenders(t *testing.T) {
 			"TargetCount": 1, "ChangedCount": 1, "UnchangedCount": 0, "SkippedCount": 0,
 		},
 		"PreviewRows": []map[string]any{{
-			"ProductName": "商品一", "SKUCode": "SKU1", "CostPrice": "8.00", "OldPrice": "10.00",
-			"NewPrice": "12.00", "Diff": "+2.00", "IsChanged": true, "Status": "changed", "Reason": "",
+			"ProductName": "商品一", "SKUCode": "SKU1", "CostPrice": 8.00, "OldPrice": 10.00,
+			"NewPrice": 12.00, "Diff": +2.00, "IsChanged": true, "Status": "changed", "Reason": "",
 		}},
 		"History": []map[string]any{{
 			"RuleType": "cost_markup", "RuleValues": map[string]any{"Value": 1.0, "HasValue": true},
@@ -353,7 +353,7 @@ func TestGroupDPricingPageRenders(t *testing.T) {
 			"ChangedCount": 1, "VariantCount": 1, "CreatedAt": "2026-01-01T10:00:00Z", "OperatorID": "u1",
 			"FilterParts": []map[string]any{}, "Note": "国庆前提价",
 			"Items": []map[string]any{{
-				"ProductName": "商品一", "SKUCode": "SKU1", "OldPrice": "10.00", "NewPrice": "12.00", "Diff": "+2.00",
+				"ProductName": "商品一", "SKUCode": "SKU1", "OldPrice": 10.00, "NewPrice": 12.00, "Diff": +2.00,
 			}},
 		}},
 	})
@@ -452,7 +452,7 @@ func TestGroupDBundlePageRenders(t *testing.T) {
 		"SelectedProduct": "p1", "MaxOptions": 5, "SkuCount": 3,
 		"Products": []map[string]any{{"ID": "p1", "Name": "套餐"}},
 		"Detail": map[string]any{
-			"ProductName": "套餐", "BasePrice": "99.00",
+			"ProductName": "套餐", "BasePrice": 99.00,
 			"Config": map[string]any{"MaxOptions": 2, "MinTotalQty": 1, "MaxTotalQty": 5},
 		},
 		"Rows": []map[string]any{{

@@ -72,6 +72,8 @@ func injectGlobals(set *jet.Set) {
 	set.AddGlobal("truncateWidth", truncateWidth)
 	set.AddGlobal("pageNumbers", pageNumbers)
 	set.AddGlobal("pager", PagerOf)
+	set.AddGlobal("amount", amount)
+	set.AddGlobal("amountDash", amountDash)
 }
 
 // money 金额（**整数分**）→ 展示串：符号 + 两位小数，如 ¥1234.50。
@@ -443,6 +445,38 @@ func toInt64(fn string, v any) int64 {
 	default:
 		panic(misuse(fn, v, "整数"))
 	}
+}
+
+// amount 金额（单位元）→ 展示文本：整数不带小数尾巴，其余最短表示。
+//
+// 与 money 的分工：money 收「分」并固定两位（订单/会员等以整数分为真源的页面）；
+// amount 收「元」（商品变体价、调价金额的原值就是元），与历史展示口径逐字一致。
+// nil（读不出来的金额，如读取失败的容器价）显示为空串，不显示 0 ——
+// 「0 元」与「不知道」在套餐价上完全不同。
+func amount(v any) string {
+	if !amountPresent(v) {
+		return ""
+	}
+	return strconv.FormatFloat(toFloat64("amount", v), 'f', -1, 64)
+}
+
+// amountDash 同 amount，但 nil 显示为 —（可空金额列的占位符）。
+func amountDash(v any) string {
+	if !amountPresent(v) {
+		return "—"
+	}
+	return strconv.FormatFloat(toFloat64("amountDash", v), 'f', -1, 64)
+}
+
+// amountPresent 金额是否有值：空接口与 nil 指针都算「没有」。
+func amountPresent(v any) bool {
+	switch n := v.(type) {
+	case nil:
+		return false
+	case *float64:
+		return n != nil
+	}
+	return true
 }
 
 func toFloat64(fn string, v any) float64 {

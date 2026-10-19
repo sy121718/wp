@@ -69,7 +69,7 @@
             <div class="kv-item"><dt>{{ .["t"]("admin.products.label.sku", "SKU 编码") }}</dt><dd>{{if isset(p.SKUCode)}}{{if p.SKUCode != ""}}<code>{{p.SKUCode}}</code>{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}} <span class="text-mute text-sm">{{ .["t"]("admin.product_detail.sku.scope", "在本工程内唯一（同工程的两个商品不能共用同一主体 SKU），变体 SKU 以它为主体拼接。") }}</span></dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.status", "状态") }}</dt><dd><span class="badge">{{p.Status}}</span></dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.variants", "变体数") }}</dt><dd>{{p.VariantCount}}</dd></div>
-            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.priceRange", "价格区间") }}</dt><dd>{{p.PriceMin}} ~ {{p.PriceMax}}</dd></div>
+            <div class="kv-item"><dt>{{ .["t"]("admin.products.col.priceRange", "价格区间") }}</dt><dd>{{amount(p.PriceMin)}} ~ {{amount(p.PriceMax)}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.attrs.title", "属性引用") }}</dt><dd>{{if len(p.Attributes) == 0}}<span class="text-mute">—</span>{{else}}{{range _, a := p.Attributes}}<span class="badge badge-{{if a.IsVariation}}info{{else}}mute{{end}}">{{a.Name}}{{if a.IsVariation}}{{ .["t"]("admin.products.row.variationSuffix", "（参与变体）") }}{{end}} × {{a.ValueCount}}</span>{{end}}{{end}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.categories", "分类") }}</dt><dd>{{if isset(p.CategoryCell)}}{{if p.CategoryCell != ""}}{{p.CategoryCell}}{{if isset(p.CategoryOthers)}}{{if p.CategoryOthers > 0}} <span class="badge badge-mute">+{{p.CategoryOthers}}</span>{{end}}{{end}}{{else}}<span class="text-mute">—</span>{{end}}{{end}}</dd></div>
             <div class="kv-item"><dt>{{ .["t"]("admin.products.col.brand", "品牌") }}</dt><dd>{{if isset(p.BrandName)}}{{if p.BrandName != ""}}{{p.BrandName}}{{else}}<span class="text-mute">—</span>{{end}}{{else}}<span class="text-mute">—</span>{{end}}</dd></div>
@@ -110,7 +110,7 @@
                 <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.product_detail.bundle.help.label", "查看说明") }}" aria-expanded="false">?</button>
                 <span class="help-pop" role="tooltip">{{ .["t"]("admin.product_detail.bundle.help.text", "捆绑容器只有一个对外价格（容器价）。成员只作为选项与履约 / 库存明细：成员价与成员成本都不参与套餐价，成员的挂牌价仅作参考（核对配置用），成员成本只进后台毛利口径。选项规则与整单上下限在「编辑捆绑构成」里改。") }}</span>
             </span>
-            {{if b.Loaded}}<span class="badge">{{ .["t"]("admin.product_detail.bundle.containerPrice", "容器价（套餐价）") }} {{b.BasePrice}}</span>{{end}}
+            {{if b.Loaded}}<span class="badge">{{ .["t"]("admin.product_detail.bundle.containerPrice", "容器价（套餐价）") }} {{amountDash(b.BasePrice)}}</span>{{end}}
             <span class="toolbar-spacer"></span>
         </div>
         {{if b.ErrorText != ""}}
@@ -147,8 +147,8 @@
                     <td>{{o.MinQty}}</td>
                     <td>{{if o.MaxQty > 0}}{{o.MaxQty}}{{else}}<span class="text-mute">{{ .["t"]("admin.product_detail.bundle.noLimit", "不限") }}</span>{{end}}</td>
                     <td>{{if o.Missing}}<span class="text-mute">—</span>{{else}}{{o.Available}}{{end}}</td>
-                    <td>{{o.CostPrice}}</td>
-                    <td>{{o.ItemPrice}}</td>
+                    <td>{{amountDash(o.CostPrice)}}</td>
+                    <td>{{amountDash(o.ItemPrice)}}</td>
                     <td>{{if o.Missing}}<span class="badge badge-warning">{{ .["t"]("admin.product_detail.bundle.state.missing", "成员 SKU 已删除") }}</span>{{else}}{{if o.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.products.variant.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.products.variant.disabled", "停用") }}</span>{{end}}{{end}}</td>
                 </tr>
                 {{end}}
@@ -182,9 +182,9 @@
                 <tr>
                     <td><code>{{v.SKUCode}}</code></td>
                     <td>{{v.Spec}}</td>
-                    <td>{{v.Price}}</td>
-                    <td>{{v.ComparePrice}}</td>
-                    <td>{{v.CostPrice}}</td>
+                    <td>{{amount(v.Price)}}</td>
+                    <td>{{amountDash(v.ComparePrice)}}</td>
+                    <td>{{amountDash(v.CostPrice)}}</td>
                     <td>{{if v.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.products.variant.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.products.variant.disabled", "停用") }}</span>{{end}}</td>
                     <td>{{v.StockTotal}}</td>
                     <td class="col-actions">

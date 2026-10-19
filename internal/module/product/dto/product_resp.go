@@ -177,8 +177,9 @@ type ProductRowResp struct {
 	// 「保存时清空」是同一件事。
 	DefaultImage string
 
-	PriceMin string
-	PriceMax string
+	// PriceMin / PriceMax 价格区间原值（元）：展示文本由模板 amount() 生成。
+	PriceMin float64
+	PriceMax float64
 
 	VariantCount int
 	// Variants 变体清单行（docs/14 §8）：种子是库里已有的变体，行上带可编辑的 SKU 与
@@ -235,9 +236,10 @@ type VariantListRowResp struct {
 	SKUCode      string
 	Spec         string
 	OptionValues string
-	Price        string
-	ComparePrice string
-	CostPrice    string
+	// 价格是原值（元）；可空金额用指针，模板 amountDash() 负责 — 占位。
+	Price        float64
+	ComparePrice *float64
+	CostPrice    *float64
 	Enabled      bool
 	StockTotal   int
 }

@@ -192,10 +192,10 @@ func productRowForRender() *productdto.ProductRowResp {
 	attr := &productdto.AttributeResp{ID: "a1", Name: "颜色", IsVariation: true}
 	return &productdto.ProductRowResp{
 		ID: "p1", Name: "纯棉 T 恤", Slug: "tee", Status: "published",
-		PriceMin: "59", PriceMax: "99", VariantCount: 1,
+		PriceMin: 59, PriceMax: 99, VariantCount: 1,
 		Variants: []productdto.VariantListRowResp{{
 			ID: "v1", SKUCode: "SZ_TEE_001", Spec: "颜色 白色",
-			Price: "59", ComparePrice: "—", CostPrice: "—", Enabled: true, StockTotal: 10,
+			Price: 59, ComparePrice: nil, CostPrice: nil, Enabled: true, StockTotal: 10,
 			OptionValues: "{}",
 		}},
 		Attributes:          []*productdto.AttributeResp{attr},

@@ -24,7 +24,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
-	"go_wp/pkg/money"
 )
 
 // productRow 组装单个商品的页面视图数据（列表页的一行 / 详情页 / 编辑页共用）。
@@ -103,8 +102,8 @@ func (s *Service) productRowWithRating(ctx context.Context, flat []*productdto.C
 		// 两处必须同时在位 —— 只有读没有回显，等于每次保存都擦图。
 		DefaultImage: detail.DefaultImage,
 
-		PriceMin: money.FormatYuan(detail.PriceMin),
-		PriceMax: money.FormatYuan(detail.PriceMax),
+		PriceMin: detail.PriceMin,
+		PriceMax: detail.PriceMax,
 
 		VariantCount: detail.VariantCount,
 		// 变体**清单**行（docs/14 §8）：种子是库里已有的变体（不是重算笛卡尔积），
@@ -285,9 +284,9 @@ func variantListRows(detail *productdto.ProductResp) []productdto.VariantListRow
 		rows = append(rows, productdto.VariantListRowResp{
 			ID: v.ID, SKUCode: v.SKUCode, Spec: SpecLabel(v.OptionValues, detail.Attributes),
 			OptionValues: optionValuesJSON(v.OptionValues),
-			Price:        money.FormatYuan(v.Price),
-			ComparePrice: money.FormatYuanOrDash(v.ComparePrice),
-			CostPrice:    money.FormatYuanOrDash(v.CostPrice),
+			Price:        v.Price,
+			ComparePrice: v.ComparePrice,
+			CostPrice:    v.CostPrice,
 			Enabled:      v.Enabled, StockTotal: v.StockTotal,
 		})
 	}

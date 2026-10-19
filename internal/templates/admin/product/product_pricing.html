@@ -142,10 +142,10 @@
                 <tr>
                     <td>{{l.ProductName}}</td>
                     <td><code>{{l.SKUCode}}</code></td>
-                    <td>{{l.CostPrice}}</td>
-                    <td>{{l.OldPrice}}</td>
-                    <td><strong>{{l.NewPrice}}</strong></td>
-                    <td>{{l.Diff}}</td>
+                    <td>{{amountDash(l.CostPrice)}}</td>
+                    <td>{{amount(l.OldPrice)}}</td>
+                    <td><strong>{{amount(l.NewPrice)}}</strong></td>
+                    <td>{{if l.Diff > 0}}+{{end}}{{amount(l.Diff)}}</td>
                     <td>
                         <span class="badge badge-{{if l.IsChanged}}ok{{else if l.IsSkipped}}mute{{else}}mute{{end}}">{{if l.Status == "changed"}}{{tr("admin.product_pricing.line.changed", "改价")}}{{else if l.Status == "unchanged"}}{{tr("admin.product_pricing.line.unchanged", "价格不变")}}{{else if l.Status == "skipped"}}{{tr("admin.product_pricing.line.skipped", "跳过")}}{{else}}{{l.Status}}{{end}}</span>
                         {{if l.Reason == "PricingSkipCostMissing"}}<span class="hint">{{tr("admin.product_pricing.skip.costMissing", "未填成本价，按成本类规则无法计算")}}</span>{{else if l.Reason == "PricingSkipOutOfRange"}}<span class="hint">{{tr("admin.product_pricing.skip.outOfRange", "计算结果为负或超过 9999999999.99")}}</span>{{end}}
@@ -221,9 +221,9 @@
                         <tr>
                             <td>{{it.ProductName}}</td>
                             <td><code>{{it.SKUCode}}</code></td>
-                            <td>{{it.OldPrice}}</td>
-                            <td><strong>{{it.NewPrice}}</strong></td>
-                            <td>{{it.Diff}}</td>
+                            <td>{{amount(it.OldPrice)}}</td>
+                            <td><strong>{{amount(it.NewPrice)}}</strong></td>
+                            <td>{{if it.Diff > 0}}+{{end}}{{amount(it.Diff)}}</td>
                         </tr>
                         {{end}}
                         </tbody>

@@ -16,7 +16,6 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/pkg/money"
 )
 
 // pricingHistoryLimit 台账最多列几个批次（明细逐条展开，所以批次不能无限）。
@@ -191,8 +190,7 @@ func pricingHistoryRow(a *productdto.PriceAdjustmentResp) map[string]any {
 	for _, it := range a.Items {
 		items = append(items, map[string]any{
 			"ProductName": it.ProductName, "SKUCode": it.SKUCode,
-			"OldPrice": money.FormatYuan(it.OldPrice), "NewPrice": money.FormatYuan(it.NewPrice),
-			"Diff": pricingSignedAmount(it.Diff),
+			"OldPrice": it.OldPrice, "NewPrice": it.NewPrice,"Diff": it.Diff,
 		})
 	}
 	return map[string]any{
@@ -214,9 +212,9 @@ func pricingLineRows(lines []*productdto.PricingLineResp) []map[string]any {
 		}
 		rows = append(rows, map[string]any{
 			"ProductName": l.ProductName, "SKUCode": l.SKUCode,
-			"CostPrice": money.FormatYuanOrDash(l.CostPrice),
-			"OldPrice":  money.FormatYuan(l.OldPrice), "NewPrice": money.FormatYuan(l.NewPrice),
-			"Diff":      pricingSignedAmount(l.NewPrice - l.OldPrice),
+			"CostPrice": l.CostPrice,
+			"OldPrice":  l.OldPrice, "NewPrice": l.NewPrice,
+			"Diff":      l.NewPrice - l.OldPrice,
 			"Status":    l.Status,
 			"IsChanged": l.Status == productenums.PricingLineChanged,
 			"IsSkipped": l.Status == productenums.PricingLineSkipped,
@@ -243,10 +241,4 @@ func pricingPreviewSummary(p *productdto.PricingPreviewResp) map[string]any {
 	}
 }
 
-// pricingSignedAmount 差值文本（正数带 + 号）。
-func pricingSignedAmount(v float64) string {
-	if v > 0 {
-		return "+" + money.FormatYuan(v)
-	}
-	return money.FormatYuan(v)
-}
+

@@ -346,9 +346,9 @@
                     <tr data-variant-row data-variant-id="{{v.ID}}" data-option-values="{{v.OptionValues}}">
                         <td><input type="text" class="form-input" data-variant-sku value="{{v.SKUCode}}" aria-label="{{ .["t"]("admin.products.variant.skuLabel", "SKU 编码（可编辑）") }}"></td>
                         <td>{{v.Spec}}</td>
-                        <td>{{v.Price}}</td>
-                        <td>{{v.ComparePrice}}</td>
-                        <td>{{v.CostPrice}}</td>
+                        <td>{{amount(v.Price)}}</td>
+                        <td>{{amountDash(v.ComparePrice)}}</td>
+                        <td>{{amountDash(v.CostPrice)}}</td>
                         <td>{{if v.Enabled}}<span class="badge badge-success">{{ .["t"]("admin.products.variant.enabled", "启用") }}</span>{{else}}<span class="badge badge-mute">{{ .["t"]("admin.products.variant.disabled", "停用") }}</span>{{end}}</td>
                         <td>{{v.StockTotal}}</td>
                         <td class="col-actions">

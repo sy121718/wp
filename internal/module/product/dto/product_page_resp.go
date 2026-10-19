@@ -654,8 +654,8 @@ type BundlePanelResp struct {
 	Loaded bool
 	// ErrorText 配置读不出来时的可读原因（区块留在页面上并说明，不是整块消失）。
 	ErrorText string
-	// BasePrice 容器价（套餐金额的唯一来源），读不出来时给 —。
-	BasePrice   string
+	// BasePrice 容器价（套餐金额的唯一来源），读不出来时为 nil（模板渲染为 —）。
+	BasePrice   *float64
 	Options     []BundlePanelRowResp
 	OptionCount int
 }
@@ -673,8 +673,9 @@ type BundlePanelRowResp struct {
 	MinQty      int
 	MaxQty      int
 	Available   int
-	ItemPrice   string
-	CostPrice   string
+	// 成员挂牌价与成本是原值（元）；变体已删除时为 nil。
+	ItemPrice   *float64
+	CostPrice   *float64
 	Enabled     bool
 	// Missing 配置指向的变体已不存在（与「存在但被停用」是两回事：状态文案与
 	// 可行动作都不同，故不合并成一个 bool）。

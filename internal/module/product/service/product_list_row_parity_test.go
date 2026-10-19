@@ -127,6 +127,9 @@ func seedParityFixture(t *testing.T, db *gorm.DB, projectID string) parityFixtur
 }
 
 // TestProductListRowSummaryMatchesDetailPath 同一库同桩下，列表行与详情页成品行逐字段一致。
+// amountText 数值金额的可比文本（对账只比「值」：展示格式已归模板）。
+func amountText(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+
 func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 	db := support.NewMigratedPGTestDB(t)
 	projectID := uuid.NewString()
@@ -172,7 +175,7 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 
 		// 夹具自检：被比较的字段必须在详情行上非零 —— 否则「两边都空」也会相等。
 		nonEmpty := []struct{ name, value string }{
-			{"PriceMin", want.PriceMin}, {"PriceMax", want.PriceMax},
+			{"PriceMin", amountText(want.PriceMin)}, {"PriceMax", amountText(want.PriceMax)},
 			{"BrandName", want.BrandName}, {"TagNames", strings.Join(want.TagNames, ",")},
 		}
 		if detailView.Detail != nil && detailView.Detail.Type == productmodel.TypeVariant {
@@ -193,8 +196,8 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 			{"Slug", got.Slug, want.Slug},
 			{"SKUCode", got.SKUCode, want.SKUCode},
 			{"Status", got.Status, want.Status},
-			{"PriceMin", got.PriceMin, want.PriceMin},
-			{"PriceMax", got.PriceMax, want.PriceMax},
+			{"PriceMin", amountText(got.PriceMin), amountText(want.PriceMin)},
+			{"PriceMax", amountText(got.PriceMax), amountText(want.PriceMax)},
 			{"CategoryCell", got.CategoryCell, want.CategoryCell},
 			{"BrandName", got.BrandName, want.BrandName},
 			{"TagNames", strings.Join(got.TagNames, ","), strings.Join(want.TagNames, ",")},
@@ -243,9 +246,9 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 	for _, row := range listView.Products {
 		switch row.Name {
 		case "变体商品":
-			// money.FormatYuan 去掉尾零（"12.5" 而不是 "12.50"）：这是既有展示口径，不是本次改动。
-			if row.PriceMin != "12.5" || row.PriceMax != "30" || row.VariantCount != 2 {
-				t.Errorf("变体商品的价格区间/变体数：%q~%q，%d 个", row.PriceMin, row.PriceMax, row.VariantCount)
+			// 价格是原值（元）：12.5 / 30，展示文本由模板 amount() 生成。
+			if row.PriceMin != 12.5 || row.PriceMax != 30 || row.VariantCount != 2 {
+				t.Errorf("变体商品的价格区间/变体数：%v~%v，%d 个", row.PriceMin, row.PriceMax, row.VariantCount)
 			}
 			if !row.HasRating || row.RatingCount != 2 || row.RatingAvg != "4.50" {
 				t.Errorf("变体商品的评分段：HasRating=%v count=%d avg=%q", row.HasRating, row.RatingCount, row.RatingAvg)
@@ -260,8 +263,8 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 				t.Errorf("变体商品的库存三态应为 %s，实际 %v", productenums.StockStateTracked, row.Stock.State)
 			}
 		case "容器商品":
-			if row.PriceMin != "88.5" || row.PriceMax != "88.5" {
-				t.Errorf("容器商品按容器价取价：%q~%q", row.PriceMin, row.PriceMax)
+			if row.PriceMin != 88.5 || row.PriceMax != 88.5 {
+				t.Errorf("容器商品按容器价取价：%v~%v", row.PriceMin, row.PriceMax)
 			}
 		}
 	}

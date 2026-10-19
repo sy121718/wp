@@ -182,7 +182,7 @@
                        状态→文案的映射）；取不到（值不在选项里、或该条没有事实字段）时退回状态原值。 *}
                     <td>{{st := p.Status}}{{sl := st}}{{if st == "draft"}}{{sl = tr("admin.products.status.draft", "草稿")}}{{else if st == "published"}}{{sl = tr("admin.products.status.published", "已上架")}}{{else if st == "archived"}}{{sl = tr("admin.products.status.archived", "已下架")}}{{else}}{{sl = tr("admin.products.status.all", "全部状态")}}{{end}}<span class="badge">{{sl}}</span></td>
                     <td>{{p.VariantCount}}</td>
-                    <td>{{p.PriceMin}} ~ {{p.PriceMax}}</td>
+                    <td>{{amount(p.PriceMin)}} ~ {{amount(p.PriceMax)}}</td>
                     {* 库存列（docs/14 §1.4）：三态 + 分仓明细。
                        · 任一仓不跟踪 → ∞（**绝不求和** —— 求和等于把无限当 0，页面会显示成有货）；
                        · 全部跟踪 → 各仓数量之和（0 就显示 0）；

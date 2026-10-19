@@ -34,17 +34,10 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
-	"go_wp/pkg/money"
 	"go_wp/public/test/support"
 )
 
-// formatSignedYuan 差值文本（正数带 + 号）—— 与台账装配同一条口径的复述。
-func formatSignedYuan(v float64) string {
-	if v > 0 {
-		return "+" + money.FormatYuan(v)
-	}
-	return money.FormatYuan(v)
-}
+// 台账行的金额是原值（元），展示格式由模板 amount()/amountDash() 生成。
 
 // referencePricingHistoryRows 按**原实现**（逐批次 Get 明细）重建台账行。
 //
@@ -68,8 +61,7 @@ func referencePricingHistoryRows(t *testing.T, s *productservice.Service, ctx co
 		for _, it := range src.Items {
 			items = append(items, map[string]any{
 				"ProductName": it.ProductName, "SKUCode": it.SKUCode,
-				"OldPrice": money.FormatYuan(it.OldPrice), "NewPrice": money.FormatYuan(it.NewPrice),
-				"Diff": formatSignedYuan(it.Diff),
+				"OldPrice": it.OldPrice, "NewPrice": it.NewPrice, "Diff": it.Diff,
 			})
 		}
 		rows = append(rows, map[string]any{
@@ -136,11 +128,13 @@ func TestProductPricingHistoryRowsMatchPerBatchDetailPath(t *testing.T) {
 		items := historyItemsOf(t, row, where)
 		total += len(items)
 		for _, it := range items {
-			for _, field := range []string{"SKUCode", "OldPrice", "NewPrice", "Diff"} {
-				text, _ := it[field].(string)
-				if text == "" {
-					t.Fatalf("夹具自检失败：%s 明细的 %s 是空文本", where, field)
+			for _, field := range []string{"OldPrice", "NewPrice", "Diff"} {
+				if amount, ok := it[field].(float64); !ok || amount == 0 {
+					t.Fatalf("夹具自检失败：%s 明细的 %s 不是非零金额（%v）", where, field, it[field])
 				}
+			}
+			if sku, _ := it["SKUCode"].(string); sku == "" {
+				t.Fatalf("夹具自检失败：%s 明细的 SKUCode 是空文本", where)
 			}
 			if name, _ := it["ProductName"].(string); name == "" {
 				blank++

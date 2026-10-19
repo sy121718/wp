@@ -30,7 +30,6 @@ import (
 	"go_wp/pkg/i18n"
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
-	"go_wp/pkg/money"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
@@ -948,10 +947,10 @@ func bundlePanelRows(options []*productdto.BundleOptionDetailResp) []productdto.
 		// Missing 表示配置指向的变体已经不存在（与「存在但被停用」是两回事，
 		// 状态文案与可行动作都不同，故不合并成一个 bool）。
 		missing := o.SKUCode == ""
-		itemPrice, costPrice := money.FormatYuan(o.ItemPrice), money.FormatYuanOrDash(o.CostPrice)
+		itemPrice, costPrice := &o.ItemPrice, o.CostPrice
 		if missing {
 			// 变体没了，价格与成本都无从谈起：这里的 0 会被读成「这个成员不要钱」。
-			itemPrice, costPrice = "—", "—"
+			itemPrice, costPrice = nil, nil
 		}
 		rows = append(rows, productdto.BundlePanelRowResp{
 			VariantID:   o.VariantID,
@@ -981,7 +980,7 @@ func (h *ProductPageHandle) bundlePanel(c *gin.Context, projectID, productID str
 	panel := &productdto.BundlePanelResp{
 		Loaded: false,
 		// 容器价是套餐金额的唯一来源，读不出来时给 —（不拿成员价兜底：那是错的口径）。
-		BasePrice:   "—",
+		BasePrice:   nil,
 		Options:     []productdto.BundlePanelRowResp{},
 		OptionCount: 0,
 	}
@@ -997,7 +996,7 @@ func (h *ProductPageHandle) bundlePanel(c *gin.Context, projectID, productID str
 	}
 	rows := bundlePanelRows(detail.Options)
 	panel.Loaded = true
-	panel.BasePrice = money.FormatYuan(detail.BasePrice)
+	panel.BasePrice = &detail.BasePrice
 	panel.Options = rows
 	panel.OptionCount = len(rows)
 	return panel

@@ -23,12 +23,15 @@ import (
 // 改配置的入口在编辑页 —— 详情页是「看」的地方。
 const bundlePanelEditLink = "href=\"/admin/products/bundle?projectId=proj-1&amp;productId=p1\""
 
+// ptrAmount 金额原值（元）取地址：可空金额用指针表示「没有值」，与 dto 的契约一致。
+func ptrAmount(v float64) *float64 { return &v }
+
 // bundlePanelRow 造一行区块视图数据（默认一个正常成员，按需覆盖字段）。
 func bundlePanelRow(over func(*productdto.BundlePanelRowResp)) productdto.BundlePanelRowResp {
 	row := productdto.BundlePanelRowResp{
 		VariantID: "v1", SKUCode: "ADDON_001", ProductName: "配件包",
 		Required: true, DefaultQty: 2, MinQty: 1, MaxQty: 3,
-		Available: 6, ItemPrice: "45.5", CostPrice: "20", Enabled: true,
+		Available: 6, ItemPrice: ptrAmount(45.5), CostPrice: ptrAmount(20), Enabled: true,
 	}
 	if over != nil {
 		over(&row)
@@ -71,7 +74,7 @@ func bundleEditPage(t *testing.T, product *productdto.ProductRowResp) string {
 // TestProductDetailBundlePanelRenders 区块的数据面：容器价、成员规则、成本与参考价。
 func TestProductDetailBundlePanelRenders(t *testing.T) {
 	out := bundleDetailPage(t, &productdto.BundlePanelResp{
-		Loaded: true, BasePrice: "199",
+		Loaded: true, BasePrice: ptrAmount(199),
 		Options: []productdto.BundlePanelRowResp{
 			bundlePanelRow(nil),
 			bundlePanelRow(func(r *productdto.BundlePanelRowResp) {
@@ -119,7 +122,7 @@ func TestProductDetailBundlePanelRenders(t *testing.T) {
 // TestProductDetailBundlePanelEmptyAndBroken 空配置与读不出配置都要有可读提示。
 func TestProductDetailBundlePanelEmptyAndBroken(t *testing.T) {
 	empty := bundleDetailPage(t, &productdto.BundlePanelResp{
-		Loaded: true, BasePrice: "199",
+		Loaded: true, BasePrice: ptrAmount(199),
 		Options: []productdto.BundlePanelRowResp{}, OptionCount: 0,
 	})
 	for _, want := range []string{"捆绑构成", "还没有配置捆绑构成"} {
@@ -143,7 +146,7 @@ func TestProductDetailBundlePanelEmptyAndBroken(t *testing.T) {
 	// 容器价不拿成员价兜底（那是错的口径），只给 —。
 	const reason = "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。"
 	broken := bundleDetailPage(t, &productdto.BundlePanelResp{
-		ErrorText: reason, BasePrice: "—",
+		ErrorText: reason, BasePrice: nil,
 		Options: []productdto.BundlePanelRowResp{}, OptionCount: 0,
 	})
 	if !strings.Contains(broken, reason) || !strings.Contains(broken, "role=\"alert\"") {
@@ -160,12 +163,12 @@ func TestProductDetailBundlePanelEmptyAndBroken(t *testing.T) {
 // TestProductDetailBundlePanelMissingAndDisabled 已删除 / 已停用的成员都不能静默丢项。
 func TestProductDetailBundlePanelMissingAndDisabled(t *testing.T) {
 	out := bundleDetailPage(t, &productdto.BundlePanelResp{
-		Loaded: true, BasePrice: "199",
+		Loaded: true, BasePrice: ptrAmount(199),
 		Options: []productdto.BundlePanelRowResp{
 			// 变体已被删除：读模型里只剩 variantId（SKUCode 为空）。
 			bundlePanelRow(func(r *productdto.BundlePanelRowResp) {
 				r.VariantID, r.SKUCode, r.ProductName = "v-dead", "", ""
-				r.ItemPrice, r.CostPrice, r.Available, r.Enabled, r.Missing = "—", "—", 0, false, true
+				r.ItemPrice, r.CostPrice, r.Available, r.Enabled, r.Missing = nil, nil, 0, false, true
 			}),
 			bundlePanelRow(func(r *productdto.BundlePanelRowResp) {
 				r.VariantID, r.SKUCode, r.Enabled = "v-off", "ADDON_OFF", false
@@ -216,13 +219,13 @@ func TestBundlePanelRowsBackofficePriceShape(t *testing.T) {
 	if len(rows) != 3 {
 		t.Fatalf("nil 项应被跳过，实际 %d 行", len(rows))
 	}
-	if rows[0].ItemPrice != "45.5" || rows[0].CostPrice != "20" {
-		t.Fatalf("正常成员的价格口径不对：%+v", rows[0])
+	if rows[0].ItemPrice == nil || *rows[0].ItemPrice != 45.5 || rows[0].CostPrice == nil || *rows[0].CostPrice != 20 {
+		t.Fatalf("正常成员的价格原值不对（元）：%+v", rows[0])
 	}
-	if rows[1].CostPrice != "—" || rows[1].Missing || rows[1].Enabled {
-		t.Fatalf("成本缺失应显示 —，且停用与删除要能分开：%+v", rows[1])
+	if rows[1].CostPrice != nil || rows[1].Missing || rows[1].Enabled {
+		t.Fatalf("成本缺失应为 nil（模板渲染 —），且停用与删除要能分开：%+v", rows[1])
 	}
-	if !rows[2].Missing || rows[2].ItemPrice != "—" || rows[2].CostPrice != "—" {
-		t.Fatalf("已删除的成员应标 Missing 且价格全为 —：%+v", rows[2])
+	if !rows[2].Missing || rows[2].ItemPrice != nil || rows[2].CostPrice != nil {
+		t.Fatalf("已删除的成员应标 Missing 且价格全为 nil：%+v", rows[2])
 	}
 }

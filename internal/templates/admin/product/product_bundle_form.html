@@ -22,7 +22,7 @@
     <section class="card card-body">
         <h2>{{ .["t"]("admin.product_bundle.rule.title", "选项规则") }}{{if .Detail}} · {{.Detail.ProductName}}{{end}}</h2>
         {{if .Detail}}
-        <p><span class="badge">{{ .["t"]("admin.product_bundle.rule.basePriceLead", "套餐价（主体自定价）：") }}{{.Detail.BasePrice}}</span></p>
+        <p><span class="badge">{{ .["t"]("admin.product_bundle.rule.basePriceLead", "套餐价（主体自定价）：") }}{{amountDash(.Detail.BasePrice)}}</span></p>
         {{end}}
         {{if .Detail}}
         {* 保存走 JSON 写基座：成员行由 static/js/ui/product_bundle_write.js 组装成
