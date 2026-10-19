@@ -512,10 +512,9 @@ type ProductBundlePageResp struct {
 	// 宁可让用户先「重新载入」，也不要缺配置误写。
 	SaveBlocked bool
 
-	// ResolveURL / ListQuery 两个 URL 形状（HTTP 边界，控制器给）：成员来源面板的解析接口、
-	// 以及页面链接要带回的筛选上下文。名字即模板键。
-	ResolveURL string
-	ListQuery  string
+	// ListQuery 页面链接要带回的筛选上下文（请求事实由入口填，读模型搬进视图）。
+	// 成员来源面板的解析接口地址是模板里的字面量，不经过数据。
+	ListQuery string
 }
 
 // ProductTranslationsPageResp 商品译文工作台的一屏。

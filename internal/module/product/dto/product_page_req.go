@@ -393,6 +393,8 @@ type ProductBundlePageReq struct {
 	SourceProductID string `form:"sourceProduct"`
 	// SourceWarehouseID 选中来源仓（仓库来源面板据此只列那个仓的一屏候选）。
 	SourceWarehouseID string `form:"sourceWarehouse"`
+	// ListQuery 回到本页的筛选上下文（请求事实，入口填；读模型搬进视图）。
+	ListQuery string `form:"-" listquery:"project,product"`
 }
 
 // BindQuery 兼容捆绑页入口的两套键名：菜单与列表页给 project/product，
@@ -503,4 +505,22 @@ type ProductTagsPageReq struct {
 	ListQuery string `form:"-" listquery:"project,keyword,page,limit"`
 	Keyword   string `form:"keyword"`
 	Page      int    `form:"page"`
+}
+
+// ServiceReq 预览入参 → service 的请求形状。
+//
+// 清单里已有的组合原样回传给 service 去重（每行一条 JSON 串，空行跳过）：前端不需要懂 optionKey。
+func (r *VariantPreviewFormReq) ServiceReq() *PreviewVariantReq {
+	req := &PreviewVariantReq{
+		ProductID:   r.ProductID,
+		ProjectID:   r.ProjectID,
+		WarehouseID: r.WarehouseID,
+		Selections:  r.Selections,
+	}
+	for _, raw := range r.OptionValues {
+		if trimmed := strings.TrimSpace(raw); trimmed != "" {
+			req.ExistingOptionValues = append(req.ExistingOptionValues, json.RawMessage(trimmed))
+		}
+	}
+	return req
 }

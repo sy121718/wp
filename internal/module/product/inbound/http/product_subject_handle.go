@@ -25,7 +25,6 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
-	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
@@ -40,7 +39,6 @@ const productListPath = "/admin/products"
 // 两处分叉的表现是「改完筛选再操作，回来静默丢了筛选」—— 页面不报错、日志也干净，
 // 所以键表只留这一份，不要在两处各写字面量。
 var (
-	productBundleBackKeys  = []string{"project", "product"}
 	productPricingBackKeys = []string{"project"}
 )
 
@@ -446,25 +444,11 @@ func (h *ProductPageHandle) ProductDetailPage(c *gin.Context) {
 //
 // 失败回 400 + 可读文案（走 productErrText 取词，不把 enums 裸 key 或 PG 报错铺给前端）。
 func (h *ProductPageHandle) ProductsVariantPreview(c *gin.Context) {
-	ctx := c.Request.Context()
 	form, ok := binding.Form[productdto.VariantPreviewFormReq](c)
 	if !ok {
 		return
 	}
-	productID := form.ProductID
-	req := &productdto.PreviewVariantReq{
-		ProductID:   productID,
-		ProjectID:   form.ProjectID,
-		WarehouseID: form.WarehouseID,
-		Selections:  form.Selections,
-	}
-	// 清单里已有的组合原样回传（每行一条）：由服务端归一去重，前端不需要懂 optionKey。
-	for _, raw := range form.OptionValues {
-		if trimmed := strings.TrimSpace(raw); trimmed != "" {
-			req.ExistingOptionValues = append(req.ExistingOptionValues, json.RawMessage(trimmed))
-		}
-	}
-	res, err := h.products.PreviewVariantCombinations(ctx, req)
+	res, err := h.products.PreviewVariantCombinations(c.Request.Context(), form.ServiceReq())
 	if err != nil {
 		response.ErrorStatusAuto(c, productErrScene, err)
 		return
@@ -633,35 +617,49 @@ func (h *ProductPageHandle) ProductPreviewFrame(c *gin.Context) {
 	if !ok {
 		return
 	}
-	// 替代页是模板渲染（不走 adminui.Prepare 的页壳），取词在这里先做掉：视图只给成品串。
+	h.renderPreviewFrame(c, req)
+}
+
+// renderPreviewFrame 渲染预览帧：成功直出构建器产物字节，其余情况给一页替代提示。
+//
+// 替代页是模板渲染（不走页壳），取词在这里先做掉；每一档都 return —— 之前少了 return，
+// 提示写完之后仍会继续去预览，响应里出现第二段内容。
+func (h *ProductPageHandle) renderPreviewFrame(c *gin.Context, req *productdto.ProductPreviewFrameReq) {
 	tr := shell.TranslateFor(c)
-	id, projectID := req.ProductID, req.ProjectID
-	if id == "" {
-		pageview.Render(c, previewNoticeResp(c, tr(productenums.ProductsPreviewNeedSave, "保存这个商品后，这里会显示它的详情页真实形态。")))
+	if req.ProductID == "" {
+		renderPreviewPlaceholder(c, tr, productenums.ProductsPreviewNeedSave, "保存这个商品后，这里会显示它的详情页真实形态。")
+		return
 	}
-	if h == nil || h.instances == nil {
-		pageview.Render(c, previewNoticeResp(c, tr(productenums.ProductsPreviewUnavailable, "预览不可用：发布能力未装配。")))
+	if h.instances == nil {
+		renderPreviewPlaceholder(c, tr, productenums.ProductsPreviewUnavailable, "预览不可用：发布能力未装配。")
+		return
 	}
 	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationcontract.PreviewInstanceReq{
-		EntityType: productcontract.EntityTypeProduct, EntityID: id, ProjectID: projectID,
+		EntityType: productcontract.EntityTypeProduct, EntityID: req.ProductID, ProjectID: req.ProjectID,
 	})
-	if err != nil {
-		// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
-		logger.Scene("product").With("product_id", id).Error(err, "商品详情页预览渲染失败")
-		pageview.Render(c, previewNoticeResp(c, tr(productenums.ProductsPreviewFailed, "预览渲染失败（多半是这个商品还没有可用的详情页模板）。")))
-	}
-	if res == nil || strings.TrimSpace(res.HTML) == "" {
-		pageview.Render(c, previewNoticeResp(c, tr(productenums.ProductsPreviewEmpty, "还没有可渲染的详情页：先给 product 类型建一套内容模板。")))
+	if err != nil || res == nil || strings.TrimSpace(res.HTML) == "" {
+		if err != nil {
+			// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
+			logger.Scene("product").With("product_id", req.ProductID).Error(err, "商品详情页预览渲染失败")
+			renderPreviewPlaceholder(c, tr, productenums.ProductsPreviewFailed, "预览渲染失败（多半是这个商品还没有可用的详情页模板）。")
+		} else {
+			renderPreviewPlaceholder(c, tr, productenums.ProductsPreviewEmpty, "还没有可渲染的详情页：先给 product 类型建一套内容模板。")
+		}
+		return
 	}
 	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物）：后端只搬运字节，不拼结构。
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
-	return
 }
 
-// previewNoticeResp 预览替代页的数据（结构与样式在 internal/templates/admin/preview_notice.html）。
+// renderPreviewPlaceholder 预览替代页（结构与样式在 admin/templates 的 preview_notice.html）。
+func renderPreviewPlaceholder(c *gin.Context, tr func(string, string) string, key, fallback string) {
+	pageview.Render(c, previewPlaceholderResp(c, tr(key, fallback)))
+}
+
+// previewPlaceholderResp 预览替代页的数据（结构与样式在 internal/templates/admin/preview_notice.html）。
 //
 // 商品与文章两个预览帧共用同一份模板：占位页长得一样，没有理由各写一份。
-func previewNoticeResp(c *gin.Context, text string) productdto.PreviewNoticeResp {
+func previewPlaceholderResp(c *gin.Context, text string) productdto.PreviewNoticeResp {
 	return productdto.PreviewNoticeResp{Text: text, Lang: response.RequestLanguage(c)}
 }
 
@@ -690,9 +688,6 @@ func previewNoticeResp(c *gin.Context, text string) productdto.PreviewNoticeResp
 // 保存已迁到 JSON 写基座：基座在原页发 fetch、失败只写结果区，不再有「htmx 写失败换片段」
 // 这种响应形态，页面装配也因此只有一处出口。
 
-// bundleResolveURL 成员来源面板的解析接口（URL 形状属 HTTP，控制器给）。
-const bundleResolveURL = "/admin/products/bundle/members/resolve"
-
 // ProductBundlePage 捆绑配置页。
 // 与商品页同族（挂在 ProductPageHandle 上）：选工程 → 选商品 → 配选项规则 → 保存。
 //
@@ -714,22 +709,15 @@ func (h *ProductPageHandle) ProductBundlePage(c *gin.Context) {
 // 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
 // 不再有「请求期断言失败 → 500 兜底」这条路径。
 func (h *ProductPageHandle) renderBundlePage(c *gin.Context) {
-	reader := h.reader
 	req, ok := binding.Query[productdto.ProductBundlePageReq](c)
 	if !ok {
 		return
 	}
-	view, err := reader.ProductBundlePage(c.Request.Context(), req)
+	view, err := h.reader.ProductBundlePage(c.Request.Context(), req)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
-
-	// 剩下两样都只由控制器给：两个 URL 形状（ResolveURL / ListQuery）。
-	// 它们要么来自请求，要么是 HTTP 侧的形状 —— 都不是取数结论。
-	// 状态码 / no-store 由视图的 PageStatus / PageNoStore 带出，渲染在 UI 线。
-	view.ResolveURL = bundleResolveURL
-	view.ListQuery = binding.ListQuery(c, productBundleBackKeys...)
 	pageview.Render(c, view)
 }
 

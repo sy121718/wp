@@ -222,7 +222,6 @@ func productRowForRender() *productdto.ProductRowResp {
 func TestProductSeoDrawerFragmentRenders(t *testing.T) {
 	body := renderAdminTemplate(t, "admin/product/entity_seo_drawer.html", productPageLayoutData(gin.H{
 		"Score":        productdto.ScoreResp{OK: true, Total: 72, Grade: "C"},
-		"ScoreURL":     "/admin/products/seo-score",
 		"TargetID":     "product-seo-score-p1",
 		"HiddenFields": []seoHiddenField{{"projectId", "proj-1"}, {"productId", "p1"}},
 	}))

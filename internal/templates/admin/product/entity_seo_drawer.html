@@ -8,7 +8,7 @@
    （「SEO 评分」是表单提交），不能出现 script / style / iframe 等，链接与 hx-* 必须同源。
 
    数据键（调用方给齐，缺键会让整个抽屉渲染中断 → htmx 因 5xx 不 swap，用户点开是空白）：
-     Score（fragments/seo_score 的入参）、ScoreURL、TargetID、HiddenFields（name/value 对）。
+     Score（fragments/seo_score 的入参）、TargetID、HiddenFields（name/value 对）；评分端点地址是本页字面量。
 
    容器 id 与提交端点沿用改造前的命名（product-seo-score-<id> 等）：它们是既有测试与
    .wb-seo-panel 样式的锚点，改名的收益只是好看。 *}
@@ -18,7 +18,7 @@
 
     {* 「SEO 评分」按需重算：hx-target 指向本片段里的结果容器，提交端点按实体类型由 Go 侧给出
        （商品 / 分类 / 品牌各一个 POST 端点）。 *}
-    <form method="post" action="{{.ScoreURL}}" hx-post="{{.ScoreURL}}" hx-target="#{{.TargetID}}" hx-swap="innerHTML">
+    <form method="post" action="/admin/products/seo-score" hx-post="/admin/products/seo-score" hx-target="#{{.TargetID}}" hx-swap="innerHTML">
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         {{range _, f := .HiddenFields}}<input type="hidden" name="{{f.Name}}" value="{{f.Value}}">
         {{end}}

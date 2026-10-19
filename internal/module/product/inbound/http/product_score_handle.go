@@ -20,7 +20,6 @@ import (
 	json "go_wp/pkg/jsonx"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -197,25 +196,25 @@ func (h *ProductPageHandle) EntitySeoDrawer(c *gin.Context) {
 	if !ok {
 		return
 	}
-	id, projectID := req.ProductID, req.ProjectID
-	if h == nil || h.products == nil {
-		c.Status(http.StatusNotFound)
-		return
-	}
+	pageview.Render(c, h.seoDrawerData(c, req))
+}
+
+// seoDrawerData 抽屉的数据根：目标容器 id + POST 隐藏字段 + 评分视图。
+//
+// 读不到实体时仍给 200 + 片段（里面就是那句空态文案）—— 这不是「加载失败」，
+// 抽屉的失败重试界面会把「这个商品读不到」伪装成网络问题。
+func (h *ProductPageHandle) seoDrawerData(c *gin.Context, req *productdto.ProductSeoDrawerReq) gin.H {
 	data := gin.H{
-		"ScoreURL":     "/admin/products/seo-score",
-		"TargetID":     "product-seo-score-" + id,
-		"HiddenFields": productScoreHiddenFields(id, projectID),
+		"TargetID":     "product-seo-score-" + req.ProductID,
+		"HiddenFields": productScoreHiddenFields(req.ProductID, req.ProjectID),
 	}
-	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindProduct, id, projectID)
+	in, selfID, emptyView := h.scoreInputOf(c, scoring.KindProduct, req.ProductID, req.ProjectID)
 	if in == nil {
-		// 读不到实体：仍给 200 + 片段（里面就是那句空态文案）—— 这不是「加载失败」，
-		// 抽屉的失败重试界面会把「这个商品读不到」伪装成网络问题。
 		data["Score"] = emptyView
-		pageview.Render(c, data)
+		return data
 	}
-	data["Score"] = h.entityScoreViewOf(c.Request.Context(), in, projectID, selfID)
-	pageview.Render(c, data)
+	data["Score"] = h.entityScoreViewOf(c.Request.Context(), in, req.ProjectID, selfID)
+	return data
 }
 
 // productScoreHiddenFields 商品评分端点的隐藏字段（与页面上那个 POST 端点同一口径）。

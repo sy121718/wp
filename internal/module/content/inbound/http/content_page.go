@@ -598,10 +598,10 @@ func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	tr := shell.TranslateFor(c)
 	id := strings.TrimSpace(c.Query("id"))
 	if id == "" {
-		pageview.Render(c, previewNoticeResp(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。")))
+		pageview.Render(c, previewPlaceholderResp(c, tr(contentenums.PreviewNeedSave, "保存这篇文章后，这里会显示它的详情页真实形态。")))
 	}
 	if h == nil || h.instances == nil {
-		pageview.Render(c, previewNoticeResp(c, tr(contentenums.PreviewUnavailable, "预览不可用：发布能力未装配。")))
+		pageview.Render(c, previewPlaceholderResp(c, tr(contentenums.PreviewUnavailable, "预览不可用：发布能力未装配。")))
 	}
 	res, err := h.instances.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
 		EntityType: articleEntityType, EntityID: id,
@@ -609,18 +609,18 @@ func (h *articlePageHandle) ArticlePreviewFrame(c *gin.Context) {
 	if err != nil {
 		// 原文只进日志（后台页面不得直出内部错误）；页面上给一句能行动的话。
 		logger.Scene("content").With("article_id", id).Error(err, "文章详情页预览渲染失败")
-		pageview.Render(c, previewNoticeResp(c, tr(contentenums.PreviewFailed, "预览渲染失败（多半是这部文章还没有可用的详情页模板）。")))
+		pageview.Render(c, previewPlaceholderResp(c, tr(contentenums.PreviewFailed, "预览渲染失败（多半是这部文章还没有可用的详情页模板）。")))
 	}
 	if res == nil || strings.TrimSpace(res.HTML) == "" {
-		pageview.Render(c, previewNoticeResp(c, tr(contentenums.PreviewEmpty, "还没有可渲染的详情页：先给 article 类型建一套内容模板。")))
+		pageview.Render(c, previewPlaceholderResp(c, tr(contentenums.PreviewEmpty, "还没有可渲染的详情页：先给 article 类型建一套内容模板。")))
 	}
 	// 直出的是**构建器渲染出来的详情页 HTML**（预览产物）：后端只搬运字节，不拼结构。
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
 	return
 }
 
-// previewNoticeResp 预览替代页的数据（结构与样式在 internal/templates/admin/preview_notice.html）。
-func previewNoticeResp(c *gin.Context, text string) contentdto.PreviewNoticeResp {
+// previewPlaceholderResp 预览替代页的数据（结构与样式在 internal/templates/admin/preview_notice.html）。
+func previewPlaceholderResp(c *gin.Context, text string) contentdto.PreviewNoticeResp {
 	return contentdto.PreviewNoticeResp{Text: text, Lang: response.RequestLanguage(c)}
 }
 

@@ -15,6 +15,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
+	productdto "go_wp/internal/module/product/dto"
+	"go_wp/pkg/binding"
 )
 
 func newFilterKeyContext(t *testing.T, rawQuery string) *gin.Context {
@@ -32,8 +34,16 @@ func TestProductFilterKeysKeepContext(t *testing.T) {
 	if got := adminui.ListQuery(c, productPricingBackKeys...); !strings.Contains(got, "project=p1") {
 		t.Errorf("定价键表 = %q（应保留 project）", got)
 	}
-	if got := adminui.ListQuery(c, productBundleBackKeys...); !strings.Contains(got, "product=prod1") {
-		t.Errorf("捆绑键表 = %q（应保留 product）", got)
+	// 捆绑页的键表写在 DTO 的 listquery tag 上（form:"-"），由 pkg/binding 统一读回。
+	bundle, ok := binding.Query[productdto.ProductBundlePageReq](c)
+	if !ok {
+		t.Fatal("捆绑页查询串应能绑定")
+	}
+	if !strings.Contains(bundle.ListQuery, "product=prod1") || !strings.Contains(bundle.ListQuery, "project=p1") {
+		t.Errorf("捆绑页 ListQuery = %q（应保留 project 与 product）", bundle.ListQuery)
+	}
+	if strings.Contains(bundle.ListQuery, "keyword") || strings.Contains(bundle.ListQuery, "lang") {
+		t.Errorf("捆绑页 ListQuery = %q（不该透传未声明的键）", bundle.ListQuery)
 	}
 	for name, keys := range map[string][]string{
 		"标签": productTagsBackKeys,

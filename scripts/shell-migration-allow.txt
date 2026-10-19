@@ -51,7 +51,7 @@ exit:ai:jump	2	down	页面写操作迁到 JSON API 后逐步归零；task-153 �
 exit:ai:ownhelper	2	down	模块自建出口 helper 收敛到统一归口后归零
 exit:block:ownhelper	1	down	模块自建出口 helper 收敛到统一归口后归零
 exit:content:jump	1	down	页面写操作迁到 JSON API 后逐步归零；task-153 控制器取词收口（片段接 adminui.PrepareFragment、成品串槽位改事实）+ 路由按功能拆分，按门禁实测 3 → 1
-exit:content:ownhelper	7	down	模块自建出口 helper 收敛到统一归口后归零；task-153 控制器取词收口（片段接 adminui.PrepareFragment、成品串槽位改事实）+ 路由按功能拆分，按门禁实测 8 → 7
+exit:content:ownhelper	6	down	模块自建出口 helper 收敛到统一归口后归零；task-153 控制器取词收口（片段接 adminui.PrepareFragment、成品串槽位改事实）+ 路由按功能拆分 + 预览替代页助手改名（去 Notice 后缀，归一页内出口），按门禁实测 8 → 6
 exit:contenttemplate:jump	2	down	页面写操作迁到 JSON API 后逐步归零
 exit:comment:ownhelper	1	keep	commentFail：写动作失败出口（业务 400 / 不可用 503 / 其余 500 + JSON，文案走 response.MessageOf）。comment_err.go 的白名单已删，这是终局形态而非过渡
 exit:contenttemplate:ownhelper	2	down	模块自建出口 helper 收敛到统一归口后归零；task-153 控制器取词收口（片段接 adminui.PrepareFragment、成品串槽位改事实）+ 路由按功能拆分，按门禁实测 3 → 2

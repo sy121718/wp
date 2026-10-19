@@ -137,63 +137,78 @@ func detailTemplateWriteFail(c *gin.Context, status int, msg facing.Msg) {
 	response.ErrorMsg(c, status, msg)
 }
 
+// detailTemplateDepsOrFail 取写动作依赖；没装配就地写完 500 并告诉调用方别再往下走。
+func detailTemplateDepsOrFail(c *gin.Context) (productservice.DetailTemplateDeps, bool) {
+	deps, err := detailTemplateWriteDepsOrErr()
+	if err != nil {
+		productDetailTemplateModeFail(c, err)
+		return productservice.DetailTemplateDeps{}, false
+	}
+	return deps, true
+}
+
+// detailTemplateWriteJSON 四个写动作的共同骨架：绑定 → 取依赖 → 交给业务函数 → 回执。
+//
+// 业务函数里要自己写完响应（例如名字为空这种请求级校验）时返回 response.ErrHandled，
+// 收尾只认「已经写完」而不再叠一条回执。
+func detailTemplateWriteJSON[T any](c *gin.Context, run func(req *T, deps productservice.DetailTemplateDeps) error) {
+	req, ok := binding.JSON[T](c)
+	if !ok {
+		return
+	}
+	deps, ok := detailTemplateDepsOrFail(c)
+	if !ok {
+		return
+	}
+	detailTemplateFinish(c, run(req, deps))
+}
+
+// detailTemplateFinish 写动作的收尾：成功一句回执；取商品失败 404；其余业务失败 400。
+func detailTemplateFinish(c *gin.Context, err error) {
+	if err == nil {
+		response.SuccessMsg(c, productActionDoneMsg)
+		return
+	}
+	if errors.Is(err, response.ErrHandled) {
+		return
+	}
+	status := http.StatusBadRequest
+	var lookup *productservice.DetailTemplateProductLookupError
+	if errors.As(err, &lookup) {
+		status = http.StatusNotFound
+	}
+	detailTemplateWriteFail(c, status, detailTemplateErrMsg(err))
+}
+
 // CreateDetailTemplate POST /api/product/detail-template/create：
 // 新建一套命名模板（复制指定模板或默认模板的文档），初始版本 v1。
 //
 // 模板内容编辑不在这里：新建只给出一个可被工作台打开的结构，改文档走 /workbench?template=…。
 func (h *ProductHandle) CreateDetailTemplate(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DetailTemplateCreateReq](c)
-	if !ok {
-		return
-	}
-	deps, err := detailTemplateWriteDepsOrErr()
-	if err != nil {
-		productDetailTemplateModeFail(c, err)
-		return
-	}
-	// binding 只拦空串，拦不住「全是空格」的名字；判据必须在 TrimSpace 之后。
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		detailTemplateWriteFail(c, http.StatusBadRequest, productDetailTemplateNameRequiredMsg)
-		return
-	}
-	// 顺序：**先取文档、再建模板**（取不到复制来源就不建空的）。
-	if err = productservice.CreateDetailTemplate(c.Request.Context(), deps,
-		strings.TrimSpace(req.ProjectID), name, strings.TrimSpace(req.CopyFrom)); err != nil {
-		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
-		return
-	}
-	response.SuccessMsg(c, productActionDoneMsg)
+	detailTemplateWriteJSON(c, func(req *productdto.DetailTemplateCreateReq, deps productservice.DetailTemplateDeps) error {
+		// binding 只拦空串，拦不住「全是空格」的名字；判据必须在 TrimSpace 之后。
+		name := strings.TrimSpace(req.Name)
+		if name == "" {
+			detailTemplateWriteFail(c, http.StatusBadRequest, productDetailTemplateNameRequiredMsg)
+			return response.ErrHandled
+		}
+		// 顺序：**先取文档、再建模板**（取不到复制来源就不建空的）。
+		return productservice.CreateDetailTemplate(c.Request.Context(), deps, strings.TrimSpace(req.ProjectID), name, strings.TrimSpace(req.CopyFrom))
+	})
 }
 
 // PublishDetailTemplate POST /api/product/detail-template/publish：
 // 首次为该商品建立发布实例并发布（URLPath 留空时按站点 URL 规则从商品 slug 派生）。
 //
-// 两类失败走**两张不同的文案表**：取商品失败（product 的 enums）与建实例失败
-// （presentation 的 enums）合成一句会把「商品不存在」说成「还没有详情页实例」。
+// 取商品失败（product 的 enums）与建实例失败（presentation 的 enums）是两类事实：
+// 收尾按 DetailTemplateProductLookupError 单独给 404，合成一句会把「商品不存在」
+// 说成「还没有详情页实例」。
 func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DetailTemplatePublishReq](c)
-	if !ok {
-		return
-	}
-	deps, err := detailTemplateWriteDepsOrErr()
-	if err != nil {
-		productDetailTemplateModeFail(c, err)
-		return
-	}
-	err = productservice.PublishDetailTemplate(c.Request.Context(), deps,
-		strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID),
-		strings.TrimSpace(req.TemplateID), strings.TrimSpace(req.URLPath))
-	if err != nil {
-		var lookup *productservice.DetailTemplateProductLookupError
-		if errors.As(err, &lookup) {
-			detailTemplateWriteFail(c, http.StatusNotFound, detailTemplateErrMsg(lookup.Err))
-			return
-		}
-		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
-		return
-	}
-	response.SuccessMsg(c, productActionDoneMsg)
+	detailTemplateWriteJSON(c, func(req *productdto.DetailTemplatePublishReq, deps productservice.DetailTemplateDeps) error {
+		return productservice.PublishDetailTemplate(c.Request.Context(), deps,
+			strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID),
+			strings.TrimSpace(req.TemplateID), strings.TrimSpace(req.URLPath))
+	})
 }
 
 // ApplyDetailTemplate POST /api/product/detail-template/apply：
@@ -202,48 +217,25 @@ func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
 // projectID 显式回传，不走 presentation 的「工程唯一时取该工程」兜底：多工程站点上
 // 兜底会落到另一个工程，改的是别的站点的页面而这里仍回成功。
 func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DetailTemplateApplyReq](c)
-	if !ok {
-		return
-	}
-	deps, err := detailTemplateWriteDepsOrErr()
-	if err != nil {
-		productDetailTemplateModeFail(c, err)
-		return
-	}
-	if err = productservice.ApplyDetailTemplate(c.Request.Context(), deps.Instances,
-		strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID),
-		strings.TrimSpace(req.TemplateID)); err != nil {
-		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
-		return
-	}
-	response.SuccessMsg(c, productActionDoneMsg)
+	detailTemplateWriteJSON(c, func(req *productdto.DetailTemplateApplyReq, deps productservice.DetailTemplateDeps) error {
+		return productservice.ApplyDetailTemplate(c.Request.Context(), deps.Instances,
+			strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID),
+			strings.TrimSpace(req.TemplateID))
+	})
 }
 
 // UpdateDetailTemplateURL POST /api/product/detail-template/update-url：
 // 修改商品详情页的线上路径（内容、模板绑定、产物内容完全不动）。
 func (h *ProductHandle) UpdateDetailTemplateURL(c *gin.Context) {
-	req, ok := binding.JSON[productdto.DetailTemplateUpdateURLReq](c)
-	if !ok {
-		return
-	}
-	deps, err := detailTemplateWriteDepsOrErr()
-	if err != nil {
-		productDetailTemplateModeFail(c, err)
-		return
-	}
-	newPath := strings.TrimSpace(req.NewPath)
-	if newPath == "" {
-		detailTemplateWriteFail(c, http.StatusBadRequest, productDetailTemplatePathRequiredMsg)
-		return
-	}
-	if err = productservice.UpdateDetailTemplateURL(c.Request.Context(), deps.Instances,
-		strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID), newPath,
-		req.WithRedirect); err != nil {
-		detailTemplateWriteFail(c, http.StatusBadRequest, detailTemplateErrMsg(err))
-		return
-	}
-	response.SuccessMsg(c, productActionDoneMsg)
+	detailTemplateWriteJSON(c, func(req *productdto.DetailTemplateUpdateURLReq, deps productservice.DetailTemplateDeps) error {
+		newPath := strings.TrimSpace(req.NewPath)
+		if newPath == "" {
+			detailTemplateWriteFail(c, http.StatusBadRequest, productDetailTemplatePathRequiredMsg)
+			return response.ErrHandled
+		}
+		return productservice.UpdateDetailTemplateURL(c.Request.Context(), deps.Instances,
+			strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID), newPath, req.WithRedirect)
+	})
 }
 
 // detailTemplateModePortFor 取双轨能力并校验实例标识（两个端点的共同前置）。
@@ -378,33 +370,31 @@ func (h *ProductPageHandle) detailTemplateDeps() productservice.DetailTemplateDe
 //	· 依赖未装配 → 200 的就地说明（不是装载失败：区别是「没读到」与「这条能力没接上」）；
 //	· 还没选商品 → 302 回商品列表（本页没有「还没选商品」的就地形态）。
 func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
-	// 未装配（缺内容模板 / 自动发布契约）是**装配缺陷的可见提示**，不是装载失败：
-	// 与「没读到数据」分开，仍然是 200 的就地说明（先于取数判断 —— 否则两个出口会互相盖住）。
-	if h.templates == nil || h.instances == nil {
-		unassembled := detailTemplateUnassembledView()
-		pageview.Render(c, &unassembled)
-		return
-	}
-	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
-	// 不再有「请求期断言失败 → 500 兜底」这条路径。
-	reader := h.reader
 	req, ok := binding.Query[productdto.ProductDetailTemplatePageReq](c)
 	if !ok {
 		return
 	}
-	view, err := reader.ProductDetailTemplatePage(c.Request.Context(), req)
+	h.renderDetailTemplatePage(c, req)
+}
+
+// renderDetailTemplatePage 详情页模板页的三条落地分支（未装配 / 取数失败 / 没选商品）。
+//
+// 未装配（缺内容模板 / 自动发布契约）是**装配缺陷的可见提示**，不是装载失败：
+// 与「没读到数据」分开，仍然是 200 的就地说明（先于取数判断 —— 否则两个出口会互相盖住）。
+func (h *ProductPageHandle) renderDetailTemplatePage(c *gin.Context, req *productdto.ProductDetailTemplatePageReq) {
+	if h.templates == nil || h.instances == nil {
+		pageview.Render(c, detailTemplateUnassembledView())
+		return
+	}
+	// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误。
+	view, err := h.reader.ProductDetailTemplatePage(c.Request.Context(), req)
 	if err != nil {
 		pageview.Fail(c, err)
 		return
 	}
 	if view.NoProduct {
 		// 侧栏菜单直接进本页时没有 product 参数：回商品列表挑一件，而不是渲染一个空壳页。
-		// 落点是本模块自己的路径常量（不带回跳参数）—— 提示页那一层已删，失败分支不再拼回跳串。
 		c.Redirect(http.StatusFound, productListPath)
-		return
-	}
-	if err != nil {
-		pageview.Fail(c, err)
 		return
 	}
 	pageview.Render(c, view)

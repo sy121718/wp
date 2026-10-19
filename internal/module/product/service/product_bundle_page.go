@@ -70,6 +70,7 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 	if req != nil {
 		selectedProject = strings.TrimSpace(req.ProjectID)
 		selectedProduct = strings.TrimSpace(req.ProductID)
+		view.ListQuery = strings.TrimSpace(req.ListQuery)
 		source = strings.TrimSpace(req.Source)
 		sourceProductID = strings.TrimSpace(req.SourceProductID)
 		sourceWarehouseID = strings.TrimSpace(req.SourceWarehouseID)
