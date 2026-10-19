@@ -158,10 +158,7 @@
             </div>
         </form>
         {{else}}
-        <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.product_bundle.detailFailedTitle", "配置读取失败") }}</p>
-            <p class="empty-desc">{{ .["t"]("admin.product_bundle.detailFailed", "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。") }}</p>
-        </div>
+        {{include "../partials/empty_state.html" map("title", tr("admin.product_bundle.detailFailedTitle", "配置读取失败"), "desc", tr("admin.product_bundle.detailFailed", "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。"))}}
         {{end}}
     </section>
 </div>

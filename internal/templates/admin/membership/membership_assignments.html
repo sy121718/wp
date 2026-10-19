@@ -116,10 +116,7 @@
             <tbody>
             {{if len(.Rows) == 0}}
             <tr><td colspan="5" class="cell-wrap">
-                <div class="empty-state">
-                    <p class="empty-title">{{ .["t"]("admin.membership.assign.emptyHeading", "还没有会员归属") }}</p>
-                    <p class="empty-desc">{{ .["t"]("admin.membership.assign.empty", "自动升级在日结时写入归属；也可以在上面的表单里手工指定一个。没有归属的访客按工程的默认等级计算。") }}</p>
-                </div>
+                {{include "../partials/empty_state.html" map("title", tr("admin.membership.assign.emptyHeading", "还没有会员归属"), "desc", tr("admin.membership.assign.empty", "自动升级在日结时写入归属；也可以在上面的表单里手工指定一个。没有归属的访客按工程的默认等级计算。"))}}
             </td></tr>
             {{end}}
             {{range _, r := .Rows}}

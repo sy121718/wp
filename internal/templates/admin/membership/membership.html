@@ -157,10 +157,7 @@
             <tbody>
             {{if !.HasTiers}}
             <tr><td colspan="6" class="cell-wrap">
-                <div class="empty-state">
-                    <p class="empty-title">{{ .["t"]("admin.membership.tier.emptyHeading", "这个工程还没有等级") }}</p>
-                    <p class="empty-desc">{{ .["t"]("admin.membership.tier.empty", "先建一个默认等级（门槛 0），再按消费额往上加档。没有默认等级时，会员身份解析会直接失败。") }}</p>
-                </div>
+                {{include "../partials/empty_state.html" map("title", tr("admin.membership.tier.emptyHeading", "这个工程还没有等级"), "desc", tr("admin.membership.tier.empty", "先建一个默认等级（门槛 0），再按消费额往上加档。没有默认等级时，会员身份解析会直接失败。"))}}
             </td></tr>
             {{end}}
             {{range _, r := .Tiers}}

@@ -105,10 +105,7 @@
                 <tbody>
                 {{if len(.Rows) == 0}}
                 <tr><td colspan="{{if isset(.Buttons["comment.review"])}}7{{else}}6{{end}}" class="cell-wrap">
-                    <div class="empty-state">
-                        <p class="empty-title">{{ tr("admin.comment.empty", "没有符合条件的评论。") }}</p>
-                        <p class="empty-desc">{{ tr("admin.comment.empty_hint", "换一个筛选条件，或等访客提交新的评论。") }}</p>
-                    </div>
+                    {{include "../partials/empty_state.html" map("title", tr("admin.comment.empty", "没有符合条件的评论。"), "desc", tr("admin.comment.empty_hint", "换一个筛选条件，或等访客提交新的评论。"))}}
                 </td></tr>
                 {{end}}
                 {{range _, r := .Rows}}

@@ -306,10 +306,7 @@
             {{if len(returns) == 0}}
             <tr><td colspan="8" class="cell-wrap">
         {{if .LoadErr != ""}}
-        <div class="empty-state">
-            <p class="empty-title">{{tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来")}}</p>
-            <p class="empty-desc">{{tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。")}}</p>
-        </div>
+        {{include "../partials/empty_state.html" map("title", tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来"), "desc", tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。"))}}
         {{else if len(.Projects) == 0}}
         <div class="empty-state">
             <p class="empty-title">{{tr("admin.returns.list.empty_no_project", "还没有站点工程")}}</p>

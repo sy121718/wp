@@ -1,0 +1,17 @@
+{* 空态容器：后台唯一的空态形态（标题 + 说明 + 可选动作）。
+
+   调用点长这样：
+     {{include "../partials/empty_state.html" map("title", tr(标题 key, 「标题兜底」), "desc", tr(说明 key, 「说明兜底」))}}
+   需要「去别处」的动作时再传两个键：actionHref / actionLabel。
+
+   · title 与 desc 都是**已经取好词的文本**：本片段不取词、不拼句子。
+   · 说明里要内联链接或加粗时，不要往这里塞 HTML —— 那种空态在自己的页面里写（本片段的
+     意义是「同一件事只写一遍」，为了一处特例把它变成 HTML 插槽就等于没写）。
+   · role="status"：读屏用户在筛选后得到零结果时，靠它听到「这里没有内容」而不是一片安静。 *}
+<div class="empty-state" role="status">
+    <p class="empty-title">{{.title}}</p>
+    {{if isset(.desc)}}{{if .desc}}<p class="empty-desc">{{.desc}}</p>{{end}}{{end}}
+    {{if isset(.actionHref)}}{{if .actionHref}}
+    <div class="empty-actions"><a class="btn" href="{{.actionHref}}">{{.actionLabel}}</a></div>
+    {{end}}{{end}}
+</div>

@@ -137,10 +137,7 @@
                 {{if isset(.LoadFailed) && .LoadFailed}}
                 {* 装载失败与「没有记录」是两回事：前者是这一次没读出来，后者是历史真的为空。
                    用空态标题「没有符合条件的变更记录」去描述装载失败，用户会以为数据丢了。 *}
-                <div class="empty-state">
-                    <p class="empty-title">{{ .["t"]("admin.masterdata.loadFailed.title", "列表没读出来") }}</p>
-                    <p class="empty-desc">{{ .["t"]("admin.masterdata.loadFailed.desc", "这一次没取到变更记录（不是「没有记录」）—— 先看上方的提示，刷新后重试。") }}</p>
-                </div>
+                {{include "../partials/empty_state.html" map("title", tr("admin.masterdata.loadFailed.title", "列表没读出来"), "desc", tr("admin.masterdata.loadFailed.desc", "这一次没取到变更记录（不是「没有记录」）—— 先看上方的提示，刷新后重试。"))}}
                 {{else}}
                 <div class="empty-state">
                     <p class="empty-title">{{ .["t"]("admin.masterdata.rows.emptyTitle", "没有符合条件的变更记录") }}</p>
@@ -199,10 +196,7 @@
                     <p class="empty-desc">{{ .["t"]("admin.masterdata.loadFailed.desc", "这一次没取到变更记录（不是「没有记录」）—— 先看上方的提示，刷新后重试。") }}</p>
                 </div>
                 {{else}}
-                <div class="empty-state">
-                    <p class="empty-title">{{ .["t"]("admin.masterdata.entities.emptyTitle", "没有任何变更记录") }}</p>
-                    <p class="empty-desc">{{ .["t"]("admin.masterdata.entities.empty", "还没有任何主数据变更记录。") }}</p>
-                </div>
+                {{include "../partials/empty_state.html" map("title", tr("admin.masterdata.entities.emptyTitle", "没有任何变更记录"), "desc", tr("admin.masterdata.entities.empty", "还没有任何主数据变更记录。"))}}
                 {{end}}
                         </td></tr>
                         {{else}}

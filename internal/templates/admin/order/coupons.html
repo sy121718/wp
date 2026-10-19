@@ -164,10 +164,7 @@
             {{if len(coupons) == 0}}
             <tr><td colspan="11" class="cell-wrap">
         {{if .LoadErr != ""}}
-        <div class="empty-state">
-            <p class="empty-title">{{tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来")}}</p>
-            <p class="empty-desc">{{tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。")}}</p>
-        </div>
+        {{include "../partials/empty_state.html" map("title", tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来"), "desc", tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。"))}}
         {{else}}
         <div class="empty-state">
             <p class="empty-title">{{if !selectedProject}}{{tr("admin.coupons.list.empty_no_project", "还没有站点工程")}}{{else if .FilterKeyword}}{{tr("admin.coupons.list.empty_no_match_lead", "没有匹配「")}}{{.FilterKeyword}}{{tr("admin.coupons.list.empty_no_match_tail", "」的优惠码")}}{{else if .FilterStatus}}{{tr("admin.coupons.list.empty_by_status", "这个状态下没有优惠码")}}{{else}}{{tr("admin.coupons.list.empty_project", "这个工程还没有优惠码")}}{{end}}</p>

@@ -73,10 +73,7 @@
        「空态吃掉了表头」，而那条判据针对的是**列表页**在空数据时不渲染表头的情形。
        平行结构下每个空态都是独立段落，语义也更清楚。 *}
     <section class="card card-body">
-        <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.common.list.loadFailedTitle", "这一页的数据没能读出来") }}</p>
-            <p class="empty-desc">{{ .["t"]("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。") }}</p>
-        </div>
+        {{include "../partials/empty_state.html" map("title", tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来"), "desc", tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。"))}}
     </section>
     {{end}}
     {{if isset(.NoProject) && .NoProject}}

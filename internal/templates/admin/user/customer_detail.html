@@ -33,10 +33,7 @@
 
     {{if not .HasDetail}}
     <section class="card card-body">
-        <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.customer_detail.no_detail.title", "客户信息读不出来") }}</p>
-            <p class="empty-desc">{{ .["t"]("admin.customer_detail.no_detail", "客户信息读不出来（多半是装配问题），页面只显示这个外壳。请联系开发确认用户模块的后台客户能力是否已注入。") }}</p>
-        </div>
+        {{include "../partials/empty_state.html" map("title", tr("admin.customer_detail.no_detail.title", "客户信息读不出来"), "desc", tr("admin.customer_detail.no_detail", "客户信息读不出来（多半是装配问题），页面只显示这个外壳。请联系开发确认用户模块的后台客户能力是否已注入。"))}}
     </section>
     {{end}}
 

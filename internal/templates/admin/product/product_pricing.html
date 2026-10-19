@@ -132,10 +132,7 @@
                    商品 / SKU / 成本价 / 原价 / 新价 / 差值 / 结果）。 *}
                 {{if len(.PreviewRows) == 0}}
                 <tr><td colspan="7" class="cell-wrap">
-        <div class="empty-state">
-            <p class="empty-title">{{ .["t"]("admin.product_pricing.preview.emptyTitle", "没有可试算的变体") }}</p>
-            <p class="empty-desc">{{ .["t"]("admin.product_pricing.preview.empty", "这个范围下没有变体。") }}</p>
-        </div>
+        {{include "../partials/empty_state.html" map("title", tr("admin.product_pricing.preview.emptyTitle", "没有可试算的变体"), "desc", tr("admin.product_pricing.preview.empty", "这个范围下没有变体。"))}}
                 </td></tr>
                 {{else}}
                 {{range _, l := .PreviewRows}}
@@ -193,10 +190,7 @@
         </summary>
         <div class="fold-body">
             {{if len(.History) == 0}}
-            <div class="empty-state">
-                <p class="empty-title">{{ .["t"]("admin.product_pricing.history.emptyTitle", "还没有调价记录") }}</p>
-                <p class="empty-desc">{{ .["t"]("admin.product_pricing.history.empty", "应用一次调价后，这里会逐批记录规则、范围、改动数量与逐变体「原价 → 新价」。") }}</p>
-            </div>
+            {{include "../partials/empty_state.html" map("title", tr("admin.product_pricing.history.emptyTitle", "还没有调价记录"), "desc", tr("admin.product_pricing.history.empty", "应用一次调价后，这里会逐批记录规则、范围、改动数量与逐变体「原价 → 新价」。"))}}
             {{else}}
             {{range _, a := .History}}
             <details class="disclosure">
