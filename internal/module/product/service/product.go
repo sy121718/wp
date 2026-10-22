@@ -536,6 +536,23 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
 			return serr
 		}
+		// 并发保护的落点：进事务后**加锁重读**，把「本次请求没碰的字段」换成库里的现值。
+		//
+		// 为什么不在事务外读一次就够：`s.m.Get`（函数开头那次）没加锁，两个并发请求
+		// 会读到同一份旧值、各自只改自己的字段，而 UpdateTx 是**全列 Save** ——
+		// 后提交的整行覆盖前者，A 改的名字被 B 改副标题的那次写抹掉，两边都回 200。
+		// 加写事务本身不解决（事务只保证原子性，不保证读到的值是最新的），必须行锁。
+		//
+		// 为什么不「重放一次赋值」：上面的赋值依赖 resolveAttributeIDs / resolveTagIDs /
+		// applyCategoryRefs 这些**要查库**的校验，重放等于把整套校验再跑一遍，且容易漏。
+		// 反过来做更稳：事务外那份 e 已经带着「本次请求的全部效果」（含归一后的值），
+		// 只需把**请求没提的字段**用加锁读到的现值覆盖 —— 那些正是可能被别人改过的。
+		locked, lerr := s.m.GetForUpdateTx(ctx, tx, req.ID, e.ProjectID)
+		if lerr != nil {
+			return mapNotFound(lerr)
+		}
+		preserveUntouchedFields(e, locked, req)
+		e.UpdatedAt = time.Now().UTC()
 		if xerr := s.m.UpdateTx(ctx, tx, e); xerr != nil {
 			return mapContainerSKUConflict(xerr)
 		}
@@ -1706,4 +1723,89 @@ func makeCandidate(tr TranslateFunc, entityType, id, name, field, source string)
 		Context:    productcontract.FieldContext(entityType, field),
 		SourceText: source, SourceHash: i18n.ContentHash(source),
 	}, true
+}
+
+// preserveUntouchedFields 把「本次请求没碰的字段」换成加锁读到的现值，避免全列覆盖丢更新。
+//
+// 背景：UpdateTx 是 `Save(e)`（写全列）。事务外那次 `s.m.Get` 没加锁，两个并发请求
+// 各自读到同一份旧值、各改自己的字段，后提交的整行会把前一个的改动覆盖回去 ——
+// 而两边都回 200，用户看到「保存成功」但数据丢了。
+//
+// 为什么走「保留未触碰字段」而不是「重放赋值」：Update 里的赋值依赖 resolveAttributeIDs /
+// resolveTagIDs / applyCategoryRefs 这些**要查库**的校验（还要判工程归属、存在性、
+// 手工标签），重放等于把整套校验再跑一遍，且漏一个就是新缺陷。
+// e 已经带着本次请求的全部效果（含归一后的值），只需要把没碰的字段对齐到现值。
+//
+// 本函数与 Update 里的字段清单**必须同步**：漏一个的后果是「那个字段的并发修改被覆盖」，
+// 而接口照旧回 200。改动 Update 的赋值时，这里要一起看。
+func preserveUntouchedFields(e, locked *productmodel.ProductEntity, req *productdto.UpdateReq) {
+	if e == nil || locked == nil || req == nil {
+		return
+	}
+	if req.Name == nil {
+		e.Name = locked.Name
+	}
+	if req.Subtitle == nil {
+		e.Subtitle = locked.Subtitle
+	}
+	if len(req.Description) == 0 {
+		e.Description = locked.Description
+	}
+	if req.Slug == nil {
+		e.Slug = locked.Slug
+	}
+	if req.SKUCode == nil {
+		e.SKUCode = locked.SKUCode
+	}
+	if req.Status == nil {
+		e.Status = locked.Status
+	}
+	if req.Unit == nil {
+		e.Unit = locked.Unit
+	}
+	if req.Weight == nil {
+		e.Weight = locked.Weight
+	}
+	if req.SEOTitle == nil {
+		e.SEOTitle = locked.SEOTitle
+	}
+	if req.SEODescription == nil {
+		e.SEODescription = locked.SEODescription
+	}
+	if req.Images == nil {
+		e.Images = locked.Images
+	}
+	if req.ImageAlts == nil {
+		e.ImageAlts = locked.ImageAlts
+	}
+	if req.AttributeIDs == nil {
+		e.AttributeIDs = locked.AttributeIDs
+	}
+	// 分类与主分类是一组（applyCategoryRefs 会联动维护「主分类必须在附属里」），
+	// 任一被请求触碰时都保留本次结果。
+	if req.CategoryIDs == nil && req.PrimaryCategoryID == nil {
+		e.CategoryIDs = locked.CategoryIDs
+		e.PrimaryCategoryID = locked.PrimaryCategoryID
+	}
+	if req.TagIDs == nil {
+		e.TagIDs = locked.TagIDs
+	}
+	if req.RelatedIDs == nil {
+		e.RelatedIDs = locked.RelatedIDs
+	}
+	if len(req.BundleItems) == 0 {
+		e.BundleItems = locked.BundleItems
+	}
+	if req.BrandID == nil {
+		e.BrandID = locked.BrandID
+	}
+	if req.DefaultPrice == nil {
+		e.DefaultPrice = locked.DefaultPrice
+	}
+	if req.DefaultImage == nil {
+		e.DefaultImage = locked.DefaultImage
+	}
+	if len(req.Metadata) == 0 {
+		e.Metadata = locked.Metadata
+	}
 }

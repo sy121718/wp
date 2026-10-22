@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"go_wp/pkg/rls"
 )
@@ -861,4 +862,24 @@ func (m *Model) SaveVariantsTx(tx *gorm.DB, updated, created []*VariantEntity) (
 		return nil
 	}
 	return tx.CreateInBatches(created, 100).Error
+}
+
+// GetForUpdateTx 在**调用方事务内**按 id 取整行并加行锁（SELECT ... FOR UPDATE）。
+//
+// 为什么需要它：Update 的旧写法是「事务外 Get → 改字段 → 事务内 Save 全列」。
+// 两个并发请求各读到旧值、各自改不同字段，后提交的那个用整行覆盖，前一个的改动就丢了
+// （A 改名、B 改副标题 → 最终只剩 B 的）。加写事务不解决这个问题，必须在**读到**的那一刻
+// 就锁住行，让后到的事务排队。
+//
+// 为什么不用 LockProductsTx：那个只 Pluck 出 id（批量删除只需要知道哪些行还在），
+// 这里是「要拿整行做字段级赋值」，需要完整实体。
+//
+// 作用域由调用方在本事务上设好（与其它 Tx 变体同一口径，见 product_bulk_model.go 头部）。
+func (m *Model) GetForUpdateTx(ctx context.Context, tx *gorm.DB, id, projectID string) (e *ProductEntity, err error) {
+	e = &ProductEntity{}
+	err = tx.WithContext(ctx).Model(&ProductEntity{}).
+		Where("id = ? AND project_id = ?", id, projectID).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(e).Error
+	return e, err
 }
