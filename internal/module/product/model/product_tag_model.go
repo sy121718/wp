@@ -193,8 +193,21 @@ func (m *Model) UpdateTagTx(ctx context.Context, tx *gorm.DB, e *ProductTagEntit
 }
 
 // DeleteTagTx 在给定事务里删除标签行（service 编排：先解绑引用再删）。
+// DeleteTagTx 删除标签行，并**检查实际删除的行数**。
+//
+// 为什么必须查 RowsAffected：project_tags 是 FORCE ROW LEVEL SECURITY 的表，
+// 非超级角色下若事务没设 scope，`DELETE ... WHERE id = ?` 会**匹配 0 行且不报错** ——
+// 只看 Error 的写法会把「什么都没删」当成成功，接口回 200，用户以为删掉了。
+// 返回 gorm.ErrRecordNotFound 让 service 用既有的 mapNotFound 归口成业务错误。
 func (m *Model) DeleteTagTx(tx *gorm.DB, id string) (err error) {
-	return tx.Model(&ProductTagEntity{}).Where("id = ?", id).Delete(&ProductTagEntity{}).Error
+	res := tx.Model(&ProductTagEntity{}).Where("id = ?", id).Delete(&ProductTagEntity{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // ListProductsByTag 反查挂了某标签的商品（后台「某标签命中哪些商品」）。

@@ -512,6 +512,12 @@ func (s *Service) DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (
 	}
 	now := time.Now().UTC()
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		// project_tags 在迁移 215 的 RLS 名单里且是 FORCE ROW LEVEL SECURITY：
+		// 不设作用域时，非超级角色的事务里 `DELETE ... WHERE id = ?` 匹配 0 行而**不报错**，
+		// 接口回 200 —— 一次假删除（同文件其它事务 109/184/644 都设了 scope，这里漏了）。
+		if serr := rls.ScopeTx(tx, tag.ProjectID); serr != nil {
+			return serr
+		}
 		if rerr := s.m.RemoveTagFromProductsTx(tx, tag.ID, tag.ProjectID, now); rerr != nil {
 			return rerr
 		}

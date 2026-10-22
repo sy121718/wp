@@ -48,6 +48,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/rls"
 )
 
 const (
@@ -266,6 +267,14 @@ func (s *Service) writePricingPlansTx(ctx context.Context, tx *gorm.DB, plans []
 		return nil
 	}
 	projectID := plans[0].projectID
+	// scope 必须设在本事务上，且要在**第一次写之前**。
+	//
+	// 原先这一层没设，靠下游的 CreateAdjustmentWithItemsTx 内部兜（它确实设了），
+	// 但那个调用排在 SaveVariantsTx **之后** —— 保护的是 product_price_adjustments，
+	// 而不是先写的 product_variants。非超级角色下先写的那一步作用域是空的。
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return serr
+	}
 	targets := make([]invalidationTarget, 0, len(plans))
 	changes := make([]*masterdatacontract.ChangeInput, 0, len(plans))
 	for _, plan := range plans {
