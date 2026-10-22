@@ -37,8 +37,8 @@ func TestProductEditFormFieldsMatchUpdateReq(t *testing.T) {
 	form := page[start : start+end]
 
 	// 声明侧：端点 + 富文本改名映射（data-write-html="源:目标"）。
-	if !strings.Contains(form, `data-write-api="/api/product/update"`) {
-		t.Fatalf("主表单缺少 data-write-api=/api/product/update")
+	if !strings.Contains(form, `hx-post="/api/product/update"`) {
+		t.Fatalf("主表单缺少 hx-post=/api/product/update")
 	}
 	renames := map[string]string{}
 	htmlSpec := regexp.MustCompile(`data-write-html="([^"]*)"`).FindStringSubmatch(form)

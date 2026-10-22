@@ -232,8 +232,8 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 	// 提交走 JSON 写基座（不再是 action=... 的页面 POST）—— 端点与四条字段声明一起钉住，
 	// 少了任意一条都会让「保存成功一半」：例如没有 data-write-lines 时图集整条 400。
 	for _, want := range []string{
-		`data-write-api="/api/product/update"`,
-		`data-write-mode="form"`,
+		`hx-post="/api/product/update"`,
+		`hx-swap="none"`,
 		`data-write-array="attributeIds,categoryIds,tagIds"`,
 		`data-write-float="defaultPrice,weight"`,
 		`data-write-skip-empty="slug,sku,defaultPrice,weight"`,
@@ -251,12 +251,12 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		// 详情入口也在：改完去看只读的构成（变体 / 评分 / 捆绑）。
 		"/admin/products/detail?project=pr1&amp;product=p1",
 		// 变体 / 评分的写入口都在 JSON 写基座上（变体清单整张提交、评分增删各一条）。
-		`data-write-api="/api/product/variant/save"`,
+		`hx-post="/api/product/variant/save"`,
 		`data-write-builder="product-variant-rows"`,
 		`data-preview-url="/admin/products/variant/preview"`,
-		`data-write-api="/api/product/variant/create"`,
-		`data-write-api="/api/product/rating/add"`,
-		`data-write-api="/api/product/rating/delete"`,
+		`hx-post="/api/product/variant/create"`,
+		`hx-post="/api/product/rating/add"`,
+		`hx-post="/api/product/rating/delete"`,
 		// SEO 评分已移入抽屉：编辑页只留入口，评分按钮与结果容器在
 		// admin/product/entity_seo_drawer.html（该片段由模块内的用例守着）。
 		`data-drawer-url="/admin/products/seo/drawer?productId=p1`,
@@ -311,10 +311,10 @@ func TestGroupDProductDetailPageRenders(t *testing.T) {
 		`action="/admin/products/taxonomy"`,
 		`action="/admin/products/tags"`,
 		`action="/admin/products/seo-score"`,
-		`data-write-api="/api/product/variant/save"`,
-		`data-write-api="/api/product/variant/create"`,
-		`data-write-api="/api/product/rating/add"`,
-		`data-write-api="/api/product/rating/delete"`,
+		`hx-post="/api/product/variant/save"`,
+		`hx-post="/api/product/variant/create"`,
+		`hx-post="/api/product/rating/add"`,
+		`hx-post="/api/product/rating/delete"`,
 		`data-write-api="/api/product/detail-template/reapply-preset"`,
 		`data-write-api="/api/product/detail-template/rollback-document"`,
 		`action="/admin/products/delete"`,

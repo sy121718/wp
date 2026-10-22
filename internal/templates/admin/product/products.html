@@ -99,7 +99,7 @@
            而是就地显示「删了几条 + 哪几条没删掉、为什么」（data-write-status 区）。
            keyword / status / page 三个隐藏域随旧通道一起去掉：基座只发 data-write-extra
            点名的字段，留着它们永远不会被发送 —— 而且列表筛选由整页刷新自然保留。 *}
-        <form data-list-bulk data-write-api="/api/product/bulk-delete" data-write-mode="bulk"
+        <form data-list-bulk hx-post="/api/product/bulk-delete" hx-swap="none" hx-include="closest form" data-reload-on-ok
               data-write-flash="product-list-bulk"
               data-write-extra="projectId"
               data-msg-none-selected="{{tr("admin.products.bulk.noneSelected", "没有勾选任何商品，列表未改动。")}}"
@@ -263,8 +263,7 @@
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="productId" value="{{p.ID}}">
     </form>
-    <form id="product-del-{{p.ID}}" class="hidden-form" data-write-api="/api/product/delete"
-          data-write-mode="single" data-write-extra="projectId"
+    <form id="product-del-{{p.ID}}" class="hidden-form" hx-post="/api/product/delete" hx-swap="none" data-reload-on-ok
           data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
           data-confirm="{{ .["t"]("admin.products.row.deleteConfirm", "删除该商品及其全部变体？") }}" data-confirm-danger>
         {* projectId 必须点名带上：service 的 resolveProjectID 在它为空的只肯走「唯一工程」兜底，
@@ -298,7 +297,7 @@
            data-write-ids-scope 指回去。不写这一条，基座在本表单内收 ids 恒为空数组，
            症状是「点了应用调价什么也没发生」，而提示只会说「没勾选任何项」。 *}
         <form class="form-stack"
-              data-write-api="/api/product/bulk-pricing" data-write-mode="bulk"
+              hx-post="/api/product/bulk-pricing" hx-swap="none" hx-include="closest form" data-reload-on-ok
               data-write-flash="product-pricing-bulk"
               data-write-outcome="update"
               data-write-ids-scope="[data-list-bulk]"

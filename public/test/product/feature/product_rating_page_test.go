@@ -105,8 +105,8 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 	editBody := getProductEditPage(engine, f.projectID, rated)
 	for _, want := range []string{
 		"4.50", "2 条", "添加评分",
-		`data-write-api="/api/product/rating/add"`,
-		`data-write-api="/api/product/rating/delete"`,
+		`hx-post="/api/product/rating/add"`,
+		`hx-post="/api/product/rating/delete"`,
 	} {
 		if !strings.Contains(editBody, want) {
 			t.Fatalf("有评分的商品编辑页应包含 %q", want)
@@ -136,7 +136,7 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 // 就落不进那个槽 —— 症状是「点了删除没反应」，而所有「存在性」断言都还是绿的。
 func assertRatingFormsInsideHost(t *testing.T, body string) {
 	t.Helper()
-	deleteForm := strings.Index(body, `data-write-api="/api/product/rating/delete"`)
+	deleteForm := strings.Index(body, `hx-post="/api/product/rating/delete"`)
 	if deleteForm < 0 {
 		t.Fatalf("编辑页缺少评分删除表单")
 	}

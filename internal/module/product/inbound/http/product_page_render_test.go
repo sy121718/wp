@@ -813,9 +813,8 @@ func TestProductsListDeleteUsesJSONWriteBase(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`data-write-api="/api/product/delete"`,
-		`data-write-mode="single"`,
-		`data-write-extra="projectId"`,
+		`hx-post="/api/product/delete"`,
+		`data-reload-on-ok`,
 		"data-write-host",
 	} {
 		if !strings.Contains(body, want) {
@@ -849,8 +848,8 @@ func TestProductsListBulkDeleteUsesJSONWriteBase(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`data-write-api="/api/product/bulk-delete"`,
-		`data-write-mode="bulk"`,
+		`hx-post="/api/product/bulk-delete"`,
+		`data-reload-on-ok`,
 		`data-write-extra="projectId"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -883,8 +882,8 @@ func TestProductsListBulkPricingUsesJSONWriteBase(t *testing.T) {
 	})
 	body := rec.Body.String()
 	for _, want := range []string{
-		`data-write-api="/api/product/bulk-pricing"`,
-		`data-write-mode="bulk"`,
+		`hx-post="/api/product/bulk-pricing"`,
+		`data-reload-on-ok`,
 		`data-write-outcome="update"`,
 		`data-write-ids-scope="[data-list-bulk]"`,
 		"data-list-bulk",

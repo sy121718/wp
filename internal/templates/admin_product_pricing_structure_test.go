@@ -87,15 +87,15 @@ func TestPricingApplyUsesJSONBase(t *testing.T) {
 
 	var apply *html.Node
 	for _, n := range peAll(root, func(n *html.Node) bool {
-		return peEl(n, "button") && peAttr(n, "data-write-api") == "/api/product/pricing/apply"
+		return peEl(n, "button") && peAttr(n, "hx-post") == "/api/product/pricing/apply"
 	}) {
 		apply = n
 	}
 	if apply == nil {
-		t.Fatalf("找不到挂 data-write-api=/api/product/pricing/apply 的按钮；输出片段：%s", snippet(out))
+		t.Fatalf("找不到挂 hx-post=/api/product/pricing/apply 的按钮；输出片段：%s", snippet(out))
 	}
-	if got := peAttr(apply, "data-write-mode"); got != "form" {
-		t.Fatalf("应用按钮 data-write-mode=%q，期望 form（按控件 name 组请求体）", got)
+	if got := peAttr(apply, "hx-swap"); got != "none" {
+		t.Fatalf("应用按钮 hx-swap=%q，期望 none（写动作没有要换进 DOM 的内容）", got)
 	}
 	if got := peAttr(apply, "data-write-flash"); got != "product-pricing" {
 		t.Fatalf("应用按钮 data-write-flash=%q，期望 product-pricing", got)

@@ -100,8 +100,7 @@
        · data-write-html：富文本给的是裸 HTML，入库形态是 jsonb {"html": …}。
        csrf 走请求头（基座自动带 X-CSRF-Token），表单里不再有隐藏域。 *}
     {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form id="product-edit-main" class="card card-body form-stack"
-          data-write-api="/api/product/update"
-          data-write-mode="form"
+          hx-post="/api/product/update" hx-swap="none"
           data-write-array="attributeIds,categoryIds,tagIds"
           data-write-float="defaultPrice,weight"
           data-write-skip-empty="slug,sku,defaultPrice,weight"
@@ -328,7 +327,7 @@
            builder 从清单 DOM 组装；成功后的结论经 data-write-flash 带过随后的整页刷新
            （清单刷新后才是库里的样子，被跳过的那几行也才会重新出现）。 *}
         <p class="form-hint badge" data-write-flash-target="product-variant-save" role="status" hidden></p>
-        <form data-write-api="/api/product/variant/save" data-write-mode="form"
+        <form hx-post="/api/product/variant/save" hx-swap="none"
               data-write-builder="product-variant-rows" data-write-flash="product-variant-save"
               data-variant-form
               data-msg-failed="{{ .["t"]("admin.products.variant.saveFailed", "清单保存失败，请刷新页面后重试。") }}">
@@ -427,7 +426,7 @@
            放到卡片外面就落不进那个槽（症状是「点了删除没反应」）。 *}
         {{range _, r := p.Ratings}}
         <form id="rating-del-{{r.ID}}" class="hidden-form"
-              data-write-api="/api/product/rating/delete" data-write-mode="single" data-write-extra="projectId"
+              hx-post="/api/product/rating/delete" hx-swap="none" data-reload-on-ok
               data-confirm="{{ .["t"]("admin.products.rating.deleteConfirm", "删除该条评分？商品的平均分与条数会随之重算。") }}" data-confirm-danger>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{r.ID}}">
@@ -471,8 +470,7 @@
         {{if .TplPanel.SourceTemplateVersionID != "" && .TplPanel.CurrentTemplateVersionID != "" && .TplPanel.SourceTemplateVersionID != .TplPanel.CurrentTemplateVersionID}}<p class="hint">{{ .["t"]("admin.product_detail.template.presetUpdated", "模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。") }}</p>{{end}}
         {* 提交走 JSON 写基座：实例 ID 与工程随请求显式回传（端点是实例级的，不再按商品反查）；
            按钮在 JS 放出之前是 hidden + disabled —— 没有 JS 就没有可用端点，不能留一个点了没反应的原生提交。 *}
-        <form class="form-inline" data-write-api="/api/product/detail-template/reapply-preset"
-              data-write-mode="form" data-write-flash="product-detail-mode">
+        <form class="form-inline" hx-post="/api/product/detail-template/reapply-preset" hx-swap="none" data-write-flash="product-detail-mode">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="hidden" name="instanceId" value="{{.TplPanel.InstanceID}}">
@@ -480,8 +478,7 @@
             <button type="submit" class="btn btn-ghost" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail.template.reapplyPreset", "重新套用预设（回到跟随模板）") }}</button>
         </form>
         {{if len(.TplPanel.Snapshots) > 0}}
-        <form class="form-inline" data-write-api="/api/product/detail-template/rollback-document"
-              data-write-mode="form" data-write-flash="product-detail-mode">
+        <form class="form-inline" hx-post="/api/product/detail-template/rollback-document" hx-swap="none" data-write-flash="product-detail-mode">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="hidden" name="instanceId" value="{{.TplPanel.InstanceID}}">
@@ -523,7 +520,7 @@
 
     {* ==== 抽屉 ==== *}
     <template id="tpl-variant-create-{{p.ID}}">
-        <form class="form-stack" data-write-api="/api/product/variant/create" data-write-mode="form"
+        <form class="form-stack" hx-post="/api/product/variant/create" hx-swap="none"
               data-write-float="price" data-write-skip-empty="skuCode,price">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -590,7 +587,7 @@
     {{end}}
 
     <template id="tpl-rating-add-{{p.ID}}">
-        <form class="form-stack" data-write-api="/api/product/rating/add" data-write-mode="form"
+        <form class="form-stack" hx-post="/api/product/rating/add" hx-swap="none"
               data-write-float="score" data-write-skip-empty="score">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">

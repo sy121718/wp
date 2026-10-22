@@ -110,7 +110,7 @@ func productEditFormByAction(root *html.Node, action string) []*html.Node {
 // productEditFormByWriteAPI 按 data-write-api 找页面上的表单（写动作的定位依据）。
 func productEditFormByWriteAPI(root *html.Node, api string) []*html.Node {
 	return peAll(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "data-write-api") == api
+		return peEl(n, "form") && peAttr(n, "hx-post") == api
 	})
 }
 
@@ -267,11 +267,11 @@ func TestProductEditSaveButtonRelatedToOutsideForm(t *testing.T) {
 	}
 	form := forms[0]
 	// 提交走 JSON 写基座：端点与字段声明写在 data-write-* 上，模板不再有 action / method。
-	if got := peAttr(form, "data-write-api"); got != "/api/product/update" {
-		t.Fatalf("编辑表单 data-write-api 应为 /api/product/update，实际 %q", got)
+	if got := peAttr(form, "hx-post"); got != "/api/product/update" {
+		t.Fatalf("编辑表单 hx-post 应为 /api/product/update，实际 %q", got)
 	}
-	if got := peAttr(form, "data-write-mode"); got != "form" {
-		t.Fatalf("编辑表单 data-write-mode 应为 form，实际 %q", got)
+	if got := peAttr(form, "hx-swap"); got != "none" {
+		t.Fatalf("编辑表单 hx-swap 应为 none（写动作没有要换进 DOM 的内容），实际 %q", got)
 	}
 	// csrf 走请求头：表单里再留隐藏域会变成一条未知字段（严格白名单整条拒掉）。
 	for _, ctl := range peAll(form, peIsFormControl) {

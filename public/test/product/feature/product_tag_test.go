@@ -596,7 +596,7 @@ func TestTagAdminPages(t *testing.T) {
 	for _, want := range []string{
 		"手工标签（可多选，一个都不勾即解绑全部手工标签）", `name="tagIds"`,
 		"自动标签（按规则重算维护，不能手工改动）",
-		`data-write-api="/api/product/update"`,
+		`hx-post="/api/product/update"`,
 	} {
 		if !strings.Contains(pageBody, want) {
 			t.Fatalf("商品编辑页缺少 %q", want)

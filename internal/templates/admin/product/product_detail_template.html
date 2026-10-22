@@ -93,7 +93,7 @@
         </form>
 
         {{if .InstanceExists}}
-        <form data-write-api="/api/product/detail-template/apply" data-write-mode="form"
+        <form hx-post="/api/product/detail-template/apply" hx-swap="none"
               data-write-flash="product-detail-template" class="form-inline">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
@@ -108,7 +108,7 @@
             <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail_template.applySubmit", "切换模板并重新发布") }}</button>
         </form>
 
-        <form data-write-api="/api/product/detail-template/update-url" data-write-mode="form"
+        <form hx-post="/api/product/detail-template/update-url" hx-swap="none"
               data-write-bool="withRedirect"
               data-write-flash="product-detail-template" class="form-inline">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -121,7 +121,7 @@
             <button type="submit" class="btn" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail_template.changeURLSubmit", "改 URL") }}</button>
         </form>
         {{else}}
-        <form data-write-api="/api/product/detail-template/publish" data-write-mode="form"
+        <form hx-post="/api/product/detail-template/publish" hx-swap="none"
               data-write-flash="product-detail-template" class="form-inline">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
@@ -183,7 +183,7 @@
     {* 新建命名模板：复制一套现有模板的文档作为起点（内容编辑仍属模板/工作台侧）。 *}
     {{if canCreateTemplate}}
     <template id="tpl-detail-template-create">
-        <form data-write-api="/api/product/detail-template/create" data-write-mode="form"
+        <form hx-post="/api/product/detail-template/create" hx-swap="none"
               data-write-flash="product-detail-template" class="form-stack">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">

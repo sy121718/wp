@@ -114,7 +114,7 @@
         </div>
     </section>
     {{else}}
-    <form data-write-api="/api/product/translations/save" data-write-mode="form"
+    <form hx-post="/api/product/translations/save" hx-swap="none"
           data-write-array="rowTarget,rowContext,rowHash"
           data-write-flash="product-translations" class="form-stack">
         {* 键名与接口的 JSON 字段一致（projectId / productId）：基座按控件 name 组请求体，

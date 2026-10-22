@@ -52,13 +52,13 @@ func renderDetailTemplatePage(t *testing.T, published bool) (*html.Node, string)
 	return root, out
 }
 
-// detailTemplateWriteForms 页面上的写表单（data-write-api 非空）按端点索引。
+// detailTemplateWriteForms 页面上的写表单（hx-post 非空）按端点索引。
 func detailTemplateWriteForms(root *html.Node) map[string]*html.Node {
 	forms := map[string]*html.Node{}
 	for _, n := range peAll(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "data-write-api") != ""
+		return peEl(n, "form") && peAttr(n, "hx-post") != ""
 	}) {
-		forms[peAttr(n, "data-write-api")] = n
+		forms[peAttr(n, "hx-post")] = n
 	}
 	return forms
 }
@@ -79,8 +79,8 @@ func TestDetailTemplateWritesUseJSONBase(t *testing.T) {
 		if !ok {
 			t.Fatalf("详情模板页缺少挂 %s 的写表单，实际端点数 %d", api, len(forms))
 		}
-		if got := peAttr(f, "data-write-mode"); got != "form" {
-			t.Fatalf("%s 表单的 data-write-mode = %q，want form", api, got)
+		if got := peAttr(f, "hx-swap"); got != "none" {
+			t.Fatalf("%s 表单的 hx-swap = %q，want none（写动作没有要换进 DOM 的内容）", api, got)
 		}
 		if got := peAttr(f, "data-write-flash"); got != "product-detail-template" {
 			t.Fatalf("%s 表单的 data-write-flash = %q，want product-detail-template", api, got)

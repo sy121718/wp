@@ -88,13 +88,12 @@ func TestCategoryPageUsesJSONWriteBase(t *testing.T) {
 	assertContainsAll(t, html, []string{
 		// 批量删除：bulk 档 + 作用域锚点
 		"data-list-bulk",
-		`data-write-api="/api/product/category/bulk-delete"`,
-		`data-write-mode="bulk"`,
+		`hx-post="/api/product/category/bulk-delete"`,
+		`data-reload-on-ok`,
 		`data-write-flash`,
 		// 单条删除：single 档 + 多工程下的 projectId
-		`data-write-api="/api/product/category/delete"`,
-		`data-write-mode="single"`,
-		`data-write-extra="projectId"`,
+		`hx-post="/api/product/category/delete"`,
+		`data-reload-on-ok`,
 		// 抽屉：整表单档（新建与编辑同一份字段清单）。
 		//
 		// 这一档已从 ui/json_write.js 迁到 htmx（formdata）：端点还是同一个，

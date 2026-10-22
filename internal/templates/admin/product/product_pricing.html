@@ -101,7 +101,7 @@
                    表单本身不能挂 data-write-api —— 那会把试算也拦进 fetch（表格就没了）。 *}
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_pricing.apply.preview", "预览试算（不落库）") }}</button>
                 <button type="submit" class="btn"
-                        data-write-api="/api/product/pricing/apply" data-write-mode="form"
+                        hx-post="/api/product/pricing/apply" hx-swap="none"
                         data-write-flash="product-pricing"
                         data-requires-js hidden disabled
                         data-confirm="{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}">{{ .["t"]("admin.product_pricing.apply.submit", "应用调价（落库）") }}</button>

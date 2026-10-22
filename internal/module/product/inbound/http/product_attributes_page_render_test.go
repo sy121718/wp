@@ -162,11 +162,10 @@ func TestProductAttributesPageUsesJSONWriteBase(t *testing.T) {
 	for _, want := range []string{
 		// 列表级：批量表单容器 + 批量按钮的就地声明。
 		`data-list-bulk`,
-		`data-write-api="/api/product/attribute/bulk-delete"`,
-		`data-write-mode="bulk"`,
+		`hx-post="/api/product/attribute/bulk-delete"`,
+		`data-reload-on-ok`,
 		// 行级：单条删除（端点只吃 ID，所以不带 data-write-extra）。
-		`data-write-api="/api/product/attribute/delete"`,
-		`data-write-mode="single"`,
+		`hx-post="/api/product/attribute/delete"`,
 		// 抽屉里的两条表单（编辑 = update、值编辑 = set-values）。
 		`data-write-api="/api/product/attribute/update"`,
 		`data-write-api="/api/product/attribute/set-values"`,

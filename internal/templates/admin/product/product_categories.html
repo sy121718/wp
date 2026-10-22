@@ -105,7 +105,7 @@
                    成功条目按 items[].deleted 就地移除行；批量档**刻意不自动刷新** ——
                    「已删 N / 跳过 M + 逐条原因」一闪而过就看不完了。 *}
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        data-write-api="/api/product/category/bulk-delete" data-write-mode="bulk"
+                        hx-post="/api/product/category/bulk-delete" hx-swap="none" hx-include="closest form" data-reload-on-ok
                         data-write-flash="product_categories-bulk"
                         data-msg-none-selected="{{tr("admin.product_categories.bulk.noneSelected", "没有勾选任何分类，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
@@ -204,7 +204,7 @@
     {* single 档只发 {id} + data-write-extra 点名的字段：多工程部署下 projectId 必须带上，
        否则 service 只能走「唯一工程」兜底，多于一个工程时直接 ErrInvalidParam。 *}
     <form id="category-del-{{row.ID}}" class="hidden-form"
-          data-write-api="/api/product/category/delete" data-write-mode="single" data-write-extra="projectId"
+          hx-post="/api/product/category/delete" hx-swap="none" data-reload-on-ok
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{ .["t"]("admin.product_categories.list.deleteConfirm", "删除该分类？有子分类或被商品引用时会被拒绝。") }}" data-confirm-danger>
         <input type="hidden" name="projectId" value="{{selectedProject}}">

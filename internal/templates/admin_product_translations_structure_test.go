@@ -56,17 +56,17 @@ func TestProductTranslationsSaveUsesJSONBase(t *testing.T) {
 	}
 
 	forms := peAll(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "data-write-api") != ""
+		return peEl(n, "form") && peAttr(n, "hx-post") != ""
 	})
 	if len(forms) != 1 {
 		t.Fatalf("译文工作台应恰有 1 张写表单，实际 %d", len(forms))
 	}
 	form := forms[0]
-	if got := peAttr(form, "data-write-api"); got != "/api/product/translations/save" {
+	if got := peAttr(form, "hx-post"); got != "/api/product/translations/save" {
 		t.Fatalf("写表单端点 = %q，want /api/product/translations/save", got)
 	}
-	if got := peAttr(form, "data-write-mode"); got != "form" {
-		t.Fatalf("data-write-mode = %q，want form", got)
+	if got := peAttr(form, "hx-swap"); got != "none" {
+		t.Fatalf("hx-swap = %q，want none", got)
 	}
 	if got := peAttr(form, "data-write-flash"); got != "product-translations" {
 		t.Fatalf("data-write-flash = %q，want product-translations", got)
