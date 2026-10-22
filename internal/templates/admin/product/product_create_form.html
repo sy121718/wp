@@ -2,21 +2,20 @@
 {* admin/product/product_create_form.html — 商品建表单片段（新建整页的唯一载体）。
    字段名、捆绑价的必填语义、仓库 SKU 候选与属性组勾选都只在这一份 markup 里。
 
-   —— 提交走 JSON 写基座（static/js/ui/json_write.js）——
-   data-write-mode=form 表示「整表单当 dto.CreateReq 发」到 /api/product/create。
-   表单不再有 method/action/hx-post、不再有 csrf 隐藏域（基座自动带 X-CSRF-Token 头）、
-   也不再有「提交失败回填」那一整套（FormEcho / SubmitErr / data-product-create-host）：
-   基座在**原页**发 fetch，失败只写结果区，用户的输入从头到尾没离开过 DOM。
-   代价是「哪个字段错了」现在只有端点给的一句话 —— 这是「重设计报错文案」那条遗留的口子，
-   记在待办里，不再靠服务端重渲染整块表单绕过它。
+   —— 提交走 htmx 原生表单（formdata）——
+   整表单当 dto.CreateReq 发到 /api/product/create。端点仍是那个 JSON 端点：
+   binding.JSON 按 Content-Type 自适应，MCP/AI 发 JSON、这里发 formdata，两边都能进。
+   表单没有 method/action，也没有 csrf 隐藏域（写请求走 X-CSRF-Token 头）；
+   失败不重渲染整页：结论由全局 toast 提示（X-Message 头），用户的输入从头到尾没离开过 DOM。
 
-   声明负责四件页面替不了的事（字段名与 dto.CreateReq 的 json 标签逐字对齐）：
-     · data-write-array：属性组 / 多仓勾选收成数组；一个都不勾就**不发**该键
-       （= 不挂属性组 / 用默认仓，而不是「解绑」—— 新建没有可解绑的东西）；
-     · data-write-number / data-write-float：数量与默认价按数字发，端点是 *int / *float64；
-     · data-write-bool：跟踪数量开关，未勾时不发（= 不跟踪 = 无限）；
-     · data-write-skip-empty：留空即「不设置」—— 空串发给 *float64 / *int 是 400，
-       发给 slug / sku 则会被当成「显式清空」。
+   三条原本要在前端声明的事，现在由 ui/htmx_form_body.js 或 formdata 本身承担
+   （字段名仍然与 dto.CreateReq 的 json/form 标签逐字对齐）：
+     · 多选 checkbox（属性组 / 多仓）：未勾选时浏览器**根本不提交**该键，
+       「一个都不勾 = 不发」天然成立（= 不挂属性组 / 用默认仓，而不是「解绑」）；
+     · 数量 / 默认价 / 跟踪开关：formdata 里是字符串，但后端 *int / *bool / *float64
+       能直接绑（实测），不需要前端转换；
+     · 留空即「不设置」：htmx_form_body.js 全局删空值键（空串发给 *float64 / *int 会 400）。
+   只有「成功后按响应 id 跳到编辑页」需要声明：data-write-nav。
    「勾了跟踪却留空数量」= 明确 0 这条语义由 dto.CreateReq.TrackQuantity 送到 service（见
    product_req.go），前端不做业务归一。
 
@@ -28,16 +27,18 @@
 {{cfProject := .["SelectedProject"]}}
 {* 多仓勾选表的数据源（未接库存契约时整块跳过，见下方 isset 判据）。 *}
 {{cfWarehouses := .["WarehouseOptions"]}}
+        {* 走 htmx 原生表单提交（formdata）。三条「formdata 与 JSON 不一样」的地方
+           由 ui/htmx_form_body.js 承担，所以这里不再逐个声明：
+             · data-write-number / -bool / -float：formdata 里值都是字符串，而后端
+               *int / *bool / *float64 能直接绑（实测），只有嵌套对象与行数组才需要声明；
+             · data-write-array：多选 checkbox 未勾选时浏览器**根本不提交**该键，
+               「一个都不勾 = 不发」天然成立（与 JSON 侧同义：新建没有可解绑的东西）；
+             · data-write-skip-empty：htmx_form_body.js 全局删空值键，覆盖了它。
+           保留 data-write-nav：成功后按响应 data.id 跳到编辑页（write_feedback.js 读它）。 *}
         <form id="product-create-form" class="form-stack"
-              data-write-api="/api/product/create"
-              data-write-mode="form"
-              data-write-array="attributeIds,warehouseIds"
-              data-write-number="quantity"
-              data-write-bool="trackQuantity"
-              data-write-float="defaultPrice"
-              data-write-skip-empty="slug,sku,externalSku,defaultPrice,quantity"
+              hx-post="/api/product/create" hx-swap="none"
+              hx-disabled-elt="find button[type=submit]"
               data-write-nav="/admin/products/edit?project={{cfProject}}&id={id}"
-              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
               data-product-create-form>
             <input type="hidden" name="projectId" value="{{cfProject}}">
             {* 写结论落在表单最上方：保存按钮在表单底部，失败原因若出现在别处，视线根本走不到。 *}

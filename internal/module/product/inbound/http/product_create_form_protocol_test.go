@@ -66,11 +66,11 @@ func stripJetComments(src string) string {
 func TestProductCreateFormFieldsMatchCreateReq(t *testing.T) {
 	form := readCreateForm(t)
 
-	if !strings.Contains(form, `data-write-api="/api/product/create"`) {
-		t.Fatalf("建表单缺少 data-write-api=/api/product/create")
+	if !strings.Contains(form, `hx-post="/api/product/create"`) {
+		t.Fatalf(`建表单缺少 hx-post="/api/product/create"（按钮会退化成原生提交）`)
 	}
-	if !strings.Contains(form, `data-write-mode="form"`) {
-		t.Fatalf("建表单缺少 data-write-mode=form（基座不会接管提交）")
+	if !strings.Contains(form, `hx-swap="none"`) {
+		t.Fatalf("建表单缺少 hx-swap=none（写动作没有要换进 DOM 的内容）")
 	}
 	// 成功后的落点：商品编辑页（新建页只填得下几个字段，全量录入在编辑页）。
 	if !strings.Contains(form, `data-write-nav="/admin/products/edit?project=`) {
@@ -124,29 +124,23 @@ func TestProductCreateFormFieldsMatchCreateReq(t *testing.T) {
 func TestProductCreateFormDeclaresBaseAttributes(t *testing.T) {
 	form := readCreateForm(t)
 
-	for _, want := range []string{
-		`data-write-array="attributeIds,warehouseIds"`,
-		"data-write-number=\"quantity\"",
-		"data-write-bool=\"trackQuantity\"",
-		`data-write-float="defaultPrice"`,
-	} {
-		if !strings.Contains(form, want) {
-			t.Errorf("建表单缺少声明 %s", want)
-		}
+	// 提交已迁到 htmx（formdata）。原来那四档声明（data-write-array / -number / -bool /
+	// -float）与 data-write-skip-empty 都不再需要，它们各自对应的事现在由
+	// htmx_form_body.js 或 formdata 本身承担：
+	//   · 多选 checkbox：未勾选时浏览器根本不提交该键 →「一个都不勾 = 不发」天然成立；
+	//   · 数字/布尔/浮点：formdata 里是字符串，后端 *int / *bool / *float64 能直接绑（实测）；
+	//   · 留空即不设置：htmx_form_body.js 全局删空值键。
+	//
+	// 判据仍是「提交必须声明端点」—— 少了它按钮会退化成原生提交（页面 POST 的 action
+	// 早已删除 ⇒ 点了没反应）。data-write-nav 是唯一还需声明的（按响应 id 跳编辑页）。
+	if !strings.Contains(form, `hx-post="/api/product/create"`) {
+		t.Errorf("建表单缺少 hx-post=\"/api/product/create\"")
 	}
-	// skip-empty 是发送策略，与上面几档叠加：留空即不设置的字段一个都不能漏。
-	skip := regexp.MustCompile(`data-write-skip-empty="([^"]*)"`).FindStringSubmatch(form)
-	if len(skip) != 2 {
-		t.Fatalf("建表单缺少 data-write-skip-empty")
+	if !strings.Contains(form, `data-write-nav="/admin/products/edit?`) {
+		t.Errorf("建表单缺少 data-write-nav（成功后要跳编辑页）")
 	}
-	for _, want := range []string{"slug", "sku", "externalSku", "defaultPrice", "quantity"} {
-		if !strings.Contains(skip[1], want) {
-			t.Errorf("data-write-skip-empty 应含 %q，实际 %q", want, skip[1])
-		}
-	}
-	// 提交不再经 htmx：hx-post / host 容器是上一版的机制，留着就会被 htmx 抢先接管
-	// （fetch 与 htmx 同时提交 = 建两个商品）。
-	for _, gone := range []string{"hx-post", "data-product-create-host", "action=\"/admin/products/create\""} {
+	// 分组容器与页面端点都该彻底消失。
+	for _, gone := range []string{"data-product-create-host", "action=\"/admin/products/create\"", "data-write-api="} {
 		if strings.Contains(form, gone) {
 			t.Errorf("建表单仍含已撤掉的提交机制 %q", gone)
 		}
