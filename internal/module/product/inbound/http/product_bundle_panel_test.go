@@ -68,7 +68,7 @@ func bundleEditPage(t *testing.T, product *productdto.ProductRowResp) string {
 		"Product": product, "IsBundle": true,
 		"Statuses":        []gin.H{{"Value": "draft", "LabelKey": "admin.products.status.draft", "LabelFallback": "草稿", "Selected": true}},
 		"AttributeChecks": []gin.H{},
-		"ImagesText":      "", "ImageAltsText": "", "WeightText": "", "DefaultPriceText": "",
+		"ImagesInput":      "", "ImageAltsInput": "", "WeightInput": "", "DefaultPriceInput": "",
 	}))
 }
 

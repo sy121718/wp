@@ -114,7 +114,7 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		"Product":         product,
 		"Statuses":        []gin.H{{"Value": "draft", "LabelKey": "admin.products.status.draft", "LabelFallback": "草稿", "Selected": true}},
 		"AttributeChecks": []gin.H{},
-		"ImagesText":      "", "ImageAltsText": "", "WeightText": "", "DefaultPriceText": "",
+		"ImagesInput":      "", "ImageAltsInput": "", "WeightInput": "", "DefaultPriceInput": "",
 	}))
 	// 商品编辑页只留**抽屉入口**：评测内容（分数容器、隐藏字段、评分按钮）已移进
 	// admin/product/entity_seo_drawer.html —— 它们不该再常驻在编辑页上。
@@ -259,9 +259,9 @@ func TestProductEditRendersMediaGallery(t *testing.T) {
 		"Product":         product,
 		"Statuses":        []gin.H{{"Value": "draft", "LabelKey": "admin.products.status.draft", "LabelFallback": "草稿", "Selected": true}},
 		"AttributeChecks": []gin.H{},
-		"ImagesText":      "http://127.0.0.1:8080/storage/372.webp",
-		"ImageAltsText":   "示例 alt",
-		"WeightText":      "", "DefaultPriceText": "",
+		"ImagesInput":      "http://127.0.0.1:8080/storage/372.webp",
+		"ImageAltsInput":   "示例 alt",
+		"WeightInput":      "", "DefaultPriceInput": "",
 	}))
 	for _, want := range []string{
 		"data-media-gallery", "data-gallery-grid", "data-gallery-addbox",

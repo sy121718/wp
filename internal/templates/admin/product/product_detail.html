@@ -114,7 +114,8 @@
             <span class="toolbar-spacer"></span>
         </div>
         {{if b.LoadFailed}}
-        {* 配置读不出来时不静默：区块留在页面上并说明原因（商品不存在 / 库存真源未接入）。 *}
+        {* 配置读不出来时不静默：区块留在页面上并说明原因（商品不存在 / 库存真源未接入）。
+           后端只说「读没读到」，这句话的 key 与中文都在这里 —— 文案不经过 Go。 *}
         <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_bundle.detailFailed", "配置读取失败：商品不存在，或库存真源端口未接入（无法给出可用量）。") }}</p>
         {{else}}
         <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_detail.bundle.tableAria", "捆绑构成成员") }}">

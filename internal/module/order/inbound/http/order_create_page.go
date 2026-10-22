@@ -43,6 +43,7 @@ import (
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 )
 
 const (
@@ -190,9 +191,10 @@ func (h *orderCreatePageHandle) OrderCreateSubmit(c *gin.Context) {
 		// 带上 orderId：回列表页时那一单的详情是展开的，运营一眼看到刚建的单。
 		params["orderId"] = strconv.FormatUint(res.ID, 10)
 	}
-	// 303：POST 之后换成 GET 去看结果（PRG）。302 在部分客户端会被当成「重放原方法」，
-	// 于是「提交一次」变成「提交两次」—— 建单页尤其致命（会落两单，靠 RequestID 幂等兜）。
-	c.Redirect(http.StatusSeeOther, backpath.WithParams("/admin/orders", params))
+	// 写后跳转走 pageview.AfterWrite（303）：POST 之后换成 GET 去看结果（PRG）。
+	// 302 在部分客户端会被当成「重放原方法」，于是「提交一次」变成「提交两次」——
+	// 建单页尤其致命（会落两单，靠 RequestID 幂等兜）。
+	pageview.AfterWrite(c, backpath.WithParams("/admin/orders", params))
 }
 
 // render 渲染整页（初始态与失败回填态共用同一个出口）。
