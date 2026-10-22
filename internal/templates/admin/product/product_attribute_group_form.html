@@ -32,8 +32,7 @@
 {{end}}
         <div data-write-host>
         <form class="form-stack" data-attr-group-form
-              data-write-api="/api/product/attribute/{{if gfCreate}}create{{else}}update{{end}}"
-              data-write-mode="form"
+              hx-post="/api/product/attribute/{{if gfCreate}}create{{else}}update{{end}}" hx-swap="none"
               data-write-number="sort"
               data-write-bool="isVariation,enabled"
               {{if gfCreate}}data-write-rows=".attr-value-row;id,key,label,sort,enabled;values"{{end}}

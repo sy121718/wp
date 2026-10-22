@@ -13,8 +13,7 @@
 {{vfTr := .["t"]}}
         <div data-write-host>
         <form class="form-stack" data-attr-values-form
-              data-write-api="/api/product/attribute/set-values"
-              data-write-mode="form"
+              hx-post="/api/product/attribute/set-values" hx-swap="none"
               data-write-number="sort"
               data-write-bool="enabled"
               data-write-rows=".attr-value-row;id,key,label,sort,enabled;values"

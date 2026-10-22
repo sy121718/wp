@@ -167,8 +167,8 @@ func TestProductAttributesPageUsesJSONWriteBase(t *testing.T) {
 		// 行级：单条删除（端点只吃 ID，所以不带 data-write-extra）。
 		`hx-post="/api/product/attribute/delete"`,
 		// 抽屉里的两条表单（编辑 = update、值编辑 = set-values）。
-		`data-write-api="/api/product/attribute/update"`,
-		`data-write-api="/api/product/attribute/set-values"`,
+		`hx-post="/api/product/attribute/update"`,
+		`hx-post="/api/product/attribute/set-values"`,
 		// 状态位：基座把失败/成功文案写进它。
 		`data-write-status`,
 	} {

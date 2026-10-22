@@ -45,7 +45,7 @@ func TestBundlePageSlimFormContract(t *testing.T) {
 	t.Logf("页面样本：%d bytes，%d 个 option", len(body), strings.Count(body, "<option"))
 	// 保存已迁到 JSON 写基座：端点、builder 与行收集声明都在表单上（CSRF 走请求头）。
 	for _, want := range []string{
-		`data-write-api="/api/product/bundle/set"`,
+		`hx-post="/api/product/bundle/set"`,
 		`data-write-builder="product-bundle-config"`,
 		`data-write-rows="[data-bundle-member-row]`,
 	} {
