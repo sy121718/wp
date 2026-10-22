@@ -90,14 +90,55 @@ func optionalPaging(page, size int) (limit, offset int) {
 	return size, (page - 1) * size
 }
 
-// normalizeSlug 规范化传入 slug（小写 + 去首尾空白）。
+// normalizeSlug 规范化**用户填的** slug：小写、去首尾空白、空格转连字符。
+//
+// 它对内容**只做最小改动**（信任用户），但会**校验结果**：不是合法 URL 段的一律返回空串，
+// 由调用方回退到 deriveSlug。校验放在这里而不是各调用点，是因为全部 9 处调用点
+// （品牌 / 分类 / 标签 / 商品的新建与改名）用的是同一条规则。
+//
+// 为什么必须校验（实测三种坏输入）：
+//
+//	"A&B"   → "a&b"   `&` 在 URL 里是参数分隔符，品牌页地址会被解析成别的东西
+//	"a/b"   → "a/b"   变成多一级路径（/brands/a/b），前端路由与归档页都对不上
+//	"café"  → "café"  非 ASCII 未转义，进 href 要靠浏览器猜
+//
+// 合法的 URL 段：字母、数字、连字符、下划线；首尾不能是连字符（避免 `/brands/-x`）。
+// 中文**允许**：iguide 的站点路径本来就有中文页，强制转拼音会改变既有 URL 的形态，
+// 而且拼音撞车时无从判断该给谁加后缀。所以这里只挡「结构性危险字符」，不挡非 ASCII。
 func normalizeSlug(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ""
 	}
-	s = strings.ReplaceAll(s, " ", "-")
-	return strings.ToLower(s)
+	s = strings.ToLower(strings.ReplaceAll(s, " ", "-"))
+	if !isLegalSlug(s) {
+		return ""
+	}
+	return s
+}
+
+// isLegalSlug 判一个已规范化的串能不能当 URL 段。
+//
+// 判据（与 pkg/pathkit 的站内路径规则同源，但不复用它的完整函数：那边处理的是带前导斜杠
+// 的整条路径，这里只是单段）：
+//   - 非空，且首尾不是连字符；
+//   - 字符集：小写字母 / 数字 / 连字符 / 下划线 / 非 ASCII（CJK 等）；
+//   - 不允许 `/`、`?`、`#`、`&`、`=`、`%`、空格与任何控制字符。
+func isLegalSlug(s string) bool {
+	if s == "" || strings.HasPrefix(s, "-") || strings.HasSuffix(s, "-") {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '-' || r == '_':
+		case r > 127: // 非 ASCII（中文等）放行，见 normalizeSlug 的说明
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // deriveSlug 由商品名派生 slug：保留字母数字、其余转连字符；中文名派生为空，由调用方兜底。
