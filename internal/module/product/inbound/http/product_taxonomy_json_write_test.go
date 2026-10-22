@@ -128,10 +128,12 @@ func TestBrandPageUsesJSONWriteBase(t *testing.T) {
 		`data-write-api="/api/product/brand/delete"`,
 		`data-write-extra="projectId"`,
 		// 编辑抽屉与新建抽屉都是整表单档：两处字段清单相同，只差一个 id 隐藏域。
-		`data-write-api="/api/product/brand/update"`,
-		`data-write-api="/api/product/brand/create"`,
-		`data-write-mode="form"`,
-		`data-write-number="sort"`,
+		// 这一档已从 ui/json_write.js 迁到 htmx（formdata）；判据不变 ——
+		// 写入口必须声明端点，少了它按钮会退化成原生提交（页面 POST 的 action 早已删除）。
+		`hx-post="/api/product/brand/update"`,
+		`hx-post="/api/product/brand/create"`,
+		`hx-swap="none"`,
+		`data-close-on-ok="[data-drawer]"`,
 		"data-write-status",
 		"data-write-host",
 	})

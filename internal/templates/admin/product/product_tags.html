@@ -271,8 +271,9 @@
         {{if isset(t.EditForm)}}{{include "product_tag_form.html" t.EditForm}}{{else}}
         {* 兜底形态：抽屉数据没装配（读取失败页）时也必须是**能用的**表单 —— 指向已删除的
            页面 POST 会让按钮 404，而失败页上没人会去查它为什么没反应。 *}
-        <form class="form-stack" data-write-api="/api/product/tag/update" data-write-mode="form"
-              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
+        <form class="form-stack" hx-post="/api/product/tag/update"
+              hx-swap="none" hx-disabled-elt="find button[type=submit]"
+              data-close-on-ok="[data-drawer]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{t.ID}}">
             <input class="form-input" name="name" value="{{t.Name}}" required>
@@ -286,8 +287,9 @@
     {{if canCreate}}
     <template id="tpl-tag-create">
         {{if isset(.TagCreateForm)}}{{include "product_tag_form.html" .TagCreateForm}}{{else}}
-        <form class="form-stack" data-write-api="/api/product/tag/create" data-write-mode="form"
-              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
+        <form class="form-stack" hx-post="/api/product/tag/create"
+              hx-swap="none" hx-disabled-elt="find button[type=submit]"
+              data-close-on-ok="[data-drawer]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input class="form-input" name="name" required>
             <button data-requires-js hidden type="submit">{{ .["t"]("admin.product_tags.create.submit", "新建标签") }}</button>

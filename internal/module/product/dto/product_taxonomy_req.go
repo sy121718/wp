@@ -69,28 +69,32 @@ type DeleteCategoryReq struct {
 }
 
 // CreateBrandReq 新建品牌。
+// form tag 与 json tag 同名：同一端点既服务 JSON（MCP/AI）也服务 htmx 表单（formdata）。
+// 没有 form tag 时 gin 只按字段名匹配（ProjectID 收不到 projectId）。
 type CreateBrandReq struct {
-	ProjectID      string `json:"projectId"`
-	Name           string `json:"name" binding:"required"`
-	Slug           string `json:"slug"`
-	Logo           string `json:"logo"`
-	Description    string `json:"description"`
-	SEOTitle       string `json:"seoTitle"`
-	SEODescription string `json:"seoDescription"`
-	Sort           int    `json:"sort"`
+	ProjectID      string `json:"projectId" form:"projectId"`
+	Name           string `json:"name" form:"name" binding:"required"`
+	Slug           string `json:"slug" form:"slug"`
+	Logo           string `json:"logo" form:"logo"`
+	Description    string `json:"description" form:"description"`
+	SEOTitle       string `json:"seoTitle" form:"seoTitle"`
+	SEODescription string `json:"seoDescription" form:"seoDescription"`
+	Sort           int    `json:"sort" form:"sort"`
 }
 
 // UpdateBrandReq 修改品牌（可选字段为 nil 表示不变）。
+// 指针字段（nil = 本次不改）在 formdata 下依赖 ui/htmx_form_body.js：它把空值键删掉，
+// 使「表单没填」与「JSON 省略字段」同义。
 type UpdateBrandReq struct {
-	ID             string  `json:"id" binding:"required"`
-	ProjectID      string  `json:"projectId"`
-	Name           *string `json:"name"`
-	Slug           *string `json:"slug"`
-	Logo           *string `json:"logo"`
-	Description    *string `json:"description"`
-	SEOTitle       *string `json:"seoTitle"`
-	SEODescription *string `json:"seoDescription"`
-	Sort           *int    `json:"sort"`
+	ID             string  `json:"id" form:"id" binding:"required"`
+	ProjectID      string  `json:"projectId" form:"projectId"`
+	Name           *string `json:"name" form:"name"`
+	Slug           *string `json:"slug" form:"slug"`
+	Logo           *string `json:"logo" form:"logo"`
+	Description    *string `json:"description" form:"description"`
+	SEOTitle       *string `json:"seoTitle" form:"seoTitle"`
+	SEODescription *string `json:"seoDescription" form:"seoDescription"`
+	Sort           *int    `json:"sort" form:"sort"`
 }
 
 // GetBrandReq 按 ID 查询品牌。
