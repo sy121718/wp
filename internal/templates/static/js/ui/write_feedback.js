@@ -157,10 +157,43 @@
         closeTarget(declared(src, 'data-close-on-ok'));
     });
 
+    // ── data-requires-js：无 JS 时不放出来的控件 ──
+    //
+    // 模板把它们写成 hidden + disabled：无 JS 时表单没有可用端点（写请求走 X-CSRF-Token 头），
+    // 所以按钮必须**真的按不动** —— 浏览器对「默认提交按钮 disabled」的表单不做隐式提交，
+    // 回车也不会把整表 POST 到一个不存在的页面上。
+    //
+    // 这段逻辑原先住在 ui/json_write.js 里，是**隐式依赖**：那个文件一旦被删（等所有模块
+    // 迁完 htmx 就会删），按钮会永远不可点，而页面上看不出任何报错。搬到本文件后，
+    // 它跟着「写动作」这条线走，与写动作是谁提交的无关。
+    function enableRequiresJS(scope) {
+        var els = (scope || document).querySelectorAll('[data-requires-js]');
+        for (var i = 0; i < els.length; i++) {
+            var el = els[i];
+            if (el.getAttribute('data-wbui-requires-js') === '1') continue;
+            el.setAttribute('data-wbui-requires-js', '1');
+            el.hidden = false;
+            el.removeAttribute('hidden');
+            if (el.disabled) el.disabled = false;
+        }
+    }
+
+    // htmx 换进来的片段里也可能有这类控件：每次 swap 后补一遍。
+    if (typeof window.htmx.on === 'function') {
+        window.htmx.on('htmx:after:swap', function (evt) {
+            var ctx = (evt && evt.detail && evt.detail.ctx) || {};
+            enableRequiresJS(ctx.target || document);
+        });
+    }
+
     // 页面装载时先把上一次写动作留下的结论落到结果区（读完即删）。
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', renderFlash);
+        document.addEventListener('DOMContentLoaded', function () {
+            enableRequiresJS(document);
+            renderFlash();
+        });
     } else {
+        enableRequiresJS(document);
         renderFlash();
     }
 })();
