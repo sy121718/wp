@@ -3,16 +3,21 @@
 {{tr := .["t"]}}
 {{create := .Mode == "create"}}
 <div data-category-form-host>
-    {* 写动作直接调 JSON 端点（data-write-api）：新建与修改共用**同一份字段清单**，只差一个 id
-       隐藏域，所以两档都是 mode=form（发整张表单、成功后整页刷新 —— 列表的父级路径与「不属于
-       本工程」徽章由服务端重算，就地改 DOM 会同源不上）。
+    {* 写动作走 htmx 原生表单提交（formdata）：新建与修改共用**同一份字段清单**，只差一个 id
+       隐藏域。端点仍是那个 JSON 端点 —— binding.JSON 现在按 Content-Type 自适应，
+       所以同一路径既服务 MCP/AI 的 JSON 调用，也服务这里的 formdata。
 
-       失败时抽屉不关、已填内容一个字段都不动，基座只把原因点到结果区。这里不再有
-       「把 Errors 塞回模板重渲染整张表单」那条路径，也不再有 SubmitErr / FormEcho 两组回填字段
-       —— 那是「服务端渲染结论」时代的产物，而结论现在由接口回、由基座显示。 *}
-    <form data-write-api="/api/product/category/{{if create}}create{{else}}update{{end}}"
-          data-write-mode="form" data-write-number="sort"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+       hx-swap="none"：写动作的响应是 {code,message,data}，没有任何要换进 DOM 的内容。
+       结论由全局监听（ui/htmx_form_body.js 同族）从 X-Message 头取出、交给 WBUI.toast。
+       data-close-on-ok="[data-drawer]" 声明成功之后关哪个容器：这张表单总是从抽屉里打开的
+       （data-drawer-open="#tpl-category-create" / "#tpl-category-edit-<id>"），
+       而抽屉是页面上唯一的 <aside data-drawer> —— 关它等于「保存完回到列表」。
+
+       空值字段由 ui/htmx_form_body.js 在请求发出前删掉 —— formdata 里 `sort=` 会让后端
+       *int 绑成 0（「没填」变成「改成 0」），而 JSON 侧「省略字段」= 本次不改。 *}
+    <form hx-post="/api/product/category/{{if create}}create{{else}}update{{end}}"
+          hx-swap="none" hx-disabled-elt="find button[type=submit]"
+          data-close-on-ok="[data-drawer]">
         <input type="hidden" name="projectId" value="{{.Project}}">
         {{if !create}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
         <div class="form-inline">
@@ -49,7 +54,11 @@
         {{key := .ID}}{{if create}}{{key = "new"}}{{end}}
         {{descValue := .Description}}
         {{yield richEditor(field="description", key=key, value=descValue)}}
-        {* 结果区在表单内：失败时抽屉不关、已填内容一个字段都不动，只在这里点出原因。 *}
+        {* 结果区保留：本表单已改走 htmx，结论由全局 toast 提示（X-Message 头），
+           但 data-write-status / data-write-host 是 ui/json_write.js 的**必需契约**
+           （它的 STATUS_SEL 与「结果区在哪个宿主里」都靠这两个属性定位）。
+           别的写表单还在用那套基座，删掉这两个标记会让它们的失败提示无处可显。
+           这里的空 <p> 不再被本表单写入，留着是为了「同一份片段被两条链路共用」时不缺键。 *}
         <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="action-row">
             <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>

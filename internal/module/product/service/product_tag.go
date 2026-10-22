@@ -3,7 +3,7 @@ package productservice
 // 语义（本票四条验收的落点）：
 //  1. 手工标签（kind=manual）可建、可手工挂到商品（products.tag_ids，写入前校验
 //     同工程 + 必须存在 + 必须是手工标签）；
-//  2. 自动标签（kind=rule）只接受内置规则类型与参数（见 product_tag_rule.go），
+//  2. 自动标签（kind=rule）只接受内置规则类型与参数（见 product_tag.go），
 //     规则类型未知、参数带未知键 / 类型不符 / 越界一律拒绝，**不接受自由表达式**；
 //  3. 自动标签归属的**重算时机**是明确的四条，别处不重算：
 //     · 商品写操作后（建商品 / 改商品 / 改状态到 published）；
@@ -48,6 +48,7 @@ import (
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/rls"
+	viewpkg "go_wp/pkg/view"
 )
 
 const (
@@ -440,17 +441,19 @@ func (s *Service) ListTagProductsPage(ctx context.Context, req *productdto.ListT
 //
 // 为什么数据根在这里而不是控制器：片段根必须是 map（模板用 .["t"] 取词，Jet 的索引只对
 // map 生效），而「把取回来的页摊成模板键」属于这一屏的形状 —— 形状只写一份，控制器只负责
-// 绑定、调它、出口。失败时返回**部分装配**的数据根（TagID / ProjectID / 空行集），
-// 调用方补一句 Err 文案即可渲染出「展开区里说明原因」—— 不是整页错误页。
+// 绑定、调它、出口。
+//
+// **失败时只带 Err、不带 Items**（与模板头部写的契约一致）。这不是风格选择：模板的分支是
+// `{{if isset(.Items)}}正常{{else}}Err{{end}}`，Items 一旦存在就走正常分支，而正常分支无条件
+// 读 .TagName —— 失败路径拿不到 TagName，Jet 在 gin.H（具名 map 类型）上取缺键**不是**返回
+// 空串，而是 `no field or method 'TagName'` 中断整页，最终 500「页面暂时无法显示」。
+// 跨工程标签 id 那条路径（mapTagNotFound → ErrTagNotFound）以前就是撞在这里，
+// 回归见 public/test/product/feature 的 TestTagHitsFragmentPagesWithinProjectScope。
 //
 // 入参是「取回来的那一页」而不是 Service：形状是纯函数（与查库无关），这样 handler 只多
 // 一条赋值，单测也能不接库直接钉住键集。
 func TagHitsFragmentData(req *productdto.ListTagProductsPageReq, res *productdto.TagProductsPageResp, err error) (data map[string]any, cause error) {
-	data = map[string]any{
-		"TagID": "", "ProjectID": "",
-		"Err": "", "Items": []*productdto.TagProductResp{},
-		"Total": 0, "Page": 1, "PageSize": tagProductsPageSize, "TotalPage": 1,
-	}
+	data = map[string]any{"TagID": "", "ProjectID": "", "Err": ""}
 	if req != nil {
 		data["TagID"], data["ProjectID"] = req.TagID, req.ProjectID
 	}
@@ -458,10 +461,11 @@ func TagHitsFragmentData(req *productdto.ListTagProductsPageReq, res *productdto
 		return data, err
 	}
 	data["TagName"], data["Total"], data["Page"] = res.TagName, res.Total, res.Page
-	data["PageSize"], data["TotalPage"], data["Items"] = res.PageSize, res.TotalPage, res.Items
+	data["PageSize"], data["TotalPage"] = res.PageSize, res.TotalPage
+	data["Items"] = res.Items
 	// 分页只给事实（文案与翻页链接由模板的 pager()/queryURL() 出）；DropLimit：本端点只认
 	// project/id/page/size，翻页链接不带 limit。基址由模板从请求串推（pageBase 去掉 page/limit）。
-	data["Pagination"] = pagination.Page{
+	data[viewpkg.PaginationKey] = pagination.Page{
 		Total: int64(res.Total), Page: res.Page, Limit: res.PageSize, DropLimit: true,
 	}
 	return data, nil

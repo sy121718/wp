@@ -1,6 +1,6 @@
 package producthttp
 
-// product_subject.go — 商品主体：接口面 CRUD / 变体 / 评分、后台列表与编辑页、捆绑配置、定价。
+// product_subject_handle.go — 商品主体：接口面 CRUD / 变体 / 评分、后台列表与编辑页、捆绑配置、定价。
 //
 // 为什么这三块在同一个文件：捆绑配置是 type=bundle 商品的一种编辑能力，定价是商品价格字段上的
 // 操作，两者都不是独立域。按子功能切文件的结果是「改一个商品的写入要在三个文件里找落点」，
@@ -42,22 +42,7 @@ var (
 // productErrScene 日志场景名（与 product 模块其它 logger.Scene("product") 一致）。
 const productErrScene = "product"
 
-// productPageInternalText 页面槽位（片段里的一行结论 / 整页失败槽）的归口文案。
-//
-// 与 JSON 出口的 response.MessageOf 只差一句话的措辞：页面上用的是带 i18n 词条的
-// 「系统内部错误，请稍后重试」（MsgInternalError），接口用的是 pkg/response 的常量
-// 「服务器内部错误，请稍后重试」。两者在 sys_i18n 里各有词条，所以这里不合并；
-// 判据（什么算业务错误、要不要记日志）仍然只有一份，在 pkg/facing 与 pkg/response。
-func productPageInternalText(c *gin.Context, err error) string {
-	if err != nil {
-		logger.Scene(productErrScene).
-			With("user_id", builtin.CurrentUserID(c)).
-			Error(err, "商品后台页取数失败（非业务错误，只对页面给归口文案）")
-	}
-	return response.InternalText(c)
-}
-
-// product_core.go — 商品本体的控制器：接口面 CRUD / 变体 + 列表 / 新建 / 编辑 / 详情页 / 批量。
+// product_subject_handle.go — 商品本体的控制器：接口面 CRUD / 变体 + 列表 / 新建 / 编辑 / 详情页 / 批量。
 //
 // 一个文件 = 一个业务功能（internal/module/CLAUDE.md §inbound/http）：同一功能的
 // 「JSON 接口面 handler」与「后台页面 handler」住在一起 —— 它们改的常常是同一件事
@@ -452,22 +437,11 @@ func (h *ProductPageHandle) ProductsVariantPreview(c *gin.Context) {
 	c.JSON(http.StatusOK, res)
 }
 
-// variantSkipFallbacks 清单外删除被跳过时的中文兜底（key 见 productenums.VariantSkip*）。
-var variantSkipFallbacks = map[string]string{
-	productenums.VariantSkipHasStock:       "仍有库存，未删除（请先处理库存或改为停用）",
-	productenums.VariantSkipReferenced:     "被 BOM 清单引用，未删除（请先解除引用）",
-	productenums.VariantSkipDuplicated:     "与清单里前面的行重复，已忽略",
-	productenums.VariantSkipVariantMissing: "这一行对应的变体已不存在（可能已被别处删除）",
-	// 本批新增的两个引用面（迁移 259）：被捆绑成员引用 / 有过库存流水。
-	productenums.VariantSkipBundleReferenced: "被捆绑成员引用，未删除（请先在捆绑配置里解除引用）",
-	productenums.VariantSkipHasMovement:      "有过库存流水（已被订单或库存变动用过），未删除（请改为停用）",
-}
-
 // productBulkText 一条结论文案的事实（key + 中文兜底）。
 type productBulkText struct{ key, fallback string }
 
 // fact 把一条结论文案变成**事实**（key + 中文兜底 + %s 参数）：模板在渲染期取词，
-// JSON 出口用 text.MsgText 取成品串。
+// JSON 出口用 response.MsgText 取成品串。
 //
 // 参数一律 strconv 成字符串（模板侧的占位符是 %s，传 int 会渲染成 %!s(int=3)）；
 // 没有占位符的词条**不要**传参数 —— TranslateArgs 对多余参数会 Sprintf 出 %!(EXTRA string=…)。
@@ -500,7 +474,7 @@ func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) facing.
 	}
 	reasons := make([]string, 0, len(res.Skipped))
 	for _, skip := range res.Skipped {
-		reasons = append(reasons, response.MsgText(c, facing.Msg{Key: skip.Reason, Fallback: variantSkipFallbacks[skip.Reason]}))
+		reasons = append(reasons, response.MsgText(c, facing.Msg{Key: skip.Reason, Fallback: productenums.BundleMemberSkipFallback(skip.Reason)}))
 	}
 	args := []string{strconv.Itoa(res.Created), strconv.Itoa(res.Updated), strconv.Itoa(res.Deleted)}
 	built := response.MsgText(c, productVariantSaveSaved.fact(args...))
@@ -730,9 +704,27 @@ func (h *ProductPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
 		response.ErrorStatusAuto(c, productErrScene, err)
 		return
 	}
-	// 回执就是响应：行结构、规格文本、来源标签、跳过原因全部由 service 填好
-	// （属性组与取词函数它都有）—— 控制器不再为拼一句 spec 回查一次商品。
+	// 规格、来源标签与行标识由 service 用数据算出；跳过原因的**译文**在这一层取一次
+	// （Reason 是 key，译文属于响应 message，业务层不产成品句）。
+	resolveBundleMemberSkipText(c, res)
 	c.JSON(http.StatusOK, res)
+}
+
+// resolveBundleMemberSkipText 给逐条跳过原因取当前语言的文本（响应出口唯一一次取词）。
+//
+// 为什么不放在 service：译文随请求语言而变，写进数据对象就成了「换语言要重算的字段」；
+// 为什么不用 response.SuccessMsg 的 message：一句话装不下逐行原因，它们是结构化回执的字段
+// （前端按行渲染），message 只能装整批的结论。
+func resolveBundleMemberSkipText(c *gin.Context, res *productdto.ResolveBundleMembersResp) {
+	if res == nil {
+		return
+	}
+	for i := range res.Skipped {
+		skip := &res.Skipped[i]
+		skip.Text = response.MsgText(c, facing.Msg{
+			Key: skip.Reason, Fallback: productenums.BundleMemberSkipFallback(skip.Reason),
+		})
+	}
 }
 
 // warehouseSKUOptionSize 已随取数下沉搬到 outbound 适配器

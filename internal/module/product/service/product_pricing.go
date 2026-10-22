@@ -3,7 +3,7 @@ package productservice
 // 本票五条验收的落点：
 //
 //  1. 四种定价规则（成本乘倍数 / 成本加价 / 目标毛利率 / 统一售价）+ 四种尾数处理，
-//     规则与尾数都只有一份内置注册表（product_pricing_rule.go），不接受自由表达式；
+//     规则与尾数都只有一份内置注册表（product_pricing.go），不接受自由表达式；
 //  2. 作用范围三种：单个 SKU（变体 id）/ 单个商品的全部变体（商品 id）/ 筛选集
 //     （工程 + 状态 / 关键词 / 分类 / 品牌 / 标签，命中商品的**全部**变体）；
 //  3. 结果**落库**：算出的售价写回 product_variants.price，不是运行时计算 ——
@@ -306,10 +306,10 @@ func (s *Service) applyPricingOnce(ctx context.Context, req *productdto.PricingA
 	return plan.res, nil
 }
 
-// ListPricingRuleTypes 内置定价规则清单（后台下拉与参数说明的唯一来源）。
+// ListPricingRuleTypes 内置定价规则清单（后台下拉的唯一来源）。
 //
-// ctx 只用于取词：展示名与参数说明是文案，按请求语言渲染（取词函数由 inbound 经
-// productTranslateMiddleware 注入，见 product_translate.go）。
+// 只给类型与「是否依赖成本价」：展示名与参数说明按 Type 写在模板里
+// （pricing_rule_fields.html / pricing_rule_name.html），本层不产出文案。
 func (s *Service) ListPricingRuleTypes(ctx context.Context) (list []*productdto.PricingRuleTypeResp) {
 	return pricingRuleTypeOptions()
 }
@@ -343,7 +343,7 @@ func (s *Service) ListPriceAdjustments(ctx context.Context, req *productdto.List
 	}
 	list = make([]*productdto.PriceAdjustmentResp, 0, len(rows))
 	for _, row := range rows {
-		list = append(list, toAdjustmentResp(translateFrom(ctx), row, nil))
+		list = append(list, toAdjustmentResp(row, nil))
 	}
 	return list, nil
 }
@@ -376,7 +376,7 @@ func (s *Service) GetPriceAdjustment(ctx context.Context, req *productdto.GetPri
 	if err != nil {
 		return nil, err
 	}
-	return toAdjustmentResp(translateFrom(ctx), row, adjustmentItemResps(details, names)), nil
+	return toAdjustmentResp(row, adjustmentItemResps(details, names)), nil
 }
 
 // adjustmentProductNames 批量取明细涉及的当前商品名（失败不阻断留痕读取）。
@@ -411,8 +411,9 @@ func (s *Service) adjustmentProductNames(ctx context.Context, projectID string, 
 
 // toAdjustmentResp 批次实体 → 响应（items 为 nil 时只回批次本身）。
 //
-// tr 由调用点给（本模块的展示文案一律按请求语言取词，见 product_translate.go）。
-func toAdjustmentResp(tr TranslateFunc, e *productmodel.PriceAdjustmentEntity, items []*productdto.PriceAdjustmentItemResp) *productdto.PriceAdjustmentResp {
+// 这里没有取词函数：批次里的规则类型、尾数与范围都是取值（RuleType / Rounding / Scope），
+// 措辞在模板（pricing_rule_text.html / pricing_rounding_text.html / pricing_scope_text.html）。
+func toAdjustmentResp(e *productmodel.PriceAdjustmentEntity, items []*productdto.PriceAdjustmentItemResp) *productdto.PriceAdjustmentResp {
 	resp := &productdto.PriceAdjustmentResp{
 		ID: e.ID, ProjectID: e.ProjectID,
 		RuleType: e.RuleType, RuleParams: orJSON(e.RuleParams, "{}"),

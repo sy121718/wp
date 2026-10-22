@@ -1,6 +1,6 @@
 package producthttp
 
-// product_score.go — 商品 / 分类 / 品牌的 SEO 评分片段（行内面板 + 抽屉）。
+// product_score_handle.go — 商品 / 分类 / 品牌的 SEO 评分片段（行内面板 + 抽屉）。
 //
 // 它原先住在 product_detail_template.go 的后半段：两者没有业务关系（模板是详情页的双轨写入，
 // 评分是三个实体的标题 / 描述质量），只是历史上先后加进同一个文件。

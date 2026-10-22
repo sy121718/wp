@@ -189,17 +189,19 @@ func normalizeProductType(raw string) (string, error) {
 	}
 }
 
-// product_translate.go — service 层取词函数的传递通道（后台展示文案专用）。
+// service 层取词函数的传递通道。
 //
-// 背景：本模块的 service 要产出**展示文案**（内置定价 / 标签规则的展示名与描述、
-// 筛选条件与状态的可读标签），而它不是纯数据 —— 英文界面上必须显示英文。
-// service 层没有语言上下文（语言来自后台 Cookie / Accept-Language，只有 gin.Context
-// 知道），因此取词函数只能由 inbound 传进来。
+// 背景：service 里还剩一处要取词的地方 —— 译文工作台的**字段名**（商品名 / 副标题 / 分类描述…，
+// 见 contract.FieldLabel 与 product.go 的 makeCandidate）。它的 key 与中文兜底都住在 enums，
+// 这里只负责把「当前请求语言」带进来（语言来自后台 Cookie / Accept-Language，只有
+// gin.Context 知道），因此取词函数由 inbound 传进来。
+//
+// 其余展示文案（定价 / 标签规则的展示名、状态与筛选标签、捆绑的跳过原因）都已按
+// 「取值进数据、措辞进模板或响应出口」搬走，不再经过这条通道。
 //
 // 为什么用 ctx 而不是给每个方法加参数：
-//   - 这些文案散布在多层内部函数里（bundle 成员规格与跳过原因 → fillBundleMemberDisplay →
-//     BundleMembers → BundlePage），逐层加到 contract 方法签名会把
-//     `tr func(...)` 写进一堆与展示无关的接口（预览、应用、留痕列表、抽屉数据…）；
+//   - 取词点在多层内部函数里（makeCandidate ← productTextCandidates ← 译文候选收集），
+//     逐层加到 contract 方法签名会把 `tr func(...)` 写进一堆与展示无关的接口；
 //   - 传播方向是单向的（inbound → service → 内部函数），与 ctx 的语义一致；
 //   - 未注入时的行为是**返回中文兜底**（不是裸 key），与 i18n 未初始化时的降级一致，
 //     所以漏注入不会把页面打坏，只是不翻译。

@@ -141,7 +141,8 @@ type ProductDetailPageResp struct {
 	SelectedProject string
 	ProductID       string
 	// HasProduct 为假 = 没读到商品（不存在 / 没给参数）：模板据此走空态分支，
-	// 与「读不出来」（LoadFailed）是两档 —— 前者再试也没用，后者可能重试就成功。
+	// 与「取数失败」（err 非 nil，走 pageview.Fail）是两档 —— 前者再试也没用，
+	// 后者可能重试就成功，所以它的状态码由声明处给、文案由出口取一次。
 	HasProduct bool
 
 	// WarehouseOptions 行数据组装（库存列）要按工程仓库清单补齐未入库的仓 —— 与列表页 /
@@ -207,15 +208,24 @@ type ProductEditPageResp struct {
 	// 控制器据此把 EditBlocked 置真并按当前语言归口文案 —— 本层不认识 HTTP，只交出事实。
 	AttributeOptionsErr error
 
-	// —— 表单字段的回填文本与勾选态（控制器算；echo=true 时用**这次提交的值**覆盖）——
-	// Statuses 当前选中档；AttributeChecks 属性组勾选列表；四个 *Text 是图集与数值字段的
-	// 文本形态（表单里是 textarea / input，库里是可空数值与切片）。
-	Statuses         []StatusOptionResp
-	AttributeChecks  []AttributeCheckOptionResp
-	ImagesText       string
-	ImageAltsText    string
-	WeightText       string
-	DefaultPriceText string
+	// —— 表单字段的回填值（控制器算；echo=true 时用**这次提交的值**覆盖）——
+	//
+	// Statuses 当前选中档；AttributeChecks 属性组勾选列表。
+	//
+	// 四个 *Input 是 **<input>/<textarea> 的 value**，不是展示串：
+	//   · 数值字段用 strconv.FormatFloat(v, 'f', -1, 64) —— **纯数字**，无货币符号、无千分位。
+	//     带 `¥1,234.50` 的 value 提交回后端会被 defaultPrice 的数值校验拒绝，
+	//     用户点保存就看到「金额格式错误」，而钱其实一直是同一个数。
+	//   · 图集两串是换行分隔的原始值（textarea / mediaGallery 的初值）。
+	//
+	// 命名用 *Input 而不是 *Text 就是为了挡住「顺手把显示格式塞进来」：
+	// 要显示金额的地方用模板的 money（分→`¥1,234.50`），两者不是同一个东西。
+	Statuses          []StatusOptionResp
+	AttributeChecks   []AttributeCheckOptionResp
+	ImagesInput       string
+	ImageAltsInput    string
+	WeightInput       string
+	DefaultPriceInput string
 	// IsBundle 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 —— 这里只给链接标记
 	//（type=variant 时为假，模板据 isset 整块跳过）。
 	IsBundle bool
@@ -459,8 +469,8 @@ type DetailTemplateOptionResp struct {
 
 // ProductDetailTemplatePageResp 「详情页模板」整页的渲染视图（本模块第八个读模型）。
 //
-// Ready 与 LoadFailed 是两件事：Ready = 「能不能给这一屏干活」（缺模板能力时为假，
-// 走页内提示而不是失败页），LoadFailed = 「取数没读到」（失败槽）。两者混成一个布尔时
+// Ready 与「取数失败」是两件事：Ready = 「能不能给这一屏干活」（缺模板能力时为假，
+// 走页内提示而不是失败页），取数失败 = err 非 nil（走 pageview.Fail）。两者混成一个布尔时
 // 「未装配」会被显示成「数据读不出来」，而前者要人去查装配、后者重试就好。
 type ProductDetailTemplatePageResp struct {
 	Projects        []projectdto.ProjectResp
@@ -695,8 +705,16 @@ type ProductTagsPageResp struct {
 // 所以它是 struct 而不是 map：根 map 只为了 .["t"] 取词，区块自身没有这个诉求。
 type BundlePanelResp struct {
 	Loaded bool
-	// LoadFailed 配置读不出来（商品不存在 / 库存真源未接入）：区块留在页面上并说明
-	// 原因，不是整块消失。原因文案由模板取词渲染 —— 后端不带成品串。
+	// LoadFailed 配置读不出来（商品不存在 / 库存真源未接入）：区块留在页面上并说明原因，
+	// 不是整块消失。
+	//
+	// 这是**区块级数据事实**（「这块配置读到了没有」），与 ProductNewPageResp 那批已删的
+	// 页面级失败槽（LoadFailed / HTTPStatus）不是一回事：后者让 dto 决定状态码与整页失败形态，
+	// 这里只说明一个区块自己有没有内容，状态码仍是 200、整页照常渲染。
+	//
+	// 只说「有没有」，不说「显示哪一句」：这一块只有一句话，key 与中文都写在模板里
+	// （product_detail.html），后端不重复一遍。同一个道理见 PricingLineResp.Status ——
+	// 后端给取值，模板按取值分支取词。
 	LoadFailed bool
 	// BasePrice 容器价（套餐金额的唯一来源），读不出来时为 nil（模板渲染为 —）。
 	BasePrice   *float64
@@ -764,3 +782,17 @@ type AttributeRowResp struct {
 	Sort, ValueCount     int
 	EditForm, ValuesForm map[string]any
 }
+
+// —— view.PageList 契约实现 ——
+//
+// 五个列表页视图都实现 Paging()，渲染出口据此**自动**把分页事实放进渲染数据，
+// 控制器不再需要手写 data["Pagination"] = ...（那串键名写错不会编译失败，
+// 页面只是少一块分页条）。
+//
+// 方法名是 Paging 不是 Pagination：Go 不允许字段与方法同名，而 Pagination 字段
+// 是模板契约（模板读 .Pagination），不能改名。详见 pkg/view/list.go 的说明。
+func (v ProductListPageResp) Paging() pagination.Page       { return v.Pagination }
+func (v ProductAttributesPageResp) Paging() pagination.Page { return v.Pagination }
+func (v ProductCategoriesPageResp) Paging() pagination.Page { return v.Pagination }
+func (v ProductBrandsPageResp) Paging() pagination.Page     { return v.Pagination }
+func (v ProductTagsPageResp) Paging() pagination.Page       { return v.Pagination }

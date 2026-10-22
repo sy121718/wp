@@ -35,8 +35,9 @@ type ProductPageReader interface {
 	// 契约（控制器据此渲染，不再自己编排失败）：
 	//   · 返回的视图**恒非 nil** —— 失败路径也要给齐模板必需键（缺键会让整页在那一行
 	//     中断渲染，见 internal/templates/CLAUDE.md），控制器因此不必写 nil 判断；
-	//   · 失败时视图带 LoadFailed / HTTPStatus（400 参数不合法 / 500 主数据没读到），
-	//     err 同时返回（供控制器按当前语言归口失败槽文案与记日志）；
+	//   · 失败时**视图照旧返回、err 同时非 nil**（控制器走 pageview.Fail：状态码取
+	//     声明处，文案由出口按请求语言取一次）；照旧返回是为了让「这一屏能装多少」
+	//     在失败时也确定，视图里不留任何失败槽；
 	//   · 失败后**一条派生取数都不发**（在非法工程上继续查只会把「工程不存在」渲染成
 	//     「这个工程下没有可选项」）。
 	ProductNewPage(ctx context.Context, req *productdto.ProductNewPageReq) (res *productdto.ProductNewPageResp, err error)
@@ -45,7 +46,7 @@ type ProductPageReader interface {
 	// 标签 / 仓库清单 → 列表与总数（同一份过滤条件）→ 逐行详情 → 属性组选项 / 每仓 SKU
 	// 候选 → 定价规则清单，并给出这一屏的档位。
 	//
-	// 契约同上（视图恒非 nil / 失败带 LoadFailed 与 HTTPStatus / 失败后不发派生取数），
+	// 契约同上（视图恒非 nil / 失败同时给 err / 失败后不发派生取数），
 	// 另加一条：**逐行详情取不到就整页失败**，不做静默跳过 —— 少一行而仍写着「共 N 条」，
 	// 用户会以为商品被删了。
 	ProductListPage(ctx context.Context, req *productdto.ProductListPageReq) (res *productdto.ProductListPageResp, err error)
@@ -54,10 +55,10 @@ type ProductPageReader interface {
 	// 商品详情 → 分类树 / 品牌 / 标签，并给出这一屏的档位。
 	//
 	// 契约同上，另加一条**三档**（这三个此前混在一句 `derr == nil && detail != nil` 里）：
-	//   · 404 业务上的「不存在」（含没给 product 参数）—— **不进失败槽**，走模板自带的空态，
-	//     仍然 no-store（商品可能刚被建回来，重试要真的回到服务端）；
-	//   · 400 参数不合法（?project=<不存在的 id> / id 形态不对）—— 进失败槽 + no-store；
-	//   · 500 其余（数据库 / 连接 / 超时 / 畸形返回）—— 进失败槽 + no-store。
+	//   · 404 业务上的「不存在」（含没给 product 参数）—— **不是失败**：返回 nil error，
+	//     视图带 HasProduct=false，模板走自带空态（商品可能刚被建回来，重试要真的回到服务端）；
+	//   · 400 参数不合法（?project=<不存在的 id> / id 形态不对）—— 返回 err，声明处带 400；
+	//   · 500 其余（数据库 / 连接 / 超时 / 畸形返回）—— 返回 err，出口按默认分档给 500。
 	ProductDetailPage(ctx context.Context, req *productdto.ProductDetailPageReq) (res *productdto.ProductDetailPageResp, err error)
 
 	// ProductEditPage 商品编辑整页的读模型：工程清单 → 工程存在性校验 → 分类树 / 品牌 /
@@ -76,7 +77,7 @@ type ProductPageReader interface {
 	// 「表单」不是另一种响应形态 —— 后端给数据、Jet 渲染 HTML：这份视图撑的是**用数据渲染出来的
 	// 那一段 HTML**，首屏与提交失败后的重渲染共用同一份装配（所以取数编排只有一处）。
 	//
-	// 契约同上面四条（视图恒非 nil / 失败带 LoadFailed 与 HTTPStatus），但没有三档：
+	// 契约同上面四条（视图恒非 nil / 失败同时给 err），但没有三档：
 	// 主数据读不到就是这个表单撑不起来，调用方退回整页提示 —— 不留半个表单给用户重填。
 	ProductCreateForm(ctx context.Context, req *productdto.ProductCreateFormReq) (res *productdto.ProductCreateFormResp, err error)
 
@@ -85,15 +86,14 @@ type ProductPageReader interface {
 	//
 	// 与上面五条**不同：这一屏没有取数失败档** —— 三处取数各自降级（工程清单读不到 → 空下拉；
 	// 参考表是注册表快照、本身无 error；台账读不到 → 空台账），页面主体（改价表单）始终
-	// 撑得起来。视图仍实现 PageResult，但 HTTPStatus 非 0 只会来自「读模型没接上」这类
-	// 装配缺陷（控制器那一半给 500 + no-store），正常路径恒 200 且可缓存。
+	// 撑得起来，正常路径恒 200。
 	//
 	// Form / Preview / ErrMsg 由控制器填（它们是写路径的产物，读模型不认识 gin.Context）。
 	ProductPricingPage(ctx context.Context, req *productdto.ProductPricingPageReq) (res *productdto.ProductPricingPageResp, err error)
 	// ProductAttributesPage 属性库整页的读模型：工程清单 → 工程存在性校验 → 计数 →
 	// 页码收敛 → 取页，并给出这一屏的档位。
 	//
-	// 契约同上（视图恒非 nil / 失败带 LoadFailed 与 HTTPStatus / 失败后不发派生取数），
+	// 契约同上（视图恒非 nil / 失败同时给 err / 失败后不发派生取数），
 	// 另加一条**先计数再取页**：反过来时越界页码会让取数层返回空页，而分页条按收敛后的
 	// 页码渲染 ——「表格为空、分页条却显示第 2 页」是自相矛盾的组合。
 	//

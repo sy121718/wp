@@ -108,7 +108,9 @@ type BundleMemberSkipResp struct {
 	WarehouseSKU string          `json:"warehouseSku,omitempty"`
 	OptionValues json.RawMessage `json:"optionValues,omitempty"`
 	Reason       string          `json:"reason"`
-	// Text 跳过原因的可读文本（已按当前语言取词）。
+	// Text 跳过原因的当前语言文本。**由响应出口填**（拿请求上下文取一次词），
+	// service 只给 Reason 这条 key —— 层里不产出成品句，否则它随语言变而变，
+	// 换一种语言就得重算整份数据。
 	Text string `json:"text"`
 	// Label 这一行的可读标识（SKU / 仓库 SKU / 规格文本）。
 	Label string `json:"label"`

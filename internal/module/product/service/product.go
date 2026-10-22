@@ -1637,7 +1637,7 @@ func appendUniqueCandidates(dst []productcontract.TranslationCandidate, seen map
 // productTextCandidates 商品自身可翻译字段的候选（图集 alt 逐元素展开）。
 //
 // tr 由调用点传：候选里的 FieldLabel 是**展示文案**（后台翻译页的字段列），
-// 必须按请求语言取词（见 product_translate.go 的取词通道）。
+// 必须按请求语言取词（见 product_shared.go 的 translateFrom 通道）。
 func productTextCandidates(tr TranslateFunc, e *productmodel.ProductEntity) []productcontract.TranslationCandidate {
 	values := map[string]string{
 		"name":        e.Name,

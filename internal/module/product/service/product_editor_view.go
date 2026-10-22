@@ -105,9 +105,9 @@ func FillProductEditFormEcho(view *productdto.ProductEditPageResp) {
 		return
 	}
 	view.AttributeChecks = AttributeChecks(view.AttributeOptions, view.Detail.AttributeIDs)
-	view.ImagesText = strings.Join(view.Detail.Images, "\n")
-	view.ImageAltsText = strings.Join(view.Detail.ImageAlts, "\n")
-	view.WeightText = NullableNumberText(view.Detail.Weight)
-	view.DefaultPriceText = NullableNumberText(view.Detail.DefaultPrice)
+	view.ImagesInput = strings.Join(view.Detail.Images, "\n")
+	view.ImageAltsInput = strings.Join(view.Detail.ImageAlts, "\n")
+	view.WeightInput = NullableNumberText(view.Detail.Weight)
+	view.DefaultPriceInput = NullableNumberText(view.Detail.DefaultPrice)
 	view.IsBundle = IsBundleProduct(view.Detail.Type)
 }

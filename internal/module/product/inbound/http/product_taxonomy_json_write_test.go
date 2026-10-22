@@ -95,10 +95,15 @@ func TestCategoryPageUsesJSONWriteBase(t *testing.T) {
 		`data-write-api="/api/product/category/delete"`,
 		`data-write-mode="single"`,
 		`data-write-extra="projectId"`,
-		// 抽屉：整表单档（新建与编辑同一份字段清单）
-		`data-write-api="/api/product/category/create"`,
-		`data-write-mode="form"`,
-		`data-write-number="sort"`,
+		// 抽屉：整表单档（新建与编辑同一份字段清单）。
+		//
+		// 这一档已从 ui/json_write.js 迁到 htmx（formdata）：端点还是同一个，
+		// binding.JSON 按 Content-Type 自适应，所以两边都能进。断言因此换成
+		// hx-post + hx-swap="none" —— 判据不变：**写入口必须声明端点**，
+		// 少了它按钮会退化成原生提交（页面 POST 的 action 早已删除 ⇒ 点了没反应）。
+		`hx-post="/api/product/category/create"`,
+		`hx-swap="none"`,
+		`data-close-on-ok="[data-drawer]"`,
 		// 结果区（失败时才有内容）
 		"data-write-status",
 		"data-write-host",

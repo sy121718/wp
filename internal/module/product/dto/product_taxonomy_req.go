@@ -5,32 +5,38 @@
 package productdto
 
 // CreateCategoryReq 新建分类。ParentID 为空即顶级分类。
+// form tag 与 json tag 同名：同一个端点既服务 JSON（MCP/AI）也服务 htmx 表单（formdata）。
+// binding.JSON 用 ShouldBind 按 Content-Type 自适应，而表单体**只认 form tag 或字段名**——
+// 没有 form tag 时 gin 会按 ProjectID 匹配，收不到表单发的 projectId。
 type CreateCategoryReq struct {
-	ProjectID      string `json:"projectId"`
-	ParentID       string `json:"parentId"`
-	Name           string `json:"name" binding:"required"`
-	Slug           string `json:"slug"`
-	Description    string `json:"description"`
-	Image          string `json:"image"`
-	SEOTitle       string `json:"seoTitle"`
-	SEODescription string `json:"seoDescription"`
-	Sort           int    `json:"sort"`
+	ProjectID      string `json:"projectId" form:"projectId"`
+	ParentID       string `json:"parentId" form:"parentId"`
+	Name           string `json:"name" form:"name" binding:"required"`
+	Slug           string `json:"slug" form:"slug"`
+	Description    string `json:"description" form:"description"`
+	Image          string `json:"image" form:"image"`
+	SEOTitle       string `json:"seoTitle" form:"seoTitle"`
+	SEODescription string `json:"seoDescription" form:"seoDescription"`
+	Sort           int    `json:"sort" form:"sort"`
 }
 
 // UpdateCategoryReq 修改分类。
 //
 // ParentID 语义与其它可选字段一致：nil 表示本次不改；指向空串表示**提升为顶级**。
+// 指针字段（nil = 本次不改）在 formdata 下依赖 ui/htmx_form_body.js：它把空值键删掉，
+// 使「表单没填」与「JSON 省略字段」同义。发 `sort=` 空串会被绑成 0（不是 nil）——
+// 那正是「什么都没填却把排序改成 0」的来源。
 type UpdateCategoryReq struct {
-	ID             string  `json:"id" binding:"required"`
-	ProjectID      string  `json:"projectId"`
-	ParentID       *string `json:"parentId"`
-	Name           *string `json:"name"`
-	Slug           *string `json:"slug"`
-	Description    *string `json:"description"`
-	Image          *string `json:"image"`
-	SEOTitle       *string `json:"seoTitle"`
-	SEODescription *string `json:"seoDescription"`
-	Sort           *int    `json:"sort"`
+	ID             string  `json:"id" form:"id" binding:"required"`
+	ProjectID      string  `json:"projectId" form:"projectId"`
+	ParentID       *string `json:"parentId" form:"parentId"`
+	Name           *string `json:"name" form:"name"`
+	Slug           *string `json:"slug" form:"slug"`
+	Description    *string `json:"description" form:"description"`
+	Image          *string `json:"image" form:"image"`
+	SEOTitle       *string `json:"seoTitle" form:"seoTitle"`
+	SEODescription *string `json:"seoDescription" form:"seoDescription"`
+	Sort           *int    `json:"sort" form:"sort"`
 }
 
 // GetCategoryReq 按 ID 查询分类。

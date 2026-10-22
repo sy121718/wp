@@ -21,6 +21,27 @@
     播报区域若跟着重建，读屏就不会播报换入的内容（详见 product_tags.html 的同一段注释）。
     取词尽量复用既有词条（hitTitle / hitLead / hitCountTail / hitEmpty / shell.pagination.*），
     只有「提示语」与「取数失败前缀」是本批新增。 *}
+{* 命中数回写：翻页时把外层标签列表里那个「N 个商品」按钮的文字换成**当前的真实数**。
+   
+   为什么需要：那个按钮的数字是首屏渲染的静态值，而命中数会在别处变动（解绑商品、删商品）。
+   用户展开片段后看到表格与信息行都是新的，旁边标签列表的人数却是旧的 —— 他会反复点开同一个空标签。
+   
+   为什么用副区域回写而不是把整页重渲染：这次请求的 hx-target 是 #tag-hits-panel，
+   换掉整页会把用户已展开的面板、滚动位置、筛选栏输入全部重置。回写只改那一格。 *}
+{{if isset(.Items)}}
+{* 命中数回写（htmx 4 的 <hx-partial>）。
+   hx-partial 是**服务端 swap 指令**而不是 DOM 元素：htmx 读取 hx-target 后执行换入，
+   再把 hx-partial 信封整段丢弃 —— 它永远不会出现在页面里（不像 hx-swap-oob 那样
+   靠元素自身的 id 找落点、再从响应里摘掉自己）。所以这里不再需要「外层元素必须是顶层、
+   必须有 id」那两条形状约束：唯一要求是 hx-target 指向页面上那个按钮。
+
+   默认 swap 是 innerHTML：把文字写进按钮内部，按钮的 hx-get / hx-target / class 全部保留
+   —— 用户回写后仍可点它继续看下一页。
+
+   为什么不带 hx-get：这条指令只负责把过时的数字换掉。带上 GET 会让它成为第三个
+   可点入口，而真实翻页按钮只有上/下两个。 *}
+<hx-partial hx-target="#tag-hit-count-{{.TagID}}">{{.Total}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</hx-partial>
+{{end}}
 <section class="card card-body">
     <h2 class="card-title mb-lg">{{ .["t"]("admin.product_tags.list.hitTitle", "命中的商品") }}</h2>
     {{if isset(.Items)}}

@@ -171,7 +171,10 @@
                        命中数据也不会把首屏撑大。0 个商品时没有可看的内容，不做成按钮。 *}
                     <td>
                         {{if t.ProductCount > 0}}
-                        <button type="button" class="btn btn-sm"
+                        {* id 是 hx-swap-oob 的落点：展开片段翻页时把「当前命中的真实数量」写回来。
+                           数量会在别处变动（解绑商品、删商品），而这个按钮是**首屏渲染的静态值** ——
+                           用户拿它判断「还有多少要处理」，过时了就会让人反复点开同一个空标签。 *}
+                        <button type="button" class="btn btn-sm" id="tag-hit-count-{{t.ID}}"
                                 hx-get="/admin/product-tags/hits?project={{selectedProject}}&id={{t.ID}}&page=1"
                                 hx-target="#tag-hits-panel" hx-swap="innerHTML">{{t.ProductCount}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</button>
                         {{else}}<span class="text-mute">0{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</span>{{end}}
