@@ -78,7 +78,29 @@ func JSON[T any](c *gin.Context) (*T, bool) {
 		response.ParamError(c)
 		return nil, false
 	}
+	// 表单体还需要 DTO 自己补一遍：有些形状反射绑定覆盖不到（典型是 json.RawMessage ——
+	// encoding/json 的 UnmarshalJSON 期待一个 JSON 值，而表单给它的是字符串，
+	// 实测结果是整条绑定失败）。DTO 实现 FormBinder 时在这里接管。
+	//
+	// 只在**表单体**上跑：JSON 请求体不需要它（JSON 的 RawMessage 本来就能绑）。
+	if isFormBody(c) {
+		if b, ok := any(&req).(FormBinder); ok {
+			if err := b.BindForm(c.Request.PostForm); err != nil {
+				response.ParamError(c)
+				return nil, false
+			}
+		}
+	}
 	return &req, true
+}
+
+// isFormBody 判断这次请求是不是表单体（urlencoded 或 multipart）。
+func isFormBody(c *gin.Context) bool {
+	if c.Request == nil {
+		return false
+	}
+	ct := strings.ToLower(c.GetHeader("Content-Type"))
+	return strings.HasPrefix(ct, "application/x-www-form-urlencoded") || strings.HasPrefix(ct, "multipart/form-data")
 }
 
 // hasBodyWithoutContentType 请求带了 body 但没声明 Content-Type。

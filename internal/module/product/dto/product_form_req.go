@@ -43,6 +43,9 @@ const (
 	FieldKindNumber FieldKind = "number"
 	// FieldKindRange 数字本身合法，但落在该字段允许的区间外（如负数数量）。
 	FieldKindRange FieldKind = "range"
+	// FieldKindJSON 不是合法的 JSON（只出现在表单提交的嵌套对象字段上：
+	// 那类字段的值由前端 JSON.stringify 生成，解析不了说明前端或模板写错了）。
+	FieldKindJSON FieldKind = "json"
 )
 
 // FieldValueError 某个表单字段的原始值不合法（属于**绑定期**错误，不是业务规则错误）。

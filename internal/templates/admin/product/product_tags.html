@@ -59,12 +59,10 @@
 
     {* 页级重算表单：与上面的「重算本工程全部自动标签」按钮用 form="<id>" 关联。
        action 上的 ListQuery 把筛选上下文随 query 提交，提示页回跳时恢复。 *}
-    {* 重算走 JSON 端点（/api/product/tag/recalc）：mode=form 发整张表单（这里就是 projectId），
-       成功后整页刷新 —— 命中数与「上次重算」时间都由服务端算，就地改 DOM 会同源不上。
-       csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头。 *}
+    {* 全量重算：htmx 原生提交（formdata），成功后整页刷新 —— 命中数与「上次重算」时间
+       都由服务端算，就地改 DOM 会同源不上。 *}
     <form id="tag-recalc-all" class="hidden-form"
-          data-write-api="/api/product/tag/recalc" data-write-mode="form"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+          hx-post="/api/product/tag/recalc" hx-swap="none" data-reload-on-ok>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
     </form>
 
@@ -99,19 +97,19 @@
            按钮优先、表单兜底）。data-list-bulk 是作用域锚点。 *}
         <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <p class="form-hint" data-write-flash-target="product_tags-bulk" role="status" hidden></p>
+            {* 批量结果不再用页面上的结论区：迁移到 htmx 后成功直接刷新、被拒由 toast 说原因。
+               原来的 data-write-flash-target 是「刷新前存结论、落地后显示」那套的落点，
+               本页已不需要（留着会是一块永远为空的区域，配对测试会报）。 *}
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete}}{{if len(.Tags) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
                 {* 就地写而不是用 bulkBtn：那个片段的属性名是冻结契约（admin.js 依赖），
                    装不下一串 data-write-* 声明。 *}
+                {* 批量是整批一个事务、要么全成要么全败（AGENTS「写操作」节）：后端锁不到某条就
+                   整批不删、明细放 data.items —— 所以前端不做逐条移除，成功刷新、被拒由 toast 说原因。 *}
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        data-write-api="/api/product/tag/bulk-delete" data-write-mode="bulk"
-                        data-write-flash="product_tags-bulk"
-                        data-msg-none-selected="{{tr("admin.product_tags.bulk.noneSelected", "没有勾选任何标签，列表未改动。")}}"
-                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                        data-msg-refresh="{{tr("admin.product_tags.bulkDelete.refresh", "刷新列表")}}"
+                        hx-post="/api/product/tag/bulk-delete" hx-swap="none" hx-include="closest form"
+                        data-reload-on-ok
                         data-confirm="{{tr("admin.product_tags.bulkDeleteConfirm", "删除选中的标签？商品上的这些标签会被一并解绑。")}}"
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
@@ -250,17 +248,14 @@
     {* mode=form 发整张表单（projectId + tagId），成功后整页刷新：命中数与「上次重算」
        都是服务端算出来的，就地改 DOM 会与列表里的同一批数字不同源。 *}
     <form id="tag-recalc-{{t.ID}}" class="hidden-form"
-          data-write-api="/api/product/tag/recalc" data-write-mode="form"
-          data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
+          hx-post="/api/product/tag/recalc" hx-swap="none" data-reload-on-ok>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="tagId" value="{{t.ID}}">
     </form>
     {{end}}
     {{if canDelete}}
     <form id="tag-del-{{t.ID}}" class="hidden-form"
-          data-write-api="/api/product/tag/delete" data-write-mode="single" data-write-extra="projectId"
-          data-msg-ok="{{ .["t"]("admin.product_tags.list.deleted", "标签已删除。") }}"
-          data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
+          hx-post="/api/product/tag/delete" hx-swap="none" data-reload-on-ok
           data-confirm="{{ .["t"]("admin.product_tags.list.deleteConfirm", "删除该标签？商品上的这个标签会被一并解绑。") }}" data-confirm-danger>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{t.ID}}">

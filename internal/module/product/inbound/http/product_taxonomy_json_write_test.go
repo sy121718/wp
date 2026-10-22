@@ -169,23 +169,19 @@ func TestTagPageUsesJSONWriteBase(t *testing.T) {
 	}
 	html := rec.Body.String()
 	assertContainsAll(t, html, []string{
-		// 批量删除：bulk 档 + 作用域锚点
+		// 全部写入口都已迁到 htmx（formdata）。判据不变：每个动作都要声明端点，
+		// 少了它按钮会退化成原生提交（页面 POST 的 action 早已删除）。
 		"data-list-bulk",
-		`data-write-api="/api/product/tag/bulk-delete"`,
-		`data-write-mode="bulk"`,
-		`data-write-flash`,
-		// 单条删除：single 档 + 多工程下的 projectId
-		`data-write-api="/api/product/tag/delete"`,
-		`data-write-mode="single"`,
-		`data-write-extra="projectId"`,
-		// 重算：整表单档（全量按钮与行内按钮共用一个端点，tagId 空即全工程）
-		`data-write-api="/api/product/tag/recalc"`,
-		`data-write-mode="form"`,
+		`hx-post="/api/product/tag/bulk-delete"`,
+		`hx-post="/api/product/tag/delete"`,
+		`data-reload-on-ok`,
+		// 重算：全量按钮与行内按钮共用一个端点（tagId 空即全工程）
+		`hx-post="/api/product/tag/recalc"`,
 		`id="tag-recalc-all"`,
 		`id="tag-recalc-t2"`,
-		// 新建 / 编辑抽屉：整表单档 + 规则参数的嵌套对象声明
-		`data-write-api="/api/product/tag/create"`,
-		`data-write-api="/api/product/tag/update"`,
+		// 新建 / 编辑抽屉：规则参数的嵌套对象声明 —— 它现在是 htmx_form_body.js 读的契约
+		`hx-post="/api/product/tag/create"`,
+		`hx-post="/api/product/tag/update"`,
 		`data-write-object=".tag-rule-fields;ruleParams;ruleType;kind=rule"`,
 		`data-rule-keys="days"`,
 		// 结果区（失败时才有内容）

@@ -31,13 +31,19 @@
 {{create := .Mode == "create"}}
 {{kind := "manual"}}{{if .IsRule}}{{kind = "rule"}}{{end}}
         <div data-write-host>
+        {* 走 htmx 原生表单提交（formdata）。两个「formdata 与 JSON 不一样」的地方由
+           ui/htmx_form_body.js 解决（它就是替代 json_write.js 那套基座的）：
+             · data-write-object：把 .tag-rule-fields 里扁平的 days/minPrice/maxPrice
+               收成 ruleParams 对象 —— 哪些键进对象由 ruleType 当前选项的 data-rule-keys 决定，
+               条件是 kind=rule；
+             · 空值键删除：`sort=` 空串会让后端 *int 绑成 0（「没填」变成「改成 0」）。
+           后端那边 CreateTagReq/UpdateTagReq 实现了 BindForm —— json.RawMessage 在表单体上
+           反射绑不了（实测 ShouldBind 直接报错），由 DTO 自己把 JSON 字符串解析一次。 *}
         <form class="form-stack"
-              data-write-api="/api/product/tag/{{if create}}create{{else}}update{{end}}"
-              data-write-mode="form"
-              data-write-number="sort"
-              data-write-object=".tag-rule-fields;ruleParams;ruleType;kind=rule"
-              data-msg-ok="{{tr("admin.product_tags.saved", "已保存。")}}"
-              data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+              hx-post="/api/product/tag/{{if create}}create{{else}}update{{end}}"
+              hx-swap="none" hx-disabled-elt="find button[type=submit]"
+              data-close-on-ok="[data-drawer]"
+              data-write-object=".tag-rule-fields;ruleParams;ruleType;kind=rule">
             <input type="hidden" name="projectId" value="{{.Project}}">
             {{if !create}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
             <div class="form-inline">
