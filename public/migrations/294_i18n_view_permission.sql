@@ -44,3 +44,24 @@ WHERE a.is_admin = 1
 UPDATE sys_menus
 SET permission_code = 'i18n:view', update_time = NOW()
 WHERE permission_code = 'i18n:manage' AND path = '/admin/i18n';
+
+-- 关联表里清掉旧码（迁移 470 之后 sys_menu_permission 才是读路径）。
+--
+-- 为什么需要这一段：470 的搬迁与触发器都**只补插、不删旧**（那是它的刻意设计：界面删掉的码
+-- 不该被旧列补回来）。而这里的语义相反 —— 这是**改绑**：菜单从「管理」改成「查看」，
+-- 旧码必须消失，否则 check-page-get-authz.sh 会同时看到两个绑定，
+-- 页面用的 i18n:view 被判成 foreign obj。
+--
+-- 幂等：按 menu_id + 旧码精确删；表不存在时（470 之前）整句是空操作。
+DO $$
+BEGIN
+    IF to_regclass('sys_menu_permission') IS NOT NULL THEN
+        DELETE FROM sys_menu_permission mp
+         USING sys_menus m
+         WHERE mp.menu_id = m.id
+           AND m.path = '/admin/i18n'
+           AND m.type = 2
+           AND m.deleted_at IS NULL
+           AND mp.permission_code = 'i18n:manage';
+    END IF;
+END $$;
