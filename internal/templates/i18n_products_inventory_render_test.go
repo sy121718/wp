@@ -251,7 +251,7 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		// 详情入口也在：改完去看只读的构成（变体 / 评分 / 捆绑）。
 		"/admin/products/detail?project=pr1&amp;product=p1",
 		// 变体 / 评分的写入口都在 JSON 写基座上（变体清单整张提交、评分增删各一条）。
-		`hx-post="/api/product/variant/save"`,
+		`data-write-api="/api/product/variant/save"`,
 		`data-write-builder="product-variant-rows"`,
 		`data-preview-url="/admin/products/variant/preview"`,
 		`hx-post="/api/product/variant/create"`,
@@ -311,7 +311,7 @@ func TestGroupDProductDetailPageRenders(t *testing.T) {
 		`action="/admin/products/taxonomy"`,
 		`action="/admin/products/tags"`,
 		`action="/admin/products/seo-score"`,
-		`hx-post="/api/product/variant/save"`,
+		`data-write-api="/api/product/variant/save"`,
 		`hx-post="/api/product/variant/create"`,
 		`hx-post="/api/product/rating/add"`,
 		`hx-post="/api/product/rating/delete"`,

@@ -79,7 +79,12 @@ function makeBody(pairs) {
             for (const [k, vs] of map) for (const v of vs) fn(v, k);
         },
         delete(k) { map.delete(k); },
+        get(k) { const vs = map.get(k); return vs && vs.length ? vs[0] : null; },
         set(k, v) { map.set(k, [v]); },
+        append(k, v) {
+            if (!map.has(k)) map.set(k, []);
+            map.get(k).push(v);
+        },
         dump() {
             const out = [];
             for (const [k, vs] of map) for (const v of vs) out.push(k + '=' + v);
@@ -290,4 +295,48 @@ test('未勾选的 checkbox 不进对象（与表单提交同口径）', () => {
     fire(body, form);
     const raw = body.dump().find((p) => p.startsWith('values=')).slice('values='.length);
     assert.equal(JSON.parse(raw)[0].enabled, undefined, '未勾选的 checkbox 不该出现在对象里');
+});
+
+// ── ④ 本轮补的五档能力（此前只有旧基座实现，htmx 侧缺失）──
+
+test('data-write-lines：换行拼接的单值展开成数组（否则图集存成一个坏 URL）', () => {
+    // 实测过：media-gallery 发 images="a.jpg\nb.jpg" 时，纯 formdata 绑成
+    // len=1 ["a.jpg\nb.jpg"] —— 一个元素内含换行，不是两个 URL。
+    const fire = loadWith('post');
+    const body = makeBody([['images', 'a.jpg\nb.jpg\n\nc.jpg'], ['projectId', 'p1']]);
+    fire(body, makeForm({ 'data-write-lines': 'images' }));
+    assert.deepEqual(body.dump(), ['projectId=p1', 'images=a.jpg', 'images=b.jpg', 'images=c.jpg'],
+        '空行丢弃，其余逐行展开（顺序按原键顺序）');
+});
+
+test('data-write-html：裸 HTML 包成 {html: …} 写到目标键，原键消失且不 trim', () => {
+    const fire = loadWith('post');
+    const body = makeBody([['descriptionHtml', '<p>x</p>  '], ['name', 'n']]);
+    fire(body, makeForm({ 'data-write-html': 'descriptionHtml:description' }));
+    assert.deepEqual(body.dump(), ['name=n', 'description={"html":"<p>x</p>  "}'],
+        '尾随空白是内容的一部分，不 trim');
+});
+
+test('data-write-array：一个都没勾时补空数组（否则「解绑全部」反转成「本次不改」）', () => {
+    // 浏览器对「全未勾选的 checkbox 组」完全不提交该键 → DTO 保持 nil = 本次不改。
+    // 用户以为解绑了，实际没动。
+    const fire = loadWith('post');
+    const body = makeBody([['projectId', 'p1']]);
+    fire(body, makeForm({ 'data-write-array': 'attributeIds,categoryIds' }));
+    assert.deepEqual(body.dump(), ['projectId=p1', 'attributeIds=[]', 'categoryIds=[]']);
+});
+
+test('data-write-array：有值时不动（不能把用户勾的覆盖掉）', () => {
+    const fire = loadWith('post');
+    const body = makeBody([['attributeIds', 'a'], ['attributeIds', 'b']]);
+    fire(body, makeForm({ 'data-write-array': 'attributeIds' }));
+    assert.deepEqual(body.dump(), ['attributeIds=a', 'attributeIds=b']);
+});
+
+test('data-write-float：点名的字段按小数发，认不出的原样发字符串', () => {
+    const fire = loadWith('post');
+    const body = makeBody([['defaultPrice', '9.90'], ['weight', 'abc'], ['slug', '9.9']]);
+    fire(body, makeForm({ 'data-write-float': 'defaultPrice,weight' }));
+    assert.deepEqual(body.dump(), ['defaultPrice=9.9', 'weight=abc', 'slug=9.9'],
+        'defaultPrice 转数字；weight 认不出原样发；未点名的 slug 不动');
 });

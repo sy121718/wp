@@ -7,25 +7,25 @@ package productdto
 
 // AddRatingReq 写入一条商品评分。
 type AddRatingReq struct {
-	ProductID string `json:"productId" binding:"required"`
-	ProjectID string `json:"projectId"`
+	ProductID string `json:"productId" form:"productId" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId"`
 	// Score 评分 0~5（含端）；越界即拒绝（数据库还有 CHECK 兜底）。
 	// 用指针是为了区分「没传」与「传了 0」：0 分是合法评分，不能让零值冒充缺失。
-	Score *float64 `json:"score" binding:"required"`
+	Score *float64 `json:"score" form:"score" binding:"required"`
 	// Source 来源：空 = manual（运营补录）；将来评论域写 review。
-	Source string `json:"source"`
+	Source string `json:"source" form:"source"`
 	// OperatorID 操作人：由 inbound 从会话覆盖写入，客户端不可指定。
 	OperatorID string `json:"-" form:"-"`
 }
 
 // ListRatingsReq 取某商品的评分明细。
 type ListRatingsReq struct {
-	ProductID string `json:"productId" binding:"required"`
-	ProjectID string `json:"projectId"`
+	ProductID string `json:"productId" form:"productId" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId"`
 }
 
 // DeleteRatingReq 删除一条评分。
 type DeleteRatingReq struct {
-	ID        string `json:"id" binding:"required"`
-	ProjectID string `json:"projectId"`
+	ID string `json:"id" form:"id" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId"`
 }

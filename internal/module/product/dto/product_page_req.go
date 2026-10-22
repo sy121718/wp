@@ -448,12 +448,12 @@ type ProductTranslationsPageReq struct {
 // 表示「本行不写入」（不删除库中已有译文），因此数组里必须保留空串占位 —— 剔掉会让后面所有行
 // 错位一格，而错位在服务端看起来只是「这一行的译文与原文对不上」。
 type SaveProductTranslationsReq struct {
-	ProjectID string   `json:"projectId"`
-	ProductID string   `json:"productId" binding:"required"`
-	Lang      string   `json:"lang"`
-	Targets   []string `json:"rowTarget"`
-	Contexts  []string `json:"rowContext"`
-	Hashes    []string `json:"rowHash"`
+	ProjectID string   `json:"projectId" form:"projectId"`
+	ProductID string   `json:"productId" form:"productId" binding:"required"`
+	Lang string   `json:"lang" form:"lang"`
+	Targets []string `json:"rowTarget" form:"rowTarget"`
+	Contexts []string `json:"rowContext" form:"rowContext"`
+	Hashes []string `json:"rowHash" form:"rowHash"`
 }
 
 // ProductCategoryParentsReq 分类抽屉「父级」候选的查询串参数（搜索式，一屏一页）。

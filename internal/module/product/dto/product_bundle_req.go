@@ -21,15 +21,15 @@ const (
 //
 // VariantID 指向**任意商品的已存在 SKU**（跨商品挑选，spec 第 53/54 条）。
 type BundleOption struct {
-	VariantID string `json:"variantId"`
+	VariantID string `json:"variantId" form:"variantId"`
 	// Required 必选 / 可选：必选项在整单校验里必须出现且满足 MinQty。
-	Required bool `json:"required"`
+	Required bool `json:"required" form:"required"`
 	// DefaultQty 前台初始数量（必选项 >= MinQty；可选项可为 0）。
-	DefaultQty int `json:"defaultQty"`
+	DefaultQty int `json:"defaultQty" form:"defaultQty"`
 	// MinQty 单项最小数量（必选项 >= 1；可选项可为 0，即允许不选）。
-	MinQty int `json:"minQty"`
+	MinQty int `json:"minQty" form:"minQty"`
 	// MaxQty 单项最大数量；0 = 留空（不设上限，只受库存约束）。
-	MaxQty int `json:"maxQty"`
+	MaxQty int `json:"maxQty" form:"maxQty"`
 
 	// —— 成员来源快照（docs/14 §1.2 的三种来源：迁移 259 配套）——
 	//
@@ -40,7 +40,7 @@ type BundleOption struct {
 	// SourceKind 取 productenums.BundleSource*（空 = 手工指定 / 历史配置）。
 	SourceKind string `json:"sourceKind,omitempty"`
 	// WarehouseID / WarehouseSKU 来自「从仓库选」那条来路（仓储侧的仓与仓内 SKU）。
-	WarehouseID  string `json:"warehouseId,omitempty"`
+	WarehouseID string `json:"warehouseId,omitempty"`
 	WarehouseSKU string `json:"warehouseSku,omitempty"`
 	// ExternalSKU 该 (仓库, 变体) 库存行登记的外部 / 第三方编码（迁移 251，可为空）。
 	ExternalSKU string `json:"externalSku,omitempty"`
@@ -49,12 +49,12 @@ type BundleOption struct {
 // BundleConfig 捆绑品配置（products.bundle_items 的完整形状）。
 type BundleConfig struct {
 	// MaxOptions 选项数量上限（1..BundleMaxOptionsLimit）。
-	MaxOptions int `json:"maxOptions"`
+	MaxOptions int `json:"maxOptions" form:"maxOptions"`
 	// MinTotalQty 整单最小总件数（所有选项数量之和的下限；0 = 不设下限）。
-	MinTotalQty int `json:"minTotalQty"`
+	MinTotalQty int `json:"minTotalQty" form:"minTotalQty"`
 	// MaxTotalQty 整单最大总件数（0 = 留空，不设上限）。
-	MaxTotalQty int            `json:"maxTotalQty"`
-	Options     []BundleOption `json:"options"`
+	MaxTotalQty int            `json:"maxTotalQty" form:"maxTotalQty"`
+	Options []BundleOption `json:"options" form:"options"`
 }
 
 // NewEmptyBundleConfig 空配置（与迁移 114 的列默认值同形状）。
@@ -78,7 +78,7 @@ type SetBundleConfigReq struct {
 	ProductID string `form:"productId" json:"productId" binding:"required"`
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
 	ProjectID  string       `form:"projectId" json:"projectId"`
-	Config     BundleConfig `json:"config"`
+	Config BundleConfig `json:"config" form:"config"`
 	OperatorID string       `json:"-" form:"-"`
 }
 
@@ -142,8 +142,8 @@ func (r *ResolveBundleMembersReq) BindForm(vals url.Values) error {
 
 // BundleMemberSource 成员来源快照（不是身份，见 BundleOption 的说明）。
 type BundleMemberSource struct {
-	Kind         string `json:"kind"`
-	WarehouseID  string `json:"warehouseId,omitempty"`
+	Kind string `json:"kind" form:"kind"`
+	WarehouseID string `json:"warehouseId,omitempty"`
 	WarehouseSKU string `json:"warehouseSku,omitempty"`
-	ExternalSKU  string `json:"externalSku,omitempty"`
+	ExternalSKU string `json:"externalSku,omitempty"`
 }

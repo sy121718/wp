@@ -18,10 +18,10 @@ import productenums "go_wp/internal/module/product/enums"
 type BulkDeleteReq struct {
 	// IDs 目标 id 清单，原样交进来即可：归一（去空白 / 去重 / 上限 200）在 service，
 	// 入口不做任何预处理 —— 归一判据只有一份，多了就有一处会漏（超限被静默截断）。
-	IDs []string `json:"ids"`
+	IDs []string `json:"ids" form:"ids"`
 	// ProjectID 工程作用域；为空时由 service 走「唯一工程」兜底。
 	// 多工程部署下必须带：空着只剩「唯一工程」兜底一条路，否则 ErrInvalidParam。
-	ProjectID string `json:"projectId"`
+	ProjectID string `json:"projectId" form:"projectId"`
 }
 
 // BulkPricingJSONReq 批量改价的 JSON 入参。
@@ -29,14 +29,14 @@ type BulkDeleteReq struct {
 // 规则字段**平铺在顶层**（不是嵌一个 rule 对象）：基座的批量按钮把表单字段整体序列化，
 // 嵌一层就要在前端再拆一次，而拆错的表现是「填了 amount 却按 multiplier 算」。
 type BulkPricingJSONReq struct {
-	IDs        []string `json:"ids"`
-	ProjectID  string   `json:"projectId"`
-	Note       string   `json:"note"`
-	RuleType   string   `json:"ruleType"`
-	Multiplier string   `json:"multiplier"`
-	Amount     string   `json:"amount"`
-	Margin     string   `json:"margin"`
-	Rounding   string   `json:"rounding"`
+	IDs []string `json:"ids" form:"ids"`
+	ProjectID string   `json:"projectId" form:"projectId"`
+	Note string   `json:"note" form:"note"`
+	RuleType string   `json:"ruleType" form:"ruleType"`
+	Multiplier string   `json:"multiplier" form:"multiplier"`
+	Amount string   `json:"amount" form:"amount"`
+	Margin string   `json:"margin" form:"margin"`
+	Rounding string   `json:"rounding" form:"rounding"`
 }
 
 // ServiceReq 转成 service 的入参（形状转换放在 dto：控制器只做「绑定 → 调用 → 响应」，

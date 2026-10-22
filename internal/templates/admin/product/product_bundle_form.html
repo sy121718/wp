@@ -28,7 +28,12 @@
         {* 保存走 JSON 写基座：成员行由 static/js/ui/product_bundle_write.js 组装成
            {productId, config:{maxOptions,minTotalQty,maxTotalQty,options:[…]}}（行内具名字段不进顶层）。
            CSRF 走请求头，表单里不再有隐藏域。 *}
-        <form hx-post="/api/product/bundle/set" hx-swap="none"
+        {* 留在旧基座：data-write-builder="product-bundle-config" 由
+           ui/product_bundle_write.js 组装 {productId, config:{…, options:[…]}}；
+           htmx 侧没有 builder 机制，硬迁会让 config.options 全丢 ——
+           而 service 把「成员为空」归一成空配置并覆盖写库，等于静默清空。
+           （审查指出这是最危险的一处：err=nil、200、配置被清空。） *}
+        <form data-write-api="/api/product/bundle/set" data-write-mode="form"
               data-write-builder="product-bundle-config"
               data-write-rows="[data-bundle-member-row];variantId,required,defaultQty,minQty,maxQty,sourceKind,memberWarehouseId,memberWarehouseSku,memberExternalSku;memberRows"
               data-write-flash="product-bundle-config">

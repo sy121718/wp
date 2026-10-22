@@ -297,7 +297,11 @@
            data-write-ids-scope 指回去。不写这一条，基座在本表单内收 ids 恒为空数组，
            症状是「点了应用调价什么也没发生」，而提示只会说「没勾选任何项」。 *}
         <form class="form-stack"
-              hx-post="/api/product/bulk-pricing" hx-swap="none" hx-include="closest form" data-reload-on-ok
+              {* 留在旧基座：ids 要从 data-list-bulk 那个**表单之外**收，
+                 data-write-ids-scope 只有 ui/json_write.js 实现。htmx 的
+                 hx-include="closest form" 只含本表单 → ids 一个都发不出去，
+                 而端点会以「没有勾选任何商品」拒绝 —— 用户勾了一列、点了没反应。 *}
+              data-write-api="/api/product/bulk-pricing" data-write-mode="bulk"
               data-write-flash="product-pricing-bulk"
               data-write-outcome="update"
               data-write-ids-scope="[data-list-bulk]"

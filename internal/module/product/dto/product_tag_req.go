@@ -113,16 +113,16 @@ func (r *ListTagProductsPageReq) BindQuery(q url.Values) error {
 
 // DeleteTagReq 删除标签（连同它在商品上的引用一起解绑）。
 type DeleteTagReq struct {
-	ID        string `json:"id" binding:"required"`
-	ProjectID string `json:"projectId"`
+	ID string `json:"id" form:"id" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId"`
 }
 
 // RecalcTagsReq 手动触发重算（重算时机之一）。
 //
 // TagID 为空表示重算该工程下全部自动标签；填了 TagID 时 ProjectID 可省略（按标签自己的工程）。
 type RecalcTagsReq struct {
-	ProjectID string `json:"projectId"`
-	TagID     string `json:"tagId"`
+	ProjectID string `json:"projectId" form:"projectId"`
+	TagID string `json:"tagId" form:"tagId"`
 }
 
 // bindRawJSONField 把表单里一个 JSON 字符串字段解析成 json.RawMessage。

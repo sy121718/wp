@@ -113,6 +113,90 @@
         return { driver: spec.driver, driverValue: String(driver.value == null ? '' : driver.value).trim(), value: out };
     }
 
+    // ── data-write-lines：多行文本 → 字符串数组 ──
+    //
+    // 图集控件的隐藏域是**换行拼接的单值**（media-gallery.js 的 join('\n')），
+    // 而 DTO 的 `Images []string` 期望多个元素。不转换时 formdata 只给出
+    // 一个元素、内含换行 —— 实测 len=1 ["a.jpg\nb.jpg"]，等于存了一个坏 URL。
+    //
+    // 空行丢弃（与旧基座的 splitLines 同口径）：用户多敲一个空行不该在数组里留空串。
+    function splitLines(raw) {
+        if (typeof raw !== 'string') return [];
+        var out = [];
+        raw.replace(/\r\n/g, '\n').split('\n').forEach(function (line) {
+            var v = line.trim();
+            if (v) out.push(v);
+        });
+        return out;
+    }
+
+    // ── data-write-html："源键:目标键" —— 裸 HTML 包成 {html: …} ──
+    //
+    // 富文本控件提交的是裸 HTML 字符串，而入库形态是 jsonb `{"html": …}`。
+    // 声明形如 `data-write-html="descriptionHtml:description"`：读 descriptionHtml，
+    // 包成 {"html": 原值} 写到 description，原键消失。
+    //
+    // 不 trim：富文本的尾随空格可能是内容的一部分（旧基座对此有专门断言）。
+    function applyHTMLFields(body, el) {
+        var host = el && el.closest ? el.closest('[data-write-html]') : null;
+        if (!host) return;
+        String(host.getAttribute('data-write-html') || '').split(',').forEach(function (pair) {
+            var parts = String(pair || '').split(':');
+            if (parts.length !== 2) return;
+            var from = parts[0].trim(), to = parts[1].trim();
+            if (!from || !to) return;
+            var raw = body.get ? body.get(from) : null;
+            if (raw === null || raw === undefined) return;
+            body.delete(from);
+            body.set(to, JSON.stringify({ html: String(raw) }));
+        });
+    }
+
+    // ── data-write-float：点名的字段按小数发 ──
+    //
+    // 后端 *float64 收字符串也能绑（实测），所以这一档**不是必需的**；
+    // 保留它是为了与旧基座的行为逐字一致：JSON 侧原本就发数字，
+    // 改成字符串会让 `{"defaultPrice":"9.9"}` 与 `{"defaultPrice":9.9}` 在日志/审计里不同形。
+    // 认不出的取值原样发字符串，交给严格 API 报错（不猜）。
+    function applyFloatFields(body, el) {
+        var names = nameSet(el, 'data-write-float');
+        Object.keys(names).forEach(function (name) {
+            var raw = body.get ? body.get(name) : null;
+            if (typeof raw !== 'string' || raw.trim() === '') return;
+            if (!/^-?\d+(\.\d+)?$/.test(raw.trim())) return;
+            var n = Number(raw.trim());
+            if (!isFinite(n)) return;
+            body.set(name, String(n));
+        });
+    }
+
+    // ── data-write-lines：换行拼接的单值展开成数组 ──
+    //
+    // 必须在 dropEmpty **之后**做：dropEmpty 会把「整串为空」的键删掉，
+    // 而这里有值时才有展开的意义。展开本身对空串是安全的（splitLines 返回空数组）。
+    function applyLinesFields(body, el) {
+        var names = nameSet(el, 'data-write-lines');
+        Object.keys(names).forEach(function (name) {
+            var raw = body.get ? body.get(name) : null;
+            if (raw === null || raw === undefined) return;
+            body.delete(name);
+            splitLines(raw).forEach(function (line) { body.append(name, line); });
+        });
+    }
+
+    // ── data-write-array：同名多值永远收成数组（哪怕一个都没勾） ──
+    //
+    // 浏览器对「一个都没勾的 checkbox 组」**完全不提交该键**，于是 DTO 的
+    // `AttributeIDs []string` 保持 nil —— 语义从「解绑全部」反转成「本次不改」，
+    // 用户以为解绑了。声明过的字段因此在一个都没勾时补一个空数组。
+    function applyArrayFields(body, el) {
+        var names = nameSet(el, 'data-write-array');
+        Object.keys(names).forEach(function (name) {
+            if (body.get && body.get(name) !== null) return;   // 有值就不动
+            body.set(name, '[]');
+        });
+    }
+
     // dropEmpty 删掉「空值 = 没填」的顶层字段。
     //
     // ⚠ 不是所有空串都该删：有些字段的空串**是有语义的**（解绑某处关联），
@@ -331,6 +415,12 @@
         //   · 更关键的是：dropEmpty 要作用在**原始表单值**上，才能在组装前把
         //     「没填的参数输入框」排除掉；组装时再判一次空值（scalar 返回 null）。
         dropEmpty(body, src);
+
+        // 其余整形：与顺序无关的逐字段转换，放在结构组装之前。
+        applyLinesFields(body, src);
+        applyHTMLFields(body, src);
+        applyFloatFields(body, src);
+        applyArrayFields(body, src);
 
         // 再组装行数组（必须在删空值之前读容器里的原始值 —— 它要取 id 这类隐藏字段）。
         var rowsSpec = src ? rowsSpecOf(src) : null;
