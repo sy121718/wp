@@ -314,10 +314,11 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 	// 由 partial 现算；单页 / 空集时模板自然不渲染。
 	//
 	// 翻页保留关键词；写动作的结论不再经查询参数回带（走提示页），基地址上只有筛选。
-	data["Pagination"] = pagination.Page{Total: total, Page: page, Limit: limit,
-		Base: reqparams.FilterBaseURL("/admin/articles", map[string]string{"keyword": keyword})}
+	adminui.AttachPagination(data, "/admin/articles",
+		map[string]string{"keyword": keyword},
+		pagination.Page{Total: total, Page: page, Limit: limit})
 	// 依赖失效影响面（只读）：文章 / 块 / 主题 / 导航变更后，哪些页面正在等待重建。
-	// 本批只做可见性，不做自动重建（见 article_stale_impact.go）。
+	// 本批只做可见性，不做自动重建（见 content_page.go）。
 	data["StaleImpact"] = articleStaleImpact(ctx, h)
 	c.HTML(http.StatusOK, "admin/content/articles.html", adminui.Prepare(c, data))
 }
@@ -936,7 +937,7 @@ func (h *articlePageHandle) ArticleNewPage(c *gin.Context) {
 	}))
 }
 
-// article_page_data.go - 文章管理页的数据装配（列表/编辑页数据、表单绑定与导入块视图）。
+// content_page.go - 文章管理页的数据装配（列表/编辑页数据、表单绑定与导入块视图）。
 
 // articleForm 编辑表单的字段集合（与 content 字段白名单一一对应）。
 //

@@ -13,6 +13,8 @@ import (
 	"go_wp/internal/module/admin/enums"
 	"go_wp/internal/module/admin/model"
 	"go_wp/pkg/i18n"
+
+	"go_wp/pkg/tree"
 )
 
 // MenuPage 菜单管理列表（**树状分页**）。
@@ -551,37 +553,29 @@ func (s *Service) MenuTree(ctx context.Context, req *admindto.MenuTreeReq) ([]ad
 
 // buildMenuTree 将扁平列表构建为树结构。
 //
-// 递归构建：先完整构建子树，再组装父节点——Children 是值切片
-// （[]MenuTreeNode），若用「roots 值拷贝 + nodeMap 指针挂载」的两遍组装，
-// 顶级节点副本的 Children 恒为空（子节点挂在指针上，拷贝时未完成），
-// 整棵菜单树会丢失全部子树。
+// 算法在 pkg/tree.Build（三处调用点共用一份）：兄弟顺序 = 输入顺序、父不在列表里的
+// 孤儿归入根、**环形父引用不会无限展开**。
+//
+// 环检测不是防御性编程 —— 原先这里用朴素递归（childrenOf + build(parentID)），
+// 如果管理员把两个菜单的父级改成互为父子，递归就会无限展开；而这个树的渲染端
+// （admin/partials/nav-nodes.html）用 {{yield navNodes(nodes=n.Children)}} 递归画，
+// 实测 Jet 在自引用数据上抛 `fatal error: stack overflow` —— 那是 Go 的 fatal error，
+// recover() 抓不住，整个进程退出。所以环必须在建树时就断开。
+//
+// 为什么要 []*MenuTreeNode 再摊回值切片：本类型用值切片存 Children（模板契约），
+// 而挂子节点要改节点自身，tree.Node 约束因此要求指针接收者。
 func buildMenuTree(list []adminmodel.MenuEntity) []admindto.MenuTreeNode {
-	childrenOf := make(map[uint64][]adminmodel.MenuEntity, len(list))
-	ids := make(map[uint64]bool, len(list))
+	ptrs := make([]*admindto.MenuTreeNode, 0, len(list))
 	for _, m := range list {
-		childrenOf[m.ParentID] = append(childrenOf[m.ParentID], m)
-		ids[m.ID] = true
+		n := menuEntityToNode(m)
+		ptrs = append(ptrs, &n)
 	}
-	// 孤儿节点（ParentID 非 0 但父不在列表中）归入顶级分组，与旧行为一致。
-	var orphans []adminmodel.MenuEntity
-	for _, m := range list {
-		if m.ParentID != 0 && !ids[m.ParentID] {
-			orphans = append(orphans, m)
-		}
+	roots := tree.Build(ptrs)
+	out := make([]admindto.MenuTreeNode, 0, len(roots))
+	for _, r := range roots {
+		out = append(out, *r)
 	}
-	childrenOf[0] = append(childrenOf[0], orphans...)
-
-	var build func(parentID uint64) []admindto.MenuTreeNode
-	build = func(parentID uint64) []admindto.MenuTreeNode {
-		var nodes []admindto.MenuTreeNode
-		for _, m := range childrenOf[parentID] {
-			n := menuEntityToNode(m)
-			n.Children = build(m.ID)
-			nodes = append(nodes, n)
-		}
-		return nodes
-	}
-	return build(0)
+	return out
 }
 
 // menuEntityToNode MenuEntity 转树节点 MenuTreeNode。

@@ -193,12 +193,13 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 		"Page":      page,
 		"Limit":     limit,
 	})
-	base := backpath.WithParams("/admin/coupons", map[string]string{
-		"project": selected, "status": filter.Status, "keyword": filter.Keyword,
+	// 分页事实：基址由 backpath 拼（带白名单参数），故 path 传空 —— AttachPagination 不动 Base。
+	adminui.AttachPagination(data, "", nil, pagination.Page{
+		Total: total, Page: page, Limit: limit,
+		Base: backpath.WithParams("/admin/coupons", map[string]string{
+			"project": selected, "status": filter.Status, "keyword": filter.Keyword,
+		}),
 	})
-	pg := pagination.Page{Total: total, Page: page, Limit: limit}
-	pg.Base = base
-	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/order/coupons.html", data)
 }
 

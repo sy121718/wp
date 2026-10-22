@@ -1,5 +1,7 @@
 package admindto
 
+import "go_wp/pkg/tree"
+
 // MenuPageRow 是菜单管理列表的一行：**树状平铺**（顶级行连同它的子孙一起按 DFS 前序排开，
 // 层级由 Depth 表达）。分页单位是顶级节点，所以一页里的每一段子树都是完整的。
 //
@@ -98,4 +100,26 @@ type MenuDetailResp struct {
 	IsSystem        int      `json:"is_system"`
 	SortOrder       int      `json:"sort_order"`
 	Remark          string   `json:"remark"`
+}
+
+// —— tree.Node[uint64] 约束实现 ——
+//
+// 菜单树是「扁平列表 → 树」的三处调用点里唯一用**值切片**存 Children 的
+// （DeptTreeNode 用 []*DeptTreeNode）。tree.Build 要求 SetTreeChildren 用指针接收者
+// 才能改节点自身，所以这里给它加一个指针接收者的方法：Build 收 []*MenuTreeNode，
+// 返回后调用点再摊回 []MenuTreeNode（与原来的值切片形状一致，模板契约不变）。
+func (n *MenuTreeNode) TreeID() uint64       { return n.ID }
+func (n *MenuTreeNode) TreeParentID() uint64 { return n.ParentID }
+
+// SetTreeChildren 挂子节点：把 []tree.Node[uint64] 摊回本类型的值切片。
+func (n *MenuTreeNode) SetTreeChildren(children []tree.Node[uint64]) {
+	if len(children) == 0 {
+		n.Children = nil
+		return
+	}
+	out := make([]MenuTreeNode, 0, len(children))
+	for _, c := range children {
+		out = append(out, *(c.(*MenuTreeNode)))
+	}
+	n.Children = out
 }

@@ -253,7 +253,8 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	})
 	// 分页只给事实（总数 / 页码 / 每页条数 / 基址）：页数、区间句、页码窗口与链接由
 	// admin/partials/pagination.html 算。单页与空集时模板自然不渲染分页条。
-	data["Pagination"] = pagination.Page{Total: total, Page: page, Limit: limit, Base: base}
+	adminui.AttachPagination(data, "", nil,
+		pagination.Page{Total: total, Page: page, Limit: limit, Base: base})
 	c.HTML(http.StatusOK, "admin/masterdata/masterdata_changes.html", data)
 }
 

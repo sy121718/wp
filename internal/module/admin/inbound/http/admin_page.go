@@ -20,15 +20,15 @@ package adminhttp
 // 以及跨领域共用的抽屉分流与取词辅助。
 //
 // 六个领域的页面实现按能力域拆在同包兄弟文件（外部贡献者导航）：
-//   · admin_pages_admin.go      管理员              /admin/administrators
-//   · admin_pages_role.go       角色（含权限分配抽屉）/admin/roles
-//   · admin_pages_perm.go       权限点              /admin/permissions
-//   · admin_pages_menu.go       菜单（树 + 绑定权限点）/admin/menus
-//   · admin_pages_dept.go       部门（树）          /admin/departments
-//   · admin_pages_datarule.go   数据权限            /admin/datarules
-//   · admin_pages_i18n.go       文案词条页          /admin/i18n
-//   · admin_pages_lang.go       后台语言切换        /admin/lang
-//   · admin_pages_login.go      后台登录页          /admin/login
+//   · admin_page.go      管理员              /admin/administrators
+//   · admin_page.go       角色（含权限分配抽屉）/admin/roles
+//   · admin_page.go       权限点              /admin/permissions
+//   · admin_page.go       菜单（树 + 绑定权限点）/admin/menus
+//   · admin_page.go       部门（树）          /admin/departments
+//   · admin_page.go   数据权限            /admin/datarules
+//   · admin_page.go       文案词条页          /admin/i18n
+//   · admin_page.go       后台语言切换        /admin/lang
+//   · admin_page.go      后台登录页          /admin/login
 //
 // 这些管理页自 dashboard 模块搬回 admin（页面住在哪个模块就归哪个模块）：严格跨模块边界在此消失，
 // 页面直接持有本模块 service 契约（同包语义），不再绕 dashboard。页面文案标题沿用原有 i18n 词条 key
@@ -113,7 +113,7 @@ type adminRoleChoice struct {
 	Status int
 	// Missing 表示「这个账号绑定的角色码已经不在角色表里」（角色被删或禁用后 g 策略还在）。
 	// 不把它渲染出来的后果与角色分权里的禁用项完全一样：管理员一保存就把这条绑定静默删掉了，
-	// 而界面上什么都没显示过（见 menu_authz.go 的 buildPermissionTree 注释）。
+	// 而界面上什么都没显示过（见 admin_page.go 的 buildPermissionTree 注释）。
 	Missing bool
 	// Checked 该账号当前绑定了这个角色。
 	Checked bool
@@ -468,11 +468,10 @@ func (h *AdminPagesHandle) AdministratorsPage(c *gin.Context) {
 		"ListQuery":   adminAdminsPage.listQuery(c),
 	})
 	// 分页条只给事实（总数 / 页码 / 每页条数 / 基址）：信息行、按钮、href 与选中态由
-	// admin/partials/pagination.html 用模板层的 pager 算。
-	base := reqparams.FilterBaseURL("/admin/administrators", map[string]string{"name": name, "email": email})
-	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
-	pg.Base = base
-	data["Pagination"] = pg
+	// admin/partials/pagination.html 用 pager(.Pagination) 算。
+	adminui.AttachPagination(data, "/admin/administrators",
+		map[string]string{"name": name, "email": email},
+		pagination.Page{Total: res.Total, Page: page, Limit: limit})
 	c.HTML(http.StatusOK, "admin/system/administrators", data)
 }
 
@@ -598,10 +597,9 @@ func (h *AdminPagesHandle) DatarulesPage(c *gin.Context) {
 		"Err":          adminListLoadErr(c, err),
 		"ListQuery":    adminDatarulesPage.listQuery(c),
 	})
-	base := reqparams.FilterBaseURL("/admin/datarules", map[string]string{"domain": domain})
-	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
-	pg.Base = base
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "/admin/datarules",
+		map[string]string{"domain": domain},
+		pagination.Page{Total: res.Total, Page: page, Limit: limit})
 	c.HTML(http.StatusOK, "admin/system/datarules", data)
 }
 
@@ -667,7 +665,7 @@ func (h *AdminPagesHandle) DatarulesEditPage(c *gin.Context) {
 // 这是本域唯一「一个端点两个入口」的写操作 —— 列表页的抽屉表单（datarules.html，只改
 // rule_name/domain/status/remark）与编辑页的完整表单（datarule_edit.html，还带条件配置）
 // 都 POST 到 /admin/datarules/update。分流依据**本来就有**：编辑页提交时带
-// dataruleEditorMarker（config_editor 隐藏域，见 datarule_config_form.go 的表单约定），
+// dataruleEditorMarker（config_editor 隐藏域，见 admin_page.go 的表单约定），
 // 抽屉不带 —— 用它判来源，不新增协议、不猜别的字段。
 //
 // 缺 id（0）时没有可回的编辑页（它由 id 决定），一律回列表页。
@@ -825,10 +823,9 @@ func (h *AdminPagesHandle) DepartmentsPage(c *gin.Context) {
 		"Err":           adminListLoadErr(c, err),
 		"ListQuery":     adminDeptsPage.listQuery(c),
 	})
-	base := reqparams.FilterBaseURL("/admin/departments", map[string]string{"keyword": keyword})
-	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
-	pg.Base = base
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "/admin/departments",
+		map[string]string{"keyword": keyword},
+		pagination.Page{Total: res.Total, Page: page, Limit: limit})
 	c.HTML(http.StatusOK, "admin/system/departments", data)
 }
 
@@ -983,8 +980,9 @@ func adminMenuTypeLabel(tr adminLabelTranslate, t int) string {
 	return tr(key, fallback)
 }
 
+// adminDrawerHX 判断是不是 htmx 请求（判据委托 pkg/reqparams，与全仓同一份实现）。
 func adminDrawerHX(c *gin.Context) bool {
-	return strings.EqualFold(strings.TrimSpace(c.GetHeader("HX-Request")), "true")
+	return reqparams.IsHXRequest(c)
 }
 
 // --- 文案词条页（审计 I18N-003） ---
@@ -1134,9 +1132,10 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	})
 	// 本页每页条数是固定常量（不看 ?limit=），事实层照旧收这个 size；KeepLimit 保持默认 true
 	// —— 旧链接就是 ?page=N&limit=50，字节不能变（本页 handler 不读 limit，但它仍出现在链接里）。
-	pg := pagination.Page{Total: total, Page: page, Limit: adminI18nEntryPageSize}
-	pg.Base = base
-	data["Pagination"] = pg
+	// 基址由本页自己的筛选逻辑算出（不是 FilterBaseURL 的形态），故 path 传空。
+	adminui.AttachPagination(data, "", nil, pagination.Page{
+		Total: total, Page: page, Limit: adminI18nEntryPageSize, Base: base,
+	})
 	c.HTML(http.StatusOK, "admin/system/i18n", adminui.Prepare(c, data))
 }
 
@@ -1304,10 +1303,9 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 		// 新建抽屉内嵌在本页，它的权限点候选也在这里给（新建时没有任何已绑码）。
 		"PermChoices": h.buildPermChoices(c, nil),
 	})
-	base := reqparams.FilterBaseURL("/admin/menus", map[string]string{"keyword": keyword})
-	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
-	pg.Base = base
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "/admin/menus",
+		map[string]string{"keyword": keyword},
+		pagination.Page{Total: res.Total, Page: page, Limit: limit})
 	c.HTML(http.StatusOK, "admin/system/menus", data)
 }
 
@@ -1609,10 +1607,9 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 		"Err":          adminListLoadErr(c, err),
 		"ListQuery":    adminPermsPage.listQuery(c),
 	})
-	base := reqparams.FilterBaseURL("/admin/permissions", map[string]string{"code": code, "module": module})
-	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
-	pg.Base = base
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "/admin/permissions",
+		map[string]string{"code": code, "module": module},
+		pagination.Page{Total: res.Total, Page: page, Limit: limit})
 	c.HTML(http.StatusOK, "admin/system/permissions", data)
 }
 
@@ -1785,10 +1782,9 @@ func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
 		"Err":           adminListLoadErr(c, err),
 		"ListQuery":     adminRolesPage.listQuery(c),
 	})
-	base := reqparams.FilterBaseURL("/admin/roles", map[string]string{"keyword": keyword})
-	pg := pagination.Page{Total: res.Total, Page: page, Limit: limit}
-	pg.Base = base
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "/admin/roles",
+		map[string]string{"keyword": keyword},
+		pagination.Page{Total: res.Total, Page: page, Limit: limit})
 	c.HTML(http.StatusOK, "admin/system/roles", data)
 }
 

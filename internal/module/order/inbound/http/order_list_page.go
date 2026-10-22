@@ -175,13 +175,14 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		"Page":         page,
 		"Limit":        limit,
 	})
-	base := backpath.WithParams("/admin/orders", map[string]string{
-		"project": selected, "status": filter.Status, "keyword": filter.Keyword,
-		"paymentMethod": filter.PaymentMethod,
+	// 分页事实：基址由 backpath 拼（带白名单参数），故 path 传空 —— AttachPagination 不动 Base。
+	adminui.AttachPagination(data, "", nil, pagination.Page{
+		Total: total, Page: page, Limit: limit,
+		Base: backpath.WithParams("/admin/orders", map[string]string{
+			"project": selected, "status": filter.Status, "keyword": filter.Keyword,
+			"paymentMethod": filter.PaymentMethod,
+		}),
 	})
-	pg := pagination.Page{Total: total, Page: page, Limit: limit}
-	pg.Base = base
-	data["Pagination"] = pg
 	c.HTML(http.StatusOK, "admin/order/orders.html", data)
 }
 

@@ -737,9 +737,10 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 	// 分页条：handler 只交事实（pkg/pagination.Page），信息行与链接由
 	// admin/partials/pagination.html 用 sprintf / queryURL 现算；
 	// 单页 / 空集时 HasPagination 为假，片段自然不渲染。
-	pg := pagination.Page{Total: customerTotal(list), Page: page, Limit: limit}
-	pg.Base = reqparams.FilterBaseURL(customerListPath, customerFilterValues(filter))
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "", nil, pagination.Page{
+		Total: customerTotal(list), Page: page, Limit: limit,
+		Base: reqparams.FilterBaseURL(customerListPath, customerFilterValues(filter)),
+	})
 	c.HTML(http.StatusOK, "admin/user/customers.html", data)
 }
 
@@ -1474,12 +1475,12 @@ func (h *customerPageHandle) CustomerRfmPage(c *gin.Context) {
 		rows, segment, page, limit, total, errMsg))
 	data["SegmentTabs"] = customerRfmSegmentTabs(res, segment, rng)
 	// 分页链接保留区间与分段：不带的话翻页会静默变成「全部区间 + 全部分段」。
-	pg := pagination.Page{Total: total, Page: page, Limit: limit}
-	pg.Base = customerRfmPath + "?" + customerRangeQuery(rng)
+	rfnBase := customerRfmPath + "?" + customerRangeQuery(rng)
 	if segment != "" {
-		pg.Base += "&segment=" + segment
+		rfnBase += "&segment=" + segment
 	}
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "", nil,
+		pagination.Page{Total: total, Page: page, Limit: limit, Base: rfnBase})
 	c.HTML(http.StatusOK, "admin/user/customer_rfm", data)
 }
 
@@ -1537,7 +1538,7 @@ var customerRfmUnavailableLabel = userLabel{
 	"RFM 分析暂时不可用（数据没接上），请稍后再试。",
 }
 
-// customer_view.go - 客户管理页的视图构造（列表/详情数据、行视图、状态选项与标签）。
+// user_page.go - 客户管理页的视图构造（列表/详情数据、行视图、状态选项与标签）。
 
 // customerListPageData 组装列表页渲染数据（纯函数：不取数、不依赖 gin.Context 之外的东西）。
 //
@@ -2530,7 +2531,7 @@ var (
 	customerMembershipFailedLabel      = userLabel{userenums.KeyCustomerMembershipFailed, "会员等级暂时读不出来 —— 客户资料本身不受影响。"}
 )
 
-// customer_query.go - 客户管理页的查询参数解析、URL 派生与对外文案出口。
+// user_page.go - 客户管理页的查询参数解析、URL 派生与对外文案出口。
 //
 // 本文件里的解析函数与 user_customer_admin_handle.go（/api/customer/*）里同名的一组
 // 刻意各自独立：接口面与页面面的取值口径不同（页面用 -1 表示「全部」，接口用

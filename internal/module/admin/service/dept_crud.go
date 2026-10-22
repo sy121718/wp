@@ -12,6 +12,8 @@ import (
 	adminmodel "go_wp/internal/module/admin/model"
 
 	"gorm.io/gorm"
+
+	"go_wp/pkg/tree"
 )
 
 // DeptPage fetches bounded list rows and a complete, narrow parent selector.
@@ -325,35 +327,25 @@ func (s *Service) deptCheckCircleTx(ctx context.Context, tx *gorm.DB, targetID, 
 }
 
 // buildDeptTree 将扁平部门列表组装为树形结构（多根节点）。
-// 通过 parent_id 建立父子关系，返回根节点列表。
-// Children 为指针存储，节点只挂载一次，避免值拷贝导致子孙丢失。
+//
+// 算法在 pkg/tree.Build（与菜单树共用一份）：父不在列表里的节点归入根、
+// 兄弟顺序 = 输入顺序、**环形父引用不会无限展开**（原实现朴素递归，两个部门
+// 互为父级会让渲染端 Jet 递归爆栈，那是 fatal error，进程直接退出）。
+//
+// 原实现这里有两遍组装 + 末尾值拷贝（注释自己记着「值拷贝会丢子孙」），
+// tree.Build 自底向上构造，不存在「什么时候拷」的问题。
 func buildDeptTree(list []adminmodel.DeptEntity) []admindto.DeptTreeNode {
-	nodeMap := make(map[uint64]*admindto.DeptTreeNode, len(list))
-	var roots []*admindto.DeptTreeNode
-
+	ptrs := make([]*admindto.DeptTreeNode, 0, len(list))
 	for _, d := range list {
-		node := deptEntityToNode(d)
-		nodeMap[d.ID] = &node
+		n := deptEntityToNode(d)
+		ptrs = append(ptrs, &n)
 	}
-
-	for _, d := range list {
-		node := nodeMap[d.ID]
-		if d.ParentID == 0 {
-			roots = append(roots, node)
-		} else {
-			if parent, ok := nodeMap[d.ParentID]; ok {
-				parent.Children = append(parent.Children, node)
-			} else {
-				roots = append(roots, node)
-			}
-		}
+	roots := tree.Build(ptrs)
+	out := make([]admindto.DeptTreeNode, 0, len(roots))
+	for _, r := range roots {
+		out = append(out, *r)
 	}
-
-	result := make([]admindto.DeptTreeNode, 0, len(roots))
-	for _, root := range roots {
-		result = append(result, *root)
-	}
-	return result
+	return out
 }
 
 // deptEntityToNode 将数据库实体转换为树节点 DTO。

@@ -180,7 +180,8 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 		"project": selected, "from": from, "to": to, "view": analyticsViewPaths,
 	})
 	// 分页只给事实；页数、区间句、页码窗口与链接由 partial 算。
-	data["Pagination"] = pagination.Page{Total: pathTotal, Page: page, Limit: limit, Base: base}
+	adminui.AttachPagination(data, "", nil,
+		pagination.Page{Total: pathTotal, Page: page, Limit: limit, Base: base})
 	c.HTML(http.StatusOK, "admin/analytics/analytics.html", data)
 }
 

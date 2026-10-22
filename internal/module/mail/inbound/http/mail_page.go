@@ -238,7 +238,7 @@ type nodeTypeOption struct {
 // nodeTypeOptions 类型下拉选项（参数提示直接写在界面上，省得去翻文档）。
 //
 // 取值与文案的真源在 mailenums.AutomationNodeTypes（key + 中文兜底），这里只做取词 ——
-// 画布页（mail_automation_canvas.go）与表单页共用同一份，不各写一套。
+// 画布页（mail_page.go）与表单页共用同一份，不各写一套。
 func nodeTypeOptions(tr mailTr) []nodeTypeOption {
 	opts := make([]nodeTypeOption, 0, len(mailenums.AutomationNodeTypes))
 	for _, o := range mailenums.AutomationNodeTypes {
@@ -349,7 +349,7 @@ func formValuesFromPost(c *gin.Context) automationFormValues {
 // MailAutomationEdit 流程编辑页（?id=N 编辑，缺省为新建）。
 //
 // 页面只讲「触发方式 + 按顺序的步骤」：标识 / 下一步 / yes / no 四个输入框已从界面消失
-// （用户原话「新建自动化不知道是个什么东西完全没法用」），换算在 mail_automation_form.go。
+// （用户原话「新建自动化不知道是个什么东西完全没法用」），换算在 mail_page.go。
 func (h *mailPageHandle) MailAutomationEdit(c *gin.Context) {
 	id := reqparams.ParseUint(c.Query("id"))
 	if id == 0 {
@@ -724,9 +724,9 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 	// 分页只给事实：总数 / 页码 / 每页 / 基址由本行注入，信息行、翻页按钮与链接
 	// 全部由 admin/partials/pagination.html 按请求语言渲染。单页 / 空数据不注入键
 	// （与迁移前的空 map 同义），片段里 isset 守卫自然跳过。
-	pg := pagination.Page{Total: runs.Total, Page: page, Limit: mailAutomationRunsPageSize}
-	pg.Base = base
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "", nil, pagination.Page{
+		Total: runs.Total, Page: page, Limit: mailAutomationRunsPageSize, Base: base,
+	})
 	c.HTML(http.StatusOK, "admin/mail/mail_automation_runs.html", adminui.Prepare(c, data))
 }
 
@@ -786,9 +786,9 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 		// 被弹回第 1 页。写动作的结论不在本页回显（走 shell.RenderJump 提示页）。
 		"ListQuery": mailPageQuery(page),
 	})
-	pg := pagination.Page{Total: campaigns.Total, Page: page, Limit: mailCampaignsPageSize}
-	pg.Base = "/admin/mail/campaigns"
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "", nil, pagination.Page{
+		Total: campaigns.Total, Page: page, Limit: mailCampaignsPageSize, Base: "/admin/mail/campaigns",
+	})
 	c.HTML(http.StatusOK, "admin/mail/mail_campaigns.html", data)
 }
 
@@ -905,9 +905,10 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 	})
 	// 收件人明细的分页条：baseURL 带上 id，翻页时不会丢掉「在看哪条活动」。
 	// 键名与 partials/pagination.html 读的键一致（该片段在这里用无参 include 渲染）。
-	pg := pagination.Page{Total: report.Total, Page: page, Limit: mailCampaignsPageSize}
-	pg.Base = fmt.Sprintf("/admin/mail/campaign?id=%d", id)
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "", nil, pagination.Page{
+		Total: report.Total, Page: page, Limit: mailCampaignsPageSize,
+		Base: fmt.Sprintf("/admin/mail/campaign?id=%d", id),
+	})
 	c.HTML(http.StatusOK, "admin/mail/mail_campaign.html", data)
 }
 
@@ -1037,10 +1038,9 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 		"ListQuery": mailContactsListQuery(keyword, status, tags, page),
 	})
 	// 基地址带上筛选，翻页才保留筛选条件（否则翻到第 2 页就回到全量）。
-	base := reqparams.FilterBaseURL(mailContactsPath, map[string]string{"keyword": keyword, "status": status, "tags": tags})
-	pg := pagination.Page{Total: contacts.Total, Page: page, Limit: mailContactsPageSize}
-	pg.Base = base
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, mailContactsPath,
+		map[string]string{"keyword": keyword, "status": status, "tags": tags},
+		pagination.Page{Total: contacts.Total, Page: page, Limit: mailContactsPageSize})
 	c.HTML(http.StatusOK, "admin/mail/mail_contacts.html", data)
 }
 
@@ -1283,8 +1283,8 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 	})
 	// 分页只注入事实；单页 / 空数据不注入键（与迁移前键缺失同义），
 	// 模板 include 里 isset 守卫自然跳过。
-	pg := mailListPaginationFacts(accountTotal, accountPage, "account_page", "/admin/mail")
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "", nil,
+		mailListPaginationFacts(accountTotal, accountPage, "account_page", "/admin/mail"))
 	c.HTML(http.StatusOK, "admin/mail/mail.html", data)
 }
 
@@ -1550,8 +1550,8 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 		// Err 只由上面的取数失败分支注入。
 	})
 	// 分页只注入事实；单页 / 空数据不注入键，模板 include 的 isset 守卫自然跳过。
-	pg := mailListPaginationFacts(total, page, "page", "/admin/mail/templates")
-	data["Pagination"] = pg
+	adminui.AttachPagination(data, "", nil,
+		mailListPaginationFacts(total, page, "page", "/admin/mail/templates"))
 	c.HTML(http.StatusOK, "admin/mail/mail_templates.html", data)
 }
 
