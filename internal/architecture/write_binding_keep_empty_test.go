@@ -39,8 +39,12 @@ import (
 var emptyMeansSemantic = regexp.MustCompile(`(指向空串|空串表示)`)
 
 // pendingKeepEmptyFields 还没在模板里声明 keep-empty 的字段（登记存量，收一个删一个）。
-// navigation 的面板块清除：该模块的写表单还没迁到 htmx（仍走 ui/json_write.js，
-// 那套用 data-write-skip-empty 而非 keep-empty）。迁的时候要补声明，并删掉这条登记。
+// navigation 的 panelBlockId 是**页面 POST**（htmx → /admin/navigations/update → 返回 HTML
+// 片段），不是 JSON 写端点：它的空值由服务端的 binding.Form 自己处理，
+// 不经过 ui/htmx_form_body.js 的 dropEmpty，也就轮不到 keep-empty 这条规则。
+//
+// 判据是「这个字段会不会被 formdata 的删空值逻辑碰到」：只有走 **JSON 端点 + htmx 表单**
+// 的那条链路才会。页面 POST 的表单不受影响。
 var pendingKeepEmptyFields = map[string]int{
 	"panelBlockID": 1,
 }

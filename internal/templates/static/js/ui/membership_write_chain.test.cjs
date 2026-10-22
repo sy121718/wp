@@ -32,11 +32,18 @@ function setup(body, response) {
     const document = {
         addEventListener(name, fn) { listeners[name] = fn; },
         querySelector() { return {getAttribute(name) { return name === 'content' ? 'CSRF' : null; }}; },
+        // renderFlash 会扫 [data-write-flash-target]；桩返回空表即可（本用例不测 flash）。
+        querySelectorAll() { return []; },
         createElement() { return {textContent: ''}; }
     };
     const window = {WBUI: {register() {}},
         location: {assign(url) { nav.push(url); }, reload() { nav.push('reload'); }},
         fetch(url, options) { calls.push({url, options}); return Promise.resolve({ok: response.code < 400, text: () => Promise.resolve(JSON.stringify(response))}); }};
+    // json_write.js 读的是 **global.document**（它在 (function(global){...})(window) 里把
+    // window 当 global 用，而某些路径直接引用裸 document）。桩必须同时挂到 window 上，
+    // 否则 `global.document.readyState` 会读到 undefined —— 这正是本用例此前一直红的原因
+    // （它从没被任何门禁跑过，所以没人发现）。
+    window.document = document;
     const context = vm.createContext({window, document});
     vm.runInContext(fs.readFileSync(__dirname + '/json_write.js', 'utf8'), context);
     vm.runInContext(fs.readFileSync(__dirname + '/membership_write.js', 'utf8'), context);

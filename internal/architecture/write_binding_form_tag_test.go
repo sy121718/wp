@@ -30,15 +30,32 @@ import (
 //
 // 收一个删一个：某个类型全部字段都带 form tag 后，这条登记要一起删，
 // 否则本测试的反向判定会报「登记了却已无缺口」。
-var pendingFormTagDTOs = map[string]int{
-	"internal/module/ai/inbound/http:sessionAppendBody":     1,
-	"internal/module/ai/inbound/http:sessionFoldBody":       1,
-	"internal/module/ai/inbound/http:sessionFoldPlanBody":   1,
-	"internal/module/ai/inbound/http:sessionRenameBody":     1,
-	"internal/module/ai/inbound/http:tokenCreateBody":       1,
-	"internal/module/ai/inbound/http:tokenRevokeBody":       1,
-	"internal/module/build/inbound/http:retryReq":           1,
-	"internal/module/product/inbound/http:productPricingApplyReq": 1,
+var pendingFormTagDTOs = map[string]int{}
+
+// intentionallyJSONOnlyDTOs **只服务 JSON 客户端**的写请求体 —— 不需要 form tag。
+//
+// 判据不是「懒得补」，而是：**模板里有没有 hx-post 指向它的端点**。这三类都没有：
+//
+//	· ai 的 sessionAppend / sessionFold / sessionRename / tokenCreate / tokenRevoke
+//	  —— 由工作台的前端 JS 与 MCP 工具用 JSON 调用，没有后台表单；
+//	· build 的 retryReq —— 构建重试由运维脚本与 MCP 触发；
+//	· product 的 productPricingApplyReq —— 调价预览的试算是**原生表单提交**（要整页重渲
+//	  出试算表），不是 htmx 写表单；它的 apply 按钮走的是另一个请求体。
+//
+// 这些类型若将来被模板的 hx-post 用到，必须先补 form tag 并**从这里删掉**，
+// 否则那个表单会静默绑不上（gin 只按字段名匹配，projectId 收不到）。
+//
+// 与 pendingFormTagDTOs 的区别：那个是「该补但还没补」的欠账，这个是「明确不需要补」
+// 的清单。两者都要求双向判定 —— 登记了却真有缺口，测试同样会红。
+var intentionallyJSONOnlyDTOs = map[string]bool{
+	"internal/module/ai/inbound/http:sessionAppendBody":           true,
+	"internal/module/ai/inbound/http:sessionFoldBody":             true,
+	"internal/module/ai/inbound/http:sessionFoldPlanBody":         true,
+	"internal/module/ai/inbound/http:sessionRenameBody":           true,
+	"internal/module/ai/inbound/http:tokenCreateBody":             true,
+	"internal/module/ai/inbound/http:tokenRevokeBody":             true,
+	"internal/module/build/inbound/http:retryReq":                 true,
+	"internal/module/product/inbound/http:productPricingApplyReq": true,
 }
 
 // TestWriteDTOsHaveFormTag 扫描全部 binding.JSON[...] 的 DTO，要求字段的 json tag 与 form tag 对齐。
@@ -122,7 +139,11 @@ func TestWriteDTOsHaveFormTag(t *testing.T) {
 				if !structLacksFormTag(st) {
 					return true
 				}
-				hits[rel+":"+ts.Name.Name] = 1
+				key := rel + ":" + ts.Name.Name
+				if intentionallyJSONOnlyDTOs[key] {
+					return true // 明确只服务 JSON 客户端，见该表的注释
+				}
+				hits[key] = 1
 				return true
 			})
 		}

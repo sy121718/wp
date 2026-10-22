@@ -126,13 +126,37 @@
     //     而 JSON 侧省略字段 = 本次不改）。
     function dropEmpty(body, el) {
         var keep = nameSet(el, 'data-write-keep-empty');
-        var drop = [];
+
+        // 先把每个键的**全部值**收集起来再判断。
+        //
+        // 为什么不能「见到一个空值就删这个键」：FormData.delete(key) 删的是该键的**所有值**，
+        // 而不是那一个空值。同名多值字段（多选 checkbox、多个 hidden）里只要混进一个空值，
+        // `tagIds=a&tagIds=&tagIds=c` 就会把 a 和 c 一起删掉 —— 用户勾了两项，存进去零项，
+        // 而页面显示保存成功。这类丢数据的缺陷在界面上完全看不出来。
+        //
+        // 语义因此定成：**只有该键的全部值都为空，才算「没填」并删掉**；
+        // 只要有一个非空值，整组原样保留（空值也保留 —— 它可能是占位，删了会改变顺序语义）。
+        var all = {};
+        var order = [];
         body.forEach(function (value, key) {
-            if (keep[key]) return;   // 空串有语义的字段：照发
-            // File 永远保留：空文件输入根本不会出现在 FormData 里，这里只是防御。
-            if (typeof value === 'string' && value.trim() === '') drop.push(key);
+            if (!all[key]) { all[key] = []; order.push(key); }
+            all[key].push(value);
         });
-        for (var i = 0; i < drop.length; i++) body.delete(drop[i]);
+
+        for (var i = 0; i < order.length; i++) {
+            var key = order[i];
+            if (keep[key]) continue;   // 空串有语义的字段：照发
+
+            var values = all[key];
+            var everyEmpty = true;
+            for (var j = 0; j < values.length; j++) {
+                var v = values[j];
+                // File 永远保留：空文件输入根本不会出现在 FormData 里，这里只是防御。
+                if (typeof v !== 'string') { everyEmpty = false; break; }
+                if (v.trim() !== '') { everyEmpty = false; break; }
+            }
+            if (everyEmpty) body.delete(key);
+        }
     }
 
     // numericValue 十进制非负整数才转数字：认不出的一律原样发，由严格 API 报参数错误
