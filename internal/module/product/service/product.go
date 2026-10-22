@@ -568,8 +568,19 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		return nil, err
 	}
 	// 重算时机之一：商品写操作后 —— 改状态（上架 / 下架）与改标签引用都会影响自动标签归属。
-	if err = s.recalcProjectAutoTags(ctx, e.ID, e.ProjectID); err != nil {
-		return nil, err
+	//
+	// 失败**不回滚也不报错**（与上面的写事务分开看）。原因有三条：
+	//   1. 商品行与留痕已经提交，它们是对的 —— 报错会让用户以为保存失败，重试还会再改一遍；
+	//   2. 自动标签归属是**可重算的派生数据**：下一次任何商品写操作都会把该工程重算一遍，
+	//      所以「这次没算成」不会永久错下去；
+	//   3. 真把它塞进上面的事务做不到：recalcTag 内部自己开事务（逐标签一次），
+	//      嵌进外层事务要么报错要么变成两段提交，比现在的补偿更差。
+	//
+	// 记 Error 而不是 Warn：归属算错会让「按标签筛选」的结果与预期不符，
+	// 那是要有人看一眼的事，不该淹没在 Warn 里。
+	if rerr := s.recalcProjectAutoTags(ctx, e.ID, e.ProjectID); rerr != nil {
+		logger.Scene("product").With("productID", e.ID).Error(rerr,
+			"商品已保存，但自动标签重算失败（归属待下次写操作重算）")
 	}
 	s.bumpFragmentCache(ctx, e.ProjectID)
 	return s.toResp(ctx, e)

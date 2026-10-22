@@ -87,6 +87,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/rls"
 )
 
@@ -170,8 +171,11 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 		return nil, err
 	}
 	// 重算时机之一：变体写操作后 —— 价格 / 对比价参与自动标签规则判定。
-	if err = s.recalcProjectAutoTags(ctx, p.ID, p.ProjectID); err != nil {
-		return nil, err
+	// 失败不回滚也不报错，理由见 product.go 的 Update（变体已提交、归属可重算、
+	// recalcTag 内部自开事务无法嵌套）。
+	if rerr := s.recalcProjectAutoTags(ctx, p.ID, p.ProjectID); rerr != nil {
+		logger.Scene("product").With("productID", p.ID).Error(rerr,
+			"变体已保存，但自动标签重算失败（归属待下次写操作重算）")
 	}
 	return toVariantResp(v), nil
 }
@@ -259,8 +263,10 @@ func (s *Service) UpdateVariant(ctx context.Context, req *productdto.UpdateVaria
 		return nil, err
 	}
 	// 重算时机之一：变体写操作后（改价格 / 改启用状态都会改自动标签归属）。
-	if err = s.recalcProjectAutoTags(ctx, v.ProductID, projectID); err != nil {
-		return nil, err
+	// 失败不回滚也不报错，理由见 product.go 的 Update。
+	if rerr := s.recalcProjectAutoTags(ctx, v.ProductID, projectID); rerr != nil {
+		logger.Scene("product").With("productID", v.ProductID).Error(rerr,
+			"变体已保存，但自动标签重算失败（归属待下次写操作重算）")
 	}
 	return toVariantResp(v), nil
 }
@@ -840,8 +846,10 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 	}
 	res.Created = len(created)
 	// 重算时机之一：变体写操作后 —— 组合生成会新建一整批变体，价格整体变化。
-	if err = s.recalcProjectAutoTags(ctx, p.ID, p.ProjectID); err != nil {
-		return nil, err
+	// 失败不回滚也不报错，理由见 product.go 的 Update。
+	if rerr := s.recalcProjectAutoTags(ctx, p.ID, p.ProjectID); rerr != nil {
+		logger.Scene("product").With("productID", p.ID).Error(rerr,
+			"变体已生成，但自动标签重算失败（归属待下次写操作重算）")
 	}
 
 	after, rerr := s.m.ListVariants(ctx, p.ID)
