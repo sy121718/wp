@@ -5,7 +5,7 @@
 //	· 页面：GET 展示审核队列，数据由 templateMap 组装；
 //	· 接口：走 pkg/response 的 JSON 信封（authorizedAPI 三层链：Session + CSRF + Casbin）。
 //
-// 两者共用同一份 service 与同一份错误归口（comment_err.go），所以「同一个错误在页面与
+// 两者共用同一份 service 与同一份错误归口，所以「同一个错误在页面与
 // 接口上说法一致」不是靠两边各写一遍。
 //
 // 接口注册处声明权限点；浏览器审核直调本接口。

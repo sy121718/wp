@@ -3,7 +3,7 @@ package producthttp
 // product_tag.go — 标签库：手工标签与自动标签的接口面、管理页、命中片段与规则参数渲染。
 //
 // 标签归属是商品的属性（挂载表单在商品详情页），但它的定义、重算与命中查询是独立的一套 ——
-// 与分类 / 品牌（product_taxonomy.go）分开：标签有规则注册表与重算时机，改动频率与归类树完全不同。
+// 与分类 / 品牌（product_taxonomy_handle.go）分开：标签有规则注册表与重算时机，改动频率与归类树完全不同。
 
 import (
 	"errors"

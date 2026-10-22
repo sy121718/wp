@@ -120,7 +120,7 @@ const (
 	// key 落在 `admin.seo.*` 这个共享命名空间（空态 / 问题行 / SERP 行的兜底文案在本文件）。
 	// **等级文案（颜色 → 文案）的 key 与中文兜底不在此处**：它是 content / project / product
 	// 三个模块共用的唯一映射，见 seoscore.ScoreGradeLabels（internal/seo/score_grade.go）；
-	// product 侧调用点在 product_seo_score_page.go 的 entityScoreView。
+	// product 侧调用点在 product_score_handle.go 的 entityScoreView。
 	SEOEmptyMissingProduct     = "admin.seo.empty.missingProduct"
 	SEOEmptyProductUnreadable  = "admin.seo.empty.productUnreadable"
 	SEOEmptyMissingCategory    = "admin.seo.empty.missingCategory"

@@ -118,7 +118,7 @@ const (
 	// SEO 评分卡的条目格式与 SERP 占位。
 	//
 	// SEOScoreIssueFormat 是**跨模块共用**词条：站点设置面板的页面评分卡
-	//（settings_panel.go）与文章编辑页的文章评分卡（content 模块 article_view.go）
+	// 与文章编辑页的文章评分卡（content 模块）
 	// 渲染的是同一批检查项。词条 key 以 admin.seo.score 打头、页面级评分卡是本模块
 	// 的主要消费方，故常量登记在本包，content 侧引用来复用（不另抄一份自研 key）。
 	SEOScoreIssueFormat    = "admin.seo.score.issueFormat"    // {label}：{actual}（基准 {benchmark}）→ {hint}

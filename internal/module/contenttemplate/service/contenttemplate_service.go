@@ -5,12 +5,12 @@ package contenttemplateservice
 // 依赖失效扇出、实体类型判据，以及被多个能力域共用的两个小转换（structureSlotLabel / toResp）。
 //
 // 用例按能力域拆分：
-//   - contenttemplate_crud.go     模板增删改与生效切换（写用例）
-//   - contenttemplate_query.go    读取入口（按 id / 按类型）与块引用反查
-//   - contenttemplate_resolve.go  构建期模板解析（presentation 取用）
-//   - contenttemplate_document.go 模板文档校验与版本哈希
-//   - contenttemplate_scope.go    工程作用域解析（DB-009）
-//   - contenttemplate_impact.go   模板引用反查（影响面提示与删除保护）
+//   - contenttemplate.go     模板增删改与生效切换（写用例）
+//   - contenttemplate.go    读取入口（按 id / 按类型）与块引用反查
+//   - contenttemplate.go  构建期模板解析（presentation 取用）
+//   - contenttemplate.go 模板文档校验与版本哈希
+//   - contenttemplate_service.go    工程作用域解析（DB-009）
+//   - contenttemplate.go   模板引用反查（影响面提示与删除保护）
 
 // content_templates 带 FORCE 策略：不设作用域的查询在非超级角色下静默返回 0 行
 // （表现为「模板不存在」，而模板其实还在）。三个来源分工：
@@ -52,7 +52,7 @@ type Service struct {
 	// 沿用 content 模块的同道范式：失效是写入的**后置副作用**，失败只记日志，
 	// 不能反向让已经成功的模板保存报错。
 	invalidator DependencyInvalidator
-	// impact 引用反查端口（装配层注入，见 contenttemplate_impact.go；可空）。
+	// impact 引用反查端口（装配层注入，见 contenttemplate.go；可空）。
 	//
 	// 影响面提示与删除保护共用它 —— 页面文档的 settings.structure 绑定写在 JSONB 里，
 	// 本模块的表看不见，靠它把「谁在引用」拿回来。

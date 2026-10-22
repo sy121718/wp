@@ -8,9 +8,9 @@ package producthttp
 //     —— 都只在这个文件里声明。以前拆成 product_router.go（API）+ product_page_router.go
 //     （页面）两份，于是回答「这个模块一共暴露了哪些入口」要跨两个文件拼，而路由正是权限点 /
 //     CSRF / Casbin 的对账面：漏看一条的表现不是编译错误，而是「接口能删、页面删不掉」这类
-//     两边都不报错、测试也不红的分叉。**按业务域拆的是控制器**（product_subject.go 商品主体：
-//     CRUD / 变体 / 列表与编辑页 / 捆绑配置 / 定价；product_taxonomy.go 分类与品牌；
-//     product_tag.go 标签；product_attributes.go 属性；product_detail_template.go 详情页模板；
+//     两边都不报错、测试也不红的分叉。**按业务域拆的是控制器**（product_subject_handle.go 商品主体：
+//     CRUD / 变体 / 列表与编辑页 / 捆绑配置 / 定价；product_taxonomy_handle.go 分类与品牌；
+//     product_tag_handle.go 标签；product_attributes_handle.go 属性；product_detail_template_handle.go 详情页模板；
 //     product_score_handle.go SEO 评分；product_translations_handle.go 译文；
 //     product_bulk_handle.go 批量回执文案与 id 归一）。同一域里接口面在前、页面面在后，
 //     所以找一个动作只需认一个文件。
@@ -303,7 +303,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 	productPages.SetDetailTemplateModePort(presentations)
 	// 详情页模板的四个写动作（新建 / 首次发布 / 切换 / 改 URL）挂在 /api/product 组，
 	// 而那两个契约在 SetupProductRoutes 里还拿不到 —— 同一批依赖在这里后置注入
-	//（与文件末尾 BindDetailTemplateModePort 同一个理由，见 product_detail_template.go）。
+	//（与文件末尾 BindDetailTemplateModePort 同一个理由，见 product_detail_template_handle.go）。
 	BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: contentTemplates, Instances: presentations, Products: products, Projects: projects,
 	})
@@ -594,14 +594,16 @@ func NewProductHandle(svc productcontract.ProductService) *ProductHandle {
 // productTranslateMiddleware 让本模块的 service 能按请求语言取词。
 //
 // service 层没有语言上下文（语言来自后台 Cookie / Accept-Language，只有 gin.Context
-// 知道），而它要产出**展示文案**：内置定价 / 标签规则的展示名与描述、筛选条件的可读
-// 标签、调价行的状态与原因。这里把 shell.TranslateFor(c) 放进 Request 的 Context，
-// handler 里 `ctx := c.Request.Context()` 因此自带取词函数 ——
-// 既不必给每个 contract 方法加 tr 参数，也不会漏掉任何一个调用点（漏一个的表现是
-// 那句话在英文界面上还是中文，且没有任何测试会红）。
+// 知道），而译文工作台要取**字段名**（商品名 / 描述 / SEO 标题…，见 contract.FieldLabel）——
+// 那些 key 与中文兜底住在 enums，这里只负责带上「当前请求语言」。这里把
+// shell.TranslateFor(c) 放进 Request 的 Context，handler 里 `ctx := c.Request.Context()`
+// 因此自带取词函数 —— 既不必给每个 contract 方法加 tr 参数，也不会漏掉任何一个调用点。
+//
+// 其余展示文案（状态、规则名、筛选标签、跳过原因）不经过这里：取值进数据，措辞进模板
+// 或响应出口。
 //
 // 未挂本中间件的路径（单测直调 service）行为不变：取词函数缺失时 service 回落中文兜底
-// （见 service/product_translate.go 的 translateFrom）。
+// （见 service/product_shared.go 的 translateFrom）。
 func productTranslateMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tr := productservice.TranslateFunc(shell.TranslateFor(c))

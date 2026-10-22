@@ -52,7 +52,7 @@ func (s *Service) List(ctx context.Context, req *blockdto.ListReq) (res []blockd
 // Detail 按 ID 查询块。
 //
 // ProjectID 非空时按工程作用域直查（REST 契约入口）；为空表示**只带 id 的入口**，
-// 逐工程探测归属（见 block_scope.go 的 locateBlockEntity）—— 工作台块编辑
+// 逐工程探测归属（见 block_service.go 的 locateBlockEntity）—— 工作台块编辑
 // （/workbench?block=ID）、块预览与 /admin/blocks/save-content 三条路径的请求里
 // 本来就没有工程参数。
 //

@@ -25,7 +25,7 @@ var TranslationMsgFallbacks = map[string]string{
 	MsgTranslationInvalid:     "提交数据不完整，请刷新页面后重试",
 	MsgTranslationStale:       "原文已变更，请刷新页面后重新翻译",
 	MsgTranslationLangInvalid: "目标语言未启用，请先在站点设置里启用",
-	// 行级校验结论（validateProductTarget 的返回值，见 product_translations.go 的 validateProductTarget）：
+	// 行级校验结论（validateProductTarget 的返回值，见 product_translations_handle.go 的 validateProductTarget）：
 	// 它们是页面上最常出现的几句话，同样必须能按语言取词。
 	ProductTranslationsErrContextInvalid: "语境非法：不是商品域的可翻译字段",
 	ProductTranslationsErrSourceSkipped:  "原文不参与翻译（空串、纯数字或纯符号）",

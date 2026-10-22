@@ -160,7 +160,7 @@ func (h *SessionPageHandle) FabAskStream(c *gin.Context) {
 		truncated = true
 	}
 
-	// 图片：前端把文件读成 data URI 传上来（服务端不去取任何地址，理由见 ai_fab_image.go）。
+	// 图片：前端把文件读成 data URI 传上来（服务端不去取任何地址，理由见 ai_handle.go）。
 	images, imageLabels, imgErr := parseFabImages(form.Images, form.ImageLabels)
 	if imgErr != nil {
 		writeFabStreamError(c, fabText(imgErr.Key))

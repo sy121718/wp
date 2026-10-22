@@ -23,7 +23,7 @@ package mediaservice
 //   2. 编辑期高频写库会与后台元数据更新（alt/title）互相放大写放大，且草稿态引用
 //      在未发布时不应阻止删除；
 //   3. 构建期天然幂等：同一文档重复构建写入同一集合（差集为空，零写入）。
-// 落点：page 模块 assembleCompile → media.SyncReferences（见 page_media_refs.go）。
+// 落点：page 模块 assembleCompile → media.SyncReferences（见 page_publish.go）。
 //
 // 读取侧：删除前查 refs（ListRefs），非空即拒绝；详情页可展示引用来源。
 
@@ -775,7 +775,7 @@ func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHe
 		}
 	}
 
-	// 失效通知：把「引用了这个附件」的引用方标记为待重建（见 media_stale_notify.go）。
+	// 失效通知：把「引用了这个附件」的引用方标记为待重建（见 media_service.go）。
 	//
 	// 顺序是刻意的：先重建变体（新 URL 此时才存在），再通知引用方 —— 引用方重建时按
 	// 现态取 srcset，反过来会产出一份仍指向旧名的产物。缺了这一步，旧 URL 会一直

@@ -134,7 +134,7 @@ const (
 	KindFooter = "admin.navigations.kind.footer" // 页脚导航
 	KindHeader = "admin.navigations.kind.header" // 页眉导航
 
-	// 面板块默认名的位置词（新建块时按当前请求语言拼出，见 navigation_panel_page.go）。
+	// 面板块默认名的位置词（新建块时按当前请求语言拼出，见 navigation_page_handle.go）。
 	PanelBlockNameMenu         = "admin.navigations.panel.blockName.menu"         // 菜单
 	PanelBlockNameHeader       = "admin.navigations.panel.blockName.header"       // 页眉菜单
 	PanelBlockNameHeaderMobile = "admin.navigations.panel.blockName.headerMobile" // 页眉移动菜单

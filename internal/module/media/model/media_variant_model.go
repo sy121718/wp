@@ -26,7 +26,7 @@ const (
 	// VariantTypeFull 全尺寸槽位：与原图同尺寸的 JPEG 重编码。
 	//
 	// 本槽位此前叫 webp —— 那个名字是骗人的：产物从来是 JPEG（编码统一走
-	// image_processor.go 的 encodeJPEGBytes / variantJPEGQuality），从不输出 WebP。
+	// media_variant.go 的 encodeJPEGBytes / variantJPEGQuality），从不输出 WebP。
 	// 将来真要接 WebP/AVIF 输出时，这个名字会把改代码的人骗一次（以为换掉编码器
 	// 就是 WebP，实际上类型名与产物格式是两回事），所以在造成误解之前改名 full。
 	VariantTypeFull = "full"

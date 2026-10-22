@@ -231,7 +231,7 @@ func TestNavigationsPageLoadFailureRendersPageWithErrorSlot(t *testing.T) {
 			name:       "zh-CN",
 			acceptLang: "zh-CN",
 			entries: map[string]map[string]string{
-				navigationInternalKey:         {"zh-CN": "操作失败，请稍后重试", "en-US": "Operation failed, please try again later"},
+				navigationInternalKey:               {"zh-CN": "操作失败，请稍后重试", "en-US": "Operation failed, please try again later"},
 				"admin.common.list.loadFailedTitle": {"zh-CN": "这一页的数据没能读出来", "en-US": "This list could not be loaded"},
 			},
 			wantMsg:   "操作失败，请稍后重试",
@@ -241,7 +241,7 @@ func TestNavigationsPageLoadFailureRendersPageWithErrorSlot(t *testing.T) {
 			name:       "en-US",
 			acceptLang: "en-US",
 			entries: map[string]map[string]string{
-				navigationInternalKey:         {"zh-CN": "操作失败，请稍后重试", "en-US": "Operation failed, please try again later"},
+				navigationInternalKey:               {"zh-CN": "操作失败，请稍后重试", "en-US": "Operation failed, please try again later"},
 				"admin.common.list.loadFailedTitle": {"zh-CN": "这一页的数据没能读出来", "en-US": "This list could not be loaded"},
 			},
 			wantMsg:   "Operation failed, please try again later",

@@ -33,7 +33,7 @@ package pageservice
 // 与 model.ListStale 的分工：model 管「一个工程内按参数取一段」，
 // 本文件管「跨工程合并 + 全局排序 + 截断 + 计数」。跨工程只能逐工程各设一次
 // 作用域（pages 在迁移 215 里带 FORCE 策略，作用域是单值会话变量，合并多工程
-// 到一个查询只能靠放宽谓词，那等于取消隔离 —— 见 page_scope.go 的论证）。
+// 到一个查询只能靠放宽谓词，那等于取消隔离 —— 见 page_service.go 的论证）。
 //
 // 两个消费者：
 //   1. 后台只读展示（/admin/pages 的待重建区块）：ListStalePages —— 全站清单，
@@ -125,7 +125,7 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 // 若该语言**此前已发布**，构建成功后自动发布，保证线上与内容一致——
 // 这是「CMS 变更自动发布」的落地口径：从未发布过的页面不会被自动上线。
 //
-// 编排本身在 page_rebuild.go（RebuildPage），本方法只负责「逐页取计划 + 调用编排」：
+// 编排本身在 page_publish.go（RebuildPage），本方法只负责「逐页取计划 + 调用编排」：
 // 超限部分入队（enqueueOverflowBuildJobs），队列 worker 消费时**走同一条编排**
 // （RunPageBuildJob）—— 报告 ARCH-04 的根因就是这两条路径各有一份实现。
 //
@@ -854,7 +854,7 @@ func formatStaleImpactSample(pages []pagedto.StalePageResp) string {
 // staleProjectScope 返回本次反查要覆盖的工程清单与工程名映射。
 //
 // projectID 非空 = 只查该工程（调用方自带作用域，不再按工程表扇出）；
-// 空 = 全部工程（逐工程各设一次作用域，见 page_scope.go）。
+// 空 = 全部工程（逐工程各设一次作用域，见 page_service.go）。
 func (s *Service) staleProjectScope(ctx context.Context, projectID string) (ids []string, names map[string]string, err error) {
 	if pid := strings.TrimSpace(projectID); pid != "" {
 		return []string{pid}, s.staleProjectNames(ctx), nil
@@ -1055,7 +1055,7 @@ func (s *Service) MarkStaleByMediaRefs(ctx context.Context, refs []mediacontract
 		}
 		collector.add(hit)
 	}
-	// 影响面留痕走本模块既有那份实现（page_stale_overview.go）：理由与其它标记入口
+	// 影响面留痕走本模块既有那份实现（page_dependency.go）：理由与其它标记入口
 	// 一致 —— 同一个 id 集合在任何标注里都该显示同一个名字。
 	s.logStaleImpact(ctx, "media_replace", collector.list())
 	return collector.list(), nil

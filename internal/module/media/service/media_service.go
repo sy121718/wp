@@ -3,10 +3,10 @@ package mediaservice
 // 为什么必须做：变体文件名带内容指纹 + /storage 对指纹名给 immutable 长缓存，
 // 于是同一 URL 的字节在构造上不可变。代价是「内容变了」这件事必须有人通知引用方 ——
 // 换图产出的是**一组新文件名**，已发布产物里的 srcset 仍指向旧名，而旧文件按设计保留
-//（见 media_replace.go），旧 URL 继续返回旧字节。访客端 srcset 按 sizes 选中的多数是
+//（见 media.go），旧 URL 继续返回旧字节。访客端 srcset 按 sizes 选中的多数是
 // 变体而不是 src，所以「换图后新图不可见」不是缓存 bug，是这条义务没人承担。
 //
-// 引用集来自本模块的 extra_info.refs（构建期由引用方自己同步，见 media_ref.go）：
+// 引用集来自本模块的 extra_info.refs（构建期由引用方自己同步，见 media.go）：
 // 它记录的是**产物事实** —— 页面文档里写的 URL 未必进产物（条件渲染 / 块内联 /
 // CMS 集合展开），只有编译后的 HTML 才是权威引用集。
 //

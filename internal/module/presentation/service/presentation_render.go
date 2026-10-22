@@ -232,7 +232,7 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 // 发布出来的」；区别只在于发布还要把字节包成 Artifact 落盘并推进指针。
 //
 // urlPath 是该实例的线上路径（预览传空）：它是 SEO 头 canonical 的来源，
-// 见 presentation_seo.go —— 唯一注入点的第二半（渲染函数本身不认识 SEO）。
+// 见 presentation_render.go —— 唯一注入点的第二半（渲染函数本身不认识 SEO）。
 // lang 为空时取站点默认语言；非默认语言时接入模板内作者文案翻译（ContentTranslator）。
 //
 // targetLangs 是本次批次准备上线的语言集合（SEO-026，预览传 nil）：hreflang 互指
@@ -274,7 +274,7 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	if err != nil {
 		return nil, err
 	}
-	// 实体字段驱动的 SEO 头（见 presentation_seo.go）：把 seoTitle / seoDescription 等
+	// 实体字段驱动的 SEO 头（见 presentation_render.go）：把 seoTitle / seoDescription 等
 	// 喂进 page.Settings.SEO，随后的 builder.Compile 由既有的 BuildSEOHead 统一产出
 	// canonical / OG / Twitter / JSON-LD。放在 Compile 之前是唯一有效的时机 ——
 	// SEO 头在 compile 内一次性生成，之后没有回填入口。
@@ -855,7 +855,7 @@ func (s *Service) publishLangsOf(ctx context.Context, projectID string) ([]strin
 
 // publishAllLangs 按站点启用语言构建、逐语言结案，整批成功后才推进实例指针。
 //
-// 三段式（PERF-01；实例锁到底保护什么见 presentation_publish_plan.go 的文件头）：
+// 三段式（PERF-01；实例锁到底保护什么见 presentation_publish.go 的文件头）：
 //
 //	① 锁内冻结本次发布的不可变输入（实例行 + 语言清单 + 编译底稿）
 //	② 锁外逐语言编译与产物落盘 —— 最慢的一段，不再占着实例锁

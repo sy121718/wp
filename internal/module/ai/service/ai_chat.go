@@ -1,6 +1,6 @@
 package aiservice
 
-// 复用面（ai_client.go 的协议层，本文件不重复实现协议）：
+// 复用面（ai_service.go 的协议层，本文件不重复实现协议）：
 //
 //	buildProtocolRequest(ctx, provider, model, input, maxOutputTokens) → 组装一次出站请求，
 //	  内部走 applyProviderHeaders(config_data.headers) 与 Authorization: Bearer <明文密钥>；
@@ -22,7 +22,7 @@ package aiservice
 
 // 与 responses 的镜像关系：请求体是 {model, messages:[...], tools?, max_tokens?}，正文取
 // choices[0].message.content，工具调用取 choices[0].message.tool_calls。两者放在同一层，
-// 由 ai_client.go 的分派函数二选一。
+// 由 ai_service.go 的分派函数二选一。
 
 // 放在这里而不是任一份协议实现里：两边都要用，谁先写谁拥有的结果会是
 // 「改一个常量要先去另一份文件里找」。
@@ -35,7 +35,7 @@ package aiservice
 //	· 响应是 {"object":"response", ...}，正文藏在 output[].content[]（type=output_text）里，
 //	  顶层没有 chat/completions 的 choices[0].message.content。
 //
-// 只做「构造 / 解析」这一层纯函数，不碰 DB、不发请求 —— 出站由 ai_client.go 的分派装配，
+// 只做「构造 / 解析」这一层纯函数，不碰 DB、不发请求 —— 出站由 ai_service.go 的分派装配，
 // 这样单测可以直接喂 JSON，不必起 HTTP 服务。
 
 // 为什么要有这一层：出站改成流式后，上游不再给一个完整 JSON，而是一行行 SSE。

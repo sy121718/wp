@@ -4,7 +4,7 @@ package navigationservice
 // navigation 表示公开站点导航，与后台权限菜单 menu 严格隔离。
 //
 // 本文件只放 Service 结构体、构造函数与全局白名单常量；各能力域用例按文件拆开：
-// 以及既有的 navigation_scope.go（逐工程定位）与 navigation_stale.go（失效派发）。
+// 以及既有的 navigation_service.go（逐工程定位）与 navigation_stale.go（失效派发）。
 
 // navigations 在迁移 215 里带 FORCE 策略：不带 app.project_id 的读写在非超级角色下
 // **静默落空**（读到 0 行、改 0 行、删 0 行且不报错），而这三个入口的请求里只有 id ——
@@ -101,7 +101,7 @@ type Service struct {
 // NewService 构造（model 与工程契约注入，不持有 *gorm.DB）。
 //
 // projects 必填：漏接装配时逐工程定位直接失败（不再回退到直读 projects 表）
-// 的只读清单（见 navigation_scope.go 的 projectIDs），并记 warning。
+// 的只读清单（见 navigation_service.go 的 projectIDs），并记 warning。
 func NewService(m *navigationmodel.Model, projects projectcontract.ProjectService) *Service {
 	return &Service{m: m, projects: projects}
 }

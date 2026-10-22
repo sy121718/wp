@@ -24,7 +24,7 @@ package workbenchhttp
 //   - 预览编译（renderPreview）的其余失败按**文档事实**判：文档有没有字段绑定、有没有过校验；
 //   - 模板预览（renderTemplatePreview）按**模块哨兵 key** 判：presentation / contenttemplate
 //     的哨兵是字符串常量（errors.New(<常量>) 在各调用点新建），errors.Is 拿不到同一个值 ——
-//     与 workbench_instance.go 判 ErrDetachConfirmRequired 是同一口径，匹配的是代码里定义的
+//     与 workbench_page.go 判 ErrDetachConfirmRequired 是同一口径，匹配的是代码里定义的
 //     key，不是人写的中文句子。
 
 import (

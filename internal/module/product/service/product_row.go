@@ -40,7 +40,7 @@ import (
 // （取唯一工程）在多工程下会直接判参数错，所以把页面上正在用的那个工程显式传下来。
 //
 // error 只表示**取数失败**（评分读不到，见 ratingsOf）：调用方按各自既有的失败通道处理
-// （详情页 / 编辑页都走 fail(...) ⇒ LoadFailed 失败页），与列表路径同一档。
+// （详情页 / 编辑页都走 pageview.Fail），与列表路径同一档。
 // 入参 detail 为 nil 是畸形调用，返回 (nil, nil) —— 调用方本来就有「详情非 nil 才装配」的守卫。
 func (s *Service) productRow(ctx context.Context, selected string, flat []*productdto.CategoryResp,
 	brands []*productdto.BrandResp, tags []*productdto.TagResp,

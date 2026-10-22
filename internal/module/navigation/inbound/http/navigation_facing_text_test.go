@@ -207,7 +207,7 @@ func TestNavigationJSONErrorNormalizesDetailProtocol(t *testing.T) {
 // TestNavigationJSONErrorHidesInternalAndKeepsParamProtocol 内部错误归口 + 带参协议不重复实现。
 func TestNavigationJSONErrorHidesInternalAndKeepsParamProtocol(t *testing.T) {
 	injectNavigationEntries(t, map[string]map[string]string{
-		navigationInternalKey:     {"zh-CN": "词条-操作失败", "en-US": "entry-internal"},
+		navigationInternalKey:           {"zh-CN": "词条-操作失败", "en-US": "entry-internal"},
 		navigationenums.ErrInvalidParam: {"zh-CN": "词条-参数无效：%s", "en-US": "entry-invalid: %s"},
 	})
 

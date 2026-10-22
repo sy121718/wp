@@ -2,7 +2,7 @@ package productservice
 
 // 本文件落地本票四条验收：
 //  1. 可建属性组与属性值，各带稳定标识与排序 —— 组有 Key，值有 ID + Key，
-//     排序由 Sort 字段 + 数组顺序双保险（见 product_attribute_values.go）；
+//     排序由 Sort 字段 + 数组顺序双保险（见 product_attribute.go）；
 //  2. 属性组可标记是否参与变体 —— IsVariation 落到 product_attributes.is_variation，
 //     由 #8 的笛卡尔积消费；
 //  3. 同一属性组可被多个商品复用 —— 组与值的定义只存一份（product_attributes），

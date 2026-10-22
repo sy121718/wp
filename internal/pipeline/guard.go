@@ -66,7 +66,7 @@ type GuardMeta struct {
 // 哈希只存在于同目录的 guard.json 与 Page Document。
 //
 // 另外，本字段刻意**不是** PublicationKind 的新取值：PublicationKind 被
-// presentation_ledger.go 与 page_publish_recover.go 按 `Kind != PublicationPage`
+//  与  按 `Kind != PublicationPage`
 // 判等，新增 Kind 会让这两条对账 / 恢复路径把带守卫的页面误判成「非页面」。
 // 守卫只能作为页面产物上的**附加标记**。
 type ManifestAccess struct {

@@ -1087,7 +1087,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 		panic(err)
 	}
 	// 审核写工具与查询工具分开装配：依赖（ReviewWriter）与权限点（CommentReview）
-	// 都不是一回事，见 comment_review_tools.go 的文件头。
+	// 都不是一回事，见 comment_tools.go 的文件头。
 	commentWriter, ok := commentSvc.(commentcontract.ReviewWriter)
 	if !ok {
 		panic("comment: 服务未实现 ReviewWriter（装配期接线错误）")
@@ -1174,7 +1174,7 @@ func (a *assembly) wireProductInventoryPorts() {
 	//
 	// 关于下列「运行时类型断言 + fail-fast」为什么保留而不是删掉：
 	// 端口形状已由**实现侧的编译期断言**钉住（product/service/product_service.go、
-	// product_bundle_validate.go、variant_availability.go、product_variant_snapshot.go 与
+	// 、variant_availability.go、 与
 	// inventory/service/inventory_service.go 各自的 `var _ xcontract.Xxx = (*Service)(nil)`），
 	// 签名漂移现在编译期就报错。但 productSvc / inventorySvc 的静态类型是**接口**
 	//（product/inbound/http 与 inventory/inbound/http 的 Setup 返回接口），装配层拿不到具体类型 ——

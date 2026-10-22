@@ -1,6 +1,6 @@
 package pageservice
 
-// 写侧为什么需要它：page_draft.go 的保存/创建路径把 builder 的校验错误拼进
+// 写侧为什么需要它：page_document.go 的保存/创建路径把 builder 的校验错误拼进
 //
 //	fmt.Errorf("%w: %v", ErrInvalidDocument, builderErr)
 //
@@ -383,7 +383,7 @@ func validateDraft(rawPath string, rawDoc json.RawMessage) (path string, doc jso
 	// 只拦截致命问题（设置非法 / 深度超限）。
 	if _, err = builder.ValidatePageTolerant(page); err != nil {
 		// 明细走 ErrorDetail 协议（可翻译），不是 builder 的中文原文 ——
-		// ErrInvalidDocument 落 400，两个出口都会把它展示给用户（见 page_document_detail.go）。
+		// ErrInvalidDocument 落 400，两个出口都会把它展示给用户（见 page_document.go）。
 		return "", nil, fmt.Errorf("%w: %s", ErrInvalidDocument, pageDocumentDetail(err))
 	}
 	// 重新编码保证存储 JSON 的规范格式；Document 不接受任意散乱字节。

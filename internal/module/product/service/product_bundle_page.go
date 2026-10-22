@@ -169,7 +169,7 @@ func (s *Service) ProductBundlePage(ctx context.Context, req *productdto.Product
 	// —— 以下装配在**失败档也要做**（逐字对齐原控制器）——
 	//
 	// 失败页上这一屏仍有配置内容：读失败不该让「这个商品配了什么」整屏消失，
-	// 保存入口则撤掉（SaveBlocked）。只置 LoadFailed 而不给这些键，模板会在缺键上断渲染。
+	// 保存入口则撤掉（SaveBlocked）。只标失败而不给这些键，模板会在缺键上断渲染。
 	view.Rows = bundleConfigRows(detail, view.Skus)
 	view.CandidateSKUs = bundleCandidateOptions(view.Skus)
 	view.SkuCount = len(view.Skus)
@@ -371,9 +371,9 @@ func bundleSourceWarehouseGroups(groups []productdto.WarehouseSKUGroupResp, sele
 
 // BundlePanel 商品详情页「捆绑构成」区块的数据（仅 type=bundle 调用）。
 //
-// 读不出配置时**不静默**：区块照常渲染并带 LoadFailed（区块本身就是运维发现
-//「配置读不出来」的地方，整块消失会让人以为这个商品不是捆绑品）。原因文案由模板取词，
-// 后端不带成品串。
+// 读不出配置时**不静默**：区块照常渲染并置 LoadFailed（区块本身就是运维发现
+// 「配置读不出来」的地方，整块消失会让人以为这个商品不是捆绑品）。这里只说「读没读到」，
+// 那句原因的 key 与中文都在模板里 —— 后端不重复一遍文案。
 func (s *Service) BundlePanel(ctx context.Context, projectID, productID string) *productdto.BundlePanelResp {
 	panel := &productdto.BundlePanelResp{
 		Loaded:      false,

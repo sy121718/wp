@@ -1,7 +1,8 @@
 package webhookservice
 
 // 本文件只放 Service 结构体、构造函数、装配注入与端点密钥加解密；各能力域见
-// 以及既有的 deliver.go / sign.go / ssrf.go / webhook_task.go / webhook_replay*.go。
+// webhook_delivery.go（投递 / 重投 / 重放调度）与 webhook_endpoint.go（端点管理）。
+// SSRF 防护与签名在本文件里（dialWebhookContext / isForbiddenIP / SignPayload）。
 
 // 防线是「DNS 解析后的 IP」而不是 hostname 字符串：攻击者可以把内网地址
 // 绑到公网域名上（DNS rebinding / 域名指内网），只看字符串拦不住。

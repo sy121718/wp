@@ -101,7 +101,7 @@ func (m *FileCategoryModel) catDB(ctx context.Context) *gorm.DB {
 // Transaction 起事务并把 *gorm.DB 句柄交给调用方编排（AGENTS.md「写操作的事务与回滚」）。
 //
 // 定位：model 不自持事务边界。media 的写路径横跨「附件行 + 变体行」两张表，
-// 单一真源要求这两处同事务，边界由 service 决定（见 media_crud.go 的 Upload 注释）。
+// 单一真源要求这两处同事务，边界由 service 决定（见 media.go 的 Upload 注释）。
 // 事务内一律走本文件的 …Tx 方法，不混用自带连接的非 Tx 形态。
 func (m *AttachmentModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	return m.db.WithContext(ctx).Transaction(fn)

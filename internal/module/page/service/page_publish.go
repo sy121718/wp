@@ -41,7 +41,7 @@ package pageservice
 // 而在这之前**只有进程启动时**跑一次恢复（RecoverPendingPublications）——
 // 长时间不重启就一直 pending，线上与库长期不一致，而且没有任何可见性。
 //
-// 做法：判定与补齐逻辑一行都不在这个文件里（在 page_publish_recover.go 的 recoverOne），
+// 做法：判定与补齐逻辑一行都不在这个文件里（在 page_publish.go 的 recoverOne），
 // 这里只负责「谁在什么时候驱动它」。三个驱动源共用同一段重放实现：
 //
 //	启动首跑  RecoverPendingPublications —— 不限批，把上次进程留下的残留一次收干净
@@ -218,7 +218,7 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	}
 	// 构建期 SEO 合规校验（审计 SEO-01）：对**刚产出的字节**做确定性事实校验，
 	// 命中就记日志（URL / 规则 / 证据 / ArtifactHash），不改产物、不改发布结果 ——
-	// 边界与理由见 page_seo_patrol.go 的文件头。
+	// 边界与理由见 page_publish.go 的文件头。
 	//
 	// sitemap 收录按**当前激活状态**如实回答：构建 ≠ 上线，拿不到「已激活」这个事实时
 	// 不能替它假设（例如 noindex 页面只是被构建过、还没发布，就不该报「与 sitemap 冲突」）。
@@ -2027,7 +2027,7 @@ func (s *Service) publishWindowFaultHit() error {
 // 同时推一次进程内快通道：调用点都在**事务已经落定之后**（DB 事务失败的回滚已发生、
 // 或文件系统那一步已失败），此刻正是「库里有 pending、线上状态未知」——
 // 让收敛立刻跑一遍，而不是等下一个定时间隔（正常情况下毫秒级收敛，见
-// page_publish_converge.go）。信号非阻塞，且收敛本身幂等。
+// page_publish.go）。信号非阻塞，且收敛本身幂等。
 func (s *Service) keepPublishReceiptPending(receiptID, reason string) {
 	if s == nil || strings.TrimSpace(receiptID) == "" {
 		return
@@ -2088,7 +2088,7 @@ func recoverableReceiptAction(action string) bool {
 // recoverOne 判定单条回执。返回 true 表示已补完成，false 表示已标回滚。
 func (s *Service) recoverOne(ctx context.Context, item pubcontract.PendingReceiptResp) (bool, error) {
 	// 新形态先分派：改 URL（路径迁移 + 旧路径处置）与回滚（活跃指针 + 旧路径下线）
-	// 要补的步骤与发布不同，各自实现见 page_publish_recover.go。
+	// 要补的步骤与发布不同，各自实现见 page_publish.go。
 	switch item.Action {
 	case pubcontract.ReceiptActionUpdateURL:
 		return s.recoverUpdateURLReceipt(ctx, item)

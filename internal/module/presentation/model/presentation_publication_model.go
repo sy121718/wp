@@ -121,7 +121,7 @@ func (m *Model) FindInstanceByActivePath(ctx context.Context, projectID, path, e
 // ListCurrentArtifactIDs 返回本模块语言账本里「当前」指向的产物行 ID（去重、输出稳定）。
 //
 // 真源是 presentation_publications.artifact_id —— 每个语言的激活产物指针，由
-// publishOneLang 在「访问面已切换、路由已登记」之后写入（见 presentation_i18n.go）。
+// publishOneLang 在「访问面已切换、路由已登记」之后写入（见 presentation_publish.go）。
 // 供组件升级后的待重建识别使用（presentation 侧 MarkStaleByRegistryVersion）：判据必须是
 // 「现在这份账本指向的产物」，而不是 presentation_artifacts 里所有 available 行 ——
 // 后者含未 GC 的历史产物（回滚 / 反复重建留下的行），拿它比对会让已经重建过的实例

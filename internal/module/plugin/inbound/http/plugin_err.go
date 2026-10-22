@@ -143,7 +143,7 @@ func pluginInstallFailMsg(c *gin.Context, m pluginMsg) pluginMsg {
 // 的中文兜底）；其余 → 记结构化日志（带 user_id / 路径 / 原文）+ 归口文案。
 //
 // 带参协议（`key: 细节`）的**明细一律不透出**：plugin 的明细是 zip 驱动 / PostgreSQL 原文
-// （plugin_install.go 的 `fmt.Errorf("%s: 缺少 manifest.json", ErrInstallParse)` 那一半），
+// （plugin_err.go 的 `fmt.Errorf("%s: 缺少 manifest.json", ErrInstallParse)` 那一半），
 // 与响应体一样不是可信边界，只进日志 —— 这正是 mail 的 `key: 细节` 形态在这里不能照抄的原因
 // （mail 的细节是它自己生成的定位信息）。所以这里只取 fact.Key，fact.Tail 直接丢弃。
 func pluginErrMsg(c *gin.Context, err error) pluginMsg {

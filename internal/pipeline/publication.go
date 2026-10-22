@@ -35,7 +35,7 @@ type PublicationState struct {
 	// Guard 访问面守卫元数据（PIPE-6，Kind 为 page 且产物带守卫时非空）。
 	//
 	// 刻意做成 Kind 之外的**附加字段**而不是新的 PublicationKind 取值：
-	// Kind 被 presentation_ledger.go 与 page_publish_recover.go 按
+	// Kind 被  与  按
 	// `Kind != PublicationPage` 判等，多一个取值会让那两条对账 / 恢复路径
 	// 把带守卫的页面误判成「不是页面」（编译期不报错，线上表现为对账漏项、
 	// 恢复流程跳过这一类页面）。守卫是页面产物上的一个属性，不是另一种路由状态。

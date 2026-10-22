@@ -12,8 +12,8 @@ package projectservice
 
 // 本文件只放主题域的跨用例共享面：业务错误哨兵（errors.Is 判型）与实体 ↔ 响应转换。
 // 用例按能力域拆分：
-//   - theme_crud.go    主题增删改与激活（含跨工程定位 findThemeForLocate）
-//   - theme_list.go    主题列举与激活态读取
+//   - theme.go    主题增删改与激活（含跨工程定位 findThemeForLocate）
+//   - theme.go    主题列举与激活态读取
 //   - theme_default.go 默认主题的幂等补齐
 
 import (

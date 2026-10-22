@@ -122,7 +122,7 @@ func NewService(m *analyticsmodel.Model, pepper string) *Service {
 // 轮换与历史哈希：盐在进程启动时解析一次，轮换 = 改配置 + 重启，不影响已落库的行。
 // 轮换后历史行的 ip_hash 由旧盐产生，与新行不可互相比对（无法反向重算 ——
 // 哈希的单向性正是它的用途）。当前 ip_hash 没有读取方：只落库、随保留期清理
-// （见 analytics_retention.go），所以轮换的实际代价为零。将来若引入「按 ip_hash 去重」
+// （见 analytics_query.go），所以轮换的实际代价为零。将来若引入「按 ip_hash 去重」
 // 的统计口径，必须同时支持多代盐的候选匹配（那时才需要 analytics.pepper_previous
 // 一类的旧盐列表），否则跨轮换的同一个人会被算成两个人。
 func ResolveAnonSalt(independent, sessionSecret string) (salt string, independentSalt bool) {

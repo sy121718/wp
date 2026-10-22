@@ -115,7 +115,7 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 	return m.db.WithContext(ctx).Transaction(fn)
 }
 
-// SchemaInfo 一个插件 L1 schema 的巡检条目（plugin_schema_patrol.go 使用）。
+// SchemaInfo 一个插件 L1 schema 的巡检条目（plugin_patrol.go 使用）。
 //
 // TableCount = 这个 schema 里有几张普通表。它是给人做判断用的：空 schema 可以判为
 // 「卸载没清干净」，有表的孤儿 schema 里可能是真实业务数据 —— 必须先看清再决定，

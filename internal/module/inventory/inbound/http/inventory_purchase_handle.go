@@ -35,7 +35,7 @@ func (h *inventoryPurchasePageHandle) purchaseCreateFail(c *gin.Context, err err
 	inventoryFail(c, err)
 }
 
-// inventory_purchase_page_form.go - 采购入库表单解析（收货明细行、草稿行与数值解析）。
+// inventory_purchase_handle.go - 采购入库表单解析（收货明细行、草稿行与数值解析）。
 
 // purchaseDraftLines 新建窗体里的空行（模板 range 用）。
 func purchaseDraftLines() []inventorydto.DraftLineViewResp {
@@ -300,7 +300,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseProduction(c *gin.Context
 
 // —— 页面取数（视图组装：模板不做逻辑）——
 
-// inventory_purchase_page_view.go - 采购入库页的视图构造（采购单/历史行、货源与仓库/变体下拉、状态文案）。
+// inventory_purchase_handle.go - 采购入库页的视图构造（采购单/历史行、货源与仓库/变体下拉、状态文案）。
 
 // purchaseOrderRows 采购单列表 + 逐行视图（含「还能收多少」与一次性幂等键）。
 //

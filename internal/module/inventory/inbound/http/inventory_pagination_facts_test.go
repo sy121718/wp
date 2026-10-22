@@ -21,8 +21,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
-	"go_wp/pkg/i18n"
 	"go_wp/internal/templates"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/pagination"
 )
 

@@ -69,7 +69,7 @@ package mailservice
 
 // 两条协议在这里汇合（见 pkg/i18n/errdetail.go 与 mailenums/mail_err_detail.go）：
 //
-//	① 图校验器（mail_automation_graph.go）不再直接产出中文 error，而是 GraphError ——
+//	① 图校验器（mail_automation.go）不再直接产出中文 error，而是 GraphError ——
 //	   它的 Error() 仍是那句中文（日志与 mail_automation_graph_test.go 的断言看的都是它），
 //	   同时 Detail() 给出 i18n.ErrorDetail 编码（词条 key + 具名参数）；
 //	② service 包装点用 graphInvalidError 把「业务 key：明细编码」拼成业务错误，
@@ -1227,7 +1227,7 @@ const (
 	// mailAutomationTickInterval 兜底扫描的间隔。
 	//
 	// 为什么钉在 1 分钟：等待节点的最小粒度就是 1 分钟（图校验要求 minutes 是正整数，
-	// 见 mail_automation_graph.go 的节点校验），扫描间隔取同一粒度意味着
+	// 见 mail_automation.go 的节点校验），扫描间隔取同一粒度意味着
 	// 「到点」与「被重新投递」之间的最坏延迟不超过这张图能表达的最短等待时长。
 	// 间隔再大就会让「等 1 分钟」的节点在最坏情况下多挂数倍时间，而扫描本身很轻
 	//（status='waiting' AND next_run_at <= now，走既有索引，单轮最多 mailAutomationTickLimit 条）。

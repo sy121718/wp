@@ -14,7 +14,7 @@ package workbenchhttp
 // 页面在自相矛盾，而每一块单独看都对。所以这里只算出 from/to 两个日期字符串往下传，
 // 下游不认识「本月」这个词。
 //
-// 日界统一 UTC，与 order 的按天桶、analytics 的按天聚合同口径（见 dashboard_overview.go 文件头）。
+// 日界统一 UTC，与 order 的按天桶、analytics 的按天聚合同口径（见 workbench_page.go 文件头）。
 
 // 背景：workbench.js 的 renderTree 用 100+ 行 DOM 代码递归建树并给每个节点绑 6 类事件。
 // 本文件把「树 HTML」搬到服务端（Jet 片段），客户端只保留一次事件委托
@@ -286,7 +286,7 @@ func (h *Handle) currencySymbol(ctx context.Context) string {
 
 // collectOverview 汇总全部工程的概览数据（任一模块失败只影响它自己的块）。
 //
-// 区间由调用方解析好传进来（见 dashboard_range.go）：KPI / 趋势 / 榜单三块必须是**同一个**
+// 区间由调用方解析好传进来（见 workbench_page.go）：KPI / 趋势 / 榜单三块必须是**同一个**
 // 窗口，所以「本月」这个词只在一个地方被翻译成日期。
 func (h *Handle) collectOverview(ctx context.Context, projectIDs []string, rng overviewRange) overviewSnapshot {
 	snap := overviewSnapshot{Range: rng}
@@ -319,7 +319,7 @@ func (h *Handle) collectOrderOverview(ctx context.Context, projectIDs []string, 
 
 	for _, pid := range projectIDs {
 		// KPI / 趋势 / 榜单同一窗口：这里只认 rng 算好的 from/to，
-		// 不接受「今日」之类的词（见 dashboard_range.go 文件头）。
+		// 不接受「今日」之类的词（见 workbench_page.go 文件头）。
 		if res, err := h.overviewOrders.SummaryByRange(ctx, &orderdto.OrderRangeSummaryReq{
 			ProjectID: pid, From: rng.From, To: rng.To,
 		}); err != nil {
@@ -2402,7 +2402,7 @@ func injectEditorBridge(html string, tr func(key, fallback string) string) strin
 	return html[:idx] + editorBridgeScriptFor(tr) + html[idx:]
 }
 
-// workbench_target.go — 工作台编辑目标描述符（审计 EDT-017）。
+// workbench_page.go — 工作台编辑目标描述符（审计 EDT-017）。
 //
 // 工作台此前靠 meta.saveBase 字符串分派（page / block / template 各写一段 if）：
 // 接入一种新文档类型要在保存、预览、校验、历史四处各加一个分支，而这些分派散在

@@ -15,7 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// product_translations.go — 商品译文工作台：候选收集、逐行校验、保存与「按依赖标记待重建」。
+// product_translations_handle.go — 商品译文工作台：候选收集、逐行校验、保存与「按依赖标记待重建」。
 //
 // 候选来自构建期同一份收集逻辑（productcontract.TranslationCandidate），译文写 sys_translation
 // 后要把用到这些 key 的实例标记待重建 —— 少标一次的表现是「译好了但线上还是旧语言」。

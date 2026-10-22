@@ -136,7 +136,7 @@ var (
 		"zoom-in": true, "zoom-out": true,
 		"slide-up": true, "slide-down": true, "slide-left": true, "slide-right": true,
 		"flip-x": true, "flip-y": true, "blur-in": true, "bounce-in": true, "rotate-in": true,
-		// Animate.css 拆解扩充（keyframes_animate.go）：
+		// Animate.css 拆解扩充（keyframes_source.go）：
 		"back-in-up": true, "back-in-down": true, "back-in-left": true, "back-in-right": true,
 		"bounce-in-down": true, "bounce-in-up": true, "bounce-in-left": true, "bounce-in-right": true,
 		"fade-in-top-left": true, "fade-in-top-right": true,

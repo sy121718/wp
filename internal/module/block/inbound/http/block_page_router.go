@@ -20,7 +20,7 @@ import (
 // 函数名沿用 SetupXxxPages 先例：本包已有 REST 路由的 SetupBlockRoutes，不能同名。
 // adminPages 为 nil 时整体跳过。
 //
-// pages 为可选变参（装配层传入 page 契约后「影响面」才可用，见 block_page_impact.go）。
+// pages 为可选变参（装配层传入 page 契约后「影响面」才可用，见 block_page.go）。
 // 用变参而不是必填参数：漏传时页面降级为「影响面未装配」的明确提示，而不是启动失败 ——
 // 这一批只做可见性，不该把块管理页的可用性与它绑死。
 func SetupBlockPages(adminPages *gin.RouterGroup,

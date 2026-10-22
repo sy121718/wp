@@ -16,7 +16,7 @@ package commentmcp
 // service.AdminList 支持工程 + 状态 + 实体类型 + 正文关键词 + 分页。
 //
 // 只读面与写面分开成两个文件：本文件只有 QueryReader（一个方法），
-// 审核在 comment_review_tools.go 里另走 WriteTools —— 两者的依赖、权限点、
+// 审核在 comment_tools.go 里另走 WriteTools —— 两者的依赖、权限点、
 // 变更风险都不是一回事，混在一个装配函数里会让「只想加个查询」顺手把审核也带进来。
 //
 //（本文初版写的「审核是人的判断，模型代替不了这个位置」已被推翻：判断是谁做出的

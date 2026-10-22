@@ -163,7 +163,7 @@ func (s *Service) AdminDetail(ctx context.Context, req *admindto.AdminDetailReq)
 		return nil, err
 	}
 	// Scan 不命中不返回 gorm.ErrRecordNotFound（RowsAffected=0），须显式判空：
-	// 避免查询不存在返回空结构 + nil error（对比 perm_crud.go 同款检查）。
+	// 避免查询不存在返回空结构 + nil error（对比 role.go 同款检查）。
 	if res.ID == 0 {
 		return nil, errors.New(adminenums.ErrAdminNotFound)
 	}

@@ -14,7 +14,7 @@ package pageservice
 // 同一工程里「法务页只做中文、首页做全语言」是**单页**的产出范围，不是站点语言清单的子集 ——
 // 所以它是页面级列，而不是又一份工程级语言清单（那会与 project_locales 形成两个真源）。
 //
-// 与 language 退役（page_locale_retire.go 的 RetireLocale，按 project + lang 整站退役）的分工：
+// 与 language 退役（page_lang.go 的 RetireLocale，按 project + lang 整站退役）的分工：
 // 那个是「站点不再有这种语言」，本文件是「站点有、这一页不产出」。两者都**必须真的下线产物** ——
 // 只写列不让访问面改变，等于后台说「已排除」而线上还在服务那一份字节。
 
@@ -232,7 +232,7 @@ func (s *Service) renameReservedAllLangsTx(ctx context.Context, tx *gorm.DB, in 
 //
 // 用在「这次动作会改动访问面」的路径上：RebuildStale 的语言遍历、RefreshSiteFiles 的
 // sitemap 分组，以及改 URL 的保留路由迁移（UpdateURL / 恢复路径 —— 在那里它还必须
-// 早于内核切访问面，见 page_publish.go 与 page_publish_recover.go）。判据不是「谁调用」，
+// 早于内核切访问面，见 page_publish.go 与 page_publish.go）。判据不是「谁调用」，
 // 而是「降级的后果可不可见」：这些路径降级成默认语言一种之后，站点少更新几种语言、
 // 只迁移一种语言的保留路由、sitemap 少几组 URL，而调用方拿到的都是成功。
 func (s *Service) publishLangsOf(ctx context.Context, projectID string) ([]string, error) {
@@ -242,7 +242,7 @@ func (s *Service) publishLangsOf(ctx context.Context, projectID string) ([]strin
 // enabledLangsOf 站点启用语言（默认语言在前；清单不可读时回退默认语言一种）。
 //
 // **调用点只有两个，都是作者可操作的写入口**：siteRoutePaths（建页 / 保存草稿时按启用
-// 语言占位 page_routes）与 SaveDraft 的保留路由迁移（page_draft.go，语言集合在事务之外
+// 语言占位 page_routes）与 SaveDraft 的保留路由迁移（page_document.go，语言集合在事务之外
 // 解析一次）。据此定口径为「允许回退」，理由有三条：
 //
 //  1. 它是**作者可操作的后台写入口**：一次读库抖动不该让作者存不了草稿 —— 那是把

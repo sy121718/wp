@@ -80,7 +80,7 @@ type Service struct {
 	invalidator productcontract.DependencyInvalidator
 	// purchases 购买事实只读端口（「买过才能评」的输入，由 order 模块实现；可缺）。
 	//
-	// 未注入 = 该规则未启用（放行），判据见 product_comment_policy.go 与
+	// 未注入 = 该规则未启用（放行），判据见 product.go 与
 	// productcontract.PurchaseChecker 的注释。刻意是**收窄的是非题端口**而不是
 	// OrderService：商品只需要一个答案，拿不到订单的读写能力。
 	purchases productcontract.PurchaseChecker

@@ -141,7 +141,7 @@ type SessionService struct {
 	// 未注入 = 不带工具的一问一答：工具是可选增强，缺了不该让普通对话也用不了。
 	tools ToolProvider
 	// toolCalls 是工具调用流水的记录器，装配层用 SetToolCallLogWriter 注入
-	// （见 ai_tool.go）。未注入时审计是空操作 —— 审计缺失不该让对话失败。
+	//。未注入时审计是空操作 —— 审计缺失不该让对话失败。
 	toolCalls *ToolCallRecorder
 }
 

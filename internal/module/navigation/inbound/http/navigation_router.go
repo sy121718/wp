@@ -1,5 +1,5 @@
 // Package navigationhttp navigation 模块 HTTP 入口（0-C）。
-// 路由挂载在 authorizedAPI（SessionAuth + CSRF + Casbin）之下，由顶层 routers.go 装配。
+// 路由挂载在 authorizedAPI（SessionAuth + CSRF + Casbin）之下，由顶层 routes.go 装配。
 package navigationhttp
 
 import (

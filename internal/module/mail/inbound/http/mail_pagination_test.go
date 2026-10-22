@@ -107,7 +107,7 @@ func TestMailPaginationFiltersStayInBase(t *testing.T) {
 	base := reqparams.FilterBaseURL(mailContactsPath, map[string]string{
 		"keyword": "vip@example.com", "status": "subscribed",
 	})
-	pg := pagination.Page{Total: int64(mailContactsPageSize)+1, Page: 1, Limit: mailContactsPageSize}
+	pg := pagination.Page{Total: int64(mailContactsPageSize) + 1, Page: 1, Limit: mailContactsPageSize}
 	pg.Base = base
 	if pg.Base != base {
 		t.Fatalf("Base 应原样带出，实际 %q", pg.Base)

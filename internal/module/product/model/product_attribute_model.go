@@ -18,7 +18,7 @@ import (
 // ProductAttributeEntity 属性组（一行一组；值以 JSONB 数组承载）。
 //
 // Values 沿用 081 的 jsonb 列：本票把元素结构固定为 [{id,key,label,sort,enabled}]，
-// 历史纯字符串数组由 service 读取时兜底归一（见 attribute_values.go）。
+// 历史纯字符串数组由 service 读取时兜底归一（见 product/service/product_attribute.go 的 normalizeValuesFromRaw）。
 type ProductAttributeEntity struct {
 	ID          string          `gorm:"column:id;primaryKey"`
 	ProjectID   string          `gorm:"column:project_id;not null"`

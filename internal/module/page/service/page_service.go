@@ -122,7 +122,7 @@ type Service struct {
 	// convergeWake 发布回执收敛的进程内快通道（容量 1）。
 	//
 	// 写路径在**事务提交之后**非阻塞地推一下，正常路径毫秒级收敛；
-	// 通道满时丢弃信号，由定时器兜底（详见 page_publish_converge.go）。
+	// 通道满时丢弃信号，由定时器兜底（详见 page_publish.go）。
 	convergeWake chan struct{}
 	// lastConvergeAt 最近一次收敛运行时刻（Unix 秒；0 = 本进程还没跑过）。
 	//

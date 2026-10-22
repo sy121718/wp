@@ -152,7 +152,7 @@ func (s *Service) ProductDetailTemplatePage(ctx context.Context, req *productdto
 
 // detailTemplates 本工程的模板清单（端口未注入 = 降级成空清单，不是失败）。
 //
-// 与「未装配」的区分留在控制器：那一档由 handle 的依赖字段判断（见 product_detail_template.go
+// 与「未装配」的区分留在控制器：那一档由 handle 的依赖字段判断（见 product_detail_template_handle.go
 // 的 ProductDetailTemplatePage），这里只保证端口为空时不 panic。
 //
 // projectID 由调用方给（它已解析出 selected）：这一跳本身就是「哪个工程的模板」，

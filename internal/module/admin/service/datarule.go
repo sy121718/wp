@@ -388,7 +388,7 @@ func (s *Service) RuleSchemaDetail(ctx context.Context, req *admindto.RuleSchema
 
 // GetRules 实现 datarule.RuleProvider 接口。
 //
-// **读路径零查询**：只读一份进程内快照（datarule_snapshot.go），在内存里按
+// **读路径零查询**：只读一份进程内快照（datarule.go），在内存里按
 // 「用户本人 / 用户角色 / 用户部门 / 上级部门 + SELF_AND_CHILDREN」过滤规则分配，
 // 命中的规则按 id 去重后解析配置。快照由装配期加载一次、写路径同步重载、定时兜底刷新共同维护。
 //

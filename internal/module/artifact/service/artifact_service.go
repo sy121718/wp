@@ -17,7 +17,7 @@ var (
 // Service 构建产物归档业务服务。
 type Service struct {
 	model *artifactmodel.Model
-	// externalRefs 其它模块对共享内容对象的引用来源（见 artifact_content_gc.go）。
+	// externalRefs 其它模块对共享内容对象的引用来源（见 artifact_record.go）。
 	// nil = 确认没有外部引用来源，不是「没接上」。
 	externalRefs ExternalContentRefs
 }

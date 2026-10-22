@@ -47,7 +47,7 @@ package webhookservice
 // 会永远停在 pending」（见该文件头部对两种写入顺序与各自的洞的分析）。没有时间驱动，
 // 那个「永远」就是字面意思 —— 只有人恰好发现才会重投。
 //
-// 形状与既有调度器逐项一致（page_publish_converge.go / analytics_retention.go /
+// 形状与既有调度器逐项一致（ /
 // context.Background()、目标方法报错只记日志、任何 panic 一律 recover 不拖垮进程。
 //
 // 纳入判断（与 media 的变体补偿同一把尺子）：ReplayPendingDeliveries 的文档注释明写
@@ -56,7 +56,7 @@ package webhookservice
 // 且它重放的是「尚未落定的投递任务」这一**派生的工作项**，不是篡改已定案的数据 ——
 // 满足「幂等 + 只动可重新生成的东西」，因此纳入调度。
 //
-// 本文件不复制任何判据：陈旧阈值仍是 webhook_replay.go 的 replayMinAge，
+// 本文件不复制任何判据：陈旧阈值仍是 webhook_delivery.go 的 replayMinAge，
 // 这里只决定「多久驱动一次」。
 
 import (
@@ -235,7 +235,7 @@ func (s *Service) DispatchEvent(ctx context.Context, eventType string, payload a
 	// 入队在事务**之外**：队列（asynq/Redis）是另一个系统，进不了 PG 事务。
 	// 队列侧的「入队」与 DB 侧的「投递日志」不是真正的两处持久化写入，而是
 	// 「真源 + 派生动作」：日志是唯一真源（pending 即待投），入队只是让它更快被取走。
-	// 所以这里不做跨系统补偿事务，而是靠可重放的对账入口补齐（webhook_replay.go）。
+	// 所以这里不做跨系统补偿事务，而是靠可重放的对账入口补齐（webhook_delivery.go）。
 	//
 	// 为什么不能反过来把入队塞进事务：worker 可能在事务提交前就取到任务，
 	// 回库读不到那一行 → DeliverDelivery 按「日志不存在 = 任务无意义」返回成功 →
@@ -312,7 +312,7 @@ func postWebhook(ctx context.Context, client *http.Client, targetURL, secret, ev
 
 // deliverLease 一次「投递中」认领的租约。
 //
-// 下界来自出站 HTTP 客户端超时（ClientTimeout = 15s，见 deliver.go）：租约必须**显著大于**
+// 下界来自出站 HTTP 客户端超时（ClientTimeout = 15s，见 webhook_delivery.go）：租约必须**显著大于**
 // 一次正常投递可能花的时间，否则一个慢目标会被判成「worker 卡死」并被抢占 —— 那等于把
 // 「并发重复投递」换成「慢目标重复投递」，而抢占态本来就是为了消除重复投递。
 // 5 分钟 = 20 倍余量：真卡了 5 分钟，重投的收益远大于重复投一次的代价。
@@ -592,7 +592,7 @@ func (s *Service) ReplayPendingDeliveries(ctx context.Context, req *ReplayPendin
 const (
 	// webhookReplayInterval 重放间隔。
 	//
-	// 取值必须**显著大于** replayMinAge（webhook_replay.go，5 分钟）：MinAge 是「陈旧」
+	// 取值必须**显著大于** replayMinAge（webhook_delivery.go，5 分钟）：MinAge 是「陈旧」
 	// 的判据 —— 比它新的 pending 很可能正在被 worker 处理，把它再入队一次就是制造一次
 	// 重复投递。1 小时 = MinAge 的 12 倍：既给 worker 足够余量（正常投递是秒级、
 	// 客户端超时 15s），又让「入队丢了」的投递在一个小时内被发现并重投 ——

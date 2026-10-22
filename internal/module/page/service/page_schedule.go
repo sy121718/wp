@@ -23,7 +23,7 @@ package pageservice
 //   - **回收**：ReclaimExpiredSchedules 把超时未结案的 running 行退回待执行（或判失败）。
 //
 // 调度器形状与 page_retention / page_publish_converge 一致（进程内 ticker + IsTestProcess 守卫），
-// 见 page_schedule_scheduler.go。**不依赖 asynq**：queue.enabled 默认 false，
+// 见 page_schedule.go。**不依赖 asynq**：queue.enabled 默认 false，
 // 依赖队列会让未启用队列的部署静默不生效。
 
 // 与 page_publish.go 的关系：定时上线**不重新编译**，因此不走 publish() 主链；
@@ -35,11 +35,11 @@ package pageservice
 // 崩溃窗口与发布同源：切换访问面（符号链接）与数据库写入之间不可原子。
 // 因此这里同样「先登记 pending 回执 → 再切 → 再写库」：
 //   · 切换前登记（AR2-002 / TX-009）：否则崩溃窗口里查不到「这次上线发生过」；
-//   · 切换后任何失败都保留 pending，交给启动恢复（page_publish_recover.go）与
-//     每分钟收敛（page_publish_converge.go）按链接实际指向补齐 —— 两者都不区分
+//   · 切换后任何失败都保留 pending，交给启动恢复（page_publish.go）与
+//     每分钟收敛（page_publish.go）按链接实际指向补齐 —— 两者都不区分
 //     「手工发布」还是「定时上线」，因为它们只看回执的 action 与链接的指向。
 
-// 形状与 page_retention.go / page_publish_converge.go 一致：进程内 goroutine + ticker，
+// 形状与 page_service.go / page_publish.go 一致：进程内 goroutine + ticker，
 // 先跑一次再等间隔。启动点在同模块的路由装配处（page_router.go），与那两个调度器并排 ——
 // 模块自己的调度器在模块内启动，不经由任何外部注册表。
 //
@@ -589,7 +589,7 @@ func (s *Service) applySchedulePublish(ctx context.Context, e pagemodel.Schedule
 
 // applyScheduleOffline 到点下线：先动访问面，再在一个事务里落数据库。
 //
-// 顺序与 page_locale_retire.go 同源，且理由相同：待清理的路径是从 page_publications
+// 顺序与 page_lang.go 同源，且理由相同：待清理的路径是从 page_publications
 // 反查出来的，**指针一旦提交删除就再也没有入口能算出该清哪些链接**。反过来
 // （先清数据库、再删链接）失败时留下的是「后台显示已下线、线上还在服务旧内容」，
 // 而没有任何入口能发现或修复它。

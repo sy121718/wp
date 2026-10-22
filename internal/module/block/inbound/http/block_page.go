@@ -54,7 +54,7 @@ type blockPageHandle struct {
 	// pages 页面契约（只读用：块变更的影响面 —— 引用该块的页面数、待重建页面清单）。
 	//
 	// 可空：未注入时页面明确写「页面能力未装配，无法统计影响面」，而不是显示一个
-	// 「0 个页面引用」的假结论（见 block_page_impact.go）。注入点是装配层
+	// 「0 个页面引用」的假结论（见 block_page.go）。注入点是装配层
 	// mountAdminPages 里的 SetupBlockPages 调用（可选变参）。
 	pages pagecontract.PageService
 }
@@ -166,7 +166,7 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 		data.Headers = toBlockRows(blocks, "header")
 		data.Footers = toBlockRows(blocks, "footer")
 		data.Blocks = toOtherBlockRows(blocks)
-		// 只读影响面（见 block_page_impact.go）：逐块引用页面数 + 待重建页面清单。
+		// 只读影响面（见 block_page.go）：逐块引用页面数 + 待重建页面清单。
 		h.fillRefCounts(c.Request.Context(), data.Headers)
 		h.fillRefCounts(c.Request.Context(), data.Footers)
 		h.fillRefCounts(c.Request.Context(), data.Blocks)
@@ -194,7 +194,7 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 	// 名称取现值（工作台只改文档）。
 	current, err := h.blocks.Detail(c.Request.Context(), &blockcontract.DetailReq{ID: req.ID})
 	if err != nil {
-		// 状态码与文案都归口到 REST 出口用的同一份判定（block_http.go）：
+		// 状态码与文案都归口到 REST 出口用的同一份判定（block_handle.go）：
 		// 业务错误（块不存在 / 缺工程作用域）→ 各自的状态码 + 模块词条 key（由 response
 		// 按请求语言翻译）；基础设施故障 → 500 + 归口文案，原文只进日志。
 		//

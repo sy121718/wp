@@ -2,7 +2,7 @@
 //
 // 本文件是「表访问单元」：只做 product_price_adjustments / product_price_adjustment_items
 // 的读写，以及筛选集取数（products 单表条件查询）。
-// 规则校验、算价、尾数处理、作用范围解析一律在 service（product_pricing_rule.go / product_pricing.go）。
+// 规则校验、算价、尾数处理、作用范围解析一律在 service（product_pricing.go / product_pricing.go）。
 //
 // 留痕写入与价格写入必须原子：批次头 + 明细是同一聚合内的原子组合（CreateAdjustmentWithItemsTx），
 // 与价格写入的跨聚合事务由 service 用 Transaction 编排（见 product_pricing.go 的 ApplyPricing）。

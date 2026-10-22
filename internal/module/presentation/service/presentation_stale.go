@@ -85,7 +85,7 @@ func (s *Service) MarkStaleByDependency(ctx context.Context, kind, key string) (
 // MarkStaleByRegistryVersion 把「**当前产物**由旧组件产出」的自动发布实例标记为待重建。
 //
 // 这是手工 Page 侧 MarkStaleByRegistryVersion 的对等入口（报告 ARCH-03）：实例的产物行
-// 同样保存 registry_version（presentation_persist.go 写的是 builder.RegistryVersion()），
+// 同样保存 registry_version（presentation_publish.go 写的是 builder.RegistryVersion()），
 // 但此前没有任何启动期收敛 —— 组件升级后详情页一直是旧组件渲染的字节，
 // 后台看不到 stale、日志里也没有任何提示（因为保存版本号本身不会触发任何比对）。
 //
@@ -329,7 +329,7 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 		tpl = &override
 	}
 	// urlPath 传空：预览不激活 URL，canonical 由模板 settings.seo 决定（通常为空）。
-	// 这是预览与发布在字节上的唯一有意差异（见 presentation_seo.go 取舍 2）。
+	// 这是预览与发布在字节上的唯一有意差异（见 presentation_render.go 取舍 2）。
 	// targetLangs 传 nil：预览没有批次概念，语言切换器按线上访问面现状输出；而且
 	// urlPath 为空时 logicalPath 也是空，alternates 分支本来就不会走（SEO-026）。
 	// usage 传 nil：预览不落依赖表，收集编译期消费线索没有写入点。

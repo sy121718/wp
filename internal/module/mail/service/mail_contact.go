@@ -10,7 +10,7 @@ package mailservice
 //	   失败才回退逐条（见 updateExistingContacts）。
 
 // 为什么单独一个文件：这三件事与「列表 + 改状态」（mail_contact.go）、
-// 「批量打标签」（mail_contact_tag.go）的入口不同、失败形态不同，但共享同一组边界：
+// 「批量打标签」（mail_contact.go）的入口不同、失败形态不同，但共享同一组边界：
 // 邮箱归一化、抑制名单连带、状态与抑制名单同事务。边界写在下面的注释里，
 // 复制到别处就会分叉。
 
@@ -194,7 +194,7 @@ func (s *Service) fireContactSubscribedIfChanged(ctx context.Context, contactID 
 
 // isContactEmailConflict 判断是不是「邮箱唯一索引撞车」。
 //
-// 双判据（与 ai_provider_crud.go / product_crud.go 同款）：生产连接开了 gorm 的
+// 双判据（与 ai_provider.go / mail_contact.go 同款）：生产连接开了 gorm 的
 // TranslateError 时拿到 gorm.ErrDuplicatedKey，未翻译的连接（部分测试 fixture）拿到的是
 // PG 原始 23505 文本。两条都认，否则并发撞车时运营看到的是 SQLSTATE 原文。
 func isContactEmailConflict(err error) bool {
@@ -971,7 +971,7 @@ func contactSourceOr(raw string) string {
 
 // fireContactTagsAdded 对本次**真正新增**的标签触发 tag_added（事务外）。
 //
-// 口径与导入路径一致（见 mail_contact_import.go 的 tagAdds / OnTagsAddedBatch）：
+// 口径与导入路径一致（见 mail_contact.go 的 tagAdds / OnTagsAddedBatch）：
 // 导入会触发、这里不触发的话，同一个动作走两条入口只有一条会发信 —— 静默不一致，
 // 而运营的预期是「打上这个标签的人就会进那条流程」。
 // 差集用 diffTags（精确匹配、大小写敏感），与按标签筛人群的口径相同。

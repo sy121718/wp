@@ -516,7 +516,7 @@ func enqueueMailSend(p MailSendPayload) error {
 
 // TaskMailCampaignDispatch 群发展开任务类型。
 //
-// 启动活动时只入队这一个任务；收件人展开由它分批完成（见 mail_campaign_dispatch.go）。
+// 启动活动时只入队这一个任务；收件人展开由它分批完成（见 mail_campaign.go）。
 // 一场万人活动若在启动时一次性入队一万个任务，请求会挂住几十秒、内存瞬时膨胀，
 // 中途失败还会留下「一半已入队」的残缺状态。
 const TaskMailCampaignDispatch = "mail:campaign_dispatch"

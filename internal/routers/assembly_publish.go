@@ -721,7 +721,7 @@ func (a *assembly) mountAdminPages() {
 
 	// pageService 作为可选第 4 参传入：块的「待重建影响面」要经 page 的只读反查（引用数 +
 	// stale 页面清单）。不接也能编译，但页面会显示「页面能力未装配」且引用数一律「未知」——
-	// 那不是 0，是「没能力回答」，所以宁可不接也不能假装查过（见 block_page_impact.go）。
+	// 那不是 0，是「没能力回答」，所以宁可不接也不能假装查过。
 	blockhttp.SetupBlockPages(a.adminPages, a.blockSvc, a.projectService, a.pageService)
 	mediahttp.SetupMediaPages(a.adminPages)
 	pluginhttp.SetupPluginPages(a.adminPages, a.pluginSvc)

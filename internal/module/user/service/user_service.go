@@ -25,7 +25,7 @@ type Service struct {
 //   - Profile / Preference 为 nil → 注册与密码重置不碰它们，
 //     纯注册链路的测试不必为了构造而准备整个依赖图。
 //
-// 访客会话没有 model：会话与设备台账都在 Redis（见 user_session_store.go）。
+// 访客会话没有 model：会话与设备台账都在 Redis（见 user_session.go）。
 func NewService(
 	m *usermodel.UserModel,
 	pm *usermodel.UserProfileModel,

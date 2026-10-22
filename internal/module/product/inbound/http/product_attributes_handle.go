@@ -14,7 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// product_attributes.go — 商品属性库（属性组 / 属性值）：列表页与它的抽屉表单。
+// product_attributes_handle.go — 商品属性库（属性组 / 属性值）：列表页与它的抽屉表单。
 //
 // 属性分两组形态：**规格属性**（isVariation，参与变体生成）与普通属性（只作展示与筛选）。
 // 属性值行（ProductAttributesValueRows）是 HTMX 片段，商品编辑页与新建页都复用它。

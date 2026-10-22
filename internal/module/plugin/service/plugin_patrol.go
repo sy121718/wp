@@ -17,7 +17,7 @@ package pluginservice
 //   · 孤儿目录 —— 注册行删了、RemoveAll 失败（权限 / 文件占用 / 磁盘错误），
 //     目录留在磁盘上，既不占后台版面也不报错。
 //   · 目录缺失 —— 注册行在、目录不在（被误删 / 镜像不完整）。装配会静默跳过该插件
-//     （plugin_runtime.go 的 os.Stat 分支），表现为「组件库里少了一组组件」而没有任何提示。
+//     （plugin.go 的 os.Stat 分支），表现为「组件库里少了一组组件」而没有任何提示。
 //
 // 四类都是**数据不一致**。按 AGENTS.md「冲突与数据不一致一律打回给人」：巡检**只报告、
 // 不自动清理** —— DROP SCHEMA ... CASCADE 会连表里的数据一起删，RemoveAll 会连里面的
@@ -30,7 +30,7 @@ package pluginservice
 // 孤儿目录白占磁盘，目录缺失让装配**静默跳过**该插件（表现为「组件库里少了一组组件」
 // 而没有任何提示）。没有定时驱动，这四类只能等出故障时倒查。
 //
-// 形状与既有调度器逐项一致（page_publish_converge.go / analytics_retention.go /
+// 形状与既有调度器逐项一致（ /
 // context.Background()、目标方法报错只记日志、任何 panic 一律 recover 不拖垮进程。
 //
 // 这里只驱动**只读**巡检：四类不一致一律打回给人，本调度器不做任何自动清理
@@ -110,7 +110,7 @@ func listPluginStorageDirs() []string {
 // storageDirExists 注册行的存储目录是否真的在磁盘上。
 //
 // 判据用「目录」而不是「路径存在」：路径被换成同名文件同样是坏状态，
-// 而装配路径（plugin_runtime.go）判的也是 IsDir，两处口径必须一致 ——
+// 而装配路径（plugin.go）判的也是 IsDir，两处口径必须一致 ——
 // 口径不一致的代价是巡检说「正常」而装配仍然跳过，那种巡检比没有更坏。
 func storageDirExists(row *pluginmodel.Entity) bool {
 	if row == nil || strings.TrimSpace(row.StoragePath) == "" {

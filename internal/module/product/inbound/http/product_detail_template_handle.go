@@ -24,7 +24,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// product_detail_template.go — 商品详情页模板（issue #14）与 SEO 评分的 **HTTP 层**。
+// product_detail_template_handle.go — 商品详情页模板（issue #14）与 SEO 评分的 **HTTP 层**。
 //
 // 这两块过去同文件、且逻辑也都在这里；拆分后本文件只做 HTTP 该做的事：请求绑定、
 // 权限入口（路由在 product_router.go）、调用 service 用例、HTTP 错误映射与响应渲染。
@@ -35,7 +35,7 @@ import (
 //	  整页读模型 → internal/module/product/service/product_detail_template_page.go
 //	  （两个文件名像、职责不同，改之前看各自文件头）。
 //
-// SEO 评分的视图层在 product_score.go（三个实体共用），不在本文件。
+// SEO 评分的视图层在 product_score_handle.go（三个实体共用），不在本文件。
 
 // productActionDoneFallback 单条写动作的通用成功回执的中文兜底（key 在
 // productenums.ProductsActionDone）。
@@ -405,7 +405,7 @@ func (h *ProductPageHandle) renderDetailTemplatePage(c *gin.Context, req *produc
 
 // detailTemplateUnassembledView 模板能力未装配时的视图（200，就地说明）。
 //
-// Ready 为假 → 模板走「详情页模板能力未装配」那一块；不给 LoadFailed —— 那是
+// Ready 为假 → 模板走「详情页模板能力未装配」那一块；**不置失败事实** —— 那是
 // 「取数没读到」的槽，两者混用会让「没装配」被说成「数据读不出来」，而前者要人去查装配。
 func detailTemplateUnassembledView() productdto.ProductDetailTemplatePageResp {
 	view := detailTemplateLoadFailureView(http.StatusOK)

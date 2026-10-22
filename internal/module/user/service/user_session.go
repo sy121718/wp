@@ -18,7 +18,7 @@ package userservice
 //   - cookie（签名）：只放令牌本身，只是「你是谁」的凭据，不含业务字段；
 //   - Redis：会话状态 + 设备台账 —— 既决定「这个请求算不算已登录」，也提供「我登录了哪些设备」。
 //
-// 访客会话**不落库**：Redis 是唯一真源。设备视图靠用户维度的索引 ZSET 支撑，见 user_session_store.go。
+// 访客会话**不落库**：Redis 是唯一真源。设备视图靠用户维度的索引 ZSET 支撑，见 user_session.go。
 //
 // # Redis key 用令牌哈希而不是明文令牌
 //

@@ -692,7 +692,7 @@ func (m *MailModel) CreateEvent(ctx context.Context, e *MailCampaignEventEntity)
 }
 
 // CreateEventTx 与 CreateEvent 相同，但复用调用方事务
-// （事件行 + 联系人「最近活跃」是同一批写，见 mail_tracking_task.go）。
+// （事件行 + 联系人「最近活跃」是同一批写，见 mail_marketing_model.go）。
 func (m *MailModel) CreateEventTx(ctx context.Context, tx *gorm.DB, e *MailCampaignEventEntity) (err error) {
 	return m.txOr(ctx, tx).Create(e).Error
 }

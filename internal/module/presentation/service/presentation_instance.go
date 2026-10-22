@@ -271,7 +271,7 @@ func (s *Service) Delete(ctx context.Context, req *presentationdto.DeleteReq) (e
 	// 失败就留下「实例没了、链接还在」的死路径，且再没有实例行可以据以定位它们。
 	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		// 工程作用域由**调用方**设进这个事务：publication 的 …Tx 变体的契约就是
-		// 「调用方负责开启事务 + 设置作用域」（见 publication_route_tx.go 文件头），
+		// 「调用方负责开启事务 + 设置作用域」（见 publication_route.go 文件头），
 		// 而 page_routes 带 FORCE 策略（迁移 215）—— 不设作用域时那条删行在非超级
 		// 角色下匹配 0 行且不报错（fail closed），随后删实例行会被外键拒绝。
 		if serr := rls.ScopeTx(tx, inst.ProjectID); serr != nil {

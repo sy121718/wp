@@ -677,7 +677,7 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		return
 	}
 	// 站点运费规则（站点级基础运费 + 满额免运费门槛）：库内单位是**分**，表单是**元**，
-	// 换算与范围判据都在 projectdto（保存与读取同一份判据，见 shipping_policy_dto.go）。
+	// 换算与范围判据都在 projectdto（保存与读取同一份判据，见 shipping_policy.go）。
 	//
 	// 非法值**不落库、不静默归零**：负运费等于倒贴钱（订单总额会被减掉一笔），
 	// 而把它悄悄改成 0 会让运营以为自己配的运费生效了 —— 实际从没生效过，

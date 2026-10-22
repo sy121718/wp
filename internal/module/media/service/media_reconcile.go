@@ -21,7 +21,7 @@ package mediaservice
 //      + **留痕**（每条都记结构化日志）+ **可重放**（重复调用不产生副作用叠加）。
 //      复用既有队列与既有的生成入口，不另造一套重试。
 //
-// 单一真源口径（与 media_crud.go 头部一致）：
+// 单一真源口径（与 media.go 头部一致）：
 //   - 元数据真源 = sys_attachment（status=1 且 file_path 非空的行）；变体 = sys_media_variant；
 //   - 内容真源 = 存储根目录下的文件字节。
 
@@ -35,11 +35,11 @@ package mediaservice
 //     3 次重试；重试耗尽后那条附件会**永久**停在「变体不齐」（srcset 给出打不开的地址），
 //     没有任何入口会再碰它。
 //
-// 形状与既有调度器逐项一致（page_publish_converge.go / analytics_retention.go /
+// 形状与既有调度器逐项一致（ /
 // context.Background()、目标方法报错只记日志、任何 panic 一律 recover 不拖垮进程。
 //
 // 这里驱动的是本模块既有的两个入口，**一行判定都不在这里**（不新造第二份真相）：
-// 对账口径在 media_reconcile.go 与 media_crud.go，补偿的幂等性由 GenerateVariants
+// 对账口径在 media_reconcile.go 与 media.go，补偿的幂等性由 GenerateVariants
 // 「先清旧记录再重建」保证。本文件只回答「谁在什么时候驱动它」。
 
 import (
@@ -87,7 +87,7 @@ const variantBackfillDefaultLimit = 2000
 // （pkg/upload 的 buildObjectKey 默认分支），它同样以数字开头 —— 按「数字开头」归属
 // 会把每一张历史图片都报成「附件 id 不存在」的孤儿，整份对账就没人看了。
 var (
-	// 原图：<id>.<ext>（上传时用主键命名，见 media_crud.go 的 objectKey 推导）。
+	// 原图：<id>.<ext>（上传时用主键命名，见 media.go 的 objectKey 推导）。
 	mediaOriginalRe = regexp.MustCompile(`^(\d+)\.[A-Za-z0-9]{1,10}$`)
 	// 变体：<id>_<variantType>[-<generation>-<hash8>].jpg
 	// （variantObjectKey 的预期名 / variantObjectKeyFingerprinted 的真实名）。
@@ -147,7 +147,7 @@ const (
 	// 为什么不并进 orphan_file：**它不该被删**。变体名带内容指纹，已发布产物里的
 	// srcset 指向换图前的那一批名字，而重建是异步的、且可能失败 —— 删掉这些文件
 	// 等于让线上图片 404。与「孤儿」混在一张清单里，运维照单清理就会踩这个坑
-	//（见 media_replace.go 里为什么保留旧变体文件：两处是同一个意图）。
+	//（见 media.go 里为什么保留旧变体文件：两处是同一个意图）。
 	ReconcileKindSupersededVariant = "superseded_variant"
 	// ReconcileKindDraftRow 草稿残留：status=0 且 file_path 为空的上传半成品行。
 	ReconcileKindDraftRow = "draft_row"
@@ -325,7 +325,7 @@ func (s *Service) ReconcileStorage(ctx context.Context, req *ReconcileReq) (*Rec
 		if _, ok := known[rel]; ok {
 			return
 		}
-		// 换图暂存残留（pkg/upload 的 tmp/replace_*，见 media_replace.go）：
+		// 换图暂存残留（pkg/upload 的 tmp/replace_*，见 media.go）：
 		// 命名不遵循 <id>.<ext>，但位置固定 —— 单独识别，不混进「无法归属」。
 		if strings.HasPrefix(rel, "tmp/") {
 			report.OrphanFiles = appendItem(report.OrphanFiles, ReconcileItem{
@@ -345,7 +345,7 @@ func (s *Service) ReconcileStorage(ctx context.Context, req *ReconcileReq) (*Rec
 			//  删除附件同样按设计保留文件）。
 			//
 			// 单列一类而不是并进 OrphanFiles 的理由就是下面这句 Detail：已发布产物
-			// 很可能仍引用它，删了会让线上图片 404。这与 media_replace.go「为什么保留
+			// 很可能仍引用它，删了会让线上图片 404。这与 media.go「为什么保留
 			// 旧变体文件」是同一个意图的两半。
 			report.SupersededVariants = appendItem(report.SupersededVariants, ReconcileItem{
 				Kind: ReconcileKindSupersededVariant, Table: "文件系统", ID: id, Path: rel,
@@ -594,7 +594,7 @@ const (
 	// mediaReconcileTimeout 单轮巡检的超时。
 	//
 	// 比 webhook / plugin 的巡检宽：对账要遍历文件系统，而队列未启用时变体补偿的
-	// 降级分支会**同步**生成变体（scheduleVariants 见 media_variant_task.go），
+	// 降级分支会**同步**生成变体（scheduleVariants 见 media_variant.go），
 	// 两者叠加可能是分钟级。
 	mediaReconcileTimeout = 10 * time.Minute
 )

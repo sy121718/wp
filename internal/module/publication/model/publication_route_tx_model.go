@@ -3,7 +3,7 @@ package pubmodel
 // publication_route_tx_model.go — 路由与回执的「事务透传写方法」。
 //
 // 这批方法在**调用方已开启的事务句柄**上执行（service 起事务，句柄透传进来），
-// 与 publication_route_tx.go 的 …Tx 服务方法一一对应：service 只做参数归一化与
+// 与 publication_route_tx_model.go 的 …Tx 服务方法一一对应：service 只做参数归一化与
 // 错误映射，不再在句柄上拼 gorm 查询（AGENTS.md「model 层定位」）。SQL 文本、
 // WHERE、更新的列与错误语义从原 service 内联实现逐字搬运，不是重写。
 

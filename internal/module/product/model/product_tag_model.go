@@ -3,7 +3,7 @@
 // 标签与规则合一张表（081 已建）：kind=manual 的手工标签、kind=rule 的自动标签，
 // 规则类型存 rule_type、参数存 rule_params（JSONB）。本文件是「表访问单元」：
 // 只做 product_tags 的 CRUD、products.tag_ids 的读写、以及规则求值所需的取数；
-// 内置规则类型与参数的合法性判定、重算时机一律在 service（product_tag_rule.go / product_tag.go）。
+// 内置规则类型与参数的合法性判定、重算时机一律在 service（product_tag.go / product_tag.go）。
 //
 // 归属写在 products.tag_ids（JSONB 数组，081 建了 GIN 索引）：手工标签与自动标签共用同一个
 // 数组列，靠「重算只替换自己那一个 tag id」保证两者互不覆盖（见 ReplaceTagProductsTx）。

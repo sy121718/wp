@@ -6,7 +6,7 @@ package aiservice
 // 密钥口径：明文只在两个瞬间存在 —— ①调用方传进来待加密的 SaveProviderReq.APIKey，
 // ②拉取可用模型时解密后放进 Authorization 头。其余任何时候对外只有 HasAPIKey 布尔。
 
-// 与 webhook 的 ssrf.go 是同一口径的**两份独立实现**（模块间不跨依赖）：
+// 与 webhook 的 ai_service.go 是同一口径的**两份独立实现**（模块间不跨依赖）：
 // 防线是「DNS 解析后的 IP」而不是 hostname 字符串 —— 攻击者可以把内网地址绑到公网
 // 域名上（DNS rebinding / 域名指内网），只看字符串拦不住。因此这里强制解析出全部
 // A/AAAA 记录，任何一个 IP 落在禁止网段即整体拒绝。
@@ -19,7 +19,7 @@ package aiservice
 
 // 安全护栏固定在客户端里（口径与 webhook 的出站客户端一致）：
 //
-//	· DialContext 走 SSRF 防护（解析后逐 IP 校验，见 ssrf.go）；
+//	· DialContext 走 SSRF 防护（解析后逐 IP 校验，见 ai_service.go）；
 //	· 不跟随重定向 —— 302 指向内网会绕过 DNS 检查，直接拒绝；
 //	· 连接 / TLS / 整体三级超时全部有硬上限；
 //	· 请求头来自**服务端保存的供应商配置**：默认集合是 Accept + 可选 Authorization，
@@ -54,11 +54,11 @@ type Service struct {
 	cipherSecret string
 	client       *http.Client
 	// calls 调用流水（ai_call_log）的写入端口，装配期注入；未注入时 Chat 照常工作、不记流水。
-	// 详见 ai_call_log.go 的 logCallAsync（协程 + 脱离请求 ctx + panic 不外溢）。
+	// 详见 ai_chat.go 的 logCallAsync（协程 + 脱离请求 ctx + panic 不外溢）。
 	calls CallLogWriter
 }
 
-// NewService 构造服务（client 用受限的 ai 出站客户端，见 ai_client.go）。
+// NewService 构造服务（client 用受限的 ai 出站客户端，见 ai_service.go）。
 func NewService(m *aimodel.Model) *Service {
 	return &Service{m: m, client: newAIClient()}
 }

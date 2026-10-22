@@ -254,7 +254,7 @@ func (s *Service) Submit(ctx context.Context, req *commentdto.SubmitReq) (res *c
 	if req.UserID == 0 {
 		return nil, errParam(commentenums.ErrLoginRequired)
 	}
-	// ② 限流：身份额度 + 来源额度（见 comment_ratelimit.go）。
+	// ② 限流：身份额度 + 来源额度（见 comment.go）。
 	if err = s.checkSubmitRate(req.UserID, req.IPHash); err != nil {
 		logger.Scene(errScene).
 			With("user_id", req.UserID).

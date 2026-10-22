@@ -14,7 +14,7 @@ package core
 //	    表单校验错误态用原生 :has(:user-invalid)（零 JS，form 已接）。
 //	 5. 文本 text ✅ 渐变文字 TextGradientDecls（AdvancedProps.TextGradient）；
 //	    ✅ 描边 TextStrokeDecls；◻️ 逐字入场（组件级）。
-//	 6. 动效 motion ✅ 入场×40（含 Animate.css 拆解 24 词，keyframes_animate.go）/
+//	 6. 动效 motion ✅ 入场×40（含 Animate.css 拆解 24 词，keyframes_source.go）/
 //	    循环×17（含拆解 7 词）/ 悬浮×8（触屏治理 hover:hover）/ 滚动触发 / 吸顶 / ReducedMotion 无障碍
 //	    → InteractionProps + css.go/keyframes_animate.go keyframes 通用表。
 //	 7. 图片 image ✅ img-zoom 悬停缩放 / img-gray 灰度→彩色 / img-hue 色相流动（HoverEffect）；

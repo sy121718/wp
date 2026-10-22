@@ -527,7 +527,7 @@ func nodeHasBindingField(n *core.Node) bool {
 // TemplatePreviewFacingKey 模板预览（有样例实体）失败的分类。
 //
 // 判据是**模块哨兵 key**：presentation / contenttemplate 的哨兵是字符串常量，
-// errors.New(<常量>) 在各调用点新建，errors.Is 拿不到同一个值 —— 与 workbench_instance.go
+// errors.New(<常量>) 在各调用点新建，errors.Is 拿不到同一个值 —— 与 workbench_page.go
 // 判 ErrDetachConfirmRequired 同一口径。未命中 = 归不了因（ErrBuildFailed 下的编译细节、
 // ErrRegistryMissing 这类装配缺陷），调用方给归口文案。
 func TemplatePreviewFacingKey(raw string) (string, bool) {
@@ -620,7 +620,7 @@ type InspectorField struct {
 	// 服务端只输出定位占位 div，客户端用既有控件函数填充（避免两套控件实现）。
 	Slot string
 	// HTML 非空表示该字段的整块结构已由服务端生成（重复项面板等）：模板原样输出，
-	// 客户端只绑行为 —— 结构只有一处定义（见 workbench_repeater.go）。
+	// 客户端只绑行为 —— 结构只有一处定义（见 workbench.go）。
 	HTML string
 	// NavNewRef 非空表示该 entityref 字段支持「就地新建」（当前只有 navigation）：
 	// 模板据此渲染一个折叠的新建表单，客户端提交后把新项写回本字段。
