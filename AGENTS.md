@@ -33,8 +33,8 @@ bash scripts/check-all.sh     # 门禁全集（--with-db 含需要库的那组�
 
 | 目录 | 只准 | 一律禁止 |
 |---|---|---|
-| dto | 请求绑定与校验（tag、Validate、FormBinder） | 展示字段（Title/Menu/Label/Tone/Text/Error/LoadFailed/HTTPStatus/Pagination）、gin.H、import service/model |
-| service | CRUD、list、数据库聚合、多表拼装成对象、事务边界 | 取词、格式化（time/money/pagination/拼句）、*PageResp、import i18n/text/templates/adminui |
+| dto | 请求绑定与校验（tag、Validate、FormBinder） | 展示字段（Title/Menu/Label/Tone/Text/Error/LoadFailed/HTTPStatus/Pagination）、语言绑定字段（换语言要重算的成品句：译文、已取词的 Err/ErrMsg）、gin.H、import service/model |
+| service | CRUD、list、数据库聚合、多表拼装成对象、事务边界；按 ctx 里的取词函数把**声明处的事实**（enums 的 key + 兜底）取成当前语言文案 | 自造词条（service 里出现 "admin./shell./user./workbench." 这类 key 字面量）、把成品句写进 dto 的语言绑定字段、*PageResp、import templates/adminui |
 | model | 本模块表的 CRUD、聚合内原子组合 | 业务规则、跨聚合事务、别人的表名、import service |
 | contract | 接口 + 不可变 DTO | import 别人的 service/model、反向依赖 builder/core |
 | enums | 枚举、错误 key + 中文兜底 + 状态码、界面 key | 取词、拼句（兜底是原文，不是成品调用） |

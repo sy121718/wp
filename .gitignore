@@ -17,6 +17,14 @@ coverage.out
 # air 热重载的临时二进制与 build-errors.log
 /tmp/
 
+# 运行时数据落在源码树里的情况：日志/产物的 base_dir 是相对路径（config.yaml 的
+# `public/logs`），从子目录启动进程时会落到 internal/routers/public/ 之类的路径下。
+# 这类目录是纯产物（无 .go 文件），不该进仓库。
+internal/**/public/logs/
+internal/**/public/runtime/
+internal/**/public/storage/
+internal/**/public/builder-preview/
+
 # 运行时数据和测试生成物
 public/logs/
 public/storage/
