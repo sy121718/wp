@@ -186,7 +186,7 @@ var allowedPkgDirs = map[string]struct{}{
 	"enums": {}, "facing": {}, "i18n": {}, "jsonx": {}, "logger": {},
 	"mailer": {}, "money": {}, "pagination": {}, "pathkit": {}, "queue": {},
 	"reqparams": {}, "response": {}, "rls": {}, "safepath": {}, "sitehttps": {},
-	"sitetz": {}, "upload": {}, "utils": {}, "validate": {}, "view": {},
+	"sitetz": {}, "tree": {}, "upload": {}, "utils": {}, "validate": {}, "view": {},
 }
 
 // pendingPkgDirs 存量：pkg 下的目录名 → 1。

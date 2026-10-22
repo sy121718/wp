@@ -3,6 +3,11 @@
    htmx 排在最前：控件入口 index.js 监听 htmx:afterSwap 重扫，后台所有局部刷新
    都建立在它之上（原先从 CDN 引，CDN 不可达时下拉/抽屉/按钮会静默退化成整页刷新）。 *}
 <script src="/static/js/ui/htmx.min.js"></script>
+{* 写表单的请求体整形必须紧跟 htmx 之后、任何发请求的控件之前：
+   它注册 htmx:config:request，把空值键删掉（formdata 里 name= 空串会让后端 *int 绑成 0，
+   而 JSON 侧「省略字段」= 本次不改）。晚于控件加载时，早于它注册的监听仍会跑，
+   但为了「谁在什么时候改了请求体」这条一眼可查，固定放在 htmx 后面。 *}
+<script src="/static/js/ui/htmx_form_body.js"></script>
 <script src="/static/js/ui/_util.js"></script>
 <script src="/static/js/ui/select.js"></script>
 <script src="/static/js/ui/drawer.js"></script>
@@ -10,6 +15,7 @@
 <script src="/static/js/ui/colorfield.js"></script>
 <script src="/static/js/ui/busy.js"></script>
 <script src="/static/js/ui/confirm.js"></script>
+<script src="/static/js/ui/write_feedback.js"></script>
 <script src="/static/js/ui/json_write.js"></script>
 <script src="/static/js/ui/membership_write.js"></script>
 <script src="/static/js/ui/modal.js"></script>

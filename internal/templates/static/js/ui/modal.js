@@ -142,7 +142,7 @@
     });
 
     // autoOpen 打开声明了 data-modal-auto-open 的弹窗（用一次即摘属性）。
-    // 摘属性是必须的：WBUI.scan 在每次 htmx:afterSwap 后都会重跑这个注册回调，
+    // 摘属性是必须的：WBUI.scan 在每次 htmx:after:swap 后都会重跑这个注册回调，
     // 留着属性等于「用户关一次、下一次局部刷新又给他弹回来」。
     function autoOpen(dlg) {
         if (!dlg.hasAttribute('data-modal-auto-open')) { return; }

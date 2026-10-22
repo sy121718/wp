@@ -22,6 +22,7 @@ import (
 	admindto "go_wp/internal/module/admin/dto"
 	"go_wp/internal/text"
 	"go_wp/pkg/binding"
+	viewpkg "go_wp/pkg/view"
 )
 
 // 侧栏状态 cookie 名（随装配一起迁入，取值语义见 sidebarOpen / sidebarPinned）。
@@ -109,7 +110,25 @@ func Prepare(c *gin.Context, data gin.H) gin.H {
 //
 // 模板侧零改动：键名与原先手写的 gin.H 一致，`{{.X}}` 写法不变。
 func PrepareView(c *gin.Context, view any) gin.H {
-	return Prepare(c, ViewMap(view))
+	data := Prepare(c, ViewMap(view))
+	injectPageList(data, view)
+	return data
+}
+
+// injectPageList 把视图自报的分页事实放进渲染数据（视图没实现 view.PageList 时什么也不做）。
+//
+// 视图自己已经塞了 Pagination 键（存量 gin.H 写法）时不覆盖：那是调用点显式给的值，
+// 比契约的默认值更具体。这条让迁移可以分批做 —— 迁一个页面就删一处手写赋值，
+// 没迁的页面行为不变。
+func injectPageList(data gin.H, view any) {
+	page, ok := viewpkg.PageListOf(view)
+	if !ok {
+		return
+	}
+	if _, exists := data[viewpkg.PaginationKey]; exists {
+		return
+	}
+	data[viewpkg.PaginationKey] = page
 }
 
 // ViewMap 把视图结构体摊平成一层的 gin.H（键名规则见 PrepareView）。

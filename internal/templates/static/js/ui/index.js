@@ -15,7 +15,9 @@
     });
 
     // htmx 局部替换后重扫（后台大量片段走 htmx）。
-    document.addEventListener('htmx:afterSwap', function (e) {
+    // htmx 4 把事件名改成冒号分段：afterSwap → after:swap（v4 起旧名不再派发，
+    // 写错的表现是「局部刷新后控件全部失效」——不报错、不 500，只是没人重扫）。
+    document.addEventListener('htmx:after:swap', function (e) {
         if (WBUI.scan) { WBUI.scan(e.target || document); }
     });
 })(window);

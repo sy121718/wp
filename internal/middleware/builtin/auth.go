@@ -9,6 +9,7 @@ import (
 	"go_wp/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	"go_wp/pkg/reqparams"
 )
 
 // loginPagePath 登录页路径。
@@ -135,7 +136,8 @@ func respondAuthRequired(c *gin.Context, message string) {
 // wantsLoginPage 判断当前请求是否期望页面（应重定向登录页而非返回 JSON）。
 func wantsLoginPage(c *gin.Context) bool {
 	// HTMX 请求：任意 method 都按页面交互处理（POST 表单提交后登录过期同样跳转）。
-	if strings.EqualFold(strings.TrimSpace(c.GetHeader("HX-Request")), "true") {
+	// 判据委托 pkg/reqparams（与全仓同一份实现，pkg 不 import internal，方向合规）。
+	if reqparams.IsHXRequest(c) {
 		return true
 	}
 	// 浏览器页面导航：GET 且 Accept 声明可接收 HTML。

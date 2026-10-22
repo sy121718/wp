@@ -63,8 +63,10 @@ func TestAdminJSGlobalHtmxFeedbackHandlers(t *testing.T) {
 	js := string(src)
 
 	for _, ev := range []string{
-		"htmx:beforeRequest", "htmx:afterRequest",
-		"htmx:responseError", "htmx:sendError", "htmx:timeout",
+		// htmx 4 的真实事件集：4xx/5xx 走 response:error，网络/超时/异常走 htmx:error。
+		// 不再有 sendError / timeout 这两个独立事件（v2 的它们已并入 htmx:error）。
+		"htmx:before:request", "htmx:after:request",
+		"htmx:response:error", "htmx:error",
 	} {
 		if !strings.Contains(js, "document.body.addEventListener('"+ev+"'") {
 			t.Errorf("admin.js 未在 document.body 上注册 %s —— 覆盖不到全部 hx- 请求", ev)
@@ -83,13 +85,17 @@ func TestAdminJSGlobalHtmxFeedbackHandlers(t *testing.T) {
 	}
 
 	// 触发元素在响应时已被移出文档的情况下，htmx 会对最近的存活祖先补派发一次
-	// afterRequest（同一个 xhr）；不按 xhr 去重会多减引用计数，进度条提前消失。
+	// after:request（同一个请求）；不去重会多减引用计数，进度条提前消失。
+	// htmx 4 用 fetch 而非 xhr，去重键是 ctx.request。
 	if !strings.Contains(js, "WeakSet") {
-		t.Error("admin.js 未对 afterRequest 做同一 xhr 去重")
+		t.Error("admin.js 未对 after:request 做同一请求去重")
 	}
 }
 
 // 监听的事件名必须真的存在于 htmx 运行时：写错的事件名不会报错，只会永远不触发。
+//
+// 这条在 htmx 4 升级时救过一次：v4 把事件名改成冒号分段（beforeRequest → before:request），
+// 若监听器还写旧名，进度条与错误提示会**静默失效** —— 而所有 Go 侧测试照样绿。
 func TestHtmxRuntimeDispatchesEventNamesWeListenFor(t *testing.T) {
 	src, err := os.ReadFile(filepath.FromSlash("static/js/ui/htmx.min.js"))
 	if err != nil {
@@ -97,8 +103,10 @@ func TestHtmxRuntimeDispatchesEventNamesWeListenFor(t *testing.T) {
 	}
 	js := string(src)
 	for _, ev := range []string{
-		"htmx:beforeRequest", "htmx:afterRequest",
-		"htmx:responseError", "htmx:sendError", "htmx:timeout",
+		// htmx 4 的真实事件集：4xx/5xx 走 response:error，网络/超时/异常走 htmx:error。
+		// 不再有 sendError / timeout 这两个独立事件（v2 的它们已并入 htmx:error）。
+		"htmx:before:request", "htmx:after:request",
+		"htmx:response:error", "htmx:error",
 	} {
 		if !strings.Contains(js, ev) {
 			t.Errorf("htmx 运行时里没有 %s —— admin.js 的监听永远不会触发", ev)

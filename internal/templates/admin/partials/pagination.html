@@ -1,32 +1,29 @@
 {* admin/partials/pagination.html — 分页条（服务端渲染，零 JS）。
    唯一数据形态：data["Pagination"] = pkg/pagination.Page，只有三件事实
-   （Total / Page / Limit）加上链接参数（PageParam / KeepLimit / Base）。
-   页数、区间句、页码窗口、上/下页按钮态与链接全部在这里算（全局函数
-   pager / sprintf / queryURL / pageNumbers），后端不预先拼任何展示串。
+   （Total / Page / Limit）加上链接参数（PageParam / DropLimit / Base）。
+
+   模板只做三个判断：省略号 / 当前页 / 普通页 —— 窗口在哪、哪些位置是省略号、
+   每一页的 href 是什么，全部由 pager(.Pagination) 的 Items / PrevURL / NextURL 给出。
+   窗口算法在 pkg/pagination.Window，取址在 pkg/pagination.QueryURL（都有 oracle 对照测试）。
+
+   为什么不再在模板里算：省略号原来是靠 {{if n-prev > 1}} 现算的，改样式的人得先读懂
+   窗口算法。现在它是数据里的一个槽位（it.Gap），模板没有算术。
+
    无键 / 单页 / 空集时不渲染分页条；Base 为空时从 req_path 推（去掉 page 与 limit）。
    「槽」注释行是逐字节兼容的缩进标记，改缩进会改页面字节 —— 先跑
    internal/templates 的分页渲染用例。 *}
-{{if isset(.Pagination)}}{{pg := pager(.Pagination)}}{{base := pg.Base}}{{if !base}}{{if isset(.["req_path"])}}{{base = pageBase(.["req_path"], pg.PageParam, "limit")}}{{end}}{{end}}{{prev := 0}}{{tr := .["t"]}}{{if pg.HasPagination()}}
+{{if isset(.Pagination)}}{{pg := pager(.Pagination)}}{{base := pg.Base}}{{if !base}}{{if isset(.["req_path"])}}{{base = pageBase(.["req_path"], pg.PageParam, "limit")}}{{end}}{{end}}{{pg = pg.WithBase(base)}}{{tr := .["t"]}}{{if pg.HasPagination()}}
 <nav class="pagination" aria-label="{{tr("shell.pagination.label", "分页") }}">
     <div class="pagination-info">{{sprintf(tr("shell.pagination.info", "共 %s 条，第 %s-%s 条"), pg.Total, pg.Start, pg.End)}}</div>
     <div class="pagination-pages">
         {*槽*}
-        {*槽*}
-        {{if pg.HasPrev()}}{{if pg.KeepLimit}}<a class="pagination-btn" href="{{queryURL(base, pg.PageParam, pg.PrevPage(), "limit", pg.Limit)}}">{{tr("shell.pagination.prev", "上一页") }}</a>{{else}}<a class="pagination-btn" href="{{queryURL(base, pg.PageParam, pg.PrevPage())}}">{{tr("shell.pagination.prev", "上一页") }}</a>{{end}}{{else}}<span class="pagination-btn is-disabled">{{tr("shell.pagination.prev", "上一页") }}</span>{{end}}
-        {{range _, n := pageNumbers(pg.Page, pg.Pages, 7)}}{{gap := false}}{{if prev > 0}}{{gap = n-prev > 1}}{{end}}{{if gap}}
-        {*槽*}
-        {*槽*}
+        {{if pg.HasPrev()}}<a class="pagination-btn" href="{{pg.PrevURL()}}">{{tr("shell.pagination.prev", "上一页") }}</a>{{else}}<span class="pagination-btn is-disabled">{{tr("shell.pagination.prev", "上一页") }}</span>{{end}}
+        {{range _, it := pg.Items()}}{{if it.Gap}}
         <span class="pagination-btn is-disabled">…</span>
-        {{end}}{*槽*}
+        {{else if it.Page == pg.Page}}<span class="pagination-btn is-active">{{it.Page}}</span>
+        {{else}}<a class="pagination-btn" href="{{it.URL}}">{{it.Page}}</a>{{end}}{{end}}
         {*槽*}
-        {*槽*}
-        {{if n == pg.Page}}<span class="pagination-btn is-active">{{n}}</span>{{else}}{{if pg.KeepLimit}}<a class="pagination-btn" href="{{queryURL(base, pg.PageParam, n, "limit", pg.Limit)}}">{{n}}</a>{{else}}<a class="pagination-btn" href="{{queryURL(base, pg.PageParam, n)}}">{{n}}</a>{{end}}{{end}}
-        {{prev = n}}{{end}}
-        {*槽*}
-        {*槽*}
-        {{if pg.HasNext()}}{{if pg.KeepLimit}}<a class="pagination-btn" href="{{queryURL(base, pg.PageParam, pg.NextPage(), "limit", pg.Limit)}}">{{tr("shell.pagination.next", "下一页") }}</a>{{else}}<a class="pagination-btn" href="{{queryURL(base, pg.PageParam, pg.NextPage())}}">{{tr("shell.pagination.next", "下一页") }}</a>{{end}}{{else}}<span class="pagination-btn is-disabled">{{tr("shell.pagination.next", "下一页") }}</span>{{end}}{{"\n        \n        "}}{* 这串白空间是**显式**发射的（不是排版缩进）：旧正文在这一行之后是「两空槽 + \n    </div>」，
-           而末条目的尾槽会被行边界机制吞掉（{{if}}/{{end}} 落在行尾时，该行的换行+缩进属于被跳过的块），
-           所以这里用字符串字面量把槽位写死。字面量只受 HTML 转义（< > & \" '），换行/空格原样发射。 *}
+        {{if pg.HasNext()}}<a class="pagination-btn" href="{{pg.NextURL()}}">{{tr("shell.pagination.next", "下一页") }}</a>{{else}}<span class="pagination-btn is-disabled">{{tr("shell.pagination.next", "下一页") }}</span>{{end}}
     </div>
 </nav>
 {{end}}

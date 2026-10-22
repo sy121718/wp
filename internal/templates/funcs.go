@@ -36,6 +36,7 @@ import (
 
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/pagination"
 	"go_wp/pkg/sitetz"
 	"go_wp/pkg/utils"
 )
@@ -582,71 +583,24 @@ func sprintf(pattern string, args ...any) string {
 	return out
 }
 
-// queryURL 把已知事实串成查询串：`queryURL(pg.Base, pg.PageParam, pg.NextPage(), "limit", pg.Limit)`。
+// queryURL 把已知事实串成查询串：`queryURL(pg.Base, "page", 2, "limit", 20)`。
 //
-// 语义（与迁移前的 Go 拼法逐字节一致——这是 P2「partial 改写后渲染字节不变」的前提）：
-//   - base 空或全空白 → 返回空串（调用点据此不渲染链接）；
-//   - base 已含 `?` → 用 `&` 续接，否则用 `?`；
-//   - 键必须是字符串：写错直接 panic（与 fill 同风格）。静默丢掉一个筛选条件的链接
-//     会把用户带到「筛选没了」的页面，比 500 难发现得多；
-//   - 值先 stringify 再 url.QueryEscape（与 url.Values.Encode 同口径，空格 → `+`）；
-//   - **按调用顺序追加、不排序、不去重**：这是迁移前的既有语义（旧 link() 也是无条件追加），
-//     当前调用点的 base 只含筛选、page/limit 从不预置 → 字节与旧完全一致。
-//     将来若要去重，那是一次**行为变更**，另开卡，别顺手改；
-//   - 参数个数为奇数时忽略最后那个孤键（与 fill 的容忍度一致）。
+// 算法本体在 pkg/pagination.QueryURL（与 Window 同一个包 —— 窗口说「要第 3 页」，
+// 取址负责把第 3 页写成串，拆开时任何一方改口径都要跨包对齐）。这里只做模板名字映射：
+// 模板里叫 queryURL，Go 侧叫 pagination.QueryURL。
 //
-// 返回值**不预先做 HTML 转义**：Jet 渲染插值时会把 `&` 转成 `&amp;`，这里若先转一次，
-// 页面上就是 `&amp;amp;` —— 链接静默坏掉且不报错（探针里有专门用例钉这条）。
+// 语义逐条不变（不预转义、按调用顺序追加不排序不去重、孤键忽略、键非字符串 panic）。
+// 唯一的变化是 panic 的消息前缀改成 pkg 的函数名 —— 现有测试只要求「panic 里指明函数名」。
 func queryURL(base string, kv ...any) string {
-	if strings.TrimSpace(base) == "" {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString(base)
-	sep := "?"
-	if strings.Contains(base, "?") {
-		sep = "&"
-	}
-	for i := 0; i+1 < len(kv); i += 2 {
-		key, ok := kv[i].(string)
-		if !ok {
-			panic(misuse("queryURL", kv[i], "参数名（字符串）"))
-		}
-		b.WriteString(sep)
-		sep = "&"
-		b.WriteString(url.QueryEscape(key))
-		b.WriteByte('=')
-		b.WriteString(url.QueryEscape(stringify(kv[i+1])))
-	}
-	return b.String()
+	return pagination.QueryURL(base, kv...)
 }
 
-// pageBase 把请求串压成「翻页基址」：保留全部筛选参数，只丢掉分页自己会写回的参数。
+// pageBase 把请求串压成「翻页基址」：保留筛选，只丢掉分页自己会写回的参数。
 //
-// 为什么需要它：分页链接由模板拼（queryURL 追加 page/limit），而模板拿到的当前请求串
-// 里**已经带着** page/limit —— 直接追加会出现两个 page 参数，浏览器取第一个，
-// 症状是「点了翻页没反应」。去掉之后再追加，语义与旧实现（控制器先拼好不含分页参数的
-// 基址）一致：同样走 url.Values.Encode 的字典序。
-//
-// raw 为空或解析失败时返回空串（调用点据此不渲染分页条）。drop 里写错的键名不报错：
-// 它只是「本来就不该保留的参数」，多删一个不存在的键没有副作用。
+// 算法本体在 pkg/pagination.PageBase。保留模板全局的名字是因为它还服务
+// 商品标签命中片段（那边 Base 为空时从 req_path 现推）。
 func pageBase(raw string, drop ...string) string {
-	if strings.TrimSpace(raw) == "" {
-		return ""
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-	q := u.Query()
-	for _, k := range drop {
-		q.Del(k)
-	}
-	u.RawQuery = q.Encode()
-	if u.RawQuery == "" {
-		return u.Path
-	}
-	return u.Path + "?" + u.RawQuery
+	return pagination.PageBase(raw, drop...)
 }
 
 // formatTime 把数据层的时间渲染成页面上的分钟精度文本（本地时区）。
@@ -687,16 +641,34 @@ func formatTime(raw any) string {
 	return s
 }
 
-// pageNumbers 给出分页条要显示的**页码窗口**（win = 窗口宽度，含首尾固定位与省略位）。
+// pageNumbers 给出分页条要显示的**页码窗口**（已废弃，改用 pager(.Pagination).Items()）。
 //
-// 只返回整数页码：省略号画在哪由模板决定（相邻两个数字差 > 1 就画一个）。这样"窗口策略"
-// 留在通用层、可以拿旧实现做逐页 oracle，"怎么画"留在模板。
-//
-// 口径与迁移前的 BuildPagination 逐字一致（win=7：首、尾、当前页 ± (win-3)/2，贴边时平移窗口）；
-// `pages <= 1` 返回空切片（模板据此不渲染页码组，与"单页不显示分页条"同一条判据）。
-// win < 3 时按 3 处理：更窄的窗口无法同时容纳首尾与当前位置，退化成确定性的最小形态，
-// 而不是算出负长度或死循环。
+// 保留成薄包装而不是直接删：admin_product_tag_hits 的测试与历史探针还引用它，
+// 而它保住了「窗口策略未漂移」的 oracle 对照（funcs_pagination_test.go 用它扫全组合）。
+// **新代码不要用它** —— 它只给整数，省略号还得调用方自己按相邻差值画，
+// 那正是这次要消掉的模板算术。
 func pageNumbers(page, pages, win int) []int {
+	if win != pagination.WindowSize {
+		// 非标准窗口宽度没有对应的 pkg 实现：这条分支只服务历史测试的退化用例
+		// （win=1/3）。生产代码一律走 pager().Items()，窗口宽度是常量。
+		return legacyWindowNumbers(page, pages, win)
+	}
+	win2 := pagination.Window(page, pages)
+	out := make([]int, 0, len(win2))
+	for _, it := range win2 {
+		if !it.Gap {
+			out = append(out, it.Page)
+		}
+	}
+	return out
+}
+
+// legacyWindowNumbers 迁移前的窗口算法原文，仅供非标准窗口宽度的历史用例使用。
+//
+// 生产里不存在非标准宽度（WindowSize 是常量），留着是因为删掉它就得连着删
+// funcs_pagination_test.go 里 win=1/3 的退化用例与全组合对照 —— 而那些正是
+// 「窗口策略未漂移」的证据。等 pageNumbers 的调用点全部消失时，一起删。
+func legacyWindowNumbers(page, pages, win int) []int {
 	if pages <= 1 {
 		return nil
 	}

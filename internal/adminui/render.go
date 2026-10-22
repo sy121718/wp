@@ -26,12 +26,13 @@ import (
 // 形状定义在 pkg/view.Result —— 实现它的是业务 dto 的整页视图，dto 不该 import 渲染层。
 // 本包只留这个别名给存量调用点（渲染出口、注释与测试），**新代码用 view.Result**。
 //
-// 由 dto 视图实现（值接收者，零值即「200 且可缓存」）：
+// 由视图自己实现（值接收者，零值即「200 且可缓存」），例如库存模块的失败视图：
 //
-//	func (v ProductNewPageResp) PageStatus() int    { return v.HTTPStatus }
-//	func (v ProductNewPageResp) PageNoStore() bool  { return v.LoadFailed }
+//	func (inventoryLoadFailedView) PageStatus() int   { return http.StatusInternalServerError }
+//	func (inventoryLoadFailedView) PageNoStore() bool { return true }
 //
-// 不实现该接口的视图按「200 + 可缓存」处理。
+// 不实现该接口的视图按「200 + 可缓存」处理。商品模块的整页视图已全部不实现它 ——
+// 那一批失败槽（LoadFailed / HTTPStatus）随「页面 GET 失败走 JSON」一起删掉了。
 type PageResult = view.Result
 
 // RenderPage 后台整页渲染出口：视图 → 状态码 / 缓存头 / 取词注入 → c.HTML。
@@ -53,8 +54,18 @@ func RenderPage(c *gin.Context, tpl string, view any) {
 // 它与 RenderPage 不是两条渲染路径：同一份模板、同一份视图，区别只在套不套页壳 ——
 // 局部更新换掉页面里的一块，套上页壳就是把整页塞进那一块里。
 //
-// 这条出口**一律 200**：htmx 2.0.4 把 5xx 判成 `swap:false`，失败返回 500 等于「用户点了没反应」。
-// 失败因此表达在视图的失败槽里（同 internal/templates/CLAUDE.md 的实测记录）。
+// 这条出口**一律 200**。
+//
+// 理由在 htmx 4 升级后变了，但结论没变，而且更强：
+//   · htmx 2：5xx 被判成 swap:false，失败返回 500 等于「用户点了没反应」；
+//   · htmx 4：**默认 swap 所有响应**（除 204/304），包括 4xx/5xx —— 失败回 500 虽然
+//     能换进去了，但会同时触发 htmx:response:error，弹出「请求失败」的 toast，
+//     而正文其实是一块可以正常渲染的失败槽。两种都不对。
+//
+// 所以片段出口继续回 200 + 在视图里表达失败（失败槽），让页面只得到一块内容、
+// 不额外弹错误。真需要状态码的调用点应该走整页出口（RenderPage 会按 PageStatus 给）。
+// htmx 4 另提供了 htmx.config.noSwap = [204, 304, '4xx', '5xx'] 可以回到「不 swap 错误响应」，
+// 但那是全局开关，会把错误页也一起挡掉 —— 本仓不用它。
 func RenderBare(c *gin.Context, tpl string, view any) {
 	c.HTML(http.StatusOK, tpl, PrepareBareView(c, view))
 }

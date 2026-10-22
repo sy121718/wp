@@ -81,13 +81,16 @@ func TestQueryURLSeparatorOrderAndDuplicates(t *testing.T) {
 
 // TestQueryURLPanicsOnNonStringKey 键写错必须当场爆掉：静默丢一个筛选条件的链接，
 // 表现是"用户点下一页后筛选没了"，比 500 难发现得多（与 fill 同一取舍）。
+//
+// 断言用大小写无关的包含：实现在 pkg/pagination.QueryURL（消息前缀是它的名字），
+// 模板层只是薄包装。要钉的是「消息里指明是哪个函数」，不是某个特定大小写。
 func TestQueryURLPanicsOnNonStringKey(t *testing.T) {
 	defer func() {
 		r := recover()
 		if r == nil {
 			t.Fatalf("非字符串键必须 panic")
 		}
-		if !strings.Contains(fmt.Sprint(r), "queryURL") {
+		if !strings.Contains(strings.ToLower(fmt.Sprint(r)), "queryurl") {
 			t.Fatalf("panic 里应指明函数名，实际: %v", r)
 		}
 	}()
