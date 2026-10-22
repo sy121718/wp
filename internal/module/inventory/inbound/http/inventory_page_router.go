@@ -3,7 +3,7 @@ package inventoryhttp
 // inventory_page_router.go — 库存 / 仓库 / 变动原因 / 货源 / 采购入库页（/admin/inventory*）的注册落点。
 //
 // 只做注册：`/admin` 组的中间件链（Session + CSRF + 权限上下文）由装配层统一挂好，
-// handler 在 inventory_page.go。路由注册只出现在 *_router.go，门禁
+// handler 在 inventory_page_handle.go。路由注册只出现在 *_router.go，门禁
 // scripts/check-route-registration-placement.sh 守这条。
 //
 // 页面写动作复用 API 的权限点 —— CasbinMiddlewareForPath 的路径是权限点声明的真源，

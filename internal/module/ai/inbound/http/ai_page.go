@@ -23,7 +23,7 @@ package aihttp
 // 列出 300 多个与本页无关的权限点只会让人选错。将来有更多类别的外部能力时，
 // 再把选项来源扩成「工具权限点 ∪ 明示的额外能力」。
 
-// 分档口径（见 ai_page_util.go）：
+// 分档口径（见 ai_page.go）：
 //
 //	· 供应商级写操作（保存 / 删除 / 启停）→ PRG 整页重定向：这些动作会改变卡片集合
 //	  与版本号，整页重渲染最不容易出现「片段与页面状态不同步」；
@@ -76,7 +76,9 @@ import (
 	"go_wp/internal/shell"
 	"go_wp/internal/uispec"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/reqparams"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 )
 
 // fabSessionKey 悬浮球的会话键（EnsureSession 按 userID 隔离，所以每个人一条）。
@@ -1097,22 +1099,23 @@ func facingText(c *gin.Context, key string) string { return facingTextParams(c, 
 // builtinProviderKeys 内置供应商键（模板 datalist 用）。
 func builtinProviderKeys() []string { return aiservice.BuiltinProviderKeys() }
 
-// isHXRequest 判断是不是 htmx 发出的请求。
+// isHXRequest 判断是不是 htmx 发出的请求（判据委托 pkg/reqparams，与全仓同一份实现）。
 func isHXRequest(c *gin.Context) bool {
-	return strings.EqualFold(strings.TrimSpace(c.GetHeader("HX-Request")), "true")
+	return reqparams.IsHXRequest(c)
 }
 
 // redirectWhere 按请求类型选择跳转方式：HTMX 用 HX-Redirect（浏览器整页跳转），
-// 原生表单用 302（PRG 的 P 部分）。
+// 原生表单用 303（PRG 的 P 部分）。
+//
+// 状态码语义交给 pageview.AfterWrite：写后跳转必须是 303，302 在部分客户端会被
+// 当成「重放原方法」，于是「提交一次」变成「提交两次」。这条知识现在只在
+// pkg/view/redirect.go 一处，不再靠每个调用点的注释传下去。
 func redirectWhere(c *gin.Context, target string) {
 	if isHXRequest(c) {
-		c.Header("HX-Redirect", target)
-		c.Status(http.StatusOK)
+		pageview.HXRedirect(c, target)
 		return
 	}
-	// 303：POST 之后换成 GET 去看结果（PRG）。302 在部分客户端会被当成「重放原方法」，
-	// 于是「提交一次」变成「提交两次」——表单页尤其明显。
-	c.Redirect(http.StatusSeeOther, target)
+	pageview.AfterWrite(c, target)
 }
 
 // hxFragment 渲染一个可独立渲染的片段；非 HTMX 请求返回 false（调用方走整页重定向）。

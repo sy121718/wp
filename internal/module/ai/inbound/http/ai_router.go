@@ -24,7 +24,7 @@ import (
 // toolRegistry 是**跨模块**的工具注册表（各领域模块在装配期把自己的只读工具注册进去）：
 // 传 nil 表示不接工具（用例测试与轻装配场景），此时会话页退化成不带工具的一问一答。
 // 注册表是指针，且各模块的装配顺序在本调用之后 —— 「先建、后填、运行期读」正是它能工作的原因，
-// 不要在这里缓存它的内容（见 ai_tools_wire.go 关于 Specs 的注释）。
+// 不要在这里缓存它的内容（见 ai_handle.go 关于 Specs 的注释）。
 //
 // adminPages 为 nil 时只挂 JSON 接口（用例测试与轻装配场景）。
 // mcpRoot 是**根路由**（不是 /api 下的组）：外部接入点的路径就是 `/mcp`，
@@ -37,7 +37,7 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	}
 	// 调用流水（ai_call_log）一个实例两个方向：
 	//   · 写侧注到**出站层** —— 流水记的是「打了一次上游」，唯一出站点是 Service.Chat，
-	//     挂在那里无论谁发起对话都记得到（详见 ai_call_log.go）；
+	//     挂在那里无论谁发起对话都记得到（详见 ai_chat.go）；
 	//   · 读侧注到**会话层** —— 会话行悬浮卡要显示「最近调用」（详见 ai_session_calls.go）。
 	// 同一个 CallLogModel 即可：它无状态，只是这张表的访问入口。
 	callLog := aimodel.NewCallLogModel(db)
@@ -50,13 +50,13 @@ func SetupAIRoutes(authorizedAPI *permission.RouteGroup, adminPages *gin.RouterG
 	// 对话能力以窄接口注入，sessionSvc 不 import 配置面的 Service：会话页的「发消息」走这条路。
 	sessionSvc.SetChatPort(svc)
 	// 工具能力（可选增强）：注册表由各领域模块在装配期填入，权限判定复用 Casbin
-	//（obj=路由路径、act=HTTP 方法，与页面中间件同一套策略，见 ai_tools_wire.go）。
+	//（obj=路由路径、act=HTTP 方法，与页面中间件同一套策略，见 ai_handle.go）。
 	// 未传注册表时不注入 —— 会话页照常一问一答，而不是整个发消息功能不可用。
 	if toolRegistry != nil {
 		sessionSvc.SetToolProvider(&toolProvider{runner: mcp.NewRunner(toolRegistry, casbinAuthorizer)})
 	}
 	// 工具调用流水（审计）：写法与调用流水一致（旁路观测、异步写）。
-	// 未注入时审计是空操作 —— 审计写不进去不该让对话失败（见 ai_tool_call_log.go）。
+	// 未注入时审计是空操作 —— 审计写不进去不该让对话失败。
 	sessionSvc.SetToolCallLogWriter(aimodel.NewToolCallLogModel(db))
 	// 调用流水的读侧（悬浮卡的「最近调用」）。
 	sessionSvc.SetCallLogReader(callLog)

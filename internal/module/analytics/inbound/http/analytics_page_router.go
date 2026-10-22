@@ -3,7 +3,7 @@ package analyticshttp
 // analytics_page_router.go — 访问统计页与 SEO 控制台（/admin/analytics、/admin/seo）的注册落点。
 //
 // 只做注册：`/admin` 组的中间件链（Session + CSRF + 权限上下文）由装配层统一挂好，
-// handler 在 analytics_page.go / seo_page.go。路由注册只出现在 *_router.go，门禁
+// handler 在 analytics_page.go。路由注册只出现在 *_router.go，门禁
 // scripts/check-route-registration-placement.sh 守这条。
 //
 // 本页没有写操作，页面 GET 的 Casbin 待补（见 docs/02-Z §4.3）—— 权限点 analytics:view

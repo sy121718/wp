@@ -2,8 +2,9 @@ package blockservice
 
 // Package blockservice 实现全局块业务用例。
 //
-// 本文件只放 Service 结构体、构造函数与装配自检；各能力域见 block_crud.go（增删改查）、
-// 以及既有的 block_errors.go（错误集）与 block_scope.go（逐工程定位）。
+// 本文件只放 Service 结构体、构造函数与装配自检；增删改查、错误集与逐工程定位都在
+// block.go 里。早先它们拆在 block_crud.go / block_errors.go / block_scope.go 三个文件，
+// 后来合回 block.go —— 注释里的旧文件名已不存在，以本包实际文件为准。
 
 // blocks 在迁移 215 里带 FORCE 策略：不带 app.project_id 的读写在非超级角色下
 // **静默落空**（读到 0 行 → ErrRecordNotFound、改 0 行、删 0 行且不报错），

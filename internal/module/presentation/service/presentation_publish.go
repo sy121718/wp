@@ -40,7 +40,7 @@ package presentationservice
 // 因此 ① ② 之外还多一道**数据库侧**的兜底 —— 提交前的指纹校验对「同一进程内」
 // 与「别的进程刚提交过」两种情形一视同仁（后者读到的是库里已经推进过的状态）。
 
-// 与 page 侧（page_publish_converge.go）同形、同表、同状态机，区别只有两处：
+// 与 page 侧同形、同表、同状态机，区别只有两处：
 //   - 领取口径按 ReceiptSourcePresentation + presentation 自己的动作词表
 //     （只认 switch_active；update_url / rollback 是手工 Page 的动作）；
 //   - 重放例程是本模块既有的 recoverOneReceipt（活跃指针与语言账本在另外两张表上，
@@ -496,7 +496,7 @@ func (s *Service) Rebuild(ctx context.Context, req *presentationdto.RebuildReq) 
 	}
 	// req.TemplateID 非空 = 切换绑定并重新发布（验收 4：切换模板重新发布后产物随之变化）。
 	// 换底稿 = 放弃自定义（docs/04-C）：切换路径不应用实例文档，产物按新模板编译，
-	// 模式与文档列在同一次发布的事务里一并清除（presentation_i18n.go 的
+	// 模式与文档列在同一次发布的事务里一并清除（presentation_render.go 的
 	// ClearInstanceModeTx，与快照/产物/指针对齐）；非切换路径则按渲染模式取底稿
 	//（document 用商品自己的文档；binding 照常解析，实体数据更新不丢自定义）。
 	//

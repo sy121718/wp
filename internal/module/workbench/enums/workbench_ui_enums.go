@@ -72,7 +72,7 @@ const InspectorSectionResponsive = "workbench.inspector.section.responsive"
 // InspectorSectionAdvanced 分组「高级」。
 const InspectorSectionAdvanced = "workbench.inspector.section.advanced"
 
-// —— 检查器字段标签与占位符（inspector_field_handle.go / inspector_navigation.go）——
+// —— 检查器字段标签与占位符（inbound/http 的 workbench_handle.go / workbench_page.go）——
 
 // InspectorCorners 四角圆角控件的默认标签。
 const InspectorCorners = "workbench.inspector.corners"
@@ -119,7 +119,7 @@ const InspectorPhCSSDecls = "workbench.inspector.ph.cssDecls"
 // InspectorPhDimension dimension 控件的占位符。
 const InspectorPhDimension = "workbench.inspector.ph.dimension"
 
-// —— 导航选择器（inspector_navigation.go）——
+// —— 导航选择器（inbound/http 的 workbench_handle.go）——
 
 // InspectorNavAny 下拉的「（不限）」空选项。
 const InspectorNavAny = "workbench.inspector.nav.any"
@@ -136,7 +136,7 @@ const InspectorNavKindFooter = "workbench.inspector.nav.kind.footer"
 // InspectorNavKindFooterMobile 导航位置「页脚（移动端）」。
 const InspectorNavKindFooterMobile = "workbench.inspector.nav.kind.footerMobile"
 
-// —— 重复项面板（inspector_repeater.go 拼 HTML）——
+// —— 重复项面板（workbench.go 拼 HTML）——
 
 // InspectorRepeaterMoveUp 重复项上移按钮的提示。
 const InspectorRepeaterMoveUp = "workbench.inspector.repeater.moveUp"
@@ -153,7 +153,7 @@ const InspectorRepeaterMatched = "workbench.inspector.repeater.matched"
 // InspectorRepeaterMismatch 数量不一致时的说明（占位符 {noun} / {rows} / {panels}）。
 const InspectorRepeaterMismatch = "workbench.inspector.repeater.mismatch"
 
-// —— 画布桥接脚本（editor_bridge.go 注入 iframe 的 JS 文案）——
+// —— 画布桥接脚本（workbench_page.go 注入 iframe 的 JS 文案）——
 //
 // 这批串拼进 <script> 后由 iframe 内的 JS 输出（浮标按钮文字、右键菜单项、
 // 快捷条 title），与模板取词同性质 —— 都是给人看的文案，所以走同一套词条。

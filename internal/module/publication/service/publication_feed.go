@@ -1,7 +1,7 @@
 package pubservice
 
 // 入口与 sitemap 同一条链：page 发布激活后调 RefreshSiteFiles，这里在写完
-// sitemap.xml / robots.txt 之后顺手刷新 feed.xml（见 publication_sitefiles.go）。
+// sitemap.xml / robots.txt 之后顺手刷新 feed.xml（见 publication_feed.go）。
 //
 // 三个输入决定了条目集合：
 //
@@ -26,7 +26,7 @@ package pubservice
 // contents.data 在这条链上取不到（publication 不跨模块查内容表，跨模块取数要加端口
 // 并改进两处装配签名），而产物恰好是唯一不需要跨模块就能拿到的同一份事实。
 //
-// 与 seo_audit.go 的 ParseAuditDocument 的分工：那个解析器服务体检（title / meta /
+// 与 publication_feed.go 的 ParseAuditDocument 的分工：那个解析器服务体检（title / meta /
 // canonical / 内链），本解析器服务 feed（多了一项 JSON-LD @type，用来判断「这是不是
 // 一篇文章」）。两者都用 x/net/html 的 tokenizer，不引入解析器级别的重型依赖。
 //
@@ -361,7 +361,7 @@ func readFeedDoc(file string) (doc feedDoc, ok bool) {
 //
 // 不遍历激活目录：active 里放的全是指向产物的符号链接，而 filepath.Walk 默认
 // 不跟随目录符号链接 —— 遍历会一个产物也读不到（这正是按路径直读的理由，
-// 见 seo_audit.go 的 CollectActiveDocuments 的同一处陷阱）。
+// 见 publication_feed.go 的 CollectActiveDocuments 的同一处陷阱）。
 func activeHTMLFile(dir, path string) (string, bool) {
 	rel := strings.Trim(strings.TrimSpace(path), "/")
 	// 空路径折算成 "index"，与 pipeline.relActivePath 的语义**逐字一致**：

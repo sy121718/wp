@@ -6,7 +6,7 @@ package aiservice
 //	  不是权威清单 —— 所以「恢复默认模型」是显式动作，缺清单时明确报错而不是静默清空。
 //	· **目录形状由代码白名单约束**：只认 config_data.models（元素形状见 dto.ModelEntry），
 //	  解析失败一律回退（跳过坏行 / 回退空目录），写回时保留 config_data 的其它键。
-//	· **拉取走 SSRF 防护口径**（ssrf.go），地址每次出站都重新校验。
+//	· **拉取走 SSRF 防护口径**（ai_service.go），地址每次出站都重新校验。
 
 // 页面上的「获取可用模型」是**两段动作**：先把候选拿出来给人看（本文件），
 // 人勾完再写库（inbound 侧组装 SaveModelsReq）。拆开的原因是可撤销性 ——
@@ -18,12 +18,11 @@ package aiservice
 //	@earendil-works/pi-ai/dist/providers/data/*.json（.manifest.json schemaVersion 3，
 //	generatedAt 2026-09-22T19:31:44.346Z）：41 家供应商、1495 个模型。
 //
-// 文件分工：
+// 本文件包含：供应商表（展示名、协议端点、模型清单引用）、中小型供应商与大目录供应商
+// （聚合平台 / 托管平台，30 个模型以上）的模型清单，以及读取与合并逻辑。
 //
-//	catalog_data.go             —— 本文件：类型 + 供应商表（展示名、协议端点、模型清单引用）
-//	catalog_data_models.go      —— 中小型供应商的模型清单
-//	catalog_data_models_bulk.go —— 大目录供应商（聚合平台 / 托管平台，30 个模型以上）的模型清单
-//	ai_model_catalog.go         —— 只留读取与合并逻辑，不再硬编码目录数据
+// 早先这几块拆在 catalog_data*.go / ai_model_catalog.go 几个文件里，后来合回本文件；
+// 注释曾按旧文件名描述分工，那些文件已不存在 —— 读代码时以本包实际文件为准。
 //
 // 模型 id / 展示名 / 上下文窗口 / 最大输出 token / 输入类型逐字段原样搬运，
 // **不做前缀加工**：openrouter 的 deepseek/deepseek-v4.1-flash 与 opencode 的 muse-spark-1.3-contributor
@@ -43,7 +42,7 @@ package aiservice
 // **不做前缀加工** —— 前缀形态是各家服务端自己要求的（openrouter 的 deepseek/deepseek-v4.1-flash
 // 与 opencode 的裸 id 都是原样），客户端既不添加也不剥离。
 //
-// 不要手改本文件的数据行：改数据要重跑生成脚本（见 ai_model_catalog.go 文件头）。
+// 不要手改本文件的数据行：改数据要重跑生成脚本（见 ai_catalog.go 文件头）。
 
 // 数据来源：dsh 内置的 pi-ai 供应商预置包
 //
@@ -54,7 +53,7 @@ package aiservice
 // **不做前缀加工** —— 前缀形态是各家服务端自己要求的（openrouter 的 deepseek/deepseek-v4.1-flash
 // 与 opencode 的裸 id 都是原样），客户端既不添加也不剥离。
 //
-// 不要手改本文件的数据行：改数据要重跑生成脚本（见 ai_model_catalog.go 文件头）。
+// 不要手改本文件的数据行：改数据要重跑生成脚本（见 ai_catalog.go 文件头）。
 
 import (
 	"cmp"
@@ -83,7 +82,7 @@ type builtinProvider struct {
 //
 // 目录数据不再硬编码在本文件：全部来自 catalog_data*.go（41 家供应商、1495 个模型，
 // 逐字段搬自 dsh 的 pi-ai 供应商预置包）。这里只把预设表压成「默认地址 + 默认模型清单」
-// 的索引视图；多协议供应商的默认地址与协议取 primaryEndpoint（见 catalog_data.go），
+// 的索引视图；多协议供应商的默认地址与协议取 primaryEndpoint（见 ai_catalog.go），
 // 协议列未实现的家（amazon-bedrock / azure-openai-responses / google-vertex / mistral /
 // openai-codex / radius）地址为空，界面会要求用户自己填。
 var builtinProviders = buildBuiltinProviders()
