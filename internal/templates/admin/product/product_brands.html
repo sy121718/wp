@@ -89,20 +89,20 @@
            csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头（基座跳过同名字段）。 *}
         <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <p class="form-hint" data-write-flash-target="product_brands-bulk" role="status" hidden></p>
+            {* 批量结果不再用页面上的结论区：迁移到 htmx 后，成功直接刷新列表、
+               被拒由全局 toast 说原因（X-Message 头）。原来的 data-write-flash-target
+               是「刷新前把结论存 sessionStorage、落地后再显示」那一套的落点，
+               本页已不需要它 —— 留着会是一块永远为空的区域（配对测试会报）。 *}
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete}}{{if len(.Brands) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                {* 就地写而不是用 bulkBtn：那个片段的属性名是冻结契约（admin.js 依赖），
-                   装不下一串 data-write-* 声明。成功条目按 items[].deleted 就地移除行；
-                   批量档**刻意不自动刷新** —— 逐条原因一闪而过就看不完了。 *}
+                {* 走 htmx 原生提交。批量在本仓是**整批一个事务、要么全成要么全败**（AGENTS
+                   「写操作」节）：后端锁不到某一条就整批不删并把明细放 data.items。
+                   所以前端不需要「按 items[].deleted 逐条移除行」那套 —— 成功就刷新列表
+                   （行还在不在、派生列怎么变由服务端重算），被拒就由 toast 说原因。 *}
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        data-write-api="/api/product/brand/bulk-delete" data-write-mode="bulk"
-                        data-write-flash="product_brands-bulk"
-                        data-msg-none-selected="{{tr("admin.product_brands.bulk.noneSelected", "没有勾选任何品牌，列表未改动。")}}"
-                        data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
-                        data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                        data-msg-refresh="{{tr("admin.product_brands.bulkDelete.refresh", "刷新列表")}}"
+                        hx-post="/api/product/brand/bulk-delete" hx-swap="none" hx-include="closest form"
+                        data-reload-on-ok
                         data-confirm="{{tr("admin.product_brands.bulkDeleteConfirm", "删除选中的品牌？被商品引用的会被拒绝，其余照常删除。")}}"
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
@@ -187,10 +187,9 @@
     <p class="form-hint" data-write-status role="status" hidden></p>
     {{range _, b := .Brands}}
     {{if canDelete}}
-    {* single 档只发 {id} + data-write-extra 点名的字段：多工程下 projectId 必须带上。 *}
+    {* single 档：表单只带 id + projectId，htmx 原生提交（formdata）后按整页刷新收尾。 *}
     <form id="brand-del-{{b.ID}}" class="hidden-form"
-          data-write-api="/api/product/brand/delete" data-write-mode="single" data-write-extra="projectId"
-          data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
+          hx-post="/api/product/brand/delete" hx-swap="none" data-reload-on-ok
           data-confirm="{{ .["t"]("admin.product_brands.list.deleteConfirm", "删除该品牌？被商品引用时会被拒绝。") }}" data-confirm-danger>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{b.ID}}">

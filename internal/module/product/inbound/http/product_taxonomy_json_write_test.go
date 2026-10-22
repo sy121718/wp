@@ -124,9 +124,12 @@ func TestBrandPageUsesJSONWriteBase(t *testing.T) {
 	html := rec.Body.String()
 	assertContainsAll(t, html, []string{
 		"data-list-bulk",
-		`data-write-api="/api/product/brand/bulk-delete"`,
-		`data-write-api="/api/product/brand/delete"`,
-		`data-write-extra="projectId"`,
+		// 批量与单条删除也都迁到 htmx 了。批量在本仓是**整批一个事务、要么全成要么全败**
+		// （AGENTS「写操作」节），后端锁不到某一条就整批不删、明细放 data.items ——
+		// 所以前端不做「按 items[].deleted 逐条移除行」，成功刷新、被拒由 toast 说原因。
+		`hx-post="/api/product/brand/bulk-delete"`,
+		`hx-post="/api/product/brand/delete"`,
+		`data-reload-on-ok`,
 		// 编辑抽屉与新建抽屉都是整表单档：两处字段清单相同，只差一个 id 隐藏域。
 		// 这一档已从 ui/json_write.js 迁到 htmx（formdata）；判据不变 ——
 		// 写入口必须声明端点，少了它按钮会退化成原生提交（页面 POST 的 action 早已删除）。

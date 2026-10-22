@@ -49,6 +49,45 @@
         return host ? (host.getAttribute(attr) || '') : '';
     }
 
+    // —— 刷新前的结论暂存 ——
+    //
+    // 有一类写动作成功后**必须整页刷新**（服务端以库为准重算了结果），而刷新会把
+    // toast 一起抹掉 —— 用户什么都没看到。结论因此在 reload 前存进 sessionStorage，
+    // 落地后由本文件写到页面上的 [data-write-flash-target="同名"]，读完即删。
+    //
+    // 键前缀与 ui/json_write.js 保持一致：两套基座共用同一份 flash 契约，
+    // 同一张页面上一半表单迁了、一半没迁时，结论不会跑到两个地方去。
+    var FLASH_PREFIX = 'json_write_flash:';
+
+    function storeFlash(src, text) {
+        var name = src && src.closest && src.closest('[data-write-flash]');
+        if (!name) return;
+        name = name.getAttribute('data-write-flash');
+        if (!name || !text) return;
+        try {
+            window.sessionStorage.setItem(FLASH_PREFIX + name, text);
+        } catch (e) { /* 隐私模式下写不进去：结论丢了，但不能让写操作变红 */ }
+    }
+
+    function renderFlash() {
+        var targets = document.querySelectorAll('[data-write-flash-target]');
+        for (var i = 0; i < targets.length; i++) {
+            var box = targets[i];
+            var name = box.getAttribute('data-write-flash-target');
+            var text = '';
+            try {
+                text = window.sessionStorage.getItem(FLASH_PREFIX + name) || '';
+                window.sessionStorage.removeItem(FLASH_PREFIX + name);
+            } catch (e) { text = ''; }
+            if (!text) continue;
+            box.textContent = '';
+            var line = document.createElement('span');
+            line.textContent = text;
+            box.appendChild(line);
+            box.hidden = false;
+        }
+    }
+
     function closeTarget(sel) {
         if (!sel) return;
         var el = document.querySelector(sel);
@@ -78,11 +117,22 @@
 
         if (!ok) return; // 失败什么都不动：抽屉不关、已填内容一个字段都不碰
 
-        var reloadSel = declared(src, 'data-reload-on-ok');
-        if (reloadSel) {
+        // 声明了 data-reload-on-ok 或 data-write-flash 的要刷新：先把结论存起来。
+        // data-write-flash 的语义是「刷新后仍要让用户看到那句话」，而 toast 活不过刷新。
+        var needsReload = declared(src, 'data-reload-on-ok') ||
+            (src && src.closest && src.closest('[data-write-flash]'));
+        if (needsReload) {
+            storeFlash(src, messageOf(res));
             window.location.reload();
             return;
         }
         closeTarget(declared(src, 'data-close-on-ok'));
     });
+
+    // 页面装载时先把上一次写动作留下的结论落到结果区（读完即删）。
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', renderFlash);
+    } else {
+        renderFlash();
+    }
 })();
