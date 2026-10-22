@@ -18,6 +18,7 @@
 package binding
 
 import (
+	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
@@ -35,14 +36,64 @@ type FormBinder interface {
 	BindForm(url.Values) error
 }
 
-// JSON 绑定 JSON 请求体。
+// JSON 绑定请求体，**同时接受 JSON 与表单体**（按 Content-Type 自适应）。
+//
+// 名字里的 JSON 是历史叫法（写 API 的主契约仍是 JSON）；实际上用的是 gin 的
+// `ShouldBind` —— 它按 Content-Type 分派：application/json 走 JSON，
+// x-www-form-urlencoded / multipart 走表单。
+//
+// 为什么需要这条：写动作现在有**两个**客户端 —— MCP / AI / fetch 发 JSON，
+// htmx 的写表单发 formdata。同一端点同时服务两者时，若用 `ShouldBindJSON`，
+// htmx 发来的表单会被当成"JSON 解析失败"整条 400（实测：字段全为零值）。
+//
+// 表单体能否绑上取决于 DTO 的 `form` tag：
+//   - 有 `form:"tagIds"` → 能收到同名的多值（tagIds=a&tagIds=b → [a b]）、
+//     指针、内嵌 struct；
+//   - 没 `form` tag → gin 按**字段名**匹配（大小写不敏感），`ProjectID` 能收到
+//     `ProjectID`/`projectID`，但**收不到 `projectId`** —— 而 JSON tag 通常就是
+//     小驼峰。所以新写的写 DTO 请把 `form` tag 一并写上（与 json tag 同名即可）。
+//
+// —— 一个必须显式处理的边界 ——
+//
+// `ShouldBind` 在**没有 Content-Type** 时一律当表单处理（gin 的 formBinding 不看 CT）。
+// 于是一段畸形 JSON（`{not json`）会被当成表单体而"绑定成功"（键名乱但不是错），
+// 这正是本函数改成自适应后唯一放宽的地方。真实浏览器发 JSON 一定会带
+// `Content-Type: application/json`，所以这个口子只在"客户端不守规矩"时出现；
+// 但写接口不能靠客户端自觉 —— 下面显式拦回去：带了 body 却没有 JSON 声明的，
+// 按 JSON 解析，解析不了就 400（与旧行为一致）。
+//
+// 其他边界照旧：`binding:"required"` 这类校验 tag 照样生效（ShouldBind 绑完仍跑
+// 校验），空 body、非法 JSON 也照样报错。
 func JSON[T any](c *gin.Context) (*T, bool) {
 	var req T
-	if err := c.ShouldBindJSON(&req); err != nil {
+	// 没声明 Content-Type 但有 body：当 JSON 处理，保住旧行为。
+	if hasBodyWithoutContentType(c) {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.ParamError(c)
+			return nil, false
+		}
+		return &req, true
+	}
+	if err := c.ShouldBind(&req); err != nil {
 		response.ParamError(c)
 		return nil, false
 	}
 	return &req, true
+}
+
+// hasBodyWithoutContentType 请求带了 body 但没声明 Content-Type。
+//
+// 只看 POST/PUT/PATCH：GET/DELETE 没有 body 是正常的，不该因此报错。
+func hasBodyWithoutContentType(c *gin.Context) bool {
+	if c.Request == nil || c.Request.Body == nil {
+		return false
+	}
+	switch c.Request.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+	default:
+		return false
+	}
+	return strings.TrimSpace(c.GetHeader("Content-Type")) == ""
 }
 
 // QueryBinder 是查询串里反射绑定覆盖不到的形态的补充入口。

@@ -34,7 +34,7 @@ func Success(c *gin.Context, data ...interface{}) {
 		responseData = data[0]
 	}
 
-	c.JSON(http.StatusOK, Response{
+	writeResponse(c, http.StatusOK, Response{
 		Code:    http.StatusOK,
 		Message: translate(c, enums.MsgOperationSuccess),
 		Data:    responseData,
@@ -47,7 +47,7 @@ func SuccessWithMessage(c *gin.Context, message string, data ...interface{}) {
 		responseData = data[0]
 	}
 
-	c.JSON(http.StatusOK, Response{
+	writeResponse(c, http.StatusOK, Response{
 		Code:    http.StatusOK,
 		Message: translate(c, message),
 		Data:    responseData,
@@ -55,7 +55,7 @@ func SuccessWithMessage(c *gin.Context, message string, data ...interface{}) {
 }
 
 func ErrorWithMessage(c *gin.Context, code int, message string) {
-	c.JSON(code, Response{
+	writeResponse(c, code, Response{
 		Code:    code,
 		Message: translate(c, message),
 	})
@@ -67,7 +67,7 @@ func ErrorWithMessage(c *gin.Context, code int, message string) {
 // 变成一段拼接的散文（既不可翻译、也没法让前端逐行展示）。判据是「这些数据是不是给人
 // 照着办下一个动作用的」—— 是就用 data，不是就写进 message。
 func ErrorWithData(c *gin.Context, code int, message string, data interface{}) {
-	c.JSON(code, Response{
+	writeResponse(c, code, Response{
 		Code:    code,
 		Message: translate(c, message),
 		Data:    data,

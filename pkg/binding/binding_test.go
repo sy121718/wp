@@ -114,3 +114,53 @@ func newContext(method, target, body string) (*gin.Context, *httptest.ResponseRe
 	c.Request = req
 	return c, rec
 }
+
+// TestJSONAcceptsFormBody 同一端点同时接受 JSON 与表单体（写动作的双客户端）。
+//
+// 这是 htmx 写表单能落到现有端点的前提：MCP/AI 发 JSON，htmx 发 formdata，
+// 两边都进 binding.JSON。若退回 ShouldBindJSON，htmx 的表单会被当「JSON 解析失败」
+// 整条 400（实测字段全为零值），而页面上看起来只是「点了没反应」。
+func TestJSONAcceptsFormBody(t *testing.T) {
+	c, rec := newContext(http.MethodPost, "/x", "name=abc&page=3")
+	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req, ok := JSON[sampleReq](c)
+	if !ok {
+		t.Fatalf("表单体应能绑定，实际失败（状态 %d，body %s）", rec.Code, rec.Body.String())
+	}
+	if req.Name != "abc" || req.Page != 3 {
+		t.Fatalf("表单字段没绑上：%+v", req)
+	}
+}
+
+// TestJSONFormMultiValue 同名多值要收成切片（form tag 声明时）。
+//
+// 多选 checkbox 组默认是「后者覆盖」，失效模式是「勾了三个、只存最后一个」——
+// 那类缺陷在页面上看不出来（保存成功、只是数据少了）。
+func TestJSONFormMultiValue(t *testing.T) {
+	type multiReq struct {
+		TagIDs []string `form:"tagIds"`
+	}
+	c, _ := newContext(http.MethodPost, "/x", "tagIds=t1&tagIds=t2&tagIds=t3")
+	c.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req, ok := JSON[multiReq](c)
+	if !ok {
+		t.Fatalf("多值表单应能绑定")
+	}
+	if len(req.TagIDs) != 3 || req.TagIDs[0] != "t1" || req.TagIDs[2] != "t3" {
+		t.Fatalf("同名多值没收成切片：%v", req.TagIDs)
+	}
+}
+
+// TestJSONStillRequiresValidJSONWithoutContentType 没 Content-Type 但有 body 时仍按 JSON 校验。
+//
+// gin 的 ShouldBind 在没有 Content-Type 时一律当表单处理，一段畸形 JSON 会被
+// "绑定成功"。写接口不能靠客户端自觉带 CT，所以这条边界必须显式拦回去。
+func TestJSONStillRequiresValidJSONWithoutContentType(t *testing.T) {
+	c, rec := newContext(http.MethodPost, "/x", "{not json")
+	if _, ok := JSON[sampleReq](c); ok {
+		t.Fatalf("无 Content-Type 的畸形 body 不该被当成表单绑定成功")
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("应写 400，实际 %d", rec.Code)
+	}
+}
