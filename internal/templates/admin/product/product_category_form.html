@@ -15,9 +15,14 @@
 
        空值字段由 ui/htmx_form_body.js 在请求发出前删掉 —— formdata 里 `sort=` 会让后端
        *int 绑成 0（「没填」变成「改成 0」），而 JSON 侧「省略字段」= 本次不改。 *}
+    {* data-write-keep-empty="parentId"：父级下拉选「（顶级分类）」时值是空串，而后端
+       UpdateCategoryReq 的语义是「nil = 本次不改，指向空串 = **提升为顶级**」。
+       不声明它，htmx_form_body.js 会把空串删掉 —— 「提升为顶级」变成「不改父级」，
+       用户点了没反应还以为保存成功。 *}
     <form hx-post="/api/product/category/{{if create}}create{{else}}update{{end}}"
           hx-swap="none" hx-disabled-elt="find button[type=submit]"
-          data-close-on-ok="[data-drawer]">
+          data-close-on-ok="[data-drawer]"
+          data-write-keep-empty="parentId">
         <input type="hidden" name="projectId" value="{{.Project}}">
         {{if !create}}<input type="hidden" name="id" value="{{.ID}}">{{end}}
         <div class="form-inline">

@@ -100,7 +100,10 @@
        · data-write-html：富文本给的是裸 HTML，入库形态是 jsonb {"html": …}。
        csrf 走请求头（基座自动带 X-CSRF-Token），表单里不再有隐藏域。 *}
     {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form id="product-edit-main" class="card card-body form-stack"
+          {* keep-empty="primaryCategoryId"：空串表示**解绑主分类**（UpdateReq 的注释写着
+             「nil 表示本次不改，指向空串表示解绑」），不能像普通空值那样删掉。 *}
           hx-post="/api/product/update" hx-swap="none"
+          data-write-keep-empty="primaryCategoryId"
           data-write-array="attributeIds,categoryIds,tagIds"
           data-write-float="defaultPrice,weight"
           data-write-skip-empty="slug,sku,defaultPrice,weight"

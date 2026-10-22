@@ -9,6 +9,8 @@
  *         hx-swap="none"                         响应不换 DOM（写动作没有要渲染的内容）
  *         hx-disabled-elt="find button[type=submit]"  提交期间禁按钮（防重复提交）
  *         data-close-on-ok="#drawer">             成功之后关掉的容器（可选）
+ *         data-write-nav="/admin/products/edit?project=p&id={id}"
+ *                                                成功之后跳到这里，{id} 取响应 data.id（可选）
  *
  * 为什么 msg 读头而不是读 body：`hx-swap="none"` 时响应体不会被使用，body 里的 message
  * 前端拿不到；而让前端去 JSON.parse 响应文本等于让前端懂后端契约（{code,message,data}），
@@ -88,6 +90,18 @@
         }
     }
 
+    // idOf 从响应正文里取 data.id（写动作的成功回执是 {code,message,data:{id:...}}）。
+    //
+    // 只在这一处解析 JSON：data-write-nav 是唯一需要「拿返回值做下一步」的声明，
+    // 其余写动作的结论都走 X-Message 头，不需要碰正文。
+    function idOf(text) {
+        if (!text) return '';
+        var body;
+        try { body = JSON.parse(text); } catch (e) { return ''; }
+        var data = (body && body.data) || {};
+        return data.id == null ? '' : String(data.id);
+    }
+
     function closeTarget(sel) {
         if (!sel) return;
         var el = document.querySelector(sel);
@@ -116,6 +130,20 @@
         toast(messageOf(res), ok);
 
         if (!ok) return; // 失败什么都不动：抽屉不关、已填内容一个字段都不碰
+
+        // data-write-nav：成功后按响应里的 id 跳到目标页（新建 → 编辑页就是这种）。
+        // {id} 从响应 JSON 的 data.id 取；取不到时退回刷新 —— 跳一个 id 为空的地址
+        // 会让用户看到「商品不存在」，比留在原页更难理解。
+        var nav = declared(src, 'data-write-nav');
+        if (nav) {
+            var id = idOf(ctx.text);
+            if (id) {
+                window.location.assign(nav.replace('{id}', encodeURIComponent(id)));
+                return;
+            }
+            window.location.reload();
+            return;
+        }
 
         // 声明了 data-reload-on-ok 或 data-write-flash 的要刷新：先把结论存起来。
         // data-write-flash 的语义是「刷新后仍要让用户看到那句话」，而 toast 活不过刷新。

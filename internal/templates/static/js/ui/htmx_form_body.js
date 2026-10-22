@@ -113,9 +113,22 @@
         return { driver: spec.driver, driverValue: String(driver.value == null ? '' : driver.value).trim(), value: out };
     }
 
-    function dropEmpty(body) {
+    // dropEmpty 删掉「空值 = 没填」的顶层字段。
+    //
+    // ⚠ 不是所有空串都该删：有些字段的空串**是有语义的**（解绑某处关联），
+    // 例如分类/商品的 parentId、primaryCategoryId —— 后端 DTO 的注释写着
+    // 「nil 表示本次不改，指向空串表示解绑 / 提升为顶级」。把这类字段的空串删掉，
+    // 「提升为顶级」就变成了「不改父级」，用户点了没反应还以为保存成功。
+    //
+    // 判据因此分两类：
+    //   · data-write-keep-empty="parentId,..." 点名的字段：**空串照发**；
+    //   · 其余字段：空串删掉（formdata 的 `sort=` 会让后端 *int 绑成 0，
+    //     而 JSON 侧省略字段 = 本次不改）。
+    function dropEmpty(body, el) {
+        var keep = nameSet(el, 'data-write-keep-empty');
         var drop = [];
         body.forEach(function (value, key) {
+            if (keep[key]) return;   // 空串有语义的字段：照发
             // File 永远保留：空文件输入根本不会出现在 FormData 里，这里只是防御。
             if (typeof value === 'string' && value.trim() === '') drop.push(key);
         });
@@ -284,6 +297,8 @@
         // v4 的 body 是 FormData 或 URLSearchParams，两者都有 forEach / delete / set。
         if (!body || typeof body.forEach !== 'function' || typeof body.delete !== 'function') return;
 
+        var src = ctx.sourceElement;
+
         // 顺序要紧：先删顶层空值，再组装对象。
         //   · 反过来会出问题：applyObject 之后 body 里的 ruleParams 是 "{}"（非空串），
         //     本身不会被删；但驱动字段（ruleType）若为空会被 dropEmpty 删掉，
@@ -291,9 +306,7 @@
         //     少发一个键只会让错误信息更难读。
         //   · 更关键的是：dropEmpty 要作用在**原始表单值**上，才能在组装前把
         //     「没填的参数输入框」排除掉；组装时再判一次空值（scalar 返回 null）。
-        dropEmpty(body);
-
-        var src = ctx.sourceElement;
+        dropEmpty(body, src);
 
         // 再组装行数组（必须在删空值之前读容器里的原始值 —— 它要取 id 这类隐藏字段）。
         var rowsSpec = src ? rowsSpecOf(src) : null;
