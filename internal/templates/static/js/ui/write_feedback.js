@@ -115,6 +115,37 @@
         el.hidden = true;
     }
 
+    // ── 确认框守卫（与 ui/json_write.js 的 hasConfirm 同一语义）──
+    //
+    // ui/confirm.js 在**捕获阶段**拦 submit、preventDefault、弹框，确认后临时摘掉
+    // data-confirm 再 requestSubmit。但 htmx 4 的事件处理器**不检查 defaultPrevented**
+    // （运行时源码里该标识 0 次出现），于是它照样发出请求 —— 而确认后 requestSubmit
+    // 会再发一次。实测：点删除按钮、还没点「确定」时就已经发出 1 个 POST，
+    // 点确定后再发 1 个 = 一次删除动作两个请求。幂等端点第二次会报「不存在」。
+    //
+    // 守卫放在 before:request（比发出请求早，比 after:request 早得多）：
+    // 表单或本次 submitter 上还有 data-confirm 就说明**确认流程还没走完**，直接拦下。
+    // confirm.js 放行时摘掉了那个属性，所以正常路径不受影响。
+    function hasPendingConfirm(src) {
+        if (!src || typeof src.closest !== 'function') return false;
+        var el = src;
+        // 按钮级声明：data-confirm 可能在 submitter 上（而不是表单上）。
+        if (el.hasAttribute && el.hasAttribute('data-confirm')) return true;
+        var form = el.closest && el.closest('form');
+        return !!(form && form.hasAttribute && form.hasAttribute('data-confirm'));
+    }
+
+    if (typeof window.htmx.on === 'function') {
+        window.htmx.on('htmx:before:request', function (evt) {
+            var ctx = (evt && evt.detail && evt.detail.ctx) || {};
+            var src = ctx.sourceElement;
+            if (hasPendingConfirm(src)) {
+                // 返回 false 让 htmx 放弃这次请求（v4 的取消协议）。
+                evt.preventDefault();
+            }
+        });
+    }
+
     window.htmx.on('htmx:after:request', function (evt) {
         var ctx = (evt && evt.detail && evt.detail.ctx) || {};
         var res = ctx.response || {};

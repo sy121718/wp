@@ -340,3 +340,59 @@ test('data-write-float：点名的字段按小数发，认不出的原样发字�
     assert.deepEqual(body.dump(), ['defaultPrice=9.9', 'weight=abc', 'slug=9.9'],
         'defaultPrice 转数字；weight 认不出原样发；未点名的 slug 不动');
 });
+
+// ── ⑤ 确认框守卫（write_feedback.js，但用同一套 vm 手法测）──
+//
+// 这是审查 P1 的一项：ui/confirm.js 在捕获阶段 preventDefault 弹框，而 htmx 4 的
+// 事件处理器**不检查 defaultPrevented**（运行时源码里该标识 0 次出现）——
+// 于是确认前就发出请求，确认后再发一次 = 一次删除两个请求。
+//
+// 守卫在 write_feedback.js 的 htmx:before:request 里，判据与 json_write.js 的
+// hasConfirm 一致：表单或 submitter 上还有 data-confirm 就拦。
+test('write_feedback 拦下「确认流程未走完」的请求', () => {
+    const feedbackSource = fs.readFileSync(__dirname + '/write_feedback.js', 'utf8');
+    const handlers = {};
+    const sandbox = {
+        window: {
+            htmx: { on(name, fn) { handlers[name] = fn; } },
+            WBUI: { toast() {} },
+        },
+        document: { readyState: 'complete', querySelectorAll() { return []; }, addEventListener() {} },
+    };
+    sandbox.window.window = sandbox.window;
+    sandbox.window.document = sandbox.document;
+    vm.createContext(sandbox);
+    vm.runInContext(feedbackSource, sandbox);
+
+    assert.ok(handlers['htmx:before:request'], '必须注册 before:request 守卫');
+
+    // 表单上还带 data-confirm → 拦
+    let prevented = 0;
+    const formWithConfirm = {
+        hasAttribute: (n) => n === 'data-confirm',
+        closest: () => null,
+    };
+    handlers['htmx:before:request']({
+        detail: { ctx: { sourceElement: formWithConfirm } },
+        preventDefault() { prevented++; },
+    });
+    assert.equal(prevented, 1, '确认未走完时必须拦下请求');
+
+    // 表单上没有 data-confirm（confirm.js 放行时摘掉了）→ 放行
+    prevented = 0;
+    const plainForm = { hasAttribute: () => false, closest: () => null };
+    handlers['htmx:before:request']({
+        detail: { ctx: { sourceElement: plainForm } },
+        preventDefault() { prevented++; },
+    });
+    assert.equal(prevented, 0, '确认已放行时不该拦');
+
+    // 按钮级 data-confirm（在 submitter 上，表单上没有）→ 也要拦
+    prevented = 0;
+    const btn = { hasAttribute: (n) => n === 'data-confirm', closest: () => ({ hasAttribute: () => false }) };
+    handlers['htmx:before:request']({
+        detail: { ctx: { sourceElement: btn } },
+        preventDefault() { prevented++; },
+    });
+    assert.equal(prevented, 1, '按钮级 data-confirm 同样要拦');
+});

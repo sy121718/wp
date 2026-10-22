@@ -1,0 +1,9 @@
+- generic [ref=e1]:
+  - button "鍒犻櫎" [ref=e3]
+  - alertdialog [ref=e4]:
+    - generic [ref=e5]:
+      - heading "璇风‘璁�" [level=3] [ref=e6]
+      - paragraph [ref=e7]: 纭鍒犻櫎锛�
+      - generic [ref=e8]:
+        - button "鍙栨秷" [ref=e9]
+        - button "纭畾" [active] [ref=e10]
