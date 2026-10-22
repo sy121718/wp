@@ -113,6 +113,12 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 			return nil, rerr
 		}
 	}
+	// Done = 请求项数：走到这里就说明整批都处理了（AGENTS「批量要么全成要么全败」）。
+	//
+	// 「本来就是目标价」不是失败、也不是「没处理」——它是**处理结果为无变化**，
+	// 由 UnchangedProducts 单独计数（service 不写空台账，故分开报）。
+	// 三个计数各答一个问题：Done 是这一批多大、ChangedVariants 是真改了几个变体、
+	// UnchangedProducts 里有几个无需改动。把它们混成一个数会让运营没法核对。
 	res.Done = len(ids)
 	res.UnchangedProducts = unchanged
 	return res, nil
