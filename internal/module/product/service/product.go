@@ -1571,7 +1571,9 @@ func (s *Service) ProjectTranslationCandidates(ctx context.Context, projectID st
 	if strings.TrimSpace(projectID) == "" {
 		return nil, nil
 	}
-	rows, lerr := s.m.List(ctx, projectID, "", "", 1000, 0)
+	// 必须用**全列**查询：List 只 Select 列表需要的列，subtitle / description /
+	// image_alts 不在其中，用它会让这三类文本的候选恒为零值（审查 P1）。
+	rows, lerr := s.m.ListAllColumnsForTranslation(ctx, projectID)
 	if lerr != nil {
 		return nil, lerr
 	}

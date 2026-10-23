@@ -883,3 +883,27 @@ func (m *Model) GetForUpdateTx(ctx context.Context, tx *gorm.DB, id, projectID s
 		First(e).Error
 	return e, err
 }
+
+// ListAllColumnsForTranslation 取工程内全部商品行（**全列**），供整工程翻译候选使用。
+//
+// 与 List 的差别只有一处：List 是给列表页的，刻意只 Select 列表需要的列（metadata /
+// description / subtitle / image_alts 不参与列表渲染，spec 明确默认不取）；
+// 而翻译候选要读的正是这些「列表不取」的字段 —— 用 List 的返回值会让 subtitle /
+// description / image_alts 恒为零值，候选里永远缺这三类文本，
+// 表现为「整工程翻了一遍，商品副标题和描述没进待翻清单」而没有任何报错。
+//
+// 不分页（传 0,0 表示不限）：调用方 ProjectTranslationCandidates 自己去重，
+// 分页会把去重键拆散到不同批里。工程商品量以千计时这个查询是可接受的 ——
+// 真要上万分页，应当在这里加游标并把去重键一起带出去，而不是让调用方分多次调。
+func (m *Model) ListAllColumnsForTranslation(ctx context.Context, projectID string) (list []*ProductEntity, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return nil, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&ProductEntity{}).
+			Where("project_id = ?", projectID).
+			Order("sort ASC, create_time DESC").
+			Find(&list).Error
+	})
+	return list, err
+}
