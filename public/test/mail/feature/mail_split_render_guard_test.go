@@ -24,6 +24,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	"go_wp/internal/templates"
 )
@@ -129,10 +130,12 @@ func TestMailSplitSixPagesRenderWithMatchingColumns(t *testing.T) {
 	handle := mailhttp.NewMailPageHandle(fixture.svc)
 
 	mount := map[string]func(*gin.Engine, string){
-		"MailPage":               func(e *gin.Engine, p string) { e.GET(p, handle.MailPage) },
-		"MailTemplatesPage":      func(e *gin.Engine, p string) { e.GET(p, handle.MailTemplatesPage) },
-		"MailContactsPage":       func(e *gin.Engine, p string) { e.GET(p, handle.MailContactsPage) },
-		"MailCampaignsPage":      func(e *gin.Engine, p string) { e.GET(p, handle.MailCampaignsPage) },
+		"MailPage":          func(e *gin.Engine, p string) { e.GET(p, handle.MailPage) },
+		"MailTemplatesPage": func(e *gin.Engine, p string) { e.GET(p, handle.MailTemplatesPage) },
+		"MailContactsPage":  func(e *gin.Engine, p string) { e.GET(p, handle.MailContactsPage) },
+		"MailCampaignsPage": func(e *gin.Engine, p string) {
+			e.GET(p, adminui.PageSlot(mailhttp.CampaignsPageTemplate), handle.MailCampaignsPage)
+		},
 		"MailAutomationPage":     func(e *gin.Engine, p string) { e.GET(p, handle.MailAutomationPage) },
 		"MailAutomationRunsPage": func(e *gin.Engine, p string) { e.GET(p, handle.MailAutomationRunsPage) },
 	}
@@ -208,10 +211,12 @@ func TestMailSplitFailureBranchKeepsFullShellAndHidesInternalError(t *testing.T)
 			handle := mailhttp.NewMailPageHandle(fixture.svc)
 
 			mount := map[string]func(*gin.Engine, string){
-				"MailPage":               func(e *gin.Engine, p string) { e.GET(p, handle.MailPage) },
-				"MailTemplatesPage":      func(e *gin.Engine, p string) { e.GET(p, handle.MailTemplatesPage) },
-				"MailContactsPage":       func(e *gin.Engine, p string) { e.GET(p, handle.MailContactsPage) },
-				"MailCampaignsPage":      func(e *gin.Engine, p string) { e.GET(p, handle.MailCampaignsPage) },
+				"MailPage":          func(e *gin.Engine, p string) { e.GET(p, handle.MailPage) },
+				"MailTemplatesPage": func(e *gin.Engine, p string) { e.GET(p, handle.MailTemplatesPage) },
+				"MailContactsPage":  func(e *gin.Engine, p string) { e.GET(p, handle.MailContactsPage) },
+				"MailCampaignsPage": func(e *gin.Engine, p string) {
+					e.GET(p, adminui.PageSlot(mailhttp.CampaignsPageTemplate), handle.MailCampaignsPage)
+				},
 				"MailAutomationPage":     func(e *gin.Engine, p string) { e.GET(p, handle.MailAutomationPage) },
 				"MailAutomationRunsPage": func(e *gin.Engine, p string) { e.GET(p, handle.MailAutomationRunsPage) },
 			}
