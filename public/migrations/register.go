@@ -330,4 +330,6 @@ func init() {
 	registerMailPageNoticeI18n()
 	// 619：捆绑容器的容器价必须 > 0（见 register_bundle_price_check.go）。
 	registerBundlePriceCheck()
+	// 620：译文保存后标记待重建失败的回执词条（见 register_translation_stale_mark_i18n.go）。
+	registerTranslationStaleMarkI18n()
 }

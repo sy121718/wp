@@ -39,8 +39,10 @@ const (
 	ProductsPreviewEmpty          = "admin.products.preview.empty"
 
 	// —— 多语言译文（entityType / field 是译文域的字段白名单，与模板同一份对应关系）——
-	ProductTranslationsTitle                    = "admin.product_translations.title"
-	ProductTranslationsSavedNote                = "admin.product_translations.savedNote"
+	ProductTranslationsTitle     = "admin.product_translations.title"
+	ProductTranslationsSavedNote = "admin.product_translations.savedNote"
+	// ProductTranslationsSavedStaleMarkFailed 译文已写入、但标记页面待重建失败（需要手动重新发布）。
+	ProductTranslationsSavedStaleMarkFailed     = "admin.product_translations.savedStaleMarkFailed"
 	ProductTranslationsSavedNone                = "admin.product_translations.savedNone"
 	ProductTranslationsErrorsTitle              = "admin.product_translations.errorsTitle"
 	ProductTranslationsEntityTypeCategory       = "admin.product_translations.entityType.category"

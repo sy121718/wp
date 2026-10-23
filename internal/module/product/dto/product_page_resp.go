@@ -601,6 +601,13 @@ type ProductTranslationsPageResp struct {
 	SaveRows []facing.Labeled
 	// SaveMessage 保存成功的回执事实（key + 中文兜底 + 具名参数），取词在响应出口发生一次。
 	SaveMessage facing.Msg
+	// StaleMarkFailed 译文已写入，但「标记页面待重建」失败。
+	//
+	// 为什么是**独立的布尔**而不是把它塞进 Errors：Errors 非空会让控制器返回 400，
+	// 而这条语义是「保存成功、但产物需要重新发布一次」——数据确实写进去了，
+	// 报失败会让用户重试并以为写丢了（而且重复保存同样的值会被「无变化」短路，补不上）。
+	// 页面据此额外提示一句，状态码仍是 200。
+	StaleMarkFailed bool
 }
 
 // CategoryParentInfoResp 「父级不在候选列表里」那一项的**事实**：名称是数据，跨工程是布尔。

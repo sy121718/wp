@@ -8,7 +8,7 @@ package productservice
 // 一旦保存，前台任何选择都会被拒，等于把商品锁死。
 
 import (
-	"encoding/json"
+	json "go_wp/pkg/jsonx"
 	"testing"
 
 	productenums "go_wp/internal/module/product/enums"

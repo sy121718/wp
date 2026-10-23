@@ -177,7 +177,8 @@ func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.S
 		}
 		res.SaveRows = saveRowsOf(res.Errors)
 		if res.Saved {
-			res.SaveMessage = TranslationsSavedMsg(res.Written)
+			// 标记失败时换一句回执：原句「已标记待重建」在那种情况下是**假话**。
+			res.SaveMessage = TranslationsSavedMsg(res.Written, res.StaleMarkFailed)
 		}
 	}()
 	if req == nil {
@@ -295,10 +296,22 @@ func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.S
 	}
 
 	// 第三步：译文变化 → 标记待重建。
+	//
+	// 标记失败**必须让调用方看见**：它决定「已发布的页面会不会被重建」，而译文已经落库
+	// （Upsert 成功）。原先把失败只写进日志、然后照常 `view.Saved = true` ——
+	// 用户看到「已保存」、页面上却仍是旧译文，而且没有任何重试入口：
+	// 下次保存同样的值会走 `prev.TargetText == item.TargetText` 那条「无变化」短路，
+	// 永远补不上这次标记。
+	//
+	// 但不能反过来返回错误：数据确实已经写进去了，报失败会让用户重试并以为写丢了。
+	// 所以走「已保存 + 逐行事实里带一条待重建失败的提示」——页面照常提示保存成功，
+	// 同时告诉运营「产物需要重新发布一次」。
 	if targetChanged {
 		if s.i18nStaleMarker != nil {
 			if merr := s.i18nStaleMarker.MarkStaleForI18n(ctx); merr != nil {
 				logger.Scene("product").With("project", projectID).Error(merr, "商品译文保存后标记页面待重建失败")
+				// 让运营知道产物没被标记：这一条不是「保存失败」，是「需要手动重新发布」。
+				view.StaleMarkFailed = true
 			}
 		}
 		s.markTranslationInstancesStale(ctx, view.Groups, changedKeys)
@@ -601,8 +614,19 @@ func containsTranslationLang(langs []string, want string) bool {
 // TranslationsSavedMsg 译文保存成功的回执事实（0 条 = 没有需要写入的变化）。
 //
 // 具名占位符 {n} 走 facing.Msg.Named（出口用 i18n.FillTranslate 填充，语序归词条）。
-func TranslationsSavedMsg(written int) facing.Msg {
+// TranslationsSavedMsg 保存成功的回执事实。
+//
+// staleMarkFailed 为真时换一条词条：译文写进去了，但「标记页面待重建」失败 ——
+// 那种情况下原句「译文变更已标记待重建」是假话，而运营需要知道「产物要手动重新发布一次」。
+func TranslationsSavedMsg(written int, staleMarkFailed bool) facing.Msg {
 	if written > 0 {
+		if staleMarkFailed {
+			return facing.Msg{
+				Key:      productenums.ProductTranslationsSavedStaleMarkFailed,
+				Fallback: "已保存 {n} 条译文，但未能标记页面待重建 —— 请手动重新发布一次，否则前台仍是旧译文。",
+				Named:    map[string]string{"n": strconv.Itoa(written)},
+			}
+		}
 		return facing.Msg{
 			Key:      productenums.ProductTranslationsSavedNote,
 			Fallback: "已保存 {n} 条译文；译文变更已标记待重建（下次构建生效）。",
