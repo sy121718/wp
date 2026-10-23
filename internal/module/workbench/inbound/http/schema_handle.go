@@ -26,6 +26,12 @@ import (
 )
 
 // componentSchemaSnapshot 进程级只读快照（见文件头）。
+//
+// **单实例前提**（架构文档「部署形态」）：快照在进程内缓存一次，插件启停后只有收到那次
+// 请求的实例会重建（实际上连它也不会 —— 进程重启才重建）。多实例时各实例的检查器 schema
+// 可能不同，表现为「同一个组件在两台机器上字段不一样」。
+//
+// 改造方向：以 plugincontract.Assembly.Fingerprint 为键做带失效的缓存，指纹变化即重建。
 var componentSchemaSnapshot = sync.OnceValues(func() (map[string]json.RawMessage, error) {
 	return builder.ComponentSchemas()
 })
