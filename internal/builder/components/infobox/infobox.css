@@ -114,7 +114,7 @@
   padding: var(--sky-space-5, 10px) 22px;
   border-radius: var(--sky-radius-pill, 999px);
   background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));
-  color: var(--sky-btn-color, var(--sky-c-surface));
+  color: var(--sky-btn-color, #fff);
   text-decoration: none;
   font-size: 0.9em;
   font-weight: 500;

@@ -39,117 +39,117 @@ body {
 }
 
 .sky-c-sb1 a[aria-label="facebook"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #1877f2;
 }
 
 .sky-c-sb1 a[aria-label="x"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #000000;
 }
 
 .sky-c-sb1 a[aria-label="instagram"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #e4405f;
 }
 
 .sky-c-sb1 a[aria-label="youtube"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #ff0000;
 }
 
 .sky-c-sb1 a[aria-label="tiktok"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #000000;
 }
 
 .sky-c-sb1 a[aria-label="telegram"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #229ed9;
 }
 
 .sky-c-sb1 a[aria-label="whatsapp"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #25d366;
 }
 
 .sky-c-sb1 a[aria-label="pinterest"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #bd081c;
 }
 
 .sky-c-sb1 a[aria-label="linkedin"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #0a66c2;
 }
 
 .sky-c-sb1 a[aria-label="threads"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #000000;
 }
 
 .sky-c-sb1 a[aria-label="vimeo"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #1ab7ea;
 }
 
 .sky-c-sb1 a[aria-label="flickr"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #0063dc;
 }
 
 .sky-c-sb1 a[aria-label="github"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #181717;
 }
 
 .sky-c-sb1 a[aria-label="dribbble"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #ea4c89;
 }
 
 .sky-c-sb1 a[aria-label="behance"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #1769ff;
 }
 
 .sky-c-sb1 a[aria-label="soundcloud"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #ff5500;
 }
 
 .sky-c-sb1 a[aria-label="spotify"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #1db954;
 }
 
 .sky-c-sb1 a[aria-label="snapchat"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #fffc00;
 }
 
 .sky-c-sb1 a[aria-label="discord"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #5865f2;
 }
 
 .sky-c-sb1 a[aria-label="tumblr"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #36465d;
 }
 
 .sky-c-sb1 a[aria-label="viber"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #7360f2;
 }
 
 .sky-c-sb1 a[aria-label="vk"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #0077ff;
 }
 
 .sky-c-sb1 a[aria-label="bluesky"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: #0a7aff;
 }
 

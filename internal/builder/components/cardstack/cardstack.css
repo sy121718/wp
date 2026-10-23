@@ -702,7 +702,7 @@
   justify-content: center;
   font-size: var(--sky-fs-xl, 20px);
   line-height: 1;
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: rgba(255,255,255,.16);
   border-radius: var(--sky-radius-pill, 9999px);
   cursor: zoom-out;

@@ -35,7 +35,7 @@
 	border: 0;
 	border-radius: var(--sky-radius-lg, 8px);
 	background: var(--sky-c-primary, #2563eb);
-	color: var(--sky-c-surface);
+	color: var(--sky-c-surface, #fff);
 	font: inherit;
 	cursor: pointer;
 }

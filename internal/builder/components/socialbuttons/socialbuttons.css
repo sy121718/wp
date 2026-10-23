@@ -53,7 +53,7 @@
 /* 品牌配色：按平台（aria-label）逐条命中。 */
 @each brand in brands
 & a[aria-label="{{brand.label}}"] {
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   background: {{brand.color}};
 }
 @endfor

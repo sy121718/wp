@@ -68,7 +68,7 @@
   padding: 0 var(--sky-space-5, 10px);
   border-radius: 5px;
   background: var(--sky-c-primary, #2563eb);
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   font-size: var(--sky-fs-sm, 12px);
   font-weight: 500;
   line-height: 1;
@@ -283,7 +283,7 @@
 /* 选中态 (不依赖 :hover, 触屏同样可见). */
 & .sky-product-option-radio:checked + .sky-product-option-value {
   border-color: var(--sky-c-primary, #2563eb);
-  color: var(--sky-c-primary);
+  color: var(--sky-c-primary, #2563eb);
   background: rgba(37,99,235,0.08);
 }
 

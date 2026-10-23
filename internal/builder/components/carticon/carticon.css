@@ -64,7 +64,7 @@
   padding: 0 var(--sky-space-3, 6px);
   border-radius: var(--sky-radius-pill, 9999px);
   background: {{color}};
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   font-size: 0.75rem;
   font-weight: 700;
 }
@@ -76,7 +76,7 @@
   border: 1px solid var(--sky-c-border, #e5e7eb);
   border-radius: var(--sky-radius-xl, 12px);
   background: var(--sky-c-surface, #fff);
-  color: var(--sky-c-text);
+  color: var(--sky-c-text, #111827);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
 }
 

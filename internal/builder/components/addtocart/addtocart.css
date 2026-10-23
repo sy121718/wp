@@ -73,7 +73,7 @@
   border: 0;
   border-radius: var(--sky-radius-lg, 8px);
   background: {{color}};
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   font: inherit;
   font-weight: 600;
   line-height: 1.2;

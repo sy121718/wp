@@ -23,7 +23,7 @@
   /* 实心：主色背景 + 白字。 */
   @if solid
   background: {{color}};
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   @endif
 
   /* 描边：主色边框 + 主色文字（背景显式 transparent，叠在任意底上口径一致）。 */

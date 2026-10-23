@@ -70,7 +70,7 @@
   height: 40px;
   border-radius: var(--sky-radius-pill, 999px);
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  background: var(--sky-c-surface);
+  background: var(--sky-c-surface, #fff);
   cursor: pointer;
   font-size: var(--sky-fs-xl, 20px);
   line-height: 1;

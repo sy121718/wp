@@ -90,7 +90,7 @@
   position: absolute;
   top: 16px;
   right: 24px;
-  color: var(--sky-c-surface);
+  color: var(--sky-c-surface, #fff);
   font-size: 2rem;
   line-height: 1;
   text-decoration: none;

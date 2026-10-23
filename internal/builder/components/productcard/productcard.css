@@ -100,5 +100,5 @@
   padding: 0 var(--sky-space-4, 8px);
   border-radius: var(--sky-radius-pill, 999px);
   background: var(--sky-c-surface-alt, rgba(0,0,0,0.05));
-  color: var(--sky-c-text-mute);
+  color: var(--sky-c-text-mute, #6b7280);
 }

@@ -58,7 +58,7 @@
 /* 选中态与焦点环都靠兄弟选择器（radio 在 label 之前），零 JS。 */
 & .sky-selector-radio:checked + .sky-selector-value {
   border-color: var(--sky-c-primary, #2563eb);
-  color: var(--sky-c-primary);
+  color: var(--sky-c-primary, #2563eb);
   background: var(--sky-c-primary-weak, rgba(37,99,235,0.08));
 }
 

@@ -49,7 +49,7 @@
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
   border-radius: var(--sky-radius-md, 6px);
   background: var(--sky-c-surface, #fff);
-  color: var(--sky-c-text);
+  color: var(--sky-c-text, #111827);
   @focus-transition;
 }
 & textarea {
@@ -60,7 +60,7 @@
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
   border-radius: var(--sky-radius-md, 6px);
   background: var(--sky-c-surface, #fff);
-  color: var(--sky-c-text);
+  color: var(--sky-c-text, #111827);
   @focus-transition;
   min-height: 96px;
   resize: vertical;
@@ -75,7 +75,7 @@
    用户交互后字段非法 → 字段容器与输入框同步标红，无需 JS 遍历 DOM。
    用 :user-invalid 而非 :invalid：避开「刚打开页面就全部标红」的体验问题。 */
 & .sky-form-field:has(:user-invalid) {
-  color: var(--sky-c-danger);
+  color: var(--sky-c-danger, #dc2626);
 }
 & :user-invalid {
   border-color: var(--sky-c-danger, #dc2626);
@@ -88,7 +88,7 @@
   padding: 11px var(--sky-space-8, 24px);
   font-size: 15px;
   font-weight: 600;
-  color: var(--sky-btn-color, var(--sky-c-surface));
+  color: var(--sky-btn-color, #fff);
   background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));
   border: none;
   border-radius: var(--sky-radius-md, 6px);
