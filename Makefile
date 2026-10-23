@@ -67,9 +67,12 @@ check-all: ## 门禁全量（无依赖组 + 数据库组）
 	bash scripts/check-all.sh --with-db
 
 .PHONY: test-race
-test-race: ## 竞态检测（CI 目前无 -race，这是手动入口：核心五域）
+test-race: ## 竞态检测（CI 目前无 -race，这是手动入口：核心六域）
+	# workbench 在列：它的画布 handler 曾经直接往 builder 的进程级 schema 缓存里 merge
+	# 插件 schema（活的 data race，已修）；不放进来就没有任何判据拦得住它回来。
 	go test -race -p 4 ./pkg/... ./internal/pipeline/... ./internal/builder/... \
-		./internal/module/publication/... ./internal/module/presentation/... -count=1 -timeout 20m
+		./internal/module/workbench/... ./internal/module/publication/... ./internal/module/presentation/... \
+		-count=1 -timeout 20m
 
 .PHONY: migrate
 # -migrate-only：只执行结构迁移与业务 seed 后退出，不启动 HTTP 服务、不监听端口。
