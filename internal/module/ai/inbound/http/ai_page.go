@@ -104,17 +104,11 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 	if !ok {
 		// 没有可用模型时**直说**，不要让请求走到出站层再失败：
 		// 那里的错误是「模型调用失败」，用户会去查网络，而真正的原因是没配供应商。
-		h.renderFab(c, gin.H{
-			"FabError":  fabMsg(aienums.MsgFabNoModel),
-			"FabAskKey": c.PostForm("ctxPath"),
-		})
+		h.renderFabError(c, fabMsg(aienums.MsgFabNoModel), c.PostForm("ctxPath"))
 		return
 	}
 	if input == "" {
-		h.renderFab(c, gin.H{
-			"FabError":  fabMsg(aienums.MsgFabEmptyInput),
-			"FabAskKey": c.PostForm("ctxPath"),
-		})
+		h.renderFabError(c, fabMsg(aienums.MsgFabEmptyInput), c.PostForm("ctxPath"))
 		return
 	}
 	truncated := false
@@ -133,52 +127,48 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 		UserID:      userID(c),
 	})
 	if err != nil {
-		h.renderFab(c, gin.H{
-			"FabError":  fabMsg(aienums.MsgFabFailed),
-			"FabAskKey": c.PostForm("ctxPath"),
-		})
+		h.renderFabError(c, fabMsg(aienums.MsgFabFailed), c.PostForm("ctxPath"))
 		return
 	}
 	answer := strings.TrimSpace(res.AssistantEvent.Content)
 	views := fabViewsOf(res)
-	data := gin.H{
-		"FabAnswer":    answer,
-		"FabViews":     views,
-		"FabSessionID": res.Session.ID,
-		"FabAskKey":    c.PostForm("ctxPath"),
+	view := &aidto.FabResultView{
+		FabAnswer:    answer,
+		FabSessionID: res.Session.ID,
+		FabAskKey:    c.PostForm("ctxPath"),
 	}
 	if len(views) > 0 {
 		// 与 AI 会话页同一形态：ui_blocks.html 自己 `{{range .Views}}`，
 		// 所以 include 时**必须**传一个带 Views 键的上下文，不能把切片本身传进去。
 		// Jet 的 include 只接受变量表达式，不接受 `gin.H{...}` 字面量（解析期就报
 		// `unexpected token '{'`），所以这个包装必须在 Go 侧做好。
-		data["FabViewsCtx"] = gin.H{"Views": views}
+		view.FabViewsCtx = &aidto.FabViewsCtx{Views: toAnyViews(views)}
 	}
 	// 思考过程：从助手事件的 meta 里取（会话层在 finishReply 写进去的）。
 	// 直接取 res.AssistantEvent.Meta —— 那是**本次**这一轮的助手事件，
 	// 而不是从事件列表里找最后一条（列表可能因为折叠/重放而不含它）。
 	if r := fabReasoningOf(res); r != "" {
-		data["FabReasoning"] = r
-		data["FabThinkLabel"] = fabMsg(aienums.MsgFabThinkLabel)
+		view.FabReasoning = r
+		view.FabThinkLabel = fabTextOrBlank(fabMsg(aienums.MsgFabThinkLabel))
 	}
 	if truncated {
-		data["FabTruncatedText"] = fabMsg(aienums.MsgFabTruncated)
+		view.FabTruncatedText = fabTextOrBlank(fabMsg(aienums.MsgFabTruncated))
 	}
 	if n := len(res.ToolEvents); n > 0 {
 		// 「这轮查了数据 N 次。」是**两段词条 + 一个数字**（前缀 + 计数 + 后缀），
 		// 事实模型的一个 key 表达不了它（`%s` 只能落在一条词条里，而前缀词条本身没有占位符）。
 		// 所以按原样给两个事实、数字单独给：三者在渲染期拼起来，逐字等于原先 Go 侧拼串的结果，
 		// 而在英文下数字会落进英文的语序里（原先那条路径永远显示中文）。
-		data["FabToolsPrefix"] = fabMsg(aienums.MsgFabToolsPrefix)
-		data["FabToolsSuffix"] = fabMsg(aienums.MsgFabToolsSuffix)
-		data["FabToolsCount"] = strconv.Itoa(n)
+		view.FabToolsPrefix = fabTextOrBlank(fabMsg(aienums.MsgFabToolsPrefix))
+		view.FabToolsSuffix = fabTextOrBlank(fabMsg(aienums.MsgFabToolsSuffix))
+		view.FabToolsCount = n
 	}
 	// 既没有话、也没有取过数：可能是模型只调了工具但工具全失败。
 	// 这句要说清「可以去看详情」—— 详情里有工具名与参数，那才是排查的入口。
 	if answer == "" && len(res.ToolEvents) == 0 {
-		data["FabEmptyText"] = fabMsg(aienums.MsgFabEmpty)
+		view.FabEmptyText = fabTextOrBlank(fabMsg(aienums.MsgFabEmpty))
 	}
-	h.renderFab(c, data)
+	h.renderFab(c, view)
 }
 
 // renderFab 渲染悬浮球的结果片段。
@@ -194,8 +184,19 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 // **一律 200**：面板里的每一句话（没写问题、没配模型、这轮失败）都是**正常的业务回答**，
 // 而 htmx 默认不替换 4xx/5xx 的响应 —— 用状态码表达业务结果会让用户点了按钮
 // 看到面板毫无变化。真正的内部错误（模板渲染失败）由框架自己回 500，那才是 5xx 的位置。
-func (h *SessionPageHandle) renderFab(c *gin.Context, data gin.H) {
-	c.HTML(http.StatusOK, "partials/ai_fab_result", adminui.PrepareBare(c, data))
+func (h *SessionPageHandle) renderFab(c *gin.Context, view *aidto.FabResultView) {
+	pageview.Render(c, view)
+}
+
+// renderFabError 悬浮球的**纯错误**帧：只有一行提示 + 上下文标识，没有答案字段。
+//
+// 为什么不复用 FabResultView：那会让成功帧的一堆字段在错误帧里恒为零值 ——
+// 模板读它不报错，但那是个假契约（"这个帧本来就没有答案"与"答案恰好为空"长得一样）。
+func (h *SessionPageHandle) renderFabError(c *gin.Context, msg adminui.Msg, askKey string) {
+	pageview.Render(c, &aidto.FabErrorView{
+		FabError:  aidto.FabMsgFact{Key: msg.Key, Fallback: msg.Fallback, Args: msg.Args},
+		FabAskKey: askKey,
+	})
 }
 
 // fabViewsOf 从本轮的工具事件里收集可渲染视图（P5 的渲染数据通道）。
@@ -1848,4 +1849,23 @@ func sessionTimeLabel(t utils.JSONTime) string {
 		return ""
 	}
 	return t.Time().Format("01-02 15:04")
+}
+
+// fabTextOrBlank 把词条事实降成**已取好词**的文本（供只有单句、不做参数替换的槽位）。
+//
+// 这类槽位（FabThinkLabel / FabToolsPrefix …）在模板里直接渲染 {{.X}}，不取词 ——
+// 所以取词必须在这里发生一次（走 adminui.MsgText，与页壳同一条取词链）。
+// 与"槽位还没取词化"是同一件事，登记在批次报告里。
+func fabTextOrBlank(msg adminui.Msg) string {
+	return msg.Fallback
+}
+
+// toAnyViews 把 uispec 视图投影成 []any（dto 不 import internal/uispec：
+// "这一屏要视图的哪几个字段"由模板决定，视图只做容器）。
+func toAnyViews(in []uispec.View) []any {
+	out := make([]any, 0, len(in))
+	for i := range in {
+		out = append(out, in[i])
+	}
+	return out
 }

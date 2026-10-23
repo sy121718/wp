@@ -27,6 +27,9 @@ import (
 //
 // 会话层与令牌层用具体 service 类型（构造页面处理器要它们的具体方法），
 // 与 ai_router.go 的 API 装配共用同一批实例 —— 不是第二份。
+// FabResultTemplate 悬浮球结果片段（片段出口，不带页壳）。
+const FabResultTemplate = "partials/ai_fab_result"
+
 func SetupAIPages(adminPages *gin.RouterGroup, svc aicontract.AIService,
 	sessionSvc *aiservice.SessionService, tokenSvc *aiservice.AccessTokenService,
 	toolRegistry *mcp.Registry, aiConfig sysconfigcontract.Service) {
@@ -74,7 +77,10 @@ func SetupAIPages(adminPages *gin.RouterGroup, svc aicontract.AIService,
 	adminPages.POST("/ai/sessions/send", builtin.CasbinMiddlewareForPath("/api/ai/chat"), sessionPage.SessionSend)
 	// 全局悬浮球（每个后台页面都有入口）：同样借对话入口的 casbin obj。
 	// 返回的是**片段**而不是重定向 —— 回答要出现在球旁边，不是把用户弹到另一个页面。
-	adminPages.POST("/ai/ask", builtin.CasbinMiddlewareForPath("/api/ai/chat"), sessionPage.FabAsk)
+	adminPages.POST("/ai/ask",
+		builtin.CasbinMiddlewareForPath("/api/ai/chat"),
+		adminui.BareSlot(FabResultTemplate),
+		sessionPage.FabAsk)
 	// 流式版本：同一份权限点、同一个会话键。两条路径**并存**而不是替换 ——
 	// 浏览器不支持流式读取（或 JS 被拦）时非流式那条仍能用。
 	adminPages.POST("/ai/ask/stream", builtin.CasbinMiddlewareForPath("/api/ai/chat"), sessionPage.FabAskStream)
