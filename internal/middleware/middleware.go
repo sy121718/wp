@@ -5,14 +5,18 @@
 //   - 具体的中间件实现全部委托给 builtin 子包（internal/middleware/builtin）
 //
 // 中间件链顺序（由上到下依次执行）：
-//  1. Recovery          — 兜底 panic 恢复，返回 500
-//  2. CORS              — 跨域资源共享，预检请求直接返回 204
-//  3. SecurityHeaders   — 安全响应头（X-Content-Type-Options, X-Frame-Options, CSP）
-//  4. RequestBodyLimit  — 限制请求体大小，按 /upload 路径区分普通/上传限制
-//  5. RequestRateLimit  — 基础限流（tollbooth 令牌桶，按 IP），由配置开关；
+//  1. RequestID         — 生成/沿用 X-Request-Id，回写响应头，注入 request context
+//  2. Recovery          — 兜底 panic 恢复，返回 500
+//  3. CORS              — 跨域资源共享，预检请求直接返回 204
+//  4. SecurityHeaders   — 安全响应头（X-Content-Type-Options, X-Frame-Options, CSP）
+//  5. RequestBodyLimit  — 限制请求体大小，按 /upload 路径区分普通/上传限制
+//  6. RequestRateLimit  — 基础限流（tollbooth 令牌桶，按 IP），由配置开关；
 //     严格层（/api/captcha、/api/admin/login 每 IP 每分钟 10 次）在各自模块
 //     路由内无条件挂载，不受此开关控制
-//  6. RequestLogCapture — 结构化 HTTP 请求日志（按配置开关）
+//  7. RequestLogCapture — 结构化 HTTP 请求日志（按配置开关）
+//
+// RequestID 排第一：Recovery 与 RequestLogCapture 自己也要记日志，id 必须在它们之前就位，
+// 否则最需要关联的那两条（panic 恢复、5xx 请求）恰好没有 id。
 //
 // 配置读取方式：
 //
@@ -54,6 +58,7 @@ func Setup(engine *gin.Engine) {
 		cfg = nil
 	}
 
+	engine.Use(builtin.RequestIDMiddleware())
 	engine.Use(builtin.Recovery())
 	engine.Use(builtin.CORS())
 	engine.Use(builtin.SecurityHeadersMiddleware())

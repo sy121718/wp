@@ -9,7 +9,6 @@ import (
 	"go_wp/pkg/enums"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/sitehttps"
 
 	"github.com/gin-gonic/gin"
@@ -87,7 +86,7 @@ func ErrorInternal(c *gin.Context, scene string, err error) {
 		if scene == "" {
 			scene = "http"
 		}
-		logger.Scene(scene).Error(err, "handler 内部错误")
+		logInternalError(c, scene, "handler 内部错误", err)
 	}
 	ErrorWithMessage(c, http.StatusInternalServerError, msgInternalError)
 }
@@ -131,7 +130,7 @@ func ErrorAuto(c *gin.Context, code int, scene string, err error) {
 		if scene == "" {
 			scene = "http"
 		}
-		logger.Scene(scene).Error(err, "handler 内部错误")
+		logInternalError(c, scene, "handler 内部错误", err)
 	}
 	// 内部错误一律 500 而不是沿用调用方给的 code —— 调用方通常写的是 400/404，
 	// 那是按「预期内的业务失败」选的；既然实际是内部错误，状态码就该如实地是 500，
@@ -224,7 +223,7 @@ func MessageOf(c *gin.Context, scene string, err error) string {
 	if scene == "" {
 		scene = "http"
 	}
-	logger.Scene(scene).Error(err, "handler 内部错误")
+	logInternalError(c, scene, "handler 内部错误", err)
 	return translate(c, msgInternalError)
 }
 

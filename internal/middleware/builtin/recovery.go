@@ -55,7 +55,10 @@ func Recovery() gin.HandlerFunc {
 				err = fmt.Errorf("%v", rec)
 			}
 
-			logger.Scene("middleware").With("stack", string(debug.Stack())).Error(err, "panic 恢复")
+			// 带 request_id：没有它，这条堆栈只能按时间窗口猜是哪一次请求。
+			logger.SceneCtx("middleware", c.Request.Context()).
+				With("stack", string(debug.Stack())).
+				Error(err, "panic 恢复")
 			c.AbortWithStatus(http.StatusInternalServerError)
 		}()
 		c.Next()

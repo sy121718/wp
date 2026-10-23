@@ -78,7 +78,8 @@ func RequestLogCaptureMiddleware(enabled bool) gin.HandlerFunc {
 			fields["query"] = redactRawQuery(rawQuery)
 		}
 
-		entry := logger.Scene(scene).WithFields(fields)
+		// SceneCtx 而不是 Scene：request_id 从 ctx 里来，中间件链与业务层打的是同一个值。
+		entry := logger.SceneCtx(scene, c.Request.Context()).WithFields(fields)
 		if len(c.Errors) > 0 {
 			errParts := make([]string, 0, len(c.Errors))
 			for _, item := range c.Errors {
