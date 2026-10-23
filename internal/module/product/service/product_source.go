@@ -122,13 +122,13 @@ func (s *Service) resolveCollection(ctx context.Context, source string, filter m
 	if ierr != nil {
 		return nil, 0, ierr
 	}
+	// 关联实体的译文**整页只算一遍**（审查 P1：原先每个商品都把全页实体重算一次，
+	// N 个商品 × C 个实体 = N×C 次 contentStore 查询，而那个查询侧没有缓存）。
+	pre := s.precomputeRelatedTexts(ctx, lang, nil, categoryIndex, brandIndex, tagIndex, attrs)
 	valueBatches := make([]map[string]string, 0, len(rows))
 	for _, r := range rows {
 		// 与实体绑定同源：同一份派生值 + 同一份译文替换（语境 实体类型.<字段名>）。
-		loc, lerr := s.localizeRelatedFrom(ctx, lang, r, categoryIndex, brandIndex, tagIndex, attrs)
-		if lerr != nil {
-			return nil, 0, lerr
-		}
+		loc := s.localizeRelatedWithPrecomputed(ctx, lang, r, pre, categoryIndex, brandIndex, tagIndex, attrs)
 		valueBatches = append(valueBatches, productFieldValues(r, byProduct[r.ID], attrs, loc))
 	}
 	s.translateFieldsBatch(ctx, lang, productcontract.EntityTypeProduct, valueBatches)
@@ -1518,6 +1518,46 @@ func (s *Service) localizeRelated(ctx context.Context, lang string, e *productmo
 	return s.fillRelatedTexts(ctx, lang, e, loc, attrs), nil
 }
 
+// precomputeRelatedTexts 为**整页**商品的关联实体一次性取词，返回按实体键索引的字段表。
+//
+// 为什么需要它（审查 P1 · N×C 次 SQL）：
+//
+//	localizeRelatedFrom 内部要遍历 categories / brands / tags 三个**全页索引**，为其中
+//	每个实体取一次译文 —— 而它对每个商品都调一次。于是 N 个商品 × C 个关联实体 =
+//	N×C 次取词，每次都进 contentStore（pkg/i18n 的查询侧没有缓存）。
+//
+// 现在把这一步提到商品循环**之外**：同一批实体只算一遍，商品循环里退化成 map 查找。
+// 判据是「同一批页面数据里，同一个实体只该被翻译一次」—— 与 translateFieldsBatch
+// 已经在用的思路一致（那个函数解决的是逐商品取词，这个解决的是逐关联实体取词）。
+func (s *Service) precomputeRelatedTexts(ctx context.Context, lang string, e *productmodel.ProductEntity,
+	categories map[string]*productmodel.ProductCategoryEntity,
+	brands map[string]*productmodel.ProductBrandEntity,
+	tags map[string]*productmodel.ProductTagEntity,
+	attrs []*productmodel.ProductAttributeEntity) *relatedTexts {
+	loc := emptyRelated()
+	for id, row := range categories {
+		loc.categories[id] = row
+		loc.fields[relatedFieldKey(productcontract.EntityTypeCategory, id)] = s.categoryValues(ctx, lang, row)
+	}
+	for id, row := range brands {
+		loc.brands[id] = row
+		loc.fields[relatedFieldKey(productcontract.EntityTypeBrand, id)] = s.brandValues(ctx, lang, row)
+	}
+	for id, row := range tags {
+		loc.tags[id] = row
+		loc.fields[relatedFieldKey(productcontract.EntityTypeTag, id)] = s.tagValues(ctx, lang, row)
+	}
+	for _, row := range attrs {
+		loc.attributes[row.ID] = row
+		loc.fields[relatedFieldKey(productcontract.EntityTypeAttribute, row.ID)] = s.attributeValues(ctx, lang, row)
+		loc.attrLabels[row.ID] = s.attributeValueTranslations(ctx, lang, row)
+	}
+	if e != nil {
+		loc.imageAlts = s.imageAltTranslations(ctx, lang, e)
+	}
+	return loc
+}
+
 // localizeRelatedFrom 用已预载的分类 / 品牌 / 标签索引取译文（集合源列表用，零 N+1）。
 func (s *Service) localizeRelatedFrom(ctx context.Context, lang string, e *productmodel.ProductEntity,
 	categories map[string]*productmodel.ProductCategoryEntity,
@@ -1538,6 +1578,47 @@ func (s *Service) localizeRelatedFrom(ctx context.Context, lang string, e *produ
 		loc.tags[id] = row
 	}
 	return s.fillRelatedTexts(ctx, lang, e, loc, attrs), nil
+}
+
+// localizeRelatedWithPrecomputed 集合源列表用：关联实体译文来自预计算表，商品循环里只查 map。
+//
+// 与 localizeRelatedFrom 的区别只在于**译文从哪来**：那边每个商品都把全页实体重算一遍
+// （N×C 次 contentStore 查询），这边复用 precomputeRelatedTexts 的结果。
+// imageAlts 是**商品级**的（每商品一批），所以仍然在这里逐商品算 —— 它不属于「关联实体」。
+func (s *Service) localizeRelatedWithPrecomputed(ctx context.Context, lang string,
+	e *productmodel.ProductEntity, pre *relatedTexts,
+	categories map[string]*productmodel.ProductCategoryEntity,
+	brands map[string]*productmodel.ProductBrandEntity,
+	tags map[string]*productmodel.ProductTagEntity,
+	attrs []*productmodel.ProductAttributeEntity) *relatedTexts {
+	loc := emptyRelated()
+	if e == nil {
+		return loc
+	}
+	for id, row := range categories {
+		loc.categories[id] = row
+	}
+	for id, row := range brands {
+		loc.brands[id] = row
+	}
+	for id, row := range tags {
+		loc.tags[id] = row
+	}
+	for _, row := range attrs {
+		loc.attributes[row.ID] = row
+	}
+	if pre != nil {
+		for k, v := range pre.fields {
+			loc.fields[k] = v
+		}
+		for k, v := range pre.attrLabels {
+			loc.attrLabels[k] = v
+		}
+	}
+	if lang != "" && s.contentStore != nil {
+		loc.imageAlts = s.imageAltTranslations(ctx, lang, e)
+	}
+	return loc
 }
 
 // fillRelatedTexts 按 lang 为已加载的关联实体取译文（每个实体类型一次批量取词）。
