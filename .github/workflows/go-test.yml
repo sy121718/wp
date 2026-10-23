@@ -52,6 +52,8 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     services:
+      # 镜像 tag 必须与 public/test/support/versions.go 的 TestPostgresMajor 一致：
+      # versions_test.go 会读本文件对账，漂移即红（不要再"顺手"改这里的 tag）。
       postgres:
         image: postgres:16
         env:
@@ -69,6 +71,7 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # 同上，与 TestRedisMajor 对齐。
       redis:
         image: redis:7
         ports:
@@ -90,6 +93,13 @@ jobs:
       # 所以 unit job 与本地裸跑不受影响）。
       GOWP_REQUIRE_PG: "1"
       GOWP_REQUIRE_REDIS: "1"
+      # 生产版本声明：CI 与生产的 PG/Redis 大版本必须一致，否则「CI 全绿」对生产没有
+      # 信息量（PG 跨大版本有规划器、jsonb 函数、MERGE 语义差异）。
+      # 核对由 public/test/support/versions_test.go 执行，漂移即红。
+      #
+      # **这里必须与生产实际版本一致**。生产升级 PG/Redis 时同步改这一行，
+      # 同时改 services 段的镜像 tag 与 public/test/support/versions.go 的常量。
+      GOWP_PRODUCTION_VERSIONS: "postgres=16,redis=7"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

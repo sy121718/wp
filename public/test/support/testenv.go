@@ -34,10 +34,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// 容器镜像：与生产主库/会话存储大版本对齐（PostgreSQL 16 / Redis 7）。
-const (
-	testPGImage    = "postgres:16"
-	testRedisImage = "redis:7-alpine"
+// 容器镜像：来自 versions.go 的单一真源（与生产主库/会话存储大版本对齐）。
+// 不要在别处硬编码版本号 —— 一旦两处各写各的，CI 会悄悄测一个生产上不存在的版本。
+var (
+	testPGImage    = TestPostgresImage()
+	testRedisImage = TestRedisImage()
 )
 
 // ErrEnvUnavailable 表示本地与容器两级环境均不可用，测试应 t.Skip 而非 fail。
