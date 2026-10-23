@@ -36,6 +36,9 @@ const ContentPreviewNoticeTemplate = "admin/preview_notice.html"
 // 这三个契约。装配层在全部契约就绪后调用本函数，装配点与 dashboard 页面并排。
 //
 // pages 为 nil 时整体跳过（与既有 rg == nil 的早退同构）。
+// ArticleTranslationsTemplate 文章译文页的模板名。
+const ArticleTranslationsTemplate = "admin/content/article_translations.html"
+
 // 内容模块两个片段出口的模板名（片段出口不带页壳）。
 const (
 	// SeoScoreFragmentTemplate SEO 评分区片段：内容 / 商品 / 工程三处共用同一模板，
@@ -91,8 +94,15 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	if writer, werr := i18n.NewContentWriterDefault(); werr == nil {
 		articleTranslations.SetContentWriter(writer)
 	}
-	pages.GET("/articles/translations", adminui.PageAuthz("/api/content/list"), articleTranslations.ArticleTranslations)
-	pages.POST("/articles/translations/save", builtin.CasbinMiddlewareForPath("/api/content/update"), articleTranslations.SaveArticleTranslations)
+	pages.GET("/articles/translations",
+		adminui.PageAuthz("/api/content/list"),
+		adminui.PageSlot(ArticleTranslationsTemplate),
+		articleTranslations.ArticleTranslations)
+	// POST 也挂 PageSlot：失败时回的是**同一张译文页**（200 + 逐行错误）。
+	pages.POST("/articles/translations/save",
+		builtin.CasbinMiddlewareForPath("/api/content/update"),
+		adminui.PageSlot(ArticleTranslationsTemplate),
+		articleTranslations.SaveArticleTranslations)
 	// 评分是纯计算（不写库、不写产物），只走组级 Session+CSRF，不再叠权限点：
 	// 能打开编辑页的人就能算分，分数本身不构成新的信息公开面。
 	pages.POST("/articles/score",

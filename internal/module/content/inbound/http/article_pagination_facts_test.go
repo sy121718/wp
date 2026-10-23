@@ -12,6 +12,7 @@ package contenthttp
 //   所以这里在**映射层**钉住：交出的是 pagination.Page 事实、旧成品键一个不留。
 
 import (
+	"go_wp/internal/adminui"
 	"testing"
 
 	"go_wp/internal/templates"
@@ -29,7 +30,9 @@ func TestArticleTranslationsMapperCarriesPaginationFacts(t *testing.T) {
 		Pagination: pg,
 	}
 
-	m := d.templateMap()
+	// 视图换强类型之后不再经 templateMap 摊平：分页事实就是视图的 Pagination 字段，
+	// 由 adminui.ViewMap 摊平成模板键（键名仍是 "Pagination"）。
+	m := adminui.ViewMap(d)
 
 	got, ok := m["Pagination"].(pagination.Page)
 	if !ok {
@@ -60,7 +63,7 @@ func TestArticleTranslationsMapperCarriesPaginationFacts(t *testing.T) {
 // 新形态靠「零值判假」，两者对模板的可见结果一致。
 func TestArticleTranslationsMapperNoDataRendersNoPagination(t *testing.T) {
 	d := &articleTranslationsData{Title: "译文工作台", Lang: "zh-CN", HasData: false}
-	m := d.templateMap()
+	m := adminui.ViewMap(d)
 
 	pg, ok := m["Pagination"].(pagination.Page)
 	if !ok {

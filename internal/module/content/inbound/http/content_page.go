@@ -1103,17 +1103,17 @@ func articleEditPageData(ctx context.Context, h *articlePageHandle, item *conten
 	}
 	// 工程列表查一次、两个区块共用（发布区块与导入区块都要它）。
 	projectOptions := articleProjectOptions(ctx, h)
-	for k, v := range articlePublishView(ctx, h, id, articleSlugOf(item), projectOptions) {
+	for k, v := range articlePublishView(ctx, h, id, articleSlugOf(item), optionViews(projectOptions)) {
 		out[k] = v
 	}
-	for k, v := range articleImportBlockView(h, item, id, projectOptions) {
+	for k, v := range articleImportBlockView(h, item, id, optionViews(projectOptions)) {
 		out[k] = v
 	}
 	if h != nil && h.templates != nil && id != "" {
 		if resolved, err := h.templates.ResolveTemplate(ctx, articleEntityType); err == nil {
 			projectID := ""
 			if len(projectOptions) > 0 {
-				if pid, ok := projectOptions[0]["ID"].(string); ok {
+				if pid := projectOptions[0].ID; pid != "" {
 					projectID = pid
 				}
 			}
@@ -1258,17 +1258,17 @@ const staleImpactPageLimit = 8
 //
 // 统一返回 gin.H 而不是结构体：模板里是 map 取值链（.StaleImpact.Pages），
 // 嵌套 map 在 Jet 上的求值路径最短、也最容易用 isset 判存在。
-func staleImpactView(available bool, pages []gin.H, total int, truncated bool, hint articleMsg) gin.H {
+func staleImpactView(available bool, pages []contentdto.StalePageRowResp, total int, truncated bool, hint articleMsg) *contentdto.StaleImpactResp {
 	if pages == nil {
-		pages = []gin.H{}
+		pages = []contentdto.StalePageRowResp{}
 	}
-	return gin.H{
-		"Available": available,
-		"Pages":     pages,
-		"Total":     total,
-		"Truncated": truncated,
-		"Limit":     staleImpactPageLimit,
-		"Hint":      hint,
+	return &contentdto.StaleImpactResp{
+		Available: available,
+		Pages:     pages,
+		Total:     total,
+		Truncated: truncated,
+		Limit:     staleImpactPageLimit,
+		Hint:      hint,
 	}
 }
 
@@ -1282,7 +1282,7 @@ func staleImpactView(available bool, pages []gin.H, total int, truncated bool, h
 // 降级语义与 page 侧一致：失败 → Available=false（显示「读不到」），**绝不**渲染成
 // 「0 个待重建」（那会把一次读取失败伪装成一切正常）；契约返回 (nil, nil) 是异常形态，
 // 同样按读不到处理。
-func articleStaleImpact(ctx context.Context, h *articlePageHandle) gin.H {
+func articleStaleImpact(ctx context.Context, h *articlePageHandle) *contentdto.StaleImpactResp {
 	if h == nil || h.pages == nil {
 		// 与 block 侧的待重建影响面文案**共用同一批 key**（两个页面说的是同一件事，
 		// 各写一份的下场是同一个现象在两页上有两种说法 —— 见本文件顶部注释）。
@@ -1311,15 +1311,15 @@ func articleStaleImpact(ctx context.Context, h *articlePageHandle) gin.H {
 		logger.Scene("content").Warn("全站待重建清单返回空结果（契约实现异常）")
 		return staleImpactView(false, nil, 0, false, articleMsg{})
 	}
-	pages := make([]gin.H, 0, len(res.Pages))
+	pages := make([]contentdto.StalePageRowResp, 0, len(res.Pages))
 	for i := range res.Pages {
-		// 转成 gin.H 而不是把契约 DTO 直接交给模板：模板的取值链是 .StaleImpact.Pages[i].Path，
-		// map 缺键能被 isset 兜住，而契约 DTO 将来改名/加字段会直接打断整页渲染。
-		pages = append(pages, gin.H{
-			"ID":          res.Pages[i].ID,
-			"Path":        res.Pages[i].Path,
-			"ProjectID":   res.Pages[i].ProjectID,
-			"ProjectName": res.Pages[i].ProjectName,
+		// 投影成视图自己的行类型，而不是把契约 DTO 直接交给模板：
+		// 契约改名/加字段不该打断页面渲染，而视图声明「这一屏要哪几个字段」。
+		pages = append(pages, contentdto.StalePageRowResp{
+			ID:          res.Pages[i].ID,
+			Path:        res.Pages[i].Path,
+			ProjectID:   res.Pages[i].ProjectID,
+			ProjectName: res.Pages[i].ProjectName,
 		})
 	}
 	return staleImpactView(true, pages, res.Total, res.Truncated, articleMsg{})
@@ -1480,7 +1480,7 @@ func articleTranslationTextField(field string) (key, fallback string) {
 // ArticleTranslations GET /admin/articles/translations。
 func (h *articleTranslationHandle) ArticleTranslations(c *gin.Context) {
 	data := h.build(c, strings.TrimSpace(c.Query("lang")), strings.TrimSpace(c.Query("project")), strings.TrimSpace(c.Query("keyword")))
-	c.HTML(http.StatusOK, "admin/content/article_translations.html", adminui.Prepare(c, data.templateMap()))
+	pageview.Render(c, data)
 }
 
 // SaveArticleTranslations POST /admin/articles/translations/save（整表提交）。
@@ -1494,7 +1494,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	// 保存校验必须使用提交时的同一页，否则第二页的行会被误判为原文已变化。
 	if page != data.Page || c.PostForm("limit") != strconv.Itoa(data.Limit) {
 		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrPageChanged, "列表页码已变化，请刷新后重试")}
-		c.HTML(http.StatusOK, "admin/content/article_translations.html", adminui.Prepare(c, data.templateMap()))
+		pageview.Render(c, data)
 		return
 	}
 
@@ -1503,12 +1503,12 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	targets := c.PostFormArray("rowTarget")
 	if len(contexts) != len(hashes) || len(contexts) != len(targets) {
 		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrRowCountMismatch, "提交的行数不一致，请刷新后重试")}
-		c.HTML(http.StatusOK, "admin/content/article_translations.html", adminui.Prepare(c, data.templateMap()))
+		pageview.Render(c, data)
 		return
 	}
 	if h.writer == nil {
 		data.Errors = []articleMsg{articleTranslationMsg(contentenums.TranslationsErrStorageUnavailable, "译文存储不可用")}
-		c.HTML(http.StatusOK, "admin/content/article_translations.html", adminui.Prepare(c, data.templateMap()))
+		pageview.Render(c, data)
 		return
 	}
 
@@ -1549,7 +1549,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 	}
 	if len(rowErrors) > 0 {
 		data.Errors = rowErrors
-		c.HTML(http.StatusOK, "admin/content/article_translations.html", adminui.Prepare(c, data.templateMap()))
+		pageview.Render(c, data)
 		return
 	}
 	if len(items) == 0 {
@@ -1590,7 +1590,7 @@ func (h *articleTranslationHandle) SaveArticleTranslations(c *gin.Context) {
 			data.Errors = []articleMsg{articleTranslationFilled(c,
 				contentenums.TranslationsErrSaveFailed, "保存失败：{detail}",
 				map[string]string{"detail": adminui.MsgText(c, articleErrMsgQuiet(c, uerr))})}
-			c.HTML(http.StatusOK, "admin/content/article_translations.html", adminui.Prepare(c, data.templateMap()))
+			pageview.Render(c, data)
 			return
 		}
 	}
@@ -1657,19 +1657,6 @@ type articleTranslationsData struct {
 	Saved      bool
 	SavedNote  string
 	Errors     []articleMsg
-}
-
-// templateMap 转小写键 map（layout 以 {{.title}} / {{.menu}} 取值）。
-func (d *articleTranslationsData) templateMap() gin.H {
-	out := gin.H{
-		"title": d.Title, "menu": d.Menu,
-		"Lang": d.Lang, "Langs": d.Langs, "Groups": d.Groups,
-		"Keyword": d.Keyword, "Page": d.Page, "Limit": d.Limit, "ProjectID": d.ProjectID, "HasData": d.HasData,
-		"RowCount": d.RowCount, "Done": d.Done, "Total": d.Total,
-		"Saved": d.Saved, "SavedNote": d.SavedNote, "Errors": d.Errors,
-	}
-	out["Pagination"] = d.Pagination
-	return out
 }
 
 // sourceOf 按语境 + hash 反查本次提交对应的原文（防表单被裁剪 / 篡改）。
@@ -2341,8 +2328,8 @@ func articleDetailDefaultPath(ctx context.Context, h *articlePageHandle,
 }
 
 // articleProjectOptions 工程下拉（发布时必须落到一个工程：实例表的 project_id 非空）。
-func articleProjectOptions(ctx context.Context, h *articlePageHandle) []gin.H {
-	out := []gin.H{}
+func articleProjectOptions(ctx context.Context, h *articlePageHandle) []contentdto.OptionResp {
+	out := []contentdto.OptionResp{}
 	if h.projects == nil {
 		return out
 	}
@@ -2351,14 +2338,14 @@ func articleProjectOptions(ctx context.Context, h *articlePageHandle) []gin.H {
 		return out
 	}
 	for _, p := range list {
-		out = append(out, gin.H{"ID": p.ID, "Name": p.Name})
+		out = append(out, contentdto.OptionResp{ID: p.ID, Name: p.Name})
 	}
 	return out
 }
 
 // articleTemplateOptions 文章类型的内容模板下拉（空表 = 这个站还没有文章详情模板）。
-func articleTemplateOptions(ctx context.Context, h *articlePageHandle) []gin.H {
-	out := []gin.H{}
+func articleTemplateOptions(ctx context.Context, h *articlePageHandle) []contentdto.TemplateOptionResp {
+	out := []contentdto.TemplateOptionResp{}
 	if h.templates == nil {
 		return out
 	}
@@ -2367,7 +2354,7 @@ func articleTemplateOptions(ctx context.Context, h *articlePageHandle) []gin.H {
 		return out
 	}
 	for _, t := range list {
-		out = append(out, gin.H{"ID": t.ID, "Name": t.Name, "Version": t.DraftVersion})
+		out = append(out, contentdto.TemplateOptionResp{ID: t.ID, Name: t.Name, Version: t.DraftVersion})
 	}
 	return out
 }
@@ -2387,3 +2374,16 @@ const (
 	articleListPath     = "/admin/articles"
 	articleEditPagePath = "/admin/articles/edit"
 )
+
+// optionViews 把强类型的下拉选项投影回 []gin.H（供尚未迁移的 view 函数使用）。
+//
+// 这是**过渡形态**：那两处 view 仍是 map 装配（下一批迁），而在这一批把它们一起改会
+// 让「下拉选项」与「页面装配」两件事混在同一个 diff 里 —— 出问题时分不清是哪边改坏的。
+// point: 迁移完成后本函数与那两个 []gin.H 参数一起删除。
+func optionViews(in []contentdto.OptionResp) []gin.H {
+	out := make([]gin.H, 0, len(in))
+	for _, o := range in {
+		out = append(out, gin.H{"ID": o.ID, "Name": o.Name})
+	}
+	return out
+}
