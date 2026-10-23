@@ -12,6 +12,7 @@ import (
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	plugincontract "go_wp/internal/module/plugin/contract"
+	workbenchdto "go_wp/internal/module/workbench/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
 	"go_wp/pkg/logger"
@@ -109,16 +110,16 @@ func (h *Handle) Workbench(c *gin.Context) {
 		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
-	c.HTML(http.StatusOK, "workbench/layout", adminui.Prepare(c, gin.H{
-		"title":     workbenchservice.WorkbenchTitle(page, workbenchTrFunc(c)),
-		"pageId":    page.ID,
-		"isBlock":   false,
-		"draftPath": page.DraftPath,
-		"version":   page.DraftVersion,
-		"document":  utils.JsonSafe(string(documentJSON)),
-		"meta":      utils.JsonSafe(string(metaJSON)),
-		"schemas":   utils.JsonSafe(string(schemasJSON)),
-		"jsVer":     workbenchservice.StaticJSVersion(),
+	c.HTML(http.StatusOK, "workbench/layout", adminui.PrepareView(c, &workbenchdto.CanvasPageResp{
+		Title:     workbenchservice.WorkbenchTitle(page, workbenchTrFunc(c)),
+		PageID:    page.ID,
+		IsBlock:   false,
+		DraftPath: page.DraftPath,
+		Version:   page.DraftVersion,
+		Document:  utils.JsonSafe(string(documentJSON)),
+		Meta:      utils.JsonSafe(string(metaJSON)),
+		Schemas:   utils.JsonSafe(string(schemasJSON)),
+		JSVer:     workbenchservice.StaticJSVersion(),
 	}))
 }
 
@@ -184,14 +185,14 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
-	c.HTML(http.StatusOK, "workbench/layout", adminui.Prepare(c, gin.H{
-		"title":    workbenchShortText(c, workbenchenums.TitleBlockPrefix) + block.Name,
-		"pageId":   block.ID,
-		"isBlock":  true,
-		"document": utils.JsonSafe(string(documentJSON)),
-		"meta":     utils.JsonSafe(string(metaJSON)),
-		"schemas":  utils.JsonSafe(string(schemasJSON)),
-		"jsVer":    workbenchservice.StaticJSVersion(),
+	c.HTML(http.StatusOK, "workbench/layout", adminui.PrepareView(c, &workbenchdto.CanvasPageResp{
+		Title:    workbenchShortText(c, workbenchenums.TitleBlockPrefix) + block.Name,
+		PageID:   block.ID,
+		IsBlock:  true,
+		Document: utils.JsonSafe(string(documentJSON)),
+		Meta:     utils.JsonSafe(string(metaJSON)),
+		Schemas:  utils.JsonSafe(string(schemasJSON)),
+		JSVer:    workbenchservice.StaticJSVersion(),
 	}))
 }
 
@@ -295,19 +296,19 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		return
 	}
 	previewQS := workbenchservice.TemplatePreviewQuery(tpl.ID, entityType, entityID, projectID)
-	c.HTML(http.StatusOK, "workbench/layout", adminui.Prepare(c, gin.H{
-		"title":      workbenchShortText(c, workbenchenums.TitleTemplatePrefix) + tpl.Name,
-		"pageId":     tpl.ID,
-		"isBlock":    false,
-		"isTemplate": true,
+	c.HTML(http.StatusOK, "workbench/layout", adminui.PrepareView(c, &workbenchdto.CanvasPageResp{
+		Title:      workbenchShortText(c, workbenchenums.TitleTemplatePrefix) + tpl.Name,
+		PageID:     tpl.ID,
+		IsBlock:    false,
+		IsTemplate: true,
 		// 画布顶栏的模式提示：结构模板的预览不解析字段绑定，这件事要在编辑器里看得见
 		//（否则作者会以为「页眉里该出现的商品名没出现」是渲染坏了）。
-		"isStructureTemplate": noEntity,
-		"document":            utils.JsonSafe(string(documentJSON)),
-		"meta":                utils.JsonSafe(string(metaJSON)),
-		"schemas":             utils.JsonSafe(string(schemasJSON)),
-		"previewQS":           previewQS,
-		"jsVer":               workbenchservice.StaticJSVersion(),
+		IsStructureTemplate: noEntity,
+		Document:            utils.JsonSafe(string(documentJSON)),
+		Meta:                utils.JsonSafe(string(metaJSON)),
+		Schemas:             utils.JsonSafe(string(schemasJSON)),
+		PreviewQS:           previewQS,
+		JSVer:               workbenchservice.StaticJSVersion(),
 	}))
 }
 

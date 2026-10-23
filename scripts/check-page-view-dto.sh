@@ -77,7 +77,7 @@ done < "$ALLOW_FILE"
 #
 # 判据：一行里出现 `gin.H{`，且**同一行**没有 JSON 出口的函数名，才算页面视图。
 # 单行判定是保守取法：JSON 载荷跨行时会被算进来（宁可多算，不要漏算页面视图）。
-JSON_EGRESS_RE='response\.Success|response\.Error|response\.OK|\.JSON\(|writeRPCResult|writeJSON'
+JSON_EGRESS_RE='response\.Success|response\.Error|response\.OK|\.JSON\(|writeRPCResult|writeJSON|json\.Marshal'
 declare -A CUR_GIN CUR_HTML
 gin_sum=0
 html_sum=0

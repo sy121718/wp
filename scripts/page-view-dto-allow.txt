@@ -17,8 +17,8 @@
 
 internal/module/admin/inbound/http/admin_handle.go gin=1 html=0
 internal/module/admin/inbound/http/admin_page.go gin=19 html=24
-internal/module/ai/inbound/http/ai_handle.go gin=21 html=0
-internal/module/ai/inbound/http/ai_page.go gin=7 html=4
+internal/module/ai/inbound/http/ai_handle.go gin=5 html=0
+internal/module/ai/inbound/http/ai_page.go gin=5 html=4
 internal/module/content/inbound/http/content_handle.go gin=2 html=0
 internal/module/content/inbound/http/content_page.go gin=16 html=6
 internal/module/inventory/inbound/http/inventory_error_handle.go gin=4 html=0
@@ -26,25 +26,19 @@ internal/module/inventory/inbound/http/inventory_page_handle.go gin=1 html=0
 internal/module/inventory/inbound/http/inventory_purchase_handle.go gin=1 html=0
 internal/module/inventory/inbound/http/inventory_reason_handle.go gin=2 html=0
 internal/module/inventory/inbound/http/inventory_source_handle.go gin=2 html=0
-internal/module/mail/inbound/http/mail_handle.go gin=1 html=0
-internal/module/masterdata/inbound/http/masterdata_handle.go gin=1 html=0
-internal/module/membership/inbound/http/membership_handle.go gin=3 html=0
 internal/module/membership/inbound/http/membership_page.go gin=5 html=2
-internal/module/navigation/inbound/http/navigation_translations_handle.go gin=2 html=0
+internal/module/navigation/inbound/http/navigation_translations_handle.go gin=1 html=0
 internal/module/page/inbound/http/page_langs_handle.go gin=1 html=2
 internal/module/page/inbound/http/page_schedule_handle.go gin=1 html=2
 internal/module/page/inbound/http/page_stale.go gin=3 html=0
 internal/module/page/inbound/http/page_translations_handle.go gin=2 html=4
-internal/module/page/inbound/http/pages_handle.go gin=3 html=2
+internal/module/page/inbound/http/pages_handle.go gin=2 html=2
 internal/module/project/inbound/http/project_page.go gin=0 html=5
-internal/module/publication/inbound/http/publication_router.go gin=1 html=0
-internal/module/publication/inbound/http/seo_audit_result.go gin=1 html=2
-internal/module/sysconfig/inbound/http/sysconfig_router.go gin=1 html=0
+internal/module/publication/inbound/http/seo_audit_result.go gin=0 html=2
 internal/module/user/inbound/http/user_page.go gin=18 html=3
-internal/module/workbench/inbound/http/canvas_handle.go gin=6 html=3
-internal/module/workbench/inbound/http/canvas_preview_handle.go gin=7 html=1
-internal/module/workbench/inbound/http/inspector_handle.go gin=4 html=4
+internal/module/workbench/inbound/http/canvas_handle.go gin=1 html=3
+internal/module/workbench/inbound/http/canvas_preview_handle.go gin=1 html=1
+internal/module/workbench/inbound/http/inspector_handle.go gin=1 html=4
 internal/module/workbench/inbound/http/router.go gin=3 html=3
-internal/module/workbench/inbound/http/workbench_handle.go gin=1 html=0
 
---total gin=106 html=67
+--total gin=97 html=67
