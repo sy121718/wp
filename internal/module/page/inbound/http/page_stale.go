@@ -12,8 +12,6 @@ import (
 	"go_wp/pkg/utils"
 	"strings"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
 
 // receiptBacklogObserver 收敛积压的只读观测（page service 实现）。
@@ -97,16 +95,16 @@ const staleOverviewLimit = 8
 // 按空态处理（此时下方列表也正落在「还没有页面」那一档）。
 // tr 由调用方传入（取词只在 handler 层做）：本函数要组装「最近一次重建失败」的文案，
 // 而它自己拿不到 gin.Context。
-func (h *pagesAdminHandle) staleOverview(ctx context.Context) gin.H {
-	empty := gin.H{
-		"Available": true, "Total": 0, "Pages": []pagedto.StaleItemResp{},
+func (h *pagesAdminHandle) staleOverview(ctx context.Context) *pagedto.StaleOverviewResp {
+	empty := &pagedto.StaleOverviewResp{
+		Available: true, Total: 0, Pages: []pagedto.StaleItemResp{},
 		// Limit 给真实口径（模板在空态下不读它，但零值会让「清单上限是多少」在两个分支里
-		// 出现两种答案 —— 将来若空态也要说一句「最多列 8 条」，零值就是错的）。
-		"Limit": staleOverviewLimit, "Truncated": false,
+		// 出现两种答案）。
+		Limit: staleOverviewLimit, Truncated: false,
 	}
-	unavailable := gin.H{
-		"Available": false, "Total": 0, "Pages": []pagedto.StaleItemResp{},
-		"Limit": 0, "Truncated": false,
+	unavailable := &pagedto.StaleOverviewResp{
+		Available: false, Total: 0, Pages: []pagedto.StaleItemResp{},
+		Limit: 0, Truncated: false,
 	}
 	if h == nil || h.pages == nil {
 		// 契约未注入（降级装配、或只覆盖写路径的测试句柄）：与「读不到」同形，
@@ -144,12 +142,12 @@ func (h *pagesAdminHandle) staleOverview(ctx context.Context) gin.H {
 			FailedAt:            at,
 		})
 	}
-	return gin.H{
-		"Available": true,
-		"Total":     res.Total,
-		"Pages":     items,
-		"Limit":     res.Limit,
-		"Truncated": res.Truncated,
+	return &pagedto.StaleOverviewResp{
+		Available: true,
+		Total:     res.Total,
+		Pages:     items,
+		Limit:     res.Limit,
+		Truncated: res.Truncated,
 	}
 }
 

@@ -162,7 +162,7 @@ type pagesPageData struct {
 	// 为什么与 ReceiptKnown 的形态不同（那里总是给键、用布尔分流）：那份观测只有「读到 / 没读到」
 	// 两种状态；这份还有「读到了但是空」这一种，而 nil 切片与空切片在模板里长得一样 ——
 	// 必须由比较列表多一个 Available 才能分开。两者共用的判据是**降级渲染时不得给出乐观结论**。
-	StaleOverview gin.H
+	StaleOverview *pagedto.StaleOverviewResp
 }
 
 // blueprintOption 新建页面表单里的蓝图选项。

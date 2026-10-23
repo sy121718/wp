@@ -77,7 +77,12 @@ done < "$ALLOW_FILE"
 #
 # 判据：一行里出现 `gin.H{`，且**同一行**没有 JSON 出口的函数名，才算页面视图。
 # 单行判定是保守取法：JSON 载荷跨行时会被算进来（宁可多算，不要漏算页面视图）。
-JSON_EGRESS_RE='response\.Success|response\.Error|response\.OK|\.JSON\(|writeRPCResult|writeJSON|json\.Marshal'
+# 「不值得计入」的第三类：**已经是视图类型**的 gin.H 别名
+# （`type xxxView gin.H` + PageStatus/PageNoStore）。它底层是 map，但形态已经是
+# 「显式命名的视图 + 出口关切」，不是「控制器里现场拼一份 map」—— 本门禁要消灭的是后者。
+# 判据：`type Xxx gin.H` 这一行本身不算；它的字面量仍会按行计入（无法从单行区分
+# "在给这个别名填值" 与 "在拼一份临时 map"）。
+JSON_EGRESS_RE='response\.Success|response\.Error|response\.OK|\.JSON\(|writeRPCResult|writeJSON|json\.Marshal|^type [A-Za-z]+ gin\.H'
 declare -A CUR_GIN CUR_HTML
 gin_sum=0
 html_sum=0

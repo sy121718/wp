@@ -42,3 +42,9 @@ type WarehouseFormResp struct {
 	SelectedProject string
 	WarehouseTypes  []WarehouseTypeOptionResp
 }
+
+// ReasonFormResp 原因新建表单的初值（模板读 .SelectedProject / .Directions）。
+type ReasonFormResp struct {
+	SelectedProject string
+	Directions      []any
+}

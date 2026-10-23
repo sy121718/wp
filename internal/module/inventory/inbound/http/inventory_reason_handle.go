@@ -209,10 +209,10 @@ func directionLabel(tr func(key, fallback string) string, direction string) stri
 	}
 }
 
-func reasonFormData(c *gin.Context, projectID string) gin.H {
-	return gin.H{
-		"SelectedProject": projectID,
-		"Directions":      directionOptions(shell.TranslateFor(c)),
+func reasonFormData(c *gin.Context, projectID string) *inventorydto.ReasonFormResp {
+	return &inventorydto.ReasonFormResp{
+		SelectedProject: projectID,
+		Directions:      toAnySlice(directionOptions(shell.TranslateFor(c))),
 	}
 }
 
