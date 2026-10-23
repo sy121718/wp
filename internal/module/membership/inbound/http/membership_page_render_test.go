@@ -11,9 +11,11 @@ package membershiphttp
 // 用真实 Jet 渲染器与真实模板文件（不是含内联模板的假 engine）。
 
 import (
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -338,17 +340,19 @@ func TestMembershipTierRowOfNoEntitlement(t *testing.T) {
 // 少了它，筛选栏无法表达「不筛来源」—— 页面看起来正常，只是永远被钉在第一个选项上。
 func TestMembershipSourceOptionsCarryAllValue(t *testing.T) {
 	opts := membershipSourceOptions(membershipmodel.SourceManual)
-	if len(opts) != 3 || opts[0]["Value"] != "" {
+	if len(opts) != 3 || opts[0].Value != "" {
 		t.Fatalf("来源下拉 = %+v", opts)
 	}
-	if opts[0]["Selected"] != false || opts[2]["Selected"] != true {
+	if opts[0].Selected != false || opts[2].Selected != true {
 		t.Fatalf("选中态应由服务端算好：%+v", opts)
 	}
 	// 选项**不带文案**：显示名是 UI 文案，模板按取值 tr() 取词（与来源列同一个 key）。
-	for _, opt := range opts {
-		if _, has := opt["Label"]; has {
-			t.Fatalf("来源选项不该带 Label（文案归模板）：%+v", opt)
-		}
+	//
+	// 强类型之后这一点由**类型**保证：ValueOption 根本没有 Label 字段。
+	// 下面这条断言退化成「类型上确实没有」，而不是运行时查 map。
+	typ := reflect.TypeOf(opts[0])
+	if _, has := typ.FieldByName("Label"); has {
+		t.Fatalf("来源选项类型上出现了 Label 字段（文案应归模板）：%+v", typ)
 	}
 }
 
@@ -362,11 +366,11 @@ func TestMembershipTierOptionsHaveNoAllOption(t *testing.T) {
 		t.Fatalf("等级选项应只有真实等级，实际 %+v", opts)
 	}
 	for _, opt := range opts {
-		if opt["Value"] == int64(0) {
+		if opt.Value == int64(0) {
 			t.Errorf("不该出现 0 值选项：%+v", opt)
 		}
 	}
-	if opts[1]["Selected"] != true || opts[0]["Selected"] != false {
+	if opts[1].Selected != true || opts[0].Selected != false {
 		t.Errorf("选中态应由服务端算好：%+v", opts)
 	}
 }
@@ -382,7 +386,7 @@ func TestMembershipPageIgnoresForgedErrQuery(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/membership", NewMembershipPageHandle(&stubMembershipService{}, nil).MembershipPage)
+	engine.GET("/admin/membership", adminui.PageSlot(MembershipTiersPageTemplate), NewMembershipPageHandle(&stubMembershipService{}, nil).MembershipPage)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/admin/membership?err=%E4%BC%AA%E9%80%A0%E6%96%87%E6%A1%88", nil)

@@ -327,6 +327,11 @@ func viewMapOfStruct(rv reflect.Value) gin.H {
 		if tag := field.Tag.Get("view"); tag != "" {
 			name = tag
 		}
+		// 零值 reflect.Value（上面的匿名分支解空指针失败时会置空）没有 Interface()，
+		// 也没有 Type() —— 直接跳过，让模板按「缺键」处理（Jet 的 isset 能兜住）。
+		if !fv.IsValid() {
+			continue
+		}
 		out[name] = fv.Interface()
 	}
 	return out

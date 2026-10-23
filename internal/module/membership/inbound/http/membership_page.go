@@ -26,14 +26,12 @@ package membershiphttp
 
 import (
 	"context"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	membershipdto "go_wp/internal/module/membership/dto"
 	membershipenums "go_wp/internal/module/membership/enums"
@@ -42,6 +40,7 @@ import (
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 )
 
 // formInt 解析整数输入，空串或非法值回落默认值。
@@ -152,6 +151,9 @@ type membershipTiersPageData struct {
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
 	Tiers           []membershipTierRow
+	// HasTiers 有没有等级（模板空态判据）。原先由 templateMap 现场算 len(.Tiers) > 0，
+	// 摊平层删掉后它必须有字段承载 —— 缺它的表现是整页 500。
+	HasTiers bool
 	// Edit 当前正在编辑的等级（nil = 不显示编辑区）。
 	Edit *membershipTierEdit
 	// KindFreeShippingValue / KindDiscountValue 权益类型的表单取值（模板不用硬编码字符串）。
@@ -172,26 +174,10 @@ type membershipTiersPageData struct {
 //
 // 这里**不注入任何界面文案**：两张页面的枚举显示名（来源、权益类型）都由模板 tr() 取词，
 // 与列表列共用同一份 key —— Go 侧再翻一遍必然出现「同一个值在两处显示成两个词」。
-func (d *membershipTiersPageData) templateMap(c *gin.Context) gin.H {
-	return gin.H{
-		"title":                 d.Title,
-		"menu":                  d.Menu,
-		"Projects":              d.Projects,
-		"SelectedProject":       d.SelectedProject,
-		"Tiers":                 d.Tiers,
-		"Edit":                  d.Edit,
-		"HasTiers":              len(d.Tiers) > 0,
-		"KindFreeShippingValue": d.KindFreeShippingValue,
-		"KindDiscountValue":     d.KindDiscountValue,
-		"ListQuery":             d.ListQuery,
-		"LoadErr":               d.LoadErr,
-		"LoadFailed":            d.LoadFailed,
-	}
-}
 
 // renderTiersPage 等级页的唯一渲染出口（正常与降级两条路都从这里出）。
 func (h *membershipPageHandle) renderTiersPage(c *gin.Context, d *membershipTiersPageData) {
-	c.HTML(http.StatusOK, "admin/membership/membership.html", adminui.Prepare(c, d.templateMap(c)))
+	pageview.Render(c, d)
 }
 
 // MembershipPage 等级与权益页。
@@ -237,6 +223,7 @@ func (h *membershipPageHandle) MembershipPage(c *gin.Context) {
 		Projects:              projects,
 		SelectedProject:       selected,
 		Tiers:                 rows,
+		HasTiers:              len(rows) > 0,
 		Edit:                  edit,
 		KindFreeShippingValue: membershipenums.KindFreeShipping,
 		KindDiscountValue:     membershipenums.KindDiscount,
@@ -254,13 +241,17 @@ type membershipAssignmentsPageData struct {
 	Menu            string
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
-	TierOptions     []gin.H
-	SourceOptions   []gin.H
+	TierOptions     []membershipdto.TierOption
+	SourceOptions   []membershipdto.ValueOption
 	FilterTier      int64
 	FilterSource    string
 	FilterUser      uint64
 	Rows            []membershipAssignRow
-	Total           int64
+	// Page 当前页码（模板回显用）。
+	Page  int
+	Total int64
+	// SourceManual 来源下拉的「手工」取值（模板用它判当前是不是手工来源）。
+	SourceManual string
 	// ListQuery 列表上下文（工程 / 等级 / 来源 / 访客 / 页码）的查询串，拼进写动作表单的 action。
 	ListQuery string
 	// LoadErr 这一次列表没读出来的原因（空串 = 正常）。
@@ -275,38 +266,10 @@ type membershipAssignmentsPageData struct {
 }
 
 // templateMap 转 Jet 模板键（来源文案同样不在这里取词，见 membershipTiersPageData.templateMap）。
-func (d *membershipAssignmentsPageData) templateMap(c *gin.Context) gin.H {
-	m := gin.H{
-		"title":           d.Title,
-		"menu":            d.Menu,
-		"Projects":        d.Projects,
-		"SelectedProject": d.SelectedProject,
-		"TierOptions":     d.TierOptions,
-		"SourceOptions":   d.SourceOptions,
-		"FilterTier":      d.FilterTier,
-		"FilterSource":    d.FilterSource,
-		"FilterUser":      d.FilterUser,
-		"Rows":            d.Rows,
-		"Total":           d.Total,
-		"ListQuery":       d.ListQuery,
-		"LoadErr":         d.LoadErr,
-		"LoadFailed":      d.LoadFailed,
-		"RecalcAvailable": d.RecalcAvailable,
-		// 来源的**取值**（不是文案）：模板按它判这一行来自自动重算还是手工指定
-		//（显示名与「能不能解除锁定」都由模板决定）。
-		"SourceManual": membershipmodel.SourceManual,
-		"SourceAuto":   membershipmodel.SourceAuto,
-	}
-	// 分页**事实**（pagination.Page，值语义）：零值就是「没有分页」，单页与装载失败
-	// 两条路都让 partial 的 {{if .Pagination.HasPagination}} 为假，自然不渲染分页条。
-	// 文案、链接与选中态由 admin/partials/pagination.html 用通用模板函数渲染。
-	m["Pagination"] = d.Pagination
-	return m
-}
 
 // renderAssignmentsPage 归属页的唯一渲染出口。
 func (h *membershipPageHandle) renderAssignmentsPage(c *gin.Context, d *membershipAssignmentsPageData) {
-	c.HTML(http.StatusOK, "admin/membership/membership_assignments.html", adminui.Prepare(c, d.templateMap(c)))
+	pageview.Render(c, d)
 }
 
 // MembershipAssignmentsPage 会员归属页。
@@ -333,7 +296,7 @@ func (h *membershipPageHandle) MembershipAssignmentsPage(c *gin.Context) {
 	page, limit := normalizePageParams(c)
 
 	rows := []membershipAssignRow{}
-	tierOptions := []gin.H{}
+	tierOptions := []membershipdto.TierOption{}
 	var total int64
 	var pg pagination.Page
 
@@ -520,11 +483,11 @@ func membershipAssignRowOf(item *membershipdto.AssignmentResp) membershipAssignR
 //
 // Selected 仍由服务端算好：让模板比较「选项值 == 根级过滤器」要引入根引用（$），
 // 而「哪个选项被选中」是一条纯数据判断，放在这里零风险。
-func membershipSourceOptions(selected string) []gin.H {
+func membershipSourceOptions(selected string) []membershipdto.ValueOption {
 	values := []string{"", membershipmodel.SourceAuto, membershipmodel.SourceManual}
-	out := make([]gin.H, 0, len(values))
+	out := make([]membershipdto.ValueOption, 0, len(values))
 	for _, v := range values {
-		out = append(out, gin.H{"Value": v, "Selected": v == selected})
+		out = append(out, membershipdto.ValueOption{Value: v, Selected: v == selected})
 	}
 	return out
 }
@@ -536,10 +499,10 @@ func membershipSourceOptions(selected string) []gin.H {
 // （选中「全部」等于提交 tierId=0，service 只能回一句「等级不存在」）。
 //
 // Selected 由服务端算好（判据同 membershipSourceOptions）。
-func membershipTierOptions(tiers []*membershipdto.TierResp, selected int64) []gin.H {
-	out := make([]gin.H, 0, len(tiers))
+func membershipTierOptions(tiers []*membershipdto.TierResp, selected int64) []membershipdto.TierOption {
+	out := make([]membershipdto.TierOption, 0, len(tiers))
 	for _, tier := range tiers {
-		out = append(out, gin.H{"Value": tier.ID, "Label": tier.Name, "Selected": tier.ID == selected})
+		out = append(out, membershipdto.TierOption{Value: tier.ID, Label: tier.Name, Selected: tier.ID == selected})
 	}
 	return out
 }
