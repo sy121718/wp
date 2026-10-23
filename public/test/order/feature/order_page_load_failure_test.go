@@ -24,6 +24,7 @@ package feature
 import (
 	"context"
 	"errors"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -81,7 +82,7 @@ func newOrderPageEngine(t *testing.T, projects projectcontract.ProjectService) *
 		InitComponents: true, // adminui.Prepare 需要 i18n / 会话组件
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.GET("/admin/orders", orders.OrdersPage)
+			e.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), orders.OrdersPage)
 			e.GET("/admin/coupons", coupons.CouponsPage)
 			e.GET("/admin/returns", returns.ReturnsPage)
 		},

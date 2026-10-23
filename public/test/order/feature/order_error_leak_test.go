@@ -40,6 +40,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	orderdto "go_wp/internal/module/order/dto"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	projectmodel "go_wp/internal/module/project/model"
@@ -226,7 +227,7 @@ func TestOrderPageHidesInternalError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/admin/orders", orderhttp.NewOrderPageHandle(f.orders, projects, nil).OrdersPage)
+	engine.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), orderhttp.NewOrderPageHandle(f.orders, projects, nil).OrdersPage)
 
 	// 制造**真实**基础设施错误。
 	if err := f.db.Exec("DROP TABLE IF EXISTS orders CASCADE").Error; err != nil {

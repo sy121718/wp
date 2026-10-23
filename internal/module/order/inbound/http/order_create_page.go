@@ -24,14 +24,12 @@ package orderhttp
 import (
 	"fmt"
 	"go_wp/internal/middleware/builtin"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -224,7 +222,7 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 
 	// 候选变体：关键词只匹配**商品名**（商品目录的既有语义），无分页。
 	// 取数失败只影响候选区（页面其余部分照常可用），因此不升级成整页错误。
-	var candidates []gin.H
+	var candidates []orderdto.SkuOptionResp
 	candidateErr := ""
 	if h.catalog != nil && selected != "" {
 		skus, cerr := h.catalog.ListBundleSKUs(ctx, &productdto.ListBundleSKUReq{
@@ -270,41 +268,41 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 	shipCountries := countryOptionViews(tr, countries, form.Ship.Country)
 	billCountries := countryOptionViews(tr, countries, form.Bill.Country)
 
-	data := adminui.Prepare(c, gin.H{
-		"title": orderCreatePageTitle,
-		"menu":  "orders",
+	view := &orderdto.OrderNewPageResp{
+		Title: orderCreatePageTitle,
+		Menu:  "orders",
 		// 工程上下文（页头下拉；只有一个工程时整段不渲染 —— 单选项的选择器
 		// 不提供任何信息，见 admin-ui-logic §2）。
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"LoadFailed":      loadFailed,
-		"NoProject":       noProject,
-		"FormReady":       formReady,
+		Projects:        projects,
+		SelectedProject: selected,
+		LoadFailed:      loadFailed,
+		NoProject:       noProject,
+		FormReady:       formReady,
 		// 候选明细（同一份候选给每一行复用：模板按行渲染 N 份 option 列表）。
-		"CandidateKeyword": form.CandidateKeyword,
-		"Candidates":       candidates,
-		"CandidateCount":   len(candidates),
-		"CandidateError":   candidateErr,
-		"ItemRows":         form.Items,
-		"MaxRows":          orderCreateMaxRows,
+		CandidateKeyword: form.CandidateKeyword,
+		Candidates:       candidates,
+		CandidateCount:   len(candidates),
+		CandidateError:   candidateErr,
+		ItemRows:         toOrderNewItemRows(form.Items),
+		MaxRows:          orderCreateMaxRows,
 		// 国家/地区下拉的选项（含首位「（不填写）」空项，国家是选填）。
-		"ShipCountries": shipCountries,
-		"BillCountries": billCountries,
-		"RowAddURL":     "/admin/orders/new?" + rowAdd.Encode(),
+		ShipCountries: toCountryOptionResps(shipCountries),
+		BillCountries: toCountryOptionResps(billCountries),
+		RowAddURL:     "/admin/orders/new?" + rowAdd.Encode(),
 		// 错误出口：字段级（标红 + 行内文案）与页级（顶部提示栏）分开。
-		"Err": pageErr,
+		Err: pageErr,
 		// FieldErrors 是**稀疏** map：模板用 chain 索引读（缺键 falsy），
 		// 有文案即标红，不需要单独的 Invalid 布尔表。
-		"FieldErrors":   fieldText,
-		"HasFieldError": len(fieldErrs) > 0,
+		FieldErrors:   fieldText,
+		HasFieldError: len(fieldErrs) > 0,
 		// 表单初始值与本次提交的原始快照：模板一律写
 		// `formValue(.Echo, "字段名", .Form.X)` —— 提交里有这个字段就用提交值
 		// （哪怕空串），没有才用初始值。旧写法把 26 个 FormEcho* 键逐个铺开，
 		// 还要维护字段清单与模板的双向断言；现在字段名只出现在模板里。
-		"Form": form,
-		"Echo": couponEcho(c),
-	})
-	c.HTML(http.StatusOK, "admin/order/order_new.html", data)
+		Form: form,
+		Echo: couponEcho(c),
+	}
+	pageview.Render(c, view)
 }
 
 // countryNoneLabelKey 「（不填写）」空项的 i18n key（中文兜底写在 countryOptionViews 里）。
@@ -380,7 +378,7 @@ func countryOptionViews(tr translate, countries []sysconfigcontract.CountryOptio
 // 只是给运营选品用的线索；真正入单的单价由服务端按下单快照落库，页面无法左右它。
 
 func (h *orderCreatePageHandle) candidateViews(c *gin.Context, projectID string,
-	skus []*productdto.BundleSKUResp) []gin.H {
+	skus []*productdto.BundleSKUResp) []orderdto.SkuOptionResp {
 	tr := orderTr(c)
 	avail := map[string]int{}
 	if h.availability != nil && len(skus) > 0 {
@@ -399,7 +397,7 @@ func (h *orderCreatePageHandle) candidateViews(c *gin.Context, projectID string,
 		}
 	}
 
-	out := make([]gin.H, 0, len(skus))
+	out := make([]orderdto.SkuOptionResp, 0, len(skus))
 	for _, sku := range skus {
 		if sku == nil || sku.VariantID == "" {
 			continue
@@ -412,7 +410,7 @@ func (h *orderCreatePageHandle) candidateViews(c *gin.Context, projectID string,
 		if n, ok := avail[sku.VariantID]; ok {
 			label += "（" + fmt.Sprintf(tr(orderenums.OrderNewOptionAvailable, "可用 %s"), strconv.Itoa(n)) + "）"
 		}
-		out = append(out, gin.H{"ID": sku.VariantID, "Label": label})
+		out = append(out, orderdto.SkuOptionResp{ID: sku.VariantID, Label: label})
 	}
 	return out
 }
@@ -620,3 +618,23 @@ const (
 )
 
 // 订单状态取值（展示用字面量，刻意不 import 订单模块的 model 包）。
+
+// toOrderNewItemRows / toCountryOptionResps 把 handler 内部形状投影成视图形状。
+//
+// 为什么不直接复用内部类型：视图是**模板契约**（模板读它的字段），内部结构是这一屏的
+// 中间产物。同形时转换只是几行，但把两者绑在一起会让改其中一个必须动另一个。
+func toOrderNewItemRows(in []orderCreateItemRow) []orderdto.OrderNewItemRowResp {
+	out := make([]orderdto.OrderNewItemRowResp, 0, len(in))
+	for _, r := range in {
+		out = append(out, orderdto.OrderNewItemRowResp{VariantID: r.VariantID, Quantity: r.Quantity})
+	}
+	return out
+}
+
+func toCountryOptionResps(in []countryOptionView) []orderdto.CountryOptionResp {
+	out := make([]orderdto.CountryOptionResp, 0, len(in))
+	for _, c := range in {
+		out = append(out, orderdto.CountryOptionResp{Code: c.Code, Label: c.Label, Selected: c.Selected})
+	}
+	return out
+}

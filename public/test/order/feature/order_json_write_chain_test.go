@@ -28,6 +28,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"io"
 	"net/http"
@@ -189,7 +190,7 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 					cap.add(c.Request.URL.Path, string(body), c.Writer.Status())
 				}
 			})
-			e.GET("/admin/orders", listPage.OrdersPage)
+			e.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), listPage.OrdersPage)
 			e.POST("/api/order/status", h.ChangeStatus)
 			e.POST("/api/order/cancel", h.CancelOrder)
 		},

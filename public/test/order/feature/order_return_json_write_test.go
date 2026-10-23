@@ -422,7 +422,6 @@ func TestReturnsTemplateDeclaresJSONWrites(t *testing.T) {
 		"admin.returns.bulk.noneSelected",
 		"admin.returns.bulk.refresh",
 		"admin.returns.write.noJs",
-
 	} {
 		if !strings.Contains(src, key) {
 			t.Errorf("模板没有引用本批词条 %q（迁移 605 的 18 行里它成了孤儿）", key)

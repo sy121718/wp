@@ -31,6 +31,24 @@ import (
 // 页面 handler 与 API handler 同用这一个 svc 实例（同一个契约，不另建一套）。
 
 // SetupOrderPages 注册订单域后台页面；pages 为 nil 时整体跳过。
+// OrderNewPageTemplate 订单新建页的模板名。
+const OrderNewPageTemplate = "admin/order/order_new.html"
+
+// ReturnListPageTemplate 退货列表页的模板名。
+const ReturnListPageTemplate = "admin/order/returns.html"
+
+// CouponListPageTemplate 优惠码列表页的模板名。
+const CouponListPageTemplate = "admin/order/coupons.html"
+
+// CouponEditFormTemplate 优惠码编辑抽屉片段（片段出口，不带页壳）。
+const CouponEditFormTemplate = "admin/order/coupon_edit_form.html"
+
+// OrderListPageTemplate 订单列表页的模板名（页面出口由页面槽带进上下文）。
+const OrderListPageTemplate = "admin/order/orders.html"
+
+// OrderSalesPageTemplate 销售概览页的模板名（页面出口由页面槽带进上下文）。
+const OrderSalesPageTemplate = "admin/order/sales_overview.html"
+
 func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	projects projectcontract.ProjectService, product productcontract.ProductService,
 	warehouses ordercontract.ReturnWarehouseSource, dict sysconfigcontract.DictReader) {
@@ -41,13 +59,19 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// 状态合法性不在这里判断：服务端状态机拒绝哪条边，页面就把哪条边藏起来 ——
 	// 前端最多只能少给一个按钮，给多了也只是被服务端拒掉并原样回显原因。
 	orderPages := NewOrderPageHandle(svc, projects, dict)
-	pages.GET("/orders", adminui.PageAuthz("/api/order/list"), orderPages.OrdersPage)
+	pages.GET("/orders",
+		adminui.PageAuthz("/api/order/list"),
+		adminui.PageSlot(OrderListPageTemplate),
+		orderPages.OrdersPage)
 	// 销售概览页（GET /admin/orders/overview）：整页只读报表 —— 只读不等于不鉴权，
 	// 菜单隐藏不是访问控制（docs/02-Z §4.3）。obj 取该页菜单绑的码 order:overview 声明的
 	// api_path，而它恰好就是这条页面路径本身（**存量特例**：绝大多数页面的 obj 是 `/api/*`
 	// 形态，见 internal/middleware/builtin/page_authz.go 的说明），归一与 02-Z 第二刀同批。
 	salesPages := NewOrderSalesPageHandle(svc, projects)
-	pages.GET("/orders/overview", adminui.PageAuthz("/admin/orders/overview"), salesPages.SalesOverviewPage)
+	pages.GET("/orders/overview",
+		adminui.PageAuthz("/admin/orders/overview"),
+		adminui.PageSlot(OrderSalesPageTemplate),
+		salesPages.SalesOverviewPage)
 	// 这个权限点同时仍是可授权对象：声明它不只是为了拦请求 —— 侧栏菜单绑 order:overview，
 	// 角色分权经 menu_ids 收集到它，
 	// 而 permission.RoutesOf 也才有非空结果（空集会被工具侧按 fail closed 一律 forbidden）。
@@ -62,8 +86,16 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// orderId，那一单的详情是展开的），**失败**一律就地重渲 200 + 字段标红 + 回填 ——
 	// 失败不能走 303：303 之后是 GET，没有 PostForm，几十个字段必然全丢。
 	orderCreate := NewOrderCreatePageHandle(svc, projects, product, dict)
-	pages.GET("/orders/new", adminui.PageAuthz("/api/order/list"), orderCreate.OrderCreatePage)
-	pages.POST("/orders/create", builtin.CasbinMiddlewareForPath("/api/order/create"), orderCreate.OrderCreateSubmit)
+	pages.GET("/orders/new",
+		adminui.PageAuthz("/api/order/list"),
+		adminui.PageSlot(OrderNewPageTemplate),
+		orderCreate.OrderCreatePage)
+	// POST 也挂 PageSlot：失败时回的是**同一张建单页**（200 + 回填），
+	// 成功时导航由前端 data-write-nav 决定（见 docs/02-W §6）。
+	pages.POST("/orders/create",
+		builtin.CasbinMiddlewareForPath("/api/order/create"),
+		adminui.PageSlot(OrderNewPageTemplate),
+		orderCreate.OrderCreateSubmit)
 	// 列表页的写动作（流转 / 取消 / 退款 / 备注 与两个批量动作）已整批迁到前端直调 JSON：
 	// 单条走 order_router.go 里的 /api/order/{status,cancel,refund,note}，批量走
 	// /api/order/{status,cancel} 的**批档形状**（体里有 ids 即批档，判别键是形状不是 action）
@@ -81,7 +113,10 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// 页面不再有自己的写路径 —— 于是也**不再需要**「页面路径借 API 权限点」那层
 	// （那些 CasbinMiddlewareForPath 只是把 API path 字符串拿来当 Casbin obj 用）。
 	returnPages := NewReturnPageHandle(svc, projects, warehouses, dict)
-	pages.GET("/returns", adminui.PageAuthz("/api/order/return/list"), returnPages.ReturnsPage)
+	pages.GET("/returns",
+		adminui.PageAuthz("/api/order/return/list"),
+		adminui.PageSlot(ReturnListPageTemplate),
+		returnPages.ReturnsPage)
 
 	// 优惠码管理页：只剩两个 GET —— 列表与编辑抽屉片段。核销**没有手工入口** —— 它发生在
 	// 建单事务内，页面只展示结果（核销明细是真源）。
@@ -94,6 +129,12 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// 编辑抽屉仍是 GET：片段里的表单自己声明 data-write-api 端点（前端发 JSON），
 	// 权限照旧按「能改券」判 —— 看不到 update 权限的人不该拿到这张表单。
 	couponPages := NewCouponPageHandle(svc, projects)
-	pages.GET("/coupons", adminui.PageAuthz("/api/order/coupon/list"), couponPages.CouponsPage)
-	pages.GET("/coupons/edit-form", builtin.CasbinMiddlewareForPathAs("/api/order/coupon/update", http.MethodPost), couponPages.CouponEditForm)
+	pages.GET("/coupons",
+		adminui.PageAuthz("/api/order/coupon/list"),
+		adminui.PageSlot(CouponListPageTemplate),
+		couponPages.CouponsPage)
+	pages.GET("/coupons/edit-form",
+		builtin.CasbinMiddlewareForPathAs("/api/order/coupon/update", http.MethodPost),
+		adminui.BareSlot(CouponEditFormTemplate),
+		couponPages.CouponEditForm)
 }

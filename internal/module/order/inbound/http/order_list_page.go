@@ -25,7 +25,6 @@ package orderhttp
 //     与状态机是两份真源。
 
 import (
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -40,6 +39,7 @@ import (
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/backpath"
 	"go_wp/pkg/pagination"
+	pageview "go_wp/pkg/view"
 )
 
 // orderPageHandle 订单管理页处理器。
@@ -142,48 +142,48 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		}
 	}
 
-	data := adminui.Prepare(c, gin.H{
-		// 标题是 i18n key：adminui.Prepare 按当前语言取词（模板不再看到裸 key）。
-		"title":           orderenums.OrdersHeading,
-		"menu":            "orders",
-		"Projects":        projects,
-		"SelectedProject": selected,
+	view := &orderdto.OrderListPageResp{
+		// 标题是 i18n key：渲染出口按当前语言取词（模板不再看到裸 key）。
+		Title:           orderenums.OrdersHeading,
+		Menu:            "orders",
+		Projects:        projects,
+		SelectedProject: selected,
 		// 取数结果：dto 原样交给模板。
-		"Orders": orders,
-		"Counts": counts,
-		"Total":  total,
-		"Detail": detail,
+		Orders: orders,
+		Counts: counts,
+		Total:  total,
+		Detail: detail,
 		// 状态徽章行的「取值 + 分档」+ 当前生效值。
 		// 分档与取值一起给（orderStatusTabs）：模板不再逐个判状态选 badge 类。
-		"StatusTabs": orderStatusTabs(),
+		StatusTabs: orderStatusTabs(),
 		// 「全部」徽章的计数（各状态之和）：模板里跨类型累加不值得押注，求和放这里一行。
-		"CountsAll": countsAll(counts),
+		CountsAll: countsAll(counts),
 		// 状态 → 当前语言标签（enums 的 (key, fallback) 是两返回值，模板接不住，
 		// 这里收敛成单值函数；**取词仍发生在模板调用点**，Go 不预先拼行视图）。
-		"OrderStatusLabel": orderStatusLabelFunc(c),
-		"FilterStatus":     filter.Status,
+		OrderStatusLabel: orderStatusLabelFunc(c),
+		FilterStatus:     filter.Status,
 		// 筛选回显与空态判据都由模板自己算（FilterActive 那种布尔不再由 Go 预先决定）。
-		"FilterKeyword": filter.Keyword,
-		"FilterPayment": filter.PaymentMethod,
+		FilterKeyword: filter.Keyword,
+		FilterPayment: filter.PaymentMethod,
 		// 这一次没读出来的原因（空串 = 正常）：模板据此把「装载失败」与「还没有订单」分开。
-		"LoadErr": loadErrText,
+		LoadErr: loadErrText,
 		// 列表上下文（拼进页内链接的 query；不含 status，见 orderListQuery）。
-		"ListQuery": orderListQuery(selected, filter, page, limit),
+		ListQuery: orderListQuery(selected, filter, page, limit),
 		// 国家/地区代码 → 当前语言的显示名。函数值直接进数据：模板里
 		// `{{ .CountryLabel(code) }}` 调用它，详情不必预先翻好每一段地址。
-		"CountryLabel": countryLabelFunc(c, h.dict),
-		"Page":         page,
-		"Limit":        limit,
-	})
+		CountryLabel: countryLabelFunc(c, h.dict),
+		Page:         page,
+		Limit:        limit,
+	}
 	// 分页事实：基址由 backpath 拼（带白名单参数），故 path 传空 —— AttachPagination 不动 Base。
-	adminui.AttachPagination(data, "", nil, pagination.Page{
+	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
 		Total: total, Page: page, Limit: limit,
 		Base: backpath.WithParams("/admin/orders", map[string]string{
 			"project": selected, "status": filter.Status, "keyword": filter.Keyword,
 			"paymentMethod": filter.PaymentMethod,
 		}),
 	})
-	c.HTML(http.StatusOK, "admin/order/orders.html", data)
+	pageview.Render(c, view)
 }
 
 // orderListQuery 列表上下文 → 查询串（拼进表单 action；空值不拼）。

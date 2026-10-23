@@ -224,7 +224,7 @@
                 {{range _, tab := statusTabs}}
                 {{sv := tab.Value}}
                 {{cnt := (sv == "" ? .CountsAll : .Counts[sv])}}
-                <a class="badge badge-{{tab.Tone}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/returns?{{listQuery}}&status={{sv}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{label := returnLabels[sv]}}{{tr(label.Key, label.Fallback)}}{{end}} {{if sv == "requested" || sv == "received"}}<strong>{{cnt}}</strong>{{else}}{{cnt}}{{end}}</a>
+                <a class="badge badge-{{tab.Kind}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/returns?{{listQuery}}&status={{sv}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{label := returnLabels[sv]}}{{tr(label.Key, label.Fallback)}}{{end}} {{if sv == "requested" || sv == "received"}}<strong>{{cnt}}</strong>{{else}}{{cnt}}{{end}}</a>
                 {{end}}
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{tr("admin.returns.help.label", "查看说明")}}" aria-expanded="false">?</button>

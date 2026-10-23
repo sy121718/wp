@@ -18,7 +18,6 @@ package orderhttp
 // 而「最近 30 天」的环比基期是一段跨两个月边界的区间，读的人对不上日历。
 
 import (
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -26,11 +25,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	projectcontract "go_wp/internal/module/project/contract"
+	pageview "go_wp/pkg/view"
 )
 
 // orderSalesPageHandle 销售概览页的 handler。
@@ -107,28 +106,28 @@ func (h *orderSalesPageHandle) SalesOverviewPage(c *gin.Context) {
 		}
 	}
 
-	data := adminui.Prepare(c, gin.H{
-		"title":           orderenums.OrderSalesTitle,
-		"menu":            "orders",
-		"Projects":        projects,
-		"SelectedProject": selected,
+	view := &orderdto.OrderSalesPageResp{
+		Title:           orderenums.OrderSalesTitle,
+		Menu:            "orders",
+		Projects:        projects,
+		SelectedProject: selected,
 		// 取数结果：dto 原样交给模板（卡片与趋势图都由模板从它算出来）。
-		"Overview": overview,
+		Overview: overview,
 		// 生效区间与筛选回显（service 归一化后的值）。
-		"FilterFrom":   fromRaw,
-		"FilterTo":     toRaw,
-		"FilterStatus": status,
-		"Monthly":      monthly,
+		FilterFrom:   fromRaw,
+		FilterTo:     toRaw,
+		FilterStatus: status,
+		Monthly:      monthly,
 		// 状态快捷项的取值 + 取词函数（空值项走「全部」自己的词条）。
-		"StatusQuickValues": salesStatusQuickValues,
-		"OrderStatusLabel":  orderStatusLabelFunc(c),
+		StatusQuickValues: salesStatusQuickValues,
+		OrderStatusLabel:  orderStatusLabelFunc(c),
 		// 这一次没读出来的原因（空串 = 正常）：模板据此把「装载失败」与「这个区间没有销售」分开。
-		"LoadErr": loadErrText,
+		LoadErr: loadErrText,
 		// 快捷项链接要保留当前区间与工程：点一下状态就把区间丢回默认，
 		// 是本页最容易让人困惑的交互（「我明明选的是上个月」）。
-		"ListQuery": salesQuery(selected, fromRaw, toRaw, monthly),
-	})
-	c.HTML(http.StatusOK, "admin/order/sales_overview.html", data)
+		ListQuery: salesQuery(selected, fromRaw, toRaw, monthly),
+	}
+	pageview.Render(c, view)
 }
 
 // salesQuery 快捷项链接的上下文（工程 + 区间 + 回看月数；**不含 status**，由每个链接自己覆盖）。

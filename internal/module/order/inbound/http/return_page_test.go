@@ -26,6 +26,7 @@ import (
 	"github.com/gin-gonic/gin"
 	ginrender "github.com/gin-gonic/gin/render"
 
+	"go_wp/internal/adminui"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -113,6 +114,7 @@ func renderReturnsPage(t *testing.T, query string, svc *returnLabelsService) str
 	cap := &returnPageCapture{delegate: templates.NewJetHTMLRender(adminTemplatesDir(t), true)}
 	engine.HTMLRender = cap
 	c.Request = httptest.NewRequest(http.MethodGet, "/admin/returns"+query, nil)
+	adminui.PageSlot(ReturnListPageTemplate)(c)
 	NewReturnPageHandle(svc, orderPaginationProjects{}, nil, nil).ReturnsPage(c)
 	c.Writer.WriteHeaderNow()
 	if cap.err != nil {
@@ -258,7 +260,7 @@ func TestStatusPageFactsCollectEveryRenderedStatus(t *testing.T) {
 
 // TestStatusLabelFactHasNoFunctionField 事实是纯数据：带函数字段就等于把取词又搬回 Go。
 func TestStatusLabelFactHasNoFunctionField(t *testing.T) {
-	typ := reflect.TypeOf(statusLabelFact{})
+	typ := reflect.TypeOf(orderdto.StatusLabelFact{})
 	if typ.NumField() != 2 {
 		t.Fatalf("事实字段数 = %d，want 2", typ.NumField())
 	}
@@ -355,7 +357,7 @@ func TestReturnsPageStatusLabelsHandleUnknownAndEmpty(t *testing.T) {
 	})
 }
 
-func keysOf(facts map[string]statusLabelFact) []string {
+func keysOf(facts map[string]orderdto.StatusLabelFact) []string {
 	out := make([]string, 0, len(facts))
 	for k := range facts {
 		out = append(out, k)

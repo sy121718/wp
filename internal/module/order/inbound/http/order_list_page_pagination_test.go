@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	ginrender "github.com/gin-gonic/gin/render"
 
+	"go_wp/internal/adminui"
 	ordercontract "go_wp/internal/module/order/contract"
 	orderdto "go_wp/internal/module/order/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -62,12 +63,17 @@ func (s orderPaginationProjects) List(context.Context) ([]projectcontract.Projec
 // Capture the actual handler data and render the production partial from it.
 type orderPaginationRender struct {
 	delegate ginrender.HTMLRender
-	data     gin.H
-	name     string
+	// data 是渲染出口**最后交给模板的那一层**。视图换强类型之后它可能不是 gin.H
+	// （pageview.Render 走 PrepareView 摊平成 map），所以用 any 接住，需要键时再断言。
+	//
+	// 这个测试验的是「分页 partial 拿到的事实」，与视图是什么 Go 类型无关 ——
+	// 强行要求 gin.H 会把「换了视图形状」当成「分页错了」。
+	data any
+	name string
 }
 
 func (r *orderPaginationRender) Instance(name string, data any) ginrender.Render {
-	r.name, r.data = name, data.(gin.H)
+	r.name, r.data = name, data
 	return r.delegate.Instance("admin/partials/pagination.html", data)
 }
 
@@ -80,10 +86,15 @@ func orderPaginationPage(t *testing.T, kind, query string, svc *orderPaginationS
 	c.Request = httptest.NewRequest(http.MethodGet, "/admin/"+kind+query, nil)
 	switch kind {
 	case "orders":
+		// 页面出口需要 PageSlot（模板名由装配点带进上下文）。
+		// 直接调 c.Set 会绕过 view.Slot 的键名约定，所以走真实中间件。
+		adminui.PageSlot(OrderListPageTemplate)(c)
 		NewOrderPageHandle(svc, projects, nil).OrdersPage(c)
 	case "coupons":
+		adminui.PageSlot(CouponListPageTemplate)(c)
 		NewCouponPageHandle(svc, projects).CouponsPage(c)
 	case "returns":
+		adminui.PageSlot(ReturnListPageTemplate)(c)
 		NewReturnPageHandle(svc, projects, nil, nil).ReturnsPage(c)
 	default:
 		t.Fatalf("unknown page %q", kind)
@@ -107,6 +118,11 @@ func TestOrderListPagesPaginationBaseline(t *testing.T) {
 				query = strings.ReplaceAll(query, "&orderId=42", "")
 			}
 			renderer, body := orderPaginationPage(t, kind, query, svc, orderPaginationProjects{})
+			// 渲染出口交给模板的是 PrepareView 摊平后的 map（键名 = 视图字段名）。
+			fields, _ := renderer.data.(gin.H)
+			if fields == nil {
+				t.Fatalf("渲染数据不是 map：%T", renderer.data)
+			}
 			if svc.project != "p-1" || svc.status != "pending" || svc.keyword != "A+&" || svc.offset != 20 || svc.limit != 20 || svc.calls != 1 {
 				t.Fatalf("request changed: %+v", svc)
 			}
@@ -121,15 +137,15 @@ func TestOrderListPagesPaginationBaseline(t *testing.T) {
 				q.Set("paymentMethod", "paypal")
 			}
 			base := "/admin/" + kind + "?" + q.Encode()
-			pg, ok := renderer.data["Pagination"].(pagination.Page)
+			pg, ok := fields["Pagination"].(pagination.Page)
 			if !ok {
-				t.Fatalf("Pagination = %T, want pagination.Page", renderer.data["Pagination"])
+				t.Fatalf("Pagination = %T, want pagination.Page", fields["Pagination"])
 			}
 			if pg.Total != 45 || pg.Page != 2 || pg.Limit != 20 || pg.Base != base {
 				t.Fatalf("pagination facts = %+v", pg)
 			}
 			for _, key := range []string{"PaginationInfo", "PaginationLinks"} {
-				if _, exists := renderer.data[key]; exists {
+				if _, exists := fields[key]; exists {
 					t.Errorf("legacy key %s remains", key)
 				}
 			}
@@ -146,8 +162,8 @@ func TestOrderListPagesPaginationBaseline(t *testing.T) {
 			if strings.Contains(body, "orderId=") || strings.Contains(body, "returnId=") || strings.Contains(body, "couponId=") {
 				t.Errorf("expanded IDs leaked into pagination: %s", body)
 			}
-			if renderer.data["LoadErr"] != "" {
-				t.Fatalf("LoadErr = %v", renderer.data["LoadErr"])
+			if fields["LoadErr"] != "" {
+				t.Fatalf("LoadErr = %v", fields["LoadErr"])
 			}
 		})
 	}
@@ -176,7 +192,12 @@ func TestOrderListPagesPaginationWindowAndEmpty(t *testing.T) {
 				if strings.Contains(body, "<nav") {
 					t.Fatalf("unexpected pagination: %s", body)
 				}
-				pg, ok := renderer.data["Pagination"].(pagination.Page)
+				// 渲染出口交给模板的是 PrepareView 摊平后的 map（键名 = 视图字段名）。
+				fields, _ := renderer.data.(gin.H)
+				if fields == nil {
+					t.Fatalf("渲染数据不是 map：%T", renderer.data)
+				}
+				pg, ok := fields["Pagination"].(pagination.Page)
 				wantTotal, wantPage := tc.total, tc.page
 				if tc.listErr != nil || tc.projectErr != nil {
 					wantTotal = 0
@@ -188,18 +209,18 @@ func TestOrderListPagesPaginationWindowAndEmpty(t *testing.T) {
 				if !ok || pager.Total != wantTotal || pager.Page != wantPage || pager.Limit != tc.limit {
 					t.Fatalf("empty/single pagination facts = %+v（渲染值 %+v）", pg, pager)
 				}
-				if renderer.data["Page"] != tc.page || renderer.data["Limit"] != tc.limit {
-					t.Fatalf("window = %v/%v", renderer.data["Page"], renderer.data["Limit"])
+				if fields["Page"] != tc.page || fields["Limit"] != tc.limit {
+					t.Fatalf("window = %v/%v", fields["Page"], fields["Limit"])
 				}
 				if tc.projectErr != nil {
-					if svc.calls != 0 || renderer.data["SelectedProject"] != "" {
+					if svc.calls != 0 || fields["SelectedProject"] != "" {
 						t.Fatalf("queried after project failure: %+v", svc)
 					}
 				} else if svc.calls != 1 || svc.offset != (tc.page-1)*tc.limit || svc.limit != tc.limit {
 					t.Fatalf("request window = %+v", svc)
 				}
 				if tc.listErr != nil || tc.projectErr != nil {
-					msg, _ := renderer.data["LoadErr"].(string)
+					msg, _ := fields["LoadErr"].(string)
 					if msg == "" || strings.Contains(msg, "private") {
 						t.Fatalf("error outlet = %q", msg)
 					}

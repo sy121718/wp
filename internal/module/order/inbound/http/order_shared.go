@@ -19,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
+	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	"go_wp/pkg/i18n"
@@ -49,19 +50,19 @@ func countsFilled(counts map[string]int64, keys []string) map[string]int64 {
 // 取值与分档一起给模板：原先模板自己拿 sv 逐个判状态选 badge 类，
 // 同一套判据在筛选行、列表行、详情头各写一遍（见 orderenums.OrderStatusTone 的说明）。
 // 顺序仍是 orderStatusValues 的顺序 —— 徽章行从左到右就是这个顺序。
-func orderStatusTabs() []gin.H {
-	tabs := make([]gin.H, 0, len(orderStatusValues))
+func orderStatusTabs() []orderdto.StatusTabResp {
+	tabs := make([]orderdto.StatusTabResp, 0, len(orderStatusValues))
 	for _, v := range orderStatusValues {
-		tabs = append(tabs, gin.H{"Value": v, "Tone": orderenums.OrderStatusTone(v)})
+		tabs = append(tabs, orderdto.StatusTabResp{Value: v, Kind: orderenums.OrderStatusTone(v)})
 	}
 	return tabs
 }
 
 // returnStatusTabs 退货状态筛选行（同上，取值白名单是 returnStatusValues）。
-func returnStatusTabs() []gin.H {
-	tabs := make([]gin.H, 0, len(returnStatusValues))
+func returnStatusTabs() []orderdto.StatusTabResp {
+	tabs := make([]orderdto.StatusTabResp, 0, len(returnStatusValues))
 	for _, v := range returnStatusValues {
-		tabs = append(tabs, gin.H{"Value": v, "Tone": orderenums.ReturnStatusTone(v)})
+		tabs = append(tabs, orderdto.StatusTabResp{Value: v, Kind: orderenums.ReturnStatusTone(v)})
 	}
 	return tabs
 }

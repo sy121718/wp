@@ -59,9 +59,9 @@ import (
 	"strings"
 
 	"go_wp/internal/mcp"
-	"go_wp/internal/module/order/contract"
-	"go_wp/internal/module/order/dto"
-	"go_wp/internal/module/order/enums"
+	ordercontract "go_wp/internal/module/order/contract"
+	orderdto "go_wp/internal/module/order/dto"
+	orderenums "go_wp/internal/module/order/enums"
 	"go_wp/internal/permission"
 	"go_wp/pkg/utils"
 )
