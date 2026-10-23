@@ -21,6 +21,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	analyticscontract "go_wp/internal/module/analytics/contract"
 	analyticsdto "go_wp/internal/module/analytics/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -317,7 +318,7 @@ func renderAnalyticsPage(t *testing.T, over map[string]any) string {
 	engine := gin.New()
 	// 模板根目录相对包目录：internal/module/analytics/inbound/http → internal/templates。
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/analytics", func(c *gin.Context) {
+	engine.GET("/admin/analytics", adminui.PageSlot(AnalyticsPageTemplate), func(c *gin.Context) {
 		c.HTML(http.StatusOK, "admin/analytics/analytics.html", data)
 	})
 	rec := httptest.NewRecorder()
@@ -337,7 +338,7 @@ func analyticsPageBody(t *testing.T, target string, resp *analyticscontract.Summ
 	}})
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/analytics", handle.AnalyticsPage)
+	engine.GET("/admin/analytics", adminui.PageSlot(AnalyticsPageTemplate), handle.AnalyticsPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
 	if rec.Code != http.StatusOK {

@@ -23,17 +23,29 @@ import (
 // setupAnalyticsPageRoutes 注册访问统计页与 SEO 控制台（pages = /admin 页面组；
 // pages 为 nil 时跳过）。SEO 控制台（SEO-020）读 analytics 热门路径 + project 站点清单，
 // 与统计页同域相邻，故随本段一起注册；SEO 体检动作由 publication 现有端点执行。
+// SEOPageTemplate SEO 控制台的模板名（页面出口由页面槽带进上下文）。
+const SEOPageTemplate = "admin/analytics/seo.html"
+
+// AnalyticsPageTemplate 访问统计页的模板名（页面出口由页面槽带进上下文）。
+const AnalyticsPageTemplate = "admin/analytics/analytics.html"
+
 func setupAnalyticsPageRoutes(pages *gin.RouterGroup,
 	analytics analyticscontract.AnalyticsService, projects projectcontract.ProjectService) {
 	if pages == nil {
 		return
 	}
 	analyticsPages := NewAnalyticsPageHandle(analytics, projects)
-	pages.GET("/analytics", adminui.PageAuthz("/api/analytics/summary"), analyticsPages.AnalyticsPage)
+	pages.GET("/analytics",
+		adminui.PageAuthz("/api/analytics/summary"),
+		adminui.PageSlot(AnalyticsPageTemplate),
+		analyticsPages.AnalyticsPage)
 
 	seoPages := NewSEOPageHandle(analytics, projects)
 	// SEO 控制台的 obj 是它的体检权限点 seo:audit（菜单 /admin/seo 绑的就是它），
 	// 而该权限点声明为 POST /api/seo/audit —— 页面是 GET，故用 As 变体显式指定 act。
 	// 存量口径不一致（页面 GET 借一个 POST 权限点），归一与 02-Z 第二刀同批。
-	pages.GET("/seo", adminui.PageAuthzAs("/api/seo/audit", http.MethodPost), seoPages.SEOPage)
+	pages.GET("/seo",
+		adminui.PageAuthzAs("/api/seo/audit", http.MethodPost),
+		adminui.PageSlot(SEOPageTemplate),
+		seoPages.SEOPage)
 }

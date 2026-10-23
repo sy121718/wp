@@ -449,12 +449,10 @@ func TestControllerMethodSize(t *testing.T) {
 var pendingControllerRenderExit = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":                     true,
 	"internal/module/ai/inbound/http/ai_page.go":                           true,
-	"internal/module/analytics/inbound/http/analytics_page.go":             true,
 	"internal/module/block/inbound/http/block_page.go":                     true,
 	"internal/module/comment/inbound/http/comment_page.go":                 true,
 	"internal/module/content/inbound/http/content_page.go":                 true,
 	"internal/module/mail/inbound/http/mail_page.go":                       true,
-	"internal/module/media/inbound/http/media_page_handle.go":              true,
 	"internal/module/membership/inbound/http/membership_page.go":           true,
 	"internal/module/navigation/inbound/http/navigation_page_handle.go":    true,
 	"internal/module/order/inbound/http/coupon_page.go":                    true,
@@ -468,7 +466,6 @@ var pendingControllerRenderExit = map[string]bool{
 	"internal/module/page/inbound/http/pages_handle.go":                    true,
 	"internal/module/page/inbound/http/page_site_slot_handle.go":           true,
 	"internal/module/page/inbound/http/page_translations_handle.go":        true,
-	"internal/module/plugin/inbound/http/plugin_page_handle.go":            true,
 	"internal/module/project/inbound/http/project_page.go":                 true,
 	"internal/module/publication/inbound/http/seo_audit_result.go":         true,
 	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":      true,
@@ -557,7 +554,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":                          true,
 	"internal/module/ai/inbound/http/ai_err.go":                                 true,
 	"internal/module/ai/inbound/http/ai_page.go":                                true,
-	"internal/module/analytics/inbound/http/analytics_page.go":                  true,
 	"internal/module/block/inbound/http/block_err.go":                           true,
 	"internal/module/block/inbound/http/block_page.go":                          true,
 	"internal/module/comment/inbound/http/comment_page.go":                      true,
@@ -568,7 +564,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/mail/inbound/http/mail_jump.go":                            true,
 	"internal/module/mail/inbound/http/mail_page.go":                            true,
 	"internal/module/masterdata/inbound/http/masterdata_page.go":                true,
-	"internal/module/media/inbound/http/media_page_handle.go":                   true,
 	"internal/module/membership/inbound/http/membership_page.go":                true,
 	"internal/module/navigation/inbound/http/navigation_error_handle.go":        true,
 	"internal/module/navigation/inbound/http/navigation_page_handle.go":         true,
@@ -586,7 +581,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/page/inbound/http/page_site_slot_handle.go":                true,
 	"internal/module/page/inbound/http/page_translations_handle.go":             true,
 	"internal/module/plugin/inbound/http/plugin_err.go":                         true,
-	"internal/module/plugin/inbound/http/plugin_page_handle.go":                 true,
 	"internal/module/project/inbound/http/project_jump.go":                      true,
 	"internal/module/project/inbound/http/project_page.go":                      true,
 	"internal/module/publication/inbound/http/seo_audit_result.go":              true,
@@ -600,6 +594,10 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/workbench/inbound/http/canvas_handle.go":             true,
 	"internal/module/workbench/inbound/http/canvas_preview_handle.go":     true,
 	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":      true,
+	// 插件页仍在用 adminui.MsgText 把事实取成文本（那个槽位还没取词化，登记在批次报告里）。
+	"internal/module/plugin/inbound/http/plugin_page_handle.go": true,
+	// 访问统计页仍在用 adminui.AttachPaginationView 挂分页事实（那是 UI 线的现成对象）。
+	"internal/module/analytics/inbound/http/analytics_page.go": true,
 }
 
 const controllerUIImportPath = "go_wp/internal/adminui"

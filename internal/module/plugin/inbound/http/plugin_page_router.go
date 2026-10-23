@@ -20,11 +20,17 @@ import (
 // SetupPluginPages 注册插件管理页（/admin 组，中间件链由装配层统一挂好）。
 // 函数名沿用 SetupXxxPages 先例：本包已有 REST 路由的 SetupPluginRoutes，不能同名。
 // adminPages 为 nil 时整体跳过。
+// PluginsPageTemplate 插件管理页的模板名（页面出口由页面槽带进上下文）。
+const PluginsPageTemplate = "admin/plugin/plugins"
+
 func SetupPluginPages(adminPages *gin.RouterGroup, plugins plugincontract.PluginService) {
 	if adminPages == nil {
 		return
 	}
 	h := &pluginPageHandle{plugins: plugins}
-	adminPages.GET("/plugins", adminui.PageAuthz("/api/plugin/list"), h.PluginsPage)
+	adminPages.GET("/plugins",
+		adminui.PageAuthz("/api/plugin/list"),
+		adminui.PageSlot(PluginsPageTemplate),
+		h.PluginsPage)
 	adminPages.POST("/plugins/install", builtin.CasbinMiddlewareForPath("/api/plugin/install"), h.PluginsInstall)
 }

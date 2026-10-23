@@ -13,12 +13,12 @@ package pluginhttp
 
 import (
 	"io"
-	"net/http"
 
 	"go_wp/internal/adminui"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	pluginenums "go_wp/internal/module/plugin/enums"
 	"go_wp/pkg/logger"
+	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
 )
@@ -86,11 +86,9 @@ func (h *pluginPageHandle) PluginsPage(c *gin.Context) {
 			data.ArtifactPatrol = patrol
 		}
 	}
-	c.HTML(http.StatusOK, "admin/plugin/plugins", adminui.Prepare(c, gin.H{
-		"title": data.Title, "menu": data.Menu,
-		"Plugins": data.Plugins, "Error": data.Error,
-		"ArtifactPatrol": data.ArtifactPatrol,
-	}))
+	// 直接交视图本身，不再摊平成 gin.H：pluginsPageData 的字段名与模板键逐字一致，
+	// 摊平只是多一次搬运，而搬运处拼错键名的表现是「页面 200 但少一块」（Jet 缺键中断）。
+	pageview.Render(c, data)
 }
 
 // pluginsUploadMax 与安装防线对齐的上传上限。

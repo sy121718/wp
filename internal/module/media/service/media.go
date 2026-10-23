@@ -43,10 +43,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/media/contract"
-	"go_wp/internal/module/media/dto"
-	"go_wp/internal/module/media/enums"
-	"go_wp/internal/module/media/model"
+	mediacontract "go_wp/internal/module/media/contract"
+	mediadto "go_wp/internal/module/media/dto"
+	mediaenums "go_wp/internal/module/media/enums"
+	mediamodel "go_wp/internal/module/media/model"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/upload"

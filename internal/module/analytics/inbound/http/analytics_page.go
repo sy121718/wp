@@ -17,7 +17,6 @@ package analyticshttp
 
 import (
 	"go_wp/internal/middleware/builtin"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -33,6 +32,7 @@ import (
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 // analyticsPageTitle 页面标题（模块 enums 没有这个键，走 shell 的 i18n fallback 链路）。
@@ -141,35 +141,35 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 		}
 	}
 
-	data := adminui.Prepare(c, gin.H{
-		"title":           analyticsPageTitle,
-		"menu":            "analytics",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"FilterFrom":      from,
-		"FilterTo":        to,
-		"RangeFrom":       rangeFrom,
-		"RangeTo":         rangeTo,
-		"Total":           total,
-		"Visitors":        visitors,
-		"Daily":           daily,
-		"Paths":           paths,
-		"PathTotal":       pathTotal,
-		"Referrers":       referrers,
-		"UAClasses":       uaClasses,
-		"Langs":           langs,
-		"RankLimit":       rankLimit,
+	view := &analyticsdto.AnalyticsPageResp{
+		Title:           analyticsPageTitle,
+		Menu:            "analytics",
+		Projects:        projects,
+		SelectedProject: selected,
+		FilterFrom:      from,
+		FilterTo:        to,
+		RangeFrom:       rangeFrom,
+		RangeTo:         rangeTo,
+		Total:           total,
+		Visitors:        visitors,
+		Daily:           daily,
+		Paths:           paths,
+		PathTotal:       pathTotal,
+		Referrers:       referrers,
+		UAClasses:       uaClasses,
+		Langs:           langs,
+		RankLimit:       rankLimit,
 		// 初始选中的维度视图（tabs）：模板据此决定 5 个标签里哪个 aria-selected，以及哪个面板
 		// 不加 hidden。模板对缺键有兜底（回落 daily），所以「别的渲染路径漏传该键」不会断页。
-		"ViewMode": viewMode,
+		ViewMode: viewMode,
 		// 只有「总数有数、维度榜全空」这一种情况给解释，见 breakdownUnavailable。
-		"BreakdownUnavailable": breakdownMissing,
-		"Err":                  pageErr,
+		BreakdownUnavailable: breakdownMissing,
+		Err:                  pageErr,
 		// LoadFailed：本次请求的工程列表没读到（不是「还没有工程」）。
 		// 模板据此把空态换成「没读出来」—— 显示「还没有站点工程」会让运营去建工程，
 		// 而真正的问题是这一次没读出来。
-		"LoadFailed": loadFailed,
-	})
+		LoadFailed: loadFailed,
+	}
 	// 分页链接的 base **固定带 view=paths**，而不是当前的 viewMode —— 这是本页最容易漏的一处：
 	// 分页条物理上只属于「按路径」面板（其余 4 个视图不分页）。若 base 跟着 viewMode 走，
 	// 用户在「按天」标签下时路径面板是 hidden 的，翻页链接带的是 view=daily，点「下一页」
@@ -180,9 +180,12 @@ func (h *analyticsPageHandle) AnalyticsPage(c *gin.Context) {
 		"project": selected, "from": from, "to": to, "view": analyticsViewPaths,
 	})
 	// 分页只给事实；页数、区间句、页码窗口与链接由 partial 算。
-	adminui.AttachPagination(data, "", nil,
+	// AttachPaginationView 把事实挂到视图显式声明的 Pagination 字段上
+	// （AttachPagination 只接 gin.H，视图换结构体后挂不上）。
+	_ = adminui.AttachPaginationView(view, "", nil,
 		pagination.Page{Total: pathTotal, Page: page, Limit: limit, Base: base})
-	c.HTML(http.StatusOK, "admin/analytics/analytics.html", data)
+	// 页面出口走 pageview.Render：模板名由路由的 PageSlot 带进上下文。
+	pageview.Render(c, view)
 }
 
 // breakdownUnavailable 判断「维度分布不可用」—— 这时页面要给一句解释，而不是让运营看空表。
@@ -267,30 +270,30 @@ func NewSEOPageHandle(analytics analyticscontract.AnalyticsService, projects pro
 
 // SEOPage 渲染当前站点的 SEO 体检入口与已有访问统计。
 func (h *seoPageHandle) SEOPage(c *gin.Context) {
-	data := gin.H{
-		"title":           seoPageTitle,
-		"menu":            "seo",
-		"Projects":        []projectcontract.ProjectResp{},
-		"SelectedProject": "",
-		"Paths":           []analyticscontract.PathCount{},
-		"HasPaths":        false,
-		"AnalyticsError":  false,
+	view := &analyticsdto.SEOPageResp{
+		Title:           seoPageTitle,
+		Menu:            "seo",
+		Projects:        []projectcontract.ProjectResp{},
+		SelectedProject: "",
+		Paths:           []analyticsdto.PathCount{},
+		HasPaths:        false,
+		AnalyticsError:  false,
 	}
 
 	projects, err := h.projects.List(c.Request.Context())
 	if err != nil {
 		logger.Error(err, "SEO 控制台读取站点列表失败")
-		data["ProjectError"] = true
-		c.HTML(http.StatusOK, "admin/analytics/seo.html", adminui.Prepare(c, data))
+		view.ProjectError = true
+		pageview.Render(c, view)
 		return
 	}
-	data["Projects"] = projects
+	view.Projects = projects
 
 	selected := strings.TrimSpace(c.Query("project"))
 	if selected == "" && len(projects) > 0 {
 		selected = projects[0].ID
 	}
-	data["SelectedProject"] = selected
+	view.SelectedProject = selected
 
 	if selected != "" && h.analytics != nil {
 		summary, summaryErr := h.analytics.Summary(c.Request.Context(), &analyticscontract.SummaryReq{
@@ -300,12 +303,12 @@ func (h *seoPageHandle) SEOPage(c *gin.Context) {
 		})
 		if summaryErr != nil {
 			logger.Error(summaryErr, "SEO 控制台读取热门路径失败，站点："+selected)
-			data["AnalyticsError"] = true
+			view.AnalyticsError = true
 		} else if summary != nil {
-			data["Paths"] = summary.Paths
-			data["HasPaths"] = len(summary.Paths) > 0
+			view.Paths = summary.Paths
+			view.HasPaths = len(summary.Paths) > 0
 		}
 	}
 
-	c.HTML(http.StatusOK, "admin/analytics/seo.html", adminui.Prepare(c, data))
+	pageview.Render(c, view)
 }

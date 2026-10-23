@@ -17,9 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	analyticsmodel "go_wp/internal/module/analytics/model"
 	"go_wp/public/test/support"
+
+	"github.com/google/uuid"
 )
 
 func TestViewBucketsReturnUTCWakeClock(t *testing.T) {

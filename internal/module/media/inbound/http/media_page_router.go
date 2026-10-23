@@ -15,9 +15,15 @@ import (
 // SetupMediaPages 注册媒体库页面（/admin 组，中间件链由装配层统一挂好）。
 // 函数名沿用 SetupXxxPages 先例：本包已有 REST 路由的 SetupMediaRoutes，不能同名。
 // adminPages 为 nil 时整体跳过。
+// MediaPageTemplate 媒体库页面的模板名（页面出口由页面槽带进上下文）。
+const MediaPageTemplate = "admin/media/media"
+
 func SetupMediaPages(adminPages *gin.RouterGroup) {
 	if adminPages == nil {
 		return
 	}
-	adminPages.GET("/media", adminui.PageAuthz("/api/media/list"), MediaPage)
+	adminPages.GET("/media",
+		adminui.PageAuthz("/api/media/list"),
+		adminui.PageSlot(MediaPageTemplate),
+		MediaPage)
 }

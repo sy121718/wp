@@ -20,8 +20,8 @@ import (
 	"errors"
 	"strings"
 
-	"go_wp/internal/module/media/contract"
-	"go_wp/internal/module/media/model"
+	mediacontract "go_wp/internal/module/media/contract"
+	mediamodel "go_wp/internal/module/media/model"
 	"go_wp/pkg/logger"
 )
 
