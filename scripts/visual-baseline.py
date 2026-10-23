@@ -174,6 +174,19 @@ def main():
         return 0
 
     # --check
+    # 前置一致性：基线必须与**当前 golden** 同源。golden 更新过而基线没重建时，
+    # --check 会把「golden 变了」误报成「样式回归了」—— 排查方向直接跑偏。
+    # 用 golden 的 mtime 作为粗判据（够用：重建基线总会晚于 golden 的更新）。
+    stale = []
+    for name in names:
+        base_png = BASELINE / f"{name}.png"
+        if base_png.exists() and (GOLDEN / f"{name}.css").stat().st_mtime > base_png.stat().st_mtime:
+            stale.append(name)
+    if stale:
+        print(f"⚠ 这些组件的 golden 比视觉基线新：{sorted(stale)}", file=sys.stderr)
+        print("  基线可能已过期 —— 若确认 golden 的变更是有意的，先跑 --save 重建，"
+              "否则 --check 会把「golden 变了」误报成「样式回归了」。", file=sys.stderr)
+
     missing = [n for n in names if not (BASELINE / f"{n}.png").exists()]
     if missing:
         print(f"✗ 缺少基线：{sorted(missing)}（先跑 --save）", file=sys.stderr)
