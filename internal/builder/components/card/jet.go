@@ -27,10 +27,10 @@ type View struct {
 	// Text 正文（已由 core.RichTextHTML 处理：富文本白名单清洗 / 存量纯文本段落化，
 	// 模板侧 unsafe 原样输出）。
 	Text string
-	// HasButton 是否有按钮（ButtonText 与 ButtonLink 均非空）。
+	// HasButton 是否有按钮（Label 与 ButtonLink 均非空）。
 	HasButton bool
-	// ButtonText 按钮文字。
-	ButtonText string
+	// Label 按钮文字。
+	Label string
 	// ButtonLink 按钮链接。
 	ButtonLink string
 
@@ -64,8 +64,8 @@ func BuildView(p *Props, siteLink func(string) string) View {
 		ImageSrc:   p.ImageSrc,
 		Title:      p.Title,
 		Text:       core.RichTextHTML(p.Text),
-		HasButton:  p.ButtonText != "" && p.ButtonLink != "",
-		ButtonText: p.ButtonText,
+		HasButton:  p.Label != "" && p.ButtonLink != "",
+		Label: p.Label,
 		// 站内链接本地化（审计 I18N-015）：作者填的 /about 在英文站点上要变成 /en/about。
 		ButtonLink:    core.SiteLinkOrSame(siteLink, p.ButtonLink),
 		Loading:       p.Loading,

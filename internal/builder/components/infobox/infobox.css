@@ -106,7 +106,7 @@
   border: 1px solid {{iconBorderColor}};
 }
 
-@if btnText
+@if label
 & .sky-infobox-btn {
   display: inline-flex;
   align-items: center;

@@ -39,8 +39,8 @@ type View struct {
 	// 加购是 POST：片段端点收集参数时只读 PostForm，**忽略 query** —— 语言只能走表单域，
 	// 不能像 GET 片段那样拼在 action 的查询串里。空语言（单语言站点）不输出该域。
 	Lang string
-	// ButtonText 按钮文字（参与内容翻译）。
-	ButtonText string
+	// Label 按钮文字（参与内容翻译）。
+	Label string
 	// QtyAria 数量输入框的无障碍名（构建期按当前语言填充，多语言 P4）。
 	//
 	// 此前硬编码在模板里（aria-label="数量"）：读屏器在英文站点上念中文，
@@ -86,7 +86,7 @@ const (
 // 中文兜底：取词函数为 nil（未接入 i18n）时用这些值，产物与接入前逐字一致。
 const (
 	// textFallbackButton 按钮文字的中文兜底。
-	textFallbackButton = defaultButtonText
+	textFallbackButton = defaultLabel
 	// textFallbackQtyAria 数量输入框无障碍名的中文兜底。
 	textFallbackQtyAria = "数量"
 	// noticeNoProject / noticeNoVariant 提示语的中文兜底：BuildView 把它们写进
@@ -111,8 +111,8 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	}
 	v.QtyAria = text(TextKeyQtyAria, textFallbackQtyAria)
 	// 按钮文字：作者填过的那条走内容翻译（sys_translation），这里只管缺省值。
-	if v.ButtonText == textFallbackButton {
-		v.ButtonText = text(TextKeyButton, textFallbackButton)
+	if v.Label == textFallbackButton {
+		v.Label = text(TextKeyButton, textFallbackButton)
 	}
 	// 提示语：只在异常数据状态下非空，按 BuildView 记下的 key 取词。
 	if v.noticeKey != "" {
@@ -138,7 +138,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 		Target:       effectiveTarget(p),
 		ProjectID:    strings.TrimSpace(projectID),
 		Lang:         strings.TrimSpace(lang),
-		ButtonText:   effectiveButtonText(p),
+		Label:   effectiveLabel(p),
 		QtyAria:      textFallbackQtyAria,
 		ShowQuantity: p.ShowQuantity,
 	}

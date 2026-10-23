@@ -47,9 +47,9 @@ export const paletteSpec = {
             "hint": "加入购物车（提交到购物车片段）",
             "category": "basic",
             "defaultProps": {
-                "buttonText": "加入购物车",
                 "cartTarget": "#cart",
                 "currency": "¥",
+                "label": "加入购物车",
                 "optionsField": "product.options",
                 "showQuantity": false,
                 "source": "product",
@@ -105,7 +105,7 @@ export const paletteSpec = {
             "category": "basic",
             "defaultProps": {
                 "buttonLink": "/",
-                "buttonText": "了解更多",
+                "label": "了解更多",
                 "text": "卡片正文内容。",
                 "title": "卡片标题"
             }

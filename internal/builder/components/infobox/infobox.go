@@ -99,8 +99,8 @@ type Props struct {
 	IconBorderColor string `json:"iconBorderColor,omitempty" ct:"color,maxlen=200,sec=style,label=图标边框色"`
 	// TitleTag 标题标签（h2/h3/h4/div，默认 h3）。
 	TitleTag string `json:"titleTag,omitempty" ct:"select,h2=H2,h3=H3,h4=H4,div=区块,default=h3,sec=style,label=标题标签"`
-	// BtnText 按钮文字（与 Link 配合）。
-	BtnText string `json:"btnText,omitempty" ct:"safe,maxlen=100,sec=content,label=按钮文字"`
+	// Label 按钮文字（与 Link 配合）。
+	Label string `json:"label,omitempty" ct:"safe,maxlen=100,sec=content,label=按钮文字"`
 	// Advanced 通用高级属性。
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
@@ -180,7 +180,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"iconBgColor":     p.IconBgColor,
 		"iconBorderColor": p.IconBorderColor,
 		"hasSubtitle":     core.BoolVar(p.Subtitle != ""),
-		"btnText":         core.BoolVar(p.BtnText != ""),
+		"label":         core.BoolVar(p.Label != ""),
 	}
 	if err := core.ApplyComponentCSSTmpl(b, sel, infoboxCSS, vars); err != nil {
 		panic(fmt.Sprintf("infobox 组件样式解析失败: %v", err))

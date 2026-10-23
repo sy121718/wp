@@ -41,7 +41,7 @@ const (
 	defaultLimit     = 6
 	defaultColumns   = "3"
 	defaultTitleTag  = "h3"
-	defaultLinkText  = "Read more"
+	defaultLabel  = "Read more"
 	defaultEmptyText = "暂无文章"
 	maxLimit         = 60
 )
@@ -62,7 +62,7 @@ type Props struct {
 	ShowImage    string `json:"showImage,omitempty" ct:"select,on=显示,off=隐藏,default=on,sec=content,label=封面图"`
 	ShowExcerpt  string `json:"showExcerpt,omitempty" ct:"select,on=显示,off=隐藏,default=on,sec=content,label=摘要"`
 	ExcerptLines int    `json:"excerptLines,omitempty" ct:"slider,min=0,max=6,step=1,sec=content,label=摘要行数"`
-	LinkText     string `json:"linkText,omitempty" ct:"text,maxlen=30,sec=content,label=链接文案"`
+	Label     string `json:"label,omitempty" ct:"text,maxlen=30,sec=content,label=链接文案"`
 	// LinkPrefix 链接前缀（站内逻辑路径，与 slug 拼接成 href）。
 	// "/" 表示文章挂在站点根下（与本仓库默认的 article 路径模式 "/{slug}" 一致）。
 	LinkPrefix string `json:"linkPrefix,omitempty" ct:"text,maxlen=80,sec=content,label=链接前缀"`

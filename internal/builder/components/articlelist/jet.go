@@ -26,7 +26,7 @@ type View struct {
 	Layout       string
 	GridTemplate string
 	TitleTag     string
-	LinkText     string
+	Label     string
 	Cards        []CardView
 	Empty        bool
 	EmptyText    string
@@ -40,7 +40,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	v := View{
 		Layout:   effectiveLayout(p),
 		TitleTag: effectiveTitleTag(p),
-		LinkText: effectiveLinkText(p),
+		Label: effectiveLabel(p),
 	}
 	v.GridTemplate = gridTemplateColumns(v.Layout, effectiveColumns(p))
 	source := ""
@@ -137,14 +137,14 @@ func sortArticles(items []map[string]any, order string) {
 	}
 }
 
-// effectiveLinkText 卡片链接文案。
-func effectiveLinkText(p *Props) string {
+// effectiveLabel 卡片链接文案。
+func effectiveLabel(p *Props) string {
 	if p != nil {
-		if t := strings.TrimSpace(p.LinkText); t != "" {
+		if t := strings.TrimSpace(p.Label); t != "" {
 			return t
 		}
 	}
-	return defaultLinkText
+	return defaultLabel
 }
 
 // effectiveLinkPrefix 链接前缀（默认 "/"，与默认的 article 路径模式 "/{slug}" 一致）。

@@ -64,7 +64,7 @@ func TestInfoboxCSSSwitches(t *testing.T) {
 			t.Errorf("未开开关时不该出现 %q:\n%s", notWant, plain)
 		}
 	}
-	full := infoCSSFor(&Props{Subtitle: "标签", Radius: "12px", BtnText: "了解更多"})
+	full := infoCSSFor(&Props{Subtitle: "标签", Radius: "12px", Label: "了解更多"})
 	for _, want := range []string{
 		".sky-c-t .sky-infobox-subtitle {",
 		"border-radius: 12px;",

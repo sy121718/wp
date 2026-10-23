@@ -148,12 +148,12 @@ var goldenCases = []goldenCase{
 		{"id":"l3","type":"core.list","props":{"style":"dot","items":[{"text":"点1"},{"text":"点2"}]}}
 	]`)},
 	{name: "infobox", doc: rootDoc(`[
-		{"id":"ib1","type":"core.infobox","props":{"icon":"check","title":"标题 & 内容","text":"描述","subtitle":"副标题","link":"https://example.com","btnText":"了解更多"}},
+		{"id":"ib1","type":"core.infobox","props":{"icon":"check","title":"标题 & 内容","text":"描述","subtitle":"副标题","link":"https://example.com","label":"了解更多"}},
 		{"id":"ib2","type":"core.infobox","props":{"mediaImage":"https://example.com/m.jpg","title":"媒体图","text":"文本"}},
 		{"id":"ib3","type":"core.infobox","props":{"icon":"star","title":"链接卡","link":"https://example.com/2"}}
 	]`)},
 	{name: "card", doc: rootDoc(`[
-		{"id":"cd1","type":"core.card","props":{"title":"标题 & 更多","text":"<p>正文 <strong>加粗</strong> &amp; 更多</p><script>alert(1)</script>","imageSrc":"https://example.com/a.jpg","buttonText":"立即购买","buttonLink":"https://example.com/buy?x=1&y=2","advanced":{"customClasses":["my-card"],"customId":"card-1"}}},
+		{"id":"cd1","type":"core.card","props":{"title":"标题 & 更多","text":"<p>正文 <strong>加粗</strong> &amp; 更多</p><script>alert(1)</script>","imageSrc":"https://example.com/a.jpg","label":"了解更多","buttonLink":"https://example.com/buy?x=1&y=2","advanced":{"customClasses":["my-card"],"customId":"card-1"}}},
 		{"id":"cd2","type":"core.card","props":{"title":"纯文本正文","text":"第一段 1 < 2 & 更多\n\n第二段\n换行"}}
 	]`)},
 	{name: "quote", doc: rootDoc(`[

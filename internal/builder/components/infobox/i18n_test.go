@@ -16,7 +16,7 @@ func siteLinkOf(p string) string {
 }
 
 func TestBuildViewLocalizesSiteLink(t *testing.T) {
-	v := BuildView(&Props{Link: "/about", BtnText: "了解"}, siteLinkOf)
+	v := BuildView(&Props{Link: "/about", Label: "了解"}, siteLinkOf)
 	if !v.HasLink || v.Link != "/en/about" {
 		t.Fatalf("整卡链接应加语言前缀，实际 %+v", v)
 	}

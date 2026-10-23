@@ -44,7 +44,7 @@ const CartAddPath = "/_fragments/cartAdd"
 
 // 缺省值与上限。
 const (
-	defaultButtonText = "加入购物车"
+	defaultLabel = "加入购物车"
 	defaultCartTarget = "#cart"
 	defaultCurrency   = "¥"
 	// defaultColor 缺省主色（主题 Token + 兜底，与 badge/button 的取色约定对齐）。
@@ -66,8 +66,8 @@ type Props struct {
 	VariantMode string `json:"variantMode,omitempty" ct:"select,single=单个变体,perVariant=逐变体,default=single,sec=content,label=变体呈现"`
 	// ShowQuantity 是否显示数量输入（关掉就是「一键加购一件」）。
 	ShowQuantity bool `json:"showQuantity,omitempty" ct:"bool,sec=content,label=数量输入"`
-	// ButtonText 按钮文字。
-	ButtonText string `json:"buttonText,omitempty" ct:"text,maxlen=20,sec=content,label=按钮文字"`
+	// Label 按钮文字。
+	Label string `json:"label,omitempty" ct:"text,maxlen=20,sec=content,label=按钮文字"`
 	// CartTarget 加购后要刷新的购物车容器选择器（HTMX 用；无 JS 时忽略）。
 	CartTarget string `json:"cartTarget,omitempty" ct:"text,maxlen=60,sec=style,label=购物车容器选择器"`
 	// Color 按钮主色（色值或主题 Token）。
@@ -88,14 +88,14 @@ var Widget = core.Atom[Props]{
 			"variantsField": "product.variants",
 			"variantMode":   "single",
 			"showQuantity":  false,
-			"buttonText":    "加入购物车",
+			"label":    "加入购物车",
 			"cartTarget":    "#cart",
 			"currency":      "¥",
 		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// 只翻「作者填写的文本」：按钮文字是给访客看的文案，理应按构建语言翻译。
-		Translatable: []string{"buttonText"},
+		Translatable: []string{"label"},
 	},
 }
 
@@ -120,12 +120,12 @@ func effectiveMode(p *Props) string {
 	return ModeSingle
 }
 
-// effectiveButtonText 有效按钮文字。
-func effectiveButtonText(p *Props) string {
-	if t := strings.TrimSpace(p.ButtonText); t != "" {
+// effectiveLabel 有效按钮文字。
+func effectiveLabel(p *Props) string {
+	if t := strings.TrimSpace(p.Label); t != "" {
 		return t
 	}
-	return defaultButtonText
+	return defaultLabel
 }
 
 // effectiveTarget 有效购物车容器选择器。

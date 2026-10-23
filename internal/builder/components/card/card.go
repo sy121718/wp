@@ -24,8 +24,8 @@ type Props struct {
 	Text string `json:"text,omitempty" ct:"richtext,maxlen=1000,sec=content,label=正文"`
 	// ImageSrc 顶部图片（媒体库选择回填 URL 或外部绝对 URL）。
 	ImageSrc string `json:"imageSrc,omitempty" ct:"media,maxlen=500,sec=content,label=图片"`
-	// ButtonText 按钮文字（非空且 ButtonLink 非空时输出 <a>）。
-	ButtonText string `json:"buttonText,omitempty" ct:"text,maxlen=50,sec=content,label=按钮文字"`
+	// Label 按钮文字（非空且 ButtonLink 非空时输出 <a>）。
+	Label string `json:"label,omitempty" ct:"text,maxlen=50,sec=content,label=按钮文字"`
 	// ButtonLink 按钮链接（href）。
 	ButtonLink string `json:"buttonLink,omitempty" ct:"text,maxlen=500,sec=content,label=按钮链接"`
 	// Loading 图片加载策略三态：空=默认（继承主题「图片管理」）/ on=开启懒加载 / off=关闭。
@@ -45,14 +45,14 @@ var Widget = core.Atom[Props]{
 		DefaultProps: map[string]any{
 			"title":      "卡片标题",
 			"text":       "卡片正文内容。",
-			"buttonText": "了解更多",
+			"label": "了解更多",
 			"buttonLink": "/",
 		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：
 		// 只有这里列出的字段参与内容翻译，未声明字段永不翻译。
-		Translatable: []string{"title", "text", "buttonText"},
+		Translatable: []string{"title", "text", "label"},
 	},
 }
 
