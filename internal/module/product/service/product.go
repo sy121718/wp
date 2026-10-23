@@ -1255,6 +1255,11 @@ func (s *Service) toListResp(e *productmodel.ProductEntity) *productdto.ProductR
 		// 而 product_find 的输出格式里写着「SKU=…，类型=…」，
 		// 用户看到的是两个空值，模型也无从据此判断这条是不是他要找的商品。
 		SKUCode: e.SKUCode, Type: e.Type,
+		// DefaultPrice 同理必须带出来：bundle 容器**只有**这一个对外价格，
+		// applyPriceRange 的 bundle 分支只认它 —— 漏拷会让容器的价格区间恒为 0.00。
+		// 页面路径有另一处补偿（product_row.go 的 applyRowFacts），API/MCP 出口没有，
+		// 所以缺的是这一份（审查 P1：页面显示容器价、接口返回 0）。
+		DefaultPrice: e.DefaultPrice, DefaultImage: e.DefaultImage,
 		Status: e.Status, Sort: e.Sort, Images: mediaURLs(decodeStrings(e.Images)),
 		ImageAlts: decodeStrings(e.ImageAlts),
 		CreatedAt: utils.NewJSONTime(e.CreatedAt), UpdatedAt: utils.NewJSONTime(e.UpdatedAt),

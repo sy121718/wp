@@ -295,7 +295,11 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 		q := tx.WithContext(ctx).Model(&ProductEntity{}).
 			// sku_code 必须在 Select 里：列表少取它时，工具返回的「SKU=」永远是空串 ——
 			// 而工具说明承诺了会给出 SKU（见 product_tools.go 的 product_find）。
-			Select("id, project_id, name, slug, sku_code, type, status, images, sort, default_image, create_time, update_time")
+			// default_price 必须在 Select 里：bundle 容器**只有**这一个对外价格
+			// （applyPriceRange 的 bundle 分支只认它），漏了它列表的价格区间恒为 0，
+			// 而页面路径有补偿（product_row.go 的 applyRowFacts 会单独补一列）、
+			// API / MCP 出口没有 —— 同一次列表，页面显示容器价、接口返回 0。
+			Select("id, project_id, name, slug, sku_code, type, status, images, sort, default_image, default_price, create_time, update_time")
 		q = productKeywordFilter(q, keyword)
 		if status != "" {
 			q = q.Where("status = ?", status)
