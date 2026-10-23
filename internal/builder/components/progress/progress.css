@@ -7,7 +7,7 @@
 & {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sky-space-5, 10px);
 }
 
 /* 轨道：撑满剩余宽度（标签占位后自动让出），浅底圆角。 */
@@ -15,7 +15,7 @@
   flex: 1;
   height: 8px;
   background: rgba(0,0,0,0.08);
-  border-radius: 9999px;
+  border-radius: var(--sky-radius-pill, 9999px);
   overflow: hidden;
 }
 

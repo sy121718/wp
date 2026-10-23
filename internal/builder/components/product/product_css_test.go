@@ -53,10 +53,10 @@ func TestProductCSSKeepsStaticRules(t *testing.T) {
 	}{
 		// 版式按源站（vapecentralau.com）实测对齐：图集略宽于摘要、间距 40px。
 		{"桌面两栏", ".sky-c-t {", []string{"display: grid", "grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr)", "gap: 40px", "align-items: start"}},
-		{"主图", ".sky-c-t .sky-product-media img {", []string{"width: min(100%, 100%)", "height: auto", "border-radius: 12px"}},
-		{"图集", ".sky-c-t .sky-product-gallery {", []string{"minmax(min(100%, 96px), 1fr)", "gap: 8px"}},
-		{"图集图", ".sky-c-t .sky-product-gallery img {", []string{"aspect-ratio: 1 / 1", "object-fit: cover", "border-radius: 8px"}},
-		{"信息栏", ".sky-c-t .sky-product-info {", []string{"flex-direction: column", "gap: 10px", "min-width: 0"}},
+		{"主图", ".sky-c-t .sky-product-media img {", []string{"width: min(100%, 100%)", "height: auto", "border-radius: var(--sky-radius-xl, 12px)"}},
+		{"图集", ".sky-c-t .sky-product-gallery {", []string{"minmax(min(100%, 96px), 1fr)", "gap: var(--sky-space-4, 8px)"}},
+		{"图集图", ".sky-c-t .sky-product-gallery img {", []string{"aspect-ratio: 1 / 1", "object-fit: cover", "border-radius: var(--sky-radius-lg, 8px)"}},
+		{"信息栏", ".sky-c-t .sky-product-info {", []string{"flex-direction: column", "gap: var(--sky-space-5, 10px)", "min-width: 0"}},
 		// 标题 30px / 600：源站实测 h1 为 30px + font-weight 600 + 行高 1.4。
 		{"标题", ".sky-c-t .sky-product-title {", []string{"font-size: 30px", "font-weight: 600", "line-height: 1.4"}},
 		{"副标题", ".sky-c-t .sky-product-subtitle {", []string{"color: var(--sky-c-text-mute, #6b7280)", "line-height: 1.6"}},
@@ -67,13 +67,13 @@ func TestProductCSSKeepsStaticRules(t *testing.T) {
 		{"描述", ".sky-c-t .sky-product-description {", []string{"line-height: 1.7", "word-break: break-word"}},
 		{"可用量", ".sky-c-t .sky-product-variant-stock {", []string{"font-size: .85rem", "flex: 1 0 100%"}},
 		{"缺货态", ".sky-c-t .sky-product-variant .is-out {", []string{"color: var(--sky-c-danger, #dc2626)", "font-weight: 600"}},
-		{"规格容器", ".sky-c-t .sky-product-options {", []string{"flex-direction: column", "gap: 12px"}},
+		{"规格容器", ".sky-c-t .sky-product-options {", []string{"flex-direction: column", "gap: var(--sky-space-6, 12px)"}},
 		{"单个规格组", ".sky-c-t .sky-product-option {", []string{"flex-wrap: wrap", "border: 0", "padding: 0"}},
-		{"规格组标签", ".sky-c-t .sky-product-option legend {", []string{"padding: 0", "font-size: 13px"}},
-		{"选项标签", ".sky-c-t .sky-product-option-value {", []string{"min-height: 36px", "border-radius: 8px", "cursor: pointer"}},
+		{"规格组标签", ".sky-c-t .sky-product-option legend {", []string{"padding: 0", "font-size: var(--sky-fs-base, 13px)"}},
+		{"选项标签", ".sky-c-t .sky-product-option-value {", []string{"min-height: 36px", "border-radius: var(--sky-radius-lg, 8px)", "cursor: pointer"}},
 		{"选中态", ".sky-c-t .sky-product-option-radio:checked + .sky-product-option-value {", []string{"border-color: var(--sky-c-primary, #2563eb)", "background: rgba(37,99,235,0.08)"}},
-		{"变体列表", ".sky-c-t .sky-product-variants {", []string{"flex-direction: column", "gap: 6px"}},
-		{"单个变体", ".sky-c-t .sky-product-variant {", []string{"gap: 4px 10px", "font-size: 13px"}},
+		{"变体列表", ".sky-c-t .sky-product-variants {", []string{"flex-direction: column", "gap: var(--sky-space-3, 6px)"}},
+		{"单个变体", ".sky-c-t .sky-product-variant {", []string{"gap: var(--sky-space-2, 4px) var(--sky-space-5, 10px)", "font-size: var(--sky-fs-base, 13px)"}},
 		{"变体规格", ".sky-c-t .sky-product-variant-options {", []string{"word-break: break-word"}},
 		{"变体价", ".sky-c-t .sky-product-variant-price {", []string{"font-weight: 600"}},
 	}

@@ -50,11 +50,11 @@
 /* 基础样式。 */
 & .sky-tabs-nav {
   display: flex;
-  gap: 4px;
+  gap: var(--sky-space-2, 4px);
   flex-wrap: wrap;
   justify-content: {{navJustify}};
   border-bottom: 1px solid {{borderColor}};
-  padding: 0 4px;
+  padding: 0 var(--sky-space-2, 4px);
 }
 
 @if activeColor
@@ -69,8 +69,8 @@
 & .sky-tabs-nav label {
   padding: 9px 18px;
   cursor: pointer;
-  font-size: 14px;
-  border-radius: 8px 8px 0 0;
+  font-size: var(--sky-fs-md, 14px);
+  border-radius: var(--sky-radius-lg, 8px) var(--sky-radius-lg, 8px) 0 0;
   transition: background .15s, color .15s;
   user-select: none;
 }
@@ -88,7 +88,7 @@
 
 & .sky-tab-panel {
   display: none;
-  padding: 18px 4px;
+  padding: 18px var(--sky-space-2, 4px);
   animation: sky-tabs-fade .25s ease;
 }
 
@@ -111,12 +111,12 @@
   border-right: 1px solid var(--sky-c-border, #e5e7eb);
   /* 多端硬规则（审计 UI-015）：竖向页签导航的最小宽度按容器收口。 */
   min-width: min(100%, 140px);
-  padding: 4px 0;
+  padding: var(--sky-space-2, 4px) 0;
 }
 
 &.sky-tabs-vertical .sky-tabs-nav label {
-  border-radius: 8px;
-  margin: 2px 4px;
+  border-radius: var(--sky-radius-lg, 8px);
+  margin: var(--sky-space-1, 2px) var(--sky-space-2, 4px);
 }
 
 &.sky-tabs-vertical .sky-tab-panel {

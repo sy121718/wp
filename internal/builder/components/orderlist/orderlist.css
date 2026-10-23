@@ -5,7 +5,7 @@
 & {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--sky-space-6, 12px);
     min-width: 0;
 }
 & .sky-orders-title {
@@ -17,7 +17,7 @@
 & .sky-orders-mount {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--sky-space-5, 10px);
     min-width: 0;
 }
 @media (max-width: 767px) {

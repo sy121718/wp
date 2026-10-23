@@ -101,7 +101,7 @@
 & .gallery-dots {
   display: flex;
   justify-content: center;
-  gap: 6px;
+  gap: var(--sky-space-3, 6px);
   margin-top: 8px;
 }
 @endif
@@ -155,7 +155,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 8px;
+  padding: var(--sky-space-4, 8px);
   background: rgba(0,0,0,0.55);
   color: var(--sky-c-surface);
   opacity: 0;

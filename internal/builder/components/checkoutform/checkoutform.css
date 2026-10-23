@@ -25,19 +25,19 @@
 /* 不可用提示（缺站点工程）。 */
 & .sky-checkout-notice {
   margin: 0;
-  padding: 12px 14px;
-  font-size: 14px;
+  padding: var(--sky-space-6, 12px) 14px;
+  font-size: var(--sky-fs-md, 14px);
   color: var(--sky-c-text-muted, #6b7280);
   background: var(--sky-c-surface-alt, rgba(0,0,0,0.03));
   border: 1px solid var(--sky-c-border, #e5e7eb);
-  border-radius: 8px;
+  border-radius: var(--sky-radius-lg, 8px);
 }
 
 /* 分组（fieldset 自带边框与内距，全部清掉，只留语义）。 */
 & .sky-checkout-group {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--sky-space-6, 12px);
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -46,7 +46,7 @@
 
 /* 分组标题。 */
 & .sky-checkout-legend {
-  margin: 0 0 2px;
+  margin: 0 0 var(--sky-space-1, 2px);
   padding: 0;
   font-size: 15px;
   font-weight: 700;
@@ -57,7 +57,7 @@
 & .sky-checkout-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-  gap: 12px;
+  gap: var(--sky-space-6, 12px);
   min-width: 0;
 }
 
@@ -65,9 +65,9 @@
 & .sky-checkout-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sky-space-3, 6px);
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--sky-fs-md, 14px);
 }
 
 /* 整行字段（多行备注、以及作者按语义需要独占一行的项）。 */
@@ -80,11 +80,11 @@
   width: 100%;
   box-sizing: border-box;
   min-height: 44px;
-  padding: 10px 12px;
+  padding: var(--sky-space-5, 10px) var(--sky-space-6, 12px);
   font: inherit;
   font-size: 15px;
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  border-radius: 6px;
+  border-radius: var(--sky-radius-md, 6px);
   background: var(--sky-c-surface, #fff);
   color: var(--sky-c-text);
   @focus-transition;
@@ -92,11 +92,11 @@
 & textarea {
   width: 100%;
   box-sizing: border-box;
-  padding: 10px 12px;
+  padding: var(--sky-space-5, 10px) var(--sky-space-6, 12px);
   font: inherit;
   font-size: 15px;
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  border-radius: 6px;
+  border-radius: var(--sky-radius-md, 6px);
   background: var(--sky-c-surface, #fff);
   color: var(--sky-c-text);
   @focus-transition;
@@ -123,13 +123,13 @@
 & .sky-checkout-submit {
   align-self: flex-start;
   max-width: 100%;
-  padding: 12px 28px;
+  padding: var(--sky-space-6, 12px) 28px;
   font-size: 15px;
   font-weight: 600;
   color: var(--sky-btn-color, var(--sky-c-surface));
   background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));
   border: none;
-  border-radius: 6px;
+  border-radius: var(--sky-radius-md, 6px);
   cursor: pointer;
   transition: background .15s;
 }

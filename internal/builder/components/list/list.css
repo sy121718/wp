@@ -16,7 +16,7 @@
 & .sky-list-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--sky-space-5, 10px);
   padding: calc({{spacing}} / 2) 0;
 }
 
@@ -59,7 +59,7 @@
 & .sky-list-dot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--sky-radius-pill, 999px);
   background: currentColor;
   display: block;
   margin-top: 6px;
@@ -76,7 +76,7 @@
 & .sky-list-marker {
   background: {{icon_bg}};
   @if icon_bg
-  border-radius: 999px;
+  border-radius: var(--sky-radius-pill, 999px);
   width: 1.8em;
   height: 1.8em;
   @endif

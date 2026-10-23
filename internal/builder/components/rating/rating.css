@@ -12,7 +12,7 @@
 & {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--sky-space-1, 2px);
   color: var(--sky-c-warning, #f59e0b);
   line-height: 0;
 }

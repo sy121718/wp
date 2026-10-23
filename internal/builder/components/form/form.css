@@ -11,19 +11,19 @@
 & {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--sky-space-7, 16px);
 }
 
 /* 单个字段：纵向排列。 */
 & .sky-form-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sky-space-3, 6px);
 }
 
 /* 标签样式。 */
 & .sky-form-field label {
-  font-size: 14px;
+  font-size: var(--sky-fs-md, 14px);
   font-weight: 600;
   color: inherit;
 }
@@ -32,7 +32,7 @@
 & .sky-form-field label.sky-form-check {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
   font-weight: 400;
 }
 & .sky-form-field label.sky-form-check input {
@@ -44,10 +44,10 @@
 & :is(input[type=text],input[type=email],select) {
   width: 100%;
   box-sizing: border-box;
-  padding: 10px 12px;
+  padding: var(--sky-space-5, 10px) var(--sky-space-6, 12px);
   font-size: 15px;
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  border-radius: 6px;
+  border-radius: var(--sky-radius-md, 6px);
   background: var(--sky-c-surface, #fff);
   color: var(--sky-c-text);
   @focus-transition;
@@ -55,10 +55,10 @@
 & textarea {
   width: 100%;
   box-sizing: border-box;
-  padding: 10px 12px;
+  padding: var(--sky-space-5, 10px) var(--sky-space-6, 12px);
   font-size: 15px;
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  border-radius: 6px;
+  border-radius: var(--sky-radius-md, 6px);
   background: var(--sky-c-surface, #fff);
   color: var(--sky-c-text);
   @focus-transition;
@@ -85,13 +85,13 @@
 /* 提交按钮样式。 */
 & .sky-form-submit {
   align-self: flex-start;
-  padding: 11px 24px;
+  padding: 11px var(--sky-space-8, 24px);
   font-size: 15px;
   font-weight: 600;
   color: var(--sky-btn-color, var(--sky-c-surface));
   background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));
   border: none;
-  border-radius: 6px;
+  border-radius: var(--sky-radius-md, 6px);
   cursor: pointer;
   transition: background .15s;
 }

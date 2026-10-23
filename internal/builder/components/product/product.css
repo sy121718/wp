@@ -17,12 +17,12 @@
    写成一条 `A,\nB {` 会在第一行报「看不懂这一行」。两个修饰类各写一条。 */
 &.sky-product-root--media-only {
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: var(--sky-space-7, 16px);
 }
 
 &.sky-product-root--info-only {
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: var(--sky-space-7, 16px);
 }
 
 /* 窄视口 (手机): 两栏改纵向堆叠. */
@@ -30,7 +30,7 @@
   & {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--sky-space-7, 16px);
   }
 }
 
@@ -39,7 +39,7 @@
   display: block;
   width: min(100%, 100%);
   height: auto;
-  border-radius: 12px;
+  border-radius: var(--sky-radius-xl, 12px);
 }
 
 /* 主图框：源站图集是**浅灰底、方形、图上压折扣角标**。 */
@@ -47,7 +47,7 @@
   position: relative;
   display: block;
   margin: 0;
-  border-radius: 12px;
+  border-radius: var(--sky-radius-xl, 12px);
   overflow: hidden;
   background: var(--sky-c-bg-soft, #f4f5f6);
 }
@@ -65,11 +65,11 @@
   display: inline-flex;
   align-items: center;
   min-height: 24px;
-  padding: 0 10px;
+  padding: 0 var(--sky-space-5, 10px);
   border-radius: 5px;
   background: var(--sky-c-primary, #2563eb);
   color: var(--sky-c-surface);
-  font-size: 12px;
+  font-size: var(--sky-fs-sm, 12px);
   font-weight: 500;
   line-height: 1;
 }
@@ -78,7 +78,7 @@
 & .sky-product-gallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 96px), 1fr));
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
   margin-top: 8px;
 }
 
@@ -88,14 +88,14 @@
   height: auto;
   aspect-ratio: 1 / 1;
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: var(--sky-radius-lg, 8px);
 }
 
 /* 信息栏. */
 & .sky-product-info {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sky-space-5, 10px);
   min-width: 0;
 }
 
@@ -113,8 +113,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0 4px;
-  font-size: 14px;
+  gap: 0 var(--sky-space-2, 4px);
+  font-size: var(--sky-fs-md, 14px);
   line-height: 1.6;
 }
 
@@ -132,8 +132,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 8px;
-  font-size: 14px;
+  gap: var(--sky-space-4, 8px);
+  font-size: var(--sky-fs-md, 14px);
   color: var(--sky-c-text-mute, #6b7280);
 }
 
@@ -148,9 +148,9 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
-  margin: 8px 0 0;
-  font-size: 14px;
+  gap: var(--sky-space-3, 6px);
+  margin: var(--sky-space-4, 8px) 0 0;
+  font-size: var(--sky-fs-md, 14px);
 }
 
 & .sky-product-brand-label {
@@ -171,7 +171,7 @@
 & .sky-product-price-row {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: var(--sky-space-5, 10px);
   flex-wrap: wrap;
 }
 
@@ -196,11 +196,11 @@
   }
 
   & .sky-product-price {
-    font-size: 16px;
+    font-size: var(--sky-fs-lg, 16px);
   }
 
   & .sky-product-compare {
-    font-size: 16px;
+    font-size: var(--sky-fs-lg, 16px);
   }
 }
 
@@ -237,7 +237,7 @@
 & .sky-product-options {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--sky-space-6, 12px);
   min-width: 0;
 }
 
@@ -245,7 +245,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
   border: 0;
   margin: 0;
   padding: 0;
@@ -255,7 +255,7 @@
 & .sky-product-option legend {
   padding: 0;
   margin-right: 4px;
-  font-size: 13px;
+  font-size: var(--sky-fs-base, 13px);
   color: var(--sky-c-text-mute, #6b7280);
 }
 
@@ -279,10 +279,10 @@
   width: auto;
   max-width: 100%;
   min-height: 36px;
-  padding: 6px 14px;
+  padding: var(--sky-space-3, 6px) 14px;
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: var(--sky-radius-lg, 8px);
+  font-size: var(--sky-fs-base, 13px);
   line-height: 1.4;
   cursor: pointer;
   user-select: none;
@@ -318,7 +318,7 @@
 & .sky-product-variants {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sky-space-3, 6px);
   min-width: 0;
 }
 
@@ -326,8 +326,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 10px;
-  font-size: 13px;
+  gap: var(--sky-space-2, 4px) var(--sky-space-5, 10px);
+  font-size: var(--sky-fs-base, 13px);
   min-width: 0;
 }
 
@@ -345,6 +345,6 @@
 @media (max-width: 767px) {
   & .sky-product-option-value {
     min-height: 44px;
-    padding: 8px 16px;
+    padding: var(--sky-space-4, 8px) var(--sky-space-7, 16px);
   }
 }

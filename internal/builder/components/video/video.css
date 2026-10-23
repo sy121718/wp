@@ -23,9 +23,7 @@
   padding-top: {{pad}};
 }
 
-/* 播放器本体：绝对定位铺满比例框；border-radius: inherit 让圆角跟着容器走。 */
-& .sky-video-frame iframe, & .sky-video-frame video {
-  position: absolute;
+/* 播放器本体：绝对定位铺满比例框；border-radius: inherit 让圆角跟着容器走。 */ & .sky-video-frame iframe, & .sky-video-frame video { position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;

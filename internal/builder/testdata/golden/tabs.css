@@ -61,11 +61,11 @@ body {
 
 .sky-c-tb1 .sky-tabs-nav {
   display: flex;
-  gap: 4px;
+  gap: var(--sky-space-2, 4px);
   flex-wrap: wrap;
   justify-content: center;
   border-bottom: 1px solid var(--sky-c-border, rgba(0,0,0,.1));
-  padding: 0 4px;
+  padding: 0 var(--sky-space-2, 4px);
 }
 
 #sky-tabs-tb1-0:checked ~ .sky-c-tb1 .sky-tabs-nav label:nth-of-type(1) {
@@ -83,15 +83,15 @@ body {
 .sky-c-tb1 .sky-tabs-nav label {
   padding: 9px 18px;
   cursor: pointer;
-  font-size: 14px;
-  border-radius: 8px 8px 0 0;
+  font-size: var(--sky-fs-md, 14px);
+  border-radius: var(--sky-radius-lg, 8px) var(--sky-radius-lg, 8px) 0 0;
   transition: background .15s, color .15s;
   user-select: none;
 }
 
 .sky-c-tb1 .sky-tab-panel {
   display: none;
-  padding: 18px 4px;
+  padding: 18px var(--sky-space-2, 4px);
   animation: sky-tabs-fade .25s ease;
 }
 
@@ -137,25 +137,25 @@ body {
 
 .sky-c-tb2 .sky-tabs-nav {
   display: flex;
-  gap: 4px;
+  gap: var(--sky-space-2, 4px);
   flex-wrap: wrap;
   justify-content: flex-start;
   border-bottom: 1px solid var(--sky-c-border, rgba(0,0,0,.1));
-  padding: 0 4px;
+  padding: 0 var(--sky-space-2, 4px);
 }
 
 .sky-c-tb2 .sky-tabs-nav label {
   padding: 9px 18px;
   cursor: pointer;
-  font-size: 14px;
-  border-radius: 8px 8px 0 0;
+  font-size: var(--sky-fs-md, 14px);
+  border-radius: var(--sky-radius-lg, 8px) var(--sky-radius-lg, 8px) 0 0;
   transition: background .15s, color .15s;
   user-select: none;
 }
 
 .sky-c-tb2 .sky-tab-panel {
   display: none;
-  padding: 18px 4px;
+  padding: 18px var(--sky-space-2, 4px);
   animation: sky-tabs-fade .25s ease;
 }
 
@@ -169,12 +169,12 @@ body {
   border-bottom: 0;
   border-right: 1px solid var(--sky-c-border, #e5e7eb);
   min-width: min(100%, 140px);
-  padding: 4px 0;
+  padding: var(--sky-space-2, 4px) 0;
 }
 
 .sky-c-tb2.sky-tabs-vertical .sky-tabs-nav label {
-  border-radius: 8px;
-  margin: 2px 4px;
+  border-radius: var(--sky-radius-lg, 8px);
+  margin: var(--sky-space-1, 2px) var(--sky-space-2, 4px);
 }
 
 .sky-c-tb2.sky-tabs-vertical .sky-tab-panel {

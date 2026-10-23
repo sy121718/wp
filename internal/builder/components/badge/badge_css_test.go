@@ -20,7 +20,7 @@ func cssFor(t *testing.T, p *Props) string {
 // 三种变体在 badge.css 里是同一个声明块内的三段条件，命中的那一支与基础声明必须合成
 // 一条规则 —— 否则产物会多出「同选择器、属性分散」的多条规则（语义等价但字节不同）。
 func TestBadgeCSSVariants(t *testing.T) {
-	base := []string{"display: inline-flex", "padding: 2px 10px", "border-radius: 9999px", "white-space: nowrap"}
+	base := []string{"display: inline-flex", "padding: var(--sky-space-1, 2px) var(--sky-space-5, 10px)", "border-radius: var(--sky-radius-pill, 9999px)", "white-space: nowrap"}
 	const token = "background: var(--sky-c-primary, #2563eb)"
 	cases := []struct {
 		name    string

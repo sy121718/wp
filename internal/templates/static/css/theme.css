@@ -76,6 +76,35 @@
     --text-xl:   20px;
     --text-2xl:  24px;
 
+    /* 前台尺度令牌别名（--sky-space/radius/text-*）。
+     *
+     * 组件 CSS 消费的是 --sky-* 命名空间（前台产物与后台共用同一份组件样式），
+     * 而档位定义在这里（后台主题）。两组名字一一对应，取值同源：
+     * 组件写 var(--sky-space-4, 8px)，后台有主题时取 --sky-space-4 = 8px，
+     * 无主题页面（纯静态产物）取兜底 8px —— 两条路径视觉一致，这正是兜底存在的理由。 */
+    --sky-space-1:  var(--space-1);
+    --sky-space-2:  var(--space-2);
+    --sky-space-3:  var(--space-3);
+    --sky-space-4:  var(--space-4);
+    --sky-space-5:  var(--space-5);
+    --sky-space-6:  var(--space-6);
+    --sky-space-7:  var(--space-7);
+    --sky-space-8:  var(--space-8);
+
+    --sky-radius-sm:   var(--radius-sm);
+    --sky-radius-md:   var(--radius-md);
+    --sky-radius-lg:   var(--radius-lg);
+    --sky-radius-xl:   var(--radius-xl);
+    --sky-radius-pill: var(--radius-pill);
+
+    --sky-fs-xs:   var(--text-xs);
+    --sky-fs-sm:   var(--text-sm);
+    --sky-fs-base: var(--text-base);
+    --sky-fs-md:   var(--text-md);
+    --sky-fs-lg:   var(--text-lg);
+    --sky-fs-xl:   var(--text-xl);
+    --sky-fs-2xl:  var(--text-2xl);
+
     /* 动效时长（与 builder/core 的入场时长档位同源语义：fast/normal/slow） */
     --motion-unit:  100ms;
     --motion-fast:  150ms;

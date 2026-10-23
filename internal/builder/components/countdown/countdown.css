@@ -7,7 +7,7 @@
 & {
   display: inline-flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
   font-variant-numeric: tabular-nums;
 }
 
@@ -16,7 +16,7 @@
   display: inline-flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--sky-space-1, 2px);
 }
 
 /* 数字位：min-width 用 ch（等宽数字的字符宽）保证 1 位与 2 位不跳宽度。 */
@@ -26,9 +26,9 @@
   font-weight: 700;
   line-height: 1;
   text-align: center;
-  padding: 8px 10px;
+  padding: var(--sky-space-4, 8px) var(--sky-space-5, 10px);
   background: rgba(0,0,0,0.05);
-  border-radius: 6px;
+  border-radius: var(--sky-radius-md, 6px);
 }
 
 /* 分隔符（冒号）：与数字同位但更淡。padding-top 让它在基线上与数字对齐。 */
@@ -37,7 +37,7 @@
   font-weight: 700;
   line-height: 1;
   opacity: 0.5;
-  padding-top: 8px;
+  padding-top: var(--sky-space-4, 8px);
 }
 
 /* 单位标签（天/时/分/秒）。 */

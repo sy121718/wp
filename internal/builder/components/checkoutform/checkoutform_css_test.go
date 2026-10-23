@@ -26,11 +26,11 @@ func TestCheckoutFormCSSParsesAndKeepsRules(t *testing.T) {
 		{"分组清掉 fieldset 默认样式", []string{".sky-c-test .sky-checkout-group {", "border: 0", "min-width: 0"}},
 		{"字段栅格用 auto-fit + min(100%, …)", []string{".sky-c-test .sky-checkout-grid {", "grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr))"}},
 		{"整行字段跨列", []string{".sky-c-test .sky-checkout-field.is-wide {", "grid-column: 1 / -1"}},
-		{"输入控件 :is() 合并", []string{".sky-c-test :is(input[type=text],input[type=email],input[type=tel],select) {", "min-height: 44px", "border-radius: 6px"}},
+		{"输入控件 :is() 合并", []string{".sky-c-test :is(input[type=text],input[type=email],input[type=tel],select) {", "min-height: 44px", "border-radius: var(--sky-radius-md, 6px)"}},
 		{"textarea", []string{".sky-c-test textarea {", "min-height: 96px", "resize: vertical"}},
 		{"聚焦 ring（占位指令已展开）", []string{".sky-c-test :is(input,textarea,select):focus {"}},
 		{"校验错误态 父容器", []string{".sky-c-test .sky-checkout-field:has(:user-invalid) {", "var(--sky-c-danger, #dc2626)"}},
-		{"提交按钮", []string{".sky-c-test .sky-checkout-submit {", "padding: 12px 28px", "cursor: pointer"}},
+		{"提交按钮", []string{".sky-c-test .sky-checkout-submit {", "padding: var(--sky-space-6, 12px) 28px", "cursor: pointer"}},
 		{"提交按钮 hover", []string{".sky-c-test .sky-checkout-submit:hover {", "var(--sky-btn-hover-bg"}},
 	}
 	for _, c := range cases {

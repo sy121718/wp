@@ -76,7 +76,7 @@ body {
 .sky-c-t2 pre {
   overflow-x: auto;
   padding: .9em 1em;
-  border-radius: 8px;
+  border-radius: var(--sky-radius-lg, 8px);
   background: var(--sky-c-bg-soft, #f4f5f6);
 }
 

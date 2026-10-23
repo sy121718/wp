@@ -12,13 +12,13 @@
 & caption {
   caption-side: top;
   text-align: left;
-  padding: 8px 0;
+  padding: var(--sky-space-4, 8px) 0;
   font-weight: 600;
 }
 
 /* 单元格基础内边距与对齐。 */
 & th, & td {
-  padding: 10px 12px;
+  padding: var(--sky-space-5, 10px) var(--sky-space-6, 12px);
   text-align: left;
 }
 

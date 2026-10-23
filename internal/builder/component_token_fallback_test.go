@@ -48,15 +48,33 @@ var componentTokenFallbacks = map[string][]string{
 	"--sky-c-bg-soft":       {"#f4f5f6"},                              // 浅灰页面底（与后台 --c-bg-soft 同值）
 	"--sky-c-danger":        {"#dc2626"},                              // 危险（red-600，与后台 --c-danger 同值）
 	"--sky-c-warning":       {"#f59e0b"},                              // 警告（amber-500）
+
+	// —— 尺度令牌（间距 / 圆角 / 字号）——
+	//
+	// 这一族与 --sky-c-* 的区别：颜色令牌由主题供值（ThemeVarsCSS 输出 --sky-c-*），
+	// 尺度令牌**不由主题供值** —— 它是组件样式自己的档位，兜底值是唯一真值。
+	// 之所以也走 var()，是为了将来能在主题层覆写密度（--sky-density-* 已经这么做）。
+	// 因此登记形式是「令牌 → 唯一允许兜底值」，判据仍是「同一令牌全仓一种兜底」。
+	"--sky-space-1":  {"2px"}, "--sky-space-2": {"4px"}, "--sky-space-3": {"6px"},
+	"--sky-space-4":  {"8px"}, "--sky-space-5": {"10px"}, "--sky-space-6": {"12px"},
+	"--sky-space-7":  {"16px"}, "--sky-space-8": {"24px"},
+	"--sky-radius-sm": {"4px"}, "--sky-radius-md": {"6px"}, "--sky-radius-lg": {"8px"},
+	"--sky-radius-xl": {"12px"}, "--sky-radius-pill": {"999px", "9999px"},
+	"--sky-fs-xs": {"11px"}, "--sky-fs-sm": {"12px"}, "--sky-fs-base": {"13px"},
+	"--sky-fs-md": {"14px"}, "--sky-fs-lg": {"16px"}, "--sky-fs-xl": {"20px"},
+	"--sky-fs-2xl": {"24px"},
 }
 
-// componentOrphanTokenRe 孤儿令牌名：--sky- 直接跟通用色词（缺 -c- 段）。
+// componentOrphanTokenRe 孤儿令牌名：--sky- 直接跟通用**色词**（缺 -c- 段）。
 // ThemeVarsCSS 只输出 --sky-c-* 一族，这类名字永远拿不到主题供值。
+//
+// 注意它只匹配色词（primary/text/border/…），不匹配 space/radius/text-xs 这类
+// **尺度档位** —— 后者本来就不由主题供值，靠兜底值生效，不是孤儿。
 var componentOrphanTokenRe = regexp.MustCompile(
 	`var\(--sky-(primary|secondary|accent|success|warning|danger|surface|text|heading|border|bg|muted)\b`)
 
 // fallback 捕获允许一层嵌套括号（rgba(37,99,235,0.08) 这类值自带括号）。
-var componentTokenRefRe = regexp.MustCompile(`var\(\s*(--sky-c-[a-z0-9-]+)\s*,\s*([^()]*(?:\([^()]*\)[^()]*)*)\)`)
+var componentTokenRefRe = regexp.MustCompile(`var\(\s*(--sky-(?:c|space|radius|text)-[a-z0-9-]+)\s*,\s*([^()]*(?:\([^()]*\)[^()]*)*)\)`)
 
 func componentCSSFiles(t *testing.T) []string {
 	t.Helper()

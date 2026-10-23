@@ -116,10 +116,10 @@ func TestCompileCSS(t *testing.T) {
 
 	wants := []string{
 		"flex-direction: column",
-		"gap: 16px",
+		"gap: var(--sky-space-7, 16px)",
 		".sky-form-field",
 		"border: 1px solid var(--sky-c-border-strong, #d1d5db)",
-		"border-radius: 6px",
+		"border-radius: var(--sky-radius-md, 6px)",
 		".sky-form-submit",
 		"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb))",
 		"textarea",

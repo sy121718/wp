@@ -7,7 +7,7 @@ body {
 
 .sky-c-q1 {
   margin: 0;
-  padding: 16px 20px;
+  padding: var(--sky-space-7, 16px) 20px;
   border-left: 4px solid var(--sky-c-primary, #2563eb);
   font-style: italic;
   text-align: center;
@@ -33,7 +33,7 @@ body {
 
 .sky-c-q2 {
   margin: 0;
-  padding: 16px 20px;
+  padding: var(--sky-space-7, 16px) 20px;
   border-left: 4px solid var(--sky-c-primary, #2563eb);
   font-style: italic;
 }

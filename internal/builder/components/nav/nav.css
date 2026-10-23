@@ -56,8 +56,8 @@
   min-width: min(180px, calc(100vw - 32px));
   list-style: none;
   margin: 0;
-  padding: 8px 0;
-  border-radius: 8px;
+  padding: var(--sky-space-4, 8px) 0;
+  border-radius: var(--sky-radius-lg, 8px);
   box-shadow: 0 8px 24px rgba(0,0,0,.12);
   opacity: 0;
   visibility: hidden;
@@ -86,7 +86,7 @@
 
 & .sky-nav-sub a {
   display: block;
-  padding: 8px 16px;
+  padding: var(--sky-space-4, 8px) var(--sky-space-7, 16px);
   text-decoration: none;
   color: inherit;
   white-space: nowrap;
@@ -122,7 +122,7 @@
   display: none;
   cursor: pointer;
   line-height: 1;
-  padding: 8px 12px;
+  padding: var(--sky-space-4, 8px) var(--sky-space-6, 12px);
 }
 
 /* 汉堡图标：基座图标库的 menu（SVG），尺寸由这里定而不是字号。 */
@@ -156,7 +156,7 @@
     align-items: stretch;
     gap: 0;
     width: 100%;
-    padding: 8px 0;
+    padding: var(--sky-space-4, 8px) 0;
   }
 
   & .sky-nav-toggle:checked ~ .sky-nav-list {
@@ -164,7 +164,7 @@
   }
 
   & .sky-nav-item > a {
-    padding: 10px 12px;
+    padding: var(--sky-space-5, 10px) var(--sky-space-6, 12px);
     width: 100%;
   }
 
@@ -189,7 +189,7 @@
     opacity: 1;
     visibility: visible;
     box-shadow: none;
-    padding: 0 0 0 16px;
+    padding: 0 0 0 var(--sky-space-7, 16px);
     background: transparent;
   }
 }
@@ -298,8 +298,8 @@
   left: 0;
   z-index: 30;
   display: none;
-  padding: 16px;
-  border-radius: 8px;
+  padding: var(--sky-space-7, 16px);
+  border-radius: var(--sky-radius-lg, 8px);
   box-shadow: 0 8px 24px rgba(0,0,0,.12);
   background: {{submenuBg}};
   min-width: min(100%, {{submenuWidth}});
@@ -347,7 +347,7 @@
 
 & .sky-nav-panel-chevron {
   cursor: pointer;
-  padding: 0 4px;
+  padding: 0 var(--sky-space-2, 4px);
 }
 
 @hover & .sky-nav-item.has-panel:hover > .sky-nav-panel {

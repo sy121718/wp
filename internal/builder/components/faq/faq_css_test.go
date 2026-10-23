@@ -14,7 +14,7 @@ func TestFAQCSSRules(t *testing.T) {
 	out := b.String()
 	for _, want := range []string{
 		".sky-c-t {\n  display: flex;",
-		"gap: 8px",
+		"gap: var(--sky-space-4, 8px)",
 		".sky-c-t details {",
 		"border: 1px solid var(--sky-c-border, #e5e7eb)",
 		".sky-c-t summary {",

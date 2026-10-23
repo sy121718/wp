@@ -8,7 +8,7 @@
 & {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
 }
 
 /* 单条问答：卡片式边框 + 圆角。 */

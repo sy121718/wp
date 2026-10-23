@@ -7,14 +7,14 @@
   overflow: hidden;
   background: var(--sky-c-surface, #fff);
   border: 1px solid var(--sky-c-border, #e5e7eb);
-  border-radius: 12px;
-  padding: var(--sky-density-pad, 16px);
+  border-radius: var(--sky-radius-xl, 12px);
+  padding: var(--sky-density-pad, var(--sky-space-7, 16px));
 }
 
 & img {
   width: 100%;
   display: block;
-  border-radius: 8px;
+  border-radius: var(--sky-radius-lg, 8px);
   margin-bottom: 12px;
   object-fit: cover;
 }
@@ -24,7 +24,7 @@
 @container (width >= 480px) & {
   flex-direction: row;
   align-items: center;
-  gap: 16px;
+  gap: var(--sky-space-7, 16px);
 }
 
 @container (width >= 480px) & img {
@@ -37,7 +37,7 @@
 @style sky-theme --sky-card-layout horizontal & {
   flex-direction: row;
   align-items: center;
-  gap: 16px;
+  gap: var(--sky-space-7, 16px);
 }
 
 /* 密度结构差异（样式查询）：紧凑档位下卡片横排 —— 更省纵向空间、信息密度更高。 */
@@ -48,7 +48,7 @@
 }
 
 & h3 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--sky-space-4, 8px);
   font-size: 18px;
   line-height: 1.4;
 }
@@ -63,8 +63,8 @@
   margin-top: 16px;
   align-self: flex-start;
   display: inline-block;
-  padding: 8px 16px;
-  border-radius: 6px;
+  padding: var(--sky-space-4, 8px) var(--sky-space-7, 16px);
+  border-radius: var(--sky-radius-md, 6px);
   background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));
   color: var(--sky-btn-color, var(--sky-c-surface));
   text-decoration: none;

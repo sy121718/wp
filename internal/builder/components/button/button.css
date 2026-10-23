@@ -41,7 +41,7 @@
   @if variantGhost
   background: {{ghostBg}};
   @if ghostCompact
-  padding: 6px 0;
+  padding: var(--sky-space-3, 6px) 0;
   @endif
   @endif
 

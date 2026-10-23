@@ -5,7 +5,7 @@
 
 & {
   display: flex;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
   justify-content: {{justify}};
 }
 

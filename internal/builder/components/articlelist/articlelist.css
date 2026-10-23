@@ -31,7 +31,7 @@
   min-width: 0;
   background: var(--sky-c-surface, #fff);
   border: 1px solid var(--sky-c-border, #e5e7eb);
-  border-radius: 12px;
+  border-radius: var(--sky-radius-xl, 12px);
   overflow: hidden;
 }
 

@@ -37,7 +37,7 @@ func TestCompileCSS(t *testing.T) {
 	compileCSS("n1", &Props{}, b)
 	css := b.String()
 	for _, want := range []string{
-		"display: flex", "flex-direction: column", "border-radius: 12px",
+		"display: flex", "flex-direction: column", "border-radius: var(--sky-radius-xl, 12px)",
 		" img", " h3", " p", "a.sky-card-btn",
 	} {
 		if !strings.Contains(css, want) {

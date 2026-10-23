@@ -46,7 +46,7 @@ func TestCompileCSS(t *testing.T) {
 		{
 			name:  "solid 缺省主色",
 			props: &Props{Text: "A", Variant: VariantSolid},
-			wants: []string{"background: var(--sky-c-primary, #2563eb)", "color: var(--sky-c-surface)", "border-radius: 9999px"},
+			wants: []string{"background: var(--sky-c-primary, #2563eb)", "color: var(--sky-c-surface)", "border-radius: var(--sky-radius-pill, 9999px)"},
 			not:   []string{"border: 1px", "color-mix"},
 		},
 		{

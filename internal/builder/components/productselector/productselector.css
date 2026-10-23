@@ -29,7 +29,7 @@
 & .sky-selector-values {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
 }
 
 & .sky-selector-radio {
@@ -46,10 +46,10 @@
 & .sky-selector-value {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
+  gap: var(--sky-space-3, 6px);
+  padding: var(--sky-space-3, 6px) 14px;
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  border-radius: 999px;
+  border-radius: var(--sky-radius-pill, 999px);
   cursor: pointer;
   min-width: 0;
   max-width: 100%;
@@ -70,17 +70,17 @@
 & .sky-selector-variants {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
 }
 
 & .sky-selector-variant {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: var(--sky-space-5, 10px);
+  padding: var(--sky-space-4, 8px) var(--sky-space-5, 10px);
   border: 1px solid var(--sky-c-border, #e5e7eb);
-  border-radius: 8px;
+  border-radius: var(--sky-radius-lg, 8px);
   min-width: 0;
 }
 

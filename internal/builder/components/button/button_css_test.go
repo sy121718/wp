@@ -57,10 +57,10 @@ func TestButtonCSSVariantBranches(t *testing.T) {
 	if strings.Contains(ghost, "1px solid") || strings.Contains(ghost, "var(--sky-btn-border-width") {
 		t.Errorf("幽灵变体混进了边框:\n%s", ghost)
 	}
-	if strings.Contains(ghost, "padding: 6px 0;") {
+	if strings.Contains(ghost, "padding: var(--sky-space-3, 6px) 0;") {
 		t.Errorf("有文案的幽灵按钮不该收紧内边距:\n%s", ghost)
 	}
-	if !strings.Contains(buttonCSSFor(&Props{Variant: "ghost", Text: ""}), "padding: 6px 0;") {
+	if !strings.Contains(buttonCSSFor(&Props{Variant: "ghost", Text: ""}), "padding: var(--sky-space-3, 6px) 0;") {
 		t.Errorf("无文案的幽灵按钮应收紧内边距")
 	}
 

@@ -9,7 +9,7 @@
 
 & .sky-product-list-items {
   display: grid;
-  gap: 16px;
+  gap: var(--sky-space-7, 16px);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -49,7 +49,7 @@
   flex: 0 0 min(100%, 16rem);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--sky-space-7, 16px);
   min-width: 0;
 }
 
@@ -59,7 +59,7 @@
 }
 
 & .sky-product-list-filter-title {
-  margin: 0 0 6px;
+  margin: 0 0 var(--sky-space-3, 6px);
   font-size: .9rem;
   font-weight: 600;
 }
@@ -67,7 +67,7 @@
 & .sky-product-list-filter-options, & .sky-product-list-tool-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--sky-space-3, 6px);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -77,9 +77,9 @@
 & .sky-product-list-filter-option, & .sky-product-list-tool-option {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: var(--sky-space-2, 4px) var(--sky-space-5, 10px);
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  border-radius: 999px;
+  border-radius: var(--sky-radius-pill, 999px);
   font-size: .85rem;
   text-decoration: none;
   color: inherit;
@@ -125,7 +125,7 @@
 & .sky-product-list-tool {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
   min-width: 0;
 }
 
@@ -138,14 +138,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: var(--sky-space-5, 10px);
   margin-top: 18px;
 }
 
 & .sky-product-list-page {
-  padding: 6px 14px;
+  padding: var(--sky-space-3, 6px) 14px;
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  border-radius: 8px;
+  border-radius: var(--sky-radius-lg, 8px);
   text-decoration: none;
   color: inherit;
 }
@@ -161,7 +161,7 @@
 & .sky-product-list-price-slider {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
   margin-top: 8px;
   min-width: 0;
 }
@@ -169,7 +169,7 @@
 & .sky-product-list-price-field {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
   min-width: 0;
 }
 
@@ -195,9 +195,9 @@
 
 & .sky-product-list-price-apply {
   align-self: flex-start;
-  padding: 5px 12px;
+  padding: 5px var(--sky-space-6, 12px);
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  border-radius: 8px;
+  border-radius: var(--sky-radius-lg, 8px);
   background: transparent;
   cursor: pointer;
 }
@@ -239,12 +239,12 @@
   display: inline-flex;
   align-items: center;
   min-height: 24px;
-  padding: 0 10px;
+  padding: 0 var(--sky-space-5, 10px);
   border-radius: 5px;
   /* 底色取主色深一档：白字对比 6.7:1（主色 var(--sky-c-primary) 只有 5.1:1，12px 小字贴边）。 */
   background: var(--sky-c-primary-deep, #1d4ed8);
   color: var(--sky-c-surface);
-  font-size: 12px;
+  font-size: var(--sky-fs-sm, 12px);
   font-weight: 600;
   line-height: 1;
 }
@@ -254,7 +254,7 @@
 & .sky-product-list-item {
   flex-direction: row;
   align-items: center;
-  gap: 16px;
+  gap: var(--sky-space-7, 16px);
 }
 
 & .sky-product-list-media {
@@ -280,7 +280,7 @@
 & .sky-product-list-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sky-space-3, 6px);
   min-width: 0;
   flex: 1 1 auto;
   padding: var(--sky-density-pad, 14px);
@@ -301,7 +301,7 @@
 & .sky-product-list-price-row {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
   flex-wrap: wrap;
 }
 
@@ -319,7 +319,7 @@
 & .sky-product-list-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--sky-space-3, 6px);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -328,15 +328,15 @@
 & .sky-product-list-tag {
   font-size: .78rem;
   line-height: 1.6;
-  padding: 0 8px;
-  border-radius: 999px;
+  padding: 0 var(--sky-space-4, 8px);
+  border-radius: var(--sky-radius-pill, 999px);
   background: var(--sky-c-surface-alt, rgba(0,0,0,0.05));
   color: var(--sky-c-text-mute);
 }
 
 & .sky-product-list-empty {
   margin: 0;
-  padding: 24px 0;
+  padding: var(--sky-space-8, 24px) 0;
   text-align: center;
   color: var(--sky-c-text-mute, #6b7280);
 }
@@ -356,9 +356,9 @@
   justify-content: center;
   width: min(100%, 320px);
   min-height: 44px;
-  padding: 10px 18px;
+  padding: var(--sky-space-5, 10px) 18px;
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  border-radius: 8px;
+  border-radius: var(--sky-radius-lg, 8px);
   color: var(--sky-c-primary, #2563eb);
   font-weight: 600;
   text-decoration: none;
@@ -411,7 +411,7 @@
   cursor: pointer;
   min-width: 0;
   padding: .18em .25em;
-  border-radius: 6px;
+  border-radius: var(--sky-radius-md, 6px);
 }
 
 & .sky-product-list-node-caret-row::-webkit-details-marker {
@@ -447,7 +447,7 @@
   align-items: center;
   gap: .5em;
   padding: .32em .45em;
-  border-radius: 6px;
+  border-radius: var(--sky-radius-md, 6px);
   color: inherit;
   font-size: .95em;
   line-height: 1.5;
