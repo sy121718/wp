@@ -656,12 +656,12 @@ func (h *AdminPagesHandle) DatarulesEditPage(c *gin.Context) {
 	// 条件编辑器按该数据域的白名单渲染（字段 / 操作符下拉都来自域声明）。
 	editor := h.dataruleEditorContext(c, detail.Domain, detail.Config)
 	// 保存失败不再回本页并带 ?err=（写动作的结论走整页提示），本页因此没有错误槽位。
-	c.HTML(http.StatusOK, "admin/system/datarule_edit", adminui.Prepare(c, gin.H{
-		"title":   pagesMsgDatarulesTitle,
-		"menu":    "datarules",
-		"Detail":  detail,
-		"Domains": domains,
-		"Editor":  editor,
+	c.HTML(http.StatusOK, "admin/system/datarule_edit", adminui.PrepareView(c, &admindto.DataruleEditPageResp{
+		Title:   pagesMsgDatarulesTitle,
+		Menu:    "datarules",
+		Detail:  detail,
+		Domains: domains,
+		Editor:  editor,
 	}))
 }
 
@@ -1197,8 +1197,8 @@ func (h *adminI18nEntryHandle) I18nEntryEditFragment(c *gin.Context) {
 		}
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/i18n_edit_form.html", adminui.Prepare(c, gin.H{
-		"I18nEdit": entry,
+	c.HTML(http.StatusOK, "admin/system/i18n_edit_form.html", adminui.PrepareView(c, &admindto.I18nEditFormResp{
+		I18nEdit: entry,
 	}))
 }
 
@@ -1646,7 +1646,7 @@ func (h *AdminPagesHandle) PermissionsEditFragment(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/permission_edit_form.html", adminui.Prepare(c, gin.H{"PermissionEdit": row}))
+	c.HTML(http.StatusOK, "admin/system/permission_edit_form.html", adminui.PrepareView(c, &admindto.PermissionEditFormResp{PermissionEdit: row}))
 }
 
 // permissionEditFail 权限点保存失败的出口（形状同 menuEditFail）。

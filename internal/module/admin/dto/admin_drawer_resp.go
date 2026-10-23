@@ -91,3 +91,23 @@ type RoleListPageResp struct {
 
 	Pagination pagination.Page
 }
+
+// DataruleEditPageResp 数据规则编辑页（/admin/datarules/edit）。
+type DataruleEditPageResp struct {
+	Title   string `view:"title"`
+	Menu    string `view:"menu"`
+	Detail  any
+	Domains any
+	// Editor 条件编辑器上下文（字段/操作符下拉来自数据域声明）。
+	Editor any
+}
+
+// PermissionEditFormResp 权限点编辑抽屉片段。
+type PermissionEditFormResp struct {
+	PermissionEdit any
+}
+
+// I18nEditFormResp 词条编辑抽屉片段。
+type I18nEditFormResp struct {
+	I18nEdit any
+}
