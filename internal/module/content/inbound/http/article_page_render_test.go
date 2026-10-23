@@ -28,8 +28,13 @@ import (
 )
 
 // articleLayoutData 补齐 layout 需要的键（与线上 adminui.Prepare / withI18n 注入的一致）。
-func articleLayoutData(base gin.H) gin.H {
+// articleLayoutData 给页面数据补上页壳键（t / lang / csrf_token / Buttons …）。
+//
+// 收 any 而不是 gin.H：视图换强类型之后要先把结构体摊平成 map 再补键 ——
+// 手工补壳键是**测试装置**的简化（生产走 adminui.Prepare），所以它跟着视图形状走。
+func articleLayoutData(anyView any) gin.H {
 	lang := "zh-CN"
+	base := adminui.ViewMap(anyView)
 	base["csrf_token"] = "test-token"
 	base["lang"] = lang
 	base["t"] = templates.TranslateFunc(lang)
@@ -105,7 +110,7 @@ func TestArticlesPageKeywordFiltersBeforePagination(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	contents := &articleSearchContentStub{total: 2}
 	h := &articlePageHandle{contents: contents}
-	engine.GET("/admin/articles", h.ArticlesPage)
+	engine.GET("/admin/articles", adminui.PageSlot(ArticlesPageTemplate), h.ArticlesPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/articles?keyword=+needle+&page=99&limit=1", nil))
@@ -140,7 +145,7 @@ func TestArticlesPageKeywordNoMatches(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	contents := &articleSearchContentStub{total: 0}
-	engine.GET("/admin/articles", (&articlePageHandle{contents: contents}).ArticlesPage)
+	engine.GET("/admin/articles", adminui.PageSlot(ArticlesPageTemplate), (&articlePageHandle{contents: contents}).ArticlesPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/articles?keyword=missing&page=8", nil))

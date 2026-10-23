@@ -22,6 +22,7 @@ package feature
 
 import (
 	"fmt"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,7 +53,7 @@ func newArticlePagingEnv(t *testing.T) (*gin.Engine, *gorm.DB, contentcontract.C
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	page := contenthttp.NewArticlePageHandle(svc, nil, nil, nil, nil)
-	engine.GET("/admin/articles", page.ArticlesPage)
+	engine.GET("/admin/articles", adminui.PageSlot(contenthttp.ArticlesPageTemplate), page.ArticlesPage)
 	return engine, db, svc
 }
 

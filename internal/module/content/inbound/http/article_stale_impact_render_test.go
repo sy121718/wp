@@ -33,10 +33,10 @@ func TestArticlesListRenderWithStaleImpactPages(t *testing.T) {
 			Data: map[string]any{"title": "第一篇"}},
 	}
 	data := articleListPageData(list, map[string]string{"a1": "/blog/hello-world"}, articleMsg{})
-	data["StaleImpact"] = gin.H{
-		"Available": true,
-		"Pages":     []gin.H{{"ID": "pg1", "Path": "/zh/stale-only-page", "ProjectID": "prj", "ProjectName": "站点"}},
-		"Total":     1, "Truncated": false, "Limit": 8, "Hint": articleMsg{},
+	data.StaleImpact = &contentdto.StaleImpactResp{
+		Available: true,
+		Pages:     []contentdto.StalePageRowResp{{ID: "pg1", Path: "/zh/stale-only-page", ProjectID: "prj", ProjectName: "站点"}},
+		Total:     1, Truncated: false, Limit: 8, Hint: articleMsg{},
 	}
 	body := renderAdminTemplate(t, "admin/content/articles.html", articleLayoutData(data))
 	for _, want := range []string{

@@ -36,6 +36,12 @@ const ContentPreviewNoticeTemplate = "admin/preview_notice.html"
 // 这三个契约。装配层在全部契约就绪后调用本函数，装配点与 dashboard 页面并排。
 //
 // pages 为 nil 时整体跳过（与既有 rg == nil 的早退同构）。
+// ArticlesPageTemplate 文章列表页的模板名。
+const ArticlesPageTemplate = "admin/content/articles.html"
+
+// ArticleNewPageTemplate 文章新建页的模板名。
+const ArticleNewPageTemplate = "admin/content/article_new.html"
+
 // ArticleTranslationsTemplate 文章译文页的模板名。
 const ArticleTranslationsTemplate = "admin/content/article_translations.html"
 
@@ -62,7 +68,10 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	if loc, ok := any(instances).(presentationcontract.PublishedEntityLocator); ok {
 		articlePages.SetArticleLinkLocator(loc)
 	}
-	pages.GET("/articles", adminui.PageAuthz("/api/content/list"), articlePages.ArticlesPage)
+	pages.GET("/articles",
+		adminui.PageAuthz("/api/content/list"),
+		adminui.PageSlot(ArticlesPageTemplate),
+		articlePages.ArticlesPage)
 	// 待重建影响面清单（只读抽屉片段）：与页头徽章同一个查询，徽章给数、抽屉给清单。
 	// 鉴权复用列表页的读权限点 —— 片段里就是全站待重建页面清单，不挂鉴权等于把它
 	// 露给任何登录账号（菜单隐藏不是访问控制）。GET 与 /api/content/list 的策略动词一致。
@@ -75,7 +84,10 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	// 方法（这里是 GET）去 enforce，而 `/api/content/create` 的策略声明是 **POST**，
 	// 两者不匹配 → 含超管在内全员 403（实测缺陷，页面完全不可达）。这里显式声明
 	// 「本页面入口按 POST 语义鉴权」，让动词不匹配这件事在代码里可见。
-	pages.GET("/articles/new", builtin.CasbinMiddlewareForPathAs("/api/content/create", http.MethodPost), articlePages.ArticleNewPage)
+	pages.GET("/articles/new",
+		builtin.CasbinMiddlewareForPathAs("/api/content/create", http.MethodPost),
+		adminui.PageSlot(ArticleNewPageTemplate),
+		articlePages.ArticleNewPage)
 	pages.GET("/articles/edit", adminui.PageAuthz("/api/content/list"), articlePages.ArticleEditPage)
 	pages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
 	pages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)

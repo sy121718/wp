@@ -1,5 +1,7 @@
 package contentdto
 
+import "go_wp/pkg/pagination"
+
 // content_option_resp.go — 内容模块的下拉选项形状。
 //
 // 三个下拉（工程 / 内容模板 / 页面）形状相同：ID + 已取好词的 Name。
@@ -36,6 +38,89 @@ type StalePageRowResp struct {
 type StaleImpactResp struct {
 	Available bool
 	Pages     []StalePageRowResp
+	Total     int
+	Truncated bool
+	Limit     int
+	Hint      any
+}
+
+// ArticleFormResp 文章编辑表单的字段集合（新建页给全空值）。
+//
+// 与 articleForm（handler 内部类型）分开：那一份是「从 POST 读什么」，
+// 这一份是「模板要读什么」。两者今天同形，但混用会让改表单字段时
+// 分不清是改入参还是改视图。
+type ArticleFormResp struct {
+	ID        string
+	Slug      string
+	Title     string
+	Body      string
+	Revision  int64
+	UpdatedAt string
+}
+
+// ArticleNewPageResp 文章新建页（不取数，只渲染空表单）。
+type ArticleNewPageResp struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+	Form  *ArticleFormResp
+}
+
+// ArticleSeoDrawerResp 文章 SEO 抽屉片段。
+type ArticleSeoDrawerResp struct {
+	Score any
+	IsNew bool
+}
+
+// ArticleListRowResp 文章列表的一行。
+//
+// 发布状态只有两种取值来源：查到了线上路径（已发布）或没查到（未发布 / 未建实例）。
+// 不区分「未发布」与「查询失败」—— 列表页不是排查页，编辑页会给出完整状态。
+type ArticleListRowResp struct {
+	ID        string
+	Title     string
+	Slug      string
+	Excerpt   string
+	Revision  int64
+	UpdatedAt any
+	Published bool
+	URLPath   string
+	PublicURL string
+	EditURL   string
+	// StateKey / StateFallback 状态文案的**事实**，取词由模板用注入的 tr 完成。
+	StateKey      string
+	StateFallback string
+}
+
+// ArticleListPageResp 文章列表整页。
+type ArticleListPageResp struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+	Rows  []ArticleListRowResp
+	Total int
+	Empty bool
+	Err   any
+	// BlogBase 文章详情路径前缀（模板拼列表页的「查看」链接）。
+	BlogBase string
+	Keyword  string
+	// ClearFilterURL 清空筛选后的地址。
+	ClearFilterURL string
+	Limit          int
+	// FilterQuery 写动作表单 action 的筛选 query。
+	FilterQuery string
+	// StaleImpact 依赖失效影响面（哪些页面正在等待重建）。
+	StaleImpact *StaleImpactResp
+
+	Pagination pagination.Page
+}
+
+// ArticleStaleImpactResp 文章列表页的「依赖失效影响面」区块。
+//
+// 与 page.StaleOverviewResp 同形但独立声明：两者回答的是同一件事（哪些页面待重建），
+// 但一个是文章列表页的页头区块、一个是页面管理页的页头区块 ——
+// 合成一个会让「改这页的区块」牵动那页。
+type ArticleStaleImpactResp struct {
+	Available bool
+	Pages     any
 	Total     int
 	Truncated bool
 	Limit     int

@@ -298,29 +298,31 @@ func (h *articlePageHandle) ArticlesPage(c *gin.Context) {
 		pageErr = firstNonEmptyMsg(pageErr, articleFacingErrMsg(c, err))
 	}
 	data := articleListPageData(list, articlesPublished(ctx, h.instances, list), pageErr)
-	data["Keyword"] = keyword
-	data["Limit"] = limit
-	data["ClearFilterURL"] = reqparams.FilterBaseURL("/admin/articles", map[string]string{"limit": strconv.Itoa(limit)})
+	data.Keyword = keyword
+	data.Limit = limit
+	data.ClearFilterURL = reqparams.FilterBaseURL("/admin/articles", map[string]string{"limit": strconv.Itoa(limit)})
 	// 写动作的回跳要带上本次筛选（shell.BackPath 从表单 action 的 query 读回，见 content_error_handle.go）：
 	// 预编码成成品 query 串（含前导 "?"）再交给模板 —— Jet 的 {{ }} 是 HTML 转义不是 URL 转义，
 	// 关键词里的 & 在模板里直接拼会切断 query；带 "?" 则空串时不留孤立的 "?"。
-	data["FilterQuery"] = "?" + url.Values{"keyword": {keyword}, "limit": {strconv.Itoa(limit)}}.Encode()
+	data.FilterQuery = "?" + url.Values{"keyword": {keyword}, "limit": {strconv.Itoa(limit)}}.Encode()
 	// Total 覆盖为**真源总数**：articleListPageData 给的是当页行数，分页之后它不再等于
 	// 文章总数 —— 不覆盖的话列表工具栏会写着「全部文章（20）」，而库里有两百篇。
 	if cerr == nil {
-		data["Total"] = total
+		data.Total = int(total)
 	}
 	// 分页条（服务端渲染）：handler 只交事实 pagination.Page —— 句子、页码窗口与链接
 	// 由 partial 现算；单页 / 空集时模板自然不渲染。
 	//
 	// 翻页保留关键词；写动作的结论不再经查询参数回带（走提示页），基地址上只有筛选。
-	adminui.AttachPagination(data, "/admin/articles",
+	if !adminui.AttachPaginationView(data, "/admin/articles",
 		map[string]string{"keyword": keyword},
-		pagination.Page{Total: total, Page: page, Limit: limit})
+		pagination.Page{Total: total, Page: page, Limit: limit}) {
+		logger.Scene("content").Error(errors.New("文章列表视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
 	// 依赖失效影响面（只读）：文章 / 块 / 主题 / 导航变更后，哪些页面正在等待重建。
 	// 本批只做可见性，不做自动重建（见 content_page.go）。
-	data["StaleImpact"] = articleStaleImpact(ctx, h)
-	c.HTML(http.StatusOK, "admin/content/articles.html", adminui.Prepare(c, data))
+	data.StaleImpact = articleStaleImpact(ctx, h)
+	pageview.Render(c, data)
 }
 
 // articleClampPage 把页码收敛到实际总页数以内（total=0 时收敛到第 1 页）。
@@ -575,9 +577,9 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 		return
 	}
 	data := item.Data
-	c.HTML(http.StatusOK, "admin/content/article_seo_drawer.html", adminui.Prepare(c, gin.H{
-		"Score": articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), shell.TranslateFor(c)),
-		"IsNew": false,
+	c.HTML(http.StatusOK, "admin/content/article_seo_drawer.html", adminui.PrepareView(c, &contentdto.ArticleSeoDrawerResp{
+		Score: articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), shell.TranslateFor(c)),
+		IsNew: false,
 	}))
 }
 
@@ -931,13 +933,11 @@ var articleImportFallbacks = map[string]string{
 // 从 Trix 编辑器同步，服务端零往返。Form 键集与编辑页 articleEditPageData 的 form
 // 对齐（模板点号取值，缺键会让 Jet 报错并截断整页）。
 func (h *articlePageHandle) ArticleNewPage(c *gin.Context) {
-	c.HTML(http.StatusOK, "admin/content/article_new.html", adminui.Prepare(c, gin.H{
-		"title": articleNewTitle,
-		"menu":  "articles",
-		"Form": gin.H{
-			"ID": "", "Slug": "", "Title": "", "Body": "",
-			"Revision": int64(0), "UpdatedAt": "",
-		},
+	c.HTML(http.StatusOK, "admin/content/article_new.html", adminui.PrepareView(c, &contentdto.ArticleNewPageResp{
+		Title: articleNewTitle,
+		Menu:  "articles",
+		// 全空表单：新建页不取数，字段集与编辑页对齐（缺键会让 Jet 报错并截断整页）。
+		Form: &contentdto.ArticleFormResp{},
 	}))
 }
 
@@ -1000,25 +1000,25 @@ func (f articleForm) data() map[string]any {
 // ?ok= / ?done= 回带（见 content_error_handle.go）。Err 与行的状态文案都是**事实**不是拼好的句子 ——
 // 取词在模板里发生（见 articles.html）。因此本函数不需要取词函数参数：语言是请求级的，
 // 在这里提前翻等于替渲染期做决定。
-func articleListPageData(list []*contentdto.ContentResp, published map[string]string, pageErr articleMsg) gin.H {
-	rows := make([]gin.H, 0, len(list))
+func articleListPageData(list []*contentdto.ContentResp, published map[string]string, pageErr articleMsg) *contentdto.ArticleListPageResp {
+	rows := make([]contentdto.ArticleListRowResp, 0, len(list))
 	for _, it := range list {
 		rows = append(rows, articleListRow(it, published[it.ID]))
 	}
-	return gin.H{
-		"title":          articlePageTitle,
-		"menu":           "articles",
-		"Rows":           rows,
-		"Total":          len(rows),
-		"Empty":          len(rows) == 0,
-		"Err":            pageErr,
-		"BlogBase":       articleBlogPathPrefix,
-		"Keyword":        "",
-		"ClearFilterURL": "/admin/articles",
-		"Limit":          articleListPageSize,
+	return &contentdto.ArticleListPageResp{
+		Title:          articlePageTitle,
+		Menu:           "articles",
+		Rows:           rows,
+		Total:          len(rows),
+		Empty:          len(rows) == 0,
+		Err:            pageErr,
+		BlogBase:       articleBlogPathPrefix,
+		Keyword:        "",
+		ClearFilterURL: "/admin/articles",
+		Limit:          articleListPageSize,
 		// FilterQuery 写动作表单 action 的筛选 query（ArticlesPage 里覆盖成预编码串）。
 		// 给零值是为了模板渲染路径变窄时也不缺键（纯函数测试直接渲染模板时不带它）。
-		"FilterQuery": "",
+		FilterQuery: "",
 	}
 }
 
@@ -1026,23 +1026,23 @@ func articleListPageData(list []*contentdto.ContentResp, published map[string]st
 //
 // 发布状态只有两种取值来源：查到了线上路径（已发布）或没查到（未发布 / 未建实例）。
 // 不区分「未发布」与「查询失败」—— 列表页不是排查页，编辑页会给出完整状态。
-func articleListRow(it *contentdto.ContentResp, urlPath string) gin.H {
+func articleListRow(it *contentdto.ContentResp, urlPath string) contentdto.ArticleListRowResp {
 	published := strings.TrimSpace(urlPath) != ""
 	stateKey, stateFallback := articleStateLabel(published)
-	return gin.H{
-		"ID":        it.ID,
-		"Title":     articleTextOrEmpty(articleStr(it.Data, "title")),
-		"Slug":      articleTextOrEmpty(it.Slug),
-		"Excerpt":   articleTextOrEmpty(articleStr(it.Data, "excerpt")),
-		"Revision":  it.Revision,
-		"UpdatedAt": it.UpdatedAt,
-		"Published": published,
-		"URLPath":   urlPath,
-		"PublicURL": articlePublicURL(urlPath),
-		"EditURL":   articleEditURL(it.ID),
+	return contentdto.ArticleListRowResp{
+		ID:        it.ID,
+		Title:     articleTextOrEmpty(articleStr(it.Data, "title")),
+		Slug:      articleTextOrEmpty(it.Slug),
+		Excerpt:   articleTextOrEmpty(articleStr(it.Data, "excerpt")),
+		Revision:  it.Revision,
+		UpdatedAt: it.UpdatedAt,
+		Published: published,
+		URLPath:   urlPath,
+		PublicURL: articlePublicURL(urlPath),
+		EditURL:   articleEditURL(it.ID),
 		// StateKey / StateFallback 状态文案的**事实**（已发布 / 未发布），取词由模板用注入的 tr 完成。
-		"StateKey":      stateKey,
-		"StateFallback": stateFallback,
+		StateKey:      stateKey,
+		StateFallback: stateFallback,
 	}
 }
 

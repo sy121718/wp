@@ -20,7 +20,7 @@ internal/module/admin/inbound/http/admin_page.go gin=12 html=20
 internal/module/ai/inbound/http/ai_handle.go gin=5 html=0
 internal/module/ai/inbound/http/ai_page.go gin=5 html=4
 internal/module/content/inbound/http/content_handle.go gin=2 html=0
-internal/module/content/inbound/http/content_page.go gin=16 html=6
+internal/module/content/inbound/http/content_page.go gin=11 html=5
 internal/module/inventory/inbound/http/inventory_page_handle.go gin=1 html=0
 internal/module/inventory/inbound/http/inventory_purchase_handle.go gin=1 html=0
 internal/module/inventory/inbound/http/inventory_reason_handle.go gin=1 html=0
@@ -38,4 +38,4 @@ internal/module/workbench/inbound/http/canvas_preview_handle.go gin=1 html=1
 internal/module/workbench/inbound/http/inspector_handle.go gin=1 html=4
 internal/module/workbench/inbound/http/router.go gin=3 html=3
 
---total gin=77 html=61
+--total gin=72 html=60
