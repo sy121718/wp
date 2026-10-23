@@ -23,7 +23,9 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 shopt -s nullglob
-files=(internal/templates/static/js/ui/*.test.cjs)
+# ui/ 是基座控件；workbench/ 是编辑器内核（此前 0 个测试，本批补上）。
+# 两个目录都扫：单扫 ui/ 会让「工作台 JS 一个测试都没有」这件事看不见。
+files=(internal/templates/static/js/ui/*.test.cjs internal/templates/static/js/workbench/*.test.cjs)
 if [[ ${#files[@]} -eq 0 ]]; then
   echo "✗ 一个控件测试都没找到（*.test.cjs）—— 检查是否被误删" >&2
   exit 1
