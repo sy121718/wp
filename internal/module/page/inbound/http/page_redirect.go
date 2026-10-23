@@ -24,6 +24,7 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 // redirectPagePath 管理页路径（与 page_router.go 里的挂载点、迁移 218 的权限点
@@ -38,11 +39,10 @@ func (h *Handle) RedirectPage(c *gin.Context) {
 		// 同页渲染 + 500：失败不该看起来像成功（200 会让「列表是空的」和「读不到」
 		// 长得一样）。no-store：失败页不该被缓存，重试必须真的回到服务端 ——
 		// 与 navigation 的整页 500 同口径。
-		c.Header("Cache-Control", "no-store")
-		c.HTML(http.StatusInternalServerError, "admin/page/page_redirects.html", redirectPageData(c, nil, redirectErrKey(err)))
+		pageview.Render(c, redirectFailureResponse{redirectPageData(c, nil, redirectErrKey(err))})
 		return
 	}
-	c.HTML(http.StatusOK, "admin/page/page_redirects.html", redirectPageData(c, res, ""))
+	pageview.Render(c, redirectPageData(c, res, ""))
 }
 
 // RedirectCreate 新增重定向。
@@ -71,14 +71,14 @@ func (h *Handle) redirectCreateFailure(c *gin.Context, req *pagedto.RedirectCrea
 	if err != nil {
 		logger.Scene("page").Error(err, "重定向创建失败后列表读取失败")
 	}
-	data := redirectPageData(c, res, errKey)
+	view := redirectPageData(c, res, errKey)
 	if res == nil && req.ProjectID != "" {
-		data["SelectedProject"] = req.ProjectID
+		view.SelectedProject = req.ProjectID
 	}
-	data["CreateSource"] = req.SourcePath
-	data["CreateTarget"] = req.TargetPath
-	data["CreateFailed"] = true
-	c.HTML(http.StatusOK, "admin/page/page_redirects.html", data)
+	view.CreateSource = req.SourcePath
+	view.CreateTarget = req.TargetPath
+	view.CreateFailed = true
+	pageview.Render(c, view)
 }
 
 // RedirectDelete 删除一条重定向。结论走整页提示（成功 1 秒后回本页）。
@@ -153,7 +153,7 @@ func (h *Handle) RedirectBulkDelete(c *gin.Context) {
 //
 // 写动作的结论不在本页回显（走 shell.RenderJump，见 page_jump.go）：ErrKey 只剩
 // 「新建失败后原地回填输入」这一条来源（redirectCreateFailure），其余读侧键已删。
-func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey string) gin.H {
+func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey string) *pagedto.RedirectPageResp {
 	lang := response.RequestLanguage(c)
 	t := templates.TranslateFunc(lang)
 	token, err := builtin.GetCSRFToken(c)
@@ -161,36 +161,31 @@ func redirectPageData(c *gin.Context, res *pagedto.RedirectListResp, errKey stri
 		// token 拿不到时不阻断渲染：页面照常显示，提交会被 CSRF 中间件拒（与其它后台页一致）。
 		token = ""
 	}
-	// 全部键都预置默认值：Jet 缺键会导致渲染器返回 500 通用错误页，
-	// 列表与失败回填所需的键必须由同一装配入口提供。
-	data := gin.H{
-		"lang":            lang,
-		"t":               t,
-		"csrf_token":      token,
-		"Title":           t(pageenums.RedirectTitle, "重定向管理"),
-		"PagePath":        redirectPagePath,
-		"ErrKey":          errKey,
-		"CreateSource":    "",
-		"CreateTarget":    "",
-		"CreateFailed":    false,
-		"Projects":        []pagedto.RedirectProjectOptionResp{},
-		"Items":           []pagedto.RedirectItemResp{},
-		"SelectedProject": "",
-		"Total":           0,
-		"EffectiveCount":  0,
+	// 全部字段都有零值可用：Jet 缺键会导致渲染器返回 500 通用错误页，
+	// 列表与失败回填所需的字段必须由同一装配入口提供。
+	//
+	// 不再手写 lang / t / csrf_token：那是页壳的关切，由 adminui.Prepare 统一注入
+	// （视图只带这一屏真正要的数据 —— 否则"哪些键是页壳给的"在类型上分不出来）。
+	_ = lang
+	_ = token
+	view := &pagedto.RedirectPageResp{
+		Title:           t(pageenums.RedirectTitle, "重定向管理"),
+		PagePath:        redirectPagePath,
+		ErrKey:          errKey,
+		Projects:        []pagedto.RedirectProjectOptionResp{},
+		Items:           []pagedto.RedirectItemResp{},
+		SelectedProject: "",
 	}
-	// 计数与分档成对写（setRedirectCounts）：多跳 / 成环的档位跟计数走，
-	// 分两处手写迟早漏一处 —— 那时页面上会同时出现「计数 3」和中性色。
-	setRedirectCounts(data, 0, 0)
 	if res != nil {
-		data["Projects"] = res.Projects
-		data["SelectedProject"] = res.ProjectID
-		data["Items"] = res.Items
-		data["Total"] = res.Total
-		data["EffectiveCount"] = res.EffectiveCount
-		setRedirectCounts(data, res.MultiHopCount, res.LoopCount)
+		view.Projects = res.Projects
+		view.SelectedProject = res.ProjectID
+		view.Items = res.Items
+		view.Total = res.Total
+		view.EffectiveCount = res.EffectiveCount
+		view.MultiHopCount = res.MultiHopCount
+		view.LoopCount = res.LoopCount
 	}
-	return data
+	return view
 }
 
 // setRedirectCounts 写重定向统计的计数事实（徽标分档由模板按计数选，见
@@ -258,3 +253,19 @@ func redirectErrMsg(key string) pageMsg {
 	}
 	return pageMsg{Key: strings.TrimSpace(key), Fallback: "操作未完成"}
 }
+
+// redirectFailureResponse 失败档的**出口包装**：视图 + 500 + no-store。
+//
+// 为什么包装在控制器层而不是让 dto 实现 PageStatus/PageNoStore：
+// internal/architecture 的「dto 不带展示字段」门禁把这两个方法名判为违规
+// （那批存量是待清理的），而渲染出口只认 pkg/view.Result。折中是让**出口包装类型**
+// 实现接口 —— dto 仍是纯数据，状态码是出口的关切（与 order / contenttemplate 同形）。
+//
+// 500 + no-store 的理由没变：200 会让「列表是空的」和「读不到」长得一样；
+// no-store 是因为重试必须真的回到服务端，而不是从缓存里再拿回同一份失败。
+type redirectFailureResponse struct {
+	*pagedto.RedirectPageResp
+}
+
+func (redirectFailureResponse) PageStatus() int   { return http.StatusInternalServerError }
+func (redirectFailureResponse) PageNoStore() bool { return true }

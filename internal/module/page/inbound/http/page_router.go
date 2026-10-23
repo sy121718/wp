@@ -51,6 +51,12 @@ import (
 )
 
 // SetupPageRoutes 自装配 page 模块并注册全部路由。
+// SiteSlotsPageTemplate 系统页面槽位页的模板名。
+const SiteSlotsPageTemplate = "admin/page/site_slots.html"
+
+// RedirectPageTemplate 重定向管理页的模板名（页面出口由页面槽带进上下文）。
+const RedirectPageTemplate = "admin/page/page_redirects.html"
+
 func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	artifacts artifactcontract.ArtifactService,
 	routes pubcontract.PublicationService,
@@ -210,7 +216,13 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	// 页面路由挂在 `/api/page/redirect*` 上而不是 `/admin/*`：page 模块只拿到
 	// authorizedAPI 这一个装配好的组，挂这里可让 Session / CSRF / Casbin 三层链与接口
 	// 完全一致（不需要改动 routes.go）。代价是 URL 少一层「后台感」。
-	g.GET("/redirect", permission.PageRedirectView, handle.RedirectPage)
+	// 这一条渲染**整页**（admin/page/page_redirects.html），所以挂 PageSlot：
+	// 路由挂在 /api 组只是为了让 Session/CSRF/Casbin 三层链与接口一致（见上方注释），
+	// 与"它是不是页面出口"无关。
+	g.GET("/redirect",
+		permission.PageRedirectView,
+		adminui.PageSlot(RedirectPageTemplate),
+		handle.RedirectPage)
 	g.POST("/redirect/create", permission.PageRedirectCreate, handle.RedirectCreate)
 	g.POST("/redirect/delete", permission.PageRedirectDelete, handle.RedirectDelete)
 	g.POST("/redirect/merge", permission.PageRedirectMerge, handle.RedirectMerge)
@@ -231,7 +243,10 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 		return
 	}
 	siteSlotPage := NewSiteSlotPageHandle(svc, projects)
-	pages.GET("/site-slots", adminui.PageAuthz("/api/page/list"), siteSlotPage.SiteSlotsPage)
+	pages.GET("/site-slots",
+		adminui.PageAuthz("/api/page/list"),
+		adminui.PageSlot(SiteSlotsPageTemplate),
+		siteSlotPage.SiteSlotsPage)
 	pages.POST("/site-slots/bind", builtin.CasbinMiddlewareForPath("/api/page/site-slot/bind"), siteSlotPage.SiteSlotBind)
 	pages.POST("/site-slots/unbind", builtin.CasbinMiddlewareForPath("/api/page/site-slot/unbind"), siteSlotPage.SiteSlotUnbind)
 }

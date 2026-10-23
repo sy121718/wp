@@ -1,12 +1,10 @@
 package pagehttp
 
 import (
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
@@ -14,6 +12,7 @@ import (
 	"go_wp/internal/shell"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 const (
@@ -87,8 +86,7 @@ func (h *siteSlotPageHandle) SiteSlotsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/page/site_slots.html",
-			adminui.Prepare(c, siteSlotPageData(nil, "", nil, nil, pageErrMsgQuiet(c, err))))
+		pageview.Render(c, siteSlotPageData(nil, "", nil, nil, pageErrMsgQuiet(c, err)))
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -129,7 +127,7 @@ func (h *siteSlotPageHandle) SiteSlotsPage(c *gin.Context) {
 
 	data := siteSlotPageData(projects, selected, candidates, slots, pageErr)
 	siteSlotApplyBindPanel(data, candidates, slots, bindSlot)
-	c.HTML(http.StatusOK, "admin/page/site_slots.html", adminui.Prepare(c, data))
+	pageview.Render(c, data)
 }
 
 // siteSlotPageData 组装渲染数据（纯函数：不取数、不依赖 gin.Context）。
@@ -142,8 +140,8 @@ func (h *siteSlotPageHandle) SiteSlotsPage(c *gin.Context) {
 // 而那正是「页面上少了一块、断言却通过」的成因。
 func siteSlotPageData(projects []projectcontract.ProjectResp, selected string,
 	candidates []pagecontract.PageResp, slots *pagecontract.SiteSlotListResp,
-	pageErr pageMsg) gin.H {
-	rows := make([]gin.H, 0)
+	pageErr pageMsg) *pagedto.SiteSlotsPageResp {
+	rows := make([]pagedto.SiteSlotRowResp, 0)
 	boundCount, total, unpublished, deleted := 0, 0, 0, 0
 	if slots != nil {
 		total, boundCount = slots.Total, slots.BoundCount
@@ -159,22 +157,22 @@ func siteSlotPageData(projects []projectcontract.ProjectResp, selected string,
 			rows = append(rows, siteSlotRow(it, candidates))
 		}
 	}
-	return gin.H{
-		"title":           siteSlotPageTitle,
-		"menu":            "site-slots",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Rows":            rows,
+	return &pagedto.SiteSlotsPageResp{
+		Title:           siteSlotPageTitle,
+		Menu:            "site-slots",
+		Projects:        toAnyProjects(projects),
+		SelectedProject: selected,
+		Rows:            rows,
 		// 工程里一个页面都没有时，绑定表单不渲染空下拉（空下拉只会让运营点一个必然失败的提交）。
-		"HasPages":         len(candidates) > 0,
-		"NoPages":          len(candidates) == 0,
-		"BoundCount":       boundCount,
-		"Total":            total,
-		"UnpublishedCount": unpublished,
-		"DeletedCount":     deleted,
+		HasPages:         len(candidates) > 0,
+		NoPages:          len(candidates) == 0,
+		BoundCount:       boundCount,
+		Total:            total,
+		UnpublishedCount: unpublished,
+		DeletedCount:     deleted,
 		// 页头两个徽标的档位不再由 Go 产出：模板按上面两个计数自己选档
 		//（判据与旧 helper 逐字一致：`n != 0`，**含负数非零**）。
-		"Err": pageErr,
+		Err: pagedto.MsgPair{Key: pageErr.Key, Fallback: pageErr.Fallback, Args: pageErr.Args},
 		// NoProjectEmpty 「还没有站点工程」空态：工程列表为空 **且** 本次没有出错。
 		//
 		// 不能只判 len(Projects) == 0：装载失败时工程列表同样是空的，但那时该显示的是
@@ -185,7 +183,7 @@ func siteSlotPageData(projects []projectcontract.ProjectResp, selected string,
 		// 判据在 handler 算好、模板只读一个布尔：模板是磁盘热读文件，而 Go 侧改动要等
 		// air 重编译，两边短暂不同步 —— 缺键直接参与判断会让**整页中断**
 		//（HTTP 200 + 后面整块 HTML 消失），所以模板侧一律 isset 包裹。
-		"NoProjectEmpty": len(projects) == 0 && pageErr.Empty(),
+		NoProjectEmpty: len(projects) == 0 && pageErr.Empty(),
 	}
 }
 
@@ -202,7 +200,7 @@ func siteSlotPageData(projects []projectcontract.ProjectResp, selected string,
 //   - 没带 slot 参数（常态浏览列表）；
 //   - slot 不在这个工程的槽位清单里（手拼 URL 猜槽位键）；
 //   - 这个工程一个页面都没有（没有候选可绑 —— 与列表页「不给空下拉」同一判据）。
-func siteSlotApplyBindPanel(data gin.H, candidates []pagecontract.PageResp,
+func siteSlotApplyBindPanel(data *pagedto.SiteSlotsPageResp, candidates []pagecontract.PageResp,
 	slots *pagecontract.SiteSlotListResp, bindSlot string) {
 	if bindSlot == "" || slots == nil || len(candidates) == 0 {
 		return
@@ -211,18 +209,16 @@ func siteSlotApplyBindPanel(data gin.H, candidates []pagecontract.PageResp,
 		if it.Slot != bindSlot {
 			continue
 		}
-		data["BindSlot"] = it.Slot
-		data["BindSlotNameKey"] = it.SlotName
-		data["BindSlotNameFallback"] = pageenums.SiteSlotName(it.SlotName)
-		data["BindBound"] = it.Bound
-		data["BindDeleted"] = it.PageDeleted
-		data["BindPageOptions"] = siteSlotPageOptions(candidates, it.PageID)
+		data.BindSlot = it.Slot
+		data.BindSlotNameKey = it.SlotName
+		data.BindSlotNameFallback = pageenums.SiteSlotName(it.SlotName)
+		data.BindBound = it.Bound
+		data.BindDeleted = it.PageDeleted
+		data.BindPageOptions = siteSlotPageOptions(candidates, it.PageID)
 		// 行内那条链接据此标 aria-current：读屏用户能听出「面板正开着的是这一行」。
-		if rows, ok := data["Rows"].([]gin.H); ok {
-			for _, row := range rows {
-				if slot, _ := row["Slot"].(string); slot == it.Slot {
-					row["Active"] = true
-				}
+		for i := range data.Rows {
+			if data.Rows[i].Slot == it.Slot {
+				data.Rows[i].Active = true
 			}
 		}
 		return
@@ -342,26 +338,26 @@ func (h *Handle) UnbindSiteSlot(c *gin.Context) {
 //	published    已绑定且已发布（链接生成方会输出链接）；
 //	unpublished  已绑定但未发布（**降级状态**：链接生成方跳过它，必须显眼）；
 //	deleted      绑定的页面已被删除（**必须立刻修**，红色 + 解绑入口）。
-func siteSlotRow(it pagecontract.SiteSlotItemResp, candidates []pagecontract.PageResp) gin.H {
-	row := gin.H{
-		"Slot": it.Slot,
+func siteSlotRow(it pagecontract.SiteSlotItemResp, candidates []pagecontract.PageResp) pagedto.SiteSlotRowResp {
+	row := pagedto.SiteSlotRowResp{
+		Slot: it.Slot,
 		// 槽位名与用途的取值是**词条 key**（pageenums 的两张表就是词条键，值即中文兜底）：
 		// 交 key + 兜底，取词交给模板 —— 模板才能在英文界面下换成英文。
-		"SlotNameKey":      it.SlotName,
-		"SlotNameFallback": pageenums.SiteSlotName(it.SlotName),
-		"UsageKey":         it.Usage,
-		"UsageFallback":    pageenums.SiteSlotUsage(it.Usage),
-		"Bound":            it.Bound,
-		"Unbound":          !it.Bound,
-		"PageDeleted":      it.PageDeleted,
-		"PageID":           it.PageID,
-		"DraftPath":        siteSlotTextOrEmpty(it.DraftPath),
-		"Path":             it.Path,
-		"PublicURL":        siteSlotPublicURL(it.Path),
-		"Published":        it.Published,
+		SlotNameKey:      it.SlotName,
+		SlotNameFallback: pageenums.SiteSlotName(it.SlotName),
+		UsageKey:         it.Usage,
+		UsageFallback:    pageenums.SiteSlotUsage(it.Usage),
+		Bound:            it.Bound,
+		Unbound:          !it.Bound,
+		PageDeleted:      it.PageDeleted,
+		PageID:           it.PageID,
+		DraftPath:        siteSlotTextOrEmpty(it.DraftPath),
+		Path:             it.Path,
+		PublicURL:        siteSlotPublicURL(it.Path),
+		Published:        it.Published,
 		// Unpublished 单独给一个布尔：它就是「运营以为配好了、实际链接生成方会跳过」的那一类。
-		"Unpublished": it.Bound && !it.PageDeleted && !it.Published,
-		"PageOptions": siteSlotPageOptions(candidates, it.PageID),
+		Unpublished: it.Bound && !it.PageDeleted && !it.Published,
+		PageOptions: siteSlotPageOptions(candidates, it.PageID),
 	}
 	// 徽章（档位 + 文案）不在这里产出：模板按上面这些事实选档、取词并写类名
 	//（badge-{{tone}}）—— 见 internal/templates/admin/page/site_slots.html。
@@ -369,13 +365,13 @@ func siteSlotRow(it pagecontract.SiteSlotItemResp, candidates []pagecontract.Pag
 }
 
 // siteSlotPageOptions 页面下拉候选（value = 页面 id，显示文本 = 草稿路径，当前绑定预先选中）。
-func siteSlotPageOptions(pages []pagecontract.PageResp, selectedID string) []gin.H {
-	out := make([]gin.H, 0, len(pages))
+func siteSlotPageOptions(pages []pagecontract.PageResp, selectedID string) []pagedto.SiteSlotPageOptionResp {
+	out := make([]pagedto.SiteSlotPageOptionResp, 0, len(pages))
 	for _, p := range pages {
-		out = append(out, gin.H{
-			"ID":       p.ID,
-			"Label":    siteSlotTextOrEmpty(p.DraftPath),
-			"Selected": p.ID == selectedID,
+		out = append(out, pagedto.SiteSlotPageOptionResp{
+			ID:       p.ID,
+			Label:    siteSlotTextOrEmpty(p.DraftPath),
+			Selected: p.ID == selectedID,
 		})
 	}
 	return out
@@ -433,4 +429,16 @@ func siteSlotJump(c *gin.Context, ok bool, msg pageMsg) {
 // siteSlotMsg 站点槽位页的一条文案（key + 中文兜底，兜底表见 siteSlotFacingMessages）。
 func siteSlotMsg(key string) pageMsg {
 	return pageMsg{Key: key, Fallback: siteSlotFacingMessages[key]}
+}
+
+// toAnyProjects 工程列表投影成 []any。
+//
+// 视图不直接用 projectcontract 的实体类型：模板只读 .ID / .Name，而"这一屏要工程的
+// 哪几个字段"由视图自己声明 —— 契约多一个字段时视图不必跟着变。
+func toAnyProjects(in []projectcontract.ProjectResp) []any {
+	out := make([]any, 0, len(in))
+	for i := range in {
+		out = append(out, in[i])
+	}
+	return out
 }

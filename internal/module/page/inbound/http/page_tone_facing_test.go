@@ -25,14 +25,17 @@ func TestRedirectPageDataCarriesCountsNotTones(t *testing.T) {
 
 	data := redirectPageData(c, nil, "")
 
-	for _, key := range []string{"MultiHopCount", "LoopCount"} {
-		if _, ok := data[key]; !ok {
-			t.Fatalf("投影里缺少计数事实 %q：模板选不出档", key)
+	// 视图换强类型之后用反射检查字段：判据从「map 里有没有这个键」变成
+	// 「这个类型有没有这个字段」—— 前者拼错键名静默通过，后者拼错是编译错误。
+	typ := reflect.TypeOf(*data)
+	for _, field := range []string{"MultiHopCount", "LoopCount"} {
+		if _, ok := typ.FieldByName(field); !ok {
+			t.Fatalf("投影里缺少计数事实 %q：模板选不出档", field)
 		}
 	}
-	for _, key := range []string{"MultiHopTone", "LoopTone"} {
-		if v, ok := data[key]; ok {
-			t.Fatalf("投影里又出现了分档 %q = %v：档位由模板按计数选（internal/templates/admin/page/page_redirects.html）", key, v)
+	for _, field := range []string{"MultiHopTone", "LoopTone"} {
+		if _, ok := typ.FieldByName(field); ok {
+			t.Fatalf("投影里又出现了分档 %q：档位由模板按计数选（internal/templates/admin/page/page_redirects.html）", field)
 		}
 	}
 }

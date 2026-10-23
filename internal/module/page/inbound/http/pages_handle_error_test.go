@@ -23,6 +23,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 )
@@ -43,7 +44,7 @@ func TestRedirectPageLoadFailureKeepsPageAndIsNotCached(t *testing.T) {
 
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
-	router.GET("/api/page/redirect", NewHandle(&redirectListFailStub{err: rawErr}).RedirectPage)
+	router.GET("/api/page/redirect", adminui.PageSlot(RedirectPageTemplate), NewHandle(&redirectListFailStub{err: rawErr}).RedirectPage)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/page/redirect?project=p1&lang=zh-CN", nil))
