@@ -228,7 +228,6 @@ var pendingControllerMethods = map[string]bool{
 	"internal/module/user/inbound/http/user_page.go:CustomersPage":                                true,
 	"internal/module/user/inbound/http/user_page.go:customerCounterTabs":                          true,
 	"internal/module/user/inbound/http/user_page.go:customerDetailPageData":                       true,
-	"internal/module/user/inbound/http/user_page.go:customerRow":                                  true,
 	"internal/module/workbench/inbound/http/router.go:SetupWorkbenchRoutes":                       true,
 	"internal/module/workbench/inbound/http/canvas_handle.go:Workbench":                          true,
 	"internal/module/workbench/inbound/http/workbench_page.go:collectOrderOverview":               true,

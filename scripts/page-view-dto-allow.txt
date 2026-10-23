@@ -41,11 +41,11 @@ internal/module/project/inbound/http/project_page.go gin=0 html=5
 internal/module/publication/inbound/http/publication_router.go gin=1 html=0
 internal/module/publication/inbound/http/seo_audit_result.go gin=1 html=2
 internal/module/sysconfig/inbound/http/sysconfig_router.go gin=1 html=0
-internal/module/user/inbound/http/user_page.go gin=30 html=7
+internal/module/user/inbound/http/user_page.go gin=18 html=3
 internal/module/workbench/inbound/http/canvas_handle.go gin=6 html=3
 internal/module/workbench/inbound/http/canvas_preview_handle.go gin=7 html=1
 internal/module/workbench/inbound/http/inspector_handle.go gin=4 html=4
 internal/module/workbench/inbound/http/router.go gin=3 html=3
 internal/module/workbench/inbound/http/workbench_handle.go gin=1 html=0
 
---total gin=195 html=96
+--total gin=183 html=92

@@ -15,16 +15,18 @@ package userhttp
 // 文案反查样式表，改一句词条就让样式静默失效，不报错、测试也不红。
 
 import (
+	"go_wp/internal/adminui"
+	"go_wp/pkg/utils"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 
 	userdto "go_wp/internal/module/user/dto"
-	"go_wp/pkg/utils"
 )
 
 // —— 一、Go 侧的行投影：事实进、展示不进 ——
@@ -32,6 +34,8 @@ import (
 // TestCustomerRowCarriesFactsNotPresentation 行投影不许再预制展示字段。
 func TestCustomerRowCarriesFactsNotPresentation(t *testing.T) {
 	row := customerRow(customerSample())
+	// 强类型之后"字段在不在"由编译期保证；这里守住的是**不该有的字段没有**与**该有的还在**。
+	typ := reflect.TypeOf(row)
 
 	for _, banned := range []string{
 		"DisplayLabel",      // 展示名回退（展示名 → 昵称 → 登录名）归模板
@@ -42,7 +46,7 @@ func TestCustomerRowCarriesFactsNotPresentation(t *testing.T) {
 		"LastLoginTimeText", //
 		"LockedUntilText",   //
 	} {
-		if _, ok := row[banned]; ok {
+		if _, ok := typ.FieldByName(banned); ok {
 			t.Errorf("customerRow 又预制了展示字段 %q：展示判断归模板（本批口径）", banned)
 		}
 	}
@@ -54,24 +58,24 @@ func TestCustomerRowCarriesFactsNotPresentation(t *testing.T) {
 		// 动作权限事实（服务端判定，不由模板推）。
 		"Actionable", "NextStatus", "StatusActionKey", "StatusActionLabel",
 	} {
-		if _, ok := row[want]; !ok {
+		if _, ok := typ.FieldByName(want); !ok {
 			t.Errorf("customerRow 缺少事实字段 %q", want)
 		}
 	}
 	// 状态说明是**按状态出现**的键（键存在 = 这个状态有说明要讲），单独钉两档。
 	pending := customerSample()
 	pending.Status = customerStatusPending
-	if _, ok := customerRow(pending)["PendingHintKey"]; !ok {
+	if customerRow(pending).PendingHintKey == "" {
 		t.Error("待激活状态的行应带 PendingHintKey（详情页的说明靠它取词）")
 	}
 	locked := customerSample()
 	locked.Locked = true
-	if _, ok := customerRow(locked)["LockHintKey"]; !ok {
+	if customerRow(locked).LockHintKey == "" {
 		t.Error("锁定状态的行应带 LockHintKey（不能只画徽章、不给解除锁定的说明）")
 	}
 	// 时间给的是**时刻本身**：模板的 dateTime() 认 *utils.JSONTime（nil / 零值出空串）。
-	if _, ok := row["RegisteredAt"].(*utils.JSONTime); !ok {
-		t.Errorf("RegisteredAt 应是 *utils.JSONTime（交给模板格式化），实得 %T", row["RegisteredAt"])
+	if _, ok := row.RegisteredAt.(*utils.JSONTime); !ok {
+		t.Errorf("RegisteredAt 应是 *utils.JSONTime（交给模板格式化），实得 %T", row.RegisteredAt)
 	}
 }
 
@@ -82,14 +86,12 @@ func TestCustomerCounterTabsCarryNoTone(t *testing.T) {
 	if len(tabs) != 7 {
 		t.Fatalf("计数徽章应有 7 个，实得 %d", len(tabs))
 	}
-	for _, tab := range tabs {
-		if _, ok := tab["Badge"]; ok {
-			t.Errorf("计数徽章 %v 的色调不该由 Go 给", tab["Key"])
-		}
-		for _, want := range []string{"Key", "LabelKey", "Label", "Count", "Active", "URL"} {
-			if _, ok := tab[want]; !ok {
-				t.Errorf("计数徽章 %v 缺少字段 %q", tab["Key"], want)
-			}
+	// 强类型之后「字段在不在」由编译期保证；这里守的是**色调不由 Go 给** ——
+	// 判据是类型上有没有 Badge/Tone 这类字段（有就是又加回来了）。
+	typ := reflect.TypeOf(tabs[0])
+	for _, banned := range []string{"Badge", "Tone", "Class", "StatusClass"} {
+		if _, ok := typ.FieldByName(banned); ok {
+			t.Errorf("计数徽章的色调不该由 Go 给：类型上出现了字段 %q", banned)
 		}
 	}
 }
@@ -100,12 +102,15 @@ func TestCustomerRfmSegmentTabsCarryNoTone(t *testing.T) {
 	if len(tabs) != 4 {
 		t.Fatalf("分段徽章应有 4 个（全部 / 高价值 / 潜力 / 一般），实得 %d", len(tabs))
 	}
-	for _, tab := range tabs {
-		if _, ok := tab["Badge"]; ok {
-			t.Errorf("分段徽章 %v 的色调不该由 Go 给", tab["Key"])
+	typ := reflect.TypeOf(tabs[0])
+	for _, banned := range []string{"Badge", "Tone", "Class"} {
+		if _, ok := typ.FieldByName(banned); ok {
+			t.Errorf("分段徽章的色调不该由 Go 给：类型上出现了字段 %q", banned)
 		}
-		if url, _ := tab["URL"].(string); !strings.Contains(url, "from=2026-10-01") {
-			t.Errorf("分段徽章 %v 的 URL 丢了时间窗口：%v", tab["Key"], tab["URL"])
+	}
+	for _, tab := range tabs {
+		if !strings.Contains(tab.URL, "from=2026-10-01") {
+			t.Errorf("分段徽章 %v 的 URL 丢了时间窗口：%v", tab.Key, tab.URL)
 		}
 	}
 }
@@ -293,7 +298,7 @@ func TestCustomerRfmUnknownSegmentRendersRawKey(t *testing.T) {
 		fakeProjects{items: detailProjects()})
 	h.SetCustomerRfm(&fakeRfmReader{res: res})
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm", nil))
@@ -315,7 +320,7 @@ func TestCustomerRfmSegmentToneComesFromTemplate(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
 	h.SetCustomerRfm(&fakeRfmReader{res: rfmSample()})
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm?range=month", nil))

@@ -15,6 +15,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -70,7 +71,7 @@ func newCustomerLeakEnv(t *testing.T) (*gin.Engine, *userservice.Service, *gorm.
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
 	// 订单摘要端口传 nil：列表页不用它（详情页才用），本文件只打列表页与批量端点。
 	page := userhttp.NewCustomerPageHandle(users, nil, projects)
-	engine.GET("/admin/customers", page.CustomersPage)
+	engine.GET("/admin/customers", adminui.PageSlot(userhttp.CustomersListPageTemplate), page.CustomersPage)
 	engine.POST("/api/customer/bulk-status", userhttp.NewCustomerHandle(users).BulkCustomerStatus)
 	engine.POST("/api/customer/bulk-unlock", userhttp.NewCustomerHandle(users).BulkCustomerUnlock)
 	return engine, users, db

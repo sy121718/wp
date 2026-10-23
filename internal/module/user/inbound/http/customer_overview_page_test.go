@@ -159,13 +159,15 @@ func TestCustomerOverviewPageDataWithoutGrowth(t *testing.T) {
 		customerTestPageTitle,
 		customerOverviewRange{Key: "month", From: "2026-10-01", To: "2026-10-05"},
 		nil, customerMsg{Key: customerUnavailableLabel.key, Fallback: customerUnavailableLabel.fallback})
-	if data["GrowthReady"] != false {
+	if data.GrowthReady != false {
 		t.Error("没拿到数据时 GrowthReady 必须是 false（模板据此渲染空态而不是一片 0）")
 	}
-	for _, k := range []string{"OrderingCustomers", "NewCustomers", "ReturningCustomers", "Repurchasers", "RepurchaseRateLabel"} {
-		if _, ok := data[k]; ok {
-			t.Errorf("拿不到数据时不应设 %s —— 设了就会渲染成 0", k)
-		}
+	// 强类型视图的字段总有零值 —— 判据从「键在不在」变成「值是不是零」。
+	// 模板仍然靠 GrowthReady 分流，所以「渲染成 0」这件事不会发生；
+	// 而这里的断言守住的是**组装处没把拿到的数据写进去**。
+	if data.OrderingCustomers != 0 || data.NewCustomers != 0 || data.ReturningCustomers != 0 ||
+		data.Repurchasers != 0 || data.RepurchaseRateLabel != "" {
+		t.Error("拿不到数据时不该有增长数据（模板靠 GrowthReady 分流，但值仍应为零）")
 	}
 }
 
@@ -177,14 +179,14 @@ func TestCustomerOverviewPageDataCarriesGrowth(t *testing.T) {
 			OrderingCustomers: 8, NewCustomers: 3, ReturningCustomers: 5,
 			Repurchasers: 4, NewRepurchasers: 1, RepurchaseRateLabel: "50.0%",
 		}, customerMsg{})
-	if data["GrowthReady"] != true {
+	if data.GrowthReady != true {
 		t.Fatal("拿到数据时 GrowthReady 应为 true")
 	}
-	if data["OrderingCustomers"] != int64(8) && data["OrderingCustomers"] != 8 {
-		t.Errorf("区间下单客户透传失败：%v", data["OrderingCustomers"])
+	if data.OrderingCustomers != int64(8) {
+		t.Errorf("区间下单客户透传失败：%v", data.OrderingCustomers)
 	}
-	if data["RepurchaseRateLabel"] != "50.0%" {
-		t.Errorf("复购率展示串透传失败：%v", data["RepurchaseRateLabel"])
+	if data.RepurchaseRateLabel != "50.0%" {
+		t.Errorf("复购率展示串透传失败：%v", data.RepurchaseRateLabel)
 	}
 }
 

@@ -113,6 +113,7 @@ import (
 	"go_wp/pkg/response"
 	"go_wp/pkg/sitetz"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 )
 
 // customerCohortPath 页面路径（菜单 seed 与导航高亮都用它）。
@@ -170,9 +171,9 @@ func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 		}
 	}
 
-	data := customerOverviewPageData(customerLabelText(c, customerCohortTitleLabel), rng, nil, errMsg)
-	data["Path"] = customerCohortPath
-	data["CohortReady"] = res != nil
+	view := customerOverviewPageData(customerLabelText(c, customerCohortTitleLabel), rng, nil, errMsg)
+	view.Path = customerCohortPath
+	view.CohortReady = res != nil
 	// 列头在 Go 侧定（Jet 的 `{{range}}` 只能遍历集合，没有「遍历 0..N」这种写法）。
 	// 列头用**相对月序号**而不是年月：每一行的首单月不同，同一列在各行是不同月份，
 	// 把某一行的月份当列头会让其它行的格子对不上号。
@@ -181,24 +182,24 @@ func (h *customerPageHandle) CustomerCohortPage(c *gin.Context) {
 	// 而 Jet 对缺席的键（nil）求 len 是运行时错误 —— 症状是整页 500，
 	// 而错误信息只有模板行号，看不出是「少了这个键」。colspan 同理，
 	// 在 Go 侧算好（Jet 的算术是浮点，`{{len(x) + 2}}` 会渲染成「2」这种怪值）。
-	cols := []gin.H{}
+	cols := []userdto.CohortColumnResp{}
 	rows := res
 	if rows != nil {
 		for k := 0; k < rows.Months; k++ {
-			cols = append(cols, gin.H{"Index": k, "Text": strconv.Itoa(k)})
+			cols = append(cols, userdto.CohortColumnResp{Index: k, Text: strconv.Itoa(k)})
 		}
 	}
-	data["Columns"] = cols
-	data["Colspan"] = len(cols) + 2
+	view.Columns = cols
+	view.Colspan = len(cols) + 2
 	if res != nil {
-		data["Cohorts"] = res.Cohorts
-		data["Customers"] = res.Customers
-		data["Months"] = res.Months
-		data["Rows"] = res.Rows
+		view.Cohorts = res.Cohorts
+		view.Customers = res.Customers
+		view.Months = res.Months
+		view.Rows = toAnySlice(res.Rows)
 	} else {
-		data["Rows"] = []orderdto.CustomerCohortRow{}
+		view.Rows = []any{}
 	}
-	c.HTML(200, "admin/user/customer_cohort", adminui.Prepare(c, data))
+	pageview.Render(c, view)
 }
 
 // customer_handle.go — 后台客户管理页（GET /admin/customers 列表、GET /admin/customers/detail 详情）。
@@ -727,21 +728,21 @@ func (h *customerPageHandle) CustomersPage(c *gin.Context) {
 		}
 	}
 
-	data := customerListPageData(customerLabelText(c, customerPageTitleLabel), list, filter, page, limit, pageErr, h.users == nil)
+	view := customerListPageData(customerLabelText(c, customerPageTitleLabel), list, filter, page, limit, pageErr, h.users == nil)
 	// 等级下拉的选项要现场取（等级是运营自建的，不是常量表）：
 	// 取不到时给空切片，页面渲染成只有「不限等级」一项 —— 而不是整个下拉消失。
-	data["TierOptions"] = h.membershipTierOptions(ctx)
-	data = adminui.Prepare(c, data)
+	view.TierOptions = h.membershipTierOptions(ctx)
+	view.BackPath = customerListPath
 	// 写动作的结论不在本页回显（走 shell.RenderJump）；写动作表单 action 上的筛选
 	// 上下文由 customerListPageData 组进 ListQuery，不再把整串回跳 URL 塞进隐藏域。
 	// 分页条：handler 只交事实（pkg/pagination.Page），信息行与链接由
 	// admin/partials/pagination.html 用 sprintf / queryURL 现算；
 	// 单页 / 空集时 HasPagination 为假，片段自然不渲染。
-	adminui.AttachPagination(data, "", nil, pagination.Page{
+	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
 		Total: customerTotal(list), Page: page, Limit: limit,
 		Base: reqparams.FilterBaseURL(customerListPath, customerFilterValues(filter)),
 	})
-	c.HTML(http.StatusOK, "admin/user/customers.html", data)
+	pageview.Render(c, view)
 }
 
 // CustomerDetailPage 客户详情（GET /admin/customers/detail?id=）。
@@ -1055,8 +1056,8 @@ var membershipFilterUnavailableLabel = userLabel{
 //
 // 取不到时返回空切片（页面渲染成只有一个「不限等级」的选项），**不返回 nil** ——
 // 模板会 range 它，而 Jet 对 nil 求 range 是运行时错误（整页 500）。
-func (h *customerPageHandle) membershipTierOptions(ctx context.Context) []gin.H {
-	out := []gin.H{}
+func (h *customerPageHandle) membershipTierOptions(ctx context.Context) []userdto.MembershipTierOptionResp {
+	out := []userdto.MembershipTierOptionResp{}
 	if h.membershipTiers == nil || h.projects == nil {
 		return out
 	}
@@ -1072,7 +1073,7 @@ func (h *customerPageHandle) membershipTierOptions(ctx context.Context) []gin.H 
 		// ID 也做成字符串：模板里要与 FilterTier（字符串）比较，
 		// 而 Jet 对 int64 与 string 的 `==` 不会隐式转换（比出来恒为 false，
 		// 表现是「选中态永远停在第一项」，页面不报错）。
-		out = append(out, gin.H{"ID": strconv.FormatInt(t.ID, 10), "Name": t.Name})
+		out = append(out, userdto.MembershipTierOptionResp{ID: strconv.FormatInt(t.ID, 10), Name: t.Name})
 	}
 	return out
 }
@@ -1260,28 +1261,30 @@ func customerRangeQuery(rng customerOverviewRange) string {
 // 不再有 `Presets` 键：三页（概览 / 群组 / RFM）的时间筛选条已统一成
 // admin/partials/date_filter.html 组件，档位下拉由它自己渲染 —— 服务端拼胶囊链接的那套
 // 逻辑（customerOverviewPresetLinks）随之删除，留着就是第二份会漂移的真源。
-func customerOverviewPageData(title string, rng customerOverviewRange, growth *orderdto.CustomerGrowthResp, errMsg customerMsg) gin.H {
-	data := gin.H{
-		"title":       title,
-		"Path":        customerOverviewPath,
-		"Range":       rng,
-		"ErrKey":      errMsg.Key,
-		"ErrFallback": errMsg.Fallback,
-		"HasErr":      !errMsg.Empty(),
-		// GrowthReady 与「有数据」是两件事：未接线时给一句人话，而不是一片 0
-		//（0 会被读成「这段时间一个客户都没来」）。同其它页面的降级口径。
-		"GrowthReady": growth != nil,
+func customerOverviewPageData(title string, rng customerOverviewRange, growth *orderdto.CustomerGrowthResp, errMsg customerMsg) *userdto.CustomerCohortPageResp {
+	// GrowthReady 与「有数据」是两件事：未接线时给一句人话，而不是一片 0
+	//（0 会被读成「这段时间一个客户都没来」）。同其它页面的降级口径。
+	view := &userdto.CustomerCohortPageResp{
+		Title:       title,
+		Path:        customerOverviewPath,
+		Range:       rng,
+		ErrKey:      errMsg.Key,
+		ErrFallback: errMsg.Fallback,
+		HasErr:      !errMsg.Empty(),
+		GrowthReady: growth != nil,
+		// 空切片而不是 nil：模板会 len() 它们。
+		Rows: []any{},
 	}
 	if growth == nil {
-		return data
+		return view
 	}
-	data["OrderingCustomers"] = growth.OrderingCustomers
-	data["NewCustomers"] = growth.NewCustomers
-	data["ReturningCustomers"] = growth.ReturningCustomers
-	data["Repurchasers"] = growth.Repurchasers
-	data["NewRepurchasers"] = growth.NewRepurchasers
-	data["RepurchaseRateLabel"] = growth.RepurchaseRateLabel
-	return data
+	view.OrderingCustomers = growth.OrderingCustomers
+	view.NewCustomers = growth.NewCustomers
+	view.ReturningCustomers = growth.ReturningCustomers
+	view.Repurchasers = growth.Repurchasers
+	view.NewRepurchasers = growth.NewRepurchasers
+	view.RepurchaseRateLabel = growth.RepurchaseRateLabel
+	return view
 }
 
 // CustomerOverviewPage 客户概览（GET /admin/customers/overview）。
@@ -1326,8 +1329,7 @@ func (h *customerPageHandle) CustomerOverviewPage(c *gin.Context) {
 		}
 	}
 
-	data := adminui.Prepare(c, customerOverviewPageData(customerLabelText(c, customerOverviewTitleLabel), rng, growth, errMsg))
-	c.HTML(200, "admin/user/customer_overview", data)
+	pageview.Render(c, customerOverviewPageData(customerLabelText(c, customerOverviewTitleLabel), rng, growth, errMsg))
 }
 
 // customerRfmPath 页面路径（菜单 seed 与导航高亮都用它）。
@@ -1361,52 +1363,55 @@ type customerRfmRow struct {
 // title 是已取词的成品、错误提示是事实（ErrKey / ErrFallback / HasErr），同概览页。
 func customerRfmPageData(title string, rng customerOverviewRange,
 	res *orderdto.CustomerRfmResp, rows []customerRfmRow,
-	segment string, page, limit int, total int64, errMsg customerMsg) gin.H {
-	data := gin.H{
-		"title":       title,
-		"Path":        customerRfmPath,
-		"Range":       rng,
-		"Segment":     segment,
-		"ErrKey":      errMsg.Key,
-		"ErrFallback": errMsg.Fallback,
-		"HasErr":      !errMsg.Empty(),
-		"Rows":        rows,
-		"Page":        page,
-		"Limit":       limit,
-		"Total":       total,
+	segment string, page, limit int, total int64, errMsg customerMsg) *userdto.CustomerRfmPageResp {
+	view := &userdto.CustomerRfmPageResp{
+		Title:       title,
+		Path:        customerRfmPath,
+		Range:       rng,
+		Segment:     segment,
+		ErrKey:      errMsg.Key,
+		ErrFallback: errMsg.Fallback,
+		HasErr:      !errMsg.Empty(),
+		Rows:        toAnySlice(rows),
+		Page:        page,
+		Limit:       limit,
+		Total:       total,
 		// RfmReady 与「有数据」是两件事：未接线时给一句人话，而不是三格 0
 		//（0 会被读成「这段时间一个客户都没有」）。同其它页面的降级口径。
-		"RfmReady": res != nil,
+		RfmReady: res != nil,
+		// 空切片而不是 nil：模板会 len() 它。
+		SegmentTabs: []userdto.RfmSegmentTabResp{},
 	}
 	if res == nil {
-		return data
+		return view
 	}
-	data["Customers"] = res.Customers
-	data["Vip"] = res.Vip
-	data["Potential"] = res.Potential
-	data["LowValue"] = res.LowValue
-	return data
+	view.Customers = res.Customers
+	view.Vip = res.Vip
+	view.Potential = res.Potential
+	view.LowValue = res.LowValue
+	view.SegmentTabs = customerRfmSegmentTabs(res, segment, rng)
+	return view
 }
 
 // customerRfmSegmentTabs 分段筛选徽章（与客户列表的计数徽章同一条口径：
 // 一个徽章一个链接，URL 由服务端拼好，条件之间可叠加）。
-func customerRfmSegmentTabs(res *orderdto.CustomerRfmResp, active string, rng customerOverviewRange) []gin.H {
+func customerRfmSegmentTabs(res *orderdto.CustomerRfmResp, active string, rng customerOverviewRange) []userdto.RfmSegmentTabResp {
 	if res == nil {
 		return nil
 	}
-	mk := func(key, labelKey, label string, count int64) gin.H {
+	mk := func(key, labelKey, label string, count int64) userdto.RfmSegmentTabResp {
 		url := customerRfmPath + "?" + customerRangeQuery(rng)
 		if key != "" {
 			url += "&segment=" + key
 		}
 		// 色调由模板按 Key 取（语义档 → 类名的映射在 ui.css），这里只给事实：
 		// 分段键、计数、当前是否选中、URL（URL 带时间窗口与其他条件，拼串归服务端）。
-		return gin.H{
-			"Key": key, "LabelKey": labelKey, "Label": label,
-			"Count": count, "Active": key == active, "URL": url,
+		return userdto.RfmSegmentTabResp{
+			Key: key, LabelKey: labelKey, Label: label,
+			Count: count, Active: key == active, URL: url,
 		}
 	}
-	return []gin.H{
+	return []userdto.RfmSegmentTabResp{
 		mk("", userenums.KeyCustomerRfmTabAll, "全部", res.Customers),
 		mk("vip", userenums.KeyCustomerRfmSegmentVip, "高价值", res.Vip),
 		mk("potential", userenums.KeyCustomerRfmSegmentPotential, "潜力", res.Potential),
@@ -1471,17 +1476,16 @@ func (h *customerPageHandle) CustomerRfmPage(c *gin.Context) {
 	if res != nil {
 		total = res.Total
 	}
-	data := adminui.Prepare(c, customerRfmPageData(customerLabelText(c, customerRfmTitleLabel), rng, res,
-		rows, segment, page, limit, total, errMsg))
-	data["SegmentTabs"] = customerRfmSegmentTabs(res, segment, rng)
+	view := customerRfmPageData(customerLabelText(c, customerRfmTitleLabel), rng, res,
+		rows, segment, page, limit, total, errMsg)
 	// 分页链接保留区间与分段：不带的话翻页会静默变成「全部区间 + 全部分段」。
 	rfnBase := customerRfmPath + "?" + customerRangeQuery(rng)
 	if segment != "" {
 		rfnBase += "&segment=" + segment
 	}
-	adminui.AttachPagination(data, "", nil,
+	_ = adminui.AttachPaginationView(view, "", nil,
 		pagination.Page{Total: total, Page: page, Limit: limit, Base: rfnBase})
-	c.HTML(http.StatusOK, "admin/user/customer_rfm", data)
+	pageview.Render(c, view)
 }
 
 // customerRfmRows 把 RFM 明细补上客户资料（姓名 / 邮箱 / 详情链接）。
@@ -1549,8 +1553,8 @@ var customerRfmUnavailableLabel = userLabel{
 // title 是已取词的成品（layout.html 的槽位），pageErr 是**事实**（ErrKey / ErrFallback /
 // HasErr 三个键）—— 取词归模板。
 func customerListPageData(title string, list *userdto.CustomerListResp, filter customerFilter,
-	page, limit int, pageErr customerMsg, capabilityMissing bool) gin.H {
-	rows := make([]gin.H, 0)
+	page, limit int, pageErr customerMsg, capabilityMissing bool) *userdto.CustomersListPageResp {
+	rows := make([]userdto.CustomerListRowResp, 0)
 	counters := userdto.CustomerCounters{}
 	if list != nil {
 		counters = list.Counters
@@ -1558,44 +1562,38 @@ func customerListPageData(title string, list *userdto.CustomerListResp, filter c
 			rows = append(rows, customerRow(item))
 		}
 	}
-	return gin.H{
-		"title":    title,
-		"menu":     "customers",
-		"Rows":     rows,
-		"Total":    customerTotal(list),
-		"Page":     page,
-		"Limit":    limit,
-		"Counters": counters,
+	return &userdto.CustomersListPageResp{
+		Title:    title,
+		Menu:     "customers",
+		Rows:     rows,
+		Total:    customerTotal(list),
+		Page:     page,
+		Limit:    limit,
+		Counters: counters,
 		// 计数徽章就是状态 / 邮箱 / 锁定三个维度的**筛选控件**（可点击链接，信息与操作合一）：
 		// 同一维度不再另配下拉 —— 两套控件表达同一维度时，用户无法确定它们是否等价。
-		"CounterTabs":       customerCounterTabs(counters, filter),
-		"FilterActive":      customerFilterActive(filter),
-		"FilterLocked":      filter.Locked,
-		"FilterKeyword":     filter.Keyword,
-		"FilterStatus":      filter.Status,
-		"FilterVerified":    filter.EmailVerified,
-		"FilterFrom":        filter.RegisteredFrom,
-		"FilterTo":          filter.RegisteredTo,
-		"FilterSegment":     filter.Segment,
-		"FilterSegmentFrom": filter.SegmentFrom,
-		"FilterSegmentTo":   filter.SegmentTo,
-		"FilterMinOrders":   customerMinOrdersQueryValue(filter.MinOrders),
-		"FilterRfm":         filter.RfmSegment,
-		"FilterTier":        customerTierQueryValue(filter.TierID),
-		// TierOptions 在这里给空切片兜底（handler 会覆盖成真实选项）。
-		// 渲染测试直接调本函数，而模板 `{{range _, t := tiers}}` 对缺席键（nil）
-		// 是**运行时错误** → 整页 500，错误信息只有模板行号。
-		// 同一个坑在客户概览/群组留存的 Columns 上踩过一次：模板会 range / len 的键，
-		// 组装函数必须给零值，不能指望调用方记得设。
-		"TierOptions":       []gin.H{},
-		"CapabilityMissing": capabilityMissing,
-		"ErrKey":            pageErr.Key,
-		"ErrFallback":       pageErr.Fallback,
-		"HasErr":            !pageErr.Empty(),
-		// ListQuery 写动作表单 action 上的筛选上下文（POST 回来由 shell.BackPath
-		// 从 query 读回）。放在组装函数里：渲染测试直接调本函数也能拿到，
-		// 不必在测试里手抄一份「拼进 action 的查询串」。
-		"ListQuery": customerListQuery(filter, page, limit),
+		CounterTabs:       customerCounterTabs(counters, filter),
+		FilterActive:      customerFilterActive(filter),
+		FilterLocked:      filter.Locked,
+		FilterKeyword:     filter.Keyword,
+		FilterStatus:      filter.Status,
+		FilterVerified:    filter.EmailVerified,
+		FilterFrom:        filter.RegisteredFrom,
+		FilterTo:          filter.RegisteredTo,
+		FilterSegment:     filter.Segment,
+		FilterSegmentFrom: filter.SegmentFrom,
+		FilterSegmentTo:   filter.SegmentTo,
+		FilterMinOrders:   customerMinOrdersQueryValue(filter.MinOrders),
+		FilterRfm:         filter.RfmSegment,
+		FilterTier:        customerTierQueryValue(filter.TierID),
+		// TierOptions 给空切片兜底（handler 会覆盖成真实选项）：
+		// 渲染测试直接调本函数，而模板 `{{range .TierOptions}}` 对 nil 是运行时错误。
+		TierOptions: []userdto.MembershipTierOptionResp{},
+		ErrKey:      pageErr.Key,
+		ErrFallback: pageErr.Fallback,
+		HasErr:      !pageErr.Empty(),
+
+		CapabilityMissing: capabilityMissing,
 	}
 }
 
@@ -1638,41 +1636,41 @@ func customerDetailPageData(title string, c *gin.Context, detail *userdto.Custom
 		data["Username"] = detail.Username
 		data["Email"] = detail.Email
 		// 展示名三个原值都给模板（三级回退由 Jet 决定，与列表页同一份逻辑）。
-		data["DisplayName"] = row["DisplayName"]
-		data["Nickname"] = row["Nickname"]
+		data["DisplayName"] = row.DisplayName
+		data["Nickname"] = row.Nickname
 		// 状态值也要给：徽章色调由模板按状态值取语义档（色调不是数据）。
-		data["Status"] = row["Status"]
+		data["Status"] = row.Status
 		// 状态与邮箱验证的展示名一律「key + 中文兜底」两个键（来源 userenums），
 		// 模板取词（tr(key, fallback)）——给中文值就等于英文界面永远中文。
-		data["StatusLabelKey"] = row["StatusLabelKey"]
-		data["StatusLabelFallback"] = row["StatusLabelFallback"]
+		data["StatusLabelKey"] = row.StatusLabelKey
+		data["StatusLabelFallback"] = row.StatusLabelFallback
 		data["EmailVerified"] = detail.EmailVerified
-		data["EmailVerifiedKey"] = row["EmailVerifiedKey"]
-		data["EmailVerifiedFallback"] = row["EmailVerifiedFallback"]
+		data["EmailVerifiedKey"] = row.EmailVerifiedKey
+		data["EmailVerifiedFallback"] = row.EmailVerifiedFallback
 		// 时间给时刻本身（*utils.JSONTime），格式化归模板的 dateTime()。
-		data["RegisteredAt"] = row["RegisteredAt"]
-		data["RegisterIP"] = row["RegisterIP"]
-		data["RegisterLocation"] = row["RegisterLocation"]
-		data["LastLoginTime"] = row["LastLoginTime"]
-		data["LastLoginIP"] = row["LastLoginIP"]
-		data["LastLoginLocation"] = row["LastLoginLocation"]
+		data["RegisteredAt"] = row.RegisteredAt
+		data["RegisterIP"] = row.RegisterIP
+		data["RegisterLocation"] = row.RegisterLocation
+		data["LastLoginTime"] = row.LastLoginTime
+		data["LastLoginIP"] = row.LastLoginIP
+		data["LastLoginLocation"] = row.LastLoginLocation
 		data["Locked"] = detail.Locked
-		data["LockedUntil"] = row["LockedUntil"]
+		data["LockedUntil"] = row.LockedUntil
 		data["LoginFailureCount"] = detail.LoginFailureCount
-		data["Actionable"] = row["Actionable"]
-		data["NextStatus"] = row["NextStatus"]
+		data["Actionable"] = row.Actionable
+		data["NextStatus"] = row.NextStatus
 		// 状态说明同样是「key + 中文兜底」（键存在 = 这个状态有说明要讲）：
 		// 直接渲染中文等于英文界面永远中文，而这两句正是详情页上唯一的解释。
-		data["PendingHintKey"] = row["PendingHintKey"]
-		data["PendingHintFallback"] = row["PendingHintFallback"]
+		data["PendingHintKey"] = row.PendingHintKey
+		data["PendingHintFallback"] = row.PendingHintFallback
 		// 动词走词条（key + 中文兜底），详情页的按钮由 {{动词}}{{这个账号}} 拼成 ——
 		// 两段都取值当前语言，中英界面各成句，不会混排。
-		data["StatusActionKey"] = row["StatusActionKey"]
-		data["StatusActionLabel"] = row["StatusActionLabel"]
+		data["StatusActionKey"] = row.StatusActionKey
+		data["StatusActionLabel"] = row.StatusActionLabel
 		// 锁定提示分开给：锁定的账号「登不上去」但状态是正常的，
 		// 这两件事在页面上必须能分辨（否则运营会去点停用）。
-		data["LockHintKey"] = row["LockHintKey"]
-		data["LockHintFallback"] = row["LockHintFallback"]
+		data["LockHintKey"] = row.LockHintKey
+		data["LockHintFallback"] = row.LockHintFallback
 	}
 	if summary != nil {
 		data["OrderCount"] = summary.OrderCount
@@ -1704,70 +1702,59 @@ func customerDetailPageData(title string, c *gin.Context, detail *userdto.Custom
 // 把表格切成一段段正文（02-J §2.1）。两者用的是**同一批词条**
 // （userenums.LabelKeyPendingHint / LockedHint / FailuresHint），所以两个页面上的解释不会漂移；
 // 列表模板读词条、详情页读这里的键 —— 同一句话，一处取词两处显示。
-func customerRow(item *userdto.CustomerResp) gin.H {
+func customerRow(item *userdto.CustomerResp) userdto.CustomerListRowResp {
 	// 展示名一律「key + 中文兜底」两个键，且唯一的来源是 userenums ——
 	// 页面不再自造文案（此前这里给的是中文，模板直接渲染，英文界面恒中文）。
 	statusKey, statusFallback := userenums.StatusLabel(item.Status)
 	verifyKey, verifyFallback := userenums.EmailVerifiedLabel(item.EmailVerified)
-	row := gin.H{
-		"ID":       item.ID,
-		"Username": customerTextOrEmpty(item.Username),
-		"Email":    customerTextOrEmpty(item.Email),
+	row := userdto.CustomerListRowResp{
+		ID:       item.ID,
+		Username: customerTextOrEmpty(item.Username),
+		Email:    customerTextOrEmpty(item.Email),
 		// 展示名三级回退（展示名 → 昵称 → 登录名）与详情链接都归模板：
 		// 页面只给三个原值，怎么挑、挑不中显示什么由 Jet 决定（同 block 的行片段口径）。
-		"DisplayName":           item.DisplayName,
-		"Nickname":              item.Nickname,
-		"Status":                item.Status,
-		"StatusLabelKey":        statusKey,
-		"StatusLabelFallback":   statusFallback,
-		"EmailVerified":         item.EmailVerified,
-		"EmailVerifiedKey":      verifyKey,
-		"EmailVerifiedFallback": verifyFallback,
-		// 时间一律给时刻本身（*utils.JSONTime），格式化归模板的 dateTime() ——
-		// 预格式化的字符串让模板既没有本地化余地，也分不出「没有这个时刻」（空串）
-		// 与「时刻存在但格式化后为空」。
-		"RegisteredAt":      item.RegisteredAt,
-		"RegisterIP":        customerTextOrEmpty(item.RegisterIP),
-		"RegisterLocation":  customerTextOrEmpty(item.RegisterLocation),
-		"LastLoginTime":     item.LastLoginTime,
-		"LastLoginIP":       customerTextOrEmpty(item.LastLoginIP),
-		"LastLoginLocation": customerTextOrEmpty(item.LastLoginLocation),
-		"Locked":            item.Locked,
-		"LockedUntil":       item.LockedUntilTime,
-		"LoginFailureCount": item.LoginFailureCount,
-		// 状态动作：只有「正常 ↔ 已停用」两个方向。
-		//
-		// 待激活的账号刻意不给按钮：它登不上去（status != active 一律拒绝登录），
-		// 停用它只会让客户点验证链接时得到「链接失效」—— 那既没解决问题，
-		// 又让客户来问「为什么我的链接坏了」。
-		//
-		// 动词本身走词条（StatusActionKey + 中文兜底）：这里原先是硬编码中文「停用 / 启用」，
-		// 英文界面上与 i18n 的后缀拼起来就是「Disable这个账号」式中英混排。
-		"Actionable": false,
+		DisplayName:           item.DisplayName,
+		Nickname:              item.Nickname,
+		Status:                item.Status,
+		StatusLabelKey:        statusKey,
+		StatusLabelFallback:   statusFallback,
+		EmailVerified:         item.EmailVerified,
+		EmailVerifiedKey:      verifyKey,
+		EmailVerifiedFallback: verifyFallback,
+		// 时间一律给时刻本身（*utils.JSONTime），格式化归模板的 dateTime()。
+		RegisteredAt:      item.RegisteredAt,
+		RegisterIP:        customerTextOrEmpty(item.RegisterIP),
+		RegisterLocation:  customerTextOrEmpty(item.RegisterLocation),
+		LastLoginTime:     item.LastLoginTime,
+		LastLoginIP:       customerTextOrEmpty(item.LastLoginIP),
+		LastLoginLocation: customerTextOrEmpty(item.LastLoginLocation),
+		Locked:            item.Locked,
+		LockedUntil:       item.LockedUntilTime,
+		LoginFailureCount: item.LoginFailureCount,
 	}
 	switch item.Status {
 	case customerStatusActive:
-		row["Actionable"] = true
-		row["NextStatus"] = customerStatusDisabled
-		row["StatusActionKey"] = customerActionDisable
-		row["StatusActionLabel"] = "停用"
+		row.Actionable = true
+		row.NextStatus = customerStatusDisabled
+		row.StatusActionKey = customerActionDisable
+		row.StatusActionLabel = "停用"
 	case customerStatusDisabled:
-		row["Actionable"] = true
-		row["NextStatus"] = customerStatusActive
-		row["StatusActionKey"] = customerActionEnable
-		row["StatusActionLabel"] = "启用"
+		row.Actionable = true
+		row.NextStatus = customerStatusActive
+		row.StatusActionKey = customerActionEnable
+		row.StatusActionLabel = "启用"
 	case customerStatusPending:
 		// 说明文案与列表页表头 .help 共用同一条词条（userenums.LabelKeyPendingHint）：
 		// 同一句解释在两处各写一份，改一处另一处会静默留在旧说法上。
-		row["PendingHintKey"] = userenums.LabelKeyPendingHint
-		row["PendingHintFallback"] = userenums.LabelPendingHint
+		row.PendingHintKey = userenums.LabelKeyPendingHint
+		row.PendingHintFallback = userenums.LabelPendingHint
 	}
 	if item.Locked {
-		row["LockHintKey"] = userenums.LabelKeyLockedHint
-		row["LockHintFallback"] = userenums.LabelLockedHint
+		row.LockHintKey = userenums.LabelKeyLockedHint
+		row.LockHintFallback = userenums.LabelLockedHint
 	} else if item.LoginFailureCount > 0 {
-		row["LockHintKey"] = userenums.LabelKeyFailuresHint
-		row["LockHintFallback"] = userenums.LabelFailuresHint
+		row.LockHintKey = userenums.LabelKeyFailuresHint
+		row.LockHintFallback = userenums.LabelFailuresHint
 	}
 	return row
 }
@@ -1793,7 +1780,7 @@ func customerStatusText(c *gin.Context, status int) string {
 // URL 一律在这里生成（模板不拼查询串）：只动自己那个维度的参数，其余条件原样保留；
 // 「全部」清掉状态 / 邮箱 / 锁定三个维度的取值，回到「不按维度筛」（关键词与时间仍在）。
 // 计数为 0 的徽章同样可点 —— 点进去看到空列表是合理预期，禁用反而像功能坏了。
-func customerCounterTabs(counters userdto.CustomerCounters, filter customerFilter) []gin.H {
+func customerCounterTabs(counters userdto.CustomerCounters, filter customerFilter) []userdto.CounterTabResp {
 	setStatus := func(v int) func(url.Values) {
 		return func(q url.Values) {
 			if v == customerStatusAll {
@@ -1845,7 +1832,7 @@ func customerCounterTabs(counters userdto.CustomerCounters, filter customerFilte
 		{"unverified", unverifiedKey, unverifiedLabel, counters.Unverified,
 			filter.EmailVerified == userdto.EmailVerifiedNo, setVerified(userdto.EmailVerifiedNo)},
 	}
-	out := make([]gin.H, 0, len(tabs))
+	out := make([]userdto.CounterTabResp, 0, len(tabs))
 	for _, t := range tabs {
 		q := url.Values{}
 		for k, val := range customerFilterValues(filter) {
@@ -1859,9 +1846,9 @@ func customerCounterTabs(counters userdto.CustomerCounters, filter customerFilte
 			target += "?" + q.Encode()
 		}
 		// 色调由模板按 Key 取（语义档 → 类名的映射在 ui.css），这里只给事实。
-		out = append(out, gin.H{
-			"Key": t.Key, "LabelKey": t.LabelKey, "Label": t.Label,
-			"Count": t.Count, "Active": t.Active, "URL": target,
+		out = append(out, userdto.CounterTabResp{
+			Key: t.Key, LabelKey: t.LabelKey, Label: t.Label,
+			Count: t.Count, Active: t.Active, URL: target,
 		})
 	}
 	return out
@@ -3130,4 +3117,14 @@ func (h *Handle) renderMessage(c *gin.Context, status int, ok bool, title, messa
 // emptyRegisterForm 注册表单的初始值（模板用 chain 索引取值，键必须齐全）。
 func emptyRegisterForm() gin.H {
 	return gin.H{"username": "", "email": "", "nickname": ""}
+}
+
+// toAnySlice 把切片投影成 []any（视图不 import 各来源的契约类型：
+// "这一屏要哪几个字段"由模板决定）。
+func toAnySlice[T any](in []T) []any {
+	out := make([]any, 0, len(in))
+	for i := range in {
+		out = append(out, in[i])
+	}
+	return out
 }

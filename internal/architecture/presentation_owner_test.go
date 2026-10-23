@@ -35,6 +35,11 @@ var pendingDTOPresentation = map[string]int{
 	"internal/module/order/dto/order_resp.go":              1,
 	"internal/module/order/dto/order_return_resp.go":       1,
 	"internal/module/user/dto/customer_admin_resp.go":      3,
+	// 客户页视图的 DisplayName / LabelKey 是**模板契约键名**（customers.html 读
+	// `.DisplayName` / `.LabelKey`），且交的是原始值与词条 key，不是成品句 ——
+	// 但字段名落在禁名单上，按「存量登记、只减不增」处理：改名要同时改模板，
+	// 而模板是渲染期契约（改错的表现是整页 500，不是编译错误）。
+	"internal/module/user/dto/user_customer_page_resp.go": 3,
 	"internal/module/user/dto/user_resp.go":                1,
 }
 

@@ -13,6 +13,7 @@ package userhttp
 import (
 	"context"
 	"errors"
+	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -47,8 +48,14 @@ const (
 	customerTestDetailTitle = "客户详情"
 )
 
-func customerTestLayoutData(base gin.H) gin.H {
+// customerTestLayoutData 给页面数据补上页壳键（t / lang / csrf_token …）。
+//
+// 收 any 而不是 gin.H：视图换强类型之后，这里要能把结构体摊平成 map 再补键 ——
+// 手工补壳键这件事本身是**测试装置**的简化（生产走 adminui.Prepare），
+// 所以它跟着视图形状走，而不是要求视图保持 map。
+func customerTestLayoutData(anyView any) gin.H {
 	lang := "zh-CN"
+	base := adminui.ViewMap(anyView)
 	base["csrf_token"] = "test-token"
 	base["lang"] = lang
 	base["t"] = templates.TranslateFunc(lang)
@@ -189,8 +196,8 @@ func newCustomerTestEngine(h *customerPageHandle) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/customers", h.CustomersPage)
-	engine.GET("/admin/customers/overview", h.CustomerOverviewPage)
+	engine.GET("/admin/customers", adminui.PageSlot(CustomersListPageTemplate), h.CustomersPage)
+	engine.GET("/admin/customers/overview", adminui.PageSlot(CustomerOverviewPageTemplate), h.CustomerOverviewPage)
 	engine.GET("/admin/customers/detail", h.CustomerDetailPage)
 	api := NewCustomerHandle(h.users)
 	engine.POST("/api/customer/status", api.SetCustomerStatus)
