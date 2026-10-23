@@ -34,10 +34,16 @@ var htmlLiteralBudget = map[string]int{
 	"internal/module/mail/inbound/http/mail_page.go": 10,
 	// 脚手架生成的是**前端模板文件的内容**（插件目录里的 .html 组件模板），不是后端渲染。
 	"internal/module/plugin/scaffold/scaffold.go": 1,
-	// 工作台：大纲树 / repeater 行仍由 Go 拼串（31），预览帧往构建产物里插增强脚本（2）。
+	// 工作台：大纲树 / repeater 行仍由 Go 拼串（31），预览帧往构建产物里插增强脚本（3）。
 	// 前者要等 workbench 页面迁 Jet 一起收；后者是对产物做字符串拼接，不是生成结构。
+	//
+	// 2 → 3 的理由：编辑器桥接脚本已挪成 scripts/editor_bridge.js（go:embed），
+	// <script> 包装收进唯一的 editorBridgeScriptTag 一处。此前包装与脚本体混在同一个
+	// 常量里，门禁只能看见「2 处」；现在看得见包装点了。**这是记账口径变清楚，
+	// 不是新增了拼 HTML 的地方** —— 注入路径要往已渲染的产物字节里插脚本，
+	// 走不了 Jet 模板。
 	"internal/module/workbench/service/workbench.go":           31,
-	"internal/module/workbench/inbound/http/workbench_page.go": 2,
+	"internal/module/workbench/inbound/http/workbench_page.go": 3,
 }
 
 var htmlLiteralRe = regexp.MustCompile(

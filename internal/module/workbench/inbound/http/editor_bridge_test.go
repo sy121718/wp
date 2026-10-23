@@ -1,6 +1,9 @@
 package workbenchhttp
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -27,14 +30,14 @@ func TestEditorBridgeStripsNodeClassPrefixByLength(t *testing.T) {
 	if got := len(prefix); got != 6 {
 		t.Fatalf("前缀长度 %d（预期 6）：写死数字的还原逻辑会重新踩坑", got)
 	}
-	if strings.Contains(editorBridgeScript, "cls.slice(5)") {
-		t.Fatal("editorBridgeScript 里仍有写死的 cls.slice(5)：'sky-c-' 是 6 个字符，会还原出带前导 '-' 的 id")
+	if strings.Contains(editorBridgeJSSource, "cls.slice(5)") {
+		t.Fatal("editorBridgeJSSource 里仍有写死的 cls.slice(5)：'sky-c-' 是 6 个字符，会还原出带前导 '-' 的 id")
 	}
-	if !strings.Contains(editorBridgeScript, "cls.slice(WB_SKY_PREFIX.length)") {
-		t.Fatal("editorBridgeScript 未按 WB_SKY_PREFIX.length 截断节点类名")
+	if !strings.Contains(editorBridgeJSSource, "cls.slice(WB_SKY_PREFIX.length)") {
+		t.Fatal("editorBridgeJSSource 未按 WB_SKY_PREFIX.length 截断节点类名")
 	}
-	if !strings.Contains(editorBridgeScript, "var WB_SKY_PREFIX = 'sky-c-'") {
-		t.Fatal("editorBridgeScript 未声明 WB_SKY_PREFIX（前缀真源）")
+	if !strings.Contains(editorBridgeJSSource, "var WB_SKY_PREFIX = 'sky-c-'") {
+		t.Fatal("editorBridgeJSSource 未声明 WB_SKY_PREFIX（前缀真源）")
 	}
 }
 
@@ -46,7 +49,7 @@ func TestEditorBridgeStripsNodeClassPrefixByLength(t *testing.T) {
 // 不同（一个漏一个多）时计数照样对得上。
 func TestEditorBridgePlaceholdersAreClosed(t *testing.T) {
 	inScript := map[string]bool{}
-	for _, m := range regexp.MustCompile(`\{\{(bridge\.[A-Za-z0-9_.]+)\}\}`).FindAllStringSubmatch(editorBridgeScript, -1) {
+	for _, m := range regexp.MustCompile(`\{\{(bridge\.[A-Za-z0-9_.]+)\}\}`).FindAllStringSubmatch(editorBridgeJSSource, -1) {
 		inScript[m[1]] = true
 	}
 	registered := map[string]bool{}
@@ -79,7 +82,7 @@ func TestEditorBridgePlaceholdersAreClosed(t *testing.T) {
 	if zh := editorBridgeScriptFor(func(_, fallback string) string { return fallback }); strings.Contains(zh, "{{bridge.") {
 		t.Error("中文兜底路径下仍有未替换的占位符")
 	}
-	occurrences := len(regexp.MustCompile(`\{\{bridge\.[A-Za-z0-9_.]+\}\}`).FindAllString(editorBridgeScript, -1))
+	occurrences := len(regexp.MustCompile(`\{\{bridge\.[A-Za-z0-9_.]+\}\}`).FindAllString(editorBridgeJSSource, -1))
 	en := editorBridgeScriptFor(func(_, _ string) string { return "EN-TEXT" })
 	if got := strings.Count(en, "EN-TEXT"); got != occurrences {
 		t.Errorf("译文替换次数 %d，脚本里占位符出现 %d 次：有占位符没被替换", got, occurrences)
@@ -99,5 +102,47 @@ func TestJsSingleQuotedEscapesQuotes(t *testing.T) {
 		if got := jsSingleQuoted(tc.in); got != tc.want {
 			t.Errorf("jsSingleQuoted(%q) = %q，预期 %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// TestEditorBridgeIsValidJavaScript 桥接脚本必须能被 node 解析。
+//
+// 这是挪出 Go 字符串常量的**主要收益**：常量的语法错误只有画布真的坏掉才会暴露，
+// 而桥接坏掉的表现是「点了没反应」——父窗口看起来一切正常，报错在 iframe 控制台。
+// 同一段代码在 .js 文件里就能被 node --check 静态拦住。
+//
+// 没有 node 时跳过（与 check-workbench.sh / defaults_contract_test.go 同一套探针）。
+func TestEditorBridgeIsValidJavaScript(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("没有 node：跳过桥接脚本语法检查")
+	}
+	// 占位符先替换成合法字面量，否则 {{bridge.x}} 本身就是语法错误。
+	src := regexp.MustCompile(`\{\{bridge\.[A-Za-z0-9_.]+\}\}`).ReplaceAllString(editorBridgeJSSource, "PLACEHOLDER")
+	dir := t.TempDir()
+	file := filepath.Join(dir, "editor_bridge.js")
+	if err := os.WriteFile(file, []byte(src), 0o644); err != nil {
+		t.Fatalf("写临时脚本失败: %v", err)
+	}
+	out, err := exec.Command(node, "--check", file).CombinedOutput()
+	if err != nil {
+		t.Fatalf("桥接脚本语法错误（node --check）：%v\n%s", err, out)
+	}
+}
+
+// TestEditorBridgeSourceFileExists 源码文件必须存在且非空（go:embed 的目标）。
+//
+// 单独钉一次的理由：go:embed 的目标文件缺失时是**编译错误**（足够安全），但空文件
+// 能编译通过 —— 那样注入的就是一个空 <script>，画布静默失去全部交互。
+func TestEditorBridgeSourceFileExists(t *testing.T) {
+	info, err := os.Stat(filepath.Join("scripts", "editor_bridge.js"))
+	if err != nil {
+		t.Fatalf("桥接脚本源文件缺失: %v", err)
+	}
+	if info.Size() < 1000 {
+		t.Fatalf("桥接脚本只有 %d 字节，不像完整实现（空文件能编译通过，画布会静默失去交互）", info.Size())
+	}
+	if !strings.Contains(editorBridgeJSSource, "WB_SKY_PREFIX") {
+		t.Error("嵌入的源码里没有 WB_SKY_PREFIX：go:embed 可能指错了文件")
 	}
 }
