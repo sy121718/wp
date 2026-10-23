@@ -86,10 +86,7 @@ func TestPageInternalTextIsControlledText(t *testing.T) {
 // 这个出口在正常环境里不可达（见文件头），所以只能按源码钉形状：这里扫的是**出口实参**，
 // 不是「文件里出现过某个字面量」—— 将来再加 500 出口而忘了走归口，这条会红。
 func TestInspectorHandleInternalErrorExitsAreControlled(t *testing.T) {
-	src, err := os.ReadFile("workbench_page.go")
-	if err != nil {
-		t.Fatalf("读 workbench_page.go 失败：%v", err)
-	}
+	src := pageLogicSource(t)
 	text := string(src)
 	start := strings.Index(text, "func (h *Handle) InspectorPanel")
 	end := strings.Index(text, "func (h *Handle) OutlineTree")

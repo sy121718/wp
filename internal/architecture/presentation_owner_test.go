@@ -110,7 +110,9 @@ var pendingModuleText = map[string]int{
 	"internal/module/user/inbound/http/user_page.go":                         1,
 	"internal/module/webhook/inbound/http/webhook_handle.go":                 1,
 	"internal/module/workbench/inbound/http/workbench_err.go":                3,
-	"internal/module/workbench/inbound/http/workbench_page.go":               2,
+	// 页面逻辑拆成 5 个文件后，两处取词跟着调用点走（都在预览编译的出口）。
+	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":   1,
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go":  1,
 }
 
 func TestModulesDoNotTranslate(t *testing.T) {

@@ -97,7 +97,9 @@ var pendingControllerFiles = map[string]bool{
 	"internal/module/user/inbound/http/user_page.go":                       true,
 	"internal/module/workbench/inbound/http/router.go":                     true,
 	"internal/module/workbench/inbound/http/workbench_err.go":              true,
-	"internal/module/workbench/inbound/http/workbench_page.go":             true,
+	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
+	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
+	"internal/module/workbench/inbound/http/workbench_page.go":            true,
 }
 
 // pendingControllerBinding 还没换成 pkg/binding 的文件（c.ShouldBind* / c.PostForm）。
@@ -161,7 +163,12 @@ var pendingControllerQuery = map[string]bool{
 	"internal/module/user/inbound/http/user_customer_admin_handle.go":      true,
 	"internal/module/user/inbound/http/user_page.go":                       true,
 	"internal/module/webhook/inbound/http/webhook_handle.go":               true,
-	"internal/module/workbench/inbound/http/workbench_page.go":             true,
+	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
+	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
+	"internal/module/workbench/inbound/http/workbench_page.go":            true,
+	"internal/module/workbench/inbound/http/canvas_handle.go":             true,
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go":     true,
+	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":      true,
 }
 
 // pendingControllerMethods 超过 60 行的控制器方法（"文件:方法名"）。
@@ -223,12 +230,12 @@ var pendingControllerMethods = map[string]bool{
 	"internal/module/user/inbound/http/user_page.go:customerDetailPageData":                       true,
 	"internal/module/user/inbound/http/user_page.go:customerRow":                                  true,
 	"internal/module/workbench/inbound/http/router.go:SetupWorkbenchRoutes":                       true,
-	"internal/module/workbench/inbound/http/workbench_page.go:Workbench":                          true,
+	"internal/module/workbench/inbound/http/canvas_handle.go:Workbench":                          true,
 	"internal/module/workbench/inbound/http/workbench_page.go:collectOrderOverview":               true,
 	"internal/module/workbench/inbound/http/workbench_page.go:layoutTrendBars":                    true,
-	"internal/module/workbench/inbound/http/workbench_page.go:workbenchBlock":                     true,
-	"internal/module/workbench/inbound/http/workbench_page.go:workbenchInstance":                  true,
-	"internal/module/workbench/inbound/http/workbench_page.go:workbenchTemplate":                  true,
+	"internal/module/workbench/inbound/http/canvas_handle.go:workbenchBlock":                     true,
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go:workbenchInstance":                  true,
+	"internal/module/workbench/inbound/http/canvas_handle.go:workbenchTemplate":                  true,
 }
 
 // controllerMethodMaxLines 单个控制器方法的行数上限（AST 起止行之差）。
@@ -468,7 +475,11 @@ var pendingControllerRenderExit = map[string]bool{
 	"internal/module/publication/inbound/http/seo_audit_result.go":         true,
 	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":      true,
 	"internal/module/user/inbound/http/user_page.go":                       true,
-	"internal/module/workbench/inbound/http/workbench_page.go":             true,
+	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
+	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
+	"internal/module/workbench/inbound/http/inspector_handle.go":          true,
+	"internal/module/workbench/inbound/http/canvas_handle.go":             true,
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go":     true,
 }
 
 // controllerRenderCalls 渲染出口的方法名（接收者不限：c / h / 变量都可能）。
@@ -586,7 +597,11 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/user/inbound/http/user_page.go":                            true,
 	"internal/module/workbench/inbound/http/workbench_err.go":                   true,
 	"internal/module/workbench/inbound/http/workbench_handle.go":                true,
-	"internal/module/workbench/inbound/http/workbench_page.go":                  true,
+	// 工作台画布逻辑拆成 5 个文件后，同一条存量豁免跟着拆（它们都还用 adminui 做页面渲染出口）。
+	"internal/module/workbench/inbound/http/inspector_handle.go":          true,
+	"internal/module/workbench/inbound/http/canvas_handle.go":             true,
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go":     true,
+	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":      true,
 }
 
 const controllerUIImportPath = "go_wp/internal/adminui"
