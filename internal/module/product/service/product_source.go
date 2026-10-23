@@ -1485,8 +1485,21 @@ func (s *Service) localizeRelated(ctx context.Context, lang string, e *productmo
 		}
 	}
 	if e.BrandID != nil && strings.TrimSpace(*e.BrandID) != "" {
-		if row, berr := s.m.GetBrand(ctx, *e.BrandID, e.ProjectID); berr == nil {
+		row, berr := s.m.GetBrand(ctx, *e.BrandID, e.ProjectID)
+		// 只容忍「品牌不存在」这一种：引用被删掉了，构建照常进行，页面不显示品牌名即可。
+		//
+		// 原先是 `if berr == nil { ... }` —— 把所有错误都吞掉，包括查库失败与 RLS 作用域
+		// 未设导致的静默 0 行。后果是「品牌名突然全空了」这种缺陷没有任何信号：
+		// 构建成功、产物生成、页面只是少了一块。同一函数里分类 / 标签 / 属性组都是
+		// `if err != nil { return nil, err }`，只有品牌这一处不同 —— 那不是刻意设计，
+		// 是漏掉的分支。
+		switch {
+		case berr == nil:
 			loc.brands[row.ID] = row
+		case errors.Is(berr, gorm.ErrRecordNotFound):
+			// 引用已失效：跳过（与「详情页读取口径一致」，见本函数头部注释）
+		default:
+			return nil, berr
 		}
 	}
 	if ids := decodeStrings(e.TagIDs); len(ids) > 0 {
