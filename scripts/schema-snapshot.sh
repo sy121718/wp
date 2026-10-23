@@ -19,11 +19,28 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-DB_HOST="${DB_HOST:-${GOWP_DB_HOST:-127.0.0.1}}"
-DB_PORT="${DB_PORT:-${GOWP_DB_PORT:-5432}}"
-DB_USER="${DB_USER:-${GOWP_DB_USER:-postgres}}"
-DB_NAME="${DB_NAME:-${GOWP_DB_NAME:-wp}}"
-export PGPASSWORD="${DB_PASSWORD:-${GOWP_DB_PASSWORD:-}}"
+# 取值优先级：显式环境变量 → config.yaml 的 database 段 → 兜底默认。
+# **config.yaml 在环境变量之后、默认值之前**：它是这个仓库里唯一的连接真源，
+# 跳过它去猜默认值正是上面那个 FATAL 的成因。
+# yaml_db 从 config.yaml 的 database 段读一个键（与 check-page-get-authz.sh 同一套读法）。
+#
+# 为什么必须有它：运维脚本曾默认 user=postgres，而 config.yaml.example 是 user=root，
+# CI 的 postgres:16 容器用 POSTGRES_USER=root 建库、容器里**没有 postgres 这个 role**。
+# 于是脚本在 CI 上必然红（FATAL: role "postgres" does not exist）——
+# 这正是"第一次接进 CI 就红"的那类问题，说明它此前从没在 CI 上跑过。
+yaml_db() {
+  [ -f config.yaml ] || return 0
+  awk -v key="$1" '/^database:/{in_db=1;next} /^[a-zA-Z]/{in_db=0} in_db && $1==key":"{print $2;exit}' config.yaml
+}
+
+DB_HOST="${DB_HOST:-${GOWP_DB_HOST:-$(yaml_db host)}}"
+DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_PORT="${DB_PORT:-${GOWP_DB_PORT:-$(yaml_db port)}}"
+DB_PORT="${DB_PORT:-5432}"
+DB_USER="${DB_USER:-${GOWP_DB_USER:-$(yaml_db user)}}"
+DB_NAME="${DB_NAME:-${GOWP_DB_NAME:-$(yaml_db dbname)}}"
+DB_NAME="${DB_NAME:-wp}"
+export PGPASSWORD="${DB_PASSWORD:-${GOWP_DB_PASSWORD:-$(yaml_db password)}}"
 
 SNAPSHOT_DIR="schema"
 SNAPSHOT="$SNAPSHOT_DIR/CURRENT.sql"

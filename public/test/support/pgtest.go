@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	tdbdriver "go_wp/pkg/database/driver"
 	"go_wp/public/migrations"
 )
 
@@ -47,13 +49,33 @@ func pgEnv(key, fallback string) string {
 	return fallback
 }
 
-// pgDSN 拼装 pgx / libpq 风格 DSN。
+// pgDSN 拼装测试库的 DSN。
+//
+// **复用 dbdriver.PostgresDSN**，不另写一份关键字格式：那套 fmt.Sprintf 有已知缺陷 ——
+// 空密码时 `password= dbname=x` 会被 libpq 解析成 password="dbname=x"、database=""，
+// 于是连不上时报的是 `database "root" does not exist`，与真因无关（应用侧修过同型缺陷，
+// 见 pkg/database/driver/postgres.go 的注释）。
+//
+// 测试侧此前靠 POSTGRES_PASSWORD=root / DefaultPGPassword="root" 掩盖着没炸 ——
+// 默认值一旦变空（本地无密码的 PG 很常见）就会以最难查的方式失败。这与应用侧是
+// 同一个坑的两条分支，修一条不修另一条等于没修完。
 func pgDSN(host, port, user, password, dbname string) string {
+	dsn := tdbdriver.PostgresDSN(tdbdriver.Config{
+		Host: host, Port: mustAtoi(port), User: user, Password: password, DBName: dbname,
+	})
 	// synchronous_commit=off：测试数据全是用完即弃的，但每个用例都要建库、跑 DDL、灌种子，
 	// 提交路径的 WAL 刷盘是纯开销。实测全量 -p 16 从 227s 降到 181s（约 20%）。
 	// 只作用于测试连接，不碰生产库；崩库最多丢最后几个未落盘的事务，测试场景无所谓。
-	return fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=Asia/Shanghai synchronous_commit=off",
-		host, user, password, dbname, port)
+	return dsn + "&synchronous_commit=off"
+}
+
+// mustAtoi 端口解析：port 在调用点恒为数字字符串，解析失败说明参数装配错了。
+func mustAtoi(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		panic(fmt.Sprintf("测试库端口不是数字: %q", s))
+	}
+	return n
 }
 
 // pgTestDB handles a per-test, isolated postgres schema.

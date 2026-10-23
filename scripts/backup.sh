@@ -28,10 +28,24 @@ cd "$ROOT_DIR"
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OUT="${BACKUP_DIR:-$ROOT_DIR/.backup}/$STAMP"
-DB_HOST="${DB_HOST:-${GOWP_DB_HOST:-127.0.0.1}}"
-DB_PORT="${DB_PORT:-${GOWP_DB_PORT:-5432}}"
-DB_USER="${DB_USER:-${GOWP_DB_USER:-postgres}}"
-DB_NAME="${DB_NAME:-${GOWP_DB_NAME:-wp}}"
+# yaml_db 从 config.yaml 的 database 段读一个键（与 check-page-get-authz.sh 同一套读法）。
+#
+# 为什么必须有它：运维脚本曾默认 user=postgres，而 config.yaml.example 是 user=root，
+# CI 的 postgres:16 容器用 POSTGRES_USER=root 建库、容器里**没有 postgres 这个 role**。
+# 于是脚本在 CI 上必然红（FATAL: role "postgres" does not exist）——
+# 这正是"第一次接进 CI 就红"的那类问题，说明它此前从没在 CI 上跑过。
+yaml_db() {
+  [ -f config.yaml ] || return 0
+  awk -v key="$1" '/^database:/{in_db=1;next} /^[a-zA-Z]/{in_db=0} in_db && $1==key":"{print $2;exit}' config.yaml
+}
+
+DB_HOST="${DB_HOST:-${GOWP_DB_HOST:-$(yaml_db host)}}"
+DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_PORT="${DB_PORT:-${GOWP_DB_PORT:-$(yaml_db port)}}"
+DB_PORT="${DB_PORT:-5432}"
+DB_USER="${DB_USER:-${GOWP_DB_USER:-$(yaml_db user)}}"
+DB_NAME="${DB_NAME:-${GOWP_DB_NAME:-$(yaml_db dbname)}}"
+DB_NAME="${DB_NAME:-wp}"
 ARTIFACT_ROOT="${ARTIFACT_ROOT:-${GO_WP_ARTIFACT_ROOT:-public/runtime}}"
 STORAGE_DIR="${STORAGE_DIR:-public/storage}"
 
