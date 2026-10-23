@@ -37,7 +37,7 @@ internal/module/page/inbound/http/page_schedule_handle.go gin=1 html=2
 internal/module/page/inbound/http/page_stale.go gin=3 html=0
 internal/module/page/inbound/http/page_translations_handle.go gin=2 html=4
 internal/module/page/inbound/http/pages_handle.go gin=3 html=2
-internal/module/project/inbound/http/project_page.go gin=8 html=11
+internal/module/project/inbound/http/project_page.go gin=0 html=5
 internal/module/publication/inbound/http/publication_router.go gin=1 html=0
 internal/module/publication/inbound/http/seo_audit_result.go gin=1 html=2
 internal/module/sysconfig/inbound/http/sysconfig_router.go gin=1 html=0
@@ -48,4 +48,4 @@ internal/module/workbench/inbound/http/inspector_handle.go gin=4 html=4
 internal/module/workbench/inbound/http/router.go gin=3 html=3
 internal/module/workbench/inbound/http/workbench_handle.go gin=1 html=0
 
---total gin=213 html=108
+--total gin=205 html=102

@@ -13,6 +13,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -68,7 +69,7 @@ func TestSaveSiteSettingsMarksStaleOnlyWhenChanged(t *testing.T) {
 		engine := gin.New()
 		// 写动作的结论由 shell.RenderJump 渲染整页提示（HTTP 200），需要真实模板渲染器。
 		engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-		engine.POST("/admin/settings/save", h.SaveSiteSettings)
+		engine.POST("/admin/settings/save", adminui.PageSlot(projecthttp.SiteSettingsPageTemplate), h.SaveSiteSettings)
 		req := httptest.NewRequest(http.MethodPost, "/admin/settings/save", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()

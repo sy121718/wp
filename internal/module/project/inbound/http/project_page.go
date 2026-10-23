@@ -61,6 +61,7 @@ import (
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 // requestScoreLang 评分使用的语言（后台 Cookie / Accept-Language，SEO-001）。
@@ -183,7 +184,7 @@ func workbenchSettingsPanel(c *gin.Context) {
 	// 片段也是页面出口：壳键走 adminui.Prepare（t / tf）—— 片段不经它时缺 t，
 	// 而 Jet 对缺 t 是**静默**的（取词调用求值成空串，页面结构完整、日志干净）。
 	c.HTML(http.StatusOK, "fragments/settings_panel",
-		adminui.Prepare(c, gin.H{"Settings": view}))
+		adminui.PrepareView(c, &projectdto.SettingsPanelView{Settings: view}))
 }
 
 // applyAccessPassword 把明文访问密码变成 settings.access 里的 bcrypt 哈希。
@@ -237,7 +238,7 @@ func applyAccessPassword(doc json.RawMessage, password string) (json.RawMessage,
 func workbenchSeoScorePanel(c *gin.Context) {
 	doc := json.RawMessage(c.PostForm("document"))
 	c.HTML(http.StatusOK, "fragments/seo_score",
-		adminui.Prepare(c, gin.H{"Score": scoreViewOf(doc, c.PostForm("url"), requestScoreLang(c), projectTr(c))}))
+		adminui.PrepareView(c, &projectdto.SeoScorePanelView{Score: scoreViewOf(doc, c.PostForm("url"), requestScoreLang(c), projectTr(c))}))
 }
 
 // settingsViewOf 解析草稿文档的 settings 片段。
@@ -427,37 +428,6 @@ type siteSettingsData struct {
 }
 
 // templateMap 转 Jet 模板键 map（layout 以小写 title/menu 取值）。
-func (d *siteSettingsData) templateMap() gin.H {
-	return gin.H{
-		"title":        d.Title,
-		"menu":         d.Menu,
-		"Projects":     d.Projects,
-		"Selected":     d.Selected,
-		"Name":         d.Name,
-		"SiteName":     d.SiteName,
-		"SiteDesc":     d.SiteDesc,
-		"ContactEmail": d.ContactEmail,
-
-		"GA4MeasurementID": d.GA4MeasurementID,
-
-		"SearchConsoleVerification": d.SearchConsoleVerification,
-		"HeadScripts":               d.HeadScripts,
-		"BodyScripts":               d.BodyScripts,
-		"HeadScriptsError":          d.HeadScriptsError,
-		"BodyScriptsError":          d.BodyScriptsError,
-		"NotFoundHTML":              d.NotFoundHTML,
-		"ShippingBaseFeeYuan":       d.ShippingBaseFeeYuan,
-		"ShippingFreeThresholdYuan": d.ShippingFreeThresholdYuan,
-		"URLPatterns":               d.URLPatterns,
-		"LangOptions":               d.LangOptions,
-		"Locales":                   d.Locales,
-		"LocaleError":               d.LocaleError,
-		"IndexNowKey":               d.IndexNowKey,
-		"LangURLOffWarning":         d.LangURLOffWarning,
-		"LangURLMode":               d.LangURLMode,
-		"Err":                       d.Err,
-	}
-}
 
 // siteSettingsAdminHandle 站点设置页处理器。
 type siteSettingsAdminHandle struct {
@@ -479,7 +449,7 @@ func NewSiteSettingsAdminHandle(projects projectcontract.ProjectService, pages p
 // SiteSettings 站点设置页（GET /admin/settings）。
 func (h *siteSettingsAdminHandle) SiteSettings(c *gin.Context) {
 	data := h.buildSiteSettingsData(c, strings.TrimSpace(c.Query("project")))
-	c.HTML(http.StatusOK, "admin/project/settings", adminui.Prepare(c, data.templateMap()))
+	pageview.Render(c, data)
 }
 
 // buildSiteSettingsData 组装站点设置页数据（工程列表 + 选中工程的基础信息与语言清单）。
@@ -673,7 +643,7 @@ func (h *siteSettingsAdminHandle) SaveSiteSettings(c *gin.Context) {
 		if rawBody != "" && !bodyOK {
 			data.BodyScriptsError = projectenums.SiteSettingsBodyScriptsInvalid
 		}
-		c.HTML(http.StatusOK, "admin/project/settings", adminui.Prepare(c, data.templateMap()))
+		pageview.Render(c, data)
 		return
 	}
 	// 站点运费规则（站点级基础运费 + 满额免运费门槛）：库内单位是**分**，表单是**元**，
@@ -1001,7 +971,7 @@ func (h *siteSettingsAdminHandle) LocaleRowsFragment(c *gin.Context) {
 			}
 		}
 	}
-	c.HTML(http.StatusOK, "admin/partials/locale_rows", adminui.Prepare(c, gin.H{"Locales": rows}))
+	displayFragment(c, "admin/partials/locale_rows", &projectdto.LocaleRowsView{Locales: rows})
 }
 
 // SaveSiteLocales POST /admin/settings/locales/save：全量保存站点语言清单。
@@ -1075,7 +1045,7 @@ func (h *siteSettingsAdminHandle) SaveSiteLocales(c *gin.Context) {
 		data := h.buildSiteSettingsData(c, projectID)
 		data.Locales = rows // 回显用户输入，便于就地修正
 		data.LocaleError = siteSettingsLocalesInval
-		c.HTML(http.StatusOK, "admin/project/settings", adminui.Prepare(c, data.templateMap()))
+		pageview.Render(c, data)
 		return
 	}
 	h.markPagesStaleForLocaleChange(c.Request.Context(), projectID, before, after)
@@ -1218,23 +1188,12 @@ type themeManageData struct {
 }
 
 // templateMap 转 Jet 模板键 map（layout 以小写 title/menu 取值）。
-func (d *themeManageData) templateMap() gin.H {
-	return gin.H{
-		"title":           d.Title,
-		"menu":            d.Menu,
-		"Projects":        d.Projects,
-		"SelectedProject": d.SelectedProjectID,
-		"Themes":          d.Themes,
-		"Err":             d.Err,
-		"NoProjectEmpty":  d.NoProjectEmpty,
-	}
-}
 
 // renderThemeManage 渲染主题页 —— 三处出口（正常 / 工程装载失败 / 主题装载失败）共用，
 // 保证 NoProjectEmpty 与 Err 的关系只有一处定义。
 func (h *themeAdminHandle) renderThemeManage(c *gin.Context, data *themeManageData) {
 	data.NoProjectEmpty = len(data.Projects) == 0 && data.Err.Empty()
-	c.HTML(http.StatusOK, "admin/project/theme", adminui.Prepare(c, data.templateMap()))
+	pageview.Render(c, data)
 }
 
 // ThemeManage 主题管理页：列出工程全部主题，支持新建/激活/删除。
@@ -1835,7 +1794,7 @@ func workbenchGlobalPanel(c *gin.Context) {
 	if themeID == "" {
 		// 片段（本面板与 settings_panel / seo_score 同路）的取词键 t / tf 由 Prepare 注入；
 		// 缺 t 时 Jet 是**静默**的（取词调用求值成空串，页面结构完整、日志干净）。
-		c.HTML(http.StatusOK, "fragments/global_panel", adminui.Prepare(c, gin.H{"ThemeID": ""}))
+		displayFragment(c, "fragments/global_panel", &projectdto.GlobalPanelView{ThemeID: ""})
 		return
 	}
 	var settings map[string]any
@@ -1845,7 +1804,7 @@ func workbenchGlobalPanel(c *gin.Context) {
 	// Groups 里只有**事实**（分组标题 / 字段 label / 选项 label 的 key + 中文兜底），
 	// 取词由模板在渲染期做 —— 本函数因此不再需要取词函数（原 tr := projectTr(c) 已删除）。
 	c.HTML(http.StatusOK, "fragments/global_panel",
-		adminui.Prepare(c, gin.H{"ThemeID": themeID, "Groups": buildThemeGroups(settings)}))
+		adminui.PrepareView(c, &projectdto.GlobalPanelView{ThemeID: themeID, Groups: buildThemeGroups(settings)}))
 }
 
 // 主题设置页文案（i18n key，与 dashboard enums 迁移前同值）。
@@ -1950,35 +1909,6 @@ type blockOption struct {
 }
 
 // templateMap 转 Jet 模板键 map。
-func (d *themeSettingsData) templateMap() gin.H {
-	return gin.H{
-		"title":                 d.Title,
-		"menu":                  d.Menu,
-		"ThemeID":               d.ThemeID,
-		"ThemeName":             d.ThemeName,
-		"ProjectID":             d.ProjectID,
-		"PColor":                d.PColor,
-		"TColor":                d.TColor,
-		"BgColor":               d.BgColor,
-		"SColor":                d.SColor,
-		"BdColor":               d.BdColor,
-		"FontFamily":            d.FontFamily,
-		"ThemeSettings":         d.ThemeSettingsJSON,
-		"Groups":                d.Groups,
-		"HeaderBlock":           d.HeaderBlockID,
-		"FooterBlock":           d.FooterBlockID,
-		"HeaderBlocks":          d.HeaderBlocks,
-		"FooterBlocks":          d.FooterBlocks,
-		"AnnouncementBlocks":    d.AnnouncementBlocks,
-		"AnnouncementBlock":     d.AnnouncementBlockID,
-		"HeaderTemplate":        d.HeaderTemplateID,
-		"FooterTemplate":        d.FooterTemplateID,
-		"SlotTemplates":         d.SlotTemplates,
-		"HeaderTemplateOptions": d.HeaderTemplateOptions,
-		"FooterTemplateOptions": d.FooterTemplateOptions,
-		"Err":                   d.Err,
-	}
-}
 
 // themeSettingsJSON 与主题设置结构约定对齐（020_themes.sql / 021_blocks.sql 方案 C）：
 // themes.settings 存储的 JSON = 完整 ThemeSettings（colors 11 色 + typography +
@@ -2021,7 +1951,7 @@ func (h *themeAdminHandle) ThemeSettings(c *gin.Context) {
 			themesBack(c), themesBackMsg)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/project/theme_settings", adminui.Prepare(c, data.templateMap()))
+	pageview.Render(c, data)
 }
 
 // loadThemeSettings 组装单主题设置页数据；主题不存在返回 nil。
@@ -2312,7 +2242,7 @@ func themeSettingsFailPage(c *gin.Context, data *themeSettingsData, msg projectM
 		themeSettingsMarkInvalid(data.Groups, name,
 			projectMsg{Key: projectenums.ThemeSettingsErrFieldInvalid, Fallback: themeSettingsFieldInvalidFallback})
 	}
-	c.HTML(http.StatusOK, "admin/project/theme_settings", adminui.Prepare(c, data.templateMap()))
+	pageview.Render(c, data)
 }
 
 // themeSettingsEchoForm 失败回填：把本次提交的表单值覆盖到页面数据上（「输入不丢」的全部实现）。
@@ -2520,4 +2450,13 @@ func themeSlotFormValues(c *gin.Context) map[string]string {
 		return nil
 	}
 	return out
+}
+
+// displayFragment 片段出口的统一写法（模板名 + 强类型视图）。
+//
+// 单独包一层是因为这类片段有 4 处，每处都写 c.HTML(…, adminui.PrepareView(…)) 会让
+// "这是片段出口"这件事在调用点看不出来 —— 而片段与整页的失败形态不同
+// （整页失败要给页壳），混在一起改的时候容易顺手改错。
+func displayFragment(c *gin.Context, template string, view any) {
+	c.HTML(http.StatusOK, template, adminui.PrepareView(c, view))
 }
