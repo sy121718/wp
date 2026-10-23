@@ -79,6 +79,11 @@ var defaultDTOExposureAllow = map[string]string{
 	//     不给他就没人能用这把令牌。
 	"TokenItem.TokenPrefix": "展示用前缀（令牌前 12 字符），仅用于辨认是哪一把；与落库哈希无关，不能据此反推明文",
 	"TokenCreateResp.Token": "刚生成的一次性明文令牌，只在创建应答出现一次（此后无任何读回明文的接口）；不交给创建者就无法使用",
+	// MCP 外部访问页（ai_page_resp.go）：从 gin.H 换成强类型视图后，这两个字段才第一次
+	// 进入 AST 扫描面 —— 同样是「刚生成的凭据交给创建者」，与 TokenCreateResp.Token 同一口径。
+	"McpPageResp.NewToken": "刚生成的一次性明文令牌，只在这一次页面渲染里出现（列表只给前缀，此后无任何读回明文的接口）",
+	// Tokens 是**列表**（每项只带前缀与元数据，不带明文）；命中敏感词的是字段名本身。
+	"McpPageResp.Tokens": "令牌列表（每项只有前缀、名称、范围、时间与状态，没有任何明文或哈希）；字段名命中词根 \"token\"，值是行列表不是凭据",
 	// 对话结果（ai_chat.go）：上游**上报**的用量。同样命中词根 "token"，同样不是凭据 ——
 	// 它们回答的是「这次调用按 token 计用了多少」，值是上游 usage 里的整数；
 	// UsageReported=false 时三列恒为 0（表示这家没上报），也没有任何字符串通道能承载凭据。
