@@ -427,8 +427,17 @@ func (s adminPaginationSite) withoutFilters() adminPaginationSite {
 // 返回空串表示这个站点还没迁：测试装置不替 handler 决定出口形态。
 // 每迁完一个页面就往这里加一行 —— 它同时是「这个模块迁到哪了」的清单。
 func adminPageTemplateFor(name string) string {
-	if name == "administrators" {
+	switch name {
+	case "administrators":
 		return AdministratorsPageTemplate
+	case "datarules":
+		return DatarulesPageTemplate
+	case "departments":
+		return DepartmentsPageTemplate
+	case "menus":
+		return MenusPageTemplate
+	case "roles":
+		return RolesPageTemplate
 	}
 	return ""
 }

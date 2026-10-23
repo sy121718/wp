@@ -33,8 +33,14 @@ import (
 // 权限点全部复用 050_admin_domains_permissions.sql 已有的 GET 权限点，不新增。
 // 六个契约由装配层以同一合并 Service 传入（admin 合并模块同包直调）。
 // 只用 GET/POST，无 RESTful 路径参数。
-// AdministratorsPageTemplate 管理员列表页的模板名。
-const AdministratorsPageTemplate = "admin/system/administrators"
+// 后台列表页的模板名。
+const (
+	AdministratorsPageTemplate = "admin/system/administrators"
+	DepartmentsPageTemplate    = "admin/system/departments"
+	DatarulesPageTemplate      = "admin/system/datarules"
+	MenusPageTemplate          = "admin/system/menus"
+	RolesPageTemplate          = "admin/system/roles"
+)
 
 func SetupAdminPages(adminPages *gin.RouterGroup,
 	admins admincontract.AdminService, roles admincontract.RoleService,
@@ -67,7 +73,10 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.GET("/administrators/menus/drawer", builtin.CasbinMiddlewareForPath("/api/admin/menu/list"), handle.AdministratorMenusDrawer)
 	adminPages.POST("/administrators/menus/save", builtin.CasbinMiddlewareForPath("/api/admin/menu/save"), handle.AdministratorMenusSave)
 
-	adminPages.GET("/roles", adminui.PageAuthz("/api/role/list"), handle.RolesPage)
+	adminPages.GET("/roles",
+		adminui.PageAuthz("/api/role/list"),
+		adminui.PageSlot(RolesPageTemplate),
+		handle.RolesPage)
 	adminPages.POST("/roles/create", builtin.CasbinMiddlewareForPath("/api/role/create"), handle.RolesCreate)
 	adminPages.POST("/roles/update", builtin.CasbinMiddlewareForPath("/api/role/update"), handle.RolesUpdate)
 	adminPages.POST("/roles/delete", builtin.CasbinMiddlewareForPath("/api/role/delete"), handle.RolesDelete)
@@ -80,7 +89,10 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.GET("/roles/permissions/drawer", builtin.CasbinMiddlewareForPath("/api/role/menu/list"), handle.RolePermissionsDrawer)
 	adminPages.POST("/roles/permissions/save", builtin.CasbinMiddlewareForPath("/api/role/menu/save"), handle.RolePermissionsSave)
 
-	adminPages.GET("/menus", adminui.PageAuthz("/api/menu/tree"), handle.MenusPage)
+	adminPages.GET("/menus",
+		adminui.PageAuthz("/api/menu/tree"),
+		adminui.PageSlot(MenusPageTemplate),
+		handle.MenusPage)
 	adminPages.GET("/menus/edit", builtin.CasbinMiddlewareForPathAs("/api/menu/update", "POST"), handle.MenusEditFragment)
 	adminPages.POST("/menus/create", builtin.CasbinMiddlewareForPath("/api/menu/create"), handle.MenusCreate)
 	adminPages.POST("/menus/update", builtin.CasbinMiddlewareForPath("/api/menu/update"), handle.MenusUpdate)
@@ -94,13 +106,19 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	adminPages.POST("/permissions/delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsDelete)
 	adminPages.POST("/permissions/bulk-delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsBulkDelete)
 
-	adminPages.GET("/departments", adminui.PageAuthz("/api/dept/tree"), handle.DepartmentsPage)
+	adminPages.GET("/departments",
+		adminui.PageAuthz("/api/dept/tree"),
+		adminui.PageSlot(DepartmentsPageTemplate),
+		handle.DepartmentsPage)
 	adminPages.POST("/departments/create", builtin.CasbinMiddlewareForPath("/api/dept/create"), handle.DepartmentsCreate)
 	adminPages.POST("/departments/update", builtin.CasbinMiddlewareForPath("/api/dept/update"), handle.DepartmentsUpdate)
 	adminPages.POST("/departments/delete", builtin.CasbinMiddlewareForPath("/api/dept/delete"), handle.DepartmentsDelete)
 	adminPages.POST("/departments/bulk-delete", builtin.CasbinMiddlewareForPath("/api/dept/delete"), handle.DepartmentsBulkDelete)
 
-	adminPages.GET("/datarules", adminui.PageAuthz("/api/datarule/list"), handle.DatarulesPage)
+	adminPages.GET("/datarules",
+		adminui.PageAuthz("/api/datarule/list"),
+		adminui.PageSlot(DatarulesPageTemplate),
+		handle.DatarulesPage)
 	adminPages.GET("/datarules/edit", adminui.PageAuthz("/api/datarule/detail"), handle.DatarulesEditPage)
 	adminPages.POST("/datarules/create", builtin.CasbinMiddlewareForPath("/api/datarule/create"), handle.DatarulesCreate)
 	adminPages.POST("/datarules/update", builtin.CasbinMiddlewareForPath("/api/datarule/update"), handle.DatarulesUpdate)

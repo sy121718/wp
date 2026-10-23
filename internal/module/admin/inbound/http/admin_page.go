@@ -590,20 +590,22 @@ func (h *AdminPagesHandle) DatarulesPage(c *gin.Context) {
 	if domains == nil {
 		domains = []admindto.RuleDomainItem{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title":        pagesMsgDatarulesTitle,
-		"menu":         "datarules",
-		"Rows":         res.List,
-		"Total":        res.Total,
-		"Domains":      domains,
-		"FilterDomain": domain,
-		"Err":          adminListLoadErr(c, err),
-		"ListQuery":    adminDatarulesPage.listQuery(c),
-	})
-	adminui.AttachPagination(data, "/admin/datarules",
+	view := &admindto.RuleListPageResp{
+		Title:        pagesMsgDatarulesTitle,
+		Menu:         "datarules",
+		Rows:         res.List,
+		Total:        res.Total,
+		Domains:      domains,
+		FilterDomain: domain,
+		Err:          adminListLoadErr(c, err),
+		ListQuery:    adminDatarulesPage.listQuery(c),
+	}
+	if !adminui.AttachPaginationView(view, "/admin/datarules",
 		map[string]string{"domain": domain},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/datarules", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("数据规则视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // DatarulesCreate 新建数据规则（POST /admin/datarules/create）。
@@ -819,17 +821,22 @@ func (h *AdminPagesHandle) DepartmentsPage(c *gin.Context) {
 	if err != nil {
 		res = &admindto.DeptPageResp{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title": pagesMsgDepartmentsTitle, "menu": "depts",
-		"Rows": res.Rows, "Parents": res.Parents, "Total": res.Total,
-		"FilterKeyword": keyword,
-		"Err":           adminListLoadErr(c, err),
-		"ListQuery":     adminDeptsPage.listQuery(c),
-	})
-	adminui.AttachPagination(data, "/admin/departments",
+	view := &admindto.DepartmentListPageResp{
+		Title:         pagesMsgDepartmentsTitle,
+		Menu:          "depts",
+		Rows:          res.Rows,
+		Parents:       res.Parents,
+		Total:         res.Total,
+		FilterKeyword: keyword,
+		Err:           adminListLoadErr(c, err),
+		ListQuery:     adminDeptsPage.listQuery(c),
+	}
+	if !adminui.AttachPaginationView(view, "/admin/departments",
 		map[string]string{"keyword": keyword},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/departments", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("部门视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // DepartmentsCreate 新建部门（POST /admin/departments/create）。
@@ -1295,21 +1302,26 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 	if err != nil {
 		res = &admindto.MenuPageResp{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title": pagesMsgMenusTitle, "menu": "menus",
-		"Rows": res.Rows, "Parents": res.Parents, "Total": res.Total,
-		"FilterKeyword": keyword,
-		"Err":           adminListLoadErr(c, err),
-		"ListQuery":     adminMenusPage.listQuery(c),
+	view := &admindto.MenuListPageResp{
+		Title:         pagesMsgMenusTitle,
+		Menu:          "menus",
+		Rows:          res.Rows,
+		Parents:       res.Parents,
+		Total:         res.Total,
+		FilterKeyword: keyword,
+		Err:           adminListLoadErr(c, err),
+		ListQuery:     adminMenusPage.listQuery(c),
 		// SearchMode 让模板切到搜索态（给命中行标「匹配」、给祖先标「上级路径」）。
-		"SearchMode": keyword != "",
+		SearchMode: keyword != "",
 		// 新建抽屉内嵌在本页，它的权限点候选也在这里给（新建时没有任何已绑码）。
-		"PermChoices": h.buildPermChoices(c, nil),
-	})
-	adminui.AttachPagination(data, "/admin/menus",
+		PermChoices: h.buildPermChoices(c, nil),
+	}
+	if !adminui.AttachPaginationView(view, "/admin/menus",
 		map[string]string{"keyword": keyword},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/menus", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("菜单视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // MenusEditFragment returns one existing menu's edit form.
@@ -1776,19 +1788,21 @@ func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
 	if err != nil {
 		res = &admindto.RoleListResp{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title":         pagesMsgRolesTitle,
-		"menu":          "roles",
-		"Rows":          res.List,
-		"Total":         res.Total,
-		"FilterKeyword": keyword,
-		"Err":           adminListLoadErr(c, err),
-		"ListQuery":     adminRolesPage.listQuery(c),
-	})
-	adminui.AttachPagination(data, "/admin/roles",
+	view := &admindto.RoleListPageResp{
+		Title:         pagesMsgRolesTitle,
+		Menu:          "roles",
+		Rows:          res.List,
+		Total:         res.Total,
+		FilterKeyword: keyword,
+		Err:           adminListLoadErr(c, err),
+		ListQuery:     adminRolesPage.listQuery(c),
+	}
+	if !adminui.AttachPaginationView(view, "/admin/roles",
 		map[string]string{"keyword": keyword},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/roles", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("角色视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // --- 角色权限分配（角色分权）---

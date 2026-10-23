@@ -14,6 +14,7 @@ package adminhttp_test
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -53,7 +54,7 @@ func serveMenusPage(t *testing.T, handle *adminhttp.AdminPagesHandle, target str
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	engine.GET("/admin/menus", handle.MenusPage)
+	engine.GET("/admin/menus", adminui.PageSlot(adminhttp.MenusPageTemplate), handle.MenusPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))

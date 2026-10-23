@@ -29,3 +29,65 @@ type AdminListPageResp struct {
 
 	Pagination pagination.Page
 }
+
+// RuleListPageResp 数据规则列表页（/admin/datarules）。
+type RuleListPageResp struct {
+	Title        string `view:"title"`
+	Menu         string `view:"menu"`
+	Rows         any
+	Total        int64
+	Domains      any
+	FilterDomain string
+	Err          string
+	ListQuery    string
+
+	Pagination pagination.Page
+}
+
+// DepartmentListPageResp 部门列表页（/admin/departments）。
+type DepartmentListPageResp struct {
+	Title         string `view:"title"`
+	Menu          string `view:"menu"`
+	Rows          any
+	Parents       any
+	Total         int64
+	FilterKeyword string
+	Err           string
+	ListQuery     string
+
+	Pagination pagination.Page
+}
+
+// MenuListPageResp 菜单列表页（/admin/menus）。
+//
+// 列表是**树状分页**：Rows 已按 DFS 前序摊平（顶级行 + 其子树），层级用 Depth 表达、
+// 初始可见性用 Hidden/Expanded 表达 —— 摊平与可见性都归 service，模板只渲染。
+type MenuListPageResp struct {
+	Title         string `view:"title"`
+	Menu          string `view:"menu"`
+	Rows          any
+	Parents       any
+	Total         int64
+	FilterKeyword string
+	Err           string
+	ListQuery     string
+	// SearchMode 让模板切到搜索态（给命中行标「匹配」、给祖先标「上级路径」）。
+	SearchMode bool
+	// PermChoices 新建抽屉的权限点候选（新建时没有任何已绑码）。
+	PermChoices any
+
+	Pagination pagination.Page
+}
+
+// RoleListPageResp 角色列表页（/admin/roles）。
+type RoleListPageResp struct {
+	Title         string `view:"title"`
+	Menu          string `view:"menu"`
+	Rows          any
+	Total         int64
+	FilterKeyword string
+	Err           string
+	ListQuery     string
+
+	Pagination pagination.Page
+}
