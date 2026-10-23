@@ -53,7 +53,7 @@ func TestA11yPageFixture(t *testing.T) {
 	// tabs：radio 在 tablist 内、可聚焦（不是 display:none），panel 与 tab 互指。
 	for _, want := range []string{
 		// tabs：radio 是原生单选组（键盘方向键原生可用），aria-controls 指向对应面板。
-		`class="sky-tabs-radio" id="sky-tabs-tabs1-0" name="sky-tabs-tabs1" checked`,
+		`class="sky-tabs-radio sky-sr-only" id="sky-tabs-tabs1-0" name="sky-tabs-tabs1" checked`,
 		`aria-controls="sky-tabs-panel-tabs1-0"`,
 		`id="sky-tabs-panel-tabs1-0"`,
 		`for="sky-tabs-tabs1-0"`,

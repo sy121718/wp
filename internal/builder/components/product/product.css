@@ -260,17 +260,8 @@
 }
 
 /* radio 视觉隐藏但保留可聚焦 (display:none 会把整组从键盘序列里移除). */
-& .sky-product-option-radio {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  border: 0;
-  clip-path: inset(50%);
-  overflow: hidden;
-  white-space: nowrap;
-}
+/* & .sky-product-option-radio 的视觉隐藏声明已上收到基座工具类 .sky-sr-only（模板已加该 class）。 */
+
 
 & .sky-product-option-value {
   display: inline-flex;

@@ -67,7 +67,7 @@ func TestNavJetSubmenuToggleBindsToParent(t *testing.T) {
 		}
 	}
 	// 控件必须是 checkbox：radio 点不掉，展开后就再也收不回去。
-	if !strings.Contains(html, `<input type="checkbox" class="sky-nav-sub-toggle"`) {
+	if !strings.Contains(html, `<input type="checkbox" class="sky-nav-sub-toggle`) {
 		t.Errorf("触屏开关应是 checkbox（radio 无法取消选中）\nHTML=%s", html)
 	}
 }
@@ -83,9 +83,11 @@ func TestNavJetSubmenuToggleOrder(t *testing.T) {
 	html := renderNavHTML(t, v)
 
 	link := strings.Index(html, `>关于</a>`)
-	toggle := strings.Index(html, `class="sky-nav-sub-toggle"`)
-	cover := strings.Index(html, `class="sky-nav-sub-cover"`)
-	chevron := strings.Index(html, `class="sky-nav-sub-chevron"`)
+	toggle := strings.Index(html, `class="sky-nav-sub-toggle`)
+	cover := strings.Index(html, `class="sky-nav-sub-cover`)
+	chevron := strings.Index(html, `class="sky-nav-sub-chevron`)
+	// 子菜单本体：必须匹配到**完整类名**（`sky-nav-sub-toggle` 等前缀相同，
+	// 用不带引号的前缀会先命中开关，顺序断言随之失真）。
 	sub := strings.Index(html, `class="sky-nav-sub"`)
 
 	if link < 0 || toggle < 0 || cover < 0 || chevron < 0 || sub < 0 {
@@ -108,13 +110,13 @@ func TestNavJetSubmenuToggleOnlyOnParents(t *testing.T) {
 	}})
 	html := renderNavHTML(t, v)
 
-	if n := strings.Count(html, `type="checkbox" class="sky-nav-sub-toggle"`); n != 1 {
+	if n := strings.Count(html, `type="checkbox" class="sky-nav-sub-toggle`); n != 1 {
 		t.Errorf("只有带子项的那一项该有开关，实际 %d 个\nHTML=%s", n, html)
 	}
-	if n := strings.Count(html, `class="sky-nav-sub-cover"`); n != 1 {
+	if n := strings.Count(html, `class="sky-nav-sub-cover`); n != 1 {
 		t.Errorf("覆盖层应只出现在带子项的项上，实际 %d 个", n)
 	}
-	if n := strings.Count(html, `class="sky-nav-sub-chevron"`); n != 1 {
+	if n := strings.Count(html, `class="sky-nav-sub-chevron`); n != 1 {
 		t.Errorf("箭头应只出现在带子项的项上，实际 %d 个", n)
 	}
 }
@@ -150,7 +152,7 @@ func TestNavJetMobileCollapseUntouched(t *testing.T) {
 	html := renderNavHTML(t, v)
 
 	for _, want := range []string{
-		`class="sky-nav-toggle" id="sky-nav-toggle-n1"`,
+		`class="sky-nav-toggle sky-sr-only" id="sky-nav-toggle-n1"`,
 		`class="sky-nav-burger" for="sky-nav-toggle-n1"`,
 	} {
 		if !strings.Contains(html, want) {

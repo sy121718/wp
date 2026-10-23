@@ -10,12 +10,7 @@ body {
   container-name: sky-theme;
 }
 
-.sky-c-tb1 {
-  display: flex;
-  flex-direction: column;
-}
-
-.sky-c-tb1 .sky-tabs-radio {
+.sky-sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -25,6 +20,11 @@ body {
   clip-path: inset(50%);
   overflow: hidden;
   white-space: nowrap;
+}
+
+.sky-c-tb1 {
+  display: flex;
+  flex-direction: column;
 }
 
 .sky-c-tb1 .sky-tabs-radio:focus-visible + .sky-tabs-tab {
@@ -98,18 +98,6 @@ body {
 .sky-c-tb2 {
   display: flex;
   flex-direction: column;
-}
-
-.sky-c-tb2 .sky-tabs-radio {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  border: 0;
-  clip-path: inset(50%);
-  overflow: hidden;
-  white-space: nowrap;
 }
 
 .sky-c-tb2 .sky-tabs-radio:focus-visible + .sky-tabs-tab {

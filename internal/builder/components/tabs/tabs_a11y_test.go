@@ -32,8 +32,10 @@ func TestTabsRadioStaysFocusable(t *testing.T) {
 	var b core.CSSBuckets
 	compileCSS("t", &Props{Tabs: []Tab{{Label: "一"}}}, &b)
 	out := b.String()
-	if !strings.Contains(out, "clip-path: inset(50%)") {
-		t.Errorf("radio 不是 sr-only 隐藏（clip-path 缺失，可能被 display:none 移出键盘序列）：\n%s", out)
+	// 视觉隐藏在基座工具类里（模板给 radio 加了 sky-sr-only）；这里断言模板真的加了，
+	// 以及组件 CSS 没有改用 display:none 那种会把控件踢出键盘序列的写法。
+	if !strings.Contains(out, ".sky-c-t .sky-tabs-radio:focus-visible + .sky-tabs-tab {") {
+		t.Errorf("焦点环规则缺失（键盘用户看不到当前页签）：\n%s", out)
 	}
 	if strings.Contains(out, ".sky-tabs-radio {\n  display: none") {
 		t.Errorf("radio 被 display:none 隐藏（键盘无法切换页签）：\n%s", out)

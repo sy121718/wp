@@ -79,9 +79,9 @@ func TestNavCSSMobileCollapse(t *testing.T) {
 		t.Errorf("未开折叠时不该产出开关规则:\n%s", plain)
 	}
 	full := navCSSFor(&Props{MobileCollapse: true})
+	// 视觉隐藏在基座工具类 .sky-sr-only 里（模板给开关加了该 class），
+	// 组件 CSS 只负责**布局与焦点环** —— 所以这里不再断言 clip-path。
 	for _, want := range []string{
-		".sky-c-t .sky-nav-toggle {",
-		"clip-path: inset(50%);",
 		".sky-c-t .sky-nav-toggle:focus-visible + .sky-nav-burger {",
 		"@media (max-width: 767px) {",
 		".sky-c-t .sky-nav-toggle:checked ~ .sky-nav-list {\n  display: flex;",

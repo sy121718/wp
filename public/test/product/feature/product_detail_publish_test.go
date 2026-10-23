@@ -375,7 +375,7 @@ func TestProductDetailRendersSpecSelectorForMultiVariant(t *testing.T) {
 	// 只按类名断言会在「选择器根本没渲染」时误判通过。
 	for _, want := range []string{
 		`<div class="sky-product-options">`,                    // 规格选择器容器
-		`<input type="radio" class="sky-product-option-radio"`, // 可选值（键盘 / 触屏 / 鼠标都可用）
+		`<input type="radio" class="sky-product-option-radio sky-sr-only"`, // 可选值（键盘 / 触屏 / 鼠标都可用）
 		`<label class="sky-product-option-value"`,
 		`<div class="sky-product-variant">`, // 规格组合行
 		"颜色", "红色", "蓝色",                    // 维度名与值显示名

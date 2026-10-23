@@ -5,6 +5,18 @@ body {
   container-name: sky-theme;
 }
 
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .sky-c-t2 p, .sky-c-t2 ul, .sky-c-t2 ol, .sky-c-t2 blockquote {
   margin-top: 1em;
   margin-bottom: 1em;

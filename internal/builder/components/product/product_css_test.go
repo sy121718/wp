@@ -7,6 +7,7 @@ package product
 // 不会让构建失败。所以这里把「容易被无声破坏的不变量」逐条钉住。
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -91,13 +92,21 @@ func TestProductCSSKeepsStaticRules(t *testing.T) {
 //
 // display:none 会把整组控件从 Tab 序列里摘掉 -- 键盘用户从此选不了规格, 而页面上看不出任何异常。
 func TestProductCSSRadioStaysKeyboardReachable(t *testing.T) {
-	out := productCSSFor(&Props{OptionsField: "product.options"})
-	radio := cssRuleText(t, out, ".sky-c-t .sky-product-option-radio {")
-	if !strings.Contains(radio, "clip-path: inset(50%)") {
-		t.Errorf("radio 未做视觉隐藏 (clip-path):\n%s", radio)
+	// 视觉隐藏已上收到基座工具类 .sky-sr-only（模板给 radio 加了该 class），
+	// 组件 CSS 不再自带那段声明。所以判据变成两件事：
+	//   1. 模板里 radio 带着 sky-sr-only（否则它可见，规格选择器会露出原生单选钮）；
+	//   2. 组件 CSS 自己不许写 display:none 隐藏它。
+	jet, err := os.ReadFile("../product/product.jet")
+	if err != nil {
+		t.Fatalf("读模板失败: %v", err)
 	}
-	if strings.Contains(radio, "display: none") || strings.Contains(radio, "display:none") {
-		t.Errorf("radio 用 display:none 隐藏会让整组离开键盘序列:\n%s", radio)
+	if !strings.Contains(string(jet), "sky-product-option-radio sky-sr-only") {
+		t.Errorf("radio 模板缺少 sky-sr-only —— 要么它会显示成原生单选钮，要么被别的写法移出键盘序列")
+	}
+	out := productCSSFor(&Props{OptionsField: "product.options"})
+	// 视觉隐藏整块已上收，组件里不该再出现这块规则；也不许出现 display:none 的替身写法。
+	if strings.Contains(out, ".sky-c-t .sky-product-option-radio {\n  display: none") {
+		t.Errorf("radio 用 display:none 隐藏会让整组离开键盘序列:\n%s", out)
 	}
 	focus := cssRuleText(t, out, ".sky-c-t .sky-product-option-radio:focus-visible + .sky-product-option-value {")
 	if !strings.Contains(focus, "outline: 2px solid var(--sky-c-primary, #2563eb)") || !strings.Contains(focus, "outline-offset: 2px") {
