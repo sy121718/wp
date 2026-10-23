@@ -431,20 +431,19 @@ func (h *McpPageHandle) pageData(c *gin.Context, newToken, errText, doneText str
 	// 开关只读一次：页面要如实显示它（这里是运维判断「外面能不能进来」的唯一地方），
 	// 徽标分档与文案必须同源 —— 读两次若中间被改，会出现「文字说已开启、颜色说已关闭」。
 	enabled := h.mcpEnabled(ctx)
-	return adminui.Prepare(c, gin.H{
-		// title（小写）是 layout 壳读的键（与同后台其它页面一致）；页面正文自己再取一次做 h1。
-		"title":        title,
-		"Title":        title,
-		"Lead":         aiMsgText(c, aienums.McpLead, ""),
-		"Endpoint":     mcpEndpointURL(c),
-		"Tokens":       tokenRows(tokens),
-		"Tools":        h.tools(),
-		"ScopeOptions": h.scopeOptions(),
-		"NewToken":     newToken,
-		"ErrText":      errText,
-		"DoneText":     doneText,
-		"McpEnabled":   enabled,
-		"McpTone":      mcpSwitchTone(enabled),
+	return adminui.PrepareView(c, &aidto.McpPageResp{
+		// Title 是壳与正文共用的那一次取词结果；页面正文自己再读同一个字段做 h1。
+		Title:        title,
+		Lead:         aiMsgText(c, aienums.McpLead, ""),
+		Endpoint:     mcpEndpointURL(c),
+		Tokens:       toAnyRows(tokenRows(tokens)),
+		Tools:        toAnyRows(h.tools()),
+		ScopeOptions: toAnyRows(h.scopeOptions()),
+		NewToken:     newToken,
+		ErrText:      errText,
+		DoneText:     doneText,
+		McpEnabled:   enabled,
+		McpTone:      mcpSwitchTone(enabled),
 	})
 }
 
@@ -841,17 +840,17 @@ func (h *PageHandle) ModelsCandidates(c *gin.Context) {
 		h.pageNotice(c, "err", aienums.ErrProviderNotFound, nil)
 		return
 	}
-	picker := gin.H{
-		"Provider":   result.Provider,
-		"Candidates": result.Candidates,
-		"Existing":   idSet(result.Existing),
+	picker := &aidto.PickerResp{
+		Provider:   result.Provider,
+		Candidates: result.Candidates,
+		Existing:   idSet(result.Existing),
 	}
 	// 两个页面合成一个（532 的菜单合并）之后，弹窗不再靠「重渲染整页 + data-modal-auto-open」，
 	// 而是作为片段插进模型标签底部的 #ai-picker-host —— 整页重渲染会把用户在同一页其它卡片里
 	// 刚填的密钥冲掉。非 htmx 请求（没有 JS）退回整页入口，至少不丢功能。
-	page := adminui.Prepare(c, gin.H{
-		"title":  aiMsgText(c, aienums.AdminLLMTitle, "大模型管理"),
-		"Picker": picker,
+	page := adminui.PrepareView(c, &aidto.PickerPageResp{
+		Title:  aiMsgText(c, aienums.AdminLLMTitle, "大模型管理"),
+		Picker: picker,
 	})
 	if hxFragment(c, pickerTemplate, page) {
 		return
@@ -1863,6 +1862,16 @@ func fabTextOrBlank(msg adminui.Msg) string {
 // toAnyViews 把 uispec 视图投影成 []any（dto 不 import internal/uispec：
 // "这一屏要视图的哪几个字段"由模板决定，视图只做容器）。
 func toAnyViews(in []uispec.View) []any {
+	out := make([]any, 0, len(in))
+	for i := range in {
+		out = append(out, in[i])
+	}
+	return out
+}
+
+// toAnyRows 把切片投影成 []any（视图不 import 各来源类型：
+// "这一屏要哪几个字段"由模板决定）。
+func toAnyRows[T any](in []T) []any {
 	out := make([]any, 0, len(in))
 	for i := range in {
 		out = append(out, in[i])
