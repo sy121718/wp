@@ -15,8 +15,8 @@ package masterdatahttp
 // 数量增减在库存流水页 —— 两张表回答的是不同的问题。
 
 import (
+	"errors"
 	"go_wp/internal/middleware/builtin"
-	"net/http"
 	"strings"
 	"time"
 
@@ -32,6 +32,7 @@ import (
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 // masterDataEntityPageSize 实体清单一次展示的条数（后台核对用；完整清单走接口分页）。
@@ -132,10 +133,10 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	//（grep 过：全仓没有 redirect 到 /admin/masterdata/changes?...err=）。
 	// 此前从 query 里读 err 并原样渲染，是一条纯伪造面 —— 手拼一个 URL 就能往
 	// 「部分数据未取到：」后面塞任意文案。页面提示只由取数失败产生（见 masterDataErrText）。
-	rows := []gin.H{}
+	rows := []masterdatadto.ChangeRowResp{}
 	var total int64
-	var current *gin.H
-	entityRows := []gin.H{}
+	var current *masterdatadto.EntityTimelineHeadResp
+	entityRows := []masterdatadto.EntityRowResp{}
 	var entityTotal int64
 
 	// 装载失败时**一次取数都不做**：下面每一项都要工程作用域（selected 此时为空），
@@ -160,11 +161,13 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 				pageErr = firstNonEmpty(pageErr, masterDataErrText(c, terr))
 			} else {
 				total = timeline.Total
-				current = &gin.H{
-					"EntityType": timeline.EntityType,
-					"EntityTypeLabel": masterDataLabel(i18n.TranslateFunc(response.RequestLanguage(c)),
+				current = &masterdatadto.EntityTimelineHeadResp{
+					EntityType: timeline.EntityType,
+					EntityTypeLabel: masterDataLabel(i18n.TranslateFunc(response.RequestLanguage(c)),
 						masterdataenums.EntityTypeLabel(timeline.EntityType)),
-					"EntityID": timeline.EntityID, "EntityLabel": timeline.EntityLabel, "Total": timeline.Total,
+					EntityID:    timeline.EntityID,
+					EntityLabel: timeline.EntityLabel,
+					Total:       timeline.Total,
 				}
 				for _, row := range timeline.Changes {
 					rows = append(rows, changeRow(i18n.TranslateFunc(response.RequestLanguage(c)), row))
@@ -216,46 +219,62 @@ func (h *masterDataChangePageHandle) MasterDataChangesPage(c *gin.Context) {
 	// 分页与视图切换链接都基于同一份筛选条件（切视图不丢筛选）。
 	base := reqparams.FilterBaseURL("/admin/masterdata/changes", filter.values(selected))
 
-	data := adminui.Prepare(c, gin.H{
-		"title":           masterDataLabel(i18n.TranslateFunc(response.RequestLanguage(c)), masterdataenums.PageTitleChanges),
-		"menu":            "masterdata-changes",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"EntityTypes":     masterDataEntityTypeOptions(i18n.TranslateFunc(response.RequestLanguage(c))),
-		"Actions":         masterDataActionOptions(i18n.TranslateFunc(response.RequestLanguage(c))),
+	// tr 绑定一次：此前每个键都写一遍 i18n.TranslateFunc(response.RequestLanguage(c))，
+	// 同一个请求语言被求值 5 次，且读的时候要在长 map 里找它到底翻译了什么。
+	tr := i18n.TranslateFunc(response.RequestLanguage(c))
+	view := &masterdatadto.MasterDataChangesPageResp{
+		Title:           masterDataLabel(tr, masterdataenums.PageTitleChanges),
+		Menu:            "masterdata-changes",
+		Projects:        projects,
+		SelectedProject: selected,
+		EntityTypes:     masterDataEntityTypeOptions(tr),
+		Actions:         masterDataActionOptions(tr),
 		// 筛选条件逐项传给模板（Jet 对「map 再索引」的链式访问不确定，与货源页同一手法）。
-		"FilterEntityType": filter.EntityType,
-		"FilterEntityID":   filter.EntityID,
-		"FilterField":      filter.Field,
-		"FilterAction":     filter.Action,
-		"FilterKeyword":    filter.Keyword,
-		"FilterOperatorID": filter.OperatorID,
-		"FilterSince":      filter.Since,
-		"FilterUntil":      filter.Until,
-		"FilterSpecific":   filter.specific(),
-		"Current":          current,
-		"Rows":             rows,
-		"Total":            total,
-		"Entities":         entityRows,
-		"EntityTotal":      entityTotal,
-		"EntityShown":      len(entityRows),
-		"EntityPageSize":   masterDataEntityPageSize,
+		FilterEntityType: filter.EntityType,
+		FilterEntityID:   filter.EntityID,
+		FilterField:      filter.Field,
+		FilterAction:     filter.Action,
+		FilterKeyword:    filter.Keyword,
+		FilterOperatorID: filter.OperatorID,
+		FilterSince:      filter.Since,
+		FilterUntil:      filter.Until,
+		FilterSpecific:   filter.specific(),
+		ViewMode:         viewMode,
+		RecordsViewURL:   base,
+		EntitiesViewURL:  base + "&view=" + masterDataViewEntities,
+		Current:          current,
+		Rows:             rows,
+		Total:            total,
+		Entities:         entityRows,
+		EntityTotal:      entityTotal,
+		EntityShown:      len(entityRows),
+		EntityPageSize:   masterDataEntityPageSize,
 		// 实体清单被截断时给一句提示（比较运算留在 handler，模板只做判断）。
-		"EntityTruncated": entityTotal > int64(len(entityRows)),
-		"Err":             pageErr,
+		EntityTruncated: entityTotal > int64(len(entityRows)),
+		Err:             pageErr,
 		// LoadFailed：本次请求的工程列表没读到（不是「没有数据」）。
 		// 模板据此把两个面板的空态换成「没读出来」—— 空态标题若是「没有记录」，
 		// 用户会以为历史真的没了，而实际上只是这一次没读出来。
-		"LoadFailed":      loadFailed,
-		"ViewMode":        viewMode,
-		"RecordsViewURL":  base,
-		"EntitiesViewURL": base + "&view=" + masterDataViewEntities,
-	})
+		LoadFailed: loadFailed,
+	}
 	// 分页只给事实（总数 / 页码 / 每页条数 / 基址）：页数、区间句、页码窗口与链接由
 	// admin/partials/pagination.html 算。单页与空集时模板自然不渲染分页条。
-	adminui.AttachPagination(data, "", nil,
-		pagination.Page{Total: total, Page: page, Limit: limit, Base: base})
-	c.HTML(http.StatusOK, "admin/masterdata/masterdata_changes.html", data)
+	//
+	// AttachPagination 往「现成数据对象」上挂一组小写壳键（total/page/limit/base…），
+	// 与 gin.H 时代完全一样 —— 换 DTO 不改变这条分工（AGENTS.md：一屏 = 若干现成数据对象）。
+	// AttachPaginationView 而不是 AttachPagination：后者只接 gin.H。
+	// 返回值断言在这里"有意忽略"—— 视图里已显式声明 Pagination 字段，
+	// 挂不上只可能是类型改错，而那是编译期就该发现的（对账测试会守）。
+	if !adminui.AttachPaginationView(view, "", nil,
+		pagination.Page{Total: total, Page: page, Limit: limit, Base: base}) {
+		// 挂不上 = 视图缺 Pagination 字段（编程错误）。不该让整页 500 ——
+		// 少一条分页条比丢掉整张表更轻，但要留痕。
+		logger.Scene("masterdata").Error(errors.New("变更记录视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	// 页面出口统一走 pageview.Render：模板名与渲染实现由路由的 PageSlot 带进上下文，
+	// 控制器不持模板名、不 import 渲染层（与商品模块同一形态）。
+	pageview.Render(c, view)
+	return
 }
 
 // masterDataErrScene 结构化日志的场景名（与模块其它 logger.Scene 调用点一致）。
@@ -319,45 +338,48 @@ func masterDataLabel(tr masterDataTr, pair masterdataenums.LabelPair) string {
 // 三个展示名**用行上的原始值重新取词**，不复用 dto 里的 *Label：那些是 service 填的中文兜底
 // （JSON API 契约），页面要的是当前语言。原始值都在行上（EntityType / Action / Field），
 // 所以这里能自己算，不需要 service 多传一份 key。
-func changeRow(tr masterDataTr, row *masterdatadto.ChangeResp) gin.H {
+func changeRow(tr masterDataTr, row *masterdatadto.ChangeResp) masterdatadto.ChangeRowResp {
 	if row == nil {
-		return gin.H{}
+		return masterdatadto.ChangeRowResp{}
 	}
-	return gin.H{
-		"Time":            masterDataTimeLabel(row.CreatedAt),
-		"EntityType":      row.EntityType,
-		"EntityTypeLabel": masterDataLabel(tr, masterdataenums.EntityTypeLabel(row.EntityType)),
-		"EntityID":        row.EntityID, "EntityLabel": row.EntityLabel,
-		"Action":      row.Action,
-		"ActionLabel": masterDataLabel(tr, masterdataenums.ActionLabel(row.Action)),
-		"Field":       row.Field,
-		"FieldLabel":  masterDataLabel(tr, masterdataenums.FieldLabel(row.EntityType, row.Field)),
-		"OldValue":    masterDataValueLabel(row.OldValue),
-		"NewValue":    masterDataValueLabel(row.NewValue),
-		"Origin":      row.Origin, "OperatorID": masterDataValueLabel(row.OperatorID),
+	return masterdatadto.ChangeRowResp{
+		Time:            masterDataTimeLabel(row.CreatedAt),
+		EntityType:      row.EntityType,
+		EntityTypeLabel: masterDataLabel(tr, masterdataenums.EntityTypeLabel(row.EntityType)),
+		EntityID:        row.EntityID,
+		EntityLabel:     row.EntityLabel,
+		Action:          row.Action,
+		ActionLabel:     masterDataLabel(tr, masterdataenums.ActionLabel(row.Action)),
+		Field:           row.Field,
+		FieldLabel:      masterDataLabel(tr, masterdataenums.FieldLabel(row.EntityType, row.Field)),
+		OldValue:        masterDataValueLabel(row.OldValue),
+		NewValue:        masterDataValueLabel(row.NewValue),
+		Origin:          row.Origin,
+		OperatorID:      masterDataValueLabel(row.OperatorID),
 	}
 }
 
 // entityRow 实体清单行 → 模板视图（带一条锁定该实体的筛选链接）。
-func entityRow(tr masterDataTr, item *masterdatadto.EntityHistoryResp, filter masterDataFilter, projectID string) gin.H {
+func entityRow(tr masterDataTr, item *masterdatadto.EntityHistoryResp, filter masterDataFilter, projectID string) masterdatadto.EntityRowResp {
 	if item == nil {
-		return gin.H{}
+		return masterdatadto.EntityRowResp{}
 	}
-	return gin.H{
-		"EntityType": item.EntityType,
-		"EntityTypeLabel": masterDataLabel(tr,
+	return masterdatadto.EntityRowResp{
+		EntityType: item.EntityType,
+		EntityTypeLabel: masterDataLabel(tr,
 			masterdataenums.EntityTypeLabel(item.EntityType)),
-		"EntityID": item.EntityID, "EntityLabel": masterDataValueLabel(item.EntityLabel),
-		"ChangeCount": item.ChangeCount,
-		"LastAction":  item.LastAction,
-		"LastActionLabel": masterDataLabel(tr,
+		EntityID:    item.EntityID,
+		EntityLabel: masterDataValueLabel(item.EntityLabel),
+		ChangeCount: item.ChangeCount,
+		LastAction:  item.LastAction,
+		LastActionLabel: masterDataLabel(tr,
 			masterdataenums.ActionLabel(item.LastAction)),
-		"LastField": item.LastField,
-		"LastFieldLabel": masterDataLabel(tr,
+		LastField: item.LastField,
+		LastFieldLabel: masterDataLabel(tr,
 			masterdataenums.FieldLabel(item.EntityType, item.LastField)),
-		"LastOperatorID": masterDataValueLabel(item.LastOperatorID),
-		"LastAt":         masterDataTimeLabel(item.LastAt),
-		"URL": reqparams.FilterBaseURL("/admin/masterdata/changes",
+		LastOperatorID: masterDataValueLabel(item.LastOperatorID),
+		LastAt:         masterDataTimeLabel(item.LastAt),
+		URL: reqparams.FilterBaseURL("/admin/masterdata/changes",
 			filter.entityValues(projectID, item.EntityType, item.EntityID)),
 	}
 }
@@ -383,24 +405,24 @@ func masterDataTimeLabel(at string) string {
 }
 
 // masterDataEntityTypeOptions 实体类型下拉（白名单来自模块 enums，单一来源）。
-func masterDataEntityTypeOptions(tr masterDataTr) []gin.H {
-	options := make([]gin.H, 0, len(masterdataenums.EntityTypes()))
+func masterDataEntityTypeOptions(tr masterDataTr) []masterdatadto.LabelOptionResp {
+	options := make([]masterdatadto.LabelOptionResp, 0, len(masterdataenums.EntityTypes()))
 	for _, entityType := range masterdataenums.EntityTypes() {
-		options = append(options, gin.H{
-			"Value": entityType,
-			"Label": masterDataLabel(tr, masterdataenums.EntityTypeLabel(entityType)),
+		options = append(options, masterdatadto.LabelOptionResp{
+			Value: entityType,
+			Label: masterDataLabel(tr, masterdataenums.EntityTypeLabel(entityType)),
 		})
 	}
 	return options
 }
 
 // masterDataActionOptions 动作下拉（新增 / 修改 / 删除）。
-func masterDataActionOptions(tr masterDataTr) []gin.H {
-	options := make([]gin.H, 0, len(masterdataenums.Actions()))
+func masterDataActionOptions(tr masterDataTr) []masterdatadto.LabelOptionResp {
+	options := make([]masterdatadto.LabelOptionResp, 0, len(masterdataenums.Actions()))
 	for _, action := range masterdataenums.Actions() {
-		options = append(options, gin.H{
-			"Value": action,
-			"Label": masterDataLabel(tr, masterdataenums.ActionLabel(action)),
+		options = append(options, masterdatadto.LabelOptionResp{
+			Value: action,
+			Label: masterDataLabel(tr, masterdataenums.ActionLabel(action)),
 		})
 	}
 	return options

@@ -95,7 +95,7 @@ var pendingModuleText = map[string]int{
 	"internal/module/mail/inbound/http/mail_err.go":                          2,
 	"internal/module/mail/inbound/http/mail_handle.go":                       2,
 	"internal/module/mail/service/mail_account.go":                           3,
-	"internal/module/masterdata/inbound/http/masterdata_page.go":             8,
+	"internal/module/masterdata/inbound/http/masterdata_page.go":             6,
 	"internal/module/media/inbound/http/media_handle.go":                     1,
 	"internal/module/media/service/media.go":                                 8,
 	"internal/module/order/inbound/http/coupon_page.go":                      1,

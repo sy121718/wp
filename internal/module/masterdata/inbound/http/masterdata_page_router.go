@@ -16,6 +16,9 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 )
 
+// MasterDataChangesTemplate 变更记录整页的模板名（页面出口由 PageSlot 带进上下文）。
+const MasterDataChangesTemplate = "admin/masterdata/masterdata_changes.html"
+
 // SetupMasterDataPages 注册后台「变更记录」页。
 //
 // 只读页面，没有写表单 —— 记录由业务模块在写操作里经本模块契约追加，
@@ -26,5 +29,10 @@ func SetupMasterDataPages(pages *gin.RouterGroup, svc masterdatacontract.MasterD
 		return
 	}
 	changePages := NewMasterDataChangePageHandle(svc, project)
-	pages.GET("/masterdata/changes", adminui.PageAuthz("/api/masterdata/change/list"), changePages.MasterDataChangesPage)
+	// 页面出口走 adminui.PageSlot（模板名与渲染实现在装配点声明），handler 只调
+	// pageview.Render —— 与商品模块同一形态（AGENTS.md：控制器不持模板名、不 import 渲染层）。
+	pages.GET("/masterdata/changes",
+		adminui.PageAuthz("/api/masterdata/change/list"),
+		adminui.PageSlot(MasterDataChangesTemplate),
+		changePages.MasterDataChangesPage)
 }

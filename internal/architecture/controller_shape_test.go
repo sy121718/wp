@@ -455,7 +455,6 @@ var pendingControllerRenderExit = map[string]bool{
 	"internal/module/content/inbound/http/content_page.go":                 true,
 	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go": true,
 	"internal/module/mail/inbound/http/mail_page.go":                       true,
-	"internal/module/masterdata/inbound/http/masterdata_page.go":           true,
 	"internal/module/media/inbound/http/media_page_handle.go":              true,
 	"internal/module/membership/inbound/http/membership_page.go":           true,
 	"internal/module/navigation/inbound/http/navigation_page_handle.go":    true,
