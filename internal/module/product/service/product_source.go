@@ -74,9 +74,22 @@ func (s *Service) resolveCollection(ctx context.Context, source string, filter m
 	}
 	items = make([]map[string]any, 0, len(rows))
 	if len(rows) == 0 {
-		// 本页空：调用方不会凭空跳到第 N 页，所以 offset 之前必然已有内容，总量就是 offset ——
-		// 与「不满一页即到底」同一个判断，省掉一次 COUNT。
-		return items, offset, nil
+		// 本页空时**不能**把 offset 当总量。
+		//
+		// 原先的推断是「调用方不会凭空跳到第 N 页，所以 offset 之前必然已有内容」，
+		// 于是直接 `return items, offset, nil` 省掉一次 COUNT。但 ResolveCollectionPage
+		// 接受任意 q.Offset（访客侧分页），越界请求会让它算出荒谬的总量：
+		// 库里只有 3 条、page=10/size=20（offset=180）→ Total=180，
+		// 前端据此渲染出 9 个空页。
+		//
+		// 空页只有两种成因：真的没有数据（total=0）、或者翻过头了（total 是真实总数）。
+		// 两种都必须知道真实总数才能给对，所以这里老老实实数一次 ——
+		// 代价只在「本页空」这一条路径上，正常翻页不受影响。
+		n, cerr := s.m.CountForCollection(ctx, f)
+		if cerr != nil {
+			return nil, 0, cerr
+		}
+		return items, int(n), nil
 	}
 	lang := core.BuildLang(ctx)
 	ids := make([]string, 0, len(rows))
