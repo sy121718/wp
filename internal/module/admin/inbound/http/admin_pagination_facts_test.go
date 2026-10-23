@@ -28,6 +28,7 @@ import (
 	"github.com/gin-gonic/gin"
 	ginrender "github.com/gin-gonic/gin/render"
 
+	"go_wp/internal/adminui"
 	admincontract "go_wp/internal/module/admin/contract"
 	admindto "go_wp/internal/module/admin/dto"
 	"go_wp/internal/templates"
@@ -232,12 +233,18 @@ func captureSiteData(t *testing.T, name string, total int64, target string) (str
 	engine := gin.New()
 	engine.HTMLRender = rec
 	route := strings.SplitN(target, "?", 2)[0]
-	engine.GET(route, siteHandler(newAdminPaginationHandle(total), name))
-	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
-	data, ok := rec.data.(gin.H)
-	if !ok {
-		t.Fatalf("%s：data 不是 gin.H（实际 %T）", name, rec.data)
+	// 页面出口改 PageSlot 之后，已迁移的站点要按真实装配方式挂模板名；
+	// 未迁移的站点仍由 handler 自己渲染（adminPageTemplateFor 返回空串表示"这批还没迁"）。
+	h := siteHandler(newAdminPaginationHandle(total), name)
+	if tpl := adminPageTemplateFor(name); tpl != "" {
+		engine.GET(route, adminui.PageSlot(tpl), h)
+	} else {
+		engine.GET(route, h)
 	}
+	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
+	// 渲染出口交给模板的是 PrepareView 摊平后的 map（键名 = 视图字段名）；
+	// 视图换强类型之后不再保证 rec.data 本身是 gin.H，所以统一走 ViewMap 摊平。
+	data := adminui.ViewMap(rec.data)
 	return rec.name, data
 }
 
@@ -413,4 +420,15 @@ func (s adminPaginationSite) withoutFilters() adminPaginationSite {
 	c.path = s.basePath
 	c.filters = nil
 	return c
+}
+
+// adminPageTemplateFor 页面名 → 模板名（只覆盖**已迁移**到 PageSlot 的站点）。
+//
+// 返回空串表示这个站点还没迁：测试装置不替 handler 决定出口形态。
+// 每迁完一个页面就往这里加一行 —— 它同时是「这个模块迁到哪了」的清单。
+func adminPageTemplateFor(name string) string {
+	if name == "administrators" {
+		return AdministratorsPageTemplate
+	}
+	return ""
 }

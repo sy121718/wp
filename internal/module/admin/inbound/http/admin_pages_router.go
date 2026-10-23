@@ -33,6 +33,9 @@ import (
 // 权限点全部复用 050_admin_domains_permissions.sql 已有的 GET 权限点，不新增。
 // 六个契约由装配层以同一合并 Service 传入（admin 合并模块同包直调）。
 // 只用 GET/POST，无 RESTful 路径参数。
+// AdministratorsPageTemplate 管理员列表页的模板名。
+const AdministratorsPageTemplate = "admin/system/administrators"
+
 func SetupAdminPages(adminPages *gin.RouterGroup,
 	admins admincontract.AdminService, roles admincontract.RoleService,
 	perms admincontract.PermService, menus admincontract.MenuService,
@@ -43,7 +46,10 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	}
 	handle := NewAdminPagesHandle(admins, roles, perms, menus, depts, rules)
 
-	adminPages.GET("/administrators", adminui.PageAuthz("/api/admin/list"), handle.AdministratorsPage)
+	adminPages.GET("/administrators",
+		adminui.PageAuthz("/api/admin/list"),
+		adminui.PageSlot(AdministratorsPageTemplate),
+		handle.AdministratorsPage)
 	adminPages.POST("/administrators/create", builtin.CasbinMiddlewareForPath("/api/admin/create"), handle.AdministratorsCreate)
 	adminPages.POST("/administrators/update", builtin.CasbinMiddlewareForPath("/api/admin/edit"), handle.AdministratorsUpdate)
 	adminPages.POST("/administrators/delete", builtin.CasbinMiddlewareForPath("/api/admin/delete"), handle.AdministratorsDelete)

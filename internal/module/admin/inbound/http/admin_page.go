@@ -100,6 +100,7 @@ import (
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	"go_wp/pkg/safepath"
+	pageview "go_wp/pkg/view"
 )
 
 // --- 角色分配 ---
@@ -269,7 +270,7 @@ func (h *AdminPagesHandle) AdministratorRolesSave(c *gin.Context) {
 		return
 	}
 	if adminDrawerHX(c) {
-		c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.Prepare(c, gin.H{"Saved": true}))
+		c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.PrepareBareView(c, &admindto.DrawerSavedResp{Saved: true}))
 		return
 	}
 	adminAdminsPage.done(c)
@@ -430,7 +431,7 @@ func (h *AdminPagesHandle) AdministratorMenusSave(c *gin.Context) {
 		return
 	}
 	if adminDrawerHX(c) {
-		c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.Prepare(c, gin.H{"Saved": true}))
+		c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.PrepareBareView(c, &admindto.DrawerSavedResp{Saved: true}))
 		return
 	}
 	adminAdminsPage.done(c)
@@ -457,22 +458,24 @@ func (h *AdminPagesHandle) AdministratorsPage(c *gin.Context) {
 		// 降级渲染：res 换零值、页面照常渲染（详见 adminListLoadErr 的说明）。
 		res = &admindto.AdminListResp{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title":       pagesMsgAdministratorsTitle,
-		"menu":        "admins",
-		"Rows":        res.List,
-		"Total":       res.Total,
-		"FilterName":  name,
-		"FilterEmail": email,
-		"Err":         adminListLoadErr(c, err),
-		"ListQuery":   adminAdminsPage.listQuery(c),
-	})
+	view := &admindto.AdminListPageResp{
+		Title:       pagesMsgAdministratorsTitle,
+		Menu:        "admins",
+		Rows:        res.List,
+		Total:       res.Total,
+		FilterName:  name,
+		FilterEmail: email,
+		Err:         adminListLoadErr(c, err),
+		ListQuery:   adminAdminsPage.listQuery(c),
+	}
 	// 分页条只给事实（总数 / 页码 / 每页条数 / 基址）：信息行、按钮、href 与选中态由
 	// admin/partials/pagination.html 用 pager(.Pagination) 算。
-	adminui.AttachPagination(data, "/admin/administrators",
+	if !adminui.AttachPaginationView(view, "/admin/administrators",
 		map[string]string{"name": name, "email": email},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/administrators", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("管理员列表视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // AdministratorsCreate 新建管理员（POST /admin/administrators/create）。
