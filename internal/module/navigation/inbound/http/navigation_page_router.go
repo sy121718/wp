@@ -28,6 +28,15 @@ import (
 // pageSvc 是页面契约：译文保存后按 i18n:content 依赖标记手工页面待重建
 // （消费者侧断言 navTranslationPageMarker 端口，实现方不支持时降级为不标记）。
 // adminPages 为 nil 时整体跳过。
+// NavigationEditFormTemplate 导航编辑抽屉片段（片段出口，不带页壳）。
+const NavigationEditFormTemplate = "admin/navigation/navigation_edit_form"
+
+// NavigationsPageTemplate 导航菜单页的模板名。
+const NavigationsPageTemplate = "admin/navigation/navigations"
+
+// NavigationTranslationsTemplate 导航译文页的模板名。
+const NavigationTranslationsTemplate = "admin/navigation/navigation_translations.html"
+
 func SetupNavigationPages(adminPages *gin.RouterGroup,
 	navigations navigationcontract.NavigationService,
 	projects projectcontract.ProjectService, pageSvc pagecontract.PageService,
@@ -39,9 +48,15 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	// 面板块能力（超级菜单）：装配期注入；未注入时**编辑抽屉**里的面板区整体降级
 	//（NavEditPanelAvail=false，入口隐藏 —— 不留一个点了没反应的下拉）。
 	h.SetBlockPanelPort(blocks)
-	adminPages.GET("/navigations", adminui.PageAuthz("/api/navigation/list"), h.NavigationsPage)
+	adminPages.GET("/navigations",
+		adminui.PageAuthz("/api/navigation/list"),
+		adminui.PageSlot(NavigationsPageTemplate),
+		h.NavigationsPage)
 	// GET 读编辑表单，但代理真正 POST /api/navigation/update 的权限动作。
-	adminPages.GET("/navigations/edit", builtin.CasbinMiddlewareForPathAs("/api/navigation/update", http.MethodPost), h.NavigationEditFragment)
+	adminPages.GET("/navigations/edit",
+		builtin.CasbinMiddlewareForPathAs("/api/navigation/update", http.MethodPost),
+		adminui.BareSlot(NavigationEditFormTemplate),
+		h.NavigationEditFragment)
 	// 面板设置复用 navigation:update；新建面板块是**块的创建**，故挂 block:create。
 	adminPages.POST("/navigations/panel", builtin.CasbinMiddlewareForPath("/api/navigation/update"), h.PanelSet)
 	adminPages.POST("/navigations/panel/create", builtin.CasbinMiddlewareForPath("/api/block/create"), h.PanelCreate)
@@ -72,5 +87,8 @@ func SetupNavigationPages(adminPages *gin.RouterGroup,
 	// 所以把带端口的句柄交给包级写入口（未注入时该分支 fail closed，见
 	// navigation_translations_handle.go）。
 	SetNavigationTranslationWriter(translations)
-	adminPages.GET("/navigations/translations", adminui.PageAuthz("/api/navigation/list"), translations.NavigationTranslations)
+	adminPages.GET("/navigations/translations",
+		adminui.PageAuthz("/api/navigation/list"),
+		adminui.PageSlot(NavigationTranslationsTemplate),
+		translations.NavigationTranslations)
 }

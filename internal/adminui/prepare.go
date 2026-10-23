@@ -175,9 +175,10 @@ func ViewMap(view any) gin.H {
 	out := make(gin.H, rt.NumField())
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
-		if !field.IsExported() {
-			continue
-		}
+		// 注意顺序：**先判 Anonymous，再判 IsExported**。
+		// 匿名嵌入一个未导出类型的字段（`type failureResponse struct{ *navigationsPageData }`）
+		// 时 field.IsExported() 返回 false —— 若先判 Exported 就把它整个跳过了，
+		// 摊平逻辑永远走不到，模板键全部缺失（Jet 缺键 = 整页中断）。
 		// 匿名嵌入的结构体**摊平**进同一层：`type errView struct{ *PageResp }` 的
 		// 用途就是「同一份视图 + 追加出口关切（状态码/no-store）」，模板读的还是
 		// `.Title` / `.Templates` 这些原字段 —— 不摊平会让模板键全部找不到
@@ -193,8 +194,11 @@ func ViewMap(view any) gin.H {
 				}
 				ev = ev.Elem()
 			}
+			// 匿名嵌入的**类型名可能未导出**（`struct{ *navigationsPageData }`），
+			// 而 IsExported() 看的是字段名（= 类型名），于是这里拿到的是"未导出字段"：
+			// 取 Interface() 会 panic。做法是**逐个读它的导出字段**，不整体取 Interface()。
 			if ev.IsValid() && ev.Kind() == reflect.Struct {
-				for k, v := range ViewMap(ev.Interface()) {
+				for k, v := range viewMapOfStruct(ev) {
 					// 外层同名字段优先（显式覆盖胜过嵌入默认），与 Go 的字段提升规则一致。
 					if _, exists := out[k]; !exists {
 						out[k] = v
@@ -202,6 +206,9 @@ func ViewMap(view any) gin.H {
 				}
 				continue
 			}
+			continue
+		}
+		if !field.IsExported() {
 			continue
 		}
 		name := field.Name
@@ -283,4 +290,44 @@ func sidebarOpen(c *gin.Context) bool {
 func sidebarPinned(c *gin.Context) bool {
 	v, _ := c.Cookie(sidebarCookiePinned)
 	return v == "1"
+}
+
+// viewMapOfStruct 把一个**结构体值**（可能来自未导出字段，因此不能整体 Interface()）
+// 摊平成一层的 gin.H。只收导出字段，规则与 ViewMap 一致。
+//
+// 为什么单独抽出来：ViewMap 对外收 any，内部要先把指针解到结构体再递归；
+// 而这里拿到的是 reflect.Value，整体取 Interface() 在"未导出字段"上会 panic。
+func viewMapOfStruct(rv reflect.Value) gin.H {
+	rt := rv.Type()
+	out := make(gin.H, rt.NumField())
+	for i := 0; i < rt.NumField(); i++ {
+		field := rt.Field(i)
+		fv := rv.Field(i)
+		if field.Anonymous {
+			for fv.Kind() == reflect.Pointer {
+				if fv.IsNil() {
+					fv = reflect.Value{}
+					break
+				}
+				fv = fv.Elem()
+			}
+			if fv.IsValid() && fv.Kind() == reflect.Struct {
+				for k, v := range viewMapOfStruct(fv) {
+					if _, exists := out[k]; !exists {
+						out[k] = v
+					}
+				}
+			}
+			continue
+		}
+		if !field.IsExported() {
+			continue
+		}
+		name := field.Name
+		if tag := field.Tag.Get("view"); tag != "" {
+			name = tag
+		}
+		out[name] = fv.Interface()
+	}
+	return out
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
 	navigationenums "go_wp/internal/module/navigation/enums"
@@ -361,6 +362,7 @@ func TestNavigationTranslationsPageRendersJSONWriteForm(t *testing.T) {
 	projects := &pagePresentationProjectStub{}
 	router := newNavigationsPageTestRouter(t, nav, projects)
 	router.GET("/admin/navigations/translations",
+		adminui.PageSlot(NavigationTranslationsTemplate),
 		NewNavigationTranslationHandle(nav, projects).NavigationTranslations)
 
 	rec := httptest.NewRecorder()

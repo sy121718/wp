@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	navigationhttp "go_wp/internal/module/navigation/inbound/http"
 	navsource "go_wp/internal/module/navigation/outbound/source"
@@ -29,7 +30,7 @@ func renderNavigationsPage(t *testing.T, page gin.HandlerFunc, projectID string,
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/navigations", func(c *gin.Context) {
+	router.GET("/admin/navigations", adminui.PageSlot(navigationhttp.NavigationsPageTemplate), func(c *gin.Context) {
 		c.Set(adminctx.PermSetKey, perms)
 		c.Set(adminctx.ButtonsKey, buttonsOf(perms))
 		page(c)

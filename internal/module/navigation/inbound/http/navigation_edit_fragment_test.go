@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	blockcontract "go_wp/internal/module/block/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
 	navigationdto "go_wp/internal/module/navigation/dto"
@@ -82,10 +83,10 @@ func editRouter(t *testing.T, h *navigationPageHandle) *gin.Engine {
 		}
 		c.Next()
 	})
-	r.GET("/admin/navigations/edit", h.NavigationEditFragment)
-	r.POST("/admin/navigations/update", h.NavigationUpdate)
-	r.POST("/admin/navigations/panel", h.PanelSet)
-	r.POST("/admin/navigations/panel/create", h.PanelCreate)
+	r.GET("/admin/navigations/edit", adminui.BareSlot(NavigationEditFormTemplate), h.NavigationEditFragment)
+	r.POST("/admin/navigations/update", adminui.BareSlot(NavigationEditFormTemplate), h.NavigationUpdate)
+	r.POST("/admin/navigations/panel", adminui.BareSlot(NavigationEditFormTemplate), h.PanelSet)
+	r.POST("/admin/navigations/panel/create", adminui.BareSlot(NavigationEditFormTemplate), h.PanelCreate)
 	return r
 }
 

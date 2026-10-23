@@ -33,7 +33,6 @@ internal/module/mail/inbound/http/mail_page.go gin=29 html=19
 internal/module/masterdata/inbound/http/masterdata_handle.go gin=1 html=0
 internal/module/membership/inbound/http/membership_handle.go gin=3 html=0
 internal/module/membership/inbound/http/membership_page.go gin=5 html=2
-internal/module/navigation/inbound/http/navigation_page_handle.go gin=3 html=4
 internal/module/navigation/inbound/http/navigation_translations_handle.go gin=2 html=0
 internal/module/page/inbound/http/page_langs_handle.go gin=1 html=2
 internal/module/page/inbound/http/page_schedule_handle.go gin=1 html=2
@@ -52,4 +51,4 @@ internal/module/workbench/inbound/http/inspector_handle.go gin=4 html=4
 internal/module/workbench/inbound/http/router.go gin=3 html=3
 internal/module/workbench/inbound/http/workbench_handle.go gin=1 html=0
 
---total gin=227 html=114
+--total gin=224 html=110

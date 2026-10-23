@@ -453,7 +453,6 @@ var pendingControllerRenderExit = map[string]bool{
 	"internal/module/content/inbound/http/content_page.go":                 true,
 	"internal/module/mail/inbound/http/mail_page.go":                       true,
 	"internal/module/membership/inbound/http/membership_page.go":           true,
-	"internal/module/navigation/inbound/http/navigation_page_handle.go":    true,
 	"internal/module/page/inbound/http/page_langs_handle.go":               true,
 	"internal/module/page/inbound/http/page_schedule_handle.go":            true,
 	"internal/module/page/inbound/http/pages_handle.go":                    true,
@@ -557,7 +556,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/masterdata/inbound/http/masterdata_page.go":                true,
 	"internal/module/membership/inbound/http/membership_page.go":                true,
 	"internal/module/navigation/inbound/http/navigation_error_handle.go":        true,
-	"internal/module/navigation/inbound/http/navigation_page_handle.go":         true,
 	"internal/module/navigation/inbound/http/navigation_translations_handle.go": true,
 	"internal/module/order/inbound/http/coupon_page.go":                         true,
 	"internal/module/order/inbound/http/order_list_page.go":                     true,
@@ -588,6 +586,8 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/analytics/inbound/http/analytics_page.go": true,
 	// 全局块页仍用 adminui.MsgInternalError / PageErrorFactQuiet 做错误归口（UIK 线的工作）。
 	"internal/module/block/inbound/http/block_page.go": true,
+	// 导航页仍用 adminui.MsgText 把事实取成文本（NavEditError 槽位还没取词化）。
+	"internal/module/navigation/inbound/http/navigation_page_handle.go": true,
 }
 
 const controllerUIImportPath = "go_wp/internal/adminui"
