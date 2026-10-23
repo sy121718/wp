@@ -59,13 +59,13 @@ func BuildView(p *Props, siteLink func(string) string) View {
 		titleTag = "h3"
 	}
 	return View{
-		TitleTag:   titleTag,
-		HasImage:   p.ImageSrc != "",
-		ImageSrc:   p.ImageSrc,
-		Title:      p.Title,
-		Text:       core.RichTextHTML(p.Text),
-		HasButton:  p.Label != "" && p.ButtonLink != "",
-		Label: p.Label,
+		TitleTag:  titleTag,
+		HasImage:  p.ImageSrc != "",
+		ImageSrc:  p.ImageSrc,
+		Title:     p.Title,
+		Text:      core.RichTextHTML(p.Text),
+		HasButton: p.Label != "" && p.ButtonLink != "",
+		Label:     p.Label,
 		// 站内链接本地化（审计 I18N-015）：作者填的 /about 在英文站点上要变成 /en/about。
 		ButtonLink:    core.SiteLinkOrSame(siteLink, p.ButtonLink),
 		Loading:       p.Loading,

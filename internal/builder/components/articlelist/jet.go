@@ -26,7 +26,7 @@ type View struct {
 	Layout       string
 	GridTemplate string
 	TitleTag     string
-	Label     string
+	Label        string
 	Cards        []CardView
 	Empty        bool
 	EmptyText    string
@@ -40,7 +40,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	v := View{
 		Layout:   effectiveLayout(p),
 		TitleTag: effectiveTitleTag(p),
-		Label: effectiveLabel(p),
+		Label:    effectiveLabel(p),
 	}
 	v.GridTemplate = gridTemplateColumns(v.Layout, effectiveColumns(p))
 	source := ""

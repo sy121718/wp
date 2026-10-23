@@ -138,7 +138,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 		Target:       effectiveTarget(p),
 		ProjectID:    strings.TrimSpace(projectID),
 		Lang:         strings.TrimSpace(lang),
-		Label:   effectiveLabel(p),
+		Label:        effectiveLabel(p),
 		QtyAria:      textFallbackQtyAria,
 		ShowQuantity: p.ShowQuantity,
 	}

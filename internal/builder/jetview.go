@@ -254,11 +254,12 @@ func declareViewFeatures(view any, ctx *core.RenderContext) {
 
 // decodeProps 解码节点 props 为组件 Props 值（空 props 返回零值，与旧路径一致）。
 func decodeProps[P any](node *core.Node) (P, error) {
-	var p P
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return p, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
+	// 走 core.DecodeProps 而不是裸 json.Unmarshal：组件可以在那里声明旧 props 名的归一
+	// （buttonText → label 等）。漏走这个入口的表现是「某个组件的按钮静默消失」——
+	// 不报错、不 500，只是产物里少一颗 <a>。
+	p, err := core.DecodeProps[P](node.Props)
+	if err != nil {
+		return p, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
 	}
 	return p, nil
 }

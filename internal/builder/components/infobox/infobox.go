@@ -105,6 +105,21 @@ type Props struct {
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
+// infoboxLegacyKeys 旧 props 名的归一表（改名不迁移数据）。
+//
+// btnText → label：这一批把三个组件的按钮/链接文案统一成 label。
+// 存量文档里存的是旧键（本仓实测：blueprints 2 张、content_templates 1 张、
+// document_snapshots 5.78 万条），不归一的表现是**按钮整颗消失**而不是报错：
+// BuildView 里 HasButton / 有无按钮 依赖 label 非空。
+var infoboxLegacyKeys = []core.LegacyKey{
+	{From: "btnText", To: "label"},
+}
+
+// NormalizeLegacy 见 core.LegacyNormalizer：把旧键的值挪进已解码的字段。
+func (p *Props) NormalizeLegacy(raw json.RawMessage) error {
+	return core.ApplyLegacyKeysInto(raw, p, infoboxLegacyKeys)
+}
+
 // Validate 校验。
 func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
@@ -113,11 +128,12 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if len(node.Children) > 0 {
 		return fmt.Errorf("节点 %s: 信息框为原子组件，不允许子节点", node.ID)
 	}
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
+	// 走 DecodeProps：解析旧 props 名（btnText/linkText → label）。裸 json.Unmarshal
+	// 会让存量文档的按钮文案读不到，而这一层拿的是**已解析的 Props** —— 漏在这里
+	// 就表现为"检查器里有值、编译出来没有按钮"。
+	p, derr := core.DecodeProps[Props](node.Props)
+	if derr != nil {
+		return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, derr)
 	}
 	if p.Icon != "" {
 		if _, ok := core.IconSVG(p.Icon); !ok {
@@ -180,7 +196,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"iconBgColor":     p.IconBgColor,
 		"iconBorderColor": p.IconBorderColor,
 		"hasSubtitle":     core.BoolVar(p.Subtitle != ""),
-		"label":         core.BoolVar(p.Label != ""),
+		"label":           core.BoolVar(p.Label != ""),
 	}
 	if err := core.ApplyComponentCSSTmpl(b, sel, infoboxCSS, vars); err != nil {
 		panic(fmt.Sprintf("infobox 组件样式解析失败: %v", err))

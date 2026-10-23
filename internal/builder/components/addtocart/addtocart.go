@@ -19,6 +19,7 @@ package addtocart
 
 import (
 	_ "embed" // addtocart.css / add_to_cart.jet 经 //go:embed 打进二进制
+	json "go_wp/pkg/jsonx"
 	"fmt"
 	"strings"
 
@@ -44,7 +45,7 @@ const CartAddPath = "/_fragments/cartAdd"
 
 // 缺省值与上限。
 const (
-	defaultLabel = "加入购物车"
+	defaultLabel      = "加入购物车"
 	defaultCartTarget = "#cart"
 	defaultCurrency   = "¥"
 	// defaultColor 缺省主色（主题 Token + 兜底，与 badge/button 的取色约定对齐）。
@@ -76,6 +77,21 @@ type Props struct {
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
+// addtocartLegacyKeys 旧 props 名的归一表（改名不迁移数据）。
+//
+// buttonText → label：这一批把三个组件的按钮/链接文案统一成 label。
+// 存量文档里存的是旧键（本仓实测：blueprints 2 张、content_templates 1 张、
+// document_snapshots 5.78 万条），不归一的表现是**按钮整颗消失**而不是报错：
+// BuildView 里 HasButton / 有无按钮 依赖 label 非空。
+var addtocartLegacyKeys = []core.LegacyKey{
+	{From: "buttonText", To: "label"},
+}
+
+// NormalizeLegacy 见 core.LegacyNormalizer：把旧键的值挪进已解码的字段。
+func (p *Props) NormalizeLegacy(raw json.RawMessage) error {
+	return core.ApplyLegacyKeysInto(raw, p, addtocartLegacyKeys)
+}
+
 // Widget 基座实例。
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
@@ -88,7 +104,7 @@ var Widget = core.Atom[Props]{
 			"variantsField": "product.variants",
 			"variantMode":   "single",
 			"showQuantity":  false,
-			"label":    "加入购物车",
+			"label":         "加入购物车",
 			"cartTarget":    "#cart",
 			"currency":      "¥",
 		},

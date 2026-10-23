@@ -41,7 +41,7 @@ const (
 	defaultLimit     = 6
 	defaultColumns   = "3"
 	defaultTitleTag  = "h3"
-	defaultLabel  = "Read more"
+	defaultLabel     = "Read more"
 	defaultEmptyText = "暂无文章"
 	maxLimit         = 60
 )
@@ -62,7 +62,7 @@ type Props struct {
 	ShowImage    string `json:"showImage,omitempty" ct:"select,on=显示,off=隐藏,default=on,sec=content,label=封面图"`
 	ShowExcerpt  string `json:"showExcerpt,omitempty" ct:"select,on=显示,off=隐藏,default=on,sec=content,label=摘要"`
 	ExcerptLines int    `json:"excerptLines,omitempty" ct:"slider,min=0,max=6,step=1,sec=content,label=摘要行数"`
-	Label     string `json:"label,omitempty" ct:"text,maxlen=30,sec=content,label=链接文案"`
+	Label        string `json:"label,omitempty" ct:"text,maxlen=30,sec=content,label=链接文案"`
 	// LinkPrefix 链接前缀（站内逻辑路径，与 slug 拼接成 href）。
 	// "/" 表示文章挂在站点根下（与本仓库默认的 article 路径模式 "/{slug}" 一致）。
 	LinkPrefix string `json:"linkPrefix,omitempty" ct:"text,maxlen=80,sec=content,label=链接前缀"`
@@ -70,6 +70,21 @@ type Props struct {
 
 	// Advanced 通用高级属性（docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
+}
+
+// articlelistLegacyKeys 旧 props 名的归一表（改名不迁移数据）。
+//
+// linkText → label：这一批把三个组件的按钮/链接文案统一成 label。
+// 存量文档里存的是旧键（本仓实测：blueprints 2 张、content_templates 1 张、
+// document_snapshots 5.78 万条），不归一的表现是**按钮整颗消失**而不是报错：
+// BuildView 里 HasButton / 有无按钮 依赖 label 非空。
+var articlelistLegacyKeys = []core.LegacyKey{
+	{From: "linkText", To: "label"},
+}
+
+// NormalizeLegacy 见 core.LegacyNormalizer：把旧键的值挪进已解码的字段。
+func (p *Props) NormalizeLegacy(raw json.RawMessage) error {
+	return core.ApplyLegacyKeysInto(raw, p, articlelistLegacyKeys)
 }
 
 // Component 文章列表组件（手工组件：集合语义 + 自定义视图装配）。
@@ -114,11 +129,12 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
 		return err
 	}
-	var p Props
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
+	// 走 DecodeProps：解析旧 props 名（btnText/linkText → label）。裸 json.Unmarshal
+	// 会让存量文档的按钮文案读不到，而这一层拿的是**已解析的 Props** —— 漏在这里
+	// 就表现为"检查器里有值、编译出来没有按钮"。
+	p, derr := core.DecodeProps[Props](node.Props)
+	if derr != nil {
+		return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, derr)
 	}
 	if err = core.ValidateSpec(&p, node.ID); err != nil {
 		return err
