@@ -76,17 +76,17 @@ func TestSessionEventRowsCarriesToolAndPhase(t *testing.T) {
 	if len(rows) != 3 {
 		t.Fatalf("应有三行，实得 %d", len(rows))
 	}
-	if rows[0]["Tool"] != "ui_render" || rows[0]["Phase"] != "call" {
+	if rows[0].Tool != "ui_render" || rows[0].Phase != "call" {
 		t.Errorf("工具名与阶段应从 meta 提出来：%+v", rows[0])
 	}
-	if rows[1]["Tool"] != "" || rows[1]["Phase"] != "" {
+	if rows[1].Tool != "" || rows[1].Phase != "" {
 		t.Errorf("没有 meta 时留空：%+v", rows[1])
 	}
-	if rows[2]["Tool"] != "" {
+	if rows[2].Tool != "" {
 		t.Errorf("类型不对时留空而不是崩溃：%+v", rows[2])
 	}
 	// 无 meta 的事件不该带出视图（也不该有 ViewsCtx 里的东西）。
-	if rows[1]["HasViews"] != false {
+	if rows[1].HasViews != false {
 		t.Errorf("无 meta 的事件不该有视图：%+v", rows[1])
 	}
 }

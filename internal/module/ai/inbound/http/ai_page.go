@@ -1771,33 +1771,31 @@ func (h *SessionPageHandle) attachSessionDetail(c *gin.Context, ctx context.Cont
 }
 
 // sessionEventRows 把事件翻成模板行：类型分档 + 正文 + 可渲染的图表视图。
-func sessionEventRows(events []aidto.SessionEventItem) []gin.H {
-	out := make([]gin.H, 0, len(events))
+func sessionEventRows(events []aidto.SessionEventItem) []aidto.SessionEventRowResp {
+	out := make([]aidto.SessionEventRowResp, 0, len(events))
 	for i := range events {
 		e := events[i]
 		views := renderViewsOf(e.Meta)
-		row := gin.H{
-			"Seq":       e.Seq,
-			"Kind":      e.Kind,
-			"Tone":      sessionEventTone(e.Kind),
-			"Content":   e.Content,
-			"Views":     views,
-			"HasViews":  len(views) > 0,
-			"TimeLabel": sessionTimeLabel(e.CreateTime),
-			"Tool":      "",
-			"Phase":     "",
+		row := aidto.SessionEventRowResp{
+			Seq:       e.Seq,
+			Kind:      e.Kind,
+			Tone:      sessionEventTone(e.Kind),
+			Content:   e.Content,
+			Views:     toAnyRows(views),
+			HasViews:  len(views) > 0,
+			TimeLabel: sessionTimeLabel(e.CreateTime),
 			// ui_blocks.html 读的是上下文键 **Views**（它自己 range .Views），
 			// 所以 include 时得给它一个带这个键的上下文，而不是直接把切片丢过去。
-			"ViewsCtx": gin.H{"Views": views},
+			ViewsCtx: &aidto.FabViewsCtx{Views: toAnyRows(views)},
 		}
 		// 工具事件把工具名与阶段提出来单独显示：正文里可能只有「工具执行失败」几个字，
 		// 是哪个工具、是调用还是结果，只有结构化字段说得清。
 		if e.Meta != nil {
 			if v, ok := e.Meta["tool"].(string); ok {
-				row["Tool"] = v
+				row.Tool = v
 			}
 			if v, ok := e.Meta["phase"].(string); ok {
-				row["Phase"] = v
+				row.Phase = v
 			}
 		}
 		out = append(out, row)

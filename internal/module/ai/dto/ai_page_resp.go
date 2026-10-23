@@ -52,3 +52,23 @@ type PickerResp struct {
 	Candidates []string
 	Existing   map[string]bool
 }
+
+// SessionEventRowResp 会话事件表的一行。
+//
+// **字段名 = 模板键**（ai_session_detail.html / ui_blocks.html 读 `.Seq` / `.Views` 等）。
+type SessionEventRowResp struct {
+	Seq       int64
+	Kind      string
+	Tone      string
+	Content   string
+	Views     []any
+	HasViews  bool
+	TimeLabel string
+	// Tool / Phase 工具事件把工具名与阶段提出来单独显示：正文里可能只有
+	// 「工具执行失败」几个字，是哪个工具、是调用还是结果，只有结构化字段说得清。
+	Tool  string
+	Phase string
+	// ViewsCtx ui_blocks.html 自己 range .Views，所以 include 时得给它一个
+	// 带这个键的上下文，而不是直接把切片丢过去（Jet 的 include 只接受变量表达式）。
+	ViewsCtx *FabViewsCtx
+}
