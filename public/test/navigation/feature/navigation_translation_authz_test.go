@@ -466,3 +466,89 @@ func TestNavigationTranslationLegacyPagePostIsGone(t *testing.T) {
 		t.Errorf("译文页仍在引用已下线的页面写路由: %s", page.Body.String())
 	}
 }
+
+// TestNavigationTranslationsRowsShape 译文保存的 rows 形状契约（slice-of-struct）。
+//
+// 背景：前端用 data-write-rows 把表格行收成**一个对象数组**发上来，
+// 而这条链路的契约是「rows 必须是数组、每项必须是对象、键只认 context/hash/target、
+// 值必须是 JSON 字符串、三个键必须都出现」。
+//
+// 为什么值得单独测：形状错误在这里有两种截然不同的失败方式，而不是一种
+//   - 整体不是数组（例如发了单个对象）→ 必须 400。若被吞成 200+written:0，
+//     客户端会以为保存成功，实际一个字段都没提交；
+//   - 数组元素缺 target 键 → 同样必须 400。缺键与「显式空串」是两件事：
+//     空串是"本次不改动这一行"的合法表达，缺键是形状错误。混在一起就会静默吞掉。
+//
+// 本仓此前没有任何用例发过 slice-of-struct 内容 —— 合并了两个商品 P1 修复的分支
+// 上出现过「data-write-rows 发数组 → 400」的真实故障，而门禁当时是绿的。
+func TestNavigationTranslationsRowsShape(t *testing.T) {
+	env := newNavTranslationAuthzEnv(t)
+
+	post := func(t *testing.T, payload string) (int, string) {
+		t.Helper()
+		rec, err := support.SendRequest(env.Engine, support.RequestOptions{
+			Method:  http.MethodPost,
+			Path:    navTranslationWriteAPIPath,
+			RawBody: []byte(payload),
+			Headers: map[string]string{
+				"Cookie":       env.Super.Cookie,
+				"Content-Type": "application/json",
+				"X-CSRF-Token": env.Super.CSRFToken,
+			},
+		})
+		if err != nil {
+			t.Fatalf("发送请求失败: %v", err)
+		}
+		return rec.Code, rec.Body.String()
+	}
+
+	// context 必须是 navigation.label（模块只接受这一个语境），hash 是源文本的哈希。
+	// 这两个值不是随便填的：它们是这条链路的**业务契约**，用假值会得到 400 而看不出
+	// 形状判据是否成立（那是另一种 400，与本测试要验的不是同一件事）。
+	ctx := i18n.ContentContext("navigation", "label")
+	hash := i18n.ContentHash("首页")
+
+	// ① 合法：数组 + 三个键齐全 + 值为字符串 → 200。
+	okPayload := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":[` +
+		`{"context":"` + ctx + `","hash":"` + hash + `","target":"Item EN"}]}`
+	if code, body := post(t, okPayload); code != http.StatusOK {
+		t.Fatalf("合法的 rows 数组应 200，实际 %d: %s", code, body)
+	}
+
+	// ② 整体不是数组（发了单个对象）→ 400，且不能是「200 + written:0」。
+	//    后者会让客户端以为保存成功。
+	objectPayload := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":` +
+		`{"context":"` + ctx + `","hash":"` + hash + `","target":"Item EN"}}`
+	if code, body := post(t, objectPayload); code != http.StatusBadRequest {
+		t.Errorf("rows 是对象（应为数组）时必须 400，实际 %d: %s\n"+
+			"被吞成 200 会让客户端以为保存成功、实际一个字段都没提交", code, body)
+	}
+
+	// ③ 数组元素缺 target 键 → 400（缺键 ≠ 显式空串）。
+	missingKey := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":[` +
+		`{"context":"` + ctx + `","hash":"` + hash + `"}]}`
+	if code, body := post(t, missingKey); code != http.StatusBadRequest {
+		t.Errorf("数组元素缺 target 键时必须 400，实际 %d: %s\n"+
+			"缺键若被当成空串，下游会按『本次不改动这一行』跳过 —— 形状错误被静默吞成 200", code, body)
+	}
+
+	// ④ 数组元素出现未知键 → 400（严格白名单，不忽略多余字段）。
+	extraKey := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":[` +
+		`{"context":"` + ctx + `","hash":"` + hash + `","target":"x","bogus":"y"}]}`
+	if code, body := post(t, extraKey); code != http.StatusBadRequest {
+		t.Errorf("数组元素含未知键时必须 400，实际 %d: %s", code, body)
+	}
+
+	// ⑤ 数组元素的键值不是字符串 → 400。
+	nonString := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":[` +
+		`{"context":"` + ctx + `","hash":"` + hash + `","target":123}]}`
+	if code, body := post(t, nonString); code != http.StatusBadRequest {
+		t.Errorf("数组元素的值不是字符串时必须 400，实际 %d: %s", code, body)
+	}
+
+	// ⑥ 空数组合法（"这次没有要改的行"是正常形态，不是错误）。
+	emptyRows := `{"action":"translations","lang":"en-US","project":"` + env.ProjectID + `","rows":[]}`
+	if code, body := post(t, emptyRows); code != http.StatusOK {
+		t.Errorf("空数组应 200（本次没有要改的行是正常形态），实际 %d: %s", code, body)
+	}
+}

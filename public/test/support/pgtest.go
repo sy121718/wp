@@ -66,6 +66,10 @@ func pgDSN(host, port, user, password, dbname string) string {
 	// synchronous_commit=off：测试数据全是用完即弃的，但每个用例都要建库、跑 DDL、灌种子，
 	// 提交路径的 WAL 刷盘是纯开销。实测全量 -p 16 从 227s 降到 181s（约 20%）。
 	// 只作用于测试连接，不碰生产库；崩库最多丢最后几个未落盘的事务，测试场景无所谓。
+	//
+	// **注意这里返回的是 URL 形式**（dbdriver.PostgresDSN 的产物），追加参数必须用
+	// 查询串语法 `&k=v`。此前这里拼的是关键字格式的 ` search_path=...`（空格分隔），
+	// 与 URL 混用会让 pgx 报 extra key/value separator —— 那个坑在改 DSN 时踩过一次。
 	return dsn + "&synchronous_commit=off"
 }
 
@@ -170,7 +174,8 @@ func newTestDatabase(t *testing.T, ep PGEndpoint, useTemplate, translateError bo
 
 	// 表结构全在 public（模板库由生产迁移建成）；search_path 带上 ext_shared 供 trgm
 	// 索引使用 —— 扩展随模板库一起复制过来，不需要再装。
-	dsn := pgDSN(host, port, user, password, name) + " search_path=public," + sharedExtSchema
+	// search_path 走查询串参数（pgDSN 返回 URL 形式；不能再用关键字格式的空格分隔）。
+	dsn := pgDSN(host, port, user, password, name) + "&search_path=public%2C" + sharedExtSchema
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: translateError})
 	if err != nil {
 		// 连接失败时尽力清理，避免残留库堆积。
