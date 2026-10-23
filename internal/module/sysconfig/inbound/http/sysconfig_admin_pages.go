@@ -19,13 +19,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfigdto "go_wp/internal/module/sysconfig/dto"
 	sysconfigenums "go_wp/internal/module/sysconfig/enums"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 // 分组键与「本页负责的键」白名单。
@@ -111,16 +111,16 @@ func (h *AdminHandle) SystemPage(c *gin.Context) {
 			errText = response.MessageOf(c, "sysconfig", coerr)
 		}
 	}
-	c.HTML(http.StatusOK, "admin/system/settings", adminui.Prepare(c, gin.H{
-		"title":           i18n.TranslateFunc(response.RequestLanguage(c))(sysconfigenums.AdminSystemTitle, "系统设置"),
-		"I18N":            i18nGroup,
-		"Trade":           tradeGroup,
-		"LangOptions":     langs,
-		"CurrencyOptions": currencies,
-		"CountryOptions":  countries,
-		"ModeOptions":     siteLangURLModeValues,
-		"LoadErr":         errText,
-	}))
+	pageview.Render(c, &sysconfigdto.SystemSettingsPageResp{
+		Title:           i18n.TranslateFunc(response.RequestLanguage(c))(sysconfigenums.AdminSystemTitle, "系统设置"),
+		I18N:            i18nGroup,
+		Trade:           tradeGroup,
+		LangOptions:     toAnySlice(langs),
+		CurrencyOptions: toAnySlice(currencies),
+		CountryOptions:  toAnySlice(countries),
+		ModeOptions:     toAnySlice(siteLangURLModeValues),
+		LoadErr:         errText,
+	})
 }
 
 // APISystemSave saves the system form through one atomic aggregate JSON request.
@@ -268,4 +268,13 @@ func hasCode2(opts []sysconfigdto.CountryOption, code string) bool {
 		}
 	}
 	return false
+}
+
+// toAnySlice 把选项列表投影成 []any（视图不 import 四个不同来源的契约类型）。
+func toAnySlice[T any](in []T) []any {
+	out := make([]any, 0, len(in))
+	for i := range in {
+		out = append(out, in[i])
+	}
+	return out
 }

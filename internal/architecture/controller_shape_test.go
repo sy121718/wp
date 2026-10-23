@@ -449,7 +449,6 @@ func TestControllerMethodSize(t *testing.T) {
 var pendingControllerRenderExit = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":                     true,
 	"internal/module/ai/inbound/http/ai_page.go":                           true,
-	"internal/module/comment/inbound/http/comment_page.go":                 true,
 	"internal/module/content/inbound/http/content_page.go":                 true,
 	"internal/module/mail/inbound/http/mail_page.go":                       true,
 	"internal/module/membership/inbound/http/membership_page.go":           true,
@@ -459,7 +458,6 @@ var pendingControllerRenderExit = map[string]bool{
 	"internal/module/page/inbound/http/page_translations_handle.go":        true,
 	"internal/module/project/inbound/http/project_page.go":                 true,
 	"internal/module/publication/inbound/http/seo_audit_result.go":         true,
-	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":      true,
 	"internal/module/user/inbound/http/user_page.go":                       true,
 	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
 	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
@@ -546,7 +544,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/ai/inbound/http/ai_err.go":                                 true,
 	"internal/module/ai/inbound/http/ai_page.go":                                true,
 	"internal/module/block/inbound/http/block_err.go":                           true,
-	"internal/module/comment/inbound/http/comment_page.go":                      true,
 	"internal/module/content/inbound/http/content_page.go":                      true,
 	"internal/module/contenttemplate/inbound/http/content_template_err.go":      true,
 	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go":      true,
@@ -570,7 +567,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/project/inbound/http/project_jump.go":                      true,
 	"internal/module/project/inbound/http/project_page.go":                      true,
 	"internal/module/publication/inbound/http/seo_audit_result.go":              true,
-	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":           true,
 	"internal/module/user/inbound/http/customer_bulk_write.go":                  true,
 	"internal/module/user/inbound/http/user_page.go":                            true,
 	"internal/module/workbench/inbound/http/workbench_err.go":                   true,

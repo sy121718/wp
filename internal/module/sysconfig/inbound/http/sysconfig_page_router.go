@@ -13,11 +13,17 @@ import (
 	"go_wp/internal/adminui"
 )
 
+// SystemSettingsPageTemplate 系统设置页的模板名（页面出口由页面槽带进上下文）。
+const SystemSettingsPageTemplate = "admin/system/settings"
+
 // SetupSysConfigPages 注册系统设置页（adminPages = /admin 后台页面组）。
 // adminPages 为 nil 时整体跳过（与 rg == nil 的早退同构）。
 func SetupSysConfigPages(adminPages *gin.RouterGroup, h *AdminHandle) {
 	if adminPages == nil || h == nil {
 		return
 	}
-	adminPages.GET("/system", adminui.PageAuthz("/api/sysconfig/get"), h.SystemPage)
+	adminPages.GET("/system",
+		adminui.PageAuthz("/api/sysconfig/get"),
+		adminui.PageSlot(SystemSettingsPageTemplate),
+		h.SystemPage)
 }
