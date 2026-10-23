@@ -539,8 +539,9 @@ func (h *articlePageHandle) ArticleScorePanel(c *gin.Context) {
 	// Score 里的文案**仍由 Go 侧取词**：这份视图是 fragments/seo_score.html 的渲染契约，
 	// 而该模板由内容 / 商品 / 工程三处共用、且不在本模块写权限内，三份同形 Go 视图必须与
 	// 模板同批取词化；本批保持原样（已在报告里登记为待办）。
-	c.HTML(http.StatusOK, "fragments/seo_score", adminui.PrepareBare(c,
-		gin.H{"Score": articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), shell.TranslateFor(c))}))
+	pageview.Render(c, &contentdto.SeoScoreFragmentView{
+		Score: articleScoreViewOf(data, strings.TrimSpace(c.PostForm("url")), requestScoreLang(c), shell.TranslateFor(c)),
+	})
 }
 
 // ArticleSeoDrawer SEO 评测抽屉片段（GET /admin/articles/seo/drawer?id=xxx）。
@@ -726,21 +727,24 @@ var articleImportActionLabels = map[richdoc.WarningAction]articleImportText{
 func (h *articlePageHandle) ArticleImportPreview(c *gin.Context) {
 	item, err := h.articleByID(c)
 	if err != nil {
-		c.HTML(http.StatusOK, "fragments/article_import", adminui.PrepareBare(c,
-			gin.H{"Preview": articleImportPreviewView{}, "Err": articleImportErrMsg(c, err)}))
+		pageview.Render(c, &contentdto.ArticleImportFragmentView{
+			Preview: articleImportPreviewView{}, Err: articleImportErrMsg(c, err),
+		})
 		return
 	}
 	res, err := richdoc.HTMLToNodes(articleStr(item.Data, "body"))
 	if err != nil {
-		c.HTML(http.StatusOK, "fragments/article_import", adminui.PrepareBare(c,
-			gin.H{"Preview": articleImportPreviewView{}, "Err": articleImportErrMsg(c, err)}))
+		pageview.Render(c, &contentdto.ArticleImportFragmentView{
+			Preview: articleImportPreviewView{}, Err: articleImportErrMsg(c, err),
+		})
 		return
 	}
 	// 片段的取词函数（t / tf）由 PrepareBare 统一注入：手工塞 "t" 的写法漏一处就是
 	// 静默空白（模板拿到 nil 时所有取词一起变空串，不报错、不 500）。
 	// Err 交的是**事实**（key + 中文兜底），模板按当前语言取词。
-	c.HTML(http.StatusOK, "fragments/article_import", adminui.PrepareBare(c,
-		gin.H{"Preview": articleImportPreviewViewOf(res, shell.TranslateFor(c)), "Err": articleMsg{}}))
+	pageview.Render(c, &contentdto.ArticleImportFragmentView{
+		Preview: articleImportPreviewViewOf(res, shell.TranslateFor(c)), Err: articleMsg{},
+	})
 }
 
 // ArticleImportCreate 新建页面草稿并打开画布（POST /admin/articles/import-page）。

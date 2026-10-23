@@ -36,6 +36,14 @@ const ContentPreviewNoticeTemplate = "admin/preview_notice.html"
 // 这三个契约。装配层在全部契约就绪后调用本函数，装配点与 dashboard 页面并排。
 //
 // pages 为 nil 时整体跳过（与既有 rg == nil 的早退同构）。
+// 内容模块两个片段出口的模板名（片段出口不带页壳）。
+const (
+	// SeoScoreFragmentTemplate SEO 评分区片段：内容 / 商品 / 工程三处共用同一模板，
+	// 所以模板名在三个模块里各声明一次 —— 它们各自装配自己的路由。
+	SeoScoreFragmentTemplate      = "fragments/seo_score"
+	ArticleImportFragmentTemplate = "fragments/article_import"
+)
+
 func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentService,
 	projects projectcontract.ProjectService, templates contenttemplatecontract.ContentTemplateService,
 	pageSvc pagecontract.PageService, instances presentationcontract.PresentationService) {
@@ -87,7 +95,9 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	pages.POST("/articles/translations/save", builtin.CasbinMiddlewareForPath("/api/content/update"), articleTranslations.SaveArticleTranslations)
 	// 评分是纯计算（不写库、不写产物），只走组级 Session+CSRF，不再叠权限点：
 	// 能打开编辑页的人就能算分，分数本身不构成新的信息公开面。
-	pages.POST("/articles/score", articlePages.ArticleScorePanel)
+	pages.POST("/articles/score",
+		adminui.BareSlot(SeoScoreFragmentTemplate),
+		articlePages.ArticleScorePanel)
 	// SEO 评测抽屉片段（只读观测 + 一个 htmx 动作）：与编辑页同一权限点（content:list 的
 	// 写侧是 content:update，评测本身不改数据，按读侧鉴权即可）。GET 与策略动词一致。
 	pages.GET("/articles/seo/drawer", builtin.CasbinMiddlewareForPath("/api/content/list"), articlePages.ArticleSeoDrawer)
@@ -99,7 +109,9 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	pages.POST("/articles/link-suggestions", articlePages.ArticleLinkSuggestions)
 	// 文章 → 画布（06-B 决策 5 的第一个真实用途）：预览是纯计算不叠权限点，
 	// 创建页面复用页面创建权限点（写的是 Page 草稿，与 /admin/pages 新建同一件事）。
-	pages.POST("/articles/import-preview", articlePages.ArticleImportPreview)
+	pages.POST("/articles/import-preview",
+		adminui.BareSlot(ArticleImportFragmentTemplate),
+		articlePages.ArticleImportPreview)
 	pages.POST("/articles/import-page", builtin.CasbinMiddlewareForPath("/api/page/create"), articlePages.ArticleImportCreate)
 	pages.POST("/articles/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), articlePages.ArticlePublish)
 	pages.POST("/articles/rebuild", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), articlePages.ArticleRebuild)

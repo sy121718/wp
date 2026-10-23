@@ -12,6 +12,7 @@ package contenthttp
 import (
 	"context"
 	"fmt"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -353,7 +354,7 @@ func TestArticleScorePanelRendersFragment(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 
 	h := &articlePageHandle{}
-	engine.POST("/admin/articles/score", h.ArticleScorePanel)
+	engine.POST("/admin/articles/score", adminui.BareSlot(SeoScoreFragmentTemplate), h.ArticleScorePanel)
 
 	form := url.Values{
 		"title":        {"一篇有标题的文章"},
