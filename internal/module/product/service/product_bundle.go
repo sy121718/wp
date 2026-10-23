@@ -70,9 +70,14 @@ func mustMarshalBundleConfig(cfg productdto.BundleConfig) json.RawMessage {
 
 // normalizeBundleItems 把商品创建 / 更新路径上的 bundle_items 规范化成迁移 114 要求的对象形状。
 //
-// 商品主体的写入路径不承担选项规则的语义校验（那是 SetBundleConfig 的职责），
-// 但必须保证**形状**合法：数据库的 CHECK 会拒绝形状不对的值，与其让整次写入
-// 以 23514 失败，不如在这里给出明确结论。
+// 商品主体的写入路径承担**形状 + 区间规则**两层校验，但不查库（没有 ctx）：
+//   · 形状：数据库的 CHECK 会拒绝形状不对的值，与其让整次写入以 23514 失败，
+//     不如在这里给出明确结论；
+//   · 区间规则（maxOptions 上限 / options 不超上限 / 数量区间自洽）：
+//     页面上的捆绑配置走 /bundle/set（那里有完整校验，含成员 SKU 的存在性），
+//     但 MCP / AI 可以直接调 UpdateReq.BundleItems 写进同一列 —— 没有这一层就绕过去了，
+//     而「minTotalQty > maxTotalQty」这种配置一旦保存，前台任何选择都会被拒。
+//   · 成员 SKU 的存在性 / 工程归属**不在这里**：那需要查库，由 validateBundleConfig 负责。
 //
 //	空 / [] / null → 空配置（历史列默认值就是 '[]'，读取侧一直按「无捆绑」处理）
 //	JSON 对象      → 补齐缺省键后重新序列化（列里始终是完整形状）
@@ -95,6 +100,30 @@ func normalizeBundleItems(raw json.RawMessage) (out json.RawMessage, err error) 
 	if cfg.Options == nil {
 		cfg.Options = []productdto.BundleOption{}
 	}
+
+	// 纯规则校验：与 validateBundleConfig 的前半段同源，但**不查库**
+	//（这里没有 ctx，也刻意不引入 —— 它的调用方是商品 Create/Update，
+	//  成员 SKU 的存在性由 /bundle/set 那条路径保证）。
+	//
+	// 为什么要补这一层：商品写路径原先只归一**形状**，于是
+	// minTotalQty=5 / maxTotalQty=1 这种「永远无法满足的整单下限」能存进去 ——
+	// 一旦保存，前台任何选择都会被拒，等于把商品锁死。
+	// 页面上的捆绑配置走 /bundle/set（有完整校验），但 MCP / AI 可以直接调
+	// UpdateReq.BundleItems 写进同一个列，没有这一层就绕过去了。
+	if cfg.MaxOptions > productdto.BundleMaxOptionsLimit {
+		return nil, productenums.Err(productenums.ErrBundleMaxOptionsInvalid)
+	}
+	if len(cfg.Options) > cfg.MaxOptions {
+		return nil, productenums.Err(productenums.ErrBundleOptionsExceeded)
+	}
+	if cfg.MinTotalQty < 0 || cfg.MinTotalQty > productdto.BundleMaxQtyLimit ||
+		cfg.MaxTotalQty < 0 || cfg.MaxTotalQty > productdto.BundleMaxQtyLimit {
+		return nil, productenums.Err(productenums.ErrBundleQtyInvalid)
+	}
+	if cfg.MaxTotalQty > 0 && cfg.MinTotalQty > cfg.MaxTotalQty {
+		return nil, productenums.Err(productenums.ErrBundleTotalRangeInvalid)
+	}
+
 	return mustMarshalBundleConfig(cfg), nil
 }
 
