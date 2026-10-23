@@ -39,16 +39,16 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 		return
 	}
 	tr := shell.TranslateFor(c)
-	pageview.Render(c, gin.H{
-		"title":               tr(inventoryenums.InventoryWarehousesTitle, "仓库管理"),
-		"menu":                "inventory-warehouses",
-		"Projects":            projects,
-		"SelectedProject":     selected,
-		"Warehouses":          warehouses,
-		"WarehouseTypes":      warehouseTypeOptions(c),
-		"WarehouseCreateForm": warehouseFormData(c, selected, false, nil),
+	pageview.Render(c, &inventorydto.WarehousesPageResp{
+		Title:               tr(inventoryenums.InventoryWarehousesTitle, "仓库管理"),
+		Menu:                "inventory-warehouses",
+		Projects:            toAnySlice(projects),
+		SelectedProject:     selected,
+		Warehouses:          warehouses,
+		WarehouseTypes:      warehouseTypeOptions(c),
+		WarehouseCreateForm: warehouseFormData(c, selected, false, nil),
 		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
-		"ListQuery": binding.ListQuery(c, inventoryWarehouseBackKeys...),
+		ListQuery: binding.ListQuery(c, inventoryWarehouseBackKeys...),
 	})
 }
 
@@ -178,12 +178,12 @@ func (h *inventoryPageHandle) listWarehouses(c *gin.Context, projectID string) (
 // —— 取词 / 文案 ——
 
 // warehouseTypeOptions 仓库类型下拉项（文案 key 见迁移 243 的 seed）。
-func warehouseTypeOptions(c *gin.Context) []gin.H {
+func warehouseTypeOptions(c *gin.Context) []inventorydto.WarehouseTypeOptionResp {
 	tr := shell.TranslateFor(c)
-	return []gin.H{
-		{"Value": inventoryenums.WarehouseTypeSelf, "Label": warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeSelf)},
-		{"Value": inventoryenums.WarehouseTypeThirdParty, "Label": warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeThirdParty)},
-		{"Value": inventoryenums.WarehouseTypeVirtual, "Label": warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeVirtual)},
+	return []inventorydto.WarehouseTypeOptionResp{
+		{Value: inventoryenums.WarehouseTypeSelf, Label: warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeSelf)},
+		{Value: inventoryenums.WarehouseTypeThirdParty, Label: warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeThirdParty)},
+		{Value: inventoryenums.WarehouseTypeVirtual, Label: warehouseTypeLabelText(tr, inventoryenums.WarehouseTypeVirtual)},
 	}
 }
 
@@ -203,10 +203,10 @@ func warehouseTypeLabelText(tr func(key, fallback string) string, typ string) st
 	}
 }
 
-func warehouseFormData(c *gin.Context, projectID string, edit bool, row gin.H) gin.H {
-	return gin.H{
-		"IsEdit": edit, "Row": row, "SelectedProject": projectID,
-		"WarehouseTypes": warehouseTypeOptions(c),
+func warehouseFormData(c *gin.Context, projectID string, edit bool, row *inventorydto.WarehouseRowResp) *inventorydto.WarehouseFormResp {
+	return &inventorydto.WarehouseFormResp{
+		IsEdit: edit, Row: row, SelectedProject: projectID,
+		WarehouseTypes: warehouseTypeOptions(c),
 	}
 }
 
@@ -218,4 +218,13 @@ func (h *inventoryPageHandle) warehouseFormFail(c *gin.Context, err error) {
 	}
 	// htmx 分支：4xx + JSON —— htmx 不 swap，抽屉与输入原样保留，admin.js 弹 toast。
 	inventoryFail(c, err)
+}
+
+// toAnySlice 把工程列表投影成 []any（见 dto 里"为什么不用 contract"的说明）。
+func toAnySlice[T any](in []T) []any {
+	out := make([]any, 0, len(in))
+	for i := range in {
+		out = append(out, in[i])
+	}
+	return out
 }
