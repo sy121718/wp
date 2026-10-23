@@ -8,11 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/spf13/viper"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
+
+	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 )
 
 // blocks_stale_impact_render_test.go — 全局块管理页的渲染级契约（02-L P1-4 / P1-10）。

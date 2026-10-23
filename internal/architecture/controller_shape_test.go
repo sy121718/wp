@@ -449,7 +449,6 @@ func TestControllerMethodSize(t *testing.T) {
 var pendingControllerRenderExit = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":                     true,
 	"internal/module/ai/inbound/http/ai_page.go":                           true,
-	"internal/module/block/inbound/http/block_page.go":                     true,
 	"internal/module/comment/inbound/http/comment_page.go":                 true,
 	"internal/module/content/inbound/http/content_page.go":                 true,
 	"internal/module/mail/inbound/http/mail_page.go":                       true,
@@ -555,7 +554,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/ai/inbound/http/ai_err.go":                                 true,
 	"internal/module/ai/inbound/http/ai_page.go":                                true,
 	"internal/module/block/inbound/http/block_err.go":                           true,
-	"internal/module/block/inbound/http/block_page.go":                          true,
 	"internal/module/comment/inbound/http/comment_page.go":                      true,
 	"internal/module/content/inbound/http/content_page.go":                      true,
 	"internal/module/contenttemplate/inbound/http/content_template_err.go":      true,
@@ -598,6 +596,8 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/plugin/inbound/http/plugin_page_handle.go": true,
 	// 访问统计页仍在用 adminui.AttachPaginationView 挂分页事实（那是 UI 线的现成对象）。
 	"internal/module/analytics/inbound/http/analytics_page.go": true,
+	// 全局块页仍用 adminui.MsgInternalError / PageErrorFactQuiet 做错误归口（UIK 线的工作）。
+	"internal/module/block/inbound/http/block_page.go": true,
 }
 
 const controllerUIImportPath = "go_wp/internal/adminui"

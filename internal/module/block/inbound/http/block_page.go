@@ -42,6 +42,7 @@ import (
 	"go_wp/pkg/response"
 	"go_wp/pkg/safepath"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 )
 
 // blocksPageTitle 全局块管理页标题（i18n key，与原 dashboard 枚举同值）。
@@ -84,29 +85,38 @@ type blockRow struct {
 
 // blocksPageData 全局块管理页数据。
 type blocksPageData struct {
-	Title             string
-	Menu              string
-	Projects          []projectcontract.ProjectResp
-	SelectedProjectID string
-	Headers           []blockRow
-	Footers           []blockRow
-	Blocks            []blockRow
+	Title    string
+	Menu     string
+	Projects []projectcontract.ProjectResp
+	// SelectedProject 模板键名（blocks.html 读 .SelectedProject）。
+	SelectedProject string
+	Headers         []blockRow
+	Footers         []blockRow
+	Blocks          []blockRow
 	// StaleImpact 只读影响面：待重建页面数与清单（块 / 内容 / 主题 / 导航变更都会产生）。
-	StaleImpact gin.H
+	StaleImpact staleImpactView
 }
 
-// templateMap 转 Jet 模板键 map（layout 以小写 title/menu 取值）。
-func (d *blocksPageData) templateMap() gin.H {
-	return gin.H{
-		"title":           d.Title,
-		"menu":            d.Menu,
-		"Projects":        d.Projects,
-		"SelectedProject": d.SelectedProjectID,
-		"Headers":         d.Headers,
-		"Footers":         d.Footers,
-		"Blocks":          d.Blocks,
-		"StaleImpact":     d.StaleImpact,
-	}
+// stalePageRow 待重建清单的一行（模板 blocks.html 的 {{.StaleImpact.Pages}}）。
+type stalePageRow struct {
+	ID          string
+	Path        string
+	ProjectID   string
+	ProjectName string
+}
+
+// staleImpactView 只读影响面（模板 blocks.html 的 {{.StaleImpact.*}}）。
+//
+// 降级语义：pages 未注入 / 读取失败 → Available=false（显示「读不到」），
+// 绝不渲染成「0 个待重建」—— 两者对运营的含义完全不同。
+type staleImpactView struct {
+	Available bool
+	Pages     []stalePageRow
+	Total     int
+	Truncated bool
+	Limit     int
+	// Hint 取不到影响面时的说明（已取词）。
+	Hint string
 }
 
 // toBlockRows 按 kind 精确过滤（header/footer 页眉页脚组）。
@@ -153,12 +163,12 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 		Projects: projects,
 	}
 	if sel := strings.TrimSpace(c.Query("project")); sel != "" {
-		data.SelectedProjectID = sel
+		data.SelectedProject = sel
 	} else if len(projects) > 0 {
-		data.SelectedProjectID = projects[0].ID
+		data.SelectedProject = projects[0].ID
 	}
-	if data.SelectedProjectID != "" {
-		blocks, err := h.blocks.List(c.Request.Context(), &blockcontract.ListReq{ProjectID: data.SelectedProjectID})
+	if data.SelectedProject != "" {
+		blocks, err := h.blocks.List(c.Request.Context(), &blockcontract.ListReq{ProjectID: data.SelectedProject})
 		if err != nil {
 			response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgInternalError)
 			return
@@ -174,7 +184,9 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 	// 影响面在两种分支（有工程 / 无工程）下都要给：模板是同一份，
 	// 缺这个键会让取值链中断（HTTP 仍 200、后半页整块消失）。
 	data.StaleImpact = h.blockStaleImpact(c, c.Request.Context())
-	c.HTML(http.StatusOK, "admin/block/blocks", adminui.Prepare(c, data.templateMap()))
+	// 直接交视图本身：blocksPageData 的字段名与模板键逐字一致，摊平只是多一次搬运，
+	// 而搬运处拼错键名的表现是「页面 200 但少一块」（Jet 缺键中断）。
+	pageview.Render(c, data)
 }
 
 // SaveBlockContent 工作台保存块内容（POST /admin/blocks/save-content，JSON）。
@@ -238,7 +250,7 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 		return
 	}
 	// 成功回执走 response 出口（与上面错误路径同族）：message 传 key，由 response 层按键取词，
-	// 不再把中文写在这里 —— 原先的 gin.H{"message": "已保存，关联页面将标记为待重建"}
+	// 不再把中文写在这里 —— 原先在控制器里手拼一个只含 message 的 map 直接返回
 	// 是英文界面上唯一说中文的那一句（同文件其余路径都走了 response + enums）。
 	response.SuccessWithMessage(c, blockenums.ContentSavedRebuildQueued)
 }
@@ -310,14 +322,14 @@ var (
 // 降级语义：pages 未注入 / 读取失败 → Available=false（显示「读不到」），
 // 绝不渲染成「0 个待重建」—— 两者对运营的含义完全不同。契约返回 (nil, nil) 是异常形态，
 // 同样按读不到处理。
-func (h *blockPageHandle) blockStaleImpact(c *gin.Context, ctx context.Context) gin.H {
+func (h *blockPageHandle) blockStaleImpact(c *gin.Context, ctx context.Context) staleImpactView {
 	// Hint 由**事实**取成当前语言文本（取词走 adminui.MsgText，不再经 shell）：
 	// 这个槽位（模板 blocks.html 的 {{.StaleImpact.Hint}}）还没取词化 —— 优先形态是
 	// 把 key 交给模板、由它用注入的 tr 取值；本轮先按批次约定取成文本再传（见批次报告）。
-	unavailable := func(msg adminui.Msg) gin.H {
-		return gin.H{
-			"Available": false, "Pages": []gin.H{}, "Total": 0, "Truncated": false,
-			"Limit": blockStalePageLimit, "Hint": adminui.MsgText(c, msg),
+	unavailable := func(msg adminui.Msg) staleImpactView {
+		return staleImpactView{
+			Available: false, Pages: []stalePageRow{}, Total: 0, Truncated: false,
+			Limit: blockStalePageLimit, Hint: adminui.MsgText(c, msg),
 		}
 	}
 	if h == nil || h.pages == nil {
@@ -337,18 +349,18 @@ func (h *blockPageHandle) blockStaleImpact(c *gin.Context, ctx context.Context) 
 		logger.Scene("block").Warn("全站待重建清单返回空结果（契约实现异常）")
 		return unavailable(adminui.Msg{})
 	}
-	pages := make([]gin.H, 0, len(res.Pages))
+	pages := make([]stalePageRow, 0, len(res.Pages))
 	for i := range res.Pages {
-		pages = append(pages, gin.H{
-			"ID":          res.Pages[i].ID,
-			"Path":        res.Pages[i].Path,
-			"ProjectID":   res.Pages[i].ProjectID,
-			"ProjectName": res.Pages[i].ProjectName,
+		pages = append(pages, stalePageRow{
+			ID:          res.Pages[i].ID,
+			Path:        res.Pages[i].Path,
+			ProjectID:   res.Pages[i].ProjectID,
+			ProjectName: res.Pages[i].ProjectName,
 		})
 	}
-	return gin.H{
-		"Available": true, "Pages": pages, "Total": res.Total, "Truncated": res.Truncated,
-		"Limit": blockStalePageLimit, "Hint": "",
+	return staleImpactView{
+		Available: true, Pages: pages, Total: res.Total, Truncated: res.Truncated,
+		Limit: blockStalePageLimit, Hint: "",
 	}
 }
 
@@ -406,24 +418,44 @@ func (h *blockPageHandle) BlocksStaleDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	rows := make([]gin.H, 0, len(res.Pages))
+	rows := make([]staleDrawerRow, 0, len(res.Pages))
 	projects := make(map[string]struct{}, 2)
 	for i := range res.Pages {
 		projects[res.Pages[i].ProjectID] = struct{}{}
-		rows = append(rows, gin.H{
-			"ID":          res.Pages[i].ID,
-			"Path":        res.Pages[i].Path,
-			"ProjectName": res.Pages[i].ProjectName,
-			"Published":   res.Pages[i].Published,
+		rows = append(rows, staleDrawerRow{
+			ID:          res.Pages[i].ID,
+			Path:        res.Pages[i].Path,
+			ProjectName: res.Pages[i].ProjectName,
+			Published:   res.Pages[i].Published,
 			// 失败痕迹（迁移 474）：有痕迹说明这页不是「还没轮到」，而是重建失败过。
 			// 交的是事实（阶段 key + 时刻），整句由共用的片段模板拼回。
-			"RebuildFailure": rebuildFailureViewOf(res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt),
+			RebuildFailure: rebuildFailureViewOf(res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt),
 		})
 	}
-	c.HTML(http.StatusOK, "admin/partials/stale_pages_drawer.html", adminui.Prepare(c, gin.H{
-		"Rows": rows, "Total": res.Total, "Truncated": res.Truncated,
-		"Limit": blockStalePageLimit, "MultiProject": len(projects) > 1,
-	}))
+	// 片段出口与整页共用 pageview.Render —— 套不套页壳由路由的 BareSlot / PageSlot 决定，
+	// 控制器不持模板名、不 import 渲染层（与整页同一形态）。
+	pageview.Render(c, stalePagesDrawerView{
+		Rows: rows, Total: res.Total, Truncated: res.Truncated,
+		Limit: blockStalePageLimit, MultiProject: len(projects) > 1,
+	})
+}
+
+// staleDrawerRow 待重建抽屉片段的一行（模板 admin/partials/stale_pages_drawer.html）。
+type staleDrawerRow struct {
+	ID             string
+	Path           string
+	ProjectName    string
+	Published      bool
+	RebuildFailure rebuildFailureView
+}
+
+// stalePagesDrawerView 待重建抽屉片段的渲染视图（**片段出口**，不是整页）。
+type stalePagesDrawerView struct {
+	Rows         []staleDrawerRow
+	Total        int
+	Truncated    bool
+	Limit        int
+	MultiProject bool
 }
 
 // rebuildFailureView 失败痕迹的**事实**：阶段词条 key + 中文兜底 + 已格式化的时刻。
