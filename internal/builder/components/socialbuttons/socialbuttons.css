@@ -37,7 +37,7 @@
 /* 配色：三选一，只命中一个分支。 */
 @if colorMono
 & .sky-social-btn {
-  color: var(--sky-c-muted, #6b7280);
+  color: var(--sky-c-text-mute, #6b7280);
   background: var(--sky-c-surface-alt, rgba(0,0,0,0.05));
 }
 @endif
@@ -53,7 +53,7 @@
 /* 品牌配色：按平台（aria-label）逐条命中。 */
 @each brand in brands
 & a[aria-label="{{brand.label}}"] {
-  color: #fff;
+  color: var(--sky-c-surface);
   background: {{brand.color}};
 }
 @endfor

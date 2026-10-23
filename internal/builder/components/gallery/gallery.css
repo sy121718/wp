@@ -157,7 +157,7 @@
   bottom: 0;
   padding: 8px;
   background: rgba(0,0,0,0.55);
-  color: #fff;
+  color: var(--sky-c-surface);
   opacity: 0;
   transition: opacity {{duration}} ease;
 }

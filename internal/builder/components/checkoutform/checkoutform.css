@@ -86,7 +86,7 @@
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
   border-radius: 6px;
   background: var(--sky-c-surface, #fff);
-  color: var(--sky-c-text, #111827);
+  color: var(--sky-c-text);
   @focus-transition;
 }
 & textarea {
@@ -98,7 +98,7 @@
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
   border-radius: 6px;
   background: var(--sky-c-surface, #fff);
-  color: var(--sky-c-text, #111827);
+  color: var(--sky-c-text);
   @focus-transition;
   min-height: 96px;
   resize: vertical;
@@ -112,7 +112,7 @@
 /* 原生校验态（零 JS）：用户交互后字段非法 → 字段容器与控件同步标红。
    用 :user-invalid 而非 :invalid，避开「刚打开页面就全部标红」。 */
 & .sky-checkout-field:has(:user-invalid) {
-  color: var(--sky-c-danger, #dc2626);
+  color: var(--sky-c-danger);
 }
 & :user-invalid {
   border-color: var(--sky-c-danger, #dc2626);
@@ -126,7 +126,7 @@
   padding: 12px 28px;
   font-size: 15px;
   font-weight: 600;
-  color: var(--sky-btn-color, #fff);
+  color: var(--sky-btn-color, var(--sky-c-surface));
   background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));
   border: none;
   border-radius: 6px;

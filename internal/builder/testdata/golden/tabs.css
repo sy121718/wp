@@ -45,17 +45,17 @@ body {
 }
 
 .sky-c-tb1:has(#sky-tabs-tb1-0:checked) .sky-tabs-nav label:nth-of-type(1) {
-  color: #fff;
+  color: var(--sky-c-surface);
   background: var(--sky-c-primary, #2563eb);
 }
 
 .sky-c-tb1:has(#sky-tabs-tb1-1:checked) .sky-tabs-nav label:nth-of-type(2) {
-  color: #fff;
+  color: var(--sky-c-surface);
   background: var(--sky-c-primary, #2563eb);
 }
 
 .sky-c-tb1:has(#sky-tabs-tb1-2:checked) .sky-tabs-nav label:nth-of-type(3) {
-  color: #fff;
+  color: var(--sky-c-surface);
   background: var(--sky-c-primary, #2563eb);
 }
 
@@ -126,12 +126,12 @@ body {
 }
 
 .sky-c-tb2:has(#sky-tabs-tb2-0:checked) .sky-tabs-nav label:nth-of-type(1) {
-  color: #fff;
+  color: var(--sky-c-surface);
   background: var(--sky-c-primary, #2563eb);
 }
 
 .sky-c-tb2:has(#sky-tabs-tb2-1:checked) .sky-tabs-nav label:nth-of-type(2) {
-  color: #fff;
+  color: var(--sky-c-surface);
   background: var(--sky-c-primary, #2563eb);
 }
 

@@ -73,7 +73,7 @@
   border: 0;
   border-radius: 8px;
   background: {{color}};
-  color: #fff;
+  color: var(--sky-c-surface);
   font: inherit;
   font-weight: 600;
   line-height: 1.2;

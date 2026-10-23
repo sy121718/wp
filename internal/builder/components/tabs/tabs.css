@@ -42,7 +42,7 @@
 /* 标签高亮。 */
 @each tab in tabs
 &:has({{tab.radio}}:checked) .sky-tabs-nav label:nth-of-type({{tab.nth}}) {
-  color: #fff;
+  color: var(--sky-c-surface);
   background: var(--sky-c-primary, #2563eb);
 }
 @endfor

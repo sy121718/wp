@@ -50,7 +50,7 @@ body {
   height: 40px;
   border-radius: 999px;
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  background: var(--sky-c-surface, #fff);
+  background: var(--sky-c-surface);
   cursor: pointer;
   font-size: 20px;
   line-height: 1;

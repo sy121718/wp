@@ -29,10 +29,10 @@ func TestBadgeCSSVariants(t *testing.T) {
 		want    []string
 		notWant []string
 	}{
-		{"solid 缺省色走主题令牌", "", "", []string{token, "color: #fff"}, []string{"border: 1px solid", "color-mix"}},
-		{"outline 自定义色", VariantOutline, "#ff0000", []string{"color: #ff0000", "background: transparent", "border: 1px solid #ff0000"}, []string{"color: #fff", "color-mix"}},
-		{"soft 自定义色", VariantSoft, "#0f0", []string{"color: #0f0", "background: color-mix(in srgb, #0f0 12%, transparent)"}, []string{"color: #fff", "border: 1px solid"}},
-		{"未知变体兜底为实心", "weird", "", []string{token, "color: #fff"}, []string{"border: 1px solid", "color-mix"}},
+		{"solid 缺省色走主题令牌", "", "", []string{token, "color: var(--sky-c-surface)"}, []string{"border: 1px solid", "color-mix"}},
+		{"outline 自定义色", VariantOutline, "#ff0000", []string{"color: #ff0000", "background: transparent", "border: 1px solid #ff0000"}, []string{"color: var(--sky-c-surface)", "color-mix"}},
+		{"soft 自定义色", VariantSoft, "#0f0", []string{"color: #0f0", "background: color-mix(in srgb, #0f0 12%, transparent)"}, []string{"color: var(--sky-c-surface)", "border: 1px solid"}},
+		{"未知变体兜底为实心", "weird", "", []string{token, "color: var(--sky-c-surface)"}, []string{"border: 1px solid", "color-mix"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

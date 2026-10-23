@@ -55,7 +55,7 @@
 
 & p {
   margin: 0;
-  color: var(--sky-c-muted, #6b7280);
+  color: var(--sky-c-text-mute, #6b7280);
   line-height: 1.6;
 }
 
@@ -66,6 +66,6 @@
   padding: 8px 16px;
   border-radius: 6px;
   background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));
-  color: var(--sky-btn-color, #fff);
+  color: var(--sky-btn-color, var(--sky-c-surface));
   text-decoration: none;
 }

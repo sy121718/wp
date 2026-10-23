@@ -88,7 +88,7 @@
 
 & .sky-product-list-filter-option.is-active, & .sky-product-list-tool-option.is-active {
   border-color: var(--sky-c-primary, #2563eb);
-  color: var(--sky-c-primary, #2563eb);
+  color: var(--sky-c-primary);
   background: var(--sky-c-primary-weak, rgba(37,99,235,0.08));
 }
 
@@ -131,7 +131,7 @@
 
 & .sky-product-list-tool-label {
   font-size: .85rem;
-  color: var(--sky-c-muted, #6b7280);
+  color: var(--sky-c-text-mute, #6b7280);
 }
 
 & .sky-product-list-pager {
@@ -152,7 +152,7 @@
 
 & .sky-product-list-page-current {
   font-size: .9rem;
-  color: var(--sky-c-muted, #6b7280);
+  color: var(--sky-c-text-mute, #6b7280);
 }
 
 /* 价格滑块 (issue #28): 原生 range 是触屏与键盘天然可用的控件 (拖拽, 方向键都行),
@@ -176,7 +176,7 @@
 & .sky-product-list-price-label {
   flex: 0 0 auto;
   font-size: .85rem;
-  color: var(--sky-c-muted, #6b7280);
+  color: var(--sky-c-text-mute, #6b7280);
 }
 
 & .sky-product-list-price-range {
@@ -241,9 +241,9 @@
   min-height: 24px;
   padding: 0 10px;
   border-radius: 5px;
-  /* 底色取主色深一档：白字对比 6.7:1（主色 #2563eb 只有 5.1:1，12px 小字贴边）。 */
+  /* 底色取主色深一档：白字对比 6.7:1（主色 var(--sky-c-primary) 只有 5.1:1，12px 小字贴边）。 */
   background: var(--sky-c-primary-deep, #1d4ed8);
-  color: #fff;
+  color: var(--sky-c-surface);
   font-size: 12px;
   font-weight: 600;
   line-height: 1;
@@ -312,7 +312,7 @@
 
 & .sky-product-list-compare {
   text-decoration: line-through;
-  color: var(--sky-c-muted, #6b7280);
+  color: var(--sky-c-text-mute, #6b7280);
   font-size: .9em;
 }
 
@@ -331,14 +331,14 @@
   padding: 0 8px;
   border-radius: 999px;
   background: var(--sky-c-surface-alt, rgba(0,0,0,0.05));
-  color: var(--sky-c-muted, #6b7280);
+  color: var(--sky-c-text-mute);
 }
 
 & .sky-product-list-empty {
   margin: 0;
   padding: 24px 0;
   text-align: center;
-  color: var(--sky-c-muted, #6b7280);
+  color: var(--sky-c-text-mute, #6b7280);
 }
 
 /* 列表页入口（系统页面槽位 shop，BIZ-2）：槽位没绑 / 那页没发布时模板根本不输出这个节点，
