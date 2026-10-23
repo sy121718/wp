@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 
 	maildto "go_wp/internal/module/mail/dto"
@@ -36,7 +37,7 @@ func TestMailCampaignPageRenders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/mail/campaign", mailhttp.NewMailPageHandle(f.svc).MailCampaignPage)
+	router.GET("/admin/mail/campaign", adminui.PageSlot(mailhttp.CampaignReportPageTemplate), mailhttp.NewMailPageHandle(f.svc).MailCampaignPage)
 
 	recorder := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/admin/mail/campaign?id="+strconv.FormatUint(cps.Items[0].ID, 10), nil)

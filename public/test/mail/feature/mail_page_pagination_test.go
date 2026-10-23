@@ -11,6 +11,7 @@ package feature
 import (
 	"context"
 	"fmt"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -41,10 +42,10 @@ func newMailPaginationRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(f.svc)
-	engine.GET("/admin/mail", h.MailPage)
-	engine.GET("/admin/mail/templates", h.MailTemplatesPage)
-	engine.GET("/admin/mail/contacts", h.MailContactsPage)
-	engine.GET("/admin/mail/campaign", h.MailCampaignPage)
+	engine.GET("/admin/mail", adminui.PageSlot(mailhttp.AccountsPageTemplate), h.MailPage)
+	engine.GET("/admin/mail/templates", adminui.PageSlot(mailhttp.TemplatesPageTemplate), h.MailTemplatesPage)
+	engine.GET("/admin/mail/contacts", adminui.PageSlot(mailhttp.ContactsPageTemplate), h.MailContactsPage)
+	engine.GET("/admin/mail/campaign", adminui.PageSlot(mailhttp.CampaignReportPageTemplate), h.MailCampaignPage)
 	return engine
 }
 

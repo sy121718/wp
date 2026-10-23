@@ -8,6 +8,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -105,7 +106,7 @@ func newMailPageFixture(t *testing.T) (*gin.Engine, *mailservice.Service) {
 		}
 	})
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/mail", mailhttp.NewMailPageHandle(svc).MailPage)
+	router.GET("/admin/mail", adminui.PageSlot(mailhttp.AccountsPageTemplate), mailhttp.NewMailPageHandle(svc).MailPage)
 	return router, svc
 }
 

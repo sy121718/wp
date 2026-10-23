@@ -449,7 +449,6 @@ var pendingControllerRenderExit = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":                     true,
 	"internal/module/ai/inbound/http/ai_page.go":                           true,
 	"internal/module/content/inbound/http/content_page.go":                 true,
-	"internal/module/mail/inbound/http/mail_page.go":                       true,
 	"internal/module/membership/inbound/http/membership_page.go":           true,
 	"internal/module/page/inbound/http/page_langs_handle.go":               true,
 	"internal/module/page/inbound/http/page_schedule_handle.go":            true,
@@ -548,7 +547,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go":      true,
 	"internal/module/mail/inbound/http/mail_err.go":                             true,
 	"internal/module/mail/inbound/http/mail_jump.go":                            true,
-	"internal/module/mail/inbound/http/mail_page.go":                            true,
 	"internal/module/masterdata/inbound/http/masterdata_page.go":                true,
 	"internal/module/membership/inbound/http/membership_page.go":                true,
 	"internal/module/navigation/inbound/http/navigation_error_handle.go":        true,
@@ -583,6 +581,8 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/block/inbound/http/block_page.go": true,
 	// 导航页仍用 adminui.MsgText 把事实取成文本（NavEditError 槽位还没取词化）。
 	"internal/module/navigation/inbound/http/navigation_page_handle.go": true,
+	// 邮件页仍用 adminui.AttachPaginationView / MsgText（UI 线的现成对象与取词链）。
+	"internal/module/mail/inbound/http/mail_page.go": true,
 }
 
 const controllerUIImportPath = "go_wp/internal/adminui"

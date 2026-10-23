@@ -130,16 +130,24 @@ func TestMailSplitSixPagesRenderWithMatchingColumns(t *testing.T) {
 	handle := mailhttp.NewMailPageHandle(fixture.svc)
 
 	mount := map[string]func(*gin.Engine, string){
-		"MailPage":          func(e *gin.Engine, p string) { e.GET(p, handle.MailPage) },
-		"MailTemplatesPage": func(e *gin.Engine, p string) { e.GET(p, handle.MailTemplatesPage) },
-		"MailContactsPage":  func(e *gin.Engine, p string) { e.GET(p, handle.MailContactsPage) },
+		"MailPage": func(e *gin.Engine, p string) {
+			e.GET(p, adminui.PageSlot(mailhttp.AccountsPageTemplate), handle.MailPage)
+		},
+		"MailTemplatesPage": func(e *gin.Engine, p string) {
+			e.GET(p, adminui.PageSlot(mailhttp.TemplatesPageTemplate), handle.MailTemplatesPage)
+		},
+		"MailContactsPage": func(e *gin.Engine, p string) {
+			e.GET(p, adminui.PageSlot(mailhttp.ContactsPageTemplate), handle.MailContactsPage)
+		},
 		"MailCampaignsPage": func(e *gin.Engine, p string) {
 			e.GET(p, adminui.PageSlot(mailhttp.CampaignsPageTemplate), handle.MailCampaignsPage)
 		},
 		"MailAutomationPage": func(e *gin.Engine, p string) {
 			e.GET(p, adminui.PageSlot(mailhttp.AutomationListPageTemplate), handle.MailAutomationPage)
 		},
-		"MailAutomationRunsPage": func(e *gin.Engine, p string) { e.GET(p, handle.MailAutomationRunsPage) },
+		"MailAutomationRunsPage": func(e *gin.Engine, p string) {
+			e.GET(p, adminui.PageSlot(mailhttp.AutomationRunsPageTemplate), handle.MailAutomationRunsPage)
+		},
 	}
 
 	for _, page := range mailSplitPages() {
@@ -213,16 +221,24 @@ func TestMailSplitFailureBranchKeepsFullShellAndHidesInternalError(t *testing.T)
 			handle := mailhttp.NewMailPageHandle(fixture.svc)
 
 			mount := map[string]func(*gin.Engine, string){
-				"MailPage":          func(e *gin.Engine, p string) { e.GET(p, handle.MailPage) },
-				"MailTemplatesPage": func(e *gin.Engine, p string) { e.GET(p, handle.MailTemplatesPage) },
-				"MailContactsPage":  func(e *gin.Engine, p string) { e.GET(p, handle.MailContactsPage) },
+				"MailPage": func(e *gin.Engine, p string) {
+					e.GET(p, adminui.PageSlot(mailhttp.AccountsPageTemplate), handle.MailPage)
+				},
+				"MailTemplatesPage": func(e *gin.Engine, p string) {
+					e.GET(p, adminui.PageSlot(mailhttp.TemplatesPageTemplate), handle.MailTemplatesPage)
+				},
+				"MailContactsPage": func(e *gin.Engine, p string) {
+					e.GET(p, adminui.PageSlot(mailhttp.ContactsPageTemplate), handle.MailContactsPage)
+				},
 				"MailCampaignsPage": func(e *gin.Engine, p string) {
 					e.GET(p, adminui.PageSlot(mailhttp.CampaignsPageTemplate), handle.MailCampaignsPage)
 				},
 				"MailAutomationPage": func(e *gin.Engine, p string) {
 					e.GET(p, adminui.PageSlot(mailhttp.AutomationListPageTemplate), handle.MailAutomationPage)
 				},
-				"MailAutomationRunsPage": func(e *gin.Engine, p string) { e.GET(p, handle.MailAutomationRunsPage) },
+				"MailAutomationRunsPage": func(e *gin.Engine, p string) {
+					e.GET(p, adminui.PageSlot(mailhttp.AutomationRunsPageTemplate), handle.MailAutomationRunsPage)
+				},
 			}
 			register, ok := mount[tc.method]
 			if !ok {
@@ -292,7 +308,7 @@ func TestMailSplitLegacyMarketingRedirectsToContacts(t *testing.T) {
 			engine := mailSplitEngine(t)
 			engine.GET(mailSplitLegacyPath, handle.MailMarketingRedirect)
 			// 落点页必须真存在，否则 302 只是把 404 挪了个地方。
-			engine.GET("/admin/mail/contacts", handle.MailContactsPage)
+			engine.GET("/admin/mail/contacts", adminui.PageSlot(mailhttp.ContactsPageTemplate), handle.MailContactsPage)
 
 			rec := mailSplitGET(t, engine, mailSplitLegacyPath+tc.query)
 			if rec.Code != http.StatusFound {

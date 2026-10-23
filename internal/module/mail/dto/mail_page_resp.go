@@ -130,3 +130,110 @@ type AutomationEditPageResp struct {
 	Err       string
 	Templates []any
 }
+
+// AutomationCanvasPageResp 自动化画布页（拖拽编辑器）。
+type AutomationCanvasPageResp struct {
+	// Title 与小写壳键双出：模板 title 槽是 `{{.title}}`（layout 壳），
+	// 而画布页自己还要 `.jsVer`。`view` 标签让同一字段同时供两个键 ——
+	// 比在控制器里再拼一层 map 干净（那是这次要消灭的形态）。
+	Title        string `view:"title"`
+	TitleDisplay string `view:"Title"`
+	// A 自动化实体（画布只读元数据 + 节点图）。
+	A         any
+	NodesJSON string
+	MetaJSON  string
+	Templates []any
+	JSVer     string `view:"jsVer"`
+	// KeyframesCSS 按需内联的动效关键帧（本次只用到入场一个）。
+	// 不声明就是零字节 —— 后台不常驻加载 63 条营销动效，谁用谁声明。
+	KeyframesCSS string
+}
+
+// AutomationRunPageResp 自动化运行详情页。
+//
+// Detail 里 Explain / ErrorMessage / 时间线都是写侧落下的**运行文案编码**，
+// 出口按语言还原（见 mailRunDetailTexts）。
+type AutomationRunPageResp struct {
+	Title string
+	D     any
+}
+
+// 四个列表页的视图。
+//
+// 它们的形状高度相似（标题 + 行 + 总数 + 分页），但仍然分开声明：
+// 每页的行类型与筛选维度不同，合成一个会让「改这页」牵动那页 ——
+// 而这四个页面正是各自独立演进的（联系人加过分组、模板加过 kind）。
+// 共用的只有「失败档也要有零值」这一条硬要求。
+
+// AutomationRunsPageResp 自动化运行记录页。
+//
+// 五个计数键（CountRunning/Waiting/Completed/Failed/Stopped）不可省：模板随后就用它们
+// 渲染，缺任一项都会让 Jet 在那一行中断（HTTP 仍是 200、正文整块消失）。
+type AutomationRunsPageResp struct {
+	Title     string
+	Page      int
+	FilterID  string
+	FilterRun string
+	// RunsQuery 补投表单 action 的 query：回跳时由 shell.BackPath 读回，
+	// 翻到第 2 页补投后不会被弹回未筛选的第 1 页。
+	RunsQuery string
+	Err       string
+
+	Runs           []any
+	RunTotal       int64
+	CountRunning   int64
+	CountWaiting   int64
+	CountCompleted int64
+	CountFailed    int64
+	CountStopped   int64
+
+	Pagination pagination.Page
+}
+
+// ContactsPageResp 联系人列表页。
+type ContactsPageResp struct {
+	Title        string
+	Contacts     []any
+	ContactTotal int64
+	Page         int
+	// 筛选回显与候选（模板在提示条之后就用它们渲染筛选栏与列表）。
+	Keyword    string
+	Status     string
+	Tags       string
+	TagOptions []any
+	// ListQuery 写动作表单 action 的 query（筛选 + 页码）。
+	ListQuery string
+	Err       string
+
+	Pagination pagination.Page
+}
+
+// AccountsPageResp 发信账号列表页（/admin/mail）。
+//
+// 空列表不可省：模板在提示条之后就用 len(.Accounts) / range 取列表，
+// 缺键会让 Jet 在那一行中断（HTTP 仍是 200、正文整块消失）。
+type AccountsPageResp struct {
+	Title    string
+	Accounts []any
+	Err      string
+
+	Pagination pagination.Page
+}
+
+// TemplatesPageResp 邮件模板列表页。
+type TemplatesPageResp struct {
+	Title         string
+	Templates     []any
+	TemplateTotal int64
+	Err           string
+	Pagination    pagination.Page
+}
+
+// CampaignReportPageResp 活动报表页。
+type CampaignReportPageResp struct {
+	Title string
+	// R 报表数据（活动信息 + 收件人明细）。
+	R          any
+	Page       int
+	Pagination pagination.Page
+}
