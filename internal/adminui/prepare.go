@@ -178,6 +178,32 @@ func ViewMap(view any) gin.H {
 		if !field.IsExported() {
 			continue
 		}
+		// 匿名嵌入的结构体**摊平**进同一层：`type errView struct{ *PageResp }` 的
+		// 用途就是「同一份视图 + 追加出口关切（状态码/no-store）」，模板读的还是
+		// `.Title` / `.Templates` 这些原字段 —— 不摊平会让模板键全部找不到
+		// （Jet 缺键的表现是整页中断，而渲染出口只能回一句归口错误）。
+		//
+		// 只摊平**匿名**字段：具名字段是视图自己的键，摊平它等于偷换语义。
+		if field.Anonymous {
+			ev := rv.Field(i)
+			for ev.Kind() == reflect.Pointer {
+				if ev.IsNil() {
+					ev = reflect.Value{}
+					break
+				}
+				ev = ev.Elem()
+			}
+			if ev.IsValid() && ev.Kind() == reflect.Struct {
+				for k, v := range ViewMap(ev.Interface()) {
+					// 外层同名字段优先（显式覆盖胜过嵌入默认），与 Go 的字段提升规则一致。
+					if _, exists := out[k]; !exists {
+						out[k] = v
+					}
+				}
+				continue
+			}
+			continue
+		}
 		name := field.Name
 		if tag := field.Tag.Get("view"); tag != "" {
 			name = tag

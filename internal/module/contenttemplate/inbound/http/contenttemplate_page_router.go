@@ -27,6 +27,9 @@ import (
 // 装配层在全部契约就绪后调用本函数，装配点与 dashboard 页面并排。
 //
 // pages 为 nil 时整体跳过（与既有 rg == nil 的早退同构）。
+// ContentTemplatesPageTemplate 内容模板列表整页的模板名（页面出口由 PageSlot 带进上下文）。
+const ContentTemplatesPageTemplate = "admin/contenttemplate/content_templates.html"
+
 func SetupContentTemplatePages(pages *gin.RouterGroup,
 	templates contenttemplatecontract.ContentTemplateService,
 	projects projectcontract.ProjectService, products productcontract.ProductService,
@@ -35,6 +38,11 @@ func SetupContentTemplatePages(pages *gin.RouterGroup,
 		return
 	}
 	contentTemplatePages := newContentTemplatePageHandle(templates, projects, products, contents)
-	pages.GET("/content-templates", adminui.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplatesPage)
+	// 页面出口走 adminui.PageSlot（模板名与渲染实现在装配点声明），handler 只调
+	// pageview.Render —— 与 product / masterdata 同一形态（控制器不持模板名、不 import 渲染层）。
+	pages.GET("/content-templates",
+		adminui.PageAuthz("/api/contenttemplate/list"),
+		adminui.PageSlot(ContentTemplatesPageTemplate),
+		contentTemplatePages.ContentTemplatesPage)
 	pages.GET("/content-templates/edit", adminui.PageAuthz("/api/contenttemplate/list"), contentTemplatePages.ContentTemplateEditPage)
 }

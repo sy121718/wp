@@ -28,6 +28,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 
+	"go_wp/internal/adminui"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -218,7 +219,9 @@ func TestContentTemplatesPageMainListFailureRenders500(t *testing.T) {
 	handle := NewContentTemplatePageHandle(ctFailingTemplates{}, ctOKProjects{}, nil, nil)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/content-templates", handle.ContentTemplatesPage)
+	engine.GET("/admin/content-templates",
+		adminui.PageSlot(ContentTemplatesPageTemplate),
+		handle.ContentTemplatesPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/content-templates", nil))
@@ -308,7 +311,9 @@ func renderContentTemplatesPageWithDeps(t *testing.T, templatesSvc contenttempla
 	handle := NewContentTemplatePageHandle(templatesSvc, projects, products, contents)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/content-templates", handle.ContentTemplatesPage)
+	engine.GET("/admin/content-templates",
+		adminui.PageSlot(ContentTemplatesPageTemplate),
+		handle.ContentTemplatesPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))

@@ -16,6 +16,8 @@ package templates
 // 与 public/test/order/feature/coupon_window_timezone_test.go（真实 service 落库）。
 
 import (
+	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
+	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -440,12 +442,16 @@ func TestContentTemplatesPageRendersGroupedEntitySelect(t *testing.T) {
 		"Ready": true, "SelectedProject": "pr1", "Projects": groupDProjects(),
 		"EntityType": "", "Err": "", "ImpactNote": "", "ImpactAvailable": true,
 		"LoadFailed": false, "TemplateCount": 1,
-		"Templates": []map[string]any{{
-			"ID": "t1", "Name": "商品详情", "TypeLabel": "商品", "EntityType": "product",
-			"IsStructure": false, "RoleLabel": "默认", "DraftVersion": 1, "IsDefault": true,
-			"RefCount": 0, "RefPageCount": 0, "RefInstanceCount": 0,
-			"RefPages": []map[string]any{}, "RefInstances": []map[string]any{},
-			"SampleErr": "", "EditURL": "", "UpdatedAt": "2026-01-01",
+		// 行是 dto.TemplateListRowResp；Type/Role 是**词条事实**（key + 中文兜底），
+		// 模板用 tr(key, fallback) 取词 —— 与 info.TypeLabel 那句断言无关（那条验的是 optgroup
+		// 分组，与行形状独立）。这里用 LabelPair 是为了让装置与真实视图同形。
+		"Templates": []contenttemplatedto.TemplateListRowResp{{
+			ID: "t1", Name: "商品详情", EntityType: "product",
+			Type:        contenttemplateenums.EntityTypeLabel("product"),
+			Role:        contenttemplateenums.TemplateRoleLabel(""),
+			IsStructure: false, DraftVersion: 1, IsDefault: true,
+			RefPages:     []contenttemplatedto.TemplatePageRefResp{},
+			RefInstances: []contenttemplatedto.TemplateInstanceRefResp{},
 		}},
 	})
 	out := renderAdminPage(t, "content_templates.html", data)
