@@ -38,6 +38,51 @@
     --shadow-lg:          0 4px 8px rgba(16,20,26,0.08), 0 16px 32px rgba(16,20,26,0.06);
 }
 
+/* ===== 基础档位令牌（间距 / 圆角 / 字号 / 动效） =====
+ *
+ * 为什么补这一层：theme.css 原本只有颜色(46) + 阴影(3) + 字体(2)，**没有**间距、
+ * 圆角、字号的档位。结果是同一类值在各处手写：border-radius 6px 出现 60 次、
+ * gap 8px 66 次 —— 改一次视觉密度要动几十个文件，而且没人能说出「我们一共用了几档」。
+ *
+ * 档位取的是**代码里实际出现过的值**，不是凭空设计一套：这样替换进存量样式时
+ * 每一处都能对应到相同数值（替换不改视觉），而档位数量收敛到能用手指数的程度。
+ *
+ * 命名遵循 --<类别>-<档位>：数字档位不是 px 的缩写（--space-3 是语义档位，不是 3px）。
+ */
+[data-theme="light"], [data-theme="dark"] {
+    /* 间距：4px 基准，档位取存量高频值 */
+    --space-1:  2px;
+    --space-2:  4px;
+    --space-3:  6px;
+    --space-4:  8px;
+    --space-5:  10px;
+    --space-6:  12px;
+    --space-7:  16px;
+    --space-8:  24px;
+
+    /* 圆角 */
+    --radius-sm:   4px;
+    --radius-md:   6px;
+    --radius-lg:   8px;
+    --radius-xl:   12px;
+    --radius-pill: 999px;
+
+    /* 字号（配 --font-sans；行高留给使用处，字号与行高不是一一绑定） */
+    --text-xs:   11px;
+    --text-sm:   12px;
+    --text-base: 13px;
+    --text-md:   14px;
+    --text-lg:   16px;
+    --text-xl:   20px;
+    --text-2xl:  24px;
+
+    /* 动效时长（与 builder/core 的入场时长档位同源语义：fast/normal/slow） */
+    --motion-unit:  100ms;
+    --motion-fast:  150ms;
+    --motion-normal: 250ms;
+    --motion-slow:  400ms;
+}
+
 /* ===== 暗色主题 ===== */
 [data-theme="dark"] {
     --c-primary:           #aeb6c0;
