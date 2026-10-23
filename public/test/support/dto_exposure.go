@@ -63,6 +63,10 @@ var defaultDTOExposureAllow = map[string]string{
 	//     供应商密钥以 AES-GCM 密文落库（pkg/crypto），服务端**没有任何读回明文的接口**，
 	//     出参只有这个布尔值；密钥一旦更换或 API 地址变更即失效，也不出密文。
 	"ModelEntry.MaxOutputTokens":     "计量字段：模型声明的最大输出 token 数（整型），不是凭据",
+	"ModelRowResp.MaxOutputTokens":   "计量字段：模型声明的最大输出 token 数（整型），不是凭据（同 ModelEntry 同名字段）",
+	// CSRF token 是**防跨站请求伪造的会话令牌**，与 API 凭据是两回事：
+	// 它由服务端在渲染时注入、随表单回传校验，本来就该出现在页面里（否则表单提交必被拒）。
+	"ProviderCardResp.CSRFToken": "CSRF 防护令牌：由服务端渲染时注入、随表单回传校验，本来就该出现在页面里；不是 API 凭据",
 	"Provider.HasAPIKey":             "布尔开关：只回答「这个供应商配没配过密钥」。密钥以 AES-GCM 密文落库、无任何读回明文的接口（连密文都不出），响应用 HasAPIKey 而不是回显密钥物",
 	"Session.ContextTokens":          "计量字段：上下文窗口已占用的 token 数（整型），不是凭据",
 	"SessionItem.Tokens":             "计量字段：会话消息累计 token 数（整型），不是凭据",
