@@ -41,3 +41,92 @@ func NewCampaignsPageError(title, errText string) *CampaignsPageResp {
 		Err:       errText,
 	}
 }
+
+// AutomationRowResp 自动化列表的一行。
+//
+// 触发方式给**中文标签**（枚举不直接进界面），其余字段原样透出。
+type AutomationRowResp struct {
+	ID           uint64
+	Name         string
+	Description  string
+	Status       string
+	Version      int
+	TriggerLabel string
+}
+
+// AutomationListPageResp 自动化列表整页（/admin/mail/automation）。
+type AutomationListPageResp struct {
+	Title     string
+	Page      int
+	ListQuery string
+	// Err 取数失败时的归口提示（空串 = 无错误）。
+	Err string
+	// Automations / AutoTotal 空列表与 0 不可省：模板随后就用 len(.Automations) /
+	// .AutoTotal 渲染列表，缺键会让 Jet 在那一行中断（HTTP 仍是 200、正文整块消失）。
+	Automations []AutomationRowResp
+	AutoTotal   int64
+
+	Pagination pagination.Page
+}
+
+// AutomationStepRowResp 自动化编辑页的步骤行。
+type AutomationStepRowResp struct {
+	Index int
+	Key   string
+	Type  string
+	// 类型下拉与目标下拉（选中态按行数据判）。
+	TypeOptions      []OptionResp
+	Param            string
+	Tag              string
+	UnitValue        string
+	UnitOptions      []OptionResp
+	ConditionOptions []OptionResp
+	Yes              string
+	No               string
+	YesOptions       []OptionResp
+	NoOptions        []OptionResp
+	StepLabel        string
+	NextLabel        string
+
+	IsDelay  bool
+	IsEmail  bool
+	IsBranch bool
+	IsTag    bool
+	IsEnd    bool
+	IsBlank  bool
+
+	CanMoveUp   bool
+	CanMoveDown bool
+}
+
+// AutomationFallbackRowResp 表单表达不了的流程的只读行。
+//
+// 只给**事实**（节点键、类型名、三条跳转），不给可提交的表单：
+// 还原失败的表单渲染出来是空的，用户一保存就把还原不出来的节点整段删掉。
+type AutomationFallbackRowResp struct {
+	Key  string
+	Type string
+	Next string
+	Yes  string
+	No   string
+}
+
+// AutomationEditPageResp 自动化编辑页（新建 / 编辑 / 只读兜底三态共用一张模板）。
+type AutomationEditPageResp struct {
+	Title string
+	Form  any
+	IsNew bool
+
+	// Rows 可编辑的步骤行（只读兜底态为空）。
+	Rows []AutomationStepRowResp
+	// Fallback / FallbackRows 表单表达不了的流程：只读展示原图 + 去画布的入口。
+	Fallback     bool
+	FallbackRows []AutomationFallbackRowResp
+
+	Types      []any
+	Triggers   []OptionResp
+	CanAddStep bool
+	// Err 本页的表单校验文案（空串 = 无错误）；写动作结论走提示页。
+	Err       string
+	Templates []any
+}

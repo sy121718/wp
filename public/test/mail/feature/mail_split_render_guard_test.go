@@ -136,7 +136,9 @@ func TestMailSplitSixPagesRenderWithMatchingColumns(t *testing.T) {
 		"MailCampaignsPage": func(e *gin.Engine, p string) {
 			e.GET(p, adminui.PageSlot(mailhttp.CampaignsPageTemplate), handle.MailCampaignsPage)
 		},
-		"MailAutomationPage":     func(e *gin.Engine, p string) { e.GET(p, handle.MailAutomationPage) },
+		"MailAutomationPage": func(e *gin.Engine, p string) {
+			e.GET(p, adminui.PageSlot(mailhttp.AutomationListPageTemplate), handle.MailAutomationPage)
+		},
 		"MailAutomationRunsPage": func(e *gin.Engine, p string) { e.GET(p, handle.MailAutomationRunsPage) },
 	}
 
@@ -217,7 +219,9 @@ func TestMailSplitFailureBranchKeepsFullShellAndHidesInternalError(t *testing.T)
 				"MailCampaignsPage": func(e *gin.Engine, p string) {
 					e.GET(p, adminui.PageSlot(mailhttp.CampaignsPageTemplate), handle.MailCampaignsPage)
 				},
-				"MailAutomationPage":     func(e *gin.Engine, p string) { e.GET(p, handle.MailAutomationPage) },
+				"MailAutomationPage": func(e *gin.Engine, p string) {
+					e.GET(p, adminui.PageSlot(mailhttp.AutomationListPageTemplate), handle.MailAutomationPage)
+				},
 				"MailAutomationRunsPage": func(e *gin.Engine, p string) { e.GET(p, handle.MailAutomationRunsPage) },
 			}
 			register, ok := mount[tc.method]
