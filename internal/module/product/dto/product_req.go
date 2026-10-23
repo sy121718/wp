@@ -1,7 +1,12 @@
 // product_req.go — product 模块入参（inbound 绑定用）。
 package productdto
 
-import json "go_wp/pkg/jsonx"
+import (
+	"net/url"
+	"strings"
+
+	json "go_wp/pkg/jsonx"
+)
 
 // CreateReq 新建商品。
 //
@@ -14,7 +19,8 @@ type CreateReq struct {
 	// 只在创建时确定 —— bundle 不生成首个变体，价格只取 DefaultPrice（容器价，必须 > 0）。
 	Type        string          `json:"type" form:"type"`
 	Subtitle    string          `json:"subtitle" form:"subtitle"`
-	Description json.RawMessage `json:"description"`
+	// Description 走 BindForm（见 CreateReq.BindForm）。
+	Description json.RawMessage `json:"description" form:"-"`
 	Slug        string          `json:"slug" form:"slug"`
 	// SKUCode 商品主体 SKU 编码（规则见 docs/14-product-sku-and-cost-model.md）。
 	//
@@ -56,10 +62,11 @@ type CreateReq struct {
 	CategoryIDs  []string `json:"categoryIds" form:"categoryIds"`
 	// PrimaryCategoryID 主分类（issue #10）。主分类必然是附属分类之一：
 	// 显式指定但它不在 CategoryIDs 里时由服务端自动纳入，不变量始终成立。
-	PrimaryCategoryID string          `json:"primaryCategoryId" form:"primaryCategoryId"`
-	TagIDs            []string        `json:"tagIds" form:"tagIds"`
-	RelatedIDs        []string        `json:"relatedIds" form:"relatedIds"`
-	BundleItems       json.RawMessage `json:"bundleItems"`
+	PrimaryCategoryID string   `json:"primaryCategoryId" form:"primaryCategoryId"`
+	TagIDs            []string `json:"tagIds" form:"tagIds"`
+	RelatedIDs        []string `json:"relatedIds" form:"relatedIds"`
+	// BundleItems / Metadata 同 Description：都走 BindForm（见 UpdateReq.BindForm）。
+	BundleItems json.RawMessage `json:"bundleItems" form:"-"`
 	// BrandID 品牌引用（issue #10）：必须是同工程内真实存在的品牌，空串即不指定。
 	BrandID      string          `json:"brandId" form:"brandId"`
 	DefaultPrice *float64        `json:"defaultPrice" form:"defaultPrice"`
@@ -110,9 +117,11 @@ type UpdateReq struct {
 	Name      *string `json:"name" form:"name"`
 	// Type 商品类型：只在创建时确定。传入且与现值不同即拒绝（ErrProductTypeImmutable）——
 	// 变体 ↔ 捆绑的切换涉及「有没有自己的 SKU / 价格放在哪」，不是一次字段更新能表达的。
-	Type        *string         `json:"type" form:"type"`
-	Subtitle    *string         `json:"subtitle" form:"subtitle"`
-	Description json.RawMessage `json:"description"`
+	Type     *string `json:"type" form:"type"`
+	Subtitle *string `json:"subtitle" form:"subtitle"`
+	// Description 走 BindForm 自己解析：htmx 的 data-write-html 产出 `{"html":…}` 字符串，
+	// 而 json.RawMessage 的 Unmarshaler 期待一个 JSON 值、不认字符串（实测绑不上恒 nil）。
+	Description json.RawMessage `json:"description" form:"-"`
 	Slug        *string         `json:"slug" form:"slug"`
 	// SKUCode 商品主体 SKU 编码（显式修改才动 products.sku_code）：nil 表示本次不改 ——
 	// 存量编码不被隐式重写；给了空串按 ErrContainerSkuInvalid 拒绝（静默忽略会让人以为改成功了）。
@@ -141,7 +150,7 @@ type UpdateReq struct {
 	BrandID           *string         `json:"brandId" form:"brandId"`
 	DefaultPrice      *float64        `json:"defaultPrice" form:"defaultPrice"`
 	DefaultImage      *string         `json:"defaultImage" form:"defaultImage"`
-	Metadata          json.RawMessage `json:"metadata"`
+	Metadata          json.RawMessage `json:"metadata" form:"-"`
 	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
 	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
 	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
@@ -187,7 +196,8 @@ type CreateVariantReq struct {
 	ComparePrice *float64        `json:"comparePrice" form:"comparePrice"`
 	CostPrice    *float64        `json:"costPrice" form:"costPrice"`
 	Image        string          `json:"image" form:"image"`
-	OptionValues json.RawMessage `json:"optionValues"`
+	// OptionValues 走 BindForm（表单体里是一个 JSON 对象字符串）。
+	OptionValues json.RawMessage `json:"optionValues" form:"-"`
 	Enabled      *bool           `json:"enabled" form:"enabled"`
 	Sort         int             `json:"sort" form:"sort"`
 	// WarehouseID 归属仓（issue #15）：不选则兜底该工程的默认仓；
@@ -213,7 +223,8 @@ type UpdateVariantReq struct {
 	ComparePrice *float64        `json:"comparePrice" form:"comparePrice"`
 	CostPrice    *float64        `json:"costPrice" form:"costPrice"`
 	Image        *string         `json:"image" form:"image"`
-	OptionValues json.RawMessage `json:"optionValues"`
+	// OptionValues 走 BindForm（表单体里是一个 JSON 对象字符串）。
+	OptionValues json.RawMessage `json:"optionValues" form:"-"`
 	Enabled      *bool           `json:"enabled" form:"enabled"`
 	Sort         *int            `json:"sort" form:"sort"`
 	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
@@ -267,4 +278,55 @@ type GenerateVariantsReq struct {
 	// （json/form 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
 	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
 	OperatorID string `json:"-" form:"-"`
+}
+
+// BindForm 表单体里把三个 json.RawMessage 字段按 JSON 字符串解析。
+//
+// 为什么需要它（审查 P1）：`Description` / `BundleItems` / `Metadata` 都没有 form tag，
+// 而 json.RawMessage 的 UnmarshalJSON 期待**一个 JSON 值**、不认表单给的字符串 ——
+// 反射那条路绑不上，字段恒 nil，service 因此「不写」（保留旧值），而页面提示保存成功。
+// 最典型的是富文本：`data-write-html="descriptionHtml:description"` 产出
+// `{"html":…}` 字符串，绑不上就等于「改完描述保存后描述没变」。
+//
+// 空值 / 未提交 → 保持 nil（nil = 本次不改，与 JSON 省略同义）。
+// 非空但不是合法 JSON → FieldValueError（400），不静默吞。
+func (r *UpdateReq) BindForm(vals url.Values) error {
+	for _, f := range []struct {
+		name string
+		dst  *json.RawMessage
+	}{
+		{"description", &r.Description},
+		{"bundleItems", &r.BundleItems},
+		{"metadata", &r.Metadata},
+	} {
+		raw := strings.TrimSpace(vals.Get(f.name))
+		if raw == "" {
+			continue
+		}
+		if !json.Valid([]byte(raw)) {
+			return &FieldValueError{Field: f.name, Kind: FieldKindJSON}
+		}
+		*f.dst = json.RawMessage(raw)
+	}
+	return nil
+}
+
+// BindForm 表单体里 description 是一个 JSON 字符串（htmx 的 data-write-html 产出
+// `{"html":…}`）。与 UpdateReq.BindForm 同一手法，理由也同：json.RawMessage 的
+// UnmarshalJSON 期待 JSON 值、不认表单给的字符串，反射那条路绑不上。
+func (r *CreateReq) BindForm(vals url.Values) error {
+	return bindRawJSONField(vals, "description", &r.Description)
+}
+
+// BindForm 变体的 optionValues：表单体里是一个 JSON 对象字符串（规格组合映射）。
+//
+// 为什么需要：这两个 DTO 的 OptionValues 原先既没有 form tag、也没有 BindForm ——
+// 「DTO 缺 form tag」门禁对 json.RawMessage 无条件豁免，把这条缺口盖住了
+// （审查 P1 指出豁免前提不成立）。现在豁免要求「有 BindForm」，于是缺口暴露、在此补上。
+func (r *CreateVariantReq) BindForm(vals url.Values) error {
+	return bindRawJSONField(vals, "optionValues", &r.OptionValues)
+}
+
+func (r *UpdateVariantReq) BindForm(vals url.Values) error {
+	return bindRawJSONField(vals, "optionValues", &r.OptionValues)
 }

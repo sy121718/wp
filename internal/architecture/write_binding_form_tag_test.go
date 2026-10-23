@@ -30,6 +30,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -250,7 +251,7 @@ func TestWriteDTOsHaveFormTag(t *testing.T) {
 				if !ok {
 					return true
 				}
-				if !structLacksFormTag(st) {
+				if !structLacksFormTag(st, implementsBindForm(fset, used, ts.Name.Name, roots, root)) {
 					return true
 				}
 				key := rel + ":" + ts.Name.Name
@@ -273,7 +274,7 @@ func TestWriteDTOsHaveFormTag(t *testing.T) {
 //     （product 的 CreateTagReq 就是这样处理的）。
 //   - 内嵌结构体（匿名字段）：其字段在父结构体上不可见，由内嵌类型自己负责。
 //   - json:"-"：本就不参与序列化。
-func structLacksFormTag(st *ast.StructType) bool {
+func structLacksFormTag(st *ast.StructType, hasBindForm bool) bool {
 	for _, field := range st.Fields.List {
 		if len(field.Names) == 0 { // 内嵌
 			continue
@@ -292,7 +293,13 @@ func structLacksFormTag(st *ast.StructType) bool {
 		if tag.Get("form") != "" {
 			continue
 		}
-		if isRawMessageField(field.Type) {
+		// json.RawMessage 豁免的**前提是这个 DTO 自己实现了 BindForm**：
+		// 编码层绑不了表单字符串，只能由 BindForm 解析。
+		//
+		// 原先是无条件豁免 —— 而 UpdateReq 并没有 BindForm，于是 Description /
+		// BundleItems / Metadata 三个字段一直静默丢失（审查 P1：富文本改完保存后没变）。
+		// 现在改成：有 BindForm 才豁免，没有就照常报缺口。
+		if isRawMessageField(field.Type) && hasBindForm {
 			continue
 		}
 		return true
@@ -325,4 +332,60 @@ func relDir(root, path string) string {
 		return dir
 	}
 	return filepath.ToSlash(rel)
+}
+
+// implementsBindForm 该类型是否实现了 `func (x *X) BindForm(url.Values) error`。
+//
+// 它决定 json.RawMessage 字段能不能豁免 form tag：编码层绑不了表单字符串，
+// 但这种字段由 BindForm 自己解析 —— 没有 BindForm 的 DTO 就得报缺口。
+//
+// 扫全部 root 下的非测试文件（类型与方法是分开声明的，可能不在同一个文件）。
+func implementsBindForm(_ *token.FileSet, _ map[string]bool, typeName string, roots []string, root string) bool {
+	dirs := make([]string, 0, len(roots))
+	dirs = append(dirs, roots...)
+	for _, dir := range dirs {
+		files := make([]string, 0, 64)
+		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			files = append(files, path)
+			return nil
+		})
+		for _, path := range files {
+			f, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+			if err != nil {
+				continue
+			}
+			for _, decl := range f.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Recv == nil || fn.Name.Name != "BindForm" {
+					continue
+				}
+				if len(fn.Recv.List) == 0 {
+					continue
+				}
+				if recvTypeName(fn.Recv.List[0].Type) == typeName {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// recvTypeName 取接收者类型名（*UpdateReq → UpdateReq，UpdateReq → UpdateReq）。
+func recvTypeName(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.StarExpr:
+		return recvTypeName(e.X)
+	case *ast.Ident:
+		return e.Name
+	case *ast.IndexExpr: // 泛型接收者
+		return recvTypeName(e.X)
+	}
+	return ""
 }

@@ -184,16 +184,27 @@
         });
     }
 
-    // ── data-write-array：同名多值永远收成数组（哪怕一个都没勾） ──
+    // ── data-write-array：同名多值收成数组 ──
     //
     // 浏览器对「一个都没勾的 checkbox 组」**完全不提交该键**，于是 DTO 的
     // `AttributeIDs []string` 保持 nil —— 语义从「解绑全部」反转成「本次不改」，
-    // 用户以为解绑了。声明过的字段因此在一个都没勾时补一个空数组。
+    // 用户以为解绑了。
+    //
+    // 但**不能靠发 "[]" 表达空数组**：gin 的 form 绑定把字符串 "[]" 当成**一个元素**
+    //（实测 `attributeIds=[]` → `[]string{"[]"}`），那个 "[]" 会被当成 uuid 去查库 →
+    // PG 报 22P02 → 500（审查 P1）。空串同样是 `[]string{""}`。
+    //
+    // 所以这里的职责改成：**删掉空值**，把「全都没勾」表达为「不发这个键」。
+    // 「解绑全部」由 DTO 自己的 BindForm 按「键存在但为空」识别 —— 见
+    // product_edit.html 的 keep-empty 声明与各 DTO 的 BindForm。
     function applyArrayFields(body, el) {
         var names = nameSet(el, 'data-write-array');
         Object.keys(names).forEach(function (name) {
-            if (body.get && body.get(name) !== null) return;   // 有值就不动
-            body.set(name, '[]');
+            var v = body.get ? body.get(name) : null;
+            if (v === null) return;   // 键本来就不在（浏览器没提交）：不动
+            // 空值、或字面量 "[]"（历史模板可能这样写）：删键。
+            // 两者都会被 gin 当成**一个元素**（"" 或 "[]"），当 uuid 查库直接 22P02。
+            if (v.trim() === '' || v.trim() === '[]') body.delete(name);
         });
     }
 
@@ -226,7 +237,12 @@
     // 例如 memberRows / maxOptions）。值是对象或数组时 JSON.stringify，
     // 其它按字符串写 —— DTO 侧用 BindForm 解 JSON、用 form tag 接标量。
     function applyBuilderPayload(body, payload) {
-        body.forEach(function (_v, key) { body.delete(key); });
+        // **先收集键再删**：真 FormData 的 forEach 在删除当前项后会跳过下一个
+        // （实测 4 个键 a,b,c,d → 遍历删除后只剩 b,d），于是组装器想删掉的中间键
+        // 会漏进请求体。改成先取快照再逐键删。
+        var existing = [];
+        body.forEach(function (_v, key) { existing.push(key); });
+        for (var i = 0; i < existing.length; i++) body.delete(existing[i]);
         Object.keys(payload).forEach(function (key) {
             var v = payload[key];
             if (v === null || v === undefined) return;
@@ -484,7 +500,23 @@
             }
         }
 
-        body.set(spec.key, JSON.stringify(rows));
+        // 逐行 append **单个 JSON 对象**，不是整体一个数组字符串。
+        //
+        // 这条是实测出来的（gin v1.12.0 的 form_mapping.go：`reflect.Struct` 分支对每个值
+        // 逐元素 `json.Unmarshal`，要求**单个对象**）：
+        //
+        //	values=[{...},{...}]（整体数组字符串）→ 400 cannot unmarshal array into Go value
+        //	values={"..."}&values={"..."}（同键多次） → 200，Values 长度 2
+        //
+        // 受影响的是所有 slice-of-struct 字段：属性值整表保存、属性组新建的 Values ——
+        // 而属性值保存是「整表全量替换」的唯一入口，整体数组会让那个抽屉**完全不可用**。
+        //
+        // 0 行时**删键而不是发 "[]"**：空数组字符串同样绑不上（实测 400），
+        // 而「不发」在 DTO 侧是 nil = 本次不改 / 空表，语义正确。
+        body.delete(spec.key);
+        for (var r = 0; r < rows.length; r++) {
+            body.append(spec.key, JSON.stringify(rows[r]));
+        }
     }
 
     // numberSet / boolSet 读 data-write-number / data-write-bool 点名的字段（逗号分隔）。

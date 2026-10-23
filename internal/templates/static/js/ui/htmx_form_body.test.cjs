@@ -274,10 +274,14 @@ test('data-write-rows 把行收成对象数组，按点名转数字与布尔', (
         { id: 'v1', key: 'red', sort: '1', enabled: '1' },
         { id: 'v2', key: 'blue', sort: '2', enabled: '0' },
     ]));
+    // **逐行 append 单个对象**，不是整体数组字符串 —— 见 applyRows 的注释：
+    // gin 的 form 映射对 slice-of-struct 是逐元素 json.Unmarshal（要求单个对象）。
+    // 发整体数组会让属性值整表保存 100% 400。
     assert.deepEqual(body.dump(), [
         'projectId=p1',
-        'values=[{"id":"v1","key":"red","sort":1,"enabled":true},{"id":"v2","key":"blue","sort":2,"enabled":false}]',
-    ], '行内字段进对象数组、类型转换正确、顶层不泄漏');
+        'values={"id":"v1","key":"red","sort":1,"enabled":true}',
+        'values={"id":"v2","key":"blue","sort":2,"enabled":false}',
+    ], '每个行对象独立 append、类型转换正确、顶层不泄漏');
 });
 
 test('未勾选的 checkbox 不进对象（与表单提交同口径）', () => {
@@ -293,8 +297,9 @@ test('未勾选的 checkbox 不进对象（与表单提交同口径）', () => {
         ];
     };
     fire(body, form);
+    // 现在每行是**独立的一次 append**（不是整体数组），所以取第一条 values= 解析。
     const raw = body.dump().find((p) => p.startsWith('values=')).slice('values='.length);
-    assert.equal(JSON.parse(raw)[0].enabled, undefined, '未勾选的 checkbox 不该出现在对象里');
+    assert.equal(JSON.parse(raw).enabled, undefined, '未勾选的 checkbox 不该出现在对象里');
 });
 
 // ── ④ 本轮补的五档能力（此前只有旧基座实现，htmx 侧缺失）──
@@ -317,13 +322,15 @@ test('data-write-html：裸 HTML 包成 {html: …} 写到目标键，原键消�
         '尾随空白是内容的一部分，不 trim');
 });
 
-test('data-write-array：一个都没勾时补空数组（否则「解绑全部」反转成「本次不改」）', () => {
-    // 浏览器对「全未勾选的 checkbox 组」完全不提交该键 → DTO 保持 nil = 本次不改。
-    // 用户以为解绑了，实际没动。
+test('data-write-array：空值删键，绝不发 "[]"（那会变成一个叫 "[]" 的元素）', () => {
+    // gin 的 form 绑定把字符串 "[]" 当成**一个元素**（实测 `attributeIds=[]`
+    // → []string{"[]"}），那个 "[]" 被当 uuid 查库 → PG 22P02 → 500（审查 P1）。
+    // 空串同样是 []string{""}。
     const fire = loadWith('post');
-    const body = makeBody([['projectId', 'p1']]);
+    const body = makeBody([['projectId', 'p1'], ['attributeIds', ''], ['categoryIds', '[]']]);
     fire(body, makeForm({ 'data-write-array': 'attributeIds,categoryIds' }));
-    assert.deepEqual(body.dump(), ['projectId=p1', 'attributeIds=[]', 'categoryIds=[]']);
+    assert.deepEqual(body.dump(), ['projectId=p1'],
+        '空值与字面量 "[]" 都该删键 —— 表达「没勾」而不是「有一个坏元素」');
 });
 
 test('data-write-array：有值时不动（不能把用户勾的覆盖掉）', () => {
@@ -502,4 +509,77 @@ test('data-write-builder：页面没注册同名组装器时不动 body（交给
 
     assert.deepEqual(body.dump(), ['productId=p1', 'note=x'],
         '没注册时不该凭空改请求体 —— 交给端点按缺字段拒绝，比静默发半份 payload 好');
+});
+
+// ── ⑧ data-reload-on-ok 是布尔属性（无值）──
+//
+// 审查 P1：declared() 用 getAttribute(attr)||'' 判，而裸属性 data-reload-on-ok 的
+// getAttribute 返回空串 → 恒 falsy → 12 处「成功后整页刷新」全部失效：
+// 删除 / 批量删除 / 调价成功后列表不动，用户以为没生效。
+
+test('data-reload-on-ok：裸属性（无值）也要触发刷新', () => {
+    const feedbackSource = fs.readFileSync(__dirname + '/write_feedback.js', 'utf8');
+    const handlers = {};
+    let reloads = 0;
+    const sandbox = {
+        window: {
+            htmx: { on(n, fn) { handlers[n] = fn; } },
+            WBUI: { toast() {} },
+            location: { reload() { reloads++; }, assign() {} },
+            sessionStorage: { getItem() { return null; }, removeItem() {}, setItem() {} },
+        },
+        document: { readyState: 'complete', querySelectorAll() { return []; }, addEventListener() {} },
+    };
+    sandbox.window.window = sandbox.window;
+    sandbox.window.document = sandbox.document;
+    vm.createContext(sandbox);
+    vm.runInContext(feedbackSource, sandbox);
+
+    // 裸属性：getAttribute 返回空串、hasAttribute 返回 true（真实 DOM 的形态）。
+    // closest 要能答两种选择器：写动作判定（[hx-post]）与刷新声明（[data-reload-on-ok]）。
+    const host = {
+        getAttribute: () => '',
+        hasAttribute: (n) => n === 'data-reload-on-ok' || n === 'hx-post',
+        closest(sel) {
+            if (sel.indexOf('hx-post') >= 0) return this;          // isWrite 判定
+            if (sel === '[data-reload-on-ok]') return this;        // needsReload 判定
+            return null;
+        },
+    };
+    handlers['htmx:after:request']({
+        detail: { ctx: { response: { status: 200, headers: { get: () => null } }, sourceElement: host } },
+    });
+
+    assert.equal(reloads, 1, '裸 data-reload-on-ok 必须触发整页刷新（判据是 hasAttribute，不是取值）');
+});
+
+// ── ⑨ 真 FormData 上的遍历删除（审查 P1）──
+//
+// 前面的用例用 Map 桩，桩的 forEach 不模拟「删除跳过下一个」的行为。
+// 这条直接用 Node 原生的 FormData，钉住 applyBuilderPayload 的「先收集再删」。
+
+test('applyBuilderPayload 在真 FormData 上能删干净全部键', () => {
+    const sandbox = {
+        window: { htmx: { on(n, fn) { sandbox._h = fn; } } },
+        document: { querySelector() { return null; }, querySelectorAll() { return []; } },
+    };
+    sandbox.window.window = sandbox.window;
+    sandbox.window.document = sandbox.document;
+    vm.createContext(sandbox);
+    vm.runInContext(source, sandbox);
+
+    // 组装器只回一个键 —— 其余必须被删干净（真 FormData 的 forEach 会跳过下一个）。
+    sandbox.window.WBFormBody.registerPayloadBuilder('onlyOne', function (form, submitter, payload) {
+        return { only: 'kept' };
+    });
+
+    const body = new FormData();
+    ['a', 'b', 'c', 'd'].forEach((k) => body.set(k, '1'));
+
+    const form = makeForm({ 'data-write-builder': 'onlyOne' });
+    sandbox._h({ detail: { ctx: { request: { method: 'post', body }, sourceElement: form } } });
+
+    const left = [...body.keys()].sort();
+    assert.deepEqual(left, ['only'],
+        '组装器返回的键之外的键必须全部删掉（真 FormData 上遍历删除会跳过下一个）');
 });

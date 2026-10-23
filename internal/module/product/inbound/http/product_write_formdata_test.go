@@ -34,7 +34,29 @@ func TestProductWriteDTOsBindFormdata(t *testing.T) {
 		{"DeleteAttributeReq", "id=a1&projectId=p1", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.DeleteAttributeReq](c); return ok }},
 		{"BulkDeleteReq", "projectId=p1&ids=x&ids=y", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.BulkDeleteReq](c); return ok }},
 		{"AddRatingReq", "productId=p1&score=4.5", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.AddRatingReq](c); return ok }},
-		{"CreateAttributeReq", "projectId=p1&name=n&key=k", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.CreateAttributeReq](c); return ok }},
+		// **slice-of-struct 必须带内容**：审查指出只发 projectId/name/key 覆盖不到
+		// Values 字段，于是「整体数组字符串绑不上」这个 P0 与全绿并存。
+		// 这里用**逐行 append 单个对象**的形态（htmx_form_body.js 产出的真实形状）。
+		{"CreateAttributeReq（带 values）", "projectId=p1&name=n&key=k" +
+			"&values=" + `{"id":"v1","key":"k1","label":"甲"}` +
+			"&values=" + `{"id":"v2","key":"k2","label":"乙"}`,
+			func(c *gin.Context) bool {
+				req, ok := binding.JSON[productdto.CreateAttributeReq](c)
+				if !ok {
+					return false
+				}
+				return len(req.Values) == 2
+			}},
+		{"SetAttributeValuesReq（带 values）", "projectId=p1&id=a1" +
+			"&values=" + `{"id":"v1","key":"k1","label":"甲","sort":1}` +
+			"&values=" + `{"id":"v2","key":"k2","label":"乙","sort":2}`,
+			func(c *gin.Context) bool {
+				req, ok := binding.JSON[productdto.SetAttributeValuesReq](c)
+				if !ok {
+					return false
+				}
+				return len(req.Values) == 2
+			}},
 		{"SaveProductTranslationsReq", "productId=p1&projectId=p1", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.SaveProductTranslationsReq](c); return ok }},
 		{"SetBundleConfigReq", "productId=p1&projectId=p1", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.SetBundleConfigReq](c); return ok }},
 		{"RecalcTagsReq", "projectId=p1", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.RecalcTagsReq](c); return ok }},
@@ -53,5 +75,29 @@ func TestProductWriteDTOsBindFormdata(t *testing.T) {
 				t.Fatalf("%s 用 formdata 绑定失败（status=%d）—— 该端点的 htmx 表单会 400 或静默收零值", tc.name, w.Code)
 			}
 		})
+	}
+}
+
+// TestSliceOfStructRejectsWholeArrayString 反向判据：**整体数组字符串绑不上**。
+//
+// 这条钉住的是 gin 的行为（不是我们的实现）：`reflect.Struct` 分支对每个值逐元素
+// `json.Unmarshal`，要求单个对象。所以 htmx 基座必须逐行 append，
+// 发整体数组会让所有 slice-of-struct 字段（属性值整表保存、属性组新建）100% 400。
+//
+// 如果哪天 gin 支持了整体数组，这条会红 —— 那时才该去改 htmx_form_body.js。
+func TestSliceOfStructRejectsWholeArrayString(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	var ok bool
+	r.POST("/x", func(c *gin.Context) {
+		_, ok = binding.JSON[productdto.SetAttributeValuesReq](c)
+	})
+	w := httptest.NewRecorder()
+	body := `projectId=p1&id=a1&values=[{"id":"v1","key":"k1"}]`
+	rq := httptest.NewRequest("POST", "/x", strings.NewReader(body))
+	rq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ServeHTTP(w, rq)
+	if ok {
+		t.Fatal("整体数组字符串竟然绑上了 —— gin 的行为变了，htmx_form_body.js 的逐行 append 可以简化")
 	}
 }

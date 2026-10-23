@@ -45,10 +45,24 @@
     }
 
     // 找触发元素上声明的容器选择器（沿 closest 向上找，允许声明在外层包装上）。
+    //
+    // 只用于**带值**的属性（data-close-on-ok="#drawer"、data-write-nav="..."）。
+    // 布尔属性要用下方的 declaredFlag —— 它们的值通常是空串，走这里会恒为 falsy。
     function declared(src, attr) {
         if (!src || typeof src.closest !== 'function') return '';
         var host = src.closest('[' + attr + ']');
         return host ? (host.getAttribute(attr) || '') : '';
+    }
+
+    // declaredFlag 判**布尔属性是否存在**（data-reload-on-ok、data-write-flash 这类无值属性）。
+    //
+    // 为什么不能用 declared：`data-reload-on-ok` 在模板里写的是裸属性（没有值），
+    // getAttribute 返回空串，`|| ''` 之后仍是 falsy —— 于是「成功后整页刷新」这件事
+    // 在 12 处声明上全部失效：删除 / 批量删除 / 调价成功后列表不动，用户以为没生效。
+    // 判据必须是 hasAttribute，不是取值。
+    function declaredFlag(src, attr) {
+        if (!src || typeof src.closest !== 'function') return null;
+        return src.closest('[' + attr + ']');
     }
 
     // —— 刷新前的结论暂存 ——
@@ -178,8 +192,9 @@
 
         // 声明了 data-reload-on-ok 或 data-write-flash 的要刷新：先把结论存起来。
         // data-write-flash 的语义是「刷新后仍要让用户看到那句话」，而 toast 活不过刷新。
-        var needsReload = declared(src, 'data-reload-on-ok') ||
-            (src && src.closest && src.closest('[data-write-flash]'));
+        // 两个都是**布尔属性**（模板里写裸属性、没有值），必须按存在性判断。
+        var needsReload = declaredFlag(src, 'data-reload-on-ok') ||
+            declaredFlag(src, 'data-write-flash');
         if (needsReload) {
             storeFlash(src, messageOf(res));
             window.location.reload();
