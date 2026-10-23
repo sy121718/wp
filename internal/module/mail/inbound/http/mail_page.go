@@ -113,6 +113,7 @@ import (
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 )
 
 // MailAutomationCanvas 流程画布页。
@@ -644,21 +645,21 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 	accounts, _ := h.mail.ListAccounts(ctx, "")
 	templates, _ := h.mail.ListTemplates(ctx, "")
 
-	data := adminui.Prepare(c, gin.H{
-		"title":         mailLabel(tr, mailenums.PageTitleCampaigns),
-		"Campaigns":     campaigns.Items,
-		"CampaignTotal": campaigns.Total,
-		"Accounts":      accounts,
-		"Templates":     templates,
-		"Page":          page,
+	view := &maildto.CampaignsPageResp{
+		Title:         mailLabel(tr, mailenums.PageTitleCampaigns),
+		Campaigns:     toAnySlice(campaigns.Items),
+		CampaignTotal: campaigns.Total,
+		Accounts:      toAnySlice(accounts),
+		Templates:     toAnySlice(templates),
+		Page:          page,
 		// 批量删除表单 action 的 query：回跳时由 shell.BackPath 读回，批量删完不会
 		// 被弹回第 1 页。写动作的结论不在本页回显（走 shell.RenderJump 提示页）。
-		"ListQuery": mailPageQuery(page),
-	})
-	adminui.AttachPagination(data, "", nil, pagination.Page{
+		ListQuery: mailPageQuery(page),
+	}
+	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
 		Total: campaigns.Total, Page: page, Limit: mailCampaignsPageSize, Base: "/admin/mail/campaigns",
 	})
-	c.HTML(http.StatusOK, "admin/mail/mail_campaigns.html", data)
+	pageview.Render(c, view)
 }
 
 // mailCampaignsErrData 取数失败时的页面数据。
@@ -1638,4 +1639,14 @@ func mailRunDetailTexts(tr mailTr, d *maildto.AutomationRunDetailResp) {
 	for i := range d.Timeline {
 		d.Timeline[i].Detail = mailenums.FormatRunText(tr, d.Timeline[i].Detail)
 	}
+}
+
+// toAnySlice 把切片投影成 []any（视图不 import 各来源的契约类型：
+// "这一屏要哪几个字段"由模板决定）。
+func toAnySlice[T any](in []T) []any {
+	out := make([]any, 0, len(in))
+	for i := range in {
+		out = append(out, in[i])
+	}
+	return out
 }

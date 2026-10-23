@@ -27,7 +27,7 @@ internal/module/inventory/inbound/http/inventory_purchase_handle.go gin=1 html=0
 internal/module/inventory/inbound/http/inventory_reason_handle.go gin=2 html=0
 internal/module/inventory/inbound/http/inventory_source_handle.go gin=2 html=0
 internal/module/mail/inbound/http/mail_handle.go gin=1 html=0
-internal/module/mail/inbound/http/mail_page.go gin=29 html=19
+internal/module/mail/inbound/http/mail_page.go gin=28 html=18
 internal/module/masterdata/inbound/http/masterdata_handle.go gin=1 html=0
 internal/module/membership/inbound/http/membership_handle.go gin=3 html=0
 internal/module/membership/inbound/http/membership_page.go gin=5 html=2
@@ -48,4 +48,4 @@ internal/module/workbench/inbound/http/inspector_handle.go gin=4 html=4
 internal/module/workbench/inbound/http/router.go gin=3 html=3
 internal/module/workbench/inbound/http/workbench_handle.go gin=1 html=0
 
---total gin=196 html=97
+--total gin=195 html=96

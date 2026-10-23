@@ -25,6 +25,9 @@ import (
 // 六页分工（一页一职能）：发信账号 / 邮件模板 / 联系人 / 群发活动 / 自动化流程 / 运行记录。
 // 拆页前是「配置页（账号 + 模板）」与「营销页（联系人 + 活动）」两页，
 // 每页两个职能、两个列表，完成最常见任务要在同一页里上下找。
+// CampaignsPageTemplate 邮件活动列表页的模板名（页面出口由页面槽带进上下文）。
+const CampaignsPageTemplate = "admin/mail/mail_campaigns.html"
+
 func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	if pages == nil || svc == nil {
 		return
@@ -69,7 +72,10 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	// 所以这个按钮不会被邻居的声明继承成 fetch。
 
 	// —— 群发活动（列表 + 报表）——
-	pages.GET("/mail/campaigns", adminui.PageAuthz("/api/mail/campaign/list"), mailPage.MailCampaignsPage)
+	pages.GET("/mail/campaigns",
+		adminui.PageAuthz("/api/mail/campaign/list"),
+		adminui.PageSlot(CampaignsPageTemplate),
+		mailPage.MailCampaignsPage)
 	pages.POST("/mail/campaign/save", builtin.CasbinMiddlewareForPath("/api/mail/campaign/save"), mailPage.MailCampaignSave)
 	pages.POST("/mail/campaign/start", builtin.CasbinMiddlewareForPath("/api/mail/campaign/start"), mailPage.MailCampaignStart)
 	pages.POST("/mail/campaign/delete", builtin.CasbinMiddlewareForPath("/api/mail/campaign/delete"), mailPage.MailCampaignDelete)
