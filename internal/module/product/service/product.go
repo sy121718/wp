@@ -413,6 +413,16 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	}
 	if req.Status != nil {
 		newStatus := strings.TrimSpace(*req.Status)
+		// 枚举白名单校验：数据库有 CHECK (status IN ('draft','published','archived'))，
+		// 但服务端不拦的话，非法值会一路落到 PG 报 SQLSTATE 23514，
+		// 而 23514 不在 mapContainerSKUConflict 的映射表里 → 出口默认给 500。
+		// 参数错误应当是 400：错在请求里，不是服务端故障。
+		//
+		// 白名单写在这里而不是复用数据库约束：PG 的错误信息（"new row for relation
+		// products violates check constraint ..."）不该出现在接口响应里。
+		if !isProductStatus(newStatus) {
+			return nil, productenums.Err(productenums.ErrInvalidParam)
+		}
 		// 上架时间（issue #11）：进入 published 时记录，作为自动标签「新品」规则的基准。
 		// 已是 published 的重复提交不刷新（否则改一次名字就把商品「重新上架」了）。
 		if newStatus == productenums.StatusPublished && e.Status != productenums.StatusPublished {
@@ -1829,4 +1839,16 @@ func preserveUntouchedFields(e, locked *productmodel.ProductEntity, req *product
 	if len(req.Metadata) == 0 {
 		e.Metadata = locked.Metadata
 	}
+}
+
+// isProductStatus 商品状态白名单（与 081_product_tables.sql 的 CHECK 逐字一致）。
+//
+// 两处必须同步：数据库那一份是**最后防线**（挡绕过 service 的写入口），
+// 这里的这一份负责给出可读的 400 而不是让 PG 的约束错误变成 500。
+func isProductStatus(s string) bool {
+	switch s {
+	case productenums.StatusDraft, productenums.StatusPublished, productenums.StatusArchived:
+		return true
+	}
+	return false
 }
