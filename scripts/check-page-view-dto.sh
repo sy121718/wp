@@ -1,107 +1,136 @@
 #!/usr/bin/env bash
-# check-page-view-dto.sh — 页面 GET 的视图出口形状（只减不增台账）。
+# check-page-view-dto.sh — 页面 GET 的视图出口形状（只减不增台账，文件级）。
 #
-# 目标形态（商品模块与主数据模块已走完，其余模块分批跟进）：
+# 目标形态（product / masterdata 已走完）：
 #
 #   路由：adminui.PageSlot(<模板名>)      —— 模板名与渲染实现在装配点声明
 #   handler：pageview.Render(c, view)     —— 控制器不持模板名、不 import 渲染层
 #   视图：dto 里的强类型结构体             —— 字段名就是模板契约
 #
-# 三类存量违规，各自有独立的判据（不是"看见 gin.H 就算"）：
+# ## 为什么是**文件级**台账而不是全局总量
 #
-#   1. **gin.H 装配页面视图**：adminui.Prepare(c, gin.H{...}) 把视图装成一个 map。
-#      违规定义是「页面 GET 的出口用 map 而不是结构体」—— 模板键拼错拿不到值，
-#      编译器一句话也不说；换成结构体后改名即编译错误。
-#      （gin.H 用在**片段**出口与 JSON 响应里不算违规：那里的键不是模板契约。）
+# 第一版只守两个全局数字（gin.H 总数、c.HTML 总数）。它能挡住"整体变多"，但挡不住
+# 最要紧的一类漂移：**A 文件少写 5 处、B 文件多写 5 处** —— 总量不变，而新代码已经
+# 搬到不该去的地方。总量是收敛节奏的度量，文件级是"不要往新文件里搬"的守卫，
+# 两者不是一回事，缺了后者这个门禁就只是个计数器。
 #
-#   2. **c.HTML 直出整页**：控制器自己持模板名。新形态是 PageSlot + pageview.Render。
+# 台账格式（scripts/page-view-dto-allow.txt）：
 #
-#   3. **模块内取词**：模块里出现 i18n.TranslateFunc(...)—— 页面文案该由模板的 t()
-#      取，响应文案该由 pkg/response 取。这一条与 presentation_owner_test.go 同源，
-#      本脚本只统计不判罚，避免两处判据漂移。
+#   <文件相对路径> gin=<n> html=<n>     —— 该文件当前容许的 gin.H / c.HTML 数量
+#   --total gin=<n> html=<n>            —— 全仓总量上限（收敛节奏的度量）
 #
-# 台账：scripts/page-view-dto-allow.txt，**只减不增**。改一条就把数字改下来；
-# 清零就从台账里删掉那一行（脚本会报"登记了但已达标"）。
+# 判据（三条，全过才绿）：
+#   1. 每个文件的 gin.H / c.HTML **不得超过**台账里它自己的数（往已知文件里加也拦）；
+#   2. 不在台账里的文件出现 gin.H / c.HTML → 红灯（新文件不许引入）；
+#   3. 全仓总量不得超过 --total（整体只能往下走）。
+#
+# 收敛方式：一个模块一个模块迁。每迁完一处，把对应行的数字改下来；清零就删掉那一行。
+#
+# 判据只认「页面 GET 的出口」：gin.H 用在片段出口与 JSON 响应里不算违规
+# （那里的键不是模板契约），所以扫描范围限定在 inbound/http 的控制器文件。
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 ALLOW_FILE="scripts/page-view-dto-allow.txt"
-declare -A ALLOW=()
-if [ -f "$ALLOW_FILE" ]; then
-  while IFS=':' read -r file n; do
-    [ -z "${file:-}" ] && continue
-    case "$file" in \#*) continue ;; esac
-    ALLOW["$file"]="$n"
-  done < "$ALLOW_FILE"
+
+if [ ! -f "$ALLOW_FILE" ]; then
+  echo "✗ 缺少台账 $ALLOW_FILE（本门禁的全部判据都在那张表里）" >&2
+  exit 1
 fi
 
-# 只扫控制器目录下的非测试文件。
-declare -A GINH CHTML
+# ── 读台账 ────────────────────────────────────────────────────────────────────
+declare -A FILE_GIN FILE_HTML
+TOTAL_GIN=0
+TOTAL_HTML=0
+while IFS= read -r line; do
+  case "$line" in ''|'#'*) continue ;; esac
+  # --total gin=N html=M
+  if [[ "$line" == --total* ]]; then
+    for kv in $line; do
+      case "$kv" in
+        gin=*)  TOTAL_GIN="${kv#gin=}" ;;
+        html=*) TOTAL_HTML="${kv#html=}" ;;
+      esac
+    done
+    continue
+  fi
+  # <path> gin=N html=M
+  path=$(echo "$line" | awk '{print $1}')
+  [ -n "$path" ] || continue
+  for kv in $line; do
+    case "$kv" in
+      gin=*)  FILE_GIN["$path"]="${kv#gin=}" ;;
+      html=*) FILE_HTML["$path"]="${kv#html=}" ;;
+    esac
+  done
+done < "$ALLOW_FILE"
+
+# ── 扫描现状（只看非测试的控制器文件）────────────────────────────────────────
+declare -A CUR_GIN CUR_HTML
+gin_sum=0
+html_sum=0
 while IFS= read -r f; do
   case "$f" in *_test.go) continue ;; esac
   g=$(grep -c 'gin\.H{' "$f" 2>/dev/null || true)
   h=$(grep -c 'c\.HTML(' "$f" 2>/dev/null || true)
-  [ "${g:-0}" -gt 0 ] && GINH["$f"]="$g"
-  [ "${h:-0}" -gt 0 ] && CHTML["$f"]="$h"
+  g=${g:-0}; h=${h:-0}
+  [ "$g" -gt 0 ] && { CUR_GIN["$f"]="$g"; gin_sum=$((gin_sum + g)); }
+  [ "$h" -gt 0 ] && { CUR_HTML["$f"]="$h"; html_sum=$((html_sum + h)); }
 done < <(find internal/module -path '*/inbound/http/*.go' -type f | sort)
 
-fail=0
-report() {
-  local label="$1"; shift
-  local -n cur=$1
-  echo "── $label"
-  local -A fileEntries=()
-  for f in "${!cur[@]}"; do
-    name=$(basename "$f")
-    fileEntries["$f"]="${cur[$f]}"
-  done
-  # 台账里的条目（按相对路径前缀匹配）
-  for key in "${!ALLOW[@]}"; do
-    :
-  done
-  local total=0
-  for f in "${!fileEntries[@]}"; do
-    total=$((total + fileEntries[$f]))
-  done
-  echo "   全仓合计 $total 处（$label）"
-}
-
-# 简化：只报总量与明细，台账按总量守（文件级台账在拆分/改名时极易失真）。
-gin_total=0
-for f in "${!GINH[@]}"; do gin_total=$((gin_total + GINH[$f])); done
-html_total=0
-for f in "${!CHTML[@]}"; do html_total=$((html_total + CHTML[$f])); done
-
-# 台账里只记两行合计：gin.H 与 c.HTML。
-allow_gin="${ALLOW[__gin_h__]:-0}"
-allow_html="${ALLOW[__c_html__]:-0}"
-
 if [ "${1:-}" = "--list" ]; then
-  echo "gin.H 装配页面视图（共 $gin_total 处）："
-  for f in $(printf '%s\n' "${!GINH[@]}" | sort); do printf '  %-70s %s\n' "$f" "${GINH[$f]}"; done
+  echo "gin.H 装配页面视图（共 $gin_sum 处，台账上限 $TOTAL_GIN）："
+  for f in $(printf '%s\n' "${!CUR_GIN[@]}" | sort); do printf '  %-72s %s\n' "$f" "${CUR_GIN[$f]}"; done
   echo
-  echo "c.HTML 直出整页（共 $html_total 处）："
-  for f in $(printf '%s\n' "${!CHTML[@]}" | sort); do printf '  %-70s %s\n' "$f" "${CHTML[$f]}"; done
+  echo "c.HTML 直出整页（共 $html_sum 处，台账上限 $TOTAL_HTML）："
+  for f in $(printf '%s\n' "${!CUR_HTML[@]}" | sort); do printf '  %-72s %s\n' "$f" "${CUR_HTML[$f]}"; done
   exit 0
 fi
 
-if [ "$gin_total" -gt "$allow_gin" ]; then
-  echo "✗ gin.H 装配页面视图：$gin_total 处，台账上限 $allow_gin" >&2
-  echo "  新页面请用 dto 里的强类型视图 + adminui.PageSlot + pageview.Render（照 product / masterdata）" >&2
+fail=0
+
+# ── 判据 1 + 2：逐文件 ────────────────────────────────────────────────────────
+for f in $(printf '%s\n' "${!CUR_GIN[@]}" "${!CUR_HTML[@]}" | sort -u); do
+  g="${CUR_GIN[$f]:-0}"
+  h="${CUR_HTML[$f]:-0}"
+  allow_g="${FILE_GIN[$f]:-}"
+  allow_h="${FILE_HTML[$f]:-}"
+
+  # 判据 2：不在台账里的文件不许出现。
+  if [ -z "$allow_g" ] && [ -z "$allow_h" ]; then
+    echo "✗ 新文件引入了页面视图存量：$f（gin.H=$g c.HTML=$h）" >&2
+    echo "  新页面请用 dto 强类型视图 + adminui.PageSlot + pageview.Render（照 product / masterdata）" >&2
+    fail=1
+    continue
+  fi
+  # 判据 1：不得超过它自己的额度。
+  if [ "$g" -gt "${allow_g:-0}" ]; then
+    echo "✗ $f：gin.H 从 ${allow_g:-0} 涨到 $g" >&2
+    fail=1
+  fi
+  if [ "$h" -gt "${allow_h:-0}" ]; then
+    echo "✗ $f：c.HTML 从 ${allow_h:-0} 涨到 $h" >&2
+    fail=1
+  fi
+done
+
+# ── 判据 3：全仓总量 ──────────────────────────────────────────────────────────
+if [ "$gin_sum" -gt "$TOTAL_GIN" ]; then
+  echo "✗ 全仓 gin.H 总量 $gin_sum，台账上限 $TOTAL_GIN" >&2
   fail=1
 fi
-if [ "$html_total" -gt "$allow_html" ]; then
-  echo "✗ c.HTML 直出整页：$html_total 处，台账上限 $allow_html" >&2
-  echo "  控制器不持模板名：路由挂 adminui.PageSlot(<模板名>)，handler 调 pageview.Render(c, view)" >&2
+if [ "$html_sum" -gt "$TOTAL_HTML" ]; then
+  echo "✗ 全仓 c.HTML 总量 $html_sum，台账上限 $TOTAL_HTML" >&2
   fail=1
 fi
 
 if [ "$fail" -eq 0 ]; then
-  echo "✓ 页面视图出口台账未超限（gin.H $gin_total / c.HTML $html_total）"
-  if [ "$gin_total" -lt "$allow_gin" ] || [ "$html_total" -lt "$allow_html" ]; then
-    echo "  ⚠ 已低于台账（gin.H $allow_gin → $gin_total，c.HTML $allow_html → $html_total）：请下调 $ALLOW_FILE"
+  echo "✓ 页面视图出口台账未超限（gin.H $gin_sum/$TOTAL_GIN · c.HTML $html_sum/$TOTAL_HTML）"
+  # 低于台账时提示下调：只减不增的另一半是"减了要记账"。
+  if [ "$gin_sum" -lt "$TOTAL_GIN" ] || [ "$html_sum" -lt "$TOTAL_HTML" ]; then
+    echo "  ⚠ 已低于台账：请下调 $ALLOW_FILE（只减不增的另一半是减了要记账）"
   fi
 fi
 exit "$fail"

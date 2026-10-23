@@ -1,17 +1,68 @@
-# page-view-dto-allow — 页面视图出口的存量台账（只减不增）。
+# page-view-dto-allow — 页面视图出口台账（**只减不增**，文件级 + 总量）。
 #
 # 目标形态（product / masterdata 已走完）：
-#   路由   adminui.PageSlot(<模板名>)
+#   路由    adminui.PageSlot(<模板名>)
 #   handler pageview.Render(c, view)
-#   视图   dto 里的强类型结构体（字段名 = 模板契约）
+#   视图    dto 里的强类型结构体（字段名 = 模板契约）
 #
-# 收敛方式：一个模块一个模块迁。每迁完一个，把对应的两行数字改下来。
-# 全仓清零后删掉这个文件。
+# 为什么两级：总量挡住"整体变多"，文件级挡住"把代码从 A 搬到 B"——
+# 后者总量不变，但新代码已经去了不该去的地方。缺了文件级这就是个计数器。
 #
-# 判据只认「页面 GET 的出口」：gin.H 用在片段出口与 JSON 响应里不算违规
-# （那里的键不是模板契约），这一点由 check-page-view-dto.sh 的文件范围体现
-# （只扫 inbound/http 下的控制器）。
+# 计数口径：**按行计**（与门禁脚本的 grep -c 一致）。同一行出现两次算一处 ——
+# 保守取法，宁可少算也不让"一行里塞两处"绕过。
 #
-# 格式：__gin_h__:<上限>  /  __c_html__:<上限>
-__gin_h__:257
-__c_html__:136
+# 收敛：一个模块一个模块迁。每迁一处把对应行改下来；清零就删掉那一行。
+#
+# 格式：<文件> gin=<n> html=<n>；末行 --total 是全仓上限。
+
+internal/module/admin/inbound/http/admin_handle.go gin=1 html=0
+internal/module/admin/inbound/http/admin_page.go gin=22 html=25
+internal/module/ai/inbound/http/ai_handle.go gin=21 html=0
+internal/module/ai/inbound/http/ai_page.go gin=17 html=5
+internal/module/analytics/inbound/http/analytics_page.go gin=2 html=3
+internal/module/block/inbound/http/block_page.go gin=8 html=2
+internal/module/comment/inbound/http/comment_page.go gin=5 html=1
+internal/module/content/inbound/http/content_handle.go gin=2 html=0
+internal/module/content/inbound/http/content_page.go gin=27 html=16
+internal/module/contenttemplate/inbound/http/contenttemplate_page.go gin=5 html=4
+internal/module/inventory/inbound/http/inventory_error_handle.go gin=4 html=0
+internal/module/inventory/inbound/http/inventory_page_handle.go gin=1 html=0
+internal/module/inventory/inbound/http/inventory_purchase_handle.go gin=1 html=0
+internal/module/inventory/inbound/http/inventory_reason_handle.go gin=2 html=0
+internal/module/inventory/inbound/http/inventory_source_handle.go gin=2 html=0
+internal/module/inventory/inbound/http/inventory_warehouse_handle.go gin=3 html=0
+internal/module/mail/inbound/http/mail_handle.go gin=1 html=0
+internal/module/mail/inbound/http/mail_page.go gin=29 html=19
+internal/module/masterdata/inbound/http/masterdata_handle.go gin=1 html=0
+internal/module/media/inbound/http/media_page_handle.go gin=1 html=1
+internal/module/membership/inbound/http/membership_handle.go gin=3 html=0
+internal/module/membership/inbound/http/membership_page.go gin=5 html=2
+internal/module/navigation/inbound/http/navigation_page_handle.go gin=3 html=4
+internal/module/navigation/inbound/http/navigation_translations_handle.go gin=2 html=0
+internal/module/order/inbound/http/coupon_page.go gin=2 html=2
+internal/module/order/inbound/http/order_create_page.go gin=2 html=1
+internal/module/order/inbound/http/order_list_page.go gin=1 html=1
+internal/module/order/inbound/http/order_shared.go gin=2 html=0
+internal/module/order/inbound/http/return_page.go gin=1 html=1
+internal/module/order/inbound/http/sales_page.go gin=1 html=1
+internal/module/page/inbound/http/page_langs_handle.go gin=1 html=2
+internal/module/page/inbound/http/page_redirect.go gin=1 html=3
+internal/module/page/inbound/http/page_schedule_handle.go gin=1 html=2
+internal/module/page/inbound/http/page_site_slot_handle.go gin=3 html=2
+internal/module/page/inbound/http/page_stale.go gin=3 html=0
+internal/module/page/inbound/http/page_translations_handle.go gin=2 html=4
+internal/module/page/inbound/http/pages_handle.go gin=3 html=2
+internal/module/plugin/inbound/http/plugin_page_handle.go gin=1 html=1
+internal/module/project/inbound/http/project_page.go gin=8 html=11
+internal/module/publication/inbound/http/publication_router.go gin=1 html=0
+internal/module/publication/inbound/http/seo_audit_result.go gin=3 html=2
+internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go gin=1 html=1
+internal/module/sysconfig/inbound/http/sysconfig_router.go gin=1 html=0
+internal/module/user/inbound/http/user_page.go gin=30 html=7
+internal/module/workbench/inbound/http/canvas_handle.go gin=6 html=3
+internal/module/workbench/inbound/http/canvas_preview_handle.go gin=7 html=1
+internal/module/workbench/inbound/http/inspector_handle.go gin=4 html=4
+internal/module/workbench/inbound/http/router.go gin=3 html=3
+internal/module/workbench/inbound/http/workbench_handle.go gin=1 html=0
+
+--total gin=257 html=136
