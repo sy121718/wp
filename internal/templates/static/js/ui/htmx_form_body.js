@@ -202,9 +202,18 @@
         Object.keys(names).forEach(function (name) {
             var v = body.get ? body.get(name) : null;
             if (v === null) return;   // 键本来就不在（浏览器没提交）：不动
-            // 空值、或字面量 "[]"（历史模板可能这样写）：删键。
-            // 两者都会被 gin 当成**一个元素**（"" 或 "[]"），当 uuid 查库直接 22P02。
-            if (v.trim() === '' || v.trim() === '[]') body.delete(name);
+            // 只删**字面量 "[]"**：那是历史模板把空数组写成字符串的遗留形态，
+            // 到后端会变成 `[]string{"[]"}`、被当 uuid 查库 → PG 22P02 → 500。
+            //
+            // **空串不删**。两类字段的语义正好相反，而前端分不出来：
+            //   · 翻译工作台的 rowTarget 是**按行对齐的并行数组**（rowTarget /
+            //     rowContext / rowHash 三组同长），某一行为空时必须保留占位，
+            //     剔掉会让后面所有行错位一格（service 判长度不等 → 整表报错）；
+            //   · 商品的 attributeIds 是纯 id 数组，空串不会被当 id —— service 侧的
+            //     resolveAttributeIDs / resolveTagIDs 都有 `if id == "" { continue }`。
+            // 所以「跳过空 id」由**消费方**负责（它知道自己在读什么），
+            // 前端只做它唯一能确定的一件事：把字面量 "[]" 这个明显错误形态清掉。
+            if (v.trim() === '[]') body.delete(name);
         });
     }
 
@@ -334,6 +343,15 @@
     function dropEmpty(body, el) {
         var keep = nameSet(el, 'data-write-keep-empty');
 
+        // data-write-array 点名的字段**不参与删空值**。
+        //
+        // 它们是「按位置对齐的数组元素」：翻译工作台的 rowTarget / rowContext / rowHash
+        // 三组同长，某一行译文为空时必须保留一个空串占位 —— 剔掉会让后面所有行错位一格，
+        // service 判「三个数组长度不等」就把整表拒了（而用户只是没填那一行）。
+        // id 类数组（attributeIds 等）里的空串由 service 侧跳过，见 applyArrayFields 的注释。
+        var arrayNames = nameSet(el, 'data-write-array');
+        Object.keys(arrayNames).forEach(function (n) { keep[n] = true; });
+
         // 先把每个键的**全部值**收集起来再判断。
         //
         // 为什么不能「见到一个空值就删这个键」：FormData.delete(key) 删的是该键的**所有值**，
@@ -392,7 +410,8 @@
     // 例子：data-write-rows=".attr-value-row;id,key,label,sort,enabled;values"
     //
     // 一个容器 = 一行 = 一个对象；每行按点名的字段顺序取值。容器里的**全部**具名控件
-    // 都不进顶层标量 —— 同一个 name 交给端点两次，严格白名单只能整条请求拒掉。
+    // 都不进顶层标量 —— 同一个 name 交给端点两次会产生两份真相（binding.JSON 本身
+    // 对未知键是容忍的，见 applyRows 的同一段说明）。
     function rowsSpecOf(el) {
         var host = el.closest ? el.closest('[data-write-rows]') : null;
         if (!host) return null;
@@ -456,7 +475,7 @@
     // 两条语义都是从 ui/json_write.js 的 objectNamesOf / objectOf 原样接过来的：
     //
     //   ① 容器里**全部**具名控件都不进顶层（与 conditions 无关）。
-    //      同一个 name 交给端点两次（一次扁平、一次在对象里），严格白名单只能整条请求拒掉。
+    //      同一个 name 交给端点两次（一次扁平、一次在对象里）会产生两份真相。
     //      注意这一条是**无条件**的 —— 即使下面的条件不满足、对象根本不发，
     //      容器里的字段也不该以扁平形态漏出去。
     //   ② 条件不满足时，整个对象**连同驱动字段**都不发。
@@ -490,8 +509,12 @@
     function applyRows(body, spec, src) {
         var rows = rowsOf(spec, numberSet(src, 'data-write-number'), boolSet(src, 'data-write-bool'));
 
-        // 容器里的**全部**具名控件都不进顶层（判据用容器而不是点名的字段名：
-        // 容器里没点名的字段若漏到顶层，端点按严格白名单只能整条拒掉）。
+        // 容器里的**全部**具名控件都不进顶层。
+        //
+        // 注意：这**不是**为了绕过什么白名单 —— 实测 binding.JSON 对未知键完全容忍
+        // （多一个顶层键不会报错）。真正的理由是**语义**：同一个字段既在顶层出现、
+        // 又在嵌套对象里出现时，消费方看到的是两份不同的真相，而哪一份生效
+        // 取决于遍历顺序 —— 那种歧义不该留在请求体里。
         var boxes = spec.host.querySelectorAll(spec.selector);
         for (var i = 0; i < boxes.length; i++) {
             var els = boxes[i].querySelectorAll('[name]');

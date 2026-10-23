@@ -19,6 +19,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"errors"
 	"go_wp/pkg/rls"
 )
 
@@ -172,4 +173,36 @@ func (m *Model) DeleteRating(ctx context.Context, id, projectID string) (err err
 		return tx.WithContext(ctx).Model(&ProductRatingEntity{}).
 			Where("id = ?", id).Delete(&ProductRatingEntity{}).Error
 	})
+}
+
+// —— Tx 变体（调用方已开启事务并设好工程作用域，见 product_bulk_model.go 头部的同一口径）——
+
+// CreateRatingTx 在调用方事务里插入评分行。
+//
+// 为什么需要 Tx 变体：评分写入要与「产物失效事件」同事务 —— 已发布详情页读评分投影，
+// 只写表不发失效会让「评分改了、前台不变」，而且没有自动发现路径。
+func (m *Model) CreateRatingTx(ctx context.Context, tx *gorm.DB, e *ProductRatingEntity) error {
+	return tx.WithContext(ctx).Model(&ProductRatingEntity{}).Create(e).Error
+}
+
+// DeleteRatingTx 在调用方事务里删除评分行。
+func (m *Model) DeleteRatingTx(ctx context.Context, tx *gorm.DB, id string) error {
+	return tx.WithContext(ctx).Model(&ProductRatingEntity{}).
+		Where("id = ?", id).Delete(&ProductRatingEntity{}).Error
+}
+
+// RatingProductIDTx 按评分 id 反查它所属的商品 id（不存在时返回空串，不报错）。
+//
+// 删除路径需要它：失效事件的目标是**商品**（详情页按商品聚合评分），而请求只带评分 id。
+// 在删除**之前**查（删完就查不到了）。
+func (m *Model) RatingProductIDTx(ctx context.Context, tx *gorm.DB, id string) (productID string, err error) {
+	var row ProductRatingEntity
+	if err = tx.WithContext(ctx).Model(&ProductRatingEntity{}).
+		Select("product_id").Where("id = ?", id).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	return row.ProductID, nil
 }

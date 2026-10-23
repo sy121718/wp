@@ -17,16 +17,16 @@ import "testing"
 //	"a b"   → 被空格转连字符，这一条是**允许**的（见下面的合法用例）
 func TestNormalizeSlugRejectsStructureBreakingInput(t *testing.T) {
 	for _, bad := range []string{
-		"A&B",     // & 参数分隔符
-		"a/b",     // / 路径分隔符
-		"a?b",     // ? 查询串起点
-		"a#b",     // # 片段标识
-		"a=b",     // = 参数赋值
-		"a%20b",   // % 百分号编码起点
-		"a.b",     // 点：扩展名/相对路径语义
-		"-abc",    // 首连字符（/brands/-abc）
-		"abc-",    // 尾连字符
-		"  -  ",   // 全空白转连字符后仍是首尾连字符
+		"A&B",   // & 参数分隔符
+		"a/b",   // / 路径分隔符
+		"a?b",   // ? 查询串起点
+		"a#b",   // # 片段标识
+		"a=b",   // = 参数赋值
+		"a%20b", // % 百分号编码起点
+		"a.b",   // 点：扩展名/相对路径语义
+		"-abc",  // 首连字符（/brands/-abc）
+		"abc-",  // 尾连字符
+		"  -  ", // 全空白转连字符后仍是首尾连字符
 	} {
 		if got := normalizeSlug(bad); got != "" {
 			t.Errorf("normalizeSlug(%q) = %q，期望空串（由调用方回退到派生）", bad, got)
@@ -37,11 +37,11 @@ func TestNormalizeSlugRejectsStructureBreakingInput(t *testing.T) {
 // TestNormalizeSlugKeepsLegalInput 合法输入只做三项规范化，不擅自改写。
 func TestNormalizeSlugKeepsLegalInput(t *testing.T) {
 	cases := map[string]string{
-		"Nike":          "nike",           // 转小写
-		"  Sony  ":      "sony",           // 去首尾空白
-		"New Balance":   "new-balance",    // 空格转连字符
-		"iPhone-15-Pro": "iphone-15-pro",  // 连字符保留
-		"a_b":           "a_b",            // 下划线保留
+		"Nike":          "nike",          // 转小写
+		"  Sony  ":      "sony",          // 去首尾空白
+		"New Balance":   "new-balance",   // 空格转连字符
+		"iPhone-15-Pro": "iphone-15-pro", // 连字符保留
+		"a_b":           "a_b",           // 下划线保留
 	}
 	for in, want := range cases {
 		if got := normalizeSlug(in); got != want {
@@ -68,11 +68,11 @@ func TestNormalizeSlugAllowsCJK(t *testing.T) {
 // 的「信任用户」正好相反，两者的宽严差异是有意的。
 func TestDeriveSlugIsStrict(t *testing.T) {
 	cases := map[string]string{
-		"Nike":         "nike",
-		"New Balance":  "new-balance",
-		"小米 14":        "14",   // 中文被丢掉，只剩数字
-		"山野":           "",     // 全中文派生不出，由调用方兜底随机码
-		"A&B":          "a-b",
+		"Nike":          "nike",
+		"New Balance":   "new-balance",
+		"小米 14":         "14", // 中文被丢掉，只剩数字
+		"山野":            "",   // 全中文派生不出，由调用方兜底随机码
+		"A&B":           "a-b",
 		"iPhone 15 Pro": "iphone-15-pro",
 	}
 	for in, want := range cases {

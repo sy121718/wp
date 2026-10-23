@@ -322,15 +322,18 @@ test('data-write-html：裸 HTML 包成 {html: …} 写到目标键，原键消�
         '尾随空白是内容的一部分，不 trim');
 });
 
-test('data-write-array：空值删键，绝不发 "[]"（那会变成一个叫 "[]" 的元素）', () => {
-    // gin 的 form 绑定把字符串 "[]" 当成**一个元素**（实测 `attributeIds=[]`
-    // → []string{"[]"}），那个 "[]" 被当 uuid 查库 → PG 22P02 → 500（审查 P1）。
-    // 空串同样是 []string{""}。
+test('data-write-array：字面量 "[]" 删键，空串保留（并行数组要占位）', () => {
+    // 两类字段语义相反，前端分不出来，所以只处理「肯定是错误形态」的那个：
+    //   · 字面量 "[]" → 后端得到 []string{"[]"}，被当 uuid 查库 → PG 22P02 → 500；
+    //   · 空串 → 翻译工作台的 rowTarget 是**按行对齐的并行数组**，某一行为空时
+    //     必须保留占位（剔掉会让后面所有行错位一格）；而 id 数组里的空串由
+    //     service 侧 resolveAttributeIDs / resolveTagIDs / validateCategoryIDs
+    //     的 `if id == "" { continue }` 跳过。
     const fire = loadWith('post');
-    const body = makeBody([['projectId', 'p1'], ['attributeIds', ''], ['categoryIds', '[]']]);
-    fire(body, makeForm({ 'data-write-array': 'attributeIds,categoryIds' }));
-    assert.deepEqual(body.dump(), ['projectId=p1'],
-        '空值与字面量 "[]" 都该删键 —— 表达「没勾」而不是「有一个坏元素」');
+    const body = makeBody([['projectId', 'p1'], ['rowTarget', ''], ['categoryIds', '[]']]);
+    fire(body, makeForm({ 'data-write-array': 'rowTarget,categoryIds' }));
+    assert.deepEqual(body.dump(), ['projectId=p1', 'rowTarget='],
+        '空串保留占位，字面量 "[]" 删掉');
 });
 
 test('data-write-array：有值时不动（不能把用户勾的覆盖掉）', () => {

@@ -234,9 +234,10 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 	for _, want := range []string{
 		`hx-post="/api/product/update"`,
 		`hx-swap="none"`,
+		// 注意：**没有** data-write-skip-empty —— 留空即不设置这件事由
+		// htmx_form_body.js 的 dropEmpty 全局负责，不再逐字段声明（旧基座才需要）。
 		`data-write-array="attributeIds,categoryIds,tagIds"`,
 		`data-write-float="defaultPrice,weight"`,
-		`data-write-skip-empty="slug,sku,defaultPrice,weight"`,
 		`data-write-lines="images,imageAlts"`,
 		`data-write-html="descriptionHtml:description"`,
 		`name="name"`, `name="subtitle"`, `name="slug"`, `name="sku"`, `name="status"`,

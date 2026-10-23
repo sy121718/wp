@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"go_wp/pkg/rls"
 )
@@ -235,5 +236,21 @@ func (m *Model) ProductUsingAttribute(ctx context.Context, attributeID, projectI
 			Where("attribute_ids @> ?::jsonb", string(probe)).
 			Order("sort ASC, create_time ASC").Limit(1).Take(e).Error
 	})
+	return e, err
+}
+
+// GetAttributeForUpdateTx 在**调用方事务内**按 id 取属性组并加行锁（SELECT ... FOR UPDATE）。
+//
+// 与产品行的 GetForUpdateTx 同一理由：UpdateAttribute 的旧写法是「事务外 Get → 改字段 →
+// 事务内全列 Save」，两个并发请求各读到旧值、各改不同字段，后提交的整行覆盖前者，
+// 两边都回 200。加写事务不解决（事务只保证原子性，不保证读到的值是最新的），必须行锁。
+//
+// 作用域由调用方在本事务上设好（与其它 Tx 变体同一口径）。
+func (m *Model) GetAttributeForUpdateTx(ctx context.Context, tx *gorm.DB, id, projectID string) (e *ProductAttributeEntity, err error) {
+	e = &ProductAttributeEntity{}
+	err = tx.WithContext(ctx).Model(&ProductAttributeEntity{}).
+		Where("id = ? AND project_id = ?", id, projectID).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(e).Error
 	return e, err
 }

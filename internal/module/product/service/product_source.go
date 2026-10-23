@@ -124,7 +124,7 @@ func (s *Service) resolveCollection(ctx context.Context, source string, filter m
 	}
 	// 关联实体的译文**整页只算一遍**（审查 P1：原先每个商品都把全页实体重算一次，
 	// N 个商品 × C 个实体 = N×C 次 contentStore 查询，而那个查询侧没有缓存）。
-	pre := s.precomputeRelatedTexts(ctx, lang, nil, categoryIndex, brandIndex, tagIndex, attrs)
+	pre := s.precomputeRelatedTexts(ctx, lang, categoryIndex, brandIndex, tagIndex, attrs)
 	valueBatches := make([]map[string]string, 0, len(rows))
 	for _, r := range rows {
 		// 与实体绑定同源：同一份派生值 + 同一份译文替换（语境 实体类型.<字段名>）。
@@ -1529,7 +1529,7 @@ func (s *Service) localizeRelated(ctx context.Context, lang string, e *productmo
 // 现在把这一步提到商品循环**之外**：同一批实体只算一遍，商品循环里退化成 map 查找。
 // 判据是「同一批页面数据里，同一个实体只该被翻译一次」—— 与 translateFieldsBatch
 // 已经在用的思路一致（那个函数解决的是逐商品取词，这个解决的是逐关联实体取词）。
-func (s *Service) precomputeRelatedTexts(ctx context.Context, lang string, e *productmodel.ProductEntity,
+func (s *Service) precomputeRelatedTexts(ctx context.Context, lang string,
 	categories map[string]*productmodel.ProductCategoryEntity,
 	brands map[string]*productmodel.ProductBrandEntity,
 	tags map[string]*productmodel.ProductTagEntity,
@@ -1552,32 +1552,9 @@ func (s *Service) precomputeRelatedTexts(ctx context.Context, lang string, e *pr
 		loc.fields[relatedFieldKey(productcontract.EntityTypeAttribute, row.ID)] = s.attributeValues(ctx, lang, row)
 		loc.attrLabels[row.ID] = s.attributeValueTranslations(ctx, lang, row)
 	}
-	if e != nil {
-		loc.imageAlts = s.imageAltTranslations(ctx, lang, e)
-	}
+	// imageAlts 不在这里：它是**商品级**的（每个商品一批 alt 文本），
+	// 由 localizeRelatedWithPrecomputed 逐商品算 —— 见那个函数的注释。
 	return loc
-}
-
-// localizeRelatedFrom 用已预载的分类 / 品牌 / 标签索引取译文（集合源列表用，零 N+1）。
-func (s *Service) localizeRelatedFrom(ctx context.Context, lang string, e *productmodel.ProductEntity,
-	categories map[string]*productmodel.ProductCategoryEntity,
-	brands map[string]*productmodel.ProductBrandEntity,
-	tags map[string]*productmodel.ProductTagEntity,
-	attrs []*productmodel.ProductAttributeEntity) (loc *relatedTexts, err error) {
-	loc = emptyRelated()
-	if e == nil {
-		return loc, nil
-	}
-	for id, row := range categories {
-		loc.categories[id] = row
-	}
-	for id, row := range brands {
-		loc.brands[id] = row
-	}
-	for id, row := range tags {
-		loc.tags[id] = row
-	}
-	return s.fillRelatedTexts(ctx, lang, e, loc, attrs), nil
 }
 
 // localizeRelatedWithPrecomputed 集合源列表用：关联实体译文来自预计算表，商品循环里只查 map。

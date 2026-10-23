@@ -401,7 +401,7 @@ func (s *Service) BundlePanel(ctx context.Context, projectID, productID string) 
 //
 // 成员挂牌价（ItemPrice）只作**参考**：套餐金额只由容器价得出，成员价不参与任何计价与前台
 // 展示（迁移 238 的类型不变量）；成员成本只进后台口径。SKU 已被删除时配置里只剩 variantId
-//（SKUCode 为空），照常出一行并标注 —— 静默丢项会让人以为配置里本来就没有这一项。
+// （SKUCode 为空），照常出一行并标注 —— 静默丢项会让人以为配置里本来就没有这一项。
 func BundlePanelRows(options []*productdto.BundleOptionDetailResp) []productdto.BundlePanelRowResp {
 	rows := make([]productdto.BundlePanelRowResp, 0, len(options))
 	for _, o := range options {

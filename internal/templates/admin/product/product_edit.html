@@ -95,7 +95,8 @@
     {* 提交走 JSON 写基座（static/js/ui/json_write.js）：data-write-mode=form 表示「整表单当
        UpdateReq 发」。字段名与 dto.UpdateReq 的 json 标签逐字对齐，声明负责三件页面替不了的事：
        · data-write-array：勾选组（属性组 / 分类 / 标签）收成数组，一个都不勾发空数组 = 解绑全部；
-       · data-write-float / data-write-skip-empty：价格与重量按小数发，留空表示「不设置」而不是 0；
+       · data-write-float：价格与重量按小数发；留空表示「不设置」而不是 0 ——
+         那一条由 htmx_form_body.js 的 dropEmpty 全局负责，模板不再逐字段声明；
        · data-write-lines：图集与 alt 是「一个隐藏域 + 多行文本」，端点要的是 []string；
        · data-write-html：富文本给的是裸 HTML，入库形态是 jsonb {"html": …}。
        csrf 走请求头（基座自动带 X-CSRF-Token），表单里不再有隐藏域。 *}
@@ -106,7 +107,7 @@
           data-write-keep-empty="primaryCategoryId"
           data-write-array="attributeIds,categoryIds,tagIds"
           data-write-float="defaultPrice,weight"
-          data-write-skip-empty="slug,sku,defaultPrice,weight"
+
           data-write-lines="images,imageAlts"
           data-write-html="descriptionHtml:description">{{end}}
         <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -529,7 +530,7 @@
     {* ==== 抽屉 ==== *}
     <template id="tpl-variant-create-{{p.ID}}">
         <form class="form-stack" hx-post="/api/product/variant/create" hx-swap="none"
-              data-write-float="price" data-write-skip-empty="skuCode,price">
+              data-write-float="price">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{p.ID}}">
@@ -596,7 +597,7 @@
 
     <template id="tpl-rating-add-{{p.ID}}">
         <form class="form-stack" hx-post="/api/product/rating/add" hx-swap="none"
-              data-write-float="score" data-write-skip-empty="score">
+              data-write-float="score">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{p.ID}}">

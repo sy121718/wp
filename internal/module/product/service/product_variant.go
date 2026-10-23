@@ -347,7 +347,12 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 	if recalcScope == "" {
 		recalcScope = projectID
 	}
-	return s.recalcProjectAutoTags(ctx, v.ProductID, recalcScope)
+	// 删除已经提交：重算失败只记日志，不让这次删除看起来失败了（否则用户重试会得到「不存在」）。
+	if rerr := s.recalcProjectAutoTags(ctx, v.ProductID, recalcScope); rerr != nil {
+		logger.Scene("product").With("productID", v.ProductID).Error(rerr,
+			"变体已删除，但自动标签重算失败（归属待下次写操作重算）")
+	}
+	return nil
 }
 
 // newVariantFromDefaults 商品级默认值 → 新变体的**唯一填充入口**。
@@ -1483,8 +1488,10 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		return nil, err
 	}
 	// 重算时机之一：变体写操作后（价格与规格集合都可能变了）。
-	if err = s.recalcProjectAutoTags(ctx, p.ID, p.ProjectID); err != nil {
-		return nil, err
+	// 失败不回滚也不报错 —— 清单已经提交，归属是可重算的派生数据。理由见 product.go 的 Update。
+	if rerr := s.recalcProjectAutoTags(ctx, p.ID, p.ProjectID); rerr != nil {
+		logger.Scene("product").With("productID", p.ID).Error(rerr,
+			"变体清单已保存，但自动标签重算失败（归属待下次写操作重算）")
 	}
 	after, rerr := s.m.ListVariants(ctx, p.ID)
 	if rerr != nil {

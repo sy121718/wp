@@ -48,6 +48,7 @@ import (
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/i18n"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/rls"
 )
 
@@ -127,11 +128,14 @@ func (s *Service) ApplyPricing(ctx context.Context, req *productdto.PricingApply
 		return nil, err
 	}
 	// 变体写操作后的重算时机（#11）：价格变了，价格区间 / 促销规则的归属可能跟着变。
+	// 调价已经提交：重算失败只记日志、不回滚不报错（理由见 product.go 的 Update）。
 	recalc, rerr := s.recalcPricingAutoTags(ctx, res.ProjectID)
 	if rerr != nil {
-		return nil, rerr
+		logger.Scene("product").With("project", res.ProjectID).Error(rerr,
+			"调价已写入，但自动标签重算失败（归属待下次写操作重算）")
+	} else {
+		res.RecalculatedTags = recalc
 	}
-	res.RecalculatedTags = recalc
 	return res, nil
 }
 

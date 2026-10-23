@@ -190,7 +190,7 @@ func pricingHistoryRow(a *productdto.PriceAdjustmentResp) map[string]any {
 	for _, it := range a.Items {
 		items = append(items, map[string]any{
 			"ProductName": it.ProductName, "SKUCode": it.SKUCode,
-			"OldPrice": it.OldPrice, "NewPrice": it.NewPrice,"Diff": it.Diff,
+			"OldPrice": it.OldPrice, "NewPrice": it.NewPrice, "Diff": it.Diff,
 		})
 	}
 	return map[string]any{
@@ -240,5 +240,3 @@ func pricingPreviewSummary(p *productdto.PricingPreviewResp) map[string]any {
 		"SkippedCount":   p.SkippedCount,
 	}
 }
-
-

@@ -17,9 +17,9 @@ func TestTagPageRowsCarryDrawerForm(t *testing.T) {
 	var recalc utils.JSONTime
 	details := []*productdto.TagResp{{
 		ID: "t1", Name: "近 30 天上新", Slug: "new-30", Kind: productenums.TagKindRule,
-		RuleType: productenums.TagRuleNewArrival,
-		RuleParams: []byte(`{"days":30}`),
-		RuleValues: productdto.RuleValuesResp{Days: 30, HasDays: true},
+		RuleType:     productenums.TagRuleNewArrival,
+		RuleParams:   []byte(`{"days":30}`),
+		RuleValues:   productdto.RuleValuesResp{Days: 30, HasDays: true},
 		ProductCount: 7, Sort: 2, RecalcAt: recalc,
 	}}
 	ruleTypes := []*productdto.TagRuleTypeResp{{Type: productenums.TagRuleNewArrival, ParamKeys: []string{"days"}}}

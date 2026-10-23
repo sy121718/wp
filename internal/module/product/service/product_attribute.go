@@ -140,6 +140,17 @@ func (s *Service) UpdateAttribute(ctx context.Context, req *productdto.UpdateAtt
 		if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
 			return serr
 		}
+		// 并发保护的落点：加锁重读，把**本次请求没碰的字段**换成库里的现值。
+		//
+		// 上面那些赋值依赖事务外那次 GetAttribute（未加锁），而 UpdateAttributeTx 是
+		// 全列 Save —— 两个并发请求各读到旧值、各改不同字段时，后提交的整行覆盖前者，
+		// 两边都回 200。与 product.go 的 Update 同一手法（见 preserveUntouchedAttributeFields）。
+		locked, lerr := s.m.GetAttributeForUpdateTx(ctx, tx, req.ID, e.ProjectID)
+		if lerr != nil {
+			return mapNotFound(lerr)
+		}
+		preserveUntouchedAttributeFields(e, locked, req)
+		e.UpdatedAt = time.Now().UTC()
 		if uerr := s.m.UpdateAttributeTx(ctx, tx, e); uerr != nil {
 			return uerr
 		}
@@ -520,4 +531,30 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return digits
+}
+
+// preserveUntouchedAttributeFields 把「本次请求没碰的字段」换成加锁读到的现值。
+//
+// 与 product.go 的 preserveUntouchedFields 同一手法、同一理由：UpdateAttributeTx 是全列
+// Save，而事务外的 GetAttribute 没加锁 —— 两个并发请求各改不同字段时，后提交的整行会
+// 覆盖前者，两边都回 200。加写事务不解决（事务不保证读到的值最新），必须行锁 + 未触碰字段对齐。
+//
+// 本函数与 UpdateAttribute 里的赋值清单**必须同步**：漏一个的后果是「那个字段的并发修改
+// 被覆盖」，而接口照旧回 200。
+func preserveUntouchedAttributeFields(e, locked *productmodel.ProductAttributeEntity, req *productdto.UpdateAttributeReq) {
+	if e == nil || locked == nil || req == nil {
+		return
+	}
+	if req.Key == nil {
+		e.Key = locked.Key
+	}
+	if req.Name == nil {
+		e.Name = locked.Name
+	}
+	if req.IsVariation == nil {
+		e.IsVariation = locked.IsVariation
+	}
+	if req.Sort == nil {
+		e.Sort = locked.Sort
+	}
 }

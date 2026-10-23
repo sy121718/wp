@@ -1378,7 +1378,18 @@ func (s *Service) AddRating(ctx context.Context, req *productdto.AddRatingReq) (
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	}
-	if err = s.m.CreateRating(ctx, row); err != nil {
+	// 评分写入与产物失效事件**同事务**（审计 ARCH-01 的同一条理由）：
+	// 已发布详情页读评分（product_source 的 rating 投影），只写表不发失效会让
+	// 「评分改了、前台不变」—— 而且没有任何自动发现路径（下次构建才生效）。
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, product.ProjectID); serr != nil {
+			return serr
+		}
+		if cerr := s.m.CreateRatingTx(ctx, tx, row); cerr != nil {
+			return cerr
+		}
+		return s.enqueueProductInvalidationTx(ctx, tx, product.ProjectID, product.ID)
+	}); err != nil {
 		return nil, err
 	}
 	return s.ratingRespOf(ctx, product.ProjectID, product.ID)
@@ -1411,7 +1422,25 @@ func (s *Service) DeleteRating(ctx context.Context, req *productdto.DeleteRating
 	if _, err = s.m.GetRating(ctx, strings.TrimSpace(req.ID), projectID); err != nil {
 		return mapNotFound(err)
 	}
-	return s.m.DeleteRating(ctx, strings.TrimSpace(req.ID), projectID)
+	// 删除与失效事件同事务，理由同 AddRating。
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
+		}
+		if derr := s.m.DeleteRatingTx(ctx, tx, strings.TrimSpace(req.ID)); derr != nil {
+			return derr
+		}
+		// 失效目标是**商品**（详情页按商品聚合评分），而 req 只带评分 id ——
+		// 先按评分 id 反查商品，再发事件。
+		productID, perr := s.m.RatingProductIDTx(ctx, tx, strings.TrimSpace(req.ID))
+		if perr != nil {
+			return perr
+		}
+		if productID == "" {
+			return nil
+		}
+		return s.enqueueProductInvalidationTx(ctx, tx, projectID, productID)
+	})
 }
 
 // ratingRespOf 组装某商品的评分明细与投影值。

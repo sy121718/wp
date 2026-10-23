@@ -24,6 +24,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	"go_wp/pkg/facing"
+	"go_wp/pkg/logger"
 )
 
 // BulkApplyPricing 批量按规则改价（POST /api/product/bulk-pricing 的 service 入口）。
@@ -109,8 +110,10 @@ func (s *Service) BulkApplyPricing(ctx context.Context, req *productdto.BulkPric
 		}
 		s.bumpFragmentCache(ctx, projectID)
 		// 自动标签重算：整批一次（重算是全工程全量的幂等操作，逐商品重算只是重复劳动）。
+		// 整批已经提交：重算失败只记日志，不报失败（否则用户重试会重复调价）。
 		if _, rerr := s.recalcPricingAutoTags(ctx, projectID); rerr != nil {
-			return nil, rerr
+			logger.Scene("product").With("project", projectID).Error(rerr,
+				"批量调价已写入，但自动标签重算失败（归属待下次写操作重算）")
 		}
 	}
 	// Done = 请求项数：走到这里就说明整批都处理了（AGENTS「批量要么全成要么全败」）。

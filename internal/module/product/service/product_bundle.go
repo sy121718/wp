@@ -71,17 +71,18 @@ func mustMarshalBundleConfig(cfg productdto.BundleConfig) json.RawMessage {
 // normalizeBundleItems 把商品创建 / 更新路径上的 bundle_items 规范化成迁移 114 要求的对象形状。
 //
 // 商品主体的写入路径承担**形状 + 区间规则**两层校验，但不查库（没有 ctx）：
-//   · 形状：数据库的 CHECK 会拒绝形状不对的值，与其让整次写入以 23514 失败，
-//     不如在这里给出明确结论；
-//   · 区间规则（maxOptions 上限 / options 不超上限 / 数量区间自洽）：
-//     页面上的捆绑配置走 /bundle/set（那里有完整校验，含成员 SKU 的存在性），
-//     但 MCP / AI 可以直接调 UpdateReq.BundleItems 写进同一列 —— 没有这一层就绕过去了，
-//     而「minTotalQty > maxTotalQty」这种配置一旦保存，前台任何选择都会被拒。
-//   · 成员 SKU 的存在性 / 工程归属**不在这里**：那需要查库，由 validateBundleConfig 负责。
 //
-//	空 / [] / null → 空配置（历史列默认值就是 '[]'，读取侧一直按「无捆绑」处理）
-//	JSON 对象      → 补齐缺省键后重新序列化（列里始终是完整形状）
-//	其它形状       → 拒绝（裸数组、字符串、数字……不静默写成脏数据）
+//	  · 形状：数据库的 CHECK 会拒绝形状不对的值，与其让整次写入以 23514 失败，
+//	    不如在这里给出明确结论；
+//	  · 区间规则（maxOptions 上限 / options 不超上限 / 数量区间自洽）：
+//	    页面上的捆绑配置走 /bundle/set（那里有完整校验，含成员 SKU 的存在性），
+//	    但 MCP / AI 可以直接调 UpdateReq.BundleItems 写进同一列 —— 没有这一层就绕过去了，
+//	    而「minTotalQty > maxTotalQty」这种配置一旦保存，前台任何选择都会被拒。
+//	  · 成员 SKU 的存在性 / 工程归属**不在这里**：那需要查库，由 validateBundleConfig 负责。
+//
+//		空 / [] / null → 空配置（历史列默认值就是 '[]'，读取侧一直按「无捆绑」处理）
+//		JSON 对象      → 补齐缺省键后重新序列化（列里始终是完整形状）
+//		其它形状       → 拒绝（裸数组、字符串、数字……不静默写成脏数据）
 func normalizeBundleItems(raw json.RawMessage) (out json.RawMessage, err error) {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" || trimmed == "null" || trimmed == "[]" {

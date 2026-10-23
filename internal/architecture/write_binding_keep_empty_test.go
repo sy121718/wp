@@ -39,12 +39,20 @@ import (
 var emptyMeansSemantic = regexp.MustCompile(`(指向空串|空串表示)`)
 
 // pendingKeepEmptyFields 还没在模板里声明 keep-empty 的字段（登记存量，收一个删一个）。
-// navigation 的 panelBlockId 是**页面 POST**（htmx → /admin/navigations/update → 返回 HTML
-// 片段），不是 JSON 写端点：它的空值由服务端的 binding.Form 自己处理，
-// 不经过 ui/htmx_form_body.js 的 dropEmpty，也就轮不到 keep-empty 这条规则。
+// navigation 的 panelBlockId **确实会被 dropEmpty 碰到**（那个表单用 hx-post，
+// ui/htmx_form_body.js 全局加载、WRITE_VERBS 含 post）—— 但它不需要 keep-empty：
 //
-// 判据是「这个字段会不会被 formdata 的删空值逻辑碰到」：只有走 **JSON 端点 + htmx 表单**
-// 的那条链路才会。页面 POST 的表单不受影响。
+//	navigation_page_handle.go 用 `c.PostForm("panelBlockId")` 取值，而 PostForm 在
+//	**键不存在时返回空串**，与「键存在但值为空」完全同义。服务端拿到空串后构造
+//	`&blockID`（恒非 nil 指针）→ 空串即「清除面板」。
+//
+// 所以 dropEmpty 删不删这个键，对结果没有任何影响 —— 与商品的 parentId /
+// primaryCategoryId 不同：那两个走 JSON 端点的 binding 绑定，nil 与空串语义相反
+//（nil = 不改、空串 = 解绑），删键就会把「解绑」变成「不改」。
+//
+// 判据因此是「空串被删掉之后，消费方还能不能区分『没填』与『显式置空』」：
+//   · PostForm 取值：不能区分也不需要区分（键不存在 = 空串）；
+//   · binding 绑定到 *string：能区分，而语义相反 —— 必须 keep-empty。
 var pendingKeepEmptyFields = map[string]int{
 	"panelBlockID": 1,
 }
