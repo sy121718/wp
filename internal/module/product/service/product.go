@@ -491,6 +491,16 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.BrandID = brandID
 	}
 	if req.DefaultPrice != nil {
+		// 与 Create 同一条校验（见本文件 Create 里的 ErrBundlePriceRequired）。
+		//
+		// Create 要求「捆绑容器必须自定价」，Update 原先直接赋值 —— 于是把一个捆绑商品的
+		// 价格改成 0 或负数能存进去，列表与详情显示 0.00，前台无从判断是免费还是没配。
+		// 数据库只有 `numeric` 列、没有 CHECK 约束（081_product_tables.sql），兜不住。
+		//
+		// 判据用 e.Type（库里的类型）而不是 req.Type：类型不可变，但请求里可能没给。
+		if e.Type == productmodel.TypeBundle && *req.DefaultPrice <= 0 {
+			return nil, productenums.Err(productenums.ErrBundlePriceRequired)
+		}
 		e.DefaultPrice = req.DefaultPrice
 	}
 	if req.DefaultImage != nil {

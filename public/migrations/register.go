@@ -328,4 +328,6 @@ func init() {
 	//（见 register_mail_page_notice_i18n.go；enums 对账判据只认 a.msg./a.err./a.test. 三种形态，
 	//  这批 7 条连红都不会红，所以必须有人读一遍 enums 的新增块）。
 	registerMailPageNoticeI18n()
+	// 619：捆绑容器的容器价必须 > 0（见 register_bundle_price_check.go）。
+	registerBundlePriceCheck()
 }
