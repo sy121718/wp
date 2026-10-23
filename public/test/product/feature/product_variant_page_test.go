@@ -218,7 +218,7 @@ func TestProductEditVariantsUseJSONWriteBase(t *testing.T) {
 
 	body := getProductEditPage(engine, f.projectID, product.ID)
 	for _, want := range []string{
-		`data-write-api="/api/product/variant/save"`,
+		`hx-post="/api/product/variant/save"`,
 		`data-write-builder="product-variant-rows"`,
 		`data-write-flash="product-variant-save"`,
 		`data-write-flash-target="product-variant-save"`,

@@ -296,22 +296,21 @@
         {* ids 在**另一个表单**里（批量表单），抽屉内容被克隆到 document 级 —— 所以这里靠
            data-write-ids-scope 指回去。不写这一条，基座在本表单内收 ids 恒为空数组，
            症状是「点了应用调价什么也没发生」，而提示只会说「没勾选任何项」。 *}
+        {* 走 htmx 原生提交（formdata）。两个关键声明：
+             · data-write-ids-scope：ids 在**另一个表单**（批量表单）里，抽屉内容被克隆到
+               document 级 —— 不指回去的话，在抽屉内找 [name=ids] 恒为空，
+               症状是「点了应用调价什么也没发生」而提示只说「没勾选任何项」；
+             · data-reload-on-ok：调价后整页刷新（售价与派生列由服务端重算）。
+           规则字段（ruleType / multiplier / amount / margin / rounding）来自
+           include 的 pricing_rule_fields.html，formdata 会一并提交，不需要额外声明。 *}
         <form class="form-stack"
-              {* 留在旧基座：ids 要从 data-list-bulk 那个**表单之外**收，
-                 data-write-ids-scope 只有 ui/json_write.js 实现。htmx 的
-                 hx-include="closest form" 只含本表单 → ids 一个都发不出去，
-                 而端点会以「没有勾选任何商品」拒绝 —— 用户勾了一列、点了没反应。 *}
-              data-write-api="/api/product/bulk-pricing" data-write-mode="bulk"
-              data-write-flash="product-pricing-bulk"
-              data-write-outcome="update"
-              data-write-ids-scope="[data-list-bulk]"
-              data-write-extra="projectId,ruleType,multiplier,amount,margin,rounding,note"
-              data-msg-none-selected="{{ .["t"]("admin.products.bulkPricing.noneSelected", "没有勾选任何商品，调价未执行。") }}"
-              data-msg-too-many="{{ .["t"]("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行") }}"
-              data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
-              data-msg-refresh="{{ .["t"]("admin.common.write.refresh", "刷新列表") }}">
+              hx-post="/api/product/bulk-pricing" hx-swap="none"
+              data-reload-on-ok
+              data-write-ids-scope="[data-list-bulk]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <p class="form-hint badge" data-write-flash-target="product-pricing-bulk" role="status" hidden></p>
+            {* 批量调价的结论不再用页面上的结论区：迁到 htmx 后成功直接刷新、
+               被拒由 toast 说原因（X-Message 头）。原来的 data-write-flash-target
+               是「刷新前存结论、落地后显示」那套的落点，本页已不需要。 *}
             <p class="form-hint" data-write-status role="status" hidden></p>
             <p class="hint">{{ .["t"]("admin.products.bulkPricing.scopeHint", "作用范围是列表里勾选的商品：每个商品的全部变体都按同一条规则改价。只想改一部分时，先回列表取消勾选那几个。") }}</p>
             <p class="hint">{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}{{ .["t"]("admin.products.bulkPricing.previewHintLead", "想先看每个 SKU 的「原价 → 新价」，去") }}<a href="/admin/product-pricing?project={{selectedProject}}">{{ .["t"]("admin.product_pricing.title", "定价工具") }}</a>{{ .["t"]("admin.products.bulkPricing.previewHintTail", "页试算（不落库）。") }}</p>

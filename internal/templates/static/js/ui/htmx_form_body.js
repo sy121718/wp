@@ -197,6 +197,113 @@
         });
     }
 
+    // ── data-write-builder：页面级 payload 组装器 ──
+    //
+    // 有些写动作的 payload 不是「表单字段的平铺」，而是从 DOM 另一处读出结构再合并
+    // （变体清单的 rows、捆绑配置的 config）。这类组装只有页面自己知道，
+    // 所以走**注册表**：页面脚本注册一个函数，模板只声明名字。
+    //
+    // 契约与旧基座 WPJsonWrite.registerPayloadBuilder 一致：
+    //   builder(form, submitter, payload) → 返回改写后的 plain object
+    // 但这里的 payload 是**对象**而不是 FormData：组装器要嵌套数组/对象，
+    // 最后由 applyBuilderPayload 逐键写回 body（简单值直接 set，对象/数组 stringify）。
+    //
+    // 为什么走 JSON 字符串而不是展开成 formdata 键：gin 的 form 映射**不支持点号嵌套**
+    //（实测 config.maxOptions=3 绑完仍是 0），而 Rows / Config 这类字段在 DTO 侧
+    // 都已实现 BindForm 自己解析 JSON 字符串 —— 这条路是通的。
+    var payloadBuilders = {};
+
+    function registerPayloadBuilder(name, fn) {
+        if (!name || typeof fn !== 'function') {
+            throw new TypeError('registerPayloadBuilder: 需要 name 与 function');
+        }
+        payloadBuilders[name] = fn;
+    }
+
+    // applyBuilderPayload 把组装器的产物写回 body。
+    //
+    // 规则：组装器返回的**全部键**都要进 body（它已经删掉了不该发的中间键，
+    // 例如 memberRows / maxOptions）。值是对象或数组时 JSON.stringify，
+    // 其它按字符串写 —— DTO 侧用 BindForm 解 JSON、用 form tag 接标量。
+    function applyBuilderPayload(body, payload) {
+        body.forEach(function (_v, key) { body.delete(key); });
+        Object.keys(payload).forEach(function (key) {
+            var v = payload[key];
+            if (v === null || v === undefined) return;
+            if (typeof v === 'object') {
+                body.set(key, JSON.stringify(v));
+                return;
+            }
+            body.set(key, String(v));
+        });
+    }
+
+    // applyBuilder 若表单声明了 data-write-builder，就跑一次组装器。
+    function applyBuilder(body, el) {
+        if (!el || !el.closest) return;
+        var host = el.closest('[data-write-builder]');
+        if (!host) return;
+        var name = String(host.getAttribute('data-write-builder') || '').trim();
+        if (!name) return;
+        var builder = payloadBuilders[name];
+        if (!builder) return;   // 页面没注册：不动 body，交给端点按缺字段拒绝
+
+        // body → plain object（同名多值收成数组，与 FormData 的语义一致）
+        var payload = {};
+        body.forEach(function (value, key) {
+            if (Object.prototype.hasOwnProperty.call(payload, key)) {
+                if (!Array.isArray(payload[key])) payload[key] = [payload[key]];
+                payload[key].push(value);
+                return;
+            }
+            payload[key] = value;
+        });
+        var out = builder(host, null, payload);
+        if (out && typeof out === 'object') applyBuilderPayload(body, out);
+    }
+
+    window.WBFormBody = { registerPayloadBuilder: registerPayloadBuilder };
+
+    // ── data-write-ids-scope：ids 装在**别的容器**里 ──
+    //
+    // 现有唯一用例是商品列表的「按规则改价」抽屉：抽屉内容被克隆到 document 级，
+    // 而勾选框留在页面那个批量表单里 —— 在抽屉表单内部找 [name=ids] 永远是空数组，
+    // 表现是「点了应用调价什么都没发生」，而基座只回一句「没勾选任何项」，
+    // 把人指向错误的原因。
+    //
+    // 不声明时什么都不做（ids 由浏览器原样提交）；声明了但选择器打错 / 目标还没渲染时
+    // **也什么都不做** —— 不静默变成空数组，让端点按自己的规则拒绝。
+    function applyIDsScope(body, el) {
+        if (!el || !el.closest) return;
+        var host = el.closest('[data-write-ids-scope]');
+        if (!host) return;
+        var sel = String(host.getAttribute('data-write-ids-scope') || '').trim();
+        if (!sel) return;
+        var scope = document.querySelector(sel);
+        if (!scope) return;   // 目标没渲染：不动，交给端点拒绝
+
+        var name = String(host.getAttribute('data-write-ids') || 'ids').trim() || 'ids';
+        var seen = {};
+        var ids = [];
+        var els = scope.querySelectorAll('[name="' + name + '"]');
+        for (var i = 0; i < els.length; i++) {
+            var node = els[i];
+            var type = (node.type || '').toLowerCase();
+            // 只认两种载体：已勾选的复选框（表格行选择）与隐藏域（页面预置的 id 列表）。
+            // 其它类型即使撞名也不是 id 载体 —— 把用户敲的文本当记录 id 发出去，
+            // 请求长得完全合法，错得安静。
+            if (type === 'checkbox' ? !node.checked : type !== 'hidden') continue;
+            var v = String(node.value == null ? '' : node.value).trim();
+            if (v === '' || seen[v]) continue;
+            seen[v] = true;
+            ids.push(v);
+        }
+        if (ids.length === 0) return;   // 一个都没勾：不发键，由端点的「没勾选」分支给结论
+
+        body.delete(name);
+        for (var j = 0; j < ids.length; j++) body.append(name, ids[j]);
+    }
+
     // dropEmpty 删掉「空值 = 没填」的顶层字段。
     //
     // ⚠ 不是所有空串都该删：有些字段的空串**是有语义的**（解绑某处关联），
@@ -414,6 +521,10 @@
         //     少发一个键只会让错误信息更难读。
         //   · 更关键的是：dropEmpty 要作用在**原始表单值**上，才能在组装前把
         //     「没填的参数输入框」排除掉；组装时再判一次空值（scalar 返回 null）。
+        // ids-scope 要在删空值**之前**：勾选框里没有空值，但这一步读的是页面别处的 DOM，
+        // 与请求体里现有的键无关。
+        applyIDsScope(body, src);
+
         dropEmpty(body, src);
 
         // 其余整形：与顺序无关的逐字段转换，放在结构组装之前。
@@ -429,5 +540,8 @@
         // 最后组装嵌套对象（读容器里的原始值；它自己也跳过空值）。
         var spec = src ? specOf(src) : null;
         if (spec) applyObject(body, spec);
+
+        // builder 放在最后：它读的是 DOM 里已渲染的行，与前面的键级整形无关。
+        applyBuilder(body, src);
     });
 })();

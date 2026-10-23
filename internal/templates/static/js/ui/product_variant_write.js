@@ -139,10 +139,16 @@
     });
 
     // rows 由清单 DOM 组装（不是表单控件），基座收不到 —— 用它的 builder 逃生舱补上。
+    // 组装规则只有一份：两个基座并存期间各注册一次（见 ui/product_bundle_write.js 的同一段注释）。
+    function variantRowsBuilder(form, submitter, payload) {
+        payload.rows = variantRows();
+        return payload;
+    }
+
     if (global.WPJsonWrite && global.WPJsonWrite.registerPayloadBuilder) {
-        global.WPJsonWrite.registerPayloadBuilder('product-variant-rows', function (form, submitter, payload) {
-            payload.rows = variantRows();
-            return payload;
-        });
+        global.WPJsonWrite.registerPayloadBuilder('product-variant-rows', variantRowsBuilder);
+    }
+    if (global.WBFormBody && global.WBFormBody.registerPayloadBuilder) {
+        global.WBFormBody.registerPayloadBuilder('product-variant-rows', variantRowsBuilder);
     }
 })(window);

@@ -14,12 +14,10 @@ package view
 
 import (
 	"errors"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )
 
@@ -68,14 +66,12 @@ func Fail(c *gin.Context, err error) {
 	if errors.Is(err, response.ErrHandled) {
 		return
 	}
-	status := http.StatusInternalServerError
-	if declared, ok := facing.StatusOf(err); ok {
-		status = declared
-	} else if response.IsBusinessError(err) {
-		status = http.StatusBadRequest
-	}
+	// 状态码判据只有一份：pkg/response 的 ErrorStatus（声明过用声明的、
+	// 业务错误 400、其余 500）。这里原先自己算了一遍 —— 同一套判据写两处，
+	// 哪天 facing 的分档变了，只有一处会跟着改，另一处静默漂移。
 	_, tpl, _ := slotOf(c)
-	response.ErrorAuto(c, status, sceneOf(tpl), err)
+	scene := sceneOf(tpl)
+	response.ErrorAuto(c, response.ErrorStatus(err), scene, err)
 }
 
 // sceneOf 模板名 → 日志场景：admin/product/products.html → product。

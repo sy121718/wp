@@ -1,6 +1,11 @@
 package productdto
 
-import "net/url"
+import (
+	"net/url"
+	"strings"
+
+	json "go_wp/pkg/jsonx"
+)
 
 // product_bundle_req.go / product_bundle_resp.go — 捆绑品配置、选品校验与成员解析的入参与回执。
 //
@@ -40,7 +45,7 @@ type BundleOption struct {
 	// SourceKind 取 productenums.BundleSource*（空 = 手工指定 / 历史配置）。
 	SourceKind string `json:"sourceKind,omitempty"`
 	// WarehouseID / WarehouseSKU 来自「从仓库选」那条来路（仓储侧的仓与仓内 SKU）。
-	WarehouseID string `json:"warehouseId,omitempty"`
+	WarehouseID  string `json:"warehouseId,omitempty"`
 	WarehouseSKU string `json:"warehouseSku,omitempty"`
 	// ExternalSKU 该 (仓库, 变体) 库存行登记的外部 / 第三方编码（迁移 251，可为空）。
 	ExternalSKU string `json:"externalSku,omitempty"`
@@ -54,7 +59,7 @@ type BundleConfig struct {
 	MinTotalQty int `json:"minTotalQty" form:"minTotalQty"`
 	// MaxTotalQty 整单最大总件数（0 = 留空，不设上限）。
 	MaxTotalQty int            `json:"maxTotalQty" form:"maxTotalQty"`
-	Options []BundleOption `json:"options" form:"options"`
+	Options     []BundleOption `json:"options" form:"options"`
 }
 
 // NewEmptyBundleConfig 空配置（与迁移 114 的列默认值同形状）。
@@ -77,8 +82,10 @@ type GetBundleConfigReq struct {
 type SetBundleConfigReq struct {
 	ProductID string `form:"productId" json:"productId" binding:"required"`
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
-	ProjectID  string       `form:"projectId" json:"projectId"`
-	Config BundleConfig `json:"config" form:"config"`
+	ProjectID string `form:"projectId" json:"projectId"`
+	// Config 走 BindForm 自己解析（表单体里是一个 JSON 字符串）：
+	// gin 的 form 映射不支持点号嵌套、encoding/json 不认字符串 —— 见 BindForm 的注释。
+	Config     BundleConfig `json:"config" form:"-"`
 	OperatorID string       `json:"-" form:"-"`
 }
 
@@ -142,8 +149,33 @@ func (r *ResolveBundleMembersReq) BindForm(vals url.Values) error {
 
 // BundleMemberSource 成员来源快照（不是身份，见 BundleOption 的说明）。
 type BundleMemberSource struct {
-	Kind string `json:"kind" form:"kind"`
-	WarehouseID string `json:"warehouseId,omitempty"`
+	Kind         string `json:"kind" form:"kind"`
+	WarehouseID  string `json:"warehouseId,omitempty"`
 	WarehouseSKU string `json:"warehouseSku,omitempty"`
-	ExternalSKU string `json:"externalSku,omitempty"`
+	ExternalSKU  string `json:"externalSku,omitempty"`
+}
+
+// BindForm 表单体里 Config 是一个 JSON 字符串（htmx 侧用 JSON.stringify 生成）。
+//
+// 为什么不能靠反射绑定：gin 的 form 映射**不支持点号嵌套**（实测 `config.maxOptions=3`
+// 绑完仍是 0），而 `encoding/json` 的 Unmarshaler 期待一个 JSON 值、不认字符串
+// （实测 `config={"maxOptions":3}` 绑完也是零值）。两条路都不通，只能自己解析。
+//
+// Config 在 tag 上标 `form:"-"`：不让反射那条路走一半（部分字段被覆盖、部分留零值，
+// 那比全零更难查）。
+//
+// 空串 / 未提交 → 保持零值（Config 是值类型，零值即「空配置」，与 JSON 省略同义）。
+// 非空但不是合法 JSON → FieldValueError（FieldKindJSON），由出口按 400 报参数错误。
+func (r *SetBundleConfigReq) BindForm(vals url.Values) error {
+	raw := strings.TrimSpace(vals.Get("config"))
+	if raw == "" {
+		return nil
+	}
+	if !json.Valid([]byte(raw)) {
+		return &FieldValueError{Field: "config", Kind: FieldKindJSON}
+	}
+	if err := json.Unmarshal([]byte(raw), &r.Config); err != nil {
+		return &FieldValueError{Field: "config", Kind: FieldKindJSON}
+	}
+	return nil
 }

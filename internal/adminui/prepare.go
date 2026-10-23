@@ -164,12 +164,8 @@ func ViewMap(view any) gin.H {
 		}
 		return out
 	}
-	for rv.Kind() == reflect.Pointer {
-		if rv.IsNil() {
-			return gin.H{}
-		}
-		rv = rv.Elem()
-	}
+	// 这里不需要再解一次指针：上面的循环已经把 rv 解到非指针；
+	// map 分支提前 return，走到这里的只可能是 struct 或其它。
 	if rv.Kind() != reflect.Struct {
 		panic("adminui.ViewMap: 视图必须是结构体、结构体指针或 gin.H/map[string]any，" +
 			"收到 " + rv.Kind().String() + "（视图装配属于 dto，不要在控制器里手工拼 map）")

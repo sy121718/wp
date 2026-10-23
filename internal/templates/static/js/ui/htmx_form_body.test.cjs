@@ -396,3 +396,110 @@ test('write_feedback 拦下「确认流程未走完」的请求', () => {
     });
     assert.equal(prevented, 1, '按钮级 data-confirm 同样要拦');
 });
+
+// ── ⑥ data-write-ids-scope：ids 装在别的容器里 ──
+//
+// 现有唯一用例是商品列表的「按规则改价」抽屉：抽屉内容被克隆到 document 级，
+// 勾选框留在页面那个批量表单里。在抽屉表单内部找 [name=ids] 永远是空数组，
+// 表现是「点了应用调价什么都没发生」，而基座只回一句「没勾选任何项」。
+
+test('data-write-ids-scope：从声明的作用域收已勾选的 ids', () => {
+    // 页面上的批量表单（ids 在这里），抽屉表单是另一个。
+    const pageScope = {
+        querySelectorAll(sel) {
+            return [
+                makeElement({ attrs: { name: 'ids' }, value: 'a', type: 'checkbox', checked: true }),
+                makeElement({ attrs: { name: 'ids' }, value: 'b', type: 'checkbox', checked: false }),
+                makeElement({ attrs: { name: 'ids' }, value: 'c', type: 'checkbox', checked: true }),
+                makeElement({ attrs: { name: 'ids' }, value: 'a', type: 'checkbox', checked: true }),
+            ];
+        },
+    };
+    const sandbox = {
+        window: { htmx: { on(n, fn) { sandbox._h = fn; } } },
+        document: { querySelector: () => pageScope },
+    };
+    sandbox.window.window = sandbox.window;
+    sandbox.window.document = sandbox.document;
+    vm.createContext(sandbox);
+    vm.runInContext(source, sandbox);
+
+    const form = makeForm({ 'data-write-ids-scope': '[data-list-bulk]' });
+    const body = makeBody([['projectId', 'p1']]);
+    sandbox._h({ detail: { ctx: { request: { method: 'post', body }, sourceElement: form } } });
+
+    // 只收勾选的、去重、保序；projectId 原样留着。
+    assert.deepEqual(body.dump(), ['projectId=p1', 'ids=a', 'ids=c'],
+        '应只收已勾选且去重的 ids');
+});
+
+test('data-write-ids-scope：目标选择器打不中时不动请求体（不静默变空数组）', () => {
+    const sandbox = {
+        window: { htmx: { on(n, fn) { sandbox._h = fn; } } },
+        document: { querySelector: () => null },
+    };
+    sandbox.window.window = sandbox.window;
+    sandbox.window.document = sandbox.document;
+    vm.createContext(sandbox);
+    vm.runInContext(source, sandbox);
+
+    const form = makeForm({ 'data-write-ids-scope': '[data-list-bulk]' });
+    const body = makeBody([['projectId', 'p1']]);
+    sandbox._h({ detail: { ctx: { request: { method: 'post', body }, sourceElement: form } } });
+
+    assert.deepEqual(body.dump(), ['projectId=p1'],
+        '选择器打不中时不该凭空造一个空 ids —— 交给端点按自己的规则拒绝');
+});
+
+// ── ⑦ data-write-builder：页面级 payload 组装器 ──
+//
+// 变体清单与捆绑配置的 payload 不是表单字段的平铺，而是从 DOM 另一处读出结构再合并。
+// 组装规则只有一份（页面脚本注册一次），模板只声明名字。
+
+test('data-write-builder：组装器的产物写回 body，对象/数组走 JSON 字符串', () => {
+    const sandbox = {
+        window: { htmx: { on(n, fn) { sandbox._h = fn; } } },
+        document: { querySelector() { return null; }, querySelectorAll() { return []; } },
+    };
+    sandbox.window.window = sandbox.window;
+    sandbox.window.document = sandbox.document;
+    vm.createContext(sandbox);
+    vm.runInContext(source, sandbox);
+
+    // 页面自己的组装器（模拟 product_variant_write.js 的注册）
+    sandbox.window.WBFormBody.registerPayloadBuilder('demo', function (form, submitter, payload) {
+        payload.rows = [{ variantId: 'v1', skuCode: 'SKU-1' }];
+        delete payload.rowInputs;   // 中间键不该发出去
+        payload.maxOptions = 3;
+        return payload;
+    });
+
+    const form = makeForm({ 'data-write-builder': 'demo' });
+    const body = makeBody([['productId', 'p1'], ['rowInputs', 'x']]);
+    sandbox._h({ detail: { ctx: { request: { method: 'post', body }, sourceElement: form } } });
+
+    const dump = body.dump();
+    // rows 是数组 → JSON 字符串；maxOptions 是数字 → 字符串；rowInputs 被组装器删掉。
+    assert.ok(dump.indexOf('rows=[{"variantId":"v1","skuCode":"SKU-1"}]') >= 0, '数组应 stringify：' + dump);
+    assert.ok(dump.indexOf('maxOptions=3') >= 0, '标量应原样写回：' + dump);
+    assert.ok(dump.indexOf('rowInputs') < 0, '组装器删掉的中间键不该出现在 body：' + dump);
+    assert.ok(dump.indexOf('productId=p1') >= 0, '其余字段保留：' + dump);
+});
+
+test('data-write-builder：页面没注册同名组装器时不动 body（交给端点拒绝）', () => {
+    const sandbox = {
+        window: { htmx: { on(n, fn) { sandbox._h = fn; } } },
+        document: { querySelector() { return null; }, querySelectorAll() { return []; } },
+    };
+    sandbox.window.window = sandbox.window;
+    sandbox.window.document = sandbox.document;
+    vm.createContext(sandbox);
+    vm.runInContext(source, sandbox);
+
+    const form = makeForm({ 'data-write-builder': 'not-registered' });
+    const body = makeBody([['productId', 'p1'], ['note', 'x']]);
+    sandbox._h({ detail: { ctx: { request: { method: 'post', body }, sourceElement: form } } });
+
+    assert.deepEqual(body.dump(), ['productId=p1', 'note=x'],
+        '没注册时不该凭空改请求体 —— 交给端点按缺字段拒绝，比静默发半份 payload 好');
+});

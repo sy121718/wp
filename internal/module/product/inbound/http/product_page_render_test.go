@@ -882,12 +882,10 @@ func TestProductsListBulkPricingUsesJSONWriteBase(t *testing.T) {
 	})
 	body := rec.Body.String()
 	for _, want := range []string{
-		// 批量调价留在旧基座：ids 要从 data-list-bulk（表单之外）收，
-		// data-write-ids-scope 只有 ui/json_write.js 实现；htmx 的 hx-include 只含本表单，
-		// ids 一个都发不出去。判据是「必须有 ids 作用域声明」，不是「必须用哪套基座」。
-		`data-write-api="/api/product/bulk-pricing"`,
-		`data-write-mode="bulk"`,
-		`data-write-outcome="update"`,
+		// 批量调价：提交走 htmx，但 ids 要从 data-list-bulk（表单之外）收 ——
+		// data-write-ids-scope 由 htmx_form_body.js 实现。
+		// 判据是「必须有 ids 作用域声明」，不是「必须用哪套基座」。
+		`hx-post="/api/product/bulk-pricing"`,
 		`data-write-ids-scope="[data-list-bulk]"`,
 		"data-list-bulk",
 	} {
@@ -895,8 +893,8 @@ func TestProductsListBulkPricingUsesJSONWriteBase(t *testing.T) {
 			t.Fatalf("按规则改价缺少 %q（未接入 JSON 写基座或 ids 作用域没声明）；body=%s", want, headOf(body))
 		}
 	}
-	if strings.Contains(body, `hx-post="/admin/products/bulk-pricing`) {
-		t.Fatal("按规则改价仍是 htmx 提交（半迁移）：应只剩 data-write-api 一种提交方式")
+	if strings.Contains(body, `data-write-api="/api/product/bulk-pricing"`) {
+		t.Fatal("按规则改价不该同时挂两套提交声明（会双提交）")
 	}
 }
 

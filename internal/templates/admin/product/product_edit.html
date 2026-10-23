@@ -330,12 +330,12 @@
            builder 从清单 DOM 组装；成功后的结论经 data-write-flash 带过随后的整页刷新
            （清单刷新后才是库里的样子，被跳过的那几行也才会重新出现）。 *}
         <p class="form-hint badge" data-write-flash-target="product-variant-save" role="status" hidden></p>
-        {* 这一档**留在旧基座**：它靠 data-write-builder="product-variant-rows" 让
-           ui/product_variant_write.js 从清单 DOM 组装整份 payload（行内字段、被跳过行、
-           默认变体标记等），htmx_form_body.js 没有对应能力。
-           硬迁的后果是 payload 少一半字段 —— 而端点是严格白名单，会整条 400。
-           迁移前提：先给 htmx 侧补出等价的 builder 机制（或把组装搬进 service）。 *}
-        <form data-write-api="/api/product/variant/save" data-write-mode="form"
+        {* 走 htmx 原生提交 + 页面级组装器：
+           data-write-builder="product-variant-rows" 由 ui/product_variant_write.js 注册到
+           htmx 基座（ui/htmx_form_body.js 的 WBFormBody），从清单 DOM 组装 rows。
+           DTO 侧 SaveVariantListReq 实现了 BindForm，把 rows 这个 JSON 字符串解析成切片
+           （gin 的 form 映射不支持点号嵌套，Rows 元素里还带 optionValues map）。 *}
+        <form hx-post="/api/product/variant/save" hx-swap="none"
               data-write-builder="product-variant-rows" data-write-flash="product-variant-save"
               data-variant-form
               data-msg-failed="{{ .["t"]("admin.products.variant.saveFailed", "清单保存失败，请刷新页面后重试。") }}">

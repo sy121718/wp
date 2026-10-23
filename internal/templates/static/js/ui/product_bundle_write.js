@@ -58,4 +58,33 @@
         delete payload.maxTotalQty;
         return payload;
     });
+
+    // 同一份组装逻辑注册给 htmx 基座（ui/htmx_form_body.js）。
+    //
+    // 两个基座并存期间，页面只需在模板里声明 data-write-builder="product-bundle-config"，
+    // 由**谁提交**决定用哪个注册表 —— 组装规则只有这一份，不复制第二遍。
+    // （复制一份的后果是两套规则慢慢分叉，而症状是「同一个抽屉在两套基座下保存出不同配置」。）
+    if (global.WBFormBody && global.WBFormBody.registerPayloadBuilder) {
+        global.WBFormBody.registerPayloadBuilder('product-bundle-config', bundleConfig);
+    }
+
+    function bundleConfig(form, submitter, payload) {
+        var options = [];
+        var rows = form.querySelectorAll(ROW_SEL);
+        for (var i = 0; i < rows.length; i++) {
+            var option = optionOf(rows[i]);
+            if (option) { options.push(option); }
+        }
+        payload.config = {
+            maxOptions: integer(payload.maxOptions),
+            minTotalQty: integer(payload.minTotalQty),
+            maxTotalQty: integer(payload.maxTotalQty),
+            options: options
+        };
+        delete payload.memberRows;
+        delete payload.maxOptions;
+        delete payload.minTotalQty;
+        delete payload.maxTotalQty;
+        return payload;
+    }
 })(window);
