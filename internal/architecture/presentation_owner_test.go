@@ -43,7 +43,7 @@ var pendingDTOPresentation = map[string]int{
 	// 会话事件行的 Tone 是**模板契约键名**（ai_session_detail.html 读 `.Tone` 拼徽标类），
 	// 值是语义档（"error"/"ok"）而不是成品类名 —— 但字段名落在禁名单上。
 	// 按存量登记：改名要同步改模板，而模板错是渲染期 500。
-	"internal/module/ai/dto/ai_page_resp.go": 1,
+	"internal/module/ai/dto/ai_page_resp.go": 2,
 	"internal/module/user/dto/user_resp.go":                1,
 }
 

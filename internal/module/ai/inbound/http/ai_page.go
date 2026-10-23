@@ -1005,17 +1005,17 @@ func (h *PageHandle) modelsFailure(c *gin.Context, providerID int64, rows []aidt
 // noticeKey 是 i18n key（不是译文）；这里翻成当前语言并填充 {n}/{m} 后才交给模板。
 func (h *PageHandle) modelsData(c *gin.Context, provider aidto.Provider, rows []aidto.ModelEntry, noticeKey string, params map[string]string, isErr bool) gin.H {
 	provider.Models = rows
-	return adminui.Prepare(c, gin.H{
-		"Provider": provider,
-		"Rows":     modelRows(rows),
+	return adminui.PrepareView(c, &aidto.ModelsDataResp{
+		Provider: provider,
+		Rows:     modelRows(rows),
 		// 这个槽位**还没取词化**：provider_models.html 直接渲染 {{.ModelsNotice}} 是文本，
 		// 所以在这里取成文本。要改成「传 key、模板 tr」得连带改那份模板的数据契约。
-		"ModelsNotice":    facingTextParams(c, noticeKey, params),
-		"ModelsNoticeErr": isErr,
+		ModelsNotice:    facingTextParams(c, noticeKey, params),
+		ModelsNoticeErr: isErr,
 		// 分档与无障碍角色在**这一份**数据里也要给全：provider_models.html 有两条渲染路径
 		//（整页 include 走 cardData、htmx 片段单独渲染走这里），只补一处会渲染出 `badge badge-`。
-		"ModelsNoticeTone": noticeTone(isErr),
-		"ModelsNoticeRole": noticeRole(isErr),
+		ModelsNoticeTone: noticeTone(isErr),
+		ModelsNoticeRole: noticeRole(isErr),
 	})
 }
 
@@ -1159,8 +1159,8 @@ func userID(c *gin.Context) int64 {
 //
 // 转换放在 Go 侧而不是模板里：模板只做「取字段 + isset 判断」，
 // 「哪些输入类型勾上了」这类判断不该由模板表达式承担（错了是整页 500）。
-func modelRows(models []aidto.ModelEntry) []gin.H {
-	rows := make([]gin.H, 0, len(models))
+func modelRows(models []aidto.ModelEntry) []aidto.ModelRowResp {
+	rows := make([]aidto.ModelRowResp, 0, len(models))
 	for i := range models {
 		hasText, hasImage := false, false
 		for _, t := range models[i].InputTypes {
@@ -1171,14 +1171,14 @@ func modelRows(models []aidto.ModelEntry) []gin.H {
 				hasImage = true
 			}
 		}
-		rows = append(rows, gin.H{
-			"Index":           i,
-			"ID":              models[i].ID,
-			"DisplayName":     models[i].DisplayName,
-			"ContextWindow":   models[i].ContextWindow,
-			"MaxOutputTokens": models[i].MaxOutputTokens,
-			"TextChecked":     hasText,
-			"ImageChecked":    hasImage,
+		rows = append(rows, aidto.ModelRowResp{
+			Index:           i,
+			ID:              models[i].ID,
+			DisplayName:     models[i].DisplayName,
+			ContextWindow:   models[i].ContextWindow,
+			MaxOutputTokens: models[i].MaxOutputTokens,
+			TextChecked:     hasText,
+			ImageChecked:    hasImage,
 		})
 	}
 	return rows

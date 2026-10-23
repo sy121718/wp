@@ -72,3 +72,54 @@ type SessionEventRowResp struct {
 	// 带这个键的上下文，而不是直接把切片丢过去（Jet 的 include 只接受变量表达式）。
 	ViewsCtx *FabViewsCtx
 }
+
+// ModelRowResp 模型目录表的一行（模板读 .Index / .DisplayName / .TextChecked …）。
+//
+// Index 是**行序号**：模板用它拼表单字段名（models[0].id 这类），不是展示序号。
+type ModelRowResp struct {
+	Index           int
+	ID              string
+	DisplayName     string
+	ContextWindow   int64
+	MaxOutputTokens int64
+	TextChecked     bool
+	ImageChecked    bool
+}
+
+// ModelsDataResp 模型目录区的模板数据（htmx 片段 + 卡片共用）。
+type ModelsDataResp struct {
+	Provider any
+	Rows     []ModelRowResp
+	// ModelsNotice 目录读取结果提示（已取好词：这个槽位在模板里直接渲染文本）。
+	ModelsNotice    string
+	ModelsNoticeErr bool
+	// ModelsNoticeTone / ModelsNoticeRole 分档与无障碍角色。
+	//
+	// provider_models.html 有**两条渲染路径**（整页 include 走 cardData、htmx 片段单独
+	// 渲染走这里），只补一处会渲染出 `badge badge-`（空类名）。
+	ModelsNoticeTone string
+	ModelsNoticeRole string
+}
+
+// ProviderCardResp 一个供应商卡片（含模型目录区）的模板数据。
+//
+// csrf_token / t / PermSet 从页面基座 map 里借 —— 卡片是 include 进整页的，
+// 作用域是这张卡片自己的 map，拿不到整页的键。这三个键由调用方显式传入。
+type ProviderCardResp struct {
+	Provider        any
+	Rows            []ModelRowResp
+	ProtocolOptions any
+	DefaultBaseURL  string
+	BuiltinKeys     any
+	ModelsNotice    string
+	ModelsNoticeErr bool
+	// 卡片上两处徽标的分档：启停与「模型目录读取结果」。
+	StatusTone       string
+	ModelsNoticeTone string
+	ModelsNoticeRole string
+
+	CSRFToken string `view:"csrf_token"`
+	// T / PermSet 是**从基座借来的壳键**（取值函数与权限集合）。
+	T       any `view:"t"`
+	PermSet any `view:"PermSet"`
+}

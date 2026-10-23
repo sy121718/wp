@@ -68,12 +68,22 @@ while IFS= read -r line; do
 done < "$ALLOW_FILE"
 
 # ── 扫描现状（只看非测试的控制器文件）────────────────────────────────────────
+#
+# **只数「页面视图」的 gin.H，不数 JSON 响应里的**。
+#
+# 这一点最初写错过：判据只按 `gin.H{` 行数算，于是 ai_handle.go 的 21 处
+# JSON-RPC 载荷（writeRPCResult / response.Success / c.JSON）全被算进「页面视图存量」，
+# 而那批根本不渲染页面 —— 台账里挂着一批永远「迁不掉」的数，看着像永远做不完。
+#
+# 判据：一行里出现 `gin.H{`，且**同一行**没有 JSON 出口的函数名，才算页面视图。
+# 单行判定是保守取法：JSON 载荷跨行时会被算进来（宁可多算，不要漏算页面视图）。
+JSON_EGRESS_RE='response\.Success|response\.Error|response\.OK|\.JSON\(|writeRPCResult|writeJSON'
 declare -A CUR_GIN CUR_HTML
 gin_sum=0
 html_sum=0
 while IFS= read -r f; do
   case "$f" in *_test.go) continue ;; esac
-  g=$(grep -c 'gin\.H{' "$f" 2>/dev/null || true)
+  g=$(grep 'gin\.H{' "$f" 2>/dev/null | grep -vcE "$JSON_EGRESS_RE" || true)
   h=$(grep -c 'c\.HTML(' "$f" 2>/dev/null || true)
   g=${g:-0}; h=${h:-0}
   [ "$g" -gt 0 ] && { CUR_GIN["$f"]="$g"; gin_sum=$((gin_sum + g)); }
