@@ -59,9 +59,10 @@ make dev       # 开发模式，air 热重载
 `scripts/` 下有两类脚本，用途不同：
 
 - **当前入口**：`dev.sh`（`make dev` 调用）、`check-*.sh`（CI 门禁，`make check` 调用）。
-- **历史脚本**：`build-all.*`、`build-frontend.*`、`deploy.sh` 是早期按 Windows/PowerShell 环境写的，
-  其中的打包步骤已被 `go build ./...` 与 CI 覆盖。保留是为了不打断仍在使用它们的本地流程，
-  但**新流程不要依赖它们**——直接编译就是全部步骤，没有前端打包工程需要编排。
+- **部署辅助**：`deploy.sh`。
+- **已删除**（2026-11）：`build-all.*`、`build-frontend.*`、`prepare-embed.*`。它们依赖的 `web/`
+  前端工程与 `internal/embed/dist` 在本仓不存在，打包步骤早已被 `go build ./...` 与 CI 覆盖，
+  留着只会让人以为存在一条前端打包链路。直接编译就是全部步骤。
 
 ## 目录
 
