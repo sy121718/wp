@@ -79,14 +79,19 @@ func run(check bool) error {
 	out := map[string]endpointSchema{}
 	var unmatched []string
 	for _, r := range routes {
-		h := matchHandler(r.Path, handlerDTO)
+		mod := moduleOfRoutePath(r.Path)
+		h := matchHandler(r.Path, mod, handlerDTO)
 		if h == "" {
 			unmatched = append(unmatched, r.Method+" "+r.Path)
 			continue
 		}
 		dtoName := handlerDTO[h]
 		info := dtoInfo[dtoName]
-		ep := endpointSchema{DTO: dtoName, Handler: h, Fields: info.Fields}
+		handlerName := h
+		if i := strings.Index(h, ":"); i >= 0 {
+			handlerName = h[i+1:]
+		}
+		ep := endpointSchema{DTO: dtoName, Handler: handlerName, Fields: info.Fields}
 		if ep.Fields == nil {
 			ep.Fields = []fieldSchema{}
 		}
@@ -174,12 +179,25 @@ func runtimeWriteRoutes() ([]route, error) {
 //   - 否则退化为「全部资源词都出现在 handler 名里且唯一」。
 //
 // 多条命中就放弃 —— 配错会让门禁按错的 DTO 对账，比不配更糟。
-func matchHandler(path string, handlerDTO map[string]string) string {
+func matchHandler(path, mod string, handlerDTO map[string]string) string {
 	segs := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segs) < 3 {
 		return ""
 	}
 	rest := segs[2:]
+
+	// 候选键**只认同模块**的 "mod:Handler"。
+	//
+	// 不回退到裸 handler 名：跨模块同名会把契约配错，而配错比漏配更糟 ——
+	// 门禁会拿错的 DTO 去对账（实测：/api/i18n/save 匹到 gorm.DB、
+	// /api/product/detail-template/create 匹到 productdto.CreateReq）。
+	// 漏配的端点没有契约，check-write-fields.sh 会明确报「端点不在契约里」。
+	idsOf := func(name string) []string {
+		if mod == "" {
+			return nil   // 拿不到模块名 → 不做猜测（宁可漏配，让门禁报出来）
+		}
+		return []string{mod + ":" + name}
+	}
 	verbs := map[string]string{
 		"create": "Create", "update": "Update", "delete": "Delete",
 		"save": "Save", "add": "Add", "remove": "Remove",
@@ -217,11 +235,18 @@ func matchHandler(path string, handlerDTO map[string]string) string {
 			cands = append(cands, verb+strings.Join(camel, ""))
 			cands = append(cands, verb+camel[len(camel)-1])
 		}
-		// 也试「全部资源」与「只有动词」两种极端（handler 名可能省略资源）。
-		cands = append(cands, verb)
+		// 只有路径**没有任何资源段**时才试裸动词（`/api/x/publish` → Publish）。
+		// 有资源段时不能回退到裸动词：`/api/product/detail-template/create` 会因此
+		// 匹到商品模块的 Create（productdto.CreateReq），而它其实该匹
+		// CreateDetailTemplate —— 实测就是这么错配的。
+		if len(camel) == 0 {
+			cands = append(cands, verb)
+		}
 		for _, c := range cands {
-			if _, ok := handlerDTO[c]; ok {
-				return c
+			for _, id := range idsOf(c) {
+				if _, ok := handlerDTO[id]; ok {
+					return id
+				}
 			}
 		}
 	}
@@ -229,6 +254,10 @@ func matchHandler(path string, handlerDTO map[string]string) string {
 	// 退化：全部资源词都出现在 handler 名里，且唯一。
 	var hits []string
 	for name := range handlerDTO {
+		// 只在本模块的候选里退化匹配（跨模块同名会让结果随机）。
+		if mod != "" && !strings.HasPrefix(name, mod+":") {
+			continue
+		}
 		all := len(camel) > 0
 		for _, c := range camel {
 			if !strings.Contains(name, c) {
@@ -244,6 +273,15 @@ func matchHandler(path string, handlerDTO map[string]string) string {
 		return hits[0]
 	}
 	return ""
+}
+
+// moduleOfRoutePath 从 /api/<mod>/... 取出模块名（与 handler 声明的模块目录同名）。
+func moduleOfRoutePath(path string) string {
+	segs := strings.Split(strings.Trim(path, "/"), "/")
+	if len(segs) < 2 {
+		return ""
+	}
+	return segs[1]
 }
 
 // camelWord 单个路径段转驼峰首字母大写（复数去尾 s）。
@@ -309,8 +347,17 @@ func scanHandlerBindings() (map[string]string, error) {
 			if !ok || fn.Body == nil || fn.Recv == nil {
 				continue
 			}
+			// 同名 handler 在多个模块里都有（每个模块都有自己的 Create/Update/Delete）。
+			// 键用 "模块:Handler"，避免 /api/product/create 被匹到 blockdto.CreateReq
+			//（实测踩过：契约里 /api/product/create 的 dto 是 blockdto.CreateReq）。
 			name := fn.Name.Name
-			if _, seen := out[name]; seen {
+			mod := moduleOfPath(path)
+			key := name
+			if mod != "" {
+				key = mod + ":" + name
+			}
+			// 带模块前缀的键**先登记**（权威），裸名只在尚未占用时登记（兜底）。
+			if _, seen := out[key]; seen {
 				continue
 			}
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
@@ -341,13 +388,85 @@ func scanHandlerBindings() (map[string]string, error) {
 				if !ok {
 					return true
 				}
-				out[name] = pkgName.Name + "." + dt.Sel.Name
+				// 只认 dto 包（*dto.XxxReq）。不设这条会把辅助函数的类型形参
+				// （`binding.JSON[gorm.DB]` 之类）当成 DTO —— 实测过。
+				if !strings.HasSuffix(pkgName.Name, "dto") {
+					return true
+				}
+				if mod != "" {
+					out[key] = pkgName.Name + "." + dt.Sel.Name
+					if _, taken := out[name]; !taken {
+						out[name] = out[key]
+					}
+				} else {
+					out[name] = pkgName.Name + "." + dt.Sel.Name
+				}
 				return false
 			})
+			// 兜底：handler 可能把 binding 包在**泛型辅助函数**里
+			//（`detailTemplateWriteJSON(c, func(req *productdto.DetailTemplateCreateReq, …)`），
+			// 此时方法体内没有 binding.JSON，类型实参在调用处。
+			found := func() bool { _, ok := out[key]; return ok }
+			if !found() {
+				if dto := dtoFromGenericHelperCall(fn.Body); dto != "" {
+					out[key] = dto
+					if _, taken := out[name]; !taken {
+						out[name] = dto
+					}
+				}
+			}
 		}
 		return nil
 	})
 	return out, err
+}
+
+// dtoFromGenericHelperCall 在 handler 体里找「调用泛型写辅助，其函数字面量参数
+// 的第一个形参是 *pkg.Type」的形态，返回 pkg.Type。
+//
+// 为什么需要：product 的 detail-template 系列把 binding 包在
+// `detailTemplateWriteJSON[T any](c, run func(req *T, …))` 里，方法体只传一个
+// 函数字面量 —— 只看方法体扫不到 binding.JSON。
+func dtoFromGenericHelperCall(body *ast.BlockStmt) string {
+	var found string
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found != "" {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		for _, arg := range call.Args {
+			lit, ok := arg.(*ast.FuncLit)
+			if !ok || lit.Type.Params == nil || len(lit.Type.Params.List) == 0 {
+				continue
+			}
+			expr := lit.Type.Params.List[0].Type
+			if star, ok := expr.(*ast.StarExpr); ok {
+				expr = star.X
+			}
+			if sel, ok := expr.(*ast.SelectorExpr); ok {
+				if pkg, ok := sel.X.(*ast.Ident); ok && strings.HasSuffix(pkg.Name, "dto") {
+					found = pkg.Name + "." + sel.Sel.Name
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// moduleOfPath 从 internal/module/<mod>/... 取出 <mod>；不在模块目录下返回空串。
+func moduleOfPath(path string) string {
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	for i, p := range parts {
+		if p == "module" && i+2 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return ""
 }
 
 // dtoInfo 一个 DTO 的字段表与需组装的表字段。

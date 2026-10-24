@@ -448,10 +448,18 @@
     function bulkIDs(form) {
         var seen = {};
         var out = [];
+        // data-write-ids-scope：ids 在**另一个容器**里（抽屉内容被克隆到 document 级，
+        // 勾选框留在列表的批量表单里）。不指回去的话，在抽屉内找 [name=ids] 恒为空，
+        // 症状是「点了应用调价什么也没发生」，提示却只说「没勾选任何项」。
+        var scopeSel = String(form.getAttribute('data-write-ids-scope') || '').trim();
+        var scope = form;
+        if (scopeSel) {
+            scope = document.querySelector(scopeSel) || form;
+        }
         // 用 [name] + 逐个判 checked，而不是选择器里的 :checked 伪类：
         // 伪类在最小 DOM 桩（feature 测试的驱动脚本）里不支持，而在真实浏览器里
         // 「[name=ids] 且 checked」与「[name=ids]:checked」等价 —— 取前者兼容面更宽。
-        var els = form.querySelectorAll('[name]');
+        var els = scope.querySelectorAll('[name]');
         for (var i = 0; i < els.length; i++) {
             var name = els[i].getAttribute('name');
             if (name !== 'ids' && name !== 'ids[]') continue;
