@@ -17,6 +17,13 @@ func TestIsSafeCSSValue(t *testing.T) {
 		"calc(100% - 20px)",
 		"url(/img/a.jpg)", // 站内相对路径
 		"",                // 空值视为合法（未设置）
+		// 以下四项靠字符集里的 `:` 活着：它们是本函数**必须不能**误伤的取值。
+		// 响应式声明的通行形式（parseResponsiveDecls 传进来的就是整条声明）、
+		// 过渡简写、渐变函数、悬停位移。
+		"color: red",
+		"transition: all 0.5s linear 0.1s",
+		"linear-gradient(90deg, #111, #999)",
+		"translate(0, -2px)",
 	}
 	for _, v := range valid {
 		if !IsSafeCSSValue(v) {
@@ -32,6 +39,25 @@ func TestIsSafeCSSValue(t *testing.T) {
 		`url('//evil.com/x')`,
 		"url('/img/a.jpg')",      // 引号形式一律拒绝（' 不在字符集）
 		strings.Repeat("a", 501), // 超长
+
+		// 协议类执行载体。修复前这些**全部返回 true**（字符集里保留着 `:`），
+		// 每条都注明它靠什么作恶。
+		"javascript:alert(1)",
+		"JavaScript:alert(1)",                      // 大小写不敏感
+		"  javascript:alert(1)",                    // 前导空白（浏览器解析 URL 时忽略）
+		"java\tscript:alert(1)",                    // 制表符拆开关键字
+		"vbscript:msgbox(1)",                       // 老 IE
+		"livescript:x",                             // 历史执行器
+		"background: url(javascript:alert(1))",     // 藏进 url() 里
+		"blob:https://evil/x",                      // 能载入脚本
+		"data:text/html,<script>alert(1)</script>", // 能载入脚本
+		"file:///etc/passwd",                       // 本地内容
+
+		// 老执行载体（函数 / 属性形式，不是 scheme）。
+		"expression(alert(1))",
+		"width: expression(alert(1))",
+		"-moz-binding:url(x)",
+		"behavior: url(x.htc)",
 	}
 	for _, v := range invalid {
 		if IsSafeCSSValue(v) {

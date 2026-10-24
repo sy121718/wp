@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // ---------- 共享白名单（全组件统一，含容器） ----------
@@ -18,6 +19,19 @@ var (
 	// （background-image: url(//attacker) 外联注入载体）。大小写不敏感，兼容 url( 与 url (、
 	// 引号包裹等 CSS 语法变体；站内相对路径 url(/img/a.jpg) 不受影响。
 	cssExternalURLRe = regexp.MustCompile(`(?i)url\s*\(\s*['"]?\s*(?:https?:|//)`)
+	// cssScriptProtocolRe 脚本类协议前缀（可直接执行或载入脚本的 scheme）。
+	//
+	// 为什么单独一条而不是把它们加进 SafeValueRe 的字符集限制：`:` 本身在合法取值里
+	// 大量存在（响应式声明的 `color: red`、`transition: all .3s`、`var(--x)` 的默认值、
+	// `?a=b` 插件参数），禁冒号会成片误伤。而真正的注入面是「值里出现 scheme:」，
+	// 且浏览器解析 URL 时忽略前导空白 —— 所以先剥噪声再找 `scheme:`，不做裸 contains。
+	// javascript:/vbscript: 可执行；mocha:/livescript: 是历史执行器；
+	// data:/blob:/file:/filesystem: 能载入脚本或本地内容（本站已有 data: 组件值需求，
+	// 所以它继续在 SafeValueRe 字符集里被拦，这里一并拒绝更清楚）。
+	cssScriptProtocolRe = regexp.MustCompile(`(?i)\b(?:javascript|vbscript|livescript|mocha|data|blob|file|filesystem)\s*:`)
+	// cssLegacyExecRe 老浏览器时代的 CSS 执行载体（IE expression / Firefox -moz-binding /
+	// IE behavior）。这三个不是「值里的前缀」而是函数或属性形式，按子串拒绝。
+	cssLegacyExecRe = regexp.MustCompile(`(?i)(?:expression\s*\(|-moz-binding|\bbehavior\s*:)`)
 	// CustomClassRe 自定义 class 白名单：禁止 sky- 前缀之外的注入字符（sky- 前缀由 ValidateAdvanced 单独拦截）。
 	CustomClassRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
 	// CustomIDRe 自定义 Element ID 白名单（锚点）。
@@ -46,12 +60,54 @@ const zIndexLimit = 100
 const hueRotateLimit = 360
 
 // IsSafeCSSValue CSS 值白名单校验（长度上限 500）。全组件共用的唯一入口。
-// 收紧取舍说明（M 级 url() 外联注入修复）：SafeValueRe 字符集保留括号（rgba() 等
-// 合法函数取值依赖，见容器 Overlay 控件），故不做「仅放行 ^url\(站内路径\)$」的
-// 全量收紧，而是单独封禁外联形式：url(//…) 与 url(http(s)://…) 一律拒绝，
-// 站内相对路径 url(/img/a.jpg) 与函数值 rgba(…) 保持既有行为。
+//
+// 三道判定，任一不过即拒：
+//
+//  1. 长度上限 500；
+//  2. 字符集 SafeValueRe（禁引号/分号/花括号/@/反斜杠/尖括号等注入载体）；
+//  3. **协议与执行载体**：url() 外联、脚本类 scheme、IE expression / -moz-binding。
+//
+// 第 3 道是补丁（原先只有 1、2）：字符集里保留着 `:`（响应式声明、var() 默认值、
+// 插件参数都靠它），于是 `javascript:alert(1)` / `expression(alert(1))` 这类值
+// **字符集完全合法**，旧实现一律放行 —— 实测 `IsSafeCSSValue("javascript:alert(1)")`
+// 返回 true。现在按「剥空白后是否出现 scheme:」判，与 core/richtext.go 里
+// isSafeRichHref 同一套口径（先剔噪声再判协议，不靠「没匹配上所以放行」）。
+//
+// 收紧取舍：括号继续保留 —— rgba()/calc()/linear-gradient()/translate() 等合法函数
+// 全靠它，一刀切禁括号会把容器 Overlay、渐变、悬停位移全打回。url() 只放行站内相对路径。
 func IsSafeCSSValue(v string) bool {
-	return len(v) <= 500 && !cssExternalURLRe.MatchString(v) && SafeValueRe.MatchString(v)
+	if len(v) > 500 {
+		return false
+	}
+	if !SafeValueRe.MatchString(v) {
+		return false
+	}
+	if cssExternalURLRe.MatchString(v) {
+		return false
+	}
+	// 先剔空白与控制字符再判协议：浏览器解析 URL 时同样忽略它们，
+	// " javascript:" / "java\tscript:" 这类前导绕过得在这里就断掉。
+	probe := stripCSSValueNoise(v)
+	if cssScriptProtocolRe.MatchString(probe) {
+		return false
+	}
+	return !cssLegacyExecRe.MatchString(probe)
+}
+
+// stripCSSValueNoise 剔掉判协议用的空白与控制字符（含各类 Unicode 空格）。
+//
+// 与 core/richtext.go 的 stripRichHrefNoise 同口径：判协议之前必须先去掉这些字符，
+// 否则 "\u0000javascript:" / "\u3000javascript:" 这类绕过只是「碰巧」落在拒绝分支里。
+func stripCSSValueNoise(v string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r <= 0x20, r == 0x7f, r == 0x180e:
+			return -1
+		case r > 0x7f && unicode.IsSpace(r):
+			return -1
+		}
+		return r
+	}, v)
 }
 
 // ---------- 结构化四向值（面板四输入框 + 锁定联动的数据模型） ----------

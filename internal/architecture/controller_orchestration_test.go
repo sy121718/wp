@@ -79,7 +79,7 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/user/inbound/http/user_customer_admin_handle.go":           {offenders: 3, max: 10},
 	"internal/module/user/inbound/http/user_page.go":                            {offenders: 14, max: 31},
 	"internal/module/workbench/inbound/http/workbench_handle.go":                {offenders: 1, max: 9},
-	"internal/module/workbench/inbound/http/workbench_page.go":                  {offenders: 7, max: 31},
+	"internal/module/workbench/inbound/http/workbench_page.go":                  {offenders: 7, max: 29},
 }
 
 // controllerHandlerStatements 每个 handler 的语句数（键是「文件:函数」，只收参数恰好一个 *gin.Context 的函数）。
