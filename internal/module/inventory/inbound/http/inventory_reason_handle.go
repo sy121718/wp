@@ -27,7 +27,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaReasons, err))
+		inventoryFail(c, err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -36,7 +36,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 	}
 	reasons, err := h.listReasons(c, selected)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaReasons, err))
+		inventoryFail(c, err)
 		return
 	}
 	tr := shell.TranslateFor(c)

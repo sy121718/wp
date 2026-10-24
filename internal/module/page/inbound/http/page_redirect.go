@@ -10,7 +10,6 @@ package pagehttp
 
 import (
 	"errors"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -35,11 +34,10 @@ const redirectPagePath = "/api/page/redirect"
 func (h *Handle) RedirectPage(c *gin.Context) {
 	res, err := h.svc.ListRedirects(c.Request.Context(), &pagedto.RedirectListReq{ProjectID: c.Query("project")})
 	if err != nil {
-		logger.Scene("page").Error(err, "重定向列表读取失败")
-		// 同页渲染 + 500：失败不该看起来像成功（200 会让「列表是空的」和「读不到」
-		// 长得一样）。no-store：失败页不该被缓存，重试必须真的回到服务端 ——
-		// 与 navigation 的整页 500 同口径。
-		pageview.Render(c, redirectFailureResponse{redirectPageData(c, nil, redirectErrKey(err))})
+		// 失败一律走 JSON 错误体（pageview.Fail）：页面 GET 失败不渲染页壳。
+		// 从前这里渲染「完整页壳 + 500」，同一张模板要维护两套必需键；
+		// 而失败时页壳给的信息（侧栏、返回链接）没有一条是这次失败需要的。
+		pageview.Fail(c, err)
 		return
 	}
 	pageview.Render(c, redirectPageData(c, res, ""))
@@ -254,18 +252,3 @@ func redirectErrMsg(key string) pageMsg {
 	return pageMsg{Key: strings.TrimSpace(key), Fallback: "操作未完成"}
 }
 
-// redirectFailureResponse 失败档的**出口包装**：视图 + 500 + no-store。
-//
-// 为什么包装在控制器层而不是让 dto 实现 PageStatus/PageNoStore：
-// internal/architecture 的「dto 不带展示字段」门禁把这两个方法名判为违规
-// （那批存量是待清理的），而渲染出口只认 pkg/view.Result。折中是让**出口包装类型**
-// 实现接口 —— dto 仍是纯数据，状态码是出口的关切（与 order / contenttemplate 同形）。
-//
-// 500 + no-store 的理由没变：200 会让「列表是空的」和「读不到」长得一样；
-// no-store 是因为重试必须真的回到服务端，而不是从缓存里再拿回同一份失败。
-type redirectFailureResponse struct {
-	*pagedto.RedirectPageResp
-}
-
-func (redirectFailureResponse) PageStatus() int   { return http.StatusInternalServerError }
-func (redirectFailureResponse) PageNoStore() bool { return true }

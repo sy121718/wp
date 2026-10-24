@@ -26,7 +26,7 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaWarehouses, err))
+		inventoryFail(c, err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -35,7 +35,7 @@ func (h *inventoryPageHandle) InventoryWarehousesPage(c *gin.Context) {
 	}
 	warehouses, err := h.listWarehouses(c, selected)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaWarehouses, err))
+		inventoryFail(c, err)
 		return
 	}
 	tr := shell.TranslateFor(c)

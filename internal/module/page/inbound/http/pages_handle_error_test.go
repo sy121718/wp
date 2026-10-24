@@ -38,7 +38,7 @@ func (s *redirectListFailStub) ListRedirects(_ context.Context, _ *pagedto.Redir
 	return nil, s.err
 }
 
-func TestRedirectPageLoadFailureKeepsPageAndIsNotCached(t *testing.T) {
+func TestRedirectPageLoadFailureReturnsJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rawErr := errors.New(`pq: relation "page_redirect" does not exist`)
 
@@ -50,22 +50,23 @@ func TestRedirectPageLoadFailureKeepsPageAndIsNotCached(t *testing.T) {
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/page/redirect?project=p1&lang=zh-CN", nil))
 	body := rec.Body.String()
 
+	// 状态码：500（200 会让失败看起来像「还没有重定向」）。
 	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("取数失败的状态码应为 500（200 会让失败看起来像「还没有重定向」），得到 %d：%s", rec.Code, body)
+		t.Fatalf("取数失败的状态码应为 500，得到 %d：%s", rec.Code, body)
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Errorf("取数失败仍应渲染页面（Content-Type 含 text/html），得到 %q", ct)
+	// 形状：JSON 错误体，不渲染页壳（失败一律一个提示 —— 用户裁定）。
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("失败出口应为 JSON，得到 %q", ct)
 	}
-	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
-		t.Errorf("失败页不应被缓存（Cache-Control 含 no-store），得到 %q", cc)
-	}
-	// 完整壳：只看 <!DOCTYPE 会漏掉「渲染中途截断」。
-	for _, want := range []string{"<!DOCTYPE", "</body>", "</html>"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("错误页页壳不完整，缺 %q：%s", want, body)
+	for _, banned := range []string{"<!DOCTYPE", "</body>", "</html>"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("失败出口不该渲染页壳（出现 %q）：%s", banned, body)
 		}
 	}
+	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
+		t.Errorf("失败响应应带归口文案：%s", body)
+	}
 	if strings.Contains(body, rawErr.Error()) {
-		t.Errorf("内部错误原文漏进了页面：%s", body)
+		t.Errorf("内部错误原文漏进了响应：%s", body)
 	}
 }

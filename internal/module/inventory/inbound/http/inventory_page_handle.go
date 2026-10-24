@@ -63,7 +63,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, err))
+		inventoryFail(c, err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -73,12 +73,12 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 
 	warehouses, err := h.listWarehouses(c, selected)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, err))
+		inventoryFail(c, err)
 		return
 	}
 	options, err := h.variantOptions(ctx, selected)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, err))
+		inventoryFail(c, err)
 		return
 	}
 
@@ -100,7 +100,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 			ProjectID: selected, SKUCode: sku,
 		})
 		if serr != nil {
-			pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, serr))
+			inventoryFail(c, serr)
 			return
 		}
 		tr := shell.TranslateFor(c)
@@ -137,7 +137,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 
 	reasons, err := h.listReasons(c, selected)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, err))
+		inventoryFail(c, err)
 		return
 	}
 
@@ -153,7 +153,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	movements, total, page, err := h.listMovements(c, selected, sku, filterWarehouse, filterDirection,
 		filterReason, filterTimeFrom, filterTimeTo, page, limit)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaHome, err))
+		inventoryFail(c, err)
 		return
 	}
 

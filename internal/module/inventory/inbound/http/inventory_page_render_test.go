@@ -204,44 +204,31 @@ func assertInventoryFailurePage(t *testing.T, rec *httptest.ResponseRecorder, ra
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("取数失败的状态码应为 500，得到 %d：%s", rec.Code, body)
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Errorf("取数失败仍应渲染页面（Content-Type 含 text/html），得到 %q", ct)
+	// 形态：JSON 错误体（失败不渲染页壳 —— 用户裁定：所有提示只需要一个提示）。
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("失败出口应为 JSON，得到 %q", ct)
 	}
-	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
-		t.Errorf("失败页不应被缓存（Cache-Control 含 no-store），得到 %q", cc)
-	}
-	// 页壳：整页渲染与「浏览器把 JSON 当文档」的分水岭；尾部两条同时查，
-	// 才能挡住「渲染中途中断、尾部截断」这种半截页。
-	for _, want := range []string{
-		"<!DOCTYPE", `class="admin-layout"`, "</body>", "</html>", `id="adminRail"`,
-		"badge-danger", "这一页的数据没能读出来",
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("失败页应含 %q，实际：%s", want, body)
+	for _, banned := range []string{"<!DOCTYPE", `class="admin-layout"`, "</body>", "</html>", `id="adminRail"`} {
+		if strings.Contains(body, banned) {
+			t.Errorf("失败出口不该渲染页壳（出现 %q）：%s", banned, body)
 		}
 	}
-	// 归口：原文只进日志。原样与 HTML 转义两种形态都要查 —— Jet 会把双引号渲染成 `&#34;`，
-	// 只比对 err.Error() 整串会漏掉「转义后照样看得懂」的直出（变异自检 ③ 发现的缺口）。
-	for _, leak := range []string{rawErr.Error(), html.EscapeString(rawErr.Error())} {
+	// 归口文案在（模块自己的内部错误兜底），原文与裸 key 都不在。
+	if !strings.Contains(body, "系统内部错误，请稍后重试") {
+		t.Errorf("失败响应应带归口文案，实际：%s", body)
+	}
+	for _, leak := range []string{rawErr.Error(), html.EscapeString(rawErr.Error()), internalErrorKey} {
 		if strings.Contains(body, leak) {
-			t.Errorf("内部错误原文漏进了页面：%s", body)
+			t.Errorf("失败响应不应出现 %q：%s", leak, body)
 		}
 	}
-	// 不再是 JSON 报文（response.ErrorWithMessage 的形态）。
-	if strings.Contains(body, `{"code"`) {
-		t.Errorf("取数失败不应再返回 JSON 报文：%s", body)
-	}
-	// 裸 key 不能出现在页面上（MsgInternalError 是归口 key，取词失败时也不许直出）。
-	if strings.Contains(body, internalErrorKey) {
-		t.Errorf("页面上漏出了 i18n key %q：%s", internalErrorKey, body)
-	}
-	// 失败优先于空态。
+	// 失败优先于空态：JSON 里不该出现空态文案。
 	if emptyText != "" && strings.Contains(body, emptyText) {
 		t.Errorf("装载失败被渲染成了空态（%q）：两档必须分开：%s", emptyText, body)
 	}
 }
 
-// TestInventoryPagesLoadFailureRenderPage 三页**全部 10 处**取数失败出口都必须是整页（500 + 失败槽）。
+// TestInventoryPagesLoadFailureRenderPage 三页**全部 10 处**取数失败出口都必须是 JSON 错误体（500）。
 //
 // 10 处 = 库存管理页 6（工程列表 / 仓库列表 / SKU 下拉 / 某 SKU 各仓库存 / 原因字典 / 流水）
 // + 仓库管理页 2（工程列表 / 仓库列表）+ 变动原因字典页 2（工程列表 / 原因列表）。
@@ -368,13 +355,13 @@ func TestInventoryPageLoadFailureFollowsRequestLanguage(t *testing.T) {
 			router.ServeHTTP(rec, req)
 
 			body := rec.Body.String()
-			for _, want := range []string{tc.wantMsg, tc.wantTitle} {
-				if !strings.Contains(body, want) {
-					t.Errorf("失败页应含 %q，实际：%s", want, body)
-				}
+			// JSON 错误体只有归口文案一条：页壳标题（wantTitle）不再出现 ——
+			// 那句话属于「页壳上的失败槽」，随失败页一起作废（用户裁定：一个提示就够）。
+			if !strings.Contains(body, tc.wantMsg) {
+				t.Errorf("失败响应应含归口文案 %q，实际：%s", tc.wantMsg, body)
 			}
 			if strings.Contains(body, internalErrorKey) {
-				t.Errorf("页面上漏出了 i18n key %q：%s", internalErrorKey, body)
+				t.Errorf("响应里漏出了 i18n key %q：%s", internalErrorKey, body)
 			}
 		})
 	}

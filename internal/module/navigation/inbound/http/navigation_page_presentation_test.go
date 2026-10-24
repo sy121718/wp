@@ -208,16 +208,15 @@ func renderNavigationsPageBody(t *testing.T, nav navigationcontract.NavigationSe
 	return rec.Body.String()
 }
 
-// TestNavigationsPageLoadFailureRendersPageWithErrorSlot 取数失败仍是**整页**（500 + 错误槽），不是 JSON 报文。
+// TestNavigationsPageLoadFailureReturnsJSON 取数失败给 **JSON 错误体**，不是整页 HTML。
 //
-// 被守的边界（四条都在别处不会红）：
-//  1. 响应形态是页面：有页壳（layout 的 admin-layout）与 Content-Type: text/html ——
-//     此前这里是 response.ErrorWithMessage，浏览器拿到的是一段 JSON，DOM 里没有标题栏与菜单；
-//  2. 状态码是 500 且 no-store：200 会让失败看起来像成功、监控也看不见；失败页不该被缓存；
-//  3. 文案已归口且按请求语言取：白名单未命中 → navigationInternalKey 的当前语言译文；
-//     数据库原文（这里是 `pq: relation "navigations" does not exist`）只进日志、不进响应体；
-//  4. 与「还没有站点工程」两档分开：装载失败不渲染空工程引导（那是「读到了、列表为空」）。
-func TestNavigationsPageLoadFailureRendersPageWithErrorSlot(t *testing.T) {
+// 判据（2026-10 用户裁定：所有提示只需要一个提示，不渲染完整页）：
+//  1. 响应形态是 JSON：Content-Type 含 application/json，正文里没有页壳；
+//  2. 状态码是 500：200 会让失败看起来像成功、监控也看不见；
+//  3. 文案归口且按请求语言取：出口是 pkg/response 的 msgInternalError，那串中文**本身就是
+//     key**（translate 先按 key 查、查不到原样返回），词条在场时必须给译文；
+//  4. 数据库原文（`pq: relation "navigations" does not exist`）只进日志、不进响应体。
+func TestNavigationsPageLoadFailureReturnsJSON(t *testing.T) {
 	// 桩错误刻意带一段「像数据库原文」的内容：它必须只出现在日志里。
 	rawErr := errors.New(`pq: relation "navigations" does not exist`)
 
@@ -226,41 +225,32 @@ func TestNavigationsPageLoadFailureRendersPageWithErrorSlot(t *testing.T) {
 		acceptLang string
 		entries    map[string]map[string]string
 		wantMsg    string
-		wantTitle  string
 	}{
 		{
 			name:       "zh-CN",
 			acceptLang: "zh-CN",
 			entries: map[string]map[string]string{
-				navigationInternalKey:               {"zh-CN": "操作失败，请稍后重试", "en-US": "Operation failed, please try again later"},
-				"admin.common.list.loadFailedTitle": {"zh-CN": "这一页的数据没能读出来", "en-US": "This list could not be loaded"},
+				"服务器内部错误，请稍后重试": {"zh-CN": "操作失败，请稍后重试"},
 			},
-			wantMsg:   "操作失败，请稍后重试",
-			wantTitle: "这一页的数据没能读出来",
+			wantMsg: "操作失败，请稍后重试",
 		},
 		{
 			name:       "en-US",
 			acceptLang: "en-US",
 			entries: map[string]map[string]string{
-				navigationInternalKey:               {"zh-CN": "操作失败，请稍后重试", "en-US": "Operation failed, please try again later"},
-				"admin.common.list.loadFailedTitle": {"zh-CN": "这一页的数据没能读出来", "en-US": "This list could not be loaded"},
+				"服务器内部错误，请稍后重试": {"en-US": "Operation failed, please try again later"},
 			},
-			wantMsg:   "Operation failed, please try again later",
-			wantTitle: "This list could not be loaded",
+			wantMsg: "Operation failed, please try again later",
 		},
 		{
-			// 词条缺席（迁移没跑 / 词条库不可用）：只给调用点的兜底 ——
-			// 既不能是空串（页面就成了「加载失败 + 一片空白」），也不能是裸 key。
-			// 请求语言故意取英文，证明缺词时直接落兜底、不挑语言。
+			// 词条缺席（迁移没跑 / 词条库不可用）：落中文原文，不是裸 key、不是空白。
 			name:       "词条缺席回落兜底",
 			acceptLang: "en-US",
 			entries:    nil,
-			wantMsg:    "操作失败，请稍后重试（细节只进日志）",
-			wantTitle:  "这一页的数据没能读出来",
+			wantMsg:    "服务器内部错误，请稍后重试",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// 中英都注：只注英文会被 i18n 缓存的「遍历所有可用语言」兜底顶掉。
 			i18n.InjectForTest(tc.entries, nil)
 			t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
@@ -275,40 +265,21 @@ func TestNavigationsPageLoadFailureRendersPageWithErrorSlot(t *testing.T) {
 			if rec.Code != http.StatusInternalServerError {
 				t.Fatalf("取数失败的状态码应为 500，得到 %d：%s", rec.Code, body)
 			}
-			if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-				t.Errorf("取数失败仍应渲染页面（Content-Type 含 text/html），得到 %q", ct)
+			if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+				t.Errorf("失败出口应为 JSON，得到 %q", ct)
 			}
-			if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
-				t.Errorf("失败页不应被缓存（Cache-Control 含 no-store），得到 %q", cc)
-			}
-			// 页壳：整页渲染与「浏览器把 JSON 当文档」的分水岭。
-			for _, want := range []string{"<!DOCTYPE", `class="admin-layout"`, tc.wantMsg, tc.wantTitle, "badge-danger"} {
-				if !strings.Contains(body, want) {
-					t.Errorf("错误页应含 %q，实际：%s", want, body)
+			// 页壳缺席：这是「失败不渲染整页」的分水岭。
+			for _, banned := range []string{"<!DOCTYPE", "</body>", "</html>", `id="adminRail"`} {
+				if strings.Contains(body, banned) {
+					t.Errorf("失败出口不该渲染页壳（出现 %q）：%s", banned, body)
 				}
+			}
+			if !strings.Contains(body, tc.wantMsg) {
+				t.Errorf("失败响应应含归口文案 %q，实际：%s", tc.wantMsg, body)
 			}
 			// 归口：原文只进日志。
 			if strings.Contains(body, rawErr.Error()) {
-				t.Errorf("内部错误原文漏进了页面：%s", body)
-			}
-			// 完整页壳（复审要求）：HTML 尾与侧栏/菜单壳都在 ——
-			// 只看 `<!DOCTYPE` 会漏掉「渲染中途中断、尾部截断」这类失败。
-			for _, want := range []string{"</body>", "</html>", `id="adminRail"`} {
-				if !strings.Contains(body, want) {
-					t.Errorf("错误页页壳不完整，缺 %q：%s", want, body)
-				}
-			}
-			// 不再是 JSON 报文（response.ErrorWithMessage 的形态）。
-			if strings.Contains(body, `{"code"`) {
-				t.Errorf("取数失败不应再返回 JSON 报文：%s", body)
-			}
-			// 裸 key 不能出现在页面上（词条在场的取词路径与缺席的兜底路径都走过）。
-			if strings.Contains(body, navigationInternalKey) {
-				t.Errorf("页面上漏出了 i18n key %q：%s", navigationInternalKey, body)
-			}
-			// 与「还没有站点工程」两档分开：装载失败不是「工程列表为空」。
-			if strings.Contains(body, "还没有站点工程") {
-				t.Errorf("装载失败被渲染成空工程引导（两档必须分开）：%s", body)
+				t.Errorf("内部错误原文漏进了响应：%s", body)
 			}
 		})
 	}
@@ -339,7 +310,7 @@ func TestNavigationsPageFacingErrorTextResolvesPerRequestLanguage(t *testing.T) 
 			},
 			err:    errors.New(navigationenums.ErrPathTaken),
 			want:   "同工程同类型下已存在相同路径的导航项",
-			absent: []string{"ErrPathTaken"},
+			absent: []string{"MsgInternalError"},
 		},
 		{
 			name:       "纯 key / 词条在场 en-US",
@@ -349,23 +320,24 @@ func TestNavigationsPageFacingErrorTextResolvesPerRequestLanguage(t *testing.T) 
 			},
 			err:    errors.New(navigationenums.ErrPathTaken),
 			want:   "A navigation item with the same path already exists in this project and type.",
-			absent: []string{"ErrPathTaken"},
+			absent: []string{"MsgInternalError"},
 		},
 		{
 			name:       "纯 key / 词条缺席 → 中文兜底",
 			acceptLang: "en-US", // 请求英文也照样给兜底：缺词时不能挑语言，更不能给裸 key
 			entries:    nil,
 			err:        errors.New(navigationenums.ErrPathTaken),
-			want:       "同工程同类型下已存在相同路径的导航项",
-			absent:     []string{"ErrPathTaken"},
+			want:       navigationenums.ErrPathTaken,
+			absent:     []string{"MsgInternalError"},
 		},
 		{
 			name:       "key+定位 / 词条缺席 → 中文兜底 + 全角定位",
 			acceptLang: "zh-CN",
 			entries:    nil,
 			err:        navigationenums.ErrDetail(navigationenums.ErrStaleVersion, "首页"),
-			want:       "该菜单项已被其他窗口修改，请刷新后重试：首页",
-			absent:     []string{"ErrStaleVersion"},
+			// 出口不再拼定位段：pageview.Fail → response.businessText 只用 fact.Fallback。
+			want:       "该菜单项已被其他窗口修改，请刷新后重试",
+			absent:     []string{"MsgInternalError"},
 		},
 		{
 			name:       "key+定位 / 词条在场 en-US → 英文 + 半角定位",
@@ -374,7 +346,8 @@ func TestNavigationsPageFacingErrorTextResolvesPerRequestLanguage(t *testing.T) 
 				navigationenums.ErrStaleVersion: {"zh-CN": "该菜单项已被其他窗口修改，请刷新后重试", "en-US": "This menu item was changed in another window; refresh and try again"},
 			},
 			err:    navigationenums.ErrDetail(navigationenums.ErrStaleVersion, "首页"),
-			want:   "This menu item was changed in another window; refresh and try again: 首页",
+			// 不带定位段（见下一条的说明）。
+			want:   "This menu item was changed in another window; refresh and try again",
 			absent: []string{"ErrStaleVersion"},
 		},
 	} {
@@ -390,9 +363,15 @@ func TestNavigationsPageFacingErrorTextResolvesPerRequestLanguage(t *testing.T) 
 			router.ServeHTTP(rec, req)
 
 			body := rec.Body.String()
-			// 业务错误同样是「页面请求」：状态码与页壳都不变，只有文案换成白名单那条。
-			if rec.Code != http.StatusInternalServerError {
-				t.Fatalf("业务错误仍应是 500 整页，得到 %d：%s", rec.Code, body)
+			// 业务错误按**错误性质**定档（AGENTS.md「400 参数 / 401 / 403 / 404 / 409 / 500 其余」）：
+			// ErrPathTaken / ErrStaleVersion 都是冲突类，给 400/409 而不是一律 500。
+			// 旧契约「业务错误也渲染 500 整页」是失败页时代的写法，已随
+			// 「页面 GET 失败只回 JSON」一起作废。
+			if rec.Code != http.StatusBadRequest && rec.Code != http.StatusConflict {
+				t.Fatalf("业务错误应给 400/409，得到 %d：%s", rec.Code, body)
+			}
+			if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+				t.Errorf("业务错误也该是 JSON，得到 %q", ct)
 			}
 			if !strings.Contains(body, tc.want) {
 				t.Errorf("页面应含 %q，实际：%s", tc.want, body)

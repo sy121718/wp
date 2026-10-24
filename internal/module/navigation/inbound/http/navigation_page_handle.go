@@ -316,13 +316,11 @@ func (h *navigationPageHandle) NavigationsPage(c *gin.Context) {
 		//（navigations.html 的 `{{loadError}}`，不取词）—— 「这个槽位还没取词化」
 		// 已登记在报告里。
 		logger.Scene("page").With("path", c.Request.URL.Path).Error(err, "加载导航菜单页失败")
-		// 失败档：零值视图 + 取好词的 LoadError，500 + no-store 由出口包装给。
-		failed := &navigationsPageData{
-			Title:     navigationsPageTitle,
-			Menu:      "navigations",
-			LoadError: adminui.MsgText(c, navigationErrMsg(c, err)),
-		}
-		pageview.Render(c, navigationFailureResponse{failed})
+		// 失败一律走 JSON 错误体（pageview.Fail）：页面 GET 失败不渲染页壳。
+		// 从前这里渲染「完整页壳 + 500」的失败档 —— 同一张模板要维护两套必需键，
+		// 而失败时页壳给的信息（侧栏、菜单树）没有一条是这次失败需要的：
+		// 菜单树本来就是这次没读到的东西（用户裁定：所有提示只需要一个提示）。
+		pageview.Fail(c, err)
 		return
 	}
 	pageview.Render(c, data)
@@ -1053,14 +1051,3 @@ type navigationEditFormView struct {
 	NavEditPanelAvail  bool
 	NavEditPanelBlocks any
 }
-
-// navigationFailureResponse 失败档的出口包装：视图 + 500 + no-store。
-//
-// 与 contenttemplate / order / page 的同类包装一致：dto 只带数据，
-// 状态码是出口的关切（dto 上带 PageStatus 会被「dto 不带展示字段」门禁计入）。
-type navigationFailureResponse struct {
-	*navigationsPageData
-}
-
-func (navigationFailureResponse) PageStatus() int   { return http.StatusInternalServerError }
-func (navigationFailureResponse) PageNoStore() bool { return true }

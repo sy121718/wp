@@ -92,9 +92,6 @@ type ContentTemplatesPageResp struct {
 	Err string
 	// Ready 模板写入能力是否装配（false = 未注入端口，页面显示「能力未装配」而非「没有模板」）。
 	Ready bool
-	// LoadFailed 列表空是因为**没读出来**，不是「还没有模板」——
-	// 模板据此换掉空态标题（空态误导比什么都不显示更糟）。
-	LoadFailed bool
 
 	Templates     []TemplateListRowResp
 	TemplateCount int
@@ -106,31 +103,3 @@ type ContentTemplatesPageResp struct {
 	ImpactNote      string
 }
 
-// NewContentTemplatesPageError 构造**失败档的视图内容**（保留页壳上下文）。
-//
-// 它只负责"页面上显示什么"，**不负责状态码** —— 状态码与 no-store 由控制器层的
-// contentTemplatesErrorView 包装给出（那里实现 view.Result）。
-//
-// 为什么这样分：internal/architecture 的「dto 不带展示字段」门禁把 PageStatus /
-// PageNoStore 两个方法名判为违规（那批存量是待清理的，不是可以继续加的），而渲染出口
-// 只认 view.Result —— 于是"决定状态码"落在**控制器层的包装类型**上，
-// 与 inventory 的 inventoryLoadFailedView 同一形态。dto 仍是纯数据。
-//
-// 500 + no-store 的理由：200 会让失败在监控里与正常页一模一样（失败会一直无声地发生），
-// no-store 是因为「重试」不该从缓存里再拿回同一份失败。
-func NewContentTemplatesPageError(title, menu string,
-	projects []projectcontract.ProjectResp, selected, entityType, errText string) *ContentTemplatesPageResp {
-	return &ContentTemplatesPageResp{
-		Title:           title,
-		Menu:            menu,
-		Projects:        projects,
-		SelectedProject: selected,
-		EntityType:      entityType,
-		Err:             errText,
-		Ready:           true,
-		LoadFailed:      true,
-		Templates:       []TemplateListRowResp{},
-		TemplateCount:   0,
-		ImpactAvailable: false,
-	}
-}

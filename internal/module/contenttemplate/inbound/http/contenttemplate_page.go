@@ -96,17 +96,11 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 		//   · LoadFailed=true —— 列表空是因为**没读出来**，不是「还没有模板」，
 		//     由模板据此换掉空态标题（空态误导比什么都不显示更糟）。
 		// 装载失败是这次请求真实发生的事（列表页自己的提示条）；原文只进日志（contentTemplateInternalText）。
-		// 三个键的取值理由见上方长注释：Ready=true（能力没问题，是取数失败）、
-		// ImpactAvailable=false（"查不出来"不能长得像"没有引用"）、LoadFailed=true（空态要换话术）。
-		view := contenttemplatedto.NewContentTemplatesPageError(
-			"MsgContentTemplatesTitle", "content-templates",
-			[]projectcontract.ProjectResp{}, "",
-			strings.TrimSpace(c.Query("entityType")),
-			contentTemplateInternalText(c, err),
-		)
-		view.ImpactNote = contentTemplateImpactLoadFailedText(c)
-		// 500 + no-store 由包装类型给（见文件末尾 contentTemplatesErrorView）。
-		pageview.Render(c, contentTemplatesErrorView{view})
+		// 失败一律走 JSON 错误体（pageview.Fail）：页面 GET 失败不渲染页壳 ——
+		// 状态码由错误性质定（pkg/response.ErrorStatus），文案由归口链取词，原文只进日志。
+		// 原先这里渲染「完整页壳 + 500」：200/500 两种出口都要维护同一张模板的必需键，
+		// 而那份页壳在失败时提供的信息（侧栏、菜单）本来就没有一条是这次失败需要的。
+		pageview.FailScene(c, contentTemplateErrScene, err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -151,15 +145,8 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 		//
 		// 键与成功路径同一份：Err 喂模板 :29 的提示条，LoadFailed 喂模板 :118 的失败空态
 		//（「列表没读出来」≠「还没有模板」）。原文只进日志（contentTemplateInternalText）。
-		// 主数据失败 → 同页完整 HTML 500 + no-store（判据见上方长注释）。
-		view.Err = contentTemplateInternalText(c, err)
-		view.LoadFailed = true
-		view.Ready = true
-		view.ImpactAvailable = impact.Available
-		view.ImpactNote = contentTemplateImpactNote(c, impact, impactErr)
-		view.Templates = []contenttemplatedto.TemplateListRowResp{}
-		view.TemplateCount = 0
-		pageview.Render(c, contentTemplatesErrorView{view})
+		// 主数据失败 → 同样是 JSON 错误体（见上一条分支的说明）。
+		pageview.FailScene(c, contentTemplateErrScene, err)
 		return
 	}
 	// 展示标签（实体类型 / 角色 / 槽位）在这里取成**当前语言文本**：service 拿不到请求语言，
@@ -503,19 +490,3 @@ func toTemplateInstanceRefs(in []contentTemplateInstanceRef) []contenttemplatedt
 	return out
 }
 
-// contentTemplatesErrorView 失败档的**出口包装**：把 dto 视图 + 状态码/no-store 一起交给渲染层。
-//
-// 为什么包装在这里而不是让 dto 实现 PageStatus/PageNoStore：
-// internal/architecture 的「dto 不带展示字段」门禁把这两个方法名判为违规
-// （那批存量是待清理的，不是可以继续加的），而渲染出口只认 pkg/view.Result。
-// 于是"决定状态码"这件事落在**控制器层的包装类型**上 —— 与 inventory 的
-// inventoryLoadFailedView 是同一形态：dto 是纯数据，状态码是出口的关切。
-//
-// 500 + no-store 的理由没变：200 会让失败在监控里与正常页一模一样（失败会一直无声地
-// 发生），而 no-store 是因为「重试」不该从缓存里再拿回同一份失败。
-type contentTemplatesErrorView struct {
-	*contenttemplatedto.ContentTemplatesPageResp
-}
-
-func (contentTemplatesErrorView) PageStatus() int   { return http.StatusInternalServerError }
-func (contentTemplatesErrorView) PageNoStore() bool { return true }
