@@ -45,10 +45,10 @@ type ArticlePublishBlockResp struct {
 	DefaultURLPath    string
 	// 两个下拉直接用本包既有的强类型选项（content_option_resp.go）：
 	// 它们本来就是「ID + 已取好词的 Name」，没有理由为页面视图再造一份。
-	Projects  []OptionResp
-	Templates []TemplateOptionResp
-	HasTemplates      bool
-	NoTemplateHint    any
+	Projects       []OptionResp
+	Templates      []TemplateOptionResp
+	HasTemplates   bool
+	NoTemplateHint any
 }
 
 // ArticleImportBlockResp 「导入到画布」区块。

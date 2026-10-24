@@ -179,9 +179,14 @@ func translationRowErrors(keys ...string) []pagedto.TranslationRowErrorResp {
 }
 
 // pageTranslationsData 工作台页面数据。
+//
+// 字段名就是模板契约键，**但只有两个是壳键**（layout 的 {{.title}} / {{.menu}} 是小写），
+// 其余与模板一致（模板读 {{.PageID}} / {{.Groups}} …）。小写那两个用 view 标签表达，
+// 而不是再写一层 templateMap() 把 21 个字段手工搬一遍 ——
+// 那层转换本身就是「加一个字段要改两处」的来源。
 type pageTranslationsData struct {
-	Title     string
-	Menu      string
+	Title     string `view:"title"`
+	Menu      string `view:"menu"`
 	PageID    string
 	PagePath  string
 	ProjectID string
@@ -210,21 +215,6 @@ type pageTranslationsData struct {
 	// 与取数失败分开，是因为「改地址就能好」和「稍后重试」不是同一件事。
 	ParamInvalid bool
 	ParamError   pageMsg
-}
-
-// templateMap 转为模板所需的小写键 map（layout 以 {{.title}}/{{.menu}} 取值）。
-func (d *pageTranslationsData) templateMap() gin.H {
-	return gin.H{
-		"title": d.Title, "menu": d.Menu,
-		"PageID": d.PageID, "PagePath": d.PagePath, "ProjectID": d.ProjectID,
-		"Lang": d.Lang, "Langs": d.Langs, "Filter": d.Filter, "Groups": d.Groups,
-		"RowCount": d.RowCount, "PageDone": d.PageDone, "PageTotal": d.PageTotal,
-		"SiteDone": d.SiteDone, "SiteTotal": d.SiteTotal, "SiteNote": d.SiteNote,
-		"IsDefaultLang": d.IsDefaultLang,
-		"Errors":        d.Errors,
-		"LoadFailed":    d.LoadFailed, "LoadError": d.LoadError,
-		"ParamInvalid": d.ParamInvalid, "ParamError": d.ParamError,
-	}
 }
 
 // 筛选取值（服务端渲染，纯链接，零 JS）。
@@ -278,7 +268,7 @@ func (h *pagesAdminHandle) PageTranslations(c *gin.Context) {
 		})
 		return
 	}
-	c.HTML(http.StatusOK, translationsTemplate, adminui.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, translationsTemplate, adminui.PrepareView(c, data))
 }
 
 // pageTranslationsFailure 失败页的两个事实档：参数非法（400）与主数据没读到（404 / 500）。
@@ -319,7 +309,7 @@ func (h *pagesAdminHandle) renderTranslationsFailure(c *gin.Context, status int,
 		data.LoadFailed, data.LoadError = true, f.loadError
 	}
 	c.Header("Cache-Control", "no-store")
-	c.HTML(status, translationsTemplate, adminui.Prepare(c, data.templateMap()))
+	c.HTML(status, translationsTemplate, adminui.PrepareView(c, data))
 }
 
 // SavePageTranslations POST /admin/pages/translations/save：保存本页译文。
@@ -479,7 +469,7 @@ func (h *pagesAdminHandle) renderTranslationError(c *gin.Context, pageID, lang s
 		return
 	}
 	data.Errors = errs
-	c.HTML(http.StatusOK, "admin/page/page_translations", adminui.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/page/page_translations", adminui.PrepareView(c, data))
 }
 
 // buildPageTranslationsData 组装工作台数据。

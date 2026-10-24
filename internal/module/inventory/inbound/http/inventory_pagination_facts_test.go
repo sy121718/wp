@@ -13,6 +13,7 @@ package inventoryhttp
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -102,14 +103,14 @@ func inventoryFactsMapper(t *testing.T, target string) (*gin.Context, *httptest.
 // TestInventoryPurchasesMapperCarriesPaginationFacts 采购单页：映射层必须交出事实键，
 // 且不得再出现旧成品键。
 func TestInventoryPurchasesMapperCarriesPaginationFacts(t *testing.T) {
-	c, _ := inventoryFactsMapper(t, "/admin/inventory/purchases?project=project-1")
+	inventoryFactsMapper(t, "/admin/inventory/purchases?project=project-1")
 
 	pg := pagination.Page{Total: 45, Page: 2, Limit: 20}
 	pg.Base = "/admin/inventory/purchases?project=project-1"
-	m := (&inventoryPurchasesPageData{
+	m := adminui.ViewMap((&inventoryPurchasesPageData{
 		SelectedProject: "project-1",
 		Pagination:      pg,
-	}).templateMap(c)
+	}))
 
 	got, ok := m["Pagination"].(pagination.Page)
 	if !ok {
@@ -135,10 +136,9 @@ func TestInventorySourcesMapperCarriesPaginationFacts(t *testing.T) {
 
 	pg := pagination.Page{Total: 45, Page: 2, Limit: 20}
 	pg.Base = "/admin/inventory/sources?project=project-1&type=internal"
-	m := (&inventorySourcesPageData{
-		SelectedProject: "project-1",
-		Pagination:      pg,
-	}).templateMap(c)
+	d := &inventorySourcesPageData{SelectedProject: "project-1", Pagination: pg}
+	fillSourceOptions(d, c)
+	m := adminui.ViewMap(d)
 
 	got, ok := m["Pagination"].(pagination.Page)
 	if !ok {
@@ -163,13 +163,12 @@ func TestInventoryPurchasesAndSourcesZeroFactsRenderNoPagination(t *testing.T) {
 	}{
 		{
 			name: "采购单页/单页",
-			data: (&inventoryPurchasesPageData{SelectedProject: "project-1",
-				Pagination: pagination.Page{Total: 5, Page: 1, Limit: 20}}).templateMap(mustGinContext(t, "/admin/inventory/purchases?project=project-1")),
+			data: adminui.ViewMap(&inventoryPurchasesPageData{SelectedProject: "project-1",
+				Pagination: pagination.Page{Total: 5, Page: 1, Limit: 20}}),
 		},
 		{
 			name: "货源页/装载失败（零值）",
-			data: (&inventorySourcesPageData{SelectedProject: "project-1"}).
-				templateMap(mustGinContext(t, "/admin/inventory/sources?project=project-1")),
+			data: adminui.ViewMap(&inventorySourcesPageData{SelectedProject: "project-1"}),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

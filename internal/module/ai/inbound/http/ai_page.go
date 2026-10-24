@@ -1480,8 +1480,8 @@ func toPresetOptions(in []aiservice.BuiltinPresetOption) []aidto.PresetOption {
 //
 // 拆分一次查完整页（见 SessionService.SessionModelUsageOf），拉取失败不阻断整页 ——
 // 行照常渲染，只是悬浮卡里没有明细（给空切片，模板不必再写一层 isset）。
-func (h *SessionPageHandle) sessionRows(ctx context.Context, rows []aidto.Session) []any {
-	out := make([]any, 0, len(rows))
+func (h *SessionPageHandle) sessionRows(ctx context.Context, rows []aidto.Session) []aidto.SessionRowResp {
+	out := make([]aidto.SessionRowResp, 0, len(rows))
 	if len(rows) == 0 {
 		return out
 	}
@@ -1504,7 +1504,7 @@ func (h *SessionPageHandle) sessionRows(ctx context.Context, rows []aidto.Sessio
 		if u == nil {
 			u = []aidto.SessionModelUsage{}
 		}
-		out = append(out, gin.H{"Session": rows[i], "Usage": u, "Calls": calls[rows[i].ID]})
+		out = append(out, aidto.SessionRowResp{Session: rows[i], Usage: u, Calls: calls[rows[i].ID]})
 	}
 	return out
 }

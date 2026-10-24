@@ -159,12 +159,12 @@ func (h *pagesAdminHandle) pageLangsPanelData(c *gin.Context, pageID string, err
 			}
 		}
 	}
-	return adminui.PrepareBare(c, gin.H{
-		"CSRFToken": token,
-		"PageID":    pid,
-		"Path":      path,
-		"Items":     rows,
-		"Err":       errMsg,
-		"Done":      doneMsg,
+	return adminui.PrepareBareView(c, &pagedto.PageFragmentResp{
+		CSRFToken: token,
+		PageID:    pid,
+		Path:      path,
+		Items:     rows,
+		Err:       errMsg,
+		Done:      doneMsg,
 	})
 }

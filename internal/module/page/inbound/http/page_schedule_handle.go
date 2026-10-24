@@ -187,15 +187,15 @@ func (h *pagesAdminHandle) schedulePanelData(c *gin.Context, pageID string, errM
 			}
 		}
 	}
-	return adminui.PrepareBare(c, gin.H{
-		"CSRFToken": token,
-		"PageID":    pageID,
-		"Path":      path,
-		"Items":     rows,
-		"Err":       errMsg,
-		"Done":      doneMsg,
+	return adminui.PrepareBareView(c, &pagedto.PageFragmentResp{
+		CSRFToken: token,
+		PageID:    pageID,
+		Path:      path,
+		Items:     rows,
+		Err:       errMsg,
+		Done:      doneMsg,
 		// 默认到点时刻 = 站点时区下的「一小时后」，省掉每次手填（运营多数排的是近期动作）。
-		"DefaultAt": sitetz.FormatDateTime(time.Now().Add(time.Hour)),
+		DefaultAt: sitetz.FormatDateTime(time.Now().Add(time.Hour)),
 	})
 }
 

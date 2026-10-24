@@ -52,8 +52,9 @@ type SessionListPageResp struct {
 	// LoadFailed / LoadError 会话清单没读出来（这一页的**主数据**）。
 	LoadFailed bool
 	LoadError  string
-	Rows       []any
-	Total      int64
+	// Rows 每项是 SessionRowResp：行要带上它自己的按 (供应商, 模型) 拆分与最近调用预览。
+	Rows  []SessionRowResp
+	Total int64
 
 	TotalPages int
 	HasPrev    bool
@@ -91,4 +92,18 @@ type SessionListPageResp struct {
 	EventsErr   string
 	FoldPlan    *FoldPlanResult
 	FoldPlanErr string
+}
+
+// SessionRowResp 会话列表的一行。
+//
+// 三个字段都用结构体/切片而不是 map：模板对行做的是点号取值
+// （row.Session / row.Usage / row.Calls），原先那层 gin.H 只是让
+// 「字段名拼错」从编译错误退化成渲染期缺键。
+type SessionRowResp struct {
+	Session Session
+	// Usage 这一行的按 (供应商, 模型) 拆分。零值给空切片而不是 nil：
+	// 模板写 len(row.Usage)，nil 切片在 Jet 里不是 0 而是运行期错误。
+	Usage []SessionModelUsage
+	// Calls 最近几次调用的预览（耗时 / token / 成没成）；零值时模板不渲染这块。
+	Calls SessionCalls
 }

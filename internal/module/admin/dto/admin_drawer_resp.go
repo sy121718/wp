@@ -214,3 +214,22 @@ type I18nListPageResp struct {
 
 	Pagination pagination.Page
 }
+
+// PermListPageResp 权限点列表页（/admin/permissions）。
+type PermListPageResp struct {
+	// Title 是 i18n **key**（adminui.Prepare → injectI18n 按当前语言翻译它）。
+	Title string `view:"title"`
+	Menu  string
+
+	Rows  any
+	Total int64
+
+	FilterCode   string
+	FilterModule string
+	// Err 列表取数失败的归口文案（原文只进日志）。
+	Err string
+	// ListQuery 写动作表单 action 上带的筛选上下文。
+	ListQuery string
+
+	Pagination pagination.Page
+}

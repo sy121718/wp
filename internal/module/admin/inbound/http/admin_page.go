@@ -1622,20 +1622,22 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 	if err != nil {
 		res = &admindto.PermListResp{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title":        pagesMsgPermissionsTitle,
-		"menu":         "permissions",
-		"Rows":         res.List,
-		"Total":        res.Total,
-		"FilterCode":   code,
-		"FilterModule": module,
-		"Err":          adminListLoadErr(c, err),
-		"ListQuery":    adminPermsPage.listQuery(c),
-	})
-	adminui.AttachPagination(data, "/admin/permissions",
+	view := &admindto.PermListPageResp{
+		Title:        pagesMsgPermissionsTitle,
+		Menu:         "permissions",
+		Rows:         res.List,
+		Total:        res.Total,
+		FilterCode:   code,
+		FilterModule: module,
+		Err:          adminListLoadErr(c, err),
+		ListQuery:    adminPermsPage.listQuery(c),
+	}
+	if !adminui.AttachPaginationView(view, "/admin/permissions",
 		map[string]string{"code": code, "module": module},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/permissions", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("权限点列表视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	c.HTML(http.StatusOK, "admin/system/permissions", adminui.PrepareView(c, view))
 }
 
 // PermissionsEditFragment fetches one existing permission by its exact id.

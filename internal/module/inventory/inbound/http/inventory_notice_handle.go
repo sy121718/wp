@@ -15,6 +15,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	inventorydto "go_wp/internal/module/inventory/dto"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 )
@@ -64,4 +66,16 @@ func inventoryFail(c *gin.Context, err error) {
 // 批量 id 超限这类「参数与结果」都走这里，一律 400。
 func inventoryFailMsg(c *gin.Context, msg facing.Msg) {
 	response.ErrorMsg(c, http.StatusBadRequest, msg)
+}
+
+// projectOptions 工程契约结果 → 页头下拉的选项（本包镜像，只带模板读的两项）。
+//
+// 为什么不直接交 projectcontract.ProjectResp：dto 的视图字段是
+// inventorydto.ProjectOptionResp（dto 不跨模块依赖），这一层就是那次转换的家。
+func projectOptions(in []projectcontract.ProjectResp) []inventorydto.ProjectOptionResp {
+	out := make([]inventorydto.ProjectOptionResp, 0, len(in))
+	for _, p := range in {
+		out = append(out, inventorydto.ProjectOptionResp{ID: p.ID, Name: p.Name})
+	}
+	return out
 }

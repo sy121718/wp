@@ -25,6 +25,11 @@ type StalePageRowResp struct {
 	Path        string
 	ProjectID   string
 	ProjectName string
+	// Published 区分「已发布但有更新」与「从未上线」：后者的下一步不是重建而是发布。
+	Published bool
+	// RebuildFailure 失败痕迹（迁移 474）：有痕迹说明这页**不是还没轮到，而是重建失败过**。
+	// 是**事实**（阶段 key + 时刻），整句由片段模板按同一顺序拼回。
+	RebuildFailure any
 }
 
 // StaleImpactResp 「待重建页面影响面」的渲染数据。

@@ -158,29 +158,31 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 	}
 
 	tr := shell.TranslateFor(c)
-	pageData := gin.H{
-		"title":            tr(inventoryenums.InventoryTitle, "库存管理"),
-		"menu":             "inventory",
-		"Projects":         projects,
-		"SelectedProject":  selected,
-		"Warehouses":       warehouses,
-		"VariantOptions":   options,
-		"SelectedSKU":      sku,
-		"SelectedVariant":  variantID,
-		"StockRows":        stockRows,
-		"Reasons":          reasons,
-		"AdjustReasons":    adjustReasonOptions(reasons),
-		"AdjustDirections": adjustDirectionOptions(c),
-		"Directions":       directionOptions(tr),
-		"Movements":        movements,
-		"FilterWarehouse":  filterWarehouse,
-		"FilterDirection":  filterDirection,
-		"FilterReason":     filterReason,
-		"FilterTimeFrom":   filterTimeFrom,
-		"FilterTimeTo":     filterTimeTo,
+	pageData := &inventorydto.InventoryPageResp{
+		Title:           tr(inventoryenums.InventoryTitle, "库存管理"),
+		Menu:            "inventory",
+		Projects:        projectOptions(projects),
+		SelectedProject: selected,
+		Warehouses:      warehouses,
+		VariantOptions:  options,
+		SelectedSKU:     sku,
+		SelectedVariant: variantID,
+		StockRows:       stockRows,
+		Reasons:         reasons,
+
+		AdjustReasons:    adjustReasonOptions(reasons),
+		AdjustDirections: adjustDirectionOptions(c),
+		Directions:       directionOptions(tr),
+		Movements:        movements,
+
+		FilterWarehouse: filterWarehouse,
+		FilterDirection: filterDirection,
+		FilterReason:    filterReason,
+		FilterTimeFrom:  filterTimeFrom,
+		FilterTimeTo:    filterTimeTo,
 		// 写动作表单的 action 上带的筛选上下文（服务端渲染时拼、POST 回来由 shell.BackPath
 		// 读回）：写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 inventory_notice_handle.go）。
-		"ListQuery": binding.ListQuery(c, inventoryStockBackKeys...),
+		ListQuery: binding.ListQuery(c, inventoryStockBackKeys...),
 	}
 	// 分页条（shell 组件，服务端渲染）：基址带当前全部筛选维度（工程 / SKU / 变体 / 仓 /
 	// 方向 / 原因 / 时间区间），翻页时不丢条件 —— 丢了条件会让人以为「记录变多了」，
@@ -201,7 +203,7 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 		"timeFrom":    filterTimeFrom,
 		"timeTo":      filterTimeTo,
 	})
-	pageData["Pagination"] = pg
+	pageData.Pagination = pg
 	pageview.Render(c, pageData)
 }
 

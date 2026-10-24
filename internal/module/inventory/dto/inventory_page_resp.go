@@ -1,6 +1,7 @@
 package inventorydto
 
 import (
+	"go_wp/pkg/pagination"
 	"go_wp/pkg/utils"
 )
 
@@ -262,4 +263,87 @@ type DraftLineViewResp struct {
 	SKU       string
 	Quantity  string
 	UnitPrice string
+}
+
+// InventoryPageResp 库存三页（库存管理 / 仓库管理 / 变动原因字典）的**共用**视图。
+//
+// 为什么一个类型覆盖三张页而不是各写一份：这三页的键集是包含关系，
+// 模板各自只读其中一部分，而多给的键不渲染、没有副作用。合成一个类型的收益是
+// **「键集齐全」由类型保证** —— 之前它靠 inventoryPageErrorData 那张 20 多个零值键的表
+// 来保证（那张表已随「失败页改 JSON」删除），现在换成编译期检查：
+// 装配处漏给一个字段，模板取它的那一刻就是整页中断，而漏字段在这里是零值而不是缺键。
+//
+// 三个页头共用的字段（Projects / SelectedProject）在前，各页专属的在后，按页分组。
+type InventoryPageResp struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	// —— 三页共用：页头的工程上下文 ——
+
+	// Projects 页头的工程下拉。用本包的最小镜像而不是 import project/dto：
+	// dto 不跨模块依赖，而模板对工程只读 p.ID / p.Name 两项。
+	Projects        []ProjectOptionResp
+	SelectedProject string
+
+	// —— 库存管理页 ——
+
+	Warehouses      []WarehouseRowResp
+	VariantOptions  []VariantOptionResp
+	SelectedSKU     string
+	SelectedVariant string
+	StockRows       []StockByWarehouseRowResp
+	Reasons         []ReasonRowResp
+	// AdjustReasons / AdjustDirections / Directions 三个下拉的候选值。
+	// 前两个是「调整库存」表单用的（只列可调整的原因 / 方向），
+	// Directions 是流水筛选用的（全部方向）。
+	AdjustReasons    []ReasonRowResp
+	AdjustDirections []OptionResp
+	Directions       []OptionResp
+	Movements        []MovementRowResp
+
+	FilterWarehouse string
+	FilterDirection string
+	FilterReason    string
+	FilterTimeFrom  string
+	FilterTimeTo    string
+
+	// ListQuery 写动作表单 action 上带的筛选上下文（服务端渲染时拼、POST 回来由
+	// shell.BackPath 读回）：写动作的结论不再回显在本页（走提示页）。
+	ListQuery string
+
+	Pagination pagination.Page
+
+	// —— 仓库管理页 ——
+
+	WarehouseTypes      []WarehouseTypeOptionResp
+	WarehouseCreateForm *WarehouseFormResp
+
+	// —— 变动原因字典页 ——
+
+	ReasonCreateForm *ReasonFormResp
+}
+
+// ProjectOptionResp 工程下拉的一项（本包镜像：只带模板读的两项）。
+type ProjectOptionResp struct {
+	ID   string
+	Name string
+}
+
+// SourceFormResp 货源抽屉表单的初值（新建与编辑共用）。
+type SourceFormResp struct {
+	IsEdit          bool
+	Row             any
+	SelectedProject string
+	TypeOptions     []OptionResp
+	RelatedOptions  []OptionResp
+	StatusOptions   []OptionResp
+}
+
+// SourcePageResp 货源管理整页：新建抽屉的初值挂在页数据上（页数据本体在
+// inbound/http 的 inventorySourcesPageData —— 它与降级分支共用同一份装配）。
+//
+// 单字段而不是把页数据也搬进 dto：那个结构体在两条渲染路径之间周转，
+// 搬过来的收益只是「少一个文件内的类型」，代价是 dto 里长出一堆只服务一页的字段。
+type SourcePageResp struct {
+	SourceCreateForm *SourceFormResp
 }

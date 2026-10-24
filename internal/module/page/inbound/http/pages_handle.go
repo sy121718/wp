@@ -104,11 +104,13 @@ func (h *pagesAdminHandle) blueprintOptions(ctx context.Context) []blueprintOpti
 }
 
 // pagesPageData 页面列表页数据。
-// 模板键统一小写（admin/layout.html 以 {{.title}}/{{.menu}} 取值，
-// Jet 对 map 键不做大小写兜底）。
+//
+// 字段名就是模板契约键：除两个壳键（layout 的 {{.title}} / {{.menu}} 是小写）之外，
+// 其余与模板一致。小写那两个用 view 标签表达，不再写一层 templateMap() 手工搬字段 ——
+// 那层转换是「加一个字段要改两处」的来源，而漏改的表现是模板缺键整页中断。
 type pagesPageData struct {
-	Title    string
-	Menu     string
+	Title    string `view:"title"`
+	Menu     string `view:"menu"`
 	Projects []projectcontract.ProjectResp
 	Pages    []pagedto.PageRowResp
 	// Blueprints 蓝图候选（审计 VIS-010）：「从蓝图开始」是新建页面流程里的一个选项，
@@ -171,31 +173,6 @@ type blueprintOption struct {
 	Name string
 }
 
-// templateMap 转为模板所需的小写键 map。
-func (d *pagesPageData) templateMap() gin.H {
-	return gin.H{
-		"title":      d.Title,
-		"menu":       d.Menu,
-		"Projects":   d.Projects,
-		"Pages":      d.Pages,
-		"Blueprints": d.Blueprints,
-		"Err":        d.Err,
-
-		"ReceiptPending":      d.ReceiptPending,
-		"ReceiptOldest":       d.ReceiptOldest,
-		"ReceiptLastConverge": d.ReceiptLastConverge,
-		"ReceiptAlert":        d.ReceiptAlert,
-		"ReceiptKnown":        d.ReceiptKnown,
-
-		"SelectedProject": d.SelectedProject,
-		"FilteredProject": d.FilteredProject,
-
-		// 全站待重建区块（可选键）：字段为 nil 时这里输出 nil，模板的 isset 判为假
-		//（Jet 的 isset 同时覆盖「键不存在」与「值为 nil」两种情形）→ 整块不渲染。
-		"StaleOverview": d.StaleOverview,
-	}
-}
-
 // PagesList 页面列表页。
 //
 // 装载失败**降级渲染**（空列表 + 归口提示，HTTP 200）：页面结构必须保留 ——
@@ -212,7 +189,7 @@ func (h *pagesAdminHandle) PagesList(c *gin.Context) {
 			// ReceiptKnown 留 false：这次没读到回执状态，模板不该报「收敛正常」。
 		}
 	}
-	c.HTML(http.StatusOK, "admin/page/pages", adminui.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, "admin/page/pages", adminui.PrepareView(c, data))
 }
 
 // buildPagesData 组装列表页数据。

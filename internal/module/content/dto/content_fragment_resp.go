@@ -20,3 +20,18 @@ type ArticleImportFragmentView struct {
 	// Err 词条事实（key + 兜底）；模板按当前语言取词。
 	Err any
 }
+
+// StalePagesDrawerResp 全站「待重建页面」抽屉片段（admin/partials/stale_pages_drawer.html）。
+//
+// 片段出口的视图：键集只有五个槽位，比整页小得多。
+type StalePagesDrawerResp struct {
+	Rows  []StalePageRowResp
+	Total int
+	// Truncated 清单被截断（页面数超过一次取的上限），模板据此在末尾加一句「还有更多」。
+	Truncated bool
+	// Limit 本次取数上限（模板用它说明截断边界）。
+	Limit int
+	// MultiProject 工程数 > 1：单工程时「所属工程」列整列都是同一个名字，是纯噪声；
+	// 多工程时缺了它又分不清两个工程同名的 /about。判据在 Go 侧算好，模板只读布尔。
+	MultiProject bool
+}

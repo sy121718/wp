@@ -1337,26 +1337,26 @@ func (h *articlePageHandle) ArticleStaleDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	rows := make([]gin.H, 0, len(res.Pages))
+	rows := make([]contentdto.StalePageRowResp, 0, len(res.Pages))
 	// 工程数决定「所属工程」列显不显示：单工程时那一列整列都是同一个名字，
 	// 是纯噪声；多工程时缺了它又分不清两个工程同名的 /about。
 	projects := make(map[string]struct{}, 2)
 	for i := range res.Pages {
 		projects[res.Pages[i].ProjectID] = struct{}{}
-		rows = append(rows, gin.H{
-			"ID":          res.Pages[i].ID,
-			"Path":        res.Pages[i].Path,
-			"ProjectName": res.Pages[i].ProjectName,
+		rows = append(rows, contentdto.StalePageRowResp{
+			ID:          res.Pages[i].ID,
+			Path:        res.Pages[i].Path,
+			ProjectName: res.Pages[i].ProjectName,
 			// Published 区分「已发布但有更新」与「从未上线」：后者的下一步不是重建而是发布。
-			"Published": res.Pages[i].Published,
+			Published: res.Pages[i].Published,
 			// 失败痕迹（迁移 474）：有痕迹说明这页**不是还没轮到，而是重建失败过**。
 			// 交的是**事实**（阶段 key + 时刻），整句由片段模板按同一顺序拼回。
-			"RebuildFailure": rebuildFailureViewOf(res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt),
+			RebuildFailure: rebuildFailureViewOf(res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt),
 		})
 	}
-	c.HTML(http.StatusOK, "admin/partials/stale_pages_drawer.html", adminui.Prepare(c, gin.H{
-		"Rows": rows, "Total": res.Total, "Truncated": res.Truncated,
-		"Limit": staleImpactPageLimit, "MultiProject": len(projects) > 1,
+	c.HTML(http.StatusOK, "admin/partials/stale_pages_drawer.html", adminui.PrepareView(c, &contentdto.StalePagesDrawerResp{
+		Rows: rows, Total: res.Total, Truncated: res.Truncated,
+		Limit: staleImpactPageLimit, MultiProject: len(projects) > 1,
 	}))
 }
 
