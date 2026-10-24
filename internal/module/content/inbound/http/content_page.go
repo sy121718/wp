@@ -575,10 +575,10 @@ func (h *articlePageHandle) ArticleSeoDrawer(c *gin.Context) {
 		return
 	}
 	data := item.Data
-	c.HTML(http.StatusOK, "admin/content/article_seo_drawer.html", adminui.PrepareView(c, &contentdto.ArticleSeoDrawerResp{
+	pageview.Render(c, &contentdto.ArticleSeoDrawerResp{
 		Score: articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), shell.TranslateFor(c)),
 		IsNew: false,
-	}))
+	})
 }
 
 // ArticlePreviewFrame 文章详情页的真实预览帧（GET /admin/articles/preview-frame?id=xxx）。
@@ -1354,10 +1354,10 @@ func (h *articlePageHandle) ArticleStaleDrawer(c *gin.Context) {
 			RebuildFailure: rebuildFailureViewOf(res.Pages[i].RebuildFailedStage, res.Pages[i].RebuildFailedAt),
 		})
 	}
-	c.HTML(http.StatusOK, "admin/partials/stale_pages_drawer.html", adminui.PrepareView(c, &contentdto.StalePagesDrawerResp{
+	pageview.Render(c, &contentdto.StalePagesDrawerResp{
 		Rows: rows, Total: res.Total, Truncated: res.Truncated,
 		Limit: staleImpactPageLimit, MultiProject: len(projects) > 1,
-	}))
+	})
 }
 
 // rebuildFailureView 失败痕迹的**事实**：阶段词条 key + 中文兜底 + 已格式化的时刻。

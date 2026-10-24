@@ -16,6 +16,7 @@ package feature
 // PG 不可用时 t.Skip（与其他功能测试一致）。
 
 import (
+	"go_wp/internal/adminui"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -80,7 +81,7 @@ func newTranslationEnv(t *testing.T) (*gin.Engine, *pagehttp.PagesAdminHandle, *
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/admin/pages/translations", handle.PageTranslations)
 	router.POST("/admin/pages/translations/save", handle.SavePageTranslations)
-	router.GET("/admin/pages", handle.PagesList)
+	router.GET("/admin/pages", adminui.PageSlot(pagehttp.PagesListPageTemplate), handle.PagesList)
 	return router, handle, db, project.ID, pageID
 }
 

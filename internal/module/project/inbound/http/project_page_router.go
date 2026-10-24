@@ -27,6 +27,12 @@ const (
 	ThemeManagePageTemplate   = "admin/project/theme"
 	ThemeSettingsPageTemplate = "admin/project/theme_settings"
 	SiteSettingsPageTemplate  = "admin/project/settings"
+
+	// 片段出口（htmx 局部替换）：键集只有几个槽位，走 BareSlot。
+	LocaleRowsFragmentTemplate    = "admin/partials/locale_rows"
+	GlobalPanelFragmentTemplate   = "fragments/global_panel"
+	SettingsPanelFragmentTemplate = "fragments/settings_panel"
+	SeoScoreFragmentTemplate      = "fragments/seo_score"
 )
 
 func SetupProjectPages(adminPages, workbenchPages *gin.RouterGroup,
@@ -54,12 +60,16 @@ func SetupProjectPages(adminPages, workbenchPages *gin.RouterGroup,
 			adminui.PageSlot(SiteSettingsPageTemplate),
 			settings.SiteSettings)
 		adminPages.POST("/settings/save", builtin.CasbinMiddlewareForPath("/api/project/update"), settings.SaveSiteSettings)
-		adminPages.POST("/settings/locales/rows", builtin.CasbinMiddlewareForPath("/api/project/update"), settings.LocaleRowsFragment)
+		adminPages.POST("/settings/locales/rows", builtin.CasbinMiddlewareForPath("/api/project/update"),
+			adminui.BareSlot(LocaleRowsFragmentTemplate), settings.LocaleRowsFragment)
 		adminPages.POST("/settings/locales/save", builtin.CasbinMiddlewareForPath("/api/project/update"), settings.SaveSiteLocales)
 	}
 	if workbenchPages != nil {
-		workbenchPages.POST("/workbench/settings", workbenchSettingsPanel)
-		workbenchPages.POST("/workbench/seo-score-panel", workbenchSeoScorePanel)
-		workbenchPages.POST("/workbench/global", workbenchGlobalPanel)
+		workbenchPages.POST("/workbench/settings",
+			adminui.BareSlot(SettingsPanelFragmentTemplate), workbenchSettingsPanel)
+		workbenchPages.POST("/workbench/seo-score-panel",
+			adminui.BareSlot(SeoScoreFragmentTemplate), workbenchSeoScorePanel)
+		workbenchPages.POST("/workbench/global",
+			adminui.BareSlot(GlobalPanelFragmentTemplate), workbenchGlobalPanel)
 	}
 }

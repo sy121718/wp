@@ -6,6 +6,7 @@ package projecthttp
 // 未挂主题时输出空态提示。
 
 import (
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,7 +29,7 @@ func newGlobalRouter(t *testing.T) *gin.Engine {
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 	// 全局设置面板已随主题设置回 project 模块：直接挂本包的面板函数（原 dashboard Handle 方法）。
-	router.POST("/workbench/global", workbenchGlobalPanel)
+	router.POST("/workbench/global", adminui.BareSlot(GlobalPanelFragmentTemplate), workbenchGlobalPanel)
 	return router
 }
 

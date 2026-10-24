@@ -251,4 +251,3 @@ func redirectErrMsg(key string) pageMsg {
 	}
 	return pageMsg{Key: strings.TrimSpace(key), Fallback: "操作未完成"}
 }
-

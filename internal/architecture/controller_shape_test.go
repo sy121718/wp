@@ -447,20 +447,13 @@ func TestControllerMethodSize(t *testing.T) {
 // **只减不增**：收一个删一条；登记了却已无渲染出口同样变红。
 var pendingControllerRenderExit = map[string]bool{
 	"internal/module/admin/inbound/http/admin_page.go":                     true,
-	"internal/module/ai/inbound/http/ai_page.go":                           true,
 	"internal/module/content/inbound/http/content_page.go":                 true,
-	"internal/module/page/inbound/http/page_langs_handle.go":               true,
-	"internal/module/page/inbound/http/page_schedule_handle.go":            true,
-	"internal/module/page/inbound/http/pages_handle.go":                    true,
 	"internal/module/page/inbound/http/page_translations_handle.go":        true,
 	"internal/module/project/inbound/http/project_page.go":                 true,
-	"internal/module/publication/inbound/http/seo_audit_result.go":         true,
 	"internal/module/user/inbound/http/user_page.go":                       true,
 	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
 	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
 	"internal/module/workbench/inbound/http/inspector_handle.go":          true,
-	"internal/module/workbench/inbound/http/canvas_handle.go":             true,
-	"internal/module/workbench/inbound/http/canvas_preview_handle.go":     true,
 }
 
 // controllerRenderCalls 渲染出口的方法名（接收者不限：c / h / 变量都可能）。
@@ -535,11 +528,16 @@ func TestControllerRenderExit(t *testing.T) {
 
 // pendingControllerUIImport 还在 import adminui 的控制器文件。**只减不增**。
 var pendingControllerUIImport = map[string]bool{
+	// 这两个文件不再**渲染**，但仍用 adminui.Msg（key + 中文兜底的事实类型）与
+	// adminui.MsgText（取词）—— 那是文案事实的共享定义处，不是 UI 线。
+	// 渲染出口本身已经交给 pageview.Render / 路由的 slot。
+	"internal/module/ai/inbound/http/ai_page.go":        true,
+	"internal/module/page/inbound/http/page_langs_handle.go": true,
+	"internal/module/page/inbound/http/pages_handle.go": true,
 	"internal/module/admin/inbound/http/admin_err.go":                           true,
 	"internal/module/admin/inbound/http/admin_jump.go":                          true,
 	"internal/module/admin/inbound/http/admin_page.go":                          true,
 	"internal/module/ai/inbound/http/ai_err.go":                                 true,
-	"internal/module/ai/inbound/http/ai_page.go":                                true,
 	"internal/module/block/inbound/http/block_err.go":                           true,
 	"internal/module/content/inbound/http/content_page.go":                      true,
 	"internal/module/contenttemplate/inbound/http/content_template_err.go":      true,
@@ -554,9 +552,7 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/order/inbound/http/order_shared.go":                        true,
 	"internal/module/order/inbound/http/return_page.go":                         true,
 	"internal/module/page/inbound/http/page_jump.go":                            true,
-	"internal/module/page/inbound/http/page_langs_handle.go":                    true,
 	"internal/module/page/inbound/http/page_schedule_handle.go":                 true,
-	"internal/module/page/inbound/http/pages_handle.go":                         true,
 	"internal/module/page/inbound/http/page_translations_handle.go":             true,
 	"internal/module/plugin/inbound/http/plugin_err.go":                         true,
 	"internal/module/project/inbound/http/project_jump.go":                      true,
@@ -568,7 +564,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/workbench/inbound/http/workbench_handle.go":                true,
 	// 工作台画布逻辑拆成 5 个文件后，同一条存量豁免跟着拆（它们都还用 adminui 做页面渲染出口）。
 	"internal/module/workbench/inbound/http/inspector_handle.go":          true,
-	"internal/module/workbench/inbound/http/canvas_handle.go":             true,
 	"internal/module/workbench/inbound/http/canvas_preview_handle.go":     true,
 	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":      true,
 	// 插件页仍在用 adminui.MsgText 把事实取成文本（那个槽位还没取词化，登记在批次报告里）。

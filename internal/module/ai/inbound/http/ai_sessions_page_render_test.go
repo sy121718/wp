@@ -217,7 +217,7 @@ func newAISessionsPageTestRouterWithProviders(t *testing.T, svc sessionServicePo
 	handle := NewSessionPageHandle(svc, providers)
 	// PageSlot 是页面出口的装配点，不只是「模板名」：pageview.Render / pageview.Fail
 	// 都从上下文里取它（缺了就是「视图出口未装配」→ 500）。
-	router.GET("/admin/ai/sessions", adminui.PageSlot(sessionTemplate), handle.SessionsPage)
+	router.GET("/admin/ai/sessions", adminui.PageSlot(SessionsPageTemplate), handle.SessionsPage)
 	return router
 }
 

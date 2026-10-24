@@ -183,8 +183,7 @@ func workbenchSettingsPanel(c *gin.Context) {
 	}
 	// 片段也是页面出口：壳键走 adminui.Prepare（t / tf）—— 片段不经它时缺 t，
 	// 而 Jet 对缺 t 是**静默**的（取词调用求值成空串，页面结构完整、日志干净）。
-	c.HTML(http.StatusOK, "fragments/settings_panel",
-		adminui.PrepareView(c, &projectdto.SettingsPanelView{Settings: view}))
+	pageview.Render(c, &projectdto.SettingsPanelView{Settings: view})
 }
 
 // applyAccessPassword 把明文访问密码变成 settings.access 里的 bcrypt 哈希。
@@ -237,8 +236,7 @@ func applyAccessPassword(doc json.RawMessage, password string) (json.RawMessage,
 // workbenchSeoScorePanel 渲染 SEO 评分区片段（POST /workbench/seo-score-panel）。
 func workbenchSeoScorePanel(c *gin.Context) {
 	doc := json.RawMessage(c.PostForm("document"))
-	c.HTML(http.StatusOK, "fragments/seo_score",
-		adminui.PrepareView(c, &projectdto.SeoScorePanelView{Score: scoreViewOf(doc, c.PostForm("url"), requestScoreLang(c), projectTr(c))}))
+	pageview.Render(c, &projectdto.SeoScorePanelView{Score: scoreViewOf(doc, c.PostForm("url"), requestScoreLang(c), projectTr(c))})
 }
 
 // settingsViewOf 解析草稿文档的 settings 片段。
@@ -971,7 +969,7 @@ func (h *siteSettingsAdminHandle) LocaleRowsFragment(c *gin.Context) {
 			}
 		}
 	}
-	displayFragment(c, "admin/partials/locale_rows", &projectdto.LocaleRowsView{Locales: rows})
+	pageview.Render(c, &projectdto.LocaleRowsView{Locales: rows})
 }
 
 // SaveSiteLocales POST /admin/settings/locales/save：全量保存站点语言清单。
@@ -1794,7 +1792,7 @@ func workbenchGlobalPanel(c *gin.Context) {
 	if themeID == "" {
 		// 片段（本面板与 settings_panel / seo_score 同路）的取词键 t / tf 由 Prepare 注入；
 		// 缺 t 时 Jet 是**静默**的（取词调用求值成空串，页面结构完整、日志干净）。
-		displayFragment(c, "fragments/global_panel", &projectdto.GlobalPanelView{ThemeID: ""})
+		pageview.Render(c, &projectdto.GlobalPanelView{ThemeID: ""})
 		return
 	}
 	var settings map[string]any
@@ -1803,8 +1801,7 @@ func workbenchGlobalPanel(c *gin.Context) {
 	}
 	// Groups 里只有**事实**（分组标题 / 字段 label / 选项 label 的 key + 中文兜底），
 	// 取词由模板在渲染期做 —— 本函数因此不再需要取词函数（原 tr := projectTr(c) 已删除）。
-	c.HTML(http.StatusOK, "fragments/global_panel",
-		adminui.PrepareView(c, &projectdto.GlobalPanelView{ThemeID: themeID, Groups: buildThemeGroups(settings)}))
+	pageview.Render(c, &projectdto.GlobalPanelView{ThemeID: themeID, Groups: buildThemeGroups(settings)})
 }
 
 // 主题设置页文案（i18n key，与 dashboard enums 迁移前同值）。

@@ -3,6 +3,7 @@ package pagehttp
 // history_panel_test.go — 修订历史列表片段的服务端渲染（HTMX 化，docs/09 §3）。
 
 import (
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,7 +21,7 @@ func TestHistoryPanelEmptyState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	router.POST("/workbench/history", handle.HistoryPanel)
+	router.POST("/workbench/history", adminui.BareSlot(PageHistoryListTemplate), handle.HistoryPanel)
 
 	form := url.Values{"pageId": {"page-1"}}
 	recorder := httptest.NewRecorder()

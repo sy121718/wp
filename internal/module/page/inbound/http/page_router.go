@@ -57,6 +57,17 @@ const SiteSlotsPageTemplate = "admin/page/site_slots.html"
 // RedirectPageTemplate 重定向管理页的模板名（页面出口由页面槽带进上下文）。
 const RedirectPageTemplate = "admin/page/page_redirects.html"
 
+// PagesListPageTemplate 页面列表（后台主入口之一）。
+const PagesListPageTemplate = "admin/page/pages"
+
+// 片段出口（htmx 局部替换）：键集只有几个槽位，走 BareSlot。
+// 模板名归路由层 —— 控制器只交视图，不持有模板名。
+const (
+	PageLangsPanelTemplate    = "fragments/page_langs"
+	PageSchedulePanelTemplate = "fragments/page_schedule_panel"
+	PageHistoryListTemplate   = "fragments/history_list"
+)
+
 func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	artifacts artifactcontract.ArtifactService,
 	routes pubcontract.PublicationService,
@@ -129,7 +140,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	if pages == nil {
 		return
 	}
-	pages.GET("/pages", adminui.PageAuthz("/api/page/list"), adminHandle.PagesList)
+	pages.GET("/pages", adminui.PageAuthz("/api/page/list"),
+		adminui.PageSlot(PagesListPageTemplate), adminHandle.PagesList)
 	pages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), adminHandle.CreatePage)
 	// 单条删除与批量删除复用「删除页面」权限点（/api/page/delete，迁移 151）：
 	// 两者走同一个 svc.Delete —— 权限点、拒绝规则、访问面下线动作都不会分叉。
@@ -145,7 +157,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	// 所以后者必须显式挂「保存草稿」的权限点 —— 否则任何仅登录后台的低权限用户
 	// 都能覆盖任意页面草稿。
 	if workbenchPages != nil {
-		workbenchPages.POST("/workbench/history", adminHandle.HistoryPanel)
+		workbenchPages.POST("/workbench/history",
+			adminui.BareSlot(PageHistoryListTemplate), adminHandle.HistoryPanel)
 		workbenchPages.POST("/workbench/history/restore", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.HistoryRestore)
 	}
 
@@ -158,7 +171,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	// 清发布 / 暂存 / 路由 / 计划），因此复用「发布页面」；恢复只改产出范围（不自动重新发布），
 	// 同一条 —— 两者都是「这一页发不发这种语言」的同一件事，不该拆成两个权限点。
 	// 面板是只读展示，复用「页面详情」。
-	pages.GET("/page-langs/panel", builtin.CasbinMiddlewareForPath("/api/page/detail"), adminHandle.PageLangsPanel)
+	pages.GET("/page-langs/panel", builtin.CasbinMiddlewareForPath("/api/page/detail"),
+		adminui.BareSlot(PageLangsPanelTemplate), adminHandle.PageLangsPanel)
 	pages.POST("/page-langs/exclude", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangExclude)
 	pages.POST("/page-langs/restore", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangRestore)
 	// 显式重新发布（V4）：恢复排除只解除限制、不自动上线 —— 译好后要真的回到线上，
@@ -182,7 +196,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	g.POST("/schedule/set", permission.PageScheduleSet, handle.SetSchedule)
 	g.POST("/schedule/cancel", permission.PageScheduleCancel, handle.CancelSchedule)
 	g.GET("/schedule/list", permission.PageScheduleList, handle.ListSchedules)
-	pages.GET("/page-schedules/panel", builtin.CasbinMiddlewareForPath("/api/page/schedule/list"), adminHandle.SchedulePanel)
+	pages.GET("/page-schedules/panel", builtin.CasbinMiddlewareForPath("/api/page/schedule/list"),
+		adminui.BareSlot(PageSchedulePanelTemplate), adminHandle.SchedulePanel)
 	pages.POST("/page-schedules/set", builtin.CasbinMiddlewareForPath("/api/page/schedule/set"), adminHandle.ScheduleSet)
 	pages.POST("/page-schedules/cancel", builtin.CasbinMiddlewareForPath("/api/page/schedule/cancel"), adminHandle.ScheduleCancel)
 

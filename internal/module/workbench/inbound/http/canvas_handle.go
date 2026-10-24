@@ -3,12 +3,12 @@ package workbenchhttp
 import (
 	_ "embed"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	plugincontract "go_wp/internal/module/plugin/contract"
@@ -110,7 +110,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
-	c.HTML(http.StatusOK, "workbench/layout", adminui.PrepareView(c, &workbenchdto.CanvasPageResp{
+	pageview.Render(c, &workbenchdto.CanvasPageResp{
 		Title:     workbenchservice.WorkbenchTitle(page, workbenchTrFunc(c)),
 		PageID:    page.ID,
 		IsBlock:   false,
@@ -120,7 +120,7 @@ func (h *Handle) Workbench(c *gin.Context) {
 		Meta:      utils.JsonSafe(string(metaJSON)),
 		Schemas:   utils.JsonSafe(string(schemasJSON)),
 		JSVer:     workbenchservice.StaticJSVersion(),
-	}))
+	})
 }
 
 // workbenchBlock 全局块编辑模式：复用工作台画布与检查器，
@@ -185,7 +185,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaEncodeFailed)
 		return
 	}
-	c.HTML(http.StatusOK, "workbench/layout", adminui.PrepareView(c, &workbenchdto.CanvasPageResp{
+	pageview.Render(c, &workbenchdto.CanvasPageResp{
 		Title:    workbenchShortText(c, workbenchenums.TitleBlockPrefix) + block.Name,
 		PageID:   block.ID,
 		IsBlock:  true,
@@ -193,7 +193,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		Meta:     utils.JsonSafe(string(metaJSON)),
 		Schemas:  utils.JsonSafe(string(schemasJSON)),
 		JSVer:    workbenchservice.StaticJSVersion(),
-	}))
+	})
 }
 
 // workbenchTemplate 内容模板编辑模式（EDT-001）：复用工作台画布与检查器，
@@ -296,7 +296,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		return
 	}
 	previewQS := workbenchservice.TemplatePreviewQuery(tpl.ID, entityType, entityID, projectID)
-	c.HTML(http.StatusOK, "workbench/layout", adminui.PrepareView(c, &workbenchdto.CanvasPageResp{
+	pageview.Render(c, &workbenchdto.CanvasPageResp{
 		Title:      workbenchShortText(c, workbenchenums.TitleTemplatePrefix) + tpl.Name,
 		PageID:     tpl.ID,
 		IsBlock:    false,
@@ -309,7 +309,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 		Schemas:             utils.JsonSafe(string(schemasJSON)),
 		PreviewQS:           previewQS,
 		JSVer:               workbenchservice.StaticJSVersion(),
-	}))
+	})
 }
 
 // previewTemplateTarget 取预览目标模板；模板不存在时已写响应并返回 ok=false。

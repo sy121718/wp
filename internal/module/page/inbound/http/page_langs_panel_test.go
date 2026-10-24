@@ -15,6 +15,7 @@ package pagehttp_test
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -124,7 +125,7 @@ func TestPageLangsPanelRenders(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 	h := pagehttp.NewPagesAdminHandle(svc, projects, nil, nil)
-	router.GET("/admin/page-langs/panel", h.PageLangsPanel)
+	router.GET("/admin/page-langs/panel", adminui.BareSlot(pagehttp.PageLangsPanelTemplate), h.PageLangsPanel)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/page-langs/panel?pageId="+pageID, nil))
@@ -190,7 +191,7 @@ func TestPageLangsPanelDegradesOnLoadFailure(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 	h := pagehttp.NewPagesAdminHandle(svc, projects, nil, nil)
-	router.GET("/admin/page-langs/panel", h.PageLangsPanel)
+	router.GET("/admin/page-langs/panel", adminui.BareSlot(pagehttp.PageLangsPanelTemplate), h.PageLangsPanel)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,

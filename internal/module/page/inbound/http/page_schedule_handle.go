@@ -26,7 +26,7 @@ package pagehttp
 // 直接把那一列渲染出来，英文界面上会显示 ErrRebuildRequired 这样的裸 key。
 
 import (
-	"net/http"
+	pageview "go_wp/pkg/view"
 	"strconv"
 	"strings"
 	"time"
@@ -222,8 +222,7 @@ func schedulePendingAt(item *pagedto.ScheduleItemResp) *utils.JSONTime {
 // SchedulePanel 渲染某个页面的排定面板片段（HTMX：列表页行内「定时」按钮的落点）。
 func (h *pagesAdminHandle) SchedulePanel(c *gin.Context) {
 	pageID := strings.TrimSpace(c.Query("pageId"))
-	c.HTML(http.StatusOK, "fragments/page_schedule_panel",
-		h.schedulePanelData(c, pageID, pageMsg{}, pageMsg{}))
+	pageview.Render(c, h.schedulePanelData(c, pageID, pageMsg{}, pageMsg{}))
 }
 
 // ScheduleSet 后台表单排定（form-urlencoded），成功后重新渲染面板片段。
@@ -286,6 +285,5 @@ func (h *pagesAdminHandle) renderSchedulePanel(c *gin.Context, pageID string, er
 		pageListJump(c, true, doneMsg)
 		return
 	}
-	c.HTML(http.StatusOK, "fragments/page_schedule_panel",
-		h.schedulePanelData(c, pageID, errMsg, doneMsg))
+	pageview.Render(c, h.schedulePanelData(c, pageID, errMsg, doneMsg))
 }

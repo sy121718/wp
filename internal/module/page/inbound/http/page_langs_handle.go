@@ -5,7 +5,7 @@ package pagehttp
 // 也**不直出内部错误**。
 
 import (
-	"net/http"
+	pageview "go_wp/pkg/view"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -21,7 +21,7 @@ import (
 
 // PageLangsPanel GET /admin/page-langs/panel?pageId=…：某页的语言产出范围面板（HTMX 片段）。
 func (h *pagesAdminHandle) PageLangsPanel(c *gin.Context) {
-	c.HTML(http.StatusOK, "fragments/page_langs", h.pageLangsPanelData(c, c.Query("pageId"), pageMsg{}, pageMsg{}))
+	pageview.Render(c, h.pageLangsPanelData(c, c.Query("pageId"), pageMsg{}, pageMsg{}))
 }
 
 // PageLangExclude POST /admin/page-langs/exclude：排除某语言（同时下线其产物）。
@@ -109,8 +109,7 @@ func (h *pagesAdminHandle) pageLangsPanelOrJump(c *gin.Context, pageID string, e
 		pageListJump(c, true, doneMsg)
 		return
 	}
-	c.HTML(http.StatusOK, "fragments/page_langs",
-		h.pageLangsPanelData(c, pageID, errMsg, doneMsg))
+	pageview.Render(c, h.pageLangsPanelData(c, pageID, errMsg, doneMsg))
 }
 
 // pageLangsPanelData 面板片段的模板数据（键一律总是存在：片段模板按点号取 map 键，

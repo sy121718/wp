@@ -3,6 +3,7 @@ package pubhttp
 import (
 	"context"
 	"errors"
+	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -50,7 +51,7 @@ func TestSEOAuditHandlerResponseModes(t *testing.T) {
 			}
 			r := gin.New()
 			r.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-			r.POST("/api/publication/seo-audit", seoAuditHandler(run))
+			r.POST("/api/publication/seo-audit", adminui.BareSlot(SeoAuditResultTemplate), seoAuditHandler(run))
 			form := url.Values{"project": {" p1 "}}
 			req := httptest.NewRequest(http.MethodPost, "/api/publication/seo-audit", strings.NewReader(form.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

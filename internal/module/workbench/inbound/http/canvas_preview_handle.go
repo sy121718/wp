@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"strings"
 
@@ -229,7 +230,7 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	// 与另外三种模式**同一个视图类型**（CanvasPageResp）：同一张模板用两套键集，
 	// 加一个键只改一处的约定就守不住了 —— 实例模式曾经就因为漏给 jsVer，
 	// 整页在 <head> 第 17 行中断、只回 445 字节。
-	c.HTML(http.StatusOK, "workbench/layout", adminui.PrepareView(c, &workbenchdto.CanvasPageResp{
+	pageview.Render(c, &workbenchdto.CanvasPageResp{
 		Title:      workbenchShortText(c, workbenchenums.TitleInstance),
 		PageID:     inst.ID,
 		IsBlock:    false,
@@ -244,7 +245,7 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 		InstanceMode:    true,
 		RenderMode:      renderMode,
 		RenderModeLabel: renderModeLabel,
-	}))
+	})
 }
 
 // InstanceSave POST /workbench/instance/save：保存实例覆盖文档并重建发布。

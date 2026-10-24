@@ -179,4 +179,3 @@ func TestPageTranslationsMissingPageReturns404(t *testing.T) {
 
 	assertTranslationsFailureJSON(t, rec, http.StatusNotFound, nil, nil)
 }
-

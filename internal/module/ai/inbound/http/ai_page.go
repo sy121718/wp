@@ -334,9 +334,6 @@ func fabMsg(key string) adminui.Msg {
 const (
 	// mcpPagePath 页面地址，也是写操作失败时的回跳地址。
 	mcpPagePath = "/admin/ai/mcp"
-	// mcpPageTemplate 整页模板；mcpTokensPartial 是令牌区块（HTMX 片段与整页共用同一份标记）。
-	mcpPageTemplate  = "admin/ai/mcp"
-	mcpTokensPartial = "admin/ai/mcp_tokens"
 )
 
 // McpPageHandle 页面处理器。
@@ -360,7 +357,7 @@ func (h *McpPageHandle) SetConfigService(s sysconfigcontract.Service) { h.config
 // Page GET /admin/ai/mcp → 整页。
 func (h *McpPageHandle) Page(c *gin.Context) {
 	data := h.pageData(c, "", "", "")
-	c.HTML(http.StatusOK, mcpPageTemplate, data)
+	pageview.Render(c, data)
 }
 
 // TokenCreate POST /admin/ai/mcp/token/create → 令牌区块片段（含**一次性明文**）。
@@ -402,7 +399,7 @@ func (h *McpPageHandle) TokenRevoke(c *gin.Context) {
 
 // renderTokens 渲染令牌区块片段。
 func (h *McpPageHandle) renderTokens(c *gin.Context, newToken, errText, doneText string) {
-	c.HTML(http.StatusOK, mcpTokensPartial, h.pageData(c, newToken, errText, doneText))
+	pageview.Render(c, h.pageData(c, newToken, errText, doneText))
 }
 
 // pageData 组装整页与片段共用的数据。
@@ -667,10 +664,6 @@ func (h *McpPageHandle) scopeOptions() []scopeOption {
 
 // 模板名与页面路径。
 const (
-	// modelsTemplate 模型目录片段（每张供应商卡片里那块）。
-	modelsTemplate = "admin/ai/provider_models"
-	// pickerTemplate 候选弹窗片段（插进 #ai-picker-host）。
-	pickerTemplate = "admin/ai/provider_picker"
 	// pagePath 统一入口（532 合并后模型与会话共用一个页面），也是各写操作 PRG 的回跳地址。
 	pagePath = "/admin/ai/sessions"
 )
@@ -852,7 +845,7 @@ func (h *PageHandle) ModelsCandidates(c *gin.Context) {
 		Title:  aiMsgText(c, aienums.AdminLLMTitle, "大模型管理"),
 		Picker: picker,
 	})
-	if hxFragment(c, pickerTemplate, page) {
+	if hxFragment(c, page) {
 		return
 	}
 	c.Redirect(http.StatusFound, pagePath+"?tab="+sessionTabModels+"&picker="+strconv.FormatInt(providerID, 10))
@@ -970,7 +963,7 @@ func (h *PageHandle) renderRows(c *gin.Context, providerID int64, rows []aidto.M
 		h.pageNotice(c, "err", aiErrKey(err), nil)
 		return
 	}
-	if hxFragment(c, modelsTemplate, h.modelsData(c, *provider, rows, noticeKey, params, isErr)) {
+	if hxFragment(c, h.modelsData(c, *provider, rows, noticeKey, params, isErr)) {
 		return
 	}
 	h.pageNotice(c, redirectSlot(isErr), noticeKey, params)
@@ -978,7 +971,7 @@ func (h *PageHandle) renderRows(c *gin.Context, providerID int64, rows []aidto.M
 
 // modelsSuccess 成功路径：用库里的行（归一后的结果）+ 提示渲染目录区。
 func (h *PageHandle) modelsSuccess(c *gin.Context, provider aidto.Provider, noticeKey string, params map[string]string) {
-	if hxFragment(c, modelsTemplate, h.modelsData(c, provider, provider.Models, noticeKey, params, false)) {
+	if hxFragment(c, h.modelsData(c, provider, provider.Models, noticeKey, params, false)) {
 		return
 	}
 	h.pageNotice(c, "done", noticeKey, params)
@@ -994,7 +987,7 @@ func (h *PageHandle) modelsFailure(c *gin.Context, providerID int64, rows []aidt
 		h.pageNotice(c, "err", key, nil)
 		return
 	}
-	if hxFragment(c, modelsTemplate, h.modelsData(c, *provider, rows, key, nil, true)) {
+	if hxFragment(c, h.modelsData(c, *provider, rows, key, nil, true)) {
 		return
 	}
 	h.pageNotice(c, "err", key, nil)
@@ -1119,11 +1112,14 @@ func redirectWhere(c *gin.Context, target string) {
 }
 
 // hxFragment 渲染一个可独立渲染的片段；非 HTMX 请求返回 false（调用方走整页重定向）。
-func hxFragment(c *gin.Context, name string, data gin.H) bool {
+//
+// 模板名由路由的 BareSlot 带进上下文（四处调用共用同一张 provider_models 片段），
+// 所以这里不再接 name 参数 —— 控制器持有模板名会让「渲不渲染」这件事散在两层。
+func hxFragment(c *gin.Context, view any) bool {
 	if !isHXRequest(c) {
 		return false
 	}
-	c.HTML(http.StatusOK, name, data)
+	pageview.Render(c, view)
 	return true
 }
 
@@ -1276,7 +1272,6 @@ func pick(items []string, i int) string {
 }
 
 const (
-	sessionTemplate = "admin/ai/sessions"
 	sessionPath     = "/admin/ai/sessions"
 	sessionPageSize = 20
 	sessionEventTop = 50
@@ -1410,7 +1405,7 @@ func (h *SessionPageHandle) SessionsPage(c *gin.Context) {
 		return
 	}
 	h.attachSessionsBlocks(c, ctx, view, rows, total, page, filter)
-	c.HTML(http.StatusOK, sessionTemplate, adminui.PrepareView(c, view))
+	pageview.Render(c, view)
 }
 
 // attachSessionsBlocks 成功档的各区块装配：列表 / 详情 / 看板 / 供应商卡片 / 分页。

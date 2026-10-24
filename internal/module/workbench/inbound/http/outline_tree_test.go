@@ -6,6 +6,7 @@ package workbenchhttp
 // 过滤只保留命中链路、未命名节点回退为组件类型名。
 
 import (
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -27,7 +28,7 @@ func newOutlineRouter(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	router.POST("/workbench/outline", handle.OutlineTree)
+	router.POST("/workbench/outline", adminui.BareSlot(OutlineTreeTemplate), handle.OutlineTree)
 	return router
 }
 

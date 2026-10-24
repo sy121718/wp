@@ -46,7 +46,7 @@ func newSiteLocalesEnv(t *testing.T) (*gin.Engine, *projectservice.Service, stri
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	router.GET("/admin/settings", adminui.PageSlot(projecthttp.SiteSettingsPageTemplate), handle.SiteSettings)
-	router.POST("/admin/settings/locales/rows", handle.LocaleRowsFragment)
+	router.POST("/admin/settings/locales/rows", adminui.BareSlot(projecthttp.LocaleRowsFragmentTemplate), handle.LocaleRowsFragment)
 	router.POST("/admin/settings/locales/save", adminui.PageSlot(projecthttp.SiteSettingsPageTemplate), handle.SaveSiteLocales)
 	return router, projects, project.ID, db
 }
