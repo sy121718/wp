@@ -1744,7 +1744,7 @@ var themeFieldGroups = []themeFieldGroup{{Title: "颜色", Fields: []themeField{
 		{Label: "缓动", Path: "motion.easing", Name: "motion.easing", Kind: "select",
 			Options: optionsOf("", "默认", "ease", "Ease", "ease-out", "Ease Out", "linear", "Linear")},
 		{Label: "默认入场", Path: "motion.defaultEntrance", Name: "motion.entrance", Kind: "select",
-			Options: optionsOf("", "无", "fade-in", "淡入", "fade-up", "淡入·上", "slide-up", "上滑", "zoom-in", "缩放")},
+			Options: optionsOf("", "无", "fade-in", "淡入", "fade-in-up", "淡入·上", "slide-in-up", "上滑", "zoom-in", "缩放")},
 	}},
 }
 

@@ -37,7 +37,7 @@ func TestHeadingCSSSegmentDelays(t *testing.T) {
 		".sky-c-t .sky-h-seg:nth-child(2) {\n  animation-delay: 40ms;",
 		".sky-c-t .sky-h-seg:nth-child(20) {\n  animation-delay: 760ms;",
 		".sky-c-t .sky-h-seg:nth-child(n+21) {\n  animation-delay: 800ms;",
-		"animation: sky-fade-up 0.6s ease backwards",
+		"animation: sky-fade-in-up 0.6s ease backwards",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("产物缺少 %q\n%s", want, out)

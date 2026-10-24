@@ -86,8 +86,8 @@
   @if text_anim
   display: inline-block;
   white-space: pre;
-  animation: sky-fade-up 0.6s ease backwards;
-  @need-keyframes sky-fade-up;
+  animation: sky-fade-in-up 0.6s ease backwards;
+  @need-keyframes sky-fade-in-up;
   @endif
 }
 

@@ -58,8 +58,12 @@ var vocabKeyframeSource = []string{
 // TestComponentKeyframesDoNotShadowVocabulary 组件私有帧名不得与共享词汇表同名或同前缀。
 func TestComponentKeyframesDoNotShadowVocabulary(t *testing.T) {
 	vocab := readKeyframeNames(t, vocabKeyframeSource...)
-	if len(vocab) != 63 {
-		t.Fatalf("动效词汇表解析出 %d 条（预期 63）：解析口径可能已失效", len(vocab))
+	// 63 → 61（2026-11）：builtin.css 里的 sky-flip-in-x / sky-flip-in-y 删掉了 ——
+	// animate.css 已有同名关键帧（Animate.css 标准版：90° 全翻 + 回弹），
+	// 两份同名会让 core.buildKeyframeIndex 直接 panic（实测）。
+	// 这个数字本身不是判据，它只是「解析口径没失效」的哨兵：改动词汇表时同步它。
+	if len(vocab) != 61 {
+		t.Fatalf("动效词汇表解析出 %d 条（预期 61）：解析口径可能已失效", len(vocab))
 	}
 	vocabSet := make(map[string]bool, len(vocab))
 	for _, n := range vocab {

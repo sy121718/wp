@@ -25,7 +25,7 @@
     <link rel="stylesheet" href="/static/css/theme.css">
 {* 原始控件基座样式（下拉/输入等）：与 theme.css 分开，前台产物也引同一份。 *}
 <link rel="stylesheet" href="/static/css/ui.css">
-{* 页面按需内联的动效关键帧：页面 handler 用 core.KeyframeCSS([]string{"sky-fade-up"}) 声明，
+{* 页面按需内联的动效关键帧：页面 handler 用 core.KeyframeCSS([]string{"sky-fade-in-up"}) 声明，
    未声明时为缺 key（链式索引安全）→ 不输出任何字节。后台不常驻加载那 63 条营销动效。 *}
 {{if .["KeyframesCSS"]}}<style>{{ .["KeyframesCSS"] | unsafe }}</style>{{end}}
 {* 全局 HTMX 请求指示（审计 UI-011）：后台所有 hx- 请求共用这一条，页面无需再逐个写

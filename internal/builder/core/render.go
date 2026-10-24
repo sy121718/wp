@@ -100,7 +100,7 @@ type RenderContext struct {
 	// 由装配层按主题/页面设置初始化；container 可在子树内覆盖（栈式进入设置、离开恢复）。
 	// 组件级显式设置（interaction.entrance / scrollStory / scrollReveal）永远优先于继承。
 	RevealInherit string
-	// RevealDefaultEntrance 滚动显现注入的默认入场词（如 "fade-up"；空 = "fade-up"）。
+	// RevealDefaultEntrance 滚动显现注入的默认入场词（如 "fade-in-up"；空 = "fade-in-up"）。
 	// 来源：主题 Motion.DefaultEntrance（效果基本库入场词汇表）。
 	RevealDefaultEntrance string
 	// ImageDefaults 图片全局默认（主题「图片管理」投影：懒加载策略 + 骨架屏）。
