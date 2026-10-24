@@ -21,8 +21,7 @@
 {{id := cp.ID}}
             <div data-drawer-fragment>
                 <form class="form-stack"
-                      data-write-api="/api/order/coupon/update" data-write-mode="create"
-                      data-write-number="id,discountValue,minSubtotal,maxUses,perUserLimit,status"
+                      data-write-url="/api/order/coupon/update" data-write="create"
                       data-write-nav="/admin/coupons?{{.ListQuery}}"
                       data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
                     <input type="hidden" name="id" value="{{id}}">

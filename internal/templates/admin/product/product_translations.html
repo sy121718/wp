@@ -59,7 +59,7 @@
 
     {* 写动作的结论行：保存成功由 ui/json_write.js 存进 flash、整页刷新后在这里显示一次
        （刷新是为了让译文状态 / 完成度 / 来源三列跟着变）。 *}
-    <p class="form-hint badge" data-write-flash-target="product-translations" role="status" hidden></p>
+    <p class="form-hint badge" role="status" hidden></p>
 
     {{if .Errors}}
     <div class="tr-alert" role="alert">
@@ -114,9 +114,7 @@
         </div>
     </section>
     {{else}}
-    <form hx-post="/api/product/translations/save" hx-swap="none"
-          data-write-array="rowTarget,rowContext,rowHash"
-          data-write-flash="product-translations" class="form-stack">
+    <form data-write="update" data-write-url="/api/product/translations/save" data-write-reload class="form-stack">
         {* 键名与接口的 JSON 字段一致（projectId / productId）：基座按控件 name 组请求体，
            写成 project / product 会被严格白名单整条拒掉。三组 row* 字段是**按行对齐**的
            并行数组 —— 空译文行必须保留占位，剔掉会让后面所有行错位一格。 *}

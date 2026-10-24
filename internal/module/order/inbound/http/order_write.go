@@ -16,7 +16,7 @@ package orderhttp
 // uint64 都不报错（落到零值），不判原文就会静默变成「一次空批量」或「把字段清空」。
 //
 // 与 mail（mail_contact_write.go）和 navigation（navigation_delete_handle.go）同形而**不是各写一套**：
-// 前端基座只有一个（internal/templates/static/js/ui/json_write.js），它读 id / ids /
+// 前端基座只有一个（internal/templates/static/js/ui/write-base.js），它读 id / ids /
 // items[].deleted|updated / items[].message 这一套字段名，三个模块给三套写法就等于让基座
 // 维护三种协议。
 
@@ -27,6 +27,7 @@ import (
 	json "go_wp/pkg/jsonx"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -65,9 +66,38 @@ const orderWriteMaxBodyBytes = 1 << 20
 // 继续往下走只会得到一句更含糊的错误。
 func orderWriteBody(c *gin.Context) (map[string]json.RawMessage, bool) {
 	if c == nil || c.Request == nil || c.Request.Body == nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+		return orderWriteReject(c, "写请求缺少请求体")
+	}
+	body, ok := orderWriteReadBody(c)
+	if !ok {
 		return nil, false
 	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	// 表单编码：写基座统一走 formdata（批次 2），而形状分派（单档 / 批档）靠**顶层键**判断，
+	// 所以这里要把表单字段也提成等价的 raw，否则批档请求会被当成"形状未知 → 单档"。
+	if orderWriteIsFormBody(c) {
+		return orderWriteFormRaw(c, body)
+	}
+	// 其它非 JSON 的体（空体等）：形状未知 → 单档，交给 gin 自己的绑定器。
+	if c.ContentType() != ginbinding.MIMEJSON {
+		return nil, true
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil || raw == nil {
+		return orderWriteReject(c, "写请求体不是 JSON 对象")
+	}
+	return raw, true
+}
+
+// orderWriteReject 统一的 400 出口（只记日志线索，body 原文不入日志）。
+func orderWriteReject(c *gin.Context, reason string) (map[string]json.RawMessage, bool) {
+	logger.Scene(orderWriteScene).With("reason", reason).Warn("订单写请求体被拒")
+	response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
+	return nil, false
+}
+
+// orderWriteReadBody 读出整个请求体（带上限）。
+func orderWriteReadBody(c *gin.Context) ([]byte, bool) {
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, orderWriteMaxBodyBytes+1))
 	if err != nil {
 		logger.Scene(orderWriteScene).Error(err, "读取订单写请求体失败")
@@ -80,17 +110,88 @@ func orderWriteBody(c *gin.Context) (map[string]json.RawMessage, bool) {
 		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
 		return nil, false
 	}
+	return body, true
+}
+
+// orderWriteIsFormBody 这次请求是不是表单体（urlencoded 或 multipart）。
+func orderWriteIsFormBody(c *gin.Context) bool {
+	ct := c.ContentType()
+	return strings.HasPrefix(ct, "application/x-www-form-urlencoded") ||
+		strings.HasPrefix(ct, "multipart/form-data")
+}
+
+// orderWriteFormRaw 把表单字段提成与 JSON 请求等价的 raw。
+//
+// 两种编码的解析入口不同（urlencoded → ParseForm；multipart → ParseMultipartForm）。
+// 解析后必须把 body 复位：单档分支还要交给 binding.Form 再读一遍。
+func orderWriteFormRaw(c *gin.Context, body []byte) (map[string]json.RawMessage, bool) {
+	if strings.HasPrefix(c.ContentType(), "multipart/form-data") {
+		if err := c.Request.ParseMultipartForm(orderWriteMaxBodyBytes); err != nil {
+			return orderWriteReject(c, "multipart 请求体解析失败")
+		}
+	} else if err := c.Request.ParseForm(); err != nil {
+		return orderWriteReject(c, "表单请求体解析失败")
+	}
 	c.Request.Body = io.NopCloser(bytes.NewReader(body))
-	// 非 JSON 的体（表单编码、空体）：形状未知 → 单档，交给 gin 自己的绑定器。
-	if c.ContentType() != ginbinding.MIMEJSON {
+	form := c.Request.PostForm
+	if len(form) == 0 {
 		return nil, true
 	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(body, &raw); err != nil || raw == nil {
-		response.ErrorWithMessage(c, http.StatusBadRequest, orderenums.ErrInvalidParam)
-		return nil, false
+	raw := make(map[string]json.RawMessage, len(form))
+	for key, vals := range form {
+		if len(vals) == 0 {
+			continue
+		}
+		raw[key] = formValueRaw(key, vals)
+	}
+	if len(raw) == 0 {
+		return nil, true
 	}
 	return raw, true
+}
+
+// formValueRaw 一个表单字段 → JSON 标量字节。
+//
+// 三条规则，都由下游读取方的口径决定（见各自注释）：
+//  1. ids 恒按字符串数组（orderWriteIDsOf 解成 []json.RawMessage，裸 `1` 解不开）；
+//  2. 同名多值 → 字符串数组；
+//  3. 单值按值推断：数字/bool/null 裸发，其余包引号（两个读取方口径相反，见 rawScalarOf）。
+func formValueRaw(key string, vals []string) json.RawMessage {
+	if key == "ids" || key == "ids[]" {
+		return quotedJSONArray(vals)
+	}
+	if len(vals) > 1 {
+		return quotedJSONArray(vals)
+	}
+	return rawScalarOf(vals[0])
+}
+
+// quotedJSONArray 把若干字符串拼成 JSON 字符串数组。
+func quotedJSONArray(vals []string) json.RawMessage {
+	quoted := make([]string, 0, len(vals))
+	for _, v := range vals {
+		quoted = append(quoted, strconv.Quote(v))
+	}
+	return json.RawMessage("[" + strings.Join(quoted, ",") + "]")
+}
+
+// rawScalarOf 把一个 formdata 字符串值转成 JSON 标量的原始字节。
+//
+// 规则与 JSON 请求体保持一致：`0` / `1` / `-3.5` / `true` / `false` / `null` 原样当标量，
+// 其余（含空串、带字母的 uuid）当字符串包引号。空串必须包引号成 `""` ——
+// 裸空字节不是合法 JSON，下游 json.Unmarshal 会失败（而「空串」在业务上常是
+// 「显式置空」，与「键不存在」不同）。
+func rawScalarOf(v string) json.RawMessage {
+	switch v {
+	case "true", "false", "null":
+		return json.RawMessage(v)
+	case "":
+		return json.RawMessage(`""`)
+	}
+	if _, err := strconv.ParseFloat(v, 64); err == nil {
+		return json.RawMessage(v)
+	}
+	return json.RawMessage(strconv.Quote(v))
 }
 
 // orderWriteHasKey 判断顶层是否出现某个键（出现即参与形状判别）。

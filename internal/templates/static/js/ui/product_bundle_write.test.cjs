@@ -1,6 +1,6 @@
 /* product_bundle_write.test.cjs — 捆绑表单 → 请求体的投影（node:test + vm，无浏览器）。
  *
- * 基座（ui/json_write.js）管传输与回执，这个 builder 只管一件事：把成员表的行与三个配置
+ * 基座（ui/write-base.js）管传输与回执，这个 builder 只管一件事：把成员表的行与三个配置
  * 数值装配成 {productId, config:{…, options:[…]}}。它守的是三类不会报错的错装配：
  *
  *   1. 空行被当成成员提交 —— 服务端会把它当一条没有 SKU 的选项拒掉，整次保存失败；

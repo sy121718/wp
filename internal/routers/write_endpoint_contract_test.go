@@ -43,7 +43,7 @@ var (
 	jetCondWrite = regexp.MustCompile(`^(.*?)\{\{if[^}]*\}\}([^{}]*)\{\{else\}\}([^{}]*)\{\{end\}\}(.*)$`)
 )
 
-// writeModesSupported 基座 ui/json_write.js 真的实现了的档位（见该文件头部的契约）。
+// writeModesSupported 基座 ui/write-base.js 真的实现了的档位（见该文件头部的契约）。
 var writeModesSupported = map[string]bool{"single": true, "bulk": true, "create": true, "form": true}
 
 // loadRouteSnapshot 读路由快照成 "METHOD PATH" 集合。
@@ -189,7 +189,8 @@ func TestWriteButtonsRequireJS(t *testing.T) {
 			}
 
 			owner, found := owningForm(tok.attrs, stack, formAttrs)
-			if !found || !strings.Contains(owner, "data-write-api") {
+			// 写表单的判据是 data-write-url（旧基座的 data-write-api 已并入它）。
+			if !found || !strings.Contains(owner, "data-write-url") {
 				continue
 			}
 			checked++

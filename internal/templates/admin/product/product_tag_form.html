@@ -39,10 +39,7 @@
              · 空值键删除：`sort=` 空串会让后端 *int 绑成 0（「没填」变成「改成 0」）。
            后端那边 CreateTagReq/UpdateTagReq 实现了 BindForm —— json.RawMessage 在表单体上
            反射绑不了（实测 ShouldBind 直接报错），由 DTO 自己把 JSON 字符串解析一次。 *}
-        <form class="form-stack"
-              hx-post="/api/product/tag/{{if create}}create{{else}}update{{end}}"
-              hx-swap="none" hx-disable="find button[type=submit]"
-              data-close-on-ok="[data-drawer]"
+        <form data-write="custom" data-write-url="/api/product/tag/{{if create}}create{{else}}update{{end}}" class="form-stack" data-write-close="[data-drawer]"
               data-write-object=".tag-rule-fields;ruleParams;ruleType;kind=rule">
             <input type="hidden" name="projectId" value="{{.Project}}">
             {{if !create}}<input type="hidden" name="id" value="{{.ID}}">{{end}}

@@ -14,7 +14,7 @@ package blockhttp
 //   · **读侧**（?err= / ?done= 的受控文案集合与判定）整批删除 —— 那条通道要求每个模块
 //     维护一份「受控文案 + 数字归一模板」来证明提示出自本仓，而查询参数不是可信边界；
 //   · **页面写路由**整批删除 —— 新建 / 删除 / 批量删除现在由前端直调 JSON API
-//     （static/js/ui/json_write.js），整页提示页（shell.RenderJump）那条通道随之退役。
+//     （static/js/ui/write-base.js），整页提示页（shell.RenderJump）那条通道随之退役。
 //
 // 于是本文件只剩两件事：
 //   ① blockErrText / blockErrFact —— 错误 → 受控文案 / 展示事实（判定与归口在

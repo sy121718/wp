@@ -491,7 +491,7 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	// 商品级表单（含手工标签勾选）已整块移到商品详情页，这里一并注册。
 	engine.GET("/admin/products/detail", adminui.PageSlot(producthttp.ProductDetailPageTemplate), handle.ProductDetailPage)
 	engine.GET("/admin/products/edit", adminui.PageSlot(producthttp.ProductEditPageTemplate), handle.ProductEditPage)
-	// 挂手工标签没有页面 POST：编辑页表单走 /api/product/update（ui/json_write.js）。
+	// 挂手工标签没有页面 POST：编辑页表单走 /api/product/update（ui/write-base.js）。
 	engine.POST("/api/product/update", producthttp.NewProductHandle(f.svc).Update)
 	return engine, f
 }
@@ -596,7 +596,7 @@ func TestTagAdminPages(t *testing.T) {
 	for _, want := range []string{
 		"手工标签（可多选，一个都不勾即解绑全部手工标签）", `name="tagIds"`,
 		"自动标签（按规则重算维护，不能手工改动）",
-		`hx-post="/api/product/update"`,
+		`data-write-url="/api/product/update"`,
 	} {
 		if !strings.Contains(pageBody, want) {
 			t.Fatalf("商品编辑页缺少 %q", want)

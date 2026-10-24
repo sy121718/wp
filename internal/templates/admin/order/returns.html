@@ -141,8 +141,7 @@
            autoReceive 是**布尔**：同理必须点名 —— 直接发 "1" 会让整条请求 400（页面不替服务端
            猜类型，与 data-write-number 同口径；见 static/js/ui/json_write.js 的 data-write-bool）。 *}
         {{if r.Status == "requested"}}
-        <form data-write-api="/api/order/return/approve" data-write-mode="create"
-              data-write-number="returnId" data-write-bool="autoReceive"
+        <form data-write-url="/api/order/return/approve" data-write="create"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="returnId" value="{{r.ID}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
@@ -166,8 +165,7 @@
         </form>
         {* 拒绝：理由必填由服务端的 400 兜底（缺 / 空 / null 一律整条拒绝，
            不再由页面先判一遍再渲染提示页）—— 页面侧只保留 required 这个快速反馈。 *}
-        <form data-write-api="/api/order/return/reject" data-write-mode="create"
-              data-write-number="returnId"
+        <form data-write-url="/api/order/return/reject" data-write="create"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-inline">
             <input type="hidden" name="returnId" value="{{r.ID}}">
             <input type="text" class="form-input" name="remark" placeholder="{{tr("admin.returns.ph.reject_remark", "拒绝原因（必填，客户要知道为什么）")}}" required autocomplete="off">
@@ -177,8 +175,7 @@
         {{end}}
 
         {{if r.Status == "approved"}}
-        <form data-write-api="/api/order/return/receive" data-write-mode="create"
-              data-write-number="returnId"
+        <form data-write-url="/api/order/return/receive" data-write="create"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="returnId" value="{{r.ID}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
@@ -202,8 +199,7 @@
         {* 补退款走的是**同一条** receive 端点：服务端识别出入库已完成，只补做退款。
            重复点安全（幂等，不会重复加库存）—— 这也是「单条成功只整页刷新、不再按落地态
            换一句提示」的补偿说明：刷新后行徽章就是结论，多点一次不会造成第二笔退款。 *}
-        <form data-write-api="/api/order/return/receive" data-write-mode="create"
-              data-write-number="returnId"
+        <form data-write-url="/api/order/return/receive" data-write="create"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="returnId" value="{{r.ID}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
@@ -276,14 +272,14 @@
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
                 <input type="text" class="form-input" name="remark" autocomplete="off" placeholder="{{tr("admin.returns.ph.bulk_remark", "备注（同意时可选；批量拒绝时作为拒绝理由，必填）")}}">
                 <button type="submit" class="btn btn-sm btn-primary" data-requires-js hidden
-                        data-write-api="/api/order/return/approve" data-write-mode="bulk" data-write-outcome="update"
+                        data-write-url="/api/order/return/approve" data-write="bulk" data-write-outcome="update"
                         data-write-extra="remark"
                         data-msg-none-selected="{{tr("admin.returns.bulk.noneSelected", "没有勾选任何退货申请，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
                         data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.returns.bulk.refresh", "刷新列表")}}">{{tr("admin.returns.bulk.approve", "批量同意")}}</button>
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        data-write-api="/api/order/return/reject" data-write-mode="bulk" data-write-outcome="update"
+                        data-write-url="/api/order/return/reject" data-write="bulk" data-write-outcome="update"
                         data-write-extra="remark"
                         data-msg-none-selected="{{tr("admin.returns.bulk.noneSelected", "没有勾选任何退货申请，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"

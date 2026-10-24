@@ -12,7 +12,7 @@ package feature
 //
 // 通道换过两轮，本用例守的**边界没变**，但载体变了：
 //   · 旧：页面 POST + form action 的 query 带回跳上下文，字段名在模板下拉与 c.PostForm 之间对齐；
-//   · 现在：前端基座 fetch（static/js/ui/json_write.js）把按钮声明的额外字段拼进 JSON 体，
+//   · 现在：前端基座 fetch（static/js/ui/write-base.js）把按钮声明的额外字段拼进 JSON 体，
 //     所以「模板下拉的 name」要同时对两处负责 —— **按钮的 data-write-extra**（唯一的发送通道）
 //     与 **Go 侧批档白名单 + 读取字面量**。三处任何一处改名，另一处不同改就静默失效。
 //
@@ -31,7 +31,7 @@ const (
 	orderBulkFormTemplate = "../../../../internal/templates/admin/order/orders.html"
 	orderBulkHandlerDir   = "../../../../internal/module/order/inbound/http"
 	// orderBulkStatusButton 批量状态流转按钮上的端点声明：用它定位「哪张表单是批量写表单」。
-	orderBulkStatusButton = `data-write-api="/api/order/status"`
+	orderBulkStatusButton = `data-write-url="/api/order/status"`
 )
 
 // orderBulkHandlerSource 把订单控制器目录下所有非测试 Go 文件拼成一份源码。

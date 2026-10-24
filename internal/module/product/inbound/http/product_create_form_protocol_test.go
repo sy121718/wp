@@ -2,7 +2,7 @@ package producthttp
 
 // product_create_form_protocol_test.go — 建表单与 /api/product/create 的协议对账。
 //
-// 页面提交已迁到 ui/json_write.js：基座把表单里**每个具名字段**原样发成 dto.CreateReq 的 JSON。
+// 页面提交已迁到 ui/write-base.js：基座把表单里**每个具名字段**原样发成 dto.CreateReq 的 JSON。
 // 端点是严格解码（未知成员整条 400），所以两侧任一处写错都是「点了没反应」：
 //   - 表单里多一个 dto 不认识的字段 → 整条请求被拒；
 //   - 表单里少一个字段（或 name 拼错）→ 该字段静默丢失，商品照样建出来、只是那一格是空的。
@@ -32,9 +32,15 @@ func readCreateForm(t *testing.T) string {
 		t.Fatalf("读建表单模板失败: %v", err)
 	}
 	page := string(raw)
-	start := strings.Index(page, `id="product-create-form"`)
-	if start < 0 {
+	// 从 `<form` 起截，不是从 id= 起 —— data-write / data-write-url 写在 id 之前，
+	// 从 id 起会把它们切掉（迁到新契约后属性顺序变了，实测踩到）。
+	idAt := strings.Index(page, `id="product-create-form"`)
+	if idAt < 0 {
 		t.Fatal("建表单模板里找不到 id=product-create-form")
+	}
+	start := strings.LastIndex(page[:idAt], "<form")
+	if start < 0 {
+		t.Fatal("建表单模板里找不到 <form 起始标签")
 	}
 	end := strings.Index(page[start:], "</form>")
 	if end < 0 {
@@ -66,11 +72,11 @@ func stripJetComments(src string) string {
 func TestProductCreateFormFieldsMatchCreateReq(t *testing.T) {
 	form := readCreateForm(t)
 
-	if !strings.Contains(form, `hx-post="/api/product/create"`) {
-		t.Fatalf(`建表单缺少 hx-post="/api/product/create"（按钮会退化成原生提交）`)
+	if !strings.Contains(form, `data-write-url="/api/product/create"`) {
+		t.Fatalf(`建表单缺少 data-write-url="/api/product/create"（按钮会退化成原生提交）`)
 	}
-	if !strings.Contains(form, `hx-swap="none"`) {
-		t.Fatalf("建表单缺少 hx-swap=none（写动作没有要换进 DOM 的内容）")
+	if !strings.Contains(form, `data-write="create"`) {
+		t.Fatalf("建表单缺少 data-write=\"create\"（写基座的必填属性）")
 	}
 	// 成功后的落点：商品编辑页（新建页只填得下几个字段，全量录入在编辑页）。
 	if !strings.Contains(form, `data-write-nav="/admin/products/edit?project=`) {
@@ -133,14 +139,14 @@ func TestProductCreateFormDeclaresBaseAttributes(t *testing.T) {
 	//
 	// 判据仍是「提交必须声明端点」—— 少了它按钮会退化成原生提交（页面 POST 的 action
 	// 早已删除 ⇒ 点了没反应）。data-write-nav 是唯一还需声明的（按响应 id 跳编辑页）。
-	if !strings.Contains(form, `hx-post="/api/product/create"`) {
-		t.Errorf("建表单缺少 hx-post=\"/api/product/create\"")
+	if !strings.Contains(form, `data-write-url="/api/product/create"`) {
+		t.Errorf("建表单缺少 data-write-url=\"/api/product/create\"")
 	}
 	if !strings.Contains(form, `data-write-nav="/admin/products/edit?`) {
 		t.Errorf("建表单缺少 data-write-nav（成功后要跳编辑页）")
 	}
-	// 分组容器与页面端点都该彻底消失。
-	for _, gone := range []string{"data-product-create-host", "action=\"/admin/products/create\"", "data-write-api="} {
+	// 旧的页面 POST 端点与宿主声明都该彻底消失（data-write-url 是**要**有的，不在这个清单里）。
+	for _, gone := range []string{"data-product-create-host", "action=\"/admin/products/create\"", "hx-post="} {
 		if strings.Contains(form, gone) {
 			t.Errorf("建表单仍含已撤掉的提交机制 %q", gone)
 		}

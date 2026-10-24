@@ -65,7 +65,7 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	//
 	// 仍留在页面 POST 的只有批量改状态（/mail/contacts/bulk-status）：它没有 JSON 端点
 	// （服务端改状态要同步写抑制名单），而批量条上「一个表单并排多个动作」现在由
-	// json_write.js 的**按钮级声明**（读 e.submitter）支持 —— 表单自己不声明端点，
+	// write-base.js 的**按钮级声明**（读 e.submitter）支持 —— 表单自己不声明端点，
 	// 所以这个按钮不会被邻居的声明继承成 fetch。
 
 	// —— 群发活动（列表 + 报表）——

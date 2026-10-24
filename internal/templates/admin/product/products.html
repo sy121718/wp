@@ -99,15 +99,14 @@
            而是就地显示「删了几条 + 哪几条没删掉、为什么」（data-write-status 区）。
            keyword / status / page 三个隐藏域随旧通道一起去掉：基座只发 data-write-extra
            点名的字段，留着它们永远不会被发送 —— 而且列表筛选由整页刷新自然保留。 *}
-        <form data-list-bulk hx-post="/api/product/bulk-delete" hx-swap="none" hx-include="closest form" data-reload-on-ok
-              data-write-flash="product-list-bulk"
+        <form data-write="bulk" data-write-url="/api/product/bulk-delete" data-list-bulk data-write-reload
               data-write-extra="projectId"
               data-msg-none-selected="{{tr("admin.products.bulk.noneSelected", "没有勾选任何商品，列表未改动。")}}"
               data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
               data-msg-refresh="{{tr("admin.common.write.refresh", "刷新列表")}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <p class="form-hint badge" data-write-flash-target="product-list-bulk" role="status" hidden></p>
+            <p class="form-hint badge" role="status" hidden></p>
             <p class="form-hint" data-write-status role="status" hidden></p>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete || canUpdate}}{{if len(.Products) > 0}}
@@ -263,7 +262,7 @@
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="productId" value="{{p.ID}}">
     </form>
-    <form id="product-del-{{p.ID}}" class="hidden-form" hx-post="/api/product/delete" hx-swap="none" data-reload-on-ok
+    <form data-write="delete" data-write-url="/api/product/delete" id="product-del-{{p.ID}}" class="hidden-form" data-write-reload
           data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
           data-confirm="{{ .["t"]("admin.products.row.deleteConfirm", "删除该商品及其全部变体？") }}" data-confirm-danger>
         {* projectId 必须点名带上：service 的 resolveProjectID 在它为空的只肯走「唯一工程」兜底，
@@ -303,9 +302,7 @@
              · data-reload-on-ok：调价后整页刷新（售价与派生列由服务端重算）。
            规则字段（ruleType / multiplier / amount / margin / rounding）来自
            include 的 pricing_rule_fields.html，formdata 会一并提交，不需要额外声明。 *}
-        <form class="form-stack"
-              hx-post="/api/product/bulk-pricing" hx-swap="none"
-              data-reload-on-ok
+        <form data-write="bulk" data-write-url="/api/product/bulk-pricing" class="form-stack" data-write-reload
               data-write-ids-scope="[data-list-bulk]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             {* 批量调价的结论不再用页面上的结论区：迁到 htmx 后成功直接刷新、

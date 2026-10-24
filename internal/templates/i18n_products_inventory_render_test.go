@@ -232,14 +232,13 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 	// 提交走 JSON 写基座（不再是 action=... 的页面 POST）—— 端点与四条字段声明一起钉住，
 	// 少了任意一条都会让「保存成功一半」：例如没有 data-write-lines 时图集整条 400。
 	for _, want := range []string{
-		`hx-post="/api/product/update"`,
-		`hx-swap="none"`,
-		// 注意：**没有** data-write-skip-empty —— 留空即不设置这件事由
-		// htmx_form_body.js 的 dropEmpty 全局负责，不再逐字段声明（旧基座才需要）。
-		`data-write-array="attributeIds,categoryIds,tagIds"`,
-		`data-write-float="defaultPrice,weight"`,
+		`data-write-url="/api/product/update"`,
+		// hx-swap="none" 已由写基座内置（模板不再写）。也不再有 data-write-array /
+		// -float / -number —— 实测 formdata 的 "3" 直接绑进 int、"a&a=b" 直接绑进
+		// []string，那批声明是旧基座为 fetch+JSON 路径补的。
+		// 唯一保留的整形：lines（多行文本→数组）与 json-wrap（裸 HTML→{html}）。
 		`data-write-lines="images,imageAlts"`,
-		`data-write-html="descriptionHtml:description"`,
+		`data-write-json-wrap="descriptionHtml:description"`,
 		`name="name"`, `name="subtitle"`, `name="slug"`, `name="sku"`, `name="status"`,
 		`name="defaultPrice"`, `name="unit"`, `name="weight"`,
 		// SEO 标题/描述已合并进商品名与副标题（2026-09-30）；表单现在多的是商品描述的富文本字段。
@@ -252,12 +251,12 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		// 详情入口也在：改完去看只读的构成（变体 / 评分 / 捆绑）。
 		"/admin/products/detail?project=pr1&amp;product=p1",
 		// 变体 / 评分的写入口都在 JSON 写基座上（变体清单整张提交、评分增删各一条）。
-		`hx-post="/api/product/variant/save"`,
+		`data-write-url="/api/product/variant/save"`,
 		`data-write-builder="product-variant-rows"`,
 		`data-preview-url="/admin/products/variant/preview"`,
-		`hx-post="/api/product/variant/create"`,
-		`hx-post="/api/product/rating/add"`,
-		`hx-post="/api/product/rating/delete"`,
+		`data-write-url="/api/product/variant/create"`,
+		`data-write-url="/api/product/rating/add"`,
+		`data-write-url="/api/product/rating/delete"`,
 		// SEO 评分已移入抽屉：编辑页只留入口，评分按钮与结果容器在
 		// admin/product/entity_seo_drawer.html（该片段由模块内的用例守着）。
 		`data-drawer-url="/admin/products/seo/drawer?productId=p1`,
@@ -312,12 +311,12 @@ func TestGroupDProductDetailPageRenders(t *testing.T) {
 		`action="/admin/products/taxonomy"`,
 		`action="/admin/products/tags"`,
 		`action="/admin/products/seo-score"`,
-		`hx-post="/api/product/variant/save"`,
-		`hx-post="/api/product/variant/create"`,
-		`hx-post="/api/product/rating/add"`,
-		`hx-post="/api/product/rating/delete"`,
-		`data-write-api="/api/product/detail-template/reapply-preset"`,
-		`data-write-api="/api/product/detail-template/rollback-document"`,
+		`data-write-url="/api/product/variant/save"`,
+		`data-write-url="/api/product/variant/create"`,
+		`data-write-url="/api/product/rating/add"`,
+		`data-write-url="/api/product/rating/delete"`,
+		`data-write-url="/api/product/detail-template/reapply-preset"`,
+		`data-write-url="/api/product/detail-template/rollback-document"`,
 		`action="/admin/products/delete"`,
 		"保存属性引用", "保存分类与品牌", "保存手工标签", "保存变体清单",
 		"新建变体", "生成组合", "添加评分", "SEO 评分",

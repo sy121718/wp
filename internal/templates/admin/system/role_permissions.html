@@ -46,8 +46,7 @@
     {{end}}{{end}}
     <p class="perm-intro">{{tr("admin.roles.perm.intro", "勾选该角色可用的目录、菜单与按钮。勾选子项会自动补齐它所属的菜单与目录（不补齐会出现「接口能调、侧栏却没有入口」的分裂授权）；取消父项会同时取消其下全部子项。保存按整棵树的当前勾选做全量替换。")}}</p>
 
-    <form method="post" action="/admin/roles/permissions/save"
-          hx-post="/admin/roles/permissions/save" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
+    <form action="/admin/roles/permissions/save" method="post">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="role_id" value="{{.Role.RoleID}}">
 

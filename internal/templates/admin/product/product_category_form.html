@@ -9,7 +9,7 @@
 
        hx-swap="none"：写动作的响应是 {code,message,data}，没有任何要换进 DOM 的内容。
        结论由全局监听（ui/htmx_form_body.js 同族）从 X-Message 头取出、交给 WBUI.toast。
-       data-close-on-ok="[data-drawer]" 声明成功之后关哪个容器：这张表单总是从抽屉里打开的
+       data-write-close="[data-drawer]" 声明成功之后关哪个容器：这张表单总是从抽屉里打开的
        （data-drawer-open="#tpl-category-create" / "#tpl-category-edit-<id>"），
        而抽屉是页面上唯一的 <aside data-drawer> —— 关它等于「保存完回到列表」。
 
@@ -19,9 +19,7 @@
        UpdateCategoryReq 的语义是「nil = 本次不改，指向空串 = **提升为顶级**」。
        不声明它，htmx_form_body.js 会把空串删掉 —— 「提升为顶级」变成「不改父级」，
        用户点了没反应还以为保存成功。 *}
-    <form hx-post="/api/product/category/{{if create}}create{{else}}update{{end}}"
-          hx-swap="none" hx-disable="find button[type=submit]"
-          data-close-on-ok="[data-drawer]"
+    <form data-write="custom" data-write-url="/api/product/category/{{if create}}create{{else}}update{{end}}" data-write-close="[data-drawer]"
           data-write-keep-empty="parentId">
         <input type="hidden" name="projectId" value="{{.Project}}">
         {{if !create}}<input type="hidden" name="id" value="{{.ID}}">{{end}}

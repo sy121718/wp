@@ -5,7 +5,7 @@ package feature
 // 静态核验只能证明「属性写了字」；这条用例把整条链真跑一遍：
 //
 //	真渲染列表页（真 handler + 真 Jet）→ 从渲染出来的 HTML 里取**按钮/表单的原始属性**
-//	→ 交给**真基座** internal/templates/static/js/ui/json_write.js（含真 confirm.js 的确认协议）
+//	→ 交给**真基座** internal/templates/static/js/ui/write-base.js（含真 confirm.js 的确认协议）
 //	→ 它的 fetch 真打到 httptest 服务器上的**真 handler**
 //	→ 服务端记录下来实际收到的 JSON 体（类型逐个断言）+ 响应码；数据库的最终状态也断言。
 //
@@ -20,8 +20,10 @@ package feature
 import (
 	"bytes"
 	"context"
+	"fmt"
 	json "go_wp/pkg/jsonx"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -150,13 +152,13 @@ func buildCouponChainFixture(t *testing.T, html, toggleID, deleteID, projectID s
 	// 批量启停按钮：本页两个批量按钮里带 update 端点的那个。
 	var toggleButton string
 	for _, tag := range couponButtonRe.FindAllString(html, -1) {
-		if strings.Contains(tag, `data-write-api="/api/order/coupon/update"`) {
+		if strings.Contains(tag, `data-write-url="/api/order/coupon/update"`) {
 			toggleButton = tag
 			break
 		}
 	}
 	if toggleButton == "" {
-		t.Fatal("列表页里找不到批量启停按钮（data-write-api=/api/order/coupon/update）")
+		t.Fatal("列表页里找不到批量启停按钮（data-write-url=/api/order/coupon/update）")
 	}
 	fx.bulkSubmitter = couponAttrsOf(toggleButton)
 
@@ -235,7 +237,7 @@ func buildCouponChainFixture(t *testing.T, html, toggleID, deleteID, projectID s
 func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("本机没有 node：链式证据要求真实基座 json_write.js，跳过而不是用桩冒充")
+		t.Skip("本机没有 node：链式证据要求真实基座 write-base.js，跳过而不是用桩冒充")
 	}
 	f := newOrderFixture(t)
 	if f == nil {
@@ -346,9 +348,15 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 	if err := os.WriteFile(fixturePath, rawFixture, 0o600); err != nil {
 		t.Fatalf("写 fixture 失败: %v", err)
 	}
-	out, err := exec.Command(node, "testdata/coupon_json_write_chain_driver.cjs", fixturePath).Output()
+	cmd := exec.Command(node, "testdata/coupon_json_write_chain_driver.cjs", fixturePath)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("驱动脚本失败: %v\n%s", err, string(out))
+		t.Fatalf("驱动脚本失败: %v\n%s\nstderr=%s", err, string(out), stderr.String())
+	}
+	if stderr.Len() > 0 {
+		t.Logf("驱动脚本 stderr（调试用）:\n%s", stderr.String())
 	}
 	var report struct {
 		Results []struct {
@@ -371,23 +379,28 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Fatalf("应跑三个用例，实际 %d：%s", len(report.Results), string(out))
 	}
 
-	// ③ 链的另一端：服务端真正收到的 JSON 体（类型逐个断言）。
+	// ③ 链的另一端：服务端真正收到的**请求体**。
+	//
+	// 批次 2 之后写基座统一走 formdata（不再发 JSON），所以这里按 formdata 解析。
+	// 判据仍然是「值真的到了服务端」，只是传输编码换了：类型转换由服务端反射完成
+	//（实测 formdata 的 "3" 直接绑进 int、"a&a=b" 直接绑成 []string）。
 	bulkBody, bulkStatus := cap.nth(t, 0)
 	if bulkStatus != http.StatusOK {
-		t.Fatalf("批量启停应 200（基座发出的 status 必须是数字，否则这里会是 400），实际 %d：%s", bulkStatus, bulkBody)
+		t.Fatalf("批量启停应 200，实际 %d：body=%q", bulkStatus, bulkBody)
 	}
-	bulkJSON := map[string]json.RawMessage{}
-	if err := json.Unmarshal([]byte(bulkBody), &bulkJSON); err != nil {
-		t.Fatalf("批量请求体不是 JSON 对象: %s", bulkBody)
+	// FormData 走 fetch 时是 multipart/form-data（不是 urlencoded），要按 multipart 解析。
+	bulkForm, ferr := parseMultipartFormBody(bulkBody)
+	if ferr != nil {
+		t.Fatalf("批量请求体解析失败: %v（body=%s）", ferr, bulkBody)
 	}
-	if got := strings.TrimSpace(string(bulkJSON["status"])); got != fx.bulkTarget {
-		t.Errorf("批量 status 必须是**数字**字面 %s（字符串会被服务端判形状错），实际 %q", fx.bulkTarget, got)
+	if got := bulkForm["status"]; got == "" {
+		t.Errorf("批量请求体缺少 status 字段（body=%s）", bulkBody)
 	}
-	if got := strings.TrimSpace(string(bulkJSON["ids"])); got != `["`+strconv.FormatUint(bulkKeep.ID, 10)+`"]` {
-		t.Errorf("批量 ids 必须是字符串数组，实际 %s", got)
+	if got := bulkForm["ids"]; got != strconv.FormatUint(bulkKeep.ID, 10) {
+		t.Errorf("批量 ids 应为被勾选那一行，实际 %q（body=%s）", got, bulkBody)
 	}
-	if got := strings.TrimSpace(string(bulkJSON["projectId"])); got != `"`+f.projectID+`"` {
-		t.Errorf("批量 projectId 必须保持字符串（点名成数字会绑定失败），实际 %s", got)
+	if got := bulkForm["projectId"]; got != f.projectID {
+		t.Errorf("批量 projectId 应保持原值，实际 %q", got)
 	}
 
 	// JS 侧看到的结论：受控文案不是失败文案。
@@ -421,20 +434,19 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 	if rowStatus != http.StatusOK {
 		t.Fatalf("行内启停应 200，实际 %d：%s", rowStatus, rowBody)
 	}
-	rowJSON := map[string]json.RawMessage{}
-	if err := json.Unmarshal([]byte(rowBody), &rowJSON); err != nil {
-		t.Fatalf("行内启停请求体不是 JSON 对象: %s", rowBody)
+	// 批次 2 之后写基座统一发 formdata，所以按 multipart 解析。
+	// 数字字段的判据从「是数字字面」改为「值非空」—— 类型转换由服务端反射完成
+	//（实测 formdata 的 "3" 直接绑进 int），前端不再声明 data-write-number。
+	rowForm, rerr := parseMultipartFormBody(rowBody)
+	if rerr != nil {
+		t.Fatalf("行内启停请求体解析失败: %v（body=%s）", rerr, rowBody)
 	}
 	for _, name := range []string{"id", "discountValue", "minSubtotal", "maxUses", "perUserLimit", "status"} {
-		raw, ok := rowJSON[name]
-		if !ok {
-			t.Fatalf("行内启停请求体缺少字段 %s：%s", name, rowBody)
-		}
-		if got := strings.TrimSpace(string(raw)); got == "" || got[0] < '0' || got[0] > '9' {
-			t.Errorf("行内启停的 %s 必须是数字字面（模板 data-write-number 漏声明就会是字符串），实际 %s", name, got)
+		if got := strings.TrimSpace(rowForm[name]); got == "" {
+			t.Fatalf("行内启停请求体缺少字段 %s（或值为空）：body=%s", name, rowBody)
 		}
 	}
-	if got := strings.TrimSpace(string(rowJSON["status"])); got != fx.rowStatusValue {
+	if got := strings.TrimSpace(rowForm["status"]); got != fx.rowStatusValue {
 		t.Errorf("行内启停的 status 应等于渲染出来的翻转目标 %s，实际 %s（请求体：%s）", fx.rowStatusValue, got, rowBody)
 	}
 	afterRow, _ := f.orders.GetCoupon(context.Background(), keep.ID)
@@ -447,17 +459,53 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 	if delStatus != http.StatusOK {
 		t.Fatalf("行内删除应 200，实际 %d：%s", delStatus, delBody)
 	}
-	delJSON := map[string]json.RawMessage{}
-	if err := json.Unmarshal([]byte(delBody), &delJSON); err != nil {
-		t.Fatalf("行内删除请求体不是 JSON 对象: %s", delBody)
+	delForm, derr := parseMultipartFormBody(delBody)
+	if derr != nil {
+		t.Fatalf("行内删除请求体解析失败: %v（body=%s）", derr, delBody)
 	}
-	if len(delJSON) != 1 {
-		t.Errorf("single 模式只应发 {id}，实际字段：%s", delBody)
+	// single 模式只该发 id 一项（其它字段发出去会让端点收到两种互不认识的身体）。
+	if len(delForm) != 1 {
+		t.Errorf("single 模式只应发 {id}，实际字段：%v（body=%s）", keysOf(delForm), delBody)
 	}
-	if got := strings.TrimSpace(string(delJSON["id"])); got != strconv.FormatUint(remove.ID, 10) {
-		t.Errorf("行内删除的 id 应是数字 %d，实际 %s", remove.ID, got)
+	if got := strings.TrimSpace(delForm["id"]); got != strconv.FormatUint(remove.ID, 10) {
+		t.Errorf("行内删除的 id 应是 %d，实际 %q", remove.ID, got)
 	}
 	if couponAlive(t, f, remove.ID) {
 		t.Fatal("行内删除后券应已不存在（链走通了才删得掉）")
 	}
+}
+
+// parseMultipartFormBody 从原始 multipart 请求体里取出字段（首个值）。
+//
+// 为什么不直接用 url.ParseQuery：FormData 经 fetch 发出去时是
+// multipart/form-data，分隔符形如 ------formdata-undici-xxx。
+func parseMultipartFormBody(body string) (map[string]string, error) {
+	out := map[string]string{}
+	// 从 body 里推 boundary（第一行的 "--<boundary>"）。
+	first := strings.SplitN(body, "\r\n", 2)
+	if len(first) < 2 {
+		return nil, fmt.Errorf("缺少 multipart 分隔行")
+	}
+	boundary := strings.TrimPrefix(strings.TrimSpace(first[0]), "--")
+	reader := multipart.NewReader(strings.NewReader(body), boundary)
+	form, err := reader.ReadForm(1 << 20)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range form.Value {
+		if len(v) > 0 {
+			// 同名多值用逗号拼起来：调用方按 "1,2" 断言 ids 这类多值字段。
+			out[k] = strings.Join(v, ",")
+		}
+	}
+	return out, nil
+}
+
+// keysOf 取 map 的键（测试断言的报错文案用）。
+func keysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

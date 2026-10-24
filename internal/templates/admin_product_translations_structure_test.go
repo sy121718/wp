@@ -56,25 +56,27 @@ func TestProductTranslationsSaveUsesJSONBase(t *testing.T) {
 	}
 
 	forms := peAll(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "hx-post") != ""
+		return peEl(n, "form") && peAttr(n, "data-write-url") != ""
 	})
 	if len(forms) != 1 {
 		t.Fatalf("译文工作台应恰有 1 张写表单，实际 %d", len(forms))
 	}
 	form := forms[0]
-	if got := peAttr(form, "hx-post"); got != "/api/product/translations/save" {
+	if got := peAttr(form, "data-write-url"); got != "/api/product/translations/save" {
 		t.Fatalf("写表单端点 = %q，want /api/product/translations/save", got)
 	}
-	if got := peAttr(form, "hx-swap"); got != "none" {
-		t.Fatalf("hx-swap = %q，want none", got)
+	if !peHasAttr(form, "data-write-reload") {
+		t.Fatal("写表单缺 data-write-reload —— 成功后结论不会跨刷新显示")
 	}
-	if got := peAttr(form, "data-write-flash"); got != "product-translations" {
-		t.Fatalf("data-write-flash = %q，want product-translations", got)
-	}
-	// 三组并行数组必须**全部**点名：漏一个就按标量发，服务端长度对齐直接判失败。
+	// 三组并行数组（rowTarget / rowContext / rowHash）都是 []string，靠**同名多值**
+	// 直接发 —— 实测 formdata 的 `a&a=b` 服务端绑成 []string，不需要任何声明。
+	// 旧基座的 data-write-array 已删。这里改守「三组控件都真的在表单里」：
+	// 少一组服务端就长度对不齐，整表被判失败。
 	for _, name := range []string{"rowTarget", "rowContext", "rowHash"} {
-		if !strings.Contains(peAttr(form, "data-write-array"), name) {
-			t.Fatalf("data-write-array 未点名 %s，实际 %q", name, peAttr(form, "data-write-array"))
+		if n := len(peAll(form, func(m *html.Node) bool {
+			return peHasAttr(m, "name") && peAttr(m, "name") == name
+		})); n == 0 {
+			t.Errorf("表单里没有 name=%s 的控件 —— 三组并行数组少一组，服务端长度对齐会判失败", name)
 		}
 	}
 
@@ -117,11 +119,7 @@ func TestProductTranslationsSaveUsesJSONBase(t *testing.T) {
 	})); n != 1 {
 		t.Fatalf("保存表单应有 1 个 data-write-status 结论行，实际 %d", n)
 	}
-	if n := len(peAll(root, func(m *html.Node) bool {
-		return peAttr(m, "data-write-flash-target") == "product-translations"
-	})); n != 1 {
-		t.Fatalf("页面应有 1 个 data-write-flash-target=product-translations，实际 %d", n)
-	}
+	// 结论跨刷新已改由 sessionStorage 承载（新基座），页面不再需要落点元素。
 	// 旧页面 POST 已下线：页面上不该再有这条 action。
 	if strings.Contains(out, `action="/admin/products/translations/save"`) {
 		t.Fatal("页面仍在提交已下线的页面 POST /admin/products/translations/save")

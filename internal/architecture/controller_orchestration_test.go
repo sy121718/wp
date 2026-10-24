@@ -62,7 +62,6 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/order/inbound/http/order_create_page.go":                   {offenders: 2, max: 11},
 	"internal/module/order/inbound/http/order_handle.go":                        {offenders: 12, max: 13},
 	"internal/module/order/inbound/http/order_list_page.go":                     {offenders: 1, max: 23},
-	"internal/module/order/inbound/http/order_write.go":                         {offenders: 1, max: 10},
 	"internal/module/order/inbound/http/return_page.go":                         {offenders: 1, max: 23},
 	"internal/module/order/inbound/http/sales_page.go":                          {offenders: 1, max: 22},
 	"internal/module/page/inbound/http/page_langs_handle.go":                    {offenders: 1, max: 11},

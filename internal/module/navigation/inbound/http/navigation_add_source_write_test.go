@@ -541,8 +541,8 @@ func TestNavigationAddSourceTemplateContract(t *testing.T) {
 	}
 	tpl := readFile("../../../../templates/admin/navigation/navigations.html")
 	for _, want := range []string{
-		`data-write-api="/api/navigation/create"`,
-		`data-write-mode="bulk"`,
+		`data-write-url="/api/navigation/create"`,
+		`data-write="bulk"`,
 		`data-write-outcome="add"`,
 		`data-write-extra="action,projectId,kind,sourceType"`,
 		`<input type="hidden" name="action" value="addSource">`,

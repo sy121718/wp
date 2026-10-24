@@ -158,7 +158,7 @@ func TestAttributeValueRowsFragmentAddRemove(t *testing.T) {
 
 // TestAttributePageCreateAndSetValues 建组 + 整体保存值（服务端归一与排序）。
 //
-// 页面写链路已迁到 ui/json_write.js（模板直调 /api/product/attribute/{create,set-values}），
+// 页面写链路已迁到 ui/write-base.js（模板直调 /api/product/attribute/{create,set-values}），
 // 这里直接验用例：形状（values[] 行数组）由 json_write.test.cjs 与页面渲染测试分别钉住。
 func TestAttributePageCreateAndSetValues(t *testing.T) {
 	engine, f := newAttrPageEngine(t)

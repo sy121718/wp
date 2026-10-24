@@ -90,18 +90,15 @@
            「按钮优先、表单兜底」读属性）。data-list-bulk 是作用域锚点。 *}
         <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <p class="form-hint" data-write-flash-target="product_attributes-bulk" role="status" hidden></p>
+            <p class="form-hint" role="status" hidden></p>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete}}{{if len(.Attributes) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
-                <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        hx-post="/api/product/attribute/bulk-delete" hx-swap="none" hx-include="closest form" data-reload-on-ok
-                        data-write-flash="product_attributes-bulk"
+                <button data-write="bulk" data-write-url="/api/product/attribute/bulk-delete" type="submit" class="btn btn-sm btn-danger" data-requires-js hidden data-write-reload
                         data-msg-none-selected="{{tr("admin.product_attributes.bulk.noneSelected", "没有勾选任何属性组，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
                         data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                        data-msg-refresh="{{tr("admin.product_attributes.bulkDelete.refresh", "刷新列表")}}"
-                        data-confirm="{{tr("admin.product_attributes.bulkDeleteConfirm", "删除选中的属性组及其全部属性值？被商品引用的会被拒绝，其余照常删除。")}}"
+                        data-msg-refresh="{{tr("admin.product_attributes.bulkDelete.refresh", "刷新列表")}}" data-write-confirm="{{tr("admin.product_attributes.bulkDeleteConfirm", "删除选中的属性组及其全部属性值？被商品引用的会被拒绝，其余照常删除。")}}"
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
@@ -186,8 +183,7 @@
     {{range _, a := .Attributes}}
     {{if canDelete}}
     {* 单条删除：single 档只发 {id}（端点 DeleteAttributeReq 不带 projectId）。 *}
-    <form id="attr-del-{{a.ID}}" class="hidden-form"
-          hx-post="/api/product/attribute/delete" hx-swap="none" data-reload-on-ok
+    <form data-write="delete" data-write-url="/api/product/attribute/delete" id="attr-del-{{a.ID}}" class="hidden-form" data-write-reload
           data-msg-ok="{{ .["t"]("admin.product_attributes.list.deleted", "属性组已删除。") }}"
           data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}"
           data-confirm="{{ .["t"]("admin.product_attributes.list.deleteConfirm", "删除该属性组及其全部属性值？被商品引用时会拒绝删除。") }}" data-confirm-danger>

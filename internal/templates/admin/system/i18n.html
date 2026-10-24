@@ -100,8 +100,8 @@
            所以行内删除表单放表格外、按钮用 form="<id>" 关联）。
            勾选值带 (key, lang) 复合键：词条唯一标识是二元组，只带 key 会把其它语言的
            同名词条一起删掉 —— 分隔符与解析见 handler 的 adminI18nEntryKeySeparator。 *}
-        <form data-write-api="/api/i18n/save"
-              data-write-mode="bulk"
+        <form data-write-url="/api/i18n/save"
+              data-write="bulk"
               data-msg-none-selected="{{tr("admin.i18nBulk.noneSelected", "没有勾选任何词条，列表未改动。")}}"
               data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
@@ -172,7 +172,7 @@
         <div data-write-host>
         <p class="form-hint" data-write-status role="status" hidden></p>
         {{range i, e := entries}}
-        <form id="i18n-del-{{i}}" class="hidden-form" data-write-api="/api/i18n/save" data-write-mode="create"
+        <form id="i18n-del-{{i}}" class="hidden-form" data-write-url="/api/i18n/save" data-write="create"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
               data-confirm="{{tr("msg_delete_confirm", "确定要删除吗？")}}" data-confirm-danger>
             <input type="hidden" name="action" value="delete">
@@ -188,7 +188,7 @@
     {* 新建抽屉：按钮在页头，模板本体留在文档末尾（<template> 不参与渲染）。 *}
     {{if canManage}}
     <template id="tpl-i18n-create">
-        <form data-write-api="/api/i18n/save" data-write-mode="create"
+        <form data-write-url="/api/i18n/save" data-write="create"
               data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
             <input type="hidden" name="action" value="create">
             {* 结果区：失败时写在这儿（表单内容原样保留），成功则整页刷新回列表。 *}

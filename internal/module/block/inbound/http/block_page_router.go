@@ -37,7 +37,7 @@ func SetupBlockPages(adminPages *gin.RouterGroup,
 	// 鉴权复用列表页读权限点（GET 与 /api/block/list 的策略动词一致）。
 	adminPages.GET("/blocks/stale/drawer", builtin.CasbinMiddlewareForPath("/api/block/list"), h.BlocksStaleDrawer)
 	// 写动作已全部改走 JSON API（前端直调 /api/block/{create,delete,bulk-delete}，
-	// 见 static/js/ui/json_write.js）：页面侧不再有「薄转发」的写路由 ——
+	// 见 static/js/ui/write-base.js）：页面侧不再有「薄转发」的写路由 ——
 	// 那条链路要么整页刷新丢输入、要么多一跳提示页，而 JSON 契约本来就更严。
 	// 权限点不变：仍由 /api 组的 Casbin 规则判定，页面只保留读入口与工作台保存。
 	adminPages.POST("/blocks/save-content", builtin.CasbinMiddlewareForPath("/api/block/update"), h.SaveBlockContent)

@@ -246,7 +246,7 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 		"/admin/customers/detail?id=42", "/api/customer/status",
 		"邮箱已验证 1", "user:customer_status",
 		// 首列勾选 + 批量条 + 两个批量端点（缺一整套批量都是摆设）
-		`data-write-api="/api/customer/bulk-status`, "/api/customer/bulk-unlock",
+		`data-write-url="/api/customer/bulk-status`, "/api/customer/bulk-unlock",
 		"data-check-all", "data-check-item", "data-bulk-bar", `name="ids" value="42"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -257,7 +257,7 @@ func TestCustomersListTemplateRenders(t *testing.T) {
 	// 结构顺序：批量 form 包住表格，行内写操作表单必须在它**外面**。
 	// HTML 不允许 form 嵌套 —— 嵌套时解析器会丢掉内层 form 标签，
 	// 表现是「行内的停用 / 解除锁定按钮点了没反应」，且只有真实浏览器才暴露。
-	bulkForm := strings.Index(body, `data-write-api="/api/customer/bulk-status`)
+	bulkForm := strings.Index(body, `data-write-url="/api/customer/bulk-status`)
 	table := strings.Index(body, `customers-page-table`)
 	rowForm := strings.Index(body, `id="customer-status-42"`)
 	if bulkForm < 0 || table < 0 || rowForm < 0 || !(bulkForm < table && table < rowForm) {

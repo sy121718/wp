@@ -361,37 +361,38 @@ func TestReturnsTemplateDeclaresJSONWrites(t *testing.T) {
 
 	// ② 五个端点都在：单档三个 + 批量两个（批量挂在同一路径上，靠 mode=bulk 区分）。
 	for _, want := range []string{
-		`data-write-api="/api/order/return/approve"`,
-		`data-write-api="/api/order/return/reject"`,
-		`data-write-api="/api/order/return/receive"`,
+		`data-write-url="/api/order/return/approve"`,
+		`data-write-url="/api/order/return/reject"`,
+		`data-write-url="/api/order/return/receive"`,
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("模板缺少端点声明 %q", want)
 		}
 	}
-	if got := strings.Count(src, `data-write-api="/api/order/return/approve"`); got != 2 {
+	if got := strings.Count(src, `data-write-url="/api/order/return/approve"`); got != 2 {
 		t.Errorf("approve 端点应出现两次（单档表单 + 批量按钮），实际 %d", got)
 	}
-	if got := strings.Count(src, `data-write-api="/api/order/return/reject"`); got != 2 {
+	if got := strings.Count(src, `data-write-url="/api/order/return/reject"`); got != 2 {
 		t.Errorf("reject 端点应出现两次（单档表单 + 批量按钮），实际 %d", got)
 	}
-	if got := strings.Count(src, `data-write-mode="bulk"`); got != 2 {
+	if got := strings.Count(src, `data-write="bulk"`); got != 2 {
 		t.Errorf("批量按钮应恰好两个，实际 %d", got)
 	}
 	if got := strings.Count(src, `data-write-extra="remark"`); got != 2 {
 		t.Errorf("两个批量按钮都要带上备注字段，实际 %d", got)
 	}
-	// 数字字段：四个单档表单各一处（returnId 是 DOM 字符串，服务端按 uint64 严格绑定）。
-	if got := strings.Count(src, `data-write-number="returnId"`); got != 4 {
-		t.Errorf("四个单档表单都该声明 data-write-number=returnId，实际 %d", got)
+	// data-write-number / -bool 已删：formdata 的 "12" 服务端直接绑进 uint64、
+	// "1" 直接绑进 bool（实测）。前端不再声明类型 —— 这两条判据随之失效，
+	// 改守「字段真的在表单里」（改名会让服务端收不到）。
+	if got := strings.Count(src, `name="returnId"`); got == 0 {
+		t.Error("表单里没有 name=returnId 的字段 —— 服务端收不到退货单 id")
 	}
-	// 布尔字段：只有同意表单需要（autoReceive），批量按钮**不得**带（批量不自动入库）。
-	if got := strings.Count(src, `data-write-bool="autoReceive"`); got != 1 {
-		t.Errorf("只有同意表单应声明 data-write-bool=autoReceive，实际 %d", got)
+	if got := strings.Count(src, `name="autoReceive"`); got != 1 {
+		t.Errorf("只有同意表单应有 name=autoReceive，实际 %d", got)
 	}
 	// 批量按钮那一行**不得**出现 autoReceive（批档白名单里没有它，带上会整批 400）。
 	for i, line := range strings.Split(src, "\n") {
-		if strings.Contains(line, `data-write-mode="bulk"`) && strings.Contains(line, "autoReceive") {
+		if strings.Contains(line, `data-write="bulk"`) && strings.Contains(line, "autoReceive") {
 			t.Errorf("第 %d 行的批量按钮声明了 autoReceive（批档不支持，会整批 400）：%s", i+1, strings.TrimSpace(line))
 		}
 	}

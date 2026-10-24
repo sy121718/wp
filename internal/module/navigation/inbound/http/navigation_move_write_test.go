@@ -255,7 +255,7 @@ func TestNavigationUpdateMoveMessageFollowsRequestLanguage(t *testing.T) {
 }
 
 // moveTemplateFormRe 匹配声明了本端点的表单块（模板里只有行内 up / down 两处）。
-var moveTemplateFormRe = regexp.MustCompile(`(?s)<form[^>]*data-write-api="/api/navigation/update".*?</form>`)
+var moveTemplateFormRe = regexp.MustCompile(`(?s)<form[^>]*data-write-url="/api/navigation/update".*?</form>`)
 
 // moveTemplateNameRe 取表单块里的具名字段。
 var moveTemplateNameRe = regexp.MustCompile(`name="([^"]+)"`)
@@ -285,8 +285,8 @@ func TestNavigationUpdateMoveTemplateContract(t *testing.T) {
 
 	tpl := readFile("../../../../templates/admin/navigation/navigations.html")
 	for _, want := range []string{
-		`data-write-api="/api/navigation/update"`,
-		`data-write-mode="create"`,
+		`data-write-url="/api/navigation/update"`,
+		`data-write="create"`,
 		`<input type="hidden" name="action" value="move">`,
 		`name="dir" value="up"`,
 		`name="dir" value="down"`,

@@ -235,11 +235,45 @@ test('bulkIDs 去重并跳过空值', () => {
     const m = load();
     const f = form({ 'data-write': 'bulk' }, []);
     f.querySelectorAll = () => [
-        el({ value: 'a', checked: true }),
-        el({ value: 'a', checked: true }),
-        el({ value: '  ', checked: true }),
-        el({ value: 'b', checked: true }),
+        el({ name: 'ids', value: 'a', checked: true }),
+        el({ name: 'ids', value: 'a', checked: true }),
+        el({ name: 'ids', value: '  ', checked: true }),
+        el({ name: 'ids', value: 'b', checked: true }),
+        el({ name: 'other', value: 'c', checked: true }),   // 不叫 ids 的不该被收
+        el({ name: 'ids', value: 'd', checked: false }),    // 未勾选的不该被收
     ];
     // 跨 vm realm 的数组原型不同，deepEqual 会误判 —— 比较拼接后的字符串。
     assert.equal(m.bulkIDs(f).join(','), 'a,b');
+});
+
+test('buildBody data-write-lines 把多行文本切成数组并丢空行', () => {
+    const m = load();
+    const f = form({ 'data-write': 'update', 'data-write-lines': 'images,imageAlts' }, [
+        el({ name: 'images', value: '/a.jpg\n\n/b.jpg\n  ' }),
+        el({ name: 'imageAlts', value: '图一' }),
+    ]);
+    const body = m.buildBody(f, null);
+    assert.equal(body.getAll('images').join('|'), '/a.jpg|/b.jpg');
+    assert.equal(body.getAll('imageAlts').join('|'), '图一');
+});
+
+test('buildBody data-write-lines 空文本按空数组发（清空是明确意图）', () => {
+    const m = load();
+    const f = form({ 'data-write': 'update', 'data-write-lines': 'images' }, [
+        el({ name: 'images', value: '' }),
+    ]);
+    const body = m.buildBody(f, null);
+    // 空串本身被 dropEmpty 删掉了 → 键不存在即「没改」。这与旧基座一致：
+    // 空文本先被 dropEmpty 删掉，applyLinesFields 就看不到它了。
+    assert.equal(body.has('images'), false);
+});
+
+test('buildBody data-write-json-wrap 把裸 HTML 包成 {html}', () => {
+    const m = load();
+    const f = form({ 'data-write': 'update', 'data-write-json-wrap': 'descriptionHtml:description' }, [
+        el({ name: 'descriptionHtml', value: '<p>正文</p>' }),
+    ]);
+    const body = m.buildBody(f, null);
+    assert.equal(body.has('descriptionHtml'), false);
+    assert.deepEqual(JSON.parse(body.get('description')), { html: '<p>正文</p>' });
 });

@@ -155,8 +155,10 @@ func TestCommentsPageRendersRows(t *testing.T) {
 		// 表头七列齐全（勾选 / 内容 / 评论对象 / 评论人 / 状态 / 提交时间 / 操作）。
 		"内容", "评论对象", "评论人", "提交时间", "操作",
 		// 批量条：批量表单的目标端点必须出现在页面上。
-		`data-write-api="/api/comment/review"`,
-		`data-write-mode="bulk"`, `data-write-number="ids"`,
+		`data-write-url="/api/comment/review"`,
+		`data-write="bulk"`,
+		// data-write-number="ids" 已删：基座 bulk 路径直接从 [name=ids]:checked 取，
+		// 而服务端 DTO 的 ids 就是 []string，不需要类型转换。
 		`data-write-extra="projectId,status"`, `data-write-outcome="review"`,
 		`name="status" value="approved" data-requires-js hidden disabled`,
 		`name="status" value="rejected" data-requires-js hidden disabled`,

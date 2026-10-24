@@ -12,10 +12,7 @@
    表单字段名与 /api/product/attribute/set-values 的绑定逐字一致，改这里等于改协议。 *}
 {{vfTr := .["t"]}}
         <div data-write-host>
-        <form class="form-stack" data-attr-values-form
-              hx-post="/api/product/attribute/set-values" hx-swap="none"
-              data-write-number="sort"
-              data-write-bool="enabled"
+        <form data-write="custom" data-write-url="/api/product/attribute/set-values" class="form-stack" data-attr-values-form
               data-write-rows=".attr-value-row;id,key,label,sort,enabled;values"
               data-msg-ok="{{vfTr("admin.product_attributes.values.saved", "属性值已保存。")}}"
               data-msg-failed="{{vfTr("MsgInternalError", "系统内部错误，请稍后重试")}}">

@@ -5,7 +5,7 @@ package feature
 // 静态核验只能证明「属性写了字」；这条用例把整条链真跑一遍：
 //
 //	真渲染列表页（真 handler + 真 Jet）→ 从渲染出来的 HTML 里取**按钮/表单的原始属性**
-//	→ 交给**真基座** internal/templates/static/js/ui/json_write.js（含真 confirm.js 的确认协议）
+//	→ 交给**真基座** internal/templates/static/js/ui/write-base.js（含真 confirm.js 的确认协议）
 //	→ 它的 fetch 真打到 httptest 服务器上的**真 handler**
 //	→ 服务端记录实际收到的 JSON 体（类型逐个断言）+ 响应码；数据库的最终状态也断言。
 //
@@ -105,12 +105,12 @@ func orderChainFormSlice(t *testing.T, html, marker string) string {
 func orderChainButtonAttrs(t *testing.T, html, api, mode string) map[string]string {
 	t.Helper()
 	for _, tag := range couponButtonRe.FindAllString(html, -1) {
-		if couponAttrOf(tag, "data-write-api") != api || couponAttrOf(tag, "data-write-mode") != mode {
+		if couponAttrOf(tag, "data-write-url") != api || couponAttrOf(tag, "data-write") != mode {
 			continue
 		}
 		return couponAttrsOf(tag)
 	}
-	t.Fatalf("渲染出来的页面里找不到 data-write-api=%s 且 data-write-mode=%s 的按钮", api, mode)
+	t.Fatalf("渲染出来的页面里找不到 data-write-url=%s 且 data-write=%s 的按钮", api, mode)
 	return nil
 }
 
@@ -144,7 +144,7 @@ type orderChainFields []couponChainField
 func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("本机没有 node：链式证据要求真实基座 json_write.js，跳过而不是用桩冒充")
+		t.Skip("本机没有 node：链式证据要求真实基座 write-base.js，跳过而不是用桩冒充")
 	}
 	f := newOrderFixture(t)
 	if f == nil {
@@ -216,12 +216,12 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 	html := string(pageHTMLRaw)
 
 	// ② 取原始属性：不手抄任何 data-*，模板少写一个属性本用例就必然跟着红。
-	bulkForm := orderChainFormSlice(t, html, `data-write-api="/api/order/status"`+` data-write-mode="bulk"`)
+	bulkForm := orderChainFormSlice(t, html, `data-write-url="/api/order/status"`+` data-write="bulk"`)
 	bulkFormAttrs := couponAttrsOf(bulkForm[:strings.Index(bulkForm, ">")+1])
 	bulkStatusSubmitter := orderChainButtonAttrs(t, html, "/api/order/status", "bulk")
 	bulkCancelSubmitter := orderChainButtonAttrs(t, html, "/api/order/cancel", "bulk")
 
-	detailForm := orderChainFormSlice(t, html, `data-write-api="/api/order/status"`+` data-write-mode="create"`)
+	detailForm := orderChainFormSlice(t, html, `data-write-url="/api/order/status"`+` data-write="create"`)
 	detailFormAttrs := couponAttrsOf(detailForm[:strings.Index(detailForm, ">")+1])
 	// 详情表单的声明落在**表单**上（批量条才把端点放在按钮上，因为同一张表单有两个动作）——
 	// 所以这里取表单里第一个 submit 按钮的属性即可，base 的 attrFrom 是「按钮优先、表单兜底」。
@@ -325,35 +325,37 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 		}
 	}
 
-	// ④ 链的另一端：服务端真正收到的 JSON 体（类型逐个断言）。
-	assertBodyKeys := func(t *testing.T, where, body string, want ...string) map[string]json.RawMessage {
+	// ④ 链的另一端：服务端真正收到的**请求体**。
+	//
+	// 批次 2 之后写基座统一发 formdata（multipart），所以这里按 multipart 解析。
+	// 值一律是字符串 —— 类型转换由服务端反射完成（实测 formdata 的 "3" 直接绑进 int、
+	// "1" 直接绑进 bool）。原先那套「必须是数字字面 / 字符串字面」的断言随
+	// data-write-number 一起下掉了：前端不再声明类型，就不存在「声明漏了变成字符串」这回事。
+	assertBodyKeys := func(t *testing.T, where, body string, want ...string) map[string]string {
 		t.Helper()
-		got := map[string]json.RawMessage{}
-		if err := json.Unmarshal([]byte(body), &got); err != nil {
-			t.Fatalf("%s 的请求体不是 JSON 对象: %s", where, body)
+		got, err := parseMultipartFormBody(body)
+		if err != nil {
+			t.Fatalf("%s 的请求体解析失败: %v（body=%s）", where, err, body)
 		}
 		if len(got) != len(want) {
-			t.Fatalf("%s 的请求体字段应为 %v，实际 %s", where, want, body)
+			t.Fatalf("%s 的请求体字段应为 %v，实际 %v（body=%s）", where, want, keysOf(got), body)
 		}
 		for _, name := range want {
 			if _, ok := got[name]; !ok {
-				t.Fatalf("%s 的请求体缺少字段 %s：%s", where, name, body)
+				t.Fatalf("%s 的请求体缺少字段 %s：body=%s", where, name, body)
 			}
 		}
 		return got
 	}
-	assertStringLiteral := func(t *testing.T, where, name, raw, want string) {
+	assertField := func(t *testing.T, where, name, got, want string) {
 		t.Helper()
-		if got := strings.TrimSpace(raw); got != strconv.Quote(want) {
-			t.Errorf("%s 的 %s 应是字符串字面 %q，实际 %s", where, name, want, got)
+		if strings.TrimSpace(got) != want {
+			t.Errorf("%s 的 %s 应为 %q，实际 %q", where, name, want, got)
 		}
 	}
-	assertUintLiteral := func(t *testing.T, where, name, raw string, want uint64) {
+	assertUintLiteral := func(t *testing.T, where, name, got string, want uint64) {
 		t.Helper()
-		if got := strings.TrimSpace(raw); got != strconv.FormatUint(want, 10) {
-			t.Errorf("%s 的 %s 应是**数字**字面 %d（模板漏写 data-write-number 就会是字符串），实际 %s",
-				where, name, want, got)
-		}
+		assertField(t, where, name, got, strconv.FormatUint(want, 10))
 	}
 
 	// 批量流转：恰好 ids + toStatus + remark 三个字段，且 toStatus 是字符串。
@@ -362,11 +364,11 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Fatalf("批量流转应 200，实际 %d：%s", bulkStatus, bulkStatusBody)
 	}
 	bulkStatusJSON := assertBodyKeys(t, "批量流转", bulkStatusBody, "ids", "toStatus", "remark")
-	assertStringLiteral(t, "批量流转", "toStatus", string(bulkStatusJSON["toStatus"]), targetStatus)
-	assertStringLiteral(t, "批量流转", "remark", string(bulkStatusJSON["remark"]), "链式证据批量流转")
-	if got := strings.TrimSpace(string(bulkStatusJSON["ids"])); got !=
-		fmt.Sprintf(`["%d","%d"]`, bulkA, bulkB) {
-		t.Errorf("批量流转的 ids 应是字符串数组 [%d %d]，实际 %s", bulkA, bulkB, got)
+	assertField(t, "批量流转", "toStatus", bulkStatusJSON["toStatus"], targetStatus)
+	assertField(t, "批量流转", "remark", bulkStatusJSON["remark"], "链式证据批量流转")
+	// formdata 里 ids 是**多个同名值**（浏览器把它们并成数组），不是 JSON 数组字面。
+	if got := bulkStatusJSON["ids"]; got != fmt.Sprintf("%d,%d", bulkA, bulkB) {
+		t.Errorf("批量流转的 ids 应是 [%d %d]，实际 %q", bulkA, bulkB, got)
 	}
 	for _, id := range []uint64{bulkA, bulkB} {
 		if got := f.orderStatusOf(t, id); got != targetStatus {
@@ -381,9 +383,9 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Fatalf("批量取消应 200，实际 %d：%s", cancelStatus, cancelBody)
 	}
 	cancelJSON := assertBodyKeys(t, "批量取消", cancelBody, "ids", "remark")
-	assertStringLiteral(t, "批量取消", "remark", string(cancelJSON["remark"]), "链式证据批量取消")
-	if got := strings.TrimSpace(string(cancelJSON["ids"])); got != fmt.Sprintf(`["%d"]`, cancelC) {
-		t.Errorf("批量取消的 ids 应是字符串数组 [%d]，实际 %s", cancelC, got)
+	assertField(t, "批量取消", "remark", cancelJSON["remark"], "链式证据批量取消")
+	if got := cancelJSON["ids"]; got != fmt.Sprintf("%d", cancelC) {
+		t.Errorf("批量取消的 ids 应是 [%d]，实际 %q", cancelC, got)
 	}
 	if got := f.orderStatusOf(t, cancelC); got != "cancelled" {
 		t.Errorf("订单 %d 批量取消后应为 cancelled，实际 %s", cancelC, got)
@@ -394,9 +396,10 @@ func TestOrderJSONWriteChainTemplateToHandler(t *testing.T) {
 	if detailStatus != http.StatusOK {
 		t.Fatalf("详情流转应 200（orderId 必须是数字，字符串会绑定失败），实际 %d：%s", detailStatus, detailBody)
 	}
-	detailJSON := assertBodyKeys(t, "详情流转", detailBody, "orderId", "toStatus", "remark")
+	// remark 留空 → 基座删掉该键（「没填」= 不改），所以字段是 orderId + toStatus 两项。
+	detailJSON := assertBodyKeys(t, "详情流转", detailBody, "orderId", "toStatus")
 	assertUintLiteral(t, "详情流转", "orderId", string(detailJSON["orderId"]), detailD)
-	assertStringLiteral(t, "详情流转", "toStatus", string(detailJSON["toStatus"]), targetStatus)
+	assertField(t, "详情流转", "toStatus", detailJSON["toStatus"], targetStatus)
 	if got := f.orderStatusOf(t, detailD); got != targetStatus {
 		t.Errorf("订单 %d 详情流转后应为 %s，实际 %s", detailD, targetStatus, got)
 	}

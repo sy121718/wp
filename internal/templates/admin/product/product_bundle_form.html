@@ -33,12 +33,11 @@
            htmx 基座，产出 {productId, config:{maxOptions,…, options:[…]}}。
            DTO 侧 SetBundleConfigReq 实现了 BindForm，把 config 这个 JSON 字符串解析成
            结构体（gin 的 form 映射不支持点号嵌套，encoding/json 又不认字符串）。 *}
-        <form hx-post="/api/product/bundle/set" hx-swap="none"
+        <form data-write="custom" data-write-url="/api/product/bundle/set"
               data-write-builder="product-bundle-config"
-              data-write-rows="[data-bundle-member-row];variantId,required,defaultQty,minQty,maxQty,sourceKind,memberWarehouseId,memberWarehouseSku,memberExternalSku;memberRows"
-              data-write-flash="product-bundle-config">
+              data-write-rows="[data-bundle-member-row];variantId,required,defaultQty,minQty,maxQty,sourceKind,memberWarehouseId,memberWarehouseSku,memberExternalSku;memberRows" data-write-reload>
             <p class="form-hint" data-write-status role="status" hidden></p>
-            <p class="form-hint badge" data-write-flash-target="product-bundle-config" role="status" hidden></p>
+            <p class="form-hint badge" role="status" hidden></p>
             <input type="hidden" name="productId" value="{{selectedProduct}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <div class="form-inline">

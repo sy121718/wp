@@ -20,11 +20,11 @@ func TestMembershipTemplatesDeclareExistingWriteAPIs(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, api := range tc.apis {
-				if !strings.Contains(tc.body, `data-write-api="`+api+`"`) {
+				if !strings.Contains(tc.body, `data-write-url="`+api+`"`) {
 					t.Errorf("missing API %s", api)
 				}
 			}
-			if strings.Count(tc.body, "data-write-api=") != tc.count || strings.Count(tc.body, "data-write-status") != tc.count {
+			if strings.Count(tc.body, "data-write-url=") != tc.count || strings.Count(tc.body, "data-write-status") != tc.count {
 				t.Error("every write requires one API declaration and one local result slot")
 			}
 			if strings.Contains(tc.body, `method="post"`) || strings.Contains(tc.body, `action="/admin/membership/tier/`) || strings.Contains(tc.body, `action="/admin/membership/assign/`) {

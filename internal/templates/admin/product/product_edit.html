@@ -88,7 +88,7 @@
        页头只放按钮。 *}
     {* 详情页模板的两个动作（重新套用预设 / 回滚文档）成功后整页刷新，结论经 flash 带过来。
        落点固定在本页顶部：那两个表单所在的折叠区默认收起着，结论放在折叠体里刷新后看不见。 *}
-    <p class="form-hint badge" data-write-flash-target="product-detail-mode" role="status" hidden></p>
+    <p class="form-hint badge" role="status" hidden></p>
     {* 两栏：左编辑（表单） / 右预览（详情页真实形态）。预览只在有商品时才有意义 ——
        新建走的是另一个页面，这里 HasProduct 为假时右栏给一句说明。 *}
     <div class="product-edit-panes">
@@ -100,16 +100,13 @@
        · data-write-lines：图集与 alt 是「一个隐藏域 + 多行文本」，端点要的是 []string；
        · data-write-html：富文本给的是裸 HTML，入库形态是 jsonb {"html": …}。
        csrf 走请求头（基座自动带 X-CSRF-Token），表单里不再有隐藏域。 *}
-    {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form id="product-edit-main" class="card card-body form-stack"
+    {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form data-write="update" data-write-url="/api/product/update" id="product-edit-main" class="card card-body form-stack"
           {* keep-empty="primaryCategoryId"：空串表示**解绑主分类**（UpdateReq 的注释写着
              「nil 表示本次不改，指向空串表示解绑」），不能像普通空值那样删掉。 *}
-          hx-post="/api/product/update" hx-swap="none"
           data-write-keep-empty="primaryCategoryId"
-          data-write-array="attributeIds,categoryIds,tagIds"
-          data-write-float="defaultPrice,weight"
 
           data-write-lines="images,imageAlts"
-          data-write-html="descriptionHtml:description">{{end}}
+          data-write-json-wrap="descriptionHtml:description">{{end}}
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{p.ID}}">
         {* 写结论落在表单最上方：保存按钮在页头，失败原因若出现在表单底部，视线根本走不到。 *}
@@ -330,14 +327,14 @@
         {* 保存走 JSON 写基座：清单行不是具名控件，rows 由 ui/product_variant_write.js 注册的
            builder 从清单 DOM 组装；成功后的结论经 data-write-flash 带过随后的整页刷新
            （清单刷新后才是库里的样子，被跳过的那几行也才会重新出现）。 *}
-        <p class="form-hint badge" data-write-flash-target="product-variant-save" role="status" hidden></p>
+        <p class="form-hint badge" role="status" hidden></p>
         {* 走 htmx 原生提交 + 页面级组装器：
            data-write-builder="product-variant-rows" 由 ui/product_variant_write.js 注册到
            htmx 基座（ui/htmx_form_body.js 的 WBFormBody），从清单 DOM 组装 rows。
            DTO 侧 SaveVariantListReq 实现了 BindForm，把 rows 这个 JSON 字符串解析成切片
            （gin 的 form 映射不支持点号嵌套，Rows 元素里还带 optionValues map）。 *}
-        <form hx-post="/api/product/variant/save" hx-swap="none"
-              data-write-builder="product-variant-rows" data-write-flash="product-variant-save"
+        <form data-write="update" data-write-url="/api/product/variant/save"
+              data-write-builder="product-variant-rows" data-write-reload
               data-variant-form
               data-msg-failed="{{ .["t"]("admin.products.variant.saveFailed", "清单保存失败，请刷新页面后重试。") }}">
             <p class="form-hint" data-write-status role="status" hidden></p>
@@ -434,8 +431,7 @@
         {* 行内删除表单必须留在卡片内：基座失败时把原因写进最近的 [data-write-host] 结果槽，
            放到卡片外面就落不进那个槽（症状是「点了删除没反应」）。 *}
         {{range _, r := p.Ratings}}
-        <form id="rating-del-{{r.ID}}" class="hidden-form"
-              hx-post="/api/product/rating/delete" hx-swap="none" data-reload-on-ok
+        <form data-write="delete" data-write-url="/api/product/rating/delete" id="rating-del-{{r.ID}}" class="hidden-form" data-write-reload
               data-confirm="{{ .["t"]("admin.products.rating.deleteConfirm", "删除该条评分？商品的平均分与条数会随之重算。") }}" data-confirm-danger>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{r.ID}}">
@@ -479,7 +475,7 @@
         {{if .TplPanel.SourceTemplateVersionID != "" && .TplPanel.CurrentTemplateVersionID != "" && .TplPanel.SourceTemplateVersionID != .TplPanel.CurrentTemplateVersionID}}<p class="hint">{{ .["t"]("admin.product_detail.template.presetUpdated", "模板已有新版本 —— 点「重新套用预设」即可跟进（会放弃本商品的独立改动）。") }}</p>{{end}}
         {* 提交走 JSON 写基座：实例 ID 与工程随请求显式回传（端点是实例级的，不再按商品反查）；
            按钮在 JS 放出之前是 hidden + disabled —— 没有 JS 就没有可用端点，不能留一个点了没反应的原生提交。 *}
-        <form class="form-inline" hx-post="/api/product/detail-template/reapply-preset" hx-swap="none" data-write-flash="product-detail-mode">
+        <form data-write="custom" data-write-url="/api/product/detail-template/reapply-preset" class="form-inline" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="hidden" name="instanceId" value="{{.TplPanel.InstanceID}}">
@@ -487,7 +483,7 @@
             <button type="submit" class="btn btn-ghost" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail.template.reapplyPreset", "重新套用预设（回到跟随模板）") }}</button>
         </form>
         {{if len(.TplPanel.Snapshots) > 0}}
-        <form class="form-inline" hx-post="/api/product/detail-template/rollback-document" hx-swap="none" data-write-flash="product-detail-mode">
+        <form data-write="custom" data-write-url="/api/product/detail-template/rollback-document" class="form-inline" data-write-reload>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{.SelectedProject}}">
             <input type="hidden" name="instanceId" value="{{.TplPanel.InstanceID}}">
@@ -529,8 +525,7 @@
 
     {* ==== 抽屉 ==== *}
     <template id="tpl-variant-create-{{p.ID}}">
-        <form class="form-stack" hx-post="/api/product/variant/create" hx-swap="none"
-              data-write-float="price">
+        <form data-write="create" data-write-url="/api/product/variant/create" class="form-stack">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{p.ID}}">
@@ -596,8 +591,7 @@
     {{end}}
 
     <template id="tpl-rating-add-{{p.ID}}">
-        <form class="form-stack" hx-post="/api/product/rating/add" hx-swap="none"
-              data-write-float="score">
+        <form data-write="create" data-write-url="/api/product/rating/add" class="form-stack">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{p.ID}}">

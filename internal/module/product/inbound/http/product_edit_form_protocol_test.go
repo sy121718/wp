@@ -2,7 +2,7 @@ package producthttp
 
 // product_edit_form_protocol_test.go — 编辑页保存表单与 /api/product/update 的协议对账。
 //
-// 页面保存已迁到 ui/json_write.js：基座把表单里**每个具名字段**原样发成 UpdateReq 的 JSON。
+// 页面保存已迁到 ui/write-base.js：基座把表单里**每个具名字段**原样发成 UpdateReq 的 JSON。
 // 端点是严格解码（未知成员整条 400），所以「表单里多一个 dto 不认识的字段」= 保存直接失败，
 // 而症状只是「点了没反应」。模板侧的用例只能断言声明存在，对不上字段名它们照样全绿 ——
 // 这条用例把两侧真的对一遍：模板里出现的每个 name 必须能在 dto.UpdateReq 的 json 标签里找到。
@@ -26,9 +26,15 @@ func TestProductEditFormFieldsMatchUpdateReq(t *testing.T) {
 		t.Fatalf("读编辑页模板失败: %v", err)
 	}
 	page := string(raw)
-	start := strings.Index(page, `id="product-edit-main"`)
-	if start < 0 {
+	// 从 `<form` 起截，不是从 id= 起：data-write / data-write-url / data-write-json-wrap
+	// 都写在 id 之前，从 id 起会把它们切掉（迁到新契约后属性顺序变了，实测踩到）。
+	idAt := strings.Index(page, `id="product-edit-main"`)
+	if idAt < 0 {
 		t.Fatal("编辑页模板里找不到 id=product-edit-main")
+	}
+	start := strings.LastIndex(page[:idAt], "<form")
+	if start < 0 {
+		t.Fatal("编辑页模板里找不到 <form 起始标签")
 	}
 	end := strings.Index(page[start:], "</form>")
 	if end < 0 {
@@ -36,12 +42,12 @@ func TestProductEditFormFieldsMatchUpdateReq(t *testing.T) {
 	}
 	form := page[start : start+end]
 
-	// 声明侧：端点 + 富文本改名映射（data-write-html="源:目标"）。
-	if !strings.Contains(form, `hx-post="/api/product/update"`) {
-		t.Fatalf("主表单缺少 hx-post=/api/product/update")
+	// 声明侧：端点 + 富文本改名映射（data-write-json-wrap="源:目标"）。
+	if !strings.Contains(form, `data-write-url="/api/product/update"`) {
+		t.Fatalf("主表单缺少 data-write-url=/api/product/update")
 	}
 	renames := map[string]string{}
-	htmlSpec := regexp.MustCompile(`data-write-html="([^"]*)"`).FindStringSubmatch(form)
+	htmlSpec := regexp.MustCompile(`data-write-json-wrap="([^"]*)"`).FindStringSubmatch(form)
 	if len(htmlSpec) == 2 {
 		for _, pair := range strings.Split(htmlSpec[1], ",") {
 			parts := strings.SplitN(strings.TrimSpace(pair), ":", 2)
@@ -90,7 +96,7 @@ func TestProductEditFormFieldsMatchUpdateReq(t *testing.T) {
 	// 富文本控件由 richEditor 片段渲染（name 不在本文件里），所以按改名映射反查：
 	// 声明一旦丢了，描述就会以 descriptionHtml 这个未知键发出去。
 	if renames["descriptionHtml"] != "description" {
-		t.Errorf("主表单应声明 data-write-html=descriptionHtml:description，实际 %v", renames)
+		t.Errorf("主表单应声明 data-write-json-wrap=descriptionHtml:description，实际 %v", renames)
 	}
 	// 图集两个字段同样出自 mediaGallery 片段，靠 data-write-lines 把它们按行切（否则发字符串，
 	// 端点的 []string 解码直接失败）。

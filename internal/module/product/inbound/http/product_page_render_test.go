@@ -790,10 +790,10 @@ func TestProductsPageSuccessRendersPage(t *testing.T) {
 	}
 }
 
-// TestProductsListDeleteUsesJSONWriteBase 列表行的删除入口走 ui/json_write.js 基座。
+// TestProductsListDeleteUsesJSONWriteBase 列表行的删除入口走 ui/write-base.js 基座。
 //
 // 迁移前是 method="post" action="/admin/products/delete"（页面 POST → 提示页）；迁移后是
-// data-write-api + data-write-mode="single" + 点名 projectId。判据取**两者互斥**：
+// data-write-api + data-write="single" + 点名 projectId。判据取**两者互斥**：
 // 两个同时在就是半迁移，而按钮 form="<id>" 指到哪个表单都不对劲（一个发 JSON、一个发表单）。
 // 点名的 projectId 单独判：service 的 resolveProjectID 在它为空时只肯走「唯一工程」兜底，
 // 多工程部署下删除直接回 ErrInvalidParam —— 那是「点了没反应」而不是报错的那种故障。
@@ -813,8 +813,8 @@ func TestProductsListDeleteUsesJSONWriteBase(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`hx-post="/api/product/delete"`,
-		`data-reload-on-ok`,
+		`data-write-url="/api/product/delete"`,
+		`data-write-reload`,
 		"data-write-host",
 	} {
 		if !strings.Contains(body, want) {
@@ -826,7 +826,7 @@ func TestProductsListDeleteUsesJSONWriteBase(t *testing.T) {
 	}
 }
 
-// TestProductsListBulkDeleteUsesJSONWriteBase 批量删除走 ui/json_write.js 基座。
+// TestProductsListBulkDeleteUsesJSONWriteBase 批量删除走 ui/write-base.js 基座。
 //
 // 与单行删除是同一条迁移的两半：单行成功后整页刷新（列表派生列由服务端重算），
 // 批量删完要**就地**告诉操作者「删了几条、哪几条没删掉、为什么」—— 旧通道是整页提示页，
@@ -848,8 +848,8 @@ func TestProductsListBulkDeleteUsesJSONWriteBase(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`hx-post="/api/product/bulk-delete"`,
-		`data-reload-on-ok`,
+		`data-write-url="/api/product/bulk-delete"`,
+		`data-write-reload`,
 		`data-write-extra="projectId"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -861,7 +861,7 @@ func TestProductsListBulkDeleteUsesJSONWriteBase(t *testing.T) {
 	}
 }
 
-// TestProductsListBulkPricingUsesJSONWriteBase 按规则改价走 ui/json_write.js 基座。
+// TestProductsListBulkPricingUsesJSONWriteBase 按规则改价走 ui/write-base.js 基座。
 //
 // 这条表单与其它批量动作不同：它在抽屉里（<template> 克隆到 document 级），勾选框却在
 // 批量表单里。所以除了 mode=bulk，还必须声明 data-write-ids-scope —— 少了它基座在本表单内
@@ -885,7 +885,7 @@ func TestProductsListBulkPricingUsesJSONWriteBase(t *testing.T) {
 		// 批量调价：提交走 htmx，但 ids 要从 data-list-bulk（表单之外）收 ——
 		// data-write-ids-scope 由 htmx_form_body.js 实现。
 		// 判据是「必须有 ids 作用域声明」，不是「必须用哪套基座」。
-		`hx-post="/api/product/bulk-pricing"`,
+		`data-write-url="/api/product/bulk-pricing"`,
 		`data-write-ids-scope="[data-list-bulk]"`,
 		"data-list-bulk",
 	} {
@@ -893,8 +893,10 @@ func TestProductsListBulkPricingUsesJSONWriteBase(t *testing.T) {
 			t.Fatalf("按规则改价缺少 %q（未接入 JSON 写基座或 ids 作用域没声明）；body=%s", want, headOf(body))
 		}
 	}
-	if strings.Contains(body, `data-write-api="/api/product/bulk-pricing"`) {
-		t.Fatal("按规则改价不该同时挂两套提交声明（会双提交）")
+	// 反向：写表单上不能再挂 hx-post —— htmx 与写基座都接 submit，
+	// 同时挂会一次点击发两个请求（写动作就是建两条记录）。
+	if strings.Contains(body, `hx-post="/api/product/bulk-pricing"`) {
+		t.Fatal("按规则改价在写表单上又挂了 hx-post —— 会双提交")
 	}
 }
 

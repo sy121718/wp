@@ -210,7 +210,7 @@ func TestAdminI18nEntriesPageRendersListOnSuccess(t *testing.T) {
 		`class="data-table"`,              // 列表在
 		i18nPageRenderSeedKey,             // 种子 key 在
 		"页面渲染哨兵",                          // 种子内容在
-		`data-write-api="/api/i18n/save"`, // 写通道仍在（本卡不碰它）
+		`data-write-url="/api/i18n/save"`, // 写通道仍在（本卡不碰它）
 	)
 	i18nPageRenderAssertAbsent(t, body, `role="alert"`, "这一页的数据没能读出来", "badge-danger")
 }
@@ -249,7 +249,7 @@ func TestAdminI18nEntriesPageMainListFailureRenders500(t *testing.T) {
 	i18nPageRenderAssertAbsent(t, body,
 		"没有匹配的词条",                              // 空态（另一档）
 		`class="data-table"`, `name="keyword"`, // 表格与筛选
-		`data-write-api="/api/i18n/save"`, `tpl-i18n-create`, // 写表单与新建抽屉
+		`data-write-url="/api/i18n/save"`, `tpl-i18n-create`, // 写表单与新建抽屉
 		"页面渲染哨兵", // 列表内容
 	)
 	// 驱动原文与裸 key 一律不许进 HTML。

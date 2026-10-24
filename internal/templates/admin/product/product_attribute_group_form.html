@@ -31,10 +31,7 @@
 {{gfKeyPh = gfTr("admin.product_attributes.ph.keyExample", "标识（留空自动生成，如 color）")}}
 {{end}}
         <div data-write-host>
-        <form class="form-stack" data-attr-group-form
-              hx-post="/api/product/attribute/{{if gfCreate}}create{{else}}update{{end}}" hx-swap="none"
-              data-write-number="sort"
-              data-write-bool="isVariation,enabled"
+        <form data-write="custom" data-write-url="/api/product/attribute/{{if gfCreate}}create{{else}}update{{end}}" class="form-stack" data-attr-group-form
               {{if gfCreate}}data-write-rows=".attr-value-row;id,key,label,sort,enabled;values"{{end}}
               data-msg-ok="{{gfTr("admin.product_attributes.saved", "已保存。")}}"
               data-msg-failed="{{gfTr("MsgInternalError", "系统内部错误，请稍后重试")}}">

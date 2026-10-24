@@ -99,8 +99,8 @@
            行为全在基座里 —— 模板不写内联 JS。
            没有 method/action 是刻意的：禁用 JS 时提交按钮是 hidden 的（下方 noscript 说明原因），
            不会退化成「GET 当前页」这种看起来像成功的空动作。 *}
-        <form data-write-api="/api/navigation/create"
-              data-write-mode="create"
+        <form data-write-url="/api/navigation/create"
+              data-write="create"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
               class="form-stack">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -183,8 +183,8 @@
                提交按钮沿用「本组没有可加入项」的置灰判据，且**刻意不加** data-requires-js：
                基座放行该属性时会一并摘掉 disabled，等于把这条判据抹掉。抽屉内容在 <template>
                里、无 JS 时根本打不开，所以这里不需要切片 A 那种 noscript 兜底。 *}
-            <form data-write-api="/api/navigation/create"
-                  data-write-mode="bulk"
+            <form data-write-url="/api/navigation/create"
+                  data-write="bulk"
                   data-write-outcome="add"
                   data-write-extra="action,projectId,kind,sourceType"
                   data-msg-none-selected="{{tr("admin.navigations.notice.noSourcePicked", "请至少勾选一项要加入菜单的内容。")}}"
@@ -257,8 +257,8 @@
            语义（去重 / 上限 200 / 逐条失败不中断 / 子项一并删除）全在服务端同一个
            /api/navigation/delete 里，页面这层只负责「勾选 → 提交 → 把结果说出来」。
            结论词条与页面提示页时代同一批（admin.navigations.bulkResult.*，命名占位符）。 *}
-        <form data-write-api="/api/navigation/delete"
-              data-write-mode="bulk"
+        <form data-write-url="/api/navigation/delete"
+              data-write="bulk"
               data-msg-none-selected="{{tr("admin.navigations.bulkResult.noneSelected", "没有勾选任何菜单项，列表未改动。")}}"
               data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
@@ -346,7 +346,7 @@
     <div data-write-host>
         <p class="form-hint" data-write-status role="status" hidden></p>
         <form id="nav-up-{{r.ID}}" class="hidden-form"
-              data-write-api="/api/navigation/update" data-write-mode="create"
+              data-write-url="/api/navigation/update" data-write="create"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <input type="hidden" name="action" value="move">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -354,7 +354,7 @@
             <input type="hidden" name="dir" value="up">
         </form>
         <form id="nav-down-{{r.ID}}" class="hidden-form"
-              data-write-api="/api/navigation/update" data-write-mode="create"
+              data-write-url="/api/navigation/update" data-write="create"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <input type="hidden" name="action" value="move">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -365,7 +365,7 @@
     {* 行内删除走 JSON 单档（只发 id）：确认框由 data-confirm 承担，成功整页刷新
        （列表的派生列由服务端重算，就地删行会同源不上）。 *}
     <form id="nav-del-{{r.ID}}" class="hidden-form"
-          data-write-api="/api/navigation/delete" data-write-mode="single"
+          data-write-url="/api/navigation/delete" data-write="single"
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{tr("admin.navigations.confirm_delete_prefix", "确定删除「")}}{{r.Title|safeJs}}{{tr("admin.navigations.confirm_delete_suffix", "」？它的子菜单项会一并删除。")}}" data-confirm-danger>
         <input type="hidden" name="id" value="{{r.ID}}">

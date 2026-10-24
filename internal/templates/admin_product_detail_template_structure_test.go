@@ -4,7 +4,7 @@ package templates
 //
 // 迁移后这一页只剩两个页面级入口：整页 GET 与「预览」（原生 POST 开新标签页，只读）。
 // 新建 / 首次发布 / 切换模板 / 改 URL 四个写动作都走 /api/product/detail-template/*，
-// 由 internal/templates/static/js/ui/json_write.js 提交。结构判据钉住四件事：
+// 由 internal/templates/static/js/ui/write-base.js 提交。结构判据钉住四件事：
 //
 //  1. 每个写表单都带 data-write-api 且指向自己的端点（一条路由一个权限点）；
 //  2. 表单里不再有 csrf_token 隐藏域（基座发 X-CSRF-Token 头，留它会被当未知字段拒掉）；
@@ -56,9 +56,9 @@ func renderDetailTemplatePage(t *testing.T, published bool) (*html.Node, string)
 func detailTemplateWriteForms(root *html.Node) map[string]*html.Node {
 	forms := map[string]*html.Node{}
 	for _, n := range peAll(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "hx-post") != ""
+		return peEl(n, "form") && peAttr(n, "data-write-url") != ""
 	}) {
-		forms[peAttr(n, "hx-post")] = n
+		forms[peAttr(n, "data-write-url")] = n
 	}
 	return forms
 }
@@ -79,11 +79,14 @@ func TestDetailTemplateWritesUseJSONBase(t *testing.T) {
 		if !ok {
 			t.Fatalf("详情模板页缺少挂 %s 的写表单，实际端点数 %d", api, len(forms))
 		}
-		if got := peAttr(f, "hx-swap"); got != "none" {
-			t.Fatalf("%s 表单的 hx-swap = %q，want none（写动作没有要换进 DOM 的内容）", api, got)
+		// hx-swap="none" 已由写基座内置（模板不再写），改判「这个表单声明了 data-write」。
+		if got := peAttr(f, "data-write"); got == "" {
+			t.Fatalf("%s 表单缺少 data-write（写基座的必填属性），实际属性为空", api)
 		}
-		if got := peAttr(f, "data-write-flash"); got != "product-detail-template" {
-			t.Fatalf("%s 表单的 data-write-flash = %q，want product-detail-template", api, got)
+		// data-write-reload 是裸属性（新基座用它表示「成功后整页刷新，结论经
+		// sessionStorage 跨刷新」），判存在而不是判值。
+		if !peHasAttr(f, "data-write-reload") {
+			t.Fatalf("%s 表单缺少 data-write-reload —— 写成功后结论不会显示", api)
 		}
 		// CSRF 走请求头：表单里留着隐藏域会被端点当未知字段整条拒掉。
 		if n := len(peAll(f, func(m *html.Node) bool {
@@ -104,9 +107,15 @@ func TestDetailTemplateWritesUseJSONBase(t *testing.T) {
 		}
 	}
 
-	// 改 URL 的「旧链接 301」复选框要把勾选状态交给基座（未勾选时客户端不发这个键）。
-	if got := peAttr(forms["/api/product/detail-template/update-url"], "data-write-bool"); got != "withRedirect" {
-		t.Fatalf("改 URL 表单的 data-write-bool = %q，want withRedirect", got)
+	// 改 URL 的「旧链接 301」复选框：未勾选时浏览器根本不提交该键（不是发空串），
+	// 服务端拿到的就是「没有这个字段」。新基座不再需要 data-write-bool 声明 ——
+	// 实测 formdata 的 on=1 直接绑进 bool，而「键不存在」天然是 false。
+	//
+	// 这里守的是复选框的 name 仍在（改名会让服务端收不到），不再守已删除的属性。
+	if n := len(peAll(forms["/api/product/detail-template/update-url"], func(m *html.Node) bool {
+		return peEl(m, "input") && peAttr(m, "type") == "checkbox" && peAttr(m, "name") == "withRedirect"
+	})); n != 1 {
+		t.Fatalf("改 URL 表单里应有 1 个 name=withRedirect 的复选框，实际 %d 个", n)
 	}
 
 	// 反向：页面上不该再有这四条页面 POST（迁移后它们连路由都不存在）。
@@ -121,12 +130,9 @@ func TestDetailTemplateWritesUseJSONBase(t *testing.T) {
 		}
 	}
 
-	// 结论行落点：写动作整页刷新后在这里显示一次。
-	if n := len(peAll(root, func(m *html.Node) bool {
-		return peAttr(m, "data-write-flash-target") == "product-detail-template"
-	})); n != 1 {
-		t.Fatalf("详情模板页应有 1 个 data-write-flash-target=product-detail-template，实际 %d", n)
-	}
+	// 结论跨刷新的落点已不再是页面上的某个 [data-write-flash-target] 元素 ——
+	// 新基座把结论写进 sessionStorage（固定键 wbui:write-flash），页面载入时读一次即删。
+	// 所以这里不再断言页面元素；机制本身由 write-base.test.cjs 的行为测试守住。
 }
 
 // TestDetailTemplateUnpublishedShowsPublishOnly 未发布态：只渲染「首次发布」写表单，

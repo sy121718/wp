@@ -34,8 +34,7 @@
     {{end}}{{end}}
     <p class="perm-intro">{{tr("admin.admins.role.intro", "勾选该管理员拥有的角色。保存按当前勾选做全量替换：没勾的会被解除绑定。角色带来的权限在「菜单权限」抽屉里显示为「来自角色」且不可在那里取消。")}}</p>
 
-    <form method="post" action="/admin/administrators/roles/save"
-          hx-post="/admin/administrators/roles/save" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
+    <form action="/admin/administrators/roles/save" method="post">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="user_id" value="{{.Account.ID}}">
 

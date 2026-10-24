@@ -79,7 +79,7 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 	// 多工程下端口读不到工程时回的是**错误**这件事就被掩盖掉了。
 	port := &detailTemplateRecordingPort{inner: dtoutbound.New(base.templates, base.pres)}
 	base.products.SetDetailTemplatePort(port)
-	// 「新建模板」已迁到 /api/product/detail-template/create（页面表单走 ui/json_write.js）。
+	// 「新建模板」已迁到 /api/product/detail-template/create（页面表单走 ui/write-base.js）。
 	producthttp.BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
 	})

@@ -307,7 +307,7 @@ func (h *Handle) UpdateCoupon(c *gin.Context) {
 // 严格形状并集（见 coupon_write.go）：单档 {id} 删一张（列表行内删除）、批档 {ids} 批量删除。
 //
 // 形状修正记录：此前这里读的是 c.PostForm("couponId")，而本端点的调用方（前端基座
-// static/js/ui/json_write.js、脚本、将来的集成方）一律发 JSON body —— 于是它**对 JSON
+// static/js/ui/write-base.js、脚本、将来的集成方）一律发 JSON body —— 于是它**对 JSON
 // 调用方事实上不可用**（必然 400），只有页面那条走 service 的专用路径能删券。
 // 本批改成严格 JSON 形状后，同一个权限锚点既服务单条也服务批量。
 func (h *Handle) DeleteCoupon(c *gin.Context) {

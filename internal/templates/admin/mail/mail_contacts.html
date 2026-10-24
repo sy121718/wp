@@ -136,7 +136,7 @@
         {{end}}
         {{if canDeleteContact}}
         <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                data-write-api="/api/mail/contact/delete" data-write-mode="bulk"
+                data-write-url="/api/mail/contact/delete" data-write="bulk"
                 data-msg-none-selected="{{tr("admin.mail.contacts.bulk.noneSelected", "没有勾选任何联系人，列表未改动。")}}"
                 data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
                 data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
@@ -151,7 +151,7 @@
         <input class="form-input" type="text" name="add" aria-label="{{ .["t"]("admin.mail.marketing.bulk_tag.add", "加上标签") }}" placeholder="{{ .["t"]("admin.mail.marketing.bulk_tag.add.ph", "加上标签：vip,华南") }}">
         <input class="form-input" type="text" name="remove" aria-label="{{ .["t"]("admin.mail.marketing.bulk_tag.remove", "去掉标签") }}" placeholder="{{ .["t"]("admin.mail.marketing.bulk_tag.remove.ph", "去掉标签：vip") }}">
         <button type="submit" class="btn btn-sm" data-requires-js hidden
-                data-write-api="/api/mail/contact/tag" data-write-mode="bulk" data-write-outcome="update"
+                data-write-url="/api/mail/contact/tag" data-write="bulk" data-write-outcome="update"
                 data-write-extra="add,remove"
                 data-msg-none-selected="{{tr("admin.mail.contacts.bulk.noneSelected", "没有勾选任何联系人，列表未改动。")}}"
                 data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
@@ -277,7 +277,7 @@
     {* 编辑：create 模式发**表单全部具名字段**（email / name / tags / status / consent_source + id），
        id>0 即编辑 —— 与新建共用同一份字段清单（分开两个端点必然出现「新建加了字段、编辑忘了加」）。
        csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头（基座会跳过同名字段）。 *}
-    <form data-write-api="/api/mail/contact/save" data-write-mode="create" data-write-number="id"
+    <form data-write-url="/api/mail/contact/save" data-write="create"
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
       <input type="hidden" name="id" value="{{c.ID}}">
       <div class="form-field">
@@ -326,8 +326,7 @@
   {{if canDeleteContact}}
   {* 单条删除：真端点 POST /api/mail/contact/delete，payload 只有 {id}（single 模式）。
      确认框仍归 ui/confirm.js（data-confirm 在表单上，按钮 form="…" 关联，提交依旧要确认）。 *}
-  <form id="contact-del-{{c.ID}}" class="hidden-form" data-write-api="/api/mail/contact/delete" data-write-mode="single"
-        data-write-number="id"
+  <form id="contact-del-{{c.ID}}" class="hidden-form" data-write-url="/api/mail/contact/delete" data-write="single"
         data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
         data-confirm="{{tr("admin.mail.marketing.contact_delete_confirm", "删除该联系人？退订 / 投诉记录仍留在抑制名单里 —— 删掉联系人不会让他重新收到邮件。")}}" data-confirm-danger>
     <input type="hidden" name="id" value="{{c.ID}}">
@@ -341,7 +340,7 @@
       没勾选同意证据就不该直接进可发送名单；要置为已订阅，必须同时写清同意来源（留痕）。 *}
   <template id="tpl-contact-save">
     {* 新建：与编辑同一端点、同一形状（id=0 即新建），字段清单一致才不会出现「新建漏字段」。 *}
-    <form data-write-api="/api/mail/contact/save" data-write-mode="create" data-write-number="id"
+    <form data-write-url="/api/mail/contact/save" data-write="create"
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
       <input type="hidden" name="id" value="0">
       <div class="form-field">

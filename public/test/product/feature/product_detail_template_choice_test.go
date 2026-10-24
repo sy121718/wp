@@ -481,7 +481,7 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
 	handle.SetDetailTemplateDeps(f.templates, f.pres)
 	// 新建 / 首次发布 / 切换三个写动作已从页面 POST 迁到 /api/product/detail-template/*：
-	// 页面表单走 ui/json_write.js 直调接口，页面只剩下整页 GET 与只读预览。
+	// 页面表单走 ui/write-base.js 直调接口，页面只剩下整页 GET 与只读预览。
 	// 写动作的依赖在装配层后置注入（SetupProductPages 里那一次），这里照同一形状注入一遍。
 	producthttp.BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: f.templates, Instances: f.pres, Products: f.products, Projects: f.projects,

@@ -61,7 +61,7 @@ var errModeUnavailable = errors.New("详情页双轨能力未装配")
 // 重新套用预设 —— 放弃该商品实例的独立文档，回到跟随模板并重建（迁移 282 的另一半）。
 //
 // 页面侧原先的 /admin/products/reapply-preset 随写通道一起删除：结论改成一行回执
-// （成功由 ui/json_write.js 存进 flash 再整页刷新 —— 模式徽标变了，必须重渲染）。
+// （成功由 ui/write-base.js 存进 flash 再整页刷新 —— 模式徽标变了，必须重渲染）。
 func (h *ProductHandle) ReapplyDetailTemplatePreset(c *gin.Context) {
 	req, ok := binding.JSON[productdto.DetailTemplateModeReapplyReq](c)
 	if !ok {

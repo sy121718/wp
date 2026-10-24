@@ -4,7 +4,7 @@ package templates
 //
 // 这一页与其它页不同：**同一张表单承载两个动作**。
 //   · 试算（preview）是只读的，结果是一张表格，必须整页重渲才渲染得出来 —— 保留原生提交；
-//   · 应用调价（apply）是写动作，走 /api/product/pricing/apply，由 ui/json_write.js 提交。
+//   · 应用调价（apply）是写动作，走 /api/product/pricing/apply，由 ui/write-base.js 提交。
 //
 // 因此判据的重点不是「表单挂没挂基座」，而是**表单本身绝不能挂**：一旦 form 带
 // data-write-api，试算也会被拦进 fetch，用户再也看不到试算表（点了没反应/没表格）。
@@ -68,7 +68,7 @@ func TestPricingFormKeepsNativePreview(t *testing.T) {
 	if form == nil {
 		t.Fatalf("找不到 action=/admin/product-pricing/preview 的表单；输出片段：%s", snippet(out))
 	}
-	if peHasAttr(form, "data-write-api") {
+	if peHasAttr(form, "data-write-url") {
 		t.Fatalf("表单本身不能挂 data-write-api —— 那会把「预览试算」也拦进 fetch，试算表就没了")
 	}
 	// CSRF 隐藏域必须留着：试算仍是原生 POST，没有基座的 X-CSRF-Token 头可用。
@@ -87,31 +87,31 @@ func TestPricingApplyUsesJSONBase(t *testing.T) {
 
 	var apply *html.Node
 	for _, n := range peAll(root, func(n *html.Node) bool {
-		return peEl(n, "button") && peAttr(n, "hx-post") == "/api/product/pricing/apply"
+		return peEl(n, "button") && peAttr(n, "data-write-url") == "/api/product/pricing/apply"
 	}) {
 		apply = n
 	}
 	if apply == nil {
 		t.Fatalf("找不到挂 hx-post=/api/product/pricing/apply 的按钮；输出片段：%s", snippet(out))
 	}
-	if got := peAttr(apply, "hx-swap"); got != "none" {
-		t.Fatalf("应用按钮 hx-swap=%q，期望 none（写动作没有要换进 DOM 的内容）", got)
+	if got := peAttr(apply, "data-write-url"); got != "/api/product/pricing/apply" {
+		t.Fatalf("应用按钮的 data-write-url = %q，want /api/product/pricing/apply", got)
 	}
-	if got := peAttr(apply, "data-write-flash"); got != "product-pricing" {
-		t.Fatalf("应用按钮 data-write-flash=%q，期望 product-pricing", got)
+	if !peHasAttr(apply, "data-write-reload") {
+		t.Fatal("应用按钮缺 data-write-reload —— 成功后结论不会跨刷新显示")
 	}
 	for _, key := range []string{"data-requires-js", "hidden", "disabled"} {
 		if !peHasAttr(apply, key) {
 			t.Fatalf("应用按钮缺 %s：无 JS 时必须不可点，而不是点了没反应", key)
 		}
 	}
-	if peAttr(apply, "data-confirm") == "" {
+	if peAttr(apply, "data-write-confirm") == "" {
 		t.Fatalf("应用调价会立刻写库，按钮必须带 data-confirm")
 	}
 
 	// 试算按钮不能带端点：它与应用按钮同在一个表单里，被基座接走就再也出不了试算表。
 	preview := firstNode(root, func(n *html.Node) bool {
-		return peEl(n, "button") && peAttr(n, "type") == "submit" && !peHasAttr(n, "data-write-api")
+		return peEl(n, "button") && peAttr(n, "type") == "submit" && !peHasAttr(n, "data-write-url")
 	})
 	if preview == nil {
 		t.Fatalf("找不到试算按钮（应当是不带 data-write-api 的 submit 按钮）")
@@ -132,11 +132,7 @@ func TestPricingPageStatusAndFlashTargets(t *testing.T) {
 	if got := len(peAll(form, func(n *html.Node) bool { return peHasAttr(n, "data-write-status") })); got != 1 {
 		t.Fatalf("改价表单内应恰有 1 个 [data-write-status] 结论行，实际 %d", got)
 	}
-	if got := len(peAll(root, func(n *html.Node) bool {
-		return peAttr(n, "data-write-flash-target") == "product-pricing"
-	})); got != 1 {
-		t.Fatalf("页面应恰有 1 个 data-write-flash-target=product-pricing，实际 %d", got)
-	}
+	// 结论跨刷新已改由 sessionStorage 承载（新基座），页面不再需要落点元素。
 }
 
 // firstNode 返回第一个满足条件的节点（找不到返回 nil）。

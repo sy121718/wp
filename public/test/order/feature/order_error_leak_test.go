@@ -15,7 +15,7 @@ package feature
 // 传输通道的契约变化（架构改造后，三轮）：
 //   1. 写动作的结论不再经 URL（302 + ?err= / ?ok= / ?done=），而是由 shell.RenderJump 渲染
 //      **提示页**（HTTP 200，文案在响应体里）。
-//   2. 订单列表页的六个写动作迁到「前端直调 JSON」（static/js/ui/json_write.js）：批量走既有
+//   2. 订单列表页的六个写动作迁到「前端直调 JSON」（static/js/ui/write-base.js）：批量走既有
 //      端点的**批档形状**（/api/order/status、/api/order/cancel，体里有 ids 即批档，见
 //      internal/module/order/inbound/http/order_bulk_write.go）。
 //   3. 退货页的两个批量动作收同一档（task-98 S3）：批档形状挂到 /api/order/return/{approve,reject}

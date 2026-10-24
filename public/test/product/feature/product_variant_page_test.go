@@ -218,11 +218,10 @@ func TestProductEditVariantsUseJSONWriteBase(t *testing.T) {
 
 	body := getProductEditPage(engine, f.projectID, product.ID)
 	for _, want := range []string{
-		`hx-post="/api/product/variant/save"`,
+		`data-write-url="/api/product/variant/save"`,
 		`data-write-builder="product-variant-rows"`,
-		`data-write-flash="product-variant-save"`,
-		`data-write-flash-target="product-variant-save"`,
-		`hx-post="/api/product/variant/create"`,
+		`data-write-reload`,
+		`data-write-url="/api/product/variant/create"`,
 		`data-preview-url="/admin/products/variant/preview"`,
 	} {
 		if !strings.Contains(body, want) {

@@ -56,7 +56,7 @@
 
     {* 写动作的结论行：成功由 ui/json_write.js 存进 flash、整页刷新后在这里显示一次。
        四个写动作都会改变「有没有实例 / 绑的是哪套模板 / 线上路径」，所以一律整页刷新。 *}
-    <p class="form-hint badge" data-write-flash-target="product-detail-template" role="status" hidden></p>
+    <p class="form-hint badge" role="status" hidden></p>
 
     <section class="card card-body">
         <h2>{{.Product.Name}}{{ .["t"]("admin.product_detail_template.detailSuffix", " · 详情页") }}</h2>
@@ -93,8 +93,7 @@
         </form>
 
         {{if .InstanceExists}}
-        <form hx-post="/api/product/detail-template/apply" hx-swap="none"
-              data-write-flash="product-detail-template" class="form-inline">
+        <form data-write="custom" data-write-url="/api/product/detail-template/apply" data-write-reload class="form-inline">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
             <label>{{ .["t"]("admin.product_detail_template.label.useTemplate", "使用模板") }}
@@ -108,9 +107,7 @@
             <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail_template.applySubmit", "切换模板并重新发布") }}</button>
         </form>
 
-        <form hx-post="/api/product/detail-template/update-url" hx-swap="none"
-              data-write-bool="withRedirect"
-              data-write-flash="product-detail-template" class="form-inline">
+        <form data-write="custom" data-write-url="/api/product/detail-template/update-url" data-write-reload class="form-inline">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
             <label>{{ .["t"]("admin.product_detail_template.label.changeURL", "改 URL") }}
@@ -121,8 +118,7 @@
             <button type="submit" class="btn" data-requires-js hidden disabled>{{ .["t"]("admin.product_detail_template.changeURLSubmit", "改 URL") }}</button>
         </form>
         {{else}}
-        <form hx-post="/api/product/detail-template/publish" hx-swap="none"
-              data-write-flash="product-detail-template" class="form-inline">
+        <form data-write="custom" data-write-url="/api/product/detail-template/publish" data-write-reload class="form-inline">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
             <label>{{ .["t"]("admin.product_detail_template.label.useTemplate", "使用模板") }}
@@ -183,8 +179,7 @@
     {* 新建命名模板：复制一套现有模板的文档作为起点（内容编辑仍属模板/工作台侧）。 *}
     {{if canCreateTemplate}}
     <template id="tpl-detail-template-create">
-        <form hx-post="/api/product/detail-template/create" hx-swap="none"
-              data-write-flash="product-detail-template" class="form-stack">
+        <form data-write="create" data-write-url="/api/product/detail-template/create" data-write-reload class="form-stack">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">
             <div class="form-row">

@@ -93,7 +93,7 @@
     </section>
     {{else}}
     <form id="nav-translations-form" method="post"
-          data-write-api="/api/navigation/update" data-write-mode="create"
+          data-write-url="/api/navigation/update" data-write="create"
           data-write-rows=".nav-tr-row;context,hash,target"
           data-write-nav="{{ .["SuccessURL"] }}">
         {* 身体只带 action / lang / project 与行数组：筛选词不进身体（它只影响回跳地址），

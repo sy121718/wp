@@ -129,16 +129,15 @@
                    This note stays outside the button tag: a `{* *}` comment inside the tag breaks
                    parsing by tag (the static check and the chain test both read attributes per <button …>). *}
                 <button type="submit" class="btn btn-sm btn-primary" data-requires-js hidden
-                        data-write-api="/api/order/coupon/update" data-write-mode="bulk" data-write-outcome="update"
+                        data-write-url="/api/order/coupon/update" data-write="bulk" data-write-outcome="update"
                         data-write-extra="status,projectId"
-                        data-write-number="status"
                         data-msg-none-selected="{{tr("admin.coupons.bulk.noneSelected", "没有勾选任何优惠码，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
                         data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.coupons.bulk.refresh", "刷新列表")}}"
                         data-confirm="{{tr("admin.coupons.bulkToggleConfirm", "把选中的优惠码改成上面选的状态？")}}">{{tr("admin.coupons.bulk.toggle", "批量启停")}}</button>
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        data-write-api="/api/order/coupon/delete" data-write-mode="bulk" data-write-outcome="delete"
+                        data-write-url="/api/order/coupon/delete" data-write="bulk" data-write-outcome="delete"
                         data-msg-none-selected="{{tr("admin.coupons.bulk.noneSelected", "没有勾选任何优惠码，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
                         data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
@@ -277,8 +276,7 @@
     <p class="form-hint" data-write-status role="status" hidden></p>
     {{range _, cp := coupons}}
     <form id="coupon-toggle-{{cp.ID}}" class="hidden-form"
-          data-write-api="/api/order/coupon/update" data-write-mode="create"
-          data-write-number="id,discountValue,minSubtotal,maxUses,perUserLimit,status"
+          data-write-url="/api/order/coupon/update" data-write="create"
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
         <input type="hidden" name="id" value="{{cp.ID}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -294,7 +292,7 @@
         <input type="hidden" name="status" value="{{if cp.Status == 1}}0{{else}}1{{end}}">
     </form>
     <form id="coupon-del-{{cp.ID}}" class="hidden-form"
-          data-write-api="/api/order/coupon/delete" data-write-mode="single" data-write-number="id"
+          data-write-url="/api/order/coupon/delete" data-write="single"
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{tr("admin.coupons.list.deleteConfirm", "删除该优惠码？有核销记录的券会被拒绝，请改用停用。")}}" data-confirm-danger>
         <input type="hidden" name="id" value="{{cp.ID}}">

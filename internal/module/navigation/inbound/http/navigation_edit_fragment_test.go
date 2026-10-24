@@ -146,7 +146,7 @@ func TestNavigationEditFragment(t *testing.T) {
 			if !strings.Contains(rec.Header().Get("Content-Type"), "text/html") || rec.Header().Get("Cache-Control") != "no-store" {
 				t.Fatalf("headers=%v", rec.Header())
 			}
-			for _, want := range []string{`data-drawer-fragment`, `name="csrf_token" value="`, `name="expectedUpdatedAt" value="2026-09-01T12:00:00.123456Z"`, `name="projectId" value="project-1"`, `旧标题`, `面板一`, `hx-post="/admin/navigations/update?`} {
+			for _, want := range []string{`data-drawer-fragment`, `name="csrf_token" value="`, `name="expectedUpdatedAt" value="2026-09-01T12:00:00.123456Z"`, `name="projectId" value="project-1"`, `旧标题`, `面板一`, `action="/admin/navigations/update?`} {
 				if !strings.Contains(body, want) {
 					t.Errorf("片段缺少 %q: %s", want, body)
 				}

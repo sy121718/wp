@@ -66,7 +66,10 @@
 (function () {
     'use strict';
 
-    if (!window.htmx) return;
+    // 不依赖 htmx：本基座用 fetch 发 formdata，只有在取 CSRF 头时才碰页面上的 meta。
+    // （早先版本这里有一句 `if (!window.htmx) return;` —— 那是从旧基座照抄的守卫，
+    //  而新基座根本不走 htmx，那条守卫会让整个基座在 htmx 未加载时不工作。
+    //  实测在无 htmx 的沙箱里提交不发请求，正是这条守卫造成的。）
 
     var MAX_BULK_IDS = 200;
 
@@ -234,6 +237,95 @@
         return String(s).replace(/["\\]/g, '\\$&');
     }
 
+    // ── 存量兼容层（只减不增）────────────────────────────────────────────────
+    //
+    // 10 处模板仍在用旧的三套整形属性（data-write-rows / -object / -builder），
+    // 它们处理的行由**服务端片段**渲染（如 product_attribute_rows.html 的行带
+    // hx-post 增删行），改成 <template data-row> 需要连着改服务端片段与交互。
+    //
+    // 本层在内部把它们翻译成 data-write-json 的等价行为，因此：
+    //   · 新模板一律写 data-write-json，不写这三个属性；
+    //   · 存量由 check-write-attributes.sh 登记（只减不增）。
+    //
+    // 为什么不在模板里直接改：改一处要动「片段端点 + 行增删交互 + 服务端数据形状」
+    // 三件东西，与本批「统一写基座」是两件事，混在一起会让 review 无法判断回归来自哪。
+    function legacyJson(form) {
+        var out = {};
+
+        // data-write-rows=".sel;f1,f2;key"：每行容器收成对象，按 DOM 顺序组装成数组。
+        var rowsSpec = form.getAttribute('data-write-rows');
+        if (rowsSpec) {
+            var parts = rowsSpec.split(';');
+            if (parts.length >= 2) {
+                var sel = parts[0].trim();
+                var names = parts[1].split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+                var key = (parts[2] || 'rows').trim();
+                var rows = [];
+                var containers = form.querySelectorAll(sel);
+                for (var i = 0; i < containers.length; i++) {
+                    var obj = {};
+                    names.forEach(function (n) {
+                        var f = findByName(containers[i], n);
+                        if (f !== null) obj[n] = f;
+                    });
+                    // 全空的容器整行跳过。
+                    if (Object.keys(obj).some(function (k) { return String(obj[k]).trim() !== ''; })) {
+                        rows.push(obj);
+                    }
+                }
+                if (rows.length) out[key] = rows;
+            }
+        }
+
+        // data-write-object=".sel;key;driver;cond"：把容器里由 driver 点名的键收成对象。
+        var objSpec = form.getAttribute('data-write-object');
+        if (objSpec) {
+            var op = objSpec.split(';');
+            if (op.length >= 3) {
+                var oscope = form.querySelector(op[0].trim());
+                var okey = op[1].trim();
+                var driver = op[2].trim();
+                var when = op[3] ? op[3].trim() : '';
+                var ok = true;
+                if (when) {
+                    var eq = when.indexOf('=');
+                    if (eq > 0) {
+                        var condName = when.slice(0, eq).trim();
+                        var condVal = when.slice(eq + 1).trim();
+                        var condEl = findByName(form, condName);
+                        ok = condEl === condVal || condEl === null ? ok : false;
+                        if (condEl !== null) ok = String(condEl) === condVal;
+                    }
+                }
+                if (ok && oscope) {
+                    var got = collect(oscope, null);
+                    var o = {};
+                    Object.keys(got).forEach(function (k) {
+                        var v = got[k];
+                        o[k] = v.length > 1 ? v : v[0];
+                    });
+                    if (Object.keys(o).length) out[okey] = o;
+                }
+            }
+        }
+        return out;
+    }
+
+    // findByName 在容器里按 name 精确取一个值（取最后一个，与旧基座同口径）。
+    function findByName(scope, name) {
+        var els = scope.querySelectorAll('[name]');
+        var out = null;
+        for (var i = 0; i < els.length; i++) {
+            if (els[i].getAttribute('name') === name) {
+                var t = (els[i].type || '').toLowerCase();
+                if (t === 'checkbox') { out = els[i].checked ? els[i].value : '0'; }
+                else if (t === 'radio') { if (els[i].checked) out = els[i].value; }
+                else out = els[i].value;
+            }
+        }
+        return out;
+    }
+
     // 组装最终请求体（FormData）。
     function buildBody(form, submitter) {
         var body = new FormData();
@@ -243,8 +335,20 @@
         var skip = {};
         jsonNames.forEach(function (n) { skip[n] = true; });
 
+        // bulk 档**只发** ids + data-write-extra 点名的字段 —— 不发整份表单。
+        //
+        // 为什么：bulk 的形状是 {ids} + 该动作自己的参数（如批量流转的 toStatus/remark），
+        // 而表单里还带着筛选控件、其它动作的隐藏域。全发出去会让端点收到两种互不认识的
+        // 身体（严格白名单直接整批 400）。旧基座的 bulk 也是这个口径。
+        var bulkMode = attr(form, submitter, 'data-write') === 'bulk';
+        var bulkExtra = {};
+        if (bulkMode) {
+            attr(form, submitter, 'data-write-extra').split(',').map(function (x) { return x.trim(); })
+                .filter(Boolean).forEach(function (n) { bulkExtra[n] = true; });
+        }
         var fields = collect(form, skip);
         Object.keys(fields).forEach(function (name) {
+            if (bulkMode && !bulkExtra[name]) return;
             var vals = fields[name];
             // 删空值键：`sort=` 会被后端 *int 绑成 0。
             // 但 data-keep-empty 字段必须保留（空串有语义）。
@@ -258,6 +362,62 @@
         Object.keys(jsonVals).forEach(function (name) {
             body.set(name, JSON.stringify(jsonVals[name]));
         });
+
+        // data-write-lines="images,imageAlts"：多行文本 → 字符串数组。
+        // 空行丢弃（用户多敲一个空行不该在数组里留空串）；空文本按空数组发
+        //（「一个都不填」是明确的清空意图，不是「本次不改」）。
+        attr(form, null, 'data-write-lines').split(',')
+            .map(function (x) { return x.trim(); })
+            .filter(Boolean)
+            .forEach(function (name) {
+                var raw = body.get(name);
+                if (raw === null) return;
+                body.delete(name);
+                splitLines(raw).forEach(function (line) { body.append(name, line); });
+            });
+
+        // data-write-json-wrap="descriptionHtml:description"：把裸 HTML 包成 {html: …}。
+        // 富文本控件给的是裸 HTML，而库里该字段是 jsonb 对象；这层包装原本在 handler 里做。
+        // 冒号后是目标键，省略则用源键名。不 trim —— 正文空白是排版。
+        attr(form, null, 'data-write-json-wrap').split(',')
+            .map(function (x) { return x.trim(); })
+            .filter(Boolean)
+            .forEach(function (pair) {
+                var parts = pair.split(':');
+                var from = parts[0].trim();
+                var to = (parts[1] || from).trim();
+                var raw = body.get(from);
+                if (raw === null) return;
+                body.delete(from);
+                body.set(to, JSON.stringify({ html: raw }));
+            });
+
+        // 存量兼容层：旧整形属性组装的键并入请求体。
+        var legacy = legacyJson(form);
+        Object.keys(legacy).forEach(function (name) {
+            body.set(name, JSON.stringify(legacy[name]));
+        });
+        // data-write-extra="status,projectId"：点名的额外字段一起发。
+        //
+        // 为什么必须**点名**而不是「把表单字段全带上」：bulk 的形状是 {ids} + 该动作
+        // 自己的参数，多带字段会让端点收到两种互不认识的身体。同名字段优先取本次
+        // submitter 的值（按钮上的 value 就是它要发的东西，如批量启停的 status）。
+        attr(form, submitter, 'data-write-extra').split(',')
+            .map(function (x) { return x.trim(); })
+            .filter(Boolean)
+            .forEach(function (name) {
+                if (submitter && submitter.getAttribute && submitter.getAttribute('name') === name) {
+                    body.set(name, submitter.getAttribute('value') || '');
+                    return;
+                }
+                if (body.has(name)) return;   // 表单里已有，保留
+                var v = findByName(form, name);
+                if (v !== null) body.set(name, v);
+            });
+
+        // 页面级组装器（data-write-builder）：最后跑，它可以覆盖前面的一切。
+        applyBuilder(body, form);
+
         return body;
     }
 
@@ -272,13 +432,30 @@
         return out;
     }
 
+    // splitLines 多行文本 → 去空行的字符串数组。
+    function splitLines(raw) {
+        if (typeof raw !== 'string') return [];
+        var out = [];
+        raw.replace(/\r\n/g, '\n').split('\n').forEach(function (line) {
+            var v = line.trim();
+            if (v) out.push(v);
+        });
+        return out;
+    }
+
     // ── bulk ────────────────────────────────────────────────────────────────
 
     function bulkIDs(form) {
         var seen = {};
         var out = [];
-        var els = form.querySelectorAll('[name="ids"]:checked, [name="ids[]"]:checked');
+        // 用 [name] + 逐个判 checked，而不是选择器里的 :checked 伪类：
+        // 伪类在最小 DOM 桩（feature 测试的驱动脚本）里不支持，而在真实浏览器里
+        // 「[name=ids] 且 checked」与「[name=ids]:checked」等价 —— 取前者兼容面更宽。
+        var els = form.querySelectorAll('[name]');
         for (var i = 0; i < els.length; i++) {
+            var name = els[i].getAttribute('name');
+            if (name !== 'ids' && name !== 'ids[]') continue;
+            if (!els[i].checked) continue;
             var v = String(els[i].value || '').trim();
             if (!v || seen[v]) continue;
             seen[v] = 1;
@@ -370,8 +547,13 @@
 
     function onSubmit(ev) {
         var form = ev.target;
-        if (!form || form.tagName !== 'FORM' || !form.hasAttribute('data-write')) return;
+        if (!form || form.tagName !== 'FORM') return;
         var submitter = ev.submitter || null;
+        // 声明可以写在表单上，也可以写在提交按钮上；两者都有时按钮优先（见 attr）。
+        // 所以**任一处**有 data-write 即算本基座的表单 —— 只判表单会让
+        // 「一个表单并排几个动作、端点各写在按钮上」这种形态整个失效（实测：
+        // 批量启停/删除的按钮就长这样，表单本身刻意不声明）。
+        if (!hasAttr(form, submitter, 'data-write')) return;
         // 按钮没有 url = 这个按钮不归本基座管（走原生提交）。
         if (submitter && submitter.hasAttribute('data-write-skip')) return;
         if (!attr(form, submitter, 'data-write-url')) return;
@@ -499,7 +681,38 @@
         if (document.readyState !== 'loading') consumeFlash();
     }
 
+    // ── 页面级 payload 组装器（data-write-builder）────────────────────────────
+    //
+    // 有些写动作的 payload 不是「表单字段的平铺」，而是从 DOM 另一处读出结构再合并
+    //（变体清单的行、捆绑配置的 config）。这类组装只有页面自己知道，所以走注册表：
+    // 页面脚本注册一个函数，模板只声明名字。
+    //
+    // 保留这个机制的原因：product_variant_write.js / product_bundle_write.js /
+    // membership_write.js 都在向它注册，而那些组装逻辑依赖各自页面特有的 DOM 结构，
+    // 用通用的 <template data-row> 表达不了（例如捆绑配置要合并多个区域的勾选状态）。
+    var builders = {};
+
+    function registerPayloadBuilder(name, fn) {
+        if (name && typeof fn === 'function') builders[name] = fn;
+    }
+
+    function applyBuilder(body, form) {
+        var name = String(form.getAttribute('data-write-builder') || '').trim();
+        if (!name || !builders[name]) return;
+        var obj = builders[name](form);
+        if (!obj || typeof obj !== 'object') return;
+        Object.keys(obj).forEach(function (k) {
+            body.set(k, typeof obj[k] === 'string' ? obj[k] : JSON.stringify(obj[k]));
+        });
+    }
+
     // 暴露两个纯函数给测试用（node:test 里以 vm 加载，见 write-base.test.cjs）。
     window.WBUI = window.WBUI || {};
-    window.WBUI.writeBase = { buildBody: buildBody, bulkIDs: bulkIDs };
+    window.WBUI.writeBase = { buildBody: buildBody, bulkIDs: bulkIDs, registerPayloadBuilder: registerPayloadBuilder };
+    // 旧附属脚本（product_variant_write.js 等）仍在向这两个名字注册组装器，
+    // 保留别名让它们不必同时改动 —— 迁完那批模板后可以删掉。
+    window.WPJsonWrite = window.WPJsonWrite || { registerPayloadBuilder: registerPayloadBuilder };
+    window.WBFormBody = window.WBFormBody || { registerPayloadBuilder: registerPayloadBuilder };
+    window.WPJsonWrite.registerPayloadBuilder = registerPayloadBuilder;
+    window.WBFormBody.registerPayloadBuilder = registerPayloadBuilder;
 })();

@@ -110,7 +110,7 @@ func productEditFormByAction(root *html.Node, action string) []*html.Node {
 // productEditFormByWriteAPI 按 data-write-api 找页面上的表单（写动作的定位依据）。
 func productEditFormByWriteAPI(root *html.Node, api string) []*html.Node {
 	return peAll(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "hx-post") == api
+		return peEl(n, "form") && peAttr(n, "data-write-url") == api
 	})
 }
 
@@ -217,8 +217,8 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 		if a := peAttr(fr, "action"); a != "" {
 			t.Fatalf("详情页模板表单同时声明了 action=%q：原生提交会打到已删除的页面端点", a)
 		}
-		if peAttr(fr, "data-write-flash") != "product-detail-mode" {
-			t.Fatalf("两个动作成功后都要整页刷新，结论必须经 data-write-flash 带过刷新（实际 %q）", peAttr(fr, "data-write-flash"))
+		if !peHasAttr(fr, "data-write-reload") {
+			t.Fatalf("两个动作成功后都要整页刷新，结论经 data-write-reload 跨刷新传递（裸属性缺失）")
 		}
 	}
 	tplFold := peUp(reapply[0], func(n *html.Node) bool { return peEl(n, "details") && peClass(n, "section-fold") })
@@ -267,11 +267,11 @@ func TestProductEditSaveButtonRelatedToOutsideForm(t *testing.T) {
 	}
 	form := forms[0]
 	// 提交走 JSON 写基座：端点与字段声明写在 data-write-* 上，模板不再有 action / method。
-	if got := peAttr(form, "hx-post"); got != "/api/product/update" {
+	if got := peAttr(form, "data-write-url"); got != "/api/product/update" {
 		t.Fatalf("编辑表单 hx-post 应为 /api/product/update，实际 %q", got)
 	}
-	if got := peAttr(form, "hx-swap"); got != "none" {
-		t.Fatalf("编辑表单 hx-swap 应为 none（写动作没有要换进 DOM 的内容），实际 %q", got)
+	if got := peAttr(form, "data-write"); got == "" {
+		t.Fatalf("编辑表单缺少 data-write（写基座必填属性；hx-swap=none 已由基座内置）")
 	}
 	// csrf 走请求头：表单里再留隐藏域会变成一条未知字段（严格白名单整条拒掉）。
 	for _, ctl := range peAll(form, peIsFormControl) {

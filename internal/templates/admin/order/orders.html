@@ -115,7 +115,7 @@
                 </select>
                 <input type="text" class="form-input" name="remark" autocomplete="off" placeholder="{{tr("admin.orders.ph.bulk_remark", "备注（可选；批量取消时作为取消原因，必填）")}}">
                 <button type="submit" class="btn btn-sm btn-primary" data-requires-js hidden
-                        data-write-api="/api/order/status" data-write-mode="bulk" data-write-outcome="update"
+                        data-write-url="/api/order/status" data-write="bulk" data-write-outcome="update"
                         data-write-extra="toStatus,remark"
                         data-msg-none-selected="{{tr("admin.orders.bulk.noneSelected", "没有勾选任何订单，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
@@ -123,7 +123,7 @@
                         data-msg-refresh="{{tr("admin.orders.bulk.refresh", "刷新列表")}}"
                         data-confirm="{{tr("admin.orders.bulkStatusConfirm", "把选中的订单流转成上面选的状态？状态机不允许这条边的会被跳过。")}}">{{tr("admin.orders.bulk.status", "批量流转")}}</button>
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        data-write-api="/api/order/cancel" data-write-mode="bulk" data-write-outcome="update"
+                        data-write-url="/api/order/cancel" data-write="bulk" data-write-outcome="update"
                         data-write-extra="remark"
                         data-msg-none-selected="{{tr("admin.orders.bulk.noneSelected", "没有勾选任何订单，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
@@ -300,8 +300,7 @@
         <div data-write-host>
         <p class="form-hint" data-write-status role="status" hidden></p>
         {{if head.Status == "pending" || head.Status == "paid" || head.Status == "shipped"}}
-        <form class="form-inline" data-write-api="/api/order/status" data-write-mode="create"
-              data-write-number="orderId" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+        <form class="form-inline" data-write-url="/api/order/status" data-write="create" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <input type="hidden" name="orderId" value="{{head.ID}}">
             <select class="form-select" name="toStatus" required aria-label="{{tr("admin.orders.action.transition", "流转状态")}}">
                 {{if head.Status == "pending"}}<option value="paid">{{statusLabel("paid")}}</option>{{end}}
@@ -317,8 +316,7 @@
 
         {* 可取消 = 未发货（已发货的单要退就走退款，退货入库另算）。 *}
         {{if head.Status == "pending" || head.Status == "paid"}}
-        <form class="form-inline" data-write-api="/api/order/cancel" data-write-mode="create"
-              data-write-number="orderId" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+        <form class="form-inline" data-write-url="/api/order/cancel" data-write="create" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <input type="hidden" name="orderId" value="{{head.ID}}">
             <input type="text" class="form-input input-wide" name="reason" placeholder="{{tr("admin.orders.ph.cancel_reason", "取消原因（必填）")}}" required autocomplete="off">
             <button data-requires-js hidden type="submit" class="btn btn-sm">{{tr("admin.orders.action.cancel", "取消订单")}}</button>
@@ -327,8 +325,7 @@
 
         {* 可退款 = paid / shipped / completed（钱与货分开：退款不归还库存）。 *}
         {{if head.Status == "paid" || head.Status == "shipped" || head.Status == "completed"}}
-        <form class="form-inline" data-write-api="/api/order/refund" data-write-mode="create"
-              data-write-number="orderId" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+        <form class="form-inline" data-write-url="/api/order/refund" data-write="create" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <input type="hidden" name="orderId" value="{{head.ID}}">
             <input type="text" class="form-input input-wide" name="reason" placeholder="{{tr("admin.orders.ph.refund_reason", "退款原因（必填）")}}" required autocomplete="off">
             <input type="text" class="form-input input-wide" name="transactionId" placeholder="{{tr("admin.orders.ph.txn_optional", "通道流水号（可选，留空则沿用原流水号）")}}" autocomplete="off">
@@ -345,8 +342,7 @@
         </h3>
         <div data-write-host>
         <p class="form-hint" data-write-status role="status" hidden></p>
-        <form class="form-stack" data-write-api="/api/order/note" data-write-mode="create"
-              data-write-number="orderId" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+        <form class="form-stack" data-write-url="/api/order/note" data-write="create" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <input type="hidden" name="orderId" value="{{head.ID}}">
             <textarea class="form-input" name="adminNote" rows="3" maxlength="500" placeholder="{{tr("admin.orders.ph.admin_note", "例如：客户电话说改地址，已同步仓库")}}">{{head.AdminNote}}</textarea>
             <div class="action-row">

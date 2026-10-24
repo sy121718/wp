@@ -41,7 +41,7 @@ var navigationDeleteBulkKeys = map[string]bool{"ids": true}
 // navigationBulkDeleteItem 批量删除的逐条结果。
 //
 // 字段名与 block 的批量结果同形（deleted/skipped/items + items[].message）：前端的
-// json_write.js 按 data.deleted / data.skipped 计数、按 items[].message 列出逐条原因，
+// write-base.js 按 data.deleted / data.skipped 计数、按 items[].message 列出逐条原因，
 // 两个模块给不同的字段名就等于让基座维护两套读法。
 type navigationBulkDeleteItem struct {
 	ID      string `json:"id"`

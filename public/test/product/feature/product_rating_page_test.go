@@ -3,7 +3,7 @@
 // 覆盖：
 //
 //	· 页面渲染评分区块（有评分时显示投影出的平均分与条数 + 明细；无评分时是明确的空态）；
-//	· 添加 / 删除各打一次 JSON 端点（编辑页的表单已由 ui/json_write.js 接管成 JSON 请求），
+//	· 添加 / 删除各打一次 JSON 端点（编辑页的表单已由 ui/write-base.js 接管成 JSON 请求），
 //	  再渲染页面能看到变化；
 //	· 非法分值被拒且**不落库**（0~5 之外、非数字、空）。
 //
@@ -105,8 +105,8 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 	editBody := getProductEditPage(engine, f.projectID, rated)
 	for _, want := range []string{
 		"4.50", "2 条", "添加评分",
-		`hx-post="/api/product/rating/add"`,
-		`hx-post="/api/product/rating/delete"`,
+		`data-write-url="/api/product/rating/add"`,
+		`data-write-url="/api/product/rating/delete"`,
 	} {
 		if !strings.Contains(editBody, want) {
 			t.Fatalf("有评分的商品编辑页应包含 %q", want)
@@ -136,7 +136,7 @@ func TestProductRatingPageShowsDetailAndProjection(t *testing.T) {
 // 就落不进那个槽 —— 症状是「点了删除没反应」，而所有「存在性」断言都还是绿的。
 func assertRatingFormsInsideHost(t *testing.T, body string) {
 	t.Helper()
-	deleteForm := strings.Index(body, `hx-post="/api/product/rating/delete"`)
+	deleteForm := strings.Index(body, `data-write-url="/api/product/rating/delete"`)
 	if deleteForm < 0 {
 		t.Fatalf("编辑页缺少评分删除表单")
 	}

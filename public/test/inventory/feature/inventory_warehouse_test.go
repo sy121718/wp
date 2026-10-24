@@ -647,7 +647,13 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 	body := rec.Body.String()
 	// 独立页 include product_create_form.html；断言仓库选项处于创建表单之内，
 	// 而非误命中页面上其他位置的仓库名。表单已迁 JSON 写基座，句柄是 id + data-write-api。
-	formStart := strings.Index(body, `<form id="product-create-form"`)
+	// 从 <form 起截，不假定 id 紧跟在 <form 后面 —— 迁到新契约后 data-write /
+	// data-write-url 排在 id 之前（属性顺序不属于契约）。
+	idAt := strings.Index(body, `id="product-create-form"`)
+	if idAt < 0 {
+		t.Fatalf("商品新建页缺少创建表单")
+	}
+	formStart := strings.LastIndex(body[:idAt], "<form")
 	if formStart < 0 {
 		t.Fatalf("商品新建页缺少创建表单")
 	}

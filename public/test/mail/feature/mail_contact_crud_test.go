@@ -545,7 +545,7 @@ func TestMailContactCrudStatusMissingIDIsNotReportedAsSuccess(t *testing.T) {
 // 为什么单独立一条（2026-10-08 的 P1）：模板里的隐藏 id 经 json_write 发出来是**字符串** "7"，
 // 而本端点的严格形状拒绝字符串数字 → 页面上的新增 / 编辑 / 单删全部 400。Node 通用用例当时
 // 全绿也发现不了它，因为那些用例的控件属性是人手写的。修法在模板侧：写表单显式声明
-// `data-write-number="id"`（基座据此在发请求前把该字段转成数字，未声明的字段一律不动）。
+// `name="id"`（值原样以字符串发出；服务端 DTO 按 int 绑定，formdata 的 "12" 直接绑得进）。
 //
 // 这条测试钉的是**契约两端**，两条一起才闭合：
 //
@@ -828,10 +828,10 @@ func TestMailContactCrudPageRendersEntryPoints(t *testing.T) {
 		`data-drawer-open="#tpl-contact-save"`,      // 页头「新建联系人」
 		`id="tpl-contact-save"`,                     // 新建抽屉本体
 		`id="tpl-contact-save-`,                     // 行内编辑抽屉
-		`data-write-api="/api/mail/contact/save"`,   // 新建 / 编辑抽屉：真端点
-		`data-write-api="/api/mail/contact/delete"`, // 行内删除 + 批量删除
-		`data-write-mode="single"`,                  // 行内删除的形状
-		`data-write-api="/api/mail/contact/tag"`,    // 批量打标签
+		`data-write-url="/api/mail/contact/save"`,   // 新建 / 编辑抽屉：真端点
+		`data-write-url="/api/mail/contact/delete"`, // 行内删除 + 批量删除
+		`data-write="single"`,                  // 行内删除的形状
+		`data-write-url="/api/mail/contact/tag"`,    // 批量打标签
 		`data-write-outcome="update"`,               // 打标签不是破坏动作：不删行
 		`data-write-extra="add,remove"`,             // 标签参数按名带上
 		`data-write-status`,                         // 就地结果区

@@ -100,10 +100,7 @@
                    「写操作」节）：后端锁不到某一条就整批不删并把明细放 data.items。
                    所以前端不需要「按 items[].deleted 逐条移除行」那套 —— 成功就刷新列表
                    （行还在不在、派生列怎么变由服务端重算），被拒就由 toast 说原因。 *}
-                <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        hx-post="/api/product/brand/bulk-delete" hx-swap="none" hx-include="closest form"
-                        data-reload-on-ok
-                        data-confirm="{{tr("admin.product_brands.bulkDeleteConfirm", "删除选中的品牌？被商品引用的会被拒绝，其余照常删除。")}}"
+                <button data-write="bulk" data-write-url="/api/product/brand/bulk-delete" type="submit" class="btn btn-sm btn-danger" data-requires-js hidden data-write-reload data-write-confirm="{{tr("admin.product_brands.bulkDeleteConfirm", "删除选中的品牌？被商品引用的会被拒绝，其余照常删除。")}}"
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
@@ -188,8 +185,7 @@
     {{range _, b := .Brands}}
     {{if canDelete}}
     {* single 档：表单只带 id + projectId，htmx 原生提交（formdata）后按整页刷新收尾。 *}
-    <form id="brand-del-{{b.ID}}" class="hidden-form"
-          hx-post="/api/product/brand/delete" hx-swap="none" data-reload-on-ok
+    <form data-write="delete" data-write-url="/api/product/brand/delete" id="brand-del-{{b.ID}}" class="hidden-form" data-write-reload
           data-confirm="{{ .["t"]("admin.product_brands.list.deleteConfirm", "删除该品牌？被商品引用时会被拒绝。") }}" data-confirm-danger>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{b.ID}}">
@@ -203,9 +199,7 @@
            结论由全局监听从 X-Message 头取出交给 WBUI.toast（ui/write_feedback.js）。
            空值字段由 ui/htmx_form_body.js 删掉 —— formdata 里 `sort=` 会让后端 *int
            绑成 0（「没填」变成「改成 0」），而 JSON 侧「省略字段」= 本次不改。 *}
-        <form hx-post="/api/product/brand/update"
-              hx-swap="none" hx-disable="find button[type=submit]"
-              data-close-on-ok="[data-drawer]">
+        <form data-write="update" data-write-url="/api/product/brand/update" data-write-close="[data-drawer]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{b.ID}}">
             <div class="form-inline">
@@ -248,9 +242,7 @@
 
     {{if canCreate}}
     <template id="tpl-brand-create">
-        <form hx-post="/api/product/brand/create"
-              hx-swap="none" hx-disable="find button[type=submit]"
-              data-close-on-ok="[data-drawer]">
+        <form data-write="create" data-write-url="/api/product/brand/create" data-write-close="[data-drawer]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-inline">
                 <input aria-label="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" class="form-input" type="text" name="name" placeholder="{{ .["t"]("admin.product_brands.ph.nameExample", "品牌名称（如 山野）") }}" required>

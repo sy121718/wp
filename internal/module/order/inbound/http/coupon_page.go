@@ -363,7 +363,7 @@ func couponFacingError(c *gin.Context, err error) string {
 // 走标准库的解析入口（gin 的 PostForm 也走这里），urlencoded 与 multipart 都会填进 PostForm；
 // 解析错误一律忽略 —— 解析失败就当「没提交」，回填退化成空表单，提交是否合法由业务校验回答。
 //
-// 券的写路径已迁 JSON（不再需要回填：失败时 DOM 里的输入原样保留，见 static/js/ui/json_write.js）；
+// 券的写路径已迁 JSON（不再需要回填：失败时 DOM 里的输入原样保留，见 static/js/ui/write-base.js）；
 // 消费者只剩代客建单页（order_create_page.go 的失败重渲片段）—— 那条路径随 S2 迁移。
 func couponEcho(c *gin.Context) url.Values {
 	if c == nil || c.Request == nil {

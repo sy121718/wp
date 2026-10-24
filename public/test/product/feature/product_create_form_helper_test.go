@@ -2,7 +2,7 @@ package feature
 
 // product_create_form_helper_test.go — 新建表单的提交值解析（三个建商品链路用例共用）。
 //
-// 页面写 handler 已迁到 JSON 写基座（static/js/ui/json_write.js + /api/product/create），
+// 页面写 handler 已迁到 JSON 写基座（static/js/ui/write-base.js + /api/product/create），
 // 于是这些用例不再能通过「POST 表单拿跳转」来驱动 —— 但它们验的是 service 的行为
 //（多仓各建一行、捆绑 SKU 补齐、初始库存），驱动方式换成直调 service 即可。
 // 解析口径与基座一致：多值收数组、数值字段转数字、留空即不设置。
