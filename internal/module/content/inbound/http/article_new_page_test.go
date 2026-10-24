@@ -12,6 +12,7 @@ package contenthttp
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -43,7 +44,7 @@ func TestArticleNewTemplateRenders(t *testing.T) {
 	for _, want := range []string{
 		"新建文章",
 		// 左栏表单：字段名与原抽屉逐字一致，action 指向既有 create。
-		`action="/admin/articles/create"`, `name="title"`, `name="slug"`,
+		`hx-post="/admin/articles/create"`, `name="title"`, `name="slug"`,
 		// 正文走统一富文本片段：隐藏 input / trix-editor / 扩展入口。
 		`data-rich-editor="body"`, "trix-editor", `name="body"`,
 		"/static/js/rich-editor/index.js",
@@ -105,13 +106,14 @@ func TestArticleNewPageHandler(t *testing.T) {
 
 	// 直接进 handler：200 + 表单。
 	engine := newEngine()
-	engine.GET("/admin/articles/new", h.ArticleNewPage)
+	engine.GET("/admin/articles/new", adminui.PageSlot(ArticleNewPageTemplate), h.ArticleNewPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/articles/new", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("新建页 handler 状态 %d，期望 200", rec.Code)
 	}
-	for _, want := range []string{`action="/admin/articles/create"`, `name="body"`} {
+	// 提交改 htmx 之后 `action=` 不再存在（hx-post 取代它）。
+	for _, want := range []string{`hx-post="/admin/articles/create"`, `name="body"`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("新建页缺少 %q", want)
 		}

@@ -369,91 +369,53 @@ func (h *articlePageHandle) ArticleEditPage(c *gin.Context) {
 }
 
 // ArticleCreate 新建文章（POST /admin/articles/create，权限点 content:create）。
+//
+// 只回 JSON（同 ArticleUpdate 的说明）。新建成功后由前端的 data-write-nav 带 id 跳编辑页
+//（表单上声明 "/admin/articles/edit?id={id}"）—— 后端不发 302 / HX-Redirect。
 func (h *articlePageHandle) ArticleCreate(c *gin.Context) {
 	form := articleFormOf(c)
 	if form.Title == "" {
-		articleListJump(c, false, articleMissingTitleMsg)
+		response.ErrorMsg(c, http.StatusBadRequest, articleMissingTitleMsg)
 		return
 	}
 	if form.Slug == "" {
-		articleListJump(c, false, articleMissingSlugMsg)
+		response.ErrorMsg(c, http.StatusBadRequest, articleMissingSlugMsg)
 		return
 	}
 	res, err := h.contents.Create(c.Request.Context(), &contentdto.CreateReq{
 		EntityType: articleEntityType, Slug: form.Slug, Data: form.data(),
 	})
 	if err != nil {
-		articleListJump(c, false, articleFacingErrMsg(c, err))
+		response.ErrorMsg(c, response.ErrorStatus(err), articleFacingErrMsg(c, err))
 		return
 	}
-	// 新建后直接进编辑页：列表页的表单只有标题与路径，正文要在这里写。
-	articleEditJump(c, true, res.ID, articleCreatedMsg)
+	response.SuccessMsg(c, articleCreatedMsg, gin.H{"id": res.ID})
 }
 
-// ArticleUpdate 保存文章（POST /admin/articles/update，权限点 content:update）。
+// ArticleUpdate 保存文章（POST /api/content/update，权限点 content:update）。
 //
-// 成功走整页提示（1 秒后回编辑页）；**失败仍原地重渲编辑页并回填本次提交** ——
-// 这是「写表单失败时原地留住输入」那一条的落地（internal/templates/CLAUDE.md）：
-// 整页提示会把用户刚写的正文整屏清掉，比错误文案贵得多。两条路径都只给已归口的文案。
+// **只回 JSON**（AGENTS.md：所有写动作走 {code,message,data}）。失败时页面一点都不动 ——
+// 表单由 htmx 提交（hx-swap="none"），用户刚写的正文本来就在框里，不需要服务端回填；
+// 结论由 ui/write_feedback.js 弹 toast，成功走 data-write-flash 提示并留在本页。
+//
+// 从前这里有第二条出口：失败时服务端重渲整页并回填提交值。那条路是把「表单是原生提交」
+// 的技术债写成了设计理由 —— 原生提交失败会跳到白屏，所以不得不重渲；改用 htmx 之后
+// 这个需求根本不存在（页面没离开过）。
 func (h *articlePageHandle) ArticleUpdate(c *gin.Context) {
 	form := articleFormOf(c)
 	if form.ID == "" {
-		h.articleUpdateFailure(c, articleMissingIDMsg, "id")
+		response.ErrorMsg(c, http.StatusBadRequest, articleMissingIDMsg)
 		return
 	}
 	if form.Title == "" {
-		h.articleUpdateFailure(c, articleMissingTitleMsg, "title")
+		response.ErrorMsg(c, http.StatusBadRequest, articleMissingTitleMsg)
 		return
 	}
 	if _, err := h.contents.Update(c.Request.Context(), &contentdto.UpdateReq{ID: form.ID, Data: form.data()}); err != nil {
-		h.articleUpdateFailure(c, articleFacingErrMsg(c, err), "")
+		response.ErrorMsg(c, response.ErrorStatus(err), articleFacingErrMsg(c, err))
 		return
 	}
-	articleEditJump(c, true, form.ID, articleSavedMsg)
-}
-
-// articleUpdateFailure reads metadata for the side panels, then replaces every editable
-// field with this POST's raw value (including empty strings).
-func (h *articlePageHandle) articleUpdateFailure(c *gin.Context, pageErr articleMsg, invalidField string) {
-	ctx := c.Request.Context()
-	id := strings.TrimSpace(c.PostForm("id"))
-	var item *contentdto.ContentResp
-	if id != "" {
-		got, err := h.contents.Get(ctx, &contentdto.GetReq{ID: id})
-		if err != nil {
-			// 元数据读取错误只记录日志，页面仍展示原本的保存错误。
-			articleInternalMsg(c, err)
-		} else {
-			item = got
-		}
-	}
-	data := articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c), shell.TranslateFor(c))
-	// 回填这次提交的值（保存失败不能把用户刚写的东西丢掉）。
-	data.Form.Title = c.PostForm("title")
-	data.Form.Body = c.PostForm("body")
-	data.Form.Excerpt = c.PostForm("excerpt")
-	data.Form.FeaturedImage = c.PostForm("featuredImage")
-	data.Form.FocusKeyword = c.PostForm("focusKeyword")
-	// SEO 标题 / 描述与标题 / 摘要合并（2026-09-30）：表单里已没有这两个框，
-	// 回填与实时评分都取同一口径（下面的评分直接读 Title / Excerpt）。
-	data.IsNew = false // 缺 id 时仍展示编辑页，避免误落入新建动作。
-	data.EditUnavailable = item == nil
-	if item == nil {
-		// 元数据不可用时禁用依赖旧版本、路径和实体标识的所有后续动作。
-		// 两个区块整体换成不可用形态（零值 + 提示事实）—— 键集由类型保证，不再逐个覆盖。
-		data.ArticlePublishBlockResp = articlePublishUnavailable(articleMsg{})
-		data.ArticleImportBlockResp = articleImportUnavailable(articleMsg{})
-		data.TemplateEditURL = ""
-	}
-	data.InvalidField = invalidField
-	data.Score = articleScoreViewOf(map[string]any{
-		"title": data.Form.Title, "body": data.Form.Body, "excerpt": data.Form.Excerpt,
-		"focusKeyword": data.Form.FocusKeyword,
-	}, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), shell.TranslateFor(c))
-	// 这个出口**不走 pageview.Render**：POST /admin/articles/update 是写动作，
-	// 生产路由没有 PageSlot（写动作不需要页面出口装配），而它的失败分支是「原地重渲编辑页
-	// 并回填提交值」—— 模板名与 Prepare 直接给出，不依赖上下文里的 slot。
-	c.HTML(http.StatusOK, "admin/content/article_edit.html", adminui.PrepareView(c, data))
+	response.SuccessMsg(c, articleSavedMsg, gin.H{"id": form.ID})
 }
 
 // ArticleDelete 删除文章（POST /admin/articles/delete，权限点 content:delete）。
@@ -931,12 +893,12 @@ var articleImportFallbacks = map[string]string{
 // 从 Trix 编辑器同步，服务端零往返。Form 键集与编辑页 articleEditPageData 的 form
 // 对齐（模板点号取值，缺键会让 Jet 报错并截断整页）。
 func (h *articlePageHandle) ArticleNewPage(c *gin.Context) {
-	c.HTML(http.StatusOK, "admin/content/article_new.html", adminui.PrepareView(c, &contentdto.ArticleNewPageResp{
+	pageview.Render(c, &contentdto.ArticleNewPageResp{
 		Title: articleNewTitle,
 		Menu:  "articles",
 		// 全空表单：新建页不取数，字段集与编辑页对齐（缺键会让 Jet 报错并截断整页）。
 		Form: &contentdto.ArticleFormResp{},
-	}))
+	})
 }
 
 // content_page.go - 文章管理页的数据装配（列表/编辑页数据、表单绑定与导入块视图）。

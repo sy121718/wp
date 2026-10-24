@@ -104,9 +104,16 @@
        原来这里是一层 repeat(auto-fit, minmax(340px,1fr)) 的内联 grid：它按容器宽自动铺列，
        于是「两栏」实际是「自动列数里的一格」—— 换成显式的 panes，列宽才是可控的那 35%。 *}
     <div class="article-edit-panes">
-        <form method="post" class="article-edit-main"
-              action="{{if .IsNew}}/admin/articles/create{{else}}/admin/articles/update{{end}}"
-              id="article-form">
+        {* 保存走 htmx（与商品模块同一套契约）：hx-swap="none" —— 成功后**不换任何节点**，
+           结论由 ui/write_feedback.js 弹 toast；失败也一样，页面与已填内容一个字段都不动。
+           从前这里是原生 method="post"：失败会跳到一个白屏，所以服务端不得不重渲整页回填输入。
+           那条路是把「表单是原生提交」的技术债写成了设计理由。 *}
+        <form class="article-edit-main"
+              id="article-form"
+              hx-post="{{if .IsNew}}/admin/articles/create{{else}}/admin/articles/update{{end}}"
+              hx-swap="none"
+              hx-disabled-elt="find button[type=submit]"
+              {{if .IsNew}}data-write-nav="/admin/articles/edit?id={id}"{{end}}>
             {{if .EditUnavailable}}<fieldset disabled style="border:0;padding:0;margin:0;min-width:0">{{end}}
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             {{if !.IsNew}}<input type="hidden" name="id" value="{{form.ID}}">{{end}}
