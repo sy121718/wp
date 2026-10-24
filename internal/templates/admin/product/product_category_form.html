@@ -20,7 +20,7 @@
        不声明它，htmx_form_body.js 会把空串删掉 —— 「提升为顶级」变成「不改父级」，
        用户点了没反应还以为保存成功。 *}
     <form hx-post="/api/product/category/{{if create}}create{{else}}update{{end}}"
-          hx-swap="none" hx-disabled-elt="find button[type=submit]"
+          hx-swap="none" hx-disable="find button[type=submit]"
           data-close-on-ok="[data-drawer]"
           data-write-keep-empty="parentId">
         <input type="hidden" name="projectId" value="{{.Project}}">

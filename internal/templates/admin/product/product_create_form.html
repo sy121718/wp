@@ -37,7 +37,7 @@
            保留 data-write-nav：成功后按响应 data.id 跳到编辑页（write_feedback.js 读它）。 *}
         <form id="product-create-form" class="form-stack"
               hx-post="/api/product/create" hx-swap="none"
-              hx-disabled-elt="find button[type=submit]"
+              hx-disable="find button[type=submit]"
               data-write-nav="/admin/products/edit?project={{cfProject}}&id={id}"
               data-product-create-form>
             <input type="hidden" name="projectId" value="{{cfProject}}">

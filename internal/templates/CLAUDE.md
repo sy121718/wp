@@ -27,7 +27,18 @@
 ## 写操作
 - 表单走 ui/json_write.js：data-write-api / data-write-mode / data-write-nav / data-write-flash 声明，端点不写在 form 上。
 - 失败不重渲染片段：4xx + JSON 由基座 toast；用户已填内容留在 DOM。
-- 非基座增强脚本必须自挂 htmx:afterSwap。
+- 非基座增强脚本必须自挂 htmx:after:swap。
+
+## htmx 属性（vendored 4.0.0，以 bundle 为准）
+- **提交期间禁按钮写 `hx-disable="find button[type=submit]"`**。v2 的 `hx-disabled-elt` 在 v4 里
+  **不存在且不报错** —— 实测（真实浏览器 + vendored bundle）：用旧属性时请求期间按钮 `disabled` 恒为
+  `false`，换成 `hx-disable` 才是 `true`、settle 后恢复。写错的代价是「防重复提交静默失效」。
+- 事件名 v4 一律冒号分段：`htmx:after:swap` / `htmx:before:request` / `htmx:response:error`。
+  v2 的驼峰名（`htmx:afterSwap`）不再派发，写了就是死监听。
+- 只能写 bundle 里真实存在的属性与元素：`scripts/check-htmx-api.sh` 反向核对模板里的每个
+  `hx-*`（含 `hx-<元素名>` 形态）在 bundle 里是否存在。
+- 局部回写用 `<template hx type="partial" hx-target="#id">`。`<hx-partial>` 不是 v4 的东西
+  （bundle 里零命中），写了会同时「不更新目标」和「信封当行内元素留在页面上」。
 
 ## 多端（硬规则）
 - 宽度写 min(100%, 设计宽度)；绝对值用 min()/clamp() 按视口封顶，不留 right 越界。

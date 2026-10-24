@@ -215,7 +215,7 @@
     <template id="tpl-category-edit-{{row.ID}}">
         {{if isset(row.EditForm)}}{{include "product_category_form.html" row.EditForm}}{{else}}
         <form hx-post="/api/product/category/update" hx-swap="none"
-              hx-disabled-elt="find button[type=submit]" data-close-on-ok="[data-drawer]">
+              hx-disable="find button[type=submit]" data-close-on-ok="[data-drawer]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{row.ID}}">
             <button type="button" hx-post="/admin/product-categories/seo-score" hx-include="closest form" hx-target="#category-seo-score-{{row.ID}}">{{ .["t"]("admin.product_categories.seoScore", "SEO 评分") }}</button>
@@ -233,7 +233,7 @@
     <template id="tpl-category-create">
         {{if isset(.CategoryCreateForm)}}{{include "product_category_form.html" .CategoryCreateForm}}{{else}}
         <form hx-post="/api/product/category/create" hx-swap="none"
-              hx-disabled-elt="find button[type=submit]" data-close-on-ok="[data-drawer]"><input type="hidden" name="projectId" value="{{selectedProject}}"><select class="form-select" name="parentId"><option value="">{{ .["t"]("admin.product_categories.option.topLevel", "（顶级分类）") }}</option></select><input class="form-input" name="name" required><p class="form-hint" data-write-status role="status" hidden></p><button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.create.submit", "新建分类") }}</button></form>
+              hx-disable="find button[type=submit]" data-close-on-ok="[data-drawer]"><input type="hidden" name="projectId" value="{{selectedProject}}"><select class="form-select" name="parentId"><option value="">{{ .["t"]("admin.product_categories.option.topLevel", "（顶级分类）") }}</option></select><input class="form-input" name="name" required><p class="form-hint" data-write-status role="status" hidden></p><button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.create.submit", "新建分类") }}</button></form>
         {{end}}
     </template>
     {{end}}

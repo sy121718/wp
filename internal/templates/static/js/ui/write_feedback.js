@@ -6,9 +6,9 @@
  * 契约（模板侧全部声明式，不写内联 JS）：
  *
  *   <form hx-post="/api/product/category/create"
- *         hx-swap="none"                         响应不换 DOM（写动作没有要渲染的内容）
- *         hx-disabled-elt="find button[type=submit]"  提交期间禁按钮（防重复提交）
- *         data-close-on-ok="#drawer">             成功之后关掉的容器（可选）
+ *         hx-swap="none"                       响应不换 DOM（写动作没有要渲染的内容）
+ *         hx-disable="find button[type=submit]" 提交期间禁按钮（防重复提交）
+ *         data-close-on-ok="#drawer">            成功之后关掉的容器（可选）
  *         data-write-nav="/admin/products/edit?project=p&id={id}"
  *                                                成功之后跳到这里，{id} 取响应 data.id（可选）
  *

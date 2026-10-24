@@ -41,7 +41,7 @@
            反射绑不了（实测 ShouldBind 直接报错），由 DTO 自己把 JSON 字符串解析一次。 *}
         <form class="form-stack"
               hx-post="/api/product/tag/{{if create}}create{{else}}update{{end}}"
-              hx-swap="none" hx-disabled-elt="find button[type=submit]"
+              hx-swap="none" hx-disable="find button[type=submit]"
               data-close-on-ok="[data-drawer]"
               data-write-object=".tag-rule-fields;ruleParams;ruleType;kind=rule">
             <input type="hidden" name="projectId" value="{{.Project}}">

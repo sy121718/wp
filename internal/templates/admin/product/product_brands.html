@@ -204,7 +204,7 @@
            空值字段由 ui/htmx_form_body.js 删掉 —— formdata 里 `sort=` 会让后端 *int
            绑成 0（「没填」变成「改成 0」），而 JSON 侧「省略字段」= 本次不改。 *}
         <form hx-post="/api/product/brand/update"
-              hx-swap="none" hx-disabled-elt="find button[type=submit]"
+              hx-swap="none" hx-disable="find button[type=submit]"
               data-close-on-ok="[data-drawer]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{b.ID}}">
@@ -249,7 +249,7 @@
     {{if canCreate}}
     <template id="tpl-brand-create">
         <form hx-post="/api/product/brand/create"
-              hx-swap="none" hx-disabled-elt="find button[type=submit]"
+              hx-swap="none" hx-disable="find button[type=submit]"
               data-close-on-ok="[data-drawer]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-inline">
