@@ -32,3 +32,23 @@ type PageFragmentResp struct {
 	// 省掉每次手填 —— 运营多数排的是近期动作。语言片段为零值。
 	DefaultAt string
 }
+
+// TranslationMissPageResp 未翻译清单页（/admin/page-translation-misses）的视图。
+//
+// 它是**报告片段**：整页由前端壳承载，这个 handler 只出报告区那块。
+type TranslationMissPageResp struct {
+	CSRFToken       string
+	Projects        any
+	SelectedProject string
+	Rows            any
+	// Err 取数失败的归口事实（key + 中文兜底），取词在模板里发生。
+	Err any
+}
+
+// PageHistoryListResp 版本历史列表片段（fragments/history_list）。
+type PageHistoryListResp struct {
+	// Revisions 用空切片而非 nil：Jet 的 len() 不接受 nil（会渲染失败）。
+	Revisions []HistoryRowResp
+	// Error 是**事实**（key + 中文兜底），取词在片段模板里做。
+	Error any
+}

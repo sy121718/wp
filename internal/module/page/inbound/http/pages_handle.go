@@ -801,11 +801,11 @@ func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 	// Revisions 用空切片而非 nil：Jet 的 len() 不接受 nil（会渲染失败）。
 	// Error 交的是**事实**（key + 中文兜底），取词在片段模板里做 —— 片段不经
 	// adminui.Prepare，所以必须显式补 t / tf（漏了不会报错：模板取到 nil，整片取词变空串）。
-	data := adminui.PrepareBare(c, gin.H{"Revisions": []pagedto.HistoryRowResp{}, "Error": pageMsg{}})
+	view := &pagedto.PageHistoryListResp{Revisions: []pagedto.HistoryRowResp{}, Error: pageMsg{}}
 	if pageID != "" && h.pages != nil {
 		revs, err := h.pages.ListRevisions(c.Request.Context(), &pagecontract.RevisionReq{PageID: pageID})
 		if err != nil {
-			data["Error"] = pageMsg{Key: pageenums.HistoryLoadFailed, Fallback: "加载失败"}
+			view.Error = pageMsg{Key: pageenums.HistoryLoadFailed, Fallback: "加载失败"}
 		} else {
 			views := make([]pagedto.HistoryRowResp, 0, len(revs))
 			for _, r := range revs {
@@ -814,10 +814,10 @@ func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 					CreatedAt: r.CreatedAt,
 				})
 			}
-			data["Revisions"] = views
+			view.Revisions = views
 		}
 	}
-	pageview.Render(c, data)
+	pageview.Render(c, view)
 }
 
 // HistoryRestore 恢复指定修订到草稿（覆盖保存为新修订，由客户端随后整页刷新）。

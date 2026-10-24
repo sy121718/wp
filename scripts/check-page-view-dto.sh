@@ -75,21 +75,24 @@ done < "$ALLOW_FILE"
 # JSON-RPC 载荷（writeRPCResult / response.Success / c.JSON）全被算进「页面视图存量」，
 # 而那批根本不渲染页面 —— 台账里挂着一批永远「迁不掉」的数，看着像永远做不完。
 #
-# 判据：一行里出现 `gin.H{`，且**同一行**没有 JSON 出口的函数名，才算页面视图。
-# 单行判定是保守取法：JSON 载荷跨行时会被算进来（宁可多算，不要漏算页面视图）。
-# 「不值得计入」的第三类：**已经是视图类型**的 gin.H 别名
-# （`type xxxView gin.H` + PageStatus/PageNoStore）。它底层是 map，但形态已经是
-# 「显式命名的视图 + 出口关切」，不是「控制器里现场拼一份 map」—— 本门禁要消灭的是后者。
-# 判据：`type Xxx gin.H` 这一行本身不算；它的字面量仍会按行计入（无法从单行区分
-# "在给这个别名填值" 与 "在拼一份临时 map"）。
-JSON_EGRESS_RE='response\.Success|response\.Error|response\.OK|\.JSON\(|writeRPCResult|writeJSON|json\.Marshal|^type [A-Za-z]+ gin\.H'
+# 判据：**按语句**判定，不按行。
+#
+# 第一版是单行判定（同一行里有没有 JSON 出口的函数名），并注明了「跨行时会被算进来
+# （宁可多算，不要漏算页面视图）」。那个保守取法的代价后来变成了实质问题：台账里
+# 挂着一批跨行写的 JSON-RPC 载荷（`writeRPCResult(c, id, gin.H{ … })` 跨七八行），
+# 它们永远迁不掉 —— 数字看着像永远做不完，而实际页面视图早就清零了。
+#
+# 所以改成按语句判定：从一行开始累加括号深度，回到零就是一条语句结束。
+# 整条语句里出现过 JSON 出口函数，其中的 gin.H 一律不计入页面视图。
+# 这不是「放宽标准」，而是把判据对准它本来要衡量的东西：**这条 gin.H 是不是要交给模板**。
+#
+# 另外两类也不计入（同样不是页面出口）：空字面量 gin.H{}，以及 []gin.H / map[string]gin.H 容器。
 declare -A CUR_GIN CUR_HTML
 gin_sum=0
 html_sum=0
 while IFS= read -r f; do
   case "$f" in *_test.go) continue ;; esac
-  g=$(grep 'gin\.H{' "$f" 2>/dev/null | grep -vcE "$JSON_EGRESS_RE" || true)
-  h=$(grep -c 'c\.HTML(' "$f" 2>/dev/null || true)
+  read -r g h < <(python3 scripts/page-view-scan.py "$f")
   g=${g:-0}; h=${h:-0}
   [ "$g" -gt 0 ] && { CUR_GIN["$f"]="$g"; gin_sum=$((gin_sum + g)); }
   [ "$h" -gt 0 ] && { CUR_HTML["$f"]="$h"; html_sum=$((html_sum + h)); }

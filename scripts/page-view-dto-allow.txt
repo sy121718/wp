@@ -1,4 +1,4 @@
-# page-view-dto-allow — 页面视图出口台账（**只减不增**，文件级 + 总量）。
+# page-view-dto-allow — 页面视图出口台账（**双向精确匹配**）。
 #
 # 目标形态（product / masterdata 已走完）：
 #   路由    adminui.PageSlot(<模板名>)
@@ -8,25 +8,27 @@
 # 为什么两级：总量挡住"整体变多"，文件级挡住"把代码从 A 搬到 B"——
 # 后者总量不变，但新代码已经去了不该去的地方。缺了文件级这就是个计数器。
 #
-# 计数口径：**按行计**（与门禁脚本的 grep -c 一致）。同一行出现两次算一处 ——
-# 保守取法，宁可少算也不让"一行里塞两处"绕过。
+# 计数口径见 scripts/page-view-scan.py：**按语句**判定"这条 gin.H 是不是要交给模板"。
+# 跨行的 JSON-RPC 载荷、空字面量、[]gin.H 容器都不计入 —— 它们不是页面视图。
 #
-# 收敛：一个模块一个模块迁。每迁一处把对应行改下来；清零就删掉那一行。
+# ## gin.H 那一半已经收口
 #
-# 格式：<文件> gin=<n> html=<n>；末行 --total 是全仓上限。
+# 全仓 gin.H 页面视图 **归零**。这说明「控制器现场拼一份 map 交给模板」这个形态
+# 已经从代码里消失，不需要再靠台账容忍任何存量。后续新增一律判失败。
+#
+# ## 剩下 12 处 c.HTML 是终局形态，不是欠账
+#
+# 它们全部是**写动作失败后原地重渲**（POST 路由，没有 PageSlot）：
+# 「回填用户刚提交的值」要求控制器持有那一次模板名。判据与处理方式写在
+# 各调用点的注释里。所以这个数字不是"还剩 12 处要迁"，而是"这 12 处就该是这样"。
+#
+# 格式：<文件> gin=<n> html=<n>；末行 --total 是本仓当前值（**双向精确匹配**）。
 
-internal/module/admin/inbound/http/admin_handle.go gin=1 html=0
 internal/module/admin/inbound/http/admin_page.go gin=0 html=3
-internal/module/ai/inbound/http/ai_handle.go gin=5 html=0
-internal/module/ai/inbound/http/ai_page.go gin=1 html=0
-internal/module/content/inbound/http/content_handle.go gin=2 html=0
-internal/module/content/inbound/http/content_page.go gin=1 html=2
-internal/module/navigation/inbound/http/navigation_translations_handle.go gin=1 html=0
-internal/module/page/inbound/http/page_translations_handle.go gin=1 html=3
-internal/module/page/inbound/http/pages_handle.go gin=1 html=0
+internal/module/content/inbound/http/content_page.go gin=0 html=2
+internal/module/page/inbound/http/page_translations_handle.go gin=0 html=3
 internal/module/project/inbound/http/project_page.go gin=0 html=2
-internal/module/user/inbound/http/user_page.go gin=1 html=1
-internal/module/workbench/inbound/http/canvas_handle.go gin=1 html=0
+internal/module/user/inbound/http/user_page.go gin=0 html=1
 internal/module/workbench/inbound/http/inspector_handle.go gin=0 html=1
 
---total gin=15 html=12
+--total gin=0 html=12

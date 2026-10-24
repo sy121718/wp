@@ -1216,12 +1216,12 @@ func (h *pagesAdminHandle) translationMissPageData(c *gin.Context, projectID str
 			projects = list
 		}
 	}
-	return adminui.PrepareBare(c, gin.H{
-		"csrf_token":      token,
-		"Projects":        projects,
-		"SelectedProject": projectID,
-		"Rows":            rows,
-		"Err":             errFact,
+	return adminui.PrepareBareView(c, &pagedto.TranslationMissPageResp{
+		CSRFToken:       token,
+		Projects:        projects,
+		SelectedProject: projectID,
+		Rows:            rows,
+		Err:             errFact,
 	})
 }
 
