@@ -33,13 +33,29 @@ import (
 // 权限点全部复用 050_admin_domains_permissions.sql 已有的 GET 权限点，不新增。
 // 六个契约由装配层以同一合并 Service 传入（admin 合并模块同包直调）。
 // 只用 GET/POST，无 RESTful 路径参数。
-// 后台列表页的模板名。
+// 后台页面与片段的模板名。
+//
+// **模板名归路由层**：控制器不持有模板名（controller_shape_test.go 的判据），
+// 页面出口由 adminui.PageSlot(<常量>) 带进上下文，控制器只交视图。
 const (
 	AdministratorsPageTemplate = "admin/system/administrators"
 	DepartmentsPageTemplate    = "admin/system/departments"
 	DatarulesPageTemplate      = "admin/system/datarules"
+	DataruleEditPageTemplate   = "admin/system/datarule_edit"
 	MenusPageTemplate          = "admin/system/menus"
 	RolesPageTemplate          = "admin/system/roles"
+	PermissionsPageTemplate    = "admin/system/permissions"
+	I18nPageTemplate           = "admin/system/i18n"
+	LoginPageTemplate          = "admin/login"
+
+	// 片段出口（htmx 局部替换）：走 BareSlot，键集只有几个槽位。
+	AdminRoleDrawerTemplate         = "admin/system/admin_role_drawer.html"
+	AdminMenuDrawerTemplate         = "admin/system/admin_menu_drawer.html"
+	MenuEditFormTemplate            = "admin/system/menu_edit_form.html"
+	PermissionEditFormTemplate      = "admin/system/permission_edit_form.html"
+	RolePermissionsFragmentTemplate = "admin/system/role_permissions.html"
+	I18nEditFormTemplate            = "admin/system/i18n_edit_form.html"
+	DataruleConfigEditorTemplate    = "admin/system/datarule_config_editor.html"
 )
 
 func SetupAdminPages(adminPages *gin.RouterGroup,
@@ -68,9 +84,11 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// 「给他加个角色、再补一个菜单入口」变成两次往返。读侧与写侧同权对待：抽屉里就是
 	// 该账号的完整授权集合，不挂鉴权等于把它露给任何登录账号（菜单隐藏不是访问控制）。
 	// 权限点复用 050 就 seed 的 admin:role_list/save、admin:menu_list/save，不新增。
-	adminPages.GET("/administrators/roles/drawer", builtin.CasbinMiddlewareForPath("/api/admin/role/list"), handle.AdministratorRolesDrawer)
+	adminPages.GET("/administrators/roles/drawer", builtin.CasbinMiddlewareForPath("/api/admin/role/list"),
+		adminui.BareSlot(AdminRoleDrawerTemplate), handle.AdministratorRolesDrawer)
 	adminPages.POST("/administrators/roles/save", builtin.CasbinMiddlewareForPath("/api/admin/role/save"), handle.AdministratorRolesSave)
-	adminPages.GET("/administrators/menus/drawer", builtin.CasbinMiddlewareForPath("/api/admin/menu/list"), handle.AdministratorMenusDrawer)
+	adminPages.GET("/administrators/menus/drawer", builtin.CasbinMiddlewareForPath("/api/admin/menu/list"),
+		adminui.BareSlot(AdminMenuDrawerTemplate), handle.AdministratorMenusDrawer)
 	adminPages.POST("/administrators/menus/save", builtin.CasbinMiddlewareForPath("/api/admin/menu/save"), handle.AdministratorMenusSave)
 
 	adminPages.GET("/roles",
@@ -86,21 +104,25 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// /api/role/menu/save 同期建成），只是此前没有任何前端调用方；不新增权限点。
 	// 片段路由与写路由同权对待：片段里就是该角色的完整勾选集合，不挂鉴权等于把
 	// 角色权限表露给任何登录账号（菜单隐藏不是访问控制）。
-	adminPages.GET("/roles/permissions/drawer", builtin.CasbinMiddlewareForPath("/api/role/menu/list"), handle.RolePermissionsDrawer)
+	adminPages.GET("/roles/permissions/drawer", builtin.CasbinMiddlewareForPath("/api/role/menu/list"),
+		adminui.BareSlot(RolePermissionsFragmentTemplate), handle.RolePermissionsDrawer)
 	adminPages.POST("/roles/permissions/save", builtin.CasbinMiddlewareForPath("/api/role/menu/save"), handle.RolePermissionsSave)
 
 	adminPages.GET("/menus",
 		adminui.PageAuthz("/api/menu/tree"),
 		adminui.PageSlot(MenusPageTemplate),
 		handle.MenusPage)
-	adminPages.GET("/menus/edit", builtin.CasbinMiddlewareForPathAs("/api/menu/update", "POST"), handle.MenusEditFragment)
+	adminPages.GET("/menus/edit", builtin.CasbinMiddlewareForPathAs("/api/menu/update", "POST"),
+		adminui.BareSlot(MenuEditFormTemplate), handle.MenusEditFragment)
 	adminPages.POST("/menus/create", builtin.CasbinMiddlewareForPath("/api/menu/create"), handle.MenusCreate)
 	adminPages.POST("/menus/update", builtin.CasbinMiddlewareForPath("/api/menu/update"), handle.MenusUpdate)
 	adminPages.POST("/menus/delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusDelete)
 	adminPages.POST("/menus/bulk-delete", builtin.CasbinMiddlewareForPath("/api/menu/delete"), handle.MenusBulkDelete)
 
-	adminPages.GET("/permissions", adminui.PageAuthz("/api/permission/list"), handle.PermissionsPage)
-	adminPages.GET("/permissions/edit", builtin.CasbinMiddlewareForPathAs("/api/permission/update", "POST"), handle.PermissionsEditFragment)
+	adminPages.GET("/permissions", adminui.PageAuthz("/api/permission/list"),
+		adminui.PageSlot(PermissionsPageTemplate), handle.PermissionsPage)
+	adminPages.GET("/permissions/edit", builtin.CasbinMiddlewareForPathAs("/api/permission/update", "POST"),
+		adminui.BareSlot(PermissionEditFormTemplate), handle.PermissionsEditFragment)
 	adminPages.POST("/permissions/create", builtin.CasbinMiddlewareForPath("/api/permission/create"), handle.PermissionsCreate)
 	adminPages.POST("/permissions/update", builtin.CasbinMiddlewareForPath("/api/permission/update"), handle.PermissionsUpdate)
 	adminPages.POST("/permissions/delete", builtin.CasbinMiddlewareForPath("/api/permission/delete"), handle.PermissionsDelete)
@@ -119,13 +141,15 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 		adminui.PageAuthz("/api/datarule/list"),
 		adminui.PageSlot(DatarulesPageTemplate),
 		handle.DatarulesPage)
-	adminPages.GET("/datarules/edit", adminui.PageAuthz("/api/datarule/detail"), handle.DatarulesEditPage)
+	adminPages.GET("/datarules/edit", adminui.PageAuthz("/api/datarule/detail"),
+		adminui.PageSlot(DataruleEditPageTemplate), handle.DatarulesEditPage)
 	adminPages.POST("/datarules/create", builtin.CasbinMiddlewareForPath("/api/datarule/create"), handle.DatarulesCreate)
 	adminPages.POST("/datarules/update", builtin.CasbinMiddlewareForPath("/api/datarule/update"), handle.DatarulesUpdate)
 	adminPages.POST("/datarules/delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesDelete)
 	adminPages.POST("/datarules/bulk-delete", builtin.CasbinMiddlewareForPath("/api/datarule/delete"), handle.DatarulesBulkDelete)
 	// 配置编辑器片段：纯渲染、不落库，因此不挂 Casbin（写入仍走 /datarules/update）。
-	adminPages.POST("/datarules/config-editor", handle.DataruleConfigEditor)
+	adminPages.POST("/datarules/config-editor",
+		adminui.BareSlot(DataruleConfigEditorTemplate), handle.DataruleConfigEditor)
 
 	// 文案词条页（审计 I18N-003）：读页面挂 i18n:view（迁移 294 新增的只读权限点）。
 	// 写动作**不再有页面 POST**：增 / 改 / 删 / 批删都走真实端点 POST /api/i18n/save
@@ -158,8 +182,10 @@ func SetupAdminPages(adminPages *gin.RouterGroup,
 	// （漏在外面 → Casbin 中间件不生效）。回归：admin_i18n_borrow_test.go；
 	// 运行时面见 public/test/admin/feature/admin_i18n_edit_drawer_test.go。
 	permission.Declare(http.MethodGet, "/api/i18n/list", permission.I18nView)
-	adminPages.GET("/i18n", adminui.PageAuthz("/api/i18n/list"), i18nPages.I18nEntriesPage)
-	adminPages.GET("/i18n/edit", builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"), i18nPages.I18nEntryEditFragment)
+	adminPages.GET("/i18n", adminui.PageAuthz("/api/i18n/list"),
+		adminui.PageSlot(I18nPageTemplate), i18nPages.I18nEntriesPage)
+	adminPages.GET("/i18n/edit", builtin.CasbinMiddlewareForPathAs("/api/i18n/save", "POST"),
+		adminui.BareSlot(I18nEditFormTemplate), i18nPages.I18nEntryEditFragment)
 
 	// 语言切换（多语言 P1）：GET 属安全方法，写语言 Cookie 后 302 回跳。
 	adminPages.GET("/lang", AdminLangSwitch)
@@ -173,5 +199,5 @@ func SetupAdminShellPages(router *gin.Engine) {
 	if router == nil {
 		return
 	}
-	router.GET("/admin/login", AdminLoginPage)
+	router.GET("/admin/login", adminui.PageSlot(LoginPageTemplate), AdminLoginPage)
 }

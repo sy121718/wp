@@ -137,7 +137,7 @@ func (h *AdminPagesHandle) AdministratorRolesDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.PrepareView(c, data))
+	pageview.Render(c, data)
 }
 
 // administratorRolesDrawerData 装配角色抽屉：候选角色（全量）+ 该账号当前绑定的 codes。
@@ -266,11 +266,11 @@ func (h *AdminPagesHandle) AdministratorRolesSave(c *gin.Context) {
 		// 抽屉片段里的错误槽是**文本**（模板直接渲染 .Err）：取词落在这一层，
 		// 槽位契约暂时还是字符串（要改成「传 key、模板 tr」得连带改那几份抽屉模板）。
 		data.Err = adminui.MsgText(c, msg)
-		c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.PrepareView(c, data))
+		pageview.Render(c, data)
 		return
 	}
 	if adminDrawerHX(c) {
-		c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.PrepareBareView(c, &admindto.DrawerSavedResp{Saved: true}))
+		pageview.Render(c, &admindto.DrawerSavedResp{Saved: true})
 		return
 	}
 	adminAdminsPage.done(c)
@@ -319,7 +319,7 @@ func (h *AdminPagesHandle) AdministratorMenusDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.PrepareView(c, data))
+	pageview.Render(c, data)
 }
 
 // administratorMenusDrawerData 装配菜单抽屉：菜单树 + 直接授权集合 + 有效集合（含角色继承）。
@@ -427,11 +427,11 @@ func (h *AdminPagesHandle) AdministratorMenusSave(c *gin.Context) {
 		}
 		// 抽屉片段里的错误槽是**文本**（模板直接渲染 .Err），取词落在这一层，槽位契约暂时是字符串。
 		data.Err = adminui.MsgText(c, msg)
-		c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.PrepareView(c, data))
+		pageview.Render(c, data)
 		return
 	}
 	if adminDrawerHX(c) {
-		c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.PrepareBareView(c, &admindto.DrawerSavedResp{Saved: true}))
+		pageview.Render(c, &admindto.DrawerSavedResp{Saved: true})
 		return
 	}
 	adminAdminsPage.done(c)
@@ -656,13 +656,13 @@ func (h *AdminPagesHandle) DatarulesEditPage(c *gin.Context) {
 	// 条件编辑器按该数据域的白名单渲染（字段 / 操作符下拉都来自域声明）。
 	editor := h.dataruleEditorContext(c, detail.Domain, detail.Config)
 	// 保存失败不再回本页并带 ?err=（写动作的结论走整页提示），本页因此没有错误槽位。
-	c.HTML(http.StatusOK, "admin/system/datarule_edit", adminui.PrepareView(c, &admindto.DataruleEditPageResp{
+	pageview.Render(c, &admindto.DataruleEditPageResp{
 		Title:   pagesMsgDatarulesTitle,
 		Menu:    "datarules",
 		Detail:  detail,
 		Domains: domains,
 		Editor:  editor,
-	}))
+	})
 }
 
 // adminDataruleBack /admin/datarules/update 的失败回跳目标：按提交**来源**分流。
@@ -1131,7 +1131,7 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	}) {
 		logger.Scene("admin").Error(errors.New("文案词条视图缺少 Pagination 字段"), "分页事实挂载失败")
 	}
-	c.HTML(http.StatusOK, "admin/system/i18n", adminui.PrepareView(c, data))
+	pageview.Render(c, data)
 }
 
 // adminI18nSaveMissingMsg 保存词条时的缺项判定：返回**具体**缺哪一项的 enums 文案
@@ -1182,9 +1182,9 @@ func (h *adminI18nEntryHandle) I18nEntryEditFragment(c *gin.Context) {
 		}
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/i18n_edit_form.html", adminui.PrepareView(c, &admindto.I18nEditFormResp{
+	pageview.Render(c, &admindto.I18nEditFormResp{
 		I18nEdit: entry,
-	}))
+	})
 }
 
 // adminI18nEntryKeySeparator 批量删除的复合键分隔符（"key|lang"）。
@@ -1244,13 +1244,13 @@ func AdminLoginPage(c *gin.Context) {
 	// 登录页无会话（不走 Prepare 的权限集部分），同样需要语言数据：
 	// 标题走 shell.login.title（缺词条回退「登录」）。这里是**模板数据槽**（layout 壳读 .title，
 	// 槽位契约是字符串），所以取成文本传进去 —— 取词走共享的 adminui.MsgText。
-	c.HTML(http.StatusOK, "admin/login", adminui.PrepareView(c, &admindto.LoginPageResp{
+	pageview.Render(c, &admindto.LoginPageResp{
 		Title:        adminui.MsgText(c, adminui.Msg{Key: adminenums.ShellLoginTitle, Fallback: "登录"}),
 		CaptchaID:    id,
 		CaptchaImage: image,
 		// debug 模式才显示一键登录入口（release 下路由压根不存在，显示了也是个死链）。
 		DevLogin: AdminDevLoginEnabled(),
-	}))
+	})
 }
 
 // AdminDevLoginEnabled 是否处于 debug 模式（决定登录页是否显示一键登录入口）。
@@ -1327,7 +1327,7 @@ func (h *AdminPagesHandle) MenusEditFragment(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", adminui.PrepareView(c, menuEditData(c, h, row, nil)))
+	pageview.Render(c, menuEditData(c, h, row, nil))
 }
 
 // menuEditData 组装编辑抽屉的模板数据（正常打开与保存失败回显共用）。
@@ -1449,7 +1449,8 @@ func (h *AdminPagesHandle) menuEditFail(c *gin.Context, msg adminui.Msg) {
 		// 上级下拉的选中值按 uint64 另给一份（理由见字段注释）。
 		MenuEditParent: reqparams.ParseUint(c.PostForm("parent_id")),
 	}
-	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", adminui.PrepareView(c, menuEditData(c, h, row, echo)))
+	// POST 失败原地重渲：写动作路由没有 PageSlot（同 permissionEditFail 的说明）。
+	c.HTML(http.StatusOK, MenuEditFormTemplate, adminui.PrepareBareView(c, menuEditData(c, h, row, echo)))
 }
 
 // menuPermissionCodes 读取表单里的权限码集合（多选控件提交 permission_codes 的多个值）。
@@ -1620,7 +1621,7 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
 		logger.Scene("admin").Error(errors.New("权限点列表视图缺少 Pagination 字段"), "分页事实挂载失败")
 	}
-	c.HTML(http.StatusOK, "admin/system/permissions", adminui.PrepareView(c, view))
+	pageview.Render(c, view)
 }
 
 // PermissionsEditFragment fetches one existing permission by its exact id.
@@ -1641,7 +1642,7 @@ func (h *AdminPagesHandle) PermissionsEditFragment(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/permission_edit_form.html", adminui.PrepareView(c, &admindto.PermissionEditFormResp{PermissionEdit: row}))
+	pageview.Render(c, &admindto.PermissionEditFormResp{PermissionEdit: row})
 }
 
 // permissionEditFail 权限点保存失败的出口（形状同 menuEditFail）。
@@ -1663,7 +1664,10 @@ func (h *AdminPagesHandle) permissionEditFail(c *gin.Context, msg adminui.Msg) {
 		"api_path": c.PostForm("api_path"), "api_method": c.PostForm("api_method"),
 		"status": c.PostForm("status"), "remark": c.PostForm("remark"),
 	}}
-	c.HTML(http.StatusOK, "admin/system/permission_edit_form.html", adminui.PrepareView(c, data))
+	// POST 失败原地重渲：这是**写动作**的路由，没有 PageSlot（写动作不需要页面出口装配）。
+	// 控制器因此持有一次模板名 —— 它与 GET /permissions/edit 是同一张片段模板，
+	// 两处必须同步（那条 GET 在路由里挂 BareSlot，这条在下面用常量，都指向同一个文件）。
+	c.HTML(http.StatusOK, PermissionEditFormTemplate, adminui.PrepareBareView(c, data))
 }
 
 // PermissionsCreate 新建权限点（POST /admin/permissions/create）。
@@ -1907,7 +1911,7 @@ func (h *AdminPagesHandle) RolePermissionsDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.PrepareView(c, data))
+	pageview.Render(c, data)
 }
 
 // RolePermissionsSave 保存角色权限（POST /admin/roles/permissions/save）。
@@ -1960,14 +1964,15 @@ func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
 		}
 		// 权限树片段里的错误槽是**文本**（模板直接渲染 .Err），取词落在这一层。
 		data.Err = adminui.MsgText(c, msg)
-		c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.PrepareView(c, data))
+		// POST 失败原地重渲：写动作路由没有 PageSlot（同 permissionEditFail 的说明）。
+		c.HTML(http.StatusOK, RolePermissionsFragmentTemplate, adminui.PrepareBareView(c, data))
 		return
 	}
 
 	if adminDrawerHX(c) {
 		// 成功态片段只读 PermSaved 一个键（见模板）：不取树也不给列表数据，
 		// 少一次查询，也避免「回执里那棵树的勾选」被误读成本次保存的结果快照。
-		c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.PrepareBareView(c, &admindto.PermSavedResp{PermSaved: true}))
+		pageview.Render(c, &admindto.PermSavedResp{PermSaved: true})
 		return
 	}
 	adminRolesPage.done(c)
@@ -2325,8 +2330,7 @@ func (h *AdminPagesHandle) DataruleConfigEditor(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "admin/system/datarule_config_editor.html",
-		adminui.PrepareBareView(c, &admindto.DataruleEditorResp{Editor: h.dataruleEditorContext(c, domain, cfg)}))
+	pageview.Render(c, &admindto.DataruleEditorResp{Editor: h.dataruleEditorContext(c, domain, cfg)})
 }
 
 // bootstrapDataRule 装配 admin 的数据权限：注册数据域 → 注入 RuleProvider → 挂 GORM 插件。

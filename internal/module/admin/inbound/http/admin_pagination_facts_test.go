@@ -438,6 +438,8 @@ func adminPageTemplateFor(name string) string {
 		return MenusPageTemplate
 	case "roles":
 		return RolesPageTemplate
+	case "permissions":
+		return PermissionsPageTemplate
 	}
 	return ""
 }
