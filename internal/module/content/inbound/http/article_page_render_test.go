@@ -236,15 +236,16 @@ func TestArticleEditPublishStates(t *testing.T) {
 	item := &contentdto.ContentResp{ID: "a1", Slug: "hello-world", Revision: 1, Data: map[string]any{"title": "第一篇"}}
 
 	cases := []struct {
-		name    string
-		view    gin.H
+		name string
+		// view 覆盖发布区块的字段（零值 + 本表的字段 = 该形态）。
+		view    contentdto.ArticlePublishBlockResp
 		want    []string
 		notWant []string
 	}{
 		{
 			name: "已发布",
-			view: gin.H{"PublishConfigured": true, "Published": true,
-				"URLPath": "/blog/hello-world", "PublicURL": "/site/blog/hello-world", "Stale": true},
+			view: contentdto.ArticlePublishBlockResp{PublishConfigured: true, Published: true,
+				URLPath: "/blog/hello-world", PublicURL: "/site/blog/hello-world", Stale: true},
 			want: []string{"/site/blog/hello-world", "内容有更新，产物待重建", "/admin/articles/rebuild",
 				// 页头页级动作：保存按钮 + 整块搬来的「重新发布」表单（只有 csrf 与 id）。
 				`form="article-form"`, `action="/admin/articles/rebuild"`},
@@ -253,10 +254,10 @@ func TestArticleEditPublishStates(t *testing.T) {
 		},
 		{
 			name: "可发布（有模板）",
-			view: gin.H{"PublishConfigured": true, "Published": false, "HasTemplates": true,
-				"DefaultURLPath": "/blog/hello-world",
-				"Projects":       []gin.H{{"ID": "p1", "Name": "官网"}},
-				"Templates":      []gin.H{{"ID": "t1", "Name": "文章详情", "Version": 2}}},
+			view: contentdto.ArticlePublishBlockResp{PublishConfigured: true, Published: false, HasTemplates: true,
+				DefaultURLPath: "/blog/hello-world",
+				Projects:       []contentdto.OptionResp{{ID: "p1", Name: "官网"}},
+				Templates:      []contentdto.TemplateOptionResp{{ID: "t1", Name: "文章详情", Version: 2}}},
 			want: []string{"/admin/articles/publish", "官网", "文章详情", "/blog/hello-world",
 				// 未发布态：三个字段留在卡内，页头只放 form="article-publish-form" 关联按钮
 				//（这张表单带 projectId / urlPath / templateId，搬不动）。保存按钮同页头。
@@ -265,11 +266,11 @@ func TestArticleEditPublishStates(t *testing.T) {
 		},
 		{
 			name: "无模板",
-			view: gin.H{"PublishConfigured": true, "Published": false, "HasTemplates": false,
+			view: contentdto.ArticlePublishBlockResp{PublishConfigured: true, Published: false, HasTemplates: false,
 				// NoTemplateHint 在生产路径上是**事实**（key + 中文兜底，见 articlePublishHintMsg），
 				// 取词在模板里发生。这里给事实而不是成品句子：直接塞一句话会把「模板有没有
 				// 真的走取词」这条路径整个绕过去（改动前后都绿）。
-				"NoTemplateHint": articlePublishHintMsg(articleNoTemplateHint)},
+				NoTemplateHint: articlePublishHintMsg(articleNoTemplateHint)},
 			want: []string{"还没有「文章详情模板」"},
 			// 没有模板时**不能**渲染发布表单，页头也不能留关联按钮：
 			// 那会是一次必然失败的点击（卡内给的是「为什么发不了」的说明）。
@@ -278,7 +279,7 @@ func TestArticleEditPublishStates(t *testing.T) {
 		{
 			name: "能力未装配",
 			// 与生产路径同形：articlePublishUnavailable(articlePublishHintMsg(articlePublishDepsMissingText))。
-			view:    gin.H{"PublishConfigured": false, "PublishHint": articlePublishHintMsg(articlePublishDepsMissingText)},
+			view:    articlePublishUnavailable(articlePublishHintMsg(articlePublishDepsMissingText)),
 			want:    []string{"发布能力未装配"},
 			notWant: []string{"/admin/articles/publish", "/admin/articles/rebuild", `form="article-publish-form"`},
 		},
@@ -288,9 +289,9 @@ func TestArticleEditPublishStates(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := &articlePageHandle{}
 			data := articleEditPageData(context.Background(), h, item, "a1", articleMsg{}, "zh-CN")
-			for k, v := range tc.view {
-				data[k] = v
-			}
+			// 整块覆盖发布区块（零值 + 本表字段）：键集由类型保证，
+			// 不再逐个键往 map 里塞 —— 漏一个键在模板里是整页中断。
+			data.ArticlePublishBlockResp = tc.view
 			body := renderAdminTemplate(t, "admin/content/article_edit.html", articleLayoutData(data))
 			for _, want := range tc.want {
 				if !strings.Contains(body, want) {
@@ -341,8 +342,8 @@ func articleSection(t *testing.T, body, start, end string) string {
 }
 
 // firstArticleBody 描述评分数据的状态（失败信息用，避免整页刷屏）。
-func firstArticleBody(data gin.H) string {
-	sv, ok := data["Score"].(scoreView)
+func firstArticleBody(data *contentdto.ArticleEditPageResp) string {
+	sv, ok := data.Score.(scoreView)
 	if !ok {
 		return "Score 数据缺失"
 	}

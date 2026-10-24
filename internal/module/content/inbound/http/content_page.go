@@ -365,8 +365,7 @@ func (h *articlePageHandle) ArticleEditPage(c *gin.Context) {
 			item = got
 		}
 	}
-	c.HTML(http.StatusOK, "admin/content/article_edit.html",
-		adminui.Prepare(c, articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c), shell.TranslateFor(c))))
+	pageview.Render(c, articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c), shell.TranslateFor(c)))
 }
 
 // ArticleCreate 新建文章（POST /admin/articles/create，权限点 content:create）。
@@ -429,33 +428,32 @@ func (h *articlePageHandle) articleUpdateFailure(c *gin.Context, pageErr article
 		}
 	}
 	data := articleEditPageData(ctx, h, item, id, pageErr, requestScoreLang(c), shell.TranslateFor(c))
-	form := data["Form"].(gin.H)
-	for key, field := range map[string]string{
-		"Title": "title", "Body": "body", "Excerpt": "excerpt",
-		"FeaturedImage": "featuredImage", "FocusKeyword": "focusKeyword",
-	} {
-		form[key] = c.PostForm(field)
-	}
+	// 回填这次提交的值（保存失败不能把用户刚写的东西丢掉）。
+	data.Form.Title = c.PostForm("title")
+	data.Form.Body = c.PostForm("body")
+	data.Form.Excerpt = c.PostForm("excerpt")
+	data.Form.FeaturedImage = c.PostForm("featuredImage")
+	data.Form.FocusKeyword = c.PostForm("focusKeyword")
 	// SEO 标题 / 描述与标题 / 摘要合并（2026-09-30）：表单里已没有这两个框，
 	// 回填与实时评分都取同一口径（下面的评分直接读 Title / Excerpt）。
-	data["IsNew"] = false // 缺 id 时仍展示编辑页，避免误落入新建动作。
-	data["EditUnavailable"] = item == nil
+	data.IsNew = false // 缺 id 时仍展示编辑页，避免误落入新建动作。
+	data.EditUnavailable = item == nil
 	if item == nil {
 		// 元数据不可用时禁用依赖旧版本、路径和实体标识的所有后续动作。
-		for k, v := range articlePublishUnavailable(articleMsg{}) {
-			data[k] = v
-		}
-		for k, v := range articleImportUnavailable(articleMsg{}) {
-			data[k] = v
-		}
-		data["TemplateEditURL"] = ""
+		// 两个区块整体换成不可用形态（零值 + 提示事实）—— 键集由类型保证，不再逐个覆盖。
+		data.ArticlePublishBlockResp = articlePublishUnavailable(articleMsg{})
+		data.ArticleImportBlockResp = articleImportUnavailable(articleMsg{})
+		data.TemplateEditURL = ""
 	}
-	data["InvalidField"] = invalidField
-	data["Score"] = articleScoreViewOf(map[string]any{
-		"title": form["Title"], "body": form["Body"], "excerpt": form["Excerpt"],
-		"focusKeyword": form["FocusKeyword"],
+	data.InvalidField = invalidField
+	data.Score = articleScoreViewOf(map[string]any{
+		"title": data.Form.Title, "body": data.Form.Body, "excerpt": data.Form.Excerpt,
+		"focusKeyword": data.Form.FocusKeyword,
 	}, articlePreviewURL(articleSlugOf(item)), requestScoreLang(c), shell.TranslateFor(c))
-	c.HTML(http.StatusOK, "admin/content/article_edit.html", adminui.Prepare(c, data))
+	// 这个出口**不走 pageview.Render**：POST /admin/articles/update 是写动作，
+	// 生产路由没有 PageSlot（写动作不需要页面出口装配），而它的失败分支是「原地重渲编辑页
+	// 并回填提交值」—— 模板名与 Prepare 直接给出，不依赖上下文里的 slot。
+	c.HTML(http.StatusOK, "admin/content/article_edit.html", adminui.PrepareView(c, data))
 }
 
 // ArticleDelete 删除文章（POST /admin/articles/delete，权限点 content:delete）。
@@ -1068,47 +1066,39 @@ func articleStateLabel(published bool) (key, fallback string) {
 // 而该模板由内容 / 商品 / 工程三处共用、不在本模块写权限内 —— 三份同形 Go 视图必须与模板
 // 同批取词化，本批保持原样（已在报告里登记）。除 Score 外，本函数出的都是事实或数据。
 func articleEditPageData(ctx context.Context, h *articlePageHandle, item *contentdto.ContentResp,
-	id string, pageErr articleMsg, lang string, trs ...func(key, fallback string) string) gin.H {
+	id string, pageErr articleMsg, lang string, trs ...func(key, fallback string) string) *contentdto.ArticleEditPageResp {
 	tr := articlePublishTr(trs)
 	data := gin.H{}
 	if item != nil {
 		data = item.Data
 	}
-	form := gin.H{
-		"ID":            id,
-		"Slug":          articleSlugOf(item),
-		"Title":         articleStr(data, "title"),
-		"Body":          articleStr(data, "body"),
-		"Excerpt":       articleStr(data, "excerpt"),
-		"FeaturedImage": articleStr(data, "featuredImage"),
-		"FocusKeyword":  articleStr(data, "focusKeyword"),
-		"Revision":      articleRevisionOf(item),
-		"UpdatedAt":     articleUpdatedAtOf(item),
+	form := contentdto.ArticleEditFormResp{
+		ID:            id,
+		Slug:          articleSlugOf(item),
+		Title:         articleStr(data, "title"),
+		Body:          articleStr(data, "body"),
+		Excerpt:       articleStr(data, "excerpt"),
+		FeaturedImage: articleStr(data, "featuredImage"),
+		FocusKeyword:  articleStr(data, "focusKeyword"),
+		Revision:      articleRevisionOf(item),
+		UpdatedAt:     articleUpdatedAtOf(item),
 	}
-	out := gin.H{
-		"title":           articleEditTitle,
-		"menu":            "articles",
-		"IsNew":           item == nil && id == "",
-		"Form":            form,
-		"Err":             pageErr,
-		"InvalidField":    "",
-		"EditUnavailable": false,
-		"ListURL":         "/admin/articles",
-		// TemplateEditURL 必须在**任何装配状态下**都存在：模板里是 {{if .TemplateEditURL}}，
-		// 而 Jet 对缺失的键报错并截断整页（下面是装配成功时才会覆盖它）。
-		"TemplateEditURL": "",
+	out := &contentdto.ArticleEditPageResp{
+		Title:           articleEditTitle,
+		Menu:            "articles",
+		IsNew:           item == nil && id == "",
+		Form:            form,
+		Err:             pageErr,
+		ListURL:         "/admin/articles",
+		TemplateEditURL: "",
 		// 初始评分：已保存的正文直接算一遍，编辑者打开页面就能看到当前水平
 		// （改动后按「重新评分」走 HTMX 片段，见 ArticleScorePanel）。
-		"Score": articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), lang, tr),
+		Score: articleScoreViewOf(data, articlePreviewURL(articleSlugOf(item)), lang, tr),
 	}
 	// 工程列表查一次、两个区块共用（发布区块与导入区块都要它）。
 	projectOptions := articleProjectOptions(ctx, h)
-	for k, v := range articlePublishView(ctx, h, id, articleSlugOf(item), optionViews(projectOptions)) {
-		out[k] = v
-	}
-	for k, v := range articleImportBlockView(h, item, id, optionViews(projectOptions)) {
-		out[k] = v
-	}
+	out.ArticlePublishBlockResp = articlePublishView(ctx, h, id, articleSlugOf(item), projectOptions)
+	out.ArticleImportBlockResp = articleImportBlockView(h, item, id, projectOptions)
 	if h != nil && h.templates != nil && id != "" {
 		if resolved, err := h.templates.ResolveTemplate(ctx, articleEntityType); err == nil {
 			projectID := ""
@@ -1117,7 +1107,7 @@ func articleEditPageData(ctx context.Context, h *articlePageHandle, item *conten
 					projectID = pid
 				}
 			}
-			out["TemplateEditURL"] = articleTemplateEditURL(resolved.TemplateID, articleEntityType, id, projectID)
+			out.TemplateEditURL = articleTemplateEditURL(resolved.TemplateID, articleEntityType, id, projectID)
 		}
 	}
 	return out
@@ -1144,7 +1134,7 @@ func articleTemplateEditURL(templateID, entityType, entityID, projectID string) 
 // 三个按钮的可用性条件必须在这里判清楚：一个点了会 500 的按钮比不给按钮更糟。
 // 新建中（还没有文章 id）、没有工程、页面能力未装配 —— 三种情况各给各的说法。
 func articleImportBlockView(h *articlePageHandle, item *contentdto.ContentResp, id string,
-	projectOptions []gin.H) gin.H {
+	projectOptions []contentdto.OptionResp) contentdto.ArticleImportBlockResp {
 	if id == "" {
 		return articleImportUnavailable(articleMsg{Key: contentenums.ImportHintSaveFirst, Fallback: "先保存这篇文章，再回来把它导入画布。"})
 	}
@@ -1163,28 +1153,22 @@ func articleImportBlockView(h *articlePageHandle, item *contentdto.ContentResp, 
 	if slug != "" {
 		defaultPath = articleImportPathPrefix + slug
 	}
-	out := articleImportUnavailable(articleMsg{})
-	out["ImportAvailable"] = true
-	out["ImportProjects"] = projectOptions
-	out["ImportDefaultPath"] = defaultPath
-	out["ImportHasPublished"] = articleStr(itemData(item), "body") != ""
-	out["ImportPreviewTarget"] = "#article-import-result"
-	return out
+	return contentdto.ArticleImportBlockResp{
+		ImportAvailable:     true,
+		ImportProjects:      projectOptions,
+		ImportDefaultPath:   defaultPath,
+		ImportHasPublished:  articleStr(itemData(item), "body") != "",
+		ImportPreviewTarget: "#article-import-result",
+	}
 }
 
 // articleImportUnavailable 导入区块的不可用形态：**键集与可用形态完全一致**。
 //
 // 理由同 articlePublishUnavailable：模板用点号取值，缺键会让 Jet 报错并截断整页。
 // hint 是**事实**（key + 中文兜底）不是拼好的句子 —— 取词在模板里发生（见 article_edit.html）。
-func articleImportUnavailable(hint articleMsg) gin.H {
-	return gin.H{
-		"ImportAvailable":     false,
-		"ImportHint":          hint,
-		"ImportProjects":      []gin.H{},
-		"ImportDefaultPath":   "",
-		"ImportHasPublished":  false,
-		"ImportPreviewTarget": "",
-	}
+func articleImportUnavailable(hint articleMsg) contentdto.ArticleImportBlockResp {
+	// 不可用形态 = 该结构体的零值 + 提示事实（理由同 articlePublishUnavailable）。
+	return contentdto.ArticleImportBlockResp{ImportHint: hint}
 }
 
 // itemData 取实体字段（item 为空时给空表，避免调用方到处判空）。
@@ -2246,7 +2230,7 @@ func (h *articlePageHandle) ArticleUpdateURL(c *gin.Context) {
 // articlePublishView 组装发布区块渲染数据（纯函数，取数在 articlePublishViewData）。
 //
 // id 为空（新建中）时不查任何东西：还没有实体，发布无从谈起。
-func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug string, projectOptions []gin.H) gin.H {
+func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug string, projectOptions []contentdto.OptionResp) contentdto.ArticlePublishBlockResp {
 	if strings.TrimSpace(id) == "" {
 		return articlePublishUnavailable(articlePublishHintMsg(articleSaveFirstHint))
 	}
@@ -2254,28 +2238,26 @@ func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug stri
 		return articlePublishUnavailable(articlePublishHintMsg(articlePublishDepsMissingText))
 	}
 
-	out := articlePublishUnavailable(articleMsg{})
-	out["PublishConfigured"] = true
+	out := contentdto.ArticlePublishBlockResp{PublishConfigured: true}
 	inst, err := h.instances.GetByEntity(ctx, &presentationdto.GetByEntityReq{
 		EntityType: articleEntityType, EntityID: id,
 	})
 	if err == nil && inst != nil && strings.TrimSpace(inst.URLPath) != "" {
-		out["Published"] = true
-		out["URLPath"] = inst.URLPath
-		out["PublicURL"] = articlePublicURL(inst.URLPath)
-		out["Stale"] = inst.Stale
-		out["Status"] = inst.Status
+		out.Published = true
+		out.URLPath = inst.URLPath
+		out.PublicURL = articlePublicURL(inst.URLPath)
+		out.Stale = inst.Stale
+		out.Status = inst.Status
 		return out
 	}
-	out["Published"] = false
 	// 默认路径按站点 URL 规则派生（取表单里第一个工程；用户可改工程、也可直接改路径）。
 	// 派生只是预填 —— 派生不出来时回落到一个不会撞车的占位，让用户自己写。
-	out["DefaultURLPath"] = articleDetailDefaultPath(ctx, h, projectOptions, slug, id)
-	out["Projects"] = projectOptions
+	out.DefaultURLPath = articleDetailDefaultPath(ctx, h, projectOptions, slug, id)
+	out.Projects = projectOptions
 	templates := articleTemplateOptions(ctx, h)
-	out["Templates"] = templates
-	out["HasTemplates"] = len(templates) > 0
-	out["NoTemplateHint"] = articlePublishHintMsg(articleNoTemplateHint)
+	out.Templates = templates
+	out.HasTemplates = len(templates) > 0
+	out.NoTemplateHint = articlePublishHintMsg(articleNoTemplateHint)
 	return out
 }
 
@@ -2288,22 +2270,13 @@ func articlePublishView(ctx context.Context, h *articlePageHandle, id, slug stri
 //
 // hint 与 NoTemplateHint 是**事实**（key + 中文兜底，见 articlePublishHintMsg）：template
 // 取词在渲染期发生，控制器不拼句子。
-func articlePublishUnavailable(hint articleMsg) gin.H {
-	return gin.H{
-		"PublishConfigured": false,
-		"PublishHint":       hint,
-		"Published":         false,
-		"URLPath":           "",
-		"PublicURL":         "",
-		"Stale":             false,
-		"Status":            "",
-		"DefaultURLPath":    "",
-		"Projects":          []gin.H{},
-		"Templates":         []gin.H{},
-		"HasTemplates":      false,
-		// 与可用形态（articlePublishView）同键同型：两边都是 articleMsg 事实，
-		// 一边给事实、另一边给空串的下场是模板只能按最宽松的形态写（见下面 hint 的注释）。
-		"NoTemplateHint": articlePublishHintMsg(""),
+func articlePublishUnavailable(hint articleMsg) contentdto.ArticlePublishBlockResp {
+	// 不可用形态 = 该结构体的零值 + 提示事实。缺字段是编译错误，不再靠人眼比对两份函数。
+	return contentdto.ArticlePublishBlockResp{
+		PublishHint: hint,
+		// 与可用形态同型：两边都是 articleMsg 事实。一边给事实、另一边给空串的下场是
+		// 模板只能按最宽松的形态写（见 hint 的注释）。
+		NoTemplateHint: articlePublishHintMsg(""),
 	}
 }
 
@@ -2313,9 +2286,9 @@ func articlePublishUnavailable(hint articleMsg) gin.H {
 // 此时猜一个常见前缀反而可能撞上真实存在的列表页（博客列表常占 /blog）——
 // 撞车的表现是发布被拒，而用户根本不知道是"默认值"的错。
 func articleDetailDefaultPath(ctx context.Context, h *articlePageHandle,
-	projectOptions []gin.H, slug, id string) string {
+	projectOptions []contentdto.OptionResp, slug, id string) string {
 	if len(projectOptions) > 0 {
-		if pid, ok := projectOptions[0]["ID"].(string); ok && pid != "" {
+		if pid := projectOptions[0].ID; pid != "" {
 			if p := siteurl.DetailPathForProject(ctx, h.projects, pid, siteurl.KindArticle, slug, id); p != "" {
 				return p
 			}
@@ -2380,10 +2353,4 @@ const (
 // 这是**过渡形态**：那两处 view 仍是 map 装配（下一批迁），而在这一批把它们一起改会
 // 让「下拉选项」与「页面装配」两件事混在同一个 diff 里 —— 出问题时分不清是哪边改坏的。
 // point: 迁移完成后本函数与那两个 []gin.H 参数一起删除。
-func optionViews(in []contentdto.OptionResp) []gin.H {
-	out := make([]gin.H, 0, len(in))
-	for _, o := range in {
-		out = append(out, gin.H{"ID": o.ID, "Name": o.Name})
-	}
-	return out
-}
+
