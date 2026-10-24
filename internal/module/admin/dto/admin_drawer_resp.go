@@ -111,3 +111,71 @@ type PermissionEditFormResp struct {
 type I18nEditFormResp struct {
 	I18nEdit any
 }
+
+// 后台抽屉 / 片段视图（片段出口，键集小且固定）。
+//
+// 一律走 PrepareBareView：片段不套页壳，只需注入取词函数。
+// 漏注入 t 时 Jet 静默输出空串（不报错、状态码 200、日志干净）。
+
+// RoleDrawerResp 角色分配抽屉（管理员勾选角色）。
+type RoleDrawerResp struct {
+	Account any
+	Rows    any
+	// Err 抽屉片段里的错误槽（模板直接渲染文本，不取词 —— 槽位契约暂时还是字符串）。
+	Err string
+}
+
+// MenuDrawerResp 菜单分配抽屉（管理员勾选菜单）。
+type MenuDrawerResp struct {
+	Account any
+	Rows    any
+	// Err 抽屉片段里的错误槽（模板直接渲染文本）。
+	Err string
+}
+
+// MenuEditFormResp 菜单编辑抽屉片段。
+type MenuEditFormResp struct {
+	MenuEdit    any
+	PermChoices any
+	// Parents 上级菜单候选。候选取不到时**不设**（模板随之退化成 hidden parent_id）：
+	// 缺了上级下拉只是少一项能力，而缺了 parent_id 提交就会把菜单搬到顶级 ——
+	// 一个读失败不该换来一次静默的数据改动。
+	Parents any
+	// MenuEditErr 保存失败的提示（已取好词；空串 = 无错误）。
+	MenuEditErr string
+	// MenuEditEcho 保存失败时的回显值（模板用 .MenuEditEcho.title 这类索引读）。
+	//
+	// 交 map 而不是结构体：模板按**字段名字面量**索引，而字段集与表单控件一一对应 ——
+	// 改成结构体会逼模板逐个改成点号取值，而这份模板同时被新建与失败回显两条路径用。
+	MenuEditEcho map[string]string
+	// MenuEditEchoCodes 权限码回显（多值，塞不进上面那个 map）。
+	MenuEditEchoCodes []string
+	// MenuEditParent 上级下拉的选中值（uint64 单给一份：MenuEditEcho 里是表单原始字符串，
+	// 拿它跟候选 ID 比恒不相等，回显会让下拉跳回「（根菜单）」）。
+	MenuEditParent uint64
+}
+
+// PermissionEditFailResp 权限点保存失败的抽屉片段（带回显值）。
+type PermissionEditFailResp struct {
+	PermissionEdit     any
+	PermissionEditErr  string
+	PermissionEditEcho any
+}
+
+// RolePermissionsResp 角色分权抽屉。
+type RolePermissionsResp struct {
+	Role any
+	Rows any
+	// Err 权限树片段里的错误槽（模板直接渲染文本）。
+	Err string
+}
+
+// PermSavedResp 权限保存成功后的片段（只渲染一个「已保存」标记）。
+type PermSavedResp struct {
+	PermSaved bool
+}
+
+// DataruleEditorResp 数据规则条件编辑器片段。
+type DataruleEditorResp struct {
+	Editor any
+}

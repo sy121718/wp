@@ -137,14 +137,14 @@ func (h *AdminPagesHandle) AdministratorRolesDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.PrepareView(c, data))
 }
 
 // administratorRolesDrawerData 装配角色抽屉：候选角色（全量）+ 该账号当前绑定的 codes。
 //
 // checkedOverride 非 nil 时用它代替库里的绑定集合 —— 保存失败路径要用本次提交的值重渲染，
 // 用库里的值会把用户刚勾的那一屏整块回退（与角色分权抽屉同一处置）。
-func (h *AdminPagesHandle) administratorRolesDrawerData(c *gin.Context, userID uint64, checkedOverride []string) (gin.H, error) {
+func (h *AdminPagesHandle) administratorRolesDrawerData(c *gin.Context, userID uint64, checkedOverride []string) (*admindto.RoleDrawerResp, error) {
 	ctx := c.Request.Context()
 	account, err := h.admins.AdminDetail(ctx, &admindto.AdminDetailReq{Id: userID})
 	if err != nil {
@@ -193,7 +193,7 @@ func (h *AdminPagesHandle) administratorRolesDrawerData(c *gin.Context, userID u
 	// 未知角色排在末尾：它们的顺序不稳定（map 迭代），排在前面会让每次打开抽屉的清单都不一样。
 	sortRoleChoices(rows)
 
-	return gin.H{"Account": account, "Rows": rows}, nil
+	return &admindto.RoleDrawerResp{Account: account, Rows: rows}, nil
 }
 
 // listAllRoles 取全部角色（角色列表接口每页上限 100，循环取完）。
@@ -265,8 +265,8 @@ func (h *AdminPagesHandle) AdministratorRolesSave(c *gin.Context) {
 		}
 		// 抽屉片段里的错误槽是**文本**（模板直接渲染 .Err）：取词落在这一层，
 		// 槽位契约暂时还是字符串（要改成「传 key、模板 tr」得连带改那几份抽屉模板）。
-		data["Err"] = adminui.MsgText(c, msg)
-		c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.Prepare(c, data))
+		data.Err = adminui.MsgText(c, msg)
+		c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.PrepareView(c, data))
 		return
 	}
 	if adminDrawerHX(c) {
@@ -319,7 +319,7 @@ func (h *AdminPagesHandle) AdministratorMenusDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.PrepareView(c, data))
 }
 
 // administratorMenusDrawerData 装配菜单抽屉：菜单树 + 直接授权集合 + 有效集合（含角色继承）。
@@ -327,7 +327,7 @@ func (h *AdminPagesHandle) AdministratorMenusDrawer(c *gin.Context) {
 // directOverride 非 nil 时用它代替库里的直接授权集合（保存失败回显）：
 // 回显要显示「用户刚勾的那一屏」，同时继承集合里的直接部分要换成本次提交的集合 ——
 // 否则用户刚取消的勾选会以「来自角色」的样子重新变成已授权，而他正需要在这里改掉。
-func (h *AdminPagesHandle) administratorMenusDrawerData(c *gin.Context, userID uint64, directOverride []uint64) (gin.H, error) {
+func (h *AdminPagesHandle) administratorMenusDrawerData(c *gin.Context, userID uint64, directOverride []uint64) (*admindto.MenuDrawerResp, error) {
 	ctx := c.Request.Context()
 	account, err := h.admins.AdminDetail(ctx, &admindto.AdminDetailReq{Id: userID})
 	if err != nil {
@@ -366,7 +366,7 @@ func (h *AdminPagesHandle) administratorMenusDrawerData(c *gin.Context, userID u
 
 	rows := make([]adminMenuTreeRow, 0, 128)
 	flattenGrantMenuTree(adminLabelTranslator(c), trees, 1, direct, effective, &rows)
-	return gin.H{"Account": account, "Rows": rows}, nil
+	return &admindto.MenuDrawerResp{Account: account, Rows: rows}, nil
 }
 
 // idSet 把 id 列表转成集合（判据里大量使用「在不在集合里」）。
@@ -426,8 +426,8 @@ func (h *AdminPagesHandle) AdministratorMenusSave(c *gin.Context) {
 			return
 		}
 		// 抽屉片段里的错误槽是**文本**（模板直接渲染 .Err），取词落在这一层，槽位契约暂时是字符串。
-		data["Err"] = adminui.MsgText(c, msg)
-		c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.Prepare(c, data))
+		data.Err = adminui.MsgText(c, msg)
+		c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.PrepareView(c, data))
 		return
 	}
 	if adminDrawerHX(c) {
@@ -1342,7 +1342,7 @@ func (h *AdminPagesHandle) MenusEditFragment(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", adminui.Prepare(c, menuEditData(c, h, row, nil)))
+	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", adminui.PrepareView(c, menuEditData(c, h, row, nil)))
 }
 
 // menuEditData 组装编辑抽屉的模板数据（正常打开与保存失败回显共用）。
@@ -1351,13 +1351,21 @@ func (h *AdminPagesHandle) MenusEditFragment(c *gin.Context) {
 // 编辑抽屉缺了上级下拉只是少一项能力，而缺了 parent_id 提交就会把菜单搬到顶级 ——
 // 一个读失败不该换来一次静默的数据改动。
 func menuEditData(c *gin.Context, h *AdminPagesHandle, row *admindto.MenuDetailResp,
-	echo gin.H) gin.H {
-	data := gin.H{"MenuEdit": row, "PermChoices": h.buildPermChoices(c, row.PermissionCodes)}
-	if parents, err := h.menus.MenuParentOptions(c.Request.Context(), row.ID); err == nil {
-		data["Parents"] = parents
+	echo *admindto.MenuEditFormResp) *admindto.MenuEditFormResp {
+	data := &admindto.MenuEditFormResp{
+		MenuEdit: row, PermChoices: h.buildPermChoices(c, row.PermissionCodes),
 	}
-	for k, v := range echo {
-		data[k] = v
+	// 回显值覆盖默认值（后者按库里的码算）：否则「保存失败 → 回显」会把
+	// 用户刚勾的那一屏换回旧值，而他正需要在这里改掉那个错误重试。
+	if echo != nil {
+		data.MenuEditErr = echo.MenuEditErr
+		data.MenuEditEcho = echo.MenuEditEcho
+		data.MenuEditEchoCodes = echo.MenuEditEchoCodes
+		data.MenuEditParent = echo.MenuEditParent
+		data.PermChoices = echo.PermChoices
+	}
+	if parents, err := h.menus.MenuParentOptions(c.Request.Context(), row.ID); err == nil {
+		data.Parents = parents
 	}
 	return data
 }
@@ -1442,21 +1450,21 @@ func (h *AdminPagesHandle) menuEditFail(c *gin.Context, msg adminui.Msg) {
 	// 候选项也要按**本次提交**重算勾选态，否则错误响应里的清单和回显的码对不上。
 	// PermChoices 放在 echo 里覆盖 menuEditData 的默认值（后者按库里的码算），
 	// 否则「保存失败 → 回显」会把用户刚勾的那一屏换回旧值。
-	echo := gin.H{
-		"MenuEditErr": adminui.MsgText(c, msg),
-		"MenuEditEcho": map[string]string{
+	echo := &admindto.MenuEditFormResp{
+		MenuEditErr: adminui.MsgText(c, msg),
+		MenuEditEcho: map[string]string{
 			"title": c.PostForm("title"), "parent_id": c.PostForm("parent_id"),
 			"type": c.PostForm("type"), "status": c.PostForm("status"),
 			"path": c.PostForm("path"), "icon": c.PostForm("icon"),
 			"sort_order": c.PostForm("sort_order"), "remark": c.PostForm("remark"),
 		},
-		"MenuEditEchoCodes": menuPermissionCodes(c),
-		"PermChoices":       h.buildPermChoices(c, menuPermissionCodes(c)),
-		// 上级下拉的选中值按 uint64 另给一份：MenuEditEcho 里是表单原始字符串，
-		// 拿它跟候选 ID（uint64）比恒不相等，回显会让下拉跳回「（根菜单）」。
-		"MenuEditParent": reqparams.ParseUint(c.PostForm("parent_id")),
+		MenuEditEchoCodes: menuPermissionCodes(c),
+		// 候选项也要按**本次提交**重算勾选态，否则错误响应里的清单和回显的码对不上。
+		PermChoices: h.buildPermChoices(c, menuPermissionCodes(c)),
+		// 上级下拉的选中值按 uint64 另给一份（理由见字段注释）。
+		MenuEditParent: reqparams.ParseUint(c.PostForm("parent_id")),
 	}
-	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", adminui.Prepare(c, menuEditData(c, h, row, echo)))
+	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", adminui.PrepareView(c, menuEditData(c, h, row, echo)))
 }
 
 // menuPermissionCodes 读取表单里的权限码集合（多选控件提交 permission_codes 的多个值）。
@@ -1663,12 +1671,12 @@ func (h *AdminPagesHandle) permissionEditFail(c *gin.Context, msg adminui.Msg) {
 		adminPermsPage.fail(c, msg)
 		return
 	}
-	data := gin.H{"PermissionEdit": row, "PermissionEditErr": adminui.MsgText(c, msg), "PermissionEditEcho": map[string]string{
+	data := &admindto.PermissionEditFailResp{PermissionEdit: row, PermissionEditErr: adminui.MsgText(c, msg), PermissionEditEcho: map[string]string{
 		"permission_name": c.PostForm("permission_name"), "module": c.PostForm("module"),
 		"api_path": c.PostForm("api_path"), "api_method": c.PostForm("api_method"),
 		"status": c.PostForm("status"), "remark": c.PostForm("remark"),
 	}}
-	c.HTML(http.StatusOK, "admin/system/permission_edit_form.html", adminui.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/system/permission_edit_form.html", adminui.PrepareView(c, data))
 }
 
 // PermissionsCreate 新建权限点（POST /admin/permissions/create）。
@@ -1873,7 +1881,7 @@ func flattenPermissionTree(tr adminLabelTranslate, nodes []admindto.MenuTreeNode
 // checkedOverride 非 nil 时用它代替库里的勾选集合。这是保存失败路径的关键：树要重取
 // （菜单结构可能刚被别处改过），但**勾选必须用本次提交的值** —— 用库里的值会把用户
 // 刚勾的那一屏整块回退成保存前的旧状态，而他正需要在这里改掉那个错误重试。
-func (h *AdminPagesHandle) rolePermissionsDrawerData(c *gin.Context, roleID uint64, checkedOverride []uint64) (gin.H, error) {
+func (h *AdminPagesHandle) rolePermissionsDrawerData(c *gin.Context, roleID uint64, checkedOverride []uint64) (*admindto.RolePermissionsResp, error) {
 	tree, err := h.roles.RolePermissionTree(c.Request.Context(), roleID)
 	if err != nil {
 		return nil, err
@@ -1888,7 +1896,7 @@ func (h *AdminPagesHandle) rolePermissionsDrawerData(c *gin.Context, roleID uint
 	}
 	rows := make([]permTreeRow, 0, len(checked)+64)
 	flattenPermissionTree(adminLabelTranslator(c), tree.Tree, 1, checked, &rows)
-	return gin.H{"Role": tree, "Rows": rows}, nil
+	return &admindto.RolePermissionsResp{Role: tree, Rows: rows}, nil
 }
 
 // RolePermissionsDrawer 角色权限分配的抽屉片段（GET /admin/roles/permissions/drawer?role_id=N）。
@@ -1912,7 +1920,7 @@ func (h *AdminPagesHandle) RolePermissionsDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.Prepare(c, data))
+	c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.PrepareView(c, data))
 }
 
 // RolePermissionsSave 保存角色权限（POST /admin/roles/permissions/save）。
@@ -1964,15 +1972,15 @@ func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
 			return
 		}
 		// 权限树片段里的错误槽是**文本**（模板直接渲染 .Err），取词落在这一层。
-		data["Err"] = adminui.MsgText(c, msg)
-		c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.Prepare(c, data))
+		data.Err = adminui.MsgText(c, msg)
+		c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.PrepareView(c, data))
 		return
 	}
 
 	if adminDrawerHX(c) {
 		// 成功态片段只读 PermSaved 一个键（见模板）：不取树也不给列表数据，
 		// 少一次查询，也避免「回执里那棵树的勾选」被误读成本次保存的结果快照。
-		c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.Prepare(c, gin.H{"PermSaved": true}))
+		c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.PrepareBareView(c, &admindto.PermSavedResp{PermSaved: true}))
 		return
 	}
 	adminRolesPage.done(c)
@@ -2331,7 +2339,7 @@ func (h *AdminPagesHandle) DataruleConfigEditor(c *gin.Context) {
 	}
 
 	c.HTML(http.StatusOK, "admin/system/datarule_config_editor.html",
-		adminui.Prepare(c, gin.H{"Editor": h.dataruleEditorContext(c, domain, cfg)}))
+		adminui.PrepareBareView(c, &admindto.DataruleEditorResp{Editor: h.dataruleEditorContext(c, domain, cfg)}))
 }
 
 // bootstrapDataRule 装配 admin 的数据权限：注册数据域 → 注入 RuleProvider → 挂 GORM 插件。
