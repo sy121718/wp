@@ -1449,7 +1449,12 @@ func (h *AdminPagesHandle) menuEditFail(c *gin.Context, msg adminui.Msg) {
 		// 上级下拉的选中值按 uint64 另给一份（理由见字段注释）。
 		MenuEditParent: reqparams.ParseUint(c.PostForm("parent_id")),
 	}
-	// POST 失败原地重渲：写动作路由没有 PageSlot（同 permissionEditFail 的说明）。
+	// 失败回**同一张抽屉片段**（htmx hx-swap="outerHTML" 换掉整个抽屉）：
+	// 表单带 hx-post + hx-target="closest [data-drawer-fragment]"，所以这不是「整页重渲」，
+	// 是 htmx 的局部替换 —— 抽屉原地变成带错误提示的抽屉，用户填的值靠 MenuEditEcho 保留。
+	//
+	// 为什么不走 pageview.Render：这条路由是**写动作**（POST /admin/menus/update），
+	// 生产装配里没有 PageSlot；模板名由本文件的路由常量给出，与 GET /menus/edit 同一个文件。
 	c.HTML(http.StatusOK, MenuEditFormTemplate, adminui.PrepareBareView(c, menuEditData(c, h, row, echo)))
 }
 
@@ -1964,7 +1969,7 @@ func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
 		}
 		// 权限树片段里的错误槽是**文本**（模板直接渲染 .Err），取词落在这一层。
 		data.Err = adminui.MsgText(c, msg)
-		// POST 失败原地重渲：写动作路由没有 PageSlot（同 permissionEditFail 的说明）。
+		// 失败回同一张抽屉片段（htmx outerHTML 局部替换，见 menuEditFail 的说明）。
 		c.HTML(http.StatusOK, RolePermissionsFragmentTemplate, adminui.PrepareBareView(c, data))
 		return
 	}
