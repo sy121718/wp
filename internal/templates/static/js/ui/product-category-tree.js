@@ -1,8 +1,12 @@
-/* Category tree state and bounded parent search. HTMX owns all data requests.
+/* Category tree state. HTMX owns all data requests — including the parent search.
  *
  * 分类列表现在由服务端一次渲染整棵树（顶级分类带全部子类），所以这里没有
  * 「展开 / 折叠子树」的逻辑：折叠过的东西会让人以为页面上没有那些分类。
- * 留下的两件事：① 勾选态（批量删除的条与全选）；② 父级下拉的远程搜索。 */
+ * 留下的只有一件事：① 勾选态（批量删除的条与全选）。
+ *
+ * ② 父级下拉的远程搜索**已迁到模板声明**（hx-get + hx-trigger="input changed delay:180ms"）：
+ * 控件调 htmx.ajax 是层次倒置 —— 控件不该依赖传输层 API，浏览器里没 htmx 时整个控件失效。
+ * 声明式写在 product_category_form.html 的搜索输入框上，防抖由 hx-trigger 的 delay 承担。 */
 (function () {
     'use strict';
     function syncSelection(form) {
@@ -54,18 +58,4 @@
         }
         syncSelection(form);
     }, true);
-    document.addEventListener('input', function (event) {
-        var input = event.target.closest('[data-category-parent-search]');
-        if (!input) return;
-        var picker = input.closest('[data-category-parent-picker]');
-        clearTimeout(picker._categoryTimer);
-        var target = picker.querySelector('[data-category-parent-results]');
-        var keyword = input.value.trim();
-        if (!keyword) { target.replaceChildren(); return; }
-        picker._categoryTimer = setTimeout(function () {
-            if (!window.htmx) return;
-            var url = '/admin/product-categories/parents?project=' + encodeURIComponent(picker.dataset.categoryProject) + '&keyword=' + encodeURIComponent(keyword);
-            window.htmx.ajax('GET', url, { target: target, swap: 'innerHTML' });
-        }, 180);
-    });
 })();

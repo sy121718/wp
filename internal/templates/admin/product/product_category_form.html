@@ -30,7 +30,18 @@
             {{id := .ID}}
             <div data-category-parent-picker data-category-project="{{.Project}}">
             <label for="category-parent-search-{{if create}}new{{else}}{{.ID}}{{end}}">{{tr("admin.product_categories.parentSearch.label", "搜索父级分类")}}</label>
-            <input id="category-parent-search-{{if create}}new{{else}}{{.ID}}{{end}}" type="search" class="form-input" autocomplete="off" placeholder="{{tr("admin.product_categories.parentSearch.placeholder", "按名称搜索父级")}}" data-category-parent-search>
+            {* 父级搜索：声明式 hx-get + 输入防抖（hx-trigger），控件层不再调 htmx.ajax。
+               输入值经 name 属性随请求发出（hx-include 指向自己），服务端读 keyword。
+               delay:180ms 与旧实现的 setTimeout 防抖等效。 *}
+            <input id="category-parent-search-{{if create}}new{{else}}{{.ID}}{{end}}" type="search" class="form-input" autocomplete="off"
+                   placeholder="{{tr("admin.product_categories.parentSearch.placeholder", "按名称搜索父级")}}"
+                   name="keyword"
+                   hx-get="/admin/product-categories/parents?project={{.Project}}"
+                   hx-trigger="input changed delay:180ms, search"
+                   hx-target="closest [data-category-parent-picker] [data-category-parent-results]"
+                   hx-swap="innerHTML"
+                   hx-include="this"
+                   data-category-parent-search>
             <select aria-label="{{tr("admin.product_categories.label.parent", "父级分类")}}" class="form-select" name="parentId" data-category-parent-select>
                 <option value="" {{if parent == ""}}selected{{end}}>{{tr("admin.product_categories.option.topLevel", "（顶级分类）")}}</option>
                 {{range _, o := .Options}}{{if o.Value != id}}<option value="{{o.Value}}" {{if o.Value == parent}}selected{{end}}>{{o.Label}}</option>{{end}}{{end}}

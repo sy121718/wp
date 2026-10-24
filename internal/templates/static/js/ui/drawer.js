@@ -154,8 +154,8 @@
         body.removeAttribute('aria-busy');
         if (tpl) {
             body.appendChild(tpl.content.cloneNode(true));
-            // Preserve the template path's original order: process before reveal.
-            if (global.htmx && typeof global.htmx.process === 'function') { global.htmx.process(body); }
+            // 先通知适配层（它负责把新内容交给 htmx 认领），再揭示抽屉。
+            requestHtmxScan(body);
         }
         if (titleEl) { titleEl.textContent = titleText || ''; }
         var wasHidden = drawer.hidden;
@@ -176,15 +176,26 @@
         activateDrawer(tplSel, true);
     }
 
+    // requestHtmxScan 广播「这块 DOM 是新的，需要认领 hx-* 属性」。
+    //
+    // 控件层不 import / 不调用任何传输层 API：适配层订阅这个事件后自己调 htmx.process。
+    // 这样 UI 控件在「没有 htmx 的页面」里也不会因为缺 API 而抛错。
+    function requestHtmxScan(el) {
+        if (!el) return;
+        document.dispatchEvent(new CustomEvent('wb:rescan', { detail: { el: el }, bubbles: true }));
+    }
+
     function activateDrawer(tplSel, processed) {
         // htmx 只扫描「首次加载的文档」与「它自己换进来的片段」——<template> 里的内容
-        // 在克隆进 DOM 之前根本不在文档里，克隆本身不触发扫描。不在这里补一次 process，
+        // 在克隆进 DOM 之前根本不在文档里，克隆本身不触发扫描。不补这一次扫描，
         // 抽屉里所有 hx-* 指令（hx-post / hx-include / hx-target）都是死的：
-        // 按钮点下去毫无反应（「+ 添加值」点不动就是这么来的），而页面上的同类按钮却正常。
-        // 顺序：先 process（认领 hx-* 属性）再 scan（增强原生控件），两者互不依赖。
-        if (!processed && global.htmx && typeof global.htmx.process === 'function') {
-            global.htmx.process(body);
-        }
+        // 按钮点下去毫无反应（「+ 添加值」点不动就是这么来的）。
+        //
+        // 但**控件不直接调 htmx API**（层次倒置：控件不该依赖传输层，浏览器里没有 htmx 时
+        // 整个抽屉会崩）。改为广播一个 `wb:rescan` 事件，由 htmx 适配层认领并转成
+        // htmx.process —— 适配层不存在时（访问面按能力裁剪）抽屉照常工作，只是 hx-* 不生效。
+        // 顺序：先通知扫描（认领 hx-* 属性）再 WBUI.scan（增强原生控件），两者互不依赖。
+        if (!processed) { requestHtmxScan(body); }
         // 先扫描再聚焦：扫描会把原生 select 换成自绘触发器，
         // 若先聚焦原生 select，焦点会落在一个视觉隐藏的元素上。
         if (WBUI.scan) { WBUI.scan(body); }

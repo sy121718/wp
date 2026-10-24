@@ -8,6 +8,9 @@
    晚加载会让早期提交走原生提交（整页跳转）。
    取代了 json_write.js + htmx_form_body.js + write_feedback.js 三个文件。 *}
 <script src="/static/js/ui/write-base.js"></script>
+{* 控件 ↔ htmx 的唯一适配层：控件广播 wb:rescan，本文件转成 htmx.process。
+   没有 htmx 时它什么都不做 —— 控件因此不依赖传输层。 *}
+<script src="/static/js/ui/htmx-bridge.js"></script>
 <script src="/static/js/ui/_util.js"></script>
 <script src="/static/js/ui/select.js"></script>
 <script src="/static/js/ui/drawer.js"></script>

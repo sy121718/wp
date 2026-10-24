@@ -51,7 +51,7 @@ PLAIN_SCRIPTS=(
   check-jet-translation-call-sites.sh
   check-js-controls.sh
   check-automation-canvas-js.sh
-  check-htmx-api.sh
+  check-controls-no-htmx.sh  check-htmx-api.sh
   check-write-attributes.sh
   check-write-combinations.sh
   check-write-fields.sh
