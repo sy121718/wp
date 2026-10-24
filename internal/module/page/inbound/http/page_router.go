@@ -66,6 +66,13 @@ const (
 	PageLangsPanelTemplate    = "fragments/page_langs"
 	PageSchedulePanelTemplate = "fragments/page_schedule_panel"
 	PageHistoryListTemplate   = "fragments/history_list"
+
+	// PageTranslationsTemplate 翻译工作台（整页）。
+	PageTranslationsTemplate = "admin/page/page_translations"
+	// PageTranslationMissesTemplate 缺译报告（整页）。
+	PageTranslationMissesTemplate = "admin/page/page_translation_misses.html"
+	// PageTranslationErrorsTemplate 译文保存失败的逐行错误片段（htmx 替换目标的内容）。
+	PageTranslationErrorsTemplate = "fragments/translation_errors.html"
 )
 
 func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
@@ -208,7 +215,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	//
 	// 鉴权：读复用「列出页面」，写复用「保存草稿」—— 保存会写 sys_translation（engine=manual）
 	// 并触发全站标记待重建，与保存草稿同一量级的影响面。
-	pages.GET("/pages/translations", adminui.PageAuthz("/api/page/list"), adminHandle.PageTranslations)
+	pages.GET("/pages/translations", adminui.PageAuthz("/api/page/list"),
+		adminui.PageSlot(PageTranslationsTemplate), adminHandle.PageTranslations)
 	pages.POST("/pages/translations/save", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.SavePageTranslations)
 
 	// ══ 缺译报告（U2，只有页面面）══
@@ -221,7 +229,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	// 那套语义以及它与切换器 / hreflang / sitemap 的一致性已经在语言排除那一处验证过。
 	//
 	// 挂**后台页面组**（Session + CSRF 已具备），写操作显式复用「发布页面」权限点。
-	pages.GET("/page-translation-misses", builtin.CasbinMiddlewareForPath("/api/page/list"), adminHandle.TranslationMissesPage)
+	pages.GET("/page-translation-misses", builtin.CasbinMiddlewareForPath("/api/page/list"),
+		adminui.PageSlot(PageTranslationMissesTemplate), adminHandle.TranslationMissesPage)
 	pages.POST("/page-translation-misses/cancel", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.TranslationMissCancel)
 
 	// ══ 重定向管理（审计 SEO-025）══

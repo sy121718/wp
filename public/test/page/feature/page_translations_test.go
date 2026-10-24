@@ -79,7 +79,7 @@ func newTranslationEnv(t *testing.T) (*gin.Engine, *pagehttp.PagesAdminHandle, *
 
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/pages/translations", handle.PageTranslations)
+	router.GET("/admin/pages/translations", adminui.PageSlot(pagehttp.PageTranslationsTemplate), handle.PageTranslations)
 	router.POST("/admin/pages/translations/save", handle.SavePageTranslations)
 	router.GET("/admin/pages", adminui.PageSlot(pagehttp.PagesListPageTemplate), handle.PagesList)
 	return router, handle, db, project.ID, pageID
@@ -265,11 +265,18 @@ func TestSavePageTranslationsWritesAndMarksStale(t *testing.T) {
 		"rowHash":    {i18n.ContentHash("联系我们"), i18n.ContentHash("<p>我们成立于 2010 年</p>")},
 		"rowTarget":  {"Contact us", "<p>Founded in 2010</p>"},
 	})
+	// 判据在 2026-10 改过：成功从「渲染提示页」改成「只回 JSON」。
+	// 表单改 htmx 之后页面留在原地，结论由 toast 给 + data-reload-on-ok 刷新，
+	// 提示页是原生提交时代为了「让用户看到结论」而造的第二条通道。
 	if saved.Code != http.StatusOK {
-		t.Fatalf("保存成功应渲染提示页（200），实际 %d：%s", saved.Code, saved.Body.String())
+		t.Fatalf("保存成功应回 200 JSON，实际 %d：%s", saved.Code, saved.Body.String())
 	}
-	if body := saved.Body.String(); !strings.Contains(body, `data-jump-state="ok"`) || !strings.Contains(body, "已保存 2 条译文") {
-		t.Fatalf("提示页应含「已保存 2 条译文」：%s", body)
+	body := saved.Body.String()
+	if !strings.Contains(body, "已保存 2 条译文") || !strings.Contains(body, `"written":2`) {
+		t.Fatalf("成功响应应含回执与 written 计数：%s", body)
+	}
+	if strings.Contains(body, `data-jump-state="ok"`) {
+		t.Fatalf("成功响应不该再渲染提示页：%s", body)
 	}
 	if n := translationRowCount(t, db, "en-US"); n != 2 {
 		t.Fatalf("应写入 2 条译文，实际 %d", n)
@@ -283,10 +290,10 @@ func TestSavePageTranslationsWritesAndMarksStale(t *testing.T) {
 			t.Fatalf("页面 %s 应被标记 stale=true", id)
 		}
 	}
-	body := getTranslationPage(t, router, pageID, "en-US")
+	pageBody := getTranslationPage(t, router, pageID, "en-US")
 	for _, want := range []string{"已翻译", ">manual<", "本页完成度 2 / 4"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("保存后工作台缺少 %q\n%s", want, body)
+		if !strings.Contains(pageBody, want) {
+			t.Fatalf("保存后工作台缺少 %q\n%s", want, pageBody)
 		}
 	}
 }
@@ -456,8 +463,10 @@ func TestSavePageTranslationsRejectsInvalid(t *testing.T) {
 			"rowContext": {tc.context}, "rowSource": {tc.source},
 			"rowHash": {tc.hash}, "rowTarget": {tc.target},
 		})
+		// 校验失败回 200 + **逐行错误片段**（htmx 就地替换 #page-translations-errors）。
+		// 不落库、不触发重建这两条判据没变。
 		if recorder.Code != http.StatusOK {
-			t.Fatalf("%s：校验失败应回渲染工作台（200），实际 %d", tc.name, recorder.Code)
+			t.Fatalf("%s：校验失败应回 200 片段，实际 %d", tc.name, recorder.Code)
 		}
 		if !strings.Contains(recorder.Body.String(), tc.want) {
 			t.Fatalf("%s：缺少错误提示 %q\n%s", tc.name, tc.want, recorder.Body.String())

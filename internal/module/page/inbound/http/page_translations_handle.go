@@ -19,6 +19,7 @@ package pagehttp
 import (
 	"context"
 	"errors"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"sort"
 	"strconv"
@@ -271,7 +272,7 @@ func (h *pagesAdminHandle) PageTranslations(c *gin.Context) {
 		})
 		return
 	}
-	c.HTML(http.StatusOK, translationsTemplate, adminui.PrepareView(c, data))
+	pageview.Render(c, data)
 }
 
 // pageTranslationsFailure 失败页的两个事实档：参数非法（400）与主数据没读到（404 / 500）。
@@ -398,7 +399,7 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 		return
 	}
 	if len(items) == 0 {
-		translationJump(c, true, pageTranslationsSavedMsg(0))
+		response.SuccessMsg(c, pageTranslationsSavedMsg(0), gin.H{"written": 0})
 		return
 	}
 
@@ -450,21 +451,21 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 		}
 	}
 	// 第四步：结论走整页提示（不再经 ?saved=1&n= 回带工作台）。
-	translationJump(c, true, pageTranslationsSavedMsg(written))
+	response.SuccessMsg(c, pageTranslationsSavedMsg(written), gin.H{"written": written})
 }
 
-// renderTranslationError 校验/写入失败：回渲染工作台（200）并展示逐行错误，不落库。
+// renderTranslationError 校验/写入失败：**只回逐行错误片段**，不落库、不重渲整页。
+//
+// 判据在 2026-10 改过：从前这里重渲整个工作台（重新查草稿、重建候选、重算全站完成度），
+// 理由是「失败时要把用户刚填的译文留在页面上」。表单改 htmx 之后那个理由不成立 ——
+// 页面根本没离开过，译文还在框里。重渲只是把一次**校验失败**变成一次全量查询。
+//
+// 逐行错误（「哪一行有什么问题」）必须留在页面上，塞不进 toast，
+// 所以返回一个只含错误区的片段，由 htmx 就地替换 #page-translations-errors。
 func (h *pagesAdminHandle) renderTranslationError(c *gin.Context, pageID, lang string, errs []pagedto.TranslationRowErrorResp) {
-	data, err := h.buildPageTranslationsData(c.Request.Context(), pageID, lang, "")
-	if err != nil {
-		// 重渲失败：这次写动作已经没有可回的工作台（「原样留下输入」做不到），走**写侧**的整页提示
-		// 通道给一句结论 + 回列表入口 —— 静默 303 会把用户刚填的整屏译文连同原因一起吞掉。
-		logger.Scene("page").With("pageId", pageID).Error(err, "重渲翻译工作台失败")
-		pageListJump(c, false, pageErrMsgQuiet(c, err))
-		return
-	}
-	data.Errors = errs
-	c.HTML(http.StatusOK, "admin/page/page_translations", adminui.PrepareView(c, data))
+	c.HTML(http.StatusOK, PageTranslationErrorsTemplate, adminui.PrepareBareView(c, &pagedto.TranslationErrorsResp{
+		Errors: errs,
+	}))
 }
 
 // buildPageTranslationsData 组装工作台数据。
@@ -697,10 +698,6 @@ func translationBack(c *gin.Context) string {
 // translationBackMsg 回跳链接文字（复用本页标题词条，不新增全站词条）。
 var translationBackMsg = pageMsg{Key: pageenums.MsgPageTranslationsTitle, Fallback: "多语言"}
 
-// translationJump 回翻译工作台的提示页出口（保存成功）。
-func translationJump(c *gin.Context, ok bool, msg pageMsg) {
-	pageJump(c, ok, msg, translationBack(c), translationBackMsg)
-}
 
 // pageTranslationsSavedMsg 译文保存成功回执 —— 一句**带 %s 的整句词条** + 数字参数。
 //
@@ -1176,8 +1173,7 @@ func (h *pagesAdminHandle) TranslationMissesPage(c *gin.Context) {
 		// 不再另造一份字段相同的渲染行 —— 两份必须逐字段等价的定义就是静默分叉的温床。
 		rows = append(rows, list...)
 	}
-	c.HTML(http.StatusOK, "admin/page/page_translation_misses.html",
-		h.translationMissPageData(c, projectID, rows, errFact))
+	pageview.Render(c, h.translationMissPageData(c, projectID, rows, errFact))
 }
 
 // TranslationMissCancel 把某个（页面 × 语言）取消：调 ExcludePageLang（不另写下线逻辑）。

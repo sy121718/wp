@@ -25,8 +25,8 @@
 # 格式：<文件> gin=<n> html=<n>；末行 --total 是本仓当前值（**双向精确匹配**）。
 
 internal/module/admin/inbound/http/admin_page.go gin=0 html=3
-internal/module/page/inbound/http/page_translations_handle.go gin=0 html=3
+internal/module/page/inbound/http/page_translations_handle.go gin=0 html=1
 internal/module/user/inbound/http/user_page.go gin=0 html=1
 internal/module/workbench/inbound/http/inspector_handle.go gin=0 html=1
 
---total gin=0 html=8
+--total gin=0 html=6

@@ -53,7 +53,9 @@ func TestTranslationLabelsUseFacts(t *testing.T) {
 					paths = append(paths, fmt.Sprintf("/p%d", i))
 				}
 				row := map[string]any{"Context": "core.text:text", "Component": "core.text", "Field": "text", "Source": "source", "SourceHash": "hash", "Target": "", "Engine": "", "Translated": false, "Rich": false, "Limit": 0, "Origin": origin, "ReusePages": count, "ReuseTotal": count, "ReusePaths": paths}
-				data := map[string]any{"title": "translations", "menu": "pages", "t": func(key, fallback string) string { return fallback }, "PageID": "p", "PagePath": "/p", "ProjectID": "pr", "Lang": "en-US", "Langs": []any{}, "Filter": "all", "IsDefaultLang": false, "Groups": []map[string]any{{"Component": "core.text", "Rows": []map[string]any{row}}}, // Errors / SiteNote / LoadError / ParamError 一律**事实**（key + 中文兜底 + %s 参数），
+				data := map[string]any{"title": "translations", "menu": "pages", "t": func(key, fallback string) string { return fallback },
+					// tf 是「取词 + %s 填充」：逐行错误片段（fragments/translation_errors.html）用它。
+					"tf": func(key, fallback string, args []string) string { return fallback }, "PageID": "p", "PagePath": "/p", "ProjectID": "pr", "Lang": "en-US", "Langs": []any{}, "Filter": "all", "IsDefaultLang": false, "Groups": []map[string]any{{"Component": "core.text", "Rows": []map[string]any{row}}}, // Errors / SiteNote / LoadError / ParamError 一律**事实**（key + 中文兜底 + %s 参数），
 					// 空 map = 无这条文案；成品串会把整页文案锁死在一种语言。
 					"Errors": []any{}, "PageTotal": 1, "PageDone": 0, "SiteTotal": 1, "SiteDone": 0,
 					"SiteNote": map[string]any{"Key": "", "Fallback": ""}, "RowCount": 1, "LoadFailed": false,

@@ -52,3 +52,13 @@ type PageHistoryListResp struct {
 	// Error 是**事实**（key + 中文兜底），取词在片段模板里做。
 	Error any
 }
+
+// TranslationErrorsResp 译文保存失败时的**逐行错误片段**（admin/partials/translation_errors.html）。
+//
+// 片段出口：保存失败就地替换 #page-translations-errors，不重渲整页 ——
+// 页面与已填译文都没动过，重渲只会把一次校验失败变成一次全量查询。
+type TranslationErrorsResp struct {
+	// Errors 逐行错误：Label 是「哪一行」（原文 context 名，可空 = 页面级），
+	// Msg 是词条事实 —— 两者在模板里合成一句。
+	Errors []TranslationRowErrorResp
+}
