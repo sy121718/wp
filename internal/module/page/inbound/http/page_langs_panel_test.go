@@ -15,7 +15,6 @@ package pagehttp_test
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,7 +26,7 @@ import (
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
 	projectcontract "go_wp/internal/module/project/contract"
-	"go_wp/internal/templates"
+	"go_wp/pkg/jsonx"
 	"go_wp/public/test/support"
 )
 
@@ -119,56 +118,102 @@ func seedLangPanelFixture(t *testing.T) (svc *pageservice.Service, projects proj
 }
 
 // TestPageLangsPanelRenders 面板渲染：两种语言各按自己的状态给出不同操作。
-func TestPageLangsPanelRenders(t *testing.T) {
+// TestPageLangsPanelReturnsJSON 面板回 **JSON 数据**，不回 HTML 片段。
+//
+// 判据在 2026-10 改过：从前这里断言「片段里有哪些元素（表单 action / CSRF 隐藏域 /
+// 文案）」—— 那是 htmx 换 HTML 片段的时代。现在局部刷新走 {code,message,data}：
+// 数据是 JSON，DOM 由前端用页面里的 Jet <template> 填充（ui/json_swap.js）。
+//
+// 所以这一层只钉**数据契约**：有哪几行、每行的状态码是什么。
+// 「按钮长什么样、文案是哪句」属于模板，由模板测试与视觉基线守。
+func TestPageLangsPanelReturnsJSON(t *testing.T) {
 	svc, projects, pageID, _ := seedLangPanelFixture(t)
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 	h := pagehttp.NewPagesAdminHandle(svc, projects, nil, nil)
-	router.GET("/admin/page-langs/panel", adminui.BareSlot(pagehttp.PageLangsPanelTemplate), h.PageLangsPanel)
+	router.GET("/admin/page-langs/panel", h.PageLangsPanel)
+
+	decode := func(rec *httptest.ResponseRecorder) map[string]any {
+		t.Helper()
+		var body map[string]any
+		if err := jsonx.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("响应不是 JSON：%v\n%s", err, rec.Body.String())
+		}
+		return body
+	}
+	rowsOf := func(body map[string]any) []any {
+		t.Helper()
+		data, _ := body["data"].(map[string]any)
+		items, _ := data["items"].([]any)
+		return items
+	}
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/page-langs/panel?pageId="+pageID, nil))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("面板应渲染成功，实际 %d：%s", rec.Code, rec.Body.String())
+		t.Fatalf("面板应回 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	body := rec.Body.String()
-	for _, want := range []string{
-		"page-langs-" + pageID, // 片段根（HTMX swap 目标）
-		`name="csrf_token"`,    // 原生表单必须显式带 CSRF 隐藏域
-		"en-AU", "zh-CN",       // 两种启用语言都在
-		`action="/admin/page-langs/exclude"`, // 未排除的非默认语言给「排除」
-		"站点默认语言",                             // 默认语言不可排除的原因（中文兜底）
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("面板缺少元素 %q：body=%s", want, body)
-		}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("面板必须回 JSON（后端不产 HTML 片段），得到 %q", ct)
 	}
-	if strings.Contains(body, `action="/admin/page-langs/restore"`) {
-		t.Fatal("没有排除任何语言时不该出现「恢复」表单（会让运营以为已经排除了）")
+	body := decode(rec)
+	// 本仓两种成功码都出现过：response.Success 用 200，writeJSON 用 0。
+	// 扩展（json_swap.isFailure）两个都当成功 —— 这里同样只钉「不是失败档」。
+	if code, _ := body["code"].(float64); code != 200 && code != 0 {
+		t.Fatalf("成功响应 code 应为 0 或 200，实际 %v", body["code"])
+	}
+	data, _ := body["data"].(map[string]any)
+	if data["pageId"] != pageID {
+		t.Errorf("data.pageId 应为 %s，实际 %v", pageID, data["pageId"])
 	}
 
-	// 另一个页面已经把 zh-CN 标成排除：操作列应切换成「恢复」。
+	items := rowsOf(body)
+	if len(items) != 2 {
+		t.Fatalf("应有两行语言，实际 %d：%s", len(items), rec.Body.String())
+	}
+	seen := map[string]string{}
+	for _, it := range items {
+		row, _ := it.(map[string]any)
+		lang, _ := row["lang"].(string)
+		status, _ := row["status"].(string)
+		seen[lang] = status
+		// 状态码只能取这三档：模板按它选 data-when 分支。
+		if status != "excluded" && status != "published" && status != "draft" {
+			t.Errorf("状态码只能是 excluded/published/draft，得到 %q", status)
+		}
+		// 行里不许有成品文案：取词发生在模板渲染期，不在 JSON 里。
+		for _, banned := range []string{"statusText", "noteText", "label"} {
+			if _, ok := row[banned]; ok {
+				t.Errorf("行里不该有成品文案字段 %q —— 取词发生在模板渲染期", banned)
+			}
+		}
+	}
+	if _, ok := seen["en-AU"]; !ok {
+		t.Errorf("缺少 en-AU：%v", seen)
+	}
+	if _, ok := seen["zh-CN"]; !ok {
+		t.Errorf("缺少 zh-CN：%v", seen)
+	}
+
+	// 另一页把 zh-CN 标成排除：状态码必须是 excluded（模板据此显示「恢复」）。
 	rec2 := httptest.NewRecorder()
 	router.ServeHTTP(rec2, httptest.NewRequest(http.MethodGet,
 		"/admin/page-langs/panel?pageId=30000000-0000-0000-0000-0000000000a2", nil))
-	body2 := rec2.Body.String()
-	if !strings.Contains(body2, `action="/admin/page-langs/restore"`) {
-		t.Fatalf("已排除语言应给「恢复」表单：body=%s", body2)
+	found := false
+	for _, it := range rowsOf(decode(rec2)) {
+		row, _ := it.(map[string]any)
+		if row["lang"] == "zh-CN" {
+			found = true
+			if row["status"] != "excluded" {
+				t.Errorf("已排除语言的状态码应为 excluded，实际 %v", row["status"])
+			}
+			if row["isExcluded"] != true {
+				t.Errorf("isExcluded 应为 true（模板据此选「恢复」分支），实际 %v", row["isExcluded"])
+			}
+		}
 	}
-	// V4：已排除的语言**不给**「重新发布」——先恢复再重发，避免「点了重发却什么都没发生」
-	// （发布入口对被排除语言会直接拒绝，那是设计上的显式失败）。
-	rowsSegment := body2[strings.Index(body2, "已排除（不产出）"):]
-	if strings.Contains(rowsSegment, `action="/admin/page-langs/republish"`) {
-		t.Fatalf("已排除的语言不该给「重新发布」按钮：body=%s", body2)
-	}
-	if !strings.Contains(body2, "已排除（不产出）") {
-		t.Fatalf("已排除语言应显示「已排除（不产出）」状态：body=%s", body2)
-	}
-
-	// 片段必须渲染完整（最后一层 div 闭合）：模板中途出错时 Jet 会写半截内容。
-	if !strings.HasSuffix(strings.TrimSpace(body), "</div>") {
-		t.Fatalf("片段没有渲染完整：%s", body)
+	if !found {
+		t.Fatalf("第二页应有 zh-CN 行：%s", rec2.Body.String())
 	}
 }
 
@@ -177,40 +222,35 @@ func TestPageLangsPanelRenders(t *testing.T) {
 //
 // 为什么这条重要：面板是 HTMX 片段，渲染失败时页面上**什么都不显示**（inert 的失败）——
 // 运营点了「语言」按钮却没有任何反应，而日志里可能什么都没有。
-func TestPageLangsPanelDegradesOnLoadFailure(t *testing.T) {
-	db := support.NewMigratedPGTestDB(t)
-	if db == nil {
-		t.Skip("本地 PostgreSQL 不可用，跳过")
-	}
-	projectID := "30000000-0000-0000-0000-000000000002"
-	support.SeedProjectRow(t, db, projectID, "降级用例")
-	projects := langPanelProjectList{ids: []string{projectID}, langs: []string{"en-AU", "zh-CN"}}
-	svc := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projects, nil, nil, nil, nil, nil)
+func TestPageLangsPanelLoadFailureReturnsJSON(t *testing.T) {
+	svc, projects, _, _ := seedLangPanelFixture(t)
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 	h := pagehttp.NewPagesAdminHandle(svc, projects, nil, nil)
-	router.GET("/admin/page-langs/panel", adminui.BareSlot(pagehttp.PageLangsPanelTemplate), h.PageLangsPanel)
+	router.GET("/admin/page-langs/panel", h.PageLangsPanel)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
 		"/admin/page-langs/panel?pageId=30000000-0000-0000-0000-0000000000ff", nil))
-	body := rec.Body.String()
-	if rec.Code != http.StatusOK {
-		t.Fatalf("读不到页面时应降级渲染（HTMX 对 4xx/5xx 不替换节点），实际 %d", rec.Code)
+
+	// 失败一律 {code,message}（用户裁定：一个提示就够）。从前这里返回「降级渲染的完整片段」，
+	// 那是 HTMX 换 HTML 的时代 —— 现在前端只认 JSON，回 HTML 会让它解析失败。
+	var body map[string]any
+	if err := jsonx.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("失败响应必须是 JSON：%v\n%s", err, rec.Body.String())
 	}
-	if !strings.Contains(body, "<thead>") {
-		t.Fatalf("空态下 table 表头必须常驻：%s", body)
+	if rec.Code < 400 {
+		t.Fatalf("读不到页面应回 4xx/5xx，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(body, `colspan="4"`) {
-		t.Fatalf("空态行应整行进 tbody 且 colspan 等于列数（4）：%s", body)
+	msg, _ := body["message"].(string)
+	if msg == "" {
+		t.Fatalf("失败响应必须带可读文案：%s", rec.Body.String())
 	}
-	if !strings.HasSuffix(strings.TrimSpace(body), "</div>") {
-		t.Fatalf("片段没有渲染完整：%s", body)
-	}
-	// 归口文案（不直出内部错误）：页面不存在是业务错误，应给可读文案而不是 SQL 原文。
-	if strings.Contains(body, "SQLSTATE") || strings.Contains(body, "record not found") {
-		t.Fatalf("片段里出现了内部错误原文：%s", body)
+	// 归口（不直出内部错误）：页面不存在是业务错误，给可读文案而不是驱动原文。
+	for _, banned := range []string{"SQLSTATE", "record not found", "pq:"} {
+		if strings.Contains(msg, banned) {
+			t.Fatalf("文案里出现了驱动原文 %q：%s", banned, msg)
+		}
 	}
 }

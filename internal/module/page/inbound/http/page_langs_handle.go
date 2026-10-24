@@ -17,11 +17,71 @@ import (
 	pageservice "go_wp/internal/module/page/service"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/reqparams"
+	"go_wp/pkg/response"
 )
 
-// PageLangsPanel GET /admin/page-langs/panel?pageId=…：某页的语言产出范围面板（HTMX 片段）。
+// PageLangsPanel GET /admin/page-langs/panel?pageId=…：某页的语言产出范围面板。
+//
+// **回 JSON**（{code,message,data}）：局部刷新时 DOM 由前端用页面里的 Jet <template>
+// 填充（ui/json_swap.js 扩展）。后端不产 HTML 片段 —— 那是全仓唯一一条渲染规矩。
+//
+// 行里只有状态码、没有文案：译文在模板渲染期就取好了（见 PageLangRowJSON 的注释）。
+// 装配（查语言状态 / 取草稿路径 / 状态码映射）在 pageLangsPanelJSON 里，与页面 GET 的
+// pageLangsPanelData 分开 —— 两者出口不同，共用的只有 service 调用。
 func (h *pagesAdminHandle) PageLangsPanel(c *gin.Context) {
-	pageview.Render(c, h.pageLangsPanelData(c, c.Query("pageId"), pageMsg{}, pageMsg{}))
+	pid := strings.TrimSpace(c.Query("pageId"))
+	out, err := pageLangsPanelJSON(c, h, pid)
+	if err != nil {
+		response.ErrorMsg(c, response.ErrorStatus(err), pageErrMsg(c, err))
+		return
+	}
+	response.Success(c, out)
+}
+
+// pageLangsPanelJSON 面板 JSON 的装配：查语言状态 → 映射三档状态码 → 取草稿路径。
+//
+// 单独一个函数而不是内联：控制器只做编排（门禁按语句数卡），
+// 而这里是「查一次 + 逐行映射」，属于装配。
+func pageLangsPanelJSON(c *gin.Context, h *pagesAdminHandle, pid string) (pagedto.PageLangsPanelJSONResp, error) {
+	rows := []pagedto.PageLangRowJSON{}
+	path := ""
+	if pid != "" && h.pages != nil {
+		states, lerr := h.pages.PageLangStates(c.Request.Context(), pid)
+		if lerr != nil {
+			return pagedto.PageLangsPanelJSONResp{}, lerr
+		}
+		for _, st := range states {
+			rows = append(rows, pagedto.PageLangRowJSON{
+				Lang:         st.Lang,
+				Status:       pageLangStatusCode(st.Excluded, st.Published),
+				IsDefault:    st.IsDefault,
+				CanRepublish: !st.Excluded,
+				IsExcluded:   st.Excluded,
+			})
+		}
+		// 页面路径取数据库的草稿路径，不从 query 回显（查询参数不是可信边界）。
+		if projID, perr := h.pages.ProjectOfPage(c.Request.Context(), pid); perr == nil && projID != "" {
+			if detail, derr := h.pages.Detail(c.Request.Context(), &pagedto.DetailReq{ProjectID: projID, ID: pid}); derr == nil && detail != nil {
+				path = detail.DraftPath
+			}
+		}
+	}
+	return pagedto.PageLangsPanelJSONResp{PageID: pid, Path: path, Items: rows}, nil
+}
+
+// pageLangStatusCode 三档状态码 —— **与模板的 data-when 取值一一对应**。
+//
+// 这个映射属于展示契约：改一处必须改另一处（模板里 data-when="excluded|published|draft"）。
+// 放在 enums 更好，但那三个常量是 page 域的展示分档，且只服务这一个面板。
+func pageLangStatusCode(excluded, published bool) string {
+	switch {
+	case excluded:
+		return "excluded"
+	case published:
+		return "published"
+	default:
+		return "draft"
+	}
 }
 
 // PageLangExclude POST /admin/page-langs/exclude：排除某语言（同时下线其产物）。
