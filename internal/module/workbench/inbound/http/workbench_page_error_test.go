@@ -45,6 +45,8 @@ import (
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
+	"go_wp/internal/builder/source"
+	plugincontract "go_wp/internal/module/plugin/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
 	workbenchenums "go_wp/internal/module/workbench/enums"
@@ -353,6 +355,11 @@ type workbenchBlockStub struct {
 	err   error
 }
 
+// List 供 workbenchPage 的 palette 取全局块摘要（没有任何块时返回空列表即可）。
+func (s *workbenchBlockStub) List(_ context.Context, _ *blockdto.ListReq) ([]blockdto.BlockResp, error) {
+	return nil, nil
+}
+
 func (s *workbenchBlockStub) Detail(_ context.Context, _ *blockdto.DetailReq) (*blockdto.BlockResp, error) {
 	if s.err != nil {
 		return nil, s.err
@@ -418,28 +425,77 @@ type workbenchModeDeps struct {
 	contentTemplates contenttemplatecontract.ContentTemplateService
 	templatePreview  TemplatePreviewPort
 	instances        presentationcontract.PresentationService
+	// plugins 插件契约（只有「组件 schema 序列化失败」一档需要它：
+	// 非法 JSON 挂在插件装配素材上才能进序列化分支，见 injectBrokenComponentSchema）。
+	plugins plugincontract.PluginService
 }
 
 func (d workbenchModeDeps) newHandle() *Handle {
-	h := New(d.pages, nil, d.blocks, nil, nil, d.contentTemplates, d.templatePreview)
+	h := New(d.pages, nil, d.blocks, d.plugins, nil, d.contentTemplates, d.templatePreview)
 	h.SetInstanceOverrideDeps(d.instances)
 	return h
 }
 
-// injectBrokenComponentSchema 让三种模式共用的 json.Marshal(schemas) 必然失败。
+// workbenchPluginStub 只提供 EnabledAssembly（本包只消费这一个方法）；
+// 其余方法由嵌入的接口兜住（本测试不调用它们）。
 //
-// 手法：builder.ComponentSchemas() 是 sync.Once 建好的进程级缓存、按**引用**返回（不拷贝），
-// 所以往这张 map 里塞一条非法 JSON，后续请求的序列化就会失败 —— 这是进程内唯一能走到
-// 「组件 schema 序列化失败」这条 500 的办法。用完必须删掉（缓存是共享的）。
-func injectBrokenComponentSchema(t *testing.T) {
+// 能力未装配用 nil 接口表达，不用「返回 nil 的桩」：本包两者走同一条降级分支。
+type workbenchPluginStub struct {
+	plugincontract.PluginService
+	asm *plugincontract.Assembly
+}
+
+func (s *workbenchPluginStub) EnabledAssembly(_ context.Context) (*plugincontract.Assembly, error) {
+	return s.asm, nil
+}
+
+// injectBrokenComponentSchema 让 workbenchPage 的 json.Marshal(schemas) 必然失败。
+//
+// 手法：非法 JSON 挂在**插件装配素材**上（plugincontract.Assembly.InspectorSchemas），
+// 由 workbenchPage 把它们并进它自己那份 schema 表。这是请求内真实存在的唯一入口 ——
+// 另外三种模式（块 / 模板 / 实例）不合并插件 schema，走不到这条分支。
+//
+// 为什么不再往 builder.ComponentSchemas() 返回的 map 里塞：那个函数自从改成
+// **每次返回进程级缓存的副本**（并发安全）之后，改返回值就不再能影响下一次调用 ——
+// 这本身就是那条修复要保证的性质，所以注入手法必须换到请求入参上，而不是和它对抗。
+// 附带好处：不再需要 t.Cleanup 清理进程级缓存（旧手法漏清会让同包其它测试跟着红）。
+func injectBrokenComponentSchema(t *testing.T) plugincontract.PluginService {
 	t.Helper()
-	schemas, err := builder.ComponentSchemas()
-	if err != nil {
-		t.Fatalf("预热组件 schema 缓存失败：%v", err)
+	return &workbenchPluginStub{asm: &plugincontract.Assembly{
+		// Specs 必须非空：Service.PluginAssembly 用 len(PluginFS)>0 || len(Specs)>0
+		// 判「这个装配素材是不是空的」，只带 InspectorSchemas 会被整个丢掉、返回 nil。
+		Specs: map[string]*source.PluginComponentSpec{"plugin.broken": {}},
+		InspectorSchemas: map[string][]byte{
+			"plugin.broken": []byte("{ 这不是 JSON"),
+		},
+	}}
+}
+
+// TestPluginInspectorSchemaMergeEncodeFailure 插件 schema 并入后无法序列化 → 500「组件 schema
+// 序列化失败」。
+//
+// 这条是**唯一**能走到该分支的路径：workbenchPage 把插件 InspectorSchemas 并进自己那份
+// ComponentSchemas() 副本，只要插件给的不是合法 JSON，合并后的 Marshal 就失败。
+// 同时它替另一件事兜底：ComponentSchemas() 现在返回的是可写副本 —— 若哪天又变回
+// 「按引用透传全局缓存」，这条用例仍会绿（合并照样发生），但并发会撞 map，由
+// TestComponentSchemasReturnsIndependentCopy 钉住。
+func TestPluginInspectorSchemaMergeEncodeFailure(t *testing.T) {
+	goodDoc := json.RawMessage(`{"type":"root"}`)
+	pageOK := &pagedto.PageResp{ID: "page-1", ProjectID: "project-1", DraftDocument: goodDoc}
+
+	router := newWorkbenchPageErrorRouter(t, New(&workbenchPageStub{page: pageOK}, nil,
+		&workbenchBlockStub{}, injectBrokenComponentSchema(t), nil, nil, nil))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/workbench?id=page-1&lang=zh-CN", nil))
+
+	body := rec.Body.String()
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("状态码应为 500，得到 %d：%s", rec.Code, body)
 	}
-	const probe = "__workbench_error_branch_probe__"
-	schemas[probe] = json.RawMessage("{ 这不是 JSON")
-	t.Cleanup(func() { delete(schemas, probe) })
+	assertWorkbenchErrorShell(t, rec, body, "组件 schema 序列化失败")
+	if strings.Contains(body, "这不是 JSON") {
+		t.Errorf("插件 schema 的原文漏到了页面上：%s", body)
+	}
 }
 
 // TestWorkbenchModeErrorBranchesRenderFullShell 三种模式的每一档失败都回完整错误壳。
@@ -449,12 +505,10 @@ func TestWorkbenchModeErrorBranchesRenderFullShell(t *testing.T) {
 	goodDoc := json.RawMessage(`{"type":"root"}`)
 	badJSON := json.RawMessage("{ 这不是 JSON")
 
-	blockOK := &blockdto.BlockResp{ID: "block-1", ProjectID: "project-1", Name: "页眉", Kind: "header", Document: goodDoc}
 	blockBad := &blockdto.BlockResp{ID: "block-1", ProjectID: "project-1", Name: "页眉", Kind: "header", Document: badJSON}
 	tplOK := &contenttemplatedto.TemplateResp{ID: "tpl-1", Name: "商品卡", EntityType: "product", DraftDocument: goodDoc}
 	tplBad := &contenttemplatedto.TemplateResp{ID: "tpl-1", Name: "商品卡", EntityType: "product", DraftDocument: badJSON}
 	tplHeader := &contenttemplatedto.TemplateResp{ID: "tpl-2", Name: "页眉", EntityType: contenttemplatecontract.EntityTypeHeader, DraftDocument: goodDoc}
-	instOK := &presentationdto.InstanceResp{ID: "inst-1", ProjectID: "project-1", EntityType: "product", EntityID: "42", Document: goodDoc}
 	instBad := &presentationdto.InstanceResp{ID: "inst-1", ProjectID: "project-1", EntityType: "product", EntityID: "42", Document: badJSON}
 	instNoDoc := &presentationdto.InstanceResp{ID: "inst-1", ProjectID: "project-1", EntityType: "product", EntityID: "42"}
 
@@ -464,70 +518,63 @@ func TestWorkbenchModeErrorBranchesRenderFullShell(t *testing.T) {
 		instURL  = "/workbench?instance=inst-1&lang=zh-CN"
 	)
 
+	// 为什么这里没有「组件 schema 序列化失败」这一档：块 / 模板 / 实例三种模式**根本不合并
+	// 插件 schema**（只有 workbenchPage 合并，见 workbench_page.go 的 asm.InspectorSchemas 循环），
+	// 所以它们的 schemas 表恒定是内置组件、恒可序列化 —— 这个分支对它们不存在。
+	// 此前这三条能绿，靠的正是「ComponentSchemas() 按引用返回全局缓存」这个缺陷：注入会把坏
+	// 数据写进进程级缓存，于是四种模式一起读到。缓存改返回副本（并发安全）后，这条路自然断开。
+	// 合并路径本身由 TestPluginInspectorSchemaMergeEncodeFailure 单独覆盖。
 	cases := []struct {
-		name         string
-		deps         workbenchModeDeps
-		url          string
-		brokenSchema bool
-		wantStatus   int
-		wantText     string
+		name       string
+		deps       workbenchModeDeps
+		url        string
+		wantStatus int
+		wantText   string
 	}{
 		{"块不存在：目标事实",
-			workbenchModeDeps{blocks: &workbenchBlockStub{err: rawErr}}, blockURL, false,
+			workbenchModeDeps{blocks: &workbenchBlockStub{err: rawErr}}, blockURL,
 			http.StatusNotFound, "全局块不存在"},
 		{"块文档序列化失败：未知内部异常",
-			workbenchModeDeps{blocks: &workbenchBlockStub{block: blockBad}}, blockURL, false,
+			workbenchModeDeps{blocks: &workbenchBlockStub{block: blockBad}}, blockURL,
 			http.StatusInternalServerError, "块文档序列化失败"},
-		{"块组件 schema 序列化失败：未知内部异常",
-			workbenchModeDeps{blocks: &workbenchBlockStub{block: blockOK}}, blockURL, true,
-			http.StatusInternalServerError, "组件 schema 序列化失败"},
 		{"模板编辑能力未装配：服务事实",
-			workbenchModeDeps{}, "/workbench?template=tpl-1&lang=zh-CN", false,
+			workbenchModeDeps{}, "/workbench?template=tpl-1&lang=zh-CN",
 			http.StatusServiceUnavailable, "内容模板编辑能力未装配"},
 		{"模板不存在：目标事实",
-			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{err: rawErr}}, tplURL, false,
+			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{err: rawErr}}, tplURL,
 			http.StatusNotFound, "模板不存在"},
 		// {type} 由词条携带、在渲染出口处替换：取词与替换的顺序错了，这里会漏出 "{type}"。
 		{"普通模板缺样例实体：请求事实（{type} 替换）",
 			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{tpl: tplOK}, templatePreview: workbenchTemplatePreviewStub{}},
-			"/workbench?template=tpl-1&entityType=product&lang=zh-CN", false,
+			"/workbench?template=tpl-1&entityType=product&lang=zh-CN", 
 			http.StatusBadRequest, "product"},
 		{"模板预览能力未装配：服务事实",
-			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{tpl: tplOK}}, tplURL, false,
+			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{tpl: tplOK}}, tplURL,
 			http.StatusServiceUnavailable, "内容模板编辑能力未装配"},
 		{"无实体模板预览能力未装配：服务事实",
-			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{tpl: tplHeader}}, "/workbench?template=tpl-2&lang=zh-CN", false,
+			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{tpl: tplHeader}}, "/workbench?template=tpl-2&lang=zh-CN",
 			http.StatusServiceUnavailable, "无实体模板预览能力未装配"},
 		{"模板文档序列化失败：未知内部异常",
-			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{tpl: tplBad}, templatePreview: workbenchTemplatePreviewStub{}}, tplURL, false,
+			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{tpl: tplBad}, templatePreview: workbenchTemplatePreviewStub{}}, tplURL,
 			http.StatusInternalServerError, "模板文档序列化失败"},
-		{"模板组件 schema 序列化失败：未知内部异常",
-			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{tpl: tplOK}, templatePreview: workbenchTemplatePreviewStub{}}, tplURL, true,
-			http.StatusInternalServerError, "组件 schema 序列化失败"},
 		{"实例编辑能力未装配：服务事实",
-			workbenchModeDeps{}, instURL, false,
+			workbenchModeDeps{}, instURL,
 			http.StatusServiceUnavailable, "实例编辑能力未装配"},
 		{"实例不存在：目标事实",
-			workbenchModeDeps{instances: &workbenchInstanceStub{err: rawErr}}, instURL, false,
+			workbenchModeDeps{instances: &workbenchInstanceStub{err: rawErr}}, instURL,
 			http.StatusNotFound, "实例不存在"},
 		// 422 不是「服务端炸了」：这个实例只是还没有可编辑的文档（业务状态），
 		// 文案走 workbenchFacingFallbacks 那条受控出口，不是短句表。
 		{"实例无可编辑文档：业务状态（facing 文案）",
-			workbenchModeDeps{instances: &workbenchInstanceStub{inst: instNoDoc}}, instURL, false,
+			workbenchModeDeps{instances: &workbenchInstanceStub{inst: instNoDoc}}, instURL,
 			http.StatusUnprocessableEntity, "这个实例还没有可编辑的文档"},
 		{"实例文档序列化失败：未知内部异常",
-			workbenchModeDeps{instances: &workbenchInstanceStub{inst: instBad}}, instURL, false,
+			workbenchModeDeps{instances: &workbenchInstanceStub{inst: instBad}}, instURL,
 			http.StatusInternalServerError, "草稿文档序列化失败"},
-		{"实例组件 schema 序列化失败：未知内部异常",
-			workbenchModeDeps{instances: &workbenchInstanceStub{inst: instOK}}, instURL, true,
-			http.StatusInternalServerError, "组件 schema 序列化失败"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.brokenSchema {
-				injectBrokenComponentSchema(t)
-			}
 			router := newWorkbenchPageErrorRouter(t, tc.deps.newHandle())
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.url, nil))
@@ -555,39 +602,50 @@ func TestWorkbenchModeErrorBranchesRenderFullShell(t *testing.T) {
 // TestComponentSchemaBuildFailureIsNotInducible 「组件 schema **生成**失败」这条 500 在进程内
 // 不可注入 —— 这里给出机制证据，而不是一句「测不了」。
 //
-// 机制：builder.ComponentSchemas() 用 sync.Once 建缓存，构建只发生在**进程第一次调用**时，
-// 之后每次返回同一张 map 的引用；构建失败的唯一来源是 core.SchemaJSON(sp.PropsSpec()) 在
-// 固定注册表上失败，而注册表在包 init 期就定死了，请求侧没有任何输入能影响它。
-// 三条断言各自钉住机制的一环：缓存存在（同一引用）、构建此刻是成功的（非空）、
-// 改动按引用可见（注入手法成立）。
+// 机制：builder.ComponentSchemas() 用 sync.Once 建缓存，构建只发生在**进程第一次调用**时；
+// 构建失败的唯一来源是 core.SchemaJSON(sp.PropsSpec()) 在固定注册表上失败，而注册表在包
+// init 期就定死了，请求侧没有任何输入能影响它。
 func TestComponentSchemaBuildFailureIsNotInducible(t *testing.T) {
 	first, err := builder.ComponentSchemas()
 	if err != nil {
 		t.Fatalf("进程第一次构建组件 schema 就失败：%v（构建分支在请求路径上本就不可达，这里更无从覆盖）", err)
 	}
 	if len(first) == 0 {
-		t.Fatal("组件 schema 为空：注册表没装配，序列化失败这条分支的注入手法也随之失效")
+		t.Fatal("组件 schema 为空：注册表没装配")
 	}
+}
+
+// TestComponentSchemasReturnsIndependentCopy 每次调用拿到的是**独立副本**。
+//
+// 这条守的是并发安全本身，而不是某个分支覆盖率：ComponentSchemas() 返回的是进程级缓存的
+// 浅拷贝，调用方（workbenchPage 把插件 schema 并进同一张表）改它**不能**影响下一次调用，
+// 也不能与并发请求撞写。此前的写法规避了拷贝，于是任一请求往里合并插件 schema 就等于
+// 写全局缓存 —— 两个画布请求同时到达就是 DATA RACE（go test -race 会报）。
+//
+// 三条断言各自钉住一个性质：副本可写、写后不影响缓存、两次调用互不相干。
+func TestComponentSchemasReturnsIndependentCopy(t *testing.T) {
+	const probe = "__independent_copy_probe__"
+
+	first, err := builder.ComponentSchemas()
+	if err != nil {
+		t.Fatalf("取组件 schema 失败：%v", err)
+	}
+	first[probe] = json.RawMessage(`{"k":1}`)
+
 	second, err := builder.ComponentSchemas()
 	if err != nil {
 		t.Fatalf("第二次取组件 schema 失败：%v", err)
 	}
-	if reflect.ValueOf(first).Pointer() != reflect.ValueOf(second).Pointer() {
-		t.Error("两次调用返回了不同的 map：sync.Once 缓存被去掉了 —— 「第一次构建失败」就变成每个请求都可能发生，" +
-			"这条 500 分支的不可注入性论证随之失效（要么恢复缓存，要么让构建失败可注入）")
-	}
-	const probe = "__inducibility_probe__"
-	first[probe] = json.RawMessage("{ 这不是 JSON")
-	// 进程级缓存是共享的：这里**显式删掉并当场验证**，不靠 defer 兜底 —— 探针没清掉会让
-	// 同包其它测试跟着红（t.Cleanup 只作 panic 路径的第二道保险）。
-	t.Cleanup(func() { delete(second, probe) })
-	if _, ok := second[probe]; !ok {
-		t.Error("改第一张 map 在第二次返回的 map 里看不见：缓存不是按引用共享，" +
-			"injectBrokenComponentSchema 的手法会失效")
-	}
-	delete(second, probe)
 	if _, ok := second[probe]; ok {
-		t.Error("探针没清掉：进程级 schema 缓存被污染，同包其它测试会跟着红")
+		t.Error("改第一份返回值在第二次调用里看得见：返回的不是独立副本 —— " +
+			"调用方合并自己的条目就是在写进程级缓存，并发画布请求会撞 map（DATA RACE）")
+	}
+	if reflect.ValueOf(first).Pointer() == reflect.ValueOf(second).Pointer() {
+		t.Error("两次调用返回了同一张 map：缓存被按引用透传出去了")
+	}
+	// 内置条目必须在两份里都在（副本不能是空的）。
+	if len(second) == 0 {
+		t.Fatal("副本里没有内置组件 schema")
 	}
 }
 
