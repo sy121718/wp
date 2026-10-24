@@ -35,9 +35,10 @@
   `false`，换成 `hx-disable` 才是 `true`、settle 后恢复。写错的代价是「防重复提交静默失效」。
 - 事件名 v4 一律冒号分段：`htmx:after:swap` / `htmx:before:request` / `htmx:response:error`。
   v2 的驼峰名（`htmx:afterSwap`）不再派发，写了就是死监听。
-- 只能写 bundle 里真实存在的属性与元素：`scripts/check-htmx-api.sh`（**待建**，见批次 1 末项）
-  反向核对模板里的每个 `hx-*` 在 bundle 里是否存在。该门禁未落地前，与 bundle 对不上的
-  写法不会被机器拦住 —— 升级 htmx 时请自己核。
+- 只能写 bundle 里真实存在的属性与元素：`scripts/check-htmx-api.sh` 机械核对四件事 ——
+  v2 已删属性、v2 驼峰事件名、v2 扩展 API、以及**模板里的每个 `hx-*` 是否在 bundle 里存在**
+  （最后一条是反向核对，拓「以为支持其实不支持」）。排除名单只有 `hx-progress` /
+  `hx-progress-slide`（本项目自定义 CSS 类）。
 - 局部回写两种写法**都合法**：`<hx-partial hx-target="#id">` 与 `<template hx type="partial" hx-target="#id">`。
   前者不是原生元素，而是 bundle 里 `#Ie` 的通用改写：`<hx-<名>>` → `<template hx type="<名>">`
   （`</hx-…>` → `</template>`），所以两者等价。实测（vendored 4.0.0，真实浏览器）：

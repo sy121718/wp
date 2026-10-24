@@ -14,14 +14,20 @@
     （v4 的 #actionSelector = '[hx-action],[hx-get],[hx-post],...'），
     本项目 69 处动词属性一处都不用改。
   · 移除的属性 hx-vars / hx-params / hx-request 在仓库里都是 0 处。
-  · hx-disable 语义变了（v4 = 禁用元素），但仓库里 hx-disable / hx-disabled-elt 都是 0 处。
+  · hx-disable 语义变了：v2 的 hx-disabled-elt 在 v4 里**不存在且不报错**，v4 用 hx-disable
+    （#ce 取属性 → #be 解析 find/closest 前缀 → e.disabled=true，settle 时 #ge 引用计数恢复）。
+    实测对照：用旧属性请求期间按钮 disabled 恒 false，改 hx-disable 才 true。
+    升级当时仓库里是 0 处，但**此后新增了 9 处**（product 目录 6 个模板），2026-11 已全部改正。
   · 事件大量改名，仓库里有 3 处要跟着改：
       htmx:afterSwap     → htmx:after:swap      （index.js、admin.js）
       htmx:beforeRequest → htmx:before:request  （admin.js）
-  · hx-swap-oob 仍支持；v4 另有 hx-partial（官方称 preferred over OOB）。
+  · hx-swap-oob 仍支持；局部回写用 partial。`<hx-partial>`是**通用写法的特例**：
+    bundle 的 #Ie 会把 `<hx-名>` 改写成 `<template hx type="名">`，两种等价（实测均生效）。
+    本仓模板统一写 template 形态（不依赖该改写），见 internal/templates/CLAUDE.md。
   · 扩展 API 从 defineExtension/onEvent 改为 registerExtension/htmx_<event>：
-    vendor/idiomorph/idiomorph-ext.min.js 是 htmx 2 语法，若要启用 hx-ext="morph"
-    必须先换 v4 兼容版（当前布局只加载 idiomorph.min.js，不注册扩展，故不受影响）。
+    vendor/idiomorph/idiomorph-ext.min.js 是 htmx 2 语法（htmx.defineExtension），
+    真实浏览器实测加载即 `TypeError: htmx.defineExtension is not a function` ——
+    2026-11 已删除该文件。要启用 hx-ext="morph" 必须另取 v4 兼容版扩展包。
   · **v4 原生内置 idiomorph**（hx-swap="innerMorph" / "outerMorph"），但**不暴露
     window.Idiomorph 全局**（运行时 grep 为 0）。所以工作台那套直接调用
     window.Idiomorph.morph(el, html, {callbacks:...}) 的写法仍然需要 vendored 副本 ——
