@@ -1083,19 +1083,19 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 		// 给业务文案（按语言取词），未命中记一条带 user_id 的日志后给 ErrInternal 取词 ——
 		// 驱动原文（表名 / SQLSTATE）只进日志。
 		// 字典与分页不再下探：主数据都没读到，派生数据不该继续查（与库存页失败后的守卫同一判据）。
-		data := gin.H{
-			"title":        adminenums.I18nTitle,
-			"Entries":      []i18n.Entry{},
-			"I18nEditURLs": []string{},
-			"Keyword":      filter.Keyword,
-			"LangFilter":   filter.Lang,
-			"CatFilter":    filter.Category,
-			"Categories":   []string{},
-			"LoadFailed":   true,
-			"LoadError":    adminErrParam(c, err),
+		view := &admindto.I18nListPageResp{
+			Title:        adminenums.I18nTitle,
+			Entries:      []i18n.Entry{},
+			I18nEditURLs: []string{},
+			Keyword:      filter.Keyword,
+			LangFilter:   filter.Lang,
+			CatFilter:    filter.Category,
+			Categories:   []string{},
+			LoadFailed:   true,
+			LoadError:    adminErrParam(c, err),
 		}
 		c.Header("Cache-Control", "no-store")
-		c.HTML(http.StatusInternalServerError, "admin/system/i18n", adminui.Prepare(c, data))
+		c.HTML(http.StatusInternalServerError, "admin/system/i18n", adminui.PrepareView(c, view))
 		return
 	}
 	categories, _ := i18n.Categories(c.Request.Context())
@@ -1111,17 +1111,17 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 		query := url.Values{"key": {entry.Key}, "lang": {entry.Lang}}
 		editURLs[idx] = "/admin/i18n/edit?" + query.Encode()
 	}
-	data := gin.H{
+	data := &admindto.I18nListPageResp{
 		// title 是 i18n **key**（不是中文）：adminui.Prepare → injectI18n 会按当前语言翻译它。
 		// admin.i18n.title 是库内既有的词条（zh-CN「文案词条」/ 英文），所以这里复用它 ——
 		// 写中文原文会让英文后台的页面标题恒为中文（其它页面标题都已经是 enums key）。
-		"title":        adminenums.I18nTitle,
-		"Entries":      items,
-		"I18nEditURLs": editURLs,
-		"Keyword":      filter.Keyword,
-		"LangFilter":   filter.Lang,
-		"CatFilter":    filter.Category,
-		"Categories":   categories,
+		Title:        adminenums.I18nTitle,
+		Entries:      items,
+		I18nEditURLs: editURLs,
+		Keyword:      filter.Keyword,
+		LangFilter:   filter.Lang,
+		CatFilter:    filter.Category,
+		Categories:   categories,
 		// 写动作的结论不再回带：写动作走 JSON 端点（POST /api/i18n/save），失败原因就地显示在
 		// 表单结果区，成功则整页刷新 —— 刷新带回当前 URL，筛选与页码自动保住。原先为它准备的
 		// .Saved / .Errored 提示条、以及表单 action 上的 ListQuery，都已随页面 POST 一起删除。
@@ -1130,7 +1130,7 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	// 只是少了按语言筛的能力，不该因此整页打不开。
 	if h.dict != nil {
 		if opts, derr := h.dict.ListDictOptions(c.Request.Context(), "language"); derr == nil {
-			data["LangOptions"] = opts
+			data.LangOptions = opts
 		}
 	}
 	// 分页条：原版只渲染「第 X / Y 页」文字，没有页码链接 —— Total 超过一页时第 2 页起
@@ -1143,10 +1143,12 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	// 本页每页条数是固定常量（不看 ?limit=），事实层照旧收这个 size；KeepLimit 保持默认 true
 	// —— 旧链接就是 ?page=N&limit=50，字节不能变（本页 handler 不读 limit，但它仍出现在链接里）。
 	// 基址由本页自己的筛选逻辑算出（不是 FilterBaseURL 的形态），故 path 传空。
-	adminui.AttachPagination(data, "", nil, pagination.Page{
+	if !adminui.AttachPaginationView(data, "", nil, pagination.Page{
 		Total: total, Page: page, Limit: adminI18nEntryPageSize, Base: base,
-	})
-	c.HTML(http.StatusOK, "admin/system/i18n", adminui.Prepare(c, data))
+	}) {
+		logger.Scene("admin").Error(errors.New("文案词条视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	c.HTML(http.StatusOK, "admin/system/i18n", adminui.PrepareView(c, data))
 }
 
 // adminI18nSaveMissingMsg 保存词条时的缺项判定：返回**具体**缺哪一项的 enums 文案
@@ -1259,12 +1261,12 @@ func AdminLoginPage(c *gin.Context) {
 	// 登录页无会话（不走 Prepare 的权限集部分），同样需要语言数据：
 	// 标题走 shell.login.title（缺词条回退「登录」）。这里是**模板数据槽**（layout 壳读 .title，
 	// 槽位契约是字符串），所以取成文本传进去 —— 取词走共享的 adminui.MsgText。
-	c.HTML(http.StatusOK, "admin/login", adminui.Prepare(c, gin.H{
-		"title":         adminui.MsgText(c, adminui.Msg{Key: adminenums.ShellLoginTitle, Fallback: "登录"}),
-		"captcha_id":    id,
-		"captcha_image": image,
+	c.HTML(http.StatusOK, "admin/login", adminui.PrepareView(c, &admindto.LoginPageResp{
+		Title:        adminui.MsgText(c, adminui.Msg{Key: adminenums.ShellLoginTitle, Fallback: "登录"}),
+		CaptchaID:    id,
+		CaptchaImage: image,
 		// debug 模式才显示一键登录入口（release 下路由压根不存在，显示了也是个死链）。
-		"DevLogin": AdminDevLoginEnabled(),
+		DevLogin: AdminDevLoginEnabled(),
 	}))
 }
 

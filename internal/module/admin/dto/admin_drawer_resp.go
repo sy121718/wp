@@ -179,3 +179,38 @@ type PermSavedResp struct {
 type DataruleEditorResp struct {
 	Editor any
 }
+
+// LoginPageResp 后台登录页（无会话，不走 Prepare 的权限集部分）。
+type LoginPageResp struct {
+	// Title 模板数据槽（layout 壳读 .title），槽位契约是字符串 → 已取好词。
+	Title        string `view:"title"`
+	CaptchaID    string `view:"captcha_id"`
+	CaptchaImage string `view:"captcha_image"`
+	// DevLogin debug 模式才显示一键登录入口（release 下路由压根不存在，显示了也是死链）。
+	DevLogin bool `view:"DevLogin"`
+}
+
+// I18nListPageResp 文案词条列表页（/admin/i18n）。
+//
+// 失败档与成功档是**同一张模板**：必需键全部给值（Jet 缺键即整页中断），
+// 标题仍是 i18n key（英文后台的标题不能变成中文），筛选取值照原样回带。
+type I18nListPageResp struct {
+	Title string `view:"title"`
+
+	Entries      any
+	I18nEditURLs []string
+
+	Keyword    string
+	LangFilter string
+	CatFilter  string
+	Categories []string
+	// LangOptions 语言下拉的供数（字典只读口）。读失败时留空 ——
+	// 页面仍可筛「全部语言」，只是少了按语言筛的能力，不该因此整页打不开。
+	LangOptions any
+
+	// LoadFailed / LoadError 装载失败档（文案已归口，原文只进日志）。
+	LoadFailed bool
+	LoadError  string
+
+	Pagination pagination.Page
+}
