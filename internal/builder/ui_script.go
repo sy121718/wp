@@ -58,7 +58,7 @@ var uiBaseClasses = []string{
 
 var uiBlocks = []uiBlock{
 	// htmx 是访问面所有 hx-* 属性的唯一执行者，也是控件入口 index.js 监听
-	// htmx:afterSwap 的前提。产物此前从不携带它 —— 组件按 HTMX 约定写出的
+	// htmx:after:swap 的前提。产物此前从不携带它 —— 组件按 HTMX 约定写出的
 	// hx-get / hx-post 在访问面全部是哑属性（组件自己降级成原生表单，功能
 	// 「看着能用」但走的不是预想路径，这类静默降级最难发现）。
 	{file: "htmx.min.js", prefixes: []string{"hx-"}, noStyle: true},
