@@ -1019,8 +1019,8 @@ func articleStateLabel(published bool) (key, fallback string) {
 // item 为 nil 表示新建（表单全空）；id 非空但 item 为 nil 表示读取失败
 // （pageErr 已带上原因），此时仍渲染空表单让编辑者能重新保存。
 //
-// Err 的写侧只剩一处：articleUpdateFailure 原地重渲时带回的保存错误。成功回执
-// 不再进模板（走提示页，见 content_error_handle.go），所以没有 Ok 键。
+// Err 与 Ok 都不再进模板：编辑页保存改 htmx 之后，失败走 toast（页面不重渲）、
+// 成功走 data-write-flash。字段留着是因为**新建页**与错误回显路径仍会用到 Err（保留类型兼容）。
 //
 // pageErr 是**事实**（key + 中文兜底）不是拼好的句子：取词在模板里发生（见 article_edit.html）。
 //

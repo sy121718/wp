@@ -227,10 +227,6 @@ const (
 	translationFilterAI      = "ai"
 )
 
-// translationsTemplate 翻译工作台的模板名：成功页与失败页**必须是同一个**模板，
-// 否则「失败也是这一页」这条契约就靠不住（契约：整页 GET 的失败出口）。
-const translationsTemplate = "admin/page/page_translations"
-
 // translationsPageMenu 工作台高亮的侧栏项（与 buildPageTranslationsData 同值）。
 const translationsPageMenu = "pages"
 
@@ -310,10 +306,14 @@ func (h *pagesAdminHandle) renderTranslationsFailure(c *gin.Context, status int,
 
 // SavePageTranslations POST /admin/pages/translations/save：保存本页译文。
 //
-// 成功走整页提示（1 秒后回工作台）；**校验 / 写入失败仍原地重渲工作台并逐行报错**
-// （renderTranslationError）：一个业务错误把编辑者刚填的整屏译文清掉，比少一句提示贵得多
-// —— 这是「写表单失败时原地留住输入」的例外（同 content 的文章保存，
-// 见 internal/templates/CLAUDE.md）。
+// 两条出口（表单带 hx-post，页面不离开）：
+//   · 成功 → JSON + written 计数，前端按 data-reload-on-ok 刷新（保住筛选与目标语言）；
+//   · 失败 → **只回逐行错误片段**（renderTranslationError），htmx 就地替换
+//     #page-translations-errors。页面与已填译文都不动。
+//
+// 从前失败会重渲整个工作台（重查草稿、重建候选、重算全站完成度）。表单改 htmx 之后
+// 那个理由不成立 —— 页面没离开过，「回填输入」不需要；重渲只是把一次校验失败
+// 变成一次全量查询。
 func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 	ctx := c.Request.Context()
 	req, ok := binding.Form[pagedto.PageTranslationsSaveFormReq](c)
