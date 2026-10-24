@@ -39,13 +39,13 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/builder"
+	"go_wp/internal/builder/source"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
-	"go_wp/internal/builder/source"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
@@ -425,13 +425,13 @@ type workbenchModeDeps struct {
 	contentTemplates contenttemplatecontract.ContentTemplateService
 	templatePreview  TemplatePreviewPort
 	instances        presentationcontract.PresentationService
-	// plugins 插件契约（只有「组件 schema 序列化失败」一档需要它：
-	// 非法 JSON 挂在插件装配素材上才能进序列化分支，见 injectBrokenComponentSchema）。
-	plugins plugincontract.PluginService
 }
 
 func (d workbenchModeDeps) newHandle() *Handle {
-	h := New(d.pages, nil, d.blocks, d.plugins, nil, d.contentTemplates, d.templatePreview)
+	// 插件契约不在这里：三种模式的 handler 都不合并插件 schema，「组件 schema 序列化失败」
+	// 那一档只对 workbenchPage 存在，用例直接 New(...) 构造（见
+	// TestPluginInspectorSchemaMergeEncodeFailure）。
+	h := New(d.pages, nil, d.blocks, nil, nil, d.contentTemplates, d.templatePreview)
 	h.SetInstanceOverrideDeps(d.instances)
 	return h
 }
@@ -546,7 +546,7 @@ func TestWorkbenchModeErrorBranchesRenderFullShell(t *testing.T) {
 		// {type} 由词条携带、在渲染出口处替换：取词与替换的顺序错了，这里会漏出 "{type}"。
 		{"普通模板缺样例实体：请求事实（{type} 替换）",
 			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{tpl: tplOK}, templatePreview: workbenchTemplatePreviewStub{}},
-			"/workbench?template=tpl-1&entityType=product&lang=zh-CN", 
+			"/workbench?template=tpl-1&entityType=product&lang=zh-CN",
 			http.StatusBadRequest, "product"},
 		{"模板预览能力未装配：服务事实",
 			workbenchModeDeps{contentTemplates: &workbenchTemplateStub{tpl: tplOK}}, tplURL,

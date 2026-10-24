@@ -1388,20 +1388,17 @@ func (h *Handle) Workbench(c *gin.Context) {
 	}
 	// 组件 Inspector 面板 schema（docs/02-C3）：声明式 Controls 驱动检查器表单，
 	// 前端按 content/style/advanced 分组渲染，替代硬编码字段。
-	// 插件组件 schema 合并（与内置同构，docs/06 §5：上传即出现在检查器）。
 	//
-	// ComponentSchemas() 返回的是进程级缓存的**副本** —— 在它上面合并插件 schema 只
-	// 影响本次请求，不会写进全局缓存（旧写法直接写缓存，并发画布会撞 map）。
-	schemas, err := builder.ComponentSchemas()
+	// 走 svc.InspectorSchemas 而不是 builder.ComponentSchemas：内置 + 插件合并这份逻辑
+	// 与检查器面板端点（svc.InspectorSections）共用一处 —— 两份各自写就会漂，
+	// 而漂的后果是「插件组件在画布里拖得进去，选中后面板没字段」。
+	//
+	// 合并发生在 ComponentSchemas() 返回的**副本**上，不写进程级缓存（并发安全）。
+	schemas, err := h.svc.InspectorSchemas(c.Request.Context())
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).Error(err, "组件 schema 生成失败")
 		renderWorkbenchPageError(c, http.StatusInternalServerError, workbenchenums.ErrComponentSchemaBuildFailed)
 		return
-	}
-	if asm != nil {
-		for t, data := range asm.InspectorSchemas {
-			schemas[t] = data
-		}
 	}
 	schemasJSON, err := json.Marshal(schemas)
 	if err != nil {
