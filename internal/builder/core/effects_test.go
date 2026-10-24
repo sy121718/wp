@@ -183,6 +183,16 @@ func TestSpringEasing(t *testing.T) {
 	}
 
 	// 非法缓动拒绝。
+	// 经典 cubic-bezier 四条必须都是合法取值（它们与弹簧并存，见 effects.go）。
+	for _, easing := range []string{"circ-out", "circ-in-out", "back-out", "quint-in-out"} {
+		b4 := &CSSBuckets{}
+		CompileInteraction(".t", InteractionProps{Entrance: "fade-in", EntranceEasing: easing}, b4)
+		out := b4.String()
+		if !strings.Contains(out, "cubic-bezier") {
+			t.Errorf("%s 应产出 cubic-bezier 覆盖声明，实际:\n%s", easing, out)
+		}
+	}
+	// 未知缓动仍然被拒。
 	if err := ValidateInteraction(InteractionProps{Entrance: "fade-in", EntranceEasing: "expo"}); err == nil {
 		t.Errorf("非法入场缓动应被拒绝")
 	}

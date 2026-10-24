@@ -345,6 +345,18 @@ body.drawer-open { overflow: hidden; }
     --ui-motion-base: var(--ui-duration-base) var(--ui-ease-out);
     --ui-tr-fast: var(--ui-motion-fast);
     --ui-tr-base: var(--ui-motion-base);
+    /* 字号令牌（2026-11 补）：此前字号全部硬编码在规则里 —— 统计 ui.css 一处就有
+       8 个不同取值（11/12/13/14/15/16/18/22px）散落 41 条规则，改一处统一字号要逐条找。
+       令牌取值刻意等于**现有实际值**，所以替换时零视觉变化；新增规则一律用令牌。
+       命名跟 --ui-sp-* 同一档（xs/sm/md/lg/xl/2xl），不引入第二套尺度。 */
+    --ui-fs-2xs: 11px;
+    --ui-fs-xs: 12px;
+    --ui-fs-sm: 13px;
+    --ui-fs-md: 14px;
+    --ui-fs-base: 15px;
+    --ui-fs-lg: 16px;
+    --ui-fs-xl: 18px;
+    --ui-fs-2xl: 22px;
     --ui-shadow-sm: var(--shadow-sm, 0 1px 2px rgba(16, 20, 26, .06));
     --ui-shadow-md: var(--shadow-md, 0 4px 12px rgba(16, 20, 26, .10));
 

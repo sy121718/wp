@@ -270,6 +270,27 @@ const (
 	SpringBouncyCurve = "linear(0, 0.0272 4.03%, 0.1137 9.06%, 0.2601 14.5%, 0.4021 19.9%, 0.6259 28.8%, 0.7605 36.4%, 0.8379 44.4%, 0.9145 54.1%, 0.9569 62.9%, 0.9836 73.1%, 1.0039 84.4%, 1.0083 89.9%, 1.0011 97.4%, 1)"
 )
 
+// —— 经典缓动（cubic-bezier；补 4 条，与弹簧并存）——
+//
+// 为什么两者并存而不是二选一：弹簧曲线（linear 采样）有真实过冲物理、手感更像系统动画，
+// 但它需要 Chrome 113+ / Safari 17.2+；cubic-bezier 自 CSS3 起全平台支持。
+// 需要「老浏览器也要一样的手感」时用这组，需要「Apple 式回弹」时用弹簧组。
+//
+// 取值照 Ant Motion 的 8 组经典曲线（它们是动效设计里最被验证过的一组），
+// 但**只取本项目用得上的 4 条**：Circ 两条（圆周加减速，适合大面积位移）、
+// InOut 两条（平滑往返，适合展开/收起）、Back 两条（过冲，适合强调）。
+// 不取 Ant 全量 8 条：多余的名字会变成「有但没人用」的选项，反而增加选择成本。
+const (
+	// EaseOutCirc 圆周加速收尾：起步快、收尾极缓。适合大区块入场。
+	EaseOutCirc = "cubic-bezier(0.08, 0.82, 0.17, 1)"
+	// EaseInOutCirc 圆周加减速：两端都缓，中间快。适合往返/循环。
+	EaseInOutCirc = "cubic-bezier(0.78, 0.14, 0.15, 0.86)"
+	// EaseOutBack 收尾过冲：越过终点一点再回来。强调式入场（与弹簧的区别：无多次弹跳）。
+	EaseOutBack = "cubic-bezier(0.12, 0.4, 0.29, 1.46)"
+	// EaseInOutQuint 五次加减速：比 Circ 更强烈的前后段压缩。适合整块位移。
+	EaseInOutQuint = "cubic-bezier(0.86, 0, 0.07, 1)"
+)
+
 // SafeAreaDecls 刘海屏/底部横条安全区垫高（H5 viewport 适配；container 等取用）。
 // edge：bottom（底部横条，最常用）/ top（刘海）/ left / right。
 // fallback 0px 兼容不支持 env() 的旧浏览器。
