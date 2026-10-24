@@ -29,3 +29,18 @@ type InspectorPanelResp struct {
 type OutlineTreeResp struct {
 	HTML string
 }
+
+// WorkbenchErrorPageResp 工作台「这一页打不开」的失败外壳（workbench/error）。
+//
+// 它是**独立完整页**，不是片段：工作台打不开时，编辑器外壳本身就没法渲染，
+// 因此失败页不依赖 layout 的任何一个键 —— 只有语言、取词函数、结论与返回入口。
+//
+// title 与 message 取同一句：失败页的浏览器标签与正文说的是同一件事
+// （分成两句会让「标签上写着 A、正文写着 B」，而这两处永远是同一个原因）。
+type WorkbenchErrorPageResp struct {
+	Lang     string `view:"lang"`
+	T        any    `view:"t"`
+	Title    string `view:"title"`
+	Message  string `view:"message"`
+	BackPath string `view:"backPath"`
+}

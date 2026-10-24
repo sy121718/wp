@@ -121,11 +121,11 @@ func renderWorkbenchPageErrorText(c *gin.Context, status int, key, text string) 
 	}
 	lang := response.RequestLanguage(c)
 	c.Header("Cache-Control", "no-store")
-	c.HTML(status, "workbench/error", gin.H{
-		"lang":     lang,
-		"t":        templates.TranslateFunc(lang),
-		"title":    text,
-		"message":  text,
-		"backPath": "/admin",
-	})
+	c.HTML(status, "workbench/error", adminui.PrepareBareView(c, &workbenchdto.WorkbenchErrorPageResp{
+		Lang:     lang,
+		T:        templates.TranslateFunc(lang),
+		Title:    text,
+		Message:  text,
+		BackPath: "/admin",
+	}))
 }

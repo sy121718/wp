@@ -36,4 +36,33 @@ type CanvasPageResp struct {
 	JSVer string `view:"jsVer"`
 	// PreviewQS 模板预览查询串（模板画布用；其它模式为空）。
 	PreviewQS string `view:"previewQS"`
+
+	// 以下三项只有**实例模式**给（layout.html 据 isset(.instanceMode) 渲染双轨状态条）：
+	// 实例编辑器改的是「这一条实体对模板的覆盖」，与页面 / 块 / 模板三种模式的状态条不同。
+	InstanceMode    bool   `view:"instanceMode"`
+	RenderMode      string `view:"renderMode"`
+	RenderModeLabel string `view:"renderModeLabel"`
+}
+
+// DashboardPageResp 后台概览页（/admin/dashboard）的视图。
+//
+// 三个装配档共用一张模板：依赖缺失 / 数据源读不到 / 正常。三档的差别只在
+// 「有没有 Err」与「有没有 Overview」，键集本身恒定。
+type DashboardPageResp struct {
+	// Title 是 i18n **key**（adminui.Prepare → injectI18n 按当前语言翻译它）。
+	Title string `view:"title"`
+	Menu  string
+
+	// Err 概览数据读不到的**归口文案**（不是驱动原文）。
+	//
+	// 从前这里塞的是 err.Error()：模板直接渲染 {{.Err}}，页面上就是
+	// `pq: relation "projects" does not exist`。概览是登录后的第一跳，
+	// 原文漏在这里等于把库结构写给每个登录用户看。
+	Err string
+
+	// Overview 概览数据（依赖缺失与读不到时为零值：模板据此退回空态）。
+	//
+	// 类型是 any 而不是具体结构：概览快照（withPresets 的结果）是 inbound/http 层的
+	// 纯装配中间态，不为它造一份 dto 镜像 —— 它是这一页专属的、一屏即用即弃。
+	Overview any
 }

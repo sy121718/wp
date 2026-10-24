@@ -226,18 +226,24 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 	// 与另外三种画布模式一致地走 adminui.Prepare：它注入 t（画布模板的取词函数）、
 	// csrf_token（workbench.js 的 POST fetch 读它）与 lang。此前这个分支直接传 gin.H，
 	// 于是 layout.html 的 `{{ .["csrf_token"] }}` 恒为空串 —— JS 只能靠 sessionStorage 兜底。
-	c.HTML(http.StatusOK, "workbench/layout", adminui.Prepare(c, gin.H{
-		"title": workbenchShortText(c, workbenchenums.TitleInstance), "pageId": inst.ID, "isBlock": false, "isTemplate": true,
-		// 双轨状态条（layout.html 据 isset(.instanceMode) 渲染）
-		"instanceMode": true, "renderMode": renderMode, "renderModeLabel": renderModeLabel,
-		"document": string(documentJSON), "meta": string(metaJSON), "schemas": string(schemasJSON),
-		"previewQS": "instance=" + inst.ID + "&entityType=" + inst.EntityType +
+	// 与另外三种模式**同一个视图类型**（CanvasPageResp）：同一张模板用两套键集，
+	// 加一个键只改一处的约定就守不住了 —— 实例模式曾经就因为漏给 jsVer，
+	// 整页在 <head> 第 17 行中断、只回 445 字节。
+	c.HTML(http.StatusOK, "workbench/layout", adminui.PrepareView(c, &workbenchdto.CanvasPageResp{
+		Title:      workbenchShortText(c, workbenchenums.TitleInstance),
+		PageID:     inst.ID,
+		IsBlock:    false,
+		IsTemplate: true,
+		Document:   string(documentJSON),
+		Meta:       string(metaJSON),
+		Schemas:    string(schemasJSON),
+		PreviewQS: "instance=" + inst.ID + "&entityType=" + inst.EntityType +
 			"&entityId=" + inst.EntityID + "&editor=1&projectId=" + inst.ProjectID,
-		// jsVer 是 layout.html 的**必需键**（脚本 / 样式 / Trix 的缓存版本）：另外三种模式
-		//（页面 / 块 / 模板）都给，唯独这里漏了。漏掉的后果与缺陷 B1 同一类，但更早 ——
-		// 模板第 17 行就取它，于是实例编辑器整页在 <head> 里中断，只回 445 字节。
-		// 回归守卫：public/test/workbench/feature/workbench_layout_render_test.go 的「实例模式」。
-		"jsVer": workbenchservice.StaticJSVersion(),
+		JSVer: workbenchservice.StaticJSVersion(),
+		// 双轨状态条（layout.html 据 isset(.instanceMode) 渲染）
+		InstanceMode:    true,
+		RenderMode:      renderMode,
+		RenderModeLabel: renderModeLabel,
 	}))
 }
 
