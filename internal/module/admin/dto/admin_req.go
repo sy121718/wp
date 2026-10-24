@@ -53,22 +53,22 @@ type AdminListReq struct {
 //
 // 新增管理员，所有必填字段均为 required。
 type AdminCreateReq struct {
-	Avatar   string `json:"avatar" binding:"omitempty,max=255" validate:"omitempty,max=255"`
-	Email    string `json:"email"  binding:"required,email_strict,max=100" validate:"required,email_strict,max=100"` // 邮箱，必填
-	Username string `json:"username" binding:"required,max=50" validate:"required,max=50"`                           // 用户名，必填
-	Phone    string `json:"phone" binding:"omitempty,max=20" validate:"omitempty,max=20"`                            // 手机号，可选
-	Password string `json:"password" binding:"required,min=6,max=100" validate:"required,min=6,max=100"`             // 密码，必填
-	Remark   string `from:"remark" json:"remark"`                                                                    //备注
+	Avatar   string `json:"avatar" form:"avatar" binding:"omitempty,max=255" validate:"omitempty,max=255"`
+	Email    string `json:"email" form:"email"  binding:"required,email_strict,max=100" validate:"required,email_strict,max=100"` // 邮箱，必填
+	Username string `json:"username" form:"username" binding:"required,max=50" validate:"required,max=50"`                        // 用户名，必填
+	Phone    string `json:"phone" form:"phone" binding:"omitempty,max=20" validate:"omitempty,max=20"`                            // 手机号，可选
+	Password string `json:"password" form:"password" binding:"required,min=6,max=100" validate:"required,min=6,max=100"`          // 密码，必填
+	Remark   string `from:"remark" json:"remark" form:"remark"`                                                                   //备注
 
 }
 
 // AdminLoginReq 管理员登录请求参数
 type AdminLoginReq struct {
-	Username   string `json:"username" binding:"required" validate:"required"`   // 登录账号
-	Password   string `json:"password" binding:"required" validate:"required"`   // 登录密码
-	CaptchaID  string `json:"captcha_id" binding:"required" validate:"required"` // 验证码标识
-	Captcha    string `json:"captcha" binding:"required" validate:"required"`    // 验证码
-	RememberMe bool   `json:"remember_me"`                                       // 是否保持登录，true 时 token 过期时间为 7 天
+	Username   string `json:"username" form:"username" binding:"required" validate:"required"`     // 登录账号
+	Password   string `json:"password" form:"password" binding:"required" validate:"required"`     // 登录密码
+	CaptchaID  string `json:"captcha_id" form:"captcha_id" binding:"required" validate:"required"` // 验证码标识
+	Captcha    string `json:"captcha" form:"captcha" binding:"required" validate:"required"`       // 验证码
+	RememberMe bool   `json:"remember_me" form:"remember_me"`                                      // 是否保持登录，true 时 token 过期时间为 7 天
 }
 
 // AdminDetailReq 查询管理员详情
@@ -78,16 +78,16 @@ type AdminDetailReq struct {
 
 // AdminEditReq 修改管理员
 type AdminEditReq struct {
-	Id       uint64 `json:"id" binding:"required" validate:"required"`
-	Username string `json:"username"`                                                     // 登录账号
-	Phone    string `json:"phone" binding:"omitempty,max=20" validate:"omitempty,max=20"` // 手机号，可选
+	Id       uint64 `json:"id" form:"id" binding:"required" validate:"required"`
+	Username string `json:"username" form:"username"`                                                  // 登录账号
+	Phone    string `json:"phone" form:"phone" binding:"omitempty,max=20" validate:"omitempty,max=20"` // 手机号，可选
 	Email    string `form:"email" json:"email" binding:"omitempty,email_strict,max=100" validate:"omitempty,email_strict,max=100"`
-	Remark   string `from:"remark" json:"remark"` //备注
+	Remark   string `from:"remark" json:"remark" form:"remark"` //备注
 }
 
 // AdminDeleteReq 批量删除管理员
 type AdminDeleteReq struct {
-	Id         []uint64 `json:"ids" binding:"required" validate:"required"`
+	Id         []uint64 `json:"ids" form:"ids" binding:"required" validate:"required"`
 	OperatorID uint64   `json:"-"`
 }
 
@@ -101,8 +101,8 @@ type AdminListByDeptIDReq struct {
 
 // AdminBatchSetDeptIDReq 批量设置用户部门。
 type AdminBatchSetDeptIDReq struct {
-	DeptID  uint64   `json:"dept_id" binding:"required" validate:"required"`
-	UserIDs []uint64 `json:"user_ids"`
+	DeptID  uint64   `json:"dept_id" form:"dept_id" binding:"required" validate:"required"`
+	UserIDs []uint64 `json:"user_ids" form:"user_ids"`
 }
 
 // --- 用户角色绑定 ---
@@ -114,8 +114,8 @@ type AdminRoleListReq struct {
 
 // AdminRoleSaveReq 全量替换用户角色绑定。
 type AdminRoleSaveReq struct {
-	UserID    uint64   `json:"user_id" binding:"required" validate:"required"`
-	RoleCodes []string `json:"role_codes"`
+	UserID    uint64   `json:"user_id" form:"user_id" binding:"required" validate:"required"`
+	RoleCodes []string `json:"role_codes" form:"role_codes"`
 	// OperatorID 当前操作者（handler 从会话注入，禁止前端传入）。
 	OperatorID uint64 `json:"-"`
 }
@@ -129,8 +129,8 @@ type AdminMenuListReq struct {
 
 // AdminMenuSaveReq 全量替换用户直接额外权限。
 type AdminMenuSaveReq struct {
-	UserID  uint64   `json:"user_id" binding:"required" validate:"required"`
-	MenuIDs []uint64 `json:"menu_ids"`
+	UserID  uint64   `json:"user_id" form:"user_id" binding:"required" validate:"required"`
+	MenuIDs []uint64 `json:"menu_ids" form:"menu_ids"`
 	// OperatorID 当前操作者（handler 从会话注入，禁止前端传入）。
 	// 与 AdminRoleSaveReq 同一个字段、同一个理由：超管保护的判定依据不能来自请求体，
 	// 否则提权者只要在 JSON 里写 operator_id=1 就能绕过保护。

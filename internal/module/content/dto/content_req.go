@@ -4,15 +4,15 @@ package contentdto
 
 // CreateReq 新建内容实体。
 type CreateReq struct {
-	EntityType string         `json:"entityType" binding:"required"`
-	Slug       string         `json:"slug" binding:"required"`
-	Data       map[string]any `json:"data"`
+	EntityType string         `json:"entityType" form:"entityType" binding:"required"`
+	Slug       string         `json:"slug" form:"slug" binding:"required"`
+	Data       map[string]any `json:"data" form:"data"`
 }
 
 // UpdateReq 更新内容实体（revision 递增）。
 type UpdateReq struct {
-	ID   string         `json:"id" binding:"required"`
-	Data map[string]any `json:"data"`
+	ID   string         `json:"id" form:"id" binding:"required"`
+	Data map[string]any `json:"data" form:"data"`
 }
 
 // GetReq 按 ID 查询。

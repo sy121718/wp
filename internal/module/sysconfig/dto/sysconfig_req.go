@@ -17,11 +17,11 @@ type SetGroupsReq struct {
 // 而这正是乐观锁要拦的事 —— 缺失即拒绝，不给「省略即强制覆盖」留口子。
 type SetGroupReq struct {
 	// GroupKey 分组键。
-	GroupKey string `json:"groupKey"`
+	GroupKey string `json:"groupKey" form:"groupKey"`
 	// Data 新的整组配置（整体替换，不是合并）。
-	Data map[string]any `json:"data"`
+	Data map[string]any `json:"data" form:"data"`
 	// Version 调用方读到的版本号（乐观锁前置条件）。
-	Version int64 `json:"version"`
+	Version int64 `json:"version" form:"version"`
 	// UpdateBy 操作人 ID（0 = 系统 / 未登录）。
-	UpdateBy int64 `json:"updateBy"`
+	UpdateBy int64 `json:"updateBy" form:"updateBy"`
 }

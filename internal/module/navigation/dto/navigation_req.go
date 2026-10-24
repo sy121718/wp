@@ -5,48 +5,48 @@ package navigationdto
 
 // CreateReq 新建公开站点导航项。
 type CreateReq struct {
-	ProjectID string `json:"projectId" binding:"required"`
-	Title     string `json:"title" binding:"required"`
-	Path      string `json:"path" binding:"required"`
-	Kind      string `json:"kind" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId" binding:"required"`
+	Title     string `json:"title" form:"title" binding:"required"`
+	Path      string `json:"path" form:"path" binding:"required"`
+	Kind      string `json:"kind" form:"kind" binding:"required"`
 	// ParentID 父导航项 ID（可选，为空表示根导航项）。
-	ParentID *string `json:"parentId"`
+	ParentID *string `json:"parentId" form:"parentId"`
 	// SortOrder 排序权重（越小越靠前）。
-	SortOrder int `json:"sortOrder"`
+	SortOrder int `json:"sortOrder" form:"sortOrder"`
 	// SourceType 菜单项来源：custom（手填链接）/page/article/product/category/block。
-	SourceType string `json:"sourceType"`
+	SourceType string `json:"sourceType" form:"sourceType"`
 	// SourceID 来源实体 ID（custom 时为空）。
-	SourceID *string `json:"sourceId"`
+	SourceID *string `json:"sourceId" form:"sourceId"`
 	// Target 打开方式：self / blank。
-	Target string `json:"target"`
+	Target string `json:"target" form:"target"`
 	// PanelBlockID 悬浮面板引用的全局块（可选；空 = 无面板，超级菜单）。
-	PanelBlockID *string `json:"panelBlockId"`
+	PanelBlockID *string `json:"panelBlockId" form:"panelBlockId"`
 	// PanelWidth 面板展示宽度：auto（跟随内容）/ full（通栏）。
-	PanelWidth string `json:"panelWidth"`
+	PanelWidth string `json:"panelWidth" form:"panelWidth"`
 }
 
 // UpdateReq 更新公开站点导航项（仅更新传入的非空字段）。
 type UpdateReq struct {
-	ID        string  `json:"id" binding:"required"`
-	Title     *string `json:"title"`
-	Path      *string `json:"path"`
-	Kind      *string `json:"kind"`
-	ParentID  *string `json:"parentId"`
-	SortOrder *int    `json:"sortOrder"`
+	ID        string  `json:"id" form:"id" binding:"required"`
+	Title     *string `json:"title" form:"title"`
+	Path      *string `json:"path" form:"path"`
+	Kind      *string `json:"kind" form:"kind"`
+	ParentID  *string `json:"parentId" form:"parentId"`
+	SortOrder *int    `json:"sortOrder" form:"sortOrder"`
 	// SourceType / SourceID / Target 同 CreateReq。
-	SourceType *string `json:"sourceType"`
-	SourceID   *string `json:"sourceId"`
-	Target     *string `json:"target"`
+	SourceType *string `json:"sourceType" form:"sourceType"`
+	SourceID   *string `json:"sourceId" form:"sourceId"`
+	Target     *string `json:"target" form:"target"`
 	// PanelBlockID 面板块：nil = 不改动；指向空串 = 清除面板（已有面板要能撤销）。
-	PanelBlockID *string `json:"panelBlockId"`
+	PanelBlockID *string `json:"panelBlockId" form:"panelBlockId"`
 	// PanelWidth 面板宽度 auto / full（nil = 不改动）。
-	PanelWidth *string `json:"panelWidth"`
+	PanelWidth *string `json:"panelWidth" form:"panelWidth"`
 	// ExpectedUpdatedAt 乐观锁：调用方读到的 update_time（精确到微秒的 RFC3339 串）。
 	//
 	// 后台菜单页与工作台检查器是同一份数据的两个入口，此前是 last-write-wins ——
 	// 两处同时改会静默覆盖。带上该值后，库内当前值与之不等即拒绝（打回给人，不自动合并）。
 	// nil / 空串 = 不做校验（既有调用方与内部路径的兼容形态）。
-	ExpectedUpdatedAt *string `json:"expectedUpdatedAt"`
+	ExpectedUpdatedAt *string `json:"expectedUpdatedAt" form:"expectedUpdatedAt"`
 }
 
 // GetReq 按 ID 查询导航项。
@@ -62,13 +62,13 @@ type ListReq struct {
 
 // DeleteReq 删除导航项。
 type DeleteReq struct {
-	ID string `json:"id" binding:"required"`
+	ID string `json:"id" form:"id" binding:"required"`
 }
 
 // MoveReq 调整导航项排序（可选：等价于仅改 SortOrder 的 Update，预留快捷入口）。
 type MoveReq struct {
-	ID        string `json:"id" binding:"required"`
-	SortOrder *int   `json:"sortOrder"`
+	ID        string `json:"id" form:"id" binding:"required"`
+	SortOrder *int   `json:"sortOrder" form:"sortOrder"`
 }
 
 // SwapMoveReq 同级上移/下移请求（页面 handler 一次调用即可完成的**原子**交换）。
@@ -77,10 +77,10 @@ type MoveReq struct {
 // update_time。服务端用自己刚读到的树快照当 token，防的是「快照 → 写入」这段窗口内的并发；
 // 它**不**宣称防住「页面渲染之后的陈旧操作」—— 那需要把 token 带进表单，属另一批。
 type SwapMoveReq struct {
-	ID string `json:"id" binding:"required"`
+	ID string `json:"id" form:"id" binding:"required"`
 	// ProjectID 调用方认为该项所属的工程。服务端会与真实归属比对，不一致即拒
 	// （跨工程一律拒 —— 移动是同一份树内部的相对位置写入，不属于「按 id 直改」）。
-	ProjectID string `json:"projectId"`
+	ProjectID string `json:"projectId" form:"projectId"`
 	// Dir 上移 up / 下移 down。
-	Dir string `json:"dir" binding:"required"`
+	Dir string `json:"dir" form:"dir" binding:"required"`
 }

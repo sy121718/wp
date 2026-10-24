@@ -11,13 +11,13 @@ import (
 // ProductID / SKUCode 是落库快照列（与库存真源同一口径：本模块按 SKU 取数，
 // 不必 JOIN 商品模块的表）；目标变体已存在时服务端会用商品模块给的值兜底校验。
 type PurchaseLineReq struct {
-	VariantID string  `json:"variantId" binding:"required"`
-	ProductID string  `json:"productId"`
-	SKUCode   string  `json:"skuCode"`
-	Quantity  int     `json:"quantity"`
-	UnitPrice float64 `json:"unitPrice"`
-	Sort      int     `json:"sort"`
-	Remark    string  `json:"remark"`
+	VariantID string  `json:"variantId" form:"variantId" binding:"required"`
+	ProductID string  `json:"productId" form:"productId"`
+	SKUCode   string  `json:"skuCode" form:"skuCode"`
+	Quantity  int     `json:"quantity" form:"quantity"`
+	UnitPrice float64 `json:"unitPrice" form:"unitPrice"`
+	Sort      int     `json:"sort" form:"sort"`
+	Remark    string  `json:"remark" form:"remark"`
 }
 
 // CreatePurchaseOrderReq 新建采购单（单头 + 结构化行，验收 1）。
@@ -25,15 +25,15 @@ type PurchaseLineReq struct {
 // SourceID 是 #17 的货源（外部供应商 / 集团内关联公司），WarehouseID 是收货仓；
 // 两者都必填 —— 采购单的「从谁买」「收进哪个仓」是单据身份的一部分。
 type CreatePurchaseOrderReq struct {
-	ProjectID   string            `json:"projectId"`
-	Code        string            `json:"code"`
-	SourceID    string            `json:"sourceId"`
-	WarehouseID string            `json:"warehouseId"`
-	ExpectedAt  *utils.JSONTime   `json:"expectedAt"`
-	Remark      string            `json:"remark"`
-	OperatorID  string            `json:"operatorId"`
-	Metadata    json.RawMessage   `json:"metadata"`
-	Lines       []PurchaseLineReq `json:"lines"`
+	ProjectID   string            `json:"projectId" form:"projectId"`
+	Code        string            `json:"code" form:"code"`
+	SourceID    string            `json:"sourceId" form:"sourceId"`
+	WarehouseID string            `json:"warehouseId" form:"warehouseId"`
+	ExpectedAt  *utils.JSONTime   `json:"expectedAt" form:"expectedAt"`
+	Remark      string            `json:"remark" form:"remark"`
+	OperatorID  string            `json:"operatorId" form:"operatorId"`
+	Metadata    json.RawMessage   `json:"metadata" form:"metadata"`
+	Lines       []PurchaseLineReq `json:"lines" form:"lines"`
 }
 
 // UpdatePurchaseOrderReq 修改采购单（单头逐字段可选；nil = 本次不改）。
@@ -42,17 +42,17 @@ type CreatePurchaseOrderReq struct {
 // ReplaceLines 为真时 Lines 全量替换 —— 只允许在「一行都还没入库」时替换
 // （已有入库数量的行被改小会让「已入库 ≤ 采购数量」不成立）。
 type UpdatePurchaseOrderReq struct {
-	ID              string            `json:"id" binding:"required"`
-	ProjectID       string            `json:"projectId"`
-	SourceID        *string           `json:"sourceId"`
-	WarehouseID     *string           `json:"warehouseId"`
-	ExpectedAt      *utils.JSONTime   `json:"expectedAt"`
-	ClearExpectedAt bool              `json:"clearExpectedAt"`
-	Remark          *string           `json:"remark"`
-	OperatorID      *string           `json:"operatorId"`
-	Metadata        json.RawMessage   `json:"metadata"`
-	ReplaceLines    bool              `json:"replaceLines"`
-	Lines           []PurchaseLineReq `json:"lines"`
+	ID              string            `json:"id" form:"id" binding:"required"`
+	ProjectID       string            `json:"projectId" form:"projectId"`
+	SourceID        *string           `json:"sourceId" form:"sourceId"`
+	WarehouseID     *string           `json:"warehouseId" form:"warehouseId"`
+	ExpectedAt      *utils.JSONTime   `json:"expectedAt" form:"expectedAt"`
+	ClearExpectedAt bool              `json:"clearExpectedAt" form:"clearExpectedAt"`
+	Remark          *string           `json:"remark" form:"remark"`
+	OperatorID      *string           `json:"operatorId" form:"operatorId"`
+	Metadata        json.RawMessage   `json:"metadata" form:"metadata"`
+	ReplaceLines    bool              `json:"replaceLines" form:"replaceLines"`
+	Lines           []PurchaseLineReq `json:"lines" form:"lines"`
 }
 
 // GetPurchaseOrderReq 按 ID 查询采购单（含全部采购行）。
@@ -80,9 +80,9 @@ type ListPurchaseOrderReq struct {
 // UnitPrice 为空表示沿用采购行上的单价；显式给出即「本批实际到货价」，
 // 会同时写进入库单行快照并更新 SKU 成本价。
 type ReceiptLineReq struct {
-	LineID    string   `json:"lineId" binding:"required"`
-	Quantity  int      `json:"quantity"`
-	UnitPrice *float64 `json:"unitPrice"`
+	LineID    string   `json:"lineId" form:"lineId" binding:"required"`
+	Quantity  int      `json:"quantity" form:"quantity"`
+	UnitPrice *float64 `json:"unitPrice" form:"unitPrice"`
 }
 
 // RegisterReceiptReq 登记采购收货（验收 3/4）：一次可收多行，按行累加已入库数量。
@@ -90,14 +90,14 @@ type ReceiptLineReq struct {
 // RequestID 是**幂等键**：同一个键重复提交命中既有入库单并原样返回，
 // 不会第二次动库存（可重放保护）；不传键时每次提交都是一张新的入库单。
 type RegisterReceiptReq struct {
-	ProjectID   string           `json:"projectId"`
-	OrderID     string           `json:"orderId" binding:"required"`
-	WarehouseID string           `json:"warehouseId"`
-	RequestID   string           `json:"requestId"`
-	Remark      string           `json:"remark"`
-	OperatorID  string           `json:"operatorId"`
-	ReceivedAt  *utils.JSONTime  `json:"receivedAt"`
-	Lines       []ReceiptLineReq `json:"lines" binding:"required"`
+	ProjectID   string           `json:"projectId" form:"projectId"`
+	OrderID     string           `json:"orderId" form:"orderId" binding:"required"`
+	WarehouseID string           `json:"warehouseId" form:"warehouseId"`
+	RequestID   string           `json:"requestId" form:"requestId"`
+	Remark      string           `json:"remark" form:"remark"`
+	OperatorID  string           `json:"operatorId" form:"operatorId"`
+	ReceivedAt  *utils.JSONTime  `json:"receivedAt" form:"receivedAt"`
+	Lines       []ReceiptLineReq `json:"lines" form:"lines" binding:"required"`
 }
 
 // ProductionInboundReq 自家工厂生产入库（验收 5）：无采购单，成本价手工填写。
@@ -105,19 +105,19 @@ type RegisterReceiptReq struct {
 // SourceID 必须是**内部货源**（自家工厂 / 集团内关联公司）—— 外部供应商没有
 // 「无采购单的生产入库」这一说，走采购单。
 type ProductionInboundReq struct {
-	ProjectID   string `json:"projectId"`
-	SourceID    string `json:"sourceId" binding:"required"`
-	WarehouseID string `json:"warehouseId"`
-	ProductID   string `json:"productId"`
-	VariantID   string `json:"variantId" binding:"required"`
-	SKUCode     string `json:"skuCode"`
-	Quantity    int    `json:"quantity"`
+	ProjectID   string `json:"projectId" form:"projectId"`
+	SourceID    string `json:"sourceId" form:"sourceId" binding:"required"`
+	WarehouseID string `json:"warehouseId" form:"warehouseId"`
+	ProductID   string `json:"productId" form:"productId"`
+	VariantID   string `json:"variantId" form:"variantId" binding:"required"`
+	SKUCode     string `json:"skuCode" form:"skuCode"`
+	Quantity    int    `json:"quantity" form:"quantity"`
 	// UnitCost 是手工填写的成本价（生产入库没有采购单价可引用）。
-	UnitCost   *float64        `json:"unitCost"`
-	RequestID  string          `json:"requestId"`
-	Remark     string          `json:"remark"`
-	OperatorID string          `json:"operatorId"`
-	ReceivedAt *utils.JSONTime `json:"receivedAt"`
+	UnitCost   *float64        `json:"unitCost" form:"unitCost"`
+	RequestID  string          `json:"requestId" form:"requestId"`
+	Remark     string          `json:"remark" form:"remark"`
+	OperatorID string          `json:"operatorId" form:"operatorId"`
+	ReceivedAt *utils.JSONTime `json:"receivedAt" form:"receivedAt"`
 }
 
 // ListPurchaseHistoryReq 某 SKU 的进货历史（验收 6）。

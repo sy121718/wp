@@ -73,13 +73,13 @@ type SendMessageReq struct {
 	//
 	// 只有当前轮带图：历史那一轮存的是标识（ImageRefs），不是像素 ——
 	// 否则每问一句都要把前面所有图重发一遍，上下文与账单都跟着涨。
-	Images []string `json:"images,omitempty"`
+	Images []string `json:"images,omitempty" form:"images"`
 	// ImageLabels 同一批图片的**标识**（文件名），与 Images 一图对一图。
 	//
 	// 分工：Images 给模型看（data URI —— 上游在另一台机器上，站内相对路径对它毫无意义），
 	// ImageLabels 给人看（界面上画「📎 图片：xxx.png」这类标识，也进事件 meta）。
 	// 不存站内地址：图片只给模型看，不必进媒体库，于是也没有一个长期有效的地址可存。
-	ImageLabels     []string `json:"imageLabels,omitempty"`
+	ImageLabels     []string `json:"imageLabels,omitempty" form:"imageLabels"`
 	MaxOutputTokens int64    `json:"maxOutputTokens" form:"maxOutputTokens"`
 	UserID          int64    `json:"-"`
 }

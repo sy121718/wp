@@ -6,15 +6,15 @@ package pubdto
 // page_routes 的 CHECK 约束要求二者恰好一个非空（init_builder_schema.sql），
 // 「二选一」无法用 binding:"required" 表达，由 service 层校验（parseRouteOwner）。
 type ActivateReq struct {
-	ProjectID string `json:"projectId" binding:"required"`
-	Path      string `json:"path" binding:"required"`
-	PageID    string `json:"pageId"`
+	ProjectID string `json:"projectId" form:"projectId" binding:"required"`
+	Path      string `json:"path" form:"path" binding:"required"`
+	PageID    string `json:"pageId" form:"pageId"`
 	// PresentationID 自动发布实例归属（presentation_instances.id）。
 	// 详情页发布实例的 URL 占用此前根本没登记进 page_routes，导致页面侧
 	// 占用预检查不出详情页抢路径；这个字段是补上那半边的入口。
-	PresentationID string `json:"presentationId"`
-	ArtifactID     string `json:"artifactId" binding:"required"`
-	Action         string `json:"action"`
+	PresentationID string `json:"presentationId" form:"presentationId"`
+	ArtifactID     string `json:"artifactId" form:"artifactId" binding:"required"`
+	Action         string `json:"action" form:"action"`
 }
 
 // DeactivateReq 取消激活请求。
@@ -23,11 +23,11 @@ type ActivateReq struct {
 // page_id 为 NULL，历史判据 page_id IS NOT NULL 够不着它）；都不指定时
 // 保持「取消该路径上任意页面占用」的既有语义，page 侧调用逐字不变。
 type DeactivateReq struct {
-	ProjectID string `json:"projectId" binding:"required"`
-	Path      string `json:"path" binding:"required"`
-	PageID    string `json:"pageId"`
+	ProjectID string `json:"projectId" form:"projectId" binding:"required"`
+	Path      string `json:"path" form:"path" binding:"required"`
+	PageID    string `json:"pageId" form:"pageId"`
 	// PresentationID 展示实例归属；指定时按它精确匹配（page_id 为 NULL 的行）。
-	PresentationID string `json:"presentationId"`
+	PresentationID string `json:"presentationId" form:"presentationId"`
 }
 
 // RedirectReq 旧路径重定向标记请求；ArtifactID 允许为空（重定向产物不入库）。
@@ -35,42 +35,42 @@ type DeactivateReq struct {
 // 归属者二选一同 ActivateReq：改 URL 后旧路径要由「原来的主人」标记为
 // redirect，归属者不对就会被判成抢占他人路径。
 type RedirectReq struct {
-	ProjectID      string `json:"projectId" binding:"required"`
-	OldPath        string `json:"oldPath" binding:"required"`
-	PageID         string `json:"pageId"`
-	PresentationID string `json:"presentationId"`
-	ArtifactID     string `json:"artifactId"`
+	ProjectID      string `json:"projectId" form:"projectId" binding:"required"`
+	OldPath        string `json:"oldPath" form:"oldPath" binding:"required"`
+	PageID         string `json:"pageId" form:"pageId"`
+	PresentationID string `json:"presentationId" form:"presentationId"`
+	ArtifactID     string `json:"artifactId" form:"artifactId"`
 }
 
 // RenameReservedReq 草稿路径占用改名请求（reserved → reserved）。
 type RenameReservedReq struct {
-	ProjectID string `json:"projectId" binding:"required"`
-	PageID    string `json:"pageId" binding:"required"`
-	OldPath   string `json:"oldPath" binding:"required"`
-	NewPath   string `json:"newPath" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId" binding:"required"`
+	PageID    string `json:"pageId" form:"pageId" binding:"required"`
+	OldPath   string `json:"oldPath" form:"oldPath" binding:"required"`
+	NewPath   string `json:"newPath" form:"newPath" binding:"required"`
 	// OnlyReserved 只迁移 reserved 行，跳过本页 active/redirect 行。
 	// 多语言 P3：改某语言 URL 时，其他语言的 active 行绝不能被顺带改名
 	//（否则 /zh-CN/about 的激活行会被迁到新路径，线上路由丢失）。
-	OnlyReserved bool `json:"onlyReserved"`
+	OnlyReserved bool `json:"onlyReserved" form:"onlyReserved"`
 }
 
 // ReserveReq 创建草稿路径 reserved 占用（页面创建时预留）。
 type ReserveReq struct {
-	ProjectID string `json:"projectId" binding:"required"`
-	Path      string `json:"path" binding:"required"`
-	PageID    string `json:"pageId" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId" binding:"required"`
+	Path      string `json:"path" form:"path" binding:"required"`
+	PageID    string `json:"pageId" form:"pageId" binding:"required"`
 }
 
 // DeleteRoutesReq 清理页面全部路径占用（页面删除时释放）。
 type DeleteRoutesReq struct {
-	ProjectID string `json:"projectId" binding:"required"`
-	PageID    string `json:"pageId" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId" binding:"required"`
+	PageID    string `json:"pageId" form:"pageId" binding:"required"`
 }
 
 // ListActivePathsReq 查询页面已激活的路径集合（页面删除时清理访问面文件用）。
 type ListActivePathsReq struct {
-	ProjectID string `json:"projectId" binding:"required"`
-	PageID    string `json:"pageId" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId" binding:"required"`
+	PageID    string `json:"pageId" form:"pageId" binding:"required"`
 }
 
 // IsOccupiedReq 查询路径是否被其他实体占用（用于页面创建/发布前的预检）。
@@ -79,17 +79,17 @@ type ListActivePathsReq struct {
 // 展示实例改 URL 必须传 ExcludePresentationID —— 它的行 page_id 为 NULL，
 // 用 ExcludePageID 排除不掉自己，会把自身占用判成冲突。
 type IsOccupiedReq struct {
-	ProjectID     string `json:"projectId" binding:"required"`
-	Path          string `json:"path" binding:"required"`
-	ExcludePageID string `json:"excludePageId"`
+	ProjectID     string `json:"projectId" form:"projectId" binding:"required"`
+	Path          string `json:"path" form:"path" binding:"required"`
+	ExcludePageID string `json:"excludePageId" form:"excludePageId"`
 	// ExcludePresentationID 排除展示实例自身的占用行。
-	ExcludePresentationID string `json:"excludePresentationId"`
+	ExcludePresentationID string `json:"excludePresentationId" form:"excludePresentationId"`
 }
 
 // ListActivePathsByPresentationReq 查询展示实例已激活的路径集合（实例删除时清理访问面文件用）。
 type ListActivePathsByPresentationReq struct {
-	ProjectID      string `json:"projectId" binding:"required"`
-	PresentationID string `json:"presentationId" binding:"required"`
+	ProjectID      string `json:"projectId" form:"projectId" binding:"required"`
+	PresentationID string `json:"presentationId" form:"presentationId" binding:"required"`
 }
 
 // DeleteRoutesByPresentationReq 清理展示实例全部路径占用（实例删除时释放）。
@@ -97,8 +97,8 @@ type ListActivePathsByPresentationReq struct {
 // 与 DeleteRoutesByPage 并存而不是合并：两者的归属列不同，合并成一个可空
 // 组合参数会让「忘了传归属者」变成静默全删，比多一个方法危险得多。
 type DeleteRoutesByPresentationReq struct {
-	ProjectID      string `json:"projectId" binding:"required"`
-	PresentationID string `json:"presentationId" binding:"required"`
+	ProjectID      string `json:"projectId" form:"projectId" binding:"required"`
+	PresentationID string `json:"presentationId" form:"presentationId" binding:"required"`
 }
 
 // BeginPublishReceiptReq 登记一条「即将切换访问面」的发布回执。
@@ -106,28 +106,28 @@ type DeleteRoutesByPresentationReq struct {
 // FromArtifactID 是本次发布前该语言的活跃产物（首次发布为空）；ToArtifactID 是本次
 // 要激活的产物。恢复流程靠它们判断「符号链接现在指着谁」，因此两者都要如实填写。
 type BeginPublishReceiptReq struct {
-	ProjectID string `json:"projectId" binding:"required"`
-	Path      string `json:"path" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId" binding:"required"`
+	Path      string `json:"path" form:"path" binding:"required"`
 	// PageID / PresentationID 二选一：手工页面发布走前者，自动发布实例走后者。
-	PageID         string `json:"pageId"`
-	PresentationID string `json:"presentationId"`
-	FromArtifactID string `json:"fromArtifactId"`
+	PageID         string `json:"pageId" form:"pageId"`
+	PresentationID string `json:"presentationId" form:"presentationId"`
+	FromArtifactID string `json:"fromArtifactId" form:"fromArtifactId"`
 	// ToArtifactID 本次要激活的产物行 id。
 	//
 	// 例外：Action 为 update_url 时允许为空 —— 改 URL 的产物是**按新路径**现编译的
 	// （canonicalPath 进 Manifest 并参与 hash），登记回执时（切换之前）拿不到它的
 	// 产物行 id。该形态的恢复改用「新路径上的产物 canonicalPath 是否等于新路径」判定。
-	ToArtifactID string `json:"toArtifactId"`
+	ToArtifactID string `json:"toArtifactId" form:"toArtifactId"`
 	// Lang 构建语言（多语言站点一个页面每个语言一条回执）。
-	Lang   string `json:"lang"`
-	Action string `json:"action"`
+	Lang   string `json:"lang" form:"lang"`
+	Action string `json:"action" form:"action"`
 	// OldPath 切换前该语言的线上路径（改 URL 的旧路径 / 回滚前的路径）。
 	//
 	// 放进回执是因为恢复要用它处置旧路径（301 或下线）：从新路径反推不出来，
 	// 而那一刻数据库里的激活记录还是旧值也会随时间被后续操作改掉。
-	OldPath string `json:"oldPath"`
+	OldPath string `json:"oldPath" form:"oldPath"`
 	// Redirect 旧路径是否应登记为 301 重定向（update_url 专用）。
-	Redirect bool `json:"redirect"`
+	Redirect bool `json:"redirect" form:"redirect"`
 }
 
 // ReceiptsQueryReq 领取 / 统计未结案回执的过滤条件（收敛例程与可观测接口共用同一口径）。
@@ -138,11 +138,11 @@ type BeginPublishReceiptReq struct {
 // 待办的行挤出单批上限（饥饿）—— 所以「领取口径」必须与「谁能收敛」严格一致。
 type ReceiptsQueryReq struct {
 	// SourceType 回执归属（'page' / 'presentation'）；空 = 不限。
-	SourceType string `json:"sourceType"`
+	SourceType string `json:"sourceType" form:"sourceType"`
 	// Actions 认得的动作名；空 = 不限（不筛就领到全部，谨慎使用）。
-	Actions []string `json:"actions"`
+	Actions []string `json:"actions" form:"actions"`
 	// Limit 单批上限（领取用；统计忽略）。<= 0 视为「不领任何行」。
-	Limit int `json:"limit"`
+	Limit int `json:"limit" form:"limit"`
 }
 
 // SeoAuditReq SEO 体检片段的表单入参。

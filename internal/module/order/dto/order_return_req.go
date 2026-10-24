@@ -16,7 +16,7 @@ type ReturnItemReq struct {
 type ReturnRequestReq struct {
 	ProjectID string          `json:"projectId" form:"projectId"`
 	OrderID   uint64          `json:"orderId" form:"orderId"`
-	Items     []ReturnItemReq `json:"items"`
+	Items     []ReturnItemReq `json:"items" form:"items"`
 	Reason    string          `json:"reason" form:"reason"`
 	// RequestID 幂等键：页面渲染时生成一次，重复提交只落一张申请单。
 	RequestID string `json:"requestId" form:"requestId"`

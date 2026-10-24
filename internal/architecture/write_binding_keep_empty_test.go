@@ -53,8 +53,13 @@ var emptyMeansSemantic = regexp.MustCompile(`(指向空串|空串表示)`)
 // 判据因此是「空串被删掉之后，消费方还能不能区分『没填』与『显式置空』」：
 //   · PostForm 取值：不能区分也不需要区分（键不存在 = 空串）；
 //   · binding 绑定到 *string：能区分，而语义相反 —— 必须 keep-empty。
+// 键是 **form tag 的值**（模板 name 与它逐字对齐），不是字段名推出来的小驼峰 ——
+// 两者在 `PanelBlockID` 上正好不同：form tag 是 `panelBlockId`（小写 d），
+// 而按字段名推会得到 `panelBlockID`。2026-11 给全部 dto 补 form tag 之后，
+// 本表的键随之从 `panelBlockID` 变成 `panelBlockId`（此前那个键其实从未被扫到过，
+// 属于登记表与实测不一致的存量 bug，补 tag 顺手修掉了）。
 var pendingKeepEmptyFields = map[string]int{
-	"panelBlockID": 1,
+	"panelBlockId": 1,
 }
 
 // TestKeepEmptyFieldsAreDeclared 扫「空串有语义」的 DTO 字段，要求模板里有对应声明。
