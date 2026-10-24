@@ -120,12 +120,15 @@ func TestAttachSessionDetailSkipsWithoutID(t *testing.T) {
 	c, _ := gin.CreateTestContext(nil)
 	c.Request = httptest.NewRequest("GET", "/admin/ai/sessions", nil)
 
-	data := gin.H{}
+	view := &aidto.SessionListPageResp{}
 	// svc 为 nil：一旦真去查库就会 panic —— 这条用例正是要钉住「不带 id 时一次库都不碰」。
 	h := &SessionPageHandle{}
-	h.attachSessionDetail(c, context.Background(), data)
+	h.attachSessionDetail(c, context.Background(), view)
 
-	if len(data) != 0 {
-		t.Fatalf("不带 id 时不该往页面数据里塞任何键：%+v", data)
+	// 「什么都没塞」的判据是详情区块全为零值（结构体视图下比 map 更准确：
+	// 多塞一个字段就是编译后的零值不符，而不是悄悄多一个键）。
+	if view.Detail != nil || view.DetailID != 0 || view.DetailErr != "" ||
+		len(view.Events) != 0 || view.EventsErr != "" || view.FoldPlan != nil || view.FoldPlanErr != "" {
+		t.Fatalf("不带 id 时不该装配详情区块：%+v", view)
 	}
 }

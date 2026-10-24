@@ -32,7 +32,7 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/admin/inbound/http/admin_i18n_write.go":                    {offenders: 1, max: 33},
 	"internal/module/admin/inbound/http/admin_page.go":                          {offenders: 36, max: 37},
 	"internal/module/ai/inbound/http/ai_handle.go":                              {offenders: 4, max: 28},
-	"internal/module/ai/inbound/http/ai_page.go":                                {offenders: 6, max: 29},
+	"internal/module/ai/inbound/http/ai_page.go":                                {offenders: 6, max: 24},
 	"internal/module/analytics/inbound/http/analytics_handle.go":                {offenders: 1, max: 7},
 	"internal/module/analytics/inbound/http/analytics_page.go":                  {offenders: 2, max: 25},
 	"internal/module/block/inbound/http/block_handle.go":                        {offenders: 1, max: 15},

@@ -1186,25 +1186,27 @@ func modelRows(models []aidto.ModelEntry) []aidto.ModelRowResp {
 
 // cardData 一个供应商卡片（含模型目录区）的模板数据。
 //
-// csrf_token / t / PermSet 从页面基座 map 里借（卡片是 include 进整页的，
-// 作用域是这张卡片自己的 map，拿不到整页的键）。
-func cardData(base gin.H, provider aidto.Provider, notice string, isErr bool, defaultBaseURL string) gin.H {
-	return gin.H{
-		"Provider":        provider,
-		"Rows":            modelRows(provider.Models),
-		"ProtocolOptions": aienums.ProtocolOptions,
-		"DefaultBaseURL":  defaultBaseURL,
-		"BuiltinKeys":     builtinProviderKeys(),
-		"ModelsNotice":    notice,
-		"ModelsNoticeErr": isErr,
+// csrf_token / t / PermSet 显式传入（卡片是 include 进整页的，作用域是这张卡片自己的
+// 视图，拿不到整页的键）。原先从页面基座 map 里按 `base["csrf_token"]` 索引取：
+// 三个键各错一次就是「表单提交被 CSRF 拒」或「卡片里所有词条渲染成空」——
+// 两者都不报错。参数化之后漏传是编译错误。
+func cardData(base aidto.ProviderCardBase, provider aidto.Provider, notice string, isErr bool, defaultBaseURL string) aidto.ProviderCardResp {
+	return aidto.ProviderCardResp{
+		Provider:        provider,
+		Rows:            modelRows(provider.Models),
+		ProtocolOptions: aienums.ProtocolOptions,
+		DefaultBaseURL:  defaultBaseURL,
+		BuiltinKeys:     builtinProviderKeys(),
+		ModelsNotice:    notice,
+		ModelsNoticeErr: isErr,
 		// 卡片上两处徽标的分档：启停与「模型目录读取结果」。阈值留在这里，
 		// 模板只把分档写进 class（原先两处都是 {{if}} 在模板里选 badge-*）。
-		"StatusTone":       providerStatusTone(provider.Status),
-		"ModelsNoticeTone": noticeTone(isErr),
-		"ModelsNoticeRole": noticeRole(isErr),
-		"csrf_token":       base["csrf_token"],
-		"t":                base["t"],
-		"PermSet":          base["PermSet"],
+		StatusTone:       providerStatusTone(provider.Status),
+		ModelsNoticeTone: noticeTone(isErr),
+		ModelsNoticeRole: noticeRole(isErr),
+		CSRFToken:        base.CSRFToken,
+		T:                base.T,
+		PermSet:          base.PermSet,
 	}
 }
 
@@ -1376,29 +1378,30 @@ func (h *SessionPageHandle) SessionsPage(c *gin.Context) {
 	// provider_card.html（cardData 的 "t": base["t"]），卡片的取词函数 / csrf_token /
 	// PermSet 全靠这次注入。挪到末尾会让卡片拿到三个 nil —— 取词当场渲染失败（500），
 	// 而 csrf_token 为空只会静默渲染出空值（表单提交必被 CSRF 拒）。
-	data := adminui.Prepare(c, gin.H{
+	view := &aidto.SessionListPageResp{
 		// title 槽是**文本**（layout 壳读 .title），所以在这里取成文本（还没取词化）。
-		"title": aiMsgText(c, aienums.AdminLLMTitle, "大模型管理"),
-		"Page":  page, "PageSize": sessionPageSize,
-		"Filter": filter, "Keyword": filter.Keyword, "Status": filter.Status,
-		"Tab": tab,
+		Title:    aiMsgText(c, aienums.AdminLLMTitle, "大模型管理"),
+		Page:     page,
+		PageSize: sessionPageSize,
+		Filter:   filter,
+		Keyword:  filter.Keyword,
+		Status:   filter.Status,
+		Tab:      tab,
 		// IsModels 是给模板用的布尔：在模板里比较字符串（.Tab == "models"）
 		// 要依赖 Jet 的比较表达式求值，多一处能出错的地方。
-		"IsModels": tab == sessionTabModels,
+		IsModels: tab == sessionTabModels,
 		// 标签按权限裁剪：没权限的标签连按钮都不渲染（模板据此包 {{if}}）。
 		// 权限是事实：一次取数失败不改变「这个人能看什么」，失败分支照给。
-		"CanViewModels": canModels, "CanViewSessions": canSessions,
-		// Usage 是模板顶层的 let（u := .Usage）：失败时给零值 —— 标签区整块会被失败槽换掉，
-		// 没有人会看到这个 0。
-		"Usage": aidto.SessionUsage{},
+		CanViewModels:   canModels,
+		CanViewSessions: canSessions,
 		// 这三项是包级静态清单，**两个分支都渲染的模板块也要取**：新建供应商抽屉
 		//（provider_create.html，页头按钮 + 末尾 include 都在失败槽之外）与供应商卡片都读它们。
 		// 缺一个的后果不是「少显示一块」而是 Jet 当场中断 —— 整页 500 且只剩半截 HTML，
 		// 与「主数据没读出来」是两回事。
-		"Presets":         aiservice.BuiltinPresets(),
-		"BuiltinKeys":     aiservice.BuiltinProviderKeys(),
-		"ProtocolOptions": aienums.ProtocolOptions,
-	})
+		Presets:         toPresetOptions(aiservice.BuiltinPresets()),
+		BuiltinKeys:     aiservice.BuiltinProviderKeys(),
+		ProtocolOptions: aienums.ProtocolOptions,
+	}
 	status := http.StatusOK
 	if loadFailed {
 		// 会话清单是这一页的**主数据**：读不到就不该有这一页 —— 同页完整 HTML 500 + no-store
@@ -1409,45 +1412,76 @@ func (h *SessionPageHandle) SessionsPage(c *gin.Context) {
 		// 就地降级（attach*，200 + 就地提示条），语义与「整页没读出来」不同，不能混为一谈。
 		// 失败时不装配那些块：模板的 `{{if loadFailed}}` 把整块标签区换成失败说明 —— 零值渲染
 		// 出来的指标卡与空列表，与「真的是 0 用量 / 真的没有会话」长得一样。
-		data["LoadFailed"] = true
-		data["LoadError"] = aiErrText(c, err)
+		view.LoadFailed = true
+		view.LoadError = aiErrText(c, err)
 		c.Header("Cache-Control", "no-store")
 		status = http.StatusInternalServerError
 	} else {
-		// Rows 是 []gin.H（每项 {Session, Usage}），不是 []aidto.Session：
-		// 每行要带上它自己的按 (供应商, 模型) 拆分，而模板对 map 做动态索引
-		// （.ModelUsage[r.ID]）依赖 Jet 的索引表达式；拼成同序的嵌套结构没这层不确定性。
-		data["Rows"] = h.sessionRows(ctx, rows)
-		data["Total"] = total
-
-		// 详情（?id=）先装配：它决定详情区显示什么，而看板与卡片与它无关，各自独立降级。
-		h.attachSessionDetail(c, ctx, data)
-		h.attachSessionUsage(c, ctx, data, filter)
-		h.attachProviderCards(c, ctx, data)
-
-		// 分页链接在服务端拼好带着全部筛选条件：让模板自己拼 query 就得在每个翻页链接里
-		// 把七八个参数各写一遍，漏一个就变成「翻页把筛选清空」。
-		totalPages := int((total + int64(sessionPageSize) - 1) / int64(sessionPageSize))
-		data["TotalPages"] = totalPages
-		data["HasPrev"] = page > 1
-		data["HasNext"] = page < totalPages
-		if page > 1 {
-			data["PrevURL"] = sessionPageURL(c, page-1)
-		}
-		if page < totalPages {
-			data["NextURL"] = sessionPageURL(c, page+1)
-		}
+		h.attachSessionsBlocks(c, ctx, view, rows, total, page, filter)
 	}
 
-	c.HTML(status, sessionTemplate, data)
+	c.HTML(status, sessionTemplate, adminui.PrepareView(c, view))
+}
+
+// attachSessionsBlocks 成功档的各区块装配：列表 / 详情 / 看板 / 供应商卡片 / 分页。
+//
+// 从控制器里拆出来是为了让 handler 保持「取数 → 分支 → 出口」三件事：
+// 这五块各自独立降级（一个聚合查询超时不该把整页打成 500），规则都在这里。
+func (h *SessionPageHandle) attachSessionsBlocks(c *gin.Context, ctx context.Context,
+	v *aidto.SessionListPageResp, rows []aidto.Session, total int64, page int, filter aidto.SessionQuery) {
+	// Rows 每项是已摊平的 map（见 sessionRows）：模板对行做动态索引
+	//（.ModelUsage[r.ID]），拼成同序的嵌套结构没这层不确定性。
+	v.Rows = h.sessionRows(ctx, rows)
+	v.Total = total
+
+	// 三个壳键要在**装配之前**就位：attachProviderCards 把它们借给卡片
+	//（cardData 的 ProviderCardBase）。取词函数 / csrf_token / PermSet 全靠这次注入 ——
+	// 装配时还没取到的话，卡片拿的是 nil：取词当场渲染失败（500），
+	// csrf_token 为空只静默渲染成空值（表单提交必被 CSRF 拒）。
+	// 这里从一次 PrepareView 里取：它做的事与下面最终渲染时完全一样。
+	base := adminui.PrepareView(c, &aidto.SessionListPageResp{})
+	v.CSRFToken, _ = base["csrf_token"].(string)
+	v.T = base["t"]
+	v.PermSet = base["PermSet"]
+	v.Buttons = base["Buttons"]
+
+	// 详情（?id=）先装配：它决定详情区显示什么，而看板与卡片与它无关，各自独立降级。
+	h.attachSessionDetail(c, ctx, v)
+	h.attachSessionUsage(c, ctx, v, filter)
+	h.attachProviderCards(c, ctx, v)
+
+	// 分页链接在服务端拼好带着全部筛选条件：让模板自己拼 query 就得在每个翻页链接里
+	// 把七八个参数各写一遍，漏一个就变成「翻页把筛选清空」。
+	totalPages := int((total + int64(sessionPageSize) - 1) / int64(sessionPageSize))
+	v.TotalPages = totalPages
+	v.HasPrev = page > 1
+	v.HasNext = page < totalPages
+	if page > 1 {
+		v.PrevURL = sessionPageURL(c, page-1)
+	}
+	if page < totalPages {
+		v.NextURL = sessionPageURL(c, page+1)
+	}
+}
+
+// toPresetOptions 把 service 的内置预设镜像成 dto 的同形类型（dto 不依赖 service）。
+func toPresetOptions(in []aiservice.BuiltinPresetOption) []aidto.PresetOption {
+	out := make([]aidto.PresetOption, 0, len(in))
+	for _, p := range in {
+		out = append(out, aidto.PresetOption{
+			Key: p.Key, DisplayName: p.DisplayName,
+			BaseURL: p.BaseURL, Protocol: p.Protocol, ModelCount: p.ModelCount,
+		})
+	}
+	return out
 }
 
 // sessionRows 把会话列表拼成模板行数据：每行带上它自己的按 (供应商, 模型) 拆分。
 //
 // 拆分一次查完整页（见 SessionService.SessionModelUsageOf），拉取失败不阻断整页 ——
 // 行照常渲染，只是悬浮卡里没有明细（给空切片，模板不必再写一层 isset）。
-func (h *SessionPageHandle) sessionRows(ctx context.Context, rows []aidto.Session) []gin.H {
-	out := make([]gin.H, 0, len(rows))
+func (h *SessionPageHandle) sessionRows(ctx context.Context, rows []aidto.Session) []any {
+	out := make([]any, 0, len(rows))
 	if len(rows) == 0 {
 		return out
 	}
@@ -1479,72 +1513,78 @@ func (h *SessionPageHandle) sessionRows(ctx context.Context, rows []aidto.Sessio
 //
 // 统计失败不阻断整页：列表与详情照常可用，只是看板那几张卡显示不出来 ——
 // 一个聚合查询超时把整页打成 500 不成比例。失败信息交给模板在看板区提示。
-func (h *SessionPageHandle) attachSessionUsage(c *gin.Context, ctx context.Context, data gin.H, filter aidto.SessionQuery) {
+func (h *SessionPageHandle) attachSessionUsage(c *gin.Context, ctx context.Context, v *aidto.SessionListPageResp, filter aidto.SessionQuery) {
 	usage, err := h.svc.SessionUsageOf(ctx, filter)
 	if err != nil {
-		data["UsageErr"] = aiErrText(c, err)
+		v.UsageErr = aiErrText(c, err)
 		// 仍然给零值：模板不必为「这个键可能不存在」再写一遍 isset 分支。
 		usage = aidto.SessionUsage{}
 	}
-	data["Usage"] = usage
+	v.Usage = usage
 
 	// 趋势单独取：它按 (供应商, 模型) 分组，比指标卡多一次聚合；两者任一个失败都只
 	// 影响自己那一块，不把整页打成 500。窗口两端与峰值由 service 一并给出（见 SessionTrend），
 	// 模板不再自己遍历取首尾 —— Jet 里取切片首尾要判空索引。
 	trend, terr := h.svc.SessionTrend(ctx, filter, sessionTrendDays)
 	if terr != nil {
-		if _, has := data["UsageErr"]; !has {
-			data["UsageErr"] = aiErrText(c, terr)
+		if v.UsageErr == "" {
+			v.UsageErr = aiErrText(c, terr)
 		}
 		trend = aidto.SessionTrend{}
 	}
-	data["Trend"] = trend
+	v.Trend = trend
 
 	opts, oerr := h.svc.SessionFilterOptions(ctx)
 	if oerr != nil {
-		data["OptionsErr"] = aiErrText(c, oerr)
+		v.OptionsErr = aiErrText(c, oerr)
 		// 候选拉不到时给空集合而不是 nil：下拉里只剩「全部」，筛选仍可用 URL 手填。
 		opts = aidto.SessionFilterOptions{Providers: []string{}, Models: []string{}, Creators: []int64{}}
 	}
-	data["FilterOptions"] = opts
+	v.FilterOptions = opts
 }
 
 // attachProviderCards 装配第二个标签（模型配置）要用的供应商卡片。
 //
 // 复用配置面的 cardData：两块页面说的是同一批供应商，各拼一份数据必然漂移
 // （加了字段只改一处）。数据仍从 providerLister 这个只读窄接口来。
-func (h *SessionPageHandle) attachProviderCards(c *gin.Context, ctx context.Context, data gin.H) {
-	data["Presets"] = aiservice.BuiltinPresets()
-	data["BuiltinKeys"] = aiservice.BuiltinProviderKeys()
-	data["ProtocolOptions"] = aienums.ProtocolOptions
-	data["ProviderCards"] = []gin.H{}
-	h.attachProviders(c, ctx, data, true)
+func (h *SessionPageHandle) attachProviderCards(c *gin.Context, ctx context.Context, v *aidto.SessionListPageResp) {
+	v.Presets = toPresetOptions(aiservice.BuiltinPresets())
+	v.BuiltinKeys = aiservice.BuiltinProviderKeys()
+	v.ProtocolOptions = aienums.ProtocolOptions
+	v.ProviderCards = []any{}
+	h.attachProviders(c, ctx, v, true)
 }
 
-// attachProviders 拉一次供应商列表，写进 data 的 Providers；withCards 时顺带拼好卡片数据。
+// attachProviders 拉一次供应商列表，写进视图的 Providers；withCards 时顺带拼好卡片数据。
 //
 // 会话列表页、模型标签页、详情抽屉都读这一份 —— 发消息区的候选与模型标签页要的是同一个列表，
 // 各拉一次就是三次查询加三处漂移点。
 // 拉取失败不阻断整页（或整个抽屉）：只置 ProviderErr，其余部分照常渲染。
-func (h *SessionPageHandle) attachProviders(c *gin.Context, ctx context.Context, data gin.H, withCards bool) {
-	data["Providers"] = []aidto.Provider{}
+func (h *SessionPageHandle) attachProviders(c *gin.Context, ctx context.Context, v *aidto.SessionListPageResp, withCards bool) {
+	v.Providers = []aidto.Provider{}
 	if h.providers == nil {
 		return
 	}
 	list, err := h.providers.ListProviders(ctx)
 	if err != nil {
-		data["ProviderErr"] = aiErrText(c, err)
+		v.ProviderErr = aiErrText(c, err)
 		return
 	}
-	data["Providers"] = list
+	v.Providers = list
 	if !withCards {
 		return
 	}
-	cards := make([]gin.H, 0, len(list))
+	// 卡片元素必须是**摊平后的 map**：provider_card.html 是 include 进来的独立作用域，
+	// 它对卡片直接取 .["t"] / .["csrf_token"] / .Buttons，不经过 ViewMap ——
+	// 塞结构体的话键名是 T / CSRFToken，模板取不到（Jet 缺键 = 整页 500）。
+	// 所以这里显式过一遍 ViewMap，而不是依赖渲染期摊平。
+	cards := make([]any, 0, len(list))
 	for i := range list {
-		cards = append(cards, cardData(data, list[i], "", false, aiservice.BuiltinBaseURL(list[i].ProviderKey)))
+		cards = append(cards, adminui.ViewMap(cardData(aidto.ProviderCardBase{
+			CSRFToken: v.CSRFToken, T: v.T, PermSet: v.PermSet, Buttons: v.Buttons,
+		}, list[i], "", false, aiservice.BuiltinBaseURL(list[i].ProviderKey))))
 	}
-	data["ProviderCards"] = cards
+	v.ProviderCards = cards
 }
 
 // sessionTabOf 归一标签参数：只认 "models"，其余一律回会话标签。
@@ -1734,39 +1774,39 @@ const sessionDetailEventSize = sessionEventTop
 //
 // 三块各自独立降级（各自一个 Err 键）：一个会话的事件查询失败不该把整页打成 500，
 // 也不该让另外两块跟着消失。
-func (h *SessionPageHandle) attachSessionDetail(c *gin.Context, ctx context.Context, data gin.H) {
+func (h *SessionPageHandle) attachSessionDetail(c *gin.Context, ctx context.Context, v *aidto.SessionListPageResp) {
 	raw := strings.TrimSpace(c.Query("id"))
 	if raw == "" {
 		return
 	}
 	id := parseInt64(raw)
 	if id <= 0 {
-		data["DetailErr"] = internalFallback(c)
+		v.DetailErr = internalFallback(c)
 		return
 	}
 
 	detail, err := h.svc.GetSession(ctx, id)
 	if err != nil {
 		// 会话头取不到就没必要再查事件：详情区只显示这一条提示。
-		data["DetailErr"] = aiErrText(c, err)
+		v.DetailErr = aiErrText(c, err)
 		return
 	}
-	data["Detail"] = detail
-	data["DetailID"] = id
+	v.Detail = detail
+	v.DetailID = id
 
 	events, _, err := h.svc.ListEvents(ctx, id, 1, sessionDetailEventSize)
 	if err != nil {
-		data["EventsErr"] = aiErrText(c, err)
+		v.EventsErr = aiErrText(c, err)
 	} else {
-		data["Events"] = sessionEventRows(events)
+		v.Events = sessionEventRows(events)
 	}
 
 	// 折叠预览只算不写（FoldPlan 不落库），失败只影响这一块。
 	plan, err := h.svc.FoldPlan(ctx, aidto.FoldPlanReq{SessionID: id})
 	if err != nil {
-		data["FoldPlanErr"] = aiErrText(c, err)
+		v.FoldPlanErr = aiErrText(c, err)
 	} else {
-		data["FoldPlan"] = plan
+		v.FoldPlan = plan
 	}
 }
 

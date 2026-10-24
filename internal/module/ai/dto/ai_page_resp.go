@@ -101,6 +101,21 @@ type ModelsDataResp struct {
 	ModelsNoticeRole string
 }
 
+// ProviderCardBase 卡片的三个「借来的壳键」：csrf_token / t / PermSet。
+//
+// 抽成一个小类型而不是三个裸参数或页面基座 map：卡片是 include 进整页的，作用域是
+// 卡片自己的视图，这三个键只能由调用方传入；而按 `base["csrf_token"]` 索引取的话，
+// 漏一个不报错 —— csrf_token 为空是「表单提交被 CSRF 拒」，t 为空是「卡片里所有词条
+// 渲染成空」，permSet 为空是「所有按钮按无权限隐藏」。
+type ProviderCardBase struct {
+	CSRFToken string
+	T         any
+	PermSet   any
+	// Buttons 按钮权限码集合（模板写 {{if isset(.Buttons["ai.provider_save"])}}）。
+	// 漏了它不是「按钮不显示」而是 Jet 缺键中断 —— 整页 500。
+	Buttons any
+}
+
 // ProviderCardResp 一个供应商卡片（含模型目录区）的模板数据。
 //
 // csrf_token / t / PermSet 从页面基座 map 里借 —— 卡片是 include 进整页的，

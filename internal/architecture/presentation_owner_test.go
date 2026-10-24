@@ -44,7 +44,11 @@ var pendingDTOPresentation = map[string]int{
 	// 值是语义档（"error"/"ok"）而不是成品类名 —— 但字段名落在禁名单上。
 	// 按存量登记：改名要同步改模板，而模板错是渲染期 500。
 	"internal/module/ai/dto/ai_page_resp.go": 2,
-	"internal/module/user/dto/user_resp.go":                1,
+	// PresetOption.DisplayName 是**模板契约键名**（provider_create.html 读 `.DisplayName`
+	// 填预设下拉），交的是 service 给的原始名而不是成品句 —— 但字段名落在禁名单上。
+	// 同 ai_page_resp.go 那条：改名要同步改模板，模板错是渲染期 500。
+	"internal/module/ai/dto/ai_session_page_resp.go": 1,
+	"internal/module/user/dto/user_resp.go":          1,
 }
 
 func TestDTOsCarryNoPresentationFields(t *testing.T) {
@@ -120,8 +124,8 @@ var pendingModuleText = map[string]int{
 	"internal/module/webhook/inbound/http/webhook_handle.go":                 1,
 	"internal/module/workbench/inbound/http/workbench_err.go":                3,
 	// 页面逻辑拆成 5 个文件后，两处取词跟着调用点走（都在预览编译的出口）。
-	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":   1,
-	"internal/module/workbench/inbound/http/canvas_preview_handle.go":  1,
+	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  1,
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go": 1,
 }
 
 func TestModulesDoNotTranslate(t *testing.T) {
