@@ -68,9 +68,9 @@ type CounterTabResp struct {
 	// 登记在 pendingDTOPresentation（与 inventory 同类同档）。
 	LabelKey string
 	Label    string
-	Count   int64
-	Active  bool
-	URL     string
+	Count    int64
+	Active   bool
+	URL      string
 }
 
 // RfmSegmentTabResp 分段筛选徽章（一个徽章一个链接，URL 由服务端拼好）。
@@ -84,9 +84,9 @@ type RfmSegmentTabResp struct {
 	// 登记在 pendingDTOPresentation（与 inventory 同类同档）。
 	LabelKey string
 	Label    string
-	Count   int64
-	Active  bool
-	URL     string
+	Count    int64
+	Active   bool
+	URL      string
 }
 
 // CustomerRfmPageResp 客户 RFM 页（/admin/customers/rfm）。
@@ -149,10 +149,10 @@ type CustomerListRowResp struct {
 	DisplayName string
 	Nickname    string
 
-	Status              int
-	StatusLabelKey           string
-	StatusLabelFallback      string
-	EmailVerified       bool
+	Status                int
+	StatusLabelKey        string
+	StatusLabelFallback   string
+	EmailVerified         bool
 	EmailVerifiedKey      string
 	EmailVerifiedFallback string
 
@@ -171,16 +171,16 @@ type CustomerListRowResp struct {
 	// 待激活的账号刻意不给按钮：它登不上去（status != active 一律拒绝登录），
 	// 停用它只会让客户点验证链接时得到「链接失效」—— 既没解决问题，
 	// 又让客户来问「为什么我的链接坏了」。
-	Actionable          bool
-	NextStatus          int
-	StatusActionKey string
-	StatusActionLabel    string
+	Actionable        bool
+	NextStatus        int
+	StatusActionKey   string
+	StatusActionLabel string
 
 	// PendingHint / LockHint 说明文案的词条事实（空 key = 没有这条提示）。
-	PendingHintKey string
-	PendingHintFallback    string
-	LockHintKey    string
-	LockHintFallback       string
+	PendingHintKey      string
+	PendingHintFallback string
+	LockHintKey         string
+	LockHintFallback    string
 }
 
 // CustomersListPageResp 客户列表整页（/admin/customers）。
@@ -224,4 +224,85 @@ type CustomersListPageResp struct {
 	BackPath          string
 
 	Pagination pagination.Page
+}
+
+// CustomerDetailPageResp 客户详情整页（/admin/customers/detail）。
+//
+// 字段名 = 模板键（customer_detail.html）。零值可用：失败档渲染同一张模板，
+// 只是 HasDetail=false + Err 带归口文案。
+//
+// 会员那一块（HasMembership / Membership*）由 applyCustomerMembership **恒设**（含空值）：
+// Jet 缺键会中断整页渲染，而这条路径有 6 个消费点（含直接调组装函数的渲染测试）——
+// 漏一处就是整页 500。
+type CustomerDetailPageResp struct {
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
+
+	ErrKey      string
+	ErrFallback string
+	HasErr      bool
+
+	HasDetail bool
+	// Customer 行事实（与列表页同一份 customerRow 投影）。
+	Customer any
+
+	Projects        []any
+	SelectedProject string
+	HasProjects     bool
+	ProjectsFailed  bool
+	SummaryFailed   bool
+	HasSummary      bool
+	// ListURL 「返回列表」链接（保留筛选上下文）。
+	ListURL string
+
+	// —— 详情字段（HasDetail 为假时全零值）——
+	ID                    uint64
+	Username              string
+	Email                 string
+	DisplayName           string
+	Nickname              string
+	Status                int
+	StatusLabelKey        string
+	StatusLabelFallback   string
+	EmailVerified         bool
+	EmailVerifiedKey      string
+	EmailVerifiedFallback string
+	RegisteredAt          any
+	RegisterIP            string
+	RegisterLocation      string
+	LastLoginTime         any
+	LastLoginIP           string
+	LastLoginLocation     string
+	Locked                bool
+	LockedUntil           any
+	LoginFailureCount     int
+	Actionable            bool
+	NextStatus            int
+	PendingHintKey        string
+	PendingHintFallback   string
+	LockHintKey           string
+	LockHintFallback      string
+	StatusActionKey       string
+	StatusActionLabel     string
+
+	// —— 订单摘要（HasSummary 为假时全零值）——
+	OrderCount              int64
+	PaidOrderCount          int64
+	TotalAmountLabel        string
+	LastOrderNo             string
+	LastOrderTime           any
+	LastOrderID             uint64
+	HasOrders               bool
+	LastOrderStatusKey      string
+	LastOrderStatusFallback string
+
+	// —— 会员等级（applyCustomerMembership 恒设）——
+	HasMembership             bool
+	MembershipTierName        string
+	MembershipIsDefault       bool
+	MembershipFreeShipping    bool
+	MembershipDiscountPercent any
+	HasMembershipNotice       bool
+	MembershipNoticeKey       string
+	MembershipNoticeFallback  string
 }

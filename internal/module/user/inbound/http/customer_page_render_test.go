@@ -198,7 +198,7 @@ func newCustomerTestEngine(h *customerPageHandle) *gin.Engine {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	engine.GET("/admin/customers", adminui.PageSlot(CustomersListPageTemplate), h.CustomersPage)
 	engine.GET("/admin/customers/overview", adminui.PageSlot(CustomerOverviewPageTemplate), h.CustomerOverviewPage)
-	engine.GET("/admin/customers/detail", h.CustomerDetailPage)
+	engine.GET("/admin/customers/detail", adminui.PageSlot(CustomerDetailPageTemplate), h.CustomerDetailPage)
 	api := NewCustomerHandle(h.users)
 	engine.POST("/api/customer/status", api.SetCustomerStatus)
 	engine.POST("/api/customer/unlock", api.UnlockCustomer)

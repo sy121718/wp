@@ -35,6 +35,7 @@ import (
 // 客户管理页的模板名（页面出口由页面槽带进上下文）。
 const (
 	CustomersListPageTemplate    = "admin/user/customers.html"
+	CustomerDetailPageTemplate   = "admin/user/customer_detail.html"
 	CustomerOverviewPageTemplate = "admin/user/customer_overview"
 	CustomerCohortPageTemplate   = "admin/user/customer_cohort"
 	CustomerRfmPageTemplate      = "admin/user/customer_rfm"
@@ -88,5 +89,8 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 		adminui.PageSlot(CustomerCohortPageTemplate),
 		h.CustomerCohortPage)
 	// 客户详情：二级页面（菜单表没有它），但它是整页导航目标 —— 直输 URL 必须同样被拦。
-	pages.GET("/customers/detail", adminui.PageAuthz("/api/customer/list"), h.CustomerDetailPage)
+	pages.GET("/customers/detail",
+		adminui.PageAuthz("/api/customer/list"),
+		adminui.PageSlot(CustomerDetailPageTemplate),
+		h.CustomerDetailPage)
 }

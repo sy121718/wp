@@ -87,7 +87,7 @@ func newCustomerE2EEnv(t *testing.T) *customerE2EEnv {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
 	page := userhttp.NewCustomerPageHandle(users, orders, projects)
 	engine.GET("/admin/customers", adminui.PageSlot(userhttp.CustomersListPageTemplate), page.CustomersPage)
-	engine.GET("/admin/customers/detail", page.CustomerDetailPage)
+	engine.GET("/admin/customers/detail", adminui.PageSlot(userhttp.CustomerDetailPageTemplate), page.CustomerDetailPage)
 	engine.POST("/api/customer/status", userhttp.NewCustomerHandle(users).SetCustomerStatus)
 	engine.POST("/api/customer/unlock", userhttp.NewCustomerHandle(users).UnlockCustomer)
 

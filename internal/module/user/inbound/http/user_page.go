@@ -759,9 +759,9 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 	// 页面上的提示条只剩一个来源：本页自己的取数失败。
 
 	if h.users == nil {
-		c.HTML(http.StatusOK, "admin/user/customer_detail.html", adminui.Prepare(c, customerDetailPageData(
+		pageview.Render(c, customerDetailPageData(
 			customerLabelText(c, customerDetailPageTitleLabel), c,
-			nil, nil, "", nil, false, false, customerUnavailableLabel.msg())))
+			nil, nil, "", nil, false, false, customerUnavailableLabel.msg()))
 		return
 	}
 
@@ -826,7 +826,7 @@ func (h *customerPageHandle) CustomerDetailPage(c *gin.Context) {
 		detail, projects, selected, summary, !projectsErr.Empty(), !summaryErr.Empty(),
 		customerMsgFirst(projectsErr, summaryErr))
 	applyCustomerMembership(memberData, h.membershipView(ctx, c, selected, id))
-	c.HTML(http.StatusOK, "admin/user/customer_detail.html", adminui.Prepare(c, memberData))
+	pageview.Render(c, memberData)
 }
 
 // customerListBackKeys 列表写动作回跳要带回来的筛选上下文。
@@ -1606,92 +1606,86 @@ func customerListPageData(title string, list *userdto.CustomerListResp, filter c
 // （「返回列表」要保留筛选上下文），允许为 nil；pageErr 是事实（三键）。
 func customerDetailPageData(title string, c *gin.Context, detail *userdto.CustomerResp, projects []projectcontract.ProjectResp,
 	selected string, summary *ordercontract.CustomerOrderSummaryResp,
-	projectsFailed, summaryFailed bool, pageErr customerMsg) gin.H {
-	data := gin.H{
-		"title":           title,
-		"menu":            "customers",
-		"ErrKey":          pageErr.Key,
-		"ErrFallback":     pageErr.Fallback,
-		"HasErr":          !pageErr.Empty(),
-		"HasDetail":       detail != nil,
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"HasProjects":     len(projects) > 0,
-		"ProjectsFailed":  projectsFailed,
-		"SummaryFailed":   summaryFailed,
-		"HasSummary":      summary != nil,
-		"ListURL":         customerDetailBackURL(c),
+	projectsFailed, summaryFailed bool, pageErr customerMsg) *userdto.CustomerDetailPageResp {
+	view := &userdto.CustomerDetailPageResp{
+		Title:           title,
+		Menu:            "customers",
+		ErrKey:          pageErr.Key,
+		ErrFallback:     pageErr.Fallback,
+		HasErr:          !pageErr.Empty(),
+		HasDetail:       detail != nil,
+		Projects:        toAnySlice(projects),
+		SelectedProject: selected,
+		HasProjects:     len(projects) > 0,
+		ProjectsFailed:  projectsFailed,
+		SummaryFailed:   summaryFailed,
+		HasSummary:      summary != nil,
+		ListURL:         customerDetailBackURL(c),
 	}
-	// 会员等级那一块的键**恒设零值**（BIZ-3）：调用方（handle）随后用
-	// applyCustomerMembership 覆盖成真实值。放在组装函数里而不是让调用方补，
-	// 是因为这里出去的 data 有 6 个消费点（含渲染测试直接调本函数）——
-	// 漏一处就是模板缺键 → 渲染中断 → 整页 500（Jet 的判据见 internal/templates/CLAUDE.md），
-	// 而那 4 处测试路径恰恰不该关心会员那块的实现。
-	applyCustomerMembership(data, customerMembershipView{})
-
 	if detail != nil {
 		row := customerRow(detail)
-		data["Customer"] = row
-		data["ID"] = detail.ID
-		data["Username"] = detail.Username
-		data["Email"] = detail.Email
+		view.Customer = row
+		view.ID = detail.ID
+		view.Username = detail.Username
+		view.Email = detail.Email
 		// 展示名三个原值都给模板（三级回退由 Jet 决定，与列表页同一份逻辑）。
-		data["DisplayName"] = row.DisplayName
-		data["Nickname"] = row.Nickname
+		view.DisplayName = row.DisplayName
+		view.Nickname = row.Nickname
 		// 状态值也要给：徽章色调由模板按状态值取语义档（色调不是数据）。
-		data["Status"] = row.Status
+		view.Status = row.Status
 		// 状态与邮箱验证的展示名一律「key + 中文兜底」两个键（来源 userenums），
 		// 模板取词（tr(key, fallback)）——给中文值就等于英文界面永远中文。
-		data["StatusLabelKey"] = row.StatusLabelKey
-		data["StatusLabelFallback"] = row.StatusLabelFallback
-		data["EmailVerified"] = detail.EmailVerified
-		data["EmailVerifiedKey"] = row.EmailVerifiedKey
-		data["EmailVerifiedFallback"] = row.EmailVerifiedFallback
+		view.StatusLabelKey = row.StatusLabelKey
+		view.StatusLabelFallback = row.StatusLabelFallback
+		view.EmailVerified = detail.EmailVerified
+		view.EmailVerifiedKey = row.EmailVerifiedKey
+		view.EmailVerifiedFallback = row.EmailVerifiedFallback
 		// 时间给时刻本身（*utils.JSONTime），格式化归模板的 dateTime()。
-		data["RegisteredAt"] = row.RegisteredAt
-		data["RegisterIP"] = row.RegisterIP
-		data["RegisterLocation"] = row.RegisterLocation
-		data["LastLoginTime"] = row.LastLoginTime
-		data["LastLoginIP"] = row.LastLoginIP
-		data["LastLoginLocation"] = row.LastLoginLocation
-		data["Locked"] = detail.Locked
-		data["LockedUntil"] = row.LockedUntil
-		data["LoginFailureCount"] = detail.LoginFailureCount
-		data["Actionable"] = row.Actionable
-		data["NextStatus"] = row.NextStatus
-		// 状态说明同样是「key + 中文兜底」（键存在 = 这个状态有说明要讲）：
-		// 直接渲染中文等于英文界面永远中文，而这两句正是详情页上唯一的解释。
-		data["PendingHintKey"] = row.PendingHintKey
-		data["PendingHintFallback"] = row.PendingHintFallback
-		// 动词走词条（key + 中文兜底），详情页的按钮由 {{动词}}{{这个账号}} 拼成 ——
-		// 两段都取值当前语言，中英界面各成句，不会混排。
-		data["StatusActionKey"] = row.StatusActionKey
-		data["StatusActionLabel"] = row.StatusActionLabel
+		view.RegisteredAt = row.RegisteredAt
+		view.RegisterIP = row.RegisterIP
+		view.RegisterLocation = row.RegisterLocation
+		view.LastLoginTime = row.LastLoginTime
+		view.LastLoginIP = row.LastLoginIP
+		view.LastLoginLocation = row.LastLoginLocation
+		view.Locked = detail.Locked
+		view.LockedUntil = row.LockedUntil
+		view.LoginFailureCount = detail.LoginFailureCount
+		view.Actionable = row.Actionable
+		view.NextStatus = row.NextStatus
+		// 状态说明同样是「key + 中文兜底」（键存在 = 这个状态有说明要讲）。
+		view.PendingHintKey = row.PendingHintKey
+		view.PendingHintFallback = row.PendingHintFallback
+		// 动词走词条（key + 中文兜底），详情页的按钮由 {{动词}}{{这个账号}} 拼成。
+		view.StatusActionKey = row.StatusActionKey
+		view.StatusActionLabel = row.StatusActionLabel
 		// 锁定提示分开给：锁定的账号「登不上去」但状态是正常的，
 		// 这两件事在页面上必须能分辨（否则运营会去点停用）。
-		data["LockHintKey"] = row.LockHintKey
-		data["LockHintFallback"] = row.LockHintFallback
+		view.LockHintKey = row.LockHintKey
+		view.LockHintFallback = row.LockHintFallback
 	}
 	if summary != nil {
-		data["OrderCount"] = summary.OrderCount
-		data["PaidOrderCount"] = summary.PaidOrderCount
-		data["TotalAmountLabel"] = summary.TotalAmountLabel
-		data["LastOrderNo"] = summary.LastOrderNo
+		view.OrderCount = summary.OrderCount
+		view.PaidOrderCount = summary.PaidOrderCount
+		view.TotalAmountLabel = summary.TotalAmountLabel
+		view.LastOrderNo = summary.LastOrderNo
 		// 最近一单：给**时刻**与「有没有单」这个显式布尔，不给预格式化的串。
-		// HasOrders 是契约里的显式布尔（0 单 + 0 元与「查不到」在数字上无法区分），
-		// 模板靠它选「显示聚合数字」还是「还没下过单」——
-		// 拿空串当判据会在时间格式化后失效（这正是原先那串 Text 的用法）。
-		data["LastOrderTime"] = summary.LastOrderTime
-		data["LastOrderID"] = summary.LastOrderID
-		data["HasOrders"] = summary.HasOrders
+		view.LastOrderTime = summary.LastOrderTime
+		view.LastOrderID = summary.LastOrderID
+		view.HasOrders = summary.HasOrders
 		// 最近一单的状态同样走「key + 中文兜底」，且**与订单页共用同一份映射**：
-		// 真源在 order 模块（orderenums.OrderStatusLabel），跨模块经 ordercontract 引用 ——
-		// 这里原先自留一份 userenums.OrderStatusLabel，改一处另一处会静默漂移。
-		data["LastOrderStatusKey"], data["LastOrderStatusFallback"] = ordercontract.OrderStatusLabel(summary.LastOrderStatus)
+		// 真源在 order 模块（orderenums.OrderStatusLabel），跨模块经 ordercontract 引用。
+		view.LastOrderStatusKey, view.LastOrderStatusFallback = ordercontract.OrderStatusLabel(summary.LastOrderStatus)
 	} else {
-		data["HasSummary"] = false
+		view.HasSummary = false
 	}
-	return data
+	// 会员等级那一块的字段**恒设零值**（BIZ-3）：调用方随后用
+	// applyCustomerMembership 覆盖成真实值。放在组装函数里而不是让调用方补，
+	// 是因为这里出去的视图有 6 个消费点（含渲染测试直接调本函数）——
+	// 漏一处就是模板缺键 → 渲染中断 → 整页 500。
+	//
+	// 视图字段是零值即"没有"，所以这里不需要额外赋值 —— 只有一条要守住：
+	// **applyCustomerMembership 必须被调用**（它会给 HasMembershipNotice 等派生布尔）。
+	return view
 }
 
 // customerRow 一行客户（列表与详情共用同一份事实；两种页面看到的数字因此不可能不一致）。
@@ -2014,7 +2008,13 @@ func userTextFilled(c *gin.Context, l userLabel, kv map[string]string) string {
 //
 // 每个页面都要拿到这两样，逐个 handler 手写必然会漏掉一个 —— 漏掉 CSRF token 的表现是
 // 「页面能打开，一提交就 403」，而报错信息指向中间件，排查会绕很远。
-func (h *Handle) render(c *gin.Context, status int, name string, data gin.H) {
+func (h *Handle) render(c *gin.Context, status int, name string, anyView any) {
+	// 收 any 而不是 gin.H：访客页的视图是强类型结构体（每个字段带 view 标签对应模板的
+	// 小写键），这里统一摊平成 map 再补页壳键（csrf_token / user / lang / t / dir / site / title）。
+	//
+	// 为什么不把壳键做成视图字段：它们是**页壳关切**，每一屏都要、内容与业务无关，
+	// 让 6 个视图各声明一遍 csrf_token/lang/t 只会让「这一屏要什么业务数据」淹没在壳键里。
+	data := adminui.ViewMap(anyView)
 	if data == nil {
 		data = gin.H{}
 	}
@@ -2500,15 +2500,15 @@ func (h *customerPageHandle) membershipFacingMsg(c *gin.Context, err error) cust
 //
 // **渲染键恒设**（包括空值）是硬要求：Jet 的 `{{if .X}}` 遇到缺失的键会中断整页渲染
 // → 500 → htmx 不 swap（用户在浏览器里看不到任何反应）。
-func applyCustomerMembership(data gin.H, view customerMembershipView) {
-	data["MembershipNoticeKey"] = view.Notice.Key
-	data["MembershipNoticeFallback"] = view.Notice.Fallback
-	data["HasMembershipNotice"] = !view.Notice.Empty()
-	data["HasMembership"] = view.HasMembership
-	data["MembershipTierName"] = view.TierName
-	data["MembershipIsDefault"] = view.IsDefaultTier
-	data["MembershipFreeShipping"] = view.FreeShipping
-	data["MembershipDiscountPercent"] = view.DiscountPercent
+func applyCustomerMembership(dst *userdto.CustomerDetailPageResp, view customerMembershipView) {
+	dst.MembershipNoticeKey = view.Notice.Key
+	dst.MembershipNoticeFallback = view.Notice.Fallback
+	dst.HasMembershipNotice = !view.Notice.Empty()
+	dst.HasMembership = view.HasMembership
+	dst.MembershipTierName = view.TierName
+	dst.MembershipIsDefault = view.IsDefaultTier
+	dst.MembershipFreeShipping = view.FreeShipping
+	dst.MembershipDiscountPercent = view.DiscountPercent
 }
 
 // 三个降级说明（i18n key + 中文兜底，与页面其余展示标签同形态）。
@@ -2707,10 +2707,10 @@ func (h *Handle) renderAccount(c *gin.Context, status int, actionError string) {
 		// 设备列表拉不到不该让整页打不开：资料与偏好仍然可用。
 		sessions = nil
 	}
-	h.render(c, status, "user/account", gin.H{
-		"account":     account,
-		"sessions":    sessions,
-		"actionError": actionError,
+	h.render(c, status, "user/account", &userdto.AccountPageResp{
+		Account:     account,
+		Sessions:    sessions,
+		ActionError: actionError,
 	})
 }
 
@@ -2874,8 +2874,8 @@ func (h *Handle) ShowRegister(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/user/account")
 		return
 	}
-	h.render(c, http.StatusOK, "user/register", gin.H{
-		"form": emptyRegisterForm(),
+	h.render(c, http.StatusOK, "user/register", &userdto.RegisterPageResp{
+		Form: emptyRegisterForm(),
 	})
 }
 
@@ -2883,32 +2883,31 @@ func (h *Handle) ShowRegister(c *gin.Context) {
 func (h *Handle) DoRegister(c *gin.Context) {
 	req, err := binding.ParseForm[userdto.RegisterReq](c)
 	if err != nil {
-		h.render(c, http.StatusBadRequest, "user/register", gin.H{
-			"error": userPageMessage(c, err),
-			"form":  emptyRegisterForm(),
+		h.render(c, http.StatusBadRequest, "user/register", &userdto.RegisterPageResp{
+			Error: userPageMessage(c, err),
+			Form:  emptyRegisterForm(),
 		})
 		return
 	}
 	// 回显用的三档只有这三个字段（密码不回显）。
-	form := gin.H{"username": req.Username, "email": req.Email, "nickname": req.Nickname}
+	form := adminui.ViewMap(&userdto.RegisterFormResp{Username: req.Username, Email: req.Email, Nickname: req.Nickname})
 	// 注册来源与语言由服务端取，表单里没有这两档。
 	req.RegisterIP = clientIP(c)
 	req.Locale = locale(c)
 	res, err := h.svc.Register(c.Request.Context(), req)
 	if err != nil {
 		// 失败时**回填已填内容**（不含密码）：让人重新把所有字段打一遍是最容易劝退的一步。
-		h.render(c, http.StatusBadRequest, "user/register", gin.H{
-			"error": userPageMessage(c, err),
-			"form":  form,
+		h.render(c, http.StatusBadRequest, "user/register", &userdto.RegisterPageResp{
+			Error: userPageMessage(c, err),
+			Form:  form,
 		})
 		return
 	}
-	h.render(c, http.StatusOK, "user/register_done", gin.H{
-		"username": res.Username,
-		"email":    res.Email,
-		// mailQueued=false 时页面要提示「可以点重发」——邮件没发出去时
+	h.render(c, http.StatusOK, "user/register_done", &userdto.RegisterDonePageResp{
+		Email: res.Email,
+		// MailQueued=false 时页面要提示「可以点重发」——邮件没发出去时
 		// 只显示「验证邮件已发送」会让用户一直等一封不会到的信。
-		"mailQueued": res.MailQueued,
+		MailQueued: res.MailQueued,
 	})
 }
 
@@ -2964,9 +2963,9 @@ func (h *Handle) ShowLogin(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/user/account")
 		return
 	}
-	h.render(c, http.StatusOK, "user/login", gin.H{
-		"next":    c.Query("next"),
-		"account": "",
+	h.render(c, http.StatusOK, "user/login", &userdto.LoginPageResp{
+		Next:    c.Query("next"),
+		Account: "",
 	})
 }
 
@@ -2985,10 +2984,10 @@ func (h *Handle) DoLogin(c *gin.Context) {
 		UserAgent: c.Request.UserAgent(),
 	})
 	if err != nil {
-		h.render(c, http.StatusUnauthorized, "user/login", gin.H{
-			"error":   userPageMessage(c, err),
-			"account": account,
-			"next":    next,
+		h.render(c, http.StatusUnauthorized, "user/login", &userdto.LoginPageResp{
+			Error:   userPageMessage(c, err),
+			Account: account,
+			Next:    next,
 		})
 		return
 	}
@@ -2999,10 +2998,10 @@ func (h *Handle) DoLogin(c *gin.Context) {
 		//
 		// 文案走 userKeyText 取词：{{ .["error"] }} 是**直接渲染**的槽位，
 		// 直接把 enums 常量塞进去，访客看到的是「user.err.internal」这个裸 key。
-		h.render(c, http.StatusInternalServerError, "user/login", gin.H{
-			"error":   userKeyText(c, userenums.ErrInternal),
-			"account": account,
-			"next":    next,
+		h.render(c, http.StatusInternalServerError, "user/login", &userdto.LoginPageResp{
+			Error:   userKeyText(c, userenums.ErrInternal),
+			Account: account,
+			Next:    next,
 		})
 		return
 	}
@@ -3035,8 +3034,8 @@ func (h *Handle) Logout(c *gin.Context) {
 
 // ShowForgot 申请重置密码页。
 func (h *Handle) ShowForgot(c *gin.Context) {
-	h.render(c, http.StatusOK, "user/forgot", gin.H{
-		"email": c.Query("email"),
+	h.render(c, http.StatusOK, "user/forgot", &userdto.ForgotPageResp{
+		Email: c.Query("email"),
 	})
 }
 
@@ -3052,17 +3051,17 @@ func (h *Handle) DoForgot(c *gin.Context) {
 	email := req.Email
 	if email == "" {
 		// 同上：裸 key 进直接渲染的槽位等于把 item_key 摆给访客看。
-		h.render(c, http.StatusBadRequest, "user/forgot", gin.H{
-			"error": userKeyText(c, userenums.ErrEmailRequired),
-			"email": email,
+		h.render(c, http.StatusBadRequest, "user/forgot", &userdto.ForgotPageResp{
+			Error: userKeyText(c, userenums.ErrEmailRequired),
+			Email: email,
 		})
 		return
 	}
 	req.Locale = locale(c)
 	if err := h.svc.RequestPasswordReset(c.Request.Context(), req); err != nil {
-		h.render(c, http.StatusBadRequest, "user/forgot", gin.H{
-			"error": userPageMessage(c, err),
-			"email": email,
+		h.render(c, http.StatusBadRequest, "user/forgot", &userdto.ForgotPageResp{
+			Error: userPageMessage(c, err),
+			Email: email,
 		})
 		return
 	}
@@ -3077,9 +3076,9 @@ func (h *Handle) ShowReset(c *gin.Context) {
 		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgLinkInvalidTitle), userKeyText(c, userenums.ErrActivationInvalid))
 		return
 	}
-	h.render(c, http.StatusOK, "user/reset", gin.H{
-		"email": email,
-		"key":   key,
+	h.render(c, http.StatusOK, "user/reset", &userdto.ResetPageResp{
+		Email: email,
+		Key:   key,
 	})
 }
 
@@ -3092,10 +3091,10 @@ func (h *Handle) DoReset(c *gin.Context) {
 	email, key := req.Email, req.Key
 	err = h.svc.ResetPassword(c.Request.Context(), req)
 	if err != nil {
-		h.render(c, http.StatusBadRequest, "user/reset", gin.H{
-			"error": userPageMessage(c, err),
-			"email": email,
-			"key":   key,
+		h.render(c, http.StatusBadRequest, "user/reset", &userdto.ResetPageResp{
+			Error: userPageMessage(c, err),
+			Email: email,
+			Key:   key,
 		})
 		return
 	}
@@ -3107,16 +3106,20 @@ func (h *Handle) DoReset(c *gin.Context) {
 // 不为每种结果写一个模板：它们结构完全相同（一个标题 + 一段话 + 一个去处），
 // 拆成五个模板只会让「改一次文案要改五个文件」。
 func (h *Handle) renderMessage(c *gin.Context, status int, ok bool, title, message string) {
-	h.render(c, status, "user/message", gin.H{
-		"ok":      ok,
-		"title":   title,
-		"message": message,
+	h.render(c, status, "user/message", &userdto.MessagePageResp{
+		OK:      ok,
+		Title:   title,
+		Message: message,
 	})
 }
 
-// emptyRegisterForm 注册表单的初始值（模板用 chain 索引取值，键必须齐全）。
+// emptyRegisterForm 注册表单的初始值。
+//
+// 返回**已摊平的 map** 而不是结构体：访客模板用 `.["form"]["username"]` 链式索引，
+// 而 adminui.ViewMap 不递归摊平嵌套结构体 —— 交结构体进去模板索引会失败。
+// 这是访客模板的既有读法（它整页都是 map 索引），不为这次迁移改模板。
 func emptyRegisterForm() gin.H {
-	return gin.H{"username": "", "email": "", "nickname": ""}
+	return adminui.ViewMap(&userdto.RegisterFormResp{})
 }
 
 // toAnySlice 把切片投影成 []any（视图不 import 各来源的契约类型：

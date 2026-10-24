@@ -32,10 +32,10 @@ internal/module/page/inbound/http/page_translations_handle.go gin=2 html=4
 internal/module/page/inbound/http/pages_handle.go gin=2 html=2
 internal/module/project/inbound/http/project_page.go gin=0 html=5
 internal/module/publication/inbound/http/seo_audit_result.go gin=0 html=2
-internal/module/user/inbound/http/user_page.go gin=18 html=3
+internal/module/user/inbound/http/user_page.go gin=1 html=1
 internal/module/workbench/inbound/http/canvas_handle.go gin=1 html=3
 internal/module/workbench/inbound/http/canvas_preview_handle.go gin=1 html=1
 internal/module/workbench/inbound/http/inspector_handle.go gin=1 html=4
 internal/module/workbench/inbound/http/router.go gin=3 html=3
 
---total gin=72 html=60
+--total gin=55 html=58
