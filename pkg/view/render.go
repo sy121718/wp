@@ -1,3 +1,15 @@
+// Package view 是视图契约的公共面：渲染接线（render.go）、失败出口、分页契约（list.go）、
+// 视图结果接口（result.go）、跳转助手（redirect.go）。全包只做出口，不含业务、不持引擎。
+//
+// 定位：
+//   - 不认识 gin、不认识请求上下文渲染细节、不读 config —— 模板名与渲染实现由路由装配注入；
+//   - **不持有引擎、不做变量累积**：ThinkPHP 那种「View::$data 挂在单例上」的写法在这里
+//     是缺陷而非特性 —— Go 是常驻进程，跨请求累积会让人权限、语言、CSRF 串号。
+//     请求级数据的正确形态是调用方在 vars 里放**捕获本次请求的闭包**
+//     （如 t(key, fallback)、can(code)），或直接放标量。
+//
+// 具体模板引擎在 internal/templates（templates.NewJetHTMLRender），
+// 依赖方向单向：internal → pkg。
 package view
 
 // render.go — 页面出口的**唯一接线**：控制器只写 pageview.Render(c, data) / pageview.Fail(c, err)。
