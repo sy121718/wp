@@ -11,7 +11,6 @@ package pubservice
 
 import (
 	"context"
-	"errors"
 	json "go_wp/pkg/jsonx"
 	"strconv"
 	"strings"
@@ -65,14 +64,14 @@ type publishReceiptData struct {
 // 登记放在切换之后，崩溃窗口里就查不到「这次发布发生过」。
 func (s *Service) BeginPublishReceipt(ctx context.Context, req *pubdto.BeginPublishReceiptReq) (receiptID string, err error) {
 	if req == nil || strings.TrimSpace(req.Path) == "" {
-		return "", errors.New(pubenums.ErrInvalidParam)
+		return "", pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	action := receiptAction(req.Action, publishReceiptAction)
 	to := strings.TrimSpace(req.ToArtifactID)
 	// update_url 的产物是切换时按新路径现编译的，登记时还没有产物行（见 DTO 字段注释），
 	// 因此只对它放行空 ToArtifactID；其余动作仍要求给出目标产物，否则恢复无从判定。
 	if to == "" && action != pubdto.ReceiptActionUpdateURL {
-		return "", errors.New(pubenums.ErrInvalidParam)
+		return "", pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	owner, perr := parseRouteOwner(req.PageID, req.PresentationID)
 	if perr != nil {
@@ -127,7 +126,7 @@ func (s *Service) finishReceipt(ctx context.Context, receiptID, state string) (e
 	}
 	rid, perr := strconv.ParseInt(id, 10, 64)
 	if perr != nil {
-		return errors.New(pubenums.ErrInvalidParam)
+		return pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	return s.model.FinishPendingReceipt(ctx, rid, state, time.Now().UTC())
 }

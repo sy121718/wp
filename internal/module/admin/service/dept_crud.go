@@ -2,7 +2,6 @@ package adminservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -78,7 +77,7 @@ func (s *Service) DeptDetail(ctx context.Context, req *admindto.DeptDetailReq) (
 		return nil, err
 	}
 	if entity == nil {
-		return nil, errors.New(adminenums.ErrDeptNotFound)
+		return nil, adminenums.Err(adminenums.ErrDeptNotFound)
 	}
 	node := deptEntityToNode(*entity)
 	return &node, nil
@@ -91,7 +90,7 @@ func (s *Service) AncestorIDs(ctx context.Context, deptID uint64) (ids []uint64,
 		return nil, err
 	}
 	if entity == nil {
-		return nil, errors.New(adminenums.ErrDeptNotFound)
+		return nil, adminenums.Err(adminenums.ErrDeptNotFound)
 	}
 
 	for _, item := range strings.Split(entity.Ancestors, ",") {
@@ -112,7 +111,7 @@ func (s *Service) DeptCreate(ctx context.Context, req *admindto.DeptCreateReq) e
 		return err
 	}
 	if existing != nil {
-		return errors.New(adminenums.ErrDeptCodeExists)
+		return adminenums.Err(adminenums.ErrDeptCodeExists)
 	}
 
 	// 计算 ancestors
@@ -123,7 +122,7 @@ func (s *Service) DeptCreate(ctx context.Context, req *admindto.DeptCreateReq) e
 			return err
 		}
 		if parent == nil {
-			return errors.New(adminenums.ErrDeptNotFound)
+			return adminenums.Err(adminenums.ErrDeptNotFound)
 		}
 		ancestors = parent.Ancestors + "," + fmt.Sprintf("%d", parent.ID)
 	}
@@ -172,7 +171,7 @@ func (s *Service) DeptUpdate(ctx context.Context, req *admindto.DeptUpdateReq) e
 			return err
 		}
 		if current == nil {
-			return errors.New(adminenums.ErrDeptNotFound)
+			return adminenums.Err(adminenums.ErrDeptNotFound)
 		}
 
 		// 编码变更检查（同事务内读；并发插入由 sys_dept.dept_code 唯一索引兜底，不自动加后缀）
@@ -182,7 +181,7 @@ func (s *Service) DeptUpdate(ctx context.Context, req *admindto.DeptUpdateReq) e
 				return err
 			}
 			if existing != nil && existing.ID != req.ID {
-				return errors.New(adminenums.ErrDeptCodeExists)
+				return adminenums.Err(adminenums.ErrDeptCodeExists)
 			}
 		}
 
@@ -191,7 +190,7 @@ func (s *Service) DeptUpdate(ctx context.Context, req *admindto.DeptUpdateReq) e
 		oldAncestors := current.Ancestors
 		if moved {
 			if req.ParentID == req.ID {
-				return errors.New(adminenums.ErrDeptCircle)
+				return adminenums.Err(adminenums.ErrDeptCircle)
 			}
 			if req.ParentID != 0 {
 				if err = s.deptCheckCircleTx(ctx, tx, req.ID, req.ParentID); err != nil {
@@ -208,7 +207,7 @@ func (s *Service) DeptUpdate(ctx context.Context, req *admindto.DeptUpdateReq) e
 					return err
 				}
 				if parent == nil {
-					return errors.New(adminenums.ErrDeptNotFound)
+					return adminenums.Err(adminenums.ErrDeptNotFound)
 				}
 				current.Ancestors = parent.Ancestors + "," + fmt.Sprintf("%d", parent.ID)
 			}
@@ -258,7 +257,7 @@ func (s *Service) DeptDelete(ctx context.Context, req *admindto.DeptDeleteReq) e
 		return err
 	}
 	if entity == nil {
-		return errors.New(adminenums.ErrDeptNotFound)
+		return adminenums.Err(adminenums.ErrDeptNotFound)
 	}
 
 	// 检查子部门
@@ -267,7 +266,7 @@ func (s *Service) DeptDelete(ctx context.Context, req *admindto.DeptDeleteReq) e
 		return err
 	}
 	if childCount > 0 {
-		return errors.New(adminenums.ErrDeptHasChildren)
+		return adminenums.Err(adminenums.ErrDeptHasChildren)
 	}
 
 	// 检查部门下是否有用户（同包直调）
@@ -276,7 +275,7 @@ func (s *Service) DeptDelete(ctx context.Context, req *admindto.DeptDeleteReq) e
 		return err
 	}
 	if userCount > 0 {
-		return errors.New(adminenums.ErrDeptHasUsers)
+		return adminenums.Err(adminenums.ErrDeptHasUsers)
 	}
 
 	if err := s.dm.Delete(ctx, req.ID); err != nil {
@@ -312,7 +311,7 @@ func (s *Service) deptCheckCircleTx(ctx context.Context, tx *gorm.DB, targetID, 
 	cursor := newParentID
 	for cursor != 0 {
 		if cursor == targetID {
-			return errors.New(adminenums.ErrDeptCircle)
+			return adminenums.Err(adminenums.ErrDeptCircle)
 		}
 		parent, err := s.dm.GetByIDTx(ctx, tx, cursor)
 		if err != nil {

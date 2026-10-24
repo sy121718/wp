@@ -131,14 +131,14 @@ func (s *Service) Create(ctx context.Context, req *pagedto.CreateReq) (res *page
 // 应该在创建那一刻就暴露，而不是让编辑者对着空白画布猜。
 func (s *Service) initFromBlueprint(ctx context.Context, blueprintID string) (json.RawMessage, error) {
 	if s.blueprints == nil {
-		return nil, errors.New(pageenums.ErrBlueprintUnavailable)
+		return nil, pageenums.Err(pageenums.ErrBlueprintUnavailable)
 	}
 	doc, err := s.blueprints.InitPageDocument(ctx, blueprintID)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", pageenums.ErrBlueprintInvalid, err)
 	}
 	if len(doc) == 0 {
-		return nil, errors.New(pageenums.ErrBlueprintInvalid)
+		return nil, pageenums.Err(pageenums.ErrBlueprintInvalid)
 	}
 	return doc, nil
 }

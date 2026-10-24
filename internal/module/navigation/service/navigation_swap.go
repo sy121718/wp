@@ -51,23 +51,23 @@ const swapReasonBoundary = "boundary"
 //     menu:{projectID}:{kind} + 父项（顺序变了的是父项子树）+ 被交换的两项。
 func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) (res *navigationdto.SwapMoveResp, err error) {
 	if req == nil {
-		return nil, errors.New(navigationenums.ErrInvalidParam)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	id := strings.TrimSpace(req.ID)
 	dir := strings.TrimSpace(req.Dir)
 	if id == "" || (dir != dirUp && dir != dirDown) {
-		return nil, errors.New(navigationenums.ErrInvalidParam)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	item, err := s.locateNavigation(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(navigationenums.ErrNotFound)
+			return nil, navigationenums.Err(navigationenums.ErrNotFound)
 		}
 		return nil, err
 	}
 	if want := strings.TrimSpace(req.ProjectID); want != "" && want != item.ProjectID {
 		// 跨工程一律拒：调用方手上的工程与该项真实归属不一致时，改的不是它以为的那棵树。
-		return nil, errors.New(navigationenums.ErrInvalidParam)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	nodes, err := s.Tree(ctx, item.ProjectID, item.Kind)
 	if err != nil {
@@ -83,7 +83,7 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 	}
 	if idx < 0 {
 		// 定位到了行、却不在它自己的同级列表里：父子关系或作用域已经不一致（异常数据）。
-		return nil, errors.New(navigationenums.ErrNotFound)
+		return nil, navigationenums.Err(navigationenums.ErrNotFound)
 	}
 	next := idx - 1
 	if dir == dirDown {
@@ -96,7 +96,7 @@ func (s *Service) SwapMove(ctx context.Context, req *navigationdto.SwapMoveReq) 
 	a, b := siblings[idx], siblings[next]
 	if a.SortOrder == b.SortOrder {
 		// 并列：交换取值不产生位移（并列由 id ASC 决胜）。零写，明确回业务文案。
-		return nil, errors.New(navigationenums.ErrSortTied)
+		return nil, navigationenums.Err(navigationenums.ErrSortTied)
 	}
 	expA, err := parseSnapshotToken(a.UpdatedAt)
 	if err != nil {

@@ -1,6 +1,8 @@
 // Package blockenums 统一管理 block 模块响应消息与错误消息。
 package blockenums
 
+import "go_wp/pkg/facing"
+
 const (
 	MsgBlockTitle = "MsgBlockTitle" // 全局块
 
@@ -67,3 +69,31 @@ const (
 	ImpactStagePlan  = "admin.pages.impact.stage_plan"  // 计划阶段（站点语言清单或旧发布范围读不到）
 	ImpactStageBuild = "admin.pages.impact.stage_build" // 构建 / 发布阶段
 )
+
+// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
+//
+// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
+// businessText 只能退回声明处给的那句话 —— 没有它，客户端拿到的是 `ErrBlockParamRequired` 这样的裸 key
+// （这批常量的值就是常量名本身，旧式形态）。
+//
+// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
+var errFallbacks = map[string]string{
+	ErrBlockParamRequired:    "块参数不能为空",
+	ErrBlockNotFound:         "全局块不存在",
+	ErrProjectNotFound:       "工程不存在",
+	ErrBlockProjectRequired:  "缺少可作用域的站点工程，无法定位全局块的工程归属",
+	ErrBlockNameRequired:     "块名称不能为空",
+	ErrBlockInvalidDoc:       "块文档不合法",
+	ErrBlockInvalidKind:      "块类型不合法",
+	ErrBlockInvalidCategory:  "块分类不合法",
+	ErrBlockDuplicate:        "同名块已存在",
+	ErrBlockInvalidReuseMode: "块复用方式不合法（仅支持 global/template）",
+	ErrBlockInUse:            "全局块已被页面或主题引用，无法删除或切换为一次性复制；可强制删除（引用页面将退化为无该块）",
+}
+
+// Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }

@@ -30,7 +30,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"errors"
 	json "go_wp/pkg/jsonx"
 	"net"
 	"net/http"
@@ -81,16 +80,16 @@ var _ aicontract.AIService = (*Service)(nil)
 // 值是 enums 的 **i18n key**（不是中文原文）：这些错误要么被页面按白名单翻成中文兜底，
 // 要么经 pkg/response.ErrorAuto 直接回给接口调用方 —— 中文原文会被判成内部错误（500）。
 var (
-	ErrProviderNotFound  = errors.New(aienums.ErrProviderNotFound)
-	ErrVersionConflict   = errors.New(aienums.ErrVersionConflict)
-	ErrCipherUnavailable = errors.New(aienums.ErrCipherUnavailable)
-	ErrNoBuiltinModels   = errors.New(aienums.ErrNoBuiltinModels)
-	ErrBaseURLRequired   = errors.New(aienums.ErrBaseURLRequired)
-	ErrModelsFetchFailed = errors.New(aienums.ErrModelsFetchFailed)
+	ErrProviderNotFound  = aienums.Err(aienums.ErrProviderNotFound)
+	ErrVersionConflict   = aienums.Err(aienums.ErrVersionConflict)
+	ErrCipherUnavailable = aienums.Err(aienums.ErrCipherUnavailable)
+	ErrNoBuiltinModels   = aienums.Err(aienums.ErrNoBuiltinModels)
+	ErrBaseURLRequired   = aienums.Err(aienums.ErrBaseURLRequired)
+	ErrModelsFetchFailed = aienums.Err(aienums.ErrModelsFetchFailed)
 	// ErrProviderKeyExists 供应商标识重复（先查后插漏网时由唯一约束兜底归口到这里）。
-	ErrProviderKeyExists = errors.New(aienums.ErrProviderKeyExists)
+	ErrProviderKeyExists = aienums.Err(aienums.ErrProviderKeyExists)
 	// ErrAPIKeyRequiredOnBaseURLChange 改了 API 地址却没给新密钥：旧凭据不能跟着新地址出站。
-	ErrAPIKeyRequiredOnBaseURLChange = errors.New(aienums.ErrAPIKeyRequiredOnBaseURLChange)
+	ErrAPIKeyRequiredOnBaseURLChange = aienums.Err(aienums.ErrAPIKeyRequiredOnBaseURLChange)
 )
 
 // encryptSecret 把明文密钥加密成落库密文；空串表示「不改动已存的密钥」，直接回空。
@@ -139,7 +138,7 @@ func (s *Service) providerOf(e *aimodel.AIProviderEntity) aidto.Provider {
 // 再读一次版本号，能读到 = 版本被别人推进过，读不到 = 行已经没了。
 func (s *Service) updateWithVersion(ctx context.Context, id, version int64, fields map[string]any, updateBy int64) error {
 	if version <= 0 {
-		return errors.New(aienums.ErrVersionRequired)
+		return aienums.Err(aienums.ErrVersionRequired)
 	}
 	rows, err := s.m.UpdateFields(ctx, id, version, fields, updateBy)
 	if err != nil {
@@ -171,11 +170,11 @@ var validateURL = validateAIURL
 // 区分业务错误；用中文原文会让「你填了个内网地址」变成「服务器内部错误」（500），
 // 用户看不出该改哪里。
 var (
-	ErrURLMalformed         = errors.New(aienums.ErrURLMalformed)
-	ErrURLSchemeUnsupported = errors.New(aienums.ErrURLSchemeUnsupported)
-	ErrURLHostMissing       = errors.New(aienums.ErrURLHostMissing)
-	ErrURLUnresolvable      = errors.New(aienums.ErrURLUnresolvable)
-	ErrURLDenied            = errors.New(aienums.ErrURLDenied)
+	ErrURLMalformed         = aienums.Err(aienums.ErrURLMalformed)
+	ErrURLSchemeUnsupported = aienums.Err(aienums.ErrURLSchemeUnsupported)
+	ErrURLHostMissing       = aienums.Err(aienums.ErrURLHostMissing)
+	ErrURLUnresolvable      = aienums.Err(aienums.ErrURLUnresolvable)
+	ErrURLDenied            = aienums.Err(aienums.ErrURLDenied)
 )
 
 // isForbiddenIP 判断 IP 是否落在禁止网段：
@@ -256,11 +255,11 @@ func validateAIURL(raw string) (err error) {
 // pkg/response.ErrorAuto 按「值是不是 key 形态」区分业务错误，所以不能回中文原文。
 var (
 	// ErrProtocolUnsupported 未实现的协议（分派遇到即报错，禁止静默回落）。
-	ErrProtocolUnsupported = errors.New(aienums.ErrProtocolUnsupported)
+	ErrProtocolUnsupported = aienums.Err(aienums.ErrProtocolUnsupported)
 	// ErrInvalidParam 请求参数不合法（如缺失 model）。
-	ErrInvalidParam = errors.New(aienums.ErrInvalidParam)
+	ErrInvalidParam = aienums.Err(aienums.ErrInvalidParam)
 	// ErrInternal 响应无法解析等内部归口（底层原文只进日志，不上页面）。
-	ErrInternal = errors.New(aienums.ErrInternal)
+	ErrInternal = aienums.Err(aienums.ErrInternal)
 )
 
 // 出站硬上限。

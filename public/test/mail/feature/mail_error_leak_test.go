@@ -219,8 +219,10 @@ func TestMailContactsPageHidesInternalError(t *testing.T) {
 //	· enums 白名单里的业务错误照原样回带（运营要知道哪一项不合法）；
 //	· 本页自造的表单校验文案（「第 N 行…」）照原样回带 —— 那是照着改的依据。
 //
-// 测试进程未初始化 i18n，白名单 key 命中后走的是「词条缺失 → 兜底给 key」这一支；
-// 生产里该 key 已 seed 成中文，页面上看到的是「参数不合法」。
+// 测试进程未初始化 i18n，走的是「词条缺失 → 退回声明处的兜底」这一支。
+// 判据在 2026-10 改过：从前兜底就是 key 本身（service 用 errors.New(enums.ErrXxx) 造裸 key），
+// 于是这里断言的是「页面上出现 mail.err.invalidParam」—— 那其实是缺陷的样子。
+// 现在每个 Err* 在 enums 的 errFallbacks 里有中文兜底，词条缺席时看到的是那句中文。
 func TestMailBusinessMessageStillVisible(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
@@ -232,8 +234,8 @@ func TestMailBusinessMessageStillVisible(t *testing.T) {
 	rec := mailPOST(engine, "/admin/mail/template/save", url.Values{"locale": {"zh-CN"}})
 	body := rec.Body.String()
 	assertMailLeakFree(t, "业务错误提示页", body)
-	// 白名单业务错误照原样渲染（测试进程未初始化 i18n，取词回落 key）。
-	mailAssertJump(t, rec, false, mailenums.ErrInvalidParam)
+	// 业务错误照原样渲染（测试进程未初始化 i18n，取词退回 enums 的兜底）。
+	mailAssertJump(t, rec, false, mailenums.FallbackFor(mailenums.ErrInvalidParam))
 	if strings.Contains(body, mailInternText) {
 		t.Error("白名单业务错误被误吞成归口文案 —— 运营再也看不到「哪一项不合法」")
 	}

@@ -1,7 +1,6 @@
 package pubservice
 
 import (
-	"errors"
 	"strings"
 
 	"go_wp/internal/module/publication/contract"
@@ -42,7 +41,7 @@ func (s *Service) Model() *pubmodel.Model {
 func normalizePath(raw string) (string, error) {
 	p, err := pathkit.NormalizeRoutePath(raw)
 	if err != nil {
-		return "", errors.New(pubenums.ErrInvalidParam)
+		return "", pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	return p, nil
 }
@@ -73,7 +72,7 @@ func parseRouteOwner(pageID, presentationID string) (routeOwner, error) {
 		presentationID: strings.TrimSpace(presentationID),
 	}
 	if (o.pageID == "") == (o.presentationID == "") {
-		return routeOwner{}, errors.New(pubenums.ErrInvalidParam)
+		return routeOwner{}, pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	return o, nil
 }

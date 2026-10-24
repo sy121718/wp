@@ -26,7 +26,6 @@ package orderservice
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -71,20 +70,20 @@ var returnableOrderStatuses = map[string]bool{
 // RequestReturn 客户提交退货申请。
 func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequestReq) (res *orderdto.ReturnResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	if req.OrderID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	reason := strings.TrimSpace(req.Reason)
 	if reason == "" {
-		return nil, errors.New(orderenums.ErrReturnReasonRequired)
+		return nil, orderenums.Err(orderenums.ErrReturnReasonRequired)
 	}
 	if len(req.Items) == 0 {
-		return nil, errors.New(orderenums.ErrReturnItemsRequired)
+		return nil, orderenums.Err(orderenums.ErrReturnItemsRequired)
 	}
 	if len(req.Items) > maxReturnItems {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
 
@@ -109,18 +108,18 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 	}
 	if order == nil || order.ProjectID != projectID {
 		// 跨工程与不存在返回同一句话：区分开来就是一个订单 id 探测器。
-		return nil, errors.New(orderenums.ErrOrderNotFound)
+		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	// 归属：登录访客只能退自己的单。userID 为 0 表示没带身份（片段层未登录或调用错误），
 	// 一律拒绝 —— 「不传即放行」是这里最危险的默认值。
 	if req.UserID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	if order.UserID == nil || *order.UserID != req.UserID {
-		return nil, errors.New(orderenums.ErrOrderNotFound)
+		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	if !returnableOrderStatuses[order.Status] {
-		return nil, errors.New(orderenums.ErrReturnOrderNotReturnable)
+		return nil, orderenums.Err(orderenums.ErrReturnOrderNotReturnable)
 	}
 
 	orderItems, ierr := s.items.ListByOrderID(ctx, order.ID)
@@ -128,7 +127,7 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		return nil, ierr
 	}
 	if len(orderItems) == 0 {
-		return nil, errors.New(orderenums.ErrOrderHasNoItems)
+		return nil, orderenums.Err(orderenums.ErrOrderHasNoItems)
 	}
 	byID := make(map[uint64]*ordermodel.OrderItemEntity, len(orderItems))
 	for _, it := range orderItems {
@@ -164,7 +163,7 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 			return lerr
 		}
 		if locked == nil {
-			return errors.New(orderenums.ErrOrderNotFound)
+			return orderenums.Err(orderenums.ErrOrderNotFound)
 		}
 		returnable, lerr = s.returnableByItemTx(ctx, tx, locked.ProjectID, locked.ID, orderItems)
 		if lerr != nil {
@@ -175,10 +174,10 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		for _, line := range req.Items {
 			it := byID[line.OrderItemID]
 			if it == nil {
-				return errors.New(orderenums.ErrInvalidParam)
+				return orderenums.Err(orderenums.ErrInvalidParam)
 			}
 			if line.Quantity <= 0 || line.Quantity > maxReturnQuantity {
-				return errors.New(orderenums.ErrReturnQuantityInvalid)
+				return orderenums.Err(orderenums.ErrReturnQuantityInvalid)
 			}
 			if line.Quantity > returnable[it.ID] {
 				return fmt.Errorf("%s：%s", orderenums.ErrReturnQuantityExceeded, it.ProductName)
@@ -225,7 +224,7 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 // CancelReturn 客户撤销自己尚未审核的申请。
 func (s *Service) CancelReturn(ctx context.Context, req *orderdto.ReturnCancelReq) (err error) {
 	if req == nil || req.ReturnID == 0 || req.UserID == 0 {
-		return errors.New(orderenums.ErrInvalidParam)
+		return orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	// 定位跳（DB-009 第四批）：访客撤销只给退货单 id（归属校验在下面用实体字段做）。
 	projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
@@ -243,11 +242,11 @@ func (s *Service) CancelReturn(ctx context.Context, req *orderdto.ReturnCancelRe
 		}
 		if e == nil || e.UserID == nil || *e.UserID != req.UserID {
 			// 不属于自己的申请与不存在的申请返回同一句话。
-			return errors.New(orderenums.ErrReturnNotFound)
+			return orderenums.Err(orderenums.ErrReturnNotFound)
 		}
 		if e.Status != ordermodel.ReturnStatusRequested {
 			// 已同意的申请不能自己撤：仓库可能已经在收货了。
-			return errors.New(orderenums.ErrReturnNotCancellable)
+			return orderenums.Err(orderenums.ErrReturnNotCancellable)
 		}
 		return s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, map[string]any{
 			"status":      ordermodel.ReturnStatusCancelled,
@@ -260,10 +259,10 @@ func (s *Service) CancelReturn(ctx context.Context, req *orderdto.ReturnCancelRe
 // ListVisitorReturns 访客查自己的退货申请。
 func (s *Service) ListVisitorReturns(ctx context.Context, req *orderdto.VisitorReturnListReq) (res *orderdto.ReturnListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	if req.UserID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	uid := req.UserID
 	list, total, lerr := s.returns.List(ctx, ordermodel.ReturnFilter{
@@ -358,7 +357,7 @@ func (s *Service) newReturnNo(ctx context.Context, projectID string) (no string,
 			return no, nil
 		}
 	}
-	return "", errors.New(orderenums.ErrOrderNoTaken)
+	return "", orderenums.Err(orderenums.ErrOrderNoTaken)
 }
 
 // idsOfReturns 取退货单 id 列表（批量取明细用）。
@@ -438,7 +437,7 @@ func yuanText(cents int64) string {
 // ReturnableOfOrder 该订单各订单项的当前可退数量（访客侧）。
 func (s *Service) ReturnableOfOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.ReturnableResp, err error) {
 	if req == nil || req.OrderID == 0 || req.UserID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	// 与访客查详情同一套归属校验：别人的单在这里也同样表现为「订单不存在」。
 	order, oerr := s.orders.GetByIDForUser(ctx, req.ProjectID, req.OrderID, req.UserID)
@@ -446,7 +445,7 @@ func (s *Service) ReturnableOfOrder(ctx context.Context, req *orderdto.VisitorOr
 		return nil, oerr
 	}
 	if order == nil {
-		return nil, errors.New(orderenums.ErrOrderNotFound)
+		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	orderItems, ierr := s.items.ListByOrderID(ctx, order.ID)
 	if ierr != nil {
@@ -470,7 +469,7 @@ func (s *Service) ReturnableOfOrder(ctx context.Context, req *orderdto.VisitorOr
 // ListReturns 后台退货申请列表（含各状态计数）。
 func (s *Service) ListReturns(ctx context.Context, req *orderdto.ReturnListReq) (res *orderdto.ReturnListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	list, total, lerr := s.returns.List(ctx, ordermodel.ReturnFilter{
 		ProjectID: req.ProjectID,
@@ -504,7 +503,7 @@ func (s *Service) ListReturns(ctx context.Context, req *orderdto.ReturnListReq) 
 // GetReturn 退货单详情（含订单摘要与逐行可退数量）。
 func (s *Service) GetReturn(ctx context.Context, returnID uint64) (res *orderdto.ReturnDetailResp, err error) {
 	if returnID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	// 定位跳（DB-009 第四批）：详情入口只给退货单 id，order_returns 带 FORCE 策略。
 	projectID, perr := s.locateReturnProject(ctx, returnID)
@@ -516,7 +515,7 @@ func (s *Service) GetReturn(ctx context.Context, returnID uint64) (res *orderdto
 		return nil, gerr
 	}
 	if e == nil {
-		return nil, errors.New(orderenums.ErrReturnNotFound)
+		return nil, orderenums.Err(orderenums.ErrReturnNotFound)
 	}
 	items, ierr := s.returns.ItemsByReturnID(ctx, e.ID)
 	if ierr != nil {
@@ -544,7 +543,7 @@ func (s *Service) GetReturn(ctx context.Context, returnID uint64) (res *orderdto
 // ApproveReturn 同意退货申请（AutoReceive=true 时一步完成入库 + 退款）。
 func (s *Service) ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewReq) (res *orderdto.ReturnResp, err error) {
 	if req == nil || req.ReturnID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	// 定位跳（DB-009 第五批）：审核入口只给退货单 id。定位必须在事务**外** ——
 	// rls.InProjectScope 会另开事务、另取连接，放进已开的事务里既看不到未提交数据，
@@ -563,10 +562,10 @@ func (s *Service) ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewR
 			return lerr
 		}
 		if e == nil {
-			return errors.New(orderenums.ErrReturnNotFound)
+			return orderenums.Err(orderenums.ErrReturnNotFound)
 		}
 		if e.Status != ordermodel.ReturnStatusRequested {
-			return errors.New(orderenums.ErrReturnNotReviewable)
+			return orderenums.Err(orderenums.ErrReturnNotReviewable)
 		}
 		return s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, map[string]any{
 			"status":        ordermodel.ReturnStatusApproved,
@@ -599,12 +598,12 @@ func (s *Service) ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewR
 // RejectReturn 拒绝退货申请（必须给理由）。
 func (s *Service) RejectReturn(ctx context.Context, req *orderdto.ReturnReviewReq) (res *orderdto.ReturnResp, err error) {
 	if req == nil || req.ReturnID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	remark := strings.TrimSpace(req.Remark)
 	if remark == "" {
 		// 没有理由的拒绝，客户只会再申请一次 —— 那对双方都是浪费。
-		return nil, errors.New(orderenums.ErrReturnRejectReasonRequired)
+		return nil, orderenums.Err(orderenums.ErrReturnRejectReasonRequired)
 	}
 	// 定位跳（DB-009 第五批）：同 ApproveReturn —— 定位在事务外，作用域设在事务内。
 	projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
@@ -621,10 +620,10 @@ func (s *Service) RejectReturn(ctx context.Context, req *orderdto.ReturnReviewRe
 			return lerr
 		}
 		if e == nil {
-			return errors.New(orderenums.ErrReturnNotFound)
+			return orderenums.Err(orderenums.ErrReturnNotFound)
 		}
 		if e.Status != ordermodel.ReturnStatusRequested {
-			return errors.New(orderenums.ErrReturnNotReviewable)
+			return orderenums.Err(orderenums.ErrReturnNotReviewable)
 		}
 		return s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, map[string]any{
 			"status":        ordermodel.ReturnStatusRejected,
@@ -644,7 +643,7 @@ func (s *Service) RejectReturn(ctx context.Context, req *orderdto.ReturnReviewRe
 // ReceiveReturn 确认收货：入库 + 退款。
 func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceiveReq) (res *orderdto.ReturnResp, err error) {
 	if req == nil || req.ReturnID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	// 定位跳（DB-009 第四批）：入库裁决只给退货单 id；定位在事务**外** ——
 	// rls.InProjectScope 会另开事务、另取连接，放进已开的事务里既看不到未提交数据，
@@ -677,7 +676,7 @@ func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceive
 			return lerr
 		}
 		if e == nil {
-			return errors.New(orderenums.ErrReturnNotFound)
+			return orderenums.Err(orderenums.ErrReturnNotFound)
 		}
 		if e.Status == ordermodel.ReturnStatusCompleted {
 			return nil
@@ -725,7 +724,7 @@ func (s *Service) admitReceive(ctx context.Context, projectID string, returnID u
 			return lerr
 		}
 		if e == nil {
-			return errors.New(orderenums.ErrReturnNotFound)
+			return orderenums.Err(orderenums.ErrReturnNotFound)
 		}
 		rt = e
 		switch e.Status {
@@ -745,10 +744,10 @@ func (s *Service) admitReceive(ctx context.Context, projectID string, returnID u
 				return oerr
 			}
 			if order == nil {
-				return errors.New(orderenums.ErrOrderNotFound)
+				return orderenums.Err(orderenums.ErrOrderNotFound)
 			}
 			if !returnableOrderStatuses[order.Status] {
-				return errors.New(orderenums.ErrReturnOrderNotReturnable)
+				return orderenums.Err(orderenums.ErrReturnOrderNotReturnable)
 			}
 			admitted = true
 			fields := map[string]any{
@@ -769,7 +768,7 @@ func (s *Service) admitReceive(ctx context.Context, projectID string, returnID u
 				return ierr
 			}
 			if len(items) == 0 {
-				return errors.New(orderenums.ErrReturnItemsRequired)
+				return orderenums.Err(orderenums.ErrReturnItemsRequired)
 			}
 			// 入库（同库跨模块，句柄透传）：失败 → 整个事务回滚，状态不会停在 received。
 			if serr := s.stockInReturnTx(ctx, tx, e, items, warehouseID); serr != nil {
@@ -788,7 +787,7 @@ func (s *Service) admitReceive(ctx context.Context, projectID string, returnID u
 			// 已经越过门闩：这批货的入库已经授过权（发生过或正在进行），本次不重复入库。
 			return nil
 		default:
-			return errors.New(orderenums.ErrReturnNotReceivable)
+			return orderenums.Err(orderenums.ErrReturnNotReceivable)
 		}
 	})
 	if err != nil {
@@ -822,7 +821,7 @@ func (s *Service) stockInReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermod
 		Remark:     "退货入库，订单 " + rt.OrderNo,
 		Lines:      lines,
 	}); err != nil {
-		return errors.New(orderenums.ErrStockUnavailable)
+		return orderenums.Err(orderenums.ErrStockUnavailable)
 	}
 	return nil
 }
@@ -884,7 +883,7 @@ func (s *Service) refundReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermode
 		return lerr
 	}
 	if order == nil {
-		return errors.New(orderenums.ErrOrderNotFound)
+		return orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	orderItems, ierr := s.items.ListByOrderIDTx(ctx, tx, rt.OrderID)
 	if ierr != nil {
@@ -945,7 +944,7 @@ func (s *Service) returnRespOf(ctx context.Context, returnID uint64) (*orderdto.
 		return nil, err
 	}
 	if e == nil {
-		return nil, errors.New(orderenums.ErrReturnNotFound)
+		return nil, orderenums.Err(orderenums.ErrReturnNotFound)
 	}
 	items, ierr := s.returns.ItemsByReturnID(ctx, e.ID)
 	if ierr != nil {

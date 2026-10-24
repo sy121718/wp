@@ -25,17 +25,17 @@ import (
 func (s *Service) CreateEndpoint(ctx context.Context, req *webhookdto.SaveEndpointReq) (item *webhookdto.EndpointItem, err error) {
 	eventType := strings.TrimSpace(req.EventType)
 	if eventType == "" {
-		return nil, errors.New(webhookenums.ErrEventTypeRequired)
+		return nil, webhookenums.Err(webhookenums.ErrEventTypeRequired)
 	}
 	targetURL := strings.TrimSpace(req.TargetURL)
 	if targetURL == "" {
-		return nil, errors.New(webhookenums.ErrTargetURLRequired)
+		return nil, webhookenums.Err(webhookenums.ErrTargetURLRequired)
 	}
 	if verr := validateWebhookURL(targetURL); verr != nil {
 		return nil, verr
 	}
 	if req.Secret == "" {
-		return nil, errors.New(webhookenums.ErrSecretRequired)
+		return nil, webhookenums.Err(webhookenums.ErrSecretRequired)
 	}
 	cipher, cerr := s.encryptSecret(req.Secret)
 	if cerr != nil {
@@ -66,11 +66,11 @@ func (s *Service) CreateEndpoint(ctx context.Context, req *webhookdto.SaveEndpoi
 // 调用方会拿到「保存成功」而其实什么都没发生。改 URL / 密钥时重新校验与重新加密。
 func (s *Service) UpdateEndpoint(ctx context.Context, req *webhookdto.SaveEndpointReq) (item *webhookdto.EndpointItem, err error) {
 	if req.ID == 0 {
-		return nil, errors.New(webhookenums.ErrInvalidParam)
+		return nil, webhookenums.Err(webhookenums.ErrInvalidParam)
 	}
 	if _, gerr := s.m.GetEndpoint(ctx, req.ID); gerr != nil {
 		if errors.Is(gerr, gorm.ErrRecordNotFound) {
-			return nil, errors.New(webhookenums.ErrEndpointNotFound)
+			return nil, webhookenums.Err(webhookenums.ErrEndpointNotFound)
 		}
 		return nil, gerr
 	}
@@ -111,7 +111,7 @@ func (s *Service) UpdateEndpoint(ctx context.Context, req *webhookdto.SaveEndpoi
 // DeleteEndpoint 删除端点（投递日志由外键 ON DELETE CASCADE 一并清理）。
 func (s *Service) DeleteEndpoint(ctx context.Context, id uint64) error {
 	if id == 0 {
-		return errors.New(webhookenums.ErrInvalidParam)
+		return webhookenums.Err(webhookenums.ErrInvalidParam)
 	}
 	return s.m.DeleteEndpoint(ctx, id)
 }
@@ -122,7 +122,7 @@ func (s *Service) DeleteEndpoint(ctx context.Context, id uint64) error {
 // 已经入队的投递仍会执行 —— 改状态不该让在途任务凭空消失。
 func (s *Service) SetEndpointStatus(ctx context.Context, id uint64, status int) (err error) {
 	if id == 0 || (status != webhookenums.EndpointStatusEnabled && status != webhookenums.EndpointStatusDisabled) {
-		return errors.New(webhookenums.ErrInvalidParam)
+		return webhookenums.Err(webhookenums.ErrInvalidParam)
 	}
 	return s.m.UpdateEndpoint(ctx, id, map[string]any{
 		"status":      status,

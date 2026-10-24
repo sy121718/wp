@@ -32,7 +32,7 @@ func (s *Service) SetCipherSecret(secret string) { s.cipherSecret = secret }
 // CreateAccount 新建发信账号（密码加密存储）。
 func (s *Service) CreateAccount(ctx context.Context, req *maildto.SaveAccountReq) (res *maildto.AccountItem, err error) {
 	if req == nil {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	if err = validateAccountReq(req, true); err != nil {
 		return nil, err
@@ -81,13 +81,13 @@ func (s *Service) CreateAccount(ctx context.Context, req *maildto.SaveAccountReq
 // UpdateAccount 更新账号；**密码留空表示不改**（避免「编辑页面回显不了密码」时的误清空）。
 func (s *Service) UpdateAccount(ctx context.Context, req *maildto.SaveAccountReq) (res *maildto.AccountItem, err error) {
 	if req == nil || req.ID == 0 {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	if err = validateAccountReq(req, false); err != nil {
 		return nil, err
 	}
 	if _, err = s.m.GetAccount(ctx, req.ID); err != nil {
-		return nil, errors.New(mailenums.ErrAccountNotFound)
+		return nil, mailenums.Err(mailenums.ErrAccountNotFound)
 	}
 	fields := map[string]any{
 		"name":          strings.TrimSpace(req.Name),
@@ -156,7 +156,7 @@ func (s *Service) DeleteAccount(ctx context.Context, id uint64) (err error) {
 func (s *Service) SetDefaultAccount(ctx context.Context, id uint64) (err error) {
 	e, err := s.m.GetAccount(ctx, id)
 	if err != nil {
-		return errors.New(mailenums.ErrAccountNotFound)
+		return mailenums.Err(mailenums.ErrAccountNotFound)
 	}
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if cerr := s.m.ClearDefaultAccounts(ctx, tx, e.Purpose); cerr != nil {
@@ -172,7 +172,7 @@ func (s *Service) SetDefaultAccount(ctx context.Context, id uint64) (err error) 
 // 失败原因按错误分类记进 last_check_error，界面直接能看出「认证失败」还是「连不上」。
 func (s *Service) TestSend(ctx context.Context, req *maildto.TestSendReq) (res *maildto.TestSendResp, err error) {
 	if req == nil || req.AccountID == 0 || strings.TrimSpace(req.ToEmail) == "" {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	sender, account, err := s.senderFor(ctx, req.AccountID)
 	if err != nil {
@@ -215,13 +215,13 @@ func (s *Service) TestSend(ctx context.Context, req *maildto.TestSendReq) (res *
 func (s *Service) senderFor(ctx context.Context, accountID uint64) (sender mailer.Sender, account *mailmodel.MailAccountEntity, err error) {
 	account, err = s.m.GetAccount(ctx, accountID)
 	if err != nil {
-		return nil, nil, errors.New(mailenums.ErrAccountNotFound)
+		return nil, nil, mailenums.Err(mailenums.ErrAccountNotFound)
 	}
 	if account.Status != mailmodel.AccountStatusEnabled {
-		return nil, nil, errors.New(mailenums.ErrAccountDisabled)
+		return nil, nil, mailenums.Err(mailenums.ErrAccountDisabled)
 	}
 	if account.Host == nil || account.Port == nil || strings.TrimSpace(account.FromEmail) == "" {
-		return nil, nil, errors.New(mailenums.ErrAccountIncomplete)
+		return nil, nil, mailenums.Err(mailenums.ErrAccountIncomplete)
 	}
 
 	password := ""
@@ -229,7 +229,7 @@ func (s *Service) senderFor(ctx context.Context, accountID uint64) (sender maile
 		plain, derr := crypto.Decrypt(*account.PasswordCipher, s.cipherSecret)
 		if derr != nil {
 			// 密钥缺失或密文损坏：给出可操作的提示，不要把底层错误原样抛给运营。
-			return nil, nil, errors.New(mailenums.ErrCipherUnavailable)
+			return nil, nil, mailenums.Err(mailenums.ErrCipherUnavailable)
 		}
 		password = plain
 	}
@@ -260,7 +260,7 @@ func (s *Service) senderFor(ctx context.Context, accountID uint64) (sender maile
 // encryptPassword 加密 SMTP 密码（密钥未配置时明确报错）。
 func (s *Service) encryptPassword(plain string) (string, error) {
 	if strings.TrimSpace(s.cipherSecret) == "" {
-		return "", errors.New(mailenums.ErrCipherSecretMissing)
+		return "", mailenums.Err(mailenums.ErrCipherSecretMissing)
 	}
 	return crypto.Encrypt(plain, s.cipherSecret)
 }
@@ -319,10 +319,10 @@ func accountItemOf(e *mailmodel.MailAccountEntity) *maildto.AccountItem {
 
 func validateAccountReq(req *maildto.SaveAccountReq, creating bool) error {
 	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.FromEmail) == "" {
-		return errors.New(mailenums.ErrInvalidParam)
+		return mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	if creating && strings.TrimSpace(req.Host) == "" {
-		return errors.New(mailenums.ErrAccountIncomplete)
+		return mailenums.Err(mailenums.ErrAccountIncomplete)
 	}
 	return nil
 }

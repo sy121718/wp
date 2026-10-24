@@ -3,7 +3,6 @@ package buildservice
 
 import (
 	"context"
-	"errors"
 	"strconv"
 	"strings"
 	"sync"
@@ -116,7 +115,7 @@ func normalizeIntent(raw string) (string, bool) {
 // 队列里那份待办会在这条 running 结束后被认领。
 func (s *Service) Enqueue(ctx context.Context, req *builddto.EnqueueReq) (job *builddto.Job, created bool, err error) {
 	if s == nil || s.m == nil || req == nil {
-		return nil, false, errors.New(buildenums.ErrInvalidParam)
+		return nil, false, buildenums.Err(buildenums.ErrInvalidParam)
 	}
 	sourceType := strings.TrimSpace(req.SourceType)
 	sourceID := strings.TrimSpace(req.SourceID)
@@ -125,14 +124,14 @@ func (s *Service) Enqueue(ctx context.Context, req *builddto.EnqueueReq) (job *b
 	default:
 		// 白名单与 DDL 的 CHECK 一致，但先在这里拦：数据库拒绝的报错是约束名，
 		// 这里能给出「来源类型不支持」这个可读结论，也不会留下半条任务。
-		return nil, false, errors.New(buildenums.ErrInvalidSource)
+		return nil, false, buildenums.Err(buildenums.ErrInvalidSource)
 	}
 	if sourceID == "" {
-		return nil, false, errors.New(buildenums.ErrInvalidParam)
+		return nil, false, buildenums.Err(buildenums.ErrInvalidParam)
 	}
 	intent, ok := normalizeIntent(req.Intent)
 	if !ok {
-		return nil, false, errors.New(buildenums.ErrInvalidParam)
+		return nil, false, buildenums.Err(buildenums.ErrInvalidParam)
 	}
 	e := &buildmodel.Entity{
 		SourceType: sourceType, SourceID: sourceID,
@@ -215,18 +214,18 @@ func (s *Service) List(ctx context.Context, req *builddto.ListReq) (list []*buil
 func (s *Service) Retry(ctx context.Context, projectID, id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return errors.New(buildenums.ErrInvalidParam)
+		return buildenums.Err(buildenums.ErrInvalidParam)
 	}
 	jid, perr := strconv.ParseInt(id, 10, 64)
 	if perr != nil {
-		return errors.New(buildenums.ErrJobNotFound)
+		return buildenums.Err(buildenums.ErrJobNotFound)
 	}
 	ok, err := s.m.RetryFailed(ctx, jid, strings.TrimSpace(projectID))
 	if err != nil {
 		return err
 	}
 	if !ok {
-		return errors.New(buildenums.ErrJobNotFound)
+		return buildenums.Err(buildenums.ErrJobNotFound)
 	}
 	return nil
 }

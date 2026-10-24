@@ -32,10 +32,10 @@ var _ blueprintcontract.BlueprintService = (*Service)(nil)
 // Create 创建 Blueprint（校验 Kind 白名单 + 文档合法 → draft_version=1 + 版本 1）。
 func (s *Service) Create(ctx context.Context, req *blueprintdto.CreateReq) (res *blueprintdto.BlueprintResp, err error) {
 	if req == nil || req.Name == "" {
-		return nil, errors.New(blueprintenums.ErrInvalidParam)
+		return nil, blueprintenums.Err(blueprintenums.ErrInvalidParam)
 	}
 	if !blueprintmodel.IsValidKind(req.Kind) {
-		return nil, errors.New(blueprintenums.ErrInvalidKind)
+		return nil, blueprintenums.Err(blueprintenums.ErrInvalidKind)
 	}
 	// 校验 DraftDocument 是合法 Page Document 并规范化为存储字节。
 	doc, err := validateDocument(req.DraftDocument)
@@ -59,12 +59,12 @@ func (s *Service) Create(ctx context.Context, req *blueprintdto.CreateReq) (res 
 // Update 修改草稿（draft_version 递增并写新不可变版本）。
 func (s *Service) Update(ctx context.Context, req *blueprintdto.UpdateReq) (res *blueprintdto.BlueprintResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(blueprintenums.ErrInvalidParam)
+		return nil, blueprintenums.Err(blueprintenums.ErrInvalidParam)
 	}
 	e, err := s.m.Get(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(blueprintenums.ErrNotFound)
+			return nil, blueprintenums.Err(blueprintenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -89,12 +89,12 @@ func (s *Service) Update(ctx context.Context, req *blueprintdto.UpdateReq) (res 
 // 写入违反 (blueprint_id, version) 唯一约束；仅在异常缺失同号版本时补写。
 func (s *Service) Publish(ctx context.Context, req *blueprintdto.PublishReq) (res *blueprintdto.BlueprintResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(blueprintenums.ErrInvalidParam)
+		return nil, blueprintenums.Err(blueprintenums.ErrInvalidParam)
 	}
 	e, err := s.m.Get(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(blueprintenums.ErrNotFound)
+			return nil, blueprintenums.Err(blueprintenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -117,12 +117,12 @@ func (s *Service) Publish(ctx context.Context, req *blueprintdto.PublishReq) (re
 // Get 按 ID 查询。
 func (s *Service) Get(ctx context.Context, req *blueprintdto.GetReq) (res *blueprintdto.BlueprintResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(blueprintenums.ErrInvalidParam)
+		return nil, blueprintenums.Err(blueprintenums.ErrInvalidParam)
 	}
 	e, err := s.m.Get(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(blueprintenums.ErrNotFound)
+			return nil, blueprintenums.Err(blueprintenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (s *Service) List(ctx context.Context, req *blueprintdto.ListReq) (list []*
 		req = &blueprintdto.ListReq{}
 	}
 	if req.Kind != "" && !blueprintmodel.IsValidKind(req.Kind) {
-		return nil, errors.New(blueprintenums.ErrInvalidKind)
+		return nil, blueprintenums.Err(blueprintenums.ErrInvalidKind)
 	}
 	rows, err := s.m.List(ctx, req.Kind)
 	if err != nil {
@@ -151,11 +151,11 @@ func (s *Service) List(ctx context.Context, req *blueprintdto.ListReq) (list []*
 // Delete 删除 Blueprint。
 func (s *Service) Delete(ctx context.Context, req *blueprintdto.DeleteReq) (err error) {
 	if req == nil || req.ID == "" {
-		return errors.New(blueprintenums.ErrInvalidParam)
+		return blueprintenums.Err(blueprintenums.ErrInvalidParam)
 	}
 	if _, err = s.m.Get(ctx, req.ID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New(blueprintenums.ErrNotFound)
+			return blueprintenums.Err(blueprintenums.ErrNotFound)
 		}
 		return err
 	}
@@ -166,24 +166,24 @@ func (s *Service) Delete(ctx context.Context, req *blueprintdto.DeleteReq) (err 
 // 返回不再依赖 Blueprint 的完整 Page Document（page 模块 CreatePage 的输入）。
 func (s *Service) InitPageDocument(ctx context.Context, blueprintID string) (doc json.RawMessage, err error) {
 	if strings.TrimSpace(blueprintID) == "" {
-		return nil, errors.New(blueprintenums.ErrInvalidParam)
+		return nil, blueprintenums.Err(blueprintenums.ErrInvalidParam)
 	}
 	ver, err := s.m.LatestVersion(ctx, blueprintID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(blueprintenums.ErrNotFound)
+			return nil, blueprintenums.Err(blueprintenums.ErrNotFound)
 		}
 		return nil, err
 	}
 	page, err := builder.ParsePage(ver.Document)
 	if err != nil {
-		return nil, errors.New(blueprintenums.ErrDataInvalid)
+		return nil, blueprintenums.Err(blueprintenums.ErrDataInvalid)
 	}
 	// 复制完整 AST：settings 原样保留，root 每个节点递归重写 ID（公共机制，与 block 片段模板共用）。
 	cloned := builder.ClonePageWithNewIDs(page)
 	out, err := json.Marshal(cloned)
 	if err != nil {
-		return nil, errors.New(blueprintenums.ErrDataInvalid)
+		return nil, blueprintenums.Err(blueprintenums.ErrDataInvalid)
 	}
 	return out, nil
 }
@@ -192,15 +192,15 @@ func (s *Service) InitPageDocument(ctx context.Context, blueprintID string) (doc
 func validateDocument(raw json.RawMessage) (json.RawMessage, error) {
 	page, err := builder.ParsePage(raw)
 	if err != nil {
-		return nil, errors.New(blueprintenums.ErrDataInvalid)
+		return nil, blueprintenums.Err(blueprintenums.ErrDataInvalid)
 	}
 	if err = builder.ValidatePage(page); err != nil {
-		return nil, errors.New(blueprintenums.ErrDataInvalid)
+		return nil, blueprintenums.Err(blueprintenums.ErrDataInvalid)
 	}
 	// 重新编码保证存储 JSON 的规范格式，不接受散乱字节。
 	doc, err := json.Marshal(page)
 	if err != nil {
-		return nil, errors.New(blueprintenums.ErrDataInvalid)
+		return nil, blueprintenums.Err(blueprintenums.ErrDataInvalid)
 	}
 	return doc, nil
 }

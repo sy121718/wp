@@ -50,7 +50,7 @@ func (s *Service) ListProviders(ctx context.Context) (res []aidto.Provider, err 
 // GetProvider 按主键取一个供应商；不存在返回 ErrProviderNotFound。
 func (s *Service) GetProvider(ctx context.Context, id int64) (res *aidto.Provider, err error) {
 	if id <= 0 {
-		return nil, errors.New(aienums.ErrInvalidParam)
+		return nil, aienums.Err(aienums.ErrInvalidParam)
 	}
 	e, err := s.m.FindByID(ctx, id)
 	if err != nil {
@@ -78,18 +78,18 @@ func (s *Service) GetProvider(ctx context.Context, id int64) (res *aidto.Provide
 //	  走，等于允许把已存密钥发往请求方自选的任意主机（fetch 的 Authorization 头）。
 func (s *Service) SaveProvider(ctx context.Context, req *aidto.SaveProviderReq) (res *aidto.Provider, err error) {
 	if req == nil {
-		return nil, errors.New(aienums.ErrInvalidParam)
+		return nil, aienums.Err(aienums.ErrInvalidParam)
 	}
 	name := strings.TrimSpace(req.DisplayName)
 	if name == "" {
-		return nil, errors.New(aienums.ErrDisplayNameRequired)
+		return nil, aienums.Err(aienums.ErrDisplayNameRequired)
 	}
 	protocol := strings.TrimSpace(req.Protocol)
 	if protocol == "" {
 		protocol = aienums.ProtocolOpenAIChatCompletions
 	}
 	if !aienums.IsSupportedProtocol(protocol) {
-		return nil, errors.New(aienums.ErrProtocolUnsupported)
+		return nil, aienums.Err(aienums.ErrProtocolUnsupported)
 	}
 	baseURL := strings.TrimSpace(req.BaseURL)
 	// Status 未表态 = 启用（与 ai_provider.status 的 DEFAULT 1 同一口径）。
@@ -101,7 +101,7 @@ func (s *Service) SaveProvider(ctx context.Context, req *aidto.SaveProviderReq) 
 	if req.ID == 0 {
 		key := strings.ToLower(strings.TrimSpace(req.ProviderKey))
 		if key == "" {
-			return nil, errors.New(aienums.ErrProviderKeyRequired)
+			return nil, aienums.Err(aienums.ErrProviderKeyRequired)
 		}
 		dup, derr := s.m.FindByKey(ctx, key)
 		if derr != nil {
@@ -180,7 +180,7 @@ func (s *Service) SaveProvider(ctx context.Context, req *aidto.SaveProviderReq) 
 // 是个明确动作，删不掉要说清楚，否则用户会以为删了。
 func (s *Service) DeleteProvider(ctx context.Context, id int64) (err error) {
 	if id <= 0 {
-		return errors.New(aienums.ErrInvalidParam)
+		return aienums.Err(aienums.ErrInvalidParam)
 	}
 	rows, derr := s.m.DeleteByID(ctx, id)
 	if derr != nil {
@@ -198,7 +198,7 @@ func (s *Service) DeleteProvider(ctx context.Context, id int64) (err error) {
 // 让同时打开的编辑页无谓冲突。
 func (s *Service) SetProviderStatus(ctx context.Context, req *aidto.SetStatusReq) (res *aidto.Provider, err error) {
 	if req == nil || req.ID <= 0 {
-		return nil, errors.New(aienums.ErrInvalidParam)
+		return nil, aienums.Err(aienums.ErrInvalidParam)
 	}
 	current, err := s.m.FindByID(ctx, req.ID)
 	if err != nil {
@@ -304,15 +304,15 @@ func (s *AccessTokenService) SetScopeValidator(v ScopeValidator) { s.scopeOK = v
 // Create 签发一把令牌，返回**一次性明文**。
 func (s *AccessTokenService) Create(ctx context.Context, req *aidto.TokenCreateReq) (*aidto.TokenCreateResp, error) {
 	if req == nil {
-		return nil, errors.New(aienums.ErrTokenNameRequired)
+		return nil, aienums.Err(aienums.ErrTokenNameRequired)
 	}
 	if req.UserID <= 0 {
 		// 归属账号必须在：没有它，「谁的令牌在调」就答不出来。
-		return nil, errors.New(aienums.ErrUserRequired)
+		return nil, aienums.Err(aienums.ErrUserRequired)
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, errors.New(aienums.ErrTokenNameRequired)
+		return nil, aienums.Err(aienums.ErrTokenNameRequired)
 	}
 	scopes, err := s.normalizeScopes(req.Scopes)
 	if err != nil {
@@ -345,7 +345,7 @@ func (s *AccessTokenService) Create(ctx context.Context, req *aidto.TokenCreateR
 // List 取令牌列表。all=true 时看全站，否则只看自己的（权限由路由层判）。
 func (s *AccessTokenService) List(ctx context.Context, req *aidto.TokenListReq) ([]aidto.TokenItem, error) {
 	if req == nil {
-		return nil, errors.New(aienums.ErrUserRequired)
+		return nil, aienums.Err(aienums.ErrUserRequired)
 	}
 	limit := req.Limit
 	if limit <= 0 {
@@ -358,7 +358,7 @@ func (s *AccessTokenService) List(ctx context.Context, req *aidto.TokenListReq) 
 	if req.All {
 		owner = 0
 	} else if owner <= 0 {
-		return nil, errors.New(aienums.ErrUserRequired)
+		return nil, aienums.Err(aienums.ErrUserRequired)
 	}
 	rows, err := s.tokens.List(ctx, owner, limit)
 	if err != nil {
@@ -375,14 +375,14 @@ func (s *AccessTokenService) List(ctx context.Context, req *aidto.TokenListReq) 
 // 对调用方来说这两件事没有区别：他要的结果是「这把不能用了」。
 func (s *AccessTokenService) Revoke(ctx context.Context, id int64) error {
 	if id <= 0 {
-		return errors.New(aienums.ErrTokenNotFound)
+		return aienums.Err(aienums.ErrTokenNotFound)
 	}
 	n, err := s.tokens.Revoke(ctx, id)
 	if err != nil {
 		return err
 	}
 	if n == 0 {
-		return errors.New(aienums.ErrTokenNotFound)
+		return aienums.Err(aienums.ErrTokenNotFound)
 	}
 	return nil
 }
@@ -392,7 +392,7 @@ func (s *AccessTokenService) Revoke(ctx context.Context, id int64) error {
 // 四种失败（不存在 / 已撤销 / 已过期 / 明文空）**对外只有一种说法**：ErrTokenInvalid。
 // 另外这里会顺手记 last_used_time（失败不冒给调用方：旁路观测不该让一次正常调用失败）。
 func (s *AccessTokenService) Verify(ctx context.Context, plain string) (*TokenIdentity, error) {
-	invalid := errors.New(aienums.ErrTokenInvalid)
+	invalid := aienums.Err(aienums.ErrTokenInvalid)
 	plain = strings.TrimSpace(plain)
 	if plain == "" || !strings.HasPrefix(plain, tokenPlainPrefix) {
 		return nil, invalid
@@ -435,13 +435,13 @@ func (s *AccessTokenService) normalizeScopes(raw []string) ([]string, error) {
 		}
 		if s.scopeOK == nil || !s.scopeOK(p) {
 			// 未注入校验端口时也走这一支（fail closed）：未知权限点必须当场拒。
-			return nil, errors.New(aienums.ErrTokenScopeUnknown)
+			return nil, aienums.Err(aienums.ErrTokenScopeUnknown)
 		}
 		seen[p] = struct{}{}
 		out = append(out, p)
 	}
 	if len(out) == 0 {
-		return nil, errors.New(aienums.ErrTokenScopeRequired)
+		return nil, aienums.Err(aienums.ErrTokenScopeRequired)
 	}
 	return out, nil
 }
@@ -457,12 +457,12 @@ func (s *AccessTokenService) parseExpiry(raw string, now time.Time) (*time.Time,
 	}
 	day, err := time.ParseInLocation(utils.LayoutDay, raw, time.UTC)
 	if err != nil {
-		return nil, errors.New(aienums.ErrInvalidParam)
+		return nil, aienums.Err(aienums.ErrInvalidParam)
 	}
 	end := day.AddDate(0, 0, 1)
 	if !end.After(now) {
 		// 建一把「一来就失效」的令牌没有意义，当场拒比让它静默不可用好。
-		return nil, errors.New(aienums.ErrTokenExpiredInPast)
+		return nil, aienums.Err(aienums.ErrTokenExpiredInPast)
 	}
 	return &end, nil
 }

@@ -53,13 +53,13 @@ func (s *Service) AdminList(ctx context.Context, req *admindto.AdminListReq) (re
 		field := strings.ToLower(strings.TrimSpace(req.SortField))
 		dir := strings.ToUpper(strings.TrimSpace(req.SortOrder))
 		if dir != "ASC" && dir != "DESC" {
-			return nil, errors.New(adminenums.ErrSortDirectionInvalid)
+			return nil, adminenums.Err(adminenums.ErrSortDirectionInvalid)
 		}
 		switch field {
 		case "id", "username", "name", "email", "phone", "status", "create_time", "last_login_time":
 			orderClause = field + " " + dir
 		default:
-			return nil, errors.New(adminenums.ErrSortFieldInvalid)
+			return nil, adminenums.Err(adminenums.ErrSortFieldInvalid)
 		}
 	}
 
@@ -99,12 +99,12 @@ func (s *Service) AdminCreate(ctx context.Context, req *admindto.AdminCreateReq)
 	if emailExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "email", req.Email); err != nil {
 		return nil, err
 	} else if emailExists {
-		return nil, errors.New(adminenums.ErrEmailExists)
+		return nil, adminenums.Err(adminenums.ErrEmailExists)
 	}
 	if nameExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "username", req.Username); err != nil {
 		return nil, err
 	} else if nameExists {
-		return nil, errors.New(adminenums.ErrUsernameExists)
+		return nil, adminenums.Err(adminenums.ErrUsernameExists)
 	}
 
 	// 加密密码
@@ -127,7 +127,7 @@ func (s *Service) AdminCreate(ctx context.Context, req *admindto.AdminCreateReq)
 		if phoneExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "phone", req.Phone); err != nil {
 			return nil, err
 		} else if phoneExists {
-			return nil, errors.New(adminenums.ErrPhoneExists)
+			return nil, adminenums.Err(adminenums.ErrPhoneExists)
 		}
 		entity.Phone = &req.Phone
 	}
@@ -158,14 +158,14 @@ func (s *Service) AdminDetail(ctx context.Context, req *admindto.AdminDetailReq)
 		Scan(res).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(adminenums.ErrAdminNotFound)
+			return nil, adminenums.Err(adminenums.ErrAdminNotFound)
 		}
 		return nil, err
 	}
 	// Scan 不命中不返回 gorm.ErrRecordNotFound（RowsAffected=0），须显式判空：
 	// 避免查询不存在返回空结构 + nil error（对比 role.go 同款检查）。
 	if res.ID == 0 {
-		return nil, errors.New(adminenums.ErrAdminNotFound)
+		return nil, adminenums.Err(adminenums.ErrAdminNotFound)
 	}
 
 	res.Roles = []any{}
@@ -180,21 +180,21 @@ func (s *Service) AdminEdit(ctx context.Context, req *admindto.AdminEditReq) (re
 		return nil, err
 	}
 	if entityExists == nil {
-		return nil, errors.New(adminenums.ErrAdminNotFound)
+		return nil, adminenums.Err(adminenums.ErrAdminNotFound)
 	}
 
 	//判断邮箱唯一
 	if emailExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "email", req.Email, req.Id); err != nil {
 		return nil, err
 	} else if emailExists {
-		return nil, errors.New(adminenums.ErrEmailExists)
+		return nil, adminenums.Err(adminenums.ErrEmailExists)
 	}
 
 	// 判断用户名唯一
 	if nameExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "username", req.Username, req.Id); err != nil {
 		return nil, err
 	} else if nameExists {
-		return nil, errors.New(adminenums.ErrUsernameExists)
+		return nil, adminenums.Err(adminenums.ErrUsernameExists)
 	}
 
 	// 构造实体
@@ -208,7 +208,7 @@ func (s *Service) AdminEdit(ctx context.Context, req *admindto.AdminEditReq) (re
 		if phoneExists, err := database.IsFieldExists(s.am.DB(ctx), &adminmodel.AdminEntity{}, "phone", req.Phone, req.Id); err != nil {
 			return nil, err
 		} else if phoneExists {
-			return nil, errors.New(adminenums.ErrPhoneExists)
+			return nil, adminenums.Err(adminenums.ErrPhoneExists)
 		}
 		entity.Phone = &req.Phone
 	}
@@ -250,7 +250,7 @@ func (s *Service) AdminEdit(ctx context.Context, req *admindto.AdminEditReq) (re
 func (s *Service) AdminDelete(ctx context.Context, req *admindto.AdminDeleteReq) (res *admindto.AdminDeleteResp, err error) {
 	ids := uniqueAdminIDs(req.Id)
 	if len(ids) == 0 {
-		return nil, errors.New(adminenums.ErrAdminNotFound)
+		return nil, adminenums.Err(adminenums.ErrAdminNotFound)
 	}
 
 	for _, id := range ids {
@@ -259,13 +259,13 @@ func (s *Service) AdminDelete(ctx context.Context, req *admindto.AdminDeleteReq)
 			return nil, err
 		}
 		if entity == nil {
-			return nil, errors.New(adminenums.ErrAdminNotFound)
+			return nil, adminenums.Err(adminenums.ErrAdminNotFound)
 		}
 		if id == req.OperatorID {
-			return nil, errors.New(adminenums.ErrDeleteSelf)
+			return nil, adminenums.Err(adminenums.ErrDeleteSelf)
 		}
 		if entity.IsSuperAdmin() {
-			return nil, errors.New(adminenums.ErrDeleteSuperAdmin)
+			return nil, adminenums.Err(adminenums.ErrDeleteSuperAdmin)
 		}
 	}
 
@@ -286,14 +286,14 @@ func (s *Service) AdminDelete(ctx context.Context, req *admindto.AdminDeleteReq)
 			return err
 		}
 		if len(locked) != len(ids) {
-			return errors.New(adminenums.ErrAdminNotFound)
+			return adminenums.Err(adminenums.ErrAdminNotFound)
 		}
 		for _, entity := range locked {
 			if entity.ID == req.OperatorID {
-				return errors.New(adminenums.ErrDeleteSelf)
+				return adminenums.Err(adminenums.ErrDeleteSelf)
 			}
 			if entity.IsSuperAdmin() {
-				return errors.New(adminenums.ErrDeleteSuperAdmin)
+				return adminenums.Err(adminenums.ErrDeleteSuperAdmin)
 			}
 		}
 
@@ -302,7 +302,7 @@ func (s *Service) AdminDelete(ctx context.Context, req *admindto.AdminDeleteReq)
 			return err
 		}
 		if deleted != int64(len(ids)) {
-			return errors.New(adminenums.ErrAdminNotFound)
+			return adminenums.Err(adminenums.ErrAdminNotFound)
 		}
 
 		// 该账号的全部策略行与 sys_admin 行同事务（跨模块只传 *gorm.DB 给 …Tx 方法）。
@@ -491,7 +491,7 @@ func (s *Service) requireSuperAdminForSensitiveTarget(ctx context.Context, opera
 		return err
 	}
 	if !opSuper {
-		return errors.New(adminenums.ErrSuperAdminOnly)
+		return adminenums.Err(adminenums.ErrSuperAdminOnly)
 	}
 	return nil
 }
@@ -510,7 +510,7 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 	var captchaSvc = captcha.Get()
 	// Verify-验证验证码是否正确
 	if !captchaSvc.Verify(req.CaptchaID, req.Captcha, true) {
-		return nil, errors.New(adminenums.ErrCaptchaExpired)
+		return nil, adminenums.Err(adminenums.ErrCaptchaExpired)
 	}
 
 	// 2) 按用户名查用户（区分大小写）
@@ -525,7 +525,7 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 	if err := s.am.DB(ctx).Where(binaryExpr+" OR email = ?", req.Username, req.Username).First(&entity).Error; err != nil {
 		logger.Scene("admin").With("username", req.Username).With("reason", "用户不存在").Warn("登录失败")
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(adminenums.ErrBadCredentials)
+			return nil, adminenums.Err(adminenums.ErrBadCredentials)
 		}
 		return nil, err
 	}
@@ -542,7 +542,7 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 	// 4) 检查是否被禁用
 	if !entity.IsActive() {
 		logger.Scene("admin").With("username", req.Username).With("reason", "账号已禁用").Warn("登录失败")
-		return nil, errors.New(adminenums.ErrAccountDisabled)
+		return nil, adminenums.Err(adminenums.ErrAccountDisabled)
 	}
 
 	// 5) 密码校验
@@ -551,7 +551,7 @@ func (s *Service) AdminLogin(ctx context.Context, req *admindto.AdminLoginReq, c
 		if ferr := s.am.IncrementLoginFailure(ctx, entity.ID, loginFailureLockThreshold, loginFailureLockDuration); ferr != nil {
 			logger.Scene("admin").Error(ferr, "记录登录失败状态失败")
 		}
-		return nil, errors.New(adminenums.ErrBadCredentials)
+		return nil, adminenums.Err(adminenums.ErrBadCredentials)
 	}
 
 	// 6) 登录成功：原子清零失败状态，再记录登录信息
@@ -728,7 +728,7 @@ func (s *Service) DevLogin(ctx context.Context, username string) (*admindto.Admi
 		return nil, err
 	}
 	if !entity.IsActive() {
-		return nil, errors.New(adminenums.ErrAccountDisabled)
+		return nil, adminenums.Err(adminenums.ErrAccountDisabled)
 	}
 
 	sessionID, err := auth.NewSessionID()

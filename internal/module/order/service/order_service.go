@@ -36,7 +36,6 @@ package orderservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -122,7 +121,7 @@ func (s *Service) SetProjects(projects projectcontract.ProjectService) {
 // 订单不存在」，那正是本批要消灭的 fail-silent。
 func (s *Service) projectIDs(ctx context.Context) ([]string, error) {
 	if s == nil || s.orders == nil || s.projects == nil {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	list, err := s.projects.List(ctx)
 	if err != nil {
@@ -135,7 +134,7 @@ func (s *Service) projectIDs(ctx context.Context) ([]string, error) {
 		}
 	}
 	if len(ids) == 0 {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	return ids, nil
 }
@@ -160,7 +159,7 @@ func (s *Service) locateOrderProject(ctx context.Context, orderID uint64) (strin
 			return e.ProjectID, nil
 		}
 	}
-	return "", errors.New(orderenums.ErrOrderNotFound)
+	return "", orderenums.Err(orderenums.ErrOrderNotFound)
 }
 
 // resolveOrderProject 优先用调用方显式传入的工程；否则逐工程探测（DB-009 第四批）。
@@ -191,7 +190,7 @@ func (s *Service) locateReturnProject(ctx context.Context, returnID uint64) (str
 			return e.ProjectID, nil
 		}
 	}
-	return "", errors.New(orderenums.ErrReturnNotFound)
+	return "", orderenums.Err(orderenums.ErrReturnNotFound)
 }
 
 // locateCouponProject 逐工程探测优惠码归属工程；找不到返回 ErrCouponNotFound。
@@ -212,7 +211,7 @@ func (s *Service) locateCouponProject(ctx context.Context, couponID uint64) (str
 			return e.ProjectID, nil
 		}
 	}
-	return "", errors.New(orderenums.ErrCouponNotFound)
+	return "", orderenums.Err(orderenums.ErrCouponNotFound)
 }
 
 // OrderPaidEvent 订单支付成功事件的载荷（webhook 事件名 order.paid）。

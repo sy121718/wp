@@ -11,6 +11,8 @@
 // 收货入库改变库存数量只进库存流水（数量列不进本表，那是流水的职责）。
 package masterdataenums
 
+import "go_wp/pkg/facing"
+
 // 实体类型白名单（master_data_changes.entity_type）。
 //
 // 只收「关键主数据」：商品、商品变体、货源。未知类型在写入入口被拒绝 ——
@@ -240,3 +242,25 @@ func FieldLabel(entityType, field string) LabelPair {
 	}
 	return LabelPair{"", field}
 }
+
+// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
+//
+// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
+// businessText 只能退回声明处给的那句话 —— 没有它，客户端拿到的是 `masterdata.err.invalidParam` 这样的裸 key。
+//
+// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:      "参数不合法",
+	ErrEntityTypeInvalid: "实体类型不在变更记录的白名单内",
+	ErrActionInvalid:     "变更动作不合法",
+	ErrEntityIDRequired:  "实体 id 必填",
+	ErrProjectRequired:   "未指定工程",
+	ErrTimeRangeInvalid:  "时间范围不合法",
+}
+
+// Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }

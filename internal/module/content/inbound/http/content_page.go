@@ -2036,7 +2036,7 @@ func articleErrMsgOfFact(scoped map[string]string, fact adminui.ErrFact) article
 // 末档回落 key：显示裸标识符一眼可见，好过空串让失败在页面上完全不可见。
 func articleErrFallback(scoped map[string]string, key, factFallback string) string {
 	// 模块声明处的兜底（enums.errFallbacks）排在事实自带兜底之前：裸 key 形态
-	// （errors.New(contentenums.ErrNotFound)）的事实兜底就是 key 本身，直接用它会让
+	// （contentenums.Err(contentenums.ErrNotFound)）的事实兜底就是 key 本身，直接用它会让
 	// 页面上出现一串英文标识符 —— 那正是「缺词条时显示裸 key」的老症状。
 	for _, fb := range []string{scoped[key], articleFallbacks[key], contentenums.FallbackFor(key), factFallback} {
 		if fb = strings.TrimSpace(fb); fb != "" {

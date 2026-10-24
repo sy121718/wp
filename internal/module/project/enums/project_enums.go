@@ -1,6 +1,8 @@
 // Package projectenums 统一管理 project 模块响应消息。
 package projectenums
 
+import "go_wp/pkg/facing"
+
 const (
 	ErrProjectNotFound = "ErrProjectNotFound" // 站点工程不存在
 	ErrInvalidSettings = "ErrInvalidSettings" // 站点设置必须是合法的 JSON 对象
@@ -132,3 +134,42 @@ const (
 	// SiteLocalesSaved 语言清单保存成功的回执（admin 命名空间下的词条，迁移 187）。
 	SiteLocalesSaved = "admin.settings.locales.saved" // 语言清单已保存
 )
+
+// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
+//
+// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
+// businessText 只能退回声明处给的那句话 —— 没有它，客户端拿到的是 `ErrProjectNotFound` 这样的裸 key
+// （这批常量的值就是常量名本身，旧式形态）。
+//
+// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
+var errFallbacks = map[string]string{
+	ErrProjectNotFound:              "工程不存在",
+	ErrInvalidSettings:              "站点设置必须是合法的 JSON 对象",
+	ErrInvalidName:                  "站点工程名称不能为空且不能超过 200 个字符",
+	ErrInvalidParam:                 "请求参数无效",
+	ErrProjectInternal:              "工程服务内部错误",
+	ErrProjectRequired:              "请先选择要操作的站点工程",
+	ErrThemeNameRequired:            "主题名称不能为空",
+	ErrThemeNotFound:                "主题不存在",
+	ErrThemeIsActive:                "激活主题不可删除，请先切换到其他主题",
+	ErrThemeDuplicateName:           "同名主题已存在",
+	ErrThemeProjectIDEmpty:          "工程 ID 不能为空",
+	ErrInvalidThemeSettings:         "无效的主题设置",
+	ErrThemeInternal:                "主题服务内部错误",
+	ErrThemeIDRequired:              "缺少主题 id",
+	ErrSiteSettingsNameRequired:     "工程与站点名称不能为空",
+	ErrGA4IDInvalid:                 "GA4 测量 ID 格式不合法（形如 G-XXXXXXXXXX，只允许字母与数字）",
+	ErrGSCVerificationInvalid:       "Search Console 验证 token 格式不合法（base64url：字母、数字、- 与 _，8~128 位）",
+	ErrNotFoundHTMLTooLong:          "自定义 404 页内容过长（上限 32 KiB）",
+	ErrLangURLModeInvalid:           "语言 URL 方案取值非法（可选 off / default_plain / all_prefix）",
+	ErrLocaleNoTranslations:         "该语言还没有任何界面词条，不能启用：请先在「文案管理」里补齐该语言的词条，再回来启用。",
+	ErrShippingBaseFeeInvalid:       "基础运费必须是不小于 0 的数字（单位：元，最多两位小数），且不超过 10000 元",
+	ErrShippingFreeThresholdInvalid: "满额免运费门槛必须是不小于 0 的数字（单位：元，最多两位小数），且不超过 10000 元；留空或 0 表示不启用",
+}
+
+// Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }

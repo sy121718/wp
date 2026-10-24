@@ -39,7 +39,7 @@ import (
 // RenameReserved 修改页面的草稿路径占用；仅允许 reserved 状态改名。
 func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReservedReq) (err error) {
 	if req == nil {
-		return errors.New(pubenums.ErrInvalidParam)
+		return pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	oldPath, err := normalizePath(req.OldPath)
 	if err != nil {
@@ -60,7 +60,7 @@ func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReserved
 		return s.model.RenameReservedTx(ctx, tx, req.ProjectID, req.PageID, oldPath, newPath, req.OnlyReserved, now)
 	}); err != nil {
 		if errors.Is(err, errRouteOccupied) {
-			return errors.New(pubenums.ErrRouteOccupied)
+			return pubenums.Err(pubenums.ErrRouteOccupied)
 		}
 		return err
 	}
@@ -79,7 +79,7 @@ func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReserved
 // 返回 ErrRouteOccupied，绝不覆盖他人占用（H2/H7 的 DB 层兜底）。
 func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *pubdto.RouteResp, err error) {
 	if req == nil {
-		return nil, errors.New(pubenums.ErrInvalidParam)
+		return nil, pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	path, err := normalizePath(req.Path)
 	if err != nil {
@@ -143,10 +143,10 @@ func (s *Service) Activate(ctx context.Context, req *pubdto.ActivateReq) (res *p
 				Error(rberr, "pending 回执补偿失败（保持 pending 供恢复流程处理）")
 		}
 		if errors.Is(err, errRouteOccupied) {
-			return nil, errors.New(pubenums.ErrRouteOccupied)
+			return nil, pubenums.Err(pubenums.ErrRouteOccupied)
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(pubenums.ErrRouteNotFound)
+			return nil, pubenums.Err(pubenums.ErrRouteNotFound)
 		}
 		logger.Scene("publication").With("url", path).With("kind", "activate").Error(err, "路由激活失败")
 		return nil, err
@@ -180,7 +180,7 @@ func activatedRouteEntity(req *pubdto.ActivateReq, path string, owner routeOwner
 // 使 URL 占用单一归 publication 所有。
 func (s *Service) ReservePath(ctx context.Context, req *pubdto.ReserveReq) (err error) {
 	if req == nil {
-		return errors.New(pubenums.ErrInvalidParam)
+		return pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	path, err := normalizePath(req.Path)
 	if err != nil {
@@ -191,7 +191,7 @@ func (s *Service) ReservePath(ctx context.Context, req *pubdto.ReserveReq) (err 
 		return s.model.ReservePathTx(ctx, tx, req.ProjectID, path, req.PageID, now)
 	})
 	if errors.Is(err, errRouteOccupied) {
-		return errors.New(pubenums.ErrRouteOccupied)
+		return pubenums.Err(pubenums.ErrRouteOccupied)
 	}
 	return err
 }
@@ -204,7 +204,7 @@ func (s *Service) ReservePath(ctx context.Context, req *pubdto.ReserveReq) (err 
 // 页面删除时释放路径。幂等（无占用时 RowsAffected=0 不报错）。
 func (s *Service) DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRoutesReq) (err error) {
 	if req == nil {
-		return errors.New(pubenums.ErrInvalidParam)
+		return pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	return s.model.DeleteRoutesByPage(ctx, req.ProjectID, req.PageID)
 }
@@ -217,7 +217,7 @@ func (s *Service) DeleteRoutesByPage(ctx context.Context, req *pubdto.DeleteRout
 // 幂等（无占用时 RowsAffected=0 不报错）。
 func (s *Service) DeleteRoutesByPresentation(ctx context.Context, req *pubdto.DeleteRoutesByPresentationReq) (err error) {
 	if req == nil {
-		return errors.New(pubenums.ErrInvalidParam)
+		return pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	return s.model.DeleteRoutesByPresentation(ctx, req.ProjectID, req.PresentationID)
 }
@@ -233,7 +233,7 @@ func (s *Service) ListReferencedArtifactIDs(ctx context.Context) (ids []string, 
 // 按这些路径解除激活（删除符号链接），只删 DB 路由行不会让内容下线。
 func (s *Service) ListActivePaths(ctx context.Context, req *pubdto.ListActivePathsReq) (paths []string, err error) {
 	if req == nil {
-		return nil, errors.New(pubenums.ErrInvalidParam)
+		return nil, pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	paths, err = s.model.ListRoutePathsByPage(ctx, req.ProjectID, req.PageID)
 	if err != nil {
@@ -249,7 +249,7 @@ func (s *Service) ListActivePaths(ctx context.Context, req *pubdto.ListActivePat
 // active 目录里继续 301，指向一个已经不存在的页面。
 func (s *Service) ListActivePathsByPresentation(ctx context.Context, req *pubdto.ListActivePathsByPresentationReq) (paths []string, err error) {
 	if req == nil {
-		return nil, errors.New(pubenums.ErrInvalidParam)
+		return nil, pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	paths, err = s.model.ListRoutePathsByPresentation(ctx, req.ProjectID, req.PresentationID)
 	if err != nil {
@@ -262,7 +262,7 @@ func (s *Service) ListActivePathsByPresentation(ctx context.Context, req *pubdto
 // page_id 非 excludePageID 即他人页面占用），供页面创建/发布前预检。
 func (s *Service) IsPathOccupied(ctx context.Context, req *pubdto.IsOccupiedReq) (occupied bool, err error) {
 	if req == nil {
-		return false, errors.New(pubenums.ErrInvalidParam)
+		return false, pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	path, err := normalizePath(req.Path)
 	if err != nil {
@@ -280,7 +280,7 @@ func (s *Service) IsPathOccupied(ctx context.Context, req *pubdto.IsOccupiedReq)
 // 只删 active 行：redirect 行是「旧路径的 301 承诺」，取消激活不该顺手销毁它。
 func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (err error) {
 	if req == nil {
-		return errors.New(pubenums.ErrInvalidParam)
+		return pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	path, err := normalizePath(req.Path)
 	if err != nil {
@@ -304,7 +304,7 @@ func (s *Service) Deactivate(ctx context.Context, req *pubdto.DeactivateReq) (er
 //	pending 回执补偿为 rolled_back（补偿失败保持 pending 供恢复）。
 func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *pubdto.RouteResp, err error) {
 	if req == nil {
-		return nil, errors.New(pubenums.ErrInvalidParam)
+		return nil, pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	oldPath, err := normalizePath(req.OldPath)
 	if err != nil {
@@ -359,10 +359,10 @@ func (s *Service) Redirect(ctx context.Context, req *pubdto.RedirectReq) (res *p
 				Error(rberr, "pending 回执补偿失败（保持 pending 供恢复流程处理）")
 		}
 		if errors.Is(err, errRouteOccupied) {
-			return nil, errors.New(pubenums.ErrRouteOccupied)
+			return nil, pubenums.Err(pubenums.ErrRouteOccupied)
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(pubenums.ErrRouteNotFound)
+			return nil, pubenums.Err(pubenums.ErrRouteNotFound)
 		}
 		logger.Scene("publication").With("url", oldPath).With("kind", "redirect").Error(err, "路由重定向失败")
 		return nil, err
@@ -395,7 +395,7 @@ func (s *Service) ActivateTx(ctx context.Context, tx *gorm.DB, req *pubdto.Activ
 		return nil, errTxRequired
 	}
 	if req == nil {
-		return nil, errors.New(pubenums.ErrInvalidParam)
+		return nil, pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	path, nerr := normalizePath(req.Path)
 	if nerr != nil {
@@ -421,7 +421,7 @@ func (s *Service) ActivateTx(ctx context.Context, tx *gorm.DB, req *pubdto.Activ
 	}
 	if aerr := s.model.ActivateRouteTx(ctx, tx, req.ProjectID, path, owner.pageIDPtr(), owner.presentationIDPtr(), req.ArtifactID, now); aerr != nil {
 		if errors.Is(aerr, errRouteOccupied) {
-			return nil, errors.New(pubenums.ErrRouteOccupied)
+			return nil, pubenums.Err(pubenums.ErrRouteOccupied)
 		}
 		return nil, aerr
 	}
@@ -437,7 +437,7 @@ func (s *Service) DeactivateTx(ctx context.Context, tx *gorm.DB, req *pubdto.Dea
 		return errTxRequired
 	}
 	if req == nil {
-		return errors.New(pubenums.ErrInvalidParam)
+		return pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	path, nerr := normalizePath(req.Path)
 	if nerr != nil {
@@ -455,7 +455,7 @@ func (s *Service) RedirectTx(ctx context.Context, tx *gorm.DB, req *pubdto.Redir
 		return nil, errTxRequired
 	}
 	if req == nil {
-		return nil, errors.New(pubenums.ErrInvalidParam)
+		return nil, pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	oldPath, nerr := normalizePath(req.OldPath)
 	if nerr != nil {
@@ -486,7 +486,7 @@ func (s *Service) RedirectTx(ctx context.Context, tx *gorm.DB, req *pubdto.Redir
 	}
 	if rerr := s.model.RedirectInTx(ctx, tx, req.ProjectID, oldPath, owner.pageID, owner.presentationID, toArtifact, now); rerr != nil {
 		if errors.Is(rerr, errRouteOccupied) {
-			return nil, errors.New(pubenums.ErrRouteOccupied)
+			return nil, pubenums.Err(pubenums.ErrRouteOccupied)
 		}
 		return nil, rerr
 	}
@@ -502,7 +502,7 @@ func (s *Service) RenameReservedTx(ctx context.Context, tx *gorm.DB, req *pubdto
 		return errTxRequired
 	}
 	if req == nil {
-		return errors.New(pubenums.ErrInvalidParam)
+		return pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	oldPath, nerr := normalizePath(req.OldPath)
 	if nerr != nil {
@@ -517,7 +517,7 @@ func (s *Service) RenameReservedTx(ctx context.Context, tx *gorm.DB, req *pubdto
 	}
 	if rerr := s.model.RenameReservedTx(ctx, tx, req.ProjectID, req.PageID, oldPath, newPath, req.OnlyReserved, time.Now().UTC()); rerr != nil {
 		if errors.Is(rerr, errRouteOccupied) {
-			return errors.New(pubenums.ErrRouteOccupied)
+			return pubenums.Err(pubenums.ErrRouteOccupied)
 		}
 		return rerr
 	}
@@ -530,7 +530,7 @@ func (s *Service) ReservePathTx(ctx context.Context, tx *gorm.DB, req *pubdto.Re
 		return errTxRequired
 	}
 	if req == nil {
-		return errors.New(pubenums.ErrInvalidParam)
+		return pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	path, nerr := normalizePath(req.Path)
 	if nerr != nil {
@@ -538,7 +538,7 @@ func (s *Service) ReservePathTx(ctx context.Context, tx *gorm.DB, req *pubdto.Re
 	}
 	if rerr := s.model.ReservePathTx(ctx, tx, req.ProjectID, path, req.PageID, time.Now().UTC()); rerr != nil {
 		if errors.Is(rerr, errRouteOccupied) {
-			return errors.New(pubenums.ErrRouteOccupied)
+			return pubenums.Err(pubenums.ErrRouteOccupied)
 		}
 		return rerr
 	}
@@ -551,7 +551,7 @@ func (s *Service) DeleteRoutesByPageTx(ctx context.Context, tx *gorm.DB, req *pu
 		return errTxRequired
 	}
 	if req == nil {
-		return errors.New(pubenums.ErrInvalidParam)
+		return pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	return s.model.DeleteRoutesByPageTx(ctx, tx, req.ProjectID, req.PageID)
 }
@@ -566,7 +566,7 @@ func (s *Service) DeleteRoutesByPresentationTx(ctx context.Context, tx *gorm.DB,
 		return errTxRequired
 	}
 	if req == nil {
-		return errors.New(pubenums.ErrInvalidParam)
+		return pubenums.Err(pubenums.ErrInvalidParam)
 	}
 	return s.model.DeleteRoutesByPresentationTx(ctx, tx, req.ProjectID, req.PresentationID)
 }

@@ -89,7 +89,7 @@ func (m *Model) RenameReservedTx(ctx context.Context, tx *gorm.DB, projectID, pa
 			return nil
 		}
 		if existing.PageID == nil || *existing.PageID != pageID {
-			return errors.New(pubenums.ErrRouteActiveRename)
+			return pubenums.Err(pubenums.ErrRouteActiveRename)
 		}
 	}
 	// 先清理新路径上本页 active 残留（避免迁移行与 (project_id, path)

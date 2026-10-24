@@ -323,15 +323,15 @@ func (s *Service) GenerateVariants(ctx context.Context, attachmentID uint64) (re
 	att, err := s.am.GetByID(ctx, attachmentID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(mediaenums.ErrAttachmentNotFound)
+			return nil, mediaenums.Err(mediaenums.ErrAttachmentNotFound)
 		}
 		return nil, err
 	}
 	if !variantEligible(att.FileType, att.FileName) {
-		return nil, errors.New(mediaenums.ErrAttachmentNotImage)
+		return nil, mediaenums.Err(mediaenums.ErrAttachmentNotImage)
 	}
 	if att.StorageType != "local" {
-		return nil, errors.New(mediaenums.ErrVariantStorageNotLocal)
+		return nil, mediaenums.Err(mediaenums.ErrVariantStorageNotLocal)
 	}
 	sourceKey := attachmentStorageKey(att)
 	srcPath, err := localObjectPath(sourceKey)

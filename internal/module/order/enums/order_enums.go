@@ -1,10 +1,16 @@
 // Package orderenums 订单模块的响应与错误消息（BIZ-1 销售侧）。
 //
-// 与 user 模块同口径：文案直接是中文常量（未接 i18n），展示层拿 UserFacingMessages
-// 做白名单，不在表里的一律收口到 ErrInternal。
+// 错误文案走**声明处**这一条链：每条 Err* 在 errFallbacks 里有中文兜底，
+// service 用 Err(key) / 默认用 Err* 常量直接构造，出口只调一次 facing.FactOf。
+// 值本身是 sys_i18n 的 item_key，词条在场时出口给译文、缺席时退回这里的兜底 ——
+// 所以客户端永远不会看到 `order.err.xxx` 这样的裸 key。
 package orderenums
 
-import "strings"
+import (
+	"strings"
+
+	"go_wp/pkg/facing"
+)
 
 const (
 	MsgCreateSuccess = "order.msg.createSuccess"
@@ -102,6 +108,68 @@ const (
 // 存在的理由同 user 模块：基础设施错误（数据库 / Redis）的原文可能带表名、列名甚至
 // SQL 片段，那是给运维看的，不是给访客看的。展示层据此把非本模块业务文案全部落到这一条。
 const ErrInternal = "操作失败，请稍后重试"
+
+// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
+//
+// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。为什么要这张表：
+// 词条库读不到时（迁移没跑 / 库不可用），businessText 只能退回声明处给的那句话 ——
+// 没有它，客户端拿到的就是 `order.err.orderNotFound` 这样的裸 key。
+//
+// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
+// 对账由 order_enums_test.go 的双向断言守（新增 Err* 没给兜底要红；表里留着已删的 key 也要红）。
+var errFallbacks = map[string]string{
+	ErrInternal:                   "操作失败，请稍后重试",
+	ErrInvalidParam:               "参数不合法",
+	ErrProjectRequired:            "缺少站点工程",
+	ErrItemsRequired:              "订单至少需要一个商品项",
+	ErrItemLimitExceeded:          "单笔订单的商品项超出上限",
+	ErrQuantityInvalid:            "商品数量必须为正整数",
+	ErrCustomerEmailRequired:      "请填写客户邮箱",
+	ErrCustomerEmailInvalid:       "客户邮箱格式不正确",
+	ErrOrderNoInvalid:             "订单号格式不合法",
+	ErrStatusInvalid:              "订单状态取值不合法",
+	ErrNoteTooLong:                "备注内容过长",
+	ErrOrderNotFound:              "订单不存在",
+	ErrOrderNoTaken:               "订单号已被占用",
+	ErrOrderHasNoItems:            "订单缺少商品项，数据不完整",
+	ErrStatusTransition:           "订单当前状态不支持该操作",
+	ErrOrderNotCancellable:        "只有未发货的订单可以取消",
+	ErrOrderNotRefundable:         "只有已付款的订单可以退款",
+	ErrAlreadyCancelled:           "订单已取消，不能再操作",
+	ErrAlreadyRefunded:            "订单已退款，不能再操作",
+	ErrCancelReasonRequired:       "请填写取消原因",
+	ErrPaymentMethodRequired:      "缺少支付方式",
+	ErrPaymentChannelFailed:       "支付未成功，请稍后重试",
+	ErrReturnNotFound:             "退货申请不存在",
+	ErrReturnItemsRequired:        "请至少选择一件要退的商品",
+	ErrReturnQuantityInvalid:      "退货数量必须是正整数",
+	ErrReturnQuantityExceeded:     "退货数量超过可退数量",
+	ErrReturnReasonRequired:       "请说明退货原因",
+	ErrReturnNotCancellable:       "该申请已进入处理流程，无法撤销",
+	ErrReturnOrderNotReturnable:   "该订单当前状态不支持退货",
+	ErrReturnNotReviewable:        "该申请不在待审核状态",
+	ErrReturnNotReceivable:        "该申请不在待收货状态（或已完成）",
+	ErrReturnRejectReasonRequired: "请填写拒绝原因",
+	ErrVariantNotFound:            "商品规格不存在或已下架",
+	ErrStockInsufficient:          "库存不足，无法下单",
+	ErrStockUnavailable:           "库存服务暂时不可用，请稍后重试",
+	ErrCouponNotFound:             "优惠码不存在",
+	ErrCouponCodeRequired:         "请填写优惠码",
+	ErrCouponCodeTaken:            "这个优惠码已经存在",
+	ErrCouponTypeInvalid:          "优惠类型只支持按比例折扣或固定金额",
+	ErrCouponValueInvalid:         "优惠值不合法",
+	ErrCouponWindowInvalid:        "生效时间不合法",
+	ErrCouponDisabled:             "优惠码已停用",
+	ErrCouponNotStarted:           "优惠码尚未开始",
+	ErrCouponExpired:              "优惠码已过期",
+	ErrCouponExhausted:            "优惠码已被用完",
+	ErrCouponUserLimit:            "你已使用过该优惠码",
+	ErrCouponMinSubtotal:          "订单金额未达到该优惠码的使用门槛",
+	ErrCouponInUse:                "该优惠码已有核销记录，不能删除",
+}
+
+// Err 声明一条自带对外文案的订单业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
 
 // UserFacingMessages 可以原样展示给访客的全部业务文案（白名单）。
 //
@@ -378,3 +446,7 @@ const (
 	// 代客建单页国家/地区下拉的「（不填写）」空项。
 	OrderNewFieldCountryNone = "admin.order_new.field.country_none"
 )
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }

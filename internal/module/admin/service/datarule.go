@@ -52,7 +52,7 @@ func (s *Service) RuleDetail(ctx context.Context, req *admindto.RuleDetailReq) (
 		return nil, err
 	}
 	if entity == nil {
-		return nil, errors.New(adminenums.ErrRuleNotFound)
+		return nil, adminenums.Err(adminenums.ErrRuleNotFound)
 	}
 
 	// 处理可选字段和格式化时间
@@ -128,7 +128,7 @@ func (s *Service) RuleUpdate(ctx context.Context, req *admindto.RuleUpdateReq) e
 		return err
 	}
 	if entity == nil {
-		return errors.New(adminenums.ErrRuleNotFound)
+		return adminenums.Err(adminenums.ErrRuleNotFound)
 	}
 	// 先查规则存在性（「规则不存在」语义优先），再校验 domain 与配置。
 	validated, err := validateRuleConfig(req.Domain, req.Config.ToRuleConfig())
@@ -181,7 +181,7 @@ func (s *Service) RuleDelete(ctx context.Context, req *admindto.RuleDeleteReq) e
 			return err
 		}
 		if len(locked) != len(ids) {
-			return errors.New(adminenums.ErrRuleNotFound)
+			return adminenums.Err(adminenums.ErrRuleNotFound)
 		}
 		// 先删分配行再删规则行（保持原顺序，与外键方向一致）；两步同事务。
 		for _, id := range ids {
@@ -232,7 +232,7 @@ func uniqueRuleIDs(ids []uint64) []uint64 {
 func validateRuleConfig(domain string, cfg datarule.RuleConfig) (datarule.RuleConfig, error) {
 	declared, ok := datarule.GetDomain(domain)
 	if !ok {
-		return datarule.RuleConfig{}, errors.New(adminenums.ErrInvalidDomain)
+		return datarule.RuleConfig{}, adminenums.Err(adminenums.ErrInvalidDomain)
 	}
 
 	allowed := make(map[string]datarule.FieldDef, len(declared.WhiteList))
@@ -488,7 +488,7 @@ func (s *Service) RuleAssignmentSave(ctx context.Context, req *admindto.RuleAssi
 	// 校验规则存在：避免产生孤儿分配记录（GetRules 对未命中 ruleMap 静默 continue）。
 	if _, err := s.drm.GetByID(ctx, req.RuleID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New(adminenums.ErrRuleNotFound)
+			return adminenums.Err(adminenums.ErrRuleNotFound)
 		}
 		return err
 	}
@@ -497,7 +497,7 @@ func (s *Service) RuleAssignmentSave(ctx context.Context, req *admindto.RuleAssi
 	entities := make([]adminmodel.SysRuleAssignmentEntity, 0, len(req.Assignments))
 	for _, a := range req.Assignments {
 		if a.TargetID == 0 {
-			return errors.New(adminenums.ErrInvalidAssignment)
+			return adminenums.Err(adminenums.ErrInvalidAssignment)
 		}
 
 		targetScope := adminmodel.AssignmentTargetScopeNone
@@ -506,11 +506,11 @@ func (s *Service) RuleAssignmentSave(ctx context.Context, req *admindto.RuleAssi
 		case adminmodel.AssignmentTargetTypeDept:
 			if a.TargetScope != adminmodel.AssignmentTargetScopeSelf &&
 				a.TargetScope != adminmodel.AssignmentTargetScopeSelfAndChildren {
-				return errors.New(adminenums.ErrInvalidAssignment)
+				return adminenums.Err(adminenums.ErrInvalidAssignment)
 			}
 			targetScope = a.TargetScope
 		default:
-			return errors.New(adminenums.ErrInvalidAssignment)
+			return adminenums.Err(adminenums.ErrInvalidAssignment)
 		}
 
 		key := [2]uint64{uint64(a.TargetType), a.TargetID}

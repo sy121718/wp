@@ -151,15 +151,15 @@ func sessionKeyByHash(hash string) string { return sessionRedisPrefix + hash }
 //     否则那条错误路径就是一条免费的爆破通道。
 func (s *Service) Login(ctx context.Context, req *userdto.LoginReq, meta SessionMeta) (res *userdto.LoginResp, err error) {
 	if s.m == nil {
-		return nil, errors.New(userenums.ErrInvalidParam)
+		return nil, userenums.Err(userenums.ErrInvalidParam)
 	}
 	if req == nil {
-		return nil, errors.New(userenums.ErrInvalidParam)
+		return nil, userenums.Err(userenums.ErrInvalidParam)
 	}
 	account := strings.TrimSpace(req.Account)
 	password := req.Password
 	if account == "" || password == "" {
-		return nil, errors.New(userenums.ErrLoginRequired)
+		return nil, userenums.Err(userenums.ErrLoginRequired)
 	}
 
 	// 账号可以是用户名或邮箱 —— 两者都大小写不敏感（与迁移 123 的唯一索引同口径）。
@@ -170,7 +170,7 @@ func (s *Service) Login(ctx context.Context, req *userdto.LoginReq, meta Session
 	if ferr != nil {
 		// 用户不存在：与密码错误返回**同一个**错误（否则登录接口就是账号枚举器）。
 		// 这里也**不记**失败计数 —— 没有行可记，而「能记」本身就等于确认了账号存在。
-		return nil, errors.New(userenums.ErrBadCredentials)
+		return nil, userenums.Err(userenums.ErrBadCredentials)
 	}
 
 	// 锁定中：即使密码正确也不放行（锁定的语义就是「这段时间不许登录」）。
@@ -188,17 +188,17 @@ func (s *Service) Login(ctx context.Context, req *userdto.LoginReq, meta Session
 	// 待激活与禁用分开说 ——「去完成邮箱验证」与「账号被禁用」对用户是两件完全不同的事，
 	// 笼统回一句「登录失败」会让人无从下手。
 	if user.Status == usermodel.UserStatusPending {
-		return nil, errors.New(userenums.ErrAccountPending)
+		return nil, userenums.Err(userenums.ErrAccountPending)
 	}
 	if user.Status != usermodel.UserStatusActive {
-		return nil, errors.New(userenums.ErrAccountDisabled)
+		return nil, userenums.Err(userenums.ErrAccountDisabled)
 	}
 
 	// 空密码 = 第三方注册的账号：它没有本站密码，密码登录必须整体拒绝。
 	// 少了这一条，bcrypt 会拿空串去比对哈希，结果虽然也是「失败」，
 	// 但对外表现为「密码错误」，那类用户会一直在改密码。
 	if strings.TrimSpace(user.Password) == "" {
-		return nil, errors.New(userenums.ErrPasswordLoginUnavailable)
+		return nil, userenums.Err(userenums.ErrPasswordLoginUnavailable)
 	}
 
 	if cerr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); cerr != nil {
@@ -206,7 +206,7 @@ func (s *Service) Login(ctx context.Context, req *userdto.LoginReq, meta Session
 			// 记账失败不能吞掉：吞掉之后锁定永远不会触发，而日志里看不出任何异常。
 			logger.Scene("user").Error(uerr, "记录登录失败状态失败")
 		}
-		return nil, errors.New(userenums.ErrBadCredentials)
+		return nil, userenums.Err(userenums.ErrBadCredentials)
 	}
 
 	// 凭据正确：清零失败状态、记录登录痕迹、建会话。
@@ -285,7 +285,7 @@ func (s *Service) Logout(ctx context.Context, token string) (err error) {
 	}
 	if uerr := cache.Delete(ctx, sessionKeyByHash(hash)); uerr != nil {
 		logger.Scene("user").Error(uerr, "登出时删除 Redis 会话失败")
-		return errors.New(userenums.ErrLogoutFailed)
+		return userenums.Err(userenums.ErrLogoutFailed)
 	}
 	if userID != 0 {
 		if rerr := unindexSession(ctx, userID, hash); rerr != nil {
@@ -392,11 +392,11 @@ func (s *Service) ListSessions(ctx context.Context, userID uint64, currentToken 
 func (s *Service) RevokeSession(ctx context.Context, userID uint64, sessionHash string) (err error) {
 	sessionHash = strings.TrimSpace(sessionHash)
 	if sessionHash == "" {
-		return errors.New(userenums.ErrSessionNotFound)
+		return userenums.Err(userenums.ErrSessionNotFound)
 	}
 	sess, gerr := cache.GetJSON[UserAuthSession](ctx, sessionKeyByHash(sessionHash))
 	if gerr != nil || sess.UserID == 0 || sess.UserID != userID {
-		return errors.New(userenums.ErrSessionNotFound)
+		return userenums.Err(userenums.ErrSessionNotFound)
 	}
 	return dropSession(ctx, userID, sessionHash)
 }

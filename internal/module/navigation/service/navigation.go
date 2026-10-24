@@ -25,14 +25,14 @@ import (
 // Create 新建导航项：校验 kind/path 基础规则 + 同工程同 kind 同 path 唯一。
 func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res *navigationdto.NavigationResp, err error) {
 	if req == nil {
-		return nil, errors.New(navigationenums.ErrInvalidParam)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
 	title := strings.TrimSpace(req.Title)
 	path := strings.TrimSpace(req.Path)
 	kind := strings.TrimSpace(req.Kind)
 	if projectID == "" {
-		return nil, errors.New(navigationenums.ErrInvalidParam)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	if err = validateField(title, path, kind); err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res
 		return nil, err
 	}
 	if exists {
-		return nil, errors.New(navigationenums.ErrPathTaken)
+		return nil, navigationenums.Err(navigationenums.ErrPathTaken)
 	}
 
 	// 排序：未显式指定（0）时追加到同级末尾，保证同级 sort_order 唯一，
@@ -107,7 +107,7 @@ func (s *Service) Create(ctx context.Context, req *navigationdto.CreateReq) (res
 // Update 更新导航项：仅更新传入的非空字段，变更 path/kind 时重校验唯一性。
 func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res *navigationdto.NavigationResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(navigationenums.ErrInvalidParam)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	// 定位这一跳逐工程探测归属（请求只给 id）。拿到实体后**全程带工程作用域**：
 	// 唯一性校验（ExistsPath）、写入（Save）与回读（Get）都用 e.ProjectID，
@@ -115,7 +115,7 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 	// 非超级角色后是静默的 ErrNotFound —— 表现为「导航项明明在却报不存在」。
 	e, err := s.locateNavigation(ctx, strings.TrimSpace(req.ID))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New(navigationenums.ErrNotFound)
+		return nil, navigationenums.Err(navigationenums.ErrNotFound)
 	}
 	if err != nil {
 		return nil, err
@@ -190,7 +190,7 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 			return nil, err
 		}
 		if exists {
-			return nil, errors.New(navigationenums.ErrPathTaken)
+			return nil, navigationenums.Err(navigationenums.ErrPathTaken)
 		}
 	}
 
@@ -235,13 +235,13 @@ func (s *Service) Update(ctx context.Context, req *navigationdto.UpdateReq) (res
 // Get 按 ID 查询导航项。
 func (s *Service) Get(ctx context.Context, req *navigationdto.GetReq) (res *navigationdto.NavigationResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(navigationenums.ErrInvalidParam)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	// 导航项详情只有 id 可依（请求不带工程）：逐工程探测出归属，再在本工程作用域内读。
 	// 原先的「不限工程」形态在换非超级角色后是静默的 ErrNotFound，且没有任何错误日志。
 	e, err := s.locateNavigation(ctx, strings.TrimSpace(req.ID))
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New(navigationenums.ErrNotFound)
+		return nil, navigationenums.Err(navigationenums.ErrNotFound)
 	}
 	if err != nil {
 		return nil, err
@@ -252,11 +252,11 @@ func (s *Service) Get(ctx context.Context, req *navigationdto.GetReq) (res *navi
 // List 按工程（可选 kind）列出导航项，sort_order 升序。
 func (s *Service) List(ctx context.Context, req *navigationdto.ListReq) (list []*navigationdto.NavigationResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(navigationenums.ErrInvalidParam)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	kind := strings.TrimSpace(req.Kind)
 	if kind != "" && !isValidKind(kind) {
-		return nil, errors.New(navigationenums.ErrInvalidKind)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidKind)
 	}
 	rows, err := s.m.List(ctx, strings.TrimSpace(req.ProjectID), kind)
 	if err != nil {
@@ -272,14 +272,14 @@ func (s *Service) List(ctx context.Context, req *navigationdto.ListReq) (list []
 // Delete 删除导航项及其全部子项（导航树是一个聚合：留下孤儿节点会被渲染成顶级项）。
 func (s *Service) Delete(ctx context.Context, req *navigationdto.DeleteReq) (err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return errors.New(navigationenums.ErrInvalidParam)
+		return navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	id := strings.TrimSpace(req.ID)
 	// 定位这一跳逐工程探测归属（请求只给 id）；拿到实体后的磁盘动作全部带工程作用域：
 	// 列表与批量删除都在本工程内，删到别的工程的行在换角色后会被策略拒绝（DB-009）。
 	e, err := s.locateNavigation(ctx, id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return errors.New(navigationenums.ErrNotFound)
+		return navigationenums.Err(navigationenums.ErrNotFound)
 	}
 	if err != nil {
 		return err
@@ -343,12 +343,12 @@ func (s *Service) TreeByID(ctx context.Context, projectID, navigationID string) 
 	projectID = strings.TrimSpace(projectID)
 	id := strings.TrimSpace(navigationID)
 	if projectID == "" || id == "" {
-		return nil, errors.New(navigationenums.ErrInvalidParam)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	item, err := s.m.Get(ctx, projectID, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(navigationenums.ErrNotFound)
+			return nil, navigationenums.Err(navigationenums.ErrNotFound)
 		}
 		return nil, err
 	}
@@ -364,7 +364,7 @@ func (s *Service) TreeByID(ctx context.Context, projectID, navigationID string) 
 	}
 	node := buildNode(item, children)
 	if node == nil {
-		return nil, errors.New(navigationenums.ErrNotFound)
+		return nil, navigationenums.Err(navigationenums.ErrNotFound)
 	}
 	nodes = []*navigationdto.NavigationNode{node}
 	s.resolveSourceTitles(ctx, projectID, nodes)
@@ -377,10 +377,10 @@ func (s *Service) Tree(ctx context.Context, projectID, kind string) (nodes []*na
 	projectID = strings.TrimSpace(projectID)
 	kind = strings.TrimSpace(kind)
 	if projectID == "" {
-		return nil, errors.New(navigationenums.ErrInvalidParam)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	if !isValidKind(kind) {
-		return nil, errors.New(navigationenums.ErrInvalidKind)
+		return nil, navigationenums.Err(navigationenums.ErrInvalidKind)
 	}
 	rows, err := s.m.List(ctx, projectID, kind)
 	if err != nil {
@@ -488,19 +488,19 @@ func normalizePanelWidth(width string) (string, error) {
 	case "full":
 		return "full", nil
 	}
-	return "", errors.New(navigationenums.ErrInvalidParam)
+	return "", navigationenums.Err(navigationenums.ErrInvalidParam)
 }
 
 // validateField 校验 title/path/kind 基础规则（不含唯一性）。
 func validateField(title, path, kind string) error {
 	if title == "" {
-		return errors.New(navigationenums.ErrInvalidParam)
+		return navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	if !strings.HasPrefix(path, "/") {
-		return errors.New(navigationenums.ErrInvalidParam)
+		return navigationenums.Err(navigationenums.ErrInvalidParam)
 	}
 	if !isValidKind(kind) {
-		return errors.New(navigationenums.ErrInvalidKind)
+		return navigationenums.Err(navigationenums.ErrInvalidKind)
 	}
 	return nil
 }
@@ -528,33 +528,33 @@ func (s *Service) validateParent(ctx context.Context, projectID, kind, selfID st
 		return nil
 	}
 	if selfID != "" && cur == selfID {
-		return errors.New(navigationenums.ErrInvalidParent)
+		return navigationenums.Err(navigationenums.ErrInvalidParent)
 	}
 	for depth := 0; depth < maxParentDepth; depth++ {
 		// 父链上溯带工程作用域：跨工程父引用本来就要拒绝，作用域让它同时受策略约束。
 		parent, err := s.m.Get(ctx, projectID, cur)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errors.New(navigationenums.ErrInvalidParent)
+				return navigationenums.Err(navigationenums.ErrInvalidParent)
 			}
 			return err
 		}
 		if parent.ProjectID != projectID {
-			return errors.New(navigationenums.ErrInvalidParent)
+			return navigationenums.Err(navigationenums.ErrInvalidParent)
 		}
 		if kind != "" && parent.Kind != kind {
-			return errors.New(navigationenums.ErrInvalidParent)
+			return navigationenums.Err(navigationenums.ErrInvalidParent)
 		}
 		if parent.ParentID == nil || strings.TrimSpace(*parent.ParentID) == "" {
 			return nil // 到达根节点，链路合法
 		}
 		next := strings.TrimSpace(*parent.ParentID)
 		if selfID != "" && next == selfID {
-			return errors.New(navigationenums.ErrInvalidParent)
+			return navigationenums.Err(navigationenums.ErrInvalidParent)
 		}
 		cur = next
 	}
-	return errors.New(navigationenums.ErrInvalidParent)
+	return navigationenums.Err(navigationenums.ErrInvalidParent)
 }
 
 // normalizeParentID 把空字符串父 ID 规范为 nil（表示根导航项）。
@@ -574,18 +574,18 @@ func normalizeParentID(p *string) *string {
 func normalizeSource(sourceType string, sourceID *string, target string) (st string, sid *string, tg string, err error) {
 	st = normalizeSourceType(sourceType)
 	if !isValidSourceType(st) {
-		return "", nil, "", errors.New(navigationenums.ErrInvalidSource)
+		return "", nil, "", navigationenums.Err(navigationenums.ErrInvalidSource)
 	}
 	tg = normalizeTarget(target)
 	if !isValidTarget(tg) {
-		return "", nil, "", errors.New(navigationenums.ErrInvalidTarget)
+		return "", nil, "", navigationenums.Err(navigationenums.ErrInvalidTarget)
 	}
 	sid = normalizeSourceID(sourceID)
 	if st == sourceCustom {
 		return st, nil, tg, nil
 	}
 	if sid == nil {
-		return "", nil, "", errors.New(navigationenums.ErrInvalidSource)
+		return "", nil, "", navigationenums.Err(navigationenums.ErrInvalidSource)
 	}
 	return st, sid, tg, nil
 }

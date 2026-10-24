@@ -13,7 +13,6 @@ package masterdataservice
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"strings"
 	"time"
@@ -70,22 +69,22 @@ func buildChangeRowsBatch(inputs []*masterdatacontract.ChangeInput) (rows []*mas
 // buildChangeRows 把一条变更输入展开成字段级记录行。
 func buildChangeRows(in *masterdatacontract.ChangeInput, now time.Time) (rows []*masterdatamodel.ChangeEntity, err error) {
 	if strings.TrimSpace(in.ProjectID) == "" {
-		return nil, errors.New(masterdataenums.ErrProjectRequired)
+		return nil, masterdataenums.Err(masterdataenums.ErrProjectRequired)
 	}
 	entityType := strings.TrimSpace(in.EntityType)
 	if !masterdataenums.IsValidEntityType(entityType) {
-		return nil, errors.New(masterdataenums.ErrEntityTypeInvalid)
+		return nil, masterdataenums.Err(masterdataenums.ErrEntityTypeInvalid)
 	}
 	action := strings.TrimSpace(in.Action)
 	if !masterdataenums.IsValidAction(action) {
-		return nil, errors.New(masterdataenums.ErrActionInvalid)
+		return nil, masterdataenums.Err(masterdataenums.ErrActionInvalid)
 	}
 	entityID := strings.TrimSpace(in.EntityID)
 	if entityID == "" {
-		return nil, errors.New(masterdataenums.ErrEntityIDRequired)
+		return nil, masterdataenums.Err(masterdataenums.ErrEntityIDRequired)
 	}
 	if _, perr := uuid.Parse(entityID); perr != nil {
-		return nil, errors.New(masterdataenums.ErrInvalidParam)
+		return nil, masterdataenums.Err(masterdataenums.ErrInvalidParam)
 	}
 	for _, field := range unionFields(in.Before, in.After) {
 		oldValue := strings.TrimSpace(in.Before[field])

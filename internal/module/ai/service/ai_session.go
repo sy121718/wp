@@ -94,23 +94,23 @@ import (
 // 面向用户的中文兜底统一登记在 aienums.FacingMessages（页面侧渲染用），service 不碰文案。
 var (
 	// ErrSessionNotFound 会话不存在。
-	ErrSessionNotFound = errors.New(aienums.ErrSessionNotFound)
+	ErrSessionNotFound = aienums.Err(aienums.ErrSessionNotFound)
 	// ErrSessionKeyMissing 追加事件时既没给会话键也没给会话 ID。
-	ErrSessionKeyMissing = errors.New(aienums.ErrSessionKeyMissing)
+	ErrSessionKeyMissing = aienums.Err(aienums.ErrSessionKeyMissing)
 	// ErrSessionArchived 会话已归档，拒绝写入。
-	ErrSessionArchived = errors.New(aienums.ErrSessionArchived)
+	ErrSessionArchived = aienums.Err(aienums.ErrSessionArchived)
 	// ErrSessionConflict 乐观锁版本不符（会话在本次读取之后被别人改过）。
-	ErrSessionConflict = errors.New(aienums.ErrSessionConflict)
+	ErrSessionConflict = aienums.Err(aienums.ErrSessionConflict)
 	// ErrSessionProviderMismatch 同一会话键被用于不同的供应商 / 模型。
-	ErrSessionProviderMismatch = errors.New(aienums.ErrSessionProviderMismatch)
+	ErrSessionProviderMismatch = aienums.Err(aienums.ErrSessionProviderMismatch)
 	// ErrEventKindInvalid 事件类别不在白名单。
-	ErrEventKindInvalid = errors.New(aienums.ErrEventKindInvalid)
+	ErrEventKindInvalid = aienums.Err(aienums.ErrEventKindInvalid)
 	// ErrEventContentEmpty 事件正文为空。
-	ErrEventContentEmpty = errors.New(aienums.ErrEventContentEmpty)
+	ErrEventContentEmpty = aienums.Err(aienums.ErrEventContentEmpty)
 	// ErrFoldRangeInvalid 折叠区间不合法（越界、倒置或与已有折叠重叠）。
-	ErrFoldRangeInvalid = errors.New(aienums.ErrFoldRangeInvalid)
+	ErrFoldRangeInvalid = aienums.Err(aienums.ErrFoldRangeInvalid)
 	// ErrFoldSummaryEmpty 折叠摘要为空。
-	ErrFoldSummaryEmpty = errors.New(aienums.ErrFoldSummaryEmpty)
+	ErrFoldSummaryEmpty = aienums.Err(aienums.ErrFoldSummaryEmpty)
 )
 
 // 会话层的默认口径（数值集中在这里，避免散落在各文件里各写一遍）。
@@ -740,17 +740,17 @@ var (
 	// 放在 service 而不是中间件：AI 的页面路由虽然都挂了登录态，但调用方不止一个
 	// （页面表单 / 会话键续写 / 将来的对外接口），把判据放在**唯一写入口**上，
 	// 新增调用方不会漏掉这一关。fail closed：UserID <= 0 一律拒。
-	ErrUserRequired = errors.New(aienums.ErrUserRequired)
+	ErrUserRequired = aienums.Err(aienums.ErrUserRequired)
 	// ErrSessionChatUnavailable 装配层没有接上对话能力。
-	ErrSessionChatUnavailable = errors.New(aienums.ErrSessionChatUnavailable)
+	ErrSessionChatUnavailable = aienums.Err(aienums.ErrSessionChatUnavailable)
 	// ErrSessionChatInputRequired 消息正文为空。
-	ErrSessionChatInputRequired = errors.New(aienums.ErrSessionChatInputRequired)
+	ErrSessionChatInputRequired = aienums.Err(aienums.ErrSessionChatInputRequired)
 	// ErrSessionChatModelRequired 没给供应商或模型。
-	ErrSessionChatModelRequired = errors.New(aienums.ErrSessionChatModelRequired)
+	ErrSessionChatModelRequired = aienums.Err(aienums.ErrSessionChatModelRequired)
 	// ErrSessionChatEmptyReply 上游回了空文本（不把空回复写成一条空事件）。
-	ErrSessionChatEmptyReply = errors.New(aienums.ErrSessionChatEmptyReply)
+	ErrSessionChatEmptyReply = aienums.Err(aienums.ErrSessionChatEmptyReply)
 	// ErrSessionToolRoundsExceeded 工具调用轮次超限（模型可能陷入了自我循环）。
-	ErrSessionToolRoundsExceeded = errors.New(aienums.ErrSessionToolRoundsExceeded)
+	ErrSessionToolRoundsExceeded = aienums.Err(aienums.ErrSessionToolRoundsExceeded)
 )
 
 // SendMessage 在一条会话里说一句话：写 user 事件 → 取上下文投影 → 打模型（含工具往返）→ 写 assistant 事件。

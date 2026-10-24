@@ -17,7 +17,6 @@ package userservice
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	userdto "go_wp/internal/module/user/dto"
@@ -38,12 +37,12 @@ const (
 // ListCustomers 客户列表：分页 + 关键词 / 状态 / 邮箱验证 / 注册时间范围筛选。
 func (s *Service) ListCustomers(ctx context.Context, req *userdto.CustomerListReq) (res *userdto.CustomerListResp, err error) {
 	if req == nil {
-		return nil, errors.New(userenums.ErrInvalidParam)
+		return nil, userenums.Err(userenums.ErrInvalidParam)
 	}
 	if req.RegisteredFrom != nil && req.RegisteredTo != nil && req.RegisteredFrom.Time().After(req.RegisteredTo.Time()) {
 		// 起止颠倒不静默交换：那会让「我明明是这么筛的」变成一个说不清的问题，
 		// 而且交换后的结果与运营预期的往往相反（他以为筛的是 9 月，实际给了 10 月）。
-		return nil, errors.New(userenums.ErrInvalidParam)
+		return nil, userenums.Err(userenums.ErrInvalidParam)
 	}
 	limit, offset := utils.NormalizeLimitOffset(req.Limit, req.Offset, customerDefaultPageSize, customerMaxPageSize)
 
@@ -94,13 +93,13 @@ func (s *Service) ListCustomers(ctx context.Context, req *userdto.CustomerListRe
 // 在这里 join 一次，就等于把「订单状态怎么算消费」的解释权搬进了用户模块。
 func (s *Service) GetCustomer(ctx context.Context, customerID uint64) (res *userdto.CustomerResp, err error) {
 	if customerID == 0 {
-		return nil, errors.New(userenums.ErrInvalidParam)
+		return nil, userenums.Err(userenums.ErrInvalidParam)
 	}
 	e, gerr := s.m.GetByID(ctx, customerID)
 	if gerr != nil || e == nil {
 		// 已注销的账号与不存在的账号回同一句话：注销是客户自己的选择，
 		// 后台不需要（也不应该）从这句话里区分出「他注销过」。
-		return nil, errors.New(userenums.ErrUserNotFound)
+		return nil, userenums.Err(userenums.ErrUserNotFound)
 	}
 	return toCustomerResp(e, time.Now()), nil
 }
@@ -111,16 +110,16 @@ func (s *Service) GetCustomer(ctx context.Context, customerID uint64) (res *user
 // 那只会让 update_time 无意义地变化，而 update_time 是排查问题时要看的东西。
 func (s *Service) SetCustomerStatus(ctx context.Context, req *userdto.CustomerStatusReq) (res *userdto.CustomerStatusResp, err error) {
 	if req == nil || req.CustomerID == 0 {
-		return nil, errors.New(userenums.ErrInvalidParam)
+		return nil, userenums.Err(userenums.ErrInvalidParam)
 	}
 	switch req.Status {
 	case usermodel.UserStatusActive, usermodel.UserStatusDisabled:
 	default:
-		return nil, errors.New(userenums.ErrCustomerStatusInvalid)
+		return nil, userenums.Err(userenums.ErrCustomerStatusInvalid)
 	}
 	e, gerr := s.m.GetByID(ctx, req.CustomerID)
 	if gerr != nil || e == nil {
-		return nil, errors.New(userenums.ErrUserNotFound)
+		return nil, userenums.Err(userenums.ErrUserNotFound)
 	}
 	if e.Status != req.Status {
 		if err = s.m.SetStatus(ctx, req.CustomerID, req.Status); err != nil {
@@ -147,11 +146,11 @@ func (s *Service) SetCustomerStatus(ctx context.Context, req *userdto.CustomerSt
 // 客户下次再错 2 次就被锁，而他完全不知道前面那 3 次来自哪里。
 func (s *Service) UnlockCustomer(ctx context.Context, req *userdto.CustomerUnlockReq) (res *userdto.CustomerUnlockResp, err error) {
 	if req == nil || req.CustomerID == 0 {
-		return nil, errors.New(userenums.ErrInvalidParam)
+		return nil, userenums.Err(userenums.ErrInvalidParam)
 	}
 	e, gerr := s.m.GetByID(ctx, req.CustomerID)
 	if gerr != nil || e == nil {
-		return nil, errors.New(userenums.ErrUserNotFound)
+		return nil, userenums.Err(userenums.ErrUserNotFound)
 	}
 	now := time.Now()
 	locked := e.LockedUntilTime != nil && e.LockedUntilTime.After(now)

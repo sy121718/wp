@@ -151,7 +151,7 @@ func (h *AdminPagesHandle) administratorRolesDrawerData(c *gin.Context, userID u
 		return nil, err
 	}
 	if account == nil || account.ID != userID {
-		return nil, errors.New(adminenums.ErrAdminNotFound)
+		return nil, adminenums.Err(adminenums.ErrAdminNotFound)
 	}
 
 	all, err := h.listAllRoles(ctx)
@@ -334,7 +334,7 @@ func (h *AdminPagesHandle) administratorMenusDrawerData(c *gin.Context, userID u
 		return nil, err
 	}
 	if account == nil || account.ID != userID {
-		return nil, errors.New(adminenums.ErrAdminNotFound)
+		return nil, adminenums.Err(adminenums.ErrAdminNotFound)
 	}
 
 	trees, err := h.menus.MenuTree(ctx, &admindto.MenuTreeReq{})
@@ -646,7 +646,7 @@ func (h *AdminPagesHandle) DatarulesEditPage(c *gin.Context) {
 		// 也不能直出裸文本。原先是 c.String(404, "数据规则不存在")：响应体是那句中文、
 		// **没有页壳**，用户在编辑页上点了半天链接后落到一个纯文本页面。
 		// 文案取 adminenums.ErrRuleNotFound（它是形态合法的业务文案，过共享判据不需要登记）。
-		adminDatarulesPage.writeFail(c, errors.New(adminenums.ErrRuleNotFound))
+		adminDatarulesPage.writeFail(c, adminenums.Err(adminenums.ErrRuleNotFound))
 		return
 	}
 	domains, _ := h.rules.RuleSchemaList(c.Request.Context())
@@ -712,7 +712,7 @@ func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 			// 「查不到但也没报错」必须给一条可行动的业务文案（规则不存在 / 不在本工程作用域内），
 			// 不能像修复前那样拿 nil 去调错误出口（旧出口对 nil 直接 return → 200 空体，
 			// 前端看到「点了没反应」而日志里什么都没有）。
-			adminJump(c, false, adminErrMsg(c, errors.New(adminenums.ErrRuleNotFound)), back, backText)
+			adminJump(c, false, adminErrMsg(c, adminenums.Err(adminenums.ErrRuleNotFound)), back, backText)
 			return
 		}
 		config = detail.Config
@@ -1508,10 +1508,10 @@ func (h *AdminPagesHandle) MenusUpdate(c *gin.Context) {
 	row, err := h.menus.MenuDetail(c.Request.Context(), &admindto.MenuDetailReq{ID: id})
 	if err != nil || row == nil || row.ID != id {
 		if adminDrawerHX(c) {
-			h.menuEditFail(c, adminErrMsg(c, errors.New(adminenums.ErrMenuNotFound)))
+			h.menuEditFail(c, adminErrMsg(c, adminenums.Err(adminenums.ErrMenuNotFound)))
 			return
 		}
-		adminMenusPage.writeFail(c, errors.New(adminenums.ErrMenuNotFound))
+		adminMenusPage.writeFail(c, adminenums.Err(adminenums.ErrMenuNotFound))
 		return
 	}
 	if err := h.menus.MenuUpdate(c.Request.Context(), &admindto.MenuUpdateReq{
@@ -1553,7 +1553,7 @@ func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
 		return
 	}
 	if !adminMenuTreeHas(nodes, id) {
-		adminMenusPage.writeFail(c, errors.New(adminenums.ErrMenuNotFound))
+		adminMenusPage.writeFail(c, adminenums.Err(adminenums.ErrMenuNotFound))
 		return
 	}
 	if err := h.menus.MenuDelete(c.Request.Context(), &admindto.MenuDeleteReq{IDs: []uint64{id}}); err != nil {

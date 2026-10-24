@@ -360,7 +360,7 @@ func (s *Service) ReskinProjectForTheme(ctx context.Context, projectID, themeID 
 // 只返回已绑定的会让作者以为自己配完了。
 func (s *Service) ListSiteSlots(ctx context.Context, req *pagedto.SiteSlotListReq) (res *pagedto.SiteSlotListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(pageenums.ErrInvalidParam)
+		return nil, pageenums.Err(pageenums.ErrInvalidParam)
 	}
 	lang := strings.TrimSpace(req.Lang)
 	if lang == "" {
@@ -429,13 +429,13 @@ func (s *Service) BindSiteSlot(ctx context.Context, req *pagedto.SiteSlotBindReq
 	page, err := s.model.GetByID(ctx, pageID, projectID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New(pageenums.ErrSlotPageMiss)
+			return pageenums.Err(pageenums.ErrSlotPageMiss)
 		}
 		return err
 	}
 	// 跨工程的页面不能绑：绑定与页面都按工程隔离，混绑的后果是站点上线后链接指向别的工程的页面。
 	if page.ProjectID != projectID || page.DeletedAt != nil {
-		return errors.New(pageenums.ErrSlotPageMiss)
+		return pageenums.Err(pageenums.ErrSlotPageMiss)
 	}
 	now := time.Now().UTC()
 	// 换绑与「标记受影响页面待重建」落在同一个事务里：
@@ -482,15 +482,15 @@ func (s *Service) markProjectStaleForSlotTx(ctx context.Context, tx *gorm.DB, pr
 // UnbindSiteSlot 解绑槽位（幂等：本来没绑也返回成功）。
 func (s *Service) UnbindSiteSlot(ctx context.Context, req *pagedto.SiteSlotUnbindReq) (err error) {
 	if req == nil {
-		return errors.New(pageenums.ErrInvalidParam)
+		return pageenums.Err(pageenums.ErrInvalidParam)
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
 	slot := strings.TrimSpace(req.Slot)
 	if projectID == "" {
-		return errors.New(pageenums.ErrInvalidParam)
+		return pageenums.Err(pageenums.ErrInvalidParam)
 	}
 	if !pageenums.IsSiteSlot(slot) {
-		return errors.New(pageenums.ErrInvalidSlot)
+		return pageenums.Err(pageenums.ErrInvalidSlot)
 	}
 	// 解绑同样是「该槽位的链接失效」：解绑与标记待重建同事务（见 markProjectStaleForSlotTx）。
 	return s.model.TransactionScoped(ctx, projectID, func(tx *gorm.DB) error {
@@ -562,16 +562,16 @@ func (s *Service) SiteSlotRefsOfPage(ctx context.Context, projectID, pageID stri
 // siteSlotTarget 取出并校验绑定三要素（工程 / 槽位 / 页面）。
 func siteSlotTarget(req *pagedto.SiteSlotBindReq) (projectID, slot, pageID string, err error) {
 	if req == nil {
-		return "", "", "", errors.New(pageenums.ErrInvalidParam)
+		return "", "", "", pageenums.Err(pageenums.ErrInvalidParam)
 	}
 	projectID = strings.TrimSpace(req.ProjectID)
 	slot = strings.TrimSpace(req.Slot)
 	pageID = strings.TrimSpace(req.PageID)
 	if projectID == "" || pageID == "" {
-		return "", "", "", errors.New(pageenums.ErrInvalidParam)
+		return "", "", "", pageenums.Err(pageenums.ErrInvalidParam)
 	}
 	if !pageenums.IsSiteSlot(slot) {
-		return "", "", "", errors.New(pageenums.ErrInvalidSlot)
+		return "", "", "", pageenums.Err(pageenums.ErrInvalidSlot)
 	}
 	return projectID, slot, pageID, nil
 }

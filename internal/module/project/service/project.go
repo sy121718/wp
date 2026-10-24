@@ -73,10 +73,10 @@ func NewService(model *projectmodel.Model) *Service {
 
 // project 业务错误哨兵（errors.Is 判型；文案统一取 projectenums，不硬编码）。
 var (
-	ErrProjectNotFound = errors.New(projectenums.ErrProjectNotFound)
-	ErrInvalidName     = errors.New(projectenums.ErrInvalidName)
-	ErrInvalidSettings = errors.New(projectenums.ErrInvalidSettings)
-	ErrInvalidParam    = errors.New(projectenums.ErrInvalidParam)
+	ErrProjectNotFound = projectenums.Err(projectenums.ErrProjectNotFound)
+	ErrInvalidName     = projectenums.Err(projectenums.ErrInvalidName)
+	ErrInvalidSettings = projectenums.Err(projectenums.ErrInvalidSettings)
+	ErrInvalidParam    = projectenums.Err(projectenums.ErrInvalidParam)
 )
 
 // Create 创建站点工程与初始 SiteSettings。

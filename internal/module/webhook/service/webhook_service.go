@@ -97,10 +97,10 @@ var validateURL = validateWebhookURL
 //
 // 导出这些变量而不是让调用方比较 key 字符串：调用方（含测试）比较的是变量本身。
 var (
-	ErrWebhookURLScheme = errors.New(webhookenums.ErrURLSchemeUnsupported)
-	ErrWebhookURLHost   = errors.New(webhookenums.ErrURLHostMissing)
-	ErrWebhookURLNoIP   = errors.New(webhookenums.ErrURLUnresolvable)
-	ErrWebhookURLDenied = errors.New(webhookenums.ErrURLDenied)
+	ErrWebhookURLScheme = webhookenums.Err(webhookenums.ErrURLSchemeUnsupported)
+	ErrWebhookURLHost   = webhookenums.Err(webhookenums.ErrURLHostMissing)
+	ErrWebhookURLNoIP   = webhookenums.Err(webhookenums.ErrURLUnresolvable)
+	ErrWebhookURLDenied = webhookenums.Err(webhookenums.ErrURLDenied)
 )
 
 // isForbiddenIP 判断 IP 是否落在禁止网段。
@@ -153,7 +153,7 @@ func validateWebhookURL(raw string) (err error) {
 	if perr != nil {
 		// 丢掉 url.Parse 的技术细节：用户要的是「这个地址填得不对」，
 		// 而不是 Go 标准库的错误串（后者会一起被渲染到界面上）。
-		return errors.New(webhookenums.ErrURLMalformed)
+		return webhookenums.Err(webhookenums.ErrURLMalformed)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return ErrWebhookURLScheme

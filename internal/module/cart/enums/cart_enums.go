@@ -10,6 +10,8 @@
 // UserFacingMessages 做白名单，不在表里的一律收口到 ErrInternal。
 package cartenums
 
+import "go_wp/pkg/facing"
+
 const (
 	MsgCartUpdated = "cart.msg.updated"
 	MsgCartCleared = "cart.msg.cleared"
@@ -82,3 +84,39 @@ var UserFacingMessages = []string{
 	ErrPaymentFailed,
 	ErrInternal,
 }
+
+// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
+//
+// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
+// businessText 只能退回声明处给的那句话 —— 没有它，客户端拿到的是 `cart.err.invalidParam` 这样的裸 key。
+//
+// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:           "参数不合法",
+	ErrProjectRequired:        "缺少站点工程",
+	ErrVariantRequired:        "缺少商品规格",
+	ErrQuantityInvalid:        "商品数量必须为正整数",
+	ErrQuantityTooMany:        "单件商品的数量超出上限",
+	ErrCartEmpty:              "购物车是空的",
+	ErrCartFull:               "购物车里放不下更多商品了，请先结算或清空",
+	ErrCartItemAbsent:         "购物车里没有这件商品",
+	ErrVariantNotFound:        "商品规格不存在或已下架",
+	ErrOutOfStock:             "库存不足，无法下单",
+	ErrEmailRequired:          "请填写邮箱，订单与账号信息会发到这里",
+	ErrEmailInvalid:           "邮箱格式不正确",
+	ErrNameRequired:           "请填写收货人姓名",
+	ErrPhoneRequired:          "请填写联系电话",
+	ErrAddressRequired:        "请填写收货地址",
+	ErrPaymentFailed:          "支付未成功，订单已创建，请稍后在订单中继续支付",
+	ErrCallbackSignature:      "回调签名校验失败",
+	ErrCallbackOrderMissing:   "回调对应的订单不存在",
+	ErrCallbackAmountMismatch: "回调金额与订单金额不一致",
+	ErrInternal:               "操作失败，请稍后重试",
+}
+
+// Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }

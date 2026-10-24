@@ -61,18 +61,18 @@ import (
 // SaveCampaign 新建 / 更新活动（只有草稿可改）。
 func (s *Service) SaveCampaign(ctx context.Context, req *maildto.SaveCampaignReq) (res *maildto.CampaignItem, err error) {
 	if req == nil || strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Subject) == "" {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	if req.AccountID == 0 || req.TemplateID == 0 {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	if req.ID > 0 {
 		old, gerr := s.m.GetCampaign(ctx, req.ID)
 		if gerr != nil {
-			return nil, errors.New(mailenums.ErrCampaignNotFound)
+			return nil, mailenums.Err(mailenums.ErrCampaignNotFound)
 		}
 		if old.Status != mailmodel.CampaignStatusDraft {
-			return nil, errors.New(mailenums.ErrCampaignNotDraft)
+			return nil, mailenums.Err(mailenums.ErrCampaignNotDraft)
 		}
 		fields := map[string]any{
 			"name":        strings.TrimSpace(req.Name),
@@ -144,7 +144,7 @@ func (s *Service) ListCampaigns(ctx context.Context, req *maildto.CampaignListRe
 func (s *Service) GetCampaign(ctx context.Context, id uint64) (res *maildto.CampaignItem, err error) {
 	row, err := s.m.GetCampaign(ctx, id)
 	if err != nil {
-		return nil, errors.New(mailenums.ErrCampaignNotFound)
+		return nil, mailenums.Err(mailenums.ErrCampaignNotFound)
 	}
 	return campaignItemOf(row), nil
 }
@@ -153,10 +153,10 @@ func (s *Service) GetCampaign(ctx context.Context, id uint64) (res *maildto.Camp
 func (s *Service) DeleteCampaign(ctx context.Context, id uint64) (err error) {
 	row, gerr := s.m.GetCampaign(ctx, id)
 	if gerr != nil {
-		return errors.New(mailenums.ErrCampaignNotFound)
+		return mailenums.Err(mailenums.ErrCampaignNotFound)
 	}
 	if row.Status == mailmodel.CampaignStatusSending {
-		return errors.New(mailenums.ErrCampaignSending)
+		return mailenums.Err(mailenums.ErrCampaignSending)
 	}
 	return s.m.DeleteCampaign(ctx, id)
 }
@@ -166,19 +166,19 @@ func (s *Service) DeleteCampaign(ctx context.Context, id uint64) (err error) {
 // 这里**不展开收件人**（见文件头说明）。目标是「HTTP 秒回 + 进度可观测」。
 func (s *Service) StartCampaign(ctx context.Context, req *maildto.StartCampaignReq) (res *maildto.StartCampaignResp, err error) {
 	if req == nil || req.CampaignID == 0 {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	c, err := s.m.GetCampaign(ctx, req.CampaignID)
 	if err != nil {
-		return nil, errors.New(mailenums.ErrCampaignNotFound)
+		return nil, mailenums.Err(mailenums.ErrCampaignNotFound)
 	}
 	if c.Status != mailmodel.CampaignStatusDraft && c.Status != mailmodel.CampaignStatusFailed {
-		return nil, errors.New(mailenums.ErrCampaignNotDraft)
+		return nil, mailenums.Err(mailenums.ErrCampaignNotDraft)
 	}
 	// 模板必须先能渲染出来（变量缺失 / 语法错在这里就暴露，而不是展开到一半才发现）。
 	tpl, terr := s.m.GetTemplateByID(ctx, c.TemplateID)
 	if terr != nil {
-		return nil, errors.New(mailenums.ErrTemplateNotFound)
+		return nil, mailenums.Err(mailenums.ErrTemplateNotFound)
 	}
 	baseVars := map[string]any{}
 	for k, v := range c.Variables {
@@ -194,7 +194,7 @@ func (s *Service) StartCampaign(ctx context.Context, req *maildto.StartCampaignR
 		return nil, err
 	}
 	if total == 0 {
-		return nil, errors.New(mailenums.ErrCampaignNoRecipient)
+		return nil, mailenums.Err(mailenums.ErrCampaignNoRecipient)
 	}
 	now := time.Now()
 	if err = s.m.UpdateCampaignFields(ctx, c.ID, map[string]any{
@@ -810,11 +810,11 @@ func StartMailRetentionScheduler(svc *Service) {
 // 用次数当分子会算出超过 100% 的打开率。
 func (s *Service) CampaignReport(ctx context.Context, campaignID uint64, page, pageSize int) (res *maildto.CampaignReport, err error) {
 	if campaignID == 0 {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	c, err := s.m.GetCampaign(ctx, campaignID)
 	if err != nil {
-		return nil, errors.New(mailenums.ErrCampaignNotFound)
+		return nil, mailenums.Err(mailenums.ErrCampaignNotFound)
 	}
 	if page <= 0 {
 		page = 1

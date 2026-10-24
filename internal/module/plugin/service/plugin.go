@@ -22,7 +22,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -75,7 +74,7 @@ func pluginStorageRoot() string {
 // Install 安装/升级插件：安全解包 → manifest 校验 → L1 迁移 → 存储 → registry 记账。
 func (s *Service) Install(ctx context.Context, zipBytes []byte) (res *plugindto.PluginResp, err error) {
 	if len(zipBytes) == 0 {
-		return nil, errors.New(pluginenums.ErrInstallParse)
+		return nil, pluginenums.Err(pluginenums.ErrInstallParse)
 	}
 	// 1. 解包（内存暂存，全部校验通过才落盘）。
 	files, err := extractZipSafe(zipBytes)

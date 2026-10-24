@@ -6,6 +6,8 @@
 // 中文值两层判据都不命中，会被当成内部错误（500 + 通用文案）。
 package pluginenums
 
+import "go_wp/pkg/facing"
+
 // 响应消息。
 const (
 	MsgInstallSuccess   = "MsgInstallSuccess"   // 插件安装成功
@@ -47,3 +49,33 @@ const (
 	// HintComponentDefault 插件组件在组件库里的默认提示（manifest 未声明 hint 时）。
 	HintComponentDefault = "plugin.hint.componentDefault" // 插件组件
 )
+
+// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
+//
+// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
+// businessText 只能退回声明处给的那句话 —— 没有它，客户端拿到的是 `ErrInvalidParam` 这样的裸 key
+// （这批常量的值就是常量名本身，旧式形态）。
+//
+// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
+var errFallbacks = map[string]string{
+	ErrModuleUnwired:     "插件模块未装配，该操作无法执行",
+	ErrInstallNoFile:     "没有收到插件包文件",
+	ErrPackageUnreadable: "插件包读取失败，或文件超过 52MB 上限",
+	ErrListFailed:        "插件列表加载失败",
+	ErrInvalidParam:      "请求参数无效",
+	ErrPluginNotFound:    "插件不存在",
+	ErrInstallParse:      "插件包解析失败",
+	ErrUnsafePackage:     "插件包包含不安全内容，已拒绝",
+	ErrVersionRegress:    "插件版本不能回退",
+	ErrStorageFailure:    "插件包存储失败",
+	ErrToggleFailed:      "插件状态更新失败",
+	ErrUninstallFailed:   "插件卸载失败",
+	ErrMigrationFailed:   "插件数据层迁移失败",
+}
+
+// Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }

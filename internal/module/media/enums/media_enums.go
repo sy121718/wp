@@ -1,5 +1,7 @@
 package mediaenums
 
+import "go_wp/pkg/facing"
+
 const (
 	ErrAttachmentNotFound = "ErrAttachmentNotFound" // 附件不存在
 	ErrUploadFailed       = "ErrUploadFailed"       // 文件上传失败
@@ -55,3 +57,32 @@ const (
 	// Heading 媒体库页标题（页头与回跳链接文字共用同一条词条）。
 	Heading = "admin.media.heading" // 媒体库
 )
+
+// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
+//
+// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
+// businessText 只能退回声明处给的那句话 —— 没有它，客户端拿到的是 `ErrAttachmentNotFound` 这样的裸 key
+// （这批常量的值就是常量名本身，旧式形态）。
+//
+// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
+var errFallbacks = map[string]string{
+	ErrAttachmentNotFound:       "附件不存在",
+	ErrUploadFailed:             "文件上传失败",
+	ErrUploadEmpty:              "上传文件不能为空",
+	ErrAttachmentNotImage:       "该附件不支持生成变体",
+	ErrVariantStorageNotLocal:   "仅本地存储支持该操作",
+	ErrDownloadFailed:           "打包下载失败",
+	ErrDownloadEmpty:            "请选择要下载的附件",
+	ErrDownloadStorageNotLocal:  "仅本地存储支持打包下载",
+	ErrReplaceFailed:            "换图失败，请稍后重试",
+	ErrReplaceExtMismatch:       "换图时扩展名必须与原文件一致，否则已引用该地址的页面会失效",
+	ErrAttachmentReferenced:     "该附件仍被页面引用，不能删除；请先解除引用",
+	ErrReplaceStaleNotifyFailed: "附件已替换，但通知页面重建失败：请手动重建引用它的页面",
+}
+
+// Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }
