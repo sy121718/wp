@@ -41,6 +41,7 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 )
 
 // === 翻译工作台（页面面 + 保存）===
@@ -237,9 +238,11 @@ var errPagesServiceMissing = errors.New("pages service 未装配")
 
 // PageTranslations GET /admin/pages/translations：翻译工作台。
 //
-// 整页 GET 的每一种结论都是**同一页**的完整 HTML（docs/rules/template-boundary.md 的「整页 GET 的失败出口」）：
-// 读到 → 200；参数缺失 → 400 参数错误槽；资源不存在 → 404；取数失败 → 500 失败槽。后三档一律 no-store。
-// 原先参数缺失与取数失败都 303 回列表页：用户被弹出工作台，既看不到缺了什么参数，也看不到哪一步没读到。
+// 整页 GET 的失败一律走 JSON 错误体（用户裁定：所有提示只需要一个提示，不渲染完整页）：
+// 读到 → 200；参数缺失 → 400；资源不存在 → 404；取数失败 → 500。
+// 从前这三档渲染「同一页 + 错误槽」：同一张模板要维护两套必需键，而失败时页壳给的信息
+// （筛选项、语言切换、整张表）没有一条是这次失败需要的。
+// 更早的版本是 303 回列表页 —— 用户被弹出工作台，既看不到缺了什么参数，也看不到哪一步没读到。
 func (h *pagesAdminHandle) PageTranslations(c *gin.Context) {
 	pageID := strings.TrimSpace(c.Query("pageId"))
 	lang := strings.TrimSpace(c.Query("lang"))
@@ -292,24 +295,16 @@ func translationsFailureStatus(err error) int {
 	}
 }
 
-// renderTranslationsFailure 把失败结论渲染成**同一页**的完整 HTML（状态码由调用方给）。
+// renderTranslationsFailure 页面 GET 的失败出口：写 JSON 错误体（状态码由调用方给）。
 //
-// 失败页也要给齐 layout 必需的键与空集合：少一个键 Jet 直接抛错，失败页就变成又一个坏页面
-// （契约的「必需的 layout 键」）；no-store 是因为失败页不该被缓存，否则「重试」只是把同一份失败再拿回来。
+// 参数非法与取数失败之所以分开两档，是因为「改地址就能好」和「稍后重试」不是同一件事 ——
+// 这个区分留在状态码上，不需要两个模板分支。
 func (h *pagesAdminHandle) renderTranslationsFailure(c *gin.Context, status int, f pageTranslationsFailure) {
-	data := &pageTranslationsData{
-		Title: pageenums.MsgPageTranslationsTitle, Menu: translationsPageMenu,
-		PageID: f.pageID, Lang: f.lang,
-		Langs: []pagedto.TranslationLangOptionResp{}, Groups: []pagedto.TranslationGroupResp{}, Errors: []pagedto.TranslationRowErrorResp{},
-	}
+	msg := f.loadError
 	if !f.paramError.Empty() {
-		data.ParamInvalid, data.ParamError = true, f.paramError
+		msg = f.paramError
 	}
-	if !f.loadError.Empty() {
-		data.LoadFailed, data.LoadError = true, f.loadError
-	}
-	c.Header("Cache-Control", "no-store")
-	c.HTML(status, translationsTemplate, adminui.PrepareView(c, data))
+	response.ErrorMsg(c, status, msg)
 }
 
 // SavePageTranslations POST /admin/pages/translations/save：保存本页译文。

@@ -84,8 +84,10 @@ func (h *Handle) OutlineTree(c *gin.Context) {
 //
 // 为什么必须完整外壳：调用它的是**四种画布模式**的页面 handler（?id= 页面 / ?block= 全局块 /
 // ?template= 内容模板 / ?instance= 实例），地址栏里都是一个页面 URL —— 回 text/plain 等于把
-// 作者丢在一片空白上，连「返回后台」都没有；
-// 契约见 docs/rules/template-boundary.md「整页 GET 的失败出口：失败也必须是「这一页」」。
+// 作者丢在一片空白上，连「返回后台」都没有。
+//
+// 注意这条与后台页的失败出口**不是同一条判据**：后台页失败时回 JSON（一个提示就够），
+// 而这里要完整外壳 —— 编辑器打不开时 layout 本身不可用，失败页不能依赖它的任何键。
 //
 // 状态码保留**事实区分**（400 请求缺参 / 404 目标不存在 / 500 未知内部异常），文案同源：
 // title 与 message 都取自 workbenchShortFallbacks 的白名单短句（未登记的 key 拼不出来），

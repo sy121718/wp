@@ -16,7 +16,7 @@
 # 格式：<文件> gin=<n> html=<n>；末行 --total 是全仓上限。
 
 internal/module/admin/inbound/http/admin_handle.go gin=1 html=0
-internal/module/admin/inbound/http/admin_page.go gin=0 html=20
+internal/module/admin/inbound/http/admin_page.go gin=0 html=19
 internal/module/ai/inbound/http/ai_handle.go gin=5 html=0
 internal/module/ai/inbound/http/ai_page.go gin=1 html=4
 internal/module/content/inbound/http/content_handle.go gin=2 html=0
@@ -24,7 +24,7 @@ internal/module/content/inbound/http/content_page.go gin=1 html=4
 internal/module/navigation/inbound/http/navigation_translations_handle.go gin=1 html=0
 internal/module/page/inbound/http/page_langs_handle.go gin=0 html=2
 internal/module/page/inbound/http/page_schedule_handle.go gin=0 html=2
-internal/module/page/inbound/http/page_translations_handle.go gin=1 html=4
+internal/module/page/inbound/http/page_translations_handle.go gin=1 html=3
 internal/module/page/inbound/http/pages_handle.go gin=1 html=2
 internal/module/project/inbound/http/project_page.go gin=0 html=5
 internal/module/publication/inbound/http/seo_audit_result.go gin=0 html=2
@@ -34,4 +34,4 @@ internal/module/workbench/inbound/http/canvas_preview_handle.go gin=0 html=1
 internal/module/workbench/inbound/http/inspector_handle.go gin=0 html=4
 internal/module/workbench/inbound/http/router.go gin=0 html=3
 
---total gin=15 html=57
+--total gin=15 html=55

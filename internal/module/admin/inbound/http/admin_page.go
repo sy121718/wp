@@ -1074,28 +1074,11 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	filter := adminI18nEntryFilterOf(c)
 	items, total, err := i18n.ListEntries(c.Request.Context(), filter)
 	if err != nil {
-		// 主数据没读到：整页失败出口 —— 同一模板 + 500 + no-store。失败槽在模板里先于空态，
-		// 所以「没读出来」与「读到了、只是空的」不会混成一句话。
-		//
-		// 必需键全部有值：Jet 的缺失键是整页中断，失败页缺一个键就是「又一个坏页面」；
-		// 标题仍是 i18n key（英文后台的标题不能变成中文），筛选取值照原样回带（运营刷新重试不丢上下文）。
-		// 文案走本模块既有归口 adminErrParam（文本槽，见 adminListLoadErr 的注释）：形态判据命中
-		// 给业务文案（按语言取词），未命中记一条带 user_id 的日志后给 ErrInternal 取词 ——
-		// 驱动原文（表名 / SQLSTATE）只进日志。
-		// 字典与分页不再下探：主数据都没读到，派生数据不该继续查（与库存页失败后的守卫同一判据）。
-		view := &admindto.I18nListPageResp{
-			Title:        adminenums.I18nTitle,
-			Entries:      []i18n.Entry{},
-			I18nEditURLs: []string{},
-			Keyword:      filter.Keyword,
-			LangFilter:   filter.Lang,
-			CatFilter:    filter.Category,
-			Categories:   []string{},
-			LoadFailed:   true,
-			LoadError:    adminErrParam(c, err),
-		}
-		c.Header("Cache-Control", "no-store")
-		c.HTML(http.StatusInternalServerError, "admin/system/i18n", adminui.PrepareView(c, view))
+		// 主数据没读到：失败一律 JSON 错误体（用户裁定：所有提示只需要一个提示，不渲染完整页）。
+		// 从前这里渲染「完整页壳 + 500」：同一张模板要维护两套必需键（成功档 + 失败档），
+		// 而失败时页壳给的信息（侧栏、筛选栏、分页）没有一条是这次失败需要的。
+		// 文案走本模块既有归口 adminErrParam：驱动原文（表名 / SQLSTATE）只进日志。
+		adminui.PageErrorInternal(c, "i18n", err)
 		return
 	}
 	categories, _ := i18n.Categories(c.Request.Context())

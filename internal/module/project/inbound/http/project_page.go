@@ -2455,8 +2455,9 @@ func themeSlotFormValues(c *gin.Context) map[string]string {
 // displayFragment 片段出口的统一写法（模板名 + 强类型视图）。
 //
 // 单独包一层是因为这类片段有 4 处，每处都写 c.HTML(…, adminui.PrepareView(…)) 会让
-// "这是片段出口"这件事在调用点看不出来 —— 而片段与整页的失败形态不同
-// （整页失败要给页壳），混在一起改的时候容易顺手改错。
+// "这是片段出口"这件事在调用点看不出来 —— 而片段与整页出口的失败形态本来就不同：
+// 片段失败要在视图里表达（htmx 对 4xx 不 swap，回 500 等于「点了没反应」），
+// 整页失败一律走 JSON 错误体。混在一起改的时候容易顺手改错。
 func displayFragment(c *gin.Context, template string, view any) {
 	c.HTML(http.StatusOK, template, adminui.PrepareView(c, view))
 }

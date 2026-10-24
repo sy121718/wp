@@ -20,6 +20,7 @@ package aihttp
 import (
 	"context"
 	"errors"
+	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"html"
 	"net/http"
@@ -214,7 +215,9 @@ func newAISessionsPageTestRouterWithProviders(t *testing.T, svc sessionServicePo
 		c.Next()
 	})
 	handle := NewSessionPageHandle(svc, providers)
-	router.GET("/admin/ai/sessions", handle.SessionsPage)
+	// PageSlot 是页面出口的装配点，不只是「模板名」：pageview.Render / pageview.Fail
+	// 都从上下文里取它（缺了就是「视图出口未装配」→ 500）。
+	router.GET("/admin/ai/sessions", adminui.PageSlot(sessionTemplate), handle.SessionsPage)
 	return router
 }
 
@@ -252,9 +255,13 @@ func requestAISessionsPageWithProviders(t *testing.T, svc sessionServicePort, pr
 	return rec
 }
 
-// TestAISessionsPageMainListFailureRenders500 主数据读不到：同页完整 HTML 500 + no-store，
+// TestAISessionsPageMainListFailureReturnsJSON 主数据读不到：JSON 错误体 + 500，
 // 且成功路径的取数一行都不跑（短路，而不是「渲染一个空的成功页」）。
-func TestAISessionsPageMainListFailureRenders500(t *testing.T) {
+//
+// **失败不渲染页壳**（用户裁定：所有提示只需要一个提示）：从前这里渲染「同页完整 HTML + 500」，
+// 同一张模板要维护两套必需键，而失败时页壳给的信息（标签、看板、供应商卡片、分页）
+// 没有一条是这次失败需要的 —— 它们本来就是这次没读到的东西。
+func TestAISessionsPageMainListFailureReturnsJSON(t *testing.T) {
 	const rawErrText = `pq: relation "ai_sessions" does not exist (SQLSTATE 42P01)`
 
 	stub := &aiSessionsRenderStub{listErr: errors.New(rawErrText)}
@@ -264,29 +271,22 @@ func TestAISessionsPageMainListFailureRenders500(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("主数据读不到应为 500，实际 %d：%s", rec.Code, body)
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Errorf("Content-Type 应含 text/html，得到 %q", ct)
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("失败出口应为 JSON，得到 %q", ct)
 	}
-	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
-		t.Errorf("失败页应带 no-store，得到 %q", cc)
-	}
-	// 仍是这一页：完整页壳 + 侧栏 + 受控提示（失败说明优先于任何空态）
-	for _, want := range []string{
-		"</body>", "</html>", `id="adminRail"`,
-		"服务器内部错误，请稍后重试",
-		"这一页的数据没能读出来",
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("失败页缺少 %q（页壳 / 受控提示）", want)
+	// 页壳缺席：这是「失败不渲染整页」的分水岭。
+	for _, banned := range []string{"</body>", "</html>", `id="adminRail"`, `class="tabs ai-tabs"`} {
+		if strings.Contains(body, banned) {
+			t.Errorf("失败出口不该渲染页壳（出现 %q）：%s", banned, body)
 		}
 	}
-	// 原文（原样与 HTML 转义两形态）与裸 key 都不许出现；也不许把「没读出来」说成「还没有会话」
-	for _, forbidden := range []string{
-		rawErrText, html.EscapeString(rawErrText), "ai.err.internal",
-		`class="tabs ai-tabs"`, "还没有任何会话。",
-	} {
+	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
+		t.Errorf("失败响应应带归口文案：%s", body)
+	}
+	// 原文（原样与转义两形态）与裸 key 都不许出现。
+	for _, forbidden := range []string{rawErrText, html.EscapeString(rawErrText), "ai.err.internal"} {
 		if strings.Contains(body, forbidden) {
-			t.Errorf("失败页不应出现 %q", forbidden)
+			t.Errorf("失败响应不应出现 %q", forbidden)
 		}
 	}
 	// 短路证据：看板 / 趋势 / 筛选候选一次都没查（这些块本次一条数据都没有）
@@ -296,14 +296,16 @@ func TestAISessionsPageMainListFailureRenders500(t *testing.T) {
 	}
 }
 
-// TestAISessionsPageMainListFailureRendersEnglishWhenTermPresent 词条在场时失败页说英文：
+// TestAISessionsPageMainListFailureRendersEnglishWhenTermPresent 词条在场时失败响应说英文：
 // 归口文案走的是「按请求语言取词」这条路，不是写死的中文。
+//
+// 失败出口改成 pageview.Fail → response.ErrorAuto 之后，归口文案**不再来自本模块**，
+// 而是 pkg/response 的 msgInternalError 常量。那串中文**本身就是 key**
+// （translate 先按 key 查、查不到原样返回），所以这里注的是它。
 func TestAISessionsPageMainListFailureRendersEnglishWhenTermPresent(t *testing.T) {
 	// InjectForTest 的形状是 key → lang → 译文（与资源文件同构），不是 lang → key。
 	i18n.InjectForTest(map[string]map[string]string{
-		"ai.err.internal":                   {"en-US": "Internal server error, please try again later"},
-		"admin.common.list.loadFailedTitle": {"en-US": "This page could not load its data"},
-		"admin.common.list.loadFailedDesc":  {"en-US": "The tip at the top explains why, then retry in a moment."},
+		"服务器内部错误，请稍后重试": {"en-US": "Internal server error, please try again later"},
 	}, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
 
@@ -316,13 +318,11 @@ func TestAISessionsPageMainListFailureRendersEnglishWhenTermPresent(t *testing.T
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("主数据读不到应为 500，实际 %d：%s", rec.Code, body)
 	}
-	for _, want := range []string{"Internal server error, please try again later", "This page could not load its data"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("英文请求应出现词条译文 %q：%s", want, body)
-		}
+	if !strings.Contains(body, "Internal server error, please try again later") {
+		t.Errorf("英文请求应出现词条译文：%s", body)
 	}
 	// 词条在场时不该再落中文兜底（兜底是缺失词条时的降级，不是常态）
-	for _, forbidden := range []string{"服务器内部错误，请稍后重试", "这一页的数据没能读出来", rawErrText} {
+	for _, forbidden := range []string{"服务器内部错误，请稍后重试", rawErrText} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("英文请求不应出现 %q", forbidden)
 		}
@@ -336,12 +336,12 @@ func TestAISessionsPageMainListFailureFallsBackWhenTermMissing(t *testing.T) {
 	rec := requestAISessionsPageLang(t, &aiSessionsRenderStub{listErr: errors.New(rawErrText)}, "en-US")
 	body := rec.Body.String()
 
-	for _, want := range []string{"服务器内部错误，请稍后重试", "这一页的数据没能读出来"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("缺词条时应落中文兜底 %q", want)
-		}
+	// 兜底就是 msgInternalError 那串中文（它同时是 key 与中文原文）：
+	// 词条缺失时 i18n.GetText 原样返回，于是响应正文就是这串。
+	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
+		t.Errorf("缺词条时应落中文兜底：%s", body)
 	}
-	for _, forbidden := range []string{"ai.err.internal", "admin.common.list.loadFailedTitle", rawErrText, html.EscapeString(rawErrText)} {
+	for _, forbidden := range []string{"ai.err.internal", rawErrText, html.EscapeString(rawErrText)} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("缺词条时不应出现 %q", forbidden)
 		}
@@ -468,23 +468,28 @@ func TestAISessionsPageProviderCardBorrowsBaseKeys(t *testing.T) {
 	}
 }
 
-// TestAISessionsPageFailurePageAlsoCarriesCSRF 失败档同样带非空 CSRF。
+// TestAISessionsPageFailureDoesNotRenderShell 失败档**不渲染页壳**，因此也不带 CSRF。
 //
-// Prepare 在函数开头调用一次、两个分支共用：失败页上仍有侧栏与页面级表单，
-// 它的 csrf_token 不该因为「主数据没读出来」而变空。
-func TestAISessionsPageFailurePageAlsoCarriesCSRF(t *testing.T) {
+// 这条测试的形态变过一次，值得留个记录：从前它叫 FailurePageAlsoCarriesCSRF，
+// 守的是「失败页上仍有侧栏与页面级表单，它的 csrf_token 不该因为主数据没读出来而变空」。
+// 那是「失败也是这一页」时代的判据。现在失败一律回 JSON 错误体（用户裁定），
+// 页面上没有表单，自然没有 csrf_token —— 判据反过来了：**不该出现**。
+//
+// 保留它而不是删掉，是因为「失败分支里 PrepareView 有没有被调用」这件事仍然值得钉住：
+// 一旦有人把失败分支改回渲染页壳，这条会立刻变红（响应里出现 csrf_token 或 HTML）。
+func TestAISessionsPageFailureDoesNotRenderShell(t *testing.T) {
 	rec := requestAISessionsPage(t, &aiSessionsRenderStub{listErr: errors.New("boom")})
 	body := rec.Body.String()
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("主数据失败应为 500，实际 %d：%s", rec.Code, body)
 	}
-	if base := aiSessionsRenderBaseCSRF(t, body); base == "" {
-		t.Error("失败页的基座 csrf_token 为空（Prepare 没在这条分支生效）")
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("失败出口应为 JSON，得到 %q", ct)
 	}
-	for _, v := range aiSessionsRenderCSRFValues(body) {
-		if v == "" {
-			t.Error("失败页出现空值的 csrf_token 隐藏域")
+	for _, banned := range []string{"csrf_token", "<form", "</body>", "</html>"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("失败出口不该渲染页壳（出现 %q）：%s", banned, body)
 		}
 	}
 }

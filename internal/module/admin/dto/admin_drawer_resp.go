@@ -208,10 +208,6 @@ type I18nListPageResp struct {
 	// 页面仍可筛「全部语言」，只是少了按语言筛的能力，不该因此整页打不开。
 	LangOptions any
 
-	// LoadFailed / LoadError 装载失败档（文案已归口，原文只进日志）。
-	LoadFailed bool
-	LoadError  string
-
 	Pagination pagination.Page
 }
 

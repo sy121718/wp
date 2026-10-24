@@ -2008,6 +2008,14 @@ func userTextFilled(c *gin.Context, l userLabel, kv map[string]string) string {
 //
 // 每个页面都要拿到这两样，逐个 handler 手写必然会漏掉一个 —— 漏掉 CSRF token 的表现是
 // 「页面能打开，一提交就 403」，而报错信息指向中间件，排查会绕很远。
+//
+// 为什么这里是 c.HTML 而不是 pageview.Render：**访客页的失败是产品行为**。
+// 登录密码错、注册校验不过、忘记密码格式不对 —— 这些都要把用户刚填的东西留在原地、
+// 在旁边说一句错在哪，而不是甩一段 JSON 让他自己回去重填。所以 status 是入参
+// （200 / 400 / 401 / 500 各有语义），视图也已经全是强类型 dto（AccountPageResp 等）。
+//
+// 后台页的失败出口是另一条判据：那些页面不带用户输入，失败时给一个提示就够
+// （用户裁定：所有提示只需要一个提示，不渲染完整页）。
 func (h *Handle) render(c *gin.Context, status int, name string, anyView any) {
 	// 收 any 而不是 gin.H：访客页的视图是强类型结构体（每个字段带 view 标签对应模板的
 	// 小写键），这里统一摊平成 map 再补页壳键（csrf_token / user / lang / t / dir / site / title）。

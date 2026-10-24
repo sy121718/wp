@@ -1402,25 +1402,15 @@ func (h *SessionPageHandle) SessionsPage(c *gin.Context) {
 		BuiltinKeys:     aiservice.BuiltinProviderKeys(),
 		ProtocolOptions: aienums.ProtocolOptions,
 	}
-	status := http.StatusOK
 	if loadFailed {
-		// 会话清单是这一页的**主数据**：读不到就不该有这一页 —— 同页完整 HTML 500 + no-store
-		//（docs/rules/template-boundary.md §「整页 GET 的失败出口：失败也必须是『这一页』」，
-		// 样板 navigation_page_handle.go:290-317）。
-		//
-		// 单点出口，所以内联：这一页只有列表这一处主数据失败，看板 / 供应商卡片 / 详情各有自己的
-		// 就地降级（attach*，200 + 就地提示条），语义与「整页没读出来」不同，不能混为一谈。
-		// 失败时不装配那些块：模板的 `{{if loadFailed}}` 把整块标签区换成失败说明 —— 零值渲染
-		// 出来的指标卡与空列表，与「真的是 0 用量 / 真的没有会话」长得一样。
-		view.LoadFailed = true
-		view.LoadError = aiErrText(c, err)
-		c.Header("Cache-Control", "no-store")
-		status = http.StatusInternalServerError
-	} else {
-		h.attachSessionsBlocks(c, ctx, view, rows, total, page, filter)
+		// 会话清单是这一页的**主数据**：读不到就不该有这一页 —— 失败走 JSON 错误体（pageview.Fail）。
+		// 看板 / 供应商卡片 / 详情各有自己的就地降级（attach*，200 + 就地提示条），
+		// 语义与「整页没读出来」不同，不走这条出口。
+		pageview.Fail(c, err)
+		return
 	}
-
-	c.HTML(status, sessionTemplate, adminui.PrepareView(c, view))
+	h.attachSessionsBlocks(c, ctx, view, rows, total, page, filter)
+	c.HTML(http.StatusOK, sessionTemplate, adminui.PrepareView(c, view))
 }
 
 // attachSessionsBlocks 成功档的各区块装配：列表 / 详情 / 看板 / 供应商卡片 / 分页。

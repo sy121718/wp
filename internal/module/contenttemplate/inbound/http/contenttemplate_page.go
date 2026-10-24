@@ -77,11 +77,11 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	if err != nil {
 		// 工程列表装载失败：**这一页的主数据失败了** —— 工程上下文是页面的前提（选择器 + 写动作归属），
 		// 而且这一支在给出 `Impact` / `templates.List` 之前就 return：**列表主体根本没读**。
-		// 出口因此是「同页完整 HTML + 500 + no-store」（docs/rules/template-boundary.md §整页 GET 的失败出口），
-		// 而不是 200 的降级渲染：200 在监控里与正常页一模一样，失败会一直无声地发生；
-		// 失败页也不该被缓存，否则「重试」只是把同一份失败从缓存里再拿回来。
+		// 出口因此是 **JSON 错误体 + 500**（pageview.Fail），而不是 200 的降级渲染：
+		// 200 在监控里与正常页一模一样，失败会一直无声地发生。
 		//（早期把这一支写成「可选辅助降级 200」的示例，已在 2026-10 按上面的短路证据纠正 ——
-		// 没有可靠工程归属的列表查询不再继续。）
+		// 没有可靠工程归属的列表查询不再继续；失败页壳也在同一批里取消，
+		// 改成「所有提示只需要一个提示」，见本文件末尾那两条分支的说明。）
 		//
 		// 此前这里是 `c.String(500, adminui.MsgInternalError)`：浏览器里没有页面，只有一块纯文本，
 		// 而且那块文本是**未翻译的裸 key**（页面上直接显示 `MsgInternalError` 这串英文）——
@@ -133,11 +133,9 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	}
 	list, err := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: entityType, ProjectID: selected})
 	if err != nil {
-		// 模板清单是这一页的**主数据**：读不到就不该有这一页 —— 同页完整 HTML 500 + no-store
-		//（docs/rules/template-boundary.md §「整页 GET 的失败出口：失败也必须是『这一页』」，
-		// 样板 navigation_page_handle.go:290-317）。
+		// 模板清单是这一页的**主数据**：读不到就不该有这一页 —— 与上面同一条出口（JSON + 500）。
 		//
-		// 与上面 `projects.List` 失败那条的分界不在状态码（两条现在都是 500 + no-store），
+		// 与上面 `projects.List` 失败那条的分界不在状态码（两条现在都是 500），
 		// 而在**页面赖以成立的主数据是否已经读完**：工程列表失败时 `Impact` / `templates.List`
 		// 都还没查（`:75-111` 直接 return），列表主体根本没读；这里失败时工程上下文与筛选骨架
 		// 还在，但列表主体同样没有了。两条都是主数据失败，200 会让失败与「真的没有模板」在

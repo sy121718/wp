@@ -141,11 +141,31 @@ if [ "$html_sum" -gt "$TOTAL_HTML" ]; then
   fail=1
 fi
 
+# ── 判据 4：双向精确匹配（与其它预算门禁同形）────────────────────────────────
+#
+# 高于台账判失败（涨了），低于台账也判失败（减了没记账）。
+# 只判"不超限"会让台账变成一句注释：迁移做完之后台账还挂在 257，下一个人读到的
+# 是"这里还有 257 处待迁"，而实际是 15 处 —— 过期台账比没有台账更坏。
 if [ "$fail" -eq 0 ]; then
-  echo "✓ 页面视图出口台账未超限（gin.H $gin_sum/$TOTAL_GIN · c.HTML $html_sum/$TOTAL_HTML）"
-  # 低于台账时提示下调：只减不增的另一半是"减了要记账"。
-  if [ "$gin_sum" -lt "$TOTAL_GIN" ] || [ "$html_sum" -lt "$TOTAL_HTML" ]; then
-    echo "  ⚠ 已低于台账：请下调 $ALLOW_FILE（只减不增的另一半是减了要记账）"
+  if [ "$gin_sum" -lt "$TOTAL_GIN" ]; then
+    echo "✗ 全仓 gin.H 已清到 $gin_sum 处，台账还是 $TOTAL_GIN；请把 $ALLOW_FILE 的 --total 改成 $gin_sum" >&2
+    fail=1
   fi
+  if [ "$html_sum" -lt "$TOTAL_HTML" ]; then
+    echo "✗ 全仓 c.HTML 已清到 $html_sum 处，台账还是 $TOTAL_HTML；请把 $ALLOW_FILE 的 --total 改成 $html_sum" >&2
+    fail=1
+  fi
+  # 逐文件同理：某个文件已经减下来了，它那一行的数字必须跟着改。
+  for f in "${!FILE_GIN[@]}"; do
+    cur="${CUR_GIN[$f]:-0}"
+    if [ "$cur" -lt "${FILE_GIN[$f]}" ]; then
+      echo "✗ $f：台账写 gin=${FILE_GIN[$f]}，实际已降到 $cur —— 请同步下调该行" >&2
+      fail=1
+    fi
+  done
+fi
+
+if [ "$fail" -eq 0 ]; then
+  echo "✓ 页面视图出口台账精确匹配（gin.H $gin_sum · c.HTML $html_sum）"
 fi
 exit "$fail"
