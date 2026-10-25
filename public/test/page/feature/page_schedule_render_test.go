@@ -14,6 +14,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -64,7 +65,7 @@ func TestPageSchedulePanelRendersFromDB(t *testing.T) {
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	handle := pagehttp.NewPagesAdminHandle(svc, projects, nil, nil)
-	router.GET("/admin/page-schedules/panel", handle.SchedulePanel)
+	router.GET("/admin/page-schedules/panel", adminui.BareSlot(pagehttp.PageSchedulePanelTemplate), handle.SchedulePanel)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,

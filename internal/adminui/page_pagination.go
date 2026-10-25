@@ -15,6 +15,7 @@ package adminui
 
 import (
 	"github.com/gin-gonic/gin"
+	"reflect"
 
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
@@ -50,4 +51,48 @@ func AttachPagination(data gin.H, path string, filters map[string]string, p pagi
 // filterBaseURL 与 reqparams.FilterBaseURL 同一实现（包一层只是为了本文件自解释）。
 func filterBaseURL(path string, filters map[string]string) string {
 	return reqparams.FilterBaseURL(path, filters)
+}
+
+// AttachPaginationView 把分页事实挂到**强类型页面视图**上（gin.H 时代的
+// AttachPagination 只能挂 map）。
+//
+// 为什么需要这一版：页面视图从 gin.H 换成强类型结构体之后，`data[view.PaginationKey] = p`
+// 这条路就没有了 —— 而分页的事实（total/page/limit/base + 页码窗口）属于
+// 「现成数据对象」的一部分，不该逼着调用方为了挂它退回 map。
+//
+// 做法是用反射给视图加一个**导出字段**承载分页对象，字段名即模板键
+// （view.PaginationKey = "Pagination"）。三条约束：
+//   - 视图必须是**指针**（否则反射写不进调用方的那个值）；
+//   - 字段必须已存在且类型可赋 pagination.Page —— 视图作者显式声明它，
+//     而不是让渲染层偷偷长出一个字段（模板契约要看得见）；
+//   - 失败页（PageStatus 非零）不该被挂分页，由调用方自己决定（这里不管业务）。
+//
+// 没有这个字段时**静默不挂**而不是 panic：分页条缺失是「少一条 UI」，
+// panic 会让整页 500 —— 后者显然更糟。但静默会让问题藏在产物里，所以返回 bool
+// 让调用方（或测试）能断言。
+func AttachPaginationView(viewResult any, path string, filters map[string]string, p pagination.Page) bool {
+	if viewResult == nil {
+		return false
+	}
+	if path != "" {
+		p.Base = filterBaseURL(path, filters)
+	}
+	rv := reflect.ValueOf(viewResult)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return false
+	}
+	elem := rv.Elem()
+	if elem.Kind() != reflect.Struct {
+		return false
+	}
+	field := elem.FieldByName(view.PaginationKey)
+	if !field.IsValid() || !field.CanSet() {
+		return false
+	}
+	pageVal := reflect.ValueOf(p)
+	if !pageVal.Type().AssignableTo(field.Type()) {
+		return false
+	}
+	field.Set(pageVal)
+	return true
 }

@@ -5,10 +5,22 @@ body {
   container-name: sky-theme;
 }
 
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .sky-c-fq1 {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
 }
 
 .sky-c-fq1 details {
@@ -47,7 +59,7 @@ body {
 
 .sky-c-fq1 .sky-faq-answer {
   padding: 0 18px 14px;
-  color: var(--sky-c-muted, #6b7280);
+  color: var(--sky-c-text-mute, #6b7280);
   line-height: 1.6;
 }
 }

@@ -208,7 +208,7 @@ func TestEffectiveTargetFallsBack(t *testing.T) {
 // 源码或用读屏器才发现）。所以这里同时钉两个方向：该取的都取了、不该取的一个也没多取。
 func TestApplyI18n(t *testing.T) {
 	// 默认文案 → 两处固定文案都取译文。
-	v := &View{ButtonText: textFallbackButton}
+	v := &View{Label: textFallbackButton}
 	asked := map[string]string{}
 	v.ApplyI18n(func(key, fallback string) string {
 		asked[key] = fallback
@@ -221,8 +221,8 @@ func TestApplyI18n(t *testing.T) {
 		t.Errorf("多取了文案键: %q", key)
 		return fallback
 	})
-	if v.ButtonText != "Add to cart" {
-		t.Fatalf("默认按钮文字应取译文，实际 %q", v.ButtonText)
+	if v.Label != "Add to cart" {
+		t.Fatalf("默认按钮文字应取译文，实际 %q", v.Label)
 	}
 	if v.QtyAria != "Quantity" {
 		t.Fatalf("数量框无障碍名应取译文，实际 %q（英文站点上读屏器会念中文）", v.QtyAria)
@@ -236,7 +236,7 @@ func TestApplyI18n(t *testing.T) {
 	}
 
 	// 自定义按钮文字 → 那条不翻译（它属于内容，走 Translatable 链路）；数量框照旧取译文。
-	v2 := &View{ButtonText: "立即抢购"}
+	v2 := &View{Label: "立即抢购"}
 	v2.ApplyI18n(func(key, fallback string) string {
 		if key == TextKeyButton {
 			t.Error("作者自定义的按钮文字不该走界面翻译（它由内容翻译链路负责）")
@@ -246,15 +246,15 @@ func TestApplyI18n(t *testing.T) {
 		}
 		return fallback
 	})
-	if v2.ButtonText != "立即抢购" {
-		t.Fatalf("作者自定义的文案不该被界面翻译覆盖，实际 %q", v2.ButtonText)
+	if v2.Label != "立即抢购" {
+		t.Fatalf("作者自定义的文案不该被界面翻译覆盖，实际 %q", v2.Label)
 	}
 	if v2.QtyAria != "Quantity" {
 		t.Fatalf("自定义按钮文字不该带走数量框的取词（两件事各自独立），实际 %q", v2.QtyAria)
 	}
 
 	// 降级提示：只在异常数据状态下非空，按 BuildView 记下的 key 取词。
-	v2b := &View{ButtonText: textFallbackButton, Notice: noticeNoVariant, noticeKey: TextKeyNoticeNoVariant}
+	v2b := &View{Label: textFallbackButton, Notice: noticeNoVariant, noticeKey: TextKeyNoticeNoVariant}
 	v2b.ApplyI18n(func(key, fallback string) string {
 		if key == TextKeyNoticeNoVariant {
 			return "No variant available"
@@ -266,10 +266,10 @@ func TestApplyI18n(t *testing.T) {
 	}
 
 	// 无翻译函数 → 全部保持中文兜底，不 panic。
-	v3 := &View{ButtonText: textFallbackButton}
+	v3 := &View{Label: textFallbackButton}
 	v3.ApplyI18n(nil)
-	if v3.ButtonText != textFallbackButton {
-		t.Fatalf("无翻译函数时应保持兜底文案，实际 %q", v3.ButtonText)
+	if v3.Label != textFallbackButton {
+		t.Fatalf("无翻译函数时应保持兜底文案，实际 %q", v3.Label)
 	}
 	if v3.QtyAria != textFallbackQtyAria {
 		t.Fatalf("无翻译函数时数量框应保持兜底文案，实际 %q", v3.QtyAria)
@@ -282,13 +282,13 @@ func TestApplyI18n(t *testing.T) {
 
 // TestEffectiveButtonText 按钮文字缺省。
 func TestEffectiveButtonText(t *testing.T) {
-	if got := effectiveButtonText(&Props{}); got != defaultButtonText {
+	if got := effectiveLabel(&Props{}); got != defaultLabel {
 		t.Fatalf("空按钮文字应回退默认值，实际 %q", got)
 	}
-	if got := effectiveButtonText(&Props{ButtonText: "  "}); got != defaultButtonText {
+	if got := effectiveLabel(&Props{Label: "  "}); got != defaultLabel {
 		t.Fatalf("纯空白应回退默认值，实际 %q", got)
 	}
-	if got := effectiveButtonText(&Props{ButtonText: "立刻购买"}); got != "立刻购买" {
+	if got := effectiveLabel(&Props{Label: "立刻购买"}); got != "立刻购买" {
 		t.Fatalf("自定义文字应原样使用，实际 %q", got)
 	}
 }

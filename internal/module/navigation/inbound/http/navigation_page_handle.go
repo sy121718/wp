@@ -54,6 +54,7 @@ import (
 	"go_wp/internal/shell"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	pageview "go_wp/pkg/view"
 )
 
 // navEditEcho is the submitted edit state, separate from the current database row.
@@ -115,17 +116,26 @@ func (h *navigationPageHandle) renderNavigationEdit(c *gin.Context, echo navEdit
 	//（`{{if .NavEditError != ""}}…{{.NavEditError}}`），不取词 —— 所以这里必须取成文本。
 	// 「这个槽位还没取词化」已登记在报告里；取词入口是共享的 adminui.MsgText，
 	// 不是 shell.TranslateFor。
-	data := gin.H{"NavEditEcho": echo, "NavEditError": adminui.MsgText(c, errMsg), "NavEditPanelAvail": panelAvail, "NavEditPanelBlocks": blocks}
-	// A fragment has no page shell: supply the shell keys (t / tf) and session CSRF data.
-	data = adminui.Prepare(c, data)
+	// 片段出口的视图（强类型：字段名即模板契约）。
+	data := &navigationEditFormView{
+		NavEditEcho:        echo,
+		NavEditError:       adminui.MsgText(c, errMsg),
+		NavEditPanelAvail:  panelAvail,
+		NavEditPanelBlocks: blocks,
+	}
+	// 片段出口没有页壳：t / tf 由路由的 BareSlot 注入，csrf_token 由视图字段给
+	// （模板要它来拼写请求的 X-CSRF-Token 头）。
+	//
+	// 从前这里手写 data["csrf_token"]，那是「页壳关切混进视图」的旧形态 ——
+	// 换成显式字段后，"这一屏要不要 csrf" 在类型上看得见。
 	token, err := builtin.GetCSRFToken(c)
 	if err != nil || token == "" {
 		logger.Scene("page").With("id", echo.ID).Error(err, "加载导航编辑 CSRF token 失败")
 		c.String(http.StatusInternalServerError, "%s", adminui.PageInternalText(c))
 		return
 	}
-	data["csrf_token"] = token
-	c.HTML(http.StatusOK, "admin/navigation/navigation_edit_form", data)
+	data.CSRFToken = token
+	pageview.Render(c, data)
 }
 
 func navEditHTMX(c *gin.Context) bool { return c.GetHeader("HX-Request") == "true" }
@@ -282,22 +292,6 @@ type navigationsPageData struct {
 	LoadError string
 }
 
-// templateMap 转为模板所需的小写键 map（layout.html 以 {{.title}}/{{.menu}} 取值）。
-func (d *navigationsPageData) templateMap() gin.H {
-	return gin.H{
-		"title":           d.Title,
-		"menu":            d.Menu,
-		"Projects":        d.Projects,
-		"SelectedProject": d.SelectedProject,
-		"Kind":            d.Kind,
-		"Rows":            d.Rows,
-		"ParentOptions":   d.ParentOptions,
-		"SourceGroups":    d.SourceGroups,
-		"MenuID":          d.MenuID,
-		"LoadError":       d.LoadError,
-	}
-}
-
 // NavigationsPage 导航菜单管理页。
 func (h *navigationPageHandle) NavigationsPage(c *gin.Context) {
 	data, err := h.buildNavigationsData(c)
@@ -322,13 +316,14 @@ func (h *navigationPageHandle) NavigationsPage(c *gin.Context) {
 		//（navigations.html 的 `{{loadError}}`，不取词）—— 「这个槽位还没取词化」
 		// 已登记在报告里。
 		logger.Scene("page").With("path", c.Request.URL.Path).Error(err, "加载导航菜单页失败")
-		failed := (&navigationsPageData{Title: navigationsPageTitle, Menu: "navigations"}).templateMap()
-		failed["LoadError"] = adminui.MsgText(c, navigationErrMsg(c, err))
-		c.Header("Cache-Control", "no-store")
-		c.HTML(http.StatusInternalServerError, "admin/navigation/navigations", adminui.Prepare(c, failed))
+		// 失败一律走 JSON 错误体（pageview.Fail）：页面 GET 失败不渲染页壳。
+		// 从前这里渲染「完整页壳 + 500」的失败档 —— 同一张模板要维护两套必需键，
+		// 而失败时页壳给的信息（侧栏、菜单树）没有一条是这次失败需要的：
+		// 菜单树本来就是这次没读到的东西（用户裁定：所有提示只需要一个提示）。
+		pageview.Fail(c, err)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/navigation/navigations", adminui.Prepare(c, data.templateMap()))
+	pageview.Render(c, data)
 }
 
 // buildNavigationsData 组装页面数据（工程/位置筛选 + 菜单树展平）。
@@ -720,7 +715,7 @@ func (h *navigationTranslationHandle) NavigationTranslations(c *gin.Context) {
 	lang := strings.TrimSpace(c.Query("lang"))
 	data := h.build(c.Request.Context(), projectID, lang, navTr(c))
 	data.filter(strings.TrimSpace(c.Query("keyword")))
-	c.HTML(http.StatusOK, "admin/navigation/navigation_translations.html", adminui.Prepare(c, data.templateMap()))
+	pageview.Render(c, data)
 }
 
 // 译文保存已迁到真实 JSON 写接口 POST /api/navigation/update（action="translations"，见
@@ -744,6 +739,11 @@ type navigationTranslationsData struct {
 	Saved        bool
 	SavedNote    string
 	Errors       []string
+	// SuccessURL 保存成功后的回跳地址：由 Go 侧拼好并转义。
+	//
+	// 为什么是字段而不是模板里拼：keyword 的转义规则只该有一份，
+	// 模板自己拼 query 就会出现第二份转义规则。
+	SuccessURL string
 	// kindsByHash 本次渲染中「原文哈希 → 出现过该文字的全部菜单位置」。
 	//
 	// 与 Groups 的差别：Groups 按原文去重（同一段文字在页眉与页脚都出现时只列一行，
@@ -816,20 +816,6 @@ func (d *navigationTranslationsData) kindsForHashes(hashes map[string]bool, fall
 		return fallback
 	}
 	return out
-}
-
-// templateMap 转模板键 map。
-func (d *navigationTranslationsData) templateMap() gin.H {
-	return gin.H{
-		"title": d.Title, "menu": d.Menu,
-		"ProjectID": d.ProjectID, "Keyword": d.Keyword, "NoProject": d.NoProject, "HasData": d.HasData, "VisibleCount": d.VisibleCount,
-		"Lang": d.Lang, "Langs": d.Langs,
-		"Groups": d.Groups, "RowCount": d.RowCount, "Done": d.Done,
-		"Saved": d.Saved, "SavedNote": d.SavedNote, "Errors": d.Errors,
-		// 保存成功后的回跳地址：由 Go 侧拼好并转义（模板不自己拼 query，
-		// 否则 keyword 的转义规则会出现第二份）。
-		"SuccessURL": navigationTranslationFilteredLocation(d.ProjectID, d.Lang, d.Keyword),
-	}
 }
 
 // sourceOf 按原文哈希反查本次提交对应的菜单项（防表单被裁剪）。
@@ -966,6 +952,8 @@ func (h *navigationTranslationHandle) build(ctx context.Context, projectID, lang
 			}
 		}
 	}
+	// 回跳地址在 build 末尾统一算一次（依赖最终的 ProjectID / Lang / Keyword）。
+	data.SuccessURL = navigationTranslationFilteredLocation(data.ProjectID, data.Lang, data.Keyword)
 	return data
 }
 
@@ -1052,4 +1040,14 @@ func navJumpList(c *gin.Context, ok bool, msg navText) {
 // navJumpListMenu 回列表页并重新展开某项抽屉的提示页（编辑 / 面板设置共用）。
 func navJumpListMenu(c *gin.Context, ok bool, msg navText) {
 	navJump(c, ok, msg, navListBackMenu(c), navListBackTitle)
+}
+
+// navigationEditFormView 导航编辑抽屉片段的视图（**片段出口**，不是整页）。
+type navigationEditFormView struct {
+	// CSRFToken 写请求的 CSRF 令牌（模板拼 X-CSRF-Token 头）。
+	CSRFToken          string
+	NavEditEcho        any
+	NavEditError       string
+	NavEditPanelAvail  bool
+	NavEditPanelBlocks any
 }

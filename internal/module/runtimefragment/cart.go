@@ -22,7 +22,6 @@ package runtimefragment
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -397,7 +396,7 @@ func cartAddQuantity(r *Request) (int, error) {
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil {
-		return 0, errors.New(cartenums.ErrQuantityInvalid)
+		return 0, cartenums.Err(cartenums.ErrQuantityInvalid)
 	}
 	return n, nil
 }
@@ -406,11 +405,11 @@ func cartAddQuantity(r *Request) (int, error) {
 func cartSetQuantity(r *Request) (int, error) {
 	raw := paramOf(r, "quantity")
 	if raw == "" {
-		return 0, errors.New(cartenums.ErrQuantityInvalid)
+		return 0, cartenums.Err(cartenums.ErrQuantityInvalid)
 	}
 	n, err := strconv.Atoi(raw)
 	if err != nil {
-		return 0, errors.New(cartenums.ErrQuantityInvalid)
+		return 0, cartenums.Err(cartenums.ErrQuantityInvalid)
 	}
 	return n, nil
 }

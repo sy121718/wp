@@ -1,6 +1,8 @@
 // Package pageenums 管理 page 模块业务消息。
 package pageenums
 
+import "go_wp/pkg/facing"
+
 import "strings"
 
 const (
@@ -297,3 +299,52 @@ var ScheduleFailureFallbacks = map[string]string{
 	ErrPageNotFound:        "页面不存在",
 	ErrScheduleApplyFailed: "排定执行失败，请查看服务日志",
 }
+
+// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
+//
+// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
+// businessText 只能退回声明处给的那句话 —— 没有它，客户端拿到的是 `ErrPageLangExcluded` 这样的裸 key
+// （这批常量的值就是常量名本身，旧式形态）。
+//
+// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
+var errFallbacks = map[string]string{
+	ErrPageLangExcluded:         "该语言已从这一页的产出范围里排除，请先恢复再发布",
+	ErrCannotExcludeDefaultLang: "站点默认语言不能排除：产物的原文就是它",
+	ErrLangAlreadyExcluded:      "该语言已经被排除过了",
+	ErrLangNotExcluded:          "该语言没有被排除，无需恢复",
+	ErrInvalidParam:             "请求参数无效",
+	ErrPageNotFound:             "页面不存在",
+	ErrProjectNotFound:          "工程不存在",
+	ErrProjectRequired:          "请先选择要操作的站点工程",
+	ErrInvalidKind:              "不支持的页面类型",
+	ErrInvalidDocument:          "页面草稿文档不合法",
+	ErrInvalidPath:              "页面访问路径不合法",
+	ErrDraftVersionConflict:     "草稿版本已更新，请刷新后重试",
+	ErrPathOccupied:             "页面访问路径已被占用",
+	ErrRevisionNotFound:         "修订版本不存在或已被清理",
+	ErrBlueprintUnavailable:     "蓝图能力未接入，暂时无法从蓝图创建页面",
+	ErrBlueprintInvalid:         "蓝图不存在或没有可用版本，请换一个蓝图",
+	ErrNoStagedArtifact:         "无暂存产物，请先构建",
+	ErrRollbackTargetMiss:       "回滚目标产物不存在",
+	ErrRebuildRequired:          "草稿已变更，请重新构建后再发布",
+	ErrInvalidSlot:              "槽位键不在允许范围内，请回到列表页重新选择",
+	ErrSlotPageMiss:             "要绑定的页面不存在、已被删除，或不属于当前工程",
+	ErrRedirectUnavailable:      "重定向能力未接入，暂时无法管理重定向",
+	ErrRedirectNotFound:         "该重定向不存在，可能已被删除",
+	ErrRedirectOccupied:         "源路径已被占用，不能为它重复配置重定向",
+	ErrRedirectTargetMiss:       "目标路径不存在或尚未激活，请先确认目标页面已发布",
+	ErrRedirectLoop:             "该重定向会形成循环跳转，已拒绝",
+	ErrScheduleNotFound:         "排定不存在",
+	ErrScheduleInPast:           "排定时间必须晚于当前时刻",
+	ErrScheduleActionInvalid:    "排定动作不合法（只支持上线与下线）",
+	ErrScheduleRunning:          "排定正在执行，无法取消",
+	ErrScheduleOccupied:         "同类排定正在执行，请稍后再试",
+	ErrScheduleApplyFailed:      "排定执行失败，请查看服务日志",
+}
+
+// Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }

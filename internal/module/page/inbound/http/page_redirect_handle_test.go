@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pageservice "go_wp/internal/module/page/service"
@@ -56,7 +57,7 @@ func TestRedirectCreateFailedRequestKeepsInput(t *testing.T) {
 			stub := &redirectCreateStub{createErr: tc.createErr, listErr: tc.listErr}
 			router := gin.New()
 			router.HTMLRender = newPageErrTestRender(t)
-			router.POST("/api/page/redirect/create", NewHandle(stub).RedirectCreate)
+			router.POST("/api/page/redirect/create", adminui.PageSlot(RedirectPageTemplate), NewHandle(stub).RedirectCreate)
 			req := httptest.NewRequest(http.MethodPost, "/api/page/redirect/create", strings.NewReader(tc.form.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			rec := httptest.NewRecorder()
@@ -88,7 +89,7 @@ func TestRedirectCreateSuccessRendersJump(t *testing.T) {
 	stub := &redirectCreateStub{}
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
-	router.POST("/api/page/redirect/create", NewHandle(stub).RedirectCreate)
+	router.POST("/api/page/redirect/create", adminui.PageSlot(RedirectPageTemplate), NewHandle(stub).RedirectCreate)
 	form := url.Values{"project": {"p1"}, "sourcePath": {"/old"}, "targetPath": {"/new"}}
 	req := httptest.NewRequest(http.MethodPost, "/api/page/redirect/create?project=p1", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

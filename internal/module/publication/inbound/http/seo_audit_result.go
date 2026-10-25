@@ -2,6 +2,7 @@ package pubhttp
 
 import (
 	"context"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"strings"
 
@@ -43,10 +44,10 @@ func seoAuditHandler(run func(context.Context, string) ([]pubservice.AuditIssue,
 				// 片段槽位：模板直接渲染文本（见 admin/analytics/seo_audit_result.html），
 				// 因此这里把**事实**取成当前语言文本交给它（这个槽位还没取词化，
 				// 登记在批次报告里）。取词本身走 adminui.MsgText，不再经 shell。
-				c.HTML(http.StatusOK, "admin/analytics/seo_audit_result.html", adminui.Prepare(c, gin.H{
-					"AuditError":     true,
-					"AuditErrorText": adminui.MsgText(c, pubAuditFailedMsg),
-				}))
+				pageview.Render(c, &pubdto.SeoAuditErrorView{
+					AuditError:     true,
+					AuditErrorText: adminui.MsgText(c, pubAuditFailedMsg),
+				})
 				return
 			}
 			response.ErrorWithMessage(c, http.StatusBadRequest, pubenums.ErrAuditFailed)
@@ -55,12 +56,22 @@ func seoAuditHandler(run func(context.Context, string) ([]pubservice.AuditIssue,
 		if c.GetHeader("HX-Request") == "true" {
 			// t 由 adminui.Prepare 注入（片段与整页共用同一条注入链）：Go 侧不再自带取词函数，
 			// 模板里的 {{ .["t"](key, fallback) }} 按当前请求语言取值。
-			c.HTML(http.StatusOK, "admin/analytics/seo_audit_result.html", adminui.Prepare(c, gin.H{
-				"AuditError": false,
-				"Issues":     issues, "Scanned": scanned, "Count": len(issues),
-			}))
+			pageview.Render(c, &pubdto.SeoAuditResultView{
+				AuditError: false,
+				Issues:     toAnyIssues(issues), Scanned: scanned, Count: len(issues),
+			})
 			return
 		}
 		response.Success(c, gin.H{"scanned": scanned, "issues": issues, "count": len(issues)})
 	}
+}
+
+// toAnyIssues 体检问题列表投影成 []any（视图不 import service 类型：
+// "这一屏要问题的哪几个字段"由视图自己声明）。
+func toAnyIssues(in []pubservice.AuditIssue) []any {
+	out := make([]any, 0, len(in))
+	for i := range in {
+		out = append(out, in[i])
+	}
+	return out
 }

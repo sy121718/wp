@@ -21,6 +21,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -100,8 +101,8 @@ func newTradePageEnv(t *testing.T) *tradePageEnv {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal/templates"), true)
 	pages := orderhttp.NewOrderPageHandle(orders, projects, nil)
 	returns := orderhttp.NewReturnPageHandle(orders, projects, nil, nil)
-	engine.GET("/admin/orders", pages.OrdersPage)
-	engine.GET("/admin/returns", returns.ReturnsPage)
+	engine.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), pages.OrdersPage)
+	engine.GET("/admin/returns", adminui.PageSlot(orderhttp.ReturnListPageTemplate), returns.ReturnsPage)
 
 	return &tradePageEnv{engine: engine, db: db, project: project.ID}
 }
@@ -560,8 +561,8 @@ func newOrderCreatePageEnv(t *testing.T) *orderCreatePageEnv {
 	// 用替身就得把它的语义再抄一份进测试，而抄错的那份不会报错。
 	dict := sysconfigservice.NewService(sysconfigmodel.NewSysConfigModel(f.db), nil)
 	page := orderhttp.NewOrderCreatePageHandle(f.orders, projects, f.products, dict)
-	engine.GET("/admin/orders/new", page.OrderCreatePage)
-	engine.POST("/admin/orders/create", page.OrderCreateSubmit)
+	engine.GET("/admin/orders/new", adminui.PageSlot(orderhttp.OrderNewPageTemplate), page.OrderCreatePage)
+	engine.POST("/admin/orders/create", adminui.PageSlot(orderhttp.OrderNewPageTemplate), page.OrderCreateSubmit)
 	return &orderCreatePageEnv{engine: engine, fixture: f, project: f.projectID}
 }
 

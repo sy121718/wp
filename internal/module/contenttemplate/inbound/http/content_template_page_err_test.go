@@ -28,6 +28,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 
+	"go_wp/internal/adminui"
 	contentcontract "go_wp/internal/module/content/contract"
 	contentdto "go_wp/internal/module/content/dto"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
@@ -97,13 +98,18 @@ func (s ctCountingContents) List(context.Context, *contentdto.ListReq) ([]*conte
 	return nil, nil
 }
 
-// TestContentTemplatesPageProjectListFailureRenders500 工程列表读不到 = **这一页的主数据失败**：
-// 同页完整 HTML + 500 + no-store，且**列表主体一次都没查**。
+// TestContentTemplatesPageProjectListFailureReturnsJSON 工程列表读不到 = **这一页的主数据失败**：
+// JSON 错误体 + 500，且**列表主体一次都没查**。
 //
 // 判据是短路证据：这一支在 `Impact` / `templates.List` 之前 return，列表主体根本没读 ——
-// 没有可靠工程归属的列表查询没有意义。2026-10 之前这里按「可选辅助降级」写成 200，
-// 于是失败在监控里与正常页长得一样（`docs/rules/template-boundary.md` 的辅助示例同步纠正）。
-func TestContentTemplatesPageProjectListFailureRenders500(t *testing.T) {
+// 没有可靠工程归属的列表查询没有意义。
+//
+// **失败不再渲染页壳**（2026-10 用户裁定：所有提示只需要一个提示，不渲染完整页）：
+// 从前这里渲染「完整页壳 + 500」，于是同一张模板要维护两套必需键（成功档 + 失败档），
+// 而失败时那份页壳提供的信息（侧栏、菜单、筛选栏）没有一条是这次失败需要的。
+// 现在失败一律走 pageview.Fail → response.ErrorAuto：状态码按错误性质定，
+// 文案由归口链取词，原文只进日志。
+func TestContentTemplatesPageProjectListFailureReturnsJSON(t *testing.T) {
 	rawErr := errors.New(ctProjectListErrText)
 	calls := &ctCalls{}
 
@@ -115,59 +121,32 @@ func TestContentTemplatesPageProjectListFailureRenders500(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("工程列表读不到（主数据失败）应为 500，实际 %d：%s", rec.Code, body)
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Errorf("Content-Type 应含 text/html，得到 %q", ct)
+	// ① 形状：JSON 错误体，不是 HTML。
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("失败出口应为 JSON（Content-Type 含 application/json），得到 %q", ct)
 	}
-	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
-		t.Errorf("失败页应带 no-store，得到 %q", cc)
+	if strings.Contains(body, "<!DOCTYPE") || strings.Contains(body, "</html>") {
+		t.Errorf("失败出口不该渲染页壳：%s", body)
 	}
-	// ① 完整页面：模板缺键会让 Jet 在那一行中断渲染（现象是 200/500 + 后面整块 HTML 消失），
-	// 所以「页壳在不在」是这条契约的判据（internal/templates/CLAUDE.md）。
-	for _, want := range []string{"</html>", `id="adminRail"`, `name="entityType"`, `role="alert"`, "内容模板"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("失败页必须仍是这一页（缺 %q）—— 不能退回一块裸文本", want)
-		}
-	}
-	// ② 筛选保留：当次的 entityType 仍然回显（失败不等于把用户的选择丢掉）。
-	if !strings.Contains(body, `value="header" selected`) {
-		t.Errorf("失败页应保留当次筛选 entityType=header：%s", body)
-	}
-	// ③ 归口提示：无 DB ⇒ 无词条 ⇒ 回落中文兜底；关键是**不是裸 key**。
-	for _, want := range []string{
-		"系统内部错误，请稍后重试",
-		"列表没读出来",
-		contentTemplateImpactLoadFailedFallback, // 引用面「没读到」也要说出来（且与「能力未装配」区分）
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("失败页面缺少受控提示 %q", want)
-		}
+	// ② 文案归口：受控提示在，裸 key 与驱动原文都不在。
+	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
+		t.Errorf("失败响应应带归口文案，实际：%s", body)
 	}
 	for _, forbidden := range []string{
-		"MsgInternalError",                // 裸 key（本批修掉的就是它）
-		rawErr.Error(),                    // 驱动原文只进日志 —— 原样
-		html.EscapeString(rawErr.Error()), // 以及 HTML 转义形态（Jet 把 `"` 渲染成 &#34;）
-		"还没有内容模板",                         // 空态误导：不是「没有模板」，是没读出来
-		"内容模板能力未装配，本页暂不可用。",               // 误报：能力装着呢，是这一次没读到工程
+		"MsgInternalError",
+		rawErr.Error(),
+		ctProjectListErrText,
 	} {
 		if strings.Contains(body, forbidden) {
-			t.Errorf("失败页面不应出现 %q", forbidden)
+			t.Errorf("失败响应不应出现 %q：%s", forbidden, body)
 		}
 	}
-	// ④ 没有列表主体就没有行级动作：`<form action=".../bulk-delete">` 是包住整张表的页壳（常驻渲染，
-	// 空表的勾选框点不出任何提交），真正的行级入口与批量动作条都挂在行上，所以只断言后两者缺席。
-	for _, forbidden := range []string{
-		"content-templates/activate", "content-templates/edit?id=", "批量删除",
-	} {
-		if strings.Contains(body, forbidden) {
-			t.Errorf("列表主体没读出来，不该渲染行级入口 %q：%s", forbidden, body)
-		}
-	}
-	// ⑤ 短路：引用面 / 模板清单 / 样例实体查询一次都没发生（只看响应证明不了这件事）。
+	// ③ 短路：引用面 / 模板清单 / 样例实体查询一次都没发生（只看响应证明不了这件事）。
 	if calls.impact != 0 || calls.list != 0 || calls.product != 0 || calls.content != 0 {
 		t.Errorf("工程失败后不该再查引用面/清单/样例实体，实际 impact=%d list=%d product=%d content=%d",
 			calls.impact, calls.list, calls.product, calls.content)
 	}
-	// ⑥ 日志这一端：原文必须完整落在本模块 scene 里（页面不泄 ≠ 丢弃）。
+	// ④ 日志这一端：原文必须完整落在本模块 scene 里（响应不泄 ≠ 丢弃）。
 	if !ctTestLogHasRawError(t, rawErr) {
 		t.Errorf("日志里没有 error=%q 的结构化记录 —— 归口变成了丢弃", rawErr.Error())
 	}
@@ -213,44 +192,39 @@ func (s ctFailingTemplates) List(context.Context, *contenttemplatedto.ListReq) (
 // 与 `projects.List` 失败那条（本文件 `:106` 的 TestContentTemplatesPageProjectListFailureRenders500）
 // 的分界不在状态码 —— 两条都是 500 + no-store —— 而在失败时是否已经读完页面赖以成立的主数据；
 // 两条分支的失败键都叫 LoadFailed，键本身不携带档位。
-func TestContentTemplatesPageMainListFailureRenders500(t *testing.T) {
+func TestContentTemplatesPageMainListFailureReturnsJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handle := NewContentTemplatePageHandle(ctFailingTemplates{}, ctOKProjects{}, nil, nil)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/content-templates", handle.ContentTemplatesPage)
+	engine.GET("/admin/content-templates",
+		adminui.PageSlot(ContentTemplatesPageTemplate),
+		handle.ContentTemplatesPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/content-templates", nil))
 	body := rec.Body.String()
 
-	// ① 形态：500 + text/html + no-store
+	// ① 形态：500 + JSON（失败不渲染页壳 —— 见 ProjectListFailure 那条的说明）
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("主数据读不到应为 500，实际 %d：%s", rec.Code, body)
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Errorf("Content-Type 应含 text/html，得到 %q", ct)
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("失败出口应为 JSON，得到 %q", ct)
 	}
-	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
-		t.Errorf("失败页应带 no-store，得到 %q", cc)
+	if strings.Contains(body, "</html>") || strings.Contains(body, "<!DOCTYPE") {
+		t.Errorf("失败出口不该渲染页壳：%s", body)
 	}
-	// ② 仍是这一页：完整页壳 + 筛选骨架 + 受控提示（失败优先于空态）
-	for _, want := range []string{
-		"</body>", "</html>", `id="adminRail"`,
-		`name="entityType"`, "内容模板",
-		"系统内部错误，请稍后重试", "列表没读出来",
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("失败页缺少 %q（页壳 / 骨架 / 受控提示）", want)
-		}
+	// ② 受控提示在，裸 key / 驱动原文 / 空态误导都不在
+	if !strings.Contains(body, "服务器内部错误，请稍后重试") {
+		t.Errorf("失败响应应带归口文案：%s", body)
 	}
-	// ③ 不泄原文 / 裸 key，也不把「没读出来」说成「还没有模板」
 	for _, forbidden := range []string{
 		"MsgInternalError", "还没有内容模板",
 		"SQLSTATE", "42P01", "content_templates\"",
 	} {
 		if strings.Contains(body, forbidden) {
-			t.Errorf("失败页不应出现 %q", forbidden)
+			t.Errorf("失败响应不应出现 %q", forbidden)
 		}
 	}
 }
@@ -308,7 +282,9 @@ func renderContentTemplatesPageWithDeps(t *testing.T, templatesSvc contenttempla
 	handle := NewContentTemplatePageHandle(templatesSvc, projects, products, contents)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/content-templates", handle.ContentTemplatesPage)
+	engine.GET("/admin/content-templates",
+		adminui.PageSlot(ContentTemplatesPageTemplate),
+		handle.ContentTemplatesPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
@@ -370,11 +346,12 @@ func TestContentTemplatesPageEmptyRendersEmptyState(t *testing.T) {
 	}
 }
 
-// ctInternalErrorKey 归口文案的 i18n key（值就是 shell 的 MsgInternalError 常量值）。
+// ctInternalErrorKey 归口文案的 i18n key。
 //
-// 这里写字面量而不引 shell 包标识符：check-shell-migration.sh 的 test 桶基线只许下降，
-// 测试里每多一个 shell.* 都是一处使用点。
-const ctInternalErrorKey = "MsgInternalError"
+// 失败出口改成 pageview.Fail → response.ErrorAuto 之后，归口文案**不再来自本模块的
+// InternalMsg**，而是 pkg/response 的 msgInternalError 常量。那串中文**本身就是 key**
+// （pkg/response 的 translate 先按 key 查、查不到才原样返回），所以这里用同一串。
+const ctInternalErrorKey = "服务器内部错误，请稍后重试"
 
 // TestContentTemplatesPageMainListFailureRendersEnglishWhenTermPresent 词条在场时失败页说英文。
 //
@@ -418,10 +395,12 @@ func TestContentTemplatesPageMainListFailureFallsBackWhenTermMissing(t *testing.
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("主列表读不到应为 500，实际 %d：%s", rec.Code, body)
 	}
-	if !strings.Contains(body, contentTemplateErrInternalFallback) {
-		t.Errorf("缺词条时应落中文兜底 %q：%s", contentTemplateErrInternalFallback, body)
+	// 兜底就是 msgInternalError 那串中文（它同时是 key 与中文原文）：
+	// 词条缺失时 i18n.GetText 原样返回，于是响应正文就是这串。
+	if !strings.Contains(body, ctInternalErrorKey) {
+		t.Errorf("缺词条时应落中文兜底 %q：%s", ctInternalErrorKey, body)
 	}
-	for _, forbidden := range []string{ctInternalErrorKey, ctTemplateListErrText, html.EscapeString(ctTemplateListErrText)} {
+	for _, forbidden := range []string{ctTemplateListErrText, html.EscapeString(ctTemplateListErrText)} {
 		if strings.Contains(body, forbidden) {
 			t.Errorf("缺词条时不应出现 %q", forbidden)
 		}

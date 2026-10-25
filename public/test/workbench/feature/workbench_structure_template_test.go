@@ -16,6 +16,7 @@ package feature
 import (
 	"context"
 	"errors"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -101,7 +102,7 @@ func newWorkbenchTemplateEnv(t *testing.T) *workbenchTemplateEnv {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/workbench", h.Workbench)
+	engine.GET("/workbench", adminui.PageSlot(workbenchhttp.CanvasLayoutTemplate), h.Workbench)
 	engine.GET("/workbench/template/preview", h.TemplatePreview)
 	engine.POST("/workbench/template/preview", h.TemplatePreviewDraft)
 	return &workbenchTemplateEnv{engine: engine, projectID: project.ID, templates: templatesSvc, preview: previewPort}

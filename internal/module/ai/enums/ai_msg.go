@@ -1,5 +1,7 @@
 package aienums
 
+import "go_wp/pkg/facing"
+
 import "strings"
 
 // ai_msg.go — ai 模块的枚举与响应文案（handle / service 不硬编码文案，一律取这里）。
@@ -237,3 +239,64 @@ func ProtocolLabel(p string) string {
 	}
 	return p
 }
+
+// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
+//
+// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
+// businessText 只能退回声明处给的那句话 —— 没有它，客户端拿到的是 `ai.err.xxx` 这样的裸 key。
+//
+// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:                  "请求参数不正确",
+	ErrProviderNotFound:              "供应商不存在或已被删除",
+	ErrProviderKeyRequired:           "请填写供应商标识（如 openai、deepseek）",
+	ErrProviderKeyExists:             "该供应商标识已存在",
+	ErrDisplayNameRequired:           "请填写显示名称",
+	ErrAPIKeyRequiredOnBaseURLChange: "更换 API 地址后需要重新填写密钥",
+	ErrVersionRequired:               "缺少版本号，请刷新页面后重试",
+	ErrVersionConflict:               "该供应商已被其他人修改，请刷新页面后重试",
+	ErrProtocolUnsupported:           "不支持的 API 协议",
+	ErrCipherUnavailable:             "未配置加密密钥，无法保存 API 密钥",
+	ErrNoBuiltinModels:               "该供应商没有内置默认模型",
+	ErrBaseURLRequired:               "请先填写 API 地址，再获取可用模型",
+	ErrModelIDRequired:               "模型 ID 不能为空",
+	ErrModelIDDuplicated:             "模型 ID 重复，请检查后再保存",
+	ErrModelsFetchFailed:             "获取可用模型失败，请检查 API 地址与密钥",
+	ErrURLMalformed:                  "API 地址格式不正确",
+	ErrURLSchemeUnsupported:          "API 地址只支持 http / https",
+	ErrURLHostMissing:                "API 地址缺少主机名",
+	ErrURLUnresolvable:               "API 地址无法解析",
+	ErrURLDenied:                     "API 地址指向内网或保留地址，已拒绝",
+	ErrUserRequired:                  "请先登录后再使用 AI 功能",
+	ErrInternal:                      "服务器内部错误，请稍后重试",
+	ErrNoModelSelected:               "请先勾选要添加的模型。",
+	ErrSessionNotFound:               "会话不存在或已被删除",
+	ErrSessionKeyMissing:             "会话标识缺失",
+	ErrSessionArchived:               "会话已归档，不能再写入",
+	ErrSessionConflict:               "该会话已被其他人修改，请刷新页面后重试",
+	ErrSessionProviderMismatch:       "该会话标识已绑定其它供应商或模型，请换一个会话标识",
+	ErrEventKindInvalid:              "不支持的事件类型",
+	ErrEventContentEmpty:             "事件内容不能为空",
+	ErrFoldRangeInvalid:              "折叠区间不正确，请重新选择",
+	ErrFoldSummaryEmpty:              "折叠摘要不能为空",
+	ErrSessionChatUnavailable:        "当前未接入对话能力，无法在这里发消息",
+	ErrSessionChatInputRequired:      "请输入消息内容",
+	ErrSessionChatModelRequired:      "请选择要使用的供应商与模型",
+	ErrSessionChatEmptyReply:         "模型没有返回内容，请重试",
+	ErrSessionToolRoundsExceeded:     "模型连续调用工具次数过多，已停止，请重试或换个说法",
+	ErrToolForbidden:                 "没有权限执行该操作",
+	ErrToolRunFailed:                 "工具执行失败",
+	ErrTokenNotFound:                 "令牌不存在或已被删除",
+	ErrTokenInvalid:                  "访问令牌无效",
+	ErrTokenNameRequired:             "请填写令牌用途",
+	ErrTokenScopeRequired:            "请至少选择一个权限点",
+	ErrTokenScopeUnknown:             "包含未知的权限点",
+	ErrTokenExpiredInPast:            "过期时间必须晚于当前时间",
+}
+
+// Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }

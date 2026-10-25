@@ -58,7 +58,6 @@ package aiservice
 import (
 	"cmp"
 	"context"
-	"errors"
 	json "go_wp/pkg/jsonx"
 	"io"
 	"net/http"
@@ -215,7 +214,7 @@ func normalizeModels(in []aidto.ModelEntry) ([]aidto.ModelEntry, error) {
 			continue
 		}
 		if _, dup := seen[id]; dup {
-			return nil, errors.New(aienums.ErrModelIDDuplicated)
+			return nil, aienums.Err(aienums.ErrModelIDDuplicated)
 		}
 		seen[id] = struct{}{}
 		name := strings.TrimSpace(m.DisplayName)
@@ -302,7 +301,7 @@ func mergeCatalog(existing []aidto.ModelEntry, fetched []string) (out []aidto.Mo
 // SaveModels 整组保存模型目录（乐观锁保护下的 config_data 写回）。
 func (s *Service) SaveModels(ctx context.Context, req *aidto.SaveModelsReq) (res *aidto.Provider, err error) {
 	if req == nil || req.ProviderID <= 0 {
-		return nil, errors.New(aienums.ErrInvalidParam)
+		return nil, aienums.Err(aienums.ErrInvalidParam)
 	}
 	models, nerr := normalizeModels(req.Models)
 	if nerr != nil {
@@ -328,7 +327,7 @@ func (s *Service) SaveModels(ctx context.Context, req *aidto.SaveModelsReq) (res
 // 「这家供应商确实没有默认模型」，而真实原因是「代码里没登记」—— 两者要分开说。
 func (s *Service) RestoreDefaultModels(ctx context.Context, req *aidto.ProviderActionReq) (res *aidto.Provider, err error) {
 	if req == nil || req.ProviderID <= 0 {
-		return nil, errors.New(aienums.ErrInvalidParam)
+		return nil, aienums.Err(aienums.ErrInvalidParam)
 	}
 	current, err := s.m.FindByID(ctx, req.ProviderID)
 	if err != nil {
@@ -360,7 +359,7 @@ func (s *Service) RestoreDefaultModels(ctx context.Context, req *aidto.ProviderA
 //	  **不落库**（半路失败不该把目录写成半份）；底层原因只进日志，不上页面。
 func (s *Service) FetchAvailableModels(ctx context.Context, req *aidto.ProviderActionReq) (res *aidto.FetchModelsResult, err error) {
 	if req == nil || req.ProviderID <= 0 {
-		return nil, errors.New(aienums.ErrInvalidParam)
+		return nil, aienums.Err(aienums.ErrInvalidParam)
 	}
 	current, err := s.m.FindByID(ctx, req.ProviderID)
 	if err != nil {
@@ -430,7 +429,7 @@ func (s *Service) fetchModelIDs(ctx context.Context, endpoint, apiKey string) (i
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		logger.Scene("ai").With("endpoint", endpoint).With("status", resp.StatusCode).
-			Error(errors.New(aienums.ErrModelsFetchFailed), "获取可用模型失败：远端非 200")
+			Error(aienums.Err(aienums.ErrModelsFetchFailed), "获取可用模型失败：远端非 200")
 		return nil, ErrModelsFetchFailed
 	}
 	body, rerr := io.ReadAll(io.LimitReader(resp.Body, MaxModelsRead))
@@ -504,7 +503,7 @@ func jsonStringSlice(v any) []string {
 // 两条路径必须给出同样的「这家能不能拉」的判断，否则会出现「弹窗拉得到、确定后失败」。
 func (s *Service) FetchModelCandidates(ctx context.Context, req *aidto.ProviderActionReq) (res *aidto.ModelCandidates, err error) {
 	if req == nil || req.ProviderID <= 0 {
-		return nil, errors.New(aienums.ErrInvalidParam)
+		return nil, aienums.Err(aienums.ErrInvalidParam)
 	}
 	current, err := s.m.FindByID(ctx, req.ProviderID)
 	if err != nil {

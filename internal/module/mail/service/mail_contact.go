@@ -76,11 +76,11 @@ func (s *Service) ListContacts(ctx context.Context, req *maildto.ContactFilterRe
 // 后台点了退订却还能发出去，是比不点退订更糟的结果。
 func (s *Service) UpdateContactStatus(ctx context.Context, req *maildto.UpdateContactStatusReq) (err error) {
 	if req == nil || req.ID == 0 || !contactStatusValid(req.Status) {
-		return errors.New(mailenums.ErrInvalidParam)
+		return mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	row, err := s.m.GetContact(ctx, req.ID)
 	if err != nil {
-		return errors.New(mailenums.ErrContactNotFound)
+		return mailenums.Err(mailenums.ErrContactNotFound)
 	}
 	// 状态变更与抑制名单是同一件事的两面，**必须同事务**（AGENTS.md「写操作的事务与回滚」）：
 	// 分开提交时第二步失败会留下「后台点了退订、地址却不在抑制名单里」——换一个活动照样会发出去，
@@ -251,10 +251,10 @@ type contactRow struct {
 // ImportContacts 导入联系人。
 func (s *Service) ImportContacts(ctx context.Context, req *maildto.ImportContactsReq) (res *maildto.ImportContactsResp, err error) {
 	if req == nil || len(req.Content) == 0 {
-		return nil, errors.New(mailenums.ErrImportEmpty)
+		return nil, mailenums.Err(mailenums.ErrImportEmpty)
 	}
 	if len(req.Content) > maxImportBytes {
-		return nil, errors.New(mailenums.ErrImportTooLarge)
+		return nil, mailenums.Err(mailenums.ErrImportTooLarge)
 	}
 
 	res = &maildto.ImportContactsResp{Errors: []maildto.ImportRowError{}}
@@ -745,7 +745,7 @@ var _ = bytes.NewReader
 //	· 状态缺省 pending：没有同意证据的人不进可发名单（与导入路径同一口径）。
 func (s *Service) CreateContact(ctx context.Context, req *maildto.SaveContactReq) (id uint64, err error) {
 	if req == nil {
-		return 0, errors.New(mailenums.ErrInvalidParam)
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	email, err := normalizeContactEmail(req.Email)
 	if err != nil {
@@ -755,10 +755,10 @@ func (s *Service) CreateContact(ctx context.Context, req *maildto.SaveContactReq
 	if status == "" {
 		status = mailmodel.ContactStatusPending
 	} else if !contactStatusValid(status) {
-		return 0, errors.New(mailenums.ErrInvalidParam)
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	if _, gerr := s.m.GetContactByEmail(ctx, email); gerr == nil {
-		return 0, errors.New(mailenums.ErrContactEmailExists)
+		return 0, mailenums.Err(mailenums.ErrContactEmailExists)
 	} else if !errors.Is(gerr, gorm.ErrRecordNotFound) {
 		return 0, gerr
 	}
@@ -793,11 +793,11 @@ func (s *Service) CreateContact(ctx context.Context, req *maildto.SaveContactReq
 		// 这条底线与导入路径的 ConsentDeclared 是同一件事的两个入口：那边靠勾选强制，
 		// 这边只能由服务端强制（页面文案承诺过，不执行就是文案在撒谎）。
 		if status == mailmodel.ContactStatusSubscribed && strings.TrimSpace(req.ConsentSource) == "" {
-			return errors.New(mailenums.ErrConsentSourceRequired)
+			return mailenums.Err(mailenums.ErrConsentSourceRequired)
 		}
 		if cerr := s.m.CreateContact(ctx, e); cerr != nil {
 			if isContactEmailConflict(cerr) {
-				return errors.New(mailenums.ErrContactEmailExists)
+				return mailenums.Err(mailenums.ErrContactEmailExists)
 			}
 			return cerr
 		}
@@ -830,7 +830,7 @@ func (s *Service) CreateContact(ctx context.Context, req *maildto.SaveContactReq
 // 内部实现（applyContactStatusTx），状态字段与抑制名单永远同一事务。
 func (s *Service) UpdateContact(ctx context.Context, req *maildto.SaveContactReq) (err error) {
 	if req == nil || req.ID == 0 {
-		return errors.New(mailenums.ErrInvalidParam)
+		return mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	email, err := normalizeContactEmail(req.Email)
 	if err != nil {
@@ -838,18 +838,18 @@ func (s *Service) UpdateContact(ctx context.Context, req *maildto.SaveContactReq
 	}
 	status := strings.TrimSpace(req.Status)
 	if status != "" && !contactStatusValid(status) {
-		return errors.New(mailenums.ErrInvalidParam)
+		return mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	row, err := s.m.GetContact(ctx, req.ID)
 	if err != nil {
-		return errors.New(mailenums.ErrContactNotFound)
+		return mailenums.Err(mailenums.ErrContactNotFound)
 	}
 	emailChanged := !strings.EqualFold(strings.TrimSpace(row.Email), email)
 	if emailChanged {
 		other, gerr := s.m.GetContactByEmail(ctx, email)
 		switch {
 		case gerr == nil && other.ID != req.ID:
-			return errors.New(mailenums.ErrContactEmailExists)
+			return mailenums.Err(mailenums.ErrContactEmailExists)
 		case gerr != nil && !errors.Is(gerr, gorm.ErrRecordNotFound):
 			return gerr
 		}
@@ -899,11 +899,11 @@ func (s *Service) UpdateContact(ctx context.Context, req *maildto.SaveContactReq
 			finalConsent = strings.TrimSpace(*row.ConsentSource)
 		}
 		if finalStatus == mailmodel.ContactStatusSubscribed && finalConsent == "" {
-			return errors.New(mailenums.ErrConsentSourceRequired)
+			return mailenums.Err(mailenums.ErrConsentSourceRequired)
 		}
 		if uerr := s.m.UpdateContactFieldsTx(ctx, tx, req.ID, fields); uerr != nil {
 			if isContactEmailConflict(uerr) {
-				return errors.New(mailenums.ErrContactEmailExists)
+				return mailenums.Err(mailenums.ErrContactEmailExists)
 			}
 			return uerr
 		}
@@ -933,7 +933,7 @@ func (s *Service) UpdateContact(ctx context.Context, req *maildto.SaveContactReq
 // 返回实际删除行数：调用方据此如实说明「点选的 id 里有几个已经不存在了」。
 func (s *Service) DeleteContacts(ctx context.Context, req *maildto.DeleteContactsReq) (deleted int64, err error) {
 	if req == nil || len(req.IDs) == 0 {
-		return 0, errors.New(mailenums.ErrInvalidParam)
+		return 0, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	// 批删是一条语句（DeleteContactsByIDsTx）而不是循环单条：循环会让「删了 3 个、
 	// 第 4 个报错」留下半截状态，调用方只能把整批当失败，重试时前 3 条已不存在。
@@ -956,9 +956,9 @@ func normalizeContactEmail(raw string) (string, error) {
 		return email, nil
 	}
 	if strings.TrimSpace(raw) == "" {
-		return "", errors.New(mailenums.ErrEmailRequired)
+		return "", mailenums.Err(mailenums.ErrEmailRequired)
 	}
-	return "", errors.New(mailenums.ErrEmailInvalid)
+	return "", mailenums.Err(mailenums.ErrEmailInvalid)
 }
 
 // contactSourceOr 来源缺省（手工新建的联系人来源就是 manual）。
@@ -995,11 +995,11 @@ func (s *Service) fireContactTagsAdded(ctx context.Context, contactID uint64, be
 // skipped 只计失败与不存在的行，逐条失败不中断整批。
 func (s *Service) TagContacts(ctx context.Context, req *maildto.TagContactsReq) (changed, skipped int, err error) {
 	if req == nil || len(req.IDs) == 0 {
-		return 0, 0, errors.New(mailenums.ErrInvalidParam)
+		return 0, 0, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	add, remove := normalizeTagList(req.Add), normalizeTagList(req.Remove)
 	if len(add) == 0 && len(remove) == 0 {
-		return 0, 0, errors.New(mailenums.ErrContactTagEmpty)
+		return 0, 0, mailenums.Err(mailenums.ErrContactTagEmpty)
 	}
 	for _, id := range dedupIDs(req.IDs) {
 		var addedTags []string

@@ -18,14 +18,12 @@ package commenthttp
 
 import (
 	"context"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	commentcontract "go_wp/internal/module/comment/contract"
 	commentdto "go_wp/internal/module/comment/dto"
 	commentenums "go_wp/internal/module/comment/enums"
@@ -33,6 +31,7 @@ import (
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 // commentProjectLister 后台页需要的工程读取能力（**收窄到一条方法**）。
@@ -67,13 +66,14 @@ type commentsPageData struct {
 	Projects        []projectdto.ProjectResp
 	SelectedProject string
 	Rows            []commentRow
-	StatusOptions   []gin.H
-	EntityOptions   []gin.H
+	StatusOptions   []commentOptionResp
+	EntityOptions   []commentOptionResp
 
-	FilterStatus     string
-	FilterEntityType string
-	FilterKeyword    string
-	FilterValues     commentFilterValues
+	FilterStatus string
+	// FilterEntity 当前筛选的实体类型（模板键名就是 FilterEntity —— 字段名即契约）。
+	FilterEntity  string
+	FilterKeyword string
+	FilterValues  commentFilterValues
 
 	Total int64
 	Page  int
@@ -83,36 +83,31 @@ type commentsPageData struct {
 	//
 	// 审核结论由 JSON API 返回成品文案，此处仅承载读取失败提示。
 	LoadErr string
+
+	// HasRows 有没有数据行（模板空态判据；不靠 len 在模板里算）。
+	HasRows bool
+	// Pagination 分页事实（模板 admin/partials/pagination.html 按这个键读）。
+	Pagination pagination.Page
 }
 
-// templateMap 转 Jet 模板键（页面框架字段以小写 title / menu 取值）。
-func (d *commentsPageData) templateMap(c *gin.Context) gin.H {
-	keys := gin.H{
-		"title":           d.Title,
-		"menu":            d.Menu,
-		"Projects":        d.Projects,
-		"SelectedProject": d.SelectedProject,
-		"Rows":            d.Rows,
-		"HasRows":         len(d.Rows) > 0,
-		"StatusOptions":   d.StatusOptions,
-		"EntityOptions":   d.EntityOptions,
-		"FilterStatus":    d.FilterStatus,
-		"FilterEntity":    d.FilterEntityType,
-		"FilterKeyword":   d.FilterKeyword,
-		"Total":           d.Total,
-		"Page":            d.Page,
-		"NoProject":       d.NoProject,
-		"LoadErr":         d.LoadErr,
-	}
-	// 分页**事实**（pagination.Page，值语义）：只给总数 / 页码 / 每页条数 / 基址；
-	// 页数与按钮态由 admin/partials/pagination.html 用模板层的 pager 算。
-	keys["Pagination"] = paginationFacts(d.Total, d.Page, d.FilterValues)
-	return keys
+// commentOptionResp 筛选下拉的一项（模板读 .Value / .Label / .Selected）。
+//
+// 状态与实体类型两个下拉共用这个形状：它们的模板用法逐字相同，
+// 分成两个类型只会让「改一个忘另一个」。
+type commentOptionResp struct {
+	Value    string
+	Label    string
+	Selected bool
 }
 
 // render 审核页的唯一渲染出口（正常与降级两条路都从这里出）。
+//
+// 直接交视图本身、不再经 templateMap 摊平：字段名与模板键逐字一致时，摊平只是多一次
+// 搬运，而搬运处拼错键名的表现是「页面 200 但少一块」（Jet 缺键中断）。
+// 分页事实以字段形式挂在视图上（Pagination），由 AttachPaginationView 反射写入。
 func (h *commentPageHandle) render(c *gin.Context, d *commentsPageData) {
-	c.HTML(http.StatusOK, "admin/comment/comments.html", adminui.Prepare(c, d.templateMap(c)))
+	d.Pagination = paginationFacts(d.Total, d.Page, d.FilterValues)
+	pageview.Render(c, d)
 }
 
 // CommentsPage 审核队列页（GET /admin/comments）。
@@ -122,13 +117,13 @@ func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 
 	title := tr(commentenums.PageTitle.Key, commentenums.PageTitle.Fallback)
 	data := &commentsPageData{
-		Title:            title,
-		Menu:             "comment",
-		StatusOptions:    commentStatusOptions(c, ""),
-		FilterStatus:     strings.TrimSpace(c.Query("status")),
-		FilterEntityType: strings.TrimSpace(c.Query("entityType")),
-		FilterKeyword:    strings.TrimSpace(c.Query("keyword")),
-		Page:             queryInt(c.Query("page")),
+		Title:         title,
+		Menu:          "comment",
+		StatusOptions: commentStatusOptions(c, ""),
+		FilterStatus:  strings.TrimSpace(c.Query("status")),
+		FilterEntity:  strings.TrimSpace(c.Query("entityType")),
+		FilterKeyword: strings.TrimSpace(c.Query("keyword")),
+		Page:          queryInt(c.Query("page")),
 	}
 
 	projects, loadErr := h.listProjects(ctx)
@@ -144,7 +139,7 @@ func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 		data.NoProject = true
 		data.Rows = []commentRow{}
 		data.StatusOptions = commentStatusOptions(c, data.FilterStatus)
-		data.EntityOptions = commentEntityOptions(c, h.svc, data.FilterEntityType)
+		data.EntityOptions = commentEntityOptions(c, h.svc, data.FilterEntity)
 		h.render(c, data)
 		return
 	}
@@ -152,16 +147,16 @@ func (h *commentPageHandle) CommentsPage(c *gin.Context) {
 	data.FilterValues = commentFilterValues{
 		Project:    data.SelectedProject,
 		Status:     data.FilterStatus,
-		EntityType: data.FilterEntityType,
+		EntityType: data.FilterEntity,
 		Keyword:    data.FilterKeyword,
 	}
 	data.StatusOptions = commentStatusOptions(c, data.FilterStatus)
-	data.EntityOptions = commentEntityOptions(c, h.svc, data.FilterEntityType)
+	data.EntityOptions = commentEntityOptions(c, h.svc, data.FilterEntity)
 
 	res, listErr := h.svc.AdminList(ctx, &commentdto.AdminListReq{
 		ProjectID:  data.SelectedProject,
 		Status:     data.FilterStatus,
-		EntityType: data.FilterEntityType,
+		EntityType: data.FilterEntity,
 		Keyword:    data.FilterKeyword,
 		Page:       data.Page,
 		PageSize:   commentsPageSize,
@@ -290,41 +285,41 @@ func pickCommentProject(requested string, projects []projectdto.ProjectResp) str
 }
 
 // commentStatusOptions 状态筛选下拉（Selected 由服务端算好，模板只渲染）。
-func commentStatusOptions(c *gin.Context, selected string) []gin.H {
+func commentStatusOptions(c *gin.Context, selected string) []commentOptionResp {
 	tr := i18n.TranslateFunc(response.RequestLanguage(c))
-	out := make([]gin.H, 0, len(commentenums.Statuses())+1)
-	out = append(out, gin.H{
-		"Value":    "",
-		"Label":    tr(commentenums.LabelKeyFilterAll, commentenums.LabelFilterAll),
-		"Selected": selected == "",
+	out := make([]commentOptionResp, 0, len(commentenums.Statuses())+1)
+	out = append(out, commentOptionResp{
+		Value:    "",
+		Label:    tr(commentenums.LabelKeyFilterAll, commentenums.LabelFilterAll),
+		Selected: selected == "",
 	})
 	for _, status := range commentenums.Statuses() {
 		pair := commentenums.StatusLabel(status)
-		out = append(out, gin.H{
-			"Value":    status,
-			"Label":    tr(pair.Key, pair.Fallback),
-			"Selected": status == selected,
+		out = append(out, commentOptionResp{
+			Value:    status,
+			Label:    tr(pair.Key, pair.Fallback),
+			Selected: status == selected,
 		})
 	}
 	return out
 }
 
 // commentEntityOptions 实体类型筛选下拉（取值来自 service 的注册表 —— 拥有者声明的那份）。
-func commentEntityOptions(c *gin.Context, svc commentcontract.CommentService, selected string) []gin.H {
+func commentEntityOptions(c *gin.Context, svc commentcontract.CommentService, selected string) []commentOptionResp {
 	tr := i18n.TranslateFunc(response.RequestLanguage(c))
-	out := []gin.H{{
-		"Value":    "",
-		"Label":    tr(commentenums.LabelKeyFilterAll, commentenums.LabelFilterAll),
-		"Selected": selected == "",
+	out := []commentOptionResp{{
+		Value:    "",
+		Label:    tr(commentenums.LabelKeyFilterAll, commentenums.LabelFilterAll),
+		Selected: selected == "",
 	}}
 	if svc == nil {
 		return out
 	}
 	for _, et := range svc.EntityTypeLabels(tr) {
-		out = append(out, gin.H{
-			"Value":    et.Type,
-			"Label":    et.Label,
-			"Selected": et.Type == selected,
+		out = append(out, commentOptionResp{
+			Value:    et.Type,
+			Label:    et.Label,
+			Selected: et.Type == selected,
 		})
 	}
 	return out

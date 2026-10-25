@@ -57,8 +57,14 @@ func main() {
 	}
 
 	if err := run(*migrateOnly); err != nil {
-		logger.Scene("init").Error(err, "服务启动失败")
-		log.Fatal("服务启动失败")
+		// **err 必须出现在最后那句输出里**。此前这里是 log.Fatal("服务启动失败")：
+		// logger 在初始化早期可能还没就绪（它自己就是被初始化的组件之一），于是 err 只
+		// 写进了一个不存在的地方，终端上只剩「服务启动失败」五个字。排查时只能改代码
+		// 加打印才知道真因（例如「解析 server.read_header_timeout 失败」）。
+		//
+		// 用标准库 log 而不是 logger：走到这里说明组件初始化失败，logger 很可能正是
+		// 失败的那一个 —— 兜底输出不能依赖正在被初始化的东西。
+		log.Fatalf("服务启动失败: %v", err)
 	}
 }
 

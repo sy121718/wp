@@ -2,7 +2,6 @@
 package blockcontract
 
 import (
-	"errors"
 
 	"context"
 	blockenums "go_wp/internal/module/block/enums"
@@ -55,27 +54,27 @@ type BlockService interface {
 // 保证 errors.Is 判等一致。Error() 文案与 blockenums 常量一致，前端响应文案不变。
 var (
 	// ErrParamRequired 请求参数缺失（nil 请求、空/空白 ID、空 projectID 等）。
-	ErrParamRequired = errors.New(blockenums.ErrBlockParamRequired)
+	ErrParamRequired = blockenums.Err(blockenums.ErrBlockParamRequired)
 	// ErrNotFound 全局块不存在。
-	ErrNotFound = errors.New(blockenums.ErrBlockNotFound)
+	ErrNotFound = blockenums.Err(blockenums.ErrBlockNotFound)
 	// ErrProjectNotFound 工程不存在。
-	ErrProjectNotFound = errors.New(blockenums.ErrProjectNotFound)
+	ErrProjectNotFound = blockenums.Err(blockenums.ErrProjectNotFound)
 	// ErrProjectRequired 缺可作用域的工程（DB-009）：只带 id 的入口逐工程定位时工程清单为空。
-	ErrProjectRequired = errors.New(blockenums.ErrBlockProjectRequired)
+	ErrProjectRequired = blockenums.Err(blockenums.ErrBlockProjectRequired)
 	// ErrNameRequired 块名称缺失。
-	ErrNameRequired = errors.New(blockenums.ErrBlockNameRequired)
+	ErrNameRequired = blockenums.Err(blockenums.ErrBlockNameRequired)
 	// ErrInvalidDoc 块文档不合法（与页面文档同构校验失败）。
-	ErrInvalidDoc = errors.New(blockenums.ErrBlockInvalidDoc)
+	ErrInvalidDoc = blockenums.Err(blockenums.ErrBlockInvalidDoc)
 	// ErrInvalidKind 块类型不合法（非 block/header/footer）。
-	ErrInvalidKind = errors.New(blockenums.ErrBlockInvalidKind)
+	ErrInvalidKind = blockenums.Err(blockenums.ErrBlockInvalidKind)
 	// ErrInvalidCategory 块分类不合法（未通过白名单）。
-	ErrInvalidCategory = errors.New(blockenums.ErrBlockInvalidCategory)
+	ErrInvalidCategory = blockenums.Err(blockenums.ErrBlockInvalidCategory)
 	// ErrDuplicate 同工程同名块已存在。
-	ErrDuplicate = errors.New(blockenums.ErrBlockDuplicate)
+	ErrDuplicate = blockenums.Err(blockenums.ErrBlockDuplicate)
 	// ErrInvalidReuseMode 块复用方式不合法（非 global/template）。
-	ErrInvalidReuseMode = errors.New(blockenums.ErrBlockInvalidReuseMode)
+	ErrInvalidReuseMode = blockenums.Err(blockenums.ErrBlockInvalidReuseMode)
 	// ErrBlockInUse global 块仍被页面/主题引用：删除或切换 global→template 前须先解除引用或 Force。
-	ErrBlockInUse = errors.New(blockenums.ErrBlockInUse)
+	ErrBlockInUse = blockenums.Err(blockenums.ErrBlockInUse)
 )
 
 // BlockReader / BlockWriter 是 AI 工具用的窄接口。

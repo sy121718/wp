@@ -1,0 +1,41 @@
+# page-view-dto-allow — 页面视图出口台账（**双向精确匹配**）。
+#
+# 目标形态（product / masterdata 已走完）：
+#   路由    adminui.PageSlot(<模板名>)
+#   handler pageview.Render(c, view)
+#   视图    dto 里的强类型结构体（字段名 = 模板契约）
+#
+# 为什么两级：总量挡住"整体变多"，文件级挡住"把代码从 A 搬到 B"——
+# 后者总量不变，但新代码已经去了不该去的地方。缺了文件级这就是个计数器。
+#
+# 计数口径见 scripts/page-view-scan.py：**按语句**判定"这条 gin.H 是不是要交给模板"。
+# 跨行的 JSON-RPC 载荷、空字面量、[]gin.H 容器都不计入 —— 它们不是页面视图。
+#
+# ## gin.H 那一半已经收口
+#
+# 全仓 gin.H 页面视图 **归零**：控制器现场拼 map 交给模板这个形态已经从代码里消失。
+#
+# ## 剩下 4 处 c.HTML 全部是 htmx 局部替换或独立失败页，不是欠账
+#
+#   · admin 三处（menuEditFail / permissionEditFail / rolePermissions 保存失败）：
+#     表单带 hx-post + hx-target="closest [data-drawer-fragment]"，失败就是把**抽屉**
+#     换成一个带错误提示的抽屉 —— htmx 的局部替换，不是整页重渲。路由是写动作，
+#     没有 PageSlot，模板名由 *_router.go 的常量给出。
+#   · page 一处：译文保存失败的逐行错误片段（htmx 替换 #page-translations-errors）。
+#     逐行错误说"哪一行有什么问题"，塞不进 toast，所以必须回一个片段。
+#   · user 一处：访客页（登录/注册/找回）。layout.html 明确写着"访客侧要求无脚本可用"，
+#     失败重渲是传统表单的常规做法，也不该引入 htmx。
+#   · workbench 一处：编辑器打不开时的失败壳。layout 本身不可用，失败页不能依赖它的
+#     任何键，也不依赖 JS。
+#
+# 判据不是"c.HTML 出现即欠账"：**整页 GET 成功出口**必须走 PageSlot + pageview.Render；
+# 片段出口（htmx 局部替换）与独立失败页本来就该用 c.HTML。
+#
+# 格式：<文件> gin=<n> html=<n>；末行 --total 是本仓当前值（**双向精确匹配**）。
+
+internal/module/admin/inbound/http/admin_page.go gin=0 html=3
+internal/module/page/inbound/http/page_translations_handle.go gin=0 html=1
+internal/module/user/inbound/http/user_page.go gin=0 html=1
+internal/module/workbench/inbound/http/inspector_handle.go gin=0 html=1
+
+--total gin=0 html=6

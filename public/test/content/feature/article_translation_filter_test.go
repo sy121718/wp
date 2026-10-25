@@ -1,6 +1,7 @@
 package feature
 
 import (
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,7 +16,7 @@ func TestArticleTranslationsFilterSearchesBeforePagination(t *testing.T) {
 	if engine == nil {
 		return
 	}
-	engine.GET("/admin/articles/translations", contenthttp.NewArticleTranslationHandle(svc).ArticleTranslations)
+	engine.GET("/admin/articles/translations", adminui.PageSlot(contenthttp.ArticleTranslationsTemplate), contenthttp.NewArticleTranslationHandle(svc).ArticleTranslations)
 	seedArticles(t, db, 65)
 
 	request := func(query string) string {
@@ -50,7 +51,7 @@ func TestArticleTranslationsFilterTreatsLikeWildcardsLiterally(t *testing.T) {
 	if engine == nil {
 		return
 	}
-	engine.GET("/admin/articles/translations", contenthttp.NewArticleTranslationHandle(svc).ArticleTranslations)
+	engine.GET("/admin/articles/translations", adminui.PageSlot(contenthttp.ArticleTranslationsTemplate), contenthttp.NewArticleTranslationHandle(svc).ArticleTranslations)
 	seedArticles(t, db, 2)
 	for _, keyword := range []string{"%", "_"} {
 		rec := httptest.NewRecorder()

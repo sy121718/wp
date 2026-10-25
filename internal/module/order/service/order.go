@@ -201,23 +201,23 @@ func sameUserID(a, b *uint64) bool {
 // validateCreateOrderReq 入参校验：不碰数据库，纯形状检查。
 func validateCreateOrderReq(req *orderdto.CreateOrderReq) error {
 	if req == nil {
-		return errors.New(orderenums.ErrInvalidParam)
+		return orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	if strings.TrimSpace(req.ProjectID) == "" {
-		return errors.New(orderenums.ErrProjectRequired)
+		return orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	email := strings.TrimSpace(req.CustomerEmail)
 	if email == "" {
-		return errors.New(orderenums.ErrCustomerEmailRequired)
+		return orderenums.Err(orderenums.ErrCustomerEmailRequired)
 	}
 	if !strings.Contains(email, "@") || len(email) < 3 {
-		return errors.New(orderenums.ErrCustomerEmailInvalid)
+		return orderenums.Err(orderenums.ErrCustomerEmailInvalid)
 	}
 	if len(req.Items) == 0 {
-		return errors.New(orderenums.ErrItemsRequired)
+		return orderenums.Err(orderenums.ErrItemsRequired)
 	}
 	if len(req.Items) > maxOrderItems {
-		return errors.New(orderenums.ErrItemLimitExceeded)
+		return orderenums.Err(orderenums.ErrItemLimitExceeded)
 	}
 	return nil
 }
@@ -264,7 +264,7 @@ func (s *Service) newOrderNo(ctx context.Context, projectID string) (no string, 
 			return no, nil
 		}
 	}
-	return "", errors.New(orderenums.ErrOrderNoTaken)
+	return "", orderenums.Err(orderenums.ErrOrderNoTaken)
 }
 
 // operatorTypeOf 下单入口 → 操作人类型。
@@ -522,14 +522,14 @@ func (s *Service) buildOrderItems(ctx context.Context, req *orderdto.CreateOrder
 	for _, it := range req.Items {
 		vid := strings.TrimSpace(it.VariantID)
 		if vid == "" {
-			return nil, 0, errors.New(orderenums.ErrInvalidParam)
+			return nil, 0, orderenums.Err(orderenums.ErrInvalidParam)
 		}
 		if it.Quantity <= 0 || it.Quantity > maxItemQuantity {
-			return nil, 0, errors.New(orderenums.ErrQuantityInvalid)
+			return nil, 0, orderenums.Err(orderenums.ErrQuantityInvalid)
 		}
 		sn := byID[vid]
 		if sn == nil {
-			return nil, 0, fmt.Errorf("%w: %s", errors.New(orderenums.ErrVariantNotFound), vid)
+			return nil, 0, fmt.Errorf("%w: %s", orderenums.Err(orderenums.ErrVariantNotFound), vid)
 		}
 		if sn.ProjectID != "" && sn.ProjectID != projectID {
 			// 跨工程下单是越权，不是「查不到」。
@@ -537,10 +537,10 @@ func (s *Service) buildOrderItems(ctx context.Context, req *orderdto.CreateOrder
 			// 端口已按工程作用域过滤（不属于本工程的变体根本不出现在快照里，见
 			// VariantSnapshotPort 的契约），所以这里到不了 —— 留着当第二道防线：
 			// 端口契约被改坏时仍然拦得住，而不是让订单落一行商品名为空的快照项。
-			return nil, 0, errors.New(orderenums.ErrVariantNotFound)
+			return nil, 0, orderenums.Err(orderenums.ErrVariantNotFound)
 		}
 		if !sn.Enabled {
-			return nil, 0, errors.New(orderenums.ErrVariantNotFound)
+			return nil, 0, orderenums.Err(orderenums.ErrVariantNotFound)
 		}
 		lineSubtotal := sn.Price * int64(it.Quantity)
 		subtotal += lineSubtotal
@@ -587,7 +587,7 @@ func (s *Service) resolveCoupon(ctx context.Context, projectID, couponCode strin
 		return nil, 0, err
 	}
 	if ce == nil {
-		return nil, 0, errors.New(orderenums.ErrCouponNotFound)
+		return nil, 0, orderenums.Err(orderenums.ErrCouponNotFound)
 	}
 	if reason := couponRuleCheck(ce, subtotal, time.Now()); reason != "" {
 		return nil, 0, errors.New(reason)
@@ -889,12 +889,12 @@ func (s *Service) resolveMembershipDiscount(ctx context.Context, projectID strin
 // 另一条走幂等分支原样返回。
 func (s *Service) PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res *orderdto.PayOrderResp, err error) {
 	if req == nil || req.OrderID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	method := strings.TrimSpace(req.PaymentMethod)
 	if method == "" {
 		// 不落支付通道就置为已付款，等于在账上放一笔来路不明的钱。
-		return nil, errors.New(orderenums.ErrPaymentMethodRequired)
+		return nil, orderenums.Err(orderenums.ErrPaymentMethodRequired)
 	}
 	title := strings.TrimSpace(req.PaymentMethodTitle)
 	txnID := strings.TrimSpace(req.TransactionID)
@@ -920,7 +920,7 @@ func (s *Service) PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res 
 			return lerr
 		}
 		if e == nil {
-			return errors.New(orderenums.ErrOrderNotFound)
+			return orderenums.Err(orderenums.ErrOrderNotFound)
 		}
 
 		// 幂等分支：已经付过（或已经走到更靠后的状态）就原样返回，不改任何列。
@@ -1077,16 +1077,16 @@ func canTransition(from, to string) bool {
 // 结果是两条流转记录 + 可能两次库存动作。
 func (s *Service) ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusReq) (err error) {
 	if req == nil || req.OrderID == 0 {
-		return errors.New(orderenums.ErrInvalidParam)
+		return orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	to := strings.TrimSpace(req.ToStatus)
 	if !isKnownStatus(to) {
-		return errors.New(orderenums.ErrStatusInvalid)
+		return orderenums.Err(orderenums.ErrStatusInvalid)
 	}
 	// 取消与退款有专门的用例（它们各有额外语义），这里拒绝走通用路径，
 	// 否则「取消」会绕过归还库存、「退款」会绕过流水号记录。
 	if to == ordermodel.OrderStatusCancelled || to == ordermodel.OrderStatusRefunded {
-		return errors.New(orderenums.ErrStatusTransition)
+		return orderenums.Err(orderenums.ErrStatusTransition)
 	}
 
 	// 定位跳（DB-009 第四批）：请求只给订单 id，而 orders 带 FORCE 策略 —— 缺作用域时
@@ -1105,7 +1105,7 @@ func (s *Service) ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusRe
 			return lerr
 		}
 		if e == nil {
-			return errors.New(orderenums.ErrOrderNotFound)
+			return orderenums.Err(orderenums.ErrOrderNotFound)
 		}
 		if !canTransition(e.Status, to) {
 			return errors.New(transitionError(e.Status, to))
@@ -1144,11 +1144,11 @@ func (s *Service) ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusRe
 // （库存句柄经 ChangeStockTx 传进本事务），失败就没有半截状态可言。
 func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq) (res *orderdto.CancelOrderResp, err error) {
 	if req == nil || req.OrderID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	reason := strings.TrimSpace(req.Reason)
 	if reason == "" {
-		return nil, errors.New(orderenums.ErrCancelReasonRequired)
+		return nil, orderenums.Err(orderenums.ErrCancelReasonRequired)
 	}
 
 	// 工程作用域（DB-009 第三批 + 第四批）：orders 带 FORCE 策略，加锁读、状态更新、
@@ -1169,7 +1169,7 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 			return lerr
 		}
 		if e == nil {
-			return errors.New(orderenums.ErrOrderNotFound)
+			return orderenums.Err(orderenums.ErrOrderNotFound)
 		}
 		if !canTransition(e.Status, ordermodel.OrderStatusCancelled) {
 			return errors.New(transitionError(e.Status, ordermodel.OrderStatusCancelled))
@@ -1229,7 +1229,7 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 // （有实物验收环节），凭空加回来等于把「系统里的数」当成「仓库里的货」。
 func (s *Service) RefundOrder(ctx context.Context, req *orderdto.RefundOrderReq) (err error) {
 	if req == nil || req.OrderID == 0 {
-		return errors.New(orderenums.ErrInvalidParam)
+		return orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	// 定位跳（DB-009 第四批）：同 ChangeStatus —— 请求只给订单 id。
 	projectID, perr := s.locateOrderProject(ctx, req.OrderID)
@@ -1258,7 +1258,7 @@ func (s *Service) refundOrderTx(ctx context.Context, tx *gorm.DB, projectID stri
 		return lerr
 	}
 	if e == nil {
-		return errors.New(orderenums.ErrOrderNotFound)
+		return orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	if !canTransition(e.Status, ordermodel.OrderStatusRefunded) {
 		return errors.New(transitionError(e.Status, ordermodel.OrderStatusRefunded))
@@ -1306,7 +1306,7 @@ func (s *Service) restockUnreturnedTx(ctx context.Context, tx *gorm.DB, e *order
 		return ierr
 	}
 	if len(items) == 0 {
-		return errors.New(orderenums.ErrOrderHasNoItems)
+		return orderenums.Err(orderenums.ErrOrderHasNoItems)
 	}
 	received, rerr := s.receivedByItemTx(ctx, tx, e.ProjectID, e.ID, items)
 	if rerr != nil {
@@ -1355,11 +1355,11 @@ const maxAdminNoteLen = 500
 // UpdateOrderNote 改订单的后台备注。
 func (s *Service) UpdateOrderNote(ctx context.Context, req *orderdto.UpdateOrderNoteReq) (res *orderdto.OrderResp, err error) {
 	if req == nil || req.OrderID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	note := strings.TrimSpace(req.AdminNote)
 	if len(note) > maxAdminNoteLen {
-		return nil, errors.New(orderenums.ErrNoteTooLong)
+		return nil, orderenums.Err(orderenums.ErrNoteTooLong)
 	}
 	// 定位跳（DB-009 第四批）：后台备注入口只给订单 id。
 	projectID, perr := s.locateOrderProject(ctx, req.OrderID)
@@ -1371,7 +1371,7 @@ func (s *Service) UpdateOrderNote(ctx context.Context, req *orderdto.UpdateOrder
 		return nil, err
 	}
 	if head == nil {
-		return nil, errors.New(orderenums.ErrOrderNotFound)
+		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	if err = s.orders.UpdateFields(ctx, head.ProjectID, head.ID, map[string]any{
 		"admin_note":  note,
@@ -1384,7 +1384,7 @@ func (s *Service) UpdateOrderNote(ctx context.Context, req *orderdto.UpdateOrder
 		return nil, err
 	}
 	if updated == nil {
-		return nil, errors.New(orderenums.ErrOrderNotFound)
+		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	return toOrderResp(updated), nil
 }
@@ -1518,7 +1518,7 @@ var _ membershipcontract.PurchaseSource = (*Service)(nil)
 func (s *Service) SpentTotalsByUser(ctx context.Context, projectID string) (totals map[uint64]int64, err error) {
 	pid := strings.TrimSpace(projectID)
 	if pid == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	return s.orders.SpentTotalsByProject(ctx, pid)
 }

@@ -5,6 +5,18 @@ body {
   container-name: sky-theme;
 }
 
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .sky-c-l1 {
   list-style: none;
   margin: 0;
@@ -14,7 +26,7 @@ body {
 .sky-c-l1 .sky-list-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--sky-space-5, 10px);
   padding: calc(10px / 2) 0;
 }
 
@@ -47,7 +59,7 @@ body {
 .sky-c-l1 .sky-list-dot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--sky-radius-pill, 999px);
   background: currentColor;
   display: block;
   margin-top: 6px;
@@ -62,7 +74,7 @@ body {
 .sky-c-l2 .sky-list-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--sky-space-5, 10px);
   padding: calc(10px / 2) 0;
 }
 
@@ -95,7 +107,7 @@ body {
 .sky-c-l2 .sky-list-dot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--sky-radius-pill, 999px);
   background: currentColor;
   display: block;
   margin-top: 6px;
@@ -110,7 +122,7 @@ body {
 .sky-c-l3 .sky-list-item {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--sky-space-5, 10px);
   padding: calc(10px / 2) 0;
 }
 
@@ -143,7 +155,7 @@ body {
 .sky-c-l3 .sky-list-dot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--sky-radius-pill, 999px);
   background: currentColor;
   display: block;
   margin-top: 6px;

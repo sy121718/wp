@@ -38,7 +38,7 @@ func TestCompileCSSDefaults(t *testing.T) {
 		}
 	}
 	// 逐变体独有规则不该出现在缺省模式里。
-	for _, unwanted := range []string{"padding-top: 10px", "width: min(100%, 240px)"} {
+	for _, unwanted := range []string{"padding-top: var(--sky-space-5, 10px)", "width: min(100%, 240px)"} {
 		if strings.Contains(css, unwanted) {
 			t.Fatalf("缺省模式不该输出逐变体独有规则 %q；实际样式：\n%s", unwanted, css)
 		}
@@ -51,7 +51,7 @@ func TestCompileCSSPerVariant(t *testing.T) {
 	p.VariantMode = ModePerVariant
 	css := addToCartCSSFor(t, p)
 	for _, want := range []string{
-		"padding-top: 10px",
+		"padding-top: var(--sky-space-5, 10px)",
 		"border-top: 1px solid var(--sky-c-border, #e5e7eb)",
 		"width: min(100%, 240px)", // 按钮仍不写死宽度
 		"align-items: stretch",

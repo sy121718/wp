@@ -6,7 +6,7 @@
 /* 引用块：左侧主色竖线 + 斜体；居中为可选项。 */
 & {
   margin: 0;
-  padding: 16px 20px;
+  padding: var(--sky-space-7, 16px) 20px;
   border-left: 4px solid var(--sky-c-primary, #2563eb);
   font-style: italic;
   @if center

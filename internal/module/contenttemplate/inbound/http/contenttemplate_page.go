@@ -34,6 +34,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	projectcontract "go_wp/internal/module/project/contract"
+	pageview "go_wp/pkg/view"
 )
 
 const contentTemplatesListPath = "/admin/content-templates"
@@ -76,11 +77,11 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	if err != nil {
 		// 工程列表装载失败：**这一页的主数据失败了** —— 工程上下文是页面的前提（选择器 + 写动作归属），
 		// 而且这一支在给出 `Impact` / `templates.List` 之前就 return：**列表主体根本没读**。
-		// 出口因此是「同页完整 HTML + 500 + no-store」（docs/rules/template-boundary.md §整页 GET 的失败出口），
-		// 而不是 200 的降级渲染：200 在监控里与正常页一模一样，失败会一直无声地发生；
-		// 失败页也不该被缓存，否则「重试」只是把同一份失败从缓存里再拿回来。
+		// 出口因此是 **JSON 错误体 + 500**（pageview.Fail），而不是 200 的降级渲染：
+		// 200 在监控里与正常页一模一样，失败会一直无声地发生。
 		//（早期把这一支写成「可选辅助降级 200」的示例，已在 2026-10 按上面的短路证据纠正 ——
-		// 没有可靠工程归属的列表查询不再继续。）
+		// 没有可靠工程归属的列表查询不再继续；失败页壳也在同一批里取消，
+		// 改成「所有提示只需要一个提示」，见本文件末尾那两条分支的说明。）
 		//
 		// 此前这里是 `c.String(500, adminui.MsgInternalError)`：浏览器里没有页面，只有一块纯文本，
 		// 而且那块文本是**未翻译的裸 key**（页面上直接显示 `MsgInternalError` 这串英文）——
@@ -95,19 +96,11 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 		//   · LoadFailed=true —— 列表空是因为**没读出来**，不是「还没有模板」，
 		//     由模板据此换掉空态标题（空态误导比什么都不显示更糟）。
 		// 装载失败是这次请求真实发生的事（列表页自己的提示条）；原文只进日志（contentTemplateInternalText）。
-		data := gin.H{
-			"title": "MsgContentTemplatesTitle", "menu": "content-templates",
-			"Projects": []projectcontract.ProjectResp{}, "SelectedProject": "",
-			"EntityType": strings.TrimSpace(c.Query("entityType")),
-			"Err":        contentTemplateInternalText(c, err),
-			"Ready":      true,
-			"LoadFailed": true,
-			"Templates":  []gin.H{}, "TemplateCount": 0,
-			"ImpactAvailable": false,
-			"ImpactNote":      contentTemplateImpactLoadFailedText(c),
-		}
-		c.Header("Cache-Control", "no-store")
-		c.HTML(http.StatusInternalServerError, "admin/contenttemplate/content_templates.html", adminui.Prepare(c, data))
+		// 失败一律走 JSON 错误体（pageview.Fail）：页面 GET 失败不渲染页壳 ——
+		// 状态码由错误性质定（pkg/response.ErrorStatus），文案由归口链取词，原文只进日志。
+		// 原先这里渲染「完整页壳 + 500」：200/500 两种出口都要维护同一张模板的必需键，
+		// 而那份页壳在失败时提供的信息（侧栏、菜单）本来就没有一条是这次失败需要的。
+		pageview.FailScene(c, contentTemplateErrScene, err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -115,17 +108,20 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 		selected = projects[0].ID
 	}
 	entityType := strings.TrimSpace(c.Query("entityType"))
-	data := gin.H{
-		"title": "MsgContentTemplatesTitle", "menu": "content-templates",
-		"Projects": projects, "SelectedProject": selected,
-		"EntityType": entityType,
+	view := &contenttemplatedto.ContentTemplatesPageResp{
+		Title: "MsgContentTemplatesTitle", Menu: "content-templates",
+		Projects: projects, SelectedProject: selected,
+		EntityType: entityType,
 		// 写动作的结论不再回带（走 shell.RenderJump 提示页，见 content_template_err.go）；
 		// 这一页的提示条只由「列表取数失败」填充（见上面的降级分支）。
-		"Err": "",
+		Err:   "",
+		Ready: true,
 	}
 	if h.templates == nil {
-		data["Ready"] = false
-		c.HTML(http.StatusOK, "admin/contenttemplate/content_templates.html", adminui.Prepare(c, data))
+		// 能力未装配 ≠ 没有模板：Ready=false 让模板只渲染「能力未装配」那句，
+		// 而不是一个误导人的空列表。
+		view.Ready = false
+		pageview.Render(c, view)
 		return
 	}
 	// 引用反查先于列表：影响面（哪些模板被页面 / 实例引用）是这一页的删前决策依据。
@@ -137,11 +133,9 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 	}
 	list, err := h.templates.List(ctx, &contenttemplatedto.ListReq{EntityType: entityType, ProjectID: selected})
 	if err != nil {
-		// 模板清单是这一页的**主数据**：读不到就不该有这一页 —— 同页完整 HTML 500 + no-store
-		//（docs/rules/template-boundary.md §「整页 GET 的失败出口：失败也必须是『这一页』」，
-		// 样板 navigation_page_handle.go:290-317）。
+		// 模板清单是这一页的**主数据**：读不到就不该有这一页 —— 与上面同一条出口（JSON + 500）。
 		//
-		// 与上面 `projects.List` 失败那条的分界不在状态码（两条现在都是 500 + no-store），
+		// 与上面 `projects.List` 失败那条的分界不在状态码（两条现在都是 500），
 		// 而在**页面赖以成立的主数据是否已经读完**：工程列表失败时 `Impact` / `templates.List`
 		// 都还没查（`:75-111` 直接 return），列表主体根本没读；这里失败时工程上下文与筛选骨架
 		// 还在，但列表主体同样没有了。两条都是主数据失败，200 会让失败与「真的没有模板」在
@@ -149,25 +143,18 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 		//
 		// 键与成功路径同一份：Err 喂模板 :29 的提示条，LoadFailed 喂模板 :118 的失败空态
 		//（「列表没读出来」≠「还没有模板」）。原文只进日志（contentTemplateInternalText）。
-		data["Err"] = contentTemplateInternalText(c, err)
-		data["LoadFailed"] = true
-		data["Ready"] = true
-		data["ImpactAvailable"] = impact.Available
-		data["ImpactNote"] = contentTemplateImpactNote(c, impact, impactErr)
-		data["Templates"] = []gin.H{}
-		data["TemplateCount"] = 0
-		c.Header("Cache-Control", "no-store")
-		c.HTML(http.StatusInternalServerError, "admin/contenttemplate/content_templates.html", adminui.Prepare(c, data))
+		// 主数据失败 → 同样是 JSON 错误体（见上一条分支的说明）。
+		pageview.FailScene(c, contentTemplateErrScene, err)
 		return
 	}
 	// 展示标签（实体类型 / 角色 / 槽位）在这里取成**当前语言文本**：service 拿不到请求语言，
 	// 模板直接渲染的文本也不经过 pkg/response 的 translate（见 enums 的 contenttemplate_labels.go）。
 	//
-	// 这几个槽位（模板的 {{t.TypeLabel}} / {{t.RoleLabel}} / {{t.Slots}}）**还没取词化**：
+	// 这几个槽位（模板的 {{t.Type}} / {{t.Role}} / {{t.Slots}}）**还没取词化**：
 	// 优先形态是把 LabelPair 交给模板、由它用注入的 tr 取词；本轮先按批次约定把它
 	// 取成文本再传（取词走 adminui.MsgText，不再经 shell）。已登记在批次报告里。
 	refsByTemplate := contentTemplateRefsByTemplate(c, impact)
-	rows := make([]gin.H, 0, len(list))
+	rows := make([]contenttemplatedto.TemplateListRowResp, 0, len(list))
 	for _, t := range list {
 		// 结构模板（页眉 / 页脚）不是内容实体：工作台以**无样例实体**模式打开它 ——
 		// 不去挑样例实体（挑也挑不到：header / footer 没有实体来源，sampleEntityID
@@ -189,31 +176,36 @@ func (h *contentTemplatePageHandle) ContentTemplatesPage(c *gin.Context) {
 			// 而那一行的报错表现是「HTTP 200 + 之后整块 HTML 消失」。
 			refs = &contentTemplateImpactRow{Pages: []contentTemplatePageRef{}, Instances: []contentTemplateInstanceRef{}}
 		}
-		rows = append(rows, gin.H{
-			"ID": t.ID, "Name": t.Name, "EntityType": t.EntityType,
-			"DraftVersion": t.DraftVersion, "UpdatedAt": t.UpdatedAt,
+		rows = append(rows, contenttemplatedto.TemplateListRowResp{
+			ID: t.ID, Name: t.Name, EntityType: t.EntityType,
+			DraftVersion: t.DraftVersion, UpdatedAt: t.UpdatedAt,
 			// 结构模板（页眉 / 页脚）与内容实体模板在这张表里是两类东西：前者没有实体来源、
 			// 也不接受字段绑定，两者的可编辑性与删除后果都不同，页面上必须一眼分得开。
-			"IsStructure": isStructure,
-			"TypeLabel":   contentTemplateTypeLabel(c, t.EntityType),
-			"RoleLabel":   contentTemplateRoleLabel(c, t.TemplateRole),
-			"IsDefault":   t.IsDefault,
+			IsStructure: isStructure,
+			Type:        contenttemplateenums.EntityTypeLabel(t.EntityType),
+			Role:        contenttemplateenums.TemplateRoleLabel(t.TemplateRole),
+			IsDefault:   t.IsDefault,
 			// SampleErr 是**模板数据**（形态③）：依赖错误只能出归口文案，原文进日志。
-			"EditURL": editURL, "SampleErr": sampleNote,
+			EditURL: editURL, SampleErr: sampleNote,
 			// 引用明细（页面 / 实例）：删除与切换生效前必须看得见的东西，所以给
 			// 「是哪几张页面、哪个实例」而不是一个计数（计数只够做提示，不够做决策）。
-			"RefPages": refs.Pages, "RefInstances": refs.Instances, "RefCount": refs.Count,
-			"RefPageCount": len(refs.Pages), "RefInstanceCount": len(refs.Instances),
+			RefPages:         toTemplatePageRefs(refs.Pages),
+			RefInstances:     toTemplateInstanceRefs(refs.Instances),
+			RefCount:         refs.Count,
+			RefPageCount:     len(refs.Pages),
+			RefInstanceCount: len(refs.Instances),
 		})
 	}
-	data["Templates"] = rows
-	data["TemplateCount"] = len(rows)
-	data["Ready"] = true
+	view.Templates = rows
+	view.TemplateCount = len(rows)
+	view.Ready = true
 	// 影响面能力的三种状态各说各话：可用 / 未装配 / 有文档解析不了（影响面可能不完整）。
 	// 未装配与「没有引用」必须长得不一样，否则运营会拿一个空白引用列表当证据去删模板。
-	data["ImpactAvailable"] = impact.Available
-	data["ImpactNote"] = contentTemplateImpactNote(c, impact, impactErr)
-	c.HTML(http.StatusOK, "admin/contenttemplate/content_templates.html", adminui.Prepare(c, data))
+	view.ImpactAvailable = impact.Available
+	view.ImpactNote = contentTemplateImpactNote(c, impact, impactErr)
+	// 页面出口统一走 pageview.Render：模板名与渲染实现由路由的 PageSlot 带进上下文，
+	// 控制器不持模板名、不 import 渲染层（与 product / masterdata 同一形态）。
+	pageview.Render(c, view)
 }
 
 // ContentTemplateEditPage GET /admin/content-templates/edit：302 到工作台（保留 query）。
@@ -470,3 +462,29 @@ func contentTemplateImpactNote(c *gin.Context, impact *contenttemplatedto.Impact
 	}
 	return ""
 }
+
+// toTemplatePageRefs / toTemplateInstanceRefs 把 handler 内部的引用行转成 dto 形状。
+//
+// 为什么不让 handler 内部类型直接当视图类型：视图是**对外契约**（模板读它的字段），
+// 而 contentTemplatePageRef 是这一屏的中间产物。两者同形时转换只是几行，但把
+// "模板契约"和"中间结构"绑在一起会让改其中一个必须动另一个。
+func toTemplatePageRefs(in []contentTemplatePageRef) []contenttemplatedto.TemplatePageRefResp {
+	out := make([]contenttemplatedto.TemplatePageRefResp, 0, len(in))
+	for _, r := range in {
+		out = append(out, contenttemplatedto.TemplatePageRefResp{
+			Label: r.Label, Path: r.Path, Slots: r.Slots, URL: r.URL,
+		})
+	}
+	return out
+}
+
+func toTemplateInstanceRefs(in []contentTemplateInstanceRef) []contenttemplatedto.TemplateInstanceRefResp {
+	out := make([]contenttemplatedto.TemplateInstanceRefResp, 0, len(in))
+	for _, r := range in {
+		out = append(out, contenttemplatedto.TemplateInstanceRefResp{
+			Label: r.Label, Entity: r.Entity, Path: r.Path, Slots: r.Slots,
+		})
+	}
+	return out
+}
+

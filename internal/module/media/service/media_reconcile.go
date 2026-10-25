@@ -53,7 +53,7 @@ import (
 	"sync"
 	"time"
 
-	"go_wp/internal/module/media/model"
+	mediamodel "go_wp/internal/module/media/model"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/upload"
 	"go_wp/pkg/utils"

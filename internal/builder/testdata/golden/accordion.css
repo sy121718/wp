@@ -5,10 +5,22 @@ body {
   container-name: sky-theme;
 }
 
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .sky-c-ac1 {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
 }
 
 .sky-c-ac1 .sky-accordion-head {
@@ -59,7 +71,7 @@ body {
 .sky-c-ac2 {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
 }
 
 .sky-c-ac2 .sky-accordion-head {

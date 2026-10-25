@@ -41,7 +41,7 @@
 }
 & hr { margin-block: 2em; border: 0; border-top: 1px solid var(--sky-c-border, #e5e7eb); }
 & code, & pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
-& pre { overflow-x: auto; padding: .9em 1em; border-radius: 8px; background: var(--sky-c-bg-soft, #f4f5f6); }
+& pre { overflow-x: auto; padding: .9em 1em; border-radius: var(--sky-radius-lg, 8px); background: var(--sky-c-bg-soft, #f4f5f6); }
 
 /* 表格：铺满可用宽度。单元格边框让长表格可辨读。 */
 & table { width: 100%; border-collapse: collapse; margin-block: 1.4em; }

@@ -12,6 +12,7 @@ package workbenchhttp
 // 不靠字符串猜测），并且被拒的值一个字符都不许出现在整页正文里。
 
 import (
+	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -37,7 +38,7 @@ func newWorkbenchBlockReturnURLRouter(t *testing.T) *gin.Engine {
 		ID: "block-1", ProjectID: "project-1", Name: "页眉", Kind: "header",
 		Document: json.RawMessage(`{"type":"root"}`),
 	}}}
-	router.GET("/workbench", deps.newHandle().Workbench)
+	router.GET("/workbench", adminui.PageSlot(CanvasLayoutTemplate), deps.newHandle().Workbench)
 	return router
 }
 

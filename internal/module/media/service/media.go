@@ -43,10 +43,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/media/contract"
-	"go_wp/internal/module/media/dto"
-	"go_wp/internal/module/media/enums"
-	"go_wp/internal/module/media/model"
+	mediacontract "go_wp/internal/module/media/contract"
+	mediadto "go_wp/internal/module/media/dto"
+	mediaenums "go_wp/internal/module/media/enums"
+	mediamodel "go_wp/internal/module/media/model"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/upload"
@@ -113,7 +113,7 @@ func detectContentMIME(src multipart.File, declared string) string {
 // 存量附件路径不动：历史随机名继续按原 file_path 提供访问，构建期探测按 file_path 反查。
 func (s *Service) Upload(ctx context.Context, file *multipart.FileHeader, categoryID *uint64) (*mediadto.AttachmentResp, error) {
 	if file == nil {
-		return nil, errors.New(mediaenums.ErrUploadEmpty)
+		return nil, mediaenums.Err(mediaenums.ErrUploadEmpty)
 	}
 	if categoryID != nil && *categoryID > 0 {
 		if _, err := s.cm.GetCategory(ctx, *categoryID); err != nil {
@@ -319,12 +319,12 @@ func decodeMediaCursor(cursor string) (time.Time, uint64, error) {
 // dto 里保留该字段是为了将来真要做工程级隔离时不必改契约。
 func (s *Service) Detail(ctx context.Context, req *mediadto.DetailReq) (*mediadto.AttachmentResp, error) {
 	if req == nil || req.ID == 0 {
-		return nil, errors.New(mediaenums.MsgBadRequest)
+		return nil, mediaenums.Err(mediaenums.MsgBadRequest)
 	}
 	e, err := s.am.GetByID(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(mediaenums.ErrAttachmentNotFound)
+			return nil, mediaenums.Err(mediaenums.ErrAttachmentNotFound)
 		}
 		return nil, err
 	}
@@ -343,12 +343,12 @@ func (s *Service) Detail(ctx context.Context, req *mediadto.DetailReq) (*mediadt
 func (s *Service) Delete(ctx context.Context, req *mediadto.DeleteReq) error {
 	// projectId 同 Detail：媒体库不按工程隔离，故不校验（见上）。
 	if req == nil || req.ID == 0 {
-		return errors.New(mediaenums.MsgBadRequest)
+		return mediaenums.Err(mediaenums.MsgBadRequest)
 	}
 	_, err := s.am.GetByID(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New(mediaenums.ErrAttachmentNotFound)
+			return mediaenums.Err(mediaenums.ErrAttachmentNotFound)
 		}
 		return err
 	}
@@ -662,27 +662,27 @@ func (s *Service) UpdateAttachment(ctx context.Context, req *mediadto.Attachment
 //   - 扩展名与现有 file_path 不一致：拒绝（见文件头说明）。
 func (s *Service) Replace(ctx context.Context, id uint64, file *multipart.FileHeader) (res *mediadto.AttachmentResp, err error) {
 	if file == nil {
-		return nil, errors.New(mediaenums.ErrUploadEmpty)
+		return nil, mediaenums.Err(mediaenums.ErrUploadEmpty)
 	}
 	att, err := s.am.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(mediaenums.ErrAttachmentNotFound)
+			return nil, mediaenums.Err(mediaenums.ErrAttachmentNotFound)
 		}
 		return nil, err
 	}
 	if att.StorageType != "local" {
-		return nil, errors.New(mediaenums.ErrVariantStorageNotLocal)
+		return nil, mediaenums.Err(mediaenums.ErrVariantStorageNotLocal)
 	}
 
 	currentKey := attachmentStorageKey(att)
 	if strings.TrimSpace(currentKey) == "" {
-		return nil, errors.New(mediaenums.ErrReplaceFailed)
+		return nil, mediaenums.Err(mediaenums.ErrReplaceFailed)
 	}
 	newExt := strings.ToLower(filepath.Ext(file.Filename))
 	oldExt := strings.ToLower(filepath.Ext(currentKey))
 	if newExt != oldExt {
-		return nil, errors.New(mediaenums.ErrReplaceExtMismatch)
+		return nil, mediaenums.Err(mediaenums.ErrReplaceExtMismatch)
 	}
 
 	md5hex, err := fileMD5(file)
@@ -898,7 +898,7 @@ func buildVariantReadme(dirName, status, lang string) string {
 // prefix 为空表示单图包根目录，批量模式为 <stem>_<id>/ 子目录。
 func (s *Service) appendAttachmentEntries(ctx context.Context, plan *mediadto.DownloadPlan, att *mediamodel.AttachmentEntity, prefix, lang string) error {
 	if att.StorageType != "local" {
-		return errors.New(mediaenums.ErrDownloadStorageNotLocal)
+		return mediaenums.Err(mediaenums.ErrDownloadStorageNotLocal)
 	}
 
 	join := func(parts ...string) string {
@@ -984,7 +984,7 @@ func (s *Service) BuildDownloadPlan(ctx context.Context, attachmentID uint64, la
 	att, err := s.am.GetByID(ctx, attachmentID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(mediaenums.ErrAttachmentNotFound)
+			return nil, mediaenums.Err(mediaenums.ErrAttachmentNotFound)
 		}
 		return nil, err
 	}
@@ -1004,7 +1004,7 @@ func (s *Service) BuildBatchDownloadPlan(ctx context.Context, ids []uint64, lang
 	lang := mediaDownloadLang(langs)
 	ids = normalizeIDs(ids)
 	if len(ids) == 0 {
-		return nil, errors.New(mediaenums.ErrDownloadEmpty)
+		return nil, mediaenums.Err(mediaenums.ErrDownloadEmpty)
 	}
 	plan = &mediadto.DownloadPlan{
 		FileName: "media_export_" + time.Now().Format("20060102") + ".zip",
@@ -1026,7 +1026,7 @@ func (s *Service) BuildBatchDownloadPlan(ctx context.Context, ids []uint64, lang
 		}
 	}
 	if len(plan.Entries) == 0 {
-		return nil, errors.New(mediaenums.ErrDownloadEmpty)
+		return nil, mediaenums.Err(mediaenums.ErrDownloadEmpty)
 	}
 	return plan, nil
 }
@@ -1052,7 +1052,7 @@ func normalizeIDs(ids []uint64) []uint64 {
 func (s *Service) References(ctx context.Context, id uint64) (res []mediadto.AttachmentRefResp, err error) {
 	if _, err := s.am.GetByID(ctx, id); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(mediaenums.ErrAttachmentNotFound)
+			return nil, mediaenums.Err(mediaenums.ErrAttachmentNotFound)
 		}
 		return nil, err
 	}
@@ -1072,12 +1072,12 @@ func (s *Service) References(ctx context.Context, id uint64) (res []mediadto.Att
 // 返回本次该引用方实际命中的附件数。差集增删，重复构建零写入（幂等）。
 func (s *Service) SyncReferences(ctx context.Context, req *mediacontract.SyncRefsInput) (n int, err error) {
 	if req == nil {
-		return 0, errors.New(mediaenums.MsgBadRequest)
+		return 0, mediaenums.Err(mediaenums.MsgBadRequest)
 	}
 	kind := strings.TrimSpace(req.RefKind)
 	refID := strings.TrimSpace(req.RefID)
 	if kind == "" || refID == "" {
-		return 0, errors.New(mediaenums.MsgBadRequest)
+		return 0, mediaenums.Err(mediaenums.MsgBadRequest)
 	}
 
 	target := make(map[uint64]struct{}, len(req.URLs))

@@ -100,6 +100,7 @@ import (
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	"go_wp/pkg/safepath"
+	pageview "go_wp/pkg/view"
 )
 
 // --- 角色分配 ---
@@ -136,21 +137,21 @@ func (h *AdminPagesHandle) AdministratorRolesDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.Prepare(c, data))
+	pageview.Render(c, data)
 }
 
 // administratorRolesDrawerData 装配角色抽屉：候选角色（全量）+ 该账号当前绑定的 codes。
 //
 // checkedOverride 非 nil 时用它代替库里的绑定集合 —— 保存失败路径要用本次提交的值重渲染，
 // 用库里的值会把用户刚勾的那一屏整块回退（与角色分权抽屉同一处置）。
-func (h *AdminPagesHandle) administratorRolesDrawerData(c *gin.Context, userID uint64, checkedOverride []string) (gin.H, error) {
+func (h *AdminPagesHandle) administratorRolesDrawerData(c *gin.Context, userID uint64, checkedOverride []string) (*admindto.RoleDrawerResp, error) {
 	ctx := c.Request.Context()
 	account, err := h.admins.AdminDetail(ctx, &admindto.AdminDetailReq{Id: userID})
 	if err != nil {
 		return nil, err
 	}
 	if account == nil || account.ID != userID {
-		return nil, errors.New(adminenums.ErrAdminNotFound)
+		return nil, adminenums.Err(adminenums.ErrAdminNotFound)
 	}
 
 	all, err := h.listAllRoles(ctx)
@@ -192,7 +193,7 @@ func (h *AdminPagesHandle) administratorRolesDrawerData(c *gin.Context, userID u
 	// 未知角色排在末尾：它们的顺序不稳定（map 迭代），排在前面会让每次打开抽屉的清单都不一样。
 	sortRoleChoices(rows)
 
-	return gin.H{"Account": account, "Rows": rows}, nil
+	return &admindto.RoleDrawerResp{Account: account, Rows: rows}, nil
 }
 
 // listAllRoles 取全部角色（角色列表接口每页上限 100，循环取完）。
@@ -264,12 +265,12 @@ func (h *AdminPagesHandle) AdministratorRolesSave(c *gin.Context) {
 		}
 		// 抽屉片段里的错误槽是**文本**（模板直接渲染 .Err）：取词落在这一层，
 		// 槽位契约暂时还是字符串（要改成「传 key、模板 tr」得连带改那几份抽屉模板）。
-		data["Err"] = adminui.MsgText(c, msg)
-		c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.Prepare(c, data))
+		data.Err = adminui.MsgText(c, msg)
+		pageview.Render(c, data)
 		return
 	}
 	if adminDrawerHX(c) {
-		c.HTML(http.StatusOK, "admin/system/admin_role_drawer.html", adminui.Prepare(c, gin.H{"Saved": true}))
+		pageview.Render(c, &admindto.DrawerSavedResp{Saved: true})
 		return
 	}
 	adminAdminsPage.done(c)
@@ -318,7 +319,7 @@ func (h *AdminPagesHandle) AdministratorMenusDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.Prepare(c, data))
+	pageview.Render(c, data)
 }
 
 // administratorMenusDrawerData 装配菜单抽屉：菜单树 + 直接授权集合 + 有效集合（含角色继承）。
@@ -326,14 +327,14 @@ func (h *AdminPagesHandle) AdministratorMenusDrawer(c *gin.Context) {
 // directOverride 非 nil 时用它代替库里的直接授权集合（保存失败回显）：
 // 回显要显示「用户刚勾的那一屏」，同时继承集合里的直接部分要换成本次提交的集合 ——
 // 否则用户刚取消的勾选会以「来自角色」的样子重新变成已授权，而他正需要在这里改掉。
-func (h *AdminPagesHandle) administratorMenusDrawerData(c *gin.Context, userID uint64, directOverride []uint64) (gin.H, error) {
+func (h *AdminPagesHandle) administratorMenusDrawerData(c *gin.Context, userID uint64, directOverride []uint64) (*admindto.MenuDrawerResp, error) {
 	ctx := c.Request.Context()
 	account, err := h.admins.AdminDetail(ctx, &admindto.AdminDetailReq{Id: userID})
 	if err != nil {
 		return nil, err
 	}
 	if account == nil || account.ID != userID {
-		return nil, errors.New(adminenums.ErrAdminNotFound)
+		return nil, adminenums.Err(adminenums.ErrAdminNotFound)
 	}
 
 	trees, err := h.menus.MenuTree(ctx, &admindto.MenuTreeReq{})
@@ -365,7 +366,7 @@ func (h *AdminPagesHandle) administratorMenusDrawerData(c *gin.Context, userID u
 
 	rows := make([]adminMenuTreeRow, 0, 128)
 	flattenGrantMenuTree(adminLabelTranslator(c), trees, 1, direct, effective, &rows)
-	return gin.H{"Account": account, "Rows": rows}, nil
+	return &admindto.MenuDrawerResp{Account: account, Rows: rows}, nil
 }
 
 // idSet 把 id 列表转成集合（判据里大量使用「在不在集合里」）。
@@ -425,12 +426,12 @@ func (h *AdminPagesHandle) AdministratorMenusSave(c *gin.Context) {
 			return
 		}
 		// 抽屉片段里的错误槽是**文本**（模板直接渲染 .Err），取词落在这一层，槽位契约暂时是字符串。
-		data["Err"] = adminui.MsgText(c, msg)
-		c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.Prepare(c, data))
+		data.Err = adminui.MsgText(c, msg)
+		pageview.Render(c, data)
 		return
 	}
 	if adminDrawerHX(c) {
-		c.HTML(http.StatusOK, "admin/system/admin_menu_drawer.html", adminui.Prepare(c, gin.H{"Saved": true}))
+		pageview.Render(c, &admindto.DrawerSavedResp{Saved: true})
 		return
 	}
 	adminAdminsPage.done(c)
@@ -457,22 +458,24 @@ func (h *AdminPagesHandle) AdministratorsPage(c *gin.Context) {
 		// 降级渲染：res 换零值、页面照常渲染（详见 adminListLoadErr 的说明）。
 		res = &admindto.AdminListResp{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title":       pagesMsgAdministratorsTitle,
-		"menu":        "admins",
-		"Rows":        res.List,
-		"Total":       res.Total,
-		"FilterName":  name,
-		"FilterEmail": email,
-		"Err":         adminListLoadErr(c, err),
-		"ListQuery":   adminAdminsPage.listQuery(c),
-	})
+	view := &admindto.AdminListPageResp{
+		Title:       pagesMsgAdministratorsTitle,
+		Menu:        "admins",
+		Rows:        res.List,
+		Total:       res.Total,
+		FilterName:  name,
+		FilterEmail: email,
+		Err:         adminListLoadErr(c, err),
+		ListQuery:   adminAdminsPage.listQuery(c),
+	}
 	// 分页条只给事实（总数 / 页码 / 每页条数 / 基址）：信息行、按钮、href 与选中态由
 	// admin/partials/pagination.html 用 pager(.Pagination) 算。
-	adminui.AttachPagination(data, "/admin/administrators",
+	if !adminui.AttachPaginationView(view, "/admin/administrators",
 		map[string]string{"name": name, "email": email},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/administrators", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("管理员列表视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // AdministratorsCreate 新建管理员（POST /admin/administrators/create）。
@@ -587,20 +590,22 @@ func (h *AdminPagesHandle) DatarulesPage(c *gin.Context) {
 	if domains == nil {
 		domains = []admindto.RuleDomainItem{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title":        pagesMsgDatarulesTitle,
-		"menu":         "datarules",
-		"Rows":         res.List,
-		"Total":        res.Total,
-		"Domains":      domains,
-		"FilterDomain": domain,
-		"Err":          adminListLoadErr(c, err),
-		"ListQuery":    adminDatarulesPage.listQuery(c),
-	})
-	adminui.AttachPagination(data, "/admin/datarules",
+	view := &admindto.RuleListPageResp{
+		Title:        pagesMsgDatarulesTitle,
+		Menu:         "datarules",
+		Rows:         res.List,
+		Total:        res.Total,
+		Domains:      domains,
+		FilterDomain: domain,
+		Err:          adminListLoadErr(c, err),
+		ListQuery:    adminDatarulesPage.listQuery(c),
+	}
+	if !adminui.AttachPaginationView(view, "/admin/datarules",
 		map[string]string{"domain": domain},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/datarules", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("数据规则视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // DatarulesCreate 新建数据规则（POST /admin/datarules/create）。
@@ -641,7 +646,7 @@ func (h *AdminPagesHandle) DatarulesEditPage(c *gin.Context) {
 		// 也不能直出裸文本。原先是 c.String(404, "数据规则不存在")：响应体是那句中文、
 		// **没有页壳**，用户在编辑页上点了半天链接后落到一个纯文本页面。
 		// 文案取 adminenums.ErrRuleNotFound（它是形态合法的业务文案，过共享判据不需要登记）。
-		adminDatarulesPage.writeFail(c, errors.New(adminenums.ErrRuleNotFound))
+		adminDatarulesPage.writeFail(c, adminenums.Err(adminenums.ErrRuleNotFound))
 		return
 	}
 	domains, _ := h.rules.RuleSchemaList(c.Request.Context())
@@ -651,13 +656,13 @@ func (h *AdminPagesHandle) DatarulesEditPage(c *gin.Context) {
 	// 条件编辑器按该数据域的白名单渲染（字段 / 操作符下拉都来自域声明）。
 	editor := h.dataruleEditorContext(c, detail.Domain, detail.Config)
 	// 保存失败不再回本页并带 ?err=（写动作的结论走整页提示），本页因此没有错误槽位。
-	c.HTML(http.StatusOK, "admin/system/datarule_edit", adminui.Prepare(c, gin.H{
-		"title":   pagesMsgDatarulesTitle,
-		"menu":    "datarules",
-		"Detail":  detail,
-		"Domains": domains,
-		"Editor":  editor,
-	}))
+	pageview.Render(c, &admindto.DataruleEditPageResp{
+		Title:   pagesMsgDatarulesTitle,
+		Menu:    "datarules",
+		Detail:  detail,
+		Domains: domains,
+		Editor:  editor,
+	})
 }
 
 // adminDataruleBack /admin/datarules/update 的失败回跳目标：按提交**来源**分流。
@@ -707,7 +712,7 @@ func (h *AdminPagesHandle) DatarulesUpdate(c *gin.Context) {
 			// 「查不到但也没报错」必须给一条可行动的业务文案（规则不存在 / 不在本工程作用域内），
 			// 不能像修复前那样拿 nil 去调错误出口（旧出口对 nil 直接 return → 200 空体，
 			// 前端看到「点了没反应」而日志里什么都没有）。
-			adminJump(c, false, adminErrMsg(c, errors.New(adminenums.ErrRuleNotFound)), back, backText)
+			adminJump(c, false, adminErrMsg(c, adminenums.Err(adminenums.ErrRuleNotFound)), back, backText)
 			return
 		}
 		config = detail.Config
@@ -816,17 +821,22 @@ func (h *AdminPagesHandle) DepartmentsPage(c *gin.Context) {
 	if err != nil {
 		res = &admindto.DeptPageResp{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title": pagesMsgDepartmentsTitle, "menu": "depts",
-		"Rows": res.Rows, "Parents": res.Parents, "Total": res.Total,
-		"FilterKeyword": keyword,
-		"Err":           adminListLoadErr(c, err),
-		"ListQuery":     adminDeptsPage.listQuery(c),
-	})
-	adminui.AttachPagination(data, "/admin/departments",
+	view := &admindto.DepartmentListPageResp{
+		Title:         pagesMsgDepartmentsTitle,
+		Menu:          "depts",
+		Rows:          res.Rows,
+		Parents:       res.Parents,
+		Total:         res.Total,
+		FilterKeyword: keyword,
+		Err:           adminListLoadErr(c, err),
+		ListQuery:     adminDeptsPage.listQuery(c),
+	}
+	if !adminui.AttachPaginationView(view, "/admin/departments",
 		map[string]string{"keyword": keyword},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/departments", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("部门视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // DepartmentsCreate 新建部门（POST /admin/departments/create）。
@@ -1064,28 +1074,11 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	filter := adminI18nEntryFilterOf(c)
 	items, total, err := i18n.ListEntries(c.Request.Context(), filter)
 	if err != nil {
-		// 主数据没读到：整页失败出口 —— 同一模板 + 500 + no-store。失败槽在模板里先于空态，
-		// 所以「没读出来」与「读到了、只是空的」不会混成一句话。
-		//
-		// 必需键全部有值：Jet 的缺失键是整页中断，失败页缺一个键就是「又一个坏页面」；
-		// 标题仍是 i18n key（英文后台的标题不能变成中文），筛选取值照原样回带（运营刷新重试不丢上下文）。
-		// 文案走本模块既有归口 adminErrParam（文本槽，见 adminListLoadErr 的注释）：形态判据命中
-		// 给业务文案（按语言取词），未命中记一条带 user_id 的日志后给 ErrInternal 取词 ——
-		// 驱动原文（表名 / SQLSTATE）只进日志。
-		// 字典与分页不再下探：主数据都没读到，派生数据不该继续查（与库存页失败后的守卫同一判据）。
-		data := gin.H{
-			"title":        adminenums.I18nTitle,
-			"Entries":      []i18n.Entry{},
-			"I18nEditURLs": []string{},
-			"Keyword":      filter.Keyword,
-			"LangFilter":   filter.Lang,
-			"CatFilter":    filter.Category,
-			"Categories":   []string{},
-			"LoadFailed":   true,
-			"LoadError":    adminErrParam(c, err),
-		}
-		c.Header("Cache-Control", "no-store")
-		c.HTML(http.StatusInternalServerError, "admin/system/i18n", adminui.Prepare(c, data))
+		// 主数据没读到：失败一律 JSON 错误体（用户裁定：所有提示只需要一个提示，不渲染完整页）。
+		// 从前这里渲染「完整页壳 + 500」：同一张模板要维护两套必需键（成功档 + 失败档），
+		// 而失败时页壳给的信息（侧栏、筛选栏、分页）没有一条是这次失败需要的。
+		// 文案走本模块既有归口 adminErrParam：驱动原文（表名 / SQLSTATE）只进日志。
+		adminui.PageErrorInternal(c, "i18n", err)
 		return
 	}
 	categories, _ := i18n.Categories(c.Request.Context())
@@ -1101,17 +1094,17 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 		query := url.Values{"key": {entry.Key}, "lang": {entry.Lang}}
 		editURLs[idx] = "/admin/i18n/edit?" + query.Encode()
 	}
-	data := gin.H{
+	data := &admindto.I18nListPageResp{
 		// title 是 i18n **key**（不是中文）：adminui.Prepare → injectI18n 会按当前语言翻译它。
 		// admin.i18n.title 是库内既有的词条（zh-CN「文案词条」/ 英文），所以这里复用它 ——
 		// 写中文原文会让英文后台的页面标题恒为中文（其它页面标题都已经是 enums key）。
-		"title":        adminenums.I18nTitle,
-		"Entries":      items,
-		"I18nEditURLs": editURLs,
-		"Keyword":      filter.Keyword,
-		"LangFilter":   filter.Lang,
-		"CatFilter":    filter.Category,
-		"Categories":   categories,
+		Title:        adminenums.I18nTitle,
+		Entries:      items,
+		I18nEditURLs: editURLs,
+		Keyword:      filter.Keyword,
+		LangFilter:   filter.Lang,
+		CatFilter:    filter.Category,
+		Categories:   categories,
 		// 写动作的结论不再回带：写动作走 JSON 端点（POST /api/i18n/save），失败原因就地显示在
 		// 表单结果区，成功则整页刷新 —— 刷新带回当前 URL，筛选与页码自动保住。原先为它准备的
 		// .Saved / .Errored 提示条、以及表单 action 上的 ListQuery，都已随页面 POST 一起删除。
@@ -1120,7 +1113,7 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	// 只是少了按语言筛的能力，不该因此整页打不开。
 	if h.dict != nil {
 		if opts, derr := h.dict.ListDictOptions(c.Request.Context(), "language"); derr == nil {
-			data["LangOptions"] = opts
+			data.LangOptions = opts
 		}
 	}
 	// 分页条：原版只渲染「第 X / Y 页」文字，没有页码链接 —— Total 超过一页时第 2 页起
@@ -1133,10 +1126,12 @@ func (h *adminI18nEntryHandle) I18nEntriesPage(c *gin.Context) {
 	// 本页每页条数是固定常量（不看 ?limit=），事实层照旧收这个 size；KeepLimit 保持默认 true
 	// —— 旧链接就是 ?page=N&limit=50，字节不能变（本页 handler 不读 limit，但它仍出现在链接里）。
 	// 基址由本页自己的筛选逻辑算出（不是 FilterBaseURL 的形态），故 path 传空。
-	adminui.AttachPagination(data, "", nil, pagination.Page{
+	if !adminui.AttachPaginationView(data, "", nil, pagination.Page{
 		Total: total, Page: page, Limit: adminI18nEntryPageSize, Base: base,
-	})
-	c.HTML(http.StatusOK, "admin/system/i18n", adminui.Prepare(c, data))
+	}) {
+		logger.Scene("admin").Error(errors.New("文案词条视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, data)
 }
 
 // adminI18nSaveMissingMsg 保存词条时的缺项判定：返回**具体**缺哪一项的 enums 文案
@@ -1187,9 +1182,9 @@ func (h *adminI18nEntryHandle) I18nEntryEditFragment(c *gin.Context) {
 		}
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/i18n_edit_form.html", adminui.Prepare(c, gin.H{
-		"I18nEdit": entry,
-	}))
+	pageview.Render(c, &admindto.I18nEditFormResp{
+		I18nEdit: entry,
+	})
 }
 
 // adminI18nEntryKeySeparator 批量删除的复合键分隔符（"key|lang"）。
@@ -1249,13 +1244,13 @@ func AdminLoginPage(c *gin.Context) {
 	// 登录页无会话（不走 Prepare 的权限集部分），同样需要语言数据：
 	// 标题走 shell.login.title（缺词条回退「登录」）。这里是**模板数据槽**（layout 壳读 .title，
 	// 槽位契约是字符串），所以取成文本传进去 —— 取词走共享的 adminui.MsgText。
-	c.HTML(http.StatusOK, "admin/login", adminui.Prepare(c, gin.H{
-		"title":         adminui.MsgText(c, adminui.Msg{Key: adminenums.ShellLoginTitle, Fallback: "登录"}),
-		"captcha_id":    id,
-		"captcha_image": image,
+	pageview.Render(c, &admindto.LoginPageResp{
+		Title:        adminui.MsgText(c, adminui.Msg{Key: adminenums.ShellLoginTitle, Fallback: "登录"}),
+		CaptchaID:    id,
+		CaptchaImage: image,
 		// debug 模式才显示一键登录入口（release 下路由压根不存在，显示了也是个死链）。
-		"DevLogin": AdminDevLoginEnabled(),
-	}))
+		DevLogin: AdminDevLoginEnabled(),
+	})
 }
 
 // AdminDevLoginEnabled 是否处于 debug 模式（决定登录页是否显示一键登录入口）。
@@ -1292,21 +1287,26 @@ func (h *AdminPagesHandle) MenusPage(c *gin.Context) {
 	if err != nil {
 		res = &admindto.MenuPageResp{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title": pagesMsgMenusTitle, "menu": "menus",
-		"Rows": res.Rows, "Parents": res.Parents, "Total": res.Total,
-		"FilterKeyword": keyword,
-		"Err":           adminListLoadErr(c, err),
-		"ListQuery":     adminMenusPage.listQuery(c),
+	view := &admindto.MenuListPageResp{
+		Title:         pagesMsgMenusTitle,
+		Menu:          "menus",
+		Rows:          res.Rows,
+		Parents:       res.Parents,
+		Total:         res.Total,
+		FilterKeyword: keyword,
+		Err:           adminListLoadErr(c, err),
+		ListQuery:     adminMenusPage.listQuery(c),
 		// SearchMode 让模板切到搜索态（给命中行标「匹配」、给祖先标「上级路径」）。
-		"SearchMode": keyword != "",
+		SearchMode: keyword != "",
 		// 新建抽屉内嵌在本页，它的权限点候选也在这里给（新建时没有任何已绑码）。
-		"PermChoices": h.buildPermChoices(c, nil),
-	})
-	adminui.AttachPagination(data, "/admin/menus",
+		PermChoices: h.buildPermChoices(c, nil),
+	}
+	if !adminui.AttachPaginationView(view, "/admin/menus",
 		map[string]string{"keyword": keyword},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/menus", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("菜单视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // MenusEditFragment returns one existing menu's edit form.
@@ -1327,7 +1327,7 @@ func (h *AdminPagesHandle) MenusEditFragment(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", adminui.Prepare(c, menuEditData(c, h, row, nil)))
+	pageview.Render(c, menuEditData(c, h, row, nil))
 }
 
 // menuEditData 组装编辑抽屉的模板数据（正常打开与保存失败回显共用）。
@@ -1336,13 +1336,21 @@ func (h *AdminPagesHandle) MenusEditFragment(c *gin.Context) {
 // 编辑抽屉缺了上级下拉只是少一项能力，而缺了 parent_id 提交就会把菜单搬到顶级 ——
 // 一个读失败不该换来一次静默的数据改动。
 func menuEditData(c *gin.Context, h *AdminPagesHandle, row *admindto.MenuDetailResp,
-	echo gin.H) gin.H {
-	data := gin.H{"MenuEdit": row, "PermChoices": h.buildPermChoices(c, row.PermissionCodes)}
-	if parents, err := h.menus.MenuParentOptions(c.Request.Context(), row.ID); err == nil {
-		data["Parents"] = parents
+	echo *admindto.MenuEditFormResp) *admindto.MenuEditFormResp {
+	data := &admindto.MenuEditFormResp{
+		MenuEdit: row, PermChoices: h.buildPermChoices(c, row.PermissionCodes),
 	}
-	for k, v := range echo {
-		data[k] = v
+	// 回显值覆盖默认值（后者按库里的码算）：否则「保存失败 → 回显」会把
+	// 用户刚勾的那一屏换回旧值，而他正需要在这里改掉那个错误重试。
+	if echo != nil {
+		data.MenuEditErr = echo.MenuEditErr
+		data.MenuEditEcho = echo.MenuEditEcho
+		data.MenuEditEchoCodes = echo.MenuEditEchoCodes
+		data.MenuEditParent = echo.MenuEditParent
+		data.PermChoices = echo.PermChoices
+	}
+	if parents, err := h.menus.MenuParentOptions(c.Request.Context(), row.ID); err == nil {
+		data.Parents = parents
 	}
 	return data
 }
@@ -1427,21 +1435,27 @@ func (h *AdminPagesHandle) menuEditFail(c *gin.Context, msg adminui.Msg) {
 	// 候选项也要按**本次提交**重算勾选态，否则错误响应里的清单和回显的码对不上。
 	// PermChoices 放在 echo 里覆盖 menuEditData 的默认值（后者按库里的码算），
 	// 否则「保存失败 → 回显」会把用户刚勾的那一屏换回旧值。
-	echo := gin.H{
-		"MenuEditErr": adminui.MsgText(c, msg),
-		"MenuEditEcho": map[string]string{
+	echo := &admindto.MenuEditFormResp{
+		MenuEditErr: adminui.MsgText(c, msg),
+		MenuEditEcho: map[string]string{
 			"title": c.PostForm("title"), "parent_id": c.PostForm("parent_id"),
 			"type": c.PostForm("type"), "status": c.PostForm("status"),
 			"path": c.PostForm("path"), "icon": c.PostForm("icon"),
 			"sort_order": c.PostForm("sort_order"), "remark": c.PostForm("remark"),
 		},
-		"MenuEditEchoCodes": menuPermissionCodes(c),
-		"PermChoices":       h.buildPermChoices(c, menuPermissionCodes(c)),
-		// 上级下拉的选中值按 uint64 另给一份：MenuEditEcho 里是表单原始字符串，
-		// 拿它跟候选 ID（uint64）比恒不相等，回显会让下拉跳回「（根菜单）」。
-		"MenuEditParent": reqparams.ParseUint(c.PostForm("parent_id")),
+		MenuEditEchoCodes: menuPermissionCodes(c),
+		// 候选项也要按**本次提交**重算勾选态，否则错误响应里的清单和回显的码对不上。
+		PermChoices: h.buildPermChoices(c, menuPermissionCodes(c)),
+		// 上级下拉的选中值按 uint64 另给一份（理由见字段注释）。
+		MenuEditParent: reqparams.ParseUint(c.PostForm("parent_id")),
 	}
-	c.HTML(http.StatusOK, "admin/system/menu_edit_form.html", adminui.Prepare(c, menuEditData(c, h, row, echo)))
+	// 失败回**同一张抽屉片段**（htmx hx-swap="outerHTML" 换掉整个抽屉）：
+	// 表单带 hx-post + hx-target="closest [data-drawer-fragment]"，所以这不是「整页重渲」，
+	// 是 htmx 的局部替换 —— 抽屉原地变成带错误提示的抽屉，用户填的值靠 MenuEditEcho 保留。
+	//
+	// 为什么不走 pageview.Render：这条路由是**写动作**（POST /admin/menus/update），
+	// 生产装配里没有 PageSlot；模板名由本文件的路由常量给出，与 GET /menus/edit 同一个文件。
+	c.HTML(http.StatusOK, MenuEditFormTemplate, adminui.PrepareBareView(c, menuEditData(c, h, row, echo)))
 }
 
 // menuPermissionCodes 读取表单里的权限码集合（多选控件提交 permission_codes 的多个值）。
@@ -1499,10 +1513,10 @@ func (h *AdminPagesHandle) MenusUpdate(c *gin.Context) {
 	row, err := h.menus.MenuDetail(c.Request.Context(), &admindto.MenuDetailReq{ID: id})
 	if err != nil || row == nil || row.ID != id {
 		if adminDrawerHX(c) {
-			h.menuEditFail(c, adminErrMsg(c, errors.New(adminenums.ErrMenuNotFound)))
+			h.menuEditFail(c, adminErrMsg(c, adminenums.Err(adminenums.ErrMenuNotFound)))
 			return
 		}
-		adminMenusPage.writeFail(c, errors.New(adminenums.ErrMenuNotFound))
+		adminMenusPage.writeFail(c, adminenums.Err(adminenums.ErrMenuNotFound))
 		return
 	}
 	if err := h.menus.MenuUpdate(c.Request.Context(), &admindto.MenuUpdateReq{
@@ -1544,7 +1558,7 @@ func (h *AdminPagesHandle) MenusDelete(c *gin.Context) {
 		return
 	}
 	if !adminMenuTreeHas(nodes, id) {
-		adminMenusPage.writeFail(c, errors.New(adminenums.ErrMenuNotFound))
+		adminMenusPage.writeFail(c, adminenums.Err(adminenums.ErrMenuNotFound))
 		return
 	}
 	if err := h.menus.MenuDelete(c.Request.Context(), &admindto.MenuDeleteReq{IDs: []uint64{id}}); err != nil {
@@ -1597,20 +1611,22 @@ func (h *AdminPagesHandle) PermissionsPage(c *gin.Context) {
 	if err != nil {
 		res = &admindto.PermListResp{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title":        pagesMsgPermissionsTitle,
-		"menu":         "permissions",
-		"Rows":         res.List,
-		"Total":        res.Total,
-		"FilterCode":   code,
-		"FilterModule": module,
-		"Err":          adminListLoadErr(c, err),
-		"ListQuery":    adminPermsPage.listQuery(c),
-	})
-	adminui.AttachPagination(data, "/admin/permissions",
+	view := &admindto.PermListPageResp{
+		Title:        pagesMsgPermissionsTitle,
+		Menu:         "permissions",
+		Rows:         res.List,
+		Total:        res.Total,
+		FilterCode:   code,
+		FilterModule: module,
+		Err:          adminListLoadErr(c, err),
+		ListQuery:    adminPermsPage.listQuery(c),
+	}
+	if !adminui.AttachPaginationView(view, "/admin/permissions",
 		map[string]string{"code": code, "module": module},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/permissions", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("权限点列表视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // PermissionsEditFragment fetches one existing permission by its exact id.
@@ -1631,7 +1647,7 @@ func (h *AdminPagesHandle) PermissionsEditFragment(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/permission_edit_form.html", adminui.Prepare(c, gin.H{"PermissionEdit": row}))
+	pageview.Render(c, &admindto.PermissionEditFormResp{PermissionEdit: row})
 }
 
 // permissionEditFail 权限点保存失败的出口（形状同 menuEditFail）。
@@ -1648,12 +1664,15 @@ func (h *AdminPagesHandle) permissionEditFail(c *gin.Context, msg adminui.Msg) {
 		adminPermsPage.fail(c, msg)
 		return
 	}
-	data := gin.H{"PermissionEdit": row, "PermissionEditErr": adminui.MsgText(c, msg), "PermissionEditEcho": map[string]string{
+	data := &admindto.PermissionEditFailResp{PermissionEdit: row, PermissionEditErr: adminui.MsgText(c, msg), PermissionEditEcho: map[string]string{
 		"permission_name": c.PostForm("permission_name"), "module": c.PostForm("module"),
 		"api_path": c.PostForm("api_path"), "api_method": c.PostForm("api_method"),
 		"status": c.PostForm("status"), "remark": c.PostForm("remark"),
 	}}
-	c.HTML(http.StatusOK, "admin/system/permission_edit_form.html", adminui.Prepare(c, data))
+	// POST 失败原地重渲：这是**写动作**的路由，没有 PageSlot（写动作不需要页面出口装配）。
+	// 控制器因此持有一次模板名 —— 它与 GET /permissions/edit 是同一张片段模板，
+	// 两处必须同步（那条 GET 在路由里挂 BareSlot，这条在下面用常量，都指向同一个文件）。
+	c.HTML(http.StatusOK, PermissionEditFormTemplate, adminui.PrepareBareView(c, data))
 }
 
 // PermissionsCreate 新建权限点（POST /admin/permissions/create）。
@@ -1773,19 +1792,21 @@ func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
 	if err != nil {
 		res = &admindto.RoleListResp{}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title":         pagesMsgRolesTitle,
-		"menu":          "roles",
-		"Rows":          res.List,
-		"Total":         res.Total,
-		"FilterKeyword": keyword,
-		"Err":           adminListLoadErr(c, err),
-		"ListQuery":     adminRolesPage.listQuery(c),
-	})
-	adminui.AttachPagination(data, "/admin/roles",
+	view := &admindto.RoleListPageResp{
+		Title:         pagesMsgRolesTitle,
+		Menu:          "roles",
+		Rows:          res.List,
+		Total:         res.Total,
+		FilterKeyword: keyword,
+		Err:           adminListLoadErr(c, err),
+		ListQuery:     adminRolesPage.listQuery(c),
+	}
+	if !adminui.AttachPaginationView(view, "/admin/roles",
 		map[string]string{"keyword": keyword},
-		pagination.Page{Total: res.Total, Page: page, Limit: limit})
-	c.HTML(http.StatusOK, "admin/system/roles", data)
+		pagination.Page{Total: res.Total, Page: page, Limit: limit}) {
+		logger.Scene("admin").Error(errors.New("角色视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // --- 角色权限分配（角色分权）---
@@ -1856,7 +1877,7 @@ func flattenPermissionTree(tr adminLabelTranslate, nodes []admindto.MenuTreeNode
 // checkedOverride 非 nil 时用它代替库里的勾选集合。这是保存失败路径的关键：树要重取
 // （菜单结构可能刚被别处改过），但**勾选必须用本次提交的值** —— 用库里的值会把用户
 // 刚勾的那一屏整块回退成保存前的旧状态，而他正需要在这里改掉那个错误重试。
-func (h *AdminPagesHandle) rolePermissionsDrawerData(c *gin.Context, roleID uint64, checkedOverride []uint64) (gin.H, error) {
+func (h *AdminPagesHandle) rolePermissionsDrawerData(c *gin.Context, roleID uint64, checkedOverride []uint64) (*admindto.RolePermissionsResp, error) {
 	tree, err := h.roles.RolePermissionTree(c.Request.Context(), roleID)
 	if err != nil {
 		return nil, err
@@ -1871,7 +1892,7 @@ func (h *AdminPagesHandle) rolePermissionsDrawerData(c *gin.Context, roleID uint
 	}
 	rows := make([]permTreeRow, 0, len(checked)+64)
 	flattenPermissionTree(adminLabelTranslator(c), tree.Tree, 1, checked, &rows)
-	return gin.H{"Role": tree, "Rows": rows}, nil
+	return &admindto.RolePermissionsResp{Role: tree, Rows: rows}, nil
 }
 
 // RolePermissionsDrawer 角色权限分配的抽屉片段（GET /admin/roles/permissions/drawer?role_id=N）。
@@ -1895,7 +1916,7 @@ func (h *AdminPagesHandle) RolePermissionsDrawer(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.Prepare(c, data))
+	pageview.Render(c, data)
 }
 
 // RolePermissionsSave 保存角色权限（POST /admin/roles/permissions/save）。
@@ -1947,15 +1968,16 @@ func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
 			return
 		}
 		// 权限树片段里的错误槽是**文本**（模板直接渲染 .Err），取词落在这一层。
-		data["Err"] = adminui.MsgText(c, msg)
-		c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.Prepare(c, data))
+		data.Err = adminui.MsgText(c, msg)
+		// 失败回同一张抽屉片段（htmx outerHTML 局部替换，见 menuEditFail 的说明）。
+		c.HTML(http.StatusOK, RolePermissionsFragmentTemplate, adminui.PrepareBareView(c, data))
 		return
 	}
 
 	if adminDrawerHX(c) {
 		// 成功态片段只读 PermSaved 一个键（见模板）：不取树也不给列表数据，
 		// 少一次查询，也避免「回执里那棵树的勾选」被误读成本次保存的结果快照。
-		c.HTML(http.StatusOK, "admin/system/role_permissions.html", adminui.Prepare(c, gin.H{"PermSaved": true}))
+		pageview.Render(c, &admindto.PermSavedResp{PermSaved: true})
 		return
 	}
 	adminRolesPage.done(c)
@@ -2313,8 +2335,7 @@ func (h *AdminPagesHandle) DataruleConfigEditor(c *gin.Context) {
 		}
 	}
 
-	c.HTML(http.StatusOK, "admin/system/datarule_config_editor.html",
-		adminui.Prepare(c, gin.H{"Editor": h.dataruleEditorContext(c, domain, cfg)}))
+	pageview.Render(c, &admindto.DataruleEditorResp{Editor: h.dataruleEditorContext(c, domain, cfg)})
 }
 
 // bootstrapDataRule 装配 admin 的数据权限：注册数据域 → 注入 RuleProvider → 挂 GORM 插件。

@@ -26,7 +26,7 @@ const p5cDoc = `{
     {"id": "hd1", "type": "core.heading", "props": {"text": "关于我们", "subtitle": "了解更多"}},
     {"id": "tx1", "type": "core.text", "props": {"text": "<p>我们成立于 2010 年</p>"}},
     {"id": "bt1", "type": "core.button", "props": {"text": "联系我们", "link": "/contact"}},
-    {"id": "cd1", "type": "core.card", "props": {"title": "卡片标题", "text": "<p>卡片正文</p>", "buttonText": "查看详情"}},
+    {"id": "cd1", "type": "core.card", "props": {"title": "卡片标题", "text": "<p>卡片正文</p>", "label": "查看详情"}},
     {"id": "im1", "type": "core.image", "props": {"src": "/storage/image/a.jpg", "alt": "公司前台", "caption": "前台照片"}},
     {"id": "tb1", "type": "core.table", "props": {"caption": "季度数据", "headers": ["名称", "金额"], "rows": [["收入", "42"]]}},
     {"id": "tx2", "type": "core.text", "props": {"text": "2024"}}

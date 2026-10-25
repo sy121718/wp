@@ -26,7 +26,6 @@ package orderservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -44,7 +43,7 @@ import (
 // CreateCoupon 新建优惠码。
 func (s *Service) CreateCoupon(ctx context.Context, req *orderdto.CouponSaveReq) (res *orderdto.CouponResp, err error) {
 	if req == nil {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	startsAt, serr := parseCouponTime(req.StartsAt)
 	if serr != nil {
@@ -81,13 +80,13 @@ func (s *Service) CreateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 		return nil, gerr
 	}
 	if existing != nil {
-		return nil, errors.New(orderenums.ErrCouponCodeTaken)
+		return nil, orderenums.Err(orderenums.ErrCouponCodeTaken)
 	}
 	if cerr := s.coupons.Create(ctx, e); cerr != nil {
 		// 并发下两个请求同时通过上面的存在性检查时，唯一索引会挡住第二个 ——
 		// 对外文案与显式检查一致，不把数据库错误原文抛给运营。
 		if database.IsUniqueViolation(cerr) {
-			return nil, errors.New(orderenums.ErrCouponCodeTaken)
+			return nil, orderenums.Err(orderenums.ErrCouponCodeTaken)
 		}
 		return nil, cerr
 	}
@@ -100,7 +99,7 @@ func (s *Service) CreateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 // 需要新码就新建一张券、把旧的停用。
 func (s *Service) UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq) (res *orderdto.CouponResp, err error) {
 	if req == nil || req.ID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	// 定位跳（DB-009 第四批）：请求只给 id；coupons 带 FORCE 策略，不带作用域的读取
 	// 在非超级角色下返回 nil（表现为「优惠码不存在」）。归属由逐工程探测确定。
@@ -113,7 +112,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 		return nil, err
 	}
 	if existing == nil {
-		return nil, errors.New(orderenums.ErrCouponNotFound)
+		return nil, orderenums.Err(orderenums.ErrCouponNotFound)
 	}
 	startsAt, serr := parseCouponTime(req.StartsAt)
 	if serr != nil {
@@ -161,7 +160,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 		return nil, err
 	}
 	if updated == nil {
-		return nil, errors.New(orderenums.ErrCouponNotFound)
+		return nil, orderenums.Err(orderenums.ErrCouponNotFound)
 	}
 	return toCouponResp(updated, now), nil
 }
@@ -169,7 +168,7 @@ func (s *Service) UpdateCoupon(ctx context.Context, req *orderdto.CouponSaveReq)
 // GetCoupon 按 id 取券。
 func (s *Service) GetCoupon(ctx context.Context, couponID uint64) (res *orderdto.CouponResp, err error) {
 	if couponID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	projectID, perr := s.locateCouponProject(ctx, couponID)
 	if perr != nil {
@@ -180,7 +179,7 @@ func (s *Service) GetCoupon(ctx context.Context, couponID uint64) (res *orderdto
 		return nil, err
 	}
 	if e == nil {
-		return nil, errors.New(orderenums.ErrCouponNotFound)
+		return nil, orderenums.Err(orderenums.ErrCouponNotFound)
 	}
 	return toCouponResp(e, time.Now()), nil
 }
@@ -192,7 +191,7 @@ func (s *Service) GetCoupon(ctx context.Context, couponID uint64) (res *orderdto
 // 等于把业务语义摊进查询层。
 func (s *Service) ListCoupons(ctx context.Context, req *orderdto.CouponListReq) (res *orderdto.CouponListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	f := ordermodel.CouponFilter{
 		ProjectID: req.ProjectID,
@@ -212,7 +211,7 @@ func (s *Service) ListCoupons(ctx context.Context, req *orderdto.CouponListReq) 
 	case "exhausted":
 		f.Exhausted = &exhausted
 	default:
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	list, total, lerr := s.coupons.List(ctx, f)
 	if lerr != nil {
@@ -229,7 +228,7 @@ func (s *Service) ListCoupons(ctx context.Context, req *orderdto.CouponListReq) 
 // DeleteCoupon 删除优惠码（有核销记录的一律拒绝）。
 func (s *Service) DeleteCoupon(ctx context.Context, couponID uint64) (err error) {
 	if couponID == 0 {
-		return errors.New(orderenums.ErrInvalidParam)
+		return orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	projectID, perr := s.locateCouponProject(ctx, couponID)
 	if perr != nil {
@@ -240,14 +239,14 @@ func (s *Service) DeleteCoupon(ctx context.Context, couponID uint64) (err error)
 		return err
 	}
 	if e == nil {
-		return errors.New(orderenums.ErrCouponNotFound)
+		return orderenums.Err(orderenums.ErrCouponNotFound)
 	}
 	used, cerr := s.coupons.CountRedemptions(ctx, e.ProjectID, couponID, nil)
 	if cerr != nil {
 		return cerr
 	}
 	if used > 0 {
-		return errors.New(orderenums.ErrCouponInUse)
+		return orderenums.Err(orderenums.ErrCouponInUse)
 	}
 	// 删除带工程作用域：越界删在换角色后会被策略拒绝，而不是删掉别的工程的券。
 	return s.coupons.Delete(ctx, e.ProjectID, couponID)
@@ -256,7 +255,7 @@ func (s *Service) DeleteCoupon(ctx context.Context, couponID uint64) (err error)
 // ListCouponRedemptions 核销记录列表。
 func (s *Service) ListCouponRedemptions(ctx context.Context, req *orderdto.CouponRedemptionListReq) (res *orderdto.CouponRedemptionListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	list, total, lerr := s.coupons.ListRedemptions(ctx, ordermodel.CouponRedemptionFilter{
 		ProjectID: req.ProjectID,
@@ -290,18 +289,18 @@ func (s *Service) ListCouponRedemptions(ctx context.Context, req *orderdto.Coupo
 // 只有参数本身不合法（缺工程、缺码）才是调用错误。
 func (s *Service) ValidateCoupon(ctx context.Context, req *orderdto.CouponValidateReq) (res *orderdto.CouponValidateResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	code := normalizeCouponCode(req.Code)
 	if code == "" {
-		return nil, errors.New(orderenums.ErrCouponCodeRequired)
+		return nil, orderenums.Err(orderenums.ErrCouponCodeRequired)
 	}
 	e, err := s.coupons.GetByCode(ctx, req.ProjectID, code)
 	if err != nil {
 		return nil, err
 	}
 	if e == nil {
-		return nil, errors.New(orderenums.ErrCouponNotFound)
+		return nil, orderenums.Err(orderenums.ErrCouponNotFound)
 	}
 	subtotal := req.Subtotal
 	if subtotal < 0 {
@@ -426,7 +425,7 @@ func parseCouponTime(raw string) (*time.Time, error) {
 			return &u, nil
 		}
 	}
-	return nil, errors.New(orderenums.ErrCouponWindowInvalid)
+	return nil, orderenums.Err(orderenums.ErrCouponWindowInvalid)
 }
 
 // validateCouponRule 校验优惠码字段（新建与修改共用）。
@@ -435,38 +434,38 @@ func parseCouponTime(raw string) (*time.Time, error) {
 // 而券的力度与他填的不是一回事。
 func validateCouponRule(e *ordermodel.CouponEntity) error {
 	if strings.TrimSpace(e.ProjectID) == "" {
-		return errors.New(orderenums.ErrProjectRequired)
+		return orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	if e.Code == "" {
-		return errors.New(orderenums.ErrCouponCodeRequired)
+		return orderenums.Err(orderenums.ErrCouponCodeRequired)
 	}
 	if len(e.Code) > maxCouponCodeLen || len(e.Name) > maxCouponNameLen || len(e.Remark) > maxCouponRemarkLen {
-		return errors.New(orderenums.ErrInvalidParam)
+		return orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	switch e.DiscountType {
 	case ordermodel.CouponTypePercent:
 		if e.DiscountValue <= 0 || e.DiscountValue > 100 {
-			return errors.New(orderenums.ErrCouponValueInvalid)
+			return orderenums.Err(orderenums.ErrCouponValueInvalid)
 		}
 	case ordermodel.CouponTypeFixed:
 		if e.DiscountValue <= 0 {
-			return errors.New(orderenums.ErrCouponValueInvalid)
+			return orderenums.Err(orderenums.ErrCouponValueInvalid)
 		}
 	default:
-		return errors.New(orderenums.ErrCouponTypeInvalid)
+		return orderenums.Err(orderenums.ErrCouponTypeInvalid)
 	}
 	if e.MinSubtotal < 0 {
-		return errors.New(orderenums.ErrCouponValueInvalid)
+		return orderenums.Err(orderenums.ErrCouponValueInvalid)
 	}
 	if e.MaxUses < 0 || e.PerUserLimit < 0 {
-		return errors.New(orderenums.ErrCouponValueInvalid)
+		return orderenums.Err(orderenums.ErrCouponValueInvalid)
 	}
 	if e.StartsAt != nil && e.EndsAt != nil && !e.EndsAt.After(*e.StartsAt) {
 		// 结束不晚于开始 = 这张券永远不可能生效，存进去等于把活动悄悄废掉。
-		return errors.New(orderenums.ErrCouponWindowInvalid)
+		return orderenums.Err(orderenums.ErrCouponWindowInvalid)
 	}
 	if e.Status != ordermodel.CouponStatusEnabled && e.Status != ordermodel.CouponStatusDisabled {
-		return errors.New(orderenums.ErrInvalidParam)
+		return orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	return nil
 }
@@ -589,7 +588,7 @@ func (s *Service) redeemCouponTx(ctx context.Context, tx *gorm.DB, e *ordermodel
 		return lerr
 	}
 	if locked == nil {
-		return errors.New(orderenums.ErrCouponNotFound)
+		return orderenums.Err(orderenums.ErrCouponNotFound)
 	}
 	e = locked
 	if e.PerUserLimit > 0 && userID != nil {
@@ -598,7 +597,7 @@ func (s *Service) redeemCouponTx(ctx context.Context, tx *gorm.DB, e *ordermodel
 			return cerr
 		}
 		if used >= int64(e.PerUserLimit) {
-			return errors.New(orderenums.ErrCouponUserLimit)
+			return orderenums.Err(orderenums.ErrCouponUserLimit)
 		}
 	}
 	inserted, ierr := s.coupons.InsertRedemptionTx(ctx, tx, &ordermodel.CouponRedemptionEntity{
@@ -626,7 +625,7 @@ func (s *Service) redeemCouponTx(ctx context.Context, tx *gorm.DB, e *ordermodel
 	if !ok {
 		// 守卫没通过 = 用尽（并发抢最后一次）。返回错误让**整个事务回滚**：
 		// 明细行与订单头一起消失，不留下「券记了一笔但单没下成」的半截状态。
-		return errors.New(orderenums.ErrCouponExhausted)
+		return orderenums.Err(orderenums.ErrCouponExhausted)
 	}
 	return nil
 }

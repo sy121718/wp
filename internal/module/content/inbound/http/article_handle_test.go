@@ -3,7 +3,6 @@ package contenthttp
 import (
 	"context"
 	"errors"
-	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -54,126 +53,105 @@ func articleUpdatePost(e *gin.Engine, form url.Values) *httptest.ResponseRecorde
 	return rec
 }
 
-func TestArticleUpdateFailureEchoesSubmittedFields(t *testing.T) {
+// TestArticleUpdateFailureReturnsJSON 保存失败回 JSON 错误体，页面不动。
+//
+// 判据在 2026-10 改过：从前这里断言「失败页必须含 </html> 且回填本次提交的值」——
+// 那是**原生表单提交**时代的需求（浏览器跳到白屏，所以服务端得重渲一遍）。
+// 表单改 htmx 之后（hx-swap="none"）页面根本没离开过，用户写的内容还在框里：
+// 回填这个需求不存在，重渲这条路也就不该存在。
+func TestArticleUpdateFailureReturnsJSON(t *testing.T) {
 	old := &contentdto.ContentResp{ID: "a1", Slug: "original-slug", Revision: 7, UpdatedAt: "2026-09-19 12:30:45", Data: map[string]any{
-		"title": "数据库旧标题", "body": "<p>数据库旧正文</p>", "excerpt": "数据库旧摘要",
-		"featuredImage": "/storage/old.jpg", "seoTitle": "旧SEO", "seoDescription": "旧描述", "focusKeyword": "旧关键词",
+		"title": "数据库旧标题", "body": "<p>数据库旧正文</p>",
 	}}
 	cases := []struct {
 		name    string
 		err     error
 		form    url.Values
+		status  int
 		message string
 	}{
-		{name: "标题缺失", form: url.Values{"id": {"a1"}, "title": {""}, "body": {"<p>新正文 &amp; 更多</p>"}, "excerpt": {""}, "featuredImage": {"/storage/new.jpg"}, "seoTitle": {""}, "seoDescription": {"新描述 <>&\"'"}, "focusKeyword": {"新词"}}, message: articleMissingTitleMsg.Fallback},
-		{name: "业务拒绝", err: errors.New(contentenums.ErrInvalidField), form: url.Values{"id": {"a1"}, "title": {"新标题 & < > \" '"}, "body": {"<h2>新正文 &amp; 标题</h2><p>第二段</p>"}, "excerpt": {"新摘要\n第二行"}, "featuredImage": {"https://example.test/?x=1&y=2"}, "seoTitle": {"SEO 新标题"}, "seoDescription": {"新描述 <>&\"'"}, "focusKeyword": {"新词"}}, message: articleFallbacks[contentenums.ErrInvalidField]},
-		{name: "内部错误归口", err: errors.New("relation secret_table does not exist"), form: url.Values{"id": {"a1"}, "title": {"新标题"}, "body": {"<p>新正文</p>"}, "excerpt": {"新摘要"}, "featuredImage": {""}, "seoTitle": {""}, "seoDescription": {""}, "focusKeyword": {""}}, message: "系统内部错误"},
+		{name: "标题缺失", form: url.Values{"id": {"a1"}, "title": {""}, "body": {"<p>新正文</p>"}}, status: http.StatusBadRequest, message: articleMissingTitleMsg.Fallback},
+		{name: "业务拒绝", err: errors.New(contentenums.ErrInvalidField), form: url.Values{"id": {"a1"}, "title": {"新标题"}, "body": {"<p>新正文</p>"}}, status: http.StatusBadRequest, message: articleFallbacks[contentenums.ErrInvalidField]},
+		{name: "内部错误归口", err: errors.New("relation secret_table does not exist"), form: url.Values{"id": {"a1"}, "title": {"新标题"}, "body": {"<p>新正文</p>"}}, status: http.StatusInternalServerError, message: "系统内部错误"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &articleUpdateContentStub{item: old, updateErr: tc.err}
 			rec := articleUpdatePost(articleUpdateTestEngine(s), tc.form)
-			if rec.Code != http.StatusOK || rec.Header().Get("Location") != "" {
-				t.Fatalf("失败须在原请求 200 渲染: status=%d location=%q body=%s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+			if rec.Code != tc.status {
+				t.Fatalf("状态码应为 %d，实际 %d：%s", tc.status, rec.Code, rec.Body.String())
+			}
+			if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+				t.Errorf("写动作失败应回 JSON，得到 %q", ct)
+			}
+			if loc := rec.Header().Get("Location"); loc != "" {
+				t.Errorf("失败不该发 302，得到 Location=%q", loc)
 			}
 			body := rec.Body.String()
-			for _, want := range []string{"</html>", tc.message, `action="/admin/articles/update"`, `value="original-slug"`, `name="id" value="a1"`, "2026-09-19 12:30:45"} {
-				if !strings.Contains(body, want) {
-					t.Errorf("缺少 %q", want)
+			if !strings.Contains(body, tc.message) {
+				t.Errorf("响应应含归口文案 %q：%s", tc.message, body)
+			}
+			// 页壳缺席：这是「失败不重渲」的分水岭。
+			for _, banned := range []string{"</html>", `action="/admin/articles/update"`} {
+				if strings.Contains(body, banned) {
+					t.Errorf("失败响应不该含页壳片段 %q：%s", banned, body)
 				}
 			}
-			// seoTitle / seoDescription 不在这里：两栏已与标题 / 摘要合并（2026-09-30），
-			// 表单里没有对应输入框，页面自然也不回显它们的提交值。
-			for field, value := range map[string]string{"title": tc.form.Get("title"), "body": tc.form.Get("body"), "excerpt": tc.form.Get("excerpt"), "featuredImage": tc.form.Get("featuredImage"), "focusKeyword": tc.form.Get("focusKeyword")} {
-				if !strings.Contains(body, html.EscapeString(value)) {
-					t.Errorf("%s 未保留原始提交值 %q", field, value)
+			// 原文与裸 key 都不许出现。
+			for _, leaked := range []string{"secret_table", "admin.article.err."} {
+				if strings.Contains(body, leaked) {
+					t.Errorf("响应不应出现 %q：%s", leaked, body)
 				}
-			}
-			for _, stale := range []string{"数据库旧标题", "数据库旧正文", "数据库旧摘要", "/storage/old.jpg", "旧SEO", "旧描述", "旧关键词"} {
-				if strings.Contains(body, stale) {
-					t.Errorf("失败页回退到旧值 %q", stale)
-				}
-			}
-			if strings.Contains(body, "secret_table") {
-				t.Error("内部错误原文泄漏")
-			}
-			// 取词必须发生在模板里：错误以**事实**（key + 中文兜底）交给模板，页面上只该有
-			// 兜底那句话。key 若出现在页面上，说明某个渲染点还在直接输出事实结构体
-			// （Jet 的 fmt 打印会把 Key 一起带上），这条断言就是为此设的。
-			if strings.Contains(body, "admin.article.err.") {
-				t.Error("错误 key 出现在页面上 —— 取词应发生在模板里")
-			}
-			if !strings.Contains(body, `form="article-form"`) || strings.Contains(body, "以下是本次提交内容") {
-				t.Error("元数据可信时应保留可操作的保存入口")
-			}
-			if tc.name == "标题缺失" && !strings.Contains(body, `aria-invalid="true" aria-describedby="article-edit-error"`) {
-				t.Error("缺少标题时应标注出错字段并关联错误槽")
 			}
 		})
 	}
 }
 
-func TestArticleUpdateMissingIDAndMetadataFailure(t *testing.T) {
-	cases := []struct {
-		name    string
-		id      string
-		getErr  error
-		message string
-	}{
-		{name: "缺少文章标识", message: articleMissingIDMsg.Fallback},
-		{name: "文章元数据读取失败", id: "a1", getErr: errors.New("relation private_table does not exist"), message: articleMissingTitleMsg.Fallback},
+func TestArticleUpdateMissingIDReturnsJSON(t *testing.T) {
+	// 缺 id 属参数错误：400 + 归口文案，不重渲页面（同上一个用例的判据变化）。
+	s := &articleUpdateContentStub{}
+	form := url.Values{"id": {""}, "title": {"标题"}, "body": {"<p>正文</p>"}}
+	rec := articleUpdatePost(articleUpdateTestEngine(s), form)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("缺 id 应回 400，实际 %d: %s", rec.Code, rec.Body.String())
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			s := &articleUpdateContentStub{getErr: tc.getErr}
-			form := url.Values{"id": {tc.id}, "title": {""}, "body": {"<p>提交的正文</p>"}, "focusKeyword": {"提交的关键词"}}
-			rec := articleUpdatePost(articleUpdateTestEngine(s), form)
-			if rec.Code != http.StatusOK {
-				t.Fatalf("应原地渲染 200，实际 %d: %s", rec.Code, rec.Body.String())
-			}
-			body := rec.Body.String()
-			for _, want := range []string{"</html>", tc.message, `action="/admin/articles/update"`, `name="body" value="&lt;p&gt;提交的正文&lt;/p&gt;"`, `name="focusKeyword"`, "提交的关键词"} {
-				if !strings.Contains(body, want) {
-					t.Errorf("缺少 %q", want)
-				}
-			}
-			if strings.Contains(body, "private_table") {
-				t.Error("元数据读取错误原文泄漏")
-			}
-			if strings.Contains(body, "admin.article.err.") {
-				t.Error("错误 key 出现在页面上 —— 取词应发生在模板里")
-			}
-			for _, forbidden := range []string{`form="article-form"`, `hx-post="/admin/articles/score"`, `action="/admin/articles/publish"`, `action="/admin/articles/import-page"`} {
-				if strings.Contains(body, forbidden) {
-					t.Errorf("元数据缺失时不应提供动作 %q", forbidden)
-				}
-			}
-			if !strings.Contains(body, "以下是本次提交内容") {
-				t.Error("只读回填态应明确提示回列表重新打开")
-			}
-		})
+	body := rec.Body.String()
+	if !strings.Contains(body, articleMissingIDMsg.Fallback) {
+		t.Errorf("响应应含受控文案：%s", body)
+	}
+	if strings.Contains(body, "</html>") {
+		t.Error("失败不该重渲页面")
 	}
 }
 
-// TestArticleUpdateSuccessRendersJumpPage 成功不再 302 + ?ok=，改由提示页渲染整页提示。
+// TestArticleUpdateSuccessReturnsJSON 成功只回 JSON，导航交给前端。
 //
-// 断言的是**新的传输通道**：HTTP 200 + data-jump-state="ok" + 归口文案 + 回编辑页地址，
-// 而不是旧的 Location 头（那条通道的读侧判定已整批删除）。
-func TestArticleUpdateSuccessRendersJumpPage(t *testing.T) {
+// 通道又变了一次：302+?ok= → 提示页（data-jump-state）→ **JSON**。
+// 最后这次的理由是 AGENTS.md 那条「成功写动作只回 JSON；导航由前端 data-write-nav 决定，
+// 后端不发 302 / HX-Redirect」—— 提示页是原生提交时代为了「让用户看到结论」而造的第二条通道，
+// 表单改 htmx 之后 toast 就够，页面留在原地。
+func TestArticleUpdateSuccessReturnsJSON(t *testing.T) {
 	s := &articleUpdateContentStub{item: &contentdto.ContentResp{ID: "a1"}}
 	rec := articleUpdatePost(articleUpdateTestEngine(s), url.Values{"id": {"a1"}, "title": {"更新"}})
 	if rec.Code != http.StatusOK {
-		t.Fatalf("成功应渲染提示页（200），实际 status=%d location=%q", rec.Code, rec.Header().Get("Location"))
+		t.Fatalf("成功应回 200 JSON，实际 status=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+	if loc := rec.Header().Get("Location"); loc != "" {
+		t.Errorf("成功不该发 302（导航归前端 data-write-nav），得到 Location=%q", loc)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("成功应回 JSON，得到 %q", ct)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{
-		`data-jump-state="ok"`,
-		"已保存", // articleFallbacks[articleSavedText] 的中文兜底
-		"/admin/articles/edit?id=a1",
-	} {
+	// 归口文案 + 新实体 id（前端 data-write-nav 的 {id} 从这里取）。
+	for _, want := range []string{"已保存", `"id":"a1"`} {
 		if !strings.Contains(body, want) {
-			t.Errorf("成功提示页缺少 %q：%s", want, body[:min(len(body), 240)])
+			t.Errorf("成功响应缺少 %q：%s", want, body)
 		}
+	}
+	// 提示页那套标记不该再出现（它们是旧通道的产物）。
+	if strings.Contains(body, "data-jump-state") {
+		t.Errorf("成功响应不该再渲染提示页：%s", body)
 	}
 	if s.getCalls != 0 {
 		t.Errorf("成功路径不应为回填读取数据库: %d", s.getCalls)

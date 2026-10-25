@@ -23,6 +23,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdatadto "go_wp/internal/module/masterdata/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -69,7 +70,9 @@ func mdPagRender(t *testing.T, changes *mdPagChanges, query string) string {
 	// 模板根相对包目录：internal/module/masterdata/inbound/http → internal/templates。
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	// 不注入权限上下文：本测试只钉分页事实与链接字节。
-	engine.GET("/admin/masterdata/changes", handle.MasterDataChangesPage)
+	engine.GET("/admin/masterdata/changes",
+		adminui.PageSlot(MasterDataChangesTemplate),
+		handle.MasterDataChangesPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/masterdata/changes"+query, nil))
 	if rec.Code != http.StatusOK {

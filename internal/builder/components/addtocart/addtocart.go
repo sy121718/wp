@@ -19,6 +19,7 @@ package addtocart
 
 import (
 	_ "embed" // addtocart.css / add_to_cart.jet 经 //go:embed 打进二进制
+	json "go_wp/pkg/jsonx"
 	"fmt"
 	"strings"
 
@@ -44,7 +45,7 @@ const CartAddPath = "/_fragments/cartAdd"
 
 // 缺省值与上限。
 const (
-	defaultButtonText = "加入购物车"
+	defaultLabel      = "加入购物车"
 	defaultCartTarget = "#cart"
 	defaultCurrency   = "¥"
 	// defaultColor 缺省主色（主题 Token + 兜底，与 badge/button 的取色约定对齐）。
@@ -66,14 +67,29 @@ type Props struct {
 	VariantMode string `json:"variantMode,omitempty" ct:"select,single=单个变体,perVariant=逐变体,default=single,sec=content,label=变体呈现"`
 	// ShowQuantity 是否显示数量输入（关掉就是「一键加购一件」）。
 	ShowQuantity bool `json:"showQuantity,omitempty" ct:"bool,sec=content,label=数量输入"`
-	// ButtonText 按钮文字。
-	ButtonText string `json:"buttonText,omitempty" ct:"text,maxlen=20,sec=content,label=按钮文字"`
+	// Label 按钮文字。
+	Label string `json:"label,omitempty" ct:"text,maxlen=20,sec=content,label=按钮文字"`
 	// CartTarget 加购后要刷新的购物车容器选择器（HTMX 用；无 JS 时忽略）。
 	CartTarget string `json:"cartTarget,omitempty" ct:"text,maxlen=60,sec=style,label=购物车容器选择器"`
 	// Color 按钮主色（色值或主题 Token）。
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style,label=按钮颜色"`
 	// Advanced 通用高级属性（docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
+}
+
+// addtocartLegacyKeys 旧 props 名的归一表（改名不迁移数据）。
+//
+// buttonText → label：这一批把三个组件的按钮/链接文案统一成 label。
+// 存量文档里存的是旧键（本仓实测：blueprints 2 张、content_templates 1 张、
+// document_snapshots 5.78 万条），不归一的表现是**按钮整颗消失**而不是报错：
+// BuildView 里 HasButton / 有无按钮 依赖 label 非空。
+var addtocartLegacyKeys = []core.LegacyKey{
+	{From: "buttonText", To: "label"},
+}
+
+// NormalizeLegacy 见 core.LegacyNormalizer：把旧键的值挪进已解码的字段。
+func (p *Props) NormalizeLegacy(raw json.RawMessage) error {
+	return core.ApplyLegacyKeysInto(raw, p, addtocartLegacyKeys)
 }
 
 // Widget 基座实例。
@@ -88,14 +104,14 @@ var Widget = core.Atom[Props]{
 			"variantsField": "product.variants",
 			"variantMode":   "single",
 			"showQuantity":  false,
-			"buttonText":    "加入购物车",
+			"label":         "加入购物车",
 			"cartTarget":    "#cart",
 			"currency":      "¥",
 		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// 只翻「作者填写的文本」：按钮文字是给访客看的文案，理应按构建语言翻译。
-		Translatable: []string{"buttonText"},
+		Translatable: []string{"label"},
 	},
 }
 
@@ -120,12 +136,12 @@ func effectiveMode(p *Props) string {
 	return ModeSingle
 }
 
-// effectiveButtonText 有效按钮文字。
-func effectiveButtonText(p *Props) string {
-	if t := strings.TrimSpace(p.ButtonText); t != "" {
+// effectiveLabel 有效按钮文字。
+func effectiveLabel(p *Props) string {
+	if t := strings.TrimSpace(p.Label); t != "" {
 		return t
 	}
-	return defaultButtonText
+	return defaultLabel
 }
 
 // effectiveTarget 有效购物车容器选择器。

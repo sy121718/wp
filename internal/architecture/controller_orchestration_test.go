@@ -32,7 +32,7 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/admin/inbound/http/admin_i18n_write.go":                    {offenders: 1, max: 33},
 	"internal/module/admin/inbound/http/admin_page.go":                          {offenders: 36, max: 37},
 	"internal/module/ai/inbound/http/ai_handle.go":                              {offenders: 4, max: 28},
-	"internal/module/ai/inbound/http/ai_page.go":                                {offenders: 6, max: 29},
+	"internal/module/ai/inbound/http/ai_page.go":                                {offenders: 6, max: 24},
 	"internal/module/analytics/inbound/http/analytics_handle.go":                {offenders: 1, max: 7},
 	"internal/module/analytics/inbound/http/analytics_page.go":                  {offenders: 2, max: 25},
 	"internal/module/block/inbound/http/block_handle.go":                        {offenders: 1, max: 15},
@@ -42,7 +42,7 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/content/inbound/http/content_handle.go":                    {offenders: 2, max: 23},
 	"internal/module/content/inbound/http/content_page.go":                      {offenders: 10, max: 52},
 	"internal/module/contenttemplate/inbound/http/contenttemplate_handle.go":    {offenders: 1, max: 28},
-	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go":      {offenders: 2, max: 41},
+	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go":      {offenders: 2, max: 31},
 	"internal/module/inventory/inbound/http/inventory_page_handle.go":           {offenders: 1, max: 39},
 	"internal/module/inventory/inbound/http/inventory_purchase_handle.go":       {offenders: 1, max: 29},
 	"internal/module/inventory/inbound/http/inventory_reason_handle.go":         {offenders: 2, max: 15},
@@ -51,12 +51,12 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go":      {offenders: 2, max: 12},
 	"internal/module/mail/inbound/http/mail_contact_write.go":                   {offenders: 3, max: 26},
 	"internal/module/mail/inbound/http/mail_handle.go":                          {offenders: 1, max: 10},
-	"internal/module/mail/inbound/http/mail_page.go":                            {offenders: 14, max: 24},
-	"internal/module/masterdata/inbound/http/masterdata_page.go":                {offenders: 1, max: 41},
+	"internal/module/mail/inbound/http/mail_page.go":                            {offenders: 14, max: 19},
+	"internal/module/masterdata/inbound/http/masterdata_page.go":                {offenders: 1, max: 42},
 	"internal/module/media/inbound/http/media_handle.go":                        {offenders: 1, max: 8},
 	"internal/module/membership/inbound/http/membership_page.go":                {offenders: 2, max: 31},
 	"internal/module/navigation/inbound/http/navigation_handle.go":              {offenders: 3, max: 14},
-	"internal/module/navigation/inbound/http/navigation_page_handle.go":         {offenders: 6, max: 20},
+	"internal/module/navigation/inbound/http/navigation_page_handle.go":         {offenders: 5, max: 20},
 	"internal/module/navigation/inbound/http/navigation_translations_handle.go": {offenders: 1, max: 8},
 	"internal/module/order/inbound/http/coupon_page.go":                         {offenders: 2, max: 29},
 	"internal/module/order/inbound/http/order_create_page.go":                   {offenders: 2, max: 11},
@@ -78,7 +78,14 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/user/inbound/http/user_customer_admin_handle.go":           {offenders: 3, max: 10},
 	"internal/module/user/inbound/http/user_page.go":                            {offenders: 14, max: 31},
 	"internal/module/workbench/inbound/http/workbench_handle.go":                {offenders: 1, max: 9},
-	"internal/module/workbench/inbound/http/workbench_page.go":                  {offenders: 7, max: 29},
+	// 工作台画布逻辑按域拆成 5 个文件（原先是一个 2538 行的 workbench_page.go）。
+	// 登记按**文件**记，所以拆分后要跟着拆：offenders 是该文件里超限的函数数，
+	// max 是其中最大的语句数。拆分本身不改变这些函数的大小 —— 豁免不是拆分换来的，
+	// 拆分只是为了下一步逐个把装配下沉到 service 读模型时能分开做。
+	"internal/module/workbench/inbound/http/inspector_handle.go":       {offenders: 2, max: 10},  // InspectorPanel=10, OutlineTree=7
+	"internal/module/workbench/inbound/http/canvas_handle.go":          {offenders: 1, max: 29},  // Workbench=29
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go":  {offenders: 3, max: 15},  // InstanceSave=15, TemplatePreviewDraft=12, TemplatePreview=10
+	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":   {offenders: 1, max: 9},   // PreviewDraft=9
 }
 
 // controllerHandlerStatements 每个 handler 的语句数（键是「文件:函数」，只收参数恰好一个 *gin.Context 的函数）。

@@ -248,7 +248,7 @@ func detailTemplateModePortFor(instanceID string) (ProductDetailTemplateModePort
 		return nil, errModeUnavailable
 	}
 	if strings.TrimSpace(instanceID) == "" {
-		return nil, errors.New(presentationenums.ErrInvalidParam)
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}
 	return detailTemplateModePort, nil
 }

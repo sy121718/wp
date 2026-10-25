@@ -20,6 +20,7 @@ import (
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
 	mailservice "go_wp/internal/module/mail/service"
+	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 	"go_wp/public/test/support"
 
@@ -105,7 +106,8 @@ func newMailPageFixture(t *testing.T) (*gin.Engine, *mailservice.Service) {
 		}
 	})
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/mail", mailhttp.NewMailPageHandle(svc).MailPage)
+	router.GET("/admin/mail",
+		adminui.PageSlot(mailhttp.AccountsPageTemplate), mailhttp.NewMailPageHandle(svc).MailPage)
 	return router, svc
 }
 

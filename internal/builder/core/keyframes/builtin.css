@@ -1,5 +1,20 @@
 /* keyframes/builtin.css — 内置动效关键帧
  *   （由 Go 源文件迁出；文件内顺序即产物输出顺序，确定性依赖它）
+ *
+ * 命名规则：**入场的名字必须含 in**。形如 sky-fade-up / sky-zoom-out / sky-slide-up
+ * 的旧名里没有 in，读代码时分不清入场还是出场 —— 而这一整组全是入场（from 有初值、
+ * to 归位）。文件末尾追加了对应的 -in 新名（fade-in-up / zoom-in-out / slide-in-up …）。
+ *
+ * 为什么是别名而不是改名：存量站点的文档里存的是旧字符串（"fade-up"），它们的产物必须
+ * 逐字节不变 —— 改名不迁移数据是本项目对已发布内容的硬约束。所以两个名字产出同一份
+ * 关键帧：新文档用新名，旧文档继续解析到同一份视觉结果。
+ *
+ * flip-x / flip-y 不在此处加别名：它们的 -in 形态（sky-flip-in-x / -y）已在 animate.css
+ * 有权威定义，再加一份会被 buildKeyframeIndex 判为「重复动效词汇」直接 panic（那条断言
+ * 是刻意的：同名两套定义 = 谁先加载谁生效）。
+ *
+ * 注意：本文件除了**开头**这一段，不要再插注释块 —— 解析器按 "@keyframes " 切段，
+ * 段与段之间的注释会被并进前一段的 CSS 里。
  */
 
 @keyframes sky-fade-in {
@@ -147,3 +162,12 @@
   from { opacity: .15 }
   to { opacity: 1 }
 }
+
+
+
+
+
+
+
+
+

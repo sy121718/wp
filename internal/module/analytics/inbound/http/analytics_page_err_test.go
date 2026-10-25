@@ -24,6 +24,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
 )
@@ -48,7 +49,7 @@ func TestAnalyticsPageDegradesWhenProjectListFails(t *testing.T) {
 	handle := NewAnalyticsPageHandle(nil, analyticsFailingProjects{})
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/analytics", handle.AnalyticsPage)
+	engine.GET("/admin/analytics", adminui.PageSlot(AnalyticsPageTemplate), handle.AnalyticsPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/analytics", nil))

@@ -35,7 +35,20 @@ var pendingDTOPresentation = map[string]int{
 	"internal/module/order/dto/order_resp.go":              1,
 	"internal/module/order/dto/order_return_resp.go":       1,
 	"internal/module/user/dto/customer_admin_resp.go":      3,
-	"internal/module/user/dto/user_resp.go":                1,
+	// 客户页视图的 DisplayName / LabelKey 是**模板契约键名**（customers.html 读
+	// `.DisplayName` / `.LabelKey`），且交的是原始值与词条 key，不是成品句 ——
+	// 但字段名落在禁名单上，按「存量登记、只减不增」处理：改名要同时改模板，
+	// 而模板是渲染期契约（改错的表现是整页 500，不是编译错误）。
+	"internal/module/user/dto/user_customer_page_resp.go": 4,
+	// 会话事件行的 Tone 是**模板契约键名**（ai_session_detail.html 读 `.Tone` 拼徽标类），
+	// 值是语义档（"error"/"ok"）而不是成品类名 —— 但字段名落在禁名单上。
+	// 按存量登记：改名要同步改模板，而模板错是渲染期 500。
+	"internal/module/ai/dto/ai_page_resp.go": 2,
+	// PresetOption.DisplayName 是**模板契约键名**（provider_create.html 读 `.DisplayName`
+	// 填预设下拉），交的是 service 给的原始名而不是成品句 —— 但字段名落在禁名单上。
+	// 同 ai_page_resp.go 那条：改名要同步改模板，模板错是渲染期 500。
+	"internal/module/ai/dto/ai_session_page_resp.go": 1,
+	"internal/module/user/dto/user_resp.go":          1,
 }
 
 func TestDTOsCarryNoPresentationFields(t *testing.T) {
@@ -95,7 +108,7 @@ var pendingModuleText = map[string]int{
 	"internal/module/mail/inbound/http/mail_err.go":                          2,
 	"internal/module/mail/inbound/http/mail_handle.go":                       2,
 	"internal/module/mail/service/mail_account.go":                           3,
-	"internal/module/masterdata/inbound/http/masterdata_page.go":             8,
+	"internal/module/masterdata/inbound/http/masterdata_page.go":             6,
 	"internal/module/media/inbound/http/media_handle.go":                     1,
 	"internal/module/media/service/media.go":                                 8,
 	"internal/module/order/inbound/http/coupon_page.go":                      1,
@@ -110,7 +123,9 @@ var pendingModuleText = map[string]int{
 	"internal/module/user/inbound/http/user_page.go":                         1,
 	"internal/module/webhook/inbound/http/webhook_handle.go":                 1,
 	"internal/module/workbench/inbound/http/workbench_err.go":                3,
-	"internal/module/workbench/inbound/http/workbench_page.go":               2,
+	// 页面逻辑拆成 5 个文件后，两处取词跟着调用点走（都在预览编译的出口）。
+	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  1,
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go": 1,
 }
 
 func TestModulesDoNotTranslate(t *testing.T) {

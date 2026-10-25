@@ -51,6 +51,30 @@ import (
 )
 
 // SetupPageRoutes 自装配 page 模块并注册全部路由。
+// SiteSlotsPageTemplate 系统页面槽位页的模板名。
+const SiteSlotsPageTemplate = "admin/page/site_slots.html"
+
+// RedirectPageTemplate 重定向管理页的模板名（页面出口由页面槽带进上下文）。
+const RedirectPageTemplate = "admin/page/page_redirects.html"
+
+// PagesListPageTemplate 页面列表（后台主入口之一）。
+const PagesListPageTemplate = "admin/page/pages"
+
+// 片段出口（htmx 局部替换）：键集只有几个槽位，走 BareSlot。
+// 模板名归路由层 —— 控制器只交视图，不持有模板名。
+const (
+	PageLangsPanelTemplate    = "fragments/page_langs"
+	PageSchedulePanelTemplate = "fragments/page_schedule_panel"
+	PageHistoryListTemplate   = "fragments/history_list"
+
+	// PageTranslationsTemplate 翻译工作台（整页）。
+	PageTranslationsTemplate = "admin/page/page_translations"
+	// PageTranslationMissesTemplate 缺译报告（整页）。
+	PageTranslationMissesTemplate = "admin/page/page_translation_misses.html"
+	// PageTranslationErrorsTemplate 译文保存失败的逐行错误片段（htmx 替换目标的内容）。
+	PageTranslationErrorsTemplate = "fragments/translation_errors.html"
+)
+
 func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	artifacts artifactcontract.ArtifactService,
 	routes pubcontract.PublicationService,
@@ -123,7 +147,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	if pages == nil {
 		return
 	}
-	pages.GET("/pages", adminui.PageAuthz("/api/page/list"), adminHandle.PagesList)
+	pages.GET("/pages", adminui.PageAuthz("/api/page/list"),
+		adminui.PageSlot(PagesListPageTemplate), adminHandle.PagesList)
 	pages.POST("/pages/create", builtin.CasbinMiddlewareForPath("/api/page/create"), adminHandle.CreatePage)
 	// 单条删除与批量删除复用「删除页面」权限点（/api/page/delete，迁移 151）：
 	// 两者走同一个 svc.Delete —— 权限点、拒绝规则、访问面下线动作都不会分叉。
@@ -139,7 +164,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	// 所以后者必须显式挂「保存草稿」的权限点 —— 否则任何仅登录后台的低权限用户
 	// 都能覆盖任意页面草稿。
 	if workbenchPages != nil {
-		workbenchPages.POST("/workbench/history", adminHandle.HistoryPanel)
+		workbenchPages.POST("/workbench/history",
+			adminui.BareSlot(PageHistoryListTemplate), adminHandle.HistoryPanel)
 		workbenchPages.POST("/workbench/history/restore", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.HistoryRestore)
 	}
 
@@ -152,7 +178,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	// 清发布 / 暂存 / 路由 / 计划），因此复用「发布页面」；恢复只改产出范围（不自动重新发布），
 	// 同一条 —— 两者都是「这一页发不发这种语言」的同一件事，不该拆成两个权限点。
 	// 面板是只读展示，复用「页面详情」。
-	pages.GET("/page-langs/panel", builtin.CasbinMiddlewareForPath("/api/page/detail"), adminHandle.PageLangsPanel)
+	pages.GET("/page-langs/panel", builtin.CasbinMiddlewareForPath("/api/page/detail"),
+		adminui.BareSlot(PageLangsPanelTemplate), adminHandle.PageLangsPanel)
 	pages.POST("/page-langs/exclude", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangExclude)
 	pages.POST("/page-langs/restore", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangRestore)
 	// 显式重新发布（V4）：恢复排除只解除限制、不自动上线 —— 译好后要真的回到线上，
@@ -176,7 +203,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	g.POST("/schedule/set", permission.PageScheduleSet, handle.SetSchedule)
 	g.POST("/schedule/cancel", permission.PageScheduleCancel, handle.CancelSchedule)
 	g.GET("/schedule/list", permission.PageScheduleList, handle.ListSchedules)
-	pages.GET("/page-schedules/panel", builtin.CasbinMiddlewareForPath("/api/page/schedule/list"), adminHandle.SchedulePanel)
+	pages.GET("/page-schedules/panel", builtin.CasbinMiddlewareForPath("/api/page/schedule/list"),
+		adminui.BareSlot(PageSchedulePanelTemplate), adminHandle.SchedulePanel)
 	pages.POST("/page-schedules/set", builtin.CasbinMiddlewareForPath("/api/page/schedule/set"), adminHandle.ScheduleSet)
 	pages.POST("/page-schedules/cancel", builtin.CasbinMiddlewareForPath("/api/page/schedule/cancel"), adminHandle.ScheduleCancel)
 
@@ -187,7 +215,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	//
 	// 鉴权：读复用「列出页面」，写复用「保存草稿」—— 保存会写 sys_translation（engine=manual）
 	// 并触发全站标记待重建，与保存草稿同一量级的影响面。
-	pages.GET("/pages/translations", adminui.PageAuthz("/api/page/list"), adminHandle.PageTranslations)
+	pages.GET("/pages/translations", adminui.PageAuthz("/api/page/list"),
+		adminui.PageSlot(PageTranslationsTemplate), adminHandle.PageTranslations)
 	pages.POST("/pages/translations/save", builtin.CasbinMiddlewareForPath("/api/page/draft/save"), adminHandle.SavePageTranslations)
 
 	// ══ 缺译报告（U2，只有页面面）══
@@ -200,7 +229,8 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	// 那套语义以及它与切换器 / hreflang / sitemap 的一致性已经在语言排除那一处验证过。
 	//
 	// 挂**后台页面组**（Session + CSRF 已具备），写操作显式复用「发布页面」权限点。
-	pages.GET("/page-translation-misses", builtin.CasbinMiddlewareForPath("/api/page/list"), adminHandle.TranslationMissesPage)
+	pages.GET("/page-translation-misses", builtin.CasbinMiddlewareForPath("/api/page/list"),
+		adminui.PageSlot(PageTranslationMissesTemplate), adminHandle.TranslationMissesPage)
 	pages.POST("/page-translation-misses/cancel", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.TranslationMissCancel)
 
 	// ══ 重定向管理（审计 SEO-025）══
@@ -210,7 +240,13 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	// 页面路由挂在 `/api/page/redirect*` 上而不是 `/admin/*`：page 模块只拿到
 	// authorizedAPI 这一个装配好的组，挂这里可让 Session / CSRF / Casbin 三层链与接口
 	// 完全一致（不需要改动 routes.go）。代价是 URL 少一层「后台感」。
-	g.GET("/redirect", permission.PageRedirectView, handle.RedirectPage)
+	// 这一条渲染**整页**（admin/page/page_redirects.html），所以挂 PageSlot：
+	// 路由挂在 /api 组只是为了让 Session/CSRF/Casbin 三层链与接口一致（见上方注释），
+	// 与"它是不是页面出口"无关。
+	g.GET("/redirect",
+		permission.PageRedirectView,
+		adminui.PageSlot(RedirectPageTemplate),
+		handle.RedirectPage)
 	g.POST("/redirect/create", permission.PageRedirectCreate, handle.RedirectCreate)
 	g.POST("/redirect/delete", permission.PageRedirectDelete, handle.RedirectDelete)
 	g.POST("/redirect/merge", permission.PageRedirectMerge, handle.RedirectMerge)
@@ -231,7 +267,10 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 		return
 	}
 	siteSlotPage := NewSiteSlotPageHandle(svc, projects)
-	pages.GET("/site-slots", adminui.PageAuthz("/api/page/list"), siteSlotPage.SiteSlotsPage)
+	pages.GET("/site-slots",
+		adminui.PageAuthz("/api/page/list"),
+		adminui.PageSlot(SiteSlotsPageTemplate),
+		siteSlotPage.SiteSlotsPage)
 	pages.POST("/site-slots/bind", builtin.CasbinMiddlewareForPath("/api/page/site-slot/bind"), siteSlotPage.SiteSlotBind)
 	pages.POST("/site-slots/unbind", builtin.CasbinMiddlewareForPath("/api/page/site-slot/unbind"), siteSlotPage.SiteSlotUnbind)
 }

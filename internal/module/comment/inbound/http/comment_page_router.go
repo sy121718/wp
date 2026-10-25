@@ -16,11 +16,17 @@ import (
 )
 
 // SetupCommentPages 注册评论审核页；pages 为 nil 时整体跳过。
+// CommentsPageTemplate 评论审核页的模板名（页面出口由页面槽带进上下文）。
+const CommentsPageTemplate = "admin/comment/comments.html"
+
 func SetupCommentPages(pages *gin.RouterGroup, svc commentcontract.CommentService,
 	projects commentProjectLister) {
 	if pages == nil {
 		return
 	}
 	pageHandle := NewCommentPageHandle(svc, projects)
-	pages.GET("/comments", adminui.PageAuthz("/api/comment/list"), pageHandle.CommentsPage)
+	pages.GET("/comments",
+		adminui.PageAuthz("/api/comment/list"),
+		adminui.PageSlot(CommentsPageTemplate),
+		pageHandle.CommentsPage)
 }

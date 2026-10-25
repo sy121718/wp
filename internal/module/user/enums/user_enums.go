@@ -3,6 +3,7 @@ package userenums
 
 import (
 	"fmt"
+	"go_wp/pkg/facing"
 )
 
 const (
@@ -274,3 +275,47 @@ func EmailVerifiedLabel(verified bool) (key, fallback string) {
 // 后台客户页的「最近一单」与订单页必须共用同一份映射（各写一张表的结果是
 // 「改一处、另一处静默留在旧说法上」），而 user 模块 import 别的模块的 enums
 // 会破坏「跨模块只用 contract/dto」的边界。
+
+// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
+//
+// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
+// businessText 只能退回声明处给的那句话 —— 没有它，客户端拿到的是 `user.err.invalidParam` 这样的裸 key。
+//
+// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
+var errFallbacks = map[string]string{
+	ErrInvalidParam:             "参数不合法",
+	ErrUsernameRequired:         "用户名不能为空",
+	ErrUsernameTooShort:         "用户名至少 3 个字符",
+	ErrUsernameTooLong:          "用户名最多 32 个字符",
+	ErrUsernameTaken:            "用户名已被占用",
+	ErrEmailRequired:            "邮箱不能为空",
+	ErrEmailInvalid:             "邮箱格式不正确",
+	ErrEmailTaken:               "邮箱已被注册",
+	ErrPasswordTooShort:         "密码至少 8 个字符",
+	ErrUserNotFound:             "用户不存在",
+	ErrActivationInvalid:        "验证链接无效或已过期",
+	ErrMailUnavailable:          "验证邮件暂时发不出去，请稍后重试或联系管理员",
+	ErrLoginRequired:            "请输入账号和密码",
+	ErrBadCredentials:           "账号或密码不正确",
+	ErrAccountLocked:            "账号已锁定，请在 %s 后重试",
+	ErrAccountDisabled:          "账号已被禁用",
+	ErrAccountPending:           "账号尚未完成邮箱验证，请先查收验证邮件",
+	ErrPasswordLoginUnavailable: "该账号不支持密码登录，请使用第三方账号登录",
+	ErrSessionNotFound:          "登录设备不存在或已被移除",
+	ErrSessionExpired:           "登录已过期，请重新登录",
+	ErrLogoutFailed:             "退出登录失败，请重试",
+	ErrOldPasswordWrong:         "当前密码不正确",
+	ErrNewPasswordSame:          "新密码不能与当前密码相同",
+	ErrProfileVisibilityInvalid: "主页可见性取值不合法",
+	ErrPageSizeInvalid:          "每页条数超出允许范围",
+	ErrNotLoggedIn:              "请先登录",
+	ErrInternal:                 "操作失败，请稍后重试",
+	ErrCustomerStatusInvalid:    "账号状态取值不合法",
+}
+
+// Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }

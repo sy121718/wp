@@ -32,6 +32,14 @@ type Node struct {
 // SectionClass 顶级容器附加 class，用于页面版心约束选择器。
 const SectionClass = "sky-section"
 
+// SROnlyClass 视觉隐藏但保留可聚焦的工具类（配方在 builder/settings.go 的基座 CSS 里）。
+//
+// 「读屏能播报、键盘能聚焦、视觉上不可见」。用 display:none 会把元素踢出键盘序列与
+// 读屏树 —— 折叠开关、页签 radio 这类控件全靠可聚焦才可用（触屏之外全废）。
+//
+// 组件模板给元素加这个 class 即可，不要再各自手写那 9 条声明。
+const SROnlyClass = "sky-sr-only"
+
 // Component 组件接口。每种可视化组件实现本接口并注册到 Registry。
 //
 // 说明：HTML 渲染已迁移到 Jet 模板路径（builder/jetview.go 的 nodeViewOf + renderView），

@@ -48,15 +48,64 @@ var componentTokenFallbacks = map[string][]string{
 	"--sky-c-bg-soft":       {"#f4f5f6"},                              // 浅灰页面底（与后台 --c-bg-soft 同值）
 	"--sky-c-danger":        {"#dc2626"},                              // 危险（red-600，与后台 --c-danger 同值）
 	"--sky-c-warning":       {"#f59e0b"},                              // 警告（amber-500）
+
+	// —— 尺度令牌（间距 / 圆角 / 字号）——
+	//
+	// 这一族与 --sky-c-* 的区别：颜色令牌由主题供值（ThemeVarsCSS 输出 --sky-c-*），
+	// 尺度令牌**不由主题供值** —— 它是组件样式自己的档位，兜底值是唯一真值。
+	// 之所以也走 var()，是为了将来能在主题层覆写密度（--sky-density-* 已经这么做）。
+	// 因此登记形式是「令牌 → 唯一允许兜底值」，判据仍是「同一令牌全仓一种兜底」。
+	"--sky-space-1": {"2px"}, "--sky-space-2": {"4px"}, "--sky-space-3": {"6px"},
+	"--sky-space-4": {"8px"}, "--sky-space-5": {"10px"}, "--sky-space-6": {"12px"},
+	"--sky-space-7": {"16px"}, "--sky-space-8": {"24px"},
+	"--sky-radius-sm": {"4px"}, "--sky-radius-md": {"6px"}, "--sky-radius-lg": {"8px"},
+	"--sky-radius-xl": {"12px"}, "--sky-radius-pill": {"999px", "9999px"},
+	"--sky-fs-xs": {"11px"}, "--sky-fs-sm": {"12px"}, "--sky-fs-base": {"13px"},
+	"--sky-fs-md": {"14px"}, "--sky-fs-lg": {"16px"}, "--sky-fs-xl": {"20px"},
+	"--sky-fs-2xl": {"24px"},
 }
 
-// componentOrphanTokenRe 孤儿令牌名：--sky- 直接跟通用色词（缺 -c- 段）。
+// componentOrphanTokenRe 孤儿令牌名：--sky- 直接跟通用**色词**（缺 -c- 段）。
 // ThemeVarsCSS 只输出 --sky-c-* 一族，这类名字永远拿不到主题供值。
+//
+// 注意它只匹配色词（primary/text/border/…），不匹配 space/radius/text-xs 这类
+// **尺度档位** —— 后者本来就不由主题供值，靠兜底值生效，不是孤儿。
 var componentOrphanTokenRe = regexp.MustCompile(
 	`var\(--sky-(primary|secondary|accent|success|warning|danger|surface|text|heading|border|bg|muted)\b`)
 
+// componentTokenRefRe **带兜底**的引用：`var(--sky-c-x, #fff)`，捕获兜底值。
 // fallback 捕获允许一层嵌套括号（rgba(37,99,235,0.08) 这类值自带括号）。
-var componentTokenRefRe = regexp.MustCompile(`var\(\s*(--sky-c-[a-z0-9-]+)\s*,\s*([^()]*(?:\([^()]*\)[^()]*)*)\)`)
+var componentTokenRefRe = regexp.MustCompile(
+	`var\(\s*(--sky-(?:c|space|radius|fs)-[a-z0-9-]+)\s*,\s*([^()]*(?:\([^()]*\)[^()]*)*)\)`)
+
+// componentBareTokenRefRe **不带兜底**的引用：`var(--sky-c-surface)`。
+//
+// 这个正则的存在本身就是一次修 bug 的产物：原先只有上面那条（要求必须有逗号），
+// 于是 `var(--sky-c-surface)` 一个逗号都没有 → 不匹配 → 完全不在扫描面 →
+// 「缺兜底」这种最要紧的形态恰好看不见。274471ae 就是这么把 27 处兜底删掉、
+// 门禁却一路 ok 的（无主题页面里按钮文字变黑，对比度 4.06:1 低于 AA）。
+//
+// 判据方向必须是：**先抓所有引用，再看有没有兜底** —— 而不是「只抓有兜底的，
+// 然后校验兜底值」。后者在删掉兜底时会让分母一起缩，问题凭空消失。
+var componentBareTokenRefRe = regexp.MustCompile(
+	`var\(\s*(--sky-(?:c|space|radius|fs)-[a-z0-9-]+)\s*\)`)
+
+// tokenNeedsFallback 哪些令牌族**必须**带兜底。
+//
+// 判据是「谁在无主题页面里没有值」：ThemeVarsCSS 只对挂了主题的页面输出 --sky-c-*
+// 一族，所以它们无兜底就等于无值。尺度档（space/radius/fs）同理 —— 它们不在
+// ThemeVarsCSS 的输出里，兜底值就是唯一真值。
+//
+// 反例（不在管辖内）：--sky-btn-* / --sky-density-* 由 ThemeVarsCSS 全量输出，
+// 兜底只是防御性写法，缺失不会让页面变黑。
+func tokenNeedsFallback(token string) bool {
+	for _, prefix := range []string{"--sky-c-", "--sky-space-", "--sky-radius-", "--sky-fs-"} {
+		if strings.HasPrefix(token, prefix) {
+			return true
+		}
+	}
+	return false
+}
 
 func componentCSSFiles(t *testing.T) []string {
 	t.Helper()
@@ -72,7 +121,8 @@ func componentCSSFiles(t *testing.T) []string {
 
 func TestComponentTokenFallbackConsistency(t *testing.T) {
 	files := componentCSSFiles(t)
-	totalRefs := 0
+	totalRefs := 0 // 带兜底的引用数
+	bareRefs := 0  // 不带兜底的引用数
 	var problems []string
 	for _, f := range files {
 		raw, err := os.ReadFile(f)
@@ -86,7 +136,20 @@ func TestComponentTokenFallbackConsistency(t *testing.T) {
 			problems = append(problems, f+": 孤儿令牌 "+m+"…（--sky- 缺 -c- 段，ThemeVarsCSS 不会供值；应为 --sky-c-* 全名）")
 		}
 
-		// 判据 1：通用令牌登记与 fallback 一致。
+		// 判据 1a：**缺兜底**的引用（最要紧的一档，原先完全漏掉）。
+		//
+		// 先跑这一条再跑有兜底那条：两者是互补的形态，一条引用要么带兜底要么不带。
+		for _, m := range componentBareTokenRefRe.FindAllStringSubmatch(src, -1) {
+			bareRefs++
+			token := m[1]
+			if !tokenNeedsFallback(token) {
+				continue
+			}
+			problems = append(problems, f+": "+token+" 缺兜底值"+
+				"（写成 var("+token+", <默认值>) —— 无主题页面里该令牌没有定义，声明会退化成继承/初始值）")
+		}
+
+		// 判据 1b：通用令牌登记与 fallback 一致。
 		for _, m := range componentTokenRefRe.FindAllStringSubmatch(src, -1) {
 			totalRefs++
 			token, fallback := m[1], strings.TrimSpace(m[2])
@@ -110,11 +173,59 @@ func TestComponentTokenFallbackConsistency(t *testing.T) {
 		}
 	}
 	// 判据 3：解析自检。
-	if totalRefs < 50 {
-		t.Fatalf("只扫到 %d 处 --sky-c-* 引用（预期 ≥50）：正则或路径口径失效，测试在空转", totalRefs)
+	//
+	// 分母用**两类之和**：只数带兜底的那一类，会在兜底被批量删掉时让分母一起缩、
+	// 自检跟着失效 —— 那正是这道门禁当初漏掉 27 处缺陷的同一个原因。
+	if all := totalRefs + bareRefs; all < 50 {
+		t.Fatalf("只扫到 %d 处令牌引用（带兜底 %d + 裸 %d，预期 ≥50）：正则或路径口径失效，测试在空转",
+			all, totalRefs, bareRefs)
 	}
 	if len(problems) > 0 {
 		sort.Strings(problems)
 		t.Errorf("组件令牌兜底不一致（%d 处）:\n  %s", len(problems), strings.Join(problems, "\n  "))
+	}
+}
+
+// TestBareTokenRefIsDetected 反向用例：门禁必须能发现「缺兜底的引用」。
+//
+// 这道测试守的是门禁自己。原实现只匹配 `var(--x, fallback)` 形态，于是
+// `var(--sky-c-surface)` 零逗号 → 不进入扫描面 → 27 处兜底被删而门禁一路 ok，
+// 最终让无主题页面的按钮文字变黑（对比度 4.06:1）。
+//
+// 判据：把一条**已知缺兜底**的写法喂给两条正则，bare 那条必须命中、带兜底那条必须不命中。
+// 只断言「bare 正则能匹配 var(--x)」是不够的 —— 还得断言它**不会**误伤带兜底的形态，
+// 否则一条 `var\(` 什么都匹配的正则也能让上面那条变绿。
+func TestBareTokenRefIsDetected(t *testing.T) {
+	bare := []string{
+		"color: var(--sky-c-surface);",
+		"background: var(--sky-c-primary);",
+		"padding: var(--sky-space-4);",
+		"border-radius: var(--sky-radius-md);",
+		"font-size: var(--sky-fs-md);",
+	}
+	for _, src := range bare {
+		matches := componentBareTokenRefRe.FindAllStringSubmatch(src, -1)
+		if len(matches) != 1 {
+			t.Errorf("缺兜底的写法没被 bare 正则检出：%q（命中 %d 次）—— 门禁对这处是瞎的", src, len(matches))
+			continue
+		}
+		if !tokenNeedsFallback(matches[0][1]) {
+			t.Errorf("%s 被判为「不需要兜底」，但它是无主题时没有值的令牌族", matches[0][1])
+		}
+		if got := componentTokenRefRe.FindAllStringSubmatch(src, -1); len(got) != 0 {
+			t.Errorf("带兜底的正则不该匹配缺兜底的写法：%q 命中了 %v", src, got)
+		}
+	}
+
+	// 反向：带兜底的写法不能被 bare 正则误判成「缺兜底」（否则修好也报错）。
+	withFallback := []string{
+		"color: var(--sky-c-surface, #fff);",
+		"background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));",
+		"padding: var(--sky-space-4, 8px);",
+	}
+	for _, src := range withFallback {
+		if got := componentBareTokenRefRe.FindAllStringSubmatch(src, -1); len(got) != 0 {
+			t.Errorf("带兜底的写法被误判成缺兜底：%q 命中了 %v", src, got)
+		}
 	}
 }

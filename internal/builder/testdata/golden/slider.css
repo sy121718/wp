@@ -5,6 +5,18 @@ body {
   container-name: sky-theme;
 }
 
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .sky-c-sl1 {
   position: relative;
   overflow: hidden;
@@ -48,11 +60,11 @@ body {
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 999px;
+  border-radius: var(--sky-radius-pill, 999px);
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
   background: var(--sky-c-surface, #fff);
   cursor: pointer;
-  font-size: 20px;
+  font-size: var(--sky-fs-xl, 20px);
   line-height: 1;
   display: flex;
   align-items: center;
@@ -76,7 +88,7 @@ body {
   right: 0;
   display: flex;
   justify-content: center;
-  gap: 6px;
+  gap: var(--sky-space-3, 6px);
   z-index: 2;
 }
 
@@ -84,7 +96,7 @@ body {
   display: block;
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--sky-radius-pill, 999px);
   border: none;
   background: rgba(0,0,0,.25);
   cursor: pointer;

@@ -218,7 +218,7 @@
   height: 40px;
   border: 0;
   padding: 0;
-  border-radius: 9999px;
+  border-radius: var(--sky-radius-pill, 9999px);
   font-size: 22px;
   line-height: 1;
   color: var(--sky-cardstack-label, rgba(0,0,0,.25));
@@ -410,7 +410,7 @@
   position: absolute;
   right: 20px;
   bottom: 16px;
-  font-size: 13px;
+  font-size: var(--sky-fs-base, 13px);
   letter-spacing: .08em;
   opacity: .45;
   pointer-events: none;
@@ -653,10 +653,7 @@
   @focus-ring
 }
 
-/* 放大态:脱离堆叠,居中到视口.用 inset:0 + margin:auto 居中而不是 transform,
-   免得和悬停展开/滚动位移抢属性,同时清掉独立属性 translate/scale 的残留. */
-& .sky-cardstack-card:has(> .sky-cardstack-toggle:checked) {
-  position: fixed;
+/* 放大态:脱离堆叠,居中到视口.用 inset:0 + margin: auto 居中而不是 transform, 免得和悬停展开/滚动位移抢属性,同时清掉独立属性 translate/scale 的残留. */ & .sky-cardstack-card:has(> .sky-cardstack-toggle:checked) { position: fixed;
   inset: 0;
   margin: auto;
   width: min(88vw, 560px);
@@ -703,11 +700,11 @@
   height: 40px;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: var(--sky-fs-xl, 20px);
   line-height: 1;
-  color: #fff;
+  color: var(--sky-c-surface, #fff);
   background: rgba(255,255,255,.16);
-  border-radius: 9999px;
+  border-radius: var(--sky-radius-pill, 9999px);
   cursor: zoom-out;
   user-select: none;
 }
@@ -722,7 +719,7 @@
 /* 卡内从上往下排(图 -> 标题 -> 正文 -> 附注 -> 链接). */
 & .sky-cardstack-card {
   justify-content: flex-start;
-  gap: 10px;
+  gap: var(--sky-space-5, 10px);
 }
 
 & .sky-cardstack-img {
@@ -778,9 +775,9 @@
   justify-content: center;
   width: min(100%, 320px);
   min-height: 44px;
-  padding: 10px 18px;
+  padding: var(--sky-space-5, 10px) 18px;
   border: 1px solid var(--sky-c-border-strong, #d1d5db);
-  border-radius: 999px;
+  border-radius: var(--sky-radius-pill, 999px);
   color: var(--sky-c-primary, #2563eb);
   font-weight: 600;
   text-decoration: none;
@@ -800,7 +797,7 @@
 /* 空状态:集合没有内容时给一块可见占位,而不是留一片空白(也可整体隐藏). */
 & .sky-cardstack-empty {
   margin: 0;
-  padding: 48px 24px;
+  padding: 48px var(--sky-space-8, 24px);
   text-align: center;
   opacity: .6;
   background-color: var(--sky-c-surface, #fff);

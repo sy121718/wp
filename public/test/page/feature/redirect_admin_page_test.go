@@ -20,6 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	pagedto "go_wp/internal/module/page/dto"
 	pagehttp "go_wp/internal/module/page/inbound/http"
 	"go_wp/internal/templates"
@@ -52,7 +53,7 @@ func TestRedirectAdminPageRenders(t *testing.T) {
 	engine := gin.New()
 	// 模板根相对包目录：public/test/page/feature → 项目根/internal/templates。
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "internal", "templates"), true)
-	engine.GET("/api/page/redirect", pagehttp.NewHandle(svc).RedirectPage)
+	engine.GET("/api/page/redirect", adminui.PageSlot(pagehttp.RedirectPageTemplate), pagehttp.NewHandle(svc).RedirectPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/page/redirect?project="+projectID, nil))

@@ -12,6 +12,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -232,7 +233,7 @@ func serveSessionsPage(t *testing.T, ph *aihttp.SessionPageHandle) *httptest.Res
 		c.Next()
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	engine.GET("/admin/ai/sessions", ph.SessionsPage)
+	engine.GET("/admin/ai/sessions", adminui.PageSlot(aihttp.SessionsPageTemplate), ph.SessionsPage)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/ai/sessions", nil)
 	rec := httptest.NewRecorder()

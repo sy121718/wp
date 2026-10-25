@@ -114,7 +114,7 @@ var _ navigationcontract.NavigationService = (*Service)(nil)
 // 数量级很小（站点工程），逐个设一次作用域比在数据层引入 BYPASSRLS 连接便宜得多。
 func (s *Service) projectIDs(ctx context.Context) ([]string, error) {
 	if s == nil || s.m == nil {
-		return nil, errors.New(navigationenums.ErrProjectRequired)
+		return nil, navigationenums.Err(navigationenums.ErrProjectRequired)
 	}
 	// 契约未注入就是装配漏接，直接失败。
 	//
@@ -123,7 +123,7 @@ func (s *Service) projectIDs(ctx context.Context) ([]string, error) {
 	// 回退还会让漏接表现为「一切正常」，于是同一份「列出全部工程」的 SQL 在
 	// navigation / block / page / order 里各存一份，四份将来会各自漂移。
 	if s.projects == nil {
-		return nil, errors.New(navigationenums.ErrProjectRequired)
+		return nil, navigationenums.Err(navigationenums.ErrProjectRequired)
 	}
 	list, err := s.projects.List(ctx)
 	if err != nil {
@@ -137,7 +137,7 @@ func (s *Service) projectIDs(ctx context.Context) ([]string, error) {
 	}
 	if len(ids) == 0 {
 		// 一个工程都没有：不是「导航项不存在」，而是没有可作用域的工程。
-		return nil, errors.New(navigationenums.ErrProjectRequired)
+		return nil, navigationenums.Err(navigationenums.ErrProjectRequired)
 	}
 	return ids, nil
 }
@@ -191,7 +191,7 @@ func parseExpectedUpdatedAt(raw *string) (*time.Time, error) {
 			return &t, nil
 		}
 	}
-	return nil, errors.New(navigationenums.ErrInvalidParam)
+	return nil, navigationenums.Err(navigationenums.ErrInvalidParam)
 }
 
 // staleVersionMessage 乐观锁冲突的业务错误：ErrStaleVersion + 定位信息（撞了的菜单项标题）。

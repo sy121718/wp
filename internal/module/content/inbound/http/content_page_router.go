@@ -36,6 +36,26 @@ const ContentPreviewNoticeTemplate = "admin/preview_notice.html"
 // 这三个契约。装配层在全部契约就绪后调用本函数，装配点与 dashboard 页面并排。
 //
 // pages 为 nil 时整体跳过（与既有 rg == nil 的早退同构）。
+// ArticlesPageTemplate 文章列表页的模板名。
+const ArticlesPageTemplate = "admin/content/articles.html"
+
+// ArticleNewPageTemplate 文章新建页的模板名。
+const ArticleNewPageTemplate = "admin/content/article_new.html"
+
+// ArticleTranslationsTemplate 文章译文页的模板名。
+const ArticleTranslationsTemplate = "admin/content/article_translations.html"
+
+// 内容模块两个片段出口的模板名（片段出口不带页壳）。
+const (
+	// SeoScoreFragmentTemplate SEO 评分区片段：内容 / 商品 / 工程三处共用同一模板，
+	// 所以模板名在三个模块里各声明一次 —— 它们各自装配自己的路由。
+	SeoScoreFragmentTemplate      = "fragments/seo_score"
+	ArticleImportFragmentTemplate = "fragments/article_import"
+	// 片段出口：SEO 抽屉与待重建清单抽屉。模板名归路由层。
+	ArticleSeoDrawerTemplate   = "admin/content/article_seo_drawer.html"
+	ArticleStaleDrawerTemplate = "admin/partials/stale_pages_drawer.html"
+)
+
 func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentService,
 	projects projectcontract.ProjectService, templates contenttemplatecontract.ContentTemplateService,
 	pageSvc pagecontract.PageService, instances presentationcontract.PresentationService) {
@@ -51,11 +71,15 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	if loc, ok := any(instances).(presentationcontract.PublishedEntityLocator); ok {
 		articlePages.SetArticleLinkLocator(loc)
 	}
-	pages.GET("/articles", adminui.PageAuthz("/api/content/list"), articlePages.ArticlesPage)
+	pages.GET("/articles",
+		adminui.PageAuthz("/api/content/list"),
+		adminui.PageSlot(ArticlesPageTemplate),
+		articlePages.ArticlesPage)
 	// 待重建影响面清单（只读抽屉片段）：与页头徽章同一个查询，徽章给数、抽屉给清单。
 	// 鉴权复用列表页的读权限点 —— 片段里就是全站待重建页面清单，不挂鉴权等于把它
 	// 露给任何登录账号（菜单隐藏不是访问控制）。GET 与 /api/content/list 的策略动词一致。
-	pages.GET("/articles/stale/drawer", builtin.CasbinMiddlewareForPath("/api/content/list"), articlePages.ArticleStaleDrawer)
+	pages.GET("/articles/stale/drawer", builtin.CasbinMiddlewareForPath("/api/content/list"),
+		adminui.BareSlot(ArticleStaleDrawerTemplate), articlePages.ArticleStaleDrawer)
 	// 文章新建整页（弃抽屉，对齐商品的 /admin/products/new）：左正文右实时预览。
 	// 页面 GET 本走 /admin 组（Session+CSRF，无 Casbin），但打开它就等于拿到建文章的
 	// 表单 —— 与 POST /articles/create 同挂 content:create 权限点，能建才能进。
@@ -64,7 +88,10 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	// 方法（这里是 GET）去 enforce，而 `/api/content/create` 的策略声明是 **POST**，
 	// 两者不匹配 → 含超管在内全员 403（实测缺陷，页面完全不可达）。这里显式声明
 	// 「本页面入口按 POST 语义鉴权」，让动词不匹配这件事在代码里可见。
-	pages.GET("/articles/new", builtin.CasbinMiddlewareForPathAs("/api/content/create", http.MethodPost), articlePages.ArticleNewPage)
+	pages.GET("/articles/new",
+		builtin.CasbinMiddlewareForPathAs("/api/content/create", http.MethodPost),
+		adminui.PageSlot(ArticleNewPageTemplate),
+		articlePages.ArticleNewPage)
 	pages.GET("/articles/edit", adminui.PageAuthz("/api/content/list"), articlePages.ArticleEditPage)
 	pages.POST("/articles/create", builtin.CasbinMiddlewareForPath("/api/content/create"), articlePages.ArticleCreate)
 	pages.POST("/articles/update", builtin.CasbinMiddlewareForPath("/api/content/update"), articlePages.ArticleUpdate)
@@ -83,14 +110,24 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	if writer, werr := i18n.NewContentWriterDefault(); werr == nil {
 		articleTranslations.SetContentWriter(writer)
 	}
-	pages.GET("/articles/translations", adminui.PageAuthz("/api/content/list"), articleTranslations.ArticleTranslations)
-	pages.POST("/articles/translations/save", builtin.CasbinMiddlewareForPath("/api/content/update"), articleTranslations.SaveArticleTranslations)
+	pages.GET("/articles/translations",
+		adminui.PageAuthz("/api/content/list"),
+		adminui.PageSlot(ArticleTranslationsTemplate),
+		articleTranslations.ArticleTranslations)
+	// POST 也挂 PageSlot：失败时回的是**同一张译文页**（200 + 逐行错误）。
+	pages.POST("/articles/translations/save",
+		builtin.CasbinMiddlewareForPath("/api/content/update"),
+		adminui.PageSlot(ArticleTranslationsTemplate),
+		articleTranslations.SaveArticleTranslations)
 	// 评分是纯计算（不写库、不写产物），只走组级 Session+CSRF，不再叠权限点：
 	// 能打开编辑页的人就能算分，分数本身不构成新的信息公开面。
-	pages.POST("/articles/score", articlePages.ArticleScorePanel)
+	pages.POST("/articles/score",
+		adminui.BareSlot(SeoScoreFragmentTemplate),
+		articlePages.ArticleScorePanel)
 	// SEO 评测抽屉片段（只读观测 + 一个 htmx 动作）：与编辑页同一权限点（content:list 的
 	// 写侧是 content:update，评测本身不改数据，按读侧鉴权即可）。GET 与策略动词一致。
-	pages.GET("/articles/seo/drawer", builtin.CasbinMiddlewareForPath("/api/content/list"), articlePages.ArticleSeoDrawer)
+	pages.GET("/articles/seo/drawer", builtin.CasbinMiddlewareForPath("/api/content/list"),
+		adminui.BareSlot(ArticleSeoDrawerTemplate), articlePages.ArticleSeoDrawer)
 	// 详情页真实预览帧（iframe 直接 src）：页面组鉴权（Session），**不挂 Casbin** ——
 	// 与评分抽屉同一取舍：它只读渲染、不落库，而 iframe 无法携带 CSRF 头。
 	pages.GET("/articles/preview-frame", adminui.BareSlot(ContentPreviewNoticeTemplate), articlePages.ArticlePreviewFrame)
@@ -99,7 +136,9 @@ func SetupContentPages(pages *gin.RouterGroup, contents contentcontract.ContentS
 	pages.POST("/articles/link-suggestions", articlePages.ArticleLinkSuggestions)
 	// 文章 → 画布（06-B 决策 5 的第一个真实用途）：预览是纯计算不叠权限点，
 	// 创建页面复用页面创建权限点（写的是 Page 草稿，与 /admin/pages 新建同一件事）。
-	pages.POST("/articles/import-preview", articlePages.ArticleImportPreview)
+	pages.POST("/articles/import-preview",
+		adminui.BareSlot(ArticleImportFragmentTemplate),
+		articlePages.ArticleImportPreview)
 	pages.POST("/articles/import-page", builtin.CasbinMiddlewareForPath("/api/page/create"), articlePages.ArticleImportCreate)
 	pages.POST("/articles/publish", builtin.CasbinMiddlewareForPath("/api/presentation/create"), articlePages.ArticlePublish)
 	pages.POST("/articles/rebuild", builtin.CasbinMiddlewareForPath("/api/presentation/rebuild"), articlePages.ArticleRebuild)

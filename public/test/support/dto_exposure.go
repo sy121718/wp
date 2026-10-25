@@ -62,13 +62,21 @@ var defaultDTOExposureAllow = map[string]string{
 	//   · HasAPIKey 是布尔开关，与 EndpointItem.HasSecret 同形：只回答「配没配过密钥」。
 	//     供应商密钥以 AES-GCM 密文落库（pkg/crypto），服务端**没有任何读回明文的接口**，
 	//     出参只有这个布尔值；密钥一旦更换或 API 地址变更即失效，也不出密文。
-	"ModelEntry.MaxOutputTokens":     "计量字段：模型声明的最大输出 token 数（整型），不是凭据",
-	"Provider.HasAPIKey":             "布尔开关：只回答「这个供应商配没配过密钥」。密钥以 AES-GCM 密文落库、无任何读回明文的接口（连密文都不出），响应用 HasAPIKey 而不是回显密钥物",
-	"Session.ContextTokens":          "计量字段：上下文窗口已占用的 token 数（整型），不是凭据",
-	"SessionItem.Tokens":             "计量字段：会话消息累计 token 数（整型），不是凭据",
-	"SessionDetail.VisibleTokens":    "计量字段：当前窗口内可见内容的 token 数（整型），不是凭据",
-	"SessionEventItem.ContentTokens": "计量字段：单条事件内容长度的 token 计数（整型），不是凭据",
-	"FoldPlanResult.SegmentTokens":   "计量字段：折叠分段各自的 token 数（整型），不是凭据",
+	"ModelEntry.MaxOutputTokens":   "计量字段：模型声明的最大输出 token 数（整型），不是凭据",
+	"ModelRowResp.MaxOutputTokens": "计量字段：模型声明的最大输出 token 数（整型），不是凭据（同 ModelEntry 同名字段）",
+	// CSRF token 是**防跨站请求伪造的会话令牌**，与 API 凭据是两回事：
+	// 它由服务端在渲染时注入、随表单回传校验，本来就该出现在页面里（否则表单提交必被拒）。
+	"ProviderCardResp.CSRFToken":        "CSRF 防护令牌：由服务端渲染时注入、随表单回传校验，本来就该出现在页面里；不是 API 凭据",
+	"ProviderCardBase.CSRFToken":        "同上：卡片视图的壳键（csrf_token / t / PermSet / Buttons），从页面基座借来给 include 进来的卡片用，不是 API 凭据",
+	"SessionListPageResp.CSRFToken":     "同上：会话列表页基座的壳键，供应商卡片从这里借 csrf_token；不是 API 凭据",
+	"PageFragmentResp.CSRFToken":        "同上：页面侧栏片段（语言状态 / 定时发布）的壳键，随片段表单回传校验；不是 API 凭据",
+	"TranslationMissPageResp.CSRFToken": "同上：未翻译清单报告片段的壳键，随表单回传校验；不是 API 凭据",
+	"Provider.HasAPIKey":                "布尔开关：只回答「这个供应商配没配过密钥」。密钥以 AES-GCM 密文落库、无任何读回明文的接口（连密文都不出），响应用 HasAPIKey 而不是回显密钥物",
+	"Session.ContextTokens":             "计量字段：上下文窗口已占用的 token 数（整型），不是凭据",
+	"SessionItem.Tokens":                "计量字段：会话消息累计 token 数（整型），不是凭据",
+	"SessionDetail.VisibleTokens":       "计量字段：当前窗口内可见内容的 token 数（整型），不是凭据",
+	"SessionEventItem.ContentTokens":    "计量字段：单条事件内容长度的 token 计数（整型），不是凭据",
+	"FoldPlanResult.SegmentTokens":      "计量字段：折叠分段各自的 token 数（整型），不是凭据",
 	// 对外访问令牌（迁移 542）。两条都不是「把存着的凭据搬出来」：
 	//   · TokenPrefix 是令牌**前缀**（前 12 字符），只用于在列表里辨认「哪一把」，
 	//     与落库的 SHA-256 哈希无关、不能据此反推明文；
@@ -79,6 +87,11 @@ var defaultDTOExposureAllow = map[string]string{
 	//     不给他就没人能用这把令牌。
 	"TokenItem.TokenPrefix": "展示用前缀（令牌前 12 字符），仅用于辨认是哪一把；与落库哈希无关，不能据此反推明文",
 	"TokenCreateResp.Token": "刚生成的一次性明文令牌，只在创建应答出现一次（此后无任何读回明文的接口）；不交给创建者就无法使用",
+	// MCP 外部访问页（ai_page_resp.go）：从 gin.H 换成强类型视图后，这两个字段才第一次
+	// 进入 AST 扫描面 —— 同样是「刚生成的凭据交给创建者」，与 TokenCreateResp.Token 同一口径。
+	"McpPageResp.NewToken": "刚生成的一次性明文令牌，只在这一次页面渲染里出现（列表只给前缀，此后无任何读回明文的接口）",
+	// Tokens 是**列表**（每项只带前缀与元数据，不带明文）；命中敏感词的是字段名本身。
+	"McpPageResp.Tokens": "令牌列表（每项只有前缀、名称、范围、时间与状态，没有任何明文或哈希）；字段名命中词根 \"token\"，值是行列表不是凭据",
 	// 对话结果（ai_chat.go）：上游**上报**的用量。同样命中词根 "token"，同样不是凭据 ——
 	// 它们回答的是「这次调用按 token 计用了多少」，值是上游 usage 里的整数；
 	// UsageReported=false 时三列恒为 0（表示这家没上报），也没有任何字符串通道能承载凭据。

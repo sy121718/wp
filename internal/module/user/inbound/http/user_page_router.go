@@ -32,6 +32,15 @@ import (
 // 同样允许为 nil —— 详情页的「会员等级」块渲染一句「会员模块尚未接入」而不是空白块。
 // 二者成对传入并在同一个 setter 里落地：只接一半的中间态（读得到等级、错误却直出原文）
 // 没有部署理由。
+// 客户管理页的模板名（页面出口由页面槽带进上下文）。
+const (
+	CustomersListPageTemplate    = "admin/user/customers.html"
+	CustomerDetailPageTemplate   = "admin/user/customer_detail.html"
+	CustomerOverviewPageTemplate = "admin/user/customer_overview"
+	CustomerCohortPageTemplate   = "admin/user/customer_cohort"
+	CustomerRfmPageTemplate      = "admin/user/customer_rfm"
+)
+
 func SetupCustomerPages(pages *gin.RouterGroup,
 	users usercontract.CustomerAdminPort,
 	orders ordercontract.CustomerOrderSummaryReader,
@@ -59,14 +68,29 @@ func SetupCustomerPages(pages *gin.RouterGroup,
 	h.SetCustomerRfm(rfm)
 	h.SetCustomerCohort(cohort)
 	h.SetMembershipFilters(membershipAdmin, membershipTiers)
-	pages.GET("/customers", adminui.PageAuthz("/api/customer/list"), h.CustomersPage)
+	pages.GET("/customers",
+		adminui.PageAuthz("/api/customer/list"),
+		adminui.PageSlot(CustomersListPageTemplate),
+		h.CustomersPage)
 	// 客户概览：目录（客户）下的第一项。只读 —— 只读不等于不鉴权，菜单隐藏不是访问控制
 	//（docs/02-Z §4.3）。与列表页同源（同一张 users 表的两种看法），借同一个读权限点。
-	pages.GET("/customers/overview", adminui.PageAuthz("/api/customer/list"), h.CustomerOverviewPage)
+	pages.GET("/customers/overview",
+		adminui.PageAuthz("/api/customer/list"),
+		adminui.PageSlot(CustomerOverviewPageTemplate),
+		h.CustomerOverviewPage)
 	// RFM 分析：客户目录下的第三项。与列表页同源（同一张表的另一种看法），同一个读权限点。
-	pages.GET("/customers/rfm", adminui.PageAuthz("/api/customer/list"), h.CustomerRfmPage)
+	pages.GET("/customers/rfm",
+		adminui.PageAuthz("/api/customer/list"),
+		adminui.PageSlot(CustomerRfmPageTemplate),
+		h.CustomerRfmPage)
 	// 群组留存：客户目录下的第四项。同一批客户按时间的另一种看法，不是另一份数据。
-	pages.GET("/customers/cohort", adminui.PageAuthz("/api/customer/list"), h.CustomerCohortPage)
+	pages.GET("/customers/cohort",
+		adminui.PageAuthz("/api/customer/list"),
+		adminui.PageSlot(CustomerCohortPageTemplate),
+		h.CustomerCohortPage)
 	// 客户详情：二级页面（菜单表没有它），但它是整页导航目标 —— 直输 URL 必须同样被拦。
-	pages.GET("/customers/detail", adminui.PageAuthz("/api/customer/list"), h.CustomerDetailPage)
+	pages.GET("/customers/detail",
+		adminui.PageAuthz("/api/customer/list"),
+		adminui.PageSlot(CustomerDetailPageTemplate),
+		h.CustomerDetailPage)
 }

@@ -22,7 +22,17 @@
 - **Redis**（必需组件，不是可选缓存 —— 会话依赖它）
 - **Node.js**（仅 `scripts/check-workbench.sh` 需要；不参与生产资产构建）
 
-版本基线：开发与生产按 **PostgreSQL 18+ / Redis 7+** 准备；CI 的测试容器用的是 `postgres:16` / `redis:7`（`.github/workflows/go-test.yml`），更早的版本未经验证。`go.mod` 不表达数据库版本，示例配置见 [`config.yaml.example`](config.yaml.example)。
+版本基线：**开发、CI、生产必须同一大版本**。版本号在 `public/test/support/versions.go` 声明一次，
+CI workflow 的 services 镜像与它由 `versions_test.go` 对账，漂移即红。
+
+改动数据库版本时三处同步（漏一处会有测试告诉你）：
+1. `public/test/support/versions.go` 的 `TestPostgresMajor` / `TestRedisMajor`
+2. `.github/workflows/go-test.yml` 的 `services.*.image`
+3. 该文件的 `GOWP_PRODUCTION_VERSIONS`，以及部署机的实际版本
+
+`GOWP_PRODUCTION_VERSIONS` 是**生产版本的唯一声明处**（形如 `postgres=18,redis=8`）。它为空时
+对账测试会明确报告「生产版本未声明，一致性未经核对」而不是假装对齐；本地开发不设它也没问题，
+CI 的 integration job 必须设。`go.mod` 不表达数据库版本，示例配置见 [`config.yaml.example`](config.yaml.example)。
 
 ### 2.2 配置
 

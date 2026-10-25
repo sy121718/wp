@@ -221,16 +221,30 @@ func TestAdminListSortBridgeIsEnums(t *testing.T) {
 		t.Fatalf("读取 admin_crud.go 失败: %v", err)
 	}
 	src := string(raw)
+	// 判据在 2026-10 收紧过一次：从「用 enums 常量」变成「用 enums.Err() 带上兜底」。
+	//
+	// 旧形态 errors.New(adminenums.ErrSortFieldInvalid) 造出来的是**裸 key** ——
+	// facing.FactOf 只能把 key 本身当兜底，词条缺席时客户端看到的是一串
+	// `admin.err.sortFieldInvalid`。现在每个 Err* 在 enums 的 errFallbacks 里有中文兜底，
+	// service 走 enums.Err(...)，出口照旧只调一次 facing.FactOf。
 	for _, want := range []string{
-		"errors.New(adminenums.ErrSortFieldInvalid)",
-		"errors.New(adminenums.ErrSortDirectionInvalid)",
+		"adminenums.Err(adminenums.ErrSortFieldInvalid)",
+		"adminenums.Err(adminenums.ErrSortDirectionInvalid)",
 	} {
 		if !strings.Contains(src, want) {
-			t.Fatalf("排序校验应返回 enums 常量（%s）：中文原文进不了白名单，会被归口成通用提示", want)
+			t.Fatalf("排序校验应返回带兜底的业务错误（%s）：裸 key 在词条缺席时会被直出给客户端", want)
 		}
 	}
-	if strings.Contains(src, `errors.New("无效的排序`) {
-		t.Fatal("排序校验又出现了中文原文错误 —— 它进不了白名单，接口会退回 500 + 归口")
+	// 反向：裸 errors.New(<enums 常量>) 不许再出现（全仓判据见
+	// internal/architecture 的 TestNoBareKeyBusinessErrors，这里只钉住本条链路）。
+	for _, forbidden := range []string{
+		"errors.New(adminenums.ErrSortFieldInvalid)",
+		"errors.New(adminenums.ErrSortDirectionInvalid)",
+		`errors.New("无效的排序`,
+	} {
+		if strings.Contains(src, forbidden) {
+			t.Fatalf("排序校验不该再用 %s —— 中文原文进不了白名单；裸 key 也没有兜底", forbidden)
+		}
 	}
 }
 

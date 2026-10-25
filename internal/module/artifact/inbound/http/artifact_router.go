@@ -63,7 +63,7 @@ func artifactDetailResponse(c *gin.Context, res *artifactdto.ArtifactResp, err e
 	switch {
 	case err == nil && res != nil:
 		response.SuccessWithMessage(c, artifactenums.MsgArtifactFound, res)
-	// 服务的错误是**文案哨兵**（errors.New(artifactenums.Xxx)），不是导出的哨兵变量 ——
+	// 服务的错误是**文案哨兵**（artifactenums.Err(artifactenums.Xxx)），不是导出的哨兵变量 ——
 	// 因此这里按 enums 常量比对（与模块内既有出口同一口径），并兜住 gorm 的 not found。
 	case err != nil && (err.Error() == artifactenums.ErrArtifactNotFound || errors.Is(err, gorm.ErrRecordNotFound)):
 		response.ErrorWithMessage(c, http.StatusNotFound, artifactenums.ErrArtifactNotFound)

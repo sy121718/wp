@@ -1,20 +1,25 @@
 package mailhttp
 
-// **画布是流程的唯一编辑器**：带 ?id=N 是编辑，不带 id 是新建。
+// 画布是**唯一编辑器**（表单编辑页已随画布改造删除）。画布页做三件事：
+// 把图渲染成可拖的节点、画出连线、把位置存回去。
 //
-// 此前有两条入口 —— 步骤式表单页（/admin/mail/automation/edit）与画布。两条入口的代价
-// 是同一份图有**两套还原器**（表单要「图 → 步骤行 → 图」，画布直接改图），而它们必然
-// 滞后于引擎：节点类型一扩，表单的还原逻辑就有一部分表达不了，只能退化成只读兜底页，
-// 用户看到的是「这个流程改不了」却说不出原因。表单页已删除，且**不留重定向** ——
-// 留一条跳转等于两个入口以另一种形式复活。
+// 连线**不在画布上拖**，而是在侧栏用下拉改。这不是妥协，是刻意的：
 //
-// 画布承担三件事：把图渲染成可拖的节点、画出连线、把图存回去。连线走画布上的出口圆钮
-// 与边的插入菜单（触屏 / 键盘都能用），不再靠侧栏下拉 —— 那种做法只能改「已存在的边」，
-// 新建节点的第一步仍然要用户自己去填 key。
+//	· HTML5 drag and drop 在触屏上完全无效；pointer events 能做拖位置，但「从端口拉出一条线」
+//	  在触屏上需要长按 + 命中判定，体验与误操作都难控；
+//	· 下拉在鼠标 / 触屏 / 键盘下都能用，无障碍也天然达标；
+//	· 连线的**真相在图数据里**，画布只是把它画出来 —— 改数据用下拉，看结构用画布。
+
+// **表单式编辑器，不是拖拽**：一行一个节点（标识 / 类型 / 参数 / 下一步 / 分支两臂），
+// 提交时服务端组装成图定义再走同一套校验。
 //
-// 前端模块见 static/js/automation/（state / layout / render / menu / index 五模块 +
-// 几何工具 graph.js）；业务判断一律在服务端（nodeArity / ValidateDefinition），
-// 画布不自己算权重和、不自己判合法性。
+// 为什么先做表单而不是拖拽：
+//
+//	· 拖拽需要一整套前端状态管理（画布坐标、连线命中、撤销栈），是独立的前端工程；
+//	· 表单能表达引擎的**全部**能力（引擎只认节点与连线，不关心它们怎么被画出来）；
+//	· 引擎的正确性（环检测 / 可达性 / 执行语义）与编辑器形态无关，先让它可用、能验证。
+//
+// 表单里不写自定义 JS（项目约定：后台交互走原生表单 / HTMX）。
 
 // 为什么单独成页：流程是「配置」（一年改几次），实例是「排障」（出事时盯着看）。
 // 挤在一页时，配流程的人要往下滚过几十条与本次操作无关的运行记录；
@@ -89,6 +94,7 @@ package mailhttp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"html"
@@ -109,177 +115,24 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 )
 
-// MailAutomationCanvas 流程画布页。
+// MailAutomationCanvas 流程画布页（?id=N）。
 //
-// **这是流程的唯一编辑器**（列表页只有一个「编辑」按钮指向这里）：带 ?id=N 是编辑，
-// 不带 id 是新建 —— 新建也走画布，不再有第二个表单页（两条入口的代价是同一份图有
-// 两套还原逻辑，而它们必然滞步）。缺 id 不再当异常：给一份只含入口节点的空图。
+// 缺 id 前置判定见 MailCampaignPage 的说明（审计 P0）：改前 canvas 的「缺参」与「不存在」
+// **合成同一句**「自动化流程不存在」—— 没带 id 的调用方会以为流程被删了，而不是自己漏了参数。
 func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 	item, ok := h.automationForCanvas(c)
 	if !ok {
 		return
 	}
-	c.HTML(http.StatusOK, "admin/mail/mail_automation_canvas.html", adminui.Prepare(c, h.automationCanvasData(c, item)))
-}
-
-// automationCanvasData 画布页的渲染数据（模板只读现成数据对象，不自己推导）。
-//
-// 与 handler 分开的理由是门禁的判据本身：`MailAutomationCanvas` 只该做
-// 「取 → 渲」两件事（controller_orchestration 的语句上限 6）。数据装配放在这里，
-// 它不做业务判断 —— 图的合法性由 service 的 ValidateDefinition 管。
-func (h *mailPageHandle) automationCanvasData(c *gin.Context, item *maildto.AutomationItem) gin.H {
-	nodesJSON, merr := json.Marshal(item.Nodes)
-	if merr != nil {
-		nodesJSON = []byte("[]")
-	}
-	meta := h.automationCanvasMeta(c, item)
-	metaJSON, _ := json.Marshal(meta)
-	return gin.H{
-		"title": mailenums.PageTitleAutomationCanvas.Key,
-		"A":     item,
-		// 新建流程要能在一屏内完成：名称与触发方式是画布顶栏的两个输入控件，
-		// 下拉选项与服务端校验共用 enums 的同一份枚举。
-		"IsNew":    item.ID == 0,
-		"Triggers": triggerOptions(mailTranslate(c), item.TriggerType),
-		// 频率的初始态：新流程按 every_time（改造前的默认）渲染。
-		"FrequencyEveryTime": item.TriggerFrequency != mailmodel.TriggerFrequencyOnce,
-		"FrequencyOnce":      item.TriggerFrequency == mailmodel.TriggerFrequencyOnce,
-		"NodeTypes":          paletteFromMeta(meta["nodeTypes"]),
-		"NodesJSON":          utils.JsonSafe(string(nodesJSON)),
-		"MetaJSON":           utils.JsonSafe(string(metaJSON)),
-		"jsVer":              automationJsVer(),
-		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）；
-		// 本页也没有取数失败分支（失败已在上面渲染提示页），所以不再注入 Err。
-		// 按需内联动效关键帧（本次只用到入场一个）。不声明就是零字节 ——
-		// 后台不常驻加载 63 条营销动效，谁用谁声明（见 core.KeyframeCSS）。
-		"KeyframesCSS": core.KeyframeCSS([]string{"sky-fade-in-up"}),
-	}
-}
-
-// automationForCanvas 取画布要编辑的流程：**没给 id** 才给空图，给了 id 就查到实处。
-//
-// 为什么不能用 `id := ParseUint(c.Query("id")); if id == 0`：ParseUint 对 "" / "abc" / "0"
-// 一律返回 0，于是 `?id=abc`（或 id 被截断的旧书签）会静默变成「新建空白草稿」——
-// 用户以为在编辑原来那条，保存后多出一条不相干的流程。判据与活动报表 / 实例排障
-// 共用同一份（mailQueryID）：没给 id 才走引导，给了 id 就由 service 说那个 id 怎么了。
-//
-// 第二个返回 false 表示已经渲染了提示页（调用方直接 return）。
-// 新建分支的图与迁移后的 v2 形状逐字一致（schema + out），画布不需要知道
-// 「这份图是刚造的」—— 它只看见一份合法的图定义。
-func (h *mailPageHandle) automationForCanvas(c *gin.Context) (*maildto.AutomationItem, bool) {
-	id, hasID := mailQueryID(c)
-	if !hasID {
-		return newAutomationDraft(), true
-	}
-	item, err := h.mail.GetAutomation(c.Request.Context(), id)
-	if err != nil {
-		mailAutomationJump(c, false, mailErrMsg(c, err))
-		return nil, false
-	}
-	return item, true
-}
-
-// newAutomationDraft 新建流程时的空图（入口 + 一条未连的出边）。
-//
-// 只造图、不落库：用户在画布上画完、点保存才建行。否则「点开新建 → 关掉」会在库里
-// 留下一堆没有节点的草稿。
-func newAutomationDraft() *maildto.AutomationItem {
-	return &maildto.AutomationItem{
-		Name:        "",
-		TriggerType: mailmodel.TriggerManual,
-		Status:      mailmodel.AutomationStatusDraft,
-		Version:     0,
-		Entry:       automationEntryKeyDefault,
-		Nodes: []maildto.AutomationNodeItem{
-			{Key: automationEntryKeyDefault, Type: "trigger"},
-		},
-	}
-}
-
-// automationCanvasMeta 画布页的元数据（前端只读这一份，不自己推导）。
-//
-// 两条值得说明的字段：
-//
-//   - **triggerParams**：触发条件是**流程级配置**，不属于图。画布保存时把它原样回传，
-//     否则服务端会以为调用方要清空条件（tag_added 流程清空后对任意标签都触发）。
-//   - **nodeTypes**：节点类型的取值与文案（enums 的真源，取词后注入）。画布当前仍从
-//     graph.js 里的 NODE_LABEL 取标签 —— 那份表是**下一批（画布重写）要收掉**的第二份；
-//     在收掉之前，这里的 nodeTypes 是给 palette 用的唯一服务端来源。
-func (h *mailPageHandle) automationCanvasMeta(c *gin.Context, item *maildto.AutomationItem) map[string]any {
-	tr := mailTranslate(c)
-	// 发信节点在「没有可用的营销 SMTP」时禁用：让用户画完之后在保存时才发现发不出去，
-	// 比一开始就灰掉它并说明原因差得多。
-	emailDisabled, emailReason := h.emailNodeDisabled(c)
-	nodeTypes := make([]gin.H, 0, len(mailenums.AutomationNodeTypes))
-	for _, o := range mailenums.AutomationNodeTypes {
-		entry := gin.H{
-			"value":   o.Value,
-			"label":   mailLabel(tr, o.Label),
-			"hint":    mailLabel(tr, o.Hint),
-			"outlets": mailenums.AutomationNodeTypeOutlets(o.Value),
-		}
-		if o.Value == "email" && emailDisabled {
-			entry["disabled"] = true
-			entry["disabledReason"] = emailReason
-		}
-		nodeTypes = append(nodeTypes, entry)
-	}
-	return map[string]any{
-		"automationId":     item.ID,
-		"name":             item.Name,
-		"description":      item.Description,
-		"triggerType":      item.TriggerType,
-		"triggerParams":    item.TriggerParams,
-		"triggerFrequency": item.TriggerFrequency,
-		"exitOnReply":      item.ExitOnReply,
-		"entry":            item.Entry,
-		"status":           item.Status,
-		"version":          item.Version,
-		"isNew":            item.ID == 0,
-		// 只有草稿 / 已暂停才允许调结构（启用中的流程改图会让在跑的实例走岔）。
-		// 新建的流程恒可编辑（它还没落库，state 是 draft）。
-		"structureEditable": item.Status != mailmodel.AutomationStatusActive,
-		"nodeTypes":         nodeTypes,
-	}
-}
-
-// paletteFromMeta 把 meta.nodeTypes（map 形态）翻成模板要的字段名。
-//
-// 为什么要翻：meta 是给 JS 的（小写键 + JSON），模板读的是导出字段名。两处共用**同一份**
-// 组装结果（而不是各自再取一遍 enums），是为了让「palette 里有什么」只有一个来源 ——
-// 前后端各组装一次的话，某个类型在 JS 里能选、在模板按钮上却没有，反之亦然。
-func paletteFromMeta(raw any) []gin.H {
-	list, _ := raw.([]gin.H)
-	out := make([]gin.H, 0, len(list))
-	for _, t := range list {
-		out = append(out, gin.H{
-			"Value":          t["value"],
-			"Hint":           t["hint"],
-			"Label":          t["label"],
-			"Disabled":       t["disabled"] == true,
-			"DisabledReason": t["disabledReason"],
-		})
-	}
-	return out
-}
-
-// emailNodeDisabled 判断「发信节点」当前是否应该禁用（没有可用的营销 SMTP）。
-//
-// 判定读的是账号列表而不是「有没有任何账号」：营销群发与事务发信走的是不同用途的账号
-// （purpose=marketing），一个只配了事务账号的站点发不出营销邮件。读失败按「可用」处理
-// —— 画布不该因为一次列表查询失败就把发信节点灰掉（那是把基础设施抖动变成编辑器的谎）。
-func (h *mailPageHandle) emailNodeDisabled(c *gin.Context) (bool, string) {
-	accounts, err := h.mail.ListAccounts(c.Request.Context(), "marketing")
-	if err != nil || len(accounts) > 0 {
-		return false, ""
-	}
-	return true, mailLabel(mailTranslate(c), mailenums.AutomationCanvasEmailDisabled)
+	pageview.Render(c, h.automationCanvasView(c, item))
 }
 
 // automationJsVer 自动化编辑器脚本的缓存版本（模块目录下 .js 的最新 mtime）。
@@ -307,14 +160,13 @@ func automationJsVer() string {
 	return strconv.FormatInt(latest, 10)
 }
 
+// maxAutomationNodes 表单最多支持多少个节点行。
+//
+// 有上限不是偷懒：表单式编辑器一旦超过十几行就不好用了 —— 那正是该上拖拽的信号。
+const maxAutomationNodes = 12
+
 // mailAutomationPageSize 流程列表每页条数（运行记录页用自己的 mailAutomationRunsPageSize）。
 const mailAutomationPageSize = 50
-
-// automationEntryKeyDefault 新建流程时入口节点的 key。
-//
-// 固定为 n1 而不是随机串：它进图的 entry 字段、也进运行实例的 current_node，一个可读的固定值
-// 在排障页上比 uuid 有用，且新建的图只有这一个节点，不存在冲突。
-const automationEntryKeyDefault = "n1"
 
 // mailTr 取词函数签名（= 后台模板注入的 .["t"]：templates.TranslateFunc 按
 // response.RequestLanguage 取词，与 shell.TranslateFor 是同一实现）。
@@ -340,30 +192,17 @@ func mailLabel(tr mailTr, pair mailenums.LabelPair) string {
 	return tr(pair.Key, pair.Fallback)
 }
 
-// triggerOptions 触发方式下拉的选项（带选中态）。
+// nodeTypeOption 类型下拉的一项（Label / Hint 已在组装时按当前语言取词）。
+type nodeTypeOption struct {
+	Value string
+	Label string
+	Hint  string
+}
+
+// nodeTypeOptions 类型下拉选项（参数提示直接写在界面上，省得去翻文档）。
 //
-// 画布顶栏与（已删除的）表单页共用同一份 enums；下拉只在这里组装一次。
-func triggerOptions(tr mailTr, selected string) []gin.H {
-	if selected == "" {
-		selected = mailmodel.TriggerManual
-	}
-	opts := make([]gin.H, 0, len(mailenums.AutomationTriggers))
-	for _, o := range mailenums.AutomationTriggers {
-		opts = append(opts, gin.H{"Value": o.Value, "Label": mailLabel(tr, o.Label), "Selected": o.Value == selected})
-	}
-	return opts
-}
-
-// triggerLabelOf 枚举 → 当前语言的标签；未知枚举原样返回（不吞掉不认识的取值）。
-func triggerLabelOf(tr mailTr, value string) string {
-	for _, o := range mailenums.AutomationTriggers {
-		if o.Value == value {
-			return mailLabel(tr, o.Label)
-		}
-	}
-	return value
-}
-
+// 取值与文案的真源在 mailenums.AutomationNodeTypes（key + 中文兜底），这里只做取词 ——
+// 画布页（mail_page.go）与表单页共用同一份，不各写一套。
 // MailAutomationPage 流程列表（只回答「有哪些流程」）。
 //
 // 运行实例搬到 /admin/mail/automation/runs：流程是「配置」，实例是「排障」，
@@ -377,38 +216,106 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 		page = 1
 	}
 	automations, err := h.mail.ListAutomations(ctx, &maildto.AutomationListReq{Page: page, PageSize: mailAutomationPageSize})
-	data := gin.H{
-		"title": mailLabel(tr, mailenums.PageTitleAutomation),
-		"Page":  page,
-		// 批量删除表单 action 的 query：回跳时由 shell.BackPath 读回，批量删完不会被弹回第 1 页。
-		"ListQuery": mailPageQuery(page),
-		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）；
-		// Err 只由下面的取数失败分支注入。
+	view := &maildto.AutomationListPageResp{
+		Title:       mailLabel(tr, mailenums.PageTitleAutomation),
+		Page:        page,
+		ListQuery:   mailPageQuery(page),
+		Automations: []maildto.AutomationRowResp{},
+		BackPath:    c.Request.URL.RequestURI(),
 	}
 	if err != nil {
-		// 取数失败：归口文案 + 空列表。
-		// 空列表不可省 —— 模板随后就用 len(.Automations) / .AutoTotal 渲染列表，
-		// 缺键会让 Jet 在那一行中断（HTTP 仍是 200、正文整块消失）。
-		data["Err"] = mailErrPageText(c, err)
-		data["Automations"] = []any{}
-		data["AutoTotal"] = 0
-		c.HTML(http.StatusOK, "admin/mail/mail_automation.html", adminui.Prepare(c, data))
+		// 取数失败：归口文案 + 空列表（空列表不可省，理由见视图字段的注释）。
+		view.Err = mailErrPageText(c, err)
+		pageview.Render(c, view)
 		return
 	}
 	// 列表行按模板需要投影：触发方式给中文标签（枚举不直接进界面），其余字段原样透出。
-	autoRows := make([]gin.H, 0, len(automations.Items))
+	autoRows := make([]maildto.AutomationRowResp, 0, len(automations.Items))
 	for _, a := range automations.Items {
-		autoRows = append(autoRows, gin.H{
-			"ID": a.ID, "Name": a.Name, "Description": a.Description,
-			"Status": a.Status, "Version": a.Version,
-			"TriggerLabel": triggerLabelOf(tr, a.TriggerType),
+		autoRows = append(autoRows, maildto.AutomationRowResp{
+			ID: a.ID, Name: a.Name, Description: a.Description,
+			Status: a.Status, Version: a.Version,
+			TriggerLabel: triggerLabelOf(tr, a.TriggerType),
 		})
 	}
-	data["Automations"] = autoRows
-	data["AutoTotal"] = automations.Total
-	c.HTML(http.StatusOK, "admin/mail/mail_automation.html", adminui.Prepare(c, data))
+	view.Automations = autoRows
+	view.AutoTotal = automations.Total
+	pageview.Render(c, view)
 }
 
+// automationFormValues 编辑页表单当前值。
+//
+// 单独一份而不是直接读 *maildto.AutomationItem：步骤动作（增 / 删 / 移）只回显不保存，
+// 那种请求里没有 item（新建流程时更是一个都没有），但**用户刚填的名称 / 触发方式 / 说明
+// 必须原样留在页面上** —— 点一下「添加一步」就清空表单是最让人恼火的一种「功能」。
+type automationFormValues struct {
+	ID          uint64
+	IsNew       bool
+	Name        string
+	Description string
+	Trigger     string
+	Entry       string
+}
+
+// formValuesFromItem 编辑既有流程时的表单初值。
+// formValuesFromPost 动作回显时取自本次提交（不落库）。
+// MailAutomationEdit 流程编辑页（?id=N 编辑，缺省为新建）。
+//
+// 页面只讲「触发方式 + 按顺序的步骤」：标识 / 下一步 / yes / no 四个输入框已从界面消失
+// （用户原话「新建自动化不知道是个什么东西完全没法用」），换算在 mail_page.go。
+// renderAutomationForm 渲染步骤表单（新建 / 编辑 / 动作回显 / 校验失败回显共用）。
+//
+// errText 是表单校验失败时的回显文案 —— 走「200 回显」而不是提示页：
+// 用户填的内容（尤其是他刚改过的步骤类型）必须留在页面上。否则「改类型 → 保存 →
+// 报错 → 页面翻回旧类型 → 再报错」就是死循环，而这条链路上用户没有任何出路。
+// renderAutomationFallback 表单表达不了的流程：只读展示原图 + 去画布的入口。
+//
+// 这里**不给可提交的步骤表单**：那份表单渲染出来是空的（还原失败），用户一保存就把
+// 还原不出来的节点整段删掉 —— 旧实现正是如此。宁可让他去画布改。
+// nodeTypeLabelOf 节点类型 → 当前语言标签；未知类型原样返回（兜底表要能显示真实取值）。
+// automationTriggerLabels 触发方式的取值与文案（key + 中文兜底的真源在 mailenums）。
+//
+// 下拉选项与列表展示**共用这一份**：此前列表直接把枚举值（manual / contact_created…）
+// 打进表格，同一个值在下拉里叫「新联系人产生」、在列表里叫 contact_created ——
+// 界面自相矛盾，而且把内部标识露给了用户。
+
+// triggerLabelOf 枚举 → 当前语言的标签；未知枚举原样返回（不吞掉不认识的取值）。
+func triggerLabelOf(tr mailTr, value string) string {
+	for _, o := range mailenums.AutomationTriggers {
+		if o.Value == value {
+			return mailLabel(tr, o.Label)
+		}
+	}
+	return value
+}
+
+// —— 状态回执 ——
+//
+// 原先这里有一个 automationStatusLabel(status) 返回中文标签（「已启用 / 已暂停 / 草稿」）。
+// 现在取值与文案都在 mailenums.AutomationStatusLabel（key + 中文兜底），拼装只在
+// mail_err.go 的 mailAutomationStatusNotice —— 那一份同时是读侧白名单的候选来源。
+// 判据没变：只有三个已知状态能进文案，其余（含空串、任意提交值）回落「未知状态」。
+
+// triggerOptions 触发方式下拉的选项（带选中态）。
+func triggerOptions(tr mailTr, selected string) []maildto.OptionResp {
+	if selected == "" {
+		selected = "manual"
+	}
+	opts := make([]maildto.OptionResp, 0, len(mailenums.AutomationTriggers))
+	for _, o := range mailenums.AutomationTriggers {
+		opts = append(opts, maildto.OptionResp{Value: o.Value, Label: mailLabel(tr, o.Label), Selected: o.Value == selected})
+	}
+	return opts
+}
+
+// MailAutomationSave 保存流程（原生表单 POST → 302 回编辑页）。
+//
+// 同一个地址承载两种请求：步骤动作（增 / 删 / 上移 / 下移）与真正保存。动作优先判，
+// 它不落库、只回显 —— 这样没有 JS 也能排步骤。
+// automationNodePositions 取原图里各节点的画布坐标（key → X / Y）。
+//
+// 保存只重排连边，不该把用户摆好的画布抹平：丢掉坐标之后，画布页上所有节点会落回原点。
+// 拿不到原图（新建流程 / 读失败）时返回空表 —— 位置是装饰，不能因为它挡住保存。
 // MailAutomationStatus 启用 / 暂停 / 退回草稿。
 func (h *mailPageHandle) MailAutomationStatus(c *gin.Context) {
 	id := reqparams.ParseUint(c.PostForm("id"))
@@ -476,11 +383,11 @@ func (h *mailPageHandle) MailAutomationRunDetail(c *gin.Context) {
 	}
 	// Explain / error_message / 时间线 detail 都是写侧落下的运行文案编码，出口按语言还原。
 	mailRunDetailTexts(mailTranslate(c), detail)
-	c.HTML(http.StatusOK, "admin/mail/mail_automation_run.html", adminui.Prepare(c, gin.H{
-		"title": mailenums.PageTitleAutomationRun.Key,
-		"D":     detail,
+	pageview.Render(c, &maildto.AutomationRunPageResp{
+		Title: mailenums.PageTitleAutomationRun.Key,
+		D:     detail,
 		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）。
-	}))
+	})
 }
 
 // MailAutomationTick 手工补投一轮延时实例（排障：主路径失效时立刻补）。
@@ -552,37 +459,32 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 		Page:         page,
 		PageSize:     mailAutomationRunsPageSize,
 	})
-	data := gin.H{
-		"title":     mailLabel(tr, mailenums.PageTitleAutomationRuns),
-		"Page":      page,
-		"FilterID":  automationID,
-		"FilterRun": runStatus,
+	view := &maildto.AutomationRunsPageResp{
+		Title:     mailLabel(tr, mailenums.PageTitleAutomationRuns),
+		Page:      page,
+		FilterID:  automationID,
+		FilterRun: runStatus,
 		// 补投表单 action 的 query：回跳时由 shell.BackPath 读回，翻到第 2 页补投后
 		// 不会被弹回未筛选的第 1 页。写动作的结论不在本页回显（走 shell.RenderJump）。
-		"RunsQuery": mailAutomationRunsListQuery(automationID, runStatus, page),
+		RunsQuery: mailAutomationRunsListQuery(automationID, runStatus, page),
+		// 空列表不可省：模板随后就用 len(.Runs) / .RunTotal 与计数渲染。
+		Runs: []any{},
 	}
 	if err != nil {
-		// 取数失败：归口文案 + 空列表 + 五个计数键。
-		// 模板随后就用 len(.Runs) / .RunTotal 与计数渲染，缺任一项都会让 Jet
-		// 在那一行中断（HTTP 仍是 200、正文整块消失）。
-		data["Err"] = mailErrPageText(c, err)
-		data["Runs"] = []any{}
-		data["RunTotal"] = int64(0)
-		data["CountRunning"], data["CountWaiting"], data["CountCompleted"] = 0, 0, 0
-		data["CountFailed"], data["CountStopped"] = 0, 0
-		c.HTML(http.StatusOK, "admin/mail/mail_automation_runs.html", adminui.Prepare(c, data))
+		// 取数失败：归口文案 + 零值（五个计数走视图零值）。
+		view.Err = mailErrPageText(c, err)
+		pageview.Render(c, view)
 		return
 	}
 	// 运行文案（error_message）落库时是「key + 参数」编码，到出口才按语言还原。
 	mailRunTexts(tr, runs.Items)
-	data["Runs"] = runs.Items
-	data["RunTotal"] = runs.Total
-	data["Counts"] = runs.Counts
-	data["CountRunning"] = runs.Counts["running"]
-	data["CountWaiting"] = runs.Counts["waiting"]
-	data["CountCompleted"] = runs.Counts["completed"]
-	data["CountFailed"] = runs.Counts["failed"]
-	data["CountStopped"] = runs.Counts["stopped"]
+	view.Runs = toAnyRows(runs.Items)
+	view.RunTotal = runs.Total
+	view.CountRunning = runs.Counts["running"]
+	view.CountWaiting = runs.Counts["waiting"]
+	view.CountCompleted = runs.Counts["completed"]
+	view.CountFailed = runs.Counts["failed"]
+	view.CountStopped = runs.Counts["stopped"]
 
 	// 分页条的基地址带上筛选：翻页时不能丢掉「在看哪个流程 / 哪个状态」，
 	// 否则翻到第 2 页就变成全量实例（而人以为自己还在筛选里）。
@@ -593,10 +495,10 @@ func (h *mailPageHandle) MailAutomationRunsPage(c *gin.Context) {
 	// 分页只给事实：总数 / 页码 / 每页 / 基址由本行注入，信息行、翻页按钮与链接
 	// 全部由 admin/partials/pagination.html 按请求语言渲染。单页 / 空数据不注入键
 	// （与迁移前的空 map 同义），片段里 isset 守卫自然跳过。
-	adminui.AttachPagination(data, "", nil, pagination.Page{
+	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
 		Total: runs.Total, Page: page, Limit: mailAutomationRunsPageSize, Base: base,
 	})
-	c.HTML(http.StatusOK, "admin/mail/mail_automation_runs.html", adminui.Prepare(c, data))
+	pageview.Render(c, view)
 }
 
 // mailCampaignsPageSize 活动每页条数。
@@ -629,13 +531,13 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 
 	campaigns, err := h.mail.ListCampaigns(ctx, &maildto.CampaignListReq{Page: page, PageSize: mailCampaignsPageSize})
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail/mail_campaigns.html", adminui.Prepare(c, mailCampaignsErrData(c, err)))
+		pageview.Render(c, mailCampaignsErrData(c, err))
 		return
 	}
 	if fixed := mailCampaignsClampPage(page, campaigns.Total); fixed != page {
 		page = fixed
 		if campaigns, err = h.mail.ListCampaigns(ctx, &maildto.CampaignListReq{Page: page, PageSize: mailCampaignsPageSize}); err != nil {
-			c.HTML(http.StatusOK, "admin/mail/mail_campaigns.html", adminui.Prepare(c, mailCampaignsErrData(c, err)))
+			pageview.Render(c, mailCampaignsErrData(c, err))
 			return
 		}
 	}
@@ -644,36 +546,35 @@ func (h *mailPageHandle) MailCampaignsPage(c *gin.Context) {
 	accounts, _ := h.mail.ListAccounts(ctx, "")
 	templates, _ := h.mail.ListTemplates(ctx, "")
 
-	data := adminui.Prepare(c, gin.H{
-		"title":         mailLabel(tr, mailenums.PageTitleCampaigns),
-		"Campaigns":     campaigns.Items,
-		"CampaignTotal": campaigns.Total,
-		"Accounts":      accounts,
-		"Templates":     templates,
-		"Page":          page,
+	view := &maildto.CampaignsPageResp{
+		Title:         mailLabel(tr, mailenums.PageTitleCampaigns),
+		Campaigns:     toAnySlice(campaigns.Items),
+		CampaignTotal: campaigns.Total,
+		Accounts:      toAnySlice(accounts),
+		Templates:     toAnySlice(templates),
+		Page:          page,
 		// 批量删除表单 action 的 query：回跳时由 shell.BackPath 读回，批量删完不会
 		// 被弹回第 1 页。写动作的结论不在本页回显（走 shell.RenderJump 提示页）。
-		"ListQuery": mailPageQuery(page),
-	})
-	adminui.AttachPagination(data, "", nil, pagination.Page{
+		ListQuery: mailPageQuery(page),
+	}
+	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
 		Total: campaigns.Total, Page: page, Limit: mailCampaignsPageSize, Base: "/admin/mail/campaigns",
 	})
-	c.HTML(http.StatusOK, "admin/mail/mail_campaigns.html", data)
+	pageview.Render(c, view)
 }
 
 // mailCampaignsErrData 取数失败时的页面数据。
 //
 // 空值不是可选的：admin/mail/mail_campaigns.html 在提示条之后就用 .Page / .CampaignTotal /
 // len(.Campaigns) 渲染列表，缺键会让 Jet **在那一行中断**（HTTP 仍是 200、正文整块消失）。
-func mailCampaignsErrData(c *gin.Context, err error) gin.H {
-	return gin.H{
-		"title":         mailenums.PageTitleCampaigns.Key,
-		"Err":           mailErrPageText(c, err),
-		"Campaigns":     []any{},
-		"CampaignTotal": int64(0),
-		"Accounts":      []any{},
-		"Templates":     []any{},
-		"Page":          1,
+func mailCampaignsErrData(c *gin.Context, err error) *maildto.CampaignsPageResp {
+	return &maildto.CampaignsPageResp{
+		Title:     mailenums.PageTitleCampaigns.Key,
+		Err:       mailErrPageText(c, err),
+		Campaigns: []any{},
+		Accounts:  []any{},
+		Templates: []any{},
+		Page:      1,
 	}
 }
 
@@ -765,20 +666,20 @@ func (h *mailPageHandle) MailCampaignPage(c *gin.Context) {
 			}
 		}
 	}
-	data := adminui.Prepare(c, gin.H{
-		"title": mailenums.PageTitleCampaignReport.Key,
-		"R":     report,
-		"Page":  page,
+	view := &maildto.CampaignReportPageResp{
+		Title: mailenums.PageTitleCampaignReport.Key,
+		R:     report,
+		Page:  page,
 		// 写动作的结论不在本页回显（走 shell.RenderJump 提示页，见 mail_jump.go）；
 		// 本页也没有取数失败分支（失败已在上面渲染提示页）。
-	})
+	}
 	// 收件人明细的分页条：baseURL 带上 id，翻页时不会丢掉「在看哪条活动」。
 	// 键名与 partials/pagination.html 读的键一致（该片段在这里用无参 include 渲染）。
-	adminui.AttachPagination(data, "", nil, pagination.Page{
+	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
 		Total: report.Total, Page: page, Limit: mailCampaignsPageSize,
 		Base: fmt.Sprintf("/admin/mail/campaign?id=%d", id),
 	})
-	c.HTML(http.StatusOK, "admin/mail/mail_campaign.html", data)
+	pageview.Render(c, view)
 }
 
 // MailCampaignReportJSON 报表数据接口（图表 / 外部核对用同一份口径）。
@@ -873,7 +774,7 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 	}
 	contacts, err := filter()
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail/mail_contacts.html", adminui.Prepare(c, mailContactsErrData(c, err)))
+		pageview.Render(c, mailContactsErrData(c, err))
 		return
 	}
 	// 页号收敛（见 mailContactsClampPage）：越界时用收敛后的页码重取一次。
@@ -881,7 +782,7 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 	if fixed := mailContactsClampPage(page, contacts.Total); fixed != page {
 		page = fixed
 		if contacts, err = filter(); err != nil {
-			c.HTML(http.StatusOK, "admin/mail/mail_contacts.html", adminui.Prepare(c, mailContactsErrData(c, err)))
+			pageview.Render(c, mailContactsErrData(c, err))
 			return
 		}
 	}
@@ -893,24 +794,26 @@ func (h *mailPageHandle) MailContactsPage(c *gin.Context) {
 		tagOptions = nil
 	}
 
-	data := adminui.Prepare(c, gin.H{
-		"title":        mailLabel(tr, mailenums.PageTitleContacts),
-		"Contacts":     contacts.Items,
-		"ContactTotal": contacts.Total,
-		"Page":         page,
-		"Keyword":      keyword,
-		"Status":       status,
-		"Tags":         tags,
-		"TagOptions":   tagOptions,
+	view := &maildto.ContactsPageResp{
+		Title:        mailLabel(tr, mailenums.PageTitleContacts),
+		Contacts:     toAnyRows(contacts.Items),
+		ContactTotal: contacts.Total,
+		Page:         page,
+		Keyword:      keyword,
+		Status:       status,
+		Tags:         tags,
+		TagOptions:   toAnyRows(tagOptions),
 		// 写动作表单 action 的 query（筛选 + 页码）：回跳时由 shell.BackPath 读回，
 		// 批量改完不会被弹回未筛选的第 1 页。写动作的结论不在本页回显（走 shell.RenderJump）。
-		"ListQuery": mailContactsListQuery(keyword, status, tags, page),
-	})
+		ListQuery: mailContactsListQuery(keyword, status, tags, page),
+	}
 	// 基地址带上筛选，翻页才保留筛选条件（否则翻到第 2 页就回到全量）。
-	adminui.AttachPagination(data, mailContactsPath,
+	if !adminui.AttachPaginationView(view, mailContactsPath,
 		map[string]string{"keyword": keyword, "status": status, "tags": tags},
-		pagination.Page{Total: contacts.Total, Page: page, Limit: mailContactsPageSize})
-	c.HTML(http.StatusOK, "admin/mail/mail_contacts.html", data)
+		pagination.Page{Total: contacts.Total, Page: page, Limit: mailContactsPageSize}) {
+		logger.Scene("mail").Error(errors.New("联系人视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
 // mailContactsErrData 取数失败时的页面数据。
@@ -933,19 +836,15 @@ func mailContactsListQuery(keyword, status, tags string, page int) string {
 	return mailListQuery(params)
 }
 
-func mailContactsErrData(c *gin.Context, err error) gin.H {
-	return gin.H{
-		"title":        mailenums.PageTitleContacts.Key,
-		"Err":          mailErrPageText(c, err),
-		"Contacts":     []any{},
-		"ContactTotal": int64(0),
-		"Page":         1,
-		"Keyword":      "",
-		"Status":       "",
-		"Tags":         "",
-		"TagOptions":   []string{},
+func mailContactsErrData(c *gin.Context, err error) *maildto.ContactsPageResp {
+	return &maildto.ContactsPageResp{
+		Title:      mailenums.PageTitleContacts.Key,
+		Err:        mailErrPageText(c, err),
+		Contacts:   []any{},
+		Page:       1,
+		TagOptions: []any{},
 		// 取数失败时没有筛选上下文：表单 action 的 query 为空（回跳落到未筛选的列表）。
-		"ListQuery": "",
+		ListQuery: "",
 	}
 }
 
@@ -1136,25 +1035,23 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 	// 运营连那句归口文案都看不到。这两条分支此前正是这样。
 	accountRows, accountTotal, accountPage, err := h.mail.ListAccountsPage(ctx, "", mailPageNumber(c.Query("account_page")), mailListPageSize)
 	if err != nil {
-		c.HTML(http.StatusOK, "admin/mail/mail.html", adminui.Prepare(c, mailPageErrData(c, err)))
+		pageview.Render(c, mailPageErrData(c, err))
 		return
 	}
 
-	data := adminui.Prepare(c, gin.H{
+	view := &maildto.AccountsPageResp{
 		// 标题取词在组装侧做（mailLabel）：只交 key 的话词条缺失 / i18n 未初始化时
-		// 页面上是裸 key（admin.mail.accounts.heading），而 adminui.Prepare 的 title 兜底
-		// 正是 key 本身 —— 与 mail_ui_labels.go 文件头写明的那条相反。同模块其余四页
-		// 都是 mailLabel(...) 的形态，这里是唯一的例外。
-		"title":    mailLabel(mailTranslate(c), mailenums.PageTitleAccounts),
-		"Accounts": accountRows,
+		// 页面上是裸 key（admin.mail.accounts.heading）。同模块其余四页都是这个形态。
+		Title:    mailLabel(mailTranslate(c), mailenums.PageTitleAccounts),
+		Accounts: toAnyRows(accountRows),
 		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）；
 		// Err 只由上面的取数失败分支注入。
-	})
+	}
 	// 分页只注入事实；单页 / 空数据不注入键（与迁移前键缺失同义），
 	// 模板 include 里 isset 守卫自然跳过。
-	adminui.AttachPagination(data, "", nil,
+	_ = adminui.AttachPaginationView(view, "", nil,
 		mailListPaginationFacts(accountTotal, accountPage, "account_page", "/admin/mail"))
-	c.HTML(http.StatusOK, "admin/mail/mail.html", data)
+	pageview.Render(c, view)
 }
 
 // mailPageErrData 取数失败时的页面数据：归口文案 + 让模板能整页渲染完的空列表。
@@ -1164,11 +1061,11 @@ func (h *mailPageHandle) MailPage(c *gin.Context) {
 // 只注入 Err 的分支因此永远渲染不完 —— 运营既看不到列表，也只有半页 HTML。
 //
 // **title 必须是小写 key**：layout.html 用 {{.title}} 取值，缺它同样会中断。
-func mailPageErrData(c *gin.Context, err error) gin.H {
-	return gin.H{
-		"title":    mailLabel(mailTranslate(c), mailenums.PageTitleAccounts),
-		"Err":      mailErrPageText(c, err),
-		"Accounts": []any{},
+func mailPageErrData(c *gin.Context, err error) *maildto.AccountsPageResp {
+	return &maildto.AccountsPageResp{
+		Title:    mailLabel(mailTranslate(c), mailenums.PageTitleAccounts),
+		Err:      mailErrPageText(c, err),
+		Accounts: []any{},
 	}
 }
 
@@ -1262,83 +1159,6 @@ func (h *mailPageHandle) MailTemplateSave(c *gin.Context) {
 		return
 	}
 	mailTemplatesJump(c, true, mailDoneMsg)
-}
-
-// MailTemplateEditor 邮件模板可视化编辑器（四栏）。
-//
-// 与列表页的分工：列表页管「有哪些模板 + 代码模式」（两个 textarea 原样保留），
-// 本页管「块树长什么样」。两者都写同一张表，但写的是不同的列
-// （列表页写 body_html / body_text，本页写 body_json + 编译产物）。
-//
-// 缺 template_key 时给一棵空树（与画布「缺 id 即新建」同一取舍）：新建模板也要能
-// 在编辑器里画完再保存，而不是先回列表填一个 textarea 再回来。
-func (h *mailPageHandle) MailTemplateEditor(c *gin.Context) {
-	item := h.templateForEditor(c.Request.Context(),
-		strings.TrimSpace(c.Query("templateKey")), strings.TrimSpace(c.Query("locale")))
-	metaJSON, _ := json.Marshal(map[string]any{
-		"tree":         templateTreeOf(item),
-		"compiledHtml": item.BodyCompiledHTML,
-		"compiledText": item.BodyCompiledText,
-	})
-	c.HTML(http.StatusOK, "admin/mail/mail_template_editor.html", adminui.Prepare(c, gin.H{
-		"title":    mailenums.PageTitleTemplateEditor.Key,
-		"T":        item,
-		"MetaJSON": utils.JsonSafe(string(metaJSON)),
-		"jsVer":    templateEditorJsVer(),
-	}))
-}
-
-// templateForEditor 取编辑器要编辑的模板：**查不到就给空条目**。
-//
-// 「查不到不是错误」是本页的设计前提：用一个新的 templateKey 打开编辑器 = 新建模板，
-// 那是正常路径而不是异常输入。与画布「缺 id 即新建」同一取舍。
-func (h *mailPageHandle) templateForEditor(ctx context.Context, key, locale string) *maildto.TemplateItem {
-	if key == "" {
-		return &maildto.TemplateItem{}
-	}
-	item, err := h.mail.GetTemplate(ctx, key, locale)
-	if err != nil {
-		return &maildto.TemplateItem{TemplateKey: key, Locale: locale}
-	}
-	return item
-}
-
-// templateTreeOf 模板条目的块树（没有树时给一棵只含 body 的空树）。
-//
-// 空树的形状必须与编译器认的一致（schema 1 + body 根）：前端拿到一份「合法但空」的树，
-// 就不需要为「新建」写第二个分支。
-func templateTreeOf(item *maildto.TemplateItem) map[string]any {
-	if item != nil && len(item.BodyJSON) > 0 {
-		var tree map[string]any
-		if err := json.Unmarshal(item.BodyJSON, &tree); err == nil && tree != nil {
-			return tree
-		}
-	}
-	return map[string]any{
-		"schema": 1,
-		"root":   map[string]any{"key": "root", "type": "body", "children": []any{}},
-	}
-}
-
-// templateEditorJsVer 模板编辑器脚本的缓存版本（目录下 .js 的最新 mtime）。
-//
-// 与 automationJsVer 同一手法：改 JS 不必手动升版本号。
-func templateEditorJsVer() string {
-	root := filepath.Join("internal", "templates", "static", "js", "template")
-	var latest int64
-	_ = filepath.Walk(root, func(_ string, fi os.FileInfo, walkErr error) error {
-		if walkErr != nil || fi.IsDir() || !strings.HasSuffix(fi.Name(), ".js") {
-			return nil
-		}
-		if m := fi.ModTime().Unix(); m > latest {
-			latest = m
-		}
-		return nil
-	})
-	if latest == 0 {
-		return "0"
-	}
-	return strconv.FormatInt(latest, 10)
 }
 
 // MailTemplateDelete 删除邮件模板。
@@ -1484,30 +1304,37 @@ func (h *mailPageHandle) MailTemplatesPage(c *gin.Context) {
 	if err != nil {
 		// 失败路径必须注入 title 与空集合：缺 title 会在 layout 中断、缺 Templates
 		// 会在列表行中断，两者都表现为「HTTP 200 + 半页 HTML」，运营连归口文案都看不全。
-		c.HTML(http.StatusOK, "admin/mail/mail_templates.html", adminui.Prepare(c, mailTemplatesErrData(c, err)))
+		pageview.Render(c, mailTemplatesErrData(c, err))
 		return
 	}
-	data := adminui.Prepare(c, gin.H{
+	view := &maildto.TemplatesPageResp{
 		// 同上：标题在组装侧取词，缺词条回落中文兜底，不留裸 key。
-		"title":         mailLabel(mailTranslate(c), mailenums.PageTitleTemplates),
-		"Templates":     rows,
-		"TemplateTotal": total,
+		Title:         mailLabel(mailTranslate(c), mailenums.PageTitleTemplates),
+		Templates:     toAnyRows(rows),
+		TemplateTotal: total,
 		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）；
 		// Err 只由上面的取数失败分支注入。
-	})
+	}
 	// 分页只注入事实；单页 / 空数据不注入键，模板 include 的 isset 守卫自然跳过。
-	adminui.AttachPagination(data, "", nil,
-		mailListPaginationFacts(total, page, "page", "/admin/mail/templates"))
-	c.HTML(http.StatusOK, "admin/mail/mail_templates.html", data)
+	//
+	// **必须对视图本身调用**（不是它的 PrepareView 产物）：AttachPaginationView 靠反射
+	// 写视图的 Pagination 字段，传 gin.H 会静默失败（返回 false）。这里原先是
+	// `adminui.PrepareView(c, …)` 的产物 —— 分页条整条不渲染，而页面其余部分完全正常。
+	if !adminui.AttachPaginationView(view, "", nil,
+		mailListPaginationFacts(total, page, "page", "/admin/mail/templates")) {
+		logger.Scene("mail").Error(errors.New("模板页视图缺少 Pagination 字段"), "分页事实挂载失败")
+	}
+	pageview.Render(c, view)
 }
 
-// mailTemplatesErrData 取数失败时的页面数据：归口文案 + 空列表 + 小写 title。
-func mailTemplatesErrData(c *gin.Context, err error) gin.H {
-	return gin.H{
-		"title":         mailLabel(mailTranslate(c), mailenums.PageTitleTemplates),
-		"Err":           mailErrPageText(c, err),
-		"Templates":     []any{},
-		"TemplateTotal": int64(0),
+// mailTemplatesErrData 取数失败时的页面数据：归口文案 + 空列表。
+//
+// 空列表不可省：模板随后就用 .TemplateTotal / len(.Templates) 渲染。
+func mailTemplatesErrData(c *gin.Context, err error) *maildto.TemplatesPageResp {
+	return &maildto.TemplatesPageResp{
+		Title:     mailLabel(mailTranslate(c), mailenums.PageTitleTemplates),
+		Err:       mailErrPageText(c, err),
+		Templates: []any{},
 	}
 }
 
@@ -1621,6 +1448,104 @@ func unsubscribeDonePage(c *gin.Context, email string) string {
 		"</body></html>"
 }
 
+// automationEntryKeyDefault 新建流程时入口节点的 key（与旧版隐藏域 entry 的默认值一致）。
+const automationEntryKeyDefault = "n1"
+
+// automationEndKeyBase 自动补的结束节点 key 基名（被占用时加后缀，见 freeKey）。
+const automationEndKeyBase = "end"
+
+// automationStep 表单里的一步 —— 界面概念，一次提交对应一行。
+type automationStep struct {
+	// Index 步号（1 起）：界面上的「第 N 步」，也是错误文案的定位（不是节点身份）。
+	Index int
+	// Key 既有步骤的原 key（隐藏域 node_key_N）。新建的步骤留空，由后端按步号生成。
+	//
+	// 保留 key 是为了既有实例：运行中的实例用 key 记录「走到哪了」，重新保存时换掉 key
+	// 会让它们全部找不到当前节点。
+	Key string
+	// Type 步骤类型（node_type_N）：delay / email / branch / tag / end。
+	Type string
+	// Param 主参数：模板 key（email）/ 标签串（tag）/ 条件取值（branch）。
+	Param string
+	// Tag 条件为「带着某个标签」时附带的标签名（param_tag_N）。
+	Tag string
+	// Unit / Value 等待步骤的单位与时长（param_unit_N / param_unit_value_N）。
+	Unit  string
+	Value string
+	// Yes / No 条件分支两条出边的界面取值：""=下一步、"end"=结束、其余=步号。
+	Yes string
+	No  string
+}
+
+// readAutomationSteps 读表单里的步骤行。
+//
+// 按固定上界扫 1..maxAutomationNodes：表单只渲染真实存在的步骤，但行号是界面的定位，
+// 不能靠「读到空行就停」来猜（隐藏行会错位）。
+// automationStepAction 步骤行的服务端动作（增 / 删 / 上移 / 下移）。
+type automationStepAction struct {
+	Kind string // add / remove / move_up / move_down
+	Step int    // 目标步号（add 不用）
+}
+
+// stepActionOf 从提交里识别步骤动作。
+//
+// 做成服务端动作而不是 JS 直改 DOM：增删一步会改变后面所有步的编号，而「第 N 步」
+// 正是错误文案与跳转选择的定位 —— 前端自己改 DOM 但服务端还按旧编号读，用户加的那步
+// 提交后就白了。表单只有一个提交地址，动作字段决定分支。
+// applyStepAction 把动作作用在当前提交的步骤上。
+//
+// 空行（用户新加一步却没填）先被剔除：界面上的「第 3 步」指的是**有内容的步骤**，
+// 不是表格里的第 3 行 —— 否则删一步会删掉一行空白，用户看到的是「点了没反应」。
+// buildAutomationDefinition 把步骤列表换算成引擎的图定义（JSON 原文）。
+//
+// pos 是既有节点的画布位置（key → X/Y）：保存图定义不该把用户摆好的位置清掉 ——
+// 旧实现整份重写定义，改一次流程，画布上所有节点都会回到原点。
+// newNode 组装一个节点（空字段不写进 JSON，保持定义干净）。
+// freeKey 取一个没被占用的 key：沿用作者原值，为空或冲突时按 base 生成（base_2、base_3…）。
+// stepParams 按类型把界面控件换算成引擎参数，顺带做行级校验（错误带「第 N 步」定位）。
+// stepErr 组装一条带「第 N 步」定位的错误。
+//
+// 词条里没有 %d 时**不追加步号**：译文漏了占位符时 fmt 会输出 `%!(EXTRA int=3)`，
+// 那比少一个定位更难解释（用户会照抄进搜索框）。
+// resolveStepTarget 把「下一步 / 第 N 步 / 结束」换算成节点 key。
+//
+// 只允许向后跳（含下一步）：往前跳会在图上造环，而环在运行期就是无限循环发邮件。
+// 这层拦下来，用户就不必去看 service 的「流程里有环: n3 → n2」这种图内部术语。
+//
+// 两种失败分开报：往回跳时目标步号明明在页面上（措辞必须说「只能往后」），
+// 只有目标步被删掉后步号才真的失效（那才叫「不存在」）。
+// automationStepsFromGraph 把既有流程还原成步骤行（第二返回值 false = 超出表单能表达的子集）。
+//
+// **不静默丢弃节点**：还原不出来时调用方走只读兜底，把原定义原样留着 —— 把兜底当空流程，
+// 用户下一次保存就会把整条流程删成一行。
+// stepTargetValue 节点 key → 界面的跳转取值（""=下一步、"end"=结束、其余=步号）。
+//
+// 不认识的出边（链外的节点 / 往前跳）返回 false：那些图表单表达不了，必须兜底。
+// graphReaches 沿出边（分支看 yes/no，其它看 next）判断能否从 from 走到 to。
+//
+// 只用于给分叉后的两条臂排行序：能走到对方的那条在前，否则表格的线性行序表达不了这张图。
+// pickWaitUnit 分钟数反解成「数值 + 单位」：优先能整除的大单位（1440 → 1 天）。
+//
+// 倒序遍历：AutomationWaitUnits 按界面顺序排（分钟在前），正序会先把 1440 拆成 24 小时。
+// parseConditionCode 引擎的 conditions 编码 →（条件取值, 标签名）。
+// waitUnitByValue 单位取值 → 选项。
+// conditionByValue 条件取值 → 选项。
+// paramInt 取 JSONB 解出来的整数（float64 / int / int64）。
+// trimAutomationSteps 裁掉尾部多余的空步骤。
+//
+// 表单固定读 12 行（maxAutomationNodes），直接回显会摆出 12 行空表格。**尾部留一个空行**：
+// 它是「继续添加」的落点 —— 但只留一个，多出来的都是噪音。
+// automationStepRows 步骤行的渲染数据（选项都在 Go 侧生成：Jet 的内层 range 拿不到外层变量）。
+// stepTypeOptions 步骤类型下拉。
+//
+// **不含入口（trigger）**：入口由基本信息里的触发方式决定，用户在中间放一个「入口」
+// 没有语义（引擎从 entry 开始跑，中间那个 trigger 节点不会重新触发任何人）。
+// waitUnitOptions 等待单位下拉（默认分钟）。
+// conditionOptions 条件下拉（第一项是空的「请选择判断条件」）。
+// branchTargetOptions 分支跳转下拉：下一步 / 之后各步 / 结束。
+//
+// 只列**当前步之后**的步（从 stepNo+2 起：stepNo+1 就是「下一步」）—— 能选的目标与
+// resolveStepTarget 的判据必须一致，否则界面上能选、提交却报目标非法。
 // mailRunTexts 实例列表里的运行文案（原地改写）。
 func mailRunTexts(tr mailTr, items []maildto.AutomationRunItem) {
 	for i := range items {
@@ -1638,4 +1563,280 @@ func mailRunDetailTexts(tr mailTr, d *maildto.AutomationRunDetailResp) {
 	for i := range d.Timeline {
 		d.Timeline[i].Detail = mailenums.FormatRunText(tr, d.Timeline[i].Detail)
 	}
+}
+
+// toAnySlice 把切片投影成 []any（视图不 import 各来源的契约类型：
+// "这一屏要哪几个字段"由模板决定）。
+func toAnySlice[T any](in []T) []any {
+	out := make([]any, 0, len(in))
+	for i := range in {
+		out = append(out, in[i])
+	}
+	return out
+}
+
+// toAnyRows 把切片投影成 []any（视图不 import 各来源类型：
+// "这一屏要哪几个字段"由模板决定）。
+func toAnyRows[T any](in []T) []any {
+	out := make([]any, 0, len(in))
+	for i := range in {
+		out = append(out, in[i])
+	}
+	return out
+}
+
+// —— 画布页数据与取数（来自 main 的画布改造；handler 只交视图对象）——
+func (h *mailPageHandle) automationCanvasData(c *gin.Context, item *maildto.AutomationItem) gin.H {
+	nodesJSON, merr := json.Marshal(item.Nodes)
+	if merr != nil {
+		nodesJSON = []byte("[]")
+	}
+	meta := h.automationCanvasMeta(c, item)
+	metaJSON, _ := json.Marshal(meta)
+	return gin.H{
+		"title": mailenums.PageTitleAutomationCanvas.Key,
+		"A":     item,
+		// 新建流程要能在一屏内完成：名称与触发方式是画布顶栏的两个输入控件，
+		// 下拉选项与服务端校验共用 enums 的同一份枚举。
+		"IsNew":    item.ID == 0,
+		"Triggers": triggerOptions(mailTranslate(c), item.TriggerType),
+		// 频率的初始态：新流程按 every_time（改造前的默认）渲染。
+		"FrequencyEveryTime": item.TriggerFrequency != mailmodel.TriggerFrequencyOnce,
+		"FrequencyOnce":      item.TriggerFrequency == mailmodel.TriggerFrequencyOnce,
+		"NodeTypes":          paletteFromMeta(meta["nodeTypes"]),
+		"NodesJSON":          utils.JsonSafe(string(nodesJSON)),
+		"MetaJSON":           utils.JsonSafe(string(metaJSON)),
+		"jsVer":              automationJsVer(),
+		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）；
+		// 本页也没有取数失败分支（失败已在上面渲染提示页），所以不再注入 Err。
+		// 按需内联动效关键帧（本次只用到入场一个）。不声明就是零字节 ——
+		// 后台不常驻加载 63 条营销动效，谁用谁声明（见 core.KeyframeCSS）。
+		"KeyframesCSS": core.KeyframeCSS([]string{"sky-fade-in-up"}),
+	}
+}
+
+// automationCanvasView 画布页的强类型视图（main 的 gin.H 版 automationCanvasData 的迁移形态）。
+//
+// 为什么保留 automationCanvasData：模板里除了强类型字段，还要 IsNew / Triggers /
+// Frequency* / NodeTypes —— 这些是画布顶栏的控件选项，由 palette 与 enums 现算，
+// 不适合塞进 DTO 字段（每次请求都一样、且与实体无关）。所以两者并存：
+// View 交页面壳与脚本数据，其余由模板从 Data 取。
+func (h *mailPageHandle) automationCanvasView(c *gin.Context, item *maildto.AutomationItem) *maildto.AutomationCanvasPageResp {
+	// 直接序列化，不从 automationCanvasData 的 gin.H 里回读 —— 那里已经过一层
+	// utils.JsonSafe，回读再包一层就成了双重转义（模板里 JSON.parse 会失败）。
+	nodesJSON, merr := json.Marshal(item.Nodes)
+	if merr != nil {
+		nodesJSON = []byte("[]")
+	}
+	metaJSON, _ := json.Marshal(h.automationCanvasMeta(c, item))
+	return &maildto.AutomationCanvasPageResp{
+		Title:        mailenums.PageTitleAutomationCanvas.Key,
+		A:            item,
+		NodesJSON:    utils.JsonSafe(string(nodesJSON)),
+		MetaJSON:     utils.JsonSafe(string(metaJSON)),
+		JSVer:        automationJsVer(),
+		KeyframesCSS: core.KeyframeCSS([]string{"sky-fade-in-up"}),
+		Triggers:     triggerOptions(mailTranslate(c), item.TriggerType),
+		NodeTypes:    mapListOf(paletteFromMeta(h.automationCanvasMeta(c, item)["nodeTypes"])),
+		IsNew:        item.ID == 0,
+		// 频率的初始态：新流程按 every_time（改造前的默认）渲染。
+		FrequencyEveryTime: item.TriggerFrequency != mailmodel.TriggerFrequencyOnce,
+		FrequencyOnce:      item.TriggerFrequency == mailmodel.TriggerFrequencyOnce,
+		ExitOnReply:        item.ExitOnReply,
+	}
+}
+
+// automationCanvasPalette 画布顶栏的控件选项（模板从 Data 取，不做业务推导）。
+
+// stringOf 从 gin.H 取字符串值（内部同包辅助，只用于上面的迁移过渡）。
+func stringOf(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func (h *mailPageHandle) automationForCanvas(c *gin.Context) (*maildto.AutomationItem, bool) {
+	id, hasID := mailQueryID(c)
+	if !hasID {
+		return newAutomationDraft(), true
+	}
+	item, err := h.mail.GetAutomation(c.Request.Context(), id)
+	if err != nil {
+		mailAutomationJump(c, false, mailErrMsg(c, err))
+		return nil, false
+	}
+	return item, true
+}
+
+func newAutomationDraft() *maildto.AutomationItem {
+	return &maildto.AutomationItem{
+		Name:        "",
+		TriggerType: mailmodel.TriggerManual,
+		Status:      mailmodel.AutomationStatusDraft,
+		Version:     0,
+		Entry:       automationEntryKeyDefault,
+		Nodes: []maildto.AutomationNodeItem{
+			{Key: automationEntryKeyDefault, Type: "trigger"},
+		},
+	}
+}
+
+func (h *mailPageHandle) automationCanvasMeta(c *gin.Context, item *maildto.AutomationItem) map[string]any {
+	tr := mailTranslate(c)
+	// 发信节点在「没有可用的营销 SMTP」时禁用：让用户画完之后在保存时才发现发不出去，
+	// 比一开始就灰掉它并说明原因差得多。
+	emailDisabled, emailReason := h.emailNodeDisabled(c)
+	nodeTypes := make([]gin.H, 0, len(mailenums.AutomationNodeTypes))
+	for _, o := range mailenums.AutomationNodeTypes {
+		entry := gin.H{
+			"value":   o.Value,
+			"label":   mailLabel(tr, o.Label),
+			"hint":    mailLabel(tr, o.Hint),
+			"outlets": mailenums.AutomationNodeTypeOutlets(o.Value),
+		}
+		if o.Value == "email" && emailDisabled {
+			entry["disabled"] = true
+			entry["disabledReason"] = emailReason
+		}
+		nodeTypes = append(nodeTypes, entry)
+	}
+	return map[string]any{
+		"automationId":     item.ID,
+		"name":             item.Name,
+		"description":      item.Description,
+		"triggerType":      item.TriggerType,
+		"triggerParams":    item.TriggerParams,
+		"triggerFrequency": item.TriggerFrequency,
+		"exitOnReply":      item.ExitOnReply,
+		"entry":            item.Entry,
+		"status":           item.Status,
+		"version":          item.Version,
+		"isNew":            item.ID == 0,
+		// 只有草稿 / 已暂停才允许调结构（启用中的流程改图会让在跑的实例走岔）。
+		// 新建的流程恒可编辑（它还没落库，state 是 draft）。
+		"structureEditable": item.Status != mailmodel.AutomationStatusActive,
+		"nodeTypes":         nodeTypes,
+	}
+}
+
+func paletteFromMeta(raw any) []gin.H {
+	list, _ := raw.([]gin.H)
+	out := make([]gin.H, 0, len(list))
+	for _, t := range list {
+		out = append(out, gin.H{
+			"Value":          t["value"],
+			"Hint":           t["hint"],
+			"Label":          t["label"],
+			"Disabled":       t["disabled"] == true,
+			"DisabledReason": t["disabledReason"],
+		})
+	}
+	return out
+}
+
+func (h *mailPageHandle) emailNodeDisabled(c *gin.Context) (bool, string) {
+	accounts, err := h.mail.ListAccounts(c.Request.Context(), "marketing")
+	if err != nil || len(accounts) > 0 {
+		return false, ""
+	}
+	return true, mailLabel(mailTranslate(c), mailenums.AutomationCanvasEmailDisabled)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+// MailTemplateEditor 邮件模板可视化编辑器（四栏）。
+//
+// 与列表页的分工：列表页管「有哪些模板 + 代码模式」（两个 textarea 原样保留），
+// 本页管「块树长什么样」。两者都写同一张表，但写的是不同的列
+// （列表页写 body_html / body_text，本页写 body_json + 编译产物）。
+//
+// 缺 template_key 时给一棵空树（与画布「缺 id 即新建」同一取舍）：新建模板也要能
+// 在编辑器里画完再保存，而不是先回列表填一个 textarea 再回来。
+func (h *mailPageHandle) MailTemplateEditor(c *gin.Context) {
+	item := h.templateForEditor(c.Request.Context(),
+		strings.TrimSpace(c.Query("templateKey")), strings.TrimSpace(c.Query("locale")))
+	metaJSON, _ := json.Marshal(map[string]any{
+		"tree":         templateTreeOf(item),
+		"compiledHtml": item.BodyCompiledHTML,
+		"compiledText": item.BodyCompiledText,
+	})
+	pageview.Render(c, &maildto.TemplateEditorPageResp{
+		Title:    mailenums.PageTitleTemplateEditor.Key,
+		T:        item,
+		MetaJSON: utils.JsonSafe(string(metaJSON)),
+		JSVer:    templateEditorJsVer(),
+	})
+}
+
+// templateForEditor 取编辑器要编辑的模板：**查不到就给空条目**。
+//
+// 「查不到不是错误」是本页的设计前提：用一个新的 templateKey 打开编辑器 = 新建模板，
+// 那是正常路径而不是异常输入。与画布「缺 id 即新建」同一取舍。
+func (h *mailPageHandle) templateForEditor(ctx context.Context, key, locale string) *maildto.TemplateItem {
+	if key == "" {
+		return &maildto.TemplateItem{}
+	}
+	item, err := h.mail.GetTemplate(ctx, key, locale)
+	if err != nil {
+		return &maildto.TemplateItem{TemplateKey: key, Locale: locale}
+	}
+	return item
+}
+
+// templateTreeOf 模板条目的块树（没有树时给一棵只含 body 的空树）。
+//
+// 空树的形状必须与编译器认的一致（schema 1 + body 根）：前端拿到一份「合法但空」的树，
+// 就不需要为「新建」写第二个分支。
+func templateTreeOf(item *maildto.TemplateItem) map[string]any {
+	if item != nil && len(item.BodyJSON) > 0 {
+		var tree map[string]any
+		if err := json.Unmarshal(item.BodyJSON, &tree); err == nil && tree != nil {
+			return tree
+		}
+	}
+	return map[string]any{
+		"schema": 1,
+		"root":   map[string]any{"key": "root", "type": "body", "children": []any{}},
+	}
+}
+
+// templateEditorJsVer 模板编辑器脚本的缓存版本（目录下 .js 的最新 mtime）。
+//
+// 与 automationJsVer 同一手法：改 JS 不必手动升版本号。
+func templateEditorJsVer() string {
+	root := filepath.Join("internal", "templates", "static", "js", "template")
+	var latest int64
+	_ = filepath.Walk(root, func(_ string, fi os.FileInfo, walkErr error) error {
+		if walkErr != nil || fi.IsDir() || !strings.HasSuffix(fi.Name(), ".js") {
+			return nil
+		}
+		if m := fi.ModTime().Unix(); m > latest {
+			latest = m
+		}
+		return nil
+	})
+	if latest == 0 {
+		return "0"
+	}
+	return strconv.FormatInt(latest, 10)
+}
+
+// mapListOf gin.H 列表 → map 列表（DTO 不引用 gin.H：dto 层不得 import gin）。
+func mapListOf(in []gin.H) []map[string]any {
+	out := make([]map[string]any, 0, len(in))
+	for _, h := range in {
+		out = append(out, map[string]any(h))
+	}
+	return out
 }

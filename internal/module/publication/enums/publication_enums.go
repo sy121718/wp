@@ -1,6 +1,8 @@
 // Package pubenums 统一管理 publication 模块业务消息。
 package pubenums
 
+import "go_wp/pkg/facing"
+
 const (
 	ErrRouteOccupied  = "ErrRouteOccupied"  // 目标路径已被其他页面占用
 	ErrRouteNotFound  = "ErrRouteNotFound"  // 路径占用不存在
@@ -31,3 +33,27 @@ const (
 	MsgRolledBack  = "MsgRolledBack"  // 回滚成功
 	MsgDeactivated = "MsgDeactivated" // 取消激活成功
 )
+
+// errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
+//
+// 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
+// businessText 只能退回声明处给的那句话 —— 没有它，客户端拿到的是 `ErrRouteOccupied` 这样的裸 key
+// （这批常量的值就是常量名本身，旧式形态）。
+//
+// 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
+var errFallbacks = map[string]string{
+	ErrRouteOccupied:     "目标路径已被其他页面占用",
+	ErrRouteNotFound:     "路径占用不存在",
+	ErrReceiptPending:    "存在未完成的发布回执，请先恢复或标记失败",
+	ErrInvalidParam:      "请求参数无效",
+	ErrRouteActiveRename: "已激活的线上路径不能直接改名，请通过页面改 URL 流程操作",
+	ErrAuditFailed:       "SEO 体检失败，请查看服务端日志",
+	ErrInternal:          "操作失败，请稍后重试",
+}
+
+// Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
+func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }

@@ -39,7 +39,7 @@ func (s *Service) RoleDetail(ctx context.Context, req *admindto.RoleDetailReq) (
 		return nil, err
 	}
 	if entity == nil {
-		return nil, errors.New(adminenums.ErrRoleNotFound)
+		return nil, adminenums.Err(adminenums.ErrRoleNotFound)
 	}
 	return roleEntityToDetailResp(entity), nil
 }
@@ -54,7 +54,7 @@ func (s *Service) RoleDetail(ctx context.Context, req *admindto.RoleDetailReq) (
 // 唯一索引（并发插入失败会原样上抛，不静默合并/改码）。
 func (s *Service) RoleCreate(ctx context.Context, req *admindto.RoleCreateReq) error {
 	if pureNumericPattern.MatchString(req.RoleCode) {
-		return errors.New(adminenums.ErrRoleCodeNumeric)
+		return adminenums.Err(adminenums.ErrRoleCodeNumeric)
 	}
 
 	existing, err := s.rm.GetByCode(ctx, req.RoleCode)
@@ -62,7 +62,7 @@ func (s *Service) RoleCreate(ctx context.Context, req *admindto.RoleCreateReq) e
 		return err
 	}
 	if existing != nil {
-		return errors.New(adminenums.ErrRoleCodeExists)
+		return adminenums.Err(adminenums.ErrRoleCodeExists)
 	}
 
 	entity := &adminmodel.RoleEntity{
@@ -126,7 +126,7 @@ func (s *Service) RoleUpdate(ctx context.Context, req *admindto.RoleUpdateReq) e
 			return err
 		}
 		if entity == nil {
-			return errors.New(adminenums.ErrRoleNotFound)
+			return adminenums.Err(adminenums.ErrRoleNotFound)
 		}
 
 		oldStatus := entity.Status
@@ -192,10 +192,10 @@ func (s *Service) RoleDelete(ctx context.Context, req *admindto.RoleDeleteReq) e
 			return err
 		}
 		if entity == nil {
-			return errors.New(adminenums.ErrRoleNotFound)
+			return adminenums.Err(adminenums.ErrRoleNotFound)
 		}
 		if entity.IsSystem == 1 {
-			return errors.New(adminenums.ErrRoleIsSystem)
+			return adminenums.Err(adminenums.ErrRoleIsSystem)
 		}
 
 		// Casbin 清理（p / g / g2）与该角色的 sys_role 行同事务
@@ -292,7 +292,7 @@ func (s *Service) RoleMenuList(ctx context.Context, req *admindto.RoleMenuListRe
 		return nil, err
 	}
 	if role == nil {
-		return nil, errors.New(adminenums.ErrRoleNotFound)
+		return nil, adminenums.Err(adminenums.ErrRoleNotFound)
 	}
 
 	// 获取角色在 Casbin 中的全部 p 策略
@@ -336,7 +336,7 @@ func (s *Service) RoleMenuSave(ctx context.Context, req *admindto.RoleMenuSaveRe
 		return nil, err
 	}
 	if role == nil {
-		return nil, errors.New(adminenums.ErrRoleNotFound)
+		return nil, adminenums.Err(adminenums.ErrRoleNotFound)
 	}
 
 	// menu_ids → permission_codes。
@@ -398,7 +398,7 @@ func (s *Service) RoleUserList(ctx context.Context, req *admindto.RoleUserListRe
 		return nil, err
 	}
 	if role == nil {
-		return nil, errors.New(adminenums.ErrRoleNotFound)
+		return nil, adminenums.Err(adminenums.ErrRoleNotFound)
 	}
 
 	// Casbin 反查用户 ID
@@ -461,7 +461,7 @@ func (s *Service) RoleUserSave(ctx context.Context, req *admindto.RoleUserSaveRe
 		return nil, err
 	}
 	if role == nil {
-		return nil, errors.New(adminenums.ErrRoleNotFound)
+		return nil, adminenums.Err(adminenums.ErrRoleNotFound)
 	}
 
 	roleSuper, err := s.roleHasSuperAdminPermission(ctx, []string{role.RoleCode})
@@ -515,7 +515,7 @@ func (s *Service) RolePermissionTree(ctx context.Context, roleID uint64) (res *a
 		return nil, err
 	}
 	if role == nil {
-		return nil, errors.New(adminenums.ErrRoleNotFound)
+		return nil, adminenums.Err(adminenums.ErrRoleNotFound)
 	}
 
 	all, err := s.mm.ListAll(ctx)
@@ -597,12 +597,12 @@ func (s *Service) PermDetail(ctx context.Context, req *admindto.PermDetailReq) (
 		Scan(res).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(adminenums.ErrPermissionNotFound)
+			return nil, adminenums.Err(adminenums.ErrPermissionNotFound)
 		}
 		return nil, err
 	}
 	if res.ID == 0 {
-		return nil, errors.New(adminenums.ErrPermissionNotFound)
+		return nil, adminenums.Err(adminenums.ErrPermissionNotFound)
 	}
 	return res, nil
 }
@@ -641,7 +641,7 @@ func (s *Service) PermCreate(ctx context.Context, req *admindto.PermCreateReq) (
 		return nil, err
 	}
 	if existing != nil {
-		return nil, errors.New(adminenums.ErrCodeExists)
+		return nil, adminenums.Err(adminenums.ErrCodeExists)
 	}
 
 	entity := &adminmodel.PermissionEntity{
@@ -684,10 +684,10 @@ func (s *Service) PermUpdate(ctx context.Context, req *admindto.PermUpdateReq) (
 			return err
 		}
 		if entity == nil {
-			return errors.New(adminenums.ErrPermissionNotFound)
+			return adminenums.Err(adminenums.ErrPermissionNotFound)
 		}
 		if req.PermissionCode != entity.PermissionCode {
-			return errors.New(adminenums.ErrCodeImmutable)
+			return adminenums.Err(adminenums.ErrCodeImmutable)
 		}
 
 		assigned, err := casbin.HasPermissionPolicies(entity.PermissionCode)
@@ -695,7 +695,7 @@ func (s *Service) PermUpdate(ctx context.Context, req *admindto.PermUpdateReq) (
 			return err
 		}
 		if req.Status == adminmodel.PermissionStatusDisabled && assigned {
-			return errors.New(adminenums.ErrPermissionAssigned)
+			return adminenums.Err(adminenums.ErrPermissionAssigned)
 		}
 
 		definitionChanged := req.APIPath != entity.APIPath || req.APIMethod != entity.APIMethod
@@ -741,7 +741,7 @@ func (s *Service) PermDelete(ctx context.Context, req *admindto.PermDeleteReq) (
 		return nil, err
 	}
 	if len(entities) != len(req.IDs) {
-		return nil, errors.New(adminenums.ErrPermissionNotFound)
+		return nil, adminenums.Err(adminenums.ErrPermissionNotFound)
 	}
 	codes := make([]string, 0, len(entities))
 	for _, entity := range entities {
@@ -750,7 +750,7 @@ func (s *Service) PermDelete(ctx context.Context, req *admindto.PermDeleteReq) (
 			return nil, err
 		}
 		if assigned {
-			return nil, errors.New(adminenums.ErrPermissionAssigned)
+			return nil, adminenums.Err(adminenums.ErrPermissionAssigned)
 		}
 		codes = append(codes, entity.PermissionCode)
 	}
@@ -761,7 +761,7 @@ func (s *Service) PermDelete(ctx context.Context, req *admindto.PermDeleteReq) (
 		return nil, err
 	}
 	if references > 0 {
-		return nil, errors.New(adminenums.ErrMenuReferenced)
+		return nil, adminenums.Err(adminenums.ErrMenuReferenced)
 	}
 
 	deleted, err := s.pm.DeleteByIDs(ctx, req.IDs)

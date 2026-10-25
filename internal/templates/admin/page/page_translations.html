@@ -79,19 +79,9 @@
     </section>
     {{else}}
 
-    {{if .Errors}}
-    <div class="tr-alert" role="alert">
-        <strong>{{ .["t"]("admin.page_translations.unsaved", "未保存：请先修正以下问题") }}</strong>
-        <ul class="list-reset">
-            {* 逐行错误：Label 是「哪一行」（原文 context 名，可能为空 = 页面级），
-               Msg 是词条事实 —— 两者在模板里合成一句，编排（「X：Y」还是「Y (X)」）
-               由界面决定，不由 Go 决定。 *}
-            {{range _, e := .Errors}}
-            <li>{{if e.Label}}{{e.Label}}：{{end}}{{tf(e.Msg.Key, e.Msg.Fallback, e.Msg.Args)}}</li>
-            {{end}}
-        </ul>
-    </div>
-    {{end}}
+    {* 逐行错误区：整页渲染与 htmx 片段共用一个 partial。
+       id 是 htmx 的替换目标（保存失败时就地换这一块，不重渲整页）。 *}
+    <div id="page-translations-errors">{{include "../../fragments/translation_errors.html" .}}</div>
 
     {{if len(.Groups) == 0}}
     {* 空数据也渲染 <table>/<thead>：用户得先看见「这个列表有哪些列」才谈得上认知。
@@ -123,7 +113,15 @@
         </div>
     </section>
     {{else}}
-    <form id="page-translations-form" method="post" action="/admin/pages/translations/save?pageId={{.PageID}}&amp;lang={{.Lang}}">
+    {* 保存走 htmx：成功 reload（保住筛选与语言）、失败只替换逐行错误区 —— 页面与已填译文都不动。
+       从前是原生 method="post" 整页提交：失败会跳到白屏，所以服务端不得不重渲整页。
+       逐行错误（「哪一行有什么问题」）必须留在页面上，塞不进 toast，所以用一个专用片段就地替换。 *}
+    <form id="page-translations-form"
+          hx-post="/admin/pages/translations/save?pageId={{.PageID}}&amp;lang={{.Lang}}"
+          hx-target="#page-translations-errors"
+          hx-swap="innerHTML"
+          hx-disable="find button[type=submit]"
+          data-reload-on-ok>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="pageId" value="{{.PageID}}">
         <input type="hidden" name="lang" value="{{.Lang}}">

@@ -14,6 +14,8 @@ package adminhttp_test
 //  4. 同一份 handler 数据：事实键渲染 == 旧成品键渲染（逐字节）。
 
 import (
+	"go_wp/internal/adminui"
+	"go_wp/pkg/pagination"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -28,7 +30,6 @@ import (
 	"go_wp/internal/templates"
 	"go_wp/pkg/database"
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/pagination"
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
 )
@@ -91,17 +92,17 @@ func TestI18nEntriesPagePaginationFacts(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = rec
 	h := adminhttp.NewAdminI18nEntryHandle()
-	engine.GET("/admin/i18n", h.I18nEntriesPage)
+	// 页面出口改 PageSlot 之后，模板名归路由层：控制器只交视图，
+	// 渲染器由 slot 带进上下文（这里是测试自装的 recorder）。
+	engine.GET("/admin/i18n", adminui.PageSlot(adminhttp.I18nPageTemplate), h.I18nEntriesPage)
 
 	target := "/admin/i18n?lang=zh-CN&page=2"
 	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
-	if rec.name != "admin/system/i18n" {
-		t.Fatalf("模板名应为 admin/system/i18n，实际 %q", rec.name)
+	if rec.name != adminhttp.I18nPageTemplate {
+		t.Fatalf("模板名应为 %s，实际 %q", adminhttp.I18nPageTemplate, rec.name)
 	}
-	data, ok := rec.data.(gin.H)
-	if !ok {
-		t.Fatalf("data 不是 gin.H（实际 %T）", rec.data)
-	}
+	// 视图是强类型，走 ViewMap 摊平后取键（与真实渲染出口同一条路径）。
+	data := adminui.ViewMap(rec.data)
 	raw, ok := data["Pagination"]
 	if !ok {
 		t.Fatal("词条页应注入 Pagination 事实键")

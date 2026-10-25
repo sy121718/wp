@@ -26,6 +26,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"go_wp/internal/adminui"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
@@ -84,7 +85,9 @@ func newContentTemplateErrorLeakEnv(t *testing.T) *contentTemplateEnv {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := contenttemplatehttp.NewContentTemplatePageHandle(templatesSvc, projects, products, nil)
-	engine.GET("/admin/content-templates", handle.ContentTemplatesPage)
+	engine.GET("/admin/content-templates",
+		adminui.PageSlot(contenttemplatehttp.ContentTemplatesPageTemplate),
+		handle.ContentTemplatesPage)
 	engine.POST("/api/contenttemplate/delete", contenttemplatehttp.NewHandle(templatesSvc).Delete)
 	return &contentTemplateEnv{engine: engine, db: db, projectID: project.ID, products: products}
 }

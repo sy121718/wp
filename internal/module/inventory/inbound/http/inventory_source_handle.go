@@ -41,6 +41,8 @@ func NewInventorySourcePageHandle(inventory inventorycontract.InventoryService,
 // 必然分叉 —— 而 Jet 的可选键缺 key 是**整页中断**（HTTP 200 + 后面整块 HTML 消失），
 // 症状比脱壳的纯文本更难看出来。
 type inventorySourcesPageData struct {
+	Title           string `view:"title"`
+	Menu            string `view:"menu"`
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
 	Sources         []inventorydto.SourceRowResp
@@ -64,46 +66,44 @@ type inventorySourcesPageData struct {
 	// 与其它键一样放在结构体里：正常渲染与降级渲染共用一份 templateMap，
 	// 降级分支才不会「忘记」给某个键（Jet 缺 key 是整页中断，见 internal/templates/CLAUDE.md）。
 	Pagination pagination.Page
+
+	// 三个下拉的文案（按请求语言）：取值需要 c，由装配处填。
+	TypeOptions    []inventorydto.OptionResp
+	StatusOptions  []inventorydto.OptionResp
+	RelatedOptions []inventorydto.OptionResp
+	// FilterStatusAll 「全部状态」这一档的值（与 status 选项区分：它不是一个状态）。
+	FilterStatusAll string
+	// ListQuery 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
+	ListQuery string
+	// SourceCreateForm 新建抽屉的初值（与页数据同一个视图：模板直接读 .SourceCreateForm.X）。
+	SourceCreateForm *inventorydto.SourceFormResp
 }
 
-// templateMap 转 Jet 模板键（页面框架字段以小写 title / menu 取值）。
+// fillOptions 填装配期才知道的键（取词 / 筛选上下文）。
+//
+// 单独一个函数而不是内联：**装配与渲染是两件事** —— 列表数据的取数在
+// InventorySourcesPage，而这几项只依赖 c。放在一起会让那个 handler 再涨一截语句数
+// （门禁按「控制器只做编排」卡它）。返回值是入参本身，便于链式写到视图里。
+func fillSourceOptions(d *inventorySourcesPageData, c *gin.Context) *inventorySourcesPageData {
+	tr := shell.TranslateFor(c)
+	d.Title, d.Menu = inventoryenums.MsgInventorySourcesTitle, "inventory-sources"
+	d.TypeOptions, d.StatusOptions = sourceTypeOptions(tr), sourceStatusOptions(tr)
+	d.RelatedOptions, d.FilterStatusAll = sourceRelatedOptions(tr), sourceStatusFilterAll
+	d.ListQuery = binding.ListQuery(c, inventorySourceBackKeys...)
+	return d
+}
+
+// 旧的 templateMap 已删除：字段名+view 标签就是模板键，
+// 那层手工搬运是「加一个字段要改两处」的来源。
 //
 // c 只用于取词：下拉项文案按请求语言渲染（取词一律经 tr(key, 中文兜底)）。
-func (d *inventorySourcesPageData) templateMap(c *gin.Context) gin.H {
-	tr := shell.TranslateFor(c)
-	m := gin.H{
-		"title":           inventoryenums.MsgInventorySourcesTitle,
-		"menu":            "inventory-sources",
-		"Projects":        d.Projects,
-		"SelectedProject": d.SelectedProject,
-		"Sources":         d.Sources,
-		"HasSummary":      d.HasSummary,
-		"Summary":         d.Summary,
-		"TypeOptions":     sourceTypeOptions(tr),
-		"StatusOptions":   sourceStatusOptions(tr),
-		"RelatedOptions":  sourceRelatedOptions(tr),
-		"FilterType":      d.FilterType,
-		"FilterRelated":   d.FilterRelated,
-		"FilterStatus":    d.FilterStatus,
-		"FilterStatusAll": sourceStatusFilterAll,
-		"FilterKeyword":   d.FilterKeyword,
-		"Err":             d.Err,
-		"LoadFailed":      d.LoadFailed,
-		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
-		"ListQuery": binding.ListQuery(c, inventorySourceBackKeys...),
-	}
-	// 分页条事实交给 partial 决定：零值（单页）与装载失败两条路 HasPagination 都为假，
-	// 片段自然不渲染。
-	m["Pagination"] = d.Pagination
-	return m
-}
 
 // sourcesPageView 货源页的视图：正常与降级两条路都从这里出，
 // 键集只有一处定义（降级分支不必「记得」补齐模板要的每一个键）。
-func (h *inventorySourcePageHandle) sourcesPageView(c *gin.Context, d *inventorySourcesPageData) gin.H {
-	data := d.templateMap(c)
-	data["SourceCreateForm"] = sourceFormData(c, d.SelectedProject, false, nil)
-	return data
+func (h *inventorySourcePageHandle) sourcesPageView(c *gin.Context, d *inventorySourcesPageData) any {
+	fillSourceOptions(d, c)
+	d.SourceCreateForm = sourceFormData(c, d.SelectedProject, false, nil)
+	return d
 }
 
 // InventorySourcesPage 货源管理页：工程切换 + 关联方统计 + 筛选 + 新建 + 列表（可编辑）。
@@ -464,12 +464,12 @@ func prettyJSON(raw json.RawMessage) string {
 	return buf.String()
 }
 
-func sourceFormData(c *gin.Context, projectID string, edit bool, row gin.H) gin.H {
+func sourceFormData(c *gin.Context, projectID string, edit bool, row any) *inventorydto.SourceFormResp {
 	tr := shell.TranslateFor(c)
-	return gin.H{
-		"IsEdit": edit, "Row": row, "SelectedProject": projectID,
-		"TypeOptions": sourceTypeOptions(tr), "RelatedOptions": sourceRelatedOptions(tr),
-		"StatusOptions": sourceStatusOptions(tr),
+	return &inventorydto.SourceFormResp{
+		IsEdit: edit, Row: row, SelectedProject: projectID,
+		TypeOptions: sourceTypeOptions(tr), RelatedOptions: sourceRelatedOptions(tr),
+		StatusOptions: sourceStatusOptions(tr),
 	}
 }
 

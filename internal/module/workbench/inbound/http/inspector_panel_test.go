@@ -6,6 +6,7 @@ package workbenchhttp
 // 当前值回填；无选中节点时输出空态提示。
 
 import (
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,7 +25,7 @@ func newInspectorRouter(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	router.POST("/workbench/inspector", handle.InspectorPanel)
+	router.POST("/workbench/inspector", adminui.BareSlot(InspectorPanelTemplate), handle.InspectorPanel)
 	return router
 }
 

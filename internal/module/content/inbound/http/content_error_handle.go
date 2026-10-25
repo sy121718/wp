@@ -74,9 +74,9 @@ var (
 // 失败不自动跳转（Seconds=0）：运营要看清楚原因。成功 1 秒后自动回目标页
 // （与 sysconfig / plugin / block 同一取舍）。
 //
-// 例外：**保存文章失败**不走这里，仍由 articleUpdateFailure 原地重渲编辑页回填本次输入
-// （见 internal/templates/CLAUDE.md「写表单失败时原地留住输入」）—— 整页提示会把
-// 用户刚写的正文整屏清掉，那是比错误文案贵得多的损失。
+// 例外（2026-10 起已取消）：保存文章的编辑页表单改走 htmx 之后，失败不再经这里，
+// 也不再重渲整页 —— 页面没离开过，正文还在框里，结论由 toast 给。
+// 这个出口只剩「列表 / 批量 / 发布 / 重建」这类**不带用户输入**的写动作在用。
 func articlePageJump(c *gin.Context, ok bool, msg articleMsg, back string, backText articleMsg) {
 	seconds := 0
 	if ok {

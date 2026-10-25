@@ -232,7 +232,7 @@ func (a *AdminEntity) BeforeCreate(tx *gorm.DB) error {
 			return err
 		}
 		if count > 0 {
-			return errors.New(adminenums.ErrSuperAdminExists)
+			return adminenums.Err(adminenums.ErrSuperAdminExists)
 		}
 	}
 	return nil
@@ -245,7 +245,7 @@ func (a *AdminEntity) BeforeUpdate(tx *gorm.DB) error {
 
 	if tx.Statement.Changed("IsAdmin") {
 		if !allowModifyIsAdmin(tx.Statement.Context) {
-			return errors.New(adminenums.ErrFieldProtected)
+			return adminenums.Err(adminenums.ErrFieldProtected)
 		}
 	}
 	return nil

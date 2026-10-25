@@ -144,8 +144,8 @@
                         {{if t.IsDefault}}<span class="badge badge-success">{{tr("admin.content.templates.activeBadge", "当前生效")}}</span>{{end}}
                     </td>
                     <td>
-                        {{if t.IsStructure}}<span class="badge badge-info">{{t.TypeLabel}}</span>{{else}}<code>{{t.EntityType}}</code> <span class="text-mute text-sm">{{t.TypeLabel}}</span>{{end}}
-                        <span class="text-mute text-sm">{{tr("admin.content.templates.roleLabel", "角色")}}：{{t.RoleLabel}}</span>
+                        {{if t.IsStructure}}<span class="badge badge-info">{{tr(t.Type.Key, t.Type.Fallback)}}</span>{{else}}<code>{{t.EntityType}}</code> <span class="text-mute text-sm">{{tr(t.Type.Key, t.Type.Fallback)}}</span>{{end}}
+                        <span class="text-mute text-sm">{{tr("admin.content.templates.roleLabel", "角色")}}：{{tr(t.Role.Key, t.Role.Fallback)}}</span>
                     </td>
                     <td>v{{t.DraftVersion}}</td>
                     <td>

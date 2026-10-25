@@ -59,16 +59,23 @@ const (
 // 取值与 sys_i18n 的 zh-CN 词条**逐字一致**（迁移 058 / 290 / 403 / 429 / 602，含同 key 被别的
 // 模块先登记的那几条）：兜底只在词条缺席时可见，与词条不一致会让人以为「词条坏了」。
 var errFallbacks = map[string]string{
-	ErrInvalidParam:    "请求参数无效",
-	ErrNotFound:        "请求资源不存在",
-	ErrInvalidKind:     "不支持的页面类型",
-	ErrPathTaken:       "同工程同类型下已存在相同路径的导航项",
-	ErrInvalidSource:   "非法的菜单项来源，仅支持 custom/page/article/product/category/block，且非 custom 必须指定来源实体",
-	ErrInvalidTarget:   "非法的打开方式，仅支持 self 或 blank",
-	ErrInvalidParent:   "父级菜单不合法：父项必须存在、与本项属于同一工程与同一类型，且不能形成循环",
-	ErrProjectRequired: "请先选择要操作的站点工程",
-	ErrStaleVersion:    "该菜单项已被其他窗口修改，请刷新后重试",
-	ErrSortTied:        "同一级里存在重复的排序值，本次没有产生位移；请先把这一级的顺序理顺",
+	ErrRowCountMismatch:   "提交的行数不一致，请刷新后重试",
+	ErrStorageUnavailable: "译文存储不可用",
+	ErrContextInvalid:     "语境非法：导航标签只接受 %s",
+	ErrSourceChanged:      "菜单文字已变化，请刷新后重试",
+	ErrNotTranslatable:    "%s：该菜单文字不参与翻译（纯数字或纯符号）",
+	ErrSaveFailed:         "保存失败：%s",
+	ErrProjectListFailed:  "读取工程列表失败，请稍后重试",
+	ErrInvalidParam:       "请求参数无效",
+	ErrNotFound:           "请求资源不存在",
+	ErrInvalidKind:        "不支持的页面类型",
+	ErrPathTaken:          "同工程同类型下已存在相同路径的导航项",
+	ErrInvalidSource:      "非法的菜单项来源，仅支持 custom/page/article/product/category/block，且非 custom 必须指定来源实体",
+	ErrInvalidTarget:      "非法的打开方式，仅支持 self 或 blank",
+	ErrInvalidParent:      "父级菜单不合法：父项必须存在、与本项属于同一工程与同一类型，且不能形成循环",
+	ErrProjectRequired:    "请先选择要操作的站点工程",
+	ErrStaleVersion:       "该菜单项已被其他窗口修改，请刷新后重试",
+	ErrSortTied:           "同一级里存在重复的排序值，本次没有产生位移；请先把这一级的顺序理顺",
 }
 
 // Err 声明一条自带对外文案的导航业务错误（兜底与本表同源）。

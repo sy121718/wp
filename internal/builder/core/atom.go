@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	json "go_wp/pkg/jsonx"
 	"reflect"
 )
 
@@ -98,11 +97,11 @@ func (a Atom[P]) Validate(node *Node, ids map[string]bool) (err error) {
 	if len(node.Children) > 0 {
 		return fmt.Errorf("节点 %s: 原子组件为叶子节点，不允许子节点", node.ID)
 	}
-	var p P
-	if len(node.Props) > 0 {
-		if err = json.Unmarshal(node.Props, &p); err != nil {
-			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
+	// 走 DecodeProps（不是裸 json.Unmarshal）：校验链也要看到旧 props 名归一后的值，
+	// 否则「检查器里显示空、编译时又用旧值」这种不一致会出现。
+	p, derr := DecodeProps[P](node.Props)
+	if derr != nil {
+		return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, derr)
 	}
 	if err = ValidateSpec(&p, node.ID); err != nil {
 		return err

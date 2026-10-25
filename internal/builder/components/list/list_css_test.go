@@ -65,7 +65,7 @@ func TestListCSSOptionals(t *testing.T) {
 		"padding: calc(20px / 2) 0",
 		".sky-c-t .sky-list-marker {\n  color: #f00;",
 		"background: #eee",
-		"border-radius: 999px",
+		"border-radius: var(--sky-radius-pill, 999px)",
 		"width: 1.8em",
 		".sky-c-t .sky-list-item:hover .sky-list-marker {",
 		"color: #0ff",

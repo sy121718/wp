@@ -1,7 +1,6 @@
 package feature
 
 import (
-	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -51,25 +50,27 @@ func TestArticleEditSaveFailureKeepsPostValues(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || rec.Header().Get("Location") != "" {
-		t.Fatalf("失败必须留在同请求: status=%d location=%q body=%s", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+	// 判据在 2026-10 改过：失败从「同请求 200 重渲整页 + 回填提交值」改成「JSON 错误体」。
+	// 理由是表单改 htmx 提交（hx-swap="none"）—— 页面根本没离开过，用户写的内容还在框里，
+	// 回填这个需求不存在；而原生提交时代必须重渲是因为浏览器会跳到白屏。
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("数据库拒绝应回 500，实际 status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if loc := rec.Header().Get("Location"); loc != "" {
+		t.Errorf("失败不该发 302，得到 Location=%q", loc)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("写动作失败应回 JSON，得到 %q", ct)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"</html>", "系统内部错误", `action="/admin/articles/update"`, `name="id" value="` + posted.Get("id") + `"`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("失败页缺少 %q", want)
-		}
+	if !strings.Contains(body, "系统内部错误") {
+		t.Errorf("响应应含归口文案：%s", body)
 	}
-	// seoTitle / seoDescription 已与标题 / 摘要合并（2026-09-30）：表单里没有这两栏，
-	// 失败回显自然也不包含它们（库里旧值仍不应回显，见下一条断言）。
-	for _, key := range []string{"title", "body", "excerpt", "featuredImage", "focusKeyword"} {
-		if !strings.Contains(body, html.EscapeString(posted.Get(key))) {
-			t.Errorf("%s 提交原值丢失: %q", key, posted.Get(key))
-		}
+	// 页壳缺席：这是「失败不重渲」的分水岭。
+	if strings.Contains(body, "</html>") || strings.Contains(body, `action="/admin/articles/update"`) {
+		t.Errorf("失败响应不该含页壳：%s", body)
 	}
-	if strings.Contains(body, "旧标题") || strings.Contains(body, "旧正文") || strings.Contains(body, "旧 SEO") {
-		t.Error("失败时从数据库回显了旧字段")
-	}
+	// 驱动原文只进日志。
 	if strings.Contains(body, "article_save_failure_test") || strings.Contains(body, "SQLSTATE") {
 		t.Error("数据库内部错误泄漏")
 	}

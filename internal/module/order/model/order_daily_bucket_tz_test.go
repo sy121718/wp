@@ -17,10 +17,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	ordermodel "go_wp/internal/module/order/model"
 	"go_wp/pkg/utils"
 	"go_wp/public/test/support"
+
+	"github.com/google/uuid"
 )
 
 func TestDayAndHourBucketsReturnUTCWakeClock(t *testing.T) {

@@ -51,6 +51,13 @@ type Store interface {
 //	{root}/artifacts/{hash}/index.html
 //	{root}/artifacts/{hash}/manifest.json
 //	{root}/artifacts/redirects/{hash}/redirect.json
+//
+// **单实例前提**（架构文档「部署形态」）：产物写在本机磁盘上，实例 A 写的东西实例 B 看不见。
+// 因此本实现**只支持单进程部署** —— 多实例时命中另一台的访客会拿到 404，而且不会报错
+// （404 是合法的「没发布过」形态，无法与「发布在别的机器上」区分）。
+//
+// 换对象存储是这一步的改造方向，也是 ArtifactStore 做成接口的全部理由：store 的调用方
+// 只认 Locator，不认 "local" 前缀（见 ArtifactLocator 的注释）。改这里之前先改那份文档。
 type LocalStore struct {
 	// Root 存储根目录（生产为配置的 artifacts 根，测试用临时目录）。
 	Root string

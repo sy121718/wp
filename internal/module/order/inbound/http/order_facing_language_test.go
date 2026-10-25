@@ -6,10 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"go_wp/internal/adminui"
 	orderenums "go_wp/internal/module/order/enums"
 	"go_wp/pkg/i18n"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestOrderFacingErrorsUseRequestLanguage(t *testing.T) {

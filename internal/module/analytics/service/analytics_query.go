@@ -17,10 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"go_wp/internal/module/analytics/dto"
-	"go_wp/internal/module/analytics/enums"
-	"go_wp/internal/module/analytics/model"
-	"go_wp/internal/module/project/contract"
+	analyticsdto "go_wp/internal/module/analytics/dto"
+	analyticsenums "go_wp/internal/module/analytics/enums"
+	analyticsmodel "go_wp/internal/module/analytics/model"
+	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )

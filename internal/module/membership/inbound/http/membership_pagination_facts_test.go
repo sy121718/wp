@@ -13,6 +13,7 @@ package membershiphttp
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -75,7 +76,7 @@ func mbPagRender(t *testing.T, svc *mbPagSvc, query string) string {
 	engine := gin.New()
 	// 模板根相对包目录：internal/module/membership/inbound/http → internal/templates。
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/membership/assignments", func(c *gin.Context) {
+	engine.GET("/admin/membership/assignments", adminui.PageSlot(MembershipAssignmentsPageTemplate), func(c *gin.Context) {
 		// 不注入权限上下文：本测试只钉分页事实与链接字节，按钮的可见性由模块既有渲染测试覆盖。
 		handle.MembershipAssignmentsPage(c)
 	})
@@ -191,7 +192,7 @@ func TestMembershipAssignmentsLoadFailureInjectsNoPagination(t *testing.T) {
 	handle := NewMembershipPageHandle(svc, mbPagProjects{})
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/membership/assignments", handle.MembershipAssignmentsPage)
+	engine.GET("/admin/membership/assignments", adminui.PageSlot(MembershipAssignmentsPageTemplate), handle.MembershipAssignmentsPage)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/membership/assignments", nil))
 	if rec.Code != http.StatusOK {

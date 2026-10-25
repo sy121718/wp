@@ -67,12 +67,12 @@ func (s *Service) List(ctx context.Context) (list []*plugindto.PluginResp, err e
 // Toggle 启停插件（影响编译装配与工作台组件库，无需重建——下次构建自然生效）。
 func (s *Service) Toggle(ctx context.Context, req *plugindto.ToggleReq) (err error) {
 	if req == nil || req.ID == "" {
-		return errors.New(pluginenums.ErrInvalidParam)
+		return pluginenums.Err(pluginenums.ErrInvalidParam)
 	}
 	row, err := s.m.Get(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New(pluginenums.ErrPluginNotFound)
+			return pluginenums.Err(pluginenums.ErrPluginNotFound)
 		}
 		return err
 	}
@@ -84,12 +84,12 @@ func (s *Service) Toggle(ctx context.Context, req *plugindto.ToggleReq) (err err
 // Uninstall 卸载：删注册行 + 级联 DROP schema（L1）+ 删存储目录。
 func (s *Service) Uninstall(ctx context.Context, req *plugindto.UninstallReq) (err error) {
 	if req == nil || req.ID == "" {
-		return errors.New(pluginenums.ErrInvalidParam)
+		return pluginenums.Err(pluginenums.ErrInvalidParam)
 	}
 	row, err := s.m.Get(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New(pluginenums.ErrPluginNotFound)
+			return pluginenums.Err(pluginenums.ErrPluginNotFound)
 		}
 		return err
 	}
@@ -112,12 +112,12 @@ func (s *Service) Uninstall(ctx context.Context, req *plugindto.UninstallReq) (e
 // Detail 插件详情（含 manifest 快照）。
 func (s *Service) Detail(ctx context.Context, req *plugindto.DetailReq) (res *plugindto.PluginResp, err error) {
 	if req == nil || req.ID == "" {
-		return nil, errors.New(pluginenums.ErrInvalidParam)
+		return nil, pluginenums.Err(pluginenums.ErrInvalidParam)
 	}
 	row, err := s.m.Get(ctx, req.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New(pluginenums.ErrPluginNotFound)
+			return nil, pluginenums.Err(pluginenums.ErrPluginNotFound)
 		}
 		return nil, err
 	}

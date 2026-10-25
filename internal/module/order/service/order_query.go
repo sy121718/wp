@@ -10,7 +10,6 @@ package orderservice
 
 import (
 	"context"
-	"errors"
 	json "go_wp/pkg/jsonx"
 	"strings"
 	"time"
@@ -27,14 +26,14 @@ import (
 // 「上半截已显示、下半截还在转」的中间态。
 func (s *Service) GetOrder(ctx context.Context, req *orderdto.GetOrderReq) (res *orderdto.OrderDetailResp, err error) {
 	if req == nil || req.OrderID == 0 || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	head, err := s.orders.GetByID(ctx, req.OrderID, req.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 	if head == nil {
-		return nil, errors.New(orderenums.ErrOrderNotFound)
+		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	return s.detailOf(ctx, head)
 }
@@ -80,7 +79,7 @@ func (s *Service) detailOf(ctx context.Context, head *ordermodel.OrderEntity) (r
 // 只按工程聚合。
 func (s *Service) ListOrders(ctx context.Context, req *orderdto.ListOrderReq) (res *orderdto.OrderListResp, err error) {
 	if req == nil || req.ProjectID == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	list, total, err := s.orders.List(ctx, ordermodel.OrderFilter{
 		ProjectID:     req.ProjectID,
@@ -116,14 +115,14 @@ func (s *Service) ListOrders(ctx context.Context, req *orderdto.ListOrderReq) (r
 // 越权面由「单号不可枚举 + 端点验签」两条一起收口。
 func (s *Service) GetOrderByNo(ctx context.Context, req *orderdto.GetOrderByNoReq) (res *orderdto.OrderResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" || strings.TrimSpace(req.OrderNo) == "" {
-		return nil, errors.New(orderenums.ErrOrderNoInvalid)
+		return nil, orderenums.Err(orderenums.ErrOrderNoInvalid)
 	}
 	head, err := s.orders.GetByNo(ctx, req.ProjectID, strings.TrimSpace(req.OrderNo))
 	if err != nil {
 		return nil, err
 	}
 	if head == nil {
-		return nil, errors.New(orderenums.ErrOrderNotFound)
+		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	return toOrderResp(head), nil
 }
@@ -134,10 +133,10 @@ func (s *Service) GetOrderByNo(ctx context.Context, req *orderdto.GetOrderByNoRe
 // 少传一次归属条件就等于把全站订单列表发给某个访客。
 func (s *Service) ListVisitorOrders(ctx context.Context, req *orderdto.VisitorOrderListReq) (res *orderdto.VisitorOrderListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	if req.UserID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	uid := req.UserID
 	list, total, err := s.orders.List(ctx, ordermodel.OrderFilter{
@@ -167,7 +166,7 @@ func (s *Service) ListVisitorOrders(ctx context.Context, req *orderdto.VisitorOr
 // 而这里的失败模式是「访客看到别人的订单」—— 不可接受。
 func (s *Service) GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.OrderDetailResp, err error) {
 	if req == nil || req.OrderID == 0 || req.UserID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	head, err := s.orders.GetByIDForUser(ctx, req.ProjectID, req.OrderID, req.UserID)
 	if err != nil {
@@ -175,10 +174,10 @@ func (s *Service) GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrde
 	}
 	if head == nil {
 		// 别人的单与不存在的单返回同一句话：区分开来就是一个订单号探测器。
-		return nil, errors.New(orderenums.ErrOrderNotFound)
+		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	if pid := strings.TrimSpace(req.ProjectID); pid != "" && head.ProjectID != pid {
-		return nil, errors.New(orderenums.ErrOrderNotFound)
+		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	return s.detailOf(ctx, head)
 }
@@ -230,7 +229,7 @@ const (
 // 直接把半开上界（次日零点）传下去会把第二天零点整的那一单也捞进来。
 func (s *Service) FindOrders(ctx context.Context, req *orderdto.FindOrderReq) (res *orderdto.FindOrderResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 
 	filter := ordermodel.OrderFilter{
@@ -274,14 +273,14 @@ func (s *Service) FindOrders(ctx context.Context, req *orderdto.FindOrderReq) (r
 // （谁在什么时候把它推到哪一步），只看头部的 status 字段答不出「到哪了」。
 func (s *Service) GetOrderDetailByNo(ctx context.Context, req *orderdto.GetOrderByNoReq) (res *orderdto.OrderDetailResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" || strings.TrimSpace(req.OrderNo) == "" {
-		return nil, errors.New(orderenums.ErrOrderNoInvalid)
+		return nil, orderenums.Err(orderenums.ErrOrderNoInvalid)
 	}
 	head, err := s.orders.GetByNo(ctx, strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.OrderNo))
 	if err != nil {
 		return nil, err
 	}
 	if head == nil {
-		return nil, errors.New(orderenums.ErrOrderNotFound)
+		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	return s.detailOf(ctx, head)
 }

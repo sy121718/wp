@@ -6,7 +6,7 @@
 & {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sky-space-5, 10px);
   align-items: {{alignItems}};
   text-align: {{textAlign}};
   padding: {{padding}};
@@ -31,7 +31,7 @@
   align-items: center;
   justify-content: center;
   font-size: calc({{iconSize}} * 0.6);
-  border-radius: 999px;
+  border-radius: var(--sky-radius-pill, 999px);
   background: rgba(0,0,0,.05);
 }
 
@@ -43,7 +43,7 @@
 & .sky-infobox-media img {
   max-width: 100%;
   height: auto;
-  border-radius: 8px;
+  border-radius: var(--sky-radius-lg, 8px);
 }
 
 & .sky-infobox-title {
@@ -77,8 +77,8 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 3px 10px;
-  border-radius: 999px;
+  padding: 3px var(--sky-space-5, 10px);
+  border-radius: var(--sky-radius-pill, 999px);
   background: rgba(0,0,0,.06);
 }
 
@@ -106,13 +106,13 @@
   border: 1px solid {{iconBorderColor}};
 }
 
-@if btnText
+@if label
 & .sky-infobox-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 22px;
-  border-radius: 999px;
+  padding: var(--sky-space-5, 10px) 22px;
+  border-radius: var(--sky-radius-pill, 999px);
   background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));
   color: var(--sky-btn-color, #fff);
   text-decoration: none;

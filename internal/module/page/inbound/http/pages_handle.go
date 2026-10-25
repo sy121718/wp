@@ -21,6 +21,7 @@ import (
 	"errors"
 	"go_wp/pkg/binding"
 	json "go_wp/pkg/jsonx"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"strconv"
 	"strings"
@@ -104,11 +105,13 @@ func (h *pagesAdminHandle) blueprintOptions(ctx context.Context) []blueprintOpti
 }
 
 // pagesPageData 页面列表页数据。
-// 模板键统一小写（admin/layout.html 以 {{.title}}/{{.menu}} 取值，
-// Jet 对 map 键不做大小写兜底）。
+//
+// 字段名就是模板契约键：除两个壳键（layout 的 {{.title}} / {{.menu}} 是小写）之外，
+// 其余与模板一致。小写那两个用 view 标签表达，不再写一层 templateMap() 手工搬字段 ——
+// 那层转换是「加一个字段要改两处」的来源，而漏改的表现是模板缺键整页中断。
 type pagesPageData struct {
-	Title    string
-	Menu     string
+	Title    string `view:"title"`
+	Menu     string `view:"menu"`
 	Projects []projectcontract.ProjectResp
 	Pages    []pagedto.PageRowResp
 	// Blueprints 蓝图候选（审计 VIS-010）：「从蓝图开始」是新建页面流程里的一个选项，
@@ -162,38 +165,13 @@ type pagesPageData struct {
 	// 为什么与 ReceiptKnown 的形态不同（那里总是给键、用布尔分流）：那份观测只有「读到 / 没读到」
 	// 两种状态；这份还有「读到了但是空」这一种，而 nil 切片与空切片在模板里长得一样 ——
 	// 必须由比较列表多一个 Available 才能分开。两者共用的判据是**降级渲染时不得给出乐观结论**。
-	StaleOverview gin.H
+	StaleOverview *pagedto.StaleOverviewResp
 }
 
 // blueprintOption 新建页面表单里的蓝图选项。
 type blueprintOption struct {
 	ID   string
 	Name string
-}
-
-// templateMap 转为模板所需的小写键 map。
-func (d *pagesPageData) templateMap() gin.H {
-	return gin.H{
-		"title":      d.Title,
-		"menu":       d.Menu,
-		"Projects":   d.Projects,
-		"Pages":      d.Pages,
-		"Blueprints": d.Blueprints,
-		"Err":        d.Err,
-
-		"ReceiptPending":      d.ReceiptPending,
-		"ReceiptOldest":       d.ReceiptOldest,
-		"ReceiptLastConverge": d.ReceiptLastConverge,
-		"ReceiptAlert":        d.ReceiptAlert,
-		"ReceiptKnown":        d.ReceiptKnown,
-
-		"SelectedProject": d.SelectedProject,
-		"FilteredProject": d.FilteredProject,
-
-		// 全站待重建区块（可选键）：字段为 nil 时这里输出 nil，模板的 isset 判为假
-		//（Jet 的 isset 同时覆盖「键不存在」与「值为 nil」两种情形）→ 整块不渲染。
-		"StaleOverview": d.StaleOverview,
-	}
 }
 
 // PagesList 页面列表页。
@@ -212,7 +190,7 @@ func (h *pagesAdminHandle) PagesList(c *gin.Context) {
 			// ReceiptKnown 留 false：这次没读到回执状态，模板不该报「收敛正常」。
 		}
 	}
-	c.HTML(http.StatusOK, "admin/page/pages", adminui.Prepare(c, data.templateMap()))
+	pageview.Render(c, data)
 }
 
 // buildPagesData 组装列表页数据。
@@ -823,11 +801,11 @@ func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 	// Revisions 用空切片而非 nil：Jet 的 len() 不接受 nil（会渲染失败）。
 	// Error 交的是**事实**（key + 中文兜底），取词在片段模板里做 —— 片段不经
 	// adminui.Prepare，所以必须显式补 t / tf（漏了不会报错：模板取到 nil，整片取词变空串）。
-	data := adminui.PrepareBare(c, gin.H{"Revisions": []pagedto.HistoryRowResp{}, "Error": pageMsg{}})
+	view := &pagedto.PageHistoryListResp{Revisions: []pagedto.HistoryRowResp{}, Error: pageMsg{}}
 	if pageID != "" && h.pages != nil {
 		revs, err := h.pages.ListRevisions(c.Request.Context(), &pagecontract.RevisionReq{PageID: pageID})
 		if err != nil {
-			data["Error"] = pageMsg{Key: pageenums.HistoryLoadFailed, Fallback: "加载失败"}
+			view.Error = pageMsg{Key: pageenums.HistoryLoadFailed, Fallback: "加载失败"}
 		} else {
 			views := make([]pagedto.HistoryRowResp, 0, len(revs))
 			for _, r := range revs {
@@ -836,10 +814,10 @@ func (h *pagesAdminHandle) HistoryPanel(c *gin.Context) {
 					CreatedAt: r.CreatedAt,
 				})
 			}
-			data["Revisions"] = views
+			view.Revisions = views
 		}
 	}
-	c.HTML(http.StatusOK, "fragments/history_list", data)
+	pageview.Render(c, view)
 }
 
 // HistoryRestore 恢复指定修订到草稿（覆盖保存为新修订，由客户端随后整页刷新）。

@@ -11,7 +11,6 @@ package masterdataservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -86,15 +85,15 @@ func (s *Service) CountEntities(ctx context.Context, req *masterdatadto.ListEnti
 // 「改过什么」，从没改过 = 没有记录，这不是「实体不存在」那种错误。
 func (s *Service) EntityTimeline(ctx context.Context, req *masterdatadto.EntityTimelineReq) (res *masterdatadto.EntityTimelineResp, err error) {
 	if req == nil {
-		return nil, errors.New(masterdataenums.ErrInvalidParam)
+		return nil, masterdataenums.Err(masterdataenums.ErrInvalidParam)
 	}
 	entityType := strings.TrimSpace(req.EntityType)
 	if !masterdataenums.IsValidEntityType(entityType) {
-		return nil, errors.New(masterdataenums.ErrEntityTypeInvalid)
+		return nil, masterdataenums.Err(masterdataenums.ErrEntityTypeInvalid)
 	}
 	entityID := strings.TrimSpace(req.EntityID)
 	if entityID == "" {
-		return nil, errors.New(masterdataenums.ErrEntityIDRequired)
+		return nil, masterdataenums.Err(masterdataenums.ErrEntityIDRequired)
 	}
 	args, err := s.resolveQuery(ctx, req.ProjectID, entityType, entityID, "", "", "", "", "", "",
 		req.Page, req.Size)

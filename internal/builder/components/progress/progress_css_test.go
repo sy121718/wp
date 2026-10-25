@@ -32,7 +32,7 @@ func TestProgressCSSRules(t *testing.T) {
 				".sky-c-t .sky-progress-bar {",
 				c.width,
 				c.color,
-				"border-radius: 9999px",
+				"border-radius: var(--sky-radius-pill, 9999px)",
 				".sky-c-t .sky-progress-label {",
 			} {
 				if !strings.Contains(out, want) {

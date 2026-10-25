@@ -74,15 +74,24 @@ func Render(c *gin.Context, data any) {
 // Fail 控制器交失败：与 JSON 接口同一个形状（业务错误 400、声明过状态码的按声明、其余 500）。
 //
 // response.ErrHandled 表示 handler 自己已经写完响应（SSE / 下载 / 原始字节）：不补第二个响应。
+//
+// 日志场景默认从模板名推（admin/product/products.html → product），但**模块的既有 scene
+// 可能与模板目录名不同**（例如 contenttemplate 模块的 scene 是 `content_template`，
+// 而模板目录是 `admin/contenttemplate/`）。那种情况用 FailScene 显式给，
+// 而不是让日志在两个名字下分家 —— 按 scene 捞日志是排障的入口，分家等于捞不全。
 func Fail(c *gin.Context, err error) {
+	_, tpl, _ := slotOf(c)
+	FailScene(c, sceneOf(tpl), err)
+}
+
+// FailScene 与 Fail 相同，但显式指定日志场景（见 Fail 的说明）。
+func FailScene(c *gin.Context, scene string, err error) {
 	if errors.Is(err, response.ErrHandled) {
 		return
 	}
 	// 状态码判据只有一份：pkg/response 的 ErrorStatus（声明过用声明的、
 	// 业务错误 400、其余 500）。这里原先自己算了一遍 —— 同一套判据写两处，
 	// 哪天 facing 的分档变了，只有一处会跟着改，另一处静默漂移。
-	_, tpl, _ := slotOf(c)
-	scene := sceneOf(tpl)
 	response.ErrorAuto(c, response.ErrorStatus(err), scene, err)
 }
 

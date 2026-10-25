@@ -9,6 +9,7 @@ import (
 	pubservice "go_wp/internal/module/publication/service"
 	"go_wp/internal/permission"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/builtin"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
@@ -50,6 +51,10 @@ func SetupPublicationRoutes(rg *permission.RouteGroup, db *gorm.DB) pubcontract.
 	// 中间件那条额外校验迁移 183 的 seo:audit（/api/seo/audit 是虚拟对象、没有独立路由）——
 	// 显式声明后者，否则 permission.RoutesOf 查不到 seo:audit，AI 工具按 fail closed 一律 forbidden。
 	permission.Declare(http.MethodPost, "/api/seo/audit", permission.SEOAudit)
-	g.POST("/seo-audit", permission.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"), seoAuditHandler(svc.RunSEOAudit))
+	g.POST("/seo-audit", permission.PublicationSEOAudit, builtin.CasbinMiddlewareForPath("/api/seo/audit"),
+		adminui.BareSlot(SeoAuditResultTemplate), seoAuditHandler(svc.RunSEOAudit))
 	return svc
 }
+
+// SeoAuditResultTemplate SEO 审计结果（htmx 片段：整块结果区就地替换）。
+const SeoAuditResultTemplate = "admin/analytics/seo_audit_result.html"

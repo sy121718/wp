@@ -9,6 +9,7 @@ package userhttp
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,7 +85,7 @@ func TestCustomerRfmPageRendersRows(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
 	h.SetCustomerRfm(rfm)
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm?range=month", nil))
@@ -125,7 +126,7 @@ func TestCustomerRfmPageEmptySegmentKeepsTableShape(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
 	h.SetCustomerRfm(rfm)
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm?segment=vip", nil))
@@ -154,7 +155,7 @@ func TestCustomerRfmPageTabURLsKeepRange(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{list: customerListSample()}, nil, fakeProjects{items: detailProjects()})
 	h.SetCustomerRfm(rfm)
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm?range=year", nil))
@@ -187,7 +188,7 @@ func TestCustomerRfmPagePassesSegmentAndWindow(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{items: detailProjects()})
 	h.SetCustomerRfm(rfm)
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm?range=month&segment=vip", nil))
@@ -215,7 +216,7 @@ func TestCustomerRfmPageUnknownSegmentFallsBack(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{items: detailProjects()})
 	h.SetCustomerRfm(rfm)
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm?segment=gold", nil))
@@ -231,7 +232,7 @@ func TestCustomerRfmPageUnknownSegmentFallsBack(t *testing.T) {
 func TestCustomerRfmPageWithoutPortShowsNotice(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{items: detailProjects()})
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm", nil))
@@ -260,7 +261,7 @@ func TestCustomerRfmPageWithoutProjectsShowsEmpty(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{})
 	h.SetCustomerRfm(rfm)
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/rfm", nil))

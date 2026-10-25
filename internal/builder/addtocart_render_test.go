@@ -49,7 +49,7 @@ func TestAddToCartCompilesToWorkingForm(t *testing.T) {
 		"variantsField": "product.variants",
 		"variantMode":   "single",
 		"showQuantity":  true,
-		"buttonText":    "马上买",
+		"label":         "马上买",
 		"cartTarget":    "#cart",
 	})
 	res := addToCartResolver{

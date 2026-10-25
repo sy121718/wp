@@ -19,7 +19,6 @@ package orderhttp
 
 import (
 	"context"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -37,6 +36,7 @@ import (
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 // returnPageHandle 退货入库页处理器。
@@ -73,16 +73,11 @@ var returnStatusValues = []string{
 	"", "requested", "approved", "received", "completed", "rejected", "cancelled",
 }
 
-type statusLabelFact struct {
-	Key      string
-	Fallback string
-}
-
-func statusLabelFacts(values []string, resolve func(string) (string, string)) map[string]statusLabelFact {
-	facts := make(map[string]statusLabelFact, len(values))
+func statusLabelFacts(values []string, resolve func(string) (string, string)) map[string]orderdto.StatusLabelFact {
+	facts := make(map[string]orderdto.StatusLabelFact, len(values))
 	for _, value := range values {
 		key, fallback := resolve(value)
-		facts[value] = statusLabelFact{Key: key, Fallback: fallback}
+		facts[value] = orderdto.StatusLabelFact{Key: key, Fallback: fallback}
 	}
 	return facts
 }
@@ -154,32 +149,32 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		}
 	}
 
-	data := adminui.Prepare(c, gin.H{
-		"title":           orderenums.ReturnsHeading,
-		"menu":            "orders",
-		"Projects":        projects,
-		"SelectedProject": selected,
+	view := &orderdto.ReturnListPageResp{
+		Title:           orderenums.ReturnsHeading,
+		Menu:            "orders",
+		Projects:        projects,
+		SelectedProject: selected,
 		// 取数结果：dto 原样交给模板。
-		"Returns": returns,
-		"Counts":  counts,
-		"Total":   total,
+		Returns: returns,
+		Counts:  counts,
+		Total:   total,
 		// 「全部」徽章的计数（各状态之和）：模板里跨类型累加（int + int64）不值得押注，
 		// 求和放这里一行，模板只取结果。
-		"CountsAll": countsAll(counts),
-		"Detail":    detail,
+		CountsAll: countsAll(counts),
+		Detail:    detail,
 		// 状态徽章行的「取值 + 分档」（含空串 = 全部）+ 当前生效值。
-		"StatusTabs":         returnStatusTabs(),
-		"FilterStatus":       filter.Status,
-		"ReturnStatusLabels": returnStatusPageFacts(returnStatusValues, filter.Status, returns, detail),
-		"OrderStatusLabels":  orderStatusPageFacts(orderStatusValues, detail),
-		"FilterKeyword":      filter.Keyword,
-		"FilterOrderID":      filter.OrderID,
+		StatusTabs:         returnStatusTabs(),
+		FilterStatus:       filter.Status,
+		ReturnStatusLabels: returnStatusPageFacts(returnStatusValues, filter.Status, returns, detail),
+		OrderStatusLabels:  orderStatusPageFacts(orderStatusValues, detail),
+		FilterKeyword:      filter.Keyword,
+		FilterOrderID:      filter.OrderID,
 		// 这一次没读出来的原因（空串 = 正常）：模板据此把「装载失败」与「还没有退货申请」分开。
-		"LoadErr": loadErrText,
+		LoadErr: loadErrText,
 		// 列表上下文（拼进表单 action / 徽章链接；不含 status，见 returnListQueryKeys）。
-		"ListQuery": returnListQuery(selected, filter, page, limit),
+		ListQuery: returnListQuery(selected, filter, page, limit),
 		// 入库仓下拉：只给启用的仓（停用的仓历史流水仍按 id 可读，但新入库不该再选它）。
-		"Warehouses": h.enabledWarehouses(ctx, selected),
+		Warehouses: toReturnWarehouses(h.enabledWarehouses(ctx, selected)),
 		// 状态 → 当前语言标签。enums 的 (key, fallback) 是两返回值，模板接不住，
 		// 所以这里包一层单值函数进数据：**取词仍在模板调用点发生**，Go 不预先拼行视图。
 		// 订单摘要里的收货地址要显示国家**标签**（模板调 .CountryLabel(o.ShipCountry)）。
@@ -188,18 +183,18 @@ func (h *returnPageHandle) ReturnsPage(c *gin.Context) {
 		// 换句话说，只要选中一张**订单有地址**的退货单，审核入口就整个打不开 ——
 		// 这是用 task-119 的链式证据（真渲染 + 真数据）才照出来的：只渲染 returnId=不存在的
 		// 那类页时，detail 分支根本不进，缺陷一直是隐形的。
-		"CountryLabel": countryLabelFunc(c, h.dict),
-		"Page":         page,
-		"Limit":        limit,
-	})
+		CountryLabel: countryLabelFunc(c, h.dict),
+		Page:         page,
+		Limit:        limit,
+	}
 	// 分页事实：基址由 backpath 拼（带白名单参数），故 path 传空 —— AttachPagination 不动 Base。
-	adminui.AttachPagination(data, "", nil, pagination.Page{
+	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
 		Total: total, Page: page, Limit: limit,
 		Base: backpath.WithParams("/admin/returns", map[string]string{
 			"project": selected, "status": filter.Status, "keyword": filter.Keyword,
 		}),
 	})
-	c.HTML(http.StatusOK, "admin/order/returns.html", data)
+	pageview.Render(c, view)
 }
 
 // —— 请求工具 ——
@@ -249,7 +244,7 @@ func returnStatusText(tr translate, status string) string {
 // **生效筛选值必须收进来**：空列表时页面上唯一会显示的状态就是它（空态那行
 // 「当前还带着状态筛选「…」」），漏掉它的症状是——筛选值合法时一切正常，
 // 而筛选值是空的/未知的那几种情况下整页渲染报错（模板索引到缺键）。
-func returnStatusPageFacts(values []string, filterStatus string, returns []*orderdto.ReturnResp, detail *orderdto.ReturnDetailResp) map[string]statusLabelFact {
+func returnStatusPageFacts(values []string, filterStatus string, returns []*orderdto.ReturnResp, detail *orderdto.ReturnDetailResp) map[string]orderdto.StatusLabelFact {
 	statuses := append([]string(nil), values...)
 	statuses = append(statuses, filterStatus)
 	for _, item := range returns {
@@ -270,7 +265,7 @@ func returnStatusPageFacts(values []string, filterStatus string, returns []*orde
 // **两张表刻意分开**：退货状态与订单状态是两套枚举（key 前缀都不同），
 // 合成一张表看着省事，但模板里 `orderLabels[o.Status]` 与 `returnLabels[r.Status]`
 // 就只靠人眼区分了 —— 串表时一行状态会显示另一套词条的文本，而且不报错。
-func orderStatusPageFacts(values []string, detail *orderdto.ReturnDetailResp) map[string]statusLabelFact {
+func orderStatusPageFacts(values []string, detail *orderdto.ReturnDetailResp) map[string]orderdto.StatusLabelFact {
 	statuses := append([]string(nil), values...)
 	if detail != nil && detail.Order != nil {
 		statuses = append(statuses, detail.Order.Status)
@@ -367,4 +362,16 @@ func returnFacingText(raw string) string {
 		}
 	}
 	return ""
+}
+
+// toReturnWarehouses 把契约的入库仓投影成视图形状。
+//
+// 视图不复用 contract.ReturnWarehouse：dto 不能 import 自己的 contract（会成环），
+// 而"页面只读 ID/Name"这件事本来就该由视图自己声明 —— 契约多一个字段时视图不必跟着变。
+func toReturnWarehouses(in []ordercontract.ReturnWarehouse) []orderdto.ReturnWarehouseResp {
+	out := make([]orderdto.ReturnWarehouseResp, 0, len(in))
+	for _, w := range in {
+		out = append(out, orderdto.ReturnWarehouseResp{ID: w.ID, Name: w.Name})
+	}
+	return out
 }

@@ -220,19 +220,19 @@ func TestSiteSlotPageDataDistinguishesLoadFailure(t *testing.T) {
 
 	t.Run("真的没有工程", func(t *testing.T) {
 		data := siteSlotPageData(nil, "", nil, nil, pageMsg{})
-		if data["NoProjectEmpty"] != true {
-			t.Fatalf("工程列表为空且本次没有出错 → 应显示「还没有站点工程」，实际 NoProjectEmpty=%v", data["NoProjectEmpty"])
+		if data.NoProjectEmpty != true {
+			t.Fatalf("工程列表为空且本次没有出错 → 应显示「还没有站点工程」，实际 NoProjectEmpty=%v", data.NoProjectEmpty)
 		}
 	})
 
 	t.Run("装载失败", func(t *testing.T) {
 		data := siteSlotPageData(nil, "", nil, nil, internal)
-		if data["NoProjectEmpty"] != false {
+		if data.NoProjectEmpty != false {
 			t.Fatal("装载失败时工程列表同样是空的，但绝不能显示「还没有站点工程」（用户明明有工程）")
 		}
-		got, ok := data["Err"].(pageMsg)
-		if !ok || got.Key != internal.Key || got.Fallback != internal.Fallback {
-			t.Fatalf("装载失败应把归口文案事实放进 Err，实际 %v", data["Err"])
+		got := data.Err
+		if got.Key != internal.Key || got.Fallback != internal.Fallback {
+			t.Fatalf("装载失败应把归口文案事实放进 Err，实际 %v", got)
 		}
 	})
 }
@@ -247,7 +247,7 @@ func TestSiteSlotsPageDegradesOnProjectLoadFailure(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
 	h := &siteSlotPageHandle{projects: failingProjectList{err: errors.New(`pq: relation "projects" does not exist (SQLSTATE 42P01)`)}}
-	router.GET("/admin/site-slots", h.SiteSlotsPage)
+	router.GET("/admin/site-slots", adminui.PageSlot(SiteSlotsPageTemplate), h.SiteSlotsPage)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/site-slots", nil))
@@ -284,7 +284,7 @@ func TestPagesListIgnoresForgedNoticeQuery(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
 	h := &pagesAdminHandle{projects: filterProjectList{list: twoProjects()}, pages: &filterPageList{}}
-	router.GET("/admin/pages", h.PagesList)
+	router.GET("/admin/pages", adminui.PageSlot(PagesListPageTemplate), h.PagesList)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,
@@ -314,7 +314,7 @@ func TestPagesListReceiptNoticeHidesWhenObservabilityUnknown(t *testing.T) {
 
 	var current *pagesPageData
 	router.GET("/admin/pages", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "admin/page/pages", adminui.Prepare(c, current.templateMap()))
+		c.HTML(http.StatusOK, "admin/page/pages", adminui.PrepareView(c, current))
 	})
 	render := func(known, alert bool) string {
 		t.Helper()
@@ -355,7 +355,7 @@ func TestPagesListDegradesOnProjectLoadFailure(t *testing.T) {
 	router := gin.New()
 	router.HTMLRender = newPageErrTestRender(t)
 	h := &pagesAdminHandle{projects: failingProjectList{err: errors.New(`pq: relation "projects" does not exist (SQLSTATE 42P01)`)}}
-	router.GET("/admin/pages", h.PagesList)
+	router.GET("/admin/pages", adminui.PageSlot(PagesListPageTemplate), h.PagesList)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/pages", nil))

@@ -20,12 +20,12 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 type View struct {
 	// HasLink 是否有链接（整卡链接或按钮化）。
 	HasLink bool
-	// HasBtn 是否按钮化（Link 非空且 BtnText 非空）。
+	// HasBtn 是否按钮化（Link 非空且 Label 非空）。
 	HasBtn bool
 	// Link 链接地址（模板输出时由 Jet 默认转义）。
 	Link string
-	// BtnText 按钮文字（模板输出时由 Jet 默认转义）。
-	BtnText string
+	// Label 按钮文字（模板输出时由 Jet 默认转义）。
+	Label string
 
 	// --- body 内容字段 ---
 	// HasMedia 是否有媒体图（优先于 Icon）。
@@ -94,9 +94,9 @@ func BuildView(p *Props, siteLink func(string) string) View {
 	if strings.TrimSpace(p.Link) != "" {
 		v.HasLink = true
 		v.Link = core.SiteLinkOrSame(siteLink, p.Link)
-		if strings.TrimSpace(p.BtnText) != "" {
+		if strings.TrimSpace(p.Label) != "" {
 			v.HasBtn = true
-			v.BtnText = p.BtnText
+			v.Label = p.Label
 		}
 	}
 	return v

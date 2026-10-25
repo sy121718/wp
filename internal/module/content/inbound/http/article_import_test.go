@@ -11,6 +11,7 @@ package contenthttp
 import (
 	"context"
 	"errors"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -170,21 +171,21 @@ func TestArticleImportPreviewView(t *testing.T) {
 func TestArticleImportBlockViewStates(t *testing.T) {
 	h := &articlePageHandle{pages: stubPageService{}}
 	item := &contentdto.ContentResp{ID: "a1", Slug: "hello", Data: map[string]any{"title": "标题", "body": "<p>x</p>"}}
-	projects := []gin.H{{"ID": "p1", "Name": "官网"}}
+	projects := []contentdto.OptionResp{{ID: "p1", Name: "官网"}}
 
 	v := articleImportBlockView(h, item, "a1", projects)
-	if v["ImportAvailable"] != true {
-		t.Errorf("具备全部前置时应可用：%v", v)
-	} else if path, _ := v["ImportDefaultPath"].(string); path != "/article-hello" {
-		t.Errorf("默认路径应为 /article-<slug>，实际 %q", path)
+	if !v.ImportAvailable {
+		t.Errorf("具备全部前置时应可用：%+v", v)
+	} else if v.ImportDefaultPath != "/article-hello" {
+		t.Errorf("默认路径应为 /article-<slug>，实际 %q", v.ImportDefaultPath)
 	}
-	if v := articleImportBlockView(h, item, "", projects); v["ImportAvailable"] != false {
+	if v := articleImportBlockView(h, item, "", projects); v.ImportAvailable {
 		t.Error("新建中（无 id）时不应给导入入口")
 	}
-	if v := articleImportBlockView(h, item, "a1", nil); v["ImportAvailable"] != false {
+	if v := articleImportBlockView(h, item, "a1", nil); v.ImportAvailable {
 		t.Error("没有站点工程时不应给导入入口")
 	}
-	if v := articleImportBlockView(&articlePageHandle{}, item, "a1", projects); v["ImportAvailable"] != false {
+	if v := articleImportBlockView(&articlePageHandle{}, item, "a1", projects); v.ImportAvailable {
 		t.Error("页面能力未装配时不应给导入入口")
 	}
 }
@@ -197,7 +198,7 @@ func TestArticleImportPreviewFragmentRenders(t *testing.T) {
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 
 	h := &articlePageHandle{contents: failingContentService{}}
-	engine.POST("/admin/articles/import-preview", h.ArticleImportPreview)
+	engine.POST("/admin/articles/import-preview", adminui.BareSlot(ArticleImportFragmentTemplate), h.ArticleImportPreview)
 
 	form := url.Values{"id": {"whatever"}}
 	req := httptest.NewRequest(http.MethodPost, "/admin/articles/import-preview", strings.NewReader(form.Encode()))

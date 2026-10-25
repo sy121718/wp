@@ -20,6 +20,7 @@ package feature
 import (
 	"bytes"
 	"fmt"
+	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"io"
 	"net/http"
@@ -147,7 +148,7 @@ func TestOrderJSONWriteChainCatchesMissingTemplateAttributes(t *testing.T) {
 							cap.add(string(body), c.Writer.Status())
 						}
 					})
-					e.GET("/admin/orders", listPage.OrdersPage)
+					e.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), listPage.OrdersPage)
 					e.POST("/api/order/status", h.ChangeStatus)
 				},
 			})

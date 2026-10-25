@@ -4,7 +4,7 @@ package projecthttp
 //
 // 形状与 internal/module/admin/inbound/http/admin_err.go 对齐，只有候选来源不同：
 // admin 是手写白名单，本域**直接用 service 哨兵**——因为 project service 的哨兵消息
-// 本来就是 enums 的 key（`errors.New(projectenums.ErrThemeNotFound)`），
+// 本来就是 enums 的 key（`projectenums.Err(projectenums.ErrThemeNotFound)`），
 // 于是「判定业务错误」这件事只需要一份表，JSON 出口与页面出口共用。
 //
 // 三件套在这里落地为：

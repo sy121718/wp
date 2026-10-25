@@ -110,20 +110,20 @@ func (s *Service) ListDeliveries(ctx context.Context, req *webhookdto.DeliveryLi
 // attempts 不清零：它是「这条投递一共试过几次」的历史，清零会让排障看不出它失败过。
 func (s *Service) RetryDelivery(ctx context.Context, id uint64) (err error) {
 	if id == 0 {
-		return errors.New(webhookenums.ErrInvalidParam)
+		return webhookenums.Err(webhookenums.ErrInvalidParam)
 	}
 	d, gerr := s.m.GetDelivery(ctx, id)
 	if gerr != nil {
 		if errors.Is(gerr, gorm.ErrRecordNotFound) {
-			return errors.New(webhookenums.ErrDeliveryNotFound)
+			return webhookenums.Err(webhookenums.ErrDeliveryNotFound)
 		}
 		return gerr
 	}
 	if d.Status == webhookenums.DeliveryStatusPending {
-		return errors.New(webhookenums.ErrDeliveryNotPending)
+		return webhookenums.Err(webhookenums.ErrDeliveryNotPending)
 	}
 	if d.Status != webhookenums.DeliveryStatusFailed {
-		return errors.New(webhookenums.ErrDeliveryNotFailed)
+		return webhookenums.Err(webhookenums.ErrDeliveryNotFailed)
 	}
 	// 状态回退走**条件更新**（WHERE status='failed'）而不是「读出来判断再写回去」：
 	// 后者在两个重投请求（或重投与 worker 收尾）并发时会双写，且两次入队让同一条投递
@@ -135,9 +135,9 @@ func (s *Service) RetryDelivery(ctx context.Context, id uint64) (err error) {
 	}
 	if !switched {
 		if cur, gerr := s.m.GetDelivery(ctx, id); gerr == nil && cur != nil && cur.Status == webhookenums.DeliveryStatusPending {
-			return errors.New(webhookenums.ErrDeliveryNotPending)
+			return webhookenums.Err(webhookenums.ErrDeliveryNotPending)
 		}
-		return errors.New(webhookenums.ErrDeliveryNotFailed)
+		return webhookenums.Err(webhookenums.ErrDeliveryNotFailed)
 	}
 	// 入队放在状态回写**之后**且事务之外（队列是 Redis 侧的写，跨系统）：
 	// worker 的认领守卫是「只有 pending、或租约已过期的 delivering 才投」，所以「先真的改回 pending，再入队」

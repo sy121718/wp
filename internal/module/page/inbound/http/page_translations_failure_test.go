@@ -101,54 +101,50 @@ func translationsFailureBody(t *testing.T, router *gin.Engine, query string) *ht
 	return rec
 }
 
-// assertTranslationsFailurePage 失败页的公共形态：
-// 整页壳（含 </body></html>，挡住「渲染中断、尾部截断」）+ no-store + 不是 JSON + 无原文。
-func assertTranslationsFailurePage(t *testing.T, rec *httptest.ResponseRecorder, status int, want, forbidden []string) string {
+// assertTranslationsFailureJSON 失败响应的公共形态：JSON 错误体 + 真实状态码 + 无原文。
+//
+// **失败不渲染页壳**（用户裁定：所有提示只需要一个提示）：从前这里渲染「同一页 + 错误槽」,
+// 同一张模板要维护两套必需键，而失败时页壳给的信息（筛选项、语言切换、整张表）
+// 没有一条是这次失败需要的。状态码仍然按错误性质分档（400 / 404 / 500）——
+// 「改地址就能好」和「稍后重试」不是同一件事，这个区分现在只剩状态码一处。
+func assertTranslationsFailureJSON(t *testing.T, rec *httptest.ResponseRecorder, status int, want, forbidden []string) string {
 	t.Helper()
 	if rec.Code != status {
 		t.Fatalf("状态码应为 %d（用户能不能修、怎么修取决于它），实际 %d：%s", status, rec.Code, rec.Body.String())
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Fatalf("失败页必须是页面（Content-Type 含 text/html），实际 %q", ct)
-	}
-	if cc := rec.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
-		t.Fatalf("失败页不该被缓存（Cache-Control 含 no-store），实际 %q", cc)
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("失败出口应为 JSON（Content-Type 含 application/json），实际 %q", ct)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"<!DOCTYPE", `class="admin-layout"`, "</body>", "</html>"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("失败页不是完整的一页（缺 %q）：%s", want, body)
+	// 页壳缺席：这是「失败不渲染整页」的分水岭。
+	for _, banned := range []string{"<!DOCTYPE", `class="admin-layout"`, "</body>", "</html>"} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("失败出口不该渲染页壳（出现 %q）：%s", banned, body)
 		}
 	}
-	if strings.Contains(body, `{"code"`) {
-		t.Fatalf("失败页回了 JSON 报文（浏览器里是一段文本，不是这一页）：%s", body)
-	}
-	for _, want := range want {
-		if !strings.Contains(body, want) {
-			t.Fatalf("失败页缺少 %q：%s", want, body)
+	for _, w := range want {
+		if !strings.Contains(body, w) {
+			t.Fatalf("失败响应缺少 %q：%s", w, body)
 		}
 	}
 	for _, bad := range append([]string{"SQLSTATE", "42P01", "pq: relation"}, forbidden...) {
 		if strings.Contains(body, bad) {
-			t.Fatalf("内部原文漏到页面上（命中 %q）：%s", bad, body)
+			t.Fatalf("内部原文漏到响应里（命中 %q）：%s", bad, body)
 		}
 	}
 	return body
 }
 
-// TestPageTranslationsMissingPageIDRenders400WithParamSlot 参数缺失档：400 + 参数错误槽 + 回列表入口。
-func TestPageTranslationsMissingPageIDRenders400WithParamSlot(t *testing.T) {
+// TestPageTranslationsMissingPageIDReturns400WithParamText 参数缺失档：400 + 参数文案。
+func TestPageTranslationsMissingPageIDReturns400WithParamText(t *testing.T) {
 	// 服务传 nil：参数缺失在取数**之前**就判掉（这本身就是要守的顺序 —— 否则「没带参数」
-	// 会被渲染成一次「服务端故障」）。
+	// 会被报成一次「服务端故障」）。
 	router := newTranslationsFailureRouter(t, nil)
 	rec := translationsFailureBody(t, router, "")
 
 	// 期望文案用与产出同一条取词路径算，不手抄：手抄的串在有人改词条时会以「谁都没写错」的方式变红。
 	paramText := i18n.Translate(pageenums.ErrInvalidParam, pagesLocalNoticeMissingPageIDGet.Fallback, "zh-CN")
-	body := assertTranslationsFailurePage(t, rec, http.StatusBadRequest, []string{
-		`<p class="empty-title">` + paramText + `</p>`,
-		`href="/admin/pages"`,
-	}, nil)
+	body := assertTranslationsFailureJSON(t, rec, http.StatusBadRequest, []string{paramText}, nil)
 
 	// 参数档不该摆出「取数失败」的那句话（两档文案混用 = 让人去重试一个改地址就能好的问题）。
 	loadFailedTitle := i18n.Translate("admin.common.list.loadFailedTitle", "这一页的数据没能读出来", "zh-CN")
@@ -157,40 +153,29 @@ func TestPageTranslationsMissingPageIDRenders400WithParamSlot(t *testing.T) {
 	}
 }
 
-// TestPageTranslationsLoadFailureRenders500WithFailureSlot 取数失败档：500 + 失败槽 + no-store。
-func TestPageTranslationsLoadFailureRenders500WithFailureSlot(t *testing.T) {
+// TestPageTranslationsLoadFailureReturns500 取数失败档：500 + 归口文案。
+func TestPageTranslationsLoadFailureReturns500(t *testing.T) {
 	router := newTranslationsFailureRouter(t, translationsFailurePages{projectErr: translationsFailureRawErr})
 	rec := translationsFailureBody(t, router, "?pageId=page-1&lang=en-US")
 
-	loadFailedTitle := i18n.Translate("admin.common.list.loadFailedTitle", "这一页的数据没能读出来", "zh-CN")
-	loadFailedDesc := i18n.Translate("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。", "zh-CN")
-	body := assertTranslationsFailurePage(t, rec, http.StatusInternalServerError, []string{
-		`<p class="badge badge-danger" role="alert">`,
-		`<p class="empty-title">` + loadFailedTitle + `</p>`,
-		`<p class="empty-desc">` + loadFailedDesc + `</p>`,
+	body := assertTranslationsFailureJSON(t, rec, http.StatusInternalServerError, []string{
+		"系统内部错误，请稍后重试",
 	}, nil)
-
 	// 失败优先于空态：没读到与「读到了、只是没有可翻译的行」是两回事，混在一起运营会以为
-	// 文本被删了，然后去重建一遍（契约的「失败槽：失败优先于空态」）。
+	// 文本被删了，然后去重建一遍。
 	emptyTitle := i18n.Translate("admin.page_translations.empty.title", "没有可翻译的行", "zh-CN")
 	if strings.Contains(body, emptyTitle) {
-		t.Fatalf("取数失败时仍渲染了空态文案 %q（失败被显示成「没有数据」）：%s", emptyTitle, body)
-	}
-	// 归口文字槽非空：只给标题不说结论，用户不知道是自己点错还是服务端坏了。
-	if !strings.Contains(body, `<p class="badge badge-danger" role="alert">`) {
-		t.Fatalf("失败槽缺归口文字位：%s", body)
+		t.Fatalf("取数失败时仍出现空态文案 %q（失败被显示成「没有数据」）：%s", emptyTitle, body)
 	}
 }
 
-// TestPageTranslationsMissingPageRenders404 NotFound 档：资源不存在是 404，不是 500。
+// TestPageTranslationsMissingPageReturns404 NotFound 档：资源不存在是 404，不是 500。
 //
-// 这一档与取数失败共用同一个槽（同一句「这里没有你要的页面」），差别只在状态码与文案 ——
-// 判据复用模块既有的错误 → 状态码映射（pageErrorStatus），不另建一套分类。
-func TestPageTranslationsMissingPageRenders404(t *testing.T) {
+// 这一档与取数失败共用同一句文案，差别只在状态码 —— 判据复用模块既有的
+// 错误 → 状态码映射（pageErrorStatus），不另建一套分类。
+func TestPageTranslationsMissingPageReturns404(t *testing.T) {
 	router := newTranslationsFailureRouter(t, translationsFailurePages{projectErr: pageservice.ErrPageNotFound})
 	rec := translationsFailureBody(t, router, "?pageId=page-missing&lang=en-US")
 
-	assertTranslationsFailurePage(t, rec, http.StatusNotFound, []string{
-		`<p class="badge badge-danger" role="alert">`,
-	}, nil)
+	assertTranslationsFailureJSON(t, rec, http.StatusNotFound, nil, nil)
 }

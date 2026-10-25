@@ -17,13 +17,25 @@ import (
 )
 
 // SetupMembershipPages 注册会员等级与归属页；pages 为 nil 时整体跳过。
+// 会员两页的模板名。
+const (
+	MembershipTiersPageTemplate       = "admin/membership/membership.html"
+	MembershipAssignmentsPageTemplate = "admin/membership/membership_assignments.html"
+)
+
 func SetupMembershipPages(pages *gin.RouterGroup, svc membershipcontract.MembershipService,
 	projects projectcontract.ProjectService) {
 	if pages == nil {
 		return
 	}
 	pageHandle := NewMembershipPageHandle(svc, projects)
-	pages.GET("/membership", adminui.PageAuthz("/api/membership/tier/list"), pageHandle.MembershipPage)
-	pages.GET("/membership/assignments", adminui.PageAuthz("/api/membership/assign/list"), pageHandle.MembershipAssignmentsPage)
+	pages.GET("/membership",
+		adminui.PageAuthz("/api/membership/tier/list"),
+		adminui.PageSlot(MembershipTiersPageTemplate),
+		pageHandle.MembershipPage)
+	pages.GET("/membership/assignments",
+		adminui.PageAuthz("/api/membership/assign/list"),
+		adminui.PageSlot(MembershipAssignmentsPageTemplate),
+		pageHandle.MembershipAssignmentsPage)
 
 }

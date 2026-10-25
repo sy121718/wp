@@ -11,12 +11,14 @@ import (
 	"net/http/httptest"
 	"strings"
 
+	"go_wp/internal/adminui"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
 	pageenums "go_wp/internal/module/page/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/templates"
 	"go_wp/pkg/utils"
+	pageview "go_wp/pkg/view"
 
 	"github.com/gin-gonic/gin"
 )
@@ -82,25 +84,17 @@ func TestSiteSlotBindLabelsFromFacts(t *testing.T) {
 			slots := &pagecontract.SiteSlotListResp{Total: 1, Items: []pagecontract.SiteSlotItemResp{{Slot: "cart", Bound: bound, PageID: "pg"}}}
 			data := siteSlotPageData([]projectcontract.ProjectResp{{ID: "pr", Name: "site"}}, "pr", candidates, slots, pageMsg{})
 			siteSlotApplyBindPanel(data, candidates, slots, "cart")
-			if _, ok := data["BindLabel"]; ok {
-				t.Fatal("panel must not carry BindLabel")
-			}
-			if data["BindBound"] != bound {
+			// 视图是强类型了，字段名的存在性由编译期保证 —— 这里只需断言「绑定面板带上了事实」。
+			if data.BindBound != bound {
 				t.Fatal("panel lost Bound fact")
 			}
-			for _, row := range data["Rows"].([]gin.H) {
-				if _, ok := row["BindLabel"]; ok {
-					t.Fatal("row must not carry BindLabel")
-				}
-			}
-			// tf 与 t 一起补：模板两处都要（tr 取词、tf 取带 %s 参数的词），
-			// 只补 t 会让模板在 tf 那一行拿到 nil —— 渲染期报错，整页中断。
-			data["t"] = func(_, fallback string) string { return fallback }
-			data["tf"] = func(_, fallback string, _ []string) string { return fallback }
-			data["title"], data["menu"] = "slots", "pages"
+			// t / tf / title / menu 不再手工塞：它们由 adminui.Prepare 注入。
+			// 原先手工塞 4 个键的地方，恰恰是「页壳关切混进视图」的证据 ——
+			// 漏塞一个的表现是渲染期 nil，整页中断。
 			router := gin.New()
 			router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-			router.GET("/t", func(c *gin.Context) { c.HTML(http.StatusOK, "admin/page/site_slots", data) })
+			router.GET("/t", adminui.PageSlot(SiteSlotsPageTemplate),
+				func(c *gin.Context) { pageview.Render(c, data) })
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/t", nil))
 			class := "btn btn-sm"
@@ -108,7 +102,7 @@ func TestSiteSlotBindLabelsFromFacts(t *testing.T) {
 				class += " btn-primary"
 			}
 			link := `<a class="` + class + `"` + "\n                           " + `href="/admin/site-slots?project=pr&amp;slot=cart#slot-bind-panel"` + "\n                           " + `aria-current="true">` + label + `</a>`
-			title := "<strong>" + label + "：" + data["BindSlotNameFallback"].(string) + "</strong>"
+			title := "<strong>" + label + "：" + data.BindSlotNameFallback + "</strong>"
 			for _, element := range []string{link, title} {
 				if strings.Count(rec.Body.String(), element) != 1 {
 					t.Fatalf("bind element must equal %q", element)

@@ -8,6 +8,9 @@
    晚加载会让早期提交走原生提交（整页跳转）。
    取代了 json_write.js + write-base.js + write_feedback.js 三个文件。 *}
 <script src="/static/js/ui/write-base.js"></script>
+{* 写动作的局部刷新：服务端回 JSON 片段 + 目标选择器，本文件按 JSON 里的 html 换入目标。
+   与写基座的分工：基座管**提交与结论**，它管**换页面里的那一块**（两者都要读响应）。 *}
+<script src="/static/js/ui/json_swap.js"></script>
 {* 控件 ↔ htmx 的唯一适配层：控件广播 wb:rescan，本文件转成 htmx.process。
    没有 htmx 时它什么都不做 —— 控件因此不依赖传输层。 *}
 <script src="/static/js/ui/htmx-bridge.js"></script>

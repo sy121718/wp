@@ -14,6 +14,7 @@ package feature
 //   （S2a-2 面板行由 page_schedule_render_test.go 的 DB 用例断言：那条只有真库才拿得到时刻真值）
 
 import (
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -106,7 +107,7 @@ func TestPagesUpdatedAtFromDB(t *testing.T) {
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	projects := projectservice.NewService(projectmodel.NewProjectModel(db))
 	handle := pagehttp.NewPagesAdminHandle(svc, projects, nil, nil)
-	router.GET("/admin/pages", handle.PagesList)
+	router.GET("/admin/pages", adminui.PageSlot(pagehttp.PagesListPageTemplate), handle.PagesList)
 	for _, tc := range []struct {
 		name string
 		at   time.Time

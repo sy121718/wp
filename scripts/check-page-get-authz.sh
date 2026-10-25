@@ -47,14 +47,44 @@ def uncomment(text):
 
 
 def scan(text):
+    """按**注册语句块**扫描，不按行。
+
+    为什么必须按块：`pages.GET(...)` 的参数可以合法地跨行写。此前是按行匹配，
+    于是下面这种写法被判定为「没有授权」：
+
+        pages.GET("/masterdata/changes",
+            adminui.PageAuthz("/api/masterdata/change/list"),
+            adminui.PageSlot(tpl),
+            handler)
+
+    权限声明其实在（permission 常量 + seed SQL 三处齐全），只是扫描器看不见 ——
+    这是**漏判**。逐行正则也还有**误判**的一面：把 PageAuthz 写在别处照样能过。
+    按块切之后，判据变成「这次 .GET( 调用的实参里有 PageAuthz」，两个方向都对。
+
+    切块规则：从每个 `.GET(` 起，按括号配平走到它的右括号（跳过字符串与注释里的括号）。
+    """
+    src = uncomment(text)
     result = set()
-    for line in uncomment(text).splitlines():
-        page = re.search(r'\.GET\("([^" ]+)"', line)
-        auth = re.search(r'adminui\.PageAuthz(As)?\("([^" ]+)"(?:,\s*http\.Method([A-Za-z]+))?\)', line)
-        if not page or not auth:
+    for m in re.finditer(r'\.GET\(', src):
+        start = m.end()
+        depth = 1
+        i = start
+        while i < len(src) and depth > 0:
+            ch = src[i]
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            i += 1
+        call = src[start:i]
+        page = re.match(r'\s*"([^" ]+)"', call)
+        if not page:
+            continue
+        auth = re.search(r'adminui\.PageAuthz(As)?\("([^" ]+)"(?:,\s*http\.Method([A-Za-z]+))?\)', call)
+        if not auth:
             continue
         if auth[1] and not auth[3]:
-            raise ValueError('unrecognized explicit act: ' + line)
+            raise ValueError('unrecognized explicit act: ' + call)
         result.add((page[1], auth[2], auth[3].upper() if auth[1] else 'GET'))
     return result
 

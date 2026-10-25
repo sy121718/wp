@@ -101,11 +101,11 @@ var allowedProfileVisibility = map[string]struct{}{
 // GetAccount 取账号中心的一次性聚合视图。
 func (s *Service) GetAccount(ctx context.Context, userID uint64) (res *userdto.AccountResp, err error) {
 	if userID == 0 {
-		return nil, errors.New(userenums.ErrInvalidParam)
+		return nil, userenums.Err(userenums.ErrInvalidParam)
 	}
 	u, gerr := s.m.GetByID(ctx, userID)
 	if gerr != nil {
-		return nil, errors.New(userenums.ErrUserNotFound)
+		return nil, userenums.Err(userenums.ErrUserNotFound)
 	}
 
 	res = &userdto.AccountResp{
@@ -183,12 +183,12 @@ func (s *Service) GetAccount(ctx context.Context, userID uint64) (res *userdto.A
 // 「昵称改了、资料没改」的半截状态，而用户看到的是一句「保存成功」。
 func (s *Service) UpdateProfile(ctx context.Context, req *userdto.UpdateProfileReq) (err error) {
 	if req == nil || req.UserID == 0 {
-		return errors.New(userenums.ErrInvalidParam)
+		return userenums.Err(userenums.ErrInvalidParam)
 	}
 	nickname := strings.TrimSpace(req.Nickname)
 	if nickname != "" {
 		if n := len([]rune(nickname)); n > 60 {
-			return errors.New(userenums.ErrUsernameTooLong)
+			return userenums.Err(userenums.ErrUsernameTooLong)
 		}
 	}
 
@@ -196,7 +196,7 @@ func (s *Service) UpdateProfile(ctx context.Context, req *userdto.UpdateProfileR
 	if b := strings.TrimSpace(req.Birthday); b != "" {
 		t, perr := time.Parse(birthdayLayout, b)
 		if perr != nil {
-			return errors.New(userenums.ErrInvalidParam)
+			return userenums.Err(userenums.ErrInvalidParam)
 		}
 		birthday = &t
 	}
@@ -243,20 +243,20 @@ func (s *Service) UpdateProfile(ctx context.Context, req *userdto.UpdateProfileR
 // UpdatePreference 保存前台偏好。
 func (s *Service) UpdatePreference(ctx context.Context, req *userdto.UpdatePreferenceReq) (err error) {
 	if req == nil || req.UserID == 0 {
-		return errors.New(userenums.ErrInvalidParam)
+		return userenums.Err(userenums.ErrInvalidParam)
 	}
 	if req.PageSize < minPageSize || req.PageSize > maxPageSize {
-		return errors.New(userenums.ErrPageSizeInvalid)
+		return userenums.Err(userenums.ErrPageSizeInvalid)
 	}
 	vis := strings.TrimSpace(req.ProfileVisibility)
 	if vis == "" {
 		vis = "public"
 	}
 	if _, ok := allowedProfileVisibility[vis]; !ok {
-		return errors.New(userenums.ErrProfileVisibilityInvalid)
+		return userenums.Err(userenums.ErrProfileVisibilityInvalid)
 	}
 	if s.prefm == nil {
-		return errors.New(userenums.ErrInvalidParam)
+		return userenums.Err(userenums.ErrInvalidParam)
 	}
 	now := time.Now()
 	return s.prefm.Upsert(ctx, &usermodel.UserPreferenceEntity{
@@ -281,25 +281,25 @@ func (s *Service) UpdatePreference(ctx context.Context, req *userdto.UpdatePrefe
 // 代价是用户改完要重新登录一次，这个代价必须付。
 func (s *Service) ChangePassword(ctx context.Context, req *userdto.ChangePasswordReq) (err error) {
 	if req == nil || req.UserID == 0 {
-		return errors.New(userenums.ErrInvalidParam)
+		return userenums.Err(userenums.ErrInvalidParam)
 	}
 	if len(req.NewPassword) < minPasswordLen {
-		return errors.New(userenums.ErrPasswordTooShort)
+		return userenums.Err(userenums.ErrPasswordTooShort)
 	}
 	u, gerr := s.m.GetByID(ctx, req.UserID)
 	if gerr != nil {
-		return errors.New(userenums.ErrUserNotFound)
+		return userenums.Err(userenums.ErrUserNotFound)
 	}
 	if strings.TrimSpace(u.Password) == "" {
 		// 第三方账号没有本站密码：允许它「设置」密码要另有一条带验证的流程，
 		// 不能走这里（这里要求提供旧密码，而它根本没有）。
-		return errors.New(userenums.ErrPasswordLoginUnavailable)
+		return userenums.Err(userenums.ErrPasswordLoginUnavailable)
 	}
 	if cerr := bcrypt.CompareHashAndPassword([]byte(u.Password), []byte(req.OldPassword)); cerr != nil {
-		return errors.New(userenums.ErrOldPasswordWrong)
+		return userenums.Err(userenums.ErrOldPasswordWrong)
 	}
 	if req.OldPassword == req.NewPassword {
-		return errors.New(userenums.ErrNewPasswordSame)
+		return userenums.Err(userenums.ErrNewPasswordSame)
 	}
 	hashed, herr := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if herr != nil {
@@ -337,7 +337,7 @@ const passwordResetTemplate = "password_reset"
 // 再去撞库或发钓鱼邮件。
 func (s *Service) RequestPasswordReset(ctx context.Context, req *userdto.PasswordResetReqRequest) (err error) {
 	if req == nil || strings.TrimSpace(req.Email) == "" {
-		return errors.New(userenums.ErrInvalidParam)
+		return userenums.Err(userenums.ErrInvalidParam)
 	}
 	email := strings.TrimSpace(req.Email)
 	e, ferr := s.m.GetByEmail(ctx, email)
@@ -379,24 +379,24 @@ func (s *Service) RequestPasswordReset(ctx context.Context, req *userdto.Passwor
 // ResetPassword 用重置码改密码。
 func (s *Service) ResetPassword(ctx context.Context, req *userdto.ResetPasswordReq) (err error) {
 	if req == nil || strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Key) == "" {
-		return errors.New(userenums.ErrInvalidParam)
+		return userenums.Err(userenums.ErrInvalidParam)
 	}
 	if len(req.NewPassword) < minPasswordLen {
-		return errors.New(userenums.ErrPasswordTooShort)
+		return userenums.Err(userenums.ErrPasswordTooShort)
 	}
 	e, ferr := s.m.GetByEmail(ctx, strings.TrimSpace(req.Email))
 	if ferr != nil {
-		return errors.New(userenums.ErrActivationInvalid)
+		return userenums.Err(userenums.ErrActivationInvalid)
 	}
 	// 必须同时校验「码」与「账号状态」：码对但账号未激活（这是注册验证的码）不该能改密码。
 	if e.ActivationKey == nil || *e.ActivationKey != crypto.Sha256(strings.ToUpper(strings.TrimSpace(req.Key))) {
-		return errors.New(userenums.ErrActivationInvalid)
+		return userenums.Err(userenums.ErrActivationInvalid)
 	}
 	if e.ActivationExpiresAt != nil && time.Now().After(*e.ActivationExpiresAt) {
-		return errors.New(userenums.ErrActivationInvalid)
+		return userenums.Err(userenums.ErrActivationInvalid)
 	}
 	if e.Status != usermodel.UserStatusActive {
-		return errors.New(userenums.ErrActivationInvalid)
+		return userenums.Err(userenums.ErrActivationInvalid)
 	}
 	hashed, herr := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if herr != nil {
@@ -492,14 +492,14 @@ func (s *Service) SendGuestAccountMail(ctx context.Context, mail *usercontract.G
 // 非 nil 时全部读写落在调用方事务内。**不发信** —— 发信时机由两个入口各自决定。
 func (s *Service) ensureGuestAccountOn(ctx context.Context, tx *gorm.DB, in *usercontract.GuestAccountInput) (res *usercontract.GuestAccountResult, err error) {
 	if in == nil {
-		return nil, errors.New(userenums.ErrInvalidParam)
+		return nil, userenums.Err(userenums.ErrInvalidParam)
 	}
 	email := strings.TrimSpace(in.Email)
 	if email == "" {
-		return nil, errors.New(userenums.ErrEmailRequired)
+		return nil, userenums.Err(userenums.ErrEmailRequired)
 	}
 	if !strings.Contains(email, "@") || len(email) < 3 {
-		return nil, errors.New(userenums.ErrEmailInvalid)
+		return nil, userenums.Err(userenums.ErrEmailInvalid)
 	}
 
 	// 已有账号 → 什么都不改。
@@ -691,7 +691,7 @@ const (
 // Register 注册：写用户（待激活）并发验证邮件。
 func (s *Service) Register(ctx context.Context, req *userdto.RegisterReq) (res *userdto.RegisterResp, err error) {
 	if req == nil {
-		return nil, errors.New(userenums.ErrInvalidParam)
+		return nil, userenums.Err(userenums.ErrInvalidParam)
 	}
 	username := strings.TrimSpace(req.Username)
 	email := strings.TrimSpace(req.Email)
@@ -709,9 +709,9 @@ func (s *Service) Register(ctx context.Context, req *userdto.RegisterReq) (res *
 		// 不区分「用户名占用」还是「邮箱占用」会在注册接口上暴露「这个邮箱注册过没有」；
 		// 但注册接口本身就要给用户可操作的提示，所以这里如实说 —— 这是产品取舍，不是疏漏。
 		if _, eerr := s.m.GetByUsername(ctx, username); eerr == nil {
-			return nil, errors.New(userenums.ErrUsernameTaken)
+			return nil, userenums.Err(userenums.ErrUsernameTaken)
 		}
-		return nil, errors.New(userenums.ErrEmailTaken)
+		return nil, userenums.Err(userenums.ErrEmailTaken)
 	}
 
 	plainKey, hashKey, err := newActivationKey()
@@ -758,15 +758,15 @@ func (s *Service) Register(ctx context.Context, req *userdto.RegisterReq) (res *
 // ActivateEmail 校验激活码并激活账号。
 func (s *Service) ActivateEmail(ctx context.Context, req *userdto.ActivateEmailReq) (res *userdto.ActivateResp, err error) {
 	if req == nil || strings.TrimSpace(req.Key) == "" {
-		return nil, errors.New(userenums.ErrInvalidParam)
+		return nil, userenums.Err(userenums.ErrInvalidParam)
 	}
 	key := strings.ToUpper(strings.TrimSpace(req.Key))
 	e, err := s.m.GetByActivationKey(ctx, crypto.Sha256(key))
 	if err != nil {
-		return nil, errors.New(userenums.ErrActivationInvalid)
+		return nil, userenums.Err(userenums.ErrActivationInvalid)
 	}
 	if e.ActivationExpiresAt != nil && time.Now().After(*e.ActivationExpiresAt) {
-		return nil, errors.New(userenums.ErrActivationInvalid)
+		return nil, userenums.Err(userenums.ErrActivationInvalid)
 	}
 	now := time.Now()
 	if uerr := s.m.UpdateFields(ctx, e.ID, map[string]any{
@@ -793,15 +793,15 @@ func (s *Service) ActivateEmail(ctx context.Context, req *userdto.ActivateEmailR
 // 密码重置不同 —— 它只需要一个邮箱、匿名可调，静默与否直接决定它能不能当批量枚举器用。
 func (s *Service) ResendActivation(ctx context.Context, req *userdto.ResendActivationReq) (err error) {
 	if req == nil || strings.TrimSpace(req.Email) == "" {
-		return errors.New(userenums.ErrInvalidParam)
+		return userenums.Err(userenums.ErrInvalidParam)
 	}
 	e, err := s.m.GetByEmail(ctx, strings.TrimSpace(req.Email))
 	if err != nil {
-		return errors.New(userenums.ErrUserNotFound)
+		return userenums.Err(userenums.ErrUserNotFound)
 	}
 	if e.Status != usermodel.UserStatusPending {
 		// 已激活的账号没有「重发验证」这回事 —— 静默成功会让调用方以为发了信。
-		return errors.New(userenums.ErrActivationInvalid)
+		return userenums.Err(userenums.ErrActivationInvalid)
 	}
 	plainKey, hashKey, err := newActivationKey()
 	if err != nil {
@@ -816,7 +816,7 @@ func (s *Service) ResendActivation(ctx context.Context, req *userdto.ResendActiv
 		return uerr
 	}
 	if !s.sendVerifyMail(ctx, e.Email, e.Username, displayName(e), plainKey, req.Locale) {
-		return errors.New(userenums.ErrMailUnavailable)
+		return userenums.Err(userenums.ErrMailUnavailable)
 	}
 	return nil
 }
@@ -869,22 +869,22 @@ func newActivationKey() (plain, hash string, err error) {
 
 func validateRegister(username, email, password string) error {
 	if username == "" {
-		return errors.New(userenums.ErrUsernameRequired)
+		return userenums.Err(userenums.ErrUsernameRequired)
 	}
 	if len([]rune(username)) < 3 {
-		return errors.New(userenums.ErrUsernameTooShort)
+		return userenums.Err(userenums.ErrUsernameTooShort)
 	}
 	if len([]rune(username)) > 32 {
-		return errors.New(userenums.ErrUsernameTooLong)
+		return userenums.Err(userenums.ErrUsernameTooLong)
 	}
 	if email == "" {
-		return errors.New(userenums.ErrEmailRequired)
+		return userenums.Err(userenums.ErrEmailRequired)
 	}
 	if _, err := mail.ParseAddress(email); err != nil {
-		return errors.New(userenums.ErrEmailInvalid)
+		return userenums.Err(userenums.ErrEmailInvalid)
 	}
 	if len(password) < minPasswordLen {
-		return errors.New(userenums.ErrPasswordTooShort)
+		return userenums.Err(userenums.ErrPasswordTooShort)
 	}
 	return nil
 }

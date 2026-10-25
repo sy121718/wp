@@ -14,7 +14,7 @@ func TestQuoteCSSRules(t *testing.T) {
 	out := b.String()
 	for _, want := range []string{
 		".sky-c-t {",
-		"padding: 16px 20px",
+		"padding: var(--sky-space-7, 16px) 20px",
 		"border-left: 4px solid var(--sky-c-primary, #2563eb)",
 		"font-style: italic",
 		".sky-c-t p {",

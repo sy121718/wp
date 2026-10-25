@@ -35,7 +35,6 @@ package orderservice
 
 import (
 	"context"
-	"errors"
 	"math"
 	"strings"
 	"time"
@@ -53,7 +52,7 @@ import (
 // 两条查询各自可解释、各自可用索引，比一条又长又贵的合并查询更划算。
 func (s *Service) SoldQuantityByRange(ctx context.Context, req *orderdto.OrderSoldQuantityReq) (res *orderdto.OrderSoldQuantityResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
 	if err != nil {
@@ -76,7 +75,7 @@ func (s *Service) SoldQuantityByRange(ctx context.Context, req *orderdto.OrderSo
 // StatusCounts 取各状态的订单条数（**不带时间窗**：回答的是「现在有多少单等着处理」）。
 func (s *Service) StatusCounts(ctx context.Context, req *orderdto.OrderStatusCountsReq) (res *orderdto.OrderStatusCountsResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	counts, err := s.orders.CountByStatus(ctx, req.ProjectID)
 	if err != nil {
@@ -111,7 +110,7 @@ const defaultTopProducts = 5
 // TopProducts 取区间内销量最高的若干商品（含名次，已按销量降序）。
 func (s *Service) TopProducts(ctx context.Context, req *orderdto.OrderTopProductsReq) (res *orderdto.OrderTopProductsResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
 	if err != nil {
@@ -171,7 +170,7 @@ const maxHourlyRangeDays = 2
 // 这里直接拼中文会让「后台页面禁止直出内部错误」那条约定出现一个漏口。
 func (s *Service) SummaryByRange(ctx context.Context, req *orderdto.OrderRangeSummaryReq) (res *orderdto.OrderRangeSummaryResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
 	if err != nil {
@@ -211,17 +210,17 @@ func normalizeRangeWindow(rawFrom, rawTo string, now time.Time) (from, to time.T
 	dayFrom, okFrom := parseDay(rawFrom)
 	dayTo, okTo := parseDay(rawTo)
 	if !okFrom || !okTo {
-		return time.Time{}, time.Time{}, errors.New(orderenums.ErrInvalidParam)
+		return time.Time{}, time.Time{}, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	from, to = dayFrom, dayTo.AddDate(0, 0, 1)
 	if tomorrow := dayStart(now).AddDate(0, 0, 1); to.After(tomorrow) {
 		to = tomorrow
 	}
 	if !from.Before(to) {
-		return time.Time{}, time.Time{}, errors.New(orderenums.ErrInvalidParam)
+		return time.Time{}, time.Time{}, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	if to.Sub(from) > time.Duration(maxRangeDays)*24*time.Hour {
-		return time.Time{}, time.Time{}, errors.New(orderenums.ErrInvalidParam)
+		return time.Time{}, time.Time{}, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	return from, to, nil
 }
@@ -252,7 +251,7 @@ func dayStart(t time.Time) time.Time {
 // DailySeries 取区间内逐日连续的订单数据（含没有订单的那些天，值为 0）。
 func (s *Service) DailySeries(ctx context.Context, req *orderdto.OrderDailySeriesReq) (res *orderdto.OrderDailySeriesResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
 	if err != nil {
@@ -310,14 +309,14 @@ func fillDailyPoints(from, to time.Time, rows []ordermodel.OrderDailyPoint) []or
 // 这里**报错而不是自动降级**：静默换粒度会让调用方以为拿到的是小时数据。
 func (s *Service) HourlySeries(ctx context.Context, req *orderdto.OrderDailySeriesReq) (res *orderdto.OrderDailySeriesResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
 	if err != nil {
 		return nil, err
 	}
 	if to.Sub(from) > time.Duration(maxHourlyRangeDays)*24*time.Hour {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	rows, err := s.orders.HourlyByRange(ctx, req.ProjectID, from, to)
 	if err != nil {
@@ -379,7 +378,7 @@ var salesStatusWhitelist = []string{
 // SalesOverview 取销售概览（卡片 + 客户 + 环比 + 月度趋势）。
 func (s *Service) SalesOverview(ctx context.Context, req *orderdto.SalesOverviewReq) (res *orderdto.SalesOverviewResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
 	if err != nil {

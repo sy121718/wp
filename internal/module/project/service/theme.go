@@ -331,14 +331,14 @@ func (s *Service) GetActiveTheme(ctx context.Context, projectID string) (res *pr
 
 // theme 业务错误哨兵（errors.Is 判型；文案统一取 projectenums，不硬编码）。
 var (
-	ErrThemeNameRequired    = errors.New(projectenums.ErrThemeNameRequired)
-	ErrThemeNotFound        = errors.New(projectenums.ErrThemeNotFound)
-	ErrThemeIsActive        = errors.New(projectenums.ErrThemeIsActive)
-	ErrThemeDuplicateName   = errors.New(projectenums.ErrThemeDuplicateName)
-	ErrThemeProjectIDEmpty  = errors.New(projectenums.ErrThemeProjectIDEmpty)
-	ErrInvalidThemeSettings = errors.New(projectenums.ErrInvalidThemeSettings)
+	ErrThemeNameRequired    = projectenums.Err(projectenums.ErrThemeNameRequired)
+	ErrThemeNotFound        = projectenums.Err(projectenums.ErrThemeNotFound)
+	ErrThemeIsActive        = projectenums.Err(projectenums.ErrThemeIsActive)
+	ErrThemeDuplicateName   = projectenums.Err(projectenums.ErrThemeDuplicateName)
+	ErrThemeProjectIDEmpty  = projectenums.Err(projectenums.ErrThemeProjectIDEmpty)
+	ErrInvalidThemeSettings = projectenums.Err(projectenums.ErrInvalidThemeSettings)
 	// ErrThemeProjectRequired 主题入口无法确定工程作用域（0 个工程；DB-009 第三批）。
-	ErrThemeProjectRequired = errors.New(projectenums.ErrProjectRequired)
+	ErrThemeProjectRequired = projectenums.Err(projectenums.ErrProjectRequired)
 )
 
 func toThemeResp(e *projectmodel.ThemeEntity) projectdto.ThemeResp {

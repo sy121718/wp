@@ -10,7 +10,7 @@
   overflow: hidden;
   background: var(--sky-c-surface, #fff);
   border: 1px solid var(--sky-c-border, #e5e7eb);
-  border-radius: 12px;
+  border-radius: var(--sky-radius-xl, 12px);
   height: 100%;
   min-width: 0;
   transition: transform .18s ease, box-shadow .18s ease;
@@ -50,7 +50,7 @@
 & .sky-product-card-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sky-space-3, 6px);
   padding: var(--sky-density-pad, 14px);
   min-width: 0;
 }
@@ -70,7 +70,7 @@
 & .sky-product-card-price-row {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
   flex-wrap: wrap;
 }
 
@@ -81,14 +81,14 @@
 
 & .sky-product-card-compare {
   text-decoration: line-through;
-  color: var(--sky-c-muted, #6b7280);
+  color: var(--sky-c-text-mute, #6b7280);
   font-size: .9em;
 }
 
 & .sky-product-card-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--sky-space-3, 6px);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -97,8 +97,8 @@
 & .sky-product-card-tag {
   font-size: .78rem;
   line-height: 1.6;
-  padding: 0 8px;
-  border-radius: 999px;
+  padding: 0 var(--sky-space-4, 8px);
+  border-radius: var(--sky-radius-pill, 999px);
   background: var(--sky-c-surface-alt, rgba(0,0,0,0.05));
-  color: var(--sky-c-muted, #6b7280);
+  color: var(--sky-c-text-mute, #6b7280);
 }

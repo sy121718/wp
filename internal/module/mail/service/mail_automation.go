@@ -109,10 +109,10 @@ import (
 // SaveAutomation 新建或更新流程（保存前校验图）。
 func (s *Service) SaveAutomation(ctx context.Context, req *maildto.SaveAutomationReq) (res *maildto.AutomationItem, err error) {
 	if req == nil || strings.TrimSpace(req.Name) == "" {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	if !validTrigger(req.TriggerType) {
-		return nil, errors.New(mailenums.ErrAutomationTriggerInvalid)
+		return nil, mailenums.Err(mailenums.ErrAutomationTriggerInvalid)
 	}
 	var raw map[string]any
 	if len(req.Definition) > 0 {
@@ -142,7 +142,7 @@ func (s *Service) SaveAutomation(ctx context.Context, req *maildto.SaveAutomatio
 	if req.ID > 0 {
 		old, gerr := s.m.GetAutomation(ctx, req.ID)
 		if gerr != nil {
-			return nil, errors.New(mailenums.ErrAutomationNotFound)
+			return nil, mailenums.Err(mailenums.ErrAutomationNotFound)
 		}
 		fields := map[string]any{
 			"name":         strings.TrimSpace(req.Name),
@@ -217,11 +217,11 @@ func (s *Service) SaveAutomation(ctx context.Context, req *maildto.SaveAutomatio
 //  3. **不认识的 key 直接忽略**：可能来自另一个标签页的旧画布。
 func (s *Service) SaveAutomationLayout(ctx context.Context, req *maildto.SaveAutomationLayoutReq) (err error) {
 	if req == nil || req.ID == 0 || len(req.Positions) == 0 {
-		return errors.New(mailenums.ErrInvalidParam)
+		return mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	row, gerr := s.m.GetAutomation(ctx, req.ID)
 	if gerr != nil {
-		return errors.New(mailenums.ErrAutomationNotFound)
+		return mailenums.Err(mailenums.ErrAutomationNotFound)
 	}
 	def, derr := ParseDefinition(row.Definition)
 	if derr != nil {
@@ -283,7 +283,7 @@ func (s *Service) ListAutomations(ctx context.Context, req *maildto.AutomationLi
 func (s *Service) GetAutomation(ctx context.Context, id uint64) (res *maildto.AutomationItem, err error) {
 	row, err := s.m.GetAutomation(ctx, id)
 	if err != nil {
-		return nil, errors.New(mailenums.ErrAutomationNotFound)
+		return nil, mailenums.Err(mailenums.ErrAutomationNotFound)
 	}
 	return automationItemOf(row), nil
 }
@@ -294,16 +294,16 @@ func (s *Service) GetAutomation(ctx context.Context, id uint64) (res *maildto.Au
 // （比如只收到欢迎邮件却没有后续的优惠券）。要阻止新实例进入才是暂停的语义。
 func (s *Service) SetAutomationStatus(ctx context.Context, req *maildto.SetAutomationStatusReq) (err error) {
 	if req == nil || req.ID == 0 {
-		return errors.New(mailenums.ErrInvalidParam)
+		return mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	switch req.Status {
 	case mailmodel.AutomationStatusDraft, mailmodel.AutomationStatusActive, mailmodel.AutomationStatusPaused:
 	default:
-		return errors.New(mailenums.ErrInvalidParam)
+		return mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	row, gerr := s.m.GetAutomation(ctx, req.ID)
 	if gerr != nil {
-		return errors.New(mailenums.ErrAutomationNotFound)
+		return mailenums.Err(mailenums.ErrAutomationNotFound)
 	}
 	// 启用前再校验一遍图：草稿期间如果被外部改动过（直接改库），启用就是最后一道关。
 	if req.Status == mailmodel.AutomationStatusActive {
@@ -325,7 +325,7 @@ func (s *Service) SetAutomationStatus(ctx context.Context, req *maildto.SetAutom
 // 运营以为删掉了，刷新后它又出现，而它的实例再也不会推进（AGENTS.md「写操作的事务与回滚」）。
 func (s *Service) DeleteAutomation(ctx context.Context, id uint64) (err error) {
 	if _, gerr := s.m.GetAutomation(ctx, id); gerr != nil {
-		return errors.New(mailenums.ErrAutomationNotFound)
+		return mailenums.Err(mailenums.ErrAutomationNotFound)
 	}
 	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := s.m.StopRunsOfAutomationTx(ctx, tx, id, time.Now()); serr != nil {
@@ -842,11 +842,11 @@ func (s *Service) ListAutomationRuns(ctx context.Context, req *maildto.Automatio
 // AutomationRunDetail 实例排障详情：状态 + 一句解释 + 节点时间线。
 func (s *Service) AutomationRunDetail(ctx context.Context, runID uint64) (res *maildto.AutomationRunDetailResp, err error) {
 	if runID == 0 {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	row, err := s.m.RunRowByID(ctx, runID)
 	if err != nil || row.ID == 0 {
-		return nil, errors.New(mailenums.ErrAutomationRunNotFound)
+		return nil, mailenums.Err(mailenums.ErrAutomationRunNotFound)
 	}
 	res = &maildto.AutomationRunDetailResp{
 		Run:            runItemOf(row),
@@ -890,7 +890,7 @@ func (s *Service) AutomationRunDetail(ctx context.Context, runID uint64) (res *m
 // ListContactRuns 某联系人的自动化历史（联系人详情页用）。
 func (s *Service) ListContactRuns(ctx context.Context, contactID uint64, limit int) (items []maildto.AutomationRunItem, err error) {
 	if contactID == 0 {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	rows, err := s.m.ListRunsOfContact(ctx, contactID, limit)
 	if err != nil {
@@ -983,7 +983,7 @@ const maxStepsPerExecution = 100
 // RunAutomation 推进一个实例，直到挂起或结束。
 func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 	if runID == 0 {
-		return errors.New(mailenums.ErrInvalidParam)
+		return mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	run, err := s.m.GetRun(ctx, runID)
 	if err != nil {
@@ -1772,11 +1772,11 @@ func runMailAutomationTickLoop(run func(), interval time.Duration) (stop func())
 // StartRun 启动一个实例。返回是否新启动（false 表示该联系人已在此流程中）。
 func (s *Service) StartRun(ctx context.Context, automationID, contactID uint64, triggerEvent string) (newRun bool, err error) {
 	if automationID == 0 || contactID == 0 {
-		return false, errors.New(mailenums.ErrInvalidParam)
+		return false, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	automation, err := s.m.GetAutomation(ctx, automationID)
 	if err != nil {
-		return false, errors.New(mailenums.ErrAutomationNotFound)
+		return false, mailenums.Err(mailenums.ErrAutomationNotFound)
 	}
 	// 只有启用中的流程接受新实例（暂停/草稿不收）。
 	if automation.Status != mailmodel.AutomationStatusActive {
@@ -1793,10 +1793,10 @@ func (s *Service) StartRun(ctx context.Context, automationID, contactID uint64, 
 func (s *Service) startRunWithAutomation(ctx context.Context, automation *mailmodel.MailAutomationEntity,
 	contactID uint64, triggerEvent string) (newRun bool, err error) {
 	if automation == nil || automation.ID == 0 || contactID == 0 {
-		return false, errors.New(mailenums.ErrInvalidParam)
+		return false, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	if _, cerr := s.m.GetContact(ctx, contactID); cerr != nil {
-		return false, errors.New(mailenums.ErrContactNotFound)
+		return false, mailenums.Err(mailenums.ErrContactNotFound)
 	}
 	def, derr := ParseDefinition(automation.Definition)
 	if derr != nil {
@@ -2206,7 +2206,7 @@ func graphInvalidError(err error) error {
 	if errors.As(err, &ge) {
 		return errors.New(mailenums.ErrAutomationGraphInvalid + ": " + ge.Detail())
 	}
-	return errors.New(mailenums.ErrAutomationGraphInvalid)
+	return mailenums.Err(mailenums.ErrAutomationGraphInvalid)
 }
 
 // graphInvalidRequestError 请求体里的 definition 不是合法 JSON → 业务错误（带解析器原文）。

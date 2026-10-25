@@ -15,6 +15,7 @@ package feature
 
 import (
 	"fmt"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -88,7 +89,7 @@ func newBlockTranslationEnv(t *testing.T) (*gin.Engine, *gorm.DB, string, string
 
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/pages/translations", handle.PageTranslations)
+	router.GET("/admin/pages/translations", adminui.PageSlot(pagehttp.PageTranslationsTemplate), handle.PageTranslations)
 	router.POST("/admin/pages/translations/save", handle.SavePageTranslations)
 	return router, db, project.ID, pageID, header.ID
 }

@@ -31,7 +31,6 @@ package orderservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -49,7 +48,7 @@ import (
 // 刚注册的账号就长这样，把它当错误会让页面显示一句看不懂的提示。
 func (s *Service) CustomerOrderSummaryOf(ctx context.Context, req *orderdto.CustomerOrderSummaryReq) (res *orderdto.CustomerOrderSummaryResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" || req.UserID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	// 聚合三值与最近一单在**同一条 SQL** 里取回（model.SummaryByUser 的窗口函数查询）。
 	// 拆成三条（聚合 / 列表里的分页计数 / 列表取一单）时，三条之间落的新单会让摘要
@@ -86,7 +85,7 @@ func (s *Service) CustomerOrderSummaryOf(ctx context.Context, req *orderdto.Cust
 // CustomerGrowthByRange 取区间内的客户增长事实。
 func (s *Service) CustomerGrowthByRange(ctx context.Context, req *orderdto.CustomerGrowthReq) (res *orderdto.CustomerGrowthResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
 	if err != nil {
@@ -162,21 +161,21 @@ var knownCustomerSegments = map[string]ordermodel.CustomerSegment{
 // （于是变成「不过滤 = 全部客户」，与「没人」正好相反）。空切片没有这个歧义。
 func (s *Service) CustomerSegmentIDsByRange(ctx context.Context, req *orderdto.CustomerSegmentIDsReq) (res *orderdto.CustomerSegmentIDsResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	// 只给了次数（没给分段名）时按「复购」处理：这是同一个筛选（区间内下单 ≥ N 单），
 	// 单独开一个分段名会让「什么算复购」在代码里出现第二个定义。
 	name := strings.TrimSpace(req.Segment)
 	minOrders := req.MinOrders
 	if minOrders != 0 && !customerSegmentMinOrdersAllowed[minOrders] {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	if name == "" && minOrders > 0 {
 		name = string(ordermodel.CustomerSegmentRepurchasing)
 	}
 	segment, ok := knownCustomerSegments[name]
 	if !ok {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
 	if err != nil {
@@ -219,7 +218,7 @@ var knownRfmSegments = map[string]string{
 // CustomerRfmByRange 取区间内的 RFM 分层。
 func (s *Service) CustomerRfmByRange(ctx context.Context, req *orderdto.CustomerRfmReq) (res *orderdto.CustomerRfmResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
 	if err != nil {
@@ -230,7 +229,7 @@ func (s *Service) CustomerRfmByRange(ctx context.Context, req *orderdto.Customer
 	// 而那时用户以为自己看的是「高价值客户」。
 	if segment != "" {
 		if _, ok := knownRfmSegments[segment]; !ok {
-			return nil, errors.New(orderenums.ErrInvalidParam)
+			return nil, orderenums.Err(orderenums.ErrInvalidParam)
 		}
 	}
 	limit, offset := utils.NormalizeLimitOffset(req.Limit, req.Offset, customerRfmDefaultLimit, customerRfmMaxLimit)
@@ -303,13 +302,13 @@ func segmentLabelOf(segment string) string {
 // 窗口归一化、分段白名单与分页收敛，不重算任何分数。
 func (s *Service) CustomerRfmSegmentIDsByRange(ctx context.Context, req *orderdto.CustomerRfmSegmentIDsReq) (res *orderdto.CustomerRfmSegmentIDsResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	segment := strings.TrimSpace(req.Segment)
 	// 与 RFM 页同一条口径：认不出的分段当场拒，不静默回落成「全部」——
 	// 回落会让一个写错的筛选显示成完整报表，而那时用户以为自己看的是「高价值客户」。
 	if _, ok := knownRfmSegments[segment]; !ok {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
 	if err != nil {
@@ -347,7 +346,7 @@ const (
 // CustomerCohortByRange 取群组留存矩阵。
 func (s *Service) CustomerCohortByRange(ctx context.Context, req *orderdto.CustomerCohortReq) (res *orderdto.CustomerCohortResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(orderenums.ErrProjectRequired)
+		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	from, to, err := normalizeRangeWindow(req.From, req.To, time.Now())
 	if err != nil {

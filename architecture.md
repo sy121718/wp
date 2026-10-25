@@ -97,6 +97,25 @@ Go 1.27 · Gin · Jet（后台与构建期模板）· PostgreSQL（含 RLS 与�
 
 `AGENTS.md` 与 `internal/module/CLAUDE.md`、`internal/templates/CLAUDE.md`、`pkg/CLAUDE.md`、`public/test/CLAUDE.md` 是本架构的规则原文，保留在原位（仓库内大量事务性注释按 `AGENTS.md §章节` 引用它们，搬走会断链）。本文件与各模块 SPEC 不复述细则，只记录判据的形状。
 
+## 部署形态：**单实例**
+
+本架构当前**只能单进程部署**。这不是待优化项，而是一条硬前提：把实例数从 1 提到 2 之前，
+下表四处必须先改造，否则故障形态是「部分访客 404 / 限流额度变成 N 倍」，而且**不会报错**。
+
+| 组件 | 实现 | 多实例下的后果 |
+|---|---|---|
+| `ArtifactStore` | `pipeline.LocalStore`（本地磁盘） | 实例 A 发布的产物在实例 B 磁盘上不存在 → 命中 B 的访客拿到 404 |
+| `PublicationStore` | `pipeline.LocalPublicationStore`（本地符号链接） | 激活状态不共享 → 同一 URL 在两个实例上指向不同版本 |
+| 限流 | `builtin.RequestRateLimitMiddleware`（进程内令牌桶） | N 个实例 = 实际额度 N 倍；重启即清零 |
+| 组件 schema 快照 | `workbench/inbound/http`（进程内 `sync.Once`） | 插件变更后各实例的检查器 schema 可能不同，直到各自重启 |
+
+**改造方向**（不是本仓当前范围）：ArtifactStore / PublicationStore 换对象存储 + 统一的激活状态
+（DB 或 Redis），限流换 Redis 令牌桶，schema 快照按插件指纹缓存（`Assembly.Fingerprint` 已提供
+这个键）。四处都改完之后，「单实例」才成为可选而非前提。
+
+**单实例 + 反向代理是当前被支持的生产形态**：静态产物由本地磁盘直接服务（访客请求不查库、
+不执行 Jet，见不变量 1），这台机器就是唯一的权威。备份与恢复见 `scripts/backup.sh` / `scripts/restore.sh`（说明：`scripts/BACKUP.md`）。
+
 ## 已知限制
 
 - **存量重构债**：控制器取词、dto 展示字段、`c.PostForm`、`shell.RenderJump`、`*_err.go` / `*_jump.go` 等旧形状仍在收敛中；`internal/shell` 为迁移期包，终局是删除。判据与台账见 `PLAN.md` 与各门禁测试。

@@ -27,7 +27,7 @@ const templateOption = "missingkey=error"
 // UpsertTemplate 新建或覆盖模板（key + locale 唯一）。
 func (s *Service) UpsertTemplate(ctx context.Context, req *maildto.SaveTemplateReq) (res *maildto.TemplateItem, err error) {
 	if req == nil || strings.TrimSpace(req.TemplateKey) == "" || strings.TrimSpace(req.Subject) == "" {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	// 可视化正文（块树）在场时：**先编译，成功才落库**。
 	//
@@ -117,11 +117,11 @@ func (s *Service) ListTemplatesPage(ctx context.Context, key string, page, limit
 // 那一份筛选逻辑会与 model 的唯一键口径分叉。
 func (s *Service) GetTemplate(ctx context.Context, key, locale string) (*maildto.TemplateItem, error) {
 	if strings.TrimSpace(key) == "" {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	e, err := s.m.GetTemplate(ctx, strings.TrimSpace(key), strings.TrimSpace(locale))
 	if err != nil {
-		return nil, errors.New(mailenums.ErrTemplateNotFound)
+		return nil, mailenums.Err(mailenums.ErrTemplateNotFound)
 	}
 	return templateItemOf(e), nil
 }
@@ -194,7 +194,7 @@ func RenderTemplate(subject, bodyHTML, bodyText string, vars map[string]any) (sS
 // 真正的投递在 worker 里（mail:send 任务），失败按错误分类回写状态。
 func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq) (res *maildto.SendResult, err error) {
 	if req == nil || strings.TrimSpace(req.To) == "" || strings.TrimSpace(req.TemplateKey) == "" {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	to := strings.TrimSpace(req.To)
 
@@ -214,7 +214,7 @@ func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq
 		tpl, err = s.m.GetTemplate(ctx, req.TemplateKey, "")
 	}
 	if err != nil {
-		return nil, errors.New(mailenums.ErrTemplateNotFound)
+		return nil, mailenums.Err(mailenums.ErrTemplateNotFound)
 	}
 
 	// 3. 渲染（缺失变量在这里报错，而不是发出去 <no value>）
@@ -229,7 +229,7 @@ func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq
 	if accountID == 0 {
 		acc, aerr := s.m.DefaultAccount(ctx, mailmodel.AccountPurposeTransactional)
 		if aerr != nil {
-			return nil, errors.New(mailenums.ErrAccountNotFound)
+			return nil, mailenums.Err(mailenums.ErrAccountNotFound)
 		}
 		accountID = acc.ID
 	}
@@ -262,7 +262,7 @@ func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq
 // 调用方必须认识绑定层字段，改一次绑定就牵动全部调用方。
 func (s *Service) SendTransactional(ctx context.Context, in *mailcontract.SendInput) (res *mailcontract.SendOutcome, err error) {
 	if in == nil {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	sent, serr := s.SendTemplate(ctx, &maildto.SendTemplateReq{
 		TemplateKey: in.TemplateKey,

@@ -26,10 +26,11 @@ import (
 // mail 已按这条路补上并从基线删除：public/test/mail/feature/mail_error_auto_status_test.go
 // 用假 service 喂两档输入（enums key → 400 + 可展示文案；SQLSTATE 原文 → 500 + 通用文案且不泄漏），
 // 断言的正是这里要守的 ErrorAuto 出口。
+// content 已按同一条路补上并从基线删除（本分支的「业务错误统一走 enums.Err()」批做的）：
+// public/test/content/feature 里的错误断言覆盖了 ErrorAuto 出口的两档。
 var stateAssertionGapBaseline = map[string]bool{
 	"blueprint":    true,
 	"build":        true,
-	"content":      true,
 	"presentation": true,
 }
 

@@ -18,6 +18,7 @@ import (
 	maildto "go_wp/internal/module/mail/dto"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
+	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 
 	"github.com/gin-gonic/gin"
@@ -37,9 +38,14 @@ func newAutomationRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(f.svc)
 	api := mailhttp.NewHandle(f.svc)
-	router.GET("/admin/mail/automation", h.MailAutomationPage)
-	router.GET("/admin/mail/automation/canvas", h.MailAutomationCanvas)
-	router.GET("/admin/mail/automation/run", h.MailAutomationRunDetail)
+	// 页面出口由 PageSlot 装配（模板名与渲染实现进请求上下文）—— handler 只交视图对象，
+	// 不自己 c.HTML。测试路由必须按线上形状挂槽，否则 Render 拿不到出口。
+	router.GET("/admin/mail/automation",
+		adminui.PageSlot(mailhttp.AutomationPageTemplate), h.MailAutomationPage)
+	router.GET("/admin/mail/automation/canvas",
+		adminui.PageSlot(mailhttp.AutomationCanvasTemplate), h.MailAutomationCanvas)
+	router.GET("/admin/mail/automation/run",
+		adminui.PageSlot(mailhttp.AutomationRunPageTemplate), h.MailAutomationRunDetail)
 	// 画布保存打的就是这条 JSON 端点（见 static/js/automation/canvas.js 的 saveStructure）。
 	// 挂真路由而不是绕到 service：绑定、响应形状、状态码都在这一层，绕过去三者坏了判据照样绿。
 	router.POST("/api/mail/automation/save", api.AutomationSave)
@@ -181,7 +187,8 @@ func TestMailAutomationCanvasPageRenders(t *testing.T) {
 	})
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(f.svc)
-	router.GET("/admin/mail/automation/canvas", h.MailAutomationCanvas)
+	router.GET("/admin/mail/automation/canvas",
+		adminui.PageSlot(mailhttp.AutomationCanvasTemplate), h.MailAutomationCanvas)
 
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/mail/automation/canvas?id="+strconv.FormatUint(id, 10), nil))

@@ -20,7 +20,7 @@ func TestRatingCSSRules(t *testing.T) {
 	for _, want := range []string{
 		".sky-c-t {",
 		"display: inline-flex",
-		"gap: 2px",
+		"gap: var(--sky-space-1, 2px)",
 		"color: var(--sky-c-warning, #f59e0b)",
 		".sky-c-t .sky-star {",
 		"width: 1.25em",

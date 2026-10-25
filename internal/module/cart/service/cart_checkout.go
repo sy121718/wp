@@ -26,7 +26,6 @@ package cartservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -39,36 +38,36 @@ import (
 // Checkout 访客结算。
 func (s *Service) Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (res *cartdto.CheckoutResp, err error) {
 	if req == nil {
-		return nil, errors.New(cartenums.ErrInvalidParam)
+		return nil, cartenums.Err(cartenums.ErrInvalidParam)
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
 	if projectID == "" {
-		return nil, errors.New(cartenums.ErrProjectRequired)
+		return nil, cartenums.Err(cartenums.ErrProjectRequired)
 	}
 	email := strings.TrimSpace(req.Email)
 	if email == "" {
-		return nil, errors.New(cartenums.ErrEmailRequired)
+		return nil, cartenums.Err(cartenums.ErrEmailRequired)
 	}
 	if !strings.Contains(email, "@") || len(email) < 3 {
-		return nil, errors.New(cartenums.ErrEmailInvalid)
+		return nil, cartenums.Err(cartenums.ErrEmailInvalid)
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, errors.New(cartenums.ErrNameRequired)
+		return nil, cartenums.Err(cartenums.ErrNameRequired)
 	}
 	phone := strings.TrimSpace(req.Phone)
 	if phone == "" {
-		return nil, errors.New(cartenums.ErrPhoneRequired)
+		return nil, cartenums.Err(cartenums.ErrPhoneRequired)
 	}
 	shipping := req.Shipping
 	if strings.TrimSpace(shipping.Address) == "" {
-		return nil, errors.New(cartenums.ErrAddressRequired)
+		return nil, cartenums.Err(cartenums.ErrAddressRequired)
 	}
 
 	p, _ := s.codec.decode(req.Cookie)
 	lines := p.cartLines()
 	if len(lines) == 0 {
-		return nil, errors.New(cartenums.ErrCartEmpty)
+		return nil, cartenums.Err(cartenums.ErrCartEmpty)
 	}
 
 	// 订单项只给「变体 + 数量」：价格由订单域从商品域现读后落快照，
@@ -231,14 +230,14 @@ const (
 // HandlePaymentCallback 处理支付通道的异步回调。
 func (s *Service) HandlePaymentCallback(ctx context.Context, req *cartdto.PaymentCallbackReq) (res *cartdto.PaymentCallbackResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
-		return nil, errors.New(cartenums.ErrProjectRequired)
+		return nil, cartenums.Err(cartenums.ErrProjectRequired)
 	}
 
 	// ① 验签。失败一律收成同一句话对外：不区分「没有签名 / 签名错 / 密钥不对」——
 	// 那是给攻击者的信息。
 	cb, cerr := s.pay.VerifyCallback(req.Headers, req.RawBody)
 	if cerr != nil {
-		return nil, errors.New(cartenums.ErrCallbackSignature)
+		return nil, cartenums.Err(cartenums.ErrCallbackSignature)
 	}
 
 	// ② 按商户单号找单（通道不认识我们的自增 id）。
@@ -248,7 +247,7 @@ func (s *Service) HandlePaymentCallback(ctx context.Context, req *cartdto.Paymen
 	})
 	if oerr != nil {
 		if strings.Contains(oerr.Error(), ordercontract.ErrOrderNotFound) {
-			return nil, errors.New(cartenums.ErrCallbackOrderMissing)
+			return nil, cartenums.Err(cartenums.ErrCallbackOrderMissing)
 		}
 		return nil, oerr
 	}
@@ -256,7 +255,7 @@ func (s *Service) HandlePaymentCallback(ctx context.Context, req *cartdto.Paymen
 	// ③ 金额核对。cb.Amount 为 0 表示通道没报金额（不是「金额为零」），
 	// 那种情况跳过核对而不是按 0 比对 —— 否则每一笔都会被判成不一致。
 	if cb.Amount > 0 && cb.Amount != order.Total {
-		return nil, errors.New(cartenums.ErrCallbackAmountMismatch)
+		return nil, cartenums.Err(cartenums.ErrCallbackAmountMismatch)
 	}
 
 	// 支付失败通知：订单本就停在待付款，不改状态，但要给出明确结论。

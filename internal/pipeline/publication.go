@@ -58,6 +58,12 @@ type PublicationStore interface {
 // LocalPublicationStore 本地文件系统实现（docs/03-pipeline.md §5）：
 // 符号链接切换策略——activate(path, loc) 为临时 symlink + 原子 rename 覆盖。
 //
+// **单实例前提**（架构文档「部署形态」）：激活状态就是本机磁盘上的一组符号链接。
+// 两个实例各有自己的那组，同一 URL 会指向不同版本的产物 —— 且两边都认为自己是对的。
+// 原子 rename 保证的是**本机**切换的原子性，不是跨机器的。
+//
+// 改造方向：激活状态进 DB（带版号与 CAS），各实例读同一份；符号链接退化为本地缓存。
+//
 //	{activeRoot}/about/ → ../../artifacts/{hash}/   （单段路径，两段上溯到产物根）
 //
 // symlink target 为相对链接：上溯段数 = 路径层数 + ActiveRoot 相对产物根的层数（2），

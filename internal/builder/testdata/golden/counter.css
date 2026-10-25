@@ -10,11 +10,23 @@ body {
   container-name: sky-theme;
 }
 
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .sky-c-c1 {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: 4px;
+  gap: var(--sky-space-2, 4px);
   text-align: center;
   font-size: 2rem;
   color: #111;
@@ -38,7 +50,7 @@ div.sky-c-c1-label.sky-counter-label, .sky-counter-label {
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: 4px;
+  gap: var(--sky-space-2, 4px);
   text-align: center;
   font-size: 2rem;
   color: inherit;

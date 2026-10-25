@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"go_wp/internal/adminui"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplatehttp "go_wp/internal/module/contenttemplate/inbound/http"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
@@ -59,7 +60,9 @@ func newContentTemplateAdminEnv(t *testing.T) *contentTemplateAdminEnv {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := contenttemplatehttp.NewContentTemplatePageHandle(templatesSvc, projects, products, nil)
-	engine.GET("/admin/content-templates", handle.ContentTemplatesPage)
+	engine.GET("/admin/content-templates",
+		adminui.PageSlot(contenttemplatehttp.ContentTemplatesPageTemplate),
+		handle.ContentTemplatesPage)
 	engine.POST("/api/contenttemplate/activate", contenttemplatehttp.NewHandle(templatesSvc).Activate)
 	return &contentTemplateAdminEnv{engine: engine, db: db, projectID: project.ID, templates: templatesSvc}
 }

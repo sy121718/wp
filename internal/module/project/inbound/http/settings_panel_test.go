@@ -6,6 +6,7 @@ package projecthttp
 // 评分区（总分/等级/圆点/SERP 预览）由服务端渲染。
 
 import (
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -27,8 +28,8 @@ func newSettingsRouter(t *testing.T) *gin.Engine {
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 	// 设置面板与 SEO 评分面板已随页面回 project 模块：直接挂本包的面板函数。
-	router.POST("/workbench/settings", workbenchSettingsPanel)
-	router.POST("/workbench/seo-score-panel", workbenchSeoScorePanel)
+	router.POST("/workbench/settings", adminui.BareSlot(SettingsPanelFragmentTemplate), workbenchSettingsPanel)
+	router.POST("/workbench/seo-score-panel", adminui.BareSlot(SeoScoreFragmentTemplate), workbenchSeoScorePanel)
 	return router
 }
 

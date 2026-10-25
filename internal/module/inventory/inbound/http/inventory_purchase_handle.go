@@ -97,6 +97,8 @@ func (h *inventoryPurchasePageHandle) setProductCatalog(products productcontract
 // 与货源页同源的理由：模板的顶层 let（selectedProject / orders / filter* / receiptRequestID）
 // 与页面直接读取的键都必须存在，缺一个就是整页中断（HTTP 200 + 后面整块 HTML 消失）。
 type inventoryPurchasesPageData struct {
+	Title           string `view:"title"`
+	Menu            string `view:"menu"`
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
 	Sources         []inventorydto.SourceOptionViewResp
@@ -119,46 +121,37 @@ type inventoryPurchasesPageData struct {
 	// 放在结构体里而不是在渲染处临时拼：正常与降级两条路共用一份 templateMap，
 	// 降级分支才不会「忘记」给某个键（Jet 缺 key 是整页中断）。
 	Pagination pagination.Page
-}
 
-// templateMap 转 Jet 模板键（一次性幂等键在这里生成：每次渲染一个新的，双击提交即被挡住）。
-//
-// c 只用于取词：状态下拉文案按请求语言渲染。
-func (d *inventoryPurchasesPageData) templateMap(c *gin.Context) gin.H {
-	m := gin.H{
-		"title":           inventoryenums.MsgInventoryPurchasesTitle,
-		"menu":            "inventory-purchases",
-		"Projects":        d.Projects,
-		"SelectedProject": d.SelectedProject,
-		"Sources":         d.Sources,
-		"InternalSources": d.InternalSources,
-		"Warehouses":      d.Warehouses,
-		"VariantOptions":  d.VariantOptions,
-		"DraftLines":      purchaseDraftLines(),
-		"Orders":          d.Orders,
-		"StatusOptions":   purchaseStatusOptions(shell.TranslateFor(c)),
-		"FilterStatus":    d.FilterStatus,
-		"FilterSource":    d.FilterSource,
-		"FilterKeyword":   d.FilterKeyword,
-		// 一次性幂等键：每个写表单一次渲染一个，双击提交只会产生一张入库单 / 一次入库。
-		// 两个入口**各用各的键**：幂等键在入库单上是全局唯一的，共用一个键会让
-		// 「先收采购货，再做生产入库」的第二跳被判成同一张单的重放而静默丢弃。
-		"ReceiptRequestID":    uuid.NewString(),
-		"ProductionRequestID": uuid.NewString(),
-		"Err":                 d.Err,
-		"LoadFailed":          d.LoadFailed,
-		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
-		"ListQuery": binding.ListQuery(c, inventoryPurchaseBackKeys...),
-	}
-	// 分页条事实交给 partial 决定：零值（单页）与装载失败两条路 HasPagination 都为假，
-	// 片段自然不渲染。
-	m["Pagination"] = d.Pagination
-	return m
+	// DraftLines 新建窗体里的空行（模板 range 用）。它是**每次渲染现算**的常量形状，
+	// 不进数据结构；留在 templateMap 里会更绕，所以放这里由装配处填。
+	DraftLines []inventorydto.DraftLineViewResp
+	// StatusOptions 状态下拉的文案（按请求语言）：取值需要 c，由装配处填。
+	StatusOptions []inventorydto.OptionResp
+	// ReceiptRequestID / ProductionRequestID 一次性幂等键：每个写表单一次渲染一个，
+	// 双击提交只会产生一张入库单 / 一次入库。两个入口**各用各的键**：幂等键在入库单上
+	// 是全局唯一的，共用一个键会让「先收采购货，再做生产入库」的第二跳被判成
+	// 同一张单的重放而静默丢弃。
+	ReceiptRequestID    string `view:"ReceiptRequestID"`
+	ProductionRequestID string `view:"ProductionRequestID"`
+	// ListQuery 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
+	ListQuery string
 }
 
 // purchasesPageView 采购页的视图（正常 / 装载失败两条路共用）。
+//
+// 「两条路共用一份装配」由**同一个结构体**保证：字段是零值就是该分支的形态，
+// 不再是两份 map 拼装互相抄（缺键在模板里是整页中断，而漏字段这里是零值）。
 func (h *inventoryPurchasePageHandle) purchasesPageView(c *gin.Context, d *inventoryPurchasesPageData) any {
-	return d.templateMap(c)
+	if d.Title == "" {
+		d.Title = inventoryenums.MsgInventoryPurchasesTitle
+		d.Menu = "inventory-purchases"
+	}
+	d.DraftLines = purchaseDraftLines()
+	d.StatusOptions = purchaseStatusOptions(shell.TranslateFor(c))
+	d.ReceiptRequestID = uuid.NewString()
+	d.ProductionRequestID = uuid.NewString()
+	d.ListQuery = binding.ListQuery(c, inventoryPurchaseBackKeys...)
+	return d
 }
 
 // InventoryPurchasesPage 采购入库页：新建采购单 + 采购单列表（含逐行收货）+ 生产入库 + 进货历史。

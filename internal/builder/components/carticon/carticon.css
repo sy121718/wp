@@ -20,9 +20,9 @@
 & .sky-cart-icon-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sky-space-4, 8px);
   min-height: 44px;
-  padding: 8px 12px;
+  padding: var(--sky-space-4, 8px) var(--sky-space-6, 12px);
   border: 0;
   border-radius: 10px;
   background: transparent;
@@ -61,10 +61,10 @@
   justify-content: center;
   min-width: 20px;
   height: 20px;
-  padding: 0 6px;
-  border-radius: 9999px;
+  padding: 0 var(--sky-space-3, 6px);
+  border-radius: var(--sky-radius-pill, 9999px);
   background: {{color}};
-  color: #fff;
+  color: var(--sky-c-surface, #fff);
   font-size: 0.75rem;
   font-weight: 700;
 }
@@ -72,9 +72,9 @@
 & .sky-cart-icon-panel {
   display: none;
   box-sizing: border-box;
-  padding: 16px;
+  padding: var(--sky-space-7, 16px);
   border: 1px solid var(--sky-c-border, #e5e7eb);
-  border-radius: 12px;
+  border-radius: var(--sky-radius-xl, 12px);
   background: var(--sky-c-surface, #fff);
   color: var(--sky-c-text, #111827);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);

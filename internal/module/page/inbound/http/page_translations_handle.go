@@ -19,6 +19,7 @@ package pagehttp
 import (
 	"context"
 	"errors"
+	pageview "go_wp/pkg/view"
 	"net/http"
 	"sort"
 	"strconv"
@@ -41,6 +42,7 @@ import (
 	"go_wp/pkg/binding"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
+	"go_wp/pkg/response"
 )
 
 // === 翻译工作台（页面面 + 保存）===
@@ -179,9 +181,14 @@ func translationRowErrors(keys ...string) []pagedto.TranslationRowErrorResp {
 }
 
 // pageTranslationsData 工作台页面数据。
+//
+// 字段名就是模板契约键，**但只有两个是壳键**（layout 的 {{.title}} / {{.menu}} 是小写），
+// 其余与模板一致（模板读 {{.PageID}} / {{.Groups}} …）。小写那两个用 view 标签表达，
+// 而不是再写一层 templateMap() 把 21 个字段手工搬一遍 ——
+// 那层转换本身就是「加一个字段要改两处」的来源。
 type pageTranslationsData struct {
-	Title     string
-	Menu      string
+	Title     string `view:"title"`
+	Menu      string `view:"menu"`
 	PageID    string
 	PagePath  string
 	ProjectID string
@@ -212,21 +219,6 @@ type pageTranslationsData struct {
 	ParamError   pageMsg
 }
 
-// templateMap 转为模板所需的小写键 map（layout 以 {{.title}}/{{.menu}} 取值）。
-func (d *pageTranslationsData) templateMap() gin.H {
-	return gin.H{
-		"title": d.Title, "menu": d.Menu,
-		"PageID": d.PageID, "PagePath": d.PagePath, "ProjectID": d.ProjectID,
-		"Lang": d.Lang, "Langs": d.Langs, "Filter": d.Filter, "Groups": d.Groups,
-		"RowCount": d.RowCount, "PageDone": d.PageDone, "PageTotal": d.PageTotal,
-		"SiteDone": d.SiteDone, "SiteTotal": d.SiteTotal, "SiteNote": d.SiteNote,
-		"IsDefaultLang": d.IsDefaultLang,
-		"Errors":        d.Errors,
-		"LoadFailed":    d.LoadFailed, "LoadError": d.LoadError,
-		"ParamInvalid": d.ParamInvalid, "ParamError": d.ParamError,
-	}
-}
-
 // 筛选取值（服务端渲染，纯链接，零 JS）。
 const (
 	translationFilterAll     = "all"
@@ -234,10 +226,6 @@ const (
 	translationFilterManual  = "manual"
 	translationFilterAI      = "ai"
 )
-
-// translationsTemplate 翻译工作台的模板名：成功页与失败页**必须是同一个**模板，
-// 否则「失败也是这一页」这条契约就靠不住（契约：整页 GET 的失败出口）。
-const translationsTemplate = "admin/page/page_translations"
 
 // translationsPageMenu 工作台高亮的侧栏项（与 buildPageTranslationsData 同值）。
 const translationsPageMenu = "pages"
@@ -247,9 +235,11 @@ var errPagesServiceMissing = errors.New("pages service 未装配")
 
 // PageTranslations GET /admin/pages/translations：翻译工作台。
 //
-// 整页 GET 的每一种结论都是**同一页**的完整 HTML（docs/rules/template-boundary.md 的「整页 GET 的失败出口」）：
-// 读到 → 200；参数缺失 → 400 参数错误槽；资源不存在 → 404；取数失败 → 500 失败槽。后三档一律 no-store。
-// 原先参数缺失与取数失败都 303 回列表页：用户被弹出工作台，既看不到缺了什么参数，也看不到哪一步没读到。
+// 整页 GET 的失败一律走 JSON 错误体（用户裁定：所有提示只需要一个提示，不渲染完整页）：
+// 读到 → 200；参数缺失 → 400；资源不存在 → 404；取数失败 → 500。
+// 从前这三档渲染「同一页 + 错误槽」：同一张模板要维护两套必需键，而失败时页壳给的信息
+// （筛选项、语言切换、整张表）没有一条是这次失败需要的。
+// 更早的版本是 303 回列表页 —— 用户被弹出工作台，既看不到缺了什么参数，也看不到哪一步没读到。
 func (h *pagesAdminHandle) PageTranslations(c *gin.Context) {
 	pageID := strings.TrimSpace(c.Query("pageId"))
 	lang := strings.TrimSpace(c.Query("lang"))
@@ -278,7 +268,7 @@ func (h *pagesAdminHandle) PageTranslations(c *gin.Context) {
 		})
 		return
 	}
-	c.HTML(http.StatusOK, translationsTemplate, adminui.Prepare(c, data.templateMap()))
+	pageview.Render(c, data)
 }
 
 // pageTranslationsFailure 失败页的两个事实档：参数非法（400）与主数据没读到（404 / 500）。
@@ -302,32 +292,28 @@ func translationsFailureStatus(err error) int {
 	}
 }
 
-// renderTranslationsFailure 把失败结论渲染成**同一页**的完整 HTML（状态码由调用方给）。
+// renderTranslationsFailure 页面 GET 的失败出口：写 JSON 错误体（状态码由调用方给）。
 //
-// 失败页也要给齐 layout 必需的键与空集合：少一个键 Jet 直接抛错，失败页就变成又一个坏页面
-// （契约的「必需的 layout 键」）；no-store 是因为失败页不该被缓存，否则「重试」只是把同一份失败再拿回来。
+// 参数非法与取数失败之所以分开两档，是因为「改地址就能好」和「稍后重试」不是同一件事 ——
+// 这个区分留在状态码上，不需要两个模板分支。
 func (h *pagesAdminHandle) renderTranslationsFailure(c *gin.Context, status int, f pageTranslationsFailure) {
-	data := &pageTranslationsData{
-		Title: pageenums.MsgPageTranslationsTitle, Menu: translationsPageMenu,
-		PageID: f.pageID, Lang: f.lang,
-		Langs: []pagedto.TranslationLangOptionResp{}, Groups: []pagedto.TranslationGroupResp{}, Errors: []pagedto.TranslationRowErrorResp{},
-	}
+	msg := f.loadError
 	if !f.paramError.Empty() {
-		data.ParamInvalid, data.ParamError = true, f.paramError
+		msg = f.paramError
 	}
-	if !f.loadError.Empty() {
-		data.LoadFailed, data.LoadError = true, f.loadError
-	}
-	c.Header("Cache-Control", "no-store")
-	c.HTML(status, translationsTemplate, adminui.Prepare(c, data.templateMap()))
+	response.ErrorMsg(c, status, msg)
 }
 
 // SavePageTranslations POST /admin/pages/translations/save：保存本页译文。
 //
-// 成功走整页提示（1 秒后回工作台）；**校验 / 写入失败仍原地重渲工作台并逐行报错**
-// （renderTranslationError）：一个业务错误把编辑者刚填的整屏译文清掉，比少一句提示贵得多
-// —— 这是「写表单失败时原地留住输入」的例外（同 content 的文章保存，
-// 见 internal/templates/CLAUDE.md）。
+// 两条出口（表单带 hx-post，页面不离开）：
+//   · 成功 → JSON + written 计数，前端按 data-reload-on-ok 刷新（保住筛选与目标语言）；
+//   · 失败 → **只回逐行错误片段**（renderTranslationError），htmx 就地替换
+//     #page-translations-errors。页面与已填译文都不动。
+//
+// 从前失败会重渲整个工作台（重查草稿、重建候选、重算全站完成度）。表单改 htmx 之后
+// 那个理由不成立 —— 页面没离开过，「回填输入」不需要；重渲只是把一次校验失败
+// 变成一次全量查询。
 func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 	ctx := c.Request.Context()
 	req, ok := binding.Form[pagedto.PageTranslationsSaveFormReq](c)
@@ -413,7 +399,7 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 		return
 	}
 	if len(items) == 0 {
-		translationJump(c, true, pageTranslationsSavedMsg(0))
+		response.SuccessMsg(c, pageTranslationsSavedMsg(0), gin.H{"written": 0})
 		return
 	}
 
@@ -465,21 +451,21 @@ func (h *pagesAdminHandle) SavePageTranslations(c *gin.Context) {
 		}
 	}
 	// 第四步：结论走整页提示（不再经 ?saved=1&n= 回带工作台）。
-	translationJump(c, true, pageTranslationsSavedMsg(written))
+	response.SuccessMsg(c, pageTranslationsSavedMsg(written), gin.H{"written": written})
 }
 
-// renderTranslationError 校验/写入失败：回渲染工作台（200）并展示逐行错误，不落库。
+// renderTranslationError 校验/写入失败：**只回逐行错误片段**，不落库、不重渲整页。
+//
+// 判据在 2026-10 改过：从前这里重渲整个工作台（重新查草稿、重建候选、重算全站完成度），
+// 理由是「失败时要把用户刚填的译文留在页面上」。表单改 htmx 之后那个理由不成立 ——
+// 页面根本没离开过，译文还在框里。重渲只是把一次**校验失败**变成一次全量查询。
+//
+// 逐行错误（「哪一行有什么问题」）必须留在页面上，塞不进 toast，
+// 所以返回一个只含错误区的片段，由 htmx 就地替换 #page-translations-errors。
 func (h *pagesAdminHandle) renderTranslationError(c *gin.Context, pageID, lang string, errs []pagedto.TranslationRowErrorResp) {
-	data, err := h.buildPageTranslationsData(c.Request.Context(), pageID, lang, "")
-	if err != nil {
-		// 重渲失败：这次写动作已经没有可回的工作台（「原样留下输入」做不到），走**写侧**的整页提示
-		// 通道给一句结论 + 回列表入口 —— 静默 303 会把用户刚填的整屏译文连同原因一起吞掉。
-		logger.Scene("page").With("pageId", pageID).Error(err, "重渲翻译工作台失败")
-		pageListJump(c, false, pageErrMsgQuiet(c, err))
-		return
-	}
-	data.Errors = errs
-	c.HTML(http.StatusOK, "admin/page/page_translations", adminui.Prepare(c, data.templateMap()))
+	c.HTML(http.StatusOK, PageTranslationErrorsTemplate, adminui.PrepareBareView(c, &pagedto.TranslationErrorsResp{
+		Errors: errs,
+	}))
 }
 
 // buildPageTranslationsData 组装工作台数据。
@@ -712,10 +698,6 @@ func translationBack(c *gin.Context) string {
 // translationBackMsg 回跳链接文字（复用本页标题词条，不新增全站词条）。
 var translationBackMsg = pageMsg{Key: pageenums.MsgPageTranslationsTitle, Fallback: "多语言"}
 
-// translationJump 回翻译工作台的提示页出口（保存成功）。
-func translationJump(c *gin.Context, ok bool, msg pageMsg) {
-	pageJump(c, ok, msg, translationBack(c), translationBackMsg)
-}
 
 // pageTranslationsSavedMsg 译文保存成功回执 —— 一句**带 %s 的整句词条** + 数字参数。
 //
@@ -1191,8 +1173,7 @@ func (h *pagesAdminHandle) TranslationMissesPage(c *gin.Context) {
 		// 不再另造一份字段相同的渲染行 —— 两份必须逐字段等价的定义就是静默分叉的温床。
 		rows = append(rows, list...)
 	}
-	c.HTML(http.StatusOK, "admin/page/page_translation_misses.html",
-		h.translationMissPageData(c, projectID, rows, errFact))
+	pageview.Render(c, h.translationMissPageData(c, projectID, rows, errFact))
 }
 
 // TranslationMissCancel 把某个（页面 × 语言）取消：调 ExcludePageLang（不另写下线逻辑）。
@@ -1231,12 +1212,12 @@ func (h *pagesAdminHandle) translationMissPageData(c *gin.Context, projectID str
 			projects = list
 		}
 	}
-	return adminui.PrepareBare(c, gin.H{
-		"csrf_token":      token,
-		"Projects":        projects,
-		"SelectedProject": projectID,
-		"Rows":            rows,
-		"Err":             errFact,
+	return adminui.PrepareBareView(c, &pagedto.TranslationMissPageResp{
+		CSRFToken:       token,
+		Projects:        projects,
+		SelectedProject: projectID,
+		Rows:            rows,
+		Err:             errFact,
 	})
 }
 

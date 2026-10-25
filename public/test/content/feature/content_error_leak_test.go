@@ -14,6 +14,7 @@ package feature
 import (
 	"context"
 	"fmt"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -56,7 +57,7 @@ func newContentErrorLeakEnv(t *testing.T) (*gin.Engine, *gorm.DB) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	translations := contenthttp.NewArticleTranslationHandle(svc)
-	engine.GET("/admin/articles/translations", translations.ArticleTranslations)
+	engine.GET("/admin/articles/translations", adminui.PageSlot(contenthttp.ArticleTranslationsTemplate), translations.ArticleTranslations)
 	page := contenthttp.NewArticlePageHandle(svc, nil, nil, nil, nil)
 	engine.POST("/admin/articles/bulk-delete", page.ArticlesBulkDelete)
 	engine.POST("/admin/articles/delete", page.ArticleDelete)

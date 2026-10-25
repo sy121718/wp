@@ -97,7 +97,9 @@ var pendingControllerFiles = map[string]bool{
 	"internal/module/user/inbound/http/user_page.go":                       true,
 	"internal/module/workbench/inbound/http/router.go":                     true,
 	"internal/module/workbench/inbound/http/workbench_err.go":              true,
-	"internal/module/workbench/inbound/http/workbench_page.go":             true,
+	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
+	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
+	"internal/module/workbench/inbound/http/workbench_page.go": true,
 }
 
 // pendingControllerBinding 还没换成 pkg/binding 的文件（c.ShouldBind* / c.PostForm）。
@@ -161,7 +163,12 @@ var pendingControllerQuery = map[string]bool{
 	"internal/module/user/inbound/http/user_customer_admin_handle.go":      true,
 	"internal/module/user/inbound/http/user_page.go":                       true,
 	"internal/module/webhook/inbound/http/webhook_handle.go":               true,
-	"internal/module/workbench/inbound/http/workbench_page.go":             true,
+	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
+	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
+	"internal/module/workbench/inbound/http/workbench_page.go":        true,
+	"internal/module/workbench/inbound/http/canvas_handle.go":         true,
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go": true,
+	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  true,
 }
 
 // pendingControllerMethods 超过 60 行的控制器方法（"文件:方法名"）。
@@ -221,14 +228,13 @@ var pendingControllerMethods = map[string]bool{
 	"internal/module/user/inbound/http/user_page.go:CustomersPage":                                true,
 	"internal/module/user/inbound/http/user_page.go:customerCounterTabs":                          true,
 	"internal/module/user/inbound/http/user_page.go:customerDetailPageData":                       true,
-	"internal/module/user/inbound/http/user_page.go:customerRow":                                  true,
 	"internal/module/workbench/inbound/http/router.go:SetupWorkbenchRoutes":                       true,
-	"internal/module/workbench/inbound/http/workbench_page.go:Workbench":                          true,
+	"internal/module/workbench/inbound/http/canvas_handle.go:Workbench":                           true,
 	"internal/module/workbench/inbound/http/workbench_page.go:collectOrderOverview":               true,
 	"internal/module/workbench/inbound/http/workbench_page.go:layoutTrendBars":                    true,
-	"internal/module/workbench/inbound/http/workbench_page.go:workbenchBlock":                     true,
-	"internal/module/workbench/inbound/http/workbench_page.go:workbenchInstance":                  true,
-	"internal/module/workbench/inbound/http/workbench_page.go:workbenchTemplate":                  true,
+	"internal/module/workbench/inbound/http/canvas_handle.go:workbenchBlock":                      true,
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go:workbenchInstance":           true,
+	"internal/module/workbench/inbound/http/canvas_handle.go:workbenchTemplate":                   true,
 }
 
 // controllerMethodMaxLines 单个控制器方法的行数上限（AST 起止行之差）。
@@ -440,35 +446,12 @@ func TestControllerMethodSize(t *testing.T) {
 // pendingControllerRenderExit 还没把渲染出口交出去的控制器文件。
 // **只减不增**：收一个删一条；登记了却已无渲染出口同样变红。
 var pendingControllerRenderExit = map[string]bool{
-	"internal/module/admin/inbound/http/admin_page.go":                     true,
-	"internal/module/ai/inbound/http/ai_page.go":                           true,
-	"internal/module/analytics/inbound/http/analytics_page.go":             true,
-	"internal/module/block/inbound/http/block_page.go":                     true,
-	"internal/module/comment/inbound/http/comment_page.go":                 true,
-	"internal/module/content/inbound/http/content_page.go":                 true,
-	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go": true,
-	"internal/module/mail/inbound/http/mail_page.go":                       true,
-	"internal/module/masterdata/inbound/http/masterdata_page.go":           true,
-	"internal/module/media/inbound/http/media_page_handle.go":              true,
-	"internal/module/membership/inbound/http/membership_page.go":           true,
-	"internal/module/navigation/inbound/http/navigation_page_handle.go":    true,
-	"internal/module/order/inbound/http/coupon_page.go":                    true,
-	"internal/module/order/inbound/http/order_create_page.go":              true,
-	"internal/module/order/inbound/http/order_list_page.go":                true,
-	"internal/module/order/inbound/http/return_page.go":                    true,
-	"internal/module/order/inbound/http/sales_page.go":                     true,
-	"internal/module/page/inbound/http/page_langs_handle.go":               true,
-	"internal/module/page/inbound/http/page_redirect.go":                   true,
-	"internal/module/page/inbound/http/page_schedule_handle.go":            true,
-	"internal/module/page/inbound/http/pages_handle.go":                    true,
-	"internal/module/page/inbound/http/page_site_slot_handle.go":           true,
-	"internal/module/page/inbound/http/page_translations_handle.go":        true,
-	"internal/module/plugin/inbound/http/plugin_page_handle.go":            true,
-	"internal/module/project/inbound/http/project_page.go":                 true,
-	"internal/module/publication/inbound/http/seo_audit_result.go":         true,
-	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":      true,
-	"internal/module/user/inbound/http/user_page.go":                       true,
-	"internal/module/workbench/inbound/http/workbench_page.go":             true,
+	"internal/module/admin/inbound/http/admin_page.go":              true,
+	"internal/module/page/inbound/http/page_translations_handle.go": true,
+	"internal/module/user/inbound/http/user_page.go":                true,
+	// 工作台画布逻辑按域拆成 5 个文件后，同一条存量豁免跟着拆（判据是"这些文件还没换 binding"，
+	// 与文件数无关）。收敛时逐个文件改，改完删对应那一行。
+	"internal/module/workbench/inbound/http/inspector_handle.go": true,
 }
 
 // controllerRenderCalls 渲染出口的方法名（接收者不限：c / h / 变量都可能）。
@@ -543,50 +526,53 @@ func TestControllerRenderExit(t *testing.T) {
 
 // pendingControllerUIImport 还在 import adminui 的控制器文件。**只减不增**。
 var pendingControllerUIImport = map[string]bool{
+	// 这两个文件不再**渲染**，但仍用 adminui.Msg（key + 中文兜底的事实类型）与
+	// adminui.MsgText（取词）—— 那是文案事实的共享定义处，不是 UI 线。
+	// 渲染出口本身已经交给 pageview.Render / 路由的 slot。
+	"internal/module/ai/inbound/http/ai_page.go":                                true,
+	"internal/module/page/inbound/http/page_langs_handle.go":                    true,
+	"internal/module/page/inbound/http/pages_handle.go":                         true,
 	"internal/module/admin/inbound/http/admin_err.go":                           true,
 	"internal/module/admin/inbound/http/admin_jump.go":                          true,
 	"internal/module/admin/inbound/http/admin_page.go":                          true,
 	"internal/module/ai/inbound/http/ai_err.go":                                 true,
-	"internal/module/ai/inbound/http/ai_page.go":                                true,
-	"internal/module/analytics/inbound/http/analytics_page.go":                  true,
 	"internal/module/block/inbound/http/block_err.go":                           true,
-	"internal/module/block/inbound/http/block_page.go":                          true,
-	"internal/module/comment/inbound/http/comment_page.go":                      true,
 	"internal/module/content/inbound/http/content_page.go":                      true,
 	"internal/module/contenttemplate/inbound/http/content_template_err.go":      true,
 	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go":      true,
 	"internal/module/mail/inbound/http/mail_err.go":                             true,
 	"internal/module/mail/inbound/http/mail_jump.go":                            true,
-	"internal/module/mail/inbound/http/mail_page.go":                            true,
 	"internal/module/masterdata/inbound/http/masterdata_page.go":                true,
-	"internal/module/media/inbound/http/media_page_handle.go":                   true,
-	"internal/module/membership/inbound/http/membership_page.go":                true,
 	"internal/module/navigation/inbound/http/navigation_error_handle.go":        true,
-	"internal/module/navigation/inbound/http/navigation_page_handle.go":         true,
 	"internal/module/navigation/inbound/http/navigation_translations_handle.go": true,
 	"internal/module/order/inbound/http/coupon_page.go":                         true,
-	"internal/module/order/inbound/http/order_create_page.go":                   true,
 	"internal/module/order/inbound/http/order_list_page.go":                     true,
 	"internal/module/order/inbound/http/order_shared.go":                        true,
 	"internal/module/order/inbound/http/return_page.go":                         true,
-	"internal/module/order/inbound/http/sales_page.go":                          true,
 	"internal/module/page/inbound/http/page_jump.go":                            true,
-	"internal/module/page/inbound/http/page_langs_handle.go":                    true,
 	"internal/module/page/inbound/http/page_schedule_handle.go":                 true,
-	"internal/module/page/inbound/http/pages_handle.go":                         true,
-	"internal/module/page/inbound/http/page_site_slot_handle.go":                true,
 	"internal/module/page/inbound/http/page_translations_handle.go":             true,
 	"internal/module/plugin/inbound/http/plugin_err.go":                         true,
-	"internal/module/plugin/inbound/http/plugin_page_handle.go":                 true,
 	"internal/module/project/inbound/http/project_jump.go":                      true,
-	"internal/module/project/inbound/http/project_page.go":                      true,
 	"internal/module/publication/inbound/http/seo_audit_result.go":              true,
-	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":           true,
 	"internal/module/user/inbound/http/customer_bulk_write.go":                  true,
 	"internal/module/user/inbound/http/user_page.go":                            true,
 	"internal/module/workbench/inbound/http/workbench_err.go":                   true,
 	"internal/module/workbench/inbound/http/workbench_handle.go":                true,
-	"internal/module/workbench/inbound/http/workbench_page.go":                  true,
+	// 工作台画布逻辑拆成 5 个文件后，同一条存量豁免跟着拆（它们都还用 adminui 做页面渲染出口）。
+	"internal/module/workbench/inbound/http/inspector_handle.go":      true,
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go": true,
+	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  true,
+	// 插件页仍在用 adminui.MsgText 把事实取成文本（那个槽位还没取词化，登记在批次报告里）。
+	"internal/module/plugin/inbound/http/plugin_page_handle.go": true,
+	// 访问统计页仍在用 adminui.AttachPaginationView 挂分页事实（那是 UI 线的现成对象）。
+	"internal/module/analytics/inbound/http/analytics_page.go": true,
+	// 全局块页仍用 adminui.MsgInternalError / PageErrorFactQuiet 做错误归口（UIK 线的工作）。
+	"internal/module/block/inbound/http/block_page.go": true,
+	// 导航页仍用 adminui.MsgText 把事实取成文本（NavEditError 槽位还没取词化）。
+	"internal/module/navigation/inbound/http/navigation_page_handle.go": true,
+	// 邮件页仍用 adminui.AttachPaginationView / MsgText（UI 线的现成对象与取词链）。
+	"internal/module/mail/inbound/http/mail_page.go": true,
 }
 
 const controllerUIImportPath = "go_wp/internal/adminui"

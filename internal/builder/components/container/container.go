@@ -29,8 +29,6 @@ const (
 var (
 	// nodeIDRe 节点 ID 白名单：字母数字下划线连字符，1~64 位。
 	nodeIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
-	// cssValueRe CSS 值白名单：字母数字与常见安全符号，禁止引号/分号/花括号/@/反斜杠/尖括号等注入载体。
-	cssValueRe = regexp.MustCompile(`^[A-Za-z0-9#%.,()\-+/:?=&_~ ]*$`)
 )
 
 // allowedContainerTags 容器允许的原生语义标签。
@@ -318,9 +316,14 @@ func (Container) Palette() core.PaletteMeta {
 	}
 }
 
-// IsSafeCSSValue 校验 CSS 值是否在安全白名单内（长度上限 500）。导出供其他组件复用。
+// IsSafeCSSValue 校验 CSS 值是否在安全白名单内。
+//
+// **委托 core.IsSafeCSSValue**，本组件不再自带一份字符集：两份正则今天字面相同、明天就会
+// 分叉，而分叉的形态恰好是最糟的 —— 容器（最容易拿到任意 CSS 值的组件）用着旧的那份，
+// 全局收紧对它无效。历史现场：core 那份已单独封禁 url() 外联，容器这份没有；
+// 报告里的 javascript:/expression( 两侧都放行。
 func IsSafeCSSValue(v string) bool {
-	return len(v) <= 500 && cssValueRe.MatchString(v)
+	return core.IsSafeCSSValue(v)
 }
 
 // shapeDividers 形状分隔线白名单（03-A §3.1 Tab2，纯 SVG 装饰）。

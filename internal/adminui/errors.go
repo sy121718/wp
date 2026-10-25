@@ -29,7 +29,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/text"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
 
@@ -46,7 +45,7 @@ const MsgInternalError = text.InternalKey
 // 但状态码用 400，前端脚本能据此区分「你填错了」与「系统出问题了」。
 func PageErrorBadRequest(c *gin.Context, scene string, err error) {
 	if err != nil {
-		logger.Scene(scene).With("path", c.Request.URL.Path).Error(err, "后台页面参数校验失败")
+		response.LogInternalErrorf(c, scene, "后台页面参数校验失败", err)
 	}
 	response.ErrorWithMessage(c, http.StatusBadRequest, MsgInternalError)
 }
@@ -66,7 +65,9 @@ func PageErrorBadRequest(c *gin.Context, scene string, err error) {
 // 一个不存在的错误不该让出口退化成 200。
 func PageErrorInternal(c *gin.Context, scene string, err error) {
 	if err != nil {
-		logger.Scene(scene).With("path", c.Request.URL.Path).Error(err, "后台页面处理失败")
+		// 走 response 的内部错误日志写法：统一带 request_id 与堆栈（后台 500 与 JSON 500
+		// 是同一类故障，排查能力不该分两档）。原文仍然只进日志。
+		response.LogInternalErrorf(c, scene, "后台页面处理失败", err)
 	}
 	response.ErrorWithMessage(c, http.StatusInternalServerError, MsgInternalError)
 }

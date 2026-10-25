@@ -22,6 +22,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdatadto "go_wp/internal/module/masterdata/dto"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -81,7 +82,9 @@ func TestMasterDataChangesPageDegradesWhenProjectListFails(t *testing.T) {
 	handle := NewMasterDataChangePageHandle(changes, mdFailingProjects{})
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/masterdata/changes", handle.MasterDataChangesPage)
+	engine.GET("/admin/masterdata/changes",
+		adminui.PageSlot(MasterDataChangesTemplate),
+		handle.MasterDataChangesPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/masterdata/changes", nil))

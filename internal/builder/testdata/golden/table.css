@@ -5,6 +5,18 @@ body {
   container-name: sky-theme;
 }
 
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .sky-c-tb1 {
   width: 100%;
   border-collapse: collapse;
@@ -13,12 +25,12 @@ body {
 .sky-c-tb1 caption {
   caption-side: top;
   text-align: left;
-  padding: 8px 0;
+  padding: var(--sky-space-4, 8px) 0;
   font-weight: 600;
 }
 
 .sky-c-tb1 th, .sky-c-tb1 td {
-  padding: 10px 12px;
+  padding: var(--sky-space-5, 10px) var(--sky-space-6, 12px);
   text-align: left;
 }
 

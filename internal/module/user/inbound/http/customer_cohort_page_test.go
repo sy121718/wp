@@ -9,6 +9,7 @@ package userhttp
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -66,7 +67,7 @@ func TestCustomerCohortPageRendersMatrix(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{items: detailProjects()})
 	h.SetCustomerCohort(&fakeCohortReader{res: cohortSample()})
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/cohort", h.CustomerCohortPage)
+	engine.GET("/admin/customers/cohort", adminui.PageSlot(CustomerCohortPageTemplate), h.CustomerCohortPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/cohort?range=year", nil))
@@ -95,7 +96,7 @@ func TestCustomerCohortPageFutureMonthIsBlank(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{items: detailProjects()})
 	h.SetCustomerCohort(&fakeCohortReader{res: cohortSample()})
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/cohort", h.CustomerCohortPage)
+	engine.GET("/admin/customers/cohort", adminui.PageSlot(CustomerCohortPageTemplate), h.CustomerCohortPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/cohort", nil))
@@ -119,7 +120,7 @@ func TestCustomerCohortPageFutureMonthIsBlank(t *testing.T) {
 func TestCustomerCohortPageWithoutPortShowsNotice(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{items: detailProjects()})
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/cohort", h.CustomerCohortPage)
+	engine.GET("/admin/customers/cohort", adminui.PageSlot(CustomerCohortPageTemplate), h.CustomerCohortPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/cohort", nil))
@@ -148,7 +149,7 @@ func TestCustomerCohortPageWithoutProjectsShowsEmpty(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{})
 	h.SetCustomerCohort(reader)
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/cohort", h.CustomerCohortPage)
+	engine.GET("/admin/customers/cohort", adminui.PageSlot(CustomerCohortPageTemplate), h.CustomerCohortPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/cohort", nil))
@@ -169,7 +170,7 @@ func TestCustomerCohortPagePassesWindow(t *testing.T) {
 	h := NewCustomerPageHandle(&fakeCustomerAdmin{}, nil, fakeProjects{items: detailProjects()})
 	h.SetCustomerCohort(reader)
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/cohort", h.CustomerCohortPage)
+	engine.GET("/admin/customers/cohort", adminui.PageSlot(CustomerCohortPageTemplate), h.CustomerCohortPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/customers/cohort?range=month", nil))

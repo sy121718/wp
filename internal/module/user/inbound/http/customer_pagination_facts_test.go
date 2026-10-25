@@ -9,6 +9,7 @@ package userhttp
 // 钉住「分页条真的出现在页面上、链接里真的带着本次筛选 + limit、信息行的页码窗口真的对」。
 
 import (
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -83,7 +84,7 @@ func TestCustomerRfmPaginationFactsKeepWindowAndSegment(t *testing.T) {
 		fakeProjects{items: detailProjects()})
 	h.SetCustomerRfm(&fakeRfmReader{res: res})
 	engine := newCustomerTestEngine(h)
-	engine.GET("/admin/customers/rfm", h.CustomerRfmPage)
+	engine.GET("/admin/customers/rfm", adminui.PageSlot(CustomerRfmPageTemplate), h.CustomerRfmPage)
 
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,

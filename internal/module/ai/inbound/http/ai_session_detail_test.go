@@ -76,17 +76,17 @@ func TestSessionEventRowsCarriesToolAndPhase(t *testing.T) {
 	if len(rows) != 3 {
 		t.Fatalf("应有三行，实得 %d", len(rows))
 	}
-	if rows[0]["Tool"] != "ui_render" || rows[0]["Phase"] != "call" {
+	if rows[0].Tool != "ui_render" || rows[0].Phase != "call" {
 		t.Errorf("工具名与阶段应从 meta 提出来：%+v", rows[0])
 	}
-	if rows[1]["Tool"] != "" || rows[1]["Phase"] != "" {
+	if rows[1].Tool != "" || rows[1].Phase != "" {
 		t.Errorf("没有 meta 时留空：%+v", rows[1])
 	}
-	if rows[2]["Tool"] != "" {
+	if rows[2].Tool != "" {
 		t.Errorf("类型不对时留空而不是崩溃：%+v", rows[2])
 	}
 	// 无 meta 的事件不该带出视图（也不该有 ViewsCtx 里的东西）。
-	if rows[1]["HasViews"] != false {
+	if rows[1].HasViews != false {
 		t.Errorf("无 meta 的事件不该有视图：%+v", rows[1])
 	}
 }
@@ -120,12 +120,15 @@ func TestAttachSessionDetailSkipsWithoutID(t *testing.T) {
 	c, _ := gin.CreateTestContext(nil)
 	c.Request = httptest.NewRequest("GET", "/admin/ai/sessions", nil)
 
-	data := gin.H{}
+	view := &aidto.SessionListPageResp{}
 	// svc 为 nil：一旦真去查库就会 panic —— 这条用例正是要钉住「不带 id 时一次库都不碰」。
 	h := &SessionPageHandle{}
-	h.attachSessionDetail(c, context.Background(), data)
+	h.attachSessionDetail(c, context.Background(), view)
 
-	if len(data) != 0 {
-		t.Fatalf("不带 id 时不该往页面数据里塞任何键：%+v", data)
+	// 「什么都没塞」的判据是详情区块全为零值（结构体视图下比 map 更准确：
+	// 多塞一个字段就是编译后的零值不符，而不是悄悄多一个键）。
+	if view.Detail != nil || view.DetailID != 0 || view.DetailErr != "" ||
+		len(view.Events) != 0 || view.EventsErr != "" || view.FoldPlan != nil || view.FoldPlanErr != "" {
+		t.Fatalf("不带 id 时不该装配详情区块：%+v", view)
 	}
 }

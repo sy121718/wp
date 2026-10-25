@@ -25,17 +25,17 @@ func TestFormCSSParsesAndKeepsRules(t *testing.T) {
 		desc string
 		want []string
 	}{
-		{"容器纵向布局", []string{".sky-node-test {", "display: flex", "flex-direction: column", "gap: 16px"}},
-		{"字段容器", []string{".sky-node-test .sky-form-field {", "gap: 6px"}},
-		{"标签", []string{".sky-node-test .sky-form-field label {", "font-size: 14px", "font-weight: 600"}},
+		{"容器纵向布局", []string{".sky-node-test {", "display: flex", "flex-direction: column", "gap: var(--sky-space-7, 16px)"}},
+		{"字段容器", []string{".sky-node-test .sky-form-field {", "gap: var(--sky-space-3, 6px)"}},
+		{"标签", []string{".sky-node-test .sky-form-field label {", "font-size: var(--sky-fs-md, 14px)", "font-weight: 600"}},
 		{"checkbox 标签", []string{".sky-node-test .sky-form-field label.sky-form-check {", "display: inline-flex", "font-weight: 400"}},
 		{"checkbox 输入", []string{".sky-node-test .sky-form-field label.sky-form-check input {", "width: auto"}},
-		{"输入控件 :is() 合并", []string{".sky-node-test :is(input[type=text],input[type=email],select) {", "padding: 10px 12px", "border-radius: 6px"}},
+		{"输入控件 :is() 合并", []string{".sky-node-test :is(input[type=text],input[type=email],select) {", "padding: var(--sky-space-5, 10px) var(--sky-space-6, 12px)", "border-radius: var(--sky-radius-md, 6px)"}},
 		{"textarea", []string{".sky-node-test textarea {", "min-height: 96px", "resize: vertical"}},
 		{"聚焦 ring（占位指令已展开）", []string{".sky-node-test :is(input,textarea,select):focus {"}},
 		{"校验错误态 父容器", []string{".sky-node-test .sky-form-field:has(:user-invalid) {", "color: var(--sky-c-danger, #dc2626)"}},
 		{"校验错误态 输入框", []string{".sky-node-test :user-invalid {", "box-shadow: 0 0 0 3px rgba(220, 38, 38, .12)"}},
-		{"提交按钮", []string{".sky-node-test .sky-form-submit {", "padding: 11px 24px", "cursor: pointer"}},
+		{"提交按钮", []string{".sky-node-test .sky-form-submit {", "padding: 11px var(--sky-space-8, 24px)", "cursor: pointer"}},
 		{"提交按钮 hover", []string{".sky-node-test .sky-form-submit:hover {", "var(--sky-btn-hover-bg"}},
 	}
 	for _, c := range cases {

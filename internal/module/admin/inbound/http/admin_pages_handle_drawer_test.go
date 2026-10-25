@@ -85,7 +85,7 @@ func TestPermissionEditFragmentAndEcho(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	r.GET("/permissions/edit", h.PermissionsEditFragment)
+	r.GET("/permissions/edit", adminui.BareSlot(PermissionEditFormTemplate), h.PermissionsEditFragment)
 	r.POST("/permissions/update", h.PermissionsUpdate)
 	for _, tc := range []struct {
 		name, query string
@@ -163,7 +163,7 @@ func TestMenuEditFragmentAndEcho(t *testing.T) {
 		}
 	}
 	r.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
-	r.GET("/menus/edit", h.MenusEditFragment)
+	r.GET("/menus/edit", adminui.BareSlot(MenuEditFormTemplate), h.MenusEditFragment)
 	r.POST("/menus/update", h.MenusUpdate)
 	for _, tc := range []struct {
 		name, query string

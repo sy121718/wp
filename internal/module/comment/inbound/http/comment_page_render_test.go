@@ -26,6 +26,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
 	commentdto "go_wp/internal/module/comment/dto"
 	projectdto "go_wp/internal/module/project/dto"
@@ -89,7 +90,7 @@ func renderCommentsPage(t *testing.T, svc *stubCommentSvc, projects stubProjects
 	// 模板根相对包目录：internal/module/comment/inbound/http → internal/templates。
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
 	h := NewCommentPageHandle(svc, projects)
-	engine.GET("/admin/comments", func(c *gin.Context) {
+	engine.GET("/admin/comments", adminui.PageSlot(CommentsPageTemplate), func(c *gin.Context) {
 		perm := map[string]bool{"comment:list": true}
 		if withReviewPerm {
 			perm["comment:review"] = true

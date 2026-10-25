@@ -5,6 +5,7 @@ package card
 
 import (
 	_ "embed" // card.css 经 //go:embed 打进二进制
+	json "go_wp/pkg/jsonx"
 	"fmt"
 
 	"go_wp/internal/builder/core"
@@ -24,8 +25,8 @@ type Props struct {
 	Text string `json:"text,omitempty" ct:"richtext,maxlen=1000,sec=content,label=正文"`
 	// ImageSrc 顶部图片（媒体库选择回填 URL 或外部绝对 URL）。
 	ImageSrc string `json:"imageSrc,omitempty" ct:"media,maxlen=500,sec=content,label=图片"`
-	// ButtonText 按钮文字（非空且 ButtonLink 非空时输出 <a>）。
-	ButtonText string `json:"buttonText,omitempty" ct:"text,maxlen=50,sec=content,label=按钮文字"`
+	// Label 按钮文字（非空且 ButtonLink 非空时输出 <a>）。
+	Label string `json:"label,omitempty" ct:"text,maxlen=50,sec=content,label=按钮文字"`
 	// ButtonLink 按钮链接（href）。
 	ButtonLink string `json:"buttonLink,omitempty" ct:"text,maxlen=500,sec=content,label=按钮链接"`
 	// Loading 图片加载策略三态：空=默认（继承主题「图片管理」）/ on=开启懒加载 / off=关闭。
@@ -34,6 +35,21 @@ type Props struct {
 	FetchPriority string `json:"fetchPriority,omitempty" ct:"select,=自动,high=高优先,low=低优先,default=,sec=content,label=加载优先级"`
 	// Advanced 通用高级属性（docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
+}
+
+// cardLegacyKeys 旧 props 名的归一表（改名不迁移数据）。
+//
+// buttonText → label：这一批把三个组件的按钮/链接文案统一成 label。
+// 存量文档里存的是旧键（本仓实测：blueprints 2 张、content_templates 1 张、
+// document_snapshots 5.78 万条），不归一的表现是**按钮整颗消失**而不是报错：
+// BuildView 里 HasButton / 有无按钮 依赖 label 非空。
+var cardLegacyKeys = []core.LegacyKey{
+	{From: "buttonText", To: "label"},
+}
+
+// NormalizeLegacy 见 core.LegacyNormalizer：把旧键的值挪进已解码的字段。
+func (p *Props) NormalizeLegacy(raw json.RawMessage) error {
+	return core.ApplyLegacyKeysInto(raw, p, cardLegacyKeys)
 }
 
 // Widget 基座实例。
@@ -45,14 +61,14 @@ var Widget = core.Atom[Props]{
 		DefaultProps: map[string]any{
 			"title":      "卡片标题",
 			"text":       "卡片正文内容。",
-			"buttonText": "了解更多",
+			"label":      "了解更多",
 			"buttonLink": "/",
 		},
 		TypeName:      Type,
 		ValidateExtra: validateExtra,
 		// Translatable 可翻译字段白名单（多语言 P5b，docs/06-D §7.5 决策 F6）：
 		// 只有这里列出的字段参与内容翻译，未声明字段永不翻译。
-		Translatable: []string{"title", "text", "buttonText"},
+		Translatable: []string{"title", "text", "label"},
 	},
 }
 

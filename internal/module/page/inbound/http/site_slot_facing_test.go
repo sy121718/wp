@@ -22,6 +22,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -102,15 +103,18 @@ func TestSiteSlotRowHasNoDisplayFields(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			row := siteSlotRow(tc.it, nil)
-			for _, key := range []string{"Badge", "StateLabel"} {
-				if _, ok := row[key]; ok {
-					t.Errorf("行投影不该再产出展示字段 %q：档位与文案由模板按事实选（见 site_slots.html）", key)
+			// 视图换强类型之后判据从「map 有没有这个键」变成「类型有没有这个字段」：
+			// 前者拼错键名静默通过，后者拼错是编译错误。
+			typ := reflect.TypeOf(row)
+			for _, field := range []string{"Badge", "StateLabel"} {
+				if _, ok := typ.FieldByName(field); ok {
+					t.Errorf("行投影不该再产出展示字段 %q：档位与文案由模板按事实选（见 site_slots.html）", field)
 				}
 			}
-			// 事实键必须在：模板靠它们选档，缺了会把「已发布」渲染成「未绑定」。
-			for _, key := range []string{"Bound", "PageDeleted", "Published"} {
-				if _, ok := row[key]; !ok {
-					t.Errorf("行投影缺少事实键 %q（模板将无从选档）", key)
+			// 事实字段必须在：模板靠它们选档，缺了会把「已发布」渲染成「未绑定」。
+			for _, field := range []string{"Bound", "PageDeleted", "Published"} {
+				if _, ok := typ.FieldByName(field); !ok {
+					t.Errorf("行投影缺少事实字段 %q（模板将无从选档）", field)
 				}
 			}
 		})
@@ -129,14 +133,15 @@ func TestSiteSlotsPageDataHasNoToneFields(t *testing.T) {
 		},
 	}
 	data := siteSlotPageData(nil, "", nil, slots, pageMsg{})
-	for _, key := range []string{"UnpublishedTone", "DeletedTone"} {
-		if _, ok := data[key]; ok {
-			t.Errorf("页面数据不该再产出档位键 %q：档位由模板按计数事实选（见 site_slots.html）", key)
+	typ := reflect.TypeOf(*data)
+	for _, field := range []string{"UnpublishedTone", "DeletedTone"} {
+		if _, ok := typ.FieldByName(field); ok {
+			t.Errorf("页面数据不该再产出档位字段 %q：档位由模板按计数事实选（见 site_slots.html）", field)
 		}
 	}
-	for _, key := range []string{"UnpublishedCount", "DeletedCount", "BoundCount", "Total"} {
-		if _, ok := data[key]; !ok {
-			t.Errorf("页面数据缺少计数事实键 %q（模板将无从选档）", key)
+	for _, field := range []string{"UnpublishedCount", "DeletedCount", "BoundCount", "Total"} {
+		if _, ok := typ.FieldByName(field); !ok {
+			t.Errorf("页面数据缺少计数事实字段 %q（模板将无从选档）", field)
 		}
 	}
 }

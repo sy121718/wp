@@ -77,3 +77,7 @@ var errFallbacks = map[string]string{
 func Err(key string) error {
 	return facing.New(key, errFallbacks[key])
 }
+
+// FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
+// 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。
+func FallbackFor(key string) string { return errFallbacks[key] }

@@ -46,16 +46,16 @@ func normalizeLang(lang string) string {
 // 否则空 ArtifactHash/PageID/Version=0 直接落库抛 PG 原始错误）。
 func validateRecordReq(req *artifactdto.RecordReq) error {
 	if req == nil {
-		return errors.New(artifactenums.ErrInvalidArtifact)
+		return artifactenums.Err(artifactenums.ErrInvalidArtifact)
 	}
 	if strings.TrimSpace(req.ArtifactID) == "" || strings.TrimSpace(req.PageID) == "" {
-		return errors.New(artifactenums.ErrInvalidArtifact)
+		return artifactenums.Err(artifactenums.ErrInvalidArtifact)
 	}
 	if strings.TrimSpace(req.ArtifactHash) == "" {
-		return errors.New(artifactenums.ErrInvalidArtifact)
+		return artifactenums.Err(artifactenums.ErrInvalidArtifact)
 	}
 	if req.Version <= 0 {
-		return errors.New(artifactenums.ErrInvalidArtifact)
+		return artifactenums.Err(artifactenums.ErrInvalidArtifact)
 	}
 	return nil
 }
@@ -82,7 +82,7 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 	// {"files":{}}、{"files":null} 与 {}（缺 files 键）三种形态
 	// （此前仅 nil 被拒，空对象会静默建出无闭包记录，行为不一致）。
 	if err = json.Unmarshal(req.Manifest, &parsedManifest); err != nil || len(parsedManifest.Files) == 0 {
-		return nil, errors.New(artifactenums.ErrInvalidArtifact)
+		return nil, artifactenums.Err(artifactenums.ErrInvalidArtifact)
 	}
 
 	now := time.Now().UTC()
@@ -155,7 +155,7 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 				if existing.ArtifactHash == req.ArtifactHash {
 					return toResp(existing), nil
 				}
-				return nil, errors.New(artifactenums.ErrArtifactMismatch)
+				return nil, artifactenums.Err(artifactenums.ErrArtifactMismatch)
 			}
 		}
 		return nil, mapPersistenceError(err)
@@ -170,14 +170,14 @@ var errArtifactVersionConflict = errors.New("artifact version conflict")
 // 只有参数合法但查询无结果才返回 ErrArtifactNotFound。
 func (s *Service) Detail(ctx context.Context, req *artifactdto.DetailReq) (res *artifactdto.ArtifactResp, err error) {
 	if req == nil || strings.TrimSpace(req.PageID) == "" || strings.TrimSpace(req.Hash) == "" {
-		return nil, errors.New(artifactenums.ErrInvalidParam)
+		return nil, artifactenums.Err(artifactenums.ErrInvalidParam)
 	}
 	entity, exists, err := s.findByHash(ctx, req.PageID, req.Hash)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
-		return nil, errors.New(artifactenums.ErrArtifactNotFound)
+		return nil, artifactenums.Err(artifactenums.ErrArtifactNotFound)
 	}
 	return toResp(entity), nil
 }
@@ -186,11 +186,11 @@ func (s *Service) Detail(ctx context.Context, req *artifactdto.DetailReq) (res *
 // nil/空 ID 属于请求不合法（ErrInvalidParam）；合法 ID 无记录才返回 ErrArtifactNotFound。
 func (s *Service) DetailByID(ctx context.Context, req *artifactdto.DetailByIDReq) (res *artifactdto.ArtifactResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(artifactenums.ErrInvalidParam)
+		return nil, artifactenums.Err(artifactenums.ErrInvalidParam)
 	}
 	entity, err := s.model.GetByID(ctx, req.ID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, errors.New(artifactenums.ErrArtifactNotFound)
+		return nil, artifactenums.Err(artifactenums.ErrArtifactNotFound)
 	}
 	if err != nil {
 		return nil, err
@@ -249,7 +249,7 @@ func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) 
 		}
 		// 与 Record 同一校验语义：空 files（{} / null / 缺键）一律拒绝。
 		if err = json.Unmarshal(req.Manifest, &parsedManifest); err != nil || len(parsedManifest.Files) == 0 {
-			return nil, errors.New(artifactenums.ErrInvalidArtifact)
+			return nil, artifactenums.Err(artifactenums.ErrInvalidArtifact)
 		}
 		now := time.Now().UTC()
 		// 同 Record：只写 manifest 一个真源（理由见 Record 里的注释与迁移 305）。
@@ -352,7 +352,7 @@ func defaultCreator(createdBy string) string {
 
 func mapPersistenceError(err error) error {
 	if errors.Is(err, gorm.ErrDuplicatedKey) {
-		return errors.New(artifactenums.ErrArtifactMismatch)
+		return artifactenums.Err(artifactenums.ErrArtifactMismatch)
 	}
 	return err
 }

@@ -57,7 +57,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"net/url"
@@ -128,11 +127,11 @@ const (
 // View 只读查询购物车。
 func (s *Service) View(ctx context.Context, req *cartdto.CartViewReq) (res *cartdto.CartSnapshot, err error) {
 	if req == nil {
-		return nil, errors.New(cartenums.ErrInvalidParam)
+		return nil, cartenums.Err(cartenums.ErrInvalidParam)
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
 	if projectID == "" {
-		return nil, errors.New(cartenums.ErrProjectRequired)
+		return nil, cartenums.Err(cartenums.ErrProjectRequired)
 	}
 	p, _ := s.codec.decode(req.Cookie)
 	// 只读路径不回写 cookie（哪怕它已经损坏）：GET 带副作用会让缓存与并发都变得可疑，
@@ -143,14 +142,14 @@ func (s *Service) View(ctx context.Context, req *cartdto.CartViewReq) (res *cart
 // Add 加入购物车：同变体累加数量。
 func (s *Service) Add(ctx context.Context, req *cartdto.CartAddReq) (res *cartdto.CartSnapshot, err error) {
 	if req == nil {
-		return nil, errors.New(cartenums.ErrInvalidParam)
+		return nil, cartenums.Err(cartenums.ErrInvalidParam)
 	}
 	projectID, variantID, err := s.validateLine("", req.ProjectID, req.VariantID)
 	if err != nil {
 		return nil, err
 	}
 	if req.Quantity <= 0 || req.Quantity > maxLineQuantity {
-		return nil, errors.New(cartenums.ErrQuantityInvalid)
+		return nil, cartenums.Err(cartenums.ErrQuantityInvalid)
 	}
 
 	// 商品必须在：加购时就校验，不让无效项攒到结算页才炸 ——
@@ -164,10 +163,10 @@ func (s *Service) Add(ctx context.Context, req *cartdto.CartAddReq) (res *cartdt
 	next := current + req.Quantity
 	if next > maxLineQuantity {
 		// 越界一律整体拒绝而不是悄悄截到上限：截断会让访客以为加成功了。
-		return nil, errors.New(cartenums.ErrQuantityTooMany)
+		return nil, cartenums.Err(cartenums.ErrQuantityTooMany)
 	}
 	if current == 0 && len(p.cartLines()) >= maxCartLines {
-		return nil, errors.New(cartenums.ErrCartFull)
+		return nil, cartenums.Err(cartenums.ErrCartFull)
 	}
 	// 库存预检（拿得到真源时才做）：拿不到就放行，最终把关在结算的写路径上。
 	if err = s.checkAvailability(ctx, projectID, variantID, next); err != nil {
@@ -179,14 +178,14 @@ func (s *Service) Add(ctx context.Context, req *cartdto.CartAddReq) (res *cartdt
 // SetQuantity 设置某变体数量（0 = 移除）。
 func (s *Service) SetQuantity(ctx context.Context, req *cartdto.CartSetQuantityReq) (res *cartdto.CartSnapshot, err error) {
 	if req == nil {
-		return nil, errors.New(cartenums.ErrInvalidParam)
+		return nil, cartenums.Err(cartenums.ErrInvalidParam)
 	}
 	projectID, variantID, err := s.validateLine("", req.ProjectID, req.VariantID)
 	if err != nil {
 		return nil, err
 	}
 	if req.Quantity < 0 || req.Quantity > maxLineQuantity {
-		return nil, errors.New(cartenums.ErrQuantityInvalid)
+		return nil, cartenums.Err(cartenums.ErrQuantityInvalid)
 	}
 	p, _ := s.codec.decode(req.Cookie)
 	if p.lineOf(variantID) == 0 && req.Quantity == 0 {
@@ -208,11 +207,11 @@ func (s *Service) SetQuantity(ctx context.Context, req *cartdto.CartSetQuantityR
 // Clear 清空购物车。
 func (s *Service) Clear(ctx context.Context, req *cartdto.CartViewReq) (res *cartdto.CartSnapshot, err error) {
 	if req == nil {
-		return nil, errors.New(cartenums.ErrInvalidParam)
+		return nil, cartenums.Err(cartenums.ErrInvalidParam)
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
 	if projectID == "" {
-		return nil, errors.New(cartenums.ErrProjectRequired)
+		return nil, cartenums.Err(cartenums.ErrProjectRequired)
 	}
 	return s.applyChange(ctx, projectID, cartPayload{V: cartCookieVersion})
 }
@@ -224,7 +223,7 @@ func (s *Service) applyChange(ctx context.Context, projectID string, p cartPaylo
 	if probe, perr := s.codec.encode(p); perr != nil {
 		return nil, perr
 	} else if len(probe) > maxCookieBytes {
-		return nil, errors.New(cartenums.ErrCartFull)
+		return nil, cartenums.Err(cartenums.ErrCartFull)
 	}
 	cookie, err := s.codec.encode(p)
 	if err != nil {
@@ -237,11 +236,11 @@ func (s *Service) applyChange(ctx context.Context, projectID string, p cartPaylo
 func (s *Service) validateLine(_ string, projectID, variantID string) (pid, vid string, err error) {
 	pid = strings.TrimSpace(projectID)
 	if pid == "" {
-		return "", "", errors.New(cartenums.ErrProjectRequired)
+		return "", "", cartenums.Err(cartenums.ErrProjectRequired)
 	}
 	vid = strings.TrimSpace(variantID)
 	if vid == "" {
-		return "", "", errors.New(cartenums.ErrVariantRequired)
+		return "", "", cartenums.Err(cartenums.ErrVariantRequired)
 	}
 	return pid, vid, nil
 }
@@ -262,11 +261,11 @@ func (s *Service) fetchVariant(ctx context.Context, projectID, variantID string)
 		// 端口已按工程作用域过滤（别的工程的变体不会出现在快照里），这里到不了 ——
 		// 留着当第二道防线：端口契约被改坏时仍然拦得住。
 		if !sn.Enabled || (sn.ProjectID != "" && sn.ProjectID != projectID) {
-			return nil, errors.New(cartenums.ErrVariantNotFound)
+			return nil, cartenums.Err(cartenums.ErrVariantNotFound)
 		}
 		return sn, nil
 	}
-	return nil, errors.New(cartenums.ErrVariantNotFound)
+	return nil, cartenums.Err(cartenums.ErrVariantNotFound)
 }
 
 // checkAvailability 数量是否超过可用量（可用量未知时不拦）。
@@ -284,7 +283,7 @@ func (s *Service) checkAvailability(ctx context.Context, projectID, variantID st
 		return nil
 	}
 	if q < quantity {
-		return errors.New(cartenums.ErrOutOfStock)
+		return cartenums.Err(cartenums.ErrOutOfStock)
 	}
 	return nil
 }

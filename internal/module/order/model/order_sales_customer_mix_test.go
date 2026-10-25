@@ -19,9 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	ordermodel "go_wp/internal/module/order/model"
 	"go_wp/public/test/support"
+
+	"github.com/google/uuid"
 )
 
 func TestMonthlyCustomerMixSplitsNewReturningGuest(t *testing.T) {

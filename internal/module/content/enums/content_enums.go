@@ -37,6 +37,9 @@ const (
 // 取值与 sys_i18n 的 zh-CN 词条逐字一致（迁移 058 / 602 等）：兜底只在词条缺席时可见，
 // 与词条不一致会让人以为「词条坏了」。
 var errFallbacks = map[string]string{
+	ErrMissingID:             "缺少文章标识，请回到列表页重试。",
+	ErrMissingTitle:          "请先填写文章标题。",
+	ErrMissingSlug:           "请先填写文章路径（slug）。",
 	ErrInvalidParam:          "提交的信息不完整，请检查后重试。",
 	ErrNotFound:              "这篇文章不存在，可能已被删除。",
 	ErrInvalidType:           "内容类型不受支持。",

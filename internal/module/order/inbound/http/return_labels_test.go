@@ -4,10 +4,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	"go_wp/pkg/i18n"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestLocalizeReturnLabelsUsesRequestLanguage(t *testing.T) {

@@ -69,7 +69,7 @@
                 {{range _, tab := .StatusTabs}}
                 {{sv := tab.Value}}
                 {{cnt := (sv == "" ? .CountsAll : .Counts[sv])}}
-                <a class="badge badge-{{tab.Tone}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/orders?{{listQuery}}&status={{sv}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{statusLabel(sv)}}{{end}} {{cnt}}</a>
+                <a class="badge badge-{{tab.Kind}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/orders?{{listQuery}}&status={{sv}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{statusLabel(sv)}}{{end}} {{cnt}}</a>
                 {{end}}
             </div>
             <form method="get" action="/admin/orders" class="filter-fields">

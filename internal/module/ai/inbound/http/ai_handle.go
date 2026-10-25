@@ -400,7 +400,7 @@ func bindID(c *gin.Context) (int64, error) {
 	if id := parseInt64(binding.Field(c, "id")); id > 0 {
 		return id, nil
 	}
-	return 0, errors.New(aienums.ErrInvalidParam)
+	return 0, aienums.Err(aienums.ErrInvalidParam)
 }
 
 const (
@@ -569,13 +569,13 @@ func (e *McpEndpoint) Handle(c *gin.Context) {
 // authenticate 从 Authorization 头取 PAT 并校验。
 func (e *McpEndpoint) authenticate(c *gin.Context) (*aiservice.TokenIdentity, error) {
 	if e.tokens == nil {
-		return nil, errors.New(aienums.ErrTokenInvalid)
+		return nil, aienums.Err(aienums.ErrTokenInvalid)
 	}
 	raw := strings.TrimSpace(c.GetHeader("Authorization"))
 	// 只接受 Bearer（大小写不敏感，RFC 6750 的 scheme 是大小写不敏感的）。
 	const scheme = "bearer "
 	if len(raw) < len(scheme) || !strings.EqualFold(raw[:len(scheme)], scheme) {
-		return nil, errors.New(aienums.ErrTokenInvalid)
+		return nil, aienums.Err(aienums.ErrTokenInvalid)
 	}
 	return e.tokens.Verify(c.Request.Context(), strings.TrimSpace(raw[len(scheme):]))
 }

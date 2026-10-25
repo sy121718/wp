@@ -377,6 +377,28 @@ func compileSettingsCSS(s *PageSettings, b *core.CSSBuckets) {
 	body = append(body, "container-name: sky-theme")
 	b.Add(core.BreakpointDesktop, "body", body)
 
+	// 视觉隐藏但**保留可聚焦**的工具类（sr-only）。
+	//
+	// 这套 8 条声明在 5 个组件里逐字重复（nav 的折叠开关、tabs 的 radio、product 的
+	// option-radio、carticon 的开合控件、accordion 的折叠态输入）—— 它们是同一个配方：
+	// 「读屏能播报、键盘能聚焦、视觉上不可见」。重复的代价不是字节，而是**改一处忘一处**：
+	// 想调整隐藏策略（比如 clip-path 兼容性）时得找全所有副本。
+	//
+	// 为什么放在基座而不是组件里：组件 CSS 按 `& ` 作用域编译，跨组件共享只有这一条路。
+	// 为什么不是 display:none：那会把元素踢出键盘序列与读屏树 —— 折叠开关与页签 radio
+	// 全靠可聚焦才可用。
+	b.Add(core.BreakpointDesktop, "."+core.SROnlyClass, []string{
+		"position: absolute",
+		"width: 1px",
+		"height: 1px",
+		"margin: -1px",
+		"padding: 0",
+		"border: 0",
+		"clip-path: inset(50%)",
+		"overflow: hidden",
+		"white-space: nowrap",
+	})
+
 	if s.Layout.Mode != LayoutBoxed {
 		return
 	}

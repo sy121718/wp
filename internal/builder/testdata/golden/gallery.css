@@ -5,6 +5,18 @@ body {
   container-name: sky-theme;
 }
 
+.sky-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 .sky-c-ga1 .gi {
   aspect-ratio: 16 / 9;
   border-radius: 8px;
@@ -49,7 +61,7 @@ body {
 .sky-c-ga2 .gallery-dots {
   display: flex;
   justify-content: center;
-  gap: 6px;
+  gap: var(--sky-space-3, 6px);
   margin-top: 8px;
 }
 
@@ -74,9 +86,9 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 8px;
+  padding: var(--sky-space-4, 8px);
   background: rgba(0,0,0,0.55);
-  color: #fff;
+  color: var(--sky-c-surface, #fff);
   opacity: 0;
   transition: opacity 300ms ease;
 }

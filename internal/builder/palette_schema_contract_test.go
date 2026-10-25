@@ -27,7 +27,7 @@ import (
 // 覆盖断言（palette_contract_test.go）与 Inspector schema 一致性检查共用同一份声明。
 
 // TestPaletteItemsMatchComponentSchemas 组件库条目与 Inspector schema 必须一一对应。
-func TestPaletteItemsMatchComponentSchemas(t *testing.T) {
+func TestPaletteItemsMatchSchemaByType(t *testing.T) {
 	schemas, err := ComponentSchemas()
 	if err != nil {
 		t.Fatalf("生成 Inspector schema 失败: %v", err)

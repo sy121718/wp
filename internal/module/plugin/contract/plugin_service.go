@@ -73,7 +73,7 @@ type Assembly struct {
 	// core 就再也无法持有业务契约）。core 侧的同名类型是它的别名，
 	// 装配层写 core.Xxx 与这里指的是**同一份定义**，不需要任何转换。
 	Specs map[string]*source.PluginComponentSpec
-	// InspectorSchemas 检查器 schema（与内置 ComponentSchemas 合并进 wb-schemas）。
+	// InspectorSchemas 检查器 schema（与内置 ComponentSchemas 快照合并进 wb-schemas）。
 	InspectorSchemas map[string][]byte
 	// Components 工作台组件库摘要（palette 注入）。
 	Components []plugindto.ComponentSummary

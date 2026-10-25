@@ -13,6 +13,7 @@ package feature
 
 import (
 	"context"
+	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -43,8 +44,8 @@ func newSiteShippingEnv(t *testing.T) (*gin.Engine, *projectservice.Service, str
 	handle := projecthttp.NewSiteSettingsAdminHandle(projects, nil, nil)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/settings", handle.SiteSettings)
-	router.POST("/admin/settings/save", handle.SaveSiteSettings)
+	router.GET("/admin/settings", adminui.PageSlot(projecthttp.SiteSettingsPageTemplate), handle.SiteSettings)
+	router.POST("/admin/settings/save", adminui.PageSlot(projecthttp.SiteSettingsPageTemplate), handle.SaveSiteSettings)
 	return router, projects, project.ID
 }
 

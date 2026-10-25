@@ -278,7 +278,7 @@ func TestTranslatableFieldsDeclared(t *testing.T) {
 		"core.button":    {"text"},
 		"core.heading":   {"text", "subtitle"},
 		"core.image":     {"alt", "title", "caption"},
-		"core.card":      {"title", "text", "buttonText"},
+		"core.card":      {"title", "text", "label"},
 		"core.table":     {"caption", "headers", "rows"},
 		"core.form":      {"submitLabel", "label", "placeholder", "options"},
 		"core.faq":       {"question", "answer"},

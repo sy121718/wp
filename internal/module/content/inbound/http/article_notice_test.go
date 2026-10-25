@@ -129,7 +129,7 @@ func TestArticlesPageIgnoresForgedResultQuery(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	e := gin.New()
 	e.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	e.GET("/admin/articles", (&articlePageHandle{contents: &articleSearchContentStub{total: 0}}).ArticlesPage)
+	e.GET("/admin/articles", adminui.PageSlot(ArticlesPageTemplate), (&articlePageHandle{contents: &articleSearchContentStub{total: 0}}).ArticlesPage)
 
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet,

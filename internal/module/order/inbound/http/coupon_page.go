@@ -43,6 +43,7 @@ import (
 	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/response"
+	pageview "go_wp/pkg/view"
 )
 
 // couponPageHandle 优惠码管理页处理器。
@@ -167,40 +168,40 @@ func (h *couponPageHandle) CouponsPage(c *gin.Context) {
 		}
 	}
 
-	data := adminui.Prepare(c, gin.H{
-		// 标题是 i18n key：adminui.Prepare 会按当前语言取词（模板不再看到裸 key）。
-		"title": orderenums.CouponsHeading,
-		"menu":  "coupons",
+	view := &orderdto.CouponListPageResp{
+		// 标题是 i18n key：渲染出口按当前语言取词（模板不再看到裸 key）。
+		Title: orderenums.CouponsHeading,
+		Menu:  "coupons",
 		// 取数结果：dto 原样交给模板，字段名就是模板要用的名字。
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Coupons":         coupons,
-		"Total":           total,
-		"Expanded":        expanded,
-		"Redemptions":     redemptions,
-		"RedemptionTotal": redemptionTotal,
-		"RedemptionLimit": couponRedemptionPageSize,
+		Projects:        projects,
+		SelectedProject: selected,
+		Coupons:         coupons,
+		Total:           total,
+		Expanded:        expanded,
+		Redemptions:     redemptions,
+		RedemptionTotal: redemptionTotal,
+		RedemptionLimit: couponRedemptionPageSize,
 		// 筛选：白名单值给模板画下拉，原值给回显（白名单外的值要原样显示，不能悄悄变成「全部」）。
-		"StatusValues":      couponStatusFilterValues,
-		"FilterStatus":      filterStatusValue,
-		"FilterStatusValid": filterStatusValid,
-		"FilterKeyword":     filter.Keyword,
+		StatusValues:      couponStatusFilterValues,
+		FilterStatus:      filterStatusValue,
+		FilterStatusValid: filterStatusValid,
+		FilterKeyword:     filter.Keyword,
 		// 这一次没读出来的原因（空串 = 正常）：模板据此把「装载失败」与「还没有优惠码」分开。
-		"LoadErr": loadErrText,
+		LoadErr: loadErrText,
 		// 列表上下文：拼进抽屉/表单链接的 query。**没有**回填槽（旧写法的 Echo / SubmitErr）——
 		// 写路径已迁 JSON：失败时 DOM 里的输入原样保留，不需要服务端重渲片段回填。
-		"ListQuery": couponListQuery(selected, filter, page, limit),
-		"Page":      page,
-		"Limit":     limit,
-	})
+		ListQuery: couponListQuery(selected, filter, page, limit),
+		Page:      page,
+		Limit:     limit,
+	}
 	// 分页事实：基址由 backpath 拼（带白名单参数），故 path 传空 —— AttachPagination 不动 Base。
-	adminui.AttachPagination(data, "", nil, pagination.Page{
+	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
 		Total: total, Page: page, Limit: limit,
 		Base: backpath.WithParams("/admin/coupons", map[string]string{
 			"project": selected, "status": filter.Status, "keyword": filter.Keyword,
 		}),
 	})
-	c.HTML(http.StatusOK, "admin/order/coupons.html", data)
+	pageview.Render(c, view)
 }
 
 // CouponEditForm 按需返回一张券的编辑抽屉内容（GET /admin/coupons/edit-form）。
@@ -242,10 +243,12 @@ func (h *couponPageHandle) CouponEditForm(c *gin.Context) {
 		return
 	}
 
-	c.HTML(http.StatusOK, "admin/order/coupon_edit_form.html", adminui.Prepare(c, gin.H{
-		"Coupon":    cp,
-		"ListQuery": couponListQuery(projectID, couponFilter{Status: c.Query("status"), Keyword: c.Query("keyword")}, 0, 0),
-	}))
+	// 片段出口：套不套页壳由路由的 BareSlot 决定，控制器不持模板名。
+	pageview.Render(c, orderdto.CouponEditFormView{
+
+		Coupon:    cp,
+		ListQuery: couponListQuery(projectID, couponFilter{Status: c.Query("status"), Keyword: c.Query("keyword")}, 0, 0),
+	})
 }
 
 // couponListQuery 列表上下文 → 查询串（拼进表单 action / 抽屉 URL；空值不拼）。

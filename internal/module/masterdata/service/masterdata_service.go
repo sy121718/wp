@@ -14,7 +14,6 @@ package masterdataservice
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -79,14 +78,14 @@ func (s *Service) resolveQuery(ctx context.Context, projectID, entityType, entit
 	entityID = strings.TrimSpace(entityID)
 	action = strings.TrimSpace(action)
 	if entityType != "" && !masterdataenums.IsValidEntityType(entityType) {
-		return args, errors.New(masterdataenums.ErrEntityTypeInvalid)
+		return args, masterdataenums.Err(masterdataenums.ErrEntityTypeInvalid)
 	}
 	if action != "" && !masterdataenums.IsValidAction(action) {
-		return args, errors.New(masterdataenums.ErrActionInvalid)
+		return args, masterdataenums.Err(masterdataenums.ErrActionInvalid)
 	}
 	if entityID != "" {
 		if _, perr := uuid.Parse(entityID); perr != nil {
-			return args, errors.New(masterdataenums.ErrInvalidParam)
+			return args, masterdataenums.Err(masterdataenums.ErrInvalidParam)
 		}
 	}
 	sinceTime, terr := parseSince(since)
@@ -98,7 +97,7 @@ func (s *Service) resolveQuery(ctx context.Context, projectID, entityType, entit
 		return args, terr
 	}
 	if sinceTime != nil && untilTime != nil && !sinceTime.Before(*untilTime) {
-		return args, errors.New(masterdataenums.ErrTimeRangeInvalid)
+		return args, masterdataenums.Err(masterdataenums.ErrTimeRangeInvalid)
 	}
 	resolvedProject, err := s.resolveProjectID(ctx, projectID)
 	if err != nil {
@@ -127,7 +126,7 @@ func (s *Service) resolveProjectID(ctx context.Context, projectID string) (id st
 		return "", err
 	}
 	if len(list) != 1 {
-		return "", errors.New(masterdataenums.ErrProjectRequired)
+		return "", masterdataenums.Err(masterdataenums.ErrProjectRequired)
 	}
 	return list[0].ID, nil
 }
@@ -159,7 +158,7 @@ func parseTimeValue(raw string) (t *time.Time, dateOnly bool, err error) {
 		utc := parsed.UTC()
 		return &utc, true, nil
 	}
-	return nil, false, errors.New(masterdataenums.ErrInvalidParam)
+	return nil, false, masterdataenums.Err(masterdataenums.ErrInvalidParam)
 }
 
 // parseSince 解析区间起点（含端点）：只填日期时取当日 00:00（含当天）。

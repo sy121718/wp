@@ -27,7 +27,7 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaReasons, err))
+		inventoryFail(c, err)
 		return
 	}
 	selected := strings.TrimSpace(c.Query("project"))
@@ -36,20 +36,22 @@ func (h *inventoryPageHandle) InventoryReasonsPage(c *gin.Context) {
 	}
 	reasons, err := h.listReasons(c, selected)
 	if err != nil {
-		pageview.Render(c, inventoryPageErrorData(c, inventoryMetaReasons, err))
+		inventoryFail(c, err)
 		return
 	}
 	tr := shell.TranslateFor(c)
-	pageview.Render(c, gin.H{
-		"title":            tr(inventoryenums.InventoryReasonsTitle, "变动原因字典"),
-		"menu":             "inventory-reasons",
-		"Projects":         projects,
-		"SelectedProject":  selected,
-		"Reasons":          reasons,
-		"Directions":       directionOptions(tr),
-		"ReasonCreateForm": reasonFormData(c, selected),
+	// 与库存 / 仓库两页共用同一个视图类型（InventoryPageResp 是三页键集的超集）：
+	// 多给的键不渲染，收益是「键集齐全」由类型保证而不是靠三份装配互相比对。
+	pageview.Render(c, &inventorydto.InventoryPageResp{
+		Title:           tr(inventoryenums.InventoryReasonsTitle, "变动原因字典"),
+		Menu:            "inventory-reasons",
+		Projects:        projectOptions(projects),
+		SelectedProject: selected,
+		Reasons:         reasons,
+		Directions:      directionOptions(tr),
 		// 写动作表单 action 上带的筛选上下文（见 inventory_notice_handle.go）。
-		"ListQuery": binding.ListQuery(c, inventoryReasonBackKeys...),
+		ReasonCreateForm: reasonFormData(c, selected),
+		ListQuery:        binding.ListQuery(c, inventoryReasonBackKeys...),
 	})
 }
 
@@ -209,10 +211,10 @@ func directionLabel(tr func(key, fallback string) string, direction string) stri
 	}
 }
 
-func reasonFormData(c *gin.Context, projectID string) gin.H {
-	return gin.H{
-		"SelectedProject": projectID,
-		"Directions":      directionOptions(shell.TranslateFor(c)),
+func reasonFormData(c *gin.Context, projectID string) *inventorydto.ReasonFormResp {
+	return &inventorydto.ReasonFormResp{
+		SelectedProject: projectID,
+		Directions:      toAnySlice(directionOptions(shell.TranslateFor(c))),
 	}
 }
 

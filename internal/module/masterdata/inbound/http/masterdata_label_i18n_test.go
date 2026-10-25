@@ -31,20 +31,20 @@ func TestChangeRowLabelsFollowLanguage(t *testing.T) {
 	}
 
 	zh := changeRow(fallbackTr, row)
-	if zh["EntityTypeLabel"] != "商品变体" || zh["ActionLabel"] != "修改" || zh["FieldLabel"] != "SKU 编码" {
+	if zh.EntityTypeLabel != "商品变体" || zh.ActionLabel != "修改" || zh.FieldLabel != "SKU 编码" {
 		t.Fatalf("缺词条时应给中文兜底，实际 %v / %v / %v",
-			zh["EntityTypeLabel"], zh["ActionLabel"], zh["FieldLabel"])
+			zh.EntityTypeLabel, zh.ActionLabel, zh.FieldLabel)
 	}
 
 	en := changeRow(keyTr, row)
-	if en["EntityTypeLabel"] != "T:"+masterdataenums.LabelKeyProductVariant {
-		t.Fatalf("实体类型没走取词：%v", en["EntityTypeLabel"])
+	if en.EntityTypeLabel != "T:"+masterdataenums.LabelKeyProductVariant {
+		t.Fatalf("实体类型没走取词：%v", en.EntityTypeLabel)
 	}
-	if en["ActionLabel"] != "T:"+masterdataenums.LabelKeyActionUpdate {
-		t.Fatalf("动作没走取词：%v", en["ActionLabel"])
+	if en.ActionLabel != "T:"+masterdataenums.LabelKeyActionUpdate {
+		t.Fatalf("动作没走取词：%v", en.ActionLabel)
 	}
-	if en["FieldLabel"] != "T:admin.masterdata.field.product_variant.sku_code" {
-		t.Fatalf("字段没走取词：%v", en["FieldLabel"])
+	if en.FieldLabel != "T:admin.masterdata.field.product_variant.sku_code" {
+		t.Fatalf("字段没走取词：%v", en.FieldLabel)
 	}
 }
 
@@ -55,11 +55,11 @@ func TestChangeRowUnknownFieldKeepsRawName(t *testing.T) {
 		Field:      "not_registered",
 	})
 	// 未登记 → 空 key（不查表），原样回显。
-	if view["ActionLabel"] != "archive" {
-		t.Fatalf("未登记动作应原样回显，实际 %v", view["ActionLabel"])
+	if view.ActionLabel != "archive" {
+		t.Fatalf("未登记动作应原样回显，实际 %v", view.ActionLabel)
 	}
-	if view["FieldLabel"] != "not_registered" {
-		t.Fatalf("未登记字段应原样回显，实际 %v", view["FieldLabel"])
+	if view.FieldLabel != "not_registered" {
+		t.Fatalf("未登记字段应原样回显，实际 %v", view.FieldLabel)
 	}
 }
 
@@ -70,9 +70,9 @@ func TestEntityRowLabelsFollowLanguage(t *testing.T) {
 		LastField:  "settle_price",
 	}
 	view := entityRow(fallbackTr, item, masterDataFilter{}, "")
-	if view["EntityTypeLabel"] != "货源" || view["LastActionLabel"] != "删除" || view["LastFieldLabel"] != "内部结算价" {
+	if view.EntityTypeLabel != "货源" || view.LastActionLabel != "删除" || view.LastFieldLabel != "内部结算价" {
 		t.Fatalf("实体清单的展示名应给中文兜底，实际 %v / %v / %v",
-			view["EntityTypeLabel"], view["LastActionLabel"], view["LastFieldLabel"])
+			view.EntityTypeLabel, view.LastActionLabel, view.LastFieldLabel)
 	}
 }
 
@@ -82,7 +82,9 @@ func TestMasterDataOptionsFollowLanguage(t *testing.T) {
 		t.Fatalf("实体类型下拉应有 3 项，实际 %d", len(types))
 	}
 	for _, o := range types {
-		if label, _ := o["Label"].(string); label == "" || label[:2] != "T:" {
+		// 强类型之后 Label 就是 string，不再需要类型断言 —— 断言本身反而会掩盖
+		// 「字段被改成 any」这种退化（any 会让模板侧的契约对账失效）。
+		if o.Label == "" || o.Label[:2] != "T:" {
 			t.Fatalf("下拉项没走取词：%v", o)
 		}
 	}

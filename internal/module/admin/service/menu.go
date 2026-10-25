@@ -3,7 +3,6 @@ package adminservice
 import (
 	"cmp"
 	"context"
-	"errors"
 	"slices"
 	"strings"
 	"sync"
@@ -263,7 +262,7 @@ func (s *Service) MenuDetail(ctx context.Context, req *admindto.MenuDetailReq) (
 		return nil, err
 	}
 	if entity == nil {
-		return nil, errors.New(adminenums.ErrMenuNotFound)
+		return nil, adminenums.Err(adminenums.ErrMenuNotFound)
 	}
 
 	return menuEntityToDetailResp(entity), nil
@@ -311,17 +310,17 @@ func (s *Service) MenuUpdate(ctx context.Context, req *admindto.MenuUpdateReq) e
 		return err
 	}
 	if entity == nil {
-		return errors.New(adminenums.ErrMenuNotFound)
+		return adminenums.Err(adminenums.ErrMenuNotFound)
 	}
 
 	// 系统内置菜单不允许修改类型
 	if entity.IsSystem == 1 && entity.Type != req.Type {
-		return errors.New(adminenums.ErrMenuIsSystem)
+		return adminenums.Err(adminenums.ErrMenuIsSystem)
 	}
 
 	// 防止父子环
 	if req.ParentID == req.ID {
-		return errors.New(adminenums.ErrMenuCircle)
+		return adminenums.Err(adminenums.ErrMenuCircle)
 	}
 	if req.ParentID != entity.ParentID && req.ParentID != 0 {
 		if err := s.menuCheckCircle(ctx, req.ID, req.ParentID); err != nil {
@@ -374,7 +373,7 @@ func (s *Service) MenuDelete(ctx context.Context, req *admindto.MenuDeleteReq) e
 			continue
 		}
 		if entity.IsSystem == 1 {
-			return errors.New(adminenums.ErrMenuIsSystem)
+			return adminenums.Err(adminenums.ErrMenuIsSystem)
 		}
 		// 检查是否有子菜单
 		childCount, err := s.mm.CountByParentID(ctx, id)
@@ -382,7 +381,7 @@ func (s *Service) MenuDelete(ctx context.Context, req *admindto.MenuDeleteReq) e
 			return err
 		}
 		if childCount > 0 {
-			return errors.New(adminenums.ErrMenuHasChildren)
+			return adminenums.Err(adminenums.ErrMenuHasChildren)
 		}
 	}
 
@@ -410,7 +409,7 @@ func (s *Service) validatePermissionBinding(menuType int, codes []string, ctx co
 		menuType == adminmodel.MenuTypeIframe ||
 		menuType == adminmodel.MenuTypeExternal {
 		if len(unique) > 0 {
-			return errors.New(adminenums.ErrCodeNotBindable)
+			return adminenums.Err(adminenums.ErrCodeNotBindable)
 		}
 		return nil
 	}
@@ -418,7 +417,7 @@ func (s *Service) validatePermissionBinding(menuType int, codes []string, ctx co
 	// 菜单和按钮必须绑定权限
 	if menuType == adminmodel.MenuTypeMenu || menuType == adminmodel.MenuTypeButton {
 		if len(unique) == 0 {
-			return errors.New(adminenums.ErrCodeRequired)
+			return adminenums.Err(adminenums.ErrCodeRequired)
 		}
 		// 逐码校验存在且启用（同包直调）：停用的码照挂会让「勾了保存却没生效」无从解释。
 		for _, code := range unique {
@@ -427,7 +426,7 @@ func (s *Service) validatePermissionBinding(menuType int, codes []string, ctx co
 				return err
 			}
 			if !ok {
-				return errors.New(adminenums.ErrCodeNotEnabled)
+				return adminenums.Err(adminenums.ErrCodeNotEnabled)
 			}
 		}
 	}
@@ -458,7 +457,7 @@ func (s *Service) validateMenuPlacement(ctx context.Context, parentID uint64, me
 	for cur != nil {
 		depth++
 		if depth > maxNavDepth {
-			return errors.New(adminenums.ErrMenuDepthExceeded)
+			return adminenums.Err(adminenums.ErrMenuDepthExceeded)
 		}
 		if cur.ParentID == 0 {
 			break
@@ -477,7 +476,7 @@ func (s *Service) menuCheckCircle(ctx context.Context, targetID, newParentID uin
 	cursor := newParentID
 	for cursor != 0 {
 		if cursor == targetID {
-			return errors.New(adminenums.ErrMenuCircle)
+			return adminenums.Err(adminenums.ErrMenuCircle)
 		}
 		parent, err := s.mm.GetByID(ctx, cursor)
 		if err != nil {
