@@ -52,6 +52,8 @@ type orderFixture struct {
 	db        *gorm.DB
 	projectID string
 	warehouse string
+	// projects 工程契约（页面处理器要它列工程下拉）。
+	projects *projectservice.Service
 
 	// 底层 model 留一份引用：故障注入用例要用同一批 model 换掉库存端口重建 service
 	//（见 serviceWithStock），否则「建单要真实端口、取消要失败端口」在同一个夹具上做不了。
@@ -124,7 +126,7 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 	orders.SetWarehouseResolver(orderstock.NewWarehouseResolver(inv))
 	return &orderFixture{
 		orders: orders, products: products, inventory: inv, users: users, mail: mail,
-		db: db, projectID: project.ID, warehouse: wh.ID,
+		db: db, projectID: project.ID, warehouse: wh.ID, projects: projects,
 		orderModel: orderModel, itemModel: itemModel, logModel: logModel,
 		couponModel: couponModel, returnModel: returnModel,
 	}

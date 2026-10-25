@@ -316,7 +316,10 @@ func (s *Service) BuildShipForm(ctx context.Context, req *orderdto.ListShipmentR
 	warehouseName := s.warehouseNames(ctx, projectID)
 	form = &orderdto.ShipForm{
 		OrderID: e.ID, OrderNo: e.OrderNo, CustomerName: e.CustomerName, Total: e.Total,
-		Lines: make([]*orderdto.ShipFormLine, 0, len(items)),
+		// 幂等键在这里生成（不是页面）：页面只渲染它，重试时的语义由 service 判 ——
+		// 同一 request_id 命中既有单据即幂等成功。
+		RequestID: uuid.NewString(),
+		Lines:     make([]*orderdto.ShipFormLine, 0, len(items)),
 	}
 	for _, it := range items {
 		line := &orderdto.ShipFormLine{

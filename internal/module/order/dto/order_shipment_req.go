@@ -75,3 +75,10 @@ type ListCarrierReq struct {
 type PendingShipReq struct {
 	ProjectID string `form:"projectId" json:"projectId"`
 }
+
+// ShipmentPageQueryReq 发货三屏的查询串（工程上下文）。
+//
+// 键名是已发布 URL 的一部分（书签 / 外部链接都按它拼），所以 form tag 不能随手改。
+type ShipmentPageQueryReq struct {
+	ProjectID string `form:"project" json:"project"`
+}

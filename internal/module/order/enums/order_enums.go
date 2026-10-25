@@ -462,6 +462,9 @@ const (
 	OrdersHeading   = "admin.orders.heading"    // 订单
 	ReturnsHeading  = "admin.returns.heading"   // 退货
 	OrderSalesTitle = "admin.order.sales.title" // 销售概览
+	// 发货三屏的页面标题（迁移 624 / 625，S3）。
+	PendingShipTitle   = "admin.order.pendingShip.title" // 待发货
+	OrderCarriersTitle = "admin.order.carriers.title"    // 承运商
 
 	// 券页表单校验的展示槽文案（key + 中文兜底的事实，交给 adminui.MsgText）。
 	CouponFormInvalidID      = "admin.coupons.form.invalid_id"

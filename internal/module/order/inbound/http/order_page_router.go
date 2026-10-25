@@ -30,6 +30,13 @@ import (
 // 由 builtin.CasbinMiddlewareForPath 按**实际 API 路径**鉴权 —— 权限点路径一个字符都不能改。
 // 页面 handler 与 API handler 同用这一个 svc 实例（同一个契约，不另建一套）。
 
+// 发货三屏的模板名（迁移 624 / 625，S3）：与路由同处 —— 失败与成功渲染的必须是同一张模板。
+const (
+	PendingShipPageTemplate   = "admin/order/order_pending_ship.html"
+	ShipFormPageTemplate      = "admin/order/order_ship_form.html"
+	OrderCarriersPageTemplate = "admin/order/order_carriers.html"
+)
+
 // SetupOrderPages 注册订单域后台页面；pages 为 nil 时整体跳过。
 // OrderNewPageTemplate 订单新建页的模板名。
 const OrderNewPageTemplate = "admin/order/order_new.html"
@@ -128,6 +135,25 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	//
 	// 编辑抽屉仍是 GET：片段里的表单自己声明 data-write-api 端点（前端发 JSON），
 	// 权限照旧按「能改券」判 —— 看不到 update 权限的人不该拿到这张表单。
+	// 发货三屏（迁移 624 / 625，S3）：
+	//   · 待发货页 —— 只读列表（「发货」按钮打开下面的抽屉片段）；
+	//   · 发货表单 —— 抽屉片段（GET），表单提交走 JSON /api/order/shipment/create；
+	//   · 承运商页 —— 只读列表 + 新建/编辑抽屉，写动作走 /api/order/carrier/*。
+	//
+	// 三个页面的写路径都不在 /admin 组上：JSON 端点本来就是给前端调的，页面再挂一遍
+	// 就等于把同一份授权写第二处（sys_permission 每个权限点只有一列 api_path）。
+	shipPages := NewOrderShipmentPageHandle(svc, projects)
+	pages.GET("/orders/pending-ship", adminui.PageAuthz("/api/order/shipment/pending"),
+		adminui.PageSlot(PendingShipPageTemplate), shipPages.PendingShipPage)
+	// 发货抽屉片段：权限点取「能发货」那条（看不到它的人不该拿到这张表单）。
+	pages.GET("/orders/ship-form", builtin.CasbinMiddlewareForPathAs("/api/order/shipment/create", http.MethodPost),
+		adminui.BareSlot(ShipFormPageTemplate), shipPages.ShipFormFragment)
+	pages.GET("/order-carriers", adminui.PageAuthz("/api/order/carrier/list"),
+		adminui.PageSlot(OrderCarriersPageTemplate), shipPages.OrderCarriersPage)
+	// 模板名与路由同处（失败与成功渲染的必须是同一张模板）。
+	permission.Declare(http.MethodGet, "/admin/orders/pending-ship", permission.OrderShipmentList)
+	permission.Declare(http.MethodGet, "/admin/order-carriers", permission.OrderCarrierManage)
+
 	couponPages := NewCouponPageHandle(svc, projects)
 	pages.GET("/coupons",
 		adminui.PageAuthz("/api/order/coupon/list"),

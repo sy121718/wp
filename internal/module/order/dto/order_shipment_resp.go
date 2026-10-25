@@ -77,7 +77,10 @@ type ShipFormLine struct {
 
 // ShipForm 发货表单的数据（订单头只读信息 + 明细 + 承运商下拉）。
 type ShipForm struct {
-	OrderID      uint64          `json:"orderId"`
+	OrderID uint64 `json:"orderId"`
+	// RequestID 本次渲染的幂等键：双击提交 / 网络重试只会产生一张发货单。
+	// 由 service 生成（与「这一次操作」绑定，而不是与订单绑定）。
+	RequestID    string          `json:"requestId"`
 	OrderNo      string          `json:"orderNo"`
 	CustomerName string          `json:"customerName"`
 	Total        int64           `json:"total"`

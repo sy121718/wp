@@ -241,4 +241,35 @@ func registerOrderAndSiteSlots() {
 			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'warehouse_id'",
 		SQL: mustSQL("625_order_item_warehouse.sql"),
 	})
+
+	// 626：S3 的文案词条（9 条发货业务错误 + 50 个三屏界面位，中英成对 = 118 行）。
+	// 判定逐条枚举本批全部 59 个 key 的两种语言（不用全库总量、也不用前缀 LIKE ——
+	// 前者会被同期其它批次的行满足而静默跳过，后者会被将来新增的同前缀 key 带跑）。
+	registerSeed(Seed{
+		Version:   "626-order-shipment-pages-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 118 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
+			"'admin.order.pendingShip.title', 'admin.order.pendingShip.hint', 'admin.order.pendingShip.sub', " +
+			"'admin.order.pendingShip.listLead', 'admin.order.pendingShip.col.shipmentNo', 'admin.order.pendingShip.col.orderNo', " +
+			"'admin.order.pendingShip.col.customer', 'admin.order.pendingShip.col.total', 'admin.order.pendingShip.col.units', " +
+			"'admin.order.pendingShip.col.remaining', 'admin.order.pendingShip.col.orderedAt', 'admin.order.pendingShip.emptyHeading', " +
+			"'admin.order.pendingShip.emptyDesc', 'admin.order.pendingShip.ship', 'admin.order.pendingShip.shipTitle', " +
+			"'admin.order.shipForm.order', 'admin.order.shipForm.total', 'admin.order.shipForm.col.product', " +
+			"'admin.order.shipForm.col.quantity', 'admin.order.shipForm.col.shipped', 'admin.order.shipForm.col.remaining', " +
+			"'admin.order.shipForm.col.thisTime', 'admin.order.shipForm.col.warehouse', 'admin.order.shipForm.warehouseMissing', " +
+			"'admin.order.shipForm.carrier', 'admin.order.shipForm.carrierNone', 'admin.order.shipForm.trackingNo', " +
+			"'admin.order.shipForm.trackingNoPh', 'admin.order.shipForm.remark', 'admin.order.shipForm.submit', " +
+			"'admin.order.carriers.title', 'admin.order.carriers.hint', 'admin.order.carriers.sub', " +
+			"'admin.order.carriers.create', 'admin.order.carriers.listLead', 'admin.order.carriers.col.name', " +
+			"'admin.order.carriers.col.code', 'admin.order.carriers.col.status', 'admin.order.carriers.col.trackingUrl', " +
+			"'admin.order.carriers.col.sort', 'admin.order.carriers.emptyHeading', 'admin.order.carriers.emptyDesc', " +
+			"'admin.order.carriers.active', 'admin.order.carriers.disabled', 'admin.order.carriers.enable', " +
+			"'admin.order.carriers.disable', 'admin.order.carriers.codePh', 'admin.order.carriers.namePh', " +
+			"'admin.order.carriers.trackingUrlPh', 'admin.order.carriers.trackingUrlHint', 'order.err.orderNotShippable', " +
+			"'order.err.shipQuantityExceeded', 'order.err.shipLinesRequired', 'order.err.shipRequestKeyConflict', " +
+			"'order.err.shipWarehouseRequired', 'order.err.carrierNotFound', 'order.err.carrierCodeTaken', " +
+			"'order.err.carrierTemplateInvalid', 'order.err.carrierStatusInvalid')",
+		SQL: mustSQL("626_order_shipment_pages_i18n.sql"),
+	})
 }
