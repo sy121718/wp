@@ -24,8 +24,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/adminui"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
+	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 )
 
@@ -129,6 +129,7 @@ func TestMailSplitSixPagesRenderWithMatchingColumns(t *testing.T) {
 	}
 	handle := mailhttp.NewMailPageHandle(fixture.svc)
 
+	// 页面出口由 PageSlot 装配（handler 只交视图对象，模板名与渲染实现在路由声明）。
 	mount := map[string]func(*gin.Engine, string){
 		"MailPage": func(e *gin.Engine, p string) {
 			e.GET(p, adminui.PageSlot(mailhttp.AccountsPageTemplate), handle.MailPage)
@@ -143,7 +144,7 @@ func TestMailSplitSixPagesRenderWithMatchingColumns(t *testing.T) {
 			e.GET(p, adminui.PageSlot(mailhttp.CampaignsPageTemplate), handle.MailCampaignsPage)
 		},
 		"MailAutomationPage": func(e *gin.Engine, p string) {
-			e.GET(p, adminui.PageSlot(mailhttp.AutomationListPageTemplate), handle.MailAutomationPage)
+			e.GET(p, adminui.PageSlot(mailhttp.AutomationPageTemplate), handle.MailAutomationPage)
 		},
 		"MailAutomationRunsPage": func(e *gin.Engine, p string) {
 			e.GET(p, adminui.PageSlot(mailhttp.AutomationRunsPageTemplate), handle.MailAutomationRunsPage)
@@ -220,6 +221,8 @@ func TestMailSplitFailureBranchKeepsFullShellAndHidesInternalError(t *testing.T)
 			}
 			handle := mailhttp.NewMailPageHandle(fixture.svc)
 
+			// 失败分支同样走 PageSlot：失败时页面要渲染**完整壳 + 归口文案**，
+			// 而不是一行 JSON —— 那正是这条测试守的东西。
 			mount := map[string]func(*gin.Engine, string){
 				"MailPage": func(e *gin.Engine, p string) {
 					e.GET(p, adminui.PageSlot(mailhttp.AccountsPageTemplate), handle.MailPage)
@@ -234,7 +237,7 @@ func TestMailSplitFailureBranchKeepsFullShellAndHidesInternalError(t *testing.T)
 					e.GET(p, adminui.PageSlot(mailhttp.CampaignsPageTemplate), handle.MailCampaignsPage)
 				},
 				"MailAutomationPage": func(e *gin.Engine, p string) {
-					e.GET(p, adminui.PageSlot(mailhttp.AutomationListPageTemplate), handle.MailAutomationPage)
+					e.GET(p, adminui.PageSlot(mailhttp.AutomationPageTemplate), handle.MailAutomationPage)
 				},
 				"MailAutomationRunsPage": func(e *gin.Engine, p string) {
 					e.GET(p, adminui.PageSlot(mailhttp.AutomationRunsPageTemplate), handle.MailAutomationRunsPage)
@@ -308,7 +311,8 @@ func TestMailSplitLegacyMarketingRedirectsToContacts(t *testing.T) {
 			engine := mailSplitEngine(t)
 			engine.GET(mailSplitLegacyPath, handle.MailMarketingRedirect)
 			// 落点页必须真存在，否则 302 只是把 404 挪了个地方。
-			engine.GET("/admin/mail/contacts", adminui.PageSlot(mailhttp.ContactsPageTemplate), handle.MailContactsPage)
+			engine.GET("/admin/mail/contacts",
+		adminui.PageSlot(mailhttp.ContactsPageTemplate), handle.MailContactsPage)
 
 			rec := mailSplitGET(t, engine, mailSplitLegacyPath+tc.query)
 			if rec.Code != http.StatusFound {

@@ -29,8 +29,8 @@ package feature
 // 用例，必须重新跑 -race。
 
 import (
-	"context"
 	"go_wp/internal/adminui"
+	"context"
 	"strings"
 	"testing"
 
@@ -74,9 +74,12 @@ func TestMailPagesRenderDBValueInsteadOfFallback(t *testing.T) {
 
 	engine := mailSplitEngine(t)
 	handle := mailhttp.NewMailPageHandle(f.svc)
-	engine.GET("/admin/mail/contacts", adminui.PageSlot(mailhttp.ContactsPageTemplate), handle.MailContactsPage)
-	engine.GET("/admin/mail/templates", adminui.PageSlot(mailhttp.TemplatesPageTemplate), handle.MailTemplatesPage)
-	engine.GET("/admin/mail/campaign", adminui.PageSlot(mailhttp.CampaignReportPageTemplate), handle.MailCampaignPage)
+	engine.GET("/admin/mail/contacts",
+		adminui.PageSlot(mailhttp.ContactsPageTemplate), handle.MailContactsPage)
+	engine.GET("/admin/mail/templates",
+		adminui.PageSlot(mailhttp.TemplatesPageTemplate), handle.MailTemplatesPage)
+	engine.GET("/admin/mail/campaign",
+		adminui.PageSlot(mailhttp.CampaignPageTemplate), handle.MailCampaignPage)
 
 	cases := []mailI18nSentinelCase{
 		{

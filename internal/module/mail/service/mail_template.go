@@ -117,11 +117,11 @@ func (s *Service) ListTemplatesPage(ctx context.Context, key string, page, limit
 // 那一份筛选逻辑会与 model 的唯一键口径分叉。
 func (s *Service) GetTemplate(ctx context.Context, key, locale string) (*maildto.TemplateItem, error) {
 	if strings.TrimSpace(key) == "" {
-		return nil, errors.New(mailenums.ErrInvalidParam)
+		return nil, mailenums.Err(mailenums.ErrInvalidParam)
 	}
 	e, err := s.m.GetTemplate(ctx, strings.TrimSpace(key), strings.TrimSpace(locale))
 	if err != nil {
-		return nil, errors.New(mailenums.ErrTemplateNotFound)
+		return nil, mailenums.Err(mailenums.ErrTemplateNotFound)
 	}
 	return templateItemOf(e), nil
 }

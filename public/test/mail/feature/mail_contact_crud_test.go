@@ -14,7 +14,6 @@ package feature
 import (
 	"bytes"
 	"context"
-	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +28,7 @@ import (
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
 	mailservice "go_wp/internal/module/mail/service"
+	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 )
 
@@ -68,7 +68,8 @@ func newMailContactCrudRouter(t *testing.T, svc *mailservice.Service, perms map[
 	}
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	page := mailhttp.NewMailPageHandle(svc)
-	router.GET("/admin/mail/contacts", adminui.PageSlot(mailhttp.ContactsPageTemplate), page.MailContactsPage)
+	router.GET("/admin/mail/contacts",
+		adminui.PageSlot(mailhttp.ContactsPageTemplate), page.MailContactsPage)
 	// JSON 写端点住在 *Handle 上（页面 handler 在 mailPageHandle 上，两者不是一个类型）——
 	// 与生产装配同形：页面在 /admin 组，写在 /api/mail 组。
 	api := router.Group("/api/mail")

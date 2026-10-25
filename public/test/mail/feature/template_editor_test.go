@@ -21,6 +21,7 @@ import (
 
 	maildto "go_wp/internal/module/mail/dto"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
+	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 
 	"github.com/gin-gonic/gin"
@@ -183,7 +184,8 @@ func newTemplateEditorRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	page := mailhttp.NewMailPageHandle(f.svc)
 	api := mailhttp.NewHandle(f.svc)
-	router.GET("/admin/mail/templates/editor", page.MailTemplateEditor)
+	router.GET("/admin/mail/templates/editor",
+		adminui.PageSlot(mailhttp.TemplateEditorPageTemplate), page.MailTemplateEditor)
 	router.POST("/admin/mail/template/save", api.TemplateSave)
 	return router
 }

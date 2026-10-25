@@ -112,7 +112,7 @@
               id="article-form"
               hx-post="{{if .IsNew}}/admin/articles/create{{else}}/admin/articles/update{{end}}"
               hx-swap="none"
-              hx-disabled-elt="find button[type=submit]"
+              hx-disable="find button[type=submit]"
               {{if .IsNew}}data-write-nav="/admin/articles/edit?id={id}"{{end}}>
             {{if .EditUnavailable}}<fieldset disabled style="border:0;padding:0;margin:0;min-width:0">{{end}}
             <input type="hidden" name="csrf_token" value="{{csrf}}">

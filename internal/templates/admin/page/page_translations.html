@@ -120,7 +120,7 @@
           hx-post="/admin/pages/translations/save?pageId={{.PageID}}&amp;lang={{.Lang}}"
           hx-target="#page-translations-errors"
           hx-swap="innerHTML"
-          hx-disabled-elt="find button[type=submit]"
+          hx-disable="find button[type=submit]"
           data-reload-on-ok>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="pageId" value="{{.PageID}}">

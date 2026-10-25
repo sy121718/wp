@@ -30,13 +30,20 @@ cd "$ROOT" || exit 1
 UI_DIR="internal/templates/static/js/ui"
 violations=0
 
-# 唯一允许直接调 htmx API 的文件（适配层）。加文件要写理由。
-ALLOW="htmx-bridge.js"
+# 允许直接调 htmx API 的文件（**适配层**，不是控件）。加文件要写理由。
+#
+# htmx-bridge.js  控件广播 wb:rescan → htmx.process（控件与传输层的通用适配）
+# json-swap.js    写动作的局部刷新协议：服务端回 JSON，本文件按 JSON 里的 html
+#                 换入目标。它注册 htmx 扩展是**传输层实现细节** —— 页面只写
+#                 hx-ext="json-swap"，控件层（select/drawer/modal…）完全不知情。
+ALLOW="htmx-bridge.js json_swap.js"
 
 for f in "$UI_DIR"/*.js; do
   base="$(basename "$f")"
   [[ "$base" == "htmx.min.js" ]] && continue
-  [[ "$base" == "$ALLOW" ]] && continue
+  skip=0
+  for ok in $ALLOW; do [[ "$base" == "$ok" ]] && skip=1; done
+  [[ $skip -eq 1 ]] && continue
 
   # 去掉注释再判（注释里说明 htmx 是允许的）。
   hits="$(python3 - "$f" <<'PY'
@@ -65,11 +72,13 @@ PY
   fi
 done
 
-# 反向自检：适配层必须真的存在（否则「控件广播 wb:rescan」没人接）。
-if [[ ! -f "$UI_DIR/$ALLOW" ]]; then
-  printf '✗ 找不到适配层 %s —— 控件广播的 wb:rescan 没有接收方，抽屉/模态里的 hx-* 会失效\n' "$ALLOW" >&2
-  violations=$((violations + 1))
-fi
+# 反向自检：白名单里的适配层必须真的存在（拼错名字会让它静默变成「全部放行」）。
+for ok in $ALLOW; do
+  if [[ ! -f "$UI_DIR/$ok" ]]; then
+    printf '✗ 白名单里的适配层 %s 不存在 —— 拼错会让门禁静默放行所有文件\n' "$ok" >&2
+    violations=$((violations + 1))
+  fi
+done
 
 if [[ $violations -gt 0 ]]; then
   echo

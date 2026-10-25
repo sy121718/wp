@@ -37,7 +37,10 @@ func TestMailCampaignPageRenders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-	router.GET("/admin/mail/campaign", adminui.PageSlot(mailhttp.CampaignReportPageTemplate), mailhttp.NewMailPageHandle(f.svc).MailCampaignPage)
+	// 页面出口由 PageSlot 装配（handler 只交视图对象）。
+	router.GET("/admin/mail/campaign",
+		adminui.PageSlot(mailhttp.CampaignPageTemplate),
+		mailhttp.NewMailPageHandle(f.svc).MailCampaignPage)
 
 	recorder := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/admin/mail/campaign?id="+strconv.FormatUint(cps.Items[0].ID, 10), nil)

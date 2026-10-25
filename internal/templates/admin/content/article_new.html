@@ -32,7 +32,7 @@
         <form id="article-new-form" class="article-edit-main"
               hx-post="/admin/articles/create"
               hx-swap="none"
-              hx-disabled-elt="find button[type=submit]"
+              hx-disable="find button[type=submit]"
               data-write-nav="/admin/articles/edit?id={id}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <section class="card card-body">

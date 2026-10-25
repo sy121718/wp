@@ -97,7 +97,14 @@ fi
 #   · hx-<名> 伪元素 —— bundle 的 #Ie 有通用改写 `<hx-名>` → `<template hx type="名">`，
 #     所以任何 hx-<名> 元素名都会被当作 partial 指令处理。本仓模板已统一写 template
 #     形态（不依赖该改写），这里仍放行是为了不把合法的历史写法判红。
-EXCLUDE='^(hx-progress|hx-progress-slide)$'
+# 排除名单（本项目自定义，不是 htmx API）：
+#   · hx-progress / hx-progress-slide —— 自定义 CSS 类
+#   · hx-ext —— v4 的扩展挂载属性；扩展由 registerExtension 注册（本项目 json-swap），
+#     属性名不出现在 bundle 的字符串字面量里，反向核对会把它误判成「不存在」。
+EXCLUDE='^(hx-progress|hx-progress-slide|hx-ext)$'
+# hx-ext：v4 用 registerExtension 注册扩展（本项目 json-swap 就是），属性本身合法 ——
+# bundle 里只在 config 字符串里出现，不是可 grep 的字面量属性名。
+HTMX_EXTRA_ALLOW="hx-ext"
 GENERIC_ELEMENT_SHIM='<hx-'   # bundle 里存在通用改写即放行 hx-<名> 元素名
 
 bundle_names="$(grep -oE 'hx-[a-z][a-z0-9-]*' "$BUNDLE" | sort -u)"

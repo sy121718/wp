@@ -259,11 +259,10 @@ func TestWorkbenchPageErrorTextFollowsRequestLanguage(t *testing.T) {
 // 文档与片段端点，不是编辑器外壳（把工作台 topbar / inspector 塞进预览画布里会同时破坏
 // 预览内容与编辑器布局）。没有后半段，下一个人「顺手统一」就会把它们一起改掉。
 func TestWorkbenchPageExitsVsPreviewEndpointShapes(t *testing.T) {
-	raw, err := os.ReadFile("workbench_page.go")
-	if err != nil {
-		t.Fatalf("读 workbench_page.go 失败：%v", err)
-	}
-	code := stripLineCommentsForShape(string(raw))
+	// 读**整个包目录**而不是单个文件：画布逻辑已按域拆成 canvas_handle.go /
+	// inspector_handle.go / schema_handle.go 等（原先是一个 2538 行的 workbench_page.go）。
+	// 按文件名读会让这条守卫在拆分后静默失效（找不到函数 = 断言跳过 = 门禁变空）。
+	code := stripLineCommentsForShape(readPackageGoSource(t))
 
 	page := goFuncBodyForShape(t, code, "func (h *Handle) Workbench(c *gin.Context) {")
 	if strings.Contains(page, "c.String(") {
@@ -732,11 +731,10 @@ func TestRenderWorkbenchPageErrorTextFallsBackOnEmptyCopy(t *testing.T) {
 // 模板 503×3+404+400+3×500；实例 503+404+422+500×3），逐条点名能在下一处
 // 「顺手加个 c.String」时给出可读的失败信息。
 func TestWorkbenchModeExitShapes(t *testing.T) {
-	raw, err := os.ReadFile("workbench_page.go")
-	if err != nil {
-		t.Fatalf("读 workbench_page.go 失败：%v", err)
-	}
-	code := stripLineCommentsForShape(string(raw))
+	// 读**整个包目录**而不是单个文件：画布逻辑已按域拆成 canvas_handle.go /
+	// inspector_handle.go / schema_handle.go 等（原先是一个 2538 行的 workbench_page.go）。
+	// 按文件名读会让这条守卫在拆分后静默失效（找不到函数 = 断言跳过 = 门禁变空）。
+	code := stripLineCommentsForShape(readPackageGoSource(t))
 
 	modes := []struct {
 		sig  string
@@ -799,4 +797,30 @@ func TestWorkbenchModeExitShapes(t *testing.T) {
 			t.Errorf("%s 的裸文本出口被顺手改了：它不是整页编辑器外壳", sig)
 		}
 	}
+}
+
+// readPackageGoSource 拼接本包全部非测试 .go 文件的源码。
+//
+// 用途：源码形状守卫（按函数签名取函数体）不能只读一个文件 —— 一旦拆分，
+// 签名散落在不同文件里，单文件读会「找不到函数」而让守卫静默失效。
+func readPackageGoSource(t *testing.T) string {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("读包目录失败：%v", err)
+	}
+	var b strings.Builder
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() || !strings.HasSuffix(n, ".go") || strings.HasSuffix(n, "_test.go") {
+			continue
+		}
+		raw, err := os.ReadFile(n)
+		if err != nil {
+			t.Fatalf("读 %s 失败：%v", n, err)
+		}
+		b.Write(raw)
+		b.WriteString("\n")
+	}
+	return b.String()
 }

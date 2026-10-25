@@ -65,6 +65,9 @@ type AutomationListPageResp struct {
 	// .AutoTotal 渲染列表，缺键会让 Jet 在那一行中断（HTTP 仍是 200、正文整块消失）。
 	Automations []AutomationRowResp
 	AutoTotal   int64
+	// BackPath 列表筛选上下文（回跳时 shell.BackPath 读回）。
+	// Buttons 不在这里：它由 adminui.Prepare 从请求上下文注入（模板侧透明）。
+	BackPath string
 
 	Pagination pagination.Page
 }
@@ -143,6 +146,20 @@ type AutomationCanvasPageResp struct {
 	NodesJSON string
 	MetaJSON  string
 	Templates []any
+	// 画布顶栏的两个输入控件选项：触发方式下拉与节点类型 palette。
+	// 由 enums 与 palette 现算（每次一样、与实体无关），但模板要 range 它们，
+	// 所以必须进视图 —— 视图是模板唯一的数据来源。
+	Triggers  []OptionResp
+	NodeTypes []map[string]any
+	// 新建 vs 编辑：新建时名称与触发方式是空/默认值，模板据此给输入框初值。
+	IsNew bool
+	// 频率两态与「回信即退出」：画布顶栏的单选/复选初值。
+	FrequencyEveryTime bool
+	FrequencyOnce      bool
+	ExitOnReply        bool
+	// 邮件节点是否可用：站点没配 marketing 用途的发信账号时灰掉并给原因。
+	NodeDisabled       bool
+	NodeDisabledReason string
 	JSVer     string `view:"jsVer"`
 	// KeyframesCSS 按需内联的动效关键帧（本次只用到入场一个）。
 	// 不声明就是零字节 —— 后台不常驻加载 63 条营销动效，谁用谁声明。
@@ -236,4 +253,15 @@ type CampaignReportPageResp struct {
 	R          any
 	Page       int
 	Pagination pagination.Page
+}
+
+// TemplateEditorPageResp 模板可视化编辑器页（四栏）。
+//
+// 与小写壳键双出：模板 title 槽是 `{{.title}}`（layout 壳），编辑器自己还要 `{{.jsVer}}`。
+// `view` 标签让同一字段供两个键 —— 比在控制器里再拼一层 gin.H 干净。
+type TemplateEditorPageResp struct {
+	Title    string `view:"title"`
+	T        any
+	MetaJSON string
+	JSVer    string `view:"jsVer"`
 }

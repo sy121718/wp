@@ -23,6 +23,7 @@ import (
 	maildto "go_wp/internal/module/mail/dto"
 	mailenums "go_wp/internal/module/mail/enums"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
+	"go_wp/internal/adminui"
 	"go_wp/internal/templates"
 )
 
@@ -69,9 +70,12 @@ func newMailLeakRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(f.svc)
-	engine.GET("/admin/mail", h.MailPage)
-	engine.GET("/admin/mail/contacts", h.MailContactsPage)
-	engine.GET("/admin/mail/automation", h.MailAutomationPage)
+	engine.GET("/admin/mail",
+		adminui.PageSlot(mailhttp.AccountsPageTemplate), h.MailPage)
+	engine.GET("/admin/mail/contacts",
+		adminui.PageSlot(mailhttp.ContactsPageTemplate), h.MailContactsPage)
+	engine.GET("/admin/mail/automation",
+		adminui.PageSlot(mailhttp.AutomationPageTemplate), h.MailAutomationPage)
 	engine.POST("/admin/mail/account/save", h.MailAccountSave)
 	engine.POST("/admin/mail/template/save", h.MailTemplateSave)
 	return engine
