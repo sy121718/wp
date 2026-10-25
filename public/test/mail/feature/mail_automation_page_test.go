@@ -194,9 +194,9 @@ func TestMailAutomationCanvasPageRenders(t *testing.T) {
 		// T3 的新容器与控件：palette 左栏、缩略图、撤销 / 重做 / 自动布局。
 		// 它们是「画布能用」的最小可见证据 —— 少了任何一个，对应交互就整体消失。
 		`class="auto-palette"`, `id="autoMiniMap"`, `id="autoUndo"`, `id="autoRedo"`, `id="autoFit"`,
-		// 后台按需内联动效：本页声明了 sky-fade-up，layout 才输出它的 @keyframes。
+		// 后台按需内联动效：本页声明了 sky-fade-in-up，layout 才输出它的 @keyframes。
 		// 未声明的页面为零字节（见 core.KeyframeCSS 的单测）。
-		"@keyframes sky-fade-up",
+		"@keyframes sky-fade-in-up",
 		"/static/js/automation/index.js", "/static/css/automation.css",
 		"画布页流程", "保存位置",
 	} {
