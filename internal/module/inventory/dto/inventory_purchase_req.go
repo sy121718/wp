@@ -139,7 +139,7 @@ type ListPurchaseHistoryReq struct {
 // Remark 是**必填**吗？不是 —— 但页面上会提示填写：一句话说清「为什么提前关单」
 // 是这类单据事后唯一能读到的解释（货的数量本身看不出来原因）。
 type PurchaseStatusReq struct {
-	ProjectID string `json:"projectId"`
-	ID        string `json:"id" binding:"required"`
-	Remark    string `json:"remark"`
+	ProjectID string `json:"projectId" form:"projectId"`
+	ID        string `json:"id" form:"id" binding:"required"`
+	Remark    string `json:"remark" form:"remark"`
 }

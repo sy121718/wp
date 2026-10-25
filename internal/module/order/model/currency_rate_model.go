@@ -1,6 +1,6 @@
 package model
 
-// currency_rate_model.go — 汇率（币种对，覆盖式）与订单汇率快照列（迁移 630，W5）。
+// currency_rate_model.go — 汇率（币种对，覆盖式）与订单汇率快照列（迁移 633，W5）。
 //
 // 三条口径：
 //
@@ -20,7 +20,7 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// CurrencyRateEntity 汇率（迁移 630）。
+// CurrencyRateEntity 汇率（迁移 633）。
 //
 // Rate 用 string 承载 numeric(18,8) 的**精确文本**（GORM 读 numeric 到 float64 会丢精度）：
 // 汇率是财务口径，1e-8 的误差在汇总时会变成可观的金额偏差。
@@ -121,7 +121,7 @@ type FXOrderRow struct {
 	FXBaseCode string `gorm:"column:fx_base_code"`
 }
 
-// ListFXOrdersByRange 区间内有汇率快照的订单（迁移 630，W5）。
+// ListFXOrdersByRange 区间内有汇率快照的订单（迁移 633，W5）。
 //
 // 逐单而不是一条聚合 SQL：每张单的**快照汇率不同**（下单时刻不同），
 // 「每行乘以自己的汇率」需要逐行算 —— 而折算必须与 service 的 big.Rat 口径
@@ -145,7 +145,7 @@ func (m *OrderModel) ListFXOrdersByRange(ctx context.Context, projectID string, 
 	return rows, err
 }
 
-// CountUnconvertedOrders 区间内**没有**汇率快照的订单数（迁移 630，W5）。
+// CountUnconvertedOrders 区间内**没有**汇率快照的订单数（迁移 633，W5）。
 func (m *OrderModel) CountUnconvertedOrders(ctx context.Context, projectID string, from, to time.Time,
 	f OrderSalesFilter) (n int64, err error) {
 	if strings.TrimSpace(projectID) == "" {

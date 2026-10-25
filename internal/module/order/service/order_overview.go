@@ -432,7 +432,7 @@ func (s *Service) SalesOverview(ctx context.Context, req *orderdto.SalesOverview
 		ReturningCustomers: growth.ReturningCustomers,
 		Repurchasers:       growth.Repurchasers,
 		RepurchaseRatePct:  repurchaseRatePct(growth.NewRepurchasers, growth.ReturningCustomers, growth.OrderingCustomers),
-		// 毛利（迁移 629，W4）：行实付 − 行成本 − **运费**。
+		// 毛利（迁移 632，W4）：行实付 − 行成本 − **运费**。
 		//
 		// 运费单独取（它是订单级的，混进按明细行聚合的那条 SQL 会被放大成
 		// 明细行数倍）；税不扣（代收）、优惠已含在 line_total 里不重扣。
@@ -448,7 +448,7 @@ func (s *Service) SalesOverview(ctx context.Context, req *orderdto.SalesOverview
 		resp.Compare = cmp
 	}
 
-	// ③b 多币种折算（迁移 630，W5）：一次请求内算好，不额外一次往返。
+	// ③b 多币种折算（迁移 633，W5）：一次请求内算好，不额外一次往返。
 	// 折算只覆盖有快照的订单；没有快照的单独计数（报表必须能说清覆盖了多少）。
 	if converted, cerr := s.ConvertedOverview(ctx, req, resp.Sales, resp.GrossProfit); cerr == nil {
 		resp.Converted = converted

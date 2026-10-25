@@ -34,7 +34,7 @@ type OrderItemEntity struct {
 	// 0 是合法的显式成本（赠品 / 内部划拨）。DDL 侧已同步去掉 NOT NULL 与 DEFAULT 0
 	//（迁移 256），所以「没核算」不会再被悄悄记成零成本。
 	CostPrice *int64 `gorm:"column:cost_price"`
-	// WarehouseID 发货仓（迁移 625）：**下单时解析并固化**，预占与发货扣减必须落在同一个仓。
+	// WarehouseID 发货仓（迁移 628）：**下单时解析并固化**，预占与发货扣减必须落在同一个仓。
 	//
 	// **可空**：存量订单没有这个事实，回填到默认仓等于伪造历史。
 	// NULL = 历史行，首次发货时解析并回写（此后这一行固化）。
@@ -100,7 +100,7 @@ func (m *OrderItemModel) CountByOrderID(ctx context.Context, orderID uint64) (co
 	return count, err
 }
 
-// SetWarehouseIDIfNullTx 事务内把发货仓回写到订单行，**仅在那一列仍为 NULL 时**（迁移 625）。
+// SetWarehouseIDIfNullTx 事务内把发货仓回写到订单行，**仅在那一列仍为 NULL 时**（迁移 628）。
 //
 // 条件写而不是无条件写：已固化的值优先 —— 并发两次发货可能各自解析到同一个仓，
 // 只有一个 UPDATE 真正改行；若期间被别的路径写成另一个仓（不该发生，但一致性不该靠假设），

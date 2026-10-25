@@ -103,7 +103,7 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	cg.POST("/update", permission.OrderCouponUpdate, h.UpdateCoupon)
 	cg.POST("/delete", permission.OrderCouponDelete, h.DeleteCoupon)
 
-	// 发货（迁移 624 / 625，S2）：一张单 = 一次发货事实（承运商 + 运单号 + 明细 + 扣库存）。
+	// 发货（迁移 627 / 625，S2）：一张单 = 一次发货事实（承运商 + 运单号 + 明细 + 扣库存）。
 	// 与 /order/status 的区别是它有单据、扣库存、置 shipped —— 后者只是改状态。
 	sg := rg.Group("/order/shipment")
 	sg.GET("/list", permission.OrderShipmentList, h.ListShipments)
@@ -117,7 +117,7 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	carg.POST("/create", permission.OrderCarrierCreate, h.CreateCarrier)
 	carg.POST("/update", permission.OrderCarrierManage, h.UpdateCarrier)
 
-	// 汇率（迁移 630，W5）：覆盖式读写，供销售总览的折算与后台配置用。
+	// 汇率（迁移 633，W5）：覆盖式读写，供销售总览的折算与后台配置用。
 	// 权限点复用 order:overview —— 汇率只影响报表口径，不构成新的风险面。
 	rg.GET("/order/currency/rate", permission.OrderCurrencyRateGet, h.GetCurrencyRate)
 	rg.POST("/order/currency/rate", permission.OrderCurrencyRateSet, h.SetCurrencyRate)

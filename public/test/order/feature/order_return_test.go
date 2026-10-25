@@ -159,7 +159,7 @@ func TestReturnApproveAndReceiveReturnsStockAndRefund(t *testing.T) {
 	_, vid := f.addProduct(t, "退货入库商品", 88, 10)
 	orderID, userID, itemID := f.paidOrder(t, "return-flow@example.com", vid, 2)
 	ctx := context.Background()
-	// 两段式（迁移 621）：下单只预占 2 件，在库仍是 10。
+	// 两段式（迁移 624）：下单只预占 2 件，在库仍是 10。
 	// 退货把货**加回来**这件事在新口径下要分开读：在库数量只有在发货之后才会减少，
 	// 而本用例的订单从未发货 —— 所以「退回 2 件后在库仍是 10、预占归零」才是正确的账。
 	if got := f.reservedOf(t, vid); got != 2 {

@@ -334,7 +334,7 @@ func TestPurchasePageMultiDeviceContract(t *testing.T) {
 	// GET 的筛选与工程切换表单不带。
 	// 建单表单已抽出为 inventory_purchase_create_form.html（页面与失败回显片段共用同一真源），
 	// 所以计数覆盖页面模板 + 新建片段两个文件，契约本身不变。
-	// 数量从 3 涨到 5 是迁移 623 的两个采购单终态（提前关单 / 取消）带来的：
+	// 数量从 3 涨到 5 是迁移 626 的两个采购单终态（提前关单 / 取消）带来的：
 	// 它们是表格外的隐藏表单（HTML 不允许 form 嵌套），按钮用 form="<id>" 关联，
 	// 每个依然各自带一份 csrf —— 少给一处就等于给那条路径开了一个 CSRF 口子。
 	fragRaw, ferr := os.ReadFile(inventoryAdminTemplatePath("inventory_purchase_create_form.html"))

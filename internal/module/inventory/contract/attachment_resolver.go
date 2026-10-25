@@ -1,6 +1,6 @@
 package inventorycontract
 
-// attachment_resolver.go — 附件读口（调拨凭证的唯一跨模块依赖，迁移 627，W3）。
+// attachment_resolver.go — 附件读口（调拨凭证的唯一跨模块依赖，迁移 630，W3）。
 //
 // 为什么需要一个窄接口而不是直接 import media 的 service / model：
 // AGENTS.md 的模块边界判据是「跨模块只走 contract」—— 库存域需要回答两个问题

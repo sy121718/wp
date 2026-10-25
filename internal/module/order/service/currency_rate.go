@@ -1,6 +1,6 @@
 package orderservice
 
-// currency_rate.go — 汇率读写与订单快照（迁移 630，W5）。
+// currency_rate.go — 汇率读写与订单快照（迁移 633，W5）。
 //
 // 三条判据：
 //
@@ -107,7 +107,7 @@ func formatRate(r *big.Rat) string {
 	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.8f", f), "0"), ".")
 }
 
-// orderFXSnapshot 下单时取汇率快照（迁移 630，W5）。
+// orderFXSnapshot 下单时取汇率快照（迁移 633，W5）。
 //
 // 返回 (rate 文本, base 代码)。取不到时返回 ("", "") —— 调用方据此留 NULL：
 // **不阻断下单**（没配汇率的工程照常卖货，只是报表显示「汇率未固化」）。
@@ -129,7 +129,7 @@ func (s *Service) orderFXSnapshot(ctx context.Context, orderCurrency, baseCurren
 	return e.Rate, baseCurrency
 }
 
-// ConvertedOverview 区间内的折算概览（迁移 630，W5）。
+// ConvertedOverview 区间内的折算概览（迁移 633，W5）。
 //
 // 逐单折算（每张单用**自己的**快照汇率）：批量订单的快照汇率可能各不相同，
 // 用「当前汇率」统一乘一遍会得到一组与订单实际金额无关的数字。

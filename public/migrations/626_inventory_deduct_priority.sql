@@ -37,10 +37,10 @@ END $$;
 
 COMMENT ON COLUMN inventory_purchase_orders.status IS 'pending 未入库 / partial 部分入库 / received 已收满 / finished 提前关单（剩余不再期待）/ cancelled 取消（仅未收满的单）';
 
--- ── 3. 单头写入守卫要让终态通行（迁移 196 的守卫在迁移 623 之后必须改）─────
+-- ── 3. 单头写入守卫要让终态通行（迁移 196 的守卫在迁移 632 之后必须改）─────
 --
 -- 196 的 BEFORE UPDATE OF status 守卫无条件把 status 换成「明细行推导值」。那对三个
--- 推导态是对的，但它会把迁移 623 引入的两个**人工终态**（finished / cancelled）当场抹回
+-- 推导态是对的，但它会把迁移 632 引入的两个**人工终态**（finished / cancelled）当场抹回
 -- received / partial —— 表现为「关单接口返回成功、库里还是 received」。
 --
 -- 改法：只有当前值**不是**终态时才强制推导。终态是单向的：一旦人工关单 / 取消，

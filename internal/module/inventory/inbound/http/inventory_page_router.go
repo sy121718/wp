@@ -34,7 +34,7 @@ func registerInventoryReadPages(pages *gin.RouterGroup, h *inventoryPageHandle) 
 	pages.GET("/inventory/reasons", adminui.PageAuthz("/api/inventory/reason/list"),
 		adminui.PageSlot(InventoryReasonsPageTemplate), h.InventoryReasonsPage)
 
-	// 仓库商品 SKU 台账页（迁移 621）：一行 = 一条库存行（含未认领行）。
+	// 仓库商品 SKU 台账页（迁移 624）：一行 = 一条库存行（含未认领行）。
 	// 复用库存列表的权限点：能看库存的人就能看这张台账 —— 它只是同一个真源的另一个视角。
 	pages.GET("/inventory/skus", adminui.PageAuthz("/api/inventory/stock/list"),
 		adminui.PageSlot(InventorySKUsPageTemplate), h.InventorySKUsPage)
@@ -75,7 +75,7 @@ func registerInventoryWarehouseWritePages(pages *gin.RouterGroup, h *inventoryPa
 	pages.POST("/inventory/reasons/bulk-status", builtin.CasbinMiddlewareForPath("/api/inventory/reason/update"), h.InventoryReasonsBulkStatus)
 }
 
-// registerInventorySKUWritePages 仓库商品 SKU 台账页的三个写动作（迁移 621）：
+// registerInventorySKUWritePages 仓库商品 SKU 台账页的三个写动作（迁移 624）：
 // 认领 / 解除认领 / 新建未认领存货。
 //
 // **全部复用** /api/inventory/stock/change —— 与外部编码、跟踪开关同口径：
@@ -89,7 +89,7 @@ func registerInventorySKUWritePages(pages *gin.RouterGroup, h *inventoryPageHand
 	pages.POST("/inventory/stock/unclaimed-create", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockUnclaimedCreate)
 }
 
-// registerInventoryTransferPage 调拨单页（迁移 627，W3）：列表整页；
+// registerInventoryTransferPage 调拨单页（迁移 630，W3）：列表整页；
 // 建单 / 出货 / 签收 / 取消走 JSON API（/api/inventory/transfer/*）——
 // 页面不另挂写端点（同一份授权不写两处）。仓库下拉复用库存页那份口径。
 func registerInventoryTransferPage(pages *gin.RouterGroup, svc inventorycontract.InventoryService,
@@ -130,7 +130,7 @@ func SetupInventoryPages(pages *gin.RouterGroup, svc inventorycontract.Inventory
 	pages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), purchasePages.InventoryPurchaseCreate)
 	pages.POST("/inventory/purchases/receipt", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/receipt"), purchasePages.InventoryPurchaseReceipt)
 	pages.POST("/inventory/purchases/production", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/production"), purchasePages.InventoryPurchaseProduction)
-	// 采购单终态（迁移 623, W2）：提前关单 / 取消。权限点复用采购单更新 ——
+	// 采购单终态（迁移 626, W2）：提前关单 / 取消。权限点复用采购单更新 ——
 	// 关单是一次对采购单的改写，不是新能力，不该多一个权限点。
 	pages.POST("/inventory/purchases/finish", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchasePages.InventoryPurchaseFinish)
 	pages.POST("/inventory/purchases/cancel", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchasePages.InventoryPurchaseCancel)

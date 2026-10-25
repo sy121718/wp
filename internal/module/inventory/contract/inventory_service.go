@@ -23,7 +23,7 @@ import (
 // 依赖方向：inventory → product（本模块实现 product 契约定义的变体库存端口，
 // 由顶层装配注入商品模块），商品模块不认识仓库模块的实现。
 type InventoryService interface {
-	// TransferService 调拨单（迁移 627，W3）：仓库间移库，出货与签收各需凭证附件。
+	// TransferService 调拨单（迁移 630，W3）：仓库间移库，出货与签收各需凭证附件。
 	TransferService
 	// —— 仓库（验收 1：可建仓库并设置一个默认仓）——
 	// CreateWarehouse 建仓；工程内第一个仓自动成为默认仓（「必须有一个默认仓」），
@@ -107,7 +107,7 @@ type InventoryService interface {
 	// 该仓改回用我们自己的 SKU；非空时做 N:1 弱校验）。
 	BindExternalSKU(ctx context.Context, req *inventorydto.BindExternalSKUReq) (res *inventorydto.StockResp, err error)
 
-	// —— 仓库商品 SKU 主档化（迁移 621）——
+	// —— 仓库商品 SKU 主档化（迁移 624）——
 	//
 	// 库存行**升格为仓库商品 SKU 主档**：允许「仓库里已有货、商品还没建」的未认领行
 	// （variant_id IS NULL），再经认领把货挂到商品变体上；同时这一行带 reserved_quantity，
@@ -139,7 +139,7 @@ type InventoryService interface {
 	// 约定同 ChangeStockTx：不自己开事务，错误原样返回。
 	ReserveStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ReserveStockReq) (err error)
 	ReleaseStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ReserveStockReq) (err error)
-	// StockAlert 库存预警四卡（迁移 621 / 623，W4）：只统计跟踪数量的行。
+	// StockAlert 库存预警四卡（迁移 624 / 623，W4）：只统计跟踪数量的行。
 	//
 	// Alert = OutOfStock + LowStock 在 service 里算一次 —— 两个数字相加是展示口径，
 	// 让模板与报表各自再算一遍就会各算各的。
@@ -236,12 +236,12 @@ type InventoryService interface {
 	// 唯一的事务外步骤是商品侧 product_variants.cost_price 的兼容回写（那是商品模块的写，
 	// 端口没有 Tx 形态）：失败只记在入库单行上，并可由幂等重放补做（见 applyReceiptCosts）。
 	RegisterReceipt(ctx context.Context, req *inventorydto.RegisterReceiptReq) (res *inventorydto.ReceiptResp, err error)
-	// FinishPurchaseOrder 采购单提前关单（迁移 623）：received / partial → finished。
+	// FinishPurchaseOrder 采购单提前关单（迁移 626）：received / partial → finished。
 	//
 	// 与前三个中间态（由到货数量推导）不同，终态是**人工决定**：剩下的不再等。
 	// 不写库存流水（单据状态不是库存事实），备注追加而不是覆盖。
 	FinishPurchaseOrder(ctx context.Context, req *inventorydto.PurchaseStatusReq) (res *inventorydto.PurchaseOrderResp, err error)
-	// CancelPurchaseOrder 采购单取消（迁移 623）：pending / partial → cancelled。
+	// CancelPurchaseOrder 采购单取消（迁移 626）：pending / partial → cancelled。
 	//
 	// received 不可取消：货已经进仓，要退只能走退货。
 	CancelPurchaseOrder(ctx context.Context, req *inventorydto.PurchaseStatusReq) (res *inventorydto.PurchaseOrderResp, err error)
@@ -351,7 +351,7 @@ type ReasonWriter interface {
 	UpdateReason(ctx context.Context, req *inventorydto.UpdateReasonReq) (res *inventorydto.ReasonResp, err error)
 }
 
-// —— 调拨（迁移 627，W3）——
+// —— 调拨（迁移 630，W3）——
 
 // TransferService 调拨单：仓库间移库，出货与签收**各需凭证附件**。
 //
@@ -380,7 +380,7 @@ type TransferService interface {
 	GetTransfer(ctx context.Context, req *inventorydto.GetTransferReq) (res *inventorydto.TransferDetailResp, err error)
 }
 
-// StockAlertReader 库存预警的窄读口（销售总览的待办块用，迁移 621 / 623，W4）。
+// StockAlertReader 库存预警的窄读口（销售总览的待办块用，迁移 624 / 623，W4）。
 //
 // 单独一个接口而不是让调用方拿 InventoryService：销售总览只要一个数字
 // （Alert = OutOfStock + LowStock），而宽接口会让它顺手拿到改库存的能力。

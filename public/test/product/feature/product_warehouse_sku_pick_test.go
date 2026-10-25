@@ -521,7 +521,7 @@ func TestProductCreateClaimsUnclaimedWarehouseRow(t *testing.T) {
 		return
 	}
 	ctx := context.Background()
-	// 造一条**未认领**的存货行（迁移 621 的形态：客户寄卖 / 清关到仓）。
+	// 造一条**未认领**的存货行（迁移 624 的形态：客户寄卖 / 清关到仓）。
 	loose, err := f.inventory.CreateUnclaimedStock(ctx, &inventorydto.CreateUnclaimedStockReq{
 		ProjectID: f.projectID, WarehouseID: f.sh.ID, SKUCode: "LOOSE-777",
 		Quantity: 12, TrackQuantity: true,

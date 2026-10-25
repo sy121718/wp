@@ -27,7 +27,7 @@ func formInt(v string, fallback int) int {
 	return n
 }
 
-// DefaultDeductPriority 出库扣减优先级的缺省值（迁移 623 的列默认值，同口径）。
+// DefaultDeductPriority 出库扣减优先级的缺省值（迁移 626 的列默认值，同口径）。
 //
 // 100 而不是 0：0 会让「没设过优先级的仓」排在任何显式正数之前，等于把「没配置」
 // 当成「最高优先级」。页面上留空 = 用这个值。
@@ -43,7 +43,7 @@ type WarehouseFormReq struct {
 	Status    string `form:"status"`
 	Type      string `form:"type"`
 	IsDefault string `form:"isDefault"`
-	// DeductPriority 出库扣减优先级（迁移 623）：值小先扣；留空按 100（= 未设置）。
+	// DeductPriority 出库扣减优先级（迁移 626）：值小先扣；留空按 100（= 未设置）。
 	DeductPriority string `form:"deductPriority"`
 
 	Provider        string `form:"provider"`

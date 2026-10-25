@@ -1,6 +1,6 @@
 package orderstock
 
-// warehouse_resolver.go — 「这一行从哪个仓出」的库存侧实现（迁移 625，S2）。
+// warehouse_resolver.go — 「这一行从哪个仓出」的库存侧实现（迁移 628，S2）。
 //
 // 订单侧持有 ordercontract.WarehouseResolver 这个窄端口，实现放在库存侧
 // （与 Operator / WarehouseSource 同一手法：实现方依赖调用方契约）。

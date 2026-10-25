@@ -84,7 +84,7 @@ func TestCartCheckoutCreatesPaidOrderAndDeductsStock(t *testing.T) {
 		t.Fatalf("订单项快照不对: %+v", detail.Items[0])
 	}
 
-	// 两段式（迁移 621）：结算建单只**预占** 2 件，在库仍是 10 ——
+	// 两段式（迁移 624）：结算建单只**预占** 2 件，在库仍是 10 ——
 	// 扣减发生在发货（S2 的发货用例），不在结算。
 	if got := f.reservedOf(t, variantID); got != 2 {
 		t.Fatalf("结算应预占 2 件，实际 %d", got)

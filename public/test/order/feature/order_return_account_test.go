@@ -171,7 +171,7 @@ func TestCancelAfterPartialReturnRestocksOnlyUnreturned(t *testing.T) {
 	orderID, userID, itemIDs := f.paidOrderWithLines(t, "cancel-after-partial@example.com",
 		[]orderLine{{variantID: vid, quantity: 2}})
 
-	// 两段式（迁移 621）：下单只预占 2 件，在库仍是 10（本单从未发货）。
+	// 两段式（迁移 624）：下单只预占 2 件，在库仍是 10（本单从未发货）。
 	if got := f.reservedOf(t, vid); got != 2 {
 		t.Fatalf("下单后预占应为 2，实际 %d", got)
 	}

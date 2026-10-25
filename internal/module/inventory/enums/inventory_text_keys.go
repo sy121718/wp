@@ -51,18 +51,18 @@ const (
 	InventoryPurchasesKindPurchase    = "admin.inventory_purchases.kind.purchase"
 	InventoryPurchasesProductionOpen  = "admin.inventory_purchases.production.open"
 	InventoryPurchasesOptionCostLabel = "admin.inventory_purchases.option.costLabel"
-	// 采购单两个终态（迁移 623）。
+	// 采购单两个终态（迁移 626）。
 	InventoryPurchasesStatusFinished  = "admin.inventory_purchases.status.finished"
 	InventoryPurchasesStatusCancelled = "admin.inventory_purchases.status.cancelled"
 	InventoryPurchasesOptionCostUnset = "admin.inventory_purchases.option.costUnset"
 
-	// —— 仓库商品 SKU 台账页（迁移 621）——
+	// —— 仓库商品 SKU 台账页（迁移 624）——
 	InventorySKUsTitle      = "admin.inventory.skus.title"
 	InventoryStockClaimed   = "admin.inventory.stock.claimed"
 	InventoryStockUnclaimed = "admin.inventory.stock.unclaimed"
 	InventoryFilterAll      = "admin.inventory.filter.all"
 
-	// —— 调拨页（迁移 627，W3）——
+	// —— 调拨页（迁移 630，W3）——
 	InventoryTransfersTitle           = "admin.inventory.transfers.title"
 	InventoryTransfersStatusPending   = "admin.inventory.transfers.status.pending"
 	InventoryTransfersStatusInTransit = "admin.inventory.transfers.status.in_transit"

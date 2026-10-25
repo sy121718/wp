@@ -270,7 +270,7 @@ func (s *Service) toStockResp(ctx context.Context, e *inventorymodel.StockEntity
 		//（跟踪且卖光 / 不跟踪无限），漏了开关就会把无限显示成「没货」。
 		TrackQuantity: e.TrackQuantity,
 		Quantity:      e.Quantity,
-		// 预占 / 可售 / 已认领（迁移 621）同源给出：可售的减法只在这一个地方做，
+		// 预占 / 可售 / 已认领（迁移 624）同源给出：可售的减法只在这一个地方做，
 		// 模板直接取字段（template_logic_test.go 禁止模板算数量）。
 		ReservedQuantity:  e.ReservedQuantity,
 		AvailableQuantity: availableOf(e.Quantity, e.ReservedQuantity),
@@ -763,7 +763,7 @@ func (s *Service) ListWarehouseSKUs(ctx context.Context, req *inventorydto.ListW
 	return list, nil
 }
 
-// LocateStockRow 按 (变体, 仓) 取库存行 id；没有这一行返回空串 + nil（迁移 624 快照用）。
+// LocateStockRow 按 (变体, 仓) 取库存行 id；没有这一行返回空串 + nil（迁移 627 快照用）。
 //
 // 只读、无副作用：发货明细的 stock_id 只用于事后追溯，不作为任何判定依据。
 func (s *Service) LocateStockRow(ctx context.Context, projectID, variantID, warehouseID string) (string, error) {

@@ -1,6 +1,6 @@
 package model
 
-// order_shipment_model.go — 承运商 + 发货单 + 发货明细（迁移 624，S1）。
+// order_shipment_model.go — 承运商 + 发货单 + 发货明细（迁移 627，S1）。
 //
 // 三张表都是**履约事实**：承运商是可选主数据（停用不删），发货单是「某次发货」的凭据，
 // 发货明细是「这次发了哪几行的多少件」。
@@ -21,7 +21,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// OrderCarrierEntity 承运商（迁移 624）。
+// OrderCarrierEntity 承运商（迁移 627）。
 type OrderCarrierEntity struct {
 	ID        string `gorm:"column:id;primaryKey"`
 	ProjectID string `gorm:"column:project_id;not null"`
@@ -41,7 +41,7 @@ type OrderCarrierEntity struct {
 // TableName 实现 gorm 表名。
 func (OrderCarrierEntity) TableName() string { return "order_carriers" }
 
-// OrderShipmentEntity 发货单（迁移 624）。
+// OrderShipmentEntity 发货单（迁移 627）。
 //
 // carrier_name 是**名称快照**：承运商改名 / 停用 / 删除之后，历史单据仍要显示当时的名字。
 type OrderShipmentEntity struct {
@@ -64,7 +64,7 @@ type OrderShipmentEntity struct {
 // TableName 实现 gorm 表名。
 func (OrderShipmentEntity) TableName() string { return "order_shipments" }
 
-// OrderShipmentItemEntity 发货明细（迁移 624）。
+// OrderShipmentItemEntity 发货明细（迁移 627）。
 //
 // stock_id 是**仓库商品 SKU 行快照**（可为空：库存行可能随变体删除而消失，但发货事实要留得住）。
 type OrderShipmentItemEntity struct {

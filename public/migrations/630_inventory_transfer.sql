@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS inventory_transfer_items (
     -- 源仓的库存行 id（仓库商品 SKU）。不建外键：库存行可随变体删除级联消失，
     -- 但调拨单据是已发生的事实，必须留得住。
     stock_id      uuid NOT NULL,
-    -- 变体快照：未认领行（variant_id IS NULL，迁移 621）也允许调拨，所以这里可空。
+    -- 变体快照：未认领行（variant_id IS NULL，迁移 633）也允许调拨，所以这里可空。
     variant_id    uuid,
     sku_code      text NOT NULL DEFAULT '',
     quantity      integer NOT NULL,

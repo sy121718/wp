@@ -74,7 +74,7 @@ type WarehouseResp struct {
 	Status    string `json:"status"`
 	IsDefault bool   `json:"isDefault"`
 	Sort      int    `json:"sort"`
-	// DeductPriority 出库扣减优先级（迁移 623）：值小先扣；仅在未显式指定仓库时生效。
+	// DeductPriority 出库扣减优先级（迁移 626）：值小先扣；仅在未显式指定仓库时生效。
 	DeductPriority int `json:"deductPriority"`
 	// ThirdParty 仅第三方仓非空；其余类型为 nil（不给前端一份看似可用的空配置）。
 	ThirdParty *WarehouseThirdPartyResp `json:"thirdParty,omitempty"`
@@ -105,7 +105,7 @@ type StockResp struct {
 	// 只读数量会让「无限」在后台被看成「没货」。
 	TrackQuantity bool `json:"trackQuantity"`
 	Quantity      int  `json:"quantity"`
-	// ReservedQuantity 本仓预占（被未发货订单占住）；**未认领行恒 0**（迁移 621）。
+	// ReservedQuantity 本仓预占（被未发货订单占住）；**未认领行恒 0**（迁移 624）。
 	ReservedQuantity int `json:"reservedQuantity"`
 	// AvailableQuantity 可售 = track_quantity ? max(quantity - reserved, 0) : 0。
 	//
@@ -203,7 +203,7 @@ type WarehouseSKUResp struct {
 	// ProductID / VariantID 是该行已绑定的商品与变体（HasVariant 为假时为空串）。
 	ProductID string `json:"productId"`
 	VariantID string `json:"variantId"`
-	// HasVariant 这条货在商品侧是否已经有变体（迁移 621 起可为假 = 未认领）。
+	// HasVariant 这条货在商品侧是否已经有变体（迁移 624 起可为假 = 未认领）。
 	HasVariant bool `json:"hasVariant"`
 	// Quantity / ReservedQuantity / AvailableQuantity 这一行的事实数量（三个一起给）。
 	Quantity          int `json:"quantity"`
@@ -344,7 +344,7 @@ type VariantWarehouseCost struct {
 
 // ReconcileStockCacheResp 对账结果（Total == Matched + Differed）。
 
-// StockAlertResp 库存预警四卡（迁移 621 / 623，W4）。
+// StockAlertResp 库存预警四卡（迁移 624 / 623，W4）。
 //
 // 口径：只统计 track_quantity = true 的行（无限库存永远「有货」，不该进预警）。
 //

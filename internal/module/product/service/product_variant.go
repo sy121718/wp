@@ -1935,7 +1935,7 @@ func attributeResps(entities []*productmodel.ProductAttributeEntity) []*productd
 	return out
 }
 
-// VariantSnapshotsInWarehouse 按「变体 + 发货仓」取快照（迁移 625，S2）。
+// VariantSnapshotsInWarehouse 按「变体 + 发货仓」取快照（迁移 628，S2）。
 //
 // 与 VariantSnapshots 的差别只有一处：成本取 **ref.WarehouseID 那一仓**的值，
 // 而不是「归属仓」。其余（去重、工程隔离、缺失即丢弃、金额换算）逐字相同 ——

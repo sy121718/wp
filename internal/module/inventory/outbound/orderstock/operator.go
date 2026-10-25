@@ -116,7 +116,7 @@ func (o *Operator) ChangeStockTx(ctx context.Context, tx *gorm.DB, in *ordercont
 	})
 }
 
-// ReserveStockTx 下单预占的**事务透传版**（迁移 621，S2）：改 reserved_quantity，不写流水。
+// ReserveStockTx 下单预占的**事务透传版**（迁移 624，S2）：改 reserved_quantity，不写流水。
 //
 // 与 DeductStockTx 的方向相反：预占是「留给这张单」，不是「货已经出去」——
 // 发货那一步才是 DeductStockTx，且它会在同一条 SQL 里释放本单的预占。
@@ -127,7 +127,7 @@ func (o *Operator) ReserveStockTx(ctx context.Context, tx *gorm.DB, in *ordercon
 	return o.svc.ReserveStockTx(ctx, tx, toReserveReq(in))
 }
 
-// ReleaseStockTx 释放预占的**事务透传版**（取消 / 退款 / 超时，迁移 621）。
+// ReleaseStockTx 释放预占的**事务透传版**（取消 / 退款 / 超时，迁移 624）。
 //
 // 与 ChangeStockTx（归还）的区别：归还是「货回来了、数量加回去」；释放是「货从来没出去、
 // 只是不再占着了」—— 前者写 in 流水，后者什么都不写。

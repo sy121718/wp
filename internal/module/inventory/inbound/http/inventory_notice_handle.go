@@ -32,9 +32,9 @@ var (
 	inventoryReasonBackKeys    = []string{"project"}
 	inventorySourceBackKeys    = []string{"project", "type", "relatedParty", "status", "keyword", "page", "limit"}
 	inventoryPurchaseBackKeys  = []string{"project", "status", "sourceId", "keyword", "page", "limit"}
-	// 仓库商品 SKU 台账页的筛选键（迁移 621）。
+	// 仓库商品 SKU 台账页的筛选键（迁移 624）。
 	inventorySKUBackKeys = []string{"project", "warehouseId", "keyword", "claimed", "page", "limit"}
-	// 调拨页的筛选键（迁移 627，W3）。
+	// 调拨页的筛选键（迁移 630，W3）。
 	inventoryTransferBackKeys = []string{"project", "status", "keyword", "page", "limit"}
 )
 

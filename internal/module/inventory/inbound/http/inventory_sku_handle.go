@@ -1,4 +1,4 @@
-// 仓库商品 SKU 台账页（迁移 621）与它的三个写动作：认领 / 解除认领 / 新建未认领存货。
+// 仓库商品 SKU 台账页（迁移 624）与它的三个写动作：认领 / 解除认领 / 新建未认领存货。
 package inventoryhttp
 
 // 为什么单独一张台账页而不是塞进 inventory.html：
@@ -132,7 +132,7 @@ func (h *inventoryPageHandle) InventoryStockUnclaim(c *gin.Context) {
 	response.Success(c, nil)
 }
 
-// InventoryPurchaseFinish 采购单提前关单（迁移 623, W2）：received / partial → finished。
+// InventoryPurchaseFinish 采购单提前关单（迁移 626, W2）：received / partial → finished。
 //
 // 与取消分开两个入口而不是一个「改状态」接口：两个动作的前置状态不同
 // （finished 要求已入库过、cancelled 要求还没收满），合成一个只会让调用方各自判一次
@@ -149,7 +149,7 @@ func (h *inventoryPurchasePageHandle) InventoryPurchaseFinish(c *gin.Context) {
 	response.Success(c, nil)
 }
 
-// InventoryPurchaseCancel 采购单取消（迁移 623, W2）：pending / partial → cancelled。
+// InventoryPurchaseCancel 采购单取消（迁移 626, W2）：pending / partial → cancelled。
 func (h *inventoryPurchasePageHandle) InventoryPurchaseCancel(c *gin.Context) {
 	form, ok := binding.Form[inventorydto.PurchaseStatusFormReq](c)
 	if !ok {

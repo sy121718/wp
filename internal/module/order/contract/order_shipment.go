@@ -1,6 +1,6 @@
 package ordercontract
 
-// order_shipment.go — 发货与承运商的契约（迁移 624 / 625，S2）。
+// order_shipment.go — 发货与承运商的契约（迁移 627 / 625，S2）。
 
 import (
 	"context"

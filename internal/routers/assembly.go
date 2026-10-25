@@ -569,7 +569,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 装配期把实现当作端口传进去 —— 建变体时解析归属仓（不选则默认仓）、并在归属仓
 	// 生成一条初始 0 的库存记录。
 	inventorySvc := inventoryhttp.SetupInventoryRoutes(authorizedAPI, a.adminPages, db, projectService)
-	// 调拨凭证的附件读口（迁移 627，W3）：适配器在库存侧（outbound/mediaatt），
+	// 调拨凭证的附件读口（迁移 630，W3）：适配器在库存侧（outbound/mediaatt），
 	// 只用到 media 的 Detail 一条能力 —— 库存不认识 media 的 service / model。
 	if concrete, ok := inventorySvc.(*inventoryservice.Service); ok {
 		concrete.SetAttachmentResolver(mediaatt.New(a.mediaSvc))
@@ -691,7 +691,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 	// 国家代码显示成当前语言的名字。传的是同一实例（它在 sysconfig 内部按语言缓存
 	// 「码 → 名」），不是另建一个 —— 每个消费方各建一层缓存等于同一份字典查 N 遍。
 	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher, a.projectService, a.adminPages, orderstock.NewWarehouseSource(a.inventorySvc), a.sysConfigDict)
-	// 发货仓解析（迁移 625，S2）：订单侧只持窄端口，实现在库存侧（orderstock）。
+	// 发货仓解析（迁移 628，S2）：订单侧只持窄端口，实现在库存侧（orderstock）。
 	// 与上面那条同一手法（实现方依赖调用方契约），装配点在这里一次注入。
 	// 解析端口的实参是 ProductStockLookup（库存契约里那一小组只读能力），
 	// 不是整个 InventoryService —— 具体 service 同时实现两者，所以这里取一次类型。
@@ -699,10 +699,10 @@ func (a *assembly) buildIdentityAndCommerce() {
 		if lookup, lok := a.inventorySvc.(inventorycontract.ProductStockLookup); lok {
 			concrete.SetWarehouseResolver(orderstock.NewWarehouseResolver(lookup))
 		}
-		// 发货明细的 stock_id 快照（迁移 624）：同一个适配器也实现 StockRowLocator。
+		// 发货明细的 stock_id 快照（迁移 627）：同一个适配器也实现 StockRowLocator。
 		concrete.SetStockRowLocator(orderstock.New(invConcrete))
 	}
-	// 销售总览的待办块要库存预警的数字（迁移 621 / 623，W4）：装配收尾补注，
+	// 销售总览的待办块要库存预警的数字（迁移 624 / 623，W4）：装配收尾补注，
 	// 订单模块不 import 库存契约（方向由 orderInventoryAlertReader 这个形状承载）。
 	// 闭包里把库存契约的 StockAlert 收成一个 int（订单侧不 import inventory/dto）。
 	if alerts, ok := a.inventorySvc.(inventorycontract.StockAlertReader); ok {

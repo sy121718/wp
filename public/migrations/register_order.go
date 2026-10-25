@@ -224,29 +224,29 @@ func registerOrderAndSiteSlots() {
 	// CheckSQL 按**三张表全在**判定（只查一张的话，中途失败会留下「承运商表在、发货单不在」
 	// 却被永久跳过的状态 —— 与 135 同因）。
 	register(Migration{
-		Version:   "624-order-shipment",
+		Version:   "627-order-shipment",
 		TableName: "order_shipments",
 		CheckSQL: "SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM information_schema.tables " +
 			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
 			"AND table_name IN ('order_carriers', 'order_shipments', 'order_shipment_items')",
-		SQL: mustSQL("624_order_shipment.sql"),
+		SQL: mustSQL("627_order_shipment.sql"),
 	})
 
 	// 625：订单行记录发货仓（S2）。存量库上 order_items 早已存在，用默认的
 	// 「表存在即跳过」会把它永久跳过 —— 按本迁移自己的列判定。
 	register(Migration{
-		Version:   "625-order-item-warehouse",
+		Version:   "628-order-item-warehouse",
 		TableName: "order_items",
 		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
 			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'warehouse_id'",
-		SQL: mustSQL("625_order_item_warehouse.sql"),
+		SQL: mustSQL("628_order_item_warehouse.sql"),
 	})
 
 	// 626：S3 的文案词条（9 条发货业务错误 + 50 个三屏界面位，中英成对 = 118 行）。
 	// 判定逐条枚举本批全部 59 个 key 的两种语言（不用全库总量、也不用前缀 LIKE ——
 	// 前者会被同期其它批次的行满足而静默跳过，后者会被将来新增的同前缀 key 带跑）。
 	registerSeed(Seed{
-		Version:   "626-order-shipment-pages-i18n",
+		Version:   "629-order-shipment-pages-i18n",
 		TableName: "sys_i18n",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 118 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
@@ -270,13 +270,13 @@ func registerOrderAndSiteSlots() {
 			"'order.err.shipQuantityExceeded', 'order.err.shipLinesRequired', 'order.err.shipRequestKeyConflict', " +
 			"'order.err.shipWarehouseRequired', 'order.err.carrierNotFound', 'order.err.carrierCodeTaken', " +
 			"'order.err.carrierTemplateInvalid', 'order.err.carrierStatusInvalid')",
-		SQL: mustSQL("626_order_shipment_pages_i18n.sql"),
+		SQL: mustSQL("629_order_shipment_pages_i18n.sql"),
 	})
 
 	// 629：W4 的文案词条（18 个 key，中英成对 = 36 行）：销售总览的两个新卡与毛利说明、
 	// 库存预警四卡与「共 N 项待办」块。
 	registerSeed(Seed{
-		Version:   "629-sales-overview-w4-i18n",
+		Version:   "632-sales-overview-w4-i18n",
 		TableName: "sys_i18n",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 36 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
@@ -286,6 +286,6 @@ func registerOrderAndSiteSlots() {
 			"'inventory.stock.alert.total', 'inventory.stock.alert.outOfStock', 'inventory.stock.alert.lowStock', " +
 			"'inventory.stock.alert.alert', 'inventory.stock.alert.hint', 'admin.order.sales.todo.transfers', " +
 			"'admin.order.sales.todo.alerts', 'admin.order.sales.todo.pendingShip', 'admin.order.sales.todo.empty')",
-		SQL: mustSQL("629_sales_overview_w4_i18n.sql"),
+		SQL: mustSQL("632_sales_overview_w4_i18n.sql"),
 	})
 }

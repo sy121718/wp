@@ -1,6 +1,6 @@
 package inventoryservice
 
-// inventory_deduct_priority.go — 出库跨仓分配（迁移 623，W2）。
+// inventory_deduct_priority.go — 出库跨仓分配（迁移 626，W2）。
 //
 // 对齐 ERP 的 listDeductCandidates：一次 IN 取全部候选 → 内存里按优先级分配 → 统一下传。
 //

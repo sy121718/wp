@@ -1,6 +1,6 @@
 package inventoryservice
 
-// inventory_stock_claim.go — 仓库商品 SKU 主档化：认领 / 解除 / 建档 / 预占 / 释放（迁移 621）。
+// inventory_stock_claim.go — 仓库商品 SKU 主档化：认领 / 解除 / 建档 / 预占 / 释放（迁移 624）。
 //
 // 主线（本仓与 ERP 对齐的那条链）：
 //
@@ -114,7 +114,7 @@ func (s *Service) ClaimStock(ctx context.Context, req *inventorydto.ClaimStockRe
 	return res, nil
 }
 
-// ClaimStockTx 认领的**事务透传版**（迁移 621 + 商品侧「从仓库选」，迁移 625 收口）。
+// ClaimStockTx 认领的**事务透传版**（迁移 624 + 商品侧「从仓库选」，迁移 628 收口）。
 //
 // 与 ClaimStock 逐字同一条判定（锁行 → 未认领 → 目标无冲突 → 写两列），
 // 差额只在事务边界：**不自己开事务**，落在调用方的 tx 里。
@@ -571,7 +571,7 @@ const (
 	ledgerMaxPageSize     = 200
 )
 
-// StockAlert 库存预警（迁移 621 / 623，W4）：只统计跟踪数量的行。
+// StockAlert 库存预警（迁移 624 / 623，W4）：只统计跟踪数量的行。
 //
 // Alert = OutOfStock + LowStock：两个数字相加是**展示口径**（「共 N 项要处理」），
 // 不是 SQL 的分组 —— 放在 service 里算一次，模板与报表不必各自再算。

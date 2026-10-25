@@ -1,4 +1,4 @@
-// inventory_transfer_test.go — W3（迁移 627）的验收：调拨单 + 明细 + 凭证附件。
+// inventory_transfer_test.go — W3（迁移 630）的验收：调拨单 + 明细 + 凭证附件。
 //
 // 覆盖任务书 §9.9 的会红断言：
 //

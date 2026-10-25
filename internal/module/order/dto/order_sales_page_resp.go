@@ -53,7 +53,7 @@ type OrderSalesPageResp struct {
 	ListQuery string
 }
 
-// SalesTodoResp 待办块的三个数字（迁移 621 / 623 / 624，W4）。
+// SalesTodoResp 待办块的三个数字（迁移 624 / 623 / 624，W4）。
 //
 // 取不到的项是 -1，模板据此不渲染那一行（而不是渲染一个「0」假装没有待办）。
 // total 是**展示口径**（一个总数），不是业务计算 —— 它由三个数字相加得出，

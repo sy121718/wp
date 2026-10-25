@@ -41,7 +41,7 @@ var (
 //
 // **下单客户数按 user_id 去重**（游客单 user_id 为空，不计入）：与客户增长那套
 // 口径同一个判据，所以卡片上的「下单客户 8 人」与客户区块的「下单客户」会相等。
-// 毛利口径（迁移 629，W4）：行实付 − 行成本 − 运费。
+// 毛利口径（迁移 632，W4）：行实付 − 行成本 − 运费。
 //
 //	· **税不扣**：tax_total 是代收的，不是成本（与 ERP order_overview.go 的
 //	  「销售额 − 行成本 − 运费」一致）；
@@ -163,7 +163,7 @@ type OrderSalesOverviewRow struct {
 	Sales int64 `gorm:"column:sales"`
 	// Customers 下单客户数（按 user_id 去重，不含游客单）。
 	Customers int64 `gorm:"column:customers"`
-	// LineMargin 行实付 − 行成本（分，迁移 629，W4）。
+	// LineMargin 行实付 − 行成本（分，迁移 632，W4）。
 	//
 	// 运费的减法在 service 里做（OrderModel.SalesShippingTotalByRange 单独一条查询：
 	// 它是订单级的，混进这条按行聚合的 SQL 会把订单头按明细行放大）。
@@ -295,7 +295,7 @@ func (m *OrderModel) SalesMonthlyByRange(ctx context.Context, projectID string, 
 	return rows, err
 }
 
-// SalesShippingTotalByRange 取区间内的运费合计（分，迁移 629 W4）。
+// SalesShippingTotalByRange 取区间内的运费合计（分，迁移 632 W4）。
 //
 // 单独一条查询的理由：运费是**订单级**的，而毛利那条 SQL 按明细行聚合 ——
 // 一张 5 行的订单在那边被数了 5 次，直接 SUM(o.shipping_total) 会把运费算成 5 倍。

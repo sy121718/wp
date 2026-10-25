@@ -55,9 +55,9 @@ type OrderService interface {
 	OrderSalesOverviewReader
 	// OrderOverviewReader 概览页的其余只读聚合：按天趋势 / 热销榜 / 状态计数。
 	OrderOverviewReader
-	// ShipmentService 发货与承运商（迁移 624 / 625，S2）。
+	// ShipmentService 发货与承运商（迁移 627 / 625，S2）。
 	ShipmentService
-	// CurrencyService 汇率读写（迁移 630，W5）。
+	// CurrencyService 汇率读写（迁移 633，W5）。
 	CurrencyService
 	// OrderQueryReader 按线索查订单（单号 / 客户名 / 邮箱 / 状态 / 时间段）。
 	//
@@ -419,7 +419,7 @@ type StockOperator interface {
 	DeductStockTx(ctx context.Context, tx *gorm.DB, in *StockDeduction) (err error)
 	ChangeStockTx(ctx context.Context, tx *gorm.DB, in *StockAdjustment) (err error)
 
-	// —— 两段式：下单预占 → 发货扣减（迁移 621 / 624，S2）——
+	// —— 两段式：下单预占 → 发货扣减（迁移 624 / 624，S2）——
 	//
 	// 下单**只预占**：改 reserved_quantity，不改 quantity、不写流水。
 	// 发货才**扣减**：DeductStockTx 在同一条 SQL 里 quantity -= n 且 reserved -= min(reserved, n)。
@@ -491,7 +491,7 @@ type StockAdjustment struct {
 	Lines      []StockLine
 }
 
-// StockRowLocator 订单侧查「这个 (变体, 仓) 对应哪一条仓库商品 SKU 行」的窄读口（迁移 624）。
+// StockRowLocator 订单侧查「这个 (变体, 仓) 对应哪一条仓库商品 SKU 行」的窄读口（迁移 627）。
 //
 // 只用于发货明细的 **stock_id 快照**：它回答「这批货当时从哪一行出去的」，事后库存行被删
 // 也能回指到「曾经是哪一行」。**不参与任何判定** —— 查不到返回空串（不是错误），
@@ -504,7 +504,7 @@ type StockRowLocator interface {
 	LocateStockRow(ctx context.Context, projectID, variantID, warehouseID string) (stockID string, err error)
 }
 
-// WarehouseResolver 订单侧解析「这一行从哪个仓出」的唯一入口（迁移 625，S2）。
+// WarehouseResolver 订单侧解析「这一行从哪个仓出」的唯一入口（迁移 628，S2）。
 //
 // 只回答一个问题：给定工程与可选仓，返回确定的仓 id（空字符串 = 该工程没有可用仓）。
 // 不暴露库存的仓库实体、不暴露默认仓的判定规则 —— 那些是库存域的事实，

@@ -1,6 +1,6 @@
 package inventorydto
 
-// inventory_sku_form_req.go — 「仓库商品 SKU」台账页的三个写表单（迁移 621）。
+// inventory_sku_form_req.go — 「仓库商品 SKU」台账页的三个写表单（迁移 624）。
 //
 // 三个表单共用一条口径：**归一留给 service**，本层只做「表单字符串 → 结构化入参」的搬运
 // 与「哪个字段是必填」的判定。理由与 ExternalSKUFormReq 一致：去空白 / 长度上限 /

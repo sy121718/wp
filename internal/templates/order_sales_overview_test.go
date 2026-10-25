@@ -37,7 +37,7 @@ func salesOverviewDTO() map[string]any {
 		"Sales":            int64(123450), // ¥1234.50
 		"AvgOrderValue":    int64(10288),  // ¥102.88
 		"AvgCustomerValue": int64(13717),  // ¥137.17
-		// ── 迁移 629（W4）的两张新卡 ──
+		// ── 迁移 632（W4）的两张新卡 ──
 		"Units":       int64(23),
 		"GrossProfit": int64(45000), // ¥450.00
 		// 成本未核算标记（为真时卡片显示「含 N 行成本未核算」）。
@@ -97,7 +97,7 @@ func salesOverviewTemplateData() map[string]any {
 	data["ListQuery"] = "project=p1&from=2026-10-01&to=2026-10-05&monthly=6"
 	// 装载失败原因（空串 = 正常）。
 	data["LoadErr"] = ""
-	// 待办块（迁移 621 / 623 / 624，W4）：total 为 0 时整块不渲染。
+	// 待办块（迁移 624 / 623 / 624，W4）：total 为 0 时整块不渲染。
 	// 三个数字由 service 一次给全（PendingShip / AlertCount 取不到时是 -1）。
 	data["Todo"] = map[string]any{"alertCount": -1, "pendingShip": -1, "total": 0}
 	// 工程下拉：给两个工程才会走 <select>（只有一个时渲染 hidden input）。
@@ -120,7 +120,7 @@ func renderSalesOverview(t *testing.T, data map[string]any) string {
 func TestSalesOverviewRendersCards(t *testing.T) {
 	out := renderSalesOverview(t, salesOverviewTemplateData())
 
-	// 四张卡（迁移 629，W4）：订单数 / 销售额 / 总订购件数 / 毛利。
+	// 四张卡（迁移 632，W4）：订单数 / 销售额 / 总订购件数 / 毛利。
 	// 原先是 AOV / ACV —— 那两个数在「毛利」这件事上帮不上忙，而件数与毛利
 	// 才是运营每天要看的两件事（AOV / ACV 仍在下面的明细块里）。
 	for _, want := range []string{

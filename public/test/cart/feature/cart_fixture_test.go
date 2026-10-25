@@ -238,7 +238,7 @@ func (f *cartFixture) stockOf(t *testing.T, variantID string) int {
 	return st.Quantity
 }
 
-// reservedOf 读某变体在默认仓的**预占**数量（迁移 621 起结算只预占、不扣减）。
+// reservedOf 读某变体在默认仓的**预占**数量（迁移 624 起结算只预占、不扣减）。
 func (f *cartFixture) reservedOf(t *testing.T, variantID string) int {
 	t.Helper()
 	st, err := f.inventory.GetStock(context.Background(), &inventorydto.GetStockReq{

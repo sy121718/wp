@@ -160,7 +160,7 @@ func TestReturnSingleJSONSemanticsUnchanged(t *testing.T) {
 	if got := f.returnStatusOf(t, ret2.ID); got != "completed" {
 		t.Fatalf("autoReceive=true 应一步完成，实际 %s", got)
 	}
-	// 两段式（迁移 621）：这张订单从未发货，在库数量一直是下单前的原值 ——
+	// 两段式（迁移 624）：这张订单从未发货，在库数量一直是下单前的原值 ——
 	// 「一步到底」真正改变的账是**预占归零**（货从来没出库，谈不上加回库存）。
 	if got := f.stockOf(t, vid); got != stockAfterOrder2 {
 		t.Fatalf("未发货订单的退货不改变在库数量（应仍是 %d），实际 %d", stockAfterOrder2, got)

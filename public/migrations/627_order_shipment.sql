@@ -7,7 +7,7 @@
 --   · 承运商与运单号是客户可见事实，必须与操作人、时间一起留痕。
 --
 -- 刻意不加的列：fulfill_status（本地只有一条状态链，order.go 的 allowedTransitions）；
---   reserved 相关（预占在 inventory_stocks，见迁移 621）。
+--   reserved 相关（预占在 inventory_stocks，见迁移 633）。
 --
 -- 幂等：全部 IF NOT EXISTS；不加外键到 orders（与 order_items 同口径：订单不因局部清理而消失）。
 

@@ -82,7 +82,7 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 	g.GET("/stock/get", permission.InventoryStockGet, handle.GetStock)
 	g.POST("/stock/ensure", permission.InventoryStockEnsure, handle.EnsureStock)
 
-	// 库存预警（迁移 621 / 623，W4）：只统计跟踪数量的行（无限库存永远「有货」）。
+	// 库存预警（迁移 624 / 623，W4）：只统计跟踪数量的行（无限库存永远「有货」）。
 	g.GET("/stock/alert", permission.InventoryStockAlert, handle.StockAlert)
 
 	// 库存变动与流水（issue #16 验收 1–5）：真源行锁增减 + 流水 + 原因字典 + 物料清单。
@@ -117,7 +117,7 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 	g.POST("/purchase/receipt", permission.InventoryPurchaseReceipt, handle.RegisterReceipt)
 	g.POST("/purchase/production", permission.InventoryPurchaseProduction, handle.RegisterProductionInbound)
 
-	// 调拨单（迁移 627，W3）：仓库间移库，出货与签收**各需凭证附件**。
+	// 调拨单（迁移 630，W3）：仓库间移库，出货与签收**各需凭证附件**。
 	// 六条独立权限点（出货与签收是两个不同的人做的事，见 permission/codes.go）。
 	transferPages := NewInventoryTransferPageHandle(svc, project, nil)
 	tg := rg.Group("/inventory/transfer")

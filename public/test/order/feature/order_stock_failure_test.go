@@ -26,7 +26,7 @@ import (
 
 // failingStockOperator 故障注入用的库存端口：六条方法恒失败。
 //
-// 六条 = 四个既有（Deduct / Change 的自足与 Tx 版）+ 两个预占/释放（迁移 621, S2）：
+// 六条 = 四个既有（Deduct / Change 的自足与 Tx 版）+ 两个预占/释放（迁移 624, S2）：
 // 建单现在走 ReserveStockTx，取消走 ReleaseStockTx —— 替身漏一条就会在编译期露出来
 // （下面的 var _ 断言就是为此存在）。
 type failingStockOperator struct{ err error }
@@ -96,7 +96,7 @@ func TestOrderCreateRollsBackWhenStockWriteFails(t *testing.T) {
 
 	// 故障注入：**预占的 UPDATE** 直接失败。
 	//
-	// 两段式（迁移 621）之后建单只预占、不写流水 —— 原先拦「流水 INSERT」的触发器
+	// 两段式（迁移 624）之后建单只预占、不写流水 —— 原先拦「流水 INSERT」的触发器
 	// 已经拦不到建单这条路径了（预占根本不写流水）。改拦 UPDATE：预占走的正是
 	// `UPDATE inventory_stocks SET reserved_quantity = ...`。
 	if err := f.db.Exec("CREATE OR REPLACE FUNCTION test_block_reserve() RETURNS trigger AS $$ " +
@@ -137,7 +137,7 @@ func TestOrderCancelStockFailureRollsBackWholeCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	// 两段式（迁移 621）：建单预占 2 件，在库仍是 5。
+	// 两段式（迁移 624）：建单预占 2 件，在库仍是 5。
 	if got := f.reservedOf(t, vid); got != 2 {
 		t.Fatalf("建单后预占应为 2，实际 %d", got)
 	}

@@ -48,7 +48,7 @@ func NormalizeCountryCode(raw string) string {
 type OrderItemReq struct {
 	VariantID string `json:"variantId" form:"variantId"`
 	Quantity  int    `json:"quantity" form:"quantity"`
-	// WarehouseID 发货仓（迁移 625）：访客前台不传（空串 = 由订单用默认仓解析并固化），
+	// WarehouseID 发货仓（迁移 628）：访客前台不传（空串 = 由订单用默认仓解析并固化），
 	// 后台代客建单可以显式指定（例如「客户要求从上海仓发」）。
 	//
 	// 为什么建单就要定仓：预占发生在下单、扣减发生在发货，两处必须落在同一个仓；
@@ -85,7 +85,7 @@ type CreateOrderReq struct {
 	PaymentMethodTitle string         `json:"paymentMethodTitle" form:"paymentMethodTitle"`
 	// Currency 订单币种（ISO 4217）。空 = 用站点全局默认（i18n 的默认货币）。
 	//
-	// 为什么建单要能传币种：汇率快照（迁移 630）只有在「订单币 ≠ 基准币」时才成立 ——
+	// 为什么建单要能传币种：汇率快照（迁移 633）只有在「订单币 ≠ 基准币」时才成立 ——
 	// 订单币若恒取自全局默认值，它永远等于基准币，fx_rate 就恒为 NULL，折算永远不发生。
 	// 访客前台不传（全站单币种展示），后台代客建单 / API 调用可以显式指定外币单。
 	Currency           string         `json:"currency" form:"currency"`

@@ -184,7 +184,7 @@ func TestConcurrentCancelAndPayKeepSingleOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	// 两段式（迁移 621）：建单只预占 1 件，在库数量不动。
+	// 两段式（迁移 624）：建单只预占 1 件，在库数量不动。
 	if got := f.reservedOf(t, vid); got != 1 {
 		t.Fatalf("建单后预占应为 1，实际 %d", got)
 	}

@@ -367,7 +367,7 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Errorf("批量拒绝后应为 rejected，实际 %s", got)
 	}
 
-	// ⑤ 库存守恒（两段式口径，迁移 621）：链上这些订单都**从未发货**，所以在库数量
+	// ⑤ 库存守恒（两段式口径，迁移 624）：链上这些订单都**从未发货**，所以在库数量
 	//    一件都不该变 —— 退货在这种单上释放的是预占，不是把货加回仓库。
 	//    批量的两条同样**一件都不许动**（批量同意不自动入库）。
 	if got, want := f.stockOf(t, variantID), stockBeforeChain; got != want {

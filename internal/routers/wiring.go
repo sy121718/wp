@@ -93,6 +93,18 @@ const (
 	portPageCheckoutCountries      = "page.SetCheckoutCountries"
 	portPageI18nStalePeer          = "page.SetI18nStalePeer"
 	portPageStructureTemplates     = "page.SetStructureTemplatePort"
+	// 发货 / 销售总览的装配端口（迁移 624-633，S1-S3 / W4）：
+	//   · SetShipmentModels  订单模块收发货单/明细的 model 句柄（自装配内部）；
+	//   · SetShipmentCounter 销售总览的「待发货」计数来源（订单 svc 自实现）；
+	//   · SetSalesStockAlerts 库存预警（装配层后置注入，订单不 import 库存 dto）；
+	//   · SetAttachmentResolver 发货凭证附件的解析器（媒体契约，可空降级）。
+	portOrderShipmentModels      = "order.SetShipmentModels"
+	portOrderShipmentCounter     = "order.SetShipmentCounter"
+	portOrderStockAlerts         = "inventory.SetStockAlerts"
+	portOrderSalesStockAlerts    = "order.SetSalesStockAlerts"
+	portOrderAttachmentResolver  = "order.SetAttachmentResolver"
+	portOrderStockRowLocator     = "inventory.SetStockRowLocator"
+	portOrderWarehouseResolver   = "inventory.SetWarehouseResolver"
 	// —— block ↔ page 的装配期接线（FIX-05）——
 	// 块内容变更后的 stale 传播与删除前的引用检查；漏接的表现都是「无声的」，
 	// 因此两条都按 required-port 登记（判据见文件头：说不清「用户看到什么」就是 required）。
@@ -212,6 +224,21 @@ var wiringManifest = []wiringEntry{
 		"详情页模板页的模板清单读不到 = 整页 500（它是那一屏的主数据），不再退化成空清单 —— 这一档与接线前逐字一致（接线前同样把 List 失败算装载失败）"},
 	{portContentContentStore, "content（自装配，db）", "content / 构建期", wiringOptionalDegraded,
 		"内容可翻译字段逐字节回退原文（同上）"},
+	// —— 发货 / 销售总览（迁移 624-633）——
+	{portOrderShipmentModels, "order（自装配，db）", "order / 发货单读写", wiringOptionalDegraded,
+		"发货单的建单与查询拿不到 model 句柄 → 发货入口整条不可用（页面能开，点发货 500）"},
+	{portOrderShipmentCounter, "order（svc 自实现）", "order 销售总览 / 待发货块", wiringOptionalDegraded,
+		"销售总览的「待发货」一格显示为空（其余三卡照常）"},
+	{portOrderStockAlerts, "inventory（经订单装配注入）", "order 库存预警数据源", wiringOptionalDegraded,
+		"库存预警读不到（销售总览那一格留空，其余三卡照常）"},
+	{portOrderSalesStockAlerts, "order（装配层后置注入）", "order 销售总览 / 库存预警块", wiringOptionalDegraded,
+		"销售总览的「库存预警」一格显示为空；订单模块不 import 库存 dto，缺接线时只是少一格"},
+	{portOrderAttachmentResolver, "media（经订单装配注入）", "order 发货凭证附件", wiringOptionalDegraded,
+		"发货凭证的附件链接不可点（附件记录仍在，只是解析器没接上）"},
+	{portOrderStockRowLocator, "inventory（经订单装配注入）", "order 发货明细 / 库存行快照", wiringOptionalDegraded,
+		"发货明细的 stock_id 留空（该列只用于追溯，发货照常进行）"},
+	{portOrderWarehouseResolver, "inventory（经订单装配注入）", "order 发货仓解析", wiringOptionalDegraded,
+		"发货时解析不到发货仓 → 整条发货失败（预占与扣减必须落在同一个仓）"},
 	{portPluginAdminAuthz, "admin", "plugin", wiringOptionalDegraded,
 		"插件读不到当前用户权限上下文（AdminAuthz() 返回 nil，调用方判空降级）"},
 	{portMailCipherSecret, "config app.secret", "mail", wiringOptionalDegraded,

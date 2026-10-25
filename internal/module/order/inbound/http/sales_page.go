@@ -37,9 +37,9 @@ import (
 type orderSalesPageHandle struct {
 	orders   ordercontract.OrderSalesOverviewReader
 	projects projectcontract.ProjectService
-	// shipments 待发货列表（迁移 624，S2/S3）：总览页的待办块要「还要发几张单」。
+	// shipments 待发货列表（迁移 627，S2/S3）：总览页的待办块要「还要发几张单」。
 	shipments orderShipmentCounter
-	// stockAlerts 库存预警（迁移 621 / 623，W4）：总览页的「共 N 项待办」块要它。
+	// stockAlerts 库存预警（迁移 624 / 623，W4）：总览页的「共 N 项待办」块要它。
 	//
 	// 用**函数**而不是接口：库存的预警形状（dto.StockAlertResp）在 inventory/dto 里，
 	// 订单侧 import 它就是 module_boundary_test.go 判的「绕过契约层」（order→inventory/dto）。
@@ -61,7 +61,7 @@ func NewOrderSalesPageHandle(svc ordercontract.OrderService, projects projectcon
 	return &orderSalesPageHandle{orders: svc, projects: projects}
 }
 
-// SetStockAlerts 注入库存预警计数（装配期调用；迁移 621 / 623，W4）。
+// SetStockAlerts 注入库存预警计数（装配期调用；迁移 624 / 623，W4）。
 //
 // fn 返回「这个工程有多少项库存预警」（OutOfStock + LowStock，由库存侧算好）。
 // 订单侧不 import 库存的 dto：形状由装配层的闭包承载。
@@ -69,7 +69,7 @@ func (h *orderSalesPageHandle) SetStockAlerts(fn func(ctx context.Context, proje
 	h.stockAlerts = fn
 }
 
-// SetShipmentCounter 注入待发货计数（装配期调用；迁移 624，W4 的待办块）。
+// SetShipmentCounter 注入待发货计数（装配期调用；迁移 627，W4 的待办块）。
 func (h *orderSalesPageHandle) SetShipmentCounter(counter orderShipmentCounter) {
 	h.shipments = counter
 }
@@ -156,7 +156,7 @@ func (h *orderSalesPageHandle) SalesOverviewPage(c *gin.Context) {
 		// 快捷项链接要保留当前区间与工程：点一下状态就把区间丢回默认，
 		// 是本页最容易让人困惑的交互（「我明明选的是上个月」）。
 		ListQuery: salesQuery(selected, fromRaw, toRaw, monthly),
-		// 待办块（迁移 621 / 623 / 624，W4）：三个键一次给全 ——
+		// 待办块（迁移 624 / 623 / 624，W4）：三个键一次给全 ——
 		// 取不到的那一块是 -1，模板据此不渲染那一行；TodoTotal 的求和是
 		// **展示口径**（一个总数），不是业务计算。
 		Todo: h.buildTodoView(c.Request.Context(), selected),
@@ -169,7 +169,7 @@ func (h *orderSalesPageHandle) SalesOverviewPage(c *gin.Context) {
 // 而 dto 层不得 import 本包，所以结构定义留在这里、字段名与模板逐字对齐。
 type todoView = orderdto.SalesTodoResp
 
-// buildTodoView 取齐待办块并算好合计（迁移 621 / 623 / 624，W4）。
+// buildTodoView 取齐待办块并算好合计（迁移 624 / 623 / 624，W4）。
 func (h *orderSalesPageHandle) buildTodoView(ctx context.Context, projectID string) todoView {
 	alertCount, pendingShip := h.todoCounts(ctx, projectID)
 	return orderdto.SalesTodoResp{
@@ -178,7 +178,7 @@ func (h *orderSalesPageHandle) buildTodoView(ctx context.Context, projectID stri
 	}
 }
 
-// todoCounts 待办块的三个数字（迁移 621 / 623 / 624，W4）。
+// todoCounts 待办块的三个数字（迁移 624 / 623 / 624，W4）。
 //
 // 取不到的项返回 -1（模板据此不渲染那一行）：缺一个数字不该让整页打不开 ——
 // 库存模块没装配、或那一次查询失败，另外两个数字仍然是有效信息。

@@ -1,6 +1,6 @@
 package inventorymodel
 
-// inventory_shipping_model.go — 发货出库与跨仓扣减候选（迁移 621 / 623）。
+// inventory_shipping_model.go — 发货出库与跨仓扣减候选（迁移 624 / 623）。
 //
 // 发货出库一条 SQL 完成两列写回（quantity 与 reserved_quantity），
 // 跨仓扣减候选一次 IN 取全再内存分配 —— 两者都是为了不在并发路径上留下中间态。
@@ -56,7 +56,7 @@ type StockCandidatesRow struct {
 
 // ListDeductCandidates 取若干变体在**各活跃仓**的库存行，按扣减优先级排好序（只读、不加锁）。
 //
-// 排序口径（迁移 623）：deduct_priority 升序 → 仓短码升序 → 仓 id 升序。
+// 排序口径（迁移 626）：deduct_priority 升序 → 仓短码升序 → 仓 id 升序。
 // 同优先级时按短码而不是随机顺序：跨环境重放同一批数据必须扣在同一个仓上，
 // 否则「为什么这个仓少了 3 件」在每个环境给出不同答案。
 func (m *Model) ListDeductCandidates(ctx context.Context, projectID string, variantIDs []string) (list []*StockCandidatesRow, err error) {
@@ -86,7 +86,7 @@ func (m *Model) ListStocksByWarehouseTx(ctx context.Context, tx *gorm.DB, projec
 	return list, err
 }
 
-// CreateUnclaimedStockTx 建一条**未认领**库存行（product_id / variant_id 均为 NULL，迁移 621）。
+// CreateUnclaimedStockTx 建一条**未认领**库存行（product_id / variant_id 均为 NULL，迁移 624）。
 //
 // 与 EnsureStockTx 的区别是幂等性：这里**不幂等**（同仓同码重复插入应该撞
 // 244 的 UNIQUE (warehouse_id, sku_code)），因为「人工建档」是一个显式的建货动作，
@@ -122,7 +122,7 @@ type StockAlertRow struct {
 	LowStock   int64 `gorm:"column:low_stock"`
 }
 
-// StockAlertCounts 库存预警（迁移 621 / 623，W4）：一条查询数三个档。
+// StockAlertCounts 库存预警（迁移 624 / 623，W4）：一条查询数三个档。
 //
 // 口径照抄 ERP 的 WarehouseSKUStockAlert，但**只统计 track_quantity = true 的行**：
 // 无限库存永远「有货」，不该进预警。
@@ -145,7 +145,7 @@ func (m *Model) StockAlertCounts(ctx context.Context, projectID string) (row Sto
 
 // FindStockIDByVariantWarehouseTx 事务内按 (变体, 仓) 取库存行 id（没有这一行返回 nil）。
 //
-// 用途：发货明细的 stock_id 快照（迁移 624 的 order_shipment_items.stock_id）——
+// 用途：发货明细的 stock_id 快照（迁移 627 的 order_shipment_items.stock_id）——
 // 它回答「这批货当时是从哪一条仓库商品 SKU 行出去的」，事后库存行被删也能回指到「曾经是哪一行」。
 //
 // 返回 nil 而不是报错：**没有库存行不是发货的失败条件**（无限库存 / 跨仓调拨都可能让

@@ -1,6 +1,6 @@
 package ordercontract
 
-// currency.go — 汇率读写契约（迁移 630，W5）。
+// currency.go — 汇率读写契约（迁移 633，W5）。
 
 import (
 	"context"

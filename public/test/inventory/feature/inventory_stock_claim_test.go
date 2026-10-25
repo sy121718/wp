@@ -1,4 +1,4 @@
-// inventory_stock_claim_test.go — W1（迁移 621）的验收：仓库商品 SKU 主档化。
+// inventory_stock_claim_test.go — W1（迁移 624）的验收：仓库商品 SKU 主档化。
 //
 // 覆盖任务书 §4.7 的会红断言：
 //

@@ -107,7 +107,7 @@ func (s *Service) CreateWarehouse(ctx context.Context, req *inventorydto.CreateW
 	return toWarehouseResp(e), nil
 }
 
-// defaultDeductPriority 扣减优先级的缺省值（与迁移 623 的列默认、dto 的表单缺省同口径）。
+// defaultDeductPriority 扣减优先级的缺省值（与迁移 626 的列默认、dto 的表单缺省同口径）。
 const defaultDeductPriority = 100
 
 // normalizeDeductPriority 归一扣减优先级：负数拒绝，0 保留（= 显式置顶）。

@@ -503,7 +503,7 @@ func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context
 
 // —— 表单与文案工具 ——
 
-// purchaseStatusOptions 状态筛选下拉（五个值：三个推导态 + 两个人工终态，迁移 623）。
+// purchaseStatusOptions 状态筛选下拉（五个值：三个推导态 + 两个人工终态，迁移 626）。
 func purchaseStatusOptions(tr func(key, fallback string) string) []inventorydto.OptionResp {
 	return []inventorydto.OptionResp{
 		{Value: inventoryenums.PurchaseStatusPending, Label: purchaseStatusLabel(tr, inventoryenums.PurchaseStatusPending)},

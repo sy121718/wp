@@ -1,6 +1,6 @@
 package orderdto
 
-// currency_rate.go — 汇率的入参出参（迁移 630，W5）。
+// currency_rate.go — 汇率的入参出参（迁移 633，W5）。
 //
 // Rate 是**文本形式的 decimal**（numeric(18,8) 的同形）：读成 float64 会丢精度，
 // 而汇率是财务口径 —— 1e-8 的误差在汇总时会变成可观的金额偏差。换算在 service
@@ -29,7 +29,7 @@ type RateResp struct {
 	Source    string `json:"source"`
 }
 
-// ConvertedOverview 折算后的销售概览（迁移 630，W5）。
+// ConvertedOverview 折算后的销售概览（迁移 633，W5）。
 //
 // 「未固化」的订单单独计数（UnconvertedOrders）：折算金额只覆盖有快照的那部分，
 // 页面必须能说清「这里面有多少单没折算」—— 否则一个偏小的数字会被当成全量。

@@ -1,11 +1,11 @@
 package inventorydto
 
-// inventory_transfer_req.go — 调拨单的入参（迁移 627，W3）。
+// inventory_transfer_req.go — 调拨单的入参（迁移 630，W3）。
 
 // TransferLineReq 一条调拨明细：搬源仓的哪条库存行、多少件。
 //
 // StockID 而不是 VariantID：调拨搬的是**源仓里那一批具体的货**，指向库存行才能表达
-// 「未认领的货也能调拨」（迁移 621 的 variant_id IS NULL 行）。
+// 「未认领的货也能调拨」（迁移 624 的 variant_id IS NULL 行）。
 type TransferLineReq struct {
 	StockID  string `form:"stockId" json:"stockId" binding:"required"`
 	Quantity int    `form:"quantity" json:"quantity"`

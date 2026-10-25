@@ -258,7 +258,7 @@ func inventoryPageErrorData(c *gin.Context, meta inventoryPageMeta, err error) i
 		"WarehouseCreateForm": gin.H{},
 		"VariantOptions":      []gin.H{},
 		"StockRows":           []inventorydto.StockByWarehouseRowResp{},
-		// 仓库商品 SKU 台账页（迁移 621）：缺键会让 Jet 从那一行起整页中断，
+		// 仓库商品 SKU 台账页（迁移 624）：缺键会让 Jet 从那一行起整页中断，
 		// 失败页同样要把键补齐（多给的键不渲染）。
 		"Rows":             []inventorydto.StockLedgerRowResp{},
 		"Keyword":          "",

@@ -124,7 +124,7 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 	// 解析实现在库存侧，通过 orderstock.WarehouseResolver 适配）。
 	orders.SetShipmentModels(ordermodel.NewOrderShipmentModel(db), ordermodel.NewOrderCarrierModel(db))
 	orders.SetWarehouseResolver(orderstock.NewWarehouseResolver(inv))
-	// 发货明细的 stock_id 快照（迁移 624）：同一个适配器也实现 StockRowLocator。
+	// 发货明细的 stock_id 快照（迁移 627）：同一个适配器也实现 StockRowLocator。
 	orders.SetStockRowLocator(orderstock.New(inv))
 	return &orderFixture{
 		orders: orders, products: products, inventory: inv, users: users, mail: mail,
@@ -190,7 +190,7 @@ func (f *orderFixture) stockOf(t *testing.T, variantID string) int {
 	return st.Quantity
 }
 
-// reservedOf 读某变体在默认仓的**预占**数量（迁移 621 起下单只预占、不扣减）。
+// reservedOf 读某变体在默认仓的**预占**数量（迁移 624 起下单只预占、不扣减）。
 //
 // 与 stockOf 分开两个函数：两段式的核心就是这个区别 ——
 // 「下单」改 reserved_quantity，「发货」才改 quantity。合成一个函数读两个数，
@@ -219,7 +219,7 @@ func (f *orderFixture) createBaseReq(variantID string, qty int) *orderdto.Create
 
 // TestOrderCreateDeductsStockAndSnapshotsPrice：建单成功 → 状态待付款、金额按服务端价格算、**库存预占**。
 //
-// 口径（迁移 621，S2）：下单只预占（reserved_quantity += n），发货才扣减 quantity。
+// 口径（迁移 624，S2）：下单只预占（reserved_quantity += n），发货才扣减 quantity。
 // 本用例断言的是「下单之后」这一半；发货那一半见 order_shipment_test.go。
 func TestOrderCreateDeductsStockAndSnapshotsPrice(t *testing.T) {
 	f := newOrderFixture(t)
@@ -239,7 +239,7 @@ func TestOrderCreateDeductsStockAndSnapshotsPrice(t *testing.T) {
 	if res.Total != 19900 {
 		t.Fatalf("总额应为 19900 分，实际 %d", res.Total)
 	}
-	// 两段式（迁移 621）：**下单只预占**，quantity 一个字都不动。
+	// 两段式（迁移 624）：**下单只预占**，quantity 一个字都不动。
 	if got := f.stockOf(t, vid); got != 10 {
 		t.Fatalf("下单不得扣减在库数量（两段式：下单只预占），期望 10，实际 %d", got)
 	}
@@ -468,7 +468,7 @@ func TestOrderCancelReturnsStock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	// 两段式（迁移 621）：建单预占 4 件、在库仍 6 件；
+	// 两段式（迁移 624）：建单预占 4 件、在库仍 6 件；
 	// 取消**释放预占**（在库本来就没动，所以「回到 6」这个说法已不适用 ——
 	// 要断言的是预占归零）。
 	if got := f.reservedOf(t, vid); got != 4 {

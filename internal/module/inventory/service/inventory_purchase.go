@@ -217,7 +217,7 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *inventorydto.Upd
 	return s.purchaseOrderResp(ctx, order, lines, nil, nil), nil
 }
 
-// FinishPurchaseOrder 提前关单（迁移 623）：received / partial → finished。
+// FinishPurchaseOrder 提前关单（迁移 626）：received / partial → finished。
 //
 // 「提前关单」= 剩下的不再等（供应商断供 / 转单 / 只要已到的那部分）。
 // 它**不是**数量推导的结果（那是 received），而是一次人工决定 —— 所以给显式入口，
@@ -228,7 +228,7 @@ func (s *Service) FinishPurchaseOrder(ctx context.Context, req *inventorydto.Pur
 	return s.settlePurchaseStatus(ctx, req, inventoryenums.PurchaseStatusFinished)
 }
 
-// CancelPurchaseOrder 取消采购单（迁移 623）：pending / partial → cancelled。
+// CancelPurchaseOrder 取消采购单（迁移 626）：pending / partial → cancelled。
 //
 // received 不可取消：货已经进仓，要退只能走退货；把它「取消」会让库存凭空多出一批
 // 没有来源的单据对应物。

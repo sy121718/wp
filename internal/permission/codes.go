@@ -185,12 +185,12 @@ const (
 	InventoryPurchaseList Perm = "inventory:purchase_list"
 	// 生产入库（POST /api/inventory/purchase/production）
 	InventoryPurchaseProduction Perm = "inventory:purchase_production"
-	// 库存预警（GET /api/inventory/stock/alert，迁移 621 / 623，W4）。
+	// 库存预警（GET /api/inventory/stock/alert，迁移 624 / 623，W4）。
 	//
 	// 单独一条而不是复用 stock/list：sys_permission 每条 API 路由要有**自己**的权限点
 	//（同一个码绑两条路由时，只有一条能生成超管策略，其余对所有人 403）。
 	InventoryStockAlert Perm = "inventory:stock_alert"
-	// 调拨单（迁移 627，W3）：六条独立权限点 —— 看列表 / 看详情 / 建单 / 出货 / 签收 / 取消。
+	// 调拨单（迁移 630，W3）：六条独立权限点 —— 看列表 / 看详情 / 建单 / 出货 / 签收 / 取消。
 	//
 	// 为什么拆这么细：出货与签收是**两个不同的人**做的事（一个人发货、另一个人签收），
 	// 合成一条会让「只有发货权的人」也能把自己的货签成已到。
@@ -433,7 +433,7 @@ const (
 	// 与 order:list 的关系是「看哪一屏」而不是「能不能看订单」：列表页管单条订单的处置，
 	// 概览页管口径聚合，两者授权可以分开。
 	OrderOverview Perm = "order:overview"
-	// 汇率读写（GET/POST /api/order/currency/rate，迁移 630 W5）。
+	// 汇率读写（GET/POST /api/order/currency/rate，迁移 633 W5）。
 	//
 	// 读与写各自一条码（每条 API 路由要一个自己的码）。
 	OrderCurrencyRateGet Perm = "order:currency_rate_get"

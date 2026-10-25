@@ -1,6 +1,6 @@
 package inventorymodel
 
-// inventory_claim_model.go — 仓库商品 SKU 主档化的行级写入（迁移 621）。
+// inventory_claim_model.go — 仓库商品 SKU 主档化的行级写入（迁移 624）。
 //
 // 两组都以**库存行 id** 为锁对象，并一律用**原子 SQL** 完成读-改-写：
 //

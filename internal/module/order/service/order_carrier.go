@@ -1,6 +1,6 @@
 package orderservice
 
-// order_carrier.go — 承运商管理（迁移 624，S1/S2）与「待发货」读模型。
+// order_carrier.go — 承运商管理（迁移 627，S1/S2）与「待发货」读模型。
 //
 // 承运商是**可选主数据**：自营配送 / 客户自提的订单没有承运商。因此它是独立一张表，
 // 而不是订单上的几个字段 —— 同一个承运商会被几十张单引用，「改个名字要改几十行」
@@ -39,7 +39,7 @@ func (s *Service) carrierProject(ctx context.Context, explicit string) (string, 
 		return "", err
 	}
 	if len(ids) != 1 {
-		return "", errors.New(orderenums.ErrProjectRequired)
+		return "", orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	return ids[0], nil
 }
@@ -53,7 +53,7 @@ var invalidPlaceholder = regexp.MustCompile(`\{[A-Za-z0-9_]+\}`)
 // ListCarriers 某工程的承运商（默认只列启用中的：停用的不该出现在发货表单里）。
 func (s *Service) ListCarriers(ctx context.Context, req *orderdto.ListCarrierReq) (list []*orderdto.CarrierResp, err error) {
 	if s.carriers == nil {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	projectID, perr := s.carrierProject(ctx, req.ProjectID)
 	if perr != nil {
@@ -73,12 +73,12 @@ func (s *Service) ListCarriers(ctx context.Context, req *orderdto.ListCarrierReq
 // CreateCarrier 新建承运商（代码工程内唯一，大小写不敏感）。
 func (s *Service) CreateCarrier(ctx context.Context, req *orderdto.CarrierCreateReq) (res *orderdto.CarrierResp, err error) {
 	if s.carriers == nil || req == nil {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	code := strings.TrimSpace(req.Code)
 	name := strings.TrimSpace(req.Name)
 	if code == "" || name == "" {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	tpl, terr := normalizeTrackingTemplate(req.TrackingURLTemplate)
 	if terr != nil {
@@ -93,7 +93,7 @@ func (s *Service) CreateCarrier(ctx context.Context, req *orderdto.CarrierCreate
 		return nil, cerr
 	}
 	if taken {
-		return nil, errors.New(orderenums.ErrCarrierCodeTaken)
+		return nil, orderenums.Err(orderenums.ErrCarrierCodeTaken)
 	}
 	now := time.Now().UTC()
 	e := &ordermodel.OrderCarrierEntity{
@@ -111,7 +111,7 @@ func (s *Service) CreateCarrier(ctx context.Context, req *orderdto.CarrierCreate
 // UpdateCarrier 修改承运商（逐字段可选）。
 func (s *Service) UpdateCarrier(ctx context.Context, req *orderdto.CarrierUpdateReq) (res *orderdto.CarrierResp, err error) {
 	if s.carriers == nil || req == nil || strings.TrimSpace(req.ID) == "" {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	projectID, perr := s.carrierProject(ctx, req.ProjectID)
 	if perr != nil {
@@ -120,28 +120,28 @@ func (s *Service) UpdateCarrier(ctx context.Context, req *orderdto.CarrierUpdate
 	e, gerr := s.carriers.Get(ctx, strings.TrimSpace(req.ID), projectID)
 	if gerr != nil {
 		if errors.Is(gerr, gorm.ErrRecordNotFound) {
-			return nil, errors.New(orderenums.ErrCarrierNotFound)
+			return nil, orderenums.Err(orderenums.ErrCarrierNotFound)
 		}
 		return nil, gerr
 	}
 	if req.Code != nil {
 		code := strings.TrimSpace(*req.Code)
 		if code == "" {
-			return nil, errors.New(orderenums.ErrInvalidParam)
+			return nil, orderenums.Err(orderenums.ErrInvalidParam)
 		}
 		taken, cerr := s.carriers.CodeExists(ctx, projectID, code, e.ID)
 		if cerr != nil {
 			return nil, cerr
 		}
 		if taken {
-			return nil, errors.New(orderenums.ErrCarrierCodeTaken)
+			return nil, orderenums.Err(orderenums.ErrCarrierCodeTaken)
 		}
 		e.Code = code
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, errors.New(orderenums.ErrInvalidParam)
+			return nil, orderenums.Err(orderenums.ErrInvalidParam)
 		}
 		e.Name = name
 	}
@@ -155,7 +155,7 @@ func (s *Service) UpdateCarrier(ctx context.Context, req *orderdto.CarrierUpdate
 	if req.Status != nil {
 		status := strings.TrimSpace(*req.Status)
 		if status != "active" && status != "disabled" {
-			return nil, errors.New(orderenums.ErrCarrierStatusInvalid)
+			return nil, orderenums.Err(orderenums.ErrCarrierStatusInvalid)
 		}
 		e.Status = status
 	}
@@ -180,7 +180,7 @@ func normalizeTrackingTemplate(raw string) (string, error) {
 	}
 	for _, m := range invalidPlaceholder.FindAllString(tpl, -1) {
 		if m != trackingPlaceholder {
-			return "", errors.New(orderenums.ErrCarrierTemplateInvalid)
+			return "", orderenums.Err(orderenums.ErrCarrierTemplateInvalid)
 		}
 	}
 	return tpl, nil
@@ -206,7 +206,7 @@ func toCarrierResp(e *ordermodel.OrderCarrierEntity) *orderdto.CarrierResp {
 	}
 }
 
-// ListPendingShip 待发货列表（迁移 624 / 625，S2）：只列 **paid 且还有未发数量** 的订单。
+// ListPendingShip 待发货列表（迁移 627 / 625，S2）：只列 **paid 且还有未发数量** 的订单。
 //
 // 三条口径：
 //
@@ -217,7 +217,7 @@ func toCarrierResp(e *ordermodel.OrderCarrierEntity) *orderdto.CarrierResp {
 //	· 每个数字都由 service 算好（模板不做减法）。剩余 = 件数 − 已发。
 func (s *Service) ListPendingShip(ctx context.Context, projectID string) (rows []*orderdto.PendingShipRow, err error) {
 	if s.shipments == nil {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	var perr error
 	if projectID, perr = s.carrierProject(ctx, projectID); perr != nil {
@@ -290,7 +290,7 @@ func (s *Service) shippedByOrderItem(ctx context.Context, orderID uint64, itemID
 // `Quantity - Shipped` 会在页面上再实现一次口径（template_logic_test.go 的判据）。
 func (s *Service) BuildShipForm(ctx context.Context, req *orderdto.ListShipmentReq) (form *orderdto.ShipForm, err error) {
 	if req == nil || req.OrderID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	projectID, perr := s.resolveOrderProject(ctx, req.OrderID, req.ProjectID)
 	if perr != nil {
@@ -301,7 +301,7 @@ func (s *Service) BuildShipForm(ctx context.Context, req *orderdto.ListShipmentR
 		return nil, err
 	}
 	if e == nil {
-		return nil, errors.New(orderenums.ErrOrderNotFound)
+		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	items, ierr := s.items.ListByOrderID(ctx, e.ID)
 	if ierr != nil {

@@ -294,7 +294,7 @@ func (s *Service) deductStockTx(ctx context.Context, tx *gorm.DB, req *inventory
 	}
 	meta := changeMeta{reason: reason, sourceType: req.SourceType, sourceRef: req.SourceRef,
 		remark: req.Remark, operatorID: req.OperatorID}
-	// 跨仓分配（迁移 623）：只在「出库 且 请求 / 行都没指定仓」时接管，
+	// 跨仓分配（迁移 626）：只在「出库 且 请求 / 行都没指定仓」时接管，
 	// 显式指定的仓永远优先。分配结果仍是同一个 lines 形状 ——
 	// 随后的 buildChangeItems 解析 / 校验 / 加锁 / 流水逐字复用。
 	lines, aerr := s.assignDeductWarehouses(ctx, projectID, inventoryenums.DirectionOut, req.WarehouseID, req.Lines)
@@ -618,7 +618,7 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 				}
 				continue
 			}
-			// 发货出库（原因码 sale_out / 来源 order_shipment）同时释放预占（迁移 621）：
+			// 发货出库（原因码 sale_out / 来源 order_shipment）同时释放预占（迁移 624）：
 			// quantity -= n 且 reserved -= min(reserved, n)，两列必须**同一句**写回
 			// （model.DeductStockOnShipTx）—— 分开写会留下「扣了货、预占还在」的
 			// 中间态，并发下可售数量会凭空变成负数。

@@ -1,6 +1,6 @@
 package orderdto
 
-// order_shipment_req.go — 发货 / 承运商 / 发货单查询的入参（迁移 624 / 625，S2）。
+// order_shipment_req.go — 发货 / 承运商 / 发货单查询的入参（迁移 627 / 625，S2）。
 
 // ShipLineReq 一行发货明细。
 //

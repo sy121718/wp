@@ -9,18 +9,18 @@ import json "go_wp/pkg/jsonx"
 // 凭据只以**密文**或**引用名**落库：APICredential 是写入方向的明文，
 // service 加密后立刻替换成密文，明文既不落库也不回显（见 WarehouseThirdPartyResp）。
 type WarehouseThirdPartyReq struct {
-	Provider       string `json:"provider"`
-	ExternalCode   string `json:"externalCode"`
-	Address        string `json:"address"`
-	Contact        string `json:"contact"`
-	AllowsShipping bool   `json:"allowsShipping"`
+	Provider       string `json:"provider" form:"provider"`
+	ExternalCode   string `json:"externalCode" form:"externalCode"`
+	Address        string `json:"address" form:"address"`
+	Contact        string `json:"contact" form:"contact"`
+	AllowsShipping bool   `json:"allowsShipping" form:"allowsShipping"`
 	// APICredential 本次要写入的**明文**凭据；为空或等于掩码 **** 表示「不改凭据」
 	// （未改动就不覆盖 —— 后台回显的是掩码，直接保存不该把真凭据清掉）。
-	APICredential string `json:"apiCredential"`
+	APICredential string `json:"apiCredential" form:"apiCredential"`
 	// ClearCredential 显式清除已配置的凭据（指针为 nil 表达不了「改成没有」）。
-	ClearCredential bool `json:"clearCredential"`
+	ClearCredential bool `json:"clearCredential" form:"clearCredential"`
 	// SecretRef 凭据的引用名（无可用加密能力时的替代形态）：系统只记名字，值在部署侧。
-	SecretRef string `json:"secretRef"`
+	SecretRef string `json:"secretRef" form:"secretRef"`
 }
 
 // CreateWarehouseReq 新建仓库（验收 1）。
@@ -29,40 +29,40 @@ type WarehouseThirdPartyReq struct {
 // IsDefault 为真表示同时把它设为该工程的默认仓（「未指定仓库」时的兜底）。
 // Type 是仓库类型；第三方仓（third_party）的对接配置走 ThirdParty。
 type CreateWarehouseReq struct {
-	ProjectID string `json:"projectId"`
-	Code      string `json:"code" binding:"required"`
-	Name      string `json:"name" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId"`
+	Code      string `json:"code" form:"code" binding:"required"`
+	Name      string `json:"name" form:"name" binding:"required"`
 	// Type 空串按 self 归一（存量语义：不加类型就是自营仓）。
-	Type      string `json:"type"`
-	IsDefault bool   `json:"isDefault"`
-	Status    string `json:"status"`
-	Sort      int    `json:"sort"`
-	// DeductPriority 出库扣减优先级（迁移 623）：值小先扣；仅在未显式指定仓库时生效。
-	DeductPriority int             `json:"deductPriority"`
-	Metadata       json.RawMessage `json:"metadata"`
+	Type      string `json:"type" form:"type"`
+	IsDefault bool   `json:"isDefault" form:"isDefault"`
+	Status    string `json:"status" form:"status"`
+	Sort      int    `json:"sort" form:"sort"`
+	// DeductPriority 出库扣减优先级（迁移 626）：值小先扣；仅在未显式指定仓库时生效。
+	DeductPriority int             `json:"deductPriority" form:"deductPriority"`
+	Metadata       json.RawMessage `json:"metadata" form:"metadata"`
 	// ThirdParty 非 nil 且类型为 third_party 时写入 config；其余类型忽略它。
-	ThirdParty *WarehouseThirdPartyReq `json:"thirdParty"`
+	ThirdParty *WarehouseThirdPartyReq `json:"thirdParty" form:"thirdParty"`
 }
 
 // UpdateWarehouseReq 修改仓库（逐字段可选；nil = 本次不改）。
 type UpdateWarehouseReq struct {
-	ID string `json:"id" binding:"required"`
+	ID string `json:"id" form:"id" binding:"required"`
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
-	ProjectID string  `json:"projectId"`
-	Code      *string `json:"code"`
-	Name      *string `json:"name"`
+	ProjectID string  `json:"projectId" form:"projectId"`
+	Code      *string `json:"code" form:"code"`
+	Name      *string `json:"name" form:"name"`
 	// IsDefault 置真即「切换默认仓」（同工程唯一）；置假在已是默认仓时被拒绝 ——
 	// 取消默认会让「未指定仓库」失去兜底，必须先指定另一个默认仓。
-	IsDefault *bool   `json:"isDefault"`
-	Status    *string `json:"status"`
-	Sort      *int    `json:"sort"`
-	// DeductPriority nil = 本次不改；显式给值即覆盖（迁移 623）。
-	DeductPriority *int `json:"deductPriority"`
+	IsDefault *bool   `json:"isDefault" form:"isDefault"`
+	Status    *string `json:"status" form:"status"`
+	Sort      *int    `json:"sort" form:"sort"`
+	// DeductPriority nil = 本次不改；显式给值即覆盖（迁移 626）。
+	DeductPriority *int `json:"deductPriority" form:"deductPriority"`
 	// Type 仓库类型；nil = 本次不改。
-	Type     *string         `json:"type"`
-	Metadata json.RawMessage `json:"metadata"`
+	Type     *string         `json:"type" form:"type"`
+	Metadata json.RawMessage `json:"metadata" form:"metadata"`
 	// ThirdParty 非 nil 表示本次整体替换对接配置（凭据按「未改动则不覆盖」处理）。
-	ThirdParty *WarehouseThirdPartyReq `json:"thirdParty"`
+	ThirdParty *WarehouseThirdPartyReq `json:"thirdParty" form:"thirdParty"`
 }
 
 // GetWarehouseReq 按 ID 查询仓库。
@@ -79,20 +79,20 @@ type ListWarehouseReq struct {
 
 // DeleteWarehouseReq 删除仓库。
 type DeleteWarehouseReq struct {
-	ID string `json:"id" binding:"required"`
+	ID string `json:"id" form:"id" binding:"required"`
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
-	ProjectID string `json:"projectId"`
+	ProjectID string `json:"projectId" form:"projectId"`
 }
 
 // EnsureStockReq 确保某个 SKU 在某仓有一条库存记录（初始 0）。
 //
 // WarehouseID 为空时兜底到该工程的默认仓；VariantID 必填（库存以 SKU × 仓库 为维度）。
 type EnsureStockReq struct {
-	ProjectID   string `json:"projectId"`
-	ProductID   string `json:"productId"`
-	VariantID   string `json:"variantId" binding:"required"`
-	SKUCode     string `json:"skuCode"`
-	WarehouseID string `json:"warehouseId"`
+	ProjectID   string `json:"projectId" form:"projectId"`
+	ProductID   string `json:"productId" form:"productId"`
+	VariantID   string `json:"variantId" form:"variantId" binding:"required"`
+	SKUCode     string `json:"skuCode" form:"skuCode"`
+	WarehouseID string `json:"warehouseId" form:"warehouseId"`
 }
 
 // UpdateStockTrackingReq 库存页行内编辑「跟踪开关 + 数量」（迁移 261）。
@@ -105,13 +105,13 @@ type EnsureStockReq struct {
 // TrackQuantity 为 true 时数量必填：数量与开关一起写回，并且经变动契约
 // （原因 = 手工调整）落一条流水 —— 数量的任何变化都要有痕迹。
 type UpdateStockTrackingReq struct {
-	ProjectID   string `json:"projectId"`
-	WarehouseID string `json:"warehouseId" binding:"required"`
-	VariantID   string `json:"variantId" binding:"required"`
+	ProjectID   string `json:"projectId" form:"projectId"`
+	WarehouseID string `json:"warehouseId" form:"warehouseId" binding:"required"`
+	VariantID   string `json:"variantId" form:"variantId" binding:"required"`
 	// TrackQuantity 跟踪开关：false = 无限（不跟踪）。
-	TrackQuantity bool `json:"trackQuantity"`
+	TrackQuantity bool `json:"trackQuantity" form:"trackQuantity"`
 	// Quantity 仅在 TrackQuantity 为真时生效；为假时必须为 0。
-	Quantity int `json:"quantity"`
+	Quantity int `json:"quantity" form:"quantity"`
 }
 
 // GetStockReq 单条库存记录（按 id，或按 变体 × 仓库 定位）。
@@ -190,26 +190,26 @@ type GetWarehouseSKUReq struct {
 // 非空时的弱校验在 service：同一仓内同一外码必须指向同一个 product_id
 // （同一商品的多个变体共用合法；跨商品报 ErrExternalSKUProductConflict）。
 type BindExternalSKUReq struct {
-	ProjectID   string `json:"projectId"`
-	WarehouseID string `json:"warehouseId" binding:"required"`
-	VariantID   string `json:"variantId" binding:"required"`
-	ExternalSKU string `json:"externalSku"`
+	ProjectID   string `json:"projectId" form:"projectId"`
+	WarehouseID string `json:"warehouseId" form:"warehouseId" binding:"required"`
+	VariantID   string `json:"variantId" form:"variantId" binding:"required"`
+	ExternalSKU string `json:"externalSku" form:"externalSku"`
 }
 
-// —— 仓库商品 SKU 主档化（迁移 621）——
+// —— 仓库商品 SKU 主档化（迁移 624）——
 
 // ClaimStockReq 把一条未认领的仓库存货行认领到某个商品变体。
 //
 // 认领是**单向且不可自动合并**的动作：目标 (variant_id, warehouse_id) 已有库存行时拒绝，
 // 因为两行库存是两份事实（迁移 262 的同一判据），合并要么丢数量、要么丢成本。
 type ClaimStockReq struct {
-	ProjectID string `json:"projectId"`
+	ProjectID string `json:"projectId" form:"projectId"`
 	// StockID 待认领的库存行 id（表单只提交它，不提交编码：编码可以改，行 id 不会）。
-	StockID string `json:"stockId" binding:"required"`
+	StockID string `json:"stockId" form:"stockId" binding:"required"`
 	// ProductID / VariantID 认领目标（两者同时给：库存行上这两列总是一起落值）。
-	ProductID  string `json:"productId" binding:"required"`
-	VariantID  string `json:"variantId" binding:"required"`
-	OperatorID string `json:"operatorId"`
+	ProductID  string `json:"productId" form:"productId" binding:"required"`
+	VariantID  string `json:"variantId" form:"variantId" binding:"required"`
+	OperatorID string `json:"operatorId" form:"operatorId"`
 }
 
 // UnclaimStockReq 解除认领（商品下线 / 认领错了）。
@@ -217,8 +217,8 @@ type ClaimStockReq struct {
 // 仅当 quantity = 0 且 reserved_quantity = 0 时允许 —— 有数量或有预占就解除，
 // 会让货从「商品库存」里消失，而变体删除守卫看不见它。
 type UnclaimStockReq struct {
-	ProjectID string `json:"projectId"`
-	StockID   string `json:"stockId" binding:"required"`
+	ProjectID string `json:"projectId" form:"projectId"`
+	StockID   string `json:"stockId" form:"stockId" binding:"required"`
 }
 
 // CreateUnclaimedStockReq 人工建档一条未认领存货（仓库 + 裸码 + 数量 + 成本）。
@@ -227,14 +227,14 @@ type UnclaimStockReq struct {
 // 迁移 261 的 CHECK (track_quantity OR quantity = 0) 决定了「有数量就必须跟踪」，
 // 填了数量却留 false 只会撞一句没有上下文的约束错误。
 type CreateUnclaimedStockReq struct {
-	ProjectID   string `json:"projectId"`
-	WarehouseID string `json:"warehouseId" binding:"required"`
+	ProjectID   string `json:"projectId" form:"projectId"`
+	WarehouseID string `json:"warehouseId" form:"warehouseId" binding:"required"`
 	// SKUCode 仓库侧裸码（不带仓码前缀；前缀只属于商品侧）。
-	SKUCode       string   `json:"skuCode" binding:"required"`
-	ExternalSKU   string   `json:"externalSku"`
-	Quantity      int      `json:"quantity"`
-	TrackQuantity bool     `json:"trackQuantity"`
-	CostPrice     *float64 `json:"costPrice"`
+	SKUCode       string   `json:"skuCode" form:"skuCode" binding:"required"`
+	ExternalSKU   string   `json:"externalSku" form:"externalSku"`
+	Quantity      int      `json:"quantity" form:"quantity"`
+	TrackQuantity bool     `json:"trackQuantity" form:"trackQuantity"`
+	CostPrice     *float64 `json:"costPrice" form:"costPrice"`
 }
 
 // ReserveStockLine 一行预占 / 释放请求。
@@ -250,11 +250,11 @@ type ReserveStockLine struct {
 //
 // SourceType / SourceRef 只做对账标识：预占不写流水，这两个值不落库存表。
 type ReserveStockReq struct {
-	ProjectID  string             `json:"projectId"`
-	SourceType string             `json:"sourceType"`
-	SourceRef  string             `json:"sourceRef"`
-	Remark     string             `json:"remark"`
-	Lines      []ReserveStockLine `json:"lines" binding:"required"`
+	ProjectID  string             `json:"projectId" form:"projectId"`
+	SourceType string             `json:"sourceType" form:"sourceType"`
+	SourceRef  string             `json:"sourceRef" form:"sourceRef"`
+	Remark     string             `json:"remark" form:"remark"`
+	Lines      []ReserveStockLine `json:"lines" form:"lines" binding:"required"`
 }
 
 // —— 库存变动与流水（issue #16）——
@@ -265,12 +265,12 @@ type ReserveStockReq struct {
 // ProductID / SKUCode 是落库快照（库存表按表隔离约定自带 sku_code 快照列）；
 // 目标行已存在时沿用既有值，故只有「首次为新 SKU 建行」才必须给全。
 type StockChangeLineReq struct {
-	WarehouseID string `json:"warehouseId"`
-	ProductID   string `json:"productId"`
-	VariantID   string `json:"variantId" binding:"required"`
-	SKUCode     string `json:"skuCode"`
+	WarehouseID string `json:"warehouseId" form:"warehouseId"`
+	ProductID   string `json:"productId" form:"productId"`
+	VariantID   string `json:"variantId" form:"variantId" binding:"required"`
+	SKUCode     string `json:"skuCode" form:"skuCode"`
 	// Quantity 语义随方向而定：in / out 是正数增减量；adjust 是目标绝对量（>= 0）。
-	Quantity int `json:"quantity"`
+	Quantity int `json:"quantity" form:"quantity"`
 	// CostPrice 可选：本次变动要写入的**当前成本价**（(仓库, SKU) 维度，覆盖式，迁移 244）。
 	//
 	// nil = 本次变动不碰成本 —— 出库、盘点、报损的默认行为就是不动成本（调成本不是
@@ -279,7 +279,7 @@ type StockChangeLineReq struct {
 	//
 	// 注意 nil 与「成本为空」是两回事：成本列可空表示尚未核算，显式给出的值必须
 	// >= 0 且有限（0 合法：赠品 / 内部划拨）。
-	CostPrice *float64 `json:"costPrice"`
+	CostPrice *float64 `json:"costPrice" form:"costPrice"`
 }
 
 // ChangeStockReq 按 SKU 增减库存（issue #16 验收 1/2/3/4）。
@@ -287,15 +287,15 @@ type StockChangeLineReq struct {
 // 多行（多 SKU / 多仓）在**同一事务**里整体生效：任一行可用量不足即整体拒绝，
 // 不留半截变动；加锁顺序由服务端按 (变体, 仓库) 标识升序固定，与入参顺序无关。
 type ChangeStockReq struct {
-	ProjectID   string               `json:"projectId"`
-	WarehouseID string               `json:"warehouseId"`
-	Direction   string               `json:"direction" binding:"required"`
-	ReasonCode  string               `json:"reasonCode" binding:"required"`
-	SourceType  string               `json:"sourceType"`
-	SourceRef   string               `json:"sourceRef"`
-	Remark      string               `json:"remark"`
-	OperatorID  string               `json:"operatorId"`
-	Lines       []StockChangeLineReq `json:"lines" binding:"required"`
+	ProjectID   string               `json:"projectId" form:"projectId"`
+	WarehouseID string               `json:"warehouseId" form:"warehouseId"`
+	Direction   string               `json:"direction" form:"direction" binding:"required"`
+	ReasonCode  string               `json:"reasonCode" form:"reasonCode" binding:"required"`
+	SourceType  string               `json:"sourceType" form:"sourceType"`
+	SourceRef   string               `json:"sourceRef" form:"sourceRef"`
+	Remark      string               `json:"remark" form:"remark"`
+	OperatorID  string               `json:"operatorId" form:"operatorId"`
+	Lines       []StockChangeLineReq `json:"lines" form:"lines" binding:"required"`
 }
 
 // DeductStockReq 按 SKU 扣减库存（issue #16 验收 5：支持按物料清单展开多个子项 SKU）。
@@ -305,15 +305,15 @@ type ChangeStockReq struct {
 // 没有清单的 SKU 就是叶子，按自身扣减。展开后的子项集合仍然整体排序加锁、整体生效
 // （任一项不足即整批拒绝）。
 type DeductStockReq struct {
-	ProjectID   string               `json:"projectId"`
-	WarehouseID string               `json:"warehouseId"`
-	ReasonCode  string               `json:"reasonCode" binding:"required"`
-	SourceType  string               `json:"sourceType"`
-	SourceRef   string               `json:"sourceRef"`
-	Remark      string               `json:"remark"`
-	OperatorID  string               `json:"operatorId"`
-	ExpandBOM   bool                 `json:"expandBom"`
-	Lines       []StockChangeLineReq `json:"lines" binding:"required"`
+	ProjectID   string               `json:"projectId" form:"projectId"`
+	WarehouseID string               `json:"warehouseId" form:"warehouseId"`
+	ReasonCode  string               `json:"reasonCode" form:"reasonCode" binding:"required"`
+	SourceType  string               `json:"sourceType" form:"sourceType"`
+	SourceRef   string               `json:"sourceRef" form:"sourceRef"`
+	Remark      string               `json:"remark" form:"remark"`
+	OperatorID  string               `json:"operatorId" form:"operatorId"`
+	ExpandBOM   bool                 `json:"expandBom" form:"expandBom"`
+	Lines       []StockChangeLineReq `json:"lines" form:"lines" binding:"required"`
 }
 
 // ListMovementReq 库存流水查询（按工程 / 仓 / 商品 / 变体 / SKU / 方向 / 原因 / 来源过滤 + 分页）。
@@ -351,11 +351,11 @@ type ListReasonReq struct {
 // Name 是**给人读的文案**（运营填的）：service 把它写成 sys_i18n 里的一条词条，
 // 原因行本身只存自动派生的 i18n key —— 全站文案的唯一真源是文案词条，不是这张表。
 type CreateReasonReq struct {
-	ProjectID string `json:"projectId"`
-	Code      string `json:"code" binding:"required"`
-	Name      string `json:"name" binding:"required"`
-	Direction string `json:"direction" binding:"required"`
-	Sort      int    `json:"sort"`
+	ProjectID string `json:"projectId" form:"projectId"`
+	Code      string `json:"code" form:"code" binding:"required"`
+	Name      string `json:"name" form:"name" binding:"required"`
+	Direction string `json:"direction" form:"direction" binding:"required"`
+	Sort      int    `json:"sort" form:"sort"`
 }
 
 // UpdateReasonReq 修改自定义变动原因（逐字段可选）。
@@ -363,31 +363,31 @@ type CreateReasonReq struct {
 // 内置原因只读：改 Name 一律拒绝（它的 key 由系统按 code 派生），仅允许改启停与排序。
 // 自定义原因改 Name 时同步更新 sys_i18n 里的那条词条。
 type UpdateReasonReq struct {
-	ID     string  `json:"id" binding:"required"`
-	Name   *string `json:"name"`
-	Status *string `json:"status"`
-	Sort   *int    `json:"sort"`
+	ID     string  `json:"id" form:"id" binding:"required"`
+	Name   *string `json:"name" form:"name"`
+	Status *string `json:"status" form:"status"`
+	Sort   *int    `json:"sort" form:"sort"`
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
-	ProjectID string `json:"projectId"`
+	ProjectID string `json:"projectId" form:"projectId"`
 }
 
 // —— 物料清单（issue #16 验收 5）——
 
 // BOMItemReq 物料清单的一条子项。
 type BOMItemReq struct {
-	ComponentVariantID string `json:"componentVariantId" binding:"required"`
-	ComponentSKUCode   string `json:"componentSkuCode"`
-	Quantity           int    `json:"quantity"`
+	ComponentVariantID string `json:"componentVariantId" form:"componentVariantId" binding:"required"`
+	ComponentSKUCode   string `json:"componentSkuCode" form:"componentSkuCode"`
+	Quantity           int    `json:"quantity" form:"quantity"`
 }
 
 // SetBOMReq 全量替换某个父 SKU 的物料清单（派生物，非追加）。
 //
 // Items 为空表示**清空**该父 SKU 的清单（之后扣减它就按自身扣）。
 type SetBOMReq struct {
-	ProjectID       string       `json:"projectId"`
-	ParentVariantID string       `json:"parentVariantId" binding:"required"`
-	ParentSKUCode   string       `json:"parentSkuCode"`
-	Items           []BOMItemReq `json:"items"`
+	ProjectID       string       `json:"projectId" form:"projectId"`
+	ParentVariantID string       `json:"parentVariantId" form:"parentVariantId" binding:"required"`
+	ParentSKUCode   string       `json:"parentSkuCode" form:"parentSkuCode"`
+	Items           []BOMItemReq `json:"items" form:"items"`
 }
 
 // GetBOMReq 查看某个父 SKU 的物料清单。
@@ -406,16 +406,16 @@ type GetBOMReq struct {
 // SettlePrice 是内部结算价，只允许出现在内部货源上。
 // Config 是**异构对接扩展信息**（JSON 对象，不同来源字段形状各不相同）。
 type CreateSourceReq struct {
-	ProjectID    string          `json:"projectId"`
-	Code         string          `json:"code" binding:"required"`
-	Name         string          `json:"name" binding:"required"`
-	Type         string          `json:"type"`
-	RelatedParty *bool           `json:"relatedParty"`
-	SettlePrice  *float64        `json:"settlePrice"`
-	Status       string          `json:"status"`
-	Config       json.RawMessage `json:"config"`
-	Sort         int             `json:"sort"`
-	Metadata     json.RawMessage `json:"metadata"`
+	ProjectID    string          `json:"projectId" form:"projectId"`
+	Code         string          `json:"code" form:"code" binding:"required"`
+	Name         string          `json:"name" form:"name" binding:"required"`
+	Type         string          `json:"type" form:"type"`
+	RelatedParty *bool           `json:"relatedParty" form:"relatedParty"`
+	SettlePrice  *float64        `json:"settlePrice" form:"settlePrice"`
+	Status       string          `json:"status" form:"status"`
+	Config       json.RawMessage `json:"config" form:"config"`
+	Sort         int             `json:"sort" form:"sort"`
+	Metadata     json.RawMessage `json:"metadata" form:"metadata"`
 	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
 	// （json 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
 	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
@@ -426,19 +426,19 @@ type CreateSourceReq struct {
 //
 // ClearSettlePrice 显式清空结算价 —— 指针为 nil 表示「不改」，没有它就无法把值改回 NULL。
 type UpdateSourceReq struct {
-	ID string `json:"id" binding:"required"`
+	ID string `json:"id" form:"id" binding:"required"`
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
-	ProjectID        string          `json:"projectId"`
-	Code             *string         `json:"code"`
-	Name             *string         `json:"name"`
-	Type             *string         `json:"type"`
-	RelatedParty     *bool           `json:"relatedParty"`
-	SettlePrice      *float64        `json:"settlePrice"`
-	ClearSettlePrice bool            `json:"clearSettlePrice"`
-	Status           *string         `json:"status"`
-	Config           json.RawMessage `json:"config"`
-	Sort             *int            `json:"sort"`
-	Metadata         json.RawMessage `json:"metadata"`
+	ProjectID        string          `json:"projectId" form:"projectId"`
+	Code             *string         `json:"code" form:"code"`
+	Name             *string         `json:"name" form:"name"`
+	Type             *string         `json:"type" form:"type"`
+	RelatedParty     *bool           `json:"relatedParty" form:"relatedParty"`
+	SettlePrice      *float64        `json:"settlePrice" form:"settlePrice"`
+	ClearSettlePrice bool            `json:"clearSettlePrice" form:"clearSettlePrice"`
+	Status           *string         `json:"status" form:"status"`
+	Config           json.RawMessage `json:"config" form:"config"`
+	Sort             *int            `json:"sort" form:"sort"`
+	Metadata         json.RawMessage `json:"metadata" form:"metadata"`
 	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
 	// （json 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
 	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。
@@ -454,9 +454,9 @@ type GetSourceReq struct {
 
 // DeleteSourceReq 删除货源。
 type DeleteSourceReq struct {
-	ID string `json:"id" binding:"required"`
+	ID string `json:"id" form:"id" binding:"required"`
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
-	ProjectID string `json:"projectId"`
+	ProjectID string `json:"projectId" form:"projectId"`
 	// OperatorID 操作人（issue #19）：由 inbound 从会话覆盖写入，客户端传入的值被忽略
 	// （json 标签为 "-"，不可由外部指定）。变更记录记「谁改的」，
 	// 统一取会话里的登录名；缺失时为空串（留痕字段允许为空）。

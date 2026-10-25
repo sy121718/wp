@@ -1,4 +1,4 @@
-// inventory_deduct_priority_test.go — W2（迁移 623）的验收：跨仓扣减优先级 + 采购单终态。
+// inventory_deduct_priority_test.go — W2（迁移 626）的验收：跨仓扣减优先级 + 采购单终态。
 //
 // 覆盖任务书 §5.6 的会红断言：
 //
@@ -22,7 +22,7 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 )
 
-// createWarehouseWithPriority 建仓并指定扣减优先级（迁移 623）。
+// createWarehouseWithPriority 建仓并指定扣减优先级（迁移 626）。
 func (f *invFixture) createWarehouseWithPriority(t *testing.T, code, name string, priority int) *inventorydto.WarehouseResp {
 	t.Helper()
 	w, err := f.inventory.CreateWarehouse(context.Background(), &inventorydto.CreateWarehouseReq{

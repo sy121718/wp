@@ -77,18 +77,18 @@ type Service struct {
 	//（见 resolveMembershipDiscount）。这里刻意是**收窄的 Reader** 而不是
 	// MembershipService —— 订单只需要「读一条会员身份」，拿不到等级 CRUD 与归属写入能力。
 	membership membershipcontract.Reader
-	// warehouses 发货仓解析（迁移 625，S2）：把「这一行从哪个仓出」的事实交给库存域回答。
+	// warehouses 发货仓解析（迁移 628，S2）：把「这一行从哪个仓出」的事实交给库存域回答。
 	//
 	// 允许为 nil：纯订单单测 / 无仓工程下不解析（warehouse_id 留 NULL、预占跳过）。
 	// 生产装配必注入（否则每一单都会被判成「没有仓」）。
 	warehouses ordercontract.WarehouseResolver
-	// stockRowLocator 仓库商品 SKU 行的定位读口（迁移 624）：发货明细的 stock_id 快照用。
+	// stockRowLocator 仓库商品 SKU 行的定位读口（迁移 627）：发货明细的 stock_id 快照用。
 	//
 	// 允许为 nil：未注入时快照列留空 —— 那一列只用于事后追溯，不参与任何判定。
 	stockRowLocator ordercontract.StockRowLocator
-	// shipments 发货单仓储（迁移 624，S1/S2）。必填：发货用例是它唯一的写入口。
+	// shipments 发货单仓储（迁移 627，S1/S2）。必填：发货用例是它唯一的写入口。
 	shipments *ordermodel.OrderShipmentModel
-	// carriers 承运商仓储（迁移 624）。必填：发货表单的承运商下拉读它。
+	// carriers 承运商仓储（迁移 627）。必填：发货表单的承运商下拉读它。
 	carriers *ordermodel.OrderCarrierModel
 }
 
@@ -114,7 +114,7 @@ func NewService(
 	}
 }
 
-// SetWarehouseResolver 注入发货仓解析端口（装配期调用；迁移 625 起为 required-port）。
+// SetWarehouseResolver 注入发货仓解析端口（装配期调用；迁移 628 起为 required-port）。
 //
 // 未注入时下单不解析仓（warehouse_id 留 NULL、预占跳过），发货会要求运营指定仓 ——
 // 那是「无仓工程」的既定形态，不是失败降级。
@@ -125,7 +125,7 @@ func (s *Service) SetWarehouseResolver(resolver ordercontract.WarehouseResolver)
 	s.warehouses = resolver
 }
 
-// SetStockRowLocator 注入库存行定位读口（迁移 624，发货明细 stock_id 快照）。
+// SetStockRowLocator 注入库存行定位读口（迁移 627，发货明细 stock_id 快照）。
 //
 // 允许为 nil：未注入时快照列留空（它只用于事后追溯）。生产装配必注入。
 func (s *Service) SetStockRowLocator(locator ordercontract.StockRowLocator) {

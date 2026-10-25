@@ -862,7 +862,7 @@ func (s *Service) createStockRowsTx(ctx context.Context, tx *gorm.DB, refs []*pr
 			return qerr
 		}
 		if found {
-			// 「从仓库选」这条来路的核心动作（迁移 621 + 625）：仓库里那批货就是这条 SKU，
+			// 「从仓库选」这条来路的核心动作（迁移 624 + 625）：仓库里那批货就是这条 SKU，
 			// 建商品时要把它**认领**到本次新建的变体上。
 			//
 			// 不认领的后果（实测）：货停在 variant_id IS NULL —— 商品侧库存汇总

@@ -43,7 +43,7 @@ type WarehouseEntity struct {
 	Status    string `gorm:"column:status;not null"`
 	IsDefault bool   `gorm:"column:is_default;not null"`
 	Sort      int    `gorm:"column:sort;not null"`
-	// DeductPriority 出库扣减优先级（迁移 623）：值小先扣。
+	// DeductPriority 出库扣减优先级（迁移 626）：值小先扣。
 	//
 	// 只在「出库且行/请求都没指定仓」时生效 —— 显式指定的仓永远优先，
 	// 否则运营在表单里选的仓会被优先级悄悄改掉。默认 100 = 与未设置等价。
@@ -70,7 +70,7 @@ type StockEntity struct {
 	ID          string `gorm:"column:id;primaryKey"`
 	ProjectID   string `gorm:"column:project_id;not null"`
 	WarehouseID string `gorm:"column:warehouse_id;not null"`
-	// ProductID / VariantID 是**认领**结果（迁移 621）。
+	// ProductID / VariantID 是**认领**结果（迁移 624）。
 	//
 	// nil = 仓库里已经有这批货、但还没对应到我们的商品（客户寄卖 / 清关到仓 /
 	// 手工补录都先有货后建商品）。认领（把这两个值填上）之后这一行就是商品的库存行，
@@ -102,7 +102,7 @@ type StockEntity struct {
 	// 直接走 model 而「给了数量却忘了翻开关」的调用点由 normalizeStockTracking 兜住。
 	TrackQuantity bool `gorm:"column:track_quantity;not null"`
 	Quantity      int  `gorm:"column:quantity;not null"`
-	// ReservedQuantity 是**本仓**被未发货订单占住的数量（迁移 621）。
+	// ReservedQuantity 是**本仓**被未发货订单占住的数量（迁移 624）。
 	//
 	// 三量恒等式（照抄 ERP product_inventory_reserve.go 文件头）：
 	//
@@ -142,7 +142,7 @@ type StockRow struct {
 	// TrackQuantity 与 StockEntity 同义（false = 无限）：列表投影与真源不能各给一个口径。
 	TrackQuantity bool `gorm:"column:track_quantity"`
 	Quantity      int  `gorm:"column:quantity"`
-	// ReservedQuantity 与 StockEntity 同义（迁移 621）：列表也要能给出可售 = 数量 - 预占。
+	// ReservedQuantity 与 StockEntity 同义（迁移 624）：列表也要能给出可售 = 数量 - 预占。
 	ReservedQuantity int       `gorm:"column:reserved_quantity"`
 	CostPrice        *float64  `gorm:"column:cost_price"`
 	CreatedAt        time.Time `gorm:"column:create_time"`
@@ -159,14 +159,14 @@ type StockFilter struct {
 	// ExternalSKU 按「该仓的外部编码」过滤：N:1 下同一个外码会命中同一商品的多个变体行，
 	// 这正是「这个外码在本仓一共有多少条货」的查询口径。
 	ExternalSKU string
-	// Claimed 认领状态筛选（迁移 621）：nil = 不过滤，true = 只看已认领，false = 只看未认领。
+	// Claimed 认领状态筛选（迁移 624）：nil = 不过滤，true = 只看已认领，false = 只看未认领。
 	//
 	// 用三态指针而不是两个布尔：`claimed=unclaimed` 与「没勾这个筛选」是两件事，
 	// 用一个 bool 装不下它们（false 会同时表示「只看未认领」与「什么都看」）。
 	Claimed *bool
 }
 
-// —— 可空列的小工具（迁移 621 起 variant_id / product_id 可空）——
+// —— 可空列的小工具（迁移 624 起 variant_id / product_id 可空）——
 //
 // 只在本模块内用：跨模块共用的才配放进 pkg/（AGENTS.md 的判据），
 // 而这两个函数的语义就是「库存行上这两列可空」这件事本身。
@@ -426,7 +426,7 @@ func normalizeStockTracking(e *StockEntity) {
 
 // getStockByVariantWarehouseTx 在给定事务内做「SKU × 仓库」定位（不新开事务）。
 //
-// variantID 是**指针**：迁移 621 起可空，未认领行用 NULL 定位（传 nil）。
+// variantID 是**指针**：迁移 624 起可空，未认领行用 NULL 定位（传 nil）。
 func (m *Model) getStockByVariantWarehouseTx(ctx context.Context, tx *gorm.DB, projectID string, variantID *string, warehouseID string) (e *StockEntity, err error) {
 	e = &StockEntity{}
 	if serr := rls.ScopeTx(tx, projectID); serr != nil {
@@ -602,7 +602,7 @@ type WarehouseSKURow struct {
 	ExternalSKU   string  `gorm:"column:external_sku"`
 	ProductID     *string `gorm:"column:product_id"`
 	VariantID     *string `gorm:"column:variant_id"`
-	// HasVariant 这条库存行是否已绑定到某个变体（迁移 621 起 variant_id 可空）。
+	// HasVariant 这条库存行是否已绑定到某个变体（迁移 624 起 variant_id 可空）。
 	//
 	// 它正是「仓库里有货、商品侧还没建变体」要回答的问题：投影里那条
 	// `(s.variant_id IS NOT NULL) AS has_variant` 早就写好了，本条就是它的「将来」。
@@ -623,7 +623,7 @@ type WarehouseSKUFilter struct {
 	WarehouseID string
 	// Keyword 同时匹配我们自己的 sku_code 与外部编码（两个都可能是运营手上的号）。
 	Keyword string
-	// Claimed 认领状态（迁移 621）：nil = 不过滤，true = 已认领，false = 未认领。
+	// Claimed 认领状态（迁移 624）：nil = 不过滤，true = 已认领，false = 未认领。
 	Claimed *bool
 }
 

@@ -103,7 +103,7 @@ const (
 	ErrStockUnavailable  = "order.err.stockUnavailable"
 )
 
-// 发货（迁移 624 / 625，S2）。
+// 发货（迁移 627 / 625，S2）。
 //
 // 发货是一条**有单据**的事实：状态、承运商、运单号、库存扣减、流水全部同事务落库。
 // 五条拒绝理由对应五类「这一步不该发生」的情形，状态码在声明处给（409 状态 / 超量 /
@@ -138,6 +138,17 @@ const ErrInternal = "操作失败，请稍后重试"
 // 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
 // 对账由 order_enums_test.go 的双向断言守（新增 Err* 没给兜底要红；表里留着已删的 key 也要红）。
 var errFallbacks = map[string]string{
+	// 发货与承运商（迁移 627-629，S1-S3）：这些 key 由本批引入，兜底必须同批给 ——
+	// 缺兜底时 facing.FactOf 取不到原文，界面上会出现裸 key。
+	ErrCarrierCodeTaken:       "该承运商编码已被占用",
+	ErrCarrierNotFound:        "承运商不存在",
+	ErrCarrierStatusInvalid:   "承运商状态不合法",
+	ErrCarrierTemplateInvalid: "承运商模板配置不合法",
+	ErrShipWarehouseRequired:  "发货必须指定发货仓",
+	ErrShipLinesRequired:      "发货单至少需要一行商品",
+	ErrShipQuantityExceeded:   "发货数量超出可发数量",
+	ErrShipRequestKeyConflict: "该发货请求已处理过（请求键冲突）",
+	ErrOrderNotShippable:      "当前订单状态不允许发货",
 	ErrInternal:                   "操作失败，请稍后重试",
 	ErrInvalidParam:               "参数不合法",
 	ErrProjectRequired:            "缺少站点工程",
@@ -462,7 +473,7 @@ const (
 	OrdersHeading   = "admin.orders.heading"    // 订单
 	ReturnsHeading  = "admin.returns.heading"   // 退货
 	OrderSalesTitle = "admin.order.sales.title" // 销售概览
-	// 发货三屏的页面标题（迁移 624 / 625，S3）。
+	// 发货三屏的页面标题（迁移 627 / 625，S3）。
 	PendingShipTitle   = "admin.order.pendingShip.title" // 待发货
 	OrderCarriersTitle = "admin.order.carriers.title"    // 承运商
 

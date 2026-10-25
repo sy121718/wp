@@ -1,4 +1,4 @@
-// order_shipment_test.go — S2（迁移 624 / 625）的验收：发货用例 + 订单预占改造。
+// order_shipment_test.go — S2（迁移 627 / 625）的验收：发货用例 + 订单预占改造。
 //
 // 覆盖任务书 §7.7 的会红断言：
 //
@@ -605,7 +605,7 @@ func TestShipPersistsLegacyItemWarehouse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	// 把这一行退化成「迁移 625 之前的存量行」：warehouse_id = NULL。
+	// 把这一行退化成「迁移 628 之前的存量行」：warehouse_id = NULL。
 	if err := f.db.Exec("UPDATE order_items SET warehouse_id = NULL WHERE order_id = ?", created.ID).Error; err != nil {
 		t.Fatalf("制造存量行失败: %v", err)
 	}
@@ -690,7 +690,7 @@ func TestShipWritesStockIDSnapshot(t *testing.T) {
 		t.Fatalf("读发货明细快照失败: %v", qerr)
 	}
 	if gotStockID == nil || strings.TrimSpace(*gotStockID) == "" {
-		t.Fatalf("order_shipment_items.stock_id 不该为空（迁移 624 的承诺）")
+		t.Fatalf("order_shipment_items.stock_id 不该为空（迁移 627 的承诺）")
 	}
 	var wantStockID string
 	if qerr := f.db.Raw("SELECT id FROM inventory_stocks WHERE variant_id = ? AND warehouse_id = ?",

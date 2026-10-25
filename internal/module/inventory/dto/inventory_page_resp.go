@@ -31,7 +31,7 @@ type StockByWarehouseRowResp struct {
 	// 与卖光（track=true，数量 0）在页面上会是同一个 0。
 	TrackQuantity bool
 	Quantity      int
-	// ReservedQuantity / AvailableQuantity 预占与可售（迁移 621）：**减法在 Go 侧算好**，
+	// ReservedQuantity / AvailableQuantity 预占与可售（迁移 624）：**减法在 Go 侧算好**，
 	// 模板只取值（template_logic_test.go 禁止模板算数量）。
 	ReservedQuantity  int
 	AvailableQuantity int
@@ -77,7 +77,7 @@ type WarehouseRowResp struct {
 	Status    string
 	IsDefault bool
 	Sort      int
-	// DeductPriority 出库扣减优先级（迁移 623）：页面上可读可改，值小先扣。
+	// DeductPriority 出库扣减优先级（迁移 626）：页面上可读可改，值小先扣。
 	DeductPriority int
 
 	StatusLabel string
@@ -353,7 +353,7 @@ type SourcePageResp struct {
 	SourceCreateForm *SourceFormResp
 }
 
-// StockLedgerRowResp 仓库商品 SKU 台账页的一行（迁移 621）。
+// StockLedgerRowResp 仓库商品 SKU 台账页的一行（迁移 624）。
 //
 // 八列：仓库 / 短码 / SKU / 外码 / 认领 / 预占 / 可售 / 操作。
 // 「认领」列的文案由 handler 拼好（ClaimedLabel）—— 模板要做「有变体 → 查商品名 →

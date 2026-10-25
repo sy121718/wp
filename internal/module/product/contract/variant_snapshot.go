@@ -53,7 +53,7 @@ type VariantSnapshotPort interface {
 	VariantSnapshots(ctx context.Context, variantIDs []string, projectID string) (list []*VariantSnapshot, err error)
 }
 
-// VariantSnapshotByWarehousePort 按「变体 + 发货仓」取下单快照（迁移 625，S2）。
+// VariantSnapshotByWarehousePort 按「变体 + 发货仓」取下单快照（迁移 628，S2）。
 //
 // 为什么需要一个**新方法**而不是给 VariantSnapshots 加一个 warehouseID 参数：
 //

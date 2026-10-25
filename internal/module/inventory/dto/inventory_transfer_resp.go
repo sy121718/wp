@@ -1,6 +1,6 @@
 package inventorydto
 
-// inventory_transfer_resp.go — 调拨单的出参（迁移 627，W3）。
+// inventory_transfer_resp.go — 调拨单的出参（迁移 630，W3）。
 
 // TransferRowResp 调拨单列表的一行（八个展示列 + 时间）。
 //

@@ -1,6 +1,6 @@
 package orderservice
 
-// order_shipment.go — 发货用例（迁移 624 / 625，S2）与承运商管理。
+// order_shipment.go — 发货用例（迁移 627 / 625，S2）与承运商管理。
 //
 // 发货是订单域里唯一「货真的出去了」的动作。十步全在**一个事务**里：
 //
@@ -47,11 +47,11 @@ import (
 // 返回的发货单是**幂等命中时的那张**（request_id 相同），此时库存与状态都不再动。
 func (s *Service) ShipOrder(ctx context.Context, req *orderdto.ShipOrderReq) (res *orderdto.ShipmentResp, err error) {
 	if req == nil || req.OrderID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	if s.shipments == nil || s.carriers == nil {
 		// 装配缺陷（required-port 未注入）：宁可当场报错，也不要静默发一批不落单的货。
-		return nil, errors.New(orderenums.ErrStatusTransition)
+		return nil, orderenums.Err(orderenums.ErrStatusTransition)
 	}
 	projectID, perr := s.resolveOrderProject(ctx, req.OrderID, req.ProjectID)
 	if perr != nil {
@@ -113,11 +113,11 @@ func (s *Service) shipOnce(ctx context.Context, args *shipOnceArgs, out **orderm
 			return lerr
 		}
 		if e == nil {
-			return errors.New(orderenums.ErrOrderNotFound)
+			return orderenums.Err(orderenums.ErrOrderNotFound)
 		}
 		// ③ 只有已付款的单可以发货。
 		if e.Status != ordermodel.OrderStatusPaid {
-			return errors.New(orderenums.ErrOrderNotShippable)
+			return orderenums.Err(orderenums.ErrOrderNotShippable)
 		}
 		// ④ 逐行校验 + ⑤ 已发数量账。
 		items, ierr := s.items.ListByOrderIDTx(ctx, tx, e.ID)
@@ -258,10 +258,10 @@ func (s *Service) planShipment(ctx context.Context, tx *gorm.DB, projectID strin
 	e *ordermodel.OrderEntity, items []*ordermodel.OrderItemEntity,
 	reqLines []orderdto.ShipLineReq) ([]shipPlanLine, map[uint64]int, error) {
 	if len(reqLines) == 0 {
-		return nil, nil, errors.New(orderenums.ErrShipLinesRequired)
+		return nil, nil, orderenums.Err(orderenums.ErrShipLinesRequired)
 	}
 	if len(reqLines) > maxShipLines {
-		return nil, nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	byID := make(map[uint64]*ordermodel.OrderItemEntity, len(items))
 	itemIDs := make([]uint64, 0, len(items))
@@ -287,10 +287,10 @@ func (s *Service) planShipment(ctx context.Context, tx *gorm.DB, projectID strin
 		item, ok := byID[line.OrderItemID]
 		if !ok || !itemByID[line.OrderItemID] {
 			// 不属于本单的订单行：不区分「不存在」与「别人的单」，避免探测。
-			return nil, nil, errors.New(orderenums.ErrInvalidParam)
+			return nil, nil, orderenums.Err(orderenums.ErrInvalidParam)
 		}
 		if line.Quantity <= 0 {
-			return nil, nil, errors.New(orderenums.ErrQuantityInvalid)
+			return nil, nil, orderenums.Err(orderenums.ErrQuantityInvalid)
 		}
 		whID, persist, werr := s.shipWarehouseOf(ctx, projectID, item, line.WarehouseID)
 		if werr != nil {
@@ -309,7 +309,7 @@ func (s *Service) planShipment(ctx context.Context, tx *gorm.DB, projectID strin
 		if existing, seen := merged[k]; seen {
 			existing.quantity += line.Quantity
 		} else {
-			// stock_id 快照（迁移 624）：回答「这批货当时从哪一条仓库商品 SKU 行出去」。
+			// stock_id 快照（迁移 627）：回答「这批货当时从哪一条仓库商品 SKU 行出去」。
 			// 查不到就留空 —— 它只用于追溯，不参与判定（见 model 的注释）。
 			snapStockID, serr := s.stockRowID(ctx, projectID, item.VariantID, whID)
 			if serr != nil {
@@ -333,7 +333,7 @@ func (s *Service) planShipment(ctx context.Context, tx *gorm.DB, projectID strin
 		entry := merged[k]
 		item := byID[entry.orderItemID]
 		if shipped[item.ID]+entry.quantity > item.Quantity {
-			return nil, nil, errors.New(orderenums.ErrShipQuantityExceeded)
+			return nil, nil, orderenums.Err(orderenums.ErrShipQuantityExceeded)
 		}
 		plan = append(plan, *entry)
 	}
@@ -346,7 +346,7 @@ func (s *Service) planShipment(ctx context.Context, tx *gorm.DB, projectID strin
 //   - 本次请求显式给了仓 → **照样走解析端口**校验它属于本工程且 active（不能直接 return：
 //     那样非法仓要拖到库存侧去报，错误 key 与文案都不是「这一行从哪仓发」该说的话）；
 //   - 没给，但 order_items.warehouse_id 已有值 → 用它（下单时已固化，此后不再解析）；
-//   - 没给且那一列为 NULL（迁移 625 之前的存量行）→ 解析默认仓，并**回写**这一列。
+//   - 没给且那一列为 NULL（迁移 628 之前的存量行）→ 解析默认仓，并**回写**这一列。
 //
 // 第二个返回值为真表示「需要回写」：回写在调用方的事务里做（见 persistItemWarehouseTx），
 // 本函数不写库 —— 它的职责只有解析。
@@ -357,7 +357,7 @@ func (s *Service) shipWarehouseOf(ctx context.Context, projectID string, item *o
 	requested string) (warehouseID string, needPersist bool, err error) {
 	if s.warehouses == nil {
 		// 装配缺陷：没有解析端口就无法校验任何仓（含显式指定的那个）。
-		return "", false, errors.New(orderenums.ErrShipWarehouseRequired)
+		return "", false, orderenums.Err(orderenums.ErrShipWarehouseRequired)
 	}
 	requested = strings.TrimSpace(requested)
 	if requested != "" {
@@ -368,7 +368,7 @@ func (s *Service) shipWarehouseOf(ctx context.Context, projectID string, item *o
 			return "", false, rerr
 		}
 		if whID == "" {
-			return "", false, errors.New(orderenums.ErrShipWarehouseRequired)
+			return "", false, orderenums.Err(orderenums.ErrShipWarehouseRequired)
 		}
 		return whID, false, nil
 	}
@@ -381,13 +381,13 @@ func (s *Service) shipWarehouseOf(ctx context.Context, projectID string, item *o
 	}
 	if whID == "" {
 		// 无仓工程 + 存量行：没有仓可解析 —— 让运营显式指定（而不是静默失败）。
-		return "", false, errors.New(orderenums.ErrShipWarehouseRequired)
+		return "", false, orderenums.Err(orderenums.ErrShipWarehouseRequired)
 	}
 	// 解析成功：这一行的 warehouse_id 是 NULL，需要回写固化。
 	return whID, true, nil
 }
 
-// stockRowID 查这一行对应的仓库商品 SKU 行 id（发货明细的 stock_id 快照，迁移 624）。
+// stockRowID 查这一行对应的仓库商品 SKU 行 id（发货明细的 stock_id 快照，迁移 627）。
 //
 // 未注入定位端口时返回空串（快照列留空）：与「查不到」同一处理 —— 那一列只用于追溯。
 func (s *Service) stockRowID(ctx context.Context, projectID, variantID, warehouseID string) (string, error) {
@@ -397,7 +397,7 @@ func (s *Service) stockRowID(ctx context.Context, projectID, variantID, warehous
 	return s.stockRowLocator.LocateStockRow(ctx, projectID, variantID, warehouseID)
 }
 
-// persistItemWarehouseTx 把解析出来的发货仓**回写**到订单行（迁移 625）。
+// persistItemWarehouseTx 把解析出来的发货仓**回写**到订单行（迁移 628）。
 //
 // 只在那一列仍为 NULL 时写（`AND warehouse_id IS NULL`）：并发两次发货可能各自解析到
 // 同一个仓，两个 UPDATE 里只有一个真正改了行 —— 语义上也只有第一种是「固化」。
@@ -489,10 +489,10 @@ func getCarrierName(ctx context.Context, s *Service, projectID string, e *orderm
 // ListShipments 某订单的发货记录（客户与后台都看这一份）。
 func (s *Service) ListShipments(ctx context.Context, req *orderdto.ListShipmentReq) (list []*orderdto.ShipmentResp, err error) {
 	if req == nil || req.OrderID == 0 {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	if s.shipments == nil {
-		return nil, errors.New(orderenums.ErrInvalidParam)
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
 	projectID, perr := s.resolveOrderProject(ctx, req.OrderID, req.ProjectID)
 	if perr != nil {

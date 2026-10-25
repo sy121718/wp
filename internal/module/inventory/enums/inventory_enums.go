@@ -161,7 +161,7 @@ const (
 	ErrPurchaseLineDuplicate   = "ErrPurchaseLineDuplicate"   // 同一采购单里同一个 SKU 重复出现
 	ErrPurchaseQuantityInvalid = "ErrPurchaseQuantityInvalid" // 采购数量必须为正整数
 	ErrPurchasePriceInvalid    = "ErrPurchasePriceInvalid"    // 采购单价必须为正数
-	ErrPurchaseStatusInvalid   = "ErrPurchaseStatusInvalid"   // 状态筛选值不在五个合法状态内（迁移 623 起多了 finished / cancelled）
+	ErrPurchaseStatusInvalid   = "ErrPurchaseStatusInvalid"   // 状态筛选值不在五个合法状态内（迁移 626 起多了 finished / cancelled）
 	ErrPurchaseLinesLocked     = "ErrPurchaseLinesLocked"     // 已有入库数量的采购单不能再改行（改了状态推导就不成立）
 	ErrPurchaseLineNotFound    = "ErrPurchaseLineNotFound"    // 采购行不存在（或不属于该采购单）
 
@@ -182,7 +182,7 @@ const (
 	// ErrVariantCostPortMissing 商品侧成本价端口未注入（装配缺陷 / 纯库存单测路径）。
 	ErrVariantCostPortMissing = "ErrVariantCostPortMissing"
 
-	// —— 采购单终态（迁移 623，W2）——
+	// —— 采购单终态（迁移 626，W2）——
 	//
 	// 前三个中间态（pending / partial / received）由「已入库数量 与 采购数量」推导，
 	// 没有任何人工置位入口。两个终态是**人工决定**：
@@ -191,7 +191,7 @@ const (
 	ErrPurchaseStatusNotFinishable = "ErrPurchaseStatusNotFinishable"
 	ErrPurchaseStatusNotCancelable = "ErrPurchaseStatusNotCancelable"
 
-	// —— 调拨（迁移 627，W3）——
+	// —— 调拨（迁移 630，W3）——
 	//
 	// 五条对应五类「这一步不该发生」：缺凭证（用户明确要求：出货与签收都必须有）、
 	// 明细不在源仓、可售不足、状态不允许、两仓相同。
@@ -240,11 +240,11 @@ const (
 	// 多个变体共用同一个外码是合法的（这正是 N:1 的意义），跨商品才是映射写错了。
 	ErrExternalSKUProductConflict = "ErrExternalSKUProductConflict"
 
-	// —— 仓库商品 SKU 主档化（迁移 621）——
+	// —— 仓库商品 SKU 主档化（迁移 624）——
 	//
 	// 四条围绕「未认领行」与「预占」的拒绝理由。前三条直接对应用户会撞上的操作，
 	// 第四条是预占 / 释放的边界；它们不 seed 词条也靠 errFallbacks 落中文，
-	// 但仍会随迁移 622 一并写入 sys_i18n（页面要按请求语言显示）。
+	// 但仍会随迁移 625 一并写入 sys_i18n（页面要按请求语言显示）。
 
 	// ErrStockAlreadyClaimed 认领冲突：目标 (变体, 仓) 已经有库存行。
 	//
@@ -358,9 +358,9 @@ const (
 	PurchaseStatusPending  = "pending"
 	PurchaseStatusPartial  = "partial"
 	PurchaseStatusReceived = "received"
-	// PurchaseStatusFinished 提前关单（迁移 623）：人工决定「剩下的不再等」。
+	// PurchaseStatusFinished 提前关单（迁移 626）：人工决定「剩下的不再等」。
 	PurchaseStatusFinished = "finished"
-	// PurchaseStatusCancelled 取消（迁移 623）：只允许在还没收满时。
+	// PurchaseStatusCancelled 取消（迁移 626）：只允许在还没收满时。
 	PurchaseStatusCancelled = "cancelled"
 )
 
@@ -403,9 +403,9 @@ const (
 const (
 	MovementSourcePurchaseOrder = "purchase_order"
 	MovementSourceProduction    = "production"
-	// MovementSourceOrderShipment 来源类型：订单发货出库（迁移 624 的发货单）。
+	// MovementSourceOrderShipment 来源类型：订单发货出库（迁移 627 的发货单）。
 	//
-	// 预占引入（迁移 621）之后，订单侧出现两条库存写入：建单**预占**（不写流水）
+	// 预占引入（迁移 624）之后，订单侧出现两条库存写入：建单**预占**（不写流水）
 	// 与发货**扣减**（写 sale_out 流水）。流水上必须能分出后者 —— service 靠它判断
 	// 「这次出库要同时释放预占」（否则 reserved 会永远挂在账上）。
 	MovementSourceOrderShipment = "order_shipment"

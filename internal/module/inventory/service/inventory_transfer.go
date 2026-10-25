@@ -1,6 +1,6 @@
 package inventoryservice
 
-// inventory_transfer.go — 调拨用例（迁移 627，W3）：建单 / 出货 / 签收 / 取消 / 列表 / 详情。
+// inventory_transfer.go — 调拨用例（迁移 630，W3）：建单 / 出货 / 签收 / 取消 / 列表 / 详情。
 //
 // 状态机（单向）：
 //
@@ -39,7 +39,7 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
-// 调拨单状态（迁移 627）。
+// 调拨单状态（迁移 630）。
 const (
 	TransferStatusPending   = "pending"
 	TransferStatusInTransit = "in_transit"
@@ -47,7 +47,7 @@ const (
 	TransferStatusCancelled = "cancelled"
 )
 
-// 凭证用途（迁移 627 的 usage_type）。
+// 凭证用途（迁移 630 的 usage_type）。
 const (
 	TransferAttachmentRequest = "request"
 	TransferAttachmentShip    = "ship"

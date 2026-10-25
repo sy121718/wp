@@ -1,6 +1,6 @@
 package inventorymodel
 
-// inventory_transfer_model.go — 调拨单 / 明细 / 凭证附件（迁移 627，W3）。
+// inventory_transfer_model.go — 调拨单 / 明细 / 凭证附件（迁移 630，W3）。
 //
 // 三张表的分工（写在这里而不是散在 service 各处）：
 //
@@ -28,7 +28,7 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// TransferEntity 调拨单头（迁移 627）。
+// TransferEntity 调拨单头（迁移 630）。
 type TransferEntity struct {
 	ID              string     `gorm:"column:id;primaryKey"`
 	ProjectID       string     `gorm:"column:project_id;not null"`
@@ -51,9 +51,9 @@ type TransferEntity struct {
 // TableName 实现 gorm 表名。
 func (TransferEntity) TableName() string { return "inventory_transfers" }
 
-// TransferItemEntity 调拨明细（迁移 627）：一条**源仓库存行**搬多少件。
+// TransferItemEntity 调拨明细（迁移 630）：一条**源仓库存行**搬多少件。
 //
-// VariantID 可空：未认领行（迁移 621 引入的 variant_id IS NULL）也允许调拨 ——
+// VariantID 可空：未认领行（迁移 624 引入的 variant_id IS NULL）也允许调拨 ——
 // 「仓库里已有的货」正是最需要调拨的那批（清关到仓、客户寄卖的货）。
 type TransferItemEntity struct {
 	ID         int64   `gorm:"column:id;primaryKey"`
@@ -67,7 +67,7 @@ type TransferItemEntity struct {
 // TableName 实现 gorm 表名。
 func (TransferItemEntity) TableName() string { return "inventory_transfer_items" }
 
-// TransferAttachmentEntity 调拨凭证（迁移 627）：附件的用途与排序。
+// TransferAttachmentEntity 调拨凭证（迁移 630）：附件的用途与排序。
 type TransferAttachmentEntity struct {
 	ID           int64     `gorm:"column:id;primaryKey"`
 	TransferID   string    `gorm:"column:transfer_id;not null"`

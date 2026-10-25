@@ -110,12 +110,12 @@ type OrderEntity struct {
 	CreateTime   time.Time `gorm:"column:create_time"`
 	UpdateTime   time.Time `gorm:"column:update_time"`
 
-	// —— 最近一次发货的快照（迁移 624，S1）——
+	// —— 最近一次发货的快照（迁移 627，S1）——
 	//
 	// 订单头只留「最后一次」：一张订单可以多次发货（部分发货 / 分仓），
 	// 历史发货看 order_shipments，不看这里。carrier_name / tracking_no 是**名称快照**，
 	// 承运商改名 / 停用 / 删除之后这里仍显示当时的名字。
-	// —— 汇率快照（迁移 630，W5）——
+	// —— 汇率快照（迁移 633，W5）——
 	//
 	// FXRate 下单那一刻的汇率（1 订单币 = fx_rate 基准币）；nil = **汇率未固化**，
 	// 不推算（历史订单 / 外部导入 / 没配汇率的工程）。快照之后汇率怎么变都不影响这张单。

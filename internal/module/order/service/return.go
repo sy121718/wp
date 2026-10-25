@@ -813,7 +813,7 @@ func (s *Service) stockInReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermod
 			WarehouseID: wh,
 		})
 	}
-	// 两段式（迁移 621）下「退货入库」有两条不同的账，先判这一单发没发货：
+	// 两段式（迁移 624）下「退货入库」有两条不同的账，先判这一单发没发货：
 	//
 	//	· 已发货 → 货真的从仓库出去过，加回 quantity（**这条才是入库**），
 	//	  同时把那一批的预占释放掉（发货时已释放过一次，这里是幂等的 0 操作）；
@@ -852,7 +852,7 @@ func (s *Service) stockInReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermod
 	}); err != nil {
 		return orderenums.Err(orderenums.ErrStockUnavailable)
 	}
-	// 退货入库同时**释放这批货的预占**（迁移 621 的两段式）：货已经回到仓库，
+	// 退货入库同时**释放这批货的预占**（迁移 624 的两段式）：货已经回到仓库，
 	// 就不该再为那张订单占着可售量 —— 不释放的话，取消 / 退款时再释放一次
 	// 就会把预占打到负数（库 DDL 的 CHECK 会拒），而那是一条没人看得懂的错误。
 	//
@@ -905,7 +905,7 @@ func (s *Service) returnReservationLinesTx(ctx context.Context, tx *gorm.DB, ord
 func (s *Service) orderShippedTx(ctx context.Context, tx *gorm.DB, orderID uint64) (bool, error) {
 	if s.shipments == nil {
 		// 未装配发货单仓储（纯退货单测路径）：按「已发货」处理 ——
-		// 那是迁移 621 之前的唯一语义，也是退货入库最保守的那一支（真的把货加回去）。
+		// 那是迁移 624 之前的唯一语义，也是退货入库最保守的那一支（真的把货加回去）。
 		return true, nil
 	}
 	list, err := s.shipments.ListByOrderTx(ctx, tx, orderID)

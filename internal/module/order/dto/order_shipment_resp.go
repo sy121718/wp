@@ -1,6 +1,6 @@
 package orderdto
 
-// order_shipment_resp.go — 发货 / 承运商 / 待发货的响应（迁移 624 / 625，S2）。
+// order_shipment_resp.go — 发货 / 承运商 / 待发货的响应（迁移 627 / 625，S2）。
 
 // ShipmentResp 一张发货单。
 type ShipmentResp struct {
