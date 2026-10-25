@@ -107,15 +107,20 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	// 与 /order/status 的区别是它有单据、扣库存、置 shipped —— 后者只是改状态。
 	sg := rg.Group("/order/shipment")
 	sg.GET("/list", permission.OrderShipmentList, h.ListShipments)
-	sg.GET("/pending", permission.OrderShipmentList, h.ListPendingShip)
-	sg.GET("/form", permission.OrderShip, h.ShipForm)
+	sg.GET("/pending", permission.OrderPendingShip, h.ListPendingShip)
+	sg.GET("/form", permission.OrderShipForm, h.ShipForm)
 	sg.POST("/create", permission.OrderShip, h.ShipOrder)
 
 	// 承运商配置（一个工程几张，配一次长期不动）。
 	carg := rg.Group("/order/carrier")
-	carg.GET("/list", permission.OrderCarrierManage, h.ListCarriers)
-	carg.POST("/create", permission.OrderCarrierManage, h.CreateCarrier)
+	carg.GET("/list", permission.OrderCarrierList, h.ListCarriers)
+	carg.POST("/create", permission.OrderCarrierCreate, h.CreateCarrier)
 	carg.POST("/update", permission.OrderCarrierManage, h.UpdateCarrier)
+
+	// 汇率（迁移 630，W5）：覆盖式读写，供销售总览的折算与后台配置用。
+	// 权限点复用 order:overview —— 汇率只影响报表口径，不构成新的风险面。
+	rg.GET("/order/currency/rate", permission.OrderCurrencyRateGet, h.GetCurrencyRate)
+	rg.POST("/order/currency/rate", permission.OrderCurrencyRateSet, h.SetCurrencyRate)
 
 	// 退货入库（RMA）：客户在访问面提交申请，后台在这里审核与收货。
 	// **先入库、后退款**的强顺序由 service 的 ReceiveReturn 保证。

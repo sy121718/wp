@@ -185,6 +185,11 @@ const (
 	InventoryPurchaseList Perm = "inventory:purchase_list"
 	// 生产入库（POST /api/inventory/purchase/production）
 	InventoryPurchaseProduction Perm = "inventory:purchase_production"
+	// 库存预警（GET /api/inventory/stock/alert，迁移 621 / 623，W4）。
+	//
+	// 单独一条而不是复用 stock/list：sys_permission 每条 API 路由要有**自己**的权限点
+	//（同一个码绑两条路由时，只有一条能生成超管策略，其余对所有人 403）。
+	InventoryStockAlert Perm = "inventory:stock_alert"
 	// 调拨单（迁移 627，W3）：六条独立权限点 —— 看列表 / 看详情 / 建单 / 出货 / 签收 / 取消。
 	//
 	// 为什么拆这么细：出货与签收是**两个不同的人**做的事（一个人发货、另一个人签收），
@@ -428,6 +433,11 @@ const (
 	// 与 order:list 的关系是「看哪一屏」而不是「能不能看订单」：列表页管单条订单的处置，
 	// 概览页管口径聚合，两者授权可以分开。
 	OrderOverview Perm = "order:overview"
+	// 汇率读写（GET/POST /api/order/currency/rate，迁移 630 W5）。
+	//
+	// 读与写各自一条码（每条 API 路由要一个自己的码）。
+	OrderCurrencyRateGet Perm = "order:currency_rate_get"
+	OrderCurrencyRateSet Perm = "order:currency_rate_set"
 	// 订单退款（POST /api/order/refund）
 	OrderRefund Perm = "order:refund"
 	// 同意退货（POST /api/order/return/approve）
@@ -447,13 +457,31 @@ const (
 	// 与 order:status 分开：改状态不改库存，发货扣库存并产出一张可追溯的单据 ——
 	// 「谁能改状态」与「谁能把货发出去」是两个风险等级不同的授权。
 	OrderShip Perm = "order:ship"
-	// 发货单列表与待发货页（GET /api/order/shipment/list，GET /api/order/shipment/pending）
-	OrderShipmentList Perm = "order:shipment_list"
-	// 承运商配置（GET/POST /api/order/carrier/*）
+	// 发货表单的只读片段（GET /api/order/shipment/form）。
 	//
-	// 一条权限点管三个入口：承运商是「配一次长期不动」的主数据，读与写同一信任级
-	// （发货的人本来就该能看到有哪些承运商可选）。
+	// 与 order:ship 分开：每条 API 路由要有自己的码。读表单与提交发货的信任级相同，
+	// 但路由是两条 —— 码也必须两条（否则一条路对所有人 403）。
+	OrderShipForm Perm = "order:ship_form"
+	// 发货单列表（GET /api/order/shipment/list）。
+	OrderShipmentList Perm = "order:shipment_list"
+	// 待发货页（GET /api/order/shipment/pending 与页面 /admin/orders/pending-ship）。
+	//
+	// 与 shipment_list 分开：每条 API 路由要有自己的码（同一个码绑两条路由时，
+	// 只有一条能生成超管策略）—— 而这两屏回答的问题也不同
+	//（「这一单发过几张」vs「还有哪些要发」）。
+	OrderPendingShip Perm = "order:pending_ship"
+	// 承运商新建（POST /api/order/carrier/create）。
+	OrderCarrierCreate Perm = "order:carrier_create"
+	// 承运商修改与停用（POST /api/order/carrier/update）。
+	//
+	// 三条写码分开的理由只有一条：**sys_permission 每条 API 路由要一个自己的码**
+	// （同一个码绑两条路由时，只有一条能生成超管策略，其余对所有人 403）。
 	OrderCarrierManage Perm = "order:carrier_manage"
+	// 承运商列表（GET /api/order/carrier/list）。
+	//
+	// 与 carrier_manage 分开：每条 API 路由要有自己的码。配置页与发货表单都要读它，
+	// 而写（新建 / 编辑 / 停用）是另一件事 —— 能看承运商不等于能改它。
+	OrderCarrierList Perm = "order:carrier_list"
 
 	// —— page（20）——
 	// 回收产物文件（POST /api/page/artifact/gc）
@@ -900,6 +928,7 @@ var specs = map[Perm]spec{
 	InventoryPurchaseHistory:    {module: "inventory", name: "进货历史"},
 	InventoryPurchaseList:       {module: "inventory", name: "采购单列表"},
 	InventoryPurchaseProduction: {module: "inventory", name: "生产入库"},
+	InventoryStockAlert:         {module: "inventory", name: "库存预警"},
 	InventoryTransferList:       {module: "inventory", name: "调拨单列表"},
 	InventoryTransferGet:        {module: "inventory", name: "调拨单详情"},
 	InventoryTransferCreate:     {module: "inventory", name: "建调拨单"},
@@ -1026,6 +1055,8 @@ var specs = map[Perm]spec{
 	OrderLogList:          {module: "order", name: "状态流转流水"},
 	OrderNote:             {module: "order", name: "订单备注"},
 	OrderOverview:         {module: "order", name: "销售概览"},
+	OrderCurrencyRateGet:  {module: "order", name: "读汇率"},
+	OrderCurrencyRateSet:  {module: "order", name: "写汇率"},
 	OrderRefund:           {module: "order", name: "订单退款"},
 	OrderReturnApprove:    {module: "order", name: "同意退货"},
 	OrderReturnGet:        {module: "order", name: "退货申请详情"},
@@ -1034,8 +1065,12 @@ var specs = map[Perm]spec{
 	OrderReturnReject:     {module: "order", name: "拒绝退货"},
 	OrderStatus:           {module: "order", name: "订单状态流转"},
 	OrderShip:             {module: "order", name: "订单发货"},
+	OrderShipForm:         {module: "order", name: "发货表单"},
 	OrderShipmentList:     {module: "order", name: "发货单列表"},
+	OrderPendingShip:      {module: "order", name: "待发货"},
+	OrderCarrierCreate:    {module: "order", name: "新建承运商"},
 	OrderCarrierManage:    {module: "order", name: "承运商配置"},
+	OrderCarrierList:      {module: "order", name: "承运商列表"},
 
 	// —— page ——
 	PageArtifactGc:       {module: "page", name: "回收产物文件"},

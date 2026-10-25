@@ -367,6 +367,14 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 	if shipping < 0 {
 		shipping = 0
 	}
+	var fxRatePtr *string
+	// 汇率快照（迁移 630，W5）：读一次、失败不阻断下单。
+	// 基准币取 i18n 的默认货币（与 orderCurrency() 同源）——
+	// 订单币与基准币相同时不写快照（同币种下「折算」这个概念不存在）。
+	fxRate, fxBase := s.orderFXSnapshot(ctx, orderCurrency(), orderCurrency())
+	if fxRate != "" {
+		fxRatePtr = &fxRate
+	}
 
 	// 会员身份：只用**事务前能确定**的那一份（调用方显式传入的登录身份，或按邮箱
 	// 只读查到的既有账号）。新邮箱在这里还没有账号 —— 开号在事务内完成，
@@ -399,7 +407,12 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 		// 这一列是**下单当时的快照**（快照原则）：改配置只影响此后新建的订单，
 		// 历史订单的 currency 不动 —— 订单详情要还原的是「当时是什么」。
 		Currency: orderCurrency(),
-		Subtotal: subtotal,
+		// 汇率快照（迁移 630，W5）：**下单那一刻**的汇率，之后汇率怎么变都不影响这张单。
+		// 取不到时留零值（fx_rate 为 NULL、fx_base_code 为空串）=「汇率未固化」——
+		// 那是真实状态（没配汇率的工程 / 同币种），回填会伪造历史。
+		FXRate:     fxRatePtr,
+		FXBaseCode: fxBase,
+		Subtotal:   subtotal,
 		// 会员折扣与总额由 applyLineMoney 统一填（见该方法的注释）：
 		// 会员折扣与券各自独立计账（相加扣减），两列分开存是为了保住 SEC-001
 		//（无优惠码时 DiscountTotal 恒为 0），见 resolveMembershipDiscount。

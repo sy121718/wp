@@ -126,3 +126,34 @@ func (h *Handle) UpdateCarrier(c *gin.Context) {
 	}
 	response.Success(c, res)
 }
+
+// GetCurrencyRate 取某币对的当前汇率（GET /api/order/currency/rate）。
+//
+// 还没配时返回 Rate=""（「未固化」）而不是 404：那是真实状态，页面据此显示
+// 「汇率未固化」而不是弹一个错误。
+func (h *Handle) GetCurrencyRate(c *gin.Context) {
+	req, ok := binding.Query[orderdto.GetRateReq](c)
+	if !ok {
+		return
+	}
+	res, err := h.svc.GetRate(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, 400, "order", err)
+		return
+	}
+	response.Success(c, res)
+}
+
+// SetCurrencyRate 覆盖式写汇率（POST /api/order/currency/rate）。
+func (h *Handle) SetCurrencyRate(c *gin.Context) {
+	req, ok := binding.JSON[orderdto.SetRateReq](c)
+	if !ok {
+		return
+	}
+	res, err := h.svc.SetRate(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, 400, "order", err)
+		return
+	}
+	response.Success(c, res)
+}

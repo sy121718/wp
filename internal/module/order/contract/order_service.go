@@ -57,6 +57,8 @@ type OrderService interface {
 	OrderOverviewReader
 	// ShipmentService 发货与承运商（迁移 624 / 625，S2）。
 	ShipmentService
+	// CurrencyService 汇率读写（迁移 630，W5）。
+	CurrencyService
 	// OrderQueryReader 按线索查订单（单号 / 客户名 / 邮箱 / 状态 / 时间段）。
 	//
 	// 与上面的聚合接口并列而不是并入其中：聚合回答「一共 / 每天 / 谁最好」，

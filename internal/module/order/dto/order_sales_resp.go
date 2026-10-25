@@ -77,6 +77,12 @@ type SalesOverviewResp struct {
 
 	// ── 月度趋势 ───────────────────────────────────────────────────
 
+	// Converted 多币种折算（迁移 630，W5）：只有「与基准币不同且有快照」的订单参与折算。
+	//
+	// UnconvertedOrders 是**必须显示**的：折算金额只覆盖有快照的那部分，
+	// 不说明「有多少单没折算」会让一个偏小的数字被当成全量。
+	Converted *ConvertedOverview `json:"converted,omitempty"`
+
 	// MonthlyPoints 近 Monthly 个月（含当月）逐月补零的序列，升序。
 	//
 	// **口径与卡片不同**（见 SalesOverviewReq.Monthly 的说明）：卡片看筛选区间、

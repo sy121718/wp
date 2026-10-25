@@ -187,8 +187,8 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	pages.GET("/order-carriers", adminui.PageAuthz("/api/order/carrier/list"),
 		adminui.PageSlot(OrderCarriersPageTemplate), shipPages.OrderCarriersPage)
 	// 模板名与路由同处（失败与成功渲染的必须是同一张模板）。
-	permission.Declare(http.MethodGet, "/admin/orders/pending-ship", permission.OrderShipmentList)
-	permission.Declare(http.MethodGet, "/admin/order-carriers", permission.OrderCarrierManage)
+	permission.Declare(http.MethodGet, "/admin/orders/pending-ship", permission.OrderPendingShip)
+	permission.Declare(http.MethodGet, "/admin/order-carriers", permission.OrderCarrierList)
 
 	couponPages := NewCouponPageHandle(svc, projects)
 	pages.GET("/coupons",

@@ -115,6 +115,15 @@ type OrderEntity struct {
 	// 订单头只留「最后一次」：一张订单可以多次发货（部分发货 / 分仓），
 	// 历史发货看 order_shipments，不看这里。carrier_name / tracking_no 是**名称快照**，
 	// 承运商改名 / 停用 / 删除之后这里仍显示当时的名字。
+	// —— 汇率快照（迁移 630，W5）——
+	//
+	// FXRate 下单那一刻的汇率（1 订单币 = fx_rate 基准币）；nil = **汇率未固化**，
+	// 不推算（历史订单 / 外部导入 / 没配汇率的工程）。快照之后汇率怎么变都不影响这张单。
+	//
+	// 用 *string 承载 numeric(18,8) 的**精确文本**：读成 float64 会丢精度（见 currency_rate_model.go）。
+	FXRate     *string `gorm:"column:fx_rate"`
+	FXBaseCode string  `gorm:"column:fx_base_code"`
+
 	CarrierID   *string    `gorm:"column:carrier_id"`
 	CarrierName string     `gorm:"column:carrier_name"`
 	TrackingNo  string     `gorm:"column:tracking_no"`

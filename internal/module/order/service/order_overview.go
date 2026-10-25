@@ -448,6 +448,12 @@ func (s *Service) SalesOverview(ctx context.Context, req *orderdto.SalesOverview
 		resp.Compare = cmp
 	}
 
+	// ③b 多币种折算（迁移 630，W5）：一次请求内算好，不额外一次往返。
+	// 折算只覆盖有快照的订单；没有快照的单独计数（报表必须能说清覆盖了多少）。
+	if converted, cerr := s.ConvertedOverview(ctx, req, resp.Sales, resp.GrossProfit); cerr == nil {
+		resp.Converted = converted
+	}
+
 	// ④ 月度趋势（固定回看窗口，与卡片的筛选区间不同口径 —— 见 dto 的说明）。
 	points, err := s.salesMonthlyPoints(ctx, req.ProjectID, monthly, filter)
 	if err != nil {
