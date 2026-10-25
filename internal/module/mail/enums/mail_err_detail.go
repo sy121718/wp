@@ -42,6 +42,16 @@ const (
 	DetailGraphNeedTagAction  = "admin.mail.detail.needTagAction"
 	DetailGraphUnknownNodeTyp = "admin.mail.detail.unknownNodeType"
 
+	// —— v2 出边与条件（出口名表见 service/automation_definition.go）——
+	//
+	// 出口名从「结构体字段」变成「数据」之后，「拼错一个出口名」从编译期问题
+	// 降级为运行期问题，必须由校验器给出可定位的错误。
+	//
+	// **声明一个 detail key 就同时要有生产者**（graphErr 调用点）与 seed；四个新节点的
+	// 参数校验词条（变体 / 权重 / 回调试 / 出口缺失）随它们的校验一起加。
+	DetailGraphUnknownOutlet = "admin.mail.detail.unknownOutlet"
+	DetailGraphBadCondition  = "admin.mail.detail.badCondition"
+
 	// —— 入口与边 ——
 	DetailGraphEntryMissing      = "admin.mail.detail.entryMissing"
 	DetailGraphEntryNotExist     = "admin.mail.detail.entryNotExist"
@@ -68,6 +78,8 @@ var DetailKeys = []string{
 	DetailGraphNeedCondition,
 	DetailGraphNeedTagAction,
 	DetailGraphUnknownNodeTyp,
+	DetailGraphUnknownOutlet,
+	DetailGraphBadCondition,
 	DetailGraphEntryMissing,
 	DetailGraphEntryNotExist,
 	DetailGraphEdgeTargetMissing,
@@ -94,6 +106,9 @@ var ErrDetailFallbacks = map[string]string{
 	DetailGraphNeedCondition:  "节点 {node}: 条件分支需要至少一个条件",
 	DetailGraphNeedTagAction:  "节点 {node}: 标签节点需要 add 或 remove",
 	DetailGraphUnknownNodeTyp: "节点 {node}: 未知节点类型: {type}",
+
+	DetailGraphUnknownOutlet: "节点 {node}: 未知出口名: {outlet}",
+	DetailGraphBadCondition:  "节点 {node}: 条件不合法: {reason}",
 
 	DetailGraphEntryMissing:      "没有指定入口节点",
 	DetailGraphEntryNotExist:     "入口节点不存在: {node}",

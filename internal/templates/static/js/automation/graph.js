@@ -19,6 +19,10 @@ export var NODE_LABEL = {
     trigger: '入口',
     delay: '等待',
     email: '发邮件',
+    // filter 是 v2 的类型名（v1 叫 branch）：图定义升级之后服务端会把回执里的
+    // 类型投影回 branch，但画布同时认两个名字 —— 少认一个的表现是节点标签显示
+    // 裸的 "filter"、两条分支边整体消失，而画布不会报任何错。
+    filter: '条件分支',
     branch: '条件分支',
     tag: '打标签',
     end: '结束'
@@ -27,6 +31,7 @@ export var NODE_LABEL = {
 /** PARAM_HINT 各类型的参数提示（与表单页同一份文案）。 */
 export var PARAM_HINT = {
     trigger: '入口不需要参数。',
+    filter: '条件（逗号分隔）：opened / clicked / subscribed / has_tag:标签。',
     delay: '等待分钟数，例如 1440 表示一天。',
     email: '邮件模板的模板 key。',
     branch: '条件（逗号分隔）：opened / clicked / subscribed / has_tag:标签。',
@@ -60,7 +65,7 @@ export function layoutMissing(nodes, startX, startY, stepX) {
  */
 export function nodeEdges(n) {
     var out = [];
-    if (n.type === 'branch') {
+    if (n.type === 'branch' || n.type === 'filter') {
         if (n.yes) { out.push({ to: n.yes, kind: 'yes' }); }
         if (n.no) { out.push({ to: n.no, kind: 'no' }); }
     } else if (n.next) {
@@ -75,7 +80,7 @@ export function nodeParamText(n) {
     if (n.type === 'delay') { return p.minutes ? (p.minutes + ' 分钟') : ''; }
     if (n.type === 'email') { return p.template_key || ''; }
     if (n.type === 'tag') { return joinList(p.add); }
-    if (n.type === 'branch') { return joinList(p.conditions); }
+    if (n.type === 'branch' || n.type === 'filter') { return joinList(p.conditions); }
     return '';
 }
 
@@ -101,7 +106,7 @@ export function parseParam(type, raw) {
         if (!tags.length) { return { ok: false, error: '标签节点要填要加的标签' }; }
         return { ok: true, params: { add: tags } };
     }
-    if (type === 'branch') {
+    if (type === 'branch' || type === 'filter') {
         var conds = splitList(v);
         if (!conds.length) { return { ok: false, error: '条件分支至少填一个条件' }; }
         return { ok: true, params: { conditions: conds } };

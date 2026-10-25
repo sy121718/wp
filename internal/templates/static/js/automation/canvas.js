@@ -119,9 +119,11 @@ function fillForm(n) {
     for (var i = 0; i < inputs.length; i++) { inputs[i].disabled = locked; }
 
     // 分支节点的 next 无意义（它走 yes / no），非分支节点的 yes / no 无意义。
-    fillSelect('fNext', n.next || '', locked || n.type === 'branch');
-    fillSelect('fYes', n.yes || '', locked || n.type !== 'branch');
-    fillSelect('fNo', n.no || '', locked || n.type !== 'branch');
+    // 条件分支有两个名字：v1 的 branch 与 v2 的 filter（见 graph.js 的 NODE_LABEL 注释）。
+    var isBranch = n.type === 'branch' || n.type === 'filter';
+    fillSelect('fNext', n.next || '', locked || isBranch);
+    fillSelect('fYes', n.yes || '', locked || !isBranch);
+    fillSelect('fNo', n.no || '', locked || !isBranch);
     var lockNote = document.getElementById('autoLockNote');
     if (locked) {
         if (!lockNote) {
@@ -279,7 +281,7 @@ if (form) {
             return
         }
         selected.params = parsed.params;
-        if (selected.type === 'branch') {
+        if (selected.type === 'branch' || selected.type === 'filter') {
             selected.yes = document.getElementById('fYes').value;
             selected.no = document.getElementById('fNo').value;
             selected.next = '';

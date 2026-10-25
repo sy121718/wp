@@ -332,4 +332,9 @@ func init() {
 	registerBundlePriceCheck()
 	// 620：译文保存后标记待重建失败的回执词条（见 register_translation_stale_mark_i18n.go）。
 	registerTranslationStaleMarkI18n()
+	// 621：自动化图定义 v1 → v2 一次性刷平（Go 回调形式，见
+	// register_mail_automation_definition_v2.go —— 该文件自带的 init 已注册，
+	// 这里不重复调用，否则重复版本号会让 ValidateRegistry 报错）。
+	// 621a：图定义 v2 的 8 条校验明细词条（见 register_mail_automation_definition_v2_i18n.go）。
+	registerMailAutomationDefinitionV2I18n()
 }

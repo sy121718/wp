@@ -89,6 +89,8 @@ import (
 	"sync"
 	"time"
 
+	"sort"
+
 	"gorm.io/gorm"
 
 	maildto "go_wp/internal/module/mail/dto"
@@ -340,7 +342,14 @@ func automationItemOf(e *mailmodel.MailAutomationEntity) *maildto.AutomationItem
 		item.Entry = parsed.Entry
 		for _, n := range parsed.Nodes {
 			item.Nodes = append(item.Nodes, maildto.AutomationNodeItem{
-				Key: n.Key, Type: n.Type, Params: n.Params, Next: n.Next, Yes: n.Yes, No: n.No,
+				Key: n.Key,
+				// 投影回 v1 的类型名：画布 JS / 表单还原 / MCP 工具都按 v1 取值，
+				// 翻译只发生在这一处（见 dto/automation_node_type.go）。
+				Type:   maildto.LegacyNodeType(n.Type),
+				Params: n.Params,
+				// 投影出边的三个旧字段（dto 形状在本次改造里不动）：画布与表单页
+				// 读的都是它们。值来自 Out —— 出口名表的唯一真源。
+				Next: n.outlet(outletNext), Yes: n.outlet(outletYes), No: n.outlet(outletNo),
 				X: n.X, Y: n.Y,
 			})
 		}
@@ -351,20 +360,41 @@ func automationItemOf(e *mailmodel.MailAutomationEntity) *maildto.AutomationItem
 	return item
 }
 
-// 节点类型。
+// 节点类型（v2）。
+//
+// 出口名表在 automation_definition.go 的 nodeOutlets：新增类型只改那张表，
+// 不要在这里加一个「只有本文件认识」的分支。
 const (
 	NodeTypeTrigger = "trigger"
 	NodeTypeDelay   = "delay"
 	NodeTypeEmail   = "email"
-	NodeTypeBranch  = "branch"
-	NodeTypeTag     = "tag"
-	NodeTypeEnd     = "end"
+	// NodeTypeBranch 是 **v1 的类型名**：读取时被 normalizeDefinition 改写成 filter
+	//（出口与条件都相同，差别只是 v2 多了 mode）。保留常量是为了让迁移前的历史行与
+	// 既有单测还能引用它 —— 新代码一律用 NodeTypeFilter。
+	NodeTypeBranch           = "branch"
+	NodeTypeFilter           = "filter"
+	NodeTypeListStatusBranch = "list_status_branch"
+	NodeTypeABTest           = "ab_test"
+	NodeTypeWebhook          = "webhook"
+	NodeTypeTag              = "tag"
+	NodeTypeEnd              = "end"
+)
+
+// 条件求值模式。
+const (
+	// ConditionModeAll 全部满足才走 yes（v1 的 AND 语义，也是缺省值）。
+	ConditionModeAll = "all"
+	// ConditionModeAny 任一满足即走 yes。
+	ConditionModeAny = "any"
 )
 
 // AutomationDefinition 图定义。
 type AutomationDefinition struct {
-	Entry string           `json:"entry"`
-	Nodes []AutomationNode `json:"nodes"`
+	// Schema 图定义版本。读到的 v1 会被升级成 automationSchemaV2，
+	// 保存时按这个值落库（库里只有 v2）。
+	Schema int              `json:"schema"`
+	Entry  string           `json:"entry"`
+	Nodes  []AutomationNode `json:"nodes"`
 }
 
 // AutomationNode 一个节点。
@@ -372,11 +402,22 @@ type AutomationNode struct {
 	Key    string         `json:"key"`
 	Type   string         `json:"type"`
 	Params map[string]any `json:"params,omitempty"`
-	// Next 单出边（trigger / delay / email / tag 用）。
-	Next string `json:"next,omitempty"`
-	// Yes / No 条件分支的两条出边（branch 用）。
-	Yes string `json:"yes,omitempty"`
-	No  string `json:"no,omitempty"`
+
+	// Out 出边：出口名 → 目标节点 key。
+	//
+	// 出口名表由 nodeOutlets 定义（trigger/delay/email/tag/webhook 是 next，filter 是
+	// yes/no，list_status_branch 是 not_in_list/active/non_active，ab_test 是变体 id，
+	// end 没有出口）。空出口不入 map。
+	Out map[string]string `json:"out,omitempty"`
+
+	// Next / Yes / No 是 **v1 的扁平出边字段，已弃用**，读写都走 Out。
+	//
+	// 保留字段而不删除的原因有二：归一化之后仍有「直接构造结构体」的场景（单测、
+	// 迁移前的库行经 outlet 兜底）；标 json:"-" 保证序列化出去的定义里只有 out，
+	// v1 与 v2 不会共存于同一个节点的出边表达。
+	Next string `json:"-"`
+	Yes  string `json:"-"`
+	No   string `json:"-"`
 
 	// X / Y 节点在可视化画布上的位置（P4）。
 	//
@@ -387,34 +428,36 @@ type AutomationNode struct {
 	Y float64 `json:"y,omitempty"`
 }
 
-// outgoing 返回该节点的所有出边。
+// outgoing 返回该节点的所有出边（按出口名排序，日志与单测因此稳定）。
+//
+// 出口名到目标 key 的映射是唯一的真源（Out）；v1 的扁平字段只在 Out 为空时兜底。
 func (n AutomationNode) outgoing() []string {
-	switch n.Type {
-	case NodeTypeBranch:
-		out := make([]string, 0, 2)
-		if n.Yes != "" {
-			out = append(out, n.Yes)
-		}
-		if n.No != "" {
-			out = append(out, n.No)
-		}
-		return out
-	case NodeTypeEnd:
-		return nil
-	default:
-		if n.Next != "" {
-			return []string{n.Next}
-		}
+	filled := n.allOutlets()
+	if len(filled) == 0 {
 		return nil
 	}
+	names := make([]string, 0, len(filled))
+	for name := range filled {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		out = append(out, filled[name])
+	}
+	return out
 }
 
 // ParseDefinition 解析并校验图定义；返回纯 Go 结构供执行器使用。
+//
+// v1 的定义在这里升级成 v2（normalizeDefinition）：之后的校验、执行、画布、模板都
+// 只面对一种形状。升级在**内存里**发生，落库要经 SaveAutomation / 迁移 621。
 func ParseDefinition(raw map[string]any) (*AutomationDefinition, error) {
 	if len(raw) == 0 {
 		return nil, graphErr(mailenums.DetailGraphEmptyDefinition, "流程定义不能为空")
 	}
-	b, err := json.Marshal(raw)
+	normalized, _ := normalizeDefinitionVersioned(raw)
+	b, err := json.Marshal(normalized)
 	if err != nil {
 		return nil, err
 	}
@@ -423,6 +466,7 @@ func ParseDefinition(raw map[string]any) (*AutomationDefinition, error) {
 		return nil, graphErr(mailenums.DetailGraphNotGraph,
 			"流程定义不是合法的图结构: {reason}", "reason", err.Error())
 	}
+	def.Schema = automationSchemaV2
 	if err := ValidateDefinition(&def); err != nil {
 		return nil, err
 	}
@@ -518,11 +562,18 @@ func ValidateDefinition(def *AutomationDefinition) error {
 
 // nodeArity 校验节点类型的出边形状与必需参数。
 //
+// 出边形状由 automation_definition.go 的 nodeOutlets 定义：本函数只回答「这一份定义配得对不对」，
+// 不另写一张出口表。返回值的第二项是「该类型固定出口的个数」（仅用于日志/测试表达，
+// 校验本身按出口名逐个查）。
+//
 // 明细自带 {node} 定位参数（与本函数返回的中文原文同源）：图校验错误要按当前语言
 // 展示给作者，参数化的定位比「有一条边配错了」有用得多。调用方（ValidateDefinition）
 // 因此不再包一层「节点 X:」。
 func nodeArity(n AutomationNode) (int, error) {
 	key := strings.TrimSpace(n.Key)
+	if unknown := unknownOutlets(n); len(unknown) > 0 {
+		return 0, graphErrUnknownOutlet(key, unknown[0])
+	}
 	switch n.Type {
 	case NodeTypeTrigger:
 		// 入口节点：有出边就往前走，没有就是「触发即结束」（合法但少用）。
@@ -540,14 +591,22 @@ func nodeArity(n AutomationNode) (int, error) {
 				"节点 {node}: 发信节点需要 template_key", "node", key)
 		}
 		return 1, nil
-	case NodeTypeBranch:
-		if n.Yes == "" || n.No == "" {
+	case NodeTypeFilter:
+		filled := n.allOutlets()
+		if filled[outletYes] == "" || filled[outletNo] == "" {
 			return 0, graphErr(mailenums.DetailGraphNeedTwoArms,
 				"节点 {node}: 条件分支需要 yes 与 no 两条出边", "node", key)
 		}
 		if len(toStringSlice(n.Params["conditions"])) == 0 {
 			return 0, graphErr(mailenums.DetailGraphNeedCondition,
 				"节点 {node}: 条件分支需要至少一个条件", "node", key)
+		}
+		// mode 非法用**独立**的词条：复用 NeedCondition 会出两个不同原因共用一句话，
+		// 中文界面上「模式填错了」显示成「需要至少一个条件」，与真正该改的地方无关。
+		if !conditionModeValid(n.Params) {
+			return 0, graphErr(mailenums.DetailGraphBadCondition,
+				"节点 {node}: 模式只能是 all 或 any", "node", key,
+				"reason", "mode="+toString(n.Params["mode"]))
 		}
 		return 2, nil
 	case NodeTypeTag:
@@ -564,6 +623,15 @@ func nodeArity(n AutomationNode) (int, error) {
 		return 0, graphErr(mailenums.DetailGraphUnknownNodeTyp,
 			"节点 {node}: 未知节点类型: {type}", "node", key, "type", n.Type)
 	}
+}
+
+// conditionModeValid 条件模式只能是 all / any（空值按 all 处理 = v1 的 AND 语义）。
+func conditionModeValid(params map[string]any) bool {
+	switch strings.TrimSpace(toString(params["mode"])) {
+	case "", ConditionModeAll, ConditionModeAny:
+		return true
+	}
+	return false
 }
 
 // ---- 小工具（JSONB 解出来的数字是 float64，取整要小心）----
@@ -834,7 +902,7 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 			if !done {
 				s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK, mailenums.EncodeRunText(mailenums.RunKeyTriggerEntered, nil))
 			}
-			current = node.Next
+			current = node.outlet(outletNext)
 			if err = s.advance(ctx, run.ID, current); err != nil {
 				return err
 			}
@@ -844,7 +912,7 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 
 		case NodeTypeDelay:
 			if done {
-				current = node.Next
+				current = node.outlet(outletNext)
 				if err = s.advance(ctx, run.ID, current); err != nil {
 					return err
 				}
@@ -861,7 +929,7 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 			// 先推进游标再挂起：唤醒时直接从下一步开始（见文件头说明）。
 			if err = s.m.UpdateRunFields(ctx, run.ID, map[string]any{
 				"status":       mailmodel.RunStatusWaiting,
-				"current_node": nullable(node.Next),
+				"current_node": nullable(node.outlet(outletNext)),
 				"next_run_at":  due,
 				"update_time":  time.Now(),
 			}); err != nil {
@@ -873,7 +941,7 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 
 		case NodeTypeEmail:
 			if done {
-				current = node.Next
+				current = node.outlet(outletNext)
 				if err = s.advance(ctx, run.ID, current); err != nil {
 					return err
 				}
@@ -921,7 +989,7 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 			}
 			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK, detail)
 			contact = refreshContact(ctx, s, contact)
-			current = node.Next
+			current = node.outlet(outletNext)
 			if err = s.advance(ctx, run.ID, current); err != nil {
 				return err
 			}
@@ -929,16 +997,16 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 				return s.completeRun(ctx, run.ID)
 			}
 
-		case NodeTypeBranch:
+		case NodeTypeFilter:
 			matched, berr := s.evalConditions(ctx, contact, node.Params)
 			if berr != nil {
 				// 条件写错不该静默走 no 分支 —— 那会让「配置错误」伪装成「条件不满足」。
 				return s.failRun(ctx, run.ID, berr.Error())
 			}
-			branch := node.No
+			branch := node.outlet(outletNo)
 			tag := mailenums.EncodeRunText(mailenums.RunKeyBranchNo, nil)
 			if matched {
-				branch = node.Yes
+				branch = node.outlet(outletYes)
 				tag = mailenums.EncodeRunText(mailenums.RunKeyBranchYes, nil)
 			}
 			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK, tag)
@@ -952,7 +1020,7 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 
 		case NodeTypeTag:
 			if done {
-				current = node.Next
+				current = node.outlet(outletNext)
 				if err = s.advance(ctx, run.ID, current); err != nil {
 					return err
 				}
@@ -971,7 +1039,7 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 					mailenums.RunArgRemoved: tagListText(removed),
 				}))
 			contact = refreshContact(ctx, s, contact)
-			current = node.Next
+			current = node.outlet(outletNext)
 			if err = s.advance(ctx, run.ID, current); err != nil {
 				return err
 			}

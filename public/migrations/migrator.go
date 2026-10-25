@@ -25,11 +25,27 @@ import (
 const migrationAdvisoryLockExpr = `hashtextextended(current_database() || ':' || current_schema() || ':go_wp_migrations', 0)`
 
 // Migration 描述一次表结构迁移。
+//
+// SQL 与 Func **二选一**：绝大多数迁移是版本化幂等 SQL，但「逐行读改写 JSONB」这类
+// 数据变换用 SQL 写会变成一大块 jsonb 函数套嵌，既读不懂也单测不了 —— 那种迁移
+// 用 Func 给出一个 Go 函数，仍然受同一条「检查 → 同事务执行 → 日志」纪律约束。
 type Migration struct {
 	Version   string // 版本号，按字符串排序决定执行顺序
 	TableName string // 目标表名，用于幂等检查
 	CheckSQL  string // 自定义存在性检查 SQL；为空时使用默认检查
 	SQL       string // 建表/变更语句，按 ";" 分割逐条执行
+	// Func Go 回调形式的迁移体（与 SQL 互斥）。
+	//
+	// 为什么允许它：把 mail_automations.definition 这种自由形状的 JSONB 从 v1 刷成 v2
+	// 要按节点类型折出边，写成 SQL 是一层套一层的 jsonb_set / jsonb_agg，改一次
+	// 节点类型就要跟着改一次，而且没有编译期保护。
+	//
+	// 约束（三条都是硬的）：
+	//   · 幂等仍靠 CheckSQL —— 函数**不能**自己写“已跑过”标记；
+	//   · 不 import go_wp/internal/**：迁移要固定「当时那一次变换」，而 internal 的实现
+	//     会继续演进（621 因此在自己的文件里写了冻结版的折边规则）；
+	//   · 在同一事务里跑，失败整体回滚。
+	Func func(*gorm.DB) error
 }
 
 // Seed 描述一批种子数据。
@@ -232,8 +248,59 @@ func ValidateRegistry() error {
 const defaultMigrationCheckSQL = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?"
 
 func apply(db *gorm.DB, m Migration) error {
+	if m.Func != nil {
+		if strings.TrimSpace(m.SQL) != "" {
+			// 两个迁移体同时给 = 作者以为两者都会跑（实际只跑 Func），这种歧义
+			// 在启动期就拒绝，而不是让一段 SQL 永远不执行。
+			return fmt.Errorf("迁移 %s 同时声明了 SQL 与 Func：只能二选一", m.Version)
+		}
+		return ApplyFunc(db, m.Version, m.TableName, m.CheckSQL, m.Func)
+	}
 	// CheckSQL 空值的兜底放在 ApplyStatements 内（导出函数必须自带兜底，见那里注释）。
 	return ApplyStatements(db, m.Version, m.TableName, m.CheckSQL, SplitStatements(m.SQL))
+}
+
+// ApplyFunc 与 ApplyStatements 同一纪律的 Go 回调版：同一事务内先做存在性检查，
+// 再执行 fn，最后记一条与 SQL 迁移同形的日志。
+//
+// 与 ApplyStatements 共享 CheckSQL 的调用约定（有 `?` 才传表名）：两种迁移体的
+// 「跑没跑过」判据必须是同一个口径，否则同一条迁移换成另一种体就会每次启动重跑。
+func ApplyFunc(db *gorm.DB, version, tableName, checkSQL string, fn func(*gorm.DB) error) error {
+	if fn == nil {
+		return fmt.Errorf("迁移 %s 的 Func 为 nil", version)
+	}
+	if strings.TrimSpace(checkSQL) == "" {
+		checkSQL = defaultMigrationCheckSQL
+	}
+	executed := false
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		check := tx.Raw(checkSQL)
+		if strings.Contains(checkSQL, "?") {
+			check = tx.Raw(checkSQL, tableName)
+		}
+		if err := check.Scan(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return nil
+		}
+		if err := fn(tx); err != nil {
+			return fmt.Errorf("执行 %s (%s) 失败: %w", version, tableName, err)
+		}
+		executed = true
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	scene := logger.Scene("init").With("version", version).With("table", tableName)
+	if executed {
+		scene.Info("迁移完成（Go 回调）")
+	} else {
+		scene.Info("迁移对象已存在，跳过")
+	}
+	return nil
 }
 
 // ApplyStatements 在**单个事务**内执行一条迁移：先在事务里做存在性检查，再逐条执行语句。
