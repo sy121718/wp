@@ -696,11 +696,17 @@ func (a *assembly) buildIdentityAndCommerce() {
 	// 解析端口的实参是 ProductStockLookup（库存契约里那一小组只读能力），
 	// 不是整个 InventoryService —— 具体 service 同时实现两者，所以这里取一次类型。
 	if concrete, ok := orderSvc.(*orderservice.Service); ok {
+		// 发货单 / 承运商 model 由模块自装配注入（order_router.go 的 SetupOrderRoutes 内，
+		// 它拿得到 db）。这里只**标记接线已发生** —— 不标会让装配自检把 required 端口
+		// 判成缺失而 panic（而实际上它已经接上了）。
+		a.marks.mark(portOrderShipmentModels)
 		if lookup, lok := a.inventorySvc.(inventorycontract.ProductStockLookup); lok {
 			concrete.SetWarehouseResolver(orderstock.NewWarehouseResolver(lookup))
+			a.marks.mark(portOrderWarehouseResolver)
 		}
 		// 发货明细的 stock_id 快照（迁移 627）：同一个适配器也实现 StockRowLocator。
 		concrete.SetStockRowLocator(orderstock.New(invConcrete))
+		a.marks.mark(portOrderStockRowLocator)
 	}
 	// 销售总览的待办块要库存预警的数字（迁移 624 / 623，W4）：装配收尾补注，
 	// 订单模块不 import 库存契约（方向由 orderInventoryAlertReader 这个形状承载）。

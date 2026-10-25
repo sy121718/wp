@@ -225,7 +225,7 @@ var wiringManifest = []wiringEntry{
 	{portContentContentStore, "content（自装配，db）", "content / 构建期", wiringOptionalDegraded,
 		"内容可翻译字段逐字节回退原文（同上）"},
 	// —— 发货 / 销售总览（迁移 624-633）——
-	{portOrderShipmentModels, "order（自装配，db）", "order / 发货单读写", wiringOptionalDegraded,
+	{portOrderShipmentModels, "order（自装配，db）", "order / 发货单读写", wiringRequiredPort,
 		"发货单的建单与查询拿不到 model 句柄 → 发货入口整条不可用（页面能开，点发货 500）"},
 	{portOrderShipmentCounter, "order（svc 自实现）", "order 销售总览 / 待发货块", wiringOptionalDegraded,
 		"销售总览的「待发货」一格显示为空（其余三卡照常）"},
@@ -237,7 +237,7 @@ var wiringManifest = []wiringEntry{
 		"发货凭证的附件链接不可点（附件记录仍在，只是解析器没接上）"},
 	{portOrderStockRowLocator, "inventory（经订单装配注入）", "order 发货明细 / 库存行快照", wiringOptionalDegraded,
 		"发货明细的 stock_id 留空（该列只用于追溯，发货照常进行）"},
-	{portOrderWarehouseResolver, "inventory（经订单装配注入）", "order 发货仓解析", wiringOptionalDegraded,
+	{portOrderWarehouseResolver, "inventory（经订单装配注入）", "order 发货仓解析", wiringRequiredPort,
 		"发货时解析不到发货仓 → 整条发货失败（预占与扣减必须落在同一个仓）"},
 	{portPluginAdminAuthz, "admin", "plugin", wiringOptionalDegraded,
 		"插件读不到当前用户权限上下文（AdminAuthz() 返回 nil，调用方判空降级）"},
