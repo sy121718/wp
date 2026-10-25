@@ -345,4 +345,6 @@ func init() {
 	registerMailAutomationCanvasV2I18n()
 	// 621e：T4 四个新节点的校验明细与运行文案（见 register_mail_automation_nodes_i18n.go）。
 	registerMailAutomationNodesI18n()
+	// 622：邮件模板的可视化正文三列（见 register_mail_template_body_json.go）。
+	registerMailTemplateBodyJSON()
 }

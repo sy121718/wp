@@ -2,6 +2,8 @@ package maildto
 
 // mail_template_req.go — 模板与发送相关请求。
 
+import json "go_wp/pkg/jsonx"
+
 // SaveTemplateReq 新建 / 覆盖模板（key + locale 唯一）。
 type SaveTemplateReq struct {
 	TemplateKey string
@@ -10,6 +12,11 @@ type SaveTemplateReq struct {
 	Subject     string
 	BodyHTML    string
 	BodyText    string
+	// BodyJSON 可视化编辑器的块树（TemplateTree 的 JSON）。
+	//
+	// 非空时：service 编译并回填 body_compiled_html / body_compiled_text，**成功才落库**
+	// （编译失败不落半成品）。空时：保持「代码模式」（body_html / body_text 原样存）。
+	BodyJSON json.RawMessage
 	// Variables 声明模板用到的变量名（仅用于提示与校验展示）。
 	Variables  []string
 	OperatorID uint64

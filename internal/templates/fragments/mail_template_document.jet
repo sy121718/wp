@@ -1,0 +1,6 @@
+{* mail_template_document.jet — 可视化正文的整篇骨架（编译器的外壳）。
+   壳（doctype / head / style / body）在模板里，块树由编译器渲染成 Body 传进来。
+   两条硬约束见 service/template_compile.go 的文件头：样式一律 inline，
+   `<style>` 只放响应式覆盖（Gmail 会剥掉其中大部分规则）。 *}
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>@media (max-width:600px){.tpl-col{display:block!important;width:100%!important}}</style></head><body style="margin:0;padding:0;background-color:#ffffff;">{{.Body | unsafe}}</body></html>

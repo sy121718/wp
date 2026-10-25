@@ -1,0 +1,11 @@
+{* mail_template_block.jet — 邮件模板块的 HTML 骨架（可视化正文编译器用）。
+   一个块一次渲染：编译器负责走树与按固定顺序拼 style，结构（标签 / 属性名）在这里。
+
+   为什么结构必须在模板里（而不是 Go 拼串）：AGENTS.md 定的前后端分界是「Go 是后端，
+   Jet 模板 + HTML 是前端」，Go 代码里出现标签字面量会被 html_boundary 门禁拦下。
+   本模板因此只认四种形状：容器（table>tr>td+子块）、自闭合内容（td 里一段 HTML）、
+   原样输出（raw）。
+
+   .Style 是编译器按固定属性顺序拼好的 inline style（已转义）。
+   .Inner 是子块的渲染结果（已渲染，模板不再转义）。 *}
+{{if .IsRaw}}{{.Raw | unsafe}}{{else}}<table role="presentation" cellpadding="0" cellspacing="0" border="0"{{if .ClassAttr}} class="{{.ClassAttr}}"{{end}}{{if .Style}} style="{{.Style | unsafe}}"{{end}}>{{.Inner | unsafe}}</table>{{end}}

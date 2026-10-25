@@ -184,7 +184,8 @@ func (s *Service) StartCampaign(ctx context.Context, req *maildto.StartCampaignR
 	for k, v := range c.Variables {
 		baseVars[k] = v
 	}
-	if _, _, _, rerr := RenderTemplate(tpl.Subject, tpl.BodyHTML, tpl.BodyText, withSampleVars(baseVars)); rerr != nil {
+	campHTML, campText := bodyOf(tpl)
+	if _, _, _, rerr := RenderTemplate(tpl.Subject, campHTML, campText, withSampleVars(baseVars)); rerr != nil {
 		return nil, rerr
 	}
 
@@ -316,7 +317,8 @@ func (s *Service) DispatchCampaign(ctx context.Context, campaignID, afterID uint
 		if contact.Name != nil {
 			vars["name"] = *contact.Name
 		}
-		subject, html, text, rerr := RenderTemplate(tpl.Subject, tpl.BodyHTML, tpl.BodyText, vars)
+		sendHTML, sendText := bodyOf(tpl)
+		subject, html, text, rerr := RenderTemplate(tpl.Subject, sendHTML, sendText, vars)
 		if rerr != nil {
 			// 单个收件人渲染失败（例如他的姓名为空而模板直接用了 .name）：
 			// 记一条 failed 日志并继续下一个人，不因一个人中断整场活动。

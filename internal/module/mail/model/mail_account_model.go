@@ -116,10 +116,19 @@ type MailTemplateEntity struct {
 	BodyText    string `gorm:"column:body_text"`
 	// Variables 模板用到的变量名列表。存 JSON **数组**（[\"name\",\"code\"]）而不是对象 ——
 	// 语义上它是「用到哪些变量」，不是「变量用什么值」（值在发送时由调用方给）。
-	Variables  StringArray `gorm:"column:variables;type:jsonb"`
-	Status     int         `gorm:"column:status"`
-	CreateTime *time.Time  `gorm:"column:create_time;autoCreateTime"`
-	UpdateTime *time.Time  `gorm:"column:update_time"`
+	Variables StringArray `gorm:"column:variables;type:jsonb"`
+	// BodyJSON 编辑器的块树（TemplateTree）。存 JSONB 而不是拆表：块树是**整体读写**的
+	// （编辑器一次保存整棵树），与 automation 的 definition 同一取舍。
+	BodyJSON JSONMap `gorm:"column:body_json;type:jsonb"`
+	// BodyCompiledHTML / BodyCompiledText 由 CompileTemplate 产出的确定性字节。
+	//
+	// 为什么落库而不是每次发送时编译：编译发生在**保存**时（那时能拒绝非法树），
+	// 而发送只读产物 —— 两条路径共用同一份字节，不会出现「预览对、发出去不对」。
+	BodyCompiledHTML string     `gorm:"column:body_compiled_html"`
+	BodyCompiledText string     `gorm:"column:body_compiled_text"`
+	Status           int        `gorm:"column:status"`
+	CreateTime       *time.Time `gorm:"column:create_time;autoCreateTime"`
+	UpdateTime       *time.Time `gorm:"column:update_time"`
 }
 
 // TableName 表名。
@@ -336,8 +345,14 @@ func (m *MailModel) ListTemplatesPage(ctx context.Context, key string, page, lim
 // UpsertTemplate 新建或覆盖模板（key + locale 唯一）。
 func (m *MailModel) UpsertTemplate(ctx context.Context, e *MailTemplateEntity) (err error) {
 	return m.tx(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "template_key"}, {Name: "locale"}},
-		DoUpdates: clause.AssignmentColumns([]string{"name", "subject", "body_html", "body_text", "variables", "status", "update_time"}),
+		Columns: []clause.Column{{Name: "template_key"}, {Name: "locale"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"name", "subject", "body_html", "body_text",
+			// 可视化正文三列必须一起更新：只更新 body_json 会让编译产物与树不一致
+			// （而 body_json 非空时渲染读的是产物）。
+			"body_json", "body_compiled_html", "body_compiled_text",
+			"variables", "status", "update_time",
+		}),
 	}).Create(e).Error
 }
 

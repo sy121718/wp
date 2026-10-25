@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	json "go_wp/pkg/jsonx"
 	"strings"
 	"text/template"
 	"time"
@@ -28,19 +29,52 @@ func (s *Service) UpsertTemplate(ctx context.Context, req *maildto.SaveTemplateR
 	if req == nil || strings.TrimSpace(req.TemplateKey) == "" || strings.TrimSpace(req.Subject) == "" {
 		return nil, errors.New(mailenums.ErrInvalidParam)
 	}
+	// 可视化正文（块树）在场时：**先编译，成功才落库**。
+	//
+	// 编译失败返回带 NodeKey 的明细（哪个块、为什么），并且不写任何一列 —— 半成品
+	// （树是新的、产物是旧的）比存不下更糟：页面显示的是新树，发出去的是旧正文。
+	var (
+		bodyJSON     mailmodel.JSONMap
+		compiledHTML string
+		compiledText string
+	)
+	if len(req.BodyJSON) > 0 {
+		var tree TemplateTree
+		if uerr := json.Unmarshal(req.BodyJSON, &tree); uerr != nil {
+			return nil, errors.New(mailenums.ErrTemplateSyntax + ": " + uerr.Error())
+		}
+		html, text, cerr := CompileTemplate(tree)
+		if cerr != nil {
+			return nil, errors.New(mailenums.ErrTemplateSyntax + ": " + cerr.Error())
+		}
+		if uerr := json.Unmarshal(req.BodyJSON, &bodyJSON); uerr != nil {
+			return nil, errors.New(mailenums.ErrTemplateSyntax + ": " + uerr.Error())
+		}
+		compiledHTML, compiledText = html, text
+	}
 	// 保存前**先试渲染一次**（用空变量）：模板语法错、变量名写错当场暴露，
 	// 而不是等到真发信时才失败。
-	if _, _, _, rerr := RenderTemplate(req.Subject, req.BodyHTML, req.BodyText, map[string]any{}); rerr != nil && !isMissingKeyErr(rerr) {
+	//
+	// 代码模式（BodyJSON 为空）校验 body_html；可视化模式校验**编译产物** ——
+	// 那才是真正会被发出去的正文（块树里的 text 允许带标记，拼错要到这一步才发现）。
+	checkHTML, checkText := req.BodyHTML, req.BodyText
+	if compiledHTML != "" {
+		checkHTML, checkText = compiledHTML, compiledText
+	}
+	if _, _, _, rerr := RenderTemplate(req.Subject, checkHTML, checkText, map[string]any{}); rerr != nil && !isMissingKeyErr(rerr) {
 		return nil, errors.New(mailenums.ErrTemplateSyntax + ": " + rerr.Error())
 	}
 	e := &mailmodel.MailTemplateEntity{
-		TemplateKey: strings.TrimSpace(req.TemplateKey),
-		Locale:      strings.TrimSpace(req.Locale),
-		Name:        strings.TrimSpace(req.Name),
-		Subject:     req.Subject,
-		BodyHTML:    req.BodyHTML,
-		BodyText:    req.BodyText,
-		Status:      mailmodel.TemplateStatusEnabled,
+		TemplateKey:      strings.TrimSpace(req.TemplateKey),
+		Locale:           strings.TrimSpace(req.Locale),
+		Name:             strings.TrimSpace(req.Name),
+		Subject:          req.Subject,
+		BodyHTML:         req.BodyHTML,
+		BodyText:         req.BodyText,
+		BodyJSON:         bodyJSON,
+		BodyCompiledHTML: compiledHTML,
+		BodyCompiledText: compiledText,
+		Status:           mailmodel.TemplateStatusEnabled,
 	}
 	if len(req.Variables) > 0 {
 		e.Variables = mailmodel.StringArray(req.Variables)
@@ -80,6 +114,25 @@ func (s *Service) ListTemplatesPage(ctx context.Context, key string, page, limit
 // DeleteTemplate 删除模板（按 key + locale）。
 func (s *Service) DeleteTemplate(ctx context.Context, key, locale string) (err error) {
 	return s.m.DeleteTemplate(ctx, key, locale)
+}
+
+// bodyOf 取模板**实际会被发出去**的正文。
+//
+// 两条路径的优先级只有这一处：
+//
+//	· body_json 非空（可视化编辑过）→ 用编译产物（body_compiled_*）；
+//	· 否则回落到 body_html / body_text（代码模式，与改造前逐字等价）。
+//
+// 为什么不用「编译产物非空就用它」：那样删掉 body_json 之后旧产物还会继续生效，
+// 而用户以为自己已经退回代码模式了。判据必须是**树的在场**。
+func bodyOf(tpl *mailmodel.MailTemplateEntity) (html, text string) {
+	if tpl == nil {
+		return "", ""
+	}
+	if len(tpl.BodyJSON) > 0 {
+		return tpl.BodyCompiledHTML, tpl.BodyCompiledText
+	}
+	return tpl.BodyHTML, tpl.BodyText
 }
 
 // RenderTemplate 渲染模板（导出以便单测直接验证渲染语义）。
@@ -150,7 +203,8 @@ func (s *Service) SendTemplate(ctx context.Context, req *maildto.SendTemplateReq
 	}
 
 	// 3. 渲染（缺失变量在这里报错，而不是发出去 <no value>）
-	subject, html, text, rerr := RenderTemplate(tpl.Subject, tpl.BodyHTML, tpl.BodyText, req.Vars)
+	htmlSrc, textSrc := bodyOf(tpl)
+	subject, html, text, rerr := RenderTemplate(tpl.Subject, htmlSrc, textSrc, req.Vars)
 	if rerr != nil {
 		return nil, rerr
 	}
@@ -246,6 +300,13 @@ func templateItemOf(e *mailmodel.MailTemplateEntity) *maildto.TemplateItem {
 	if len(e.Variables) > 0 {
 		item.Variables = append(item.Variables, e.Variables...)
 	}
+	if len(e.BodyJSON) > 0 {
+		if b, err := json.Marshal(e.BodyJSON); err == nil {
+			item.BodyJSON = b
+		}
+	}
+	item.BodyCompiledHTML = e.BodyCompiledHTML
+	item.BodyCompiledText = e.BodyCompiledText
 	if e.UpdateTime != nil {
 		item.UpdateTime = e.UpdateTime.Format(time.RFC3339)
 	}

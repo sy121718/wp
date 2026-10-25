@@ -1,0 +1,13 @@
+{* mail_template_node_inner.jet — 一个块的「td 里放什么」。
+   编译器把块的语义翻成这里的字段（Kind + 若干已转义的值），标签留在模板里。
+
+   Kind 取值与 service/template_compile.go 的 writeNode 一致：
+     children  容器：把子块渲染结果原样放进来
+     text      富文本（允许带少量标记，原样输出）
+     button    按钮（Href / Label 已转义）
+     image     图片（Src / Alt / Width 已转义）
+     divider   分隔线
+     spacer    留白（Height 已转义）
+     social    社交一行文字
+     raw       原样片段 *}
+{{if .IsContainer}}<tr><td>{{.Inner | unsafe}}</td></tr>{{else if .IsText}}<tr><td>{{.Text | unsafe}}</td></tr>{{else if .IsButton}}<tr><td style="padding:12px 0;"><a href="{{.Href}}" style="display:inline-block;padding:12px 24px;border-radius:4px;background-color:#2f6fed;color:#ffffff;text-decoration:none;">{{.Label | unsafe}}</a></td></tr>{{else if .IsImage}}<tr><td><img src="{{.Src}}" alt="{{.Alt}}" width="{{.Width}}" style="display:block;max-width:100%;height:auto;border:0;"></td></tr>{{else if .IsDivider}}<tr><td style="border-top:1px solid #e3e6ec;font-size:0;line-height:0;">&nbsp;</td></tr>{{else if .IsSpacer}}<tr><td height="{{.Height}}" style="font-size:0;line-height:0;">&nbsp;</td></tr>{{else if .IsSocial}}<tr><td style="padding:8px 0;font-size:13px;">{{.Text | unsafe}}</td></tr>{{end}}
