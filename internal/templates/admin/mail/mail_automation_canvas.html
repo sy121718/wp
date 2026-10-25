@@ -11,9 +11,25 @@
 <link rel="stylesheet" href="/static/css/automation.css?v={{.jsVer}}">
 <div class="auto-wrap">
   <div class="auto-bar">
-    <strong>{{.A.Name}}</strong>
-    <span class="auto-badge">v{{.A.Version}} · {{.A.Status}}</span>
+    {* 流程名与触发方式是**画布上唯一可编辑的两个文字字段**：保存结构时一起提交，
+       所以它们必须是输入控件而不是只读文本 —— 否则「新建流程 → 画布上画完 → 保存」
+       会被服务端以「流程名称不能为空」拒掉，而新建流程已经没有第二个入口了。 *}
+    <label class="auto-field">
+      <span>{{ .["t"]("admin.mail.automation_canvas.field.name", "流程名称") }}</span>
+      <input type="text" id="autoName" class="form-input" value="{{.A.Name}}" maxlength="150"
+             placeholder="{{ .["t"]("admin.mail.automation_canvas.field.name_ph", "例如：新订阅欢迎") }}" required>
+    </label>
+    <label class="auto-field">
+      <span>{{ .["t"]("admin.mail.automation_canvas.field.trigger", "触发方式") }}</span>
+      <select id="autoTrigger" class="form-select">
+        {{range _, o := .Triggers}}
+        <option value="{{o.Value}}" {{if o.Selected}}selected{{end}}>{{o.Label}}</option>
+        {{end}}
+      </select>
+    </label>
+    <span class="auto-badge" id="autoVersionBadge">{{if .IsNew}}{{ .["t"]("admin.mail.automation_canvas.badge.new", "新流程") }}{{else}}v{{.A.Version}} · {{.A.Status}}{{end}}</span>
     <button type="button" id="autoSavePos" class="btn">{{ .["t"]("admin.mail.automation_canvas.save_pos", "保存位置") }}</button>
+    <button type="button" id="autoSave" class="btn btn-primary">{{ .["t"]("admin.mail.automation_canvas.save", "保存结构") }}</button>
     <span id="autoStatus" class="auto-status" role="status" aria-live="polite"></span>
     <span class="help">
       <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.mail.automation_canvas.help.label", "查看说明") }}" aria-expanded="false">?</button>
@@ -47,7 +63,7 @@
         <p><label>{{ .["t"]("admin.mail.automation_canvas.field.next", "下一步") }} <select id="fNext" class="form-select"></select></label></p>
         <p><label>{{ .["t"]("admin.mail.automation_canvas.field.yes", "条件为真走（yes）") }} <select id="fYes" class="form-select"></select></label></p>
         <p><label>{{ .["t"]("admin.mail.automation_canvas.field.no", "条件为假走（no）") }} <select id="fNo" class="form-select"></select></label></p>
-        <p><button type="submit" class="btn btn-primary">{{ .["t"]("admin.mail.automation_canvas.save", "保存结构") }}</button></p>
+        <p class="auto-hint">{{ .["t"]("admin.mail.automation_canvas.side.save_hint", "改完参数后按顶栏的「保存结构」提交整张图。") }}</p>
       </form>
     </aside>
   </div>

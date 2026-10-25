@@ -337,4 +337,8 @@ func init() {
 	// 这里不重复调用，否则重复版本号会让 ValidateRegistry 报错）。
 	// 621a：图定义 v2 的 8 条校验明细词条（见 register_mail_automation_definition_v2_i18n.go）。
 	registerMailAutomationDefinitionV2I18n()
+	// 621b：画布保存提示指向已删除表单页的措辞修正（见 register_mail_automation_canvas_save_hint_i18n.go）。
+	registerMailAutomationCanvasSaveHintI18n()
+	// 621c：画布顶栏名称 / 触发方式控件的词条（见 register_mail_automation_canvas_field_i18n.go）。
+	registerMailAutomationCanvasFieldI18n()
 }

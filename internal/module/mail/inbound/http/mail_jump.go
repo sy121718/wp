@@ -15,7 +15,7 @@ package mailhttp
 // 不报错也不记日志 —— 所以本模块的出口只交事实，不取词。
 //
 // 三条边界（同 shell.RenderJump 的注释）：
-//   · 文案必须是**已归口的事实或受控成品**（mailErrMsg / mailFormErrText /
+//   · 文案必须是**已归口的事实或受控成品**（mailErrMsg /
 //     mailBulkIDsMsg 的产物）—— 原文只进日志，换个页面呈现不等于可以把
 //     err.Error() 铺上去；
 //   · 回跳地址由 backref.BackPath 从**表单 action 的 query** 按白名单读回（服务端自己拼，

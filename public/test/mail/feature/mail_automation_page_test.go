@@ -262,3 +262,58 @@ func TestMailAutomationEditRouteIsGone(t *testing.T) {
 		t.Fatal("流程列表的「编辑」应指向画布（带 id）")
 	}
 }
+
+// TestMailAutomationNewFlowCanBeSaved 新建流程必须能从画布**存下去**。
+//
+// 这条用例钉的是一个会让整条链断掉的形态：服务端对空名直接返回 ErrInvalidParam，
+// 而新建流程时 meta.name 是空串 —— 如果画布不提供名称输入（而是从注入的 meta 读），
+// 那么「新建 → 画布上画完 → 保存」永远 400，而新建已经没有第二个入口了。
+//
+// 判据分两段：画布 HTML 里确有可编辑的名称 / 触发方式控件；带着这两个值提交
+// /api/mail/automation/save 能建出流程（并回带 id）。
+func TestMailAutomationNewFlowCanBeSaved(t *testing.T) {
+	f := newMailFeatureFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	router := newAutomationRouter(t, f)
+
+	// 1. 画布上有可编辑的名称与触发方式（不是只读文本）。
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/admin/mail/automation/canvas", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("新建画布状态码 %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`id="autoName"`, `id="autoTrigger"`, `id="autoSave"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("新建画布缺少可编辑控件 %s：保存结构时名称只能是空串，服务端会以「流程名称不能为空」拒绝", want)
+		}
+	}
+
+	// 2. 带着画布提交的那几个字段走保存：能建出流程并回带 id。
+	raw, err := json.Marshal(map[string]any{"schema": 2, "entry": "n1", "nodes": []any{
+		map[string]any{"key": "n1", "type": "trigger", "out": map[string]any{}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := f.svc.SaveAutomation(ctx, &maildto.SaveAutomationReq{
+		Name: "新建流程", TriggerType: mailmodel.TriggerManual, Definition: raw,
+	})
+	if err != nil {
+		t.Fatalf("新建流程保存失败: %v", err)
+	}
+	if item.ID == 0 {
+		t.Fatal("保存成功必须回带 id（画布要靠它把地址栏从「新建」切成「编辑」）")
+	}
+	// 3. 只含入口节点（没有出口）的图是合法的：触发即结束。
+	got, err := f.svc.GetAutomation(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("回读失败: %v", err)
+	}
+	if got.Entry != "n1" || len(got.Nodes) != 1 {
+		t.Fatalf("新建流程应是「一个入口节点」，实际 entry=%q nodes=%d", got.Entry, len(got.Nodes))
+	}
+}

@@ -57,7 +57,7 @@ exit:comment:ownhelper	1	keep	commentFail：写动作失败出口（业务 400 /
 exit:contenttemplate:ownhelper	2	down	模块自建出口 helper 收敛到统一归口后归零；task-153 控制器取词收口（片段接 adminui.PrepareFragment、成品串槽位改事实）+ 路由按功能拆分，按门禁实测 3 → 2
 exit:inventory:ownhelper	2	keep	写动作只剩两个出口：inventoryFail（错误 → 4xx/5xx + JSON）与 inventoryFailMsg（参数级提示 → 400）。inventoryJump 与五个回跳助手已删除（写动作成功只回 {code:200}，导航在前端），故 1 → 2 是同一处的拆分而非新增过渡面
 exit:mail:jump	1	down	页面写操作迁到 JSON API 后逐步归零；task-153 控制器取词收口（片段接 adminui.PrepareFragment、成品串槽位改事实）+ 路由按功能拆分，按门禁实测 2 → 1
-exit:mail:ownhelper	11	down	模块自建出口 helper 收敛到统一归口后归零
+exit:mail:ownhelper	10	down	模块自建出口 helper 收敛到统一归口后归零
 exit:mail:cstring	3	down	直出文本出口应换成页面提示或 JSON 出口
 exit:media:ownhelper	1	down	模块自建出口 helper 收敛到统一归口后归零
 exit:membership:ownhelper	1	keep	membershipFail + membershipText：失败出口（404/409/400/503/500 按声明处分档）与文案取词。membership_err.go 的白名单已删，这是终局形态而非过渡

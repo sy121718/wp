@@ -269,7 +269,7 @@ if (saveBtn) {
     });
 }
 
-/* ---------- 保存结构（走与表单页同一套图校验） ---------- */
+/* ---------- 保存结构（服务端同一套图校验） ---------- */
 
 if (form) {
     form.addEventListener('submit', function (ev) {
@@ -291,33 +291,86 @@ if (form) {
             selected.no = '';
         }
 
-        var def = { entry: meta.entry, nodes: nodes };
-        setStatus('保存中…');
-        fetch('/api/mail/automation/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
-            credentials: 'same-origin',
-            body: JSON.stringify({
-                id: meta.automationId,
-                name: meta.name || '',
-                description: meta.description || '',
-                triggerType: meta.triggerType || 'manual',
-                definition: def
-            })
-        }).then(function (r) {
-            return r.json().catch(function () { return {}; });
-        }).then(function (body) {
-            if (body && body.code === 200) {
-                setStatus('结构已保存，正在刷新…');
-                window.location.reload();
-            } else {
-                // 图校验失败时把服务端的定位信息原样显示（它会说清是哪一条边 / 哪个节点）。
-                setStatus('保存失败：' + ((body && body.message) || '未知错误'));
-            }
-        })['catch'](function () {
-            setStatus('保存失败：网络错误');
-        });
+        saveStructure();
     });
+}
+
+/**
+ * saveStructure 提交整张图（顶栏「保存结构」与侧栏表单共用这一条路径）。
+ *
+ * 三件事必须一起做对：
+ *
+ *   1. **名称与触发方式从顶栏输入读**，不从注入的 meta 读 —— 新建流程时 meta.name 是空串，
+ *      而服务端对空名直接拒绝（ErrInvalidParam）。从 meta 读的写法会让「新建 → 画布上画完
+ *      → 保存」永远存不进去，而新建已经没有任何第二个入口。
+ *   2. **保存成功后不 reload**：新建时地址栏还没有 id，刷新会回到又一份空白草稿，
+ *      用户会以为刚建的流程丢了（再点保存就多建一条）。改成把返回的 id 写回地址
+ *      （replaceState），页面状态一律不动。
+ *   3. 图校验失败时把服务端的定位信息原样显示（它会说清是哪一条边 / 哪个节点）。
+ */
+function saveStructure() {
+    var nameEl = document.getElementById('autoName');
+    var triggerEl = document.getElementById('autoTrigger');
+    var name = nameEl ? String(nameEl.value || '').trim() : (meta.name || '');
+    if (!name) {
+        setStatus('请先填流程名称');
+        if (nameEl) { nameEl.focus(); }
+        return;
+    }
+    var def = { schema: 2, entry: meta.entry || 'n1', nodes: nodes };
+    setStatus('保存中…');
+    fetch('/api/mail/automation/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf() },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+            id: meta.automationId || 0,
+            name: name,
+            description: meta.description || '',
+            triggerType: (triggerEl && triggerEl.value) || meta.triggerType || 'manual',
+            definition: def
+        })
+    }).then(function (r) {
+        return r.json().catch(function () { return {}; });
+    }).then(function (body) {
+        if (body && body.code === 200) {
+            dirty = false;
+            var item = body.data || {};
+            if (item.id) { adoptSaved(item); }
+            setStatus('已保存' + (item.version ? '（版本 ' + item.version + '）' : ''));
+        } else {
+            setStatus('保存失败：' + ((body && body.message) || '未知错误'));
+        }
+    })['catch'](function () {
+        setStatus('保存失败：网络错误');
+    });
+}
+
+/**
+ * adoptSaved 保存成功后把服务端回执吸收进页面状态（**不刷新页面**）。
+ *
+ * 新建流程第一次保存会拿到 id：把它写回地址栏并更新 meta，此后的保存就是「更新」而不是
+ * 又一次新建。用 replaceState 而不是 pushState —— 这是一次原地转变，不该多出一条历史。
+ */
+function adoptSaved(item) {
+    meta.automationId = item.id;
+    meta.version = item.version || meta.version;
+    meta.status = item.status || meta.status;
+    if (item.name) { meta.name = item.name; }
+    if (typeof window.history !== 'undefined' && window.history.replaceState) {
+        var url = new URL(window.location.href);
+        url.searchParams.set('id', String(item.id));
+        window.history.replaceState({}, '', url.toString());
+    }
+    var badge = document.getElementById('autoVersionBadge');
+    if (badge) {
+        badge.textContent = 'v' + (item.version || 1) + ' · ' + (item.status || 'draft');
+    }
+}
+
+var saveBtnBar = document.getElementById('autoSave');
+if (saveBtnBar) {
+    saveBtnBar.addEventListener('click', saveStructure);
 }
 
 // 离开前提醒未保存的位置改动。

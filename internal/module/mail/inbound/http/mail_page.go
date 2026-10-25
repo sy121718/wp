@@ -124,16 +124,30 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 	if !ok {
 		return
 	}
+	c.HTML(http.StatusOK, "admin/mail/mail_automation_canvas.html", adminui.Prepare(c, h.automationCanvasData(c, item)))
+}
+
+// automationCanvasData 画布页的渲染数据（模板只读现成数据对象，不自己推导）。
+//
+// 与 handler 分开的理由是门禁的判据本身：`MailAutomationCanvas` 只该做
+// 「取 → 渲」两件事（controller_orchestration 的语句上限 6）。数据装配放在这里，
+// 它不做业务判断 —— 图的合法性由 service 的 ValidateDefinition 管。
+func (h *mailPageHandle) automationCanvasData(c *gin.Context, item *maildto.AutomationItem) gin.H {
+	ctx := c.Request.Context()
 	nodesJSON, merr := json.Marshal(item.Nodes)
 	if merr != nil {
 		nodesJSON = []byte("[]")
 	}
 	metaJSON, _ := json.Marshal(h.automationCanvasMeta(c, item))
 	// 发信节点要选模板：把模板列表给页面（省得用户手敲 key）。
-	templates, _ := h.mail.ListTemplates(c.Request.Context(), "")
-	c.HTML(http.StatusOK, "admin/mail/mail_automation_canvas.html", adminui.Prepare(c, gin.H{
-		"title":     mailenums.PageTitleAutomationCanvas.Key,
-		"A":         item,
+	templates, _ := h.mail.ListTemplates(ctx, "")
+	return gin.H{
+		"title": mailenums.PageTitleAutomationCanvas.Key,
+		"A":     item,
+		// 新建流程要能在一屏内完成：名称与触发方式是画布顶栏的两个输入控件，
+		// 下拉选项与服务端校验共用 enums 的同一份枚举。
+		"IsNew":     item.ID == 0,
+		"Triggers":  triggerOptions(mailTranslate(c), item.TriggerType),
 		"NodesJSON": utils.JsonSafe(string(nodesJSON)),
 		"MetaJSON":  utils.JsonSafe(string(metaJSON)),
 		"Templates": templates,
@@ -143,17 +157,22 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 		// 按需内联动效关键帧（本次只用到入场一个）。不声明就是零字节 ——
 		// 后台不常驻加载 63 条营销动效，谁用谁声明（见 core.KeyframeCSS）。
 		"KeyframesCSS": core.KeyframeCSS([]string{"sky-fade-up"}),
-	}))
+	}
 }
 
-// automationForCanvas 取画布要编辑的流程：带 id 读库，不带 id 给空图。
+// automationForCanvas 取画布要编辑的流程：**没给 id** 才给空图，给了 id 就查到实处。
+//
+// 为什么不能用 `id := ParseUint(c.Query("id")); if id == 0`：ParseUint 对 "" / "abc" / "0"
+// 一律返回 0，于是 `?id=abc`（或 id 被截断的旧书签）会静默变成「新建空白草稿」——
+// 用户以为在编辑原来那条，保存后多出一条不相干的流程。判据与活动报表 / 实例排障
+// 共用同一份（mailQueryID）：没给 id 才走引导，给了 id 就由 service 说那个 id 怎么了。
 //
 // 第二个返回 false 表示已经渲染了提示页（调用方直接 return）。
-// 新建分支的图只含入口节点：它与迁移后的 v2 形状逐字一致（schema + out），
-// 画布不需要知道「这份图是刚造的」—— 它只看见一份合法的图定义。
+// 新建分支的图与迁移后的 v2 形状逐字一致（schema + out），画布不需要知道
+// 「这份图是刚造的」—— 它只看见一份合法的图定义。
 func (h *mailPageHandle) automationForCanvas(c *gin.Context) (*maildto.AutomationItem, bool) {
-	id := reqparams.ParseUint(c.Query("id"))
-	if id == 0 {
+	id, hasID := mailQueryID(c)
+	if !hasID {
 		return newAutomationDraft(), true
 	}
 	item, err := h.mail.GetAutomation(c.Request.Context(), id)
@@ -236,11 +255,6 @@ func automationJsVer() string {
 	return strconv.FormatInt(latest, 10)
 }
 
-// maxAutomationNodes 表单最多支持多少个节点行。
-//
-// 有上限不是偷懒：表单式编辑器一旦超过十几行就不好用了 —— 那正是该上拖拽的信号。
-const maxAutomationNodes = 12
-
 // mailAutomationPageSize 流程列表每页条数（运行记录页用自己的 mailAutomationRunsPageSize）。
 const mailAutomationPageSize = 50
 
@@ -274,38 +288,18 @@ func mailLabel(tr mailTr, pair mailenums.LabelPair) string {
 	return tr(pair.Key, pair.Fallback)
 }
 
-// nodeTypeOption 类型下拉的一项（Label / Hint 已在组装时按当前语言取词）。
-type nodeTypeOption struct {
-	Value string
-	Label string
-	Hint  string
-}
-
-// nodeTypeOptions 节点类型选项（取词后的形状）。
+// triggerOptions 触发方式下拉的选项（带选中态）。
 //
-// 取值与文案的真源在 mailenums.AutomationNodeTypes（key + 中文兜底），这里只做取词。
-// 画布的 palette 与结构树读的是 meta.nodeTypes（同一份 enums），本函数给 Go 侧
-// 需要直接渲染的场景用。
-func nodeTypeOptions(tr mailTr) []nodeTypeOption {
-	opts := make([]nodeTypeOption, 0, len(mailenums.AutomationNodeTypes))
-	for _, o := range mailenums.AutomationNodeTypes {
-		opts = append(opts, nodeTypeOption{
-			Value: o.Value,
-			Label: mailLabel(tr, o.Label),
-			Hint:  mailLabel(tr, o.Hint),
-		})
+// 画布顶栏与（已删除的）表单页共用同一份 enums；下拉只在这里组装一次。
+func triggerOptions(tr mailTr, selected string) []gin.H {
+	if selected == "" {
+		selected = mailmodel.TriggerManual
+	}
+	opts := make([]gin.H, 0, len(mailenums.AutomationTriggers))
+	for _, o := range mailenums.AutomationTriggers {
+		opts = append(opts, gin.H{"Value": o.Value, "Label": mailLabel(tr, o.Label), "Selected": o.Value == selected})
 	}
 	return opts
-}
-
-// nodeTypeLabelOf 节点类型 → 当前语言标签；未知类型原样返回（兜底表要能显示真实取值）。
-func nodeTypeLabelOf(tr mailTr, value string) string {
-	for _, o := range mailenums.AutomationNodeTypes {
-		if o.Value == value {
-			return mailLabel(tr, o.Label)
-		}
-	}
-	return value
 }
 
 // triggerLabelOf 枚举 → 当前语言的标签；未知枚举原样返回（不吞掉不认识的取值）。
@@ -316,18 +310,6 @@ func triggerLabelOf(tr mailTr, value string) string {
 		}
 	}
 	return value
-}
-
-// triggerOptions 触发方式下拉的选项（带选中态）。
-func triggerOptions(tr mailTr, selected string) []gin.H {
-	if selected == "" {
-		selected = mailmodel.TriggerManual
-	}
-	opts := make([]gin.H, 0, len(mailenums.AutomationTriggers))
-	for _, o := range mailenums.AutomationTriggers {
-		opts = append(opts, gin.H{"Value": o.Value, "Label": mailLabel(tr, o.Label), "Selected": o.Value == selected})
-	}
-	return opts
 }
 
 // MailAutomationPage 流程列表（只回答「有哪些流程」）。

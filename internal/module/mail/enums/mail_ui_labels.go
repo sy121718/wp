@@ -181,7 +181,8 @@ var AutomationConditions = []AutomationConditionOption{
 //
 // 具名而不是按下标访问：插一条就全错位，而错位的表现是
 // 「第 3 步报的是第 5 步的错」—— 用户照着改永远改不对。
-// 文案由 mailFormErrText 原样回带（校验失败走 200 回显，见 mail_page.go 的 renderAutomationForm）。
+// 文案原由表单页（已随「画布是唯一编辑器」删除）回带；这几个常量现在是存量词条 ——
+// 图校验的失败文案改由 graphErr 的 detail key 承担（admin.mail.detail.*）。
 var (
 	AutomationFormErrNameRequired     = LabelPair{"admin.mail.automation_edit.err.name_required", "流程名称不能为空"}
 	AutomationFormErrStepsRequired    = LabelPair{"admin.mail.automation_edit.err.steps_required", "至少要排一个步骤"}
