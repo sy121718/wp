@@ -55,6 +55,8 @@ type OrderService interface {
 	OrderSalesOverviewReader
 	// OrderOverviewReader 概览页的其余只读聚合：按天趋势 / 热销榜 / 状态计数。
 	OrderOverviewReader
+	// ShipmentService 发货与承运商（迁移 624 / 625，S2）。
+	ShipmentService
 	// OrderQueryReader 按线索查订单（单号 / 客户名 / 邮箱 / 状态 / 时间段）。
 	//
 	// 与上面的聚合接口并列而不是并入其中：聚合回答「一共 / 每天 / 谁最好」，
@@ -414,6 +416,34 @@ type StockOperator interface {
 	// 约定：不自己开事务；错误原样返回（含库存不足），由调用方决定呈现方式。
 	DeductStockTx(ctx context.Context, tx *gorm.DB, in *StockDeduction) (err error)
 	ChangeStockTx(ctx context.Context, tx *gorm.DB, in *StockAdjustment) (err error)
+
+	// —— 两段式：下单预占 → 发货扣减（迁移 621 / 624，S2）——
+	//
+	// 下单**只预占**：改 reserved_quantity，不改 quantity、不写流水。
+	// 发货才**扣减**：DeductStockTx 在同一条 SQL 里 quantity -= n 且 reserved -= min(reserved, n)。
+	// 取消 / 退款 / 超时**释放**预占：只改 reserved_quantity，不写流水。
+	//
+	// 为什么预占与释放必须与订单自己的事务同生共死：建单要先占住货，
+	// 「订单已提交但预占失败」会让另一张单把这批货卖掉 —— 那种账没有补偿能修好。
+	ReserveStockTx(ctx context.Context, tx *gorm.DB, in *StockReservation) (err error)
+	ReleaseStockTx(ctx context.Context, tx *gorm.DB, in *StockReservation) (err error)
+}
+
+// StockReservation 预占 / 释放的入参（与 StockDeduction 同形，语义不同）。
+//
+// SourceType / SourceRef 只做对账标识：预占**不写流水**，这两个值不进库存表 ——
+// 对账靠一个查询（reserved_quantity 与该订单未发货行数量）。
+type StockReservation struct {
+	OrderID    int64
+	ProjectID  string
+	SourceType string
+	SourceRef  string
+	Remark     string
+	// Lines 复用 StockLine：含 WarehouseID（来自 order_items.warehouse_id，建单时已固化）。
+	//
+	// 与预占 / 发货两条路径上的约定一致：WarehouseID **必填** ——
+	// 空值会让库存侧回落到默认仓，而默认仓可能已经被改过（预占与扣减分裂成两个仓）。
+	Lines []StockLine
 }
 
 // StockLine 一次库存变动里的一行：动哪个 SKU、动多少件。
@@ -431,6 +461,10 @@ type StockLine struct {
 	// Quantity 件数（正整数）。
 	Quantity int
 	// WarehouseID 指定仓库；为空表示按该 SKU 的归属仓由库存域解析。
+	//
+	// **预占与发货两条路径要求必填**（S2）：这两处必须落在同一个仓，而「归属仓」是
+	// 随时可能被改的解析结果 —— 建单时解析并固化到 order_items.warehouse_id，
+	// 发货时用它，中间默认仓怎么变都不影响这一单。
 	WarehouseID string
 }
 
@@ -453,6 +487,24 @@ type StockAdjustment struct {
 	SourceRef  string
 	Remark     string
 	Lines      []StockLine
+}
+
+// WarehouseResolver 订单侧解析「这一行从哪个仓出」的唯一入口（迁移 625，S2）。
+//
+// 只回答一个问题：给定工程与可选仓，返回确定的仓 id（空字符串 = 该工程没有可用仓）。
+// 不暴露库存的仓库实体、不暴露默认仓的判定规则 —— 那些是库存域的事实，
+// 抄一份到订单侧就成了两处会各自漂移的真源。
+//
+// 由库存模块实现（internal/module/inventory/outbound/orderstock 的 WarehouseResolver），
+// 形同 StockOperator：实现方依赖调用方契约。
+type WarehouseResolver interface {
+	// ResolveShipWarehouse 解析发货仓：requested 非空即用它（校验工程与 active），
+	// 为空则回落到该工程的默认仓；**工程里一个仓都没有时返回空串 + nil**。
+	//
+	// 空串不报错是有意的：本地单站允许「没有仓库也卖货」（虚拟商品 / 纯服务），
+	// 那种工程下单不该被拦住 —— 只是 warehouse_id 留 NULL、预占跳过，
+	// 发货时由运营指定仓（缺仓则报 ErrShipWarehouseRequired）。
+	ResolveShipWarehouse(ctx context.Context, projectID, requested string) (warehouseID string, err error)
 }
 
 // ReturnWarehouseSource 退货页「入库仓库」下拉所需的最窄读能力。

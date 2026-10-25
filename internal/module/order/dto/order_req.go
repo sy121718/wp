@@ -48,6 +48,12 @@ func NormalizeCountryCode(raw string) string {
 type OrderItemReq struct {
 	VariantID string `json:"variantId" form:"variantId"`
 	Quantity  int    `json:"quantity" form:"quantity"`
+	// WarehouseID 发货仓（迁移 625）：访客前台不传（空串 = 由订单用默认仓解析并固化），
+	// 后台代客建单可以显式指定（例如「客户要求从上海仓发」）。
+	//
+	// 为什么建单就要定仓：预占发生在下单、扣减发生在发货，两处必须落在同一个仓；
+	// 若两处各自解析默认仓，中间默认仓一改，预占的那批货与发货扣的那批就是两批。
+	WarehouseID string `json:"warehouseId" form:"warehouseId"`
 }
 
 // OrderAddress 地址（收货与账单共用同一形状）。

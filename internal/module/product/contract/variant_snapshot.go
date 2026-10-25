@@ -52,3 +52,26 @@ type VariantSnapshotPort interface {
 	// ProjectID 来拦越权的话，工程为空的那条快照会让比较失效 —— 隔离必须落在端口这一层。
 	VariantSnapshots(ctx context.Context, variantIDs []string, projectID string) (list []*VariantSnapshot, err error)
 }
+
+// VariantSnapshotByWarehousePort 按「变体 + 发货仓」取下单快照（迁移 625，S2）。
+//
+// 为什么需要一个**新方法**而不是给 VariantSnapshots 加一个 warehouseID 参数：
+//   · 旧签名被 cart / 商品实时价片段共用，改签名等于把改动扩散到订单域之外；
+//   · 语义也不同：旧方法回答「这个变体现价多少、成本多少（按归属仓）」，
+//     新方法回答「**从这一仓发货**的话，成本是多少」—— 成本是 (仓库, SKU) 的事实，
+//     发货仓一换，成本就该跟着换，否则「成本来自 A 仓、发货扣 B 仓」。
+type VariantSnapshotByWarehousePort interface {
+	// VariantSnapshotsInWarehouse 按 refs 取快照，成本取 ref.WarehouseID 那一仓的当前值。
+	//
+	// WarehouseID 为空表示「按归属仓解析」（与 VariantSnapshots 相同行为）：
+	// 调用方不写仓时不该报错 —— 它只是还没决定，不是写错了。
+	//
+	// 返回顺序与 refs 一致，查不到的项以 nil 占位（调用方决定打回还是跳过）。
+	VariantSnapshotsInWarehouse(ctx context.Context, refs []VariantWarehouseRef, projectID string) (list []*VariantSnapshot, err error)
+}
+
+// VariantWarehouseRef 一行「哪个变体、从哪个仓发货」的入参。
+type VariantWarehouseRef struct {
+	VariantID   string
+	WarehouseID string
+}

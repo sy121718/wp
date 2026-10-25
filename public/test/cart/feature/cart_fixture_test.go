@@ -151,6 +151,10 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 		nil, // webhooks：本用例不接线外部集成通道
 	)
 	orders.SetProjects(projects)
+	// S1/S2：发货单仓储 + 发货仓解析端口（与生产装配同形）。结算建单走预占，
+	// 而预占必须有 warehouse_id —— 缺这两个端口时结算会静默跳过预占（不报错、只是没占货）。
+	orders.SetShipmentModels(ordermodel.NewOrderShipmentModel(db), ordermodel.NewOrderCarrierModel(db))
+	orders.SetWarehouseResolver(orderstock.NewWarehouseResolver(inv))
 	cart := cartservice.NewService(orders, products, products, gateway, cartTestSecret)
 	// 站点运费规则端口（本项目新增）：与生产装配（routers.assembly 的 wireRuntimeAccessFace）
 	// 逐字一致 —— 结算的基准运费来自 projects.settings，不再由调用方传入。
@@ -232,6 +236,18 @@ func (f *cartFixture) stockOf(t *testing.T, variantID string) int {
 		t.Fatalf("读库存失败: %v", err)
 	}
 	return st.Quantity
+}
+
+// reservedOf 读某变体在默认仓的**预占**数量（迁移 621 起结算只预占、不扣减）。
+func (f *cartFixture) reservedOf(t *testing.T, variantID string) int {
+	t.Helper()
+	st, err := f.inventory.GetStock(context.Background(), &inventorydto.GetStockReq{
+		VariantID: variantID, WarehouseID: f.warehouse,
+	})
+	if err != nil {
+		t.Fatalf("读库存失败: %v", err)
+	}
+	return st.ReservedQuantity
 }
 
 // addToCart 加购（cookie 由被测代码签发）。

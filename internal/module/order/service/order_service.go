@@ -77,6 +77,15 @@ type Service struct {
 	//（见 resolveMembershipDiscount）。这里刻意是**收窄的 Reader** 而不是
 	// MembershipService —— 订单只需要「读一条会员身份」，拿不到等级 CRUD 与归属写入能力。
 	membership membershipcontract.Reader
+	// warehouses 发货仓解析（迁移 625，S2）：把「这一行从哪个仓出」的事实交给库存域回答。
+	//
+	// 允许为 nil：纯订单单测 / 无仓工程下不解析（warehouse_id 留 NULL、预占跳过）。
+	// 生产装配必注入（否则每一单都会被判成「没有仓」）。
+	warehouses ordercontract.WarehouseResolver
+	// shipments 发货单仓储（迁移 624，S1/S2）。必填：发货用例是它唯一的写入口。
+	shipments *ordermodel.OrderShipmentModel
+	// carriers 承运商仓储（迁移 624）。必填：发货表单的承运商下拉读它。
+	carriers *ordermodel.OrderCarrierModel
 }
 
 // NewService 构造（参数直传，不用 Deps 结构体）。
@@ -99,6 +108,28 @@ func NewService(
 		product: product, stock: stock, guest: guest,
 		webhooks: webhooks,
 	}
+}
+
+// SetWarehouseResolver 注入发货仓解析端口（装配期调用；迁移 625 起为 required-port）。
+//
+// 未注入时下单不解析仓（warehouse_id 留 NULL、预占跳过），发货会要求运营指定仓 ——
+// 那是「无仓工程」的既定形态，不是失败降级。
+func (s *Service) SetWarehouseResolver(resolver ordercontract.WarehouseResolver) {
+	if s == nil {
+		return
+	}
+	s.warehouses = resolver
+}
+
+// SetShipmentModels 注入承运商与发货单仓储（装配期调用；S1 起为 required-port）。
+//
+// 与其它 Setter 同一手法：model 由装配层构造后注入，service 不持有 *gorm.DB。
+func (s *Service) SetShipmentModels(shipments *ordermodel.OrderShipmentModel, carriers *ordermodel.OrderCarrierModel) {
+	if s == nil {
+		return
+	}
+	s.shipments = shipments
+	s.carriers = carriers
 }
 
 // 编译期断言：本 service 实现模块对外契约。

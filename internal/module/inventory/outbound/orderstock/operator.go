@@ -116,6 +116,49 @@ func (o *Operator) ChangeStockTx(ctx context.Context, tx *gorm.DB, in *ordercont
 	})
 }
 
+// ReserveStockTx 下单预占的**事务透传版**（迁移 621，S2）：改 reserved_quantity，不写流水。
+//
+// 与 DeductStockTx 的方向相反：预占是「留给这张单」，不是「货已经出去」——
+// 发货那一步才是 DeductStockTx，且它会在同一条 SQL 里释放本单的预占。
+func (o *Operator) ReserveStockTx(ctx context.Context, tx *gorm.DB, in *ordercontract.StockReservation) (err error) {
+	if in == nil {
+		return nil
+	}
+	return o.svc.ReserveStockTx(ctx, tx, toReserveReq(in))
+}
+
+// ReleaseStockTx 释放预占的**事务透传版**（取消 / 退款 / 超时，迁移 621）。
+//
+// 与 ChangeStockTx（归还）的区别：归还是「货回来了、数量加回去」；释放是「货从来没出去、
+// 只是不再占着了」—— 前者写 in 流水，后者什么都不写。
+func (o *Operator) ReleaseStockTx(ctx context.Context, tx *gorm.DB, in *ordercontract.StockReservation) (err error) {
+	if in == nil {
+		return nil
+	}
+	return o.svc.ReleaseStockTx(ctx, tx, toReserveReq(in))
+}
+
+// toReserveReq 契约的预占入参 → 库存 dto（预占与释放同形，共用一个转换）。
+func toReserveReq(in *ordercontract.StockReservation) *inventorydto.ReserveStockReq {
+	lines := make([]inventorydto.ReserveStockLine, 0, len(in.Lines))
+	for _, l := range in.Lines {
+		lines = append(lines, inventorydto.ReserveStockLine{
+			ProductID:   l.ProductID,
+			VariantID:   l.VariantID,
+			SKUCode:     l.SKUCode,
+			Quantity:    l.Quantity,
+			WarehouseID: l.WarehouseID,
+		})
+	}
+	return &inventorydto.ReserveStockReq{
+		ProjectID:  in.ProjectID,
+		SourceType: in.SourceType,
+		SourceRef:  in.SourceRef,
+		Remark:     in.Remark,
+		Lines:      lines,
+	}
+}
+
 // toStockLines 契约行 → 库存 dto 行。
 func toStockLines(lines []ordercontract.StockLine) []inventorydto.StockChangeLineReq {
 	if len(lines) == 0 {

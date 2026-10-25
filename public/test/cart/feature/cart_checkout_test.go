@@ -84,8 +84,13 @@ func TestCartCheckoutCreatesPaidOrderAndDeductsStock(t *testing.T) {
 		t.Fatalf("订单项快照不对: %+v", detail.Items[0])
 	}
 
-	if got := f.stockOf(t, variantID); got != 8 {
-		t.Fatalf("库存应扣 2 件（10 → 8），实际 %d", got)
+	// 两段式（迁移 621）：结算建单只**预占** 2 件，在库仍是 10 ——
+	// 扣减发生在发货（S2 的发货用例），不在结算。
+	if got := f.reservedOf(t, variantID); got != 2 {
+		t.Fatalf("结算应预占 2 件，实际 %d", got)
+	}
+	if got := f.stockOf(t, variantID); got != 10 {
+		t.Fatalf("结算不得扣减在库数量（两段式），期望 10，实际 %d", got)
 	}
 
 	// 结算返回的 cookie 必须是空车：东西已经变成订单，留着只会让人再点一次结账。
@@ -233,8 +238,9 @@ func TestCartCheckoutIsIdempotentByRequestID(t *testing.T) {
 	if list.Total != 1 {
 		t.Fatalf("重复结算只应落一单，实际 %d 单", list.Total)
 	}
-	if got := f.stockOf(t, variantID); got != 8 {
-		t.Fatalf("库存只该被扣一次（10 → 8），实际 %d —— 幂等失效就是重复扣库存", got)
+	// 两段式：幂等生效时预占只该加一次（2）。
+	if got := f.reservedOf(t, variantID); got != 2 {
+		t.Fatalf("预占只该加一次（应为 2），实际 %d —— 幂等失效就是重复占货", got)
 	}
 	if !second.Paid {
 		t.Fatal("重复结算时订单已经是已付款，结果应仍然报告已支付")
@@ -302,9 +308,13 @@ func TestCartCheckoutKeepsOrderWhenPaymentFails(t *testing.T) {
 	if detail.Head.PaidAt != nil {
 		t.Fatal("没收到钱的订单不该有 paid_at")
 	}
-	// 待付款的订单照样占着库存：不占的话客户回头付款时货可能已经卖光。
-	if got := f.stockOf(t, variantID); got != 4 {
-		t.Fatalf("待付款订单的库存应已扣减（5 → 4），实际 %d", got)
+	// 待付款的订单照样占着货：不占的话客户回头付款时货可能已经卖光。
+	// 两段式下「占着」的表现是 reserved_quantity（不是 quantity）。
+	if got := f.reservedOf(t, variantID); got != 1 {
+		t.Fatalf("待付款订单应预占 1 件，实际 %d", got)
+	}
+	if got := f.stockOf(t, variantID); got != 5 {
+		t.Fatalf("结算不得扣减在库数量，期望 5，实际 %d", got)
 	}
 }
 

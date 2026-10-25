@@ -171,16 +171,23 @@ func TestCancelAfterPartialReturnRestocksOnlyUnreturned(t *testing.T) {
 	orderID, userID, itemIDs := f.paidOrderWithLines(t, "cancel-after-partial@example.com",
 		[]orderLine{{variantID: vid, quantity: 2}})
 
-	if got := f.stockOf(t, vid); got != 8 {
-		t.Fatalf("下单后库存应为 8，实际 %d", got)
+	// 两段式（迁移 621）：下单只预占 2 件，在库仍是 10（本单从未发货）。
+	if got := f.reservedOf(t, vid); got != 2 {
+		t.Fatalf("下单后预占应为 2，实际 %d", got)
+	}
+	if got := f.stockOf(t, vid); got != 10 {
+		t.Fatalf("下单不得扣减在库数量，期望 10，实际 %d", got)
 	}
 
 	ret := f.requestReturn(t, orderID, userID, itemIDs[vid], 1)
 	if _, err := f.orders.ApproveReturn(ctx, &orderdto.ReturnReviewReq{ReturnID: ret.ID, Remark: "同意", AutoReceive: true}); err != nil {
 		t.Fatalf("部分退货收货失败: %v", err)
 	}
-	if got := f.stockOf(t, vid); got != 9 {
-		t.Fatalf("部分退货入库后库存应为 9，实际 %d", got)
+	if got := f.reservedOf(t, vid); got != 1 {
+		t.Fatalf("部分退货后预占应减到 1，实际 %d", got)
+	}
+	if got := f.stockOf(t, vid); got != 10 {
+		t.Fatalf("未发货的退货不改变在库数量，期望 10，实际 %d", got)
 	}
 	if got := f.orderStatusOf(t, orderID); got != ordermodel.OrderStatusPaid {
 		t.Fatalf("部分退货不该改订单状态，实际 %s", got)
@@ -292,14 +299,18 @@ func TestUnshippedRefundRestocksStock(t *testing.T) {
 
 	// ① 未发货（paid）直接退款 → 货从未出库，库存必须回来。
 	paidOrderID, _, _ := f.paidOrderWithLines(t, "refund-unshipped@example.com", []orderLine{{variantID: paidVid, quantity: 2}})
-	if got := f.stockOf(t, paidVid); got != 8 {
-		t.Fatalf("下单后库存应为 8，实际 %d", got)
+	if got := f.reservedOf(t, paidVid); got != 2 {
+		t.Fatalf("下单后预占应为 2，实际 %d", got)
 	}
 	if err := f.orders.RefundOrder(ctx, &orderdto.RefundOrderReq{OrderID: paidOrderID, Reason: "后台退款"}); err != nil {
 		t.Fatalf("未发货订单退款失败: %v", err)
 	}
+	// 两段式：未发货退款释放预占（在库从来没动）。
+	if got := f.reservedOf(t, paidVid); got != 0 {
+		t.Fatalf("未发货退款后预占应归零，实际 %d", got)
+	}
 	if got := f.stockOf(t, paidVid); got != 10 {
-		t.Fatalf("未发货退款后库存应回到 10，实际 %d —— 退款与取消对同一状态给出了不同的库存结果", got)
+		t.Fatalf("未发货退款后库存应仍是 10，实际 %d", got)
 	}
 
 	// ② 已发货（shipped）退款 → 不归还（退货入库是唯一入口）。
@@ -310,7 +321,11 @@ func TestUnshippedRefundRestocksStock(t *testing.T) {
 	if err := f.orders.RefundOrder(ctx, &orderdto.RefundOrderReq{OrderID: shippedOrderID, Reason: "后台退款"}); err != nil {
 		t.Fatalf("已发货订单退款失败: %v", err)
 	}
-	if got := f.stockOf(t, shippedVid); got != 9 {
+	// 已发货退款不该归还库存（货已出库，退货入库是唯一入口）。
+	// 两段式下这条订单走的是**旧的状态流转**（ChangeStatus 到 shipped）—— 没有发货单、
+	// 也没有扣减，所以在库仍是 10。判据不是「等于 9」而是「没被加回来」：
+	// 退款路径不该把任何数量加进 quantity。
+	if got := f.stockOf(t, shippedVid); got != 10 {
 		t.Fatalf("已发货退款不该归还库存（货已出库），实际 %d", got)
 	}
 }

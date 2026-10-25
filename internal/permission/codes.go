@@ -432,6 +432,18 @@ const (
 	OrderReturnReject Perm = "order:return_reject"
 	// 订单状态流转（POST /api/order/status）
 	OrderStatus Perm = "order:status"
+	// 订单发货（POST /api/order/shipment/create，GET /api/order/shipment/form）
+	//
+	// 与 order:status 分开：改状态不改库存，发货扣库存并产出一张可追溯的单据 ——
+	// 「谁能改状态」与「谁能把货发出去」是两个风险等级不同的授权。
+	OrderShip Perm = "order:ship"
+	// 发货单列表与待发货页（GET /api/order/shipment/list，GET /api/order/shipment/pending）
+	OrderShipmentList Perm = "order:shipment_list"
+	// 承运商配置（GET/POST /api/order/carrier/*）
+	//
+	// 一条权限点管三个入口：承运商是「配一次长期不动」的主数据，读与写同一信任级
+	// （发货的人本来就该能看到有哪些承运商可选）。
+	OrderCarrierManage Perm = "order:carrier_manage"
 
 	// —— page（20）——
 	// 回收产物文件（POST /api/page/artifact/gc）
@@ -1005,6 +1017,9 @@ var specs = map[Perm]spec{
 	OrderReturnReceive:    {module: "order", name: "退货入库"},
 	OrderReturnReject:     {module: "order", name: "拒绝退货"},
 	OrderStatus:           {module: "order", name: "订单状态流转"},
+	OrderShip:             {module: "order", name: "订单发货"},
+	OrderShipmentList:     {module: "order", name: "发货单列表"},
+	OrderCarrierManage:    {module: "order", name: "承运商配置"},
 
 	// —— page ——
 	PageArtifactGc:       {module: "page", name: "回收产物文件"},

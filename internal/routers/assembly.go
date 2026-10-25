@@ -77,6 +77,7 @@ import (
 	ordercontract "go_wp/internal/module/order/contract"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	ordermcp "go_wp/internal/module/order/inbound/mcp"
+	orderservice "go_wp/internal/module/order/service"
 	pagecontract "go_wp/internal/module/page/contract"
 	plugincontract "go_wp/internal/module/plugin/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
@@ -684,6 +685,15 @@ func (a *assembly) buildIdentityAndCommerce() {
 	// 国家代码显示成当前语言的名字。传的是同一实例（它在 sysconfig 内部按语言缓存
 	// 「码 → 名」），不是另建一个 —— 每个消费方各建一层缓存等于同一份字典查 N 遍。
 	orderSvc := orderhttp.SetupOrderRoutes(authorizedAPI, db, productSvc, orderstock.New(invConcrete), userSvc, webhookDispatcher, a.projectService, a.adminPages, orderstock.NewWarehouseSource(a.inventorySvc), a.sysConfigDict)
+	// 发货仓解析（迁移 625，S2）：订单侧只持窄端口，实现在库存侧（orderstock）。
+	// 与上面那条同一手法（实现方依赖调用方契约），装配点在这里一次注入。
+	// 解析端口的实参是 ProductStockLookup（库存契约里那一小组只读能力），
+	// 不是整个 InventoryService —— 具体 service 同时实现两者，所以这里取一次类型。
+	if concrete, ok := orderSvc.(*orderservice.Service); ok {
+		if lookup, lok := a.inventorySvc.(inventorycontract.ProductStockLookup); lok {
+			concrete.SetWarehouseResolver(orderstock.NewWarehouseResolver(lookup))
+		}
+	}
 	// 订单模块的模型可调用工具（只读聚合）注册进上面那个表。
 	// 装配顺序在这里不构成约束：注册表是同一个指针，AI 侧只在**运行期**读它。
 	// 注册失败即 panic（权限点重复 / 依赖缺失这类装配缺陷，必须在启动时炸掉，

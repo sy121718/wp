@@ -29,12 +29,13 @@ type OrderCarrierEntity struct {
 	Name      string `gorm:"column:name;not null"`
 	// TrackingURLTemplate 跟踪页模板，唯一允许的占位符是 {tracking_no}。
 	// 空串 = 没有公开跟踪页（本地自营配送常见）。
-	TrackingURLTemplate string    `gorm:"column:tracking_url_template;not null"`
-	Status              string    `gorm:"column:status;not null"`
-	Sort                int       `gorm:"column:sort;not null"`
-	Metadata            []byte    `gorm:"column:metadata;type:jsonb;not null"`
-	CreateTime          time.Time `gorm:"column:create_time;not null"`
-	UpdateTime          time.Time `gorm:"column:update_time;not null"`
+	TrackingURLTemplate string `gorm:"column:tracking_url_template;not null"`
+	Status              string `gorm:"column:status;not null"`
+	Sort                int    `gorm:"column:sort;not null"`
+	// Metadata 不写 type:jsonb（model_gorm_tag_test.go：可推断类型不得声明列类型）。
+	Metadata   []byte    `gorm:"column:metadata;not null"`
+	CreateTime time.Time `gorm:"column:create_time;not null"`
+	UpdateTime time.Time `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -242,5 +243,18 @@ func (m *OrderShipmentModel) ListShipmentItemsByOrderItem(ctx context.Context,
 	orderItemID uint64) (list []*OrderShipmentItemEntity, err error) {
 	err = m.db.WithContext(ctx).Model(&OrderShipmentItemEntity{}).
 		Where("order_item_id = ?", orderItemID).Order("id ASC").Find(&list).Error
+	return list, err
+}
+
+// SumShippedQuantity 非事务版的已发数量账（只读列表路径用：不必为每条订单开事务）。
+func (m *OrderShipmentModel) SumShippedQuantity(ctx context.Context, orderID uint64,
+	itemIDs []uint64) (sum map[uint64]int, err error) {
+	return m.SumShippedQuantityTx(ctx, m.db.WithContext(ctx), orderID, itemIDs)
+}
+
+// ListByOrderTx 事务内取某订单的发货单（判「发过货没有」用）。
+func (m *OrderShipmentModel) ListByOrderTx(ctx context.Context, tx *gorm.DB, orderID uint64) (list []*OrderShipmentEntity, err error) {
+	err = tx.WithContext(ctx).Model(&OrderShipmentEntity{}).
+		Where("order_id = ?", orderID).Find(&list).Error
 	return list, err
 }

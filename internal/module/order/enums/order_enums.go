@@ -103,6 +103,26 @@ const (
 	ErrStockUnavailable  = "order.err.stockUnavailable"
 )
 
+// 发货（迁移 624 / 625，S2）。
+//
+// 发货是一条**有单据**的事实：状态、承运商、运单号、库存扣减、流水全部同事务落库。
+// 五条拒绝理由对应五类「这一步不该发生」的情形，状态码在声明处给（409 状态 / 超量 /
+// 幂等键冲突，400 缺明细 / 缺仓）—— 全部压成 400 的代价是前端与监控分不清
+// 「输错了」与「这条路现在不通」。
+const (
+	ErrOrderNotShippable      = "order.err.orderNotShippable"
+	ErrShipQuantityExceeded   = "order.err.shipQuantityExceeded"
+	ErrShipLinesRequired      = "order.err.shipLinesRequired"
+	ErrShipRequestKeyConflict = "order.err.shipRequestKeyConflict"
+	ErrShipWarehouseRequired  = "order.err.shipWarehouseRequired"
+	// ErrCarrierNotFound 承运商不存在（发货表单选了一个已被删掉的承运商）。
+	ErrCarrierNotFound  = "order.err.carrierNotFound"
+	ErrCarrierCodeTaken = "order.err.carrierCodeTaken"
+	// ErrCarrierTemplateInvalid 跟踪页模板里有 {tracking_no} 之外的占位符。
+	ErrCarrierTemplateInvalid = "order.err.carrierTemplateInvalid"
+	ErrCarrierStatusInvalid   = "order.err.carrierStatusInvalid"
+)
+
 // ErrInternal 未归类的系统错误对外统一文案。
 //
 // 存在的理由同 user 模块：基础设施错误（数据库 / Redis）的原文可能带表名、列名甚至
@@ -184,6 +204,10 @@ var UserFacingMessages = []string{
 	ErrAlreadyCancelled, ErrAlreadyRefunded, ErrCancelReasonRequired,
 	ErrPaymentMethodRequired, ErrPaymentChannelFailed,
 	ErrVariantNotFound, ErrStockInsufficient, ErrStockUnavailable,
+	// 发货：后台发货表单与「待发货」页会把它们直接展示给操作者。
+	ErrOrderNotShippable, ErrShipQuantityExceeded, ErrShipLinesRequired,
+	ErrShipWarehouseRequired, ErrShipRequestKeyConflict,
+	ErrCarrierNotFound, ErrCarrierCodeTaken, ErrCarrierTemplateInvalid, ErrCarrierStatusInvalid,
 	// 优惠码：**后台代客建单页与 /api/order/create 会把它们直接透出给操作者**。
 	//
 	// 口径修正（BIZ-10）：这批文案此前写着「结算链路会把它们直接显示给访客」，

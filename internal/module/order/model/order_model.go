@@ -495,3 +495,16 @@ func (m *OrderModel) SummaryByUser(ctx context.Context, projectID string, userID
 	})
 	return row, err
 }
+
+// ListByStatus 某工程下指定状态的订单（按创建时间升序）。
+//
+// 「待发货」页用它：只要 paid 的单（partially shipped 的剩余部分也停在 paid）。
+// 排序固定升序：先下的单先发，是仓库作业的常识口径。
+func (m *OrderModel) ListByStatus(ctx context.Context, projectID, status string) (list []*OrderEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&OrderEntity{}).
+			Where("project_id = ? AND status = ?", projectID, status).
+			Order("create_time ASC").Find(&list).Error
+	})
+	return list, err
+}

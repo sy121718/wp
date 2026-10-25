@@ -118,6 +118,10 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 		nil, // webhooks：本用例不接线外部集成通道
 	)
 	orders.SetProjects(projects)
+	// S1/S2：发货单 / 承运商仓储 + 发货仓解析端口（与生产装配同形：
+	// 解析实现在库存侧，通过 orderstock.WarehouseResolver 适配）。
+	orders.SetShipmentModels(ordermodel.NewOrderShipmentModel(db), ordermodel.NewOrderCarrierModel(db))
+	orders.SetWarehouseResolver(orderstock.NewWarehouseResolver(inv))
 	return &orderFixture{
 		orders: orders, products: products, inventory: inv, users: users, mail: mail,
 		db: db, projectID: project.ID, warehouse: wh.ID,
@@ -128,10 +132,15 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 
 // serviceWithStock 用同一批 model 换一个库存端口重建 service（故障注入用）。
 func (f *orderFixture) serviceWithStock(stock ordercontract.StockOperator) *orderservice.Service {
-	return orderservice.NewService(
+	svc := orderservice.NewService(
 		f.orderModel, f.itemModel, f.logModel, f.couponModel, f.returnModel,
 		f.products, stock, f.users, nil,
 	)
+	// 与 newOrderFixture 同一份装配：故障注入只换库存端口，其余端口照旧 ——
+	// 否则「建单失败」可能是缺端口导致的，测的就不是库存那一条路径了。
+	svc.SetShipmentModels(ordermodel.NewOrderShipmentModel(f.db), ordermodel.NewOrderCarrierModel(f.db))
+	svc.SetWarehouseResolver(orderstock.NewWarehouseResolver(f.inventory))
+	return svc
 }
 
 // addProduct 建商品 + 一个带价的变体，并把指定数量的货补进默认仓。
@@ -176,6 +185,22 @@ func (f *orderFixture) stockOf(t *testing.T, variantID string) int {
 	return st.Quantity
 }
 
+// reservedOf 读某变体在默认仓的**预占**数量（迁移 621 起下单只预占、不扣减）。
+//
+// 与 stockOf 分开两个函数：两段式的核心就是这个区别 ——
+// 「下单」改 reserved_quantity，「发货」才改 quantity。合成一个函数读两个数，
+// 断言就会写成「总数是 X」，那正好把两者混为一谈。
+func (f *orderFixture) reservedOf(t *testing.T, variantID string) int {
+	t.Helper()
+	st, err := f.inventory.GetStock(context.Background(), &inventorydto.GetStockReq{
+		VariantID: variantID, WarehouseID: f.warehouse,
+	})
+	if err != nil {
+		t.Fatalf("读库存失败: %v", err)
+	}
+	return st.ReservedQuantity
+}
+
 // createBaseReq 造一个最小可用建单请求。
 func (f *orderFixture) createBaseReq(variantID string, qty int) *orderdto.CreateOrderReq {
 	return &orderdto.CreateOrderReq{
@@ -187,7 +212,10 @@ func (f *orderFixture) createBaseReq(variantID string, qty int) *orderdto.Create
 	}
 }
 
-// TestOrderCreateDeductsStockAndSnapshotsPrice：建单成功 → 状态待付款、金额按服务端价格算、库存扣减。
+// TestOrderCreateDeductsStockAndSnapshotsPrice：建单成功 → 状态待付款、金额按服务端价格算、**库存预占**。
+//
+// 口径（迁移 621，S2）：下单只预占（reserved_quantity += n），发货才扣减 quantity。
+// 本用例断言的是「下单之后」这一半；发货那一半见 order_shipment_test.go。
 func TestOrderCreateDeductsStockAndSnapshotsPrice(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
@@ -206,8 +234,12 @@ func TestOrderCreateDeductsStockAndSnapshotsPrice(t *testing.T) {
 	if res.Total != 19900 {
 		t.Fatalf("总额应为 19900 分，实际 %d", res.Total)
 	}
-	if got := f.stockOf(t, vid); got != 8 {
-		t.Fatalf("库存应从 10 扣到 8，实际 %d", got)
+	// 两段式（迁移 621）：**下单只预占**，quantity 一个字都不动。
+	if got := f.stockOf(t, vid); got != 10 {
+		t.Fatalf("下单不得扣减在库数量（两段式：下单只预占），期望 10，实际 %d", got)
+	}
+	if got := f.reservedOf(t, vid); got != 2 {
+		t.Fatalf("下单应预占 2 件，实际 %d", got)
 	}
 
 	detail, err := f.orders.GetOrder(context.Background(), &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: res.ID})
@@ -308,8 +340,12 @@ func TestOrderCreateIsIdempotentByRequestID(t *testing.T) {
 	if !second.Duplicated || second.ID != first.ID || second.OrderNo != first.OrderNo {
 		t.Fatalf("重复提交应命中同一单，实际 %+v vs %+v", second, first)
 	}
-	if got := f.stockOf(t, vid); got != 3 {
-		t.Fatalf("幂等生效时库存只该扣一次（5→3），实际 %d", got)
+	// 两段式：幂等生效时预占只该加一次（5 件货里占 2 件）。
+	if got := f.reservedOf(t, vid); got != 2 {
+		t.Fatalf("幂等生效时预占只该加一次（2），实际 %d", got)
+	}
+	if got := f.stockOf(t, vid); got != 5 {
+		t.Fatalf("预占不得改在库数量，期望 5，实际 %d", got)
 	}
 }
 
@@ -334,7 +370,10 @@ func TestOrderCreateRejectsInsufficientStockAndRollsBack(t *testing.T) {
 		t.Fatalf("应报库存不足，实际 %q", err.Error())
 	}
 	if got := f.stockOf(t, vid); got != 1 {
-		t.Fatalf("失败的单不该扣走库存，实际 %d", got)
+		t.Fatalf("失败的单不该动在库数量，实际 %d", got)
+	}
+	if got := f.reservedOf(t, vid); got != 0 {
+		t.Fatalf("预占失败不该留下任何预占，实际 %d", got)
 	}
 	// 整单回滚：订单头 / 订单项 / 流转流水一条都不该留下（含「建单」与旧的「自动取消」）。
 	for _, table := range []string{"orders", "order_items", "order_status_logs"} {
@@ -424,16 +463,25 @@ func TestOrderCancelReturnsStock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	if got := f.stockOf(t, vid); got != 2 {
-		t.Fatalf("建单后应剩 2，实际 %d", got)
+	// 两段式（迁移 621）：建单预占 4 件、在库仍 6 件；
+	// 取消**释放预占**（在库本来就没动，所以「回到 6」这个说法已不适用 ——
+	// 要断言的是预占归零）。
+	if got := f.reservedOf(t, vid); got != 4 {
+		t.Fatalf("建单后预占应为 4，实际 %d", got)
+	}
+	if got := f.stockOf(t, vid); got != 6 {
+		t.Fatalf("建单不得扣减在库数量，期望 6，实际 %d", got)
 	}
 	if _, err := f.orders.CancelOrder(ctx, &orderdto.CancelOrderReq{
 		OrderID: res.ID, Reason: "买家改主意", OperatorName: "tester",
 	}); err != nil {
 		t.Fatalf("取消失败: %v", err)
 	}
+	if got := f.reservedOf(t, vid); got != 0 {
+		t.Fatalf("取消后预占应释放回 0，实际 %d", got)
+	}
 	if got := f.stockOf(t, vid); got != 6 {
-		t.Fatalf("取消后库存应回到 6，实际 %d", got)
+		t.Fatalf("取消不改变在库数量（货从来没出库），期望 6，实际 %d", got)
 	}
 	// 已取消的单不能再取消。
 	if _, err := f.orders.CancelOrder(ctx, &orderdto.CancelOrderReq{

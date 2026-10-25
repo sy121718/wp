@@ -367,10 +367,11 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Errorf("批量拒绝后应为 rejected，实际 %s", got)
 	}
 
-	// ⑤ 库存守恒：两句用例各自入库一次（approveA 一步到底 1 件 + receiveC 1 件），
-	//    批量的两条**一件都不许动**（批量同意不自动入库）。
-	if got, want := f.stockOf(t, variantID), stockBeforeChain+2; got != want {
-		t.Errorf("链跑完后库存应为 %d（两次单档入库各 +1），实际 %d —— 批量动作多动了库存？", want, got)
+	// ⑤ 库存守恒（两段式口径，迁移 621）：链上这些订单都**从未发货**，所以在库数量
+	//    一件都不该变 —— 退货在这种单上释放的是预占，不是把货加回仓库。
+	//    批量的两条同样**一件都不许动**（批量同意不自动入库）。
+	if got, want := f.stockOf(t, variantID), stockBeforeChain; got != want {
+		t.Errorf("链跑完后在库应为 %d（未发货的退货不改变在库数量），实际 %d —— 有人把货加回去了", want, got)
 	}
 
 	// ⑥ JS 侧结论：五个用例都不该把后端那句话当成失败展示。

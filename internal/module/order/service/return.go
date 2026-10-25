@@ -813,6 +813,35 @@ func (s *Service) stockInReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermod
 			WarehouseID: wh,
 		})
 	}
+	// 两段式（迁移 621）下「退货入库」有两条不同的账，先判这一单发没发货：
+	//
+	//	· 已发货 → 货真的从仓库出去过，加回 quantity（**这条才是入库**），
+	//	  同时把那一批的预占释放掉（发货时已释放过一次，这里是幂等的 0 操作）；
+	//	· 未发货 → 货从来没出库，加回 quantity 会凭空多货（实测：10 件货退 2 件之后变成 12）。
+	//	  此时「退货」的实质是释放预占 —— 与取消同一条账。
+	//
+	// 判据是**发货单存在**而不是订单状态：部分发货的单状态可能还是 paid，
+	// 但已经有一部分货出去了，那部分要按「入库」处理。
+	shipped, serr := s.orderShippedTx(ctx, tx, rt.OrderID)
+	if serr != nil {
+		return serr
+	}
+	if !shipped {
+		// 释放按**订单行上固化的发货仓**，而不是退货单选的入库仓：
+		// 预占是 Occupation 在下单那一刻的仓，退货入到哪个仓是另一件事 ——
+		// 用退货仓去释放会锁到一行「没有预占」的库存行，释放静默失败。
+		if rerr := s.stock.ReleaseStockTx(ctx, tx, &ordercontract.StockReservation{
+			ProjectID:  rt.ProjectID,
+			SourceType: "order_return",
+			SourceRef:  rt.ReturnNo,
+			Remark:     "未发货退货释放预占，订单 " + rt.OrderNo,
+			Lines:      s.returnReservationLinesTx(ctx, tx, rt.OrderID, items),
+		}); rerr != nil && !strings.Contains(rerr.Error(), "ErrStockNotFound") {
+			// 释放失败（那一行已无预占 / 已被取消释放）不是错误：退货这个事实更重要。
+			// 「行不存在」也不算错：无仓工程的订单从来没预占过。
+		}
+		return nil
+	}
 	if err := s.stock.ChangeStockTx(ctx, tx, &ordercontract.StockAdjustment{
 		ProjectID:  rt.ProjectID,
 		ReasonCode: "return_in",
@@ -823,7 +852,67 @@ func (s *Service) stockInReturnTx(ctx context.Context, tx *gorm.DB, rt *ordermod
 	}); err != nil {
 		return orderenums.Err(orderenums.ErrStockUnavailable)
 	}
+	// 退货入库同时**释放这批货的预占**（迁移 621 的两段式）：货已经回到仓库，
+	// 就不该再为那张订单占着可售量 —— 不释放的话，取消 / 退款时再释放一次
+	// 就会把预占打到负数（库 DDL 的 CHECK 会拒），而那是一条没人看得懂的错误。
+	//
+	// 失败**不阻断入库**：这里的预占可能已经被上次取消释放过（幂等重放），
+	// 释放 0 件不是错误 —— 入库这个事实比账目微调重要得多。
+	_ = s.stock.ReleaseStockTx(ctx, tx, &ordercontract.StockReservation{
+		ProjectID:  rt.ProjectID,
+		SourceType: "order_return",
+		SourceRef:  rt.ReturnNo,
+		Remark:     "退货入库释放预占，订单 " + rt.OrderNo,
+		Lines:      lines,
+	})
 	return nil
+}
+
+// returnReservationLinesTx 这次退货要释放的预占行：**退货数量**、**订单行固化的发货仓**。
+//
+// 两个要点：
+//   - 数量取退货单的件数（不是整单数量）：部分退货只该释放退回来的那几件；
+//   - 仓取订单行的 warehouse_id（不是退货单选的入库仓）：预占是下单那一刻记在
+//     发货仓上的 —— 拿退货仓去释放会锁到一行「没有预占」的库存行，静默失败。
+func (s *Service) returnReservationLinesTx(ctx context.Context, tx *gorm.DB, orderID uint64,
+	returnItems []*ordermodel.ReturnItemEntity) []ordercontract.StockLine {
+	items, err := s.items.ListByOrderIDTx(ctx, tx, orderID)
+	if err != nil {
+		return nil
+	}
+	warehouseOf := make(map[uint64]*string, len(items))
+	for _, it := range items {
+		warehouseOf[it.ID] = it.WarehouseID
+	}
+	out := make([]ordercontract.StockLine, 0, len(returnItems))
+	for _, rit := range returnItems {
+		wh := warehouseOf[rit.OrderItemID]
+		if wh == nil || strings.TrimSpace(*wh) == "" {
+			continue
+		}
+		out = append(out, ordercontract.StockLine{
+			ProductID: rit.ProductID, VariantID: rit.VariantID, SKUCode: rit.SKU,
+			Quantity: rit.Quantity, WarehouseID: *wh,
+		})
+	}
+	return out
+}
+
+// orderShippedTx 该订单发过货没有（任意一张发货单存在即为真）。
+//
+// 与 hasShipment 同判据（发货单存在，不是订单状态）：部分发货的单状态可能仍是 paid，
+// 但货已经出去了一部分 —— 退货时那部分要按「入库」处理，未发的那部分按「释放预占」。
+func (s *Service) orderShippedTx(ctx context.Context, tx *gorm.DB, orderID uint64) (bool, error) {
+	if s.shipments == nil {
+		// 未装配发货单仓储（纯退货单测路径）：按「已发货」处理 ——
+		// 那是迁移 621 之前的唯一语义，也是退货入库最保守的那一支（真的把货加回去）。
+		return true, nil
+	}
+	list, err := s.shipments.ListByOrderTx(ctx, tx, orderID)
+	if err != nil {
+		return false, err
+	}
+	return len(list) > 0, nil
 }
 
 // receivedByItemTx 该订单各订单项**已经实际收货入库**的数量 —— BIZ-01 / 02 / 04 / 07 共用的那本账。
