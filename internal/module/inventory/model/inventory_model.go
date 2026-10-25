@@ -43,6 +43,11 @@ type WarehouseEntity struct {
 	Status    string `gorm:"column:status;not null"`
 	IsDefault bool   `gorm:"column:is_default;not null"`
 	Sort      int    `gorm:"column:sort;not null"`
+	// DeductPriority 出库扣减优先级（迁移 623）：值小先扣。
+	//
+	// 只在「出库且行/请求都没指定仓」时生效 —— 显式指定的仓永远优先，
+	// 否则运营在表单里选的仓会被优先级悄悄改掉。默认 100 = 与未设置等价。
+	DeductPriority int `gorm:"column:deduct_priority;not null"`
 	// Config 是第三方仓的对接配置（jsonb）：非敏感项明文，凭据只存密文或引用名。
 	//
 	// json.RawMessage 保留 type:jsonb —— 这是「Go 值怎么变成 SQL 值」的映射声明，

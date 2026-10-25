@@ -132,6 +132,36 @@ func (h *inventoryPageHandle) InventoryStockUnclaim(c *gin.Context) {
 	response.Success(c, nil)
 }
 
+// InventoryPurchaseFinish 采购单提前关单（迁移 623, W2）：received / partial → finished。
+//
+// 与取消分开两个入口而不是一个「改状态」接口：两个动作的前置状态不同
+// （finished 要求已入库过、cancelled 要求还没收满），合成一个只会让调用方各自判一次
+// 该传哪个值 —— 而判错的表现是「已收满的单被取消，货却已经进仓」。
+func (h *inventoryPurchasePageHandle) InventoryPurchaseFinish(c *gin.Context) {
+	form, ok := binding.Form[inventorydto.PurchaseStatusFormReq](c)
+	if !ok {
+		return
+	}
+	if _, err := h.inventory.FinishPurchaseOrder(c.Request.Context(), form.StatusReq()); err != nil {
+		inventoryFail(c, err)
+		return
+	}
+	response.Success(c, nil)
+}
+
+// InventoryPurchaseCancel 采购单取消（迁移 623, W2）：pending / partial → cancelled。
+func (h *inventoryPurchasePageHandle) InventoryPurchaseCancel(c *gin.Context) {
+	form, ok := binding.Form[inventorydto.PurchaseStatusFormReq](c)
+	if !ok {
+		return
+	}
+	if _, err := h.inventory.CancelPurchaseOrder(c.Request.Context(), form.StatusReq()); err != nil {
+		inventoryFail(c, err)
+		return
+	}
+	response.Success(c, nil)
+}
+
 // InventoryStockUnclaimedCreate 人工建档一条未认领存货（仓库 + 裸码 + 数量 + 成本）。
 func (h *inventoryPageHandle) InventoryStockUnclaimedCreate(c *gin.Context) {
 	form, ok := binding.Form[inventorydto.UnclaimedStockFormReq](c)

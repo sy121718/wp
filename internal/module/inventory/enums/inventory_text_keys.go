@@ -51,6 +51,9 @@ const (
 	InventoryPurchasesKindPurchase    = "admin.inventory_purchases.kind.purchase"
 	InventoryPurchasesProductionOpen  = "admin.inventory_purchases.production.open"
 	InventoryPurchasesOptionCostLabel = "admin.inventory_purchases.option.costLabel"
+	// 采购单两个终态（迁移 623）。
+	InventoryPurchasesStatusFinished  = "admin.inventory_purchases.status.finished"
+	InventoryPurchasesStatusCancelled = "admin.inventory_purchases.status.cancelled"
 	InventoryPurchasesOptionCostUnset = "admin.inventory_purchases.option.costUnset"
 
 	// —— 仓库商品 SKU 台账页（迁移 621）——

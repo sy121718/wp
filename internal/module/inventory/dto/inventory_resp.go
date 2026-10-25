@@ -74,6 +74,8 @@ type WarehouseResp struct {
 	Status    string `json:"status"`
 	IsDefault bool   `json:"isDefault"`
 	Sort      int    `json:"sort"`
+	// DeductPriority 出库扣减优先级（迁移 623）：值小先扣；仅在未显式指定仓库时生效。
+	DeductPriority int `json:"deductPriority"`
 	// ThirdParty 仅第三方仓非空；其余类型为 nil（不给前端一份看似可用的空配置）。
 	ThirdParty *WarehouseThirdPartyResp `json:"thirdParty,omitempty"`
 	CreatedAt  string                   `json:"createdAt"`

@@ -503,12 +503,14 @@ func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context
 
 // —— 表单与文案工具 ——
 
-// purchaseStatusOptions 状态筛选下拉（三种推导值）。
+// purchaseStatusOptions 状态筛选下拉（五个值：三个推导态 + 两个人工终态，迁移 623）。
 func purchaseStatusOptions(tr func(key, fallback string) string) []inventorydto.OptionResp {
 	return []inventorydto.OptionResp{
 		{Value: inventoryenums.PurchaseStatusPending, Label: purchaseStatusLabel(tr, inventoryenums.PurchaseStatusPending)},
 		{Value: inventoryenums.PurchaseStatusPartial, Label: purchaseStatusLabel(tr, inventoryenums.PurchaseStatusPartial)},
 		{Value: inventoryenums.PurchaseStatusReceived, Label: purchaseStatusLabel(tr, inventoryenums.PurchaseStatusReceived)},
+		{Value: inventoryenums.PurchaseStatusFinished, Label: purchaseStatusLabel(tr, inventoryenums.PurchaseStatusFinished)},
+		{Value: inventoryenums.PurchaseStatusCancelled, Label: purchaseStatusLabel(tr, inventoryenums.PurchaseStatusCancelled)},
 	}
 }
 
@@ -522,6 +524,10 @@ func purchaseStatusLabel(tr func(key, fallback string) string, status string) st
 	case inventoryenums.PurchaseStatusReceived:
 		// 已入库：与同页列头同一个词（英文都是 Received），复用它的词条。
 		return tr(inventoryenums.InventoryPurchasesColReceived, "已入库")
+	case inventoryenums.PurchaseStatusFinished:
+		return tr(inventoryenums.InventoryPurchasesStatusFinished, "已关单")
+	case inventoryenums.PurchaseStatusCancelled:
+		return tr(inventoryenums.InventoryPurchasesStatusCancelled, "已取消")
 	default:
 		return status
 	}

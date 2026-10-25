@@ -114,6 +114,10 @@ func SetupInventoryPages(pages *gin.RouterGroup, svc inventorycontract.Inventory
 	pages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), purchasePages.InventoryPurchaseCreate)
 	pages.POST("/inventory/purchases/receipt", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/receipt"), purchasePages.InventoryPurchaseReceipt)
 	pages.POST("/inventory/purchases/production", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/production"), purchasePages.InventoryPurchaseProduction)
+	// 采购单终态（迁移 623, W2）：提前关单 / 取消。权限点复用采购单更新 ——
+	// 关单是一次对采购单的改写，不是新能力，不该多一个权限点。
+	pages.POST("/inventory/purchases/finish", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchasePages.InventoryPurchaseFinish)
+	pages.POST("/inventory/purchases/cancel", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchasePages.InventoryPurchaseCancel)
 	// 生产入库（自家工厂）属于「有单据来源的手工入库」，表单留在采购入库页：
 	// 它的页面 action 是 /admin/inventory/purchases/production，权限点仍是
 	// api/inventory/purchase/production（权限点是声明真源，不随页面走）。

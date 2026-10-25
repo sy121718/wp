@@ -32,7 +32,8 @@ type PurchaseOrderResp struct {
 	SourceType    string `json:"sourceType"`
 	WarehouseID   string `json:"warehouseId"`
 	WarehouseName string `json:"warehouseName"`
-	// Status 是推导值：pending / partial / received（见 enums 的推导口径）。
+	// Status 五个值：前三个由「已入库数量 与 采购数量」推导（pending / partial / received），
+	// 后两个是人工终态（finished 提前关单 / cancelled 取消，迁移 623）。
 	Status           string              `json:"status"`
 	OrderedAt        utils.JSONTime      `json:"orderedAt"`
 	ExpectedAt       *utils.JSONTime     `json:"expectedAt"`

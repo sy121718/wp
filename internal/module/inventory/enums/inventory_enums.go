@@ -161,7 +161,7 @@ const (
 	ErrPurchaseLineDuplicate   = "ErrPurchaseLineDuplicate"   // 同一采购单里同一个 SKU 重复出现
 	ErrPurchaseQuantityInvalid = "ErrPurchaseQuantityInvalid" // 采购数量必须为正整数
 	ErrPurchasePriceInvalid    = "ErrPurchasePriceInvalid"    // 采购单价必须为正数
-	ErrPurchaseStatusInvalid   = "ErrPurchaseStatusInvalid"   // 状态筛选值不是 pending / partial / received
+	ErrPurchaseStatusInvalid   = "ErrPurchaseStatusInvalid"   // 状态筛选值不在五个合法状态内（迁移 623 起多了 finished / cancelled）
 	ErrPurchaseLinesLocked     = "ErrPurchaseLinesLocked"     // 已有入库数量的采购单不能再改行（改了状态推导就不成立）
 	ErrPurchaseLineNotFound    = "ErrPurchaseLineNotFound"    // 采购行不存在（或不属于该采购单）
 
@@ -181,6 +181,15 @@ const (
 	ErrProductionCostInvalid       = "ErrProductionCostInvalid"     // 生产入库的成本价必须手工填写且非负
 	// ErrVariantCostPortMissing 商品侧成本价端口未注入（装配缺陷 / 纯库存单测路径）。
 	ErrVariantCostPortMissing = "ErrVariantCostPortMissing"
+
+	// —— 采购单终态（迁移 623，W2）——
+	//
+	// 前三个中间态（pending / partial / received）由「已入库数量 与 采购数量」推导，
+	// 没有任何人工置位入口。两个终态是**人工决定**：
+	//   · finished  —— 提前关单：剩下的不再等（供应商断供 / 转单 / 只要已到的那部分）；
+	//   · cancelled —— 取消：只允许在还没收满时（收满的货已经进仓，要走退货）。
+	ErrPurchaseStatusNotFinishable = "ErrPurchaseStatusNotFinishable"
+	ErrPurchaseStatusNotCancelable = "ErrPurchaseStatusNotCancelable"
 
 	// —— 物料清单（issue #16 验收 5）——
 	ErrBOMQuantityInvalid    = "ErrBOMQuantityInvalid"    // 子项用量必须为正整数
@@ -333,6 +342,10 @@ const (
 	PurchaseStatusPending  = "pending"
 	PurchaseStatusPartial  = "partial"
 	PurchaseStatusReceived = "received"
+	// PurchaseStatusFinished 提前关单（迁移 623）：人工决定「剩下的不再等」。
+	PurchaseStatusFinished = "finished"
+	// PurchaseStatusCancelled 取消（迁移 623）：只允许在还没收满时。
+	PurchaseStatusCancelled = "cancelled"
 )
 
 // 入库单类型（验收 3/5）。
@@ -468,9 +481,11 @@ var errFallbacks = map[string]string{
 	ErrPurchaseLineDuplicate:         "同一采购单里同一个 SKU 重复出现",
 	ErrPurchaseQuantityInvalid:       "采购数量必须为正整数",
 	ErrPurchasePriceInvalid:          "采购单价必须为正数",
-	ErrPurchaseStatusInvalid:         "状态筛选值不是 pending / partial / received",
+	ErrPurchaseStatusInvalid:         "状态筛选值不在合法状态内（未入库 / 部分入库 / 已入库 / 已关单 / 已取消）",
 	ErrPurchaseLinesLocked:           "已有入库数量的采购单不能再改行（改了状态推导就不成立）",
 	ErrPurchaseLineNotFound:          "采购行不存在（或不属于该采购单）",
+	ErrPurchaseStatusNotFinishable:   "只有已入库或部分入库的采购单可以提前关单",
+	ErrPurchaseStatusNotCancelable:   "只有未入库或部分入库的采购单可以取消（已收满的货已进仓，要走退货）",
 	ErrReceiptLinesRequired:          "入库清单不能为空",
 	ErrReceiptLineDuplicate:          "同一入库请求里同一采购行只能出现一次",
 	ErrReceiptQuantityInvalid:        "入库数量必须为正整数",
@@ -521,24 +536,26 @@ var errStatuses = map[string]int{
 	ErrPurchaseLineNotFound:  http.StatusNotFound,
 
 	// —— 409 冲突 / 当前状态不允许 ——
-	ErrWarehouseCodeTaken:         http.StatusConflict,
-	ErrWarehouseSKUCodeTaken:      http.StatusConflict,
-	ErrWarehouseIsDefault:         http.StatusConflict,
-	ErrWarehouseHasStock:          http.StatusConflict,
-	ErrWarehouseDisabled:          http.StatusConflict,
-	ErrStockInsufficient:          http.StatusConflict,
-	ErrReasonCodeTaken:            http.StatusConflict,
-	ErrReasonBuiltin:              http.StatusConflict,
-	ErrSourceCodeTaken:            http.StatusConflict,
-	ErrPurchaseCodeTaken:          http.StatusConflict,
-	ErrPurchaseSourceDisabled:     http.StatusConflict,
-	ErrPurchaseLinesLocked:        http.StatusConflict,
-	ErrReceiptOverReceive:         http.StatusConflict,
-	ErrReceiptOrderDone:           http.StatusConflict,
-	ErrExternalSKUProductConflict: http.StatusConflict,
-	ErrStockAlreadyClaimed:        http.StatusConflict,
-	ErrStockHasQuantity:           http.StatusConflict,
-	ErrReserveUnderflow:           http.StatusConflict,
+	ErrWarehouseCodeTaken:          http.StatusConflict,
+	ErrWarehouseSKUCodeTaken:       http.StatusConflict,
+	ErrWarehouseIsDefault:          http.StatusConflict,
+	ErrWarehouseHasStock:           http.StatusConflict,
+	ErrWarehouseDisabled:           http.StatusConflict,
+	ErrStockInsufficient:           http.StatusConflict,
+	ErrReasonCodeTaken:             http.StatusConflict,
+	ErrReasonBuiltin:               http.StatusConflict,
+	ErrSourceCodeTaken:             http.StatusConflict,
+	ErrPurchaseCodeTaken:           http.StatusConflict,
+	ErrPurchaseSourceDisabled:      http.StatusConflict,
+	ErrPurchaseLinesLocked:         http.StatusConflict,
+	ErrPurchaseStatusNotFinishable: http.StatusConflict,
+	ErrPurchaseStatusNotCancelable: http.StatusConflict,
+	ErrReceiptOverReceive:          http.StatusConflict,
+	ErrReceiptOrderDone:            http.StatusConflict,
+	ErrExternalSKUProductConflict:  http.StatusConflict,
+	ErrStockAlreadyClaimed:         http.StatusConflict,
+	ErrStockHasQuantity:            http.StatusConflict,
+	ErrReserveUnderflow:            http.StatusConflict,
 }
 
 // Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。

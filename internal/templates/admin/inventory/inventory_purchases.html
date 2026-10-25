@@ -160,14 +160,27 @@
                 <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}">{{o.SourceTypeLabel}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.warehouse", "收货仓") }}">{{o.WarehouseName}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.status", "单据状态") }}">
-                    {{if o.Status == "received"}}<span class="badge badge-success">{{o.StatusLabel}}</span>
-                    {{else if o.Status == "partial"}}<span class="badge badge-warning">{{o.StatusLabel}}</span>
-                    {{else}}<span class="badge badge-mute">{{o.StatusLabel}}</span>{{end}}
+                    {* 五态（迁移 623）：前三个由到货数量推导，后两个是人工终态。
+                       配色按「这个单据还需要人做什么」分档：完成类 ok、进行中 warn、不需要动 mute。 *}
+                    {{tone := "mute"}}{{if o.Status == "received" || o.Status == "finished"}}{{tone = "success"}}{{else if o.Status == "partial"}}{{tone = "warning"}}{{end}}
+                    {{include "../partials/badge.html" map("tone", tone, "label", o.StatusLabel)}}
                 </td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.progress", "收货进度") }}">{{o.ReceivedQuantity}} / {{o.TotalQuantity}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.orderedAt", "下单时间") }}">{{o.OrderedAt}}</td>
                 <td class="col-actions" data-label="{{ .["t"]("admin.common.col.actions", "操作") }}">
                     <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-receipt-{{o.ID}}" data-drawer-title="{{ .["t"]("admin.inventory_purchases.receipt.drawerTitle", "登记入库：") }}{{o.Code}}">{{ .["t"]("admin.inventory_purchases.receipt.open", "登记入库") }}</button>
+                    {* 两个终态入口（迁移 623）：只有对应的前置状态成立时才渲染。
+                       判据按状态分档而不是「全都给按钮、点了再报错」—— 已收满的单没有
+                       「取消」这条路，摆一个点了必失败的按钮只是噪声。
+                       表单放表格外（HTML 不允许 form 嵌套），按钮用 form="<id>" 关联。 *}
+                    {{if o.Status == "received" || o.Status == "partial"}}
+                    <button type="submit" form="po-finish-{{o.ID}}" class="btn btn-sm btn-ghost"
+                            data-confirm="{{ .["t"]("admin.inventory_purchases.finishConfirm", "提前关单？剩下的不再等，单据进入已完成终态。")}}">{{ .["t"]("admin.inventory_purchases.finish", "提前关单") }}</button>
+                    {{end}}
+                    {{if o.Status == "pending" || o.Status == "partial"}}
+                    <button type="submit" form="po-cancel-{{o.ID}}" class="btn btn-sm btn-danger"
+                            data-confirm="{{ .["t"]("admin.inventory_purchases.cancelConfirm", "取消这张采购单？已入库的货仍留在仓库里。")}}" data-confirm-danger>{{ .["t"]("admin.inventory_purchases.cancel", "取消单据") }}</button>
+                    {{end}}
                 </td>
             </tr>
             {{end}}
@@ -181,6 +194,26 @@
            单页与装载失败时这两个键都不注入，片段自然不渲染。 *}
         {{include "../partials/pagination.html"}}
     </section>
+
+    {* ===== 采购单终态的隐藏表单（表格外，按钮用 form="<id>" 关联） =====
+       备注字段留空也能提交：运营不写原因时不该拦住一次明确的关单动作，
+       但页面上给一行提示（见批次说明）—— 原因缺失只是少了一句解释，不是错误。 *}
+    {{range _, o := .Orders}}
+    {{if o.Status == "received" || o.Status == "partial"}}
+    <form id="po-finish-{{o.ID}}" method="post" action="/admin/inventory/purchases/finish?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/finish?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{o.ID}}">
+    </form>
+    {{end}}
+    {{if o.Status == "pending" || o.Status == "partial"}}
+    <form id="po-cancel-{{o.ID}}" method="post" action="/admin/inventory/purchases/cancel?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/cancel?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{o.ID}}">
+    </form>
+    {{end}}
+    {{end}}
 
     {* ===== 逐行收货（每个采购单一份抽屉模板） ===== *}
     {{range _, o := .Orders}}

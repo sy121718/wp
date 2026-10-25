@@ -294,7 +294,14 @@ func (s *Service) deductStockTx(ctx context.Context, tx *gorm.DB, req *inventory
 	}
 	meta := changeMeta{reason: reason, sourceType: req.SourceType, sourceRef: req.SourceRef,
 		remark: req.Remark, operatorID: req.OperatorID}
-	items, err := s.buildChangeItems(ctx, projectID, inventoryenums.DirectionOut, req.WarehouseID, req.Lines, meta, "")
+	// 跨仓分配（迁移 623）：只在「出库 且 请求 / 行都没指定仓」时接管，
+	// 显式指定的仓永远优先。分配结果仍是同一个 lines 形状 ——
+	// 随后的 buildChangeItems 解析 / 校验 / 加锁 / 流水逐字复用。
+	lines, aerr := s.assignDeductWarehouses(ctx, projectID, inventoryenums.DirectionOut, req.WarehouseID, req.Lines)
+	if aerr != nil {
+		return nil, "", aerr
+	}
+	items, err := s.buildChangeItems(ctx, projectID, inventoryenums.DirectionOut, req.WarehouseID, lines, meta, "")
 	if err != nil {
 		return nil, "", err
 	}

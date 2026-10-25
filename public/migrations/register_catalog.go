@@ -910,4 +910,30 @@ func registerCatalogAndInventory() {
 			"'admin.inventory.skus.filter.submit')",
 		SQL: mustSQL("622_inventory_stock_master_i18n.sql"),
 	})
+
+	// 623：出库扣减优先级（inventory_warehouses.deduct_priority）+ 采购单两个终态。
+	// CheckSQL 按本迁移自己的列判定（deduct_priority 存在即已执行）：存量库上
+	// inventory_warehouses 早就存在，用默认的「表存在即跳过」会把它永久跳过。
+	register(Migration{
+		Version:   "623-inventory-deduct-priority",
+		TableName: "inventory_warehouses",
+		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'deduct_priority'",
+		SQL: mustSQL("623_inventory_deduct_priority.sql"),
+	})
+
+	// 623b：W2 的文案词条（2 条业务错误 + 8 个界面位，中英成对 = 20 行）。
+	// 判定逐条枚举本批全部 10 个 key 的两种语言（= 20 个 (item_key, lang) 组合）。
+	registerSeed(Seed{
+		Version:   "623b-inventory-deduct-priority-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 20 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
+			"'admin.inventory.warehouse.col.deductPriority', 'admin.inventory.warehouse.deductPriorityHint', " +
+			"'admin.inventory_purchases.status.finished', 'admin.inventory_purchases.status.cancelled', " +
+			"'admin.inventory_purchases.finish', 'admin.inventory_purchases.finishConfirm', " +
+			"'admin.inventory_purchases.cancel', 'admin.inventory_purchases.cancelConfirm', " +
+			"'ErrPurchaseStatusNotFinishable', 'ErrPurchaseStatusNotCancelable')",
+		SQL: mustSQL("623b_inventory_deduct_priority_i18n.sql"),
+	})
 }

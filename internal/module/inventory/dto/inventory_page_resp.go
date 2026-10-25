@@ -77,6 +77,8 @@ type WarehouseRowResp struct {
 	Status    string
 	IsDefault bool
 	Sort      int
+	// DeductPriority 出库扣减优先级（迁移 623）：页面上可读可改，值小先扣。
+	DeductPriority int
 
 	StatusLabel string
 	TypeLabel   string

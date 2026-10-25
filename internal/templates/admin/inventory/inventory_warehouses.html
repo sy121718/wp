@@ -89,6 +89,8 @@
                 <th>{{ .["t"]("admin.inventory.label.code", "短码") }}</th>
                 <th>{{ .["t"]("admin.inventory.col.status", "状态") }}</th>
                 <th>{{ .["t"]("admin.inventory.ph.sort", "排序") }}</th>
+                {* 扣减优先级（迁移 623）：只在出库且没指定仓时生效，值小先扣。 *}
+                <th>{{ .["t"]("admin.inventory.warehouse.col.deductPriority", "扣减优先级") }}</th>
                 <th class="col-actions">{{ .["t"]("admin.common.col.actions", "操作") }}</th>
             </tr>
             </thead>
@@ -121,6 +123,7 @@
                 <td data-label="{{ .["t"]("admin.inventory.label.code", "短码") }}"><code>{{w.Code}}</code></td>
                 <td data-label="{{ .["t"]("admin.inventory.col.status", "状态") }}">{{w.StatusLabel}}</td>
                 <td data-label="{{ .["t"]("admin.inventory.ph.sort", "排序") }}">{{w.Sort}}</td>
+                <td data-label="{{ .["t"]("admin.inventory.warehouse.col.deductPriority", "扣减优先级") }}">{{w.DeductPriority}}</td>
                 <td class="col-actions" data-label="{{ .["t"]("admin.common.col.actions", "操作") }}">
                     {{if isset(.Buttons["inventory.warehouse_update"])}}
                     <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-warehouse-edit-{{w.ID}}" data-drawer-title="{{ .["t"]("admin.common.action.edit", "编辑") }}">{{ .["t"]("admin.common.action.edit", "编辑") }}</button>
@@ -178,6 +181,13 @@
             <div class="form-group">
                 <label class="form-label">{{ .["t"]("admin.inventory.ph.sort", "排序") }}</label>
                 <input type="number" class="form-input" name="sort" value="0" inputmode="numeric" step="1">
+            </div>
+            {* 扣减优先级（迁移 623）：值小先扣，只在「出库且没指定仓」时生效。
+               留空 = 100（与未设置等价），0 是合法的「显式置顶」。 *}
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.col.deductPriority", "扣减优先级") }}</label>
+                <input type="number" class="form-input" name="deductPriority" value="100" inputmode="numeric" step="1" min="0">
+                <p class="hint">{{ .["t"]("admin.inventory.warehouse.deductPriorityHint", "值小先扣；只在出库且没有指定仓库时生效，显式选仓永远优先。留空按 100。") }}</p>
             </div>
             <label class="var-value">
                 <input type="checkbox" name="isDefault" value="1"> {{ .["t"]("admin.inventory.setDefault", "设为默认仓") }}
@@ -285,6 +295,11 @@
             <div class="form-group">
                 <label class="form-label">{{ .["t"]("admin.inventory.ph.sort", "排序") }}</label>
                 <input type="number" class="form-input" name="sort" value="{{w.Sort}}" inputmode="numeric" step="1">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{ .["t"]("admin.inventory.warehouse.col.deductPriority", "扣减优先级") }}</label>
+                <input type="number" class="form-input" name="deductPriority" value="{{w.DeductPriority}}" inputmode="numeric" step="1" min="0">
+                <p class="hint">{{ .["t"]("admin.inventory.warehouse.deductPriorityHint", "值小先扣；只在出库且没有指定仓库时生效，显式选仓永远优先。留空按 100。") }}</p>
             </div>
             <div class="form-group">
                 <label class="form-label">{{ .["t"]("admin.inventory.status.active", "状态") }}</label>

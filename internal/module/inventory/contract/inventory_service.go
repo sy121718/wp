@@ -229,6 +229,15 @@ type InventoryService interface {
 	// 唯一的事务外步骤是商品侧 product_variants.cost_price 的兼容回写（那是商品模块的写，
 	// 端口没有 Tx 形态）：失败只记在入库单行上，并可由幂等重放补做（见 applyReceiptCosts）。
 	RegisterReceipt(ctx context.Context, req *inventorydto.RegisterReceiptReq) (res *inventorydto.ReceiptResp, err error)
+	// FinishPurchaseOrder 采购单提前关单（迁移 623）：received / partial → finished。
+	//
+	// 与前三个中间态（由到货数量推导）不同，终态是**人工决定**：剩下的不再等。
+	// 不写库存流水（单据状态不是库存事实），备注追加而不是覆盖。
+	FinishPurchaseOrder(ctx context.Context, req *inventorydto.PurchaseStatusReq) (res *inventorydto.PurchaseOrderResp, err error)
+	// CancelPurchaseOrder 采购单取消（迁移 623）：pending / partial → cancelled。
+	//
+	// received 不可取消：货已经进仓，要退只能走退货。
+	CancelPurchaseOrder(ctx context.Context, req *inventorydto.PurchaseStatusReq) (res *inventorydto.PurchaseOrderResp, err error)
 	// RegisterProductionInbound 自家工厂生产入库（验收 5）：无采购单、来源必须是内部货源、
 	// 成本价手工填写；库存变动同样走 ChangeStock（原因 = 生产入库），
 	// 手工成本作为**显式成本**落到 (仓库, SKU) 的当前值上（与采购收货同一条路径）。
