@@ -82,6 +82,9 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 	g.GET("/stock/get", permission.InventoryStockGet, handle.GetStock)
 	g.POST("/stock/ensure", permission.InventoryStockEnsure, handle.EnsureStock)
 
+	// 库存预警（迁移 621 / 623，W4）：只统计跟踪数量的行（无限库存永远「有货」）。
+	g.GET("/stock/alert", permission.InventoryStockList, handle.StockAlert)
+
 	// 库存变动与流水（issue #16 验收 1–5）：真源行锁增减 + 流水 + 原因字典 + 物料清单。
 	g.POST("/stock/change", permission.InventoryStockChange, handle.ChangeStock)
 	g.POST("/stock/deduct", permission.InventoryStockDeduct, handle.DeductStock)

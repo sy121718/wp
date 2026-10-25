@@ -44,35 +44,35 @@ type (
 	SiteSlotBindReq   = pagedto.SiteSlotBindReq
 	SiteSlotUnbindReq = pagedto.SiteSlotUnbindReq
 	SiteSlotListResp  = pagedto.SiteSlotListResp
-	SiteSlotItemResp      = pagedto.SiteSlotItemResp
+	SiteSlotItemResp  = pagedto.SiteSlotItemResp
 
 	// 待重建页面的只读反查（反查面）。跨模块调用方只依赖 contract，不直接 import page/dto。
-	StalePageListReq   = pagedto.StalePageListReq
-	StalePageListResp  = pagedto.StalePageListResp
-	StalePageResp      = pagedto.StalePageResp
+	StalePageListReq       = pagedto.StalePageListReq
+	StalePageListResp      = pagedto.StalePageListResp
+	StalePageResp          = pagedto.StalePageResp
 	StaleImpactSummaryResp = pagedto.StaleImpactSummaryResp
 
 	// SEO 合规巡检（审计 SEO-01 前半段）。
-	SEOPatrolReq      = pagedto.SEOPatrolReq
-	SEOPatrolResp     = pagedto.SEOPatrolResp
+	SEOPatrolReq          = pagedto.SEOPatrolReq
+	SEOPatrolResp         = pagedto.SEOPatrolResp
 	SEOArtifactItemResp   = pagedto.SEOArtifactItemResp
 	SEOFindingItemResp    = pagedto.SEOFindingItemResp
 	SEOUncheckedRouteResp = pagedto.SEOUncheckedRouteResp
 
 	// 重定向管理（审计 SEO-025）。
-	RedirectListReq       = pagedto.RedirectListReq
-	RedirectListResp      = pagedto.RedirectListResp
+	RedirectListReq           = pagedto.RedirectListReq
+	RedirectListResp          = pagedto.RedirectListResp
 	RedirectItemResp          = pagedto.RedirectItemResp
-	RedirectCreateReq     = pagedto.RedirectCreateReq
-	RedirectDeleteReq     = pagedto.RedirectDeleteReq
-	RedirectMergeReq      = pagedto.RedirectMergeReq
+	RedirectCreateReq         = pagedto.RedirectCreateReq
+	RedirectDeleteReq         = pagedto.RedirectDeleteReq
+	RedirectMergeReq          = pagedto.RedirectMergeReq
 	RedirectProjectOptionResp = pagedto.RedirectProjectOptionResp
 
 	// 定时上下线（PIPE-7）。
 	ScheduleSetReq    = pagedto.ScheduleSetReq
 	ScheduleCancelReq = pagedto.ScheduleCancelReq
 	ScheduleListReq   = pagedto.ScheduleListReq
-	ScheduleItemResp      = pagedto.ScheduleItemResp
+	ScheduleItemResp  = pagedto.ScheduleItemResp
 	ScheduleListResp  = pagedto.ScheduleListResp
 	ScheduleRunResp   = pagedto.ScheduleRunResp
 	// SchedulePageSummaryResp 列表页的行内排定投影（每页一条待执行 + 一条最近失败）。

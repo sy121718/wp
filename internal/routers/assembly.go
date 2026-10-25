@@ -700,6 +700,18 @@ func (a *assembly) buildIdentityAndCommerce() {
 			concrete.SetWarehouseResolver(orderstock.NewWarehouseResolver(lookup))
 		}
 	}
+	// 销售总览的待办块要库存预警的数字（迁移 621 / 623，W4）：装配收尾补注，
+	// 订单模块不 import 库存契约（方向由 orderInventoryAlertReader 这个形状承载）。
+	// 闭包里把库存契约的 StockAlert 收成一个 int（订单侧不 import inventory/dto）。
+	if alerts, ok := a.inventorySvc.(inventorycontract.StockAlertReader); ok {
+		orderhttp.SetSalesStockAlerts(func(ctx context.Context, projectID string) (int, error) {
+			got, err := alerts.StockAlert(ctx, projectID)
+			if err != nil || got == nil {
+				return 0, err
+			}
+			return int(got.Alert), nil
+		})
+	}
 	// 订单模块的模型可调用工具（只读聚合）注册进上面那个表。
 	// 装配顺序在这里不构成约束：注册表是同一个指针，AI 侧只在**运行期**读它。
 	// 注册失败即 panic（权限点重复 / 依赖缺失这类装配缺陷，必须在启动时炸掉，

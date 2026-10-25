@@ -406,6 +406,12 @@ func (s *Service) SalesOverview(ctx context.Context, req *orderdto.SalesOverview
 		return nil, err
 	}
 
+	// 运费合计（订单级、按订单去重）：毛利的第三项。
+	shippingTotal, err := s.orders.SalesShippingTotalByRange(ctx, req.ProjectID, from, to, filter)
+	if err != nil {
+		return nil, err
+	}
+
 	resp := &orderdto.SalesOverviewResp{
 		Currency:           orderCurrency(),
 		ProjectID:          req.ProjectID,
@@ -426,6 +432,14 @@ func (s *Service) SalesOverview(ctx context.Context, req *orderdto.SalesOverview
 		ReturningCustomers: growth.ReturningCustomers,
 		Repurchasers:       growth.Repurchasers,
 		RepurchaseRatePct:  repurchaseRatePct(growth.NewRepurchasers, growth.ReturningCustomers, growth.OrderingCustomers),
+		// 毛利（迁移 629，W4）：行实付 − 行成本 − **运费**。
+		//
+		// 运费单独取（它是订单级的，混进按明细行聚合的那条 SQL 会被放大成
+		// 明细行数倍）；税不扣（代收）、优惠已含在 line_total 里不重扣。
+		// CostIncomplete 为真时卡片要显示「含 N 行成本未核算」：那些行按 0 计入。
+		GrossProfit:        row.LineMargin - shippingTotal,
+		CostIncompleteRows: row.CostIncompleteRows,
+		CostIncomplete:     row.CostIncompleteRows > 0,
 	}
 
 	// ③ 环比：紧邻的上一段**等长**区间。等长是关键 —— 拿「本月 1 号到今天」与「上月整月」

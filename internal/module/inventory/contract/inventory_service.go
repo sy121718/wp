@@ -139,6 +139,11 @@ type InventoryService interface {
 	// 约定同 ChangeStockTx：不自己开事务，错误原样返回。
 	ReserveStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ReserveStockReq) (err error)
 	ReleaseStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ReserveStockReq) (err error)
+	// StockAlert 库存预警四卡（迁移 621 / 623，W4）：只统计跟踪数量的行。
+	//
+	// Alert = OutOfStock + LowStock 在 service 里算一次 —— 两个数字相加是展示口径，
+	// 让模板与报表各自再算一遍就会各算各的。
+	StockAlert(ctx context.Context, projectID string) (res *inventorydto.StockAlertResp, err error)
 	// ListStockLedger 仓库商品 SKU 台账页（/admin/inventory/skus）的读模型。
 	//
 	// 返回行里「认领到谁」的文案与「可售 = 数量 − 预占」的减法都已在服务端算好：
@@ -373,4 +378,12 @@ type TransferService interface {
 	CountTransfers(ctx context.Context, req *inventorydto.ListTransferReq) (n int64, err error)
 	// GetTransfer 详情（明细 + 三类凭证）。
 	GetTransfer(ctx context.Context, req *inventorydto.GetTransferReq) (res *inventorydto.TransferDetailResp, err error)
+}
+
+// StockAlertReader 库存预警的窄读口（销售总览的待办块用，迁移 621 / 623，W4）。
+//
+// 单独一个接口而不是让调用方拿 InventoryService：销售总览只要一个数字
+// （Alert = OutOfStock + LowStock），而宽接口会让它顺手拿到改库存的能力。
+type StockAlertReader interface {
+	StockAlert(ctx context.Context, projectID string) (res *inventorydto.StockAlertResp, err error)
 }

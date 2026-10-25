@@ -523,3 +523,23 @@ const (
 	ledgerDefaultPageSize = 50
 	ledgerMaxPageSize     = 200
 )
+
+// StockAlert 库存预警（迁移 621 / 623，W4）：只统计跟踪数量的行。
+//
+// Alert = OutOfStock + LowStock：两个数字相加是**展示口径**（「共 N 项要处理」），
+// 不是 SQL 的分组 —— 放在 service 里算一次，模板与报表不必各自再算。
+func (s *Service) StockAlert(ctx context.Context, projectID string) (res *inventorydto.StockAlertResp, err error) {
+	pid, err := s.resolveProjectID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.m.StockAlertCounts(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+	return &inventorydto.StockAlertResp{
+		ProjectID: pid, Total: row.Total,
+		OutOfStock: row.OutOfStock, LowStock: row.LowStock,
+		Alert: row.OutOfStock + row.LowStock,
+	}, nil
+}

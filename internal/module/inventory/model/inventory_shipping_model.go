@@ -114,3 +114,31 @@ func (m *Model) StockVariantExistsTx(ctx context.Context, tx *gorm.DB, projectID
 		Count(&n).Error
 	return n > 0, err
 }
+
+// StockAlertRow 库存预警的四个计数（口径见 StockAlertCounts）。
+type StockAlertRow struct {
+	Total      int64 `gorm:"column:total"`
+	OutOfStock int64 `gorm:"column:out_of_stock"`
+	LowStock   int64 `gorm:"column:low_stock"`
+}
+
+// StockAlertCounts 库存预警（迁移 621 / 623，W4）：一条查询数三个档。
+//
+// 口径照抄 ERP 的 WarehouseSKUStockAlert，但**只统计 track_quantity = true 的行**：
+// 无限库存永远「有货」，不该进预警。
+//
+//	out  —— quantity <= 0（跟踪且卖光）
+//	low  —— quantity > 0 且 quantity - reserved_quantity <= 0（货在，但全被订单占住）
+//
+// Alert = out + low 由 service 算（两个数字相加是展示口径，不是 SQL 的分组）。
+func (m *Model) StockAlertCounts(ctx context.Context, projectID string) (row StockAlertRow, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&StockEntity{}).
+			Select("COUNT(*) AS total, "+
+				"COUNT(*) FILTER (WHERE quantity <= 0) AS out_of_stock, "+
+				"COUNT(*) FILTER (WHERE quantity > 0 AND quantity - reserved_quantity <= 0) AS low_stock").
+			Where("project_id = ? AND track_quantity", projectID).
+			Scan(&row).Error
+	})
+	return row, err
+}

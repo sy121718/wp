@@ -450,10 +450,10 @@ type ProductTranslationsPageReq struct {
 type SaveProductTranslationsReq struct {
 	ProjectID string   `json:"projectId" form:"projectId"`
 	ProductID string   `json:"productId" form:"productId" binding:"required"`
-	Lang string   `json:"lang" form:"lang"`
-	Targets []string `json:"rowTarget" form:"rowTarget"`
-	Contexts []string `json:"rowContext" form:"rowContext"`
-	Hashes []string `json:"rowHash" form:"rowHash"`
+	Lang      string   `json:"lang" form:"lang"`
+	Targets   []string `json:"rowTarget" form:"rowTarget"`
+	Contexts  []string `json:"rowContext" form:"rowContext"`
+	Hashes    []string `json:"rowHash" form:"rowHash"`
 }
 
 // ProductCategoryParentsReq 分类抽屉「父级」候选的查询串参数（搜索式，一屏一页）。

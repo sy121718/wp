@@ -29,14 +29,14 @@ type BulkDeleteReq struct {
 // 规则字段**平铺在顶层**（不是嵌一个 rule 对象）：基座的批量按钮把表单字段整体序列化，
 // 嵌一层就要在前端再拆一次，而拆错的表现是「填了 amount 却按 multiplier 算」。
 type BulkPricingJSONReq struct {
-	IDs []string `json:"ids" form:"ids"`
-	ProjectID string   `json:"projectId" form:"projectId"`
-	Note string   `json:"note" form:"note"`
-	RuleType string   `json:"ruleType" form:"ruleType"`
+	IDs        []string `json:"ids" form:"ids"`
+	ProjectID  string   `json:"projectId" form:"projectId"`
+	Note       string   `json:"note" form:"note"`
+	RuleType   string   `json:"ruleType" form:"ruleType"`
 	Multiplier string   `json:"multiplier" form:"multiplier"`
-	Amount string   `json:"amount" form:"amount"`
-	Margin string   `json:"margin" form:"margin"`
-	Rounding string   `json:"rounding" form:"rounding"`
+	Amount     string   `json:"amount" form:"amount"`
+	Margin     string   `json:"margin" form:"margin"`
+	Rounding   string   `json:"rounding" form:"rounding"`
 }
 
 // ServiceReq 转成 service 的入参（形状转换放在 dto：控制器只做「绑定 → 调用 → 响应」，

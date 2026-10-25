@@ -26,6 +26,6 @@ type ListRatingsReq struct {
 
 // DeleteRatingReq 删除一条评分。
 type DeleteRatingReq struct {
-	ID string `json:"id" form:"id" binding:"required"`
+	ID        string `json:"id" form:"id" binding:"required"`
 	ProjectID string `json:"projectId" form:"projectId"`
 }

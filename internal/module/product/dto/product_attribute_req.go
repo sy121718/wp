@@ -9,22 +9,22 @@ package productdto
 // Key 为稳定标识（工程内唯一）；留空则由 Name 派生，派生不出（纯中文名）
 // 由 service 兜底生成。IsVariation 决定该组是否参与变体笛卡尔积（issue #8）。
 type CreateAttributeReq struct {
-	ProjectID string              `json:"projectId" form:"projectId"`
-	Key string              `json:"key" form:"key"`
-	Name string              `json:"name" form:"name" binding:"required"`
+	ProjectID   string              `json:"projectId" form:"projectId"`
+	Key         string              `json:"key" form:"key"`
+	Name        string              `json:"name" form:"name" binding:"required"`
 	IsVariation *bool               `json:"isVariation" form:"isVariation"`
-	Sort int                 `json:"sort" form:"sort"`
-	Values []AttributeValueReq `json:"values" form:"values"`
+	Sort        int                 `json:"sort" form:"sort"`
+	Values      []AttributeValueReq `json:"values" form:"values"`
 }
 
 // UpdateAttributeReq 修改属性组（只改组本身；属性值走 SetAttributeValuesReq）。
 type UpdateAttributeReq struct {
-	ID string  `json:"id" form:"id" binding:"required"`
-	ProjectID string  `json:"projectId" form:"projectId"`
-	Key *string `json:"key" form:"key"`
-	Name *string `json:"name" form:"name"`
+	ID          string  `json:"id" form:"id" binding:"required"`
+	ProjectID   string  `json:"projectId" form:"projectId"`
+	Key         *string `json:"key" form:"key"`
+	Name        *string `json:"name" form:"name"`
 	IsVariation *bool   `json:"isVariation" form:"isVariation"`
-	Sort *int    `json:"sort" form:"sort"`
+	Sort        *int    `json:"sort" form:"sort"`
 }
 
 // SetAttributeValuesReq 整体保存某属性组的属性值。
@@ -32,17 +32,17 @@ type UpdateAttributeReq struct {
 // 语义是「全量替换」：请求里没有的值被删除，已有的按 id 更新、无 id 的新建。
 // 这样上移/下移/改名/增删都在一次提交里完成，不会出现「值序号错乱」。
 type SetAttributeValuesReq struct {
-	ID string              `json:"id" form:"id" binding:"required"`
+	ID        string              `json:"id" form:"id" binding:"required"`
 	ProjectID string              `json:"projectId" form:"projectId"`
-	Values []AttributeValueReq `json:"values" form:"values"`
+	Values    []AttributeValueReq `json:"values" form:"values"`
 }
 
 // AttributeValueReq 单个属性值。
 type AttributeValueReq struct {
-	ID string `json:"id" form:"id"`
-	Key string `json:"key" form:"key"`
-	Label string `json:"label" form:"label" binding:"required"`
-	Sort int    `json:"sort" form:"sort"`
+	ID      string `json:"id" form:"id"`
+	Key     string `json:"key" form:"key"`
+	Label   string `json:"label" form:"label" binding:"required"`
+	Sort    int    `json:"sort" form:"sort"`
 	Enabled *bool  `json:"enabled" form:"enabled"`
 }
 
@@ -65,6 +65,6 @@ type ListAttributeReq struct {
 
 // DeleteAttributeReq 删除属性组。
 type DeleteAttributeReq struct {
-	ID string `json:"id" form:"id" binding:"required"`
+	ID        string `json:"id" form:"id" binding:"required"`
 	ProjectID string `json:"projectId" form:"projectId"`
 }

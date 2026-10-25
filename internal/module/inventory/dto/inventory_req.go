@@ -488,3 +488,8 @@ type SourceSummaryReq struct {
 // SyncStockCacheReq 【已废弃，121 删缓存列】历史 DTO，仅保留类型兼容。
 
 // ReconcileStockCacheReq 缓存对账（可选对齐修复）。
+
+// StockAlertQueryReq 库存预警的查询串（工程维度）。
+type StockAlertQueryReq struct {
+	ProjectID string `form:"projectId" json:"projectId"`
+}

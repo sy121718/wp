@@ -343,3 +343,19 @@ type VariantWarehouseCost struct {
 }
 
 // ReconcileStockCacheResp 对账结果（Total == Matched + Differed）。
+
+// StockAlertResp 库存预警四卡（迁移 621 / 623，W4）。
+//
+// 口径：只统计 track_quantity = true 的行（无限库存永远「有货」，不该进预警）。
+//
+//	Total      —— 跟踪数量的库存行总数
+//	OutOfStock —— quantity <= 0
+//	LowStock   —— quantity > 0 且 quantity - reserved_quantity <= 0（货在但全被订单占住）
+//	Alert      —— OutOfStock + LowStock
+type StockAlertResp struct {
+	ProjectID  string `json:"projectId"`
+	Total      int64  `json:"total"`
+	OutOfStock int64  `json:"outOfStock"`
+	LowStock   int64  `json:"lowStock"`
+	Alert      int64  `json:"alert"`
+}

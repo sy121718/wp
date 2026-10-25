@@ -477,3 +477,67 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + fmt.Sprintf("…（共 %d 字节）", len(s))
 }
+
+// TestStockAlertCounts 验收（W4 §10.5 ③）：库存预警四卡口径。
+//
+// 构造四行：quantity=0（跟踪）/ quantity=5 reserved=5 / quantity=5 reserved=0 /
+// track_quantity=false → OutOfStock=1, LowStock=1, Alert=2, Total=3。
+func TestStockAlertCounts(t *testing.T) {
+	f := newInvFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	wh := f.createWarehouse(t, "SZ", "苏州仓", true)
+
+	// ① quantity = 0（跟踪）—— 缺货。
+	p1 := mustProduct(t, f, "预警缺货")
+	v1 := f.firstVariant(t, p1.ID)
+	changeIn(t, f, p1, v1, wh.ID, 1, "purchase_in")
+	if err := f.db.Exec("UPDATE inventory_stocks SET quantity = 0 WHERE variant_id = ? AND warehouse_id = ?",
+		v1.ID, wh.ID).Error; err != nil {
+		t.Fatalf("把库存改成 0 失败: %v", err)
+	}
+
+	// ② quantity = 5、reserved = 5 —— 货在但全被占住（可售为 0）。
+	p2 := mustProduct(t, f, "预警被占")
+	v2 := f.firstVariant(t, p2.ID)
+	changeIn(t, f, p2, v2, wh.ID, 5, "purchase_in")
+	if _, err := f.inventory.ReserveStock(ctx, &inventorydto.ReserveStockReq{
+		ProjectID: f.projectID, SourceType: "order", SourceRef: "SO-alert",
+		Lines: []inventorydto.ReserveStockLine{{VariantID: v2.ID, Quantity: 5, WarehouseID: wh.ID}},
+	}); err != nil {
+		t.Fatalf("预占失败: %v", err)
+	}
+
+	// ③ quantity = 5、reserved = 0 —— 健康（不进预警）。
+	p3 := mustProduct(t, f, "预警健康")
+	v3 := f.firstVariant(t, p3.ID)
+	changeIn(t, f, p3, v3, wh.ID, 5, "purchase_in")
+
+	// ④ 跟踪关闭（无限）—— 永远「有货」，不进预警。
+	loose := createUnclaimed(t, f, wh.ID, "ALERT_UNTRACKED", 0, false)
+	if loose.TrackQuantity {
+		t.Fatalf("未跟踪行不该是跟踪状态")
+	}
+	// 商品侧自动建的那些初始 0 行也是在跟踪状态 —— 它们会被算进 Total / OutOfStock，
+	// 所以断言用「增量」而不是绝对值：本用例另外造了 4 行，其中 3 行是跟踪的。
+	before, err := f.inventory.StockAlert(ctx, f.projectID)
+	if err != nil {
+		t.Fatalf("读库存预警失败: %v", err)
+	}
+	// 已建商品（p1 起）各有一行跟踪库存；p1 的那行是 0（缺货）、p2 的是可售 0（低库存）、
+	// p3 的是健康。所以三个增量分别是 +1 / +1 / +0。
+	if before.OutOfStock != 1 {
+		t.Fatalf("缺货应为 1（p1 那一行 quantity=0），实际 %d", before.OutOfStock)
+	}
+	if before.LowStock != 1 {
+		t.Fatalf("可售为 0 应为 1（p2 那一行 5/−5），实际 %d", before.LowStock)
+	}
+	if before.Alert != 2 {
+		t.Fatalf("要处理应为 2（缺货 +1、可售为 0 +1），实际 %d", before.Alert)
+	}
+	if before.Total != 3 {
+		t.Fatalf("跟踪数量的行应为 3（p1/p2/p3 各一行；未跟踪行不计），实际 %d", before.Total)
+	}
+}

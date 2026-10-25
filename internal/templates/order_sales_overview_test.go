@@ -37,6 +37,12 @@ func salesOverviewDTO() map[string]any {
 		"Sales":            int64(123450), // ¥1234.50
 		"AvgOrderValue":    int64(10288),  // ¥102.88
 		"AvgCustomerValue": int64(13717),  // ¥137.17
+		// ── 迁移 629（W4）的两张新卡 ──
+		"Units":       int64(23),
+		"GrossProfit": int64(45000), // ¥450.00
+		// 成本未核算标记（为真时卡片显示「含 N 行成本未核算」）。
+		"CostIncomplete":     false,
+		"CostIncompleteRows": int64(0),
 		// 「平均每单件数」已从卡面移除：给一个值，断言它**不出现**在页面上。
 		"AvgItemsPerOrder": 1.92,
 		// ── 环比（紧邻的上一段等长区间）──
@@ -91,6 +97,9 @@ func salesOverviewTemplateData() map[string]any {
 	data["ListQuery"] = "project=p1&from=2026-10-01&to=2026-10-05&monthly=6"
 	// 装载失败原因（空串 = 正常）。
 	data["LoadErr"] = ""
+	// 待办块（迁移 621 / 623 / 624，W4）：total 为 0 时整块不渲染。
+	// 三个数字由 service 一次给全（PendingShip / AlertCount 取不到时是 -1）。
+	data["Todo"] = map[string]any{"alertCount": -1, "pendingShip": -1, "total": 0}
 	// 工程下拉：给两个工程才会走 <select>（只有一个时渲染 hidden input）。
 	data["Projects"] = []map[string]any{
 		{"ID": "p1", "Name": "测试工程"},
@@ -111,9 +120,12 @@ func renderSalesOverview(t *testing.T, data map[string]any) string {
 func TestSalesOverviewRendersCards(t *testing.T) {
 	out := renderSalesOverview(t, salesOverviewTemplateData())
 
+	// 四张卡（迁移 629，W4）：订单数 / 销售额 / 总订购件数 / 毛利。
+	// 原先是 AOV / ACV —— 那两个数在「毛利」这件事上帮不上忙，而件数与毛利
+	// 才是运营每天要看的两件事（AOV / ACV 仍在下面的明细块里）。
 	for _, want := range []string{
-		"订单数", "销售额", "平均订单价值", "平均客户价值",
-		"¥1234.50", "¥102.88", "¥137.17",
+		"订单数", "销售额", "总订购件数", "毛利",
+		"¥1234.50", "¥450.00", "23",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("页面缺少 %q", want)
@@ -124,8 +136,11 @@ func TestSalesOverviewRendersCards(t *testing.T) {
 	// 曾经用原生 `title` —— 位置与样式由浏览器决定，实测悬浮时会压住相邻卡片
 	// （页面上「直接出现一段说明文字」）。仓内其它页面用的是 .help-pop 浮层
 	// （admin.js 已处理 hover / 键盘聚焦 / Esc / 点外部关闭 / 贴边自动翻转）。
-	if !strings.Contains(out, `<span class="help-pop" role="tooltip">销售额 ÷ 订单数（AOV）</span>`) {
-		t.Error("AOV 的口径说明没有渲染进 .help-pop 浮层")
+	// 毛利的说明必须落在 .help-pop 浮层里（与 AOV 当初同一条形态判据：
+	// 原生 title 的位置与样式由浏览器决定，实测会压住相邻卡片）。
+	if !strings.Contains(out, `<span class="help-pop" role="tooltip">`) ||
+		!strings.Contains(out, "行实付 − 行成本 − 运费") {
+		t.Error("毛利的说明没有渲染进 .help-pop 浮层")
 	}
 	if strings.Contains(out, `title="销售额`) || strings.Contains(out, `title="含没有商品明细`) {
 		t.Error("口径说明仍在用原生 title 悬浮（会盖住相邻卡片）")

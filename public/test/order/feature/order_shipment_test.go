@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
@@ -522,5 +523,71 @@ func TestShipWithNoWarehouseRequiresSelection(t *testing.T) {
 	})
 	if serr == nil || !strings.Contains(serr.Error(), orderenums.ErrShipWarehouseRequired) {
 		t.Fatalf("无仓工程的发货应报 ErrShipWarehouseRequired，实际 %v", serr)
+	}
+}
+
+// TestSalesOverviewGrossProfit 验收（W4 §10.5 ①/②）：
+// 毛利 = 行实付 − 行成本 − 运费；成本未核算的行按 0 计入并标记。
+func TestSalesOverviewGrossProfit(t *testing.T) {
+	f := newOrderFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	_, vid := f.addProduct(t, "毛利商品", 50, 10)
+	created, err := f.orders.CreateOrder(ctx, f.createBaseReq(vid, 2))
+	if err != nil {
+		t.Fatalf("建单失败: %v", err)
+	}
+	f.payOrder(t, created.ID)
+	// 直接改库设总价 / 行金额 / 行成本 / 运费：这个用例测的是**口径**（怎么算毛利），
+	// 不是建单链路（那条已有自己的用例）。构造成：
+	//   total = 10000、line_total = 10000、cost_price = 2000、quantity = 2、shipping_total = 1000
+	//   → 毛利 = 10000 − 4000 − 1000 = 5000
+	if err := f.db.Exec("UPDATE orders SET subtotal = 10000, total = 10000, shipping_total = 1000 WHERE id = ?",
+		created.ID).Error; err != nil {
+		t.Fatalf("改订单金额失败: %v", err)
+	}
+	if err := f.db.Exec("UPDATE order_items SET unit_price = 5000, line_subtotal = 10000, line_total = 10000, "+
+		"cost_price = 2500 WHERE order_id = ?", created.ID).Error; err != nil {
+		t.Fatalf("改订单行金额失败: %v", err)
+	}
+
+	// 概览页永远显式传区间（service 不给「静默默认窗口」，见 normalizeRangeWindow）。
+	day := func(offset int) string {
+		return time.Now().UTC().AddDate(0, 0, offset).Format("2006-01-02")
+	}
+	overview, err := f.orders.SalesOverview(ctx, &orderdto.SalesOverviewReq{
+		ProjectID: f.projectID, From: day(-30), To: day(0), Status: "paid",
+	})
+	if err != nil {
+		t.Fatalf("读销售概览失败: %v", err)
+	}
+	// 毛利 = line_total(10000) − cost_price×quantity(2500×2=5000) − shipping_total(1000) = 4000。
+	const wantGross = 10000 - 5000 - 1000
+	if overview.GrossProfit != wantGross {
+		t.Fatalf("毛利应等于 %d 分（行实付 − 行成本 − 运费），实际 %d", wantGross, overview.GrossProfit)
+	}
+	if overview.CostIncomplete {
+		t.Fatalf("成本都核算了，CostIncomplete 不该为真")
+	}
+
+	// ② 含一行 cost_price IS NULL：CostIncomplete 为真，该行成本按 0 计入（毛利不被判成负数）。
+	if err := f.db.Exec("UPDATE order_items SET cost_price = NULL WHERE order_id = ?", created.ID).Error; err != nil {
+		t.Fatalf("清空行成本失败: %v", err)
+	}
+	overview2, err := f.orders.SalesOverview(ctx, &orderdto.SalesOverviewReq{
+		ProjectID: f.projectID, From: day(-30), To: day(0), Status: "paid",
+	})
+	if err != nil {
+		t.Fatalf("读销售概览失败: %v", err)
+	}
+	if !overview2.CostIncomplete || overview2.CostIncompleteRows != 1 {
+		t.Fatalf("成本未核算应标记 CostIncomplete=true 且 Rows=1，实际 %v / %d",
+			overview2.CostIncomplete, overview2.CostIncompleteRows)
+	}
+	// 该行按 0 计入：毛利 = 10000 − 0 − 1000 = 9000。
+	if overview2.GrossProfit != 9000 {
+		t.Fatalf("成本未核算的行应按 0 计入（毛利 9000），实际 %d", overview2.GrossProfit)
 	}
 }

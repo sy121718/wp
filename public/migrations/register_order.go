@@ -272,4 +272,20 @@ func registerOrderAndSiteSlots() {
 			"'order.err.carrierTemplateInvalid', 'order.err.carrierStatusInvalid')",
 		SQL: mustSQL("626_order_shipment_pages_i18n.sql"),
 	})
+
+	// 629：W4 的文案词条（18 个 key，中英成对 = 36 行）：销售总览的两个新卡与毛利说明、
+	// 库存预警四卡与「共 N 项待办」块。
+	registerSeed(Seed{
+		Version:   "629-sales-overview-w4-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 36 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
+			"'admin.order.sales.label.units', 'admin.order.sales.note.units', 'admin.order.sales.costIncomplete', " +
+			"'admin.order.sales.costIncompleteTail', 'admin.order.sales.todo.titleLead', 'admin.order.sales.todo.titleTail', " +
+			"'admin.order.sales.label.grossProfit', 'admin.order.sales.note.grossProfit', 'inventory.stock.alert.title', " +
+			"'inventory.stock.alert.total', 'inventory.stock.alert.outOfStock', 'inventory.stock.alert.lowStock', " +
+			"'inventory.stock.alert.alert', 'inventory.stock.alert.hint', 'admin.order.sales.todo.transfers', " +
+			"'admin.order.sales.todo.alerts', 'admin.order.sales.todo.pendingShip', 'admin.order.sales.todo.empty')",
+		SQL: mustSQL("629_sales_overview_w4_i18n.sql"),
+	})
 }
