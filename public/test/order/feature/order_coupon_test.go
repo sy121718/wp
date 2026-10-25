@@ -209,10 +209,13 @@ func TestOrderCouponExhaustedRollsBackOrder(t *testing.T) {
 	if after := f.orderCount(t); after != before {
 		t.Fatalf("券不可用时订单不该落库（%d → %d）", before, after)
 	}
-	// 库存也不该被扣（建单事务回滚在建单之前，扣库存在事务之后 ——
-	// 券判定失败发生在写订单之前，所以这里连单都没建）。
-	if got := f.stockOf(t, vid); got != 9 {
-		t.Fatalf("库存应只被第一单扣一次（9），实际 %d", got)
+	// 预占也不该多占（两段式：建单只预占。券判定失败发生在写订单之前，
+	// 所以这里连单都没建，预占只该是第一单那一件）。
+	if got := f.reservedOf(t, vid); got != 1 {
+		t.Fatalf("券用完时不该多预占（应为第一单的 1 件），实际 %d", got)
+	}
+	if got := f.stockOf(t, vid); got != 10 {
+		t.Fatalf("在库数量不该被下单改动，期望 10，实际 %d", got)
 	}
 }
 
@@ -442,8 +445,9 @@ func TestOrderCancelReleasesCoupon(t *testing.T) {
 	if n := f.redemptionCount(t, c.ID); n != 1 {
 		t.Fatalf("建单后应有 1 条核销明细，实际 %d", n)
 	}
-	if got := f.stockOf(t, vid); got != 8 {
-		t.Fatalf("建单后库存应为 8，实际 %d", got)
+	// 两段式：建单预占 2 件，在库不动。
+	if got := f.reservedOf(t, vid); got != 2 {
+		t.Fatalf("建单后预占应为 2，实际 %d", got)
 	}
 
 	if _, err := f.orders.CancelOrder(ctx, &orderdto.CancelOrderReq{

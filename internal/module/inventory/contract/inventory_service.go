@@ -23,6 +23,8 @@ import (
 // 依赖方向：inventory → product（本模块实现 product 契约定义的变体库存端口，
 // 由顶层装配注入商品模块），商品模块不认识仓库模块的实现。
 type InventoryService interface {
+	// TransferService 调拨单（迁移 630，W3）：仓库间移库，出货与签收各需凭证附件。
+	TransferService
 	// —— 仓库（验收 1：可建仓库并设置一个默认仓）——
 	// CreateWarehouse 建仓；工程内第一个仓自动成为默认仓（「必须有一个默认仓」），
 	// 显式 IsDefault 则切换默认仓（同工程唯一）。
@@ -104,6 +106,51 @@ type InventoryService interface {
 	// BindExternalSKU 绑定 / 更新某 (仓库, 变体) 库存行的外部编码（空串 = 清空，
 	// 该仓改回用我们自己的 SKU；非空时做 N:1 弱校验）。
 	BindExternalSKU(ctx context.Context, req *inventorydto.BindExternalSKUReq) (res *inventorydto.StockResp, err error)
+
+	// —— 仓库商品 SKU 主档化（迁移 624）——
+	//
+	// 库存行**升格为仓库商品 SKU 主档**：允许「仓库里已有货、商品还没建」的未认领行
+	// （variant_id IS NULL），再经认领把货挂到商品变体上；同时这一行带 reserved_quantity，
+	// 为订单的「下单预占 → 发货扣减」两段式提供真源字段。
+	//
+	// 三量恒等式（照抄 ERP product_inventory_reserve.go 文件头）：
+	//
+	//	on_hand = quantity；reserved = reserved_quantity；available = quantity - reserved_quantity
+	//
+	// 预占 / 释放**只改 reserved_quantity**，不改 quantity、不写流水 —— 流水只记录真实出入库。
+
+	// ClaimStock 把一条未认领的库存行认领到商品变体（单向且不可自动合并）。
+	ClaimStock(ctx context.Context, req *inventorydto.ClaimStockReq) (res *inventorydto.StockResp, err error)
+	// UnclaimStock 解除认领（仅当 quantity = 0 且 reserved_quantity = 0）。
+	UnclaimStock(ctx context.Context, req *inventorydto.UnclaimStockReq) (res *inventorydto.StockResp, err error)
+	// CreateUnclaimedStock 人工建档一条**未认领**存货（仓库 + 裸码 + 数量 + 成本）。
+	//
+	// 未认领行不能只靠迁移存量产出来 —— 那样「先有货后建商品」这个能力白做。
+	CreateUnclaimedStock(ctx context.Context, req *inventorydto.CreateUnclaimedStockReq) (res *inventorydto.StockResp, err error)
+	// ReserveStock 下单预占（只改 reserved_quantity，不写流水）。
+	//
+	// 可售不足**整单拒绝**（不做部分预占）：部分预占会让订单拿到「一半的货」
+	// 却依然成功，发货时才发现缺口。
+	ReserveStock(ctx context.Context, req *inventorydto.ReserveStockReq) (res *inventorydto.StockReserveResp, err error)
+	// ReleaseStock 取消 / 退款 / 超时释放预占（只改 reserved_quantity，不写流水）。
+	ReleaseStock(ctx context.Context, req *inventorydto.ReserveStockReq) (res *inventorydto.StockReserveResp, err error)
+
+	// ReserveStockTx / ReleaseStockTx —— **事务透传版**（订单建单 / 取消必须与自己那个事务同生共死）。
+	// 约定同 ChangeStockTx：不自己开事务，错误原样返回。
+	ReserveStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ReserveStockReq) (err error)
+	ReleaseStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ReserveStockReq) (err error)
+	// StockAlert 库存预警四卡（迁移 624 / 623，W4）：只统计跟踪数量的行。
+	//
+	// Alert = OutOfStock + LowStock 在 service 里算一次 —— 两个数字相加是展示口径，
+	// 让模板与报表各自再算一遍就会各算各的。
+	StockAlert(ctx context.Context, projectID string) (res *inventorydto.StockAlertResp, err error)
+	// ListStockLedger 仓库商品 SKU 台账页（/admin/inventory/skus）的读模型。
+	//
+	// 返回行里「认领到谁」的文案与「可售 = 数量 − 预占」的减法都已在服务端算好：
+	// 控制器只做绑定 → 调用例 → 交视图，模板只取值（template_logic_test.go）。
+	// options 由调用方传入（页面为下拉已查过一次），台账里的标签与下拉必须是同一份。
+	ListStockLedger(ctx context.Context, req *inventorydto.StockLedgerQueryReq,
+		options []inventorydto.VariantOptionResp) (*StockLedgerPage, error)
 
 	// —— 库存变动与流水（issue #16）——
 	// ChangeStock 按 SKU 增减库存（验收 1/2/3/4）：真源行锁内判定可用量，
@@ -189,6 +236,15 @@ type InventoryService interface {
 	// 唯一的事务外步骤是商品侧 product_variants.cost_price 的兼容回写（那是商品模块的写，
 	// 端口没有 Tx 形态）：失败只记在入库单行上，并可由幂等重放补做（见 applyReceiptCosts）。
 	RegisterReceipt(ctx context.Context, req *inventorydto.RegisterReceiptReq) (res *inventorydto.ReceiptResp, err error)
+	// FinishPurchaseOrder 采购单提前关单（迁移 626）：received / partial → finished。
+	//
+	// 与前三个中间态（由到货数量推导）不同，终态是**人工决定**：剩下的不再等。
+	// 不写库存流水（单据状态不是库存事实），备注追加而不是覆盖。
+	FinishPurchaseOrder(ctx context.Context, req *inventorydto.PurchaseStatusReq) (res *inventorydto.PurchaseOrderResp, err error)
+	// CancelPurchaseOrder 采购单取消（迁移 626）：pending / partial → cancelled。
+	//
+	// received 不可取消：货已经进仓，要退只能走退货。
+	CancelPurchaseOrder(ctx context.Context, req *inventorydto.PurchaseStatusReq) (res *inventorydto.PurchaseOrderResp, err error)
 	// RegisterProductionInbound 自家工厂生产入库（验收 5）：无采购单、来源必须是内部货源、
 	// 成本价手工填写；库存变动同样走 ChangeStock（原因 = 生产入库），
 	// 手工成本作为**显式成本**落到 (仓库, SKU) 的当前值上（与采购收货同一条路径）。
@@ -230,6 +286,8 @@ type InventoryService interface {
 // 边界：本模块内部（service / inbound）继续用 inventorydto 作为实现形状；重导出只服务于
 // 跨模块调用方（当前是 product：商品列表的库存投影、新建商品的「从仓库选」、变体成本快照）。
 type (
+	// 台账页的一屏数据（读模型，见 InventoryService.ListStockLedger）。
+	StockLedgerPage = inventorydto.StockLedgerPage
 	// 商品列表的库存投影（一行一个仓，跨仓求和在调用方做）。
 	ProductWarehouseStock = inventorydto.ProductWarehouseStock
 	// 成本快照的一行入参：哪个变体、在哪个仓（空 = 按归属仓解析）。
@@ -291,4 +349,41 @@ type ReasonWriter interface {
 	CreateReason(ctx context.Context, req *inventorydto.CreateReasonReq) (res *inventorydto.ReasonResp, err error)
 	// UpdateReason 改名 / 启停 / 排序（内置原因只允许启停与排序）。
 	UpdateReason(ctx context.Context, req *inventorydto.UpdateReasonReq) (res *inventorydto.ReasonResp, err error)
+}
+
+// —— 调拨（迁移 630，W3）——
+
+// TransferService 调拨单：仓库间移库，出货与签收**各需凭证附件**。
+//
+// 状态机（单向）：
+//
+//	pending ──Ship(需出货凭证)──→ in_transit ──Receive(需签收凭证)──→ completed
+//	   │
+//	   └──Cancel──→ cancelled
+//
+// 与 ERP 的一处刻意差异：建单就要求两个仓（ERP 的目标仓到 Receive 才给）——
+// 本地是单仓管理员操作，建单时不知道发往哪里等于留一张半截单据。
+type TransferService interface {
+	// CreateTransfer 建调拨单（两仓必须存在、active、不同；明细按 stock_id 校验属于源仓）。
+	CreateTransfer(ctx context.Context, req *inventorydto.CreateTransferReq) (res *inventorydto.TransferResp, err error)
+	// ShipTransfer 出货：AttachmentIDs 为空即拒绝（ErrAttachmentRequired），逐行出库写 transfer_out 流水。
+	ShipTransfer(ctx context.Context, req *inventorydto.TransferShipReq) (res *inventorydto.TransferResp, err error)
+	// ReceiveTransfer 签收：同样要求签收凭证，逐行在目标仓入库（同变体同码则累加、否则建行）。
+	ReceiveTransfer(ctx context.Context, req *inventorydto.TransferReceiveReq) (res *inventorydto.TransferResp, err error)
+	// CancelTransfer 取消（仅 pending；in_transit 要先签收或走反向调拨）。
+	CancelTransfer(ctx context.Context, req *inventorydto.TransferCancelReq) (res *inventorydto.TransferResp, err error)
+	// ListTransfers 列表（状态 / 关键词过滤 + 分页）。
+	ListTransfers(ctx context.Context, req *inventorydto.ListTransferReq) (list []*inventorydto.TransferRowResp, err error)
+	// CountTransfers 总数（与 ListTransfers 同一份过滤条件）。
+	CountTransfers(ctx context.Context, req *inventorydto.ListTransferReq) (n int64, err error)
+	// GetTransfer 详情（明细 + 三类凭证）。
+	GetTransfer(ctx context.Context, req *inventorydto.GetTransferReq) (res *inventorydto.TransferDetailResp, err error)
+}
+
+// StockAlertReader 库存预警的窄读口（销售总览的待办块用，迁移 624 / 623，W4）。
+//
+// 单独一个接口而不是让调用方拿 InventoryService：销售总览只要一个数字
+// （Alert = OutOfStock + LowStock），而宽接口会让它顺手拿到改库存的能力。
+type StockAlertReader interface {
+	StockAlert(ctx context.Context, projectID string) (res *inventorydto.StockAlertResp, err error)
 }

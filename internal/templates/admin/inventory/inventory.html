@@ -37,7 +37,9 @@
             </div>
             {* 边界提示：入库 / 出库属于单据，不属于本页。写清楚比留一个能点的按钮更好 ——
                用户找不到「怎么入库」时会先看这句话，而不是去点一个语义不符的入口。 *}
-            <p class="page-sub">{{ .["t"]("admin.inventory.boundary.lead", "入库 / 出库请走单据：采购入库与") }}<a href="/admin/inventory/purchases?project={{selectedProject}}">{{ .["t"]("admin.inventory.boundary.production", "生产入库") }}</a>{{ .["t"]("admin.inventory.boundary.tail", "在采购入库页，销售出库走发货，退货入库走退货单，调拨走调拨单。本页只保留盘点与报损的调整入口。") }}</p>
+            {* 存量谎言的修正（W3）：这句原先写「调拨走调拨单」但调拨单并不存在 ——
+               现在它成真了，所以这里给一条可点的链接（不再只是纯文本承诺）。 *}
+            <p class="page-sub">{{ .["t"]("admin.inventory.boundary.lead", "入库 / 出库请走单据：采购入库与") }}<a href="/admin/inventory/purchases?project={{selectedProject}}">{{ .["t"]("admin.inventory.boundary.production", "生产入库") }}</a>{{ .["t"]("admin.inventory.boundary.tail", "在采购入库页，销售出库走发货，退货入库走退货单，仓间移库走") }}<a href="/admin/inventory/transfers?project={{selectedProject}}">{{ .["t"]("admin.inventory.boundary.transfers", "调拨单") }}</a>{{ .["t"]("admin.inventory.boundary.tail2", "。本页只保留盘点与报损的调整入口。") }}</p>
         </div>
         <div class="page-actions">
             {* 唯一的写入口：盘点 / 报损（无单据承载的两类调整）。按钮文案直接说能做什么。 *}
@@ -139,7 +141,7 @@
         </div>
         <div class="table-wrap" tabindex="0">
         <table class="data-table data-table-wide">
-            <thead><tr><th>{{ .["t"]("admin.inventory.sku.col.warehouse", "仓库") }}</th><th>{{ .["t"]("admin.inventory.sku.col.code", "短码") }}</th><th>SKU</th><th>{{ .["t"]("admin.inventory.sku.col.externalSku", "外部编码") }}</th><th>{{ .["t"]("admin.inventory.sku.col.qty", "数量") }}</th><th>{{ .["t"]("admin.inventory.stock.col.tracking", "跟踪与数量") }}</th><th>{{ .["t"]("admin.inventory.sku.col.updatedAt", "更新时间") }}</th></tr></thead>
+            <thead><tr><th>{{ .["t"]("admin.inventory.sku.col.warehouse", "仓库") }}</th><th>{{ .["t"]("admin.inventory.sku.col.code", "短码") }}</th><th>SKU</th><th>{{ .["t"]("admin.inventory.sku.col.externalSku", "外部编码") }}</th><th>{{ .["t"]("admin.inventory.sku.col.qty", "数量") }}</th><th>{{ .["t"]("admin.inventory.skus.col.reserved", "预占") }}</th><th>{{ .["t"]("admin.inventory.skus.col.available", "可售") }}</th><th>{{ .["t"]("admin.inventory.stock.col.tracking", "跟踪与数量") }}</th><th>{{ .["t"]("admin.inventory.sku.col.updatedAt", "更新时间") }}</th></tr></thead>
             <tbody>
             {{range _, r := .StockRows}}
             <tr>
@@ -168,8 +170,12 @@
                     </form>
                 </td>
                 {* 数量列的三态（迁移 261）：∞ 无限（不跟踪；数量恒为 0，显示 0 会让无限
-                   看起来像「没货」）/ 数字（跟踪）/ 未入库（这个仓没有这一行，label 已由 handler 给好）。 *}
+                   看起来像「没货」）/ 数字（跟踪）/ 未入库（这个仓没有这一行，label 已由 handler 给好）。
+                   预占 / 可售两列（迁移 621）：数字由 handler 算好（可售 = 数量 − 预占），
+                   模板**不做减法**（template_logic_test.go）。未入库行没有这两列的语义，给 —。 *}
                 <td>{{if isset(r.QuantityLabel)}}{{r.QuantityLabel}}{{else}}—{{end}}</td>
+                <td>{{if isset(r.Present)}}{{if r.Present}}{{r.ReservedQuantity}}{{else}}—{{end}}{{else}}—{{end}}</td>
+                <td>{{if isset(r.Present)}}{{if r.Present}}{{r.AvailableQuantity}}{{else}}—{{end}}{{else}}—{{end}}</td>
                 <td>
                     {* 行内编辑「跟踪开关 + 数量」：数量走变动契约（手工调整）并写流水。
                        无限（不跟踪）时数量框**留空且禁用** —— 绝不预填 0：0 是「卖光」这个具体事实，

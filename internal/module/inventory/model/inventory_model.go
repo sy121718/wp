@@ -43,6 +43,11 @@ type WarehouseEntity struct {
 	Status    string `gorm:"column:status;not null"`
 	IsDefault bool   `gorm:"column:is_default;not null"`
 	Sort      int    `gorm:"column:sort;not null"`
+	// DeductPriority 出库扣减优先级（迁移 626）：值小先扣。
+	//
+	// 只在「出库且行/请求都没指定仓」时生效 —— 显式指定的仓永远优先，
+	// 否则运营在表单里选的仓会被优先级悄悄改掉。默认 100 = 与未设置等价。
+	DeductPriority int `gorm:"column:deduct_priority;not null"`
 	// Config 是第三方仓的对接配置（jsonb）：非敏感项明文，凭据只存密文或引用名。
 	//
 	// json.RawMessage 保留 type:jsonb —— 这是「Go 值怎么变成 SQL 值」的映射声明，
@@ -65,9 +70,17 @@ type StockEntity struct {
 	ID          string `gorm:"column:id;primaryKey"`
 	ProjectID   string `gorm:"column:project_id;not null"`
 	WarehouseID string `gorm:"column:warehouse_id;not null"`
-	ProductID   string `gorm:"column:product_id;not null"`
-	VariantID   string `gorm:"column:variant_id;not null"`
-	SKUCode     string `gorm:"column:sku_code;not null"`
+	// ProductID / VariantID 是**认领**结果（迁移 624）。
+	//
+	// nil = 仓库里已经有这批货、但还没对应到我们的商品（客户寄卖 / 清关到仓 /
+	// 手工补录都先有货后建商品）。认领（把这两个值填上）之后这一行就是商品的库存行，
+	// 后续链路（预占 / 出库 / 流水 / 变体删除守卫）全部照旧。
+	//
+	// 用 `*string` 而不是空串：空串会被 `sku_code <> ''` 这类判据误吃，
+	// 而且「没有变体」与「变体 id 是空串」必须是同一个事实，不能有两种表示。
+	ProductID *string `gorm:"column:product_id"`
+	VariantID *string `gorm:"column:variant_id"`
+	SKUCode   string  `gorm:"column:sku_code;not null"`
 	// ExternalSKU 是这条库存**在该仓**的外部 / 第三方编码（迁移 251，docs/14 §9.3）。
 	//
 	// 空串 = 该仓用我们自己的 SKU（自营仓的常态）；非空 = 第三方仓 / 平台仓的编码
@@ -89,6 +102,15 @@ type StockEntity struct {
 	// 直接走 model 而「给了数量却忘了翻开关」的调用点由 normalizeStockTracking 兜住。
 	TrackQuantity bool `gorm:"column:track_quantity;not null"`
 	Quantity      int  `gorm:"column:quantity;not null"`
+	// ReservedQuantity 是**本仓**被未发货订单占住的数量（迁移 624）。
+	//
+	// 三量恒等式（照抄 ERP product_inventory_reserve.go 文件头）：
+	//
+	//	on_hand = quantity；reserved = reserved_quantity；available = quantity - reserved_quantity
+	//
+	// 预占 / 释放**只改本列**，不改 quantity、不写流水 —— 预占是「留给某张订单」
+	// 的派生量，不是一次真实出入库。DDL 上两条 CHECK 钉住 0 <= reserved <= quantity。
+	ReservedQuantity int `gorm:"column:reserved_quantity;not null"`
 	// CostPrice 是这一 (仓库, SKU) 的**当前成本价**（迁移 244；维度与库存同源）。
 	//
 	// 三条口径（docs/14 §4）：① 只记一个当前值、**不做成本流水**，覆盖式 —— 最近一次
@@ -118,11 +140,13 @@ type StockRow struct {
 	SKUCode       string `gorm:"column:sku_code"`
 	ExternalSKU   string `gorm:"column:external_sku"`
 	// TrackQuantity 与 StockEntity 同义（false = 无限）：列表投影与真源不能各给一个口径。
-	TrackQuantity bool      `gorm:"column:track_quantity"`
-	Quantity      int       `gorm:"column:quantity"`
-	CostPrice     *float64  `gorm:"column:cost_price"`
-	CreatedAt     time.Time `gorm:"column:create_time"`
-	UpdatedAt     time.Time `gorm:"column:update_time"`
+	TrackQuantity bool `gorm:"column:track_quantity"`
+	Quantity      int  `gorm:"column:quantity"`
+	// ReservedQuantity 与 StockEntity 同义（迁移 624）：列表也要能给出可售 = 数量 - 预占。
+	ReservedQuantity int       `gorm:"column:reserved_quantity"`
+	CostPrice        *float64  `gorm:"column:cost_price"`
+	CreatedAt        time.Time `gorm:"column:create_time"`
+	UpdatedAt        time.Time `gorm:"column:update_time"`
 }
 
 // StockFilter 库存记录查询条件（条件以参数传入，方法内不写死业务判断）。
@@ -135,6 +159,37 @@ type StockFilter struct {
 	// ExternalSKU 按「该仓的外部编码」过滤：N:1 下同一个外码会命中同一商品的多个变体行，
 	// 这正是「这个外码在本仓一共有多少条货」的查询口径。
 	ExternalSKU string
+	// Claimed 认领状态筛选（迁移 624）：nil = 不过滤，true = 只看已认领，false = 只看未认领。
+	//
+	// 用三态指针而不是两个布尔：`claimed=unclaimed` 与「没勾这个筛选」是两件事，
+	// 用一个 bool 装不下它们（false 会同时表示「只看未认领」与「什么都看」）。
+	Claimed *bool
+}
+
+// —— 可空列的小工具（迁移 624 起 variant_id / product_id 可空）——
+//
+// 只在本模块内用：跨模块共用的才配放进 pkg/（AGENTS.md 的判据），
+// 而这两个函数的语义就是「库存行上这两列可空」这件事本身。
+
+// PtrString 解引用可空字符串列（NULL → 空串）。
+//
+// 调用方拿到空串时的含义恒为「未认领」：认领过的变体 id 是 uuid，永远不会是空串。
+func PtrString(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+// StringPtr 把非空字符串转成可空列值（空串 → NULL）。
+//
+// 「没有值」与「值是空串」必须是同一个事实：留下两种表示会让所有
+// `variant_id IS NULL` 类的判据逐处各自决定要不要再看空串。
+func StringPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // Model inventory 域仓储。
@@ -370,13 +425,20 @@ func normalizeStockTracking(e *StockEntity) {
 }
 
 // getStockByVariantWarehouseTx 在给定事务内做「SKU × 仓库」定位（不新开事务）。
-func (m *Model) getStockByVariantWarehouseTx(ctx context.Context, tx *gorm.DB, projectID, variantID, warehouseID string) (e *StockEntity, err error) {
+//
+// variantID 是**指针**：迁移 624 起可空，未认领行用 NULL 定位（传 nil）。
+func (m *Model) getStockByVariantWarehouseTx(ctx context.Context, tx *gorm.DB, projectID string, variantID *string, warehouseID string) (e *StockEntity, err error) {
 	e = &StockEntity{}
 	if serr := rls.ScopeTx(tx, projectID); serr != nil {
 		return nil, serr
 	}
-	err = tx.WithContext(ctx).Model(&StockEntity{}).
-		Where("variant_id = ? AND warehouse_id = ?", variantID, warehouseID).First(e).Error
+	q := tx.WithContext(ctx).Model(&StockEntity{}).Where("warehouse_id = ?", warehouseID)
+	if variantID == nil {
+		q = q.Where("variant_id IS NULL")
+	} else {
+		q = q.Where("variant_id = ?", *variantID)
+	}
+	err = q.First(e).Error
 	return e, err
 }
 
@@ -462,7 +524,8 @@ func (m *Model) WarehouseStocksByProducts(ctx context.Context, projectID string,
 func stockRowsQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db.WithContext(ctx).Table("inventory_stocks AS s").
 		Select("s.id, s.project_id, s.warehouse_id, s.product_id, s.variant_id, s.sku_code, " +
-			"s.external_sku, s.track_quantity, s.quantity, s.cost_price, s.create_time, s.update_time, " +
+			"s.external_sku, s.track_quantity, s.quantity, s.reserved_quantity, s.cost_price, " +
+			"s.create_time, s.update_time, " +
 			"w.code AS warehouse_code, w.name AS warehouse_name").
 		Joins("JOIN inventory_warehouses AS w ON w.id = s.warehouse_id")
 }
@@ -486,6 +549,13 @@ func applyStockFilter(q *gorm.DB, f StockFilter) *gorm.DB {
 	}
 	if f.ExternalSKU != "" {
 		q = q.Where("s.external_sku = ?", f.ExternalSKU)
+	}
+	if f.Claimed != nil {
+		if *f.Claimed {
+			q = q.Where("s.variant_id IS NOT NULL")
+		} else {
+			q = q.Where("s.variant_id IS NULL")
+		}
 	}
 	return q
 }
@@ -522,20 +592,29 @@ func (m *Model) ListStockRows(ctx context.Context, f StockFilter, limit, offset 
 // 一行 = 一个 (warehouse_id, sku_code)：迁移 244 的 UNIQUE (warehouse_id, sku_code)
 // 保证了它天然不重复，查询侧不必 GROUP BY。
 type WarehouseSKURow struct {
-	WarehouseID   string `gorm:"column:warehouse_id"`
-	WarehouseCode string `gorm:"column:warehouse_code"`
-	WarehouseName string `gorm:"column:warehouse_name"`
-	IsDefault     bool   `gorm:"column:is_default"`
-	SKUCode       string `gorm:"column:sku_code"`
-	ExternalSKU   string `gorm:"column:external_sku"`
-	ProductID     string `gorm:"column:product_id"`
-	VariantID     string `gorm:"column:variant_id"`
-	// HasVariant 这条库存行是否已绑定到某个变体。
+	// ID 库存行 id：台账页的写动作（认领 / 解除认领）按它定位 —— 编码可以改，行 id 不会。
+	ID            string  `gorm:"column:id"`
+	WarehouseID   string  `gorm:"column:warehouse_id"`
+	WarehouseCode string  `gorm:"column:warehouse_code"`
+	WarehouseName string  `gorm:"column:warehouse_name"`
+	IsDefault     bool    `gorm:"column:is_default"`
+	SKUCode       string  `gorm:"column:sku_code"`
+	ExternalSKU   string  `gorm:"column:external_sku"`
+	ProductID     *string `gorm:"column:product_id"`
+	VariantID     *string `gorm:"column:variant_id"`
+	// HasVariant 这条库存行是否已绑定到某个变体（迁移 624 起 variant_id 可空）。
 	//
-	// 今天 inventory_stocks.variant_id 是 NOT NULL + 外键（迁移 099），所以恒为真；
-	// 保留这个信号是因为它正是「仓库里有货、商品侧还没建变体」要回答的问题 ——
-	// 将来若放开 variant_id 可空（仓库自有 SKU 目录），查询侧不必再改一次投影。
+	// 它正是「仓库里有货、商品侧还没建变体」要回答的问题：投影里那条
+	// `(s.variant_id IS NOT NULL) AS has_variant` 早就写好了，本条就是它的「将来」。
 	HasVariant bool `gorm:"column:has_variant"`
+	// Quantity / ReservedQuantity 这一行的事实数量：可售 = Quantity - ReservedQuantity。
+	//
+	// 减法落在读模型（StockResp.AvailableQuantity），**不在模板里做**
+	// （template_logic_test.go 禁止模板算金额 / 数量）。
+	Quantity         int `gorm:"column:quantity"`
+	ReservedQuantity int `gorm:"column:reserved_quantity"`
+	// TrackQuantity 与真源同义（false = 无限）：数量列在页面上怎么显示要靠它。
+	TrackQuantity bool `gorm:"column:track_quantity"`
 }
 
 // WarehouseSKUFilter 仓库里一条货的查询条件（条件以参数传入）。
@@ -544,15 +623,19 @@ type WarehouseSKUFilter struct {
 	WarehouseID string
 	// Keyword 同时匹配我们自己的 sku_code 与外部编码（两个都可能是运营手上的号）。
 	Keyword string
+	// Claimed 认领状态（迁移 624）：nil = 不过滤，true = 已认领，false = 未认领。
+	Claimed *bool
 }
 
 // warehouseSKUsQuery (仓库, 仓库 SKU) 投影查询（本模块两表 join 的第二处定义）。
 //
 // 句柄由调用方给：列表路径的作用域闭包必须把查询建在同一个 tx 上（同 stockRowsQuery）。
+// 列清单就是页面台账要的 8 列（仓库 / 短码 / SKU / 外码 / 认领 / 预占 / 可售 / 数量）：
+// 可售的减法在读模型做（StockResp.AvailableQuantity），**不在模板里做**。
 func warehouseSKUsQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db.WithContext(ctx).Table("inventory_stocks AS s").
-		Select("s.warehouse_id, s.product_id, s.variant_id, s.sku_code, s.external_sku, " +
-			"s.create_time, " +
+		Select("s.id, s.warehouse_id, s.product_id, s.variant_id, s.sku_code, s.external_sku, " +
+			"s.quantity, s.reserved_quantity, s.track_quantity, s.create_time, " +
 			"w.code AS warehouse_code, w.name AS warehouse_name, w.is_default AS is_default, " +
 			"(s.variant_id IS NOT NULL) AS has_variant").
 		Joins("JOIN inventory_warehouses AS w ON w.id = s.warehouse_id")
@@ -569,6 +652,13 @@ func applyWarehouseSKUFilter(q *gorm.DB, f WarehouseSKUFilter) *gorm.DB {
 	if kw := f.Keyword; kw != "" {
 		like := "%" + kw + "%"
 		q = q.Where("(s.sku_code ILIKE ? OR s.external_sku ILIKE ?)", like, like)
+	}
+	if f.Claimed != nil {
+		if *f.Claimed {
+			q = q.Where("s.variant_id IS NOT NULL")
+		} else {
+			q = q.Where("s.variant_id IS NULL")
+		}
 	}
 	return q
 }
@@ -681,8 +771,8 @@ func (m *Model) ExternalSKUProductConflict(ctx context.Context, projectID, wareh
 
 // StockCostRow 一条库存行的当前成本（本模块单表只读投影：批量取成本用，不 join）。
 type StockCostRow struct {
-	VariantID   string `gorm:"column:variant_id"`
-	WarehouseID string `gorm:"column:warehouse_id"`
+	VariantID   *string `gorm:"column:variant_id"`
+	WarehouseID string  `gorm:"column:warehouse_id"`
 	// CostPrice 元；nil = 尚未核算（0 是合法的显式成本，两者不能混）。
 	CostPrice *float64 `gorm:"column:cost_price"`
 }

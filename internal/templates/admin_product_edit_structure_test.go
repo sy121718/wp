@@ -48,9 +48,9 @@ func productEditPageData() map[string]any {
 		"BackURL":          "/admin/products?project=pr1",
 		"WarehouseOptions": []map[string]any{{"ID": "w1", "Label": "苏州仓"}},
 		"AttributeChecks":  []map[string]any{{"ID": "a1", "Label": "颜色（color）", "IsVariation": true, "Checked": true}},
-		"ImagesInput":       "https://cdn.example.com/1.jpg",
-		"ImageAltsInput":    "图一",
-		"WeightInput":       "0.5", "DefaultPriceInput": "10.00",
+		"ImagesInput":      "https://cdn.example.com/1.jpg",
+		"ImageAltsInput":   "图一",
+		"WeightInput":      "0.5", "DefaultPriceInput": "10.00",
 		// 捆绑商品：多渲染一张 .card（捆绑构成的编辑入口），卡片计数因此是 6。
 		"IsBundle": true,
 		"TplPanel": map[string]any{

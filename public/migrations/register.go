@@ -52,6 +52,7 @@ func init() {
 	registerCoreSchemaAndAccess()
 	registerMediaAndUniqueConstraints()
 	registerCatalogAndInventory()
+	registerCurrency()
 	registerI18nDataLayer()
 	registerIdentityAndMail()
 	registerOrderAndSiteSlots()

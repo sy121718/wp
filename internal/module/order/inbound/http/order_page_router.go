@@ -11,6 +11,7 @@ package orderhttp
 // 页面 handler 与 API handler 同用一个 svc 实例（同一个契约，不另建一套）。
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -29,6 +30,39 @@ import (
 // 页面 GET 走 /admin 组认证（Session + CSRF，无 Casbin）；写动作复用订单 API 的权限点，
 // 由 builtin.CasbinMiddlewareForPath 按**实际 API 路径**鉴权 —— 权限点路径一个字符都不能改。
 // 页面 handler 与 API handler 同用这一个 svc 实例（同一个契约，不另建一套）。
+
+// 发货三屏的模板名（迁移 627 / 625，S3）：与路由同处 —— 失败与成功渲染的必须是同一张模板。
+const (
+	PendingShipPageTemplate   = "admin/order/order_pending_ship.html"
+	ShipFormPageTemplate      = "admin/order/order_ship_form.html"
+	OrderCarriersPageTemplate = "admin/order/order_carriers.html"
+)
+
+// salesPageAlertSinks 已注册的销售页句柄（装配收尾由 SetSalesInventoryAlert 补注库存预警读口）。
+//
+// 为什么后置注入：订单模块不能 import 库存契约（module_boundary_test.go 的方向判据），
+// 而销售页的待办块要库存预警的数字 —— 由装配层把库存契约作为**接口值**传进来
+// （shape 在装配层，本包只认 orderInventoryAlertReader 这个形状）。
+var salesPageAlertSinks []*orderSalesPageHandle
+
+// registerSalesPageAlerts 登记待注入口（装配期写一次，之后只读）。
+func registerSalesPageAlerts(h *orderSalesPageHandle) {
+	salesPageAlertSinks = append(salesPageAlertSinks, h)
+}
+
+// SetSalesStockAlerts 装配收尾补注库存预警计数（迁移 624 / 623，W4）。
+//
+// fn 返回「这个工程有多少项库存预警」。用函数而不是接口：库存的预警形状在
+// inventory/dto 里，订单侧 import 它就是 module_boundary_test.go 判的绕过契约层 ——
+// 装配层的闭包承载形状，订单侧只认一个 int。
+//
+// 与 inventory.SetProductCatalog 同一手法：两边互为依赖，固定顺序装配不出来，
+// 于是装配期注入一次、之后只读。未注入时待办块里「库存预警」那一行不渲染。
+func SetSalesStockAlerts(fn func(ctx context.Context, projectID string) (int, error)) {
+	for _, h := range salesPageAlertSinks {
+		h.SetStockAlerts(fn)
+	}
+}
 
 // SetupOrderPages 注册订单域后台页面；pages 为 nil 时整体跳过。
 // OrderNewPageTemplate 订单新建页的模板名。
@@ -68,6 +102,15 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// api_path，而它恰好就是这条页面路径本身（**存量特例**：绝大多数页面的 obj 是 `/api/*`
 	// 形态，见 internal/middleware/builtin/page_authz.go 的说明），归一与 02-Z 第二刀同批。
 	salesPages := NewOrderSalesPageHandle(svc, projects)
+	// 待办块的两个数字（迁移 624 / 623 / 624，W4）：库存预警走库存契约的 StockAlert，
+	// 待发货走本模块的 ListPendingShip。未注入时那一块不渲染。
+	// 待发货计数走本模块的 ListPendingShip（svc 天然实现）。
+	if shipmentCounter, ok := svc.(orderShipmentCounter); ok {
+		salesPages.SetShipmentCounter(shipmentCounter)
+	}
+	// 库存预警由装配层后置注入（SetSalesStockAlerts）—— 订单模块不 import 库存的 dto。
+	registerSalesPageAlerts(salesPages)
+	// 页面出口由 PageSlot 装配（handler 只交视图对象）。
 	pages.GET("/orders/overview",
 		adminui.PageAuthz("/admin/orders/overview"),
 		adminui.PageSlot(OrderSalesPageTemplate),
@@ -128,6 +171,25 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	//
 	// 编辑抽屉仍是 GET：片段里的表单自己声明 data-write-api 端点（前端发 JSON），
 	// 权限照旧按「能改券」判 —— 看不到 update 权限的人不该拿到这张表单。
+	// 发货三屏（迁移 627 / 625，S3）：
+	//   · 待发货页 —— 只读列表（「发货」按钮打开下面的抽屉片段）；
+	//   · 发货表单 —— 抽屉片段（GET），表单提交走 JSON /api/order/shipment/create；
+	//   · 承运商页 —— 只读列表 + 新建/编辑抽屉，写动作走 /api/order/carrier/*。
+	//
+	// 三个页面的写路径都不在 /admin 组上：JSON 端点本来就是给前端调的，页面再挂一遍
+	// 就等于把同一份授权写第二处（sys_permission 每个权限点只有一列 api_path）。
+	shipPages := NewOrderShipmentPageHandle(svc, projects)
+	pages.GET("/orders/pending-ship", adminui.PageAuthz("/api/order/shipment/pending"),
+		adminui.PageSlot(PendingShipPageTemplate), shipPages.PendingShipPage)
+	// 发货抽屉片段：权限点取「能发货」那条（看不到它的人不该拿到这张表单）。
+	pages.GET("/orders/ship-form", builtin.CasbinMiddlewareForPathAs("/api/order/shipment/create", http.MethodPost),
+		adminui.BareSlot(ShipFormPageTemplate), shipPages.ShipFormFragment)
+	pages.GET("/order-carriers", adminui.PageAuthz("/api/order/carrier/list"),
+		adminui.PageSlot(OrderCarriersPageTemplate), shipPages.OrderCarriersPage)
+	// 模板名与路由同处（失败与成功渲染的必须是同一张模板）。
+	permission.Declare(http.MethodGet, "/admin/orders/pending-ship", permission.OrderPendingShip)
+	permission.Declare(http.MethodGet, "/admin/order-carriers", permission.OrderCarrierList)
+
 	couponPages := NewCouponPageHandle(svc, projects)
 	pages.GET("/coupons",
 		adminui.PageAuthz("/api/order/coupon/list"),

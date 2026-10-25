@@ -27,6 +27,12 @@ func formInt(v string, fallback int) int {
 	return n
 }
 
+// DefaultDeductPriority 出库扣减优先级的缺省值（迁移 626 的列默认值，同口径）。
+//
+// 100 而不是 0：0 会让「没设过优先级的仓」排在任何显式正数之前，等于把「没配置」
+// 当成「最高优先级」。页面上留空 = 用这个值。
+const DefaultDeductPriority = 100
+
 // WarehouseFormReq 仓库新建 / 编辑表单（两屏字段合并：编辑多 id 与 status）。
 type WarehouseFormReq struct {
 	ProjectID string `form:"projectId"`
@@ -37,6 +43,8 @@ type WarehouseFormReq struct {
 	Status    string `form:"status"`
 	Type      string `form:"type"`
 	IsDefault string `form:"isDefault"`
+	// DeductPriority 出库扣减优先级（迁移 626）：值小先扣；留空按 100（= 未设置）。
+	DeductPriority string `form:"deductPriority"`
 
 	Provider        string `form:"provider"`
 	ExternalCode    string `form:"externalCode"`
@@ -72,13 +80,14 @@ func (r *WarehouseFormReq) ThirdParty(typ string) *WarehouseThirdPartyReq {
 func (r *WarehouseFormReq) CreateReq() *CreateWarehouseReq {
 	typ := strings.TrimSpace(r.Type)
 	return &CreateWarehouseReq{
-		ProjectID:  strings.TrimSpace(r.ProjectID),
-		Code:       strings.TrimSpace(r.Code),
-		Name:       strings.TrimSpace(r.Name),
-		Type:       typ,
-		IsDefault:  formBool(r.IsDefault),
-		Sort:       formInt(r.Sort, 0),
-		ThirdParty: r.ThirdParty(typ),
+		ProjectID:      strings.TrimSpace(r.ProjectID),
+		Code:           strings.TrimSpace(r.Code),
+		Name:           strings.TrimSpace(r.Name),
+		Type:           typ,
+		IsDefault:      formBool(r.IsDefault),
+		Sort:           formInt(r.Sort, 0),
+		DeductPriority: formInt(r.DeductPriority, DefaultDeductPriority),
+		ThirdParty:     r.ThirdParty(typ),
 	}
 }
 
@@ -93,14 +102,16 @@ func (r *WarehouseFormReq) UpdateReq() *UpdateWarehouseReq {
 		typ = inventoryenums.WarehouseTypeSelf
 	}
 	sort := formInt(r.Sort, 0)
+	priority := formInt(r.DeductPriority, DefaultDeductPriority)
 	return &UpdateWarehouseReq{
-		ID:         strings.TrimSpace(r.ID),
-		Code:       &code,
-		Name:       &name,
-		Status:     &status,
-		Type:       &typ,
-		Sort:       &sort,
-		ThirdParty: r.ThirdParty(typ),
+		ID:             strings.TrimSpace(r.ID),
+		Code:           &code,
+		Name:           &name,
+		Status:         &status,
+		Type:           &typ,
+		Sort:           &sort,
+		DeductPriority: &priority,
+		ThirdParty:     r.ThirdParty(typ),
 	}
 }
 

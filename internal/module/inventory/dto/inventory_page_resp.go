@@ -31,6 +31,10 @@ type StockByWarehouseRowResp struct {
 	// 与卖光（track=true，数量 0）在页面上会是同一个 0。
 	TrackQuantity bool
 	Quantity      int
+	// ReservedQuantity / AvailableQuantity 预占与可售（迁移 624）：**减法在 Go 侧算好**，
+	// 模板只取值（template_logic_test.go 禁止模板算数量）。
+	ReservedQuantity  int
+	AvailableQuantity int
 	// QuantityLabel 三态里的前两态已成文（∞ 无限 / 数字）；未入库由调用点给 notStocked 文案。
 	QuantityLabel string
 	UpdatedAt     string
@@ -61,8 +65,7 @@ type MovementRowResp struct {
 	CreatedAt      string
 }
 
-// WarehouseRowResp 仓库行（仓库管理页的表格与各页的仓库下拉共用）。
-//
+// WarehouseRowResp 仓库行（仓库管理页的表格与各页的仓库下拉共用）。//
 // 第三方配置的各个键**恒存在**（非第三方仓给零值）：模板里直接取值不会因缺键中断 ——
 // Jet 的缺失键会让整页从那一行起消失，而 HTTP 仍是 200（见 internal/templates/CLAUDE.md）。
 // HasThirdParty 是「要不要显示那一组字段」的分界，不要靠 Provider 是否为空去猜。
@@ -74,6 +77,8 @@ type WarehouseRowResp struct {
 	Status    string
 	IsDefault bool
 	Sort      int
+	// DeductPriority 出库扣减优先级（迁移 626）：页面上可读可改，值小先扣。
+	DeductPriority int
 
 	StatusLabel string
 	TypeLabel   string
@@ -346,4 +351,42 @@ type SourceFormResp struct {
 // 搬过来的收益只是「少一个文件内的类型」，代价是 dto 里长出一堆只服务一页的字段。
 type SourcePageResp struct {
 	SourceCreateForm *SourceFormResp
+}
+
+// StockLedgerRowResp 仓库商品 SKU 台账页的一行（迁移 624）。
+//
+// 八列：仓库 / 短码 / SKU / 外码 / 认领 / 预占 / 可售 / 操作。
+// 「认领」列的文案由 handler 拼好（ClaimedLabel）—— 模板要做「有变体 → 查商品名 →
+// 拼变体标签」就得在前端持一张 variantID → 名称的表，那是把一个派生关系塞进模板。
+//
+// 可售的减法同样在服务端算好（AvailableQuantity）：template_logic_test.go 禁止模板算数量。
+type StockLedgerRowResp struct {
+	ID            string
+	WarehouseID   string
+	WarehouseName string
+	WarehouseCode string
+	SKUCode       string
+	ExternalSKU   string
+	// VariantID 已认领的变体（未认领时为空串，表单的认领抽屉据此判断走「认领」还是「解除」）。
+	VariantID string
+	// Claimed 已认领（= 有 variant_id）；未认领行在页面上显示「未认领」徽标。
+	Claimed bool
+	// ClaimedLabel 认领列的展示文案：已认领 = 商品 · 变体标签，未认领 = 「未认领」。
+	ClaimedLabel      string
+	Quantity          int
+	ReservedQuantity  int
+	AvailableQuantity int
+	// TrackQuantity 与真源同义（false = 无限）：数量列在页面上怎么显示要靠它。
+	TrackQuantity bool
+}
+
+// StockLedgerPage 仓库商品 SKU 台账页的一屏数据（读模型，见 InventoryService.ListStockLedger）。
+//
+// Rows / Total 是「按筛选条件的结果」，Options 是认领抽屉的候选变体（与筛选无关）。
+// Total 是当页行数（台账页不做「跨页总数」：它不是对账口径，多一次 COUNT 只是多一条
+// 会与列表漂移的查询）。
+type StockLedgerPage struct {
+	Rows    []StockLedgerRowResp
+	Total   int
+	Options []VariantOptionResp
 }

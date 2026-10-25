@@ -109,6 +109,25 @@ type OrderEntity struct {
 	CreateBy     uint64    `gorm:"column:create_by"`
 	CreateTime   time.Time `gorm:"column:create_time"`
 	UpdateTime   time.Time `gorm:"column:update_time"`
+
+	// —— 最近一次发货的快照（迁移 627，S1）——
+	//
+	// 订单头只留「最后一次」：一张订单可以多次发货（部分发货 / 分仓），
+	// 历史发货看 order_shipments，不看这里。carrier_name / tracking_no 是**名称快照**，
+	// 承运商改名 / 停用 / 删除之后这里仍显示当时的名字。
+	// —— 汇率快照（迁移 633，W5）——
+	//
+	// FXRate 下单那一刻的汇率（1 订单币 = fx_rate 基准币）；nil = **汇率未固化**，
+	// 不推算（历史订单 / 外部导入 / 没配汇率的工程）。快照之后汇率怎么变都不影响这张单。
+	//
+	// 用 *string 承载 numeric(18,8) 的**精确文本**：读成 float64 会丢精度（见 currency_rate_model.go）。
+	FXRate     *string `gorm:"column:fx_rate"`
+	FXBaseCode string  `gorm:"column:fx_base_code"`
+
+	CarrierID   *string    `gorm:"column:carrier_id"`
+	CarrierName string     `gorm:"column:carrier_name"`
+	TrackingNo  string     `gorm:"column:tracking_no"`
+	ShippedAt   *time.Time `gorm:"column:shipped_at"`
 }
 
 // TableName 实现 gorm 表名。
@@ -484,4 +503,17 @@ func (m *OrderModel) SummaryByUser(ctx context.Context, projectID string, userID
 			Scan(&row).Error
 	})
 	return row, err
+}
+
+// ListByStatus 某工程下指定状态的订单（按创建时间升序）。
+//
+// 「待发货」页用它：只要 paid 的单（partially shipped 的剩余部分也停在 paid）。
+// 排序固定升序：先下的单先发，是仓库作业的常识口径。
+func (m *OrderModel) ListByStatus(ctx context.Context, projectID, status string) (list []*OrderEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&OrderEntity{}).
+			Where("project_id = ? AND status = ?", projectID, status).
+			Order("create_time ASC").Find(&list).Error
+	})
+	return list, err
 }

@@ -128,27 +128,100 @@
             </div>
             <div class="stat-value">{{money(o.Sales, cur)}}</div>
         </div>
+        {* 第三、四卡（迁移 629，W4）：总订购件数 + 毛利。
+           原先是 AOV / ACV —— 那两个数在「毛利」这件事上帮不上忙，
+           而件数与毛利才是运营每天要看的两件事（AOV / ACV 仍在下面的明细块里）。 *}
         <div class="card stat-card sales-card accent-info">
             <div class="stat-label">
-                {{tr("admin.order.sales.label.aov", "平均订单价值")}}
+                {{tr("admin.order.sales.label.units", "总订购件数")}}
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{tr("admin.common.help.label", "查看说明")}}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{tr("admin.order.sales.note.aov", "销售额 ÷ 订单数（AOV）")}}</span>
+                    <span class="help-pop" role="tooltip">{{tr("admin.order.sales.note.units", "Σ 明细数量（一单多行各算一次）")}}</span>
                 </span>
             </div>
-            <div class="stat-value">{{money(o.AvgOrderValue, cur)}}</div>
+            <div class="stat-value">{{o.Units}}</div>
         </div>
         <div class="card stat-card sales-card accent-mute">
             <div class="stat-label">
-                {{tr("admin.order.sales.label.acv", "平均客户价值")}}
+                {{tr("admin.order.sales.label.grossProfit", "毛利")}}
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{tr("admin.common.help.label", "查看说明")}}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{tr("admin.order.sales.note.acv", "销售额 ÷ 下单客户数（ACV）；分母是人不是单，与 AOV 不同")}}</span>
+                    <span class="help-pop" role="tooltip">{{tr("admin.order.sales.note.grossProfit", "毛利 = 行实付 − 行成本 − 运费；税不扣（代收）、优惠已含在行实付里不重复扣。")}}</span>
                 </span>
             </div>
-            <div class="stat-value">{{money(o.AvgCustomerValue, cur)}}</div>
+            <div class="stat-value">{{money(o.GrossProfit, cur)}}</div>
+            {* 「含 N 行成本未核算」是**必须显示**的：把未知成本记成 0 会让毛利虚高，
+               而那个数字比不显示更糟 —— 运营会拿它做决策。 *}
+            {{if o.CostIncomplete}}
+            <div class="stat-note">{{tr("admin.order.sales.costIncomplete", "含")}} {{o.CostIncompleteRows}} {{tr("admin.order.sales.costIncompleteTail", "行成本未核算")}}</div>
+            {{end}}
         </div>
     </section>
+
+    {* ===== 多币种折算（迁移 630，W5）=====
+       只显示有汇率快照的那部分折算值，并**必须**说明「有多少单没折算」——
+       否则一个偏小的数字会被当成全量。
+       Converted.Rate 为空 / Converted 为 nil 时整块不渲染（单币种站点没有这一块）。 *}
+    {{if o.Converted}}
+    <section class="card">
+        <div class="card-header">
+            <h2 class="card-title">{{tr("admin.order.sales.converted.title", "折算到")}} {{o.Converted.BaseCurrency}}</h2>
+            <span class="card-sub">{{tr("admin.order.sales.converted.hint", "按下单时刻的汇率快照折算；汇率之后再变不影响这些数字。")}}</span>
+        </div>
+        <div class="card-body">
+            <div class="stat-grid">
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.order.sales.converted.sales", "折算销售额")}}</div>
+                    <div class="stat-value">{{money(o.Converted.ConvertedSales, cur)}}</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.order.sales.converted.profit", "折算毛利")}}</div>
+                    <div class="stat-value">{{money(o.Converted.ConvertedProfit, cur)}}</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.order.sales.converted.orders", "已折算订单")}}</div>
+                    <div class="stat-value">{{o.Converted.ConvertedOrders}}</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.order.sales.converted.unconverted", "汇率未固化")}}</div>
+                    <div class="stat-value">{{o.Converted.UnconvertedOrders}}</div>
+                    {{if o.Converted.UnconvertedOrders}}
+                    <div class="stat-note">{{tr("admin.order.sales.converted.unconvertedNote", "这些单没有汇率快照，不进上面的折算金额")}}</div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </section>
+    {{end}}
+
+    {* ===== 待办块（迁移 621 / 623 / 624，W4）=====
+       「共 N 项待办」= 调拨待出货 + 库存预警 + 待发货，三个数字各由自己的 service 给，
+       TodoTotal 是 service 算好的合计（模板只显示，不做求和）。
+       每一项都是可点的入口 —— 一个不可点的待办数字只会让人去猜该去哪。 *}
+    {{if .Todo.total}}
+    <section class="card">
+        <div class="card-header">
+            <h2 class="card-title">{{tr("admin.order.sales.todo.titleLead", "共")}} {{.Todo.total}} {{tr("admin.order.sales.todo.titleTail", "项待办")}}</h2>
+        </div>
+        <div class="card-body todo-list">
+            {{if .Todo.alertCount}}{{if .Todo.alertCount}}
+            <a class="todo-item" href="/admin/inventory/skus?claimed=claimed&project={{selectedProject}}">
+                <span class="todo-label">{{tr("admin.order.sales.todo.alerts", "库存预警")}}</span>
+                <span class="todo-count">{{.Todo.alertCount}}</span>
+            </a>
+            {{end}}{{end}}
+            {{if .Todo.pendingShip}}
+            <a class="todo-item" href="/admin/orders/pending-ship?project={{selectedProject}}">
+                <span class="todo-label">{{tr("admin.order.sales.todo.pendingShip", "待发货")}}</span>
+                <span class="todo-count">{{.Todo.pendingShip}}</span>
+            </a>
+            {{end}}
+            <a class="todo-item" href="/admin/inventory/transfers?project={{selectedProject}}&status=pending">
+                <span class="todo-label">{{tr("admin.order.sales.todo.transfers", "调拨待出货")}}</span>
+            </a>
+        </div>
+    </section>
+    {{end}}
 
     {* ===== 环比：只给上一期绝对值 + 变化率（本期值在上面那排卡片里，不重复放两份）===== *}
     {{if o.Compare}}

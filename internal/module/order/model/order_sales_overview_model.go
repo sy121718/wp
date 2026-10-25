@@ -41,11 +41,30 @@ var (
 //
 // **下单客户数按 user_id 去重**（游客单 user_id 为空，不计入）：与客户增长那套
 // 口径同一个判据，所以卡片上的「下单客户 8 人」与客户区块的「下单客户」会相等。
+// 毛利口径（迁移 632，W4）：行实付 − 行成本 − 运费。
+//
+//	· **税不扣**：tax_total 是代收的，不是成本（与 ERP order_overview.go 的
+//	  「销售额 − 行成本 − 运费」一致）；
+//	· 优惠已含在 line_total 里（分摊过），不重复扣；
+//	· cost_price IS NULL 的行（迁移 256 让它可空）= **成本未核算**，不是零成本 ——
+//	  这类行按 0 计入毛利，同时把 cost_incomplete_rows 数出来，让卡片能说
+//	  「含 N 行成本未核算」。**绝不用 0 冒充**造成毛利虚高。
+//
+// 运费是**订单级**的，而 JOIN 会按明细行放大订单头 —— 一条查询里既要「按行求和」
+// 又要「按订单去重求和」，PG 没有 `SUM(DISTINCT x BY y)` 这种写法，所以取
+// `MAX(o.shipping_total)` 作为近似会漏掉「一单多行」的运费合计。
+//
+// 因此**运费单独一条查询**（见 OrderModel.SalesShippingTotalByRange），
+// 这里只算 `行实付 − 行成本`（shipping 部分由 service 减）。这条 SQL 保持单一职责：
+// 每一列都是按明细行可聚合的，不存在「同一行被算两次」的隐患。
 const orderSalesOverviewSelect = `COUNT(DISTINCT o.id) AS order_count,
        COUNT(i.id) AS item_rows,
        COALESCE(SUM(i.quantity), 0) AS units,
        COALESCE(SUM(i.line_total), 0) AS sales,
-       COUNT(DISTINCT o.user_id) AS customers`
+       COUNT(DISTINCT o.user_id) AS customers,
+       COUNT(DISTINCT CASE WHEN i.cost_price IS NULL AND i.id IS NOT NULL THEN i.id END) AS cost_incomplete_rows,
+       COALESCE(SUM(i.line_total), 0)
+         - COALESCE(SUM(CASE WHEN i.cost_price IS NOT NULL THEN i.cost_price * i.quantity ELSE 0 END), 0) AS line_margin`
 
 // orderSalesMonthlyInnerSelect 月度趋势的**内层**投影（逐行：月桶 + 金额 + 客户类型）。
 //
@@ -144,6 +163,16 @@ type OrderSalesOverviewRow struct {
 	Sales int64 `gorm:"column:sales"`
 	// Customers 下单客户数（按 user_id 去重，不含游客单）。
 	Customers int64 `gorm:"column:customers"`
+	// LineMargin 行实付 − 行成本（分，迁移 632，W4）。
+	//
+	// 运费的减法在 service 里做（OrderModel.SalesShippingTotalByRange 单独一条查询：
+	// 它是订单级的，混进这条按行聚合的 SQL 会把订单头按明细行放大）。
+	LineMargin int64 `gorm:"column:line_margin"`
+	// CostIncompleteRows cost_price IS NULL 的明细行数 —— **不是 0 成本，是没核算**。
+	//
+	// 卡片据此显示「含 N 行成本未核算」：把未知成本记成 0 会让毛利虚高，
+	// 而那个数字比不显示更糟。
+	CostIncompleteRows int64 `gorm:"column:cost_incomplete_rows"`
 }
 
 // OrderSalesMonthlyRow 月度趋势的一个桶。
@@ -264,4 +293,37 @@ func (m *OrderModel) SalesMonthlyByRange(ctx context.Context, projectID string, 
 			Scan(&rows).Error
 	})
 	return rows, err
+}
+
+// SalesShippingTotalByRange 取区间内的运费合计（分，迁移 632 W4）。
+//
+// 单独一条查询的理由：运费是**订单级**的，而毛利那条 SQL 按明细行聚合 ——
+// 一张 5 行的订单在那边被数了 5 次，直接 SUM(o.shipping_total) 会把运费算成 5 倍。
+// PG 没有 `SUM(DISTINCT x BY y)`，所以这里按订单去重后求和。
+func (m *OrderModel) SalesShippingTotalByRange(ctx context.Context, projectID string, from, to time.Time,
+	f OrderSalesFilter) (total int64, err error) {
+	if strings.TrimSpace(projectID) == "" {
+		return 0, ErrProjectRequired
+	}
+	if from.IsZero() || to.IsZero() {
+		return 0, ErrRangeRequired
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		// 子查询按订单 id 去重（一张订单一行），外层求和 —— 与明细行数无关。
+		inner := salesScope(
+			tx.Table(OrderEntity{}.TableName()+" AS o").
+				Select("o.id AS id, o.shipping_total AS shipping_total"),
+			projectID, from, to, f,
+		)
+		var row struct {
+			Total int64 `gorm:"column:total"`
+		}
+		if serr := tx.Table("(?) AS s", inner).
+			Select("COALESCE(SUM(s.shipping_total), 0) AS total").Scan(&row).Error; serr != nil {
+			return serr
+		}
+		total = row.Total
+		return nil
+	})
+	return total, err
 }

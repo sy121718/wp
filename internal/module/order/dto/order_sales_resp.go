@@ -41,6 +41,21 @@ type SalesOverviewResp struct {
 	// AvgSalesPerUnit 平均每件销售额（分）= 销售额 / 售出件数。
 	AvgSalesPerUnit int64 `json:"avgSalesPerUnit"`
 
+	// ── 毛利（迁移 632，W4）────────────────────────────────────────
+
+	// GrossProfit 毛利（分）= Σ 行实付 − Σ 行成本 − Σ 运费。
+	//
+	// 口径（写在这里供报表侧核对）：**税不扣**（tax_total 是代收的，不是成本）、
+	// 优惠已含在 line_total 里（不重复扣）、运费按订单去重后扣一次。
+	GrossProfit int64 `json:"grossProfit"`
+	// CostIncomplete 有明细行的 cost_price 为 NULL（= 成本未核算）。
+	//
+	// 卡片的判据：为真时显示「含 N 行成本未核算」，而不是悄悄把毛利当成准的。
+	// 那些行按 0 计入毛利 —— 用 0 冒充未知会让毛利虚高，比不显示更糟。
+	CostIncomplete bool `json:"costIncomplete"`
+	// CostIncompleteRows 成本未核算的明细行数（CostIncomplete 的具体条数）。
+	CostIncompleteRows int64 `json:"costIncompleteRows"`
+
 	// ── 客户维度（区间内）────────────────────────────────────────────
 
 	// Customers 下单客户数（按 user_id 去重，**不含游客单**）。
@@ -61,6 +76,12 @@ type SalesOverviewResp struct {
 	Compare *SalesCompareDTO `json:"compare,omitempty"`
 
 	// ── 月度趋势 ───────────────────────────────────────────────────
+
+	// Converted 多币种折算（迁移 633，W5）：只有「与基准币不同且有快照」的订单参与折算。
+	//
+	// UnconvertedOrders 是**必须显示**的：折算金额只覆盖有快照的那部分，
+	// 不说明「有多少单没折算」会让一个偏小的数字被当成全量。
+	Converted *ConvertedOverview `json:"converted,omitempty"`
 
 	// MonthlyPoints 近 Monthly 个月（含当月）逐月补零的序列，升序。
 	//

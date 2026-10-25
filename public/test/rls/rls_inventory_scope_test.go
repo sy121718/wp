@@ -88,7 +88,7 @@ func seedStockQty(t *testing.T, db *gorm.DB, projectID, productID, variantID, wa
 	track := true
 	_, err := inventorymodel.NewModel(db).EnsureStock(context.Background(), &inventorymodel.StockEntity{
 		ID: uuid.NewString(), ProjectID: projectID, WarehouseID: warehouseID,
-		ProductID: productID, VariantID: variantID, SKUCode: "SKU-" + variantID[:8],
+		ProductID: &productID, VariantID: &variantID, SKUCode: "SKU-" + variantID[:8],
 		Quantity: qty, TrackQuantity: track, Metadata: []byte("{}"), CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {

@@ -33,11 +33,13 @@ type CreateWarehouseReq struct {
 	Code      string `json:"code" form:"code" binding:"required"`
 	Name      string `json:"name" form:"name" binding:"required"`
 	// Type 空串按 self 归一（存量语义：不加类型就是自营仓）。
-	Type      string          `json:"type" form:"type"`
-	IsDefault bool            `json:"isDefault" form:"isDefault"`
-	Status    string          `json:"status" form:"status"`
-	Sort      int             `json:"sort" form:"sort"`
-	Metadata  json.RawMessage `json:"metadata" form:"metadata"`
+	Type      string `json:"type" form:"type"`
+	IsDefault bool   `json:"isDefault" form:"isDefault"`
+	Status    string `json:"status" form:"status"`
+	Sort      int    `json:"sort" form:"sort"`
+	// DeductPriority 出库扣减优先级（迁移 626）：值小先扣；仅在未显式指定仓库时生效。
+	DeductPriority int             `json:"deductPriority" form:"deductPriority"`
+	Metadata       json.RawMessage `json:"metadata" form:"metadata"`
 	// ThirdParty 非 nil 且类型为 third_party 时写入 config；其余类型忽略它。
 	ThirdParty *WarehouseThirdPartyReq `json:"thirdParty" form:"thirdParty"`
 }
@@ -54,6 +56,8 @@ type UpdateWarehouseReq struct {
 	IsDefault *bool   `json:"isDefault" form:"isDefault"`
 	Status    *string `json:"status" form:"status"`
 	Sort      *int    `json:"sort" form:"sort"`
+	// DeductPriority nil = 本次不改；显式给值即覆盖（迁移 626）。
+	DeductPriority *int `json:"deductPriority" form:"deductPriority"`
 	// Type 仓库类型；nil = 本次不改。
 	Type     *string         `json:"type" form:"type"`
 	Metadata json.RawMessage `json:"metadata" form:"metadata"`
@@ -149,8 +153,28 @@ type ListWarehouseSKUReq struct {
 	ProjectID   string `form:"projectId"`
 	WarehouseID string `form:"warehouseId"`
 	Keyword     string `form:"keyword"`
-	Page        int    `form:"page"`
-	Size        int    `form:"size"`
+	// Claimed 认领状态筛选：空串 = 全部，"claimed" = 已认领，"unclaimed" = 未认领。
+	//
+	// 用字符串而不是 bool：三态（全部 / 已认领 / 未认领）用 bool 装不下，
+	// 而多一个 includeAll 开关只会让调用点多一处可能写错的组合。
+	Claimed string `form:"claimed"`
+	Page    int    `form:"page"`
+	Size    int    `form:"size"`
+}
+
+// StockLedgerQueryReq 仓库商品 SKU 台账页（/admin/inventory/skus）的查询串。
+//
+// 键名是**已发布 URL 的一部分**（书签、外部链接、回跳都按它拼），所以 form tag 不能随手改。
+// 落成 DTO 而不是在控制器里 c.Query：查询串的键名与默认值只有一处定义
+// （controller_shape_test.go 的 TestControllerQueryBinding）。
+type StockLedgerQueryReq struct {
+	ProjectID   string `form:"project"`
+	WarehouseID string `form:"warehouseId"`
+	Keyword     string `form:"keyword"`
+	// Claimed 三态：空 = 全部，claimed = 已认领，unclaimed = 未认领（白名单在 service）。
+	Claimed string `form:"claimed"`
+	Page    int    `form:"page"`
+	Limit   int    `form:"limit"`
 }
 
 // GetWarehouseSKUReq 「从仓库选」的最小查询：给定仓库 + 我们自己那条仓库 SKU，返回该行。
@@ -170,6 +194,67 @@ type BindExternalSKUReq struct {
 	WarehouseID string `json:"warehouseId" form:"warehouseId" binding:"required"`
 	VariantID   string `json:"variantId" form:"variantId" binding:"required"`
 	ExternalSKU string `json:"externalSku" form:"externalSku"`
+}
+
+// —— 仓库商品 SKU 主档化（迁移 624）——
+
+// ClaimStockReq 把一条未认领的仓库存货行认领到某个商品变体。
+//
+// 认领是**单向且不可自动合并**的动作：目标 (variant_id, warehouse_id) 已有库存行时拒绝，
+// 因为两行库存是两份事实（迁移 262 的同一判据），合并要么丢数量、要么丢成本。
+type ClaimStockReq struct {
+	ProjectID string `json:"projectId" form:"projectId"`
+	// StockID 待认领的库存行 id（表单只提交它，不提交编码：编码可以改，行 id 不会）。
+	StockID string `json:"stockId" form:"stockId" binding:"required"`
+	// ProductID / VariantID 认领目标（两者同时给：库存行上这两列总是一起落值）。
+	ProductID  string `json:"productId" form:"productId" binding:"required"`
+	VariantID  string `json:"variantId" form:"variantId" binding:"required"`
+	OperatorID string `json:"operatorId" form:"operatorId"`
+}
+
+// UnclaimStockReq 解除认领（商品下线 / 认领错了）。
+//
+// 仅当 quantity = 0 且 reserved_quantity = 0 时允许 —— 有数量或有预占就解除，
+// 会让货从「商品库存」里消失，而变体删除守卫看不见它。
+type UnclaimStockReq struct {
+	ProjectID string `json:"projectId" form:"projectId"`
+	StockID   string `json:"stockId" form:"stockId" binding:"required"`
+}
+
+// CreateUnclaimedStockReq 人工建档一条未认领存货（仓库 + 裸码 + 数量 + 成本）。
+//
+// TrackQuantity 由调用方显式表态（页面给两个选项：跟踪数量 / 无限库存），**不猜**：
+// 迁移 261 的 CHECK (track_quantity OR quantity = 0) 决定了「有数量就必须跟踪」，
+// 填了数量却留 false 只会撞一句没有上下文的约束错误。
+type CreateUnclaimedStockReq struct {
+	ProjectID   string `json:"projectId" form:"projectId"`
+	WarehouseID string `json:"warehouseId" form:"warehouseId" binding:"required"`
+	// SKUCode 仓库侧裸码（不带仓码前缀；前缀只属于商品侧）。
+	SKUCode       string   `json:"skuCode" form:"skuCode" binding:"required"`
+	ExternalSKU   string   `json:"externalSku" form:"externalSku"`
+	Quantity      int      `json:"quantity" form:"quantity"`
+	TrackQuantity bool     `json:"trackQuantity" form:"trackQuantity"`
+	CostPrice     *float64 `json:"costPrice" form:"costPrice"`
+}
+
+// ReserveStockLine 一行预占 / 释放请求。
+type ReserveStockLine struct {
+	ProductID   string `json:"productId"`
+	VariantID   string `json:"variantId" binding:"required"`
+	SKUCode     string `json:"skuCode"`
+	Quantity    int    `json:"quantity"`
+	WarehouseID string `json:"warehouseId"`
+}
+
+// ReserveStockReq 预占与释放（同形：两个方向都是同一个行清单）。
+//
+// SourceType / SourceRef 只做对账标识：预占不写流水，这两个值不落库存表。
+type ReserveStockReq struct {
+	ProjectID  string             `json:"projectId" form:"projectId"`
+	SourceType string             `json:"sourceType" form:"sourceType"`
+	SourceRef  string             `json:"sourceRef" form:"sourceRef"`
+	Remark     string             `json:"remark" form:"remark"`
+	Lines      []ReserveStockLine `json:"lines" form:"lines" binding:"required"`
 }
 
 // —— 库存变动与流水（issue #16）——
@@ -403,3 +488,8 @@ type SourceSummaryReq struct {
 // SyncStockCacheReq 【已废弃，121 删缓存列】历史 DTO，仅保留类型兼容。
 
 // ReconcileStockCacheReq 缓存对账（可选对齐修复）。
+
+// StockAlertQueryReq 库存预警的查询串（工程维度）。
+type StockAlertQueryReq struct {
+	ProjectID string `form:"projectId" json:"projectId"`
+}

@@ -1,0 +1,177 @@
+{* admin/order_carriers.html — 承运商配置（迁移 624，S3）
+
+   承运商是「配一次长期不动」的主数据：卡片列表 + 新建/编辑抽屉。
+   停用（status = disabled）而不是删除 —— 历史发货单上的 carrier_id 还指着它，
+   删掉会让「这单是哪家送的」变成一条悬空外键。
+
+   写动作走 JSON API（data-write-api）：/api/order/carrier/{create,update}。
+   跟踪页模板里只允许 {tracking_no} 一个占位符 —— 别的占位符会让页面上原样显示
+   `{order_no}`，比「没有跟踪页」更让人困惑。前端给一行预览（填运单号后的样子）。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{selectedProject := .SelectedProject}}
+{{carriers := .Carriers}}
+{{loadError := .LoadError}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{tr("admin.order.carriers.title", "承运商")}}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{tr("admin.common.help.label", "查看说明")}}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{tr("admin.order.carriers.hint", "发货表单从这里选承运商。停用而不是删除：历史发货单仍显示当时的承运商名称快照。跟踪页模板只认 {tracking_no} 占位符。")}}</span>
+                </span>
+            </div>
+            <p class="page-sub">{{tr("admin.order.carriers.sub", "运单号由承运商提供；跟踪页模板留空表示这家没有公开跟踪页（自营配送常见）。")}}</p>
+        </div>
+        <div class="page-actions">
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-carrier-create"
+                    data-drawer-title="{{tr("admin.order.carriers.create", "新建承运商")}}">＋ {{tr("admin.order.carriers.create", "新建承运商")}}</button>
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/order-carriers">
+                <label class="sr-only" for="carrier-project">{{tr("admin.common.field.project", "站点工程")}}</label>
+                <select class="form-select" id="carrier-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+        </div>
+    </header>
+
+    {{if loadError}}
+    <section class="card list-card">
+        <p class="badge badge-danger" role="alert">{{loadError}}</p>
+        <p class="page-sub">{{tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来")}}</p>
+    </section>
+    {{else}}
+    <section class="card list-card">
+        <div class="card-header">
+            <span class="card-title">{{if len(carriers) > 0}}{{tr("admin.order.carriers.listLead", "承运商（")}}{{len(carriers)}}）{{else}}{{tr("admin.order.carriers.title", "承运商")}}{{end}}</span>
+        </div>
+        {* 空数据也渲染 <table>/<thead>：表头是「这里能看什么」的说明。 *}
+        <div class="table-wrap table-scroll" tabindex="0">
+        <table class="data-table data-table-wide">
+            <thead>
+            <tr>
+                <th>{{tr("admin.order.carriers.col.name", "名称")}}</th>
+                <th>{{tr("admin.order.carriers.col.code", "代码")}}</th>
+                <th>{{tr("admin.order.carriers.col.status", "状态")}}</th>
+                <th>{{tr("admin.order.carriers.col.trackingUrl", "跟踪页模板")}}</th>
+                <th>{{tr("admin.order.carriers.col.sort", "排序")}}</th>
+                <th class="col-actions">{{tr("admin.common.col.actions", "操作")}}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{if len(carriers) == 0}}
+            <tr><td colspan="6" class="cell-wrap">
+                {{include "../partials/empty_state.html" map(
+                    "title", tr("admin.order.carriers.emptyHeading", "还没有承运商"),
+                    "desc", tr("admin.order.carriers.emptyDesc", "发货时可以只填运单号不选承运商（自营配送 / 客户自提）；要按承运商统计与展示跟踪页时再建。"))}}
+            </td></tr>
+            {{else}}
+            {{range _, c := carriers}}
+            <tr>
+                <td data-label="{{tr("admin.order.carriers.col.name", "名称")}}">
+                    <button type="button" class="row-title-link" data-drawer-open="#tpl-carrier-edit-{{c.ID}}" data-drawer-title="{{tr("admin.common.action.edit", "编辑")}}">{{c.Name}}</button>
+                </td>
+                <td data-label="{{tr("admin.order.carriers.col.code", "代码")}}"><code>{{c.Code}}</code></td>
+                <td data-label="{{tr("admin.order.carriers.col.status", "状态")}}">
+                    {* 停用是「不再可选」而不是错误态：用 mute 而不是 danger（badge partial 的档位由模板选）。 *}
+                    {{if c.Status == "disabled"}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.order.carriers.disabled", "已停用"))}}{{else}}{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.order.carriers.active", "启用中"))}}{{end}}
+                </td>
+                <td data-label="{{tr("admin.order.carriers.col.trackingUrl", "跟踪页模板")}}">{{if c.TrackingURLTemplate != ""}}<code>{{c.TrackingURLTemplate}}</code>{{else}}—{{end}}</td>
+                <td data-label="{{tr("admin.order.carriers.col.sort", "排序")}}">{{c.Sort}}</td>
+                <td class="col-actions" data-label="{{tr("admin.common.col.actions", "操作")}}">
+                    <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-carrier-edit-{{c.ID}}" data-drawer-title="{{tr("admin.common.action.edit", "编辑")}}">{{tr("admin.common.action.edit", "编辑")}}</button>
+                    {* 停用 / 启用：一个表单一个端点（update），按钮只切 status。 *}
+                    <button type="submit" form="carrier-toggle-{{c.ID}}" class="btn btn-sm">
+                        {{if c.Status == "disabled"}}{{tr("admin.order.carriers.enable", "启用")}}{{else}}{{tr("admin.order.carriers.disable", "停用")}}{{end}}
+                    </button>
+                </td>
+            </tr>
+            {{end}}
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+    </section>
+
+    {* 停用 / 启用的隐藏表单（表格外，按钮用 form="<id>" 关联）。 *}
+    {{range _, c := carriers}}
+    <form id="carrier-toggle-{{c.ID}}" data-write-api="/api/order/carrier/update" data-write-nav method="post" class="hidden-form">
+        {{include "../partials/csrf_field.html" map("csrf", .["csrf_token"])}}
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{c.ID}}">
+        <input type="hidden" name="status" value="{{if c.Status == "disabled"}}active{{else}}disabled{{end}}">
+    </form>
+    {{end}}
+
+    {* ===== 新建承运商（抽屉） ===== *}
+    <template id="tpl-carrier-create">
+        <form data-write-api="/api/order/carrier/create" data-write-nav method="post">
+            {{include "../partials/csrf_field.html" map("csrf", .["csrf_token"])}}
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-group">
+                <label class="form-label req">{{tr("admin.order.carriers.col.code", "代码")}}</label>
+                <input type="text" class="form-input" name="code" required maxlength="32" autocomplete="off"
+                       placeholder="{{tr("admin.order.carriers.codePh", "如 SF / YTO（工程内唯一，大小写不敏感）")}}">
+            </div>
+            <div class="form-group">
+                <label class="form-label req">{{tr("admin.order.carriers.col.name", "名称")}}</label>
+                <input type="text" class="form-input" name="name" required maxlength="64" autocomplete="off"
+                       placeholder="{{tr("admin.order.carriers.namePh", "如 顺丰速运")}}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.order.carriers.col.trackingUrl", "跟踪页模板")}}</label>
+                <input type="text" class="form-input" name="trackingUrlTemplate" maxlength="256" autocomplete="off"
+                       placeholder="{{tr("admin.order.carriers.trackingUrlPh", "如 https://example.com/track?no={tracking_no}")}}">
+                <p class="hint">{{tr("admin.order.carriers.trackingUrlHint", "只能出现 {tracking_no} 一个占位符；留空表示这家没有公开跟踪页。")}}</p>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.order.carriers.col.sort", "排序")}}</label>
+                <input type="number" class="form-input" name="sort" value="0" inputmode="numeric" step="1">
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+                <button type="submit" class="btn btn-primary">{{tr("admin.common.action.save", "保存")}}</button>
+            </div>
+        </form>
+    </template>
+
+    {* ===== 编辑承运商（每个一张抽屉模板：字段要回填） ===== *}
+    {{range _, c := carriers}}
+    <template id="tpl-carrier-edit-{{c.ID}}">
+        <form data-write-api="/api/order/carrier/update" data-write-nav method="post">
+            {{include "../partials/csrf_field.html" map("csrf", .["csrf_token"])}}
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{c.ID}}">
+            <div class="form-group">
+                <label class="form-label req">{{tr("admin.order.carriers.col.code", "代码")}}</label>
+                <input type="text" class="form-input" name="code" value="{{c.Code}}" required maxlength="32" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label req">{{tr("admin.order.carriers.col.name", "名称")}}</label>
+                <input type="text" class="form-input" name="name" value="{{c.Name}}" required maxlength="64" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.order.carriers.col.trackingUrl", "跟踪页模板")}}</label>
+                <input type="text" class="form-input" name="trackingUrlTemplate" value="{{c.TrackingURLTemplate}}" maxlength="256" autocomplete="off">
+                <p class="hint">{{tr("admin.order.carriers.trackingUrlHint", "只能出现 {tracking_no} 一个占位符；留空表示这家没有公开跟踪页。")}}</p>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.order.carriers.col.sort", "排序")}}</label>
+                <input type="number" class="form-input" name="sort" value="{{c.Sort}}" inputmode="numeric" step="1">
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+                <button type="submit" class="btn btn-primary">{{tr("admin.common.action.save", "保存")}}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+    {{end}}
+</div>
+{{end}}

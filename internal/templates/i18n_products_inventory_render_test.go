@@ -215,9 +215,9 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		"BackURL": "/admin/products?project=pr1",
 		// 属性组勾选态（服务端算好；模板只渲染）。
 		"AttributeChecks": []map[string]any{{"ID": "a1", "Label": "颜色（color）", "IsVariation": true, "Checked": true}},
-		"ImagesInput":      "https://cdn.example.com/1.jpg",
-		"ImageAltsInput":   "图一",
-		"WeightInput":      "0.5", "DefaultPriceInput": "10.00",
+		"ImagesInput":     "https://cdn.example.com/1.jpg",
+		"ImageAltsInput":  "图一",
+		"WeightInput":     "0.5", "DefaultPriceInput": "10.00",
 		"TplPanel": map[string]any{
 			"Available": true, "InstanceID": "inst1", "TemplateID": "tpl1", "Status": "published",
 			"RenderMode": "template", "AffectedTemplateCount": 3, "HasAffectedTemplateCount": true,

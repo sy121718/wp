@@ -32,6 +32,14 @@ type ProductStockWriter interface {
 	EnsureVariantStockWithExternalTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode, externalSKU string, quantity *int) (err error)
 	NormalizeExternalSKU(raw string) (code string, err error)
 	CheckExternalSKUProductScope(ctx context.Context, projectID, warehouseID, externalSKU, productID string) (err error)
+	// ClaimStockTx 把该仓已有的**未认领**存货行认领到本次新建的变体（迁移 624 + 625）。
+	//
+	// 「从仓库选」这条来路的核心：仓库里那一批货就是这条 SKU，建商品时要把它挂到新变体上，
+	// 否则货仍是 variant_id IS NULL —— 商品侧库存汇总看不见它，页面显示 0 而仓库里有货。
+	//
+	// 与 EnsureVariantStockTx 同为事务透传：建商品与认领要么全成、要么全不成。
+	// 返回错误时调用方整体回滚。
+	ClaimStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ClaimStockReq) (err error)
 }
 
 // ProductStockPort groups the two required capabilities supplied by one inventory service.

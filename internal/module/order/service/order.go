@@ -367,6 +367,16 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 	if shipping < 0 {
 		shipping = 0
 	}
+	var fxRatePtr *string
+	// 汇率快照（迁移 633，W5）：读一次、失败不阻断下单。
+	//
+	// **订单币取请求里的 Currency，基准币取站点默认货币**：两者是同源函数的话
+	// （都取全局默认值）它们永远相等，快照永远为空 —— 折算永远不会发生。
+	// 请求没给币种时回落站点默认（此时两者相等、不写快照，这是正确的：同币种无需折算）。
+	fxRate, fxBase := s.orderFXSnapshot(ctx, orderCurrencyOf(req), orderCurrency())
+	if fxRate != "" {
+		fxRatePtr = &fxRate
+	}
 
 	// 会员身份：只用**事务前能确定**的那一份（调用方显式传入的登录身份，或按邮箱
 	// 只读查到的既有账号）。新邮箱在这里还没有账号 —— 开号在事务内完成，
@@ -398,8 +408,13 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 		//
 		// 这一列是**下单当时的快照**（快照原则）：改配置只影响此后新建的订单，
 		// 历史订单的 currency 不动 —— 订单详情要还原的是「当时是什么」。
-		Currency: orderCurrency(),
-		Subtotal: subtotal,
+		Currency: orderCurrencyOf(req),
+		// 汇率快照（迁移 633，W5）：**下单那一刻**的汇率，之后汇率怎么变都不影响这张单。
+		// 取不到时留零值（fx_rate 为 NULL、fx_base_code 为空串）=「汇率未固化」——
+		// 那是真实状态（没配汇率的工程 / 同币种），回填会伪造历史。
+		FXRate:     fxRatePtr,
+		FXBaseCode: fxBase,
+		Subtotal:   subtotal,
 		// 会员折扣与总额由 applyLineMoney 统一填（见该方法的注释）：
 		// 会员折扣与券各自独立计账（相加扣减），两列分开存是为了保住 SEC-001
 		//（无优惠码时 DiscountTotal 恒为 0），见 resolveMembershipDiscount。
@@ -508,7 +523,12 @@ func (s *Service) buildOrderItems(ctx context.Context, req *orderdto.CreateOrder
 	// 工程作用域随端口下传（审计 DB-009）：没有它，换非超级角色后这次读取会静默返回 0 行，
 	// 表现是「每个变体都查不到」⇒ 下单报「规格不存在」，而库里明明有。projectID 就是本函数
 	// 的形参 —— 调用方（草稿 / 下单）已经带着它，不存在「拿不到工程」的情形。
-	snapshots, err := s.product.VariantSnapshots(ctx, variantIDs, projectID)
+	// 发货仓在下单那一刻**解析并固化**（迁移 628）：预占与扣减必须落在同一个仓。
+	//
+	// 逐行解析（不是整单一个仓）：一条订单可以要求「A 商品从上海仓、B 商品从苏州仓」，
+	// 那是运营/客户明确表达的、而且仓是 (变体, 仓) 这条库存维度的坐标 ——
+	// 整单一个仓会让部分行扣到错的仓。
+	snapshots, warehouseOf, err := s.resolveOrderSnapshots(ctx, req, projectID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -557,10 +577,71 @@ func (s *Service) buildOrderItems(ctx context.Context, req *orderdto.CreateOrder
 			LineTax:      0,
 			LineTotal:    lineSubtotal,
 			CostPrice:    sn.CostPrice,
-			CreateTime:   now,
+			// 发货仓：解析失败时留 NULL（无仓工程 / 未注入解析端口），
+			// 预占跳过、发货时要求运营指定 —— 见 resolveOrderSnapshots 的注释。
+			WarehouseID: warehouseOf[vid],
+			CreateTime:  now,
 		})
 	}
 	return items, subtotal, nil
+}
+
+// resolveOrderSnapshots 解析每一行的发货仓并按仓取商品快照（迁移 628，S2）。
+//
+// 分三步：
+//
+//  1. 逐行解析发货仓 —— 请求里写了就用它（库存侧校验工程与 active），没写则回落默认仓；
+//     工程里一个仓都没有时留 nil（本地单站允许无仓卖货，此时预占跳过、发货时要求指定仓）；
+//  2. 按「变体 + 发货仓」取快照（VariantSnapshotsInWarehouse，成本跟着发货仓走）；
+//  3. 返回「变体 → 发货仓」映射，供订单项落 warehouse_id。
+//
+// 为什么不再走无仓的 VariantSnapshots：那个方法的成本取**归属仓**，而发货仓可能是另一个。
+// 两条路径并存会让「成本来自 A 仓、发货扣 B 仓」—— 利润报表与库存流水对不上。
+//
+// 解析端口未注入（纯订单单测 / 部分装配）时退化成「不解析仓 + 旧快照方法」：
+// 那是既有的、与迁移前一致的形态，不是新引入的降级。
+func (s *Service) resolveOrderSnapshots(ctx context.Context, req *orderdto.CreateOrderReq,
+	projectID string) (list []*productcontract.VariantSnapshot,
+	warehouseOf map[string]*string, err error) {
+	warehouseOf = make(map[string]*string, len(req.Items))
+	if s.warehouses == nil {
+		list, err = s.product.VariantSnapshots(ctx, variantIDsOf(req), projectID)
+		return list, warehouseOf, err
+	}
+	refs := make([]productcontract.VariantWarehouseRef, 0, len(req.Items))
+	for _, it := range req.Items {
+		vid := strings.TrimSpace(it.VariantID)
+		if vid == "" {
+			continue
+		}
+		whID, rerr := s.warehouses.ResolveShipWarehouse(ctx, projectID, strings.TrimSpace(it.WarehouseID))
+		if rerr != nil {
+			return nil, nil, rerr
+		}
+		if whID != "" {
+			id := whID
+			warehouseOf[vid] = &id
+		}
+		refs = append(refs, productcontract.VariantWarehouseRef{VariantID: vid, WarehouseID: whID})
+	}
+	// 端口未实现按仓取快照时退化到旧方法（成本取归属仓）：宁可成本口径旧一点，
+	// 也不让「商品模块还没跟上」把下单整条拦死。
+	byWarehouse, ok := s.product.(productcontract.VariantSnapshotByWarehousePort)
+	if !ok {
+		list, err = s.product.VariantSnapshots(ctx, variantIDsOf(req), projectID)
+		return list, warehouseOf, err
+	}
+	list, err = byWarehouse.VariantSnapshotsInWarehouse(ctx, refs, projectID)
+	return list, warehouseOf, err
+}
+
+// variantIDsOf 请求里的变体 id 清单（保持入参顺序，去空白）。
+func variantIDsOf(req *orderdto.CreateOrderReq) []string {
+	out := make([]string, 0, len(req.Items))
+	for _, it := range req.Items {
+		out = append(out, strings.TrimSpace(it.VariantID))
+	}
+	return out
 }
 
 // 成本快照的责任分工（迁移 256 之后）：
@@ -634,6 +715,22 @@ func (s *Service) provisionGuestAccountTx(ctx context.Context, tx *gorm.DB, req 
 	return &id, gres.PendingMail, nil
 }
 
+// orderCurrencyOf 这次下单的订单币种：请求显式给了就用它（归一成大写），否则用站点默认。
+//
+// 归一在这里而不是落库层：`usd` 与 `USD` 是同一个币种，而汇率表的唯一索引按 upper 建 ——
+// 落库前不统一会让「同一个币种的订单」在快照里出现两种写法。
+//
+// 为什么建单要能指定币种：汇率快照（迁移 633）只在「订单币 ≠ 基准币」时成立。
+// 两者若同源（都取站点默认值）则永远相等、fx_rate 恒 NULL、折算永远不会发生。
+func orderCurrencyOf(req *orderdto.CreateOrderReq) string {
+	if req != nil {
+		if v := strings.ToUpper(strings.TrimSpace(req.Currency)); v != "" {
+			return v
+		}
+	}
+	return orderCurrency()
+}
+
 // orderCurrency 新建订单的币种标签。
 //
 // 币种是**标签**：金额本来就是数值（分），改币种只改标签 —— 按产品口径货币由后台
@@ -676,42 +773,84 @@ func (s *Service) persistOrderTx(ctx context.Context, tx *gorm.DB, d *orderDraft
 	if rerr := s.redeemCouponTx(ctx, tx, d.appliedCoupon, d.head.ID, d.head.OrderNo, d.head.DiscountTotal, d.head.UserID, d.now); rerr != nil {
 		return rerr
 	}
-	// 扣库存：同库跨模块，把**订单事务的句柄**传给库存的 …Tx 方法。
-	// 不足 / 不可用都让整个事务回滚 —— 订单、项、流水、券核销一起消失。
-	return s.deductStockTx(ctx, tx, d)
+	// 下单**预占**（迁移 624 起的两段式第一段）：只改 reserved_quantity、不写流水。
+	// 同库跨模块，把**订单事务的句柄**传给库存的 …Tx 方法：不足 / 不可用都让整个事务回滚
+	// —— 订单、项、流水、券核销一起消失。
+	//
+	// 为什么不再在下单时扣 quantity：扣了之后「取消要归还」「退款要判断发没发」都变成
+	// 判断题，而两段式（预占 → 发货扣减）把这些判断压成一条不变式：
+	// 已发 = 已扣，未发 = 只占着。
+	return s.reserveStockTx(ctx, tx, d)
 }
 
-// deductStockTx 建单出库（在订单事务内）：库存变动落在调用方的事务里，失败原样反馈。
+// reserveStockTx 建单预占（在订单事务内）：只改 reserved_quantity、不写流水（迁移 624）。
 //
-// 区分「库存不足」与「库存服务不可用」：前者是客户看得到答案的业务结论，
-// 后者是运维要看的问题，两者在错误文案与后续排查上完全不同。
-func (s *Service) deductStockTx(ctx context.Context, tx *gorm.DB, d *orderDraft) error {
+// 无仓工程（warehouse_id 为 NULL 的行）跳过预占：那种工程没有库存维度，
+// 预占无处可落 —— 发货时由运营指定仓（即「无仓卖货」这条既有的单站形态）。
+//
+// 预占不足**整单拒绝**（库存侧的守卫写在 UPDATE 的 WHERE 里），订单一起回滚。
+func (s *Service) reserveStockTx(ctx context.Context, tx *gorm.DB, d *orderDraft) error {
 	lines := make([]ordercontract.StockLine, 0, len(d.items))
 	for _, it := range d.items {
+		if it.WarehouseID == nil || strings.TrimSpace(*it.WarehouseID) == "" {
+			continue
+		}
 		lines = append(lines, ordercontract.StockLine{
-			ProductID: it.ProductID,
-			VariantID: it.VariantID,
-			SKUCode:   it.SKU,
-			Quantity:  it.Quantity,
+			ProductID:   it.ProductID,
+			VariantID:   it.VariantID,
+			SKUCode:     it.SKU,
+			Quantity:    it.Quantity,
+			WarehouseID: *it.WarehouseID,
 		})
 	}
-	dErr := s.stock.DeductStockTx(ctx, tx, &ordercontract.StockDeduction{
+	if len(lines) == 0 {
+		return nil // 无仓工程：没有可预占的对象。
+	}
+	rErr := s.stock.ReserveStockTx(ctx, tx, &ordercontract.StockReservation{
+		OrderID:    int64(d.head.ID),
 		ProjectID:  d.projectID,
-		ReasonCode: "sale_out",
 		SourceType: "order",
 		SourceRef:  d.head.OrderNo,
-		Remark:     "订单出库",
+		Remark:     "订单预占",
 		Lines:      lines,
 	})
-	if dErr == nil {
+	if rErr == nil {
 		return nil
 	}
-	reason := orderenums.ErrStockInsufficient
-	msg := strings.ToLower(dErr.Error())
-	if !strings.Contains(msg, "不足") && !strings.Contains(msg, "insufficient") {
-		reason = orderenums.ErrStockUnavailable
+	return mapStockError(rErr)
+}
+
+// mapStockError 把库存侧的错误收敛成订单侧的业务错误（文案与状态码由 enums 声明）。
+//
+// 「库存不足」是客户看得到答案的业务结论（409），其余是运维要看的问题（可用量判定失败
+// 之外的库存域故障）—— 两者在错误文案与后续排查上完全不同，不能压成一句。
+//
+// 判据是**错误文本里的 key**（inventory enums 的常量值）：跨模块不 import 对方的包
+// （module_boundary_test.go），两边的 key 常量值就是约定的锚点。
+// 匹配用 `errors.Is` 的语义等价物 —— 库存侧用 facing.WithStatus 包装，Error() 含 key。
+func mapStockError(err error) error {
+	if err == nil {
+		return nil
 	}
-	return errors.New(reason)
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "ErrStockInsufficient"):
+		return orderenums.Err(orderenums.ErrStockInsufficient)
+	case strings.Contains(msg, "ErrReserveUnderflow"):
+		// 释放比预占多：这是账目不一致，不是客户输入问题 —— 但对客户来说
+		// 「这单没法处理」是唯一可行动的信息，走「库存不可用」那一档。
+		return orderenums.Err(orderenums.ErrStockUnavailable)
+	case strings.HasPrefix(msg, "Err") || strings.HasPrefix(msg, "order.err."):
+		// 已经是本模块 / 库存模块的业务 key：原样上抛（它们自带兜底与状态码）。
+		//
+		// 判据是「Error() 以 Err 或某个模块的 err key 前缀开头」—— 这是 facing 形态的
+		// 文本等价物：业务错误是 key，基础设施错误是原始报文（不含这种前缀）。
+		return err
+	default:
+		// 库存端口本身不可用（网络 / 装配 / 替身故障）：业务结论是「库存暂时算不出来」。
+		// 与「库存不足」分开：前者要重试或查运维，后者要少买几件 —— 两句话完全不同。
+		return orderenums.Err(orderenums.ErrStockUnavailable)
+	}
 }
 
 // allocateLineDiscounts 把订单级折扣按行小计比例分摊到各订单项。
@@ -1194,13 +1333,17 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 			return lerr
 		}
 
-		// 归还库存（同库跨模块，句柄透传进本事务）。只归还**还没发货**的单：已发货的取消
-		// 发生在货物已出库之后，归还应该走退货入库流程（有实物验收环节），不能凭空加回来。
+		// 释放预占（迁移 624 的两段式第二段）：**只改 reserved_quantity、不写流水**。
 		//
-		// 归还量扣掉**已实际收货入库**的部分（BIZ-02）：客户已经退回来的货早就加进库存了，
-		// 这里再按订单项原始数量全额归还一次，库存就凭空多出已退的那些件 —— 不报错，只多货。
-		if rerr := s.restockUnreturnedTx(ctx, tx, e, "取消订单归还库存："+reason); rerr != nil {
-			// 归还失败 → 整个取消回滚：订单仍是原状态，库存也没动，不存在需要人工兜底的半截状态。
+		// 为什么不再是「归还数量」：下单只预占（quantity 从来没减），取消自然也没有数量可归还 ——
+		// 归还一个没扣过的数量会把库存凭空加多（BIZ-03 那类缺陷的镜像）。
+		// 已发货的单不走这条分支：货确实出去了，要回来必须经退货入库
+		// （ReturnService 的 ReceiveReturn → stockInReturnTx，那里才把货加回 quantity）。
+		// 本方法只处理「预占」这一半账 —— 那是取消 / 退款唯一需要动的库存事实。
+		// 已发部分在发货时已随扣减释放；这里释放的只是**剩余未发部分**
+		//（releaseOrderReservationTx 自己按「订单数量 − 已发数量」算）。
+		// 释放失败 → 整个取消回滚：订单仍是原状态，预占也没动。
+		if rerr := s.releaseOrderReservationTx(ctx, tx, e, "取消订单释放预占："+reason); rerr != nil {
 			return rerr
 		}
 
@@ -1274,9 +1417,13 @@ func (s *Service) refundOrderTx(ctx context.Context, tx *gorm.DB, projectID stri
 	if uerr := s.orders.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, fields); uerr != nil {
 		return uerr
 	}
-	// 未发货的退款把货按「还没归还的数量」还回仓库（与取消同一条路径、同一本账）。
+	// 未发货的退款**释放预占**（迁移 624）：货从来没出库，钱退了货自然还在库里 ——
+	// 只需要把「留给这张单的占用」还回去，quantity 一个字都不动。
+	//
+	// 已发货的退款（shipped / completed）保持原状：货已经出库，要回来必须经退货入库
+	// （有实物验收环节），凭空加回来等于把「系统里的数」当成「仓库里的货」。
 	if restock && unshipped {
-		if rerr := s.restockUnreturnedTx(ctx, tx, e, "退款归还库存："+strings.TrimSpace(req.Reason)); rerr != nil {
+		if rerr := s.releaseOrderReservationTx(ctx, tx, e, strings.TrimSpace(req.Reason)); rerr != nil {
 			return rerr
 		}
 	}
@@ -1292,7 +1439,72 @@ func (s *Service) refundOrderTx(ctx context.Context, tx *gorm.DB, projectID stri
 	})
 }
 
-// restockUnreturnedTx 事务内把「还没归还的」订单项加回仓库 —— 取消订单与未发货退款共用。
+// releaseOrderReservationTx 事务内释放某订单的预占（迁移 624 的两段式第二段）。
+//
+// 释放量 = 每一行「订单数量 − 已发数量」：已发的那些件在发货时已经随扣减释放过了，
+// 再释放一次会把预占打到负数（库 DDL 的 CHECK 会拒，但那条错误对运营毫无意义）。
+//
+// 没有 warehouse_id 的行跳过（无仓工程的既有形态：那些行从来没预占过）。
+//
+// 释放失败（ErrReserveUnderflow）说明账目不一致 —— 原样上抛让整个事务回滚，
+// 由运营去对账，而不是夹到 0 让差额藏在账里。
+func (s *Service) releaseOrderReservationTx(ctx context.Context, tx *gorm.DB,
+	e *ordermodel.OrderEntity, remark string) error {
+	items, ierr := s.items.ListByOrderIDTx(ctx, tx, e.ID)
+	if ierr != nil {
+		return ierr
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	itemIDs := make([]uint64, 0, len(items))
+	for _, it := range items {
+		itemIDs = append(itemIDs, it.ID)
+	}
+	shipped := map[uint64]int{}
+	if s.shipments != nil {
+		var serr error
+		shipped, serr = s.shipments.SumShippedQuantityTx(ctx, tx, e.ID, itemIDs)
+		if serr != nil {
+			return serr
+		}
+	}
+	lines := make([]ordercontract.StockLine, 0, len(items))
+	for _, it := range items {
+		if it.WarehouseID == nil || strings.TrimSpace(*it.WarehouseID) == "" {
+			continue
+		}
+		remaining := it.Quantity - shipped[it.ID]
+		if remaining <= 0 {
+			continue
+		}
+		lines = append(lines, ordercontract.StockLine{
+			ProductID: it.ProductID, VariantID: it.VariantID, SKUCode: it.SKU,
+			Quantity: remaining, WarehouseID: *it.WarehouseID,
+		})
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	if remark == "" {
+		remark = "订单取消 / 退款释放预占"
+	}
+	if rerr := s.stock.ReleaseStockTx(ctx, tx, &ordercontract.StockReservation{
+		OrderID: int64(e.ID), ProjectID: e.ProjectID,
+		SourceType: "order", SourceRef: e.OrderNo, Remark: remark, Lines: lines,
+	}); rerr != nil {
+		// 「该行已无预占」不是错误（退货入库 / 上一次取消已经释放过）：那说明这本账
+		// 已经是对的，取消 / 退款不该因为「没有可释放的东西」而失败。
+		if strings.Contains(rerr.Error(), "ErrStockNotFound") ||
+			strings.Contains(rerr.Error(), "ErrReserveUnderflow") {
+			return nil
+		}
+		return mapStockError(rerr)
+	}
+	return nil
+}
+
+// restockUnreturnedTx 事务内把「还没归还的」订单项加回仓库 —— 退货入库与已发货取消共用。
 //
 // 归还量扣掉**已实际收货入库**的数量（BIZ-02）：部分退货已经把那些货加回来过，
 // 再按订单项原始数量全额归还就是凭空多出库存。全部项都已归还时**不调用**库存变动 ——

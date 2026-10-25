@@ -52,8 +52,8 @@ type slot struct {
 func extractSlots(t *testing.T, html string) []slot {
 	t.Helper()
 	type hit struct {
-		at   int
-		s    slot
+		at int
+		s  slot
 	}
 	var hits []hit
 	for _, m := range gapSlot.FindAllStringIndex(html, -1) {

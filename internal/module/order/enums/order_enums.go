@@ -103,6 +103,26 @@ const (
 	ErrStockUnavailable  = "order.err.stockUnavailable"
 )
 
+// 发货（迁移 627 / 625，S2）。
+//
+// 发货是一条**有单据**的事实：状态、承运商、运单号、库存扣减、流水全部同事务落库。
+// 五条拒绝理由对应五类「这一步不该发生」的情形，状态码在声明处给（409 状态 / 超量 /
+// 幂等键冲突，400 缺明细 / 缺仓）—— 全部压成 400 的代价是前端与监控分不清
+// 「输错了」与「这条路现在不通」。
+const (
+	ErrOrderNotShippable      = "order.err.orderNotShippable"
+	ErrShipQuantityExceeded   = "order.err.shipQuantityExceeded"
+	ErrShipLinesRequired      = "order.err.shipLinesRequired"
+	ErrShipRequestKeyConflict = "order.err.shipRequestKeyConflict"
+	ErrShipWarehouseRequired  = "order.err.shipWarehouseRequired"
+	// ErrCarrierNotFound 承运商不存在（发货表单选了一个已被删掉的承运商）。
+	ErrCarrierNotFound  = "order.err.carrierNotFound"
+	ErrCarrierCodeTaken = "order.err.carrierCodeTaken"
+	// ErrCarrierTemplateInvalid 跟踪页模板里有 {tracking_no} 之外的占位符。
+	ErrCarrierTemplateInvalid = "order.err.carrierTemplateInvalid"
+	ErrCarrierStatusInvalid   = "order.err.carrierStatusInvalid"
+)
+
 // ErrInternal 未归类的系统错误对外统一文案。
 //
 // 存在的理由同 user 模块：基础设施错误（数据库 / Redis）的原文可能带表名、列名甚至
@@ -118,6 +138,17 @@ const ErrInternal = "操作失败，请稍后重试"
 // 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
 // 对账由 order_enums_test.go 的双向断言守（新增 Err* 没给兜底要红；表里留着已删的 key 也要红）。
 var errFallbacks = map[string]string{
+	// 发货与承运商（迁移 627-629，S1-S3）：这些 key 由本批引入，兜底必须同批给 ——
+	// 缺兜底时 facing.FactOf 取不到原文，界面上会出现裸 key。
+	ErrCarrierCodeTaken:       "该承运商编码已被占用",
+	ErrCarrierNotFound:        "承运商不存在",
+	ErrCarrierStatusInvalid:   "承运商状态不合法",
+	ErrCarrierTemplateInvalid: "承运商模板配置不合法",
+	ErrShipWarehouseRequired:  "发货必须指定发货仓",
+	ErrShipLinesRequired:      "发货单至少需要一行商品",
+	ErrShipQuantityExceeded:   "发货数量超出可发数量",
+	ErrShipRequestKeyConflict: "该发货请求已处理过（请求键冲突）",
+	ErrOrderNotShippable:      "当前订单状态不允许发货",
 	ErrInternal:                   "操作失败，请稍后重试",
 	ErrInvalidParam:               "参数不合法",
 	ErrProjectRequired:            "缺少站点工程",
@@ -184,6 +215,10 @@ var UserFacingMessages = []string{
 	ErrAlreadyCancelled, ErrAlreadyRefunded, ErrCancelReasonRequired,
 	ErrPaymentMethodRequired, ErrPaymentChannelFailed,
 	ErrVariantNotFound, ErrStockInsufficient, ErrStockUnavailable,
+	// 发货：后台发货表单与「待发货」页会把它们直接展示给操作者。
+	ErrOrderNotShippable, ErrShipQuantityExceeded, ErrShipLinesRequired,
+	ErrShipWarehouseRequired, ErrShipRequestKeyConflict,
+	ErrCarrierNotFound, ErrCarrierCodeTaken, ErrCarrierTemplateInvalid, ErrCarrierStatusInvalid,
 	// 优惠码：**后台代客建单页与 /api/order/create 会把它们直接透出给操作者**。
 	//
 	// 口径修正（BIZ-10）：这批文案此前写着「结算链路会把它们直接显示给访客」，
@@ -438,6 +473,9 @@ const (
 	OrdersHeading   = "admin.orders.heading"    // 订单
 	ReturnsHeading  = "admin.returns.heading"   // 退货
 	OrderSalesTitle = "admin.order.sales.title" // 销售概览
+	// 发货三屏的页面标题（迁移 627 / 625，S3）。
+	PendingShipTitle   = "admin.order.pendingShip.title" // 待发货
+	OrderCarriersTitle = "admin.order.carriers.title"    // 承运商
 
 	// 券页表单校验的展示槽文案（key + 中文兜底的事实，交给 adminui.MsgText）。
 	CouponFormInvalidID      = "admin.coupons.form.invalid_id"

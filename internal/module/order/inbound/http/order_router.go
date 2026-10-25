@@ -69,6 +69,10 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	// 只带 id 的入口（取消 / 改状态 / 退款 / 备注 / 超时扫描）靠它逐工程定位归属，
 	// 不注入会退回读 projects 表的兜底路径。
 	svc.SetProjects(projects)
+	// S1/S2：承运商与发货单仓储（发货用例唯一的写入口），以及发货仓解析端口。
+	// 解析端口由库存侧实现（orderstock.WarehouseResolver）—— 装配点在 routers/assembly.go，
+	// 那里已经持有库存契约，注入一次即可。
+	svc.SetShipmentModels(ordermodel.NewOrderShipmentModel(db), ordermodel.NewOrderCarrierModel(db))
 	h := NewHandle(svc)
 	// 待付款超时自动取消（TX-001）：进程内定时扫描，失败不阻断启动。
 	orderservice.StartPendingOrderExpiryScheduler(svc)
@@ -98,6 +102,25 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	cg.POST("/create", permission.OrderCouponCreate, h.CreateCoupon)
 	cg.POST("/update", permission.OrderCouponUpdate, h.UpdateCoupon)
 	cg.POST("/delete", permission.OrderCouponDelete, h.DeleteCoupon)
+
+	// 发货（迁移 627 / 625，S2）：一张单 = 一次发货事实（承运商 + 运单号 + 明细 + 扣库存）。
+	// 与 /order/status 的区别是它有单据、扣库存、置 shipped —— 后者只是改状态。
+	sg := rg.Group("/order/shipment")
+	sg.GET("/list", permission.OrderShipmentList, h.ListShipments)
+	sg.GET("/pending", permission.OrderPendingShip, h.ListPendingShip)
+	sg.GET("/form", permission.OrderShipForm, h.ShipForm)
+	sg.POST("/create", permission.OrderShip, h.ShipOrder)
+
+	// 承运商配置（一个工程几张，配一次长期不动）。
+	carg := rg.Group("/order/carrier")
+	carg.GET("/list", permission.OrderCarrierList, h.ListCarriers)
+	carg.POST("/create", permission.OrderCarrierCreate, h.CreateCarrier)
+	carg.POST("/update", permission.OrderCarrierManage, h.UpdateCarrier)
+
+	// 汇率（迁移 633，W5）：覆盖式读写，供销售总览的折算与后台配置用。
+	// 权限点复用 order:overview —— 汇率只影响报表口径，不构成新的风险面。
+	rg.GET("/order/currency/rate", permission.OrderCurrencyRateGet, h.GetCurrencyRate)
+	rg.POST("/order/currency/rate", permission.OrderCurrencyRateSet, h.SetCurrencyRate)
 
 	// 退货入库（RMA）：客户在访问面提交申请，后台在这里审核与收货。
 	// **先入库、后退款**的强顺序由 service 的 ReceiveReturn 保证。

@@ -184,8 +184,12 @@ func TestConcurrentCancelAndPayKeepSingleOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	if got := f.stockOf(t, vid); got != 9 {
-		t.Fatalf("建单后库存应为 9，实际 %d", got)
+	// 两段式（迁移 624）：建单只预占 1 件，在库数量不动。
+	if got := f.reservedOf(t, vid); got != 1 {
+		t.Fatalf("建单后预占应为 1，实际 %d", got)
+	}
+	if got := f.stockOf(t, vid); got != 10 {
+		t.Fatalf("建单不得扣减在库数量，期望 10，实际 %d", got)
 	}
 
 	const workers = 8

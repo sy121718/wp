@@ -192,12 +192,15 @@ func TestProductCreateFromWarehouseSKU(t *testing.T) {
 	if _, rows := f.wpickExternalSKU(t, picked.Variants[0].ID, f.sh.ID); rows != 0 {
 		t.Fatalf("认领已有编码不应为该变体新建库存行，实际 %d 行", rows)
 	}
-	// 宿主那一行原样保留：编码是**裸码**（不带仓码前缀），外码没被改写。
+	// 宿主那一行的编码是**裸码**（不带仓码前缀），外码没被改写。
 	if code := f.wpickStockCode(t, src.Variants[0].ID, f.sh.ID); code != "TEE-001" {
 		t.Fatalf("仓库侧的编码应是裸码 TEE-001（不带仓码前缀），实际 %q", code)
 	}
+	// 这一行本来**已认领**（属于宿主商品的变体）：认领是单向动作，不该把它改挂到新变体上
+	// （那等于把前任的库存偷走）。「未认领行被认领」那条正向断言见
+	// TestProductCreateClaimsUnclaimedWarehouseRow。
 	if external, rows := f.wpickExternalSKU(t, src.Variants[0].ID, f.sh.ID); rows != 1 || external != "" {
-		t.Fatalf("认领不改写既有行：应仍是 1 行且外码 TEE-001，实际 %d 行 / %q", rows, external)
+		t.Fatalf("认领不改写既有行：应仍是 1 行且外码空，实际 %d 行 / %q", rows, external)
 	}
 
 	// 自己打新码 = 建行：仓库侧写**裸码**，显式填的外部编码写在认领仓那一次。
@@ -503,5 +506,70 @@ func TestNewPageRendersWarehouseSKUCatalog(t *testing.T) {
 		if strings.Contains(page, unwanted) {
 			t.Fatalf("新建表单不该再有 %q（这两条来路已从页面撤掉）", unwanted)
 		}
+	}
+}
+
+// TestProductCreateClaimsUnclaimedWarehouseRow 复审 G（P1）：
+// 「从仓库选」建商品时，该仓那条**未认领**的存货行必须被认领到新变体上。
+//
+// 这是主线 A→B 段的断点：不认领的话货停在 variant_id IS NULL，商品侧库存汇总
+// （StockTotals 带 `WHERE variant_id IS NOT NULL`）看不见它 —— 商品页显示库存 0
+// 而仓库里明明有货，运营得再去 /admin/inventory/skus 手动认领一次。
+func TestProductCreateClaimsUnclaimedWarehouseRow(t *testing.T) {
+	f := newWPickFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	// 造一条**未认领**的存货行（迁移 624 的形态：客户寄卖 / 清关到仓）。
+	loose, err := f.inventory.CreateUnclaimedStock(ctx, &inventorydto.CreateUnclaimedStockReq{
+		ProjectID: f.projectID, WarehouseID: f.sh.ID, SKUCode: "LOOSE-777",
+		Quantity: 12, TrackQuantity: true,
+	})
+	if err != nil {
+		t.Fatalf("建未认领存货失败: %v", err)
+	}
+
+	price := 29.9
+	picked, err := f.products.Create(ctx, &productdto.CreateReq{
+		ProjectID: f.projectID, Name: "从仓库选未认领的货", Slug: "picked-loose",
+		DefaultPrice: &price, SKUSource: "warehouse",
+		WarehouseSKU: "LOOSE-777", WarehouseID: f.sh.ID,
+	})
+	if err != nil {
+		t.Fatalf("从仓库选建商品失败: %v", err)
+	}
+
+	// ① 那条行必须挂到新变体上（原地改列，不是新建一行）。
+	var claimedVariant *string
+	var claimedQty int
+	if qerr := f.db.Raw("SELECT variant_id, quantity FROM inventory_stocks WHERE id = ?", loose.ID).
+		Row().Scan(&claimedVariant, &claimedQty); qerr != nil {
+		t.Fatalf("读库存行失败: %v", qerr)
+	}
+	if claimedVariant == nil || *claimedVariant != picked.Variants[0].ID {
+		t.Fatalf("未认领行应被认领到新变体 %q，实际 %v", picked.Variants[0].ID, claimedVariant)
+	}
+	// ② 数量原样保留（认领只改归属，不动数量 —— 那是两份事实）。
+	if claimedQty != 12 {
+		t.Fatalf("认领不该改数量（期望 12），实际 %d", claimedQty)
+	}
+	// ③ 同仓同码只有一行：认领是原地改列，不是新建。
+	var n int64
+	if qerr := f.db.Raw("SELECT COUNT(*) FROM inventory_stocks WHERE warehouse_id = ? AND sku_code = ?",
+		f.sh.ID, "LOOSE-777").Scan(&n).Error; qerr != nil {
+		t.Fatalf("查同仓同码行数失败: %v", qerr)
+	}
+	if n != 1 {
+		t.Fatalf("认领之后同仓同码应仍只有 1 行，实际 %d 行", n)
+	}
+	// ④ 商品侧库存汇总必须看得见它 —— 这正是这个缺陷的用户可见后果。
+	totals, terr := inventorymodel.NewModel(f.db).VariantStockTotals(ctx, f.projectID,
+		[]string{picked.Variants[0].ID})
+	if terr != nil {
+		t.Fatalf("读变体库存汇总失败: %v", terr)
+	}
+	if got := totals[picked.Variants[0].ID]; got != 12 {
+		t.Fatalf("商品侧应看到 12 件（否则商品页显示 0 而仓库里有货），实际 %d", got)
 	}
 }

@@ -133,5 +133,4 @@ type CommentService interface {
 	EntityTypeLabels(tr func(key, fallback string) string) []commentdto.EntityType
 	// IsRegisteredEntityType 实体类型是否已注册（后台筛选参数校验用，fail-closed）。
 	IsRegisteredEntityType(entityType string) bool
-
 }

@@ -14,7 +14,7 @@ package productdto
 // DetailTemplateModeReapplyReq 重新套用预设：放弃实例的独立文档、回到跟随模板。
 type DetailTemplateModeReapplyReq struct {
 	InstanceID string `json:"instanceId" form:"instanceId" binding:"required"`
-	ProjectID string `json:"projectId" form:"projectId"`
+	ProjectID  string `json:"projectId" form:"projectId"`
 	// TemplateID 非空时同时换一套底稿；留空 = 沿用当前绑定。
 	TemplateID string `json:"templateId" form:"templateId"`
 }
@@ -22,7 +22,7 @@ type DetailTemplateModeReapplyReq struct {
 // DetailTemplateModeRollbackReq 文档级回滚：取历史快照的文档重新发布（实体数据取最新）。
 type DetailTemplateModeRollbackReq struct {
 	InstanceID string `json:"instanceId" form:"instanceId" binding:"required"`
-	ProjectID string `json:"projectId" form:"projectId"`
+	ProjectID  string `json:"projectId" form:"projectId"`
 	SnapshotID string `json:"snapshotId" form:"snapshotId" binding:"required"`
 }
 
@@ -36,23 +36,23 @@ type DetailTemplateModeRollbackReq struct {
 type DetailTemplateCreateReq struct {
 	ProjectID string `json:"projectId" form:"projectId"`
 	ProductID string `json:"productId" form:"productId" binding:"required"`
-	Name string `json:"name" form:"name" binding:"required"`
+	Name      string `json:"name" form:"name" binding:"required"`
 	// CopyFrom 复制来源模板 ID；留空 = 该类型的默认模板。
 	CopyFrom string `json:"copyFrom" form:"copyFrom"`
 }
 
 // DetailTemplatePublishReq 首次为该商品建立发布实例并发布（URLPath 留空按商品 slug 派生）。
 type DetailTemplatePublishReq struct {
-	ProjectID string `json:"projectId" form:"projectId"`
-	ProductID string `json:"productId" form:"productId" binding:"required"`
+	ProjectID  string `json:"projectId" form:"projectId"`
+	ProductID  string `json:"productId" form:"productId" binding:"required"`
 	TemplateID string `json:"templateId" form:"templateId"`
-	URLPath string `json:"urlPath" form:"urlPath"`
+	URLPath    string `json:"urlPath" form:"urlPath"`
 }
 
 // DetailTemplateApplyReq 把商品切换到选中模板并重新发布。
 type DetailTemplateApplyReq struct {
-	ProjectID string `json:"projectId" form:"projectId"`
-	ProductID string `json:"productId" form:"productId" binding:"required"`
+	ProjectID  string `json:"projectId" form:"projectId"`
+	ProductID  string `json:"productId" form:"productId" binding:"required"`
 	TemplateID string `json:"templateId" form:"templateId"`
 }
 
@@ -60,7 +60,7 @@ type DetailTemplateApplyReq struct {
 type DetailTemplateUpdateURLReq struct {
 	ProjectID string `json:"projectId" form:"projectId"`
 	ProductID string `json:"productId" form:"productId" binding:"required"`
-	NewPath string `json:"newPath" form:"newPath" binding:"required"`
+	NewPath   string `json:"newPath" form:"newPath" binding:"required"`
 	// WithRedirect 勾选时旧链接 301 到新路径。未勾选时客户端根本不发这个键，
 	// 于是零值 false —— 与页面表单「复选框不勾即不提交」同一语义。
 	WithRedirect bool `json:"withRedirect" form:"withRedirect"`

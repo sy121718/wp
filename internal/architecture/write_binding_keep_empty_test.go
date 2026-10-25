@@ -48,7 +48,7 @@ var emptyMeansSemantic = regexp.MustCompile(`(指向空串|空串表示)`)
 //
 // 所以 dropEmpty 删不删这个键，对结果没有任何影响 —— 与商品的 parentId /
 // primaryCategoryId 不同：那两个走 JSON 端点的 binding 绑定，nil 与空串语义相反
-//（nil = 不改、空串 = 解绑），删键就会把「解绑」变成「不改」。
+// （nil = 不改、空串 = 解绑），删键就会把「解绑」变成「不改」。
 //
 // 判据因此是「空串被删掉之后，消费方还能不能区分『没填』与『显式置空』」：
 //   · PostForm 取值：不能区分也不需要区分（键不存在 = 空串）；

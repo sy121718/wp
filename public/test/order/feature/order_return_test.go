@@ -159,8 +159,14 @@ func TestReturnApproveAndReceiveReturnsStockAndRefund(t *testing.T) {
 	_, vid := f.addProduct(t, "退货入库商品", 88, 10)
 	orderID, userID, itemID := f.paidOrder(t, "return-flow@example.com", vid, 2)
 	ctx := context.Background()
-	if got := f.stockOf(t, vid); got != 8 {
-		t.Fatalf("下单后库存应为 8，实际 %d", got)
+	// 两段式（迁移 624）：下单只预占 2 件，在库仍是 10。
+	// 退货把货**加回来**这件事在新口径下要分开读：在库数量只有在发货之后才会减少，
+	// 而本用例的订单从未发货 —— 所以「退回 2 件后在库仍是 10、预占归零」才是正确的账。
+	if got := f.reservedOf(t, vid); got != 2 {
+		t.Fatalf("下单后预占应为 2，实际 %d", got)
+	}
+	if got := f.stockOf(t, vid); got != 10 {
+		t.Fatalf("下单不得扣减在库数量，期望 10，实际 %d", got)
 	}
 
 	req := f.returnReq(orderID, []orderdto.ReturnItemReq{{OrderItemID: itemID, Quantity: 2}})
@@ -223,10 +229,12 @@ func TestReturnReceiveIsIdempotent(t *testing.T) {
 	if first.Status != ordermodel.ReturnStatusCompleted {
 		t.Fatalf("首次收货后应完成，实际 %s", first.Status)
 	}
-	stockAfterFirst := f.stockOf(t, vid)
-	if stockAfterFirst != 10 {
-		t.Fatalf("入库后库存应为 10，实际 %d", stockAfterFirst)
+	// 入库把货加回来 —— 但本单从未发货，在库一直是 10；真正变化的是**预占归零**。
+	// 断言预占而不是在库：那才是这段代码改的东西（释放留给这张单的占用）。
+	if got := f.reservedOf(t, vid); got != 0 {
+		t.Fatalf("退货入库后预占应归零，实际 %d", got)
 	}
+	stockAfterFirst := f.stockOf(t, vid)
 
 	second, err := f.orders.ReceiveReturn(ctx, &orderdto.ReturnReceiveReq{ReturnID: created.ID})
 	if err != nil {
@@ -258,8 +266,12 @@ func TestReturnReceiveRequiresApproval(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), orderenums.ErrReturnNotReceivable) {
 		t.Fatalf("未同意的申请不能收货，实际: %v", err)
 	}
-	if got := f.stockOf(t, vid); got != 9 {
-		t.Fatalf("被拒的收货不该动库存，实际 %d", got)
+	// 被拒的收货不动任何库存事实（在库与预占都不变）。
+	if got := f.stockOf(t, vid); got != 10 {
+		t.Fatalf("被拒的收货不该动在库数量，实际 %d", got)
+	}
+	if got := f.reservedOf(t, vid); got != 1 {
+		t.Fatalf("被拒的收货不该动预占，实际 %d", got)
 	}
 }
 
@@ -315,8 +327,12 @@ func TestReturnPartialRefundKeepsOrderStatus(t *testing.T) {
 	if res.Status != ordermodel.ReturnStatusCompleted {
 		t.Fatalf("退货单应完成，实际 %s", res.Status)
 	}
-	if got := f.stockOf(t, vid); got != 8 {
-		t.Fatalf("退回 1 件后库存应为 8（10-3+1），实际 %d", got)
+	// 部分退货：在库不动（本单未发货），预占从 3 降到 2（退回的那 1 件不再占着）。
+	if got := f.reservedOf(t, vid); got != 2 {
+		t.Fatalf("退回 1 件后预占应为 2（3−1），实际 %d", got)
+	}
+	if got := f.stockOf(t, vid); got != 10 {
+		t.Fatalf("未发货的订单退货不改变在库数量，期望 10，实际 %d", got)
 	}
 	detail, _ := f.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: f.projectID, OrderID: orderID})
 	if detail.Head.Status == ordermodel.OrderStatusRefunded {

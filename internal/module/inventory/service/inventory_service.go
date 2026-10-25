@@ -75,6 +75,11 @@ type Service struct {
 	// 与 mail / webhook 同一模式）。为空时不写明文凭据，而是明确报错 ——
 	// 「没有密钥」是配置问题，不该降级成「凭据明文落库」。
 	cipherSecret string
+	// attachments 附件读口（调拨凭证的存在性校验与展示，迁移 630 W3）。
+	//
+	// 允许为 nil：纯库存单测路径下不校验存在性（只保留 id）。生产装配必注入 ——
+	// 缺它时「凭证引用的附件是否存在」就无从判起，而那是凭证要求的全部意义。
+	attachments inventorycontract.AttachmentResolver
 }
 
 // NewService 构造。
@@ -100,6 +105,17 @@ func (s *Service) SetCipherSecret(secret string) { s.cipherSecret = secret }
 // 与 SetStockCache 同一模式：端口实现属商品模块，故在商品模块装配之后注入。
 func (s *Service) SetVariantCost(port productcontract.VariantCostPort) {
 	s.variantCost = port
+}
+
+// SetAttachmentResolver 注入附件读口（迁移 630 W3，装配期调用；生产必注入）。
+//
+// 未注入时调拨的凭证校验退化成「只保留 id、不校验存在性」——
+// 那是纯库存单测的形态，不是生产可接受的降级。
+func (s *Service) SetAttachmentResolver(resolver inventorycontract.AttachmentResolver) {
+	if s == nil {
+		return
+	}
+	s.attachments = resolver
 }
 
 // SetMasterDataChanges 注入主数据变更记录端口（issue #19，装配期调用；**必须注入**）。

@@ -64,7 +64,7 @@ type ListCategoryPageReq struct {
 
 // DeleteCategoryReq 删除分类（有子级或被商品引用时拒绝）。
 type DeleteCategoryReq struct {
-	ID string `json:"id" form:"id" binding:"required"`
+	ID        string `json:"id" form:"id" binding:"required"`
 	ProjectID string `json:"projectId" form:"projectId"`
 }
 
@@ -119,6 +119,6 @@ type ListBrandReq struct {
 
 // DeleteBrandReq 删除品牌（被商品引用时拒绝）。
 type DeleteBrandReq struct {
-	ID string `json:"id" form:"id" binding:"required"`
+	ID        string `json:"id" form:"id" binding:"required"`
 	ProjectID string `json:"projectId" form:"projectId"`
 }

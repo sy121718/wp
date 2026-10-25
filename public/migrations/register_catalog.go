@@ -873,4 +873,102 @@ func registerCatalogAndInventory() {
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.inventory.stock.unlimited'",
 		SQL:          mustSQL("263_inventory_track_quantity_i18n.sql"),
 	})
+
+	// 621：仓库商品 SKU 主档化（库存行升格）。variant_id / product_id 改可空（允许
+	// 「仓库里已有、尚未对应商品」的存货行），加 reserved_quantity 预占列与两条 CHECK。
+	// CheckSQL 按**本迁移自己的列**判定（reserved_quantity 存在即已执行）：存量库上
+	// inventory_stocks 早就存在，用默认的「表存在即跳过」会把它永久跳过。
+	register(Migration{
+		Version:   "624-inventory-stock-master",
+		TableName: "inventory_stocks",
+		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'reserved_quantity'",
+		SQL: mustSQL("624_inventory_stock_master.sql"),
+	})
+
+	// 622：本批的文案词条（4 条业务错误 + 30 个台账页界面位，中英成对 = 68 行）。
+	// 判定逐条枚举本批全部 34 个 key 的两种语言（= 68 个 (item_key, lang) 组合），
+	// 不用全库行数、也不用前缀 LIKE（前者会被同期其它批次的行满足而静默跳过，
+	// 后者会被将来新增的同前缀 key 带跑）。
+	// 阈值取**精确组合数 68**：低于它缺词也能满足，高于它判据永不满足、每次启动重跑。
+	registerSeed(Seed{
+		Version:   "625-inventory-stock-master-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 68 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
+			"'ErrStockAlreadyClaimed', 'ErrStockHasQuantity', 'ErrStockNotClaimed', 'ErrReserveUnderflow', " +
+			"'admin.inventory.skus.title', 'admin.inventory.skus.lead', 'admin.inventory.skus.mid', " +
+			"'admin.inventory.skus.boundary', 'admin.inventory.skus.createTitle', 'admin.inventory.skus.create', " +
+			"'admin.inventory.skus.listLead', 'admin.inventory.skus.col.claimed', 'admin.inventory.skus.col.reserved', " +
+			"'admin.inventory.skus.col.available', 'admin.inventory.skus.col.cost', 'admin.inventory.skus.filter.keyword', " +
+			"'admin.inventory.skus.filter.keywordPh', 'admin.inventory.skus.emptyHeading', 'admin.inventory.skus.emptyDesc', " +
+			"'admin.inventory.skus.unclaimConfirm', 'admin.inventory.skus.unclaim', 'admin.inventory.skus.claim', " +
+			"'admin.inventory.skus.claimTitle', 'admin.inventory.skus.claimTarget', 'admin.inventory.skus.claimPick', " +
+			"'admin.inventory.skus.claimSubmit', 'admin.inventory.skus.createWarehousePh', " +
+			"'admin.inventory.skus.createCodePh', 'admin.inventory.skus.costPh', 'admin.inventory.skus.createSubmit', " +
+			"'admin.inventory.stock.claimed', 'admin.inventory.stock.unclaimed', 'admin.inventory.filter.all', " +
+			"'admin.inventory.skus.filter.submit')",
+		SQL: mustSQL("625_inventory_stock_master_i18n.sql"),
+	})
+
+	// 623：出库扣减优先级（inventory_warehouses.deduct_priority）+ 采购单两个终态。
+	// CheckSQL 按本迁移自己的列判定（deduct_priority 存在即已执行）：存量库上
+	// inventory_warehouses 早就存在，用默认的「表存在即跳过」会把它永久跳过。
+	register(Migration{
+		Version:   "626-inventory-deduct-priority",
+		TableName: "inventory_warehouses",
+		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'deduct_priority'",
+		SQL: mustSQL("626_inventory_deduct_priority.sql"),
+	})
+
+	// 623b：W2 的文案词条（2 条业务错误 + 8 个界面位，中英成对 = 20 行）。
+	// 判定逐条枚举本批全部 10 个 key 的两种语言（= 20 个 (item_key, lang) 组合）。
+	registerSeed(Seed{
+		Version:   "626b-inventory-deduct-priority-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 20 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
+			"'admin.inventory.warehouse.col.deductPriority', 'admin.inventory.warehouse.deductPriorityHint', " +
+			"'admin.inventory_purchases.status.finished', 'admin.inventory_purchases.status.cancelled', " +
+			"'admin.inventory_purchases.finish', 'admin.inventory_purchases.finishConfirm', " +
+			"'admin.inventory_purchases.cancel', 'admin.inventory_purchases.cancelConfirm', " +
+			"'ErrPurchaseStatusNotFinishable', 'ErrPurchaseStatusNotCancelable')",
+		SQL: mustSQL("626b_inventory_deduct_priority_i18n.sql"),
+	})
+
+	// 627：调拨单 + 明细 + 凭证附件（W3）。CheckSQL 按**三张表全在**判定：
+	// 只查一张的话，中途失败会留下「调拨单表在、明细表不在」却被永久跳过的状态（与 624 同因）。
+	register(Migration{
+		Version:   "630-inventory-transfer",
+		TableName: "inventory_transfers",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
+			"AND table_name IN ('inventory_transfers', 'inventory_transfer_items', 'inventory_transfer_attachments')",
+		SQL: mustSQL("630_inventory_transfer.sql"),
+	})
+
+	// 628：W3 的文案词条（45 个 key，中英成对 = 90 行）。
+	// 判定逐条枚举本批全部 42 个 key 的两种语言。
+	registerSeed(Seed{
+		Version:   "631-inventory-transfer-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 90 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
+			"'admin.inventory.transfers.title', 'admin.inventory.transfers.hint', 'admin.inventory.transfers.sub', " +
+			"'admin.inventory.transfers.create', 'admin.inventory.transfers.listLead', 'admin.inventory.transfers.filter.keywordPh', " +
+			"'admin.inventory.transfers.col.no', 'admin.inventory.transfers.col.route', 'admin.inventory.transfers.col.status', " +
+			"'admin.inventory.transfers.col.items', 'admin.inventory.transfers.col.totalQty', 'admin.inventory.transfers.col.createdAt', " +
+			"'admin.inventory.transfers.emptyHeading', 'admin.inventory.transfers.emptyDesc', 'admin.inventory.transfers.ship', " +
+			"'admin.inventory.transfers.receive', 'admin.inventory.transfers.cancel', 'admin.inventory.transfers.cancelConfirm', " +
+			"'admin.inventory.transfers.cancelRemark', 'admin.inventory.transfers.attachments', 'admin.inventory.transfers.shipAttachHint', " +
+			"'admin.inventory.transfers.receiveAttachHint', 'admin.inventory.transfers.remark', 'admin.inventory.transfers.shipSubmit', " +
+			"'admin.inventory.transfers.receiveSubmit', 'admin.inventory.transfers.fromWarehouse', 'admin.inventory.transfers.toWarehouse', " +
+			"'admin.inventory.transfers.sameWarehouseHint', 'admin.inventory.transfers.requestAttachments', 'admin.inventory.transfers.createSubmit', " +
+			"'admin.inventory.transfers.status.pending', 'admin.inventory.transfers.status.in_transit', 'admin.inventory.transfers.status.completed', " +
+			"'admin.inventory.transfers.status.cancelled', 'ErrTransferNotFound', 'ErrTransferLinesRequired', " +
+			"'ErrTransferSameWarehouse', 'ErrItemNotInSourceWarehouse', 'ErrTransferStatusInvalid', " +
+			"'ErrAttachmentRequired', 'ErrAttachmentNotFound', 'ErrStockNotEnough', 'admin.inventory.transfers.units', 'admin.inventory.boundary.transfers', 'admin.inventory.boundary.tail2')",
+		SQL: mustSQL("631_inventory_transfer_i18n.sql"),
+	})
 }

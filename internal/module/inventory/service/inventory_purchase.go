@@ -217,6 +217,100 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *inventorydto.Upd
 	return s.purchaseOrderResp(ctx, order, lines, nil, nil), nil
 }
 
+// FinishPurchaseOrder 提前关单（迁移 626）：received / partial → finished。
+//
+// 「提前关单」= 剩下的不再等（供应商断供 / 转单 / 只要已到的那部分）。
+// 它**不是**数量推导的结果（那是 received），而是一次人工决定 —— 所以给显式入口，
+// 不让 derivePurchaseStatus 在下次收货时把它抹回去（终态不参与推导）。
+//
+// 不写库存流水：单据状态不是库存事实（货的进出早已在收货时落账）。
+func (s *Service) FinishPurchaseOrder(ctx context.Context, req *inventorydto.PurchaseStatusReq) (res *inventorydto.PurchaseOrderResp, err error) {
+	return s.settlePurchaseStatus(ctx, req, inventoryenums.PurchaseStatusFinished)
+}
+
+// CancelPurchaseOrder 取消采购单（迁移 626）：pending / partial → cancelled。
+//
+// received 不可取消：货已经进仓，要退只能走退货；把它「取消」会让库存凭空多出一批
+// 没有来源的单据对应物。
+func (s *Service) CancelPurchaseOrder(ctx context.Context, req *inventorydto.PurchaseStatusReq) (res *inventorydto.PurchaseOrderResp, err error) {
+	return s.settlePurchaseStatus(ctx, req, inventoryenums.PurchaseStatusCancelled)
+}
+
+// settlePurchaseStatus 两个终态的公共实现：锁单 → 校验当前状态 → 写终态与备注 → 交出详情。
+//
+// 锁单的理由：两个并发的关单请求（或关单 + 收货）必须串行，否则「先判状态再写」
+// 会让一个已 finished 的单被后到的收货改回 received。
+func (s *Service) settlePurchaseStatus(ctx context.Context, req *inventorydto.PurchaseStatusReq,
+	target string) (res *inventorydto.PurchaseOrderResp, err error) {
+	if req == nil || strings.TrimSpace(req.ID) == "" {
+		return nil, inventoryenums.Err(inventoryenums.ErrInvalidParam)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	remark := strings.TrimSpace(req.Remark)
+	now := time.Now().UTC()
+	var order *inventorymodel.PurchaseOrderEntity
+	var lines []*inventorymodel.PurchaseLineEntity
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		locked, lerr := s.m.LockPurchaseOrderTx(ctx, tx, strings.TrimSpace(req.ID), projectID)
+		if lerr != nil {
+			return mapPurchaseOrderNotFound(lerr)
+		}
+		if perr := assertPurchaseTransition(locked.Status, target); perr != nil {
+			return perr
+		}
+		// 备注追加而不是覆盖：「提前关单」要留下原因，但不能把下单时写的备注抹掉。
+		if remark != "" {
+			locked.Remark = orJoinRemark(locked.Remark, remark)
+		}
+		locked.Status = target
+		locked.UpdatedAt = now
+		if uerr := s.m.UpdatePurchaseOrderTx(ctx, tx, locked); uerr != nil {
+			return uerr
+		}
+		order = locked
+		list, qerr := s.m.ListPurchaseLinesTx(ctx, tx, locked.ID, projectID)
+		if qerr != nil {
+			return qerr
+		}
+		lines = list
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return s.purchaseOrderResp(ctx, order, lines, nil, nil), nil
+}
+
+// assertPurchaseTransition 采购单终态的合法前置状态。
+//
+// 与前三个中间态不同，终态是**单向**的：没有任何路径把 finished / cancelled 改回推导状态
+// （否则「提前关单」会被下一次收货悄悄复活）。
+func assertPurchaseTransition(current, target string) error {
+	switch target {
+	case inventoryenums.PurchaseStatusFinished:
+		if current == inventoryenums.PurchaseStatusReceived || current == inventoryenums.PurchaseStatusPartial {
+			return nil
+		}
+		return inventoryenums.Err(inventoryenums.ErrPurchaseStatusNotFinishable)
+	case inventoryenums.PurchaseStatusCancelled:
+		if current == inventoryenums.PurchaseStatusPending || current == inventoryenums.PurchaseStatusPartial {
+			return nil
+		}
+		return inventoryenums.Err(inventoryenums.ErrPurchaseStatusNotCancelable)
+	}
+	return inventoryenums.Err(inventoryenums.ErrPurchaseStatusInvalid)
+}
+
+// orJoinRemark 把一句补充说明追加到已有备注之后（半角分号分隔，空则直接用新的）。
+func orJoinRemark(existing, extra string) string {
+	if strings.TrimSpace(existing) == "" {
+		return extra
+	}
+	return existing + "；" + extra
+}
+
 // GetPurchaseOrder 采购单详情（含全部采购行）。
 func (s *Service) GetPurchaseOrder(ctx context.Context, req *inventorydto.GetPurchaseOrderReq) (res *inventorydto.PurchaseOrderResp, err error) {
 	if req == nil || strings.TrimSpace(req.ID) == "" {
@@ -504,7 +598,8 @@ func normalizePurchaseStatusFilter(status string) (out string, err error) {
 	case "":
 		return "", nil
 	case inventoryenums.PurchaseStatusPending, inventoryenums.PurchaseStatusPartial,
-		inventoryenums.PurchaseStatusReceived:
+		inventoryenums.PurchaseStatusReceived, inventoryenums.PurchaseStatusFinished,
+		inventoryenums.PurchaseStatusCancelled:
 		return strings.ToLower(strings.TrimSpace(status)), nil
 	default:
 		return "", inventoryenums.Err(inventoryenums.ErrPurchaseStatusInvalid)

@@ -36,7 +36,7 @@ func TestEnsureStockCoercesUntrackedRowWithQuantity(t *testing.T) {
 		now := time.Now().UTC()
 		return m.EnsureStock(ctx, &inventorymodel.StockEntity{
 			ID: uuid.NewString(), ProjectID: f.projectID, WarehouseID: warehouseID,
-			ProductID: p.ID, VariantID: v.ID, SKUCode: bareSKU(v.SKUCode, sh.Code),
+			ProductID: &p.ID, VariantID: &v.ID, SKUCode: bareSKU(v.SKUCode, sh.Code),
 			TrackQuantity: track, Quantity: quantity,
 			Metadata: json.RawMessage("{}"), CreatedAt: now, UpdatedAt: now,
 		})

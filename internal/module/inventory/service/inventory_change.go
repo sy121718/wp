@@ -294,7 +294,14 @@ func (s *Service) deductStockTx(ctx context.Context, tx *gorm.DB, req *inventory
 	}
 	meta := changeMeta{reason: reason, sourceType: req.SourceType, sourceRef: req.SourceRef,
 		remark: req.Remark, operatorID: req.OperatorID}
-	items, err := s.buildChangeItems(ctx, projectID, inventoryenums.DirectionOut, req.WarehouseID, req.Lines, meta, "")
+	// 跨仓分配（迁移 626）：只在「出库 且 请求 / 行都没指定仓」时接管，
+	// 显式指定的仓永远优先。分配结果仍是同一个 lines 形状 ——
+	// 随后的 buildChangeItems 解析 / 校验 / 加锁 / 流水逐字复用。
+	lines, aerr := s.assignDeductWarehouses(ctx, projectID, inventoryenums.DirectionOut, req.WarehouseID, req.Lines)
+	if aerr != nil {
+		return nil, "", aerr
+	}
+	items, err := s.buildChangeItems(ctx, projectID, inventoryenums.DirectionOut, req.WarehouseID, lines, meta, "")
 	if err != nil {
 		return nil, "", err
 	}
@@ -504,9 +511,10 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 		byKey := make(map[stockKey]*inventorymodel.StockEntity, len(existing))
 		meta := make(map[string]*inventorymodel.StockEntity, len(existing))
 		for _, e := range existing {
-			byKey[stockKey{variantID: e.VariantID, warehouseID: e.WarehouseID}] = e
-			if _, ok := meta[e.VariantID]; !ok {
-				meta[e.VariantID] = e
+			variantID := inventorymodel.PtrString(e.VariantID)
+			byKey[stockKey{variantID: variantID, warehouseID: e.WarehouseID}] = e
+			if _, ok := meta[variantID]; !ok {
+				meta[variantID] = e
 			}
 		}
 
@@ -520,7 +528,7 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 			productID, skuCode := item.productID, item.skuCode
 			if src, ok := meta[k.variantID]; ok {
 				if productID == "" {
-					productID = src.ProductID
+					productID = inventorymodel.PtrString(src.ProductID)
 				}
 				if skuCode == "" {
 					skuCode = src.SKUCode
@@ -531,8 +539,12 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 			}
 			pending = append(pending, &inventorymodel.StockEntity{
 				ID: uuid.NewString(), ProjectID: orString(item.projectID, projectID),
-				WarehouseID: k.warehouseID, ProductID: productID, VariantID: k.variantID,
-				SKUCode: skuCode,
+				// 建行路径**不允许**变体为空（出入库必须有商品上下文）：
+				// 未认领行只由人工建档 / 迁移存量产出，不走出入库。
+				WarehouseID: k.warehouseID,
+				ProductID:   inventorymodel.StringPtr(productID),
+				VariantID:   inventorymodel.StringPtr(k.variantID),
+				SKUCode:     skuCode,
 				// 变动路径上首次出现的行同样默认**不跟踪（无限）**：与商品侧建变体、
 				// 与 EnsureStock 的新建口径一致（迁移 261：新建行默认无限，存量行才 true）。
 				// 入库 / 调整会在 ③ 里把这一行切成跟踪并把数量写回。
@@ -547,7 +559,8 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 		// ② 按同一升序逐一加行锁。
 		locked := make(map[stockKey]*inventorymodel.StockEntity, len(keys))
 		for _, k := range keys {
-			e, lerr := s.m.LockStockRowTx(ctx, tx, k.variantID, k.warehouseID)
+			variantID := k.variantID
+			e, lerr := s.m.LockStockRowTx(ctx, tx, &variantID, k.warehouseID)
 			if lerr != nil {
 				return lerr
 			}
@@ -603,6 +616,23 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 				if switched {
 					changed[it.key] = true
 				}
+				continue
+			}
+			// 发货出库（原因码 sale_out / 来源 order_shipment）同时释放预占（迁移 624）：
+			// quantity -= n 且 reserved -= min(reserved, n)，两列必须**同一句**写回
+			// （model.DeductStockOnShipTx）—— 分开写会留下「扣了货、预占还在」的
+			// 中间态，并发下可售数量会凭空变成负数。
+			//
+			// 只在**出库**方向启用：入库 / 调整不是发货，没有「释放别人占的货」这回事。
+			// 这一支写完后**不再进 ③ 的数量写回循环**（changed 不置位）：数量已经在
+			// 同一条 SQL 里减掉了，再写一次 quantity 只会多一条 UPDATE。
+			if isShipOut(it) {
+				if derr := s.deductOnShip(ctx, tx, e.ID, abs(delta), now); derr != nil {
+					return derr
+				}
+				e.Quantity = after
+				out.variants[it.key.variantID] = e.SKUCode
+				out.movements = append(out.movements, movementOf(it, e, before, after, delta, out.batchID, now))
 				continue
 			}
 			e.Quantity = after
@@ -683,7 +713,8 @@ func (s *Service) finishChange(ctx context.Context, projectID, direction string,
 func movementOf(it changeItem, e *inventorymodel.StockEntity, before, after, delta int, batchID string, now time.Time) *inventorymodel.MovementEntity {
 	m := &inventorymodel.MovementEntity{
 		ID: utils.NewTimeOrderedID(), ProjectID: e.ProjectID, WarehouseID: e.WarehouseID,
-		ProductID: e.ProductID, VariantID: e.VariantID, SKUCode: e.SKUCode,
+		ProductID: inventorymodel.PtrString(e.ProductID), VariantID: inventorymodel.PtrString(e.VariantID),
+		SKUCode:   e.SKUCode,
 		Direction: it.direction, Quantity: abs(delta), Delta: delta,
 		QuantityBefore: before, QuantityAfter: after,
 		SourceType: it.sourceType, SourceRef: it.sourceRef,
@@ -862,6 +893,35 @@ func parseMovementTime(raw string, endOfDay bool) (out *time.Time, err error) {
 		return &t, nil
 	}
 	return nil, inventoryenums.Err(inventoryenums.ErrMovementTimeRangeInvalid)
+}
+
+// isShipOut 这条变动是不是「发货出库」：只有发货才需要同时释放预占。
+//
+// 判据用**来源类型**而不是原因码：原因码是字典里的可维护数据（可停用、可改名），
+// 而来源类型是流水的对外协议，由调用方在代码里写定（订单侧恒为 order_shipment）。
+// 用原因码判会出现「运营改了某个原因的方向，发货突然不释放预占了」。
+//
+// 同时排除系统归还策略（stockPolicyRestore 走 RestockStock，方向恒为 in，
+// 这里再按方向兜一层）：那条路径不欠任何人预占。
+func isShipOut(it changeItem) bool {
+	return it.direction == inventoryenums.DirectionOut &&
+		it.sourceType == inventoryenums.MovementSourceOrderShipment
+}
+
+// deductOnShip 发货出库的**同句双列**写回：quantity -= n 且 reserved -= min(reserved, n)。
+//
+// 守卫（`quantity >= n`）写在 SQL 的 WHERE 里，受影响 0 行即可用量不足 ——
+// 与 ③ 的内存判定互补：内存里的 after < 0 是快路径，这里是并发下的最终裁决
+// （两次扣减同时读到旧值时，只有一句 UPDATE 能匹配上行）。
+func (s *Service) deductOnShip(ctx context.Context, tx *gorm.DB, stockID string, quantity int, at time.Time) error {
+	affected, err := s.m.DeductStockOnShipTx(ctx, tx, stockID, quantity, at)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return inventoryenums.Err(inventoryenums.ErrStockInsufficient)
+	}
+	return nil
 }
 
 // abs 整数绝对值。

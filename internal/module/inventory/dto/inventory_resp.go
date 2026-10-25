@@ -74,6 +74,8 @@ type WarehouseResp struct {
 	Status    string `json:"status"`
 	IsDefault bool   `json:"isDefault"`
 	Sort      int    `json:"sort"`
+	// DeductPriority 出库扣减优先级（迁移 626）：值小先扣；仅在未显式指定仓库时生效。
+	DeductPriority int `json:"deductPriority"`
 	// ThirdParty 仅第三方仓非空；其余类型为 nil（不给前端一份看似可用的空配置）。
 	ThirdParty *WarehouseThirdPartyResp `json:"thirdParty,omitempty"`
 	CreatedAt  string                   `json:"createdAt"`
@@ -103,6 +105,16 @@ type StockResp struct {
 	// 只读数量会让「无限」在后台被看成「没货」。
 	TrackQuantity bool `json:"trackQuantity"`
 	Quantity      int  `json:"quantity"`
+	// ReservedQuantity 本仓预占（被未发货订单占住）；**未认领行恒 0**（迁移 624）。
+	ReservedQuantity int `json:"reservedQuantity"`
+	// AvailableQuantity 可售 = track_quantity ? max(quantity - reserved, 0) : 0。
+	//
+	// 下限夹 0 是**防御性**的：DDL 的 CHECK (reserved_quantity <= quantity) 保证正常情况
+	// 不会为负，但历史脏数据可能违反（约束是后加的），显示负数比显示 0 更吓人。
+	// 夹 0 只发生在**读模型**，写路径仍严格报错。
+	AvailableQuantity int `json:"availableQuantity"`
+	// Claimed 这一行是否已认领到商品变体（= variant_id IS NOT NULL）。
+	Claimed bool `json:"claimed"`
 	// CostPrice 是这一 (仓库, SKU) 的**当前成本价**（迁移 244）：NULL = 尚未核算，
 	// 0 是合法的显式成本 —— 后台必须能把两者分开显示，所以这里是可空指针而不是 float64。
 	//
@@ -110,6 +122,29 @@ type StockResp struct {
 	CostPrice *float64 `json:"costPrice"`
 	CreatedAt string   `json:"createdAt"`
 	UpdatedAt string   `json:"updatedAt"`
+}
+
+// StockReserveResp 预占 / 释放的写动作回执。
+//
+// 只回事实（哪个仓、哪条货、预占增减多少）—— 不写流水，所以没有 batch_id / 流水行。
+type StockReserveResp struct {
+	ProjectID  string                  `json:"projectId"`
+	SourceType string                  `json:"sourceType"`
+	SourceRef  string                  `json:"sourceRef"`
+	Lines      []*StockReserveLineResp `json:"lines"`
+}
+
+// StockReserveLineResp 一行预占 / 释放的结果。
+type StockReserveLineResp struct {
+	StockID           string `json:"stockId"`
+	WarehouseID       string `json:"warehouseId"`
+	WarehouseCode     string `json:"warehouseCode"`
+	VariantID         string `json:"variantId"`
+	SKUCode           string `json:"skuCode"`
+	Delta             int    `json:"delta"`
+	ReservedQuantity  int    `json:"reservedQuantity"`
+	Quantity          int    `json:"quantity"`
+	AvailableQuantity int    `json:"availableQuantity"`
 }
 
 // WarehouseStockResp 某个 (仓库, SKU) 库存行的**分仓视图**节点（含跟踪开关）。
@@ -155,6 +190,8 @@ type ProductWarehouseStock struct {
 // 它回答的是「这个仓里有哪些货可选、这条货在该仓叫什么、商品侧有没有对应的变体」——
 // 新建商品的「从仓库选」按它列出候选，服务端再按 sku_code 复核（前端只是便捷入口）。
 type WarehouseSKUResp struct {
+	// ID 库存行 id（认领 / 解除认领的写入定位键：编码可以改，行 id 不会）。
+	ID            string `json:"id"`
 	WarehouseID   string `json:"warehouseId"`
 	WarehouseCode string `json:"warehouseCode"`
 	WarehouseName string `json:"warehouseName"`
@@ -166,8 +203,14 @@ type WarehouseSKUResp struct {
 	// ProductID / VariantID 是该行已绑定的商品与变体（HasVariant 为假时为空串）。
 	ProductID string `json:"productId"`
 	VariantID string `json:"variantId"`
-	// HasVariant 这条货在商品侧是否已经有变体（今天恒为真，见 model.WarehouseSKURow）。
+	// HasVariant 这条货在商品侧是否已经有变体（迁移 624 起可为假 = 未认领）。
 	HasVariant bool `json:"hasVariant"`
+	// Quantity / ReservedQuantity / AvailableQuantity 这一行的事实数量（三个一起给）。
+	Quantity          int `json:"quantity"`
+	ReservedQuantity  int `json:"reservedQuantity"`
+	AvailableQuantity int `json:"availableQuantity"`
+	// TrackQuantity 与真源同义（false = 无限）：页面数量列靠它区分「∞」与「0」。
+	TrackQuantity bool `json:"trackQuantity"`
 }
 
 // —— 库存变动与流水（issue #16）——
@@ -300,3 +343,19 @@ type VariantWarehouseCost struct {
 }
 
 // ReconcileStockCacheResp 对账结果（Total == Matched + Differed）。
+
+// StockAlertResp 库存预警四卡（迁移 624 / 623，W4）。
+//
+// 口径：只统计 track_quantity = true 的行（无限库存永远「有货」，不该进预警）。
+//
+//	Total      —— 跟踪数量的库存行总数
+//	OutOfStock —— quantity <= 0
+//	LowStock   —— quantity > 0 且 quantity - reserved_quantity <= 0（货在但全被订单占住）
+//	Alert      —— OutOfStock + LowStock
+type StockAlertResp struct {
+	ProjectID  string `json:"projectId"`
+	Total      int64  `json:"total"`
+	OutOfStock int64  `json:"outOfStock"`
+	LowStock   int64  `json:"lowStock"`
+	Alert      int64  `json:"alert"`
+}

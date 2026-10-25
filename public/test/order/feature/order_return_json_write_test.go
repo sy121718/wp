@@ -150,6 +150,7 @@ func TestReturnSingleJSONSemanticsUnchanged(t *testing.T) {
 	// ③ autoReceive=true 一步到底：同意 → 入库 → 退款 → 订单转已退款。
 	orderID2, userID2, itemID2 := f.paidOrder(t, "return-single-auto@example.com", vid, 2)
 	stockAfterOrder2 := f.stockOf(t, vid)
+	reservedAfterOrder2 := f.reservedOf(t, vid)
 	ret2 := f.requestReturn(t, orderID2, userID2, itemID2, 2)
 	rec2 := bulkJSONPost(engine, "/api/order/return/approve",
 		`{"returnId":`+strconv.FormatUint(ret2.ID, 10)+`,"remark":"同意","autoReceive":true}`)
@@ -159,8 +160,15 @@ func TestReturnSingleJSONSemanticsUnchanged(t *testing.T) {
 	if got := f.returnStatusOf(t, ret2.ID); got != "completed" {
 		t.Fatalf("autoReceive=true 应一步完成，实际 %s", got)
 	}
-	if got := f.stockOf(t, vid); got != stockAfterOrder2+2 {
-		t.Fatalf("一步到底应把 2 件货加回库存（%d → %d），实际 %d", stockAfterOrder2, stockAfterOrder2+2, got)
+	// 两段式（迁移 624）：这张订单从未发货，在库数量一直是下单前的原值 ——
+	// 「一步到底」真正改变的账是**预占归零**（货从来没出库，谈不上加回库存）。
+	if got := f.stockOf(t, vid); got != stockAfterOrder2 {
+		t.Fatalf("未发货订单的退货不改变在库数量（应仍是 %d），实际 %d", stockAfterOrder2, got)
+	}
+	// 预占只该少掉**这一单**那 2 件（同一变体上还有第一张单占着的 2 件 ——
+	// 预占是 (变体, 仓) 一行上的合计，不是按订单分开存的）。
+	if got := f.reservedOf(t, vid); got != reservedAfterOrder2-2 {
+		t.Fatalf("一步到底后预占应减 2（%d → %d），实际 %d", reservedAfterOrder2, reservedAfterOrder2-2, got)
 	}
 	if got := f.orderStatusOf(t, orderID2); got != "refunded" {
 		t.Fatalf("全额退货后订单应为已退款，实际 %s", got)
@@ -182,9 +190,10 @@ func TestReturnSingleJSONSemanticsUnchanged(t *testing.T) {
 		t.Fatalf("非数字 returnId 应 400，实际 %d：%s", rec4.Code, rec4.Body.String())
 	}
 	assertOrderLeakFree(t, "非数字 returnId", rec4.Body.String())
-	// 形状档不许有副作用：被那两个单档动作改过的库存停在原地。
-	if got := f.stockOf(t, vid); got != stockAfterOrder2+2 {
-		t.Fatalf("非数字 returnId 的请求不该动库存，实际 %d（应为 %d）", got, stockAfterOrder2+2)
+	// 形状档不许有副作用：被那两个单档动作改过的库存停在原地
+	// （两段式下这两个动作改的是预占，在库数量自下单起就没动过）。
+	if got := f.stockOf(t, vid); got != stockAfterOrder2 {
+		t.Fatalf("非数字 returnId 的请求不该动库存，实际 %d（应为 %d）", got, stockAfterOrder2)
 	}
 	_ = orderID
 	_ = stockAfterOrder

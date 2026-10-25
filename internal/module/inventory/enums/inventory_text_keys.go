@@ -51,7 +51,23 @@ const (
 	InventoryPurchasesKindPurchase    = "admin.inventory_purchases.kind.purchase"
 	InventoryPurchasesProductionOpen  = "admin.inventory_purchases.production.open"
 	InventoryPurchasesOptionCostLabel = "admin.inventory_purchases.option.costLabel"
+	// 采购单两个终态（迁移 626）。
+	InventoryPurchasesStatusFinished  = "admin.inventory_purchases.status.finished"
+	InventoryPurchasesStatusCancelled = "admin.inventory_purchases.status.cancelled"
 	InventoryPurchasesOptionCostUnset = "admin.inventory_purchases.option.costUnset"
+
+	// —— 仓库商品 SKU 台账页（迁移 624）——
+	InventorySKUsTitle      = "admin.inventory.skus.title"
+	InventoryStockClaimed   = "admin.inventory.stock.claimed"
+	InventoryStockUnclaimed = "admin.inventory.stock.unclaimed"
+	InventoryFilterAll      = "admin.inventory.filter.all"
+
+	// —— 调拨页（迁移 630，W3）——
+	InventoryTransfersTitle           = "admin.inventory.transfers.title"
+	InventoryTransfersStatusPending   = "admin.inventory.transfers.status.pending"
+	InventoryTransfersStatusInTransit = "admin.inventory.transfers.status.in_transit"
+	InventoryTransfersStatusCompleted = "admin.inventory.transfers.status.completed"
+	InventoryTransfersStatusCancelled = "admin.inventory.transfers.status.cancelled"
 
 	// —— 单条与批量写动作的结论文案（失败出口的事实形态：key + 中文兜底 + `%s` 参数）——
 	InventoryActionDone             = "admin.inventory.actionDone"

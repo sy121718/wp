@@ -1934,3 +1934,98 @@ func attributeResps(entities []*productmodel.ProductAttributeEntity) []*productd
 	}
 	return out
 }
+
+// VariantSnapshotsInWarehouse 按「变体 + 发货仓」取快照（迁移 628，S2）。
+//
+// 与 VariantSnapshots 的差别只有一处：成本取 **ref.WarehouseID 那一仓**的值，
+// 而不是「归属仓」。其余（去重、工程隔离、缺失即丢弃、金额换算）逐字相同 ——
+// 两处各写一份的话，「成本来自哪一仓」这条判据会在两条路径上分叉。
+//
+// WarehouseID 为空表示「还没决定从哪仓发货」，此时退回归属仓解析（与旧方法同行为）：
+// 调用方不写仓不该报错，它只是还没决定。
+func (s *Service) VariantSnapshotsInWarehouse(ctx context.Context, refs []productcontract.VariantWarehouseRef,
+	projectID string) (list []*productcontract.VariantSnapshot, err error) {
+	variantIDs := make([]string, 0, len(refs))
+	warehouseOf := make(map[string]string, len(refs))
+	for _, r := range refs {
+		v := strings.TrimSpace(r.VariantID)
+		if v == "" {
+			continue
+		}
+		variantIDs = append(variantIDs, v)
+		// 同一变体给了两个仓时后者生效：调用方不该这么传，但取任意一个都好过 panic。
+		warehouseOf[v] = strings.TrimSpace(r.WarehouseID)
+	}
+	ids := dedupeNonEmpty(variantIDs)
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	variants, err := s.m.ListVariantsByIDs(ctx, ids, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if len(variants) == 0 {
+		return nil, nil
+	}
+	productIDs := make([]string, 0, len(variants))
+	seen := make(map[string]bool, len(variants))
+	for _, v := range variants {
+		if !seen[v.ProductID] {
+			seen[v.ProductID] = true
+			productIDs = append(productIDs, v.ProductID)
+		}
+	}
+	products, err := s.m.ListByIDs(ctx, productIDs, projectID)
+	if err != nil {
+		return nil, err
+	}
+	nameOf := make(map[string]string, len(products))
+	projectOf := make(map[string]string, len(products))
+	for _, p := range products {
+		nameOf[p.ID] = p.Name
+		projectOf[p.ID] = p.ProjectID
+	}
+	// 成本按**每一行自己的发货仓**取（同一批里两行可以来自不同仓）。
+	costRefs := make([]inventorycontract.VariantWarehouseCostRef, 0, len(variants))
+	for _, v := range variants {
+		costRefs = append(costRefs, inventorycontract.VariantWarehouseCostRef{
+			VariantID: v.ID, WarehouseID: warehouseOf[v.ID],
+		})
+	}
+	costByKey := make(map[string]int64, len(costRefs))
+	if s.invSvc != nil {
+		if costs, cerr := s.invSvc.ResolveVariantWarehouseCosts(ctx, projectID, costRefs); cerr == nil {
+			for _, c := range costs {
+				if c.CostPrice == nil {
+					continue
+				}
+				// key = 变体 + 仓：同一变体可能同时出现在两个仓（部分发货场景），只按变体做键会串。
+				costByKey[c.VariantID+"|"+c.WarehouseID] = yuanToCents(*c.CostPrice)
+			}
+		}
+		// 解析失败不升级成错误：与 variantWarehouseCosts 同一判据（成本是附加事实）。
+	}
+	list = make([]*productcontract.VariantSnapshot, 0, len(variants))
+	for _, v := range variants {
+		ownerProject := projectOf[v.ProductID]
+		if ownerProject == "" {
+			continue
+		}
+		costKey := v.ID + "|" + warehouseOf[v.ID]
+		list = append(list, &productcontract.VariantSnapshot{
+			VariantID:    v.ID,
+			ProductID:    v.ProductID,
+			ProjectID:    ownerProject,
+			ProductName:  nameOf[v.ProductID],
+			VariantLabel: variantOptionLabel(v.OptionValues),
+			SKU:          v.SKUCode,
+			Price:        yuanToCents(v.Price),
+			CostPrice:    costOf(costByKey, costKey),
+			Enabled:      v.Enabled,
+		})
+	}
+	return list, nil
+}
+
+// 编译期断言：按仓取快照的端口已实现（签名漂移在编译期拦住）。
+var _ productcontract.VariantSnapshotByWarehousePort = (*Service)(nil)

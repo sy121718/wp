@@ -113,7 +113,7 @@ func (r *ListTagProductsPageReq) BindQuery(q url.Values) error {
 
 // DeleteTagReq 删除标签（连同它在商品上的引用一起解绑）。
 type DeleteTagReq struct {
-	ID string `json:"id" form:"id" binding:"required"`
+	ID        string `json:"id" form:"id" binding:"required"`
 	ProjectID string `json:"projectId" form:"projectId"`
 }
 
@@ -122,7 +122,7 @@ type DeleteTagReq struct {
 // TagID 为空表示重算该工程下全部自动标签；填了 TagID 时 ProjectID 可省略（按标签自己的工程）。
 type RecalcTagsReq struct {
 	ProjectID string `json:"projectId" form:"projectId"`
-	TagID string `json:"tagId" form:"tagId"`
+	TagID     string `json:"tagId" form:"tagId"`
 }
 
 // bindRawJSONField 把表单里一个 JSON 字符串字段解析成 json.RawMessage。
@@ -134,7 +134,7 @@ type RecalcTagsReq struct {
 //
 // 空串 / 未提交 → 保持 nil（= 本次没有这个参数，与 JSON 省略字段同义）。
 // 非空但不是合法 JSON → 返回 FieldValueError，由出口按 400 报参数错误
-//（不能静默吞掉：那会让「填了规则参数却没生效」看起来像保存成功）。
+// （不能静默吞掉：那会让「填了规则参数却没生效」看起来像保存成功）。
 func bindRawJSONField(vals url.Values, name string, dst *json.RawMessage) error {
 	raw := strings.TrimSpace(vals.Get(name))
 	if raw == "" {

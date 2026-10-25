@@ -20,6 +20,8 @@ type OrderSalesPageResp struct {
 
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
+	// Todo 待办块（库存预警 / 待发货 / 合计）。零值即「都不渲染」。
+	Todo SalesTodoResp
 
 	// Overview 取数结果：dto 原样交给模板（卡片与趋势图都由模板从它算出来）。
 	//
@@ -49,4 +51,17 @@ type OrderSalesPageResp struct {
 	// ListQuery 快捷项链接要保留当前区间与工程：点一下状态就把区间丢回默认，
 	// 是本页最容易让人困惑的交互（「我明明选的是上个月」）。
 	ListQuery string
+}
+
+// SalesTodoResp 待办块的三个数字（迁移 624 / 623 / 624，W4）。
+//
+// 取不到的项是 -1，模板据此不渲染那一行（而不是渲染一个「0」假装没有待办）。
+// total 是**展示口径**（一个总数），不是业务计算 —— 它由三个数字相加得出，
+// 相加这件事属于「这一屏怎么显示」，所以留在装配侧。
+type SalesTodoResp struct {
+	// 字段名导出（Go 语法要求），模板键用小写 —— view tag 让两者对上，
+	// 与 AutomationCanvasPageResp 的 title/jsVer 双出同一手法。
+	AlertCount  int `view:"alertCount"`
+	PendingShip int `view:"pendingShip"`
+	Total       int `view:"total"`
 }

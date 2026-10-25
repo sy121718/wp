@@ -87,10 +87,16 @@ func (s *Service) CreateWarehouse(ctx context.Context, req *inventorydto.CreateW
 		return nil, err
 	}
 	now := time.Now().UTC()
+	// 扣减优先级：负数打回（负数会抢到所有仓之前，等于意外的「最高优先级」）；
+	// 0 是合法值（显式置顶），只有「没给」才落到默认 100。
+	priority, perr := normalizeDeductPriority(req.DeductPriority)
+	if perr != nil {
+		return nil, perr
+	}
 	e := &inventorymodel.WarehouseEntity{
 		ID: uuid.NewString(), ProjectID: projectID,
 		Code: code, Name: name, Type: typ, Status: status,
-		IsDefault: asDefault, Sort: req.Sort,
+		IsDefault: asDefault, Sort: req.Sort, DeductPriority: priority,
 		Config:    config,
 		Metadata:  orJSON(req.Metadata, "{}"),
 		CreatedAt: now, UpdatedAt: now,
@@ -99,6 +105,21 @@ func (s *Service) CreateWarehouse(ctx context.Context, req *inventorydto.CreateW
 		return nil, err
 	}
 	return toWarehouseResp(e), nil
+}
+
+// defaultDeductPriority 扣减优先级的缺省值（与迁移 626 的列默认、dto 的表单缺省同口径）。
+const defaultDeductPriority = 100
+
+// normalizeDeductPriority 归一扣减优先级：负数拒绝，0 保留（= 显式置顶）。
+//
+// 「0 合法、负数非法」这条口径的理由：优先级是「越小越先扣」，0 是最高的合法档；
+// 负数与 0 语义重合（都排在最前），但负数几乎总是「手滑多打了一个 -」，
+// 静默接受会让这个仓永远抢在别人前面，而这种错在页面上看不出来。
+func normalizeDeductPriority(raw int) (int, error) {
+	if raw < 0 {
+		return 0, inventoryenums.Err(inventoryenums.ErrInvalidParam)
+	}
+	return raw, nil
 }
 
 // UpdateWarehouse 修改仓库（逐字段可选；nil = 本次不改）。
@@ -132,6 +153,13 @@ func (s *Service) UpdateWarehouse(ctx context.Context, req *inventorydto.UpdateW
 			return nil, inventoryenums.Err(inventoryenums.ErrWarehouseNameRequired)
 		}
 		e.Name = name
+	}
+	if req.DeductPriority != nil {
+		priority, perr := normalizeDeductPriority(*req.DeductPriority)
+		if perr != nil {
+			return nil, perr
+		}
+		e.DeductPriority = priority
 	}
 	if req.Status != nil {
 		status, serr := normalizeStatus(*req.Status)
@@ -347,7 +375,8 @@ func toWarehouseResp(e *inventorymodel.WarehouseEntity) *inventorydto.WarehouseR
 	resp := &inventorydto.WarehouseResp{
 		ID: e.ID, ProjectID: e.ProjectID, Code: e.Code, Name: e.Name,
 		Type: e.Type, Status: e.Status, IsDefault: e.IsDefault, Sort: e.Sort,
-		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
+		DeductPriority: e.DeductPriority,
+		CreatedAt:      e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}
 	// 只有第三方仓带对接配置，且给出的是**脱敏后**的结构（凭据只有掩码与布尔值）。
 	if e.Type == inventoryenums.WarehouseTypeThirdParty {

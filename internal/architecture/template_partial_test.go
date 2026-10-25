@@ -17,7 +17,7 @@ const emptyStatePartial = "internal/templates/admin/partials/empty_state.html"
 
 // 状态徽标同理：形态只在 admin/partials/badge.html 里，模板里手写的 badge 只能减少。
 // 只数 <span class="badge badge-…">（td/div 上的 badge 是表格与卡片自己的类，不是这个形态）。
-const badgeBudget = 165
+const badgeBudget = 162
 
 const badgePartial = "internal/templates/admin/partials/badge.html"
 

@@ -24,7 +24,11 @@ import (
 	ordermodel "go_wp/internal/module/order/model"
 )
 
-// failingStockOperator 故障注入用的库存端口：四条方法恒失败。
+// failingStockOperator 故障注入用的库存端口：六条方法恒失败。
+//
+// 六条 = 四个既有（Deduct / Change 的自足与 Tx 版）+ 两个预占/释放（迁移 624, S2）：
+// 建单现在走 ReserveStockTx，取消走 ReleaseStockTx —— 替身漏一条就会在编译期露出来
+// （下面的 var _ 断言就是为此存在）。
 type failingStockOperator struct{ err error }
 
 func (f failingStockOperator) DeductStock(context.Context, *ordercontract.StockDeduction) error {
@@ -37,6 +41,12 @@ func (f failingStockOperator) DeductStockTx(context.Context, *gorm.DB, *ordercon
 	return f.err
 }
 func (f failingStockOperator) ChangeStockTx(context.Context, *gorm.DB, *ordercontract.StockAdjustment) error {
+	return f.err
+}
+func (f failingStockOperator) ReserveStockTx(context.Context, *gorm.DB, *ordercontract.StockReservation) error {
+	return f.err
+}
+func (f failingStockOperator) ReleaseStockTx(context.Context, *gorm.DB, *ordercontract.StockReservation) error {
 	return f.err
 }
 
@@ -84,13 +94,17 @@ func TestOrderCreateRollsBackWhenStockWriteFails(t *testing.T) {
 	ctx := context.Background()
 	_, vid := f.addProduct(t, "真实故障商品", 30, 5)
 
-	// 故障注入：库存流水的 INSERT 直接失败（与收货回滚用例同一手法，只在隔离 schema 里）。
-	if err := f.db.Exec("CREATE OR REPLACE FUNCTION test_block_movement() RETURNS trigger AS $$ " +
-		"BEGIN RAISE EXCEPTION '故障注入：库存流水写入失败'; END $$ LANGUAGE plpgsql").Error; err != nil {
+	// 故障注入：**预占的 UPDATE** 直接失败。
+	//
+	// 两段式（迁移 624）之后建单只预占、不写流水 —— 原先拦「流水 INSERT」的触发器
+	// 已经拦不到建单这条路径了（预占根本不写流水）。改拦 UPDATE：预占走的正是
+	// `UPDATE inventory_stocks SET reserved_quantity = ...`。
+	if err := f.db.Exec("CREATE OR REPLACE FUNCTION test_block_reserve() RETURNS trigger AS $$ " +
+		"BEGIN RAISE EXCEPTION '故障注入：预占写入失败'; END $$ LANGUAGE plpgsql").Error; err != nil {
 		t.Fatalf("创建故障注入函数失败: %v", err)
 	}
-	if err := f.db.Exec("CREATE TRIGGER test_block_movement BEFORE INSERT ON inventory_stock_movements " +
-		"FOR EACH ROW EXECUTE FUNCTION test_block_movement()").Error; err != nil {
+	if err := f.db.Exec("CREATE TRIGGER test_block_reserve BEFORE UPDATE ON inventory_stocks " +
+		"FOR EACH ROW EXECUTE FUNCTION test_block_reserve()").Error; err != nil {
 		t.Fatalf("创建故障注入触发器失败: %v", err)
 	}
 
@@ -104,6 +118,9 @@ func TestOrderCreateRollsBackWhenStockWriteFails(t *testing.T) {
 	}
 	if got := f.stockOf(t, vid); got != 5 {
 		t.Fatalf("库存数量必须回滚（故障发生在写回之后），实际 %d", got)
+	}
+	if got := f.reservedOf(t, vid); got != 0 {
+		t.Fatalf("预占必须回滚，实际 %d", got)
 	}
 }
 
@@ -120,8 +137,12 @@ func TestOrderCancelStockFailureRollsBackWholeCancel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	if got := f.stockOf(t, vid); got != 3 {
-		t.Fatalf("建单后库存应为 3，实际 %d", got)
+	// 两段式（迁移 624）：建单预占 2 件，在库仍是 5。
+	if got := f.reservedOf(t, vid); got != 2 {
+		t.Fatalf("建单后预占应为 2，实际 %d", got)
+	}
+	if got := f.stockOf(t, vid); got != 5 {
+		t.Fatalf("建单后库存应为 5（只预占不扣减），实际 %d", got)
 	}
 
 	// 同一批 model 换一个库存恒失败的 service 执行取消。
@@ -142,8 +163,11 @@ func TestOrderCancelStockFailureRollsBackWholeCancel(t *testing.T) {
 	if len(detail.Logs) != 1 {
 		t.Fatalf("流转链应只有建单那一条（不该出现取消流转），实际 %d 条", len(detail.Logs))
 	}
-	if got := f.stockOf(t, vid); got != 3 {
-		t.Fatalf("取消回滚后库存应仍是 3，实际 %d", got)
+	if got := f.reservedOf(t, vid); got != 2 {
+		t.Fatalf("取消回滚后预占应仍是 2，实际 %d", got)
+	}
+	if got := f.stockOf(t, vid); got != 5 {
+		t.Fatalf("取消回滚后库存应仍是 5，实际 %d", got)
 	}
 }
 
@@ -157,8 +181,9 @@ func TestReturnReceiveStockFailureKeepsApproved(t *testing.T) {
 	ctx := context.Background()
 	_, vid := f.addProduct(t, "退货故障商品", 50, 5)
 	orderID, userID, itemID := f.paidOrder(t, "return-stock-fail@example.com", vid, 1)
-	if got := f.stockOf(t, vid); got != 4 {
-		t.Fatalf("下单并付款后库存应为 4，实际 %d", got)
+	// 两段式：下单只预占 1 件，在库仍是 5。
+	if got := f.stockOf(t, vid); got != 5 {
+		t.Fatalf("下单并付款后在库应为 5（只预占），实际 %d", got)
 	}
 
 	req := f.returnReq(orderID, []orderdto.ReturnItemReq{{OrderItemID: itemID, Quantity: 1}})
@@ -197,7 +222,7 @@ func TestReturnReceiveStockFailureKeepsApproved(t *testing.T) {
 	if received != 0 {
 		t.Fatalf("入库失败不该登记已收数量，实际 %d", received)
 	}
-	if got := f.stockOf(t, vid); got != 4 {
-		t.Fatalf("入库失败不该动库存（应仍是 4），实际 %d", got)
+	if got := f.stockOf(t, vid); got != 5 {
+		t.Fatalf("入库失败不该动库存（应仍是 5），实际 %d", got)
 	}
 }

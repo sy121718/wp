@@ -161,7 +161,7 @@ const (
 	ErrPurchaseLineDuplicate   = "ErrPurchaseLineDuplicate"   // 同一采购单里同一个 SKU 重复出现
 	ErrPurchaseQuantityInvalid = "ErrPurchaseQuantityInvalid" // 采购数量必须为正整数
 	ErrPurchasePriceInvalid    = "ErrPurchasePriceInvalid"    // 采购单价必须为正数
-	ErrPurchaseStatusInvalid   = "ErrPurchaseStatusInvalid"   // 状态筛选值不是 pending / partial / received
+	ErrPurchaseStatusInvalid   = "ErrPurchaseStatusInvalid"   // 状态筛选值不在五个合法状态内（迁移 626 起多了 finished / cancelled）
 	ErrPurchaseLinesLocked     = "ErrPurchaseLinesLocked"     // 已有入库数量的采购单不能再改行（改了状态推导就不成立）
 	ErrPurchaseLineNotFound    = "ErrPurchaseLineNotFound"    // 采购行不存在（或不属于该采购单）
 
@@ -181,6 +181,31 @@ const (
 	ErrProductionCostInvalid       = "ErrProductionCostInvalid"     // 生产入库的成本价必须手工填写且非负
 	// ErrVariantCostPortMissing 商品侧成本价端口未注入（装配缺陷 / 纯库存单测路径）。
 	ErrVariantCostPortMissing = "ErrVariantCostPortMissing"
+
+	// —— 采购单终态（迁移 626，W2）——
+	//
+	// 前三个中间态（pending / partial / received）由「已入库数量 与 采购数量」推导，
+	// 没有任何人工置位入口。两个终态是**人工决定**：
+	//   · finished  —— 提前关单：剩下的不再等（供应商断供 / 转单 / 只要已到的那部分）；
+	//   · cancelled —— 取消：只允许在还没收满时（收满的货已经进仓，要走退货）。
+	ErrPurchaseStatusNotFinishable = "ErrPurchaseStatusNotFinishable"
+	ErrPurchaseStatusNotCancelable = "ErrPurchaseStatusNotCancelable"
+
+	// —— 调拨（迁移 630，W3）——
+	//
+	// 五条对应五类「这一步不该发生」：缺凭证（用户明确要求：出货与签收都必须有）、
+	// 明细不在源仓、可售不足、状态不允许、两仓相同。
+	ErrTransferNotFound         = "ErrTransferNotFound"
+	ErrTransferLinesRequired    = "ErrTransferLinesRequired"
+	ErrTransferSameWarehouse    = "ErrTransferSameWarehouse"
+	ErrItemNotInSourceWarehouse = "ErrItemNotInSourceWarehouse"
+	ErrTransferStatusInvalid    = "ErrTransferStatusInvalid"
+	// ErrAttachmentRequired 出货 / 签收必须带凭证附件（用户明确要求）。
+	ErrAttachmentRequired = "ErrAttachmentRequired"
+	// ErrAttachmentNotFound 凭证引用的附件不存在（或不属于本工程）。
+	ErrAttachmentNotFound = "ErrAttachmentNotFound"
+	// ErrStockNotEnough 可售不足（调拨不得占用被订单预占的那部分）。
+	ErrStockNotEnough = "ErrStockNotEnough"
 
 	// —— 物料清单（issue #16 验收 5）——
 	ErrBOMQuantityInvalid    = "ErrBOMQuantityInvalid"    // 子项用量必须为正整数
@@ -214,6 +239,30 @@ const (
 	// ErrExternalSKUProductConflict N:1 弱校验的拒绝理由：同一仓内同一外码已挂在**另一个商品**上。
 	// 多个变体共用同一个外码是合法的（这正是 N:1 的意义），跨商品才是映射写错了。
 	ErrExternalSKUProductConflict = "ErrExternalSKUProductConflict"
+
+	// —— 仓库商品 SKU 主档化（迁移 624）——
+	//
+	// 四条围绕「未认领行」与「预占」的拒绝理由。前三条直接对应用户会撞上的操作，
+	// 第四条是预占 / 释放的边界；它们不 seed 词条也靠 errFallbacks 落中文，
+	// 但仍会随迁移 625 一并写入 sys_i18n（页面要按请求语言显示）。
+
+	// ErrStockAlreadyClaimed 认领冲突：目标 (变体, 仓) 已经有库存行。
+	//
+	// **不合并、不加后缀**：两行库存是两份事实（成本可能不同、数量各自独立），
+	// 合并要么丢数量、要么丢成本；自动加后缀则会凭空造出一条谁也不认识的新编码。
+	ErrStockAlreadyClaimed = "ErrStockAlreadyClaimed"
+	// ErrStockHasQuantity 带数量 / 预占的行不能解除认领。
+	//
+	// 解除之后这一行会从「商品库存」里消失，而变体删除守卫看不见它（它没有 variant_id 了）
+	// —— 于是「库存为零」变成了一条谁也发现不了的假设。
+	ErrStockHasQuantity = "ErrStockHasQuantity"
+	// ErrStockNotClaimed 这行已经认领过了（或反过来：要求认领却没有商品上下文）。
+	ErrStockNotClaimed = "ErrStockNotClaimed"
+	// ErrReserveUnderflow 释放的预占量超过已预占量（不静默夹到 0）。
+	//
+	// 夹到 0 会让「释放得比预占多」这种真错误变成一次静默的部分成功，
+	// 而差额会一直藏在账里，直到下一张订单预占时才发现可售数量凭空少了。
+	ErrReserveUnderflow = "ErrReserveUnderflow"
 )
 
 // 仓库状态取值（写入即校验，不接受自由文本）。
@@ -309,6 +358,10 @@ const (
 	PurchaseStatusPending  = "pending"
 	PurchaseStatusPartial  = "partial"
 	PurchaseStatusReceived = "received"
+	// PurchaseStatusFinished 提前关单（迁移 626）：人工决定「剩下的不再等」。
+	PurchaseStatusFinished = "finished"
+	// PurchaseStatusCancelled 取消（迁移 626）：只允许在还没收满时。
+	PurchaseStatusCancelled = "cancelled"
 )
 
 // 入库单类型（验收 3/5）。
@@ -350,6 +403,12 @@ const (
 const (
 	MovementSourcePurchaseOrder = "purchase_order"
 	MovementSourceProduction    = "production"
+	// MovementSourceOrderShipment 来源类型：订单发货出库（迁移 627 的发货单）。
+	//
+	// 预占引入（迁移 624）之后，订单侧出现两条库存写入：建单**预占**（不写流水）
+	// 与发货**扣减**（写 sale_out 流水）。流水上必须能分出后者 —— service 靠它判断
+	// 「这次出库要同时释放预占」（否则 reserved 会永远挂在账上）。
+	MovementSourceOrderShipment = "order_shipment"
 )
 
 // 后台页面标题（i18n key）。
@@ -438,9 +497,19 @@ var errFallbacks = map[string]string{
 	ErrPurchaseLineDuplicate:         "同一采购单里同一个 SKU 重复出现",
 	ErrPurchaseQuantityInvalid:       "采购数量必须为正整数",
 	ErrPurchasePriceInvalid:          "采购单价必须为正数",
-	ErrPurchaseStatusInvalid:         "状态筛选值不是 pending / partial / received",
+	ErrPurchaseStatusInvalid:         "状态筛选值不在合法状态内（未入库 / 部分入库 / 已入库 / 已关单 / 已取消）",
 	ErrPurchaseLinesLocked:           "已有入库数量的采购单不能再改行（改了状态推导就不成立）",
 	ErrPurchaseLineNotFound:          "采购行不存在（或不属于该采购单）",
+	ErrPurchaseStatusNotFinishable:   "只有已入库或部分入库的采购单可以提前关单",
+	ErrTransferNotFound:              "调拨单不存在",
+	ErrTransferLinesRequired:         "调拨单至少要有一行明细",
+	ErrTransferSameWarehouse:         "源仓与目标仓不能是同一个",
+	ErrItemNotInSourceWarehouse:      "这条库存行不属于源仓",
+	ErrTransferStatusInvalid:         "调拨单当前状态不允许这个操作",
+	ErrAttachmentRequired:            "出货与签收都必须上传凭证附件",
+	ErrAttachmentNotFound:            "凭证引用的附件不存在",
+	ErrStockNotEnough:                "可售数量不足（被订单预占的部分不能调拨）",
+	ErrPurchaseStatusNotCancelable:   "只有未入库或部分入库的采购单可以取消（已收满的货已进仓，要走退货）",
 	ErrReceiptLinesRequired:          "入库清单不能为空",
 	ErrReceiptLineDuplicate:          "同一入库请求里同一采购行只能出现一次",
 	ErrReceiptQuantityInvalid:        "入库数量必须为正整数",
@@ -464,6 +533,10 @@ var errFallbacks = map[string]string{
 	ErrWarehouseSKUCodeTaken:         "该仓已有同一条 SKU 编码的库存行（我们自己的 SKU 在仓内唯一），请改用另一个仓库或另一个仓库 SKU",
 	ErrExternalSKUInvalid:            "外部编码不合法：长度需在 128 个字符以内且不含控制字符",
 	ErrExternalSKUProductConflict:    "该外部编码在本仓已挂在另一个商品上：同一个外部编码在同一仓库内只能属于同一个商品（同一商品的多个口味可以共用一个外部编码）",
+	ErrStockAlreadyClaimed:           "这个商品变体在该仓已经有库存行了：两行库存是两份事实，不能自动合并，请先核对数量与成本再人工处理",
+	ErrStockHasQuantity:              "这条存货还有数量或预占，不能解除认领：请先把数量清零、预占释放完",
+	ErrStockNotClaimed:               "这条存货还没有认领到商品变体",
+	ErrReserveUnderflow:              "要释放的预占数量超过了这一行已预占的数量",
 }
 
 // errStatuses 业务错误对外的 HTTP 状态码（**只登记非 400 的档**）。
@@ -487,21 +560,33 @@ var errStatuses = map[string]int{
 	ErrPurchaseLineNotFound:  http.StatusNotFound,
 
 	// —— 409 冲突 / 当前状态不允许 ——
-	ErrWarehouseCodeTaken:         http.StatusConflict,
-	ErrWarehouseSKUCodeTaken:      http.StatusConflict,
-	ErrWarehouseIsDefault:         http.StatusConflict,
-	ErrWarehouseHasStock:          http.StatusConflict,
-	ErrWarehouseDisabled:          http.StatusConflict,
-	ErrStockInsufficient:          http.StatusConflict,
-	ErrReasonCodeTaken:            http.StatusConflict,
-	ErrReasonBuiltin:              http.StatusConflict,
-	ErrSourceCodeTaken:            http.StatusConflict,
-	ErrPurchaseCodeTaken:          http.StatusConflict,
-	ErrPurchaseSourceDisabled:     http.StatusConflict,
-	ErrPurchaseLinesLocked:        http.StatusConflict,
-	ErrReceiptOverReceive:         http.StatusConflict,
-	ErrReceiptOrderDone:           http.StatusConflict,
-	ErrExternalSKUProductConflict: http.StatusConflict,
+	ErrWarehouseCodeTaken:          http.StatusConflict,
+	ErrWarehouseSKUCodeTaken:       http.StatusConflict,
+	ErrWarehouseIsDefault:          http.StatusConflict,
+	ErrWarehouseHasStock:           http.StatusConflict,
+	ErrWarehouseDisabled:           http.StatusConflict,
+	ErrStockInsufficient:           http.StatusConflict,
+	ErrReasonCodeTaken:             http.StatusConflict,
+	ErrReasonBuiltin:               http.StatusConflict,
+	ErrSourceCodeTaken:             http.StatusConflict,
+	ErrPurchaseCodeTaken:           http.StatusConflict,
+	ErrPurchaseSourceDisabled:      http.StatusConflict,
+	ErrPurchaseLinesLocked:         http.StatusConflict,
+	ErrPurchaseStatusNotFinishable: http.StatusConflict,
+	ErrTransferNotFound:            http.StatusNotFound,
+	ErrTransferSameWarehouse:       http.StatusConflict,
+	ErrItemNotInSourceWarehouse:    http.StatusConflict,
+	ErrTransferStatusInvalid:       http.StatusConflict,
+	ErrAttachmentRequired:          http.StatusBadRequest,
+	ErrAttachmentNotFound:          http.StatusNotFound,
+	ErrStockNotEnough:              http.StatusConflict,
+	ErrPurchaseStatusNotCancelable: http.StatusConflict,
+	ErrReceiptOverReceive:          http.StatusConflict,
+	ErrReceiptOrderDone:            http.StatusConflict,
+	ErrExternalSKUProductConflict:  http.StatusConflict,
+	ErrStockAlreadyClaimed:         http.StatusConflict,
+	ErrStockHasQuantity:            http.StatusConflict,
+	ErrReserveUnderflow:            http.StatusConflict,
 }
 
 // Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。

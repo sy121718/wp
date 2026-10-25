@@ -7,6 +7,7 @@ package inventoryhttp
 
 import (
 	"errors"
+	"net/http"
 
 	"go_wp/internal/shell"
 	"go_wp/internal/text"
@@ -19,7 +20,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	projectcontract "go_wp/internal/module/project/contract"
 	bulkids "go_wp/pkg/bulkids"
 )
 
@@ -207,21 +210,75 @@ var (
 		titleKey: inventoryenums.InventoryWarehousesTitle, titleFallback: "仓库管理",
 		menu: "inventory-warehouses",
 	}
+	inventoryMetaSKUs = inventoryPageMeta{
+		titleKey: inventoryenums.InventorySKUsTitle, titleFallback: "仓库商品 SKU",
+		menu: "inventory-skus",
+	}
+	inventoryMetaTransfers = inventoryPageMeta{
+		titleKey: inventoryenums.InventoryTransfersTitle, titleFallback: "调拨单",
+		menu: "inventory-transfers",
+	}
 	inventoryMetaReasons = inventoryPageMeta{
 		titleKey: inventoryenums.InventoryReasonsTitle, titleFallback: "变动原因字典",
 		menu: "inventory-reasons",
 	}
 )
 
-// 页面 GET 取数失败走与写动作**同一个出口**（inventoryFail，见 inventory_notice_handle.go）：
-// 状态码由错误自己声明（pkg/facing.Statused），文案走 inventoryErrText，与写动作同一份事实。
+// inventoryLoadFailedView 取数失败时的整页视图：同一张模板 + 全部键的零值 + 失败槽。
 //
-// 为什么不另建一个 pageLoadFailed 助手：那会是模块里的第三个出口，而它要做的判断与
-// inventoryFail 一字不差 —— 复制一份判据等于给自己留一条静默漂移的路（门禁
-// check-shell-migration.sh 的 ownhelper 计数就是拦这件事的）。
+// 它是**视图**，不是错误出口：状态码与缓存策略由 PageStatus / PageNoStore 交给渲染层
+// （adminui.Page 在路由装配处读 view.Result），控制器里没有 c.HTML、没有状态码分档。
+// 500 + no-store 的理由没变：200 会让失败在监控里与正常页无从区分，且「重试」会从缓存
+// 里拿回同一份失败。
+type inventoryLoadFailedView gin.H
+
+func (inventoryLoadFailedView) PageStatus() int   { return http.StatusInternalServerError }
+func (inventoryLoadFailedView) PageNoStore() bool { return true }
+
+// inventoryPageErrorData 装载失败时的键集：全部零值 + 失败槽。
 //
-// 失败不渲染页壳（用户裁定：所有提示只需要一个提示）：从前这里交回一个
-// `inventoryLoadFailedView`（gin.H + PageStatus/PageNoStore 出口包装），代价是同一张模板
-// 要维护两套必需键 —— 那个函数下面原来那张 20 多个零值键的表就是那份代价。失败时页壳给的
-// 东西（侧栏、工程下拉、筛选栏）没有一条是这次失败需要的：主数据都没读到，
-// 拿 URL 里那个 project 去渲染下拉，显示的是哪个工程的东西都说不清。
+// 零值而不是「顺手再查一把」：主数据都没读到，任何派生数据都不该再下探 —— 工程上下文没定下来时，
+// 拿 URL 里那个 project 去查仓库 / 流水，查出来的是哪个工程的东西都说不清（与采购页 loadFailed 后的守卫同一判据）。
+//
+// 键是三个页面的超集：Jet 的缺失键是**整页中断**，失败页缺一个键就是「又一个坏页面」；
+// 多给的键不渲染，没有副作用。
+func inventoryPageErrorData(c *gin.Context, meta inventoryPageMeta, err error) inventoryLoadFailedView {
+	return inventoryLoadFailedView{
+		"title": inventoryMsgText(c, facing.Msg{Key: meta.titleKey, Fallback: meta.titleFallback}),
+		"menu":  meta.menu,
+		// 页头里的工程上下文选择器读 .Projects（len + range）：零值 = 不渲染下拉。
+		"Projects":        []projectcontract.ProjectResp{},
+		"SelectedProject": "",
+		// 三个页面的顶层 let 与实际读取的键（inventory.html 的 reasons / selectedVariant /
+		// selectedSKU、仓库页的类型下拉与新建抽屉、原因页的原因抽屉……）。
+		"SelectedVariant":     "",
+		"SelectedSKU":         "",
+		"Warehouses":          []inventorydto.WarehouseRowResp{},
+		"WarehouseTypes":      []gin.H{},
+		"WarehouseCreateForm": gin.H{},
+		"VariantOptions":      []gin.H{},
+		"StockRows":           []inventorydto.StockByWarehouseRowResp{},
+		// 仓库商品 SKU 台账页（迁移 624）：缺键会让 Jet 从那一行起整页中断，
+		// 失败页同样要把键补齐（多给的键不渲染）。
+		"Rows":             []inventorydto.StockLedgerRowResp{},
+		"Keyword":          "",
+		"FilterClaimed":    "",
+		"ClaimedOptions":   []inventorydto.OptionResp{},
+		"Reasons":          []inventorydto.ReasonRowResp{},
+		"AdjustReasons":    []inventorydto.ReasonRowResp{},
+		"AdjustDirections": []inventorydto.OptionResp{},
+		"Directions":       []inventorydto.OptionResp{},
+		"Movements":        []inventorydto.MovementRowResp{},
+		"ReasonCreateForm": gin.H{},
+		"FilterWarehouse":  "",
+		"FilterDirection":  "",
+		"FilterReason":     "",
+		"FilterTimeFrom":   "",
+		"FilterTimeTo":     "",
+		// 写动作表单 action 上的列表上下文：失败页不渲染表单，键照样存在（Jet 缺键即中断）。
+		"ListQuery": "",
+		// 失败槽：模板先判 LoadError、再判各页空态 —— 「没读到」与「读到了、只是空的」必须分开。
+		"LoadFailed": true,
+		"LoadError":  inventoryErrText(c, err),
+	}
+}

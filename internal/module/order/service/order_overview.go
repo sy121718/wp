@@ -406,6 +406,12 @@ func (s *Service) SalesOverview(ctx context.Context, req *orderdto.SalesOverview
 		return nil, err
 	}
 
+	// 运费合计（订单级、按订单去重）：毛利的第三项。
+	shippingTotal, err := s.orders.SalesShippingTotalByRange(ctx, req.ProjectID, from, to, filter)
+	if err != nil {
+		return nil, err
+	}
+
 	resp := &orderdto.SalesOverviewResp{
 		Currency:           orderCurrency(),
 		ProjectID:          req.ProjectID,
@@ -426,12 +432,26 @@ func (s *Service) SalesOverview(ctx context.Context, req *orderdto.SalesOverview
 		ReturningCustomers: growth.ReturningCustomers,
 		Repurchasers:       growth.Repurchasers,
 		RepurchaseRatePct:  repurchaseRatePct(growth.NewRepurchasers, growth.ReturningCustomers, growth.OrderingCustomers),
+		// 毛利（迁移 632，W4）：行实付 − 行成本 − **运费**。
+		//
+		// 运费单独取（它是订单级的，混进按明细行聚合的那条 SQL 会被放大成
+		// 明细行数倍）；税不扣（代收）、优惠已含在 line_total 里不重扣。
+		// CostIncomplete 为真时卡片要显示「含 N 行成本未核算」：那些行按 0 计入。
+		GrossProfit:        row.LineMargin - shippingTotal,
+		CostIncompleteRows: row.CostIncompleteRows,
+		CostIncomplete:     row.CostIncompleteRows > 0,
 	}
 
 	// ③ 环比：紧邻的上一段**等长**区间。等长是关键 —— 拿「本月 1 号到今天」与「上月整月」
 	// 比，月初几天的报表永远显示暴跌，那个数字没有信息量。
 	if cmp := s.salesCompare(ctx, req.ProjectID, from, to, filter, row); cmp != nil {
 		resp.Compare = cmp
+	}
+
+	// ③b 多币种折算（迁移 633，W5）：一次请求内算好，不额外一次往返。
+	// 折算只覆盖有快照的订单；没有快照的单独计数（报表必须能说清覆盖了多少）。
+	if converted, cerr := s.ConvertedOverview(ctx, req, resp.Sales, resp.GrossProfit); cerr == nil {
+		resp.Converted = converted
 	}
 
 	// ④ 月度趋势（固定回看窗口，与卡片的筛选区间不同口径 —— 见 dto 的说明）。
