@@ -61,7 +61,11 @@ fi
 routes_raw="$(WP_DUMP_ROUTES=1 go test ./internal/routers/ -run TestDumpRoutesForAudit -count=1 -v 2>/dev/null || true)"
 mapfile -t ROUTES < <(printf '%s\n' "$routes_raw" | grep -E '^[A-Z]+ /api' | awk '{print $2}' | sort -u)
 if [[ ${#ROUTES[@]} -eq 0 ]]; then
-  echo "· 拿不到运行时路由表（需要数据库装配）—— 跳过端点存在性检查"
+  # 跳过 ≠ 通过。静态端点名单仍然可以在这里报一句数量，让读日志的人知道
+  # 「这一条本次没查」—— 否则「✓ 全部门禁通过」会让人以为端点存在性被验证过。
+  printf '· 端点存在性**未检查**（拿不到运行时路由表，需要数据库装配）：%d 个 data-write-url 未经核对。\n' \
+    "${#DECLARED[@]}"
+  printf '  要查这一条，先配好 config.yaml 再跑 bash scripts/check-all.sh --with-db\n'
   exit 0
 fi
 
