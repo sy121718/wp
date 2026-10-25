@@ -948,12 +948,12 @@ func registerCatalogAndInventory() {
 		SQL: mustSQL("627_inventory_transfer.sql"),
 	})
 
-	// 628：W3 的文案词条（8 条调拨业务错误 + 35 个界面位，中英成对 = 86 行）。
+	// 628：W3 的文案词条（8 条调拨业务错误 + 38 个界面位，中英成对 = 92 行）。
 	// 判定逐条枚举本批全部 42 个 key 的两种语言。
 	registerSeed(Seed{
 		Version:   "628-inventory-transfer-i18n",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 86 THEN 1 ELSE 0 END FROM sys_i18n " +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 92 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
 			"'admin.inventory.transfers.title', 'admin.inventory.transfers.hint', 'admin.inventory.transfers.sub', " +
 			"'admin.inventory.transfers.create', 'admin.inventory.transfers.listLead', 'admin.inventory.transfers.filter.keywordPh', " +
@@ -968,7 +968,7 @@ func registerCatalogAndInventory() {
 			"'admin.inventory.transfers.status.pending', 'admin.inventory.transfers.status.in_transit', 'admin.inventory.transfers.status.completed', " +
 			"'admin.inventory.transfers.status.cancelled', 'ErrTransferNotFound', 'ErrTransferLinesRequired', " +
 			"'ErrTransferSameWarehouse', 'ErrItemNotInSourceWarehouse', 'ErrTransferStatusInvalid', " +
-			"'ErrAttachmentRequired', 'ErrAttachmentNotFound', 'ErrStockNotEnough', 'admin.inventory.transfers.units')",
+			"'ErrAttachmentRequired', 'ErrAttachmentNotFound', 'ErrStockNotEnough', 'admin.inventory.transfers.units', 'admin.inventory.boundary.transfers', 'admin.inventory.boundary.tail2')",
 		SQL: mustSQL("628_inventory_transfer_i18n.sql"),
 	})
 }

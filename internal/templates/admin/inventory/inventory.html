@@ -37,7 +37,9 @@
             </div>
             {* 边界提示：入库 / 出库属于单据，不属于本页。写清楚比留一个能点的按钮更好 ——
                用户找不到「怎么入库」时会先看这句话，而不是去点一个语义不符的入口。 *}
-            <p class="page-sub">{{ .["t"]("admin.inventory.boundary.lead", "入库 / 出库请走单据：采购入库与") }}<a href="/admin/inventory/purchases?project={{selectedProject}}">{{ .["t"]("admin.inventory.boundary.production", "生产入库") }}</a>{{ .["t"]("admin.inventory.boundary.tail", "在采购入库页，销售出库走发货，退货入库走退货单，调拨走调拨单。本页只保留盘点与报损的调整入口。") }}</p>
+            {* 存量谎言的修正（W3）：这句原先写「调拨走调拨单」但调拨单并不存在 ——
+               现在它成真了，所以这里给一条可点的链接（不再只是纯文本承诺）。 *}
+            <p class="page-sub">{{ .["t"]("admin.inventory.boundary.lead", "入库 / 出库请走单据：采购入库与") }}<a href="/admin/inventory/purchases?project={{selectedProject}}">{{ .["t"]("admin.inventory.boundary.production", "生产入库") }}</a>{{ .["t"]("admin.inventory.boundary.tail", "在采购入库页，销售出库走发货，退货入库走退货单，仓间移库走") }}<a href="/admin/inventory/transfers?project={{selectedProject}}">{{ .["t"]("admin.inventory.boundary.transfers", "调拨单") }}</a>{{ .["t"]("admin.inventory.boundary.tail2", "。本页只保留盘点与报损的调整入口。") }}</p>
         </div>
         <div class="page-actions">
             {* 唯一的写入口：盘点 / 报损（无单据承载的两类调整）。按钮文案直接说能做什么。 *}
