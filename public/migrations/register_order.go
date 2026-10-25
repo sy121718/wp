@@ -219,4 +219,26 @@ func registerOrderAndSiteSlots() {
 			"'admin.order_new.field.country', 'admin.order_new.field.country_none')",
 		SQL: mustSQL("504_i18n_order_new_country.sql"),
 	})
+
+	// 624：履约事实（承运商 / 发货单 / 发货明细）+ 订单头的最近一次发货快照列（S1）。
+	// CheckSQL 按**三张表全在**判定（只查一张的话，中途失败会留下「承运商表在、发货单不在」
+	// 却被永久跳过的状态 —— 与 135 同因）。
+	register(Migration{
+		Version:   "624-order-shipment",
+		TableName: "order_shipments",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
+			"AND table_name IN ('order_carriers', 'order_shipments', 'order_shipment_items')",
+		SQL: mustSQL("624_order_shipment.sql"),
+	})
+
+	// 625：订单行记录发货仓（S2）。存量库上 order_items 早已存在，用默认的
+	// 「表存在即跳过」会把它永久跳过 —— 按本迁移自己的列判定。
+	register(Migration{
+		Version:   "625-order-item-warehouse",
+		TableName: "order_items",
+		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'warehouse_id'",
+		SQL: mustSQL("625_order_item_warehouse.sql"),
+	})
 }

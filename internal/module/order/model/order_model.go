@@ -109,6 +109,16 @@ type OrderEntity struct {
 	CreateBy     uint64    `gorm:"column:create_by"`
 	CreateTime   time.Time `gorm:"column:create_time"`
 	UpdateTime   time.Time `gorm:"column:update_time"`
+
+	// —— 最近一次发货的快照（迁移 624，S1）——
+	//
+	// 订单头只留「最后一次」：一张订单可以多次发货（部分发货 / 分仓），
+	// 历史发货看 order_shipments，不看这里。carrier_name / tracking_no 是**名称快照**，
+	// 承运商改名 / 停用 / 删除之后这里仍显示当时的名字。
+	CarrierID   *string    `gorm:"column:carrier_id"`
+	CarrierName string     `gorm:"column:carrier_name"`
+	TrackingNo  string     `gorm:"column:tracking_no"`
+	ShippedAt   *time.Time `gorm:"column:shipped_at"`
 }
 
 // TableName 实现 gorm 表名。

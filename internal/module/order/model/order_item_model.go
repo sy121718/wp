@@ -33,8 +33,13 @@ type OrderItemEntity struct {
 	// **可空**：nil = 下单时该 (仓库, SKU) 尚未核算（cost_price IS NULL），不是 0 ——
 	// 0 是合法的显式成本（赠品 / 内部划拨）。DDL 侧已同步去掉 NOT NULL 与 DEFAULT 0
 	//（迁移 256），所以「没核算」不会再被悄悄记成零成本。
-	CostPrice  *int64    `gorm:"column:cost_price"`
-	CreateTime time.Time `gorm:"column:create_time"`
+	CostPrice *int64 `gorm:"column:cost_price"`
+	// WarehouseID 发货仓（迁移 625）：**下单时解析并固化**，预占与发货扣减必须落在同一个仓。
+	//
+	// **可空**：存量订单没有这个事实，回填到默认仓等于伪造历史。
+	// NULL = 历史行，首次发货时解析并回写（此后这一行固化）。
+	WarehouseID *string   `gorm:"column:warehouse_id"`
+	CreateTime  time.Time `gorm:"column:create_time"`
 }
 
 // TableName 实现 gorm 表名（默认推断为 order_item_entities）。
