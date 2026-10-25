@@ -22,4 +22,16 @@ func registerCurrency() {
 			") AS probe",
 		SQL: mustSQL("630_currency_rates.sql"),
 	})
+
+	// 630b：折算块的文案词条（7 个 key × 中英 = 14 行）。
+	registerSeed(Seed{
+		Version:   "630b-currency-converted-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 14 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
+			"'admin.order.sales.converted.title', 'admin.order.sales.converted.hint', 'admin.order.sales.converted.sales', " +
+			"'admin.order.sales.converted.profit', 'admin.order.sales.converted.orders', 'admin.order.sales.converted.unconverted', " +
+			"'admin.order.sales.converted.unconvertedNote')",
+		SQL: mustSQL("630b_currency_converted_i18n.sql"),
+	})
 }

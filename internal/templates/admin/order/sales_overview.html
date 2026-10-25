@@ -158,6 +158,42 @@
         </div>
     </section>
 
+    {* ===== 多币种折算（迁移 630，W5）=====
+       只显示有汇率快照的那部分折算值，并**必须**说明「有多少单没折算」——
+       否则一个偏小的数字会被当成全量。
+       Converted.Rate 为空 / Converted 为 nil 时整块不渲染（单币种站点没有这一块）。 *}
+    {{if o.Converted}}
+    <section class="card">
+        <div class="card-header">
+            <h2 class="card-title">{{tr("admin.order.sales.converted.title", "折算到")}} {{o.Converted.BaseCurrency}}</h2>
+            <span class="card-sub">{{tr("admin.order.sales.converted.hint", "按下单时刻的汇率快照折算；汇率之后再变不影响这些数字。")}}</span>
+        </div>
+        <div class="card-body">
+            <div class="stat-grid">
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.order.sales.converted.sales", "折算销售额")}}</div>
+                    <div class="stat-value">{{money(o.Converted.ConvertedSales, cur)}}</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.order.sales.converted.profit", "折算毛利")}}</div>
+                    <div class="stat-value">{{money(o.Converted.ConvertedProfit, cur)}}</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.order.sales.converted.orders", "已折算订单")}}</div>
+                    <div class="stat-value">{{o.Converted.ConvertedOrders}}</div>
+                </div>
+                <div class="card stat-card">
+                    <div class="stat-label">{{tr("admin.order.sales.converted.unconverted", "汇率未固化")}}</div>
+                    <div class="stat-value">{{o.Converted.UnconvertedOrders}}</div>
+                    {{if o.Converted.UnconvertedOrders}}
+                    <div class="stat-note">{{tr("admin.order.sales.converted.unconvertedNote", "这些单没有汇率快照，不进上面的折算金额")}}</div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </section>
+    {{end}}
+
     {* ===== 待办块（迁移 621 / 623 / 624，W4）=====
        「共 N 项待办」= 调拨待出货 + 库存预警 + 待发货，三个数字各由自己的 service 给，
        TodoTotal 是 service 算好的合计（模板只显示，不做求和）。
