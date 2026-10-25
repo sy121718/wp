@@ -238,7 +238,8 @@ func TestMailBusinessMessageStillVisible(t *testing.T) {
 		t.Error("白名单业务错误被误吞成归口文案 —— 运营再也看不到「哪一项不合法」")
 	}
 
-	// ② 表单页已随「画布是唯一编辑器」删除，本页自造文案的出口（mailFormErrText）
-	// 随之消失；图校验失败现在经 JSON API 返回明细，由画布的保存回执渲染。
-	// 这条用例不再有第二个断言点 —— 留着它只统计 ① 的业务错误透出。
+	// ② 表单页已随「画布是唯一编辑器」删除，本页自造文案的出口随之消失；
+	// 图校验失败现在经 JSON API 返回带 detail key 的明细，由画布的保存回执渲染
+	// （画布侧的判据见 mail_automation_page_test.go 的 TestMailAutomationNewFlowCanBeSaved）。
+	// 本用例因此只剩 ① 这一个断言点：**业务错误必须能透出**，不被归口文案吞掉。
 }
