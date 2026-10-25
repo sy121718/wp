@@ -239,7 +239,7 @@ var (
 	mailTemplateListFailedMsg = mailMsg{Key: mailenums.NoticeTemplateListFailed, Fallback: "读取模板列表失败，本次没有删除任何模板。"}
 	mailContactStatusBadMsg   = mailMsg{Key: mailenums.NoticeContactStatusBad, Fallback: "目标状态不合法，本次没有处理任何联系人。"}
 
-	// 缺 id 的三句引导（分档判据见 mailQueryID 的说明）。
+	// 缺 id 的两句引导（分档判据见 mailQueryID 的说明；画布那条已随「缺 id 即新建」删除）。
 	mailCampaignIDRequiredMsg = mailMsg{Key: mailenums.NoticeCampaignIDRequired, Fallback: "请先从活动列表选择一条活动，再查看它的报表。"}
 	mailRunIDRequiredMsg      = mailMsg{Key: mailenums.NoticeRunIDRequired, Fallback: "请先从实例列表选择一条实例，再查看它的排障详情。"}
 )

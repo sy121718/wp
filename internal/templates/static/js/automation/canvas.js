@@ -328,6 +328,9 @@ function saveStructure() {
             name: name,
             description: meta.description || '',
             triggerType: (triggerEl && triggerEl.value) || meta.triggerType || 'manual',
+            // 触发条件是流程级配置，不在图里：原样回传，否则服务端会把「只对该标签触发」
+            // 清成空条件（triggerParamsMatch 对空条件恒为 true，此后任意标签都触发）。
+            triggerParams: meta.triggerParams || {},
             definition: def
         })
     }).then(function (r) {

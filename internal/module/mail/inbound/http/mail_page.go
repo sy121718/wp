@@ -133,14 +133,11 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 // 「取 → 渲」两件事（controller_orchestration 的语句上限 6）。数据装配放在这里，
 // 它不做业务判断 —— 图的合法性由 service 的 ValidateDefinition 管。
 func (h *mailPageHandle) automationCanvasData(c *gin.Context, item *maildto.AutomationItem) gin.H {
-	ctx := c.Request.Context()
 	nodesJSON, merr := json.Marshal(item.Nodes)
 	if merr != nil {
 		nodesJSON = []byte("[]")
 	}
 	metaJSON, _ := json.Marshal(h.automationCanvasMeta(c, item))
-	// 发信节点要选模板：把模板列表给页面（省得用户手敲 key）。
-	templates, _ := h.mail.ListTemplates(ctx, "")
 	return gin.H{
 		"title": mailenums.PageTitleAutomationCanvas.Key,
 		"A":     item,
@@ -150,7 +147,6 @@ func (h *mailPageHandle) automationCanvasData(c *gin.Context, item *maildto.Auto
 		"Triggers":  triggerOptions(mailTranslate(c), item.TriggerType),
 		"NodesJSON": utils.JsonSafe(string(nodesJSON)),
 		"MetaJSON":  utils.JsonSafe(string(metaJSON)),
-		"Templates": templates,
 		"jsVer":     automationJsVer(),
 		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）；
 		// 本页也没有取数失败分支（失败已在上面渲染提示页），所以不再注入 Err。
@@ -202,8 +198,13 @@ func newAutomationDraft() *maildto.AutomationItem {
 
 // automationCanvasMeta 画布页的元数据（前端只读这一份，不自己推导）。
 //
-// 节点类型表也在这里：**palette、出口菜单、结构树的白名单都读它**，不在前端硬编码
-// 第二份（两处名字一对不上，用户就在 palette 里选得到但保存被拒的节点）。
+// 两条值得说明的字段：
+//
+//   - **triggerParams**：触发条件是**流程级配置**，不属于图。画布保存时把它原样回传，
+//     否则服务端会以为调用方要清空条件（tag_added 流程清空后对任意标签都触发）。
+//   - **nodeTypes**：节点类型的取值与文案（enums 的真源，取词后注入）。画布当前仍从
+//     graph.js 里的 NODE_LABEL 取标签 —— 那份表是**下一批（画布重写）要收掉**的第二份；
+//     在收掉之前，这里的 nodeTypes 是给 palette 用的唯一服务端来源。
 func (h *mailPageHandle) automationCanvasMeta(c *gin.Context, item *maildto.AutomationItem) map[string]any {
 	tr := mailTranslate(c)
 	nodeTypes := make([]gin.H, 0, len(mailenums.AutomationNodeTypes))
@@ -215,14 +216,15 @@ func (h *mailPageHandle) automationCanvasMeta(c *gin.Context, item *maildto.Auto
 		})
 	}
 	return map[string]any{
-		"automationId": item.ID,
-		"name":         item.Name,
-		"description":  item.Description,
-		"triggerType":  item.TriggerType,
-		"entry":        item.Entry,
-		"status":       item.Status,
-		"version":      item.Version,
-		"isNew":        item.ID == 0,
+		"automationId":  item.ID,
+		"name":          item.Name,
+		"description":   item.Description,
+		"triggerType":   item.TriggerType,
+		"triggerParams": item.TriggerParams,
+		"entry":         item.Entry,
+		"status":        item.Status,
+		"version":       item.Version,
+		"isNew":         item.ID == 0,
 		// 只有草稿 / 已暂停才允许调结构（启用中的流程改图会让在跑的实例走岔）。
 		// 新建的流程恒可编辑（它还没落库，state 是 draft）。
 		"structureEditable": item.Status != mailmodel.AutomationStatusActive,

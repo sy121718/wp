@@ -64,7 +64,7 @@
 
             {* ==== 页级动作（清单 02-L P1-8）：保存 / 发布从卡内提到页头 ====
                保存按钮用 form="article-form" 关联左列表单 —— 表单归属与字段一个都没动，
-               按钮只是搬了位置（与 mail_automation_edit.html 的保存按钮同款做法，零 JS）。 *}
+               按钮只是搬了位置（与 product_edit.html 页头的保存按钮同款做法，零 JS）。 *}
             {{if !.EditUnavailable}}<button type="submit" form="article-form" class="btn btn-primary">{{ .["t"]("admin.article.edit.save", "保存") }}</button>{{end}}
             {* ⚠ 维护成本就在这一段：发布动作的三个条件分支在下方的右栏发布卡里**各有一份**，
                两处必须同步改（分支判据见下）。之所以不复用片段：一个给的是「按钮」、另一个给的是

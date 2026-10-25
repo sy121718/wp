@@ -87,10 +87,12 @@ const (
 	NoticeTemplateListFailed = "mail.page.templateListFailed"
 	// NoticeContactStatusBad 批量改联系人状态时目标状态不在受控取值里。
 	NoticeContactStatusBad = "mail.page.contactStatusBad"
-	// 缺 id 的三句引导（分档判据见 inbound/http 的 mailQueryID）。
-	NoticeCampaignIDRequired   = "mail.page.campaignIDRequired"
-	NoticeRunIDRequired        = "mail.page.runIDRequired"
-	NoticeAutomationIDRequired = "mail.page.automationIDRequired"
+	// 缺 id 的两句引导（分档判据见 inbound/http 的 mailQueryID）。
+	//
+	// 画布那条（automationIDRequired）已随「缺 id 即新建」删除：画布现在把「没给 id」
+	// 当正常的建流程入口，不再是一句引导。
+	NoticeCampaignIDRequired = "mail.page.campaignIDRequired"
+	NoticeRunIDRequired      = "mail.page.runIDRequired"
 )
 
 // MailFacingMessages 已于「控制器不取词」这一批删除，这里留一条路标。

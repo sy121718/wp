@@ -23,7 +23,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// newAutomationRouter 挂三个页面路由 + 保存 / 状态接口。
+// newAutomationRouter 挂画布的页面路由 + 保存端点（画布自己就是保存端的唯一调用方）。
 func newAutomationRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -36,9 +36,13 @@ func newAutomationRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	})
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(f.svc)
+	api := mailhttp.NewHandle(f.svc)
 	router.GET("/admin/mail/automation", h.MailAutomationPage)
 	router.GET("/admin/mail/automation/canvas", h.MailAutomationCanvas)
 	router.GET("/admin/mail/automation/run", h.MailAutomationRunDetail)
+	// 画布保存打的就是这条 JSON 端点（见 static/js/automation/canvas.js 的 saveStructure）。
+	// 挂真路由而不是绕到 service：绑定、响应形状、状态码都在这一层，绕过去三者坏了判据照样绿。
+	router.POST("/api/mail/automation/save", api.AutomationSave)
 	return router
 }
 
@@ -269,14 +273,15 @@ func TestMailAutomationEditRouteIsGone(t *testing.T) {
 // 而新建流程时 meta.name 是空串 —— 如果画布不提供名称输入（而是从注入的 meta 读），
 // 那么「新建 → 画布上画完 → 保存」永远 400，而新建已经没有第二个入口了。
 //
-// 判据分两段：画布 HTML 里确有可编辑的名称 / 触发方式控件；带着这两个值提交
-// /api/mail/automation/save 能建出流程（并回带 id）。
+// 两段判据：
+//  1. 画布 HTML 里确有可编辑的名称 / 触发方式控件；
+//  2. 按画布保存体**真发一次 POST /api/mail/automation/save**（绑定 + 响应形状 + 状态码
+//     都在这一层；直接调 service 的话三者坏了这条判据照样绿）。
 func TestMailAutomationNewFlowCanBeSaved(t *testing.T) {
 	f := newMailFeatureFixture(t)
 	if f == nil {
 		return
 	}
-	ctx := context.Background()
 	router := newAutomationRouter(t, f)
 
 	// 1. 画布上有可编辑的名称与触发方式（不是只读文本）。
@@ -292,28 +297,96 @@ func TestMailAutomationNewFlowCanBeSaved(t *testing.T) {
 		}
 	}
 
-	// 2. 带着画布提交的那几个字段走保存：能建出流程并回带 id。
-	raw, err := json.Marshal(map[string]any{"schema": 2, "entry": "n1", "nodes": []any{
-		map[string]any{"key": "n1", "type": "trigger", "out": map[string]any{}},
-	}})
+	// 2. 按画布的保存体发一次真请求（只含入口节点、无出口 = 触发即结束，合法）。
+	payload := map[string]any{
+		"id":            0,
+		"name":          "新建流程",
+		"triggerType":   mailmodel.TriggerManual,
+		"triggerParams": map[string]any{},
+		"definition": map[string]any{"schema": 2, "entry": "n1", "nodes": []any{
+			map[string]any{"key": "n1", "type": "trigger", "out": map[string]any{}},
+		}},
+	}
+	raw, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
+	req := httptest.NewRequest(http.MethodPost, "/api/mail/automation/save", strings.NewReader(string(raw)))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("新建流程保存状态码 %d，正文：%s", rec.Code, firstN(rec.Body.String(), 300))
+	}
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			ID    uint64 `json:"id"`
+			Entry string `json:"entry"`
+			Nodes []struct {
+				Key string `json:"key"`
+			} `json:"nodes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("保存响应不是合法 JSON: %v（%s）", err, firstN(rec.Body.String(), 300))
+	}
+	if resp.Code != http.StatusOK || resp.Data.ID == 0 {
+		t.Fatalf("保存成功必须回带 id（画布靠它把地址栏从「新建」切成「编辑」），实际 code=%d id=%d",
+			resp.Code, resp.Data.ID)
+	}
+	if resp.Data.Entry != "n1" || len(resp.Data.Nodes) != 1 {
+		t.Fatalf("新建流程应是「一个入口节点」，实际 entry=%q nodes=%d", resp.Data.Entry, len(resp.Data.Nodes))
+	}
+}
+
+// TestMailAutomationSaveKeepsTriggerParams 画布保存不能抹掉触发条件。
+//
+// 触发条件（如 tag_added 的标签）是**流程级配置**，不在图里；画布提交的 body 也不带它。
+// 而 SaveAutomation 的更新分支若无条件写 trigger_params，就会把它清成空 map ——
+// 而 triggerParamsMatch 对空条件恒为 true：一条「只在打上 vip 时触发」的流程，
+// 在画布上保存一次之后对**任意标签**都触发。这是静默的数据损坏，必须钉住。
+func TestMailAutomationSaveKeepsTriggerParams(t *testing.T) {
+	f := newMailFeatureFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	router := newAutomationRouter(t, f)
+
 	item, err := f.svc.SaveAutomation(ctx, &maildto.SaveAutomationReq{
-		Name: "新建流程", TriggerType: mailmodel.TriggerManual, Definition: raw,
+		Name:          "标签触发流程",
+		TriggerType:   mailmodel.TriggerTagAdded,
+		TriggerParams: map[string]any{"tag": "vip"},
+		Definition:    json.RawMessage(`{"schema":2,"entry":"n1","nodes":[{"key":"n1","type":"trigger","out":{}}]}`),
 	})
 	if err != nil {
-		t.Fatalf("新建流程保存失败: %v", err)
+		t.Fatalf("建流程失败: %v", err)
 	}
-	if item.ID == 0 {
-		t.Fatal("保存成功必须回带 id（画布要靠它把地址栏从「新建」切成「编辑」）")
+
+	// 画布保存体：**不带 triggerParams**（这正是前端的真实形态）。
+	payload := map[string]any{
+		"id":          item.ID,
+		"name":        "标签触发流程",
+		"triggerType": mailmodel.TriggerTagAdded,
+		"definition": map[string]any{"schema": 2, "entry": "n1", "nodes": []any{
+			map[string]any{"key": "n1", "type": "trigger", "out": map[string]any{}},
+		}},
 	}
-	// 3. 只含入口节点（没有出口）的图是合法的：触发即结束。
-	got, err := f.svc.GetAutomation(ctx, item.ID)
+	raw, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/mail/automation/save", strings.NewReader(string(raw)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("保存状态码 %d：%s", rec.Code, firstN(rec.Body.String(), 300))
+	}
+
+	after, err := f.svc.GetAutomation(ctx, item.ID)
 	if err != nil {
 		t.Fatalf("回读失败: %v", err)
 	}
-	if got.Entry != "n1" || len(got.Nodes) != 1 {
-		t.Fatalf("新建流程应是「一个入口节点」，实际 entry=%q nodes=%d", got.Entry, len(got.Nodes))
+	if got := after.TriggerParams["tag"]; got != "vip" {
+		t.Fatalf("画布保存抹掉了触发条件：tag=%v（期望 vip）。清空后该流程对任意标签都触发", got)
 	}
 }

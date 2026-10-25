@@ -141,14 +141,23 @@ func (s *Service) SaveAutomation(ctx context.Context, req *maildto.SaveAutomatio
 			return nil, errors.New(mailenums.ErrAutomationNotFound)
 		}
 		fields := map[string]any{
-			"name":           strings.TrimSpace(req.Name),
-			"description":    nullable(req.Description),
-			"trigger_type":   req.TriggerType,
-			"trigger_params": trigger,
-			"definition":     definition,
+			"name":         strings.TrimSpace(req.Name),
+			"description":  nullable(req.Description),
+			"trigger_type": req.TriggerType,
+			// TriggerParams 只在**调用方真的传了**时才改写。
+			//
+			// 为什么不能无条件写：画布（唯一的编辑器）只提交图与名称，不带触发条件 ——
+			// 无条件写会把一条 tag_added 流程的「只对该标签触发」清成空 map，而
+			// triggerParamsMatch 对空条件恒为 true：该流程此后对**任意**标签都触发。
+			// 触发条件不是图的一部分（它是流程级的配置），改图不该顺手抹掉它。
+			// 「想清空条件」的调用方传一个空 map 即可 —— 那是显式意图，与「没传」可区分。
+			"definition": definition,
 			// 定义变了就推进版本：运行中的实例继续用它们启动时的版本。
 			"version":     old.Version + 1,
 			"update_time": now,
+		}
+		if req.TriggerParams != nil {
+			fields["trigger_params"] = trigger
 		}
 		if err = s.m.UpdateAutomationFields(ctx, req.ID, fields); err != nil {
 			return nil, err
