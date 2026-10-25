@@ -936,4 +936,15 @@ func registerCatalogAndInventory() {
 			"'ErrPurchaseStatusNotFinishable', 'ErrPurchaseStatusNotCancelable')",
 		SQL: mustSQL("623b_inventory_deduct_priority_i18n.sql"),
 	})
+
+	// 627：调拨单 + 明细 + 凭证附件（W3）。CheckSQL 按**三张表全在**判定：
+	// 只查一张的话，中途失败会留下「调拨单表在、明细表不在」却被永久跳过的状态（与 624 同因）。
+	register(Migration{
+		Version:   "627-inventory-transfer",
+		TableName: "inventory_transfers",
+		CheckSQL: "SELECT CASE WHEN COUNT(*) = 3 THEN 1 ELSE 0 END FROM information_schema.tables " +
+			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
+			"AND table_name IN ('inventory_transfers', 'inventory_transfer_items', 'inventory_transfer_attachments')",
+		SQL: mustSQL("627_inventory_transfer.sql"),
+	})
 }
