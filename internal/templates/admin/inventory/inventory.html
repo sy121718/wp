@@ -139,7 +139,7 @@
         </div>
         <div class="table-wrap" tabindex="0">
         <table class="data-table data-table-wide">
-            <thead><tr><th>{{ .["t"]("admin.inventory.sku.col.warehouse", "仓库") }}</th><th>{{ .["t"]("admin.inventory.sku.col.code", "短码") }}</th><th>SKU</th><th>{{ .["t"]("admin.inventory.sku.col.externalSku", "外部编码") }}</th><th>{{ .["t"]("admin.inventory.sku.col.qty", "数量") }}</th><th>{{ .["t"]("admin.inventory.stock.col.tracking", "跟踪与数量") }}</th><th>{{ .["t"]("admin.inventory.sku.col.updatedAt", "更新时间") }}</th></tr></thead>
+            <thead><tr><th>{{ .["t"]("admin.inventory.sku.col.warehouse", "仓库") }}</th><th>{{ .["t"]("admin.inventory.sku.col.code", "短码") }}</th><th>SKU</th><th>{{ .["t"]("admin.inventory.sku.col.externalSku", "外部编码") }}</th><th>{{ .["t"]("admin.inventory.sku.col.qty", "数量") }}</th><th>{{ .["t"]("admin.inventory.skus.col.reserved", "预占") }}</th><th>{{ .["t"]("admin.inventory.skus.col.available", "可售") }}</th><th>{{ .["t"]("admin.inventory.stock.col.tracking", "跟踪与数量") }}</th><th>{{ .["t"]("admin.inventory.sku.col.updatedAt", "更新时间") }}</th></tr></thead>
             <tbody>
             {{range _, r := .StockRows}}
             <tr>
@@ -168,8 +168,12 @@
                     </form>
                 </td>
                 {* 数量列的三态（迁移 261）：∞ 无限（不跟踪；数量恒为 0，显示 0 会让无限
-                   看起来像「没货」）/ 数字（跟踪）/ 未入库（这个仓没有这一行，label 已由 handler 给好）。 *}
+                   看起来像「没货」）/ 数字（跟踪）/ 未入库（这个仓没有这一行，label 已由 handler 给好）。
+                   预占 / 可售两列（迁移 621）：数字由 handler 算好（可售 = 数量 − 预占），
+                   模板**不做减法**（template_logic_test.go）。未入库行没有这两列的语义，给 —。 *}
                 <td>{{if isset(r.QuantityLabel)}}{{r.QuantityLabel}}{{else}}—{{end}}</td>
+                <td>{{if isset(r.Present)}}{{if r.Present}}{{r.ReservedQuantity}}{{else}}—{{end}}{{else}}—{{end}}</td>
+                <td>{{if isset(r.Present)}}{{if r.Present}}{{r.AvailableQuantity}}{{else}}—{{end}}{{else}}—{{end}}</td>
                 <td>
                     {* 行内编辑「跟踪开关 + 数量」：数量走变动契约（手工调整）并写流水。
                        无限（不跟踪）时数量框**留空且禁用** —— 绝不预填 0：0 是「卖光」这个具体事实，

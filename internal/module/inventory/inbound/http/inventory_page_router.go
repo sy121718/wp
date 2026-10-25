@@ -33,6 +33,10 @@ func registerInventoryReadPages(pages *gin.RouterGroup, h *inventoryPageHandle) 
 		adminui.PageSlot(InventoryWarehousesPageTemplate), h.InventoryWarehousesPage)
 	pages.GET("/inventory/reasons", adminui.PageAuthz("/api/inventory/reason/list"),
 		adminui.PageSlot(InventoryReasonsPageTemplate), h.InventoryReasonsPage)
+	// 仓库商品 SKU 台账页（迁移 621）：一行 = 一条库存行（含未认领行）。
+	// 复用库存列表的权限点：能看库存的人就能看这张台账 —— 它只是同一个真源的另一个视角。
+	pages.GET("/inventory/skus", adminui.PageAuthz("/api/inventory/stock/list"),
+		adminui.PageSlot(InventorySKUsPageTemplate), h.InventorySKUsPage)
 }
 
 // 三个整页的模板名（与路由 / 权限点同处：一眼能看全这个模块渲染了哪些屏）。
@@ -42,7 +46,22 @@ const (
 	InventoryReasonsPageTemplate    = "admin/inventory/inventory_reasons.html"
 	InventorySourcesPageTemplate    = "admin/inventory/inventory_sources.html"
 	InventoryPurchasesPageTemplate  = "admin/inventory/inventory_purchases.html"
+	InventorySKUsPageTemplate       = "admin/inventory/inventory_skus.html"
 )
+
+// registerInventorySKUWritePages 仓库商品 SKU 台账页的三个写动作（迁移 621）：
+// 认领 / 解除认领 / 新建未认领存货。
+//
+// **全部复用** /api/inventory/stock/change —— 与外部编码、跟踪开关同口径：
+// 能改这个仓库存的人，才该能认领它 / 给它建档。不新增权限点，也不新增 authorizedAPI 路由。
+// 三条都写成**字面量**的 CasbinMiddlewareForPath 调用而不是先存进变量：
+// scripts/check-page-endpoint-authz.py 按调用形状判授权（`args 里出现 CasbinMiddleware`），
+// 抽成变量会让门禁看不见鉴权、把三条全判成「登录即可用」。
+func registerInventorySKUWritePages(pages *gin.RouterGroup, h *inventoryPageHandle) {
+	pages.POST("/inventory/stock/claim", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockClaim)
+	pages.POST("/inventory/stock/unclaim", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockUnclaim)
+	pages.POST("/inventory/stock/unclaimed-create", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockUnclaimedCreate)
+}
 
 // SetupInventoryPages 注册库存域后台页面；pages 为 nil 时整体跳过。
 func SetupInventoryPages(pages *gin.RouterGroup, svc inventorycontract.InventoryService,
@@ -72,6 +91,7 @@ func SetupInventoryPages(pages *gin.RouterGroup, svc inventorycontract.Inventory
 	// inventory_stocks 写权限上（能改这个仓库存的人，才该能改它跟不跟踪）。
 	// 数量本身仍走变动契约（手工调整）并写流水，行内表单只是入口。
 	pages.POST("/inventory/stock/tracking", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), inventoryPages.InventoryStockTrackingUpdate)
+	registerInventorySKUWritePages(pages, inventoryPages)
 	pages.POST("/inventory/reason/create", builtin.CasbinMiddlewareForPath("/api/inventory/reason/create"), inventoryPages.InventoryReasonCreate)
 	// 启停 / 改名：内置原因改名由 service 拒绝（它的 key 由系统按 code 派生），停用照常。
 	pages.POST("/inventory/reason/update", builtin.CasbinMiddlewareForPath("/api/inventory/reason/update"), inventoryPages.InventoryReasonUpdate)

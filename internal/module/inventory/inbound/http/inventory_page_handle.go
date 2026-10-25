@@ -129,8 +129,12 @@ func (h *inventoryPageHandle) InventoryPage(c *gin.Context) {
 				VariantID: r.VariantID, SKUCode: r.SKUCode,
 				ExternalSKU:   r.ExternalSKU,
 				TrackQuantity: r.TrackQuantity, Quantity: r.Quantity,
-				QuantityLabel: stockQuantityLabel(tr, r.TrackQuantity, r.Quantity),
-				UpdatedAt:     r.UpdatedAt,
+				// 预占 / 可售（迁移 621）：可售的减法在 service 侧算好
+				//（StockResp.AvailableQuantity），模板只取值。
+				ReservedQuantity:  r.ReservedQuantity,
+				AvailableQuantity: r.AvailableQuantity,
+				QuantityLabel:     stockQuantityLabel(tr, r.TrackQuantity, r.Quantity),
+				UpdatedAt:         r.UpdatedAt,
 			})
 		}
 	}

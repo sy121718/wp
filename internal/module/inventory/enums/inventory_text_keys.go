@@ -53,6 +53,12 @@ const (
 	InventoryPurchasesOptionCostLabel = "admin.inventory_purchases.option.costLabel"
 	InventoryPurchasesOptionCostUnset = "admin.inventory_purchases.option.costUnset"
 
+	// —— 仓库商品 SKU 台账页（迁移 621）——
+	InventorySKUsTitle      = "admin.inventory.skus.title"
+	InventoryStockClaimed   = "admin.inventory.stock.claimed"
+	InventoryStockUnclaimed = "admin.inventory.stock.unclaimed"
+	InventoryFilterAll      = "admin.inventory.filter.all"
+
 	// —— 单条与批量写动作的结论文案（失败出口的事实形态：key + 中文兜底 + `%s` 参数）——
 	InventoryActionDone             = "admin.inventory.actionDone"
 	InventoryBulkWarehousePartial   = "admin.inventory.bulk.partial"

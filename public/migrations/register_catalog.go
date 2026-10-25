@@ -873,4 +873,41 @@ func registerCatalogAndInventory() {
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.inventory.stock.unlimited'",
 		SQL:          mustSQL("263_inventory_track_quantity_i18n.sql"),
 	})
+
+	// 621：仓库商品 SKU 主档化（库存行升格）。variant_id / product_id 改可空（允许
+	// 「仓库里已有、尚未对应商品」的存货行），加 reserved_quantity 预占列与两条 CHECK。
+	// CheckSQL 按**本迁移自己的列**判定（reserved_quantity 存在即已执行）：存量库上
+	// inventory_stocks 早就存在，用默认的「表存在即跳过」会把它永久跳过。
+	register(Migration{
+		Version:   "621-inventory-stock-master",
+		TableName: "inventory_stocks",
+		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
+			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'reserved_quantity'",
+		SQL: mustSQL("621_inventory_stock_master.sql"),
+	})
+
+	// 622：本批的文案词条（4 条业务错误 + 30 个台账页界面位，中英成对 = 68 行）。
+	// 判定逐条枚举本批全部 34 个 key 的两种语言（= 68 个 (item_key, lang) 组合），
+	// 不用全库行数、也不用前缀 LIKE（前者会被同期其它批次的行满足而静默跳过，
+	// 后者会被将来新增的同前缀 key 带跑）。
+	// 阈值取**精确组合数 68**：低于它缺词也能满足，高于它判据永不满足、每次启动重跑。
+	registerSeed(Seed{
+		Version:   "622-inventory-stock-master-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 68 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
+			"'ErrStockAlreadyClaimed', 'ErrStockHasQuantity', 'ErrStockNotClaimed', 'ErrReserveUnderflow', " +
+			"'admin.inventory.skus.title', 'admin.inventory.skus.lead', 'admin.inventory.skus.mid', " +
+			"'admin.inventory.skus.boundary', 'admin.inventory.skus.createTitle', 'admin.inventory.skus.create', " +
+			"'admin.inventory.skus.listLead', 'admin.inventory.skus.col.claimed', 'admin.inventory.skus.col.reserved', " +
+			"'admin.inventory.skus.col.available', 'admin.inventory.skus.col.cost', 'admin.inventory.skus.filter.keyword', " +
+			"'admin.inventory.skus.filter.keywordPh', 'admin.inventory.skus.emptyHeading', 'admin.inventory.skus.emptyDesc', " +
+			"'admin.inventory.skus.unclaimConfirm', 'admin.inventory.skus.unclaim', 'admin.inventory.skus.claim', " +
+			"'admin.inventory.skus.claimTitle', 'admin.inventory.skus.claimTarget', 'admin.inventory.skus.claimPick', " +
+			"'admin.inventory.skus.claimSubmit', 'admin.inventory.skus.createWarehousePh', " +
+			"'admin.inventory.skus.createCodePh', 'admin.inventory.skus.costPh', 'admin.inventory.skus.createSubmit', " +
+			"'admin.inventory.stock.claimed', 'admin.inventory.stock.unclaimed', 'admin.inventory.filter.all', " +
+			"'admin.inventory.skus.filter.submit')",
+		SQL: mustSQL("622_inventory_stock_master_i18n.sql"),
+	})
 }

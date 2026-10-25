@@ -124,7 +124,7 @@ func seedStock(t *testing.T, db *gorm.DB, projectID, productID, variantID, wareh
 	// 不允许「不跟踪（无限）却又带着数字」。
 	out, err := inventorymodel.NewModel(db).EnsureStock(context.Background(), &inventorymodel.StockEntity{
 		ID: id, ProjectID: projectID, WarehouseID: warehouseID,
-		ProductID: productID, VariantID: variantID, SKUCode: "SKU-" + variantID[:8],
+		ProductID: &productID, VariantID: &variantID, SKUCode: "SKU-" + variantID[:8],
 		Quantity: 7, TrackQuantity: true, Metadata: []byte("{}"), CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {

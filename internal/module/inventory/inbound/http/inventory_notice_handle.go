@@ -32,6 +32,8 @@ var (
 	inventoryReasonBackKeys    = []string{"project"}
 	inventorySourceBackKeys    = []string{"project", "type", "relatedParty", "status", "keyword", "page", "limit"}
 	inventoryPurchaseBackKeys  = []string{"project", "status", "sourceId", "keyword", "page", "limit"}
+	// 仓库商品 SKU 台账页的筛选键（迁移 621）。
+	inventorySKUBackKeys = []string{"project", "warehouseId", "keyword", "claimed", "page", "limit"}
 )
 
 // inventoryMsgText 把一句文案的事实取成当前语言文本（页面槽位 / 片段槽位用）。

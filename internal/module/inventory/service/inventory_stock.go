@@ -136,7 +136,8 @@ func (s *Service) ensureStockRowWithExternalTx(ctx context.Context, tx *gorm.DB,
 	now := time.Now().UTC()
 	row := &inventorymodel.StockEntity{
 		ID: uuid.NewString(), ProjectID: wh.ProjectID, WarehouseID: wh.ID,
-		ProductID: productID, VariantID: variantID, SKUCode: skuCode,
+		ProductID: inventorymodel.StringPtr(productID), VariantID: inventorymodel.StringPtr(variantID),
+		SKUCode:     skuCode,
 		ExternalSKU: externalSKU,
 		// 默认 = 不跟踪（无限）：新建行「不填数量就是无限」与列默认 false 是同一个口径。
 		TrackQuantity: false,
@@ -260,7 +261,8 @@ func (s *Service) toStockResp(ctx context.Context, e *inventorymodel.StockEntity
 	}
 	resp := &inventorydto.StockResp{
 		ID: e.ID, ProjectID: e.ProjectID, WarehouseID: e.WarehouseID,
-		ProductID: e.ProductID, VariantID: e.VariantID, SKUCode: e.SKUCode,
+		ProductID: inventorymodel.PtrString(e.ProductID), VariantID: inventorymodel.PtrString(e.VariantID),
+		SKUCode: e.SKUCode,
 		// 外部编码随库存行一起出：它回答的是「这条货在这个仓叫什么」，
 		// 与成本一样是 (仓库, 变体) 维度的附加事实，后台不必再查一次。
 		ExternalSKU: e.ExternalSKU,
@@ -268,6 +270,11 @@ func (s *Service) toStockResp(ctx context.Context, e *inventorymodel.StockEntity
 		//（跟踪且卖光 / 不跟踪无限），漏了开关就会把无限显示成「没货」。
 		TrackQuantity: e.TrackQuantity,
 		Quantity:      e.Quantity,
+		// 预占 / 可售 / 已认领（迁移 621）同源给出：可售的减法只在这一个地方做，
+		// 模板直接取字段（template_logic_test.go 禁止模板算数量）。
+		ReservedQuantity:  e.ReservedQuantity,
+		AvailableQuantity: availableOf(e.Quantity, e.ReservedQuantity),
+		Claimed:           e.VariantID != nil,
 		// 成本随库存行一起出（(仓库, SKU) 一个当前值）：后台不必再为「这条货按多少
 		// 算成本」跑第二次查询，也保证「库存与成本同源」不会各查各的漂移。
 		CostPrice: e.CostPrice,
@@ -286,13 +293,18 @@ func toStockRespList(rows []*inventorymodel.StockRow) []*inventorydto.StockResp 
 		list = append(list, &inventorydto.StockResp{
 			ID: r.ID, ProjectID: r.ProjectID, WarehouseID: r.WarehouseID,
 			WarehouseCode: r.WarehouseCode, WarehouseName: r.WarehouseName,
-			ProductID: r.ProductID, VariantID: r.VariantID, SKUCode: r.SKUCode,
+			ProductID: r.ProductID, VariantID: r.VariantID,
+			SKUCode: r.SKUCode,
 			// 外部编码同源（投影里带上 s.external_sku）：与单条 GetStock 给出同一个值。
 			ExternalSKU: r.ExternalSKU,
 			// 跟踪开关同源（投影里带上 s.track_quantity）：列表 / 按 SKU 各仓两条读路径
 			// 与单条 GetStock 给出同一个值，不会出现「详情是无限、列表是 0」。
 			TrackQuantity: r.TrackQuantity,
 			Quantity:      r.Quantity,
+			// 预占 / 可售 / 已认领同源（与 toStockResp 同一个算式，不各写一份）。
+			ReservedQuantity:  r.ReservedQuantity,
+			AvailableQuantity: availableOf(r.Quantity, r.ReservedQuantity),
+			Claimed:           r.VariantID != "",
 			// 成本同源（投影里带上 s.cost_price）：列表 / 按 SKU 各仓两条读路径
 			// 与单条 GetStock 给出同一个值，不会出现「详情有成本、列表没有」。
 			CostPrice: r.CostPrice,
@@ -398,7 +410,7 @@ func (s *Service) UpdateStockTracking(ctx context.Context, req *inventorydto.Upd
 			Lines: []inventorydto.StockChangeLineReq{{
 				WarehouseID: warehouseID,
 				VariantID:   variantID,
-				ProductID:   row.ProductID,
+				ProductID:   inventorymodel.PtrString(row.ProductID),
 				SKUCode:     row.SKUCode,
 				Quantity:    target,
 			}},
@@ -475,9 +487,13 @@ func (s *Service) ResolveVariantWarehouseCosts(ctx context.Context, projectID st
 		return nil, err
 	}
 	// key 用「变体 + 分隔符 + 仓」：uuid 不含 '|'，不会与另一个组合撞键。
+	// 未认领行（variant_id 为 NULL）不参与成本快照：它不属于任何变体。
 	cost := make(map[string]*float64, len(rows))
 	for _, r := range rows {
-		cost[r.VariantID+"|"+r.WarehouseID] = r.CostPrice
+		if r.VariantID == nil {
+			continue
+		}
+		cost[*r.VariantID+"|"+r.WarehouseID] = r.CostPrice
 	}
 	// 归属仓解析在**同一批内复用**：留空的 ref 一律落到同一个默认仓、显式仓相同的也共用
 	// 一次解析结果 —— 否则十几行的订单要查十几次默认仓，而且并发下「默认仓刚好被切换」
@@ -735,6 +751,7 @@ func (s *Service) ListWarehouseSKUs(ctx context.Context, req *inventorydto.ListW
 		ProjectID:   projectID,
 		WarehouseID: strings.TrimSpace(listWarehouseSKUWarehouseID(req)),
 		Keyword:     strings.TrimSpace(listWarehouseSKUKeyword(req)),
+		Claimed:     claimedFilterOf(listWarehouseSKUClaimed(req)),
 	}, size, (page-1)*size)
 	if err != nil {
 		return nil, err
@@ -789,7 +806,7 @@ func (s *Service) BindExternalSKU(ctx context.Context, req *inventorydto.BindExt
 	if err != nil {
 		return nil, mapStockNotFound(err)
 	}
-	if err = s.assertExternalSKUProductScope(ctx, projectID, warehouseID, code, row.ProductID); err != nil {
+	if err = s.assertExternalSKUProductScope(ctx, projectID, warehouseID, code, inventorymodel.PtrString(row.ProductID)); err != nil {
 		return nil, err
 	}
 	affected, err := s.m.SetExternalSKUByVariantWarehouse(ctx, projectID, warehouseID, variantID, code)
@@ -872,7 +889,12 @@ func toWarehouseSKUResp(r *inventorymodel.WarehouseSKURow) *inventorydto.Warehou
 	return &inventorydto.WarehouseSKUResp{
 		WarehouseID: r.WarehouseID, WarehouseCode: r.WarehouseCode, WarehouseName: r.WarehouseName,
 		IsDefault: r.IsDefault, SKUCode: r.SKUCode, ExternalSKU: r.ExternalSKU,
-		ProductID: r.ProductID, VariantID: r.VariantID, HasVariant: r.HasVariant,
+		ProductID: inventorymodel.PtrString(r.ProductID), VariantID: inventorymodel.PtrString(r.VariantID),
+		HasVariant: r.HasVariant,
+		// 三个数量同一个算式（与 toStockResp 一致）：可售的减法只在服务端做一次。
+		Quantity: r.Quantity, ReservedQuantity: r.ReservedQuantity,
+		AvailableQuantity: availableOf(r.Quantity, r.ReservedQuantity),
+		TrackQuantity:     r.TrackQuantity,
 	}
 }
 
@@ -883,8 +905,14 @@ func (s *Service) toWarehouseSKURespFromEntity(ctx context.Context, e *inventory
 		return nil
 	}
 	resp := &inventorydto.WarehouseSKUResp{
+		ID:          e.ID,
 		WarehouseID: e.WarehouseID, SKUCode: e.SKUCode, ExternalSKU: e.ExternalSKU,
-		ProductID: e.ProductID, VariantID: e.VariantID, HasVariant: strings.TrimSpace(e.VariantID) != "",
+		ProductID: inventorymodel.PtrString(e.ProductID), VariantID: inventorymodel.PtrString(e.VariantID),
+		HasVariant:        e.VariantID != nil,
+		Quantity:          e.Quantity,
+		ReservedQuantity:  e.ReservedQuantity,
+		AvailableQuantity: availableOf(e.Quantity, e.ReservedQuantity),
+		TrackQuantity:     e.TrackQuantity,
 	}
 	if wh, werr := s.m.GetWarehouse(ctx, e.WarehouseID, e.ProjectID); werr == nil {
 		resp.WarehouseCode, resp.WarehouseName, resp.IsDefault = wh.Code, wh.Name, wh.IsDefault
@@ -924,4 +952,28 @@ func listWarehouseSKUKeyword(req *inventorydto.ListWarehouseSKUReq) string {
 		return ""
 	}
 	return req.Keyword
+}
+
+// listWarehouseSKUClaimed 认领状态筛选原文（nil req 时为空 = 不过滤）。
+func listWarehouseSKUClaimed(req *inventorydto.ListWarehouseSKUReq) string {
+	if req == nil {
+		return ""
+	}
+	return req.Claimed
+}
+
+// claimedFilterOf 把表单 / 查询串的三态值归一成过滤条件（nil = 不过滤）。
+//
+// 只认两个字面量（claimed / unclaimed），其余一律当「不过滤」：页面下拉的「全部」就是空串，
+// 而一个手改的脏参数不该把列表变成空集（那看起来像「真的没数据」）。
+func claimedFilterOf(raw string) *bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "claimed":
+		trueValue := true
+		return &trueValue
+	case "unclaimed":
+		falseValue := false
+		return &falseValue
+	}
+	return nil
 }
