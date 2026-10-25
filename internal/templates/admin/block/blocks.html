@@ -89,7 +89,7 @@
     {{end}}
 
     <template id="tpl-block-create">
-        {* 新建走 JSON API（前端直调 /api/block/create，见 static/js/ui/json_write.js）：
+        {* 新建走 JSON API（前端直调 /api/block/create，见 static/js/ui/write-base.js）：
            成功直接进工作台编辑内容（原先是「提示页 1 秒后跳转」那一跳），失败在原地点出
            并保住已填内容。表单只声明**事实**（端点 / 写模式 / 跳哪儿 / 文案从哪来），
            行为全在控件里 —— 模板里不写内联 JS。

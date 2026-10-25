@@ -36,7 +36,6 @@ declare -A REMOVED=(
   [data-write-bool]='（已删：同上）'
   [data-write-array]='（已删：a&a=b 直接绑成 []string）'
   [data-write-skip-empty]='（已删：基座永远删空值）'
-  [data-write-host]='（已删：基座用 closest("[data-write]")）'
   [data-write-flash]='data-write-reload'
   [data-write-flash-target]='（已删：结论经 sessionStorage 跨刷新）'
   [data-close-on-ok]='data-write-close'
@@ -45,6 +44,9 @@ declare -A REMOVED=(
 )
 
 # 仍在用的整形属性（基座认识；不属于类型声明）。
+# data-write-host 保留：一批隐藏表单（单条删除 / 行内改状态）在列表页上各占一行，
+# 它们的结论区是**共用**的 —— 模板把那个区放在 <div data-write-host> 里，
+# 基座的 statusOf 先查表单内、再查 closest('[data-write-host]')。
 # data-write-ids-scope 保留：ids 可能在**另一个容器**里（抽屉内容被克隆到 document 级，
 # 勾选框留在列表的批量表单里），必须显式指回去。
 declare -A ALLOWED_SHAPING=(
@@ -54,6 +56,7 @@ declare -A ALLOWED_SHAPING=(
   [data-write-lines]='多行文本 → 字符串数组'
   [data-write-keep-empty]='空串有语义的字段'
   [data-write-ids-scope]='ids 在另一个容器里'
+  [data-write-host]='共用结论区的宿主容器'
   [data-write-builder]='存量兼容：页面级组装器'
   [data-write-rows]='存量兼容：行容器 → 数组'
   [data-write-object]='存量兼容：容器 → 单对象'

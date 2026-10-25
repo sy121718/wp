@@ -92,7 +92,7 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的。
            勾选列只加在标签表上；下面的「命中的商品」是标签 × 商品的关系表（只读展示），
            它的删除入口属于商品，不在这里批量。 *}
-        {* 表单不声明 data-write-api：端点声明落在按钮/各自的表单上（json_write.js 的 attrFrom：
+        {* 表单不声明 data-write-url：端点声明落在按钮/各自的表单上（json_write.js 的 attrFrom：
            按钮优先、表单兜底）。data-list-bulk 是作用域锚点。 *}
         <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">

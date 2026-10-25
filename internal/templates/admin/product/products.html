@@ -93,9 +93,9 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。
            操作列里的按钮都带 form="<id>"，各自归属自己的隐藏表单、不会误触发这个批量表单：
-           单行删除的隐藏表单声明 data-write-api（走 ui/json_write.js），
+           单行删除的隐藏表单声明 data-write-url（走 ui/write-base.js），
            预览的隐藏表单是原生 POST + target="_blank"（只读、开新标签，不需要基座）。 *}
-        {* 批量删除走 ui/json_write.js（与单行删除同一个基座）：结论不再靠整页提示页，
+        {* 批量删除走 ui/write-base.js（与单行删除同一个基座）：结论不再靠整页提示页，
            而是就地显示「删了几条 + 哪几条没删掉、为什么」（data-write-status 区）。
            keyword / status / page 三个隐藏域随旧通道一起去掉：基座只发 data-write-extra
            点名的字段，留着它们永远不会被发送 —— 而且列表筛选由整页刷新自然保留。 *}
@@ -251,7 +251,7 @@
     </section>
 
     {* ==== 行内表单：全部放表格外，按钮用 form="<id>" 关联 ==== *}
-    {* 商品接入 ui/json_write.js 的第一个动作：删除走 JSON 接口，失败原因落在结果区、
+    {* 商品接入 ui/write-base.js 的第一个动作：删除走 JSON 接口，失败原因落在结果区、
        成功整页刷新（列表的派生列由服务端重算，就地改 DOM 会同源不上）。
        data-write-host 与结果区是这条链路的声明点，别的行内表单后续也往这里接。 *}
     <div data-write-host>
@@ -284,7 +284,7 @@
        为什么不能用普通表单提交：抽屉内容被克隆到 document 级（见 ui/drawer.js），
        而勾选框在**批量表单**里 —— 原生提交一个字都带不上来。所以这里声明
        data-write-ids-scope="[data-list-bulk]" 把勾选的 ids 指回那个表单，
-       提交由 ui/json_write.js 发 JSON（data-write-api + data-write-mode=bulk），
+       提交由 ui/write-base.js 发 JSON（data-write-url + data-write=bulk），
        结论就地写进 data-write-status 区 —— 不再有 HX-Redirect 那种整页跳转技巧。
        这里**不写 data-confirm**：把「售价会立刻写库」作为可见提示行呈现，
        抽屉本身的填写与点击就是那次确认。

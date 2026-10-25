@@ -86,7 +86,7 @@
            工程里真的没有属性组 → 指到本页页头那个新建抽屉。 *}
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids（见 admin.js 的批量选择增强）。 *}
-        {* 写动作走 ui/json_write.js：表单不声明端点，端点落在批量按钮上（基座按
+        {* 写动作走 ui/write-base.js：表单不声明端点，端点落在批量按钮上（基座按
            「按钮优先、表单兜底」读属性）。data-list-bulk 是作用域锚点。 *}
         <form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">

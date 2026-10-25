@@ -6,7 +6,7 @@
 {* 写表单的唯一基座：整形（删空值键 / 嵌套字段）+ 提交 + 收尾（toast / 导航 / 刷新）。
    紧随 htmx 之后、任何控件之前 —— 它在 document 上以捕获阶段接 submit，
    晚加载会让早期提交走原生提交（整页跳转）。
-   取代了 json_write.js + htmx_form_body.js + write_feedback.js 三个文件。 *}
+   取代了 json_write.js + write-base.js + write_feedback.js 三个文件。 *}
 <script src="/static/js/ui/write-base.js"></script>
 {* 控件 ↔ htmx 的唯一适配层：控件广播 wb:rescan，本文件转成 htmx.process。
    没有 htmx 时它什么都不做 —— 控件因此不依赖传输层。 *}

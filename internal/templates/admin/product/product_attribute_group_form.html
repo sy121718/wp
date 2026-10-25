@@ -4,13 +4,14 @@
    （名称 / 标识 / 排序 / 参与变体），差别只有提交地址、id 隐藏域与「要不要带属性值行编辑器」。
    两处各抄一份必然分叉，而分叉不会编译失败，只会在某一条入口上静默丢字段。
 
-   —— 写动作走 ui/json_write.js（声明式 JSON 写基座）——
-   · 表单不再有 method/action/csrf 隐藏域：端点由 data-write-api 声明，客户端序列化成 JSON，
+   —— 写动作走 ui/write-base.js（声明式 JSON 写基座）——
+   · 表单不再有 method/action/csrf 隐藏域：端点由 data-write-url 声明，客户端序列化成 JSON，
      csrf 走 X-CSRF-Token 头；
    · 失败不再「原地重渲染整张表单」：基座把响应里的 message 写进 data-write-status，
      用户已填的内容本来就还在 DOM 里（没有整页替换），输入一个字都不用重打；
    · 「参与变体」是**同名隐藏域 0 + 复选框 1**：基座对同名取最后一个值（DOM 末尾是 checkbox），
-     勾选得 "1"、未勾选时 checkbox 不出现而 hidden 的 "0" 留下，再经 data-write-bool 转布尔；
+     勾选得 "1"、未勾选时 hidden 的 "0" 留下 —— 两者服务端都能直接绑进 bool（实测），
+     不需要前端转类型；
    · 属性值行编辑器只在新建形态渲染：它的行容器（.attr-value-row）就是 data-write-rows 的
      「一行一个容器」，行内字段名带索引（values[0].key），基座按「.后缀」取字段、按第三个字段
      组装成 payload.values。

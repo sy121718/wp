@@ -2,7 +2,7 @@
 
    唯一身份：抽屉 tpl-coupon-create 的内容（coupons.html 里 include 本文件）。
 
-   写路径已迁到「前端直调 JSON」（POST /api/order/coupon/create，见 static/js/ui/json_write.js）：
+   写路径已迁到「前端直调 JSON」（POST /api/order/coupon/create，见 static/js/ui/write-base.js）：
      · 成功：回到列表并带回当前筛选上下文（data-write-nav），不再有「提示页停一秒再跳」那一跳；
      · 失败：抽屉里**原地**显示后端给的那句话，已填内容原样留着 —— 于是旧写法的
        「失败重渲片段 + Echo 回填 + SubmitErr 错误槽」三层整块不需要了
@@ -12,7 +12,7 @@
    写请求走 X-CSRF-Token 头（见 <meta name="csrf-token">）。
 
    字段名与 /api/order/coupon/create 的绑定逐字一致，改这里等于改协议。
-   数值字段必须 data-write-number 点名（JSON 里要是数字，字符串会被绑定拒绝）。 *}
+   数值字段不必声明类型：formdata 的字符串服务端直接绑得进 int/float64。 *}
 {{tr := .["t"]}}
         <div>
             <form class="form-stack"

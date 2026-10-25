@@ -4,8 +4,8 @@
    （名称 / URL 段 / 类型 / 排序 / 规则），差别只有提交地址、id 隐藏域与「规则字段有没有初值」。
    两处各抄一份必然分叉，而分叉不会编译失败，只会在某一条入口上静默丢字段。
 
-   —— 写动作走 ui/json_write.js（声明式 JSON 写基座）——
-   · 表单不再有 method/action/csrf 隐藏域：端点由 data-write-api 声明，客户端序列化成 JSON，
+   —— 写动作走 ui/write-base.js（声明式 JSON 写基座）——
+   · 表单不再有 method/action/csrf 隐藏域：端点由 data-write-url 声明，客户端序列化成 JSON，
      csrf 走 X-CSRF-Token 头；
    · 失败不再「原地重渲染整张表单」：基座把响应里的 message 写进 data-write-status，
      用户已填的内容本来就还在 DOM 里（没有整页替换），输入一个字都不用重打；
@@ -32,7 +32,7 @@
 {{kind := "manual"}}{{if .IsRule}}{{kind = "rule"}}{{end}}
         <div data-write-host>
         {* 走 htmx 原生表单提交（formdata）。两个「formdata 与 JSON 不一样」的地方由
-           ui/htmx_form_body.js 解决（它就是替代 json_write.js 那套基座的）：
+           ui/write-base.js 解决（它就是替代 json_write.js 那套基座的）：
              · data-write-object：把 .tag-rule-fields 里扁平的 days/minPrice/maxPrice
                收成 ruleParams 对象 —— 哪些键进对象由 ruleType 当前选项的 data-rule-keys 决定，
                条件是 kind=rule；

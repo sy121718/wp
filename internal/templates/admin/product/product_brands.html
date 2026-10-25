@@ -84,7 +84,7 @@
            工程里真的没有品牌 → 指到本页页头那个新建抽屉。 *}
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids（见 admin.js 的批量选择增强）。 *}
-        {* 表单不声明 data-write-api：端点声明落在按钮/各自的表单上（json_write.js 的 attrFrom：
+        {* 表单不声明 data-write-url：端点声明落在按钮/各自的表单上（json_write.js 的 attrFrom：
            按钮优先、表单兜底）。data-list-bulk 是作用域锚点，给「勾选框在这里、动作在别处」留根。
            csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头（基座跳过同名字段）。 *}
         <form data-list-bulk>
@@ -197,7 +197,7 @@
            Content-Type 自适应，MCP/AI 发 JSON、这里发 formdata，两边都能进。
            hx-swap="none"：响应是 {code,message,data}，没有要换进 DOM 的内容；
            结论由全局监听从 X-Message 头取出交给 WBUI.toast（ui/write_feedback.js）。
-           空值字段由 ui/htmx_form_body.js 删掉 —— formdata 里 `sort=` 会让后端 *int
+           空值字段由 ui/write-base.js 删掉 —— formdata 里 `sort=` 会让后端 *int
            绑成 0（「没填」变成「改成 0」），而 JSON 侧「省略字段」= 本次不改。 *}
         <form data-write="update" data-write-url="/api/product/brand/update" data-write-close="[data-drawer]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">

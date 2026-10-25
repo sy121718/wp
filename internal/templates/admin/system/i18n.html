@@ -1,7 +1,7 @@
 {* admin/i18n.html — 文案词条管理（审计 I18N-003）。 *}
 {* 读写都走 pkg/i18n 的端口；本页只管「选一条、改一句、存回去」。 *}
 {* 写动作（新建 / 编辑 / 删除 / 批量删除）由前端 fetch 直调 JSON 端点 POST /api/i18n/save
-   （static/js/ui/json_write.js；请求体形状是严格 tagged union，见
+   （static/js/ui/write-base.js；请求体形状是严格 tagged union，见
    internal/module/admin/inbound/http/admin_i18n_write.go）。页面 POST 已删除，因此：
      · 表单只声明**事实**（端点 / 写模式 / 文案从哪来），行为全在控件里，模板不写内联 JS；
      · 成功后整页刷新（列表的派生列由服务端重算，且刷新天然保住当前的筛选与页码 ——

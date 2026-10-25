@@ -115,7 +115,7 @@
         三个动作共用同一批勾选框（勾选框必须留在表单里 —— 基座按 form.querySelectorAll 收 ids，
         抽屉在列表外看不见它们），而它们的目标不同：
           · 批量改状态没有 JSON 端点（服务端还要同步写抑制名单），必须保持原生页面 POST ——
-            所以表单上**不能**声明 data-write-api，否则它会被继承成一个 fetch；
+            所以表单上**不能**声明 data-write-url，否则它会被继承成一个 fetch；
           · 批量删除 / 批量打标签声明自己的端点，并在按钮上带自己的结果文案。
         bulk_bar 的 bulkBtn 不能加属性（那个片段的属性名是冻结契约，admin.js 依赖），
         所以这两个按钮就地写在本页；class / data-confirm / data-confirm-danger 与 bulkBtn 同形。 *}

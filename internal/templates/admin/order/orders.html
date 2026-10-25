@@ -4,7 +4,7 @@
      · 数据是 dto 本身（.Orders / .Detail.Head / .Detail.Items / .Detail.Logs）；
      · 文案用 tr（状态标签经 .OrderStatusLabel 收敛 enums 的 key+兜底）；
      · 显示判断写在用它的地方：徽章颜色、哪些操作表单渲染、空态说哪句话；
-     · 写动作由前端直调 JSON（static/js/ui/json_write.js）：单条走 /api/order/{status,cancel,
+     · 写动作由前端直调 JSON（static/js/ui/write-base.js）：单条走 /api/order/{status,cancel,
        refund,note} 的单档，两个批量动作走 /api/order/{status,cancel} 的**批档**（体里有 ids
        即批档）；页面不再有自己的写路径，结论由响应体承担，逐条原因写在结果区 ——
        不再经 ?ok= / ?err= / ?done=，也不再走整页提示页。
@@ -94,12 +94,12 @@
 
         {* 空数据也渲染 <table>/<thead>：用户得先看见「这个列表有哪些列」才谈得上认知。
            空态落在 tbody 的整行里（colspan = 8 列）。 *}
-        {* 两个批量动作都迁到了「前端直调 JSON」（static/js/ui/json_write.js）：目标状态 / 备注
+        {* 两个批量动作都迁到了「前端直调 JSON」（static/js/ui/write-base.js）：目标状态 / 备注
            是流转与取消各自要带的额外字段，所以端点声明落在**按钮**上（attrFrom：按钮优先、
-           表单兜底），表单上刻意不声明 data-write-api —— 声明了它会被继承成一个 fetch，
+           表单兜底），表单上刻意不声明 data-write-url —— 声明了它会被继承成一个 fetch，
            两个按钮就没法各投各的端点。
-           `toStatus` 是**字符串**（paid / shipped / completed），因此不进 data-write-number：
-           它是服务端严格认的枚举值，声明成数值字段只会是个误导后续测试的伪契约。
+           `toStatus` 是**字符串**（paid / shipped / completed），服务端严格校枚举 ——
+           前端不声明类型（也不需要），formdata 的字符串原样发出去。
            没有 action 是刻意的：禁用 JS 时这两个按钮是 hidden 的（下方 noscript 说明原因），
            不会退化成「GET 当前页」这种看起来像成功的空动作。
            也不需要 csrf 隐藏域：写请求走 X-CSRF-Token 头（见 <meta name="csrf-token">）。 *}
@@ -289,10 +289,10 @@
                 <span class="help-pop" role="tooltip">{{tr("admin.orders.hint.cancel_refund.lead", "取消与退款各是独立用例：取消会归还")}}<strong>{{tr("admin.orders.hint.cancel_refund.strong", "尚未发货")}}</strong>{{tr("admin.orders.hint.cancel_refund.tail", "那部分库存，退款只动钱与状态（不归还库存）。")}}</span>
             </span>
         </h3>
-        {* 四个详情写动作全部迁到「前端直调 JSON」（static/js/ui/json_write.js）：端点即
+        {* 四个详情写动作全部迁到「前端直调 JSON」（static/js/ui/write-base.js）：端点即
            /api/order/{status,cancel,refund,note} 的单档，走 `create` 模式发**全部具名字段**。
-           `orderId` 因此必须是表单里的 hidden 具名字段（以前它只活在 action 的 query 上），
-           且必须进 data-write-number —— 绑定的字段类型是整数，字符串会被拒。
+           `orderId` 因此必须是表单里的 hidden 具名字段（以前它只活在 action 的 query 上）。
+           不必声明类型：服务端 DTO 按整数绑定，formdata 的 "12" 直接绑得进（实测）。
            成功后基座 location.reload()：详情是服务端渲染的，刷新才能让状态徽章与流转链同源；
            当前 URL 的 query 不动（工程 / 筛选 / orderId 都还在，位置不丢）。
            失败把后端那句话写进下面的结果区，输入原样留着。

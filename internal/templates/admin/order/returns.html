@@ -137,9 +137,8 @@
            表单只声明**事实**（端点 / 写模式 / 数字字段 / 布尔字段 / 失败文案），行为全在基座里；
            没有 method/action 是刻意的：禁用 JS 时按钮是 hidden 的（见表格前的 noscript），
            不会退化成「GET 当前页」这种看起来像成功的空动作。
-           returnId 是**数字**：DOM 的值都是字符串，而服务端按 uint64 严格绑定，所以要点名；
-           autoReceive 是**布尔**：同理必须点名 —— 直接发 "1" 会让整条请求 400（页面不替服务端
-           猜类型，与 data-write-number 同口径；见 static/js/ui/json_write.js 的 data-write-bool）。 *}
+           returnId / autoReceive 都不必声明类型：formdata 里虽是字符串，服务端按 uint64 / bool
+           直接绑得进（实测）。前端不替服务端猜类型，也不需要猜 —— 类型在 DTO 上。 *}
         {{if r.Status == "requested"}}
         <form data-write-url="/api/order/return/approve" data-write="create"
               data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">

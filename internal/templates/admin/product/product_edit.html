@@ -92,14 +92,13 @@
     {* 两栏：左编辑（表单） / 右预览（详情页真实形态）。预览只在有商品时才有意义 ——
        新建走的是另一个页面，这里 HasProduct 为假时右栏给一句说明。 *}
     <div class="product-edit-panes">
-    {* 提交走 JSON 写基座（static/js/ui/json_write.js）：data-write-mode=form 表示「整表单当
-       UpdateReq 发」。字段名与 dto.UpdateReq 的 json 标签逐字对齐，声明负责三件页面替不了的事：
-       · data-write-array：勾选组（属性组 / 分类 / 标签）收成数组，一个都不勾发空数组 = 解绑全部；
-       · data-write-float：价格与重量按小数发；留空表示「不设置」而不是 0 ——
-         那一条由 htmx_form_body.js 的 dropEmpty 全局负责，模板不再逐字段声明；
-       · data-write-lines：图集与 alt 是「一个隐藏域 + 多行文本」，端点要的是 []string；
-       · data-write-html：富文本给的是裸 HTML，入库形态是 jsonb {"html": …}。
-       csrf 走请求头（基座自动带 X-CSRF-Token），表单里不再有隐藏域。 *}
+    {* 提交走写基座（static/js/ui/write-base.js）：data-write="update" 表示「整表单发到
+       UpdateReq」。字段名与 DTO 的 form tag 逐字对齐 —— 类型不在这里声明：
+       · 标量（int / float64 / bool / []string）：formdata 的字符串服务端直接绑得进（实测）；
+       · 空值键由基座统一删掉（「留空 = 不设置」），不需要逐字段点名；
+       · 只有表单表达不了的形状才声明：-lines（多行文本→数组）、-json-wrap（裸 HTML→jsonb）、
+         -keep-empty（空串有语义的字段）。
+       csrf 走请求头（基座自动带 X-CSRF-Token），表单里没有隐藏域。 *}
     {{if editBlocked}}<section class="card card-body form-stack"><fieldset disabled>{{else}}<form data-write="update" data-write-url="/api/product/update" id="product-edit-main" class="card card-body form-stack"
           {* keep-empty="primaryCategoryId"：空串表示**解绑主分类**（UpdateReq 的注释写着
              「nil 表示本次不改，指向空串表示解绑」），不能像普通空值那样删掉。 *}
@@ -330,7 +329,7 @@
         <p class="form-hint badge" role="status" hidden></p>
         {* 走 htmx 原生提交 + 页面级组装器：
            data-write-builder="product-variant-rows" 由 ui/product_variant_write.js 注册到
-           htmx 基座（ui/htmx_form_body.js 的 WBFormBody），从清单 DOM 组装 rows。
+           htmx 基座（ui/write-base.js 的 WBFormBody），从清单 DOM 组装 rows。
            DTO 侧 SaveVariantListReq 实现了 BindForm，把 rows 这个 JSON 字符串解析成切片
            （gin 的 form 映射不支持点号嵌套，Rows 元素里还带 optionValues map）。 *}
         <form data-write="update" data-write-url="/api/product/variant/save"

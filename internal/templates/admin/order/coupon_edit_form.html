@@ -3,7 +3,7 @@
    唯一身份：GET /admin/coupons/edit-form 的按需抽屉响应（列表页的 data-drawer-url 加载）。
 
    写路径已迁到「前端直调 JSON」（POST /api/order/coupon/update 的单档 = 完整 CouponSaveReq，
-   见 static/js/ui/json_write.js）：成功回列表（data-write-nav 带回当前筛选上下文），
+   见 static/js/ui/write-base.js）：成功回列表（data-write-nav 带回当前筛选上下文），
    失败在抽屉里**原地**显示后端给的那句话、已填内容留着。于是旧写法的
    「失败重渲片段 + Echo 回填 + SubmitErr 错误槽」（服务端的 couponEditFail）整块不需要了，
    本片段不再读 .Echo / .SubmitErr / .ListQuery。
@@ -15,7 +15,7 @@
    控件 id 用 `coupon-{{id}}-…`：本片段是**多实例**模板（不同券各一份），id 带券 id
    才不依赖「只有一份在 DOM 里」这个巧合；每个可见字段都配 label + for。
    字段名与 /api/order/coupon/update 的绑定逐字一致，改这里等于改协议。
-   数值字段必须 data-write-number 点名（JSON 里要是数字，字符串会被绑定拒绝）。 *}
+   数值字段不必声明类型：formdata 的字符串服务端直接绑得进 int/float64。 *}
 {{tr := .["t"]}}
 {{cp := .Coupon}}
 {{id := cp.ID}}

@@ -63,6 +63,15 @@
  *   · 宿主元素从 closest('[data-write]') 找。
  *   · 提交期间自动禁按钮（hx-disable），settle 后恢复。
  */
+// ── 关于行数（方案目标 ≤450，当前 ~735）────────────────────────────────────
+//
+// 超出的部分不是「写多了」，是两类**可以消失**的内容：
+//   · ~120 行存量兼容层（legacyJson / applyBuilder 的 data-write-rows / -object /
+//     -builder），等那 10 处旧模板迁到 data-write-json 后整段删除；
+//   · ~185 行注释，写的是「为什么这样做」而不是「做了什么」—— 尤其「标量不转换」这类
+//     容易被误读成 bug 的决定。删注释能压到 550 行，但那等于让下一个人重新踩一遍。
+//
+// 所以行数会在兼容层删掉后自然降到 ~450。在那之前，行数不是进度指标。
 (function () {
     'use strict';
 
@@ -110,8 +119,17 @@
     // ── 状态区 ──────────────────────────────────────────────────────────────
     //
     // 结果就地显示：失败绝不重渲染片段（用户已填内容必须留在 DOM 里）。
+    // statusOf 找结论区：**先表单内、再宿主内**。
+    //
+    // 为什么必须兜到宿主：一批隐藏表单（单条删除 / 行内改状态）在列表页上各占一行，
+    // 它们的结论区是**共用**的 —— 每个表单各带一个结果区会在每行底下多出一片空白。
+    // 模板把那个共用区放在 <div data-write-host> 里（17 个模板这么写）。
+    // 只查表单内的话，这些表单的失败提示不会显示在任何地方（用户只看到"点了没反应"）。
     function statusOf(form) {
-        return form.querySelector('[data-write-status]');
+        var own = form.querySelector('[data-write-status]');
+        if (own) return own;
+        var host = form.closest ? form.closest('[data-write-host]') : null;
+        return host ? host.querySelector('[data-write-status]') : null;
     }
 
     function setStatus(form, text, tone, details) {
@@ -562,8 +580,6 @@
         // 「一个表单并排几个动作、端点各写在按钮上」这种形态整个失效（实测：
         // 批量启停/删除的按钮就长这样，表单本身刻意不声明）。
         if (!hasAttr(form, submitter, 'data-write')) return;
-        // 按钮没有 url = 这个按钮不归本基座管（走原生提交）。
-        if (submitter && submitter.hasAttribute('data-write-skip')) return;
         if (!attr(form, submitter, 'data-write-url')) return;
 
         ev.preventDefault();

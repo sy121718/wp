@@ -2,7 +2,7 @@
 {* 菜单文字不在页面文档里：页面翻译工作台看不到它。构建期按 navigation.label 语境回填。 *}
 {* 保存走真实 JSON 写端点 POST /api/navigation/update（action=translations，见
      internal/module/navigation/inbound/http/navigation_translation_write.go）：表单只声明事实
-     （端点 / 写模式 / 行数组怎么收 / 成功后跳哪），行为全在 ui/json_write.js 里，模板零内联 JS。
+     （端点 / 写模式 / 行数组怎么收 / 成功后跳哪），行为全在 ui/write-base.js 里，模板零内联 JS。
      每个行容器（.nav-tr-row）就是一个行对象：字段名 context / hash / target 由 data-write-rows 点名，
      并行数组那种「按下标对齐」的隐式契约没有了 —— 一旦错位，译文会写到别的菜单文字上。
      没有 action 是刻意的：禁用 JS 时提交按钮是 disabled 的（下方提醒说明原因），
