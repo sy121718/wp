@@ -1,0 +1,125 @@
+/* template_editor.css — 邮件模板可视化编辑器（四栏）。
+ *
+ * 三条布局约束（与项目多端规则一致）：
+ *   1. 四栏用 grid，窄屏逐级降为两栏 / 单栏；
+ *   2. 每栏独立滚动（编辑器的常见工作方式是「左栏找、右栏看」，整页滚动会把对照关系弄丢）；
+ *   3. 宽度一律 min(100%, Npx) 或 1fr，不写死绝对值（否则窄视口会撑宽文档）。
+ */
+
+.tpl-editor { display: flex; flex-direction: column; gap: 10px; }
+
+.tpl-editor-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 0;
+}
+.tpl-spacer { flex: 1 1 auto; }
+.tpl-field { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.tpl-field > span { color: var(--ui-text-2, #556); white-space: nowrap; }
+.tpl-field .form-input { width: min(100%, 180px); }
+.tpl-field--wide .form-input { width: min(100%, 280px); }
+
+.tpl-status { margin: 0; font-size: 13px; color: var(--ui-text-2, #556); min-height: 1.2em; }
+
+/* 四栏：结构树 / 画布 / 属性 / 预览 */
+.tpl-grid {
+  display: grid;
+  grid-template-columns: min(100%, 240px) min(100%, 260px) min(100%, 280px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+  /* 吃掉视口剩余高度，四栏各自滚动而不是整页滚。 */
+  min-height: clamp(360px, 66vh, 820px);
+}
+@media (max-width: 1200px) {
+  .tpl-grid { grid-template-columns: min(100%, 260px) min(100%, 280px) minmax(0, 1fr); }
+  .tpl-grid > :nth-child(2) { display: none; } /* 画布栏先让位（结构树能做同样的事） */
+}
+@media (max-width: 860px) {
+  .tpl-grid { grid-template-columns: minmax(0, 1fr); }
+  .tpl-grid > :nth-child(2) { display: block; }
+}
+
+.tpl-pane {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  border: 1px solid var(--ui-border, #ccd); border-radius: 8px;
+  background: var(--ui-surface, #fff);
+  padding: 8px;
+  overflow: auto;
+}
+.tpl-pane-title {
+  margin: 0; font-size: 12px; font-weight: 600; color: var(--ui-text-2, #667);
+}
+
+/* 结构树 */
+.tpl-tree { display: flex; flex-direction: column; gap: 2px; }
+.tpl-tree-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; border-radius: 6px; cursor: pointer;
+  font-size: 13px;
+  border: 1px solid transparent;
+}
+.tpl-tree-row[data-selected="1"] {
+  border-color: #7763F1; background: rgb(119 99 241 / 10%);
+}
+.tpl-tree-label { font-weight: 600; }
+.tpl-tree-brief { color: var(--ui-text-2, #667); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-tree-actions { margin-left: auto; display: flex; gap: 2px; }
+.tpl-tree-btn {
+  width: 22px; height: 22px; padding: 0; cursor: pointer;
+  font: inherit; font-size: 12px; line-height: 1;
+  border: 1px solid var(--ui-border, #ccd); border-radius: 4px;
+  background: var(--ui-surface-2, #f6f7f9); color: var(--ui-text-2, #556);
+}
+@media (hover: hover) {
+  .tpl-tree-btn:hover { border-color: var(--ui-accent, #2f6fed); color: var(--ui-accent, #2f6fed); }
+}
+
+/* 画布：选中块的子块卡片 */
+.tpl-canvas { display: flex; flex-direction: column; gap: 6px; }
+.tpl-canvas-card {
+  display: flex; flex-direction: column; gap: 2px; text-align: left; cursor: pointer;
+  padding: 8px; border-radius: 6px;
+  border: 1px solid var(--ui-border, #ccd); background: var(--ui-surface-2, #f6f7f9);
+  font: inherit; font-size: 13px; color: var(--ui-text, #223);
+}
+.tpl-canvas-card[data-selected="1"] { border-color: #7763F1; }
+.tpl-canvas-type { font-weight: 600; }
+.tpl-canvas-text { color: var(--ui-text-2, #667); font-size: 12px; }
+.tpl-canvas-empty, .tpl-attr-hint, .tpl-attr-head {
+  margin: 0; font-size: 13px; color: var(--ui-text-2, #667); line-height: 1.6;
+}
+.tpl-attr-head { font-weight: 600; color: var(--ui-text, #223); }
+
+/* 属性面板 */
+.tpl-attrs { display: flex; flex-direction: column; gap: 8px; }
+.tpl-attr-field { margin: 0; font-size: 13px; }
+.tpl-attr-field label { display: flex; flex-direction: column; gap: 4px; }
+.tpl-attr-field .form-input, .tpl-attr-field .form-textarea { width: 100%; }
+
+/* 预览：iframe 独立文档上下文（邮件正文的 table + <style> 不能污染后台样式） */
+.tpl-pane--preview { min-height: 320px; }
+.tpl-preview {
+  flex: 1 1 auto; width: 100%; min-height: 300px;
+  border: 1px solid var(--ui-border, #ccd); border-radius: 6px; background: #fff;
+}
+.tpl-preview-text { font-size: 12px; }
+.tpl-preview-pre {
+  margin: 6px 0 0; padding: 8px; max-height: 200px; overflow: auto;
+  border-radius: 6px; background: var(--ui-surface-2, #f6f7f9);
+  font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+}
+
+/* 加块浮层 */
+.tpl-add-pop {
+  position: fixed; z-index: 60; min-width: min(100%, 160px); padding: 6px;
+  border: 1px solid var(--ui-border, #ccd); border-radius: 8px;
+  background: var(--ui-surface, #fff);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+}
+.tpl-add-item {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 6px 8px; border: 0; border-radius: 6px; background: transparent;
+  font: inherit; font-size: 13px; color: var(--ui-text, #223);
+}
+@media (hover: hover) {
+  .tpl-add-item:hover { background: var(--ui-surface-2, #f0f2f6); }
+}

@@ -89,6 +89,10 @@
         <td class="col-actions">
           {{if canSaveTemplate}}
           <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-template-edit-{{tp.ID}}" data-drawer-title="{{tr("admin.mail.templates.action.edit_full", "编辑模板：")}}{{tp.TemplateKey}}">{{tr("admin.mail.accounts.action.edit", "编辑")}}</button>
+          {* 可视化编辑器：与上面那个「编辑」的分工是**改什么** —— 抽屉改代码（body_html /
+             body_text），编辑器改用块树（body_json + 编译产物）。两条路径都保留：
+             复杂排版用可视化，要精修源码就进抽屉。 *}
+          <a class="btn btn-sm btn-ghost" href="/admin/mail/templates/editor?templateKey={{tp.TemplateKey}}&amp;locale={{tp.Locale}}">{{tr("admin.mail.templates.action.visual", "可视化")}}</a>
           {{end}}
           <button type="submit" form="template-del-{{tp.ID}}" class="btn btn-sm btn-danger">{{tr("admin.mail.action.delete", "删除")}}</button>
         </td>

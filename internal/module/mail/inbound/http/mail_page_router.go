@@ -40,6 +40,9 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 	pages.POST("/mail/account/test", builtin.CasbinMiddlewareForPath("/api/mail/account/test"), mailPage.MailAccountTest)
 	// —— 邮件模板 ——
 	pages.GET("/mail/templates", adminui.PageAuthz("/api/mail/template/list"), mailPage.MailTemplatesPage)
+	// 可视化编辑器（四栏）：**复用模板保存的权限点**，不新增权限点 —— 页面路由可复用
+	// （AGENTS.md「权限点：一条 API 路由一个独立权限点；页面路由可复用」）。
+	pages.GET("/mail/templates/editor", adminui.PageAuthz("/api/mail/template/list"), mailPage.MailTemplateEditor)
 	pages.POST("/mail/template/save", builtin.CasbinMiddlewareForPath("/api/mail/template/save"), mailPage.MailTemplateSave)
 	pages.POST("/mail/template/delete", builtin.CasbinMiddlewareForPath("/api/mail/template/delete"), mailPage.MailTemplateDelete)
 	// 批量动作（评审规则 admin-ui-logic §7：列表首列勾选 + 批量条）。

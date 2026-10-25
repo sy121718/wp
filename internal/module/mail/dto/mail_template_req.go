@@ -2,7 +2,12 @@ package maildto
 
 // mail_template_req.go — 模板与发送相关请求。
 
-import json "go_wp/pkg/jsonx"
+import (
+	"net/url"
+	"strings"
+
+	json "go_wp/pkg/jsonx"
+)
 
 // SaveTemplateReq 新建 / 覆盖模板（key + locale 唯一）。
 type SaveTemplateReq struct {
@@ -20,6 +25,21 @@ type SaveTemplateReq struct {
 	// Variables 声明模板用到的变量名（仅用于提示与校验展示）。
 	Variables  []string
 	OperatorID uint64
+}
+
+// BindForm 表单体补齐：body_json 是 JSON 字符串，反射绑定到 RawMessage 会失败
+// （encoding/json 的 UnmarshalJSON 期待一个 JSON 值，而表单给的是字符串）。
+//
+// 这是 binding.JSON 的既定协议（见 pkg/binding 的 FormBinder 注释）：DTO 自己接管
+// 「表单里那一列怎么变成结构化字段」。表单模式（代码模式 / 旧页面）不带 body_json，
+// 这里就是空操作。
+func (r *SaveTemplateReq) BindForm(v url.Values) error {
+	raw := strings.TrimSpace(v.Get("body_json"))
+	if raw == "" {
+		return nil
+	}
+	r.BodyJSON = json.RawMessage(raw)
+	return nil
 }
 
 // SendTemplateReq 发送一封（事务）邮件。

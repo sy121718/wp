@@ -347,4 +347,6 @@ func init() {
 	registerMailAutomationNodesI18n()
 	// 622：邮件模板的可视化正文三列（见 register_mail_template_body_json.go）。
 	registerMailTemplateBodyJSON()
+	// 621f：模板可视化编辑器的界面词条（见 register_mail_template_editor_i18n.go）。
+	registerMailTemplateEditorI18n()
 }

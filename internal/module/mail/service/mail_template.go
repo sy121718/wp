@@ -111,6 +111,21 @@ func (s *Service) ListTemplatesPage(ctx context.Context, key string, page, limit
 	return res, total, current, nil
 }
 
+// GetTemplate 取单个模板（key + locale）。不存在返回可读的业务错误。
+//
+// 供可视化编辑器读树：它按 (template_key, locale) 精确定位，不接受「拿列表再筛」——
+// 那一份筛选逻辑会与 model 的唯一键口径分叉。
+func (s *Service) GetTemplate(ctx context.Context, key, locale string) (*maildto.TemplateItem, error) {
+	if strings.TrimSpace(key) == "" {
+		return nil, errors.New(mailenums.ErrInvalidParam)
+	}
+	e, err := s.m.GetTemplate(ctx, strings.TrimSpace(key), strings.TrimSpace(locale))
+	if err != nil {
+		return nil, errors.New(mailenums.ErrTemplateNotFound)
+	}
+	return templateItemOf(e), nil
+}
+
 // DeleteTemplate 删除模板（按 key + locale）。
 func (s *Service) DeleteTemplate(ctx context.Context, key, locale string) (err error) {
 	return s.m.DeleteTemplate(ctx, key, locale)

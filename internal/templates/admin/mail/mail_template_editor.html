@@ -1,0 +1,80 @@
+{* admin/mail/mail_template_editor.html — 邮件模板可视化编辑器（四栏）。
+   版式：结构树 / 画布 / 属性 / 预览。画布与预览的关系是「编辑 vs 看结果」 ——
+   预览的 HTML **完全由后端编译器产出**（iframe srcdoc），前端不拼一份。
+
+   为什么不套 .page-head：四栏编辑器要吃掉整个视口高度（每栏都要能独立滚动），
+   与后台整页壳的「一屏一卡」假设冲突。这是与既有设计系统一致的例外，
+   与画布页（mail_automation_canvas.html）同一取舍。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{csrf := .["csrf_token"]}}
+<link rel="stylesheet" href="/static/css/template_editor.css?v={{.jsVer}}">
+<div class="tpl-editor">
+  <header class="tpl-editor-bar">
+    <strong>{{ .["t"]("admin.mail.template_editor.heading", "模板编辑器") }}</strong>
+    <label class="tpl-field">
+      <span>{{ .["t"]("admin.mail.template_editor.field.key", "标识") }}</span>
+      <input type="text" id="tplKey" class="form-input" value="{{.T.TemplateKey}}" required>
+    </label>
+    <label class="tpl-field">
+      <span>{{ .["t"]("admin.mail.template_editor.field.locale", "语言") }}</span>
+      <input type="text" id="tplLocale" class="form-input" value="{{.T.Locale}}" placeholder="{{ .["t"]("admin.mail.template_editor.ph.locale", "留空 = 通用") }}">
+    </label>
+    <label class="tpl-field tpl-field--wide">
+      <span>{{ .["t"]("admin.mail.template_editor.field.subject", "主题") }}</span>
+      <input type="text" id="tplSubject" class="form-input" value="{{.T.Subject}}" required>
+    </label>
+    <label class="tpl-field">
+      <span>{{ .["t"]("admin.mail.template_editor.field.name", "名称") }}</span>
+      <input type="text" id="tplName" class="form-input" value="{{.T.Name}}">
+    </label>
+    <label class="tpl-field">
+      <span>{{ .["t"]("admin.mail.template_editor.field.vars", "变量") }}</span>
+      <input type="text" id="tplVars" class="form-input" value="{{range _, v := .T.Variables}}{{v}},{{end}}" placeholder="name,email">
+    </label>
+    <span class="tpl-spacer"></span>
+    <button type="button" id="tplUndo" class="btn btn-sm" title="{{ .["t"]("admin.mail.template_editor.undo", "撤销（Ctrl+Z）") }}">↶</button>
+    <button type="button" id="tplRedo" class="btn btn-sm" title="{{ .["t"]("admin.mail.template_editor.redo", "重做（Ctrl+Shift+Z）") }}">↷</button>
+    <button type="button" id="tplSave" class="btn btn-primary">{{ .["t"]("admin.mail.template_editor.save", "保存并更新预览") }}</button>
+    <a class="btn btn-sm btn-ghost" href="/admin/mail/templates">{{ .["t"]("admin.mail.template_editor.back", "返回模板列表") }}</a>
+  </header>
+
+  {* 保存结论 / 编译错误都在这里（aria-live：读屏会念出来）。编译失败时后端回带
+     NodeKey 定位，原样显示 —— 只说「保存失败」等于没说。 *}
+  <p id="tplStatus" class="tpl-status" role="status" aria-live="polite"></p>
+
+  <div class="tpl-grid">
+    <section class="tpl-pane">
+      <h2 class="tpl-pane-title">{{ .["t"]("admin.mail.template_editor.pane.tree", "结构") }}</h2>
+      <div id="tplTree" class="tpl-tree" role="tree"
+           aria-label="{{ .["t"]("admin.mail.template_editor.tree.aria", "模板块树") }}"></div>
+    </section>
+
+    <section class="tpl-pane">
+      <h2 class="tpl-pane-title">{{ .["t"]("admin.mail.template_editor.pane.canvas", "画布") }}</h2>
+      <div id="tplCanvas" class="tpl-canvas"
+           aria-label="{{ .["t"]("admin.mail.template_editor.canvas.aria", "选中块的子块") }}"></div>
+    </section>
+
+    <section class="tpl-pane">
+      <h2 class="tpl-pane-title">{{ .["t"]("admin.mail.template_editor.pane.attrs", "属性") }}</h2>
+      <div id="tplAttrs" class="tpl-attrs"></div>
+    </section>
+
+    <section class="tpl-pane tpl-pane--preview">
+      <h2 class="tpl-pane-title">{{ .["t"]("admin.mail.template_editor.pane.preview", "预览") }}</h2>
+      {* 预览是后端编译产物：sandbox 只给 allow-same-origin（不需要脚本），
+         邮件正文里不该有 JS，而万一有也不该在这里执行。 *}
+      <iframe id="tplPreview" class="tpl-preview" title="{{ .["t"]("admin.mail.template_editor.preview.title", "邮件预览") }}"
+              sandbox="allow-same-origin"></iframe>
+      <details class="tpl-preview-text">
+        <summary>{{ .["t"]("admin.mail.template_editor.preview.text", "纯文本正文") }}</summary>
+        <pre id="tplPreviewText" class="tpl-preview-pre"></pre>
+      </details>
+    </section>
+  </div>
+</div>
+
+<script type="application/json" id="tplEditorMeta">{{.MetaJSON | unsafe}}</script>
+<script type="module" src="/static/js/template/index.js?v={{.jsVer}}"></script>
+{{end}}

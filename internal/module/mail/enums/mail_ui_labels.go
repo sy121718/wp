@@ -173,6 +173,8 @@ var (
 	PageTitleAutomation = LabelPair{"admin.mail.automation.heading", "自动化流程"}
 	// PageTitleAutomationRun 实例排障页。
 	PageTitleAutomationRun = LabelPair{"admin.mail.automation_run.heading", "实例排障"}
+	// PageTitleTemplateEditor 模板可视化编辑器（四栏）。
+	PageTitleTemplateEditor = LabelPair{"admin.mail.template_editor.title", "模板编辑器"}
 	// PageTitleAutomationCanvas 流程画布页。
 	PageTitleAutomationCanvas = LabelPair{"admin.mail.automation_canvas.title", "流程画布"}
 	// PageTitleTemplates 邮件模板页（从邮箱设置页拆出的独立职能）。

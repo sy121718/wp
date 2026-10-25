@@ -88,6 +88,7 @@ package mailhttp
 // 所以历史行在排障页上显示的还是当年那句话。
 
 import (
+	"context"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"html"
@@ -1256,6 +1257,83 @@ func (h *mailPageHandle) MailTemplateSave(c *gin.Context) {
 		return
 	}
 	mailTemplatesJump(c, true, mailDoneMsg)
+}
+
+// MailTemplateEditor 邮件模板可视化编辑器（四栏）。
+//
+// 与列表页的分工：列表页管「有哪些模板 + 代码模式」（两个 textarea 原样保留），
+// 本页管「块树长什么样」。两者都写同一张表，但写的是不同的列
+// （列表页写 body_html / body_text，本页写 body_json + 编译产物）。
+//
+// 缺 template_key 时给一棵空树（与画布「缺 id 即新建」同一取舍）：新建模板也要能
+// 在编辑器里画完再保存，而不是先回列表填一个 textarea 再回来。
+func (h *mailPageHandle) MailTemplateEditor(c *gin.Context) {
+	item := h.templateForEditor(c.Request.Context(),
+		strings.TrimSpace(c.Query("templateKey")), strings.TrimSpace(c.Query("locale")))
+	metaJSON, _ := json.Marshal(map[string]any{
+		"tree":         templateTreeOf(item),
+		"compiledHtml": item.BodyCompiledHTML,
+		"compiledText": item.BodyCompiledText,
+	})
+	c.HTML(http.StatusOK, "admin/mail/mail_template_editor.html", adminui.Prepare(c, gin.H{
+		"title":    mailenums.PageTitleTemplateEditor.Key,
+		"T":        item,
+		"MetaJSON": utils.JsonSafe(string(metaJSON)),
+		"jsVer":    templateEditorJsVer(),
+	}))
+}
+
+// templateForEditor 取编辑器要编辑的模板：**查不到就给空条目**。
+//
+// 「查不到不是错误」是本页的设计前提：用一个新的 templateKey 打开编辑器 = 新建模板，
+// 那是正常路径而不是异常输入。与画布「缺 id 即新建」同一取舍。
+func (h *mailPageHandle) templateForEditor(ctx context.Context, key, locale string) *maildto.TemplateItem {
+	if key == "" {
+		return &maildto.TemplateItem{}
+	}
+	item, err := h.mail.GetTemplate(ctx, key, locale)
+	if err != nil {
+		return &maildto.TemplateItem{TemplateKey: key, Locale: locale}
+	}
+	return item
+}
+
+// templateTreeOf 模板条目的块树（没有树时给一棵只含 body 的空树）。
+//
+// 空树的形状必须与编译器认的一致（schema 1 + body 根）：前端拿到一份「合法但空」的树，
+// 就不需要为「新建」写第二个分支。
+func templateTreeOf(item *maildto.TemplateItem) map[string]any {
+	if item != nil && len(item.BodyJSON) > 0 {
+		var tree map[string]any
+		if err := json.Unmarshal(item.BodyJSON, &tree); err == nil && tree != nil {
+			return tree
+		}
+	}
+	return map[string]any{
+		"schema": 1,
+		"root":   map[string]any{"key": "root", "type": "body", "children": []any{}},
+	}
+}
+
+// templateEditorJsVer 模板编辑器脚本的缓存版本（目录下 .js 的最新 mtime）。
+//
+// 与 automationJsVer 同一手法：改 JS 不必手动升版本号。
+func templateEditorJsVer() string {
+	root := filepath.Join("internal", "templates", "static", "js", "template")
+	var latest int64
+	_ = filepath.Walk(root, func(_ string, fi os.FileInfo, walkErr error) error {
+		if walkErr != nil || fi.IsDir() || !strings.HasSuffix(fi.Name(), ".js") {
+			return nil
+		}
+		if m := fi.ModTime().Unix(); m > latest {
+			latest = m
+		}
+		return nil
+	})
+	if latest == 0 {
+		return "0"
+	}
+	return strconv.FormatInt(latest, 10)
 }
 
 // MailTemplateDelete 删除邮件模板。

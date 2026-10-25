@@ -24,6 +24,8 @@ type MailService interface {
 
 	// ---- 邮件模板 ----
 	UpsertTemplate(ctx context.Context, req *maildto.SaveTemplateReq) (*maildto.TemplateItem, error)
+	// GetTemplate 取单个模板（key + locale）：可视化编辑器按它读块树。
+	GetTemplate(ctx context.Context, key, locale string) (*maildto.TemplateItem, error)
 	ListTemplates(ctx context.Context, key string) ([]*maildto.TemplateItem, error)
 	ListTemplatesPage(ctx context.Context, key string, page, limit int) ([]*maildto.TemplateItem, int64, int, error)
 	DeleteTemplate(ctx context.Context, key, locale string) error

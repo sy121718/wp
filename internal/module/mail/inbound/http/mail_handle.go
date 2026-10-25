@@ -248,7 +248,10 @@ func (h *Handle) TemplateList(c *gin.Context) {
 
 // TemplateSave 新建 / 覆盖模板。
 func (h *Handle) TemplateSave(c *gin.Context) {
-	req, ok := binding.Form[maildto.SaveTemplateReq](c)
+	// 用 binding.JSON（= ShouldBind，按 Content-Type 分派）：模板保存有**两个客户端** ——
+	// 列表页的表单（代码模式，urlencoded）与可视化编辑器（body_json，JSON）。
+	// 只收表单会让编辑器存不了树，只收 JSON 会让老页面 415。
+	req, ok := binding.JSON[maildto.SaveTemplateReq](c)
 	if !ok {
 		return
 	}
