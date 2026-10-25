@@ -122,23 +122,6 @@ func mailDetailText(tr func(key, fallback string) string, tail string) string {
 	return strings.Join(out, "；")
 }
 
-// mailFormErrText 本页表单校验的错误文案（由 parseAutomationForm 组装，带「第 N 行」定位）。
-//
-// 与 mailErrPageText 分开的理由：那一份管的是「service 的 error 能不能透出」，
-// 而这里的原文**由本页生成**（「第 3 行：节点标识与类型都要填」「流程名称不能为空」），
-// 结构上不可能带库表 / SMTP 信息，而且正是运营照着改的依据 ——
-// 落进归口文案会把「第 3 行缺节点标识」变成「操作失败，请稍后重试」，把可行动的提示弄丢。
-//
-// 与批量 id 超限那条是同一判据：**看文案来自哪里**，而不是看它是不是 error 类型
-// （超限那条走类型判定 + adminui.BulkIDsFacingText，不再需要门禁豁免；本页自造的文案
-// 仍由本函数原样透出）。
-func mailFormErrText(err error) string {
-	if err == nil {
-		return ""
-	}
-	return strings.TrimSpace(err.Error())
-}
-
 // mailBulkIDsText 批量 id 读取失败的**成品文本**（JSON 出口用：那边要一句话，界面在前端）。
 //
 // 判据是**类型**而不是文案比对：超限错误是 bulkids 的类型（*bulkids.IDsError），
@@ -245,7 +228,6 @@ var (
 	mailBulkPartialMsg    = mailMsg{Key: mailenums.NoticeBulkPartial, Fallback: "已%s %s 个%s，另有 %s 个被跳过（不存在或被服务端拒绝）。"}
 
 	// 带计数的写动作回执（自动化与营销页）。
-	mailAutomationSavedMsg = mailMsg{Key: mailenums.MsgSaveSuccess, Fallback: "已保存（版本 %s）"}
 	mailAutomationTickMsg  = mailMsg{Key: mailenums.NoticeAutomationTick, Fallback: "已补投 %s 个到点实例"}
 	mailContactImportMsg   = mailMsg{Key: mailenums.MsgImportSuccess, Fallback: "导入完成：新增 %s，更新 %s，跳过 %s，抑制名单命中 %s，非法 %s"}
 	mailCampaignStartedMsg = mailMsg{Key: mailenums.MsgCampaignStarted, Fallback: "活动已开始发送，目标 %s 人；进度可在下方列表刷新查看。"}
@@ -258,9 +240,8 @@ var (
 	mailContactStatusBadMsg   = mailMsg{Key: mailenums.NoticeContactStatusBad, Fallback: "目标状态不合法，本次没有处理任何联系人。"}
 
 	// 缺 id 的三句引导（分档判据见 mailQueryID 的说明）。
-	mailCampaignIDRequiredMsg   = mailMsg{Key: mailenums.NoticeCampaignIDRequired, Fallback: "请先从活动列表选择一条活动，再查看它的报表。"}
-	mailRunIDRequiredMsg        = mailMsg{Key: mailenums.NoticeRunIDRequired, Fallback: "请先从实例列表选择一条实例，再查看它的排障详情。"}
-	mailAutomationIDRequiredMsg = mailMsg{Key: mailenums.NoticeAutomationIDRequired, Fallback: "请先从流程列表选择一个流程，再查看它的画布。"}
+	mailCampaignIDRequiredMsg = mailMsg{Key: mailenums.NoticeCampaignIDRequired, Fallback: "请先从活动列表选择一条活动，再查看它的报表。"}
+	mailRunIDRequiredMsg      = mailMsg{Key: mailenums.NoticeRunIDRequired, Fallback: "请先从实例列表选择一条实例，再查看它的排障详情。"}
 )
 
 // mailTestSendFailedLabel 发送失败分类 → 受控文案标签。

@@ -20,11 +20,10 @@
       <span class="help-pop" role="tooltip">
         {{ .["t"]("admin.mail.automation_canvas.hint.lead", "拖动节点摆位置（鼠标 / 触摸屏都可以）；") }}<strong>{{ .["t"]("admin.mail.automation_canvas.hint.strong", "连线在右侧下拉里改") }}</strong>{{ .["t"]("admin.mail.automation_canvas.hint.tail", " —— 鼠标、触屏、键盘都能用。") }}<br>
         {{ .["t"]("admin.mail.automation_canvas.kbd.lead", "键盘：") }}<code>Tab</code>{{ .["t"]("admin.mail.automation_canvas.kbd.tab", " 选中节点，") }}<code>{{ .["t"]("admin.mail.automation_canvas.kbd.arrow", "方向键") }}</code>{{ .["t"]("admin.mail.automation_canvas.kbd.move", " 移动，") }}<code>Shift</code>{{ .["t"]("admin.mail.automation_canvas.kbd.shift", "+方向键一次移 40px，") }}<code>Enter</code>{{ .["t"]("admin.mail.automation_canvas.kbd.enter", " 打开右侧参数编辑。") }}<br>
-        {{ .["t"]("admin.mail.automation_canvas.save_hint.lead", "改完点下面的「保存结构」——它会走和表单页") }}<strong>{{ .["t"]("admin.mail.automation_canvas.save_hint.strong", "同一套图校验") }}</strong>{{ .["t"]("admin.mail.automation_canvas.save_hint.tail", "（有环、指向不存在的节点、走不到的节点都会被拒绝）。") }}
+        {{ .["t"]("admin.mail.automation_canvas.save_hint.lead", "改完点下面的「保存结构」——服务端会走") }}<strong>{{ .["t"]("admin.mail.automation_canvas.save_hint.strong", "同一套图校验") }}</strong>{{ .["t"]("admin.mail.automation_canvas.save_hint.tail", "（有环、指向不存在的节点、走不到的节点都会被拒绝）。") }}
       </span>
     </span>
     <span class="auto-spacer"></span>
-    <a href="/admin/mail/automation/edit?id={{.A.ID}}">{{ .["t"]("admin.mail.automation_canvas.use_form", "改用表单编辑") }}</a>
     <a href="/admin/mail/automation">← {{ .["t"]("admin.mail.automation_canvas.back", "返回列表") }}</a>
   </div>
 

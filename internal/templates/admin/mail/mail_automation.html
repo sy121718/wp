@@ -33,7 +33,7 @@
     </div>
     <div class="page-actions">
       <a class="btn btn-sm btn-ghost" href="/admin/mail/automation/runs">{{ .["t"]("admin.mail.automation.runs.heading", "运行实例（排障）") }}</a>
-      <a class="btn btn-primary" href="/admin/mail/automation/edit">＋ {{ .["t"]("admin.mail.automation.new_link", "新建流程") }}</a>
+      <a class="btn btn-primary" href="/admin/mail/automation/canvas">＋ {{ .["t"]("admin.mail.automation.new_link", "新建流程") }}</a>
     </div>
   </header>
 
@@ -69,7 +69,7 @@
         <p class="empty-title">{{ .["t"]("admin.mail.automation.empty.title", "还没有流程") }}</p>
         <p class="empty-desc">{{ .["t"]("admin.mail.automation.empty", "先新建一条，比如「新订阅 → 等 1 天 → 发欢迎邮件 → 打上 welcomed 标签」。") }}</p>
         <div class="empty-actions">
-          <a class="btn btn-primary" href="/admin/mail/automation/edit">＋ {{ .["t"]("admin.mail.automation.new_link", "新建流程") }}</a>
+          <a class="btn btn-primary" href="/admin/mail/automation/canvas">＋ {{ .["t"]("admin.mail.automation.new_link", "新建流程") }}</a>
         </div>
       </div>
         </td></tr>
@@ -89,8 +89,7 @@
           </td>
           <td>v{{a.Version}}</td>
           <td class="col-actions">
-            <a class="btn btn-sm btn-ghost" href="/admin/mail/automation/edit?id={{a.ID}}">{{tr("admin.common.action.edit", "编辑")}}</a>
-            <a class="btn btn-sm btn-ghost" href="/admin/mail/automation/canvas?id={{a.ID}}">{{tr("admin.mail.automation.canvas_link", "画布")}}</a>
+            <a class="btn btn-sm btn-ghost" href="/admin/mail/automation/canvas?id={{a.ID}}">{{tr("admin.common.action.edit", "编辑")}}</a>
             {{if a.Status == "active"}}
             <button type="submit" form="automation-status-{{a.ID}}-pause" class="btn btn-sm">{{tr("admin.mail.automation.action.pause", "暂停")}}</button>
             {{else}}

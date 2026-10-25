@@ -192,8 +192,6 @@ var pendingControllerMethods = map[string]bool{
 	"internal/module/mail/inbound/http/mail_contact_write.go:ContactDelete":                       true,
 	"internal/module/mail/inbound/http/mail_contact_write.go:ContactSave":                         true,
 	"internal/module/mail/inbound/http/mail_contact_write.go:ContactTag":                          true,
-	"internal/module/mail/inbound/http/mail_page.go:automationStepsFromGraph":                     true,
-	"internal/module/mail/inbound/http/mail_page.go:buildAutomationDefinition":                    true,
 	"internal/module/mail/inbound/http/mail_page_router.go:setupMailPageRoutes":                   true,
 	"internal/module/mail/inbound/http/mail_router.go:SetupMailRoutes":                            true,
 	"internal/module/masterdata/inbound/http/masterdata_page.go:MasterDataChangesPage":            true,

@@ -46,7 +46,6 @@ GET /admin/login
 GET /admin/mail
 GET /admin/mail/automation
 GET /admin/mail/automation/canvas
-GET /admin/mail/automation/edit
 GET /admin/mail/automation/run
 GET /admin/mail/automation/runs
 GET /admin/mail/campaign
@@ -328,7 +327,6 @@ POST /admin/mail/account/save
 POST /admin/mail/account/test
 POST /admin/mail/accounts/bulk-delete
 POST /admin/mail/automation/delete
-POST /admin/mail/automation/save
 POST /admin/mail/automation/status
 POST /admin/mail/automation/tick
 POST /admin/mail/automations/bulk-delete

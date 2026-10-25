@@ -25,16 +25,16 @@ package mailhttp
 import (
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"strconv"
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/backref"
 	mailenums "go_wp/internal/module/mail/enums"
 	"go_wp/internal/shell"
-	"go_wp/pkg/backpath"
 	"go_wp/pkg/reqparams"
 )
 
@@ -44,7 +44,6 @@ const (
 	mailTemplatesPath      = "/admin/mail/templates"
 	mailCampaignsPath      = "/admin/mail/campaigns"
 	mailAutomationPath     = "/admin/mail/automation"
-	mailAutomationEditPath = "/admin/mail/automation/edit"
 	mailAutomationRunsPath = "/admin/mail/automation/runs"
 )
 
@@ -123,15 +122,6 @@ func mailAutomationRunsBack(c *gin.Context) string {
 	return backref.BackPath(c, mailAutomationRunsPath, mailAutomationRunsBackKeys...)
 }
 
-// mailAutomationEditBack 流程编辑页的回跳地址：id 来自本次保存的流程（不在表单 action 的
-// query 里），所以用 backpath.WithParams 拼 —— 与 BackPath 同一份编码口径。
-func mailAutomationEditBack(id uint64) string {
-	if id == 0 {
-		return mailAutomationEditPath
-	}
-	return backpath.WithParams(mailAutomationEditPath, map[string]string{"id": strconv.FormatUint(id, 10)})
-}
-
 // —— 提示页文案的形状与静态事实 ——
 
 // mailMsg 提示页的一句结论 = 共享形状 adminui.Msg（i18n key + 中文兜底 + 位置参数）。
@@ -155,7 +145,6 @@ var (
 	mailContactsBackMsg       = mailLabelMsg(mailenums.PageTitleContacts)
 	mailCampaignsBackMsg      = mailLabelMsg(mailenums.PageTitleCampaigns)
 	mailAutomationBackMsg     = mailLabelMsg(mailenums.PageTitleAutomation)
-	mailAutomationEditBackMsg = mailLabelMsg(mailenums.PageTitleAutomationEdit)
 	mailAutomationRunsBackMsg = mailLabelMsg(mailenums.PageTitleAutomationRuns)
 )
 
@@ -198,10 +187,6 @@ func mailCampaignsJump(c *gin.Context, ok bool, msg mailMsg) {
 
 func mailAutomationJump(c *gin.Context, ok bool, msg mailMsg) {
 	mailJump(c, ok, msg, mailAutomationBack(c), mailAutomationBackMsg)
-}
-
-func mailAutomationEditJump(c *gin.Context, ok bool, msg mailMsg, id uint64) {
-	mailJump(c, ok, msg, mailAutomationEditBack(id), mailAutomationEditBackMsg)
 }
 
 func mailAutomationRunsJump(c *gin.Context, ok bool, msg mailMsg) {

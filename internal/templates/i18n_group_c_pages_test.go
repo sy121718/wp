@@ -18,7 +18,7 @@ func TestGroupCPagesParse(t *testing.T) {
 		"admin/order/coupons", "admin/order/returns", "admin/order/orders", "admin/user/customers",
 		"admin/user/customer_detail", "admin/mail/mail", "admin/mail/mail_templates",
 		"admin/mail/mail_contacts", "admin/mail/mail_campaigns", "admin/mail/mail_campaign",
-		"admin/mail/mail_automation", "admin/mail/mail_automation_runs", "admin/mail/mail_automation_edit",
+		"admin/mail/mail_automation", "admin/mail/mail_automation_runs",
 		"admin/mail/mail_automation_run", "admin/mail/mail_automation_canvas",
 	}
 	for _, f := range files {

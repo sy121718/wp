@@ -74,7 +74,6 @@ func newMailLeakRouter(t *testing.T, f *mailFixture) *gin.Engine {
 	engine.GET("/admin/mail/automation", h.MailAutomationPage)
 	engine.POST("/admin/mail/account/save", h.MailAccountSave)
 	engine.POST("/admin/mail/template/save", h.MailTemplateSave)
-	engine.POST("/admin/mail/automation/save", h.MailAutomationSave)
 	return engine
 }
 
@@ -239,17 +238,7 @@ func TestMailBusinessMessageStillVisible(t *testing.T) {
 		t.Error("白名单业务错误被误吞成归口文案 —— 运营再也看不到「哪一项不合法」")
 	}
 
-	// ② 本页表单校验文案：名称必填。校验失败**回显表单（200）**而不是提示页 ——
-	// 用户刚改的步骤类型必须留在页面上，提示页会把页面翻回存库里的旧状态（改类型就成了死循环）。
-	rec = mailPOST(engine, "/admin/mail/automation/save", url.Values{"name": {""}})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("表单校验失败应回显表单（200），实际 %d", rec.Code)
-	}
-	body = rec.Body.String()
-	if !strings.Contains(body, "流程名称不能为空") {
-		t.Errorf("表单校验文案应回显在页面上，实际：%s", mailHead(body))
-	}
-	if !strings.Contains(body, "</html>") {
-		t.Error("表单校验回显渲染被中断（缺少 </html>）—— 错误分支缺模板必需的键")
-	}
+	// ② 表单页已随「画布是唯一编辑器」删除，本页自造文案的出口（mailFormErrText）
+	// 随之消失；图校验失败现在经 JSON API 返回明细，由画布的保存回执渲染。
+	// 这条用例不再有第二个断言点 —— 留着它只统计 ① 的业务错误透出。
 }

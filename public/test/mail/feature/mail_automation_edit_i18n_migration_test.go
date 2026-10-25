@@ -37,8 +37,6 @@ const (
 	mailAEI18nSeedVersion = "524-mail-automation-edit-i18n"
 	// mailAEI18nKeyPrefix 本迁移负责的键前缀。
 	mailAEI18nKeyPrefix = "admin.mail.automation_edit."
-	// mailAEI18nTemplatePath 自动化编辑器模板（模板直写的兜底文案来源）。
-	mailAEI18nTemplatePath = "../../../../internal/templates/admin/mail/mail_automation_edit.html"
 	// mailAEI18nEnumsPath 步骤/节点/单位文案的 LabelPair 来源。
 	mailAEI18nEnumsPath = "../../../../internal/module/mail/enums/mail_ui_labels.go"
 
@@ -449,75 +447,53 @@ func TestMailAutomationEditI18nMigrationIsIdempotent(t *testing.T) {
 	mailI18nAssertReplayAffectsNoRows(t, db, seed, pairs)
 }
 
-// TestMailAutomationEditI18nTextMatchesSources 524 的中文必须与模板兜底、LabelPair 逐字一致。
-// 这是本轮反复出现的缺陷形态：模板改了、库里没跟（437 → 522 → 523），必须自动化挡住。
-func TestMailAutomationEditI18nTextMatchesSources(t *testing.T) {
+// TestMailAutomationEditI18nTextMatchesEnums 524 的中文必须与 LabelPair 逐字一致。
+//
+// 为什么只剩下枚举这一侧：表单编辑页（mail_automation_edit.html）已随
+// 「画布是唯一编辑器」删除，模板里那批 admin.mail.automation_edit.{col,param,guide}.*
+// 兜底不复存在（它们变成**未使用的词条** —— 允许，但不能再拿它们当判据）。仍在用的
+// 是 enums 里的节点 / 触发方式 / 条件 / 单位取值，它们经 meta 注入画布的 palette。
+//
+// 判据留着的那一半仍然是真判据：模板改了、库里没跟（437 → 522 → 523）是反复出现的
+// 缺陷形态，而这是唯一自动化挡住它的地方。
+func TestMailAutomationEditI18nTextMatchesEnums(t *testing.T) {
 	db := mailSplitDB(t)
 	mailSplitApplySeeds(t, db)
 
 	seedZh := mailAEI18nSQLZh(t)  // 524 负责的键 → 中文
 	dbZh := mailAEI18nDBZh(t, db) // 库里该前缀的全部中文（含 190 等更早迁移）
 
-	tplSrc := mailGuardStripComments(mailAEI18nSource(t, mailAEI18nTemplatePath))
 	enumSrc := mailAEI18nSource(t, mailAEI18nEnumsPath)
-	tpl := mailAEI18nFallbacks(t, "模板 "+mailAEI18nTemplatePath, tplSrc)
 	enum := mailAEI18nFallbacks(t, "枚举 "+mailAEI18nEnumsPath, enumSrc)
-
-	if len(tpl) == 0 {
-		t.Fatalf("%s 里没有解析到任何 %s* 兜底：文件形态变了，本用例会静默空转",
-			mailAEI18nTemplatePath, mailAEI18nKeyPrefix)
-	}
 	if len(enum) == 0 {
 		t.Fatalf("%s 里没有解析到任何 LabelPair 文案：文件形态变了，本用例会静默空转", mailAEI18nEnumsPath)
 	}
 
-	used := make(map[string]bool)
-	for _, src := range []struct {
-		where    string
-		fallback map[string]string
-		literals map[string]bool
-	}{
-		{"模板", tpl, mailAEI18nLiterals(tplSrc)},
-		{"枚举", enum, mailAEI18nLiterals(enumSrc)},
-	} {
-		for _, key := range mailAEI18nSortedSet(src.literals) {
-			used[key] = true
-
-			value, ok := dbZh[key]
-			if !ok || strings.TrimSpace(value) == "" {
-				t.Errorf("%s 里的键 %s 在 sys_i18n 里没有中文值：英文站会退回模板兜底（中文）或裸 key",
-					src.where, key)
-				continue
-			}
-
-			want, owned := seedZh[key]
-			if !owned {
-				// 190 等更早迁移负责的旧键：只判「库里确有中文值」，文案归各自的迁移用例。
-				continue
-			}
-			if value != want {
-				t.Errorf("键 %s 的库内中文 %q 与 %s 的 %q 不一致：运行期取的是库值，只改一侧就是假收口",
-					key, value, mailAEI18nSeedVersion, want)
-			}
-			if fallback, hasFallback := src.fallback[key]; hasFallback && fallback != want {
-				t.Errorf("%s 里键 %s 的兜底 %q 与 %s 的中文 %q 不一致：只改一边就是假翻译",
-					src.where, key, fallback, mailAEI18nSeedVersion, want)
-			}
+	for _, key := range mailAEI18nSortedSet(mailAEI18nLiterals(enumSrc)) {
+		value, ok := dbZh[key]
+		if !ok || strings.TrimSpace(value) == "" {
+			t.Errorf("枚举里的键 %s 在 sys_i18n 里没有中文值：英文站会退回兜底（中文）或裸 key", key)
+			continue
+		}
+		want, owned := seedZh[key]
+		if !owned {
+			// 190 等更早迁移负责的旧键：只判「库里确有中文值」，文案归各自的迁移用例。
+			continue
+		}
+		if value != want {
+			t.Errorf("键 %s 的库内中文 %q 与 %s 的 %q 不一致：运行期取的是库值，只改一侧就是假收口",
+				key, value, mailAEI18nSeedVersion, want)
+		}
+		if fallback, hasFallback := enum[key]; hasFallback && fallback != want {
+			t.Errorf("枚举里键 %s 的兜底 %q 与 %s 的中文 %q 不一致：只改一边就是假翻译",
+				key, fallback, mailAEI18nSeedVersion, want)
 		}
 	}
 
-	// 模板里出现却没带兜底的键：链式取词（{{tr := .["t"]}} 后 tr("k")）缺词条时静默输出空串。
-	for _, key := range mailAEI18nSortedSet(mailAEI18nLiterals(tplSrc)) {
-		if _, ok := tpl[key]; !ok {
-			t.Errorf("模板里的键 %s 没有中文兜底：缺词条时会静默输出空串，既不 500 也无日志", key)
-		}
-	}
-
-	// 524 种了、但模板与枚举里都找不到的键：多半是旧表格键没删干净，会留下永不显示的词条。
-	enumLiterals := mailAEI18nLiterals(enumSrc)
-	for _, key := range mailAEI18nSortedKeys(seedZh) {
-		if !used[key] || (!mailAEI18nLiterals(tplSrc)[key] && !enumLiterals[key]) {
-			t.Errorf("524 种了 %s，但模板与枚举里都没有这个键：会留下永不显示的词条", key)
+	// 枚举里出现却没带兜底的键：链式取词缺词条时静默输出空串。
+	for _, key := range mailAEI18nSortedSet(mailAEI18nLiterals(enumSrc)) {
+		if _, ok := enum[key]; !ok {
+			t.Errorf("枚举里的键 %s 没有中文兜底：缺词条时会静默输出空串，既不 500 也无日志", key)
 		}
 	}
 }

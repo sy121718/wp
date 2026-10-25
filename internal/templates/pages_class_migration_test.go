@@ -72,7 +72,6 @@ func TestMailAdminTemplatesUseSharedClasses(t *testing.T) {
 		"admin/mail/mail_campaign.html",
 		"admin/mail/mail_automation.html",
 		"admin/mail/mail_automation_runs.html",
-		"admin/mail/mail_automation_edit.html",
 		"admin/mail/mail_automation_run.html",
 	}
 	for _, page := range pages {

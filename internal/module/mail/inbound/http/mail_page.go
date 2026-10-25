@@ -1,25 +1,20 @@
 package mailhttp
 
-// 画布是**增强**，不是替代：表单页（/admin/mail/automation/edit）在没有 JS 时仍然完整可用。
-// 所以画布页只做三件事：把图渲染成可拖的节点、画出连线、把位置存回去。
+// **画布是流程的唯一编辑器**：带 ?id=N 是编辑，不带 id 是新建。
 //
-// 连线**不在画布上拖**，而是在侧栏用下拉改。这不是妥协，是刻意的：
+// 此前有两条入口 —— 步骤式表单页（/admin/mail/automation/edit）与画布。两条入口的代价
+// 是同一份图有**两套还原器**（表单要「图 → 步骤行 → 图」，画布直接改图），而它们必然
+// 滞后于引擎：节点类型一扩，表单的还原逻辑就有一部分表达不了，只能退化成只读兜底页，
+// 用户看到的是「这个流程改不了」却说不出原因。表单页已删除，且**不留重定向** ——
+// 留一条跳转等于两个入口以另一种形式复活。
 //
-//	· HTML5 drag and drop 在触屏上完全无效；pointer events 能做拖位置，但「从端口拉出一条线」
-//	  在触屏上需要长按 + 命中判定，体验与误操作都难控；
-//	· 下拉在鼠标 / 触屏 / 键盘下都能用，无障碍也天然达标；
-//	· 连线的**真相在图数据里**，画布只是把它画出来 —— 改数据用下拉，看结构用画布。
-
-// **表单式编辑器，不是拖拽**：一行一个节点（标识 / 类型 / 参数 / 下一步 / 分支两臂），
-// 提交时服务端组装成图定义再走同一套校验。
+// 画布承担三件事：把图渲染成可拖的节点、画出连线、把图存回去。连线走画布上的出口圆钮
+// 与边的插入菜单（触屏 / 键盘都能用），不再靠侧栏下拉 —— 那种做法只能改「已存在的边」，
+// 新建节点的第一步仍然要用户自己去填 key。
 //
-// 为什么先做表单而不是拖拽：
-//
-//	· 拖拽需要一整套前端状态管理（画布坐标、连线命中、撤销栈），是独立的前端工程；
-//	· 表单能表达引擎的**全部**能力（引擎只认节点与连线，不关心它们怎么被画出来）；
-//	· 引擎的正确性（环检测 / 可达性 / 执行语义）与编辑器形态无关，先让它可用、能验证。
-//
-// 表单里不写自定义 JS（项目约定：后台交互走原生表单 / HTMX）。
+// 前端模块见 static/js/automation/（state / layout / render / menu / index 五模块 +
+// 几何工具 graph.js）；业务判断一律在服务端（nodeArity / ValidateDefinition），
+// 画布不自己算权重和、不自己判合法性。
 
 // 为什么单独成页：流程是「配置」（一年改几次），实例是「排障」（出事时盯着看）。
 // 挤在一页时，配流程的人要往下滚过几十条与本次操作无关的运行记录；
@@ -93,7 +88,6 @@ package mailhttp
 // 所以历史行在排障页上显示的还是当年那句话。
 
 import (
-	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"html"
@@ -114,48 +108,29 @@ import (
 	mailmodel "go_wp/internal/module/mail/model"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
 )
 
-// MailAutomationCanvas 流程画布页（?id=N）。
+// MailAutomationCanvas 流程画布页。
 //
-// 缺 id 前置判定见 MailCampaignPage 的说明（审计 P0）：改前 canvas 的「缺参」与「不存在」
-// **合成同一句**「自动化流程不存在」—— 没带 id 的调用方会以为流程被删了，而不是自己漏了参数。
+// **这是流程的唯一编辑器**（列表页只有一个「编辑」按钮指向这里）：带 ?id=N 是编辑，
+// 不带 id 是新建 —— 新建也走画布，不再有第二个表单页（两条入口的代价是同一份图有
+// 两套还原逻辑，而它们必然滞步）。缺 id 不再当异常：给一份只含入口节点的空图。
 func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
-	ctx := c.Request.Context()
-	id, hasID := mailQueryID(c)
-	if !hasID {
-		// 缺 id 是**引导**（不是异常输入）：渲染提示页并给出回流程列表的入口。
-		mailAutomationJump(c, false, mailAutomationIDRequiredMsg)
-		return
-	}
-	item, err := h.mail.GetAutomation(ctx, id)
-	if err != nil {
-		mailAutomationJump(c, false, mailErrMsg(c, err))
+	item, ok := h.automationForCanvas(c)
+	if !ok {
 		return
 	}
 	nodesJSON, merr := json.Marshal(item.Nodes)
 	if merr != nil {
 		nodesJSON = []byte("[]")
 	}
-	meta := map[string]any{
-		"automationId": item.ID,
-		"name":         item.Name,
-		"description":  item.Description,
-		"triggerType":  item.TriggerType,
-		"entry":        item.Entry,
-		"status":       item.Status,
-		"version":      item.Version,
-		// 只有草稿 / 已暂停才允许调结构（启用中的流程改图会让在跑的实例走岔）。
-		"structureEditable": item.Status != "active",
-	}
-	metaJSON, _ := json.Marshal(meta)
-	// 发信节点的模板下拉（与表单页同一份数据）。
-	templates, _ := h.mail.ListTemplates(ctx, "")
+	metaJSON, _ := json.Marshal(h.automationCanvasMeta(c, item))
+	// 发信节点要选模板：把模板列表给页面（省得用户手敲 key）。
+	templates, _ := h.mail.ListTemplates(c.Request.Context(), "")
 	c.HTML(http.StatusOK, "admin/mail/mail_automation_canvas.html", adminui.Prepare(c, gin.H{
 		"title":     mailenums.PageTitleAutomationCanvas.Key,
 		"A":         item,
@@ -169,6 +144,71 @@ func (h *mailPageHandle) MailAutomationCanvas(c *gin.Context) {
 		// 后台不常驻加载 63 条营销动效，谁用谁声明（见 core.KeyframeCSS）。
 		"KeyframesCSS": core.KeyframeCSS([]string{"sky-fade-up"}),
 	}))
+}
+
+// automationForCanvas 取画布要编辑的流程：带 id 读库，不带 id 给空图。
+//
+// 第二个返回 false 表示已经渲染了提示页（调用方直接 return）。
+// 新建分支的图只含入口节点：它与迁移后的 v2 形状逐字一致（schema + out），
+// 画布不需要知道「这份图是刚造的」—— 它只看见一份合法的图定义。
+func (h *mailPageHandle) automationForCanvas(c *gin.Context) (*maildto.AutomationItem, bool) {
+	id := reqparams.ParseUint(c.Query("id"))
+	if id == 0 {
+		return newAutomationDraft(), true
+	}
+	item, err := h.mail.GetAutomation(c.Request.Context(), id)
+	if err != nil {
+		mailAutomationJump(c, false, mailErrMsg(c, err))
+		return nil, false
+	}
+	return item, true
+}
+
+// newAutomationDraft 新建流程时的空图（入口 + 一条未连的出边）。
+//
+// 只造图、不落库：用户在画布上画完、点保存才建行。否则「点开新建 → 关掉」会在库里
+// 留下一堆没有节点的草稿。
+func newAutomationDraft() *maildto.AutomationItem {
+	return &maildto.AutomationItem{
+		Name:        "",
+		TriggerType: mailmodel.TriggerManual,
+		Status:      mailmodel.AutomationStatusDraft,
+		Version:     0,
+		Entry:       automationEntryKeyDefault,
+		Nodes: []maildto.AutomationNodeItem{
+			{Key: automationEntryKeyDefault, Type: "trigger"},
+		},
+	}
+}
+
+// automationCanvasMeta 画布页的元数据（前端只读这一份，不自己推导）。
+//
+// 节点类型表也在这里：**palette、出口菜单、结构树的白名单都读它**，不在前端硬编码
+// 第二份（两处名字一对不上，用户就在 palette 里选得到但保存被拒的节点）。
+func (h *mailPageHandle) automationCanvasMeta(c *gin.Context, item *maildto.AutomationItem) map[string]any {
+	tr := mailTranslate(c)
+	nodeTypes := make([]gin.H, 0, len(mailenums.AutomationNodeTypes))
+	for _, o := range mailenums.AutomationNodeTypes {
+		nodeTypes = append(nodeTypes, gin.H{
+			"value": o.Value,
+			"label": mailLabel(tr, o.Label),
+			"hint":  mailLabel(tr, o.Hint),
+		})
+	}
+	return map[string]any{
+		"automationId": item.ID,
+		"name":         item.Name,
+		"description":  item.Description,
+		"triggerType":  item.TriggerType,
+		"entry":        item.Entry,
+		"status":       item.Status,
+		"version":      item.Version,
+		"isNew":        item.ID == 0,
+		// 只有草稿 / 已暂停才允许调结构（启用中的流程改图会让在跑的实例走岔）。
+		// 新建的流程恒可编辑（它还没落库，state 是 draft）。
+		"structureEditable": item.Status != mailmodel.AutomationStatusActive,
+		"nodeTypes":         nodeTypes,
+	}
 }
 
 // automationJsVer 自动化编辑器脚本的缓存版本（模块目录下 .js 的最新 mtime）。
@@ -204,6 +244,12 @@ const maxAutomationNodes = 12
 // mailAutomationPageSize 流程列表每页条数（运行记录页用自己的 mailAutomationRunsPageSize）。
 const mailAutomationPageSize = 50
 
+// automationEntryKeyDefault 新建流程时入口节点的 key。
+//
+// 固定为 n1 而不是随机串：它进图的 entry 字段、也进运行实例的 current_node，一个可读的固定值
+// 在排障页上比 uuid 有用，且新建的图只有这一个节点，不存在冲突。
+const automationEntryKeyDefault = "n1"
+
 // mailTr 取词函数签名（= 后台模板注入的 .["t"]：templates.TranslateFunc 按
 // response.RequestLanguage 取词，与 shell.TranslateFor 是同一实现）。
 type mailTr func(key, fallback string) string
@@ -235,10 +281,11 @@ type nodeTypeOption struct {
 	Hint  string
 }
 
-// nodeTypeOptions 类型下拉选项（参数提示直接写在界面上，省得去翻文档）。
+// nodeTypeOptions 节点类型选项（取词后的形状）。
 //
-// 取值与文案的真源在 mailenums.AutomationNodeTypes（key + 中文兜底），这里只做取词 ——
-// 画布页（mail_page.go）与表单页共用同一份，不各写一套。
+// 取值与文案的真源在 mailenums.AutomationNodeTypes（key + 中文兜底），这里只做取词。
+// 画布的 palette 与结构树读的是 meta.nodeTypes（同一份 enums），本函数给 Go 侧
+// 需要直接渲染的场景用。
 func nodeTypeOptions(tr mailTr) []nodeTypeOption {
 	opts := make([]nodeTypeOption, 0, len(mailenums.AutomationNodeTypes))
 	for _, o := range mailenums.AutomationNodeTypes {
@@ -247,6 +294,38 @@ func nodeTypeOptions(tr mailTr) []nodeTypeOption {
 			Label: mailLabel(tr, o.Label),
 			Hint:  mailLabel(tr, o.Hint),
 		})
+	}
+	return opts
+}
+
+// nodeTypeLabelOf 节点类型 → 当前语言标签；未知类型原样返回（兜底表要能显示真实取值）。
+func nodeTypeLabelOf(tr mailTr, value string) string {
+	for _, o := range mailenums.AutomationNodeTypes {
+		if o.Value == value {
+			return mailLabel(tr, o.Label)
+		}
+	}
+	return value
+}
+
+// triggerLabelOf 枚举 → 当前语言的标签；未知枚举原样返回（不吞掉不认识的取值）。
+func triggerLabelOf(tr mailTr, value string) string {
+	for _, o := range mailenums.AutomationTriggers {
+		if o.Value == value {
+			return mailLabel(tr, o.Label)
+		}
+	}
+	return value
+}
+
+// triggerOptions 触发方式下拉的选项（带选中态）。
+func triggerOptions(tr mailTr, selected string) []gin.H {
+	if selected == "" {
+		selected = mailmodel.TriggerManual
+	}
+	opts := make([]gin.H, 0, len(mailenums.AutomationTriggers))
+	for _, o := range mailenums.AutomationTriggers {
+		opts = append(opts, gin.H{"Value": o.Value, "Label": mailLabel(tr, o.Label), "Selected": o.Value == selected})
 	}
 	return opts
 }
@@ -294,250 +373,6 @@ func (h *mailPageHandle) MailAutomationPage(c *gin.Context) {
 	data["Automations"] = autoRows
 	data["AutoTotal"] = automations.Total
 	c.HTML(http.StatusOK, "admin/mail/mail_automation.html", adminui.Prepare(c, data))
-}
-
-// automationFormValues 编辑页表单当前值。
-//
-// 单独一份而不是直接读 *maildto.AutomationItem：步骤动作（增 / 删 / 移）只回显不保存，
-// 那种请求里没有 item（新建流程时更是一个都没有），但**用户刚填的名称 / 触发方式 / 说明
-// 必须原样留在页面上** —— 点一下「添加一步」就清空表单是最让人恼火的一种「功能」。
-type automationFormValues struct {
-	ID          uint64
-	IsNew       bool
-	Name        string
-	Description string
-	Trigger     string
-	Entry       string
-}
-
-// formValuesFromItem 编辑既有流程时的表单初值。
-func formValuesFromItem(item *maildto.AutomationItem) automationFormValues {
-	entry := strings.TrimSpace(item.Entry)
-	if entry == "" {
-		entry = automationEntryKeyDefault
-	}
-	return automationFormValues{
-		ID:          item.ID,
-		Name:        item.Name,
-		Description: item.Description,
-		Trigger:     item.TriggerType,
-		Entry:       entry,
-	}
-}
-
-// formValuesFromPost 动作回显时取自本次提交（不落库）。
-func formValuesFromPost(c *gin.Context) automationFormValues {
-	id := reqparams.ParseUint(c.PostForm("id"))
-	trigger := strings.TrimSpace(c.PostForm("trigger_type"))
-	if trigger == "" {
-		trigger = "manual"
-	}
-	entry := strings.TrimSpace(c.PostForm("entry"))
-	if entry == "" {
-		entry = automationEntryKeyDefault
-	}
-	return automationFormValues{
-		ID:          id,
-		IsNew:       id == 0,
-		Name:        strings.TrimSpace(c.PostForm("name")),
-		Description: strings.TrimSpace(c.PostForm("description")),
-		Trigger:     trigger,
-		Entry:       entry,
-	}
-}
-
-// MailAutomationEdit 流程编辑页（?id=N 编辑，缺省为新建）。
-//
-// 页面只讲「触发方式 + 按顺序的步骤」：标识 / 下一步 / yes / no 四个输入框已从界面消失
-// （用户原话「新建自动化不知道是个什么东西完全没法用」），换算在 mail_page.go。
-func (h *mailPageHandle) MailAutomationEdit(c *gin.Context) {
-	id := reqparams.ParseUint(c.Query("id"))
-	if id == 0 {
-		h.renderAutomationForm(c, automationFormValues{IsNew: true, Trigger: "manual", Entry: automationEntryKeyDefault}, []automationStep{{}}, "")
-		return
-	}
-	item, err := h.mail.GetAutomation(c.Request.Context(), id)
-	if err != nil {
-		mailAutomationJump(c, false, mailErrMsg(c, err))
-		return
-	}
-	if steps, ok := automationStepsFromGraph(item); ok {
-		h.renderAutomationForm(c, formValuesFromItem(item), steps, "")
-		return
-	}
-	// 表单表达不了的图（环 / 非 trigger 入口 / 有节点走不到 / 多条件分支）：只读兜底 ——
-	// 原定义原样留着，用户改不了它，但也不会在下一次保存时被静默改坏。
-	h.renderAutomationFallback(c, item)
-}
-
-// renderAutomationForm 渲染步骤表单（新建 / 编辑 / 动作回显 / 校验失败回显共用）。
-//
-// errText 是表单校验失败时的回显文案 —— 走「200 回显」而不是提示页：
-// 用户填的内容（尤其是他刚改过的步骤类型）必须留在页面上。否则「改类型 → 保存 →
-// 报错 → 页面翻回旧类型 → 再报错」就是死循环，而这条链路上用户没有任何出路。
-func (h *mailPageHandle) renderAutomationForm(c *gin.Context, form automationFormValues, steps []automationStep, errText string) {
-	tr := mailTranslate(c)
-	steps = trimAutomationSteps(steps)
-	// Err 只来自本页的表单校验（errText）—— 校验失败走 200 回显以留住用户输入；
-	// 写动作的结论走提示页（见 mail_jump.go），不再从查询参数读回。
-	err := strings.TrimSpace(errText)
-	data := gin.H{
-		"title":        mailLabel(tr, mailenums.PageTitleAutomationEdit),
-		"Form":         form,
-		"IsNew":        form.IsNew,
-		"Rows":         automationStepRows(tr, steps),
-		"Fallback":     false,
-		"FallbackRows": []gin.H{},
-		"Types":        nodeTypeOptions(tr),
-		"Triggers":     triggerOptions(tr, form.Trigger),
-		"CanAddStep":   len(steps) < maxAutomationNodes,
-		// 表单校验文案由本页拼（见 mail_err.go 的 mailFormErrText）；写动作结论不在本页回显。
-		"Err": err,
-	}
-	// 发信步骤要选模板：把模板列表给页面（省得用户手敲 key）。
-	templates, _ := h.mail.ListTemplates(c.Request.Context(), "")
-	data["Templates"] = templates
-	c.HTML(http.StatusOK, "admin/mail/mail_automation_edit.html", adminui.Prepare(c, data))
-}
-
-// renderAutomationFallback 表单表达不了的流程：只读展示原图 + 去画布的入口。
-//
-// 这里**不给可提交的步骤表单**：那份表单渲染出来是空的（还原失败），用户一保存就把
-// 还原不出来的节点整段删掉 —— 旧实现正是如此。宁可让他去画布改。
-func (h *mailPageHandle) renderAutomationFallback(c *gin.Context, item *maildto.AutomationItem) {
-	tr := mailTranslate(c)
-	rows := make([]gin.H, 0, len(item.Nodes))
-	for _, n := range item.Nodes {
-		rows = append(rows, gin.H{
-			"Key": n.Key, "Type": nodeTypeLabelOf(tr, n.Type),
-			"Next": n.Next, "Yes": n.Yes, "No": n.No,
-		})
-	}
-	form := formValuesFromItem(item)
-	data := gin.H{
-		"title":        mailLabel(tr, mailenums.PageTitleAutomationEdit),
-		"Form":         form,
-		"IsNew":        false,
-		"Rows":         []gin.H{},
-		"Fallback":     true,
-		"FallbackRows": rows,
-		"Types":        nodeTypeOptions(tr),
-		"Triggers":     triggerOptions(tr, form.Trigger),
-		"CanAddStep":   false,
-		// 只读兜底页没有表单校验，也不回显写动作结论（走提示页，见 mail_jump.go）。
-	}
-	templates, _ := h.mail.ListTemplates(c.Request.Context(), "")
-	data["Templates"] = templates
-	c.HTML(http.StatusOK, "admin/mail/mail_automation_edit.html", adminui.Prepare(c, data))
-}
-
-// nodeTypeLabelOf 节点类型 → 当前语言标签；未知类型原样返回（兜底表要能显示真实取值）。
-func nodeTypeLabelOf(tr mailTr, value string) string {
-	for _, o := range mailenums.AutomationNodeTypes {
-		if o.Value == value {
-			return mailLabel(tr, o.Label)
-		}
-	}
-	return value
-}
-
-// automationTriggerLabels 触发方式的取值与文案（key + 中文兜底的真源在 mailenums）。
-//
-// 下拉选项与列表展示**共用这一份**：此前列表直接把枚举值（manual / contact_created…）
-// 打进表格，同一个值在下拉里叫「新联系人产生」、在列表里叫 contact_created ——
-// 界面自相矛盾，而且把内部标识露给了用户。
-
-// triggerLabelOf 枚举 → 当前语言的标签；未知枚举原样返回（不吞掉不认识的取值）。
-func triggerLabelOf(tr mailTr, value string) string {
-	for _, o := range mailenums.AutomationTriggers {
-		if o.Value == value {
-			return mailLabel(tr, o.Label)
-		}
-	}
-	return value
-}
-
-// —— 状态回执 ——
-//
-// 原先这里有一个 automationStatusLabel(status) 返回中文标签（「已启用 / 已暂停 / 草稿」）。
-// 现在取值与文案都在 mailenums.AutomationStatusLabel（key + 中文兜底），拼装只在
-// mail_err.go 的 mailAutomationStatusNotice —— 那一份同时是读侧白名单的候选来源。
-// 判据没变：只有三个已知状态能进文案，其余（含空串、任意提交值）回落「未知状态」。
-
-// triggerOptions 触发方式下拉的选项（带选中态）。
-func triggerOptions(tr mailTr, selected string) []gin.H {
-	if selected == "" {
-		selected = "manual"
-	}
-	opts := make([]gin.H, 0, len(mailenums.AutomationTriggers))
-	for _, o := range mailenums.AutomationTriggers {
-		opts = append(opts, gin.H{"Value": o.Value, "Label": mailLabel(tr, o.Label), "Selected": o.Value == selected})
-	}
-	return opts
-}
-
-// MailAutomationSave 保存流程（原生表单 POST → 302 回编辑页）。
-//
-// 同一个地址承载两种请求：步骤动作（增 / 删 / 上移 / 下移）与真正保存。动作优先判，
-// 它不落库、只回显 —— 这样没有 JS 也能排步骤。
-func (h *mailPageHandle) MailAutomationSave(c *gin.Context) {
-	tr := mailTranslate(c)
-	id := reqparams.ParseUint(c.PostForm("id"))
-	steps := readAutomationSteps(c)
-
-	if act, ok := stepActionOf(c); ok {
-		h.renderAutomationForm(c, formValuesFromPost(c), applyStepAction(steps, act), "")
-		return
-	}
-
-	form := formValuesFromPost(c)
-	if form.Name == "" {
-		h.renderAutomationForm(c, form, steps, mailLabel(tr, mailenums.AutomationFormErrNameRequired))
-		return
-	}
-	raw, err := buildAutomationDefinition(tr, c.PostForm("entry"), steps, h.automationNodePositions(c, id))
-	if err != nil {
-		// 表单校验文案由本页组装（「第 3 步：…」），是运营照着改的依据：
-		// 走 mailFormErrText 原样回带（判据见 mail_err.go 里对该函数的说明），不进白名单。
-		h.renderAutomationForm(c, form, steps, mailFormErrText(err))
-		return
-	}
-	item, err := h.mail.SaveAutomation(c.Request.Context(), &maildto.SaveAutomationReq{
-		ID:          id,
-		Name:        form.Name,
-		Description: form.Description,
-		TriggerType: form.Trigger,
-		Definition:  raw,
-	})
-	if err != nil {
-		// 图校验失败（有环 / 悬空边 / 不可达 / 形状不对）走到这里，错误里带定位信息；
-		// 但也可能是数据库错误 —— 所以必须过白名单：命中 → 翻成中文，未命中 → 归口文案 + 日志。
-		mailAutomationEditJump(c, false, mailErrMsg(c, err), id)
-		return
-	}
-	// 与 mail_err.go 的 mailAutomationSavedMsg 同一句话（版本号是位置参数）。
-	mailAutomationEditJump(c, true, mailAutomationSavedMsg.WithArgs(strconv.Itoa(item.Version)), item.ID)
-}
-
-// automationNodePositions 取原图里各节点的画布坐标（key → X / Y）。
-//
-// 保存只重排连边，不该把用户摆好的画布抹平：丢掉坐标之后，画布页上所有节点会落回原点。
-// 拿不到原图（新建流程 / 读失败）时返回空表 —— 位置是装饰，不能因为它挡住保存。
-func (h *mailPageHandle) automationNodePositions(c *gin.Context, id uint64) map[string][2]float64 {
-	pos := map[string][2]float64{}
-	if id == 0 {
-		return pos
-	}
-	item, err := h.mail.GetAutomation(c.Request.Context(), id)
-	if err != nil {
-		return pos
-	}
-	for _, n := range item.Nodes {
-		if n.Key != "" {
-			pos[n.Key] = [2]float64{n.X, n.Y}
-		}
-	}
-	return pos
 }
 
 // MailAutomationStatus 启用 / 暂停 / 退回草稿。
@@ -1673,768 +1508,6 @@ func unsubscribeDonePage(c *gin.Context, email string) string {
 		"<h2>" + title + "</h2><p>" + body + "</p>" +
 		"<p>" + note + "</p>" +
 		"</body></html>"
-}
-
-// automationEntryKeyDefault 新建流程时入口节点的 key（与旧版隐藏域 entry 的默认值一致）。
-const automationEntryKeyDefault = "n1"
-
-// automationEndKeyBase 自动补的结束节点 key 基名（被占用时加后缀，见 freeKey）。
-const automationEndKeyBase = "end"
-
-// automationStep 表单里的一步 —— 界面概念，一次提交对应一行。
-type automationStep struct {
-	// Index 步号（1 起）：界面上的「第 N 步」，也是错误文案的定位（不是节点身份）。
-	Index int
-	// Key 既有步骤的原 key（隐藏域 node_key_N）。新建的步骤留空，由后端按步号生成。
-	//
-	// 保留 key 是为了既有实例：运行中的实例用 key 记录「走到哪了」，重新保存时换掉 key
-	// 会让它们全部找不到当前节点。
-	Key string
-	// Type 步骤类型（node_type_N）：delay / email / branch / tag / end。
-	Type string
-	// Param 主参数：模板 key（email）/ 标签串（tag）/ 条件取值（branch）。
-	Param string
-	// Tag 条件为「带着某个标签」时附带的标签名（param_tag_N）。
-	Tag string
-	// Unit / Value 等待步骤的单位与时长（param_unit_N / param_unit_value_N）。
-	Unit  string
-	Value string
-	// Yes / No 条件分支两条出边的界面取值：""=下一步、"end"=结束、其余=步号。
-	Yes string
-	No  string
-}
-
-// readAutomationSteps 读表单里的步骤行。
-//
-// 按固定上界扫 1..maxAutomationNodes：表单只渲染真实存在的步骤，但行号是界面的定位，
-// 不能靠「读到空行就停」来猜（隐藏行会错位）。
-func readAutomationSteps(c *gin.Context) []automationStep {
-	steps := make([]automationStep, 0, maxAutomationNodes)
-	for i := 1; i <= maxAutomationNodes; i++ {
-		idx := strconv.Itoa(i)
-		steps = append(steps, automationStep{
-			Index: i,
-			Key:   strings.TrimSpace(c.PostForm("node_key_" + idx)),
-			Type:  strings.TrimSpace(c.PostForm("node_type_" + idx)),
-			Param: strings.TrimSpace(c.PostForm("param_" + idx)),
-			Tag:   strings.TrimSpace(c.PostForm("param_tag_" + idx)),
-			Unit:  strings.TrimSpace(c.PostForm("param_unit_" + idx)),
-			Value: strings.TrimSpace(c.PostForm("param_unit_value_" + idx)),
-			Yes:   strings.TrimSpace(c.PostForm("yes_" + idx)),
-			No:    strings.TrimSpace(c.PostForm("no_" + idx)),
-		})
-	}
-	return steps
-}
-
-// automationStepAction 步骤行的服务端动作（增 / 删 / 上移 / 下移）。
-type automationStepAction struct {
-	Kind string // add / remove / move_up / move_down
-	Step int    // 目标步号（add 不用）
-}
-
-// stepActionOf 从提交里识别步骤动作。
-//
-// 做成服务端动作而不是 JS 直改 DOM：增删一步会改变后面所有步的编号，而「第 N 步」
-// 正是错误文案与跳转选择的定位 —— 前端自己改 DOM 但服务端还按旧编号读，用户加的那步
-// 提交后就白了。表单只有一个提交地址，动作字段决定分支。
-func stepActionOf(c *gin.Context) (automationStepAction, bool) {
-	if strings.TrimSpace(c.PostForm("add_step")) != "" {
-		return automationStepAction{Kind: "add"}, true
-	}
-	if v := strings.TrimSpace(c.PostForm("remove_step")); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return automationStepAction{Kind: "remove", Step: n}, true
-		}
-		return automationStepAction{Kind: "remove"}, true
-	}
-	if v := strings.TrimSpace(c.PostForm("switch_step")); v != "" {
-		// 换控件：只看这一行的类型有没有改（类型值本身就在提交里），重渲染即可。
-		if n, err := strconv.Atoi(v); err == nil {
-			return automationStepAction{Kind: "switch", Step: n}, true
-		}
-		return automationStepAction{Kind: "switch"}, true
-	}
-	// 取值形态 `N:up` / `N:down`
-	if v := strings.TrimSpace(c.PostForm("move_step")); v != "" {
-		parts := strings.SplitN(v, ":", 2)
-		if len(parts) != 2 {
-			return automationStepAction{}, false
-		}
-		n, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-		if err != nil {
-			return automationStepAction{}, false
-		}
-		switch strings.TrimSpace(parts[1]) {
-		case "up":
-			return automationStepAction{Kind: "move_up", Step: n}, true
-		case "down":
-			return automationStepAction{Kind: "move_down", Step: n}, true
-		}
-	}
-	return automationStepAction{}, false
-}
-
-// applyStepAction 把动作作用在当前提交的步骤上。
-//
-// 空行（用户新加一步却没填）先被剔除：界面上的「第 3 步」指的是**有内容的步骤**，
-// 不是表格里的第 3 行 —— 否则删一步会删掉一行空白，用户看到的是「点了没反应」。
-func applyStepAction(steps []automationStep, act automationStepAction) []automationStep {
-	rows := make([]automationStep, 0, len(steps))
-	for _, s := range steps {
-		if s.Type == "" && s.Key == "" && s.Param == "" && s.Tag == "" && s.Value == "" {
-			continue
-		}
-		rows = append(rows, s)
-	}
-	switch act.Kind {
-	case "add":
-		if len(rows) < maxAutomationNodes {
-			rows = append(rows, automationStep{})
-		}
-	case "remove":
-		if act.Step >= 1 && act.Step <= len(rows) {
-			rows = append(rows[:act.Step-1], rows[act.Step:]...)
-		}
-	case "switch":
-		// 改类型只需要按新类型重渲染这一行的控件；行列表与顺序都不动。
-	case "move_up":
-		if i := act.Step - 1; i > 0 && i < len(rows) {
-			rows[i-1], rows[i] = rows[i], rows[i-1]
-		}
-	case "move_down":
-		if i := act.Step - 1; i >= 0 && i < len(rows)-1 {
-			rows[i], rows[i+1] = rows[i+1], rows[i]
-		}
-	}
-	// 重排后行号重算：行号是界面的定位，不是身份（key 才是身份，且它跟着步骤走）。
-	for i := range rows {
-		rows[i].Index = i + 1
-	}
-	return rows
-}
-
-// buildAutomationDefinition 把步骤列表换算成引擎的图定义（JSON 原文）。
-//
-// pos 是既有节点的画布位置（key → X/Y）：保存图定义不该把用户摆好的位置清掉 ——
-// 旧实现整份重写定义，改一次流程，画布上所有节点都会回到原点。
-func buildAutomationDefinition(tr mailTr, rawEntry string, rows []automationStep, pos map[string][2]float64) ([]byte, error) {
-	steps := make([]automationStep, 0, len(rows))
-	for _, s := range rows {
-		if s.Type == "" {
-			continue
-		}
-		steps = append(steps, s)
-	}
-	if len(steps) == 0 {
-		return nil, errors.New(mailLabel(tr, mailenums.AutomationFormErrStepsRequired))
-	}
-	if len(steps) > maxAutomationNodes {
-		return nil, errors.New(mailLabel(tr, mailenums.AutomationFormErrStepsTooMany))
-	}
-
-	// key 分配：先占入口，再给步骤（新建步骤按步号生成 n2 / n3…，避开入口占用的 n1）。
-	used := make(map[string]bool, len(steps)+2)
-	entryKey := freeKey(strings.TrimSpace(rawEntry), used)
-	keys := make([]string, len(steps))
-	for i, s := range steps {
-		base := strings.TrimSpace(s.Key)
-		if base == "" {
-			base = fmt.Sprintf("n%d", i+2)
-		}
-		keys[i] = freeKey(base, used)
-	}
-	// 结束节点：末步本身就是「结束」时复用它，否则补一个。
-	lastIsEnd := steps[len(steps)-1].Type == "end"
-	endKey := ""
-	if lastIsEnd {
-		endKey = keys[len(keys)-1]
-	} else {
-		endKey = freeKey(automationEndKeyBase, used)
-	}
-
-	nodes := make([]any, 0, len(steps)+2)
-	nodes = append(nodes, newNode(entryKey, "trigger", nil, keys[0], "", "", pos[entryKey]))
-	for i, s := range steps {
-		stepNo := i + 1
-		params, err := stepParams(tr, s, stepNo)
-		if err != nil {
-			return nil, err
-		}
-		next, yes, no := "", "", ""
-		switch s.Type {
-		case "end":
-			// 结束之后再排步骤 = 那些步骤永远走不到（图上不可达，保存会被拒）。
-			// 与其让用户看 service 的「有节点从入口走不到: n5」，不如在这里点明步号。
-			if stepNo != len(steps) {
-				return nil, stepErr(tr, mailenums.AutomationFormErrEndNotLast, stepNo)
-			}
-		case "branch":
-			if yes, err = resolveStepTarget(tr, s.Yes, i, len(steps), keys, endKey, stepNo); err != nil {
-				return nil, err
-			}
-			if no, err = resolveStepTarget(tr, s.No, i, len(steps), keys, endKey, stepNo); err != nil {
-				return nil, err
-			}
-		default:
-			if i+1 < len(steps) {
-				next = keys[i+1]
-			} else {
-				next = endKey
-			}
-		}
-		nodes = append(nodes, newNode(keys[i], s.Type, params, next, yes, no, pos[keys[i]]))
-	}
-	if !lastIsEnd {
-		nodes = append(nodes, newNode(endKey, "end", nil, "", "", "", pos[endKey]))
-	}
-
-	raw, merr := json.Marshal(map[string]any{"entry": entryKey, "nodes": nodes})
-	if merr != nil {
-		// 理论上不可达（节点只含字符串 / 整数 / 切片），但这一层的返回值会经
-		// mailFormErrText 原样进重定向 —— 所以不把 Go 的原文交出去（判据同 mailErrPageText）。
-		logger.Scene(mailErrScene).Error(merr, "邮箱自动化步骤组装失败")
-		return nil, errors.New(mailLabel(tr, mailenums.AutomationFormErrAssemble))
-	}
-	return raw, nil
-}
-
-// newNode 组装一个节点（空字段不写进 JSON，保持定义干净）。
-func newNode(key, typ string, params map[string]any, next, yes, no string, xy [2]float64) map[string]any {
-	n := map[string]any{"key": key, "type": typ}
-	if len(params) > 0 {
-		n["params"] = params
-	}
-	if next != "" {
-		n["next"] = next
-	}
-	if yes != "" {
-		n["yes"] = yes
-	}
-	if no != "" {
-		n["no"] = no
-	}
-	// X / Y 是画布布局（引擎忽略）：保留原节点的位置，摆好的画布不会因为改一次流程就散架。
-	if xy[0] != 0 || xy[1] != 0 {
-		n["x"], n["y"] = xy[0], xy[1]
-	}
-	return n
-}
-
-// freeKey 取一个没被占用的 key：沿用作者原值，为空或冲突时按 base 生成（base_2、base_3…）。
-func freeKey(base string, used map[string]bool) string {
-	base = strings.TrimSpace(base)
-	if base == "" {
-		base = automationEntryKeyDefault
-	}
-	if !used[base] {
-		used[base] = true
-		return base
-	}
-	for i := 2; ; i++ {
-		candidate := fmt.Sprintf("%s_%d", base, i)
-		if !used[candidate] {
-			used[candidate] = true
-			return candidate
-		}
-	}
-}
-
-// stepParams 按类型把界面控件换算成引擎参数，顺带做行级校验（错误带「第 N 步」定位）。
-func stepParams(tr mailTr, s automationStep, stepNo int) (map[string]any, error) {
-	switch s.Type {
-	case "delay":
-		unit, ok := waitUnitByValue(s.Unit)
-		if !ok {
-			return nil, stepErr(tr, mailenums.AutomationFormErrStepDelayUnit, stepNo)
-		}
-		value, err := strconv.Atoi(s.Value)
-		if err != nil || value <= 0 {
-			return nil, stepErr(tr, mailenums.AutomationFormErrStepDelayValue, stepNo)
-		}
-		// 界面单位 → 引擎的 minutes 整数（引擎只认分钟）。
-		return map[string]any{"minutes": value * unit.Minutes}, nil
-	case "email":
-		if s.Param == "" {
-			return nil, stepErr(tr, mailenums.AutomationFormErrStepTemplate, stepNo)
-		}
-		return map[string]any{"template_key": s.Param}, nil
-	case "tag":
-		tags := splitFormList(s.Param)
-		if len(tags) == 0 {
-			return nil, stepErr(tr, mailenums.AutomationFormErrStepTag, stepNo)
-		}
-		return map[string]any{"add": tags}, nil
-	case "branch":
-		cond, ok := conditionByValue(s.Param)
-		if !ok {
-			return nil, stepErr(tr, mailenums.AutomationFormErrStepCondition, stepNo)
-		}
-		code := cond.Value
-		if cond.NeedsTag {
-			tag := strings.TrimSpace(s.Tag)
-			if tag == "" {
-				return nil, stepErr(tr, mailenums.AutomationFormErrStepTag, stepNo)
-			}
-			// 内部语法 has_tag:<标签> 只在这里拼：用户选「带着某个标签」再填标签名。
-			code = cond.Value + ":" + tag
-		}
-		return map[string]any{"conditions": []string{code}}, nil
-	case "end", "trigger":
-		// 结束节点没有参数；入口节点由服务端补，不来自步骤行（见文件头）。
-		return nil, nil
-	default:
-		return nil, stepErr(tr, mailenums.AutomationFormErrStepTypeRequired, stepNo)
-	}
-}
-
-// stepErr 组装一条带「第 N 步」定位的错误。
-//
-// 词条里没有 %d 时**不追加步号**：译文漏了占位符时 fmt 会输出 `%!(EXTRA int=3)`，
-// 那比少一个定位更难解释（用户会照抄进搜索框）。
-func stepErr(tr mailTr, pair mailenums.LabelPair, stepNo int) error {
-	tpl := mailLabel(tr, pair)
-	if strings.Contains(tpl, "%d") {
-		return errors.New(fmt.Sprintf(tpl, stepNo))
-	}
-	return errors.New(tpl)
-}
-
-// resolveStepTarget 把「下一步 / 第 N 步 / 结束」换算成节点 key。
-//
-// 只允许向后跳（含下一步）：往前跳会在图上造环，而环在运行期就是无限循环发邮件。
-// 这层拦下来，用户就不必去看 service 的「流程里有环: n3 → n2」这种图内部术语。
-//
-// 两种失败分开报：往回跳时目标步号明明在页面上（措辞必须说「只能往后」），
-// 只有目标步被删掉后步号才真的失效（那才叫「不存在」）。
-func resolveStepTarget(tr mailTr, raw string, pos, total int, keys []string, endKey string, stepNo int) (string, error) {
-	backward := stepErr(tr, mailenums.AutomationFormErrStepTargetBackward, stepNo)
-	missing := stepErr(tr, mailenums.AutomationFormErrStepTargetInvalid, stepNo)
-	switch raw {
-	case "end":
-		if endKey == "" {
-			return "", missing
-		}
-		return endKey, nil
-	case "":
-		if pos+1 < total {
-			return keys[pos+1], nil
-		}
-		if endKey != "" {
-			return endKey, nil
-		}
-		return "", missing
-	}
-	target, err := strconv.Atoi(raw)
-	if err != nil || target > total {
-		// 解析不出步号、或步号超出末尾：多半是下拉里那一步刚被删掉。
-		return "", missing
-	}
-	if target <= pos+1 {
-		return "", backward
-	}
-	return keys[target-1], nil
-}
-
-// automationStepsFromGraph 把既有流程还原成步骤行（第二返回值 false = 超出表单能表达的子集）。
-//
-// **不静默丢弃节点**：还原不出来时调用方走只读兜底，把原定义原样留着 —— 把兜底当空流程，
-// 用户下一次保存就会把整条流程删成一行。
-func automationStepsFromGraph(item *maildto.AutomationItem) ([]automationStep, bool) {
-	if item == nil || len(item.Nodes) == 0 {
-		return nil, false
-	}
-	byKey := make(map[string]maildto.AutomationNodeItem, len(item.Nodes))
-	for _, n := range item.Nodes {
-		key := strings.TrimSpace(n.Key)
-		if key == "" {
-			return nil, false
-		}
-		if _, dup := byKey[key]; dup {
-			return nil, false
-		}
-		byKey[key] = n
-	}
-	entry := strings.TrimSpace(item.Entry)
-	head, ok := byKey[entry]
-	if !ok || head.Type != "trigger" {
-		return nil, false
-	}
-
-	// 表单只认一个「结束」目标，多个结束节点在界面上无处区分。
-	endKey := ""
-	for _, n := range item.Nodes {
-		if n.Type != "end" {
-			continue
-		}
-		if endKey != "" {
-			return nil, false
-		}
-		endKey = n.Key
-	}
-
-	// 主链：入口 → next → …；条件分支沿「指向后续步骤」的那条出边继续。
-	// 顺序分支用 next 表达，分支节点的下一步就是它的 yes（或 no）目标，所以遍历不能只认 next。
-	chain := make([]maildto.AutomationNodeItem, 0, len(item.Nodes))
-	seen := make(map[string]bool, len(item.Nodes))
-	for cur := entry; cur != ""; {
-		if seen[cur] {
-			return nil, false // 有环：表单里的顺序表达不了
-		}
-		seen[cur] = true
-		n, ok := byKey[cur]
-		if !ok {
-			return nil, false // 悬空边
-		}
-		chain = append(chain, n)
-		if n.Type == "end" {
-			break
-		}
-		next := strings.TrimSpace(n.Next)
-		if n.Type == "branch" {
-			forward := make([]string, 0, 2)
-			for _, raw := range []string{strings.TrimSpace(n.Yes), strings.TrimSpace(n.No)} {
-				target, exist := byKey[raw]
-				if !exist {
-					return nil, false // 分支必须有两条存在的出边
-				}
-				if target.Type == "end" {
-					continue // 「满足时结束」这类目标不进主链
-				}
-				if seen[raw] {
-					return nil, false // 往前跳（也是环），表单表达不了
-				}
-				forward = append(forward, raw)
-			}
-			switch len(forward) {
-			case 0:
-				next = ""
-			case 1:
-				next = forward[0]
-			default:
-				// 两条臂都指向后续步骤：表格的行序把「先执行的那条」排在前，
-				// 只有能沿出边走到另一条时才连得上，否则线性表格表达不了。
-				switch {
-				case graphReaches(byKey, forward[0], forward[1]):
-					next = forward[0]
-				case graphReaches(byKey, forward[1], forward[0]):
-					next = forward[1]
-				default:
-					return nil, false
-				}
-			}
-		}
-		cur = next
-	}
-	if len(seen) != len(item.Nodes) {
-		return nil, false // 有节点不在主链上（分支跳到了链外，或存在不可达节点）
-	}
-	steps := chain[1:]
-	if len(steps) > 0 && steps[len(steps)-1].Type == "end" {
-		steps = steps[:len(steps)-1]
-	}
-	if len(steps) == 0 {
-		return nil, false // 「入口即结束」这类流程表单表达不了（留只读态更诚实）
-	}
-
-	stepPos := make(map[string]int, len(steps))
-	for i, n := range steps {
-		stepPos[n.Key] = i + 1
-	}
-
-	out := make([]automationStep, 0, len(steps))
-	for i, n := range steps {
-		stepNo := i + 1
-		step := automationStep{Index: stepNo, Key: n.Key, Type: n.Type}
-		switch n.Type {
-		case "delay":
-			minutes, ok := paramInt(n.Params["minutes"])
-			if !ok || minutes <= 0 {
-				return nil, false
-			}
-			unit := pickWaitUnit(minutes)
-			step.Unit, step.Value = unit.Value, strconv.Itoa(minutes/unit.Minutes)
-		case "email":
-			step.Param = strOf(n.Params["template_key"])
-			if step.Param == "" {
-				return nil, false
-			}
-		case "tag":
-			add := strSlice(n.Params["add"])
-			// 表单只表达「加标签」：既有流程若还带 remove，还原成步骤行会丢掉那半句。
-			if len(add) == 0 || len(strSlice(n.Params["remove"])) > 0 {
-				return nil, false
-			}
-			step.Param = strings.Join(add, ", ")
-		case "branch":
-			conditions := strSlice(n.Params["conditions"])
-			if len(conditions) != 1 {
-				return nil, false // 多条件是表单表达不了的（引擎支持，界面不暴露）
-			}
-			cond, tag, ok := parseConditionCode(conditions[0])
-			if !ok {
-				return nil, false
-			}
-			step.Param, step.Tag = cond, tag
-			if step.Yes, ok = stepTargetValue(n.Yes, stepPos, endKey, stepNo); !ok {
-				return nil, false
-			}
-			if step.No, ok = stepTargetValue(n.No, stepPos, endKey, stepNo); !ok {
-				return nil, false
-			}
-		default:
-			// 中间放「入口」，或引擎将来新增的类型：界面不认识 → 只读兜底。
-			return nil, false
-		}
-		out = append(out, step)
-	}
-	return out, true
-}
-
-// stepTargetValue 节点 key → 界面的跳转取值（""=下一步、"end"=结束、其余=步号）。
-//
-// 不认识的出边（链外的节点 / 往前跳）返回 false：那些图表单表达不了，必须兜底。
-func stepTargetValue(raw string, stepPos map[string]int, endKey string, stepNo int) (string, bool) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", false // 分支必须有两条出边；缺一条说明这条流程不是表单建的
-	}
-	if endKey != "" && raw == endKey {
-		return "end", true
-	}
-	target, ok := stepPos[raw]
-	if !ok || target <= stepNo {
-		return "", false
-	}
-	if target == stepNo+1 {
-		return "", true // 就是「下一步」，界面默认值
-	}
-	return strconv.Itoa(target), true
-}
-
-// graphReaches 沿出边（分支看 yes/no，其它看 next）判断能否从 from 走到 to。
-//
-// 只用于给分叉后的两条臂排行序：能走到对方的那条在前，否则表格的线性行序表达不了这张图。
-func graphReaches(byKey map[string]maildto.AutomationNodeItem, from, to string) bool {
-	queue := []string{from}
-	seen := map[string]bool{from: true}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		n, ok := byKey[cur]
-		if !ok {
-			continue
-		}
-		for _, next := range outgoingKeys(n) {
-			if next == to {
-				return true
-			}
-			if seen[next] {
-				continue
-			}
-			seen[next] = true
-			queue = append(queue, next)
-		}
-	}
-	return false
-}
-
-func outgoingKeys(n maildto.AutomationNodeItem) []string {
-	var out []string
-	if n.Type == "branch" {
-		for _, raw := range []string{n.Yes, n.No} {
-			if raw = strings.TrimSpace(raw); raw != "" {
-				out = append(out, raw)
-			}
-		}
-		return out
-	}
-	if n.Type == "end" {
-		return nil
-	}
-	if next := strings.TrimSpace(n.Next); next != "" {
-		out = append(out, next)
-	}
-	return out
-}
-
-// pickWaitUnit 分钟数反解成「数值 + 单位」：优先能整除的大单位（1440 → 1 天）。
-//
-// 倒序遍历：AutomationWaitUnits 按界面顺序排（分钟在前），正序会先把 1440 拆成 24 小时。
-func pickWaitUnit(minutes int) mailenums.AutomationWaitUnitOption {
-	units := mailenums.AutomationWaitUnits
-	for i := len(units) - 1; i >= 0; i-- {
-		if units[i].Minutes > 1 && minutes%units[i].Minutes == 0 {
-			return units[i]
-		}
-	}
-	return units[0]
-}
-
-// parseConditionCode 引擎的 conditions 编码 →（条件取值, 标签名）。
-func parseConditionCode(code string) (value, tag string, ok bool) {
-	code = strings.TrimSpace(code)
-	for _, c := range mailenums.AutomationConditions {
-		if c.Value == code {
-			return c.Value, "", true
-		}
-		if c.NeedsTag && strings.HasPrefix(code, c.Value+":") {
-			t := strings.TrimSpace(strings.TrimPrefix(code, c.Value+":"))
-			if t == "" {
-				return "", "", false
-			}
-			return c.Value, t, true
-		}
-	}
-	return "", "", false
-}
-
-// waitUnitByValue 单位取值 → 选项。
-func waitUnitByValue(value string) (mailenums.AutomationWaitUnitOption, bool) {
-	for _, u := range mailenums.AutomationWaitUnits {
-		if u.Value == value {
-			return u, true
-		}
-	}
-	return mailenums.AutomationWaitUnitOption{}, false
-}
-
-// conditionByValue 条件取值 → 选项。
-func conditionByValue(value string) (mailenums.AutomationConditionOption, bool) {
-	for _, c := range mailenums.AutomationConditions {
-		if c.Value == value {
-			return c, true
-		}
-	}
-	return mailenums.AutomationConditionOption{}, false
-}
-
-// paramInt 取 JSONB 解出来的整数（float64 / int / int64）。
-func paramInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case float64:
-		return int(n), true
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	}
-	return 0, false
-}
-
-// trimAutomationSteps 裁掉尾部多余的空步骤。
-//
-// 表单固定读 12 行（maxAutomationNodes），直接回显会摆出 12 行空表格。**尾部留一个空行**：
-// 它是「继续添加」的落点 —— 但只留一个，多出来的都是噪音。
-func trimAutomationSteps(steps []automationStep) []automationStep {
-	last := len(steps)
-	for last > 1 && steps[last-1].Type == "" && steps[last-2].Type == "" {
-		last--
-	}
-	if last <= 0 {
-		return []automationStep{{}}
-	}
-	out := make([]automationStep, last)
-	copy(out, steps[:last])
-	for i := range out {
-		out[i].Index = i + 1
-	}
-	return out
-}
-
-// automationStepRows 步骤行的渲染数据（选项都在 Go 侧生成：Jet 的内层 range 拿不到外层变量）。
-func automationStepRows(tr mailTr, steps []automationStep) []gin.H {
-	rows := make([]gin.H, 0, len(steps))
-	for i, s := range steps {
-		stepNo := i + 1
-		nextLabel := mailLabel(tr, mailenums.AutomationNextEnd)
-		if stepNo < len(steps) {
-			nextLabel = fmt.Sprintf(mailLabel(tr, mailenums.AutomationNextStepLabel), stepNo+1)
-		}
-		rows = append(rows, gin.H{
-			"Index": stepNo,
-			"Key":   s.Key,
-			"Type":  s.Type,
-			// 行号不在选项里：类型下拉与行号无关，选中态按行数据判。
-			"TypeOptions":      stepTypeOptions(tr, s.Type),
-			"Param":            s.Param,
-			"Tag":              s.Tag,
-			"UnitValue":        s.Value,
-			"UnitOptions":      waitUnitOptions(tr, s.Unit),
-			"ConditionOptions": conditionOptions(tr, s.Param),
-			"Yes":              s.Yes,
-			"No":               s.No,
-			"YesOptions":       branchTargetOptions(tr, stepNo, s.Yes),
-			"NoOptions":        branchTargetOptions(tr, stepNo, s.No),
-			"StepLabel":        fmt.Sprintf(mailLabel(tr, mailenums.AutomationStepLabel), stepNo),
-			"NextLabel":        nextLabel,
-			"IsDelay":          s.Type == "delay",
-			"IsEmail":          s.Type == "email",
-			"IsBranch":         s.Type == "branch",
-			"IsTag":            s.Type == "tag",
-			"IsEnd":            s.Type == "end",
-			"IsBlank":          s.Type == "",
-			"CanMoveUp":        i > 0,
-			"CanMoveDown":      i < len(steps)-1,
-		})
-	}
-	return rows
-}
-
-// stepTypeOptions 步骤类型下拉。
-//
-// **不含入口（trigger）**：入口由基本信息里的触发方式决定，用户在中间放一个「入口」
-// 没有语义（引擎从 entry 开始跑，中间那个 trigger 节点不会重新触发任何人）。
-func stepTypeOptions(tr mailTr, selected string) []gin.H {
-	opts := make([]gin.H, 0, len(mailenums.AutomationNodeTypes))
-	opts = append(opts, gin.H{"Value": "", "Label": mailLabel(tr, mailenums.AutomationStepNone), "Selected": selected == ""})
-	for _, o := range mailenums.AutomationNodeTypes {
-		if o.Value == "trigger" {
-			continue
-		}
-		opts = append(opts, gin.H{"Value": o.Value, "Label": mailLabel(tr, o.Label), "Selected": o.Value == selected})
-	}
-	return opts
-}
-
-// waitUnitOptions 等待单位下拉（默认分钟）。
-func waitUnitOptions(tr mailTr, selected string) []gin.H {
-	if selected == "" {
-		selected = mailenums.AutomationWaitUnits[0].Value
-	}
-	opts := make([]gin.H, 0, len(mailenums.AutomationWaitUnits))
-	for _, u := range mailenums.AutomationWaitUnits {
-		opts = append(opts, gin.H{"Value": u.Value, "Label": mailLabel(tr, u.Label), "Selected": u.Value == selected})
-	}
-	return opts
-}
-
-// conditionOptions 条件下拉（第一项是空的「请选择判断条件」）。
-func conditionOptions(tr mailTr, selected string) []gin.H {
-	opts := make([]gin.H, 0, len(mailenums.AutomationConditions)+1)
-	opts = append(opts, gin.H{"Value": "", "Label": mailLabel(tr, mailenums.AutomationConditionNone), "Selected": selected == ""})
-	for _, c := range mailenums.AutomationConditions {
-		opts = append(opts, gin.H{"Value": c.Value, "Label": mailLabel(tr, c.Label), "Selected": c.Value == selected})
-	}
-	return opts
-}
-
-// branchTargetOptions 分支跳转下拉：下一步 / 之后各步 / 结束。
-//
-// 只列**当前步之后**的步（从 stepNo+2 起：stepNo+1 就是「下一步」）—— 能选的目标与
-// resolveStepTarget 的判据必须一致，否则界面上能选、提交却报目标非法。
-func branchTargetOptions(tr mailTr, stepNo int, selected string) []gin.H {
-	opts := make([]gin.H, 0, maxAutomationNodes+2)
-	opts = append(opts, gin.H{"Value": "", "Label": mailLabel(tr, mailenums.AutomationTargetNext), "Selected": selected == ""})
-	for k := stepNo + 2; k <= maxAutomationNodes; k++ {
-		opts = append(opts, gin.H{
-			"Value":    strconv.Itoa(k),
-			"Label":    fmt.Sprintf(mailLabel(tr, mailenums.AutomationStepLabel), k),
-			"Selected": selected == strconv.Itoa(k),
-		})
-	}
-	opts = append(opts, gin.H{"Value": "end", "Label": mailLabel(tr, mailenums.AutomationTargetEnd), "Selected": selected == "end"})
-	return opts
 }
 
 // mailRunTexts 实例列表里的运行文案（原地改写）。

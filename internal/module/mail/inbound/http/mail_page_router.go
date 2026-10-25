@@ -82,13 +82,13 @@ func setupMailPageRoutes(pages *gin.RouterGroup, svc mailcontract.MailService) {
 
 	// —— 自动化 ——
 	pages.GET("/mail/automation", adminui.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationPage)
-	pages.GET("/mail/automation/edit", adminui.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationEdit)
 	// 运行记录（排障）：流程是配置、实例是现场，拆成两页各答一个问题。
 	pages.GET("/mail/automation/runs", adminui.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationRunsPage)
 	pages.GET("/mail/automation/run", adminui.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationRunDetail)
-	// 画布（P4）：可视化摆放节点。连线仍在侧栏下拉里改（触屏 / 键盘都能用）。
+	// 画布：**流程的唯一编辑器**。带 ?id=N 是编辑，不带 id 是新建 ——
+	// 表单编辑页（旧 /mail/automation/edit）已删除，不留重定向：留一条跳转就等于
+	// 「两个入口」以另一种形式复活。
 	pages.GET("/mail/automation/canvas", adminui.PageAuthz("/api/mail/automation/list"), mailPage.MailAutomationCanvas)
-	pages.POST("/mail/automation/save", builtin.CasbinMiddlewareForPath("/api/mail/automation/save"), mailPage.MailAutomationSave)
 	pages.POST("/mail/automation/status", builtin.CasbinMiddlewareForPath("/api/mail/automation/status"), mailPage.MailAutomationStatus)
 	pages.POST("/mail/automation/delete", builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationDelete)
 	pages.POST("/mail/automations/bulk-delete", builtin.CasbinMiddlewareForPath("/api/mail/automation/delete"), mailPage.MailAutomationsBulkDelete)
