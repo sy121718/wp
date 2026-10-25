@@ -26,7 +26,7 @@
     <p class="badge badge-warning" role="alert">{{.LoadErr}}</p>
     {{end}}{{end}}
 
-    <form data-write-api="/api/sysconfig/system/save" data-write-mode="create" data-write-number="i18nVersion,tradeVersion" data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}" class="card card-body">
+    <form data-write-url="/api/sysconfig/system/save" data-write="create" data-msg-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}" class="card card-body">
         <p data-write-status role="status" aria-live="polite"></p>
         <input type="hidden" name="csrf_token" value="{{ .["csrf_token"] }}">
         {* 乐观锁：带上读到的版本；库内已变则整批拒绝（不自动重试、不静默覆盖）。 *}

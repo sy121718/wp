@@ -62,14 +62,14 @@ func TestCompileHeadingTextAnimCSS(t *testing.T) {
 	css := res.CSS
 	for _, want := range []string{
 		".sky-c-ha1 .sky-h-seg {",
-		"animation: sky-fade-up 0.6s ease backwards",
+		"animation: sky-fade-in-up 0.6s ease backwards",
 		".sky-c-ha1 .sky-h-seg:nth-child(1)",
 		"animation-delay: 0ms",
 		".sky-c-ha1 .sky-h-seg:nth-child(3)",
 		"animation-delay: 80ms",
 		".sky-c-ha1 .sky-h-seg:nth-child(n+21)",
 		"animation-delay: 800ms",
-		"@keyframes sky-fade-up",
+		"@keyframes sky-fade-in-up",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("产物 CSS 缺少 %q", want)

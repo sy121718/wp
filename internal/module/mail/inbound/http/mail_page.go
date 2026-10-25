@@ -158,7 +158,7 @@ func (h *mailPageHandle) automationCanvasData(c *gin.Context, item *maildto.Auto
 		// 本页也没有取数失败分支（失败已在上面渲染提示页），所以不再注入 Err。
 		// 按需内联动效关键帧（本次只用到入场一个）。不声明就是零字节 ——
 		// 后台不常驻加载 63 条营销动效，谁用谁声明（见 core.KeyframeCSS）。
-		"KeyframesCSS": core.KeyframeCSS([]string{"sky-fade-up"}),
+		"KeyframesCSS": core.KeyframeCSS([]string{"sky-fade-in-up"}),
 	}
 }
 

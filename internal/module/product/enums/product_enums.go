@@ -390,7 +390,7 @@ const (
 // 这些句子是 handler 按计数拼出的整句回执，不是 service 返回的错误，因此不进
 // productenums.ProductErrFallbacks 那套「错误 key → 展示原文」的表。
 //
-// 传输已经改了：后台写动作走 ui/json_write.js 直调 /api/product/*，结论文案由基座取
+// 传输已经改了：后台写动作走 ui/write-base.js 直调 /api/product/*，结论文案由基座取
 // data-msg-* / data-msg-template 属性或 handler 回的 message 承担，**不再**渲染整页提示页。
 // 因此下表多数常量已无 Go 消费者（见各分组的说明），但**词条与常量都留着**：
 // 词条在 sys_i18n 里由迁移落地，删词条属于数据变更、要另起迁移，而保留的成本只是一条
@@ -409,7 +409,7 @@ const (
 	BulkAttrPartial = "product.bulk.attrPartial"
 	BulkAttrDone    = "product.bulk.attrDone"
 	// BulkCategoryPartial / BulkCategoryDone 的 Go 消费者已随分类写动作迁移删除
-	// （页面 POST → /api/product/category/bulk-delete，结论句由 json_write.js 的
+	// （页面 POST → /api/product/category/bulk-delete，结论句由 write-base.js 的
 	// data-msg-* 承担）。词条本身保留：它在 sys_i18n 里由迁移 283 落地，删词条属于
 	// 数据变更、要另起迁移，而保留的成本只是一条无人读的行。
 	BulkCategoryPartial = "product.bulk.categoryPartial"
@@ -434,7 +434,7 @@ const (
 	BulkVariantSaved    = "product.bulk.variantSaveSaved"
 	BulkVariantSkipped  = "product.bulk.variantSaveSkipped"
 
-	// 商品编辑页保存成功的回执已随页面 POST 消失（写动作走 ui/json_write.js 直调
+	// 商品编辑页保存成功的回执已随页面 POST 消失（写动作走 ui/write-base.js 直调
 	// /api/product/update，成功后基座 reload 编辑页）—— 常量刻意保留：词条在 449 迁移里，
 	// 删它要连带删 seed，而这条回执正是基座将来要复用的一句。
 	MsgProductSaved = "product.msg.saved"

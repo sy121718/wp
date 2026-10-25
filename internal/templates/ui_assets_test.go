@@ -64,7 +64,7 @@ func TestUIAssetEntry(t *testing.T) {
 		t.Fatal("控件入口必须按助手、控件、扫描入口的顺序加载（扫描入口放最后）")
 	}
 	// 断言的是**顺序的性质**而不是固定清单：_util.js 必须在 index.js 之前，
-	// 前置库（htmx）必须在 _util.js 之前 —— 控件入口监听 htmx:afterSwap，反了就静默失效。
+	// 前置库（htmx）必须在 _util.js 之前 —— 控件入口监听 htmx:after:swap，反了就静默失效。
 	idx := func(name string) int {
 		for i, m := range matches {
 			if m[1] == name {

@@ -4,7 +4,7 @@ package producthttp
 //
 // 商品写表单已全部迁到 JSON 写基座：失败不再由服务端重渲染片段，于是「回填快照」那组用例
 //（formEchoFrom + 归一化口径）随实现一起删除。归一化口径现在在
-// static/js/ui/json_write.js，由 public/test/product/json_write.test.cjs 覆盖。
+// static/js/ui/write-base.js，由 public/test/product/json_write.test.cjs 覆盖。
 //
 // 分档判据（isHXRequest）的守卫在 product_jump_test.go。
 

@@ -168,7 +168,7 @@
             </span>
         </h2>
         {{if .Actionable}}
-        <form data-write-api="/api/customer/status" data-write-mode="create" data-write-number="customerId,status" data-msg-failed="{{ .["t"]("admin.customers.write.failed", "操作失败，请稍后重试。") }}" class="form-inline">
+        <form data-write-url="/api/customer/status" data-write="create" data-msg-failed="{{ .["t"]("admin.customers.write.failed", "操作失败，请稍后重试。") }}" class="form-inline">
  <p data-write-status role="status" aria-live="polite"></p>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{.ID}}">
@@ -186,7 +186,7 @@
         </p>
         {{end}}
         {{if .Locked}}
-        <form data-write-api="/api/customer/unlock" data-write-mode="create" data-write-number="customerId" data-msg-failed="{{ .["t"]("admin.customers.write.failed", "操作失败，请稍后重试。") }}" class="form-inline">
+        <form data-write-url="/api/customer/unlock" data-write="create" data-msg-failed="{{ .["t"]("admin.customers.write.failed", "操作失败，请稍后重试。") }}" class="form-inline">
  <p data-write-status role="status" aria-live="polite"></p>
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{.ID}}">

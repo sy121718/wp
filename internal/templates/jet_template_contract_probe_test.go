@@ -283,9 +283,10 @@ func TestJetContractTranslatorMustNotBeASetGlobal(t *testing.T) {
 //   - eval.go:88-93 newScope() 挂 parent 链、eval.go:604-631 executeInclude 也走 newScope()
 //     → include / import / yield 都继承这条链。
 //
-// 现状：本仓驱动把第一个参数传 nil（pkg/view/driver/jet/jet.go:62 `t.Execute(&buf, nil, vars)`），
-// 且 `driver.Driver.Render(name string, vars map[string]any)` 只有一个数据通道 —— 要用这条通道必须改驱动，
-// 属下一批（本批不得改，补丁见 docs/rules/jet-template-contract.md）。
+// 现状：本仓两条渲染路径都把第一个参数传 nil（internal/templates/jet_render.go:82、
+// fragment_render.go:78 `t.Execute(&buf, nil, data)`），且渲染入口只有一个数据通道（data）——
+// 要用 per-render 变量通道必须改渲染实现，属下一批（本批不得改，补丁见 docs/rules/jet-template-contract.md）。
+// 注：历史上这里指的是 pkg/view/driver/jet（已删除的零调用引擎门面），两条路径的实际写法一脉相承。
 func TestJetContractPerRenderVarsChannelReachesInclude(t *testing.T) {
 	set := memSet(t, map[string]string{
 		"probe/parent.html": `P[{{include "child.html"}}]`,

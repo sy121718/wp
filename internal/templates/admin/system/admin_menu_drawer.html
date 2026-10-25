@@ -30,8 +30,7 @@
     {{end}}{{end}}
     <p class="perm-intro">{{tr("admin.admins.menu.intro", "勾选该管理员额外需要的菜单入口（超出角色已有的部分）。标着「来自角色」的项由角色授权，在这里取消不会生效，要去角色里改。保存按整棵树的当前勾选做全量替换。")}}</p>
 
-    <form method="post" action="/admin/administrators/menus/save"
-          hx-post="/admin/administrators/menus/save" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
+    <form action="/admin/administrators/menus/save" method="post">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="user_id" value="{{.Account.ID}}">
 

@@ -54,16 +54,15 @@ func TestPluginsJSONWriteExternalForms(t *testing.T) {
 				if f == nil {
 					t.Fatalf("missing form %s", tc.id)
 				}
-				for k, want := range map[string]string{"data-write-api": tc.api, "action": tc.api, "data-write-mode": tc.mode} {
+				for k, want := range map[string]string{"data-write-url": tc.api, "action": tc.api, "data-write": tc.mode} {
 					got, _ := pluginAttr(f, k)
 					if got != want {
 						t.Errorf("%s %s=%q want %q", tc.id, k, got, want)
 					}
 				}
+				// data-write-host 已删：新基座统一用 closest('[data-write]') 找宿主。
+				// 下面三条仍要守：宿主不能隐藏结论区（否则失败提示看不见）。
 				host := f.Parent
-				if _, ok := pluginAttr(host, "data-write-host"); !ok {
-					t.Fatal("form lacks explicit host")
-				}
 				if _, ok := pluginAttr(host, "hidden"); ok {
 					t.Fatal("host hides status")
 				}
@@ -96,8 +95,16 @@ func TestPluginsJSONWriteExternalForms(t *testing.T) {
 				}
 			}
 			f := forms["plugin-toggle-hello"]
-			if v, _ := pluginAttr(f, "data-write-bool"); v != "enabled" {
-				t.Fatal("toggle must send bool enabled")
+			// data-write-bool 已删：实测 formdata 的 on=1 直接绑进 bool，
+			// 未勾选时浏览器根本不提交该键（服务端得到 false）。守复选框 name 仍在。
+			hasEnabled := false
+			for c := f.FirstChild; c != nil; c = c.NextSibling {
+				if v, ok := pluginAttr(c, "name"); ok && v == "enabled" {
+					hasEnabled = true
+				}
+			}
+			if !hasEnabled {
+				t.Fatal("toggle 表单缺少 name=enabled 的复选框 —— 服务端收不到开关状态")
 			}
 			if v, _ := pluginAttr(f, "data-write-nav"); v != "/admin/plugins" {
 				t.Fatal("toggle navigation missing")

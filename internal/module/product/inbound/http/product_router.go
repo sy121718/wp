@@ -128,7 +128,7 @@ func registerProductCoreAPI(g *permission.RouteGroup, handle *ProductHandle) {
 	g.POST("/update", permission.ProductUpdate, handle.Update)
 	g.POST("/delete", permission.ProductDelete, handle.Delete)
 	// 批量删除：与单条同一个权限点、同一个 service 方法，回执从「整页提示」换成
-	// JSON（ui/json_write.js 基座消费 data.deleted / data.skipped / data.items[].message）。
+	// JSON（ui/write-base.js 基座消费 data.deleted / data.skipped / data.items[].message）。
 	g.POST("/bulk-delete", permission.ProductBulkDelete, handle.BulkDelete)
 	g.POST("/variant/create", permission.ProductVariantCreate, handle.CreateVariant)
 	// 组合生成（issue #8）：勾选属性值 → 笛卡尔积写变体（幂等，超上限整体拒绝）。
@@ -179,7 +179,7 @@ func registerProductAttributeAPI(g *permission.RouteGroup, handle *ProductHandle
 	g.POST("/attribute/set-values", permission.ProductAttributeSetValues, handle.SetAttributeValues)
 	g.POST("/attribute/delete", permission.ProductAttributeDelete, handle.DeleteAttribute)
 	// 批量删除：与单条同一个权限点（删的都是属性组，只是形状从 {id} 变成 {ids}），
-	// 回执形状与商品批量删除逐字一致（json_write.js 按 outcome=delete 读 data.deleted）。
+	// 回执形状与商品批量删除逐字一致（write-base.js 按 outcome=delete 读 data.deleted）。
 	g.POST("/attribute/bulk-delete", permission.ProductAttributeBulkDelete, handle.BulkDeleteAttributes)
 }
 
@@ -341,10 +341,10 @@ func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageH
 	// 而这个端点落不了任何库）。返回的行由前端追加进清单，用户点保存才落库。
 	// 变体的四个写动作（新建 / 生成 / 删除 / 清单保存）已全部在 /api/product/variant/* 。
 	pages.POST("/products/variant/preview", productPages.ProductsVariantPreview)
-	// 删除 / 批量删除 / 批量改价 / 挂属性组**都没有页面 POST**：模板用 ui/json_write.js 直调
+	// 删除 / 批量删除 / 批量改价 / 挂属性组**都没有页面 POST**：模板用 ui/write-base.js 直调
 	// /api/product/{delete,bulk-delete,bulk-pricing,update}。页面组只剩读入口与三个只算不写的
 	// 预览端点（变体组合、评分面板、SEO 抽屉）。
-	// 双轨写动作（迁移 282）没有页面 POST：模板用 ui/json_write.js 直调
+	// 双轨写动作（迁移 282）没有页面 POST：模板用 ui/write-base.js 直调
 	// /api/product/detail-template/*（见上面接口面那一节）。
 	// 产物指针回滚（rollback-artifact）连页面入口一起**删除**：它要求调用方手上有一个
 	// 产物 hash，而后台上没有任何地方给出这个事实（模板里从来没渲染过这个表单），
@@ -377,7 +377,7 @@ func registerProductTemplatePages(pages *gin.RouterGroup, productPages *ProductP
 	// 发布前可预览（预览只读渲染，不落库不激活）。
 	// 页面上只剩两条页面入口：整页 GET 与**预览**（预览开新标签页看渲染字节，本质是只读）。
 	// 新建 / 首次发布 / 切换模板 / 改 URL 四个写动作已迁到 /api/product/detail-template/*，
-	// 页面前端走 ui/json_write.js。
+	// 页面前端走 ui/write-base.js。
 	pages.GET("/products/template", adminui.PageAuthz("/api/product/get"), adminui.PageSlot(ProductDetailTemplatePageTemplate), productPages.ProductDetailTemplatePage)
 	pages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), adminui.PageSlot(ProductDetailTemplatePageTemplate), productPages.ProductDetailTemplatePreview)
 	// 捆绑配置：配置页 + 保存（保存复用 /api/product/bundle/set 的权限点）。
@@ -411,10 +411,10 @@ func registerProductTaxonomyPages(pages *gin.RouterGroup, productPages *ProductP
 	// 写动作复用商品 API 权限点做 Casbin 鉴权。
 	pages.GET("/product-categories", adminui.PageAuthz("/api/product/category/list"), adminui.PageSlot(ProductCategoriesPageTemplate), productPages.ProductCategoriesPage)
 	pages.GET("/product-categories/parents", adminui.PageAuthz("/api/product/category/list"), adminui.BareSlot(ProductCategoryParentsTemplate), productPages.ProductCategoryParents)
-	// 分类的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/category/*。
+	// 分类的写动作没有页面 POST：模板用 ui/write-base.js 直调 /api/product/category/*。
 	// 页面组只剩两个读入口（列表页与父级候选搜索）。
 	pages.GET("/product-brands", adminui.PageAuthz("/api/product/brand/list"), adminui.PageSlot(ProductBrandsPageTemplate), productPages.ProductBrandsPage)
-	// 品牌的写动作没有页面 POST：模板用 ui/json_write.js 直调 /api/product/brand/*。
+	// 品牌的写动作没有页面 POST：模板用 ui/write-base.js 直调 /api/product/brand/*。
 	// 商品挂载分类（多个 + 主分类）与品牌也没有：属于商品更新，走 /api/product/update。
 }
 
@@ -444,7 +444,7 @@ func registerProductPricingPages(pages *gin.RouterGroup, productPages *ProductPa
 	pages.GET("/product-pricing", adminui.PageAuthz("/api/product/list"), adminui.PageSlot(ProductPricingPageTemplate), productPages.ProductPricingPage)
 	// 试算保留页面 POST：结果是**一张表格**（逐变体的成本 / 原价 / 新价 / 差值 / 结果），
 	// 只有整页重渲才渲染得出来；它不落库，没有写动作要迁。应用调价已迁到
-	// /api/product/pricing/apply（页面走 ui/json_write.js，落库后整页刷新看台账）。
+	// /api/product/pricing/apply（页面走 ui/write-base.js，落库后整页刷新看台账）。
 	pages.POST("/product-pricing/preview", builtin.CasbinMiddlewareForPath("/api/product/pricing/preview"), adminui.PageSlot(ProductPricingPageTemplate), productPages.ProductPricingPreview)
 
 	// —— 商品域翻译工作台（issue #12）——
@@ -456,7 +456,7 @@ func registerProductPricingPages(pages *gin.RouterGroup, productPages *ProductPa
 // SetupProductTranslationRoutes 注册商品域翻译工作台的两条路由：页面组 GET + /api/product 组保存。
 //
 // 为什么同时要两个组：页面（整页 GET）挂在 /admin 组，而保存已经是接口端点（模板用
-// ui/json_write.js 提交），必须挂在 authorizedAPI 的声明式组上才拿得到 Session + CSRF + Casbin
+// ui/write-base.js 提交），必须挂在 authorizedAPI 的声明式组上才拿得到 Session + CSRF + Casbin
 // 三层链。两个组分别由 assembly.go 与 assembly_publish.go 持有，所以这个函数由装配层调用，
 // **不**由 SetupProductPages 代劳。
 //

@@ -663,12 +663,41 @@ var inspectorSectionOrder = []struct{ Key, TitleKey string }{
 	{"advanced", workbenchenums.InspectorSectionAdvanced},
 }
 
+// InspectorSchemas 当前进程的组件 schema 表：内置组件 + 启用插件的 InspectorSchemas。
+//
+// 为什么要这一个入口而不是各处直接调 builder.ComponentSchemas()：
+// schema 有两个来源 —— 构建内核的内置组件，和启用插件自带的（docs/06 §5）。
+// 画画入口（http 层的 canvas 模式）和检查器面板端点都必须看到**同一张合并后的表**，
+// 否则插件组件在画布里拖得进去、在面板里却一个字段都没有（用户看到的是「插件组件不可编辑」）。
+// 合并只在**副本**上做，不写进程级缓存（builder.ComponentSchemas 自 2026-11 起返回副本）。
+func (s *Service) InspectorSchemas(ctx context.Context) (map[string]json.RawMessage, error) {
+	schemas, err := builder.ComponentSchemas()
+	if err != nil {
+		return nil, err
+	}
+	// nil 接收者返回内置表（同 SetPlugins / SetProducts 的 nil 守卫口径）：
+	// 面板渲染测试会直接构造零值 Handle，它不需要插件能力。
+	if s == nil {
+		return schemas, nil
+	}
+	asm := s.PluginAssembly(ctx)
+	if asm == nil {
+		return schemas, nil
+	}
+	for t, data := range asm.InspectorSchemas {
+		schemas[t] = data
+	}
+	return schemas, nil
+}
+
 // InspectorSections 把节点文档装配成模板可渲染的分组数据。
 //
 // 装配链：组件 schema（构建内核，按节点类型取）→ 单字段构造 → 分组桶 →
 // 重复项面板骨架。任一步取数失败都返回 error，由调用方决定出口（HTTP 侧是 500）。
 func (s *Service) InspectorSections(ctx context.Context, node *DocNode, tab, projectID string, tr Translate) ([]InspectorSection, error) {
-	schemas, err := builder.ComponentSchemas()
+	// 必须走 InspectorSchemas（含插件）而不是直接读内置表：插件组件节点的字段全靠它 ——
+	// 缺了它面板会静默变空（不报错、200、日志干净），用户以为插件组件坏了。
+	schemas, err := s.InspectorSchemas(ctx)
 	if err != nil {
 		return nil, err
 	}

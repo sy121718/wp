@@ -33,7 +33,10 @@ func TestProductCreateFormEnhancesOnDOMReady(t *testing.T) {
 			t.Errorf("product-create-form.js 缺少 %q", want)
 		}
 	}
-	for _, gone := range []string{"wbui:drawer-open", "htmx:afterSwap"} {
+	// 注意这里列的是**两个时代**的旧监听名：htmx:afterSwap 是 htmx 2 的驼峰名（v4 起
+	// 不再派发），htmx:after:swap 是当前正确名 —— 两者都不该出现在这个文件里，
+	// 因为它对应的提交机制已撤掉，任何一处监听都是在掩盖回归。
+	for _, gone := range []string{"wbui:drawer-open", "htmx:afterSwap", "htmx:after:swap"} {
 		if strings.Contains(js, gone) {
 			t.Errorf("product-create-form.js 仍监听 %q —— 该入口对应的提交机制已撤掉，监听留着只是在掩盖回归", gone)
 		}

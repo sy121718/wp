@@ -39,108 +39,16 @@ import (
 
 // pendingFormTagDTOs 还没补 form tag 的写 DTO（键 = 包路径别名走的类型名）。
 //
-// 收一个删一个：某个类型全部字段都带 form tag 后，这条登记要一起删，
-// 否则本测试的反向判定会报「登记了却已无缺口」。
-// pendingFormTagDTOs 还没补 form tag 的写 DTO（**商品域已清零**，此处是其余模块的欠账）。
+// **2026-11 已清零**：全部 43 个 dto 文件、581 个字段都补上了 form tag
+// （`go run ./cmd/formtags`，幂等工具）。此前这里有 99 条按类型登记的存量，
+// 现在一条不剩 —— 保留空 map 是因为判据是**双向**的：新增的写 DTO 缺 form tag
+// 会被扫出来并要求登记，而登记了却已补完也会报错。
 //
-// 为什么保留这份登记而不是一次全补：本轮的范围是商品模块。其余 10 个模块的写表单
-// 大多仍走旧基座（ui/json_write.js 发 JSON），补 form tag 对它们没有即时收益，
-// 但**只要哪天迁到 htmx 就会立刻需要** —— 登记在这里表示「知道有这笔账」。
-//
-// 判据仍然双向：某个类型补完 form tag 后必须从本表删掉，否则测试会报「登记了却已无缺口」。
-var pendingFormTagDTOs = map[string]int{
-	"internal/module/admin/dto:AdminCreateReq":             1,
-	"internal/module/admin/dto:AdminDeleteReq":             1,
-	"internal/module/admin/dto:AdminEditReq":               1,
-	"internal/module/admin/dto:AdminLoginReq":              1,
-	"internal/module/admin/dto:AdminMenuSaveReq":           1,
-	"internal/module/admin/dto:AdminRoleSaveReq":           1,
-	"internal/module/admin/dto:DeptCreateReq":              1,
-	"internal/module/admin/dto:DeptDeleteReq":              1,
-	"internal/module/admin/dto:DeptUpdateReq":              1,
-	"internal/module/admin/dto:DeptUserSaveReq":            1,
-	"internal/module/admin/dto:MenuCreateReq":              1,
-	"internal/module/admin/dto:MenuDeleteReq":              1,
-	"internal/module/admin/dto:MenuUpdateReq":              1,
-	"internal/module/admin/dto:PermCreateReq":              1,
-	"internal/module/admin/dto:PermDeleteReq":              1,
-	"internal/module/admin/dto:PermUpdateReq":              1,
-	"internal/module/admin/dto:RoleCreateReq":              1,
-	"internal/module/admin/dto:RoleDeleteReq":              1,
-	"internal/module/admin/dto:RoleMenuSaveReq":            1,
-	"internal/module/admin/dto:RoleUpdateReq":              1,
-	"internal/module/admin/dto:RoleUserSaveReq":            1,
-	"internal/module/admin/dto:RuleAssignmentSaveReq":      1,
-	"internal/module/admin/dto:RuleCreateReq":              1,
-	"internal/module/admin/dto:RuleDeleteReq":              1,
-	"internal/module/admin/dto:RuleUpdateReq":              1,
-	"internal/module/ai/dto:ProviderActionReq":             1,
-	"internal/module/ai/dto:SaveModelsReq":                 1,
-	"internal/module/ai/dto:SaveProviderReq":               1,
-	"internal/module/ai/dto:SetStatusReq":                  1,
-	"internal/module/block/dto:BulkDeleteReq":              1,
-	"internal/module/block/dto:CloneReq":                   1,
-	"internal/module/block/dto:CreateReq":                  1,
-	"internal/module/block/dto:DeleteReq":                  1,
-	"internal/module/block/dto:UpdateReq":                  1,
-	"internal/module/blueprint/dto:CreateReq":              1,
-	"internal/module/blueprint/dto:DeleteReq":              1,
-	"internal/module/blueprint/dto:PublishReq":             1,
-	"internal/module/blueprint/dto:UpdateReq":              1,
-	"internal/module/content/dto:CreateReq":                1,
-	"internal/module/content/dto:UpdateReq":                1,
-	"internal/module/contenttemplate/dto:ActivateReq":      1,
-	"internal/module/contenttemplate/dto:BulkDeleteReq":    1,
-	"internal/module/contenttemplate/dto:CreateReq":        1,
-	"internal/module/contenttemplate/dto:DeleteReq":        1,
-	"internal/module/contenttemplate/dto:UpdateReq":        1,
-	"internal/module/inventory/dto:ChangeStockReq":         1,
-	"internal/module/inventory/dto:CreatePurchaseOrderReq": 1,
-	"internal/module/inventory/dto:CreateReasonReq":        1,
-	"internal/module/inventory/dto:CreateSourceReq":        1,
-	"internal/module/inventory/dto:CreateWarehouseReq":     1,
-	"internal/module/inventory/dto:DeductStockReq":         1,
-	"internal/module/inventory/dto:DeleteSourceReq":        1,
-	"internal/module/inventory/dto:DeleteWarehouseReq":     1,
-	"internal/module/inventory/dto:EnsureStockReq":         1,
-	"internal/module/inventory/dto:ProductionInboundReq":   1,
-	"internal/module/inventory/dto:RegisterReceiptReq":     1,
-	"internal/module/inventory/dto:SetBOMReq":              1,
-	"internal/module/inventory/dto:UpdatePurchaseOrderReq": 1,
-	"internal/module/inventory/dto:UpdateReasonReq":        1,
-	"internal/module/inventory/dto:UpdateSourceReq":        1,
-	"internal/module/inventory/dto:UpdateWarehouseReq":     1,
-	"internal/module/mail/dto:SaveAutomationLayoutReq":     1,
-	"internal/module/media/dto:DeleteReq":                  1,
-	"internal/module/media/dto:VariantsGenerateReq":        1,
-	"internal/module/navigation/dto:CreateReq":             1,
-	"internal/module/navigation/dto:DeleteReq":             1,
-	"internal/module/navigation/dto:UpdateReq":             1,
-	"internal/module/order/dto:CancelOrderReq":             1,
-	"internal/module/order/dto:ChangeStatusReq":            1,
-	"internal/module/order/dto:CreateOrderReq":             1,
-	"internal/module/order/dto:RefundOrderReq":             1,
-	"internal/module/page/dto:BuildReq":                    1,
-	"internal/module/page/dto:CreateReq":                   1,
-	"internal/module/page/dto:DeleteReq":                   1,
-	"internal/module/page/dto:GCArtifactsReq":              1,
-	"internal/module/page/dto:PublishReq":                  1,
-	"internal/module/page/dto:RebuildArtifactReq":          1,
-	"internal/module/page/dto:RollbackReq":                 1,
-	"internal/module/page/dto:SaveDraftReq":                1,
-	"internal/module/page/dto:UpdateURLReq":                1,
-	"internal/module/presentation/dto:CreateInstanceReq":   1,
-	"internal/module/presentation/dto:RebuildReq":          1,
-	"internal/module/project/dto:CreateReq":                1,
-	"internal/module/project/dto:ThemeActivateReq":         1,
-	"internal/module/project/dto:ThemeCreateReq":           1,
-	"internal/module/project/dto:ThemeUpdateReq":           1,
-	"internal/module/project/dto:UpdateReq":                1,
-	"internal/module/publication/dto:ActivateReq":          1,
-	"internal/module/sysconfig/dto:SetGroupReq":            1,
-	"internal/module/sysconfig/dto:SystemSaveReq":          1,
-	"internal/module/user/dto:CustomerStatusSetReq":        1,
-}
+// 为什么必须补完而不是继续登记：写端点有两个客户端（MCP/AI 发 JSON、htmx 表单发 formdata），
+// 而没有 form tag 时 gin 的 form 映射只按 **Go 字段名精确匹配**（大小写敏感）——
+// `ProjectID` 收不到 `projectId`。失效是静默的：无 required 的字段静默收零值
+// （保存成功但什么都没改），有 required 的报 400 而用户只看到「保存失败」。
+var pendingFormTagDTOs = map[string]int{}
 
 // intentionallyJSONOnlyDTOs **只服务 JSON 客户端**的写请求体 —— 不需要 form tag。
 //

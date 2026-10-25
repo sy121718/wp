@@ -44,9 +44,9 @@
         </div>
     </header>
 
-    {* 应用调价的结论行：成功由 ui/json_write.js 存 flash、整页刷新后在这里显示一次
+    {* 应用调价的结论行：成功由 ui/write-base.js 存 flash、整页刷新后在这里显示一次
        （刷新是为了让下方留痕台账与变体价格跟着变）。 *}
-    <p class="form-hint badge" data-write-flash-target="product-pricing" role="status" hidden></p>
+    <p class="form-hint badge" role="status" hidden></p>
 
     {{if isset(.Err)}}{{if .Err != ""}}
     <p class="badge badge-warning" role="alert">{{ .["t"]("admin.product_pricing.lastError", "上一次操作未完成：") }}{{.Err}}</p>
@@ -96,15 +96,12 @@
             </div>
             <div class="action-row">
                 {* 两个按钮两条出口：试算是**只读**且结果是一张表格，只有整页重渲才渲染得出来，
-                   所以它保持原生提交（不挂 data-write-api）；应用调价是写动作，交给
-                   ui/json_write.js 直调接口，落库后整页刷新看台账。
-                   表单本身不能挂 data-write-api —— 那会把试算也拦进 fetch（表格就没了）。 *}
+                   所以它保持原生提交（不挂 data-write-url）；应用调价是写动作，交给
+                   ui/write-base.js 直调接口，落库后整页刷新看台账。
+                   表单本身不能挂 data-write-url —— 那会把试算也拦进 fetch（表格就没了）。 *}
                 <button type="submit" class="btn btn-primary">{{ .["t"]("admin.product_pricing.apply.preview", "预览试算（不落库）") }}</button>
-                <button type="submit" class="btn"
-                        hx-post="/api/product/pricing/apply" hx-swap="none"
-                        data-write-flash="product-pricing"
-                        data-requires-js hidden disabled
-                        data-confirm="{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}">{{ .["t"]("admin.product_pricing.apply.submit", "应用调价（落库）") }}</button>
+                <button data-write="custom" data-write-url="/api/product/pricing/apply" type="submit" class="btn" data-write-reload
+                        data-requires-js hidden disabled data-write-confirm="{{ .["t"]("admin.product_pricing.apply.confirm", "按当前规则应用调价？售价会立刻写库，并留下调价台账。") }}">{{ .["t"]("admin.product_pricing.apply.submit", "应用调价（落库）") }}</button>
             </div>
             {* 结论行必须在 form 内：基座只在表单里（或 data-write-host 容器里）找 [data-write-status]。 *}
             <p class="form-hint" data-write-status role="status" hidden></p>

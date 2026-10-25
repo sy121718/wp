@@ -39,10 +39,10 @@ type AttachmentUpdateReq struct {
 // 语义为「全量替换」：该引用方当前引用的 URL 集合即为最终集合，
 // 不再出现的附件会被移除引用（差集增删，单条 SQL 原子更新）。
 type SyncRefsReq struct {
-	RefKind  string   `json:"ref_kind"`            // 引用方类型，如 page
-	RefID    string   `json:"ref_id"`              // 引用方标识，如页面 ID
-	RefTitle string   `json:"ref_title,omitempty"` // 引用方标题
-	URLs     []string `json:"urls"`                // 该引用方产物中出现的媒体 URL
+	RefKind  string   `json:"ref_kind" form:"ref_kind"`             // 引用方类型，如 page
+	RefID    string   `json:"ref_id" form:"ref_id"`                 // 引用方标识，如页面 ID
+	RefTitle string   `json:"ref_title,omitempty" form:"ref_title"` // 引用方标题
+	URLs     []string `json:"urls" form:"urls"`                     // 该引用方产物中出现的媒体 URL
 }
 
 // ListReq 附件列表查询。
@@ -90,12 +90,12 @@ type DetailReq struct {
 // DeleteReq 删除附件。
 type DeleteReq struct {
 	ProjectID string `form:"projectId" json:"projectId" binding:"required"`
-	ID        uint64 `json:"id" binding:"required"`
+	ID        uint64 `json:"id" form:"id" binding:"required"`
 }
 
 // VariantsGenerateReq 重新生成图片变体（POST /api/media/variants/generate）。
 type VariantsGenerateReq struct {
-	ID uint64 `json:"id" binding:"required"`
+	ID uint64 `json:"id" form:"id" binding:"required"`
 }
 
 // UploadReq 上传附件的表单入参（multipart，file 由 c.FormFile 单独取）。

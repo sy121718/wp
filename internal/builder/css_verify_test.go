@@ -7,7 +7,7 @@ import (
 
 // TestVerifyAnimationRefsAcceptsDefined 有定义就放行。
 func TestVerifyAnimationRefsAcceptsDefined(t *testing.T) {
-	css := "@keyframes sky-fade-up {\n  from { opacity: 0 }\n}\n.sky-c-a {\n  animation: sky-fade-up 0.6s ease backwards;\n}"
+	css := "@keyframes sky-fade-in-up {\n  from { opacity: 0 }\n}\n.sky-c-a {\n  animation: sky-fade-in-up 0.6s ease backwards;\n}"
 	if err := verifyAnimationRefs(css); err != nil {
 		t.Fatalf("引用了已定义的关键帧不该报错: %v", err)
 	}
@@ -17,12 +17,12 @@ func TestVerifyAnimationRefsAcceptsDefined(t *testing.T) {
 // 且报错要精确指出是哪一个（已定义的那个不能出现在里面）。
 func TestVerifyAnimationRefsRejectsUndefined(t *testing.T) {
 	// 入场 + 循环逗号并接是真实产物里的形态（CompileInteraction 会这么拼）。
-	css := "@keyframes sky-loop-drift {\n  from { transform: none }\n}\n.sky-c-a {\n  animation: sky-fade-up 0.6s ease backwards, sky-loop-drift 2.4s ease-in-out infinite;\n}"
+	css := "@keyframes sky-loop-drift {\n  from { transform: none }\n}\n.sky-c-a {\n  animation: sky-fade-in-up 0.6s ease backwards, sky-loop-drift 2.4s ease-in-out infinite;\n}"
 	err := verifyAnimationRefs(css)
 	if err == nil {
 		t.Fatal("引用未定义的关键帧必须报错")
 	}
-	if !strings.Contains(err.Error(), "sky-fade-up") {
+	if !strings.Contains(err.Error(), "sky-fade-in-up") {
 		t.Errorf("报错应指出缺哪一个: %v", err)
 	}
 	if strings.Contains(err.Error(), "sky-loop-drift") {

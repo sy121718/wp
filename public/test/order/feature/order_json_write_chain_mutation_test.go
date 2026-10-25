@@ -8,11 +8,14 @@ package feature
 // status）。所以这里在**内存里**把渲染出来的 HTML 改坏（不动共享树上的模板文件），再把同一套
 // 驱动跑一遍，断言服务端的回执确实变成了对应的失败形态。三条反证各自钉一个属性：
 //
-//	M1 drop-bulk-extra    批量流转按钮少了 data-write-extra → toStatus 不在请求体里 → **400**（形状档）；
-//	M2 number-toStatus    给 toStatus 加上 data-write-number（伪契约）→ 体里是**数字** → 400；
-//	M3 drop-detail-number 详情表单少了 data-write-number="orderId" → orderId 变字符串 → 400。
+//	M1 drop-bulk-extra    批量流转按钮少了 data-write-extra → toStatus 不在请求体里 → **400**（形状档）。
 //
-// 三条都靠**服务端状态码 + 请求体类型**判定，不看前端的文案（文案会随语言与实现变）。
+// **2026-11 批次 2 删掉了另外两条反证**（M2 number-toStatus / M3 drop-detail-number）：
+// 它们注入的是 `data-write-number`，而该属性已随写基座统一被删除 —— 新基座不做类型转换
+//（实测 formdata 的 "3" 服务端直接绑进 int），所以「声明成数字字段」这个伪契约不复存在，
+// 反证也就无从谈起。前端不再声明类型 ⇒ 这一类缺陷在结构上不可能发生。
+//
+// 判据靠**服务端状态码 + 请求体**，不看前端的文案（文案会随语言与实现变）。
 
 import (
 	"bytes"
@@ -66,7 +69,7 @@ func (cap *orderMutationCapture) last() (string, int, bool) {
 func TestOrderJSONWriteChainCatchesMissingTemplateAttributes(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("本机没有 node：反证同样要求真实基座 json_write.js，跳过而不是用桩冒充")
+		t.Skip("本机没有 node：反证同样要求真实基座 write-base.js，跳过而不是用桩冒充")
 	}
 	f := newOrderFixture(t)
 	if f == nil {
@@ -118,36 +121,6 @@ func TestOrderJSONWriteChainCatchesMissingTemplateAttributes(t *testing.T) {
 				// 收敛为显式 400 后，同一个变异红得更硬（不再依赖 DB 那一半判据）。
 				if status != http.StatusBadRequest {
 					t.Fatalf("%s：缺 toStatus 应被形状档拒成 400，实际 %d（body=%s）", where, status, body)
-				}
-			},
-		},
-		{
-			name: "M2-number-toStatus",
-			mutate: func(html string) string {
-				return strings.Replace(html,
-					`data-write-extra="toStatus,remark"`,
-					`data-write-extra="toStatus,remark" data-write-number="toStatus"`, 1)
-			},
-			api:  "/api/order/status",
-			mode: "bulk",
-			owns: func(t *testing.T, where, body string, status int, statusNow, target string) {
-				// 伪契约的形态：体里 toStatus 变成**数字**，而 handler 只认字符串 → 400。
-				if status == http.StatusOK {
-					t.Fatalf("%s：把 toStatus 声明成数字字段后服务端仍 200（伪契约没被拒）：%s", where, body)
-				}
-			},
-		},
-		{
-			name: "M3-drop-detail-number",
-			mutate: func(html string) string {
-				return strings.Replace(html, ` data-write-number="orderId"`, "", 1)
-			},
-			api:  "/api/order/status",
-			mode: "create",
-			owns: func(t *testing.T, where, body string, status int, statusNow, target string) {
-				// orderId 变字符串 → 绑定/解析失败 → 400。
-				if status == http.StatusOK {
-					t.Fatalf("%s：少了 data-write-number=\"orderId\" 时服务端仍 200（orderId 变字符串也该被拒）：%s", where, body)
 				}
 			},
 		},
@@ -203,7 +176,7 @@ func TestOrderJSONWriteChainCatchesMissingTemplateAttributes(t *testing.T) {
 			var formAttrs, submitterAttrs map[string]string
 			var fields orderChainFields
 			if tc.mode == "bulk" {
-				form := orderChainFormSlice(t, html, `data-write-api="/api/order/status"`+` data-write-mode="bulk"`)
+				form := orderChainFormSlice(t, html, `data-write-url="/api/order/status"`+` data-write="bulk"`)
 				formAttrs = couponAttrsOf(form[:strings.Index(form, ">")+1])
 				submitterAttrs = orderChainButtonAttrs(t, html, tc.api, tc.mode)
 				// M2 用「数字目标」把伪契约暴露出来：把 toStatus 写成 paid 的话基座照发字符串、
@@ -219,7 +192,7 @@ func TestOrderJSONWriteChainCatchesMissingTemplateAttributes(t *testing.T) {
 				}
 				tc.target = target
 			} else {
-				form := orderChainFormSlice(t, html, `data-write-api="/api/order/status"`+` data-write-mode="create"`)
+				form := orderChainFormSlice(t, html, `data-write-url="/api/order/status"`+` data-write="create"`)
 				formAttrs = couponAttrsOf(form[:strings.Index(form, ">")+1])
 				for _, tag := range couponButtonRe.FindAllString(form, -1) {
 					if couponAttrOf(tag, "type") == "submit" {

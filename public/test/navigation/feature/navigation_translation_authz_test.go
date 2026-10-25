@@ -459,8 +459,8 @@ func TestNavigationTranslationLegacyPagePostIsGone(t *testing.T) {
 	}
 	body := page.Body.String()
 	// 页面上的写契约必须与真实端点一致：点一次保存就该打到 /api/navigation/update。
-	if !strings.Contains(body, `data-write-api="`+navTranslationWriteAPIPath+`"`) {
-		t.Errorf("译文页缺少 JSON 写声明 data-write-api=%q", navTranslationWriteAPIPath)
+	if !strings.Contains(body, `data-write-url="`+navTranslationWriteAPIPath+`"`) {
+		t.Errorf("译文页缺少 JSON 写声明 data-write-url=%q", navTranslationWriteAPIPath)
 	}
 	if strings.Contains(body, "translations/save") {
 		t.Errorf("译文页仍在引用已下线的页面写路由: %s", page.Body.String())

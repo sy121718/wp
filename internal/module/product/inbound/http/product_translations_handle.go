@@ -107,7 +107,7 @@ func (h *ProductTranslationHandle) renderPage(c *gin.Context, req *productdto.Pr
 
 // SaveProductTranslations POST /api/product/translations/save：保存译文（整表提交）。
 //
-// 出口是 JSON 回执（页面表单已改由 ui/json_write.js 提交）：成功 → 基座存 flash 并刷新整页；
+// 出口是 JSON 回执（页面表单已改由 ui/write-base.js 提交）：成功 → 基座存 flash 并刷新整页；
 // 失败 → 逐行结论的 400（响应出口取词一次）。逐行校验、变更判定、写入与待重建标记都在读模型。
 func (h *ProductTranslationHandle) SaveProductTranslations(c *gin.Context) {
 	req, ok := binding.JSON[productdto.SaveProductTranslationsReq](c)

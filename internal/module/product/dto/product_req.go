@@ -17,8 +17,8 @@ type CreateReq struct {
 	Name      string `json:"name" form:"name" binding:"required"`
 	// Type 商品类型（迁移 238）：空 = variant（常规变体商品）；bundle = 捆绑容器。
 	// 只在创建时确定 —— bundle 不生成首个变体，价格只取 DefaultPrice（容器价，必须 > 0）。
-	Type        string          `json:"type" form:"type"`
-	Subtitle    string          `json:"subtitle" form:"subtitle"`
+	Type     string `json:"type" form:"type"`
+	Subtitle string `json:"subtitle" form:"subtitle"`
 	// Description 走 BindForm（见 CreateReq.BindForm）。
 	Description json.RawMessage `json:"description" form:"-"`
 	Slug        string          `json:"slug" form:"slug"`
@@ -71,7 +71,7 @@ type CreateReq struct {
 	BrandID      string          `json:"brandId" form:"brandId"`
 	DefaultPrice *float64        `json:"defaultPrice" form:"defaultPrice"`
 	DefaultImage string          `json:"defaultImage" form:"defaultImage"`
-	Metadata     json.RawMessage `json:"metadata"`
+	Metadata     json.RawMessage `json:"metadata" form:"metadata"`
 	// WarehouseID 归属仓（issue #15）：新建商品时首个变体落在该仓；
 	// 为空则兜底该工程的默认仓。归属仓的短码同时决定首个变体的 SKU 编码前缀。
 	//
@@ -146,7 +146,7 @@ type UpdateReq struct {
 	PrimaryCategoryID *string         `json:"primaryCategoryId" form:"primaryCategoryId"`
 	TagIDs            []string        `json:"tagIds" form:"tagIds"`
 	RelatedIDs        []string        `json:"relatedIds" form:"relatedIds"`
-	BundleItems       json.RawMessage `json:"bundleItems"`
+	BundleItems       json.RawMessage `json:"bundleItems" form:"bundleItems"`
 	BrandID           *string         `json:"brandId" form:"brandId"`
 	DefaultPrice      *float64        `json:"defaultPrice" form:"defaultPrice"`
 	DefaultImage      *string         `json:"defaultImage" form:"defaultImage"`
@@ -189,13 +189,13 @@ type DeleteReq struct {
 type CreateVariantReq struct {
 	ProductID string `json:"productId" form:"productId" binding:"required"`
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
-	ProjectID    string          `json:"projectId" form:"projectId"`
-	SKUCode      string          `json:"skuCode" form:"skuCode"`
-	Barcode      string          `json:"barcode" form:"barcode"`
-	Price        *float64        `json:"price" form:"price"`
-	ComparePrice *float64        `json:"comparePrice" form:"comparePrice"`
-	CostPrice    *float64        `json:"costPrice" form:"costPrice"`
-	Image        string          `json:"image" form:"image"`
+	ProjectID    string   `json:"projectId" form:"projectId"`
+	SKUCode      string   `json:"skuCode" form:"skuCode"`
+	Barcode      string   `json:"barcode" form:"barcode"`
+	Price        *float64 `json:"price" form:"price"`
+	ComparePrice *float64 `json:"comparePrice" form:"comparePrice"`
+	CostPrice    *float64 `json:"costPrice" form:"costPrice"`
+	Image        string   `json:"image" form:"image"`
 	// OptionValues 走 BindForm（表单体里是一个 JSON 对象字符串）。
 	OptionValues json.RawMessage `json:"optionValues" form:"-"`
 	Enabled      *bool           `json:"enabled" form:"enabled"`
@@ -216,13 +216,13 @@ type CreateVariantReq struct {
 type UpdateVariantReq struct {
 	ID string `json:"id" form:"id" binding:"required"`
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
-	ProjectID    string          `json:"projectId" form:"projectId"`
-	SKUCode      *string         `json:"skuCode" form:"skuCode"`
-	Barcode      *string         `json:"barcode" form:"barcode"`
-	Price        *float64        `json:"price" form:"price"`
-	ComparePrice *float64        `json:"comparePrice" form:"comparePrice"`
-	CostPrice    *float64        `json:"costPrice" form:"costPrice"`
-	Image        *string         `json:"image" form:"image"`
+	ProjectID    string   `json:"projectId" form:"projectId"`
+	SKUCode      *string  `json:"skuCode" form:"skuCode"`
+	Barcode      *string  `json:"barcode" form:"barcode"`
+	Price        *float64 `json:"price" form:"price"`
+	ComparePrice *float64 `json:"comparePrice" form:"comparePrice"`
+	CostPrice    *float64 `json:"costPrice" form:"costPrice"`
+	Image        *string  `json:"image" form:"image"`
 	// OptionValues 走 BindForm（表单体里是一个 JSON 对象字符串）。
 	OptionValues json.RawMessage `json:"optionValues" form:"-"`
 	Enabled      *bool           `json:"enabled" form:"enabled"`

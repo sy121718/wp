@@ -3,17 +3,25 @@ idiomorph 0.8.0
 下载日期：2026-09-09
 文件：
   idiomorph.min.js      dist/idiomorph.min.js，UMD 风格自执行，暴露全局对象 Idiomorph
-  idiomorph-ext.min.js  dist/idiomorph-ext.min.js = idiomorph + idiomorph-htmx，
-                        在 htmx 上注册名为 morph 的扩展（htmx.defineExtension("morph", ...)）
   LICENSE               0BSD（Zero-Clause BSD）
 校验：
   4cbd535caf7663a51eda9bce6595371c384fc430d54b8d414e29a61167f19f96  idiomorph.min.js
-  5811b9a7eda14878b7dab4378bf60432e1bb6f11fcfb970cc26540642650181e  idiomorph-ext.min.js
   d3d2456f76414f2456104660ebd65aff1c04cd7966b942bdabd63f3cdb316a38  LICENSE
-体积：idiomorph.min.js 10,587 B（gzip -9 3,789 B）；idiomorph-ext.min.js 11,037 B（gzip -9 3,945 B）
+体积：idiomorph.min.js 10,587 B（gzip -9 3,789 B）
+
 加载：workbench/layout.html 只引入 idiomorph.min.js（在 workbench/index.js 之前），
       工作台 JS 直接调用全局 Idiomorph.morph(el, html, {morphStyle:'innerHTML'})，不需要 hx-ext。
-      idiomorph-ext.min.js 本目录留存但不加载：未来把面板改为 hx-ext="morph" +
-      hx-swap="morph:innerHTML" 的声明式路径时可直接启用；与核心文件同源同版本一起锁定，避免版本漂移。
-升级方式：改上面的版本号，重新 curl 解包 dist/idiomorph.min.js 与 dist/idiomorph-ext.min.js 覆盖本目录，
+
+为什么删掉了 dist/idiomorph-ext.min.js（2026-11 移除）：
+  它注册扩展用的是 htmx 2 的 API `htmx.defineExtension("morph", …)`，而 htmx 4 已把
+  扩展 API 改成 `htmx.registerExtension`（bundle 里 defineExtension 计数为 0）。
+  实测（真实浏览器，htmx 4.0.0 + 本文件）加载即报
+      TypeError: htmx.defineExtension is not a function
+  即：留着它不是「备用的声明式路径」，而是一个一引就抛错的陷阱。真要走声明式 morph，
+  必须换 v4 兼容版的扩展包，届时按下面「升级方式」重新取文件。
+  另外 htmx 4 **原生内置 morph**（hx-swap="innerMorph" / "outerMorph"），但它不暴露
+  window.Idiomorph 全局、也没有 beforeNodeMorphed 之类回调 —— 工作台靠那些回调保留
+  <details> 折叠态，所以 vendored 的 idiomorph 核心仍然必须留着，两套实现并存是有意的。
+
+升级方式：改上面的版本号，重新 curl 解包 dist/idiomorph.min.js 覆盖本目录，
       再执行 sha256sum 更新上面的校验值。

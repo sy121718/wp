@@ -42,7 +42,7 @@ var (
 // orderWriteBulkItem 批量写的一条结果：id 原样回带 + 是否成功 + 失败原因。
 //
 // 字段名与 mail / navigation / 优惠码同族（`id` / `updated` / `message`）：前端基座只有一个
-// （internal/templates/static/js/ui/json_write.js），四个模块各给一套写法就等于让基座
+// （internal/templates/static/js/ui/write-base.js），四个模块各给一套写法就等于让基座
 // 维护四份协议。
 type orderWriteBulkItem struct {
 	ID      string `json:"id"`

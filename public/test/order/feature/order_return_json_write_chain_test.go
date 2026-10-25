@@ -5,16 +5,16 @@ package feature
 // 与 S1/S2 同一条链，只是换了页面与端点：
 //
 //	真渲染退货页（真 handler + 真 Jet）→ 从渲染出来的 HTML 里取**表单/按钮的原始属性**
-//	→ 交给**真基座** internal/templates/static/js/ui/json_write.js
+//	→ 交给**真基座** internal/templates/static/js/ui/write-base.js
 //	→ 它的 fetch 真打到 httptest 服务器上的**真 handler**
 //	→ 服务端记录实际收到的 JSON 体（类型逐个断言）+ 响应码；数据库的最终状态也断言。
 //
 // 本页比列表页多了一层形状风险，所以非这样测不可：
 //
 //   · **`autoReceive` 是布尔**：DOM 里它是 `value="1"` 的复选框（字符串），服务端按 bool 严格绑定。
-//     模板少写 `data-write-bool="autoReceive"`，基座就会把 "1" 当字符串发出去 → 整条请求 400，
+//     复选框未勾选时浏览器根本不提交该键（服务端得到 false），不需要额外声明；
 //     而页面上只看到「操作失败」。这一条只有真基座能证。
-//   · **`returnId` 是数字**：DOM 的值恒为字符串，模板少写 `data-write-number="returnId"` 就是绑定失败。
+//   · **`returnId` 是数字**：DOM 值恒为字符串，但 formdata 的 "12" 服务端直接绑得进 uint64。
 //   · **批量两个按钮各投各的端点**：端点声明落在按钮上（表单上刻意不声明），且批量体里不得出现
 //     `autoReceive`（批档白名单里没有它，带上会整批 400 —— 批量不自动入库是硬语义）。
 //
@@ -51,7 +51,7 @@ import (
 func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("本机没有 node：链式证据要求真实基座 json_write.js，跳过而不是用桩冒充")
+		t.Skip("本机没有 node：链式证据要求真实基座 write-base.js，跳过而不是用桩冒充")
 	}
 	f := newOrderFixture(t)
 	if f == nil {
@@ -146,15 +146,15 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 	}
 
 	// ② 取原始属性：不手抄任何 data-*，模板少写一个属性本用例就必然跟着红。
-	approveForm := orderChainFormSlice(t, requestedHTML, `data-write-api="/api/order/return/approve"`+` data-write-mode="create"`)
+	approveForm := orderChainFormSlice(t, requestedHTML, `data-write-url="/api/order/return/approve"`+` data-write="create"`)
 	approveFormAttrs := couponAttrsOf(approveForm[:strings.Index(approveForm, ">")+1])
 	approveSubmitter := orderChainFormSubmitter(t, approveForm)
 
-	rejectForm := orderChainFormSlice(t, requestedHTML, `data-write-api="/api/order/return/reject"`+` data-write-mode="create"`)
+	rejectForm := orderChainFormSlice(t, requestedHTML, `data-write-url="/api/order/return/reject"`+` data-write="create"`)
 	rejectFormAttrs := couponAttrsOf(rejectForm[:strings.Index(rejectForm, ">")+1])
 	rejectSubmitter := orderChainFormSubmitter(t, rejectForm)
 
-	receiveForm := orderChainFormSlice(t, approvedHTML, `data-write-api="/api/order/return/receive"`+` data-write-mode="create"`)
+	receiveForm := orderChainFormSlice(t, approvedHTML, `data-write-url="/api/order/return/receive"`+` data-write="create"`)
 	receiveFormAttrs := couponAttrsOf(receiveForm[:strings.Index(receiveForm, ">")+1])
 	receiveSubmitter := orderChainFormSubmitter(t, receiveForm)
 
@@ -262,34 +262,36 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		}
 	}
 
-	// ④ 链的另一端：服务端真正收到的 JSON 体（类型逐个断言）。
-	assertKeys := func(t *testing.T, where, body string, want ...string) map[string]json.RawMessage {
+	// ④ 链的另一端：服务端真正收到的**请求体**。
+	//
+	// 批次 2 之后写基座统一发 formdata（multipart），值一律是字符串 ——
+	// 类型转换由服务端反射完成（实测 formdata 的 "3" 直接绑进 int、"1" 绑进 bool）。
+	assertKeys := func(t *testing.T, where, body string, want ...string) map[string]string {
 		t.Helper()
-		got := map[string]json.RawMessage{}
-		if err := json.Unmarshal([]byte(body), &got); err != nil {
-			t.Fatalf("%s 的请求体不是 JSON 对象: %s", where, body)
+		got, err := parseMultipartFormBody(body)
+		if err != nil {
+			t.Fatalf("%s 的请求体解析失败: %v（body=%s）", where, err, body)
 		}
 		if len(got) != len(want) {
-			t.Fatalf("%s 的请求体字段应为 %v，实际 %s", where, want, body)
+			t.Fatalf("%s 的请求体字段应为 %v，实际 %v（body=%s）", where, want, keysOf(got), body)
 		}
 		for _, name := range want {
 			if _, ok := got[name]; !ok {
-				t.Fatalf("%s 的请求体缺少字段 %s：%s", where, name, body)
+				t.Fatalf("%s 的请求体缺少字段 %s：body=%s", where, name, body)
 			}
 		}
 		return got
 	}
-	assertUint := func(t *testing.T, where, name, raw string, want uint64) {
+	assertUint := func(t *testing.T, where, name, got string, want uint64) {
 		t.Helper()
-		if got := strings.TrimSpace(raw); got != strconv.FormatUint(want, 10) {
-			t.Errorf("%s 的 %s 应是**数字**字面 %d（缺 data-write-number 就会是字符串），实际 %s",
-				where, name, want, got)
+		if strings.TrimSpace(got) != strconv.FormatUint(want, 10) {
+			t.Errorf("%s 的 %s 应为 %d，实际 %q", where, name, want, got)
 		}
 	}
-	assertStr := func(t *testing.T, where, name, raw, want string) {
+	assertStr := func(t *testing.T, where, name, got, want string) {
 		t.Helper()
-		if got := strings.TrimSpace(raw); got != strconv.Quote(want) {
-			t.Errorf("%s 的 %s 应是字符串字面 %q，实际 %s", where, name, want, got)
+		if strings.TrimSpace(got) != want {
+			t.Errorf("%s 的 %s 应为 %q，实际 %q", where, name, want, got)
 		}
 	}
 
@@ -298,12 +300,14 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 	if approveStatus != http.StatusOK {
 		t.Fatalf("单档同意应 200（autoReceive 若不是布尔就会 400），实际 %d：%s", approveStatus, approveBody)
 	}
-	approveJSON := assertKeys(t, "单档同意", approveBody, "returnId", "remark", "warehouseId", "transactionId", "autoReceive")
-	assertUint(t, "单档同意", "returnId", string(approveJSON["returnId"]), approveA)
-	assertStr(t, "单档同意", "remark", string(approveJSON["remark"]), "链式证据同意")
-	assertStr(t, "单档同意", "transactionId", string(approveJSON["transactionId"]), "TX-CHAIN-A")
-	if got := strings.TrimSpace(string(approveJSON["autoReceive"])); got != "true" {
-		t.Errorf("单档同意的 autoReceive 应是**布尔** true（缺 data-write-bool 时会是字符串 \"1\"），实际 %s", got)
+	// warehouseId 留空 → 基座删掉该键（「没填」= 用默认仓），所以不在这里的字段表里。
+	approveJSON := assertKeys(t, "单档同意", approveBody, "returnId", "remark", "transactionId", "autoReceive")
+	assertUint(t, "单档同意", "returnId", approveJSON["returnId"], approveA)
+	assertStr(t, "单档同意", "remark", approveJSON["remark"], "链式证据同意")
+	assertStr(t, "单档同意", "transactionId", approveJSON["transactionId"], "TX-CHAIN-A")
+	// formdata 里复选框的值是 "1"（或 on），服务端 *bool 绑定认它 —— 不需要前端声明类型。
+	if got := strings.TrimSpace(approveJSON["autoReceive"]); got == "" || got == "false" || got == "0" {
+		t.Errorf("单档同意的 autoReceive 应表达「勾选」（值为 \"1\" 等），实际 %q", got)
 	}
 	if got := f.returnStatusOf(t, approveA); got != "completed" {
 		t.Errorf("勾了 autoReceive 的同意应一步完成，实际 %s", got)
@@ -315,8 +319,8 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Fatalf("单档拒绝应 200，实际 %d：%s", rejectStatus, rejectBody)
 	}
 	rejectJSON := assertKeys(t, "单档拒绝", rejectBody, "returnId", "remark")
-	assertUint(t, "单档拒绝", "returnId", string(rejectJSON["returnId"]), rejectB)
-	assertStr(t, "单档拒绝", "remark", string(rejectJSON["remark"]), "链式证据拒绝")
+	assertUint(t, "单档拒绝", "returnId", rejectJSON["returnId"], rejectB)
+	assertStr(t, "单档拒绝", "remark", rejectJSON["remark"], "链式证据拒绝")
 	if got := f.returnStatusOf(t, rejectB); got != "rejected" {
 		t.Errorf("单档拒绝后应为 rejected，实际 %s", got)
 	}
@@ -326,9 +330,10 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 	if recvStatus != http.StatusOK {
 		t.Fatalf("单档收货应 200，实际 %d：%s", recvStatus, recvBody)
 	}
-	recvJSON := assertKeys(t, "单档收货", recvBody, "returnId", "warehouseId", "transactionId", "remark")
-	assertUint(t, "单档收货", "returnId", string(recvJSON["returnId"]), receiveC)
-	assertStr(t, "单档收货", "transactionId", string(recvJSON["transactionId"]), "TX-CHAIN-C")
+	// warehouseId / remark 留空 → 基座删掉这两个键（「没填」= 不变）。
+	recvJSON := assertKeys(t, "单档收货", recvBody, "returnId", "transactionId")
+	assertUint(t, "单档收货", "returnId", recvJSON["returnId"], receiveC)
+	assertStr(t, "单档收货", "transactionId", recvJSON["transactionId"], "TX-CHAIN-C")
 	if got := f.returnStatusOf(t, receiveC); got != "completed" {
 		t.Errorf("确认收货（先入库后退款）后应为 completed，实际 %s", got)
 	}
@@ -339,9 +344,10 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Fatalf("批量同意应 200，实际 %d：%s", bulkAStatus, bulkABody)
 	}
 	bulkAJSON := assertKeys(t, "批量同意", bulkABody, "ids", "remark")
-	assertStr(t, "批量同意", "remark", string(bulkAJSON["remark"]), "链式证据批量同意")
-	if got := strings.TrimSpace(string(bulkAJSON["ids"])); got != fmt.Sprintf(`["%d"]`, bulkE) {
-		t.Errorf("批量同意的 ids 应是字符串数组 [%d]，实际 %s", bulkE, got)
+	assertStr(t, "批量同意", "remark", bulkAJSON["remark"], "链式证据批量同意")
+	// formdata 里 ids 是多个同名值，浏览器会把它们并成数组交给服务端。
+	if got := bulkAJSON["ids"]; got != fmt.Sprintf("%d", bulkE) {
+		t.Errorf("批量同意的 ids 应为 [%d]，实际 %q", bulkE, got)
 	}
 	if got := f.returnStatusOf(t, bulkE); got != "approved" {
 		t.Errorf("批量同意后应为 approved（不自动入库），实际 %s", got)
@@ -353,9 +359,9 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 		t.Fatalf("批量拒绝应 200，实际 %d：%s", bulkRStatus, bulkRBody)
 	}
 	bulkRJSON := assertKeys(t, "批量拒绝", bulkRBody, "ids", "remark")
-	assertStr(t, "批量拒绝", "remark", string(bulkRJSON["remark"]), "链式证据批量拒绝")
-	if got := strings.TrimSpace(string(bulkRJSON["ids"])); got != fmt.Sprintf(`["%d"]`, bulkF) {
-		t.Errorf("批量拒绝的 ids 应是字符串数组 [%d]，实际 %s", bulkF, got)
+	assertStr(t, "批量拒绝", "remark", bulkRJSON["remark"], "链式证据批量拒绝")
+	if got := bulkRJSON["ids"]; got != fmt.Sprintf("%d", bulkF) {
+		t.Errorf("批量拒绝的 ids 应为 [%d]，实际 %q", bulkF, got)
 	}
 	if got := f.returnStatusOf(t, bulkF); got != "rejected" {
 		t.Errorf("批量拒绝后应为 rejected，实际 %s", got)

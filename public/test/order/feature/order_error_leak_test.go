@@ -15,7 +15,7 @@ package feature
 // 传输通道的契约变化（架构改造后，三轮）：
 //   1. 写动作的结论不再经 URL（302 + ?err= / ?ok= / ?done=），而是由 shell.RenderJump 渲染
 //      **提示页**（HTTP 200，文案在响应体里）。
-//   2. 订单列表页的六个写动作迁到「前端直调 JSON」（static/js/ui/json_write.js）：批量走既有
+//   2. 订单列表页的六个写动作迁到「前端直调 JSON」（static/js/ui/write-base.js）：批量走既有
 //      端点的**批档形状**（/api/order/status、/api/order/cancel，体里有 ids 即批档，见
 //      internal/module/order/inbound/http/order_bulk_write.go）。
 //   3. 退货页的两个批量动作收同一档（task-98 S3）：批档形状挂到 /api/order/return/{approve,reject}
@@ -46,6 +46,7 @@ import (
 	projectservice "go_wp/internal/module/project/service"
 	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/i18n"
 )
 
 // orderLeakTokens 内部细节指纹：PG 原文与库结构里一定出现、业务文案里一定不出现。
@@ -108,6 +109,18 @@ func orderPOSTJSON(engine *gin.Engine, path, body string) *httptest.ResponseReco
 // 用 nil service 是刻意的最小化：超限在读到 service 之前就被 bulkids.Normalize 拒绝，
 // 这条路径本来就不该碰数据库。
 func TestOrderBulkPagesRejectOversizedSelectionWithControlledText(t *testing.T) {
+	// 词条必须**自己注入**，不能靠包内别的测试的副作用。
+	//
+	// 这个测试的引擎不建 i18n 组件，而 pkg/response 的 translate 靠 pkg/i18n 取词 ——
+	// 没有词条时会回落成 key 原文（`shell.err.bulkIdsTooMany|200|201`），断言就假红。
+	// 实测：单跑必失败、整包跑时因为 trade_empty_state_honesty_test.go 先注入过而通过 ——
+	// 这是**测试顺序依赖**，换包内文件顺序或单独 -run 就翻脸。
+	i18n.InjectForTest(map[string]map[string]string{
+		bulkids.MsgTooMany: {"zh-CN": "一次最多操作 %s 项，当前 %s 项，请分批进行",
+			"en-US": "Too many items at once: max %s, got %s"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
 	gin.SetMode(gin.TestMode)
 	orderHandle := orderhttp.NewHandle(nil)
 

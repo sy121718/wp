@@ -39,7 +39,10 @@ function setup() {
         body: { classList: { add() {}, remove() {} } },
         querySelector(sel) { return ({ '[data-drawer]': drawer, '[data-drawer-mask]': mask, '#tpl-a': template })[sel] || null; },
         addEventListener(name, fn) { listeners[name] = fn; },
-        dispatchEvent(event) { events.push(event); calls.push(event.type); },
+        dispatchEvent(event) {
+            events.push(event);
+            calls.push(event.type === 'wb:rescan' ? 'process' : event.type);
+        },
         createElement(tag) {
             const el = makeNode();
             el.tagName = tag.toUpperCase();
@@ -71,7 +74,9 @@ function setup() {
             return { body: { children: match ? [root] : [], textContent: '' } };
         }
     }
-    const window = { WBUI, htmx: { process() { calls.push('process'); } }, location: { href: 'https://example.test/admin' } };
+    // 控件不再直接调 htmx.process，而是广播 wb:rescan（由 ui/htmx-bridge.js 转成 process）。
+    // 桩在这里扮演 bridge：收到 wb:rescan 就记一次 'process' —— 与旧断言的语义等价。
+    const window = { WBUI, location: { href: 'https://example.test/admin' } };
     vm.runInNewContext(source, { window, document, fetch, AbortController, DOMParser, URL,
         CustomEvent: class { constructor(type, detail) { this.type = type; this.detail = detail?.detail; } } });
     WBUI.init(document);
@@ -92,7 +97,10 @@ test('legacy template clone preserves processing, scan, event, focus order', () 
     s.click(s.trigger);
     assert.equal(s.body.innerHTML, 'content');
     assert.deepEqual(s.calls, ['process', 'scan', 'wbui:drawer-open', 'focus']);
-    assert.equal(s.events[0].detail.template, '#tpl-a');
+    // events[0] 现在是 wb:rescan（控件 → 适配层），抽屉自己的事件在后面。
+    assert.equal(s.events[0].type, 'wb:rescan');
+    const opened = s.events.find((e) => e.type === 'wbui:drawer-open');
+    assert.equal(opened.detail.template, '#tpl-a');
 });
 
 test('async open displays busy state then processes valid form in order', async () => {

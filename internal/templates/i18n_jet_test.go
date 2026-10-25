@@ -463,7 +463,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		"文案词条", "page-head", "help-pop",
 		"filter-bar", "table-scroll", "data-table",
 		"site.component.gallery.prev", "Previous",
-		`data-write-api="/api/i18n/save"`, `data-write-mode="bulk"`,
+		`data-write-url="/api/i18n/save"`, `data-write="bulk"`,
 		"data-msg-refresh", "data-write-status",
 		`name="action" value="delete"`, `name="action" value="create"`,
 		"data-requires-js",
@@ -475,7 +475,7 @@ func TestI18nEntriesPageRenders(t *testing.T) {
 		}
 	}
 	// 反向：写动作不再回投页面路由、也不再自带表单 csrf 域（CSRF 走 X-CSRF-Token 头，
-	// 由 static/js/ui/json_write.js 从 meta/sessionStorage 取）。
+	// 由 static/js/ui/write-base.js 从 meta/sessionStorage 取）。
 	for _, unwanted := range []string{`action="/admin/i18n/`, `hx-post="/admin/i18n/`, `name="csrf_token"`} {
 		if strings.Contains(out, unwanted) {
 			t.Fatalf("词条页不应再出现 %q —— 写动作已收敛到 JSON 端点 POST /api/i18n/save", unwanted)
@@ -604,7 +604,7 @@ func TestNavigationTranslationsPageRenders(t *testing.T) {
 	for _, want := range []string{
 		"保存译文", "class=\"field nav-tr-row\"",
 		"name=\"context\"", "name=\"hash\"", "name=\"target\"",
-		"data-write-api=\"/api/navigation/update\"", "data-write-mode=\"create\"",
+		"data-write-url=\"/api/navigation/update\"", "data-write=\"create\"",
 		"data-write-rows=\".nav-tr-row;context,hash,target\"",
 		"name=\"action\" value=\"translations\"",
 		"/admin/navigations/translations?lang=en-US&amp;project=p1",

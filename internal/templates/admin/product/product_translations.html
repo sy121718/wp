@@ -1,6 +1,6 @@
 {* admin/product_translations.html — 商品域翻译工作台（issue #12）。
    入口：商品列表行内「多语言」按钮（不做独立菜单）；本页两个交互形态：
-   语言 / 工程切换是原生 GET 表单（onchange 提交），保存整表走 ui/json_write.js 直调
+   语言 / 工程切换是原生 GET 表单（onchange 提交），保存整表走 ui/write-base.js 直调
    /api/product/translations/save（成功存 flash 再整页刷新，让译文状态 / 完成度 / 来源三列跟着变）。
    可翻译行由 product 模块的 ProductTranslationCandidates 生成（与构建期同源，
    同一份 contract 白名单与语境界定），写入 pkg/i18n.ContentWriter（sys_translation）。 *}
@@ -57,9 +57,9 @@
         </div>
     </header>
 
-    {* 写动作的结论行：保存成功由 ui/json_write.js 存进 flash、整页刷新后在这里显示一次
+    {* 写动作的结论行：保存成功由 ui/write-base.js 存进 flash、整页刷新后在这里显示一次
        （刷新是为了让译文状态 / 完成度 / 来源三列跟着变）。 *}
-    <p class="form-hint badge" data-write-flash-target="product-translations" role="status" hidden></p>
+    <p class="form-hint badge" role="status" hidden></p>
 
     {{if .Errors}}
     <div class="tr-alert" role="alert">
@@ -114,9 +114,7 @@
         </div>
     </section>
     {{else}}
-    <form hx-post="/api/product/translations/save" hx-swap="none"
-          data-write-array="rowTarget,rowContext,rowHash"
-          data-write-flash="product-translations" class="form-stack">
+    <form data-write="update" data-write-url="/api/product/translations/save" data-write-reload class="form-stack">
         {* 键名与接口的 JSON 字段一致（projectId / productId）：基座按控件 name 组请求体，
            写成 project / product 会被严格白名单整条拒掉。三组 row* 字段是**按行对齐**的
            并行数组 —— 空译文行必须保留占位，剔掉会让后面所有行错位一格。 *}

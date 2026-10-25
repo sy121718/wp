@@ -8,15 +8,15 @@ package builddto
 // 人工构建要显式传 manual —— 默认值必须站在**多数且更安全**的一侧，
 // 依赖重建走的是「有就排上、没有就算了」的幂等语义，误判成人工构建会让后台列表失真。
 type EnqueueReq struct {
-	SourceType string `json:"sourceType" binding:"required"`
-	SourceID   string `json:"sourceId" binding:"required"`
+	SourceType string `json:"sourceType" form:"sourceType" binding:"required"`
+	SourceID   string `json:"sourceId" form:"sourceId" binding:"required"`
 	// ProjectID 任务所属工程（显式入库，消费侧不必再反推来源行）。
-	ProjectID string `json:"projectId"`
+	ProjectID string `json:"projectId" form:"projectId"`
 	// Lang 构建语言；留空 = 默认语言。
-	Lang           string `json:"lang"`
-	Intent         string `json:"intent"`
-	DraftVersion   int64  `json:"draftVersion"`
-	BuildInputHash string `json:"buildInputHash"`
+	Lang           string `json:"lang" form:"lang"`
+	Intent         string `json:"intent" form:"intent"`
+	DraftVersion   int64  `json:"draftVersion" form:"draftVersion"`
+	BuildInputHash string `json:"buildInputHash" form:"buildInputHash"`
 }
 
 // ListReq 任务列表请求。

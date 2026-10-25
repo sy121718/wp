@@ -51,10 +51,17 @@ PLAIN_SCRIPTS=(
   check-jet-translation-call-sites.sh
   check-js-controls.sh
   check-automation-canvas-js.sh
+  check-controls-no-htmx.sh
+  check-htmx-api.sh
+  check-frontend-naming.sh
+  check-write-attributes.sh
+  check-write-combinations.sh
+  check-write-fields.sh
 )
 
 # 需要真实 PostgreSQL，且必须在迁移（go run ./cmd -migrate-only）之后。
 DB_SCRIPTS=(
+  check-write-endpoints.sh
   check-permission-gaps.sh
   check-menu-page-binding.sh
   check-button-code-binding.sh

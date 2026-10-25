@@ -1,1 +1,25 @@
-{* 组件模板目录占位：组件渲染 Jet 化迁移后，每个组件一个 .jet 模板（node.jet / heading.jet / container.jet ...） *}
+{* components/ 目录的**唯一文件**，唯一作用是让下面的 go:embed 指令有匹配项。
+
+   为什么必须留一个文件：components_embed.go 里写的是
+
+       //go:embed components/*.jet
+
+   go:embed 的 glob **匹配不到任何文件时是编译错误**（不是警告）：
+       pattern components/*.jet: no matching files found
+   实测删掉本文件后 go build 直接失败。所以它不是"迁移残留"，而是这条 embed 的
+   最小合法占位。
+
+   为什么不能删掉整个 components/ 目录再改 embed：组件模板在 Jet 化之后**已就近放在
+   各自组件目录**（internal/builder/components/<name>/<name>.jet，经 core.RegisterTemplate
+   注册，由 embed_loader.go 合并进同一个 Set）。components/ 因此不再承载内置组件模板，
+   但 embed.FS 这条路径仍被 NewEmbeddedComponentSet 用来构建内置 Set 的根，
+   保留它才能维持「内置来源与插件来源合并」的既有装配形状。
+
+   什么时候可以真正删除：把 components_embed.go 改成不依赖空目录的形态
+   （例如 //go:embed all:components + 目录里只放 .gitkeep —— 实测这种写法能编译通过），
+   之后本文件才能删。在那之前删它等于让仓库编译不过。
+
+   顺带一条与产物相关的约束：本文件内容必须**只有 Jet 注释**。占位模板会被加载进
+   内置 Set（实测 set.GetTemplate("_placeholder") 可取到），目前执行后输出为空；
+   如果哪天往里面写真实内容，它会随组件 Set 参与构建。
+*}

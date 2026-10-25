@@ -10,7 +10,7 @@ package feature
 //	   CasbinMiddlewareForPathAs("/api/i18n/save","POST")（片段是写表单的宿主，所以按写权限点守门）。
 //	② 抽屉片段按 (key, lang) **精确**取一条：同一 key 的另一种语言不能被串进来，且只回片段
 //	   （不是整页）；缺参数 400、查不到 404，且都带 no-store（抽屉内容随权限与数据变，不许缓存）。
-//	③ 片段与列表页都是 json_write.js 的宿主：必须带 data-write-api / data-write-mode / 动作标签
+//	③ 片段与列表页都是 write-base.js 的宿主：必须带 data-write-api / data-write-mode / 动作标签
 //	   隐藏域 / 结果区，且**不再**有 action="/admin/i18n/…" 或 hx-post 这类回投形态。
 //
 // 写动作的真实链路（SessionAuth / CSRF / Casbin 三层 + 落库效果 + 中英文案）见同目录
@@ -96,7 +96,7 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 	fragment := strings.TrimSpace(found.Body.String())
 	for _, want := range []string{
 		"<div data-drawer-fragment>",
-		`data-write-api="/api/i18n/save"`, `data-write-mode="create"`,
+		`data-write-url="/api/i18n/save"`, `data-write="create"`,
 		`name="action" value="update"`,
 		`name="key" value="drawer.exact.test"`, `name="lang" value="en-US"`,
 		"data-write-status", "data-requires-js", "noscript",
@@ -147,7 +147,7 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 	}
 	for _, want := range []string{
 		`data-drawer-url="/admin/i18n/edit?key=drawer.exact.test&amp;lang=en-US"`,
-		`data-write-api="/api/i18n/save"`, `data-write-mode="bulk"`,
+		`data-write-url="/api/i18n/save"`, `data-write="bulk"`,
 		// 批量只有「全成 / 全败」两档：没有「部分成功」可报，data-msg-partial 已随该语义删除。
 		"data-msg-none-selected", "data-msg-too-many",
 		`name="action" value="delete"`, `name="action" value="create"`,
@@ -161,7 +161,7 @@ func TestAdminI18nEditDrawerExactPairAndFragment(t *testing.T) {
 			t.Fatalf("列表页不应出现 %q：%s", unwanted, page)
 		}
 	}
-	// 行内删除按钮在禁用 JS 时是 hidden（有 JS 时由 json_write.js 放出来）：没有端到端兜底表单，
+	// 行内删除按钮在禁用 JS 时是 hidden（有 JS 时由 write-base.js 放出来）：没有端到端兜底表单，
 	// 留一个「点了只是重新加载本页」的按钮不如藏起来。
 	if !strings.Contains(page, "data-requires-js") {
 		t.Fatalf("列表页的写控件应带 data-requires-js（无 JS 时隐藏）：%s", page)

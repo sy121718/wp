@@ -25,14 +25,77 @@
 - 表格数据行的 td 数必须与表头列数一致（colspan 同）；空态表头常驻、空态整行进 tbody（check-empty-state-table-head.sh）。
 
 ## 写操作
-- 表单走 ui/json_write.js：data-write-api / data-write-mode / data-write-nav / data-write-flash 声明，端点不写在 form 上。
+写基座只有一个：**`static/js/ui/write-base.js`**（旧的 json_write / htmx_form_body /
+write_feedback 三件已删除）。契约见该文件头，要点：
+
+- **必填三个**：`data-write`（create|update|delete|bulk|custom）、`data-write-url`（必须 `/api/` 开头）、
+  `data-write-status`（同表单内或宿主内有对应元素）。
+- **可选六个**：`-nav`（成功后跳转，含 `{id}`）、`-reload`（裸属性，成功刷新）、`-close`（关抽屉选择器）、
+  `-confirm`、`-extra`（bulk 点名要发的字段）、`-outcome`（仅 bulk）。
+- **声明可以写在 form 或提交按钮上**，两者都有时按钮优先。这是「一个表单并排几个动作」的落点
+  （批量启停 / 批量删除端点不同），**不是历史残留**。
 - 失败不重渲染片段：4xx + JSON 由基座 toast；用户已填内容留在 DOM。
-- 非基座增强脚本必须自挂 htmx:afterSwap。
+
+### 有意保留的整形属性（**不是残留，别删**）
+
+| 属性 | 为什么删不掉 |
+|---|---|
+| `data-write-json` | HTML 表单没有嵌套语法：`inner.days=30` 绑不出 `*Inner`（实测）。行模板 → JSON 数组/对象 |
+| `data-write-json-single` | 声明哪些 name 发单对象而非数组 |
+| `data-write-json-wrap` | 富文本给裸 HTML，库里是 jsonb `{html: …}` |
+| `data-write-lines` | 多行文本 → `[]string` |
+| `data-write-keep-empty` | 空串有语义的字段（解绑）不能被删 |
+| `data-write-ids-scope` | ids 在**另一个容器**里（抽屉内容被克隆到 document 级） |
+| `data-write-host` | 一批隐藏表单**共用一个结论区**（放 `closest('[data-write-host]')` 里） |
+| `data-write-rows` / `-object` / `-builder` | **存量兼容层**：10 处模板的行由服务端片段渲染，改成 `<template data-row>` 要连服务端一起改 |
+
+### 已彻底删除的（写上去不报错，只是不生效）
+
+`data-write-api`（→ `-url`）、`-mode`（→ `data-write`）、`-number` / `-float` / `-bool` / `-array`
+（formdata 的 `"3"` 服务端直接绑进 int，前端不做类型转换）、`-skip-empty`（基座永远删空值）、
+`-flash` / `-flash-target`（→ `-reload`，结论经 sessionStorage 跨刷新）、`data-close-on-ok`（→ `-close`）、
+`data-reload-on-ok`（→ `-reload`）、`data-write-html`（→ `-json-wrap`）。
+
+`scripts/check-write-attributes.sh` 守这张表：写表单上出现已删属性即变红。
+
+- 非基座增强脚本不再自挂 `htmx:after:swap`：控件用 `WBUI.scan` + `MutationObserver`
+  （`ui/index.js`），需要 htmx 认领新 DOM 时广播 `wb:rescan`（`ui/htmx-bridge.js` 翻译）。
+  控件**不得**直接调 `htmx.*` —— `scripts/check-controls-no-htmx.sh` 守这条。
+
+## htmx 属性（vendored 4.0.0，以 bundle 为准）
+- **提交期间禁按钮写 `hx-disable="find button[type=submit]"`**。v2 的 `hx-disabled-elt` 在 v4 里
+  **不存在且不报错** —— 实测（真实浏览器 + vendored bundle）：用旧属性时请求期间按钮 `disabled` 恒为
+  `false`，换成 `hx-disable` 才是 `true`、settle 后恢复。写错的代价是「防重复提交静默失效」。
+- 事件名 v4 一律冒号分段：`htmx:after:swap` / `htmx:before:request` / `htmx:response:error`。
+  v2 的驼峰名（`htmx:afterSwap`）不再派发，写了就是死监听。
+- 只能写 bundle 里真实存在的属性与元素：`scripts/check-htmx-api.sh` 机械核对四件事 ——
+  v2 已删属性、v2 驼峰事件名、v2 扩展 API、以及**模板里的每个 `hx-*` 是否在 bundle 里存在**
+  （最后一条是反向核对，拓「以为支持其实不支持」）。排除名单只有 `hx-progress` /
+  `hx-progress-slide`（本项目自定义 CSS 类）。
+- 局部回写两种写法**都合法**：`<hx-partial hx-target="#id">` 与 `<template hx type="partial" hx-target="#id">`。
+  前者不是原生元素，而是 bundle 里 `#Ie` 的通用改写：`<hx-<名>>` → `<template hx type="<名>">`
+  （`</hx-…>` → `</template>`），所以两者等价。实测（vendored 4.0.0，真实浏览器）：
+  `<hx-partial>` 能更新目标、不留残留、含嵌套子元素也正常。
+- 推而广之：`hx-<名>` 一律会被改写成 `template hx type=<名>` —— 所以「写成 `<hx-xxx>` 当普通标签用」
+  不会报错也不会渲染，只会被当成一条 partial/swap 指令。
 
 ## 多端（硬规则）
 - 宽度写 min(100%, 设计宽度)；绝对值用 min()/clamp() 按视口封顶，不留 right 越界。
 - 触屏是独立环境：hover 规则包在 @media (hover: hover) 里，触屏等价形态用 CSSBuckets.AddHoverNone。
 - 验收三条视口（1440 / 768 / 375）× 四种输入（鼠标 / 滚轮 / 触摸 / 键盘）各一次。
+
+## 令牌（都在 ui.css，**没有** tokens.css）
+- 间距 / 圆角 / 阴影 / 时长 / 缓动：`ui.css` 的 `:root`（`--ui-sp-*` / `--ui-r-*` / `--ui-shadow-*` /
+  `--ui-duration-*` / `--ui-ease-*`）。**都带兜底链**（`var(--sp-xs, 6px)`）—— theme.css 缺失时仍有值，
+  所以不要把它们拆到单独文件（拆了就断链）。
+- 字号：`--ui-fs-2xs` … `--ui-fs-2xl`（11/12/13/14/15/16/18/22px，2026-11 补）。
+  取值等于补之前各处的硬编码实际值，所以替换零视觉变化。**新规则一律用令牌**，
+  存量硬编码逐条替换需要 Playwright 截图基线，是独立一批。
+- 入场缓动两族并存：`spring` / `soft` / `bouncy`（linear() 采样，需 Chrome 113+）与
+  `circ-out` / `circ-in-out` / `back-out` / `quint-in-out`（cubic-bezier，全平台）。
+  要 Apple 式回弹用前者，要老浏览器一致用后者。
+- 入场动效名一律 `<效果>-in[-<方向>]`（`fade-in-up` / `back-in-top-left`）。
+  `scripts/check-frontend-naming.sh` 守命名 + 反向核对关键帧存在。
 
 ## 视觉与动效
 - CSS 层次三层：页面底 + 卡片面 + 描边；只靠描边区分会读成灰蒙蒙一片。

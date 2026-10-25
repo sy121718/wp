@@ -9,7 +9,7 @@ package producthttp
 //
 // 批量删除与批量改价的回执**不在这里**：它们的页面 POST 已删除，结论走 JSON 回执 ——
 // 整批成功只回一句 message（计数在 data.done / data.changedVariants），整批被拒的明细在 data.items。
-// ui/json_write.js 按当前页面语言拼装 —— 判据在 json_write.test.cjs 里。
+// ui/write-base.js 按当前页面语言拼装 —— 判据在 json_write.test.cjs 里。
 //
 // 用 pkg/i18n.InjectForTest 直接塞内存词条，不建库、不起装配。
 

@@ -106,7 +106,7 @@ func (t *ThemeSettings) RevealInheritOf() string {
 // RevealDefaultEntranceOf 滚动显现注入的默认入场词（空 = fade-up）。
 func (t *ThemeSettings) RevealDefaultEntranceOf() string {
 	if t == nil || t.Motion.DefaultEntrance == "" {
-		return "fade-up"
+		return "fade-in-up"
 	}
 	return t.Motion.DefaultEntrance
 }

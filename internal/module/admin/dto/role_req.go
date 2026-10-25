@@ -40,25 +40,25 @@ type RoleDetailReq struct {
 // Status 用 *int：nil 表示未传（service 默认启用），显式传 0 表示禁用，
 // 避免 int 零值 0 无法区分「未传」与「显式禁用」。
 type RoleCreateReq struct {
-	RoleCode  string `json:"role_code" binding:"required,max=50" validate:"required,max=50"`
-	RoleName  string `json:"role_name" binding:"required,max=100" validate:"required,max=100"`
-	Status    *int   `json:"status"`
-	SortOrder int    `json:"sort_order"`
-	Remark    string `json:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
+	RoleCode  string `json:"role_code" form:"role_code" binding:"required,max=50" validate:"required,max=50"`
+	RoleName  string `json:"role_name" form:"role_name" binding:"required,max=100" validate:"required,max=100"`
+	Status    *int   `json:"status" form:"status"`
+	SortOrder int    `json:"sort_order" form:"sort_order"`
+	Remark    string `json:"remark" form:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
 }
 
 // RoleUpdateReq 更新角色元信息。
 type RoleUpdateReq struct {
-	ID        uint64 `json:"id" binding:"required" validate:"required"`
-	RoleName  string `json:"role_name" binding:"required,max=100" validate:"required,max=100"`
-	Status    int    `json:"status"`
-	SortOrder int    `json:"sort_order"`
-	Remark    string `json:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
+	ID        uint64 `json:"id" form:"id" binding:"required" validate:"required"`
+	RoleName  string `json:"role_name" form:"role_name" binding:"required,max=100" validate:"required,max=100"`
+	Status    int    `json:"status" form:"status"`
+	SortOrder int    `json:"sort_order" form:"sort_order"`
+	Remark    string `json:"remark" form:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
 }
 
 // RoleDeleteReq 删除角色。
 type RoleDeleteReq struct {
-	ID uint64 `json:"id" binding:"required" validate:"required"`
+	ID uint64 `json:"id" form:"id" binding:"required" validate:"required"`
 }
 
 // RoleMenuListReq 查询角色拥有的菜单 ID。
@@ -68,8 +68,8 @@ type RoleMenuListReq struct {
 
 // RoleMenuSaveReq 保存角色菜单授权（全量替换）。
 type RoleMenuSaveReq struct {
-	RoleID  uint64   `json:"role_id" binding:"required" validate:"required"`
-	MenuIDs []uint64 `json:"menu_ids"`
+	RoleID  uint64   `json:"role_id" form:"role_id" binding:"required" validate:"required"`
+	MenuIDs []uint64 `json:"menu_ids" form:"menu_ids"`
 	// OperatorID 当前操作者（handler 从会话注入，禁止前端传入）。
 	OperatorID uint64 `json:"-"`
 }
@@ -82,8 +82,8 @@ type RoleUserListReq struct {
 
 // RoleUserSaveReq 保存角色用户绑定（全量替换）。
 type RoleUserSaveReq struct {
-	RoleID  uint64   `json:"role_id" binding:"required" validate:"required"`
-	UserIDs []uint64 `json:"user_ids"`
+	RoleID  uint64   `json:"role_id" form:"role_id" binding:"required" validate:"required"`
+	UserIDs []uint64 `json:"user_ids" form:"user_ids"`
 	// OperatorID 当前操作者（handler 从会话注入，禁止前端传入）。
 	OperatorID uint64 `json:"-"`
 }

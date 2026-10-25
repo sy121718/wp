@@ -29,18 +29,23 @@
    为什么用副区域回写而不是把整页重渲染：这次请求的 hx-target 是 #tag-hits-panel，
    换掉整页会把用户已展开的面板、滚动位置、筛选栏输入全部重置。回写只改那一格。 *}
 {{if isset(.Items)}}
-{* 命中数回写（htmx 4 的 <hx-partial>）。
-   hx-partial 是**服务端 swap 指令**而不是 DOM 元素：htmx 读取 hx-target 后执行换入，
-   再把 hx-partial 信封整段丢弃 —— 它永远不会出现在页面里（不像 hx-swap-oob 那样
-   靠元素自身的 id 找落点、再从响应里摘掉自己）。所以这里不再需要「外层元素必须是顶层、
-   必须有 id」那两条形状约束：唯一要求是 hx-target 指向页面上那个按钮。
+{* 命中数回写（htmx 4 的 partial 指令）。
+   用 <template hx type="partial"> 而不是 <hx-partial>：两者在本仓 vendored bundle 下等价
+   （bundle 的 #Ie 把 <hx-名> 通用改写成 <template hx type="名">，实测都能更新目标、不留残留），
+   但后者**依赖那条改写**。写成 template 形态时用的是 bundle 原生路径，上游哪天只留 native
+   形态也不影响这里。
+
+   partial 是**服务端 swap 指令**而不是 DOM 元素：htmx 读取 hx-target 后执行换入，
+   再把信封整段丢弃 —— 它永远不会出现在页面里（不像 hx-swap-oob 那样靠元素自身的 id
+   找落点、再从响应里摘掉自己）。所以这里不需要「外层元素必须是顶层、必须有 id」那两条
+   形状约束：唯一要求是 hx-target 指向页面上那个按钮。
 
    默认 swap 是 innerHTML：把文字写进按钮内部，按钮的 hx-get / hx-target / class 全部保留
    —— 用户回写后仍可点它继续看下一页。
 
    为什么不带 hx-get：这条指令只负责把过时的数字换掉。带上 GET 会让它成为第三个
    可点入口，而真实翻页按钮只有上/下两个。 *}
-<hx-partial hx-target="#tag-hit-count-{{.TagID}}">{{.Total}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</hx-partial>
+<template hx type="partial" hx-target="#tag-hit-count-{{.TagID}}">{{.Total}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</template>
 {{end}}
 <section class="card card-body">
     <h2 class="card-title mb-lg">{{ .["t"]("admin.product_tags.list.hitTitle", "命中的商品") }}</h2>

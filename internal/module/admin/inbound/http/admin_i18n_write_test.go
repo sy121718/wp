@@ -38,7 +38,7 @@ type adminI18nWriteResponse struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-// adminI18nWriteBulkData 批量档的 data 体（json_write.js 直接读这几个字段）。
+// adminI18nWriteBulkData 批量档的 data 体（write-base.js 直接读这几个字段）。
 type adminI18nWriteBulkData struct {
 	Deleted int `json:"deleted"`
 	Skipped int `json:"skipped"`

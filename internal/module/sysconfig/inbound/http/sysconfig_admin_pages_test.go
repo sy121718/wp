@@ -110,7 +110,7 @@ func TestSystemSettingsPageRenders(t *testing.T) {
 		`name="defaultLang"`, `name="siteLangURLMode"`,
 		`name="defaultCountry"`, `name="defaultCurrency"`,
 		`name="i18nVersion"`, `name="tradeVersion"`,
-		`data-write-api="/api/sysconfig/system/save"`,
+		`data-write-url="/api/sysconfig/system/save"`,
 		`value="zh-CN"`, // 语言下拉来自 sys_dict（type=language）
 		`value="CNY"`,   // 货币下拉来自 sys_dict（type=currency）
 		`value="CN"`,    // 国家下拉来自 sys_area（kind=country）

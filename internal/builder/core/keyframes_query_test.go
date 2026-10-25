@@ -17,8 +17,8 @@ func TestKeyframeCSSByName(t *testing.T) {
 		t.Errorf("空白声明应当零字节，得到 %q", got)
 	}
 
-	one := KeyframeCSS([]string{"sky-fade-up"})
-	if !strings.Contains(one, "@keyframes sky-fade-up") {
+	one := KeyframeCSS([]string{"sky-fade-in-up"})
+	if !strings.Contains(one, "@keyframes sky-fade-in-up") {
 		t.Errorf("未包含请求的动效: %q", one)
 	}
 	// 只该有请求的那一条 —— 这正是「按需」的含义。
@@ -27,14 +27,14 @@ func TestKeyframeCSSByName(t *testing.T) {
 	}
 
 	// 去重：同一名字写两遍只出现一次。
-	dup := KeyframeCSS([]string{"sky-fade-up", "sky-fade-up"})
+	dup := KeyframeCSS([]string{"sky-fade-in-up", "sky-fade-in-up"})
 	if strings.Count(dup, "@keyframes ") != 1 {
 		t.Errorf("重复声明应只内联一次，得到 %d 条", strings.Count(dup, "@keyframes "))
 	}
 
 	// 未知名字跳过并留痕，不能影响已知的那些（后台页面是开发者写的，写错属笔误）。
-	mixed := KeyframeCSS([]string{"sky-fade-up", "sky-not-a-real-name", "sky-fade-in-top-left"})
-	if !strings.Contains(mixed, "@keyframes sky-fade-up") || !strings.Contains(mixed, "@keyframes sky-fade-in-top-left") {
+	mixed := KeyframeCSS([]string{"sky-fade-in-up", "sky-not-a-real-name", "sky-fade-in-top-left"})
+	if !strings.Contains(mixed, "@keyframes sky-fade-in-up") || !strings.Contains(mixed, "@keyframes sky-fade-in-top-left") {
 		t.Errorf("已知动效被未知名字连累: %q", mixed)
 	}
 	if strings.Contains(mixed, "sky-not-a-real-name") {
@@ -51,7 +51,7 @@ func TestKeyframeNamesAvailable(t *testing.T) {
 	if len(names) != len(keyframesCatalog) {
 		t.Errorf("名字数 %d 与 catalog %d 不一致", len(names), len(keyframesCatalog))
 	}
-	for _, want := range []string{"sky-fade-up", "sky-loop-flash"} {
+	for _, want := range []string{"sky-fade-in-up", "sky-loop-flash"} {
 		found := false
 		for _, n := range names {
 			if n == want {

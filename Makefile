@@ -1,8 +1,9 @@
 # Makefile — 常用命令入口（审计 OSS-012）。
 #
-# 为什么需要它：项目里散着 scripts/*.sh 与 ps1 两套脚本，新人要读一遍才知道
-# 「跑起来」需要哪几条；而且有些脚本已经失效（build-all.ps1 在当时的环境里跑不通）。
+# 为什么需要它：scripts/ 下的脚本不少，新人要读一遍才知道「跑起来」需要哪几条。
 # Makefile 把这些收成一张可发现的清单 —— `make` 不带参数就列出全部目标。
+# （早期那批按 Windows/PowerShell 写的发版脚本已于 2026-11 删除：它们依赖的 web/ 前端工程
+# 与 internal/embed/dist 在本仓都不存在；静态资源走 internal/templates/static_embed.go。）
 #
 # 约定：`.PHONY` 全部声明；每条目标都能独立执行（不依赖上一条刚跑过）。
 

@@ -54,8 +54,8 @@ type AutomationPosition struct {
 // **不该推进版本号** —— 否则在画布上挪一下节点，所有正在跑的实例都会变成
 // 「版本落后于流程」，排障页面会误导人。
 type SaveAutomationLayoutReq struct {
-	ID        uint64                        `json:"id"`
-	Positions map[string]AutomationPosition `json:"positions"`
+	ID        uint64                        `json:"id" form:"id"`
+	Positions map[string]AutomationPosition `json:"positions" form:"positions"`
 }
 
 // AutomationRunReq 手工把联系人加进流程（manual 触发）。

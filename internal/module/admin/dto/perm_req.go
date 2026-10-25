@@ -44,28 +44,28 @@ type PermOptionsReq struct {
 
 // PermCreateReq 新建权限点。
 type PermCreateReq struct {
-	PermissionCode string `json:"permission_code" binding:"required,max=100" validate:"required,max=100"`
-	PermissionName string `json:"permission_name" binding:"required,max=100" validate:"required,max=100"`
-	Module         string `json:"module" binding:"required,max=50" validate:"required,max=50"`
-	APIPath        string `json:"api_path" binding:"required,max=200" validate:"required,max=200"`
-	APIMethod      string `json:"api_method" binding:"required,oneof=GET POST" validate:"required,oneof=GET POST"`
-	Status         int    `json:"status"`
-	Remark         string `json:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
+	PermissionCode string `json:"permission_code" form:"permission_code" binding:"required,max=100" validate:"required,max=100"`
+	PermissionName string `json:"permission_name" form:"permission_name" binding:"required,max=100" validate:"required,max=100"`
+	Module         string `json:"module" form:"module" binding:"required,max=50" validate:"required,max=50"`
+	APIPath        string `json:"api_path" form:"api_path" binding:"required,max=200" validate:"required,max=200"`
+	APIMethod      string `json:"api_method" form:"api_method" binding:"required,oneof=GET POST" validate:"required,oneof=GET POST"`
+	Status         int    `json:"status" form:"status"`
+	Remark         string `json:"remark" form:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
 }
 
 // PermUpdateReq 更新权限点。
 type PermUpdateReq struct {
-	ID             uint64 `json:"id" binding:"required" validate:"required"`
-	PermissionCode string `json:"permission_code" binding:"required,max=100" validate:"required,max=100"`
-	PermissionName string `json:"permission_name" binding:"required,max=100" validate:"required,max=100"`
-	Module         string `json:"module" binding:"required,max=50" validate:"required,max=50"`
-	APIPath        string `json:"api_path" binding:"required,max=200" validate:"required,max=200"`
-	APIMethod      string `json:"api_method" binding:"required,oneof=GET POST" validate:"required,oneof=GET POST"`
-	Status         int    `json:"status"`
-	Remark         string `json:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
+	ID             uint64 `json:"id" form:"id" binding:"required" validate:"required"`
+	PermissionCode string `json:"permission_code" form:"permission_code" binding:"required,max=100" validate:"required,max=100"`
+	PermissionName string `json:"permission_name" form:"permission_name" binding:"required,max=100" validate:"required,max=100"`
+	Module         string `json:"module" form:"module" binding:"required,max=50" validate:"required,max=50"`
+	APIPath        string `json:"api_path" form:"api_path" binding:"required,max=200" validate:"required,max=200"`
+	APIMethod      string `json:"api_method" form:"api_method" binding:"required,oneof=GET POST" validate:"required,oneof=GET POST"`
+	Status         int    `json:"status" form:"status"`
+	Remark         string `json:"remark" form:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
 }
 
 // PermDeleteReq 批量删除权限点。
 type PermDeleteReq struct {
-	IDs []uint64 `json:"ids" binding:"required,min=1" validate:"required,min=1"`
+	IDs []uint64 `json:"ids" form:"ids" binding:"required,min=1" validate:"required,min=1"`
 }

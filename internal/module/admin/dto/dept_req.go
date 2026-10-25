@@ -7,30 +7,30 @@ type DeptDetailReq struct {
 
 // DeptCreateReq 新建部门。
 type DeptCreateReq struct {
-	ParentID  uint64  `json:"parent_id"`
-	DeptName  string  `json:"dept_name" binding:"required,max=100" validate:"required,max=100"`
-	DeptCode  string  `json:"dept_code" binding:"required,max=50" validate:"required,max=50"`
-	LeaderID  *uint64 `json:"leader_id"`
-	SortOrder int     `json:"sort_order"`
-	Status    int     `json:"status"`
-	Remark    string  `json:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
+	ParentID  uint64  `json:"parent_id" form:"parent_id"`
+	DeptName  string  `json:"dept_name" form:"dept_name" binding:"required,max=100" validate:"required,max=100"`
+	DeptCode  string  `json:"dept_code" form:"dept_code" binding:"required,max=50" validate:"required,max=50"`
+	LeaderID  *uint64 `json:"leader_id" form:"leader_id"`
+	SortOrder int     `json:"sort_order" form:"sort_order"`
+	Status    int     `json:"status" form:"status"`
+	Remark    string  `json:"remark" form:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
 }
 
 // DeptUpdateReq 更新部门。
 type DeptUpdateReq struct {
-	ID        uint64  `json:"id" binding:"required" validate:"required"`
-	ParentID  uint64  `json:"parent_id"`
-	DeptName  string  `json:"dept_name" binding:"required,max=100" validate:"required,max=100"`
-	DeptCode  string  `json:"dept_code" binding:"required,max=50" validate:"required,max=50"`
-	LeaderID  *uint64 `json:"leader_id"`
-	SortOrder int     `json:"sort_order"`
-	Status    int     `json:"status"`
-	Remark    string  `json:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
+	ID        uint64  `json:"id" form:"id" binding:"required" validate:"required"`
+	ParentID  uint64  `json:"parent_id" form:"parent_id"`
+	DeptName  string  `json:"dept_name" form:"dept_name" binding:"required,max=100" validate:"required,max=100"`
+	DeptCode  string  `json:"dept_code" form:"dept_code" binding:"required,max=50" validate:"required,max=50"`
+	LeaderID  *uint64 `json:"leader_id" form:"leader_id"`
+	SortOrder int     `json:"sort_order" form:"sort_order"`
+	Status    int     `json:"status" form:"status"`
+	Remark    string  `json:"remark" form:"remark" binding:"omitempty,max=200" validate:"omitempty,max=200"`
 }
 
 // DeptDeleteReq 删除部门。
 type DeptDeleteReq struct {
-	ID uint64 `json:"id" binding:"required" validate:"required"`
+	ID uint64 `json:"id" form:"id" binding:"required" validate:"required"`
 }
 
 // DeptUserListReq 查询部门下用户。
@@ -61,6 +61,6 @@ func (r *DeptUserListReq) GetLimit() int {
 
 // DeptUserSaveReq 批量分配用户到部门。
 type DeptUserSaveReq struct {
-	DeptID  uint64   `json:"dept_id" binding:"required" validate:"required"`
-	UserIDs []uint64 `json:"user_ids"`
+	DeptID  uint64   `json:"dept_id" form:"dept_id" binding:"required" validate:"required"`
+	UserIDs []uint64 `json:"user_ids" form:"user_ids"`
 }

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
+	"maps"
 	"strings"
 	"sync"
 
@@ -585,11 +586,24 @@ func nodeDepth(n *core.Node) int {
 //
 // 结果进程级缓存：PropsSpec 由组件编译期静态声明（core.Lookup + SchemaJSON
 // 均为纯函数），进程内恒定；此前每个工作台请求都重新遍历生成，属冗余开销。
+//
+// **每次返回浅拷贝**：缓存是并发共享的，调用方一律在副本上改。
+// 缓存本身只读：调用方要往里合并自己的条目（工作台把插件 schema 并进同一张表，见
+// service.InspectorSchemas）就在副本上并，改坏了也只影响本次请求，不会污染进程级缓存、
+// 也不会与并发请求撞写。值类型是 json.RawMessage（[]byte 切片），故浅拷贝即可 ——
+// 全仓没有任何调用方改写 RawMessage 的字节，只整条覆盖。
+//
+// 返回值恒为可写的非 nil map（即使构建失败），调用方无需再做 nil 判断 ——
+// 工作台在拿到它之后会往里合并插件 schema，nil map 上写会 panic。
 func ComponentSchemas() (map[string]json.RawMessage, error) {
 	componentSchemasOnce.Do(func() {
 		componentSchemas, componentSchemasErr = buildComponentSchemas()
 	})
-	return componentSchemas, componentSchemasErr
+	out := maps.Clone(componentSchemas)
+	if out == nil {
+		out = map[string]json.RawMessage{}
+	}
+	return out, componentSchemasErr
 }
 
 // componentSchemas* 进程级单例（见 ComponentSchemas 注释）。

@@ -105,7 +105,7 @@ func TestCompileCSSTextAnim(t *testing.T) {
 	for _, want := range []string{
 		"display: inline-block",
 		"white-space: pre",
-		"animation: sky-fade-up 0.6s ease backwards",
+		"animation: sky-fade-in-up 0.6s ease backwards",
 	} {
 		if !strings.Contains(base, want) {
 			t.Errorf("分段基础规则缺少 %q，实际 %q", want, base)
@@ -131,8 +131,8 @@ func TestCompileCSSTextAnim(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(css, "@keyframes sky-fade-up") {
-		t.Error("NeedKeyframes 未激活 @keyframes sky-fade-up")
+	if !strings.Contains(css, "@keyframes sky-fade-in-up") {
+		t.Error("NeedKeyframes 未激活 @keyframes sky-fade-in-up")
 	}
 }
 
@@ -166,7 +166,7 @@ func TestCompileCSSTextAnimOff(t *testing.T) {
 	if strings.Contains(css, "sky-h-seg") {
 		t.Errorf("未开启文本动画不应输出分段规则，实际 %q", css)
 	}
-	if strings.Contains(css, "@keyframes sky-fade-up") {
-		t.Error("未开启文本动画不应激活 @keyframes sky-fade-up")
+	if strings.Contains(css, "@keyframes sky-fade-in-up") {
+		t.Error("未开启文本动画不应激活 @keyframes sky-fade-in-up")
 	}
 }

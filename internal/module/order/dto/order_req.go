@@ -46,8 +46,8 @@ func NormalizeCountryCode(raw string) string {
 
 // OrderItemReq 下单商品项：只传变体 id 与数量（价格与名称由服务端填）。
 type OrderItemReq struct {
-	VariantID string `json:"variantId"`
-	Quantity  int    `json:"quantity"`
+	VariantID string `json:"variantId" form:"variantId"`
+	Quantity  int    `json:"quantity" form:"quantity"`
 }
 
 // OrderAddress 地址（收货与账单共用同一形状）。
@@ -68,31 +68,31 @@ type OrderAddress struct {
 
 // CreateOrderReq 建单请求。
 type CreateOrderReq struct {
-	ProjectID          string         `json:"projectId"`
-	CustomerEmail      string         `json:"customerEmail"`
-	CustomerName       string         `json:"customerName"`
-	CustomerPhone      string         `json:"customerPhone"`
-	Items              []OrderItemReq `json:"items"`
-	Shipping           OrderAddress   `json:"shipping"`
-	Billing            OrderAddress   `json:"billing"`
-	PaymentMethod      string         `json:"paymentMethod"`
-	PaymentMethodTitle string         `json:"paymentMethodTitle"`
+	ProjectID          string         `json:"projectId" form:"projectId"`
+	CustomerEmail      string         `json:"customerEmail" form:"customerEmail"`
+	CustomerName       string         `json:"customerName" form:"customerName"`
+	CustomerPhone      string         `json:"customerPhone" form:"customerPhone"`
+	Items              []OrderItemReq `json:"items" form:"items"`
+	Shipping           OrderAddress   `json:"shipping" form:"shipping"`
+	Billing            OrderAddress   `json:"billing" form:"billing"`
+	PaymentMethod      string         `json:"paymentMethod" form:"paymentMethod"`
+	PaymentMethodTitle string         `json:"paymentMethodTitle" form:"paymentMethodTitle"`
 	// ShippingTotal 由调用方给出（运费策略不属于商品域）。
 	// DiscountTotal 无 CouponCode 时一律忽略；有券时以服务端试算为准。
 	// Subtotal / Total 由服务端按商品价格算出，不接受传入。
-	ShippingTotal int64 `json:"shippingTotal"`
-	DiscountTotal int64 `json:"discountTotal"`
+	ShippingTotal int64 `json:"shippingTotal" form:"shippingTotal"`
+	DiscountTotal int64 `json:"discountTotal" form:"discountTotal"`
 	// CouponCode 优惠码。给了它就以**服务端试算**的折扣为准并忽略 DiscountTotal ——
 	// 客户端能定价的接口等于把收银台交给客人自己看。
 	// 核销与建单在同一个事务里完成，不会出现「单建了、券没核销」或反之。
-	CouponCode string `json:"couponCode"`
-	Remark     string `json:"remark"`
+	CouponCode string `json:"couponCode" form:"couponCode"`
+	Remark     string `json:"remark" form:"remark"`
 	// RequestID 幂等键：同一键重复提交只落一单。
-	RequestID string `json:"requestId"`
+	RequestID string `json:"requestId" form:"requestId"`
 	// AdminNote 后台备注：后台代客订单与代发订单的填写位置。
-	AdminNote string `json:"adminNote"`
+	AdminNote string `json:"adminNote" form:"adminNote"`
 	// Locale 访客语言：决定自动开号的初始密码邮件用哪套模板（空 = 通用模板）。
-	Locale string `json:"locale"`
+	Locale string `json:"locale" form:"locale"`
 	// ProvisionGuestAccount 是否给这个邮箱开号并把初始密码寄过去（**显式请求字段**）。
 	//
 	// 三态，且是**唯一**的开号依据；订单来源由建单入口决定，不参与开户判定
@@ -106,10 +106,10 @@ type CreateOrderReq struct {
 	//
 	// 为什么用 *bool 而不是 bool：bool 的零值 false 无法区分「明确不开号」与「老调用方没传」，
 	// 一旦把零值当「不开号」，前台的「下单即开户」会在一夜之间静默消失（既有两条开号用例即判据）。
-	ProvisionGuestAccount *bool `json:"provisionGuestAccount"`
+	ProvisionGuestAccount *bool `json:"provisionGuestAccount" form:"provisionGuestAccount"`
 	// Attribution 归因与轨迹（流量来源 / 广告参数 / 会话 / 下单前浏览轨迹）。
 	// 由 inbound 从访客追踪上下文组装，允许为 nil（后台代客下单没有访客上下文）。
-	Attribution *Attribution `json:"attribution"`
+	Attribution *Attribution `json:"attribution" form:"attribution"`
 
 	// 以下由 inbound 覆盖写入，客户端不可伪造。
 	UserID    *uint64 `json:"-"`
@@ -137,9 +137,9 @@ type GetOrderReq struct {
 
 // ChangeStatusReq 状态流转。
 type ChangeStatusReq struct {
-	OrderID  uint64 `json:"orderId"`
-	ToStatus string `json:"toStatus"`
-	Remark   string `json:"remark"`
+	OrderID  uint64 `json:"orderId" form:"orderId"`
+	ToStatus string `json:"toStatus" form:"toStatus"`
+	Remark   string `json:"remark" form:"remark"`
 
 	OperatorType string `json:"-"`
 	OperatorID   uint64 `json:"-"`
@@ -148,8 +148,8 @@ type ChangeStatusReq struct {
 
 // CancelOrderReq 取消订单（会归还库存）。
 type CancelOrderReq struct {
-	OrderID uint64 `json:"orderId"`
-	Reason  string `json:"reason"`
+	OrderID uint64 `json:"orderId" form:"orderId"`
+	Reason  string `json:"reason" form:"reason"`
 	// ProjectID 订单所属工程（DB-009 第三批）：orders 带 FORCE 策略，取消是一次
 	// 「加锁读 + 更新 + 写状态日志」的事务，不给作用域时三步全部静默落空。
 	// 超时取消扫描已逐工程传入；后台手工取消的调用点（dashboard）目前不带 ——
@@ -167,13 +167,13 @@ type CancelOrderReq struct {
 // 它刚建完单、手上就是 id。将来接真网关的异步回调时再补「按单号加锁」的入口 ——
 // 现在写出来没有消费方，只会是一段没人跑的代码。
 type PayOrderReq struct {
-	OrderID uint64 `json:"orderId"`
+	OrderID uint64 `json:"orderId" form:"orderId"`
 
 	// 支付通道信息落的是订单列（对账要看），所以由调用方给出而不是订单域猜。
-	PaymentMethod      string `json:"paymentMethod"`
-	PaymentMethodTitle string `json:"paymentMethodTitle"`
-	TransactionID      string `json:"transactionId"`
-	Remark             string `json:"remark"`
+	PaymentMethod      string `json:"paymentMethod" form:"paymentMethod"`
+	PaymentMethodTitle string `json:"paymentMethodTitle" form:"paymentMethodTitle"`
+	TransactionID      string `json:"transactionId" form:"transactionId"`
+	Remark             string `json:"remark" form:"remark"`
 
 	OperatorType string `json:"-"`
 	OperatorID   uint64 `json:"-"`
@@ -182,9 +182,9 @@ type PayOrderReq struct {
 
 // RefundOrderReq 退款。
 type RefundOrderReq struct {
-	OrderID       uint64 `json:"orderId"`
-	Reason        string `json:"reason"`
-	TransactionID string `json:"transactionId"`
+	OrderID       uint64 `json:"orderId" form:"orderId"`
+	Reason        string `json:"reason" form:"reason"`
+	TransactionID string `json:"transactionId" form:"transactionId"`
 
 	OperatorType string `json:"-"`
 	OperatorID   uint64 `json:"-"`
@@ -309,15 +309,15 @@ type CouponRedemptionListReq struct {
 // 全站状态计数），而这里要的是「用户说了个线索（单号 / 客户名 / 邮箱 / 状态 / 时间段），
 // 把它指向的订单找出来」。混在一体会让列表页的筛选语义与工具语义互相将就。
 type FindOrderReq struct {
-	ProjectID string `json:"projectId"`
+	ProjectID string `json:"projectId" form:"projectId"`
 	// Keyword 单号 / 客户邮箱 / 客户姓名，三者任一命中即算（由 model 层的 ILIKE 收口）。
-	Keyword string `json:"keyword"`
-	Status  string `json:"status"`
+	Keyword string `json:"keyword" form:"keyword"`
+	Status  string `json:"status" form:"status"`
 	// From / To 都是 YYYY-MM-DD 的**日界**（UTC），可选；两个要么都给要么都不给 ——
 	// 只给一边的半开窗口说不清是「从这天起」还是「到这天止」。
-	From  string `json:"from"`
-	To    string `json:"to"`
-	Limit int    `json:"limit"`
+	From  string `json:"from" form:"from"`
+	To    string `json:"to" form:"to"`
+	Limit int    `json:"limit" form:"limit"`
 }
 
 // FindOrderResp 找到的订单（不含全站状态计数 —— 那是列表页的东西，工具不需要）。

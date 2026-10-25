@@ -456,8 +456,8 @@ func TestNavigationLegacyPagePostsAreGone(t *testing.T) {
 	body := page.Body.String()
 	// 页面上的写契约必须与真实端点一致：点一次新建 / 删除就该打到这两条 JSON 路径。
 	for _, want := range []string{
-		`data-write-api="` + navCreateAPIPath + `"`,
-		`data-write-api="` + navDeleteAPIPath + `"`,
+		`data-write-url="` + navCreateAPIPath + `"`,
+		`data-write-url="` + navDeleteAPIPath + `"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("列表页缺少 JSON 写声明 %q", want)

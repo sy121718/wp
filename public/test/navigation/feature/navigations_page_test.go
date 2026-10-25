@@ -61,8 +61,8 @@ func TestNavigationsPageRenders(t *testing.T) {
 	// 上移 / 下移也迁到真实 JSON 端点（action=move）：页面只剩声明，旧页面 POST 退役。
 	// 放行标记挂在外层 span（基座放行 [data-requires-js] 时会摘 disabled，边界语义要留在按钮上）。
 	for _, want := range []string{
-		`data-write-api="/api/navigation/update"`,
-		`data-write-mode="create"`,
+		`data-write-url="/api/navigation/update"`,
+		`data-write="create"`,
 		`<input type="hidden" name="action" value="move">`,
 		`name="dir" value="up"`,
 		`name="dir" value="down"`,
@@ -78,8 +78,8 @@ func TestNavigationsPageRenders(t *testing.T) {
 	}
 	// 新建与删除已迁到真实 JSON 端点（页面 POST 退役）：页面上只剩端点声明，请求由基座发出。
 	for _, want := range []string{
-		`data-write-api="/api/navigation/create"`,
-		`data-write-api="/api/navigation/delete"`,
+		`data-write-url="/api/navigation/create"`,
+		`data-write-url="/api/navigation/delete"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("页面缺少 JSON 写端点声明 %q", want)
@@ -111,8 +111,8 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 	// 来源批量加入已迁到真实 JSON 端点：抽屉表单只声明事实（端点 / 批量档 / outcome / 具名字段 /
 	// 分支判别键 / 结果区），请求由基座发出 —— 页面 POST 与它的 action=query 回跳链一起退役。
 	for _, want := range []string{
-		`data-write-api="/api/navigation/create"`,
-		`data-write-mode="bulk"`,
+		`data-write-url="/api/navigation/create"`,
+		`data-write="bulk"`,
 		`data-write-outcome="add"`,
 		`data-write-extra="action,projectId,kind,sourceType"`,
 		`<input type="hidden" name="action" value="addSource">`,
@@ -132,7 +132,7 @@ func TestNavigationsPageShowsSourceCandidates(t *testing.T) {
 		t.Error("无更新权限时页面主体未渲染")
 	}
 	for _, forbidden := range []string{
-		`data-drawer-open="#tpl-nav-create"`, `id="tpl-nav-create"`, `data-write-api="/api/navigation/create"`,
+		`data-drawer-open="#tpl-nav-create"`, `id="tpl-nav-create"`, `data-write-url="/api/navigation/create"`,
 		`data-drawer-open="#tpl-nav-add-source"`, `id="tpl-nav-add-source"`, `data-write-outcome="add"`,
 	} {
 		if strings.Contains(withoutUpdate, forbidden) {

@@ -260,7 +260,7 @@ const productListPageSize = productservice.ProductListPageSize
 // ==========================================================================
 // 商品新建页。
 //
-// 表单的提交已迁到 JSON 写基座（static/js/ui/json_write.js + /api/product/create），页面这边
+// 表单的提交已迁到 JSON 写基座（static/js/ui/write-base.js + /api/product/create），页面这边
 // 只剩「读数据 → 渲染」：没有回填槽、没有失败重渲染、也不再有页面的写 handler。
 // 字段名与 dto.CreateReq 的 json 标签的逐字对齐由 product_create_form_protocol_test.go 钉住
 // —— 模板写错一个 name 的后果是字段静默丢失（商品建出来了，某个字段是空的）。
@@ -307,7 +307,7 @@ func (h *ProductPageHandle) ProductNewPage(c *gin.Context) {
 // ==========================================================================
 // 商品编辑页（整页 + 回显）。
 //
-// 保存走 JSON 写基座（static/js/ui/json_write.js）：字段名与 /api/product/update 的
+// 保存走 JSON 写基座（static/js/ui/write-base.js）：字段名与 /api/product/update 的
 // UpdateReq json 标签逐字一致，由 product_edit_form_protocol_test.go 对账；
 // 失败只在原页结果区出现，服务端不再有「把刚提交的值原样送回」那一层。
 
@@ -806,7 +806,7 @@ func (h *ProductHandle) ListBundleSKUs(c *gin.Context) {
 //     表单值原样回填，用户接着点「应用调价」用的就是刚刚预览过的那份参数。
 //     它是**只读**的，所以仍是页面 POST（原生表单 + csrf_token 隐藏域）。
 //  2. **应用**（验收 3）：POST /api/product/pricing/apply 走 service 落库 + 留痕，
-//     由 ui/json_write.js 提交，成功回执含本次改动的变体数（页面上是 flash 结论行）。
+//     由 ui/write-base.js 提交，成功回执含本次改动的变体数（页面上是 flash 结论行）。
 //  3. **留痕**（验收 4）：页面下半部分是调价台账，每个批次可展开看到逐变体「原价 → 新价」。
 //
 // 接口面在前，后台页面在后。

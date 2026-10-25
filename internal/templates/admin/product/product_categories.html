@@ -57,8 +57,8 @@
         </div>
     </header>
 
-    {* 写动作直接调 JSON 端点（ui/json_write.js 基座）：删除 / 批量删除 / 新建 / 编辑四个动作
-       各自声明 data-write-api，结论就地显示在 data-write-status 里，不再经页面 POST 渲染提示页。
+    {* 写动作直接调 JSON 端点（ui/write-base.js 基座）：删除 / 批量删除 / 新建 / 编辑四个动作
+       各自声明 data-write-url，结论就地显示在 data-write-status 里，不再经页面 POST 渲染提示页。
        失败时已填内容与已勾选的勾选一并保留 —— 这是基座的行为，本页不再回滚任何状态。 *}
 
     {* 没有面包屑导航：列表本身就是整棵树（顶级分类带全部子类），
@@ -90,13 +90,13 @@
            工程里真的没有分类 → 指到本页页头那个新建抽屉。 *}
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids，不需要在提交前注入隐藏域。 *}
-        {* 表单本身不带 data-write-api：批量与单条删除的目标不同，端点声明落在各自的按钮/表单上
+        {* 表单本身不带 data-write-url：批量与单条删除的目标不同，端点声明落在各自的按钮/表单上
            （json_write.js 的 attrFrom：按钮优先、表单兜底；表单不声明 = 不会被继承成 fetch）。
            data-list-bulk 只是作用域锚点，给「勾选框在这里、动作在别处」的形态留一个可寻址的根。
            csrf_token 不需要隐藏域：写请求走 X-CSRF-Token 头（基座跳过同名字段）。 *}
         <form data-category-tree-form data-list-bulk>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
-            <p class="form-hint" data-write-flash-target="product_categories-bulk" role="status" hidden></p>
+            <p class="form-hint" role="status" hidden></p>
             {* 批量条只在有数据时渲染：空表没有可勾选的行，渲染一个永远显示不出来的条只是噪声。 *}
             {{if canDelete}}{{if len(.Categories) > 0}}
             {{yield bulkBarOpen(count=tr("admin.common.bulk.selected", "已选 {n} 项"))}}
@@ -104,14 +104,11 @@
                    formaction 等），装不下一串 data-write-* 声明。class 与 data-confirm 与它与同形。
                    成功条目按 items[].deleted 就地移除行；批量档**刻意不自动刷新** ——
                    「已删 N / 跳过 M + 逐条原因」一闪而过就看不完了。 *}
-                <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        hx-post="/api/product/category/bulk-delete" hx-swap="none" hx-include="closest form" data-reload-on-ok
-                        data-write-flash="product_categories-bulk"
+                <button data-write="bulk" data-write-url="/api/product/category/bulk-delete" type="submit" class="btn btn-sm btn-danger" data-requires-js hidden data-write-reload
                         data-msg-none-selected="{{tr("admin.product_categories.bulk.noneSelected", "没有勾选任何分类，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
                         data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
-                        data-msg-refresh="{{tr("admin.product_categories.bulkDelete.refresh", "刷新列表")}}"
-                        data-confirm="{{tr("admin.product_categories.bulkDeleteConfirm", "删除选中的分类？有子分类或被商品引用的会被拒绝，其余照常删除。")}}"
+                        data-msg-refresh="{{tr("admin.product_categories.bulkDelete.refresh", "刷新列表")}}" data-write-confirm="{{tr("admin.product_categories.bulkDeleteConfirm", "删除选中的分类？有子分类或被商品引用的会被拒绝，其余照常删除。")}}"
                         data-confirm-danger>{{tr("admin.common.bulk.delete", "批量删除")}}</button>
             {{yield bulkBarClose()}}
             {{end}}{{end}}
@@ -203,8 +200,7 @@
     {{if canDelete}}
     {* single 档只发 {id} + data-write-extra 点名的字段：多工程部署下 projectId 必须带上，
        否则 service 只能走「唯一工程」兜底，多于一个工程时直接 ErrInvalidParam。 *}
-    <form id="category-del-{{row.ID}}" class="hidden-form"
-          hx-post="/api/product/category/delete" hx-swap="none" data-reload-on-ok
+    <form data-write="delete" data-write-url="/api/product/category/delete" id="category-del-{{row.ID}}" class="hidden-form" data-write-reload
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{ .["t"]("admin.product_categories.list.deleteConfirm", "删除该分类？有子分类或被商品引用时会被拒绝。") }}" data-confirm-danger>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -214,8 +210,7 @@
     {{if canUpdate}}
     <template id="tpl-category-edit-{{row.ID}}">
         {{if isset(row.EditForm)}}{{include "product_category_form.html" row.EditForm}}{{else}}
-        <form hx-post="/api/product/category/update" hx-swap="none"
-              hx-disabled-elt="find button[type=submit]" data-close-on-ok="[data-drawer]">
+        <form data-write="update" data-write-url="/api/product/category/update" data-write-close="[data-drawer]">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{row.ID}}">
             <button type="button" hx-post="/admin/product-categories/seo-score" hx-include="closest form" hx-target="#category-seo-score-{{row.ID}}">{{ .["t"]("admin.product_categories.seoScore", "SEO 评分") }}</button>
@@ -232,8 +227,7 @@
     {{if canCreate}}
     <template id="tpl-category-create">
         {{if isset(.CategoryCreateForm)}}{{include "product_category_form.html" .CategoryCreateForm}}{{else}}
-        <form hx-post="/api/product/category/create" hx-swap="none"
-              hx-disabled-elt="find button[type=submit]" data-close-on-ok="[data-drawer]"><input type="hidden" name="projectId" value="{{selectedProject}}"><select class="form-select" name="parentId"><option value="">{{ .["t"]("admin.product_categories.option.topLevel", "（顶级分类）") }}</option></select><input class="form-input" name="name" required><p class="form-hint" data-write-status role="status" hidden></p><button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.create.submit", "新建分类") }}</button></form>
+        <form data-write="create" data-write-url="/api/product/category/create" data-write-close="[data-drawer]"><input type="hidden" name="projectId" value="{{selectedProject}}"><select class="form-select" name="parentId"><option value="">{{ .["t"]("admin.product_categories.option.topLevel", "（顶级分类）") }}</option></select><input class="form-input" name="name" required><p class="form-hint" data-write-status role="status" hidden></p><button data-requires-js hidden type="submit" class="btn btn-primary">{{ .["t"]("admin.product_categories.create.submit", "新建分类") }}</button></form>
         {{end}}
     </template>
     {{end}}

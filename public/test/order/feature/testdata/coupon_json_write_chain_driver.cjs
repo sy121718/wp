@@ -1,6 +1,6 @@
 /* coupon_json_write_chain_driver.cjs — task-98 S1 的**链式证据**驱动脚本。
  *
- * 目的：证明「模板里声明的属性 → 真实基座 json_write.js → HTTP 请求体 → 真实 handler」
+ * 目的：证明「模板里声明的属性 → 真实基座 write-base.js → HTTP 请求体 → 真实 handler」
  * 这条链是通的 —— 静态核验（data-write-number 有没有写）挡不住 Sol 报的 P1：
  * bulk 按钮少一个 data-write-number=status，属性看着齐全、请求却是字符串 status，
  * 服务端整批 400。只有把**真实渲染出来的模板属性**喂给**真实基座**、再让请求真的打到
@@ -9,7 +9,7 @@
  * 用法：node coupon_json_write_chain_driver.cjs <fixture.json>
  *   fixture = { uiDir, base, csrf, cases: [ { name, formAttrs, submitterAttrs,
  *               fields:[{name,value,checked,tag,type}], wantsRequest } ] }
- *   · uiDir: internal/templates/static/js/ui 的绝对路径（加载真 _util.js / json_write.js / confirm.js）
+ *   · uiDir: internal/templates/static/js/ui 的绝对路径（加载真 _util.js / write-base.js / confirm.js）
  *   · base:  真实 httptest 服务器地址（请求真打过去，不在本地桩掉 fetch）
  *   · fields: 按**渲染出来的**表单字段逐个构造（隐藏域 / 目标状态 select / 已勾选的 ids 复选框）
  * 输出：stdout 一行 JSON：{ results: [{ name, requests:[{url, body}], statusText, reloads, assigns }] }
@@ -26,7 +26,8 @@ const fixture = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const uiDir = fixture.uiDir;
 
 const utilSource = fs.readFileSync(uiDir + '/_util.js', 'utf8');
-const source = fs.readFileSync(uiDir + '/json_write.js', 'utf8');
+// 批次 2 之后写基座统一为 write-base.js（取代 json_write + htmx_form_body + write_feedback）。
+const source = fs.readFileSync(uiDir + '/write-base.js', 'utf8');
 const confirmSource = fs.readFileSync(uiDir + '/confirm.js', 'utf8');
 
 function classesOf(el) {
@@ -230,8 +231,13 @@ async function runCase(spec) {
         },
         sessionStorage: { getItem: () => null },
     };
+    // 新基座用 FormData 组装请求体（formdata 传输），sandbox 必须提供它。
+    // Node 18+ 自带 FormData，直接借过来即可（它是实现的真相，不是桩）。
+    sandbox.FormData = FormData;
+    sandbox.CustomEvent = class { constructor(t) { this.type = t; } };
+    sandbox.CSS = { escape: (x) => String(x) };
     sandbox.window = sandbox;
-    sandbox.global = sandbox;   // 基座里 request() 用的是 global.fetch
+    sandbox.global = sandbox;
     sandbox.location = {
         reload() { calls.reload += 1; },
         assign(url) { calls.assign.push(url); },
@@ -266,6 +272,14 @@ async function runCase(spec) {
         return ev;
     };
 
+    // TEMP DEBUG
+    try {
+        const WB = sandbox.window.WBUI && sandbox.window.WBUI.writeBase;
+        console.error('DEBUG forms attrs=', JSON.stringify(form.attrs));
+        console.error('DEBUG hasWB=', !!WB, 'bulkIDs=', WB ? JSON.stringify(WB.bulkIDs(form)) : 'n/a');
+        const qsa = form.querySelectorAll('[name]');
+        console.error('DEBUG qsa len=', qsa.length, 'names=', qsa.map((x)=>x.getAttribute('name')+':'+x.checked).join(','));
+    } catch (e) { console.error('DEBUG err', e.message); }
     fire();
     // 带 data-confirm 的按钮会被 confirm.js 拦下：不弹框、先不发请求。
     // 这里模拟用户点「确认」（<dialog>.returnValue='ok' + close），再由 confirm.js 重派发。

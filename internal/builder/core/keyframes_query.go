@@ -6,7 +6,7 @@ package core
 // 后台没有 props 管线，但同样不该常驻加载 63 条营销动效 ——
 // 所以给一条「页面声明要哪几个，才内联哪几个」的通道：
 //
-//     data["KeyframesCSS"] = core.KeyframeCSS([]string{"sky-fade-up"})
+//     data["KeyframesCSS"] = core.KeyframeCSS([]string{"sky-fade-in-up"})
 //
 // 声明为空 → 返回空串 → layout 不输出任何 <style>（零字节）。
 

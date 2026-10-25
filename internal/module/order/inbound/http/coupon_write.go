@@ -13,7 +13,7 @@ package orderhttp
 // 缩权」是本仓有案可查的事故（block_router.go / 迁移 521）。于是同一个删除权限只能有一个
 // 授权锚点，单条与批量共用它 —— 与 navigation_delete_handle.go / mail_contact_write.go 同源。
 //
-// 批档为什么逐条调用 service：前端基座（static/js/ui/json_write.js 的 bulk 档）要**逐条结果**
+// 批档为什么逐条调用 service：前端基座（static/js/ui/write-base.js 的 bulk 档）要**逐条结果**
 //（items[].deleted|updated + items[].message）才能决定移除哪一行、并说清哪几个没成功。
 // 券的删除与更新在 service 里都是**单条**方法（DeleteCoupon / UpdateCoupon），逐条调用与
 // 「整批一次」在语义上逐字相同（每条各自一个事务），却因此能给出逐条原因；条数上限走
@@ -48,7 +48,7 @@ import (
 
 // 三条端点各自的形状白名单（严格并集：多一个键就 400，不做「忽略未知字段」的宽松解析）。
 var (
-	// 单档删除接受**两个键名**：`id`（新口径，与 json_write.js 的 single 模式固定发的键名一致）
+	// 单档删除接受**两个键名**：`id`（新口径，与 write-base.js 的 single 模式固定发的键名一致）
 	// 与 `couponId`（历史键名：迁 JSON 之前这个 handler 读的就是 c.PostForm("couponId")）。
 	// 旧键保留是为了不静默破坏既有调用方；两者**同时出现**算形状错（不替调用方选一个）。
 	orderCouponDeleteSingleKeys = map[string]bool{"id": true, "couponId": true}
@@ -103,7 +103,7 @@ func couponTimeInputValue(raw string) string {
 // orderCouponBulkItem 批量逐条结果。
 //
 // 字段名与 block / mail / navigation 的批量结果同形（id + deleted / updated + message）：
-// 前端的 json_write.js 按 data.deleted / data.updated 计数、按 items[].message 列出逐条原因，
+// 前端的 write-base.js 按 data.deleted / data.updated 计数、按 items[].message 列出逐条原因，
 // 各模块给不同的字段名就等于让基座维护多套读法。
 type orderCouponBulkItem struct {
 	ID      string `json:"id"`

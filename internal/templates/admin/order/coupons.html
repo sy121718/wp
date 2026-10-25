@@ -106,9 +106,9 @@
         {* 空数据也渲染 <table>/<thead>：先让用户看见这个列表有哪些列，才谈得上判断「是不是筛错了」。
            空态整行落在 tbody 里（colspan = 11：勾选 / 券码 / 名称 / 折扣 / 门槛 / 已用上限 /
            每人限次 / 时间窗 / 状态 / 备注 / 操作）。 *}
-        {* 两个批量动作都迁到了「前端直调 JSON」（static/js/ui/json_write.js）：目标状态 / projectId
+        {* 两个批量动作都迁到了「前端直调 JSON」（static/js/ui/write-base.js）：目标状态 / projectId
            是启停要带、删除不要带的额外字段，所以端点声明落在**按钮**上（attrFrom：按钮优先、
-           表单兜底），表单上刻意不声明 data-write-api —— 声明了它会被继承成一个 fetch。
+           表单兜底），表单上刻意不声明 data-write-url —— 声明了它会被继承成一个 fetch。
            没有 action 是刻意的：禁用 JS 时这两个按钮是 hidden 的（下方 noscript 说明原因），
            不会退化成「GET 当前页」这种看起来像成功的空动作。
            也不需要 csrf 隐藏域：写请求走 X-CSRF-Token 头（见 <meta name="csrf-token">）。 *}
@@ -121,24 +121,22 @@
                     <option value="1">{{tr("admin.coupons.form.enabled", "启用")}}</option>
                     <option value="0">{{tr("admin.coupons.form.disabled", "停用")}}</option>
                 </select>
-                {* Endpoints and payload shapes are declared on the **buttons** themselves:
-                   `status` must be listed in data-write-number (a <select> value is always a string,
-                   the server accepts only the literal 0/1, so an unlisted status is sent as "0"/"1"
-                   and the whole batch is rejected with 400); `projectId` must NOT be listed
-                   (it is a string; coercing it to a number breaks binding).
+                {* Endpoints 与 payload 形状声明在**按钮**上：批量启停与批量删除的端点不同，
+                   一个表单并排两个动作。`status` 与 `projectId` 都写进 data-write-extra ——
+                   bulk 档只发 ids + 点名的字段（不发整份表单），类型由服务端 DTO 决定
+                   （formdata 的 "0" 直接绑进 int，实测）。
                    This note stays outside the button tag: a `{* *}` comment inside the tag breaks
                    parsing by tag (the static check and the chain test both read attributes per <button …>). *}
                 <button type="submit" class="btn btn-sm btn-primary" data-requires-js hidden
-                        data-write-api="/api/order/coupon/update" data-write-mode="bulk" data-write-outcome="update"
+                        data-write-url="/api/order/coupon/update" data-write="bulk" data-write-outcome="update"
                         data-write-extra="status,projectId"
-                        data-write-number="status"
                         data-msg-none-selected="{{tr("admin.coupons.bulk.noneSelected", "没有勾选任何优惠码，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
                         data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
                         data-msg-refresh="{{tr("admin.coupons.bulk.refresh", "刷新列表")}}"
                         data-confirm="{{tr("admin.coupons.bulkToggleConfirm", "把选中的优惠码改成上面选的状态？")}}">{{tr("admin.coupons.bulk.toggle", "批量启停")}}</button>
                 <button type="submit" class="btn btn-sm btn-danger" data-requires-js hidden
-                        data-write-api="/api/order/coupon/delete" data-write-mode="bulk" data-write-outcome="delete"
+                        data-write-url="/api/order/coupon/delete" data-write="bulk" data-write-outcome="delete"
                         data-msg-none-selected="{{tr("admin.coupons.bulk.noneSelected", "没有勾选任何优惠码，列表未改动。")}}"
                         data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}"
                         data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
@@ -271,14 +269,13 @@
        两个动作都走前端直调 JSON，形状按端点分：停用 / 启用 → /api/order/coupon/update 的单档
        （= 完整 CouponSaveReq），所以用 create 模式发「表单全部具名字段」（single 模式只发 {id}，
        会把门槛、时间窗悄悄写成零值）；删除 → /api/order/coupon/delete 的单档（只发 {id}）。
-       数值字段必须 data-write-number 点名：JSON 里要是数字，字符串会被绑定拒绝。
+       数值字段不必声明类型：formdata 里是字符串，服务端 DTO 按 int/float64 直接绑得进（实测）。
        结果区放在表单**外**的 host 里：隐藏表单是 display:none，写进去等于写进看不见的地方。 *}
     <div data-write-host>
     <p class="form-hint" data-write-status role="status" hidden></p>
     {{range _, cp := coupons}}
     <form id="coupon-toggle-{{cp.ID}}" class="hidden-form"
-          data-write-api="/api/order/coupon/update" data-write-mode="create"
-          data-write-number="id,discountValue,minSubtotal,maxUses,perUserLimit,status"
+          data-write-url="/api/order/coupon/update" data-write="create"
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
         <input type="hidden" name="id" value="{{cp.ID}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -294,7 +291,7 @@
         <input type="hidden" name="status" value="{{if cp.Status == 1}}0{{else}}1{{end}}">
     </form>
     <form id="coupon-del-{{cp.ID}}" class="hidden-form"
-          data-write-api="/api/order/coupon/delete" data-write-mode="single" data-write-number="id"
+          data-write-url="/api/order/coupon/delete" data-write="single"
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}"
           data-confirm="{{tr("admin.coupons.list.deleteConfirm", "删除该优惠码？有核销记录的券会被拒绝，请改用停用。")}}" data-confirm-danger>
         <input type="hidden" name="id" value="{{cp.ID}}">

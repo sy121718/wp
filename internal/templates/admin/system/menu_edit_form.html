@@ -11,7 +11,7 @@
 {{if isset(.MenuEditParent)}}{{parent = .MenuEditParent}}{{end}}
 <div data-drawer-fragment>
     {{if isset(.MenuEditErr)}}{{if .MenuEditErr != ""}}<p class="badge badge-warning" role="alert">{{.MenuEditErr}}</p>{{end}}{{end}}
-    <form method="post" action="/admin/menus/update" hx-post="/admin/menus/update" hx-target="closest [data-drawer-fragment]" hx-swap="outerHTML">
+    <form action="/admin/menus/update" method="post">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="id" value="{{m.ID}}">
         <div class="form-group">

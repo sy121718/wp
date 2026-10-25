@@ -65,3 +65,8 @@ public/backup/
 # DSH 技能缓存（本机状态，不入库）
 .dsh-mattskillsdeck-cache/
 .playwright-mcp/
+
+# 在仓库根目录误跑 `go build ./cmd/xxx` 会在这里留下同名二进制（曾误提交 formtags /
+# write-contracts 两个共 8MB+ 的文件）。构建产物一律不入库。
+/formtags
+/write-contracts

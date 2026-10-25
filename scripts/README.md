@@ -4,14 +4,13 @@
 
 ## 当前状态
 
-现有前端打包脚本来自基础框架迁移，但当前仓库不包含它们依赖的 `web/` 前端源码，也没有脚本引用的 GoReleaser 配置。因此以下脚本暂不属于可用发布链路：
+**2026-11 清理**：`build-all.*` / `build-frontend.*` / `prepare-embed.*` 六个脚本已删除。
+它们来自基础框架迁移，依赖本仓并不存在的 `web/` 前端工程与 `internal/embed/dist`
+（实测 `build-frontend.sh` 在第 16 行 `cd web` 直接失败，`build-all.sh` 在半途 `cd web` 打包）。
+静态资源实际由 `internal/templates/static_embed.go` 的 `go:embed` 打进二进制，
+发布只需 `go build -o app ./cmd`；留着这些脚本只会让人误以为存在一条前端打包链路。
 
-- `build-all.sh` / `build-all.ps1`
-- `build-frontend.sh` / `build-frontend.ps1`
-- `prepare-embed.sh` / `prepare-embed.ps1`
-- `deploy.sh`
-
-在前端源码位置、嵌入策略和发布产物格式确定前，不应使用这些脚本生成正式发布包。
+`deploy.sh` 保留（部署辅助），但它同样不会生成前端产物 —— 见下文「发布」一节。
 
 当前检查入口：
 
@@ -41,11 +40,14 @@ CI 与上线前跑的门禁（改了权限点 / service 层数据访问 / 后台
 | `check-no-internal-error-leak.sh` | 后台 handler 把 `err.Error()` 直出——响应写入 / 重定向 query / 模板数据**三种形态一起判**（豁免按文件 + 形态记账） | 无 |
 | `check-stock-sku-prefix-collisions.sh` | 迁移 262 剥掉仓库 SKU 的前缀后会撞成同一 `(warehouse_id, sku_code)` 的存量行（迁移会在启动时 RAISE，脚本把它提前） | psql + `config.yaml` |
 | `check-inventory-sku-format.sh` | 库存侧 SKU 的**存量格式**三类问题：空编码 / 带仓码前缀 / 采购行同类（只读巡检，命中即打回给人） | psql + `config.yaml` |
+| `check-htmx-api.sh` | htmx 4 的静默失效面：v2 已删属性（`hx-disabled-elt` 等）、v2 驼峰事件名、v2 扩展 API，以及**反向核对**模板里每个 `hx-*` 是否真在 vendored bundle 里存在 | 无 |
+| `check-js-controls.sh` | 前端控件的 `*.test.cjs` 行为测试（逐文件串行，避免 vm 夹具互相干扰） | node |
 
 每个门禁怎么跑、失败意味着什么：
 
 - `bash scripts/check-no-internal-error-leak.sh`（无依赖，秒级）。exit 1 = 某处把内部错误原文写进了响应、重定向 query 或模板数据；改走模块的归口助手（如 `admin_err.go`）或片段端点的 `adminui.PageErrorBadRequest`（400）/ `adminui.PageErrorInternal`（500，JSON，不渲染页壳；定义见 `internal/adminui/errors.go:46` / `:66`）。旧 `shell.PageError` 已删除；`shell.RenderJump` 与 `shell.Prepare` 过渡转发仍在。确实受控的写进脚本顶部 `EXEMPT`（按**文件 + 形态**记账，条目不再命中也会失败）。
 - `bash scripts/check-service-db-boundary.sh`（无外部依赖，秒级）。exit 1 = ① 非 admin 的 service 出现 `DB(ctx)`/`RevisionDB(ctx)`；①b 它在**事务回调的句柄**上直接拼查询（裸查询全族：`tx.WithContext(ctx).Model(...)` / `tx.Create(...)` / `tx.Where(...)` / `tx.Exec(...)` …）；② 跨模块 import 对方 model/service。修法都是「给 model 加具名方法」（要落在同一事务里就加 `…Tx` 变体、句柄由 service 透传）。①b 的暂缓条目写进 `scripts/service-db-boundary-allow.txt`，**每条必须写理由**，条目不再命中脚本会失败（只增不减等于没有门禁）；**能改成 model 具名方法的一律改，不要拿豁免记账**。**判据 ①b 是启发式**：句柄名只认 tx/txn/trx/session/dbtx/dbx/db/t，且经 model 裸句柄的直查（如 publication 的 `RouteDB(ctx)`）、先取句柄存到局部再用、`.Session(...)` 链式包装仍是同类漏网 —— 脚本绿 ≠ 边界干净。
+- `bash scripts/check-htmx-api.sh`（无依赖，秒级）。exit 1 = 模板或控件 JS 里出现了 htmx 4 不认的写法。这类错误的共同特征是**静默**：不报错、不 500、日志干净，只是那段交互从此不工作。本项目踩过两次——product 目录 9 处 `hx-disabled-elt`（实测对照：用旧属性时请求期间按钮 `disabled` 恒为 false，改 `hx-disable` 才 true），以及 `vendor/idiomorph/idiomorph-ext.min.js`（用 htmx 2 的 `htmx.defineExtension`，v4 下加载即 `TypeError`）。判据 4 是反向核对：从 bundle 抽出它认识的 `hx-*` 全集与模板求差集，抓的是「以为支持其实不支持」；它比「bundle 里 grep 得到该字符串」严格得多（后者的松判据实测会把 `hx-get` 误判成缺失）。排除名单只有 `hx-progress` / `hx-progress-slide`（本项目自定义 CSS 类）。
 - `bash scripts/check-stock-sku-prefix-collisions.sh` 与 `bash scripts/check-inventory-sku-format.sh`（需要 `psql`，库连接从 `config.yaml` 的 `database` 段读取，脚本里不另存口令）。两个都是**只读 SELECT**：exit 1 = 有命中（明细已打印），先把人拉进来定「留哪一行、改成什么码」——迁移与脚本都不做自动改码（自动加后缀 / 静默合并 / 丢行都是数据篡改）。第一个要在跑迁移 262 之前跑，第二个用于日常巡检存量。
 
 运维脚本：

@@ -255,7 +255,7 @@ func TestNavigationTranslationWriteRouteAndTemplateContract(t *testing.T) {
 
 	template := readFile("../../../../templates/admin/navigation/navigation_translations.html")
 	for _, want := range []string{
-		`data-write-api="/api/navigation/update"`,
+		`data-write-url="/api/navigation/update"`,
 		`data-write-rows=".nav-tr-row;context,hash,target"`,
 		`data-write-nav="{{ .["SuccessURL"] }}"`,
 		`name="action" value="translations"`,
@@ -372,8 +372,8 @@ func TestNavigationTranslationsPageRendersJSONWriteForm(t *testing.T) {
 	body := rec.Body.String()
 
 	for _, want := range []string{
-		`data-write-api="/api/navigation/update"`,
-		`data-write-mode="create"`,
+		`data-write-url="/api/navigation/update"`,
+		`data-write="create"`,
 		`data-write-rows=".nav-tr-row;context,hash,target"`,
 		`data-write-nav="/admin/navigations/translations?`,
 		`name="action" value="translations"`,

@@ -467,7 +467,7 @@ func TestOrderCouponBulkShapeChecksRunBeforeAnyServiceCall(t *testing.T) {
 // TestOrderCouponTemplatesDeclareNumericFieldsForJSONWrite 模板层静态交叉核验：
 // 每个写表单声明的 `data-write-number` 必须**恰好**等于它实际提交的数值字段。
 //
-// 为什么非核不可：json_write.js 的 create 模式把**表单具名字段**原样发出去，
+// 为什么非核不可：write-base.js 的 create 模式把**表单具名字段**原样发出去，
 // 只有 data-write-number 点名的字段会被转成 JSON 数字。少声明一个 → 该字段以字符串发出 →
 // 服务端绑定拒绝（表现是「这个表单永远提交不了」，而字段看着完全正常）；多声明一个 →
 // 声明了不存在的字段，后来人照着它找字段会找不到真相。
@@ -503,10 +503,11 @@ func TestOrderCouponTemplatesDeclareNumericFieldsForJSONWrite(t *testing.T) {
 			t.Errorf("%s：找不到目标表单（id 前缀 %q）", tc.file, tc.formIDPrefix)
 			continue
 		}
+		// data-write-number 已删：formdata 的 "3" 服务端直接绑进 int（实测），
+		// 前端不再声明类型。这里只守端点、模式与结论文案。
 		for _, want := range []string{
-			`data-write-api="` + tc.api + `"`,
-			`data-write-mode="` + tc.mode + `"`,
-			`data-write-number="` + tc.number + `"`,
+			`data-write-url="` + tc.api + `"`,
+			`data-write="` + tc.mode + `"`,
 			`data-msg-failed=`,
 		} {
 			if !strings.Contains(block, want) {
@@ -524,9 +525,9 @@ func TestOrderCouponTemplatesDeclareNumericFieldsForJSONWrite(t *testing.T) {
 		t.Fatalf("读 coupons.html 失败: %v", err)
 	}
 	for _, want := range []string{
-		`data-write-api="/api/order/coupon/update" data-write-mode="bulk" data-write-outcome="update"`,
+		`data-write-url="/api/order/coupon/update" data-write="bulk" data-write-outcome="update"`,
 		`data-write-extra="status,projectId"`,
-		`data-write-api="/api/order/coupon/delete" data-write-mode="bulk" data-write-outcome="delete"`,
+		`data-write-url="/api/order/coupon/delete" data-write="bulk" data-write-outcome="delete"`,
 		`data-msg-too-many="`,
 		`data-requires-js hidden`,
 	} {

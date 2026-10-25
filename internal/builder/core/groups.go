@@ -131,11 +131,11 @@ type InteractionProps struct {
 // 动效枚举白名单（效果基本库词汇表）。
 var (
 	allowedEntrance = map[string]bool{
-		"": true, "fade-in": true, "fade-up": true, "fade-down": true,
-		"fade-left": true, "fade-right": true,
-		"zoom-in": true, "zoom-out": true,
-		"slide-up": true, "slide-down": true, "slide-left": true, "slide-right": true,
-		"flip-x": true, "flip-y": true, "blur-in": true, "bounce-in": true, "rotate-in": true,
+		"": true, "fade-in": true, "fade-in-up": true, "fade-in-down": true,
+		"fade-in-left": true, "fade-in-right": true,
+		"zoom-in": true, "zoom-in-out": true,
+		"slide-in-up": true, "slide-in-down": true, "slide-in-left": true, "slide-in-right": true,
+		"blur-in": true, "bounce-in": true, "rotate-in": true,
 		// Animate.css 拆解扩充（keyframes_source.go）：
 		"back-in-up": true, "back-in-down": true, "back-in-left": true, "back-in-right": true,
 		"bounce-in-down": true, "bounce-in-up": true, "bounce-in-left": true, "bounce-in-right": true,
@@ -149,7 +149,16 @@ var (
 		"flip-in-x": true, "flip-in-y": true,
 	}
 	allowedEntranceDuration = map[string]bool{"": true, "fast": true, "normal": true, "slow": true}
-	allowedEntranceEasing   = map[string]bool{"": true, "spring": true, "soft": true, "bouncy": true, "classic": true}
+	// 入场缓动：三档弹簧（linear 采样，有真实过冲）+ classic（回退 ease）
+	// + 四条 cubic-bezier 经典曲线（老浏览器也支持，见 effects.go 的说明）。
+	allowedEntranceEasing = map[string]bool{
+		"": true,
+		// 弹簧（Apple 式回弹，需要 Chrome 113+ / Safari 17.2+）
+		"spring": true, "soft": true, "bouncy": true,
+		// 经典（全平台）
+		"classic": true,
+		"circ-out": true, "circ-in-out": true, "back-out": true, "quint-in-out": true,
+	}
 	allowedScrollReveal     = map[string]bool{"": true, "reveal": true}
 	allowedScrollStory      = map[string]bool{"": true, "zoom": true, "rise": true, "fade": true}
 	allowedHoverEffect      = map[string]bool{"": true, "lift": true, "scale": true, "glow": true, "shadow": true, "underline": true, "shine": true,
@@ -360,6 +369,15 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 			decls = append(decls, timingOverride(SpringSoftCurve, withLoop))
 		case "bouncy":
 			decls = append(decls, timingOverride(SpringBouncyCurve, withLoop))
+		// 经典 cubic-bezier 四条（老浏览器也认，不需要渐进增强回退）
+		case "circ-out":
+			decls = append(decls, timingOverride(EaseOutCirc, withLoop))
+		case "circ-in-out":
+			decls = append(decls, timingOverride(EaseInOutCirc, withLoop))
+		case "back-out":
+			decls = append(decls, timingOverride(EaseOutBack, withLoop))
+		case "quint-in-out":
+			decls = append(decls, timingOverride(EaseInOutQuint, withLoop))
 		default: // "" 与 "spring" 均走标准弹簧
 			decls = append(decls, timingOverride(SpringStandardCurve, withLoop))
 		}

@@ -4,7 +4,7 @@ package feature
 //
 // 本页补的是「商品自身字段」的编辑入口：在这之前，名称 / URL 段 / SKU / 状态 / 价格 /
 // 单位 / 重量 / SEO / 图集只有创建时能填，建完之后再也没有入口（详情页只管子资源）。
-// 保存链路已迁到 JSON 写基座（internal/templates/static/js/ui/json_write.js 直调
+// 保存链路已迁到 JSON 写基座（internal/templates/static/js/ui/write-base.js 直调
 // /api/product/update），页面那条 POST 不存在了。所以本文件守两件事：
 //  1. 回填：GET 的控件里是当前值（空表单等于把已有数据擦掉）；
 //  2. UpdateReq 的替换语义：多选字段给空数组 = 解绑全部（nil 才是「本次不改」）、
@@ -346,8 +346,8 @@ func TestProductEditPageAttributeListFailure(t *testing.T) {
 	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `role="alert"`) ||
 		!strings.Contains(page.Body.String(), "内部错误，请稍后重试") ||
 		strings.Contains(page.Body.String(), `id="product-edit-main"`) ||
-		strings.Contains(page.Body.String(), `data-write-api="/api/product/variant/save"`) ||
-		strings.Contains(page.Body.String(), `data-write-api="/api/product/rating/add"`) ||
+		strings.Contains(page.Body.String(), `data-write-url="/api/product/variant/save"`) ||
+		strings.Contains(page.Body.String(), `data-write-url="/api/product/rating/add"`) ||
 		strings.Contains(page.Body.String(), "injected attribute list failure") {
 		t.Fatalf("属性取数失败应展示归口错误且不渲染危险表单：状态=%d，页面尾部=%s", page.Code, tailOfPage(page.Body.String(), 900))
 	}

@@ -9,21 +9,21 @@ import (
 // Lang 是产物行唯一键 (pageId, version, lang) 的第三维（多语言 P3）：
 // 空 = 全局默认语言（sys_config 的 i18n 组 default_lang），service 落库前统一归一化，绝不留空。
 type RecordReq struct {
-	ArtifactID       string          `json:"artifactId" binding:"required"`
-	PageID           string          `json:"pageId" binding:"required"`
-	Version          int64           `json:"version" binding:"required,min=1"`
-	Lang             string          `json:"lang"`
-	SourceDocument   json.RawMessage `json:"sourceDocument" binding:"required"`
-	SchemaVersion    int             `json:"schemaVersion" binding:"required,min=1"`
-	SourceHash       string          `json:"sourceHash" binding:"required"`
-	BuildInputHash   string          `json:"buildInputHash" binding:"required"`
-	ArtifactProvider string          `json:"artifactProvider" binding:"required"`
-	ArtifactKey      string          `json:"artifactKey" binding:"required"`
-	ArtifactHash     string          `json:"artifactHash" binding:"required"`
-	CompilerVersion  string          `json:"compilerVersion" binding:"required"`
-	RegistryVersion  string          `json:"registryVersion" binding:"required"`
-	Manifest         json.RawMessage `json:"manifest" binding:"required"`
-	CreatedBy        string          `json:"createdBy"`
+	ArtifactID       string          `json:"artifactId" form:"artifactId" binding:"required"`
+	PageID           string          `json:"pageId" form:"pageId" binding:"required"`
+	Version          int64           `json:"version" form:"version" binding:"required,min=1"`
+	Lang             string          `json:"lang" form:"lang"`
+	SourceDocument   json.RawMessage `json:"sourceDocument" form:"sourceDocument" binding:"required"`
+	SchemaVersion    int             `json:"schemaVersion" form:"schemaVersion" binding:"required,min=1"`
+	SourceHash       string          `json:"sourceHash" form:"sourceHash" binding:"required"`
+	BuildInputHash   string          `json:"buildInputHash" form:"buildInputHash" binding:"required"`
+	ArtifactProvider string          `json:"artifactProvider" form:"artifactProvider" binding:"required"`
+	ArtifactKey      string          `json:"artifactKey" form:"artifactKey" binding:"required"`
+	ArtifactHash     string          `json:"artifactHash" form:"artifactHash" binding:"required"`
+	CompilerVersion  string          `json:"compilerVersion" form:"compilerVersion" binding:"required"`
+	RegistryVersion  string          `json:"registryVersion" form:"registryVersion" binding:"required"`
+	Manifest         json.RawMessage `json:"manifest" form:"manifest" binding:"required"`
+	CreatedBy        string          `json:"createdBy" form:"createdBy"`
 }
 
 // DetailReq 按 pageId + hash 查询产物。
@@ -45,9 +45,9 @@ type DetailByIDReq struct {
 type ContentObjectGCReq struct {
 	// RetentionDays 保留窗口（天）：早于 now-retentionDays 创建的对象才可能被回收。
 	// 留空或 <=0 按默认 30 天。
-	RetentionDays int `json:"retentionDays"`
+	RetentionDays int `json:"retentionDays" form:"retentionDays"`
 	// DryRun 只统计与列出候选、不实际删除。留空视为 true（安全默认）。
-	DryRun *bool `json:"dryRun"`
+	DryRun *bool `json:"dryRun" form:"dryRun"`
 	// Limit 本批处理行数上限，留空按默认批次。
-	Limit int `json:"limit"`
+	Limit int `json:"limit" form:"limit"`
 }

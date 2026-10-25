@@ -164,7 +164,7 @@
         {* 批量动作与勾选框同属一个 form：<form> 包 <table> 是合法的，
            提交时浏览器直接带上所有勾中的 ids（admin.js 只做计数与显隐，不注入字段）。
            行内写操作表单必须留在 </form> 之后 —— HTML 不允许 form 嵌套。 *}
-        <form data-write-api="/api/customer/bulk-status" data-write-mode="bulk" data-write-outcome="update" data-write-number="ids,status" data-write-extra="status"
+        <form data-write-url="/api/customer/bulk-status" data-write="bulk" data-write-outcome="update" data-write-extra="status"
  data-msg-none-selected="{{tr("admin.customers.write.noneSelected", "请先选择客户。")}}" data-msg-refresh="{{tr("admin.customers.write.refresh", "刷新列表")}}" data-msg-failed="{{tr("admin.customers.write.failed", "操作失败，请稍后重试。")}}" data-msg-too-many="{{tr("shell.err.bulkIdsTooMany", "一次最多操作 %s 项，当前 %s 项，请分批进行")}}">
  <p data-write-status role="status" aria-live="polite"></p>
  <noscript><p>{{tr("admin.customers.write.noJs", "修改客户状态和解除锁定需要 JavaScript。")}}</p></noscript>
@@ -177,7 +177,7 @@
                     解除锁定用 formaction 改投另一个端点，勾选状态与筛选字段照旧带上。 *}
                 <button type="submit" class="btn btn-sm" data-requires-js hidden name="status" value="1" data-confirm="{{tr("admin.customers.bulk.enableConfirm", "批量启用选中的客户？")}}">{{tr("admin.customers.bulk.enable", "批量启用")}}</button>
                 <button type="submit" class="btn btn-sm" data-requires-js hidden name="status" value="0" data-confirm="{{tr("admin.customers.bulk.disableConfirm", "批量停用选中的客户？")}}">{{tr("admin.customers.bulk.disable", "批量停用")}}</button>
-                <button type="submit" class="btn btn-sm" data-requires-js hidden data-write-api="/api/customer/bulk-unlock" data-write-outcome="receipt" data-write-extra="" data-confirm="{{tr("admin.customers.bulk.unlockConfirm", "批量解除锁定选中的客户？")}}">{{tr("admin.customers.bulk.unlock", "批量解除锁定")}}</button>
+                <button type="submit" class="btn btn-sm" data-requires-js hidden data-write-url="/api/customer/bulk-unlock" data-write-outcome="receipt" data-write-extra="" data-confirm="{{tr("admin.customers.bulk.unlockConfirm", "批量解除锁定选中的客户？")}}">{{tr("admin.customers.bulk.unlock", "批量解除锁定")}}</button>
             {{yield bulkBarClose()}}
             {{end}}
             <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.customers.list.aria", "客户列表") }}">
@@ -276,14 +276,14 @@
            按钮用 form="<id>" 关联；失败显示在可见卡片回执区，成功刷新当前 URL。 *}
         {{range _, r := rows}}
         {{if r.Actionable}}
-        <form id="customer-status-{{r.ID}}" class="hidden-form" data-write-api="/api/customer/status" data-write-mode="create" data-write-number="customerId,status" data-msg-failed="{{tr("admin.customers.write.failed", "操作失败，请稍后重试。")}}">
+        <form id="customer-status-{{r.ID}}" class="hidden-form" data-write-url="/api/customer/status" data-write="create" data-msg-failed="{{tr("admin.customers.write.failed", "操作失败，请稍后重试。")}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{r.ID}}">
             <input type="hidden" name="status" value="{{r.NextStatus}}">
         </form>
         {{end}}
         {{if r.Locked}}
-        <form id="customer-unlock-{{r.ID}}" class="hidden-form" data-write-api="/api/customer/unlock" data-write-mode="create" data-write-number="customerId" data-msg-failed="{{tr("admin.customers.write.failed", "操作失败，请稍后重试。")}}">
+        <form id="customer-unlock-{{r.ID}}" class="hidden-form" data-write-url="/api/customer/unlock" data-write="create" data-msg-failed="{{tr("admin.customers.write.failed", "操作失败，请稍后重试。")}}">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="customerId" value="{{r.ID}}">
         </form>

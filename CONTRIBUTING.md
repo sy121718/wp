@@ -109,7 +109,7 @@ scripts/check-permission-gaps.sh
 
 每个脚本拦什么、判据是什么、豁免怎么记账 → 见各脚本文件头的注释与 `scripts/check-all.sh`。
 
-`scripts/` 下还有不入门禁的脚本：`dev.sh`（`make dev` 调用）、`rls-role-setup.sh`（建非超级角色并授权）、`index-usage-report.sh`（索引使用量快照）、`site-preview.py`、`audit-*.py`，以及 `build-all.*` / `build-frontend.*` / `prepare-embed.*` / `deploy.sh` —— **最后这一批属历史脚本**，缺少它们依赖的前端源码与发布产物定义，不要拿来发版（见 [`scripts/README.md`](scripts/README.md)）。
+`scripts/` 下还有不入门禁的脚本：`dev.sh`（`make dev` 调用）、`rls-role-setup.sh`（建非超级角色并授权）、`index-usage-report.sh`（索引使用量快照）、`site-preview.py`、`audit-*.py`、`deploy.sh`（见 [`scripts/README.md`](scripts/README.md)）。
 
 ## 4. 测试约定
 
@@ -188,6 +188,6 @@ make test-race      # 触及 pkg/ 或核心五域时
 
 ## 6. 已知限制
 
-- 前端打包脚本（`build-all.*` / `build-frontend.*` / `prepare-embed.*` / `deploy.sh`）当前不构成可用发布链路，详见 [`scripts/README.md`](scripts/README.md)。
+- 前端打包脚本（`build-all.*` / `build-frontend.*` / `prepare-embed.*`）已于 2026-11 删除：它们依赖的 `web/` 前端工程与 `internal/embed/dist` 在本仓都不存在（实测前者 `cd web` 直接失败）。静态资源由 `internal/templates/static_embed.go` 的 `go:embed` 打进入二进制，发布用 `go build -o app ./cmd`。`deploy.sh` 保留，详见 [`scripts/README.md`](scripts/README.md)。
 - 生产构建用 `go build -o app ./cmd`，后台模板与 `/static` 须一并交付 —— 不能只复制一个二进制。
 - 开源发行仍待补可复现发行包与更完整的自动检查。

@@ -8,7 +8,7 @@
    成功后整页刷新 —— 刷新带回当前 URL，列表的筛选与页码自动保住。
    key / lang 是只读展示，但必须以 hidden 具名提交：词条的身份由二者共同决定。 *}
 <div data-drawer-fragment>
-    <form data-write-api="/api/i18n/save" data-write-mode="create"
+    <form data-write-url="/api/i18n/save" data-write="create"
           data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
         <input type="hidden" name="action" value="update">
         <input type="hidden" name="key" value="{{entry.Key}}">

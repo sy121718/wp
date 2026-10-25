@@ -8,13 +8,13 @@
    表单没有 method/action，也没有 csrf 隐藏域（写请求走 X-CSRF-Token 头）；
    失败不重渲染整页：结论由全局 toast 提示（X-Message 头），用户的输入从头到尾没离开过 DOM。
 
-   三条原本要在前端声明的事，现在由 ui/htmx_form_body.js 或 formdata 本身承担
+   三条原本要在前端声明的事，现在由 ui/write-base.js 或 formdata 本身承担
    （字段名仍然与 dto.CreateReq 的 json/form 标签逐字对齐）：
      · 多选 checkbox（属性组 / 多仓）：未勾选时浏览器**根本不提交**该键，
        「一个都不勾 = 不发」天然成立（= 不挂属性组 / 用默认仓，而不是「解绑」）；
      · 数量 / 默认价 / 跟踪开关：formdata 里是字符串，但后端 *int / *bool / *float64
        能直接绑（实测），不需要前端转换；
-     · 留空即「不设置」：htmx_form_body.js 全局删空值键（空串发给 *float64 / *int 会 400）。
+     · 留空即「不设置」：write-base.js 全局删空值键（空串发给 *float64 / *int 会 400）。
    只有「成功后按响应 id 跳到编辑页」需要声明：data-write-nav。
    「勾了跟踪却留空数量」= 明确 0 这条语义由 dto.CreateReq.TrackQuantity 送到 service（见
    product_req.go），前端不做业务归一。
@@ -27,17 +27,12 @@
 {{cfProject := .["SelectedProject"]}}
 {* 多仓勾选表的数据源（未接库存契约时整块跳过，见下方 isset 判据）。 *}
 {{cfWarehouses := .["WarehouseOptions"]}}
-        {* 走 htmx 原生表单提交（formdata）。三条「formdata 与 JSON 不一样」的地方
-           由 ui/htmx_form_body.js 承担，所以这里不再逐个声明：
-             · data-write-number / -bool / -float：formdata 里值都是字符串，而后端
-               *int / *bool / *float64 能直接绑（实测），只有嵌套对象与行数组才需要声明；
-             · data-write-array：多选 checkbox 未勾选时浏览器**根本不提交**该键，
-               「一个都不勾 = 不发」天然成立（与 JSON 侧同义：新建没有可解绑的东西）；
-             · data-write-skip-empty：htmx_form_body.js 全局删空值键，覆盖了它。
-           保留 data-write-nav：成功后按响应 data.id 跳到编辑页（write_feedback.js 读它）。 *}
-        <form id="product-create-form" class="form-stack"
-              hx-post="/api/product/create" hx-swap="none"
-              hx-disabled-elt="find button[type=submit]"
+        {* 走写基座（ui/write-base.js）的 formdata 提交。三件事基座已经包了，模板不必声明：
+             · 标量类型（int / *bool / *float64）：formdata 里虽是字符串，服务端直接绑得进（实测）；
+             · 多选 checkbox：未勾选时浏览器**根本不提交**该键，「一个都不勾 = 不发」天然成立；
+             · 空值键：基座统一删掉（`sort=` 否则会让后端 *int 绑成 0）。
+           要声明的只有 data-write-nav：成功后按响应 data.id 跳到编辑页。 *}
+        <form data-write="create" data-write-url="/api/product/create" id="product-create-form" class="form-stack"
               data-write-nav="/admin/products/edit?project={{cfProject}}&id={id}"
               data-product-create-form>
             <input type="hidden" name="projectId" value="{{cfProject}}">

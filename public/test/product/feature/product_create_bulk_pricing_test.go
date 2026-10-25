@@ -45,7 +45,7 @@ func newCreateFlowEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
 	engine.GET("/admin/products/new", adminui.PageSlot(producthttp.ProductNewPageTemplate), handle.ProductNewPage)
 	engine.GET("/admin/products/detail", adminui.PageSlot(producthttp.ProductDetailPageTemplate), handle.ProductDetailPage)
-	// 批量改价没有页面 POST：列表抽屉走 /api/product/bulk-pricing（ui/json_write.js）。
+	// 批量改价没有页面 POST：列表抽屉走 /api/product/bulk-pricing（ui/write-base.js）。
 	engine.POST("/api/product/bulk-pricing", producthttp.NewProductHandle(f.svc).BulkPricing)
 	return engine, f
 }

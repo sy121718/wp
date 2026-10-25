@@ -958,7 +958,7 @@ func TestMailSplitContactPageWritePostsAreRetired(t *testing.T) {
 	}
 }
 
-// mailSplitRoutesJSONPost 带会话与 CSRF 的 JSON POST —— 前端 json_write.js 在生产里就是这么发的。
+// mailSplitRoutesJSONPost 带会话与 CSRF 的 JSON POST —— 前端 write-base.js 在生产里就是这么发的。
 func mailSplitRoutesJSONPost(t *testing.T, env *mailSplitRoutesEnv, sess *support.AdminSession, path string, payload map[string]interface{}) *httptest.ResponseRecorder {
 	t.Helper()
 	raw, err := json.Marshal(payload)

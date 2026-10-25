@@ -16,29 +16,29 @@ import (
 func TestApplyScrollReveal(t *testing.T) {
 	// 空配置：注入。
 	empty := &core.InteractionProps{}
-	applyScrollReveal(empty, "fade-up")
-	if empty.Entrance != "fade-up" || empty.ScrollReveal != "reveal" {
+	applyScrollReveal(empty, "fade-in-up")
+	if empty.Entrance != "fade-in-up" || empty.ScrollReveal != "reveal" {
 		t.Errorf("空配置应注入: %+v", empty)
 	}
 
 	// 显式 entrance：不覆盖。
 	explicit := &core.InteractionProps{Entrance: "bounce-in"}
-	applyScrollReveal(explicit, "fade-up")
+	applyScrollReveal(explicit, "fade-in-up")
 	if explicit.Entrance != "bounce-in" || explicit.ScrollReveal != "" {
 		t.Errorf("显式 entrance 不应被覆盖: %+v", explicit)
 	}
 
 	// 滚动叙事：不注入（story 独占 animation 声明）。
 	story := &core.InteractionProps{ScrollStory: "zoom"}
-	applyScrollReveal(story, "fade-up")
+	applyScrollReveal(story, "fade-in-up")
 	if story.Entrance != "" {
 		t.Errorf("scrollStory 存在时不应注入: %+v", story)
 	}
 
 	// 其他动效字段保留（注入为字段级合并，不触碰悬浮等）。
 	other := &core.InteractionProps{HoverEffect: "lift"}
-	applyScrollReveal(other, "fade-up")
-	if other.HoverEffect != "lift" || other.Entrance != "fade-up" {
+	applyScrollReveal(other, "fade-in-up")
+	if other.HoverEffect != "lift" || other.Entrance != "fade-in-up" {
 		t.Errorf("应保留既有字段并注入: %+v", other)
 	}
 }
@@ -50,7 +50,7 @@ const revealDoc = `{"settings":{"layout":{"mode":"full"},"base":{}},"root":[	{"i
 
 // TestScrollRevealLayered 分层集成：主题全站开启 → 顶层组件注入、容器 off 子树豁免。
 func TestScrollRevealLayered(t *testing.T) {
-	theme := &ThemeSettings{Motion: ThemeMotion{ScrollRevealDefault: true, DefaultEntrance: "fade-up"}}
+	theme := &ThemeSettings{Motion: ThemeMotion{ScrollRevealDefault: true, DefaultEntrance: "fade-in-up"}}
 	page, err := ParsePage([]byte(revealDoc))
 	if err != nil {
 		t.Fatalf("ParsePage: %v", err)
@@ -64,7 +64,7 @@ func TestScrollRevealLayered(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 
-	for _, want := range []string{"animation-timeline: view()", "animation: sky-fade-up 0.6s ease backwards", "@keyframes sky-fade-up"} {
+	for _, want := range []string{"animation-timeline: view()", "animation: sky-fade-in-up 0.6s ease backwards", "@keyframes sky-fade-in-up"} {
 		if !strings.Contains(compiled.CSS, want) {
 			t.Errorf("CSS 缺少 %q\n%s", want, compiled.CSS)
 		}

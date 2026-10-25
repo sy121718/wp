@@ -16,15 +16,15 @@ package aidto
 // 用零值 int 会让「没提交状态字段」被读成「停用」—— 新建抽屉里没有状态字段，
 // 那样建出来的供应商一出生就是停用，且看不出哪里错了。
 type SaveProviderReq struct {
-	ID          int64  `json:"id"`
-	ProviderKey string `json:"providerKey"`
-	DisplayName string `json:"displayName"`
-	BaseURL     string `json:"baseUrl"`
-	Protocol    string `json:"protocol"`
-	APIKey      string `json:"apiKey"`
-	Status      *int   `json:"status"`
-	Sort        int    `json:"sort"`
-	Version     int64  `json:"version"`
+	ID          int64  `json:"id" form:"id"`
+	ProviderKey string `json:"providerKey" form:"providerKey"`
+	DisplayName string `json:"displayName" form:"displayName"`
+	BaseURL     string `json:"baseUrl" form:"baseUrl"`
+	Protocol    string `json:"protocol" form:"protocol"`
+	APIKey      string `json:"apiKey" form:"apiKey"`
+	Status      *int   `json:"status" form:"status"`
+	Sort        int    `json:"sort" form:"sort"`
+	Version     int64  `json:"version" form:"version"`
 
 	// UpdateBy 由服务端填（当前登录账号），json:"-" 让请求体无法自报操作人。
 	UpdateBy int64 `json:"-"`
@@ -32,9 +32,9 @@ type SaveProviderReq struct {
 
 // SetStatusReq 启停一个供应商（卡片上的状态点）。
 type SetStatusReq struct {
-	ID       int64 `json:"id"`
-	Status   int   `json:"status"`
-	Version  int64 `json:"version"`
+	ID       int64 `json:"id" form:"id"`
+	Status   int   `json:"status" form:"status"`
+	Version  int64 `json:"version" form:"version"`
 	UpdateBy int64 `json:"-"`
 }
 
@@ -44,16 +44,16 @@ type SetStatusReq struct {
 // 不做「逐行 diff」—— 行没有自己的身份（id 是模型 ID，由用户填），逐行合并
 // 会把「删掉一行」变成无法表达的操作。
 type SaveModelsReq struct {
-	ProviderID int64        `json:"providerId"`
-	Version    int64        `json:"version"`
-	Models     []ModelEntry `json:"models"`
+	ProviderID int64        `json:"providerId" form:"providerId"`
+	Version    int64        `json:"version" form:"version"`
+	Models     []ModelEntry `json:"models" form:"models"`
 	UpdateBy   int64        `json:"-"`
 }
 
 // ProviderActionReq 「恢复默认模型」「获取可用模型」这类整组动作的入参。
 type ProviderActionReq struct {
-	ProviderID int64 `json:"providerId"`
-	Version    int64 `json:"version"`
+	ProviderID int64 `json:"providerId" form:"providerId"`
+	Version    int64 `json:"version" form:"version"`
 	UpdateBy   int64 `json:"-"`
 }
 

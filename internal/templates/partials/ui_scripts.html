@@ -1,13 +1,16 @@
 {* 控制面的控件基座唯一入口：后台、工作台和控件验证页共用。
    顺序为 htmx → 助手 → 控件 → 扫描入口。访问面仍由 builder 按能力裁剪。
-   htmx 排在最前：控件入口 index.js 监听 htmx:afterSwap 重扫，后台所有局部刷新
+   htmx 排在最前：控件入口 index.js 监听 htmx:after:swap 重扫，后台所有局部刷新
    都建立在它之上（原先从 CDN 引，CDN 不可达时下拉/抽屉/按钮会静默退化成整页刷新）。 *}
 <script src="/static/js/ui/htmx.min.js"></script>
-{* 写表单的请求体整形必须紧跟 htmx 之后、任何发请求的控件之前：
-   它注册 htmx:config:request，把空值键删掉（formdata 里 name= 空串会让后端 *int 绑成 0，
-   而 JSON 侧「省略字段」= 本次不改）。晚于控件加载时，早于它注册的监听仍会跑，
-   但为了「谁在什么时候改了请求体」这条一眼可查，固定放在 htmx 后面。 *}
-<script src="/static/js/ui/htmx_form_body.js"></script>
+{* 写表单的唯一基座：整形（删空值键 / 嵌套字段）+ 提交 + 收尾（toast / 导航 / 刷新）。
+   紧随 htmx 之后、任何控件之前 —— 它在 document 上以捕获阶段接 submit，
+   晚加载会让早期提交走原生提交（整页跳转）。
+   取代了 json_write.js + write-base.js + write_feedback.js 三个文件。 *}
+<script src="/static/js/ui/write-base.js"></script>
+{* 控件 ↔ htmx 的唯一适配层：控件广播 wb:rescan，本文件转成 htmx.process。
+   没有 htmx 时它什么都不做 —— 控件因此不依赖传输层。 *}
+<script src="/static/js/ui/htmx-bridge.js"></script>
 <script src="/static/js/ui/_util.js"></script>
 <script src="/static/js/ui/select.js"></script>
 <script src="/static/js/ui/drawer.js"></script>
@@ -15,8 +18,6 @@
 <script src="/static/js/ui/colorfield.js"></script>
 <script src="/static/js/ui/busy.js"></script>
 <script src="/static/js/ui/confirm.js"></script>
-<script src="/static/js/ui/write_feedback.js"></script>
-<script src="/static/js/ui/json_write.js"></script>
 <script src="/static/js/ui/membership_write.js"></script>
 <script src="/static/js/ui/modal.js"></script>
 <script src="/static/js/ui/toast.js"></script>

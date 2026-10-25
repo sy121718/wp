@@ -371,7 +371,7 @@ func TestNavigationAddSourceLegacyPagePostIsGone(t *testing.T) {
 	}
 	body := page.Body.String()
 	for _, want := range []string{
-		`data-write-api="` + navCreateAPIPath + `"`,
+		`data-write-url="` + navCreateAPIPath + `"`,
 		`data-write-outcome="add"`,
 		`value="addSource"`,
 	} {

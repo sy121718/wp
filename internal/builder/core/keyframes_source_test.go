@@ -59,7 +59,7 @@ func TestKeyframesSourceParsed(t *testing.T) {
 		seen[k.Name] = true
 	}
 	// 抽查几个动效词汇确实在（入场 / 循环 / 拆解组 / 滚动叙事各自代表）。
-	for _, name := range []string{"sky-fade-up", "sky-loop-flash", "sky-story-zoom"} {
+	for _, name := range []string{"sky-fade-in-up", "sky-loop-flash", "sky-story-zoom"} {
 		if !seen[name] {
 			t.Errorf("缺少动效词汇: %s", name)
 		}

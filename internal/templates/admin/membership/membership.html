@@ -52,7 +52,7 @@
     {{if isset(.Edit)}}
     <section class="card">
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.tier.editTitle", "编辑等级") }}：{{ .Edit.Name }}</span></div>
-        <form data-write-api="/api/membership/tier/update" data-write-mode="create" data-write-builder="membership-tier" data-write-number="tierId,sortOrder" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
+        <form data-write-url="/api/membership/tier/update" data-write="create" data-write-builder="membership-tier" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -87,7 +87,7 @@
     <section class="card">
         <div class="card-header"><span class="card-title">{{ .["t"]("admin.membership.entitlement.title", "权益") }}</span></div>
         <p class="form-hint">{{ .["t"]("admin.membership.entitlement.hint", "清单即最终状态：这里没勾选 / 没填写的权益会被删掉。免运费与折扣相加扣减，与优惠码各自独立计账。") }}</p>
-        <form data-write-api="/api/membership/entitlement/save" data-write-mode="create" data-write-builder="membership-entitlements" data-write-number="tierId" data-membership-shipping-kind="{{.KindFreeShippingValue}}" data-membership-discount-kind="{{.KindDiscountValue}}" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
+        <form data-write-url="/api/membership/entitlement/save" data-write="create" data-write-builder="membership-entitlements" data-membership-shipping-kind="{{.KindFreeShippingValue}}" data-membership-discount-kind="{{.KindDiscountValue}}" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -115,7 +115,7 @@
         <div class="action-row">
             {{if !.Edit.IsDefault}}
             {{if isset(.Buttons["membership.tier_update"])}}
-            <form data-write-api="/api/membership/tier/update" data-write-mode="create" data-write-number="tierId" data-write-bool="isDefault" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+            <form data-write-url="/api/membership/tier/update" data-write="create" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <p class="form-hint" data-write-status role="status" hidden></p>
                 <input type="hidden" name="isDefault" value="true">
@@ -126,7 +126,7 @@
             {{end}}
             {{end}}
             {{if isset(.Buttons["membership.tier_delete"])}}
-            <form data-write-api="/api/membership/tier/delete" data-write-mode="create" data-write-number="tierId" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+            <form data-write-url="/api/membership/tier/delete" data-write="create" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
                 <input type="hidden" name="csrf_token" value="{{csrf}}">
                 <p class="form-hint" data-write-status role="status" hidden></p>
                 <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -184,7 +184,7 @@
 
 {{if isset(.Buttons["membership.tier_create"])}}
 <template id="tpl-tier-create">
-    <form data-write-api="/api/membership/tier/create" data-write-mode="create" data-write-builder="membership-tier" data-write-number="sortOrder" data-write-bool="isDefault" data-membership-create="true" data-membership-shipping-kind="{{.KindFreeShippingValue}}" data-membership-discount-kind="{{.KindDiscountValue}}" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
+    <form data-write-url="/api/membership/tier/create" data-write="create" data-write-builder="membership-tier" data-membership-create="true" data-membership-shipping-kind="{{.KindFreeShippingValue}}" data-membership-discount-kind="{{.KindDiscountValue}}" data-write-nav="/admin/membership?{{listQuery}}" data-msg-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}" class="form-stack">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <p class="form-hint" data-write-status role="status" hidden></p>
         <input type="hidden" name="projectId" value="{{selectedProject}}">

@@ -142,7 +142,7 @@ func TestBlocksListKeepsSelectionAndDeleteWiring(t *testing.T) {
 	for _, want := range []string{
 		// 勾选框所在的批量表单：现在是「JSON 写表单」声明（前一版是页面 POST 的 action，
 		// 工程筛选不再进 action —— 批量只发 ids，结果由前端按当前 URL 刷新）。
-		`data-write-api="/api/block/bulk-delete"`, `data-write-mode="bulk"`,
+		`data-write-url="/api/block/bulk-delete"`, `data-write="bulk"`,
 		`data-msg-none-selected`, `data-write-status`,
 		`name="ids"`, "data-check-item", "data-bulk-bar", "data-bulk-count",
 		"data-filter-input", "data-filter-text", "data-filter-empty",
@@ -263,20 +263,20 @@ func TestBlocksStaleImpactMissingKeyStillRenders(t *testing.T) {
 //
 // 三处写入口的失败出口也在这里钉住（它们是**看不到就没人知道**的那类缺陷）：
 // 新建 / 批量在表单内有结果区；行内删除的表单自身 display:none，结果区必须挂在
-// [data-write-host] 上（json_write.js 的 statusOf 会沿 closest 上溯找它）。
+// [data-write-host] 上（write-base.js 的 statusOf 会沿 closest 上溯找它）。
 func TestBlocksWriteFormsAreJSONWired(t *testing.T) {
 	body := renderBlocksPage(t, blocksBaseData(true))
 
 	for _, want := range []string{
 		// 新建（抽屉表单）：成功直接进工作台编辑内容。
-		`data-write-api="/api/block/create"`, `data-write-mode="create"`,
+		`data-write-url="/api/block/create"`, `data-write="create"`,
 		`data-write-nav="/workbench?block={id}"`,
 		// 单条删除 + 批量删除端点。
-		`data-write-api="/api/block/delete"`, `data-write-mode="single"`,
-		`data-write-api="/api/block/bulk-delete"`, `data-write-mode="bulk"`,
+		`data-write-url="/api/block/delete"`, `data-write="single"`,
+		`data-write-url="/api/block/bulk-delete"`, `data-write="bulk"`,
 		// 结果区（三个写入口各一处）与行内删除的宿主元素。
 		`data-write-status`, `data-write-host`,
-		// 无 JS 状态：控件默认 hidden，由 json_write.js 的 [data-requires-js] 放出来。
+		// 无 JS 状态：控件默认 hidden，由 write-base.js 的 [data-requires-js] 放出来。
 		`data-requires-js`,
 	} {
 		if !strings.Contains(body, want) {

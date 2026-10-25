@@ -10,7 +10,7 @@ package feature
 // **只有真实链路才答得出来**的三件事：
 //
 //	① 端点挂的确实是三层链：无会话拒（不是裸 handler）、有会话但缺 X-CSRF-Token 被 CSRF 拒。
-//	   前端 json_write.js 会带这个头，缺了它写动作一个都成不了 —— 这条如果只靠「直挂 handler」
+//	   前端 write-base.js 会带这个头，缺了它写动作一个都成不了 —— 这条如果只靠「直挂 handler」
 //	   的用例是永远测不出来的。
 //	② 权限点仍是迁移 178 的 `i18n:manage → POST /api/i18n/save`：没策略 403（且**不落库**）、
 //	   挂上策略 200。判权只按 (路径, 方法) 匹配，所以这是「一条 code 一条路径」这条约束的活体验证。
@@ -49,7 +49,7 @@ type i18nWriteResp struct {
 	Data    json.RawMessage `json:"data"`
 }
 
-// i18nWriteBulkData 批量档的 data 体（前端 json_write.js 读的就是这几个字段）。
+// i18nWriteBulkData 批量档的 data 体（前端 write-base.js 读的就是这几个字段）。
 type i18nWriteBulkData struct {
 	Deleted int `json:"deleted"`
 	Skipped int `json:"skipped"`

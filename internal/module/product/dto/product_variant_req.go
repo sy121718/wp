@@ -24,7 +24,7 @@ type PreviewVariantReq struct {
 	// WarehouseID 归属仓（issue #15）：与生成路径同一口径，仅用于主体 SKU 的仓码前缀。
 	WarehouseID string `json:"warehouseId" form:"warehouseId"`
 	// ExistingOptionValues 前端清单里每行的 option_values（JSON 对象）。
-	ExistingOptionValues []json.RawMessage `json:"existingOptionValues"`
+	ExistingOptionValues []json.RawMessage `json:"existingOptionValues" form:"existingOptionValues"`
 }
 
 // SaveVariantListReq 以清单为准保存变体（唯一落库动作）。

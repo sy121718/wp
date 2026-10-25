@@ -30,7 +30,7 @@ package adminhttp
 //	{"action":"delete","key":"…","lang":"…"}
 //	{"ids":["key|lang", …]}                       ← 批量删除档
 //
-// 批量档没有 action 字段，这是**基座契约**而不是本处的取舍：json_write.js 的 bulk 模式
+// 批量档没有 action 字段，这是**基座契约**而不是本处的取舍：write-base.js 的 bulk 模式
 // payload 恒为 {ids:[…]}（见其 runBulk），模板侧能改的只有收集用的 DOM 名（data-write-ids），
 // 而 rowOfID 又硬编码 [name="ids"]（改名会让「已删掉的行」留在页面上）。所以批量档的 tag 是
 // 「键集恰好 {ids}」—— 它与另外三档互斥，只有一种解释。基座将来若支持 bulk 透传 action，
