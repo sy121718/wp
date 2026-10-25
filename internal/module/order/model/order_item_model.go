@@ -99,3 +99,14 @@ func (m *OrderItemModel) CountByOrderID(ctx context.Context, orderID uint64) (co
 	err = m.DB(ctx).Where("order_id = ?", orderID).Count(&count).Error
 	return count, err
 }
+
+// SetWarehouseIDIfNullTx 事务内把发货仓回写到订单行，**仅在那一列仍为 NULL 时**（迁移 625）。
+//
+// 条件写而不是无条件写：已固化的值优先 —— 并发两次发货可能各自解析到同一个仓，
+// 只有一个 UPDATE 真正改行；若期间被别的路径写成另一个仓（不该发生，但一致性不该靠假设），
+// 这里不覆盖既有事实。
+func (m *OrderItemModel) SetWarehouseIDIfNullTx(ctx context.Context, tx *gorm.DB, id uint64, warehouseID string) error {
+	return tx.WithContext(ctx).Model(&OrderItemEntity{}).
+		Where("id = ? AND warehouse_id IS NULL", id).
+		Update("warehouse_id", warehouseID).Error
+}

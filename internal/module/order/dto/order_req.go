@@ -83,6 +83,12 @@ type CreateOrderReq struct {
 	Billing            OrderAddress   `json:"billing" form:"billing"`
 	PaymentMethod      string         `json:"paymentMethod" form:"paymentMethod"`
 	PaymentMethodTitle string         `json:"paymentMethodTitle" form:"paymentMethodTitle"`
+	// Currency 订单币种（ISO 4217）。空 = 用站点全局默认（i18n 的默认货币）。
+	//
+	// 为什么建单要能传币种：汇率快照（迁移 630）只有在「订单币 ≠ 基准币」时才成立 ——
+	// 订单币若恒取自全局默认值，它永远等于基准币，fx_rate 就恒为 NULL，折算永远不发生。
+	// 访客前台不传（全站单币种展示），后台代客建单 / API 调用可以显式指定外币单。
+	Currency           string         `json:"currency" form:"currency"`
 	// ShippingTotal 由调用方给出（运费策略不属于商品域）。
 	// DiscountTotal 无 CouponCode 时一律忽略；有券时以服务端试算为准。
 	// Subtotal / Total 由服务端按商品价格算出，不接受传入。

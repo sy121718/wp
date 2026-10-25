@@ -114,6 +114,53 @@ func (s *Service) ClaimStock(ctx context.Context, req *inventorydto.ClaimStockRe
 	return res, nil
 }
 
+// ClaimStockTx 认领的**事务透传版**（迁移 621 + 商品侧「从仓库选」，迁移 625 收口）。
+//
+// 与 ClaimStock 逐字同一条判定（锁行 → 未认领 → 目标无冲突 → 写两列），
+// 差额只在事务边界：**不自己开事务**，落在调用方的 tx 里。
+//
+// 为什么商品侧需要它：建商品时那条「该仓已有同裸码的存货行」必须**在同一次建商品事务内**
+// 认领到新变体 —— 用自足版本的话，商品事务回滚了而认领已经提交，货就被挂到一个
+// 不存在的变体上（外键还在的话会拦，但那是 23503 而不是「事务回滚」）。
+func (s *Service) ClaimStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ClaimStockReq) error {
+	if req == nil || tx == nil {
+		return inventoryenums.Err(inventoryenums.ErrInvalidParam)
+	}
+	stockID := strings.TrimSpace(req.StockID)
+	productID := strings.TrimSpace(req.ProductID)
+	variantID := strings.TrimSpace(req.VariantID)
+	if stockID == "" || productID == "" || variantID == "" {
+		return inventoryenums.Err(inventoryenums.ErrInvalidParam)
+	}
+	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
+	if err != nil {
+		return err
+	}
+	row, lerr := s.m.LockStockByIDTx(ctx, tx, projectID, stockID)
+	if lerr != nil {
+		return mapStockNotFound(lerr)
+	}
+	if inventorymodel.PtrString(row.VariantID) != "" {
+		return inventoryenums.Err(inventoryenums.ErrStockNotClaimed)
+	}
+	occupied, oerr := s.m.StockVariantExistsTx(ctx, tx, projectID, row.WarehouseID, variantID)
+	if oerr != nil {
+		return oerr
+	}
+	if occupied {
+		// 目标 (变体, 仓) 已有库存行：不合并、不加后缀（两行库存是两份事实）。
+		return inventoryenums.Err(inventoryenums.ErrStockAlreadyClaimed)
+	}
+	affected, cerr := s.m.ClaimStockTx(ctx, tx, stockID, productID, variantID, time.Now().UTC())
+	if cerr != nil {
+		return cerr
+	}
+	if affected == 0 {
+		return inventoryenums.Err(inventoryenums.ErrStockNotClaimed)
+	}
+	return nil
+}
+
 // UnclaimStock 解除认领（验收 6）：仅当 quantity = 0 且 reserved_quantity = 0。
 //
 // 为什么要求清零：解除之后这一行不再属于任何商品变体，变体删除守卫

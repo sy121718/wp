@@ -142,3 +142,26 @@ func (m *Model) StockAlertCounts(ctx context.Context, projectID string) (row Sto
 	})
 	return row, err
 }
+
+// FindStockIDByVariantWarehouseTx 事务内按 (变体, 仓) 取库存行 id（没有这一行返回 nil）。
+//
+// 用途：发货明细的 stock_id 快照（迁移 624 的 order_shipment_items.stock_id）——
+// 它回答「这批货当时是从哪一条仓库商品 SKU 行出去的」，事后库存行被删也能回指到「曾经是哪一行」。
+//
+// 返回 nil 而不是报错：**没有库存行不是发货的失败条件**（无限库存 / 跨仓调拨都可能让
+// 某行缺席），快照这一列可空，缺了就留空 —— 它只用于追溯，不参与任何判定。
+func (m *Model) FindStockIDByVariantWarehouseTx(ctx context.Context, tx *gorm.DB, projectID, variantID, warehouseID string) (*string, error) {
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return nil, serr
+	}
+	var ids []string
+	if err := tx.WithContext(ctx).Model(&StockEntity{}).
+		Where("variant_id = ? AND warehouse_id = ?", variantID, warehouseID).
+		Limit(1).Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	return &ids[0], nil
+}

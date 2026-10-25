@@ -66,7 +66,44 @@ func (s *Service) ShipOrder(ctx context.Context, req *orderdto.ShipOrderReq) (re
 	}
 	now := time.Now().UTC()
 	var shipment *ordermodel.OrderShipmentEntity
-	if terr := s.orders.Transaction(ctx, func(tx *gorm.DB) error {
+	// 单号冲突重试一次（见 nextShipmentNoTx 的注释）：序号按「当日单据数」取，
+	// 并发两张单可能数到同一个号 —— 唯一索引会拒掉后到的那一张。
+	// 整个事务重试（不是只重取单号）：PG 在唯一键冲突后会把事务标记为 aborted，
+	// 同事务里的后续语句全部失败，只能整体重来。
+	var terr error
+	for attempt := 0; attempt < 2; attempt++ {
+		shipment = nil
+		terr = s.shipOnce(ctx, &shipOnceArgs{
+			req: req, projectID: projectID, requestID: requestID, now: now,
+		}, &shipment)
+		if terr == nil {
+			break
+		}
+		if !isShipmentNoConflict(terr) {
+			break
+		}
+		// 命中冲突：等一毫秒再重来（让先到的那一张先提交完，序号才会 +1）。
+		time.Sleep(time.Millisecond)
+	}
+	if terr != nil {
+		return nil, terr
+	}
+	return s.shipmentResp(ctx, shipment), nil
+}
+
+// shipOnceArgs 一次发货事务的全部入参（重试时同一份入参原样再用）。
+type shipOnceArgs struct {
+	req       *orderdto.ShipOrderReq
+	projectID string
+	requestID string
+	now       time.Time
+}
+
+// shipOnce 一次完整发货事务（①②③…⑨）。单号冲突时由调用方整体重跑。
+func (s *Service) shipOnce(ctx context.Context, args *shipOnceArgs, out **ordermodel.OrderShipmentEntity) error {
+	req, projectID, requestID, now := args.req, args.projectID, args.requestID, args.now
+	var shipment *ordermodel.OrderShipmentEntity
+	err := s.orders.Transaction(ctx, func(tx *gorm.DB) error {
 		if serr := rls.ScopeTx(tx, projectID); serr != nil {
 			return serr
 		}
@@ -156,10 +193,28 @@ func (s *Service) ShipOrder(ctx context.Context, req *orderdto.ShipOrderReq) (re
 			Remark:       shipmentNo,
 			CreateTime:   now,
 		})
-	}); terr != nil {
-		return nil, terr
+	})
+	if err != nil {
+		return err
 	}
-	return s.shipmentResp(ctx, shipment), nil
+	*out = shipment
+	return nil
+}
+
+// isShipmentNoConflict 判「发货单号撞了唯一索引」（并发取到同一个序号）。
+//
+// 生产连接开了 gorm 的 TranslateError（拿到 gorm.ErrDuplicatedKey），测试 fixture 可能
+// 拿到原始 23505 文本 —— 两条都认，否则重试会随连接配置不同而时隐时现
+// （与 product 的 mapContainerSKUConflict 同一手法）。
+func isShipmentNoConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "23505") && strings.Contains(msg, "uq_order_shipments_no")
 }
 
 // planHasRemaining 本次发货之后订单是否还有未发数量（决定状态推进到 shipped 还是留在 paid）。
@@ -237,16 +292,36 @@ func (s *Service) planShipment(ctx context.Context, tx *gorm.DB, projectID strin
 		if line.Quantity <= 0 {
 			return nil, nil, errors.New(orderenums.ErrQuantityInvalid)
 		}
-		whID, werr := s.shipWarehouseOf(ctx, projectID, item, line.WarehouseID)
+		whID, persist, werr := s.shipWarehouseOf(ctx, projectID, item, line.WarehouseID)
 		if werr != nil {
 			return nil, nil, werr
+		}
+		if persist {
+			// 存量行（warehouse_id IS NULL）首次发货：解析出的仓在**同一事务内**回写，
+			// 此后这一行固化（再改默认仓也不影响它）。
+			if perr := s.persistItemWarehouseTx(ctx, tx, item.ID, whID); perr != nil {
+				return nil, nil, perr
+			}
+			id := whID
+			item.WarehouseID = &id
 		}
 		k := key{itemID: item.ID, whID: whID}
 		if existing, seen := merged[k]; seen {
 			existing.quantity += line.Quantity
 		} else {
+			// stock_id 快照（迁移 624）：回答「这批货当时从哪一条仓库商品 SKU 行出去」。
+			// 查不到就留空 —— 它只用于追溯，不参与判定（见 model 的注释）。
+			snapStockID, serr := s.stockRowID(ctx, projectID, item.VariantID, whID)
+			if serr != nil {
+				return nil, nil, serr
+			}
+			var stockPtr *string
+			if snapStockID != "" {
+				stockPtr = &snapStockID
+			}
 			entry := &shipPlanLine{
 				orderItemID: item.ID, warehouseID: whID,
+				stockID:   stockPtr,
 				variantID: item.VariantID, productID: item.ProductID,
 				skuCode: item.SKU, quantity: line.Quantity,
 			}
@@ -265,38 +340,74 @@ func (s *Service) planShipment(ctx context.Context, tx *gorm.DB, projectID strin
 	return plan, shipped, nil
 }
 
-// shipWarehouseOf 解析「这一行从哪个仓发」并**回写**订单行的 warehouse_id（迁移 625）。
+// shipWarehouseOf 解析「这一行从哪个仓发」，并回答「要不要回写订单行」。
 //
-// 两条路径：
-//   - 本次请求显式给了仓 → 用它（校验工程与 active）；
-//   - 没给 → 用 order_items.warehouse_id（下单时已固化）；若那一列为 NULL
-//     （迁移 625 之前的存量行），解析默认仓并**回写**，此后这一行固化。
+// 三条路径：
+//   - 本次请求显式给了仓 → **照样走解析端口**校验它属于本工程且 active（不能直接 return：
+//     那样非法仓要拖到库存侧去报，错误 key 与文案都不是「这一行从哪仓发」该说的话）；
+//   - 没给，但 order_items.warehouse_id 已有值 → 用它（下单时已固化，此后不再解析）；
+//   - 没给且那一列为 NULL（迁移 625 之前的存量行）→ 解析默认仓，并**回写**这一列。
+//
+// 第二个返回值为真表示「需要回写」：回写在调用方的事务里做（见 persistItemWarehouseTx），
+// 本函数不写库 —— 它的职责只有解析。
 //
 // 回写是「一次性固化」：同一订单行的后续发货不会再解析一次默认仓 ——
 // 否则默认仓一改，同一行的第二批货就从另一个仓出，账面永远对不上。
 func (s *Service) shipWarehouseOf(ctx context.Context, projectID string, item *ordermodel.OrderItemEntity,
-	requested string) (string, error) {
+	requested string) (warehouseID string, needPersist bool, err error) {
+	if s.warehouses == nil {
+		// 装配缺陷：没有解析端口就无法校验任何仓（含显式指定的那个）。
+		return "", false, errors.New(orderenums.ErrShipWarehouseRequired)
+	}
 	requested = strings.TrimSpace(requested)
 	if requested != "" {
-		return requested, nil
+		// 显式仓也要校验（工程归属 + active）：直接把字符串交给库存侧，会让
+		// 「跨工程的仓 id」一路走到扣减才失败 —— 那时错误已经不像「这一行选错了仓」。
+		whID, rerr := s.warehouses.ResolveShipWarehouse(ctx, projectID, requested)
+		if rerr != nil {
+			return "", false, rerr
+		}
+		if whID == "" {
+			return "", false, errors.New(orderenums.ErrShipWarehouseRequired)
+		}
+		return whID, false, nil
 	}
 	if item.WarehouseID != nil && strings.TrimSpace(*item.WarehouseID) != "" {
-		return strings.TrimSpace(*item.WarehouseID), nil
+		return strings.TrimSpace(*item.WarehouseID), false, nil
 	}
-	if s.warehouses == nil {
-		return "", errors.New(orderenums.ErrShipWarehouseRequired)
-	}
-	whID, err := s.warehouses.ResolveShipWarehouse(ctx, projectID, "")
-	if err != nil {
-		return "", err
+	whID, rerr := s.warehouses.ResolveShipWarehouse(ctx, projectID, "")
+	if rerr != nil {
+		return "", false, rerr
 	}
 	if whID == "" {
 		// 无仓工程 + 存量行：没有仓可解析 —— 让运营显式指定（而不是静默失败）。
-		return "", errors.New(orderenums.ErrShipWarehouseRequired)
+		return "", false, errors.New(orderenums.ErrShipWarehouseRequired)
 	}
-	// 回写在调用方的事务里发生（shipStep 之后紧跟 order_items 的 UPDATE）——
-	// 见 persistItemWarehouse。这里只返回解析结果。
-	return whID, nil
+	// 解析成功：这一行的 warehouse_id 是 NULL，需要回写固化。
+	return whID, true, nil
+}
+
+// stockRowID 查这一行对应的仓库商品 SKU 行 id（发货明细的 stock_id 快照，迁移 624）。
+//
+// 未注入定位端口时返回空串（快照列留空）：与「查不到」同一处理 —— 那一列只用于追溯。
+func (s *Service) stockRowID(ctx context.Context, projectID, variantID, warehouseID string) (string, error) {
+	if s.stockRowLocator == nil {
+		return "", nil
+	}
+	return s.stockRowLocator.LocateStockRow(ctx, projectID, variantID, warehouseID)
+}
+
+// persistItemWarehouseTx 把解析出来的发货仓**回写**到订单行（迁移 625）。
+//
+// 只在那一列仍为 NULL 时写（`AND warehouse_id IS NULL`）：并发两次发货可能各自解析到
+// 同一个仓，两个 UPDATE 里只有一个真正改了行 —— 语义上也只有第一种是「固化」。
+// 若期间被别的路径写成另一个仓（不该发生，但数据一致性不该靠假设），这里不覆盖：
+// 已固化的值优先，调用方拿到的本次解析结果仍用于这一次扣减。
+func (s *Service) persistItemWarehouseTx(ctx context.Context, tx *gorm.DB, itemID uint64, warehouseID string) error {
+	if strings.TrimSpace(warehouseID) == "" {
+		return nil
+	}
+	return s.items.SetWarehouseIDIfNullTx(ctx, tx, itemID, warehouseID)
 }
 
 // shipStockTx 发货出库（第 ⑥ 步）：库存扣减 + 同条 SQL 里释放预占。
@@ -328,8 +439,8 @@ func (s *Service) shipStockTx(ctx context.Context, tx *gorm.DB, e *ordermodel.Or
 
 // nextShipmentNoTx 生成发货单号：SH + YYYYMMDD + 6 位零填充序号（第 ⑥ 步之前）。
 //
-// 序号按当日已有单据数取，冲突由唯一索引兜底并重试一次（并发下两张单可能数到同一个序号）。
-// 这里只做「取序号」：重试在调用方（ShipOrder 的幂等分支也会兜住同一 request_id 的重放）。
+// 序号按当日已有单据数取，冲突由唯一索引兜底、由 ShipOrder 的 shipOnce 重试一次
+// （并发下两张单可能数到同一个序号）。
 func (s *Service) nextShipmentNoTx(ctx context.Context, tx *gorm.DB, projectID string,
 	now time.Time) (string, error) {
 	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)

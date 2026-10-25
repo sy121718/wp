@@ -82,6 +82,10 @@ type Service struct {
 	// 允许为 nil：纯订单单测 / 无仓工程下不解析（warehouse_id 留 NULL、预占跳过）。
 	// 生产装配必注入（否则每一单都会被判成「没有仓」）。
 	warehouses ordercontract.WarehouseResolver
+	// stockRowLocator 仓库商品 SKU 行的定位读口（迁移 624）：发货明细的 stock_id 快照用。
+	//
+	// 允许为 nil：未注入时快照列留空 —— 那一列只用于事后追溯，不参与任何判定。
+	stockRowLocator ordercontract.StockRowLocator
 	// shipments 发货单仓储（迁移 624，S1/S2）。必填：发货用例是它唯一的写入口。
 	shipments *ordermodel.OrderShipmentModel
 	// carriers 承运商仓储（迁移 624）。必填：发货表单的承运商下拉读它。
@@ -119,6 +123,16 @@ func (s *Service) SetWarehouseResolver(resolver ordercontract.WarehouseResolver)
 		return
 	}
 	s.warehouses = resolver
+}
+
+// SetStockRowLocator 注入库存行定位读口（迁移 624，发货明细 stock_id 快照）。
+//
+// 允许为 nil：未注入时快照列留空（它只用于事后追溯）。生产装配必注入。
+func (s *Service) SetStockRowLocator(locator ordercontract.StockRowLocator) {
+	if s == nil {
+		return
+	}
+	s.stockRowLocator = locator
 }
 
 // SetShipmentModels 注入承运商与发货单仓储（装配期调用；S1 起为 required-port）。

@@ -491,6 +491,19 @@ type StockAdjustment struct {
 	Lines      []StockLine
 }
 
+// StockRowLocator 订单侧查「这个 (变体, 仓) 对应哪一条仓库商品 SKU 行」的窄读口（迁移 624）。
+//
+// 只用于发货明细的 **stock_id 快照**：它回答「这批货当时从哪一行出去的」，事后库存行被删
+// 也能回指到「曾经是哪一行」。**不参与任何判定** —— 查不到返回空串（不是错误），
+// 快照这一列可空（无限库存 / 行尚未生成都可能让它缺席）。
+//
+// 与 StockOperator 分开：那是写口（扣减 / 预占），这是读口；合在一起会让只读的调用点
+// 也拿到扣库存的能力。
+type StockRowLocator interface {
+	// LocateStockRow 返回该 (变体, 仓) 的库存行 id；没有这一行时返回空串 + nil。
+	LocateStockRow(ctx context.Context, projectID, variantID, warehouseID string) (stockID string, err error)
+}
+
 // WarehouseResolver 订单侧解析「这一行从哪个仓出」的唯一入口（迁移 625，S2）。
 //
 // 只回答一个问题：给定工程与可选仓，返回确定的仓 id（空字符串 = 该工程没有可用仓）。

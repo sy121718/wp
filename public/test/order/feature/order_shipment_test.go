@@ -591,3 +591,113 @@ func TestSalesOverviewGrossProfit(t *testing.T) {
 		t.Fatalf("成本未核算的行应按 0 计入（毛利 9000），实际 %d", overview2.GrossProfit)
 	}
 }
+
+// TestShipPersistsLegacyItemWarehouse 验收 A（复审 P0）：
+// 存量行（warehouse_id IS NULL）首次发货必须**回写**该列，此后改默认仓也不影响它。
+func TestShipPersistsLegacyItemWarehouse(t *testing.T) {
+	f := newOrderFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	_, vid := f.addProduct(t, "存量行固化", 40, 10)
+	created, err := f.orders.CreateOrder(ctx, f.createBaseReq(vid, 2))
+	if err != nil {
+		t.Fatalf("建单失败: %v", err)
+	}
+	// 把这一行退化成「迁移 625 之前的存量行」：warehouse_id = NULL。
+	if err := f.db.Exec("UPDATE order_items SET warehouse_id = NULL WHERE order_id = ?", created.ID).Error; err != nil {
+		t.Fatalf("制造存量行失败: %v", err)
+	}
+	f.payOrder(t, created.ID)
+	itemIDs := f.orderItemIDs(t, created.ID)
+
+	// 首次发货：解析默认仓并回写。
+	if _, serr := f.orders.ShipOrder(ctx, &orderdto.ShipOrderReq{
+		OrderID: created.ID, ProjectID: f.projectID, RequestID: "legacy-wh-1",
+		Lines: []orderdto.ShipLineReq{{OrderItemID: itemIDs[0], Quantity: 1}},
+	}); serr != nil {
+		t.Fatalf("首次发货失败: %v", serr)
+	}
+	var pinned *string
+	if qerr := f.db.Raw("SELECT warehouse_id FROM order_items WHERE id = ?", itemIDs[0]).
+		Row().Scan(&pinned); qerr != nil {
+		t.Fatalf("读订单行发货仓失败: %v", qerr)
+	}
+	if pinned == nil || *pinned != f.warehouse {
+		t.Fatalf("存量行首次发货后 warehouse_id 应被回写成默认仓 %q，实际 %v", f.warehouse, pinned)
+	}
+
+	// 改默认仓（新建一个设为默认）后再发余量：仍从**原仓**扣。
+	other, oerr := f.inventory.CreateWarehouse(ctx, &inventorydto.CreateWarehouseReq{
+		ProjectID: f.projectID, Code: "SH", Name: "上海仓", IsDefault: true,
+	})
+	if oerr != nil {
+		t.Fatalf("建新默认仓失败: %v", oerr)
+	}
+	if _, cerr := f.inventory.ChangeStock(ctx, &inventorydto.ChangeStockReq{
+		ProjectID: f.projectID, Direction: "in", ReasonCode: "purchase_in",
+		Lines: []inventorydto.StockChangeLineReq{{VariantID: vid, WarehouseID: other.ID, Quantity: 10}},
+	}); cerr != nil {
+		t.Fatalf("给新仓补货失败: %v", cerr)
+	}
+	stockBefore := f.stockOf(t, vid)
+	if _, serr := f.orders.ShipOrder(ctx, &orderdto.ShipOrderReq{
+		OrderID: created.ID, ProjectID: f.projectID, RequestID: "legacy-wh-2",
+		Lines: []orderdto.ShipLineReq{{OrderItemID: itemIDs[0], Quantity: 1}},
+	}); serr != nil {
+		t.Fatalf("第二次发货失败: %v", serr)
+	}
+	if got := f.stockOf(t, vid); got != stockBefore-1 {
+		t.Fatalf("第二批货仍应从固化后的原仓扣（%d→%d），实际 %d", stockBefore, stockBefore-1, got)
+	}
+	var otherQty int
+	if qerr := f.db.Raw("SELECT quantity FROM inventory_stocks WHERE variant_id = ? AND warehouse_id = ?",
+		vid, other.ID).Row().Scan(&otherQty); qerr != nil {
+		t.Fatalf("读新仓库存失败: %v", qerr)
+	}
+	if otherQty != 10 {
+		t.Fatalf("新默认仓不该被扣（值固化后不受默认仓变更影响），实际 %d", otherQty)
+	}
+}
+
+// TestShipWritesStockIDSnapshot 验收 B（复审 P1）：
+// order_shipment_items.stock_id 必须是真实库存行 id，而不是恒 NULL。
+func TestShipWritesStockIDSnapshot(t *testing.T) {
+	f := newOrderFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	_, vid := f.addProduct(t, "发货快照", 40, 10)
+	created, err := f.orders.CreateOrder(ctx, f.createBaseReq(vid, 2))
+	if err != nil {
+		t.Fatalf("建单失败: %v", err)
+	}
+	f.payOrder(t, created.ID)
+	itemIDs := f.orderItemIDs(t, created.ID)
+	res, err := f.orders.ShipOrder(ctx, &orderdto.ShipOrderReq{
+		OrderID: created.ID, ProjectID: f.projectID, RequestID: "snap-stock",
+		Lines: []orderdto.ShipLineReq{{OrderItemID: itemIDs[0], Quantity: 2}},
+	})
+	if err != nil {
+		t.Fatalf("发货失败: %v", err)
+	}
+	// 快照必须等于 (变体, 仓) 那条库存行的 id。
+	var gotStockID *string
+	if qerr := f.db.Raw("SELECT stock_id FROM order_shipment_items WHERE shipment_id = ?", res.ID).
+		Row().Scan(&gotStockID); qerr != nil {
+		t.Fatalf("读发货明细快照失败: %v", qerr)
+	}
+	if gotStockID == nil || strings.TrimSpace(*gotStockID) == "" {
+		t.Fatalf("order_shipment_items.stock_id 不该为空（迁移 624 的承诺）")
+	}
+	var wantStockID string
+	if qerr := f.db.Raw("SELECT id FROM inventory_stocks WHERE variant_id = ? AND warehouse_id = ?",
+		vid, f.warehouse).Row().Scan(&wantStockID); qerr != nil {
+		t.Fatalf("读库存行 id 失败: %v", qerr)
+	}
+	if *gotStockID != wantStockID {
+		t.Fatalf("快照应为该 (变体, 仓) 的库存行 id %q，实际 %q", wantStockID, *gotStockID)
+	}
+}

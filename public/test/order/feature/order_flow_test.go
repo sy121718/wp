@@ -124,6 +124,8 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 	// 解析实现在库存侧，通过 orderstock.WarehouseResolver 适配）。
 	orders.SetShipmentModels(ordermodel.NewOrderShipmentModel(db), ordermodel.NewOrderCarrierModel(db))
 	orders.SetWarehouseResolver(orderstock.NewWarehouseResolver(inv))
+	// 发货明细的 stock_id 快照（迁移 624）：同一个适配器也实现 StockRowLocator。
+	orders.SetStockRowLocator(orderstock.New(inv))
 	return &orderFixture{
 		orders: orders, products: products, inventory: inv, users: users, mail: mail,
 		db: db, projectID: project.ID, warehouse: wh.ID, projects: projects,
@@ -142,6 +144,7 @@ func (f *orderFixture) serviceWithStock(stock ordercontract.StockOperator) *orde
 	// 否则「建单失败」可能是缺端口导致的，测的就不是库存那一条路径了。
 	svc.SetShipmentModels(ordermodel.NewOrderShipmentModel(f.db), ordermodel.NewOrderCarrierModel(f.db))
 	svc.SetWarehouseResolver(orderstock.NewWarehouseResolver(f.inventory))
+	svc.SetStockRowLocator(orderstock.New(f.inventory))
 	return svc
 }
 

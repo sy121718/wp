@@ -699,6 +699,8 @@ func (a *assembly) buildIdentityAndCommerce() {
 		if lookup, lok := a.inventorySvc.(inventorycontract.ProductStockLookup); lok {
 			concrete.SetWarehouseResolver(orderstock.NewWarehouseResolver(lookup))
 		}
+		// 发货明细的 stock_id 快照（迁移 624）：同一个适配器也实现 StockRowLocator。
+		concrete.SetStockRowLocator(orderstock.New(invConcrete))
 	}
 	// 销售总览的待办块要库存预警的数字（迁移 621 / 623，W4）：装配收尾补注，
 	// 订单模块不 import 库存契约（方向由 orderInventoryAlertReader 这个形状承载）。

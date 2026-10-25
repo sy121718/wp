@@ -51,6 +51,7 @@ import (
 
 	commentcontract "go_wp/internal/module/comment/contract"
 	inventorycontract "go_wp/internal/module/inventory/contract"
+	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
@@ -810,7 +811,29 @@ func (s *Service) warehouseCodeExists(ctx context.Context, projectID, warehouseI
 	return false, gerr
 }
 
-// createStockRowsTx 在勾选的各仓各建一行库存（裸码），已有同裸码的行**复用不新建**（幂等）。
+// findWarehouseSKURow 该仓是否已有这条裸码的库存行；有则返回整行（认领需要 id 与 has_variant）。
+//
+// 与 warehouseCodeExists 的分工：那个只回答「有没有」，用于预检；这里要整行 ——
+// 认领必须拿到**行 id**（认领的入参是库存行，不是编码），还必须知道它是不是已认领。
+func (s *Service) findWarehouseSKURow(ctx context.Context, projectID, warehouseID, skuCode string) (
+	row *inventorycontract.WarehouseSKUResp, found bool, err error) {
+	if s.invSvc == nil || strings.TrimSpace(skuCode) == "" {
+		return nil, false, nil
+	}
+	got, gerr := s.invSvc.GetWarehouseSKU(ctx, &inventorycontract.GetWarehouseSKUReq{
+		ProjectID: projectID, WarehouseID: warehouseID, SKUCode: skuCode,
+	})
+	if gerr == nil {
+		return got, true, nil
+	}
+	// 「没有这一行」是常态（自己打的新码），不是错误；其余（参数 / 库故障）原样上抛。
+	if gerr.Error() == inventoryenums.ErrWarehouseSKUNotFound {
+		return nil, false, nil
+	}
+	return nil, false, gerr
+}
+
+// createStockRowsTx 在勾选的各仓各建一行库存（裸码），已有同裸码的**未认领**行则认领它。
 //
 // 三条口径（docs/14 §1.1 / §9.3，2026-09-19 用户拍板）：
 //
@@ -833,12 +856,31 @@ func (s *Service) createStockRowsTx(ctx context.Context, tx *gorm.DB, refs []*pr
 		if ref == nil {
 			continue
 		}
-		exists, qerr := s.warehouseCodeExists(ctx, ref.ProjectID, ref.ID, bare)
+		// 该仓已有同裸码的行？查整行（不只是 bool）：认领需要它的 id 与「有没有变体」。
+		existing, found, qerr := s.findWarehouseSKURow(ctx, ref.ProjectID, ref.ID, bare)
 		if qerr != nil {
 			return qerr
 		}
-		if exists {
-			// 认领 / 复用：这一行本来就在，不新建（也不改它的外码与数量 —— 覆盖走库存页的显式入口）。
+		if found {
+			// 「从仓库选」这条来路的核心动作（迁移 621 + 625）：仓库里那批货就是这条 SKU，
+			// 建商品时要把它**认领**到本次新建的变体上。
+			//
+			// 不认领的后果（实测）：货停在 variant_id IS NULL —— 商品侧库存汇总
+			// （StockTotals 带 `WHERE variant_id IS NOT NULL`）看不见它，页面显示库存 0
+			// 而仓库里明明有货，运营得再去 /admin/inventory/skus 手动认领一次。
+			//
+			// 已经认领过的（同一变体重复 ensure / 另一个变体占了同一行）**维持现状**：
+			// 前者是幂等重放，后者是「一行货只能属于一个变体」这条约束在说话 ——
+			// 静默改挂到新变体等于把前任的库存偷走。
+			if !existing.HasVariant {
+				if cerr := s.invSvc.ClaimStockTx(ctx, tx, &inventorydto.ClaimStockReq{
+					ProjectID: ref.ProjectID, StockID: existing.ID,
+					ProductID: productID, VariantID: variantID,
+				}); cerr != nil {
+					return cerr
+				}
+			}
+			// 数量与外码不在这里改：覆盖走库存页的显式入口（BindExternalSKU / 跟踪开关）。
 			continue
 		}
 		ext := ""

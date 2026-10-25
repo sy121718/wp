@@ -95,15 +95,30 @@ func TestOrderFXSnapshotIsImmutable(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("写汇率失败: %v", err)
 	}
-	snapshotOrder, err := f.orders.CreateOrder(ctx, f.createBaseReq(vid, 1))
+	// 走**真实建单链路**：请求显式给币种 USD，快照应由 orderFXSnapshot 自动写入。
+	// （复审 C：原先靠手工 UPDATE 模拟，掩盖了「两个实参同源导致 fx_rate 恒 NULL」的缺陷。）
+	req := f.createBaseReq(vid, 1)
+	req.Currency = "USD"
+	snapshotOrder, err := f.orders.CreateOrder(ctx, req)
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
-	// 手工把这张单写成「USD 单、快照 7.20」：建单链路的币种来自全局配置，
-	// 单测不便于改全局配置，所以直接落库模拟「下单那一刻的记录」。
-	if err := f.db.Exec("UPDATE orders SET currency = 'USD', fx_rate = 7.20, fx_base_code = 'CNY' WHERE id = ?",
-		snapshotOrder.ID).Error; err != nil {
-		t.Fatalf("写订单汇率快照失败: %v", err)
+	// ③b 建单就该落下快照：这是 C 那条缺陷的正面断言。
+	var snapRate *string
+	if qerr := f.db.Raw("SELECT CAST(fx_rate AS text) FROM orders WHERE id = ?", snapshotOrder.ID).
+		Row().Scan(&snapRate); qerr != nil {
+		t.Fatalf("读订单汇率快照失败: %v", qerr)
+	}
+	if snapRate == nil {
+		t.Fatalf("请求带 currency=USD 且已有 USD→CNY 汇率时，下单应写入 fx_rate 快照（不能恒 NULL）")
+	}
+	var snapBase string
+	if qerr := f.db.Raw("SELECT fx_base_code FROM orders WHERE id = ?", snapshotOrder.ID).
+		Row().Scan(&snapBase); qerr != nil {
+		t.Fatalf("读订单基准币失败: %v", qerr)
+	}
+	if snapBase != "CNY" {
+		t.Fatalf("快照的基准币应为 CNY，实际 %q", snapBase)
 	}
 	// 改汇率表：快照**不该**跟着变。
 	if _, err := f.orders.SetRate(ctx, &orderdto.SetRateReq{
@@ -130,15 +145,24 @@ func TestConvertedOverview(t *testing.T) {
 	ctx := context.Background()
 	_, vid := f.addProduct(t, "折算商品", 100, 20)
 
-	// 一张有快照的单（总额 10000 分、汇率 7.20）与一张没有快照的单。
-	withFX, err := f.orders.CreateOrder(ctx, f.createBaseReq(vid, 1))
+	// **先配汇率再建单**：没配汇率时下单不写快照（那是「未固化」这条合法状态）。
+	if _, err := f.orders.SetRate(ctx, &orderdto.SetRateReq{
+		BaseCode: "USD", QuoteCode: "CNY", Rate: "7.20",
+	}); err != nil {
+		t.Fatalf("写汇率失败: %v", err)
+	}
+	// 一张有快照的单（USD 单，建单链路自动写入 7.20）与一张没有快照的单。
+	fxReq := f.createBaseReq(vid, 1)
+	fxReq.Currency = "USD"
+	withFX, err := f.orders.CreateOrder(ctx, fxReq)
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
 	f.payOrder(t, withFX.ID)
-	if err := f.db.Exec("UPDATE orders SET total = 10000, subtotal = 10000, currency = 'USD', "+
-		"fx_rate = 7.20, fx_base_code = 'CNY' WHERE id = ?", withFX.ID).Error; err != nil {
-		t.Fatalf("写订单快照失败: %v", err)
+	// 金额改大以便断言（汇率快照仍由建单链路写入，不手工伪造 fx_rate）。
+	if err := f.db.Exec("UPDATE orders SET total = 10000, subtotal = 10000 WHERE id = ?", withFX.ID).
+		Error; err != nil {
+		t.Fatalf("改订单金额失败: %v", err)
 	}
 	noFX, err := f.orders.CreateOrder(ctx, f.createBaseReq(vid, 1))
 	if err != nil {

@@ -369,9 +369,11 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 	}
 	var fxRatePtr *string
 	// 汇率快照（迁移 630，W5）：读一次、失败不阻断下单。
-	// 基准币取 i18n 的默认货币（与 orderCurrency() 同源）——
-	// 订单币与基准币相同时不写快照（同币种下「折算」这个概念不存在）。
-	fxRate, fxBase := s.orderFXSnapshot(ctx, orderCurrency(), orderCurrency())
+	//
+	// **订单币取请求里的 Currency，基准币取站点默认货币**：两者是同源函数的话
+	// （都取全局默认值）它们永远相等，快照永远为空 —— 折算永远不会发生。
+	// 请求没给币种时回落站点默认（此时两者相等、不写快照，这是正确的：同币种无需折算）。
+	fxRate, fxBase := s.orderFXSnapshot(ctx, orderCurrencyOf(req), orderCurrency())
 	if fxRate != "" {
 		fxRatePtr = &fxRate
 	}
@@ -406,7 +408,7 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 		//
 		// 这一列是**下单当时的快照**（快照原则）：改配置只影响此后新建的订单，
 		// 历史订单的 currency 不动 —— 订单详情要还原的是「当时是什么」。
-		Currency: orderCurrency(),
+		Currency: orderCurrencyOf(req),
 		// 汇率快照（迁移 630，W5）：**下单那一刻**的汇率，之后汇率怎么变都不影响这张单。
 		// 取不到时留零值（fx_rate 为 NULL、fx_base_code 为空串）=「汇率未固化」——
 		// 那是真实状态（没配汇率的工程 / 同币种），回填会伪造历史。
@@ -711,6 +713,22 @@ func (s *Service) provisionGuestAccountTx(ctx context.Context, tx *gorm.DB, req 
 	}
 	id := gres.UserID
 	return &id, gres.PendingMail, nil
+}
+
+// orderCurrencyOf 这次下单的订单币种：请求显式给了就用它（归一成大写），否则用站点默认。
+//
+// 归一在这里而不是落库层：`usd` 与 `USD` 是同一个币种，而汇率表的唯一索引按 upper 建 ——
+// 落库前不统一会让「同一个币种的订单」在快照里出现两种写法。
+//
+// 为什么建单要能指定币种：汇率快照（迁移 630）只在「订单币 ≠ 基准币」时成立。
+// 两者若同源（都取站点默认值）则永远相等、fx_rate 恒 NULL、折算永远不会发生。
+func orderCurrencyOf(req *orderdto.CreateOrderReq) string {
+	if req != nil {
+		if v := strings.ToUpper(strings.TrimSpace(req.Currency)); v != "" {
+			return v
+		}
+	}
+	return orderCurrency()
 }
 
 // orderCurrency 新建订单的币种标签。
@@ -1319,7 +1337,9 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 		//
 		// 为什么不再是「归还数量」：下单只预占（quantity 从来没减），取消自然也没有数量可归还 ——
 		// 归还一个没扣过的数量会把库存凭空加多（BIZ-03 那类缺陷的镜像）。
-		// 已发货的单走另一条分支：货确实出去了，那才需要退货入库（在 restockUnreturnedTx 里）。
+		// 已发货的单不走这条分支：货确实出去了，要回来必须经退货入库
+		// （ReturnService 的 ReceiveReturn → stockInReturnTx，那里才把货加回 quantity）。
+		// 本方法只处理「预占」这一半账 —— 那是取消 / 退款唯一需要动的库存事实。
 		// 已发部分在发货时已随扣减释放；这里释放的只是**剩余未发部分**
 		//（releaseOrderReservationTx 自己按「订单数量 − 已发数量」算）。
 		// 释放失败 → 整个取消回滚：订单仍是原状态，预占也没动。

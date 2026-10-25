@@ -763,6 +763,23 @@ func (s *Service) ListWarehouseSKUs(ctx context.Context, req *inventorydto.ListW
 	return list, nil
 }
 
+// LocateStockRow 按 (变体, 仓) 取库存行 id；没有这一行返回空串 + nil（迁移 624 快照用）。
+//
+// 只读、无副作用：发货明细的 stock_id 只用于事后追溯，不作为任何判定依据。
+func (s *Service) LocateStockRow(ctx context.Context, projectID, variantID, warehouseID string) (string, error) {
+	e, err := s.m.GetStockByVariantWarehouse(ctx, variantID, warehouseID, projectID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	if e == nil {
+		return "", nil
+	}
+	return e.ID, nil
+}
+
 // GetWarehouseSKU 「从仓库选」的最小查询：给定仓库 + 我们自己那条仓库 SKU，返回该行。
 //
 // 不存在时明确报 ErrWarehouseSKUNotFound（不返回空行、也不静默当作「没选」）：

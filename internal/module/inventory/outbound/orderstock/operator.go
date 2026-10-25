@@ -138,6 +138,13 @@ func (o *Operator) ReleaseStockTx(ctx context.Context, tx *gorm.DB, in *ordercon
 	return o.svc.ReleaseStockTx(ctx, tx, toReserveReq(in))
 }
 
+// LocateStockRow 实现 ordercontract.StockRowLocator（发货明细的 stock_id 快照用）。
+//
+// 查不到返回空串 + nil：那一列可空，缺席不是错误（无限库存 / 行尚未生成都可能）。
+func (o *Operator) LocateStockRow(ctx context.Context, projectID, variantID, warehouseID string) (string, error) {
+	return o.svc.LocateStockRow(ctx, projectID, variantID, warehouseID)
+}
+
 // toReserveReq 契约的预占入参 → 库存 dto（预占与释放同形，共用一个转换）。
 func toReserveReq(in *ordercontract.StockReservation) *inventorydto.ReserveStockReq {
 	lines := make([]inventorydto.ReserveStockLine, 0, len(in.Lines))
