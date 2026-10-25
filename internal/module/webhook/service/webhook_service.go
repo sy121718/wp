@@ -38,6 +38,7 @@ import (
 	webhookmodel "go_wp/internal/module/webhook/model"
 	"go_wp/pkg/crypto"
 	"go_wp/pkg/queue"
+	"go_wp/pkg/ssrf"
 )
 
 // Service webhook 域服务：只持本模块 model。
@@ -102,13 +103,12 @@ var (
 	ErrWebhookURLDenied = errors.New(webhookenums.ErrURLDenied)
 )
 
-// isForbiddenIP 判断 IP 是否落在禁止网段：
-// 私有段（10/8、172.16/12、192.168/16、IPv6 fc00::/7）、环回（127/8、::1）、
-// 链路本地（169.254/16、fe80::/10）、组播与未指定地址。
-func isForbiddenIP(ip net.IP) bool {
-	return !ip.IsGlobalUnicast() || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
-}
+// isForbiddenIP 判断 IP 是否落在禁止网段。
+//
+// 判定本体在 pkg/ssrf：mail 模块的回调节点要判同一件事，而两边各写一份的话，
+// 下一次补一个网段必然只改一边（漏的那边就是可被利用的入口）。这里保留一个薄壳，
+// 是为了让 webhook 内部的 call site 不必知道 pkg 的错误值。
+func isForbiddenIP(ip net.IP) bool { return ssrf.IsForbiddenIP(ip) }
 
 // dialWebhookContext 把校验绑定到真正建立连接的 IP，避免校验与拨号各解析一次域名。
 // URL 中的 hostname 保持原样，HTTP Host 与 TLS 证书校验仍针对原始主机。

@@ -343,4 +343,6 @@ func init() {
 	registerMailAutomationCanvasFieldI18n()
 	// 621d：画布重写的节点类型与控件词条（见 register_mail_automation_canvas_v2_i18n.go）。
 	registerMailAutomationCanvasV2I18n()
+	// 621e：T4 四个新节点的校验明细与运行文案（见 register_mail_automation_nodes_i18n.go）。
+	registerMailAutomationNodesI18n()
 }

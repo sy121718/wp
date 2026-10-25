@@ -65,6 +65,16 @@ const (
 	RunKeyCondMissing    = "mail.run.condMissing"
 	RunKeyCondTagMissing = "mail.run.condTagMissing"
 	RunKeyCondUnknown    = "mail.run.condUnknown"
+	RunKeyCondInvalid    = "mail.run.condInvalid"
+
+	// —— v2 的四个新节点（list_status_branch / ab_test / webhook）——
+	RunKeyBranchOut     = "mail.run.branchOut"
+	RunKeyABVariant     = "mail.run.abVariant"
+	RunKeyOutletMissing = "mail.run.outletMissing"
+	RunKeyWebhookOK     = "mail.run.webhookOk"
+	RunKeyWebhookFailed = "mail.run.webhookFailed"
+	RunKeyWebhookNoURL  = "mail.run.webhookNoUrl"
+	RunKeyWebhookDenied = "mail.run.webhookDenied"
 
 	// —— 写进实例 error_message 的（终态原因）——
 	RunKeyAutomationGone = "mail.run.automationDeleted"
@@ -95,6 +105,8 @@ const (
 	RunArgType      = "type"
 	RunArgReason    = "reason"
 	RunArgCondition = "condition"
+	RunArgOutlet    = "outlet"
+	RunArgVariant   = "variant"
 	RunArgNode      = "node"
 	RunArgWhen      = "when"
 	RunArgCount     = "count"
@@ -121,6 +133,15 @@ var runTextFallbacks = map[string]string{
 	RunKeyCondMissing:    "条件分支没有条件",
 	RunKeyCondTagMissing: "has_tag 条件缺少标签名",
 	RunKeyCondUnknown:    "未知条件: {" + RunArgCondition + "}",
+	RunKeyCondInvalid:    "条件不合法: {" + RunArgCondition + "}",
+
+	RunKeyBranchOut:     "按状态走 {" + RunArgOutlet + "} 分支",
+	RunKeyABVariant:     "命中变体 {" + RunArgVariant + "}",
+	RunKeyOutletMissing: "节点 {" + RunArgNode + "} 缺少出口 {" + RunArgOutlet + "}",
+	RunKeyWebhookOK:     "回调已发出（HTTP {" + RunArgStatus + "}）",
+	RunKeyWebhookFailed: "回调失败: {" + RunArgReason + "}（流程继续）",
+	RunKeyWebhookNoURL:  "回调节点没有配置地址",
+	RunKeyWebhookDenied: "回调地址指向内网，已拒绝",
 
 	RunKeyAutomationGone: "流程已被删除",
 	RunKeyContactGone:    "联系人不存在",

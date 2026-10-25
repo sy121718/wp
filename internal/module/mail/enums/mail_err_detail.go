@@ -52,6 +52,14 @@ const (
 	DetailGraphUnknownOutlet = "admin.mail.detail.unknownOutlet"
 	DetailGraphBadCondition  = "admin.mail.detail.badCondition"
 
+	// —— 四个新节点的参数（v2 第四批：filter / list_status_branch / ab_test / webhook）——
+	DetailGraphOutletMissing    = "admin.mail.detail.outletMissing"
+	DetailGraphNeedVariants     = "admin.mail.detail.needVariants"
+	DetailGraphVariantDup       = "admin.mail.detail.variantDuplicate"
+	DetailGraphVariantWeightBad = "admin.mail.detail.variantWeightBad"
+	DetailGraphNeedWebhookURL   = "admin.mail.detail.needWebhookURL"
+	DetailGraphWebhookDenied    = "admin.mail.detail.webhookDenied"
+
 	// —— 入口与边 ——
 	DetailGraphEntryMissing      = "admin.mail.detail.entryMissing"
 	DetailGraphEntryNotExist     = "admin.mail.detail.entryNotExist"
@@ -80,6 +88,12 @@ var DetailKeys = []string{
 	DetailGraphUnknownNodeTyp,
 	DetailGraphUnknownOutlet,
 	DetailGraphBadCondition,
+	DetailGraphOutletMissing,
+	DetailGraphNeedVariants,
+	DetailGraphVariantDup,
+	DetailGraphVariantWeightBad,
+	DetailGraphNeedWebhookURL,
+	DetailGraphWebhookDenied,
 	DetailGraphEntryMissing,
 	DetailGraphEntryNotExist,
 	DetailGraphEdgeTargetMissing,
@@ -109,6 +123,13 @@ var ErrDetailFallbacks = map[string]string{
 
 	DetailGraphUnknownOutlet: "节点 {node}: 未知出口名: {outlet}",
 	DetailGraphBadCondition:  "节点 {node}: 条件不合法: {reason}",
+
+	DetailGraphOutletMissing:    "节点 {node}: 缺少出口 {outlet}",
+	DetailGraphNeedVariants:     "节点 {node}: 分流转需要 2–5 个变体",
+	DetailGraphVariantDup:       "节点 {node}: 变体 id 重复: {variant}",
+	DetailGraphVariantWeightBad: "节点 {node}: 变体权重之和必须是 100（当前 {weight}）",
+	DetailGraphNeedWebhookURL:   "节点 {node}: 回调节点需要 https 地址",
+	DetailGraphWebhookDenied:    "节点 {node}: 回调地址不允许指向内网",
 
 	DetailGraphEntryMissing:      "没有指定入口节点",
 	DetailGraphEntryNotExist:     "入口节点不存在: {node}",

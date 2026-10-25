@@ -80,16 +80,19 @@ package mailservice
 // 单测断言全部失效。两份文本各有判据，所以都用**同一个模板**生成，不各写一遍。
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	json "go_wp/pkg/jsonx"
+	"io"
+	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"sort"
+	json "go_wp/pkg/jsonx"
 
 	"gorm.io/gorm"
 
@@ -99,6 +102,7 @@ import (
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/queue"
+	"go_wp/pkg/ssrf"
 	"go_wp/pkg/utils"
 )
 
@@ -626,12 +630,123 @@ func nodeArity(n AutomationNode) (int, error) {
 				"节点 {node}: 标签节点需要 add 或 remove", "node", key)
 		}
 		return 1, nil
+	case NodeTypeListStatusBranch:
+		// 三个出口**必须全填**：少一条意味着「某一类状态的人走到这里就没了」，
+		// 而执行器找不到目标会把实例判失败 —— 那本该在保存时就拒绝。
+		if err := requireAllOutlets(n, key); err != nil {
+			return 0, err
+		}
+		return len(nodeOutlets(NodeTypeListStatusBranch)), nil
+	case NodeTypeABTest:
+		return checkABTest(n, key)
+	case NodeTypeWebhook:
+		raw := strings.TrimSpace(toString(n.Params["url"]))
+		if raw == "" {
+			return 0, graphErr(mailenums.DetailGraphNeedWebhookURL,
+				"节点 {node}: 回调节点需要 https 地址", "node", key)
+		}
+		// 保存时校验一次（执行时还会再校验一次：库里的地址可能被直接改过）。
+		if uerr := ssrf.Check(context.Background(), raw, "https"); uerr != nil {
+			return 0, graphErr(mailenums.DetailGraphWebhookDenied,
+				"节点 {node}: 回调地址不允许指向内网", "node", key)
+		}
+		return 1, nil
 	case NodeTypeEnd:
 		return 0, nil
 	default:
 		return 0, graphErr(mailenums.DetailGraphUnknownNodeTyp,
 			"节点 {node}: 未知节点类型: {type}", "node", key, "type", n.Type)
 	}
+}
+
+// requireAllOutlets 校验「出口必须全填」的节点（list_status_branch）。
+//
+// filter 不走这里：它的两条出边在 v1 就已有专门的错误文案（「需要 yes 与 no 两条出边」），
+// 换成通用的「缺少出口 {outlet}」会让既有运维手册与日志检索失效。
+func requireAllOutlets(n AutomationNode, key string) error {
+	required := nodeOutlets(n.Type)
+	filled := n.allOutlets()
+	missing := make([]string, 0, len(required))
+	for _, name := range required {
+		if filled[name] == "" {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return graphErr(mailenums.DetailGraphOutletMissing,
+		"节点 {node}: 缺少出口 {outlet}", "node", key, "outlet", strings.Join(missing, ", "))
+}
+
+// checkABTest 校验分流转：2–5 个变体、id 唯一、权重和 = 100、每个变体都要有出口。
+func checkABTest(n AutomationNode, key string) (int, error) {
+	variants := abVariants(n.Params)
+	if len(variants) < 2 || len(variants) > 5 {
+		return 0, graphErr(mailenums.DetailGraphNeedVariants,
+			"节点 {node}: 分流转需要 2–5 个变体", "node", key)
+	}
+	seen := make(map[string]bool, len(variants))
+	total := 0
+	for _, v := range variants {
+		if seen[v.ID] {
+			return 0, graphErr(mailenums.DetailGraphVariantDup,
+				"节点 {node}: 变体 id 重复: {variant}", "node", key, "variant", v.ID)
+		}
+		seen[v.ID] = true
+		total += v.Weight
+	}
+	// 权重和必须是 100：差一点就会让「按权重落桶」在边界上把最后一段人分不到任何变体。
+	if total != 100 {
+		return 0, graphErr(mailenums.DetailGraphVariantWeightBad,
+			"节点 {node}: 变体权重之和必须是 100（当前 {weight}）", "node", key,
+			"weight", strconv.Itoa(total))
+	}
+	// 每个变体都要有出口（少一条 = 落到这个变体的人走到这里就没了）。
+	filled := n.allOutlets()
+	missing := make([]string, 0, len(variants))
+	for _, v := range variants {
+		if filled[v.ID] == "" {
+			missing = append(missing, v.ID)
+		}
+	}
+	if len(missing) > 0 {
+		return 0, graphErr(mailenums.DetailGraphOutletMissing,
+			"节点 {node}: 缺少出口 {outlet}", "node", key, "outlet", strings.Join(missing, ", "))
+	}
+	return len(variants), nil
+}
+
+// abVariant 一个 A/B 变体（id 是出口名，weight 是落桶权重）。
+type abVariant struct {
+	ID     string
+	Name   string
+	Weight int
+}
+
+// abVariants 从 params.variants 里读出变体（保持声明顺序 —— 落桶顺序必须是确定的）。
+func abVariants(params map[string]any) []abVariant {
+	if params == nil {
+		return nil
+	}
+	list, ok := params["variants"].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]abVariant, 0, len(list))
+	for _, item := range list {
+		v, isMap := item.(map[string]any)
+		if !isMap {
+			continue
+		}
+		id := strings.TrimSpace(toString(v["id"]))
+		if id == "" {
+			continue
+		}
+		weight, _ := toInt(v["weight"])
+		out = append(out, abVariant{ID: id, Name: toString(v["name"]), Weight: weight})
+	}
+	return out
 }
 
 // conditionModeValid 条件模式只能是 all / any（空值按 all 处理 = v1 的 AND 语义）。
@@ -1056,6 +1171,72 @@ func (s *Service) RunAutomation(ctx context.Context, runID uint64) (err error) {
 				return s.completeRun(ctx, run.ID)
 			}
 
+		case NodeTypeListStatusBranch:
+			outlet := listStatusOutlet(contact.Status)
+			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK,
+				mailenums.EncodeRunText(mailenums.RunKeyBranchOut, map[string]string{
+					mailenums.RunArgStatus: outlet,
+				}))
+			current = node.outlet(outlet)
+			if current == "" {
+				// 校验时已要求三条出口全填；走到这里说明库里的图被改过。
+				return s.failRun(ctx, run.ID, mailenums.EncodeRunText(mailenums.RunKeyOutletMissing,
+					map[string]string{mailenums.RunArgNode: node.Key, mailenums.RunArgOutlet: outlet}))
+			}
+			if err = s.advance(ctx, run.ID, current); err != nil {
+				return err
+			}
+
+		case NodeTypeABTest:
+			outlet, berr := abOutletOf(run.ID, node)
+			if berr != nil {
+				return s.failRun(ctx, run.ID, berr.Error())
+			}
+			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK,
+				mailenums.EncodeRunText(mailenums.RunKeyABVariant,
+					map[string]string{mailenums.RunArgVariant: outlet}))
+			current = node.outlet(outlet)
+			if current == "" {
+				return s.failRun(ctx, run.ID, mailenums.EncodeRunText(mailenums.RunKeyOutletMissing,
+					map[string]string{mailenums.RunArgNode: node.Key, mailenums.RunArgOutlet: outlet}))
+			}
+			if err = s.advance(ctx, run.ID, current); err != nil {
+				return err
+			}
+
+		case NodeTypeWebhook:
+			if done {
+				current = node.outlet(outletNext)
+				if err = s.advance(ctx, run.ID, current); err != nil {
+					return err
+				}
+				if current == "" {
+					return s.completeRun(ctx, run.ID)
+				}
+				continue
+			}
+			// 回调失败**不终止流程**：下游动作还要执行，而「第三方暂时 500」不该吃掉用户
+			// 后面那封邮件。失败记一条 failed 日志（排障看得到），然后照常沿 next 前进。
+			status, werr := s.postWebhook(ctx, node)
+			logStatus := mailmodel.NodeStatusOK
+			if werr != nil {
+				logStatus = mailmodel.NodeStatusFailed
+			}
+			detail := mailenums.EncodeRunText(mailenums.RunKeyWebhookOK,
+				map[string]string{mailenums.RunArgStatus: strconv.Itoa(status)})
+			if werr != nil {
+				detail = mailenums.EncodeRunText(mailenums.RunKeyWebhookFailed,
+					map[string]string{mailenums.RunArgReason: werr.Error()})
+			}
+			s.logNode(ctx, run.ID, node, logStatus, detail)
+			current = node.outlet(outletNext)
+			if err = s.advance(ctx, run.ID, current); err != nil {
+				return err
+			}
+			if current == "" {
+				return s.completeRun(ctx, run.ID)
+			}
+
 		case NodeTypeEnd:
 			s.logNode(ctx, run.ID, node, mailmodel.NodeStatusOK, mailenums.EncodeRunText(mailenums.RunKeyEnded, nil))
 			return s.completeRun(ctx, run.ID)
@@ -1216,72 +1397,229 @@ func displayNameOf(c *mailmodel.MailContactEntity) string {
 	return c.Email
 }
 
-// evalConditions 求值条件分支（**AND 语义**：全部满足才走 yes）。
+// Condition 结构化条件（图定义 v2 的 `params.conditions` 元素形态之一）。
 //
-// 支持的条件（前缀式，便于将来扩展且不引入表达式解析器）：
+// 另一种元素形态是**字符串**（v1 的前缀语义：opened / clicked / subscribed / has_tag:X）——
+// 两种都要支持，因为存量定义里全是字符串，而新画布写的是对象。
 //
-//	opened              打开过任意营销邮件
-//	clicked             点击过任意营销链接
-//	subscribed          当前是已订阅
-//	has_tag:<标签>      当前带某个标签
+// 字段名限定在 mail 联系人的列上（status / tags / email / name / source /
+// last_activity_at）；未知字段一律报错，不默认 false。
+type Condition struct {
+	Field string `json:"field"`
+	Op    string `json:"op"`
+	Value any    `json:"value"`
+}
+
+// 条件操作符（封闭集合）。
+const (
+	condOpEq     = "eq"
+	condOpNeq    = "neq"
+	condOpHas    = "has"
+	condOpNotHas = "not_has"
+	condOpGt     = "gt"
+	condOpGte    = "gte"
+	condOpLt     = "lt"
+	condOpLte    = "lte"
+)
+
+// evalConditions 求值条件分支。
 //
-// **未知条件直接报错**，不静默当 false —— 否则「配置写错」会伪装成「条件不满足」，
-// 表现是「这批人怎么都走了 no 分支」，极难查。
+// 语义由 `params.mode` 决定：`all`（缺省，v1 的 AND 语义）与 `any`（任一满足即真）。
+// 两个模式都**短路**：all 遇到第一个假就停（省掉后续查询），any 遇到第一个真就停。
+//
+// 条件元素支持两种形态：
+//
+//	字符串   opened / clicked / subscribed / has_tag:<标签>（v1 前缀语义，行为不变）
+//	对象     {field, op, value}（v2 结构化条件）
+//
+// **未知条件 / 未知字段 / 未知操作符一律报错**，不静默当 false —— 否则「配置写错」会
+// 伪装成「条件不满足」，表现是「这批人怎么都走了 no 分支」，极难查。
 func (s *Service) evalConditions(ctx context.Context, contact *mailmodel.MailContactEntity, params map[string]any) (bool, error) {
-	conds := toStringSlice(params["conditions"])
-	if len(conds) == 0 {
+	raw, _ := params["conditions"].([]any)
+	if len(raw) == 0 {
 		return false, errors.New(mailenums.EncodeRunText(mailenums.RunKeyCondMissing, nil))
 	}
-	for _, c := range conds {
-		cond := strings.TrimSpace(c)
-		switch {
-		case cond == "":
-			continue
-		case cond == "opened":
-			has, err := s.m.ContactHasEvent(ctx, contact.ID, mailmodel.EventTypeOpen)
-			if err != nil {
-				return false, err
-			}
-			if !has {
-				return false, nil
-			}
-		case cond == "clicked":
-			has, err := s.m.ContactHasEvent(ctx, contact.ID, mailmodel.EventTypeClick)
-			if err != nil {
-				return false, err
-			}
-			if !has {
-				return false, nil
-			}
-		case cond == "subscribed":
-			if contact.Status != mailmodel.ContactStatusSubscribed {
-				return false, nil
-			}
-		case strings.HasPrefix(cond, "has_tag:"):
-			tag := strings.TrimSpace(strings.TrimPrefix(cond, "has_tag:"))
-			if tag == "" {
-				return false, errors.New(mailenums.EncodeRunText(mailenums.RunKeyCondTagMissing, nil))
-			}
-			tags, err := s.m.GetContactTags(ctx, contact.ID)
-			if err != nil {
-				return false, err
-			}
-			found := false
-			for _, t := range tags {
-				if t == tag {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return false, nil
-			}
-		default:
-			return false, errors.New(mailenums.EncodeRunText(mailenums.RunKeyCondUnknown,
-				map[string]string{mailenums.RunArgCondition: cond}))
+	anyMode := strings.TrimSpace(toString(params["mode"])) == ConditionModeAny
+
+	seen := 0
+	for _, item := range raw {
+		ok, err := s.evalOneCondition(ctx, contact, item)
+		if err != nil {
+			return false, err
+		}
+		if ok {
+			seen++
+		}
+		// 短路：any 命中即真、all 落空即假。
+		if anyMode && ok {
+			return true, nil
+		}
+		if !anyMode && !ok {
+			return false, nil
 		}
 	}
-	return true, nil
+	if seen == 0 && !anyMode {
+		return false, nil
+	}
+	return !anyMode || seen > 0, nil
+}
+
+// evalOneCondition 求值单个条件（字符串形态或对象形态）。
+func (s *Service) evalOneCondition(ctx context.Context, contact *mailmodel.MailContactEntity, item any) (bool, error) {
+	switch v := item.(type) {
+	case string:
+		return s.evalPrefixCondition(ctx, contact, strings.TrimSpace(v))
+	case map[string]any:
+		return s.evalStructuredCondition(ctx, contact, v)
+	}
+	return false, errors.New(mailenums.EncodeRunText(mailenums.RunKeyCondUnknown,
+		map[string]string{mailenums.RunArgCondition: fmt.Sprintf("%v", item)}))
+}
+
+// evalPrefixCondition v1 的前缀式条件（行为与改造前逐字一致）。
+func (s *Service) evalPrefixCondition(ctx context.Context, contact *mailmodel.MailContactEntity, cond string) (bool, error) {
+	switch {
+	case cond == "":
+		// 空串不算一个条件：它既不是真也不是假，跳过（由调用方的计数决定整体结果）。
+		return false, nil
+	case cond == "opened":
+		return s.m.ContactHasEvent(ctx, contact.ID, mailmodel.EventTypeOpen)
+	case cond == "clicked":
+		return s.m.ContactHasEvent(ctx, contact.ID, mailmodel.EventTypeClick)
+	case cond == "subscribed":
+		return contact.Status == mailmodel.ContactStatusSubscribed, nil
+	case strings.HasPrefix(cond, "has_tag:"):
+		tag := strings.TrimSpace(strings.TrimPrefix(cond, "has_tag:"))
+		if tag == "" {
+			return false, errors.New(mailenums.EncodeRunText(mailenums.RunKeyCondTagMissing, nil))
+		}
+		tags, err := s.m.GetContactTags(ctx, contact.ID)
+		if err != nil {
+			return false, err
+		}
+		for _, t := range tags {
+			if t == tag {
+				return true, nil
+			}
+		}
+		return false, nil
+	default:
+		return false, errors.New(mailenums.EncodeRunText(mailenums.RunKeyCondUnknown,
+			map[string]string{mailenums.RunArgCondition: cond}))
+	}
+}
+
+// evalStructuredCondition v2 的结构化条件 {field, op, value}。
+//
+// 字段与操作符都是封闭集合：**未知的一律报错**（不默认 false）。判据与 v1 的前缀式
+// 一致 —— 配置写错必须让人看见，而不是伪装成「条件不满足」。
+func (s *Service) evalStructuredCondition(ctx context.Context, contact *mailmodel.MailContactEntity, raw map[string]any) (bool, error) {
+	var cond Condition
+	cond.Field = strings.TrimSpace(toString(raw["field"]))
+	cond.Op = strings.TrimSpace(toString(raw["op"]))
+	cond.Value = raw["value"]
+	if cond.Field == "" || cond.Op == "" {
+		return false, conditionErr(cond, "field 与 op 都必须填")
+	}
+
+	switch cond.Field {
+	case "status":
+		return compareString(string(contact.Status), cond)
+	case "email":
+		return compareString(contact.Email, cond)
+	case "name":
+		name := ""
+		if contact.Name != nil {
+			name = *contact.Name
+		}
+		return compareString(name, cond)
+	case "source":
+		return compareString(contact.Source, cond)
+	case "last_activity_at":
+		if contact.LastActivityAt == nil {
+			// 从未活动过：比较类操作一律为假（而不是报错）—— 这是一个真实状态。
+			return false, nil
+		}
+		return compareTime(*contact.LastActivityAt, cond)
+	case "tags":
+		tags, err := s.m.GetContactTags(ctx, contact.ID)
+		if err != nil {
+			return false, err
+		}
+		return compareTags(tags, cond)
+	default:
+		return false, conditionErr(cond, "未知字段")
+	}
+}
+
+// conditionErr 结构化条件的可定位错误（带 field / op / value）。
+func conditionErr(cond Condition, reason string) error {
+	return errors.New(mailenums.EncodeRunText(mailenums.RunKeyCondInvalid, map[string]string{
+		mailenums.RunArgCondition: fmt.Sprintf("%s %s %v（%s）", cond.Field, cond.Op, cond.Value, reason),
+	}))
+}
+
+// compareString 字符串字段的比较（eq / neq / 包含类）。
+func compareString(actual string, cond Condition) (bool, error) {
+	want := strings.TrimSpace(toString(cond.Value))
+	switch cond.Op {
+	case condOpEq:
+		return actual == want, nil
+	case condOpNeq:
+		return actual != want, nil
+	}
+	return false, conditionErr(cond, "该字段只支持 eq / neq")
+}
+
+// compareTime 时间字段的比较（gt / gte / lt / lte）。
+//
+// value 接受 RFC3339 或「相对天数」（如 `-7`）：后者在界面上更容易填（「7 天内活跃过」），
+// 而负数代表过去。
+func compareTime(actual time.Time, cond Condition) (bool, error) {
+	var want time.Time
+	text := strings.TrimSpace(toString(cond.Value))
+	if days, ok := toInt(cond.Value); ok {
+		want = time.Now().Add(time.Duration(days) * 24 * time.Hour)
+	} else {
+		parsed, err := time.Parse(time.RFC3339, text)
+		if err != nil {
+			return false, conditionErr(cond, "时间要填 RFC3339 或天数")
+		}
+		want = parsed
+	}
+	switch cond.Op {
+	case condOpGt:
+		return actual.After(want), nil
+	case condOpGte:
+		return actual.After(want) || actual.Equal(want), nil
+	case condOpLt:
+		return actual.Before(want), nil
+	case condOpLte:
+		return actual.Before(want) || actual.Equal(want), nil
+	}
+	return false, conditionErr(cond, "时间字段只支持 gt / gte / lt / lte")
+}
+
+// compareTags 标签数组的比较（has / not_has）。
+func compareTags(tags []string, cond Condition) (bool, error) {
+	want := strings.TrimSpace(toString(cond.Value))
+	if want == "" {
+		return false, conditionErr(cond, "标签名不能为空")
+	}
+	found := false
+	for _, t := range tags {
+		if t == want {
+			found = true
+			break
+		}
+	}
+	switch cond.Op {
+	case condOpHas:
+		return found, nil
+	case condOpNotHas:
+		return !found, nil
+	}
+	return false, conditionErr(cond, "标签字段只支持 has / not_has")
 }
 
 // tagListText 标签列表 → 展示文本（空列表给「—」，避免词条里出现空的 %s）。
@@ -1787,4 +2125,118 @@ func graphInvalidError(err error) error {
 func graphInvalidRequestError(reason string) error {
 	return errors.New(mailenums.ErrAutomationGraphInvalid + ": " +
 		i18n.ErrorDetail(mailenums.DetailGraphRequestNotJSON, "reason", reason))
+}
+
+// listStatusOutlet 联系人状态 → list_status_branch 的出口名。
+//
+// 三档映射刻意是**封闭**的：`subscribed` 走 active、`pending`（待确认同意）走 non_active、
+// 其余（含退订 / 抑制 / 空串）走 not_in_list。多出来的状态归到「不在名单」而不是「未激活」，
+// 因为「不在名单」的语义是「这个人不该被营销」，那才是保守的一侧。
+func listStatusOutlet(status string) string {
+	switch status {
+	case mailmodel.ContactStatusSubscribed:
+		return outletActive
+	case mailmodel.ContactStatusPending:
+		return outletNonActive
+	default:
+		return outletNotInList
+	}
+}
+
+// abOutletOf 决定这次执行落哪个变体（确定性分桶）。
+//
+// 找不到可用出口时**报错**而不是静默走第一个：静默的后果是 A/B 统计里所有失败案例都被
+// 计进 A 组，而运营看不出分布已经歪了。
+func abOutletOf(runID uint64, node AutomationNode) (string, error) {
+	variants := abVariants(node.Params)
+	if len(variants) == 0 {
+		return "", errors.New(mailenums.EncodeRunText(mailenums.RunKeyOutletMissing,
+			map[string]string{mailenums.RunArgNode: node.Key, mailenums.RunArgOutlet: "variants"}))
+	}
+	bucket := int(bucketOf(runID, node.Key) % 100)
+	acc := 0
+	for _, v := range variants {
+		acc += v.Weight
+		if bucket < acc {
+			if node.outlet(v.ID) == "" {
+				return "", errors.New(mailenums.EncodeRunText(mailenums.RunKeyOutletMissing,
+					map[string]string{mailenums.RunArgNode: node.Key, mailenums.RunArgOutlet: v.ID}))
+			}
+			return v.ID, nil
+		}
+	}
+	// 权重和不足 100 时落桶可能落在所有变体之外（校验会拒，但库里的图可能被改过）。
+	return "", errors.New(mailenums.EncodeRunText(mailenums.RunKeyOutletMissing,
+		map[string]string{mailenums.RunArgNode: node.Key, mailenums.RunArgOutlet: "weight"}))
+}
+
+// bucketOf 确定性分桶：同一个 (runID, nodeKey) **永远**落同一个桶。
+//
+// 为什么必须确定性：A/B 的统计前提是「同一个人反复经过这个节点时看到的是同一个变体」。
+// 用 map 迭代顺序或 rand 的话，队列重试 / 补跑会让同一个人换分支 —— 那不只是统计作废，
+// 用户还会先后收到两个版本的邮件。
+//
+// 用 FNV-1a 而不是 hash/maphash：后者每次进程启动换种子，跨重启就不确定了。
+func bucketOf(runID uint64, nodeKey string) uint64 {
+	const (
+		offset64 = 14695981039346656037
+		prime64  = 1099511628211
+	)
+	h := uint64(offset64)
+	for i := 0; i < 8; i++ {
+		h ^= (runID >> (8 * i)) & 0xff
+		h *= prime64
+	}
+	for i := 0; i < len(nodeKey); i++ {
+		h ^= uint64(nodeKey[i])
+		h *= prime64
+	}
+	return h
+}
+
+// postWebhook 执行一次回调（同步、有超时、不跟随重定向）。
+//
+// 三条约束：
+//  1. **不跟随重定向**：重定向目标没过 SSRF 校验，跟随等于把校验绕过去；
+//  2. **执行时再校验一次地址**：库里的 URL 可能被直接改过（保存时的校验只挡住正常路径）；
+//  3. 返回状态码是为了让它进节点日志 —— 「第三方到底回了什么」是排障的第一个问题。
+func (s *Service) postWebhook(ctx context.Context, node AutomationNode) (int, error) {
+	raw := strings.TrimSpace(toString(node.Params["url"]))
+	if raw == "" {
+		return 0, errors.New(mailenums.EncodeRunText(mailenums.RunKeyWebhookNoURL, nil))
+	}
+	// SSRF 判定：内网 / 环回 / 链路本地一律拒绝（判定本体在 pkg/ssrf，与 webhook 模块共用）。
+	//
+	// 这里**不豁免**任何客户端：`webhookClient` 是可注入的（测试与特殊部署替换），
+	// 而「因为测试要发请求所以跳过校验」正是把防线开出后门的那种写法。要验回调成功
+	// 的路径，用 httptest 起一个监听 127.0.0.1 的服务是行不通的（它仍在内网）——
+	// 所以 T4 只判「被拒后流程继续」，成功路径由 pkg/ssrf 与 webhook 侧的用例覆盖。
+	if err := ssrf.Check(ctx, raw, "https"); err != nil {
+		return 0, errors.New(mailenums.EncodeRunText(mailenums.RunKeyWebhookDenied, nil))
+	}
+	body, _ := json.Marshal(map[string]any{"node": node.Key, "params": node.Params})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, raw, bytes.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	client := s.webhookClient
+	if client == nil {
+		client = &http.Client{
+			Timeout: 10 * time.Second,
+			// 不跟随重定向：目标未过 SSRF 校验。
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	// 只读一小段：回执内容不进日志（可能含第三方敏感信息），状态码足够定位。
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return resp.StatusCode, fmt.Errorf("webhook 返回 %d", resp.StatusCode)
+	}
+	return resp.StatusCode, nil
 }

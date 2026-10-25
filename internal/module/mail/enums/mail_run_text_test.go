@@ -63,6 +63,10 @@ func TestRunTextFallbackCoversEveryKey(t *testing.T) {
 		RunKeyEntryNode, RunKeyWhenUnset, RunKeyReasonUnset, RunKeyWaiting,
 		RunKeyRunning, RunKeyCompleted, RunKeyStopped, RunKeyStoppedWhy,
 		RunKeyFailed, RunKeyStatusUnkwn,
+		// v2 的四个新节点（T4）
+		RunKeyBranchOut, RunKeyABVariant, RunKeyOutletMissing,
+		RunKeyWebhookOK, RunKeyWebhookFailed, RunKeyWebhookNoURL, RunKeyWebhookDenied,
+		RunKeyCondInvalid,
 	}
 	if len(runTextFallbacks) != len(keys) {
 		t.Fatalf("兜底表应有 %d 条，实际 %d", len(keys), len(runTextFallbacks))
