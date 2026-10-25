@@ -191,6 +191,22 @@ const (
 	ErrPurchaseStatusNotFinishable = "ErrPurchaseStatusNotFinishable"
 	ErrPurchaseStatusNotCancelable = "ErrPurchaseStatusNotCancelable"
 
+	// —— 调拨（迁移 627，W3）——
+	//
+	// 五条对应五类「这一步不该发生」：缺凭证（用户明确要求：出货与签收都必须有）、
+	// 明细不在源仓、可售不足、状态不允许、两仓相同。
+	ErrTransferNotFound         = "ErrTransferNotFound"
+	ErrTransferLinesRequired    = "ErrTransferLinesRequired"
+	ErrTransferSameWarehouse    = "ErrTransferSameWarehouse"
+	ErrItemNotInSourceWarehouse = "ErrItemNotInSourceWarehouse"
+	ErrTransferStatusInvalid    = "ErrTransferStatusInvalid"
+	// ErrAttachmentRequired 出货 / 签收必须带凭证附件（用户明确要求）。
+	ErrAttachmentRequired = "ErrAttachmentRequired"
+	// ErrAttachmentNotFound 凭证引用的附件不存在（或不属于本工程）。
+	ErrAttachmentNotFound = "ErrAttachmentNotFound"
+	// ErrStockNotEnough 可售不足（调拨不得占用被订单预占的那部分）。
+	ErrStockNotEnough = "ErrStockNotEnough"
+
 	// —— 物料清单（issue #16 验收 5）——
 	ErrBOMQuantityInvalid    = "ErrBOMQuantityInvalid"    // 子项用量必须为正整数
 	ErrBOMSelfReference      = "ErrBOMSelfReference"      // 父项不能把自己列为子项
@@ -485,6 +501,14 @@ var errFallbacks = map[string]string{
 	ErrPurchaseLinesLocked:           "已有入库数量的采购单不能再改行（改了状态推导就不成立）",
 	ErrPurchaseLineNotFound:          "采购行不存在（或不属于该采购单）",
 	ErrPurchaseStatusNotFinishable:   "只有已入库或部分入库的采购单可以提前关单",
+	ErrTransferNotFound:              "调拨单不存在",
+	ErrTransferLinesRequired:         "调拨单至少要有一行明细",
+	ErrTransferSameWarehouse:         "源仓与目标仓不能是同一个",
+	ErrItemNotInSourceWarehouse:      "这条库存行不属于源仓",
+	ErrTransferStatusInvalid:         "调拨单当前状态不允许这个操作",
+	ErrAttachmentRequired:            "出货与签收都必须上传凭证附件",
+	ErrAttachmentNotFound:            "凭证引用的附件不存在",
+	ErrStockNotEnough:                "可售数量不足（被订单预占的部分不能调拨）",
 	ErrPurchaseStatusNotCancelable:   "只有未入库或部分入库的采购单可以取消（已收满的货已进仓，要走退货）",
 	ErrReceiptLinesRequired:          "入库清单不能为空",
 	ErrReceiptLineDuplicate:          "同一入库请求里同一采购行只能出现一次",
@@ -549,6 +573,13 @@ var errStatuses = map[string]int{
 	ErrPurchaseSourceDisabled:      http.StatusConflict,
 	ErrPurchaseLinesLocked:         http.StatusConflict,
 	ErrPurchaseStatusNotFinishable: http.StatusConflict,
+	ErrTransferNotFound:            http.StatusNotFound,
+	ErrTransferSameWarehouse:       http.StatusConflict,
+	ErrItemNotInSourceWarehouse:    http.StatusConflict,
+	ErrTransferStatusInvalid:       http.StatusConflict,
+	ErrAttachmentRequired:          http.StatusBadRequest,
+	ErrAttachmentNotFound:          http.StatusNotFound,
+	ErrStockNotEnough:              http.StatusConflict,
 	ErrPurchaseStatusNotCancelable: http.StatusConflict,
 	ErrReceiptOverReceive:          http.StatusConflict,
 	ErrReceiptOrderDone:            http.StatusConflict,

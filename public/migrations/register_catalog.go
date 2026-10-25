@@ -947,4 +947,28 @@ func registerCatalogAndInventory() {
 			"AND table_name IN ('inventory_transfers', 'inventory_transfer_items', 'inventory_transfer_attachments')",
 		SQL: mustSQL("627_inventory_transfer.sql"),
 	})
+
+	// 628：W3 的文案词条（8 条调拨业务错误 + 35 个界面位，中英成对 = 86 行）。
+	// 判定逐条枚举本批全部 42 个 key 的两种语言。
+	registerSeed(Seed{
+		Version:   "628-inventory-transfer-i18n",
+		TableName: "sys_i18n",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 86 THEN 1 ELSE 0 END FROM sys_i18n " +
+			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
+			"'admin.inventory.transfers.title', 'admin.inventory.transfers.hint', 'admin.inventory.transfers.sub', " +
+			"'admin.inventory.transfers.create', 'admin.inventory.transfers.listLead', 'admin.inventory.transfers.filter.keywordPh', " +
+			"'admin.inventory.transfers.col.no', 'admin.inventory.transfers.col.route', 'admin.inventory.transfers.col.status', " +
+			"'admin.inventory.transfers.col.items', 'admin.inventory.transfers.col.totalQty', 'admin.inventory.transfers.col.createdAt', " +
+			"'admin.inventory.transfers.emptyHeading', 'admin.inventory.transfers.emptyDesc', 'admin.inventory.transfers.ship', " +
+			"'admin.inventory.transfers.receive', 'admin.inventory.transfers.cancel', 'admin.inventory.transfers.cancelConfirm', " +
+			"'admin.inventory.transfers.cancelRemark', 'admin.inventory.transfers.attachments', 'admin.inventory.transfers.shipAttachHint', " +
+			"'admin.inventory.transfers.receiveAttachHint', 'admin.inventory.transfers.remark', 'admin.inventory.transfers.shipSubmit', " +
+			"'admin.inventory.transfers.receiveSubmit', 'admin.inventory.transfers.fromWarehouse', 'admin.inventory.transfers.toWarehouse', " +
+			"'admin.inventory.transfers.sameWarehouseHint', 'admin.inventory.transfers.requestAttachments', 'admin.inventory.transfers.createSubmit', " +
+			"'admin.inventory.transfers.status.pending', 'admin.inventory.transfers.status.in_transit', 'admin.inventory.transfers.status.completed', " +
+			"'admin.inventory.transfers.status.cancelled', 'ErrTransferNotFound', 'ErrTransferLinesRequired', " +
+			"'ErrTransferSameWarehouse', 'ErrItemNotInSourceWarehouse', 'ErrTransferStatusInvalid', " +
+			"'ErrAttachmentRequired', 'ErrAttachmentNotFound', 'ErrStockNotEnough', 'admin.inventory.transfers.units')",
+		SQL: mustSQL("628_inventory_transfer_i18n.sql"),
+	})
 }

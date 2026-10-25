@@ -23,6 +23,8 @@ import (
 // 依赖方向：inventory → product（本模块实现 product 契约定义的变体库存端口，
 // 由顶层装配注入商品模块），商品模块不认识仓库模块的实现。
 type InventoryService interface {
+	// TransferService 调拨单（迁移 627，W3）：仓库间移库，出货与签收各需凭证附件。
+	TransferService
 	// —— 仓库（验收 1：可建仓库并设置一个默认仓）——
 	// CreateWarehouse 建仓；工程内第一个仓自动成为默认仓（「必须有一个默认仓」），
 	// 显式 IsDefault 则切换默认仓（同工程唯一）。
@@ -342,4 +344,33 @@ type ReasonWriter interface {
 	CreateReason(ctx context.Context, req *inventorydto.CreateReasonReq) (res *inventorydto.ReasonResp, err error)
 	// UpdateReason 改名 / 启停 / 排序（内置原因只允许启停与排序）。
 	UpdateReason(ctx context.Context, req *inventorydto.UpdateReasonReq) (res *inventorydto.ReasonResp, err error)
+}
+
+// —— 调拨（迁移 627，W3）——
+
+// TransferService 调拨单：仓库间移库，出货与签收**各需凭证附件**。
+//
+// 状态机（单向）：
+//
+//	pending ──Ship(需出货凭证)──→ in_transit ──Receive(需签收凭证)──→ completed
+//	   │
+//	   └──Cancel──→ cancelled
+//
+// 与 ERP 的一处刻意差异：建单就要求两个仓（ERP 的目标仓到 Receive 才给）——
+// 本地是单仓管理员操作，建单时不知道发往哪里等于留一张半截单据。
+type TransferService interface {
+	// CreateTransfer 建调拨单（两仓必须存在、active、不同；明细按 stock_id 校验属于源仓）。
+	CreateTransfer(ctx context.Context, req *inventorydto.CreateTransferReq) (res *inventorydto.TransferResp, err error)
+	// ShipTransfer 出货：AttachmentIDs 为空即拒绝（ErrAttachmentRequired），逐行出库写 transfer_out 流水。
+	ShipTransfer(ctx context.Context, req *inventorydto.TransferShipReq) (res *inventorydto.TransferResp, err error)
+	// ReceiveTransfer 签收：同样要求签收凭证，逐行在目标仓入库（同变体同码则累加、否则建行）。
+	ReceiveTransfer(ctx context.Context, req *inventorydto.TransferReceiveReq) (res *inventorydto.TransferResp, err error)
+	// CancelTransfer 取消（仅 pending；in_transit 要先签收或走反向调拨）。
+	CancelTransfer(ctx context.Context, req *inventorydto.TransferCancelReq) (res *inventorydto.TransferResp, err error)
+	// ListTransfers 列表（状态 / 关键词过滤 + 分页）。
+	ListTransfers(ctx context.Context, req *inventorydto.ListTransferReq) (list []*inventorydto.TransferRowResp, err error)
+	// CountTransfers 总数（与 ListTransfers 同一份过滤条件）。
+	CountTransfers(ctx context.Context, req *inventorydto.ListTransferReq) (n int64, err error)
+	// GetTransfer 详情（明细 + 三类凭证）。
+	GetTransfer(ctx context.Context, req *inventorydto.GetTransferReq) (res *inventorydto.TransferDetailResp, err error)
 }

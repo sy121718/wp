@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -80,8 +81,11 @@ func TestInventoryReasonBulkUsesUpdatePermission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	route := `pages.POST("/inventory/reasons/bulk-status", builtin.CasbinMiddlewareForPath("/api/inventory/reason/update"), inventoryPages.InventoryReasonsBulkStatus)`
-	if !strings.Contains(string(body), route) {
+	// 判据只看「这条路由上挂的权限点是不是 reason/update」——不锁死接收者变量名：
+	// 路由注册从 SetupInventoryPages 拆到 registerInventoryWarehouseWritePages 之后，
+	// 句柄形参名从 inventoryPages 变成了 h，而「共用 update 权限点」这条契约没变。
+	route := regexp.MustCompile(`pages\.POST\("/inventory/reasons/bulk-status",\s*builtin\.CasbinMiddlewareForPath\("/api/inventory/reason/update"\),\s*[\w.]+\.InventoryReasonsBulkStatus\)`)
+	if !route.Match(body) {
 		t.Fatal("bulk route must share reason_update enforcement")
 	}
 }

@@ -58,6 +58,7 @@ import (
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 	inventorymcp "go_wp/internal/module/inventory/inbound/mcp"
 	inventorymodel "go_wp/internal/module/inventory/model"
+	mediaatt "go_wp/internal/module/inventory/outbound/mediaatt"
 	orderstock "go_wp/internal/module/inventory/outbound/orderstock"
 	inventoryservice "go_wp/internal/module/inventory/service"
 	mailcontract "go_wp/internal/module/mail/contract"
@@ -568,6 +569,11 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 装配期把实现当作端口传进去 —— 建变体时解析归属仓（不选则默认仓）、并在归属仓
 	// 生成一条初始 0 的库存记录。
 	inventorySvc := inventoryhttp.SetupInventoryRoutes(authorizedAPI, a.adminPages, db, projectService)
+	// 调拨凭证的附件读口（迁移 627，W3）：适配器在库存侧（outbound/mediaatt），
+	// 只用到 media 的 Detail 一条能力 —— 库存不认识 media 的 service / model。
+	if concrete, ok := inventorySvc.(*inventoryservice.Service); ok {
+		concrete.SetAttachmentResolver(mediaatt.New(a.mediaSvc))
+	}
 	// 商品域（issue #5）：商品与变体管理。商品是独立领域模块，不再寄居内容表。
 	productSvc, productReader := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
 	// product ↔ inventory 是循环依赖：product 的 Setup 要 inventory 契约，而库存页面

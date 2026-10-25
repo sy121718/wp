@@ -62,6 +62,13 @@ const (
 	InventoryStockUnclaimed = "admin.inventory.stock.unclaimed"
 	InventoryFilterAll      = "admin.inventory.filter.all"
 
+	// —— 调拨页（迁移 627，W3）——
+	InventoryTransfersTitle           = "admin.inventory.transfers.title"
+	InventoryTransfersStatusPending   = "admin.inventory.transfers.status.pending"
+	InventoryTransfersStatusInTransit = "admin.inventory.transfers.status.in_transit"
+	InventoryTransfersStatusCompleted = "admin.inventory.transfers.status.completed"
+	InventoryTransfersStatusCancelled = "admin.inventory.transfers.status.cancelled"
+
 	// —— 单条与批量写动作的结论文案（失败出口的事实形态：key + 中文兜底 + `%s` 参数）——
 	InventoryActionDone             = "admin.inventory.actionDone"
 	InventoryBulkWarehousePartial   = "admin.inventory.bulk.partial"

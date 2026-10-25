@@ -281,3 +281,68 @@ func (m *Model) CountTransfers(ctx context.Context, f TransferListFilter) (n int
 	})
 	return n, err
 }
+
+// GetTransfer 按 id 取调拨单（非事务版）。
+func (m *Model) GetTransfer(ctx context.Context, id, projectID string) (e *TransferEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		e = &TransferEntity{}
+		return tx.WithContext(ctx).Model(&TransferEntity{}).Where("id = ?", id).First(e).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// ListTransferItems 某调拨单的明细（非事务版）。
+func (m *Model) ListTransferItems(ctx context.Context, projectID, transferID string) (list []*TransferItemEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&TransferItemEntity{}).
+			Where("transfer_id = ?", transferID).Order("id ASC").Find(&list).Error
+	})
+	return list, err
+}
+
+// ListTransferAttachments 某调拨单的凭证（非事务版）。
+func (m *Model) ListTransferAttachments(ctx context.Context, projectID, transferID string) (
+	list []*TransferAttachmentEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&TransferAttachmentEntity{}).
+			Where("transfer_id = ?", transferID).Order("usage_type ASC, sort ASC, id ASC").Find(&list).Error
+	})
+	return list, err
+}
+
+// DeductUnclaimedStockTx 未认领行出库（按库存行 id）：quantity -= n，守卫在 WHERE 里。
+//
+// 为什么不走 applyStockChangesTx：那条路径按 (variant, warehouse) 加锁与写流水，
+// 而未认领行没有变体 —— 补一个空串会让流水落一条无法归属的记录。
+// 这里只改数量（守卫 quantity >= n 在 SQL 里，并发下只有一句能匹配上行）。
+func (m *Model) DeductUnclaimedStockTx(ctx context.Context, tx *gorm.DB, projectID, stockID string,
+	quantity int, at time.Time) (affected int64, err error) {
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return 0, serr
+	}
+	res := tx.WithContext(ctx).Model(&StockEntity{}).
+		Where("id = ? AND variant_id IS NULL AND quantity >= ?", stockID, quantity).
+		Updates(map[string]any{
+			"quantity":    gorm.Expr("quantity - ?", quantity),
+			"update_time": at,
+		})
+	return res.RowsAffected, res.Error
+}
+
+// IncreaseStockQuantityTx 目标仓入库（quantity += n，并按需翻跟踪开关）。
+//
+// 与入库走不同的路径：调拨签收是**必有单据**的入库，数量已经由源仓那一行确定，
+// 不需要走变动契约的「原因字典 / 流水」那套（单据本身就是凭据）。
+// 但仍要把 track_quantity 翻成 true —— 有数量却不跟踪会撞迁移 261 的 CHECK。
+func (m *Model) IncreaseStockQuantityTx(ctx context.Context, tx *gorm.DB, stockID string,
+	quantity int, at time.Time) (err error) {
+	return tx.WithContext(ctx).Model(&StockEntity{}).Where("id = ?", stockID).
+		Updates(map[string]any{
+			"quantity":       gorm.Expr("quantity + ?", quantity),
+			"track_quantity": true,
+			"update_time":    at,
+		}).Error
+}

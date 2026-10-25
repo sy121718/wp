@@ -185,6 +185,16 @@ const (
 	InventoryPurchaseList Perm = "inventory:purchase_list"
 	// 生产入库（POST /api/inventory/purchase/production）
 	InventoryPurchaseProduction Perm = "inventory:purchase_production"
+	// 调拨单（迁移 627，W3）：六条独立权限点 —— 看列表 / 看详情 / 建单 / 出货 / 签收 / 取消。
+	//
+	// 为什么拆这么细：出货与签收是**两个不同的人**做的事（一个人发货、另一个人签收），
+	// 合成一条会让「只有发货权的人」也能把自己的货签成已到。
+	InventoryTransferList    Perm = "inventory:transfer_list"
+	InventoryTransferGet     Perm = "inventory:transfer_get"
+	InventoryTransferCreate  Perm = "inventory:transfer_create"
+	InventoryTransferShip    Perm = "inventory:transfer_ship"
+	InventoryTransferReceive Perm = "inventory:transfer_receive"
+	InventoryTransferCancel  Perm = "inventory:transfer_cancel"
 	// 采购收货入库（POST /api/inventory/purchase/receipt）
 	InventoryPurchaseReceipt Perm = "inventory:purchase_receipt"
 	// 修改采购单（POST /api/inventory/purchase/update）
@@ -890,6 +900,12 @@ var specs = map[Perm]spec{
 	InventoryPurchaseHistory:    {module: "inventory", name: "进货历史"},
 	InventoryPurchaseList:       {module: "inventory", name: "采购单列表"},
 	InventoryPurchaseProduction: {module: "inventory", name: "生产入库"},
+	InventoryTransferList:       {module: "inventory", name: "调拨单列表"},
+	InventoryTransferGet:        {module: "inventory", name: "调拨单详情"},
+	InventoryTransferCreate:     {module: "inventory", name: "建调拨单"},
+	InventoryTransferShip:       {module: "inventory", name: "调拨出货"},
+	InventoryTransferReceive:    {module: "inventory", name: "调拨签收"},
+	InventoryTransferCancel:     {module: "inventory", name: "取消调拨"},
 	InventoryPurchaseReceipt:    {module: "inventory", name: "采购收货入库"},
 	InventoryPurchaseUpdate:     {module: "inventory", name: "修改采购单"},
 	InventoryReasonCreate:       {module: "inventory", name: "新建变动原因"},

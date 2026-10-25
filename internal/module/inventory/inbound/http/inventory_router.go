@@ -114,6 +114,17 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 	g.POST("/purchase/receipt", permission.InventoryPurchaseReceipt, handle.RegisterReceipt)
 	g.POST("/purchase/production", permission.InventoryPurchaseProduction, handle.RegisterProductionInbound)
 
+	// 调拨单（迁移 627，W3）：仓库间移库，出货与签收**各需凭证附件**。
+	// 六条独立权限点（出货与签收是两个不同的人做的事，见 permission/codes.go）。
+	transferPages := NewInventoryTransferPageHandle(svc, project, nil)
+	tg := rg.Group("/inventory/transfer")
+	tg.GET("/list", permission.InventoryTransferList, transferPages.InventoryTransferListJSON)
+	tg.GET("/get", permission.InventoryTransferGet, transferPages.InventoryTransferDetail)
+	tg.POST("/create", permission.InventoryTransferCreate, transferPages.InventoryTransferCreate)
+	tg.POST("/ship", permission.InventoryTransferShip, transferPages.InventoryTransferShip)
+	tg.POST("/receive", permission.InventoryTransferReceive, transferPages.InventoryTransferReceive)
+	tg.POST("/cancel", permission.InventoryTransferCancel, transferPages.InventoryTransferCancel)
+
 	// 商品侧缓存同步与对账（issue #16 验收 6/7）：提交后的独立步骤，不进变动事务。
 
 	// 后台页面：注册在 inventory_page_router.go（同一入口调用，装配顺序不变）。
