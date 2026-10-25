@@ -339,11 +339,6 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 		values: []string{"before", "after", "inside"},
 		note:   "取值见 canvas.js:544-545 的 remove 列表",
 	},
-	"edge-": {
-		site:   "automation/graph.js:205 `' edge-' + edges[e].kind`",
-		values: []string{"yes", "no"},
-		note:   "kind ∈ {'',yes,no}（graph.js:59 注释与 64-65 行的赋值），空值不拼类；对应 automation.css 的 .edge-yes / .edge-no",
-	},
 	"perm-type-": {
 		site:   "admin/system/role_permissions.html:100 `class=\"perm-type perm-type-{{r.Type}}\"`",
 		values: nil,

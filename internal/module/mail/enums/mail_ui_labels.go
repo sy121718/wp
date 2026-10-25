@@ -26,39 +26,92 @@ type AutomationNodeTypeOption struct {
 	Hint  LabelPair
 }
 
-// AutomationNodeTypes 节点类型选项（顺序即界面顺序）。
+// AutomationNodeOutlets 出口名表：节点类型 → 该类型的出口名（有序）。
+//
+// **这是唯一一份出口名数据**：service 的 nodeOutlets（校验与执行）、画布的 palette 与
+// 出口圆钮、模板结构树的白名单全部经它取值。放在 enums 而不是 service，是因为两边都要读
+// ——service 已经 import enums，反向不成立；而各写一份的结果是「画布上画得出、保存被拒」。
+//
+// `ab_test` 不在这里：它的出口是动态的变体 id（来自 params.variants），由调用方读参数得出。
+var AutomationNodeOutlets = map[string][]string{
+	"trigger":            {"next"},
+	"delay":              {"next"},
+	"email":              {"next"},
+	"tag":                {"next"},
+	"webhook":            {"next"},
+	"filter":             {"yes", "no"},
+	"branch":             {"yes", "no"}, // v1 的类型名，读取时被升级成 filter
+	"list_status_branch": {"not_in_list", "active", "non_active"},
+	"end":                {},
+}
+
+// AutomationNodeTypeOutlets 取某类型的出口名（未登记的类型返回 nil，由调用方报未知类型）。
+func AutomationNodeTypeOutlets(nodeType string) []string {
+	outlets, ok := AutomationNodeOutlets[nodeType]
+	if !ok {
+		return nil
+	}
+	return outlets
+}
+
+// AutomationNodeTypes 节点类型选项（顺序即界面顺序 = palette 的顺序）。
+//
+// 十个类型（v2 的终局形状）：条件分支 v1 叫 branch、v2 叫 filter，界面只出现 filter
+// 一个名字（存量 branch 在读取时被升级，见 service/automation_definition.go）。
 var AutomationNodeTypes = []AutomationNodeTypeOption{
 	{
 		Value: "trigger",
-		Label: LabelPair{"admin.mail.automation_edit.node.trigger.label", "入口"},
-		Hint:  LabelPair{"admin.mail.automation_edit.node.trigger.hint", "流程从这里开始（不需要参数）"},
+		Label: LabelPair{"admin.mail.automation_node.trigger.label", "入口"},
+		Hint:  LabelPair{"admin.mail.automation_node.trigger.hint", "流程从这里开始，不需要参数"},
 	},
 	{
 		Value: "delay",
-		Label: LabelPair{"admin.mail.automation_edit.node.delay.label", "等待"},
-		Hint:  LabelPair{"admin.mail.automation_edit.node.delay.hint", "填时长并选单位，例如 2 小时"},
+		Label: LabelPair{"admin.mail.automation_node.delay.label", "等待"},
+		Hint:  LabelPair{"admin.mail.automation_node.delay.hint", "等待若干分钟再继续"},
 	},
 	{
 		Value: "email",
-		Label: LabelPair{"admin.mail.automation_edit.node.email.label", "发邮件"},
-		Hint:  LabelPair{"admin.mail.automation_edit.node.email.hint", "选一个邮件模板"},
+		Label: LabelPair{"admin.mail.automation_node.email.label", "发邮件"},
+		Hint:  LabelPair{"admin.mail.automation_node.email.hint", "用某个邮件模板发一封信"},
 	},
 	{
-		Value: "branch",
-		Label: LabelPair{"admin.mail.automation_edit.node.branch.label", "条件分支"},
-		Hint: LabelPair{"admin.mail.automation_edit.node.branch.hint",
-			"选一个判断条件，再指定满足与不满足时各跳到哪一步"},
+		Value: "filter",
+		Label: LabelPair{"admin.mail.automation_node.filter.label", "条件分支"},
+		Hint:  LabelPair{"admin.mail.automation_node.filter.hint", "条件满足走 yes，不满足走 no"},
+	},
+	{
+		Value: "list_status_branch",
+		Label: LabelPair{"admin.mail.automation_node.list_status_branch.label", "按订阅状态分流"},
+		Hint:  LabelPair{"admin.mail.automation_node.list_status_branch.hint", "已订阅 / 待确认 / 不在名单，各走一条"},
+	},
+	{
+		Value: "ab_test",
+		Label: LabelPair{"admin.mail.automation_node.ab_test.label", "A/B 分流"},
+		Hint:  LabelPair{"admin.mail.automation_node.ab_test.hint", "按权重把联系人分到不同变体（2–5 个，权重和 100）"},
+	},
+	{
+		Value: "webhook",
+		Label: LabelPair{"admin.mail.automation_node.webhook.label", "回调"},
+		Hint:  LabelPair{"admin.mail.automation_node.webhook.hint", "向一个 https 地址发 POST（内网地址会被拒绝）"},
 	},
 	{
 		Value: "tag",
-		Label: LabelPair{"admin.mail.automation_edit.node.tag.label", "打标签"},
-		Hint:  LabelPair{"admin.mail.automation_edit.node.tag.hint", "填要加的标签（逗号分隔）"},
+		Label: LabelPair{"admin.mail.automation_node.tag.label", "打标签"},
+		Hint:  LabelPair{"admin.mail.automation_node.tag.hint", "给联系人加标签或减标签"},
 	},
 	{
 		Value: "end",
-		Label: LabelPair{"admin.mail.automation_edit.node.end.label", "结束"},
-		Hint:  LabelPair{"admin.mail.automation_edit.node.end.hint", "流程到此结束（不需要参数）"},
+		Label: LabelPair{"admin.mail.automation_node.end.label", "结束"},
+		Hint:  LabelPair{"admin.mail.automation_node.end.hint", "流程到此结束，不需要参数"},
 	},
+}
+
+// AutomationCanvasEmailDisabled 画布上「发信节点」被禁用时的原因（tooltip）。
+//
+// 写清「去哪里配」而不是「不可用」：把选项灰掉却不说是哪一步没做，用户只会以为画布坏了。
+var AutomationCanvasEmailDisabled = LabelPair{
+	Key:      "admin.mail.automation_canvas.email_disabled",
+	Fallback: "先在「发信账号」里配置一个营销用途的 SMTP，再回来加发信节点",
 }
 
 // AutomationTriggerOption 触发方式选项（列表展示与下拉**共用这一份**）。

@@ -341,4 +341,6 @@ func init() {
 	registerMailAutomationCanvasSaveHintI18n()
 	// 621c：画布顶栏名称 / 触发方式控件的词条（见 register_mail_automation_canvas_field_i18n.go）。
 	registerMailAutomationCanvasFieldI18n()
+	// 621d：画布重写的节点类型与控件词条（见 register_mail_automation_canvas_v2_i18n.go）。
+	registerMailAutomationCanvasV2I18n()
 }

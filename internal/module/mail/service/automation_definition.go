@@ -59,25 +59,20 @@ var automationV1OnlyTypes = map[string]string{
 
 // nodeOutlets 返回该类型的**有序**出口名。
 //
+// 数据在 enums（AutomationNodeOutlets）—— 画布的 palette 与出口圆钮也要读同一份，
+// 而 inbound/http 不能 import 本包的具体实现；enums 是两边都能 import 的那一层。
+//
 // `ab_test` 返回空切片：它的出口是动态的变体 id，名字来自 `params.variants`，
-// 不能写死在这里（`nodeOutlets` 只回答「有没有固定出口」，不回答「这一份定义的
-// 出口是哪几个」—— 后者要读 params，见 `nodeArity`）。
+// 不能写死在这里（nodeOutlets 只回答「有没有固定出口」，不回答「这一份定义的
+// 出口是哪几个」—— 后者要读 params，见 nodeArity）。
 func nodeOutlets(nodeType string) []string {
 	if mapped, ok := automationV1OnlyTypes[nodeType]; ok {
 		nodeType = mapped
 	}
-	switch nodeType {
-	case NodeTypeTrigger, NodeTypeDelay, NodeTypeEmail, NodeTypeTag, NodeTypeWebhook:
-		return []string{outletNext}
-	case NodeTypeFilter:
-		return []string{outletYes, outletNo}
-	case NodeTypeListStatusBranch:
-		return []string{outletNotInList, outletActive, outletNonActive}
-	case NodeTypeEnd:
+	if nodeType == NodeTypeABTest {
 		return []string{}
-	default:
-		return nil
 	}
+	return mailenums.AutomationNodeTypeOutlets(nodeType)
 }
 
 // normalizeDefinition 把任意版本的图定义升级到 v2，返回（v2 定义, 目标 schema 版本）。

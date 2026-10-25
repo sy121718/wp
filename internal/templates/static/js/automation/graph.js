@@ -1,7 +1,13 @@
-// automation/graph.js — 画布的数据与渲染（issue #38 P4）。
+// automation/graph.js — 画布的两个**小工具**：读注入数据、把侧栏一行文本解析成参数。
 //
-// 与 canvas.js 的分工：这个文件只负责「把图数据变成 DOM 与连线」，不碰任何输入事件。
-// 拆开的意义是渲染逻辑可以单独读、单独验证 —— 事件处理最容易把渲染代码搅成一团。
+// 渲染与布局已搬到 render.js / layout.js（那两个是纯函数，能直接在 node 里跑），
+// 本文件只剩这两件事：
+//
+//   · readJSON  —— 服务端把图与 meta 注入成 <script type="application/json">，
+//                  避免内联可执行脚本（CSP / 评审规则都要求）；
+//   · parseParam —— 侧栏那个文本框里的一行字 → 该类型的 params 对象。
+//
+// 叫什么名字是历史包袱（它曾经承担渲染），改名会让缓存版本与引用一起漂，故保留。
 
 /** readJSON 从页面的 script[type=application/json] 里读数据（服务端注入，避免内联脚本）。 */
 export function readJSON(id, fallback) {
@@ -14,81 +20,33 @@ export function readJSON(id, fallback) {
     }
 }
 
-/** NODE_LABEL 节点类型的中文名（与表单页保持同一套说法）。 */
-export var NODE_LABEL = {
-    trigger: '入口',
-    delay: '等待',
-    email: '发邮件',
-    // filter 是 v2 的类型名（v1 叫 branch）：图定义升级之后服务端会把回执里的
-    // 类型投影回 branch，但画布同时认两个名字 —— 少认一个的表现是节点标签显示
-    // 裸的 "filter"、两条分支边整体消失，而画布不会报任何错。
-    filter: '条件分支',
-    branch: '条件分支',
-    tag: '打标签',
-    end: '结束'
-};
-
-/** PARAM_HINT 各类型的参数提示（与表单页同一份文案）。 */
-export var PARAM_HINT = {
+/**
+ * PARAM_HINT_FALLBACK 参数提示的兜底文案。
+ *
+ * 节点类型的**显示名**一律取服务端注入的 meta.nodeTypes（见 render.js 的 nodeLabel）——
+ * 这里不再维护第二份 NODE_LABEL：两处名字一对不上，用户就在 palette 里看到一种说法、
+ * 在节点上看到另一种。
+ *
+ * 参数提示仍然留在前端：它是「这一格该填什么」的输入提示，不是业务语义，
+ * 而服务端的类型表只给到 label / hint 两句。缺条目时渲染空串即可。
+ */
+export var PARAM_HINT_FALLBACK = {
     trigger: '入口不需要参数。',
-    filter: '条件（逗号分隔）：opened / clicked / subscribed / has_tag:标签。',
     delay: '等待分钟数，例如 1440 表示一天。',
-    email: '邮件模板的模板 key。',
-    branch: '条件（逗号分隔）：opened / clicked / subscribed / has_tag:标签。',
-    tag: '要加的标签（逗号分隔）。',
+    email: '邮件模板的 template_key。',
+    tag: '要加的标签（逗号分隔），减标签用「- 标签」。',
+    filter: '条件（逗号分隔）：opened / clicked / subscribed / has_tag:标签。',
+    list_status_branch: '按联系人状态分流，不需要参数。',
+    ab_test: '变体与权重在图上编辑；权重之和必须是 100。',
+    webhook: 'https 回调地址（内网地址会被拒绝）。',
     end: '结束不需要参数。'
 };
 
 /**
- * layoutMissing 给没有坐标的节点排一个默认位置。
- *
- * 为什么要这一步：老流程（表单页建的）没有 x / y，如果不排就会全部叠在 (0,0)，
- * 表现为「画布上只有一个节点」—— 用户会以为数据丢了。默认横向排开，一眼能看全。
- */
-export function layoutMissing(nodes, startX, startY, stepX) {
-    var x = startX, y = startY, col = 0;
-    for (var i = 0; i < nodes.length; i++) {
-        var n = nodes[i];
-        if (typeof n.x !== 'number' || typeof n.y !== 'number') {
-            n.x = x;
-            n.y = y;
-        }
-        col++;
-        if (col >= 4) { col = 0; x = startX; y += 140; } else { x += stepX; }
-    }
-    return nodes;
-}
-
-/**
- * nodeEdges 返回一个节点的所有出边：[{ to, kind }]。
- * kind 为 '' | 'yes' | 'no'，用于给连线加不同的颜色（分支两臂一眼可分）。
- */
-export function nodeEdges(n) {
-    var out = [];
-    if (n.type === 'branch' || n.type === 'filter') {
-        if (n.yes) { out.push({ to: n.yes, kind: 'yes' }); }
-        if (n.no) { out.push({ to: n.no, kind: 'no' }); }
-    } else if (n.next) {
-        out.push({ to: n.next, kind: '' });
-    }
-    return out;
-}
-
-/** nodeParamText 把一个节点的参数还原成一行文本（与表单页同一套规则）。 */
-export function nodeParamText(n) {
-    var p = n.params || {};
-    if (n.type === 'delay') { return p.minutes ? (p.minutes + ' 分钟') : ''; }
-    if (n.type === 'email') { return p.template_key || ''; }
-    if (n.type === 'tag') { return joinList(p.add); }
-    if (n.type === 'branch' || n.type === 'filter') { return joinList(p.conditions); }
-    return '';
-}
-
-/**
  * parseParam 把侧栏里的一行文本解析成该类型的 params 对象。
  *
- * **与表单页 parseAutomationForm 规则一致** —— 两处不一致的话，同一个流程
- * 在画布改一次、在表单改一次，参数会走出不同的形状。返回 { ok, params, error }。
+ * 返回 { ok, params, error }。**这是唯一一份文本↔参数规则**：侧栏是唯一的文本编辑入口，
+ * 不再有「表单页」需要对齐（那个页面已删除）。
  */
 export function parseParam(type, raw) {
     var v = (raw || '').trim();
@@ -111,6 +69,10 @@ export function parseParam(type, raw) {
         if (!conds.length) { return { ok: false, error: '条件分支至少填一个条件' }; }
         return { ok: true, params: { conditions: conds } };
     }
+    if (type === 'webhook') {
+        if (!/^https:\/\//i.test(v)) { return { ok: false, error: '回调地址必须以 https:// 开头' }; }
+        return { ok: true, params: { url: v } };
+    }
     return { ok: true, params: {} };
 }
 
@@ -119,104 +81,4 @@ export function splitList(raw) {
     return (raw || '').replace(/[，、]/g, ',').split(',')
         .map(function (s) { return s.trim(); })
         .filter(function (s) { return s !== ''; });
-}
-
-function joinList(v) {
-    if (Object.prototype.toString.call(v) === '[object Array]') {
-        return v.join(', ');
-    }
-    return '';
-}
-
-/**
- * renderNodes 在画布内容层里渲染节点。
- *
- * 每个节点是一个可聚焦的 div（tabindex=0）：键盘用户 Tab 得进去、方向键能移动、
- * Enter 能打开侧栏。这不是锦上添花 —— 无障碍是硬要求，而且触屏上拖拽体验本来就差，
- * 键盘路径是它的等价替代。
- */
-export function renderNodes(stage, nodes, entryKey, onSelect) {
-    for (var i = 0; i < nodes.length; i++) {
-        var n = nodes[i];
-        var el = document.createElement('div');
-        el.className = 'auto-node';
-        el.setAttribute('data-key', n.key);
-        el.setAttribute('data-type', n.type);
-        el.setAttribute('tabindex', '0');
-        el.setAttribute('role', 'button');
-        el.style.left = n.x + 'px';
-        el.style.top = n.y + 'px';
-        el.setAttribute('aria-label', nodeAria(n, n.key === entryKey));
-
-        var entry = n.key === entryKey ? '<span class="auto-node-entry">入口</span>' : '';
-        var param = nodeParamText(n);
-        el.innerHTML = entry
-            + '<div class="auto-node-key">' + escapeHTML(n.key) + '</div>'
-            + '<div class="auto-node-type">' + escapeHTML(NODE_LABEL[n.type] || n.type) + '</div>'
-            + (param ? '<div class="auto-node-param">' + escapeHTML(param) + '</div>' : '');
-
-        el.addEventListener('click', function (node, ev) {
-            ev.stopPropagation();
-            onSelect(node);
-        }.bind(null, n));
-        stage.appendChild(el);
-    }
-}
-
-function nodeAria(n, isEntry) {
-    var parts = ['节点 ' + n.key, NODE_LABEL[n.type] || n.type];
-    if (isEntry) { parts.push('流程入口'); }
-    var p = nodeParamText(n);
-    if (p) { parts.push('参数 ' + p); }
-    return parts.join('，');
-}
-
-/**
- * renderEdges 画出所有连线。
- *
- * 从源节点右边中点连到目标节点左边中点，用三次贝塞尔。点在节点中心算，
- * 所以拖动节点后重画即可（不需要维护端口位置）。
- */
-export function renderEdges(svg, nodes) {
-    var byKey = {};
-    for (var i = 0; i < nodes.length; i++) { byKey[nodes[i].key] = nodes[i]; }
-    var sel = document.querySelectorAll('.auto-node');
-    var box = {};
-    for (var j = 0; j < sel.length; j++) {
-        var el = sel[j];
-        box[el.getAttribute('data-key')] = {
-            x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight
-        };
-    }
-
-    var html = '<defs><marker id="autoArrow" viewBox="0 0 10 10" refX="9" refY="5"'
-        + ' markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
-        + '<path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>';
-    for (var k = 0; k < nodes.length; k++) {
-        var n = nodes[k];
-        var from = box[n.key];
-        if (!from) { continue; }
-        var edges = nodeEdges(n);
-        for (var e = 0; e < edges.length; e++) {
-            var to = box[edges[e].to];
-            if (!to) { continue; }
-            var x1 = from.x + from.w, y1 = from.y + from.h / 2;
-            var x2 = to.x, y2 = to.y + to.h / 2;
-            // 目标在左边时（回绕），从源节点左边出发，避免线穿过节点。
-            if (x2 < x1) { x1 = from.x; x2 = to.x + to.w; }
-            var dx = Math.max(40, Math.abs(x2 - x1) / 2);
-            var d = 'M ' + x1 + ' ' + y1 + ' C ' + (x1 + dx) + ' ' + y1 + ', '
-                + (x2 - dx) + ' ' + y2 + ', ' + x2 + ' ' + y2;
-            var cls = edges[e].kind ? (' edge-' + edges[e].kind) : '';
-            html += '<path class="edge' + cls + '" d="' + d + '" marker-end="url(#autoArrow)"></path>';
-        }
-    }
-    svg.innerHTML = html;
-}
-
-/** escapeHTML 文本进 DOM 前转义（节点 key / 参数可能含用户输入）。 */
-export function escapeHTML(s) {
-    return String(s).replace(/[&<>"']/g, function (c) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
 }

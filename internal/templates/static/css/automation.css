@@ -101,3 +101,128 @@
     animation: sky-fade-up .28s ease-out both;
   }
 }
+
+/* ================= v2 画布：palette / 端口 / 缩略图 / 浮层 =================
+ *
+ * 与上面那批（P4 老画布）的关系：老画布只有「节点层 + 连线层 + 侧栏下拉」，
+ * 这里补的是新交互需要的四组：左栏 palette、出口圆钮、缩略图、两个浮层菜单。
+ * 间距与圆角一律沿用 --ui-* 变量，不另造一套尺寸体系。
+ */
+
+/* 主区现在是三栏：palette / 画布 / 侧栏。窄屏下 palette 变成一行横条（见下面媒体查询）。 */
+.auto-main { grid-template-columns: auto minmax(0, 1fr) min(360px, 100%); }
+@media (max-width: 1200px) {
+  .auto-main { grid-template-columns: minmax(0, 1fr) min(360px, 100%); }
+  .auto-palette { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
+}
+@media (max-width: 900px) {
+  .auto-main { grid-template-columns: minmax(0, 1fr); }
+}
+
+.auto-bar .auto-field { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.auto-bar .auto-field > span { color: var(--ui-text-2, #556); white-space: nowrap; }
+.auto-bar .auto-field .form-input { width: min(240px, 34vw); }
+.auto-bar .auto-field .form-select { width: min(200px, 30vw); }
+
+/* 左栏 palette：竖排按钮，每项一行；窄屏下自动变横排。 */
+.auto-palette {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px; border: 1px solid var(--ui-border, #ccd); border-radius: 8px;
+  background: var(--ui-surface, #fff);
+  min-width: min(100%, 132px);
+}
+.auto-palette-head {
+  margin: 0 0 2px; font-size: 12px; color: var(--ui-text-2, #667); font-weight: 600;
+}
+.auto-palette-btn {
+  text-align: left; font: inherit; font-size: 13px; cursor: pointer;
+  padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--ui-border, #ccd); background: var(--ui-surface-2, #f6f7f9);
+  color: var(--ui-text, #223);
+}
+@media (hover: hover) {
+  .auto-palette-btn:hover:not([disabled]) { border-color: var(--ui-accent, #2f6fed); }
+}
+.auto-palette-btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+/* 画布内容层：节点与端口绝对定位在里面，尺寸由 index.js 按最右/最下节点撑开。 */
+.auto-stage { position: relative; min-width: 100%; min-height: 100%; }
+.auto-nodes-layer, .auto-ports-layer { position: absolute; left: 0; top: 0; }
+.auto-ports-layer { pointer-events: none; }
+.auto-edges { position: absolute; left: 0; top: 0; z-index: 0; }
+
+.auto-node { position: absolute; z-index: 2; box-sizing: border-box; }
+.auto-node[data-selected="1"] {
+  border-color: #7763F1; box-shadow: 0 0 0 3px rgb(119 99 241 / 22%);
+}
+.auto-node[data-disabled="1"] { opacity: .55; }
+
+/* 出口圆钮：r=12（直径 24）。触屏上小圆钮的命中率是硬下限，不要再缩小。 */
+.auto-port {
+  position: absolute; z-index: 3; width: 24px; height: 24px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  font: inherit; font-size: 15px; line-height: 1; cursor: pointer;
+  border-radius: 50%; border: 1px solid var(--ui-border-strong, #98a);
+  background: var(--ui-surface, #fff); color: var(--ui-text-2, #556);
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+@media (hover: hover) {
+  .auto-port:hover { border-color: var(--ui-accent, #2f6fed); color: var(--ui-accent, #2f6fed); }
+}
+
+/* 连线的命中区：path 只有 2px 粗，靠一条透明粗线接指针事件（否则悬停几乎点不中）。 */
+.auto-edges .edge-hit {
+  stroke: transparent; stroke-width: 14; fill: none; pointer-events: stroke;
+}
+.auto-edges { pointer-events: auto; }
+
+/* 缩略图：固定在画布右下角，不参与布局（绝对定位在 .auto-canvas 里）。 */
+.auto-mini {
+  position: absolute; right: 8px; bottom: 8px; z-index: 5;
+  width: min(100%, 160px); height: 100px; cursor: pointer;
+  border: 1px solid var(--ui-border, #ccd); border-radius: 6px;
+  background: rgb(255 255 255 / 88%); overflow: hidden;
+}
+.auto-mini:empty { display: none; }
+.auto-mini-svg { display: block; }
+.auto-mini .mini-node { fill: var(--ui-surface-2, #dde3ec); stroke: none; }
+.auto-mini .mini-selected { fill: #7763F1; }
+
+/* 两个浮层菜单（palette 与边菜单）：fixed 定位，由 JS 夹到视口内。 */
+.auto-palette-pop, .auto-edge-pop {
+  z-index: 60; min-width: min(100%, 180px); padding: 6px;
+  border: 1px solid var(--ui-border, #ccd); border-radius: 8px;
+  background: var(--ui-surface, #fff);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+}
+.auto-palette-title {
+  margin: 0 0 4px; padding: 0 4px; font-size: 12px; color: var(--ui-text-2, #667);
+}
+.auto-palette-item {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 6px 8px; border: 0; border-radius: 6px; background: transparent;
+  font: inherit; font-size: 13px; color: var(--ui-text, #223);
+}
+@media (hover: hover) {
+  .auto-palette-item:hover:not([disabled]) { background: var(--ui-surface-2, #f0f2f6); }
+}
+.auto-palette-item[disabled] { opacity: .5; cursor: not-allowed; }
+.auto-palette-label { display: block; font-weight: 600; }
+.auto-palette-hint { display: block; font-size: 12px; color: var(--ui-text-2, #667); }
+
+.auto-edge-pop { display: flex; gap: 4px; min-width: 0; }
+.auto-edge-btn {
+  width: 28px; height: 28px; padding: 0; cursor: pointer;
+  font: inherit; font-size: 15px; line-height: 1;
+  border: 1px solid var(--ui-border, #ccd); border-radius: 6px;
+  background: var(--ui-surface, #fff); color: var(--ui-text-2, #556);
+}
+@media (hover: hover) {
+  .auto-edge-btn:hover { border-color: var(--ui-accent, #2f6fed); color: var(--ui-accent, #2f6fed); }
+  .auto-edge-delete:hover { border-color: #b3261e; color: #b3261e; }
+}
+
+.auto-outlet-row { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.auto-outlet-row label { display: flex; align-items: center; gap: 6px; width: 100%; }
+.auto-outlet-row select { flex: 1 1 auto; }

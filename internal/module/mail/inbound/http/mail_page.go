@@ -137,7 +137,8 @@ func (h *mailPageHandle) automationCanvasData(c *gin.Context, item *maildto.Auto
 	if merr != nil {
 		nodesJSON = []byte("[]")
 	}
-	metaJSON, _ := json.Marshal(h.automationCanvasMeta(c, item))
+	meta := h.automationCanvasMeta(c, item)
+	metaJSON, _ := json.Marshal(meta)
 	return gin.H{
 		"title": mailenums.PageTitleAutomationCanvas.Key,
 		"A":     item,
@@ -145,6 +146,7 @@ func (h *mailPageHandle) automationCanvasData(c *gin.Context, item *maildto.Auto
 		// 下拉选项与服务端校验共用 enums 的同一份枚举。
 		"IsNew":     item.ID == 0,
 		"Triggers":  triggerOptions(mailTranslate(c), item.TriggerType),
+		"NodeTypes": paletteFromMeta(meta["nodeTypes"]),
 		"NodesJSON": utils.JsonSafe(string(nodesJSON)),
 		"MetaJSON":  utils.JsonSafe(string(metaJSON)),
 		"jsVer":     automationJsVer(),
@@ -207,13 +209,22 @@ func newAutomationDraft() *maildto.AutomationItem {
 //     在收掉之前，这里的 nodeTypes 是给 palette 用的唯一服务端来源。
 func (h *mailPageHandle) automationCanvasMeta(c *gin.Context, item *maildto.AutomationItem) map[string]any {
 	tr := mailTranslate(c)
+	// 发信节点在「没有可用的营销 SMTP」时禁用：让用户画完之后在保存时才发现发不出去，
+	// 比一开始就灰掉它并说明原因差得多。
+	emailDisabled, emailReason := h.emailNodeDisabled(c)
 	nodeTypes := make([]gin.H, 0, len(mailenums.AutomationNodeTypes))
 	for _, o := range mailenums.AutomationNodeTypes {
-		nodeTypes = append(nodeTypes, gin.H{
-			"value": o.Value,
-			"label": mailLabel(tr, o.Label),
-			"hint":  mailLabel(tr, o.Hint),
-		})
+		entry := gin.H{
+			"value":   o.Value,
+			"label":   mailLabel(tr, o.Label),
+			"hint":    mailLabel(tr, o.Hint),
+			"outlets": mailenums.AutomationNodeTypeOutlets(o.Value),
+		}
+		if o.Value == "email" && emailDisabled {
+			entry["disabled"] = true
+			entry["disabledReason"] = emailReason
+		}
+		nodeTypes = append(nodeTypes, entry)
 	}
 	return map[string]any{
 		"automationId":  item.ID,
@@ -230,6 +241,39 @@ func (h *mailPageHandle) automationCanvasMeta(c *gin.Context, item *maildto.Auto
 		"structureEditable": item.Status != mailmodel.AutomationStatusActive,
 		"nodeTypes":         nodeTypes,
 	}
+}
+
+// paletteFromMeta 把 meta.nodeTypes（map 形态）翻成模板要的字段名。
+//
+// 为什么要翻：meta 是给 JS 的（小写键 + JSON），模板读的是导出字段名。两处共用**同一份**
+// 组装结果（而不是各自再取一遍 enums），是为了让「palette 里有什么」只有一个来源 ——
+// 前后端各组装一次的话，某个类型在 JS 里能选、在模板按钮上却没有，反之亦然。
+func paletteFromMeta(raw any) []gin.H {
+	list, _ := raw.([]gin.H)
+	out := make([]gin.H, 0, len(list))
+	for _, t := range list {
+		out = append(out, gin.H{
+			"Value":          t["value"],
+			"Hint":           t["hint"],
+			"Label":          t["label"],
+			"Disabled":       t["disabled"] == true,
+			"DisabledReason": t["disabledReason"],
+		})
+	}
+	return out
+}
+
+// emailNodeDisabled 判断「发信节点」当前是否应该禁用（没有可用的营销 SMTP）。
+//
+// 判定读的是账号列表而不是「有没有任何账号」：营销群发与事务发信走的是不同用途的账号
+// （purpose=marketing），一个只配了事务账号的站点发不出营销邮件。读失败按「可用」处理
+// —— 画布不该因为一次列表查询失败就把发信节点灰掉（那是把基础设施抖动变成编辑器的谎）。
+func (h *mailPageHandle) emailNodeDisabled(c *gin.Context) (bool, string) {
+	accounts, err := h.mail.ListAccounts(c.Request.Context(), "marketing")
+	if err != nil || len(accounts) > 0 {
+		return false, ""
+	}
+	return true, mailLabel(mailTranslate(c), mailenums.AutomationCanvasEmailDisabled)
 }
 
 // automationJsVer 自动化编辑器脚本的缓存版本（模块目录下 .js 的最新 mtime）。
