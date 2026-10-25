@@ -31,6 +31,17 @@
         {{end}}
       </select>
     </label>
+    <label class="auto-field">
+      <span>{{ .["t"]("admin.mail.automation_canvas.field.frequency", "频率") }}</span>
+      <select id="autoFrequency" class="form-select">
+        <option value="every_time" {{if .FrequencyEveryTime}}selected{{end}}>{{ .["t"]("admin.mail.automation_canvas.frequency.every_time", "每次触发都跑") }}</option>
+        <option value="once" {{if .FrequencyOnce}}selected{{end}}>{{ .["t"]("admin.mail.automation_canvas.frequency.once", "每人只跑一次") }}</option>
+      </select>
+    </label>
+    <label class="auto-field auto-field--check">
+      <input type="checkbox" id="autoExitOnReply" {{if .A.ExitOnReply}}checked{{end}}>
+      <span>{{ .["t"]("admin.mail.automation_canvas.field.exit_on_reply", "回信即退出") }}</span>
+    </label>
     <span class="auto-badge" id="autoVersionBadge">{{if .IsNew}}{{ .["t"]("admin.mail.automation_canvas.badge.new", "新流程") }}{{else}}v{{.A.Version}} · {{.A.Status}}{{end}}</span>
     <span class="auto-spacer"></span>
     <button type="button" id="autoUndo" class="btn btn-sm" title="{{ .["t"]("admin.mail.automation_canvas.undo", "撤销（Ctrl+Z）") }}">↶</button>

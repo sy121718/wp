@@ -349,4 +349,10 @@ func init() {
 	registerMailTemplateBodyJSON()
 	// 621f：模板可视化编辑器的界面词条（见 register_mail_template_editor_i18n.go）。
 	registerMailTemplateEditorI18n()
+	// 623：自动化触发频率与「回信即退出」（见 register_mail_automation_frequency.go）。
+	registerMailAutomationFrequency()
+	// 623a：回信退出的运行文案（见 register_mail_automation_frequency_i18n.go）。
+	registerMailAutomationFrequencyI18n()
+	// 623b：画布的频率 / 回信即退出控件词条（见 register_mail_automation_frequency_field_i18n.go）。
+	registerMailAutomationFrequencyFieldI18n()
 }

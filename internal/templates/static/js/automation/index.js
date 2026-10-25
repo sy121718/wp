@@ -577,6 +577,8 @@ function saveStructure() {
         return;
     }
     var triggerType = (triggerEl && triggerEl.value) || meta.triggerType || 'manual';
+    var freqEl = document.getElementById('autoFrequency');
+    var exitEl = document.getElementById('autoExitOnReply');
     setStatus('保存中…');
     fetch('/api/mail/automation/save', {
         method: 'POST',

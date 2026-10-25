@@ -76,6 +76,9 @@ const (
 	RunKeyWebhookNoURL  = "mail.run.webhookNoUrl"
 	RunKeyWebhookDenied = "mail.run.webhookDenied"
 
+	// RunKeyStoppedByReply 回信退出：实例被 exit_on_reply 停掉。
+	RunKeyStoppedByReply = "mail.run.stoppedByReply"
+
 	// —— 写进实例 error_message 的（终态原因）——
 	RunKeyAutomationGone = "mail.run.automationDeleted"
 	RunKeyContactGone    = "mail.run.contactMissing"
@@ -142,6 +145,8 @@ var runTextFallbacks = map[string]string{
 	RunKeyWebhookFailed: "回调失败: {" + RunArgReason + "}（流程继续）",
 	RunKeyWebhookNoURL:  "回调节点没有配置地址",
 	RunKeyWebhookDenied: "回调地址指向内网，已拒绝",
+
+	RunKeyStoppedByReply: "联系人已回信，流程退出",
 
 	RunKeyAutomationGone: "流程已被删除",
 	RunKeyContactGone:    "联系人不存在",

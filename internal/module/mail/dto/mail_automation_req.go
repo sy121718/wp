@@ -16,6 +16,13 @@ type SaveAutomationReq struct {
 	TriggerType string
 	// TriggerParams 触发条件（如 tag_added 匹配的标签）。
 	TriggerParams map[string]any
+	// TriggerFrequency 触发频率（every_time / once）。空 = every_time（不改变既有行为）。
+	//
+	// 与 TriggerParams 同一形态：只在**调用方真的传了**时改写（画布不提交它，
+	// 于是保存一次图画不该把「只跑一次」清回「每次都跑」）。
+	TriggerFrequency string
+	// ExitOnReply 收到回信时停掉进行中的实例。空 = 不改动（同上）。
+	ExitOnReply *bool
 	// Definition 图定义（{"entry":...,"nodes":[...]}）。
 	Definition json.RawMessage
 	OperatorID uint64

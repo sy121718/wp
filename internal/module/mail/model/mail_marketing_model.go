@@ -54,6 +54,13 @@ const (
 	EventTypeBounce      = "bounce"
 	EventTypeUnsubscribe = "unsubscribe"
 	EventTypeComplaint   = "complaint"
+	// EventTypeReply 收件人回信。
+	//
+	// 本仓**没有**回信渠道（不接 IMAP / 不解析 inbox），所以这个事件目前没有生产者：
+	// 它是流程配置 exit_on_reply 的接入点（OnEmailReplied 由未来的收信 worker 调用）。
+	// 留着而不是删掉的理由：`exit_on_reply` 是用户可配的行为，配了却没有任何代码路径
+	// 能触发它，比留一个空接入点更糟 —— 后者至少把「差什么」写在代码里。
+	EventTypeReply = "reply"
 )
 
 // StringArray 是 PG text[] 的 Go 映射，自己实现 driver.Valuer / sql.Scanner。

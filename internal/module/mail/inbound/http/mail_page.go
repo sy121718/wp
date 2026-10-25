@@ -145,12 +145,15 @@ func (h *mailPageHandle) automationCanvasData(c *gin.Context, item *maildto.Auto
 		"A":     item,
 		// 新建流程要能在一屏内完成：名称与触发方式是画布顶栏的两个输入控件，
 		// 下拉选项与服务端校验共用 enums 的同一份枚举。
-		"IsNew":     item.ID == 0,
-		"Triggers":  triggerOptions(mailTranslate(c), item.TriggerType),
-		"NodeTypes": paletteFromMeta(meta["nodeTypes"]),
-		"NodesJSON": utils.JsonSafe(string(nodesJSON)),
-		"MetaJSON":  utils.JsonSafe(string(metaJSON)),
-		"jsVer":     automationJsVer(),
+		"IsNew":    item.ID == 0,
+		"Triggers": triggerOptions(mailTranslate(c), item.TriggerType),
+		// 频率的初始态：新流程按 every_time（改造前的默认）渲染。
+		"FrequencyEveryTime": item.TriggerFrequency != mailmodel.TriggerFrequencyOnce,
+		"FrequencyOnce":      item.TriggerFrequency == mailmodel.TriggerFrequencyOnce,
+		"NodeTypes":          paletteFromMeta(meta["nodeTypes"]),
+		"NodesJSON":          utils.JsonSafe(string(nodesJSON)),
+		"MetaJSON":           utils.JsonSafe(string(metaJSON)),
+		"jsVer":              automationJsVer(),
 		// 写动作的结论不再回显在本页（走 shell.RenderJump 提示页，见 mail_jump.go）；
 		// 本页也没有取数失败分支（失败已在上面渲染提示页），所以不再注入 Err。
 		// 按需内联动效关键帧（本次只用到入场一个）。不声明就是零字节 ——
@@ -228,15 +231,17 @@ func (h *mailPageHandle) automationCanvasMeta(c *gin.Context, item *maildto.Auto
 		nodeTypes = append(nodeTypes, entry)
 	}
 	return map[string]any{
-		"automationId":  item.ID,
-		"name":          item.Name,
-		"description":   item.Description,
-		"triggerType":   item.TriggerType,
-		"triggerParams": item.TriggerParams,
-		"entry":         item.Entry,
-		"status":        item.Status,
-		"version":       item.Version,
-		"isNew":         item.ID == 0,
+		"automationId":     item.ID,
+		"name":             item.Name,
+		"description":      item.Description,
+		"triggerType":      item.TriggerType,
+		"triggerParams":    item.TriggerParams,
+		"triggerFrequency": item.TriggerFrequency,
+		"exitOnReply":      item.ExitOnReply,
+		"entry":            item.Entry,
+		"status":           item.Status,
+		"version":          item.Version,
+		"isNew":            item.ID == 0,
 		// 只有草稿 / 已暂停才允许调结构（启用中的流程改图会让在跑的实例走岔）。
 		// 新建的流程恒可编辑（它还没落库，state 是 draft）。
 		"structureEditable": item.Status != mailmodel.AutomationStatusActive,

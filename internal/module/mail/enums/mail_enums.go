@@ -95,6 +95,17 @@ const (
 	NoticeRunIDRequired      = "mail.page.runIDRequired"
 )
 
+// 触发事件与「哪些事件能当触发器」的口径。
+//
+// 有两类事件**刻意不作为触发器**：
+//
+//	email.sent / email.delivered —— 自动化自己发信会产生 sent，若它也触发流程，
+//	「发信 → 触发 → 发信」就是发送循环（Notifuse 同样排除这两类）。
+//	unsubscribe / complaint / bounce —— 它们是**抑制信号**，正确反应是「少发」，
+//	拿来做流程触发器几乎总是配错（而且与合规底线冲突）。
+//
+// 哪些能当触发器由 model.Trigger* 常量与 validTrigger 决定，不在这里重复列一遍。
+//
 // MailFacingMessages 已于「控制器不取词」这一批删除，这里留一条路标。
 //
 // 它是一份必须与上面每个 Err* / Msg* 常量逐条对齐的**白名单**（漏一条 = 业务错误在页面上

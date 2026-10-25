@@ -123,6 +123,9 @@
 .auto-bar .auto-field > span { color: var(--ui-text-2, #556); white-space: nowrap; }
 .auto-bar .auto-field .form-input { width: min(240px, 34vw); }
 .auto-bar .auto-field .form-select { width: min(200px, 30vw); }
+/* 复选框那一档：勾选框与文字同行（.auto-field 的默认是 label 上、控件下）。 */
+.auto-bar .auto-field--check { gap: 4px; }
+.auto-bar .auto-field--check input[type="checkbox"] { margin: 0; }
 
 /* 左栏 palette：竖排按钮，每项一行；窄屏下自动变横排。 */
 .auto-palette {

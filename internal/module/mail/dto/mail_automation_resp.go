@@ -51,11 +51,15 @@ type AutomationItem struct {
 	TriggerParams map[string]any  `json:"triggerParams,omitempty"`
 	Definition    json.RawMessage `json:"definition"`
 	// Entry 入口节点标识（编辑器回填用）。
-	Entry      string               `json:"entry"`
-	Nodes      []AutomationNodeItem `json:"nodes"`
-	Status     string               `json:"status"`
-	Version    int                  `json:"version"`
-	CreateTime string               `json:"createTime"`
+	Entry string               `json:"entry"`
+	Nodes []AutomationNodeItem `json:"nodes"`
+	// TriggerFrequency 触发频率（every_time / once）与「回信即退出」——
+	// 两者都是**流程级配置**，画布读它们渲染控件、保存时原样回传。
+	TriggerFrequency string `json:"triggerFrequency"`
+	ExitOnReply      bool   `json:"exitOnReply"`
+	Status           string `json:"status"`
+	Version          int    `json:"version"`
+	CreateTime       string `json:"createTime"`
 }
 
 // AutomationListResp 流程列表。

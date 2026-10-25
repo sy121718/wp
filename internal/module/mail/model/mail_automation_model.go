@@ -37,6 +37,14 @@ const (
 	TriggerTagAdded = "tag_added"
 )
 
+// 触发频率。
+const (
+	// TriggerFrequencyEveryTime 每次触发都建实例（默认，改造前的行为）。
+	TriggerFrequencyEveryTime = "every_time"
+	// TriggerFrequencyOnce 同一个人只跑一次（有过任何实例就不再建）。
+	TriggerFrequencyOnce = "once"
+)
+
 // 实例状态。
 const (
 	RunStatusRunning   = "running"
@@ -61,6 +69,14 @@ type MailAutomationEntity struct {
 	Description   *string `gorm:"column:description"`
 	TriggerType   string  `gorm:"column:trigger_type"`
 	TriggerParams JSONMap `gorm:"column:trigger_params;type:jsonb"`
+	// TriggerFrequency 触发频率：every_time（每次触发都建实例）/ once（同一个人只跑一次）。
+	//
+	// 为什么需要它：`idx_mail_automation_runs_active` 只挡「同时有一个进行中的实例」，
+	// 而 completed / failed / stopped 不在那个部分索引里 —— 「打开邮件」这类可重复事件
+	// 会不断给人重跑同一条欢迎流程。
+	TriggerFrequency string `gorm:"column:trigger_frequency"`
+	// ExitOnReply 收到回信时停掉该联系人进行中的实例（true 才生效）。
+	ExitOnReply bool `gorm:"column:exit_on_reply"`
 	// Definition 图定义。用 JSONB 是正当的「自由形状」用法：节点形状各异，
 	// 且编辑器整体读写整张图，拆成关联表只会让读写更碎。
 	Definition JSONMap    `gorm:"column:definition;type:jsonb"`
@@ -189,6 +205,35 @@ func (m *MailModel) ActiveRun(ctx context.Context, automationID, contactID uint6
 		Where("automation_id = ? AND contact_id = ? AND status IN ?", automationID, contactID,
 			[]string{RunStatusRunning, RunStatusWaiting}).First(e).Error
 	return e, err
+}
+
+// HasAnyRun 该联系人在这条流程里**是否有过任何实例**（不限状态）。
+//
+// 这是「只跑一次」频率闸门的判据：不能复用 ActiveRun —— 那个只看 running/waiting，
+// 而一条跑完的实例正是不该再跑的理由。走 (automation_id, contact_id) 索引
+// （迁移 623 加的），limit 1 让它在命中之后立刻停。
+func (m *MailModel) HasAnyRun(ctx context.Context, automationID, contactID uint64) (exists bool, err error) {
+	var id uint64
+	res := m.tx(ctx).Model(&MailAutomationRunEntity{}).
+		Select("id").
+		Where("automation_id = ? AND contact_id = ?", automationID, contactID).
+		Limit(1).Scan(&id)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return id != 0, nil
+}
+
+// ListActiveRunsOfContact 该联系人**进行中**的实例（running / waiting）。
+//
+// 回信退出要按流程配置逐条判断，所以返回的是行而不是计数 —— 调用方需要 automation_id
+// 去查那条流程有没有配 exit_on_reply。
+func (m *MailModel) ListActiveRunsOfContact(ctx context.Context, contactID uint64) (list []*MailAutomationRunEntity, err error) {
+	err = m.tx(ctx).
+		Where("contact_id = ? AND status IN ?", contactID,
+			[]string{RunStatusRunning, RunStatusWaiting}).
+		Order("id ASC").Find(&list).Error
+	return list, err
 }
 
 // UpdateRunFields 按主键更新实例。

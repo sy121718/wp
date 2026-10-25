@@ -163,18 +163,33 @@ func (s *Service) SaveAutomation(ctx context.Context, req *maildto.SaveAutomatio
 		if req.TriggerParams != nil {
 			fields["trigger_params"] = trigger
 		}
+		// 频率与「回信即退出」同样只在调用方真的传了时才改写（画布不提交它们）。
+		if f := strings.TrimSpace(req.TriggerFrequency); f != "" {
+			fields["trigger_frequency"] = f
+		}
+		if req.ExitOnReply != nil {
+			fields["exit_on_reply"] = *req.ExitOnReply
+		}
 		if err = s.m.UpdateAutomationFields(ctx, req.ID, fields); err != nil {
 			return nil, err
 		}
 	} else {
+		frequency := strings.TrimSpace(req.TriggerFrequency)
+		if frequency == "" {
+			frequency = mailmodel.TriggerFrequencyEveryTime
+		}
 		e := &mailmodel.MailAutomationEntity{
-			Name:          strings.TrimSpace(req.Name),
-			TriggerType:   req.TriggerType,
-			TriggerParams: trigger,
-			Definition:    definition,
-			Status:        mailmodel.AutomationStatusDraft,
-			Version:       1,
-			CreateBy:      req.OperatorID,
+			Name:             strings.TrimSpace(req.Name),
+			TriggerType:      req.TriggerType,
+			TriggerParams:    trigger,
+			TriggerFrequency: frequency,
+			Definition:       definition,
+			Status:           mailmodel.AutomationStatusDraft,
+			Version:          1,
+			CreateBy:         req.OperatorID,
+		}
+		if req.ExitOnReply != nil {
+			e.ExitOnReply = *req.ExitOnReply
 		}
 		if v := strings.TrimSpace(req.Description); v != "" {
 			e.Description = &v
@@ -331,12 +346,14 @@ func validTrigger(t string) bool {
 
 func automationItemOf(e *mailmodel.MailAutomationEntity) *maildto.AutomationItem {
 	item := &maildto.AutomationItem{
-		ID:            e.ID,
-		Name:          e.Name,
-		TriggerType:   e.TriggerType,
-		TriggerParams: map[string]any{},
-		Status:        e.Status,
-		Version:       e.Version,
+		ID:               e.ID,
+		Name:             e.Name,
+		TriggerType:      e.TriggerType,
+		TriggerParams:    map[string]any{},
+		TriggerFrequency: e.TriggerFrequency,
+		ExitOnReply:      e.ExitOnReply,
+		Status:           e.Status,
+		Version:          e.Version,
 	}
 	if e.Description != nil {
 		item.Description = *e.Description
@@ -1790,6 +1807,25 @@ func (s *Service) startRunWithAutomation(ctx context.Context, automation *mailmo
 		// 已在流程中：不重复启动。
 		return false, nil
 	}
+	// 频率闸门：`once` 时「有过任何实例」就不再建。
+	//
+	// 为什么不能只靠 `idx_mail_automation_runs_active`：那个部分唯一索引只管
+	// running / waiting，而 completed / failed / stopped 不在里面 —— 「打开邮件」
+	// 这类可重复事件会一个接一个地重跑整条欢迎流程。这里的判据必须是**任何**实例，
+	// 而不只是「进行中的实例」。
+	//
+	// 走 (automation_id, contact_id) 索引（迁移 623 加的），不是全表扫描。
+	if automation.TriggerFrequency == mailmodel.TriggerFrequencyOnce {
+		seen, herr := s.m.HasAnyRun(ctx, automation.ID, contactID)
+		if herr != nil {
+			return false, herr
+		}
+		if seen {
+			logger.Scene("mail").With("automation_id", automation.ID).With("contact_id", contactID).
+				Info("流程配置为「只跑一次」，该联系人已有实例，本次触发跳过")
+			return false, nil
+		}
+	}
 
 	now := time.Now()
 	entry := def.Entry
@@ -1984,6 +2020,61 @@ func (s *Service) OnEmailOpened(ctx context.Context, contactID uint64) {
 	if contactID > 0 {
 		s.fireTrigger(ctx, mailmodel.TriggerEmailOpened, contactID, nil)
 	}
+}
+
+// OnEmailReplied 收到回信：按 exit_on_reply 停掉该联系人进行中的实例。
+//
+// ## 为什么这条不等于「触发流程」
+//
+// 回信是**退出信号**而不是进入信号：给一个刚回信的人继续发自动化营销邮件是最典型的
+// 骚扰（而且他会回信正是因为想找人说人话）。所以这里做的只有一件事 —— 停实例。
+//
+// ## 当前没有生产者
+//
+// 本仓不接 IMAP / 不解析收件箱，`model.EventTypeReply` 因此没有写入方。这个方法与常量
+// 是**接入点**：未来的收信 worker 只需要调 `OnEmailReplied(contactID)`。
+// 测试直接调它来验证 exit_on_reply 的语义（见 automation_frequency_test.go）。
+func (s *Service) OnEmailReplied(ctx context.Context, contactID uint64) {
+	if contactID == 0 {
+		return
+	}
+	// 触发失败绝不影响主流程（与其它 On* 同一约定）：回信记录本身才是用户要的结果。
+	defer func() { _ = recover() }()
+	if err := s.StopRunsOnReply(ctx, contactID); err != nil {
+		logger.Scene("mail").With("contact_id", contactID).
+			Error(err, "回信退出：停止流程实例失败（不影响回信本身）")
+	}
+}
+
+// StopRunsOnReply 把该联系人**进行中的**实例置 stopped（只对 exit_on_reply=true 的流程）。
+//
+// 逐条按流程配置判断：同一个联系人可能同时在不同的流程里，其中一个配了 exit_on_reply、
+// 另一个没配 —— 停错那条就是「配了 A 的开关，B 也跟着停了」。
+func (s *Service) StopRunsOnReply(ctx context.Context, contactID uint64) error {
+	runs, err := s.m.ListActiveRunsOfContact(ctx, contactID)
+	if err != nil {
+		return err
+	}
+	if len(runs) == 0 {
+		return nil
+	}
+	now := time.Now()
+	for _, run := range runs {
+		automation, aerr := s.m.GetAutomation(ctx, run.AutomationID)
+		if aerr != nil || !automation.ExitOnReply {
+			continue
+		}
+		if serr := s.m.UpdateRunFields(ctx, run.ID, map[string]any{
+			"status":        mailmodel.RunStatusStopped,
+			"error_message": mailenums.EncodeRunText(mailenums.RunKeyStoppedByReply, nil),
+			"finished_at":   now,
+			"update_time":   now,
+			"next_run_at":   nil,
+		}); serr != nil {
+			return serr
+		}
+	}
+	return nil
 }
 
 // OnEmailClicked 点击事件触发。
