@@ -22,10 +22,17 @@ UPDATE sys_menus SET sort_order = sort_order + 1, update_time = now()
 WHERE coalesce(parent_id, 0) = 0 AND sort_order >= 4;
 
 -- 2) 一级目录「库存」
+-- NOT EXISTS 守卫：判据与插入必须问同一件事。没有它时，只要判据有一次失配
+--（224 按权限码把仓库页的 path 改写回 /admin/inventory），重跑就会插出第二个「库存」目录；
+-- 收敛脚本见 634。
 INSERT INTO sys_menus (permission_code, title, parent_id, type, path, icon, status,
                        is_hidden, is_public, is_system, sort_order, remark, create_time, update_time)
-VALUES (NULL, '库存', 0, 1, '', 'warehouse', 1,
-        0, 1, 1, 4, '库存模块一级目录：库存流水 / 仓库 / 货源 / 采购 / 变动原因', now(), now());
+SELECT NULL, '库存', 0, 1, '', 'warehouse', 1,
+       0, 1, 1, 4, '库存模块一级目录：库存流水 / 仓库 / 货源 / 采购 / 变动原因', now(), now()
+WHERE NOT EXISTS (
+    SELECT 1 FROM sys_menus
+    WHERE deleted_at IS NULL AND type = 1 AND COALESCE(parent_id, 0) = 0 AND title = '库存'
+);
 
 -- 3) 三项改挂到「库存」目录
 UPDATE sys_menus
@@ -44,11 +51,20 @@ INSERT INTO sys_menus (permission_code, title, parent_id, type, path, icon, stat
 SELECT 'inventory:warehouse_list', '仓库管理', m.id, 2, '/admin/inventory/warehouses', '', 1,
        0, 1, 1, 2, '仓库实体：短码 / 默认仓 / 状态', now(), now()
 FROM sys_menus m
-WHERE coalesce(m.parent_id, 0) = 0 AND m.title = '库存' AND m.type = 1;
+WHERE coalesce(m.parent_id, 0) = 0 AND m.title = '库存' AND m.type = 1
+  -- 按 path 守卫：目录若因历史原因有两条，不带这条会一次插出两行同名菜单（634 的现场）。
+  AND NOT EXISTS (
+      SELECT 1 FROM sys_menus x
+      WHERE x.deleted_at IS NULL AND x.type = 2 AND x.path = '/admin/inventory/warehouses'
+  );
 
 INSERT INTO sys_menus (permission_code, title, parent_id, type, path, icon, status,
                        is_hidden, is_public, is_system, sort_order, remark, create_time, update_time)
 SELECT 'inventory:reason_list', '变动原因字典', m.id, 2, '/admin/inventory/reasons', '', 1,
        0, 1, 1, 5, '库存变动原因的取值集合（内置 + 自定义）', now(), now()
 FROM sys_menus m
-WHERE coalesce(m.parent_id, 0) = 0 AND m.title = '库存' AND m.type = 1;
+WHERE coalesce(m.parent_id, 0) = 0 AND m.title = '库存' AND m.type = 1
+  AND NOT EXISTS (
+      SELECT 1 FROM sys_menus x
+      WHERE x.deleted_at IS NULL AND x.type = 2 AND x.path = '/admin/inventory/reasons'
+  );

@@ -85,7 +85,12 @@ FROM (VALUES
     ('analytics:view',               '/admin/analytics',           4),
     ('mail:account_list',            '/admin/mail',                1)
 ) AS v(code, path, sort)
-WHERE m.permission_code = v.code AND m.type = 2 AND m.deleted_at IS NULL;
+WHERE m.permission_code = v.code AND m.type = 2 AND m.deleted_at IS NULL
+  -- 229 之后「仓库管理」是独立页面（/admin/inventory/warehouses），与「库存管理」共用
+  -- 同一个权限点 inventory:warehouse_list。本表按权限码匹配，不带这条例外会把两条都改成
+  -- /admin/inventory —— 仓库页从侧栏消失、库存管理出现两条，且 229 的判据随之失配、
+  -- 下次启动再插一套菜单（2026-10-24 实测，收敛脚本见 634）。
+  AND NOT (v.code = 'inventory:warehouse_list' AND m.path = '/admin/inventory/warehouses');
 
 -- ---- 3. 归位：按路径挂到所属分组目录下（路径唯一，比 code 更适合做归位键） ----
 

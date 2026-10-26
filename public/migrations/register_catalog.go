@@ -536,15 +536,26 @@ func registerCatalogAndInventory() {
 	// 原先「库存管理 / 货源管理 / 采购入库」混在「商品与库存」目录下，与商品八项并列 ——
 	// 直接的后果是库存管理页靠 <details> 折叠把「流水 + 改库存 + 仓库配置 + 原因字典」
 	// 四件事塞进一页。折叠不是解法：装不下就该拆页，并把模块边界反映到菜单上。
-	// CheckSQL 以新增页 /admin/inventory/warehouses 的菜单行为门槛（整条迁移只跑一次）。
+	// CheckSQL 判三条**产物**在不在：目录「库存」+ 仓库页 + 原因字典页。
+	//
+	// 原来判的是「path = '/admin/inventory/warehouses' 这一行存在」。这一行会被 224 第 2 段
+	// 按 permission_code 改回 /admin/inventory（库存管理与仓库管理共用 inventory:warehouse_list），
+	// 于是判据失配 → 整条重跑 → 又插一套目录与子页，侧栏出现两个「库存」
+	//（2026-10-24 开发库实测，收敛脚本见 634）。现在：
+	//   · 判据看目录（224 不碰 type=1 行），且用 >= 1 —— 即使历史库已有重复也不算「没跑过」；
+	//   · 229 自己的三条 INSERT 都加了 NOT EXISTS 守卫，真重跑也不会复制。
+	// 不带 ? 参数：TableName 只给默认检查用，自定义判据不需要。
 	register(Migration{
 		Version:   "229-inventory-menu-split",
 		TableName: "sys_menus",
-		// 约定：自定义 CheckSQL 必须接收迁移器传入的表名参数（migrator_test.go 会检查）。
-		// 注意 ? 是**值占位**（会被替换成 $1），只能出现在值的位置 ——
-		// 写成 "FROM ?" 会得到 FROM $1 的语法错误（实测踩过）。
-		CheckSQL: "SELECT COUNT(*) FROM sys_menus " +
-			"WHERE path = '/admin/inventory/warehouses' AND to_regclass(?) IS NOT NULL",
+		CheckSQL: "SELECT CASE WHEN " +
+			"(SELECT COUNT(*) FROM sys_menus WHERE deleted_at IS NULL AND type = 1 " +
+			"AND COALESCE(parent_id, 0) = 0 AND title = '库存') >= 1 " +
+			"AND (SELECT COUNT(*) FROM sys_menus WHERE deleted_at IS NULL AND type = 2 " +
+			"AND path = '/admin/inventory/warehouses') >= 1 " +
+			"AND (SELECT COUNT(*) FROM sys_menus WHERE deleted_at IS NULL AND type = 2 " +
+			"AND path = '/admin/inventory/reasons') >= 1 " +
+			"THEN 1 ELSE 0 END",
 		SQL: mustSQL("229_inventory_menu_split.sql"),
 	})
 
