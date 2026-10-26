@@ -296,24 +296,6 @@ type AttrValueFormRow struct {
 	Enabled bool
 }
 
-// BundleSourcePart 成员来源快照的**一段**：段的种类 + 该段的数据值。
-//
-// 段交给模板：分隔符「·」、每一段前面的词条（从仓库选 / 仓库 SKU / 外部编码）都在
-// 渲染期决定。后端只说「这是第几类段、值是什么」—— 拼成一句话就等于把语言锁死在一种。
-type BundleSourcePart struct {
-	// Kind 段种类：source（来源种类）/ warehouseSku（仓库 SKU）/ externalSku（外部编码）。
-	Kind string
-	// Value 该段的数据值（来源种类常量 / SKU 编码 / 对方编码）。
-	Value string
-}
-
-// BundleSourcePart 的段种类取值（模板按它选词条）。
-const (
-	BundleSourcePartSource       = "source"
-	BundleSourcePartWarehouseSKU = "warehouseSku"
-	BundleSourcePartExternalSKU  = "externalSku"
-)
-
 // PricingForm 定价表单的取值（试算后要原样回填，用户接着点应用）。
 type PricingForm struct {
 	ProjectID  string
@@ -374,62 +356,6 @@ type ProductDetailTemplatePageReq struct {
 	ProjectID string `form:"project"`
 	// ProductID 商品 id；空串 = 还没选商品（菜单入口），控制器据此走引导出口。
 	ProductID string `form:"product"`
-}
-
-// ProductBundlePageReq 捆绑配置页的取数入参。
-//
-// 五个上下文字段（全部来自 query，页面用 GET 重新渲染）：
-//
-//	· ProjectID / ProductID 页面的两个选择器（入口有两套字段名，控制器认完再传进来）；
-//	· Source / SourceProductID / SourceWarehouseID 成员来源面板的当前上下文
-//	  （用 GET 重新渲染，不是前端拼参数 —— 属性值勾选清单与仓库 SKU 候选都由服务端给）。
-//
-// 没有「提交快照」这一档：保存已迁到 JSON 写基座，基座在原页发 fetch、失败只写结果区，
-// 用户的输入从未离开 DOM，因此页面装载只回答「库里配了什么」。
-type ProductBundlePageReq struct {
-	ProjectID       string `form:"project"`
-	ProductID       string `form:"product"`
-	Source          string `form:"source"`
-	SourceProductID string `form:"sourceProduct"`
-	// SourceWarehouseID 选中来源仓（仓库来源面板据此只列那个仓的一屏候选）。
-	SourceWarehouseID string `form:"sourceWarehouse"`
-	// ListQuery 回到本页的筛选上下文（请求事实，入口填；读模型搬进视图）。
-	ListQuery string `form:"-" listquery:"project,product"`
-}
-
-// BindQuery 兼容捆绑页入口的两套键名：菜单与列表页给 project/product，
-// 片段与旧链接给 projectId/productId（见 ProductBundlePageReq 的注释）。
-// 两套都空时保持空串 —— 页面回落到工程清单的第一个。
-func (r *ProductBundlePageReq) BindQuery(q url.Values) error {
-	if r.ProjectID == "" {
-		r.ProjectID = strings.TrimSpace(q.Get("projectId"))
-	}
-	if r.ProductID == "" {
-		r.ProductID = strings.TrimSpace(q.Get("productId"))
-	}
-	return nil
-}
-
-// BundleOptionResp 成员表的一行（渲染行，非原始配置）。
-//
-// 与原始 BundleOption 分开：Available（真源可用量）与 SKULabel 都是这一屏才算得出的，
-// 混进配置结构会让「配置里存的字段」与「页面显示的字段」看起来是同一件事。
-type BundleOptionResp struct {
-	VariantID  string
-	SKULabel   string
-	Required   bool
-	DefaultQty int
-	MinQty     int
-	MaxQty     int
-	// Available 真源可用量；新增的空白行没有可用量可言（还没选 SKU），恒为 0。
-	Available int
-	// 来源快照（仅作溯源与展示，不是身份）：四个字段原样回填进隐藏域；
-	// SourceParts 是展示用的段（种类 + 数据值），词条在模板取。
-	SourceKind   string
-	WarehouseID  string
-	WarehouseSKU string
-	ExternalSKU  string
-	SourceParts  []BundleSourcePart
 }
 
 // ProductTranslationsPageReq 商品译文工作台的取数入参（工程 / 商品 / 目标语言，三者都可空）。

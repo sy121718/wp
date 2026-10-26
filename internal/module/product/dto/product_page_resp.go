@@ -131,10 +131,9 @@ type DetailTemplateSnapshotResp struct {
 // 字段的写者与 ProductListPageResp 同一套约定：
 //   - **service 写**：Projects / SelectedProject / ProductID / HasProduct / WarehouseOptions /
 //     Detail / Categories / Brands / Tags（取数结果）；
-//   - **控制器写**：Title / Menu（页壳）、BackURL（URL 形状属 HTTP）、Bundle / TplPanel
-//     （两块面板各自的取数与组装）；
-//   - **读模型写行**：Product 成品行由 service 的行装配产出（service/product_row.go），
-//     控制器只在 type=bundle 时往里补 Bundle；
+//   - **控制器写**：Title / Menu（页壳）、BackURL（URL 形状属 HTTP）、TplPanel
+//     （面板的取数与组装）；
+//   - **读模型写行**：Product 成品行由 service 的行装配产出（service/product_row.go）；
 //   - **控制器在失败时写**：LoadError。
 type ProductDetailPageResp struct {
 	Projects        []projectdto.ProjectResp
@@ -158,8 +157,7 @@ type ProductDetailPageResp struct {
 	Tags       []*TagResp
 
 	// —— 装配的产物 ——
-	// Product 是成品行（读模型写，其中的 Bundle 面板由控制器在 type=bundle 时补）；
-	// TplPanel 是详情模板面板（控制器组装）。
+	// Product 是成品行（读模型写）；TplPanel 是详情模板面板（控制器组装）。
 	Product  *ProductRowResp
 	TplPanel *DetailTemplatePanelResp
 	// BackURL 回列表的链接（带工程上下文，不掉回默认工程）。
@@ -226,9 +224,6 @@ type ProductEditPageResp struct {
 	ImageAltsInput    string
 	WeightInput       string
 	DefaultPriceInput string
-	// IsBundle 捆绑容器：构成表在详情页只读展示，编辑入口在独立页 —— 这里只给链接标记
-	//（type=variant 时为假，模板据 isset 整块跳过）。
-	IsBundle bool
 }
 
 // WarehouseOptionResp 仓库下拉 / 勾选项的渲染视图。
@@ -494,21 +489,6 @@ type ProductDetailTemplatePageResp struct {
 	NoProduct bool
 }
 
-// BundleCandidateResp 候选 SKU 下拉项（id + 可读标签）。
-type BundleCandidateResp struct {
-	ID    string
-	Label string
-}
-
-// BundleSourceWarehouseGroupResp 来源仓下拉项 + 该仓的仓库 SKU 勾选清单。
-type BundleSourceWarehouseGroupResp struct {
-	WarehouseID string
-	Label       string
-	IsDefault   bool
-	Selected    bool
-	Items       []WarehouseSKUItemResp
-}
-
 // PreviewNoticeResp 预览 iframe 里的替代页（还没保存 / 还没有详情页模板）。
 //
 // 只给事实：Key + Fallback 由模板取词，Lang 落 html 的 lang 属性。
@@ -517,52 +497,6 @@ type PreviewNoticeResp struct {
 	Key      string
 	Fallback string
 	Lang     string
-}
-
-// ProductBundlePageResp 捆绑配置页的渲染视图（本模块第九个读模型）。
-//
-// 取数原料与装配产物分开命名：Detail / Skus / Warehouses / WarehouseGroups / Products
-// 是读回来的，Rows / CandidateSKUs / Sources / SourceProducts / SourceWarehouses 是装出来的。
-// 混在一个字段名下会让人以为模板里看到的就是库里的东西。
-type ProductBundlePageResp struct {
-	Projects        []projectdto.ProjectResp
-	SelectedProject string
-	Products        []*ProductResp
-	SelectedProduct string
-	// Detail 库里的捆绑配置（写失败重渲染时 Config 已被 Submitted 覆盖）。
-	Detail *BundleConfigResp
-	// Skus 本工程的候选 SKU（成员标签与候选下拉都从它来）。
-	Skus []*BundleSKUResp
-
-	// Rows 成员表行；CandidateSKUs 候选下拉；SkuCount 候选条数（模板提示用）。
-	Rows          []BundleOptionResp
-	CandidateSKUs []BundleCandidateResp
-	SkuCount      int
-	// MaxOptions 成员数上限（表单约束 + 空行补齐的判据）。
-	MaxOptions int
-
-	// 成员来源面板：三种来源 + 各自的候选数据。槽位收事实（Key + 中文兜底 / 数据名），取词在模板。
-	// Sources / SourceProducts 与商品行的主分类 / 品牌下拉同一份形状（PickOptionResp）。
-	Sources        []PickOptionResp
-	Source         string
-	SourceProducts []PickOptionResp
-	// SourceAttributes 与 SourceWarehouses 的选择依据分别是「选中来源商品」与「选中来源仓」。
-	SourceAttributes  []*AttributeResp
-	SourceWarehouses  []BundleSourceWarehouseGroupResp
-	SourceWarehouseID string
-
-	// Cfg* 配置数值的回填源（库里的配置；读不出来时是零值 + SaveBlocked）。
-	CfgMaxOptions  int
-	CfgMinTotalQty int
-	CfgMaxTotalQty int
-
-	// SaveBlocked 配置读不出来时禁止保存：无法保证这次提交的是完整配置，
-	// 宁可让用户先「重新载入」，也不要缺配置误写。
-	SaveBlocked bool
-
-	// ListQuery 页面链接要带回的筛选上下文（请求事实由入口填，读模型搬进视图）。
-	// 成员来源面板的解析接口地址是模板里的字面量，不经过数据。
-	ListQuery string
 }
 
 // ProductTranslationsPageResp 商品译文工作台的一屏。
@@ -704,54 +638,6 @@ type ProductTagsPageResp struct {
 	Limit      int
 	Pagination pagination.Page
 	ListQuery  string
-}
-
-// BundlePanelResp 商品详情页「捆绑构成」区块的数据（只读表）。
-//
-// 这是**片段根**的下一层，字段按模板的读法命名（b.Loaded / b.Options / o.SKUCode），
-// 所以它是 struct 而不是 map：根 map 只为了 .["t"] 取词，区块自身没有这个诉求。
-type BundlePanelResp struct {
-	Loaded bool
-	// LoadFailed 配置读不出来（商品不存在 / 库存真源未接入）：区块留在页面上并说明原因，
-	// 不是整块消失。
-	//
-	// 这是**区块级数据事实**（「这块配置读到了没有」），与 ProductNewPageResp 那批已删的
-	// 页面级失败槽（LoadFailed / HTTPStatus）不是一回事：后者让 dto 决定状态码与整页失败形态，
-	// 这里只说明一个区块自己有没有内容，状态码仍是 200、整页照常渲染。
-	//
-	// 只说「有没有」，不说「显示哪一句」：这一块只有一句话，key 与中文都写在模板里
-	// （product_detail.html），后端不重复一遍。同一个道理见 PricingLineResp.Status ——
-	// 后端给取值，模板按取值分支取词。
-	LoadFailed bool
-	// BasePrice 容器价（套餐金额的唯一来源），读不出来时为 nil（模板渲染为 —）。
-	BasePrice   *float64
-	Options     []BundlePanelRowResp
-	OptionCount int
-}
-
-// BundlePanelRowResp 构成表的一行：成员 SKU 的规则、可用量与后台价格口径。
-//
-// 成员挂牌价（ItemPrice）只作**参考**：套餐金额只由容器价得出，成员价不参与
-// 任何计价与前台展示（迁移 238 的类型不变量）；成员成本只进后台口径。
-type BundlePanelRowResp struct {
-	VariantID   string
-	SKUCode     string
-	ProductName string
-	Required    bool
-	DefaultQty  int
-	MinQty      int
-	MaxQty      int
-	Available   int
-	// 成员挂牌价与成本是原值（元）；变体已删除时为 nil。
-	ItemPrice *float64
-	CostPrice *float64
-	Enabled   bool
-	// Missing 配置指向的变体已不存在（与「存在但被停用」是两回事：状态文案与
-	// 可行动作都不同，故不合并成一个 bool）。
-	Missing bool
-	// SourceParts 来源快照的段（种类 + 数据值）：词条与「·」分隔符都在模板
-	// （product_detail.html 的来源列）；空 = 手工指定 / 历史配置。
-	SourceParts []BundleSourcePart
 }
 
 // BrandRowResp 品牌列表的一行（成品行：模板直接读字段）。

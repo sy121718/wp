@@ -27,7 +27,7 @@ import (
 func SetupOrderRoutes(rg *permission.RouteGroup,
 	db *gorm.DB,
 	// product 商品目录契约。下单快照用它的 VariantSnapshotPort 那一半（只读），
-	// 后台代客建单页的候选 SKU 用它的 ListBundleSKUs（跨商品列启用变体）。
+	// 后台代客建单页的候选 SKU 用它的 ListVariantOptions（跨商品列启用变体）。
 	// 参数取全量契约而不再是单独的 VariantSnapshotPort：ProductService **天然嵌入**
 	// 那个端口，所以装配点（routers/assembly.go）传的实参一个字都不用改 ——
 	// 为一条只读能力新增一个装配参数，等于让所有调用方跟着改一遍。

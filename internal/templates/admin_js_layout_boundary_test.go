@@ -24,7 +24,7 @@ var adminJSRootAllowance = map[string]string{
 	"admin.js":               "后台侧边栏状态 + 上级菜单候选过滤；控件部分已迁 ui/，剩余随页面迁移逐步清零",
 	"media-lib.js":           "媒体库公共逻辑（/admin/media 与工作台弹窗共用），被 mediafield.js / media-gallery.js 依赖",
 	"media-admin.js":         "媒体库页面的左树右库业务逻辑，依赖 media-lib.js；页面专用，未进公共入口",
-	"product-create-form.js": "商品新建表单的主体 SKU 预填/显隐增强；只服务 products.html 与 products_new.html 两页",
+	"product-create-form.js": "商品新建表单的仓库候选过滤与主体 SKU 预览；只服务 products.html 与 products_new.html 两页",
 	"enhance.js":             "构建产物（访客静态页）的客户端增强，构建期内联，不属于后台控件层",
 	"track.js":               "访问归因采集，构建期无条件内联进产物，长期保留",
 	"icons.js":               "内置图标数据（与 Go core/icons.go 同源），性质是 vendor 数据表",

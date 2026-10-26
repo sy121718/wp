@@ -207,14 +207,6 @@ const (
 	// ErrStockNotEnough 可售不足（调拨不得占用被订单预占的那部分）。
 	ErrStockNotEnough = "ErrStockNotEnough"
 
-	// —— 物料清单（issue #16 验收 5）——
-	ErrBOMQuantityInvalid    = "ErrBOMQuantityInvalid"    // 子项用量必须为正整数
-	ErrBOMSelfReference      = "ErrBOMSelfReference"      // 父项不能把自己列为子项
-	ErrBOMDuplicateComponent = "ErrBOMDuplicateComponent" // 同一子项重复出现
-	ErrBOMComponentRequired  = "ErrBOMComponentRequired"  // 子项必须给出变体
-	ErrBOMCycle              = "ErrBOMCycle"              // 物料清单会形成环（A→B→A）
-	ErrBOMDepthExceeded      = "ErrBOMDepthExceeded"      // 展开层数超过上限
-
 	// —— 仓库 SKU 外部编码（迁移 251 / docs/14 §9.3）——
 	//
 	// 属性属于**商品**（属性组 + 值 → 笛卡尔积 → variant.option_values），仓库侧只回答
@@ -228,8 +220,6 @@ const (
 	ErrWarehouseSKURequired = "ErrWarehouseSKURequired"
 	// ErrWarehouseSKUNotFound 该仓库里没有这条仓库 SKU（含编码不在本仓 / 不属于该工程）。
 	ErrWarehouseSKUNotFound = "ErrWarehouseSKUNotFound"
-	// ErrWarehouseSKUBundleNotAllowed 捆绑商品不存在于仓库，不能「从仓库选」建主体 SKU。
-	ErrWarehouseSKUBundleNotAllowed = "ErrWarehouseSKUBundleNotAllowed"
 	// ErrWarehouseSKUCodeTaken 该仓已有同一条 sku_code 的库存行（我们自己的 SKU 仓内唯一，
 	// 迁移 244 的 UNIQUE (warehouse_id, sku_code)）；提前拦截是为了给出可读的错误，
 	// 而不是让运营对着一个 23505 猜是哪两行。
@@ -520,16 +510,9 @@ var errFallbacks = map[string]string{
 	ErrProductionVariantRequired:     "生产入库必须给出 SKU 变体",
 	ErrProductionCostInvalid:         "生产入库的成本价必须手工填写且非负",
 	ErrVariantCostPortMissing:        "商品侧成本价端口未注入（装配缺陷 / 纯库存单测路径）。",
-	ErrBOMQuantityInvalid:            "子项用量必须为正整数",
-	ErrBOMSelfReference:              "父项不能把自己列为子项",
-	ErrBOMDuplicateComponent:         "同一子项重复出现",
-	ErrBOMComponentRequired:          "子项必须给出变体",
-	ErrBOMCycle:                      "物料清单会形成环（A→B→A）",
-	ErrBOMDepthExceeded:              "展开层数超过上限",
 	ErrSKUSourceInvalid:              "SKU 来源取值不合法：只支持「自己创建」与「从仓库选」",
 	ErrWarehouseSKURequired:          "从仓库选 SKU 时必须先选仓库并指明该仓的那条仓库 SKU",
 	ErrWarehouseSKUNotFound:          "该仓库里没有这条仓库 SKU：请确认仓库选对了，或先在该仓建好这条货的库存记录",
-	ErrWarehouseSKUBundleNotAllowed:  "捆绑商品不存在于仓库，不能用「从仓库选」建主体 SKU，请改用自己的编码",
 	ErrWarehouseSKUCodeTaken:         "该仓已有同一条 SKU 编码的库存行（我们自己的 SKU 在仓内唯一），请改用另一个仓库或另一个仓库 SKU",
 	ErrExternalSKUInvalid:            "外部编码不合法：长度需在 128 个字符以内且不含控制字符",
 	ErrExternalSKUProductConflict:    "该外部编码在本仓已挂在另一个商品上：同一个外部编码在同一仓库内只能属于同一个商品（同一商品的多个口味可以共用一个外部编码）",

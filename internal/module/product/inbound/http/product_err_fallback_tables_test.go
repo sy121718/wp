@@ -6,7 +6,7 @@ package producthttp
 //   · 本模块 Err* 的展示原文 → internal/module/product/enums 的 ProductErrFallbacks
 //     （覆盖面守卫在 productenums 包里）；
 //   · 别模块 key（inventory / presentation）→ 各自的 enums 兜底表（product 不再替对方留补丁表）；
-//   · 跳过原因（VariantSkip* / BundleMember*）→ productenums.BundleMemberSkipFallbacks ——
+//   · 跳过原因（VariantSkip*）→ productenums.VariantSkipFallbacks ——
 //     它们的取值过不了业务判据（pkg/facing.IsBusinessKey），所以单独一张表（漏登一条 =
 //     页面上出现裸 key）；覆盖面守卫在 enums 包，本文件守「出口取词时用的是这张表」。
 
@@ -84,9 +84,8 @@ func enumsStringConstants(t *testing.T) map[string]string {
 // TestSkipReasonFallbacksCoverEnumsSkipKeys 每条跳过原因都要有出口层的展示原文。
 //
 // 跳过原因不走 productErrFactOf（取值过不了业务判据），所以它们的表与 ProductErrFallbacks 分开；
-// 两张表现在都在 enums（声明处）：VariantSkip* 与 BundleMember* 同住
-// productenums.BundleMemberSkipFallbacks，覆盖面守卫在 enums 包的
-// product_bundle_skip_fallbacks_test.go —— 这里只留「出口取词时用的是不是这张表」这一条。
+// 两张表现在都在 enums（声明处）：VariantSkip* 住 productenums.VariantSkipFallbacks，覆盖面守卫
+// 在 enums 包的 product_skip_fallbacks_test.go —— 这里只留「出口取词时用的是不是这张表」这一条。
 func TestSkipReasonFallbacksCoverEnumsSkipKeys(t *testing.T) {
 	all := enumsStringConstants(t)
 	tables := []struct {
@@ -94,8 +93,7 @@ func TestSkipReasonFallbacksCoverEnumsSkipKeys(t *testing.T) {
 		prefix string
 		table  map[string]string
 	}{
-		{"BundleMemberSkipFallbacks", "VariantSkip", productenums.BundleMemberSkipFallbacks},
-		{"BundleMemberSkipFallbacks", "BundleMember", productenums.BundleMemberSkipFallbacks},
+		{"VariantSkipFallbacks", "VariantSkip", productenums.VariantSkipFallbacks},
 	}
 	for _, tc := range tables {
 		t.Run(tc.name, func(t *testing.T) {

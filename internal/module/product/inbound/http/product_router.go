@@ -65,7 +65,6 @@ const (
 	ProductNewPageTemplate            = "admin/product/products_new.html"
 	ProductEditPageTemplate           = "admin/product/product_edit.html"
 	ProductDetailPageTemplate         = "admin/product/product_detail.html"
-	ProductBundlePageTemplate         = "admin/product/product_bundle.html"
 	ProductPricingPageTemplate        = "admin/product/product_pricing.html"
 	ProductDetailTemplatePageTemplate = "admin/product/product_detail_template.html"
 	ProductAttributesPageTemplate     = "admin/product/product_attributes.html"
@@ -111,7 +110,6 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	registerProductAttributeAPI(g, handle)
 	registerProductTaxonomyAPI(g, handle)
 	registerProductTagAPI(g, handle)
-	registerProductBundleAPI(g, handle)
 	registerProductPricingAPI(g, handle)
 	return svc, svc
 }
@@ -222,20 +220,6 @@ func registerProductTagAPI(g *permission.RouteGroup, handle *ProductHandle) {
 	g.POST("/tag/delete", permission.ProductTagDelete, handle.DeleteTag)
 	g.POST("/tag/bulk-delete", permission.ProductTagBulkDelete, handle.BulkDeleteTags)
 	g.POST("/tag/recalc", permission.ProductTagRecalc, handle.RecalcTags)
-}
-
-// registerProductBundleAPI 注册 捆绑品（issue #20） 的接口路由。
-//
-// 权限点逐条独立：API 组按实际请求路径 enforce，而 sys_permission 上 permission_code
-// 唯一 —— 一个 code 挂两条路径会把其中一条挤出策略（含超管全员 403）。
-func registerProductBundleAPI(g *permission.RouteGroup, handle *ProductHandle) {
-	// —— 捆绑品（issue #20）——
-	// 选项规则在 products.bundle_items，选项来自跨商品挑选的已存在 SKU。
-	// validate 是后端硬校验（与前台片段共用同一份校验逻辑），skus 是配置器的数据源。
-	g.GET("/bundle/get", permission.ProductBundleGet, handle.GetBundleConfig)
-	g.POST("/bundle/set", permission.ProductBundleSet, handle.SetBundleConfig)
-	g.POST("/bundle/validate", permission.ProductBundleValidate, handle.ValidateBundleSelection)
-	g.GET("/bundle/skus", permission.ProductBundleSkus, handle.ListBundleSKUs)
 }
 
 // registerProductPricingAPI 注册 定价工具（issue #13） 的接口路由。
@@ -372,7 +356,7 @@ func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageH
 //
 // 页面 GET 走 /admin 组认证（Session + CSRF）并按需 PageAuthz；写动作复用既有 API 权限点。
 func registerProductTemplatePages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
-	// —— 详情页模板（issue #14）+ 捆绑配置（issue #20）——
+	// —— 详情页模板（issue #14）——
 	// 商品详情页模板：一个商品类型下可建多套命名模板，商品发布时可选一套、
 	// 发布前可预览（预览只读渲染，不落库不激活）。
 	// 页面上只剩两条页面入口：整页 GET 与**预览**（预览开新标签页看渲染字节，本质是只读）。
@@ -380,12 +364,6 @@ func registerProductTemplatePages(pages *gin.RouterGroup, productPages *ProductP
 	// 页面前端走 ui/write-base.js。
 	pages.GET("/products/template", adminui.PageAuthz("/api/product/get"), adminui.PageSlot(ProductDetailTemplatePageTemplate), productPages.ProductDetailTemplatePage)
 	pages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), adminui.PageSlot(ProductDetailTemplatePageTemplate), productPages.ProductDetailTemplatePreview)
-	// 捆绑配置：配置页 + 保存（保存复用 /api/product/bundle/set 的权限点）。
-	pages.GET("/products/bundle", adminui.PageAuthz("/api/product/list"), adminui.PageSlot(ProductBundlePageTemplate), productPages.ProductBundlePage)
-	// 成员来源解析（docs/14 §1.2 的三种来源，本批）：只解析、**不落库** ——
-	// 与 /products/variant/preview 同一先例（页面组已有 Session + CSRF，端点落不了任何库），
-	// 因此不叠加 Casbin 权限点，也就不会出现「有路由、无权限点」的全员 403。
-	pages.POST("/products/bundle/members/resolve", productPages.ProductsBundleMembersResolve)
 }
 
 // registerProductAttributePages 注册属性库（issue #7）的页面路由。

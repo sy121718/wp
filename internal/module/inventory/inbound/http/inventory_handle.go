@@ -358,34 +358,6 @@ func (h *Handle) UpdateReason(c *gin.Context) {
 	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
 }
 
-// SetBOM 全量替换某个父 SKU 的物料清单（验收 5）。
-func (h *Handle) SetBOM(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.SetBOMReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.SetBOM(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
-}
-
-// GetBOM 查看某个父 SKU 的物料清单。
-func (h *Handle) GetBOM(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.GetBOMReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.GetBOM(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgDetailSuccess, res)
-}
-
 // CreatePurchaseOrder 新建采购单（验收 1）。
 func (h *Handle) CreatePurchaseOrder(c *gin.Context) {
 	req, ok := binding.JSON[inventorydto.CreatePurchaseOrderReq](c)

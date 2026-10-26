@@ -130,12 +130,6 @@ func registerAnalyticsSeoAndPermissions() {
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key = 'site.fragment.common.session_not_ready' AND lang = 'zh-CN'",
 		SQL:          mustSQL("157_i18n_seed_fragments_user_orders.sql"),
 	})
-	registerSeed(Seed{
-		Version:      "158-i18n-seed-fragments-bundle-jet",
-		TableName:    "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE item_key = 'site.fragment.bundle.qty_aria' AND lang = 'zh-CN'",
-		SQL:          mustSQL("158_i18n_seed_fragments_bundle_jet.sql"),
-	})
 
 	// 159：默认文章详情内容模板（EDT-002）。
 	registerSeed(Seed{

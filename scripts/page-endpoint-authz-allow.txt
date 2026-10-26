@@ -44,7 +44,6 @@ internal/module/product/inbound/http/product_router.go /products/variant/preview
 internal/module/product/inbound/http/product_router.go /products/seo-score	商品 SEO 评分：纯计算
 internal/module/product/inbound/http/product_router.go /product-categories/seo-score	分类 SEO 评分：纯计算
 internal/module/product/inbound/http/product_router.go /product-brands/seo-score	品牌 SEO 评分：纯计算
-internal/module/product/inbound/http/product_router.go /products/bundle/members/resolve	组合商品成员解析：只读
 internal/module/product/inbound/http/product_router.go /product-attributes/value-rows	属性值行片段：只读渲染
 internal/module/project/inbound/http/project_page_router.go /workbench/settings	页面设置表单片段：纯渲染（真正写入走 /admin/settings/save，已挂 /api/project/update）
 internal/module/project/inbound/http/project_page_router.go /workbench/seo-score-panel	SEO 评分区片段：纯渲染

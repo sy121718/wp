@@ -117,28 +117,18 @@ const (
 	// 保存时被跳过的一行（不整批失败，逐条回带原因；值即 i18n key）。
 	// 与定价工具的 PricingSkip* 同一形态：跳过是「这一行没做」，不是「整批失败」。
 	VariantSkipHasStock       = "VariantSkipHasStock"       // 该变体仍有非零库存
-	VariantSkipReferenced     = "VariantSkipReferenced"     // 该变体被 BOM 清单引用
 	VariantSkipDuplicated     = "VariantSkipDuplicated"     // 清单里重复的规格组合（只保留第一行）
 	VariantSkipVariantMissing = "VariantSkipVariantMissing" // 清单引用的既有变体已不存在（并发删除）
 
-	// 删除守卫的另外两个引用面（docs/14 §8「待补」两项，迁移 259 配套）：
-	//   · 捆绑成员引用 —— products.bundle_items.options[].variantId 指向这个变体；
-	//   · 有过任何库存流水 —— 订单一旦建单就必然产生扣减流水，所以「有流水」等价于
-	//     「被订单用过」（历史单据按 variant_id 追溯，不允许硬删）。
-	// 与非零库存互补：卖出后补货清零的变体库存为 0 却仍被用过，两个守卫都要。
-	VariantSkipBundleReferenced = "VariantSkipBundleReferenced" // 该变体被捆绑成员引用
-	VariantSkipHasMovement      = "VariantSkipHasMovement"      // 该变体有过库存流水（被订单用过）
+	// 删除守卫的另一个引用面（迁移 259 配套）：有过任何库存流水 —— 订单一旦建单就必然
+	// 产生扣减流水，所以「有流水」等价于「被订单用过」（历史单据按 variant_id 追溯，
+	// 不允许硬删）。与非零库存互补：卖出后补货清零的变体库存为 0 却仍被用过，两个守卫都要。
+	VariantSkipHasMovement = "VariantSkipHasMovement" // 该变体有过库存流水（被订单用过）
 
 	// —— 商品主体 SKU 编码（2026-09-19 评审第四轮，迁移 248 配套）——
 	// 两条都是「可行动的」错误：运营要么显式填一个编码，要么把 URL 段改成 ASCII。
 	ErrSkuContainerMissing = "ErrSkuContainerMissing" // 商品 URL 段不含 ASCII 字符，派生不出主体 SKU 编码
 	ErrContainerSkuInvalid = "ErrContainerSkuInvalid" // 显式填的主体 SKU 编码不合法（空串）
-	// ErrBundleSKURequired 捆绑商品的主体 SKU 必填（2026-09-19 用户拍板，迁移 249 配套）。
-	//
-	// 与变体商品不同：捆绑不生成自己的变体，主体 SKU 就是它唯一的对外身份 ——
-	// 旧实现「留空即静默按 <商品段>_B 派生」被否掉，理由是编码要**被运营看见并确认**；
-	// 前台改为预填建议值、允许修改，服务端不再接受空值（静默派生会让运营以为没填也行）。
-	ErrBundleSKURequired = "ErrBundleSKURequired" // 捆绑商品必须填写主体 SKU 编码
 
 	// ErrContainerSKUTaken 主体 SKU 在本工程已被**其它商品**占用（主体编码在工程内唯一）。
 	//
@@ -273,117 +263,6 @@ const (
 	ErrPricingTargetTooMany = "ErrPricingTargetTooMany"
 )
 
-// 捆绑品（issue #20）。
-//
-// 配置期错误（保存时拒，运营填错了）与选择期错误（前台即时反馈，买家选错了）分开：
-// 后台与前台因此都能给出具体原因，而不是一句笼统的「不合法」。
-const (
-	// MsgBundleSaveSuccess 捆绑配置已保存。
-	MsgBundleSaveSuccess = "MsgBundleSaveSuccess"
-	// MsgBundleValidateSuccess 整单校验通过。
-	MsgBundleValidateSuccess = "MsgBundleValidateSuccess"
-
-	// ErrProductTypeInvalid 商品类型不合法（仅支持 variant / bundle）。
-	ErrProductTypeInvalid = "ErrProductTypeInvalid"
-	// ErrProductTypeImmutable 商品类型不可在创建后更改（变体 ↔ 捆绑涉及存量数据差异）。
-	ErrProductTypeImmutable = "ErrProductTypeImmutable"
-	// ErrBundlePriceRequired 捆绑容器必须自定价（容器价 > 0）—— 成员价不参与计价，
-	// 容器价为空就是「0 元套餐」，列表与详情会显示 0.00，前台也分不清是免费还是没配。
-	ErrBundlePriceRequired = "ErrBundlePriceRequired"
-
-	// ErrBundleShapeInvalid 捆绑配置形状非法（既不是空值，也不是 JSON 对象）。
-	ErrBundleShapeInvalid = "ErrBundleShapeInvalid"
-	// ErrBundleNotConfigured 该商品没有配置捆绑选项（不是捆绑品）。
-	ErrBundleNotConfigured = "ErrBundleNotConfigured"
-	// ErrBundleMaxOptionsInvalid 选项数量上限非法（超出 1..20 护栏）。
-	ErrBundleMaxOptionsInvalid = "ErrBundleMaxOptionsInvalid"
-	// ErrBundleOptionsExceeded 配置的选项数超过上限。
-	ErrBundleOptionsExceeded = "ErrBundleOptionsExceeded"
-
-	// ErrBundleVariantRequired 选项缺少 SKU（配置期与选择期共用）。
-	ErrBundleVariantRequired = "ErrBundleVariantRequired"
-	// ErrBundleVariantDuplicated 同一个 SKU 在配置里或同一次选择里出现多次。
-	ErrBundleVariantDuplicated = "ErrBundleVariantDuplicated"
-	// ErrBundleVariantNotFound 选项引用的 SKU 不存在（已被删除）。
-	ErrBundleVariantNotFound = "ErrBundleVariantNotFound"
-	// ErrBundleVariantProjectMismatch 选项引用的 SKU 不属于该商品所在工程。
-	ErrBundleVariantProjectMismatch = "ErrBundleVariantProjectMismatch"
-	// ErrBundleSelfReference 选项引用了捆绑主体自己的 SKU（自引用）。
-	ErrBundleSelfReference = "ErrBundleSelfReference"
-	// ErrBundleVariantNotInConfig 选择里出现配置之外的 SKU。
-	ErrBundleVariantNotInConfig = "ErrBundleVariantNotInConfig"
-
-	// ErrBundleQtyInvalid 数量非法（负数 / 非整数 / 超过硬上限）。
-	ErrBundleQtyInvalid = "ErrBundleQtyInvalid"
-	// ErrBundleQtyRangeInvalid 单项数量区间自相矛盾（最小 > 默认、最大 < 最小 等）。
-	ErrBundleQtyRangeInvalid = "ErrBundleQtyRangeInvalid"
-	// ErrBundleTotalRangeInvalid 整单件数区间自相矛盾（最大 < 最小，或低于必选项最小量之和）。
-	ErrBundleTotalRangeInvalid = "ErrBundleTotalRangeInvalid"
-	// ErrBundleTotalUnreachable 整单下限高于所有选项能加到的上限（永远无法满足）。
-	ErrBundleTotalUnreachable = "ErrBundleTotalUnreachable"
-
-	// ErrBundleOptionRequired 漏填必选项。
-	ErrBundleOptionRequired = "ErrBundleOptionRequired"
-	// ErrBundleQtyBelowMin 单项数量低于该项最小数量。
-	ErrBundleQtyBelowMin = "ErrBundleQtyBelowMin"
-	// ErrBundleQtyAboveMax 单项数量超过该项最大数量。
-	ErrBundleQtyAboveMax = "ErrBundleQtyAboveMax"
-	// ErrBundleTotalBelowMin 整单总件数低于最小总件数。
-	ErrBundleTotalBelowMin = "ErrBundleTotalBelowMin"
-	// ErrBundleTotalAboveMax 整单总件数超过最大总件数。
-	ErrBundleTotalAboveMax = "ErrBundleTotalAboveMax"
-
-	// ErrBundleQtyAboveStock 数量超过库存可用量（只读库房真源得出的结论）。
-	ErrBundleQtyAboveStock = "ErrBundleQtyAboveStock"
-	// ErrBundleStockUnavailable 读不到库存可用量（inventory 端口未注入）：整单校验 fail-closed。
-	ErrBundleStockUnavailable = "ErrBundleStockUnavailable"
-)
-
-// 捆绑成员的三种来源（docs/14 §1.2，批次 C）。
-//
-// 成员引用的**永远是变体**（inventory_stocks.variant_id 是 NOT NULL，
-// 所以「从仓库选」一定能定位到变体；刻意不造「无变体的成员」）。
-// 来源只是**溯源与展示**，不是身份：身份恒为 variantId。
-//
-// 三种来源都走同一条出口（ResolveBundleMembers）：去重、单条失败不整批失败、
-// 组合由服务端重算（不信任前端提交的行）。
-const (
-	// BundleSourceProduct 从商品导入：选中一个商品 → 其全部启用变体一次导入为成员。
-	BundleSourceProduct = "BundleSourceProduct"
-	// BundleSourceWarehouse 从仓库选：按仓列出仓库 SKU，选中即定位到该仓那条货的变体。
-	BundleSourceWarehouse = "BundleSourceWarehouse"
-	// BundleSourceAttributes 自选属性值笛卡尔积：服务端按属性组固定顺序重算组合，
-	// 只接受「商品侧确实存在对应变体」的组合。
-	BundleSourceAttributes = "BundleSourceAttributes"
-)
-
-// 捆绑成员来源解析的业务错误与逐条跳过原因（常量值即 i18n key）。
-//
-// 跳过原因是「这一条没加进来」，不是「整批失败」—— 与变体清单的 VariantSkip* 同一口径：
-// 一条失败不能把整批回滚（运营会以为「一条都没加」然后反复重试）。
-const (
-	// ErrBundleSourceInvalid 来源标识不合法（不是 product / warehouse / attributes）。
-	ErrBundleSourceInvalid = "ErrBundleSourceInvalid"
-	// ErrBundleSourceProductRequired 该来源必须先选一个来源商品。
-	ErrBundleSourceProductRequired = "ErrBundleSourceProductRequired"
-	// ErrBundleSourceWarehouseRequired 从仓库选时必须指定仓库并至少给一条仓库 SKU。
-	ErrBundleSourceWarehouseRequired = "ErrBundleSourceWarehouseRequired"
-
-	// BundleMemberNotOnProduct 该属性值组合在商品侧**没有对应变体** ——
-	// 明确拒绝并在结果里逐条列出（提示先到商品上生成该规格的变体），绝不静默丢弃、
-	// 也不造无变体成员（成员的身份恒为 variantId）。
-	BundleMemberNotOnProduct = "BundleMemberNotOnProduct"
-	// BundleMemberSkippedInList 该变体已经在成员清单里（同一变体只出现一次）。
-	BundleMemberSkippedInList = "BundleMemberSkippedInList"
-	// BundleMemberWarehouseSKUMissing 该仓没有这条仓库 SKU（库存行不存在）。
-	BundleMemberWarehouseSKUMissing = "BundleMemberWarehouseSKUMissing"
-	// BundleMemberVariantDisabled 该变体已停用（停用的 SKU 挂进套餐会变成
-	// 前台「选不了又躲不开」的必选项，与 ListBundleSKUs 只列启用变体同一口径）。
-	BundleMemberVariantDisabled = "BundleMemberVariantDisabled"
-	// BundleMemberOptionsExceeded 加到配置的选项数量上限了（其余候选逐条列出，不静默截断）。
-	BundleMemberOptionsExceeded = "BundleMemberOptionsExceeded"
-)
-
 // --- 批量操作的结论文案（页面回执，不是错误白名单）---
 //
 // 与 admin / order 的 Bulk* 同口径：值 = sys_i18n 的 item_key，**不带 Err / Msg 前缀**。
@@ -448,97 +327,69 @@ const (
 // 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
 // 对账由 internal/architecture 的 error_fallback_ownership_test.go 双向守。
 var errFallbacks = map[string]string{
-	ErrInvalidParam:                  "请求参数无效",
-	ErrBulkRejected:                  "这一批里有不允许的操作，整批未生效：请检查标出的项目后重试",
-	ErrInvalidType:                   "不支持的内容类型",
-	ErrInvalidField:                  "内容字段不在白名单",
-	ErrNotFound:                      "请求资源不存在",
-	ErrSlugTaken:                     "同类型下 slug 已存在",
-	ErrSkuTaken:                      "同商品下 SKU 编码已占用，请换一个",
-	ErrVariantHasStock:               "该变体仍有库存，不能删除；请改为停用",
-	ErrNameRequired:                  "商品名称必填",
-	ErrCommentPurchaseRequired:       "购买过该商品才能发表评论",
-	ErrMissingProjectContext:         "构建期拿不到工程上下文，无法读取实体字段（属装配缺陷，请联系管理员）",
-	ErrRelatedInvalid:                "相关商品引用不合法：引用的商品必须存在、属于本工程，且不能指向自己",
-	ErrAttrNameRequired:              "属性组名称必填",
-	ErrAttrKeyRequired:               "属性组标识不能改为空",
-	ErrAttrKeyTaken:                  "同工程下属性组标识已占用，请换一个",
-	ErrAttrNotFound:                  "属性组不存在",
-	ErrAttrProjectMismatch:           "该属性组不属于这个商品所在的工程",
-	ErrAttrInUse:                     "属性组已被商品引用，不能删除",
-	ErrAttrValueLabelMissing:         "属性值名称必填",
-	ErrCategoryNameRequired:          "分类名称必填",
-	ErrCategoryNotFound:              "分类不存在",
-	ErrCategorySlugTaken:             "同工程下分类 slug 已占用，请换一个",
-	ErrCategoryParentMismatch:        "父分类不属于该分类所在的工程",
-	ErrCategoryCycle:                 "不能把分类挂到自身或自己的下级分类下",
-	ErrCategoryHasChildren:           "该分类下仍有子分类，不能删除",
-	ErrCategoryInUse:                 "分类已被商品引用，不能删除",
-	ErrCategoryProjectMismatch:       "该分类不属于这个商品所在的工程",
-	ErrBrandNameRequired:             "品牌名称必填",
-	ErrBrandNotFound:                 "品牌不存在",
-	ErrBrandSlugTaken:                "同工程下品牌 slug 已占用，请换一个",
-	ErrBrandInUse:                    "品牌已被商品引用，不能删除",
-	ErrBrandProjectMismatch:          "该品牌不属于这个商品所在的工程",
-	ErrTagNameRequired:               "标签名称必填",
-	ErrTagNotFound:                   "标签不存在",
-	ErrTagSlugTaken:                  "同工程下标签 slug 已占用，请换一个",
-	ErrTagProjectMismatch:            "该标签不属于这个商品所在的工程",
-	ErrTagCrossProject:               "标签仍被其它工程的商品引用，不能删除",
-	ErrTagKindInvalid:                "标签类型只支持 manual（手工）或 rule（自动）",
-	ErrTagRuleNotAllowed:             "手工标签不能携带自动规则",
-	ErrTagRuleTypeInvalid:            "规则类型不是内置类型，不支持自定义表达式",
-	ErrTagRuleParamsInvalid:          "规则参数不合法：键、类型或取值范围有问题",
-	ErrTagNotManual:                  "自动标签的归属由规则重算维护，不能手工挂载",
-	ErrCollectionSourceInvalid:       "集合源标识不合法：不是本模块提供的集合源",
-	ErrCollectionFilterInvalid:       "过滤维度不在该集合源允许的范围内",
-	ErrVariationNoDimension:          "没有可用于生成变体的属性值，请先为商品填好属性",
-	ErrVariationDimensionLimit:       "参与变体的属性维度超过上限，请减少参与生成变体的属性组",
-	ErrVariationCountLimit:           "生成的变体组合数超过上限，请减少属性值或维度",
-	ErrVariationAttributeInvalid:     "勾选的属性组没有参与该商品的变体，不能用于生成",
-	ErrVariationValueInvalid:         "勾选的属性值不属于该属性组，或已被停用",
-	ErrVariationSelectionEmpty:       "未勾选任何属性值",
-	ErrVariantSKUEmpty:               "变体的 SKU 编码不能为空：请填写一个编码（或改回系统生成的编码）",
-	ErrVariantOptionsInvalid:         "变体的规格组合不合法：属性组或属性值不属于该商品",
-	ErrSkuContainerMissing:           "SKU 编码无法生成：商品 URL 段不含 ASCII 字符，请显式填写 SKU 编码",
-	ErrContainerSkuInvalid:           "主体 SKU 不合法：必须是非空字符串",
-	ErrBundleSKURequired:             "捆绑商品必须填写主体 SKU 编码（新建抽屉已给出建议值，可直接修改）",
-	ErrContainerSKUTaken:             "该主体 SKU 在本工程已被其它商品占用（主体编码在工程内唯一）",
-	ErrPricingRuleTypeInvalid:        "定价规则类型不是内置类型",
-	ErrPricingRuleParamsInvalid:      "定价规则参数不合法：未知键、类型不符或取值越界",
-	ErrPricingRoundingInvalid:        "尾数处理方式不是内置类型",
-	ErrPricingScopeInvalid:           "作用范围不是内置类型",
-	ErrPricingTargetRequired:         "该作用范围需要指定目标：单个 SKU 或单个商品必须给出目标 id",
-	ErrPricingTargetNotFound:         "定价目标（SKU 或商品）不存在",
-	ErrPricingFilterEmpty:            "筛选没有命中任何商品，为避免全表改价已中止",
-	ErrPricingNothingChanged:         "没有任何变体的价格需要改动，未写库也未留痕",
-	ErrPricingAdjustmentNotFound:     "调价批次不存在",
-	ErrPricingTargetTooMany:          "筛选命中的商品数超过单批上限，请缩小范围后重试",
-	ErrProductTypeInvalid:            "商品类型不合法（仅支持变体商品或捆绑商品）",
-	ErrProductTypeImmutable:          "商品类型在创建后不可更改",
-	ErrBundlePriceRequired:           "捆绑商品必须自定价：容器价需大于 0",
-	ErrBundleShapeInvalid:            "捆绑配置格式非法：既不是空值，也不是 JSON 对象",
-	ErrBundleNotConfigured:           "该商品没有配置捆绑选项（不是捆绑品）",
-	ErrBundleMaxOptionsInvalid:       "选项数量上限超出允许范围（1 到 20）",
-	ErrBundleOptionsExceeded:         "配置的选项数超过上限",
-	ErrBundleVariantRequired:         "选项缺少 SKU",
-	ErrBundleVariantDuplicated:       "同一个 SKU 在配置里或同一次选择里出现了多次",
-	ErrBundleVariantNotFound:         "选项引用的 SKU 不存在，可能已被删除",
-	ErrBundleVariantProjectMismatch:  "选项引用的 SKU 不属于该商品所在的工程",
-	ErrBundleSelfReference:           "选项引用了捆绑主体自己的 SKU",
-	ErrBundleVariantNotInConfig:      "选择里出现了配置之外的 SKU",
-	ErrBundleQtyInvalid:              "数量非法：不能为负数或小数，也不能超过硬上限",
-	ErrBundleQtyRangeInvalid:         "单项数量区间自相矛盾：最小数量大于默认数量，或最大数量小于最小数量",
-	ErrBundleTotalRangeInvalid:       "整单件数区间自相矛盾：最大件数小于最小件数，或低于必选项最小量之和",
-	ErrBundleTotalUnreachable:        "整单最小件数高于所有选项能加到的最大件数，永远无法满足",
-	ErrBundleOptionRequired:          "有必选项没有选择数量",
-	ErrBundleQtyBelowMin:             "单项数量低于该项最小数量",
-	ErrBundleQtyAboveMax:             "单项数量超过该项最大数量",
-	ErrBundleTotalBelowMin:           "整单总件数低于最小总件数",
-	ErrBundleTotalAboveMax:           "整单总件数超过最大总件数",
-	ErrBundleQtyAboveStock:           "数量超过库存可用量",
-	ErrBundleStockUnavailable:        "读不到库存可用量，暂时无法校验整单",
-	ErrBundleSourceInvalid:           "成员来源不合法：只支持「从商品导入」「从仓库选」「自选属性值组合」",
-	ErrBundleSourceProductRequired:   "该来源必须先选一个来源商品",
-	ErrBundleSourceWarehouseRequired: "从仓库选时必须指定仓库并至少勾选一条仓库 SKU",
+	ErrInvalidParam:              "请求参数无效",
+	ErrBulkRejected:              "这一批里有不允许的操作，整批未生效：请检查标出的项目后重试",
+	ErrInvalidType:               "不支持的内容类型",
+	ErrInvalidField:              "内容字段不在白名单",
+	ErrNotFound:                  "请求资源不存在",
+	ErrSlugTaken:                 "同类型下 slug 已存在",
+	ErrSkuTaken:                  "同商品下 SKU 编码已占用，请换一个",
+	ErrVariantHasStock:           "该变体仍有库存，不能删除；请改为停用",
+	ErrNameRequired:              "商品名称必填",
+	ErrCommentPurchaseRequired:   "购买过该商品才能发表评论",
+	ErrMissingProjectContext:     "构建期拿不到工程上下文，无法读取实体字段（属装配缺陷，请联系管理员）",
+	ErrRelatedInvalid:            "相关商品引用不合法：引用的商品必须存在、属于本工程，且不能指向自己",
+	ErrAttrNameRequired:          "属性组名称必填",
+	ErrAttrKeyRequired:           "属性组标识不能改为空",
+	ErrAttrKeyTaken:              "同工程下属性组标识已占用，请换一个",
+	ErrAttrNotFound:              "属性组不存在",
+	ErrAttrProjectMismatch:       "该属性组不属于这个商品所在的工程",
+	ErrAttrInUse:                 "属性组已被商品引用，不能删除",
+	ErrAttrValueLabelMissing:     "属性值名称必填",
+	ErrCategoryNameRequired:      "分类名称必填",
+	ErrCategoryNotFound:          "分类不存在",
+	ErrCategorySlugTaken:         "同工程下分类 slug 已占用，请换一个",
+	ErrCategoryParentMismatch:    "父分类不属于该分类所在的工程",
+	ErrCategoryCycle:             "不能把分类挂到自身或自己的下级分类下",
+	ErrCategoryHasChildren:       "该分类下仍有子分类，不能删除",
+	ErrCategoryInUse:             "分类已被商品引用，不能删除",
+	ErrCategoryProjectMismatch:   "该分类不属于这个商品所在的工程",
+	ErrBrandNameRequired:         "品牌名称必填",
+	ErrBrandNotFound:             "品牌不存在",
+	ErrBrandSlugTaken:            "同工程下品牌 slug 已占用，请换一个",
+	ErrBrandInUse:                "品牌已被商品引用，不能删除",
+	ErrBrandProjectMismatch:      "该品牌不属于这个商品所在的工程",
+	ErrTagNameRequired:           "标签名称必填",
+	ErrTagNotFound:               "标签不存在",
+	ErrTagSlugTaken:              "同工程下标签 slug 已占用，请换一个",
+	ErrTagProjectMismatch:        "该标签不属于这个商品所在的工程",
+	ErrTagCrossProject:           "标签仍被其它工程的商品引用，不能删除",
+	ErrTagKindInvalid:            "标签类型只支持 manual（手工）或 rule（自动）",
+	ErrTagRuleNotAllowed:         "手工标签不能携带自动规则",
+	ErrTagRuleTypeInvalid:        "规则类型不是内置类型，不支持自定义表达式",
+	ErrTagRuleParamsInvalid:      "规则参数不合法：键、类型或取值范围有问题",
+	ErrTagNotManual:              "自动标签的归属由规则重算维护，不能手工挂载",
+	ErrCollectionSourceInvalid:   "集合源标识不合法：不是本模块提供的集合源",
+	ErrCollectionFilterInvalid:   "过滤维度不在该集合源允许的范围内",
+	ErrVariationNoDimension:      "没有可用于生成变体的属性值，请先为商品填好属性",
+	ErrVariationDimensionLimit:   "参与变体的属性维度超过上限，请减少参与生成变体的属性组",
+	ErrVariationCountLimit:       "生成的变体组合数超过上限，请减少属性值或维度",
+	ErrVariationAttributeInvalid: "勾选的属性组没有参与该商品的变体，不能用于生成",
+	ErrVariationValueInvalid:     "勾选的属性值不属于该属性组，或已被停用",
+	ErrVariationSelectionEmpty:   "未勾选任何属性值",
+	ErrVariantSKUEmpty:           "变体的 SKU 编码不能为空：请填写一个编码（或改回系统生成的编码）",
+	ErrVariantOptionsInvalid:     "变体的规格组合不合法：属性组或属性值不属于该商品",
+	ErrSkuContainerMissing:       "SKU 编码无法生成：商品 URL 段不含 ASCII 字符，请显式填写 SKU 编码",
+	ErrContainerSkuInvalid:       "主体 SKU 不合法：必须是非空字符串",
+	ErrContainerSKUTaken:         "该主体 SKU 在本工程已被其它商品占用（主体编码在工程内唯一）",
+	ErrPricingRuleTypeInvalid:    "定价规则类型不是内置类型",
+	ErrPricingRuleParamsInvalid:  "定价规则参数不合法：未知键、类型不符或取值越界",
+	ErrPricingRoundingInvalid:    "尾数处理方式不是内置类型",
+	ErrPricingScopeInvalid:       "作用范围不是内置类型",
+	ErrPricingTargetRequired:     "该作用范围需要指定目标：单个 SKU 或单个商品必须给出目标 id",
+	ErrPricingTargetNotFound:     "定价目标（SKU 或商品）不存在",
+	ErrPricingFilterEmpty:        "筛选没有命中任何商品，为避免全表改价已中止",
+	ErrPricingNothingChanged:     "没有任何变体的价格需要改动，未写库也未留痕",
+	ErrPricingAdjustmentNotFound: "调价批次不存在",
+	ErrPricingTargetTooMany:      "筛选命中的商品数超过单批上限，请缩小范围后重试",
 }

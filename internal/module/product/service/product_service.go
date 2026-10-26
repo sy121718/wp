@@ -58,7 +58,7 @@ type Service struct {
 	invSvc inventorycontract.ProductStockPort
 	// availability 库存真源可用量端口（issue #20，由 inventory 模块实现）。
 	// 捆绑品的数量上限与整单下限都受可用量约束，且只看真源、绝不读展示缓存；
-	// 未注入时整单校验 fail-closed（返回 ErrBundleStockUnavailable），不按「无限制」放行。
+	// 未注入时 fail-closed（按不可用处理），不按「无限制」放行。
 	availability productcontract.VariantAvailabilityPort
 	// changes 主数据变更记录端口（issue #19，由 masterdata 模块实现）。
 	// 商品 / 变体的关键字段变更经它留痕（append-only）；

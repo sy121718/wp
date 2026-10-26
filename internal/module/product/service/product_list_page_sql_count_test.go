@@ -165,8 +165,8 @@ func (p *sqlCountProbe) dump() string {
 func seedListProduct(t *testing.T, db *gorm.DB, projectID string, seq int) string {
 	t.Helper()
 	id := uuid.NewString()
-	if err := db.Exec(`INSERT INTO products (id, project_id, name, slug, sku_code, status, type, sort, create_time, update_time)
-		VALUES (?, ?, ?, ?, ?, 'published', 'variant', ?, now(), now())`,
+	if err := db.Exec(`INSERT INTO products (id, project_id, name, slug, sku_code, status, sort, create_time, update_time)
+		VALUES (?, ?, ?, ?, ?, 'published', ?, now(), now())`,
 		id, projectID, fmt.Sprintf("商品 %03d", seq), fmt.Sprintf("p-%03d", seq),
 		fmt.Sprintf("SKU-%03d", seq), seq).Error; err != nil {
 		t.Fatalf("插入商品失败：%v", err)
@@ -186,13 +186,13 @@ func seedListProductsBulk(t *testing.T, db *gorm.DB, projectID string, from, to 
 			end = to
 		}
 		var sb strings.Builder
-		sb.WriteString(`INSERT INTO products (id, project_id, name, slug, sku_code, status, type, sort, create_time, update_time) VALUES `)
+		sb.WriteString(`INSERT INTO products (id, project_id, name, slug, sku_code, status, sort, create_time, update_time) VALUES `)
 		args := make([]any, 0, (end-start+1)*6)
 		for seq := start; seq <= end; seq++ {
 			if seq > start {
 				sb.WriteString(", ")
 			}
-			sb.WriteString("(?, ?, ?, ?, ?, 'published', 'variant', ?, now(), now())")
+			sb.WriteString("(?, ?, ?, ?, ?, 'published', ?, now(), now())")
 			args = append(args, uuid.NewString(), projectID,
 				fmt.Sprintf("商品 %03d", seq), fmt.Sprintf("p-%03d", seq),
 				fmt.Sprintf("SKU-%03d", seq), seq)

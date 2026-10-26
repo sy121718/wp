@@ -25,8 +25,6 @@ VALUES
 ('ErrWarehouseSKUNotFound', 'en-US', 'No such warehouse SKU in this warehouse: check the warehouse, or create its stock row first', 400, 'inventory', 'internal/module/product/inventory/enums', 1, now(), now()),
 ('ErrWarehouseSKURequired', 'zh-CN', '从仓库选 SKU 时必须先选仓库并指明该仓的那条仓库 SKU', 400, 'inventory', 'internal/module/product/inventory/enums', 1, now(), now()),
 ('ErrWarehouseSKURequired', 'en-US', 'Picking an SKU from a warehouse requires both a warehouse and one of its warehouse SKUs', 400, 'inventory', 'internal/module/product/inventory/enums', 1, now(), now()),
-('ErrWarehouseSKUBundleNotAllowed', 'zh-CN', '捆绑商品不存在于仓库，不能用「从仓库选」建主体 SKU，请改用自己的编码', 400, 'inventory', 'internal/module/product/inventory/enums', 1, now(), now()),
-('ErrWarehouseSKUBundleNotAllowed', 'en-US', 'Bundles do not exist in a warehouse, so "pick from warehouse" cannot be used; enter your own container SKU', 400, 'inventory', 'internal/module/product/inventory/enums', 1, now(), now()),
 ('ErrWarehouseSKUCodeTaken', 'zh-CN', '该仓已有同一条 SKU 编码的库存行（我们自己的 SKU 在仓内唯一），请改用另一个仓库或另一个仓库 SKU', 400, 'inventory', 'internal/module/product/inventory/enums', 1, now(), now()),
 ('ErrWarehouseSKUCodeTaken', 'en-US', 'This warehouse already has a stock row with the same SKU code (our SKUs are unique per warehouse); pick another warehouse or warehouse SKU', 400, 'inventory', 'internal/module/product/inventory/enums', 1, now(), now()),
 ('ErrSKUSourceInvalid', 'zh-CN', 'SKU 来源取值不合法：只支持「自己创建」与「从仓库选」', 400, 'inventory', 'internal/module/product/inventory/enums', 1, now(), now()),

@@ -139,7 +139,7 @@
     });
 
     // rows 由清单 DOM 组装（不是表单控件），基座收不到 —— 用它的 builder 逃生舱补上。
-    // 组装规则只有一份：两个基座并存期间各注册一次（见 ui/product_bundle_write.js 的同一段注释）。
+    // 组装规则只有一份：两个基座并存期间各注册一次（见 ui/write-base.js 的 registerPayloadBuilder）。
     function variantRowsBuilder(form, submitter, payload) {
         payload.rows = variantRows();
         return payload;

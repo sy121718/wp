@@ -160,21 +160,6 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if err != nil {
 		return nil, err
 	}
-	// 捆绑配置形状规范化（issue #20）：空 / [] → 空配置对象；形状不对即拒绝。
-	// 语义校验（必选 / 上下限 / 整单件数）走 SetBundleConfig 专用入口，这里只保证形状合法。
-	bundleItems, berr := normalizeBundleItems(req.BundleItems)
-	if berr != nil {
-		return nil, berr
-	}
-	productType, terr := normalizeProductType(req.Type)
-	if terr != nil {
-		return nil, terr
-	}
-	// 捆绑容器必须自定价：成员价不参与计价，容器价为空就是「0 元套餐」——
-	// 列表与详情会显示 0.00，前台无从判断这是免费还是没配。
-	if productType == productmodel.TypeBundle && (req.DefaultPrice == nil || *req.DefaultPrice <= 0) {
-		return nil, productenums.Err(productenums.ErrBundlePriceRequired)
-	}
 	// 「跟踪数量」开关与数量框的同组绑定（原 dto.TrackedQuantity 的语义，页面迁到 JSON 写基座后
 	// 归一到 service）：勾了跟踪却还没填数量 = 明确 0（没货），与「压根不跟踪 = 无限」是两件事。
 	// JSON 里这两种都是 quantity 缺失，区别只在开关上 —— 前端不做业务归一，所以必须在这里补。
@@ -193,23 +178,15 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	if serr != nil {
 		return nil, serr
 	}
-	// 捆绑商品不存在于仓库：它的主体 SKU 一律自定义，「从仓库选」对它不成立。
-	// 前端已把该入口对 bundle 隐去，服务端仍硬拒 —— 前端只是便捷入口。
-	if productType == productmodel.TypeBundle && skuSource == skuSourceWarehouse {
-		return nil, inventoryenums.Err(inventoryenums.ErrWarehouseSKUBundleNotAllowed)
-	}
-	// 容器主体 SKU 的正式输入通道（规则 A / B）：运营在新建抽屉里填的编码走
-	// CreateReq.SKUCode（json:"sku"）。变体商品留空即派生 —— 取商品 URL 段的 ASCII 段
-	// （选了仓再加仓码前缀），派生不出 ASCII 段时明确报错、不退回随机码；
-	// **捆绑商品留空即拒绝**（ErrBundleSKURequired，2026-09-19 用户拍板）—— 主体编码是它的
-	// 对外身份，必须由运营看见并确认，抽屉负责预填建议值。metadata 原样落库：
-	// 主体编码只留一份真源，就在 products.sku_code。
+	// 容器主体 SKU 的正式输入通道（规则 A）：运营在新建抽屉里填的编码走
+	// CreateReq.SKUCode（json:"sku"）。留空即派生 —— 取商品 URL 段的 ASCII 段
+	// （选了仓再加仓码前缀），派生不出 ASCII 段时明确报错、不退回随机码。
+	// metadata 原样落库：主体编码只留一份真源，就在 products.sku_code。
 	customSKU := strings.TrimSpace(req.SKUCode)
 	metadata := orJSON(req.Metadata, "{}")
 	e := &productmodel.ProductEntity{
 		ID: productID, ProjectID: projectID,
 		Name: strings.TrimSpace(req.Name), Subtitle: req.Subtitle,
-		Type:        productType,
 		Description: orJSON(req.Description, "{}"), Slug: slug,
 		Status: productenums.StatusDraft,
 		Unit:   req.Unit, Weight: req.Weight,
@@ -220,137 +197,98 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		PrimaryCategoryID: primaryCategoryID,
 		BrandID:           brandID,
 		TagIDs:            orIDList(tagIDs), RelatedIDs: orIDList(relatedIDs),
-		BundleItems: bundleItems,
 
 		DefaultImage: mediaURL(req.DefaultImage),
 		DefaultPrice: req.DefaultPrice,
 		Metadata:     metadata,
 		CreatedAt:    now, UpdatedAt: now,
 	}
-	if productType == productmodel.TypeBundle {
-		// 规则 B：捆绑容器主体 SKU 由运营自定义、恒以 _B 结尾（缺后缀补齐）；
-		// **没填即拒绝**（ErrBundleSKURequired）—— 抽屉已预填建议值，留空等于运营
-		// 既没看见也没确认这个编码。不再按 URL 段静默派生。
-		if e.SKUCode, err = buildProductContainerSKU(containerSKUInput{
-			ProductType: productmodel.TypeBundle, Custom: customSKU,
-		}); err != nil {
-			return nil, err
+	// 归属仓与多仓（issue #15 / 2026-09-19 口径）：勾了哪些仓就在哪些仓各建一行。
+	// **认领仓** = 显式指定的第一个仓（未指定则默认仓），只有它决定主体 SKU 的仓码前缀。
+	// 解析失败（如工程内没有默认仓 / 某个仓已停用）时整体失败 —— 先解析再落库，
+	// 不留「有商品没库存记录」的半截状态。
+	refs, werr := s.resolveWarehouseTargets(ctx, projectID, req.WarehouseIDs, req.WarehouseID)
+	if werr != nil {
+		return nil, werr
+	}
+	claim := claimWarehouse(refs)
+	// 规则 A：容器主体 SKU 落到 products.sku_code（迁移 246），是商品的**身份编码**。
+	// ① 从仓库选：<认领仓短码大写>_<仓库里那条 SKU 原样>；② 自己创建：编码原样 + 认领仓仓码前缀。
+	// 没填则按商品 URL 段派生（确定性，不退回随机码）。
+	//
+	// 「从仓库选」的编码**不取前端提交的 sku**：前端提交的仓库编码只是线索，落库前一律在
+	// 该仓复核一遍（GetWarehouseSKU）—— 服务端不信任前端，见 docs/14 §9.3。
+	skuInput := customSKU
+	externalSKU := ""
+	if skuSource == skuSourceWarehouse {
+		// 复核发生在**认领仓**：主体 SKU 的前缀、以及「那条货确实存在」的判定都取自它。
+		picked, perr := s.pickWarehouseSKU(ctx, projectID, claim, req.WarehouseSKU)
+		if perr != nil {
+			return nil, perr
 		}
-		// 主体 SKU 唯一性**预检**（工程内唯一，迁移 246 的偏唯一索引）：先给可读的业务错误，
-		// 不让 23505 的索引名铺到页面上（CQ-009）；落库侧仍有兜底映射（mapContainerSKUConflict）。
-		if err = s.ensureContainerSKUFree(ctx, projectID, e.SKUCode, ""); err != nil {
-			return nil, err
-		}
-		// 捆绑容器不分销自己的 SKU：不生成首个变体、不建库存记录（它的库存由成员变体
-		// 按 BOM 扣减，见 inventory_bom_items），也不产生变体那条变更记录。
-		// 本分支只有两处写入（商品 + 变更记录），同样包进一个事务：留下「有商品没留痕」
-		// 或反过来的半截状态，事后只能靠对账发现。
-		if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-			if serr := rls.ScopeTx(tx, projectID); serr != nil {
-				return serr
-			}
-			if xerr := s.m.CreateWithVariantsTx(ctx, tx, e, nil); xerr != nil {
-				return mapContainerSKUConflict(xerr)
-			}
-			// 静态产物失效事件与商品行**同事务**（审计 ARCH-01）：回滚即无事件，
-			// 提交后由消费者扇出 direct_content + content_collection 两类键。
-			if xerr := s.enqueueProductInvalidationTx(ctx, tx, projectID, e.ID); xerr != nil {
-				return xerr
-			}
-			return s.recordChangesTx(ctx, tx, productChangeInput(e, masterdataenums.ActionCreate,
-				masterdataenums.OriginProduct, req.OperatorID, nil, productChangeSnapshot(e)))
-		}); err != nil {
-			return nil, err
-		}
+		skuInput = stripWarehousePrefix(picked.SKUCode, picked.WarehouseCode)
+		// 外部编码：显式填的优先；否则带入那条货登记的编码，再否则就是它自己的 SKU ——
+		// 「从仓库选」这条来路本身就是在建立「我们的商品 ↔ 那条货」的映射（docs/14 §9.3）。
+		externalSKU = firstNonEmpty(req.ExternalSKU, picked.ExternalSKU, skuInput)
 	} else {
-		// 归属仓与多仓（issue #15 / 2026-09-19 口径）：勾了哪些仓就在哪些仓各建一行。
-		// **认领仓** = 显式指定的第一个仓（未指定则默认仓），只有它决定主体 SKU 的仓码前缀。
-		// 解析失败（如工程内没有默认仓 / 某个仓已停用）时整体失败 —— 先解析再落库，
-		// 不留「有商品没库存记录」的半截状态。
-		refs, werr := s.resolveWarehouseTargets(ctx, projectID, req.WarehouseIDs, req.WarehouseID)
-		if werr != nil {
-			return nil, werr
+		// 自己创建 + 回填：只在运营显式填了外码时才写（§9.3 的另一条来路），
+		// 不替他猜一个 —— 空串是合法状态（该仓用我们自己的 SKU）。
+		externalSKU = strings.TrimSpace(req.ExternalSKU)
+	}
+	// 容器主体 SKU 的唯一入口：**认领仓**的短码参与前缀。
+	if e.SKUCode, werr = buildProductContainerSKU(containerSKUInput{
+		Slug: slug, Custom: skuInput, WarehouseCode: refCode(claim),
+	}); werr != nil {
+		return nil, werr
+	}
+	if s.invSvc == nil {
+		if externalSKU != "" {
+			return nil, inventoryenums.Err(inventoryenums.ErrStockWarehouseNeeded)
 		}
-		claim := claimWarehouse(refs)
-		// 规则 A：容器主体 SKU 落到 products.sku_code（迁移 246），是商品的**身份编码**。
-		// ① 从仓库选：<认领仓短码大写>_<仓库里那条 SKU 原样>；② 自己创建：编码原样 + 认领仓仓码前缀。
-		// 没填则按商品 URL 段派生（确定性，不退回随机码）。
-		//
-		// 「从仓库选」的编码**不取前端提交的 sku**：前端提交的仓库编码只是线索，落库前一律在
-		// 该仓复核一遍（GetWarehouseSKU）—— 服务端不信任前端，见 docs/14 §9.3。
-		skuInput := customSKU
-		externalSKU := ""
-		if skuSource == skuSourceWarehouse {
-			// 复核发生在**认领仓**：主体 SKU 的前缀、以及「那条货确实存在」的判定都取自它。
-			picked, perr := s.pickWarehouseSKU(ctx, projectID, claim, req.WarehouseSKU)
-			if perr != nil {
-				return nil, perr
-			}
-			skuInput = stripWarehousePrefix(picked.SKUCode, picked.WarehouseCode)
-			// 外部编码：显式填的优先；否则带入那条货登记的编码，再否则就是它自己的 SKU ——
-			// 「从仓库选」这条来路本身就是在建立「我们的商品 ↔ 那条货」的映射（docs/14 §9.3）。
-			externalSKU = firstNonEmpty(req.ExternalSKU, picked.ExternalSKU, skuInput)
-		} else {
-			// 自己创建 + 回填：只在运营显式填了外码时才写（§9.3 的另一条来路），
-			// 不替他猜一个 —— 空串是合法状态（该仓用我们自己的 SKU）。
-			externalSKU = strings.TrimSpace(req.ExternalSKU)
+	} else if externalSKU, werr = s.invSvc.NormalizeExternalSKU(externalSKU); werr != nil {
+		return nil, werr
+	}
+	// 主体 SKU 唯一性**预检**（工程内唯一，迁移 246 的偏唯一索引 uq_products_project_sku_code）：
+	// 先给出可读的业务错误；落库侧仍有兜底映射（mapContainerSKUConflict），两处都不把
+	// 23505 的索引名铺到页面上（CQ-009 的实测缺陷：编辑路径曾把 uq_products_project_sku_code 吐出去）。
+	if werr = s.ensureContainerSKUFree(ctx, projectID, e.SKUCode, ""); werr != nil {
+		return nil, werr
+	}
+	// 首个变体：由商品级默认值填充（新增路径）—— 无规格变体就是容器主体本身，
+	// 因此它的 SKU 与 e.SKUCode 相同；后续组合生成的变体 SKU 都以该主体拼接
+	// （见 product_variant.go）。
+	v, verr := s.newVariantFromDefaults(ctx, e, nil, refCode(claim), nil)
+	if verr != nil {
+		return nil, verr
+	}
+	// 一次商品创建 = 一个事务：商品 + 首个变体 + 各仓库存行 + 变更记录。
+	// 任一步失败整体回滚 —— 「有商品没库存行」这种半截状态只能靠人工对账发现（AGENTS.md「写操作的事务与回滚」）。
+	if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		if serr := rls.ScopeTx(tx, projectID); serr != nil {
+			return serr
 		}
-		// 容器主体 SKU 的唯一入口：类型是 variant，**认领仓**的短码参与前缀。
-		if e.SKUCode, werr = buildProductContainerSKU(containerSKUInput{
-			ProductType: productmodel.TypeVariant, Slug: slug,
-			Custom: skuInput, WarehouseCode: refCode(claim),
-		}); werr != nil {
-			return nil, werr
+		if xerr := s.m.CreateWithVariantsTx(ctx, tx, e, []*productmodel.VariantEntity{v}); xerr != nil {
+			return mapContainerSKUConflict(xerr)
 		}
-		if s.invSvc == nil {
-			if externalSKU != "" {
-				return nil, inventoryenums.Err(inventoryenums.ErrStockWarehouseNeeded)
-			}
-		} else if externalSKU, werr = s.invSvc.NormalizeExternalSKU(externalSKU); werr != nil {
-			return nil, werr
+		// 创建即入库：勾选的每个仓各一行（裸码；该仓已有同裸码的行则复用不新建）。
+		// external_sku 写在**认领仓**那一次（外码是「这条货在该仓的名字」，其余仓不猜）。
+		if xerr := s.createStockRowsTx(ctx, tx, refs, e.ID, v.ID, v.SKUCode, externalSKU, req.Quantity); xerr != nil {
+			return xerr
 		}
-		// 主体 SKU 唯一性**预检**（工程内唯一，迁移 246 的偏唯一索引 uq_products_project_sku_code）：
-		// 先给出可读的业务错误；落库侧仍有兜底映射（mapContainerSKUConflict），两处都不把
-		// 23505 的索引名铺到页面上（CQ-009 的实测缺陷：编辑路径曾把 uq_products_project_sku_code 吐出去）。
-		if werr = s.ensureContainerSKUFree(ctx, projectID, e.SKUCode, ""); werr != nil {
-			return nil, werr
+		// 静态产物失效事件与商品行**同事务**（审计 ARCH-01）。
+		if xerr := s.enqueueProductInvalidationTx(ctx, tx, projectID, e.ID); xerr != nil {
+			return xerr
 		}
-		// 首个变体：由商品级默认值填充（新增路径）—— 无规格变体就是容器主体本身，
-		// 因此它的 SKU 与 e.SKUCode 相同；后续组合生成的变体 SKU 都以该主体拼接
-		// （见 product_variant.go）。
-		v, verr := s.newVariantFromDefaults(ctx, e, nil, refCode(claim), nil)
-		if verr != nil {
-			return nil, verr
-		}
-		// 一次商品创建 = 一个事务：商品 + 首个变体 + 各仓库存行 + 变更记录。
-		// 任一步失败整体回滚 —— 「有商品没库存行」这种半截状态只能靠人工对账发现（AGENTS.md「写操作的事务与回滚」）。
-		if err = s.m.Transaction(ctx, func(tx *gorm.DB) error {
-			if serr := rls.ScopeTx(tx, projectID); serr != nil {
-				return serr
-			}
-			if xerr := s.m.CreateWithVariantsTx(ctx, tx, e, []*productmodel.VariantEntity{v}); xerr != nil {
-				return mapContainerSKUConflict(xerr)
-			}
-			// 创建即入库：勾选的每个仓各一行（裸码；该仓已有同裸码的行则复用不新建）。
-			// external_sku 写在**认领仓**那一次（外码是「这条货在该仓的名字」，其余仓不猜）。
-			if xerr := s.createStockRowsTx(ctx, tx, refs, e.ID, v.ID, v.SKUCode, externalSKU, req.Quantity); xerr != nil {
-				return xerr
-			}
-			// 静态产物失效事件与商品行**同事务**（审计 ARCH-01）。
-			if xerr := s.enqueueProductInvalidationTx(ctx, tx, projectID, e.ID); xerr != nil {
-				return xerr
-			}
-			// issue #19：新增关键主数据 → 写变更记录（商品与首个变体各一条，逐字段落行）。
-			// 变体那条带上了认领仓，这是该事实在商品侧唯一可留痕的地方。
-			return s.recordChangesTx(ctx, tx,
-				productChangeInput(e, masterdataenums.ActionCreate, masterdataenums.OriginProduct, req.OperatorID,
-					nil, productChangeSnapshot(e)),
-				variantChangeInput(projectID, v, masterdataenums.ActionCreate, masterdataenums.OriginVariant, req.OperatorID,
-					nil, variantChangeSnapshot(v, claim)),
-			)
-		}); err != nil {
-			return nil, err
-		}
+		// issue #19：新增关键主数据 → 写变更记录（商品与首个变体各一条，逐字段落行）。
+		// 变体那条带上了认领仓，这是该事实在商品侧唯一可留痕的地方。
+		return s.recordChangesTx(ctx, tx,
+			productChangeInput(e, masterdataenums.ActionCreate, masterdataenums.OriginProduct, req.OperatorID,
+				nil, productChangeSnapshot(e)),
+			variantChangeInput(projectID, v, masterdataenums.ActionCreate, masterdataenums.OriginVariant, req.OperatorID,
+				nil, variantChangeSnapshot(v, claim)),
+		)
+	}); err != nil {
+		return nil, err
 	}
 	// 重算时机之一：商品写操作后 —— 新建商品若已满足某条自动规则（如价格区间），
 	// 立刻归位，不必等到下一次重算。
@@ -373,18 +311,6 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	e, err := s.m.Get(ctx, req.ID, projectID)
 	if err != nil {
 		return nil, mapNotFound(err)
-	}
-	// 商品类型只在创建时确定：变体 ↔ 捆绑的切换涉及「有没有自己的 SKU / 价格放在哪 /
-	// 库存从哪扣」，不是一次字段更新能表达的（要换类型就新建商品并迁移数据）。
-	// 显式拒绝而不是静默忽略：静默忽略会让调用方以为改成功了。
-	if req.Type != nil {
-		want, terr := normalizeProductType(*req.Type)
-		if terr != nil {
-			return nil, terr
-		}
-		if want != e.Type {
-			return nil, productenums.Err(productenums.ErrProductTypeImmutable)
-		}
 	}
 	// issue #19：改前快照必须在任何赋值之前取（之后的字段级 diff 以它为基准）。
 	before := productChangeSnapshot(e)
@@ -485,14 +411,6 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		}
 		e.RelatedIDs = orIDList(ids)
 	}
-	if req.BundleItems != nil {
-		// 形状规范化（issue #20）：整体替换语义不变，但写进去的必须是合法对象。
-		bundleItems, berr := normalizeBundleItems(req.BundleItems)
-		if berr != nil {
-			return nil, berr
-		}
-		e.BundleItems = bundleItems
-	}
 	if req.BrandID != nil {
 		// 品牌引用同样先校验（空串 = 解绑，与分类的「整体替换」语义一致）。
 		brandID, berr := s.resolveBrandID(ctx, e.ProjectID, *req.BrandID)
@@ -502,16 +420,6 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		e.BrandID = brandID
 	}
 	if req.DefaultPrice != nil {
-		// 与 Create 同一条校验（见本文件 Create 里的 ErrBundlePriceRequired）。
-		//
-		// Create 要求「捆绑容器必须自定价」，Update 原先直接赋值 —— 于是把一个捆绑商品的
-		// 价格改成 0 或负数能存进去，列表与详情显示 0.00，前台无从判断是免费还是没配。
-		// 数据库只有 `numeric` 列、没有 CHECK 约束（081_product_tables.sql），兜不住。
-		//
-		// 判据用 e.Type（库里的类型）而不是 req.Type：类型不可变，但请求里可能没给。
-		if e.Type == productmodel.TypeBundle && *req.DefaultPrice <= 0 {
-			return nil, productenums.Err(productenums.ErrBundlePriceRequired)
-		}
 		e.DefaultPrice = req.DefaultPrice
 	}
 	if req.DefaultImage != nil {
@@ -522,8 +430,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 	}
 	if req.SKUCode != nil {
 		// 只有运营**显式**给了主体编码才动 products.sku_code；nil 表示本次不改 ——
-		// 存量商品的 SKU 一律不重写（新规则只约束新建商品与新生成的变体），
-		// 捆绑的「必填」也因此不会拦住任何不带 sku 键的存量商品更新。
+		// 存量商品的 SKU 一律不重写（新规则只约束新建商品与新生成的变体）。
 		// 给了空串即拒绝：静默忽略会让运营以为改成功了（页面上又看不出差别）。
 		custom := strings.TrimSpace(*req.SKUCode)
 		if custom == "" {
@@ -531,18 +438,7 @@ func (s *Service) Update(ctx context.Context, req *productdto.UpdateReq) (res *p
 		}
 		// 编辑路径不补仓码前缀：仓码前缀是创建时按归属仓确定的，UpdateReq 没有仓上下文，
 		// 不在这里猜（要换主体编码的仓前缀，走新建商品）。
-		// 走到了这里 custom 必非空，所以捆绑分支只会补 _B 后缀，不会触发必填错误。
-		if e.Type == productmodel.TypeBundle {
-			// 与新建路径共用同一个入口（本批的合并）：编辑路径同样只补 _B 后缀、
-			// 不接仓码前缀 —— 仓码是创建时按归属仓确定的，UpdateReq 没有仓上下文。
-			if e.SKUCode, err = buildProductContainerSKU(containerSKUInput{
-				ProductType: productmodel.TypeBundle, Custom: custom,
-			}); err != nil {
-				return nil, err
-			}
-		} else {
-			e.SKUCode = custom
-		}
+		e.SKUCode = custom
 		// 主体 SKU 唯一性**预检**（编辑路径同样要）：excludeID = 自身，
 		// 否则「保存一个没改编码的商品」会被自己撞下。落库侧仍有兜底映射
 		//（mapContainerSKUConflict）—— 这正是修 CQ-009 的那条：编辑路径曾把
@@ -1105,8 +1001,6 @@ func (s *Service) toResp(ctx context.Context, e *productmodel.ProductEntity) (re
 		}
 	}
 	resp.RelatedIDs = decodeStrings(e.RelatedIDs)
-	resp.BundleItems = orJSON(e.BundleItems, string(defaultBundleItemsJSON))
-	resp.Type = e.Type
 	// 主体 SKU（products.sku_code，迁移 246）：详情页只读展示它的唯一性范围（本工程内唯一），
 	// 运营据此核对「新建时填过的编码」有没有落库。
 	resp.SKUCode = e.SKUCode
@@ -1292,15 +1186,12 @@ func (s *Service) fillRelated(ctx context.Context, resp *productdto.ProductResp,
 func (s *Service) toListResp(e *productmodel.ProductEntity) *productdto.ProductResp {
 	resp := &productdto.ProductResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Slug: e.Slug,
-		// SKUCode 与 Type 必须在这里带出来：列表行是**逐字段拷贝**，
-		// 少拷一个字段不会报错，只会让响应里那一列恒为空 ——
-		// 而 product_find 的输出格式里写着「SKU=…，类型=…」，
-		// 用户看到的是两个空值，模型也无从据此判断这条是不是他要找的商品。
-		SKUCode: e.SKUCode, Type: e.Type,
-		// DefaultPrice 同理必须带出来：bundle 容器**只有**这一个对外价格，
-		// applyPriceRange 的 bundle 分支只认它 —— 漏拷会让容器的价格区间恒为 0.00。
-		// 页面路径有另一处补偿（product_row.go 的 applyRowFacts），API/MCP 出口没有，
-		// 所以缺的是这一份（审查 P1：页面显示容器价、接口返回 0）。
+		// SKUCode 必须在这里带出来：列表行是**逐字段拷贝**，少拷一个字段不会报错，
+		// 只会让响应里那一列恒为空 —— 而 product_find 的输出格式里写着「SKU=…」，
+		// 用户看到的是空值，模型也无从据此判断这条是不是他要找的商品。
+		SKUCode: e.SKUCode,
+		// DefaultPrice 同理必须带出来（商品级默认售价）：页面路径另有
+		// product_row.go 的补偿，API/MCP 出口没有，漏了这里接口那一列恒为空。
 		DefaultPrice: e.DefaultPrice, DefaultImage: e.DefaultImage,
 		Status: e.Status, Sort: e.Sort, Images: mediaURLs(decodeStrings(e.Images)),
 		ImageAlts: decodeStrings(e.ImageAlts),
@@ -1314,19 +1205,10 @@ func (s *Service) toListResp(e *productmodel.ProductEntity) *productdto.ProductR
 
 // applyPriceRange 算出商品的价格区间（只读派生）。
 //
-// 两种商品的来源不同，别混：
-//
-//	· variant 商品：区间由**变体**派生（主体不存价，区间是展示用的汇总）；
-//	· bundle 容器：只有一个对外价格 = 容器价（products.default_price）。它没有自己的 SKU，
-//	  若还从变体派生，就会把自动生成的价 0 变体当成售价（列表显示 0.00 的成因）。
+// 区间由**变体**派生：商品主体不存价，区间是展示用的汇总。没有变体（或变体都没价）时
+// 不填区间，由模板显示「无价」—— 不当成 0 元。
 func applyPriceRange(resp *productdto.ProductResp, variants []*productmodel.VariantEntity) {
 	resp.VariantCount = len(variants)
-	if resp.Type == productmodel.TypeBundle {
-		if resp.DefaultPrice != nil {
-			resp.PriceMin, resp.PriceMax = *resp.DefaultPrice, *resp.DefaultPrice
-		}
-		return
-	}
 	if len(variants) == 0 {
 		return
 	}
@@ -1901,9 +1783,6 @@ func preserveUntouchedFields(e, locked *productmodel.ProductEntity, req *product
 	}
 	if req.RelatedIDs == nil {
 		e.RelatedIDs = locked.RelatedIDs
-	}
-	if len(req.BundleItems) == 0 {
-		e.BundleItems = locked.BundleItems
 	}
 	if req.BrandID == nil {
 		e.BrandID = locked.BrandID

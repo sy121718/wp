@@ -97,20 +97,17 @@ const maxSKUProbe = 500
 const (
 	// VariantSKUSuffix 变体 SKU 后缀（规则 A：变体 SKU = 容器主体 SKU + 属性值段… + _V）。
 	VariantSKUSuffix = "_V"
-	// BundleSKUSuffix 捆绑容器主体 SKU 后缀（规则 B：捆绑主体自定义，恒以 _B 结尾）。
-	BundleSKUSuffix = "_B"
 	// skuSeparator 主体 / 属性段 / 后缀之间统一的分隔符。
 	skuSeparator = "_"
 )
 
-// SKU 编码新规则（2026-09-19 商品域评审第四轮）的三条业务错误已收口到 productenums
-// （常量值即 i18n key，真文案在 sys_i18n，迁移 248 与 249 seed）：
+// SKU 编码新规则（2026-09-19 商品域评审第四轮）的两条业务错误已收口到 productenums
+// （常量值即 i18n key，真文案在 sys_i18n，迁移 248 seed）：
 //
 //	ErrSkuContainerMissing —— 商品 URL 段不含 ASCII 字符，派生不出主体 SKU 编码；
-//	ErrContainerSkuInvalid —— 显式填的主体 SKU 编码不合法（空串）；
-//	ErrBundleSKURequired   —— 捆绑商品没填主体 SKU（留空不再静默派生，见 normalizeBundleSKU）。
+//	ErrContainerSkuInvalid —— 显式填的主体 SKU 编码不合法（空串）。
 //
-// 三条都必须登记进 inbound 的业务错误 sentinel 白名单，否则页面只显示「系统内部错误」，
+// 两条都必须登记进 inbound 的业务错误 sentinel 白名单，否则页面只显示「系统内部错误」，
 // 把可行动的提示（填一个编码 / 改 URL 段）丢掉。调用点一律直接 errors.New(enums 常量)，
 // 不在服务层另立一份本地别名 —— 别名会让「哪些错误会被回带到页面」多出一份隐形清单。
 
@@ -286,8 +283,8 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 	// issue #19：删除前取快照与工程（删完之后这两个值都查不到了）。
 	// DB-009：这次「按变体反查工程」同样需要工程作用域，所以先把请求给的工程解析出来
 	//（留痕与守卫端口都没注入时保持原样：一次库都不读 —— 删除守卫读的是
-	// inventory_stocks / inventory_bom_items / inventory_stock_movements 与
-	// products.bundle_items，四张表都在迁移 215 名单里，缺作用域会静默放行删除）。
+	// inventory_stocks / inventory_stock_movements，
+	// 两张表都在迁移 215 名单里，缺作用域会静默放行删除）。
 	var projectID, scopeID string
 	if s.changes != nil || s.inv != nil || s.invSvc != nil {
 		if scopeID, gerr = s.resolveProjectID(ctx, req.ProjectID); gerr != nil {
@@ -299,7 +296,7 @@ func (s *Service) DeleteVariant(ctx context.Context, req *productdto.DeleteVaria
 			return gerr
 		}
 	}
-	// 删除守卫：库存非零 / BOM 引用 / 捆绑成员引用 / 有过库存流水（命中任一即拒绝）。
+	// 删除守卫：库存非零 / 捆绑成员引用 / 有过库存流水（命中任一即拒绝）。
 	// 与「保存变体清单」的清单外删除共用**同一个**守卫函数 —— 两处各写一份必然分叉，
 	// 表现为「接口能删掉、抽屉保存删不掉」这类只在一条路径上出现的缺陷。
 	guardScope := projectID
@@ -419,7 +416,7 @@ func (s *Service) newVariantFromDefaults(ctx context.Context, p *productmodel.Pr
 		//    按商品 URL 段派生确定性编码；派生不出来直接报错（不退回随机码）。
 		//    同样走容器主体 SKU 的唯一入口（本批合并）。
 		if base, err = buildProductContainerSKU(containerSKUInput{
-			ProductType: p.Type, Slug: p.Slug, WarehouseCode: warehouseCode,
+			Slug: p.Slug, WarehouseCode: warehouseCode,
 		}); err != nil {
 			return nil, err
 		}
@@ -465,47 +462,31 @@ func (s *Service) uniqueSKUCode(ctx context.Context, productID, base string, tak
 	return "", productenums.Err(productenums.ErrSkuTaken)
 }
 
-// containerSKUInput 容器主体 SKU 的解析输入（三处调用点共用的形状，本批合并）。
+// containerSKUInput 容器主体 SKU 的解析输入（三处调用点共用的形状）。
 //
 // 三处取得容器主体 SKU 的路径（docs/14 §1.2「容器 SKU 获取函数合并」）：
 //
 //	① 商品新建 —— 从仓库选（Custom = 那条仓库 SKU）或自己创建（Custom = 运营填的编码）；
 //	② 变体生成 / 预览 / 保存 —— 已存在商品的主体段（products.sku_code），
-//	   存量商品回落到最早创建的那条变体，再回落按下述规则派生；
-//	③ 捆绑主体 —— 自定义且恒以 _B 结尾（ProductType = bundle）。
-//
-// 行为差异只有一处，且是刻意的：**捆绑不存在于仓库**，所以它的主体段不接仓码前缀 ——
-// 「从仓库选」对捆绑根本不成立（product_crud 已在入口硬拒 ErrWarehouseSKUBundleNotAllowed）。
+//	   存量商品回落到最早创建的那条变体，再回落按下述规则派生。
 type containerSKUInput struct {
-	// ProductType 商品类型（productmodel.TypeVariant / TypeBundle）：决定后缀规则与是否接仓码。
-	ProductType string
 	// Slug 商品 URL 段：Custom 为空时按它的 ASCII 段派生（派生不出来明确报错，不退回随机码）。
 	Slug string
 	// Custom 运营给的编码：①「从仓库选」选中的那条仓库 SKU，或②自己创建填的编码。
 	// 两者对拼法没有区别 —— 本体原样保留，选了仓只加一次仓码前缀。
 	Custom string
-	// WarehouseCode 归属仓短码（空 = 未选仓 / 捆绑 / 端口未注入的纯商品单测路径）。
+	// WarehouseCode 归属仓短码（空 = 未选仓 / 端口未注入的纯商品单测路径）。
 	WarehouseCode string
 }
 
-// buildProductContainerSKU 容器主体 SKU 的**唯一**入口（商品新建 / 变体生成 / 捆绑主体三处共用）。
-//
-// 合并前：捆绑走 normalizeBundleSKU、变体走 buildContainerSKU，两条路各自被调用点直接拼参数，
-// 「谁该加后缀、谁该接仓码」是散在调用点上的约定 —— 新增一条来路时最容易漏的是
-// 「捆绑被顺手接上了仓码前缀」（SZ_XX_B），而那种编码在仓库侧根本不存在。
-// 现在改成：类型决定分支，分支只有两条，调用点只负责把输入摆好。
+// buildProductContainerSKU 容器主体 SKU 的**唯一**入口（商品新建 / 变体生成 / 变体保存三处共用）。
 //
 // 既有 SKU 一律不重算、不改存量：本函数只服务**新建**（商品 / 新生成的变体 SKU 的主体段）。
 func buildProductContainerSKU(in containerSKUInput) (string, error) {
-	if in.ProductType == productmodel.TypeBundle {
-		// 规则 B：捆绑主体由运营自定义、恒以 _B 结尾（缺后缀服务端补齐，大小写不敏感）；
-		// 没填即明确报错 ErrBundleSKURequired，不静默按 URL 段派生（见 normalizeBundleSKU）。
-		return normalizeBundleSKU(in.Custom)
-	}
 	return buildContainerSKU(in.Slug, in.Custom, in.WarehouseCode)
 }
 
-// buildContainerSKU 决定容器主体 SKU（变体商品的**唯一**拼接点）。
+// buildContainerSKU 决定容器主体 SKU（**唯一**拼接点）。
 //
 //	custom        运营给的编码 —— ①从仓库选中的那条 SKU，或 ②自己创建填的编码。
 //	              两者对拼法没有区别：**本体原样保留**，选了仓只加一次仓码前缀。
@@ -573,32 +554,6 @@ func stripWarehousePrefix(code, warehouseCode string) string {
 // 两边就会在边界（大小写 / 双前缀）分叉，表现为「下拉里的编码和落库的不是一个」。
 func StripWarehousePrefix(code, warehouseCode string) string {
 	return stripWarehousePrefix(code, warehouseCode)
-}
-
-// normalizeBundleSKU 捆绑容器主体 SKU（规则 B）。
-//
-// 捆绑品不存在于仓库，主体由运营自定义，且**恒以 _B 结尾**：
-//
-//	· 没填（空 / 纯空白）→ 明确报错 ErrBundleSKURequired，**不再静默派生**；
-//	· 填了但缺后缀 → 服务端补齐（大小写不敏感）。
-//
-// 为什么不再派生（用户 2026-09-19 拍板）：SKU 是商品的对外身份，旧实现「留空即按
-// <商品段>_B 派生」会让运营**看不见那个编码**就建出了商品 —— 列表、仓库、后续变体都以它
-// 为准，事后才发现号不对。现在改由新建抽屉预填建议值（同一套商品段算法，见
-// products.html 的 codeSegment）并允许运营修改：编码必须被看见并确认。
-// 变体商品保持原状（可留空派生）—— 它的主体常来自「从仓库选 SKU」，不适用本条。
-//
-// 编辑路径同样只对**显式传入**的 sku 键生效（nil = 不改存量编码，见 product_crud.Update）；
-// 显式传空串在更上层就被 ErrContainerSkuInvalid 拦下，所以这里只管「补 _B 后缀」。
-func normalizeBundleSKU(custom string) (string, error) {
-	code := strings.TrimSpace(custom)
-	if code == "" {
-		return "", productenums.Err(productenums.ErrBundleSKURequired)
-	}
-	if !strings.HasSuffix(strings.ToUpper(code), strings.ToUpper(BundleSKUSuffix)) {
-		code += BundleSKUSuffix
-	}
-	return code, nil
 }
 
 // productCodeSegment 商品 slug → SKU 编码里的商品段（大写字母数字）。
@@ -1212,7 +1167,7 @@ func shortHash(s string) string {
 //   · 生成（PreviewVariantCombinations）—— 只算不写，把笛卡尔积按组合去重后交回前端清单；
 //   · 删除（前端行为）—— 只是从清单里移出，服务端没有「删一行」的入口；
 //   · 保存（SaveVariantList）—— 以清单为准：新增缺失的组合、更新改过的 SKU、
-//     删除清单外的既有变体；清单外要删的行若**有非零库存或被 BOM 引用**则跳过，
+//     删除清单外的既有变体；清单外要删的行若**有非零库存或被捆绑成员引用**则跳过，
 //     逐条回带原因（不整批失败、不静默）。
 //
 // 与 GenerateVariants 的关系：后者是「直接落库」的接口路径（导入 / 接口 / 批量生成），
@@ -1309,7 +1264,7 @@ func (s *Service) PreviewVariantCombinations(ctx context.Context, req *productdt
 //     （历史组合可能引用了后来被删的组 / 值，用前端传的组合判定会让老数据卡住保存）；
 //   - SKU 逐段规范化（normalizeVariantSKU），为空或规范化后为空一律报
 //     ErrVariantSKUEmpty；唯一性按 product_id + sku_code（前端提交的值不作数）；
-//   - 删除清单外的既有变体前先查引用面（四个：非零库存 / BOM 引用 / 捆绑成员引用 /
+//   - 删除清单外的既有变体前先查引用面（三个：非零库存 / 捆绑成员引用 /
 //     有过库存流水），命中任一即跳过该行并逐条回带原因，不整批失败。
 func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVariantListReq) (res *productdto.SaveVariantListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProductID) == "" {
@@ -1438,7 +1393,7 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		res.Created++
 	}
 
-	// 清单外要删的既有变体：先查引用面（库存 / BOM），跳过的行逐条记原因。
+	// 清单外要删的既有变体：先查引用面（库存 / 捆绑成员 / 流水），跳过的行逐条记原因。
 	type pendingDelete struct {
 		v      *productmodel.VariantEntity
 		before masterdatacontract.FieldSnapshot
@@ -1520,23 +1475,15 @@ func variantSkipOf(v *productmodel.VariantEntity, reason, detail string) product
 	}
 }
 
-// variantDeleteBlockReason 变体删除的守卫：命中**四个引用面**之一时返回原因
+// variantDeleteBlockReason 变体删除的守卫：命中**两个引用面**之一时返回原因
 // （enums 常量 = i18n key）+ 可定位明细（detail 为空表示该原因没有额外定位信息）。
 //
-//	① 库存非零（inventory_stocks；已有）—— 该 SKU 还有货，先处理库存或改为停用；
-//	② BOM 引用（inventory_bom_items 的 component；已有）—— 先解除引用；
-//	③ 捆绑成员引用（products.bundle_items.options[].variantId）——
-//	   删掉它会让那些捆绑套餐的成员指向一个不存在的变体；**必须跨工程可发现**：
-//	   别的工程把本工程的变体列为捆绑成员时，只在本工程里查会命中 0 行 ⇒ 删除放行 ⇒
-//	   那些捆绑的成员清单永久悬空（审计 DB-03 §1.2 的守卫盲区）；
-//	④ 有过任何库存流水（inventory_stock_movements）—— 订单一旦建单就必然产生
+//	① 库存非零（inventory_stocks）—— 该 SKU 还有货，先处理库存或改为停用；
+//	② 有过任何库存流水（inventory_stock_movements）—— 订单一旦建单就必然产生
 //	   扣减流水，所以「有流水」等价于「被订单用过」；历史单据按 variant_id 追溯，不允许硬删。
 //
-// ①②在 inventory 侧（同模块直调 model 具名方法，未注入时不拦 —— 纯商品单测路径）；
-// ③在 product 侧（本 module 的表，恒可查，且跨工程可见性由逐工程作用域枚举取得，
-// 见 model/product_ref_scan.go）；④经库存用例（契约方法，未注入时不拦）。
-//
-// ①②④仍按**单个工程作用域**查（这些表都在迁移 215 名单里，缺作用域会静默返回
+// 两条都在 product 侧经库存用例查询（契约方法，未注入时不拦 —— 纯商品单测路径），
+// 都按**单个工程作用域**查（这两张表都在迁移 215 名单里，缺作用域会静默返回
 // 「没被引用」）。它们的跨工程面属库存域，不在本票范围（DB-03 §6 第 7 条已记录）。
 func (s *Service) variantDeleteBlockReason(ctx context.Context, projectID string, v *productmodel.VariantEntity) (reason, detail string, err error) {
 	if v == nil {
@@ -1550,25 +1497,8 @@ func (s *Service) variantDeleteBlockReason(ctx context.Context, projectID string
 		if n > 0 {
 			return productenums.VariantSkipHasStock, "", nil
 		}
-		hasParent, berr := s.inv.HasBOMParent(ctx, v.ID, projectID)
-		if berr != nil {
-			return "", "", berr
-		}
-		if hasParent {
-			return productenums.VariantSkipReferenced, "", nil
-		}
 	}
-	// ③ 捆绑成员引用：跨工程扫描（jsonb 包含判断下推，见 model.ProductRefsByBundleVariant 的注释）。
-	ref, rerr := s.crossProjectRefs(ctx, func(ids []string) (*productmodel.CrossProjectRef, error) {
-		return s.m.ProductRefsByBundleVariant(ctx, v.ID, ids)
-	})
-	if rerr != nil {
-		return "", "", rerr
-	}
-	if ref.Referenced() {
-		return productenums.VariantSkipBundleReferenced, refGuardDetail(ref), nil
-	}
-	// ④ 库存流水（被订单用过）：订单域与库存域的口径都在这一条上。
+	// ② 库存流水（被订单用过）：订单域与库存域的口径都在这一条上。
 	if s.invSvc != nil {
 		moved, merr := s.invSvc.VariantHasStockMovement(ctx, projectID, v.ID)
 		if merr != nil {
@@ -1602,7 +1532,7 @@ func resolveContainerSKU(p *productmodel.ProductEntity, existing []*productmodel
 	// 兜底派生也走容器主体 SKU 的**唯一**入口（本批合并）：三处路径共用一条分支逻辑，
 	// 否则「新建时加仓码前缀、生成时忘了」这类差异只会在某个组合上暴露。
 	return buildProductContainerSKU(containerSKUInput{
-		ProductType: p.Type, Slug: p.Slug, WarehouseCode: warehouseCode,
+		Slug: p.Slug, WarehouseCode: warehouseCode,
 	})
 }
 

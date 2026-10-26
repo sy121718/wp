@@ -28,7 +28,6 @@ import (
 var builtinFragmentCapabilities = []string{
 	"accountPanel", "accountPasswordForm", "accountPreferenceForm", "accountProfileForm",
 	"accountSessionsPanel",
-	"bundleConfigurator", "bundleConfiguratorCheck",
 	"cartAdd", "cartClear", "cartSetQty", "cartSummary", "cartView", "checkout",
 	"commentList", "commentSubmit",
 	"forgotForm", "loginForm", "loginPanel", "membershipBadge", "membershipPanel",

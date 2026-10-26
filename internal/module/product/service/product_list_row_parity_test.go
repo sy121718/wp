@@ -67,16 +67,16 @@ func (s parityStockPortStub) WarehouseStocksByProducts(context.Context, string, 
 
 const parityWarehouseID = "11111111-1111-1111-1111-111111111111"
 
-// parityFixture 一套「挂满料」的夹具：变体商品 + 容器商品。
+// parityFixture 一套「挂满料」的夹具：多 SKU 商品 + 单品商品。
 type parityFixture struct {
 	variantProduct string
-	bundleProduct  string
+	singleProduct  string
 }
 
 // seedParityFixture 造夹具（只补 NOT NULL 且无默认值的列，其余走表默认）。
 func seedParityFixture(t *testing.T, db *gorm.DB, projectID string) parityFixture {
 	t.Helper()
-	f := parityFixture{variantProduct: uuid.NewString(), bundleProduct: uuid.NewString()}
+	f := parityFixture{variantProduct: uuid.NewString(), singleProduct: uuid.NewString()}
 	categoryA, categoryB := uuid.NewString(), uuid.NewString()
 	brand, manualTag, ruleTag := uuid.NewString(), uuid.NewString(), uuid.NewString()
 
@@ -97,20 +97,20 @@ func seedParityFixture(t *testing.T, db *gorm.DB, projectID string) parityFixtur
 	exec(`INSERT INTO product_tags (id, project_id, name, slug, kind, rule_type, sort, create_time, update_time)
 		VALUES (?, ?, '自动标签', 'tag-rule', 'rule', 'price_below', 2, now(), now())`, ruleTag, projectID)
 
-	exec(`INSERT INTO products (id, project_id, name, slug, sku_code, status, type, sort,
+	exec(`INSERT INTO products (id, project_id, name, slug, sku_code, status, sort,
 			category_ids, primary_category_id, brand_id, tag_ids, create_time, update_time)
-		VALUES (?, ?, '变体商品', 'p-variant', 'SKU-V1', 'published', 'variant', 1,
+		VALUES (?, ?, '变体商品', 'p-variant', 'SKU-V1', 'published', 1,
 			?::jsonb, ?, ?, ?::jsonb, now(), now())`,
 		f.variantProduct, projectID,
 		"["+strconv.Quote(categoryA)+","+strconv.Quote(categoryB)+"]", categoryA, brand,
 		"["+strconv.Quote(manualTag)+","+strconv.Quote(ruleTag)+"]")
-	// 容器商品也挂分类 / 品牌 / 标签：夹具的每个待比字段都要有非零值，
+	// 单品商品也挂分类 / 品牌 / 标签：夹具的每个待比字段都要有非零值，
 	// 否则「两边都空」的对账是假绿（详情行侧的 BrandName / TagLabel / CategoryCell）。
-	exec(`INSERT INTO products (id, project_id, name, slug, sku_code, status, type, sort,
+	exec(`INSERT INTO products (id, project_id, name, slug, sku_code, status, sort,
 			default_price, category_ids, primary_category_id, brand_id, tag_ids, create_time, update_time)
-		VALUES (?, ?, '容器商品', 'p-bundle', 'SKU-B1', 'published', 'bundle', 2,
+		VALUES (?, ?, '单品商品', 'p-single', 'SKU-S1', 'published', 2,
 			88.50, ?::jsonb, ?, ?, ?::jsonb, now(), now())`,
-		f.bundleProduct, projectID,
+		f.singleProduct, projectID,
 		"["+strconv.Quote(categoryA)+"]", categoryA, brand, "["+strconv.Quote(manualTag)+"]")
 
 	for i, price := range []string{"12.50", "30.00"} {
@@ -118,6 +118,8 @@ func seedParityFixture(t *testing.T, db *gorm.DB, projectID string) parityFixtur
 			VALUES (?, ?, ?, ?::numeric, true, ?)`,
 			uuid.NewString(), f.variantProduct, "SKU-V1-"+strconv.Itoa(i+1), price, i+1)
 	}
+	exec(`INSERT INTO product_variants (id, product_id, sku_code, price, enabled, sort)
+		VALUES (?, ?, 'SKU-S1-1', 88.50, true, 1)`, uuid.NewString(), f.singleProduct)
 	for _, score := range []string{"4.00", "5.00"} {
 		exec(`INSERT INTO product_ratings (id, project_id, product_id, score, source, create_time, update_time)
 			VALUES (?, ?, ?, ?::numeric, 'manual', now(), now())`,
@@ -178,7 +180,7 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 			{"PriceMin", amountText(want.PriceMin)}, {"PriceMax", amountText(want.PriceMax)},
 			{"BrandName", want.BrandName}, {"TagNames", strings.Join(want.TagNames, ",")},
 		}
-		if detailView.Detail != nil && detailView.Detail.Type == productmodel.TypeVariant {
+		if detailView.Detail != nil {
 			nonEmpty = append(nonEmpty,
 				struct{ name, value string }{"CategoryCell", want.CategoryCell},
 				struct{ name, value string }{"RatingAvg", want.RatingAvg})
@@ -262,9 +264,9 @@ func TestProductListRowSummaryMatchesDetailPath(t *testing.T) {
 			if row.Stock.State != productenums.StockStateTracked {
 				t.Errorf("变体商品的库存三态应为 %s，实际 %v", productenums.StockStateTracked, row.Stock.State)
 			}
-		case "容器商品":
+		case "单品商品":
 			if row.PriceMin != 88.5 || row.PriceMax != 88.5 {
-				t.Errorf("容器商品按容器价取价：%v~%v", row.PriceMin, row.PriceMax)
+				t.Errorf("单品商品按唯一变体取价：%v~%v", row.PriceMin, row.PriceMax)
 			}
 		}
 	}

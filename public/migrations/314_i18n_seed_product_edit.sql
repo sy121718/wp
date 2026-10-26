@@ -60,8 +60,6 @@ VALUES
 ('admin.products.label.weight', 'zh-CN', '重量', 200, 'admin', '商品字段：重量', 1, now(), now()),
 ('admin.products.edit.ph.weight', 'en-US', 'Leave empty to leave it unset', 200, 'admin', '商品编辑页：重量占位符', 1, now(), now()),
 ('admin.products.edit.ph.weight', 'zh-CN', '留空即不设置', 200, 'admin', '商品编辑页：重量占位符', 1, now(), now()),
-('admin.products.edit.typeNote', 'en-US', 'The product type (variant product / bundle) is fixed at creation time and cannot be switched afterwards.', 200, 'admin', '商品编辑页：商品类型不可切换', 1, now(), now()),
-('admin.products.edit.typeNote', 'zh-CN', '商品类型在创建时确定（变体商品 / 捆绑商品），之后不能切换。', 200, 'admin', '商品编辑页：商品类型不可切换', 1, now(), now()),
 ('admin.products.label.seoTitle', 'en-US', 'SEO title', 200, 'admin', '商品字段：SEO 标题', 1, now(), now()),
 ('admin.products.label.seoTitle', 'zh-CN', 'SEO 标题', 200, 'admin', '商品字段：SEO 标题', 1, now(), now()),
 ('admin.products.label.seoDescription', 'en-US', 'SEO description', 200, 'admin', '商品字段：SEO 描述', 1, now(), now()),

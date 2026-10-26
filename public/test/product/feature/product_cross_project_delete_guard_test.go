@@ -71,20 +71,6 @@ func (f *crossRefFixture) mkProduct(t *testing.T, projectID, name, slug string) 
 	return p
 }
 
-// firstVariantID 取商品的首个变体（直读表：变体列表接口不在本用例的验证范围里）。
-func (f *crossRefFixture) firstVariantID(t *testing.T, productID string) string {
-	t.Helper()
-	var id string
-	if err := f.db.Raw("SELECT id FROM product_variants WHERE product_id = ? ORDER BY create_time ASC, id ASC LIMIT 1", productID).
-		Scan(&id).Error; err != nil {
-		t.Fatalf("读变体 id 失败: %v", err)
-	}
-	if id == "" {
-		t.Fatalf("商品 %s 没有变体", productID)
-	}
-	return id
-}
-
 // setProductRef 把引用**直接写进 products**（绕过 service 的跨工程校验，见文件头）。
 func (f *crossRefFixture) setProductRef(t *testing.T, productID, column, value string) {
 	t.Helper()
@@ -97,8 +83,6 @@ func (f *crossRefFixture) setProductRef(t *testing.T, productID, column, value s
 		sql = "UPDATE products SET " + column + " = jsonb_build_array(?::text) WHERE id = ?"
 	case "brand_id":
 		sql = "UPDATE products SET brand_id = ?::uuid WHERE id = ?"
-	case "bundle_items":
-		sql = "UPDATE products SET bundle_items = jsonb_build_object('options', jsonb_build_array(jsonb_build_object('variantId', ?::text))) WHERE id = ?"
 	default:
 		t.Fatalf("未知引用列 %s", column)
 	}
@@ -285,35 +269,6 @@ func TestCrossProjectTagDeleteGuard(t *testing.T) {
 	}
 }
 
-// TestCrossProjectBundleVariantDeleteGuard 变体被**另一个工程**的捆绑商品引用时，
-// 单条删除与清单保存两条路径都必须拒绝，并给出可定位明细。
-func TestCrossProjectBundleVariantDeleteGuard(t *testing.T) {
-	f := newCrossRefFixture(t)
-	if f == nil {
-		return
-	}
-	ctx := context.Background()
-	host := f.mkProduct(t, f.projectID, "A 工程宿主商品", "cross-project-bundle-host")
-	variantID := f.firstVariantID(t, host.ID)
-
-	bundle := f.mkProduct(t, f.otherProjectID, "B 工程捆绑商品", "cross-project-bundle-product")
-	f.setProductRef(t, bundle.ID, "bundle_items", variantID)
-
-	// 单条删除路径：错误里带引用面 / 工程 / 商品。
-	derr := f.svc.DeleteVariant(ctx, &productdto.DeleteVariantReq{ID: variantID, ProjectID: f.projectID})
-	assertCrossProjectRef(t, derr, productenums.VariantSkipBundleReferenced,
-		"products.bundle_items.options[].variantId", f.otherProjectID, bundle.ID)
-
-	// 变体必须还在库里（守卫是「不改状态」）。
-	var n int64
-	if err := f.db.Raw("SELECT count(*) FROM product_variants WHERE id = ?", variantID).Scan(&n).Error; err != nil {
-		t.Fatalf("读变体行数失败: %v", err)
-	}
-	if n != 1 {
-		t.Fatalf("被拦下的变体必须留在库里，实际 %d 行", n)
-	}
-}
-
 // TestCrossProjectRefGuardUnderNonSuperRole 把同一条守卫放进**非超级角色**里跑。
 //
 // 为什么必须单独有这一条：超级用户无条件绕过 RLS（FORCE 只约束表属主），在它下面
@@ -355,14 +310,6 @@ func TestCrossProjectRefGuardUnderNonSuperRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建属性组失败: %v", err)
 	}
-	host, err := svc.Create(ctx, &productdto.CreateReq{ProjectID: pA.ID, Name: "非超级角色宿主商品", Slug: "nonsuper-host"})
-	if err != nil {
-		t.Fatalf("建宿主商品失败: %v", err)
-	}
-	var variantID string
-	if err := db.Raw("SELECT id FROM product_variants WHERE product_id = ? ORDER BY create_time ASC, id ASC LIMIT 1", host.ID).Scan(&variantID).Error; err != nil || variantID == "" {
-		t.Fatalf("读变体 id 失败（id=%q err=%v）", variantID, err)
-	}
 	pBProd, err := svc.Create(ctx, &productdto.CreateReq{ProjectID: pB.ID, Name: "非超级角色对端商品", Slug: "nonsuper-b"})
 	if err != nil {
 		t.Fatalf("建对端商品失败: %v", err)
@@ -376,7 +323,6 @@ func TestCrossProjectRefGuardUnderNonSuperRole(t *testing.T) {
 		{"UPDATE products SET tag_ids = jsonb_build_array(?::text) WHERE id = ?", tag.ID},
 		{"UPDATE products SET attribute_ids = jsonb_build_array(?::text) WHERE id = ?", attribute.ID},
 		{"UPDATE products SET brand_id = ?::uuid WHERE id = ?", brand.ID},
-		{"UPDATE products SET bundle_items = jsonb_build_object('options', jsonb_build_array(jsonb_build_object('variantId', ?::text))) WHERE id = ?", variantID},
 	} {
 		if err := db.Exec(stmt.sql, stmt.arg, pBProd.ID).Error; err != nil {
 			t.Fatalf("准备跨工程引用失败: %v", err)
@@ -428,12 +374,9 @@ func TestCrossProjectRefGuardUnderNonSuperRole(t *testing.T) {
 			{"标签", productenums.ErrTagCrossProject, "products.tag_ids", func() error {
 				return scoped.DeleteTag(ctx, &productdto.DeleteTagReq{ProjectID: pA.ID, ID: tag.ID})
 			}},
-			{"捆绑成员", productenums.VariantSkipBundleReferenced, "products.bundle_items", func() error {
-				return scoped.DeleteVariant(ctx, &productdto.DeleteVariantReq{ID: variantID, ProjectID: pA.ID})
-			}},
 		}
-		// 五个守卫**逐条报告**（不在第一条失败处停下）：这一版在「守卫只看本工程」的代码上
-		// 应当五条全红，只报第一条会让人以为另外四条没问题。
+		// 四个守卫**逐条报告**（不在第一条失败处停下）：这一版在「守卫只看本工程」的代码上
+		// 应当四条全红，只报第一条会让人以为另外三条没问题。
 		var failures []string
 		for _, c := range checks {
 			derr := c.call()

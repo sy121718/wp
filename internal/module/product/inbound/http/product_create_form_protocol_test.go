@@ -105,7 +105,7 @@ func TestProductCreateFormFieldsMatchCreateReq(t *testing.T) {
 	}
 	// 反向：这几个是协议主干，少一个就等于那个字段不再能在新建时填。
 	for _, want := range []string{
-		"projectId", "name", "type", "slug", "sku", "externalSku",
+		"projectId", "name", "slug", "sku", "externalSku",
 		"defaultPrice", "attributeIds", "warehouseIds", "trackQuantity", "quantity",
 	} {
 		if !names[want] {

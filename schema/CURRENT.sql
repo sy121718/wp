@@ -6,7 +6,7 @@
 -- 更新方式：bash scripts/schema-snapshot.sh
 -- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）
 -- 迁移台账版本：597-block-bulk-delete-grant-copy
--- 生成时间：2026-10-23T11:37:16+08:00
+-- 生成时间：2026-10-26T11:25:35+08:00
 
 --
 -- PostgreSQL database dump
@@ -48,6 +48,11 @@ CREATE FUNCTION public.fn_inventory_purchase_order_status_guard() RETURNS trigge
 DECLARE
     v_status text;
 BEGIN
+    -- 已经是人工终态：不再按明细行改判（终态单向）。
+    IF NEW.status IN ('finished', 'cancelled') THEN
+        RETURN NEW;
+    END IF;
+
     SELECT CASE
                WHEN COUNT(*) = 0 THEN 'pending'
                WHEN COUNT(*) FILTER (WHERE received_quantity < quantity) = 0 THEN 'received'
@@ -725,6 +730,42 @@ ALTER SEQUENCE public.coupons_id_seq OWNED BY public.coupons.id;
 
 
 --
+-- Name: currency_rates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.currency_rates (
+    id bigint NOT NULL,
+    base_code text NOT NULL,
+    quote_code text NOT NULL,
+    rate numeric(18,8) NOT NULL,
+    rate_at timestamp with time zone DEFAULT now() NOT NULL,
+    source text DEFAULT 'manual'::text NOT NULL,
+    update_time timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_currency_rates_code CHECK (((btrim(base_code) <> ''::text) AND (btrim(quote_code) <> ''::text))),
+    CONSTRAINT ck_currency_rates_rate CHECK ((rate > (0)::numeric))
+);
+
+
+--
+-- Name: currency_rates_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.currency_rates_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: currency_rates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.currency_rates_id_seq OWNED BY public.currency_rates.id;
+
+
+--
 -- Name: document_snapshots; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -736,27 +777,6 @@ CREATE TABLE public.document_snapshots (
     document jsonb NOT NULL,
     create_time timestamp with time zone CONSTRAINT document_snapshots_created_at_not_null NOT NULL
 );
-
-
---
--- Name: inventory_bom_items; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.inventory_bom_items (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    project_id uuid NOT NULL,
-    parent_variant_id uuid NOT NULL,
-    parent_sku_code text DEFAULT ''::text NOT NULL,
-    component_variant_id uuid NOT NULL,
-    component_sku_code text DEFAULT ''::text NOT NULL,
-    quantity integer NOT NULL,
-    create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_bom_items_created_at_not_null NOT NULL,
-    update_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_bom_items_updated_at_not_null NOT NULL,
-    CONSTRAINT inventory_bom_items_quantity_check CHECK ((quantity > 0)),
-    CONSTRAINT inventory_bom_items_self_check CHECK ((parent_variant_id <> component_variant_id))
-);
-
-ALTER TABLE ONLY public.inventory_bom_items FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -840,7 +860,7 @@ CREATE TABLE public.inventory_purchase_orders (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_purchase_orders_created_at_not_null NOT NULL,
     update_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_purchase_orders_updated_at_not_null NOT NULL,
-    CONSTRAINT inventory_purchase_orders_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'partial'::text, 'received'::text])))
+    CONSTRAINT inventory_purchase_orders_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'partial'::text, 'received'::text, 'finished'::text, 'cancelled'::text])))
 );
 
 ALTER TABLE ONLY public.inventory_purchase_orders FORCE ROW LEVEL SECURITY;
@@ -1173,8 +1193,8 @@ CREATE TABLE public.inventory_stocks (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     project_id uuid NOT NULL,
     warehouse_id uuid NOT NULL,
-    product_id uuid NOT NULL,
-    variant_id uuid NOT NULL,
+    product_id uuid,
+    variant_id uuid,
     sku_code text DEFAULT ''::text NOT NULL,
     quantity integer DEFAULT 0 NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -1183,10 +1203,108 @@ CREATE TABLE public.inventory_stocks (
     cost_price numeric(12,2),
     external_sku text DEFAULT ''::text NOT NULL,
     track_quantity boolean DEFAULT false NOT NULL,
+    reserved_quantity integer DEFAULT 0 NOT NULL,
+    CONSTRAINT ck_inventory_stocks_reserved_le_quantity CHECK ((reserved_quantity <= quantity)),
+    CONSTRAINT ck_inventory_stocks_reserved_nonneg CHECK ((reserved_quantity >= 0)),
     CONSTRAINT inventory_stocks_track_quantity_check CHECK ((track_quantity OR (quantity = 0)))
 );
 
 ALTER TABLE ONLY public.inventory_stocks FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: inventory_transfer_attachments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inventory_transfer_attachments (
+    id bigint NOT NULL,
+    transfer_id uuid NOT NULL,
+    attachment_id bigint NOT NULL,
+    usage_type text NOT NULL,
+    sort integer DEFAULT 0 NOT NULL,
+    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_inventory_transfer_attachments_usage CHECK ((usage_type = ANY (ARRAY['request'::text, 'ship'::text, 'receive'::text])))
+);
+
+
+--
+-- Name: inventory_transfer_attachments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.inventory_transfer_attachments_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: inventory_transfer_attachments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.inventory_transfer_attachments_id_seq OWNED BY public.inventory_transfer_attachments.id;
+
+
+--
+-- Name: inventory_transfer_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inventory_transfer_items (
+    id bigint NOT NULL,
+    transfer_id uuid NOT NULL,
+    stock_id uuid NOT NULL,
+    variant_id uuid,
+    sku_code text DEFAULT ''::text NOT NULL,
+    quantity integer NOT NULL,
+    CONSTRAINT ck_inventory_transfer_items_qty CHECK ((quantity > 0))
+);
+
+
+--
+-- Name: inventory_transfer_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.inventory_transfer_items_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: inventory_transfer_items_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.inventory_transfer_items_id_seq OWNED BY public.inventory_transfer_items.id;
+
+
+--
+-- Name: inventory_transfers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.inventory_transfers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    transfer_no text NOT NULL,
+    from_warehouse_id uuid NOT NULL,
+    to_warehouse_id uuid NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    remark text DEFAULT ''::text NOT NULL,
+    create_by bigint DEFAULT 0 NOT NULL,
+    shipped_by bigint DEFAULT 0 NOT NULL,
+    received_by bigint DEFAULT 0 NOT NULL,
+    shipped_at timestamp with time zone,
+    received_at timestamp with time zone,
+    request_id text DEFAULT ''::text NOT NULL,
+    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    update_time timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_inventory_transfers_diff_wh CHECK ((from_warehouse_id <> to_warehouse_id)),
+    CONSTRAINT ck_inventory_transfers_status CHECK ((status = ANY (ARRAY['pending'::text, 'in_transit'::text, 'completed'::text, 'cancelled'::text])))
+);
+
+ALTER TABLE ONLY public.inventory_transfers FORCE ROW LEVEL SECURITY;
 
 
 --
@@ -1206,6 +1324,7 @@ CREATE TABLE public.inventory_warehouses (
     update_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_warehouses_updated_at_not_null NOT NULL,
     type text DEFAULT 'self'::text NOT NULL,
     config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    deduct_priority integer DEFAULT 100 NOT NULL,
     CONSTRAINT inventory_warehouses_status_check CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text]))),
     CONSTRAINT inventory_warehouses_type_check CHECK ((type = ANY (ARRAY['self'::text, 'third_party'::text, 'virtual'::text])))
 );
@@ -1348,7 +1467,9 @@ CREATE TABLE public.mail_automations (
     version integer DEFAULT 1 NOT NULL,
     create_by bigint DEFAULT 0 NOT NULL,
     create_time timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    update_time timestamp with time zone
+    update_time timestamp with time zone,
+    trigger_frequency character varying(16) DEFAULT 'every_time'::character varying NOT NULL,
+    exit_on_reply boolean DEFAULT false NOT NULL
 );
 
 
@@ -1582,7 +1703,10 @@ CREATE TABLE public.mail_templates (
     variables text[] DEFAULT '{}'::text[] NOT NULL,
     status smallint DEFAULT 1 NOT NULL,
     create_time timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    update_time timestamp with time zone
+    update_time timestamp with time zone,
+    body_json jsonb,
+    body_compiled_html text DEFAULT ''::text NOT NULL,
+    body_compiled_text text DEFAULT ''::text NOT NULL
 );
 
 
@@ -1921,6 +2045,28 @@ ALTER TABLE ONLY public.navigations FORCE ROW LEVEL SECURITY;
 
 
 --
+-- Name: order_carriers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_carriers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    code text NOT NULL,
+    name text NOT NULL,
+    tracking_url_template text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    sort integer DEFAULT 0 NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    create_time timestamp with time zone DEFAULT now() NOT NULL,
+    update_time timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_order_carriers_code CHECK ((btrim(code) <> ''::text)),
+    CONSTRAINT ck_order_carriers_status CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text])))
+);
+
+ALTER TABLE ONLY public.order_carriers FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: order_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1939,7 +2085,8 @@ CREATE TABLE public.order_items (
     line_tax bigint DEFAULT 0 NOT NULL,
     line_total bigint DEFAULT 0 NOT NULL,
     cost_price bigint,
-    create_time timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    create_time timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    warehouse_id uuid
 );
 
 
@@ -2057,6 +2204,63 @@ ALTER SEQUENCE public.order_returns_id_seq OWNED BY public.order_returns.id;
 
 
 --
+-- Name: order_shipment_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_shipment_items (
+    id bigint NOT NULL,
+    shipment_id uuid NOT NULL,
+    order_item_id bigint NOT NULL,
+    warehouse_id uuid NOT NULL,
+    stock_id uuid,
+    quantity integer NOT NULL,
+    CONSTRAINT ck_order_shipment_items_qty CHECK ((quantity > 0))
+);
+
+
+--
+-- Name: order_shipment_items_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.order_shipment_items_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: order_shipment_items_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.order_shipment_items_id_seq OWNED BY public.order_shipment_items.id;
+
+
+--
+-- Name: order_shipments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_shipments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    order_id bigint NOT NULL,
+    shipment_no text NOT NULL,
+    carrier_id uuid,
+    carrier_name text DEFAULT ''::text NOT NULL,
+    tracking_no text DEFAULT ''::text NOT NULL,
+    shipped_at timestamp with time zone DEFAULT now() NOT NULL,
+    operator_id bigint DEFAULT 0 NOT NULL,
+    operator_name text DEFAULT ''::text NOT NULL,
+    remark text DEFAULT ''::text NOT NULL,
+    request_id text DEFAULT ''::text NOT NULL,
+    create_time timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.order_shipments FORCE ROW LEVEL SECURITY;
+
+
+--
 -- Name: order_status_logs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2144,6 +2348,12 @@ CREATE TABLE public.orders (
     membership_discount_total bigint DEFAULT 0 NOT NULL,
     ship_country character varying(2) DEFAULT ''::character varying NOT NULL,
     bill_country character varying(2) DEFAULT ''::character varying NOT NULL,
+    carrier_id uuid,
+    carrier_name text DEFAULT ''::text NOT NULL,
+    tracking_no text DEFAULT ''::text NOT NULL,
+    shipped_at timestamp with time zone,
+    fx_rate numeric(18,8),
+    fx_base_code text DEFAULT ''::text NOT NULL,
     CONSTRAINT orders_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'paid'::character varying, 'shipped'::character varying, 'completed'::character varying, 'cancelled'::character varying, 'refunded'::character varying])::text[])))
 );
 
@@ -2977,7 +3187,6 @@ CREATE TABLE public.products (
     category_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
     tag_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
     related_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
-    bundle_items jsonb DEFAULT '{"options": [], "maxOptions": 20, "maxTotalQty": 0, "minTotalQty": 0}'::jsonb NOT NULL,
     brand_id uuid,
     default_price numeric(12,2),
     default_compare_price numeric(12,2),
@@ -2990,12 +3199,8 @@ CREATE TABLE public.products (
     primary_category_id uuid,
     published_at timestamp with time zone,
     images_alt jsonb DEFAULT '[]'::jsonb NOT NULL,
-    type text DEFAULT 'variant'::text NOT NULL,
     sku_code text DEFAULT ''::text NOT NULL,
-    CONSTRAINT ck_products_bundle_price_positive CHECK (((type <> 'bundle'::text) OR ((default_price IS NOT NULL) AND (default_price > (0)::numeric)))),
-    CONSTRAINT products_bundle_items_shape_check CHECK (((jsonb_typeof(bundle_items) = 'object'::text) AND (jsonb_typeof((bundle_items -> 'options'::text)) = 'array'::text))),
-    CONSTRAINT products_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text]))),
-    CONSTRAINT products_type_check CHECK ((type = ANY (ARRAY['variant'::text, 'bundle'::text])))
+    CONSTRAINT products_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text])))
 );
 
 ALTER TABLE ONLY public.products FORCE ROW LEVEL SECURITY;
@@ -4128,6 +4333,27 @@ ALTER TABLE ONLY public.coupons ALTER COLUMN id SET DEFAULT nextval('public.coup
 
 
 --
+-- Name: currency_rates id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.currency_rates ALTER COLUMN id SET DEFAULT nextval('public.currency_rates_id_seq'::regclass);
+
+
+--
+-- Name: inventory_transfer_attachments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_transfer_attachments ALTER COLUMN id SET DEFAULT nextval('public.inventory_transfer_attachments_id_seq'::regclass);
+
+
+--
+-- Name: inventory_transfer_items id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_transfer_items ALTER COLUMN id SET DEFAULT nextval('public.inventory_transfer_items_id_seq'::regclass);
+
+
+--
 -- Name: mail_accounts id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4237,6 +4463,13 @@ ALTER TABLE ONLY public.order_return_items ALTER COLUMN id SET DEFAULT nextval('
 --
 
 ALTER TABLE ONLY public.order_returns ALTER COLUMN id SET DEFAULT nextval('public.order_returns_id_seq'::regclass);
+
+
+--
+-- Name: order_shipment_items id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_shipment_items ALTER COLUMN id SET DEFAULT nextval('public.order_shipment_items_id_seq'::regclass);
 
 
 --
@@ -4578,6 +4811,14 @@ ALTER TABLE ONLY public.coupons
 
 
 --
+-- Name: currency_rates currency_rates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.currency_rates
+    ADD CONSTRAINT currency_rates_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: document_snapshots document_snapshots_id_presentation_instance_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4591,22 +4832,6 @@ ALTER TABLE ONLY public.document_snapshots
 
 ALTER TABLE ONLY public.document_snapshots
     ADD CONSTRAINT document_snapshots_pkey PRIMARY KEY (id);
-
-
---
--- Name: inventory_bom_items inventory_bom_items_parent_variant_id_component_variant_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inventory_bom_items
-    ADD CONSTRAINT inventory_bom_items_parent_variant_id_component_variant_id_key UNIQUE (parent_variant_id, component_variant_id);
-
-
---
--- Name: inventory_bom_items inventory_bom_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inventory_bom_items
-    ADD CONSTRAINT inventory_bom_items_pkey PRIMARY KEY (id);
 
 
 --
@@ -4727,6 +4952,30 @@ ALTER TABLE ONLY public.inventory_stocks
 
 ALTER TABLE ONLY public.inventory_stocks
     ADD CONSTRAINT inventory_stocks_variant_id_warehouse_id_key UNIQUE (variant_id, warehouse_id);
+
+
+--
+-- Name: inventory_transfer_attachments inventory_transfer_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_transfer_attachments
+    ADD CONSTRAINT inventory_transfer_attachments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_transfer_items inventory_transfer_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_transfer_items
+    ADD CONSTRAINT inventory_transfer_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: inventory_transfers inventory_transfers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_transfers
+    ADD CONSTRAINT inventory_transfers_pkey PRIMARY KEY (id);
 
 
 --
@@ -4906,6 +5155,14 @@ ALTER TABLE ONLY public.navigations
 
 
 --
+-- Name: order_carriers order_carriers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_carriers
+    ADD CONSTRAINT order_carriers_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: order_items order_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4927,6 +5184,22 @@ ALTER TABLE ONLY public.order_return_items
 
 ALTER TABLE ONLY public.order_returns
     ADD CONSTRAINT order_returns_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_shipment_items order_shipment_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_shipment_items
+    ADD CONSTRAINT order_shipment_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_shipments order_shipments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_shipments
+    ADD CONSTRAINT order_shipments_pkey PRIMARY KEY (id);
 
 
 --
@@ -5902,20 +6175,6 @@ CREATE INDEX idx_fc_update_by ON public.sys_file_category USING btree (update_by
 
 
 --
--- Name: idx_inventory_bom_component; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_inventory_bom_component ON public.inventory_bom_items USING btree (component_variant_id);
-
-
---
--- Name: idx_inventory_bom_project; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_inventory_bom_project ON public.inventory_bom_items USING btree (project_id);
-
-
---
 -- Name: idx_inventory_movements_batch; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6049,6 +6308,13 @@ CREATE INDEX idx_inventory_stocks_project_sku ON public.inventory_stocks USING b
 
 
 --
+-- Name: idx_inventory_stocks_unclaimed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inventory_stocks_unclaimed ON public.inventory_stocks USING btree (project_id, warehouse_id, sku_code) WHERE (variant_id IS NULL);
+
+
+--
 -- Name: idx_inventory_stocks_variant_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6077,6 +6343,20 @@ CREATE INDEX idx_inventory_stocks_warehouse_nonzero ON public.inventory_stocks U
 
 
 --
+-- Name: idx_inventory_transfers_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inventory_transfers_status ON public.inventory_transfers USING btree (project_id, status, create_time DESC);
+
+
+--
+-- Name: idx_inventory_warehouses_deduct; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inventory_warehouses_deduct ON public.inventory_warehouses USING btree (project_id, deduct_priority, code);
+
+
+--
 -- Name: idx_mail_accounts_default; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6102,6 +6382,13 @@ CREATE INDEX idx_mail_automation_node_logs_run ON public.mail_automation_node_lo
 --
 
 CREATE UNIQUE INDEX idx_mail_automation_runs_active ON public.mail_automation_runs USING btree (automation_id, contact_id) WHERE ((status)::text = ANY ((ARRAY['running'::character varying, 'waiting'::character varying])::text[]));
+
+
+--
+-- Name: idx_mail_automation_runs_automation_contact; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mail_automation_runs_automation_contact ON public.mail_automation_runs USING btree (automation_id, contact_id);
 
 
 --
@@ -6322,6 +6609,13 @@ CREATE INDEX idx_order_items_variant ON public.order_items USING btree (variant_
 
 
 --
+-- Name: idx_order_items_warehouse; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_order_items_warehouse ON public.order_items USING btree (warehouse_id) WHERE (warehouse_id IS NOT NULL);
+
+
+--
 -- Name: idx_order_return_items_order_item; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6354,6 +6648,20 @@ CREATE INDEX idx_order_returns_project_status ON public.order_returns USING btre
 --
 
 CREATE INDEX idx_order_returns_user ON public.order_returns USING btree (user_id);
+
+
+--
+-- Name: idx_order_shipment_items_item; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_order_shipment_items_item ON public.order_shipment_items USING btree (order_item_id);
+
+
+--
+-- Name: idx_order_shipments_order; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_order_shipments_order ON public.order_shipments USING btree (order_id, create_time DESC);
 
 
 --
@@ -6669,13 +6977,6 @@ CREATE INDEX idx_products_attribute_ids ON public.products USING gin (attribute_
 --
 
 CREATE INDEX idx_products_brand_id ON public.products USING btree (brand_id) WHERE (brand_id IS NOT NULL);
-
-
---
--- Name: idx_products_bundle_items_gin; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_products_bundle_items_gin ON public.products USING gin (bundle_items jsonb_path_ops);
 
 
 --
@@ -7526,6 +7827,13 @@ CREATE UNIQUE INDEX uq_coupons_project_code ON public.coupons USING btree (proje
 
 
 --
+-- Name: uq_currency_rates_pair; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_currency_rates_pair ON public.currency_rates USING btree (upper(base_code), upper(quote_code));
+
+
+--
 -- Name: uq_inventory_purchase_lines_order_variant; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7572,6 +7880,34 @@ CREATE UNIQUE INDEX uq_inventory_reasons_project_code ON public.inventory_change
 --
 
 CREATE UNIQUE INDEX uq_inventory_sources_project_code ON public.inventory_sources USING btree (project_id, upper(code));
+
+
+--
+-- Name: uq_inventory_transfer_attachments_row; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_inventory_transfer_attachments_row ON public.inventory_transfer_attachments USING btree (transfer_id, attachment_id, usage_type);
+
+
+--
+-- Name: uq_inventory_transfer_items_row; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_inventory_transfer_items_row ON public.inventory_transfer_items USING btree (transfer_id, stock_id);
+
+
+--
+-- Name: uq_inventory_transfers_no; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_inventory_transfers_no ON public.inventory_transfers USING btree (project_id, transfer_no);
+
+
+--
+-- Name: uq_inventory_transfers_request; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_inventory_transfers_request ON public.inventory_transfers USING btree (project_id, request_id) WHERE (request_id <> ''::text);
 
 
 --
@@ -7631,6 +7967,13 @@ CREATE UNIQUE INDEX uq_navigation_project_kind_path ON public.navigations USING 
 
 
 --
+-- Name: uq_order_carriers_project_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_order_carriers_project_code ON public.order_carriers USING btree (project_id, upper(code));
+
+
+--
 -- Name: uq_order_returns_no; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7642,6 +7985,27 @@ CREATE UNIQUE INDEX uq_order_returns_no ON public.order_returns USING btree (pro
 --
 
 CREATE UNIQUE INDEX uq_order_returns_request ON public.order_returns USING btree (project_id, request_id) WHERE ((request_id)::text <> ''::text);
+
+
+--
+-- Name: uq_order_shipment_items_row; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_order_shipment_items_row ON public.order_shipment_items USING btree (shipment_id, order_item_id, warehouse_id);
+
+
+--
+-- Name: uq_order_shipments_no; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_order_shipments_no ON public.order_shipments USING btree (project_id, shipment_no);
+
+
+--
+-- Name: uq_order_shipments_request; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_order_shipments_request ON public.order_shipments USING btree (project_id, request_id) WHERE (request_id <> ''::text);
 
 
 --
@@ -8509,30 +8873,6 @@ ALTER TABLE ONLY public.sys_attachment
 
 
 --
--- Name: inventory_bom_items inventory_bom_items_component_variant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inventory_bom_items
-    ADD CONSTRAINT inventory_bom_items_component_variant_id_fkey FOREIGN KEY (component_variant_id) REFERENCES public.product_variants(id) ON DELETE CASCADE;
-
-
---
--- Name: inventory_bom_items inventory_bom_items_parent_variant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inventory_bom_items
-    ADD CONSTRAINT inventory_bom_items_parent_variant_id_fkey FOREIGN KEY (parent_variant_id) REFERENCES public.product_variants(id) ON DELETE CASCADE;
-
-
---
--- Name: inventory_bom_items inventory_bom_items_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inventory_bom_items
-    ADD CONSTRAINT inventory_bom_items_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id);
-
-
---
 -- Name: inventory_change_reasons inventory_change_reasons_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8669,6 +9009,22 @@ ALTER TABLE ONLY public.inventory_stocks
 
 
 --
+-- Name: inventory_transfer_attachments inventory_transfer_attachments_transfer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_transfer_attachments
+    ADD CONSTRAINT inventory_transfer_attachments_transfer_id_fkey FOREIGN KEY (transfer_id) REFERENCES public.inventory_transfers(id) ON DELETE CASCADE;
+
+
+--
+-- Name: inventory_transfer_items inventory_transfer_items_transfer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.inventory_transfer_items
+    ADD CONSTRAINT inventory_transfer_items_transfer_id_fkey FOREIGN KEY (transfer_id) REFERENCES public.inventory_transfers(id) ON DELETE CASCADE;
+
+
+--
 -- Name: inventory_warehouses inventory_warehouses_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8698,6 +9054,14 @@ ALTER TABLE ONLY public.navigations
 
 ALTER TABLE ONLY public.navigations
     ADD CONSTRAINT navigations_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
+-- Name: order_shipment_items order_shipment_items_shipment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_shipment_items
+    ADD CONSTRAINT order_shipment_items_shipment_id_fkey FOREIGN KEY (shipment_id) REFERENCES public.order_shipments(id) ON DELETE CASCADE;
 
 
 --
@@ -9027,12 +9391,6 @@ ALTER TABLE public.coupon_redemptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.coupons ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: inventory_bom_items; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public.inventory_bom_items ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: inventory_change_reasons; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9117,6 +9475,12 @@ ALTER TABLE public.inventory_stock_movements_default ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_stocks ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: inventory_transfers; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inventory_transfers ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: inventory_warehouses; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9183,10 +9547,22 @@ ALTER TABLE public.membership_tiers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.navigations ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: order_carriers; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.order_carriers ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: order_returns; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.order_returns ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: order_shipments; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.order_shipments ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: orders; Type: ROW SECURITY; Schema: public; Owner: -
@@ -9358,13 +9734,6 @@ CREATE POLICY project_isolation ON public.coupons USING ((project_id = (NULLIF(c
 
 
 --
--- Name: inventory_bom_items project_isolation; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY project_isolation ON public.inventory_bom_items USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
-
-
---
 -- Name: inventory_change_reasons project_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -9463,6 +9832,13 @@ CREATE POLICY project_isolation ON public.inventory_stocks USING ((project_id = 
 
 
 --
+-- Name: inventory_transfers project_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY project_isolation ON public.inventory_transfers USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
+
+
+--
 -- Name: inventory_warehouses project_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -9526,10 +9902,24 @@ CREATE POLICY project_isolation ON public.navigations USING ((project_id = (NULL
 
 
 --
+-- Name: order_carriers project_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY project_isolation ON public.order_carriers USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
+
+
+--
 -- Name: order_returns project_isolation; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY project_isolation ON public.order_returns USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
+
+
+--
+-- Name: order_shipments project_isolation; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY project_isolation ON public.order_shipments USING ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid)) WITH CHECK ((project_id = (NULLIF(current_setting('app.project_id'::text, true), ''::text))::uuid));
 
 
 --

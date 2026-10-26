@@ -234,13 +234,11 @@ type MovementResp struct {
 	ReasonID       string `json:"reasonId"`
 	ReasonCode     string `json:"reasonCode"`
 	ReasonName     string `json:"reasonName"`
-	// ParentVariantID 非空表示这条流水是「按物料清单展开」出的子项扣减。
-	ParentVariantID string `json:"parentVariantId"`
-	SourceType      string `json:"sourceType"`
-	SourceRef       string `json:"sourceRef"`
-	Remark          string `json:"remark"`
-	OperatorID      string `json:"operatorId"`
-	BatchID         string `json:"batchId"`
+	SourceType     string `json:"sourceType"`
+	SourceRef      string `json:"sourceRef"`
+	Remark         string `json:"remark"`
+	OperatorID     string `json:"operatorId"`
+	BatchID        string `json:"batchId"`
 	// UnitCost 是这次变动时刻的**成本留痕**（元，迁移 256）：出库 = 扣减时该库存行的
 	// 当前成本；入库 = 本次显式成本（采购 / 生产单价），无显式成本时记库存行当前成本。
 	// 可空：nil = 当时该 (仓库, SKU) 尚未核算 —— 与「0 成本」严格区分。
@@ -248,7 +246,7 @@ type MovementResp struct {
 	CreatedAt string   `json:"createdAt"`
 }
 
-// StockChangeResp 一次库存变动（或一次 BOM 展开扣减）的结果。
+// StockChangeResp 一次库存变动的结果。
 //
 // CacheTotals / CacheSynced / CacheFailures 是商品侧库存缓存时代的字段（issue #16）：那层
 // 缓存已由迁移 121 删除、同步动作随之移除，三个字段保留以免改动对外响应结构 —— 值恒为
@@ -280,25 +278,6 @@ type ReasonResp struct {
 	Sort      int    `json:"sort"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
-}
-
-// —— 物料清单（issue #16 验收 5）——
-
-// BOMItemResp 物料清单的一条子项。
-type BOMItemResp struct {
-	ID                 string `json:"id"`
-	ComponentVariantID string `json:"componentVariantId"`
-	ComponentSKUCode   string `json:"componentSkuCode"`
-	Quantity           int    `json:"quantity"`
-}
-
-// BOMResp 某个父 SKU 的物料清单。
-type BOMResp struct {
-	ParentVariantID string         `json:"parentVariantId"`
-	ParentSKUCode   string         `json:"parentSkuCode"`
-	ProjectID       string         `json:"projectId"`
-	Items           []*BOMItemResp `json:"items"`
-	UpdatedAt       string         `json:"updatedAt"`
 }
 
 // —— 库存对账（issue #16 验收 7）——

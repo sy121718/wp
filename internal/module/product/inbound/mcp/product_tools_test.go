@@ -31,14 +31,14 @@ func (f *fakeProduct) Get(_ context.Context, req *productdto.GetReq) (*productdt
 	f.getCalls++
 	return &productdto.ProductResp{
 		ID: req.ID, ProjectID: req.ProjectID, Name: "维生素 C", Slug: "vitamin-c",
-		Type: "variant", Status: "active", SKUCode: "VIT-C",
+		Status: "active", SKUCode: "VIT-C",
 	}, nil
 }
 
 func (f *fakeProduct) List(_ context.Context, req *productdto.ListReq) ([]*productdto.ProductResp, error) {
 	f.listReq = req
 	return []*productdto.ProductResp{
-		{ID: "p-9", Name: "维生素 C 泡腾片", SKUCode: "VIT-C", Type: "variant", Status: "active"},
+		{ID: "p-9", Name: "维生素 C 泡腾片", SKUCode: "VIT-C", Status: "active"},
 	}, nil
 }
 

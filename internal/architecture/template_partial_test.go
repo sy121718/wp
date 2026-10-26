@@ -11,13 +11,13 @@ import (
 //
 // 判据是**处数**（双向）：后台模板里手写的 <div class="empty-state"> 只能减少 ——
 // 新写一处就失败，改完一处忘了下调预算也失败。这是「同一形态只写一遍」唯一能自动守住的形式。
-const emptyStateBudget = 72
+const emptyStateBudget = 71
 
 const emptyStatePartial = "internal/templates/admin/partials/empty_state.html"
 
 // 状态徽标同理：形态只在 admin/partials/badge.html 里，模板里手写的 badge 只能减少。
 // 只数 <span class="badge badge-…">（td/div 上的 badge 是表格与卡片自己的类，不是这个形态）。
-const badgeBudget = 162
+const badgeBudget = 161
 
 const badgePartial = "internal/templates/admin/partials/badge.html"
 

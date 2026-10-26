@@ -9,6 +9,16 @@ import (
 
 // product_variant_req.go / product_variant_resp.go — 变体清单、组合预览与批量保存的入参与回执。
 
+// ListVariantOptionReq 跨商品的可选变体清单（后台选品下拉的数据源）。
+//
+// 只按**商品名**关键词过滤（商品目录的既有语义），无分页：调用方是下拉候选区，
+// 要的是「输几个字就缩小范围」，不是翻页浏览。
+type ListVariantOptionReq struct {
+	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
+	ProjectID string `form:"projectId"`
+	Keyword   string `form:"keyword"`
+}
+
 // PreviewVariantReq 组合生成预览（不落库）。
 //
 // Selections 为空 = 「生成全部组合」（与 GenerateVariants 的无表单路径同一语义：
@@ -45,7 +55,7 @@ type SaveVariantListReq struct {
 
 // BindForm 表单体里 Rows 是一个 JSON 字符串（htmx 侧用 JSON.stringify 生成）。
 //
-// 与 SetBundleConfigReq.BindForm 同一条理由：gin 的 form 映射不支持点号嵌套，
+// 与其他自定义 BindForm 的 DTO 同一条理由：gin 的 form 映射不支持点号嵌套，
 // 而 Rows 的元素里还带 optionValues（一个 map）—— 只能整体按 JSON 解析。
 //
 // 空串 / 未提交 → 保持 nil（nil = 本次不改，与 JSON 省略同义）。

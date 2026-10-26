@@ -300,23 +300,6 @@ func TestProductCreateFromWarehouseSKUDuplicate(t *testing.T) {
 	}
 }
 
-// TestProductCreateFromWarehouseSKUBundleRejected 捆绑商品不存在于仓库：这个入口对它不成立。
-func TestProductCreateFromWarehouseSKUBundleRejected(t *testing.T) {
-	f := newWPickFixture(t)
-	if f == nil {
-		return
-	}
-	price := 99.0
-	_, err := f.products.Create(context.Background(), &productdto.CreateReq{
-		ProjectID: f.projectID, Name: "捆绑也想从仓库选", Slug: "bundle-pick",
-		Type: productmodel.TypeBundle, DefaultPrice: &price, SKUCode: "BUNDLE-PICK",
-		SKUSource: "warehouse", WarehouseSKU: "TEE-001", WarehouseID: f.sh.ID,
-	})
-	if err == nil || err.Error() != inventoryenums.ErrWarehouseSKUBundleNotAllowed {
-		t.Fatalf("bundle 用「从仓库选」应返回 %s，实际 %v", inventoryenums.ErrWarehouseSKUBundleNotAllowed, err)
-	}
-}
-
 // TestProductCreateFromWarehouseSKUExternalConflict 跨商品共用一个外部编码被拒（N:1 弱校验）。
 //
 // 触发路径是**自己打新码 + 显式填外码**：那条货还没进这个仓，商品侧的首次入库要写外码，

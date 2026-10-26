@@ -98,10 +98,8 @@ func fragmentUnstyledCapabilities() map[string]string {
 		// .sky-comment-* 同样是保留命名空间下的**语义钩子**（站点主题可覆写），
 		// 基座刻意不给布局 —— 列表密度与表单宽窄由放置它的容器组件决定，
 		// 进基座会与「容器决定排版」的分工打架（与会员片段同一取舍）。
-		"commentList":             "评论列表 + 提交表单：.sky-comment-* 为语义钩子，当前无布局样式；宽窄由放置它的容器组件决定",
-		"commentSubmit":           "评论提交结果只输出一句人话（.sky-comment-result 无布局诉求），当前无样式定义",
-		"bundleConfigurator":      "捆绑配置器内嵌在后台工作台页面里（用后台的 workbench.css），不进访问产物",
-		"bundleConfiguratorCheck": "同 bundleConfigurator：整单校验结果内嵌在后台工作台，样式来自 workbench.css",
+		"commentList":   "评论列表 + 提交表单：.sky-comment-* 为语义钩子，当前无布局样式；宽窄由放置它的容器组件决定",
+		"commentSubmit": "评论提交结果只输出一句人话（.sky-comment-result 无布局诉求），当前无样式定义",
 	}
 }
 

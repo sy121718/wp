@@ -8,7 +8,7 @@ package runtimefragment
 // issue #20 起支持 POST：结构化入参（表单里的并行数组）用 GET 的 query 传既受长度
 // 限制也不合语义。POST 片段分两类：
 //
-//   · **无副作用**（bundleConfiguratorCheck 是纯计算校验）—— anonymous 即可；
+//   · **无副作用**（纯计算校验类片段）—— anonymous 即可；
 //   · **有副作用**（购物车 / 结算）—— 必须满足下面两条之一，否则就是 CSRF 缺口：
 //     ① session 策略（认证态自带 cookie 身份 + CSRF token）；或
 //     ② 状态落在**客户端签名 cookie** 里、且该 cookie 是 SameSite=Lax。

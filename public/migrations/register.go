@@ -291,9 +291,6 @@ func init() {
 	registerBlockBulkDeleteGrantCopy()
 	// 598：联系人页 JSON 写表单的界面文案（见 register_mail_contact_write_ui_i18n.go）。
 	registerMailContactWriteUII18n()
-	// 599：商品捆绑页「写失败 + 重读也失败」档的三条界面文案
-	//（见 register_product_bundle_write_ui_i18n.go）。
-	registerProductBundleWriteUII18n()
 	// 600：导航菜单页 JSON 写表单的两条界面文案（见 register_navigation_write_ui_i18n.go）。
 	registerNavigationWriteUII18n()
 	// 601：导航菜单页「来源批量加入菜单」迁到 JSON API 后的三条结果文案
@@ -329,8 +326,6 @@ func init() {
 	//（见 register_mail_page_notice_i18n.go；enums 对账判据只认 a.msg./a.err./a.test. 三种形态，
 	//  这批 7 条连红都不会红，所以必须有人读一遍 enums 的新增块）。
 	registerMailPageNoticeI18n()
-	// 619：捆绑容器的容器价必须 > 0（见 register_bundle_price_check.go）。
-	registerBundlePriceCheck()
 	// 620：译文保存后标记待重建失败的回执词条（见 register_translation_stale_mark_i18n.go）。
 	registerTranslationStaleMarkI18n()
 	// 621：自动化图定义 v1 → v2 一次性刷平（Go 回调形式，见

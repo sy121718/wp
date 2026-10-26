@@ -2,20 +2,16 @@ package rlstest
 
 // rls_inventory_scope_test.go — product/inventory 批次的工程作用域护栏（DB-009 最后一批）。
 //
-// 这一批补的是 inventory 域**既不在前几批允许面里、也没被任何代理接手**的 7 处：
-// 流水列表 / 流水计数 / 库存列表 / BOM 读（单个父 SKU / 批量父 SKU / 父链）/ BOM 全量替换。
-// 三张表（inventory_stock_movements、inventory_stocks、inventory_bom_items）都在迁移 215
-// 名单里 —— 流水还是分区表（策略装在父表、分区由 215 单独装，见 partition.EnsureAhead）。
+// 这一批补的是 inventory 域**既不在前几批允许面里、也没被任何代理接手**的 4 处：
+// 流水列表 / 流水计数 / 库存列表 / 库存真源分页。
+// 两张表（inventory_stock_movements、inventory_stocks）都在迁移 215 名单里 ——
+// 流水还是分区表（策略装在父表、分区由 215 单独装，见 partition.EnsureAhead）。
 //
 // 失效形态**按危害排序，不能只看读路径**：
 //
-//  1. **BOM 成环检测读到空父链 ⇒ 放行成环**（本批最危险的一条）。检测的方向是「从父 SKU
-//     沿父链上行，撞到新子项即判环」；读不到 parents 等于上行路径为空，A→B→A 被判成无环
-//     并**真的写进库**，之后每次扣减展开都要撞 maxBOMDepth 才认输。所以这里的断言不止
-//     「返回了错误」，还必须看**库里有没有那条成环边**；
-//  2. **清空 BOM 静默影响 0 行**（ReplaceBOM 的空 rows 分支）：接口回报成功、清单里
-//     什么都没删，而清空前后的响应完全一样；
-//  3. 流水列表 / 库存列表静默空集、CountMovements 恒 0：列表页显示「暂无数据」而不是报错。
+//  1. **流水计数静默归零**（CountMovements）：分页总量变成 0，列表页却仍是「暂无数据」，
+//     看不出是没数据还是读不到；
+//  2. 流水列表 / 库存列表静默空集：页面显示「暂无数据」而不是报错。
 //
 // 全程跑在**非超级角色**下（rlsFixture 保证，并用 rls.BypassedRole 自检），
 // 否则超级用户无条件绕过 RLS，断言全绿而无意义。
@@ -28,7 +24,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
 	inventoryservice "go_wp/internal/module/inventory/service"
@@ -132,158 +127,6 @@ func seedMovement(t *testing.T, db *gorm.DB, projectID, warehouseID, variantID, 
 	}
 }
 
-// setBOM 经 service 公开入口全量替换清单（components 为空即**清空**）。
-func setBOM(t *testing.T, f *invScope, projectID, parentVariantID string, components ...string) {
-	t.Helper()
-	items := make([]inventorydto.BOMItemReq, 0, len(components))
-	for _, c := range components {
-		items = append(items, inventorydto.BOMItemReq{ComponentVariantID: c, Quantity: 2})
-	}
-	if _, err := f.svc.SetBOM(context.Background(), &inventorydto.SetBOMReq{
-		ProjectID: projectID, ParentVariantID: parentVariantID, Items: items,
-	}); err != nil {
-		t.Fatalf("设置清单失败（projectID=%s parent=%s）: %v", projectID, parentVariantID, err)
-	}
-}
-
-// bomItems 读某父 SKU 的清单子项（经 model 的作用域路径）。
-func bomItems(t *testing.T, f *invScope, projectID, parentVariantID string) []*inventorymodel.BOMItemEntity {
-	t.Helper()
-	rows, err := f.im.ListBOMItems(context.Background(), parentVariantID, projectID)
-	if err != nil {
-		t.Fatalf("读清单失败（projectID=%s）: %v", projectID, err)
-	}
-	return rows
-}
-
-// stockQtyScoped 经作用域读某库存行的数量。
-//
-// 必须包 scope：非超级角色下裸查恒 0 行（fail closed 不报错），
-// 直接 Scan 到 int 会得到 0 —— 那是「查不到」而不是「数量是 0」，两者会被混淆。
-func stockQtyScoped(t *testing.T, f *invScope, projectID, variantID, warehouseID string) int {
-	t.Helper()
-	var qty int
-	err := rls.InProjectScope(context.Background(), f.db, projectID, func(tx *gorm.DB) error {
-		return tx.Raw("SELECT quantity FROM inventory_stocks WHERE variant_id = ? AND warehouse_id = ?",
-			variantID, warehouseID).Scan(&qty).Error
-	})
-	if err != nil {
-		t.Fatalf("读库存数量失败: %v", err)
-	}
-	return qty
-}
-
-// TestRLS_InventoryScope_BOMCycleDetectionStaysInProject 成环检测必须真正读到父链。
-//
-// 这是本批最危险的一条：inventory_bom_items 带 FORCE 策略，ListBOMParents 若拿不到
-// 工程作用域就读到**空父链**，而空父链在成环判定里等价于「上行一路没撞到新子项」——
-// 判定返回「无环」并**放行写入**。它的后果不是「查不到数据」，而是把该拒绝的清单写进库，
-// 之后每次扣减展开都要递归到 maxBOMDepth 才认输。
-//
-// 断言三层，缺一层都可能放过退化：
-//   - 本工程读得到父链（判定才有依据）；
-//   - 他工程的作用域读同一列 0 行（这就是「漏包 scope 后判定看到的东西」）；
-//   - 端到端：成环清单被拒 **且库里没有留下那条边**。
-func TestRLS_InventoryScope_BOMCycleDetectionStaysInProject(t *testing.T) {
-	f := newInvScope(t)
-	ctx := context.Background()
-
-	// 合法清单：P → C。
-	setBOM(t, f, f.pA, f.parentA, f.compA)
-
-	// 端到端（危害最直接的一条，故放最前）：再加 C → P 会成环，必须被拒。
-	_, err := f.svc.SetBOM(ctx, &inventorydto.SetBOMReq{
-		ProjectID: f.pA, ParentVariantID: f.compA,
-		Items: []inventorydto.BOMItemReq{{ComponentVariantID: f.parentA, Quantity: 1}},
-	})
-	if err == nil || err.Error() != inventoryenums.ErrBOMCycle {
-		t.Fatalf("成环清单必须返回 %s，实际 err=%v —— 读到空父链时它会返回 nil 并把环写进库",
-			inventoryenums.ErrBOMCycle, err)
-	}
-	// 第二重证据：库里不该留下那条成环边（只看返回值会漏掉「先写后报错」的实现）。
-	if cycleRows := bomItems(t, f, f.pA, f.compA); len(cycleRows) != 0 {
-		t.Fatalf("成环边 C→P 不该落库，实际 %d 行 —— 成环被静默放行", len(cycleRows))
-	}
-	// 反向对照：合法的那条仍在（证明上面的「0 行」不是清单根本没写进去）。
-	if n := len(bomItems(t, f, f.pA, f.parentA)); n != 1 {
-		t.Fatalf("合法清单 P→C 应仍在，实际 %d 行", n)
-	}
-
-	// 机理：上面的判定靠的就是这条父链查询读得到（拿不到作用域时它返回空父链，
-	// 而空父链在成环判定里等价于「上行一路没撞到新子项」）。
-	parents, err := f.im.ListBOMParents(ctx, f.compA, f.pA)
-	if err != nil {
-		t.Fatalf("读父链失败: %v", err)
-	}
-	if len(parents) != 1 || parents[0].ParentVariantID != f.parentA {
-		t.Fatalf("工程 A 应看到子件 C 的父是 P，实际 %+v", parents)
-	}
-
-	// 拿 B 的作用域读同一列：0 行 —— 这正是漏包 scope 时成环检测拿到的东西。
-	cross, err := f.im.ListBOMParents(ctx, f.compA, f.pB)
-	if err != nil {
-		t.Fatalf("跨工程读父链失败: %v", err)
-	}
-	if len(cross) != 0 {
-		t.Errorf("拿 B 的作用域读 A 的父链应 0 行（行不可见），实际 %d 行", len(cross))
-	}
-}
-
-// TestRLS_InventoryScope_ClearBOMActuallyDeletes 清空 BOM 必须真的删掉行。
-//
-// ReplaceBOM 的「rows 为空」分支此前是**裸事务**（签名里拿不到工程 id）：换非超级角色后
-// 那条 DELETE 静默匹配 0 行 —— 接口回报成功（SetBOM 末尾还会回读一次并返回空 items），
-// 而清单里什么都没删。断言因此必须落到**库里的行数**上，不能只看调用没报错。
-func TestRLS_InventoryScope_ClearBOMActuallyDeletes(t *testing.T) {
-	f := newInvScope(t)
-
-	setBOM(t, f, f.pA, f.parentA, f.compA)
-	if n := len(bomItems(t, f, f.pA, f.parentA)); n != 1 {
-		t.Fatalf("准备阶段：清单应为 1 条，实际 %d 条", n)
-	}
-
-	// 空 items = 清空。
-	setBOM(t, f, f.pA, f.parentA)
-
-	if n := len(bomItems(t, f, f.pA, f.parentA)); n != 0 {
-		t.Fatalf("清空后清单应为 0 条，实际 %d 条 —— 清空静默影响 0 行", n)
-	}
-
-	// 经作用域直查表本身（与上面的读路径是两条独立证据）。
-	var raw int64
-	if err := rls.InProjectScope(context.Background(), f.db, f.pA, func(tx *gorm.DB) error {
-		return tx.Table("inventory_bom_items").Where("parent_variant_id = ?", f.parentA).Count(&raw).Error
-	}); err != nil {
-		t.Fatalf("直查清单表失败: %v", err)
-	}
-	if raw != 0 {
-		t.Fatalf("清空之后 inventory_bom_items 里不应再有该父 SKU 的行，实际 %d 行", raw)
-	}
-}
-
-// TestRLS_InventoryScope_ClearBOMStaysInProject 清空只动本工程的行。
-//
-// 拿别的工程的作用域去清空：不报错，但一行都不该动。这条钉的是「作用域取自谁」——
-// 若作用域被写成「父 SKU 的归属」或「不过滤」，跨工程清空就会真的删掉别人的清单。
-func TestRLS_InventoryScope_ClearBOMStaysInProject(t *testing.T) {
-	f := newInvScope(t)
-	ctx := context.Background()
-
-	setBOM(t, f, f.pA, f.parentA, f.compA)
-
-	// 拿工程 B 的作用域清空工程 A 的父 SKU 清单。
-	if _, err := f.svc.SetBOM(ctx, &inventorydto.SetBOMReq{
-		ProjectID: f.pB, ParentVariantID: f.parentA,
-	}); err != nil {
-		t.Fatalf("跨工程清空不该报错（策略是「不可见」而非「拒绝」），实际 %v", err)
-	}
-
-	// A 的清单必须原样还在。
-	if n := len(bomItems(t, f, f.pA, f.parentA)); n != 1 {
-		t.Fatalf("拿 B 的作用域清空 A 的清单：A 的行必须仍在，实际 %d 条", n)
-	}
-}
-
 // TestRLS_InventoryScope_MovementListAndCount 流水列表与计数都落在工程作用域内。
 //
 // 两条静默形态：ListMovementRows 少一条流水就是「流水页少一行」（看起来像数据没记），
@@ -384,49 +227,6 @@ func TestRLS_InventoryScope_StockRowsList(t *testing.T) {
 	}
 }
 
-// TestRLS_InventoryScope_BOMExpansionUsesScope 展开扣减真的按清单走（子项被扣、父项不动）。
-//
-// ListBOMItemsByParents 缺作用域时每层都读到空子项，有清单的 SKU **全被当成叶子**：
-// 扣减变成按父项自身扣，静默少扣子项料、不报错。所以断言落在**两个 SKU 的数量**上，
-// 而不是「调用没报错」。
-func TestRLS_InventoryScope_BOMExpansionUsesScope(t *testing.T) {
-	f := newInvScope(t)
-	ctx := context.Background()
-
-	setBOM(t, f, f.pA, f.parentA, f.compA) // P → C，用量 2
-	seedBuiltinReason(t, f.db, "guard_out", inventoryenums.DirectionOut)
-
-	if _, err := f.svc.DeductStock(ctx, &inventorydto.DeductStockReq{
-		ProjectID: f.pA, WarehouseID: f.whA, ReasonCode: "guard_out", ExpandBOM: true,
-		Lines: []inventorydto.StockChangeLineReq{{VariantID: f.parentA, Quantity: 3}},
-	}); err != nil {
-		t.Fatalf("按清单展开扣减失败: %v", err)
-	}
-
-	if q := stockQtyScoped(t, f, f.pA, f.parentA, f.whA); q != 10 {
-		t.Errorf("有清单的父 SKU 不该被自身扣减（应仍为 10），实际 %d —— 展开读到空子项时会变成 7", q)
-	}
-	if q := stockQtyScoped(t, f, f.pA, f.compA, f.whA); q != 4 {
-		t.Errorf("子项应被扣 3×2=6（10 → 4），实际 %d —— 展开读到空子项时这里会仍是 10", q)
-	}
-
-	// 批量父查（展开逐层用的就是它）在别工程的作用域下读不到。
-	byParents, err := f.im.ListBOMItemsByParents(ctx, []string{f.parentA}, f.pB)
-	if err != nil {
-		t.Fatalf("跨工程批量读清单子项失败: %v", err)
-	}
-	if len(byParents) != 0 {
-		t.Errorf("拿 B 的作用域批量读 A 的清单子项应 0 行，实际 %d 行", len(byParents))
-	}
-	own, err := f.im.ListBOMItemsByParents(ctx, []string{f.parentA}, f.pA)
-	if err != nil {
-		t.Fatalf("批量读本工程清单子项失败: %v", err)
-	}
-	if len(own) != 1 {
-		t.Errorf("本工程批量读清单子项应得 1 行，实际 %d 行", len(own))
-	}
-}
-
 // TestRLS_InventoryScope_RejectsMissingProjectID 缺工程作用域时这批入口显式报错。
 //
 // 与「裸查 0 行」是两种失效形态，都要钉住：裸句柄是**静默** fail closed，而带
@@ -457,21 +257,6 @@ func TestRLS_InventoryScope_RejectsMissingProjectID(t *testing.T) {
 				_, err := f.im.CountMovements(ctx, inventorymodel.MovementFilter{ProjectID: bad})
 				return err
 			}},
-			{"ListBOMItems(inventory_bom_items)", func() error {
-				_, err := f.im.ListBOMItems(ctx, f.parentA, bad)
-				return err
-			}},
-			{"ListBOMItemsByParents(inventory_bom_items)", func() error {
-				_, err := f.im.ListBOMItemsByParents(ctx, []string{f.parentA}, bad)
-				return err
-			}},
-			{"ListBOMParents(inventory_bom_items)", func() error {
-				_, err := f.im.ListBOMParents(ctx, f.compA, bad)
-				return err
-			}},
-			{"ReplaceBOM(inventory_bom_items)", func() error {
-				return f.im.ReplaceBOM(ctx, f.parentA, bad, nil)
-			}},
 		}
 		for _, c := range cases {
 			if err := c.run(); err == nil || err.Error() != rls.ErrInvalidProjectID.Error() {
@@ -484,20 +269,16 @@ func TestRLS_InventoryScope_RejectsMissingProjectID(t *testing.T) {
 	if _, err := f.im.ListStockRows(ctx, inventorymodel.StockFilter{ProjectID: f.pA}, 10, 0); err != nil {
 		t.Fatalf("工程 A 读自己的库存列表应成功，实际 %v", err)
 	}
-	if err := f.im.ReplaceBOM(ctx, f.parentA, f.pA, nil); err != nil {
-		t.Fatalf("工程 A 清空自己的清单应成功，实际 %v", err)
-	}
 }
 
-// TestRLS_InventoryScope_FailClosedWithoutScope 未设作用域时这三张表一行都读不到。
+// TestRLS_InventoryScope_FailClosedWithoutScope 未设作用域时这两张表一行都读不到。
 //
 // 这条把「漏包 scope 的路径」在换角色后的真实表现钉住 —— 0 行且不报错。
-// 三张表各测一次：库存真源（读路径）、流水（分区表，父表策略）、物料清单（成环检测的依据）。
+// 两张表各测一次：库存真源（读路径）、流水（分区表，父表策略）。
 func TestRLS_InventoryScope_FailClosedWithoutScope(t *testing.T) {
 	f := newInvScope(t)
 	ctx := context.Background()
 
-	setBOM(t, f, f.pA, f.parentA, f.compA)
 	seedMovement(t, f.db, f.pA, f.whA, f.parentA, inventoryenums.DirectionIn)
 
 	bare := []struct {
@@ -514,11 +295,6 @@ func TestRLS_InventoryScope_FailClosedWithoutScope(t *testing.T) {
 			err := f.db.Table("inventory_stock_movements").Where("project_id = ?", f.pA).Count(&n).Error
 			return n, err
 		}},
-		{"inventory_bom_items", func() (int64, error) {
-			var n int64
-			err := f.db.Table("inventory_bom_items").Where("project_id = ?", f.pA).Count(&n).Error
-			return n, err
-		}},
 	}
 	for _, c := range bare {
 		n, err := c.query()
@@ -531,16 +307,13 @@ func TestRLS_InventoryScope_FailClosedWithoutScope(t *testing.T) {
 	}
 
 	// 对照：同一批行经作用域路径读得到 —— 差别只在会话变量，不在 WHERE。
-	if n := len(bomItems(t, f, f.pA, f.parentA)); n != 1 {
-		t.Fatalf("设了作用域应读得到清单，实际 %d 行", n)
-	}
 	if rows, err := f.im.ListMovementRows(ctx, inventorymodel.MovementFilter{ProjectID: f.pA}, 0, 0); err != nil || len(rows) != 1 {
 		t.Fatalf("设了作用域应读得到流水，实际 n=%d err=%v", len(rows), err)
 	}
 
 	// 作用域事务结束后变量已还原：再次裸查仍 0 行（会话变量不许泄漏到池里的下一条语句）。
 	var raw int64
-	if err := f.db.Table("inventory_bom_items").Count(&raw).Error; err != nil {
+	if err := f.db.Table("inventory_stocks").Count(&raw).Error; err != nil {
 		t.Fatalf("裸查失败: %v", err)
 	}
 	if raw != 0 {

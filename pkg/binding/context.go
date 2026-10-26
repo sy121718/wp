@@ -21,7 +21,7 @@ import (
 // ListQuery 本次请求 query 里**白名单内**的页面上下文（空值丢弃、键有序）。
 //
 // keys 是那一页的筛选键表：渲染时把它拼进表单 action，提交回来时按同一份表读回。
-// 不在表里的键一律不透传 —— 页面表单不该把无关参数（例如 source=bundle）带回服务端。
+// 不在表里的键一律不透传 —— 页面表单不该把无关参数（例如 source=xxx）带回服务端。
 func ListQuery(c *gin.Context, keys ...string) string {
 	if c == nil || c.Request == nil || c.Request.URL == nil {
 		return ""

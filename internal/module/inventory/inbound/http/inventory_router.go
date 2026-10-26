@@ -30,7 +30,7 @@ var pageCatalogConsumers []productCatalogConsumer
 //
 // 为什么必须后置注入：商品模块的 Setup 需要本模块的 InventoryService（VariantStockPort），
 // 本模块的后台页面又需要商品契约做「商品 → 变体」下拉 —— 两边互为依赖，固定顺序装配不出来。
-// 与本仓 runtimefragment.SetBundleProvider 同一手法：装配期注入一次，之后只读。
+// 与本仓其他装配期注入端口同一手法：装配期注入一次，之后只读。
 // 未注入时页面照常渲染，只是下拉为空（handler 侧对 nil 做降级，不 panic）。
 func SetProductCatalog(products productcontract.ProductService) {
 	// 装配期类型断言而不是把 catalogProduct 写进参数：SetupProductRoutes 的返回值是
@@ -85,15 +85,13 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 	// 库存预警（迁移 624 / 623，W4）：只统计跟踪数量的行（无限库存永远「有货」）。
 	g.GET("/stock/alert", permission.InventoryStockAlert, handle.StockAlert)
 
-	// 库存变动与流水（issue #16 验收 1–5）：真源行锁增减 + 流水 + 原因字典 + 物料清单。
+	// 库存变动与流水（issue #16 验收 1–5）：真源行锁增减 + 流水 + 原因字典。
 	g.POST("/stock/change", permission.InventoryStockChange, handle.ChangeStock)
 	g.POST("/stock/deduct", permission.InventoryStockDeduct, handle.DeductStock)
 	g.GET("/movement/list", permission.InventoryMovementList, handle.ListMovements)
 	g.GET("/reason/list", permission.InventoryReasonList, handle.ListReasons)
 	g.POST("/reason/create", permission.InventoryReasonCreate, handle.CreateReason)
 	g.POST("/reason/update", permission.InventoryReasonUpdate, handle.UpdateReason)
-	g.POST("/bom/set", permission.InventoryBomSet, handle.SetBOM)
-	g.GET("/bom/get", permission.InventoryBomGet, handle.GetBOM)
 
 	// 货源（issue #17）：一张表承载全部进货来源 —— 外部供应商 / 集团内关联公司 / 自家工厂
 	// 用类型区分，关联方标志独立成列（报表区分），config 承载异构对接扩展信息。

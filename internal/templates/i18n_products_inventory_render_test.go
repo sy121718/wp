@@ -455,26 +455,6 @@ func TestGroupDTagsPageRenders(t *testing.T) {
 		"内置规则类型", "标签", "保存标签", "重算", "删除")
 }
 
-func TestGroupDBundlePageRenders(t *testing.T) {
-	data := groupDData(map[string]any{
-		"Err": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
-		"SelectedProduct": "p1", "MaxOptions": 5, "SkuCount": 3,
-		"Products": []map[string]any{{"ID": "p1", "Name": "套餐"}},
-		"Detail": map[string]any{
-			"ProductName": "套餐", "BasePrice": 99.00,
-			"Config": map[string]any{"MaxOptions": 2, "MinTotalQty": 1, "MaxTotalQty": 5},
-		},
-		"Rows": []map[string]any{{
-			"Options":    []map[string]any{{"ID": "v1", "Label": "SKU1", "Selected": true}},
-			"Required":   true,
-			"VariantID":  "v1",
-			"Available":  10,
-			"DefaultQty": 1, "MinQty": 1, "MaxQty": 3,
-		}},
-	})
-	assertGroupDPage(t, "product_bundle", data, "捆绑配置", "选项规则", "保存配置", "前台配置器预览")
-}
-
 func TestGroupDTranslationsPageRenders(t *testing.T) {
 	data := groupDData(map[string]any{
 		"Errors": []string{}, "Saved": false, "SavedNote": "",

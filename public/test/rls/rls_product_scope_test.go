@@ -41,16 +41,11 @@ func seedProductWithVariant(t *testing.T, db *gorm.DB, projectID, name string) (
 	err := productmodel.NewModel(db).CreateWithVariants(context.Background(), &productmodel.ProductEntity{
 		ID: productID, ProjectID: projectID,
 		Name: name, Slug: "guard-" + productID,
-		Status: "draft",
-		// Type 必须显式给：DDL 有 DEFAULT 'variant'，但 gorm 会把 string 零值（空串）**显式写进去**，
-		// 撞 products_type_check（迁移 238）—— 这是刻意的：漏设类型要在写入时就失败，而不是静默落成 variant。
-		Type:        productmodel.TypeVariant,
+		Status:      "draft",
 		Description: []byte("{}"), Images: []byte("[]"), ImageAlts: []byte("[]"),
 		AttributeIDs: []byte("[]"), CategoryIDs: []byte("[]"), TagIDs: []byte("[]"),
 		RelatedIDs: []byte("[]"), Metadata: []byte("{}"),
-		// 114 的 products_bundle_items_shape_check 要求它是对象且带 options 数组。
-		BundleItems: []byte(`{"options":[]}`),
-		CreatedAt:   now, UpdatedAt: now,
+		CreatedAt: now, UpdatedAt: now,
 	}, []*productmodel.VariantEntity{{
 		ID: variantID, ProductID: productID,
 		SKUCode: "SKU-" + variantID[:8], Barcode: "", Image: "",

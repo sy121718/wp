@@ -45,7 +45,7 @@ type purchaseCreateCatalog struct {
 	productcontract.VariantOptionsReader
 }
 
-func (purchaseCreateCatalog) ListVariantOptions(context.Context, string) ([]productcontract.VariantOption, error) {
+func (purchaseCreateCatalog) ListAllVariantOptions(context.Context, string) ([]productcontract.VariantOption, error) {
 	return []productcontract.VariantOption{
 		{VariantID: "variant-1", ProductID: "product-1", SKUCode: "SKU1", ProductName: "product-1"},
 		{VariantID: "variant-2", ProductID: "product-2", SKUCode: "SKU2", ProductName: "product-2"},

@@ -30,6 +30,10 @@ type VariantOption struct {
 //
 // projectID 必填：空串由实现方按参数错误拒绝（不返回「全部工程」——
 // 那会让一个工程的页面列出所有工程的 SKU）。
+//
+// 方法名与 ProductService.ListVariantOptions 刻意不同：后者按**关键词**收窄候选
+// （订单代客建单页用），这个要的是全量（库存页与采购页的下拉）。同名不同签名会让
+// 同一个实现类型两条都实现不了（装配期的类型断言直接编不过）。
 type VariantOptionsReader interface {
-	ListVariantOptions(ctx context.Context, projectID string) ([]VariantOption, error)
+	ListAllVariantOptions(ctx context.Context, projectID string) ([]VariantOption, error)
 }

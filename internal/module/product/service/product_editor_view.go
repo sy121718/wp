@@ -14,7 +14,6 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	productmodel "go_wp/internal/module/product/model"
 )
 
 // ProductListPath 商品列表页路径（详情页 / 编辑页的返回地址都以它打底）。
@@ -79,14 +78,6 @@ func AttributeChecks(options []productdto.AttributeOptionResp, selected []string
 	return out
 }
 
-// IsBundleProduct 商品类型是否为捆绑容器（详情页据此决定要不要渲染「捆绑构成」）。
-//
-// 判据只认类型本身，不看 bundle_items 是否非空 —— 后者是迁移 238 之前的旧口径，分不清
-// 「主体卖自己的 SKU」与「容器卖组合」。
-func IsBundleProduct(productType string) bool {
-	return productType == productmodel.TypeBundle
-}
-
 // FillProductEditFormEcho 编辑表单的回显值（状态选中项、属性组勾选态、图集与数值字段的文本形态、
 // 捆绑容器标记）。
 //
@@ -109,5 +100,4 @@ func FillProductEditFormEcho(view *productdto.ProductEditPageResp) {
 	view.ImageAltsInput = strings.Join(view.Detail.ImageAlts, "\n")
 	view.WeightInput = NullableNumberText(view.Detail.Weight)
 	view.DefaultPriceInput = NullableNumberText(view.Detail.DefaultPrice)
-	view.IsBundle = IsBundleProduct(view.Detail.Type)
 }

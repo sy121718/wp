@@ -426,13 +426,15 @@ func registerAdminI18nSeedsAndLatest() {
 		SQL: mustSQL("190_i18n_seed_marketing.sql"),
 	})
 	// 191：商品库存类后台模板文案（审计 I18N-001 组D）
-	// 判据按本批自己的 key 枚举计数（581 个全列）—— 用总量会被其它批次满足而静默跳过。
-	// （原 582：admin.inventory_sources.filter.title 随 436 退役 —— 模板删掉了零样式的
-	//   .fold-title 标签，key 失去引用；本批列表与门槛同批 -1，见 436_retire_sources_filter_title_i18n.sql。）
+	// 判据按本批自己的 key 枚举计数（552 个全列）—— 用总量会被其它批次满足而静默跳过。
+	// 门槛的三次下调都遵循「删能力连 seed 一起收口」（条件与 SQL 同批改）：
+	//   · 582 → 581：admin.inventory_sources.filter.title 随 436 退役（模板删掉了零样式的
+	//     .fold-title 标签，key 失去引用，见 436_retire_sources_filter_title_i18n.sql）；
+	//   · 581 → 552：29 个 admin.product_bundle.* 随捆绑配置页一起下线（636）。
 	registerSeed(Seed{
 		Version:   "191-i18n-seed-product-inventory",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 581 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN (" +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 552 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN (" +
 			"'admin.inventory.change.boldDict', 'admin.inventory.change.boldSource', 'admin.inventory.change.boldTarget', 'admin.inventory.change.lead', " +
 			"'admin.inventory.change.mid', 'admin.inventory.change.mid2', 'admin.inventory.change.optionPick', 'admin.inventory.change.optionReason', " +
 			"'admin.inventory.change.optionWarehouse', 'admin.inventory.change.phQty', 'admin.inventory.change.phRemark', 'admin.inventory.change.phSourceRef', " +
@@ -500,14 +502,7 @@ func registerAdminI18nSeedsAndLatest() {
 			"'admin.product_brands.list.empty', 'admin.product_brands.list.save', 'admin.product_brands.list.sortLead', 'admin.product_brands.list.title', " +
 			"'admin.product_brands.ph.description', 'admin.product_brands.ph.logo', 'admin.product_brands.ph.nameExample', 'admin.product_brands.ph.seoDesc', " +
 			"'admin.product_brands.ph.seoTitle', 'admin.product_brands.ph.slug', 'admin.product_brands.ph.sort', 'admin.product_brands.projectAria', " +
-			"'admin.product_brands.seoScore', 'admin.product_brands.title', 'admin.product_bundle.cfg.col.available', 'admin.product_bundle.cfg.col.defaultQty', " +
-			"'admin.product_bundle.cfg.col.maxQty', 'admin.product_bundle.cfg.col.minQty', 'admin.product_bundle.cfg.col.required', 'admin.product_bundle.cfg.maxOptions', " +
-			"'admin.product_bundle.cfg.maxTotalQty', 'admin.product_bundle.cfg.minTotalQty', 'admin.product_bundle.cfg.save', 'admin.product_bundle.detailFailed', " +
-			"'admin.product_bundle.intro.end', 'admin.product_bundle.intro.lead', 'admin.product_bundle.intro.mid', 'admin.product_bundle.intro.skuBold', " +
-			"'admin.product_bundle.intro.sourceBold', 'admin.product_bundle.intro.tail', 'admin.product_bundle.intro.totalBold', 'admin.product_bundle.option.optional', " +
-			"'admin.product_bundle.option.required', 'admin.product_bundle.preview.hint', 'admin.product_bundle.preview.title', 'admin.product_bundle.rule.basePriceLead', " +
-			"'admin.product_bundle.rule.basePriceTail', 'admin.product_bundle.rule.title', 'admin.product_bundle.saveError', 'admin.product_bundle.selectProductPlaceholder', " +
-			"'admin.product_bundle.skuCountLead', 'admin.product_bundle.skuCountTail', 'admin.product_bundle.title', 'admin.product_categories.create.submit', " +
+			"'admin.product_brands.seoScore', 'admin.product_brands.title', 'admin.product_categories.create.submit', " +
 			"'admin.product_categories.create.title', 'admin.product_categories.intro', 'admin.product_categories.label.description', 'admin.product_categories.label.image', " +
 			"'admin.product_categories.label.name', 'admin.product_categories.label.parent', 'admin.product_categories.label.seoDesc', 'admin.product_categories.label.seoTitle', " +
 			"'admin.product_categories.label.slug', 'admin.product_categories.lastError', 'admin.product_categories.list.delete', 'admin.product_categories.list.deleteConfirm', " +

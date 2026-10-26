@@ -298,12 +298,7 @@ type ChangeStockReq struct {
 	Lines       []StockChangeLineReq `json:"lines" form:"lines" binding:"required"`
 }
 
-// DeductStockReq 按 SKU 扣减库存（issue #16 验收 5：支持按物料清单展开多个子项 SKU）。
-//
-// ExpandBOM 为真时：入参每个 SKU 若维护了物料清单，就展开成它的子项（用量 × 请求量），
-// 递归到**叶子**为止；有清单的 SKU 被展开而不是被扣，因此中间件半成品自身的真源不动。
-// 没有清单的 SKU 就是叶子，按自身扣减。展开后的子项集合仍然整体排序加锁、整体生效
-// （任一项不足即整批拒绝）。
+// DeductStockReq 按 SKU 扣减库存（issue #16 验收 1/5）。
 type DeductStockReq struct {
 	ProjectID   string               `json:"projectId" form:"projectId"`
 	WarehouseID string               `json:"warehouseId" form:"warehouseId"`
@@ -312,7 +307,6 @@ type DeductStockReq struct {
 	SourceRef   string               `json:"sourceRef" form:"sourceRef"`
 	Remark      string               `json:"remark" form:"remark"`
 	OperatorID  string               `json:"operatorId" form:"operatorId"`
-	ExpandBOM   bool                 `json:"expandBom" form:"expandBom"`
 	Lines       []StockChangeLineReq `json:"lines" form:"lines" binding:"required"`
 }
 
@@ -369,32 +363,6 @@ type UpdateReasonReq struct {
 	Sort   *int    `json:"sort" form:"sort"`
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
 	ProjectID string `json:"projectId" form:"projectId"`
-}
-
-// —— 物料清单（issue #16 验收 5）——
-
-// BOMItemReq 物料清单的一条子项。
-type BOMItemReq struct {
-	ComponentVariantID string `json:"componentVariantId" form:"componentVariantId" binding:"required"`
-	ComponentSKUCode   string `json:"componentSkuCode" form:"componentSkuCode"`
-	Quantity           int    `json:"quantity" form:"quantity"`
-}
-
-// SetBOMReq 全量替换某个父 SKU 的物料清单（派生物，非追加）。
-//
-// Items 为空表示**清空**该父 SKU 的清单（之后扣减它就按自身扣）。
-type SetBOMReq struct {
-	ProjectID       string       `json:"projectId" form:"projectId"`
-	ParentVariantID string       `json:"parentVariantId" form:"parentVariantId" binding:"required"`
-	ParentSKUCode   string       `json:"parentSkuCode" form:"parentSkuCode"`
-	Items           []BOMItemReq `json:"items" form:"items"`
-}
-
-// GetBOMReq 查看某个父 SKU 的物料清单。
-type GetBOMReq struct {
-	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
-	ProjectID       string `form:"projectId"`
-	ParentVariantID string `form:"parentVariantId" binding:"required"`
 }
 
 // —— 货源（issue #17 验收 1/2/4）——

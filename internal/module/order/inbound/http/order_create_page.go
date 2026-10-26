@@ -6,7 +6,7 @@ package orderhttp
 //
 //	1. 入口形态 —— 独立整页（字段 20+ 且明细可多行，抽屉放不下；抽屉关闭态下
 //	   「失败即整屏丢输入」更致命）。
-//	2. 明细 —— **服务端渲染**的变体候选行（商品目录 ListBundleSKUs + 关键词重渲染），
+//	2. 明细 —— **服务端渲染**的变体候选行（商品目录 ListVariantOptions + 关键词重渲染），
 //	   可用量走只读端口 VariantAvailabilityLookupPort。**不用 /_fragments/**：那是公开面。
 //	3. 开号 —— **默认不开号**：开关落在显式请求字段 ProvisionGuestAccount。
 //	4. 权限 —— 复用 order:create（见 order_page_router.go 的 CasbinMiddlewareForPath）。
@@ -103,7 +103,7 @@ type orderCreateForm struct {
 type orderCreatePageHandle struct {
 	orders   ordercontract.OrderService
 	projects projectcontract.ProjectService
-	// catalog 商品目录（只读用）：候选变体来自 ListBundleSKUs。
+	// catalog 商品目录（只读用）：候选变体来自 ListVariantOptions。
 	// 传 nil 时页面照常渲染，只是候选为空、明细无法选择（纯单测路径）。
 	catalog productcontract.ProductService
 	// availability 可用量只读端口：**可选**能力（未装配库存时为 nil）。
@@ -225,7 +225,7 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 	var candidates []orderdto.SkuOptionResp
 	candidateErr := ""
 	if h.catalog != nil && selected != "" {
-		skus, cerr := h.catalog.ListBundleSKUs(ctx, &productdto.ListBundleSKUReq{
+		skus, cerr := h.catalog.ListVariantOptions(ctx, &productdto.ListVariantOptionReq{
 			ProjectID: selected,
 			Keyword:   form.CandidateKeyword,
 		})
@@ -378,7 +378,7 @@ func countryOptionViews(tr translate, countries []sysconfigcontract.CountryOptio
 // 只是给运营选品用的线索；真正入单的单价由服务端按下单快照落库，页面无法左右它。
 
 func (h *orderCreatePageHandle) candidateViews(c *gin.Context, projectID string,
-	skus []*productdto.BundleSKUResp) []orderdto.SkuOptionResp {
+	skus []*productdto.VariantOptionResp) []orderdto.SkuOptionResp {
 	tr := orderTr(c)
 	avail := map[string]int{}
 	if h.availability != nil && len(skus) > 0 {

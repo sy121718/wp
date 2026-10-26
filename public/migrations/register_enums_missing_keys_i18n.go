@@ -16,7 +16,9 @@ import "sync"
 //
 //	zh-CN 与 en-US 都有 361 · 只有 zh-CN 99 · 完全没有 119
 //
-// 本批补后两类共 218 个 key / 337 行：
+// 本批补后两类共 218 个 key / 337 行（2026-10：其中 23 个 product 捆绑错误与提示 key
+// 随捆绑品概念下线，已从 SQL 与本文件列表移除、门槛 218 → 195 —— 见 636 与
+// 「删能力连 seed 一起收口」）：
 //
 //	「完全没有」119 个 × 2 语言 = 238 行（category 取模块名、http_code 取实际语义）
 //	「只有 zh-CN」 99 个 × 1 语言 =  99 行（en-US 沿用该 key 既有 zh-CN 行的 category / http_code，
@@ -34,7 +36,7 @@ var registerEnumsMissingKeysI18nOnce sync.Once
 
 // registerEnumsMissingKeysI18nSeed 注册 430（真正干活的那一半）。
 func registerEnumsMissingKeysI18nSeed() {
-	// 门槛 = 本批 218 个 key 的 **en-US** 行都在（= 218 行）。挑 en-US 而不是 zh-CN 是有意的：
+	// 门槛 = 本批 195 个 key 的 **en-US** 行都在（= 195 行）。挑 en-US 而不是 zh-CN 是有意的：
 	// 中文行与 Go 侧的 fallback 同形，容易在别处被顺手加上，按 zh-CN 计数会让门槛在
 	// 「本批还没跑」时就成立，整批词条被静默跳过。
 	//
@@ -47,7 +49,7 @@ func registerEnumsMissingKeysI18nSeed() {
 	registerSeed(Seed{
 		Version:   "430-i18n-enums-missing-keys",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 218 THEN 1 ELSE 0 END FROM sys_i18n " +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 195 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE lang = 'en-US' AND item_key IN (" +
 			// 按模块分组，便于核对「本批覆盖了哪些域」。
 			// admin（4 个）
@@ -98,17 +100,10 @@ func registerEnumsMissingKeysI18nSeed() {
 			"'ErrBuildFailed','ErrEntityMissing','ErrNoTemplate','ErrRegistryMissing'," +
 			"'ErrSamePath','ErrTemplateTypeMismatch','MsgPreviewSuccess','MsgRebuildSuccess'," +
 			"'MsgUpdateURLSuccess'," +
-			// product（79 个）
+			// product（56 个）
 			"'ErrAttrInUse','ErrAttrKeyRequired','ErrAttrKeyTaken','ErrAttrNameRequired'," +
 			"'ErrAttrNotFound','ErrAttrProjectMismatch','ErrAttrValueLabelMissing','ErrBrandInUse'," +
 			"'ErrBrandNameRequired','ErrBrandNotFound','ErrBrandProjectMismatch','ErrBrandSlugTaken'," +
-			"'ErrBundleMaxOptionsInvalid','ErrBundleNotConfigured','ErrBundleOptionRequired'," +
-			"'ErrBundleOptionsExceeded','ErrBundleQtyAboveMax','ErrBundleQtyAboveStock'," +
-			"'ErrBundleQtyBelowMin','ErrBundleQtyInvalid','ErrBundleQtyRangeInvalid'," +
-			"'ErrBundleSelfReference','ErrBundleShapeInvalid','ErrBundleStockUnavailable'," +
-			"'ErrBundleTotalAboveMax','ErrBundleTotalBelowMin','ErrBundleTotalRangeInvalid'," +
-			"'ErrBundleTotalUnreachable','ErrBundleVariantDuplicated','ErrBundleVariantNotFound'," +
-			"'ErrBundleVariantNotInConfig','ErrBundleVariantProjectMismatch','ErrBundleVariantRequired'," +
 			"'ErrCategoryCycle','ErrCategoryHasChildren','ErrCategoryInUse','ErrCategoryNameRequired'," +
 			"'ErrCategoryNotFound','ErrCategoryParentMismatch','ErrCategoryProjectMismatch'," +
 			"'ErrCategorySlugTaken','ErrCollectionFilterInvalid','ErrCollectionSourceInvalid'," +
@@ -121,7 +116,7 @@ func registerEnumsMissingKeysI18nSeed() {
 			"'ErrTagRuleTypeInvalid','ErrTagSlugTaken','ErrVariantHasStock'," +
 			"'ErrVariationAttributeInvalid','ErrVariationCountLimit','ErrVariationDimensionLimit'," +
 			"'ErrVariationNoDimension','ErrVariationSelectionEmpty','ErrVariationValueInvalid'," +
-			"'MsgBundleSaveSuccess','MsgBundleValidateSuccess','MsgPricingApplySuccess'," +
+			"'MsgPricingApplySuccess'," +
 			"'MsgPricingPreviewSuccess','MsgVariantGenerateSuccess','PricingSkipCostMissing'," +
 			"'PricingSkipOutOfRange'," +
 			// project（12 个）

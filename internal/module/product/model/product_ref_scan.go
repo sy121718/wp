@@ -44,10 +44,10 @@ package productmodel
 //     操作，工程数是站点工程量级；相比之下「静默留下悬空引用」的代价高得多。
 //   · 工程清单由 service 经 project 契约 List() 取得；并发新建的工程在清单快照之后不可见 ——
 //     但新工程里不可能出现「引用别的工程的分类」：写入路径（resolveCategoryIDs /
-//     resolveBrandID / resolveAttributeIDs / 捆绑成员解析）一律拒绝跨工程引用，
+//     resolveBrandID / resolveAttributeIDs）一律拒绝跨工程引用，
 //     跨工程引用只可能来自存量或绕过 service 的写入。
-//   · 变体（product_variants）自身没有 project_id 列、也没有策略；捆绑成员引用查的是
-//     **products.bundle_items**（有策略的表），所以变体守卫同样按工程枚举。
+//   · 变体（product_variants）自身没有 project_id 列、也没有策略；变体守卫查的是
+//     **products**（有策略的表），所以按工程枚举。
 //   · 本文件只做「发现」，不做任何清理：命中即交给 service 打回给人（AGENTS.md
 //     「冲突与数据不一致一律打回给人」，禁止自动清理 / 静默放过）。
 
@@ -289,31 +289,6 @@ func (m *Model) ProductRefsByTag(ctx context.Context, tagID string, projectIDs [
 	return m.scanProductRefs(ctx, []string{"products.tag_ids"}, projectIDs,
 		func(db *gorm.DB) *gorm.DB {
 			return db.Where("tag_ids @> ?::jsonb", string(probe))
-		})
-}
-
-// ProductRefsByBundleVariant 跨工程反查「把某变体列为捆绑成员」的商品
-// （products.bundle_items.options[].variantId，docs/14 §8 的删除守卫补引用面）。
-//
-// 为什么是 jsonb 查询而不是全表扫 + 内存过滤：成员清单是 JSONB 列，把整个工程的行拉进
-// 内存逐个比对在「商品多、每个捆绑都有十几个成员」时是纯粹的浪费，而且会随数据增长变成
-// 拖慢删除的隐藏成本。这里用包含语义下推：
-//
-//	bundle_items @> jsonb_build_object('options', jsonb_build_array(jsonb_build_object('variantId', ?::text)))
-//
-// 语义与「bundle_items -> 'options' @> […]」等价（PG 的 jsonb 包含是「右边数组的每个元素
-// 都被左边某个元素包含」），但**只有整列包含这种写法能用上 GIN 索引** —— 迁移 260 的注释里
-// 记了三条 EXPLAIN 实测：GIN 的可索引操作符作用在**被索引的表达式**上，所以「整列索引 +
-// 嵌套表达式（bundle_items -> 'options' @> …）」永远走不进索引，写成整列包含才有 Index Cond。
-// 索引：idx_products_bundle_items_gin（jsonb_path_ops，占位 260）。
-//
-// 变体表本身没有 project_id（也不在迁移 215 名单里），但引用面在 products 上 ——
-// 这条与其它守卫同形：按工程枚举 products。
-func (m *Model) ProductRefsByBundleVariant(ctx context.Context, variantID string, projectIDs []string) (*CrossProjectRef, error) {
-	return m.scanProductRefs(ctx, []string{"products.bundle_items.options[].variantId"}, projectIDs,
-		func(db *gorm.DB) *gorm.DB {
-			return db.Where("bundle_items @> jsonb_build_object('options', jsonb_build_array(jsonb_build_object('variantId', ?::text)))",
-				variantID)
 		})
 }
 

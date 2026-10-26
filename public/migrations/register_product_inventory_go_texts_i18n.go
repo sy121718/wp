@@ -7,25 +7,30 @@ package migrations
 // 前缀判据在「已有别的批次同前缀行」时计数虚高 → 本批被静默跳过；在用全库总量时
 // 将来新增同前缀 key 会让计数永远追不平 → 每次启动重跑。
 //
-// 行数 = key 数 × 2（每个 key 中英各一行）：137 × 2 = 274。
+// 行数 = key 数 × 2（每个 key 中英各一行）：136 × 2 = 272。
 //
 // 137 而不是 142：本批原先含 admin.seo.grade.{green,lightgreen,yellow,red,redBlocking}
 // 5 个 key（10 行）—— product 侧改用共享映射 seoscore.ScoreGradeText 后它们成为孤儿，
 // 由 458 退役（register_retire_seo_grade_keys.go）。这 5 个 key 已从下面的列表移出，
 // 门槛同步 284 → 274：**留着它们会让计数永远差 10、本 seed 每轮启动都重跑**。
 // 449 的 SQL 保持原样（历史迁移 SQL 不改），因此那 10 行仍由 458 在每轮 seed 末尾清掉。
+//
+// 2026-10 再 -1（274 → 270）：admin.product_bundle.noProduct 随捆绑配置页下线，
+// 已从 SQL 与本文件列表一起移除（门槛按「列表里剩下的 key 数」算，只删 SQL 不删列表
+// 会让计数永远差 2、本 seed 每轮重跑），636b 负责从存量库删掉那两行。同批其余 bundle
+// 词条不在本批（属 191/247/430），各批已按同样方式收口。
 func init() {
 	registerSeed(Seed{
 		Version:   "449-i18n-product-inventory-go-texts",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 274 THEN 1 ELSE 0 END FROM sys_i18n " +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 270 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE item_key IN (" +
 			"'admin.inventory.direction.in', 'admin.inventory.direction.out', 'admin.inventory.direction.adjust', " +
 			"'admin.inventory.err.externalSkuOwner', 'admin.inventory_sources.type.internal', 'admin.inventory_sources.relatedTypeDefault', " +
 			"'admin.inventory_purchases.status.pending', 'admin.inventory_purchases.status.partial', 'admin.inventory_purchases.kind.purchase', " +
 			"'admin.inventory_purchases.option.costUnset', 'admin.inventory_purchases.option.costLabel', 'admin.product_categories.children.pageLabel', " +
 			"'admin.products.option.noPrimaryCategory', 'admin.products.option.noBrand', 'admin.products.list.tagCount', " +
-			"'admin.products.create.quantityInvalid', 'admin.product_bundle.noProduct', 'admin.product_detail_template.noProductPrompt', " +
+			"'admin.products.create.quantityInvalid', 'admin.product_detail_template.noProductPrompt', " +
 			"'admin.product_detail_template.nameRequired', 'admin.product_detail_template.pathRequired', 'admin.product_edit.err.defaultPriceInvalid', " +
 			"'admin.product_edit.err.weightInvalid', 'admin.product_pricing.rule.costMultiple.name', 'admin.product_pricing.rule.costMultiple.params', " +
 			"'admin.product_pricing.rule.costMultiple.describe', 'admin.product_pricing.rule.costMarkup.name', 'admin.product_pricing.rule.costMarkup.params', " +

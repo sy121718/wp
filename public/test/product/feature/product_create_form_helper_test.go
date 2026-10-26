@@ -4,7 +4,7 @@ package feature
 //
 // 页面写 handler 已迁到 JSON 写基座（static/js/ui/write-base.js + /api/product/create），
 // 于是这些用例不再能通过「POST 表单拿跳转」来驱动 —— 但它们验的是 service 的行为
-//（多仓各建一行、捆绑 SKU 补齐、初始库存），驱动方式换成直调 service 即可。
+//（多仓各建一行、初始库存），驱动方式换成直调 service 即可。
 // 解析口径与基座一致：多值收数组、数值字段转数字、留空即不设置。
 
 import (
@@ -27,7 +27,6 @@ func cfCreateWith(svc *productservice.Service, form url.Values) (*productdto.Pro
 	req := &productdto.CreateReq{
 		ProjectID:     form.Get("projectId"),
 		Name:          form.Get("name"),
-		Type:          form.Get("type"),
 		Slug:          form.Get("slug"),
 		SKUCode:       form.Get("sku"),
 		ExternalSKU:   form.Get("externalSku"),

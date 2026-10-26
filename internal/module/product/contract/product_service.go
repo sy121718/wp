@@ -163,25 +163,9 @@ type ProductService interface {
 	ProductTranslationCandidates(ctx context.Context, projectID, productID string) (list []TranslationCandidate, err error)
 	// ProjectTranslationCandidates 工程内全部商品域可翻译文本（按 (hash, context) 去重）。
 	ProjectTranslationCandidates(ctx context.Context, projectID string) (list []TranslationCandidate, err error)
-	// —— 捆绑品（issue #20）——
-	// 选项规则落在 products.bundle_items（迁移 114 起是带规则的对象，不再是裸数组）：
-	// 选项来自**跨商品挑选的已存在 SKU**，每项带必选 / 可选与默认 / 最小 / 最大数量；
-	// 主体可配选项数量上限与整单最小 / 最大总件数。
-	//   · SetBundleConfig 整体替换配置，非法 / 自相矛盾的配置在保存时被拒并给出可读原因；
-	//   · GetBundleConfig 读配置 + 每个选项的 SKU 快照与可用量（可用量只读 inventory 真源）；
-	//   · ValidateBundleSelection 整单硬校验 + 算价（纯读）：前端反馈与后端拦截共用它；
-	//   · ListBundleSKUs 后台配置器的 SKU 数据源（跨商品）。
-	GetBundleConfig(ctx context.Context, req *productdto.GetBundleConfigReq) (res *productdto.BundleConfigResp, err error)
-	SetBundleConfig(ctx context.Context, req *productdto.SetBundleConfigReq) (res *productdto.BundleConfigResp, err error)
-	ValidateBundleSelection(ctx context.Context, req *productdto.ValidateBundleSelectionReq) (res *productdto.BundleSelectionResp, err error)
-	ListBundleSKUs(ctx context.Context, req *productdto.ListBundleSKUReq) (list []*productdto.BundleSKUResp, err error)
-	// ResolveBundleMembers 捆绑成员的三种来源（docs/14 §1.2，批次 C）：从商品导入 /
-	// 从仓库选 / 自选属性值笛卡尔积。与变体清单的「预览—保存」同一形态 ——
-	// 本方法**不落库**，只解析出候选成员交回前端清单；写入的唯一入口仍是 SetBundleConfig。
+	// ListVariantOptions 跨商品的可选变体清单（后台选品下拉的数据源）。
 	//
-	// 三条共用口径：同一变体只出现一次（去重）；单条失败不整批失败（成功 N / 跳过 M +
-	// 逐条原因）；服务端不信任前端（组合由服务端按属性组固定顺序重算、仓库 SKU 回仓复核）。
-	// 属性组合在商品侧没有对应变体时**明确拒绝并逐条列出**（BundleMemberNotOnProduct），
-	// 绝不静默丢弃、也不造无变体成员（成员身份恒为 variantId）。
-	ResolveBundleMembers(ctx context.Context, req *productdto.ResolveBundleMembersReq) (res *productdto.ResolveBundleMembersResp, err error)
+	// 组合关系落在仓库侧（仓库商品 SKU 承担一切组合基数），商品侧只剩「这件商品卖哪些变体」，
+	// 所以这里只回答那件事：某工程下启用中的变体，带所属商品名。
+	ListVariantOptions(ctx context.Context, req *productdto.ListVariantOptionReq) (list []*productdto.VariantOptionResp, err error)
 }
