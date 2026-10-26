@@ -1092,9 +1092,10 @@ const customerOverviewDefaultPreset = "month"
 // 复用概览页那批时间词条（`admin.dashboard.range.*`）：同一批档位在后台出现两次，
 // 各写一套文案的话迟早出现「两页的『本周』不是同一个意思」—— 而那是个没人会去核对的地方。
 //
-// 与前端下拉（ui/datepreset.js 的 rangeOf 分支）**必须是一套档位名**：下拉选中后由脚本把
-// 两个 date 填好再提交，所以正常路径根本不经过这里；但老书签 / 手改 URL 里的 ?range=xxx
-// 仍走本表，两处名字对不上就会静默落进「认不出 → 回落默认档」。
+// 与前端控件（ui/daterange.js 的 rangeOf）**必须是一套档位名**：快捷区间点下去由脚本把
+// 两个 date 填好、档位字段恒提交 custom，所以正常路径根本不经过这里；但老书签 / 手改 URL
+// 里的 ?range=xxx 仍走本表，两处名字对不上就会静默落进「认不出 → 回落默认档」。
+// 本表比控件多 days7 / days30：它们只服务老链接，控件里没有这两个快捷项。
 var customerOverviewPresets = []string{"today", "yesterday", "week", "month", "lastMonth", "days7", "days30", "year"}
 
 // customerOverviewRangeMaxDays 显式区间的跨度上限（含首尾）。

@@ -1271,60 +1271,42 @@ a.pagination-btn:hover { background: var(--sky-c-bg-hover); color: var(--sky-c-t
     transition: opacity 0.28s ease, max-height 0.38s ease;
 }
 
-/* ── 11.2 时间筛选条（admin/partials/date_filter.html）─────────────────
-   后台所有「按时间筛」的页面共用这一条：快捷区间下拉（渐进增强，无 JS 时不显示）
-   + 两个可见的原生 date + 提交键 + 可选的区间回显。
 
-   为什么是下拉不是胶囊：六个胶囊每个 50~70px，一行之内就把筛选条撑满、窄屏必然折行；
-   而「选哪个区间」是低频动作，为它常驻六个按钮不划算（原先只有仪表盘有胶囊，
-   其余页面得手点两次日历）。
-   胶囊那套（`.range-bar` / `.range-chip` / `.range-custom` / `.form-input.range-date`）已随
-   「后台全局统一到本组件」一并删除：仪表盘 → 销售概览 → 访问统计 / 客户列表 / AI 会话 /
-   变更记录 / 库存流水 → 客户概览 / 客户群组 / 客户 RFM，最后一个使用点在客户 RFM 页
-   （原先只有预设、没有自定义日期）接入时消失。不要重新引入第二种容器形态。 */
+/* ── 11.2 时间筛选条（admin/partials/date_filter.html）─────────────────
+   后台所有「按时间筛」的页面共用这一条：一个区间触发器（ui/daterange.js 接管）
+   + 提交键 + 可选的区间回显。触发器显示「起 至 止」，点了展开双月日历与快捷列。
+
+   为什么是一个区间而不是两个日期框：两个独立 date 表达的是两个时刻，先后要用户
+   自己保证；原生日历弹层各平台不一致，窄屏下两个框还会把筛选条撑成两行。
+
+   position: relative 是弹层的锚点 —— 组件把 .wbd-pop 绝对定位在触发器下方
+   （宽度与横向位置由 JS 算：视口够宽就双月，不够就单月；越界时贴边而不是翻转）。
+   漏掉这一行，弹层会去认最近的定位祖先，实测直接跑到整页左上角。
+
+   gap 取 6px 而不是全局的 --ui-sp-xs(8px)：这一条本身就是一个「字段」，
+   与其它筛选字段并排时它是最宽的那个 —— 内部几个间隙各差 2px 就是
+   「最后一个字段被顶到第二行」与「一行放得下」的分界。 */
 .date-filter {
-    /* gap 取 6px 而不是全局的 --ui-sp-xs(8px)：这一条本身就是一个「字段」，
-       在 .filter-fields 里与其它字段并排时它是最宽的那个 —— 内部 6 个间隙各差 2px
-       就是 12px，正好是「最后一个字段被顶到第二行」与「一行放得下」的分界
-       （实测 1440 下 591+24+260+24+150 = 1049 而容器只有 1047）。 */
+    position: relative;
     display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    /* 它是 .filter-fields 里的一个 flex 项，而它是**一个区间**（自带快捷列 + 双月弹层），
+       不是「label + 单值控件」那种紧凑单元：挤到 200px 宽只剩半截文案，弹层也没地方展开。
+       所以整条独占一行（前四项各自成单元，日期条另起一行占满）。 */
+    flex: 1 1 100%;
     margin-bottom: var(--ui-sp-xs);
 }
-/* 含时间筛选条的卡片必须放开 overflow。快捷区间下拉（.wbs-menu）是从触发器**向下展开**的
-   绝对定位层，而 .card 基座是 overflow: hidden（ui.css:430）—— 被裁之后用户只看得到
-   展开菜单的头两三项（实测销售概览页：「自定义 / 今日 / 昨日」之后就没了），
+/* 含时间筛选条的卡片必须放开 overflow：日历弹层是从触发器向下展开的绝对定位层，
+   而 .card 基座是 overflow: hidden（ui.css:430）—— 被裁之后只看得到弹层的上半截，
    页面不报错、也没有任何测试会红。
-   写成 :has(.date-filter) 而不是给每个页面加类：这是**组件的自带要求**，
-   漏加一个页面的表现是「下拉被裁一截」，而漏加的页面只有点到那个下拉才看得出来 ——
-   靠人记住「包住组件时要加类」一定会漏。:has() 的特异性 (0,2,0) 也正好压过 .card (0,1,0)，
-   与加载顺序无关（同 .card.sales-card 的那条理由）。 */
+   写成 :has(.date-filter) 而不是给每个页面加类：这是组件的自带要求，漏加的页面
+   只有点到那个控件才看得出来 —— 靠人记住「包住组件时要加类」一定会漏。
+   :has() 的特异性 (0,2,0) 也正好压过 .card (0,1,0)，与加载顺序无关。 */
 .card:has(.date-filter) { overflow: visible; }
-.date-filter-label {
-    font-size: 13px; line-height: 1.6;
-    color: var(--sky-c-text-secondary, #4b5563); white-space: nowrap;
-}
-/* 日期框只声明**本页的尺寸差异**：边框 / 底色 / 圆角由基座类 form-input 承担 ——
-   在这里给它上外观等于复活「容器给控件上样式」，那会让「输入框长什么样」出现第二个真源
-   （审计条目 UIK-009，判据见 ui_base_layering_contract_test.go）。
-   width 必须显式收回来：基座类 form-input 是块级满宽（单独表单里那是对的），放进这一行的
-   flex 里会让两个日期框各占满一行、把筛选条撑成三行。
+/* 原生两个日期框只在「控件没接管」时可见（.wbd-native 由 ui/daterange.js 加上），
+   所以这条宽度规则也只在那个状态下起作用；接管后真正占位的是触发器。
    写成 .form-input.date-filter-date（两个类）而不是单类：基座类与它同为单类选择器，
-   谁赢取决于两张样式表的加载顺序 —— 实测 ui.css 在后，单类的 width:auto 会被
-   form-input 的 width:100% 盖掉（页面表现是日期框竖排，没有任何报错）。 */
-/* 8.5rem（136px）刚够「2026/10/06」+ 日历图标；原先的 9.5rem 是留了余量的估计值。 */
+   谁赢取决于两张样式表的加载顺序 —— 单类会被 form-input 的 width:100% 盖掉。 */
 .form-input.date-filter-date { width: auto; min-width: 8.5rem; }
-/* 原生 select 上也要收回来：select.js 未加载或未接管时（无 JS、脚本出错、htmx 刚换进来
-   的瞬间）它是直接可见的，基座的 width:100% 会把整行撑满。有 JS 时它被视觉隐藏，
-   真正决定宽度的是下面那条 .wbs 规则。 */
-.form-select.date-filter-preset { width: auto; min-width: 7rem; }
-/* 下拉的宽度由包着它的那个容器决定：ui/select.js 会把原生 select 视觉隐藏、
-   换成自绘的 .wbs 结构（div.wbs > button.wbs-trigger + 菜单），而 .wbs 的基座是
-   width:100%（见 ui.css:15）。所以只收窄原生 select 是没用的 —— 实测几何量：
-   下拉的 .wbs 宽 1293px，把整行撑满、两个日期框被挤到下一行，而页面不报错、
-   原生 select 的 computed width 看起来也「正常」。
-   判据：量 .date-filter 各子元素的 top 是否互相重叠（同一行），不是比 top 是否相等
-   —— 高度不同的元素在 align-items:center 下 top 本来就不同。 */
-.date-filter .wbs { flex: none; width: auto; min-width: 7rem; }
 /* KPI 卡可点击时保持卡片外观：<a> 默认的下划线与蓝字会把「统计卡」变成「链接」。 */
 .stat-card-link { display: block; text-decoration: none; color: inherit; }
 

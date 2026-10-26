@@ -17,8 +17,8 @@
         </div>
     </header>
 
-    {* 时间筛选条走后台统一组件（admin/partials/date_filter.html）：档位下拉的九个档位
-       与 ui/datepreset.js 的分支同名，选完由脚本把两个 date 填好再提交；服务端
+    {* 时间筛选条走后台统一组件（admin/partials/date_filter.html）：快捷区间由模板声明、
+       ui/daterange.js 负责算区间并填两个 date，档位字段恒为 custom；服务端
        customerOverviewRangeOf 以 from/to 为先（?range= 只服务于老书签）。
        原来那排 .range-bar 胶囊（服务端拼 URL）已随之删除。
        注意 action 不带 project：本页原有胶囊也不带（点一下就丢工程上下文），本批不扩大范围。 *}

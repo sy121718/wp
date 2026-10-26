@@ -257,7 +257,7 @@ func TestCustomerOverviewPageRendersGrowth(t *testing.T) {
 	// 时间筛选条已换成组件：断言它的两个 date 字段名与 form action，
 	// 不再断旧胶囊的 URL（那个形态已经没有渲染路径了）。
 	for _, want := range []string{"50.0%", "区间下单客户", "新客", "回头客", "复购率",
-		`name="from"`, `name="to"`, `action="/admin/customers/overview"`, "date-filter-preset"} {
+		`name="from"`, `name="to"`, `action="/admin/customers/overview"`, "data-wb-daterange"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("概览页缺少 %q", want)
 		}

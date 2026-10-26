@@ -359,4 +359,6 @@ func init() {
 	// 634：后台菜单去重（库存目录被插了两套）+ 会员两项归位「客户」
 	//（见 register_menu_dedup.go）。
 	registerMenuDedupMembership()
+	// 635：时间筛选条改成区间控件后的词条（见 register_date_range_picker_i18n.go）。
+	registerDateRangePickerI18n()
 }

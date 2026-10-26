@@ -29,7 +29,7 @@ import (
 
 // baseSharedClasses 共享外观组的成员；baseStateSuffixes 状态层后缀。
 var (
-	baseSharedClasses = []string{".form-input", ".form-select", ".form-textarea", ".wbs-trigger"}
+	baseSharedClasses = []string{".form-input", ".form-select", ".form-textarea", ".wbs-trigger", ".wbd-trigger"}
 	baseStateSuffixes = []string{":focus-visible", ":focus", ":disabled", `[aria-invalid="true"]`, "::placeholder"}
 )
 
@@ -48,16 +48,16 @@ var sizeProps = []string{
 
 // TestBaseAppearanceGroupIsSingleSource 控件外观只有一个真源：五个类在同一条规则里。
 //
-// 防的真实缺陷：同一份外观被写两遍、值还漂了 —— `.wbs-trigger` 曾与已下线的 `.wbd-trigger`
+// 防的真实缺陷：同一份外观被写两遍、值还漂了 —— `.wbs-trigger` 与 `.wbd-trigger`
 // 曾经各自写死 `padding: 8px 10px`，而基座走 token 是 `8px 12px`（同一份 UI 里三种内边距）。
 // 白名单是**闭集**：往共享组里塞原生 select 专属属性（background-image 等）会被打回，
 // 否则自绘触发器也会长出浏览器原生那枚箭头。
 func TestBaseAppearanceGroupIsSingleSource(t *testing.T) {
 	src := uiCssStripComments(readUIOwnershipFile(t, "static/css/ui.css"))
-	re := regexp.MustCompile(`(?m)^\.form-input,\s*\n\.form-select,\s*\n\.form-textarea,\s*\n\.wbs-trigger\s*\{([^}]*)\}`)
+	re := regexp.MustCompile(`(?m)^\.form-input,\s*\n\.form-select,\s*\n\.form-textarea,\s*\n\.wbs-trigger,\s*\n\.wbd-trigger\s*\{([^}]*)\}`)
 	m := re.FindStringSubmatch(src)
 	if m == nil {
-		t.Fatal("共享外观组不是「.form-input, .form-select, .form-textarea, .wbs-trigger」这一条规则：" +
+		t.Fatal("共享外观组不是「.form-input, .form-select, .form-textarea, .wbs-trigger, .wbd-trigger」这一条规则：" +
 			"控件外观被拆成多处真源（两个自绘触发器都曾因此与基座内边距漂了 2px）")
 	}
 	props := cssPropNames(m[1])
