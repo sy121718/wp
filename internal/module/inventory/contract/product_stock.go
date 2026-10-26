@@ -26,19 +26,17 @@ type ProductStockLookup interface {
 // ProductStockWriter holds only product-initiated inventory creation and its validation.
 // Tx methods use the caller's transaction to preserve product and inventory atomicity.
 type ProductStockWriter interface {
-	EnsureVariantStock(ctx context.Context, ref *productcontract.WarehouseRef, productID, variantID, skuCode string, quantity *int) (err error)
-	EnsureVariantStockTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode string, quantity *int) (err error)
-	EnsureVariantStockWithExternalTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode, externalSKU string, quantity *int) (err error)
+	// EnsureVariantStock / EnsureVariantStockTx / EnsureVariantStockWithExternalTx 都在
+	// 「该仓已有同裸码的行」时**复用**那一条，并把它的 id 返回给调用方。
+	//
+	// 返回 stockID 的理由（迁移 637）：商品侧要把这条货行记进变体的 warehouse_skus，
+	// 而它是新建还是复用只有库存侧知道。让调用方建完再按 (仓, 裸码) 反查一次，
+	// 等于把「怎么定位一条货行」这件事复制一份到调用方 —— 两处口径迟早不一致。
+	EnsureVariantStock(ctx context.Context, ref *productcontract.WarehouseRef, productID, variantID, skuCode string, quantity *int) (stockID string, err error)
+	EnsureVariantStockTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode string, quantity *int) (stockID string, err error)
+	EnsureVariantStockWithExternalTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode, externalSKU string, quantity *int) (stockID string, err error)
 	NormalizeExternalSKU(raw string) (code string, err error)
 	CheckExternalSKUProductScope(ctx context.Context, projectID, warehouseID, externalSKU, productID string) (err error)
-	// ClaimStockTx 把该仓已有的**未认领**存货行认领到本次新建的变体（迁移 624 + 625）。
-	//
-	// 「从仓库选」这条来路的核心：仓库里那一批货就是这条 SKU，建商品时要把它挂到新变体上，
-	// 否则货仍是 variant_id IS NULL —— 商品侧库存汇总看不见它，页面显示 0 而仓库里有货。
-	//
-	// 与 EnsureVariantStockTx 同为事务透传：建商品与认领要么全成、要么全不成。
-	// 返回错误时调用方整体回滚。
-	ClaimStockTx(ctx context.Context, tx *gorm.DB, req *inventorydto.ClaimStockReq) (err error)
 }
 
 // ProductStockPort groups the two required capabilities supplied by one inventory service.

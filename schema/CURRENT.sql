@@ -6,7 +6,7 @@
 -- 更新方式：bash scripts/schema-snapshot.sh
 -- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）
 -- 迁移台账版本：597-block-bulk-delete-grant-copy
--- 生成时间：2026-10-26T11:25:35+08:00
+-- 生成时间：2026-10-26T15:24:53+08:00
 
 --
 -- PostgreSQL database dump
@@ -3162,7 +3162,9 @@ CREATE TABLE public.product_variants (
     sort integer DEFAULT 0 NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     create_time timestamp with time zone DEFAULT now() CONSTRAINT product_variants_created_at_not_null NOT NULL,
-    update_time timestamp with time zone DEFAULT now() CONSTRAINT product_variants_updated_at_not_null NOT NULL
+    update_time timestamp with time zone DEFAULT now() CONSTRAINT product_variants_updated_at_not_null NOT NULL,
+    warehouse_skus jsonb DEFAULT '[]'::jsonb NOT NULL,
+    CONSTRAINT product_variants_warehouse_skus_shape_check CHECK (((jsonb_typeof(warehouse_skus) = 'array'::text) AND (NOT jsonb_path_exists(warehouse_skus, '$[*]?(((!(exists ($."stockId")) || !(exists ($."warehouseId"))) || $."stockId" == "") || $."warehouseId" == "")'::jsonpath))))
 );
 
 
@@ -6308,13 +6310,6 @@ CREATE INDEX idx_inventory_stocks_project_sku ON public.inventory_stocks USING b
 
 
 --
--- Name: idx_inventory_stocks_unclaimed; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_inventory_stocks_unclaimed ON public.inventory_stocks USING btree (project_id, warehouse_id, sku_code) WHERE (variant_id IS NULL);
-
-
---
 -- Name: idx_inventory_stocks_variant_project; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6963,6 +6958,13 @@ CREATE INDEX idx_product_variants_price_enabled ON public.product_variants USING
 --
 
 CREATE INDEX idx_product_variants_product ON public.product_variants USING btree (product_id);
+
+
+--
+-- Name: idx_product_variants_warehouse_skus; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_product_variants_warehouse_skus ON public.product_variants USING gin (warehouse_skus jsonb_path_ops);
 
 
 --
@@ -8790,6 +8792,14 @@ ALTER TABLE ONLY public.document_snapshots
 
 ALTER TABLE ONLY public.document_snapshots
     ADD CONSTRAINT document_snapshots_source_template_version_id_fkey FOREIGN KEY (source_template_version_id) REFERENCES public.content_template_versions(id);
+
+
+--
+-- Name: inventory_stock_movements fk_inventory_movements_product; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inventory_stock_movements
+    ADD CONSTRAINT fk_inventory_movements_product FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE RESTRICT;
 
 
 --

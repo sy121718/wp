@@ -16,8 +16,8 @@ package inventoryservice
 //     拆开的话会出现「状态已 in_transit、货没出库」这类事后只能人工对账的半截状态；
 //  3. 调拨用**可售**（quantity − reserved）而不是在库：预占是留给订单的，
 //     调拨吃掉它会让一张已付款的订单发不出货；
-//  4. 明细指向**源仓库存行**（stock_id）：未认领的货（variant_id IS NULL）同样可以调拨，
-//     签收时按同样的 variant_id / sku_code 在目标仓找行或建行 —— 未认领进、未认领出。
+//  4. 明细指向**源仓库存行**（stock_id）：无归属的货（variant_id IS NULL）同样可以调拨，
+//     签收时按同样的 variant_id / sku_code 在目标仓找行或建行 —— 无归属进、无归属出。
 //
 // 凭证校验走 contract 的 AttachmentResolver（不 import media）：逐个查存在性，
 // 缺一张就整体拒绝 —— 「有 5 张凭证但其中 1 张被删了」不该被静默接受。
@@ -226,7 +226,7 @@ func (s *Service) ShipTransfer(ctx context.Context, req *inventorydto.TransferSh
 				Quantity:    it.Quantity,
 			})
 		}
-		// 未认领行的 variantID 为空 —— 变动契约要求变体上下文（否则建不出有身份的流水），
+		// 无归属行的 variantID 为空 —— 变动契约要求变体上下文（否则建不出有身份的流水），
 		// 所以这里按行 id 直接走「按库存行出库」的窄路径（见 shipUnclaimedTx）。
 		if lerr := s.transferOutTx(ctx, tx, e, items, lines); lerr != nil {
 			return lerr
@@ -260,10 +260,10 @@ func (s *Service) ShipTransfer(ctx context.Context, req *inventorydto.TransferSh
 	return s.transferRespTx(ctx, nil, projectID, req.ID)
 }
 
-// transferOutTx 逐行出库（含**未认领行**：它们的 variant_id 为空，走按库存行扣减的路径）。
+// transferOutTx 逐行出库（含**无归属行**：它们的 variant_id 为空，走按库存行扣减的路径）。
 //
-// 为什么未认领行不能走常规变动契约：buildChangeItems 要求每行有 variantID
-// （流水的维度是变体 × 仓），而未认领行恰恰没有变体 —— 强行补一个空串会让流水
+// 为什么无归属行不能走常规变动契约：buildChangeItems 要求每行有 variantID
+// （流水的维度是变体 × 仓），而无归属行恰恰没有变体 —— 强行补一个空串会让流水
 // 落一条「空变体」的记录，那比不写更糟（对账时无法归属到任何一行）。
 //
 // 这里按 model 的原子 SQL 直接扣：`quantity -= n` 且 `quantity >= n` 写在 WHERE 里，
@@ -285,7 +285,7 @@ func (s *Service) transferOutTx(ctx context.Context, tx *gorm.DB, e *inventorymo
 			claimed = append(claimed, *it)
 			continue
 		}
-		// 未认领行：按 stock_id 直接扣（守卫在 SQL 里）。
+		// 无归属行：按 stock_id 直接扣（守卫在 SQL 里）。
 		if err := s.deductUnclaimedStockTx(ctx, tx, e.ProjectID, it.StockID, it.Quantity); err != nil {
 			return err
 		}
@@ -315,10 +315,10 @@ func (s *Service) transferOutTx(ctx context.Context, tx *gorm.DB, e *inventorymo
 	})
 }
 
-// deductUnclaimedStockTx 未认领行出库（按库存行 id）：quantity -= n，守卫在 SQL 的 WHERE 里。
+// deductUnclaimedStockTx 无归属行出库（按库存行 id）：quantity -= n，守卫在 SQL 的 WHERE 里。
 //
-// 不写流水：流水的维度是「变体 × 仓」，未认领行没有变体 —— 写一条空变体的流水
-// 没有任何归属价值。调拨的事实由单据 + 未认领行数量的变化共同表达。
+// 不写流水：流水的维度是「变体 × 仓」，无归属行没有变体 —— 写一条空变体的流水
+// 没有任何归属价值。调拨的事实由单据 + 无归属行数量的变化共同表达。
 func (s *Service) deductUnclaimedStockTx(ctx context.Context, tx *gorm.DB, projectID, stockID string, quantity int) error {
 	affected, err := s.m.DeductUnclaimedStockTx(ctx, tx, projectID, stockID, quantity, time.Now().UTC())
 	if err != nil {
@@ -389,21 +389,21 @@ func (s *Service) ReceiveTransfer(ctx context.Context, req *inventorydto.Transfe
 
 // transferInTx 逐行在目标仓入库：同 (variant_id, sku_code) 有行则累加、否则建行。
 //
-// 判据是 **(variant_id, sku_code)** 而不是只按 sku_code：未认领行（variant 为空）
-// 与已认领行可以是同一个编码（认领前后），它们的行必须分开 —— 一起累加会把
-// 「已认领的货」和「还没认领的货」混成一行，之后再认领就撞唯一约束了。
+// 判据是 **(variant_id, sku_code)** 而不是只按 sku_code：无归属行（variant 为空）
+// 与已归属行可以是同一个编码（引用前后），它们的行必须分开 —— 一起累加会把
+// 「已归属的货」和「无归属的货」混成一行，后来的引用就撞唯一约束了。
 func (s *Service) transferInTx(ctx context.Context, tx *gorm.DB, e *inventorymodel.TransferEntity,
 	items []*inventorymodel.TransferItemEntity) error {
 	rows, err := s.m.ListStocksByWarehouseTx(ctx, tx, e.ProjectID, e.ToWarehouseID)
 	if err != nil {
 		return err
 	}
-	// 源仓的行（商品 id 的继承来源：未认领行两个都为空，已认领行带 product_id）。
+	// 源仓的行（商品 id 的继承来源：无归属行两个都为空，已归属行带 product_id）。
 	srcRows, serr := s.m.ListStocksByWarehouseTx(ctx, tx, e.ProjectID, e.FromWarehouseID)
 	if serr != nil {
 		return serr
 	}
-	// key = 变体（空串表示未认领）+ '|' + 编码：uuid 与编码都不含 '|'，不会撞键。
+	// key = 变体（空串表示无归属）+ '|' + 编码：uuid 与编码都不含 '|'，不会撞键。
 	type key struct{ variant, sku string }
 	byKey := make(map[key]*inventorymodel.StockEntity, len(rows))
 	for _, r := range rows {
@@ -426,17 +426,17 @@ func (s *Service) transferInTx(ctx context.Context, tx *gorm.DB, e *inventorymod
 			toIncrease[existing.ID] += it.Quantity
 			continue
 		}
-		// 目标仓没有这一行：建一条（未认领进、未认领出 —— variant_id 原样继承）。
+		// 目标仓没有这一行：建一条（无归属进、无归属出 —— variant_id 原样继承）。
 		toCreate = append(toCreate, &inventorymodel.StockEntity{
 			ID: uuid.NewString(), ProjectID: e.ProjectID, WarehouseID: e.ToWarehouseID,
-			// 商品 id 从源仓那一行带过来（未认领行两个都为空 —— 继承即可）。
+			// 商品 id 从源仓那一行带过来（无归属行两个都为空 —— 继承即可）。
 			ProductID: srcProductID(srcRows, it.StockID), VariantID: it.VariantID,
 			SKUCode: it.SKUCode, TrackQuantity: true, Quantity: it.Quantity,
 			Metadata: json.RawMessage("{}"), CreatedAt: now, UpdatedAt: now,
 		})
 	}
 	for _, row := range toCreate {
-		if cerr := s.m.CreateUnclaimedStockTx(ctx, tx, row); cerr != nil {
+		if cerr := s.m.CreateStockRowTx(ctx, tx, row); cerr != nil {
 			return cerr
 		}
 	}
@@ -448,7 +448,7 @@ func (s *Service) transferInTx(ctx context.Context, tx *gorm.DB, e *inventorymod
 	return nil
 }
 
-// srcProductID 从源仓的行里取商品 id（未认领行为 nil）。
+// srcProductID 从源仓的行里取商品 id（无归属行为 nil）。
 //
 // 单独一个函数只为让 transferInTx 的建行语句读得出来：一行里同时有「目标仓的
 // 库存行键」与「源仓的商品 id」两件事时，内联表达式会看不出哪个是哪个。
@@ -567,7 +567,7 @@ func (s *Service) GetTransfer(ctx context.Context, req *inventorydto.GetTransfer
 
 // transferRespTx 组装调拨单回执（tx 为 nil 时用非事务读取）。
 //
-// 明细的「商品名 / 变体标签」取不到时留空（未认领行就是空）：展示信息读不到
+// 明细的「商品名 / 变体标签」取不到时留空（无归属行就是空）：展示信息读不到
 // 不该让整张单据读不出来 —— 那个变体可能已经被删了。
 func (s *Service) transferRespTx(ctx context.Context, tx *gorm.DB, projectID, id string) (
 	res *inventorydto.TransferResp, err error) {
@@ -608,7 +608,6 @@ func (s *Service) transferRespTx(ctx context.Context, tx *gorm.DB, projectID, id
 		res.Items = append(res.Items, &inventorydto.TransferItemResp{
 			ID: it.ID, StockID: it.StockID, VariantID: variantID,
 			SKUCode: it.SKUCode, Quantity: it.Quantity,
-			Claimed: variantID != "",
 		})
 		total += it.Quantity
 	}

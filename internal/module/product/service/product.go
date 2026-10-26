@@ -51,7 +51,6 @@ import (
 
 	commentcontract "go_wp/internal/module/comment/contract"
 	inventorycontract "go_wp/internal/module/inventory/contract"
-	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	masterdatacontract "go_wp/internal/module/masterdata/contract"
 	masterdataenums "go_wp/internal/module/masterdata/enums"
@@ -204,16 +203,16 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		CreatedAt:    now, UpdatedAt: now,
 	}
 	// 归属仓与多仓（issue #15 / 2026-09-19 口径）：勾了哪些仓就在哪些仓各建一行。
-	// **认领仓** = 显式指定的第一个仓（未指定则默认仓），只有它决定主体 SKU 的仓码前缀。
+	// **前缀仓** = 显式指定的第一个仓（未指定则默认仓），只有它决定主体 SKU 的仓码前缀。
 	// 解析失败（如工程内没有默认仓 / 某个仓已停用）时整体失败 —— 先解析再落库，
 	// 不留「有商品没库存记录」的半截状态。
 	refs, werr := s.resolveWarehouseTargets(ctx, projectID, req.WarehouseIDs, req.WarehouseID)
 	if werr != nil {
 		return nil, werr
 	}
-	claim := claimWarehouse(refs)
+	claim := prefixWarehouse(refs)
 	// 规则 A：容器主体 SKU 落到 products.sku_code（迁移 246），是商品的**身份编码**。
-	// ① 从仓库选：<认领仓短码大写>_<仓库里那条 SKU 原样>；② 自己创建：编码原样 + 认领仓仓码前缀。
+	// ① 从仓库选：<前缀仓短码大写>_<仓库里那条 SKU 原样>；② 自己创建：编码原样 + 前缀仓仓码前缀。
 	// 没填则按商品 URL 段派生（确定性，不退回随机码）。
 	//
 	// 「从仓库选」的编码**不取前端提交的 sku**：前端提交的仓库编码只是线索，落库前一律在
@@ -221,7 +220,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 	skuInput := customSKU
 	externalSKU := ""
 	if skuSource == skuSourceWarehouse {
-		// 复核发生在**认领仓**：主体 SKU 的前缀、以及「那条货确实存在」的判定都取自它。
+		// 复核发生在**前缀仓**：主体 SKU 的前缀、以及「那条货确实存在」的判定都取自它。
 		picked, perr := s.pickWarehouseSKU(ctx, projectID, claim, req.WarehouseSKU)
 		if perr != nil {
 			return nil, perr
@@ -235,7 +234,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 		// 不替他猜一个 —— 空串是合法状态（该仓用我们自己的 SKU）。
 		externalSKU = strings.TrimSpace(req.ExternalSKU)
 	}
-	// 容器主体 SKU 的唯一入口：**认领仓**的短码参与前缀。
+	// 容器主体 SKU 的唯一入口：**前缀仓**的短码参与前缀。
 	if e.SKUCode, werr = buildProductContainerSKU(containerSKUInput{
 		Slug: slug, Custom: skuInput, WarehouseCode: refCode(claim),
 	}); werr != nil {
@@ -271,8 +270,8 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 			return mapContainerSKUConflict(xerr)
 		}
 		// 创建即入库：勾选的每个仓各一行（裸码；该仓已有同裸码的行则复用不新建）。
-		// external_sku 写在**认领仓**那一次（外码是「这条货在该仓的名字」，其余仓不猜）。
-		if xerr := s.createStockRowsTx(ctx, tx, refs, e.ID, v.ID, v.SKUCode, externalSKU, req.Quantity); xerr != nil {
+		// external_sku 写在**前缀仓**那一次（外码是「这条货在该仓的名字」，其余仓不猜）。
+		if xerr := s.createStockRowsTx(ctx, tx, refs, v, v.SKUCode, externalSKU, req.Quantity); xerr != nil {
 			return xerr
 		}
 		// 静态产物失效事件与商品行**同事务**（审计 ARCH-01）。
@@ -280,7 +279,7 @@ func (s *Service) Create(ctx context.Context, req *productdto.CreateReq) (res *p
 			return xerr
 		}
 		// issue #19：新增关键主数据 → 写变更记录（商品与首个变体各一条，逐字段落行）。
-		// 变体那条带上了认领仓，这是该事实在商品侧唯一可留痕的地方。
+		// 变体那条带上了前缀仓，这是该事实在商品侧唯一可留痕的地方。
 		return s.recordChangesTx(ctx, tx,
 			productChangeInput(e, masterdataenums.ActionCreate, masterdataenums.OriginProduct, req.OperatorID,
 				nil, productChangeSnapshot(e)),
@@ -639,7 +638,7 @@ func (s *Service) pickWarehouseSKU(ctx context.Context, projectID string, ref *p
 // resolveWarehouseTargets 解析本次要写库存行的仓（保持调用方给的顺序、按仓 id 去重）。
 //
 // 取值优先级：WarehouseIDs（多仓勾选）> WarehouseID（单值兼容）> 空（默认仓）。
-// **顺序必须保持**：第一个非空项是认领仓（决定主体 SKU 的仓码前缀），顺序一变，
+// **顺序必须保持**：第一个非空项是前缀仓（决定主体 SKU 的仓码前缀），顺序一变，
 // 同一份表单就会生成不同的编码。去重按**解析后的仓 id** —— 「勾了默认仓 + 又显式勾了
 // 默认仓那一个」只该建一行（同一份选择产生两行是幂等性漏洞，不是用户意图）。
 //
@@ -670,11 +669,11 @@ func (s *Service) resolveWarehouseTargets(ctx context.Context, projectID string,
 	return refs, nil
 }
 
-// claimWarehouse 认领仓 = 解析出的第一个仓：只有它决定主体 SKU 的仓码前缀。
+// prefixWarehouse 前缀仓 = 解析出的第一个仓：只有它决定主体 SKU 的仓码前缀。
 //
 // 其余勾选的仓只各建一行（裸码），不参与命名 —— 「前缀标注哪个仓认领了它」，
 // 多仓共用同一个前缀是刻意的（SKU 是商品的对外身份，不该随勾选数量变化）。
-func claimWarehouse(refs []*productcontract.WarehouseRef) *productcontract.WarehouseRef {
+func prefixWarehouse(refs []*productcontract.WarehouseRef) *productcontract.WarehouseRef {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -710,7 +709,7 @@ func (s *Service) warehouseCodeExists(ctx context.Context, projectID, warehouseI
 // findWarehouseSKURow 该仓是否已有这条裸码的库存行；有则返回整行（认领需要 id 与 has_variant）。
 //
 // 与 warehouseCodeExists 的分工：那个只回答「有没有」，用于预检；这里要整行 ——
-// 认领必须拿到**行 id**（认领的入参是库存行，不是编码），还必须知道它是不是已认领。
+// 认领必须拿到**行 id**（认领的入参是库存行，不是编码），还必须知道它是不是已归属。
 func (s *Service) findWarehouseSKURow(ctx context.Context, projectID, warehouseID, skuCode string) (
 	row *inventorycontract.WarehouseSKUResp, found bool, err error) {
 	if s.invSvc == nil || strings.TrimSpace(skuCode) == "" {
@@ -729,68 +728,48 @@ func (s *Service) findWarehouseSKURow(ctx context.Context, projectID, warehouseI
 	return nil, false, gerr
 }
 
-// createStockRowsTx 在勾选的各仓各建一行库存（裸码），已有同裸码的**未认领**行则认领它。
+// createStockRowsTx 在勾选的各仓各建/复用一行库存（裸码），并把每行的 id 记进变体的引用清单。
 //
 // 三条口径（docs/14 §1.1 / §9.3，2026-09-19 用户拍板）：
 //
-//	· 仓库侧写**裸码** —— 剥掉仓码前缀的那一串（属性段保留）；剥前缀由 stripWarehousePrefix 统一做；
-//	· 该仓已有同裸码的行 → **不新建**（那一行就是这条货）——「从仓库选」这条来路正是靠它成立；
-//	· 外码与数量只作用于本次**新建**的行：外码写在认领仓那一次（外码是「这条货在该仓的名字」），
-//	  数量按表单口径（nil = 不跟踪 = 无限；非 nil = 跟踪并写入）。
+//   - 仓库侧写**裸码** —— 剥掉仓码前缀的那一串（属性段保留）；剥前缀由 stripWarehousePrefix 统一做；
+//   - 该仓已有同裸码的行 → **复用**那一行、不新建（那一行就是这条货）——「从仓库选」这条来路
+//     正是靠它成立；复用的同时把它记进本变体的引用（迁移 637，取代旧的「认领」）；
+//   - 外码与数量只作用于本次**新建**的行：外码写在该仓那一次（外码是「这条货在该仓的名字」），
+//     数量按表单口径（nil = 不跟踪 = 无限；非 nil = 跟踪并写入）。
+//
+// 引用是**多对多**：同一行货能被多个变体同时引用（旧「认领」的一对一正是要去掉的约束 ——
+// 同一批货得能供套装 / 组合 / 多站点同款一起卖）。
 //
 // 调用方必须已开事务（tx 已设工程作用域）：多仓逐行写入要么全成、要么全不成。
 func (s *Service) createStockRowsTx(ctx context.Context, tx *gorm.DB, refs []*productcontract.WarehouseRef,
-	productID, variantID, productSKU, externalSKU string, quantity *int) (err error) {
+	v *productmodel.VariantEntity, productSKU, externalSKU string, quantity *int) (err error) {
 	if s.invSvc == nil {
 		return nil
 	}
-	// 裸码只剥**一次**，而且按**认领仓**的仓码剥：其余仓写的是同一条裸码
-	//（「同一商品多仓各一行同名裸码」）。各仓各自剥前缀反而是错的 —— 目标仓与认领仓不同，
+	// 裸码只剥**一次**，而且按**归属仓**的仓码剥：其余仓写的是同一条裸码
+	//（「同一商品多仓各一行同名裸码」）。各仓各自剥前缀反而是错的 —— 目标仓与归属仓不同，
 	// SZ_X 在上海仓（仓码 SH）剥不掉，于是上海仓凭空多出一个带 SZ_ 前缀的编码。
-	bare := stripWarehousePrefix(productSKU, refCode(claimWarehouse(refs)))
+	bare := stripWarehousePrefix(productSKU, refCode(prefixWarehouse(refs)))
 	for i, ref := range refs {
 		if ref == nil {
 			continue
 		}
-		// 该仓已有同裸码的行？查整行（不只是 bool）：认领需要它的 id 与「有没有变体」。
-		existing, found, qerr := s.findWarehouseSKURow(ctx, ref.ProjectID, ref.ID, bare)
-		if qerr != nil {
-			return qerr
-		}
-		if found {
-			// 「从仓库选」这条来路的核心动作（迁移 624 + 625）：仓库里那批货就是这条 SKU，
-			// 建商品时要把它**认领**到本次新建的变体上。
-			//
-			// 不认领的后果（实测）：货停在 variant_id IS NULL —— 商品侧库存汇总
-			// （StockTotals 带 `WHERE variant_id IS NOT NULL`）看不见它，页面显示库存 0
-			// 而仓库里明明有货，运营得再去 /admin/inventory/skus 手动认领一次。
-			//
-			// 已经认领过的（同一变体重复 ensure / 另一个变体占了同一行）**维持现状**：
-			// 前者是幂等重放，后者是「一行货只能属于一个变体」这条约束在说话 ——
-			// 静默改挂到新变体等于把前任的库存偷走。
-			if !existing.HasVariant {
-				if cerr := s.invSvc.ClaimStockTx(ctx, tx, &inventorydto.ClaimStockReq{
-					ProjectID: ref.ProjectID, StockID: existing.ID,
-					ProductID: productID, VariantID: variantID,
-				}); cerr != nil {
-					return cerr
-				}
-			}
-			// 数量与外码不在这里改：覆盖走库存页的显式入口（BindExternalSKU / 跟踪开关）。
-			continue
-		}
+		// 外码与数量只作用于「本次新建」那一行；复用时两者都不动（覆盖走库存页的显式入口）。
 		ext := ""
 		if i == 0 {
 			ext = strings.TrimSpace(externalSKU)
 			// N:1 弱校验（迁移 251）：同一仓内同一外码必须指向同一个商品。
 			// 与库存页的绑定路径共用同一条规则，错误里带上冲突的商品 id。
 			if ext != "" {
-				if xerr := s.invSvc.CheckExternalSKUProductScope(ctx, ref.ProjectID, ref.ID, ext, productID); xerr != nil {
+				if xerr := s.invSvc.CheckExternalSKUProductScope(ctx, ref.ProjectID, ref.ID, ext, v.ProductID); xerr != nil {
 					return xerr
 				}
 			}
 		}
-		if xerr := s.ensureVariantStockBareWithExternalTx(ctx, tx, ref, productID, variantID, bare, ext, quantity); xerr != nil {
+		// 建/复用库存行 + 登记引用，一步完成：库存侧知道这行是新建还是复用、id 是多少，
+		// 而「怎么定位一条货行」只有它知道（让调用方建完再反查一次就是两份口径）。
+		if _, xerr := s.attachWarehouseStockTx(ctx, tx, ref, v, bare, ext, quantity); xerr != nil {
 			return xerr
 		}
 	}

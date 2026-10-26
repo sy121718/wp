@@ -503,7 +503,7 @@ func (h *purchasePageHandle) warehouseOptions(ctx context.Context, projectID str
 //
 // 每一项额外带 **BareSKU（仓库侧裸码）**：采购行的 sku_code 是仓库侧快照，必须按裸码落库
 // （仓库里的 SKU 永远不带仓码前缀）。裸码取自库存真源（inventory_stocks.sku_code）——
-// 它就是「这条货在仓库里叫什么」的权威答案，商品侧的 SKUCode 只是它加了认领仓前缀的投影。
+// 它就是「这条货在仓库里叫什么」的权威答案，商品侧的 SKUCode 只是它加了前缀仓前缀的投影。
 // 没有库存行的变体退回商品侧编码，由服务端在入库入口按目标仓短码归一。
 //
 // 查询次数与商品数无关：变体清单一次（商品契约的只读口），裸码映射一次（库存真源）。

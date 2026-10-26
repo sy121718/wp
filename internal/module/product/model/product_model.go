@@ -94,9 +94,12 @@ func (ProductEntity) TableName() string { return "products" }
 
 // VariantEntity 商品变体（一行一个 SKU）。
 //
-// 这里**没有**库存字段（issue #32）：库存真源在 inventory_stocks，商品侧的展示值
+// 这里**没有**库存**数量**字段（issue #32）：库存真源在 inventory_stocks，商品侧的展示值
 // 由查询期投影得到（同模块的库存用例提供真源汇总）。曾经的 stock_total 缓存列
 // 与随之而来的同步 / 台账 / 对账已一并删除。
+//
+// 但这里**有**库存**归属**：WarehouseSKUs 记着本变体引用了哪几条仓库货行（迁移 637）。
+// 数量在库存表，归属在变体上 —— 两者不是同一件事，后者是「这批货算谁的销售额」。
 type VariantEntity struct {
 	ID           string          `gorm:"column:id;primaryKey"`
 	ProductID    string          `gorm:"column:product_id;not null"`
@@ -110,8 +113,14 @@ type VariantEntity struct {
 	Enabled      bool            `gorm:"column:enabled;not null"`
 	Sort         int             `gorm:"column:sort;not null"`
 	Metadata     json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
-	CreatedAt    time.Time       `gorm:"column:create_time;not null"`
-	UpdatedAt    time.Time       `gorm:"column:update_time;not null"`
+	// WarehouseSKUs 本变体引用的仓库货行（迁移 637）：JSON 数组，元素 {stockId,warehouseId,
+	// warehouseCode,skuCode}。形状与解码见 variant_warehouse_sku.go。
+	//
+	// 多对多：一条货行可以被多个变体引用（同一批货供套装 / 组合 / 多站点同款一起卖）。
+	// 这是取代「认领」（迁移 624 的 inventory_stocks.variant_id）的那一列。
+	WarehouseSKUs json.RawMessage `gorm:"column:warehouse_skus;type:jsonb;not null"`
+	CreatedAt     time.Time       `gorm:"column:create_time;not null"`
+	UpdatedAt     time.Time       `gorm:"column:update_time;not null"`
 }
 
 // TableName 实现 gorm 表名。
@@ -767,6 +776,21 @@ func (m *Model) CreateVariantTx(ctx context.Context, tx *gorm.DB, e *VariantEnti
 // UpdateVariantTx 更新变体（复用调用方事务）。
 func (m *Model) UpdateVariantTx(ctx context.Context, tx *gorm.DB, e *VariantEntity) (err error) {
 	return tx.WithContext(ctx).Model(&VariantEntity{}).Where("id = ?", e.ID).Save(e).Error
+}
+
+// UpdateVariantWarehouseSKUsTx 只写 warehouse_skus 一列（迁移 637 的变体 → 货行引用）。
+//
+// 为什么单独一条而不是走 Save：Save 会把整行其它列一起写回，而「登记一条引用」
+// 发生在别的事务步骤里（库存行刚建好、商品行的其它列不该被这次写入覆盖成
+// 内存里的旧快照）。只写一列 = 只表达一个意图。
+func (m *Model) UpdateVariantWarehouseSKUsTx(ctx context.Context, tx *gorm.DB, variantID string, refs json.RawMessage, at time.Time) (err error) {
+	db := tx
+	if db == nil {
+		db = m.db
+	}
+	return db.WithContext(ctx).Model(&VariantEntity{}).
+		Where("id = ?", variantID).
+		Updates(map[string]any{"warehouse_skus": refs, "update_time": at}).Error
 }
 
 // DeleteVariantTx 删除变体（复用调用方事务；库存行由外键级联删除）。

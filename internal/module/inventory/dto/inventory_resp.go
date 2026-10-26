@@ -105,7 +105,7 @@ type StockResp struct {
 	// 只读数量会让「无限」在后台被看成「没货」。
 	TrackQuantity bool `json:"trackQuantity"`
 	Quantity      int  `json:"quantity"`
-	// ReservedQuantity 本仓预占（被未发货订单占住）；**未认领行恒 0**（迁移 624）。
+	// ReservedQuantity 本仓预占（被未发货订单占住）。
 	ReservedQuantity int `json:"reservedQuantity"`
 	// AvailableQuantity 可售 = track_quantity ? max(quantity - reserved, 0) : 0。
 	//
@@ -113,8 +113,6 @@ type StockResp struct {
 	// 不会为负，但历史脏数据可能违反（约束是后加的），显示负数比显示 0 更吓人。
 	// 夹 0 只发生在**读模型**，写路径仍严格报错。
 	AvailableQuantity int `json:"availableQuantity"`
-	// Claimed 这一行是否已认领到商品变体（= variant_id IS NOT NULL）。
-	Claimed bool `json:"claimed"`
 	// CostPrice 是这一 (仓库, SKU) 的**当前成本价**（迁移 244）：NULL = 尚未核算，
 	// 0 是合法的显式成本 —— 后台必须能把两者分开显示，所以这里是可空指针而不是 float64。
 	//
@@ -190,7 +188,7 @@ type ProductWarehouseStock struct {
 // 它回答的是「这个仓里有哪些货可选、这条货在该仓叫什么、商品侧有没有对应的变体」——
 // 新建商品的「从仓库选」按它列出候选，服务端再按 sku_code 复核（前端只是便捷入口）。
 type WarehouseSKUResp struct {
-	// ID 库存行 id（认领 / 解除认领的写入定位键：编码可以改，行 id 不会）。
+	// ID 库存行 id（变体侧引用的定位键：编码可以改，行 id 不会）。
 	ID            string `json:"id"`
 	WarehouseID   string `json:"warehouseId"`
 	WarehouseCode string `json:"warehouseCode"`
@@ -203,7 +201,7 @@ type WarehouseSKUResp struct {
 	// ProductID / VariantID 是该行已绑定的商品与变体（HasVariant 为假时为空串）。
 	ProductID string `json:"productId"`
 	VariantID string `json:"variantId"`
-	// HasVariant 这条货在商品侧是否已经有变体（迁移 624 起可为假 = 未认领）。
+	// HasVariant 这条货在商品侧是否已经有变体（迁移 624 起可为假 = 无归属）。
 	HasVariant bool `json:"hasVariant"`
 	// Quantity / ReservedQuantity / AvailableQuantity 这一行的事实数量（三个一起给）。
 	Quantity          int `json:"quantity"`

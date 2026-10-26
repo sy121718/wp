@@ -207,7 +207,7 @@ func (m *Model) EnsureStocksTx(ctx context.Context, tx *gorm.DB, rows []*StockEn
 // LockStockRowTx 对 (variant_id, warehouse_id) 那一行取 FOR UPDATE 行锁，返回加锁后的行。
 //
 // 可用量的判定只发生在持锁之后：并行扣减因此被串行化，超扣不可能发生。
-// variantID 是**指针**（迁移 624 起可空）：未认领行按 `variant_id IS NULL` 定位。
+// variantID 是**指针**（迁移 624 起可空）：无归属行按 `variant_id IS NULL` 定位。
 func (m *Model) LockStockRowTx(ctx context.Context, tx *gorm.DB, variantID *string, warehouseID string) (e *StockEntity, err error) {
 	e = &StockEntity{}
 	q := tx.WithContext(ctx).Model(&StockEntity{}).
@@ -224,8 +224,8 @@ func (m *Model) LockStockRowTx(ctx context.Context, tx *gorm.DB, variantID *stri
 
 // LockStockByIDTx 按库存行 id 取 FOR UPDATE 行锁。
 //
-// 认领 / 解除 / 预占 / 释放全部以**库存行 id** 为锁对象：前两者的入参就是行 id，
-// 后两者在拿到候选行之后也可以只锁 id（比重新按 (变体, 仓) 定位少一次读取）。
+// 预占 / 释放全部以**库存行 id** 为锁对象：拿到候选行之后只锁 id 即可
+// （比重新按 (变体, 仓) 定位少一次读取）。
 func (m *Model) LockStockByIDTx(ctx context.Context, tx *gorm.DB, projectID, id string) (e *StockEntity, err error) {
 	e = &StockEntity{}
 	if serr := rls.ScopeTx(tx, projectID); serr != nil {
@@ -282,9 +282,9 @@ func (m *Model) StockTotals(ctx context.Context, projectID string, variantIDs []
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := tx.WithContext(ctx).Model(&StockEntity{}).
 			Select("variant_id, MAX(sku_code) AS sku_code, SUM(quantity) AS total").
-			// 未认领行（variant_id IS NULL）不参与变体汇总（迁移 624）：
+			// 无归属行（variant_id IS NULL）不参与变体汇总（迁移 624）：
 			// 汇总的结果是按 variant_id 索引的 map，NULL 会聚成 map[""] 一组，
-			// 被商品侧当成一个「空 id 的变体」返回。那批货还没认领到任何商品，
+			// 被商品侧当成一个「空 id 的变体」返回。那批货还没被任何变体引用，
 			// 本来就不属于任何变体的可用量。
 			Where("variant_id IS NOT NULL").
 			Group("variant_id").Order("variant_id ASC")

@@ -344,7 +344,7 @@ func TestProductListStockAggregationThreeStates(t *testing.T) {
 	if rerr != nil {
 		t.Fatalf("解析第二仓失败: %v", rerr)
 	}
-	if err := f.inventory.EnsureVariantStock(ctx, ref, mixed.ID, mixed.Variants[0].ID, "AGG-MIXED", &five); err != nil {
+	if _, err := f.inventory.EnsureVariantStock(ctx, ref, mixed.ID, mixed.Variants[0].ID, "AGG-MIXED", &five); err != nil {
 		t.Fatalf("为第二仓建跟踪行失败: %v", err)
 	}
 	got, err = f.products.Get(ctx, &productdto.GetReq{ID: mixed.ID})

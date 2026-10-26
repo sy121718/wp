@@ -537,7 +537,7 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 			pending = append(pending, &inventorymodel.StockEntity{
 				ID: uuid.NewString(), ProjectID: orString(item.projectID, projectID),
 				// 建行路径**不允许**变体为空（出入库必须有商品上下文）：
-				// 未认领行只由人工建档 / 迁移存量产出，不走出入库。
+				// 无归属行只由人工建档 / 迁移存量产出，不走出入库。
 				WarehouseID: k.warehouseID,
 				ProductID:   inventorymodel.StringPtr(productID),
 				VariantID:   inventorymodel.StringPtr(k.variantID),

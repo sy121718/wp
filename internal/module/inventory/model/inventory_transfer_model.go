@@ -11,7 +11,7 @@ package inventorymodel
 // 三条不变量：
 //
 //  1. 明细指向**库存行**（stock_id）而不是变体：调拨搬的是源仓里那一批具体的货，
-//     这样才能表达「未认领的货也能调拨」；
+//     这样才能表达「无归属的货也能调拨」；
 //  2. 出货与签收**各需至少一张凭证**（service 强制，本层只负责落库）——
 //     一张没有凭证的移库事后无法证明「货是谁交出去的、谁签收的」；
 //  3. 状态单向：pending → in_transit → completed，或 pending → cancelled。
@@ -53,7 +53,7 @@ func (TransferEntity) TableName() string { return "inventory_transfers" }
 
 // TransferItemEntity 调拨明细（迁移 630）：一条**源仓库存行**搬多少件。
 //
-// VariantID 可空：未认领行（迁移 624 引入的 variant_id IS NULL）也允许调拨 ——
+// VariantID 可空：无归属行（迁移 624 引入的 variant_id IS NULL）也允许调拨 ——
 // 「仓库里已有的货」正是最需要调拨的那批（清关到仓、客户寄卖的货）。
 type TransferItemEntity struct {
 	ID         int64   `gorm:"column:id;primaryKey"`
@@ -313,10 +313,10 @@ func (m *Model) ListTransferAttachments(ctx context.Context, projectID, transfer
 	return list, err
 }
 
-// DeductUnclaimedStockTx 未认领行出库（按库存行 id）：quantity -= n，守卫在 WHERE 里。
+// DeductUnclaimedStockTx 无归属行出库（按库存行 id）：quantity -= n，守卫在 WHERE 里。
 //
 // 为什么不走 applyStockChangesTx：那条路径按 (variant, warehouse) 加锁与写流水，
-// 而未认领行没有变体 —— 补一个空串会让流水落一条无法归属的记录。
+// 而无归属行没有变体 —— 补一个空串会让流水落一条无法归属的记录。
 // 这里只改数量（守卫 quantity >= n 在 SQL 里，并发下只有一句能匹配上行）。
 func (m *Model) DeductUnclaimedStockTx(ctx context.Context, tx *gorm.DB, projectID, stockID string,
 	quantity int, at time.Time) (affected int64, err error) {

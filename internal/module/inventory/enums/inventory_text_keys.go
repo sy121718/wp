@@ -38,10 +38,7 @@ const (
 	InventoryChangeWarehouseDefaultSuffix = "admin.inventory.change.warehouseDefaultSuffix"
 
 	// —— 仓库商品 SKU 台账页（迁移 624）——
-	InventorySKUsTitle      = "admin.inventory.skus.title"
-	InventoryStockClaimed   = "admin.inventory.stock.claimed"
-	InventoryStockUnclaimed = "admin.inventory.stock.unclaimed"
-	InventoryFilterAll      = "admin.inventory.filter.all"
+	InventoryFilterAll = "admin.inventory.filter.all"
 
 	// —— 调拨页（迁移 630，W3）——
 	InventoryTransfersTitle           = "admin.inventory.transfers.title"

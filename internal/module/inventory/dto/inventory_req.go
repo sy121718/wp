@@ -153,28 +153,8 @@ type ListWarehouseSKUReq struct {
 	ProjectID   string `form:"projectId"`
 	WarehouseID string `form:"warehouseId"`
 	Keyword     string `form:"keyword"`
-	// Claimed 认领状态筛选：空串 = 全部，"claimed" = 已认领，"unclaimed" = 未认领。
-	//
-	// 用字符串而不是 bool：三态（全部 / 已认领 / 未认领）用 bool 装不下，
-	// 而多一个 includeAll 开关只会让调用点多一处可能写错的组合。
-	Claimed string `form:"claimed"`
-	Page    int    `form:"page"`
-	Size    int    `form:"size"`
-}
-
-// StockLedgerQueryReq 仓库商品 SKU 台账页（/admin/inventory/skus）的查询串。
-//
-// 键名是**已发布 URL 的一部分**（书签、外部链接、回跳都按它拼），所以 form tag 不能随手改。
-// 落成 DTO 而不是在控制器里 c.Query：查询串的键名与默认值只有一处定义
-// （controller_shape_test.go 的 TestControllerQueryBinding）。
-type StockLedgerQueryReq struct {
-	ProjectID   string `form:"project"`
-	WarehouseID string `form:"warehouseId"`
-	Keyword     string `form:"keyword"`
-	// Claimed 三态：空 = 全部，claimed = 已认领，unclaimed = 未认领（白名单在 service）。
-	Claimed string `form:"claimed"`
-	Page    int    `form:"page"`
-	Limit   int    `form:"limit"`
+	Page        int    `form:"page"`
+	Size        int    `form:"size"`
 }
 
 // GetWarehouseSKUReq 「从仓库选」的最小查询：给定仓库 + 我们自己那条仓库 SKU，返回该行。
@@ -196,37 +176,17 @@ type BindExternalSKUReq struct {
 	ExternalSKU string `json:"externalSku" form:"externalSku"`
 }
 
-// —— 仓库商品 SKU 主档化（迁移 624）——
+// —— 仓库货行建档（迁移 624；2026-10 去认领后库存行不再指回变体）——
 
-// ClaimStockReq 把一条未认领的仓库存货行认领到某个商品变体。
+// CreateStockReq 在某个仓建一条货行（仓库 + 裸码 + 数量 + 成本）。
 //
-// 认领是**单向且不可自动合并**的动作：目标 (variant_id, warehouse_id) 已有库存行时拒绝，
-// 因为两行库存是两份事实（迁移 262 的同一判据），合并要么丢数量、要么丢成本。
-type ClaimStockReq struct {
-	ProjectID string `json:"projectId" form:"projectId"`
-	// StockID 待认领的库存行 id（表单只提交它，不提交编码：编码可以改，行 id 不会）。
-	StockID string `json:"stockId" form:"stockId" binding:"required"`
-	// ProductID / VariantID 认领目标（两者同时给：库存行上这两列总是一起落值）。
-	ProductID  string `json:"productId" form:"productId" binding:"required"`
-	VariantID  string `json:"variantId" form:"variantId" binding:"required"`
-	OperatorID string `json:"operatorId" form:"operatorId"`
-}
-
-// UnclaimStockReq 解除认领（商品下线 / 认领错了）。
+// 「仓库里的货可以先于商品存在」这件事在去认领之后仍然成立：库存的真源在仓库侧
+// （仓 + 裸码 + 数量 + 成本），商品侧的变体只在自己的 warehouse_skus 里**引用**这一行。
+// 所以建档不写 product / variant —— 那是商品侧的动作。
 //
-// 仅当 quantity = 0 且 reserved_quantity = 0 时允许 —— 有数量或有预占就解除，
-// 会让货从「商品库存」里消失，而变体删除守卫看不见它。
-type UnclaimStockReq struct {
-	ProjectID string `json:"projectId" form:"projectId"`
-	StockID   string `json:"stockId" form:"stockId" binding:"required"`
-}
-
-// CreateUnclaimedStockReq 人工建档一条未认领存货（仓库 + 裸码 + 数量 + 成本）。
-//
-// TrackQuantity 由调用方显式表态（页面给两个选项：跟踪数量 / 无限库存），**不猜**：
-// 迁移 261 的 CHECK (track_quantity OR quantity = 0) 决定了「有数量就必须跟踪」，
-// 填了数量却留 false 只会撞一句没有上下文的约束错误。
-type CreateUnclaimedStockReq struct {
+// TrackQuantity 由调用方显式表态，**不猜**：迁移 261 的 CHECK (track_quantity OR quantity = 0)
+// 决定了「有数量就必须跟踪」，填了数量却留 false 只会撞一句没有上下文的约束错误。
+type CreateStockReq struct {
 	ProjectID   string `json:"projectId" form:"projectId"`
 	WarehouseID string `json:"warehouseId" form:"warehouseId" binding:"required"`
 	// SKUCode 仓库侧裸码（不带仓码前缀；前缀只属于商品侧）。
@@ -236,6 +196,8 @@ type CreateUnclaimedStockReq struct {
 	TrackQuantity bool     `json:"trackQuantity" form:"trackQuantity"`
 	CostPrice     *float64 `json:"costPrice" form:"costPrice"`
 }
+
+// —— 预占 / 释放（迁移 624）——
 
 // ReserveStockLine 一行预占 / 释放请求。
 type ReserveStockLine struct {
