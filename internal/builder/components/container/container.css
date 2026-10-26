@@ -85,12 +85,23 @@
   max-height: {{maxHeight}};
   overflow: {{overflow}};
 
+  /* 显式定宽（不居中，不带外边距）：flex 行里的定宽列用它，
+     Center 的 margin-inline:auto 会吸走主轴剩余空间。 */
+  @if hasWidth
+  width: {{width}};
+  box-sizing: border-box;
+  @endif
+
   /* 版心约束（横向）。max-width 本身不会超过可用宽度，窄屏无需另配断点。 */
   max-width: {{maxWidth}};
 
   /* 居中：只在配了 max-width 且显式打开时输出（全宽背景 + 内层版心的写法不该被居中）。 */
   @if center
   margin-inline: auto;
+  /* 版心必须是「撑满可用宽度、封顶 max-width」：只写 margin-inline:auto 时，
+     flex 父级里 width:auto 的成员会被 auto 边距收缩成内容宽，版心失效（页眉整条居中挤在中间）。 */
+  width: 100%;
+  box-sizing: border-box;
   @endif
 
   /* 视觉装饰：渐变 > 背景图 > 图案（互斥，同写 background-image）。 */

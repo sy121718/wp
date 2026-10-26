@@ -7,10 +7,13 @@
  *   @media (max-width: Npx)          只认既有断点 1024 / 767，自造断点会构建期报错
  */
 
-/* 表单容器：纵向布局 + 字段间距。 */
+/* 表单容器：纵向布局 + 字段间距。
+ * align-self: stretch 必需——放在 align-items: flex-start 的列里时，
+ * 窄到 fit-content 的容器会把 width:100% 的输入框一起压窄。 */
 & {
   display: flex;
   flex-direction: column;
+  align-self: stretch;
   gap: var(--sky-space-7, 16px);
 }
 
@@ -38,6 +41,48 @@
 & .sky-form-field label.sky-form-check input {
   width: auto;
   margin: 0;
+}
+
+/* 下拉框：清掉 UA 外观，否则暗色主题下 select 仍是白底黑字的原生控件
+   （background/color 被 UA 的 appearance 盖掉）。箭头用背景渐变画，零 SVG。 */
+& select {
+  appearance: none;
+  padding-right: var(--sky-space-10, 36px);
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 17px) calc(50% + 2px), calc(100% - 12px) calc(50% + 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+/* 复选项：appearance:none 自绘。只给 accent-color 时未勾选态仍是 UA 白方块，
+   暗色主题下像一块补丁。勾用 clip-path 画，selected 时才 scale(1)。 */
+& input[type=checkbox] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  display: inline-grid;
+  place-content: center;
+  border: 1px solid var(--sky-c-border-strong, #d1d5db);
+  border-radius: 4px;
+  background: var(--sky-c-surface, #fff);
+  cursor: pointer;
+}
+& input[type=checkbox]::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  transform: scale(0);
+  transition: transform .12s ease-out;
+  box-shadow: inset 1em 1em var(--sky-c-primary, #2563eb);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 82% 0, 43% 62%);
+}
+& input[type=checkbox]:checked::before {
+  transform: scale(1);
+}
+& input[type=radio] {
+  accent-color: var(--sky-c-primary, #2563eb);
 }
 
 /* 输入控件通用边框样式（:is() 合并同声明选择器，与迁移前一致）。 */

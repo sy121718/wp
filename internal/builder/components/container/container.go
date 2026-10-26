@@ -222,6 +222,12 @@ type BoxProps struct {
 	// 传 CSS 长度即可（常用 "820px" 这类定值）。窄屏不要另配：CSS 的
 	// max-width 本来就不会超过可用宽度，写 min(100%, 820px) 也可以。
 	MaxWidth string `json:"maxWidth,omitempty" ct:"dimension,maxlen=30,sec=layout,label=最大宽度"`
+	// Width 显式宽度（定宽，不居中）。
+	//
+	// 为什么 Center 不够：Center 输出的 margin-inline:auto 在 flex 行里会吸收主轴
+	// 剩余空间 —— 同一行两个定宽列都开 Center 时，两列被一起推到中间，space-between
+	// 失效。这里只写 width，不碰外边距，定宽与居中彻底分成两件事。
+	Width string `json:"width,omitempty" ct:"dimension,maxlen=30,sec=layout,label=宽度"`
 	// Center 水平居中（配了 MaxWidth 才有效）。
 	//
 	// 单列出来而不是「设了 MaxWidth 就自动居中」：容器常常是**全宽背景 + 内层版心**
@@ -447,6 +453,8 @@ func cssVarsHead(p *Props) map[string]string {
 		"minHeight":     p.Box.MinHeight,
 		"maxHeight":     p.Box.MaxHeight,
 		"maxWidth":      p.Box.MaxWidth,
+		"hasWidth":      core.BoolVar(p.Box.Width != ""),
+		"width":         p.Box.Width,
 		"center":        core.BoolVar(p.Box.Center && p.Box.MaxWidth != ""),
 		"overflow":      p.Box.Overflow,
 		// 视觉装饰。

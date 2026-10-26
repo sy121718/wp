@@ -58,6 +58,7 @@ var componentTokenFallbacks = map[string][]string{
 	"--sky-space-1": {"2px"}, "--sky-space-2": {"4px"}, "--sky-space-3": {"6px"},
 	"--sky-space-4": {"8px"}, "--sky-space-5": {"10px"}, "--sky-space-6": {"12px"},
 	"--sky-space-7": {"16px"}, "--sky-space-8": {"24px"},
+	"--sky-space-10": {"36px"}, // 下拉箭头右侧留白（form.css 的 select）
 	"--sky-radius-sm": {"4px"}, "--sky-radius-md": {"6px"}, "--sky-radius-lg": {"8px"},
 	"--sky-radius-xl": {"12px"}, "--sky-radius-pill": {"999px", "9999px"},
 	"--sky-fs-xs": {"11px"}, "--sky-fs-sm": {"12px"}, "--sky-fs-base": {"13px"},
