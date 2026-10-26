@@ -540,7 +540,7 @@ type orderCreatePageEnv struct {
 
 // newOrderCreatePageEnv 装配一个可 GET / POST 的建单页。
 //
-// 商品目录传**真**的 productservice.Service：候选 SKU 走 ListBundleSKUs，
+// 商品目录传**真**的 productservice.Service：候选 SKU 走 ListVariantOptions，
 // 用替身就得把它的语义再抄一份进测试，而抄错的那份不会报错。
 func newOrderCreatePageEnv(t *testing.T) *orderCreatePageEnv {
 	t.Helper()
@@ -640,7 +640,7 @@ func TestAdminOrderCreatePageEchoesOnFailure(t *testing.T) {
 		t.Errorf("rows=3 时应渲染 3 行明细输入框，实际 %d", got)
 	}
 	if !strings.Contains(page, "回填商品") {
-		t.Error("候选 SKU 应带出商品名（真商品目录的 ListBundleSKUs）")
+		t.Error("候选 SKU 应带出商品名（真商品目录的 ListVariantOptions）")
 	}
 
 	// ② 提交**非法邮箱** → 200 + 整页 + 字段级标红 + 全部字段回填。

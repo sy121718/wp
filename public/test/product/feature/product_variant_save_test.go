@@ -373,10 +373,10 @@ func TestVariantSaveAddsUpdatesAndDeletes(t *testing.T) {
 	}
 }
 
-// —— 验收 5：有库存 / 被引用时跳过该行，且不整批失败 ——
+// —— 验收 5：有库存时跳过该行，且不整批失败 ——
 
-// TestVariantSaveSkipsStockAndBOM 清单外要删的行：有非零库存或被 BOM 引用 → 跳过并逐条回带原因。
-func TestVariantSaveSkipsStockAndBOM(t *testing.T) {
+// TestVariantSaveSkipsStockRow 清单外要删的行：有非零库存 → 跳过并逐条回带原因。
+func TestVariantSaveSkipsStockRow(t *testing.T) {
 	f := newVariantListFixture(t)
 	if f == nil {
 		return
@@ -393,50 +393,33 @@ func TestVariantSaveSkipsStockAndBOM(t *testing.T) {
 	f.save(t, p.ID, rows)
 
 	withStock := variantByOption(t, f, p.ID, pv.Rows[0].OptionValues)
-	referenced := variantByOption(t, f, p.ID, pv.Rows[1].OptionValues)
-	parent := variantByOption(t, f, p.ID, pv.Rows[2].OptionValues)
 	kept := variantByOption(t, f, p.ID, pv.Rows[3].OptionValues)
 	f.addStock(t, withStock, 3)
-	if _, err := f.inventory.SetBOM(context.Background(), &inventorydto.SetBOMReq{
-		ProjectID: f.projectID, ParentVariantID: parent.ID, ParentSKUCode: parent.SKUCode,
-		Items: []inventorydto.BOMItemReq{{
-			ComponentVariantID: referenced.ID, ComponentSKUCode: referenced.SKUCode, Quantity: 1,
-		}},
-	}); err != nil {
-		t.Fatalf("配置 BOM 失败: %v", err)
-	}
 
-	// 清单只留一个：其余三个都在删除范围内（两个被守卫拦下，一个真的删掉）。
+	// 清单只留一个：其余三个都在删除范围内（一个有库存被拦下，两个真的删掉）。
 	res := f.save(t, p.ID, []productdto.VariantListResp{{
 		VariantID: kept.ID, SKUCode: kept.SKUCode, OptionValues: kept.OptionValues,
 	}})
-	if res.Deleted != 1 {
-		t.Fatalf("无库存无引用的那一行应被删除，实际 deleted=%d", res.Deleted)
+	if res.Deleted != 2 {
+		t.Fatalf("无库存的那两行应被删除，实际 deleted=%d", res.Deleted)
 	}
-	if len(res.Skipped) != 2 {
-		t.Fatalf("应有 2 行被跳过（库存 / BOM），实际 %d：%+v", len(res.Skipped), res.Skipped)
+	if len(res.Skipped) != 1 {
+		t.Fatalf("应有 1 行被跳过（库存），实际 %d：%+v", len(res.Skipped), res.Skipped)
 	}
-	reasons := map[string]bool{}
-	for _, skip := range res.Skipped {
-		reasons[skip.Reason] = true
-	}
-	if !reasons[productenums.VariantSkipHasStock] {
+	if res.Skipped[0].Reason != productenums.VariantSkipHasStock {
 		t.Fatalf("有库存的那一行应报 %s，实际 %+v", productenums.VariantSkipHasStock, res.Skipped)
 	}
-	if !reasons[productenums.VariantSkipReferenced] {
-		t.Fatalf("被 BOM 引用的那一行应报 %s，实际 %+v", productenums.VariantSkipReferenced, res.Skipped)
-	}
-	// 不整批失败：被拦下的两个变体仍在库里，没有被误删。
+	// 不整批失败：被拦下的变体仍在库里，其余照常删掉。
 	after := f.variantsOf(t, p.ID)
 	ids := map[string]bool{}
 	for _, v := range after {
 		ids[v.ID] = true
 	}
-	if !ids[withStock.ID] || !ids[referenced.ID] || !ids[kept.ID] {
-		t.Fatalf("被跳过的变体必须留在库里：%+v", ids)
+	if !ids[withStock.ID] || !ids[kept.ID] {
+		t.Fatalf("被跳过的变体与保留的变体必须留在库里：%+v", ids)
 	}
-	if ids[parent.ID] {
-		t.Fatalf("清单外且没有引用的变体应被删除")
+	if len(after) != 2 {
+		t.Fatalf("除被跳过与保留的两行外，其余应被删除，实际剩 %d 个", len(after))
 	}
 }
 

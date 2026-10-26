@@ -27,13 +27,6 @@ import "strconv"
 // 类型的显示名与「未重算过」这句话都只出现在模板里（product_tags.html 按 Kind 分支取词）：
 // 后端不再有「取值 → 文案」的映射表，也就不会出现第二份措辞。
 
-// —— 捆绑成员的来源（products.bundle_items.options[].sourceKind）——
-//
-// 三种来源都走同一条出口（ResolveBundleMembers），空值 = 迁移 238 之前的历史配置 /
-// 手工指定。取值常量见 product_enums.go 的 BundleSource*。显示名一律在渲染期按取值取词：
-// 模板（product_bundle.html / product_bundle_form.html）与 bundle_members.js 各按同一份
-// 取值分支走，后端不再有「取值 → 文案」的映射表。
-
 // —— 商品域实体类型（译文工作台的分组标题）——
 //
 // 取值即 productcontract.EntityType*（实体类型注册表与内容模板 entityType 的取值）。

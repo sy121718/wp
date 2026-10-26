@@ -64,9 +64,9 @@ func TestCollectionRelatedTranslationQueryCountDoesNotGrowWithProducts(t *testin
 		}
 		for i := 0; i < n; i++ {
 			if err := db.Exec(`INSERT INTO products
-				(id, project_id, name, slug, sku_code, status, type, sort,
+				(id, project_id, name, slug, sku_code, status, sort,
 				 category_ids, primary_category_id, brand_id, tag_ids, create_time, update_time)
-				VALUES (?, ?, ?, ?, ?, 'published', 'variant', ?, ?::jsonb, ?, ?, ?::jsonb, now(), now())`,
+				VALUES (?, ?, ?, ?, ?, 'published', ?, ?::jsonb, ?, ?, ?::jsonb, now(), now())`,
 				uuid.NewString(), projectID, "商品"+uuid.NewString()[:4], "p-"+uuid.NewString()[:8],
 				"SKU-"+uuid.NewString()[:8], i+1,
 				`["`+catID+`"]`, catID, brandID, `["`+tagID+`"]`).Error; err != nil {

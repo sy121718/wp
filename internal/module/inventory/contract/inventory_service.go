@@ -189,11 +189,6 @@ type InventoryService interface {
 	CreateReason(ctx context.Context, req *inventorydto.CreateReasonReq) (res *inventorydto.ReasonResp, err error)
 	UpdateReason(ctx context.Context, req *inventorydto.UpdateReasonReq) (res *inventorydto.ReasonResp, err error)
 
-	// —— 物料清单（验收 5）——
-	// SetBOM 全量替换某个父 SKU 的清单（空 items 即清空）。
-	SetBOM(ctx context.Context, req *inventorydto.SetBOMReq) (res *inventorydto.BOMResp, err error)
-	GetBOM(ctx context.Context, req *inventorydto.GetBOMReq) (res *inventorydto.BOMResp, err error)
-
 	// —— 货源（issue #17）——
 	// 一张表承载**所有进货来源**：外部供应商、集团内关联公司、自家工厂用 type 区分，
 	// related_party 标记关联交易（报表按「类型 × 关联方」取数），config 承载异构对接扩展信息。

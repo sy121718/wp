@@ -1,7 +1,7 @@
 package producthttp
 
-// product_editor_page_render_test.go — 组合（bundle）/ 编辑（edit）/ 详情页模板（template）
-// 三个整页 GET 的失败出口（task-38）。
+// product_editor_page_render_test.go — 编辑（edit）/ 详情页模板（template）
+// 两个整页 GET 的失败出口（task-38）。
 //
 // 与 product_page_render_test.go（task-28）、product_taxonomy_page_render_test.go（task-37）
 // 同一族判据，契约见 docs/rules/template-boundary.md §整页 GET 的失败出口：取数失败的整页 GET
@@ -14,10 +14,8 @@ package producthttp
 //	商品不在库里            → 404（只有业务 key = ErrNotFound 才是「不存在」，
 //	                          驱动错误一律 500 —— 不把服务错误误报成「商品被删了」）
 //
-// 这一批的额外难点是**共享 render 函数**：renderBundlePage 同时服务整页
-//（ProductBundlePage）与 htmx 片段（ProductBundleSave 写失败重渲染）。片段档必须仍是片段 ——
-// 整页失败页塞进片段槽会把外层结构（页头、侧边菜单）一起换掉，所以这里用真实 Jet 把两种边界
-// 分开钉住，并顺带钉住「写失败重渲染不丢用户刚配的成员清单」。
+// 这里用真实 Jet 把整页渲染出来钉住边界：失败页塞进片段槽会把外层结构（页头、侧边菜单）
+// 一起换掉，所以只有真渲染才看得出「还是这一页」。
 //
 // 另外钉住一条极易回退的性质：**失败之后不再发任何派生查询**（此前每一次取数失败都各自
 // shell.PageError 出口，后面的分类 / 品牌 / 标签 / 仓库 / 属性 / 模板清单照发不误）。
@@ -64,16 +62,11 @@ type editorStub struct {
 	tagsErr       error
 	attributesErr error
 	listErr       error
-	configErr     error
-	skusErr       error
-	setErr        error
 
 	categories []*productdto.CategoryResp
 	brands     []*productdto.BrandResp
 	tags       []*productdto.TagResp
 	attributes []*productdto.AttributeResp
-	config     *productdto.BundleConfigResp
-	skus       []*productdto.BundleSKUResp
 
 	// 编辑页已改走读模型（ProductPageReader）：这一页的取数编排与档位都在 service，
 	// 桩只负责交回一份视图 / 一个失败 —— 原来的 getErr / categoriesErr 那一族对编辑页不再生效。
@@ -83,10 +76,6 @@ type editorStub struct {
 	// 「详情页模板」整页同样改走读模型（2026-10-11，第九个方法）。
 	detailTemplatePageView *productdto.ProductDetailTemplatePageResp
 	detailTemplatePageErr  error
-
-	// 捆绑配置页也改走读模型（第十个方法）。
-	bundlePageView *productdto.ProductBundlePageResp
-	bundlePageErr  error
 
 	calls []string
 }
@@ -135,25 +124,6 @@ func (s *editorStub) ProductCreateForm(context.Context, *productdto.ProductCreat
 func (s *editorStub) ProductPricingPage(context.Context, *productdto.ProductPricingPageReq) (*productdto.ProductPricingPageResp, error) {
 	s.record("ProductPricingPage")
 	return productPricingPageViewStub(nil), nil
-}
-
-// ProductBundlePage 读模型桩：只负责给出契约形状的视图（页面装载只回答「库里配了什么」——
-// 保存已迁到 JSON 写基座，没有提交快照这一档）。
-func (s *editorStub) ProductBundlePage(_ context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageResp, error) {
-	s.record("ProductBundlePage")
-	view := s.bundlePageView
-	if view == nil {
-		view = productBundlePageViewStub(func(v *productdto.ProductBundlePageResp) {
-			if req != nil {
-				v.SelectedProject = req.ProjectID
-				v.SelectedProduct = req.ProductID
-			}
-			if s.bundlePageErr != nil {
-				v.SaveBlocked = true
-			}
-		})
-	}
-	return view, s.bundlePageErr
 }
 
 func (s *editorStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageResp, error) {
@@ -253,24 +223,6 @@ func (s *editorStub) ListRatings(context.Context, *productdto.ListRatingsReq) (*
 	return nil, nil
 }
 
-func (s *editorStub) GetBundleConfig(context.Context, *productdto.GetBundleConfigReq) (*productdto.BundleConfigResp, error) {
-	s.record("GetBundleConfig")
-	if s.configErr != nil {
-		return nil, s.configErr
-	}
-	return s.config, nil
-}
-
-func (s *editorStub) ListBundleSKUs(context.Context, *productdto.ListBundleSKUReq) ([]*productdto.BundleSKUResp, error) {
-	s.record("ListBundleSKUs")
-	return s.skus, s.skusErr
-}
-
-func (s *editorStub) SetBundleConfig(context.Context, *productdto.SetBundleConfigReq) (*productdto.BundleConfigResp, error) {
-	s.record("SetBundleConfig")
-	return nil, s.setErr
-}
-
 // editorProjectsStub 工程契约：List 供页面装载，Detail 供 siteurl.DetailPathForProject 派生详情页 URL
 // （派生失败会回落到默认模式，所以 Detail 返回 (nil, nil) 就够 —— 这不是本文件要测的判据）。
 //
@@ -345,18 +297,6 @@ type editorPage struct {
 
 var editorPages = []editorPage{
 	{
-		name:   "组合页",
-		path:   "/admin/products/bundle?project=p1&product=prod1",
-		marker: "捆绑配置",
-		// 取数编排（工程清单 → 工程商品 → 配置三档 → 候选 SKU → 来源面板三条）已整体进
-		// service 的读模型：控制器只调一次 ProductBundlePage，失败之后不会再发任何派生查询。
-		successCalls:  []string{"ProductBundlePage"},
-		breakLoad:     func(s *editorStub) { s.bundlePageErr = errors.New(editorDriverText) },
-		loadFailCalls: []string{"ProductBundlePage"},
-		// 工程清单 / 未知工程两条已随取数编排归 service（同编辑页）。
-		skipProjectCases: true,
-	},
-	{
 		name:   "编辑页",
 		path:   "/admin/products/edit?project=p1&product=prod1",
 		marker: "编辑商品",
@@ -382,12 +322,11 @@ var editorPages = []editorPage{
 	},
 }
 
-// editorEnv 三页共用的环境：一个工程 p1、一个商品 prod1、一份可读的捆绑配置，
+// editorEnv 两页共用的环境：一个工程 p1、一个商品 prod1，
 // 并注入模板 / 实例端口（详情页模板页缺这两个会走「未装配」档，那是另一条判据）。
 func editorEnv() (*ProductPageHandle, *editorStub, *editorTemplatesStub, *editorInstancesStub) {
 	stub := &editorStub{
 		getRes: &productdto.ProductResp{ID: "prod1", Name: "商品一", Slug: "prod-1"},
-		config: &productdto.BundleConfigResp{ProductID: "prod1", ProductName: "商品一", BasePrice: 9.9},
 	}
 	tpls := &editorTemplatesStub{rows: []*contenttemplatecontract.TemplateResp{{ID: "tpl1", Name: "默认模板"}}}
 	insts := &editorInstancesStub{}
@@ -406,7 +345,6 @@ func editorRequest(t *testing.T, h *ProductPageHandle, target string) *httptest.
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/admin/products/bundle", adminui.PageSlot(ProductBundlePageTemplate), h.ProductBundlePage)
 	engine.GET("/admin/products/edit", adminui.PageSlot(ProductEditPageTemplate), h.ProductEditPage)
 	engine.GET("/admin/products/template", adminui.PageSlot(ProductDetailTemplatePageTemplate), h.ProductDetailTemplatePage)
 	rec := httptest.NewRecorder()
@@ -487,37 +425,6 @@ func TestEditorPagesSuccessRendersPage(t *testing.T) {
 						p.name, want, stub.calls)
 				}
 			}
-		})
-	}
-}
-
-// TestBundleConfigErrorGrades 捆绑配置读取的错误分档**由读模型给出**，控制器只原样透出。
-//
-// 「哪种错误落哪一档」（不存在 404 / 参数非法 400 / 其余 500）的判据已经下沉到
-// service/product_bundle_page.go（对着真实 PG 的用例在 public/test/product/feature），
-// 这里验的是控制器那一层的两件事：不改判档位、按这一次的 err 归口当前语言的失败槽。
-func TestBundleConfigErrorGrades(t *testing.T) {
-	cases := []struct {
-		name     string
-		err      error
-		status   int
-		wantText string
-	}{
-		{"商品不存在", productenums.Err(productenums.ErrNotFound), http.StatusNotFound, "商品或变体不存在"},
-		{"参数非法", productenums.Err(productenums.ErrInvalidParam), http.StatusBadRequest, "请求参数无效"},
-		{"驱动错误", errors.New(editorDriverText), http.StatusInternalServerError, "内部错误"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			h, stub, _, _ := editorEnv()
-			stub.bundlePageView = productBundlePageViewStub(func(v *productdto.ProductBundlePageResp) {
-				v.SaveBlocked = true
-			})
-			stub.bundlePageErr = tc.err
-			rec := editorRequest(t, h, "/admin/products/bundle?project=p1&product=prod1")
-			assertProductJSONFailure(t, tc.name, rec, tc.status, tc.wantText)
-			// 取数编排在 service：控制器只调一次读模型。
-			assertCalls(t, tc.name, stub.calls, []string{"ProductBundlePage"})
 		})
 	}
 }

@@ -74,8 +74,8 @@ func seedPricingHistoryFixture(t *testing.T, db *gorm.DB, projectID string, batc
 	firstProduct := seedListProduct(t, db, projectID, 9001)
 	secondProduct := seedListProduct(t, db, projectID, 9002)
 	blankNameProduct := uuid.NewString()
-	exec("INSERT INTO products (id, project_id, name, slug, sku_code, status, type, sort, create_time, update_time) "+
-		"VALUES (?, ?, '', ?, ?, 'published', 'variant', 3, now(), now())",
+	exec("INSERT INTO products (id, project_id, name, slug, sku_code, status, sort, create_time, update_time) "+
+		"VALUES (?, ?, '', ?, ?, 'published', 3, now(), now())",
 		blankNameProduct, projectID, "p-blank", "SKU-BLANK")
 
 	// 批次时间递减：越后插的批次越新，列表（新的在前）顺序确定。

@@ -10,24 +10,20 @@ import (
 
 // CreateReq 新建商品。
 //
-// 关联关系一律走 JSON 数组（图片 URL / 分类 id / 标签 id / 关联商品 id / 捆绑 BOM），
+// 关联关系一律走 JSON 数组（图片 URL / 分类 id / 标签 id / 关联商品 id），
 // 见 spec §数据结构精简原则：不为每类关系单开关联表。
 type CreateReq struct {
 	ProjectID string `json:"projectId" form:"projectId"`
 	Name      string `json:"name" form:"name" binding:"required"`
-	// Type 商品类型（迁移 238）：空 = variant（常规变体商品）；bundle = 捆绑容器。
-	// 只在创建时确定 —— bundle 不生成首个变体，价格只取 DefaultPrice（容器价，必须 > 0）。
-	Type     string `json:"type" form:"type"`
-	Subtitle string `json:"subtitle" form:"subtitle"`
+	Subtitle  string `json:"subtitle" form:"subtitle"`
 	// Description 走 BindForm（见 CreateReq.BindForm）。
 	Description json.RawMessage `json:"description" form:"-"`
 	Slug        string          `json:"slug" form:"slug"`
 	// SKUCode 商品主体 SKU 编码（规则见 docs/14-product-sku-and-cost-model.md）。
 	//
-	// 语义：运营填的商品主体编码。留空则按规则派生 —— 变体商品取商品 URL 段的 ASCII 段，
-	// 捆绑商品取 <商品段>_B；派生不出 ASCII 段时明确报错（ErrSkuContainerMissing），
-	// 不退回随机码。填了时：变体商品原样保留、选了仓库自动加仓库码前缀（已带前缀不重复加）；
-	// 捆绑商品恒以 _B 结尾（缺后缀补齐）。
+	// 语义：运营填的商品主体编码。留空则按规则派生 —— 取商品 URL 段的 ASCII 段；
+	// 派生不出 ASCII 段时明确报错（ErrSkuContainerMissing），不退回随机码。
+	// 填了时原样保留、选了仓库自动加仓库码前缀（已带前缀不重复加）。
 	// **存量编码一律不重写** —— 本字段只作用于新建商品。
 	SKUCode string `json:"sku" form:"sku"`
 	// SKUSource 新建商品的 SKU 来源（docs/14 §1.1 的两条入口）：
@@ -65,8 +61,7 @@ type CreateReq struct {
 	PrimaryCategoryID string   `json:"primaryCategoryId" form:"primaryCategoryId"`
 	TagIDs            []string `json:"tagIds" form:"tagIds"`
 	RelatedIDs        []string `json:"relatedIds" form:"relatedIds"`
-	// BundleItems / Metadata 同 Description：都走 BindForm（见 UpdateReq.BindForm）。
-	BundleItems json.RawMessage `json:"bundleItems" form:"-"`
+	// Metadata 同 Description：走 BindForm（见 CreateReq.BindForm）。
 	// BrandID 品牌引用（issue #10）：必须是同工程内真实存在的品牌，空串即不指定。
 	BrandID      string          `json:"brandId" form:"brandId"`
 	DefaultPrice *float64        `json:"defaultPrice" form:"defaultPrice"`
@@ -115,18 +110,15 @@ type UpdateReq struct {
 	// ProjectID 是工程隔离（DB-009）的作用域来源；为空时由 service 走唯一工程兜底。
 	ProjectID string  `json:"projectId" form:"projectId"`
 	Name      *string `json:"name" form:"name"`
-	// Type 商品类型：只在创建时确定。传入且与现值不同即拒绝（ErrProductTypeImmutable）——
-	// 变体 ↔ 捆绑的切换涉及「有没有自己的 SKU / 价格放在哪」，不是一次字段更新能表达的。
-	Type     *string `json:"type" form:"type"`
-	Subtitle *string `json:"subtitle" form:"subtitle"`
+	Subtitle  *string `json:"subtitle" form:"subtitle"`
 	// Description 走 BindForm 自己解析：htmx 的 data-write-html 产出 `{"html":…}` 字符串，
 	// 而 json.RawMessage 的 Unmarshaler 期待一个 JSON 值、不认字符串（实测绑不上恒 nil）。
 	Description json.RawMessage `json:"description" form:"-"`
 	Slug        *string         `json:"slug" form:"slug"`
 	// SKUCode 商品主体 SKU 编码（显式修改才动 products.sku_code）：nil 表示本次不改 ——
 	// 存量编码不被隐式重写；给了空串按 ErrContainerSkuInvalid 拒绝（静默忽略会让人以为改成功了）。
-	// 捆绑商品缺 _B 后缀时补齐；这里不补仓库码前缀（仓码前缀是创建时按归属仓确定的，
-	// 编辑路径没有仓上下文，要换前缀走新建商品）。
+	// 这里不补仓库码前缀（仓码前缀是创建时按归属仓确定的，编辑路径没有仓上下文，
+	// 要换前缀走新建商品）。
 	SKUCode        *string  `json:"sku" form:"sku"`
 	Status         *string  `json:"status" form:"status"`
 	Unit           *string  `json:"unit" form:"unit"`
@@ -146,7 +138,6 @@ type UpdateReq struct {
 	PrimaryCategoryID *string         `json:"primaryCategoryId" form:"primaryCategoryId"`
 	TagIDs            []string        `json:"tagIds" form:"tagIds"`
 	RelatedIDs        []string        `json:"relatedIds" form:"relatedIds"`
-	BundleItems       json.RawMessage `json:"bundleItems" form:"bundleItems"`
 	BrandID           *string         `json:"brandId" form:"brandId"`
 	DefaultPrice      *float64        `json:"defaultPrice" form:"defaultPrice"`
 	DefaultImage      *string         `json:"defaultImage" form:"defaultImage"`
@@ -282,7 +273,7 @@ type GenerateVariantsReq struct {
 
 // BindForm 表单体里把三个 json.RawMessage 字段按 JSON 字符串解析。
 //
-// 为什么需要它（审查 P1）：`Description` / `BundleItems` / `Metadata` 都没有 form tag，
+// 为什么需要它（审查 P1）：`Description` / `Metadata` 都没有 form tag，
 // 而 json.RawMessage 的 UnmarshalJSON 期待**一个 JSON 值**、不认表单给的字符串 ——
 // 反射那条路绑不上，字段恒 nil，service 因此「不写」（保留旧值），而页面提示保存成功。
 // 最典型的是富文本：`data-write-html="descriptionHtml:description"` 产出
@@ -296,7 +287,6 @@ func (r *UpdateReq) BindForm(vals url.Values) error {
 		dst  *json.RawMessage
 	}{
 		{"description", &r.Description},
-		{"bundleItems", &r.BundleItems},
 		{"metadata", &r.Metadata},
 	} {
 		raw := strings.TrimSpace(vals.Get(f.name))

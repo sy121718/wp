@@ -89,19 +89,6 @@ const (
 	ProductDetailTemplateNameRequired    = "admin.product_detail_template.nameRequired"
 	ProductDetailTemplatePathRequired    = "admin.product_detail_template.pathRequired"
 
-	// —— 捆绑配置 ——
-	ProductBundleTitle                   = "admin.product_bundle.title"
-	ProductBundleOptionNone              = "admin.product_bundle.option.none"
-	ProductBundleSourceProduct           = "admin.product_bundle.source.product"
-	ProductBundleSourceWarehouse         = "admin.product_bundle.source.warehouse"
-	ProductBundleSourceAttributes        = "admin.product_bundle.source.attributes"
-	ProductBundleSourceNone              = "admin.product_bundle.source.none"
-	ProductBundleSourceWarehouseSKULabel = "admin.product_bundle.source.warehouseSkuLabel"
-	ProductBundleSourceExternalSKULabel  = "admin.product_bundle.source.externalSkuLabel"
-	// 配置页的两种「没有可配对象」与面板读取失败（提示页与面板降级都用）。
-	ProductBundleNoProduct    = "admin.product_bundle.noProduct"
-	ProductBundleDetailFailed = "admin.product_bundle.detailFailed"
-
 	// —— 定价工具 ——
 	ProductPricingTitle            = "admin.product_pricing.title"
 	ProductPricingLineChanged      = "admin.product_pricing.line.changed"

@@ -15,13 +15,11 @@ type ProductResp struct {
 	Subtitle    string          `json:"subtitle"`
 	Description json.RawMessage `json:"description"`
 	Slug        string          `json:"slug"`
-	// SKUCode 商品主体 SKU（products.sku_code，迁移 246）：变体商品的「容器主体」，
-	// 捆绑商品的自定义主体（恒 _B 结尾）。唯一性范围是**本工程**（部分唯一索引
-	// uq_products_project_sku_code），不是全局；变体 SKU 以它为主体拼接。
+	// SKUCode 商品主体 SKU（products.sku_code，迁移 246）：商品的「容器主体」。
+	// 唯一性范围是**本工程**（部分唯一索引 uq_products_project_sku_code），不是全局；
+	// 变体 SKU 以它为主体拼接。
 	SKUCode string `json:"skuCode"`
 	Status  string `json:"status"`
-	// Type 商品类型（迁移 238）：variant | bundle。
-	Type string `json:"type"`
 	// PublishedAt 上架时间（issue #11，RFC3339；未上架为空串）：
 	// 自动标签的「新品」规则以它为判定基准。
 	PublishedAt    utils.JSONTime `json:"publishedAt"`
@@ -41,13 +39,11 @@ type ProductResp struct {
 	PrimaryCategoryID string          `json:"primaryCategoryId"`
 	TagIDs            []string        `json:"tagIds"`
 	RelatedIDs        []string        `json:"relatedIds"`
-	BundleItems       json.RawMessage `json:"bundleItems"`
 	BrandID           string          `json:"brandId"`
 	DefaultPrice      *float64        `json:"defaultPrice"`
 	DefaultImage      string          `json:"defaultImage"`
 	Metadata          json.RawMessage `json:"metadata"`
-	// PriceMin / PriceMax 只读价格区间：变体商品从变体派生；**捆绑容器取容器价**
-	//（bundle 没有自己的 SKU，成员价不参与计价，见 applyPriceRange）。
+	// PriceMin / PriceMax 只读价格区间：从变体派生（没有变体时不填，见 applyPriceRange）。
 	PriceMin float64 `json:"priceMin"`
 	PriceMax float64 `json:"priceMax"`
 	// VariantCount 变体数量（单变体商品在前台不显示规格选择器）。
@@ -217,9 +213,6 @@ type ProductRowResp struct {
 
 	// Stock 库存列（三态 + 分仓明细）；nil = 这一行不带库存（模板整格跳过）。
 	Stock *StockCellResp
-
-	// Bundle 捆绑构成面板（只在 type=bundle 时给，nil = 模板整块跳过）。
-	Bundle *BundlePanelResp
 }
 
 // 行元素一律是结构体，只有**片段/抽屉的数据根**保持 map —— 后者是 Jet 的取值方式决定的：

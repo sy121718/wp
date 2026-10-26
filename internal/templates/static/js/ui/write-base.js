@@ -711,9 +711,9 @@
     //（变体清单的行、捆绑配置的 config）。这类组装只有页面自己知道，所以走注册表：
     // 页面脚本注册一个函数，模板只声明名字。
     //
-    // 保留这个机制的原因：product_variant_write.js / product_bundle_write.js /
-    // membership_write.js 都在向它注册，而那些组装逻辑依赖各自页面特有的 DOM 结构，
-    // 用通用的 <template data-row> 表达不了（例如捆绑配置要合并多个区域的勾选状态）。
+    // 保留这个机制的原因：product_variant_write.js / membership_write.js 都在向它注册，
+    // 而那些组装逻辑依赖各自页面特有的 DOM 结构，用通用的 <template data-row> 表达不了
+    //（例如变体清单的行是从清单 DOM 读出来的，不是表单控件）。
     var builders = {};
 
     function registerPayloadBuilder(name, fn) {

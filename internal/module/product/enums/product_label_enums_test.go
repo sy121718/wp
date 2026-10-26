@@ -88,20 +88,6 @@ func TestTagLabelMappingsStayedInTemplate(t *testing.T) {
 	}
 }
 
-// 成员来源的显示名已归渲染期（product_bundle.html / product_bundle_form.html 与
-// bundle_members.js 按取值分支取词）：后端不得再加回「取值 → 文案」的映射。
-func TestBundleSourceLabelsStayedInTemplate(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("..", "..", "..", "templates", "admin", "product", "product_bundle.html"))
-	if err != nil {
-		t.Fatalf("读捆绑页模板失败：%v", err)
-	}
-	for _, want := range []string{"admin.product_bundle.source.product", "admin.product_bundle.source.warehouse", "admin.product_bundle.source.attributes"} {
-		if !strings.Contains(string(src), want) {
-			t.Errorf("捆绑页模板缺少 %q —— 来源显示名必须由模板取词", want)
-		}
-	}
-}
-
 // TestEntityTypeLabel 五类实体各一条词条，未知类型回落到「商品」。
 func TestEntityTypeLabel(t *testing.T) {
 	cases := []struct {

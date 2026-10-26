@@ -579,7 +579,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// product ↔ inventory 是循环依赖：product 的 Setup 要 inventory 契约，而库存页面
 	// 要 product 契约做「商品 → 变体」下拉，任何固定顺序都装配不出来。
 	// 所以 products 不进参数表，改为后置注入（装配期写一次、之后只读；
-	// 与 runtimefragment.Deps.BundleProvider 同一手法），handler 侧对 nil 降级为下拉为空。
+	// 与本仓其他装配期注入端口同一手法），handler 侧对 nil 降级为下拉为空。
 	inventoryhttp.SetProductCatalog(productSvc)
 	marks.mark(portInventoryProductCatalog)
 	// 商品译文存储由 SetupProductRoutes 内部用同一个 db 注入（可选端口：未接入即回退原文）。
@@ -973,7 +973,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 	//
 	// 只覆盖 products 一行 —— 属性 / 品牌 / 分类 / 捆绑配置各自是独立的数据形态，
 	// 混进同一批会让「商品」在工具列表里指五样东西（模型分不清时会挑一个最像的调下去）。
-	// 断言成收窄的读写端口：ProductService 同时握着 SetBundleConfig / UpdateVariantCost /
+	// 断言成收窄的读写端口：ProductService 同时握着 UpdateVariantCost /
 	// CreateAttribute，工具层握着它们时「顺手调个价」会从「显式加一个工具」退化成「随手就能做」。
 	productWriter, prodWriteOK := a.productSvc.(productmcp.ProductWriter)
 	if !prodWriteOK {
@@ -1265,16 +1265,6 @@ func (a *assembly) wireProductInventoryPorts() {
 	}
 	availabilitySetter.SetAvailabilityPort(availabilityPort)
 	marks.mark(portProductAvailability)
-	// 捆绑配置器片段（issue #20）：前台配置器走访问面的 /_fragments 端点，
-	// 经商品模块的窄契约（BundleConfiguratorPort）读配置与整单校验 ——
-	// 访问面不经过后台鉴权链，也不认识商品表。装配期注入，未注入即 fail-closed。
-	// 运行时兜底，理由见上面「为什么保留」；编译期断言在 product/service/product_bundle_validate.go。
-	bundlePort, ok := productSvc.(productcontract.BundleConfiguratorPort)
-	if !ok {
-		panic("商品模块未实现捆绑配置器端口（BundleConfiguratorPort）")
-	}
-	a.fragDeps.BundleProvider = bundlePort
-	marks.mark(portRuntimeFragBundle)
 	// 商品变体可用量片段（issue #24）：商品详情规格选择器旁的「实时库存」走访问面片段端点。
 	// 同一份注入模式：product 模块实现 VariantAvailabilityLookupPort（内部再调 inventory 的
 	// VariantAvailabilityPort 读真源），片段层只管渲染结论。与库存端口一样 fail-fast ——

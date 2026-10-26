@@ -18,7 +18,7 @@ type countingVariantCatalog struct {
 	calls int
 }
 
-func (c *countingVariantCatalog) ListVariantOptions(context.Context, string) ([]productcontract.VariantOption, error) {
+func (c *countingVariantCatalog) ListAllVariantOptions(context.Context, string) ([]productcontract.VariantOption, error) {
 	c.calls++
 	out := make([]productcontract.VariantOption, 0, 50)
 	for i := 0; i < 50; i++ {

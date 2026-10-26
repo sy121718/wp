@@ -5,7 +5,7 @@
 //
 //  1. 目录里**只能有** `<域>_req.go` / `<域>_resp.go` 两种非测试文件 —— 一个域最多两份，
 //     入参进 req、回执进 resp。原先的 product_view.go / product_bulk.go / product_row_view.go /
-//     product_variant_save.go / product_bundle.go 都是同一份域被拆成了别的名字，读的人要先
+//     product_variant_save.go / product_variant.go 都是同一份域被拆成了别的名字，读的人要先
 //     「这个文件是进还是出」才能定位，所以一并按这条规则收口。
 //  2. **导出类型一律以 Req / Resp 结尾**，除了下面 allowlist 里的三类值对象 —— 它们既不是
 //     入参也不是回执，而是**两个方向共用的形状**（持久化形状、表单回填值、绑定原语），
@@ -28,15 +28,11 @@ import (
 
 // dtoValueObjects 允许不带 Req / Resp 后缀的导出类型（既进请求也进回执的共用形状）。
 var dtoValueObjects = map[string]string{
-	"BundleOption":       "持久化形状：products.bundle_items.options 的元素",
-	"BundleConfig":       "持久化形状：products.bundle_items 的完整配置",
-	"BundleMemberSource": "来源快照（json:\"-\"）：库里的溯源字段，请求与回执都带",
-	"BundleSourcePart":   "表单回填值：选品来源的一段（后台用），不落库",
-	"PricingForm":        "表单回填值：试算后原样回填的取值，由 Req.Form() 产生",
-	"AttrValueFormRow":   "表单行：属性值行，请求提交与页面回显是同一形状",
-	"FieldKind":          "绑定原语的类型事实（product_form_req.go）",
-	"FieldValueError":    "绑定原语的错误类型（product_form_req.go）",
-	"BulkRejectedError":  "错误包装：整批拒绝时把可定位条目带出 service（既不是入参也不是回执）",
+	"PricingForm":       "表单回填值：试算后原样回填的取值，由 Req.Form() 产生",
+	"AttrValueFormRow":  "表单行：属性值行，请求提交与页面回显是同一形状",
+	"FieldKind":         "绑定原语的类型事实（product_form_req.go）",
+	"FieldValueError":   "绑定原语的错误类型（product_form_req.go）",
+	"BulkRejectedError": "错误包装：整批拒绝时把可定位条目带出 service（既不是入参也不是回执）",
 }
 
 var dtoFileName = regexp.MustCompile(`^[a-z0-9_]+_(req|resp)\.go$`)

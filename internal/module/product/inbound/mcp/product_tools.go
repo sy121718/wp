@@ -11,7 +11,7 @@ package productmcp
 // 而分不清的代价是它挑一个看起来最像的调下去。
 //
 // **依赖断言成收窄的端口**而不是整个 ProductService：后者同时握着
-// SetBundleConfig / UpdateVariantCost / CreateAttribute，工具层握着它们时
+// UpdateVariantCost / CreateAttribute，工具层握着它们时
 // 「顺手调个价」会从「显式加一个工具」退化成「随手就能做」。
 
 // 为什么单独一批：它们描述的是**商品怎么被归类**，不是「某个商品」。
@@ -367,7 +367,7 @@ func productFind(r ProductReader) mcp.Tool {
 			b.WriteString("匹配到 " + strconv.Itoa(len(list)) + " 个商品：\n")
 			for _, p := range list {
 				b.WriteString("- " + p.Name + "（id=" + p.ID + "，SKU=" + p.SKUCode +
-					"，类型=" + p.Type + "，状态=" + p.Status + "）\n")
+					"，状态=" + p.Status + "）\n")
 			}
 			if len(list) >= productFindLimit {
 				b.WriteString("（只列了前 " + strconv.Itoa(productFindLimit) + " 条；" +
@@ -524,9 +524,8 @@ func productDelete(w ProductWriter, store mcp.IdempotencyStore) mcp.Tool {
 
 // describeProduct 把商品摊成便于模型读的文本。
 //
-// 只列**可变且模型需要知道**的字段：状态、类型、SKU 这些是它做判断的依据
-// （比如「类型是 bundle，所以不能按变体商品理解」），而 id / projectId 要带上，
-// 否则下一轮它无从引用这一行。
+// 只列**可变且模型需要知道**的字段：状态、SKU、价格与库存这些是它做判断的依据，
+// 而 id / projectId 要带上，否则下一轮它无从引用这一行。
 func describeProduct(res *productdto.ProductResp) string {
 	if res == nil {
 		return "（没有读到商品）"
@@ -536,7 +535,6 @@ func describeProduct(res *productdto.ProductResp) string {
 	writeLine(&b, "名称", res.Name)
 	writeLine(&b, "副标题", res.Subtitle)
 	writeLine(&b, "URL 段", res.Slug)
-	writeLine(&b, "类型", res.Type)
 	writeLine(&b, "状态", res.Status)
 	writeLine(&b, "SKU 编码", res.SKUCode)
 	// 价格与库存是用户最常追问的两件事（「多少钱」「还有货吗」），而它们都已由

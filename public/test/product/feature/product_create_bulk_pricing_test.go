@@ -1,14 +1,11 @@
 // Package feature product 模块 feature 测试 —— 商品新建流程与批量「按规则改价」（本批）。
 //
-// 覆盖三件事（真实 PostgreSQL + 生产迁移 + 真实 service + 真实 Jet 模板）：
+// 覆盖两件事（真实 PostgreSQL + 生产迁移 + 真实 service + 真实 Jet 模板）：
 //
-//  1. 新建商品：type 真的被读到（type=bundle 建出来就是捆绑容器、且没有变体），
-//     成功后进**该商品的详情页**继续编辑（不是回列表）；
-//     失败（bundle 没给容器价）回列表页并把中文结论经 ?err= 带回，不出现裸 key；
-//  2. 属性组引用：抽屉的勾选列表按名重复提交（attributeIds 多值），服务端收全；
+//  1. 属性组引用：抽屉的勾选列表按名重复提交（attributeIds 多值），服务端收全；
 //     列表页给出可选项，用户不必再手打 UUID；
-//  3. 批量改价：勾选若干商品 + 一条规则 → 逐个商品的全部变体改价并留痕；
-//     捆绑容器（没有变体）被跳过且不静默；一个都没勾选时明确拒绝、不动任何价格。
+//  2. 批量改价：勾选若干商品 + 一条规则 → 逐个商品的全部变体改价并留痕；
+//     一个都没勾选时明确拒绝、不动任何价格；夹着不存在的商品时整批拒绝并点出是哪个。
 package feature
 
 import (
@@ -24,7 +21,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
-	productmodel "go_wp/internal/module/product/model"
 	"go_wp/internal/templates"
 )
 
@@ -68,76 +64,6 @@ func cfSetVariantCost(t *testing.T, f *attrFixture, variantID string, price, cos
 		ID: variantID, Price: &pv, CostPrice: &cv,
 	}); err != nil {
 		t.Fatalf("设置变体价格失败: %v", err)
-	}
-}
-
-// TestProductCreateBundleTypeAndGoToDetail 验收 1：
-// type=bundle 必须真的生效（否则会退化成 variant 并生成首个变体），成功去详情页。
-func TestProductCreateBundleTypeAndGoToDetail(t *testing.T) {
-	_, f := newCreateFlowEngine(t)
-	if f == nil {
-		return
-	}
-	created, err := cfCreate(f, url.Values{
-		"projectId": {f.projectID}, "name": {"夏季套餐"}, "slug": {"summer-bundle"},
-		"type": {"bundle"}, "defaultPrice": {"199"},
-		// 捆绑主体 SKU 必填（2026-09-19）：新建页会预填建议值，这里直接给一个。
-		"sku": {"SUMMER-BUNDLE"},
-	})
-	if err != nil {
-		t.Fatalf("建捆绑容器失败: %v", err)
-	}
-	// 成功后的落点（商品编辑页）由基座的 data-write-nav 负责；
-	// 这里钉住 service 交回的身份：id 与工程上下文缺一个，编辑页就接不上。
-	productID := created.ID
-	if productID == "" {
-		t.Fatal("建商品没有交回 id")
-	}
-	if created.ProjectID != f.projectID {
-		t.Fatalf("建商品丢了工程上下文：%q", created.ProjectID)
-	}
-
-	detail, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: productID})
-	if err != nil {
-		t.Fatalf("读商品失败: %v", err)
-	}
-	if detail.Type != productmodel.TypeBundle {
-		t.Fatalf("type=bundle 建出来应为捆绑容器，实际 %q（漏读 type 会退化成 %q）",
-			detail.Type, productmodel.TypeVariant)
-	}
-	if detail.VariantCount != 0 {
-		t.Fatalf("捆绑容器不该有自己的变体，实际 %d 个", detail.VariantCount)
-	}
-	// 投影值之外再直接查一次变体表：判据落在「库里到底有没有那一行」上。
-	var variantRows int64
-	if err := f.db.Raw("SELECT COUNT(*) FROM product_variants WHERE product_id = ?", productID).
-		Scan(&variantRows).Error; err != nil {
-		t.Fatalf("查询变体行数失败: %v", err)
-	}
-	if variantRows != 0 {
-		t.Fatalf("捆绑容器的变体表里不该有行，实际 %d 行", variantRows)
-	}
-}
-
-// TestProductCreateBundleWithoutPriceReportsChinese 验收 1（失败路径）：
-// 没给容器价的 bundle 被拒，且列表页拿到的是一句话，不是 ErrBundlePriceRequired 这个 key。
-func TestProductCreateBundleWithoutPriceReportsChinese(t *testing.T) {
-	_, f := newCreateFlowEngine(t)
-	if f == nil {
-		return
-	}
-	if _, err := cfCreate(f, url.Values{
-		"projectId": {f.projectID}, "name": {"无价套餐"}, "slug": {"no-price-bundle"},
-		"type": {"bundle"},
-	}); err == nil || err.Error() != productenums.ErrBundlePriceRequired {
-		t.Fatalf("没给容器价应返回 %s，实际 %v", productenums.ErrBundlePriceRequired, err)
-	}
-	list, err := f.svc.List(t.Context(), &productdto.ListReq{ProjectID: f.projectID, Size: 100})
-	if err != nil {
-		t.Fatalf("读商品列表失败: %v", err)
-	}
-	if len(list) != 0 {
-		t.Fatalf("被拒的商品不该落库，实际 %d 个", len(list))
 	}
 }
 
@@ -186,10 +112,10 @@ func TestProductCreateAttributeSelection(t *testing.T) {
 	}
 }
 
-// TestProductsBulkPricing 验收 3：批量按规则改价。
+// TestProductsBulkPricing 验收 2：批量按规则改价。
 //
-// 两个变体商品 + 一个捆绑容器一起提交：前两个按「成本乘倍数 2」改价，
-// 捆绑容器没有变体被跳过 —— 有跳过时走 ?err=（更显眼），且逐变体留痕。
+// 两个商品一起提交：按「成本乘倍数 2」改价并逐变体留痕；
+// 勾选里夹着一个不存在的商品时整批拒绝，且点出是哪一个。
 func TestProductsBulkPricing(t *testing.T) {
 	engine, f := newCreateFlowEngine(t)
 	if engine == nil {
@@ -198,7 +124,7 @@ func TestProductsBulkPricing(t *testing.T) {
 	ctx := context.Background()
 	// 初始售价都不是「规则算出来的值」：否则该商品会落在「已是目标价」分支，
 	// 断言就测不到真正的改价（成本 40×2=80、成本 100×2=200）。
-	price1, price2, bundlePrice := 100.0, 210.0, 199.0
+	price1, price2 := 100.0, 210.0
 	p1, err := f.svc.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "衬衫", Slug: "bulk-shirt", DefaultPrice: &price1,
 	})
@@ -211,13 +137,6 @@ func TestProductsBulkPricing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建商品失败: %v", err)
 	}
-	bundle, err := f.svc.Create(ctx, &productdto.CreateReq{
-		ProjectID: f.projectID, Name: "套餐", Slug: "bulk-bundle",
-		Type: productmodel.TypeBundle, DefaultPrice: &bundlePrice, SKUCode: "BULK-BUNDLE",
-	})
-	if err != nil {
-		t.Fatalf("建捆绑容器失败: %v", err)
-	}
 	cfSetVariantCost(t, f, p1.Variants[0].ID, price1, 40)
 	cfSetVariantCost(t, f, p2.Variants[0].ID, price2, 100)
 
@@ -229,10 +148,11 @@ func TestProductsBulkPricing(t *testing.T) {
 		t.Fatalf("未勾选应被拒绝并给出可读文案，实际 %d：%q", env.Code, env.Message)
 	}
 
-	// 夹着捆绑容器（没有变体可改价）：整批拒绝 —— 一行都不改，错误里点出是哪个商品。
+	// 夹着不存在的商品 id：整批拒绝 —— 一行都不改，错误里点出是哪个商品。
+	const ghostID = "0b1f0d0c-0000-4000-8000-000000000000"
 	blockedRec := postJSON(t, engine, "/api/product/bulk-pricing", map[string]any{
 		"projectId":  f.projectID,
-		"ids":        []string{p1.ID, p2.ID, bundle.ID},
+		"ids":        []string{p1.ID, p2.ID, ghostID},
 		"ruleType":   productenums.PricingRuleCostMultiple,
 		"multiplier": "2",
 		"rounding":   productenums.PricingRoundingNone,
@@ -243,19 +163,19 @@ func TestProductsBulkPricing(t *testing.T) {
 		t.Fatalf("含不可处理条目应整批拒绝（409），实际 %d：%s", benv.Code, benv.Message)
 	}
 	blockedItems, _ := benv.Data["items"].([]any)
-	seenBundle := false
+	seenGhost := false
 	for _, raw := range blockedItems {
 		row, _ := raw.(map[string]any)
-		if id, _ := row["id"].(string); id != bundle.ID {
+		if id, _ := row["id"].(string); id != ghostID {
 			continue
 		}
-		seenBundle = true
-		if msg, _ := row["message"].(string); !strings.Contains(msg, "捆绑容器只有容器价") {
-			t.Fatalf("条目应说清原因，实际 %q", msg)
+		seenGhost = true
+		if msg, _ := row["message"].(string); strings.TrimSpace(msg) == "" {
+			t.Fatalf("条目应说清原因（不存在的商品），实际空消息")
 		}
 	}
-	if !seenBundle {
-		t.Fatalf("拒绝条目里应点出捆绑容器，items=%v", blockedItems)
+	if !seenGhost {
+		t.Fatalf("拒绝条目里应点出那个不存在的商品，items=%v", blockedItems)
 	}
 	// 整批被拒 = 两个本来能改价的商品也一行没改。
 	for _, tc := range []struct {
@@ -309,15 +229,6 @@ func TestProductsBulkPricing(t *testing.T) {
 	if got2.Variants[0].Price != 200 {
 		t.Fatalf("成本 100 × 2 应为 200，实际 %v", got2.Variants[0].Price)
 	}
-	// 捆绑容器的容器价不该被动：定价只改变体售价。
-	gotBundle, serr := f.svc.Get(ctx, &productdto.GetReq{ProjectID: f.projectID, ID: bundle.ID})
-	if serr != nil {
-		t.Fatalf("读捆绑容器失败: %v", serr)
-	}
-	if gotBundle.PriceMax != 199 {
-		t.Fatalf("捆绑容器价不该被改价工具动到，实际 %v", gotBundle.PriceMax)
-	}
-
 	// 留痕：每个真正改动的商品各一批，改动变体合计 2 个。
 	history, herr := f.svc.ListPriceAdjustments(ctx, &productdto.ListPriceAdjustmentReq{
 		ProjectID: f.projectID, Limit: 20,
@@ -341,8 +252,7 @@ func TestProductsBulkPricing(t *testing.T) {
 //
 //	· 抽屉的 sku 字段必须真的被读 —— 漏读会静默按 URL 段派生另一个编码，
 //	  建完看不出异常，直到与仓库对不上号；
-//	· 变体商品不填时走确定性派生（取 URL 段），捆绑商品不填则**明确拒绝**（必填，
-//	  2026-09-19 用户拍板：编码必须被看见并确认，抽屉负责预填建议值）；
+//	· 不填时走确定性派生（取 URL 段）；
 //	· 失败时页面拿到的是中文文案，不是裸 key（sentinel 白名单登记过的证据）。
 func TestProductCreateSKUInputAndEcho(t *testing.T) {
 	engine, f := newCreateFlowEngine(t)
@@ -373,28 +283,19 @@ func TestProductCreateSKUInputAndEcho(t *testing.T) {
 		}
 	}
 
-	// ③ 不填主体编码建捆绑：**明确拒绝**（2026-09-19 起不再静默按 URL 段派生 <商品段>_B）——
-	// 新建页会预填建议值让运营看见并确认，服务端不接受空值。
-	if _, err := cfCreate(f, url.Values{
-		"projectId": {f.projectID}, "name": {"未填编码套餐"}, "slug": {"summer-set"},
-		"type": {"bundle"}, "defaultPrice": {"99"},
-	}); err == nil || err.Error() != productenums.ErrBundleSKURequired {
-		t.Fatalf("没填编码的捆绑应返回 %s，实际 %v", productenums.ErrBundleSKURequired, err)
-	}
-
-	// ④ 中文 URL 段 + 运营显式填了编码：编码与 URL 段无关，照样建成功（原样落库）。
+	// ③ 中文 URL 段 + 运营显式填了编码：编码与 URL 段无关，照样建成功（原样落库）。
 	cn, err := cfCreate(f, url.Values{
-		"projectId": {f.projectID}, "name": {"中文套餐"}, "slug": {"中文套餐"},
-		"type": {"bundle"}, "defaultPrice": {"99"}, "sku": {"CN-BUNDLE"},
+		"projectId": {f.projectID}, "name": {"中文商品"}, "slug": {"中文商品"},
+		"type": {"variant"}, "defaultPrice": {"99"}, "sku": {"CN-SKU"},
 	})
 	if err != nil {
-		t.Fatalf("填了编码的捆绑应建成功: %v", err)
+		t.Fatalf("填了编码的商品应建成功: %v", err)
 	}
-	bundle, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: cn.ID})
+	named, err := f.svc.Get(t.Context(), &productdto.GetReq{ProjectID: f.projectID, ID: cn.ID})
 	if err != nil {
-		t.Fatalf("读捆绑商品失败: %v", err)
+		t.Fatalf("读商品失败: %v", err)
 	}
-	if bundle.SKUCode != "CN-BUNDLE_B" {
-		t.Fatalf("填了编码的捆绑应按规则补齐 _B 后缀得到 CN-BUNDLE_B，实际 %q", bundle.SKUCode)
+	if named.SKUCode != "CN-SKU" {
+		t.Fatalf("填了编码应原样落库得到 CN-SKU，实际 %q", named.SKUCode)
 	}
 }

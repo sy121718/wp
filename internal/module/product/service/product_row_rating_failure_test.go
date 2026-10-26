@@ -70,8 +70,8 @@ func attachRatingReadFailure(t *testing.T, db *gorm.DB) *ratingReadFailureProbe 
 func seedRatingFailureProduct(t *testing.T, db *gorm.DB, projectID, name, slug, sku, score string) string {
 	t.Helper()
 	productID := uuid.NewString()
-	if err := db.Exec(`INSERT INTO products (id, project_id, name, slug, sku_code, status, type, sort, create_time, update_time)
-		VALUES (?, ?, ?, ?, ?, 'published', 'variant', 1, now(), now())`,
+	if err := db.Exec(`INSERT INTO products (id, project_id, name, slug, sku_code, status, sort, create_time, update_time)
+		VALUES (?, ?, ?, ?, ?, 'published', 1, now(), now())`,
 		productID, projectID, name, slug, sku).Error; err != nil {
 		t.Fatalf("插入商品失败：%v", err)
 	}

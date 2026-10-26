@@ -12,7 +12,6 @@ import (
 type ProductStockReader interface {
 	VariantStockTotals(ctx context.Context, projectID string, variantIDs []string) (totals map[string]int, err error)
 	CountNonZeroStocksByVariant(ctx context.Context, variantID, projectID string) (n int64, err error)
-	HasBOMParent(ctx context.Context, variantID, projectID string) (exists bool, err error)
 }
 
 // ProductStockLookup holds read-only warehouse and inventory facts for product use cases.

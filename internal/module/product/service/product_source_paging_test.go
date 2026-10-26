@@ -29,8 +29,8 @@ func TestResolveCollectionOutOfRangeTotalIsRealCount(t *testing.T) {
 
 	// 只造 3 条商品。
 	for i := 0; i < 3; i++ {
-		if err := db.Exec(`INSERT INTO products (id, project_id, name, slug, sku_code, status, type, sort, create_time, update_time)
-			VALUES (?, ?, ?, ?, ?, 'published', 'variant', ?, now(), now())`,
+		if err := db.Exec(`INSERT INTO products (id, project_id, name, slug, sku_code, status, sort, create_time, update_time)
+			VALUES (?, ?, ?, ?, ?, 'published', ?, now(), now())`,
 			uuid.NewString(), projectID, "商品"+uuid.NewString()[:4], "p-"+uuid.NewString()[:8],
 			"SKU-"+uuid.NewString()[:8], i+1).Error; err != nil {
 			t.Fatalf("造数据失败：%v", err)

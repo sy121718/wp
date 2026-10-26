@@ -19,15 +19,6 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// 商品类型（迁移 238）。
-const (
-	// TypeVariant 常规变体商品：价格与库存在自己的变体上。
-	TypeVariant = "variant"
-	// TypeBundle 捆绑容器：只有一个对外价格（products.default_price），
-	// 成员变体只作为选项/履约明细，价格不参与计价与展示。
-	TypeBundle = "bundle"
-)
-
 // ProductEntity 商品主体。价格与库存在变体上；关联关系走 JSON 列。
 type ProductEntity struct {
 	ID          string          `gorm:"column:id;primaryKey"`
@@ -37,9 +28,6 @@ type ProductEntity struct {
 	Description json.RawMessage `gorm:"column:description;type:jsonb;not null"`
 	Slug        string          `gorm:"column:slug;not null"`
 	Status      string          `gorm:"column:status;not null"`
-	// Type 商品类型（迁移 238）：TypeVariant = 常规变体商品（主体卖自己的 SKU）；
-	// TypeBundle = 捆绑容器（只有容器价，成员价不参与计价与展示，库存按成员 BOM 扣减）。
-	Type string `gorm:"column:type;not null"`
 	// SKUCode 容器主体 SKU（迁移 246）—— 商品身份编码，不是「某个变体的 SKU」：
 	//   · 变体商品：从仓库选 = <仓短码大写>_<仓库里那条 SKU 原样>；
 	//     自己创建 = 运营填的编码（选了仓则自动附加仓码前缀）。
@@ -88,10 +76,10 @@ type ProductEntity struct {
 	//
 	// 只读：它是列表查询的派生列，不落库（写操作一律走变体自己的 price）。
 	// 没有启用变体时为 NULL —— 组件按「无价」排到最后，不当成 0 元。
-	MinPrice            *float64        `gorm:"column:min_price;->"`
-	RelatedIDs          json.RawMessage `gorm:"column:related_ids;type:jsonb;not null"`
-	BundleItems         json.RawMessage `gorm:"column:bundle_items;type:jsonb;not null"`
-	BrandID             *string         `gorm:"column:brand_id"`
+	MinPrice   *float64        `gorm:"column:min_price;->"`
+	RelatedIDs json.RawMessage `gorm:"column:related_ids;type:jsonb;not null"`
+	BrandID    *string         `gorm:"column:brand_id"`
+	// DefaultPrice 商品级默认售价（081）：商品级的展示价，也是新建变体的兜底价。
 	DefaultPrice        *float64        `gorm:"column:default_price"`
 	DefaultComparePrice *float64        `gorm:"column:default_compare_price"`
 	DefaultCostPrice    *float64        `gorm:"column:default_cost_price"`
@@ -295,11 +283,9 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 		q := tx.WithContext(ctx).Model(&ProductEntity{}).
 			// sku_code 必须在 Select 里：列表少取它时，工具返回的「SKU=」永远是空串 ——
 			// 而工具说明承诺了会给出 SKU（见 product_tools.go 的 product_find）。
-			// default_price 必须在 Select 里：bundle 容器**只有**这一个对外价格
-			// （applyPriceRange 的 bundle 分支只认它），漏了它列表的价格区间恒为 0，
-			// 而页面路径有补偿（product_row.go 的 applyRowFacts 会单独补一列）、
-			// API / MCP 出口没有 —— 同一次列表，页面显示容器价、接口返回 0。
-			Select("id, project_id, name, slug, sku_code, type, status, images, sort, default_image, default_price, create_time, update_time")
+			// default_price 也必须在 Select 里：它是商品级默认售价，toListResp 直接拷贝它，
+			// 漏了它接口出口那一列恒为空（页面路径另有 product_row.go 的补偿，接口没有）。
+			Select("id, project_id, name, slug, sku_code, status, images, sort, default_image, default_price, create_time, update_time")
 		q = productKeywordFilter(q, keyword)
 		if status != "" {
 			q = q.Where("status = ?", status)
@@ -340,8 +326,6 @@ const idBatchSize = 500
 // jsonb 列保持 json.RawMessage（与 ProductEntity 同一形状）：解码归 service 的
 // decodeStrings 一处做，model 不另立一份解码。
 type ProductRowFacts struct {
-	// Type 商品类型（TypeVariant / TypeBundle）：容器价的判定要用它。
-	Type string
 	// CategoryIDs 挂载的分类 id 数组（jsonb）。
 	CategoryIDs json.RawMessage
 	// PrimaryCategoryID 主分类（可空）。
@@ -350,20 +334,15 @@ type ProductRowFacts struct {
 	BrandID string
 	// TagIDs 挂载的标签 id 数组（jsonb，手工 + 自动）。
 	TagIDs json.RawMessage
-	// DefaultPrice 容器价（仅 TypeBundle 有意义）：商品侧只有一个对外价格，
-	// 取值规则见 service 的 applyPriceRange 的 bundle 分支。
-	DefaultPrice *float64
 }
 
 // rowFactsRow ListRowFacts 的扫描目标：只含被 Select 出来的列（不是完整商品行）。
 type rowFactsRow struct {
 	ID                string          `gorm:"column:id"`
-	Type              string          `gorm:"column:type"`
 	CategoryIDs       json.RawMessage `gorm:"column:category_ids"`
 	PrimaryCategoryID *string         `gorm:"column:primary_category_id"`
 	BrandID           *string         `gorm:"column:brand_id"`
 	TagIDs            json.RawMessage `gorm:"column:tag_ids"`
-	DefaultPrice      *float64        `gorm:"column:default_price"`
 }
 
 // ListRowFacts 按 id 批量读列表行的挂载事实（列表页消 N+1 的第二条批量读）。
@@ -387,7 +366,7 @@ func (m *Model) ListRowFacts(ctx context.Context, projectID string, productIDs [
 		var batch []rowFactsRow
 		if err := rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 			return tx.WithContext(ctx).Model(&ProductEntity{}).
-				Select("id, type, category_ids, primary_category_id, brand_id, tag_ids, default_price").
+				Select("id, category_ids, primary_category_id, brand_id, tag_ids").
 				// 与评分批量读同理：project_id 显式进 WHERE（RLS 换角色前不生效）。
 				Where("project_id = ? AND id IN ?", projectID, ids[start:end]).Scan(&batch).Error
 		}); err != nil {
@@ -396,7 +375,7 @@ func (m *Model) ListRowFacts(ctx context.Context, projectID string, productIDs [
 		rows = append(rows, batch...)
 	}
 	for _, r := range rows {
-		f := ProductRowFacts{Type: r.Type, CategoryIDs: r.CategoryIDs, TagIDs: r.TagIDs, DefaultPrice: r.DefaultPrice}
+		f := ProductRowFacts{CategoryIDs: r.CategoryIDs, TagIDs: r.TagIDs}
 		if r.PrimaryCategoryID != nil {
 			f.PrimaryCategoryID = *r.PrimaryCategoryID
 		}
@@ -728,7 +707,7 @@ func (m *Model) ListVariantsByProducts(ctx context.Context, productIDs []string)
 	return list, err
 }
 
-// ListVariantsByIDs 批量按 ID 取变体（issue #20：捆绑选项按 id 批量取 SKU，避免 N+1）。
+// ListVariantsByIDs 批量按 ID 取变体（按 id 批量取 SKU，避免 N+1）。
 //
 // 返回值只有命中的行：调用方按「请求了哪些 id」与「拿到了哪些」做差集，
 // 缺的那些就是「SKU 已被删除」——那是业务判断，留在 service。
@@ -737,7 +716,7 @@ func (m *Model) ListVariantsByProducts(ctx context.Context, productIDs []string)
 // product_variants 自身没有 project_id 列，**也不在迁移 215 的策略名单里**（实测
 // relrowsecurity=f、policies=0），所以这条作用域**当前不对本表构成过滤** ——
 // 变体的跨工程可见性是由调用方解析归属商品兜底的（ListProductsByIDs(ctx, ids, projectID)
-// 读的是 products，那是有策略的表；bundle 的三条路径就是这么做的）。
+// 读的是 products，那是有策略的表）。
 // 仍然包作用域的两个理由：① 与同批读方法保持同一形状，避免换连接角色后出现
 // 「有的方法静默 0 行、有的不会」这种难以推理的差异；② 将来给 product_variants
 // 加策略时，这里不会突然退化成静默 0 行（那正是审计 db-03 §2.5 描述的失效形态）。
@@ -754,11 +733,6 @@ func (m *Model) ListVariantsByIDs(ctx context.Context, ids []string, projectID s
 	})
 	return list, err
 }
-
-// 捆绑成员引用的反查已迁到 product_ref_scan.go 的 ProductRefsByBundleVariant：
-// 那条守卫必须**跨工程**可发现（别的工程把本工程的变体列为捆绑成员时，只在本工程里查
-// 会命中 0 行 ⇒ 删除放行 ⇒ 那些捆绑的成员清单永久悬空），原来的单工程布尔反查
-// （VariantReferencedByBundleItems）已随之删除 —— 留着它只会让下一个调用方再踩一次。
 
 // GetVariant 按 ID 查变体。
 func (m *Model) GetVariant(ctx context.Context, id string) (e *VariantEntity, err error) {

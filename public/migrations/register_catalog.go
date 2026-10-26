@@ -297,7 +297,7 @@ func registerCatalogAndInventory() {
 		SQL: mustSQL("103_inventory_reasons_seed.sql"),
 	})
 
-	// 104：库存变动 / 流水 / 原因字典 / 物料清单 8 个权限点 + 超管策略（issue #16）。
+	// 104：库存变动 / 流水 / 原因字典 6 个权限点 + 超管策略（issue #16）。
 	// 条件只看本票自己的权限点，与 100 的宽匹配（inventory:%）互不干扰。
 	//
 	// 2026-09 修正：原先这里是 10 个（多 inventory:cache_sync / cache_reconcile）。那两个随
@@ -306,14 +306,15 @@ func registerCatalogAndInventory() {
 	// Seeds 台账后跑（migrator.go 的 runAll 与 RunSeeds），终态永远是「死权限点又回来了」——
 	// 后台于是存在指向不存在路由的死授权（勾选后毫无作用、误导配置者）。
 	// 条件与 SQL 同批收到 8 个：**删能力时必须连 seed 一起收口**。
-	// 回归判据：migrations_retired_permission_test.go（删过的码不得再被任何 seed 写入）。
+	// 2026-10 再收到 6 个：inventory:bom_set / bom_get 随物料清单一起下线（636 从存量库删），
+	// 同样的道理 —— 留着它们会让 636 的删除每轮被本 seed 撤回。
+	// 回归判据：migrations_retired_permission_test.go（删过的码不得被任何 seed 写入）。
 	registerSeed(Seed{
 		Version:   "104-inventory-change-permissions",
 		TableName: "sys_permission",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 8 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 6 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
 			"'inventory:stock_change', 'inventory:stock_deduct', 'inventory:movement_list', " +
-			"'inventory:reason_list', 'inventory:reason_create', 'inventory:reason_update', " +
-			"'inventory:bom_set', 'inventory:bom_get')",
+			"'inventory:reason_list', 'inventory:reason_create', 'inventory:reason_update')",
 		SQL: mustSQL("104_inventory_change_permissions.sql"),
 	})
 
@@ -416,40 +417,6 @@ func registerCatalogAndInventory() {
 		TableName:    "sys_menus",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '变更记录' AND type = 2 AND deleted_at IS NULL",
 		SQL:          mustSQL("113_master_data_menu.sql"),
-	})
-
-	// 114：捆绑品选项规则（issue #20）。默认「表存在即跳过」在 products 上必然误跳过，
-	// 故 CheckSQL 核对形状约束是否在位（列默认值 + 规范化 UPDATE + CHECK 三者同段执行，
-	// 语句全部幂等，缺约束即整段重跑）。
-	register(Migration{
-		Version:   "114-product-bundle-config",
-		TableName: "products",
-		// 按约束定义判定（只判「存在」区分不了宽松旧定义）；
-		// 物化 OID 后再 deparse 的理由同 071（避免与并发 DROP SCHEMA 争用）。
-		CheckSQL: "WITH target AS MATERIALIZED (" +
-			"SELECT oid FROM pg_constraint WHERE conrelid = ?::regclass AND conname = 'products_bundle_items_shape_check') " +
-			"SELECT CASE WHEN (SELECT COUNT(*) FROM pg_constraint pc JOIN target t ON t.oid = pc.oid " +
-			"WHERE pg_get_constraintdef(pc.oid) LIKE '%jsonb_typeof%') = 1 THEN 1 ELSE 0 END",
-		SQL: mustSQL("114_product_bundle_config.sql"),
-	})
-
-	// 115：捆绑品 4 个权限点 + 超管策略（issue #20）。
-	// 条件只看本票自己的权限点（product:bundle_%），与 082 的宽匹配互不干扰。
-	registerSeed(Seed{
-		Version:   "115-product-bundle-permissions",
-		TableName: "sys_permission",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 4 THEN 1 ELSE 0 END FROM sys_permission WHERE permission_code IN (" +
-			"'product:bundle_get', 'product:bundle_set', " +
-			"'product:bundle_validate', 'product:bundle_skus')",
-		SQL: mustSQL("115_product_bundle_permissions.sql"),
-	})
-
-	// 116：捆绑配置后台菜单（issue #20）。与 084/113 同挂「站点工程」目录（sort 12）。
-	registerSeed(Seed{
-		Version:      "116-product-bundle-menu",
-		TableName:    "sys_menus",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM sys_menus WHERE title = '捆绑配置' AND type = 2 AND deleted_at IS NULL",
-		SQL:          mustSQL("116_product_bundle_menu.sql"),
 	})
 
 	// 117：商品按品牌筛选的索引（issue #21）。products 表存在即默认跳过，
@@ -578,25 +545,6 @@ func registerCatalogAndInventory() {
 		SQL: mustSQL("236_fix_inventory_menu_visibility.sql"),
 	})
 
-	// 238：商品类型列（variant / bundle）+ 存量捆绑品回填。
-	// CheckSQL 判列是否存在：已加则返回非零跳过（约定见 236）。
-	register(Migration{
-		Version:   "238-product-type",
-		TableName: "products",
-		CheckSQL: "SELECT COUNT(*) FROM information_schema.columns " +
-			"WHERE table_schema = current_schema() AND table_name = ? AND column_name = 'type'",
-		SQL: mustSQL("238_product_type.sql"),
-	})
-
-	// 239：新错误词条（商品类型 / 捆绑容器价）+ 新建商品抽屉的「商品类型」文案。
-	// 判定只看自己的 key（058 那种全库计数在存量库永远判定已灌满）。
-	registerSeed(Seed{
-		Version:      "239-i18n-seed-product-type",
-		TableName:    "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrProductTypeInvalid'",
-		SQL:          mustSQL("239_i18n_seed_product_type.sql"),
-	})
-
 	// 240：仓库类型（self / third_party / virtual）与第三方对接配置 config jsonb（库存域收口）。
 	//
 	// 存量「is_default 那一行」按自营（self）处理，理由写在 SQL 注释里：默认仓是
@@ -704,13 +652,17 @@ func registerCatalogAndInventory() {
 		SQL: mustSQL("246_product_container_sku.sql"),
 	})
 
-	// 247：商品域后续词条（捆绑构成区块 19 / 多语言空态 4 / 新建抽屉属性组多选与批量改价 6）
+	// 247：商品域后续词条（多语言空态 4 / 新建抽屉属性组多选与批量改价 6）
 	// + 退役旧的 admin.products.ph.attributeIds（属性引用文本框时代的占位符，改版后无模板取用）。
 	// 判定只看自己的 key（058 那种全库计数在存量库永远判定已灌满）。
+	//
+	// 2026-10：本批原有 19 个 admin.product_detail.bundle.*（商品详情页「捆绑构成」只读区块），
+	// 随捆绑品概念下线一起从 SQL 移除，门槛判定改用同批仍有效的
+	// admin.product_translations.noTargetLang.action（同批删除的 key 不能当门槛）。
 	registerSeed(Seed{
 		Version:      "247-i18n-seed-product-followups",
 		TableName:    "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.product_detail.bundle.title'",
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.product_translations.noTargetLang.action'",
 		SQL:          mustSQL("247_i18n_seed_product_followups.sql"),
 	})
 
@@ -723,17 +675,6 @@ func registerCatalogAndInventory() {
 		TableName:    "sys_i18n",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrSkuContainerMissing'",
 		SQL:          mustSQL("248_product_sku_error_i18n.sql"),
-	})
-
-	// 249：捆绑商品主体 SKU 必填（2026-09-19 用户拍板）的词条 ——
-	// ErrBundleSKURequired 一条业务错误（常量值即 i18n key，不 seed 就会在页面上原样显示裸 key），
-	// 加上新建抽屉的四个文案位（「重新生成」按钮 / 建议值说明 / 请手填提示 / 捆绑占位符）。
-	// 变体商品一字未动，248 的三条 key 继续有效、不退役。判定只看自己的 key（同 239/247/248）。
-	registerSeed(Seed{
-		Version:      "249-i18n-seed-product-bundle-sku",
-		TableName:    "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'ErrBundleSKURequired'",
-		SQL:          mustSQL("249_product_bundle_sku_i18n.sql"),
 	})
 
 	// 250：商品目录菜单归属收口（2026-09-19 评审第四轮）——
@@ -804,34 +745,6 @@ func registerCatalogAndInventory() {
 		TableName:    "sys_i18n",
 		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'admin.inventory.sku.externalSku.save'",
 		SQL:          mustSQL("255_inventory_external_sku_edit_i18n.sql"),
-	})
-
-	// 259：捆绑成员的三种来源 + 变体删除守卫补引用面（docs/14 §1.2 / §8，批次 C）——
-	// 两类 enums 常量（常量值即 i18n key，不 seed 就原样返回裸 key）：
-	//   · 删除守卫的两个新引用面：被捆绑成员引用 / 有过库存流水；
-	//   · 成员来源（BundleSource*）与解析期错误 / 逐条跳过原因（ErrBundleSource*、BundleMember*）；
-	// 加两类模板文案：捆绑配置页的成员来源面板、商品详情页「捆绑构成」的来源列。
-	// 判定只看自己的 key：count >= 1 即视为已 seed（同 239/247/248/249/252/253/255）。
-	registerSeed(Seed{
-		Version:      "259-i18n-seed-product-bundle-member-source",
-		TableName:    "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 1 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key = 'BundleMemberNotOnProduct'",
-		SQL:          mustSQL("259_product_bundle_member_source_i18n.sql"),
-	})
-
-	// 260：products.bundle_items 的 GIN 索引（批次 C 的删除守卫查询）。
-	// 为什么是结构迁移而不是「顺手加一句 DDL」：这条查询在**每次删除变体 / 保存变体清单**时
-	// 都要按变体 id 判定「是否被某个捆绑引用」，没有索引就是全表扫 products 的 jsonb 列。
-	// 注意查询必须写成**整列包含**（bundle_items @> …）才能命中它 —— 迁移文件注释里记了
-	// 三条 EXPLAIN 实测（整列索引 + 嵌套表达式用不上）。
-	// CheckSQL 判本索引是否已在：限定 current_schema()，否则并发测试或残留 schema 里的
-	// 同名索引会让判定恒为真、迁移被静默跳过（167 / p7_index_audit_test 都踩过）。
-	register(Migration{
-		Version:   "260-products-bundle-items-gin",
-		TableName: "products",
-		CheckSQL: "SELECT COUNT(*) FROM pg_indexes " +
-			"WHERE schemaname = current_schema() AND tablename = ? AND indexname = 'idx_products_bundle_items_gin'",
-		SQL: mustSQL("260_products_bundle_items_gin.sql"),
 	})
 
 	// 261：无限库存（不跟踪数量）开关 —— inventory_stocks.track_quantity（库存域第一批）。

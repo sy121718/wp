@@ -327,7 +327,6 @@ func TestExternalSKUErrorMessagesAreChinese(t *testing.T) {
 		inventoryenums.ErrExternalSKUProductConflict,
 		inventoryenums.ErrWarehouseSKUNotFound,
 		inventoryenums.ErrWarehouseSKURequired,
-		inventoryenums.ErrWarehouseSKUBundleNotAllowed,
 		inventoryenums.ErrWarehouseSKUCodeTaken,
 		inventoryenums.ErrSKUSourceInvalid,
 	}

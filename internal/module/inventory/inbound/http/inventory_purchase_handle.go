@@ -467,7 +467,7 @@ func (h *inventoryPurchasePageHandle) purchaseVariantOptions(ctx context.Context
 	if projectID == "" || h.products == nil {
 		return out
 	}
-	options, err := h.products.ListVariantOptions(ctx, projectID)
+	options, err := h.products.ListAllVariantOptions(ctx, projectID)
 	if err != nil {
 		return out
 	}

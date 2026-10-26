@@ -746,21 +746,21 @@ func TestInventoryPermissionsAndMenusSeeded(t *testing.T) {
 	if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE module = 'inventory'").Scan(&n).Error; err != nil {
 		t.Fatalf("查询权限点失败: %v", err)
 	}
-	// 100（#15 仓库与库存记录 9 个）+ 104（#16 变动 / 流水 / 原因 / 清单 **8 个**）
-	// + 106（#17 货源 6 个）+ 109（#18 采购单与入库 7 个）= 30。
+	// 100（#15 仓库与库存记录 9 个）+ 104（#16 变动 / 流水 / 原因 **6 个**）
+	// + 106（#17 货源 6 个）+ 109（#18 采购单与入库 7 个）= 28。
 	//
 	// 104 原为 10 个，其中 inventory:cache_sync / cache_reconcile 随库存缓存一起下线（迁移 122
 	// 负责从存量库删除）。**那两行曾留在 104 的 seed 与幂等条件里，导致 122 每轮删完又被重新插回**
 	//（Migrations 台账先跑、Seeds 台账后跑），库里长期存在指向不存在路由的死授权。
 	// 2026-09 把 104 的 SQL 与条件同批收到 8 个之后，这里的期望值随之从 32 落到 30 ——
 	// 数字下降不是漏 seed，而是**那两条权限点本来就不该存在**。
-	if n != 30 {
-		t.Fatalf("迁移 100 + 104 + 106 + 109 应 seed 30 个 inventory 权限点（104 已从 10 收到 8），实际 %d", n)
+	// 2026-10 再收到 6 个（inventory:bom_set / bom_get 随物料清单下线，见 636），30 → 28。
+	if n != 28 {
+		t.Fatalf("迁移 100 + 104 + 106 + 109 应 seed 28 个 inventory 权限点（104 已从 10 收到 6），实际 %d", n)
 	}
-	// 104 仍然持有的 8 个权限点：逐个断言存在（数量对得上但 key 写错也会在这里暴露）。
+	// 104 仍然持有的 6 个权限点：逐个断言存在（数量对得上但 key 写错也会在这里暴露）。
 	for _, code := range []string{"inventory:stock_change", "inventory:stock_deduct", "inventory:movement_list",
-		"inventory:reason_list", "inventory:reason_create", "inventory:reason_update",
-		"inventory:bom_set", "inventory:bom_get"} {
+		"inventory:reason_list", "inventory:reason_create", "inventory:reason_update"} {
 		var hit int64
 		if err := f.db.Raw("SELECT COUNT(*) FROM sys_permission WHERE permission_code = ?", code).Scan(&hit).Error; err != nil {
 			t.Fatalf("查询权限点 %s 失败: %v", code, err)

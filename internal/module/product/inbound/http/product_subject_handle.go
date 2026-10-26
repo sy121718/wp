@@ -1,10 +1,9 @@
 package producthttp
 
-// product_subject_handle.go — 商品主体：接口面 CRUD / 变体 / 评分、后台列表与编辑页、捆绑配置、定价。
+// product_subject_handle.go — 商品主体：接口面 CRUD / 变体 / 评分、后台列表与编辑页、定价。
 //
-// 为什么这三块在同一个文件：捆绑配置是 type=bundle 商品的一种编辑能力，定价是商品价格字段上的
-// 操作，两者都不是独立域。按子功能切文件的结果是「改一个商品的写入要在三个文件里找落点」，
-// 而路由表本身只按业务域分节（见 product_router.go）。
+// 为什么这两块在同一个文件：定价是商品价格字段上的操作，不是独立域。按子功能切文件的结果是
+// 「改一个商品的写入要在两个文件里找落点」，而路由表本身只按业务域分节（见 product_router.go）。
 
 import (
 	"go_wp/pkg/binding"
@@ -21,7 +20,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	productservice "go_wp/internal/module/product/service"
-	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
@@ -474,7 +472,7 @@ func variantSaveMsg(c *gin.Context, res *productdto.SaveVariantListResp) facing.
 	}
 	reasons := make([]string, 0, len(res.Skipped))
 	for _, skip := range res.Skipped {
-		reasons = append(reasons, response.MsgText(c, facing.Msg{Key: skip.Reason, Fallback: productenums.BundleMemberSkipFallback(skip.Reason)}))
+		reasons = append(reasons, response.MsgText(c, facing.Msg{Key: skip.Reason, Fallback: productenums.VariantSkipFallback(skip.Reason)}))
 	}
 	args := []string{strconv.Itoa(res.Created), strconv.Itoa(res.Updated), strconv.Itoa(res.Deleted)}
 	built := response.MsgText(c, productVariantSaveSaved.fact(args...))
@@ -604,195 +602,6 @@ func renderPreviewPlaceholder(c *gin.Context, key, fallback string) {
 // previewPlaceholderResp 预览替代页的数据（结构与样式在 internal/templates/admin/preview_notice.html）。
 //
 // 商品与文章两个预览帧共用同一份模板：占位页长得一样，没有理由各写一份。
-// product_bundle.go — 捆绑商品（容器 + 可选组）：配置页、成员解析接口与详情页的捆绑面板。
-//
-// 可用量来自库存真源端口（warehouseOptions / warehouseSKUOptions）：捆绑的「可卖几份」
-// 由各成员的最小可用量决定，不在商品表里存。
-
-// ProductBundlePage 捆绑配置页。
-// 与商品页同族（挂在 ProductPageHandle 上）：选工程 → 选商品 → 配选项规则 → 保存。
-// 表单是**原生并行数组**（variantId / required / defaultQty / minQty / maxQty 各自多值），
-// 零自定义 JS 就能表达「一行的多个字段」—— 不用 JSON 字符串塞进隐藏域，
-// 也就没有「前端拼 JSON 出错但服务端照单全收」的缝隙。
-//
-// 页面底部内嵌前台配置器片段（hx-get /_fragments/bundleConfigurator）：
-// 运营在这里看到的就是访客看到的那一份渲染。
-
-// 为什么单独成文件：这一段是「仓库侧只回答这条货在这个仓叫什么」在商品页的唯一落点 ——
-// 候选按仓分组、每仓有上限、未接库存契约时整块降级为空。与商品页其余部分（列表 / 详情 /
-// 抽屉业务字段）没有耦合，放在一起只会让两边互相牵制。
-//
-// 前端只是便捷入口：ProductsCreate 会带着仓库 id 让 service 在**该仓**重新复核一遍。
-//
-// 接口面（原先的 product_handle.go 捆绑段）在前，后台页面在后。
-
-// 保存已迁到 JSON 写基座：基座在原页发 fetch、失败只写结果区，不再有「htmx 写失败换片段」
-// 这种响应形态，页面装配也因此只有一处出口。
-
-// ProductBundlePage 捆绑配置页。
-// 与商品页同族（挂在 ProductPageHandle 上）：选工程 → 选商品 → 配选项规则 → 保存。
-//
-// 页面底部内嵌前台配置器片段（hx-get /_fragments/bundleConfigurator）：
-// 运营在这里看到的就是访客看到的那一份渲染。
-//
-// 为什么单独成文件：这一段是「仓库侧只回答这条货在这个仓叫什么」在商品页的唯一落点 ——
-// 候选按仓分组、每仓有上限、未接库存契约时整块降级为空。与商品页其余部分（列表 / 详情 /
-// 抽屉业务字段）没有耦合，放在一起只会让两边互相牵制。
-//
-// 保存走 JSON 写基座（表单声明 data-write-api=/api/product/bundle/set）：成员行由
-// static/js/ui/product_bundle_write.js 组装成 {productId, config:{...}}，页面只负责渲染。
-func (h *ProductPageHandle) ProductBundlePage(c *gin.Context) {
-	h.renderBundlePage(c)
-}
-
-// renderBundlePage 整页出口（只有这一处）。
-//
-// 读模型在装配期注入（见 ProductPageHandle.reader）：漏接 = 编译错误，
-// 不再有「请求期断言失败 → 500 兜底」这条路径。
-func (h *ProductPageHandle) renderBundlePage(c *gin.Context) {
-	req, ok := binding.Query[productdto.ProductBundlePageReq](c)
-	if !ok {
-		return
-	}
-	view, err := h.reader.ProductBundlePage(c.Request.Context(), req)
-	if err != nil {
-		pageview.Fail(c, err)
-		return
-	}
-	pageview.Render(c, view)
-}
-
-// bundlePageFailureView 失败档的视图（给齐模板必需键，避免失败分支只设了错误键）。
-func bundlePageFailureView(status int) productdto.ProductBundlePageResp {
-	return productdto.ProductBundlePageResp{
-		Projects:         []projectdto.ProjectResp{},
-		Products:         []*productdto.ProductResp{},
-		Skus:             []*productdto.BundleSKUResp{},
-		Rows:             []productdto.BundleOptionResp{},
-		CandidateSKUs:    []productdto.BundleCandidateResp{},
-		Sources:          []productdto.PickOptionResp{},
-		SourceProducts:   []productdto.PickOptionResp{},
-		SourceAttributes: []*productdto.AttributeResp{},
-		SourceWarehouses: []productdto.BundleSourceWarehouseGroupResp{},
-		MaxOptions:       productdto.BundleMaxOptionsLimit,
-		SaveBlocked:      true,
-	}
-}
-
-// bundleQueryParam 取本页的上下文参数（工程 / 商品），按候选名依次认第一个非空值。
-//
-// 参数名有两套且都合法：本页自己的两个选择器用 project / product；商品详情页的
-// 「编辑捆绑构成」入口用 projectId / productId（与商品页其余表单同一套字段名，
-// 直接复用商品 id 不会串）。两个都认，入口从哪来都能选中同一个商品 ——
-// 与变体清单的预览端点（/admin/products/variant/preview）同一形态：服务端把候选行与逐条
-// 跳过原因算好回 JSON，前端只负责把行**追加**进成员清单；「保存配置」才是落库动作。
-//
-// 为什么要 JSON 而不是服务端渲染的片段：成员清单是**未保存的前端状态**（与变体清单同理），
-// 服务端渲染的片段落不进那个状态里；这里回的行结构与服务端渲染的行结构逐字一致。
-//
-// 失败回 400 + 可读文案（走 productErrText，不把 enums 裸 key 或 PG 报错铺给前端）。
-func (h *ProductPageHandle) ProductsBundleMembersResolve(c *gin.Context) {
-	ctx := c.Request.Context()
-	// 属性组合的勾选用生成组合抽屉的同一套字段名（attr:<属性组 id>=值 id）：
-	// 收拢规则只有一份（dto.SelectionsFromForm），两个入口不会一个认前缀、另一个漏读。
-	req, ok := binding.JSON[productdto.ResolveBundleMembersReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.products.ResolveBundleMembers(ctx, req)
-	if err != nil {
-		response.ErrorStatusAuto(c, productErrScene, err)
-		return
-	}
-	// 规格、来源标签与行标识由 service 用数据算出；跳过原因的**译文**在这一层取一次
-	// （Reason 是 key，译文属于响应 message，业务层不产成品句）。
-	resolveBundleMemberSkipText(c, res)
-	c.JSON(http.StatusOK, res)
-}
-
-// resolveBundleMemberSkipText 给逐条跳过原因取当前语言的文本（响应出口唯一一次取词）。
-//
-// 为什么不放在 service：译文随请求语言而变，写进数据对象就成了「换语言要重算的字段」；
-// 为什么不用 response.SuccessMsg 的 message：一句话装不下逐行原因，它们是结构化回执的字段
-// （前端按行渲染），message 只能装整批的结论。
-func resolveBundleMemberSkipText(c *gin.Context, res *productdto.ResolveBundleMembersResp) {
-	if res == nil {
-		return
-	}
-	for i := range res.Skipped {
-		skip := &res.Skipped[i]
-		skip.Text = response.MsgText(c, facing.Msg{
-			Key: skip.Reason, Fallback: productenums.BundleMemberSkipFallback(skip.Reason),
-		})
-	}
-}
-
-// warehouseSKUOptionSize 已随取数下沉搬到 outbound 适配器
-//（internal/module/product/outbound/inventory 的 warehouseSKUOptionSize）：
-// 每仓取多少条候选是**取数口径**，与页面怎么渲染无关。
-
-// ==========================================================================
-// 捆绑接口的四个出口：读配置、存配置、整单校验、SKU 数据源。
-// 整单校验在这里是**后端硬校验**：前端片段调的是同一个 service 方法，
-// 因此「构造请求绕过前端」得到的结论与前台一致（验收 4）。
-// ==========================================================================
-// GetBundleConfig 读某商品的捆绑配置（含每项 SKU 快照与真源可用量）。
-func (h *ProductHandle) GetBundleConfig(c *gin.Context) {
-	req, ok := binding.Query[productdto.GetBundleConfigReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.GetBundleConfig(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
-		return
-	}
-	response.SuccessWithMessage(c, productenums.MsgDetailSuccess, res)
-}
-
-// SetBundleConfig 保存捆绑配置（整体替换）。
-func (h *ProductHandle) SetBundleConfig(c *gin.Context) {
-	req, ok := binding.JSON[productdto.SetBundleConfigReq](c)
-	if !ok {
-		return
-	}
-	// issue #19：配置变更要落主数据变更记录，操作人只能来自会话。
-	req.OperatorID = builtin.OperatorName(c)
-	res, err := h.svc.SetBundleConfig(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
-		return
-	}
-	response.SuccessWithMessage(c, productenums.MsgBundleSaveSuccess, res)
-}
-
-// ValidateBundleSelection 整单硬校验 + 算价（纯读，不写库）。
-func (h *ProductHandle) ValidateBundleSelection(c *gin.Context) {
-	req, ok := binding.JSON[productdto.ValidateBundleSelectionReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.ValidateBundleSelection(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
-		return
-	}
-	response.SuccessWithMessage(c, productenums.MsgBundleValidateSuccess, res)
-}
-
-// ListBundleSKUs 可挑选的 SKU 清单（跨商品，后台配置器的下拉数据源）。
-func (h *ProductHandle) ListBundleSKUs(c *gin.Context) {
-	req, ok := binding.Query[productdto.ListBundleSKUReq](c)
-	if !ok {
-		return
-	}
-	list, err := h.svc.ListBundleSKUs(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorStatusAuto(c, "product", err)
-		return
-	}
-	response.SuccessWithMessage(c, productenums.MsgListSuccess, list)
-}
 
 // —— 定价工具（预览 → 应用 → 台账）——
 //

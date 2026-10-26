@@ -130,7 +130,7 @@ type inventoryPageRenderCatalog struct {
 	listErr error
 }
 
-func (s *inventoryPageRenderCatalog) ListVariantOptions(context.Context, string) ([]productcontract.VariantOption, error) {
+func (s *inventoryPageRenderCatalog) ListAllVariantOptions(context.Context, string) ([]productcontract.VariantOption, error) {
 	if s.listErr != nil {
 		return nil, s.listErr
 	}

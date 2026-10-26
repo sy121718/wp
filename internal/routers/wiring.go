@@ -98,13 +98,13 @@ const (
 	//   · SetShipmentCounter 销售总览的「待发货」计数来源（订单 svc 自实现）；
 	//   · SetSalesStockAlerts 库存预警（装配层后置注入，订单不 import 库存 dto）；
 	//   · SetAttachmentResolver 发货凭证附件的解析器（媒体契约，可空降级）。
-	portOrderShipmentModels      = "order.SetShipmentModels"
-	portOrderShipmentCounter     = "order.SetShipmentCounter"
-	portOrderStockAlerts         = "inventory.SetStockAlerts"
-	portOrderSalesStockAlerts    = "order.SetSalesStockAlerts"
-	portOrderAttachmentResolver  = "order.SetAttachmentResolver"
-	portOrderStockRowLocator     = "inventory.SetStockRowLocator"
-	portOrderWarehouseResolver   = "inventory.SetWarehouseResolver"
+	portOrderShipmentModels     = "order.SetShipmentModels"
+	portOrderShipmentCounter    = "order.SetShipmentCounter"
+	portOrderStockAlerts        = "inventory.SetStockAlerts"
+	portOrderSalesStockAlerts   = "order.SetSalesStockAlerts"
+	portOrderAttachmentResolver = "order.SetAttachmentResolver"
+	portOrderStockRowLocator    = "inventory.SetStockRowLocator"
+	portOrderWarehouseResolver  = "inventory.SetWarehouseResolver"
 	// —— block ↔ page 的装配期接线（FIX-05）——
 	// 块内容变更后的 stale 传播与删除前的引用检查；漏接的表现都是「无声的」，
 	// 因此两条都按 required-port 登记（判据见文件头：说不清「用户看到什么」就是 required）。
@@ -144,7 +144,6 @@ const (
 	// 片段层端口都由装配期唯一一次 runtimefragment.SetDependencies 提交：装配点先把各段落的
 	// 提供方攒进 assembly.fragDeps（见 assembly.go / assembly_publish.go），全部就位后才提交。
 	// 端口值因此写成「提交点.字段名」——从清单可以直接对到 Deps 的具体字段。
-	portRuntimeFragBundle              = "runtimefragment.SetDependencies.BundleProvider"
 	portRuntimeFragVariantAvailability = "runtimefragment.SetDependencies.VariantAvailabilityProvider"
 	portRuntimeFragVariantSnapshot     = "runtimefragment.SetDependencies.VariantSnapshotProvider"
 	portRuntimeFragCart                = "runtimefragment.SetDependencies.CartProvider"
@@ -346,8 +345,6 @@ var wiringManifest = []wiringEntry{
 		"概览页的 KPI / 趋势 / 热销榜 / 文章浏览量显示为空态（页面壳与页面列表照常）"},
 
 	// —— 运行时片段层（访问面）——
-	{portRuntimeFragBundle, "product", "runtimefragment", wiringRequiredContract,
-		"前台套餐配置器渲染失败（500）"},
 	{portRuntimeFragVariantAvailability, "product", "runtimefragment", wiringRequiredContract,
 		"商品详情规格选择器永远显示「以结算时库存为准」"},
 	{portRuntimeFragVariantSnapshot, "product", "runtimefragment", wiringRequiredContract,

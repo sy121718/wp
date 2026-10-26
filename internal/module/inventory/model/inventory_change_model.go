@@ -1,7 +1,7 @@
-// inventory_change_model.go — 库存流水 / 变动原因字典 / 物料清单 / 缓存同步台账（issue #16）。
+// inventory_change_model.go — 库存流水 / 变动原因字典 / 缓存同步台账（issue #16）。
 //
 // 与 inventory_model.go 同属一个「表访问单元（Repository）」：这里只做本模块表的
-// CRUD、聚合内原子组合与只读投影。业务规则（方向语义、原因方向必须匹配、清单成环、
+// CRUD、聚合内原子组合与只读投影。业务规则（方向语义、原因方向必须匹配、
 // 缓存同步时机）一律留在 service。
 //
 // 并发安全的两条约定（issue #16 验收 1/2）落在本文件：
@@ -141,22 +141,6 @@ type ReasonFilter struct {
 	Keyword         string
 	IncludeDisabled bool
 }
-
-// BOMItemEntity 物料清单的一条子项（父 SKU → 子项 SKU × 用量）。
-type BOMItemEntity struct {
-	ID                 string    `gorm:"column:id;primaryKey"`
-	ProjectID          string    `gorm:"column:project_id;not null"`
-	ParentVariantID    string    `gorm:"column:parent_variant_id;not null"`
-	ParentSKUCode      string    `gorm:"column:parent_sku_code;not null"`
-	ComponentVariantID string    `gorm:"column:component_variant_id;not null"`
-	ComponentSKUCode   string    `gorm:"column:component_sku_code;not null"`
-	Quantity           int       `gorm:"column:quantity;not null"`
-	CreatedAt          time.Time `gorm:"column:create_time;not null"`
-	UpdatedAt          time.Time `gorm:"column:update_time;not null"`
-}
-
-// TableName 实现 gorm 表名。
-func (BOMItemEntity) TableName() string { return "inventory_bom_items" }
 
 // StockTotalRow 某个变体的真源汇总（跨仓求和）+ SKU 快照。
 type StockTotalRow struct {
@@ -559,80 +543,6 @@ func (m *Model) UpdateReason(ctx context.Context, e *ReasonEntity) (err error) {
 	}
 	return rls.InProjectScope(ctx, m.db, *e.ProjectID, func(tx *gorm.DB) error {
 		return tx.Model(&ReasonEntity{}).Where("id = ?", e.ID).Save(e).Error
-	})
-}
-
-// —— 物料清单（issue #16 验收 5）——
-
-// bomDB 物料清单表句柄（同上，仅本 model 内部使用）。
-func (m *Model) bomDB(ctx context.Context) *gorm.DB {
-	return m.db.WithContext(ctx).Model(&BOMItemEntity{})
-}
-
-// ListBOMItems 某个父 SKU 的清单子项（按子项变体 id 升序：展开顺序确定）。
-//
-// projectID 由调用方给出：inventory_bom_items 在迁移 215 名单里，跨工程的行不可见。
-// 缺作用域时这里**静默返回空清单** —— 表现是「BOM 明细页显示这个 SKU 没有清单」，
-// 而扣减时又按「无清单」走自身扣减，两边一致地错，界面上看不出异常。
-func (m *Model) ListBOMItems(ctx context.Context, parentVariantID, projectID string) (list []*BOMItemEntity, err error) {
-	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Model(&BOMItemEntity{}).
-			Where("parent_variant_id = ?", parentVariantID).
-			Order("component_variant_id ASC").Find(&list).Error
-	})
-	return list, err
-}
-
-// ListBOMItemsByParents 批量取多个父 SKU 的清单子项（展开时不产生 N+1）。
-//
-// projectID 由调用方给出：inventory_bom_items 在迁移 215 名单里。这条路径的失效是
-// **成环展开的帮凶**：读不到子项 ⇒ 每个父 SKU 都被当成叶子，「有清单」这件事消失，
-// 展开直接退化成按自身扣减（少扣子项料、不报错）。
-func (m *Model) ListBOMItemsByParents(ctx context.Context, parentVariantIDs []string, projectID string) (list []*BOMItemEntity, err error) {
-	if len(parentVariantIDs) == 0 {
-		return nil, nil
-	}
-	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Model(&BOMItemEntity{}).
-			Where("parent_variant_id IN ?", parentVariantIDs).
-			Order("parent_variant_id ASC, component_variant_id ASC").Find(&list).Error
-	})
-	return list, err
-}
-
-// ListBOMParents 某子项出现在哪些父 SKU 的清单里（维护入口的成环检测用）。
-//
-// projectID 由调用方给出 —— **这条是本批最危险的失效点**：成环检测的方向是
-// 「从父 SKU 沿父链上行，撞到新子项即判环」，读不到 parents 就等于「上行路径为空」，
-// 于是 A→B→A 被判成无环、清单写入成功，扣减时展开递归到 maxBOMDepth 才认输
-// （后端返回层数超限，而清单本身已经落库，每次扣减都要重走一遍死循环）。
-// 隔离缺失在这里**不是查不到数据，而是把该拒绝的写入放行**。
-func (m *Model) ListBOMParents(ctx context.Context, componentVariantID, projectID string) (list []*BOMItemEntity, err error) {
-	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Model(&BOMItemEntity{}).
-			Where("component_variant_id = ?", componentVariantID).Find(&list).Error
-	})
-	return list, err
-}
-
-// ReplaceBOM 在同一事务内全量替换某父 SKU 的清单（先删后写，聚合内原子组合）。
-//
-// projectID 由调用方给出，**两个分支共用同一把作用域**（此前只有 rows 非空的分支
-// 能取到工程 id，空 rows 那条是裸事务）。空 rows 即「清空清单」，是本方法里最需要
-// 作用域的一条：策略挡写时 DELETE **影响 0 行且不报错** —— 接口回报成功、清单里
-// 什么都没删，而调用方拿到的响应与真的清空一模一样。
-func (m *Model) ReplaceBOM(ctx context.Context, parentVariantID, projectID string, rows []*BOMItemEntity) (err error) {
-	return rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		if err := tx.WithContext(ctx).Model(&BOMItemEntity{}).
-			Where("parent_variant_id = ?", parentVariantID).Delete(&BOMItemEntity{}).Error; err != nil {
-			return err
-		}
-		if len(rows) == 0 {
-			return nil
-		}
-		// 传入行的工程与作用域必须一致：不一致时策略的 WITH CHECK 会拒绝写入
-		// （fail closed），这正是想要的 —— 而不是靠调用方自觉。
-		return tx.WithContext(ctx).CreateInBatches(&rows, 100).Error
 	})
 }
 

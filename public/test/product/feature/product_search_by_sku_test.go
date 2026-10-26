@@ -63,11 +63,6 @@ func TestProductListSearchMatchesSKUCode(t *testing.T) {
 	if list[0].SKUCode != "W1_CUP001" {
 		t.Fatalf("列表返回里 SKU 为空/不对：%q（List 的 Select 漏了 sku_code 就会这样）", list[0].SKUCode)
 	}
-	// 类型同理：它决定「这件商品是不是捆绑容器」，模型据此才知道要不要去找成员。
-	// 少取一列时这里会静默变空串 —— product_find 的输出格式里写着「类型=…」。
-	if list[0].Type != "variant" {
-		t.Fatalf("列表返回里类型为空/不对：%q（Select 漏了 type 就会这样）", list[0].Type)
-	}
 }
 
 // 按名字仍然能搜（原有能力不能因为加了 SKU 而退化）。

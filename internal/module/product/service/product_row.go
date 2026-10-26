@@ -9,7 +9,7 @@
 //   - 行元素一律 dto 结构体（模板全用 .Field 读，结构体换来编译期保护）；只有**带可选键**的
 //     下拉选项仍是 map —— 它的语义是「LabelKey 这个键在不在」，而 Jet 对 struct 标量字段的
 //     isset 恒真，换成结构体就分不出「空项」与「数据项」；
-//   - 只在部分路径出现的整块数据用**可 nil 的指针**（Bundle / Stock：nil 才让模板整块跳过）；
+//   - 只在部分路径出现的整块数据用**可 nil 的指针**（Stock：nil 才让模板整块跳过）；
 //   - 取词走 ctx（translateFrom），控制器不再往里传取词函数。
 package productservice
 
@@ -222,11 +222,8 @@ func (s *Service) productRowsFromList(ctx context.Context, projectID string, fla
 
 // applyRowFacts 把批量事实补到列表项上（行装配的原料）。
 //
-// 只补**列表行真正缺的那几列**：s.List 的列表项已经带出价格区间（从变体派生）与库存三态。
-// 容器价（bundle）是唯一的例外：商品侧只有一个对外价格 = products.default_price，
-// 而列表项的 Select 里没有这一列、applyPriceRange 的 bundle 分支又只认它 —— 这里按
-// **同一规则**补一次。两处口径是否一致由 product_list_row_parity_test.go 对账
-// applyPriceRange 钉住：改了一处、另一处不改就变红。
+// 只补**列表行真正缺的那几列**（挂载 id）：s.List 的列表项已经带出价格区间（从变体派生）
+// 与库存三态。
 func applyRowFacts(item *productdto.ProductResp, facts productmodel.ProductRowFacts) {
 	if item == nil {
 		return
@@ -235,10 +232,6 @@ func applyRowFacts(item *productdto.ProductResp, facts productmodel.ProductRowFa
 	item.TagIDs = decodeStrings(facts.TagIDs)
 	item.PrimaryCategoryID = facts.PrimaryCategoryID
 	item.BrandID = facts.BrandID
-	if item.Type == productmodel.TypeBundle && facts.DefaultPrice != nil {
-		item.DefaultPrice = facts.DefaultPrice
-		item.PriceMin, item.PriceMax = *facts.DefaultPrice, *facts.DefaultPrice
-	}
 }
 
 // ratingsOf 读某商品的评分明细与投影值，**两档语义分开**（dd.txt 3.5 验收表最后一行）：

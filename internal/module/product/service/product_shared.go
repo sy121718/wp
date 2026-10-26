@@ -14,7 +14,6 @@ import (
 
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	productmodel "go_wp/internal/module/product/model"
 	"go_wp/pkg/rls"
 	"go_wp/pkg/upload"
 	"go_wp/pkg/utils"
@@ -218,18 +217,6 @@ func decodeStrings(raw json.RawMessage) (out []string) {
 	return out
 }
 
-// normalizeProductType 归一化商品类型：空默认 variant，其余仅接受 variant / bundle。
-func normalizeProductType(raw string) (string, error) {
-	switch strings.TrimSpace(raw) {
-	case "", productmodel.TypeVariant:
-		return productmodel.TypeVariant, nil
-	case productmodel.TypeBundle:
-		return productmodel.TypeBundle, nil
-	default:
-		return "", productenums.Err(productenums.ErrProductTypeInvalid)
-	}
-}
-
 // service 层取词函数的传递通道。
 //
 // 背景：service 里还剩一处要取词的地方 —— 译文工作台的**字段名**（商品名 / 副标题 / 分类描述…，
@@ -237,7 +224,7 @@ func normalizeProductType(raw string) (string, error) {
 // 这里只负责把「当前请求语言」带进来（语言来自后台 Cookie / Accept-Language，只有
 // gin.Context 知道），因此取词函数由 inbound 传进来。
 //
-// 其余展示文案（定价 / 标签规则的展示名、状态与筛选标签、捆绑的跳过原因）都已按
+// 其余展示文案（定价 / 标签规则的展示名、状态与筛选标签）都已按
 // 「取值进数据、措辞进模板或响应出口」搬走，不再经过这条通道。
 //
 // 为什么用 ctx 而不是给每个方法加参数：

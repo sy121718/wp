@@ -29,8 +29,8 @@ func TestProjectTranslationCandidatesCoverListOmittedColumns(t *testing.T) {
 
 	productID := uuid.NewString()
 	if err := db.Exec(`INSERT INTO products
-		(id, project_id, name, subtitle, description, images_alt, slug, sku_code, status, type, sort, create_time, update_time)
-		VALUES (?, ?, '主标题', '副标题文本', ?::jsonb, ?::jsonb, ?, ?, 'published', 'variant', 1, now(), now())`,
+		(id, project_id, name, subtitle, description, images_alt, slug, sku_code, status, sort, create_time, update_time)
+		VALUES (?, ?, '主标题', '副标题文本', ?::jsonb, ?::jsonb, ?, ?, 'published', 1, now(), now())`,
 		productID, projectID,
 		`{"html":"<p>描述正文</p>"}`,
 		`["alt 文本甲"]`,

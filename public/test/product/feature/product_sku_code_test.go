@@ -4,7 +4,7 @@
 //  1. 容器主体 SKU 从仓库选：<仓库短码大写>_<仓库里那条 SKU 原样>（不再追加序号）；
 //  2. 自己创建的主体：运营填的编码 + 自动附加仓码前缀；
 //  3. 变体 SKU = <主体>_<属性值段…>_V，属性段顺序固定（点选顺序不同得到同一个 SKU）；
-//  4. 捆绑主体 SKU 恒以 _B 结尾（填了缺后缀补齐；没填=必填错误 ErrBundleSKURequired）；
+//  4. 中文 URL 段 + 显式编码：编码与 URL 段无关，原样落库；
 //  5. 存量 SKU 一律不重写（新变体以老主体拼接）。
 //
 // 表结构一律来自生产迁移（迁移 246：products.sku_code + uq_products_project_sku_code），
@@ -292,68 +292,6 @@ func TestVariantSKUFixedOrderAndSuffix(t *testing.T) {
 		if got, wantCode := skus[opts["color"]+"/"+opts["size"]], v.SKUCode; got != wantCode {
 			t.Fatalf("顺序不同但组合相同必须得到同一个 SKU：%q vs %q", wantCode, got)
 		}
-	}
-}
-
-// TestBundleContainerSKUAutoSuffix 规则 ④：捆绑主体恒以 _B 结尾 ——
-// 填了但缺后缀 → 补齐；**没填 → 明确拒绝（ErrBundleSKURequired）**。
-//
-// 2026-09-19 用户拍板改掉「静默派生」：主体 SKU 是捆绑品的身份，必须让运营看见并确认；
-// 新建抽屉按商品段预填建议值（可改、可一键重新生成），服务端不再接受空值。
-func TestBundleContainerSKUAutoSuffix(t *testing.T) {
-	f := newSKUFixture(t)
-	if f == nil {
-		return
-	}
-	ctx := context.Background()
-	price := 129.0
-	cases := map[string]string{
-		"GIFT-BOX": "GIFT-BOX_B",
-		"GIFT_B":   "GIFT_B",
-	}
-	for custom, want := range cases {
-		t.Run(custom, func(t *testing.T) {
-			res, err := f.products.Create(ctx, &productdto.CreateReq{
-				ProjectID: f.projectID, Name: "捆绑 " + custom, Slug: "bundle-" + strings.ToLower(strings.ReplaceAll(custom, "_", "-")),
-				Type: productmodel.TypeBundle, DefaultPrice: &price, SKUCode: custom,
-			})
-			if err != nil {
-				t.Fatalf("创建捆绑商品失败: %v", err)
-			}
-			if got := f.containerSKUOf(t, res.ID); got != want {
-				t.Fatalf("捆绑主体 SKU 应为 %q，实际 %q", want, got)
-			}
-			if len(res.Variants) != 0 {
-				t.Fatalf("捆绑容器不生成变体，实际 %d 个", len(res.Variants))
-			}
-		})
-	}
-
-	// 没填主体编码：明确拒绝 —— 不再按商品 URL 段静默派生 <商品段>_B，
-	// 也不退回随机码（运营必须看见并确认这个编码；抽屉会预填建议值）。
-	if _, err := f.products.Create(ctx, &productdto.CreateReq{
-		ProjectID: f.projectID, Name: "未填主体的捆绑", Slug: "bundle-empty",
-		Type: productmodel.TypeBundle, DefaultPrice: &price,
-	}); err == nil || err.Error() != productenums.ErrBundleSKURequired {
-		t.Fatalf("没填主体应返回 %s，实际 %v", productenums.ErrBundleSKURequired, err)
-	}
-	// 中文 URL 段同理：填了就不看 URL 段，没填仍然是同一条必填错误（与「派生不出商品段」无关）。
-	if _, err := f.products.Create(ctx, &productdto.CreateReq{
-		ProjectID: f.projectID, Name: "中文捆绑", Slug: "中文捆绑",
-		Type: productmodel.TypeBundle, DefaultPrice: &price,
-	}); err == nil || err.Error() != productenums.ErrBundleSKURequired {
-		t.Fatalf("中文 URL 段的捆绑没填主体同样应返回 %s，实际 %v", productenums.ErrBundleSKURequired, err)
-	}
-	// 中文 URL 段 + 显式填编码：编码与 URL 段无关，照样建成功。
-	cn, err := f.products.Create(ctx, &productdto.CreateReq{
-		ProjectID: f.projectID, Name: "中文捆绑", Slug: "中文捆绑",
-		Type: productmodel.TypeBundle, DefaultPrice: &price, SKUCode: "CN-SET",
-	})
-	if err != nil {
-		t.Fatalf("显式填了编码的捆绑不应报错: %v", err)
-	}
-	if got := f.containerSKUOf(t, cn.ID); got != "CN-SET_B" {
-		t.Fatalf("显式编码应只补 _B 后缀得到 CN-SET_B，实际 %q", got)
 	}
 }
 

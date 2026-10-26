@@ -281,18 +281,18 @@ func TestProductListStockAggregationThreeStates(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// ① 未入库：捆绑容器不生成库存行（它不分销自己的 SKU）。
-	bundlePrice := 99.0
-	bundle, err := f.products.Create(ctx, &productdto.CreateReq{
-		ProjectID: f.projectID, Name: "捆绑容器", Slug: "agg-bundle", Type: "bundle",
-		DefaultPrice: &bundlePrice, SKUCode: "AGG-BUNDLE",
+	// ① 未入库：没选仓就不落库存行（三态里的「未入库」）。
+	nonePrice := 99.0
+	none, err := f.products.Create(ctx, &productdto.CreateReq{
+		ProjectID: f.projectID, Name: "未入库商品", Slug: "agg-none",
+		DefaultPrice: &nonePrice, SKUCode: "AGG-NONE",
 	})
 	if err != nil {
-		t.Fatalf("建捆绑商品失败: %v", err)
+		t.Fatalf("建未入库商品失败: %v", err)
 	}
-	got, err := f.products.Get(ctx, &productdto.GetReq{ID: bundle.ID})
+	got, err := f.products.Get(ctx, &productdto.GetReq{ID: none.ID})
 	if err != nil {
-		t.Fatalf("读捆绑商品失败: %v", err)
+		t.Fatalf("读未入库商品失败: %v", err)
 	}
 	if got.StockState != productenums.StockStateNone || got.StockTotal != 0 {
 		t.Fatalf("没有任何库存行应显示未入库，实际 state=%q total=%d", got.StockState, got.StockTotal)
@@ -662,12 +662,12 @@ func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("建无限商品失败: %v", err)
 	}
-	bundlePrice := 9.0
+	nonePrice := 9.0
 	if _, err := f.products.Create(ctx, &productdto.CreateReq{
-		ProjectID: f.projectID, Name: "未入库容器", Slug: "col-none", Type: "bundle",
-		DefaultPrice: &bundlePrice, SKUCode: "COL-NONE",
+		ProjectID: f.projectID, Name: "未入库商品", Slug: "col-none",
+		DefaultPrice: &nonePrice, SKUCode: "COL-NONE",
 	}); err != nil {
-		t.Fatalf("建捆绑容器失败: %v", err)
+		t.Fatalf("建未入库商品失败: %v", err)
 	}
 
 	gin.SetMode(gin.TestMode)

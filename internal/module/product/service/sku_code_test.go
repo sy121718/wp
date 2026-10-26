@@ -6,7 +6,6 @@ package productservice
 //   · 容器主体 SKU 的两种来源（从仓库选 / 自己创建）与仓码前缀；
 //   · 变体 SKU 的属性段顺序固定 + _V 后缀（顺序不同但组合相同必须得到同一个 SKU）；
 //   · 属性值 key 含非 ASCII 或为空时的 ASCII 短码兜底；
-//   · 捆绑主体 SKU：_B 后缀补齐 + 留空必填（不再静默派生）；
 //   · 派生不出商品段时**明确报错**（旧实现会退回随机码）。
 //
 // 这几条都是纯函数，不碰数据库，所以放在模块内就近跑（毫秒级）。
@@ -17,7 +16,6 @@ import (
 	"testing"
 
 	productdto "go_wp/internal/module/product/dto"
-	productenums "go_wp/internal/module/product/enums"
 )
 
 // TestBuildContainerSKU 规则 A 的容器主体 SKU：
@@ -131,42 +129,5 @@ func TestAttributeValueCodeEmptyKey(t *testing.T) {
 	}
 	if again := attributeValueCode(productdto.AttributeValueResp{ID: "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"}); again != empty {
 		t.Fatalf("短码必须稳定：%q vs %q", empty, again)
-	}
-}
-
-// TestNormalizeBundleSKU 规则 B：捆绑主体恒以 _B 结尾 ——
-// 填了但缺后缀 → 补齐（大小写不敏感）；**没填（空 / 纯空白）→ ErrBundleSKURequired**。
-//
-// 2026-09-19 用户拍板：不再按商品 URL 段静默派生 <商品段>_B。SKU 是商品的对外身份，
-// 旧实现会让运营「看不见那个编码」就建出商品；现在改由新建抽屉预填建议值并允许修改，
-// 服务端只接受一个**被看见并确认过**的编码。
-func TestNormalizeBundleSKU(t *testing.T) {
-	cases := []struct {
-		custom, want string
-	}{
-		{"GIFT-BOX", "GIFT-BOX_B"},
-		{"GIFT_B", "GIFT_B"},
-		{"gift_b", "gift_b"},
-		{"  SUMMER-SET  ", "SUMMER-SET_B"},
-		{"b", "b_B"},
-	}
-	for _, c := range cases {
-		got, err := normalizeBundleSKU(c.custom)
-		if err != nil {
-			t.Fatalf("输入 %q 不应报错: %v", c.custom, err)
-		}
-		if got != c.want {
-			t.Fatalf("输入 %q 应为 %q，实际 %q", c.custom, c.want, got)
-		}
-	}
-	// 留空不再静默派生（商品段是 giftbox 也不行）：必须拿到可行动的必填错误。
-	for _, blank := range []string{"", "   ", "\t\n"} {
-		got, err := normalizeBundleSKU(blank)
-		if err == nil {
-			t.Fatalf("留空 %q 应返回 ErrBundleSKURequired，实际得到 %q（静默派生的老行为）", blank, got)
-		}
-		if err.Error() != productenums.ErrBundleSKURequired {
-			t.Fatalf("留空应返回 %s，实际 %v", productenums.ErrBundleSKURequired, err)
-		}
 	}
 }

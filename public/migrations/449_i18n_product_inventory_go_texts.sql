@@ -53,8 +53,6 @@ VALUES
 ('admin.products.list.tagCount', 'en-US', '{n} tags', 200, 'admin', 'product list tag cell count fallback', 1, now(), now()),
 ('admin.products.create.quantityInvalid', 'zh-CN', '数量必须是非负整数', 200, 'admin', 'product create quantity validation', 1, now(), now()),
 ('admin.products.create.quantityInvalid', 'en-US', 'Quantity must be a non-negative integer', 200, 'admin', 'product create quantity validation', 1, now(), now()),
-('admin.product_bundle.noProduct', 'zh-CN', '请先选择商品', 200, 'admin', 'bundle page missing product prompt', 1, now(), now()),
-('admin.product_bundle.noProduct', 'en-US', 'Select a product first', 200, 'admin', 'bundle page missing product prompt', 1, now(), now()),
 ('admin.product_detail_template.noProductPrompt', 'zh-CN', '请先从商品列表选择一件商品，再配置它的详情页模板。', 200, 'admin', 'detail template page missing product prompt', 1, now(), now()),
 ('admin.product_detail_template.noProductPrompt', 'en-US', 'Pick a product from the product list first, then configure its detail-page template.', 200, 'admin', 'detail template page missing product prompt', 1, now(), now()),
 ('admin.product_detail_template.nameRequired', 'zh-CN', '模板名不能为空', 200, 'admin', 'detail template name validation', 1, now(), now()),

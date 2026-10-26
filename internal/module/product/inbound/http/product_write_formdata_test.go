@@ -58,7 +58,6 @@ func TestProductWriteDTOsBindFormdata(t *testing.T) {
 				return len(req.Values) == 2
 			}},
 		{"SaveProductTranslationsReq", "productId=p1&projectId=p1", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.SaveProductTranslationsReq](c); return ok }},
-		{"SetBundleConfigReq", "productId=p1&projectId=p1", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.SetBundleConfigReq](c); return ok }},
 		{"RecalcTagsReq", "projectId=p1", func(c *gin.Context) bool { _, ok := binding.JSON[productdto.RecalcTagsReq](c); return ok }},
 	}
 	for _, tc := range cases {

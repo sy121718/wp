@@ -161,7 +161,6 @@
                        inputmode="decimal" placeholder="{{ .["t"]("admin.products.edit.ph.weight", "留空即不设置") }}" autocomplete="off">
             </label>
         </div>
-        <p class="text-mute text-sm">{{ .["t"]("admin.products.edit.typeNote", "商品类型在创建时确定（变体商品 / 捆绑商品），之后不能切换。") }}</p>
 
         {* SEO 是纯文本字段（技能 §8 硬规则）：meta 里出现富文本标签等于把标签喂给搜索引擎，
            所以用 textarea 而不是富文本；长度只是展示建议，超长不拦截保存。 *}
@@ -511,16 +510,6 @@
     </details>
     {{end}}
     {{end}}
-
-    {* 捆绑容器：构成表在详情页只读展示，编辑在独立页 —— 这里只给入口。
-       IsBundle 是可选键（只有 type=bundle 才给），一律 isset 包裹。 *}
-    {{if isset(.IsBundle)}}{{if .IsBundle}}
-    <section class="card card-body">
-        <h2 class="card-title mb-lg">{{ .["t"]("admin.product_detail.bundle.title", "捆绑构成") }}</h2>
-        <p class="hint">{{ .["t"]("admin.products.edit.bundleHint", "成员与选项规则在捆绑配置页维护：成员只作为选项与履约明细，成员价不参与套餐价。") }}</p>
-        <a class="btn btn-primary" href="/admin/products/bundle?projectId={{selectedProject}}&amp;productId={{p.ID}}">{{ .["t"]("admin.product_detail.bundle.edit", "编辑捆绑构成") }}</a>
-    </section>
-    {{end}}{{end}}
 
     {* ==== 抽屉 ==== *}
     <template id="tpl-variant-create-{{p.ID}}">

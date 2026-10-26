@@ -128,10 +128,6 @@ type productPageReaderStub struct {
 	detailTemplatePageErr  error
 	detailTemplatePageReqs []*productdto.ProductDetailTemplatePageReq
 
-	bundleView *productdto.ProductBundlePageResp
-	bundleErr  error
-	bundleReqs []*productdto.ProductBundlePageReq
-
 	categoriesView *productdto.ProductCategoriesPageResp
 	categoriesErr  error
 	categoriesReqs []*productdto.ProductCategoriesPageReq
@@ -203,11 +199,6 @@ func (s *productPageReaderStub) ProductAttributesPage(_ context.Context, req *pr
 func (s *productPageReaderStub) ProductDetailTemplatePage(_ context.Context, req *productdto.ProductDetailTemplatePageReq) (*productdto.ProductDetailTemplatePageResp, error) {
 	s.detailTemplatePageReqs = append(s.detailTemplatePageReqs, req)
 	return s.detailTemplatePageView, s.detailTemplatePageErr
-}
-
-func (s *productPageReaderStub) ProductBundlePage(_ context.Context, req *productdto.ProductBundlePageReq) (*productdto.ProductBundlePageResp, error) {
-	s.bundleReqs = append(s.bundleReqs, req)
-	return s.bundleView, s.bundleErr
 }
 
 func (s *productPageReaderStub) ProductCategoriesPage(_ context.Context, req *productdto.ProductCategoriesPageReq) (*productdto.ProductCategoriesPageResp, error) {
@@ -286,38 +277,6 @@ func productTagsPageViewStub(mutate func(*productdto.ProductTagsPageResp)) *prod
 		mutate(v)
 	}
 	v.Pagination = pagination.Page{Total: v.Total, Page: v.Page, Limit: v.Limit}
-	return v
-}
-
-// productBundlePageViewStub 捆绑配置页的成功档视图（键给齐，与 service 同型）。
-//
-// Rows 给一行**已配置成员**（不是空白行）：成员表是这一屏里最贵的内容，
-// 渲染用例要能看出「行真的装出来了」——只给空白行时，把装配整段删掉也照样绿。
-func productBundlePageViewStub(mutate func(*productdto.ProductBundlePageResp)) *productdto.ProductBundlePageResp {
-	v := &productdto.ProductBundlePageResp{
-		Projects:        []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}},
-		SelectedProject: "p1",
-		Products:        []*productdto.ProductResp{{ID: "prod1", Name: "商品一"}},
-		SelectedProduct: "prod1",
-		Detail:          &productdto.BundleConfigResp{ProductID: "prod1", ProductName: "商品一"},
-		Skus:            []*productdto.BundleSKUResp{},
-		Rows: []productdto.BundleOptionResp{{
-			VariantID: "v1", SKULabel: "商品一 · SKU-1", Required: true,
-			DefaultQty: 2, MinQty: 1, MaxQty: 5, Available: 9,
-			SourceParts: []productdto.BundleSourcePart{{Kind: productdto.BundleSourcePartExternalSKU, Value: "EXT-1"}},
-		}},
-		CandidateSKUs:    []productdto.BundleCandidateResp{{ID: "v1", Label: "商品一 · SKU-1"}},
-		SkuCount:         1,
-		MaxOptions:       productdto.BundleMaxOptionsLimit,
-		Sources:          []productdto.PickOptionResp{{Value: productenums.BundleSourceProduct, Selected: true}},
-		Source:           productenums.BundleSourceProduct,
-		SourceProducts:   []productdto.PickOptionResp{{Selected: true, IsNone: true}},
-		SourceAttributes: []*productdto.AttributeResp{},
-		SourceWarehouses: []productdto.BundleSourceWarehouseGroupResp{},
-	}
-	if mutate != nil {
-		mutate(v)
-	}
 	return v
 }
 
@@ -732,10 +691,10 @@ func TestProductDetailPageRendersProductWhenDetailReadable(t *testing.T) {
 		projects: productPageProjectsStub{rows: []projectdto.ProjectResp{{ID: "p1", Name: "工程一"}}},
 		products: &productPageReaderStub{detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageResp) {
 			v.HasProduct = true
-			v.Detail = &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"}
+			v.Detail = &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active"}
 		})}, reader: &productPageReaderStub{detailView: productDetailPageViewStub(func(v *productdto.ProductDetailPageResp) {
 			v.HasProduct = true
-			v.Detail = &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active", Type: "variant"}
+			v.Detail = &productdto.ProductResp{ID: "prod-1", Name: "测试商品", Status: "active"}
 		})},
 	}
 	rec := productPageRequest(t, h, "/admin/products/detail?project=p1&product=prod-1")

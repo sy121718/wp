@@ -8,10 +8,10 @@ package productenums
 //   · 表里登记了一个不属于本包的 key（已改名的旧 key / 别模块的 key）→ 失败
 //     （登记表退化成注释就没人看它了，与 rawSQLDebtList / controller-i18n 白名单同一判据）。
 //
-// 为什么 VariantSkip* / BundleMember* 反过来要求「不许登记」：它们是「这一行被跳过」的原因，
+// 为什么 VariantSkip* 反过来要求「不许登记」：它们是「这一行被跳过」的原因，
 // 不是错误消息 —— 取值过不了 pkg/facing.IsBusinessKey（判据只认 Err*/Msg* 与点分 key 两种形态），
 // 所以经 productErrFactOf 永远拿不到，登记了就是死条目。它们的兜底表是本目录的
-// BundleMemberSkipFallbacks（product_bundle_skip_fallbacks.go），由同名 _test 守卫。
+// VariantSkipFallbacks（product_skip_fallbacks.go），由同名 _test 守卫。
 //
 // 表本身不参与取词优先级（先查 sys_i18n 词条），所以「多登记」不影响行为 —— 能变红的只有
 // 「漏登记」与「登记了不存在 / 不该登记的 key」，这两件都不该靠人眼守。
@@ -129,7 +129,7 @@ func TestEveryErrorKeyHasFallback(t *testing.T) {
 	}
 	if len(forbidden) > 0 {
 		t.Errorf("兜底表里登记了「跳过原因」类 key（取值过不了业务判据，永远不会被查到）：%s\n"+
-			"它们的兜底表是同目录的 BundleMemberSkipFallbacks（product_bundle_skip_fallbacks.go）",
+			"它们的兜底表是同目录的 VariantSkipFallbacks（product_skip_fallbacks.go）",
 			strings.Join(forbidden, ", "))
 	}
 

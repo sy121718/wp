@@ -43,7 +43,7 @@ func TestProductCreateFormEnhancesOnDOMReady(t *testing.T) {
 	}
 }
 
-// 桩 DOM 真跑一遍：DOMContentLoaded 之后捆绑商品的主体 SKU 被预填，重复派发不叠加监听。
+// 桩 DOM 真跑一遍：DOMContentLoaded 之后按勾选的仓预览出主体 SKU，重复派发不叠加监听。
 func TestProductCreateFormEnhanceRunsOnLoad(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -61,7 +61,7 @@ let bound = 0;
 function makeTextField(value) {
   const attrs = { placeholder: '留空自动生成' };
   return {
-    dataset: {}, value: value, required: false, readOnly: false,
+    dataset: {}, value: value, required: false, readOnly: false, textContent: '',
     getAttribute: n => (n in attrs ? attrs[n] : null),
     setAttribute: (n, v) => { attrs[n] = v; },
     removeAttribute: n => { delete attrs[n]; },
@@ -71,20 +71,21 @@ function makeTextField(value) {
   };
 }
 
-const input = makeTextField('');
-const slug = makeTextField('abc');
-const name = makeTextField('半价套餐');
-const typeSelect = { value: 'bundle', addEventListener: () => {} };
+const input = makeTextField('Abc');
+const preview = makeTextField('');
+preview.dataset.previewLabel = '将生成：';
+const box = {
+  value: 'wh-1', checked: true, dataset: { code: 'SZ', default: '1' },
+  addEventListener: () => { bound++; }
+};
 const form = {
   dataset: {},
   querySelector: sel => {
     if (sel === '[data-sku-input]') { return input; }
-    if (sel === 'select[name="type"]') { return typeSelect; }
-    if (sel === 'input[name="slug"]') { return slug; }
-    if (sel === 'input[name="name"]') { return name; }
+    if (sel === '[data-sku-preview]') { return preview; }
     return null;
   },
-  querySelectorAll: () => []
+  querySelectorAll: sel => (sel === '[data-warehouse-check]' ? [box] : [])
 };
 const document = {
   addEventListener: (type, fn) => { handlers[type] = fn; },
@@ -96,8 +97,8 @@ assert.ok(handlers['DOMContentLoaded'], '没有注册 DOMContentLoaded 监听');
 
 handlers['DOMContentLoaded']({});
 assert.equal(input.dataset.skuEnhanced, '1', '页面就绪后表单没有被增强');
-assert.equal(input.required, true, '捆绑商品的主体 SKU 必须变成必填');
-assert.equal(input.value, 'ABC_B', '建议值应按 URL 段预填');
+assert.equal(preview.textContent, '将生成：SZ_Abc', '应按勾选仓的短码预览主体 SKU（裸码原样保留，只加仓前缀）');
+assert.equal(input.required, false, '主体 SKU 不再必填（留空由服务端按 URL 段派生）');
 
 const first = bound;
 handlers['DOMContentLoaded']({});

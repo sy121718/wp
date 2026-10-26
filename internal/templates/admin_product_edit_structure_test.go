@@ -39,7 +39,7 @@ var productEditProtocolFields = []string{
 
 // productEditPageData 编辑页渲染数据。与 handler 的装配同形：
 // 商品存在 + 捆绑商品 + 详情页模板面板（document 模式、有历史版本）——
-// 这样 6 张内容卡与两个折叠区的最全形态都被渲染到，判据才有覆盖面。
+// 这样 5 张内容卡与两个折叠区的最全形态都被渲染到，判据才有覆盖面。
 func productEditPageData() map[string]any {
 	return groupDData(map[string]any{
 		"SelectedProject": "pr1", "Err": "", "Done": "",
@@ -52,7 +52,6 @@ func productEditPageData() map[string]any {
 		"ImageAltsInput":   "图一",
 		"WeightInput":      "0.5", "DefaultPriceInput": "10.00",
 		// 捆绑商品：多渲染一张 .card（捆绑构成的编辑入口），卡片计数因此是 6。
-		"IsBundle": true,
 		"TplPanel": map[string]any{
 			"Available": true, "InstanceID": "inst1", "TemplateID": "tpl1",
 			"Status": "published", "RenderMode": "document",
@@ -329,7 +328,7 @@ func TestProductEditSaveButtonRelatedToOutsideForm(t *testing.T) {
 
 // TestProductEditEveryContentCardHasTitle 卡片标题全覆盖（清单记的「.card-title 数」判据）。
 //
-// 口径说明：本页 6 张内容卡的标题元素是 **4 个 .card-title + 2 个 .fold-title**。
+// 口径说明：本页 5 张内容卡的标题元素是 **3 个 .card-title + 2 个 .fold-title**。
 // 折叠区的标题按既有设计用 .fold-title —— theme.css 只在 `.section-fold > summary` 里
 // 给它样式，站内已有 5 个页面这么做；字面凑够 6 个 .card-title 只能把标题塞进不该塞的地方。
 // 所以这里钉的判据是「每张内容卡都有且只有一个标题元素」，它比数字更直接地表达意图。
@@ -352,9 +351,9 @@ func TestProductEditEveryContentCardHasTitle(t *testing.T) {
 		}
 	}
 	collectCards(stack)
-	// 基本信息表单 / 变体 / 评分 / 详情页模板 / 捆绑构成 / 详情页预览（右栏）。
+	// 基本信息表单 / 变体 / 评分 / 详情页模板 / 详情页预览（右栏）。
 	// SEO 检查改抽屉后不再自占一卡。
-	const wantCards = 6
+	const wantCards = 5
 	if len(cards) != wantCards {
 		t.Fatalf("商品编辑页应有 %d 张内容卡，实际 %d 张", wantCards, len(cards))
 	}

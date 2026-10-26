@@ -1,6 +1,6 @@
 {{tr := .["t"]}}
 {* admin/product/product_create_form.html — 商品建表单片段（新建整页的唯一载体）。
-   字段名、捆绑价的必填语义、仓库 SKU 候选与属性组勾选都只在这一份 markup 里。
+   字段名、仓库 SKU 候选与属性组勾选都只在这一份 markup 里。
 
    —— 提交走 htmx 原生表单（formdata）——
    整表单当 dto.CreateReq 发到 /api/product/create。端点仍是那个 JSON 端点：
@@ -39,26 +39,15 @@
             {* 写结论落在表单最上方：保存按钮在表单底部，失败原因若出现在别处，视线根本走不到。 *}
             <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="text" class="form-input" name="name" placeholder="{{ .["t"]("admin.products.ph.name", "商品名称") }}" required>
-            {* 商品类型（迁移 238）：bundle 不生成首个变体，价格只有容器价（defaultPrice）。
-               选「捆绑商品」时下面的默认价格是**必填**的容器价（服务端 ErrBundlePriceRequired 兜底）。 *}
-            <select class="form-select" name="type" aria-label="{{ .["t"]("admin.products.label.type", "商品类型") }}">
-                <option value="variant" selected>{{ .["t"]("admin.products.type.variant", "变体商品（本商品自己的 SKU）") }}</option>
-                <option value="bundle">{{ .["t"]("admin.products.type.bundle", "捆绑商品（组合多个变体，只有套餐价）") }}</option>
-            </select>
             <input type="text" class="form-input" name="slug" placeholder="{{ .["t"]("admin.products.ph.slug", "URL 段（留空自动生成）") }}">
             {* 主体 SKU 编码（规则见 docs/14-product-sku-and-cost-model.md）：这是商品的**身份编码**。
-               变体商品：可留空（服务端按 URL 段派生；填了并选了归属仓时自动加仓库码前缀，已带前缀不重复加）。
-               捆绑商品：**必填**（服务端 ErrBundleSKURequired）—— 类型切到 bundle 时预填建议值
-               <商品段>_B，运营可改、可一键重新生成；编码必须被看见并确认，不再静默派生。
-               增强脚本在页尾（算法与 Go 侧的 productCodeSegment 同口径，只作用于本页、不改共享 JS）。 *}
+               可留空 —— 服务端按 URL 段派生；填了并选了归属仓时自动加仓库码前缀（已带前缀不重复加）。 *}
             <label class="form-label" for="create-sku">{{ .["t"]("admin.products.label.sku", "SKU 编码") }}</label>
             <div class="form-inline">
                 <input type="text" class="form-input" id="create-sku" name="sku" data-sku-input
                        list="create-sku-candidates"
                        placeholder="{{ .["t"]("admin.products.ph.sku", "留空自动生成；填了并选择了仓库时自动加仓库码前缀") }}"
-                       data-sku-placeholder-bundle="{{ .["t"]("admin.products.ph.skuBundle", "系统建议值，可直接修改（捆绑商品必填，编码恒以 _B 结尾）") }}"
-                       aria-describedby="create-sku-hint" autocomplete="off">
-                <button type="button" class="btn btn-sm" data-sku-regenerate style="display:none" hidden>{{ .["t"]("admin.products.sku.regenerate", "重新生成") }}</button>
+                       autocomplete="off">
             </div>
             {* SKU 编码的候选（**可搜索下拉 + 可自由输入**，2026-09-19 口径，docs/14 §1.1）：
                一个控件承担两种意图 ——
@@ -76,10 +65,6 @@
                 {{end}}
                 {{end}}
             </datalist>
-            {* 两条提示行互斥：bundle 给建议值说明；建议值为空（名称与 URL 段都不含 ASCII）时改说「请手填」。
-               初始都隐藏 —— 类型默认是变体商品，此时 SKU 仍可留空。 *}
-            <p class="hint" id="create-sku-hint" data-sku-hint style="display:none" hidden>{{ .["t"]("admin.products.sku.bundleHint", "这是系统建议的唯一身份编码，可直接修改；捆绑商品的编码恒以 _B 结尾。") }}</p>
-            <p class="hint" data-sku-manual style="display:none" hidden>{{ .["t"]("admin.products.sku.bundleManual", "商品名称与 URL 段都不含 ASCII 字符，派生不出建议值，请手动填写 SKU 编码。") }}</p>
             {* 预览：这个编码会变成什么（<认领仓短码>_<编码>），或「已存在 → 复用那一行」。
                只是把服务端的规则**显示**出来；真源与复核都在服务端（前端不参与命名决策）。 *}
             <p class="hint" data-sku-preview style="display:none" hidden
@@ -112,7 +97,7 @@
             <input type="text" class="form-input" id="create-external-sku" name="externalSku" data-external-sku-input
                    placeholder="{{ .["t"]("admin.products.ph.externalSku", "该仓的第三方编码，留空即用我们自己的 SKU") }}" autocomplete="off">
             <p class="hint">{{ .["t"]("admin.products.skuSource.warehouseHint", "新建时主体 SKU = 认领仓短码_编码；同一仓库内一个外部编码只能属于同一个商品（同一商品的多个口味共用一个编码是允许的）。") }}</p>
-            <input type="text" class="form-input" name="defaultPrice" placeholder="{{ .["t"]("admin.products.ph.defaultPrice", "默认价格（变体商品：首个变体继承；捆绑商品：套餐价，必填）") }}">
+            <input type="text" class="form-input" name="defaultPrice" placeholder="{{ .["t"]("admin.products.ph.defaultPrice", "默认价格（首个变体继承）") }}">
             {* 引用的属性组（本批改版）：原来是「逗号分隔的 UUID」输入框 —— 用户手上没有 UUID，
                只能去属性页复制粘贴，打错一个字符要到提交才知道（ErrAttrNotFound）。
                现在勾选列表，可选值由服务端给出（AttributeOptions）。 *}

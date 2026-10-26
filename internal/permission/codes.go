@@ -168,11 +168,7 @@ const (
 	// 文案词条管理（POST /api/i18n/save）。同上：后台页的增删改与批量删除都借这一个对象。
 	I18nManage Perm = "i18n:manage"
 
-	// —— inventory（30）——
-	// 查看物料清单（GET /api/inventory/bom/get）
-	InventoryBomGet Perm = "inventory:bom_get"
-	// 维护物料清单（POST /api/inventory/bom/set）
-	InventoryBomSet Perm = "inventory:bom_set"
+	// —— inventory（28）——
 	// 库存流水列表（GET /api/inventory/movement/list）
 	InventoryMovementList Perm = "inventory:movement_list"
 	// 新建采购单（POST /api/inventory/purchase/create）
@@ -604,14 +600,6 @@ const (
 	ProductBrandList Perm = "product:brand_list"
 	// 商品品牌更新（POST /api/product/brand/update）
 	ProductBrandUpdate Perm = "product:brand_update"
-	// 捆绑配置读取（GET /api/product/bundle/get）
-	ProductBundleGet Perm = "product:bundle_get"
-	// 捆绑配置保存（POST /api/product/bundle/set）
-	ProductBundleSet Perm = "product:bundle_set"
-	// 捆绑可选 SKU（GET /api/product/bundle/skus）
-	ProductBundleSkus Perm = "product:bundle_skus"
-	// 捆绑整单校验（POST /api/product/bundle/validate）
-	ProductBundleValidate Perm = "product:bundle_validate"
 	// 商品批量删除（POST /api/product/bulk-delete）
 	ProductBulkDelete Perm = "product:bulk_delete"
 	// 批量改价（POST /api/product/bulk-pricing）
@@ -920,8 +908,6 @@ var specs = map[Perm]spec{
 	I18nManage: {module: "i18n", name: "文案词条管理"},
 
 	// —— inventory ——
-	InventoryBomGet:             {module: "inventory", name: "查看物料清单"},
-	InventoryBomSet:             {module: "inventory", name: "维护物料清单"},
 	InventoryMovementList:       {module: "inventory", name: "库存流水列表"},
 	InventoryPurchaseCreate:     {module: "inventory", name: "新建采购单"},
 	InventoryPurchaseGet:        {module: "inventory", name: "采购单详情"},
@@ -1137,10 +1123,6 @@ var specs = map[Perm]spec{
 	ProductBrandGet:                {module: "product", name: "商品品牌详情"},
 	ProductBrandList:               {module: "product", name: "商品品牌列表"},
 	ProductBrandUpdate:             {module: "product", name: "商品品牌更新"},
-	ProductBundleGet:               {module: "product", name: "捆绑配置读取"},
-	ProductBundleSet:               {module: "product", name: "捆绑配置保存"},
-	ProductBundleSkus:              {module: "product", name: "捆绑可选 SKU"},
-	ProductBundleValidate:          {module: "product", name: "捆绑整单校验"},
 	ProductBulkDelete:              {module: "product", name: "商品批量删除"},
 	ProductBulkPricing:             {module: "product", name: "批量改价"},
 	ProductCategoryBulkDelete:      {module: "product", name: "商品分类批量删除"},

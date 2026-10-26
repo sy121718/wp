@@ -22,9 +22,3 @@ func (m *Model) VariantStockTotals(ctx context.Context, projectID string, varian
 	}
 	return totals, nil
 }
-
-// HasBOMParent avoids exposing inventory persistence entities across the product boundary.
-func (m *Model) HasBOMParent(ctx context.Context, variantID, projectID string) (exists bool, err error) {
-	rows, err := m.ListBOMParents(ctx, variantID, projectID)
-	return len(rows) > 0, err
-}

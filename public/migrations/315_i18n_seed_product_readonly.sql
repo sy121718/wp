@@ -18,7 +18,5 @@ VALUES
 ('admin.products.tags.none', 'en-US', 'This product has no tags yet.', 200, 'admin', '商品详情页只读：标签空态', 1, now(), now()),
 ('admin.products.tags.none', 'zh-CN', '这个商品还没有标签。', 200, 'admin', '商品详情页只读：标签空态', 1, now(), now()),
 ('admin.products.col.stockLink', 'en-US', 'Stock detail', 200, 'admin', '商品详情页只读：变体表末列表头（只读页没有操作列）', 1, now(), now()),
-('admin.products.col.stockLink', 'zh-CN', '库存明细', 200, 'admin', '商品详情页只读：变体表末列表头（只读页没有操作列）', 1, now(), now()),
-('admin.products.edit.bundleHint', 'en-US', 'Members and option rules are maintained on the bundle configuration page: members only serve as options and fulfilment detail, and member prices never take part in the bundle price.', 200, 'admin', '商品编辑页：捆绑构成入口说明', 1, now(), now()),
-('admin.products.edit.bundleHint', 'zh-CN', '成员与选项规则在捆绑配置页维护：成员只作为选项与履约明细，成员价不参与套餐价。', 200, 'admin', '商品编辑页：捆绑构成入口说明', 1, now(), now())
+('admin.products.col.stockLink', 'zh-CN', '库存明细', 200, 'admin', '商品详情页只读：变体表末列表头（只读页没有操作列）', 1, now(), now())
 ON CONFLICT (item_key, lang) DO NOTHING;

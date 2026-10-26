@@ -4,6 +4,20 @@ import json "go_wp/pkg/jsonx"
 
 // product_variant_req.go / product_variant_resp.go — 变体清单、组合预览与批量保存的入参与回执。
 
+// VariantOptionResp 可选的变体（跨商品），带所属商品与后台可见的价格 / 成本。
+//
+// 与 VariantResp 的区别是**选择器视角**：带商品名（下拉要显示「哪件商品的哪个 SKU」），
+// 不带条码 / 图片 / 排序这些选择器用不上的字段。
+type VariantOptionResp struct {
+	VariantID   string   `json:"variantId"`
+	SKUCode     string   `json:"skuCode"`
+	ProductID   string   `json:"productId"`
+	ProductName string   `json:"productName"`
+	Price       float64  `json:"price"`
+	CostPrice   *float64 `json:"costPrice"`
+	Enabled     bool     `json:"enabled"`
+}
+
 // VariantListResp 前端清单里的一行（保存请求的输入）。
 //
 // VariantID 为空 = 清单里的**新增行**（库里还没有这个组合）：
