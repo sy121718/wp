@@ -118,7 +118,38 @@ type StockEntity struct {
 	// 入库或显式写入为准；② 可空，NULL = **尚未核算**，绝不用 0 冒充「未知成本」
 	//（0 是合法的显式成本：赠品 / 内部划拨）；③ 核算归采购侧（可以不走采购流程，
 	// 由外部核算后导入），本表只是「这个仓里这条 SKU 现在按多少算成本」的落点。
-	CostPrice *float64        `gorm:"column:cost_price"`
+	CostPrice *float64 `gorm:"column:cost_price"`
+
+	// —— 仓库商品 SKU 主档（迁移 642）——
+	//
+	// 下面九列回答的是「这条货在这个仓叫什么、长什么样、按多少运费、什么状态」，
+	// 与商品侧的 products / product_variants **不是**同一份事实：同一款货在不同仓可以有
+	// 不同的叫法、不同的图、不同的运费口径。所以主档挂在货行上，不挂回商品侧。
+	//
+	// 为什么 freight_price / cost_currency / cost_base_currency / status 带 default 标签：
+	// Go 零值对这四列**有意义冲突**（0 会被读成「免运费」，"" 会撞 cost_currency 的非空
+	// CHECK）。带 default 时 gorm 在零值上**不写该列**、让 DB 取默认（70 / CNY / active）；
+	// 显式传 0 或 "USD" 才真的写进去。
+	//
+	// 反过来 name / image_url / barcode / remark 的零值就是空串本身，无需 default。
+	Name string `gorm:"column:name;not null"`
+	// ImageURL 仓库侧货品图（可以不是商品主图）。
+	ImageURL string `gorm:"column:image_url;not null"`
+	// Barcode 条码原文：扫码枪读到的串，不参与唯一约束（同一条码可以贴多行）。
+	Barcode string `gorm:"column:barcode;not null"`
+	// FreightPrice 这条货从仓到买家的固定开销（不计入 CostPrice）。
+	FreightPrice *float64 `gorm:"column:freight_price;not null;default:70"`
+	// CostCurrency / CostBaseCurrency / CostFXRate 是成本的三件套：
+	// 「1 CostCurrency = CostFXRate CostBaseCurrency」。CostFXRate 为 nil = 汇率未固化，
+	// 与 orders.fx_rate（迁移 633）同口径，**不推算**。
+	CostCurrency     string   `gorm:"column:cost_currency;not null;default:CNY"`
+	CostBaseCurrency string   `gorm:"column:cost_base_currency;not null;default:CNY"`
+	CostFXRate       *float64 `gorm:"column:cost_fx_rate"`
+	// Status 货行状态（active / disabled）：停用不再出现在可挑选的候选里，
+	// 但历史流水与已建立的变体引用照旧可读 —— 停用不是删除。
+	Status string `gorm:"column:status;not null;default:active"`
+	Remark string `gorm:"column:remark;not null"`
+
 	Metadata  json.RawMessage `gorm:"column:metadata;type:jsonb;not null"`
 	CreatedAt time.Time       `gorm:"column:create_time;not null"`
 	UpdatedAt time.Time       `gorm:"column:update_time;not null"`
@@ -144,8 +175,18 @@ type StockRow struct {
 	TrackQuantity bool `gorm:"column:track_quantity"`
 	Quantity      int  `gorm:"column:quantity"`
 	// ReservedQuantity 与 StockEntity 同义（迁移 624）：列表也要能给出可售 = 数量 - 预占。
-	ReservedQuantity int       `gorm:"column:reserved_quantity"`
-	CostPrice        *float64  `gorm:"column:cost_price"`
+	ReservedQuantity int      `gorm:"column:reserved_quantity"`
+	CostPrice        *float64 `gorm:"column:cost_price"`
+	// 主档九列（迁移 642）：列表页要显示名称 / 条码 / 状态，缺了它们运营只能看到编码。
+	Name             string    `gorm:"column:name"`
+	ImageURL         string    `gorm:"column:image_url"`
+	Barcode          string    `gorm:"column:barcode"`
+	FreightPrice     *float64  `gorm:"column:freight_price"`
+	CostCurrency     string    `gorm:"column:cost_currency"`
+	CostBaseCurrency string    `gorm:"column:cost_base_currency"`
+	CostFXRate       *float64  `gorm:"column:cost_fx_rate"`
+	Status           string    `gorm:"column:status"`
+	Remark           string    `gorm:"column:remark"`
 	CreatedAt        time.Time `gorm:"column:create_time"`
 	UpdatedAt        time.Time `gorm:"column:update_time"`
 }
@@ -337,6 +378,46 @@ func (m *Model) GetStockByVariantWarehouse(ctx context.Context, variantID, wareh
 	return e, err
 }
 
+// —— 主档写路径（迁移 642 / B3）——
+
+// GetStockScopedTx 在调用方事务内按 id + 工程取一条货行（不存在时返回 gorm.ErrRecordNotFound）。
+//
+// 作用域设在传入的 tx 上：inventory_stocks 有 FORCE 策略，脱离作用域定位恒 ErrRecordNotFound
+// （与 GetStock 同一个坑，表现是「明明那一行在，保存却说找不到」）。
+func (m *Model) GetStockScopedTx(ctx context.Context, tx *gorm.DB, id, projectID string) (e *StockEntity, err error) {
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return nil, serr
+	}
+	e = &StockEntity{}
+	if gerr := tx.WithContext(ctx).Model(&StockEntity{}).
+		Where("id = ?", id).First(e).Error; gerr != nil {
+		return nil, gerr
+	}
+	return e, nil
+}
+
+// UpdateStockFieldsTx 在调用方事务内按 id + 工程改若干列（主档编辑 / 启停共用）。
+//
+// 只接受 service 组装的白名单列：数量与身份列（sku_code / warehouse_id）不在此列 ——
+// 它们各有自己的写路径（变动契约 / 建行），从这里改会绕过流水与引用的一致性。
+func (m *Model) UpdateStockFieldsTx(ctx context.Context, tx *gorm.DB, id, projectID string, fields map[string]any) (err error) {
+	if len(fields) == 0 {
+		return nil
+	}
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return serr
+	}
+	res := tx.WithContext(ctx).Model(&StockEntity{}).Where("id = ?", id).Updates(fields)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		// 行在读取与写入之间被删（或工程作用域不一致）：不谎报成功。
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 // GetStockByWarehouseSKU 按「仓库 × 仓库 SKU」定位库存行（641 起的**身份键**）。
 func (m *Model) GetStockByWarehouseSKU(ctx context.Context, warehouseID, skuCode, projectID string) (e *StockEntity, err error) {
 	e = &StockEntity{}
@@ -508,15 +589,15 @@ func (m *Model) ListAllStockIDs(ctx context.Context, projectID string) (ids []st
 
 // StockFactRow 一条货行的只读投影（按 id 批量读的返回元素）。
 type StockFactRow struct {
-	ID                 string   `gorm:"column:id"`
-	WarehouseID        string   `gorm:"column:warehouse_id"`
-	WarehouseCode      string   `gorm:"column:warehouse_code"`
-	WarehouseName      string   `gorm:"column:warehouse_name"`
-	SKUCode            string   `gorm:"column:sku_code"`
-	TrackQuantity      bool     `gorm:"column:track_quantity"`
-	Quantity           int      `gorm:"column:quantity"`
-	ReservedQuantity   int      `gorm:"column:reserved_quantity"`
-	CostPrice          *float64 `gorm:"column:cost_price"`
+	ID               string   `gorm:"column:id"`
+	WarehouseID      string   `gorm:"column:warehouse_id"`
+	WarehouseCode    string   `gorm:"column:warehouse_code"`
+	WarehouseName    string   `gorm:"column:warehouse_name"`
+	SKUCode          string   `gorm:"column:sku_code"`
+	TrackQuantity    bool     `gorm:"column:track_quantity"`
+	Quantity         int      `gorm:"column:quantity"`
+	ReservedQuantity int      `gorm:"column:reserved_quantity"`
+	CostPrice        *float64 `gorm:"column:cost_price"`
 }
 
 // ProductWarehouseStockRow 一个商品在**各仓**的库存行（分仓聚合的只读投影）。
@@ -577,6 +658,8 @@ func stockRowsQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db.WithContext(ctx).Table("inventory_stocks AS s").
 		Select("s.id, s.project_id, s.warehouse_id, s.product_id, s.variant_id, s.sku_code, " +
 			"s.external_sku, s.track_quantity, s.quantity, s.reserved_quantity, s.cost_price, " +
+			"s.name, s.image_url, s.barcode, s.freight_price, s.cost_currency, s.cost_base_currency, " +
+			"s.cost_fx_rate, s.status, s.remark, " +
 			"s.create_time, s.update_time, " +
 			"w.code AS warehouse_code, w.name AS warehouse_name").
 		Joins("JOIN inventory_warehouses AS w ON w.id = s.warehouse_id")
@@ -660,14 +743,32 @@ type WarehouseSKURow struct {
 	ReservedQuantity int `gorm:"column:reserved_quantity"`
 	// TrackQuantity 与真源同义（false = 无限）：数量列在页面上怎么显示要靠它。
 	TrackQuantity bool `gorm:"column:track_quantity"`
+
+	// —— 主档字段（迁移 642）：台账页要按名称认货，光有编码运营看不懂 ——
+	Name             string    `gorm:"column:name"`
+	ImageURL         string    `gorm:"column:image_url"`
+	Barcode          string    `gorm:"column:barcode"`
+	FreightPrice     *float64  `gorm:"column:freight_price"`
+	CostCurrency     string    `gorm:"column:cost_currency"`
+	CostBaseCurrency string    `gorm:"column:cost_base_currency"`
+	CostFXRate       *float64  `gorm:"column:cost_fx_rate"`
+	Status           string    `gorm:"column:status"`
+	Remark           string    `gorm:"column:remark"`
+	CostPrice        *float64  `gorm:"column:cost_price"`
+	CreatedAt        time.Time `gorm:"column:create_time"`
+	UpdatedAt        time.Time `gorm:"column:update_time"`
 }
 
 // WarehouseSKUFilter 仓库里一条货的查询条件（条件以参数传入）。
 type WarehouseSKUFilter struct {
 	ProjectID   string
 	WarehouseID string
-	// Keyword 同时匹配我们自己的 sku_code 与外部编码（两个都可能是运营手上的号）。
+	// Keyword 匹配范围在 642 之后扩到名称与条码：运营手上的通常是商品名或扫出来的码，
+	// 不是我们自己的 sku_code。
 	Keyword string
+	// Status 为空 = 不限；台账页默认列全部（停用的也要能看见、能改回来），
+	// 而「从仓库选」的候选传 active。
+	Status string
 }
 
 // warehouseSKUsQuery (仓库, 仓库 SKU) 投影查询（本模块两表 join 的第二处定义）。
@@ -678,7 +779,12 @@ type WarehouseSKUFilter struct {
 func warehouseSKUsQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db.WithContext(ctx).Table("inventory_stocks AS s").
 		Select("s.id, s.warehouse_id, s.product_id, s.variant_id, s.sku_code, s.external_sku, " +
-			"s.quantity, s.reserved_quantity, s.track_quantity, s.create_time, " +
+			"s.quantity, s.reserved_quantity, s.track_quantity, " +
+			// cost_price / update_time 必须在列清单里：台账页要显示成本与更新时间，
+			// 漏了它们不是「显示空」而是**静默读不到**（gorm 不报错，字段就是零值）。
+			"s.cost_price, s.update_time, " +
+			"s.name, s.image_url, s.barcode, s.freight_price, s.cost_currency, s.cost_base_currency, " +
+			"s.cost_fx_rate, s.status, s.remark, s.create_time, " +
 			"w.code AS warehouse_code, w.name AS warehouse_name, w.is_default AS is_default, " +
 			"(s.variant_id IS NOT NULL) AS has_variant").
 		Joins("JOIN inventory_warehouses AS w ON w.id = s.warehouse_id")
@@ -692,11 +798,24 @@ func applyWarehouseSKUFilter(q *gorm.DB, f WarehouseSKUFilter) *gorm.DB {
 	if f.WarehouseID != "" {
 		q = q.Where("s.warehouse_id = ?", f.WarehouseID)
 	}
+	if f.Status != "" {
+		q = q.Where("s.status = ?", f.Status)
+	}
 	if kw := f.Keyword; kw != "" {
 		like := "%" + kw + "%"
-		q = q.Where("(s.sku_code ILIKE ? OR s.external_sku ILIKE ?)", like, like)
+		q = q.Where("(s.sku_code ILIKE ? OR s.external_sku ILIKE ? OR s.name ILIKE ? OR s.barcode = ?)",
+			like, like, like, kw)
 	}
 	return q
+}
+
+// CountWarehouseSKUs 与 ListWarehouseSKUs 同口径的行数（分页要用；两个方法必须共用
+// 同一份 applyWarehouseSKUFilter，否则「总数 120、翻了 3 页只有 40 行」这类偏差迟早出现）。
+func (m *Model) CountWarehouseSKUs(ctx context.Context, f WarehouseSKUFilter) (total int64, err error) {
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		return applyWarehouseSKUFilter(warehouseSKUsQuery(ctx, tx), f).Count(&total).Error
+	})
+	return total, err
 }
 
 // ListWarehouseSKUs 按工程 / 仓库列出可选的仓库 SKU（关键字命中我们或对方编码，分页）。
@@ -802,4 +921,3 @@ func (m *Model) ExternalSKUProductConflict(ctx context.Context, projectID, wareh
 	})
 	return owner, err
 }
-

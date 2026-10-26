@@ -158,8 +158,11 @@ type ListWarehouseSKUReq struct {
 	ProjectID   string `form:"projectId"`
 	WarehouseID string `form:"warehouseId"`
 	Keyword     string `form:"keyword"`
-	Page        int    `form:"page"`
-	Size        int    `form:"size"`
+	// Status 为空 = 不限（台账页要能看见停用的行）；"active" = 只要启用的
+	//（「从仓库选」的候选走这一档：停用的货不该被继续挂到新变体上）。
+	Status string `form:"status"`
+	Page   int    `form:"page"`
+	Size   int    `form:"size"`
 }
 
 // GetWarehouseSKUReq 「从仓库选」的最小查询：给定仓库 + 我们自己那条仓库 SKU，返回该行。
@@ -200,6 +203,51 @@ type CreateStockReq struct {
 	Quantity      int      `json:"quantity" form:"quantity"`
 	TrackQuantity bool     `json:"trackQuantity" form:"trackQuantity"`
 	CostPrice     *float64 `json:"costPrice" form:"costPrice"`
+
+	// —— 主档（迁移 642）——
+	//
+	// 都可以留空：收货时只知道一个编码是常态，名称 / 图 / 条码后补。空串就是空串，
+	// 不用 NULL 表示「没填」—— 两种表示会让每个读取点各自决定要不要再看一次空串。
+	Name             string   `json:"name" form:"name"`
+	ImageURL         string   `json:"imageUrl" form:"imageUrl"`
+	Barcode          string   `json:"barcode" form:"barcode"`
+	Remark           string   `json:"remark" form:"remark"`
+	Status           string   `json:"status" form:"status"`
+	FreightPrice     *float64 `json:"freightPrice" form:"freightPrice"`
+	CostCurrency     string   `json:"costCurrency" form:"costCurrency"`
+	CostBaseCurrency string   `json:"costBaseCurrency" form:"costBaseCurrency"`
+	CostFXRate       *float64 `json:"costFxRate" form:"costFxRate"`
+}
+
+// UpdateStockReq 修改一条货行的主档（642）。
+//
+// 三个「改不了」的东西刻意不在本结构里：id 是定位键、sku_code 与 warehouse_id 一起构成本行
+// 的身份（244 的 UNIQUE）。改编码等于换一条货 —— 流水与变体引用都会指空，
+// 所以那件事只能通过「新建一行 + 迁移引用」完成，不是一次编辑。
+//
+// 数量同样不在这里：数量只能经变动契约改（有变动必有流水）。
+type UpdateStockReq struct {
+	ProjectID string `json:"projectId" form:"projectId"`
+	ID        string `json:"id" form:"id" binding:"required"`
+
+	Name             string   `json:"name" form:"name"`
+	ExternalSKU      string   `json:"externalSku" form:"externalSku"`
+	ImageURL         string   `json:"imageUrl" form:"imageUrl"`
+	Barcode          string   `json:"barcode" form:"barcode"`
+	Remark           string   `json:"remark" form:"remark"`
+	Status           string   `json:"status" form:"status"`
+	CostPrice        *float64 `json:"costPrice" form:"costPrice"`
+	FreightPrice     *float64 `json:"freightPrice" form:"freightPrice"`
+	CostCurrency     string   `json:"costCurrency" form:"costCurrency"`
+	CostBaseCurrency string   `json:"costBaseCurrency" form:"costBaseCurrency"`
+	CostFXRate       *float64 `json:"costFxRate" form:"costFxRate"`
+}
+
+// UpdateStockStatusReq 货行启停（列表行内快速开关）。
+type UpdateStockStatusReq struct {
+	ProjectID string `json:"projectId" form:"projectId"`
+	ID        string `json:"id" form:"id" binding:"required"`
+	Status    string `json:"status" form:"status" binding:"required"`
 }
 
 // —— 预占 / 释放（迁移 624）——

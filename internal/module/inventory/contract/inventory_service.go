@@ -103,6 +103,30 @@ type InventoryService interface {
 	// GetWarehouseSKU 「从仓库选」的最小查询：给定仓库 + 仓库 SKU → 那一行
 	//（不存在即 ErrWarehouseSKUNotFound，不返回空行）。
 	GetWarehouseSKU(ctx context.Context, req *inventorydto.GetWarehouseSKUReq) (res *inventorydto.WarehouseSKUResp, err error)
+
+	// —— 仓库商品 SKU 主档（迁移 642 / B3）——
+	//
+	// 主档回答的是「这条货在这个仓叫什么、长什么样、按多少运费、什么状态」，
+	// 与商品侧的 products / product_variants 不是同一份事实（同一款货在不同仓可以不同）。
+	//
+	// 三个方法都**不碰数量**：数量只能经变动契约改（有变动必有流水）。
+	// 编码与所在仓也不可变 —— 它们一起构成本行的身份（244 的 UNIQUE (warehouse_id, sku_code)），
+	// 改它们等于换一条货，历史流水与变体引用都会指空。
+
+	// CreateStock 在某个仓建一条货行（仓库 + 裸码 + 数量 + 成本 + 主档）。
+	CreateStock(ctx context.Context, req *inventorydto.CreateStockReq) (res *inventorydto.StockResp, err error)
+	// UpdateStock 修改一条货行的主档（名称 / 图 / 条码 / 备注 / 状态 / 成本四件套）。
+	UpdateStock(ctx context.Context, req *inventorydto.UpdateStockReq) (res *inventorydto.StockResp, err error)
+	// UpdateStockStatus 货行启停（停用不等于删除：引用与流水照旧可读）。
+	UpdateStockStatus(ctx context.Context, req *inventorydto.UpdateStockStatusReq) (res *inventorydto.StockResp, err error)
+	// CountWarehouseSKUsByFilter 与 ListWarehouseSKUs 同口径的行数（台账页分页用）。
+	CountWarehouseSKUsByFilter(ctx context.Context, req *inventorydto.ListWarehouseSKUReq) (total int64, err error)
+	// ListStockSKURows 台账页一屏：货行 → 展示行（金额 / 币种 / 数量 / 变体引用已在 service 成型）。
+	//
+	// 为什么不复用 ListWarehouseSKUs：那是接口出口（带 metadata / projectId 这类调用方字段），
+	// 而台账页要的是「屏幕上那一行」—— 金额要格式化、币对要拼、汇率未固化要能表达，
+	// 这些口径放 handler 会与库存页各写一份。
+	ListStockSKURows(ctx context.Context, req *inventorydto.ListWarehouseSKUReq) (rows []inventorydto.StockSKURowResp, err error)
 	// BindExternalSKU 绑定 / 更新某 (仓库, 变体) 库存行的外部编码（空串 = 清空，
 	// 该仓改回用我们自己的 SKU；非空时做 N:1 弱校验）。
 	BindExternalSKU(ctx context.Context, req *inventorydto.BindExternalSKUReq) (res *inventorydto.StockResp, err error)

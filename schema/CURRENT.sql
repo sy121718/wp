@@ -6,7 +6,7 @@
 -- 更新方式：bash scripts/schema-snapshot.sh
 -- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）
 -- 迁移台账版本：597-block-bulk-delete-grant-copy
--- 生成时间：2026-10-26T17:22:31+08:00
+-- 生成时间：2026-10-26T20:59:09+08:00
 
 --
 -- PostgreSQL database dump
@@ -29,13 +29,6 @@ SET row_security = off;
 --
 
 CREATE SCHEMA ext_shared;
-
-
---
--- Name: public; Type: SCHEMA; Schema: -; Owner: -
---
-
--- *not* creating schema, since initdb creates it
 
 
 --
@@ -1218,8 +1211,21 @@ CREATE TABLE public.inventory_stocks (
     external_sku text DEFAULT ''::text NOT NULL,
     track_quantity boolean DEFAULT false NOT NULL,
     reserved_quantity integer DEFAULT 0 NOT NULL,
+    name text DEFAULT ''::text NOT NULL,
+    image_url text DEFAULT ''::text NOT NULL,
+    barcode text DEFAULT ''::text NOT NULL,
+    freight_price numeric(12,2) DEFAULT 70 NOT NULL,
+    cost_currency text DEFAULT 'CNY'::text NOT NULL,
+    cost_base_currency text DEFAULT 'CNY'::text NOT NULL,
+    cost_fx_rate numeric(18,8),
+    status text DEFAULT 'active'::text NOT NULL,
+    remark text DEFAULT ''::text NOT NULL,
+    CONSTRAINT ck_inventory_stocks_cost_currency CHECK (((btrim(cost_currency) <> ''::text) AND (btrim(cost_base_currency) <> ''::text))),
+    CONSTRAINT ck_inventory_stocks_cost_fx_rate CHECK (((cost_fx_rate IS NULL) OR (cost_fx_rate > (0)::numeric))),
+    CONSTRAINT ck_inventory_stocks_freight_nonneg CHECK ((freight_price >= (0)::numeric)),
     CONSTRAINT ck_inventory_stocks_reserved_le_quantity CHECK ((reserved_quantity <= quantity)),
     CONSTRAINT ck_inventory_stocks_reserved_nonneg CHECK ((reserved_quantity >= 0)),
+    CONSTRAINT inventory_stocks_status_check CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text]))),
     CONSTRAINT inventory_stocks_track_quantity_check CHECK ((track_quantity OR (quantity = 0)))
 );
 
@@ -6306,6 +6312,13 @@ CREATE INDEX idx_inventory_sources_project_party ON public.inventory_sources USI
 --
 
 CREATE INDEX idx_inventory_sources_project_type ON public.inventory_sources USING btree (project_id, type);
+
+
+--
+-- Name: idx_inventory_stocks_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inventory_stocks_name ON public.inventory_stocks USING btree (project_id, warehouse_id, name);
 
 
 --

@@ -168,6 +168,22 @@ const (
 	// 多个变体共用同一个外码是合法的（这正是 N:1 的意义），跨商品才是映射写错了。
 	ErrExternalSKUProductConflict = "ErrExternalSKUProductConflict"
 
+	// —— 仓库商品 SKU 主档（迁移 642 / B3）——
+
+	// ErrStockStatusInvalid 货行状态只接受 active / disabled（其余一律拒绝，不静默按启用处理）。
+	ErrStockStatusInvalid = "ErrStockStatusInvalid"
+	// ErrStockFreightInvalid 运费不合法（必须是 >= 0 的有限数；0 是合法的「免运费」）。
+	ErrStockFreightInvalid = "ErrStockFreightInvalid"
+	// ErrStockFXRateInvalid 成本换算汇率不合法（必须 > 0；未固化请留空，不要填 0）。
+	ErrStockFXRateInvalid = "ErrStockFXRateInvalid"
+	// ErrStockNameTooLong / ErrStockBarcodeTooLong / ErrStockRemarkTooLong / ErrStockImageTooLong
+	// 主档展示字段的长度上限：超长是排版问题（表格被撑破），不是数据完整性问题，
+	// 所以在服务层给可读的业务错误，而不是让 varchar 抛一个没有上下文的 22001。
+	ErrStockNameTooLong    = "ErrStockNameTooLong"
+	ErrStockBarcodeTooLong = "ErrStockBarcodeTooLong"
+	ErrStockRemarkTooLong  = "ErrStockRemarkTooLong"
+	ErrStockImageTooLong   = "ErrStockImageTooLong"
+
 	// —— 预占 / 释放（迁移 624）——
 
 	// ErrReserveUnderflow 释放的预占量超过已预占量（不静默夹到 0）。
@@ -321,6 +337,13 @@ var errFallbacks = map[string]string{
 	ErrExternalSKUInvalid:            "外部编码不合法：长度需在 128 个字符以内且不含控制字符",
 	ErrExternalSKUProductConflict:    "该外部编码在本仓已挂在另一个商品上：同一个外部编码在同一仓库内只能属于同一个商品（同一商品的多个口味可以共用一个外部编码）",
 	ErrReserveUnderflow:              "要释放的预占数量超过了这一行已预占的数量",
+	ErrStockStatusInvalid:            "货行状态只能是启用或停用",
+	ErrStockFreightInvalid:           "运费不合法：必须是不小于 0 的数（0 表示免运费）",
+	ErrStockFXRateInvalid:            "成本换算汇率不合法：必须大于 0；汇率未固化请留空，不要填 0",
+	ErrStockNameTooLong:              "商品名称过长：最多 200 个字符",
+	ErrStockBarcodeTooLong:           "条码过长：最多 64 个字符",
+	ErrStockRemarkTooLong:            "备注过长：最多 500 个字符",
+	ErrStockImageTooLong:             "图片地址过长：最多 512 个字符",
 }
 
 // errStatuses 业务错误对外的 HTTP 状态码（**只登记非 400 的档**）。
@@ -400,6 +423,14 @@ const (
 	// 名字**不带 Err 前缀**：它不是可抛出的业务错误消息（不单独经 ErrorAuto 的形态判据），
 	// 而是「补充说明」的词条 key，由 i18n.ErrorDetail 编码进业务错误的 tail。
 	DetailExternalSKUOwner = "admin.inventory.err.externalSkuOwner"
+
+	// DetailStockNameLimit / DetailStockBarcodeLimit / DetailStockRemarkLimit /
+	// DetailStockImageLimit 长度上限的具名参数：上限数字只写一处（service 的常量），
+	// 词条里用 {max} 占位 —— 两处各写一个数字，改上限时必然有一处漏改。
+	DetailStockNameLimit    = "admin.inventory.err.stockNameLimit"
+	DetailStockBarcodeLimit = "admin.inventory.err.stockBarcodeLimit"
+	DetailStockRemarkLimit  = "admin.inventory.err.stockRemarkLimit"
+	DetailStockImageLimit   = "admin.inventory.err.stockImageLimit"
 )
 
 // ErrDetailFallbacks 上面那组明细词条的中文兜底（i18n 未初始化 / 该 key 没有词条时用）。
@@ -407,5 +438,9 @@ const (
 // 占位符与词条一一对应（{name} / …）：读侧填不上某个占位符时判为坏词条、回落这里的中文，
 // 而不是把 {name} 摆给运营看。
 var ErrDetailFallbacks = map[string]string{
-	DetailExternalSKUOwner: "该外部编码在本仓已属于商品 {name}",
+	DetailExternalSKUOwner:  "该外部编码在本仓已属于商品 {name}",
+	DetailStockNameLimit:    "上限 {max} 个字符",
+	DetailStockBarcodeLimit: "上限 {max} 个字符",
+	DetailStockRemarkLimit:  "上限 {max} 个字符",
+	DetailStockImageLimit:   "上限 {max} 个字符",
 }
