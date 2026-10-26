@@ -107,7 +107,12 @@ type EnsureStockReq struct {
 type UpdateStockTrackingReq struct {
 	ProjectID   string `json:"projectId" form:"projectId"`
 	WarehouseID string `json:"warehouseId" form:"warehouseId" binding:"required"`
-	VariantID   string `json:"variantId" form:"variantId" binding:"required"`
+	// SKUCode 仓库侧裸码（可带仓码前缀，服务端剥掉）。
+	//
+	// 迁移 641 起库存行的身份是 (仓, 仓库 SKU)：同一变体在同一仓可以有多条货行，
+	// 所以定位以编码为准；只有调用方确实不知道该行编码时才退回按变体取第一条。
+	SKUCode   string `json:"skuCode" form:"skuCode"`
+	VariantID string `json:"variantId" form:"variantId"`
 	// TrackQuantity 跟踪开关：false = 无限（不跟踪）。
 	TrackQuantity bool `json:"trackQuantity" form:"trackQuantity"`
 	// Quantity 仅在 TrackQuantity 为真时生效；为假时必须为 0。

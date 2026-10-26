@@ -6,7 +6,7 @@
 -- 更新方式：bash scripts/schema-snapshot.sh
 -- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）
 -- 迁移台账版本：597-block-bulk-delete-grant-copy
--- 生成时间：2026-10-26T15:24:53+08:00
+-- 生成时间：2026-10-26T17:22:31+08:00
 
 --
 -- PostgreSQL database dump
@@ -29,6 +29,13 @@ SET row_security = off;
 --
 
 CREATE SCHEMA ext_shared;
+
+
+--
+-- Name: public; Type: SCHEMA; Schema: -; Owner: -
+--
+
+-- *not* creating schema, since initdb creates it
 
 
 --
@@ -972,6 +979,7 @@ CREATE TABLE public.inventory_stock_movements (
     batch_id uuid CONSTRAINT inventory_stock_movements_batch_id_not_null1 NOT NULL,
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
+    stock_id uuid,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -1007,6 +1015,7 @@ CREATE TABLE public.inventory_stock_movements_2026_09 (
     batch_id uuid CONSTRAINT inventory_stock_movements_batch_id_not_null1 NOT NULL,
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
+    stock_id uuid,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -1041,6 +1050,7 @@ CREATE TABLE public.inventory_stock_movements_2026_10 (
     batch_id uuid CONSTRAINT inventory_stock_movements_batch_id_not_null1 NOT NULL,
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
+    stock_id uuid,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -1075,6 +1085,7 @@ CREATE TABLE public.inventory_stock_movements_2026_11 (
     batch_id uuid CONSTRAINT inventory_stock_movements_batch_id_not_null1 NOT NULL,
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
+    stock_id uuid,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -1109,6 +1120,7 @@ CREATE TABLE public.inventory_stock_movements_2026_12 (
     batch_id uuid CONSTRAINT inventory_stock_movements_batch_id_not_null1 NOT NULL,
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
+    stock_id uuid,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -1143,6 +1155,7 @@ CREATE TABLE public.inventory_stock_movements_2027_01 (
     batch_id uuid CONSTRAINT inventory_stock_movements_batch_id_not_null1 NOT NULL,
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
+    stock_id uuid,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -1177,6 +1190,7 @@ CREATE TABLE public.inventory_stock_movements_default (
     batch_id uuid CONSTRAINT inventory_stock_movements_batch_id_not_null1 NOT NULL,
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
+    stock_id uuid,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -4949,14 +4963,6 @@ ALTER TABLE ONLY public.inventory_stocks
 
 
 --
--- Name: inventory_stocks inventory_stocks_variant_id_warehouse_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inventory_stocks
-    ADD CONSTRAINT inventory_stocks_variant_id_warehouse_id_key UNIQUE (variant_id, warehouse_id);
-
-
---
 -- Name: inventory_transfer_attachments inventory_transfer_attachments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6198,6 +6204,13 @@ CREATE INDEX idx_inventory_movements_reason ON ONLY public.inventory_stock_movem
 
 
 --
+-- Name: idx_inventory_movements_stock_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inventory_movements_stock_time ON ONLY public.inventory_stock_movements USING btree (stock_id, create_time DESC);
+
+
+--
 -- Name: idx_inventory_movements_variant_time; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6307,13 +6320,6 @@ CREATE INDEX idx_inventory_stocks_product ON public.inventory_stocks USING btree
 --
 
 CREATE INDEX idx_inventory_stocks_project_sku ON public.inventory_stocks USING btree (project_id, sku_code);
-
-
---
--- Name: idx_inventory_stocks_variant_project; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_inventory_stocks_variant_project ON public.inventory_stocks USING btree (project_id, variant_id);
 
 
 --
@@ -7304,6 +7310,13 @@ CREATE INDEX inventory_stock_movements_2026_09_reason_code_idx ON public.invento
 
 
 --
+-- Name: inventory_stock_movements_2026_09_stock_id_create_time_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_2026_09_stock_id_create_time_idx ON public.inventory_stock_movements_2026_09 USING btree (stock_id, create_time DESC);
+
+
+--
 -- Name: inventory_stock_movements_2026_09_variant_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7336,6 +7349,13 @@ CREATE INDEX inventory_stock_movements_2026_10_project_id_created_at_idx ON publ
 --
 
 CREATE INDEX inventory_stock_movements_2026_10_reason_code_idx ON public.inventory_stock_movements_2026_10 USING btree (reason_code);
+
+
+--
+-- Name: inventory_stock_movements_2026_10_stock_id_create_time_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_2026_10_stock_id_create_time_idx ON public.inventory_stock_movements_2026_10 USING btree (stock_id, create_time DESC);
 
 
 --
@@ -7374,6 +7394,13 @@ CREATE INDEX inventory_stock_movements_2026_11_reason_code_idx ON public.invento
 
 
 --
+-- Name: inventory_stock_movements_2026_11_stock_id_create_time_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_2026_11_stock_id_create_time_idx ON public.inventory_stock_movements_2026_11 USING btree (stock_id, create_time DESC);
+
+
+--
 -- Name: inventory_stock_movements_2026_11_variant_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7406,6 +7433,13 @@ CREATE INDEX inventory_stock_movements_2026_12_project_id_created_at_idx ON publ
 --
 
 CREATE INDEX inventory_stock_movements_2026_12_reason_code_idx ON public.inventory_stock_movements_2026_12 USING btree (reason_code);
+
+
+--
+-- Name: inventory_stock_movements_2026_12_stock_id_create_time_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_2026_12_stock_id_create_time_idx ON public.inventory_stock_movements_2026_12 USING btree (stock_id, create_time DESC);
 
 
 --
@@ -7444,6 +7478,13 @@ CREATE INDEX inventory_stock_movements_2027_01_reason_code_idx ON public.invento
 
 
 --
+-- Name: inventory_stock_movements_2027_01_stock_id_create_time_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_2027_01_stock_id_create_time_idx ON public.inventory_stock_movements_2027_01 USING btree (stock_id, create_time DESC);
+
+
+--
 -- Name: inventory_stock_movements_2027_01_variant_id_created_at_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7476,6 +7517,13 @@ CREATE INDEX inventory_stock_movements_default_project_id_created_at_idx ON publ
 --
 
 CREATE INDEX inventory_stock_movements_default_reason_code_idx ON public.inventory_stock_movements_default USING btree (reason_code);
+
+
+--
+-- Name: inventory_stock_movements_default_stock_id_create_time_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX inventory_stock_movements_default_stock_id_create_time_idx ON public.inventory_stock_movements_default USING btree (stock_id, create_time DESC);
 
 
 --
@@ -8151,6 +8199,13 @@ ALTER INDEX public.idx_inventory_movements_reason ATTACH PARTITION public.invent
 
 
 --
+-- Name: inventory_stock_movements_2026_09_stock_id_create_time_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_stock_time ATTACH PARTITION public.inventory_stock_movements_2026_09_stock_id_create_time_idx;
+
+
+--
 -- Name: inventory_stock_movements_2026_09_variant_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -8190,6 +8245,13 @@ ALTER INDEX public.idx_inventory_movements_project_time ATTACH PARTITION public.
 --
 
 ALTER INDEX public.idx_inventory_movements_reason ATTACH PARTITION public.inventory_stock_movements_2026_10_reason_code_idx;
+
+
+--
+-- Name: inventory_stock_movements_2026_10_stock_id_create_time_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_stock_time ATTACH PARTITION public.inventory_stock_movements_2026_10_stock_id_create_time_idx;
 
 
 --
@@ -8235,6 +8297,13 @@ ALTER INDEX public.idx_inventory_movements_reason ATTACH PARTITION public.invent
 
 
 --
+-- Name: inventory_stock_movements_2026_11_stock_id_create_time_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_stock_time ATTACH PARTITION public.inventory_stock_movements_2026_11_stock_id_create_time_idx;
+
+
+--
 -- Name: inventory_stock_movements_2026_11_variant_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -8274,6 +8343,13 @@ ALTER INDEX public.idx_inventory_movements_project_time ATTACH PARTITION public.
 --
 
 ALTER INDEX public.idx_inventory_movements_reason ATTACH PARTITION public.inventory_stock_movements_2026_12_reason_code_idx;
+
+
+--
+-- Name: inventory_stock_movements_2026_12_stock_id_create_time_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_stock_time ATTACH PARTITION public.inventory_stock_movements_2026_12_stock_id_create_time_idx;
 
 
 --
@@ -8319,6 +8395,13 @@ ALTER INDEX public.idx_inventory_movements_reason ATTACH PARTITION public.invent
 
 
 --
+-- Name: inventory_stock_movements_2027_01_stock_id_create_time_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_stock_time ATTACH PARTITION public.inventory_stock_movements_2027_01_stock_id_create_time_idx;
+
+
+--
 -- Name: inventory_stock_movements_2027_01_variant_id_created_at_idx; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -8358,6 +8441,13 @@ ALTER INDEX public.idx_inventory_movements_project_time ATTACH PARTITION public.
 --
 
 ALTER INDEX public.idx_inventory_movements_reason ATTACH PARTITION public.inventory_stock_movements_default_reason_code_idx;
+
+
+--
+-- Name: inventory_stock_movements_default_stock_id_create_time_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_inventory_movements_stock_time ATTACH PARTITION public.inventory_stock_movements_default_stock_id_create_time_idx;
 
 
 --
@@ -8795,14 +8885,6 @@ ALTER TABLE ONLY public.document_snapshots
 
 
 --
--- Name: inventory_stock_movements fk_inventory_movements_product; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE public.inventory_stock_movements
-    ADD CONSTRAINT fk_inventory_movements_product FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE RESTRICT;
-
-
---
 -- Name: inventory_purchase_order_lines fk_inventory_purchase_lines_product; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8992,6 +9074,14 @@ ALTER TABLE ONLY public.inventory_purchase_receipts
 
 ALTER TABLE ONLY public.inventory_sources
     ADD CONSTRAINT inventory_sources_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id);
+
+
+--
+-- Name: inventory_stock_movements inventory_stock_movements_stock_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inventory_stock_movements
+    ADD CONSTRAINT inventory_stock_movements_stock_id_fkey FOREIGN KEY (stock_id) REFERENCES public.inventory_stocks(id) ON DELETE SET NULL;
 
 
 --

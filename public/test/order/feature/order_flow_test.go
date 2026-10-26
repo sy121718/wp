@@ -88,6 +88,7 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
 	products := productservice.NewService(productmodel.NewModel(db), projects)
 	products.SetInventoryService(inv)
+	inv.SetVariantWarehouseStocks(products)
 
 	// 建单要扣库存，必须有默认仓 —— 商品建变体时会往归属仓生成一条 0 库存记录。
 	wh, err := inv.CreateWarehouse(ctx, &inventorydto.CreateWarehouseReq{

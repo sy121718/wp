@@ -19,7 +19,7 @@ package inventoryservice
 // 流水只在真实出入库时写 —— 预占是可从 reserved_quantity 与「订单未发货行数量」
 // 反算的派生量，单独写一张表只会与主档漂移。
 //
-// 加锁顺序与 applyStockChangesTx 一致：按 (variant_id, warehouse_id) 升序逐一
+// 加锁顺序与 applyStockChangesTx 一致：按 (仓库, 仓库 SKU) 升序逐一
 // `FOR UPDATE`。出入库与预占共享同一个全局顺序，等待链不可能成环。
 
 import (
@@ -85,7 +85,7 @@ var (
 //
 //  1. 归一入参（行数上限与变动同口径：maxBatchLines）；
 //  2. 逐行解析仓 —— 与 DeductStock 的 resolveWarehouse 同一入口（空 = 默认仓）；
-//  3. 取目标行并按 (variant_id, warehouse_id) 升序 `FOR UPDATE`；
+//  3. 取目标行并按 (仓库, 仓库 SKU) 升序 `FOR UPDATE`；
 //  4. 跳过不跟踪（无限）行 —— 无限行的 quantity 恒 0，预占会违反
 //     CHECK (reserved_quantity <= quantity)；
 //  5. 逐行原子更新 reserved_quantity（守卫写在 SQL 的 WHERE 里）；
@@ -131,7 +131,7 @@ func (s *Service) reserveStockOn(ctx context.Context, tx *gorm.DB,
 
 // reserveTarget 一行预占目标：要锁哪一行、动多少。
 type reserveTarget struct {
-	stockID   string
+	key       stockKey
 	warehouse *inventorymodel.WarehouseEntity
 	variantID string
 	skuCode   string
@@ -160,14 +160,19 @@ func (s *Service) reserveTargets(ctx context.Context, projectID string,
 		if werr != nil {
 			return nil, werr
 		}
-		key := stockKey{variantID: variantID, warehouseID: wh.ID}
+		// 行的身份是 (仓库, 仓库 SKU)（迁移 641）：预占也必须落到具体那一条货行上，
+		// 否则同变体同仓有多条货时「占了哪一条」无从回答。
+		key, serr := s.resolveLineStockKey(ctx, projectID, wh, variantID, line.SKUCode)
+		if serr != nil {
+			return nil, serr
+		}
 		if t, ok := byKey[key]; ok {
 			t.delta += line.Quantity
 			continue
 		}
 		byKey[key] = &reserveTarget{
-			warehouse: wh, variantID: variantID,
-			skuCode: strings.TrimSpace(line.SKUCode),
+			key: key, warehouse: wh, variantID: variantID,
+			skuCode: key.skuCode,
 			delta:   line.Quantity,
 		}
 		order = append(order, key)
@@ -176,7 +181,7 @@ func (s *Service) reserveTargets(ctx context.Context, projectID string,
 	sorted := make([]stockKey, len(order))
 	copy(sorted, order)
 	slices.SortFunc(sorted, func(a, b stockKey) int {
-		return cmp.Or(cmp.Compare(a.variantID, b.variantID), cmp.Compare(a.warehouseID, b.warehouseID))
+		return cmp.Or(cmp.Compare(a.warehouseID, b.warehouseID), cmp.Compare(a.skuCode, b.skuCode))
 	})
 	targets = make([]*reserveTarget, 0, len(sorted))
 	for _, k := range sorted {
@@ -199,10 +204,10 @@ func (s *Service) applyReservations(ctx context.Context, tx *gorm.DB, projectID 
 	}
 	for _, t := range targets {
 		variantID := t.variantID
-		row, lerr := s.m.LockStockRowTx(ctx, tx, &variantID, t.warehouse.ID)
+		row, lerr := s.m.LockStockBySKUTx(ctx, tx, projectID, t.key.warehouseID, t.key.skuCode)
 		if lerr != nil {
 			if errors.Is(lerr, gorm.ErrRecordNotFound) {
-				// 该 (变体, 仓) 没有库存行：预占无从谈起。
+				// 该 (仓, 仓库 SKU) 没有库存行：预占无从谈起。
 				return nil, inventoryenums.Err(inventoryenums.ErrStockNotFound)
 			}
 			return nil, lerr

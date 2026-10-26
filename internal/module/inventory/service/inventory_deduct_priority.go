@@ -62,21 +62,18 @@ func (s *Service) assignDeductWarehouses(ctx context.Context, projectID, directi
 	if len(pending) == 0 {
 		return lines, nil
 	}
-	candidates, err := s.m.ListDeductCandidates(ctx, projectID, variantIDs)
+	candidates, err := s.deductCandidatesOf(ctx, projectID, variantIDs)
 	if err != nil {
 		return nil, err
 	}
 	// 按变体收集候选（候选已按全局顺序排好；组内顺序与全局顺序一致）。
 	avail := make(map[string][]deductCandidate, len(variantIDs))
 	for _, c := range candidates {
-		if c == nil || c.VariantID == nil || !c.TrackQuantity {
+		if c == nil || c.variantID == "" || !c.trackQuantity {
 			// 无限行不参与分配：quantity 恒 0，可售也恒 0，留着只会空转。
 			continue
 		}
-		v := strings.TrimSpace(*c.VariantID)
-		avail[v] = append(avail[v], deductCandidate{
-			warehouseID: c.WarehouseID, available: availableOf(c.Quantity, c.ReservedQuantity),
-		})
+		avail[c.variantID] = append(avail[c.variantID], *c)
 	}
 	out := make([]inventorydto.StockChangeLineReq, len(lines))
 	copy(out, lines)
@@ -90,13 +87,19 @@ func (s *Service) assignDeductWarehouses(ctx context.Context, projectID, directi
 			return nil, aerr
 		}
 		cursor[v] += line.Quantity
-		// 第一片写回原行，其余追加（同一 (变体, 仓) 由 buildChangeItems 之后的
+		// 第一片写回原行，其余追加（同一 (仓, 仓库 SKU) 由 buildChangeItems 之后的
 		// applyStockChangesTx 按 key 汇总，不会重复加锁）。
+		//
+		// 641 起一行的身份是 (仓, 仓库 SKU)：分配出来的是**具体那条货行**，
+		// 所以仓与编码必须一起写回 —— 只写仓会让 buildChangeItems 又去按变体猜编码，
+		// 猜到的可能是同仓另一条货。
 		out[idx].WarehouseID = pieces[0].warehouseID
+		out[idx].SKUCode = pieces[0].skuCode
 		out[idx].Quantity = pieces[0].take
 		for _, p := range pieces[1:] {
 			extra := line
 			extra.WarehouseID = p.warehouseID
+			extra.SKUCode = p.skuCode
 			extra.Quantity = p.take
 			out = append(out, extra)
 		}
@@ -104,11 +107,76 @@ func (s *Service) assignDeductWarehouses(ctx context.Context, projectID, directi
 	return out, nil
 }
 
-// deductCandidate 一个跨仓分配的候选（仓 + 该仓的可售）；分配后 take 是分到这一仓的量。
+// deductCandidatesOf 取这些变体在各活跃仓的候选货行（按扣减优先级排好）。
+//
+// 641 起「某变体有哪些货」由商品侧的引用清单回答（VariantWarehouseStockPort）：
+// 库存侧按 inventory_stocks.variant_id 过滤会漏掉「同一仓另一条货行」的形态。
+// 引用读口未注入（纯库存单测路径）时退回按变体过滤的旧实现。
+func (s *Service) deductCandidatesOf(ctx context.Context, projectID string, variantIDs []string) (out []*deductCandidate, err error) {
+	if s.refs == nil {
+		rows, rerr := s.m.ListDeductCandidates(ctx, projectID, variantIDs)
+		if rerr != nil {
+			return nil, rerr
+		}
+		for _, r := range rows {
+			if r == nil || r.VariantID == nil {
+				continue
+			}
+			out = append(out, &deductCandidate{
+				variantID: *r.VariantID, warehouseID: r.WarehouseID, skuCode: r.SKUCode,
+				available: availableOf(r.Quantity, r.ReservedQuantity), trackQuantity: r.TrackQuantity,
+			})
+		}
+		return out, nil
+	}
+	byVariant, err := s.refs.WarehouseStockIDsByVariant(ctx, projectID, variantIDs)
+	if err != nil {
+		return nil, err
+	}
+	stockIDs := make([]string, 0, len(byVariant)*2)
+	for _, ids := range byVariant {
+		stockIDs = append(stockIDs, ids...)
+	}
+	if len(stockIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.m.ListStockCandidatesByIDs(ctx, projectID, stockIDs)
+	if err != nil {
+		return nil, err
+	}
+	// 归属：一条货行可能被多个变体引用，按「引用它的变体」逐条展开 ——
+	// 分配要按变体各自算够不够，所以同一货行会在两个变体的候选里各出现一次。
+	owners := make(map[string][]string, len(stockIDs))
+	for variantID, ids := range byVariant {
+		for _, id := range ids {
+			owners[id] = append(owners[id], variantID)
+		}
+	}
+	for _, r := range rows {
+		if r == nil {
+			continue
+		}
+		for _, variantID := range owners[r.ID] {
+			out = append(out, &deductCandidate{
+				variantID: variantID, warehouseID: r.WarehouseID, skuCode: r.SKUCode,
+				available: availableOf(r.Quantity, r.ReservedQuantity), trackQuantity: r.TrackQuantity,
+			})
+		}
+	}
+	return out, nil
+}
+
+// deductCandidate 一个跨仓分配的候选（具体货行 + 可售）；分配后 take 是分到这一行的量。
+//
+// 641 起候选是**货行**而不是「仓」：同一变体在同一仓可以有多条货行，
+// 扣减必须落到具体那一条上（流水按 stock_id 记账）。
 type deductCandidate struct {
-	warehouseID string
-	available   int
-	take        int
+	variantID     string
+	warehouseID   string
+	skuCode       string
+	available     int
+	trackQuantity bool
+	take          int
 }
 
 // allocatePieces 从一个变体的候选序列里切出若干片，凑够 quantity。
@@ -144,7 +212,9 @@ func allocatePieces(candidates []deductCandidate, skip, quantity int) (pieces []
 		if take <= 0 {
 			continue
 		}
-		pieces = append(pieces, deductCandidate{warehouseID: c.warehouseID, take: take})
+		pieces = append(pieces, deductCandidate{
+			variantID: c.variantID, warehouseID: c.warehouseID, skuCode: c.skuCode, take: take,
+		})
 		need -= take
 	}
 	if len(pieces) == 0 {

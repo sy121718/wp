@@ -222,8 +222,13 @@ type MovementResp struct {
 	WarehouseName string `json:"warehouseName"`
 	ProductID     string `json:"productId"`
 	VariantID     string `json:"variantId"`
-	SKUCode       string `json:"skuCode"`
-	Direction     string `json:"direction"`
+	// StockID 是这次变动动的那一条库存货行（迁移 638）。
+	//
+	// (variantId, warehouseId) 在 638 之后不再唯一：同一变体在同一个仓可以对应多条货行
+	// （不同批次 / 自有码与客户码并存）。追溯「这批货的流水」只能靠行 id。
+	StockID   string `json:"stockId"`
+	SKUCode   string `json:"skuCode"`
+	Direction string `json:"direction"`
 	// Quantity 是本次变动的绝对量（恒 > 0）；Delta 是带符号的实际变化量。
 	Quantity       int    `json:"quantity"`
 	Delta          int    `json:"delta"`

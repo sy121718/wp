@@ -126,6 +126,18 @@ type VariantEntity struct {
 // TableName 实现 gorm 表名。
 func (VariantEntity) TableName() string { return "product_variants" }
 
+// BeforeCreate 给引用清单补默认值（迁移 637 的 NOT NULL + 形状 CHECK 是库级底线）。
+//
+// 为什么要 hook：warehouse_skus 是 not null，而「新建变体」这条路上它的值要等库存行
+// 建好之后才填。调用方忘写一次就是一次 23502 —— 让零值落成 '[]' 比让每一处调用点
+// 都记得写一行字面量可靠。
+func (e *VariantEntity) BeforeCreate(tx *gorm.DB) error {
+	if len(e.WarehouseSKUs) == 0 {
+		e.WarehouseSKUs = json.RawMessage("[]")
+	}
+	return nil
+}
+
 // Model 商品域仓储。
 type Model struct{ db *gorm.DB }
 
@@ -741,6 +753,37 @@ func (m *Model) ListVariantsByIDs(ctx context.Context, ids []string, projectID s
 		return tx.WithContext(ctx).Model(&VariantEntity{}).Where("id IN ?", ids).Find(&list).Error
 	})
 	return list, err
+}
+
+// GetVariantScoped 按 ID + 工程查变体（工程隔离在归属商品那一步，与 ListVariantsByIDs 同口径）。
+//
+// product_variants 没有 project_id 列，所以「这个变体属于这个工程」只能靠 join products 论证 ——
+// 单查变体表会跨工程读到别人的变体。
+func (m *Model) GetVariantScoped(ctx context.Context, id, projectID string) (e *VariantEntity, err error) {
+	e = &VariantEntity{}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&VariantEntity{}).
+			Joins("JOIN products AS p ON p.id = product_variants.product_id").
+			Where("product_variants.id = ? AND p.project_id = ?", id, projectID).
+			First(e).Error
+	})
+	return e, err
+}
+
+// GetVariantScopedTx 与 GetVariantScoped 相同，但复用调用方已开启的事务。
+//
+// 为什么要 Tx 版本：登记货行引用发生在「库存行与变体同一笔事务」里，走非 Tx 版本会另取
+// 一条连接、读不到刚写的清单（并在外层回滚时留下一条孤儿引用）。
+func (m *Model) GetVariantScopedTx(ctx context.Context, tx *gorm.DB, id, projectID string) (e *VariantEntity, err error) {
+	e = &VariantEntity{}
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return nil, serr
+	}
+	err = tx.WithContext(ctx).Model(&VariantEntity{}).
+		Joins("JOIN products AS p ON p.id = product_variants.product_id").
+		Where("product_variants.id = ? AND p.project_id = ?", id, projectID).
+		First(e).Error
+	return e, err
 }
 
 // GetVariant 按 ID 查变体。

@@ -331,7 +331,18 @@ func (m *Model) GetStockByVariantWarehouse(ctx context.Context, variantID, wareh
 	e = &StockEntity{}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return tx.WithContext(ctx).Model(&StockEntity{}).
-			Where("variant_id = ? AND warehouse_id = ?", variantID, warehouseID).First(e).Error
+			Where("variant_id = ? AND warehouse_id = ?", variantID, warehouseID).
+			Order("sku_code ASC").First(e).Error
+	})
+	return e, err
+}
+
+// GetStockByWarehouseSKU 按「仓库 × 仓库 SKU」定位库存行（641 起的**身份键**）。
+func (m *Model) GetStockByWarehouseSKU(ctx context.Context, warehouseID, skuCode, projectID string) (e *StockEntity, err error) {
+	e = &StockEntity{}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&StockEntity{}).
+			Where("warehouse_id = ? AND sku_code = ?", warehouseID, skuCode).First(e).Error
 	})
 	return e, err
 }
@@ -359,7 +370,7 @@ func (m *Model) EnsureStock(ctx context.Context, e *StockEntity) (out *StockEnti
 //
 //  1. 先读后写：绝大多数调用是「这一行已经有了」，读到的行直接返回（本次传入的
 //     quantity / track_quantity / external_sku 都被忽略，覆盖式修改走显式入口）；
-//  2. 插入用 ON CONFLICT (variant_id, warehouse_id) DO NOTHING：**不能让它报错** ——
+//  2. 插入用 ON CONFLICT (warehouse_id, sku_code) DO NOTHING（迁移 641 后的身份键）：**不能让它报错** ——
 //     并发命中唯一键时，那句 INSERT 会把调用方的整个事务标记为 aborted，
 //     之后同事务里的任何语句都会失败（current transaction is aborted），
 //     而调用方那批「商品 + 变体」的写入会一起回滚；
@@ -374,8 +385,10 @@ func (m *Model) EnsureStockTx(ctx context.Context, tx *gorm.DB, e *StockEntity) 
 	if err = rls.ScopeTx(tx, e.ProjectID); err != nil {
 		return nil, err
 	}
-	existing, gerr := m.getStockByVariantWarehouseTx(ctx, tx, e.ProjectID, e.VariantID, e.WarehouseID)
+	existing, gerr := m.getStockByWarehouseSKUTx(ctx, tx, e.ProjectID, e.WarehouseID, e.SKUCode)
 	if gerr == nil {
+		// 已存在就复用它，**不覆盖**它的归属：641 起一行可能已经挂在别的变体上
+		// （「先收货后建品」的形态），那正是要复用而不是另起一行的理由。
 		return existing, nil
 	}
 	if !errors.Is(gerr, gorm.ErrRecordNotFound) {
@@ -385,14 +398,14 @@ func (m *Model) EnsureStockTx(ctx context.Context, tx *gorm.DB, e *StockEntity) 
 	// 会让这种行以一个没有上下文的 23514 冒出来（页面侧看到的是内部错误）。
 	normalizeStockTracking(e)
 	res := tx.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "variant_id"}, {Name: "warehouse_id"}},
+		Columns:   []clause.Column{{Name: "warehouse_id"}, {Name: "sku_code"}},
 		DoNothing: true,
 	}).Create(e)
 	if res.Error != nil {
 		return nil, res.Error
 	}
 	if res.RowsAffected == 0 {
-		return m.getStockByVariantWarehouseTx(ctx, tx, e.ProjectID, e.VariantID, e.WarehouseID)
+		return m.getStockByWarehouseSKUTx(ctx, tx, e.ProjectID, e.WarehouseID, e.SKUCode)
 	}
 	return e, nil
 }
@@ -420,7 +433,20 @@ func normalizeStockTracking(e *StockEntity) {
 	}
 }
 
-// getStockByVariantWarehouseTx 在给定事务内做「SKU × 仓库」定位（不新开事务）。
+// getStockByWarehouseSKUTx 在给定事务内按「仓库 × 仓库 SKU」定位（不新开事务）。
+func (m *Model) getStockByWarehouseSKUTx(ctx context.Context, tx *gorm.DB, projectID, warehouseID, skuCode string) (e *StockEntity, err error) {
+	e = &StockEntity{}
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return nil, serr
+	}
+	err = tx.WithContext(ctx).Model(&StockEntity{}).
+		Where("warehouse_id = ? AND sku_code = ?", warehouseID, skuCode).First(e).Error
+	return e, err
+}
+
+// getStockByVariantWarehouseTx 在给定事务内做「变体 × 仓库」定位（不新开事务）。
+//
+// 641 之后这是**退化形态**：同一变体在同一仓可以有多条货行，故按 sku_code 升序取第一条。
 //
 // variantID 是**指针**：迁移 624 起可空，无归属行用 NULL 定位（传 nil）。
 func (m *Model) getStockByVariantWarehouseTx(ctx context.Context, tx *gorm.DB, projectID string, variantID *string, warehouseID string) (e *StockEntity, err error) {
@@ -451,16 +477,46 @@ func (m *Model) CountNonZeroStocks(ctx context.Context, warehouseID, projectID s
 	return n, err
 }
 
-// CountNonZeroStocksByVariant 某变体在各仓的非零库存行数（删变体前的守卫依据）。
+// ListStockFactsByIDs 按货行 id 批量取只读事实（641 起的寻址单位，带仓码 / 仓名）。
 //
-// projectID 由调用方给出：inventory_stocks 在迁移 215 名单里。与 CountNonZeroStocks
-// 同一条反向失效路径 —— 缺作用域数出 0 ⇒ 有货的 SKU 被判成可删。
-func (m *Model) CountNonZeroStocksByVariant(ctx context.Context, variantID, projectID string) (n int64, err error) {
+// 为什么按 id 而不是按变体：一条货行可以被多个变体引用（同一批货同时挂两个套装），
+// 按变体过滤会漏算或重复算。归属关系在商品侧（product_variants.warehouse_skus），
+// 库存侧只回答「这些行各自是什么」。
+func (m *Model) ListStockFactsByIDs(ctx context.Context, projectID string, stockIDs []string) (list []*StockFactRow, err error) {
+	if len(stockIDs) == 0 {
+		return nil, nil
+	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Model(&StockEntity{}).
-			Where("variant_id = ? AND quantity <> 0", variantID).Count(&n).Error
+		return stockRowsQuery(ctx, tx).
+			Where("s.id IN ?", stockIDs).
+			Order("w.is_default DESC, w.sort ASC, w.code ASC, s.sku_code ASC, s.id ASC").
+			Scan(&list).Error
 	})
-	return n, err
+	return list, err
+}
+
+// ListAllStockIDs 取工程内全部货行 id（商品列表投影的入口：先取全量 id，再由商品侧归位）。
+//
+// 只返回 id 是有意的：按商品反查货行的方向已经反转（真源是 product_variants.warehouse_skus），
+// 「某商品有哪些货」不能在这里筛。工程内货行数 = 仓库 × SKU，有限，一次拿全比按商品逐个查划算。
+func (m *Model) ListAllStockIDs(ctx context.Context, projectID string) (ids []string, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Model(&StockEntity{}).Order("id ASC").Pluck("id", &ids).Error
+	})
+	return ids, err
+}
+
+// StockFactRow 一条货行的只读投影（按 id 批量读的返回元素）。
+type StockFactRow struct {
+	ID                 string   `gorm:"column:id"`
+	WarehouseID        string   `gorm:"column:warehouse_id"`
+	WarehouseCode      string   `gorm:"column:warehouse_code"`
+	WarehouseName      string   `gorm:"column:warehouse_name"`
+	SKUCode            string   `gorm:"column:sku_code"`
+	TrackQuantity      bool     `gorm:"column:track_quantity"`
+	Quantity           int      `gorm:"column:quantity"`
+	ReservedQuantity   int      `gorm:"column:reserved_quantity"`
+	CostPrice          *float64 `gorm:"column:cost_price"`
 }
 
 // ProductWarehouseStockRow 一个商品在**各仓**的库存行（分仓聚合的只读投影）。

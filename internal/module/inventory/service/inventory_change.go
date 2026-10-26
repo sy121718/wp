@@ -4,8 +4,8 @@ package inventoryservice
 //
 //  1. **判定只读真源**：可用量在 inventory_stocks 的行锁之内判定，绝不读
 //     product_variants.stock_total 缓存 —— 缓存滞后会直接变成超卖；
-//  2. **加锁顺序由标识决定**：同一批多 SKU / 多仓一律按 (variant_id, warehouse_id)
-//     升序加锁（与入参顺序无关）。并发批次因此共享同一个全局锁序，
+//  2. **加锁顺序由标识决定**：同一批多 SKU / 多仓一律按 (仓库, 仓库 SKU) 升序加锁
+//     （与入参顺序无关；641 起行的身份是「仓 × 仓库 SKU」）。并发批次因此共享同一个全局锁序，
 //     等待链不可能成环 —— 这是「不产生死锁」的实现依据，不是概率问题；
 //  3. **有变动必有流水**：数量写回与流水写在同一事务里，一次变动一个 batch_id；
 //     调整到与当前值相同的行不写流水（没有变动）。
@@ -44,6 +44,7 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
+	productcontract "go_wp/internal/module/product/contract"
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
@@ -58,15 +59,19 @@ const (
 	movementMaxPageSize     = 200
 )
 
-// stockKey 库存真源的行标识（维度 = SKU × 仓库）。
+// stockKey 库存真源的行标识 = 「仓库 × 仓库 SKU」（迁移 641 起就是 inventory_stocks 的唯一键）。
+//
+// 为什么不再用 (变体, 仓库)：同一变体在同一仓可以有多条货行（自有码 / 客户码 / 不同批次），
+// 变体已经不构成行的身份；真正定位一行的是仓 + 那个仓里的 SKU 编码。
 type stockKey struct {
-	variantID   string
 	warehouseID string
+	skuCode     string
 }
 
 // changeItem 一条待执行的变动项（同一 key 可以有多条：多行入参）。
 type changeItem struct {
 	key       stockKey
+	variantID string
 	direction string
 	// quantity：in / out 是正数增减量；adjust 是目标绝对量。
 	quantity int
@@ -415,6 +420,11 @@ func (s *Service) buildChangeItems(ctx context.Context, projectID, direction, de
 		if werr != nil {
 			return nil, werr
 		}
+		// 行的身份是 (仓库, 仓库 SKU)（迁移 641），先定出落哪一行。
+		key, serr := s.resolveLineStockKey(ctx, projectID, wh, variantID, line.SKUCode)
+		if serr != nil {
+			return nil, serr
+		}
 		// 显式成本：空 = 本次不碰成本（出库 / 盘点 / 报损的默认行为），
 		// 给了值就校验 —— 成本可以「尚未核算」（NULL），但不能是负数 / NaN / Inf。
 		cost, cerr := normalizeExplicitCost(line.CostPrice)
@@ -422,13 +432,14 @@ func (s *Service) buildChangeItems(ctx context.Context, projectID, direction, de
 			return nil, cerr
 		}
 		items = append(items, changeItem{
-			key:        stockKey{variantID: variantID, warehouseID: wh.ID},
+			key:        key,
+			variantID:  variantID,
 			direction:  direction,
 			quantity:   quantity,
 			cost:       cost,
 			projectID:  wh.ProjectID,
 			productID:  strings.TrimSpace(line.ProductID),
-			skuCode:    strings.TrimSpace(line.SKUCode),
+			skuCode:    key.skuCode,
 			reason:     meta.reason,
 			warehouse:  wh,
 			sourceType: meta.sourceType,
@@ -438,6 +449,52 @@ func (s *Service) buildChangeItems(ctx context.Context, projectID, direction, de
 		})
 	}
 	return items, nil
+}
+
+// resolveLineStockKey 定出这一行要落在哪条货行上（641 起行的身份是「仓 × 仓库 SKU」）。
+//
+// 三级判断，命中的第一级说了算：
+//
+//  1. 调用方给的编码剥掉仓码前缀后，**该仓确实有这一行** —— 用它（最常见的形态：
+//     页面 / 接口传的就是那条货行的编码）；
+//  2. 该变体在这个仓已有货行 —— 用它的编码。这一级兜住「调用方给的是商品侧 SKU，
+//     而货行在仓库里叫另一个码」的形态（第三方仓 / 平台仓的编码我们改不了）；
+//  3. 都没有 —— 用归一后的编码新建一条。编码为空则拒绝：空串建不出一行有身份的货，
+//     而且会撞 UNIQUE (warehouse_id, sku_code)，变成一句没有上下文的 23505。
+func (s *Service) resolveLineStockKey(ctx context.Context, projectID string, wh *inventorymodel.WarehouseEntity,
+	variantID, raw string) (key stockKey, err error) {
+	bare, berr := normalizeStockSKU(strings.TrimSpace(raw), wh.Code)
+	if berr != nil {
+		bare = ""
+	}
+	if bare != "" {
+		row, gerr := s.m.GetStockByWarehouseSKU(ctx, wh.ID, bare, projectID)
+		if gerr == nil && row != nil {
+			return stockKey{warehouseID: wh.ID, skuCode: row.SKUCode}, nil
+		}
+		if gerr != nil && !errors.Is(gerr, gorm.ErrRecordNotFound) {
+			return stockKey{}, gerr
+		}
+	}
+	row, gerr := s.m.GetStockByVariantWarehouse(ctx, variantID, wh.ID, projectID)
+	if gerr == nil && row != nil {
+		return stockKey{warehouseID: wh.ID, skuCode: row.SKUCode}, nil
+	}
+	if gerr != nil && !errors.Is(gerr, gorm.ErrRecordNotFound) {
+		return stockKey{}, gerr
+	}
+	// 第四级：调用方既没给编码、该仓也没有这个变体的货行 —— 拿变体自己的 SKU 编码兜底。
+	// 这是「第一次把货放进这个仓」的形态（下单预占 / 补货入库都这么进来），
+	// 仓库里那一行的名字本来就是变体在仓库侧的名字。
+	if bare == "" && variantID != "" && s.refs != nil {
+		if codes, cerr := s.refs.VariantSKUCodes(ctx, projectID, []string{variantID}); cerr == nil {
+			bare, _ = normalizeStockSKU(strings.TrimSpace(codes[variantID]), wh.Code)
+		}
+	}
+	if bare == "" {
+		return stockKey{}, inventoryenums.Err(inventoryenums.ErrStockSKURequired)
+	}
+	return stockKey{warehouseID: wh.ID, skuCode: bare}, nil
 }
 
 // applyStockChangesOn 完成全部行的加锁与增减（不留半截状态）：tx 为 nil 时自己开一个
@@ -492,8 +549,8 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 		}
 	}
 	keys := uniqueSortedKeys(items)
-	variantIDs := distinctVariantIDs(keys)
-	// 显式成本按 (变体, 仓库) 汇总：同一 key 出现多条时**最后一条显式成本**生效
+	variantIDs := distinctVariantIDs(items)
+	// 显式成本按 (仓库, 仓库 SKU) 汇总：同一 key 出现多条时**最后一条显式成本**生效
 	//（按锁序处理，结果确定；调用方不该给同一个 key 两个成本）。
 	costs := explicitCosts(items)
 
@@ -508,8 +565,8 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 		byKey := make(map[stockKey]*inventorymodel.StockEntity, len(existing))
 		meta := make(map[string]*inventorymodel.StockEntity, len(existing))
 		for _, e := range existing {
+			byKey[stockKey{warehouseID: e.WarehouseID, skuCode: e.SKUCode}] = e
 			variantID := inventorymodel.PtrString(e.VariantID)
-			byKey[stockKey{variantID: variantID, warehouseID: e.WarehouseID}] = e
 			if _, ok := meta[variantID]; !ok {
 				meta[variantID] = e
 			}
@@ -522,14 +579,10 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 				continue
 			}
 			item := firstItemOf(items, k)
-			productID, skuCode := item.productID, item.skuCode
-			if src, ok := meta[k.variantID]; ok {
-				if productID == "" {
-					productID = inventorymodel.PtrString(src.ProductID)
-				}
-				if skuCode == "" {
-					skuCode = src.SKUCode
-				}
+			// 编码已经是身份的一部分（buildChangeItems 定好的），这里只补商品快照。
+			productID, skuCode := item.productID, k.skuCode
+			if src, ok := meta[item.variantID]; ok && productID == "" {
+				productID = inventorymodel.PtrString(src.ProductID)
 			}
 			if productID == "" {
 				return inventoryenums.Err(inventoryenums.ErrStockProductRequired)
@@ -540,7 +593,7 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 				// 无归属行只由人工建档 / 迁移存量产出，不走出入库。
 				WarehouseID: k.warehouseID,
 				ProductID:   inventorymodel.StringPtr(productID),
-				VariantID:   inventorymodel.StringPtr(k.variantID),
+				VariantID:   inventorymodel.StringPtr(item.variantID),
 				SKUCode:     skuCode,
 				// 变动路径上首次出现的行同样默认**不跟踪（无限）**：与商品侧建变体、
 				// 与 EnsureStock 的新建口径一致（迁移 261：新建行默认无限，存量行才 true）。
@@ -556,12 +609,46 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 		// ② 按同一升序逐一加行锁。
 		locked := make(map[stockKey]*inventorymodel.StockEntity, len(keys))
 		for _, k := range keys {
-			variantID := k.variantID
-			e, lerr := s.m.LockStockRowTx(ctx, tx, &variantID, k.warehouseID)
+			e, lerr := s.m.LockStockBySKUTx(ctx, tx, projectID, k.warehouseID, k.skuCode)
 			if lerr != nil {
 				return lerr
 			}
 			locked[k] = e
+		}
+
+		// ②.5 把这次的货行登记进变体的引用清单（迁移 637/641）。
+		//
+		// 641 之后「这条行属于哪个变体」的真源在 product_variants.warehouse_skus，
+		// inventory_stocks.variant_id 只是线索。所以收支写路径在拿到行之后必须当场登记
+		// —— 否则货行建出来了、商品侧却统计不到（可用量显示 0、订单算不出成本，且不报错）。
+		// 既有行也照登记（幂等）：老数据 / 夹具直接用 ChangeStock 建的行由此补齐。
+		//
+		// 失败只记日志不阻断：库存增减本身已经在同一条事务里做对了，引用是归属线索，
+		// 缺了会让展示与成本投影失真 —— 但那是可事后补齐的账，不是「这笔货不该动」。
+		if s.refs != nil {
+			for _, k := range keys {
+				e := locked[k]
+				if e == nil || e.ID == "" {
+					continue
+				}
+				for _, it := range items {
+					if it.key != k || strings.TrimSpace(it.variantID) == "" {
+						continue
+					}
+					ref := productcontract.WarehouseStockRef{
+						StockID:     e.ID,
+						WarehouseID: e.WarehouseID,
+						SKUCode:     e.SKUCode,
+					}
+					if it.warehouse != nil {
+						ref.WarehouseCode = it.warehouse.Code
+					}
+					if aerr := s.refs.AttachWarehouseStockTx(ctx, tx, projectID, it.variantID, ref); aerr != nil {
+						logger.Scene("inventory").With("stockId", e.ID).With("variantId", it.variantID).
+							With("err", aerr).Warn("登记变体货行引用失败（可用量 / 成本投影会缺这一行）")
+					}
+				}
+			}
 		}
 
 		// ③ 在锁内按序应用（同一 key 的多条项依次累加，各自写一条流水）。
@@ -628,13 +715,13 @@ func (s *Service) applyStockChangesTx(ctx context.Context, tx *gorm.DB, projectI
 					return derr
 				}
 				e.Quantity = after
-				out.variants[it.key.variantID] = e.SKUCode
+				out.variants[it.variantID] = e.SKUCode
 				out.movements = append(out.movements, movementOf(it, e, before, after, delta, out.batchID, now))
 				continue
 			}
 			e.Quantity = after
 			changed[it.key] = true
-			out.variants[it.key.variantID] = e.SKUCode
+			out.variants[it.variantID] = e.SKUCode
 			out.movements = append(out.movements, movementOf(it, e, before, after, delta, out.batchID, now))
 		}
 		for _, k := range keys {
@@ -714,6 +801,8 @@ func movementOf(it changeItem, e *inventorymodel.StockEntity, before, after, del
 		SKUCode:   e.SKUCode,
 		Direction: it.direction, Quantity: abs(delta), Delta: delta,
 		QuantityBefore: before, QuantityAfter: after,
+		// 货行级追溯（迁移 638）：同变体同仓可以有多条货行，记账必须指到具体那一条。
+		StockID:    &e.ID,
 		SourceType: it.sourceType, SourceRef: it.sourceRef,
 		Remark: it.remark, OperatorID: it.operatorID,
 		BatchID: batchID, CreatedAt: now,
@@ -747,7 +836,7 @@ func movementOf(it changeItem, e *inventorymodel.StockEntity, before, after, del
 
 // —— 工具 ——
 
-// uniqueSortedKeys 去重并按 (变体, 仓库) 标识升序返回锁目标 —— 全局锁序的唯一来源。
+// uniqueSortedKeys 去重并按 (仓库, 仓库 SKU) 标识升序返回锁目标 —— 全局锁序的唯一来源。
 func uniqueSortedKeys(items []changeItem) []stockKey {
 	seen := make(map[stockKey]bool, len(items))
 	keys := make([]stockKey, 0, len(items))
@@ -759,7 +848,7 @@ func uniqueSortedKeys(items []changeItem) []stockKey {
 		keys = append(keys, it.key)
 	}
 	slices.SortFunc(keys, func(a, b stockKey) int {
-		return cmp.Or(cmp.Compare(a.variantID, b.variantID), cmp.Compare(a.warehouseID, b.warehouseID))
+		return cmp.Or(cmp.Compare(a.warehouseID, b.warehouseID), cmp.Compare(a.skuCode, b.skuCode))
 	})
 	return keys
 }
@@ -769,21 +858,21 @@ func sortItems(items []changeItem) []changeItem {
 	out := make([]changeItem, len(items))
 	copy(out, items)
 	slices.SortStableFunc(out, func(a, b changeItem) int {
-		return cmp.Or(cmp.Compare(a.key.variantID, b.key.variantID), cmp.Compare(a.key.warehouseID, b.key.warehouseID))
+		return cmp.Or(cmp.Compare(a.key.warehouseID, b.key.warehouseID), cmp.Compare(a.key.skuCode, b.key.skuCode))
 	})
 	return out
 }
 
-// distinctVariantIDs 去重变体 id（元数据批量解析用）。
-func distinctVariantIDs(keys []stockKey) []string {
-	seen := make(map[string]bool, len(keys))
-	out := make([]string, 0, len(keys))
-	for _, k := range keys {
-		if seen[k.variantID] {
+// distinctVariantIDs 去重变体 id（元数据批量解析用；变体已不是行标识，故从变动项取）。
+func distinctVariantIDs(items []changeItem) []string {
+	seen := make(map[string]bool, len(items))
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		if seen[it.variantID] {
 			continue
 		}
-		seen[k.variantID] = true
-		out = append(out, k.variantID)
+		seen[it.variantID] = true
+		out = append(out, it.variantID)
 	}
 	return out
 }
@@ -942,6 +1031,7 @@ func toMovementResp(r *inventorymodel.MovementRow) *inventorydto.MovementResp {
 		Direction: r.Direction, Quantity: r.Quantity, Delta: r.Delta,
 		QuantityBefore: r.QuantityBefore, QuantityAfter: r.QuantityAfter,
 		ReasonCode: r.ReasonCode, ReasonName: r.ReasonName,
+		StockID:    inventorymodel.PtrString(r.StockID),
 		SourceType: r.SourceType, SourceRef: r.SourceRef,
 		Remark: r.Remark, OperatorID: r.OperatorID, BatchID: r.BatchID,
 		// 成本留痕同源（投影带上 mv.unit_cost）：列表与变动回执给出同一个值。
@@ -961,7 +1051,9 @@ func toMovementRespFromEntity(m *inventorymodel.MovementEntity) *inventorydto.Mo
 		ProductID: m.ProductID, VariantID: m.VariantID, SKUCode: m.SKUCode,
 		Direction: m.Direction, Quantity: m.Quantity, Delta: m.Delta,
 		QuantityBefore: m.QuantityBefore, QuantityAfter: m.QuantityAfter,
-		ReasonCode: m.ReasonCode, SourceType: m.SourceType, SourceRef: m.SourceRef,
+		ReasonCode: m.ReasonCode,
+		StockID:    inventorymodel.PtrString(m.StockID),
+		SourceType: m.SourceType, SourceRef: m.SourceRef,
 		Remark: m.Remark, OperatorID: m.OperatorID, BatchID: m.BatchID,
 		UnitCost:  m.UnitCost,
 		CreatedAt: m.CreatedAt.Format(time.RFC3339),

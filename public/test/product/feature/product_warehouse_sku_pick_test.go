@@ -67,6 +67,7 @@ func newWPickFixture(t *testing.T) *wpickFixture {
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
 	products := productservice.NewService(productmodel.NewModel(db), projects)
 	products.SetInventoryService(inv)
+	inv.SetVariantWarehouseStocks(products)
 	sz, err := inv.CreateWarehouse(ctx, &inventorydto.CreateWarehouseReq{
 		ProjectID: project.ID, Code: "SZ", Name: "苏州仓",
 	})

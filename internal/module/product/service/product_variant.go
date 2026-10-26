@@ -526,7 +526,7 @@ func attachWarehousePrefix(code, warehouseCode string) string {
 // stripWarehousePrefix 剥掉仓码前缀 —— attachWarehousePrefix 的**逆操作**。
 //
 // 仓库侧只认裸码（DRAWERSMOKE_001），仓码前缀只属于商品侧（SZ_DRAWERSMOKE_001，
-// 标注哪个仓认领了它）。商品侧建库存行时统一在这里剥一次，调用点不必各自记得。
+// 标注哪条货行是它）。商品侧建库存行时统一在这里剥一次，调用点不必各自记得。
 //
 // 三条性质与 attachWarehousePrefix 对称：
 //
@@ -617,7 +617,7 @@ func (s *Service) ensureVariantStock(ctx context.Context, ref *productcontract.W
 //     并把它的 id 记进引用 —— 「从仓库选」这条来路正是靠它成立；
 //   - 引用是**多对多**：一行货可以被多个变体引用（旧「认领」模型不允许，那正是它被
 //     去掉的原因 —— 同一批货要能同时供套卖 / 组合卖）；
-//   - 引用登记与库存行写入同事务：库存行落了库、引用没写上，等于货存在但没人认领它，
+//   - 引用登记与库存行写入同事务：库存行落了库、引用没写上，等于货存在但没人引用它，
 //     商品页显示 0 而仓库里明明有货。
 func (s *Service) attachWarehouseStockTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef,
 	v *productmodel.VariantEntity, bareCode, externalSKU string, quantity *int) (stockID string, err error) {
@@ -1518,6 +1518,17 @@ func variantSkipOf(v *productmodel.VariantEntity, reason, detail string) product
 	}
 }
 
+// stockIDsOfRefs 引用清单 → 货行 id 清单（过滤空的 StockID，保持记录顺序）。
+func stockIDsOfRefs(refs []productmodel.WarehouseSKURef) []string {
+	out := make([]string, 0, len(refs))
+	for _, r := range refs {
+		if r.StockID != "" {
+			out = append(out, r.StockID)
+		}
+	}
+	return out
+}
+
 // variantDeleteBlockReason 变体删除的守卫：命中**两个引用面**之一时返回原因
 // （enums 常量 = i18n key）+ 可定位明细（detail 为空表示该原因没有额外定位信息）。
 //
@@ -1533,12 +1544,18 @@ func (s *Service) variantDeleteBlockReason(ctx context.Context, projectID string
 		return "", "", nil
 	}
 	if s.inv != nil {
-		n, cerr := s.inv.CountNonZeroStocksByVariant(ctx, v.ID, projectID)
-		if cerr != nil {
-			return "", "", cerr
-		}
-		if n > 0 {
-			return productenums.VariantSkipHasStock, "", nil
+		// 641 起按引用清单判：这个变体引用的货行里有没有非零的。
+		stockIDs := stockIDsOfRefs(productmodel.DecodeWarehouseSKUs(v.WarehouseSKUs))
+		if len(stockIDs) > 0 {
+			facts, cerr := s.inv.StockFactsByStockIDs(ctx, projectID, stockIDs)
+			if cerr != nil {
+				return "", "", cerr
+			}
+			for _, f := range facts {
+				if f != nil && f.Quantity != 0 {
+					return productenums.VariantSkipHasStock, "", nil
+				}
+			}
 		}
 	}
 	// ② 库存流水（被订单用过）：订单域与库存域的口径都在这一条上。

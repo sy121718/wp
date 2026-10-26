@@ -8,10 +8,13 @@ package productservice
 import (
 	"context"
 	"strings"
+	"time"
 
 	productcontract "go_wp/internal/module/product/contract"
 	productenums "go_wp/internal/module/product/enums"
 	productmodel "go_wp/internal/module/product/model"
+
+	"gorm.io/gorm"
 )
 
 // 编译期断言。
@@ -44,6 +47,92 @@ func (s *Service) WarehouseStockIDsByVariant(ctx context.Context, projectID stri
 			stockIDs = append(stockIDs, r.StockID)
 		}
 		out[v.ID] = stockIDs
+	}
+	return out, nil
+}
+
+// VariantProductIDs 变体 → 所属商品（契约见 VariantWarehouseStockPort）。
+func (s *Service) VariantProductIDs(ctx context.Context, projectID string, variantIDs []string) (byVariant map[string]string, err error) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil, productenums.Err(productenums.ErrInvalidParam)
+	}
+	out := make(map[string]string, len(variantIDs))
+	if len(variantIDs) == 0 {
+		return out, nil
+	}
+	list, err := s.m.ListVariantsByIDs(ctx, variantIDs, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range list {
+		if v != nil && v.ProductID != "" {
+			out[v.ID] = v.ProductID
+		}
+	}
+	return out, nil
+}
+
+// AttachWarehouseStockTx 把一条货行登记进变体的引用清单（契约见 VariantWarehouseStockPort）。
+//
+// 实现落在商品侧是因为真源就是 product_variants 这一列；库存侧只负责「我刚建了/用到了
+// 这一行」这一个事实。整条路径只写一列（不 Save 整行）：调用方的事务里可能同时在建库存行，
+// 用旧快照整行写回会把别的列冲掉。
+//
+// 幂等：同一 stockId 重复登记只更新线索字段（UpsertWarehouseSKURef 按 stockId 判重）。
+func (s *Service) AttachWarehouseStockTx(ctx context.Context, tx *gorm.DB, projectID, variantID string, ref productcontract.WarehouseStockRef) error {
+	projectID = strings.TrimSpace(projectID)
+	variantID = strings.TrimSpace(variantID)
+	if projectID == "" || variantID == "" || strings.TrimSpace(ref.StockID) == "" {
+		return productenums.Err(productenums.ErrInvalidParam)
+	}
+	// 读当前清单走 model（join products 做工程隔离，与 ListVariantsByIDs 同一口径）；
+	// 事务句柄透传，读到的就是调用方那一笔未提交的清单。
+	var entity *productmodel.VariantEntity
+	var err error
+	if tx != nil {
+		entity, err = s.m.GetVariantScopedTx(ctx, tx, variantID, projectID)
+	} else {
+		entity, err = s.m.GetVariantScoped(ctx, variantID, projectID)
+	}
+	if err != nil {
+		return mapNotFound(err)
+	}
+	refs := productmodel.DecodeWarehouseSKUs(entity.WarehouseSKUs)
+	next := productmodel.UpsertWarehouseSKURef(refs, productmodel.WarehouseSKURef{
+		StockID:       ref.StockID,
+		WarehouseID:   ref.WarehouseID,
+		WarehouseCode: ref.WarehouseCode,
+		SKUCode:       ref.SKUCode,
+	})
+	// tx 为 nil 时由 model 自己取句柄（product_variants 不在 RLS 名单，无需作用域）。
+	return s.m.UpdateVariantWarehouseSKUsTx(ctx, tx, variantID, productmodel.EncodeWarehouseSKUs(next), time.Now().UTC())
+}
+
+// VariantSKUCodes 变体 → 它的 SKU 编码（契约见 VariantWarehouseStockPort）。
+//
+// 只读变体自己那一列，不碰库存表：调用方（库存）拿它当「第一次把货放进某个仓时，
+// 那一行该叫什么码」的兜底，编码本体仍由仓库侧的归一规则决定（剥前缀 / 大写）。
+func (s *Service) VariantSKUCodes(ctx context.Context, projectID string, variantIDs []string) (byVariant map[string]string, err error) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return nil, productenums.Err(productenums.ErrInvalidParam)
+	}
+	out := make(map[string]string, len(variantIDs))
+	if len(variantIDs) == 0 {
+		return out, nil
+	}
+	list, err := s.m.ListVariantsByIDs(ctx, variantIDs, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range list {
+		if v == nil {
+			continue
+		}
+		if code := strings.TrimSpace(v.SKUCode); code != "" {
+			out[v.ID] = code
+		}
 	}
 	return out, nil
 }

@@ -671,7 +671,7 @@ func (s *Service) resolveWarehouseTargets(ctx context.Context, projectID string,
 
 // prefixWarehouse 前缀仓 = 解析出的第一个仓：只有它决定主体 SKU 的仓码前缀。
 //
-// 其余勾选的仓只各建一行（裸码），不参与命名 —— 「前缀标注哪个仓认领了它」，
+// 其余勾选的仓只各建一行（裸码），不参与命名 —— 「前缀标注哪条货行是它」，
 // 多仓共用同一个前缀是刻意的（SKU 是商品的对外身份，不该随勾选数量变化）。
 func prefixWarehouse(refs []*productcontract.WarehouseRef) *productcontract.WarehouseRef {
 	if len(refs) == 0 {
@@ -682,7 +682,7 @@ func prefixWarehouse(refs []*productcontract.WarehouseRef) *productcontract.Ware
 
 // warehouseCodeExists 该仓是否已有这条**裸码**（有即复用，不再新建）。
 //
-// 「认领 / 复用」是这条规则的全部：下拉里选到的是仓库已有的裸码 → 那一行本来就在，
+// 「复用」是这条规则的全部：下拉里选到的是仓库已有的裸码 → 那一行本来就在，
 // 直接复用；自己打新码 → 在勾选的各仓各建一行。两条路都不会产生「同仓同码两行」
 // （UNIQUE (warehouse_id, sku_code)，迁移 244）—— 这也正是库存侧的幂等建行兜不住的那一段：
 // inventory 的 ON CONFLICT 只覆盖 (variant_id, warehouse_id)，撞到仓内唯一约束是一句
@@ -706,10 +706,10 @@ func (s *Service) warehouseCodeExists(ctx context.Context, projectID, warehouseI
 	return false, gerr
 }
 
-// findWarehouseSKURow 该仓是否已有这条裸码的库存行；有则返回整行（认领需要 id 与 has_variant）。
+// findWarehouseSKURow 该仓是否已有这条裸码的库存行；有则返回整行（复用需要 id）。
 //
 // 与 warehouseCodeExists 的分工：那个只回答「有没有」，用于预检；这里要整行 ——
-// 认领必须拿到**行 id**（认领的入参是库存行，不是编码），还必须知道它是不是已归属。
+// 复用必须拿到**行 id**（入参是库存行，不是编码），还必须知道它是不是已被别的变体引用。
 func (s *Service) findWarehouseSKURow(ctx context.Context, projectID, warehouseID, skuCode string) (
 	row *inventorycontract.WarehouseSKUResp, found bool, err error) {
 	if s.invSvc == nil || strings.TrimSpace(skuCode) == "" {
@@ -734,11 +734,11 @@ func (s *Service) findWarehouseSKURow(ctx context.Context, projectID, warehouseI
 //
 //   - 仓库侧写**裸码** —— 剥掉仓码前缀的那一串（属性段保留）；剥前缀由 stripWarehousePrefix 统一做；
 //   - 该仓已有同裸码的行 → **复用**那一行、不新建（那一行就是这条货）——「从仓库选」这条来路
-//     正是靠它成立；复用的同时把它记进本变体的引用（迁移 637，取代旧的「认领」）；
+//     正是靠它成立；复用的同时把它记进本变体的引用（迁移 637）；
 //   - 外码与数量只作用于本次**新建**的行：外码写在该仓那一次（外码是「这条货在该仓的名字」），
 //     数量按表单口径（nil = 不跟踪 = 无限；非 nil = 跟踪并写入）。
 //
-// 引用是**多对多**：同一行货能被多个变体同时引用（旧「认领」的一对一正是要去掉的约束 ——
+// 引用是**多对多**：同一行货能被多个变体同时引用（一对一正是 641 去掉的约束 ——
 // 同一批货得能供套装 / 组合 / 多站点同款一起卖）。
 //
 // 调用方必须已开事务（tx 已设工程作用域）：多仓逐行写入要么全成、要么全不成。
@@ -1207,9 +1207,13 @@ func applyPriceRange(resp *productdto.ProductResp, variants []*productmodel.Vari
 //
 // 库存不再有商品侧缓存列，展示值只能**查询期投影**：
 //
-//	· 一次批量取真源按变体汇总（不是逐条查）；
-//	· 未注入库存 model（纯商品单测路径）时保持 0 —— 调用方**不可**据此判断可用量；
-//	· 投影失败不影响商品本身的读取（库存是展示值，不是商品的组成部分）。
+//   - 一次批量取真源按变体汇总（不是逐条查）；
+//   - 未注入库存 model（纯商品单测路径）时保持 0 —— 调用方**不可**据此判断可用量；
+//   - 投影失败不影响商品本身的读取（库存是展示值，不是商品的组成部分）。
+//
+// 641 之后求和的对象是「这个变体引用了哪些货行」：同一变体在同一仓可以有多条货行
+// （自有码 / 客户码 / 不同批次），按 inventory_stocks.variant_id 求和已经答不对。
+// 引用清单本来就在变体这一行上（warehouse_skus），所以这里不必跨模块查一次再查回来。
 //
 // 死线不变：可用量判断一律走库存真源的带行锁路径，永远不看这个投影值。
 func (s *Service) fillVariantStock(ctx context.Context, projectID string, variants []*productdto.VariantResp) {
@@ -1222,9 +1226,42 @@ func (s *Service) fillVariantStock(ctx context.Context, projectID string, varian
 			ids = append(ids, v.ID)
 		}
 	}
-	totals, err := s.inv.VariantStockTotals(ctx, projectID, ids)
+	stockIDs := make([]string, 0, len(ids))
+	perVariant := make(map[string][]string, len(ids))
+	entities, err := s.m.ListVariantsByIDs(ctx, ids, projectID)
 	if err != nil {
 		return
+	}
+	seen := make(map[string]bool, len(ids))
+	for _, e := range entities {
+		refs := productmodel.DecodeWarehouseSKUs(e.WarehouseSKUs)
+		for _, r := range refs {
+			perVariant[e.ID] = append(perVariant[e.ID], r.StockID)
+			if !seen[r.StockID] {
+				seen[r.StockID] = true
+				stockIDs = append(stockIDs, r.StockID)
+			}
+		}
+	}
+	totals := make(map[string]int, len(ids))
+	if len(stockIDs) > 0 {
+		facts, ferr := s.inv.StockFactsByStockIDs(ctx, projectID, stockIDs)
+		if ferr != nil {
+			return
+		}
+		byStock := make(map[string]*inventorycontract.StockFact, len(facts))
+		for _, f := range facts {
+			byStock[f.StockID] = f
+		}
+		for variantID, ids := range perVariant {
+			total := 0
+			for _, id := range ids {
+				if f := byStock[id]; f != nil && f.TrackQuantity {
+					total += f.Quantity
+				}
+			}
+			totals[variantID] = total
+		}
 	}
 	for _, v := range variants {
 		if v != nil {

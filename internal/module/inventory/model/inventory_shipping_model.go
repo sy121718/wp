@@ -47,11 +47,34 @@ type StockCandidatesRow struct {
 	ID               string  `gorm:"column:id"`
 	VariantID        *string `gorm:"column:variant_id"`
 	WarehouseID      string  `gorm:"column:warehouse_id"`
+	SKUCode          string  `gorm:"column:sku_code"`
 	WarehouseCode    string  `gorm:"column:warehouse_code"`
 	DeductPriority   int     `gorm:"column:deduct_priority"`
 	Quantity         int     `gorm:"column:quantity"`
 	ReservedQuantity int     `gorm:"column:reserved_quantity"`
 	TrackQuantity    bool    `gorm:"column:track_quantity"`
+}
+
+// ListStockCandidatesByIDs 按货行 id 取候选（含仓的扣减优先级），按优先级排好序（只读、不加锁）。
+//
+// 641 之后「某变体有哪些货」由商品侧的引用清单回答（VariantWarehouseStockPort），
+// 库存侧只负责把这些 id 投影成「在哪个仓、还剩多少、优先级多少」——
+// 两边的判据因此不会各写一份（按变体过滤的老实现已随 641 失效）。
+func (m *Model) ListStockCandidatesByIDs(ctx context.Context, projectID string, stockIDs []string) (list []*StockCandidatesRow, err error) {
+	if len(stockIDs) == 0 {
+		return nil, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Table("inventory_stocks AS s").
+			Select("s.id, s.variant_id, s.warehouse_id, s.quantity, s.reserved_quantity, "+
+				"s.track_quantity, s.sku_code, w.code AS warehouse_code, w.deduct_priority AS deduct_priority").
+			Joins("JOIN inventory_warehouses AS w ON w.id = s.warehouse_id").
+			Where("w.status = ?", "active").
+			Where("s.id IN ?", stockIDs).
+			Order("w.deduct_priority ASC, w.code ASC, w.id ASC, s.sku_code ASC, s.id ASC").
+			Scan(&list).Error
+	})
+	return list, err
 }
 
 // ListDeductCandidates 取若干变体在**各活跃仓**的库存行，按扣减优先级排好序（只读、不加锁）。

@@ -11,7 +11,7 @@ package inventorymodel
 // —— 表现为少卖（reserved 只加了一次）或超卖（守卫读到旧值放行）。
 // DDL 的两条 CHECK 只是最后一道兜底，不是判据。
 //
-// 加锁顺序：调用方在事务内先按 (variant_id, warehouse_id) 升序 `FOR UPDATE` 锁定目标行，
+// 加锁顺序：调用方在事务内先按 (warehouse_id, sku_code) 升序 `FOR UPDATE` 锁定目标行，
 // 再调这里的 UPDATE —— 与 applyStockChangesTx 同一锁序，出入库与预占两条路径因此共享
 // 一个全局顺序，等待链不可能成环。
 

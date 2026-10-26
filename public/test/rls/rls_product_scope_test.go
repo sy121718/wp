@@ -347,8 +347,8 @@ func TestRLS_ProductScope_RejectsMissingScope(t *testing.T) {
 				_, err := im.CountNonZeroStocks(ctx, aIDs["warehouse"], bad)
 				return err
 			}},
-			{"CountNonZeroStocksByVariant(inventory_stocks)", func() error {
-				_, err := im.CountNonZeroStocksByVariant(ctx, aIDs["variant"], bad)
+			{"ListStockFactsByIDs(inventory_stocks)", func() error {
+				_, err := im.ListStockFactsByIDs(ctx, bad, []string{aIDs["stock"]})
 				return err
 			}},
 		}
@@ -446,12 +446,12 @@ func TestRLS_ProductScope_StockGuardSeesOwnProject(t *testing.T) {
 	if byWarehouse != 1 {
 		t.Errorf("本工程仓内有 1 行 7 件库存，守卫应数出 1，实际 %d", byWarehouse)
 	}
-	byVariant, err := im.CountNonZeroStocksByVariant(ctx, aIDs["variant"], pA)
+	factsA, err := im.ListStockFactsByIDs(ctx, pA, []string{aIDs["stock"]})
 	if err != nil {
-		t.Fatalf("数本工程 SKU 的非零库存失败: %v", err)
+		t.Fatalf("读本工程货行事实失败: %v", err)
 	}
-	if byVariant != 1 {
-		t.Errorf("本工程 SKU 有 1 行 7 件库存，守卫应数出 1，实际 %d", byVariant)
+	if len(factsA) != 1 || factsA[0].Quantity != 7 {
+		t.Errorf("本工程货行有 1 行 7 件，应读到 7，实际 %+v", factsA)
 	}
 
 	// 拿 B 的作用域数 A 的仓 / SKU：数不到（策略让那些行不可见）。
@@ -460,8 +460,8 @@ func TestRLS_ProductScope_StockGuardSeesOwnProject(t *testing.T) {
 	if n, err := im.CountNonZeroStocks(ctx, aIDs["warehouse"], pB); err != nil || n != 0 {
 		t.Errorf("拿 B 的作用域数 A 的仓应得 0（行不可见），实际 n=%d err=%v", n, err)
 	}
-	if n, err := im.CountNonZeroStocksByVariant(ctx, aIDs["variant"], pB); err != nil || n != 0 {
-		t.Errorf("拿 B 的作用域数 A 的 SKU 应得 0（行不可见），实际 n=%d err=%v", n, err)
+	if rows, err := im.ListStockFactsByIDs(ctx, pB, []string{aIDs["stock"]}); err != nil || len(rows) != 0 {
+		t.Errorf("拿 B 的作用域读 A 的货行应得 0 行（行不可见），实际 n=%d err=%v", len(rows), err)
 	}
 }
 

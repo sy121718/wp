@@ -6,7 +6,7 @@
 //	7  预占不写流水
 //	8  可售不足整单拒绝（第一行 reserved 回到原值）
 //	9  并发预占不超卖（-race）
-//	10 无归属行不进商品侧聚合（VariantStockTotals 不出现空串 key）
+//	10 无归属行不进商品侧聚合（只按变体引用的货行清单算）
 //	11 删仓守卫仍拦得住无归属存货
 //	12 建档的自相矛盾输入被拒（数量 > 0 却不跟踪）
 //
@@ -22,6 +22,7 @@ import (
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
+	productmodel "go_wp/internal/module/product/model"
 )
 
 // createStock 建一条无归属（尚未挂到任何商品变体）的货行，走 service 的真实建档路径。
@@ -239,7 +240,8 @@ func TestReleaseReservation(t *testing.T) {
 }
 
 // TestOrphanRowsStayOutOfVariantTotals 验收 10：
-// 无归属行不进商品侧聚合（VariantStockTotals 的返回 map 里不出现空串 key）。
+// 无归属行（没有任何变体引用它）不进商品侧聚合 —— 641 之后聚合的入口是
+// 「变体引用了哪些货行」，不是 inventory_stocks.variant_id。
 func TestOrphanRowsStayOutOfVariantTotals(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -250,18 +252,30 @@ func TestOrphanRowsStayOutOfVariantTotals(t *testing.T) {
 	p := mustProduct(t, f, "Totals")
 	v := f.firstVariant(t, p.ID)
 	changeIn(t, f, p, v, wh.ID, 5, "purchase_in")
-	// 一条无归属的 7 件货。
-	createStock(t, f, wh.ID, "ORPHAN_007", 7, true)
+	// 一条没有变体引用的 7 件货。
+	orphan := createStock(t, f, wh.ID, "ORPHAN_007", 7, true)
 
-	totals, err := inventorymodel.NewModel(f.db).VariantStockTotals(ctx, f.projectID, nil)
+	// 变体引用的货行 id 清单里只有它自己那条。
+	refs, err := productmodel.NewModel(f.db).ListVariantsByIDs(ctx, []string{v.ID}, f.projectID)
+	if err != nil || len(refs) != 1 {
+		t.Fatalf("读变体失败: %v", err)
+	}
+	ids := []string{}
+	for _, r := range productmodel.DecodeWarehouseSKUs(refs[0].WarehouseSKUs) {
+		ids = append(ids, r.StockID)
+	}
+	if len(ids) != 1 {
+		t.Fatalf("变体应只引用一条货行，实际 %v", ids)
+	}
+	if ids[0] == orphan.ID {
+		t.Fatalf("无归属行不该被登记进任何变体的引用清单")
+	}
+	facts, err := inventorymodel.NewModel(f.db).ListStockFactsByIDs(ctx, f.projectID, ids)
 	if err != nil {
-		t.Fatalf("读变体合计失败: %v", err)
+		t.Fatalf("读货行失败: %v", err)
 	}
-	if _, ok := totals[""]; ok {
-		t.Fatalf("无归属行不得聚成空串 key 的「变体」：%+v", totals)
-	}
-	if got := totals[v.ID]; got != 5 {
-		t.Fatalf("已知变体的合计不该受无归属行影响：期望 5，实际 %d", got)
+	if len(facts) != 1 || facts[0].Quantity != 5 {
+		t.Fatalf("已知变体只该看到自己那条 5 件，实际 %+v", facts)
 	}
 }
 

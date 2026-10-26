@@ -42,6 +42,17 @@ type Service struct {
 	// 依赖方向 inventory → product：本模块调商品模块的缓存端口，
 	// 商品模块实现的库存记录端口则由顶层反向注入（两端口互不干扰）。
 	cipherSecret string
+	// refs 变体 → 仓库货行的引用读口（迁移 637 / 641）。
+	//
+	// 641 之后「这条库存行属于哪个变体」的真源是 product_variants.warehouse_skus（JSON 数组），
+	// inventory_stocks.variant_id 退化成写入当时留下的线索列 —— 同一变体在同一仓可以有多条
+	// 货行，一条货行也可以被多个变体引用。所以按变体汇总（可用量 / 成本 / 出库分配）
+	// 必须经这个口取 id 清单，不能再用 variant_id 过滤。
+	//
+	// 允许为 nil：纯库存单测路径下没有商品域。生产装配必注入（缺它就答不出「这个变体
+	// 有哪些货」）—— 汇总方法在 nil 时返回空结果，与「没有任何货行」同形，
+	// 而那只影响展示投影，可用量判定仍由写路径的行锁说了算。
+	refs productcontract.VariantWarehouseStockPort
 	// attachments 附件读口（调拨凭证的存在性校验与展示，迁移 630 W3）。
 	//
 	// 允许为 nil：纯库存单测路径下不校验存在性（只保留 id）。生产装配必注入 ——
@@ -74,6 +85,17 @@ func (s *Service) SetAttachmentResolver(resolver inventorycontract.AttachmentRes
 		return
 	}
 	s.attachments = resolver
+}
+
+// SetVariantWarehouseStocks 注入变体 → 货行的引用读口（装配期调用，生产必注入）。
+//
+// 未注入时汇总类方法返回空结果（与「没有任何货行」同形），只影响展示投影；
+// 可用量判定仍由写路径的行锁说了算，不靠这个口兜底。
+func (s *Service) SetVariantWarehouseStocks(refs productcontract.VariantWarehouseStockPort) {
+	if s == nil {
+		return
+	}
+	s.refs = refs
 }
 
 // 编译期断言：本模块契约 + 仍保留的跨模块能力。
