@@ -356,4 +356,7 @@ func init() {
 	registerMailAutomationFrequencyI18n()
 	// 623b：画布的频率 / 回信即退出控件词条（见 register_mail_automation_frequency_field_i18n.go）。
 	registerMailAutomationFrequencyFieldI18n()
+	// 634：后台菜单去重（库存目录被插了两套）+ 会员两项归位「客户」
+	//（见 register_menu_dedup.go）。
+	registerMenuDedupMembership()
 }
