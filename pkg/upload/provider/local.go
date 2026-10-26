@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -113,7 +114,20 @@ func (p *localProvider) Upload(_ context.Context, _ RuntimeConfig, file File, re
 	// O_NOFOLLOW 防 symlink 覆盖（攻击者预置软链指向受害文件时 open 失败）。
 	// 注意：O_NOFOLLOW 只保护最终路径分量，中间目录仍跟随 symlink——
 	// 能写入 storage 下中间目录的攻击者已具备更高权限，超出本层防御范围。
-	fd, err := os.OpenFile(targetPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o644)
+	fd, err := openExclusive(targetPath)
+	if err != nil && errors.Is(err, os.ErrExist) && strings.TrimSpace(req.ObjectKey) != "" {
+		// 调用方指定了键却被占用：系统分配的键（如媒体库的 <id>.<ext>）用完了
+		// 「自己分配的空间」，磁盘上那份是别的世代的遗留文件——库表重置而
+		// storage 目录长期累积，两套命名空间会撞在一起。此时既不能覆盖
+		// （O_EXCL 的初衷），也不该让整次上传失败：改写成相邻的带随机后缀键，
+		// 把实际落盘键与 URL 返回给调用方。PreserveName 路径不吃这条分支，
+		// 「同名二次上传失败」的语义原样保留。
+		objectKey, targetPath, err = collisionKey(rootDir, objectKey)
+		if err != nil {
+			return Result{}, err
+		}
+		fd, err = openExclusive(targetPath)
+	}
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return Result{}, fmt.Errorf("目标文件已存在")
@@ -144,6 +158,40 @@ func (p *localProvider) Upload(_ context.Context, _ RuntimeConfig, file File, re
 		URL:      buildURL(baseURL, objectKey),
 		Size:     written,
 	}, nil
+}
+
+// openExclusive 以「不覆盖、不跟随软链」的方式打开目标文件。
+func openExclusive(target string) (*os.File, error) {
+	return os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o644)
+}
+
+// collisionKey 在目标键已被磁盘占用时，为同一目录生成一个带随机后缀的相邻键。
+//
+// 只给「调用方显式指定键」的路径用：那种键由程序分配（媒体库 <id>.<ext>），
+// 撞上遗留文件意味着两套主键世代错位，换一个即可；而 PreserveName 的同名语义
+// 必须保持「失败」，否则用户会拿到一份被改名的新文件却以为覆盖了旧的。
+func collisionKey(rootDir, objectKey string) (string, string, error) {
+	dir := path.Dir(objectKey)
+	ext := path.Ext(objectKey)
+	base := strings.TrimSuffix(path.Base(objectKey), ext)
+	for i := 0; i < 8; i++ {
+		randPart, err := randomHex(3)
+		if err != nil {
+			return "", "", fmt.Errorf("生成随机文件名失败: %w", err)
+		}
+		key := base + "-" + randPart + ext
+		if dir != "." && dir != "/" {
+			key = dir + "/" + key
+		}
+		target := filepath.Clean(filepath.Join(rootDir, filepath.FromSlash(key)))
+		if rel, err := filepath.Rel(rootDir, target); err != nil || strings.HasPrefix(rel, "..") {
+			return "", "", fmt.Errorf("上传路径越界")
+		}
+		if _, err := os.Lstat(target); errors.Is(err, os.ErrNotExist) {
+			return key, target, nil
+		}
+	}
+	return "", "", fmt.Errorf("目标文件已存在")
 }
 
 func buildObjectKey(filename string, req Request) (string, error) {
