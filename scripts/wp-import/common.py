@@ -24,7 +24,9 @@ def login() -> str:
     """dev-login 建会话并取 CSRF token。"""
     global _token
     subprocess.run(["curl", "-s", "-c", COOKIE, f"{BASE}/admin/dev-login?to=/admin", "-o", "/dev/null"], check=True)
-    html = subprocess.run(["curl", "-s", "-b", COOKIE, f"{BASE}/admin/media"],
+    # 取 token 的页面必须是 200 且渲染了 layout 注入的 X-CSRF-Token；
+    # /admin/media 在当前版本 500（媒体库页渲染失败），用稳定的 /admin/pages。
+    html = subprocess.run(["curl", "-s", "-b", COOKIE, f"{BASE}/admin/pages"],
                           capture_output=True, text=True, check=True).stdout
     m = re.search(r'"X-CSRF-Token":"([0-9a-f]{64})"', html)
     if not m:
