@@ -810,28 +810,17 @@ func registerCatalogAndInventory() {
 		SQL: mustSQL("624_inventory_stock_master.sql"),
 	})
 
-	// 622：本批的文案词条（4 条业务错误 + 30 个台账页界面位，中英成对 = 68 行）。
-	// 判定逐条枚举本批全部 34 个 key 的两种语言（= 68 个 (item_key, lang) 组合），
+	// 622：本批的文案词条（认领概念 2026-10 下线后只剩 1 条业务错误 + 1 个共用界面位，
+	// 中英成对 = 4 行）。
+	// 判定逐条枚举本批全部 2 个 key 的两种语言（= 4 个 (item_key, lang) 组合），
 	// 不用全库行数、也不用前缀 LIKE（前者会被同期其它批次的行满足而静默跳过，
 	// 后者会被将来新增的同前缀 key 带跑）。
-	// 阈值取**精确组合数 68**：低于它缺词也能满足，高于它判据永不满足、每次启动重跑。
 	registerSeed(Seed{
 		Version:   "625-inventory-stock-master-i18n",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 68 THEN 1 ELSE 0 END FROM sys_i18n " +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 4 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE lang IN ('zh-CN', 'en-US') AND item_key IN (" +
-			"'ErrStockAlreadyClaimed', 'ErrStockHasQuantity', 'ErrStockNotClaimed', 'ErrReserveUnderflow', " +
-			"'admin.inventory.skus.title', 'admin.inventory.skus.lead', 'admin.inventory.skus.mid', " +
-			"'admin.inventory.skus.boundary', 'admin.inventory.skus.createTitle', 'admin.inventory.skus.create', " +
-			"'admin.inventory.skus.listLead', 'admin.inventory.skus.col.claimed', 'admin.inventory.skus.col.reserved', " +
-			"'admin.inventory.skus.col.available', 'admin.inventory.skus.col.cost', 'admin.inventory.skus.filter.keyword', " +
-			"'admin.inventory.skus.filter.keywordPh', 'admin.inventory.skus.emptyHeading', 'admin.inventory.skus.emptyDesc', " +
-			"'admin.inventory.skus.unclaimConfirm', 'admin.inventory.skus.unclaim', 'admin.inventory.skus.claim', " +
-			"'admin.inventory.skus.claimTitle', 'admin.inventory.skus.claimTarget', 'admin.inventory.skus.claimPick', " +
-			"'admin.inventory.skus.claimSubmit', 'admin.inventory.skus.createWarehousePh', " +
-			"'admin.inventory.skus.createCodePh', 'admin.inventory.skus.costPh', 'admin.inventory.skus.createSubmit', " +
-			"'admin.inventory.stock.claimed', 'admin.inventory.stock.unclaimed', 'admin.inventory.filter.all', " +
-			"'admin.inventory.skus.filter.submit')",
+			"'ErrReserveUnderflow', 'admin.inventory.filter.all')",
 		SQL: mustSQL("625_inventory_stock_master_i18n.sql"),
 	})
 

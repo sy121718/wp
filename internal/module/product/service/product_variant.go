@@ -151,7 +151,7 @@ func (s *Service) CreateVariant(ctx context.Context, req *productdto.CreateVaria
 			return cerr
 		}
 		// 库存行落**裸码**（剥仓码前缀），数量按表单口径（nil = 不跟踪 = 无限）。
-		if serr := s.ensureVariantStockTx(ctx, tx, ref, p.ID, v.ID, v.SKUCode, req.Quantity); serr != nil {
+		if serr := s.ensureVariantStockTx(ctx, tx, ref, v, v.SKUCode, req.Quantity); serr != nil {
 			return serr
 		}
 		// 静态产物失效（审计 ARCH-01）：变体是商品聚合的一部分，它的可见字段
@@ -376,8 +376,11 @@ func (s *Service) newVariantFromDefaults(ctx context.Context, p *productmodel.Pr
 		OptionValues: json.RawMessage("{}"),
 		Enabled:      true,
 		Metadata:     json.RawMessage("{}"),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		// 引用列表先落空数组：本变体引用哪几条仓库货行由「建行 / 引用」那一步填
+		//（createStockRowsTx / AttachWarehouseSKU），不在这里猜。
+		WarehouseSKUs: json.RawMessage("[]"),
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 	if req != nil {
 		if req.Price != nil {
@@ -523,7 +526,7 @@ func attachWarehousePrefix(code, warehouseCode string) string {
 // stripWarehousePrefix 剥掉仓码前缀 —— attachWarehousePrefix 的**逆操作**。
 //
 // 仓库侧只认裸码（DRAWERSMOKE_001），仓码前缀只属于商品侧（SZ_DRAWERSMOKE_001，
-// 标注哪个仓认领了它）。商品侧建库存行时统一在这里剥一次，调用点不必各自记得。
+// 标注哪条货行是它）。商品侧建库存行时统一在这里剥一次，调用点不必各自记得。
 //
 // 三条性质与 attachWarehousePrefix 对称：
 //
@@ -593,11 +596,68 @@ func (s *Service) resolveWarehouseRef(ctx context.Context, projectID, warehouseI
 // （少一处记得，就少一处「仓库里出现 SZ_ 开头的东西」）。见 stripWarehousePrefix。
 //
 // quantity 见 inventory 的签名口径：nil = 不跟踪（无限），非 nil = 跟踪并写入该数量。
-func (s *Service) ensureVariantStock(ctx context.Context, ref *productcontract.WarehouseRef, productID, variantID, skuCode string, quantity *int) (err error) {
+func (s *Service) ensureVariantStock(ctx context.Context, ref *productcontract.WarehouseRef,
+	v *productmodel.VariantEntity, skuCode string, quantity *int) (err error) {
 	if s.invSvc == nil || ref == nil {
 		return nil
 	}
-	return s.invSvc.EnsureVariantStock(ctx, ref, productID, variantID, stripWarehousePrefix(skuCode, ref.Code), quantity)
+	return s.m.Transaction(ctx, func(tx *gorm.DB) error {
+		_, xerr := s.attachWarehouseStockTxBySKU(ctx, tx, ref, v, skuCode, quantity)
+		return xerr
+	})
+}
+
+// attachWarehouseStockTx 建/复用该仓的库存行，并把它的 id 记进本变体的引用清单（事务版）。
+//
+// 这是「商品 ↔ 仓库货行」关联的**唯一**写入点（迁移 637）。返回该行的 stockId。
+//
+// 三条口径：
+//
+//   - 该仓已有同裸码的行 → **复用**那一行、不新建（库存侧 Ensure 的幂等语义），
+//     并把它的 id 记进引用 —— 「从仓库选」这条来路正是靠它成立；
+//   - 引用是**多对多**：一行货可以被多个变体引用（旧「认领」模型不允许，那正是它被
+//     去掉的原因 —— 同一批货要能同时供套卖 / 组合卖）；
+//   - 引用登记与库存行写入同事务：库存行落了库、引用没写上，等于货存在但没人引用它，
+//     商品页显示 0 而仓库里明明有货。
+func (s *Service) attachWarehouseStockTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef,
+	v *productmodel.VariantEntity, bareCode, externalSKU string, quantity *int) (stockID string, err error) {
+	if s.invSvc == nil || ref == nil {
+		return "", nil
+	}
+	// 先按 (仓, 裸码) 找那一行：仓库里的货可以先于商品存在（先收货后建品），
+	// 这时要**引用既有行**而不是再建一条 —— 244 的 UNIQUE (warehouse_id, sku_code)
+	// 会让「按 (变体, 仓) 幂等插入」在这里直接撞 23505。
+	stockID, err = s.invSvc.WarehouseStockIDBySKU(ctx, ref.ProjectID, ref.ID, bareCode)
+	if err != nil {
+		return "", err
+	}
+	if stockID == "" {
+		stockID, err = s.invSvc.EnsureVariantStockWithExternalTx(ctx, tx, ref, v.ProductID, v.ID, bareCode, externalSKU, quantity)
+		if err != nil || stockID == "" {
+			return stockID, err
+		}
+	}
+	refs := productmodel.DecodeWarehouseSKUs(v.WarehouseSKUs)
+	refs = productmodel.UpsertWarehouseSKURef(refs, productmodel.WarehouseSKURef{
+		StockID: stockID, WarehouseID: ref.ID, WarehouseCode: ref.Code, SKUCode: bareCode,
+	})
+	raw := productmodel.EncodeWarehouseSKUs(refs)
+	if xerr := s.m.UpdateVariantWarehouseSKUsTx(ctx, tx, v.ID, raw, time.Now().UTC()); xerr != nil {
+		return "", xerr
+	}
+	// 同步内存里的那份，让同事务后续的留痕快照看到最新引用。
+	v.WarehouseSKUs = raw
+	return stockID, nil
+}
+
+// attachWarehouseStockTxBySKU 同 attachWarehouseStockTx，但入参是**商品侧编码**（带仓码前缀）：
+// 剥前缀在这一层做（与 ensureVariantStock 同一口径 —— 剥在这里，调用点不必各自记得）。
+func (s *Service) attachWarehouseStockTxBySKU(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef,
+	v *productmodel.VariantEntity, skuCode string, quantity *int) (stockID string, err error) {
+	if s.invSvc == nil || ref == nil {
+		return "", nil
+	}
+	return s.attachWarehouseStockTx(ctx, tx, ref, v, stripWarehousePrefix(skuCode, ref.Code), "", quantity)
 }
 
 // ensureVariantStockTx 与 ensureVariantStock 相同，但复用**调用方已开启的事务**。
@@ -605,29 +665,12 @@ func (s *Service) ensureVariantStock(ctx context.Context, ref *productcontract.W
 // 一次商品保存要落「商品 + 变体 + 各仓库存行 + 变更记录」，库存行是其中一步：
 // 走非事务版本会另取一条连接、独立提交，前一步失败时这行已经落库 ——
 // 半截状态正是事务要消灭的东西（CQ-026）。
-func (s *Service) ensureVariantStockTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode string, quantity *int) (err error) {
-	if s.invSvc == nil || ref == nil {
-		return nil
-	}
-	return s.invSvc.EnsureVariantStockTx(ctx, tx, ref, productID, variantID, stripWarehousePrefix(skuCode, ref.Code), quantity)
+func (s *Service) ensureVariantStockTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef,
+	v *productmodel.VariantEntity, skuCode string, quantity *int) (err error) {
+	_, err = s.attachWarehouseStockTxBySKU(ctx, tx, ref, v, skuCode, quantity)
+	return err
 }
 
-// ensureVariantStockBareWithExternalTx 在指定仓为该**裸码**建库存行并写入该仓的外部编码（事务版）。
-//
-// 入参已经是**仓库侧裸码**（调用方按认领仓剥好），本函数不再剥：多仓建行时目标仓 ≠ 认领仓，
-// 拿目标仓的仓码去剥认领仓的前缀是剥不掉的（SZ_X 在上海仓会原样留下 SZ_ 前缀）。
-// 单仓路径用 ensureVariantStockTx（接受商品侧编码、内部剥前缀）—— 两个名字把这个差别写在脸上。
-//
-// external_sku 只作用于**新建**那一行（已存在的行沿用既有值，覆盖走 BindExternalSKU）：
-// 「认领」路径下这一行本来就属于别的商品，商品侧不改它的外码。
-func (s *Service) ensureVariantStockBareWithExternalTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, bareCode, externalSKU string, quantity *int) (err error) {
-	if s.invSvc == nil || ref == nil {
-		return nil
-	}
-	return s.invSvc.EnsureVariantStockWithExternalTx(ctx, tx, ref, productID, variantID, bareCode, externalSKU, quantity)
-}
-
-// refCode 归属仓短码（ref 为 nil 时为空串，即「无仓前缀」路径）。
 func refCode(ref *productcontract.WarehouseRef) string {
 	if ref == nil {
 		return ""
@@ -796,7 +839,7 @@ func (s *Service) GenerateVariants(ctx context.Context, req *productdto.Generate
 		// 商品创建时的首个变体已在此路径外生成过，这里补的是本批新组合。
 		// 数量不填（nil = 不跟踪 = 无限）：这条路径没有数量输入。
 		for _, v := range created {
-			if xerr := s.ensureVariantStockTx(ctx, tx, ref, p.ID, v.ID, v.SKUCode, nil); xerr != nil {
+			if xerr := s.ensureVariantStockTx(ctx, tx, ref, v, v.SKUCode, nil); xerr != nil {
 				return xerr
 			}
 		}
@@ -1426,7 +1469,7 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 			return xerr
 		}
 		for _, v := range created {
-			if xerr := s.ensureVariantStockTx(ctx, tx, ref, p.ID, v.ID, v.SKUCode, nil); xerr != nil {
+			if xerr := s.ensureVariantStockTx(ctx, tx, ref, v, v.SKUCode, nil); xerr != nil {
 				return xerr
 			}
 		}
@@ -1475,6 +1518,17 @@ func variantSkipOf(v *productmodel.VariantEntity, reason, detail string) product
 	}
 }
 
+// stockIDsOfRefs 引用清单 → 货行 id 清单（过滤空的 StockID，保持记录顺序）。
+func stockIDsOfRefs(refs []productmodel.WarehouseSKURef) []string {
+	out := make([]string, 0, len(refs))
+	for _, r := range refs {
+		if r.StockID != "" {
+			out = append(out, r.StockID)
+		}
+	}
+	return out
+}
+
 // variantDeleteBlockReason 变体删除的守卫：命中**两个引用面**之一时返回原因
 // （enums 常量 = i18n key）+ 可定位明细（detail 为空表示该原因没有额外定位信息）。
 //
@@ -1490,12 +1544,18 @@ func (s *Service) variantDeleteBlockReason(ctx context.Context, projectID string
 		return "", "", nil
 	}
 	if s.inv != nil {
-		n, cerr := s.inv.CountNonZeroStocksByVariant(ctx, v.ID, projectID)
-		if cerr != nil {
-			return "", "", cerr
-		}
-		if n > 0 {
-			return productenums.VariantSkipHasStock, "", nil
+		// 641 起按引用清单判：这个变体引用的货行里有没有非零的。
+		stockIDs := stockIDsOfRefs(productmodel.DecodeWarehouseSKUs(v.WarehouseSKUs))
+		if len(stockIDs) > 0 {
+			facts, cerr := s.inv.StockFactsByStockIDs(ctx, projectID, stockIDs)
+			if cerr != nil {
+				return "", "", cerr
+			}
+			for _, f := range facts {
+				if f != nil && f.Quantity != 0 {
+					return productenums.VariantSkipHasStock, "", nil
+				}
+			}
 		}
 	}
 	// ② 库存流水（被订单用过）：订单域与库存域的口径都在这一条上。

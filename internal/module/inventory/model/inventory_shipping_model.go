@@ -47,11 +47,34 @@ type StockCandidatesRow struct {
 	ID               string  `gorm:"column:id"`
 	VariantID        *string `gorm:"column:variant_id"`
 	WarehouseID      string  `gorm:"column:warehouse_id"`
+	SKUCode          string  `gorm:"column:sku_code"`
 	WarehouseCode    string  `gorm:"column:warehouse_code"`
 	DeductPriority   int     `gorm:"column:deduct_priority"`
 	Quantity         int     `gorm:"column:quantity"`
 	ReservedQuantity int     `gorm:"column:reserved_quantity"`
 	TrackQuantity    bool    `gorm:"column:track_quantity"`
+}
+
+// ListStockCandidatesByIDs 按货行 id 取候选（含仓的扣减优先级），按优先级排好序（只读、不加锁）。
+//
+// 641 之后「某变体有哪些货」由商品侧的引用清单回答（VariantWarehouseStockPort），
+// 库存侧只负责把这些 id 投影成「在哪个仓、还剩多少、优先级多少」——
+// 两边的判据因此不会各写一份（按变体过滤的老实现已随 641 失效）。
+func (m *Model) ListStockCandidatesByIDs(ctx context.Context, projectID string, stockIDs []string) (list []*StockCandidatesRow, err error) {
+	if len(stockIDs) == 0 {
+		return nil, nil
+	}
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.WithContext(ctx).Table("inventory_stocks AS s").
+			Select("s.id, s.variant_id, s.warehouse_id, s.quantity, s.reserved_quantity, "+
+				"s.track_quantity, s.sku_code, w.code AS warehouse_code, w.deduct_priority AS deduct_priority").
+			Joins("JOIN inventory_warehouses AS w ON w.id = s.warehouse_id").
+			Where("w.status = ?", "active").
+			Where("s.id IN ?", stockIDs).
+			Order("w.deduct_priority ASC, w.code ASC, w.id ASC, s.sku_code ASC, s.id ASC").
+			Scan(&list).Error
+	})
+	return list, err
 }
 
 // ListDeductCandidates 取若干变体在**各活跃仓**的库存行，按扣减优先级排好序（只读、不加锁）。
@@ -86,33 +109,18 @@ func (m *Model) ListStocksByWarehouseTx(ctx context.Context, tx *gorm.DB, projec
 	return list, err
 }
 
-// CreateUnclaimedStockTx 建一条**未认领**库存行（product_id / variant_id 均为 NULL，迁移 624）。
+// CreateStockRowTx 直接建一条库存行（调拨签收在目标仓复制源仓那一行时走它）。
 //
 // 与 EnsureStockTx 的区别是幂等性：这里**不幂等**（同仓同码重复插入应该撞
-// 244 的 UNIQUE (warehouse_id, sku_code)），因为「人工建档」是一个显式的建货动作，
-// 重复提交必须报错而不是静默返回旧行 —— 否则运营会以为补录成功了。
-func (m *Model) CreateUnclaimedStockTx(ctx context.Context, tx *gorm.DB, e *StockEntity) (err error) {
+// 244 的 UNIQUE (warehouse_id, sku_code)）—— 调拨签收前已经按 (变体, 编码) 查过
+// 目标仓有没有这一行，走到插入就是真的没有。
+func (m *Model) CreateStockRowTx(ctx context.Context, tx *gorm.DB, e *StockEntity) (err error) {
 	if serr := rls.ScopeTx(tx, e.ProjectID); serr != nil {
 		return serr
 	}
 	// 与 EnsureStockTx 同一道兜底（见 normalizeStockTracking）。
 	normalizeStockTracking(e)
 	return tx.WithContext(ctx).Create(e).Error
-}
-
-// StockVariantExistsTx 该仓里是否**已经**有某变体的库存行（认领前的冲突判定）。
-//
-// 判据是 (variant_id, warehouse_id) 而不是 (warehouse_id, sku_code)：认领不改编码，
-// 撞的必须是「同一个变体在该仓已有行」这件事 —— 那才是两份事实。
-func (m *Model) StockVariantExistsTx(ctx context.Context, tx *gorm.DB, projectID, warehouseID, variantID string) (exists bool, err error) {
-	if serr := rls.ScopeTx(tx, projectID); serr != nil {
-		return false, serr
-	}
-	var n int64
-	err = tx.WithContext(ctx).Model(&StockEntity{}).
-		Where("warehouse_id = ? AND variant_id = ?", warehouseID, variantID).
-		Count(&n).Error
-	return n > 0, err
 }
 
 // StockAlertRow 库存预警的四个计数（口径见 StockAlertCounts）。

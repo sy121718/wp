@@ -34,10 +34,6 @@ func registerInventoryReadPages(pages *gin.RouterGroup, h *inventoryPageHandle) 
 	pages.GET("/inventory/reasons", adminui.PageAuthz("/api/inventory/reason/list"),
 		adminui.PageSlot(InventoryReasonsPageTemplate), h.InventoryReasonsPage)
 
-	// 仓库商品 SKU 台账页（迁移 624）：一行 = 一条库存行（含未认领行）。
-	// 复用库存列表的权限点：能看库存的人就能看这张台账 —— 它只是同一个真源的另一个视角。
-	pages.GET("/inventory/skus", adminui.PageAuthz("/api/inventory/stock/list"),
-		adminui.PageSlot(InventorySKUsPageTemplate), h.InventorySKUsPage)
 }
 
 // 三个整页的模板名（与路由 / 权限点同处：一眼能看全这个模块渲染了哪些屏）。
@@ -45,7 +41,6 @@ const (
 	InventoryListPageTemplate       = "admin/inventory/inventory.html"
 	InventoryWarehousesPageTemplate = "admin/inventory/inventory_warehouses.html"
 	InventoryReasonsPageTemplate    = "admin/inventory/inventory_reasons.html"
-	InventorySKUsPageTemplate       = "admin/inventory/inventory_skus.html"
 	InventoryTransfersPageTemplate  = "admin/inventory/inventory_transfers.html"
 )
 
@@ -73,20 +68,6 @@ func registerInventoryWarehouseWritePages(pages *gin.RouterGroup, h *inventoryPa
 	pages.POST("/inventory/reasons/bulk-status", builtin.CasbinMiddlewareForPath("/api/inventory/reason/update"), h.InventoryReasonsBulkStatus)
 }
 
-// registerInventorySKUWritePages 仓库商品 SKU 台账页的三个写动作（迁移 624）：
-// 认领 / 解除认领 / 新建未认领存货。
-//
-// **全部复用** /api/inventory/stock/change —— 与外部编码、跟踪开关同口径：
-// 能改这个仓库存的人，才该能认领它 / 给它建档。不新增权限点，也不新增 authorizedAPI 路由。
-// 三条都写成**字面量**的 CasbinMiddlewareForPath 调用而不是先存进变量：
-// scripts/check-page-endpoint-authz.py 按调用形状判授权（`args 里出现 CasbinMiddleware`），
-// 抽成变量会让门禁看不见鉴权、把三条全判成「登录即可用」。
-func registerInventorySKUWritePages(pages *gin.RouterGroup, h *inventoryPageHandle) {
-	pages.POST("/inventory/stock/claim", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockClaim)
-	pages.POST("/inventory/stock/unclaim", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockUnclaim)
-	pages.POST("/inventory/stock/unclaimed-create", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockUnclaimedCreate)
-}
-
 // registerInventoryTransferPage 调拨单页（迁移 630，W3）：列表整页；
 // 建单 / 出货 / 签收 / 取消走 JSON API（/api/inventory/transfer/*）——
 // 页面不另挂写端点（同一份授权不写两处）。仓库下拉复用库存页那份口径。
@@ -108,7 +89,5 @@ func SetupInventoryPages(pages *gin.RouterGroup, svc inventorycontract.Inventory
 	pageCatalogConsumers = append(pageCatalogConsumers, inventoryPages)
 	registerInventoryReadPages(pages, inventoryPages)
 	registerInventoryWarehouseWritePages(pages, inventoryPages)
-	registerInventorySKUWritePages(pages, inventoryPages)
 	registerInventoryTransferPage(pages, svc, project, inventoryPages)
-
 }

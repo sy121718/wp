@@ -586,6 +586,22 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	// 与本仓其他装配期注入端口同一手法），handler 侧对 nil 降级为下拉为空。
 	inventoryhttp.SetProductCatalog(productSvc)
 	marks.mark(portInventoryProductCatalog)
+	// 变体 ↔ 仓库货行的引用读口（迁移 637 / 641）：真源在 product_variants.warehouse_skus，
+	// 库存侧按变体汇总（可用量 / 成本 / 出库分配）必须经它取货行 id 清单 ——
+	// 641 之后 inventory_stocks.variant_id 只是线索列，按它过滤会漏掉同仓的其他货行。
+	// 断言 + 注入，任一未实现即 fail-fast（缺它会让页面上的可用量恒为 0，且不报错）。
+	variantStockRefs, ok := productSvc.(productcontract.VariantWarehouseStockPort)
+	if !ok {
+		panic("商品模块未实现变体货行引用端口（VariantWarehouseStockPort）")
+	}
+	if setter, ok := inventorySvc.(interface {
+		SetVariantWarehouseStocks(productcontract.VariantWarehouseStockPort)
+	}); ok {
+		setter.SetVariantWarehouseStocks(variantStockRefs)
+	} else {
+		panic("库存模块未提供变体货行引用注入点（SetVariantWarehouseStocks）")
+	}
+	marks.mark(portInventoryVariantStockRefs)
 	// 商品译文存储由 SetupProductRoutes 内部用同一个 db 注入（可选端口：未接入即回退原文）。
 	marks.mark(portProductContentStore)
 	// 采购域（2026-10 从 inventory 拆出）：货源 / 采购单 / 入库。

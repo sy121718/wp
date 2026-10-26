@@ -119,6 +119,7 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
 	products := productservice.NewService(productmodel.NewModel(db), projects)
 	products.SetInventoryService(inv)
+	inv.SetVariantWarehouseStocks(products)
 	// 可用量端口（inventory 实现、product 消费）。漏接这一步**不会报错**：
 	// product 的 VariantAvailabilities 只是返回空表，于是购物车的库存预检静默失效 ——
 	// 表现是「库存只有 3 件，却能加 5 件进购物车，到结算才被拒」。

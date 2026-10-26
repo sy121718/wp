@@ -56,6 +56,7 @@ func newSKUFixture(t *testing.T) *skuFixture {
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
 	products := productservice.NewService(productmodel.NewModel(db), projects)
 	products.SetInventoryService(inv)
+	inv.SetVariantWarehouseStocks(products)
 	wh, err := inv.CreateWarehouse(context.Background(), &inventorydto.CreateWarehouseReq{
 		ProjectID: project.ID, Code: "SZ", Name: "苏州仓",
 	})

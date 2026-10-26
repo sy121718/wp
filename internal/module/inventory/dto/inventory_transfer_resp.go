@@ -32,11 +32,10 @@ type TransferItemResp struct {
 	VariantID string `json:"variantId"`
 	SKUCode   string `json:"skuCode"`
 	Quantity  int    `json:"quantity"`
-	// ProductName / VariantLabel 已认领行的**快照展示信息**（商品名与规格文本，
-	// 与订单项同理：改名后历史单据仍显示当时的名字）。未认领行为空。
+	// ProductName / VariantLabel 行的**快照展示信息**（商品名与规格文本，
+	// 与订单项同理：改名后历史单据仍显示当时的名字）。
 	ProductName  string `json:"productName"`
 	VariantLabel string `json:"variantLabel"`
-	Claimed      bool   `json:"claimed"`
 }
 
 // TransferAttachmentResp 一张凭证（含附件的展示信息）。
@@ -80,6 +79,4 @@ type TransferStockOptionResp struct {
 	Quantity          int `json:"quantity"`
 	ReservedQuantity  int `json:"reservedQuantity"`
 	AvailableQuantity int `json:"availableQuantity"`
-	// Claimed 已认领（未认领行在页面上标「未认领」，但它同样可以调拨）。
-	Claimed bool `json:"claimed"`
 }

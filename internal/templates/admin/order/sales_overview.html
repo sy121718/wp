@@ -205,7 +205,7 @@
         </div>
         <div class="card-body todo-list">
             {{if .Todo.alertCount}}{{if .Todo.alertCount}}
-            <a class="todo-item" href="/admin/inventory/skus?claimed=claimed&project={{selectedProject}}">
+            <a class="todo-item" href="/admin/inventory?project={{selectedProject}}">
                 <span class="todo-label">{{tr("admin.order.sales.todo.alerts", "库存预警")}}</span>
                 <span class="todo-count">{{.Todo.alertCount}}</span>
             </a>

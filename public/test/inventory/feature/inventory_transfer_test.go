@@ -362,7 +362,7 @@ func TestTransferUnclaimedStock(t *testing.T) {
 	f.inventory.SetAttachmentResolver(atts)
 
 	// 建一条未认领的货。
-	loose := createUnclaimed(t, f, from.ID, "TRANSFER_ORPHAN", 6, true)
+	loose := createStock(t, f, from.ID, "TRANSFER_ORPHAN", 6, true)
 	created, err := f.inventory.CreateTransfer(ctx, &inventorydto.CreateTransferReq{
 		ProjectID: f.projectID, FromWarehouseID: from.ID, ToWarehouseID: to.ID,
 		Lines: []inventorydto.TransferLineReq{{StockID: loose.ID, Quantity: 4}},

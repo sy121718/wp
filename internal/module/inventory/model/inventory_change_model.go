@@ -6,7 +6,7 @@
 //
 // 并发安全的两条约定（issue #16 验收 1/2）落在本文件：
 //
-//	· LockStockRowTx —— 对 (variant_id, warehouse_id) 那一行取 FOR UPDATE 行锁，
+//	· LockStockBySKUTx —— 对 (warehouse_id, sku_code) 那一行取 FOR UPDATE 行锁，
 //	  可用量的判定只发生在持锁之后，绝不读 product_variants.stock_total 缓存；
 //	· EnsureStocksTx —— 目标行不存在时先幂等建行（ON CONFLICT DO NOTHING），
 //	  并发的两批变动因此不会各自插出第二条同维度记录。
@@ -70,10 +70,17 @@ type MovementEntity struct {
 	ReasonID        *int64  `gorm:"column:reason_id"`
 	ReasonCode      string  `gorm:"column:reason_code;not null"`
 	ParentVariantID *string `gorm:"column:parent_variant_id"`
-	SourceType      string  `gorm:"column:source_type;not null"`
-	SourceRef       string  `gorm:"column:source_ref;not null"`
-	Remark          string  `gorm:"column:remark;not null"`
-	OperatorID      string  `gorm:"column:operator_id;not null"`
+	// StockID 是这次变动动的**那一条货行**（迁移 640）。
+	//
+	// 为什么不能只靠 (variant_id, warehouse_id)：那对值不再唯一 —— 同一变体在同一个仓
+	// 可以对应多条货行（不同批次 / 自有码与客户码并存，见 637 / 640 / 641 的注释）。
+	// 可空：货行被删时外键置 NULL（历史流水不因货行消失而丢），
+	// 也兼容 640 之前写入、回填时找不到对应货行的历史（极少）。
+	StockID    *string `gorm:"column:stock_id"`
+	SourceType string  `gorm:"column:source_type;not null"`
+	SourceRef  string  `gorm:"column:source_ref;not null"`
+	Remark     string  `gorm:"column:remark;not null"`
+	OperatorID string  `gorm:"column:operator_id;not null"`
 	// UnitCost 是这次变动时刻的**成本留痕**（元，迁移 256）：出库 = 扣减时该库存行的
 	// 当前成本；入库 = 本次显式成本（采购 / 生产单价），无显式成本时记库存行当前成本。
 	// 可空：nil = 当时该 (仓库, SKU) 尚未核算（0 是合法的显式成本，两者不能混）。
@@ -104,10 +111,12 @@ type MovementRow struct {
 	ReasonCode      string  `gorm:"column:reason_code"`
 	ReasonName      string  `gorm:"column:reason_name"`
 	ParentVariantID *string `gorm:"column:parent_variant_id"`
-	SourceType      string  `gorm:"column:source_type"`
-	SourceRef       string  `gorm:"column:source_ref"`
-	Remark          string  `gorm:"column:remark"`
-	OperatorID      string  `gorm:"column:operator_id"`
+	// StockID 与 MovementEntity 同义（迁移 640：货行级追溯）。
+	StockID    *string `gorm:"column:stock_id"`
+	SourceType string  `gorm:"column:source_type"`
+	SourceRef  string  `gorm:"column:source_ref"`
+	Remark     string  `gorm:"column:remark"`
+	OperatorID string  `gorm:"column:operator_id"`
 	// UnitCost 与 MovementEntity 同义（成本留痕，元，可空）。
 	UnitCost  *float64  `gorm:"column:unit_cost"`
 	BatchID   string    `gorm:"column:batch_id"`
@@ -126,6 +135,8 @@ type MovementFilter struct {
 	SourceType  string
 	SourceRef   string
 	BatchID     string
+	// StockID 按货行过滤（迁移 640）：流水页「这条货的全部变动」就是它。
+	StockID string
 	// TimeFrom / TimeTo 是流水的创建时间区间（闭区间，nil 表示该侧不限）。
 	// 时间列是 timestamptz，比较直接用 time.Time —— 后台表单传进来的本地时间由调用方
 	// 按站点时区解析后再传，model 不猜时区。
@@ -142,13 +153,6 @@ type ReasonFilter struct {
 	IncludeDisabled bool
 }
 
-// StockTotalRow 某个变体的真源汇总（跨仓求和）+ SKU 快照。
-type StockTotalRow struct {
-	VariantID string `gorm:"column:variant_id"`
-	SKUCode   string `gorm:"column:sku_code"`
-	Total     int    `gorm:"column:total"`
-}
-
 // —— 事务与库存行（issue #16 验收 1/2）——
 
 // Transaction 透传事务句柄：跨表的库存变动（真源行 + 流水）事务边界由 service 决定。
@@ -158,7 +162,7 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 
 // ListStocksByVariantsTx 取若干变体的库存行（**不加锁**，用于变动前的元数据解析）。
 //
-// 加锁是独立的第二步（LockStockRowTx），两步分开是为了让 service 能先把
+// 加锁是独立的第二步（LockStockBySKUTx），两步分开是为了让 service 能先把
 // 「按标识排序」的锁顺序固定下来 —— 边查边锁会让并发批次的等待链成环。
 //
 // projectID 由调用方给，且这里**自己设作用域**（与 EnsureStocksTx / CreateMovementsTx 同款）：
@@ -181,10 +185,9 @@ func (m *Model) ListStocksByVariantsTx(ctx context.Context, tx *gorm.DB, variant
 // 行已存在时本次传入的元数据被忽略（PostgreSQL 的 DO NOTHING 语义），
 // 因此「目标 SKU 首次入库」才需要给全 product_id / sku_code 快照。
 //
-// 冲突目标只是 (variant_id, warehouse_id)：另一条唯一约束是仓库内 SKU 唯一
-// （uq_inventory_stocks_warehouse_sku，迁移 244），**不同变体**置入同仓同 sku_code
-// 时会直接撞它并报 23505 —— 那是「同一仓库不能有重复 SKU」的口径在生效，
-// 不是这里的幂等失效。
+// 冲突目标是 (warehouse_id, sku_code)（uq_inventory_stocks_warehouse_sku，迁移 244）——
+// 641 起它就是库存行的身份键：同一变体在同一仓可以有多条货行（自有码 / 客户码 / 不同批次），
+// 而同一仓里绝不能有两条同码的货。
 func (m *Model) EnsureStocksTx(ctx context.Context, tx *gorm.DB, rows []*StockEntity) (err error) {
 	if len(rows) == 0 {
 		return nil
@@ -199,33 +202,32 @@ func (m *Model) EnsureStocksTx(ctx context.Context, tx *gorm.DB, rows []*StockEn
 		normalizeStockTracking(row)
 	}
 	return tx.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "variant_id"}, {Name: "warehouse_id"}},
+		Columns:   []clause.Column{{Name: "warehouse_id"}, {Name: "sku_code"}},
 		DoNothing: true,
 	}).Create(&rows).Error
 }
 
-// LockStockRowTx 对 (variant_id, warehouse_id) 那一行取 FOR UPDATE 行锁，返回加锁后的行。
+// LockStockBySKUTx 对「仓库 × 仓库 SKU」那一行取 FOR UPDATE 行锁（641 起的身份键）。
 //
-// 可用量的判定只发生在持锁之后：并行扣减因此被串行化，超扣不可能发生。
-// variantID 是**指针**（迁移 624 起可空）：未认领行按 `variant_id IS NULL` 定位。
-func (m *Model) LockStockRowTx(ctx context.Context, tx *gorm.DB, variantID *string, warehouseID string) (e *StockEntity, err error) {
+// 为什么按编码而不是按 id 加锁：
+//   - 建行路径手里只有 (仓, 编码)（收货 / 建品时还没有货行 id），必须先锁住身份键，
+//     否则两个并发的首次入库会各自插一行、在 UNIQUE (warehouse_id, sku_code) 上撞车；
+//   - 归属仓解析给的是仓 + 裸码，按它定位不需要先按 id 查一次。
+func (m *Model) LockStockBySKUTx(ctx context.Context, tx *gorm.DB, projectID, warehouseID, skuCode string) (e *StockEntity, err error) {
 	e = &StockEntity{}
-	q := tx.WithContext(ctx).Model(&StockEntity{}).
-		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("warehouse_id = ?", warehouseID)
-	if variantID == nil {
-		q = q.Where("variant_id IS NULL")
-	} else {
-		q = q.Where("variant_id = ?", *variantID)
+	if serr := rls.ScopeTx(tx, projectID); serr != nil {
+		return nil, serr
 	}
-	err = q.First(e).Error
+	err = tx.WithContext(ctx).Model(&StockEntity{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("warehouse_id = ? AND sku_code = ?", warehouseID, skuCode).First(e).Error
 	return e, err
 }
 
 // LockStockByIDTx 按库存行 id 取 FOR UPDATE 行锁。
 //
-// 认领 / 解除 / 预占 / 释放全部以**库存行 id** 为锁对象：前两者的入参就是行 id，
-// 后两者在拿到候选行之后也可以只锁 id（比重新按 (变体, 仓) 定位少一次读取）。
+// 预占 / 释放全部以**库存行 id** 为锁对象：拿到候选行之后只锁 id 即可
+// （比重新按 (变体, 仓) 定位少一次读取）。
 func (m *Model) LockStockByIDTx(ctx context.Context, tx *gorm.DB, projectID, id string) (e *StockEntity, err error) {
 	e = &StockEntity{}
 	if serr := rls.ScopeTx(tx, projectID); serr != nil {
@@ -274,28 +276,6 @@ func (m *Model) CreateMovementsTx(ctx context.Context, tx *gorm.DB, rows []*Move
 	return tx.WithContext(ctx).CreateInBatches(&rows, 100).Error
 }
 
-// StockTotals 按变体汇总真源数量（跨仓求和）+ SKU 快照。
-//
-// projectID 为空表示不限工程；variantIDs 为空表示该范围内的全部变体。
-// 这是「商品侧缓存该被同步成什么值」的**唯一依据** —— 汇总读的是真源，不是缓存。
-func (m *Model) StockTotals(ctx context.Context, projectID string, variantIDs []string) (list []*StockTotalRow, err error) {
-	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		q := tx.WithContext(ctx).Model(&StockEntity{}).
-			Select("variant_id, MAX(sku_code) AS sku_code, SUM(quantity) AS total").
-			// 未认领行（variant_id IS NULL）不参与变体汇总（迁移 624）：
-			// 汇总的结果是按 variant_id 索引的 map，NULL 会聚成 map[""] 一组，
-			// 被商品侧当成一个「空 id 的变体」返回。那批货还没认领到任何商品，
-			// 本来就不属于任何变体的可用量。
-			Where("variant_id IS NOT NULL").
-			Group("variant_id").Order("variant_id ASC")
-		if len(variantIDs) > 0 {
-			q = q.Where("variant_id IN ?", variantIDs)
-		}
-		return q.Scan(&list).Error
-	})
-	return list, err
-}
-
 // —— 流水查询（issue #16 验收 3）——
 
 // movementRowsQuery 流水 + 仓库 + 原因名的只读投影查询（本模块三表 join 的唯一定义处）。
@@ -304,7 +284,7 @@ func (m *Model) StockTotals(ctx context.Context, projectID string, variantIDs []
 func movementRowsQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db.WithContext(ctx).Table("inventory_stock_movements AS mv").
 		Select("mv.id, mv.project_id, mv.warehouse_id, mv.product_id, mv.variant_id, mv.sku_code, " +
-			"mv.direction, mv.quantity, mv.delta, mv.quantity_before, mv.quantity_after, " +
+			"mv.stock_id, mv.direction, mv.quantity, mv.delta, mv.quantity_before, mv.quantity_after, " +
 			"mv.reason_id, mv.reason_code, mv.parent_variant_id, mv.source_type, mv.source_ref, " +
 			"mv.remark, mv.operator_id, mv.unit_cost, mv.batch_id, mv.create_time, " +
 			"w.code AS warehouse_code, w.name AS warehouse_name, " +
@@ -380,6 +360,9 @@ func applyMovementFilter(q *gorm.DB, f MovementFilter) *gorm.DB {
 	}
 	if f.BatchID != "" {
 		q = q.Where("mv.batch_id = ?", f.BatchID)
+	}
+	if f.StockID != "" {
+		q = q.Where("mv.stock_id = ?", f.StockID)
 	}
 	// 时间区间**闭区间**：调用方把「到某日」折算成当日 23:59:59 这类上界
 	// （而不是在这里套 date_trunc —— 那会让索引失效，也会把时区问题藏进来）。
@@ -556,7 +539,7 @@ func (m *Model) UpdateReason(ctx context.Context, e *ReasonEntity) (err error) {
 // 所以调用方（商品模块保存变体清单时的删除分支）据本方法判定**不允许硬删**。
 //
 // 与「非零库存」是两回事：卖出后补货清零的变体库存为 0 却仍被订单用过，
-// 单看 CountNonZeroStocksByVariant 会误放行 —— 两个守卫都要。
+// 只看库存数量会误放行 —— 两个守卫都要。
 //
 // projectID 由调用方给出：inventory_stock_movements（含分区子表）在迁移 215 名单里，
 // 缺作用域时计数**恒 0 且不报错** —— 表现为「所有变体都没被用过」，守卫静默失效。

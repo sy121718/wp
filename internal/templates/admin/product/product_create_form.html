@@ -51,7 +51,7 @@
             </div>
             {* SKU 编码的候选（**可搜索下拉 + 可自由输入**，2026-09-19 口径，docs/14 §1.1）：
                一个控件承担两种意图 ——
-                 · 下拉里选到某仓已有的**裸码** → 那一行本来就在，直接**认领 / 复用**（不新建行）；
+                 · 下拉里选到某仓已有的**裸码** → 那一行本来就在，直接**复用**它（不新建行，登记进本变体的引用）；
                  · 自己打一个新码 → 在勾选的每个仓各建一行（仓库侧写裸码）。
                候选只由服务端渲一次（这个 datalist），前端按**勾选的仓库**过滤；
                没有 JS 时它退化成普通的可自由输入文本框，功能不会卡死。 *}
@@ -65,7 +65,7 @@
                 {{end}}
                 {{end}}
             </datalist>
-            {* 预览：这个编码会变成什么（<认领仓短码>_<编码>），或「已存在 → 复用那一行」。
+            {* 预览：这个编码会变成什么（<前缀仓短码>_<编码>），或「已存在 → 复用那一行」。
                只是把服务端的规则**显示**出来；真源与复核都在服务端（前端不参与命名决策）。 *}
             <p class="hint" data-sku-preview style="display:none" hidden
                data-preview-label="{{ .["t"]("admin.products.skuSource.previewLabel", "将要生成的主体 SKU：") }}"
@@ -96,7 +96,7 @@
             <label class="form-label" for="create-external-sku">{{ .["t"]("admin.products.label.externalSku", "外部编码（可选）") }}</label>
             <input type="text" class="form-input" id="create-external-sku" name="externalSku" data-external-sku-input
                    placeholder="{{ .["t"]("admin.products.ph.externalSku", "该仓的第三方编码，留空即用我们自己的 SKU") }}" autocomplete="off">
-            <p class="hint">{{ .["t"]("admin.products.skuSource.warehouseHint", "新建时主体 SKU = 认领仓短码_编码；同一仓库内一个外部编码只能属于同一个商品（同一商品的多个口味共用一个编码是允许的）。") }}</p>
+            <p class="hint">{{ .["t"]("admin.products.skuSource.warehouseHint", "新建时主体 SKU = 前缀仓短码_编码；同一仓库内一个外部编码只能属于同一个商品（同一商品的多个口味共用一个编码是允许的）。") }}</p>
             <input type="text" class="form-input" name="defaultPrice" placeholder="{{ .["t"]("admin.products.ph.defaultPrice", "默认价格（首个变体继承）") }}">
             {* 引用的属性组（本批改版）：原来是「逗号分隔的 UUID」输入框 —— 用户手上没有 UUID，
                只能去属性页复制粘贴，打错一个字符要到提交才知道（ErrAttrNotFound）。
@@ -117,8 +117,8 @@
             {{end}}
             {{if isset(.WarehouseOptions)}}{{if len(cfWarehouses) > 0}}
             {* 多仓勾选（2026-09-19 口径）：**勾了哪些仓就在哪些仓各建一行**（仓库侧写裸码）。
-               第一个勾中的仓（按本表顺序）是**认领仓**，只有它决定主体 SKU 的仓码前缀；
-               一个都不勾即默认仓。提交顺序 = 表内顺序（浏览器行为），服务端据此取认领仓。
+               第一个勾中的仓（按本表顺序）是**前缀仓**，只有它决定主体 SKU 的仓码前缀；
+               一个都不勾即默认仓。提交顺序 = 表内顺序（浏览器行为），服务端据此取前缀仓。
                同一张表里勾两次同一个仓会被服务端按仓 id 去重，不会建出两行。 *}
             <fieldset class="var-group">
                 <legend>{{ .["t"]("admin.products.warehouses.label", "建在哪些仓（可多选，不勾即默认仓）") }}</legend>
@@ -127,7 +127,7 @@
                     <input type="checkbox" name="warehouseIds" value="{{w.ID}}" data-warehouse-check data-code="{{w.Code}}" data-label="{{w.Label}}{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}" {{if w.IsDefault}}data-default="1"{{end}}> {{w.Label}}{{if w.IsDefault}} {{ .["t"]("admin.inventory.change.warehouseDefaultSuffix", "· 默认仓") }}{{end}}
                 </label>
                 {{end}}
-                <p class="hint">{{ .["t"]("admin.products.warehouses.hint", "按本表顺序第一个勾中的仓是认领仓（决定主体 SKU 的仓码前缀）；仓库里已有同编码的行会复用、不新建。") }}</p>
+                <p class="hint">{{ .["t"]("admin.products.warehouses.hint", "按本表顺序第一个勾中的仓是前缀仓（决定主体 SKU 的仓码前缀）；仓库里已有同编码的行会复用、不新建。") }}</p>
             </fieldset>
             {* 数量（迁移 261）：**不填 = 不跟踪 = 无限**。开关没勾时数量框禁用且留空 ——
                **绝不预填 0**：0 是「明确没货」这个具体事实，与「无限」是两种状态。

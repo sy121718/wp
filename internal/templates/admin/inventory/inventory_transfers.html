@@ -24,7 +24,7 @@
                     <span class="help-pop" role="tooltip">{{tr("admin.inventory.transfers.hint", "调拨是仓库之间的移库：建单时定两个仓，出货扣源仓、签收加目标仓。出货与签收都必须上传凭证附件 —— 一张没有凭证的移库事后无法证明货是谁交出去的、谁签收的。")}}</span>
                 </span>
             </div>
-            <p class="page-sub">{{tr("admin.inventory.transfers.sub", "调拨用的是可售数量（被订单预占的部分不能调拨）。未认领的货也可以调拨 —— 它同样是仓库里的一批货。")}}</p>
+            <p class="page-sub">{{tr("admin.inventory.transfers.sub", "调拨用的是可售数量（被订单预占的部分不能调拨）。无归属的货也可以调拨 —— 它同样是仓库里的一批货。")}}</p>
         </div>
         <div class="page-actions">
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-transfer-create"
@@ -64,12 +64,12 @@
                     </select>
                 </div>
                 <div class="filter-field">
-                    <label for="tr-keyword">{{tr("admin.inventory.skus.filter.keyword", "关键词")}}</label>
+                    <label for="tr-keyword">{{tr("admin.inventory.filter.keyword", "关键词")}}</label>
                     <input type="text" class="form-input" id="tr-keyword" name="keyword" value="{{.Keyword}}"
                            placeholder="{{tr("admin.inventory.transfers.filter.keywordPh", "单号或备注")}}" autocomplete="off">
                 </div>
                 <div class="filter-actions">
-                    <button type="submit" class="btn btn-sm">{{tr("admin.inventory.skus.filter.submit", "查询")}}</button>
+                    <button type="submit" class="btn btn-sm">{{tr("admin.inventory.filter.submit", "查询")}}</button>
                     <a class="btn btn-sm btn-ghost" href="/admin/inventory/transfers?project={{selectedProject}}">{{tr("admin.common.action.reset", "重置")}}</a>
                 </div>
             </form>
@@ -214,7 +214,7 @@
             <div class="form-group">
                 <label class="form-label req">{{tr("admin.inventory.transfers.fromWarehouse", "源仓")}}</label>
                 <select class="form-select" name="fromWarehouseId" required>
-                    <option value="">{{tr("admin.inventory.skus.createWarehousePh", "选择仓库")}}</option>
+                    <option value="">{{tr("admin.inventory.create.warehousePh", "选择仓库")}}</option>
                     {{range _, w := .Warehouses}}
                     <option value="{{w.ID}}">{{w.Name}} ({{w.Code}})</option>
                     {{end}}
@@ -223,7 +223,7 @@
             <div class="form-group">
                 <label class="form-label req">{{tr("admin.inventory.transfers.toWarehouse", "目标仓")}}</label>
                 <select class="form-select" name="toWarehouseId" required>
-                    <option value="">{{tr("admin.inventory.skus.createWarehousePh", "选择仓库")}}</option>
+                    <option value="">{{tr("admin.inventory.create.warehousePh", "选择仓库")}}</option>
                     {{range _, w := .Warehouses}}
                     <option value="{{w.ID}}">{{w.Name}} ({{w.Code}})</option>
                     {{end}}

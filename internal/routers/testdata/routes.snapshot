@@ -39,7 +39,6 @@ GET /admin/i18n/edit
 GET /admin/inventory
 GET /admin/inventory/purchases
 GET /admin/inventory/reasons
-GET /admin/inventory/skus
 GET /admin/inventory/sources
 GET /admin/inventory/transfers
 GET /admin/inventory/warehouses
@@ -87,7 +86,6 @@ GET /admin/product-pricing
 GET /admin/product-tags
 GET /admin/product-tags/hits
 GET /admin/products
-GET /admin/products/bundle
 GET /admin/products/detail
 GET /admin/products/edit
 GET /admin/products/new
@@ -143,7 +141,6 @@ GET /api/datarule/schema/list
 GET /api/dept/detail
 GET /api/dept/tree
 GET /api/dept/user/list
-GET /api/inventory/bom/get
 GET /api/inventory/movement/list
 GET /api/inventory/purchase/get
 GET /api/inventory/purchase/history
@@ -223,8 +220,6 @@ GET /api/product/attribute/get
 GET /api/product/attribute/list
 GET /api/product/brand/get
 GET /api/product/brand/list
-GET /api/product/bundle/get
-GET /api/product/bundle/skus
 GET /api/product/category/get
 GET /api/product/category/list
 GET /api/product/get
@@ -323,6 +318,7 @@ POST /admin/inventory/purchases/create
 POST /admin/inventory/purchases/finish
 POST /admin/inventory/purchases/production
 POST /admin/inventory/purchases/receipt
+POST /admin/inventory/purchases/update
 POST /admin/inventory/reason/create
 POST /admin/inventory/reason/update
 POST /admin/inventory/reasons/bulk-status
@@ -331,10 +327,7 @@ POST /admin/inventory/sources/create
 POST /admin/inventory/sources/delete
 POST /admin/inventory/sources/update
 POST /admin/inventory/stock/change
-POST /admin/inventory/stock/claim
 POST /admin/inventory/stock/tracking
-POST /admin/inventory/stock/unclaim
-POST /admin/inventory/stock/unclaimed-create
 POST /admin/inventory/warehouse/create
 POST /admin/inventory/warehouse/default
 POST /admin/inventory/warehouse/delete
@@ -387,7 +380,6 @@ POST /admin/product-attributes/value-rows
 POST /admin/product-brands/seo-score
 POST /admin/product-categories/seo-score
 POST /admin/product-pricing/preview
-POST /admin/products/bundle/members/resolve
 POST /admin/products/seo-score
 POST /admin/products/template/preview
 POST /admin/products/variant/preview
@@ -459,7 +451,6 @@ POST /api/dept/delete
 POST /api/dept/update
 POST /api/dept/user/save
 POST /api/i18n/save
-POST /api/inventory/bom/set
 POST /api/inventory/purchase/create
 POST /api/inventory/purchase/production
 POST /api/inventory/purchase/receipt
@@ -573,8 +564,6 @@ POST /api/product/brand/delete
 POST /api/product/brand/update
 POST /api/product/bulk-delete
 POST /api/product/bulk-pricing
-POST /api/product/bundle/set
-POST /api/product/bundle/validate
 POST /api/product/category/bulk-delete
 POST /api/product/category/create
 POST /api/product/category/delete

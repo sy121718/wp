@@ -69,6 +69,7 @@ const (
 	portWebhookDispatcher          = "order.SetWebhookDispatcher"
 	portProductInventoryService    = "product.SetInventoryService"
 	portProductInventoryModel      = "product.SetInventory"
+	portInventoryVariantStockRefs  = "inventory.SetVariantWarehouseStocks"
 	portPurchaseVariantCost        = "purchase.SetVariantCost"
 	portProductMasterDataChanges   = "product.SetMasterDataChanges"
 	portPurchaseMasterDataChanges  = "purchase.SetMasterDataChanges"
@@ -252,7 +253,9 @@ var wiringManifest = []wiringEntry{
 	{portProductInventoryService, "inventory", "product", wiringRequiredPort,
 		"建变体不生成库存记录、SKU 编码缺仓短码前缀（库存真源缺行）"},
 	{portProductInventoryModel, "inventory ProductStockReader", "product", wiringRequiredPort,
-		"变体库存投影恒为 0；删变体时非零库存与 BOM 引用守卫失效"},
+		"变体库存投影恒为 0；删变体时的非零库存守卫失效"},
+	{portInventoryVariantStockRefs, "product VariantWarehouseStockPort", "inventory", wiringRequiredPort,
+		"可用量 / 成本快照 / 出库跨仓分配读不到「这个变体引用了哪些货行」（页面显示 0 且不报错）"},
 	{portPurchaseVariantCost, "product", "purchase", wiringRequiredPort,
 		"采购收货 / 生产入库的单价不回写 cost_price（入库单行记 cost_error）"},
 	{portProductMasterDataChanges, "masterdata", "product", wiringRequiredPort,

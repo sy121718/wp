@@ -168,24 +168,8 @@ const (
 	// 多个变体共用同一个外码是合法的（这正是 N:1 的意义），跨商品才是映射写错了。
 	ErrExternalSKUProductConflict = "ErrExternalSKUProductConflict"
 
-	// —— 仓库商品 SKU 主档化（迁移 624）——
-	//
-	// 四条围绕「未认领行」与「预占」的拒绝理由。前三条直接对应用户会撞上的操作，
-	// 第四条是预占 / 释放的边界；它们不 seed 词条也靠 errFallbacks 落中文，
-	// 但仍会随迁移 625 一并写入 sys_i18n（页面要按请求语言显示）。
+	// —— 预占 / 释放（迁移 624）——
 
-	// ErrStockAlreadyClaimed 认领冲突：目标 (变体, 仓) 已经有库存行。
-	//
-	// **不合并、不加后缀**：两行库存是两份事实（成本可能不同、数量各自独立），
-	// 合并要么丢数量、要么丢成本；自动加后缀则会凭空造出一条谁也不认识的新编码。
-	ErrStockAlreadyClaimed = "ErrStockAlreadyClaimed"
-	// ErrStockHasQuantity 带数量 / 预占的行不能解除认领。
-	//
-	// 解除之后这一行会从「商品库存」里消失，而变体删除守卫看不见它（它没有 variant_id 了）
-	// —— 于是「库存为零」变成了一条谁也发现不了的假设。
-	ErrStockHasQuantity = "ErrStockHasQuantity"
-	// ErrStockNotClaimed 这行已经认领过了（或反过来：要求认领却没有商品上下文）。
-	ErrStockNotClaimed = "ErrStockNotClaimed"
 	// ErrReserveUnderflow 释放的预占量超过已预占量（不静默夹到 0）。
 	//
 	// 夹到 0 会让「释放得比预占多」这种真错误变成一次静默的部分成功，
@@ -336,9 +320,6 @@ var errFallbacks = map[string]string{
 	ErrWarehouseSKUCodeTaken:         "该仓已有同一条 SKU 编码的库存行（我们自己的 SKU 在仓内唯一），请改用另一个仓库或另一个仓库 SKU",
 	ErrExternalSKUInvalid:            "外部编码不合法：长度需在 128 个字符以内且不含控制字符",
 	ErrExternalSKUProductConflict:    "该外部编码在本仓已挂在另一个商品上：同一个外部编码在同一仓库内只能属于同一个商品（同一商品的多个口味可以共用一个外部编码）",
-	ErrStockAlreadyClaimed:           "这个商品变体在该仓已经有库存行了：两行库存是两份事实，不能自动合并，请先核对数量与成本再人工处理",
-	ErrStockHasQuantity:              "这条存货还有数量或预占，不能解除认领：请先把数量清零、预占释放完",
-	ErrStockNotClaimed:               "这条存货还没有认领到商品变体",
 	ErrReserveUnderflow:              "要释放的预占数量超过了这一行已预占的数量",
 }
 
@@ -376,8 +357,6 @@ var errStatuses = map[string]int{
 	ErrAttachmentNotFound:         http.StatusNotFound,
 	ErrStockNotEnough:             http.StatusConflict,
 	ErrExternalSKUProductConflict: http.StatusConflict,
-	ErrStockAlreadyClaimed:        http.StatusConflict,
-	ErrStockHasQuantity:           http.StatusConflict,
 	ErrReserveUnderflow:           http.StatusConflict,
 }
 

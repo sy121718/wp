@@ -26,6 +26,7 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
 	inventoryservice "go_wp/internal/module/inventory/service"
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
@@ -66,6 +67,7 @@ func newWPickFixture(t *testing.T) *wpickFixture {
 	inv := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
 	products := productservice.NewService(productmodel.NewModel(db), projects)
 	products.SetInventoryService(inv)
+	inv.SetVariantWarehouseStocks(products)
 	sz, err := inv.CreateWarehouse(ctx, &inventorydto.CreateWarehouseReq{
 		ProjectID: project.ID, Code: "SZ", Name: "苏州仓",
 	})
@@ -203,7 +205,7 @@ func TestProductCreateFromWarehouseSKU(t *testing.T) {
 		t.Fatalf("认领不改写既有行：应仍是 1 行且外码空，实际 %d 行 / %q", rows, external)
 	}
 
-	// 自己打新码 = 建行：仓库侧写**裸码**，显式填的外部编码写在认领仓那一次。
+	// 自己打新码 = 建行：仓库侧写**裸码**，显式填的外部编码写在前缀仓那一次。
 	explicit, err := f.products.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "自己打码并带外部编码的商品", Slug: "picked-explicit",
 		DefaultPrice: &price, SKUCode: "SELF-002",
@@ -492,67 +494,83 @@ func TestNewPageRendersWarehouseSKUCatalog(t *testing.T) {
 	}
 }
 
-// TestProductCreateClaimsUnclaimedWarehouseRow 复审 G（P1）：
-// 「从仓库选」建商品时，该仓那条**未认领**的存货行必须被认领到新变体上。
+// TestProductCreateAttachesExistingStock 复审 G（P1）：
+// 「从仓库选」建商品时，该仓那条**已有**的货行必须被新变体**引用**（不是原地改列）。
 //
-// 这是主线 A→B 段的断点：不认领的话货停在 variant_id IS NULL，商品侧库存汇总
-// （StockTotals 带 `WHERE variant_id IS NOT NULL`）看不见它 —— 商品页显示库存 0
-// 而仓库里明明有货，运营得再去 /admin/inventory/skus 手动认领一次。
-func TestProductCreateClaimsUnclaimedWarehouseRow(t *testing.T) {
+// 去认领（迁移 637）之后的语义：库存行归仓库所有、先于商品存在；变体在自己的
+// warehouse_skus 里引用这些行。所以判据从「variant_id 被改写」变成「变体引用了该
+// stockId」，而商品侧库存汇总也必须看得见这批货 —— 否则运营看到商品页 0、仓库里有货。
+func TestProductCreateAttachesExistingStock(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
 		return
 	}
 	ctx := context.Background()
-	// 造一条**未认领**的存货行（迁移 624 的形态：客户寄卖 / 清关到仓）。
-	loose, err := f.inventory.CreateUnclaimedStock(ctx, &inventorydto.CreateUnclaimedStockReq{
+	// 造一条还没挂任何商品的货行（客户寄卖 / 清关到仓的常态：先有货，后有商品）。
+	loose, err := f.inventory.CreateStock(ctx, &inventorydto.CreateStockReq{
 		ProjectID: f.projectID, WarehouseID: f.sh.ID, SKUCode: "LOOSE-777",
 		Quantity: 12, TrackQuantity: true,
 	})
 	if err != nil {
-		t.Fatalf("建未认领存货失败: %v", err)
+		t.Fatalf("建货行失败: %v", err)
 	}
 
 	price := 29.9
 	picked, err := f.products.Create(ctx, &productdto.CreateReq{
-		ProjectID: f.projectID, Name: "从仓库选未认领的货", Slug: "picked-loose",
+		ProjectID: f.projectID, Name: "从仓库选已有的货", Slug: "picked-loose",
 		DefaultPrice: &price, SKUSource: "warehouse",
 		WarehouseSKU: "LOOSE-777", WarehouseID: f.sh.ID,
 	})
 	if err != nil {
 		t.Fatalf("从仓库选建商品失败: %v", err)
 	}
+	variantID := picked.Variants[0].ID
 
-	// ① 那条行必须挂到新变体上（原地改列，不是新建一行）。
-	var claimedVariant *string
-	var claimedQty int
-	if qerr := f.db.Raw("SELECT variant_id, quantity FROM inventory_stocks WHERE id = ?", loose.ID).
-		Row().Scan(&claimedVariant, &claimedQty); qerr != nil {
-		t.Fatalf("读库存行失败: %v", qerr)
+	// ① 变体的 warehouse_skus 必须含该 stockId（引用存在）。
+	var raw []byte
+	if qerr := f.db.Raw("SELECT warehouse_skus FROM product_variants WHERE id = ?", variantID).
+		Row().Scan(&raw); qerr != nil {
+		t.Fatalf("读变体引用失败: %v", qerr)
 	}
-	if claimedVariant == nil || *claimedVariant != picked.Variants[0].ID {
-		t.Fatalf("未认领行应被认领到新变体 %q，实际 %v", picked.Variants[0].ID, claimedVariant)
+	refs := productmodel.DecodeWarehouseSKUs(raw)
+	found := false
+	for _, r := range refs {
+		if r.StockID == loose.ID && r.WarehouseID == f.sh.ID && r.SKUCode == "LOOSE-777" {
+			found = true
+		}
 	}
-	// ② 数量原样保留（认领只改归属，不动数量 —— 那是两份事实）。
-	if claimedQty != 12 {
-		t.Fatalf("认领不该改数量（期望 12），实际 %d", claimedQty)
+	if !found {
+		t.Fatalf("变体应引用货行 %q，实际 %s", loose.ID, string(raw))
 	}
-	// ③ 同仓同码只有一行：认领是原地改列，不是新建。
+	// ② 货行本身**不被改写**：它归仓库，数量是仓库的事实。
+	var qty int
+	if qerr := f.db.Raw("SELECT quantity FROM inventory_stocks WHERE id = ?", loose.ID).
+		Row().Scan(&qty); qerr != nil {
+		t.Fatalf("读货行失败: %v", qerr)
+	}
+	if qty != 12 {
+		t.Fatalf("引用不该改货行数量（期望 12），实际 %d", qty)
+	}
+	// ③ 同仓同码仍只有一行（引用是加引用，不是新建一行）。
 	var n int64
 	if qerr := f.db.Raw("SELECT COUNT(*) FROM inventory_stocks WHERE warehouse_id = ? AND sku_code = ?",
 		f.sh.ID, "LOOSE-777").Scan(&n).Error; qerr != nil {
 		t.Fatalf("查同仓同码行数失败: %v", qerr)
 	}
 	if n != 1 {
-		t.Fatalf("认领之后同仓同码应仍只有 1 行，实际 %d 行", n)
+		t.Fatalf("引用之后同仓同码应仍只有 1 行，实际 %d 行", n)
 	}
-	// ④ 商品侧库存汇总必须看得见它 —— 这正是这个缺陷的用户可见后果。
-	totals, terr := inventorymodel.NewModel(f.db).VariantStockTotals(ctx, f.projectID,
-		[]string{picked.Variants[0].ID})
-	if terr != nil {
-		t.Fatalf("读变体库存汇总失败: %v", terr)
+	// ④ 反查是双向的：按 stockId 能找回引用它的变体（删除守卫与库存寻址都靠它）。
+	port, ok := interface{}(f.products).(productcontract.VariantWarehouseStockPort)
+	if !ok {
+		t.Fatalf("商品服务未实现 VariantWarehouseStockPort")
 	}
-	if got := totals[picked.Variants[0].ID]; got != 12 {
-		t.Fatalf("商品侧应看到 12 件（否则商品页显示 0 而仓库里有货），实际 %d", got)
+	owners, oerr := port.VariantIDsByWarehouseStock(ctx, f.projectID, loose.ID)
+	if oerr != nil {
+		t.Fatalf("按货行反查变体失败: %v", oerr)
 	}
+	if len(owners) != 1 || owners[0] != variantID {
+		t.Fatalf("按货行 %q 应反查到变体 %q，实际 %v", loose.ID, variantID, owners)
+	}
+	// 商品侧库存汇总按 stockId 归集，随 B2-2（把寻址从 variant_id 改成引用清单）一起验。
 }

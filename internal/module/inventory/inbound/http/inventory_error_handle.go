@@ -208,10 +208,6 @@ var (
 		titleKey: inventoryenums.InventoryWarehousesTitle, titleFallback: "仓库管理",
 		menu: "inventory-warehouses",
 	}
-	inventoryMetaSKUs = inventoryPageMeta{
-		titleKey: inventoryenums.InventorySKUsTitle, titleFallback: "仓库商品 SKU",
-		menu: "inventory-skus",
-	}
 	inventoryMetaTransfers = inventoryPageMeta{
 		titleKey: inventoryenums.InventoryTransfersTitle, titleFallback: "调拨单",
 		menu: "inventory-transfers",
@@ -256,23 +252,17 @@ func inventoryPageErrorData(c *gin.Context, meta inventoryPageMeta, err error) i
 		"WarehouseCreateForm": gin.H{},
 		"VariantOptions":      []gin.H{},
 		"StockRows":           []inventorydto.StockByWarehouseRowResp{},
-		// 仓库商品 SKU 台账页（迁移 624）：缺键会让 Jet 从那一行起整页中断，
-		// 失败页同样要把键补齐（多给的键不渲染）。
-		"Rows":             []inventorydto.StockLedgerRowResp{},
-		"Keyword":          "",
-		"FilterClaimed":    "",
-		"ClaimedOptions":   []inventorydto.OptionResp{},
-		"Reasons":          []inventorydto.ReasonRowResp{},
-		"AdjustReasons":    []inventorydto.ReasonRowResp{},
-		"AdjustDirections": []inventorydto.OptionResp{},
-		"Directions":       []inventorydto.OptionResp{},
-		"Movements":        []inventorydto.MovementRowResp{},
-		"ReasonCreateForm": gin.H{},
-		"FilterWarehouse":  "",
-		"FilterDirection":  "",
-		"FilterReason":     "",
-		"FilterTimeFrom":   "",
-		"FilterTimeTo":     "",
+		"Reasons":             []inventorydto.ReasonRowResp{},
+		"AdjustReasons":       []inventorydto.ReasonRowResp{},
+		"AdjustDirections":    []inventorydto.OptionResp{},
+		"Directions":          []inventorydto.OptionResp{},
+		"Movements":           []inventorydto.MovementRowResp{},
+		"ReasonCreateForm":    gin.H{},
+		"FilterWarehouse":     "",
+		"FilterDirection":     "",
+		"FilterReason":        "",
+		"FilterTimeFrom":      "",
+		"FilterTimeTo":        "",
 		// 写动作表单 action 上的列表上下文：失败页不渲染表单，键照样存在（Jet 缺键即中断）。
 		"ListQuery": "",
 		// 失败槽：模板先判 LoadError、再判各页空态 —— 「没读到」与「读到了、只是空的」必须分开。

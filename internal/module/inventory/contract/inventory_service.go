@@ -107,11 +107,9 @@ type InventoryService interface {
 	// 该仓改回用我们自己的 SKU；非空时做 N:1 弱校验）。
 	BindExternalSKU(ctx context.Context, req *inventorydto.BindExternalSKUReq) (res *inventorydto.StockResp, err error)
 
-	// —— 仓库商品 SKU 主档化（迁移 624）——
+	// —— 预占 / 释放（迁移 624）——
 	//
-	// 库存行**升格为仓库商品 SKU 主档**：允许「仓库里已有货、商品还没建」的未认领行
-	// （variant_id IS NULL），再经认领把货挂到商品变体上；同时这一行带 reserved_quantity，
-	// 为订单的「下单预占 → 发货扣减」两段式提供真源字段。
+	// 库存行带 reserved_quantity，为订单的「下单预占 → 发货扣减」两段式提供真源字段。
 	//
 	// 三量恒等式（照抄 ERP product_inventory_reserve.go 文件头）：
 	//
@@ -119,14 +117,6 @@ type InventoryService interface {
 	//
 	// 预占 / 释放**只改 reserved_quantity**，不改 quantity、不写流水 —— 流水只记录真实出入库。
 
-	// ClaimStock 把一条未认领的库存行认领到商品变体（单向且不可自动合并）。
-	ClaimStock(ctx context.Context, req *inventorydto.ClaimStockReq) (res *inventorydto.StockResp, err error)
-	// UnclaimStock 解除认领（仅当 quantity = 0 且 reserved_quantity = 0）。
-	UnclaimStock(ctx context.Context, req *inventorydto.UnclaimStockReq) (res *inventorydto.StockResp, err error)
-	// CreateUnclaimedStock 人工建档一条**未认领**存货（仓库 + 裸码 + 数量 + 成本）。
-	//
-	// 未认领行不能只靠迁移存量产出来 —— 那样「先有货后建商品」这个能力白做。
-	CreateUnclaimedStock(ctx context.Context, req *inventorydto.CreateUnclaimedStockReq) (res *inventorydto.StockResp, err error)
 	// ReserveStock 下单预占（只改 reserved_quantity，不写流水）。
 	//
 	// 可售不足**整单拒绝**（不做部分预占）：部分预占会让订单拿到「一半的货」
@@ -144,20 +134,11 @@ type InventoryService interface {
 	// Alert = OutOfStock + LowStock 在 service 里算一次 —— 两个数字相加是展示口径，
 	// 让模板与报表各自再算一遍就会各算各的。
 	StockAlert(ctx context.Context, projectID string) (res *inventorydto.StockAlertResp, err error)
-	// ListStockLedger 仓库商品 SKU 台账页（/admin/inventory/skus）的读模型。
-	//
-	// 返回行里「认领到谁」的文案与「可售 = 数量 − 预占」的减法都已在服务端算好：
-	// 控制器只做绑定 → 调用例 → 交视图，模板只取值（template_logic_test.go）。
-	// options 由调用方传入（页面为下拉已查过一次），台账里的标签与下拉必须是同一份。
-	ListStockLedger(ctx context.Context, req *inventorydto.StockLedgerQueryReq,
-		options []inventorydto.VariantOptionResp) (*StockLedgerPage, error)
-
 	// —— 库存变动与流水（issue #16）——
 	// ChangeStock 按 SKU 增减库存（验收 1/2/3/4）：真源行锁内判定可用量，
 	// 多行按 (变体, 仓库) 标识升序加锁（无死锁），每次变动写带原因与来源引用的流水。
 	ChangeStock(ctx context.Context, req *inventorydto.ChangeStockReq) (res *inventorydto.StockChangeResp, err error)
-	// DeductStock 按 SKU 扣减（验收 1/5）：不足即整体拒绝；ExpandBOM 为真时
-	// 按物料清单展开成多个子项 SKU 一起扣减。
+	// DeductStock 按 SKU 扣减（验收 1/5）：不足即整体拒绝。
 	DeductStock(ctx context.Context, req *inventorydto.DeductStockReq) (res *inventorydto.StockChangeResp, err error)
 	// ChangeStockTx / DeductStockTx —— **事务透传版**：与 ChangeStock / DeductStock 逐字
 	// 同一条路径（同一套加锁顺序、同一份流水构造），但在**调用方的事务**里执行。
@@ -229,8 +210,6 @@ type InventoryService interface {
 // 边界：本模块内部（service / inbound）继续用 inventorydto 作为实现形状；重导出只服务于
 // 跨模块调用方（当前是 product：商品列表的库存投影、新建商品的「从仓库选」、变体成本快照）。
 type (
-	// 台账页的一屏数据（读模型，见 InventoryService.ListStockLedger）。
-	StockLedgerPage = inventorydto.StockLedgerPage
 	// 商品列表的库存投影（一行一个仓，跨仓求和在调用方做）。
 	ProductWarehouseStock = inventorydto.ProductWarehouseStock
 	// 成本快照的一行入参：哪个变体、在哪个仓（空 = 按归属仓解析）。

@@ -3,7 +3,7 @@
 // 覆盖五组口径（docs/14-product-sku-and-cost-model.md §1.1 / §1.4 / §9.3）：
 //
 //  1. **仓库侧裸码 / 商品侧带前缀**：同一商品多仓各一行，仓库里那行的 sku_code 是裸码；
-//  2. **多仓逐仓建行 + 认领仓定前缀**：勾了哪些仓就在哪些仓各建一行，第一个仓决定主体 SKU 前缀；
+//  2. **多仓逐仓建行 + 前缀仓定前缀**：勾了哪些仓就在哪些仓各建一行，第一个仓决定主体 SKU 前缀；
 //  3. **认领 / 复用**：该仓已有同裸码的行 → 复用不新建（同仓同码两行是这批要消灭的东西）；
 //  4. **数量默认无限**：不传数量 = 不跟踪（track_quantity = false）；显式填数字 = 跟踪并写入
 //     （0 是合法值，与「没填」严格区分）；
@@ -125,7 +125,7 @@ func (p *failingChangesPort) RecordChangesTx(ctx context.Context, tx *gorm.DB, i
 }
 
 // TestProductCreateMultiWarehouseBareCodes 多仓逐仓建行：仓库侧是**同一条裸码**，
-// 商品侧（主体 + 首个变体）带认领仓的仓码前缀。
+// 商品侧（主体 + 首个变体）带前缀仓的仓码前缀。
 func TestProductCreateMultiWarehouseBareCodes(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -135,14 +135,14 @@ func TestProductCreateMultiWarehouseBareCodes(t *testing.T) {
 	p, err := f.products.Create(context.Background(), &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "多仓商品", Slug: "multi-wh",
 		DefaultPrice: &price, SKUCode: "DRAWERSMOKE_001",
-		// 勾两个仓：苏州（默认仓）在前 = 认领仓。
+		// 勾两个仓：苏州（默认仓）在前 = 前缀仓。
 		WarehouseIDs: []string{f.sz.ID, f.sh.ID},
 	})
 	if err != nil {
 		t.Fatalf("多仓创建失败: %v", err)
 	}
 	if got := f.wpickContainerSKU(t, p.ID); got != "SZ_DRAWERSMOKE_001" {
-		t.Fatalf("主体 SKU 应带**认领仓**（第一个勾选的仓）前缀，实际 %q", got)
+		t.Fatalf("主体 SKU 应带**前缀仓**（第一个勾选的仓）前缀，实际 %q", got)
 	}
 	if len(p.Variants) != 1 || p.Variants[0].SKUCode != "SZ_DRAWERSMOKE_001" {
 		t.Fatalf("首个变体应等于容器主体，实际 %+v", p.Variants)
@@ -169,7 +169,7 @@ func TestProductCreateMultiWarehouseBareCodes(t *testing.T) {
 	}
 }
 
-// TestProductCreateClaimWarehouseDecidesPrefix 认领仓 = 显式列表的第一个仓（与勾选顺序一致）。
+// TestProductCreateClaimWarehouseDecidesPrefix 前缀仓 = 显式列表的第一个仓（与勾选顺序一致）。
 func TestProductCreateClaimWarehouseDecidesPrefix(t *testing.T) {
 	f := newWPickFixture(t)
 	if f == nil {
@@ -183,7 +183,7 @@ func TestProductCreateClaimWarehouseDecidesPrefix(t *testing.T) {
 		t.Fatalf("创建失败: %v", err)
 	}
 	if got := f.wpickContainerSKU(t, p.ID); got != "SH_TEE-9001" {
-		t.Fatalf("认领仓应是列表第一个仓（SH），实际主体 SKU %q", got)
+		t.Fatalf("前缀仓应是列表第一个仓（SH），实际主体 SKU %q", got)
 	}
 	// 单值兼容形态（warehouseId）依旧可用：等价于只勾一个仓。
 	p2, err := f.products.Create(context.Background(), &productdto.CreateReq{
@@ -216,14 +216,14 @@ func TestProductCreateReusesExistingWarehouseCode(t *testing.T) {
 
 	p, err := f.products.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "认领已有编码", Slug: "reuse-claim",
-		// 认领仓是 SH（第一个）：那里已有 REUSE-1 这一行。
+		// 前缀仓是 SH（第一个）：那里已有 REUSE-1 这一行。
 		SKUCode: "REUSE-1", WarehouseIDs: []string{f.sh.ID},
 	})
 	if err != nil {
 		t.Fatalf("认领已有编码应成功（复用那一行）: %v", err)
 	}
 	if got := f.wpickContainerSKU(t, p.ID); got != "SH_REUSE-1" {
-		t.Fatalf("主体 SKU 应带认领仓前缀，实际 %q", got)
+		t.Fatalf("主体 SKU 应带前缀仓前缀，实际 %q", got)
 	}
 	if got := f.wstockRowCount(t, f.sh.ID, "REUSE-1"); got != 1 {
 		t.Fatalf("同仓同码必须只有一行（复用不新建），实际 %d 行", got)
@@ -344,7 +344,7 @@ func TestProductListStockAggregationThreeStates(t *testing.T) {
 	if rerr != nil {
 		t.Fatalf("解析第二仓失败: %v", rerr)
 	}
-	if err := f.inventory.EnsureVariantStock(ctx, ref, mixed.ID, mixed.Variants[0].ID, "AGG-MIXED", &five); err != nil {
+	if _, err := f.inventory.EnsureVariantStock(ctx, ref, mixed.ID, mixed.Variants[0].ID, "AGG-MIXED", &five); err != nil {
 		t.Fatalf("为第二仓建跟踪行失败: %v", err)
 	}
 	got, err = f.products.Get(ctx, &productdto.GetReq{ID: mixed.ID})
