@@ -85,12 +85,19 @@ func uiCSSSections() []uiCSSSection {
 		{id: "drawer", anchor: "/* ===== 抽屉（js/ui/drawer.js）=====", trigger: sectionTriggerClasses, files: []string{"drawer.js"}},
 		{id: "colorfield", anchor: "/* ===== 颜色字段（js/ui/colorfield.js）=====", trigger: sectionTriggerClasses, files: []string{"colorfield.js"}},
 		{id: "busy", anchor: "/* ===== 按钮忙碌态（js/ui/busy.js）=====", trigger: sectionTriggerClasses},
-		{id: "base-doc", anchor: "原始控件（与 js/ui/*.js 配套）—— 后台、工作台、前台产物共用一份", trigger: sectionTriggerPublic},
+		// 段标记必须是**注释块之外的独立单行**：切点落在多行注释内部时，前一段
+		// 会留下未闭合的 /*，浏览器把后一段整块当注释吞掉（令牌段 :root 丢失、
+		// 控件尺寸归零，且 CSS 不报错）。这行是那条约束的锚。
+		{id: "base-doc", anchor: "/* ===== 原始控件基座（js/ui/*.js）=====", trigger: sectionTriggerPublic},
 		{id: "tokens", anchor: "/* ===== 尺寸与动效的基础量（theme.css 缺失时的兜底）=====", trigger: sectionTriggerPublic},
 		{id: "buttons", anchor: "按钮", trigger: sectionTriggerClasses},
 		{id: "cards", anchor: "卡片", trigger: sectionTriggerClasses},
 		{id: "tables", anchor: "表格", trigger: sectionTriggerClasses},
-		{id: "forms", anchor: "表单", trigger: sectionTriggerClasses},
+		// forms 段必须跟着 select.js 走：自绘下拉的可见触发器 .wbs-trigger 是**运行时生成**的，
+		// 构建期扫 HTML 时它还不存在，而它的外观全在 forms 段的共享外观组里。
+		// 只按类命中时，任何「用了下拉但没有 .form-select 类」的页面（站点表单组件就是）
+		// 都会拿到一个浏览器默认按钮 —— 白底黑字、outset 边框。
+		{id: "forms", anchor: "表单", trigger: sectionTriggerClasses, files: []string{"select.js"}},
 		// 这里曾有 bareform 段（后台裸控件兜底，UIK-009）。2026-10-01 基座清洗：兜底规则删了，
 		// 真裸控件清零（internal/templates/admin_form_base_test.go 断言必须为 0），段随之消失。
 		{id: "badges", anchor: "徽章 / 标签 / 状态", trigger: sectionTriggerClasses},
@@ -178,6 +185,15 @@ func splitUICSS(src string) (chunks []uiCSSChunk, ok bool, err error) {
 }
 
 // indexAnchorLine 从 from 起找到「去空白后以 anchor 开头的整行」，返回该行起始偏移。
+//
+// 切点必须落在**注释块之外**：掉进多行注释内部时，前一段末尾留下未闭合的 /*、
+// 后一段开头是个孤立的 */ —— 整份拼回去仍逐字节相同（拼回测试绿），但子集注入会
+// 让浏览器把未闭合注释之后的规则整块吞掉，CSS 一句也不报错（实测：自绘下拉箭头
+// 宽高归零，页面不报错）。
+//
+// 段标记本身常写在多行注释的中间（三行块：开线、标题、闭线），所以不能简单跳过
+// 命中的注释位置 —— 那样一处都找不到。正确做法是把切点**前移到该注释块的起始行**，
+// 让每个段都从一条完整注释的开头开始。
 func indexAnchorLine(src, anchor string, from int) int {
 	for {
 		idx := strings.Index(src[from:], anchor)
@@ -187,10 +203,26 @@ func indexAnchorLine(src, anchor string, from int) int {
 		at := from + idx
 		lineStart := strings.LastIndexByte(src[:at], '\n') + 1
 		if strings.TrimSpace(src[lineStart:at]) == "" {
+			if open := openCommentStart(src, lineStart); open >= 0 {
+				return open // 命中在注释内部：切点前移到该注释的起始行
+			}
 			return lineStart
 		}
 		from = at + len(anchor)
 	}
+}
+
+// openCommentStart 若 pos 处在一条未闭合注释内部，返回该注释起始行的偏移；否则 -1。
+func openCommentStart(src string, pos int) int {
+	if !inOpenCSSComment(src[:pos]) {
+		return -1
+	}
+	// 反向找最近的 "/*"，它就是劈开当前位置的那条注释的起点。
+	i := strings.LastIndex(src[:pos], "/*")
+	if i < 0 {
+		return -1
+	}
+	return strings.LastIndexByte(src[:i], '\n') + 1
 }
 
 // sectionClasses 段里定义的类名集合（剥注释后按 .class 提取，自动推导触发条件）。
@@ -250,10 +282,56 @@ func uiCSSFor(css string, scan htmlScan) (string, error) {
 			continue // 后台专属段不进产物
 		}
 		if sec.trigger == sectionTriggerPublic || hit[c.id] {
-			sb.WriteString(c.text)
+			sb.WriteString(repairCommentBoundaries(c.text))
 		}
 	}
 	return sb.String(), nil
+}
+
+// repairCommentBoundaries 把被切点劈开的注释各自封闭。
+//
+// 切分按标题行定位，标题可能落在**多行注释内部**（作者把段标记写进文件头说明里）。
+// 于是前一段末尾留下未闭合的 /*，后一段开头是一个孤立的 */。整份拼回去是原文件，
+// 逐字节相同 —— 所以"源没问题"掩盖了"子集注入坏掉"：浏览器把未闭合注释之后的
+// 规则**整块吞掉且不报错**。实测症状：base-doc 段锚在注释块中间 → 后一段的
+// tokens :root 失效 → --ui-icon-chevron-size 读不到 → 自绘下拉箭头宽高归零。
+//
+// 修补只动注释边界，不触碰任何规则文本：被劈开的两半各自成为一条完整注释，
+// 语义上等价（注释本来就不参与样式）。
+func repairCommentBoundaries(text string) string {
+	if text == "" {
+		return text
+	}
+	const ( 
+		openMark  = "/*"
+		closeMark = "*/"
+	)
+	var b strings.Builder
+	if strings.HasPrefix(strings.TrimSpace(text), closeMark) {
+		b.WriteString(openMark + "\n")
+	}
+	b.WriteString(text)
+	if inOpenCSSComment(text) {
+		b.WriteString("\n" + closeMark + "\n")
+	}
+	return b.String()
+}
+
+// inOpenCSSComment 判断 s 末尾是否停在一条未闭合的 CSS 注释里。
+//
+// 不能用 strings.Count 数 "/*" 与 "*/"：注释正文里会出现**文件名通配**（"js/ui/*.js"），
+// 那一对字符会被误算成注释开头，于是边界判断全靠运气对上。
+func inOpenCSSComment(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if i+1 < len(s) && s[i] == '/' && s[i+1] == '*' {
+			end := strings.Index(s[i+2:], "*/")
+			if end < 0 {
+				return true
+			}
+			i += 2 + end + 1
+		}
+	}
+	return false
 }
 
 // uiCSSSectionByID 按 id 取段定义（段表是常量，找不到属于代码缺陷）。

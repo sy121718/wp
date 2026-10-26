@@ -72,6 +72,81 @@ func TestUICSSSplitSectionTableMatchesSource(t *testing.T) {
 	}
 }
 
+// TestUICSSInjectionKeepsCommentsBalanced 任何命中组合注入出去都必须是注释配平的 CSS。
+//
+// 切点落在多行注释内部时，前一段末尾留下未闭合的 `/*`、后一段开头是个孤立的 `*/`。
+// 全部段拼回去是逐字节相同的（TestUICSSSplitReassemblesSource 绿），所以"源没问题"
+// 掩盖了"子集注入坏掉"：浏览器把未闭合注释之后的规则整块吞掉，且 CSS 不报错。
+// 实测症状：base-doc 段的锚写在文件头注释块中间 → tokens 段的 :root 整块失效 →
+// --ui-icon-chevron-size 读不到 → 自绘下拉的箭头宽高归零（看不见，但没有报错）。
+//
+// 断言的是**输出**而不是源文本结构：段表里公共段（head / tokens / 工具类）永远先带上，
+// 某些切点因此天然被后一段接续闭合——那种情况注入结果是对的，不该判失败。
+func TestUICSSInjectionKeepsCommentsBalanced(t *testing.T) {
+	src := fullUICSS(t)
+	cases := []struct {
+		name string
+		html string
+	}{
+		{"只用按钮", "<button class='btn btn-primary'>提交</button>"},
+		{"只用表格", "<table class='data-table'><tr><td>x</td></tr></table>"},
+		{"只用下拉", "<select data-ui-select name='a'><option>1</option></select>"},
+		{"表单", "<form><input class='form-input'><button class='btn'>提交</button></form>"},
+		{"徽章与分页", "<span class='badge'>新</span><nav class='pagination'><a class='pagination-btn'>2</a></nav>"},
+		{"模态与抽屉", "<div data-modal></div><div data-drawer></div>"},
+	}
+	for _, c := range cases {
+		css, err := uiCSSFor(src, collectHTMLScan(c.html))
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if css == "" {
+			continue
+		}
+		if inCSSComment(css) {
+			t.Errorf("%s：注入的 CSS 停在未闭合注释里，其后的规则会被浏览器整块忽略", c.name)
+		}
+		if stray := countStrayCommentClose(css); stray > 0 {
+			t.Errorf("%s：注入的 CSS 里有 %d 处孤立 */（注释被切点劈开）", c.name, stray)
+		}
+	}
+}
+
+// countStrayCommentClose 统计不在任何注释内部的 "*/" 出现次数（注释被劈开的另一半）。
+func countStrayCommentClose(s string) int {
+	n, in := 0, false
+	for i := 0; i+1 < len(s); i++ {
+		switch {
+		case !in && s[i] == '/' && s[i+1] == '*':
+			in, i = true, i+1
+		case in && s[i] == '*' && s[i+1] == '/':
+			in, i = false, i+1
+		case !in && s[i] == '*' && s[i+1] == '/':
+			n++
+			i++
+		}
+	}
+	return n
+}
+
+// inCSSComment 判断 s 末尾是否停在一条未闭合的 CSS 注释里。
+//
+// 不能用 strings.Count 数 "/*" 与 "*/"：注释正文里会出现**文件名通配**（"js/ui/*.js"），
+// 那一对字符会被误算成注释开头，于是真实的注释边界全靠运气对上。
+func inCSSComment(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if !strings.HasPrefix(s[i:], "/*") {
+			continue
+		}
+		end := strings.Index(s[i+2:], "*/")
+		if end < 0 {
+			return true
+		}
+		i += 2 + end + 1
+	}
+	return false
+}
+
 // TestUICSSInjectsOnlyUsedSections 只用按钮的页面不注入表格与分页（UIK-013 验收第一条）。
 func TestUICSSInjectsOnlyUsedSections(t *testing.T) {
 	src := fullUICSS(t)
