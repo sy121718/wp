@@ -1,0 +1,353 @@
+{* admin/inventory/inventory_stock_skus.html — 仓库商品 SKU 台账（迁移 642 / B3）
+
+   页面定位：**仓库里有哪些货** —— 「从仓库选」的反向视角。
+   候选下拉只列能选的（启用的、没被挂满的），台账页要把全部行列出来：停用的、
+   还没被任何商品引用的（VariantCount 为 0 的那批）都必须看得见 ——
+   否则运营没法判断「这批货到底建过没有」，只能在商品页反复试。
+
+   与 /admin/inventory（库存管理）的分工：
+     · 库存管理 = 按 SKU 看各仓（一个 SKU 的横向视图），入口是筛选一个 SKU；
+     · 本页 = 仓库里的一行行货（一个仓的纵向视图），入口是筛选一个仓。
+   两者读的是同一张表（inventory_stocks），维度不同。
+
+   写动作：新建（建行 + 可带初量）、编辑主档（编码与所在仓不可改）、启停、调整数量。
+   数量只能经变动契约改（有变动必有流水），所以「调整数量」走库存调整的表单口径，
+   编辑抽屉里数量是只读的。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{csrf := .["csrf_token"]}}
+{{selectedProject := .SelectedProject}}
+{{rows := .Rows}}
+{{loadError := .["LoadError"]}}
+{{filterWarehouse := ""}}{{if isset(.FilterWarehouse)}}{{filterWarehouse = .FilterWarehouse}}{{end}}
+{{filterKeyword := ""}}{{if isset(.FilterKeyword)}}{{filterKeyword = .FilterKeyword}}{{end}}
+{{filterStatus := ""}}{{if isset(.FilterStatus)}}{{filterStatus = .FilterStatus}}{{end}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{tr("admin.inventory.stock_skus.title", "仓库商品 SKU")}}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{tr("admin.inventory.help.label", "查看说明")}}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{tr("admin.inventory.stock_skus.lead", "一条货的身份是「仓库 + 仓库 SKU」：")}}<strong>{{tr("admin.inventory.stock_skus.bold", "同一条货可以在多个仓各有一行，同一个仓里也可以有多条货")}}</strong>{{tr("admin.inventory.stock_skus.tail", "（自有码、客户码、不同批次）。编码与所在仓建好之后不可改 —— 改了等于换一条货，历史流水与变体引用都会指空。商品要卖这里的货，挂在商品变体上（引用这一行），不在这里操作。")}}</span>
+                </span>
+            </div>
+        </div>
+        <div class="page-actions">
+            {{if isset(.Buttons["inventory.stock_create"])}}
+            <button type="button" class="btn btn-primary" data-drawer-open="#tpl-stock-sku-create"
+                    data-drawer-title="{{tr("admin.inventory.stock_skus.create", "新建仓库 SKU")}}">＋ {{tr("admin.inventory.stock_skus.create", "新建仓库 SKU")}}</button>
+            {{end}}
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/inventory/skus">
+                <label class="sr-only" for="sk-project">{{tr("admin.inventory.field.project", "站点工程")}}</label>
+                <select class="form-select" id="sk-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+        </div>
+    </header>
+
+    {{if loadError}}
+    <section class="card list-card">
+        <p class="badge badge-danger" role="alert">{{loadError}}</p>
+        <p class="page-sub">{{tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来")}}</p>
+        <p class="hint">{{tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。")}}</p>
+    </section>
+    {{else}}
+    <section class="card list-card">
+        <div class="card-header">
+            <span class="card-title">{{if len(rows) > 0}}{{tr("admin.inventory.stock_skus.listLead", "仓库 SKU（")}}{{len(rows)}}{{tr("admin.inventory.list.titleTail", "）")}}{{else}}{{tr("admin.inventory.stock_skus.title", "仓库商品 SKU")}}{{end}}</span>
+        </div>
+        <div class="filter-bar">
+            <form method="get" action="/admin/inventory/skus" class="filter-fields">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                <div class="filter-field">
+                    <label for="sk-warehouse">{{tr("admin.inventory.sku.col.warehouse", "仓库")}}</label>
+                    <select class="form-select" id="sk-warehouse" name="warehouseId">
+                        <option value="">{{tr("admin.inventory.filter.allWarehouses", "（全部）")}}</option>
+                        {{range _, w := .Warehouses}}
+                        <option value="{{w.ID}}" {{if w.ID == filterWarehouse}}selected{{end}}>{{w.Name}} ({{w.Code}})</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="sk-keyword">{{tr("admin.common.field.keyword", "关键词")}}</label>
+                    <input type="text" class="form-input" id="sk-keyword" name="keyword" value="{{filterKeyword}}"
+                           placeholder="{{tr("admin.inventory.stock_skus.keywordPh", "SKU / 名称 / 条码 / 外部编码")}}" autocomplete="off">
+                </div>
+                <div class="filter-field">
+                    <label for="sk-status">{{tr("admin.inventory.col.status", "状态")}}</label>
+                    <select class="form-select" id="sk-status" name="status">
+                        <option value="">{{tr("admin.inventory.filter.allStatus", "（全部）")}}</option>
+                        {{range _, o := .StatusOptions}}
+                        <option value="{{o.Value}}" {{if o.Value == filterStatus}}selected{{end}}>{{o.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-sm">{{tr("admin.common.filter.submit", "筛选")}}</button>
+                    <a class="btn btn-sm btn-ghost" href="/admin/inventory/skus?project={{selectedProject}}">{{tr("admin.common.filter.reset", "重置")}}</a>
+                </div>
+            </form>
+        </div>
+
+        <div class="table-wrap table-scroll" tabindex="0">
+        <table class="data-table data-table-wide">
+            <thead>
+            <tr>
+                <th>{{tr("admin.inventory.stock_skus.col.item", "货品")}}</th>
+                <th>{{tr("admin.inventory.sku.col.warehouse", "仓库")}}</th>
+                <th>{{tr("admin.inventory.sku.col.qty", "数量")}}</th>
+                <th>{{tr("admin.inventory.stock_skus.col.cost", "成本 / 运费")}}</th>
+                <th>{{tr("admin.inventory.stock_skus.col.variants", "被商品引用")}}</th>
+                <th>{{tr("admin.inventory.col.status", "状态")}}</th>
+                <th>{{tr("admin.inventory.sku.col.updatedAt", "更新时间")}}</th>
+                <th class="col-actions">{{tr("admin.common.col.actions", "操作")}}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{if len(rows) == 0}}
+            <tr><td colspan="8" class="cell-wrap">
+                {{include "../partials/empty_state.html" map(
+                    "title", tr("admin.inventory.stock_skus.emptyHeading", "这个仓里还没有货"),
+                    "desc", tr("admin.inventory.stock_skus.emptyDesc", "先建一条仓库 SKU：它是一个仓里的一批货，之后商品变体引用它就能卖了。"))}}
+            </td></tr>
+            {{else}}
+            {{range _, r := rows}}
+            <tr>
+                <td data-label="{{tr("admin.inventory.stock_skus.col.item", "货品")}}">
+                    <div class="cell-stack">
+                        {{if r.Name}}<span class="cell-title">{{r.Name}}</span>{{end}}
+                        <code>{{r.SKUCode}}</code>
+                        {{if r.ExternalSKU}}<span class="move-meta">{{tr("admin.inventory.sku.col.externalSku", "外部编码")}} {{r.ExternalSKU}}</span>{{end}}
+                        {{if r.Barcode}}<span class="move-meta">{{r.Barcode}}</span>{{end}}
+                    </div>
+                </td>
+                <td data-label="{{tr("admin.inventory.sku.col.warehouse", "仓库")}}">
+                    {{r.WarehouseName}} <code>{{r.WarehouseCode}}</code>
+                    {{if r.IsDefault}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.inventory.defaultWarehouse", "默认仓"))}}{{end}}
+                </td>
+                <td data-label="{{tr("admin.inventory.sku.col.qty", "数量")}}">
+                    {* 三态：不跟踪（∞ 无限）不该显示 0 —— 0 是「卖光」这个具体事实，
+                       两者长得一样会让运营以为要补货。预占 / 可售跟在后面。 *}
+                    {{if r.TrackQuantity}}{{r.QuantityText}}{{else}}∞ {{tr("admin.inventory.stock.unlimited", "无限")}}{{end}}
+                    {{if r.TrackQuantity}}<span class="move-meta">{{tr("admin.inventory.sku.col.reserved", "预占")}} {{r.ReservedQuantity}} · {{tr("admin.inventory.sku.col.available", "可售")}} {{r.AvailableQuantity}}</span>{{end}}
+                </td>
+                <td data-label="{{tr("admin.inventory.stock_skus.col.cost", "成本 / 运费")}}">
+                    {{r.CostText}}
+                    {{if r.CurrencyText}}<span class="move-meta">{{r.CurrencyText}}</span>{{end}}
+                    <span class="move-meta">{{tr("admin.inventory.stock_skus.col.freight", "运费")}} {{r.FreightText}}</span>
+                    {* 汇率未固化不显示 1:1 —— 报表会因此凭空多一个能算的折算金额。 *}
+                    {{if r.FXMissing}}{{include "../partials/badge.html" map("tone", "warning", "label", tr("admin.inventory.stock_skus.fxMissing", "汇率未固化"))}}{{end}}
+                </td>
+                <td data-label="{{tr("admin.inventory.stock_skus.col.variants", "被商品引用")}}">
+                    {{if r.VariantCount == 0}}
+                    {{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.inventory.stock_skus.noVariant", "暂无商品引用"))}}
+                    {{else}}
+                    {{range _, u := r.Variants}}<code class="move-meta">{{u.SKUCode}}</code> {{end}}
+                    {{if r.VariantCount > len(r.Variants)}}<span class="move-meta">{{tr("admin.inventory.stock_skus.variantMore", "等")}} {{r.VariantCount}} {{tr("admin.inventory.stock_skus.variantCount", "个变体")}}</span>{{end}}
+                    {{end}}
+                </td>
+                <td data-label="{{tr("admin.inventory.col.status", "状态")}}">
+                    {{if r.Status == "disabled"}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.inventory.status.disabled", "已停用"))}}
+                    {{else}}{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.inventory.status.active", "启用中"))}}{{end}}
+                </td>
+                <td data-label="{{tr("admin.inventory.sku.col.updatedAt", "更新时间")}}">{{formatTime(r.UpdatedAt)}}</td>
+                <td class="col-actions" data-label="{{tr("admin.common.col.actions", "操作")}}">
+                    {{if isset(.Buttons["inventory.stock_update"])}}
+                    <button type="button" class="btn btn-sm btn-ghost" data-drawer-open="#tpl-stock-sku-edit-{{r.ID}}"
+                            data-drawer-title="{{tr("admin.common.action.edit", "编辑")}}">{{tr("admin.common.action.edit", "编辑")}}</button>
+                    {{end}}
+                    {{if isset(.Buttons["inventory.stock_update"])}}
+                    <button type="submit" form="sk-toggle-{{r.ID}}" class="btn btn-sm">
+                        {{if r.Status == "disabled"}}{{tr("admin.inventory.stock_skus.enable", "启用")}}{{else}}{{tr("admin.inventory.stock_skus.disable", "停用")}}{{end}}
+                    </button>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {{include "../partials/pagination.html"}}
+
+        {* 行内启停表单放表格外：HTML 不允许 form 嵌套，按钮用 form="<id>" 关联。 *}
+        {{if isset(.Buttons["inventory.stock_update"])}}
+        {{range _, r := rows}}
+        <form id="sk-toggle-{{r.ID}}" method="post" action="/admin/inventory/stock/status?{{ .ListQuery }}" class="hidden-form"
+              hx-post="/admin/inventory/stock/status?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{r.ID}}">
+            <input type="hidden" name="status" value="{{if r.Status == "disabled"}}active{{else}}disabled{{end}}">
+        </form>
+        {{end}}
+        {{end}}
+    </section>
+
+    {* ===== 新建仓库 SKU（抽屉） ===== *}
+    {{if isset(.Buttons["inventory.stock_create"])}}
+    <template id="tpl-stock-sku-create">
+        <form method="post" action="/admin/inventory/stock/create?{{ .ListQuery }}"
+              hx-post="/admin/inventory/stock/create?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <div class="form-group">
+                <label class="form-label req">{{tr("admin.inventory.sku.col.warehouse", "仓库")}}</label>
+                <select class="form-select" name="warehouseId" required>
+                    <option value="">{{tr("admin.inventory.create.warehousePh", "选择仓库")}}</option>
+                    {{range _, w := .Warehouses}}
+                    <option value="{{w.ID}}">{{w.Name}} ({{w.Code}})</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label req">{{tr("admin.inventory.stock_skus.skuCode", "仓库 SKU 编码")}}</label>
+                <input type="text" class="form-input" name="skuCode" required autocomplete="off"
+                       placeholder="{{tr("admin.inventory.stock_skus.skuCodePh", "这个仓里的货号（不带仓码前缀）")}}">
+                <p class="hint">{{tr("admin.inventory.stock_skus.skuCodeHint", "同一仓里编码唯一。带不带仓码前缀都可以，服务端会归一（剥掉前缀后按「仓 + 编码」判重）。")}}</p>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.name", "商品名称")}}</label>
+                <input type="text" class="form-input" name="name" autocomplete="off" maxlength="200"
+                       placeholder="{{tr("admin.inventory.stock_skus.namePh", "运营看得懂的名字（如 红茶 500ml）")}}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.sku.col.externalSku", "外部编码")}}</label>
+                <input type="text" class="form-input" name="externalSku" autocomplete="off" maxlength="128"
+                       placeholder="{{tr("admin.inventory.sku.externalSku.ph", "留空 = 该仓用我们的 SKU")}}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.barcode", "条码")}}</label>
+                <input type="text" class="form-input" name="barcode" autocomplete="off" maxlength="64">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.imageUrl", "图片地址")}}</label>
+                <input type="text" class="form-input" name="imageUrl" autocomplete="off" maxlength="512">
+            </div>
+            {* 数量与跟踪开关成对：填了数量却不跟踪是自相矛盾，服务端会拒。 *}
+            <label class="var-value">
+                <input type="checkbox" name="trackQuantity" value="1" checked>
+                {{tr("admin.inventory.stock.track", "按数量跟踪（不勾 = 无限库存）")}}
+            </label>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.initialQty", "初始数量")}}</label>
+                <input type="number" class="form-input" name="quantity" value="0" inputmode="numeric" step="1" min="0">
+                <p class="hint">{{tr("admin.inventory.stock_skus.initialQtyHint", "只在新建时能填；之后的数量调整走「库存调整」（要填原因与备注，会留流水）。")}}</p>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.cost", "成本价")}}</label>
+                <input type="text" class="form-input" name="costPrice" inputmode="decimal" autocomplete="off"
+                       placeholder="{{tr("admin.inventory.stock_skus.costPh", "留空 = 尚未核算（不是 0）")}}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.col.freight", "运费")}}</label>
+                <input type="text" class="form-input" name="freightPrice" inputmode="decimal" autocomplete="off" placeholder="70">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.costCurrency", "成本币种")}}</label>
+                <input type="text" class="form-input" name="costCurrency" autocomplete="off" placeholder="CNY" maxlength="8">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.costBaseCurrency", "基准币种")}}</label>
+                <input type="text" class="form-input" name="costBaseCurrency" autocomplete="off" placeholder="{{tr("admin.inventory.stock_skus.baseCurrencyPh", "留空 = 与成本币种相同")}}" maxlength="8">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.fxRate", "汇率")}}</label>
+                <input type="text" class="form-input" name="costFxRate" inputmode="decimal" autocomplete="off"
+                       placeholder="{{tr("admin.inventory.stock_skus.fxRatePh", "两币不同才需要；留空 = 未固化，不要填 0")}}">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.col.status", "状态")}}</label>
+                <select class="form-select" name="status">
+                    {{range _, o := .StatusOptions}}
+                    <option value="{{o.Value}}">{{o.Label}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.remark", "备注")}}</label>
+                <textarea class="form-textarea" name="remark" rows="2" maxlength="500"></textarea>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+                <button type="submit" class="btn btn-primary">{{tr("admin.inventory.stock_skus.createSubmit", "新建")}}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+
+    {* ===== 编辑一条货的主档（每行一份模板，id 带行 ID） =====
+       编码与所在仓不在表单里：它们是这一行的身份（244 的 UNIQUE (warehouse_id, sku_code)），
+       改了等于换一条货，历史流水与变体引用都会指空。数量也不在这里 —— 走库存调整。 *}
+    {{if isset(.Buttons["inventory.stock_update"])}}
+    {{range _, r := rows}}
+    <template id="tpl-stock-sku-edit-{{r.ID}}">
+        <form method="post" action="/admin/inventory/stock/update?{{ .ListQuery }}"
+              hx-post="/admin/inventory/stock/update?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{r.ID}}">
+            <p class="hint">{{r.WarehouseName}} · <code>{{r.SKUCode}}</code> —— {{tr("admin.inventory.stock_skus.identityHint", "仓与编码不可改（它们是这条货的身份）")}}</p>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.name", "商品名称")}}</label>
+                <input type="text" class="form-input" name="name" value="{{r.Name}}" autocomplete="off" maxlength="200">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.sku.col.externalSku", "外部编码")}}</label>
+                <input type="text" class="form-input" name="externalSku" value="{{r.ExternalSKU}}" autocomplete="off" maxlength="128">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.barcode", "条码")}}</label>
+                <input type="text" class="form-input" name="barcode" value="{{r.Barcode}}" autocomplete="off" maxlength="64">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.imageUrl", "图片地址")}}</label>
+                <input type="text" class="form-input" name="imageUrl" value="{{r.ImageURL}}" autocomplete="off" maxlength="512">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.cost", "成本价")}}</label>
+                <input type="text" class="form-input" name="costPrice" value="{{r.CostText}}" inputmode="decimal" autocomplete="off">
+                <p class="hint">{{tr("admin.inventory.stock_skus.costHint", "留空 = 尚未核算（会显示 —，不是 0）；填 0 是显式的零成本。")}}</p>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.col.freight", "运费")}}</label>
+                <input type="text" class="form-input" name="freightPrice" value="{{r.FreightText}}" inputmode="decimal" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.costCurrency", "成本币种")}}</label>
+                <input type="text" class="form-input" name="costCurrency" value="{{r.CurrencyText}}" autocomplete="off" maxlength="8">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.fxRate", "汇率")}}</label>
+                <input type="text" class="form-input" name="costFxRate" value="{{r.FXText}}" inputmode="decimal" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.col.status", "状态")}}</label>
+                <select class="form-select" name="status">
+                    {{range _, o := .StatusOptions}}
+                    <option value="{{o.Value}}" {{if o.Value == r.Status}}selected{{end}}>{{o.Label}}</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">{{tr("admin.inventory.stock_skus.remark", "备注")}}</label>
+                <textarea class="form-textarea" name="remark" rows="2" maxlength="500">{{r.Remark}}</textarea>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+                <button type="submit" class="btn btn-primary">{{tr("admin.common.action.save", "保存")}}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+    {{end}}
+</div>
+{{end}}
+{{end}}

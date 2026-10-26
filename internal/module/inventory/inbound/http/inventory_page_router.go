@@ -33,7 +33,10 @@ func registerInventoryReadPages(pages *gin.RouterGroup, h *inventoryPageHandle) 
 		adminui.PageSlot(InventoryWarehousesPageTemplate), h.InventoryWarehousesPage)
 	pages.GET("/inventory/reasons", adminui.PageAuthz("/api/inventory/reason/list"),
 		adminui.PageSlot(InventoryReasonsPageTemplate), h.InventoryReasonsPage)
-
+	// 仓库商品 SKU 台账（迁移 642）：与「库存管理」同表不同维度 ——
+	// 库存管理按 SKU 横看各仓，本页按仓纵看一屏货行（含停用的、还没被商品引用的）。
+	pages.GET("/inventory/skus", adminui.PageAuthz("/api/inventory/stock/list"),
+		adminui.PageSlot(InventoryStockSKUsPageTemplate), h.InventoryStockSKUsPage)
 }
 
 // 三个整页的模板名（与路由 / 权限点同处：一眼能看全这个模块渲染了哪些屏）。
@@ -42,6 +45,7 @@ const (
 	InventoryWarehousesPageTemplate = "admin/inventory/inventory_warehouses.html"
 	InventoryReasonsPageTemplate    = "admin/inventory/inventory_reasons.html"
 	InventoryTransfersPageTemplate  = "admin/inventory/inventory_transfers.html"
+	InventoryStockSKUsPageTemplate  = "admin/inventory/inventory_stock_skus.html"
 )
 
 // registerInventoryWarehouseWritePages 仓库与库存行的写端点（新建 / 编辑 / 删 / 批量删 /
@@ -62,6 +66,12 @@ func registerInventoryWarehouseWritePages(pages *gin.RouterGroup, h *inventoryPa
 	pages.POST("/inventory/stock/change", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockChange)
 	pages.POST("/inventory/external-sku", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryExternalSKUUpdate)
 	pages.POST("/inventory/stock/tracking", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockTrackingUpdate)
+	// 仓库商品 SKU 台账的三条写动作（迁移 642）：建行复用 ensure（建一条货 = 保证它存在），
+	// 主档与启停复用 change（能改这个仓库存的人，才该能改它的名称 / 状态）——
+	// 不新增权限点：sys_permission 已有行，另起名字等于给同一能力发两张票。
+	pages.POST("/inventory/stock/create", builtin.CasbinMiddlewareForPath("/api/inventory/stock/ensure"), h.InventoryStockCreate)
+	pages.POST("/inventory/stock/update", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockUpdate)
+	pages.POST("/inventory/stock/status", builtin.CasbinMiddlewareForPath("/api/inventory/stock/change"), h.InventoryStockStatus)
 	// 原因字典：启停 / 改名（内置原因改名由 service 拒绝，停用照常）。
 	pages.POST("/inventory/reason/create", builtin.CasbinMiddlewareForPath("/api/inventory/reason/create"), h.InventoryReasonCreate)
 	pages.POST("/inventory/reason/update", builtin.CasbinMiddlewareForPath("/api/inventory/reason/update"), h.InventoryReasonUpdate)

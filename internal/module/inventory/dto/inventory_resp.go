@@ -118,8 +118,25 @@ type StockResp struct {
 	//
 	// 成本只记一个当前值、不做成本流水；核算归采购侧（可外部核算后导入）。
 	CostPrice *float64 `json:"costPrice"`
-	CreatedAt string   `json:"createdAt"`
-	UpdatedAt string   `json:"updatedAt"`
+
+	// —— 仓库商品 SKU 主档（迁移 642 / B3）——
+	//
+	// 这些是**这条货在这个仓**的展示属性，与商品侧的 products / product_variants 不是同一份事实。
+	Name     string `json:"name"`
+	ImageURL string `json:"imageUrl"`
+	Barcode  string `json:"barcode"`
+	Remark   string `json:"remark"`
+	Status   string `json:"status"`
+	// FreightPrice 这条货从仓到买家的固定开销（不计入 CostPrice）；nil = 用默认值。
+	FreightPrice *float64 `json:"freightPrice"`
+	// CostCurrency / CostBaseCurrency / CostFXRate 是成本换算的三件套：
+	// 「1 CostCurrency = CostFXRate CostBaseCurrency」；CostFXRate 为 nil = 未固化，不推算。
+	CostCurrency     string   `json:"costCurrency"`
+	CostBaseCurrency string   `json:"costBaseCurrency"`
+	CostFXRate       *float64 `json:"costFxRate"`
+
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 // StockReserveResp 预占 / 释放的写动作回执。
@@ -209,6 +226,19 @@ type WarehouseSKUResp struct {
 	AvailableQuantity int `json:"availableQuantity"`
 	// TrackQuantity 与真源同义（false = 无限）：页面数量列靠它区分「∞」与「0」。
 	TrackQuantity bool `json:"trackQuantity"`
+	// 成本与主档（迁移 244 / 642）：台账页与「从仓库选」都要按名称认货、按成本核价。
+	CostPrice        *float64 `json:"costPrice"`
+	FreightPrice     *float64 `json:"freightPrice"`
+	CostCurrency     string   `json:"costCurrency"`
+	CostBaseCurrency string   `json:"costBaseCurrency"`
+	CostFXRate       *float64 `json:"costFxRate"`
+	Name             string   `json:"name"`
+	ImageURL         string   `json:"imageUrl"`
+	Barcode          string   `json:"barcode"`
+	Remark           string   `json:"remark"`
+	Status           string   `json:"status"`
+	CreatedAt        string   `json:"createdAt"`
+	UpdatedAt        string   `json:"updatedAt"`
 }
 
 // —— 库存变动与流水（issue #16）——

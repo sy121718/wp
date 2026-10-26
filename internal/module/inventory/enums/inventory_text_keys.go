@@ -37,8 +37,12 @@ const (
 	// InventoryChangeWarehouseDefaultSuffix 商品列表页与库存页共用的后缀词条（同一份词条两处取用）。
 	InventoryChangeWarehouseDefaultSuffix = "admin.inventory.change.warehouseDefaultSuffix"
 
-	// —— 仓库商品 SKU 台账页（迁移 624）——
-	InventoryFilterAll = "admin.inventory.filter.all"
+	// —— 仓库商品 SKU 台账页（迁移 642 / B3）——
+	InventoryFilterAll      = "admin.inventory.filter.all"
+	InventoryStockSKUsTitle = "admin.inventory.stock_skus.title"
+	InventoryStockSKUsLead  = "admin.inventory.stock_skus.lead"
+	InventoryStockSKUsBold  = "admin.inventory.stock_skus.bold"
+	InventoryStockSKUsTail  = "admin.inventory.stock_skus.tail"
 
 	// —— 调拨页（迁移 630，W3）——
 	InventoryTransfersTitle           = "admin.inventory.transfers.title"

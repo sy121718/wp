@@ -317,6 +317,10 @@ func (s *Service) toStockResp(ctx context.Context, e *inventorymodel.StockEntity
 		// 成本随库存行一起出（(仓库, SKU) 一个当前值）：后台不必再为「这条货按多少
 		// 算成本」跑第二次查询，也保证「库存与成本同源」不会各查各的漂移。
 		CostPrice: e.CostPrice,
+		// 主档（迁移 642）随行一起出：后台列表要按名称认货、按状态区分启停。
+		Name: e.Name, ImageURL: e.ImageURL, Barcode: e.Barcode, Remark: e.Remark,
+		Status: e.Status, FreightPrice: e.FreightPrice,
+		CostCurrency: e.CostCurrency, CostBaseCurrency: e.CostBaseCurrency, CostFXRate: e.CostFXRate,
 		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}
 	if wh, err := s.m.GetWarehouse(ctx, e.WarehouseID, e.ProjectID); err == nil {
@@ -346,6 +350,9 @@ func toStockRespList(rows []*inventorymodel.StockRow) []*inventorydto.StockResp 
 			// 成本同源（投影里带上 s.cost_price）：列表 / 按 SKU 各仓两条读路径
 			// 与单条 GetStock 给出同一个值，不会出现「详情有成本、列表没有」。
 			CostPrice: r.CostPrice,
+			Name:      r.Name, ImageURL: r.ImageURL, Barcode: r.Barcode, Remark: r.Remark,
+			Status: r.Status, FreightPrice: r.FreightPrice,
+			CostCurrency: r.CostCurrency, CostBaseCurrency: r.CostBaseCurrency, CostFXRate: r.CostFXRate,
 			CreatedAt: r.CreatedAt.Format(time.RFC3339), UpdatedAt: r.UpdatedAt.Format(time.RFC3339),
 		})
 	}
@@ -977,6 +984,7 @@ func (s *Service) ListWarehouseSKUs(ctx context.Context, req *inventorydto.ListW
 		ProjectID:   projectID,
 		WarehouseID: strings.TrimSpace(listWarehouseSKUWarehouseID(req)),
 		Keyword:     strings.TrimSpace(listWarehouseSKUKeyword(req)),
+		Status:      strings.TrimSpace(listWarehouseSKUStatus(req)),
 	}, size, (page-1)*size)
 	if err != nil {
 		return nil, err
@@ -1137,6 +1145,11 @@ func toWarehouseSKUResp(r *inventorymodel.WarehouseSKURow) *inventorydto.Warehou
 		Quantity: r.Quantity, ReservedQuantity: r.ReservedQuantity,
 		AvailableQuantity: availableOf(r.Quantity, r.ReservedQuantity),
 		TrackQuantity:     r.TrackQuantity,
+		// 主档（迁移 642）：台账页与「从仓库选」都要按名称认货、按成本核价。
+		CostPrice: r.CostPrice, FreightPrice: r.FreightPrice,
+		CostCurrency: r.CostCurrency, CostBaseCurrency: r.CostBaseCurrency, CostFXRate: r.CostFXRate,
+		Name: r.Name, ImageURL: r.ImageURL, Barcode: r.Barcode, Remark: r.Remark, Status: r.Status,
+		CreatedAt: r.CreatedAt.Format(time.RFC3339), UpdatedAt: r.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -1155,6 +1168,10 @@ func (s *Service) toWarehouseSKURespFromEntity(ctx context.Context, e *inventory
 		ReservedQuantity:  e.ReservedQuantity,
 		AvailableQuantity: availableOf(e.Quantity, e.ReservedQuantity),
 		TrackQuantity:     e.TrackQuantity,
+		CostPrice:         e.CostPrice, FreightPrice: e.FreightPrice,
+		CostCurrency: e.CostCurrency, CostBaseCurrency: e.CostBaseCurrency, CostFXRate: e.CostFXRate,
+		Name: e.Name, ImageURL: e.ImageURL, Barcode: e.Barcode, Remark: e.Remark, Status: e.Status,
+		CreatedAt: e.CreatedAt.Format(time.RFC3339), UpdatedAt: e.UpdatedAt.Format(time.RFC3339),
 	}
 	if wh, werr := s.m.GetWarehouse(ctx, e.WarehouseID, e.ProjectID); werr == nil {
 		resp.WarehouseCode, resp.WarehouseName, resp.IsDefault = wh.Code, wh.Name, wh.IsDefault
@@ -1194,4 +1211,11 @@ func listWarehouseSKUKeyword(req *inventorydto.ListWarehouseSKUReq) string {
 		return ""
 	}
 	return req.Keyword
+}
+
+func listWarehouseSKUStatus(req *inventorydto.ListWarehouseSKUReq) string {
+	if req == nil {
+		return ""
+	}
+	return req.Status
 }

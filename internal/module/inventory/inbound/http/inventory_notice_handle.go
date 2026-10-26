@@ -31,7 +31,7 @@ var (
 	inventoryWarehouseBackKeys = []string{"project"}
 	inventoryReasonBackKeys    = []string{"project"}
 	// 仓库商品 SKU 台账页的筛选键（迁移 624）。
-	inventorySKUBackKeys = []string{"project", "warehouseId", "keyword", "claimed", "page", "limit"}
+	inventorySKUBackKeys = []string{"project", "warehouseId", "keyword", "status", "page", "limit"}
 	// 调拨页的筛选键（迁移 630，W3）。
 	inventoryTransferBackKeys = []string{"project", "status", "keyword", "page", "limit"}
 )

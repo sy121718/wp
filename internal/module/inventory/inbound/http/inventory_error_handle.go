@@ -216,6 +216,10 @@ var (
 		titleKey: inventoryenums.InventoryReasonsTitle, titleFallback: "变动原因字典",
 		menu: "inventory-reasons",
 	}
+	inventoryMetaStockSKUs = inventoryPageMeta{
+		titleKey: inventoryenums.InventoryStockSKUsTitle, titleFallback: "仓库商品 SKU",
+		menu: "inventory-skus",
+	}
 )
 
 // inventoryLoadFailedView 取数失败时的整页视图：同一张模板 + 全部键的零值 + 失败槽。
@@ -258,11 +262,17 @@ func inventoryPageErrorData(c *gin.Context, meta inventoryPageMeta, err error) i
 		"Directions":          []inventorydto.OptionResp{},
 		"Movements":           []inventorydto.MovementRowResp{},
 		"ReasonCreateForm":    gin.H{},
-		"FilterWarehouse":     "",
-		"FilterDirection":     "",
-		"FilterReason":        "",
-		"FilterTimeFrom":      "",
-		"FilterTimeTo":        "",
+		// 仓库商品 SKU 台账页（迁移 642）：行与三个筛选 + 状态下拉，
+		// 缺一个键就是「失败页本身也渲染不出来」（Jet 缺键即整页中断）。
+		"Rows":            []inventorydto.StockSKURowResp{},
+		"FilterKeyword":   "",
+		"FilterStatus":    "",
+		"StatusOptions":   []inventorydto.OptionResp{},
+		"FilterWarehouse": "",
+		"FilterDirection": "",
+		"FilterReason":    "",
+		"FilterTimeFrom":  "",
+		"FilterTimeTo":    "",
 		// 写动作表单 action 上的列表上下文：失败页不渲染表单，键照样存在（Jet 缺键即中断）。
 		"ListQuery": "",
 		// 失败槽：模板先判 LoadError、再判各页空态 —— 「没读到」与「读到了、只是空的」必须分开。
