@@ -3,7 +3,7 @@ package inventoryenums
 // inventory_enums_test.go — 业务错误的**声明处兜底**与 enums 常量的逐条对账。
 //
 // 判据两条、方向相反：① 每个 Err* 常量都在 errFallbacks 里有非空中文兜底（否则页面出口只能
-// 把 ErrReceiptOrderDone 这种标识符摆给运营看）；② 兜底表里没有已删常量的死条目。
+// 把 ErrWarehouseNotFound 这种标识符摆给运营看）；② 兜底表里没有已删常量的死条目。
 // 纯 AST 解析，不依赖数据库与装配。
 //
 // 兜底为什么住在声明处：出口只调一次 pkg/facing.FactOf，它给不出兜底时，消费方只能各补一张
@@ -101,20 +101,20 @@ func TestErrFallbacksMatchSeededText(t *testing.T) {
 
 // TestErrCarriesFallbackAndKey Err(key) 同时带 key 与中文兜底；ErrDetail 用半角冒号拼明细。
 func TestErrCarriesFallbackAndKey(t *testing.T) {
-	err := Err(ErrReceiptOrderDone)
-	if err.Error() != ErrReceiptOrderDone {
-		t.Fatalf("Err(%q).Error() = %q，want 原 key", ErrReceiptOrderDone, err.Error())
+	err := Err(ErrWarehouseNotFound)
+	if err.Error() != ErrWarehouseNotFound {
+		t.Fatalf("Err(%q).Error() = %q，want 原 key", ErrWarehouseNotFound, err.Error())
 	}
 	fact, ok := facing.FactOf(err)
-	if !ok || !fact.Business || fact.Key != ErrReceiptOrderDone || fact.Fallback == "" {
+	if !ok || !fact.Business || fact.Key != ErrWarehouseNotFound || fact.Fallback == "" {
 		t.Fatalf("FactOf 应给出业务事实（key + 中文兜底），实际 %+v ok=%v", fact, ok)
 	}
-	detail := ErrDetail(ErrReceiptOrderDone, "采购单 PO-1")
-	if !strings.HasPrefix(detail.Error(), ErrReceiptOrderDone+": ") {
+	detail := ErrDetail(ErrWarehouseNotFound, "仓库 WH-1")
+	if !strings.HasPrefix(detail.Error(), ErrWarehouseNotFound+": ") {
 		t.Fatalf("ErrDetail 的明细段必须是半角冒号：%q", detail.Error())
 	}
 	fact, ok = facing.FactOf(detail)
-	if !ok || !fact.Business || fact.Key != ErrReceiptOrderDone || fact.Tail != "采购单 PO-1" {
+	if !ok || !fact.Business || fact.Key != ErrWarehouseNotFound || fact.Tail != "仓库 WH-1" {
 		t.Fatalf("ErrDetail 的事实应保留 key 与明细段，实际 %+v ok=%v", fact, ok)
 	}
 	if _, ok := facing.FactOf(errors.New("pq: relation stock_items does not exist")); ok {

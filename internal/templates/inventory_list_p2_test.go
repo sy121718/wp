@@ -9,13 +9,24 @@ import (
 
 func inventoryListDOM(t *testing.T, name string, data map[string]any) *html.Node {
 	t.Helper()
-	out, err := render(t, groupDSet(t), "admin/inventory/"+name, groupDData(data))
+	return templateDOM(t, "admin/inventory/"+name, data)
+}
+
+// purchaseListDOM 渲染采购域页面（2026-10 随采购域迁入 admin/purchase/）。
+func purchaseListDOM(t *testing.T, name string, data map[string]any) *html.Node {
+	t.Helper()
+	return templateDOM(t, "admin/purchase/"+name, data)
+}
+
+func templateDOM(t *testing.T, template string, data map[string]any) *html.Node {
+	t.Helper()
+	out, err := render(t, groupDSet(t), template, groupDData(data))
 	if err != nil {
-		t.Fatalf("渲染 %s: %v", name, err)
+		t.Fatalf("渲染 %s: %v", template, err)
 	}
 	root, err := html.Parse(strings.NewReader(out))
 	if err != nil {
-		t.Fatalf("解析 %s: %v", name, err)
+		t.Fatalf("解析 %s: %v", template, err)
 	}
 	return root
 }
@@ -130,7 +141,7 @@ func TestPurchaseListColumnsAlign(t *testing.T) {
 		}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			root := inventoryListDOM(t, "inventory_purchases", map[string]any{
+			root := purchaseListDOM(t, "purchases", map[string]any{
 				"Err": "", "Ok": "", "SelectedProject": "pr1", "Projects": groupDProjects(),
 				"FilterStatus": "", "FilterSource": "", "FilterKeyword": "", "ReceiptRequestID": "r1",
 				"Sources": tc.sources, "Orders": tc.orders, "StatusOptions": []map[string]any{},

@@ -25,9 +25,6 @@ const (
 	MsgDeductSuccess    = "MsgDeductSuccess"    // 库存扣减成功
 	MsgSyncSuccess      = "MsgSyncSuccess"      // 缓存同步成功
 	MsgReconcileSuccess = "MsgReconcileSuccess" // 缓存对账完成
-
-	// —— 采购单与入库（issue #18）——
-	MsgReceiptSuccess = "MsgReceiptSuccess" // 入库登记成功
 )
 
 // 错误消息。
@@ -131,65 +128,6 @@ const (
 	ErrReasonDirectionInvalid  = "ErrReasonDirectionInvalid"  // 原因方向必须是 in / out / adjust
 	ErrReasonBuiltin           = "ErrReasonBuiltin"           // 内置原因不可改（自定义原因才可维护）
 	ErrReasonStatusInvalid     = "ErrReasonStatusInvalid"     // 原因状态不是 active / disabled
-
-	// —— 货源（issue #17 验收 1/2/4）——
-	ErrSourceNotFound      = "ErrSourceNotFound"      // 货源不存在
-	ErrSourceNameRequired  = "ErrSourceNameRequired"  // 货源名称必填
-	ErrSourceCodeRequired  = "ErrSourceCodeRequired"  // 货源编码必填
-	ErrSourceCodeInvalid   = "ErrSourceCodeInvalid"   // 货源编码只允许大写字母 / 数字 / 下划线，且不超长
-	ErrSourceCodeTaken     = "ErrSourceCodeTaken"     // 同工程下货源编码已占用
-	ErrSourceTypeInvalid   = "ErrSourceTypeInvalid"   // 类型只认 external / internal（决定是否按内部交易口径出报表）
-	ErrSourceStatusInvalid = "ErrSourceStatusInvalid" // 状态不是 active / disabled
-	// ErrSourceInternalNotRelated 内部货源必须标记关联方：内部交易必须能被关联方报表捕获。
-	ErrSourceInternalNotRelated = "ErrSourceInternalNotRelated"
-	// ErrSourceSettleNotInternal 结算价只属于内部货源（自产商品的成本口径，外部供应商走采购价）。
-	ErrSourceSettleNotInternal = "ErrSourceSettleNotInternal"
-	ErrSourceSettleInvalid     = "ErrSourceSettleInvalid" // 结算价不能为负
-	ErrSourceConfigInvalid     = "ErrSourceConfigInvalid" // 对接配置必须是 JSON 对象
-	ErrSourceFilterInvalid     = "ErrSourceFilterInvalid" // 报表筛选参数不合法（关联方标志只认 true / false）
-
-	// —— 采购单（issue #18 验收 1/2）——
-	ErrPurchaseOrderNotFound   = "ErrPurchaseOrderNotFound"   // 采购单不存在
-	ErrPurchaseCodeRequired    = "ErrPurchaseCodeRequired"    // 采购单号必填
-	ErrPurchaseCodeInvalid     = "ErrPurchaseCodeInvalid"     // 采购单号只允许大写字母 / 数字 / 下划线 / 连字符，且不超长
-	ErrPurchaseCodeTaken       = "ErrPurchaseCodeTaken"       // 同工程下采购单号已占用
-	ErrPurchaseSourceRequired  = "ErrPurchaseSourceRequired"  // 采购单必须指定货源（来源 = #17 的货源）
-	ErrPurchaseSourceDisabled  = "ErrPurchaseSourceDisabled"  // 已停用的货源不能下采购单（停用 = 不再选用）
-	ErrPurchaseLinesRequired   = "ErrPurchaseLinesRequired"   // 采购单至少要有一行
-	ErrPurchaseLinesTooMany    = "ErrPurchaseLinesTooMany"    // 采购行数超过上限
-	ErrPurchaseLineRequired    = "ErrPurchaseLineRequired"    // 采购行必须给出变体
-	ErrPurchaseLineDuplicate   = "ErrPurchaseLineDuplicate"   // 同一采购单里同一个 SKU 重复出现
-	ErrPurchaseQuantityInvalid = "ErrPurchaseQuantityInvalid" // 采购数量必须为正整数
-	ErrPurchasePriceInvalid    = "ErrPurchasePriceInvalid"    // 采购单价必须为正数
-	ErrPurchaseStatusInvalid   = "ErrPurchaseStatusInvalid"   // 状态筛选值不在五个合法状态内（迁移 626 起多了 finished / cancelled）
-	ErrPurchaseLinesLocked     = "ErrPurchaseLinesLocked"     // 已有入库数量的采购单不能再改行（改了状态推导就不成立）
-	ErrPurchaseLineNotFound    = "ErrPurchaseLineNotFound"    // 采购行不存在（或不属于该采购单）
-
-	// —— 入库（issue #18 验收 3/4/5）——
-	ErrReceiptLinesRequired   = "ErrReceiptLinesRequired"   // 入库清单不能为空
-	ErrReceiptLineDuplicate   = "ErrReceiptLineDuplicate"   // 同一入库请求里同一采购行只能出现一次
-	ErrReceiptQuantityInvalid = "ErrReceiptQuantityInvalid" // 入库数量必须为正整数
-	// ErrReceiptOverReceive 入库数量超过「采购数量 - 已入库数量」：超收在数据层即不可能，
-	// 服务层在同一事务内用带守卫的原子递增拒绝（不留半截、不靠读-改-写）。
-	ErrReceiptOverReceive    = "ErrReceiptOverReceive"
-	ErrReceiptOrderDone      = "ErrReceiptOrderDone"      // 采购单已全部入库，无需再收
-	ErrReceiptRequestInvalid = "ErrReceiptRequestInvalid" // 幂等键不合法（超长 / 非法字符）
-	// ErrProductionSourceNotInternal 生产入库只认内部货源（自家工厂）：外部供应商走采购单，
-	// 没有「无采购单的生产入库」这一说。
-	ErrProductionSourceNotInternal = "ErrProductionSourceNotInternal"
-	ErrProductionVariantRequired   = "ErrProductionVariantRequired" // 生产入库必须给出 SKU 变体
-	ErrProductionCostInvalid       = "ErrProductionCostInvalid"     // 生产入库的成本价必须手工填写且非负
-	// ErrVariantCostPortMissing 商品侧成本价端口未注入（装配缺陷 / 纯库存单测路径）。
-	ErrVariantCostPortMissing = "ErrVariantCostPortMissing"
-
-	// —— 采购单终态（迁移 626，W2）——
-	//
-	// 前三个中间态（pending / partial / received）由「已入库数量 与 采购数量」推导，
-	// 没有任何人工置位入口。两个终态是**人工决定**：
-	//   · finished  —— 提前关单：剩下的不再等（供应商断供 / 转单 / 只要已到的那部分）；
-	//   · cancelled —— 取消：只允许在还没收满时（收满的货已经进仓，要走退货）。
-	ErrPurchaseStatusNotFinishable = "ErrPurchaseStatusNotFinishable"
-	ErrPurchaseStatusNotCancelable = "ErrPurchaseStatusNotCancelable"
 
 	// —— 调拨（迁移 630，W3）——
 	//
@@ -317,63 +255,6 @@ const (
 	DirectionAdjust = "adjust"
 )
 
-// 货源类型取值（写入即校验，不接受自由文本）。
-//
-//	external —— 外部供应商（第三方，采购走采购单）；
-//	internal —— 集团内（关联公司 / 自家工厂，可设内部结算价，自家工厂走生产入库）。
-//
-// 类型不是装饰性标签：它是「这笔交易是否按内部交易口径出报表」的判据，
-// 内部货源恒为关联方（见 Service.CreateSource）。
-const (
-	SourceTypeExternal = "external"
-	SourceTypeInternal = "internal"
-)
-
-// 货源状态取值（写入即校验，不接受自由文本）。
-const (
-	SourceStatusActive   = "active"
-	SourceStatusDisabled = "disabled"
-)
-
-// 采购单状态取值（issue #18 验收 2）。
-//
-// 三种状态**全部由「已入库数量 与 采购数量」推导**（没有任何人工置位入口）：
-//
-//	pending  —— 所有行的已入库数量都是 0（未入库）；
-//	partial  —— 有入库但至少一行还没收满（部分入库）；
-//	received —— 每一行的已入库数量都等于采购数量（已入库）。
-//
-// 推导在登记入库的同一事务内完成并写回，因此状态永远与行数据自洽。
-const (
-	PurchaseStatusPending  = "pending"
-	PurchaseStatusPartial  = "partial"
-	PurchaseStatusReceived = "received"
-	// PurchaseStatusFinished 提前关单（迁移 626）：人工决定「剩下的不再等」。
-	PurchaseStatusFinished = "finished"
-	// PurchaseStatusCancelled 取消（迁移 626）：只允许在还没收满时。
-	PurchaseStatusCancelled = "cancelled"
-)
-
-// 入库单类型（验收 3/5）。
-//
-//	purchase   —— 采购收货：必有采购单，来源是 #17 的货源，成本价取采购单价；
-//	production —— 自家工厂生产入库：无采购单，成本价手工填写。
-const (
-	ReceiptKindPurchase   = "purchase"
-	ReceiptKindProduction = "production"
-)
-
-// 入库单状态（入库是「先记账再动库存」）。
-//
-//	pending —— 记账已落库、库存变动尚未完成（中间态；进程中断时会停在这里，后台可见）；
-//	posted  —— 库存变动已提交并记下批次号（正常终态）。
-//
-// 变动失败不留 failed 单据：补偿路径把单据整体删除，状态列只有这两态。
-const (
-	ReceiptStatusPending = "pending"
-	ReceiptStatusPosted  = "posted"
-)
-
 // 库存页行内编辑「跟踪开关 + 数量」（迁移 261）使用的变动原因与来源类型。
 //
 // 写成常量而不是在 service 里裸写字符串：原因 code 是字典表的数据、来源类型是流水的
@@ -384,34 +265,12 @@ const (
 	ReasonManualAdjust = "manual_adjust"
 	// MovementSourceInventoryPage 来源类型：库存页行内编辑。
 	MovementSourceInventoryPage = "inventory_page"
-)
-
-// 入库产生的库存流水来源引用（source_type 列，验收 3 的「来源引用齐全」）。
-//
-// 采购收货的 source_ref 是采购单号，生产入库的 source_ref 是入库单号 ——
-// 流水可以反向定位到是哪张单据动的库存。
-const (
-	MovementSourcePurchaseOrder = "purchase_order"
-	MovementSourceProduction    = "production"
 	// MovementSourceOrderShipment 来源类型：订单发货出库（迁移 627 的发货单）。
 	//
 	// 预占引入（迁移 624）之后，订单侧出现两条库存写入：建单**预占**（不写流水）
 	// 与发货**扣减**（写 sale_out 流水）。流水上必须能分出后者 —— service 靠它判断
 	// 「这次出库要同时释放预占」（否则 reserved 会永远挂在账上）。
 	MovementSourceOrderShipment = "order_shipment"
-)
-
-// 后台页面标题（i18n key）。
-//
-// 与原 dashboard/enums 里的历史同名常量同值：i18n key 是字符串协议，模板与词条表都按
-// 字面量取值，页面搬回本模块后在本模块留一份常量，比让模块反向依赖 web/dashboard 层干净。
-const (
-	// MsgInventorySourcesTitle 货源管理页标题（issue #17）。
-	// 值就是 i18n key：adminui.Prepare 会做 t(title, title)，词条命中则显示译文、未命中回退字面量。
-	// 因此**新增这两个常量必须同批 seed 词条**（迁移 217），否则顶栏会把 key 原样显示出来。
-	MsgInventorySourcesTitle = "MsgInventorySourcesTitle"
-	// MsgInventoryPurchasesTitle 采购入库页标题（issue #18）。同上，词条见迁移 217。
-	MsgInventoryPurchasesTitle = "MsgInventoryPurchasesTitle"
 )
 
 // errFallbacks 每个错误常量的中文兜底（与声明的 key 一起交给 pkg/facing.New）。
@@ -463,34 +322,6 @@ var errFallbacks = map[string]string{
 	ErrReasonDirectionInvalid:        "原因方向必须是 in / out / adjust",
 	ErrReasonBuiltin:                 "内置原因不可改名（只能停用）",
 	ErrReasonStatusInvalid:           "原因状态不是 active / disabled",
-	ErrSourceNotFound:                "货源不存在",
-	ErrSourceNameRequired:            "货源名称必填",
-	ErrSourceCodeRequired:            "货源编码必填",
-	ErrSourceCodeInvalid:             "货源编码只允许大写字母 / 数字 / 下划线，且不超长",
-	ErrSourceCodeTaken:               "同工程下货源编码已占用",
-	ErrSourceTypeInvalid:             "类型只认 external / internal（决定是否按内部交易口径出报表）",
-	ErrSourceStatusInvalid:           "状态不是 active / disabled",
-	ErrSourceInternalNotRelated:      "内部货源必须标记关联方：内部交易必须能被关联方报表捕获。",
-	ErrSourceSettleNotInternal:       "结算价只属于内部货源（自产商品的成本口径，外部供应商走采购价）。",
-	ErrSourceSettleInvalid:           "结算价不能为负",
-	ErrSourceConfigInvalid:           "对接配置必须是 JSON 对象",
-	ErrSourceFilterInvalid:           "报表筛选参数不合法（关联方标志只认 true / false）",
-	ErrPurchaseOrderNotFound:         "采购单不存在",
-	ErrPurchaseCodeRequired:          "采购单号必填",
-	ErrPurchaseCodeInvalid:           "采购单号只允许大写字母 / 数字 / 下划线 / 连字符，且不超长",
-	ErrPurchaseCodeTaken:             "同工程下采购单号已占用",
-	ErrPurchaseSourceRequired:        "采购单必须指定货源（来源 = #17 的货源）",
-	ErrPurchaseSourceDisabled:        "已停用的货源不能下采购单（停用 = 不再选用）",
-	ErrPurchaseLinesRequired:         "采购单至少要有一行",
-	ErrPurchaseLinesTooMany:          "采购行数超过上限",
-	ErrPurchaseLineRequired:          "采购行必须给出变体",
-	ErrPurchaseLineDuplicate:         "同一采购单里同一个 SKU 重复出现",
-	ErrPurchaseQuantityInvalid:       "采购数量必须为正整数",
-	ErrPurchasePriceInvalid:          "采购单价必须为正数",
-	ErrPurchaseStatusInvalid:         "状态筛选值不在合法状态内（未入库 / 部分入库 / 已入库 / 已关单 / 已取消）",
-	ErrPurchaseLinesLocked:           "已有入库数量的采购单不能再改行（改了状态推导就不成立）",
-	ErrPurchaseLineNotFound:          "采购行不存在（或不属于该采购单）",
-	ErrPurchaseStatusNotFinishable:   "只有已入库或部分入库的采购单可以提前关单",
 	ErrTransferNotFound:              "调拨单不存在",
 	ErrTransferLinesRequired:         "调拨单至少要有一行明细",
 	ErrTransferSameWarehouse:         "源仓与目标仓不能是同一个",
@@ -499,17 +330,6 @@ var errFallbacks = map[string]string{
 	ErrAttachmentRequired:            "出货与签收都必须上传凭证附件",
 	ErrAttachmentNotFound:            "凭证引用的附件不存在",
 	ErrStockNotEnough:                "可售数量不足（被订单预占的部分不能调拨）",
-	ErrPurchaseStatusNotCancelable:   "只有未入库或部分入库的采购单可以取消（已收满的货已进仓，要走退货）",
-	ErrReceiptLinesRequired:          "入库清单不能为空",
-	ErrReceiptLineDuplicate:          "同一入库请求里同一采购行只能出现一次",
-	ErrReceiptQuantityInvalid:        "入库数量必须为正整数",
-	ErrReceiptOverReceive:            "入库数量超过「采购数量 - 已入库数量」：超收在数据层即不可能。",
-	ErrReceiptOrderDone:              "采购单已全部入库，无需再收",
-	ErrReceiptRequestInvalid:         "幂等键不合法（超长 / 非法字符）",
-	ErrProductionSourceNotInternal:   "生产入库只认内部货源（自家工厂）：外部供应商走采购单。",
-	ErrProductionVariantRequired:     "生产入库必须给出 SKU 变体",
-	ErrProductionCostInvalid:         "生产入库的成本价必须手工填写且非负",
-	ErrVariantCostPortMissing:        "商品侧成本价端口未注入（装配缺陷 / 纯库存单测路径）。",
 	ErrSKUSourceInvalid:              "SKU 来源取值不合法：只支持「自己创建」与「从仓库选」",
 	ErrWarehouseSKURequired:          "从仓库选 SKU 时必须先选仓库并指明该仓的那条仓库 SKU",
 	ErrWarehouseSKUNotFound:          "该仓库里没有这条仓库 SKU：请确认仓库选对了，或先在该仓建好这条货的库存记录",
@@ -534,42 +354,31 @@ var errFallbacks = map[string]string{
 // facing.StatusOf（见 pkg/facing.Statused），绝不按错误文案猜。
 var errStatuses = map[string]int{
 	// —— 404 找不到 ——
-	ErrWarehouseNotFound:     http.StatusNotFound,
-	ErrWarehouseSKUNotFound:  http.StatusNotFound,
-	ErrStockNotFound:         http.StatusNotFound,
-	ErrReasonNotFound:        http.StatusNotFound,
-	ErrSourceNotFound:        http.StatusNotFound,
-	ErrPurchaseOrderNotFound: http.StatusNotFound,
-	ErrPurchaseLineNotFound:  http.StatusNotFound,
+	ErrWarehouseNotFound:    http.StatusNotFound,
+	ErrWarehouseSKUNotFound: http.StatusNotFound,
+	ErrStockNotFound:        http.StatusNotFound,
+	ErrReasonNotFound:       http.StatusNotFound,
 
 	// —— 409 冲突 / 当前状态不允许 ——
-	ErrWarehouseCodeTaken:          http.StatusConflict,
-	ErrWarehouseSKUCodeTaken:       http.StatusConflict,
-	ErrWarehouseIsDefault:          http.StatusConflict,
-	ErrWarehouseHasStock:           http.StatusConflict,
-	ErrWarehouseDisabled:           http.StatusConflict,
-	ErrStockInsufficient:           http.StatusConflict,
-	ErrReasonCodeTaken:             http.StatusConflict,
-	ErrReasonBuiltin:               http.StatusConflict,
-	ErrSourceCodeTaken:             http.StatusConflict,
-	ErrPurchaseCodeTaken:           http.StatusConflict,
-	ErrPurchaseSourceDisabled:      http.StatusConflict,
-	ErrPurchaseLinesLocked:         http.StatusConflict,
-	ErrPurchaseStatusNotFinishable: http.StatusConflict,
-	ErrTransferNotFound:            http.StatusNotFound,
-	ErrTransferSameWarehouse:       http.StatusConflict,
-	ErrItemNotInSourceWarehouse:    http.StatusConflict,
-	ErrTransferStatusInvalid:       http.StatusConflict,
-	ErrAttachmentRequired:          http.StatusBadRequest,
-	ErrAttachmentNotFound:          http.StatusNotFound,
-	ErrStockNotEnough:              http.StatusConflict,
-	ErrPurchaseStatusNotCancelable: http.StatusConflict,
-	ErrReceiptOverReceive:          http.StatusConflict,
-	ErrReceiptOrderDone:            http.StatusConflict,
-	ErrExternalSKUProductConflict:  http.StatusConflict,
-	ErrStockAlreadyClaimed:         http.StatusConflict,
-	ErrStockHasQuantity:            http.StatusConflict,
-	ErrReserveUnderflow:            http.StatusConflict,
+	ErrWarehouseCodeTaken:         http.StatusConflict,
+	ErrWarehouseSKUCodeTaken:      http.StatusConflict,
+	ErrWarehouseIsDefault:         http.StatusConflict,
+	ErrWarehouseHasStock:          http.StatusConflict,
+	ErrWarehouseDisabled:          http.StatusConflict,
+	ErrStockInsufficient:          http.StatusConflict,
+	ErrReasonCodeTaken:            http.StatusConflict,
+	ErrReasonBuiltin:              http.StatusConflict,
+	ErrTransferNotFound:           http.StatusNotFound,
+	ErrTransferSameWarehouse:      http.StatusConflict,
+	ErrItemNotInSourceWarehouse:   http.StatusConflict,
+	ErrTransferStatusInvalid:      http.StatusConflict,
+	ErrAttachmentRequired:         http.StatusBadRequest,
+	ErrAttachmentNotFound:         http.StatusNotFound,
+	ErrStockNotEnough:             http.StatusConflict,
+	ErrExternalSKUProductConflict: http.StatusConflict,
+	ErrStockAlreadyClaimed:        http.StatusConflict,
+	ErrStockHasQuantity:           http.StatusConflict,
+	ErrReserveUnderflow:           http.StatusConflict,
 }
 
 // Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。

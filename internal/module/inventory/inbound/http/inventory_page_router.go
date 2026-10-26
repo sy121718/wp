@@ -45,8 +45,6 @@ const (
 	InventoryListPageTemplate       = "admin/inventory/inventory.html"
 	InventoryWarehousesPageTemplate = "admin/inventory/inventory_warehouses.html"
 	InventoryReasonsPageTemplate    = "admin/inventory/inventory_reasons.html"
-	InventorySourcesPageTemplate    = "admin/inventory/inventory_sources.html"
-	InventoryPurchasesPageTemplate  = "admin/inventory/inventory_purchases.html"
 	InventorySKUsPageTemplate       = "admin/inventory/inventory_skus.html"
 	InventoryTransfersPageTemplate  = "admin/inventory/inventory_transfers.html"
 )
@@ -113,30 +111,4 @@ func SetupInventoryPages(pages *gin.RouterGroup, svc inventorycontract.Inventory
 	registerInventorySKUWritePages(pages, inventoryPages)
 	registerInventoryTransferPage(pages, svc, project, inventoryPages)
 
-	// 货源管理页（issue #17）：类型与关联方两个结构化维度支撑报表区分。
-	sourcePages := NewInventorySourcePageHandle(svc, project)
-	pages.GET("/inventory/sources", adminui.PageAuthz("/api/inventory/source/list"),
-		adminui.PageSlot(InventorySourcesPageTemplate), sourcePages.InventorySourcesPage)
-	pages.POST("/inventory/sources/create", builtin.CasbinMiddlewareForPath("/api/inventory/source/create"), sourcePages.InventorySourceCreate)
-	pages.POST("/inventory/sources/update", builtin.CasbinMiddlewareForPath("/api/inventory/source/update"), sourcePages.InventorySourceUpdate)
-	pages.POST("/inventory/sources/delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), sourcePages.InventorySourceDelete)
-	pages.POST("/inventory/sources/bulk-delete", builtin.CasbinMiddlewareForPath("/api/inventory/source/delete"), sourcePages.InventorySourcesBulkDelete)
-
-	// 采购入库页（issue #18）：采购单 → 逐行收货入库（复用 #16 的变动契约）+ 生产入库 + 进货历史。
-	purchasePages := NewInventoryPurchasePageHandle(svc, project, nil)
-	pageCatalogConsumers = append(pageCatalogConsumers, purchasePages)
-	pages.GET("/inventory/purchases", adminui.PageAuthz("/api/inventory/purchase/list"),
-		adminui.PageSlot(InventoryPurchasesPageTemplate), purchasePages.InventoryPurchasesPage)
-	pages.POST("/inventory/purchases/create", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/create"), purchasePages.InventoryPurchaseCreate)
-	pages.POST("/inventory/purchases/receipt", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/receipt"), purchasePages.InventoryPurchaseReceipt)
-	pages.POST("/inventory/purchases/production", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/production"), purchasePages.InventoryPurchaseProduction)
-	// 采购单终态（迁移 626, W2）：提前关单 / 取消。权限点复用采购单更新 ——
-	// 关单是一次对采购单的改写，不是新能力，不该多一个权限点。
-	pages.POST("/inventory/purchases/finish", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchasePages.InventoryPurchaseFinish)
-	pages.POST("/inventory/purchases/cancel", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchasePages.InventoryPurchaseCancel)
-	// 生产入库（自家工厂）属于「有单据来源的手工入库」，表单留在采购入库页：
-	// 它的页面 action 是 /admin/inventory/purchases/production，权限点仍是
-	// api/inventory/purchase/production（权限点是声明真源，不随页面走）。
-	// 库存管理页只保留「库存调整（盘点 / 报损）」这一个写入口，因此这里不再暴露
-	// /admin/inventory/production —— 留一个没有表单指向的页面路由只会变成第二个入口。
 }

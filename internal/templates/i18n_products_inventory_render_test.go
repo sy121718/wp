@@ -605,7 +605,7 @@ func TestGroupDPurchasesPageRenders(t *testing.T) {
 	// 该页面入口已随本轮下线（API 保留），断言随之收窄。
 	// 行内 label 已经写明「采购单号」，placeholder 不再重复前缀；列表改标准表格 + 操作列
 	// 后「登记入库」进操作列抽屉。断言跟随实现。
-	assertGroupDPage(t, "inventory_purchases", data,
+	assertGroupDPage(t, "purchase/purchases", data,
 		"采购入库", "新建采购单", "登记入库", "如 PO-20260101-001")
 }
 
@@ -634,7 +634,7 @@ func TestGroupDSourcesPageRenders(t *testing.T) {
 	// 筛选区文案按评审判据收短（"筛选（报表区分维度）" → "筛选"，口径说明进 .help）；
 	// 列表改标准表格 + 右侧操作列后，行内按钮按操作列惯例收短（"删除货源" → "删除"）。
 	// 批量协议同仓库管理页：勾选框即批量表单字段，行内删除表单在表格外。
-	out := assertGroupDPage(t, "inventory_sources", data,
+	out := assertGroupDPage(t, "purchase/sources", data,
 		"货源管理", "货源总数", "新建货源", "筛选", "保存货源", "删除", "批量删除")
 	for _, want := range []string{
 		`action="/admin/inventory/sources/bulk-delete?`,
@@ -720,7 +720,7 @@ func TestGroupDEnglishSwitch(t *testing.T) {
 		"VariantOptions": []map[string]any{}, "Orders": []map[string]any{}, "History": []map[string]any{},
 	})
 	purchases["t"] = enT
-	out, err = render(t, groupDSet(t), "admin/inventory/inventory_purchases", purchases)
+	out, err = render(t, groupDSet(t), "admin/purchase/purchases", purchases)
 	if err != nil {
 		t.Fatalf("inventory_purchases 空数据渲染失败: %v", err)
 	}

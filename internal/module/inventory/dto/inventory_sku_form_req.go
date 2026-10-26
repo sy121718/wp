@@ -94,19 +94,3 @@ func formCostPrice(raw string) *float64 {
 	}
 	return &parsed
 }
-
-// PurchaseStatusFormReq 采购单终态的页面表单（提前关单 / 取消共用）。
-type PurchaseStatusFormReq struct {
-	ProjectID string `form:"projectId"`
-	ID        string `form:"id"`
-	Remark    string `form:"remark"`
-}
-
-// StatusReq 转成 service 的终态请求。
-func (r *PurchaseStatusFormReq) StatusReq() *PurchaseStatusReq {
-	return &PurchaseStatusReq{
-		ProjectID: strings.TrimSpace(r.ProjectID),
-		ID:        strings.TrimSpace(r.ID),
-		Remark:    strings.TrimSpace(r.Remark),
-	}
-}

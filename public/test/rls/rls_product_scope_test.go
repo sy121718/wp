@@ -30,6 +30,7 @@ import (
 
 	inventorymodel "go_wp/internal/module/inventory/model"
 	productmodel "go_wp/internal/module/product/model"
+	purchasemodel "go_wp/internal/module/purchase/model"
 	"go_wp/pkg/rls"
 )
 
@@ -99,7 +100,7 @@ func seedSource(t *testing.T, db *gorm.DB, projectID, code string) string {
 	t.Helper()
 	now := time.Now()
 	id := uuid.NewString()
-	err := inventorymodel.NewModel(db).CreateSource(context.Background(), &inventorymodel.SourceEntity{
+	err := purchasemodel.NewModel(db).CreateSource(context.Background(), &purchasemodel.SourceEntity{
 		ID: id, ProjectID: projectID, Code: code, Name: "护栏货源 " + code,
 		Type: "external", Status: "active", Config: []byte("{}"),
 		Metadata: []byte("{}"), CreatedAt: now, UpdatedAt: now,
@@ -133,8 +134,8 @@ func seedPurchaseOrder(t *testing.T, db *gorm.DB, projectID, sourceID, warehouse
 	t.Helper()
 	now := time.Now()
 	id := uuid.NewString()
-	err := inventorymodel.NewModel(db).Transaction(context.Background(), func(tx *gorm.DB) error {
-		return inventorymodel.NewModel(db).CreatePurchaseOrderTx(context.Background(), tx, &inventorymodel.PurchaseOrderEntity{
+	err := purchasemodel.NewModel(db).Transaction(context.Background(), func(tx *gorm.DB) error {
+		return purchasemodel.NewModel(db).CreatePurchaseOrderTx(context.Background(), tx, &purchasemodel.PurchaseOrderEntity{
 			ID: id, ProjectID: projectID, Code: code,
 			SourceID: sourceID, WarehouseID: warehouseID, Status: "pending",
 			OrderedAt: now, Remark: "", OperatorID: "",
@@ -185,6 +186,7 @@ func TestRLS_ProductScope_ReadsOwnProjectOnly(t *testing.T) {
 	ctx := context.Background()
 	pm := productmodel.NewModel(db)
 	im := inventorymodel.NewModel(db)
+	pm2 := purchasemodel.NewModel(db)
 
 	pA, pB, aIDs, bIDs := productScopeFixture(t, db)
 
@@ -198,7 +200,7 @@ func TestRLS_ProductScope_ReadsOwnProjectOnly(t *testing.T) {
 	if _, err := im.GetStock(ctx, aIDs["stock"], pA); err != nil {
 		t.Fatalf("本工程按 id 读库存行应成功，实际 %v", err)
 	}
-	if _, err := im.GetPurchaseOrder(ctx, aIDs["purchaseOrder"], pA); err != nil {
+	if _, err := pm2.GetPurchaseOrder(ctx, aIDs["purchaseOrder"], pA); err != nil {
 		t.Fatalf("本工程按 id 读采购单应成功，实际 %v", err)
 	}
 
@@ -210,7 +212,7 @@ func TestRLS_ProductScope_ReadsOwnProjectOnly(t *testing.T) {
 		{"products", func() error { _, err := pm.Get(ctx, bIDs["products"], pA); return err }},
 		{"product_tags", func() error { _, err := pm.GetTag(ctx, bIDs["tag"], pA); return err }},
 		{"inventory_stocks", func() error { _, err := im.GetStock(ctx, bIDs["stock"], pA); return err }},
-		{"inventory_purchase_orders", func() error { _, err := im.GetPurchaseOrder(ctx, bIDs["purchaseOrder"], pA); return err }},
+		{"inventory_purchase_orders", func() error { _, err := pm2.GetPurchaseOrder(ctx, bIDs["purchaseOrder"], pA); return err }},
 	}
 	for _, c := range cross {
 		if err := c.run(); !errors.Is(err, gorm.ErrRecordNotFound) {

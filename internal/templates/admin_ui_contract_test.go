@@ -61,7 +61,7 @@ func TestAdminPagesExposePublicUIClasses(t *testing.T) {
 
 // 已迁移页面不得重新依赖 pages-* 兼容层；这些页面的结构由公共 UI Kit 提供。
 func TestMigratedAdminPagesDoNotUseLegacyClasses(t *testing.T) {
-	for _, name := range []string{"theme.html", "theme_settings.html", "pages.html", "blocks.html", "plugins.html", "product_brands.html", "product_categories.html", "product_tags.html", "products.html", "product_attributes.html", "product_pricing.html", "product_detail_template.html", "product_translations.html", "inventory.html", "inventory_sources.html", "inventory_purchases.html"} {
+	for _, name := range []string{"theme.html", "theme_settings.html", "pages.html", "blocks.html", "plugins.html", "product_brands.html", "product_categories.html", "product_tags.html", "products.html", "product_attributes.html", "product_pricing.html", "product_detail_template.html", "product_translations.html", "inventory.html", "sources.html", "purchases.html"} {
 		// 按 basename 递归找（模板已按后端模块分进子目录），别硬编码 admin/ 下的一层路径。
 		path := adminTemplatePath(t, name)
 		html := adminTemplateSource(t, name)

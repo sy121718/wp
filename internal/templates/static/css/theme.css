@@ -296,7 +296,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .move-delta-none { color: var(--sky-c-text-mute, #6b7280); }
 .move-meta { color: var(--sky-c-text-mute, #6b7280); font-size: 12px; }
 
-/* ===== 货源管理（admin/inventory_sources.html，issue #17） =====
+/* ===== 货源管理（admin/purchase/sources.html，issue #17） =====
    多端适配（硬规则）：
      · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；
      · 对接配置是多行文本，textarea 的宽度收口已**上收到基座**（ui.css 的
@@ -329,7 +329,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
     .source-page .action-row .btn { width: 100%; }
 }
 
-/* ===== 采购入库（admin/inventory_purchases.html，issue #18） =====
+/* ===== 采购入库（admin/purchase/purchases.html，issue #18） =====
    多端适配（硬规则）：
      · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；
      · 采购行 / 进货历史表格窄屏改堆叠块（同 .source-page-table 手法），

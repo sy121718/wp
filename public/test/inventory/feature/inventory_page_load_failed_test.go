@@ -14,11 +14,13 @@
 //
 // 故障是**真实制造**的（把 projects 表改名，取数即报 relation does not exist），
 // 不是手搓一个长得像 PG 原文的字符串。每个用例一份隔离 schema，跑完随库一起丢弃。
+//
+// 页面侧的降级渲染用例（货源页 / 采购入库页）随采购域一起迁到了
+// public/test/purchase/feature/inventory_page_load_failed_test.go：那两页现在由 purchase 模块渲染。
 
 package feature
 
 import (
-	"net/http"
 	"strings"
 	"testing"
 )
@@ -49,36 +51,6 @@ func assertLoadFailedPage(t *testing.T, where, body string) {
 		t.Fatalf("%s 的空态没走装载失败档（判据 LoadFailed 没传给模板）", where)
 	}
 	assertNoInternalTokens(t, where, body)
-}
-
-// TestInventorySourcesPageLoadFailedDegrades 货源页：装载失败 → 200 + 页壳完好 + 归口提示。
-func TestInventorySourcesPageLoadFailedDegrades(t *testing.T) {
-	engine, f := newSourcePageEngine(t)
-	if engine == nil {
-		return
-	}
-	breakProjectsTable(t, f)
-
-	rec := httptestGet(engine, "/admin/inventory/sources")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("装载失败应降级渲染（200），实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	assertLoadFailedPage(t, "货源管理页", rec.Body.String())
-}
-
-// TestInventoryPurchasesPageLoadFailedDegrades 采购入库页：同一条出口，同一组判据。
-func TestInventoryPurchasesPageLoadFailedDegrades(t *testing.T) {
-	engine, f := newPurchasePageEngine(t)
-	if engine == nil {
-		return
-	}
-	breakProjectsTable(t, f)
-
-	rec := httptestGet(engine, "/admin/inventory/purchases")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("装载失败应降级渲染（200），实际 %d：%s", rec.Code, rec.Body.String())
-	}
-	assertLoadFailedPage(t, "采购入库页", rec.Body.String())
 }
 
 // TestPageErrI18nSeeded 迁移 407 的 4 个文案位真的落库（中英各一行）。

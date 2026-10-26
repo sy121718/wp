@@ -10,12 +10,14 @@ parent: go-wp-modules
 
 ## 职责
 
-库存的唯一真源：仓库、仓库商品 SKU（库存行）、变动流水、变动原因、物料清单、货源、采购单与收货入库、**调拨单**、**库存预警**。
+库存的唯一真源：仓库、仓库商品 SKU（库存行）、变动流水、变动原因、**调拨单**、**库存预警**。
+
+采购域（货源、采购单、收货入库）自 2026-10 拆到 `internal/module/purchase`：它只经本模块的 `contract`（`ChangeStockTxWithBatch` / `ProductStockLookup`）写库存与读仓库，**不 join 库存表**。
 
 ## 边界
 
 - **可用量判断只读库存行锁内**：绝不读商品上的缓存库存列；缓存只被同步与对账写。
-- **入库不得旁路**：采购收货与手工调整走同一变动契约。
+- **入库不得旁路**：采购收货（purchase 模块）与手工调整走同一变动契约。
 - 库存变动与主数据配置变更严格分工：数量变动在这里，改前改后 diff 在 `masterdata`。
 - 订单扣减由本模块的 `outbound/orderstock` 实现 `order` 的 `StockOperator` 契约——方向是「实现方依赖调用方契约」，不是 order 依赖 inventory。
 

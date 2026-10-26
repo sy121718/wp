@@ -39,8 +39,9 @@ parent: go-wp-arch
 | `artifact` | 不可变产物记录与内容对象闭包 | 不判断业务引用；GC 默认 dry run 且保留下限 |
 | `publication` | URL 路由占用状态机、发布回执、站点文件 | `*Tx` 变体不新开事务；已激活路径不得直接改名 |
 | `runtimefragment` | 片段能力注册表与端点 | 无 contract/model；不读页面文档、不执行 Jet；未注入依赖 fail-closed |
-| `product` | 商品、变体、属性、分类、品牌、标签、定价规则、捆绑 | 商品不存价，价格只在变体；不存库存真源 |
-| `inventory` | 库存真源、仓库、变动流水、BOM、货源、采购入库 | 可用量只读库存行锁内；入库不得旁路 |
+| `product` | 商品、变体、属性、分类、品牌、标签、定价规则 | 商品不存价，价格只在变体；不存库存真源 |
+| `inventory` | 库存真源、仓库、库存行、变动流水、变动原因、调拨、预警 | 可用量只读库存行锁内；入库不得旁路 |
+| `purchase` | 货源、采购单、收货入库、生产入库 | 收货/生产入库只经库存契约写库存；不 join 库存表 |
 | `cart` | 客户端签名 cookie 里的购物车 | 无表；不建订单、不落账 |
 | `order` | 订单、明细、状态流水、退货、优惠码、客户分析 | 不 import inventory（经收窄的 `StockOperator` 契约） |
 | `membership` | 会员等级、权益、分配 | `Resolve` 在访问面绝不写库 |
@@ -68,7 +69,8 @@ content       -> project, presentation, page, contenttemplate
 contenttemplate -> project, content, product, block
 blueprint/block -> builder, project
 product       -> inventory, masterdata, comment, content, contenttemplate, page, presentation, project
-inventory     -> product, masterdata, order(outbound), project
+inventory     -> product, order(outbound), project
+purchase      -> inventory, product, masterdata, project
 cart          -> product, order, membership, project
 order         -> product, membership, user, sysconfig, webhook, project
 user          -> mail, membership, order, project
@@ -79,7 +81,7 @@ plugin        -> admin
 admin         -> page, sysconfig
 ```
 
-反向实现（调用方持接口、被调方实现）不算反向依赖：`inventory/outbound/orderstock` 实现 `order` 的 `StockOperator`；`page` 与 `presentation` 各自实现 `media` 的 `StaleMarker`。
+反向实现（调用方持接口、被调方实现）不算反向依赖：`inventory/outbound/orderstock` 实现 `order` 的 `StockOperator`；`inventory/outbound/purchasestock` 实现 `purchase` 的 `StockPort` 与 `VariantCatalog`；`page` 与 `presentation` 各自实现 `media` 的 `StaleMarker`。
 
 ## 数据与事务
 

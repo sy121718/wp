@@ -56,6 +56,16 @@ func (f *wpickFixture) wstockRows(t *testing.T, productID string) []wstockRow {
 	return rows
 }
 
+// wdropStockRows 清掉某商品的全部库存行 —— 用来还原「未入库」这个真实形态
+// （历史/导入商品就是没有库存行的那一类；新建路径必然给默认仓落一行，
+// 见 dto.CreateReq.WarehouseID 的兜底语义，所以只能事后清）。
+func (f *wpickFixture) wdropStockRows(t *testing.T, productID string) {
+	t.Helper()
+	if err := f.db.Exec("DELETE FROM inventory_stocks WHERE product_id = ?", productID).Error; err != nil {
+		t.Fatalf("清库存行失败: %v", err)
+	}
+}
+
 // wstockRowCount 该 (仓库, 裸码) 有几行 —— 「复用不新建」的判据就是它恒为 1。
 func (f *wpickFixture) wstockRowCount(t *testing.T, warehouseID, skuCode string) int {
 	t.Helper()
@@ -281,7 +291,10 @@ func TestProductListStockAggregationThreeStates(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// ① 未入库：没选仓就不落库存行（三态里的「未入库」）。
+	// ① 未入库：商品没有任何库存行（三态里的「未入库」）。
+	//
+	// 这条**不是**「不传仓就没有库存行」—— CreateReq 的 WarehouseID 为空时兜底默认仓，
+	// 新建路径一定会落一行。未入库是「历史 / 导入商品」那一类，所以先建再清行。
 	nonePrice := 99.0
 	none, err := f.products.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "未入库商品", Slug: "agg-none",
@@ -290,6 +303,7 @@ func TestProductListStockAggregationThreeStates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建未入库商品失败: %v", err)
 	}
+	f.wdropStockRows(t, none.ID)
 	got, err := f.products.Get(ctx, &productdto.GetReq{ID: none.ID})
 	if err != nil {
 		t.Fatalf("读未入库商品失败: %v", err)
@@ -663,12 +677,15 @@ func TestProductsPageStockColumnRendersThreeStates(t *testing.T) {
 		t.Fatalf("建无限商品失败: %v", err)
 	}
 	nonePrice := 9.0
-	if _, err := f.products.Create(ctx, &productdto.CreateReq{
+	colNone, err := f.products.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "未入库商品", Slug: "col-none",
 		DefaultPrice: &nonePrice, SKUCode: "COL-NONE",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("建未入库商品失败: %v", err)
 	}
+	// 未入库 = 没有库存行（新建必落默认仓，见上面 agg-none 那条的说明）。
+	f.wdropStockRows(t, colNone.ID)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

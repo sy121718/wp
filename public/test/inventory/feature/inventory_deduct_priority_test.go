@@ -20,6 +20,8 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 
 	productdto "go_wp/internal/module/product/dto"
+	purchasedto "go_wp/internal/module/purchase/dto"
+	purchaseenums "go_wp/internal/module/purchase/enums"
 )
 
 // createWarehouseWithPriority 建仓并指定扣减优先级（迁移 626）。
@@ -211,13 +213,13 @@ func TestPurchaseTerminalStates(t *testing.T) {
 	}
 	ctx := context.Background()
 	wh := f.createWarehouse(t, "SZ", "苏州仓", true)
-	src := mustPurchaseSource(t, f, "SUP1", "供应商一", inventoryenums.SourceTypeExternal)
+	src := mustPurchaseSource(t, f, "SUP1", "供应商一", purchaseenums.SourceTypeExternal)
 	p := mustProduct(t, f, "Purchase")
 	v := f.firstVariant(t, p.ID)
 
-	order, err := f.inventory.CreatePurchaseOrder(ctx, &inventorydto.CreatePurchaseOrderReq{
+	order, err := f.purchase.CreatePurchaseOrder(ctx, &purchasedto.CreatePurchaseOrderReq{
 		ProjectID: f.projectID, Code: "PO-TERM-1", SourceID: src.ID, WarehouseID: wh.ID,
-		Lines: []inventorydto.PurchaseLineReq{{
+		Lines: []purchasedto.PurchaseLineReq{{
 			VariantID: v.ID, ProductID: p.ID, SKUCode: bareSKU(v.SKUCode, wh.Code),
 			Quantity: 3, UnitPrice: 5,
 		}},
@@ -226,25 +228,25 @@ func TestPurchaseTerminalStates(t *testing.T) {
 		t.Fatalf("建采购单失败: %v", err)
 	}
 	// pending 的单不能提前关单（还没收到货，关单没有意义）。
-	if _, err := f.inventory.FinishPurchaseOrder(ctx, &inventorydto.PurchaseStatusReq{
+	if _, err := f.purchase.FinishPurchaseOrder(ctx, &purchasedto.PurchaseStatusReq{
 		ProjectID: f.projectID, ID: order.ID,
-	}); !errors.Is(err, inventoryenums.Err(inventoryenums.ErrPurchaseStatusNotFinishable)) {
+	}); !errors.Is(err, purchaseenums.Err(purchaseenums.ErrPurchaseStatusNotFinishable)) {
 		t.Fatalf("pending 的单提前关单应报 ErrPurchaseStatusNotFinishable，实际 %v", err)
 	}
 	// 收满 → received。
-	if _, err := f.inventory.RegisterReceipt(ctx, &inventorydto.RegisterReceiptReq{
+	if _, err := f.purchase.RegisterReceipt(ctx, &purchasedto.RegisterReceiptReq{
 		ProjectID: f.projectID, OrderID: order.ID, RequestID: "req-term-1",
-		Lines: []inventorydto.ReceiptLineReq{{LineID: order.Lines[0].ID, Quantity: 3}},
+		Lines: []purchasedto.ReceiptLineReq{{LineID: order.Lines[0].ID, Quantity: 3}},
 	}); err != nil {
 		t.Fatalf("收货 3 件失败: %v", err)
 	}
-	finished, err := f.inventory.FinishPurchaseOrder(ctx, &inventorydto.PurchaseStatusReq{
+	finished, err := f.purchase.FinishPurchaseOrder(ctx, &purchasedto.PurchaseStatusReq{
 		ProjectID: f.projectID, ID: order.ID, Remark: "供应商断供",
 	})
 	if err != nil {
 		t.Fatalf("received 的单提前关单应成功: %v", err)
 	}
-	if finished.Status != inventoryenums.PurchaseStatusFinished {
+	if finished.Status != purchaseenums.PurchaseStatusFinished {
 		t.Fatalf("关单后状态应是 finished，实际 %q", finished.Status)
 	}
 	// 库里也必须是 finished：回执取自锁内的行，单看回执会漏掉「守卫把它改回去了」这类错。
@@ -252,18 +254,18 @@ func TestPurchaseTerminalStates(t *testing.T) {
 	if qerr := f.db.Raw("SELECT status FROM inventory_purchase_orders WHERE id = ?", order.ID).Scan(&dbStatus).Error; qerr != nil {
 		t.Fatalf("读状态失败: %v", qerr)
 	}
-	if dbStatus != inventoryenums.PurchaseStatusFinished {
+	if dbStatus != purchaseenums.PurchaseStatusFinished {
 		t.Fatalf("关单后库里的状态应是 finished，实际 %q", dbStatus)
 	}
 	// finished 不能再取消（终态单向）。
-	if _, err := f.inventory.CancelPurchaseOrder(ctx, &inventorydto.PurchaseStatusReq{
+	if _, err := f.purchase.CancelPurchaseOrder(ctx, &purchasedto.PurchaseStatusReq{
 		ProjectID: f.projectID, ID: order.ID,
-	}); !errors.Is(err, inventoryenums.Err(inventoryenums.ErrPurchaseStatusNotCancelable)) {
+	}); !errors.Is(err, purchaseenums.Err(purchaseenums.ErrPurchaseStatusNotCancelable)) {
 		t.Fatalf("finished 的单取消应报 ErrPurchaseStatusNotCancelable，实际 %v", err)
 	}
 	// 关单不写库存流水：收货那一次流水仍在，关单之后条数不变。
 	before := f.movementCount(t)
-	again, againErr := f.inventory.FinishPurchaseOrder(ctx, &inventorydto.PurchaseStatusReq{
+	again, againErr := f.purchase.FinishPurchaseOrder(ctx, &purchasedto.PurchaseStatusReq{
 		ProjectID: f.projectID, ID: order.ID,
 	})
 	if againErr == nil {
@@ -282,13 +284,13 @@ func TestPurchaseCancelPendingAndPartial(t *testing.T) {
 	}
 	ctx := context.Background()
 	wh := f.createWarehouse(t, "SZ", "苏州仓", true)
-	src := mustPurchaseSource(t, f, "SUP2", "供应商二", inventoryenums.SourceTypeExternal)
+	src := mustPurchaseSource(t, f, "SUP2", "供应商二", purchaseenums.SourceTypeExternal)
 	p := mustProduct(t, f, "Cancelable")
 	v := f.firstVariant(t, p.ID)
 
-	order, err := f.inventory.CreatePurchaseOrder(ctx, &inventorydto.CreatePurchaseOrderReq{
+	order, err := f.purchase.CreatePurchaseOrder(ctx, &purchasedto.CreatePurchaseOrderReq{
 		ProjectID: f.projectID, Code: "PO-CANCEL-1", SourceID: src.ID, WarehouseID: wh.ID,
-		Lines: []inventorydto.PurchaseLineReq{{
+		Lines: []purchasedto.PurchaseLineReq{{
 			VariantID: v.ID, ProductID: p.ID, SKUCode: bareSKU(v.SKUCode, wh.Code),
 			Quantity: 4, UnitPrice: 3,
 		}},
@@ -297,19 +299,19 @@ func TestPurchaseCancelPendingAndPartial(t *testing.T) {
 		t.Fatalf("建采购单失败: %v", err)
 	}
 	// pending 可以取消。
-	cancelled, err := f.inventory.CancelPurchaseOrder(ctx, &inventorydto.PurchaseStatusReq{
+	cancelled, err := f.purchase.CancelPurchaseOrder(ctx, &purchasedto.PurchaseStatusReq{
 		ProjectID: f.projectID, ID: order.ID, Remark: "改下别家",
 	})
 	if err != nil {
 		t.Fatalf("pending 的单取消应成功: %v", err)
 	}
-	if cancelled.Status != inventoryenums.PurchaseStatusCancelled {
+	if cancelled.Status != purchaseenums.PurchaseStatusCancelled {
 		t.Fatalf("取消后状态应是 cancelled，实际 %q", cancelled.Status)
 	}
 	// 部分入库的单也可以取消。
-	order2, err := f.inventory.CreatePurchaseOrder(ctx, &inventorydto.CreatePurchaseOrderReq{
+	order2, err := f.purchase.CreatePurchaseOrder(ctx, &purchasedto.CreatePurchaseOrderReq{
 		ProjectID: f.projectID, Code: "PO-CANCEL-2", SourceID: src.ID, WarehouseID: wh.ID,
-		Lines: []inventorydto.PurchaseLineReq{{
+		Lines: []purchasedto.PurchaseLineReq{{
 			VariantID: v.ID, ProductID: p.ID, SKUCode: bareSKU(v.SKUCode, wh.Code),
 			Quantity: 4, UnitPrice: 3,
 		}},
@@ -317,19 +319,19 @@ func TestPurchaseCancelPendingAndPartial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建第二张采购单失败: %v", err)
 	}
-	if _, err := f.inventory.RegisterReceipt(ctx, &inventorydto.RegisterReceiptReq{
+	if _, err := f.purchase.RegisterReceipt(ctx, &purchasedto.RegisterReceiptReq{
 		ProjectID: f.projectID, OrderID: order2.ID, RequestID: "req-cancel-2",
-		Lines: []inventorydto.ReceiptLineReq{{LineID: order2.Lines[0].ID, Quantity: 1}},
+		Lines: []purchasedto.ReceiptLineReq{{LineID: order2.Lines[0].ID, Quantity: 1}},
 	}); err != nil {
 		t.Fatalf("收 1 件失败: %v", err)
 	}
-	partialCancel, err := f.inventory.CancelPurchaseOrder(ctx, &inventorydto.PurchaseStatusReq{
+	partialCancel, err := f.purchase.CancelPurchaseOrder(ctx, &purchasedto.PurchaseStatusReq{
 		ProjectID: f.projectID, ID: order2.ID,
 	})
 	if err != nil {
 		t.Fatalf("partial 的单取消应成功: %v", err)
 	}
-	if partialCancel.Status != inventoryenums.PurchaseStatusCancelled {
+	if partialCancel.Status != purchaseenums.PurchaseStatusCancelled {
 		t.Fatalf("取消后状态应是 cancelled，实际 %q", partialCancel.Status)
 	}
 	// 已入库的 1 件仍在仓里（取消不动库存）。
@@ -346,12 +348,12 @@ func TestPurchaseStatusCheckConstraint(t *testing.T) {
 	}
 	ctx := context.Background()
 	wh := f.createWarehouse(t, "SZ", "苏州仓", true)
-	src := mustPurchaseSource(t, f, "SUP3", "供应商三", inventoryenums.SourceTypeExternal)
+	src := mustPurchaseSource(t, f, "SUP3", "供应商三", purchaseenums.SourceTypeExternal)
 	p := mustProduct(t, f, "Check")
 	v := f.firstVariant(t, p.ID)
-	order, err := f.inventory.CreatePurchaseOrder(ctx, &inventorydto.CreatePurchaseOrderReq{
+	order, err := f.purchase.CreatePurchaseOrder(ctx, &purchasedto.CreatePurchaseOrderReq{
 		ProjectID: f.projectID, Code: "PO-CHECK-1", SourceID: src.ID, WarehouseID: wh.ID,
-		Lines: []inventorydto.PurchaseLineReq{{
+		Lines: []purchasedto.PurchaseLineReq{{
 			VariantID: v.ID, ProductID: p.ID, SKUCode: bareSKU(v.SKUCode, wh.Code),
 			Quantity: 1, UnitPrice: 1,
 		}},

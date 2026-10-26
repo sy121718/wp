@@ -24,6 +24,8 @@ import (
 
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
+	purchasedto "go_wp/internal/module/purchase/dto"
+	purchaseenums "go_wp/internal/module/purchase/enums"
 	"go_wp/pkg/database"
 	"go_wp/public/migrations"
 )
@@ -82,7 +84,7 @@ func TestInventoryStockCostFromReceipt(t *testing.T) {
 	}
 	ctx := context.Background()
 	wh := f.createWarehouse(t, "SZ", "苏州仓", true)
-	source := mustPurchaseSource(t, f, "SUP_A", "供应商 A", inventoryenums.SourceTypeExternal)
+	source := mustPurchaseSource(t, f, "SUP_A", "供应商 A", purchaseenums.SourceTypeExternal)
 	p := mustProductPriced(t, f, "Tee", 99)
 	v := f.firstVariant(t, p.ID)
 
@@ -93,22 +95,22 @@ func TestInventoryStockCostFromReceipt(t *testing.T) {
 
 	// ② 收 10 件 × 12.50 → 当前成本 12.50。
 	order1 := mustPurchaseOrder(t, f, "PO-COST-1", source.ID, wh.ID,
-		[]inventorydto.PurchaseLineReq{purchaseLine(p, v, 10, 12.50)})
+		[]purchasedto.PurchaseLineReq{purchaseLine(p, v, 10, 12.50)})
 	mustReceiveLine(t, f, order1.ID, order1.Lines[0].ID, 10, "cost-receipt-1")
 	mustStockCost(t, f, v.ID, wh.ID, 12.50)
 
 	// ③ 再收一批 × 9.75：**覆盖**成最近一次，而不是加权 / 留两条历史。
 	order2 := mustPurchaseOrder(t, f, "PO-COST-2", source.ID, wh.ID,
-		[]inventorydto.PurchaseLineReq{purchaseLine(p, v, 4, 9.75)})
+		[]purchasedto.PurchaseLineReq{purchaseLine(p, v, 4, 9.75)})
 	mustReceiveLine(t, f, order2.ID, order2.Lines[0].ID, 4, "cost-receipt-2")
 	mustStockCost(t, f, v.ID, wh.ID, 9.75)
 
 	// ④ 本批到货价（20.50）覆盖采购行单价（15.25）：收货行显式给的价就是成本。
 	order3 := mustPurchaseOrder(t, f, "PO-COST-3", source.ID, wh.ID,
-		[]inventorydto.PurchaseLineReq{purchaseLine(p, v, 2, 15.25)})
-	if _, err := f.inventory.RegisterReceipt(ctx, &inventorydto.RegisterReceiptReq{
+		[]purchasedto.PurchaseLineReq{purchaseLine(p, v, 2, 15.25)})
+	if _, err := f.purchase.RegisterReceipt(ctx, &purchasedto.RegisterReceiptReq{
 		ProjectID: f.projectID, OrderID: order3.ID, RequestID: "cost-receipt-3",
-		Lines: []inventorydto.ReceiptLineReq{{
+		Lines: []purchasedto.ReceiptLineReq{{
 			LineID: order3.Lines[0].ID, Quantity: 2, UnitPrice: floatPtr(20.50),
 		}},
 	}); err != nil {
@@ -135,13 +137,13 @@ func TestInventoryStockCostExplicitWritesAndUntouched(t *testing.T) {
 	}
 	ctx := context.Background()
 	wh := f.createWarehouse(t, "SZ", "苏州仓", true)
-	source := mustPurchaseSource(t, f, "SUP_B", "供应商 B", inventoryenums.SourceTypeExternal)
+	source := mustPurchaseSource(t, f, "SUP_B", "供应商 B", purchaseenums.SourceTypeExternal)
 	p := mustProduct(t, f, "Hoodie")
 	v := f.firstVariant(t, p.ID)
 
 	// 先由采购入库写下一个基准成本 8.25。
 	order := mustPurchaseOrder(t, f, "PO-COST-4", source.ID, wh.ID,
-		[]inventorydto.PurchaseLineReq{purchaseLine(p, v, 6, 8.25)})
+		[]purchasedto.PurchaseLineReq{purchaseLine(p, v, 6, 8.25)})
 	mustReceiveLine(t, f, order.ID, order.Lines[0].ID, 6, "cost-receipt-4")
 	mustStockCost(t, f, v.ID, wh.ID, 8.25)
 
@@ -229,11 +231,11 @@ func TestInventoryStockCostProductionInbound(t *testing.T) {
 		return
 	}
 	wh := f.createWarehouse(t, "SZ", "苏州仓", true)
-	factory := mustPurchaseSource(t, f, "FAC", "自家工厂", inventoryenums.SourceTypeInternal)
+	factory := mustPurchaseSource(t, f, "FAC", "自家工厂", purchaseenums.SourceTypeInternal)
 	p := mustProduct(t, f, "Mug")
 	v := f.firstVariant(t, p.ID)
 
-	if _, err := f.inventory.RegisterProductionInbound(context.Background(), &inventorydto.ProductionInboundReq{
+	if _, err := f.purchase.RegisterProductionInbound(context.Background(), &purchasedto.ProductionInboundReq{
 		ProjectID: f.projectID, SourceID: factory.ID, WarehouseID: wh.ID,
 		ProductID: p.ID, VariantID: v.ID, SKUCode: v.SKUCode,
 		Quantity: 5, UnitCost: floatPtr(6.50), RequestID: "prod-cost-1",
@@ -253,7 +255,7 @@ func TestInventoryStockCostPerWarehouseAndSKU(t *testing.T) {
 	ctx := context.Background()
 	suzhou := f.createWarehouse(t, "SZ", "苏州仓", true)
 	shanghai := f.createWarehouse(t, "SH", "上海仓", false)
-	source := mustPurchaseSource(t, f, "SUP_C", "供应商 C", inventoryenums.SourceTypeExternal)
+	source := mustPurchaseSource(t, f, "SUP_C", "供应商 C", purchaseenums.SourceTypeExternal)
 	p := mustProduct(t, f, "Cap")
 	v := f.firstVariant(t, p.ID)
 
@@ -262,8 +264,8 @@ func TestInventoryStockCostPerWarehouseAndSKU(t *testing.T) {
 	// 采购行上的 SKU 走**仓库侧裸码**（仓库里的货不带仓码前缀，前缀只留在商品 / 变体侧）：
 	// 第二个仓的库存行就是这条入库路径新建的，它存下来的编码就是这个值。
 	bare := bareSKU(v.SKUCode, suzhou.Code)
-	purchaseLines := func(quantity int, unitPrice float64) []inventorydto.PurchaseLineReq {
-		return []inventorydto.PurchaseLineReq{{
+	purchaseLines := func(quantity int, unitPrice float64) []purchasedto.PurchaseLineReq {
+		return []purchasedto.PurchaseLineReq{{
 			VariantID: v.ID, ProductID: p.ID, SKUCode: bare,
 			Quantity: quantity, UnitPrice: unitPrice,
 		}}

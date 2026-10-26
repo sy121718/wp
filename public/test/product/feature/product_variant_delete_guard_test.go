@@ -65,7 +65,6 @@ func newGuardFixture(t *testing.T) *guardFixture {
 	products.SetInventoryService(inv)
 	products.SetInventory(inventorymodel.NewModel(db))
 	products.SetAvailabilityPort(inv)
-	inv.SetVariantCost(products)
 	sz, err := inv.CreateWarehouse(ctx, &inventorydto.CreateWarehouseReq{
 		ProjectID: project.ID, Code: "SZ", Name: "苏州仓",
 	})

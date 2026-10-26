@@ -93,28 +93,6 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 	g.POST("/reason/create", permission.InventoryReasonCreate, handle.CreateReason)
 	g.POST("/reason/update", permission.InventoryReasonUpdate, handle.UpdateReason)
 
-	// 货源（issue #17）：一张表承载全部进货来源 —— 外部供应商 / 集团内关联公司 / 自家工厂
-	// 用类型区分，关联方标志独立成列（报表区分），config 承载异构对接扩展信息。
-	// list 的 type / relatedParty / status / keyword 都是可组合的报表筛选维度，
-	// summary 按「类型 × 关联方」分组给出交叉计数。
-	g.GET("/source/list", permission.InventorySourceList, handle.ListSources)
-	g.GET("/source/get", permission.InventorySourceGet, handle.GetSource)
-	g.GET("/source/summary", permission.InventorySourceSummary, handle.SourceSummary)
-	g.POST("/source/create", permission.InventorySourceCreate, handle.CreateSource)
-	g.POST("/source/update", permission.InventorySourceUpdate, handle.UpdateSource)
-	g.POST("/source/delete", permission.InventorySourceDelete, handle.DeleteSource)
-
-	// 采购单与入库（issue #18）：采购单（来源 = #17 的货源）→ 收货入库（复用 #16 的 ChangeStock）。
-	// receipt 支持按行分批累加已入库数量，带幂等键防重复入库；production 是自家工厂
-	// 生产入库（无采购单，成本价手工填写）；history 是某 SKU 的进货历史。
-	g.GET("/purchase/list", permission.InventoryPurchaseList, handle.ListPurchaseOrders)
-	g.GET("/purchase/get", permission.InventoryPurchaseGet, handle.GetPurchaseOrder)
-	g.GET("/purchase/history", permission.InventoryPurchaseHistory, handle.ListPurchaseHistory)
-	g.POST("/purchase/create", permission.InventoryPurchaseCreate, handle.CreatePurchaseOrder)
-	g.POST("/purchase/update", permission.InventoryPurchaseUpdate, handle.UpdatePurchaseOrder)
-	g.POST("/purchase/receipt", permission.InventoryPurchaseReceipt, handle.RegisterReceipt)
-	g.POST("/purchase/production", permission.InventoryPurchaseProduction, handle.RegisterProductionInbound)
-
 	// 调拨单（迁移 630，W3）：仓库间移库，出货与签收**各需凭证附件**。
 	// 六条独立权限点（出货与签收是两个不同的人做的事，见 permission/codes.go）。
 	transferPages := NewInventoryTransferPageHandle(svc, project, nil)

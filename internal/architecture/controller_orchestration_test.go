@@ -44,9 +44,8 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/contenttemplate/inbound/http/contenttemplate_handle.go":    {offenders: 1, max: 28},
 	"internal/module/contenttemplate/inbound/http/contenttemplate_page.go":      {offenders: 2, max: 31},
 	"internal/module/inventory/inbound/http/inventory_page_handle.go":           {offenders: 1, max: 39},
-	"internal/module/inventory/inbound/http/inventory_purchase_handle.go":       {offenders: 1, max: 29},
 	"internal/module/inventory/inbound/http/inventory_reason_handle.go":         {offenders: 2, max: 15},
-	"internal/module/inventory/inbound/http/inventory_source_handle.go":         {offenders: 2, max: 39},
+	"internal/module/purchase/inbound/http/source_page_handle.go":               {offenders: 1, max: 11},
 	"internal/module/inventory/inbound/http/inventory_stock_handle.go":          {offenders: 2, max: 9},
 	"internal/module/inventory/inbound/http/inventory_warehouse_handle.go":      {offenders: 2, max: 12},
 	"internal/module/mail/inbound/http/mail_contact_write.go":                   {offenders: 3, max: 26},
@@ -82,10 +81,10 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	// 登记按**文件**记，所以拆分后要跟着拆：offenders 是该文件里超限的函数数，
 	// max 是其中最大的语句数。拆分本身不改变这些函数的大小 —— 豁免不是拆分换来的，
 	// 拆分只是为了下一步逐个把装配下沉到 service 读模型时能分开做。
-	"internal/module/workbench/inbound/http/inspector_handle.go":       {offenders: 2, max: 10},  // InspectorPanel=10, OutlineTree=7
-	"internal/module/workbench/inbound/http/canvas_handle.go":          {offenders: 1, max: 29},  // Workbench=29
-	"internal/module/workbench/inbound/http/canvas_preview_handle.go":  {offenders: 3, max: 15},  // InstanceSave=15, TemplatePreviewDraft=12, TemplatePreview=10
-	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":   {offenders: 1, max: 9},   // PreviewDraft=9
+	"internal/module/workbench/inbound/http/inspector_handle.go":      {offenders: 2, max: 10}, // InspectorPanel=10, OutlineTree=7
+	"internal/module/workbench/inbound/http/canvas_handle.go":         {offenders: 1, max: 29}, // Workbench=29
+	"internal/module/workbench/inbound/http/canvas_preview_handle.go": {offenders: 3, max: 15}, // InstanceSave=15, TemplatePreviewDraft=12, TemplatePreview=10
+	"internal/module/workbench/inbound/http/canvas_bridge_handle.go":  {offenders: 1, max: 9},  // PreviewDraft=9
 }
 
 // controllerHandlerStatements 每个 handler 的语句数（键是「文件:函数」，只收参数恰好一个 *gin.Context 的函数）。

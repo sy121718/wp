@@ -710,6 +710,17 @@ func toTransferRowResp(r *inventorymodel.TransferListRow) *inventorydto.Transfer
 	return out
 }
 
+// orJoinRemark 在已有备注后追加一段说明（空备注时直接取新段）。
+//
+// 与采购域的 orJoinRemark 同一形状：两张单据的备注都是「人写的自由文本」，
+// 系统追加的推进说明必须用统一分隔符接在后面，不能覆盖人工内容。
+func orJoinRemark(existing, extra string) string {
+	if strings.TrimSpace(existing) == "" {
+		return extra
+	}
+	return existing + "；" + extra
+}
+
 // mapTransferNotFound 单据不存在 → 业务错误，其余原样透出。
 func mapTransferNotFound(err error) error {
 	if errors.Is(err, gorm.ErrRecordNotFound) {

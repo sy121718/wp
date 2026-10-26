@@ -60,6 +60,7 @@ import (
 	inventorymodel "go_wp/internal/module/inventory/model"
 	mediaatt "go_wp/internal/module/inventory/outbound/mediaatt"
 	orderstock "go_wp/internal/module/inventory/outbound/orderstock"
+	purchasestock "go_wp/internal/module/inventory/outbound/purchasestock"
 	inventoryservice "go_wp/internal/module/inventory/service"
 	mailcontract "go_wp/internal/module/mail/contract"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
@@ -91,6 +92,8 @@ import (
 	projectmcp "go_wp/internal/module/project/inbound/mcp"
 	pubcontract "go_wp/internal/module/publication/contract"
 	pubhttp "go_wp/internal/module/publication/inbound/http"
+	purchasecontract "go_wp/internal/module/purchase/contract"
+	purchasehttp "go_wp/internal/module/purchase/inbound/http"
 	runtimefragment "go_wp/internal/module/runtimefragment"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfighttp "go_wp/internal/module/sysconfig/inbound/http"
@@ -210,6 +213,7 @@ type assembly struct {
 	contentTemplateSvc contenttemplatecontract.ContentTemplateService
 	masterdataSvc      masterdatacontract.MasterDataService
 	inventorySvc       inventorycontract.InventoryService
+	purchaseSvc        purchasecontract.PurchaseService
 	productSvc         productcontract.ProductService
 	// productReader 是 productSvc 的**读模型面**（同一个实现，contract.ProductPageReader）。
 	// SetupProductRoutes 一次产出两条，页面装配要用第二条：页面处理器用它取数，
@@ -584,6 +588,33 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	marks.mark(portInventoryProductCatalog)
 	// 商品译文存储由 SetupProductRoutes 内部用同一个 db 注入（可选端口：未接入即回退原文）。
 	marks.mark(portProductContentStore)
+	// 采购域（2026-10 从 inventory 拆出）：货源 / 采购单 / 入库。
+	// 库存侧能力经 purchases 契约的窄端口（purchasecontract.StockPort）注入，
+	// 适配器在库存侧（outbound/purchasestock）—— 采购不 import 库存的 dto / model / service。
+	// 收货落账仍在库存模块里发生（真源、原因字典、流水、来源引用），采购只记
+	// 「进了多少、单价多少」，两边在同一事务内。
+	purchaseLookup, ok := inventorySvc.(inventorycontract.ProductStockLookup)
+	if !ok {
+		panic("库存模块未实现库存只读端口（ProductStockLookup）")
+	}
+	purchaseBatch, ok := inventorySvc.(inventorycontract.BatchStockWriter)
+	if !ok {
+		panic("库存模块未实现带批次的库存变动端口（BatchStockWriter）")
+	}
+	purchaseStock := purchasestock.New(inventorySvc, purchaseLookup, purchaseBatch)
+	purchaseSvc := purchasehttp.SetupPurchaseRoutes(authorizedAPI, a.adminPages, db, projectService, purchaseStock)
+	// SKU 候选下拉的两条只读口（商品侧变体清单 + 库存侧裸码映射）：与
+	// inventoryhttp.SetProductCatalog 同一手法 —— 后置注入，未注入时下拉为空。
+	purchaseVariants, ok := productSvc.(productcontract.VariantOptionsReader)
+	if !ok {
+		panic("purchase.SetVariantCatalog: 商品契约未实现 VariantOptionsReader（两处接口不同步）")
+	}
+	purchaseBareSKUs, ok := inventorySvc.(inventorycontract.StockSKUReader)
+	if !ok {
+		panic("purchase.SetVariantCatalog: 库存契约未实现 StockSKUReader（两处接口不同步）")
+	}
+	purchasehttp.SetVariantCatalog(purchasestock.NewCatalog(purchaseVariants, purchaseBareSKUs))
+	marks.mark(portPurchaseVariantCatalog)
 
 	a.mediaSvc = mediaSvc
 	a.projectService = projectService
@@ -599,6 +630,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	a.contentTemplateSvc = contentTemplateSvc
 	a.masterdataSvc = masterdataSvc
 	a.inventorySvc = inventorySvc
+	a.purchaseSvc = purchaseSvc
 	a.productSvc = productSvc
 	a.productReader = productReader
 }
@@ -1220,14 +1252,14 @@ func (a *assembly) wireProductInventoryPorts() {
 	if !ok {
 		panic("商品模块未实现成本价写回端口（VariantCostPort）")
 	}
-	variantCostSetter, ok := inventorySvc.(interface {
+	variantCostSetter, ok := a.purchaseSvc.(interface {
 		SetVariantCost(productcontract.VariantCostPort)
 	})
 	if !ok {
-		panic("库存模块未提供成本价端口注入点（SetVariantCost）")
+		panic("采购模块未提供成本价端口注入点（SetVariantCost）")
 	}
 	variantCostSetter.SetVariantCost(variantCostPort)
-	marks.mark(portInventoryVariantCost)
+	marks.mark(portPurchaseVariantCost)
 	// 主数据变更记录注入（issue #19）：两个模块的端口是同一套方法（SetMasterDataChanges），
 	// 同一手法断言 + 注入；任一未实现即 fail-fast（装配缺陷不该拖到运行时才暴露 ——
 	// 变更记录漏接的表现是「审计静默缺失」，比报错隐蔽得多）。
@@ -1235,7 +1267,7 @@ func (a *assembly) wireProductInventoryPorts() {
 		name   string
 		target any
 	}{
-		{"商品模块", productSvc}, {"库存模块", inventorySvc},
+		{"商品模块", productSvc}, {"采购模块", a.purchaseSvc},
 	}
 	for _, item := range masterDataSetters {
 		setter, sok := item.target.(interface {
@@ -1247,7 +1279,7 @@ func (a *assembly) wireProductInventoryPorts() {
 		setter.SetMasterDataChanges(a.masterdataSvc)
 	}
 	marks.mark(portProductMasterDataChanges)
-	marks.mark(portInventoryMasterDataChanges)
+	marks.mark(portPurchaseMasterDataChanges)
 	// 库存真源可用量端口（issue #20）：捆绑品的单项上限与整单下限都受可用量约束，
 	// 且只读 inventory_stocks 真源 —— 读 product_variants.stock_total 缓存会直接变成超卖。
 	// 方向与 VariantStockPort 相同（inventory 实现、product 调用）：断言 + 注入，

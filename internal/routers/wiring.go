@@ -69,9 +69,9 @@ const (
 	portWebhookDispatcher          = "order.SetWebhookDispatcher"
 	portProductInventoryService    = "product.SetInventoryService"
 	portProductInventoryModel      = "product.SetInventory"
-	portInventoryVariantCost       = "inventory.SetVariantCost"
+	portPurchaseVariantCost        = "purchase.SetVariantCost"
 	portProductMasterDataChanges   = "product.SetMasterDataChanges"
-	portInventoryMasterDataChanges = "inventory.SetMasterDataChanges"
+	portPurchaseMasterDataChanges  = "purchase.SetMasterDataChanges"
 	portProductAvailability        = "product.SetAvailabilityPort"
 	portProductArchiveEnsurer      = "product.SetArchiveInstanceEnsurer"
 	portProductPublishedLocator    = "product.SetPublishedEntityLocator"
@@ -115,6 +115,7 @@ const (
 	portI18nValueLoader               = "i18n.SetValueLoader"
 	portDataRuleDeptResolver          = "builtin.SetDataRuleDeptResolver"
 	portInventoryProductCatalog       = "inventory.SetProductCatalog"
+	portPurchaseVariantCatalog        = "purchase.SetVariantCatalog"
 	portRuntimeFragCommentHasher      = "runtimefragment.SetDependencies.CommentSourceHasher"
 	portRuntimeFragCountryLabel       = "runtimefragment.SetDependencies.CountryLabelReader"
 	portWorkbenchInstanceOverrideDeps = "workbench.SetInstanceOverrideDeps"
@@ -252,11 +253,11 @@ var wiringManifest = []wiringEntry{
 		"建变体不生成库存记录、SKU 编码缺仓短码前缀（库存真源缺行）"},
 	{portProductInventoryModel, "inventory ProductStockReader", "product", wiringRequiredPort,
 		"变体库存投影恒为 0；删变体时非零库存与 BOM 引用守卫失效"},
-	{portInventoryVariantCost, "product", "inventory", wiringRequiredPort,
+	{portPurchaseVariantCost, "product", "purchase", wiringRequiredPort,
 		"采购收货 / 生产入库的单价不回写 cost_price（入库单行记 cost_error）"},
 	{portProductMasterDataChanges, "masterdata", "product", wiringRequiredPort,
 		"商品 / 变体字段级审计静默缺失（改价格、改编码都查不到留痕）"},
-	{portInventoryMasterDataChanges, "masterdata", "inventory", wiringRequiredPort,
+	{portPurchaseMasterDataChanges, "masterdata", "purchase", wiringRequiredPort,
 		"货源资料变更审计静默缺失"},
 	{portProductAvailability, "inventory", "product", wiringRequiredPort,
 		"套餐整单校验 fail-closed（一律拒单，而不是按「无上限」放行超卖）"},
@@ -286,6 +287,8 @@ var wiringManifest = []wiringEntry{
 		"按部门的数据权限规则静默失效：该被拦的数据放行或被误拦，页面上看不出区别"},
 	{portInventoryProductCatalog, "product", "inventory（商品 → 变体下拉）", wiringOptionalDegraded,
 		"库存页的「商品 → 变体」下拉为空（用户看到空列表，不是错误）"},
+	{portPurchaseVariantCatalog, "product + inventory", "purchase（采购行 SKU 下拉）", wiringOptionalDegraded,
+		"采购入库页的 SKU 下拉为空（用户看到空列表，不是错误；入库入口仍可手工填编码）"},
 	{portRuntimeFragCommentHasher, "装配层（盐来自配置）", "runtimefragment", wiringOptionalDegraded,
 		"评论来源 IP 哈希退化为无盐 / 会话密钥回退（resolvePurposeSecret 记 Warn）"},
 	{portRuntimeFragCountryLabel, "sysconfig（字典只读口）", "runtimefragment", wiringOptionalDegraded,
