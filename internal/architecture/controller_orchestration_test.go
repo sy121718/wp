@@ -98,6 +98,9 @@ func controllerHandlerStatements(t *testing.T) (perFile map[string][]int, offend
 		if err != nil {
 			return err
 		}
+		if info.IsDir() && skipArchScanDir(info.Name()) {
+			return filepath.SkipDir
+		}
 		if info.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			return nil
 		}

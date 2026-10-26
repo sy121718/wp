@@ -214,6 +214,20 @@ func parseImports(path string) ([]string, error) {
 	return out, nil
 }
 
+// skipArchScanDir 架构门禁不扫描的目录名。
+//
+// .worktrees 是**嵌套 worktree**：另一个分支的完整副本，自带 go.mod 与全套 inbound/http。
+// 它住在仓库目录里，却既不属于当前工作区、也不由当前提交负责 —— 扫进来会把同一份代码
+// 按分支数重复计数，基线（pendingControllerStatements 之类）随之无声漂移，
+// 表现为"我没改那批文件，门禁却红了一片"。
+func skipArchScanDir(name string) bool {
+	switch name {
+	case ".git", "node_modules", "vendor", ".worktrees":
+		return true
+	}
+	return false
+}
+
 // repoRoot 从当前工作目录向上找 go.mod。
 func repoRoot(t *testing.T) string {
 	t.Helper()

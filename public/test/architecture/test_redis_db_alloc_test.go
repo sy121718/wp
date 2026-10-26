@@ -148,7 +148,9 @@ func scanRedisFixtureCallers(t *testing.T, root string) map[string]bool {
 			return nil
 		}
 		if d.IsDir() {
-			if d.Name() == ".git" || d.Name() == "node_modules" || d.Name() == "vendor" {
+			// .worktrees 是嵌套 worktree（另一个分支的完整副本）：扫进来会把同一批调用点
+			// 按分支数重复登记，基线永久漂移。
+			if d.Name() == ".git" || d.Name() == "node_modules" || d.Name() == "vendor" || d.Name() == ".worktrees" {
 				return filepath.SkipDir
 			}
 			return nil

@@ -55,7 +55,9 @@ import collections, os, re, sys
 root, allow_path = sys.argv[1], sys.argv[2]
 
 # 与门禁无关的目录一律不进统计：.scratch 是本地草稿，node_modules/vendor 是第三方。
-SKIP_DIRS = {".git", ".scratch", "node_modules", "vendor", ".review-graph"}
+# .worktrees 是嵌套 worktree（另一个分支的完整副本）：扫进来等于把同一份代码按分支数重复计数，
+# 而且那些副本的改动不属于当前工作区，会让本门禁对比的基线无声漂移。
+SKIP_DIRS = {".git", ".scratch", "node_modules", "vendor", ".review-graph", ".worktrees"}
 
 def read(path):
     with open(path, encoding="utf-8", errors="ignore") as fh:

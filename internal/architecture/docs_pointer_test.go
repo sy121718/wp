@@ -21,7 +21,7 @@ var docsPointerPattern = regexp.MustCompile("docs/[A-Za-z0-9._/\\-]+\\.(?:md|htm
 func TestNoDanglingDocsPointers(t *testing.T) {
 	root := repoRoot(t)
 	exts := map[string]bool{".go": true, ".md": true, ".sh": true, ".html": true, ".js": true, ".css": true}
-	skipDirs := map[string]bool{".git": true, "node_modules": true, "tmp": true, ".scratch": true, ".backup": true, "runtime": true, "logs": true, "storage": true, "site": true}
+	skipDirs := map[string]bool{"tmp": true, ".scratch": true, ".backup": true, "runtime": true, "logs": true, "storage": true, "site": true}
 
 	var dangling []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -29,7 +29,7 @@ func TestNoDanglingDocsPointers(t *testing.T) {
 			return nil
 		}
 		if d.IsDir() {
-			if path != root && skipDirs[d.Name()] {
+			if path != root && (skipDirs[d.Name()] || skipArchScanDir(d.Name())) {
 				return filepath.SkipDir
 			}
 			return nil

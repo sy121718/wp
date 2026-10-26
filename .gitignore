@@ -70,3 +70,7 @@ public/backup/
 # write-contracts 两个共 8MB+ 的文件）。构建产物一律不入库。
 /formtags
 /write-contracts
+
+# 嵌套 worktree（另一个分支的完整副本）。不入库，且必须让门禁与测试扫描跳过 ——
+# 扫进来等于把同一份代码按分支数重复计数，基线会无声漂移。
+/.worktrees/
