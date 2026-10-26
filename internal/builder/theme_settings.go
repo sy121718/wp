@@ -304,7 +304,25 @@ func ThemeVarsCSS(t *ThemeSettings) string {
 	if len(vars) == 0 {
 		return ""
 	}
-	return ":root{\n  " + strings.Join(vars, ";\n  ") + ";\n}"
+	out := ":root{\n  " + strings.Join(vars, ";\n  ") + ";\n}"
+	// 字体令牌此前只有变量、没有消费方 —— 在主题里设了标题/正文字体，页面上毫无变化。
+	// 这里补上唯一一处消费：只在令牌存在时输出，未设字体的主题产物字节不变。
+	if strings.TrimSpace(t.Typography.Heading.FontFamily) != "" {
+		out += "\nh1,h2,h3,h4,h5,h6{font-family:var(--sky-heading-font,inherit)}"
+	}
+	if strings.TrimSpace(t.Typography.Body.FontFamily) != "" {
+		out += "\nbody{font-family:var(--sky-body-font,inherit)}"
+	}
+	// 正文色同理：组件里 color:inherit 的元素（表单 label、富文本外壳）拿的是 body 色，
+	// 而 body 从未消费 --sky-body-color，暗色主题下这些字会落回浏览器默认黑。
+	if strings.TrimSpace(t.Typography.Body.Color) != "" {
+		out += "\nbody{color:var(--sky-body-color,inherit)}"
+	}
+	// 页面底色同理：各段没显式设背景时落回 body，body 不消费 --sky-c-bg 就是白底。
+	if strings.TrimSpace(t.Colors.Background) != "" {
+		out += "\nbody{background-color:var(--sky-c-bg,transparent)}"
+	}
+	return out
 }
 
 // GetThemeID 空安全读取主题标识。

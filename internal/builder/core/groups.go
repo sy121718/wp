@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -500,6 +501,33 @@ func CompileInteraction(sel string, p InteractionProps, b *CSSBuckets) {
 	}
 }
 
+// glowColorFallback 无主题时的光晕回退色（与旧产物逐字节一致）。
+const glowColorFallback = "#3b82f6"
+
+// glowRing 外圈光环：主题主色 + 指定不透明度；color-mix 让令牌直接带透明
+// （CSS 变量本身不能拼 alpha）。不支持 color-mix 的浏览器落到整条声明失效，
+// 效果退化为「无光晕」，不影响布局与可读性。
+func glowRing(alpha string) string {
+	return "0 0 0 3px color-mix(in srgb, var(--sky-c-primary, " + glowColorFallback + ") " + trimAlpha(alpha) + ", transparent)"
+}
+
+// glowHalo 外发光。
+func glowHalo(alpha string, blur ...string) string {
+	b := "24px"
+	if len(blur) > 0 {
+		b = blur[0]
+	}
+	return "0 0 " + b + " color-mix(in srgb, var(--sky-c-primary, " + glowColorFallback + ") " + trimAlpha(alpha) + ", transparent)"
+}
+
+// trimAlpha .35 → 35%（color-mix 的百分比语法）。
+func trimAlpha(a string) string {
+	if v, err := strconv.ParseFloat(a, 64); err == nil {
+		return strconv.FormatFloat(v*100, 'f', -1, 64) + "%"
+	}
+	return "35%"
+}
+
 // hoverTriggerDecls 悬浮效果 → :hover 触发态声明。
 func hoverTriggerDecls(effect string) []string {
 	switch effect {
@@ -508,7 +536,8 @@ func hoverTriggerDecls(effect string) []string {
 	case "scale":
 		return []string{"transform: scale(1.04)"}
 	case "glow":
-		return []string{"box-shadow: 0 0 0 3px rgba(59,130,246,.35), 0 0 24px rgba(59,130,246,.25)"}
+		// 光晕跟主题主色走：写死 Tailwind 蓝的话，换任何配色的主题，悬停反光都还是蓝的。
+		return []string{"box-shadow: " + glowRing("0.35") + ", " + glowHalo("0.25")}
 	case "shadow":
 		return []string{"box-shadow: 0 16px 40px rgba(0,0,0,.18)"}
 	case "sink":
@@ -516,7 +545,7 @@ func hoverTriggerDecls(effect string) []string {
 	case "grow":
 		return []string{"transform: scale(1.06)"}
 	case "border-glow":
-		return []string{"box-shadow: 0 0 0 3px rgba(59,130,246,.28)"}
+		return []string{"box-shadow: " + glowRing("0.28")}
 	case "text-glow":
 		return []string{"text-shadow: 0 0 12px currentColor"}
 	case "skew":
@@ -538,7 +567,7 @@ func activeTriggerDecls(effect string) []string {
 	case "pop":
 		return []string{"transform: scale(1.03)"}
 	case "glow":
-		return []string{"box-shadow: 0 0 0 3px rgba(59,130,246,.4), 0 0 20px rgba(59,130,246,.3)"}
+		return []string{"box-shadow: " + glowRing("0.4") + ", " + glowHalo("0.3", "20px")}
 	}
 	return nil
 }
