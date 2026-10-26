@@ -70,12 +70,12 @@ type MovementEntity struct {
 	ReasonID        *int64  `gorm:"column:reason_id"`
 	ReasonCode      string  `gorm:"column:reason_code;not null"`
 	ParentVariantID *string `gorm:"column:parent_variant_id"`
-	// StockID 是这次变动动的**那一条货行**（迁移 638）。
+	// StockID 是这次变动动的**那一条货行**（迁移 640）。
 	//
 	// 为什么不能只靠 (variant_id, warehouse_id)：那对值不再唯一 —— 同一变体在同一个仓
-	// 可以对应多条货行（不同批次 / 自有码与客户码并存，见 637 与 638 的注释）。
+	// 可以对应多条货行（不同批次 / 自有码与客户码并存，见 637 / 640 / 641 的注释）。
 	// 可空：货行被删时外键置 NULL（历史流水不因货行消失而丢），
-	// 也兼容 638 之前写入、回填时找不到对应货行的历史（极少）。
+	// 也兼容 640 之前写入、回填时找不到对应货行的历史（极少）。
 	StockID    *string `gorm:"column:stock_id"`
 	SourceType string  `gorm:"column:source_type;not null"`
 	SourceRef  string  `gorm:"column:source_ref;not null"`
@@ -111,7 +111,7 @@ type MovementRow struct {
 	ReasonCode      string  `gorm:"column:reason_code"`
 	ReasonName      string  `gorm:"column:reason_name"`
 	ParentVariantID *string `gorm:"column:parent_variant_id"`
-	// StockID 与 MovementEntity 同义（迁移 638：货行级追溯）。
+	// StockID 与 MovementEntity 同义（迁移 640：货行级追溯）。
 	StockID    *string `gorm:"column:stock_id"`
 	SourceType string  `gorm:"column:source_type"`
 	SourceRef  string  `gorm:"column:source_ref"`
@@ -135,7 +135,7 @@ type MovementFilter struct {
 	SourceType  string
 	SourceRef   string
 	BatchID     string
-	// StockID 按货行过滤（迁移 638）：台账页「这条货的全部变动」就是它。
+	// StockID 按货行过滤（迁移 640）：流水页「这条货的全部变动」就是它。
 	StockID string
 	// TimeFrom / TimeTo 是流水的创建时间区间（闭区间，nil 表示该侧不限）。
 	// 时间列是 timestamptz，比较直接用 time.Time —— 后台表单传进来的本地时间由调用方

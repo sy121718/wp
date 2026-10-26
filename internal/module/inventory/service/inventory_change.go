@@ -801,7 +801,7 @@ func movementOf(it changeItem, e *inventorymodel.StockEntity, before, after, del
 		SKUCode:   e.SKUCode,
 		Direction: it.direction, Quantity: abs(delta), Delta: delta,
 		QuantityBefore: before, QuantityAfter: after,
-		// 货行级追溯（迁移 638）：同变体同仓可以有多条货行，记账必须指到具体那一条。
+		// 货行级追溯（迁移 640）：同变体同仓可以有多条货行，记账必须指到具体那一条。
 		StockID:    &e.ID,
 		SourceType: it.sourceType, SourceRef: it.sourceRef,
 		Remark: it.remark, OperatorID: it.operatorID,
