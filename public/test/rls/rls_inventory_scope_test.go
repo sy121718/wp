@@ -116,7 +116,8 @@ func seedMovement(t *testing.T, db *gorm.DB, projectID, warehouseID, variantID, 
 	err := im.Transaction(context.Background(), func(tx *gorm.DB) error {
 		return im.CreateMovementsTx(context.Background(), tx, []*inventorymodel.MovementEntity{{
 			ID: id, ProjectID: projectID, WarehouseID: warehouseID,
-			ProductID: uuid.NewString(), VariantID: variantID, SKUCode: "SKU-" + variantID[:8],
+			ProductID: inventorymodel.StringPtr(uuid.NewString()), VariantID: inventorymodel.StringPtr(variantID),
+			SKUCode: "SKU-" + variantID[:8],
 			Direction: direction, Quantity: 1, Delta: 1, QuantityBefore: 0, QuantityAfter: 1,
 			ReasonCode: "guard_in", SourceType: "guard", SourceRef: id,
 			BatchID: id, CreatedAt: now,

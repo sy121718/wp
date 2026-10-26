@@ -216,6 +216,10 @@ var (
 		titleKey: inventoryenums.InventoryReasonsTitle, titleFallback: "变动原因字典",
 		menu: "inventory-reasons",
 	}
+	inventoryMetaMovements = inventoryPageMeta{
+		titleKey: inventoryenums.InventoryMovementsTitle, titleFallback: "库存流水",
+		menu: "inventory-movements",
+	}
 	inventoryMetaStockSKUs = inventoryPageMeta{
 		titleKey: inventoryenums.InventoryStockSKUsTitle, titleFallback: "仓库商品 SKU",
 		menu: "inventory-skus",

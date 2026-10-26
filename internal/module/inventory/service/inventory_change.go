@@ -797,13 +797,17 @@ func (s *Service) finishChange(ctx context.Context, projectID, direction string,
 func movementOf(it changeItem, e *inventorymodel.StockEntity, before, after, delta int, batchID string, now time.Time) *inventorymodel.MovementEntity {
 	m := &inventorymodel.MovementEntity{
 		ID: utils.NewTimeOrderedID(), ProjectID: e.ProjectID, WarehouseID: e.WarehouseID,
-		ProductID: inventorymodel.PtrString(e.ProductID), VariantID: inventorymodel.PtrString(e.VariantID),
+		ProductID: e.ProductID, VariantID: e.VariantID,
 		SKUCode:   e.SKUCode,
 		Direction: it.direction, Quantity: abs(delta), Delta: delta,
 		QuantityBefore: before, QuantityAfter: after,
 		// 货行级追溯（迁移 640）：同变体同仓可以有多条货行，记账必须指到具体那一条。
-		StockID:    &e.ID,
-		SourceType: it.sourceType, SourceRef: it.sourceRef,
+		StockID: &e.ID,
+		// 货品名与图是**当时**的快照（迁移 646）：货行之后改名 / 换图 / 被删，
+		// 历史流水仍要能回答「当时动的是哪件货」。与 unit_cost 同一取舍。
+		StockName:     e.Name,
+		StockImageURL: e.ImageURL,
+		SourceType:    it.sourceType, SourceRef: it.sourceRef,
 		Remark: it.remark, OperatorID: it.operatorID,
 		BatchID: batchID, CreatedAt: now,
 	}
@@ -1027,11 +1031,12 @@ func toMovementResp(r *inventorymodel.MovementRow) *inventorydto.MovementResp {
 	resp := &inventorydto.MovementResp{
 		ID: r.ID, ProjectID: r.ProjectID, WarehouseID: r.WarehouseID,
 		WarehouseCode: r.WarehouseCode, WarehouseName: r.WarehouseName,
-		ProductID: r.ProductID, VariantID: r.VariantID, SKUCode: r.SKUCode,
+		ProductID: inventorymodel.PtrString(r.ProductID), VariantID: inventorymodel.PtrString(r.VariantID), SKUCode: r.SKUCode,
 		Direction: r.Direction, Quantity: r.Quantity, Delta: r.Delta,
 		QuantityBefore: r.QuantityBefore, QuantityAfter: r.QuantityAfter,
 		ReasonCode: r.ReasonCode, ReasonName: r.ReasonName,
-		StockID:    inventorymodel.PtrString(r.StockID),
+		StockID:   inventorymodel.PtrString(r.StockID),
+		StockName: r.StockName, StockImageURL: r.StockImageURL,
 		SourceType: r.SourceType, SourceRef: r.SourceRef,
 		Remark: r.Remark, OperatorID: r.OperatorID, BatchID: r.BatchID,
 		// 成本留痕同源（投影带上 mv.unit_cost）：列表与变动回执给出同一个值。
@@ -1048,11 +1053,12 @@ func toMovementResp(r *inventorymodel.MovementRow) *inventorydto.MovementResp {
 func toMovementRespFromEntity(m *inventorymodel.MovementEntity) *inventorydto.MovementResp {
 	resp := &inventorydto.MovementResp{
 		ID: m.ID, ProjectID: m.ProjectID, WarehouseID: m.WarehouseID,
-		ProductID: m.ProductID, VariantID: m.VariantID, SKUCode: m.SKUCode,
+		ProductID: inventorymodel.PtrString(m.ProductID), VariantID: inventorymodel.PtrString(m.VariantID), SKUCode: m.SKUCode,
 		Direction: m.Direction, Quantity: m.Quantity, Delta: m.Delta,
 		QuantityBefore: m.QuantityBefore, QuantityAfter: m.QuantityAfter,
 		ReasonCode: m.ReasonCode,
 		StockID:    inventorymodel.PtrString(m.StockID),
+		StockName:  m.StockName, StockImageURL: m.StockImageURL,
 		SourceType: m.SourceType, SourceRef: m.SourceRef,
 		Remark: m.Remark, OperatorID: m.OperatorID, BatchID: m.BatchID,
 		UnitCost:  m.UnitCost,

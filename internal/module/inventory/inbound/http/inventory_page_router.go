@@ -37,6 +37,11 @@ func registerInventoryReadPages(pages *gin.RouterGroup, h *inventoryPageHandle) 
 	// 库存管理按 SKU 横看各仓，本页按仓纵看一屏货行（含停用的、还没被商品引用的）。
 	pages.GET("/inventory/skus", adminui.PageAuthz("/api/inventory/stock/list"),
 		adminui.PageSlot(InventoryStockSKUsPageTemplate), h.InventoryStockSKUsPage)
+	// 库存流水独立页（B4）：库存管理页是「按 SKU 横看各仓」，本页是「跨 SKU 的时间轴」——
+	// 挤在一页时筛 SKU 会把流水一起绑住，想看全局流水就得清空 SKU，而那又同时清掉了
+	// 库存卡的上下文。两页共用一个流水行映射（movementRowResp），只有查询维度不同。
+	pages.GET("/inventory/movements", adminui.PageAuthz("/api/inventory/movement/list"),
+		adminui.PageSlot(InventoryMovementsPageTemplate), h.InventoryMovementsPage)
 }
 
 // 三个整页的模板名（与路由 / 权限点同处：一眼能看全这个模块渲染了哪些屏）。
@@ -46,6 +51,7 @@ const (
 	InventoryReasonsPageTemplate    = "admin/inventory/inventory_reasons.html"
 	InventoryTransfersPageTemplate  = "admin/inventory/inventory_transfers.html"
 	InventoryStockSKUsPageTemplate  = "admin/inventory/inventory_stock_skus.html"
+	InventoryMovementsPageTemplate  = "admin/inventory/inventory_movements.html"
 )
 
 // registerInventoryWarehouseWritePages 仓库与库存行的写端点（新建 / 编辑 / 删 / 批量删 /

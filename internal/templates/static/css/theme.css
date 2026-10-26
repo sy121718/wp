@@ -296,6 +296,17 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .move-delta-none { color: var(--sky-c-text-mute, #6b7280); }
 .move-meta { color: var(--sky-c-text-mute, #6b7280); font-size: 12px; }
 
+/* 货品单元格的纵向堆叠（台账 /admin/inventory/skus 与流水 /admin/inventory/movements 共用）
+   —— 两页的「货品」列都是：主图（流水有）+ 名称 + 编码 + 一行 meta。
+   抽在这里而不是各页内联：同一份堆叠在两页间距不一致，读起来像两种控件。 */
+.cell-stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cell-title { font-weight: 600; overflow-wrap: anywhere; }
+.cell-thumb {
+    width: 32px; height: 32px; object-fit: cover;
+    border: 1px solid var(--border, #d0d7de); border-radius: var(--ui-r-sm, 6px);
+    background: #fff;
+}
+
 /* ===== 货源管理（admin/purchase/sources.html，issue #17） =====
    多端适配（硬规则）：
      · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；

@@ -40,6 +40,8 @@ const (
 	// —— 仓库商品 SKU 台账页（迁移 642 / B3）——
 	InventoryFilterAll      = "admin.inventory.filter.all"
 	InventoryStockSKUsTitle = "admin.inventory.stock_skus.title"
+	// InventoryMovementsTitle 流水独立页的标题（B4）。
+	InventoryMovementsTitle = "admin.inventory.movements.title"
 	InventoryStockSKUsLead  = "admin.inventory.stock_skus.lead"
 	InventoryStockSKUsBold  = "admin.inventory.stock_skus.bold"
 	InventoryStockSKUsTail  = "admin.inventory.stock_skus.tail"
