@@ -175,11 +175,11 @@ func TestDashboardRendersOverviewBlocks(t *testing.T) {
 		`range=week&amp;granularity=day`,
 		// 标题走服务端算好的词条键（模板里没有 if/else 四档）。
 		"granularity=hour", "granularity=week", "granularity=month",
-		// 时间筛选条：换成了后台统一的时间筛选条（admin/partials/date_filter.html）——
-		// 快捷区间下拉 + 两个原生 date + 应用。原先那一排预设胶囊（服务端拼 URL 的
-		// .range-chip）已经下线，所以这里不再断言胶囊，改为钉住组件的三件东西：
-		// 下拉、两个日期框的 name、以及 form 的 action。
-		"date-filter", "date-filter-preset", "name=\"range\"",
+		// 时间筛选条：走后台统一组件（admin/partials/date_filter.html）——
+		// 一个区间触发器 + 两个原生 date（视觉隐藏、参与提交）+ 查询键。
+		// 原先那一排预设胶囊（服务端拼 URL 的 .range-chip）已经下线，快捷区间改由组件内的
+		// 日历弹层承担；所以这里钉住组件的挂载点、档位字段名与 form 的 action。
+		"date-filter", "data-wb-daterange", "name=\"range\"",
 		// 日期框带基座类（外观只有一个真源）+ 本页的尺寸类。
 		`class="form-input date-filter-date"`,
 		// 分开断言而不是连成 `name="from" value="..."`：属性之间还夹着 aria-label，

@@ -36,7 +36,8 @@
    刻意**不进**基座共享组 —— 原生 input / select 没有 hover 边框反馈，
    并进去等于改基座行为（超出「触发器族归一」的范围）。 */
 @media (hover: hover) {
-.wbs-trigger:hover { border-color: var(--sky-c-border-strong, #d1d5db); }
+.wbs-trigger:hover,
+.wbd-trigger:hover { border-color: var(--sky-c-border-strong, #d1d5db); }
 }
 .wbs.is-open .wbs-trigger { border-color: var(--sky-c-primary, #3d444f); }
 .wbs-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -79,6 +80,170 @@
 }
 .wbs-option.is-selected { font-weight: 600; }
 .wbs-option[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+
+/* ===== 日期区间（js/ui/daterange.js）=====
+   两个 <input type="date"> 合并成**一个区间控件**：触发器显示「起 至 止」，点了展开
+   双月日历 + 左侧快捷区间列。原生两个框仍留在 DOM 里（视觉隐藏），name/value、表单提交、
+   label[for] 全部照旧 —— 替换只发生在前端，服务端与已发布 URL 一个字都不用改。
+
+   触发器外观不在这里写：它是「显示当前值、点了展开」的同一语义角色，外观与自绘下拉的
+   .wbs-trigger 同源（见下方 forms 段的共享外观组）。这里只写它在这个 flex 行里的排布、
+   打开/悬停/禁用状态，以及弹层本身。 */
+.wbd { min-width: 0; }
+/* 视觉隐藏而不是 display:none：label[for] 的点击转焦仍在（JS 把焦点转给触发器），
+   表单提交与取值也完全不受影响。类由控件加，所以无 JS 时原生两个 date 仍可见可用。 */
+.wbd-native {
+    position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
+    opacity: 0; pointer-events: none; border: 0;
+}
+.wbd-trigger {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--ui-sp-sm);
+    cursor: pointer; text-align: start;
+}
+/* 宽度属于布局差异，但基座共享组（.form-input, .wbd-trigger, …）已经把 width 定为 100%，
+   同特异性下后出现的会赢 —— 所以这里必须用两参选择器，而不是回基座组里改。
+   22rem：两端日期都显示全需要这么多；再宽就空得难看（独占一行时 flex-grow 会吃掉整行）。 */
+.date-filter .wbd-trigger {
+    flex: 0 1 auto; width: min(100%, 22rem); min-width: 12rem;
+}
+.wbd.is-open .wbd-trigger { border-color: var(--sky-c-primary, #3d444f); }
+.wbd-value {
+    flex: 1 1 auto;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    /* 值是这一行的主角：居中显示（与自绘下拉「左文右箭头」的差别在于这里只有一个值，
+       左右各有一个定宽图标，居中才不显得挂在左边）。 */
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+/* 日历图标走伪元素：不加 DOM，读屏器也就不必跳过它（纯装饰）。 */
+.wbd-trigger::before {
+    content: "";
+    flex: 0 0 auto;
+    width: var(--ui-icon-chevron-size); height: var(--ui-icon-chevron-size);
+    background-color: currentColor; opacity: .6;
+    -webkit-mask: var(--ui-icon-calendar) center / contain no-repeat;
+    mask: var(--ui-icon-calendar) center / contain no-repeat;
+}
+.wbd:not(.has-value) .wbd-value { color: var(--sky-c-text-mute, #6b7280); }
+/* 与自绘下拉的箭头同一枚图标、同一套取值（见 .wbs-caret 的理由）。 */
+.wbd-caret {
+    flex: 0 0 auto;
+    width: var(--ui-icon-chevron-size); height: var(--ui-icon-chevron-size);
+    background-color: currentColor;
+    -webkit-mask: var(--ui-icon-chevron) center / contain no-repeat;
+    mask: var(--ui-icon-chevron) center / contain no-repeat;
+    opacity: .75;
+    transition: transform var(--ui-motion-fast);
+}
+.wbd.is-open .wbd-caret { transform: rotate(180deg); }
+
+.wbd-pop {
+    position: absolute; z-index: 60; top: calc(100% + 4px); left: 0;
+    display: flex; align-items: stretch; gap: var(--ui-sp-sm);
+    box-sizing: border-box; padding: var(--ui-sp-sm);
+    /* 宽度由 JS 按「触发器到视口两侧的实际距离」算好写进 style；这一行只是首帧兜底，
+       避免极端窄屏下弹层比视口还宽。 */
+    width: min(100%, 660px); max-width: calc(100vw - 24px);
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: var(--ui-r-md, 10px);
+    box-shadow: var(--ui-shadow-pop, 0 8px 24px rgba(16, 20, 26, .12));
+}
+.wbd-pop[hidden] { display: none; }
+
+/* 左侧快捷区间列：竖向排列（横排六个会把弹层撑到满屏宽）。文案由模板渲染，
+   控件只提供容器与选中态 —— 换文案、增删档位都不用动 JS。 */
+.wbd-presets {
+    flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px;
+    padding-inline-end: var(--ui-sp-sm);
+    border-inline-end: 1px solid var(--sky-c-border, #e5e7eb);
+}
+.wbd-preset {
+    padding: 6px 10px; border: 0; border-radius: var(--ui-r-sm);
+    background: transparent; color: inherit; font: inherit; font-size: var(--ui-fs-sm);
+    line-height: 1.5; text-align: start; white-space: nowrap; cursor: pointer;
+    transition: background-color var(--ui-motion-fast);
+}
+.wbd-preset.is-active { background: var(--sky-c-primary-bg, #eceef1); font-weight: 600; }
+@media (hover: hover) {
+    .wbd-preset:hover { background: var(--sky-c-bg-hover, #ececec); }
+}
+
+.wbd-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.wbd-month { display: flex; flex-direction: column; min-width: 0; }
+/* 表头属于单栏：两栏各有自己的一组箭头（两栏是区间两端，月份本来就不相邻）。 */
+.wbd-mhead {
+    display: grid; grid-template-columns: auto auto 1fr auto auto; align-items: center;
+    gap: 2px; margin-bottom: var(--ui-sp-xs);
+}
+.wbd-mtitle {
+    text-align: center; font-size: var(--ui-fs-sm); font-weight: 600; white-space: nowrap;
+}
+/* 换月 / 清除是同一种「图标或短文本的小触发按钮」：共用一份外观，只留各自尺寸。
+   它们不是基座外观组成员（那一组管文本类控件与值触发器）—— 组规则与单类块属性不重叠，
+   所以写在共享外观组之前也不依赖顺序。 */
+.wbd-mnav,
+.wbd-clear {
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; border-radius: var(--ui-r-sm);
+    background: transparent; color: inherit; font: inherit; font-size: var(--ui-fs-sm);
+    line-height: 1; padding: 0; cursor: pointer;
+    transition: background-color var(--ui-motion-fast);
+}
+.wbd-mnav { width: 22px; height: 24px; font-size: var(--ui-fs-xs); }
+.wbd-clear { height: 26px; padding: 0 8px; color: var(--sky-c-text-mute, #6b7280); }
+.wbd-clear[hidden] { display: none; }
+@media (hover: hover) {
+    .wbd-mnav:hover,
+    .wbd-clear:hover { background: var(--sky-c-bg-hover, #ececec); }
+    .wbd-clear:hover { color: var(--sky-c-text, #1a1d21); }
+}
+.wbd-mnav:focus-visible,
+.wbd-clear:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: 1px; }
+
+.wbd-months { display: grid; grid-template-columns: 1fr; gap: var(--ui-sp-md, 14px); }
+.wbd-pop.is-double .wbd-months { grid-template-columns: 1fr 1fr; }
+.wbd-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+/* 空格也要参与布局：只漏掉它的话，有 6 行的月份与有 5 行的月份高度不同，
+   双月并排时两列底部差一行。 */
+.wbd-blank { min-height: 26px; }
+.wbd-weekday {
+    padding: 4px 0; text-align: center;
+    font-size: var(--ui-fs-2xs); color: var(--sky-c-text-mute, #6b7280);
+}
+.wbd-day {
+    position: relative; box-sizing: border-box; min-height: 26px; padding: 4px 0;
+    border: 1px solid transparent; border-radius: var(--ui-r-sm);
+    background: transparent; color: inherit; font: inherit;
+    font-size: var(--ui-fs-xs); font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: background-color var(--ui-motion-fast), border-color var(--ui-motion-fast);
+}
+@media (hover: hover) {
+    .wbd-day:hover { background: var(--sky-c-primary-bg, #eceef1); }
+}
+.wbd-day:focus-visible { outline: 2px solid var(--sky-c-primary, #3d444f); outline-offset: -2px; }
+.wbd-day.is-today { border-color: var(--sky-c-border-strong, #d1d5db); }
+.wbd-day.is-between { background: var(--sky-c-primary-bg, #eceef1); border-radius: 0; }
+.wbd-day.is-start,
+.wbd-day.is-end {
+    background: var(--sky-c-primary-bg, #eceef1); color: var(--sky-c-primary, #3d444f);
+    font-weight: 600; box-shadow: inset 0 0 0 1px var(--sky-c-primary, #3d444f);
+}
+.wbd-foot {
+    display: flex; justify-content: flex-end; margin-top: var(--ui-sp-xs);
+    padding-top: var(--ui-sp-xs);
+    border-top: 1px solid var(--sky-c-border, #e5e7eb);
+}
+/* 触屏是独立环境：触摸目标单独放大（≥ 40px），hover 反馈在上面各自的 (hover: hover) 里。 */
+@media (pointer: coarse) {
+    .wbd-day { min-height: 40px; }
+    .wbd-mnav { width: 34px; height: 36px; }
+    .wbd-preset { padding-block: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .wbd-trigger, .wbd-caret, .wbd-day, .wbd-mnav, .wbd-clear, .wbd-preset { transition: none; }
+}
 
 /* ===== 确认框（js/ui/confirm.js）=====
    替代原生 confirm 与内联 onclick/onsubmit：模板里只留 data-confirm 一个属性。
@@ -373,6 +538,9 @@ body.drawer-open { overflow: hidden; }
     --ui-icon-chevron-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     --ui-icon-chevron-size: 16px;
     --ui-select-caret-gap: 10px;
+    /* 日历图标：日期区间触发器的前缀（Lucide calendar，与 chevron 同一套描边口径）。
+       只给 mask 版 —— 它用在伪元素上，颜色随上下文。 */
+    --ui-icon-calendar: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18'/%3E%3C/svg%3E");
 }
 
 /* 深色主题下 select 的箭头换成深色 token 的描边色（--c-text-mute dark = #8a9199）：
@@ -661,7 +829,8 @@ button.row-title-link {
 .form-input,
 .form-select,
 .form-textarea,
-.wbs-trigger {
+.wbs-trigger,
+.wbd-trigger {
     width: 100%; min-width: 0; box-sizing: border-box;
     font-family: inherit; line-height: 1.4;
     padding: var(--ui-sp-sm) var(--ui-sp-md);
@@ -682,7 +851,8 @@ button.row-title-link {
 .form-input:focus-visible,
 .form-select:focus-visible,
 .form-textarea:focus-visible,
-.wbs-trigger:focus-visible {
+.wbs-trigger:focus-visible,
+.wbd-trigger:focus-visible {
     outline: 2px solid var(--sky-c-primary, #3d444f);
     outline-offset: 1px;
 }
@@ -698,7 +868,8 @@ button.row-title-link {
 .form-input:disabled,
 .form-select:disabled,
 .form-textarea:disabled,
-.wbs-trigger:disabled {
+.wbs-trigger:disabled,
+.wbd-trigger:disabled {
     opacity: .6;
     cursor: not-allowed;
 }

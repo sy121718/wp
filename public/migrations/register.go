@@ -356,4 +356,6 @@ func init() {
 	registerMailAutomationFrequencyI18n()
 	// 623b：画布的频率 / 回信即退出控件词条（见 register_mail_automation_frequency_field_i18n.go）。
 	registerMailAutomationFrequencyFieldI18n()
+	// 635：时间筛选条改成区间控件后的词条（见 register_date_range_picker_i18n.go）。
+	registerDateRangePickerI18n()
 }
