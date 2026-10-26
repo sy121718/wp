@@ -32,6 +32,12 @@ type ProductStockWriter interface {
 	// 返回 stockID 的理由（迁移 637）：商品侧要把这条货行记进变体的 warehouse_skus，
 	// 而它是新建还是复用只有库存侧知道。让调用方建完再按 (仓, 裸码) 反查一次，
 	// 等于把「怎么定位一条货行」这件事复制一份到调用方 —— 两处口径迟早不一致。
+	// WarehouseStockIDBySKU 按 (仓, 裸码) 取货行 id；不存在时返回空串与 nil 错。
+	//
+	// 商品侧「从仓库选」必须先问这一句：仓库里的货可以先于商品存在（先收货后建品），
+	// 那时要**引用既有行**，而不是按 (变体, 仓) 幂等插入 —— 后者会撞 244 的
+	// UNIQUE (warehouse_id, sku_code)（23505 冒到页面上就是内部错误）。
+	WarehouseStockIDBySKU(ctx context.Context, projectID, warehouseID, skuCode string) (stockID string, err error)
 	EnsureVariantStock(ctx context.Context, ref *productcontract.WarehouseRef, productID, variantID, skuCode string, quantity *int) (stockID string, err error)
 	EnsureVariantStockTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode string, quantity *int) (stockID string, err error)
 	EnsureVariantStockWithExternalTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode, externalSKU string, quantity *int) (stockID string, err error)

@@ -26,6 +26,7 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
 	inventoryservice "go_wp/internal/module/inventory/service"
+	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	producthttp "go_wp/internal/module/product/inbound/http"
 	productmodel "go_wp/internal/module/product/model"
@@ -558,12 +559,17 @@ func TestProductCreateAttachesExistingStock(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("引用之后同仓同码应仍只有 1 行，实际 %d 行", n)
 	}
-	// ④ 商品侧库存汇总必须看得见它 —— 这正是这个缺陷的用户可见后果。
-	totals, terr := inventorymodel.NewModel(f.db).VariantStockTotals(ctx, f.projectID, []string{variantID})
-	if terr != nil {
-		t.Fatalf("读变体库存汇总失败: %v", terr)
+	// ④ 反查是双向的：按 stockId 能找回引用它的变体（删除守卫与库存寻址都靠它）。
+	port, ok := interface{}(f.products).(productcontract.VariantWarehouseStockPort)
+	if !ok {
+		t.Fatalf("商品服务未实现 VariantWarehouseStockPort")
 	}
-	if got := totals[variantID]; got != 12 {
-		t.Fatalf("商品侧应看到 12 件（否则商品页显示 0 而仓库里有货），实际 %d", got)
+	owners, oerr := port.VariantIDsByWarehouseStock(ctx, f.projectID, loose.ID)
+	if oerr != nil {
+		t.Fatalf("按货行反查变体失败: %v", oerr)
 	}
+	if len(owners) != 1 || owners[0] != variantID {
+		t.Fatalf("按货行 %q 应反查到变体 %q，实际 %v", loose.ID, variantID, owners)
+	}
+	// 商品侧库存汇总按 stockId 归集，随 B2-2（把寻址从 variant_id 改成引用清单）一起验。
 }

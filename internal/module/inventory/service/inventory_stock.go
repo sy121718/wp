@@ -597,6 +597,25 @@ func (s *Service) ResolveWarehouse(ctx context.Context, projectID, warehouseID s
 	}, nil
 }
 
+// WarehouseStockIDBySKU 按 (仓, 裸码) 取货行 id（不存在返回空串）。
+//
+// 与 GetWarehouseSKU 的差别是「不存在」不是错误：调用方问的是「这一行在不在」，
+// 不在是正常分支（商品侧据此决定复用还是新建）。
+func (s *Service) WarehouseStockIDBySKU(ctx context.Context, projectID, warehouseID, skuCode string) (stockID string, err error) {
+	projectID, err = s.resolveProjectID(ctx, projectID)
+	if err != nil {
+		return "", err
+	}
+	e, ferr := s.m.FindStockByWarehouseSKU(ctx, projectID, strings.TrimSpace(warehouseID), strings.TrimSpace(skuCode))
+	if errors.Is(ferr, gorm.ErrRecordNotFound) {
+		return "", nil
+	}
+	if ferr != nil {
+		return "", ferr
+	}
+	return e.ID, nil
+}
+
 // EnsureVariantStock 在归属仓为该 SKU 生成库存记录（已存在则复用）。
 //
 // 签名与 quantity 语义（2026-09-19 商品侧冻结，照此实现）：

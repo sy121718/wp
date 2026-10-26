@@ -624,9 +624,18 @@ func (s *Service) attachWarehouseStockTx(ctx context.Context, tx *gorm.DB, ref *
 	if s.invSvc == nil || ref == nil {
 		return "", nil
 	}
-	stockID, err = s.invSvc.EnsureVariantStockWithExternalTx(ctx, tx, ref, v.ProductID, v.ID, bareCode, externalSKU, quantity)
-	if err != nil || stockID == "" {
-		return stockID, err
+	// 先按 (仓, 裸码) 找那一行：仓库里的货可以先于商品存在（先收货后建品），
+	// 这时要**引用既有行**而不是再建一条 —— 244 的 UNIQUE (warehouse_id, sku_code)
+	// 会让「按 (变体, 仓) 幂等插入」在这里直接撞 23505。
+	stockID, err = s.invSvc.WarehouseStockIDBySKU(ctx, ref.ProjectID, ref.ID, bareCode)
+	if err != nil {
+		return "", err
+	}
+	if stockID == "" {
+		stockID, err = s.invSvc.EnsureVariantStockWithExternalTx(ctx, tx, ref, v.ProductID, v.ID, bareCode, externalSKU, quantity)
+		if err != nil || stockID == "" {
+			return stockID, err
+		}
 	}
 	refs := productmodel.DecodeWarehouseSKUs(v.WarehouseSKUs)
 	refs = productmodel.UpsertWarehouseSKURef(refs, productmodel.WarehouseSKURef{
