@@ -680,54 +680,6 @@ func prefixWarehouse(refs []*productcontract.WarehouseRef) *productcontract.Ware
 	return refs[0]
 }
 
-// warehouseCodeExists 该仓是否已有这条**裸码**（有即复用，不再新建）。
-//
-// 「复用」是这条规则的全部：下拉里选到的是仓库已有的裸码 → 那一行本来就在，
-// 直接复用；自己打新码 → 在勾选的各仓各建一行。两条路都不会产生「同仓同码两行」
-// （UNIQUE (warehouse_id, sku_code)，迁移 244）—— 这也正是库存侧的幂等建行兜不住的那一段：
-// inventory 的 ON CONFLICT 只覆盖 (variant_id, warehouse_id)，撞到仓内唯一约束是一句
-// 会**把调用方事务标记为 aborted** 的报错（商品 + 变体一起回滚）。
-//
-// 用 GetWarehouseSKU 而不是 ListStocks：这是最小查询，且与「从仓库选」的复核共用同一个入口。
-func (s *Service) warehouseCodeExists(ctx context.Context, projectID, warehouseID, skuCode string) (exists bool, err error) {
-	if s.invSvc == nil || strings.TrimSpace(skuCode) == "" {
-		return false, nil
-	}
-	_, gerr := s.invSvc.GetWarehouseSKU(ctx, &inventorycontract.GetWarehouseSKUReq{
-		ProjectID: projectID, WarehouseID: warehouseID, SKUCode: skuCode,
-	})
-	if gerr == nil {
-		return true, nil
-	}
-	// 不存在是常态（自己打的新码），不是错误；其余错误（参数 / 库故障）原样上抛。
-	if gerr.Error() == inventoryenums.ErrWarehouseSKUNotFound {
-		return false, nil
-	}
-	return false, gerr
-}
-
-// findWarehouseSKURow 该仓是否已有这条裸码的库存行；有则返回整行（复用需要 id）。
-//
-// 与 warehouseCodeExists 的分工：那个只回答「有没有」，用于预检；这里要整行 ——
-// 复用必须拿到**行 id**（入参是库存行，不是编码），还必须知道它是不是已被别的变体引用。
-func (s *Service) findWarehouseSKURow(ctx context.Context, projectID, warehouseID, skuCode string) (
-	row *inventorycontract.WarehouseSKUResp, found bool, err error) {
-	if s.invSvc == nil || strings.TrimSpace(skuCode) == "" {
-		return nil, false, nil
-	}
-	got, gerr := s.invSvc.GetWarehouseSKU(ctx, &inventorycontract.GetWarehouseSKUReq{
-		ProjectID: projectID, WarehouseID: warehouseID, SKUCode: skuCode,
-	})
-	if gerr == nil {
-		return got, true, nil
-	}
-	// 「没有这一行」是常态（自己打的新码），不是错误；其余（参数 / 库故障）原样上抛。
-	if gerr.Error() == inventoryenums.ErrWarehouseSKUNotFound {
-		return nil, false, nil
-	}
-	return nil, false, gerr
-}
-
 // createStockRowsTx 在勾选的各仓各建/复用一行库存（裸码），并把每行的 id 记进变体的引用清单。
 //
 // 三条口径（docs/14 §1.1 / §9.3，2026-09-19 用户拍板）：

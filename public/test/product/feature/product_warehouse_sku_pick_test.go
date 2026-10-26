@@ -205,7 +205,7 @@ func TestProductCreateFromWarehouseSKU(t *testing.T) {
 		t.Fatalf("认领不改写既有行：应仍是 1 行且外码空，实际 %d 行 / %q", rows, external)
 	}
 
-	// 自己打新码 = 建行：仓库侧写**裸码**，显式填的外部编码写在认领仓那一次。
+	// 自己打新码 = 建行：仓库侧写**裸码**，显式填的外部编码写在前缀仓那一次。
 	explicit, err := f.products.Create(ctx, &productdto.CreateReq{
 		ProjectID: f.projectID, Name: "自己打码并带外部编码的商品", Slug: "picked-explicit",
 		DefaultPrice: &price, SKUCode: "SELF-002",

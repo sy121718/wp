@@ -207,18 +207,57 @@ func (s *Service) ListStocksBySKU(ctx context.Context, req *inventorydto.ListSto
 
 // BareSKUsByVariant 工程内「变体 → 仓库侧裸码」的一次性映射（后台采购下拉用）。
 //
-// 查询只有一次、与变体数无关（原先的调用方按商品逐个查库存行）。
+// 查询次数与变体数无关：货行取一轮、归属反查一轮、事实取一轮（原先按商品逐个查库存行）。
 //
-// 取值规则**只在实现里写一份**：按 model 的固定顺序（默认仓优先、再按仓 sort / code），
-// 同一个变体在多个仓各有一条不同裸码时取第一条非空。
-// 调用方不要自己再挑一遍 —— 挑法两处各写一份，入库时就会按另一个仓的编码落库，
-// 而两边都不报错。
+// 归属走**变体的引用清单**（迁移 637），不再读 inventory_stocks.variant_id —— 641 之后
+// 那一列只是写入当时的线索，同一变体在同仓可以有多条货行、一条货行也可以被多个变体引用，
+// 按线索列过滤会漏掉「引用别人建的货行」的那些变体（采购下拉里它们的编码显示为空）。
+//
+// 取值规则**只在实现里写一份**：按 model 的固定顺序（默认仓优先 → 仓 sort → 仓短码 →
+// 裸码），同一个变体在多个仓各有一条不同裸码时取第一条非空。调用方不要自己再挑一遍 ——
+// 挑法两处各写一份，入库时就会按另一个仓的编码落库，而两边都不报错。
 func (s *Service) BareSKUsByVariant(ctx context.Context, projectID string) (map[string]string, error) {
 	pid, err := s.resolveProjectID(ctx, strings.TrimSpace(projectID))
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.m.ListStockRows(ctx, inventorymodel.StockFilter{ProjectID: pid}, 0, 0)
+	out := make(map[string]string)
+	if s.refs == nil {
+		// 纯库存单测路径（没有商品域）：退回线索列口径，行为与 641 之前一致。
+		return s.bareSKUsByVariantColumn(ctx, pid)
+	}
+	stockIDs, err := s.m.ListAllStockIDs(ctx, pid)
+	if err != nil {
+		return nil, err
+	}
+	if len(stockIDs) == 0 {
+		return out, nil
+	}
+	byStock, err := s.refs.VariantIDsByWarehouseStocks(ctx, pid, stockIDs)
+	if err != nil {
+		return nil, err
+	}
+	facts, err := s.m.ListStockFactsByIDs(ctx, pid, stockIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range facts {
+		if f == nil || f.SKUCode == "" {
+			continue
+		}
+		for _, variantID := range byStock[f.ID] {
+			if _, seen := out[variantID]; seen {
+				continue
+			}
+			out[variantID] = f.SKUCode
+		}
+	}
+	return out, nil
+}
+
+// bareSKUsByVariantColumn 按 inventory_stocks.variant_id 线索列取映射（refs 未注入时的退化形态）。
+func (s *Service) bareSKUsByVariantColumn(ctx context.Context, projectID string) (map[string]string, error) {
+	rows, err := s.m.ListStockRows(ctx, inventorymodel.StockFilter{ProjectID: projectID}, 0, 0)
 	if err != nil {
 		return nil, err
 	}

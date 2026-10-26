@@ -803,36 +803,3 @@ func (m *Model) ExternalSKUProductConflict(ctx context.Context, projectID, wareh
 	return owner, err
 }
 
-// —— 归属仓成本（(仓库, SKU) 的当前成本，迁移 244；订单成本快照口径见 docs/14 §9.3）——
-
-// StockCostRow 一条库存行的当前成本（本模块单表只读投影：批量取成本用，不 join）。
-type StockCostRow struct {
-	VariantID   *string `gorm:"column:variant_id"`
-	WarehouseID string  `gorm:"column:warehouse_id"`
-	// CostPrice 元；nil = 尚未核算（0 是合法的显式成本，两者不能混）。
-	CostPrice *float64 `gorm:"column:cost_price"`
-}
-
-// ListStockCostsByVariants 批量取若干变体在**各仓**的当前成本（(仓库, SKU) 维度）。
-//
-// 用途：订单行成本快照 —— service 拿到全部候选行后按「归属仓」挑选（归属仓由
-// service.resolveWarehouse 解析，解析规则不在 model 里）。一次查询覆盖全部变体，
-// 不逐变体查：「十来个口味共用同一个成本值」（docs/14 §9.3 的常见形态）在建单时
-// 就是一次十几行的批量读取，N+1 会让建单的读放大随口味数线性增长。
-//
-// projectID 由调用方给出：inventory_stocks 在迁移 215 名单里，缺作用域时这里
-// **静默返回空集** —— 表现是「所有变体都未核算」（订单行成本全空）而建单照常成功。
-// 成本缺失本身不是错误（未核算就是未核算），但这个空集绝不能来自「忘了带工程」，
-// 所以调用方必须传工程、由 rls.InProjectScope 在空工程时直接报错。
-func (m *Model) ListStockCostsByVariants(ctx context.Context, projectID string, variantIDs []string) (list []*StockCostRow, err error) {
-	if len(variantIDs) == 0 {
-		return nil, nil
-	}
-	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.WithContext(ctx).Model(&StockEntity{}).
-			Select("variant_id, warehouse_id, cost_price").
-			Where("variant_id IN ?", variantIDs).
-			Find(&list).Error
-	})
-	return list, err
-}

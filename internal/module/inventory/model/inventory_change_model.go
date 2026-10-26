@@ -6,7 +6,7 @@
 //
 // 并发安全的两条约定（issue #16 验收 1/2）落在本文件：
 //
-//	· LockStockRowTx —— 对 (variant_id, warehouse_id) 那一行取 FOR UPDATE 行锁，
+//	· LockStockBySKUTx —— 对 (warehouse_id, sku_code) 那一行取 FOR UPDATE 行锁，
 //	  可用量的判定只发生在持锁之后，绝不读 product_variants.stock_total 缓存；
 //	· EnsureStocksTx —— 目标行不存在时先幂等建行（ON CONFLICT DO NOTHING），
 //	  并发的两批变动因此不会各自插出第二条同维度记录。
@@ -162,7 +162,7 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 
 // ListStocksByVariantsTx 取若干变体的库存行（**不加锁**，用于变动前的元数据解析）。
 //
-// 加锁是独立的第二步（LockStockRowTx），两步分开是为了让 service 能先把
+// 加锁是独立的第二步（LockStockBySKUTx），两步分开是为了让 service 能先把
 // 「按标识排序」的锁顺序固定下来 —— 边查边锁会让并发批次的等待链成环。
 //
 // projectID 由调用方给，且这里**自己设作用域**（与 EnsureStocksTx / CreateMovementsTx 同款）：
@@ -209,9 +209,10 @@ func (m *Model) EnsureStocksTx(ctx context.Context, tx *gorm.DB, rows []*StockEn
 
 // LockStockBySKUTx 对「仓库 × 仓库 SKU」那一行取 FOR UPDATE 行锁（641 起的身份键）。
 //
-// 与 LockStockRowTx 并存的两个理由：
-//   - 建行路径手里只有 (仓, 编码)（收货 / 建品时还没有货行 id）；
-//   - 归属仓解析给的是仓 + 裸码，按它定位不需要先查一次。
+// 为什么按编码而不是按 id 加锁：
+//   - 建行路径手里只有 (仓, 编码)（收货 / 建品时还没有货行 id），必须先锁住身份键，
+//     否则两个并发的首次入库会各自插一行、在 UNIQUE (warehouse_id, sku_code) 上撞车；
+//   - 归属仓解析给的是仓 + 裸码，按它定位不需要先按 id 查一次。
 func (m *Model) LockStockBySKUTx(ctx context.Context, tx *gorm.DB, projectID, warehouseID, skuCode string) (e *StockEntity, err error) {
 	e = &StockEntity{}
 	if serr := rls.ScopeTx(tx, projectID); serr != nil {
@@ -220,24 +221,6 @@ func (m *Model) LockStockBySKUTx(ctx context.Context, tx *gorm.DB, projectID, wa
 	err = tx.WithContext(ctx).Model(&StockEntity{}).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("warehouse_id = ? AND sku_code = ?", warehouseID, skuCode).First(e).Error
-	return e, err
-}
-
-// LockStockRowTx 对 (variant_id, warehouse_id) 那一行取 FOR UPDATE 行锁，返回加锁后的行。
-//
-// 可用量的判定只发生在持锁之后：并行扣减因此被串行化，超扣不可能发生。
-// variantID 是**指针**（迁移 624 起可空）：无归属行按 `variant_id IS NULL` 定位。
-func (m *Model) LockStockRowTx(ctx context.Context, tx *gorm.DB, variantID *string, warehouseID string) (e *StockEntity, err error) {
-	e = &StockEntity{}
-	q := tx.WithContext(ctx).Model(&StockEntity{}).
-		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("warehouse_id = ?", warehouseID)
-	if variantID == nil {
-		q = q.Where("variant_id IS NULL")
-	} else {
-		q = q.Where("variant_id = ?", *variantID)
-	}
-	err = q.First(e).Error
 	return e, err
 }
 

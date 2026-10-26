@@ -671,14 +671,14 @@ func TestProductPageWarehouseSelect(t *testing.T) {
 		t.Fatalf("商品新建表单缺少结束标签")
 	}
 	form := body[formStart : formStart+formEnd]
-	// 多仓勾选、不勾默认仓；选项 ID 与顺序决定真正的仓库和认领仓。
+	// 多仓勾选、不勾默认仓；选项 ID 与顺序决定真正的仓库和前缀仓。
 	for _, want := range []string{
 		"建在哪些仓（可多选，不勾即默认仓）",
 		`name="warehouseIds" value="` + sz.ID + `"`,
 		`name="warehouseIds" value="` + sh.ID + `"`,
 		"苏州仓（SZ） · 默认仓",
 		"上海仓（SH）",
-		"按本表顺序第一个勾中的仓是认领仓",
+		"按本表顺序第一个勾中的仓是前缀仓",
 	} {
 		if !strings.Contains(form, want) {
 			t.Fatalf("商品新建表单缺少归属仓（多仓勾选）内容 %q", want)
