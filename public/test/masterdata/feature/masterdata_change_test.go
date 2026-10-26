@@ -39,6 +39,10 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	purchasedto "go_wp/internal/module/purchase/dto"
+	purchaseenums "go_wp/internal/module/purchase/enums"
+	purchasemodel "go_wp/internal/module/purchase/model"
+	purchaseservice "go_wp/internal/module/purchase/service"
 
 	"go_wp/public/migrations"
 	"go_wp/public/test/support"
@@ -52,6 +56,7 @@ type mdFixture struct {
 	changes   *masterdataservice.Service
 	products  *productservice.Service
 	inventory *inventoryservice.Service
+	purchase  *purchaseservice.Service
 	projects  *projectservice.Service
 	db        *gorm.DB
 	projectID string
@@ -76,11 +81,12 @@ func newMDFixture(t *testing.T) *mdFixture {
 	inventory := inventoryservice.NewService(inventorymodel.NewModel(db), projects)
 	products := productservice.NewService(productmodel.NewModel(db), projects)
 	products.SetInventoryService(inventory)
-	inventory.SetVariantCost(products)
+	purchase := purchaseservice.NewService(purchasemodel.NewModel(db), projects)
+	purchase.SetVariantCost(products)
 	products.SetMasterDataChanges(changes)
-	inventory.SetMasterDataChanges(changes)
+	purchase.SetMasterDataChanges(changes)
 	return &mdFixture{
-		changes: changes, products: products, inventory: inventory,
+		changes: changes, products: products, inventory: inventory, purchase: purchase,
 		projects: projects, db: db, projectID: project.ID,
 	}
 }
@@ -351,9 +357,9 @@ func TestMasterDataChangeSourceLifecycle(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	src, err := f.inventory.CreateSource(ctx, &inventorydto.CreateSourceReq{
+	src, err := f.purchase.CreateSource(ctx, &purchasedto.CreateSourceReq{
 		ProjectID: f.projectID, Code: "SZ_FACTORY", Name: "苏州自有工厂",
-		Type: inventoryenums.SourceTypeInternal, SettlePrice: floatPtr(3.5),
+		Type: purchaseenums.SourceTypeInternal, SettlePrice: floatPtr(3.5),
 		Config: json.RawMessage(`{"erp":"sap"}`), OperatorID: operatorForTest,
 	})
 	if err != nil {
@@ -361,7 +367,7 @@ func TestMasterDataChangeSourceLifecycle(t *testing.T) {
 	}
 	rows := f.entityChanges(t, masterdataenums.EntityInventorySource, src.ID)
 	mustChange(t, rows, masterdataenums.ActionCreate, "code", "", "SZ_FACTORY")
-	mustChange(t, rows, masterdataenums.ActionCreate, "type", "", inventoryenums.SourceTypeInternal)
+	mustChange(t, rows, masterdataenums.ActionCreate, "type", "", purchaseenums.SourceTypeInternal)
 	// 内部货源恒为关联方（DDL CHECK 兜住），留痕记的是落库后的真值。
 	mustChange(t, rows, masterdataenums.ActionCreate, "related_party", "", "true")
 	mustChange(t, rows, masterdataenums.ActionCreate, "settle_price", "", "3.50")
@@ -373,15 +379,15 @@ func TestMasterDataChangeSourceLifecycle(t *testing.T) {
 	}
 
 	// 改：停用 + 改结算价 + 换对接配置 —— 只有这三个字段产生记录。
-	if _, err = f.inventory.UpdateSource(ctx, &inventorydto.UpdateSourceReq{
-		ID: src.ID, Status: strPtr(inventoryenums.SourceStatusDisabled),
+	if _, err = f.purchase.UpdateSource(ctx, &purchasedto.UpdateSourceReq{
+		ID: src.ID, Status: strPtr(purchaseenums.SourceStatusDisabled),
 		SettlePrice: floatPtr(4.2), Config: json.RawMessage(`{"erp":"kingdee"}`),
 		OperatorID: operatorForTest,
 	}); err != nil {
 		t.Fatalf("改货源失败: %v", err)
 	}
 	rows = f.entityChanges(t, masterdataenums.EntityInventorySource, src.ID)
-	mustChange(t, rows, masterdataenums.ActionUpdate, "status", inventoryenums.SourceStatusActive, inventoryenums.SourceStatusDisabled)
+	mustChange(t, rows, masterdataenums.ActionUpdate, "status", purchaseenums.SourceStatusActive, purchaseenums.SourceStatusDisabled)
 	mustChange(t, rows, masterdataenums.ActionUpdate, "settle_price", "3.50", "4.20")
 	mustChange(t, rows, masterdataenums.ActionUpdate, "config", `{"erp":"sap"}`, `{"erp":"kingdee"}`)
 	if findChange(rows, masterdataenums.ActionUpdate, "type") != nil {
@@ -392,7 +398,7 @@ func TestMasterDataChangeSourceLifecycle(t *testing.T) {
 	}
 
 	// 删：old 为删除前的取值。
-	if err = f.inventory.DeleteSource(ctx, &inventorydto.DeleteSourceReq{ID: src.ID, OperatorID: operatorForTest}); err != nil {
+	if err = f.purchase.DeleteSource(ctx, &purchasedto.DeleteSourceReq{ID: src.ID, OperatorID: operatorForTest}); err != nil {
 		t.Fatalf("删货源失败: %v", err)
 	}
 	rows = f.entityChanges(t, masterdataenums.EntityInventorySource, src.ID)
@@ -481,7 +487,7 @@ func TestMasterDataChangeSeparatedFromStockMovements(t *testing.T) {
 	// 库存变动（入库 +5）：只进流水，不进主数据变更记录。
 	if _, err := f.inventory.ChangeStock(ctx, &inventorydto.ChangeStockReq{
 		ProjectID: f.projectID, Direction: inventoryenums.DirectionIn,
-		ReasonCode: "purchase_in", SourceType: inventoryenums.MovementSourcePurchaseOrder,
+		ReasonCode: "purchase_in", SourceType: purchaseenums.MovementSourcePurchaseOrder,
 		SourceRef: "PO-TEST-1", OperatorID: operatorForTest,
 		Lines: []inventorydto.StockChangeLineReq{{
 			VariantID: v.ID, ProductID: p.ID, SKUCode: v.SKUCode, WarehouseID: sz.ID, Quantity: 5,

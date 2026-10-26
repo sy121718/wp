@@ -124,7 +124,6 @@ func newCartFixtureWithGateway(t *testing.T, gateway cartcontract.PaymentGateway
 	// 表现是「库存只有 3 件，却能加 5 件进购物车，到结算才被拒」。
 	// 生产装配（routers.SetupRoutes）里有这一段，测试必须与它一致，否则测出来的是假链路。
 	products.SetAvailabilityPort(inv)
-	inv.SetVariantCost(products)
 
 	wh, err := inv.CreateWarehouse(ctx, &inventorydto.CreateWarehouseReq{
 		ProjectID: project.ID, Code: "SZ", Name: "深圳仓", IsDefault: true,

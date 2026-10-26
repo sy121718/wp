@@ -62,12 +62,6 @@ func TestInventoryDrawerFailureReturnsJSON(t *testing.T) {
 		{"reason edit business", (&inventoryPageHandle{}).reasonEditFormFail,
 			inventoryenums.Err(inventoryenums.ErrReasonStatusInvalid), http.StatusBadRequest,
 			inventoryenums.FallbackFor(inventoryenums.ErrReasonStatusInvalid)},
-		{"source business", (&inventorySourcePageHandle{}).sourceFormFail,
-			inventoryenums.Err(inventoryenums.ErrSourceSettleInvalid), http.StatusBadRequest,
-			inventoryenums.FallbackFor(inventoryenums.ErrSourceSettleInvalid)},
-		{"purchase business", (&inventoryPurchasePageHandle{}).purchaseCreateFail,
-			inventoryenums.Err(inventoryenums.ErrInvalidParam), http.StatusBadRequest,
-			inventoryenums.FallbackFor(inventoryenums.ErrInvalidParam)},
 		// 404：找不到 —— 由声明处给（facing.WithStatus），出口只读。
 		{"warehouse not found", (&inventoryPageHandle{}).warehouseFormFail,
 			inventoryenums.Err(inventoryenums.ErrWarehouseNotFound), http.StatusNotFound,

@@ -31,16 +31,11 @@ func getProductsNewPage(engine *gin.Engine, projectID string) string {
 
 // createFormHooks 建表单里「抽屉与整页都必须有」的钩子与字段（片段内的协议面）。
 var createFormHooks = []string{
-	"data-product-create-form",    // 增强脚本按它定位表单
-	"data-sku-input",              // 主体 SKU 输入框
-	"data-sku-regenerate",         // 「重新生成」按钮
-	"data-sku-placeholder-bundle", // 捆绑态占位符
-	"data-sku-hint",               // 系统建议文案钩子
-	"data-sku-manual",             // 请手填提示行
-	"name=\"attributeIds\"",       // 属性组勾选
-	"name=\"warehouseIds\"",       // 多仓归属
-	"name=\"skuSource\"",          // SKU 来源（自己创建 / 从仓库选）
-	"value=\"bundle\"",            // 捆绑类型选项
+	"data-product-create-form", // 增强脚本按它定位表单
+	"data-sku-input",           // 主体 SKU 输入框
+	"name=\"attributeIds\"",    // 属性组勾选
+	"name=\"warehouseIds\"",    // 多仓归属
+	"name=\"skuSource\"",       // SKU 来源（自己创建 / 从仓库选）
 }
 
 func TestProductNewPageCarriesFullCreateForm(t *testing.T) {

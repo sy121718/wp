@@ -40,6 +40,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventorymodel "go_wp/internal/module/inventory/model"
@@ -144,6 +145,23 @@ func (s *Service) ChangeStockTx(ctx context.Context, tx *gorm.DB, req *inventory
 	_, _, _, err = s.changeStockTrackingTx(ctx, tx, req, nil)
 	return err
 }
+
+// ChangeStockTxWithBatch 与 ChangeStockTx 逐字同一条路径，额外把本次变动的批次号交出来。
+//
+// 采购收货要把批次号写进入库单同一行（追溯「这批货动的哪笔流水」）：提交后回读会留下
+// 「单据已提交、流水查不到」的窗口，所以在事务里顺着返回值一起给。
+func (s *Service) ChangeStockTxWithBatch(ctx context.Context, tx *gorm.DB, req *inventorydto.ChangeStockReq) (batchID string, err error) {
+	out, _, _, cerr := s.changeStockTrackingTx(ctx, tx, req, nil)
+	if cerr != nil {
+		return "", cerr
+	}
+	if out == nil {
+		return "", nil
+	}
+	return out.batchID, nil
+}
+
+var _ inventorycontract.BatchStockWriter = (*Service)(nil)
 
 // RestockStock 系统自动归还（补偿性入库）：取消订单归还 / 退货入库走这条。
 //

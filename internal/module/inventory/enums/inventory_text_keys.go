@@ -37,25 +37,6 @@ const (
 	// InventoryChangeWarehouseDefaultSuffix 商品列表页与库存页共用的后缀词条（同一份词条两处取用）。
 	InventoryChangeWarehouseDefaultSuffix = "admin.inventory.change.warehouseDefaultSuffix"
 
-	// —— 货源页（key 前缀是 `admin.inventory_sources.*`，与 `admin.inventory.*` 不同族）——
-	InventorySourcesRelatedTypeDefault = "admin.inventory_sources.relatedTypeDefault"
-	InventorySourcesTypeInternal       = "admin.inventory_sources.type.internal"
-	InventorySourcesStatsExternal      = "admin.inventory_sources.stats.external"
-	InventorySourcesStatsRelated       = "admin.inventory_sources.stats.related"
-	InventorySourcesStatsUnrelated     = "admin.inventory_sources.stats.unrelated"
-
-	// —— 采购入库页（key 前缀是 `admin.inventory_purchases.*`）——
-	InventoryPurchasesStatusPending   = "admin.inventory_purchases.status.pending"
-	InventoryPurchasesStatusPartial   = "admin.inventory_purchases.status.partial"
-	InventoryPurchasesColReceived     = "admin.inventory_purchases.col.received"
-	InventoryPurchasesKindPurchase    = "admin.inventory_purchases.kind.purchase"
-	InventoryPurchasesProductionOpen  = "admin.inventory_purchases.production.open"
-	InventoryPurchasesOptionCostLabel = "admin.inventory_purchases.option.costLabel"
-	// 采购单两个终态（迁移 626）。
-	InventoryPurchasesStatusFinished  = "admin.inventory_purchases.status.finished"
-	InventoryPurchasesStatusCancelled = "admin.inventory_purchases.status.cancelled"
-	InventoryPurchasesOptionCostUnset = "admin.inventory_purchases.option.costUnset"
-
 	// —— 仓库商品 SKU 台账页（迁移 624）——
 	InventorySKUsTitle      = "admin.inventory.skus.title"
 	InventoryStockClaimed   = "admin.inventory.stock.claimed"
@@ -73,8 +54,6 @@ const (
 	InventoryActionDone             = "admin.inventory.actionDone"
 	InventoryBulkWarehousePartial   = "admin.inventory.bulk.partial"
 	InventoryBulkWarehouseDone      = "admin.inventory.bulk.deleted"
-	InventoryBulkSourcePartial      = "admin.inventory.bulk.sourcePartial"
-	InventoryBulkSourceDone         = "admin.inventory.bulk.sourceDone"
 	InventoryBulkReasonPartial      = "admin.inventory.bulk.reasonPartial"
 	InventoryBulkReasonDone         = "admin.inventory.bulk.reasonDone"
 	InventoryBulkReasonNoneSelected = "admin.inventory.bulk.reasonNoneSelected"

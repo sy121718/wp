@@ -173,7 +173,7 @@ func registerOrderAndSiteSlots() {
 	//
 	// 路由 /admin/inventory/purchases/production、权限点 inventory:purchase_production 与
 	// handler 一直在，缺的只是页面入口 —— 本批把表单补回采购入库页
-	//（internal/templates/admin/inventory_purchases.html）。模板文案一律走 t(key, 中文兜底)，
+	//（现已迁到 internal/templates/admin/purchase/purchases.html）。模板文案一律走 t(key, 中文兜底)，
 	// 词条必须同批 seed 中英各一行：缺 en-US 不会有任何断言变红，只会让英文界面显示中文。
 	//
 	// 判定按**本批自己的 key 列表**计数（用「全库总量」会被其它批次的行满足而静默跳过，

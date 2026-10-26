@@ -8,47 +8,15 @@ package inventoryhttp
 
 import (
 	"net/http"
-	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 
-	"go_wp/internal/middleware/builtin"
 	inventorycontract "go_wp/internal/module/inventory/contract"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/response"
 )
-
-// operatorFromContext 从会话取操作人（issue #19 的变更记录操作人）。
-//
-// 优先取登录名（留痕要能直接读懂「谁改的」，与库存流水的 operator_id 同口径），
-// 缺失时退回数值 user_id，两者都没有则空串（留痕字段允许为空）。
-// 本函数不参与任何鉴权判断，只做展示用的文本化。
-//
-// 不走 builtin.CurrentUserIDText：这里要的是「先登录名、后 id 文本」的组合语义，
-// 且保留非 int64 原始值分支（脚本 / 测试路径可能写入别的形状），builtin.CurrentUserID 入口只认 int64。
-func operatorFromContext(c *gin.Context) (id string) {
-	if name := strings.TrimSpace(builtin.GetUsername(c)); name != "" {
-		return name
-	}
-	value, exists := c.Get("user_id")
-	if !exists {
-		return ""
-	}
-	switch v := value.(type) {
-	case int64:
-		return strconv.FormatInt(v, 10)
-	case int:
-		return strconv.Itoa(v)
-	case string:
-		return v
-	case uint64:
-		return strconv.FormatUint(v, 10)
-	}
-	return ""
-}
 
 // Handle inventory HTTP 处理器。
 type Handle struct {
@@ -57,95 +25,6 @@ type Handle struct {
 
 // NewHandle 构造。
 func NewHandle(svc inventorycontract.InventoryService) *Handle { return &Handle{svc: svc} }
-
-// CreateSource 新建货源（issue #17 验收 1/2）。
-func (h *Handle) CreateSource(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.CreateSourceReq](c)
-	if !ok {
-		return
-	}
-	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
-	req.OperatorID = operatorFromContext(c)
-	res, err := h.svc.CreateSource(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgCreateSuccess, res)
-}
-
-// UpdateSource 修改货源（验收 1/2）。
-func (h *Handle) UpdateSource(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.UpdateSourceReq](c)
-	if !ok {
-		return
-	}
-	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
-	req.OperatorID = operatorFromContext(c)
-	res, err := h.svc.UpdateSource(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
-}
-
-// GetSource 货源详情。
-func (h *Handle) GetSource(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.GetSourceReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.GetSource(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusNotFound, "inventory", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgDetailSuccess, res)
-}
-
-// ListSources 货源列表（验收 4：关联方标志是可筛选的报表维度）。
-func (h *Handle) ListSources(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.ListSourceReq](c)
-	if !ok {
-		return
-	}
-	list, err := h.svc.ListSources(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
-}
-
-// DeleteSource 删除货源。
-func (h *Handle) DeleteSource(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.DeleteSourceReq](c)
-	if !ok {
-		return
-	}
-	// issue #19：变更记录的操作人从会话取（客户端传入被忽略）。
-	req.OperatorID = operatorFromContext(c)
-	if err := h.svc.DeleteSource(c.Request.Context(), req); err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgDeleteSuccess, nil)
-}
-
-// SourceSummary 货源关联方统计（验收 4）。
-func (h *Handle) SourceSummary(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.SourceSummaryReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.SourceSummary(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "inventory", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, res)
-}
 
 // CreateWarehouse 新建仓库（验收 1）。
 func (h *Handle) CreateWarehouse(c *gin.Context) {
@@ -356,102 +235,4 @@ func (h *Handle) UpdateReason(c *gin.Context) {
 		return
 	}
 	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
-}
-
-// CreatePurchaseOrder 新建采购单（验收 1）。
-func (h *Handle) CreatePurchaseOrder(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.CreatePurchaseOrderReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.CreatePurchaseOrder(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgCreateSuccess, res)
-}
-
-// UpdatePurchaseOrder 修改采购单。
-func (h *Handle) UpdatePurchaseOrder(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.UpdatePurchaseOrderReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.UpdatePurchaseOrder(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgUpdateSuccess, res)
-}
-
-// GetPurchaseOrder 采购单详情（含全部采购行）。
-func (h *Handle) GetPurchaseOrder(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.GetPurchaseOrderReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.GetPurchaseOrder(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusNotFound, "product", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgDetailSuccess, res)
-}
-
-// ListPurchaseOrders 采购单列表。
-func (h *Handle) ListPurchaseOrders(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.ListPurchaseOrderReq](c)
-	if !ok {
-		return
-	}
-	list, err := h.svc.ListPurchaseOrders(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
-}
-
-// RegisterReceipt 登记采购收货（验收 3/4）：库存增加 + 流水 + 成本价更新一次完成。
-func (h *Handle) RegisterReceipt(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.RegisterReceiptReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.RegisterReceipt(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgReceiptSuccess, res)
-}
-
-// RegisterProductionInbound 自家工厂生产入库（验收 5）。
-func (h *Handle) RegisterProductionInbound(c *gin.Context) {
-	req, ok := binding.JSON[inventorydto.ProductionInboundReq](c)
-	if !ok {
-		return
-	}
-	res, err := h.svc.RegisterProductionInbound(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgReceiptSuccess, res)
-}
-
-// ListPurchaseHistory 某 SKU 的进货历史（验收 6）。
-func (h *Handle) ListPurchaseHistory(c *gin.Context) {
-	req, ok := binding.Query[inventorydto.ListPurchaseHistoryReq](c)
-	if !ok {
-		return
-	}
-	list, err := h.svc.ListPurchaseHistory(c.Request.Context(), req)
-	if err != nil {
-		response.ErrorAuto(c, http.StatusBadRequest, "product", err)
-		return
-	}
-	response.SuccessWithMessage(c, inventoryenums.MsgListSuccess, list)
 }

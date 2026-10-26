@@ -79,7 +79,6 @@ func newVariantListFixture(t *testing.T) *variantListFixture {
 	products := productservice.NewService(productmodel.NewModel(db), projects)
 	products.SetInventoryService(inv)
 	products.SetInventory(inventorymodel.NewModel(db))
-	inv.SetVariantCost(products)
 	wh, err := inv.CreateWarehouse(context.Background(), &inventorydto.CreateWarehouseReq{
 		ProjectID: project.ID, Code: "SZ", Name: "苏州仓",
 	})

@@ -169,7 +169,7 @@ type chromeHit struct{ key, detail string }
 // containerChromeExempt 存量违规的**带理由**豁免清单。
 //
 // 2026-10-01（task-12）：theme.css 那 6 条存量已全部迁移完毕，清单随之清空 ——
-// 控件侧本来就带基座类（inventory_sources.html 的 form-textarea、product_attribute_rows.html
+// 控件侧本来就带基座类（purchase/sources.html 的 form-textarea、product_attribute_rows.html
 // 的 form-input、两个翻译页的 form-textarea），删掉的是容器里重复的外观声明；
 // .receipt-form 与 .toolbar-search 两条连使用点都没有（css_class_audit_test.go 登记为疑似死样式），
 // 只删外观，整块清理归死样式批次。于是这门禁回到**零豁免**状态。

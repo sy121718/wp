@@ -31,6 +31,7 @@ import (
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	inventoryhttp "go_wp/internal/module/inventory/inbound/http"
 	inventorymodel "go_wp/internal/module/inventory/model"
+	purchasestock "go_wp/internal/module/inventory/outbound/purchasestock"
 	inventoryservice "go_wp/internal/module/inventory/service"
 	productdto "go_wp/internal/module/product/dto"
 	productmodel "go_wp/internal/module/product/model"
@@ -38,6 +39,8 @@ import (
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	purchasemodel "go_wp/internal/module/purchase/model"
+	purchaseservice "go_wp/internal/module/purchase/service"
 
 	"go_wp/internal/adminui"
 	"go_wp/internal/middleware/adminctx"
@@ -54,6 +57,7 @@ import (
 // （依赖方向 inventory → product），因此「建变体即生成库存记录」走的是真实链路。
 type invFixture struct {
 	inventory *inventoryservice.Service
+	purchase  *purchaseservice.Service
 	products  *productservice.Service
 	db        *gorm.DB
 	projects  *projectservice.Service
@@ -83,9 +87,13 @@ func newInvFixture(t *testing.T) *invFixture {
 	// 库存变动提交后经它把真源汇总写进展示缓存（issue #16 验收 6）。
 	// 同理注入成本价写回端口（issue #18）：采购 / 生产入库后把单价写进
 	// product_variants.cost_price。缺这一步，入库单行会记成「成本价未写回」。
-	inv.SetVariantCost(products)
+	// 采购域 2026-10 拆成独立模块：库存测试里凡需要「先入库再验证库存」的用例
+	// 都经采购 service 建单收货，收货仍回调库存契约写流水。
+	purchase := purchaseservice.NewService(purchasemodel.NewModel(db), projects)
+	purchase.SetStock(purchasestock.New(inv, inv, inv))
+	purchase.SetVariantCost(products)
 	return &invFixture{
-		inventory: inv, products: products, db: db,
+		inventory: inv, purchase: purchase, products: products, db: db,
 		projects: projects, projectID: project.ID,
 	}
 }

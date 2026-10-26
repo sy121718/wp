@@ -13,7 +13,6 @@ package inventoryhttp
 
 import (
 	"context"
-	"go_wp/internal/adminui"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,9 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	inventorydto "go_wp/internal/module/inventory/dto"
-	"go_wp/internal/templates"
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/pagination"
 )
 
 // paginationNavOf 取出页面里的分页条片段（没渲染出来时返回空串）。
@@ -99,90 +96,6 @@ func inventoryFactsMapper(t *testing.T, target string) (*gin.Context, *httptest.
 	c.Request = httptest.NewRequest(http.MethodGet, target, nil)
 	return c, rec
 }
-
-// TestInventoryPurchasesMapperCarriesPaginationFacts 采购单页：映射层必须交出事实键，
-// 且不得再出现旧成品键。
-func TestInventoryPurchasesMapperCarriesPaginationFacts(t *testing.T) {
-	inventoryFactsMapper(t, "/admin/inventory/purchases?project=project-1")
-
-	pg := pagination.Page{Total: 45, Page: 2, Limit: 20}
-	pg.Base = "/admin/inventory/purchases?project=project-1"
-	m := adminui.ViewMap((&inventoryPurchasesPageData{
-		SelectedProject: "project-1",
-		Pagination:      pg,
-	}))
-
-	got, ok := m["Pagination"].(pagination.Page)
-	if !ok {
-		t.Fatalf("模板键 Pagination 不是 pagination.Page 事实：%T", m["Pagination"])
-	}
-	if got != pg {
-		t.Errorf("交出的事实与 handler 构造的不一致：%+v", got)
-	}
-	if !templates.PagerOf(got).HasPagination() || got.Base != pg.Base {
-		t.Errorf("事实应带基址且为多页：%+v", got)
-	}
-	for _, legacy := range []string{"PaginationInfo", "PaginationLinks"} {
-		if v, exists := m[legacy]; exists {
-			t.Errorf("旧成品键 %s 仍在：%v", legacy, v)
-		}
-	}
-}
-
-// TestInventorySourcesMapperCarriesPaginationFacts 货源页：同上（该页 mapper 额外读
-// 请求 query 拼写动作回跳上下文，所以这里用真 context）。
-func TestInventorySourcesMapperCarriesPaginationFacts(t *testing.T) {
-	c, _ := inventoryFactsMapper(t, "/admin/inventory/sources?project=project-1&type=internal")
-
-	pg := pagination.Page{Total: 45, Page: 2, Limit: 20}
-	pg.Base = "/admin/inventory/sources?project=project-1&type=internal"
-	d := &inventorySourcesPageData{SelectedProject: "project-1", Pagination: pg}
-	fillSourceOptions(d, c)
-	m := adminui.ViewMap(d)
-
-	got, ok := m["Pagination"].(pagination.Page)
-	if !ok {
-		t.Fatalf("模板键 Pagination 不是 pagination.Page 事实：%T", m["Pagination"])
-	}
-	if got != pg {
-		t.Errorf("交出的事实与 handler 构造的不一致：%+v", got)
-	}
-	for _, legacy := range []string{"PaginationInfo", "PaginationLinks"} {
-		if v, exists := m[legacy]; exists {
-			t.Errorf("旧成品键 %s 仍在：%v", legacy, v)
-		}
-	}
-}
-
-// TestInventoryPurchasesAndSourcesZeroFactsRenderNoPagination 单页 / 装载失败（零值事实）
-// 时两条路都必须渲染空 —— 「零值」而不是「nil 指针」，正是本卡换掉旧形态的那一处。
-func TestInventoryPurchasesAndSourcesZeroFactsRenderNoPagination(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		data gin.H
-	}{
-		{
-			name: "采购单页/单页",
-			data: adminui.ViewMap(&inventoryPurchasesPageData{SelectedProject: "project-1",
-				Pagination: pagination.Page{Total: 5, Page: 1, Limit: 20}}),
-		},
-		{
-			name: "货源页/装载失败（零值）",
-			data: adminui.ViewMap(&inventorySourcesPageData{SelectedProject: "project-1"}),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			pg, ok := tc.data["Pagination"].(pagination.Page)
-			if !ok {
-				t.Fatalf("模板键 Pagination 不是事实：%T", tc.data["Pagination"])
-			}
-			if templates.PagerOf(pg).HasPagination() {
-				t.Errorf("单页 / 零值事实不该判定为多页：%+v", pg)
-			}
-		})
-	}
-}
-
 func mustGinContext(t *testing.T, target string) *gin.Context {
 	t.Helper()
 	c, _ := inventoryFactsMapper(t, target)

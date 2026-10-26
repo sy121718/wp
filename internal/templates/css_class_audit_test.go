@@ -353,7 +353,7 @@ var dynamicClassEvidence = map[string]dynPrefixEvidence{
 		site: "admin/ai/mcp.html:41 `badge-{{.McpTone}}`；admin/ai/provider_card.html:15 `badge-{{.StatusTone}}`；" +
 			"admin/ai/provider_card.html:31 与 admin/ai/provider_models.html:19 `badge-{{.ModelsNoticeTone}}`；" +
 			"admin/ai/sessions.html:402 `badge-{{e.Tone}}`；" +
-			"admin/inventory/inventory_purchases.html:203 `badge-{{l.OutstandingTone}}`；" +
+			"admin/purchase/purchases.html:236 `badge-{{l.OutstandingTone}}`；" +
 			"admin/mail/mail_campaign.html:126 `badge-{{p.StatusTone}}`；" +
 			"admin/order/coupons.html:175 `badge-{{cp.StateTone}}`；" +
 			"admin/order/orders.html:70 `badge-{{tab.Tone}}`、:158 `badge-{{o.StatusTone}}`、:186 `badge-{{head.StatusTone}}`；" +

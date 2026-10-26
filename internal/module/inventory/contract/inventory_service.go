@@ -189,63 +189,11 @@ type InventoryService interface {
 	CreateReason(ctx context.Context, req *inventorydto.CreateReasonReq) (res *inventorydto.ReasonResp, err error)
 	UpdateReason(ctx context.Context, req *inventorydto.UpdateReasonReq) (res *inventorydto.ReasonResp, err error)
 
-	// —— 货源（issue #17）——
-	// 一张表承载**所有进货来源**：外部供应商、集团内关联公司、自家工厂用 type 区分，
-	// related_party 标记关联交易（报表按「类型 × 关联方」取数），config 承载异构对接扩展信息。
-	// CreateSource 新建货源（验收 1/2）：类型区分内外部、可标记关联方、可配对接扩展信息；
-	// 内部货源恒为关联方，结算价只属于内部货源。
-	CreateSource(ctx context.Context, req *inventorydto.CreateSourceReq) (res *inventorydto.SourceResp, err error)
-	// UpdateSource 改货源（改名 / 改码 / 改类型 / 改关联方 / 改结算价 / 停启用 / 改对接配置）。
-	UpdateSource(ctx context.Context, req *inventorydto.UpdateSourceReq) (res *inventorydto.SourceResp, err error)
-	GetSource(ctx context.Context, req *inventorydto.GetSourceReq) (res *inventorydto.SourceResp, err error)
-	// ListSources 货源列表（验收 4）：类型 / 关联方 / 状态 / 关键词都是可组合的筛选维度。
-	ListSources(ctx context.Context, req *inventorydto.ListSourceReq) (list []*inventorydto.SourceResp, err error)
-	// CountSources 货源总条数：与 ListSources 同一份过滤条件（含「默认只列启用中」这条
-	// 由 IncludeDisabled 决定的默认档），供后台分页算总页数。
-	CountSources(ctx context.Context, req *inventorydto.ListSourceReq) (n int64, err error)
-	DeleteSource(ctx context.Context, req *inventorydto.DeleteSourceReq) (err error)
-	// SourceSummary 按「类型 × 关联方」分组统计（验收 4「关联方标志可用于报表区分」的数据出口）。
-	SourceSummary(ctx context.Context, req *inventorydto.SourceSummaryReq) (res *inventorydto.SourceSummaryResp, err error)
-
-	// —— 采购单与入库（issue #18）——
-	// 采购单：单头（来源 = #17 的货源 + 收货仓）+ 结构化行（SKU × 数量 × 单价），
-	// 行的「已入库数量」可原子递增；采购单状态由「已入库数量 与 采购数量」推导。
-	// CreatePurchaseOrder 新建采购单（验收 1）：单头 + 结构化行，来源必须是启用中的货源。
-	CreatePurchaseOrder(ctx context.Context, req *inventorydto.CreatePurchaseOrderReq) (res *inventorydto.PurchaseOrderResp, err error)
-	// UpdatePurchaseOrder 改单头（来源 / 收货仓 / 备注 / 预计到货），行全量替换只允许在未入库时。
-	UpdatePurchaseOrder(ctx context.Context, req *inventorydto.UpdatePurchaseOrderReq) (res *inventorydto.PurchaseOrderResp, err error)
-	GetPurchaseOrder(ctx context.Context, req *inventorydto.GetPurchaseOrderReq) (res *inventorydto.PurchaseOrderResp, err error)
-	// ListPurchaseOrders 采购单列表（状态 / 货源 / 关键词可组合筛选）。
-	ListPurchaseOrders(ctx context.Context, req *inventorydto.ListPurchaseOrderReq) (list []*inventorydto.PurchaseOrderResp, err error)
-	// CountPurchaseOrders 采购单总张数：与 ListPurchaseOrders 同一份过滤条件，
-	// 供后台分页算总页数。
-	CountPurchaseOrders(ctx context.Context, req *inventorydto.ListPurchaseOrderReq) (n int64, err error)
-
-	// RegisterReceipt 登记采购收货（验收 1/2/3/4）：按行累加已入库数量（原子递增、超收拒绝、
-	// 幂等键防重放），随后经 ChangeStockTx 增加库存并写流水（原因 = 采购入库、来源 = 采购单），
-	// 并把本次到货价（缺省沿用采购行单价）写为该 (仓库, SKU) 的**当前成本价**。
-	//
-	// **上述全部写入是同一个事务**：锁采购单头 → 行已入库数量原子递增 → 建入库单与入库行
-	// → 库存变动（ChangeStockTx 透传句柄）→ 单据状态与批次号写回 → 采购单状态重算。
-	// 任一步失败整体回滚 —— 不会留下「记了账没动库存」（跨模块的 DB 补偿已删）。
-	// 唯一的事务外步骤是商品侧 product_variants.cost_price 的兼容回写（那是商品模块的写，
-	// 端口没有 Tx 形态）：失败只记在入库单行上，并可由幂等重放补做（见 applyReceiptCosts）。
-	RegisterReceipt(ctx context.Context, req *inventorydto.RegisterReceiptReq) (res *inventorydto.ReceiptResp, err error)
-	// FinishPurchaseOrder 采购单提前关单（迁移 626）：received / partial → finished。
-	//
-	// 与前三个中间态（由到货数量推导）不同，终态是**人工决定**：剩下的不再等。
-	// 不写库存流水（单据状态不是库存事实），备注追加而不是覆盖。
-	FinishPurchaseOrder(ctx context.Context, req *inventorydto.PurchaseStatusReq) (res *inventorydto.PurchaseOrderResp, err error)
-	// CancelPurchaseOrder 采购单取消（迁移 626）：pending / partial → cancelled。
-	//
-	// received 不可取消：货已经进仓，要退只能走退货。
-	CancelPurchaseOrder(ctx context.Context, req *inventorydto.PurchaseStatusReq) (res *inventorydto.PurchaseOrderResp, err error)
-	// RegisterProductionInbound 自家工厂生产入库（验收 5）：无采购单、来源必须是内部货源、
-	// 成本价手工填写；库存变动同样走 ChangeStock（原因 = 生产入库），
-	// 手工成本作为**显式成本**落到 (仓库, SKU) 的当前值上（与采购收货同一条路径）。
-	RegisterProductionInbound(ctx context.Context, req *inventorydto.ProductionInboundReq) (res *inventorydto.ReceiptResp, err error)
-	// ListPurchaseHistory 某 SKU 的进货历史（验收 6）：入库单行 + 单价快照 + 来源 + 收货仓。
-	ListPurchaseHistory(ctx context.Context, req *inventorydto.ListPurchaseHistoryReq) (list []*inventorydto.PurchaseHistoryResp, err error)
+	// —— 货源与采购单（2026-10 迁往 purchase 模块）——
+	// 进货来源（inventory_sources）与采购单据（inventory_purchase_* 四张表）已独立成
+	// internal/module/purchase：货源 / 采购单 / 入库是**一个业务域**（谁供货、下了多少、
+	// 到货多少），与「库存真源怎么变」是两件事。本模块只保留库存真源，采购要动库存时
+	// 经 purchasecontract.StockPort 反向调用（适配器在 inventory/outbound/purchasestock）。
 
 	// —— 商品侧缓存同步与对账（验收 6/7）——
 	// SyncStockCache 显式同步（真源汇总 → 商品侧展示缓存，带时间戳）。

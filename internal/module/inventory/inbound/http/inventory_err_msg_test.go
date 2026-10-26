@@ -126,8 +126,9 @@ func TestInventoryErrMsgSplitsFacts(t *testing.T) {
 //     这种「看起来像一句结论」的垃圾 —— 那才是真正危险的形态。
 func TestInventoryBulkMsgFollowsRequestLanguage(t *testing.T) {
 	entries := map[string]map[string]string{
-		"admin.inventory.bulk.sourceDone": {"zh-CN": "已删除 %s 个货源", "en-US": "Deleted %s source(s)"},
-		"admin.inventory.bulk.deleted":    {"zh-CN": "已删除 %d 个仓库", "en-US": "Deleted %d warehouses"},
+		"admin.inventory.bulk.deleted":       {"zh-CN": "已删除 %d 个仓库", "en-US": "Deleted %d warehouses"},
+		"admin.inventory.bulk.reasonDone":    {"zh-CN": "已更新 %s 个原因", "en-US": "Updated %s reason(s)"},
+		"admin.inventory.bulk.reasonPartial": {"zh-CN": "已更新 %s 个原因，%s 个未能更新", "en-US": "Updated %s reason(s), %s failed"},
 	}
 	i18n.InjectForTest(entries, nil)
 	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
@@ -137,9 +138,9 @@ func TestInventoryBulkMsgFollowsRequestLanguage(t *testing.T) {
 		msg              adminui.Msg
 		want             string
 	}{
-		{"%s 词条 / 中文", "zh-CN", inventoryBulkSourceDone.WithArgs("2"), "已删除 2 个货源"},
-		{"%s 词条 / 英文", "en-US", inventoryBulkSourceDone.WithArgs("2"), "Deleted 2 source(s)"},
-		{"两个参数按顺序填", "zh-CN", inventoryBulkSourcePartial.WithArgs("2", "1"), "已删除 2 个，1 个未能删除（仍被采购单或历史流水引用）"},
+		{"%s 词条 / 中文", "zh-CN", inventoryBulkReasonDone.WithArgs("2"), "已更新 2 个原因"},
+		{"%s 词条 / 英文", "en-US", inventoryBulkReasonDone.WithArgs("2"), "Updated 2 reason(s)"},
+		{"两个参数按顺序填", "zh-CN", inventoryBulkReasonPartial.WithArgs("2", "1"), "已更新 2 个原因，1 个未能更新"},
 		// 旧词条是 %d：丢弃词条、回落中文兜底（这里断言的是**不掉进 Sprintf 垃圾**）。
 		{"%d 词条回落兜底", "en-US", inventoryBulkWarehouseDone.WithArgs("2"), "已删除 2 个仓库"},
 	} {
