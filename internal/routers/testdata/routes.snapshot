@@ -37,6 +37,7 @@ GET /admin/dev-login
 GET /admin/i18n
 GET /admin/i18n/edit
 GET /admin/inventory
+GET /admin/inventory/movements
 GET /admin/inventory/purchases
 GET /admin/inventory/reasons
 GET /admin/inventory/skus

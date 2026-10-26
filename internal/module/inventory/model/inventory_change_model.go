@@ -59,8 +59,11 @@ type MovementEntity struct {
 	ID              string  `gorm:"column:id;primaryKey"`
 	ProjectID       string  `gorm:"column:project_id;not null"`
 	WarehouseID     string  `gorm:"column:warehouse_id;not null"`
-	ProductID       string  `gorm:"column:product_id;not null"`
-	VariantID       string  `gorm:"column:variant_id;not null"`
+	// ProductID / VariantID 是**线索列**（迁移 649 起可空）：货行的身份是「仓 × 仓库 SKU」，
+	// 归属在 product_variants.warehouse_skus。无归属货行（台账页直接建的行）的流水
+	// 这两列为 NULL —— 空串是 uuid 的非法输入，写进去会 22P02。
+	ProductID       *string `gorm:"column:product_id"`
+	VariantID       *string `gorm:"column:variant_id"`
 	SKUCode         string  `gorm:"column:sku_code;not null"`
 	Direction       string  `gorm:"column:direction;not null"`
 	Quantity        int     `gorm:"column:quantity;not null"`
@@ -76,8 +79,15 @@ type MovementEntity struct {
 	// 可以对应多条货行（不同批次 / 自有码与客户码并存，见 637 / 640 / 641 的注释）。
 	// 可空：货行被删时外键置 NULL（历史流水不因货行消失而丢），
 	// 也兼容 640 之前写入、回填时找不到对应货行的历史（极少）。
-	StockID    *string `gorm:"column:stock_id"`
-	SourceType string  `gorm:"column:source_type;not null"`
+	StockID *string `gorm:"column:stock_id"`
+	// StockName / StockImageURL 是**写入时刻**的货品名称与图片快照（迁移 646）。
+	//
+	// 为什么快照而不 join 货行：流水是审计。货行改名、换图、甚至被删（stock_id 会置
+	// NULL）之后，历史流水仍要能回答「当时动的是哪件货、长什么样」—— 与 unit_cost
+	// 同一个道理（迁移 256）。
+	StockName     string `gorm:"column:stock_name;not null"`
+	StockImageURL string `gorm:"column:stock_image_url;not null"`
+	SourceType    string `gorm:"column:source_type;not null"`
 	SourceRef  string  `gorm:"column:source_ref;not null"`
 	Remark     string  `gorm:"column:remark;not null"`
 	OperatorID string  `gorm:"column:operator_id;not null"`
@@ -99,8 +109,9 @@ type MovementRow struct {
 	WarehouseID     string  `gorm:"column:warehouse_id"`
 	WarehouseCode   string  `gorm:"column:warehouse_code"`
 	WarehouseName   string  `gorm:"column:warehouse_name"`
-	ProductID       string  `gorm:"column:product_id"`
-	VariantID       string  `gorm:"column:variant_id"`
+	// ProductID / VariantID 与 MovementEntity 同义（迁移 649 起可空、仅作线索）。
+	ProductID       *string `gorm:"column:product_id"`
+	VariantID       *string `gorm:"column:variant_id"`
 	SKUCode         string  `gorm:"column:sku_code"`
 	Direction       string  `gorm:"column:direction"`
 	Quantity        int     `gorm:"column:quantity"`
@@ -112,8 +123,11 @@ type MovementRow struct {
 	ReasonName      string  `gorm:"column:reason_name"`
 	ParentVariantID *string `gorm:"column:parent_variant_id"`
 	// StockID 与 MovementEntity 同义（迁移 640：货行级追溯）。
-	StockID    *string `gorm:"column:stock_id"`
-	SourceType string  `gorm:"column:source_type"`
+	StockID *string `gorm:"column:stock_id"`
+	// StockName / StockImageURL 与 MovementEntity 同义（迁移 646：变动时刻的快照）。
+	StockName     string `gorm:"column:stock_name"`
+	StockImageURL string `gorm:"column:stock_image_url"`
+	SourceType    string `gorm:"column:source_type"`
 	SourceRef  string  `gorm:"column:source_ref"`
 	Remark     string  `gorm:"column:remark"`
 	OperatorID string  `gorm:"column:operator_id"`
@@ -284,7 +298,8 @@ func (m *Model) CreateMovementsTx(ctx context.Context, tx *gorm.DB, rows []*Move
 func movementRowsQuery(ctx context.Context, db *gorm.DB) *gorm.DB {
 	return db.WithContext(ctx).Table("inventory_stock_movements AS mv").
 		Select("mv.id, mv.project_id, mv.warehouse_id, mv.product_id, mv.variant_id, mv.sku_code, " +
-			"mv.stock_id, mv.direction, mv.quantity, mv.delta, mv.quantity_before, mv.quantity_after, " +
+			"mv.stock_id, mv.stock_name, mv.stock_image_url, " +
+			"mv.direction, mv.quantity, mv.delta, mv.quantity_before, mv.quantity_after, " +
 			"mv.reason_id, mv.reason_code, mv.parent_variant_id, mv.source_type, mv.source_ref, " +
 			"mv.remark, mv.operator_id, mv.unit_cost, mv.batch_id, mv.create_time, " +
 			"w.code AS warehouse_code, w.name AS warehouse_name, " +

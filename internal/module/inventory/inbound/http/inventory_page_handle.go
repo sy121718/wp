@@ -4,6 +4,7 @@ package inventoryhttp
 import (
 	"fmt"
 	"go_wp/internal/shell"
+	"go_wp/internal/text"
 	"go_wp/pkg/binding"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
@@ -242,17 +243,11 @@ func (h *inventoryPageHandle) listMovements(c *gin.Context, projectID, sku, ware
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	tr := shell.TranslateFor(c)
+	// 逐行映射抽到 movementRowResp（流水独立页共用）：两页对同一条流水的展示
+	// 必须逐字一致 —— 各写一份的话，新增一列只改一侧就会变成「同一笔流水两页显示不同成本」。
+	tr := text.TranslateFunc(c)
 	for _, m := range rows {
-		out = append(out, inventorydto.MovementRowResp{
-			ID: m.ID, SKUCode: m.SKUCode, WarehouseName: m.WarehouseName,
-			WarehouseCode: m.WarehouseCode, Direction: m.Direction,
-			DirectionLabel: directionLabel(tr, m.Direction),
-			Quantity:       m.Quantity, QuantityBefore: m.QuantityBefore, QuantityAfter: m.QuantityAfter,
-			ReasonName: tr(m.ReasonName, m.ReasonCode), ReasonCode: m.ReasonCode,
-			SourceType: m.SourceType, SourceRef: m.SourceRef, Remark: m.Remark,
-			OperatorID: m.OperatorID, BatchID: m.BatchID, CreatedAt: m.CreatedAt,
-		})
+		out = append(out, movementRowResp(tr, m))
 	}
 	return out, total, curPage, nil
 }

@@ -345,6 +345,23 @@ type ListMovementReq struct {
 	Size     int    `form:"size"`
 }
 
+// MovementPageReq 库存流水页（/admin/inventory/movements）的筛选与分页参数。
+//
+// 与 ListMovementReq 分开：那个是接口入参（projectId / skuCode / page / size），
+// 这个是**页面**入参 —— 键名已随旧页发布（?sku=、?timeFrom=），换名字会静默废掉
+// 书签与外部链接。两套名字各对应一个消费者，强行合成一个会让两条口径互相带跑。
+type MovementPageReq struct {
+	ProjectID   string `form:"project"`
+	SKUCode     string `form:"sku"`
+	WarehouseID string `form:"warehouseId"`
+	Direction   string `form:"direction"`
+	ReasonCode  string `form:"reasonCode"`
+	TimeFrom    string `form:"timeFrom"`
+	TimeTo      string `form:"timeTo"`
+	Page        int    `form:"page"`
+	Limit       int    `form:"limit"`
+}
+
 // —— 变动原因字典（issue #16 验收 4）——
 
 // ListReasonReq 变动原因列表。

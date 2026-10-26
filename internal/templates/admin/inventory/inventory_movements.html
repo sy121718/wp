@@ -1,0 +1,178 @@
+{* admin/inventory/inventory_movements.html — 库存流水（B4：从 /admin/inventory 拆出的独立页）
+
+   页面定位：**货在时间轴上发生了什么** —— 跨 SKU、跨仓的只读审计视图。
+   与 /admin/inventory 的分工：那一屏是「按 SKU 横看各仓的当前数量」+ 盘点调整入口，
+   入口是筛一个 SKU；本页入口是筛时间与维度，看的是「谁在什么时候动了哪条货」。
+
+   与台账页（/admin/inventory/skus）的分工：台账看「仓库里现在有什么货」，
+   本页看「这些货怎么变成现在这样的」。
+
+   只读：不提供任何写入口。入库 / 出库在单据页，盘点与报损在库存管理页的调整抽屉里。
+   列的口径：货品列取流水里的**快照**（名称 / 图 / 编码 / 单价都是变动当时的），
+   不是货行的当前值 —— 流水是审计，主档后来改名换图都不改写历史。 *}
+{{extends "../layout.html"}}
+{{block body()}}
+{{tr := .["t"]}}
+{{selectedProject := .SelectedProject}}
+{{rows := .Movements}}
+{{reasons := .Reasons}}
+{{loadError := .["LoadError"]}}
+{{filterSKU := ""}}{{if isset(.FilterSKU)}}{{filterSKU = .FilterSKU}}{{end}}
+{{filterWarehouse := ""}}{{if isset(.FilterWarehouse)}}{{filterWarehouse = .FilterWarehouse}}{{end}}
+{{filterDirection := ""}}{{if isset(.FilterDirection)}}{{filterDirection = .FilterDirection}}{{end}}
+{{filterReason := ""}}{{if isset(.FilterReason)}}{{filterReason = .FilterReason}}{{end}}
+{{filterTimeFrom := ""}}{{if isset(.FilterTimeFrom)}}{{filterTimeFrom = .FilterTimeFrom}}{{end}}
+{{filterTimeTo := ""}}{{if isset(.FilterTimeTo)}}{{filterTimeTo = .FilterTimeTo}}{{end}}
+<div class="stack">
+    <header class="page-head">
+        <div class="page-head-main">
+            <div class="page-title-row">
+                <h1>{{tr("admin.inventory.movements.title", "库存流水")}}</h1>
+                <span class="help">
+                    <button type="button" class="help-btn" aria-label="{{tr("admin.inventory.help.label", "查看说明")}}" aria-expanded="false">?</button>
+                    <span class="help-pop" role="tooltip">{{tr("admin.inventory.movements.lead", "每一次库存真源变动都留痕：方向、数量、变动前后值、原因、来源引用与批次号。")}} {{tr("admin.inventory.movements.snapshot", "货品名、图片与单价是变动当时的快照 —— 之后改主档不改写历史。")}} {{tr("admin.inventory.movements.timeHint", "时间筛选按流水创建时间过滤；只填日期时，截止日按当天 23:59:59 收口。")}}</span>
+                </span>
+            </div>
+            <p class="page-sub">{{tr("admin.inventory.movements.boundary", "本页只读。入库 / 出库请走单据（采购入库、发货、退货、调拨），盘点与报损在")}}<a href="/admin/inventory?project={{selectedProject}}">{{tr("admin.inventory.movements.boundaryLink", "库存管理")}}</a>{{tr("admin.inventory.movements.boundaryTail", "页的调整抽屉里。")}}</p>
+        </div>
+        <div class="page-actions">
+            {{if len(.Projects) > 1}}
+            <form class="page-context" method="get" action="/admin/inventory/movements">
+                <label class="sr-only" for="mv-project">{{tr("admin.inventory.field.project", "站点工程")}}</label>
+                <select class="form-select" id="mv-project" name="project" onchange="this.form.submit()">
+                    {{range _, p := .Projects}}
+                    <option value="{{p.ID}}" {{if p.ID == selectedProject}}selected{{end}}>{{p.Name}}</option>
+                    {{end}}
+                </select>
+            </form>
+            {{end}}
+        </div>
+    </header>
+
+    {{if loadError}}
+    <section class="card list-card">
+        <p class="badge badge-danger" role="alert">{{loadError}}</p>
+        <p class="page-sub">{{tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来")}}</p>
+        <p class="hint">{{tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。")}}</p>
+    </section>
+    {{else}}
+    <section class="card list-card">
+        <div class="card-header">
+            <span class="card-title">{{if len(rows) > 0}}{{tr("admin.inventory.movements.listLead", "库存流水（本页 ")}}{{len(rows)}}{{tr("admin.inventory.list.titleTail", "）")}}{{else}}{{tr("admin.inventory.movements.title", "库存流水")}}{{end}}</span>
+        </div>
+        <div class="filter-bar">
+            <form method="get" action="/admin/inventory/movements" class="filter-fields">
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                <div class="filter-field">
+                    <label for="mv-sku">{{tr("admin.inventory.change.labelSku", "SKU")}}</label>
+                    <input type="text" class="form-input" id="mv-sku" name="sku" value="{{filterSKU}}"
+                           placeholder="{{tr("admin.inventory.ph.sku", "SKU 编码")}}" autocomplete="off">
+                </div>
+                <div class="filter-field">
+                    <label for="mv-warehouse">{{tr("admin.inventory.change.labelWarehouse", "仓库")}}</label>
+                    <select class="form-select" id="mv-warehouse" name="warehouseId">
+                        <option value="">{{tr("admin.inventory.filter.allWarehouses", "（全部）")}}</option>
+                        {{range _, w := .Warehouses}}
+                        <option value="{{w.ID}}" {{if w.ID == filterWarehouse}}selected{{end}}>{{w.Name}} ({{w.Code}})</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="mv-direction">{{tr("admin.inventory.moves.col.direction", "方向")}}</label>
+                    <select class="form-select" id="mv-direction" name="direction">
+                        <option value="">{{tr("admin.inventory.filter.allDirections", "（全部）")}}</option>
+                        {{range _, d := .Directions}}
+                        <option value="{{d.Value}}" {{if d.Value == filterDirection}}selected{{end}}>{{d.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="mv-reason">{{tr("admin.inventory.change.labelReason", "变动原因")}}</label>
+                    <select class="form-select" id="mv-reason" name="reasonCode">
+                        <option value="">{{tr("admin.inventory.filter.allReasons", "（全部）")}}</option>
+                        {{range _, r := reasons}}
+                        <option value="{{r.Code}}" {{if r.Code == filterReason}}selected{{end}}>{{r.Name}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                {* 区间走后台统一的时间筛选条（admin/partials/date_filter.html）。
+                   字段名 timeFrom / timeTo 是已发布 URL 的一部分，由调用方传入：
+                   改成 from/to 会静默废掉书签与外部链接。 *}
+                {{include "../partials/date_filter.html" map(
+                    "t", .["t"],
+                    "idPrefix", "mv",
+                    "formAction", "",
+                    "fromName", "timeFrom", "toName", "timeTo",
+                    "from", filterTimeFrom, "to", filterTimeTo,
+                    "presetName", "preset",
+                    "resetHref", "/admin/inventory/movements?project=" + selectedProject,
+                    "hint", "")}}
+            </form>
+        </div>
+
+        {* 空数据也渲染 <table>/<thead>：表头是「这里能看什么」的说明，空数据不该连它一起藏掉
+           （check-empty-state-table-head.sh 守）。空态落在 tbody 的整行里，colspan = 8 个实际列。 *}
+        <div class="table-wrap table-scroll" tabindex="0">
+        <table class="data-table data-table-wide">
+            <thead>
+            <tr>
+                <th>{{tr("admin.inventory.moves.col.time", "时间")}}</th>
+                <th>{{tr("admin.inventory.movements.col.item", "货品")}}</th>
+                <th>{{tr("admin.inventory.moves.col.warehouse", "仓库")}}</th>
+                <th>{{tr("admin.inventory.moves.col.direction", "方向")}}</th>
+                <th>{{tr("admin.inventory.moves.col.delta", "变动")}}</th>
+                <th>{{tr("admin.inventory.moves.col.qtyChange", "数量变化")}}</th>
+                <th>{{tr("admin.inventory.moves.col.reason", "原因")}}</th>
+                <th>{{tr("admin.inventory.movements.col.source", "来源 / 操作人")}}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{if len(rows) == 0}}
+            <tr><td colspan="8" class="cell-wrap">
+                {{include "../partials/empty_state.html" map(
+                    "title", tr("admin.inventory.moves.emptyHeading", "没有符合条件的库存流水"),
+                    "desc", tr("admin.inventory.movements.emptyDesc", "库存还没有变动过，或者当前筛选条件把记录都过滤掉了。入库请走采购入库，盘点 / 报损在库存管理页。"))}}
+            </td></tr>
+            {{else}}
+            {{range _, m := rows}}
+            <tr>
+                <td data-label="{{tr("admin.inventory.moves.col.time", "时间")}}">{{formatTime(m.CreatedAt)}}</td>
+                <td data-label="{{tr("admin.inventory.movements.col.item", "货品")}}">
+                    <div class="cell-stack">
+                        {{if m.StockImageURL}}<img class="cell-thumb" src="{{m.StockImageURL}}" alt="" loading="lazy">{{end}}
+                        <span class="cell-title">{{m.StockName}}</span>
+                        <code>{{m.SKUCode}}</code>
+                        {* 单价是变动时刻的成本留痕：空串 = 当时尚未核算（与 0 元严格区分）。 *}
+                        {{if m.UnitCostText}}<span class="move-meta">{{tr("admin.inventory.movements.col.unitCost", "单价")}} {{m.UnitCostText}}</span>{{end}}
+                    </div>
+                </td>
+                <td data-label="{{tr("admin.inventory.moves.col.warehouse", "仓库")}}">{{m.WarehouseName}} <code>{{m.WarehouseCode}}</code></td>
+                <td data-label="{{tr("admin.inventory.moves.col.direction", "方向")}}">{{m.DirectionLabel}}</td>
+                <td data-label="{{tr("admin.inventory.moves.col.delta", "变动")}}">
+                    {* 符号由 service 给（movementRowResp 的 Delta）——
+                       模板不做算术（template_logic_test.go）。 *}
+                    {{if m.Delta > 0}}<span class="move-delta-in">+{{m.Delta}}</span>{{end}}
+                    {{if m.Delta < 0}}<span class="move-delta-out">{{m.Delta}}</span>{{end}}
+                    {{if m.Delta == 0}}<span class="move-delta-none">±0</span>{{end}}
+                </td>
+                <td data-label="{{tr("admin.inventory.moves.col.qtyChange", "数量变化")}}">{{m.QuantityBefore}} → {{m.QuantityAfter}}</td>
+                <td data-label="{{tr("admin.inventory.moves.col.reason", "原因")}}">{{m.ReasonName}} <span class="move-meta">{{m.ReasonCode}}</span></td>
+                <td data-label="{{tr("admin.inventory.movements.col.source", "来源 / 操作人")}}">
+                    {{if m.SourceRef}}{{m.SourceRef}}{{else}}—{{end}}
+                    {{if m.SourceType}}<span class="move-meta">{{m.SourceType}}</span>{{end}}
+                    <span class="move-meta">{{if m.OperatorID}}{{m.OperatorID}}{{else}}—{{end}}</span>
+                    {{if m.Remark}}<span class="move-meta">{{m.Remark}}</span>{{end}}
+                </td>
+            </tr>
+            {{end}}
+            {{end}}
+            </tbody>
+        </table>
+        </div>
+        {* 分页条：基址带当前全部筛选维度（工程 / SKU / 仓 / 方向 / 原因 / 时间区间），
+           翻页不丢条件 —— 丢了条件会让人以为「记录变多了」，实际是筛选被清掉。 *}
+        {{include "../partials/pagination.html"}}
+    </section>
+    {{end}}
+</div>
+{{end}}

@@ -30,6 +30,8 @@ var (
 	inventoryStockBackKeys     = []string{"project", "sku", "variantId", "warehouseId", "direction", "reasonCode", "timeFrom", "timeTo", "page", "limit"}
 	inventoryWarehouseBackKeys = []string{"project"}
 	inventoryReasonBackKeys    = []string{"project"}
+	// 流水独立页的筛选键（B4）：与库存管理页同一套参数名（?sku= / ?timeFrom= 已发布）。
+	inventoryMovementsBackKeys = []string{"project", "sku", "warehouseId", "direction", "reasonCode", "timeFrom", "timeTo", "page", "limit"}
 	// 仓库商品 SKU 台账页的筛选键（迁移 624）。
 	inventorySKUBackKeys = []string{"project", "warehouseId", "keyword", "status", "page", "limit"}
 	// 调拨页的筛选键（迁移 630，W3）。

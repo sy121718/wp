@@ -6,7 +6,7 @@
 -- 更新方式：bash scripts/schema-snapshot.sh
 -- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）
 -- 迁移台账版本：597-block-bulk-delete-grant-copy
--- 生成时间：2026-10-26T20:59:09+08:00
+-- 生成时间：2026-10-26T21:43:52+08:00
 
 --
 -- PostgreSQL database dump
@@ -954,8 +954,8 @@ CREATE TABLE public.inventory_stock_movements (
     id uuid DEFAULT gen_random_uuid() CONSTRAINT inventory_stock_movements_id_not_null1 NOT NULL,
     project_id uuid CONSTRAINT inventory_stock_movements_project_id_not_null1 NOT NULL,
     warehouse_id uuid CONSTRAINT inventory_stock_movements_warehouse_id_not_null1 NOT NULL,
-    product_id uuid CONSTRAINT inventory_stock_movements_product_id_not_null1 NOT NULL,
-    variant_id uuid CONSTRAINT inventory_stock_movements_variant_id_not_null1 NOT NULL,
+    product_id uuid,
+    variant_id uuid,
     sku_code text DEFAULT ''::text CONSTRAINT inventory_stock_movements_sku_code_not_null1 NOT NULL,
     direction text CONSTRAINT inventory_stock_movements_direction_not_null1 NOT NULL,
     quantity integer CONSTRAINT inventory_stock_movements_quantity_not_null1 NOT NULL,
@@ -973,6 +973,8 @@ CREATE TABLE public.inventory_stock_movements (
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
     stock_id uuid,
+    stock_name text DEFAULT ''::text NOT NULL,
+    stock_image_url text DEFAULT ''::text NOT NULL,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -990,8 +992,8 @@ CREATE TABLE public.inventory_stock_movements_2026_09 (
     id uuid DEFAULT gen_random_uuid() CONSTRAINT inventory_stock_movements_id_not_null1 NOT NULL,
     project_id uuid CONSTRAINT inventory_stock_movements_project_id_not_null1 NOT NULL,
     warehouse_id uuid CONSTRAINT inventory_stock_movements_warehouse_id_not_null1 NOT NULL,
-    product_id uuid CONSTRAINT inventory_stock_movements_product_id_not_null1 NOT NULL,
-    variant_id uuid CONSTRAINT inventory_stock_movements_variant_id_not_null1 NOT NULL,
+    product_id uuid,
+    variant_id uuid,
     sku_code text DEFAULT ''::text CONSTRAINT inventory_stock_movements_sku_code_not_null1 NOT NULL,
     direction text CONSTRAINT inventory_stock_movements_direction_not_null1 NOT NULL,
     quantity integer CONSTRAINT inventory_stock_movements_quantity_not_null1 NOT NULL,
@@ -1009,6 +1011,8 @@ CREATE TABLE public.inventory_stock_movements_2026_09 (
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
     stock_id uuid,
+    stock_name text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_name_not_null NOT NULL,
+    stock_image_url text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_image_url_not_null NOT NULL,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -1025,8 +1029,8 @@ CREATE TABLE public.inventory_stock_movements_2026_10 (
     id uuid DEFAULT gen_random_uuid() CONSTRAINT inventory_stock_movements_id_not_null1 NOT NULL,
     project_id uuid CONSTRAINT inventory_stock_movements_project_id_not_null1 NOT NULL,
     warehouse_id uuid CONSTRAINT inventory_stock_movements_warehouse_id_not_null1 NOT NULL,
-    product_id uuid CONSTRAINT inventory_stock_movements_product_id_not_null1 NOT NULL,
-    variant_id uuid CONSTRAINT inventory_stock_movements_variant_id_not_null1 NOT NULL,
+    product_id uuid,
+    variant_id uuid,
     sku_code text DEFAULT ''::text CONSTRAINT inventory_stock_movements_sku_code_not_null1 NOT NULL,
     direction text CONSTRAINT inventory_stock_movements_direction_not_null1 NOT NULL,
     quantity integer CONSTRAINT inventory_stock_movements_quantity_not_null1 NOT NULL,
@@ -1044,6 +1048,8 @@ CREATE TABLE public.inventory_stock_movements_2026_10 (
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
     stock_id uuid,
+    stock_name text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_name_not_null NOT NULL,
+    stock_image_url text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_image_url_not_null NOT NULL,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -1060,8 +1066,8 @@ CREATE TABLE public.inventory_stock_movements_2026_11 (
     id uuid DEFAULT gen_random_uuid() CONSTRAINT inventory_stock_movements_id_not_null1 NOT NULL,
     project_id uuid CONSTRAINT inventory_stock_movements_project_id_not_null1 NOT NULL,
     warehouse_id uuid CONSTRAINT inventory_stock_movements_warehouse_id_not_null1 NOT NULL,
-    product_id uuid CONSTRAINT inventory_stock_movements_product_id_not_null1 NOT NULL,
-    variant_id uuid CONSTRAINT inventory_stock_movements_variant_id_not_null1 NOT NULL,
+    product_id uuid,
+    variant_id uuid,
     sku_code text DEFAULT ''::text CONSTRAINT inventory_stock_movements_sku_code_not_null1 NOT NULL,
     direction text CONSTRAINT inventory_stock_movements_direction_not_null1 NOT NULL,
     quantity integer CONSTRAINT inventory_stock_movements_quantity_not_null1 NOT NULL,
@@ -1079,6 +1085,8 @@ CREATE TABLE public.inventory_stock_movements_2026_11 (
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
     stock_id uuid,
+    stock_name text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_name_not_null NOT NULL,
+    stock_image_url text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_image_url_not_null NOT NULL,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -1095,8 +1103,8 @@ CREATE TABLE public.inventory_stock_movements_2026_12 (
     id uuid DEFAULT gen_random_uuid() CONSTRAINT inventory_stock_movements_id_not_null1 NOT NULL,
     project_id uuid CONSTRAINT inventory_stock_movements_project_id_not_null1 NOT NULL,
     warehouse_id uuid CONSTRAINT inventory_stock_movements_warehouse_id_not_null1 NOT NULL,
-    product_id uuid CONSTRAINT inventory_stock_movements_product_id_not_null1 NOT NULL,
-    variant_id uuid CONSTRAINT inventory_stock_movements_variant_id_not_null1 NOT NULL,
+    product_id uuid,
+    variant_id uuid,
     sku_code text DEFAULT ''::text CONSTRAINT inventory_stock_movements_sku_code_not_null1 NOT NULL,
     direction text CONSTRAINT inventory_stock_movements_direction_not_null1 NOT NULL,
     quantity integer CONSTRAINT inventory_stock_movements_quantity_not_null1 NOT NULL,
@@ -1114,6 +1122,8 @@ CREATE TABLE public.inventory_stock_movements_2026_12 (
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
     stock_id uuid,
+    stock_name text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_name_not_null NOT NULL,
+    stock_image_url text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_image_url_not_null NOT NULL,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -1130,8 +1140,8 @@ CREATE TABLE public.inventory_stock_movements_2027_01 (
     id uuid DEFAULT gen_random_uuid() CONSTRAINT inventory_stock_movements_id_not_null1 NOT NULL,
     project_id uuid CONSTRAINT inventory_stock_movements_project_id_not_null1 NOT NULL,
     warehouse_id uuid CONSTRAINT inventory_stock_movements_warehouse_id_not_null1 NOT NULL,
-    product_id uuid CONSTRAINT inventory_stock_movements_product_id_not_null1 NOT NULL,
-    variant_id uuid CONSTRAINT inventory_stock_movements_variant_id_not_null1 NOT NULL,
+    product_id uuid,
+    variant_id uuid,
     sku_code text DEFAULT ''::text CONSTRAINT inventory_stock_movements_sku_code_not_null1 NOT NULL,
     direction text CONSTRAINT inventory_stock_movements_direction_not_null1 NOT NULL,
     quantity integer CONSTRAINT inventory_stock_movements_quantity_not_null1 NOT NULL,
@@ -1149,6 +1159,8 @@ CREATE TABLE public.inventory_stock_movements_2027_01 (
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
     stock_id uuid,
+    stock_name text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_name_not_null NOT NULL,
+    stock_image_url text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_image_url_not_null NOT NULL,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))
@@ -1165,8 +1177,8 @@ CREATE TABLE public.inventory_stock_movements_default (
     id uuid DEFAULT gen_random_uuid() CONSTRAINT inventory_stock_movements_id_not_null1 NOT NULL,
     project_id uuid CONSTRAINT inventory_stock_movements_project_id_not_null1 NOT NULL,
     warehouse_id uuid CONSTRAINT inventory_stock_movements_warehouse_id_not_null1 NOT NULL,
-    product_id uuid CONSTRAINT inventory_stock_movements_product_id_not_null1 NOT NULL,
-    variant_id uuid CONSTRAINT inventory_stock_movements_variant_id_not_null1 NOT NULL,
+    product_id uuid,
+    variant_id uuid,
     sku_code text DEFAULT ''::text CONSTRAINT inventory_stock_movements_sku_code_not_null1 NOT NULL,
     direction text CONSTRAINT inventory_stock_movements_direction_not_null1 NOT NULL,
     quantity integer CONSTRAINT inventory_stock_movements_quantity_not_null1 NOT NULL,
@@ -1184,6 +1196,8 @@ CREATE TABLE public.inventory_stock_movements_default (
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_stock_movements_created_at_not_null1 NOT NULL,
     unit_cost numeric(12,2),
     stock_id uuid,
+    stock_name text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_name_not_null NOT NULL,
+    stock_image_url text DEFAULT ''::text CONSTRAINT inventory_stock_movements_stock_image_url_not_null NOT NULL,
     CONSTRAINT inventory_stock_movements_after_check CHECK ((quantity_after >= 0)),
     CONSTRAINT inventory_stock_movements_direction_check CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text, 'adjust'::text]))),
     CONSTRAINT inventory_stock_movements_quantity_check CHECK ((quantity > 0))

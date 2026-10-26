@@ -44,14 +44,22 @@ type StockByWarehouseRowResp struct {
 // 字段是这条流水的完整快照（含模板暂时没展示的 Remark / BatchID）：流水是审计，
 // 少一列不影响渲染但会让「界面上看不到的那部分」无从追查。
 type MovementRowResp struct {
-	ID            string
-	SKUCode       string
+	ID      string
+	StockID string
+	SKUCode string
+	// StockName / StockImageURL 是变动时刻的货品快照（迁移 646）：流水是审计，
+	// 货行之后改名换图都不改写历史。空串 = 当时没有主档信息（迁移 642 之前的行）。
+	StockName     string
+	StockImageURL string
 	WarehouseName string
 	WarehouseCode string
 	Direction     string
 	// DirectionLabel 方向的中文（模板只用来显示，判断仍按 Direction）。
 	DirectionLabel string
 	Quantity       int
+	// Delta 是带符号的实际变化量（out 为负）：模板按它决定符号与配色，
+	// 不在模板里做算术（template_logic_test.go）。
+	Delta          int
 	QuantityBefore int
 	QuantityAfter  int
 	ReasonName     string
@@ -61,7 +69,10 @@ type MovementRowResp struct {
 	Remark         string
 	OperatorID     string
 	BatchID        string
-	CreatedAt      string
+	// UnitCostText 变动时刻的成本（元，已成型）；空串 = 当时尚未核算。
+	// 与「0 元」严格区分：0 是合法的显式成本（赠品 / 内部划拨）。
+	UnitCostText string
+	CreatedAt    string
 }
 
 // WarehouseRowResp 仓库行（仓库管理页的表格与各页的仓库下拉共用）。//
