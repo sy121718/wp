@@ -518,12 +518,6 @@ const (
 	PageRevisionList Perm = "page:revision_list"
 	// 回滚页面（POST /api/page/rollback）
 	PageRollback Perm = "page:rollback"
-	// 排定定时下线（POST /api/page/schedule/cancel）
-	PageScheduleCancel Perm = "page:schedule_cancel"
-	// 排定列表（GET /api/page/schedule/list）
-	PageScheduleList Perm = "page:schedule_list"
-	// 排定定时上线 / 下线（POST /api/page/schedule/set）
-	PageScheduleSet Perm = "page:schedule_set"
 	// SEO 合规巡检（GET /api/page/seo/patrol）
 	PageSEOPatrol Perm = "page:seo_patrol"
 	// 绑定系统页面（POST /api/page/site-slot/bind）
@@ -1084,9 +1078,6 @@ var specs = map[Perm]spec{
 	PageRedirectView:     {module: "page", name: "重定向列表"},
 	PageRevisionList:     {module: "page", name: "修订记录"},
 	PageRollback:         {module: "page", name: "回滚页面"},
-	PageScheduleCancel:   {module: "page", name: "取消定时上下线"},
-	PageScheduleList:     {module: "page", name: "定时上下线列表"},
-	PageScheduleSet:      {module: "page", name: "排定定时上下线"},
 	PageSEOPatrol:        {module: "page", name: "SEO 合规巡检"},
 	PageSiteSlotBind:     {module: "page", name: "绑定系统页面"},
 	PageSiteSlotList:     {module: "page", name: "系统页面槽位列表"},

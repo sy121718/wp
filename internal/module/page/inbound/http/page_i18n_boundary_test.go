@@ -24,7 +24,6 @@ func TestControllerI18nBoundary(t *testing.T) {
 	allow := map[string]string{
 		"pages_handle.go":         "JSON 出口成品串：错误事实的 Tail 复合形态（多段拼接）",
 		"page_jump.go":            "提示页出口（RenderJump 那条链要成品串）+ Tail 复合形态",
-		"page_schedule_handle.go": "JSON 出口成品串：定时保存失败原因要嵌进响应体的整句",
 	}
 
 	hits := scanControllerTranslate(t)

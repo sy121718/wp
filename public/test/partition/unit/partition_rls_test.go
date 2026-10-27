@@ -11,12 +11,10 @@ package unit
 //   2. 迁移 507 能**修**缺口，且**不假定策略名**（全库存在 4 个策略名，按名字过滤会误判）；
 //   3. EnsureAhead 重建 DEFAULT 分区时**不留下没有策略的兜底桶** —— 这是本批次发现的
 //      第二个缺口：建表走 CREATE TABLE IF NOT EXISTS，稳态不重建，所以缺口平时看不出来，
-//      但一旦该分区被手工删掉，重建出来的那个恰好是数据兜底落点；
-//   4. 迁移 506 补的索引**真的被用上且满足排序**（不是「DDL 跑过了」就算数）。
+//      但一旦该分区被手工删掉，重建出来的那个恰好是数据兜底落点。
 
 import (
 	"context"
-	json "go_wp/pkg/jsonx"
 	"os"
 	"strings"
 	"testing"
@@ -354,86 +352,6 @@ func TestAuditRLSCoverageWhitelist(t *testing.T) {
 	t.Logf("受检 %d 张带 project_id 的基表，豁免 2 张后缺口 0 处", checked)
 }
 
-// TestPageSchedulesPageIndexSatisfiesOrderBy 506 的索引必须真的满足那条查询的「等值 + 排序」。
-//
-// 判据不是「索引存在」（那是 DDL 断言，看不出有没有用），而是 EXPLAIN 计划：
-//   - 走 idx_page_schedules_page_created；
-//   - 计划里**没有 Sort 节点** —— 这才证明排序由索引满足，而不是「取回整批再排」。
-//     少了后半条，「索引加了但每次查询仍要排序」会被漏过：收益打折而没有任何信号。
-//
-// 数据分布是判据的一部分：3000 行集中在 5 个 page_id 上（模拟一个页面有多条历史排定），
-// 且必须先 ANALYZE —— 空表上优化器必然选 Seq Scan，那种 EXPLAIN 不构成证据。
-//
-// 实测对照（真库，2026-10，3000 行 + ANALYZE）：
-//
-//	本查询                                          → Index Scan using idx_page_schedules_page_created，**无 Sort**
-//	ListSchedulesForPages（page_id IN + status IN …）→ 仍走 idx_page_schedules_due + Sort
-//
-// 后者不是缺陷：终态行占绝大多数时，status 索引只扫回极少数行，比按 page_id 取回
-// 每个页面的全部历史更便宜，优化器选得对。本索引的真正受益者是前者（面板片段，
-// 全状态 + LIMIT 50）—— 460 那条 PARTIAL 索引恰恰覆盖不到终态行。
-func TestPageSchedulesPageIndexSatisfiesOrderBy(t *testing.T) {
-	db := newPartitionFixture(t)
-
-	if err := db.Exec(`INSERT INTO page_schedules
-		(page_id, lang, action, scheduled_at, status, draft_version, create_time, update_time)
-		SELECT ('00000000-0000-0000-0000-00000000000' || (i % 5))::uuid, 'zh-CN', 'publish',
-		       now() - (i || ' minutes')::interval, 'done', 1,
-		       now() - (i || ' minutes')::interval, now()
-		  FROM generate_series(1, 3000) AS i`).Error; err != nil {
-		t.Fatalf("造测试数据失败: %v", err)
-	}
-	if err := db.Exec("ANALYZE page_schedules").Error; err != nil {
-		t.Fatalf("ANALYZE 失败: %v", err)
-	}
-
-	var planJSON string
-	if err := db.Raw("EXPLAIN (FORMAT JSON) SELECT * FROM page_schedules"+
-		" WHERE page_id = ?::uuid ORDER BY create_time DESC, id DESC LIMIT 50",
-		"00000000-0000-0000-0000-000000000001").Scan(&planJSON).Error; err != nil {
-		t.Fatalf("EXPLAIN 失败: %v", err)
-	}
-
-	nodes := explainNodeTypes(t, planJSON)
-	t.Logf("计划节点：%v", nodes)
-
-	if !strings.Contains(planJSON, "idx_page_schedules_page_created") {
-		t.Errorf("计划没有用上 idx_page_schedules_page_created（506 的索引形同虚设）：\n%s", planJSON)
-	}
-	for _, n := range nodes {
-		if n == "Sort" {
-			t.Errorf("计划里出现 Sort 节点：索引没有满足 ORDER BY create_time DESC, id DESC\n%s", planJSON)
-		}
-	}
-}
-
-// explainNodeTypes 递归收集 EXPLAIN (FORMAT JSON) 计划里的所有 Node Type。
-func explainNodeTypes(t *testing.T, planJSON string) []string {
-	t.Helper()
-	var decoded any
-	if err := json.Unmarshal([]byte(planJSON), &decoded); err != nil {
-		t.Fatalf("解析 EXPLAIN JSON 失败: %v\n原始输出：%s", err, planJSON)
-	}
-	var out []string
-	var walk func(v any)
-	walk = func(v any) {
-		switch node := v.(type) {
-		case map[string]any:
-			if name, ok := node["Node Type"].(string); ok {
-				out = append(out, name)
-			}
-			for _, child := range node {
-				walk(child)
-			}
-		case []any:
-			for _, child := range node {
-				walk(child)
-			}
-		}
-	}
-	walk(decoded)
-	return out
-}
 
 // TestEnsureAheadReconcilesArbitraryPolicyShapes EnsureAhead 用的判据必须与迁移 507 同一份。
 //

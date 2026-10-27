@@ -18,7 +18,7 @@ func TestCatalogCoversGrowthTables(t *testing.T) {
 		"page_views", "inventory_stock_movements", "mail_campaign_events", "mail_logs",
 		"master_data_changes", "page_revisions", "page_artifacts", "artifacts 磁盘目录",
 		"order_status_logs", "sys_translation", "mail_automation_node_logs",
-		"product_ratings", "page_views_daily", "page_schedules",
+		"product_ratings", "page_views_daily",
 		// content_objects（审计 IDX-016）：实现早就在（artifact 的内容对象 GC，
 		// 挂在 page 每日任务的产物 GC 上），声明与这里的 want 却都没有它 ——
 		// 于是「新增增长表必须声明保留期」这条不变量对这张表静默失效。

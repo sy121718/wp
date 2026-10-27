@@ -36,38 +36,13 @@ func TestPagePresentationHasNoBackendUIHelpers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ast.Inspect(f, func(n ast.Node) bool {
-		lit, ok := n.(*ast.CompositeLit)
-		if !ok {
-			return true
-		}
-		ident, ok := lit.Type.(*ast.Ident)
-		if !ok || ident.Name != "pagedto.ScheduleResp" {
-			return true
-		}
-		for _, elt := range lit.Elts {
-			kv, ok := elt.(*ast.KeyValueExpr)
-			if !ok {
-				continue
-			}
-			key, ok := kv.Key.(*ast.Ident)
-			if !ok || (key.Name != "Action" && key.Name != "Status") {
-				continue
-			}
-			sel, ok := kv.Value.(*ast.SelectorExpr)
-			if !ok || sel.Sel.Name != key.Name {
-				t.Errorf("schedule %s must carry item fact", key.Name)
-			}
-		}
-		return true
-	})
 	for _, decl := range f.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok {
 			continue
 		}
 		switch fn.Name.Name {
-		case "siteSlotBindLabel", "scheduleActionText", "scheduleStatusText", "translationOriginText", "reuseHint":
+		case "siteSlotBindLabel", "translationOriginText", "reuseHint":
 			t.Errorf("UI helper remains in backend: %s", fn.Name.Name)
 		}
 	}

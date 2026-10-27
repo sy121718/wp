@@ -87,14 +87,6 @@ func (f *filterPageList) List(_ context.Context, req *pagedto.ListReq) ([]pagedt
 //
 // 必须**显式实现**：内嵌的 nil 接口不会兜住它 —— 方法集包含（提升）不等于有实现，
 // 调用即 panic，症状是整组筛选用例以「nil pointer dereference」失败。
-// ListSchedulesForPages 行内排定投影。
-//
-// 与 ListStalePages 同一条教训：内嵌 nil 接口不兜住提升方法，调用即 panic。
-// 返回空表 = 「这批页面没有排定」，正是默认场景。
-func (f *filterPageList) ListSchedulesForPages(context.Context, []string) (map[string]pagedto.SchedulePageSummaryResp, error) {
-	return map[string]pagedto.SchedulePageSummaryResp{}, nil
-}
-
 func (f *filterPageList) ListStalePages(_ context.Context, req *pagedto.StalePageListReq) (*pagedto.StalePageListResp, error) {
 	f.staleGot = req
 	if f.staleErr != nil {

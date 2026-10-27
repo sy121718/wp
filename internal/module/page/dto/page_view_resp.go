@@ -27,25 +27,6 @@ type PageLangResp struct {
 	NoteFallback string
 }
 
-// ScheduleResp 只交动作与状态事实；Note 是受控业务错误译文。
-type ScheduleResp struct {
-	ID     int64
-	Action string
-	Lang   string
-	// ScheduledAt 到点时刻（事实）：格式由模板的 dateTime() 决定。
-	ScheduledAt utils.JSONTime
-	Status      string
-	Attempts    int
-	// NoteKey / NoteFallback 失败原因的**事实**（写侧只写 key，读侧按 key 取词）。
-	//
-	// 为什么行上不放成品串：与 Note 一起交出去的还有「用哪种语言说」这个决定，
-	// 而语言是请求级的 —— 取词放在模板（片段拿到 adminui.PrepareBare 注入的 tr）。
-	NoteKey      string
-	NoteFallback string
-	// CanCancel 只有 pending 能取消（running 已在执行、终态没有可取消的东西）。
-	CanCancel bool
-}
-
 // PageRowResp 列表行投影：时间交事实，UI 文案由 Jet 选择。
 type PageRowResp struct {
 	ID        string
@@ -57,20 +38,6 @@ type PageRowResp struct {
 	Stale     bool
 	Version   int64
 	UpdatedAt utils.JSONTime
-
-	// 定时上下线（PIPE-7）的行内投影：有待执行排定时显示「已排定 + 到点时刻」，
-	// 有失败排定时显示「排定失败 + 原因」。
-	//
-	// 取词仍在 Go 侧（失败原因是受控错误枚举 → 当前语言文案），**时间交事实**：
-	// SchedulePendingAt 是时间对象，站点时区与格式由模板的 siteDateTime 决定
-	//（task-108 迁移；档位同理由模板按事实选，模板是磁盘热读文件，判据写进模板会漂移）。
-	SchedulePendingAt *utils.JSONTime
-	// ScheduleFailedKey / ScheduleFailedFallback 排定失败原因的**事实**（行上不放成品串：
-	// 徽标的 title 由模板按当前请求语言取词）。
-	ScheduleFailedKey      string
-	ScheduleFailedFallback string
-	// ScheduleAlert 是否有需要运营看一眼的失败排定（模板据此选徽标样式）。
-	ScheduleAlert bool
 
 	// LangScope 按语言维度筛选时，本行在**那一门语言**下的产出状态（空 = 本次没按语言筛，
 	// 行上不该出现语言徽标）。

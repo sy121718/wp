@@ -65,7 +65,6 @@ var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/order/inbound/http/sales_page.go":                          {offenders: 1, max: 22},
 	"internal/module/page/inbound/http/page_langs_handle.go":                    {offenders: 1, max: 11},
 	"internal/module/page/inbound/http/page_redirect.go":                        {offenders: 1, max: 10},
-	"internal/module/page/inbound/http/page_schedule_handle.go":                 {offenders: 3, max: 10},
 	"internal/module/page/inbound/http/page_site_slot_handle.go":                {offenders: 2, max: 18},
 	"internal/module/page/inbound/http/page_translations_handle.go":             {offenders: 3, max: 52},
 	"internal/module/page/inbound/http/pages_handle.go":                         {offenders: 8, max: 18},

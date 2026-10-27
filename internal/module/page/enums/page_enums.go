@@ -250,56 +250,6 @@ func ValidatePageContentContract(kind, targetType string, targetID *string) bool
 	}
 }
 
-// —— 定时上下线（PIPE-7）——
-//
-// 业务错误 key：与其它 Err* 同族（值即 i18n key，读侧取词后展示）。
-// 到点执行失败时的 last_error 也存这一族的 key（见 ScheduleFailureFallbacks）——
-// page_schedules.last_error 会显示在后台，存原文等于把内部错误摆到页面上。
-const (
-	// ErrScheduleNotFound 这条排定不存在（或不属于该页面）。
-	ErrScheduleNotFound = "ErrScheduleNotFound" // 排定不存在
-	// ErrScheduleInPast 排定时间必须晚于当前时刻（「到点」已经过去 = 这次排定永远不会执行）。
-	ErrScheduleInPast = "ErrScheduleInPast" // 排定时间必须晚于当前时刻
-	// ErrScheduleActionInvalid 排定动作不在白名单内（只接受 publish / offline）。
-	ErrScheduleActionInvalid = "ErrScheduleActionInvalid" // 排定动作不合法
-	// ErrScheduleRunning 这条排定正在执行（已被认领），无法取消。
-	ErrScheduleRunning = "ErrScheduleRunning" // 排定正在执行，无法取消
-	// ErrScheduleOccupied 该页面该语言已有待执行 / 执行中的同类排定。
-	//
-	// 与「重排」的区别：同动作的 pending 会被新排定**取代**（旧决策作废，不报错），
-	// 只有 running 才拒绝 —— 执行者手上还拿着那一条的租约与快照。
-	ErrScheduleOccupied = "ErrScheduleOccupied" // 同类排定正在执行，请稍后再试
-	// ErrScheduleApplyFailed 到点执行失败的**归口** key（内部错误统一用它，
-	// 原文只进日志；具体可归因的失败用更精确的 key，如 ErrRebuildRequired）。
-	ErrScheduleApplyFailed = "ErrScheduleApplyFailed" // 排定执行失败，请查看服务日志
-)
-
-const (
-	// MsgScheduleSet 排定成功（到点自动执行）。
-	MsgScheduleSet = "MsgScheduleSet" // 已排定，到点自动执行
-	// MsgScheduleCanceled 排定已取消。
-	MsgScheduleCanceled = "MsgScheduleCanceled" // 排定已取消
-)
-
-// ScheduleFailureFallbacks 到点执行失败的 last_error 词条 → 中文兜底。
-//
-// 与 ErrDetailFallbacks（page_err_detail.go）同形：键是写侧写进 page_schedules.last_error 的
-// 取值集合，值是 i18n 未初始化 / 词条缺失时页面上显示的原文。
-//
-// **两个消费者共用这一份**：service 写 last_error 时只写 key（不写原文），
-// 后台读侧（pages_handle.go 的排定投影）用本表取词 —— 两边各抄一份清单的下场是
-// 「新增一个失败原因，页面上显示成裸 key」且不报错。
-//
-// 取值刻意全是既有业务错误 key（不加新词条即可用）：到点失败的两类成因就是
-// 「产物不再代表当前草稿」与「访问面/占用出问题」，它们的文案早已存在。
-var ScheduleFailureFallbacks = map[string]string{
-	ErrRebuildRequired:     "草稿已变更，请重新构建后再发布",
-	ErrNoStagedArtifact:    "无暂存产物，请先构建",
-	ErrPathOccupied:        "页面访问路径已被占用",
-	ErrPageNotFound:        "页面不存在",
-	ErrScheduleApplyFailed: "排定执行失败，请查看服务日志",
-}
-
 // errFallbacks 错误 key → 中文兜底（**与 sys_i18n 的 zh-CN 词条逐字一致**）。
 //
 // 兜底跟**声明处**走（pkg/facing.New），出口只调一次 facing.FactOf。词条库读不到时
@@ -334,12 +284,6 @@ var errFallbacks = map[string]string{
 	ErrRedirectOccupied:         "源路径已被占用，不能为它重复配置重定向",
 	ErrRedirectTargetMiss:       "目标路径不存在或尚未激活，请先确认目标页面已发布",
 	ErrRedirectLoop:             "该重定向会形成循环跳转，已拒绝",
-	ErrScheduleNotFound:         "排定不存在",
-	ErrScheduleInPast:           "排定时间必须晚于当前时刻",
-	ErrScheduleActionInvalid:    "排定动作不合法（只支持上线与下线）",
-	ErrScheduleRunning:          "排定正在执行，无法取消",
-	ErrScheduleOccupied:         "同类排定正在执行，请稍后再试",
-	ErrScheduleApplyFailed:      "排定执行失败，请查看服务日志",
 }
 
 // Err 声明一条自带对外文案的业务错误（兜底与本表同源）。

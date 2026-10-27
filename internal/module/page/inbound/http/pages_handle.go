@@ -247,7 +247,7 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 	if err != nil {
 		return nil, err
 	}
-	rows := h.pageRowsOf(ctx, pages)
+	rows := h.pageRowsOf(pages)
 	// 语言维度（筛选栏的第二、三项）：候选来自站点启用语言，选中值必须在这份清单里。
 	langOptions, langStates, selectedLang := pageListLangFilter(h.enabledLangsOf(ctx, projectID), filter.Lang, filter.State)
 	// 待收敛回执观测（只读）：读取失败只记日志，页面照常渲染 ——
@@ -286,25 +286,10 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 	}, nil
 }
 
-// pageRowsOf 把 service 的页面摘要映射成列表行（含两个附加投影：排定 / 语言维度状态）。
+// pageRowsOf 把 service 的页面摘要映射成列表行。
 //
-// 两个附加投影都是**只读观测**，读不到只记日志：缺的是一两枚徽标，不是列表本身 ——
-// 让整张列表页 500 反而把「列表还能用」这个事实也弄丢了。
-func (h *pagesAdminHandle) pageRowsOf(ctx context.Context, pages []pagedto.PageResp) []pagedto.PageRowResp {
-	// 排定投影（PIPE-7）：一次批量取回这批页面的待执行 / 最近失败记录。
-	schedules := map[string]pagecontract.SchedulePageSummaryResp{}
-	pageIDs := make([]string, 0, len(pages))
-	for i := range pages {
-		pageIDs = append(pageIDs, pages[i].ID)
-	}
-	if len(pageIDs) > 0 {
-		got, serr := h.pages.ListSchedulesForPages(ctx, pageIDs)
-		if serr != nil {
-			logger.Scene("page").Error(serr, "读取页面排定投影失败（列表页不显示定时徽标）")
-		} else {
-			schedules = got
-		}
-	}
+// 纯映射：不取附加数据、不查库 —— 行的每个字段都来自 service 交回的摘要本身。
+func (h *pagesAdminHandle) pageRowsOf(pages []pagedto.PageResp) []pagedto.PageRowResp {
 	rows := make([]pagedto.PageRowResp, 0, len(pages))
 	for _, p := range pages {
 		row := pagedto.PageRowResp{
@@ -312,14 +297,6 @@ func (h *pagesAdminHandle) pageRowsOf(ctx context.Context, pages []pagedto.PageR
 			DraftPath: p.DraftPath, Active: p.ActiveArtifactID != nil,
 			Staged: p.StagedArtifactID != nil, Stale: p.Stale,
 			Version: p.DraftVersion, UpdatedAt: p.UpdatedAt,
-		}
-		if summary, ok := schedules[p.ID]; ok {
-			row.SchedulePendingAt = schedulePendingAt(summary.Pending)
-			if summary.Failed != nil {
-				row.ScheduleAlert = true
-				failure := scheduleFailureFact(summary.Failed.LastError)
-				row.ScheduleFailedKey, row.ScheduleFailedFallback = failure.Key, failure.Fallback
-			}
 		}
 		// 按语言筛选时每行带上「这一门语言在这页是什么状态」：徽标让用户确认
 		// 「我筛的是已发布，眼前这行确实有 en-US 的线上页面」，而不是只信筛选条件。
@@ -836,14 +813,8 @@ func pageErrorStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, pageservice.ErrDraftVersionConflict),
 		errors.Is(err, pageservice.ErrPathOccupied),
-		errors.Is(err, pageservice.ErrRebuildRequired),
-		// 定时上下线（PIPE-7）：正在执行的排定不能被取消 —— 与「草稿已变更」同属
-		// 「当前状态与请求冲突，刷新后重试」，而不是调用方写错了参数。
-		errors.Is(err, pageservice.ErrScheduleOccupied),
-		errors.Is(err, pageservice.ErrScheduleRunning):
+		errors.Is(err, pageservice.ErrRebuildRequired):
 		return http.StatusConflict
-	case errors.Is(err, pageservice.ErrScheduleNotFound):
-		return http.StatusNotFound
 	// 页面级语言排除（迁移 491）：「这一页不产出该语言」/「默认语言不能排除」都是
 	// **当前状态与请求冲突**（刷新后能看到真实状态），不是调用方写错参数，
 	// 也不是内部故障 —— 归到 409 与排定占用同一档，前端据此给"可展示的业务文案"。
@@ -858,10 +829,7 @@ func pageErrorStatus(err error) int {
 		errors.Is(err, pageservice.ErrInvalidPath),
 		// DB-009 第三批：跨工程扇出入口在「工程表读不到 / 一个工程都没有」时显式失败，
 		// 这是调用环境的问题（400）而不是内部故障（500）—— 它不该被兜底文案吞掉。
-		errors.Is(err, pageservice.ErrProjectRequired),
-		// 定时上下线（PIPE-7）：排定时间在过去 / 动作不在白名单内都属于请求本身不合法。
-		errors.Is(err, pageservice.ErrScheduleInPast),
-		errors.Is(err, pageservice.ErrScheduleActionInvalid):
+		errors.Is(err, pageservice.ErrProjectRequired):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

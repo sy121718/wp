@@ -48,7 +48,7 @@ func TestParseDayRejectsBadInput(t *testing.T) {
 
 // TestParseDateTimeUsesSiteTimezone 「日期 + 时刻」按站点时区解释（审计 TX-011 的口径）。
 //
-// 这是定时上下线的排定入口依赖的判据：同一条字面量「2026-09-30 10:00」在 Asia/Shanghai
+// 这是后台「日期 + 时刻」输入（如排期类表单）依赖的判据：同一条字面量「2026-09-30 10:00」在 Asia/Shanghai
 // 与 UTC 下必须是两个不同的绝对时刻 —— 若实现走 time.Local 或 UTC，部署固定时区之后
 // 到点时刻会整体偏移几个小时，而且不报任何错（排定看起来成功了）。
 func TestParseDateTimeUsesSiteTimezone(t *testing.T) {
