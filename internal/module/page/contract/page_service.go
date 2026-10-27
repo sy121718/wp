@@ -266,6 +266,10 @@ type PageService interface {
 
 	Create(ctx context.Context, req *pagedto.CreateReq) (res *pagedto.PageResp, err error)
 	// List 列出页面摘要（必须带 projectID；themeID 可选过滤主题）。
+	//
+	// 多一层可选的**语言维度**：req.Lang 非空时只返回该语言处于 req.LangState 状态的页面
+	// （空状态 = 已发布），并把每行的 LangStatus 填好。判据与工作台的行状态同源
+	// （pageenums.LangStatusOf），两个屏对同一页同一语言不会给出两种说法。
 	List(ctx context.Context, req *pagedto.ListReq) (res []pagedto.PageResp, err error)
 	// —— 页面级语言排除（迁移 491）——
 

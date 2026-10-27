@@ -40,6 +40,7 @@ import (
 	projectenums "go_wp/internal/module/project/enums"
 	"go_wp/internal/shell"
 	bulkids "go_wp/pkg/bulkids"
+	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"go_wp/pkg/utils"
@@ -153,6 +154,20 @@ type pagesPageData struct {
 	// 判据写在模板里会随两边不同步而漂移（与 ReceiptKnown 同一理由）。
 	FilteredProject bool
 
+	// LangOptions 站点启用语言（筛选栏「语言」下拉的候选；默认语言在前）。
+	//
+	// 空切片 / 只有一种语言 = 没有可筛的东西：那时整条语言筛选不渲染。
+	LangOptions []pagedto.PageListLangOptionResp
+	// LangStateOptions 该语言的产出状态候选（与行徽标同一套取值与词条）。
+	LangStateOptions []pagedto.PageListStateOptionResp
+	// SelectedLang 当前筛的语言（空 = 没有按语言筛）。
+	SelectedLang string
+	// FilteredLang 用户是否**指定**了语言（?lang= 命中启用语言清单）。
+	//
+	// 与 FilteredProject 同一用途：空态要能说「这个语言下一页都没有」而不是
+	// 「还没有页面」—— 后者会让用户以为站点是空的，然后去建重复的页。
+	FilteredLang bool
+
 	// StaleOverview 全站待重建区块的渲染数据（只读观测，取数见 staleOverview）。
 	//
 	// 三种状态由**键 + Available** 一起表达，模板只读它们、不做取数：
@@ -208,8 +223,15 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 	if err != nil {
 		return nil, err
 	}
+	// 筛选栏的三项走 binding（键名只在 DTO 里有一份）。解析失败不把整页变成 400：
+	// 三个键都不是必填，退化成「没有筛选」仍是可用的列表（与 focusProjectID 同一口径）。
+	filter, ferr := binding.ParseQuery[pagedto.PageListQueryReq](c)
+	if ferr != nil {
+		logger.Scene("page").With("err", ferr).Warn("页面列表筛选参数解析失败，按无筛选渲染")
+		filter = &pagedto.PageListQueryReq{}
+	}
 	// 第一步：定位当前聚焦工程（筛选栏的输入）。
-	projectID, filteredProject := focusProjectID(projects, c.Query("project"))
+	projectID, filteredProject := focusProjectID(projects, filter.Project)
 	// 第二步：取该工程的激活主题。
 	themeID := ""
 	if projectID != "" {
@@ -217,14 +239,59 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 			themeID = theme.ID
 		}
 	}
-	// 第三步：按聚焦工程与激活主题取页面。
-	pages, err := h.pages.List(ctx, &pagecontract.ListReq{ProjectID: projectID, ThemeID: themeID})
+	// 第三步：按聚焦工程、激活主题与语言维度取页面。
+	pages, err := h.pages.List(ctx, &pagecontract.ListReq{
+		ProjectID: projectID, ThemeID: themeID,
+		Lang: filter.Lang, LangState: filter.State,
+	})
 	if err != nil {
 		return nil, err
 	}
+	rows := h.pageRowsOf(ctx, pages)
+	// 语言维度（筛选栏的第二、三项）：候选来自站点启用语言，选中值必须在这份清单里。
+	langOptions, langStates, selectedLang := pageListLangFilter(h.enabledLangsOf(ctx, projectID), filter.Lang, filter.State)
+	// 待收敛回执观测（只读）：读取失败只记日志，页面照常渲染 ——
+	// 一个观测字段不该让整张列表页 500。
+	receiptPending, receiptOldest, receiptLast := h.receiptBacklog(ctx)
+	// 全站待重建区块（只读）：取数作用域是**全部站点工程**，与上面按工程聚焦的页面列表
+	// 不是一个数（块 / 文章 / 主题 / 词条改动影响的是全站）。读不到时它自己给失败态，
+	// 同样不让整张列表页失败。
+	stale := h.staleOverview(ctx)
+	return &pagesPageData{
+		Title: pageenums.MsgPagesTitle, Menu: "pages",
+		Projects: projects, Pages: rows,
+		// 筛选栏的两个键：SelectedProject 供下拉回显，FilteredProject 供空态分档
+		//（「这个工程还没有页面」≠「全站还没有页面」，两者的下一步动作不同）。
+		SelectedProject: projectID,
+		FilteredProject: filteredProject,
+		// 语言筛选：候选为空表示「没有第二条语言可筛」，模板据此整条不渲染。
+		LangOptions:      langOptions,
+		LangStateOptions: langStates,
+		SelectedLang:     selectedLang,
+		FilteredLang:     selectedLang != "",
+		// 蓝图候选（审计 VIS-010）：把「从蓝图开始」放进新建页面流程，
+		// 而不是要求编辑者先去另一个页面建好蓝图再回来。
+		Blueprints: h.blueprintOptions(ctx),
+
+		ReceiptPending:      receiptPending,
+		ReceiptOldest:       receiptOldest,
+		ReceiptLastConverge: receiptLast,
+		ReceiptAlert:        receiptPending > 0,
+		// 走到这里说明本页数据装配完成（回执观测读不到只记日志、不给零值以外的信号，
+		// 见 receiptBacklog），所以这条观测条可以展示。
+		ReceiptKnown: true,
+
+		// 全站待重建区块：非 nil 即「本次装配到了这份数据」，读到与否由 Available 表达。
+		StaleOverview: stale,
+	}, nil
+}
+
+// pageRowsOf 把 service 的页面摘要映射成列表行（含两个附加投影：排定 / 语言维度状态）。
+//
+// 两个附加投影都是**只读观测**，读不到只记日志：缺的是一两枚徽标，不是列表本身 ——
+// 让整张列表页 500 反而把「列表还能用」这个事实也弄丢了。
+func (h *pagesAdminHandle) pageRowsOf(ctx context.Context, pages []pagedto.PageResp) []pagedto.PageRowResp {
 	// 排定投影（PIPE-7）：一次批量取回这批页面的待执行 / 最近失败记录。
-	// 读取失败只记日志、页面照常渲染：与回执观测同一口径 ——
-	// 一个附加观测不该让整张列表页 500（缺的是两个徽标，不是列表本身）。
 	schedules := map[string]pagecontract.SchedulePageSummaryResp{}
 	pageIDs := make([]string, 0, len(pages))
 	for i := range pages {
@@ -254,37 +321,81 @@ func (h *pagesAdminHandle) buildPagesData(c *gin.Context) (*pagesPageData, error
 				row.ScheduleFailedKey, row.ScheduleFailedFallback = failure.Key, failure.Fallback
 			}
 		}
+		// 按语言筛选时每行带上「这一门语言在这页是什么状态」：徽标让用户确认
+		// 「我筛的是已发布，眼前这行确实有 en-US 的线上页面」，而不是只信筛选条件。
+		if p.LangStatus != "" {
+			row.LangScope = p.LangStatus
+			row.LangStatusKey, row.LangStatusFb = pageenums.LangStatusLabel(p.LangStatus)
+		}
 		rows = append(rows, row)
 	}
-	// 待收敛回执观测（只读）：读取失败只记日志，页面照常渲染 ——
-	// 一个观测字段不该让整张列表页 500。
-	receiptPending, receiptOldest, receiptLast := h.receiptBacklog(ctx)
-	// 全站待重建区块（只读）：取数作用域是**全部站点工程**，与上面按工程聚焦的页面列表
-	// 不是一个数（块 / 文章 / 主题 / 词条改动影响的是全站）。读不到时它自己给失败态，
-	// 同样不让整张列表页失败。
-	stale := h.staleOverview(ctx)
-	return &pagesPageData{
-		Title: pageenums.MsgPagesTitle, Menu: "pages",
-		Projects: projects, Pages: rows,
-		// 筛选栏的两个键：SelectedProject 供下拉回显，FilteredProject 供空态分档
-		//（「这个工程还没有页面」≠「全站还没有页面」，两者的下一步动作不同）。
-		SelectedProject: projectID,
-		FilteredProject: filteredProject,
-		// 蓝图候选（审计 VIS-010）：把「从蓝图开始」放进新建页面流程，
-		// 而不是要求编辑者先去另一个页面建好蓝图再回来。
-		Blueprints: h.blueprintOptions(ctx),
+	return rows
+}
 
-		ReceiptPending:      receiptPending,
-		ReceiptOldest:       receiptOldest,
-		ReceiptLastConverge: receiptLast,
-		ReceiptAlert:        receiptPending > 0,
-		// 走到这里说明本页数据装配完成（回执观测读不到只记日志、不给零值以外的信号，
-		// 见 receiptBacklog），所以这条观测条可以展示。
-		ReceiptKnown: true,
+// pageListLangFilter 组装筛选栏的语言维度三项（候选语言 / 状态候选 / 选中的语言）。
+//
+// 语言维度为什么要紧：页面列表按工程作用域取数，但「这一页有没有 en-US」是另一回事
+// —— 运营要回答的问题是「哪些页面还没出日语」，答案只在语言维度里。
+// 判据一条：选中的语言必须真的在这份启用语言清单里，否则等于没筛 ——
+// 陈旧链接（站点删过语言）、手改 URL 都不该把列表变成空表。
+//
+// 只有一种语言时三项一律给空：恒为单值、且状态取值与「全量」等价的下拉是噪声，
+// 不是能力（同一理由见筛选栏模板里工程下拉 `len(.Projects) > 1` 的判据）。
+func pageListLangFilter(langs []string, wantLang, wantState string) (options []pagedto.PageListLangOptionResp, states []pagedto.PageListStateOptionResp, selected string) {
+	langs = dedupeLangs(langs)
+	if len(langs) <= 1 {
+		return nil, nil, ""
+	}
+	defaultLang := i18n.GetDefaultLang()
+	// 选中值：只认清单里的语言（大小写与空格归一后再比）。
+	wantLang = strings.TrimSpace(wantLang)
+	for i := range langs {
+		if strings.EqualFold(langs[i], wantLang) {
+			selected = langs[i]
+			break
+		}
+	}
+	options = make([]pagedto.PageListLangOptionResp, 0, len(langs))
+	for i := range langs {
+		options = append(options, pagedto.PageListLangOptionResp{
+			Value: langs[i], Label: langs[i],
+			Default: langs[i] == defaultLang, Active: langs[i] == selected,
+		})
+	}
+	states = pageListStateOptions(wantState)
+	return options, states, selected
+}
 
-		// 全站待重建区块：非 nil 即「本次装配到了这份数据」，读到与否由 Available 表达。
-		StaleOverview: stale,
-	}, nil
+// pageListStateOptions 语言维度下的三档状态候选（顺序即默认排序：已发布在前）。
+//
+// 值与词条都从 pageenums 取：下拉里出现一个行徽标写不出来的状态就是错的。
+// 默认选中「已发布」—— 运营问「哪些页面已经出了日语」的次数远多于问相反的问题。
+func pageListStateOptions(want string) []pagedto.PageListStateOptionResp {
+	active := pageenums.LangStatusParse(want, pageenums.LangStatusPublished)
+	order := []string{pageenums.LangStatusPublished, pageenums.LangStatusDraft, pageenums.LangStatusExcluded}
+	out := make([]pagedto.PageListStateOptionResp, 0, len(order))
+	for _, status := range order {
+		key, fallback := pageenums.LangStatusLabel(status)
+		out = append(out, pagedto.PageListStateOptionResp{
+			Value: status, Key: key, Fallback: fallback, Active: status == active,
+		})
+	}
+	return out
+}
+
+// dedupeLangs 去空去重（保序：默认语言在最前是 enabledLangsOf 的既有承诺）。
+func dedupeLangs(langs []string) []string {
+	seen := make(map[string]bool, len(langs))
+	out := make([]string, 0, len(langs))
+	for _, lang := range langs {
+		lang = strings.TrimSpace(lang)
+		if lang == "" || seen[lang] {
+			continue
+		}
+		seen[lang] = true
+		out = append(out, lang)
+	}
+	return out
 }
 
 // focusProjectID 从工程列表里挑出当前聚焦的工程 id。

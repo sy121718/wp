@@ -25,6 +25,11 @@ type PageResp struct {
 	// Publications 每语言激活状态（多语言 P3，docs/06-D §15.5 第 2 条）。
 	// ActivePath/ActiveArtifactID 是「最近发布语言」的单值镜像，多语言真源在此列表。
 	Publications []PagePublicationResp `json:"publications,omitempty"`
+	// LangStatus 本行在**查询指定的那一门语言**下的产出状态（取值见 pageenums.LangStatusOf）。
+	//
+	// 只有 ListReq.Lang 非空时才填 —— 没问某一门语言时「这一行的语言状态」无从谈起，
+	// 给个默认值等于替调用方编一个。
+	LangStatus string `json:"langStatus,omitempty"`
 }
 
 // PagePublicationResp 页面某语言的激活状态投影。

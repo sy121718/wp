@@ -71,6 +71,15 @@ type PageRowResp struct {
 	ScheduleFailedFallback string
 	// ScheduleAlert 是否有需要运营看一眼的失败排定（模板据此选徽标样式）。
 	ScheduleAlert bool
+
+	// LangScope 按语言维度筛选时，本行在**那一门语言**下的产出状态（空 = 本次没按语言筛，
+	// 行上不该出现语言徽标）。
+	//
+	// 三个字段分工：Status 是取值（模板据此选徽标档位，档位是展示词表的事），
+	// Key / Fallback 是文案事实（取词在模板里，本层不拼成品句）。
+	LangScope     string
+	LangStatusKey string
+	LangStatusFb  string
 }
 
 // HistoryRowResp 修订历史行视图。
@@ -111,6 +120,29 @@ type TranslationLangOptionResp struct {
 	Code   string
 	Label  string
 	Active bool
+}
+
+// PageListLangOptionResp 页面列表筛选栏的「语言」下拉项（一门站点启用语言）。
+//
+// Value 是完整语言码（提交出去的 query 值），Label 是展示文本：两者现在相同，
+// 但分开是为了将来接语言显示名时不改提交值 —— 提交值一旦变成显示名，
+// 手改 URL 就再也对不上语言清单。
+type PageListLangOptionResp struct {
+	Value   string
+	Label   string
+	Default bool
+	Active  bool
+}
+
+// PageListStateOptionResp 页面列表筛选栏的「状态」下拉项。
+//
+// Key / Fallback 是状态文案的**事实**（取值同 pageenums.LangStatusOf）：
+// 下拉与行徽标必须用同一份词条，否则同一个「已排除」在两处会写成两种说法。
+type PageListStateOptionResp struct {
+	Value    string
+	Key      string
+	Fallback string
+	Active   bool
 }
 
 // TranslationRowResp 工作台一行（一个可翻译取值）。

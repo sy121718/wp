@@ -16,6 +16,8 @@
 {{canDelete := isset(.Buttons["page.delete"])}}
 {* 筛选栏的回显值：链索引取值（缺键安全），不参与 if 判断 —— 直接判断缺键会让整页中断。 *}
 {{selectedProject := .["SelectedProject"]}}
+{* 语言维度筛选的回显值（链索引取值，缺键给空串）。 *}
+{{selectedLang := .["SelectedLang"]}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -113,9 +115,15 @@
            工程只有一个时不渲染：一个恒选项的下拉是噪声，不是能力。
            没有关键词输入框：page 的 List 只有 projectID / themeID 两个维度，没有关键词，
            本批不越界改 service（硬塞一个输入框就是死控件）。 *}
-        {{if len(.Projects) > 1}}
+        {* 语言维度：页面的「有没有这门语言」是独立于工程的一条轴 —— 运营的问题是
+           「哪些页面还没出日语」，答案只在语言维度里。下拉候选来自站点启用语言，
+           选中值必须真的在清单里（handler 已校验，陈旧链接等于没筛）。
+           只有一门有效语言时整条不渲染（`LangOptions` 由 handler 给空）。 *}
+        {{langFilter := isset(.LangOptions) && len(.LangOptions) > 1}}
+        {{if len(.Projects) > 1 || langFilter}}
         <div class="filter-bar">
             <form class="filter-fields" method="get" action="/admin/pages">
+                {{if len(.Projects) > 1}}
                 <div class="filter-field">
                     <label for="project-filter">{{ .["t"]("admin.pages.filter_project", "站点工程") }}</label>
                     <select class="form-select" id="project-filter" name="project">
@@ -124,9 +132,37 @@
                         {{end}}
                     </select>
                 </div>
+                {{else}}
+                {* 工程下拉不渲染时工程名仍要随表单提交：GET 表单只带控件里的值，
+                   少了这个隐藏域就会把用户筛的语言套到「默认第一个工程」上。 *}
+                <input type="hidden" name="project" value="{{selectedProject}}">
+                {{end}}
+                {{if langFilter}}
+                <div class="filter-field">
+                    <label for="lang-filter">{{ .["t"]("admin.pages.filter_lang", "语言") }}</label>
+                    <select class="form-select" id="lang-filter" name="lang">
+                        <option value="">{{ .["t"]("admin.pages.filter_lang_all", "全部语言") }}</option>
+                        {{range _, o := .LangOptions}}
+                        <option value="{{o.Value}}"{{if o.Active}} selected{{end}}>{{o.Label}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="lang-state-filter">{{ .["t"]("admin.pages.filter_lang_state", "产出状态") }}</label>
+                    {* 状态候选与行徽标同一份词条（handler 从 pageenums 给），
+                       下拉里出现一个徽标写不出来的状态就是错的。 *}
+                    <select class="form-select" id="lang-state-filter" name="state">
+                        {{range _, o := .LangStateOptions}}
+                        <option value="{{o.Value}}"{{if o.Active}} selected{{end}}>{{tr(o.Key, o.Fallback)}}</option>
+                        {{end}}
+                    </select>
+                </div>
+                {{end}}
                 <div class="filter-actions">
                     <button type="submit" class="btn btn-sm">{{ .["t"]("admin.pages.filter_submit", "筛选") }}</button>
-                    <a class="btn btn-sm btn-ghost" href="/admin/pages">{{ .["t"]("admin.pages.filter_reset", "重置") }}</a>
+                    {* 重置只清筛选、不丢作用域：回到「这个工程的完整页面列表」，
+                       而不是把用户踢到第一个工程。 *}
+                    <a class="btn btn-sm btn-ghost" href="/admin/pages?project={{selectedProject}}">{{ .["t"]("admin.pages.filter_reset", "重置") }}</a>
                 </div>
             </form>
         </div>
@@ -162,10 +198,15 @@
                 {* 空态整行：colspan = 7 列 *}
                 <tr><td colspan="7" class="cell-wrap">
                     <div class="empty-state">
-                        {* 两档空态：筛选（指定了工程）之后为空 ≠ 全站还没有页面 ——
-                           两档的下一步动作不同（换工程 / 建页面 vs 建第一个页面）。
-                           判据由 handler 给出（FilteredProject），模板不拿 query 猜。 *}
-                        {{if isset(.FilteredProject) && .FilteredProject}}
+                        {* 三档空态：筛了语言为空 ≠ 筛了工程为空 ≠ 全站还没有页面 ——
+                           三档的下一步动作不同（换语言 / 换工程 / 建第一个页面）。
+                           判据由 handler 给出（FilteredLang / FilteredProject），模板不拿 query 猜。
+                           语言档排最前：它是最具体的条件，「已发布 + 日语」筛空时让用户去建页面
+                           是错的方向 —— 他该先把日语排上产出。 *}
+                        {{if isset(.FilteredLang) && .FilteredLang}}
+                        <p class="empty-title">{{ .["t"]("admin.pages.empty_lang_title", "这个语言下没有符合状态的页面") }}</p>
+                        <p class="empty-desc">{{ .["t"]("admin.pages.empty_lang_desc", "换一个「产出状态」看（新语言的页面通常还在「未发布」），或换一个语言；要让某页始终产出这门语言，去该页的「多语言」工作台调整语言产出范围。") }}</p>
+                        {{else if isset(.FilteredProject) && .FilteredProject}}
                         <p class="empty-title">{{ .["t"]("admin.pages.empty_project_title", "这个站点工程还没有页面") }}</p>
                         <p class="empty-desc">{{ .["t"]("admin.pages.empty_project_desc", "用页头的「创建页面」在这个工程里建一个，或切换上方「站点工程」看别的工程。") }}</p>
                         {{if canCreatePage}}
@@ -205,6 +246,13 @@
                         {{if isset(p.ScheduleAlert)}}{{if p.ScheduleAlert}}
                         <span class="badge badge-warning" title="{{tr(p.ScheduleFailedKey, p.ScheduleFailedFallback)}}">{{tr("admin.pages.status.schedule_failed", "排定失败")}}</span>
                         {{end}}{{end}}
+                        {* 语言维度徽标：按语言筛选时补一枚「这门语言在这页是什么状态」。
+                           筛选条件本身只说「我筛了什么」，徽标才说明「这行为什么出现在这里」
+                           —— 尤其状态是「未发布」时，用户要能立刻分辨它不是筛错了。 *}
+                        {{if isset(p.LangScope) && p.LangScope != ""}}
+                        {{langBadge := "mute"}}{{if p.LangScope == "excluded"}}{{langBadge = "warn"}}{{else if p.LangScope == "published"}}{{langBadge = "ok"}}{{end}}
+                        {{include "../partials/badge.html" map("tone", langBadge, "label", selectedLang + " · " + tr(p.LangStatusKey, p.LangStatusFb))}}
+                        {{end}}
                     </td>
                     <td>v{{p.Version}}</td>
                     <td class="text-mute text-sm">{{dateTime(p.UpdatedAt)}}</td>

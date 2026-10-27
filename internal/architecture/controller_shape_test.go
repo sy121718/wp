@@ -151,7 +151,6 @@ var pendingControllerQuery = map[string]bool{
 	"internal/module/order/inbound/http/sales_page.go":                     true,
 	"internal/module/page/inbound/http/page_redirect.go":                   true,
 	"internal/module/page/inbound/http/page_schedule_handle.go":            true,
-	"internal/module/page/inbound/http/pages_handle.go":                    true,
 	"internal/module/page/inbound/http/page_site_slot_handle.go":           true,
 	"internal/module/page/inbound/http/page_translations_handle.go":        true,
 	"internal/module/project/inbound/http/project_handle.go":               true,

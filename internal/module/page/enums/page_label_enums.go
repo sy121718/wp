@@ -1,6 +1,9 @@
 package pageenums
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 // page_label_enums.go — page 模块的「值 → 文案」映射（internal/module/CLAUDE.md §enums）。
 //
@@ -59,6 +62,20 @@ func LangStatusOf(excluded, published bool) string {
 		return LangStatusPublished
 	default:
 		return LangStatusDraft
+	}
+}
+
+// LangStatusParse 把外部传入的状态串收进取值域；空串与未知值都回落到 fallback。
+//
+// 筛选项来自 URL（可被手改）：未知状态若原样下传，service 会按「没匹配上」过滤成空表 ——
+// 用户看到的是「这个语言一页都没有」，而真相是他手改坏了链接。收进值域等于
+// 「认不出的筛选不算筛选」，与 focusProjectID 对陈旧 ?project= 的回退同口径。
+func LangStatusParse(raw, fallback string) string {
+	switch strings.TrimSpace(raw) {
+	case LangStatusExcluded, LangStatusPublished, LangStatusDraft:
+		return strings.TrimSpace(raw)
+	default:
+		return fallback
 	}
 }
 

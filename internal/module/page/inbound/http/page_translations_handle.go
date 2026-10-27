@@ -315,9 +315,10 @@ func (h *pagesAdminHandle) renderTranslationsFailure(c *gin.Context, status int,
 // SavePageTranslations POST /admin/pages/translations/save：保存本页译文。
 //
 // 两条出口（表单带 hx-post，页面不离开）：
-//   · 成功 → JSON + written 计数，前端按 data-reload-on-ok 刷新（保住筛选与目标语言）；
-//   · 失败 → **只回逐行错误片段**（renderTranslationError），htmx 就地替换
-//     #page-translations-errors。页面与已填译文都不动。
+//
+//	· 成功 → JSON + written 计数，前端按 data-reload-on-ok 刷新（保住筛选与目标语言）；
+//	· 失败 → **只回逐行错误片段**（renderTranslationError），htmx 就地替换
+//	  #page-translations-errors。页面与已填译文都不动。
 //
 // 从前失败会重渲整个工作台（重查草稿、重建候选、重算全站完成度）。表单改 htmx 之后
 // 那个理由不成立 —— 页面没离开过，「回填输入」不需要；重渲只是把一次校验失败
@@ -708,7 +709,6 @@ func translationBack(c *gin.Context) string {
 
 // translationBackMsg 回跳链接文字（复用本页标题词条，不新增全站词条）。
 var translationBackMsg = pageMsg{Key: pageenums.MsgPageTranslationsTitle, Fallback: "多语言"}
-
 
 // pageTranslationsSavedMsg 译文保存成功回执 —— 一句**带 %s 的整句词条** + 数字参数。
 //

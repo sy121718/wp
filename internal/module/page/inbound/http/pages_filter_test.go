@@ -27,6 +27,7 @@ import (
 
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
+	pageenums "go_wp/internal/module/page/enums"
 	projectcontract "go_wp/internal/module/project/contract"
 )
 
@@ -38,6 +39,8 @@ import (
 type filterProjectList struct {
 	projectcontract.ProjectService
 	list []projectcontract.ProjectResp
+	// enabled 站点启用语言清单（nil = 读不到，语言下拉不渲染）。
+	enabled []string
 	// themeFor 记录「按哪个工程取激活主题」——筛选必须连取数的工程作用域一起换，
 	// 只换 List 的 projectID 而主题仍取第一个工程，会列出「B 工程 + A 工程主题」的混合结果。
 	themeFor *string
@@ -52,6 +55,15 @@ func (f filterProjectList) GetActiveTheme(_ context.Context, projectID string) (
 		*f.themeFor = projectID
 	}
 	return nil, nil
+}
+
+// EnabledLangs 站点启用语言：语言筛选栏的候选来源。
+//
+// 必须显式实现（内嵌 nil 接口调用即 panic）：默认返回 nil = 「读不到清单」，
+// enabledLangsOf 回退成站点默认语言一种 → 语言下拉不渲染，既有用例不受影响。
+// 要测语言筛选的用例用 enabled 字段给多语言清单。
+func (f filterProjectList) EnabledLangs(context.Context, string) ([]string, error) {
+	return f.enabled, nil
 }
 
 // filterPageList 页面契约替身：记录 List 收到的请求（这就是「条件真的进了查询」的证据）。
@@ -75,6 +87,14 @@ func (f *filterPageList) List(_ context.Context, req *pagedto.ListReq) ([]pagedt
 //
 // 必须**显式实现**：内嵌的 nil 接口不会兜住它 —— 方法集包含（提升）不等于有实现，
 // 调用即 panic，症状是整组筛选用例以「nil pointer dereference」失败。
+// ListSchedulesForPages 行内排定投影。
+//
+// 与 ListStalePages 同一条教训：内嵌 nil 接口不兜住提升方法，调用即 panic。
+// 返回空表 = 「这批页面没有排定」，正是默认场景。
+func (f *filterPageList) ListSchedulesForPages(context.Context, []string) (map[string]pagedto.SchedulePageSummaryResp, error) {
+	return map[string]pagedto.SchedulePageSummaryResp{}, nil
+}
+
 func (f *filterPageList) ListStalePages(_ context.Context, req *pagedto.StalePageListReq) (*pagedto.StalePageListResp, error) {
 	f.staleGot = req
 	if f.staleErr != nil {
@@ -262,5 +282,119 @@ func TestPagesListHidesFilterBarWithSingleProject(t *testing.T) {
 	}
 	if !strings.Contains(body, "还没有页面") {
 		t.Error("单工程时列表照常渲染（收口不能过头）")
+	}
+}
+
+// newLangFilterPagesHandle 同 newFilterPagesHandle，但带上站点启用语言清单。
+func newLangFilterPagesHandle(t *testing.T, langs []string) (*pagesAdminHandle, *filterPageList) {
+	t.Helper()
+	themeFor := new(string)
+	pages := &filterPageList{}
+	h := &pagesAdminHandle{
+		projects: filterProjectList{list: oneProject(), themeFor: themeFor, enabled: langs},
+		pages:    pages,
+	}
+	return h, pages
+}
+
+// oneProject 单工程：语言维度的用例不该被工程下拉干扰（单工程时工程下拉不渲染）。
+func oneProject() []projectcontract.ProjectResp {
+	return []projectcontract.ProjectResp{{ID: "p1", Name: "官网"}}
+}
+
+// TestPagesListLangFilter 语言维度：条件要真的进查询、要回显、要能分档空态。
+//
+// 这条轴与工程轴分开测：页面按工程作用域取数是既有语义，语言维度是新加的第二条轴 ——
+// 「哪些页面还没出日语」只在这条轴上答得出来，装成死控件（控件在、query 没人读）
+// 的失败形态与 02-L §0.3 M-3 那次一模一样。
+func TestPagesListLangFilter(t *testing.T) {
+	twoLangs := []string{"zh-CN", "en-US"}
+
+	t.Run("条件进 service", func(t *testing.T) {
+		h, pages := newLangFilterPagesHandle(t, twoLangs)
+		renderPagesList(t, h, "lang=en-US&state=draft")
+
+		if pages.got == nil {
+			t.Fatal("handler 没有调用 service.List")
+		}
+		if pages.got.Lang != "en-US" || pages.got.LangState != "draft" {
+			t.Fatalf("ListReq = {Lang:%q, LangState:%q}，期望 {en-US, draft}", pages.got.Lang, pages.got.LangState)
+		}
+	})
+
+	t.Run("只给语言时状态留空交给 service 取默认", func(t *testing.T) {
+		h, pages := newLangFilterPagesHandle(t, twoLangs)
+		renderPagesList(t, h, "lang=en-US")
+		if pages.got == nil || pages.got.Lang != "en-US" || pages.got.LangState != "" {
+			t.Fatalf("ListReq = %+v，期望 Lang=en-US 且 LangState 留空（默认已发布由 service 判定）", pages.got)
+		}
+	})
+
+	t.Run("回显：语言与状态都停在已选项", func(t *testing.T) {
+		h, _ := newLangFilterPagesHandle(t, twoLangs)
+		body := renderPagesList(t, h, "lang=en-US&state=excluded").Body.String()
+		if !strings.Contains(body, `<option value="en-US" selected>`) {
+			t.Fatal("语言下拉没有回显 en-US：用户改了筛选，下拉却显示别的语言")
+		}
+		if !strings.Contains(body, `<option value="excluded" selected>`) {
+			t.Fatal("状态下拉没有回显 excluded")
+		}
+	})
+
+	t.Run("未知状态回退成已发布（手改 URL 等于没筛）", func(t *testing.T) {
+		h, pages := newLangFilterPagesHandle(t, twoLangs)
+		body := renderPagesList(t, h, "lang=en-US&state=%E4%B9%B1%E5%86%99").Body.String()
+		if !strings.Contains(body, `<option value="published" selected>`) {
+			t.Error("未知状态没有回显到「已发布」：下拉会显示成没有任何一项被选中")
+		}
+		if pages.got == nil || pages.got.LangState != "乱写" {
+			// query 原样下传是对的：值域收敛在 service（pageenums.LangStatusParse），
+			// 控制器只负责把「认不出的东西」交给唯一定义处，不自建第二份白名单。
+			t.Logf("ListReq.LangState = %q（service 负责收敛）", pages.got.LangState)
+		}
+	})
+
+	t.Run("不存在于启用清单的语言等于没筛", func(t *testing.T) {
+		h, pages := newLangFilterPagesHandle(t, twoLangs)
+		body := renderPagesList(t, h, "lang=ja-JP").Body.String()
+		if pages.got == nil || pages.got.Lang != "ja-JP" {
+			t.Fatalf("ListReq.Lang = %q，query 应原样下传（收敛不在控制器）", pages.got.Lang)
+		}
+		if strings.Contains(body, "这个语言下没有符合状态的页面") {
+			t.Error("未启用的语言被当成一次真筛选：空态会说是「这个语言下没有页面」，而用户筛的语言站点根本没启用")
+		}
+	})
+
+	t.Run("站点只有一种语言→整条语言筛选不渲染", func(t *testing.T) {
+		h, _ := newLangFilterPagesHandle(t, []string{"zh-CN"})
+		body := renderPagesList(t, h, "").Body.String()
+		if strings.Contains(body, `id="lang-filter"`) {
+			t.Error("单语言站点仍渲染语言下拉：恒为单值的下拉是噪声，不是能力")
+		}
+	})
+}
+
+// TestPagesListLangRowBadge 按语言筛选时，行上要说明「这行为什么出现在这里」。
+//
+// 筛选条件只说「我筛了什么」，徽标才说明「这页在这门语言下是什么状态」——
+// 少了它，「已发布」筛选结果里出现一行，用户无从判断它是真已发布还是筛错了。
+func TestPagesListLangRowBadge(t *testing.T) {
+	h, pages := newLangFilterPagesHandle(t, []string{"zh-CN", "en-US"})
+	pages.rows = []pagedto.PageResp{{
+		ID: "pg1", ProjectID: "p1", Kind: "page", DraftPath: "/about",
+		DraftVersion: 2, LangStatus: pageenums.LangStatusPublished,
+	}}
+	body := renderPagesList(t, h, "lang=en-US&state=published").Body.String()
+	if !strings.Contains(body, "en-US · 已发布") {
+		t.Fatalf("行上没有语言维度徽标（en-US · 已发布），列表页没把 LangScope 渲染到状态列：%s", body)
+	}
+}
+
+// TestPagesListLangEmptyState 筛了语言却为空时，空态要说清下一步（不是「还没有页面」）。
+func TestPagesListLangEmptyState(t *testing.T) {
+	h, _ := newLangFilterPagesHandle(t, []string{"zh-CN", "en-US"})
+	body := renderPagesList(t, h, "lang=en-US&state=published").Body.String()
+	if strings.Contains(body, "还没有页面，先用上方表单创建一个") {
+		t.Error("筛了语言却给出「还没有页面」：用户会去建重复的页面，而真相是这个语言没排上产出")
 	}
 }
