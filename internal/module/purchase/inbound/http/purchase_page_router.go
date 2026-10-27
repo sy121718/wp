@@ -71,4 +71,10 @@ func SetupPurchasePages(pages *gin.RouterGroup, svc purchasecontract.PurchaseSer
 	// 关单是一次对采购单的改写，不是新能力，不该多一个权限点。
 	pages.POST("/inventory/purchases/finish", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchases.PurchaseFinish)
 	pages.POST("/inventory/purchases/cancel", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchases.PurchaseCancel)
+	// 670 状态机的另外三个动作：草稿下单 / 标异常 / 解除异常。
+	// 权限点同样复用采购单更新：三个都是对**同一张已知采购单**的状态推进，
+	// 不是新的资源能力；各拆一个权限点只会让「谁能推进单据」这件事散成五处判断。
+	pages.POST("/inventory/purchases/place", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchases.PurchasePlace)
+	pages.POST("/inventory/purchases/exception", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchases.PurchaseException)
+	pages.POST("/inventory/purchases/resume", builtin.CasbinMiddlewareForPath("/api/inventory/purchase/update"), purchases.PurchaseResume)
 }

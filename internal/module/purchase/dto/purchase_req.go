@@ -24,6 +24,9 @@ type PurchaseLineReq struct {
 //
 // SourceID 是货源（外部供应商 / 集团内关联公司），WarehouseID 是收货仓；
 // 两者都必填 —— 采购单的「从谁买」「收进哪个仓」是单据身份的一部分。
+//
+// AsDraft 为真即「存为草稿」（670）：草稿不可收货，行可继续改，下单是一次显式动作。
+// 不传就是直接下单（默认路径不变，老调用方无需改动）。
 type CreatePurchaseOrderReq struct {
 	ProjectID   string            `json:"projectId" form:"projectId"`
 	Code        string            `json:"code" form:"code"`
@@ -32,13 +35,15 @@ type CreatePurchaseOrderReq struct {
 	ExpectedAt  *utils.JSONTime   `json:"expectedAt" form:"expectedAt"`
 	Remark      string            `json:"remark" form:"remark"`
 	OperatorID  string            `json:"operatorId" form:"operatorId"`
+	AsDraft     bool              `json:"asDraft" form:"asDraft"`
 	Metadata    json.RawMessage   `json:"metadata" form:"metadata"`
 	Lines       []PurchaseLineReq `json:"lines" form:"lines"`
 }
 
 // UpdatePurchaseOrderReq 修改采购单（单头逐字段可选；nil = 本次不改）。
 //
-// 状态**不可改**：它是「已入库数量 与 采购数量」的推导值，没有任何人工置位入口。
+// 状态**不可改**：推导态（已下单 / 部分到货 / 已到货）是「已入库数量 与 采购数量」
+// 的结果，人工态（草稿 / 异常 / 已完结 / 已取消）只由动作推进 —— 表单里没有状态字段。
 // ReplaceLines 为真时 Lines 全量替换 —— 只允许在「一行都还没入库」时替换
 // （已有入库数量的行被改小会让「已入库 ≤ 采购数量」不成立）。
 type UpdatePurchaseOrderReq struct {

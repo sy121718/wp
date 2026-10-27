@@ -25,6 +25,9 @@ type PurchaseCreateFormReq struct {
 	SourceID    string `form:"sourceId"`
 	WarehouseID string `form:"warehouseId"`
 	Remark      string `form:"remark"`
+	// AsDraft 勾选即「存为草稿」（670）：不勾直接下单。checkbox 未勾不提交，
+	// 所以空值就是 false —— 默认路径（直接下单）不需要任何额外字段。
+	AsDraft bool `form:"asDraft"`
 
 	LineSku       []string `form:"lineSku"`
 	LineQuantity  []string `form:"lineQuantity"`
@@ -61,6 +64,7 @@ func (r *PurchaseCreateFormReq) CreateReq(operatorID string) *CreatePurchaseOrde
 		WarehouseID: strings.TrimSpace(r.WarehouseID),
 		Remark:      strings.TrimSpace(r.Remark),
 		OperatorID:  operatorID,
+		AsDraft:     r.AsDraft,
 		Lines:       lines,
 	}
 }
@@ -70,34 +74,56 @@ func (r *PurchaseCreateFormReq) LineAt(i int) (sku, quantity, unitPrice string) 
 	return formArrayAtRaw(r.LineSku, i), formArrayAtRaw(r.LineQuantity, i), formArrayAtRaw(r.LineUnitPrice, i)
 }
 
-// PurchaseReceiptFormReq 登记采购收货（表单按行提交：一次一行）。
+// PurchaseReceiptFormReq 登记采购收货（**整单一一次提交**：每行一个数量输入）。
+//
+// 从「一次一行」改成「一次整单」：dy_erp 的收货对话框就是整单一次提交，
+// 每行填本次到货量、默认填满剩余量。逐行提交的形态下，一张 10 行的单要点 10 次、
+// 失败在第 7 行时前 6 行已经落库 —— 用户看到的是「收了一半」，而不是「这次没收」。
+//
+// 三列同名数组（lineId / quantity / unitPrice）按序号读，与新建采购单的三列同构：
+// 反射绑定拆片后看不出错位，而「填了第一行数量、第二行行号」正是这种错位的常见形态。
+// 行数靠 lineId 决定（行号是行的身份，数量是它的属性）。
 type PurchaseReceiptFormReq struct {
-	ProjectID string `form:"projectId"`
-	OrderID   string `form:"orderId"`
-	LineID    string `form:"lineId"`
-	RequestID string `form:"requestId"`
-	Quantity  string `form:"quantity"`
-	UnitPrice string `form:"unitPrice"`
-	Remark    string `form:"remark"`
+	ProjectID string   `form:"projectId"`
+	OrderID   string   `form:"orderId"`
+	RequestID string   `form:"requestId"`
+	Remark    string   `form:"remark"`
+	LineID    []string `form:"lineId"`
+	Quantity  []string `form:"quantity"`
+	UnitPrice []string `form:"unitPrice"`
 }
 
-// RegisterReq 转成 service 的收货请求（单价可空：留空 = 按采购单价）。
+// RegisterReq 转成 service 的收货请求。
+//
+// 本次到货量为 0 / 空的行**整行跳过**（不落零数量行）：一次整单提交里，
+// 用户只会填他要收的那几行，其余留着默认值被清空是常态 —— 把 0 当成
+// 「这次收 0 件」送去校验，会让一个合法的部分收货被 ErrReceiptQuantityInvalid 拒掉。
+// 一格都没填时 Lines 为空，由服务层报「没有可收货的行」。
 func (r *PurchaseReceiptFormReq) RegisterReq(operatorID string) *RegisterReceiptReq {
-	req := &RegisterReceiptReq{
+	lines := make([]ReceiptLineReq, 0, len(r.LineID))
+	for i, rawLineID := range r.LineID {
+		lineID := strings.TrimSpace(rawLineID)
+		if lineID == "" {
+			continue
+		}
+		quantity := formInt(formArrayAt(r.Quantity, i), 0)
+		if quantity <= 0 {
+			continue
+		}
+		line := ReceiptLineReq{LineID: lineID, Quantity: quantity}
+		if price, ok := parseFloatOK(formArrayAt(r.UnitPrice, i)); ok {
+			line.UnitPrice = &price
+		}
+		lines = append(lines, line)
+	}
+	return &RegisterReceiptReq{
 		ProjectID:  strings.TrimSpace(r.ProjectID),
 		OrderID:    strings.TrimSpace(r.OrderID),
 		RequestID:  strings.TrimSpace(r.RequestID),
 		Remark:     strings.TrimSpace(r.Remark),
 		OperatorID: operatorID,
-		Lines: []ReceiptLineReq{{
-			LineID:   strings.TrimSpace(r.LineID),
-			Quantity: formInt(r.Quantity, 0),
-		}},
+		Lines:      lines,
 	}
-	if price, ok := parseFloatOK(r.UnitPrice); ok {
-		req.Lines[0].UnitPrice = &price
-	}
-	return req
 }
 
 // ProductionFormReq 自家工厂生产入库表单（无采购单，成本价手工填写）。

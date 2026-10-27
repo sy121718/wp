@@ -251,8 +251,14 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	if order.Code != "PO-2026-001" {
 		t.Fatalf("采购单号应归一为大写，实际 %q", order.Code)
 	}
-	if order.Status != purchaseenums.PurchaseStatusPending {
-		t.Fatalf("新建采购单状态应为 pending，实际 %q", order.Status)
+	if order.Status != purchaseenums.PurchaseStatusOrdered {
+		t.Fatalf("新建采购单状态应为 ordered，实际 %q", order.Status)
+	}
+	// 未收货的单一律是「该收货的那一档」：进度 0%、未到量 = 订购量。
+	// 两个派生数字由 service 给（模板不做减法与除法），这里一并钉住。
+	if order.ProgressPercent != 0 || order.OutstandingQuantity != 14 {
+		t.Fatalf("未收货的单应为 0%% 且未到量 = 订购量，实际 %d%% / %d",
+			order.ProgressPercent, order.OutstandingQuantity)
 	}
 	if len(order.Lines) != 2 || order.TotalQuantity != 14 || order.ReceivedQuantity != 0 {
 		t.Fatalf("采购行不完整：%+v", order)
@@ -368,8 +374,8 @@ func TestPurchaseOrderCreateWithAtomicReceive(t *testing.T) {
 	if len(updated.Lines) != 2 || updated.Lines[0].Quantity != 3 || updated.TotalQuantity != 4 {
 		t.Fatalf("整行替换结果不正确：%+v", updated)
 	}
-	if updated.Status != purchaseenums.PurchaseStatusPending {
-		t.Fatalf("替换后状态仍是 pending，实际 %q", updated.Status)
+	if updated.Status != purchaseenums.PurchaseStatusOrdered {
+		t.Fatalf("替换后状态仍是 ordered，实际 %q", updated.Status)
 	}
 }
 

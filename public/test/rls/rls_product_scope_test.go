@@ -137,7 +137,7 @@ func seedPurchaseOrder(t *testing.T, db *gorm.DB, projectID, sourceID, warehouse
 	err := purchasemodel.NewModel(db).Transaction(context.Background(), func(tx *gorm.DB) error {
 		return purchasemodel.NewModel(db).CreatePurchaseOrderTx(context.Background(), tx, &purchasemodel.PurchaseOrderEntity{
 			ID: id, ProjectID: projectID, Code: code,
-			SourceID: sourceID, WarehouseID: warehouseID, Status: "pending",
+			SourceID: sourceID, WarehouseID: warehouseID, Status: "ordered",
 			OrderedAt: now, Remark: "", OperatorID: "",
 			Metadata: []byte("{}"), CreatedAt: now, UpdatedAt: now,
 		}, nil)

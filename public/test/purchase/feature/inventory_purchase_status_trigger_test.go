@@ -27,30 +27,40 @@ import (
 	"go_wp/public/migrations"
 )
 
-// statusSyncMigrationPath 迁移文件相对本包目录的路径（public/test/inventory/feature → public/migrations）。
-const statusSyncMigrationPath = "../../../migrations/196_inventory_purchase_status_sync.sql"
+// statusSyncMigrationPath 状态机两个迁移文件相对本包目录的路径
+// （public/test/purchase/feature → public/migrations）。
+//
+// 196 建立推导 + 守卫，670 把「三态 + 两个终态」扩成七态（pending 改名为 ordered，
+// 新增 draft / exception，守卫判据从「列举人工态」换成「列举推导态」）。
+// 两份都要重放：只放 196 会得到一个已经**不被约束接受**的状态机。
+var statusSyncMigrationPaths = []string{
+	"../../../migrations/196_inventory_purchase_status_sync.sql",
+	"../../../migrations/670_inventory_purchase_status_machine.sql",
+}
 
-// execStatusSyncMigration 逐语句执行 196 迁移（SplitStatements 与迁移器同一份实现：
+// execStatusSyncMigration 逐语句执行状态机的两份迁移（SplitStatements 与迁移器同一份实现：
 // 它认得 $$ 美元引用块，触发器函数体里的分号不会被当语句边界切开）。
 func execStatusSyncMigration(t *testing.T, f *purchaseFixture) {
 	t.Helper()
-	raw, err := os.ReadFile(statusSyncMigrationPath)
-	if err != nil {
-		t.Fatalf("读取迁移文件失败: %v", err)
-	}
-	// 196 写于 205（DB-019 时间列改名）**之前**，它的两处回填 UPDATE 与 sync 函数体
-	// 都写的是 updated_at。本包的表由生产迁移建出，列名已是 update_time ——
-	// 所以要重放这份历史 SQL，得先按当前列名做一次等价替换。
-	// 生产里不存在这层替换：196 在迁移序列中总是早于 205 执行。
-	// 用原始文本跑的话，第一条回填就会报 column "updated_at" does not exist。
-	sqlText := strings.ReplaceAll(string(raw), "updated_at", "update_time")
-	stmts := migrations.SplitStatements(sqlText)
-	if len(stmts) == 0 {
-		t.Fatalf("迁移文件解析出 0 条语句，路径或分割逻辑有问题")
-	}
-	for i, stmt := range stmts {
-		if err := f.db.Exec(stmt).Error; err != nil {
-			t.Fatalf("执行第 %d 条迁移语句失败: %v；语句: %s", i+1, err, stmt)
+	for _, path := range statusSyncMigrationPaths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("读取迁移文件失败: %v", err)
+		}
+		// 历史 SQL 要按当前 schema 做两次等价替换才能重放：
+		//   · 196 写于 205（DB-019 时间列改名）之前，回填与 sync 函数体写的是 updated_at；
+		//   · 196 的推导值写的是 pending，670 起该状态改名为 ordered（约束只认后者）。
+		// 生产里不存在这两层替换：196 在序列中总是早于 205 与 670 执行。
+		sqlText := strings.ReplaceAll(string(raw), "updated_at", "update_time")
+		sqlText = strings.ReplaceAll(sqlText, "'pending'", "'ordered'")
+		stmts := migrations.SplitStatements(sqlText)
+		if len(stmts) == 0 {
+			t.Fatalf("迁移文件 %s 解析出 0 条语句，路径或分割逻辑有问题", path)
+		}
+		for i, stmt := range stmts {
+			if err := f.db.Exec(stmt).Error; err != nil {
+				t.Fatalf("执行 %s 第 %d 条迁移语句失败: %v；语句: %s", path, i+1, err, stmt)
+			}
 		}
 	}
 }
@@ -70,9 +80,9 @@ func TestPurchaseStatusTriggerFollowsLineWrites(t *testing.T) {
 	order := mustPurchaseOrder(t, f, "TRG-001", src.ID, wh.ID,
 		[]purchasedto.PurchaseLineReq{purchaseLine(p, v, 10, 5)})
 
-	// 建单后（服务层写回 pending）——这是基线，触发器不该把它改坏。
-	if got := purchaseStatusIn(t, f, order.ID); got != "pending" {
-		t.Fatalf("建单后状态应为 pending，实得 %s", got)
+	// 建单后（服务层写回 ordered）——这是基线，触发器不该把它改坏。
+	if got := purchaseStatusIn(t, f, order.ID); got != "ordered" {
+		t.Fatalf("建单后状态应为 ordered，实得 %s", got)
 	}
 
 	// ① 绕过 service 直接把明细收满 → 数据库应把单头推成 received。
@@ -129,7 +139,7 @@ func TestPurchaseStatusTriggerFollowsLineWrites(t *testing.T) {
 
 	// ⑤ 直接改写单头 status（明细行一行不动，上面那个 AFTER 触发器不会醒）→
 	//    写入守卫在落库前把它换成推导值。
-	if err := f.db.Exec("UPDATE inventory_purchase_orders SET status = 'pending' WHERE id = ?",
+	if err := f.db.Exec("UPDATE inventory_purchase_orders SET status = 'ordered' WHERE id = ?",
 		order.ID).Error; err != nil {
 		t.Fatalf("直接改写单头状态失败: %v", err)
 	}
@@ -178,8 +188,8 @@ func TestPurchaseStatusMigrationBackfillsAndIsIdempotent(t *testing.T) {
 
 	// 整份迁移再跑一遍：守卫与 AFTER 触发器重建 + 回填把两张单拉回各自明细行对应的真值。
 	execStatusSyncMigration(t, f)
-	if got := purchaseStatusIn(t, f, pendingOrder.ID); got != "pending" {
-		t.Errorf("回填后未收明细的单应为 pending，实得 %s", got)
+	if got := purchaseStatusIn(t, f, pendingOrder.ID); got != "ordered" {
+		t.Errorf("回填后未收明细的单应为 ordered，实得 %s", got)
 	}
 	if got := purchaseStatusIn(t, f, receivedOrder.ID); got != "received" {
 		t.Errorf("回填后收满明细的单应为 received，实得 %s", got)
@@ -233,10 +243,10 @@ func TestPurchaseStatusTriggerKeepsServicePathIntact(t *testing.T) {
 	var derived string
 	if err := f.db.Raw(
 		"SELECT CASE "+
-			"WHEN COUNT(*) = 0 THEN 'pending' "+
+			"WHEN COUNT(*) = 0 THEN 'ordered' "+
 			"WHEN COUNT(*) FILTER (WHERE received_quantity < quantity) = 0 THEN 'received' "+
 			"WHEN COUNT(*) FILTER (WHERE received_quantity > 0) > 0 THEN 'partial' "+
-			"ELSE 'pending' END "+
+			"ELSE 'ordered' END "+
 			"FROM inventory_purchase_order_lines WHERE order_id = ?", order.ID).Scan(&derived).Error; err != nil {
 		t.Fatalf("独立推导状态失败: %v", err)
 	}

@@ -81,14 +81,20 @@ const (
 	// ErrVariantCostPortMissing 商品侧成本价端口未注入（装配缺陷 / 纯采购单测路径）。
 	ErrVariantCostPortMissing = "ErrVariantCostPortMissing"
 
-	// —— 采购单终态（迁移 626，W2）——
+	// —— 采购单状态动作的拒绝（迁移 626 / 670）——
 	//
-	// 前三个中间态（pending / partial / received）由「已入库数量 与 采购数量」推导，
-	// 没有任何人工置位入口。两个终态是**人工决定**：
+	// 三个推导态（ordered / partial / received）由「已入库数量 与 采购数量」推出，
+	// 没有任何人工置位入口。其余状态是**人工动作**的结果：
+	//   · draft     —— 草稿：只有草稿能「下单」（draft → ordered）；
+	//   · exception —— 异常：从 ordered / partial / received 标记，可「解除」回到推导态；
 	//   · finished  —— 提前关单：剩下的不再等；
 	//   · cancelled —— 取消：只允许在还没收满时（收满的货已经进仓，要走退货）。
-	ErrPurchaseStatusNotFinishable = "ErrPurchaseStatusNotFinishable"
-	ErrPurchaseStatusNotCancelable = "ErrPurchaseStatusNotCancelable"
+	ErrPurchaseStatusNotFinishable    = "ErrPurchaseStatusNotFinishable"
+	ErrPurchaseStatusNotCancelable    = "ErrPurchaseStatusNotCancelable"
+	ErrPurchaseStatusNotPlaceable     = "ErrPurchaseStatusNotPlaceable"
+	ErrPurchaseStatusNotExceptionable = "ErrPurchaseStatusNotExceptionable"
+	ErrPurchaseStatusNotResumable     = "ErrPurchaseStatusNotResumable"
+	ErrPurchaseStatusNotReceivable    = "ErrPurchaseStatusNotReceivable"
 
 	// —— 入库接收的仓库侧 SKU 编码归一 ——
 	//
@@ -125,24 +131,99 @@ const (
 	StatusDisabled = "disabled"
 )
 
-// 采购单状态取值。
+// 采购单状态取值（迁移 670：七态，全部由动作推进）。
 //
-// 三种状态**全部由「已入库数量 与 采购数量」推导**（没有任何人工置位入口）：
+// 三个**推导态**（明细行数据的函数，没有任何人工置位入口）：
 //
-//	pending  —— 所有行的已入库数量都是 0（未入库）；
-//	partial  —— 有入库但至少一行还没收满（部分入库）；
-//	received —— 每一行的已入库数量都等于采购数量（已入库）。
+//	ordered   —— 已下单：所有行的已入库数量都是 0；
+//	partial   —— 部分到货：有入库但至少一行还没收满；
+//	received  —— 已到货：每一行的已入库数量都等于采购数量。
 //
-// 推导在登记入库的同一事务内完成并写回，因此状态永远与行数据自洽。
+// 四个**人工态**（由动作推进，不参与推导；见 service 的 nextPurchaseStatus）：
+//
+//	draft     —— 草稿：还没正式下单（建单时选「存为草稿」），不可收货；
+//	exception —— 异常：人工标记（供应商延期 / 数量对不上），暂停收货，等人处理；
+//	finished  —— 已完结：提前关单，剩下的不再等（迁移 626）；
+//	cancelled —— 已取消（迁移 626）。
+//
+// 为什么状态不能由表单直接选：状态是推导值（收 3 件也是 received 这类脏数据进不了库），
+// 表单只提供**动作**（下单 / 收货 / 标记异常 / 解除异常 / 关单 / 取消），状态由服务端
+// 在动作里推进 —— 与 dy_erp 的 orderFormStatusOptions 只允许 draft|ordered 同一口径。
 const (
-	PurchaseStatusPending  = "pending"
-	PurchaseStatusPartial  = "partial"
-	PurchaseStatusReceived = "received"
+	// PurchaseStatusDraft 草稿（迁移 670）：还没正式下单，行可自由改，不可收货。
+	PurchaseStatusDraft = "draft"
+	// PurchaseStatusOrdered 已下单（迁移 670）：原来叫 pending（未入库），改名让它
+	// 与「已下单待收货」这件事对齐 —— 值属于库内状态列，改名由迁移 670 回填。
+	PurchaseStatusOrdered   = "ordered"
+	PurchaseStatusPartial   = "partial"
+	PurchaseStatusReceived  = "received"
+	PurchaseStatusException = "exception"
 	// PurchaseStatusFinished 提前关单（迁移 626）：人工决定「剩下的不再等」。
 	PurchaseStatusFinished = "finished"
 	// PurchaseStatusCancelled 取消（迁移 626）：只允许在还没收满时。
 	PurchaseStatusCancelled = "cancelled"
 )
+
+// PurchaseDerivedStatuses 由明细行推导的状态（不在此列的一律是人工态，不参与推导）。
+//
+// 单独成表而不是三个 isXxx 函数：推导口径与「谁允许收货」是两件事，但两处都必须
+// 与常量同步 —— 表格化之后，新增一个状态时漏登记会立刻表现为「推导把它抹掉」
+// 或「收货被拒」，而不是一年后才在脏数据里发现。
+var PurchaseDerivedStatuses = []string{
+	PurchaseStatusOrdered, PurchaseStatusPartial, PurchaseStatusReceived,
+}
+
+// PurchaseReceivableStatuses 允许登记收货的状态（dy_erp 的 receivableStatuses 同口径）。
+//
+// 只认 ordered / partial：draft 还没下单、received 已收满、finished / cancelled 已收尾、
+// exception 等人处理 —— 这五种状态下收货都是「绕过了单据流程」。注意这不是「数量守卫」
+// 的替代：超收仍由 IncrPurchaseLineReceivedTx 的 WHERE 兜（见 service.RegisterReceipt）。
+var PurchaseReceivableStatuses = []string{
+	PurchaseStatusOrdered, PurchaseStatusPartial,
+}
+
+// PurchaseTerminalStatuses 单向终态：一旦进入就不再被任何动作或推导改回。
+//
+// 与 dy_erp 的差异：dy_erp 的 exception 可以从异常里「恢复」，本仓把它实现为一条
+// 显式动作（见 service.ResumePurchaseOrder），因此 exception **不在**终态表里 ——
+// 它不可收货，但允许解除。
+var PurchaseTerminalStatuses = []string{
+	PurchaseStatusFinished, PurchaseStatusCancelled,
+}
+
+// PurchaseStatuses 全部合法取值（筛选归一与表单 dropdown 的唯一来源）。
+//
+// 顺序即展示顺序：单据沿「草稿 → 已下单 → 部分到货 → 已到货」推进，
+// 异常 / 已完结 / 已取消是旁路结果，排在后面。
+var PurchaseStatuses = []string{
+	PurchaseStatusDraft, PurchaseStatusOrdered, PurchaseStatusPartial,
+	PurchaseStatusReceived, PurchaseStatusException,
+	PurchaseStatusFinished, PurchaseStatusCancelled,
+}
+
+// IsKnownPurchaseStatus 是否是合法状态取值（筛选参数归一用）。
+func IsKnownPurchaseStatus(status string) bool {
+	for _, s := range PurchaseStatuses {
+		if s == status {
+			return true
+		}
+	}
+	return false
+}
+
+// IsReceivableStatus 该状态下能否登记收货。
+//
+// 与 PurchaseReceivableStatuses 同源：服务层判「这张单现在该不该收」用它，
+// 页面判「要不要渲染收货入口」也用它 —— 两处各写一份的话，
+// 「按钮点了必失败」与「没有按钮但其实能收」两类缺陷会轮流出现。
+func IsReceivableStatus(status string) bool {
+	for _, s := range PurchaseReceivableStatuses {
+		if s == status {
+			return true
+		}
+	}
+	return false
+}
 
 // 入库单类型。
 //
@@ -234,11 +315,17 @@ var errFallbacks = map[string]string{
 	ErrPurchaseLineDuplicate:       "同一采购单里同一个 SKU 重复出现",
 	ErrPurchaseQuantityInvalid:     "采购数量必须为正整数",
 	ErrPurchasePriceInvalid:        "采购单价必须为正数",
-	ErrPurchaseStatusInvalid:       "状态筛选值不在合法状态内（未入库 / 部分入库 / 已入库 / 已关单 / 已取消）",
+	ErrPurchaseStatusInvalid:       "状态筛选值不在合法状态内（草稿 / 已下单 / 部分到货 / 已到货 / 异常 / 已完结 / 已取消）",
 	ErrPurchaseLinesLocked:         "已有入库数量的采购单不能再改行（改了状态推导就不成立）",
 	ErrPurchaseLineNotFound:        "采购行不存在（或不属于该采购单）",
-	ErrPurchaseStatusNotFinishable: "只有已入库或部分入库的采购单可以提前关单",
-	ErrPurchaseStatusNotCancelable: "只有未入库或部分入库的采购单可以取消（已收满的货已进仓，要走退货）",
+	ErrPurchaseStatusNotFinishable: "只有已到货或部分到货的采购单可以提前关单",
+	ErrPurchaseStatusNotCancelable: "只有草稿 / 已下单 / 部分到货 / 异常中的采购单可以取消（已到货的货已进仓，要走退货）",
+	ErrPurchaseStatusNotPlaceable:  "只有草稿可以下单（已下单的单重复下单不改变任何东西）",
+	ErrPurchaseStatusNotExceptionable: "只有已下单 / 部分到货 / 已到货的采购单可以标记异常" +
+		"（草稿还没下单，已完结 / 已取消的单已经收尾）",
+	ErrPurchaseStatusNotResumable: "只有异常中的采购单可以解除异常",
+	ErrPurchaseStatusNotReceivable: "只有已下单 / 部分到货的采购单可以登记收货" +
+		"（草稿还没下单；已到货 / 已完结 / 已取消已收尾；异常要先解除）",
 	ErrReceiptLinesRequired:        "入库清单不能为空",
 	ErrReceiptLineDuplicate:        "同一入库请求里同一采购行只能出现一次",
 	ErrReceiptQuantityInvalid:      "入库数量必须为正整数",
@@ -266,14 +353,18 @@ var errStatuses = map[string]int{
 	ErrPurchaseLineNotFound:  http.StatusNotFound,
 
 	// —— 409 冲突 / 当前状态不允许 ——
-	ErrSourceCodeTaken:             http.StatusConflict,
-	ErrPurchaseCodeTaken:           http.StatusConflict,
-	ErrPurchaseSourceDisabled:      http.StatusConflict,
-	ErrPurchaseLinesLocked:         http.StatusConflict,
-	ErrPurchaseStatusNotFinishable: http.StatusConflict,
-	ErrPurchaseStatusNotCancelable: http.StatusConflict,
-	ErrReceiptOverReceive:          http.StatusConflict,
-	ErrReceiptOrderDone:            http.StatusConflict,
+	ErrSourceCodeTaken:                http.StatusConflict,
+	ErrPurchaseCodeTaken:              http.StatusConflict,
+	ErrPurchaseSourceDisabled:         http.StatusConflict,
+	ErrPurchaseLinesLocked:            http.StatusConflict,
+	ErrPurchaseStatusNotFinishable:    http.StatusConflict,
+	ErrPurchaseStatusNotCancelable:    http.StatusConflict,
+	ErrPurchaseStatusNotPlaceable:     http.StatusConflict,
+	ErrPurchaseStatusNotExceptionable: http.StatusConflict,
+	ErrPurchaseStatusNotResumable:     http.StatusConflict,
+	ErrPurchaseStatusNotReceivable:    http.StatusConflict,
+	ErrReceiptOverReceive:             http.StatusConflict,
+	ErrReceiptOrderDone:               http.StatusConflict,
 }
 
 // Err 声明一条自带对外文案的业务错误（pkg/facing.New：key + 中文兜底）。

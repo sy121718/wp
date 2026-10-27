@@ -160,24 +160,48 @@
                 <td data-label="{{ .["t"]("admin.inventory_sources.stats.col.type", "类型") }}">{{o.SourceTypeLabel}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.warehouse", "收货仓") }}">{{o.WarehouseName}}</td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.status", "单据状态") }}">
-                    {* 五态（迁移 623）：前三个由到货数量推导，后两个是人工终态。
-                       配色按「这个单据还需要人做什么」分档：完成类 ok、进行中 warn、不需要动 mute。 *}
-                    {{tone := "mute"}}{{if o.Status == "received" || o.Status == "finished"}}{{tone = "success"}}{{else if o.Status == "partial"}}{{tone = "warning"}}{{end}}
+                    {* 七态（迁移 670）。配色按「这张单现在该由谁动」分档：
+                       草稿 / 已下单 = 等人收货（mute，正常在路上）；
+                       部分到货 = 有人在收但没收完（warning，最需要注意的一档）；
+                       已到货 = 收齐了（success）；异常 = 要人处理（danger）；
+                       已完结 / 已取消 = 收尾了（mute，不再是待办）。 *}
+                    {{tone := "mute"}}{{if o.Status == "received"}}{{tone = "success"}}{{else if o.Status == "partial"}}{{tone = "warning"}}{{else if o.Status == "exception"}}{{tone = "danger"}}{{end}}
                     {{include "../partials/badge.html" map("tone", tone, "label", o.StatusLabel)}}
                 </td>
-                <td data-label="{{ .["t"]("admin.inventory_purchases.col.progress", "收货进度") }}">{{o.ReceivedQuantity}} / {{o.TotalQuantity}}</td>
+                <td data-label="{{ .["t"]("admin.inventory_purchases.col.progress", "收货进度") }}">
+                    {* 四个数（订购 / 已到 / 未到 / 进度%）全部由 service 算好，模板只显示 ——
+                       模板里的减法和百分号换算是没有测试的第二份业务实现，且看不到除零边界。 *}
+                    {{include "../partials/badge.html" map("tone", "mute", "label", o.ReceivedLabel)}}
+                    {{include "../partials/badge.html" map("tone", o.OutstandingTone, "label", o.OutstandingLabel)}}
+                    {{include "../partials/badge.html" map("tone", "mute", "label", o.ProgressLabel)}}
+                </td>
                 <td data-label="{{ .["t"]("admin.inventory_purchases.col.orderedAt", "下单时间") }}">{{o.OrderedAt}}</td>
                 <td class="col-actions" data-label="{{ .["t"]("admin.common.col.actions", "操作") }}">
-                    <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-receipt-{{o.ID}}" data-drawer-title="{{ .["t"]("admin.inventory_purchases.receipt.drawerTitle", "登记入库：") }}{{o.Code}}">{{ .["t"]("admin.inventory_purchases.receipt.open", "登记入库") }}</button>
-                    {* 两个终态入口（迁移 623）：只有对应的前置状态成立时才渲染。
-                       判据按状态分档而不是「全都给按钮、点了再报错」—— 已收满的单没有
-                       「取消」这条路，摆一个点了必失败的按钮只是噪声。
+                    {* 五个动作（迁移 670），每个只在**前置状态成立**时渲染：
+                       摆一个点了必失败的按钮只是噪声，而「灰按钮 + 悬停说为什么」在窄屏上
+                       等于没有（操作列本来就只有一行宽）。
+                       收货入口的可达性判据与服务层的 IsReceivableStatus 同口径 ——
+                       两边各写一份就会出现「按钮点了必失败」或「没有按钮但其实能收」。
                        表单放表格外（HTML 不允许 form 嵌套），按钮用 form="<id>" 关联。 *}
+                    {{if o.Status == "draft"}}
+                    <button type="submit" form="po-place-{{o.ID}}" class="btn btn-sm btn-primary"
+                            data-confirm="{{ .["t"]("admin.inventory_purchases.placeConfirm", "下单？下单后行就锁定，收货按这张单进行。")}}">{{ .["t"]("admin.inventory_purchases.place", "下单") }}</button>
+                    {{end}}
+                    {{if o.Status == "ordered" || o.Status == "partial"}}
+                    <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-receipt-{{o.ID}}" data-drawer-title="{{ .["t"]("admin.inventory_purchases.receipt.drawerTitle", "登记入库：") }}{{o.Code}}">{{ .["t"]("admin.inventory_purchases.receipt.open", "登记入库") }}</button>
+                    {{end}}
+                    {{if o.Status == "exception"}}
+                    <button type="submit" form="po-resume-{{o.ID}}" class="btn btn-sm"
+                            data-confirm="{{ .["t"]("admin.inventory_purchases.resumeConfirm", "解除异常？解除后按已到数量重新判定单据状态，收货入口恢复。")}}">{{ .["t"]("admin.inventory_purchases.resume", "解除异常") }}</button>
+                    {{else if o.Status == "ordered" || o.Status == "partial" || o.Status == "received"}}
+                    <button type="submit" form="po-exception-{{o.ID}}" class="btn btn-sm btn-ghost"
+                            data-confirm="{{ .["t"]("admin.inventory_purchases.exceptionConfirm", "标记异常？标记后暂停收货，直到解除异常。")}}">{{ .["t"]("admin.inventory_purchases.exception", "标记异常") }}</button>
+                    {{end}}
                     {{if o.Status == "received" || o.Status == "partial"}}
                     <button type="submit" form="po-finish-{{o.ID}}" class="btn btn-sm btn-ghost"
                             data-confirm="{{ .["t"]("admin.inventory_purchases.finishConfirm", "提前关单？剩下的不再等，单据进入已完成终态。")}}">{{ .["t"]("admin.inventory_purchases.finish", "提前关单") }}</button>
                     {{end}}
-                    {{if o.Status == "pending" || o.Status == "partial"}}
+                    {{if o.Status == "draft" || o.Status == "ordered" || o.Status == "partial" || o.Status == "exception"}}
                     <button type="submit" form="po-cancel-{{o.ID}}" class="btn btn-sm btn-danger"
                             data-confirm="{{ .["t"]("admin.inventory_purchases.cancelConfirm", "取消这张采购单？已入库的货仍留在仓库里。")}}" data-confirm-danger>{{ .["t"]("admin.inventory_purchases.cancel", "取消单据") }}</button>
                     {{end}}
@@ -195,10 +219,33 @@
         {{include "../partials/pagination.html"}}
     </section>
 
-    {* ===== 采购单终态的隐藏表单（表格外，按钮用 form="<id>" 关联） =====
-       备注字段留空也能提交：运营不写原因时不该拦住一次明确的关单动作，
-       但页面上给一行提示（见批次说明）—— 原因缺失只是少了一句解释，不是错误。 *}
+    {* ===== 采购单动作的隐藏表单（表格外，按钮用 form="<id>" 关联） =====
+       五个动作五条路由，不合成一个「改状态」接口：各自的**前置状态不同**，
+       合成一条只会让调用方在前端判一次该传哪个值，而判错的表现是
+       「已收满的单被取消，货却已经进仓」这类不可逆的脏数据。
+       备注字段留空也能提交：运营不写原因时不该拦住一次明确的动作，
+       原因缺失只是少了一句解释，不是错误。 *}
     {{range _, o := .Orders}}
+    {{if o.Status == "draft"}}
+    <form id="po-place-{{o.ID}}" method="post" action="/admin/inventory/purchases/place?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/place?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{o.ID}}">
+    </form>
+    {{end}}
+    {{if o.Status == "exception"}}
+    <form id="po-resume-{{o.ID}}" method="post" action="/admin/inventory/purchases/resume?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/resume?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{o.ID}}">
+    </form>
+    {{else if o.Status == "ordered" || o.Status == "partial" || o.Status == "received"}}
+    <form id="po-exception-{{o.ID}}" method="post" action="/admin/inventory/purchases/exception?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/exception?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+        <input type="hidden" name="csrf_token" value="{{csrf}}">
+        <input type="hidden" name="projectId" value="{{selectedProject}}">
+        <input type="hidden" name="id" value="{{o.ID}}">
+    </form>
+    {{end}}
     {{if o.Status == "received" || o.Status == "partial"}}
     <form id="po-finish-{{o.ID}}" method="post" action="/admin/inventory/purchases/finish?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/finish?{{ .ListQuery }}" hx-swap="none" data-write-nav>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
@@ -206,7 +253,7 @@
         <input type="hidden" name="id" value="{{o.ID}}">
     </form>
     {{end}}
-    {{if o.Status == "pending" || o.Status == "partial"}}
+    {{if o.Status == "draft" || o.Status == "ordered" || o.Status == "partial" || o.Status == "exception"}}
     <form id="po-cancel-{{o.ID}}" method="post" action="/admin/inventory/purchases/cancel?{{ .ListQuery }}" class="hidden-form" hx-post="/admin/inventory/purchases/cancel?{{ .ListQuery }}" hx-swap="none" data-write-nav>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
@@ -215,7 +262,12 @@
     {{end}}
     {{end}}
 
-    {* ===== 逐行收货（每个采购单一份抽屉模板） ===== *}
+    {* ===== 按行收货（每个采购单一份抽屉模板，**整单一次提交**） =====
+       形态对齐 dy_erp 的收货对话框：每行显示「订购 / 已到 / 剩余」，本次到货
+       **默认填满剩余量**（最常见的操作是一车货全到，不该让人逐行敲一遍），
+       可以改小成部分到货。整单一次提交：逐行提交时失败在第 7 行，前 6 行已经落库，
+       用户看到的是「收了一半」而不是「这次没收」。
+       行数据全部由 service 算好（剩余量 = OutstandingQuantity），模板不做减法。 *}
     {{range _, o := .Orders}}
     <template id="tpl-receipt-{{o.ID}}">
         <p class="hint">
@@ -225,33 +277,44 @@
         {{if len(o.Lines) == 0}}
         <p class="hint">{{ .["t"]("admin.inventory_purchases.receipt.noLines", "这张采购单没有采购行。") }}</p>
         {{else}}
-        {{range _, l := o.Lines}}
-        <div class="receipt-row">
-            <div class="receipt-head">
-                <code>{{l.SKUCode}}</code>
-                {* 四个信号各自成块（徽章），不拼成一句话：采购数量 / 已入库 / 未入库 / 单价
-                   是四个独立字段，拼起来既扫不动也没法单独对齐（评审：单元格是值不是句子）。 *}
-                <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.qty", "采购数量") }} {{l.Quantity}}</span>
-                <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.received", "已入库") }} {{l.ReceivedQuantity}}</span>
-                <span class="badge badge-{{l.OutstandingTone}}">{{ .["t"]("admin.inventory_purchases.col.outstanding", "未入库") }} {{l.OutstandingQuantity}}</span>
-                <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.unitPrice", "单价") }} {{l.UnitPrice}}</span>
-            </div>
-            {{if l.Open}}
-            <form method="post" action="/admin/inventory/purchases/receipt?{{ .ListQuery }}" class="form-inline" hx-post="/admin/inventory/purchases/receipt?{{ .ListQuery }}" hx-swap="none" data-write-nav>
-                <input type="hidden" name="csrf_token" value="{{csrf}}">
-                <input type="hidden" name="projectId" value="{{selectedProject}}">
-                <input type="hidden" name="orderId" value="{{o.ID}}">
+        <form method="post" action="/admin/inventory/purchases/receipt?{{ .ListQuery }}" hx-post="/admin/inventory/purchases/receipt?{{ .ListQuery }}" hx-swap="none" data-write-nav>
+            <input type="hidden" name="csrf_token" value="{{csrf}}">
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="orderId" value="{{o.ID}}">
+            {* 一张单一个幂等键：重复提交（连点 / 网络重试）命中同一张入库单，不会二次加库存。 *}
+            <input type="hidden" name="requestId" value="{{o.RequestID}}">
+            {{range _, l := o.Lines}}
+            <div class="receipt-row">
+                <div class="receipt-head">
+                    <code>{{l.SKUCode}}</code>
+                    {* 四个信号各自成块（徽章），不拼成一句话：订购 / 已到 / 剩余 / 单价
+                       是四个独立字段，拼起来既扫不动也没法单独对齐（评审：单元格是值不是句子）。 *}
+                    <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.qty", "采购数量") }} {{l.Quantity}}</span>
+                    <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.received", "已入库") }} {{l.ReceivedQuantity}}</span>
+                    <span class="badge badge-{{l.OutstandingTone}}">{{ .["t"]("admin.inventory_purchases.col.outstanding", "未入库") }} {{l.OutstandingQuantity}}</span>
+                    <span class="badge badge-mute">{{ .["t"]("admin.inventory_purchases.col.unitPrice", "单价") }} {{l.UnitPrice}}</span>
+                </div>
+                {* lineId 每行都交（含已收满的行）：表单按行号定位行，数量才是行号
+                   的属性。已收满的行没有数量输入 → 那一行天然被跳过（数量 0 即不收）。 *}
                 <input type="hidden" name="lineId" value="{{l.ID}}">
-                <input type="hidden" name="requestId" value="{{o.RequestID}}">
-                <input type="number" class="form-input" name="quantity" placeholder="{{ .["t"]("admin.inventory_purchases.receipt.phQty", "本次数量") }}" inputmode="numeric" step="1" min="1" max="{{l.OutstandingQuantity}}" required>
-                <input type="number" class="form-input input-wide" name="unitPrice" placeholder="{{ .["t"]("admin.inventory_purchases.receipt.phUnitPrice", "本次到货价（留空 = 采购价）") }}" inputmode="decimal" step="0.01" min="0.01">
-                <button type="submit" class="btn btn-sm btn-primary">{{ .["t"]("admin.inventory_purchases.col.receipt", "登记入库") }}</button>
-            </form>
-            {{else}}
-            <p class="hint">{{ .["t"]("admin.inventory_purchases.receipt.full", "已收满") }}</p>
+                {{if l.Open}}
+                <div class="form-inline">
+                    {* 默认值 = 剩余量：全到是常态，部分到货才需要人动手改小。
+                       max 卡在剩余量上（前端先拦一道），服务端仍会以 IncrPurchaseLineReceivedTx
+                       的「received + n <= quantity」原子条件兜底 —— 前端限制不是判据。 *}
+                    <input type="number" class="form-input" name="quantity" value="{{l.OutstandingQuantity}}" inputmode="numeric" step="1" min="0" max="{{l.OutstandingQuantity}}" aria-label="{{ .["t"]("admin.inventory_purchases.receipt.phQty", "本次数量") }}">
+                    <input type="number" class="form-input input-wide" name="unitPrice" placeholder="{{ .["t"]("admin.inventory_purchases.receipt.phUnitPrice", "本次到货价（留空 = 采购价）") }}" inputmode="decimal" step="0.01" min="0.01">
+                </div>
+                {{else}}
+                <p class="hint">{{ .["t"]("admin.inventory_purchases.receipt.full", "已收满") }}</p>
+                {{end}}
+            </div>
             {{end}}
-        </div>
-        {{end}}
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">{{ .["t"]("admin.inventory_purchases.receipt.submitAll", "确认收货") }}</button>
+                <span class="form-hint">{{ .["t"]("admin.inventory_purchases.receipt.submitHint", "本次到货默认填满剩余量；留 0 的行本次不收。") }}</span>
+            </div>
+        </form>
         {{end}}
     </template>
     {{end}}

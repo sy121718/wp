@@ -340,7 +340,7 @@ func TestPurchaseCancelPendingAndPartial(t *testing.T) {
 	}
 }
 
-// TestPurchaseStatusCheckConstraint 验收 7：迁移后 CHECK 认五态、拒非法值。
+// TestPurchaseStatusCheckConstraint 验收 7：迁移后 CHECK 认七态、拒非法值。
 func TestPurchaseStatusCheckConstraint(t *testing.T) {
 	f := newInvFixture(t)
 	if f == nil {
@@ -361,15 +361,16 @@ func TestPurchaseStatusCheckConstraint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建采购单失败: %v", err)
 	}
-	// 单头守卫（迁移 196 改版后）会把非终态改写成推导值，所以非法值不能经 UPDATE 测 ——
-	// 它会先被守卫换成 'pending'，CHECK 根本没机会说话。改用 INSERT 直接验约束本身。
+	// 单头守卫（196 建立、670 改成「只对推导态重算」）会把 ordered / partial / received
+	// 改写成明细行推导值，所以非法值不能经 UPDATE 测 —— 它会被守卫换掉，CHECK 根本没机会
+	// 说话。改用 INSERT 直接验约束本身。
 	if err := f.db.Exec("INSERT INTO inventory_purchase_orders "+
 		"(project_id, code, source_id, warehouse_id, status) VALUES (?, 'PO-BAD-STATUS', ?, ?, 'foo')",
 		f.projectID, src.ID, wh.ID).Error; err == nil {
 		t.Fatalf("非法状态值应被 CHECK 拒绝")
 	}
-	// 五个合法值都能写（约束认全）。
-	for _, status := range []string{"pending", "partial", "received", "finished", "cancelled"} {
+	// 七个合法值都能写（约束认全 —— 670 起是七态）。
+	for _, status := range []string{"draft", "ordered", "partial", "received", "exception", "finished", "cancelled"} {
 		if err := f.db.Exec("UPDATE inventory_purchase_orders SET status = ? WHERE id = ?", status, order.ID).Error; err != nil {
 			t.Fatalf("合法状态 %q 写入失败: %v", status, err)
 		}

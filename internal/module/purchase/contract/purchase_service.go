@@ -30,6 +30,10 @@ type PurchaseService interface {
 	ListPurchaseOrders(ctx context.Context, req *purchasedto.ListPurchaseOrderReq) (list []*purchasedto.PurchaseOrderResp, err error)
 	CountPurchaseOrders(ctx context.Context, req *purchasedto.ListPurchaseOrderReq) (n int64, err error)
 	RegisterReceipt(ctx context.Context, req *purchasedto.RegisterReceiptReq) (res *purchasedto.ReceiptResp, err error)
+	// 状态只由动作推进（670 七态）：草稿下单、标异常、解除异常、提前关单、取消。
+	PlacePurchaseOrder(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error)
+	MarkPurchaseOrderException(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error)
+	ResumePurchaseOrder(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error)
 	FinishPurchaseOrder(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error)
 	CancelPurchaseOrder(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error)
 	RegisterProductionInbound(ctx context.Context, req *purchasedto.ProductionInboundReq) (res *purchasedto.ReceiptResp, err error)

@@ -108,10 +108,15 @@ func (s *Service) CreatePurchaseOrder(ctx context.Context, req *purchasedto.Crea
 		return nil, err
 	}
 	now := time.Now().UTC()
+	// 草稿是显式选择：勾了就停在 draft（不可收货、行可自由改），下单是一个独立动作。
+	status := derivePurchaseStatus(lines)
+	if req.AsDraft {
+		status = purchaseenums.PurchaseStatusDraft
+	}
 	order := &purchasemodel.PurchaseOrderEntity{
 		ID: orderID, ProjectID: projectID, Code: code,
 		SourceID: source.ID, WarehouseID: wh.ID,
-		Status:    derivePurchaseStatus(lines),
+		Status:    status,
 		OrderedAt: now, ExpectedAt: normalizeTime(req.ExpectedAt.TimePtr()),
 		Remark: strings.TrimSpace(req.Remark), OperatorID: strings.TrimSpace(req.OperatorID),
 		Metadata: orJSON(req.Metadata, "{}"), CreatedAt: now, UpdatedAt: now,
@@ -209,7 +214,8 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *purchasedto.Upda
 			}
 			lines = replaced
 		}
-		order.Status = derivePurchaseStatus(lines)
+		// 人工态原样保留（草稿改行不会变成已下单，见 statusAfterDerive）。
+		order.Status = statusAfterDerive(order.Status, derivePurchaseStatus(lines))
 		order.UpdatedAt = now
 		return s.m.UpdatePurchaseOrderTx(ctx, tx, order)
 	}); err != nil {
@@ -217,6 +223,40 @@ func (s *Service) UpdatePurchaseOrder(ctx context.Context, req *purchasedto.Upda
 	}
 	return s.purchaseOrderResp(ctx, order, lines, nil, nil), nil
 }
+
+// PlacePurchaseOrder 下单：draft → ordered（670 状态机）。
+//
+// 草稿是「还没正式下单」，行可以随便改、没人按它备货。下单是它唯一的出口：
+// 状态从这一刻起交给明细行推导 —— 草稿单不会因为「加了行」自己变成已下单，
+// 否则「存草稿」就失去了意义（那只是延迟一秒的提交）。
+func (s *Service) PlacePurchaseOrder(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error) {
+	return s.settlePurchaseStatus(ctx, req, purchaseenums.PurchaseStatusOrdered)
+}
+
+// MarkPurchaseOrderException 标记异常：ordered / partial / received → exception。
+//
+// 用途是「这批货出问题了，先别继续收」：供应商断供、货不对版、验收不过。
+// 收到 exception 之后收货入口会被服务层拒掉（IsReceivableStatus 不含 exception），
+// 直到人解除异常 —— 这就是它存在的理由：让「暂停」成为一个可查询的单据事实，
+// 而不是备注里的一句「先别收」。
+func (s *Service) MarkPurchaseOrderException(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error) {
+	return s.settlePurchaseStatus(ctx, req, purchaseenums.PurchaseStatusException)
+}
+
+// ResumePurchaseOrder 解除异常：exception → 由明细行重新推导（通常是 ordered / partial）。
+//
+// 目标态不写死：异常期间行数据没动（收货被拦住），解除后该是「已下单」还是
+// 「部分到货」由已收数量说了算 —— 手填一个「已到货」会让剩下的货永远收不进来。
+func (s *Service) ResumePurchaseOrder(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error) {
+	return s.settlePurchaseStatus(ctx, req, purchaseTargetResume)
+}
+
+// purchaseTargetResume 是「解除异常」的内部目标信号，**不落库**。
+//
+// 解除异常的目标态不是一个字面值，而是「按当前明细行重新推导」（见 ResumePurchaseOrder）。
+// 用一个不存在的状态字符串当信号，是为了让它无法被误当成合法列值：
+// 它既不在 PurchaseStatuses 里，也过不了 670 的 CHECK 约束。
+const purchaseTargetResume = "resume"
 
 // FinishPurchaseOrder 提前关单（迁移 626）：received / partial → finished。
 //
@@ -229,10 +269,10 @@ func (s *Service) FinishPurchaseOrder(ctx context.Context, req *purchasedto.Purc
 	return s.settlePurchaseStatus(ctx, req, purchaseenums.PurchaseStatusFinished)
 }
 
-// CancelPurchaseOrder 取消采购单（迁移 626）：pending / partial → cancelled。
+// CancelPurchaseOrder 取消采购单（迁移 626 / 670 扩到七态）：draft / ordered / partial / exception → cancelled。
 //
 // received 不可取消：货已经进仓，要退只能走退货；把它「取消」会让库存凭空多出一批
-// 没有来源的单据对应物。
+// 没有来源的单据对应物。同理 finished 已收尾，不再受理取消。
 func (s *Service) CancelPurchaseOrder(ctx context.Context, req *purchasedto.PurchaseStatusReq) (res *purchasedto.PurchaseOrderResp, err error) {
 	return s.settlePurchaseStatus(ctx, req, purchaseenums.PurchaseStatusCancelled)
 }
@@ -262,20 +302,25 @@ func (s *Service) settlePurchaseStatus(ctx context.Context, req *purchasedto.Pur
 		if perr := assertPurchaseTransition(locked.Status, target); perr != nil {
 			return perr
 		}
+		list, qerr := s.m.ListPurchaseLinesTx(ctx, tx, locked.ID, projectID)
+		if qerr != nil {
+			return qerr
+		}
+		next := target
+		if target == purchaseTargetResume {
+			// 解除异常：目标态按明细行重算（异常期间收货被拦住，行数据就是唯一事实）。
+			next = derivePurchaseStatus(list)
+		}
 		// 备注追加而不是覆盖：「提前关单」要留下原因，但不能把下单时写的备注抹掉。
 		if remark != "" {
 			locked.Remark = orJoinRemark(locked.Remark, remark)
 		}
-		locked.Status = target
+		locked.Status = next
 		locked.UpdatedAt = now
 		if uerr := s.m.UpdatePurchaseOrderTx(ctx, tx, locked); uerr != nil {
 			return uerr
 		}
 		order = locked
-		list, qerr := s.m.ListPurchaseLinesTx(ctx, tx, locked.ID, projectID)
-		if qerr != nil {
-			return qerr
-		}
 		lines = list
 		return nil
 	}); err != nil {
@@ -284,24 +329,60 @@ func (s *Service) settlePurchaseStatus(ctx context.Context, req *purchasedto.Pur
 	return s.purchaseOrderResp(ctx, order, lines, nil, nil), nil
 }
 
-// assertPurchaseTransition 采购单终态的合法前置状态。
+// assertPurchaseTransition 每个人工动作的合法前置状态（670 七态）。
 //
-// 与前三个中间态不同，终态是**单向**的：没有任何路径把 finished / cancelled 改回推导状态
-// （否则「提前关单」会被下一次收货悄悄复活）。
+// 全部人工态都是**单向**的：没有任何路径把人工态改回推导状态
+// （否则「提前关单」会被下一次收货悄悄复活），唯一的回头路是 exception → 推导向
+// （ResumePurchaseOrder，人明确了「问题解决了」）。
+//
+// 前置条件按「这件事在业务上是否说得通」定，不按枚举顺序：
+//
+//	place      草稿 → 已下单        已经在流程里的单不需要再下单
+//	exception  已下单/部分/已到货 → 异常   货还在路上或刚到手，才有可能出问题
+//	resume     异常 → 推导向        只有异常中的单需要解除
+//	finish     已到货/部分 → 已完结       没到过货的单「提前关单」没有意义（取消才是它）
+//	cancel     草稿/已下单/部分/异常 → 已取消   已到货的货进了仓，要走退货；已完结已收尾
 func assertPurchaseTransition(current, target string) error {
 	switch target {
+	case purchaseenums.PurchaseStatusOrdered:
+		if current == purchaseenums.PurchaseStatusDraft {
+			return nil
+		}
+		return purchaseenums.Err(purchaseenums.ErrPurchaseStatusNotPlaceable)
+	case purchaseenums.PurchaseStatusException:
+		if isStatusIn(current, purchaseenums.PurchaseStatusOrdered,
+			purchaseenums.PurchaseStatusPartial, purchaseenums.PurchaseStatusReceived) {
+			return nil
+		}
+		return purchaseenums.Err(purchaseenums.ErrPurchaseStatusNotExceptionable)
+	case purchaseTargetResume:
+		if current == purchaseenums.PurchaseStatusException {
+			return nil
+		}
+		return purchaseenums.Err(purchaseenums.ErrPurchaseStatusNotResumable)
 	case purchaseenums.PurchaseStatusFinished:
-		if current == purchaseenums.PurchaseStatusReceived || current == purchaseenums.PurchaseStatusPartial {
+		if isStatusIn(current, purchaseenums.PurchaseStatusReceived, purchaseenums.PurchaseStatusPartial) {
 			return nil
 		}
 		return purchaseenums.Err(purchaseenums.ErrPurchaseStatusNotFinishable)
 	case purchaseenums.PurchaseStatusCancelled:
-		if current == purchaseenums.PurchaseStatusPending || current == purchaseenums.PurchaseStatusPartial {
+		if isStatusIn(current, purchaseenums.PurchaseStatusDraft, purchaseenums.PurchaseStatusOrdered,
+			purchaseenums.PurchaseStatusPartial, purchaseenums.PurchaseStatusException) {
 			return nil
 		}
 		return purchaseenums.Err(purchaseenums.ErrPurchaseStatusNotCancelable)
 	}
 	return purchaseenums.Err(purchaseenums.ErrPurchaseStatusInvalid)
+}
+
+// isStatusIn 一组候选取值里的成员判断（避免把长条件写成四个 ||）。
+func isStatusIn(current string, candidates ...string) bool {
+	for _, c := range candidates {
+		if current == c {
+			return true
+		}
+	}
+	return false
 }
 
 // orJoinRemark 把一句补充说明追加到已有备注之后（半角分号分隔，空则直接用新的）。
@@ -461,11 +542,13 @@ func buildPurchaseLines(projectID, orderID, warehouseCode string, rows []purchas
 
 // derivePurchaseStatus 由「已入库数量 与 采购数量」推导采购单状态（验收 2）。
 //
-// 三种结果互斥且穷尽：全部未入库 → pending；全部收满 → received；其余 → partial。
-// 没有任何人工置位入口，改单与收货之后都调用它重算，因此状态永远与行数据自洽。
+// 三种结果互斥且穷尽：全部未入库 → ordered；全部收满 → received；其余 → partial。
+// 推导只负责**这三个**：draft / exception / finished / cancelled 是人工态，
+// 由动作推进（见 assertPurchaseTransition 与 PurchaseDerivedStatuses），
+// 不在任何推导路径的射程里 —— 否则「提前关单」会被下一次收货悄悄复活。
 func derivePurchaseStatus(lines []*purchasemodel.PurchaseLineEntity) (status string) {
 	if len(lines) == 0 {
-		return purchaseenums.PurchaseStatusPending
+		return purchaseenums.PurchaseStatusOrdered
 	}
 	receivedAll := true
 	receivedAny := false
@@ -485,8 +568,23 @@ func derivePurchaseStatus(lines []*purchasemodel.PurchaseLineEntity) (status str
 	case receivedAny:
 		return purchaseenums.PurchaseStatusPartial
 	default:
-		return purchaseenums.PurchaseStatusPending
+		return purchaseenums.PurchaseStatusOrdered
 	}
+}
+
+// statusAfterDerive 重算推导状态时「当前是人工态就原样保留」。
+//
+// 改单（UpdatePurchaseOrder）会重算推导状态，但草稿不该因为「加了一行」就变成已下单
+// （草稿的唯一出口是显式下单，见 PlacePurchaseOrder）；异常中的单也不该因为改了一句备注
+// 就自己好了 —— 同理 finished / cancelled 这两个终态一旦被改单抹掉，
+// 「提前关单」这个人工决定就白做了。
+func statusAfterDerive(current, derived string) string {
+	for _, s := range purchaseenums.PurchaseDerivedStatuses {
+		if current == s {
+			return derived
+		}
+	}
+	return current
 }
 
 // resolvePurchaseSource 解析采购来源：必须存在、同工程、启用中（停用 = 不再选用）。
@@ -535,8 +633,22 @@ func (s *Service) purchaseOrderResp(ctx context.Context, e *purchasemodel.Purcha
 	if wh != nil {
 		resp.WarehouseName = wh.Name
 	}
-	resp.TotalQuantity, resp.ReceivedQuantity = sumPurchaseLines(lines)
+	fillPurchaseQuantities(resp, lines)
 	return resp
+}
+
+// fillPurchaseQuantities 填三个派生数量 + 进度百分比。
+//
+// 为什么不放模板做：模板里的算术是**没有测试的第二份业务实现**，而且它看不到
+// 「采购数量为 0」这种边界（除零）；模板整型渲染也做不了四舍五入。
+// 百分比向下取整：99.6% 显示成 99 比显示成 100% 更诚实 —— 进度条走满但还差货
+// 是最容易被当成「已经收完」的显示。
+func fillPurchaseQuantities(resp *purchasedto.PurchaseOrderResp, lines []*purchasemodel.PurchaseLineEntity) {
+	resp.TotalQuantity, resp.ReceivedQuantity = sumPurchaseLines(lines)
+	resp.OutstandingQuantity = resp.TotalQuantity - resp.ReceivedQuantity
+	if resp.TotalQuantity > 0 {
+		resp.ProgressPercent = resp.ReceivedQuantity * 100 / resp.TotalQuantity
+	}
 }
 
 // purchaseOrderRespFromRow 列表路径的响应组装（行汇总直接取投影里的聚合值，
@@ -550,6 +662,10 @@ func purchaseOrderRespFromRow(row *purchasemodel.PurchaseOrderRow) *purchasedto.
 		Remark: row.Remark, OperatorID: row.OperatorID,
 		TotalQuantity: row.TotalQuantity, ReceivedQuantity: row.ReceivedQuantity,
 		CreatedAt: utils.NewJSONTime(row.CreatedAt), UpdatedAt: utils.NewJSONTime(row.UpdatedAt),
+	}
+	resp.OutstandingQuantity = row.TotalQuantity - row.ReceivedQuantity
+	if row.TotalQuantity > 0 {
+		resp.ProgressPercent = row.ReceivedQuantity * 100 / row.TotalQuantity
 	}
 	return resp
 }
@@ -597,17 +713,19 @@ func normalizePurchaseCode(code string) (out string, err error) {
 }
 
 // normalizePurchaseStatusFilter 归一状态筛选（空串表示不过滤）。
+//
+// 合法取值只认 enums 的 PurchaseStatuses —— 服务层不再自带第二份名单：
+// 新增状态时漏改这里，会让「筛不出刚加的态」变成一个静默的 409，
+// 而调用方看不出是名单没跟上还是这个值真的非法。
 func normalizePurchaseStatusFilter(status string) (out string, err error) {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "":
+	normalized := strings.ToLower(strings.TrimSpace(status))
+	if normalized == "" {
 		return "", nil
-	case purchaseenums.PurchaseStatusPending, purchaseenums.PurchaseStatusPartial,
-		purchaseenums.PurchaseStatusReceived, purchaseenums.PurchaseStatusFinished,
-		purchaseenums.PurchaseStatusCancelled:
-		return strings.ToLower(strings.TrimSpace(status)), nil
-	default:
+	}
+	if !purchaseenums.IsKnownPurchaseStatus(normalized) {
 		return "", purchaseenums.Err(purchaseenums.ErrPurchaseStatusInvalid)
 	}
+	return normalized, nil
 }
 
 // purchasePageArgs 归一采购单分页参数。
@@ -731,7 +849,18 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 		}
 		if !outstanding {
 			// 全部收满的单不再受理（状态已是 received）。
+			//
+			// 这个判断排在状态守卫**之前**：收满的单同时满足「状态不可收」与「没有余量」，
+			// 而后者是用户更想看到的解释（「已经收完了」比「这个状态不允许收货」有用）。
 			return purchaseenums.Err(purchaseenums.ErrReceiptOrderDone)
+		}
+		// 状态守卫：只有已下单 / 部分到货可以收货（dy_erp 的 receivableStatuses 同口径）。
+		//
+		// 草稿还没下单、已完结 / 已取消已收尾、异常要人工解除 —— 这几种状态下收货都是
+		// 「绕过了单据流程」。它与超收守卫是两件事：这里判「这张单现在该不该收」，
+		// IncrPurchaseLineReceivedTx 判「这一次收多少」。
+		if !purchaseenums.IsReceivableStatus(locked.Status) {
+			return purchaseenums.Err(purchaseenums.ErrPurchaseStatusNotReceivable)
 		}
 		receiptID := uuid.NewString()
 		seq, cerr := s.m.CountOrderReceiptsTx(ctx, tx, locked.ID, projectID)
@@ -799,7 +928,7 @@ func (s *Service) RegisterReceipt(ctx context.Context, req *purchasedto.Register
 		if lerr != nil {
 			return lerr
 		}
-		status := derivePurchaseStatus(fresh)
+		status := statusAfterDerive(locked.Status, derivePurchaseStatus(fresh))
 		receipt = &purchasemodel.ReceiptEntity{
 			ID: receiptID, ProjectID: projectID,
 			Code: fmt.Sprintf("%s-R%d", locked.Code, seq+1),
