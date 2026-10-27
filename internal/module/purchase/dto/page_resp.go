@@ -82,8 +82,23 @@ type PurchaseOrderViewResp struct {
 	Remark     string
 	OperatorID string
 
-	TotalQuantity    int
-	ReceivedQuantity int
+	// 数量四件由 service 算好（模板不做减法与除法，见 template_logic 门禁）。
+	// ProgressPercent 是整数百分比：进度条与「还差多少」用同一份数据，
+	// 免得模板自己除一次、两者在取整上打架。
+	TotalQuantity       int
+	ReceivedQuantity    int
+	OutstandingQuantity int
+	ProgressPercent     int
+	// OutstandingTone 未到量的展示色调（还有余量 = warn，收齐 = ok），由 handler 给。
+	// 模板里写 `OutstandingQuantity > 0` 是把「什么算收齐」这条业务判断搬进视图，
+	// 而且对非数字输入会直接抛渲染错误（Jet 的 numeric comparative）。
+	OutstandingTone string
+	// 三个**拼好的徽标文案**（「已入库 3 / 10」「未入库 7」「40%」），由 handler 用当前语言
+	// 的词条拼出来：模板只 include 徽标片段并传这几串，不做除法、不做数字→文本转换、
+	// 也不做「词条 + 数字」的拼接（Jet 的 + 对 map 索引表达式不成立）。
+	ReceivedLabel    string
+	OutstandingLabel string
+	ProgressLabel    string
 	Lines            []PurchaseOrderLineViewResp
 	// RequestID 每张单一个一次性幂等键（渲染表单时生成，重复提交命中同一张入库单）。
 	RequestID string

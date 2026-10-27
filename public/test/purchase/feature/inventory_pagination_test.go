@@ -99,8 +99,10 @@ func TestInventoryPurchasesPagePagination(t *testing.T) {
 	mustPurchaseOrder(t, f, "PO-PAGE-1", src.ID, wh.ID, []purchasedto.PurchaseLineReq{purchaseLine(p, v, 1, 10)})
 	mustPurchaseOrder(t, f, "PO-PAGE-2", src.ID, wh.ID, []purchasedto.PurchaseLineReq{purchaseLine(p, v, 2, 10)})
 
+	// 状态筛选值用 ordered（迁移 670 起 pending 改名为 ordered）：
+	// 老值会被服务层判非法，页面降级成错误条 —— 那样「翻页保留筛选」就测不到了。
 	rec := httptestGet(engine, "/admin/inventory/purchases?project="+f.projectID+
-		"&limit=1&status=pending&keyword=PO-PAGE")
+		"&limit=1&status=ordered&keyword=PO-PAGE")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("采购入库页应 200，实际 %d", rec.Code)
 	}
@@ -117,7 +119,7 @@ func TestInventoryPurchasesPagePagination(t *testing.T) {
 		t.Fatalf("第 1 页应渲染 1 张采购单，实际 %d 张", got)
 	}
 	line := paginationLinkLine(t, body, 2)
-	for _, want := range []string{"status=pending", "keyword=PO-PAGE"} {
+	for _, want := range []string{"status=ordered", "keyword=PO-PAGE"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("翻页链接丢了筛选条件 %s：%s", want, line)
 		}

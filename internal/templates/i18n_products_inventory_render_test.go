@@ -583,6 +583,10 @@ func TestGroupDPurchasesPageRenders(t *testing.T) {
 			"ID": "o1", "Code": "PO-1", "Status": "partial", "StatusLabel": "部分入库",
 			"SourceName": "苏州通达", "SourceTypeLabel": "外部供应商", "WarehouseName": "苏州仓",
 			"ReceivedQuantity": "1", "TotalQuantity": "2", "RequestID": "req1",
+			"OutstandingQuantity": 1, "ProgressPercent": 50,
+			// 三个徽标文案由 handler 拼好（词条 + 数字），模板只 include 片段直出。
+			"ReceivedLabel": "已入库 1 / 2", "OutstandingLabel": "未入库 1",
+			"ProgressLabel": "50%", "OutstandingTone": "warn",
 			"OrderedAt": "2026-01-01", "OperatorID": "u1", "Remark": "",
 			"Lines": []map[string]any{{
 				"ID": "l1", "SKUCode": "SKU1", "Quantity": "2", "ReceivedQuantity": "1",

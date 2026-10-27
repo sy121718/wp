@@ -138,6 +138,8 @@ func TestPurchaseListColumnsAlign(t *testing.T) {
 			"ID": "o1", "Code": "PO-1", "SourceName": "货源甲", "SourceTypeLabel": "外部供应商",
 			"WarehouseName": "仓库甲", "Status": "partial", "StatusLabel": "部分入库",
 			"ReceivedQuantity": 1, "TotalQuantity": 2, "OrderedAt": "2026-01-01", "Lines": []map[string]any{},
+			"OutstandingQuantity": 1, "ProgressPercent": 50, "OutstandingTone": "warn",
+			"ReceivedLabel": "已入库 1 / 2", "OutstandingLabel": "未入库 1", "ProgressLabel": "50%",
 		}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -63,8 +63,8 @@ func TestReceiptRollsBackAccountingWhenStockChangeFails(t *testing.T) {
 	if receiptItems != 0 {
 		t.Fatalf("入库行必须回滚掉，实际 %d 行", receiptItems)
 	}
-	if got := purchaseStatusIn(t, f, order.ID); got != purchaseenums.PurchaseStatusPending {
-		t.Fatalf("采购单状态应仍是 pending，实际 %q", got)
+	if got := purchaseStatusIn(t, f, order.ID); got != purchaseenums.PurchaseStatusOrdered {
+		t.Fatalf("采购单状态应仍是 ordered，实际 %q", got)
 	}
 	// 库存：行还在（商品建变体时生成的那一行），但数量与流水都要退回去 ——
 	// 故障发生在数量写回之后，这里最能说明「同一条事务」。

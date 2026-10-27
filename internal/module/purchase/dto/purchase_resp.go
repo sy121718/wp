@@ -32,18 +32,23 @@ type PurchaseOrderResp struct {
 	SourceType    string `json:"sourceType"`
 	WarehouseID   string `json:"warehouseId"`
 	WarehouseName string `json:"warehouseName"`
-	// Status 五个值：前三个由「已入库数量 与 采购数量」推导（pending / partial / received），
-	// 后两个是人工终态（finished 提前关单 / cancelled 取消，迁移 626）。
-	Status           string              `json:"status"`
-	OrderedAt        utils.JSONTime      `json:"orderedAt"`
-	ExpectedAt       *utils.JSONTime     `json:"expectedAt"`
-	Remark           string              `json:"remark"`
-	OperatorID       string              `json:"operatorId"`
-	TotalQuantity    int                 `json:"totalQuantity"`
-	ReceivedQuantity int                 `json:"receivedQuantity"`
-	Lines            []*PurchaseLineResp `json:"lines"`
-	CreatedAt        utils.JSONTime      `json:"createdAt"`
-	UpdatedAt        utils.JSONTime      `json:"updatedAt"`
+	// Status 七个值（迁移 670）。ordered / partial / received 三个由「已入库数量 与
+	// 采购数量」推导；draft / exception / finished / cancelled 是人工态，只由动作推进
+	// （下单 / 标异常 / 解除异常 / 提前关单 / 取消），表单里没有状态字段。
+	Status     string          `json:"status"`
+	OrderedAt  utils.JSONTime  `json:"orderedAt"`
+	ExpectedAt *utils.JSONTime `json:"expectedAt"`
+	Remark     string          `json:"remark"`
+	OperatorID string          `json:"operatorId"`
+	// 数量四件一次给全：模板只显示，不做减法与除法（template_logic 门禁）。
+	// ProgressPercent 是「已入库 / 采购数量」的整数百分比（采购数量为 0 时给 0）。
+	TotalQuantity       int                 `json:"totalQuantity"`
+	ReceivedQuantity    int                 `json:"receivedQuantity"`
+	OutstandingQuantity int                 `json:"outstandingQuantity"`
+	ProgressPercent     int                 `json:"progressPercent"`
+	Lines               []*PurchaseLineResp `json:"lines"`
+	CreatedAt           utils.JSONTime      `json:"createdAt"`
+	UpdatedAt           utils.JSONTime      `json:"updatedAt"`
 }
 
 // ReceiptItemResp 一条入库行（数量 + 单价快照 + 成本价回写结果）。

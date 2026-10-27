@@ -318,9 +318,12 @@ POST /admin/departments/update
 POST /admin/inventory/external-sku
 POST /admin/inventory/purchases/cancel
 POST /admin/inventory/purchases/create
+POST /admin/inventory/purchases/exception
 POST /admin/inventory/purchases/finish
+POST /admin/inventory/purchases/place
 POST /admin/inventory/purchases/production
 POST /admin/inventory/purchases/receipt
+POST /admin/inventory/purchases/resume
 POST /admin/inventory/purchases/update
 POST /admin/inventory/reason/create
 POST /admin/inventory/reason/update

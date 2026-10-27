@@ -27,9 +27,17 @@ const (
 	KeySourcesStatsUnrelated     = "admin.inventory_sources.stats.unrelated"
 
 	// —— 采购入库页（key 前缀是 `admin.inventory_purchases.*`）——
-	KeyPurchasesStatusPending   = "admin.inventory_purchases.status.pending"
+	//
+	// 七个状态各一个 key（迁移 670 起）：状态文案是**动作推进的结果**，不是用户可以
+	// 在表单里选的枚举值 —— 措辞按「这张单现在到哪一步」写，「未入库 / 已收满」这种
+	// 数量口径的说法留给列头（col.*）。
+	KeyPurchasesStatusDraft     = "admin.inventory_purchases.status.draft"
+	KeyPurchasesStatusOrdered   = "admin.inventory_purchases.status.ordered"
 	KeyPurchasesStatusPartial   = "admin.inventory_purchases.status.partial"
+	KeyPurchasesStatusReceived  = "admin.inventory_purchases.status.received"
+	KeyPurchasesStatusException = "admin.inventory_purchases.status.exception"
 	KeyPurchasesColReceived     = "admin.inventory_purchases.col.received"
+	KeyPurchasesColOutstanding  = "admin.inventory_purchases.col.outstanding"
 	KeyPurchasesKindPurchase    = "admin.inventory_purchases.kind.purchase"
 	KeyPurchasesProductionOpen  = "admin.inventory_purchases.production.open"
 	KeyPurchasesOptionCostLabel = "admin.inventory_purchases.option.costLabel"

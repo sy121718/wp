@@ -333,13 +333,58 @@ func (h *purchasePageHandle) PurchaseFinish(c *gin.Context) {
 	response.Success(c, nil)
 }
 
-// PurchaseCancel 采购单取消：pending / partial → cancelled。
+// PurchaseCancel 采购单取消：草稿 / 已下单 / 部分到货 / 异常 → 已取消。
 func (h *purchasePageHandle) PurchaseCancel(c *gin.Context) {
 	form, ok := binding.Form[purchasedto.PurchaseStatusFormReq](c)
 	if !ok {
 		return
 	}
 	if _, err := h.purchase.CancelPurchaseOrder(c.Request.Context(), form.StatusReq()); err != nil {
+		purchaseFail(c, err)
+		return
+	}
+	response.Success(c, nil)
+}
+
+// PurchasePlace 草稿下单：draft → ordered（670）。
+//
+// 草稿页面上只多这一个出口 —— 草稿的其余路径（改行、取消）与普通单一致，
+// 不额外造一套「草稿专用编辑页」：它只是同一张单的早一个阶段。
+func (h *purchasePageHandle) PurchasePlace(c *gin.Context) {
+	form, ok := binding.Form[purchasedto.PurchaseStatusFormReq](c)
+	if !ok {
+		return
+	}
+	if _, err := h.purchase.PlacePurchaseOrder(c.Request.Context(), form.StatusReq()); err != nil {
+		purchaseFail(c, err)
+		return
+	}
+	response.Success(c, nil)
+}
+
+// PurchaseException 标记异常：已下单 / 部分到货 / 已到货 → 异常。
+//
+// 与解除异常成对：异常期间收货入口被服务层拦住（IsReceivableStatus 不含 exception），
+// 这就是「先别收」这个动作在数据上的表达。
+func (h *purchasePageHandle) PurchaseException(c *gin.Context) {
+	form, ok := binding.Form[purchasedto.PurchaseStatusFormReq](c)
+	if !ok {
+		return
+	}
+	if _, err := h.purchase.MarkPurchaseOrderException(c.Request.Context(), form.StatusReq()); err != nil {
+		purchaseFail(c, err)
+		return
+	}
+	response.Success(c, nil)
+}
+
+// PurchaseResume 解除异常：异常 → 按明细行重新推导（通常是已下单 / 部分到货）。
+func (h *purchasePageHandle) PurchaseResume(c *gin.Context) {
+	form, ok := binding.Form[purchasedto.PurchaseStatusFormReq](c)
+	if !ok {
+		return
+	}
+	if _, err := h.purchase.ResumePurchaseOrder(c.Request.Context(), form.StatusReq()); err != nil {
 		purchaseFail(c, err)
 		return
 	}
@@ -388,32 +433,51 @@ func (h *purchasePageHandle) purchaseOrderRows(c *gin.Context, projectID, status
 	}
 	tr := purchaseTranslate(c)
 	for _, o := range orders {
-		lines := make([]purchasedto.PurchaseOrderLineViewResp, 0, len(o.Lines))
-		for _, l := range o.Lines {
-			lines = append(lines, purchasedto.PurchaseOrderLineViewResp{
-				ID: l.ID, SKUCode: l.SKUCode, VariantID: l.VariantID,
-				Quantity: l.Quantity, ReceivedQuantity: l.ReceivedQuantity,
-				OutstandingQuantity: l.OutstandingQuantity,
-				UnitPrice:           strconv.FormatFloat(l.UnitPrice, 'f', 2, 64),
-				Remark:              l.Remark,
-				Open:                l.OutstandingQuantity > 0,
-				OutstandingTone:     outstandingTone(l.OutstandingQuantity),
-			})
-		}
-		out = append(out, purchasedto.PurchaseOrderViewResp{
-			ID: o.ID, Code: o.Code,
-			SourceName: o.SourceName, SourceType: o.SourceType,
-			SourceTypeLabel: sourceTypeLabel(tr, o.SourceType),
-			WarehouseName:   o.WarehouseName,
-			Status:          o.Status, StatusLabel: purchaseStatusLabel(tr, o.Status),
-			OrderedAt: o.OrderedAt, ExpectedAt: o.ExpectedAt,
-			Remark: o.Remark, OperatorID: o.OperatorID,
-			TotalQuantity: o.TotalQuantity, ReceivedQuantity: o.ReceivedQuantity,
-			Lines:     lines,
-			RequestID: uuid.NewString(),
-		})
+		out = append(out, purchaseOrderRowView(o, tr))
 	}
 	return out, total, curPage
+}
+
+// purchaseOrderRowView 一张采购单 → 列表一行的视图对象（含逐行明细与一次性幂等键）。
+//
+// 从 purchaseOrderRows 里抽出来是为了让「取数」与「逐行映射」各自可读：
+// 映射本身有十几行字段赋值，混在分页取数里会让控制面方法体越过形状门禁的上限
+// （controller_shape_test.go 判的是方法行数，判据是「装配/取数/映射应分层」）。
+func purchaseOrderRowView(o *purchasedto.PurchaseOrderResp,
+	tr func(key, fallback string) string) purchasedto.PurchaseOrderViewResp {
+	lines := make([]purchasedto.PurchaseOrderLineViewResp, 0, len(o.Lines))
+	for _, l := range o.Lines {
+		lines = append(lines, purchasedto.PurchaseOrderLineViewResp{
+			ID: l.ID, SKUCode: l.SKUCode, VariantID: l.VariantID,
+			Quantity: l.Quantity, ReceivedQuantity: l.ReceivedQuantity,
+			OutstandingQuantity: l.OutstandingQuantity,
+			UnitPrice:           strconv.FormatFloat(l.UnitPrice, 'f', 2, 64),
+			Remark:              l.Remark,
+			Open:                l.OutstandingQuantity > 0,
+			OutstandingTone:     outstandingTone(l.OutstandingQuantity),
+		})
+	}
+	return purchasedto.PurchaseOrderViewResp{
+		ID: o.ID, Code: o.Code,
+		SourceName: o.SourceName, SourceType: o.SourceType,
+		SourceTypeLabel: sourceTypeLabel(tr, o.SourceType),
+		WarehouseName:   o.WarehouseName,
+		Status:          o.Status, StatusLabel: purchaseStatusLabel(tr, o.Status),
+		OrderedAt: o.OrderedAt, ExpectedAt: o.ExpectedAt,
+		Remark: o.Remark, OperatorID: o.OperatorID,
+		TotalQuantity: o.TotalQuantity, ReceivedQuantity: o.ReceivedQuantity,
+		OutstandingQuantity: o.OutstandingQuantity, ProgressPercent: o.ProgressPercent,
+		OutstandingTone: outstandingTone(o.OutstandingQuantity),
+		// 三个徽标文案在这里拼好（词条 + 数字）：模板只 include 片段传字符串，
+		// Jet 的 + 对 map 索引表达式（.["t"](…)）不成立，且视图不该做数字→文本。
+		ReceivedLabel: tr(purchaseenums.KeyPurchasesColReceived, "已入库") +
+			" " + strconv.Itoa(o.ReceivedQuantity) + " / " + strconv.Itoa(o.TotalQuantity),
+		OutstandingLabel: tr(purchaseenums.KeyPurchasesColOutstanding, "未入库") +
+			" " + strconv.Itoa(o.OutstandingQuantity),
+		ProgressLabel: strconv.Itoa(o.ProgressPercent) + "%",
+		Lines:         lines,
+		RequestID:     uuid.NewString(),
+	}
 }
 
 // purchaseHistoryRows 按 SKU（可空 = 全部）取进货历史。
@@ -550,29 +614,38 @@ func (h *purchasePageHandle) variantOptions(ctx context.Context, projectID strin
 
 // —— 表单与文案工具 ——
 
-// purchaseStatusOptions 状态筛选下拉（五个值：三个推导态 + 两个人工终态）。
+// purchaseStatusOptions 状态筛选下拉。
+//
+// 遍历 enums 的 PurchaseStatuses 而不是手写五个字面量：手写的那份名单一定会与服务层
+// 的合法集合（IsKnownPurchaseStatus）漂移，表现是「下拉里有的值筛不出东西」或
+// 「库里有的状态在下拉里选不到」。顺序即 enums 里的业务推进顺序。
 func purchaseStatusOptions(tr func(key, fallback string) string) []purchasedto.OptionResp {
-	return []purchasedto.OptionResp{
-		{Value: purchaseenums.PurchaseStatusPending, Label: purchaseStatusLabel(tr, purchaseenums.PurchaseStatusPending)},
-		{Value: purchaseenums.PurchaseStatusPartial, Label: purchaseStatusLabel(tr, purchaseenums.PurchaseStatusPartial)},
-		{Value: purchaseenums.PurchaseStatusReceived, Label: purchaseStatusLabel(tr, purchaseenums.PurchaseStatusReceived)},
-		{Value: purchaseenums.PurchaseStatusFinished, Label: purchaseStatusLabel(tr, purchaseenums.PurchaseStatusFinished)},
-		{Value: purchaseenums.PurchaseStatusCancelled, Label: purchaseStatusLabel(tr, purchaseenums.PurchaseStatusCancelled)},
+	out := make([]purchasedto.OptionResp, 0, len(purchaseenums.PurchaseStatuses))
+	for _, status := range purchaseenums.PurchaseStatuses {
+		out = append(out, purchasedto.OptionResp{Value: status, Label: purchaseStatusLabel(tr, status)})
 	}
+	return out
 }
 
-// purchaseStatusLabel 推导状态 → 当前语言展示文案。
+// purchaseStatusLabel 采购单状态 → 当前语言展示文案。
+//
+// 词条的声明处是 enums 的 Key 常量（与兜底原文一起），本函数只做「状态 → key」的映射；
+// 拼句不在这里（那是 text 线的事）。
 func purchaseStatusLabel(tr func(key, fallback string) string, status string) string {
 	switch status {
-	case purchaseenums.PurchaseStatusPending:
-		return tr(purchaseenums.KeyPurchasesStatusPending, "未入库")
+	case purchaseenums.PurchaseStatusDraft:
+		return tr(purchaseenums.KeyPurchasesStatusDraft, "草稿")
+	case purchaseenums.PurchaseStatusOrdered:
+		return tr(purchaseenums.KeyPurchasesStatusOrdered, "已下单")
 	case purchaseenums.PurchaseStatusPartial:
-		return tr(purchaseenums.KeyPurchasesStatusPartial, "部分入库")
+		return tr(purchaseenums.KeyPurchasesStatusPartial, "部分到货")
 	case purchaseenums.PurchaseStatusReceived:
-		// 已入库：与同页列头同一个词（英文都是 Received），复用它的词条。
-		return tr(purchaseenums.KeyPurchasesColReceived, "已入库")
+		// 已到货：与「收货进度」列里的同一个词，复用列头词条（KeyPurchasesColReceived）。
+		return tr(purchaseenums.KeyPurchasesStatusReceived, "已到货")
+	case purchaseenums.PurchaseStatusException:
+		return tr(purchaseenums.KeyPurchasesStatusException, "异常")
 	case purchaseenums.PurchaseStatusFinished:
-		return tr(purchaseenums.KeyPurchasesStatusFinished, "已关单")
+		return tr(purchaseenums.KeyPurchasesStatusFinished, "已完结")
 	case purchaseenums.PurchaseStatusCancelled:
 		return tr(purchaseenums.KeyPurchasesStatusCancelled, "已取消")
 	default:
