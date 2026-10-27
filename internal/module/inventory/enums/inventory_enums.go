@@ -138,6 +138,9 @@ const (
 	ErrTransferSameWarehouse    = "ErrTransferSameWarehouse"
 	ErrItemNotInSourceWarehouse = "ErrItemNotInSourceWarehouse"
 	ErrTransferStatusInvalid    = "ErrTransferStatusInvalid"
+	// 审批（迁移 651）。
+	ErrTransferRejectReasonRequired = "ErrTransferRejectReasonRequired"
+	ErrTransferRejectReasonTooLong  = "ErrTransferRejectReasonTooLong"
 	// ErrAttachmentRequired 出货 / 签收必须带凭证附件（用户明确要求）。
 	ErrAttachmentRequired = "ErrAttachmentRequired"
 	// ErrAttachmentNotFound 凭证引用的附件不存在（或不属于本工程）。
@@ -327,6 +330,8 @@ var errFallbacks = map[string]string{
 	ErrTransferSameWarehouse:         "源仓与目标仓不能是同一个",
 	ErrItemNotInSourceWarehouse:      "这条库存行不属于源仓",
 	ErrTransferStatusInvalid:         "调拨单当前状态不允许这个操作",
+	ErrTransferRejectReasonRequired:  "驳回必须写明理由（申请人据此决定怎么改）",
+	ErrTransferRejectReasonTooLong:   "驳回理由过长：最多 {max} 个字符",
 	ErrAttachmentRequired:            "出货与签收都必须上传凭证附件",
 	ErrAttachmentNotFound:            "凭证引用的附件不存在",
 	ErrStockNotEnough:                "可售数量不足（被订单预占的部分不能调拨）",

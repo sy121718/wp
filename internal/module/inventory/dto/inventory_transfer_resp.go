@@ -23,6 +23,13 @@ type TransferRowResp struct {
 	CreateTime      string `json:"createTime"`
 	ShippedAt       string `json:"shippedAt"`
 	ReceivedAt      string `json:"receivedAt"`
+	// 审批链路（迁移 651）：列表要能看出「这张等谁批 / 谁驳回的」。
+	RequestedAt    string `json:"requestedAt"`
+	ApprovedAt     string `json:"approvedAt"`
+	ApprovedName   string `json:"approvedName"`
+	RejectedAt     string `json:"rejectedAt"`
+	RejectedName   string `json:"rejectedName"`
+	RejectedReason string `json:"rejectedReason"`
 }
 
 // TransferItemResp 一条调拨明细（含商品的展示信息，页面不必再查一次）。
@@ -53,6 +60,17 @@ type TransferResp struct {
 	TransferRowResp
 	Items       []*TransferItemResp       `json:"items,omitempty"`
 	Attachments []*TransferAttachmentResp `json:"attachments,omitempty"`
+	// 审批链路（迁移 651）：申请人 / 审批人 / 驳回人与时刻。
+	// 只给 id 与时刻（姓名由页面经后台账号表补，dto 不带展示口径）。
+	RequestedBy    int64  `json:"requestedBy"`
+	RequestedAt    string `json:"requestedAt"`
+	ApprovedBy     int64  `json:"approvedBy"`
+	ApprovedAt     string `json:"approvedAt"`
+	ApprovedName   string `json:"approvedName"`
+	RejectedBy     int64  `json:"rejectedBy"`
+	RejectedAt     string `json:"rejectedAt"`
+	RejectedName   string `json:"rejectedName"`
+	RejectedReason string `json:"rejectedReason"`
 	// ShippedByName / ReceivedByName 操作人（写动作的审计字段）。
 	CreateBy   int64 `json:"createBy"`
 	ShippedBy  int64 `json:"shippedBy"`
@@ -72,7 +90,9 @@ type TransferDetailResp struct {
 
 // TransferStockOptionResp 建单调拨明细的候选：源仓里一条可售的库存行。
 type TransferStockOptionResp struct {
-	StockID   string `json:"stockId"`
+	StockID string `json:"stockId"`
+	// Name 货品名（迁移 642 的主档列）：只给编码，运营认不出「SZ_MY-TEE-1」是哪件衣服。
+	Name      string `json:"name"`
 	SKUCode   string `json:"skuCode"`
 	VariantID string `json:"variantId"`
 	// Quantity / ReservedQuantity / AvailableQuantity 这一行的事实数量（三个一起给）。

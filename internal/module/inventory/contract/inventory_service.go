@@ -310,14 +310,20 @@ type ReasonWriter interface {
 // 与 ERP 的一处刻意差异：建单就要求两个仓（ERP 的目标仓到 Receive 才给）——
 // 本地是单仓管理员操作，建单时不知道发往哪里等于留一张半截单据。
 type TransferService interface {
-	// CreateTransfer 建调拨单（两仓必须存在、active、不同；明细按 stock_id 校验属于源仓）。
+	// CreateTransfer 建调拨申请（落 requested；两仓必须存在、active、不同；明细按 stock_id 校验属于源仓）。
 	CreateTransfer(ctx context.Context, req *inventorydto.CreateTransferReq) (res *inventorydto.TransferResp, err error)
-	// ShipTransfer 出货：AttachmentIDs 为空即拒绝（ErrAttachmentRequired），逐行出库写 transfer_out 流水。
+	// ApproveTransfer 同意（仅 requested → pending）：审批时重校源仓可售，可顺带改目标仓。
+	ApproveTransfer(ctx context.Context, req *inventorydto.TransferApproveReq) (res *inventorydto.TransferResp, err error)
+	// RejectTransfer 驳回（仅 requested → rejected）：理由必填，不动库存。
+	RejectTransfer(ctx context.Context, req *inventorydto.TransferRejectReq) (res *inventorydto.TransferResp, err error)
+	// ShipTransfer 出货（仅 pending）：AttachmentIDs 为空即拒绝（ErrAttachmentRequired），逐行出库写 transfer_out 流水。
 	ShipTransfer(ctx context.Context, req *inventorydto.TransferShipReq) (res *inventorydto.TransferResp, err error)
 	// ReceiveTransfer 签收：同样要求签收凭证，逐行在目标仓入库（同变体同码则累加、否则建行）。
 	ReceiveTransfer(ctx context.Context, req *inventorydto.TransferReceiveReq) (res *inventorydto.TransferResp, err error)
-	// CancelTransfer 取消（仅 pending；in_transit 要先签收或走反向调拨）。
+	// CancelTransfer 取消（requested / pending；in_transit 要先签收或走反向调拨）。
 	CancelTransfer(ctx context.Context, req *inventorydto.TransferCancelReq) (res *inventorydto.TransferResp, err error)
+	// ListTransferStockOptions 建单抽屉的候选：某仓里可售 > 0 的库存行（按可售降序）。
+	ListTransferStockOptions(ctx context.Context, req *inventorydto.TransferStockOptionReq) (list []*inventorydto.TransferStockOptionResp, err error)
 	// ListTransfers 列表（状态 / 关键词过滤 + 分页）。
 	ListTransfers(ctx context.Context, req *inventorydto.ListTransferReq) (list []*inventorydto.TransferRowResp, err error)
 	// CountTransfers 总数（与 ListTransfers 同一份过滤条件）。

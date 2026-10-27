@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/middleware/builtin"
 	inventorydto "go_wp/internal/module/inventory/dto"
 	inventoryenums "go_wp/internal/module/inventory/enums"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -102,7 +103,7 @@ func (h *inventoryTransferPageHandle) InventoryTransferDetail(c *gin.Context) {
 }
 
 // InventoryTransferCreate 建调拨单（POST /api/inventory/transfer/create）。
-func (h *inventoryTransferPageHandle) InventoryTransferCreate(c *gin.Context) {
+func (h *inventoryTransferPageHandle) CreateTransfer(c *gin.Context) {
 	req, ok := binding.JSON[inventorydto.CreateTransferReq](c)
 	if !ok {
 		return
@@ -116,7 +117,7 @@ func (h *inventoryTransferPageHandle) InventoryTransferCreate(c *gin.Context) {
 }
 
 // InventoryTransferShip 出货（POST /api/inventory/transfer/ship）：必须带出货凭证。
-func (h *inventoryTransferPageHandle) InventoryTransferShip(c *gin.Context) {
+func (h *inventoryTransferPageHandle) ShipTransfer(c *gin.Context) {
 	req, ok := binding.JSON[inventorydto.TransferShipReq](c)
 	if !ok {
 		return
@@ -130,7 +131,7 @@ func (h *inventoryTransferPageHandle) InventoryTransferShip(c *gin.Context) {
 }
 
 // InventoryTransferReceive 签收（POST /api/inventory/transfer/receive）：必须带签收凭证。
-func (h *inventoryTransferPageHandle) InventoryTransferReceive(c *gin.Context) {
+func (h *inventoryTransferPageHandle) ReceiveTransfer(c *gin.Context) {
 	req, ok := binding.JSON[inventorydto.TransferReceiveReq](c)
 	if !ok {
 		return
@@ -143,8 +144,55 @@ func (h *inventoryTransferPageHandle) InventoryTransferReceive(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// InventoryTransferCancel 取消（POST /api/inventory/transfer/cancel，仅 pending）。
-func (h *inventoryTransferPageHandle) InventoryTransferCancel(c *gin.Context) {
+// InventoryTransferStockOptions 建单抽屉的候选（GET /api/inventory/transfer/stock-options）。
+func (h *inventoryTransferPageHandle) InventoryTransferStockOptions(c *gin.Context) {
+	req, ok := binding.Query[inventorydto.TransferStockOptionReq](c)
+	if !ok {
+		return
+	}
+	list, err := h.transfers.ListTransferStockOptions(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, 400, "inventory", err)
+		return
+	}
+	response.Success(c, list)
+}
+
+// InventoryTransferApprove 同意调拨（POST /api/inventory/transfer/approve，仅 requested）。
+func (h *inventoryTransferPageHandle) ApproveTransfer(c *gin.Context) {
+	req, ok := binding.JSON[inventorydto.TransferApproveReq](c)
+	if !ok {
+		return
+	}
+	// 审计字段从会话无条件覆盖：客户端传什么都不看（对齐 order_shipment 的同一条约定）。
+	req.OperatorID = int64(builtin.CurrentUserID(c))
+	req.OperatorName = builtin.OperatorName(c)
+	res, err := h.transfers.ApproveTransfer(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, 400, "inventory", err)
+		return
+	}
+	response.Success(c, res)
+}
+
+// InventoryTransferReject 驳回调拨（POST /api/inventory/transfer/reject，仅 requested）。
+func (h *inventoryTransferPageHandle) RejectTransfer(c *gin.Context) {
+	req, ok := binding.JSON[inventorydto.TransferRejectReq](c)
+	if !ok {
+		return
+	}
+	req.OperatorID = int64(builtin.CurrentUserID(c))
+	req.OperatorName = builtin.OperatorName(c)
+	res, err := h.transfers.RejectTransfer(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorAuto(c, 400, "inventory", err)
+		return
+	}
+	response.Success(c, res)
+}
+
+// InventoryTransferCancel 取消（POST /api/inventory/transfer/cancel，requested / pending）。
+func (h *inventoryTransferPageHandle) CancelTransfer(c *gin.Context) {
 	req, ok := binding.JSON[inventorydto.TransferCancelReq](c)
 	if !ok {
 		return
@@ -176,13 +224,15 @@ func NewInventoryTransferPageHandle(transfers inventoryTransferContract,
 	return &inventoryTransferPageHandle{transfers: transfers, projects: projects, warehouses: warehouseLister}
 }
 
-// transferStatusOptions 调拨单状态筛选（四态）。
+// transferStatusOptions 调拨单状态筛选（六态；requested / rejected 见迁移 651）。
 func transferStatusOptions(tr func(key, fallback string) string) []inventorydto.OptionResp {
 	return []inventorydto.OptionResp{
 		{Value: "", Label: tr(inventoryenums.InventoryFilterAll, "（全部）")},
+		{Value: "requested", Label: tr(inventoryenums.InventoryTransfersStatusRequested, "待审批")},
 		{Value: "pending", Label: tr(inventoryenums.InventoryTransfersStatusPending, "待出货")},
 		{Value: "in_transit", Label: tr(inventoryenums.InventoryTransfersStatusInTransit, "在途")},
 		{Value: "completed", Label: tr(inventoryenums.InventoryTransfersStatusCompleted, "已完成")},
+		{Value: "rejected", Label: tr(inventoryenums.InventoryTransfersStatusRejected, "已驳回")},
 		{Value: "cancelled", Label: tr(inventoryenums.InventoryTransfersStatusCancelled, "已取消")},
 	}
 }
@@ -211,6 +261,9 @@ type inventoryTransferContract interface {
 	CountTransfers(ctx context.Context, req *inventorydto.ListTransferReq) (int64, error)
 	GetTransfer(ctx context.Context, req *inventorydto.GetTransferReq) (*inventorydto.TransferDetailResp, error)
 	CreateTransfer(ctx context.Context, req *inventorydto.CreateTransferReq) (*inventorydto.TransferResp, error)
+	ListTransferStockOptions(ctx context.Context, req *inventorydto.TransferStockOptionReq) ([]*inventorydto.TransferStockOptionResp, error)
+	ApproveTransfer(ctx context.Context, req *inventorydto.TransferApproveReq) (*inventorydto.TransferResp, error)
+	RejectTransfer(ctx context.Context, req *inventorydto.TransferRejectReq) (*inventorydto.TransferResp, error)
 	ShipTransfer(ctx context.Context, req *inventorydto.TransferShipReq) (*inventorydto.TransferResp, error)
 	ReceiveTransfer(ctx context.Context, req *inventorydto.TransferReceiveReq) (*inventorydto.TransferResp, error)
 	CancelTransfer(ctx context.Context, req *inventorydto.TransferCancelReq) (*inventorydto.TransferResp, error)

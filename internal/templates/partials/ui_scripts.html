@@ -14,6 +14,9 @@
 {* 控件 ↔ htmx 的唯一适配层：控件广播 wb:rescan，本文件转成 htmx.process。
    没有 htmx 时它什么都不做 —— 控件因此不依赖传输层。 *}
 <script src="/static/js/ui/htmx-bridge.js"></script>
+{* 放行 [data-requires-js] 的写按钮：排在控件基座之前 —— 首屏那批按钮要尽早可见，
+   不必等 index.js 的控件扫描跑完。 *}
+<script src="/static/js/ui/requires_js.js"></script>
 <script src="/static/js/ui/_util.js"></script>
 <script src="/static/js/ui/select.js"></script>
 <script src="/static/js/ui/drawer.js"></script>
@@ -35,6 +38,11 @@
 <script src="/static/js/ui/preview-thumb.js"></script>
 <script src="/static/js/ui/preview-zoom.js"></script>
 <script src="/static/js/ui/media-gallery.js"></script>
+{* 凭证附件字段（媒体 id 列表）：媒体库多选 → 同名多值隐藏域。
+   排在 mediafield.js 之后 —— 它复用 openMediaPickerMulti。 *}
+<script src="/static/js/ui/attachment_pick.js"></script>
+{* 调拨建单的明细行（lines[i].* 扁平键）：表单没有嵌套数组语法，行只能由前端铺。 *}
+<script src="/static/js/ui/transfer_lines.js"></script>
 <script src="/static/js/ui/hovercard.js"></script>
 <script src="/static/js/ui/ai-fab.js"></script>
 <script src="/static/js/ui/index.js"></script>

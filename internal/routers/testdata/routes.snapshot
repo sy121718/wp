@@ -157,6 +157,7 @@ GET /api/inventory/stock/list
 GET /api/inventory/stock/sku
 GET /api/inventory/transfer/get
 GET /api/inventory/transfer/list
+GET /api/inventory/transfer/stock-options
 GET /api/inventory/warehouse/get
 GET /api/inventory/warehouse/list
 GET /api/mail/account/list
@@ -468,9 +469,11 @@ POST /api/inventory/source/update
 POST /api/inventory/stock/change
 POST /api/inventory/stock/deduct
 POST /api/inventory/stock/ensure
+POST /api/inventory/transfer/approve
 POST /api/inventory/transfer/cancel
 POST /api/inventory/transfer/create
 POST /api/inventory/transfer/receive
+POST /api/inventory/transfer/reject
 POST /api/inventory/transfer/ship
 POST /api/inventory/warehouse/create
 POST /api/inventory/warehouse/delete
