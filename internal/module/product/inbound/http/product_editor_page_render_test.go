@@ -170,6 +170,12 @@ func (s *editorStub) ProductTagsPage(context.Context, *productdto.ProductTagsPag
 	return productTagsPageViewStub(nil), nil
 }
 
+// ProductPublishRecordPage 发布记录页（B9，接口的一部分）；本文件不会调到它。
+func (s *editorStub) ProductPublishRecordPage(context.Context, *productdto.ProductPublishRecordPageReq) (*productdto.ProductPublishRecordPageResp, error) {
+	s.record("ProductPublishRecordPage")
+	return productPublishRecordPageViewStub(nil), nil
+}
+
 // CategoryParentOptions 父级候选片段走读模型（第十四个方法）；本文件不会调到它。
 func (s *editorStub) CategoryParentOptions(context.Context, *productdto.ProductCategoryParentsReq) (productdto.CategoryParentOptionsResp, error) {
 	s.record("CategoryParentOptions")

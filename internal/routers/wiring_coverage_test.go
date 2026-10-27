@@ -84,10 +84,15 @@ var moduleInternalSetters = map[string]string{
 	"SetInventoryDeps":          "product.SetupProductPages：形参 inventories 转交；它在转交方法内注入真端口 product.SetWarehouseOptionsPort（已登记 manifest）",
 	"SetDetailTemplateDeps":     "product.SetupProductPages：形参 contentTemplates + instances 转交；它在转交方法内注入真端口 product.SetEntityTemplatePort / SetDetailTemplatePort（已登记 manifest）",
 	"SetDetailTemplateModePort": "product.SetupProductPages：形参 presentations 转交详情页模板模式端口",
-	"SetSeoTitleSources":        "product.SetupProductPages：形参 pageSvc 转交 SEO 标题候选来源",
-	"SetI18nStaleMarker":        "product.NewProductTranslationHandle：构造参数 pages（失效标记）转交",
-	"SetTranslationInstances":   "product.NewProductTranslationHandle：构造参数 instances 转交",
-	"SetTranslationStore":       "product.SetContentTranslationStore：形参 port（译文存储口）转交",
+	// 发布记录页（B9）：与上面两条同形态 —— 形参 presentations（静态类型 PresentationService
+	// 已嵌入 presentation 的 PublishRecordPort，编译期成立）交进来，在转交方法内部包成
+	// outbound/publishrecord 再注入读模型。不需要运行期断言，也没有第二个真端口要 marks。
+	"SetPublishRecordDeps":    "product.SetupProductPages：形参 instances 转交；它在转交方法内注入真端口 product.SetPublishRecordPort（本模块读模型字段）",
+	"SetPublishRecordPort":    "product.SetPublishRecordPort：moduleInbound 的转交方法把 outbound/publishrecord 适配器交到 service 读模型，本行即那个真端口",
+	"SetSeoTitleSources":      "product.SetupProductPages：形参 pageSvc 转交 SEO 标题候选来源",
+	"SetI18nStaleMarker":      "product.NewProductTranslationHandle：构造参数 pages（失效标记）转交",
+	"SetTranslationInstances": "product.NewProductTranslationHandle：构造参数 instances 转交",
+	"SetTranslationStore":     "product.SetContentTranslationStore：形参 port（译文存储口）转交",
 	// —— admin ——
 	"SetDictReader": "admin.SetupAdminPages：形参 dict（sysconfigcontract.DictReader）转交 i18n 词条页",
 	"SetLangCookie": "admin.AdminLangSwitch：包级助手 response.SetLangCookie —— HTTP 出口写语言 cookie，不是端口",

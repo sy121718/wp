@@ -39,6 +39,10 @@ type PresentationService interface {
 	// 收窄端口（后台商品详情页只拿得到这六条）。主服务嵌它，装配层持有的本接口值
 	//（静态类型 PresentationService）因此直接满足那条端口，注入无需运行期断言。
 	DetailTemplateModePort
+	// PublishRecordPort 发布记录只读口（B9）：按实体批量读「现在发布成什么样」。
+	// 与 DetailTemplateModePort 同一手法 —— 收窄端口声明在 publish_record.go，
+	// 主服务嵌它，装配层持有的本接口值因此直接满足那条端口，注入无需运行期断言。
+	PublishRecordPort
 	// ClearOverride 清除实例级文档覆盖并按（新）模板重建：放弃自定义 / 换底稿。
 	// 语义等同端口的 ReapplyPreset，保留它是因为既有调用点用这个名字。
 	ClearOverride(ctx context.Context, req *presentationdto.ClearOverrideReq) (res *presentationdto.InstanceResp, err error)

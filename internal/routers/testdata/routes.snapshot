@@ -92,6 +92,7 @@ GET /admin/products/detail
 GET /admin/products/edit
 GET /admin/products/new
 GET /admin/products/preview-frame
+GET /admin/products/publish-records
 GET /admin/products/seo/drawer
 GET /admin/products/template
 GET /admin/products/translations

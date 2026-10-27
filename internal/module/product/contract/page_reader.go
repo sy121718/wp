@@ -128,6 +128,17 @@ type ProductPageReader interface {
 	// 计数 → 页码收敛 → 取页。命中商品**不在首屏取**（审计 PERF-02），由展开区按页拉片段。
 	ProductTagsPage(ctx context.Context, req *productdto.ProductTagsPageReq) (res *productdto.ProductTagsPageResp, err error)
 
+	// ProductPublishRecordPage 商品发布记录整页的读模型（B9）：工程清单 → 工程存在性校验 →
+	// 商品清单（按关键词）→ 这些商品的当前发布登记（站点路径 / 发布时间 / 产物版本 /
+	// 是否上线 / 是否待重建）→ 状态筛选后分页。
+	//
+	// 契约同上（视图恒非 nil / 失败同时给 err），另加两条这一屏特有的：
+	//   · **没有历史这一维**：库里没有「每次发布尝试成功/失败」的明细表，视图只给当前状态，
+	//     不为「像别的系统」而编造发布历史行；
+	//   · 发布记录端口未装配**不算失败**（Ready=false，200 就地说明）：那是装配缺陷的
+	//     可见提示，与「数据读不到」是两档 —— 混用会让「没接上」被说成「读不出来」。
+	ProductPublishRecordPage(ctx context.Context, req *productdto.ProductPublishRecordPageReq) (res *productdto.ProductPublishRecordPageResp, err error)
+
 	// CategoryParentOptions 分类抽屉「父级」候选的一屏（搜索式）。
 	//
 	// 参数级判据在服务端给：工程不存在 / 没给工程一律返回业务错误（出口给 400），

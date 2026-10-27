@@ -675,6 +675,23 @@ func productKeywordFilter(q *gorm.DB, keyword string) *gorm.DB {
 }
 
 // Count 列表总数（与 List 同过滤条件）。
+// ListForPublishRecords 工程内全部商品的 id / name / slug（发布记录页用，B9）。
+//
+// 与 List 的区别：**不分页、不带 status**。发布记录页的状态筛选筛的是「当前发布状态」
+// （已上线 / 有实例未上线 / 未建实例），那一列不在 products 表里 —— 过滤发生在与发布登记
+// 合并之后，所以商品必须先全量取。只读三列：列表页要渲染的图、价格、描述一律不搬。
+//
+// 注意 List 的 (limit, offset) 是 gorm 直传的：Limit(0) 生成 LIMIT 0（**零行**，不是不限），
+// 所以这里不能靠 List(ctx, ..., 0, 0) 表达「全量」，必须另开一个读法。
+func (m *Model) ListForPublishRecords(ctx context.Context, projectID, keyword string) (list []*ProductEntity, err error) {
+	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&ProductEntity{}).Select("id, project_id, name, slug")
+		return productKeywordFilter(q, keyword).Order("sort ASC, create_time DESC").Find(&list).Error
+	})
+	return list, err
+}
+
+// Count 计数商品（与 List 同一筛选口径）。
 func (m *Model) Count(ctx context.Context, projectID, keyword, status string) (n int64, err error) {
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		q := productKeywordFilter(tx.WithContext(ctx).Model(&ProductEntity{}), keyword)
