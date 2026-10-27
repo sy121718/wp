@@ -23,6 +23,7 @@ import (
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
 	ordermodel "go_wp/internal/module/order/model"
+	"go_wp/pkg/utils"
 )
 
 // carrierProject 承运商 / 待发货页的工程作用域。
@@ -206,28 +207,53 @@ func toCarrierResp(e *ordermodel.OrderCarrierEntity) *orderdto.CarrierResp {
 	}
 }
 
-// ListPendingShip 待发货列表（迁移 627 / 625，S2）：只列 **paid 且还有未发数量** 的订单。
+// pendingShipProbeLine 待判定的订单行 + 它属于哪张单（归口用）。
+type pendingShipProbeLine struct {
+	orderID uint64
+	line    ordercontract.ShipProbeLine
+}
+
+// ListPendingShip 待发货列表的一页（迁移 627 / 625，S2；分页与守卫见 B6-a）。
 //
-// 三条口径：
+// 四条口径：
 //
 //	· 状态必须是 paid：pending 还没付款、shipped 已经发过（部分发货的剩余部分仍留在 paid，
 //	  那正是本页要抓的）；completed / cancelled / refunded 都不用发；
-//	· 「还有未发」= Σ订单行数量 > Σ已发数量。全发完的单应当离开这一屏，
-//	  留着只会让人以为「还没发」；
-//	· 每个数字都由 service 算好（模板不做减法）。剩余 = 件数 − 已发。
-func (s *Service) ListPendingShip(ctx context.Context, projectID string) (rows []*orderdto.PendingShipRow, err error) {
+//	· 「还有未发」= Σ订单行数量 > Σ已发数量。**这条判据落在 SQL 里**（model 的
+//	  pendingShipRemainingSQL）：先全量取回再在 Go 里过滤，页码与总数就与实际行数对不上
+//	  （总数偏大、末页可能空白），一页几万单时不可用；
+//	· 关键词只匹配订单号 / 客户名（仓库手里拿的是拣货单）；
+//	· 每个数字都由 service 算好（模板不做减法），「能不能发」也是算好的事实。
+func (s *Service) ListPendingShip(ctx context.Context, req *orderdto.PendingShipReq) (res *orderdto.PendingShipPageResp, err error) {
 	if s.shipments == nil {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
-	var perr error
-	if projectID, perr = s.carrierProject(ctx, projectID); perr != nil {
+	if req == nil {
+		req = &orderdto.PendingShipReq{}
+	}
+	projectID, perr := s.carrierProject(ctx, req.ProjectID)
+	if perr != nil {
 		return nil, perr
 	}
-	orders, err := s.orders.ListByStatus(ctx, projectID, ordermodel.OrderStatusPaid)
-	if err != nil {
-		return nil, err
+	limit := req.Limit
+	if limit <= 0 || limit > pendingShipPageMax {
+		limit = pendingShipPageDefault
 	}
-	rows = make([]*orderdto.PendingShipRow, 0, len(orders))
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	orders, total, lerr := s.orders.ListPendingShipPage(ctx, ordermodel.PendingShipFilter{
+		ProjectID: projectID, Keyword: strings.TrimSpace(req.Keyword),
+		Offset: offset, Limit: limit,
+	})
+	if lerr != nil {
+		return nil, lerr
+	}
+	// 先取齐每单的「件数 / 已发 / 剩余」与待判行，再一次性问库存侧能不能发 ——
+	// 逐单问会把「一屏 20 单」放大成 20 次往返。
+	rows := make([]*orderdto.PendingShipRow, 0, len(orders))
+	probes := make([]pendingShipProbeLine, 0, len(orders)*2)
 	for _, o := range orders {
 		items, ierr := s.items.ListByOrderID(ctx, o.ID)
 		if ierr != nil {
@@ -237,36 +263,114 @@ func (s *Service) ListPendingShip(ctx context.Context, projectID string) (rows [
 			continue
 		}
 		itemIDs := make([]uint64, 0, len(items))
-		total := 0
+		totalQty := 0
 		for _, it := range items {
 			itemIDs = append(itemIDs, it.ID)
-			total += it.Quantity
+			totalQty += it.Quantity
 		}
-		shipped := 0
 		// 已发数量账走明细求和（不是缓存列）：一张订单的发货单数量是个位数，
 		// 逐个订单查一次是可接受的（本页一屏几十单），而缓存列会在删单后静默失准。
-		for _, n := range s.shippedByOrderItem(ctx, o.ID, itemIDs) {
-			shipped += n
+		shippedByItem := s.shippedByOrderItem(ctx, o.ID, itemIDs)
+		shippedQty := 0
+		for _, n := range shippedByItem {
+			shippedQty += n
 		}
-		if total-shipped <= 0 {
+		remaining := totalQty - shippedQty
+		if remaining <= 0 {
+			// SQL 已经滤过；这里兜住「分页取回后又被并发发完」的窗口。
 			continue
 		}
 		row := &orderdto.PendingShipRow{
 			OrderID: o.ID, OrderNo: o.OrderNo,
 			CustomerName:      o.CustomerName,
+			CustomerEmail:     o.CustomerEmail,
+			Currency:          o.Currency,
 			Total:             o.Total,
-			ItemQuantity:      total,
-			ShippedQuantity:   shipped,
-			RemainingQuantity: total - shipped,
-			OrderedAt:         o.CreateTime.Format(time.RFC3339),
+			LineCount:         len(items),
+			ItemQuantity:      totalQty,
+			ShippedQuantity:   shippedQty,
+			RemainingQuantity: remaining,
+			OrderedAt:         utils.NewJSONTime(o.CreateTime),
+			CreatedVia:        o.CreatedVia,
+			// 装配没注入库存投影时按「可发」处理（与接线前逐字一致：页面不禁用按钮，
+			// 由提交时的真实校验决定成败）。
+			Shippable: true,
 		}
 		// 最近一次发货单号（部分发货的单在本页也要能看出来发过哪几张）。
-		if list, lerr := s.shipments.ListByOrder(ctx, o.ID); lerr == nil && len(list) > 0 {
+		if list, serr := s.shipments.ListByOrder(ctx, o.ID); serr == nil && len(list) > 0 {
 			row.LatestShipmentNo = list[len(list)-1].ShipmentNo
+		}
+		for _, it := range items {
+			left := it.Quantity - shippedByItem[it.ID]
+			if left <= 0 {
+				continue
+			}
+			line := ordercontract.ShipProbeLine{
+				OrderItemID: it.ID, VariantID: it.VariantID, Quantity: left,
+			}
+			if it.WarehouseID != nil {
+				line.WarehouseID = *it.WarehouseID
+			}
+			probes = append(probes, pendingShipProbeLine{orderID: o.ID, line: line})
 		}
 		rows = append(rows, row)
 	}
-	return rows, nil
+	s.markPendingShippable(ctx, projectID, rows, probes)
+	return &orderdto.PendingShipPageResp{List: rows, Total: total}, nil
+}
+
+// pendingShipBlockReason 一行不可发的事实码（空串 = 这一行说得通）。
+//
+// 判据对着发货用例的每一步：行没变体 → 库存侧 ErrStockVariantRequired；
+// 认不出货 → ErrStockSKURequired；没仓 → ErrShipWarehouseRequired；
+// 跟踪行不够 → ErrStockInsufficient。不跟踪行（无限）永远够。
+func pendingShipBlockReason(line ordercontract.ShipProbeLine, fact ordercontract.ShipAvailability) string {
+	switch {
+	case line.VariantID == "":
+		return "variant_missing"
+	case fact.Unmatched:
+		return "unmatched"
+	case fact.NoWarehouse:
+		return "warehouse_missing"
+	case !fact.Infinite && fact.Available < line.Quantity:
+		return "stock_insufficient"
+	default:
+		return ""
+	}
+}
+
+// markPendingShippable 把「这一单现在能不能发」写进行（B6-a 的守卫）。
+//
+// 只禁用按钮、不阻断页面：投影说能发而并发卖掉了，提交仍会被行锁拒绝
+// （投影是提示，正确性由发货事务负责）。投影失败同理 —— 按钮照常可点。
+//
+// 同一单多处说不通时取**第一件**（先修哪个都一样），页面只给一行说明。
+func (s *Service) markPendingShippable(ctx context.Context, projectID string,
+	rows []*orderdto.PendingShipRow, probes []pendingShipProbeLine) {
+	if s.stockProbe == nil || len(probes) == 0 {
+		return
+	}
+	lines := make([]ordercontract.ShipProbeLine, 0, len(probes))
+	for _, p := range probes {
+		lines = append(lines, p.line)
+	}
+	facts, err := s.stockProbe.ShipAvailabilityByLine(ctx, projectID, lines)
+	if err != nil {
+		return
+	}
+	for _, p := range probes {
+		reason := pendingShipBlockReason(p.line, facts[p.line.OrderItemID])
+		if reason == "" {
+			continue
+		}
+		for _, r := range rows {
+			if r.OrderID != p.orderID || !r.Shippable {
+				continue
+			}
+			r.Shippable = false
+			r.ShippableReason = reason
+		}
+	}
 }
 
 // shippedByOrderItem 某订单的已发数量账（itemID → 已发件数）。
@@ -354,12 +458,19 @@ func (s *Service) BuildShipForm(ctx context.Context, req *orderdto.ListShipmentR
 // 未注入时退化成空映射：仓的选择靠 id，名称只是帮助辨认，缺它不该让表单打不开。
 func (s *Service) warehouseNames(ctx context.Context, projectID string) map[string]string {
 	out := map[string]string{}
-	if s.warehouses == nil {
-		return out
-	}
-	lister, ok := s.warehouses.(ordercontract.ReturnWarehouseSource)
-	if !ok {
-		return out
+	// 先看显式注入的仓库清单（SetWarehouseSource）；没有再试 warehouses 是否兼任 ——
+	// 生产装配只注入了 WarehouseResolver（它只回答「这一行从哪个仓出」），
+	// 少了这一档，退货页的「原发货仓」会恒为「—」而没有任何报错。
+	lister := s.warehouseSource
+	if lister == nil {
+		if s.warehouses == nil {
+			return out
+		}
+		casted, ok := s.warehouses.(ordercontract.ReturnWarehouseSource)
+		if !ok {
+			return out
+		}
+		lister = casted
 	}
 	list, err := lister.ListReturnWarehouses(ctx, projectID)
 	if err != nil {

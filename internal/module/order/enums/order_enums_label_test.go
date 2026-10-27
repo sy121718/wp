@@ -58,6 +58,78 @@ func TestReturnStatusLabelKeyAndFallback(t *testing.T) {
 	}
 }
 
+// TestFulfillmentLabelKeyAndFallback 履约状态文案（迁移 654 seed 的 12 条）。
+//
+// 与订单状态一样逐字钉：key 与中文兜底都必须稳定 —— 只给中文会让英文界面恒中文，
+// 只给 key 会让词条缺失时露出裸 key，两边都不报错。
+func TestFulfillmentLabelKeyAndFallback(t *testing.T) {
+	cases := []struct {
+		status, key, fallbackOut string
+	}{
+		{"pending", FulfillmentKeyPrefix + "pending", "待履约"},
+		{"paid", FulfillmentKeyPrefix + "paid", "待发货"},
+		{"partial", FulfillmentKeyPrefix + "partial", "部分发货"},
+		{"shipped", FulfillmentKeyPrefix + "shipped", "已发货"},
+		{"received", FulfillmentKeyPrefix + "received", "已收货"},
+		{"returned", FulfillmentKeyPrefix + "returned", "已退货"},
+		{"return_done", FulfillmentKeyPrefix + "return_done", "退货完成"},
+		{"reship", FulfillmentKeyPrefix + "reship", "换货补发"},
+		{"exception", FulfillmentKeyPrefix + "exception", "履约异常"},
+		{"failed", FulfillmentKeyPrefix + "failed", "履约失败"},
+		{"cancelled", FulfillmentKeyPrefix + "cancelled", "已取消"},
+		{"refunded", FulfillmentKeyPrefix + "refunded", "已退款"},
+		{"", "", "—"},
+		{"zzbogus", "", "zzbogus"},
+	}
+	for _, tc := range cases {
+		key, fallback := FulfillmentLabel(tc.status)
+		if key != tc.key || fallback != tc.fallbackOut {
+			t.Errorf("FulfillmentLabel(%q) = (%q, %q)，期望 (%q, %q)",
+				tc.status, key, fallback, tc.key, tc.fallbackOut)
+		}
+	}
+}
+
+// TestFulfillmentStatusesMatchLabels 有序清单与文案表必须同集合。
+//
+// 清单在 enums、判据在 model 的常量、文案在 FulfillmentLabel —— 三处各写一份，
+// 少一个的症状是筛选行少一个徽章（不报错，只是那个状态永远筛不到）。
+func TestFulfillmentStatusesMatchLabels(t *testing.T) {
+	if len(FulfillmentStatuses) != 12 {
+		t.Fatalf("履约状态应有 12 个，实际 %d 个：%v", len(FulfillmentStatuses), FulfillmentStatuses)
+	}
+	seen := make(map[string]bool, len(FulfillmentStatuses))
+	for _, v := range FulfillmentStatuses {
+		if seen[v] {
+			t.Errorf("履约状态 %q 在清单里重复了", v)
+		}
+		seen[v] = true
+		if key, _ := FulfillmentLabel(v); key == "" {
+			t.Errorf("履约状态 %q 在清单里，但 FulfillmentLabel 给不出 key", v)
+		}
+	}
+}
+
+// TestCreatedViaLabelKeyAndFallback 来源三态（复用迁移 448 的词条）。
+func TestCreatedViaLabelKeyAndFallback(t *testing.T) {
+	cases := []struct {
+		via, key, fallbackOut string
+	}{
+		{"checkout", CreatedViaKeyPrefix + "checkout", "访客结算"},
+		{"admin", CreatedViaKeyPrefix + "admin", "后台自建"},
+		{"api", CreatedViaKeyPrefix + "api", "接口"},
+		{"", "", "—"},
+		{"zzbogus", "", "zzbogus"},
+	}
+	for _, tc := range cases {
+		key, fallback := CreatedViaLabel(tc.via)
+		if key != tc.key || fallback != tc.fallbackOut {
+			t.Errorf("CreatedViaLabel(%q) = (%q, %q)，期望 (%q, %q)",
+				tc.via, key, fallback, tc.key, tc.fallbackOut)
+		}
+	}
+}
+
 func TestCouponStateLabelKeyAndFallback(t *testing.T) {
 	cases := []struct {
 		state, key, fallbackOut string

@@ -748,9 +748,21 @@ func (a *assembly) buildIdentityAndCommerce() {
 		// 它拿得到 db）。这里只**标记接线已发生** —— 不标会让装配自检把 required 端口
 		// 判成缺失而 panic（而实际上它已经接上了）。
 		a.marks.mark(portOrderShipmentModels)
+		// 退货页的「原发货仓」：同一个仓库清单端口在模块内已由 SetupOrderRoutes 转交
+		// （形参 warehouses），这里只标记接线已发生。
+		a.marks.mark(portOrderReturnWarehouseSource)
 		if lookup, lok := a.inventorySvc.(inventorycontract.ProductStockLookup); lok {
 			concrete.SetWarehouseResolver(orderstock.NewWarehouseResolver(lookup))
 			a.marks.mark(portOrderWarehouseResolver)
+			// 待发货页的「能不能发」（B6-a）：库存侧读货行事实 + 商品侧读变体引用的货行清单。
+			// 两个端口在同一个分支里都能拿到，实现放库存侧（orderstock.ShipProbe），
+			// 订单侧只持窄接口 —— 它不能 import inventory 的 dto / model（CQ-004）。
+			// 商品侧的「变体引用了哪些货行」：直接再断一次类型（不跨函数共享变量 ——
+			// 上面那处是另一个装配域的局部量，靠闭包传过来只会让两个域的次序耦合）。
+			if refs, rok := a.productSvc.(productcontract.VariantWarehouseStockPort); rok {
+				concrete.SetShipStockProbe(orderstock.NewShipProbe(lookup, refs))
+				a.marks.mark(portOrderShipStockProbe)
+			}
 		}
 		// 发货明细的 stock_id 快照（迁移 627）：同一个适配器也实现 StockRowLocator。
 		concrete.SetStockRowLocator(orderstock.New(invConcrete))

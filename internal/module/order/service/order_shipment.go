@@ -168,13 +168,20 @@ func (s *Service) shipOnce(ctx context.Context, args *shipOnceArgs, out **orderm
 		if planHasRemaining(items, shippedSoFar, plan) {
 			nextStatus = ordermodel.OrderStatusPaid
 		}
+		// 履约轴（迁移 652）：与上面同一判据的另一面 —— 钱的状态留在 paid 时，
+		// 货的状态正是 partial。两个轴分开之后，「部分发货」这件事第一次能被筛选出来。
+		nextFulfillment := ordermodel.FulfillmentShipped
+		if nextStatus == ordermodel.OrderStatusPaid {
+			nextFulfillment = ordermodel.FulfillmentPartial
+		}
 		fields := map[string]any{
-			"status":       nextStatus,
-			"carrier_name": shipment.CarrierName,
-			"tracking_no":  shipment.TrackingNo,
-			"shipped_at":   now,
-			"completed_at": nil,
-			"update_time":  now,
+			"status":             nextStatus,
+			"fulfillment_status": nextFulfillment,
+			"carrier_name":       shipment.CarrierName,
+			"tracking_no":        shipment.TrackingNo,
+			"shipped_at":         now,
+			"completed_at":       nil,
+			"update_time":        now,
 		}
 		if shipment.CarrierID != nil {
 			fields["carrier_id"] = *shipment.CarrierID

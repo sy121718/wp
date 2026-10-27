@@ -140,15 +140,15 @@ const ErrInternal = "操作失败，请稍后重试"
 var errFallbacks = map[string]string{
 	// 发货与承运商（迁移 627-629，S1-S3）：这些 key 由本批引入，兜底必须同批给 ——
 	// 缺兜底时 facing.FactOf 取不到原文，界面上会出现裸 key。
-	ErrCarrierCodeTaken:       "该承运商编码已被占用",
-	ErrCarrierNotFound:        "承运商不存在",
-	ErrCarrierStatusInvalid:   "承运商状态不合法",
-	ErrCarrierTemplateInvalid: "承运商模板配置不合法",
-	ErrShipWarehouseRequired:  "发货必须指定发货仓",
-	ErrShipLinesRequired:      "发货单至少需要一行商品",
-	ErrShipQuantityExceeded:   "发货数量超出可发数量",
-	ErrShipRequestKeyConflict: "该发货请求已处理过（请求键冲突）",
-	ErrOrderNotShippable:      "当前订单状态不允许发货",
+	ErrCarrierCodeTaken:           "该承运商编码已被占用",
+	ErrCarrierNotFound:            "承运商不存在",
+	ErrCarrierStatusInvalid:       "承运商状态不合法",
+	ErrCarrierTemplateInvalid:     "承运商模板配置不合法",
+	ErrShipWarehouseRequired:      "发货必须指定发货仓",
+	ErrShipLinesRequired:          "发货单至少需要一行商品",
+	ErrShipQuantityExceeded:       "发货数量超出可发数量",
+	ErrShipRequestKeyConflict:     "该发货请求已处理过（请求键冲突）",
+	ErrOrderNotShippable:          "当前订单状态不允许发货",
 	ErrInternal:                   "操作失败，请稍后重试",
 	ErrInvalidParam:               "参数不合法",
 	ErrProjectRequired:            "缺少站点工程",
@@ -350,6 +350,109 @@ func OrderStatusTone(status string) string {
 	case "completed":
 		return "ok"
 	case "refunded":
+		return "danger"
+	default:
+		return "mute"
+	}
+}
+
+// CreatedViaKeyPrefix 订单来源的词条 key 前缀。
+//
+// 复用迁移 448 seed 的三个词条（admin.orders.created_via.*）—— 详情块里
+// orders.html:218 早就在用它们，这里只是把「三分支写死在模板里」收敛成一张事实表，
+// 让筛选条与列表行用同一份文案。
+const CreatedViaKeyPrefix = "admin.orders.created_via."
+
+// CreatedViaLabel 订单来源 → (词条 key, 中文兜底)。
+//
+// checkout = 访客在站点结算下单；admin = 后台代客建单；api = 外部系统经接口建单。
+func CreatedViaLabel(v string) (key, fallback string) {
+	switch strings.TrimSpace(v) {
+	case "checkout":
+		return CreatedViaKeyPrefix + "checkout", "访客结算"
+	case "admin":
+		return CreatedViaKeyPrefix + "admin", "后台自建"
+	case "api":
+		return CreatedViaKeyPrefix + "api", "接口"
+	case "":
+		return "", "—"
+	default:
+		return "", v
+	}
+}
+
+// FulfillmentKeyPrefix 履约状态的词条 key 前缀（迁移 654 seed，12 个状态中英成对）。
+//
+// 与订单状态（site.fragment.order.status.*）分开：履约状态只在后台出现，
+// 访客面拿不到它，也没有「货到哪了」的公开口径可复用。
+const FulfillmentKeyPrefix = "admin.orders.fulfillment."
+
+// FulfillmentStatuses 履约状态的有序清单（顺序 = 筛选行徽章从左到右的顺序）。
+//
+// 放在 enums 而不是 model：控制器只能 import contract/dto/enums（分层判据禁止
+// inbound 依赖 model），而筛选行、计数补零、事实表补键三处都要这份清单。
+// 取值本身与 ordermodel 的 Fulfillment* 常量一一对应，错一个会在列表上显示生值。
+var FulfillmentStatuses = []string{
+	"pending", "paid", "partial", "shipped", "received", "returned",
+	"return_done", "reship", "exception", "failed", "cancelled", "refunded",
+}
+
+// FulfillmentLabel 履约状态 → (词条 key, 中文兜底)。
+//
+// 取值集合与 ordermodel 的 Fulfillment* 常量一一对应；那边是数据层的真源，
+// 这里是**文案**的真源 —— 两处都是 switch，但改一处忘了另一处会立刻在列表上看得见
+// （显示生值而不是静默错文案）。
+func FulfillmentLabel(v string) (key, fallback string) {
+	switch strings.TrimSpace(v) {
+	case "pending":
+		return FulfillmentKeyPrefix + "pending", "待履约"
+	case "paid":
+		return FulfillmentKeyPrefix + "paid", "待发货"
+	case "partial":
+		return FulfillmentKeyPrefix + "partial", "部分发货"
+	case "shipped":
+		return FulfillmentKeyPrefix + "shipped", "已发货"
+	case "received":
+		return FulfillmentKeyPrefix + "received", "已收货"
+	case "returned":
+		return FulfillmentKeyPrefix + "returned", "已退货"
+	case "return_done":
+		return FulfillmentKeyPrefix + "return_done", "退货完成"
+	case "reship":
+		return FulfillmentKeyPrefix + "reship", "换货补发"
+	case "exception":
+		return FulfillmentKeyPrefix + "exception", "履约异常"
+	case "failed":
+		return FulfillmentKeyPrefix + "failed", "履约失败"
+	case "cancelled":
+		return FulfillmentKeyPrefix + "cancelled", "已取消"
+	case "refunded":
+		return FulfillmentKeyPrefix + "refunded", "已退款"
+	case "":
+		return "", "—"
+	default:
+		return "", v
+	}
+}
+
+// FulfillmentTone 履约状态 → 徽标分档（ok / warn / danger / mute / info）。
+//
+// 分档口径是**仓库视角的待办强度**：
+//   - pending / paid → warn：还欠客户货，仓库要动手；
+//   - partial / reship → info：在处理中（补发是人为决定，不是故障）；
+//   - shipped / received / return_done → ok：这条线走完了；
+//   - returned → info：货回仓了，但钱可能还没退；
+//   - exception / failed → danger：需要人工介入；
+//   - cancelled / refunded → mute：不再需要仓库动作。
+func FulfillmentTone(v string) string {
+	switch strings.TrimSpace(v) {
+	case "pending", "paid":
+		return "warn"
+	case "partial", "reship", "returned":
+		return "info"
+	case "shipped", "received", "return_done":
+		return "ok"
+	case "exception", "failed":
 		return "danger"
 	default:
 		return "mute"

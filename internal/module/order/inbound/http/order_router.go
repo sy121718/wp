@@ -73,6 +73,11 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	// 解析端口由库存侧实现（orderstock.WarehouseResolver）—— 装配点在 routers/assembly.go，
 	// 那里已经持有库存契约，注入一次即可。
 	svc.SetShipmentModels(ordermodel.NewOrderShipmentModel(db), ordermodel.NewOrderCarrierModel(db))
+	// 退货页的「原发货仓」要仓库 id → 名字：同一个端口也交给 service（页面用它渲染下拉，
+	// service 用它把事实换成名字）。不注则那一列恒为「—」，且不会报错。
+	if warehouses != nil {
+		svc.SetWarehouseSource(warehouses)
+	}
 	h := NewHandle(svc)
 	// 待付款超时自动取消（TX-001）：进程内定时扫描，失败不阻断启动。
 	orderservice.StartPendingOrderExpiryScheduler(svc)

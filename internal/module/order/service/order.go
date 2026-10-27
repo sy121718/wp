@@ -396,13 +396,16 @@ func (s *Service) buildOrderDraft(ctx context.Context, req *orderdto.CreateOrder
 	}
 
 	head := &ordermodel.OrderEntity{
-		ProjectID:     projectID,
-		OrderNo:       orderNo,
-		Status:        ordermodel.OrderStatusPending,
-		UserID:        userID,
-		CustomerEmail: email,
-		CustomerName:  strings.TrimSpace(req.CustomerName),
-		CustomerPhone: strings.TrimSpace(req.CustomerPhone),
+		ProjectID: projectID,
+		OrderNo:   orderNo,
+		Status:    ordermodel.OrderStatusPending,
+		// 刚建单：钱还没到、货还没有动作（迁移 652 的履约轴，与 status 正交）。
+		// 必须显式给：GORM 会把零值 "" 一起插进去，撞 ck_orders_fulfillment_status。
+		FulfillmentStatus: ordermodel.FulfillmentPending,
+		UserID:            userID,
+		CustomerEmail:     email,
+		CustomerName:      strings.TrimSpace(req.CustomerName),
+		CustomerPhone:     strings.TrimSpace(req.CustomerPhone),
 		// 币种取全局默认（进程内缓存值，不查库）：币种是**标签**，金额仍是数值（分），
 		// 按产品口径货币由后台全局限定为单值、前台不提供货币选择。
 		//
@@ -1104,6 +1107,8 @@ func (s *Service) PayOrder(ctx context.Context, req *orderdto.PayOrderReq) (res 
 			"paid_at":        now,
 			"update_time":    now,
 			"payment_method": method,
+			// 钱到了，货还没动（履约轴，迁移 652）。
+			"fulfillment_status": ordermodel.FulfillmentPaid,
 		}
 		// 标题与流水号是可选信息：模拟通道也会给，但真通道的某些回调可能不带。
 		if title != "" {
@@ -1249,7 +1254,11 @@ func (s *Service) ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusRe
 		if !canTransition(e.Status, to) {
 			return errors.New(transitionError(e.Status, to))
 		}
-		fields := map[string]any{"status": to, "update_time": now}
+		fields := map[string]any{
+			"status":             to,
+			"update_time":        now,
+			"fulfillment_status": ordermodel.FulfillmentOfStatus(to),
+		}
 		// 付款与完成各有自己的时间戳（对账与时效统计要用）。
 		switch to {
 		case ordermodel.OrderStatusPaid:
@@ -1317,6 +1326,8 @@ func (s *Service) CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq)
 			"status":        ordermodel.OrderStatusCancelled,
 			"cancel_reason": reason,
 			"update_time":   now,
+			// 取消是终态：货的这条线也一起停（已取消的单不再出现在仓库作业台上）。
+			"fulfillment_status": ordermodel.FulfillmentCancelled,
 		}); uerr != nil {
 			return uerr
 		}
@@ -1410,7 +1421,12 @@ func (s *Service) refundOrderTx(ctx context.Context, tx *gorm.DB, projectID stri
 	// 「这一单该不该还」由订单自己回答。状态必须在改动之前取 —— 改完就成了 refunded，
 	// 那时再看状态，未发货的单会被误判成「已发货、不归还」。
 	unshipped := e.Status == ordermodel.OrderStatusPaid
-	fields := map[string]any{"status": ordermodel.OrderStatusRefunded, "update_time": now}
+	fields := map[string]any{
+		"status":      ordermodel.OrderStatusRefunded,
+		"update_time": now,
+		// 已退款的单：履约轴同样落终态（已发货退款的货还没回来，后续由退货入库推成 returned）。
+		"fulfillment_status": ordermodel.FulfillmentRefunded,
+	}
 	if tid := strings.TrimSpace(req.TransactionID); tid != "" {
 		fields["transaction_id"] = tid
 	}

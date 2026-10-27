@@ -62,6 +62,8 @@
         <dl class="kv">
             <div class="kv-item"><dt>{{tr("admin.returns.detail.order", "订单")}}</dt><dd><a href="/admin/orders?{{listQuery}}&orderId={{r.OrderID}}"><code>{{r.OrderNo}}</code></a></dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.detail.customer", "客户")}}</dt><dd>{{r.CustomerName}} · {{r.CustomerEmail}}</dd></div>
+            <div class="kv-item"><dt>{{tr("admin.returns.detail.warehouse", "原发货仓")}}</dt><dd>{{if r.OriginalWarehouseName != ""}}{{r.OriginalWarehouseName}}{{else}}—{{end}}</dd></div>
+            <div class="kv-item"><dt>{{tr("admin.returns.detail.pending_lines", "待入库行数")}}</dt><dd>{{r.PendingInboundLines}}</dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.detail.created_at", "申请时间")}}</dt><dd>{{dateTime(r.CreateTime)}}</dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.detail.reason", "退货原因")}}</dt><dd>{{r.Reason}}</dd></div>
             <div class="kv-item"><dt>{{tr("admin.returns.detail.reviewer", "审核人")}}</dt><dd>{{r.ReviewerName}}</dd></div>
@@ -295,11 +297,11 @@
             <div class="table-wrap table-scroll" tabindex="0">
             <table class="data-table data-table-wide">
             <thead>
-            <tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{tr("admin.common.bulk.selectAll", "全选")}}"></th><th>{{tr("admin.returns.col.return_no", "退货单号")}}</th><th>{{tr("admin.returns.col.order_no", "订单号")}}</th><th>{{tr("admin.returns.col.customer", "客户")}}</th><th>{{tr("admin.returns.col.status", "状态")}}</th><th>{{tr("admin.returns.col.refund_amount", "退款金额")}}</th><th>{{tr("admin.returns.col.created_at", "申请时间")}}</th><th class="col-actions">{{tr("admin.returns.col.actions", "操作")}}</th></tr>
+            <tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{tr("admin.common.bulk.selectAll", "全选")}}"></th><th>{{tr("admin.returns.col.return_no", "退货单号")}}</th><th>{{tr("admin.returns.col.order_no", "订单号")}}</th><th>{{tr("admin.returns.col.customer", "客户")}}</th><th>{{tr("admin.returns.col.warehouse", "原发货仓")}}</th><th>{{tr("admin.returns.col.status", "状态")}}</th><th>{{tr("admin.returns.col.pending_lines", "待入库行数")}}</th><th>{{tr("admin.returns.col.refund_amount", "退款金额")}}</th><th>{{tr("admin.returns.col.created_at", "申请时间")}}</th><th class="col-actions">{{tr("admin.returns.col.actions", "操作")}}</th></tr>
             </thead>
             <tbody>
             {{if len(returns) == 0}}
-            <tr><td colspan="8" class="cell-wrap">
+            <tr><td colspan="10" class="cell-wrap">
         {{if .LoadErr != ""}}
         {{include "../partials/empty_state.html" map("title", tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来"), "desc", tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。"))}}
         {{else if len(.Projects) == 0}}
@@ -330,7 +332,10 @@
                 <td data-label="{{tr("admin.returns.col.return_no", "退货单号")}}"><a class="row-title-link" href="/admin/returns?{{listQuery}}&returnId={{rt.ID}}"><code>{{rt.ReturnNo}}</code></a></td>
                 <td data-label="{{tr("admin.returns.col.order_no", "订单号")}}"><code>{{rt.OrderNo}}</code></td>
                 <td data-label="{{tr("admin.returns.col.customer", "客户")}}">{{rt.CustomerName}} <span class="hint">{{rt.CustomerEmail}}</span></td>
+                {* 仓库视角（B6-b）：货原本从哪个仓出去，就该收回哪个仓。没有这个事实时显示「—」。 *}
+                <td data-label="{{tr("admin.returns.col.warehouse", "原发货仓")}}">{{if rt.OriginalWarehouseName != ""}}{{rt.OriginalWarehouseName}}{{else}}—{{end}}</td>
                 <td data-label="{{tr("admin.returns.col.status", "状态")}}"><span class="badge badge-{{rt.StatusTone}}">{{label := returnLabels[rt.Status]}}{{tr(label.Key, label.Fallback)}}</span></td>
+                <td data-label="{{tr("admin.returns.col.pending_lines", "待入库行数")}}">{{if rt.PendingInboundLines > 0}}<strong>{{rt.PendingInboundLines}}</strong>{{else}}0{{end}}</td>
                 <td data-label="{{tr("admin.returns.col.refund_amount", "退款金额")}}"><strong>{{rt.RefundLabel}}</strong></td>
                 <td data-label="{{tr("admin.returns.col.created_at", "申请时间")}}">{{dateTime(rt.CreateTime)}}</td>
                 <td data-label="{{tr("admin.returns.col.actions", "操作")}}" class="col-actions">

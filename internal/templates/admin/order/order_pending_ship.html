@@ -1,11 +1,13 @@
-{* admin/order_pending_ship.html — 待发货列表（迁移 624 / 625，S3）
+{* admin/order_pending_ship.html — 待发货列表（迁移 624 / 625 / 652，S3 + B6-a）
 
-   这一屏回答「现在有哪些货要发、各自还差多少」：
+   这一屏回答「现在有哪些货要发、各自还差多少、哪几张现在就能发」：
      · 只列 **paid 且还有未发数量** 的订单 —— 全发完的单应当离开这一屏；
-     · 六个数字（件数 / 已发 / 剩余）全部由 service 算好，模板**不做减法**
+     · 每个数字（行数 / 件数 / 已发 / 剩余）全部由 service 算好，模板**不做减法**
        （template_logic_test.go 的判据针对的正是「剩余 = 件数 − 已发」这种算式）；
-     · 「发货」按钮打开抽屉片段（GET /admin/orders/ship-form?orderId=），
-       表单提交走 data-write-api → /api/order/shipment/create。 *}
+     · 「能不能发」也是 service 算好的事实（Shippable + ShippableReason）：
+       不可发时按钮 disabled 并给一行说明 —— 与发货用例的真实校验同源，
+       而不是让人点了才在提交时失败（对齐 dy_erp 仓库发货台的守卫）；
+     · 关键词只匹配订单号 / 客户名（仓库手里拿的是拣货单），翻页保留筛选。 *}
 {{extends "../layout.html"}}
 {{block body()}}
 {{tr := .["t"]}}
@@ -46,8 +48,18 @@
     {{else}}
     <section class="card list-card">
         <div class="card-header">
-            <span class="card-title">{{if len(rows) > 0}}{{tr("admin.order.pendingShip.listLead", "待发货订单（")}}{{len(rows)}}）{{else}}{{tr("admin.order.pendingShip.title", "待发货")}}{{end}}</span>
+            <span class="card-title">{{if .Total > 0}}{{tr("admin.order.pendingShip.listLead", "待发货订单（")}}{{.Total}}）{{else}}{{tr("admin.order.pendingShip.title", "待发货")}}{{end}}</span>
         </div>
+        {* 筛选条：关键词只打订单号与客户名。project 跟着走 —— 否则筛选一提交就跳到别的工程。 *}
+        <form method="get" action="/admin/orders/pending-ship" class="filter-fields" role="search">
+            <input type="hidden" name="project" value="{{selectedProject}}">
+            <label class="sr-only" for="ps-keyword">{{tr("admin.order.pendingShip.filter.keyword", "订单号 / 客户名")}}</label>
+            <input class="form-input" type="search" id="ps-keyword" name="keyword"
+                   value="{{.FilterKeyword}}" placeholder="{{tr("admin.order.pendingShip.filter.keywordPh", "订单号 / 客户名")}}"
+                   autocomplete="off">
+            <button type="submit" class="btn btn-sm btn-primary">{{tr("admin.orders.filter.submit", "筛选")}}</button>
+            {{if .FilterKeyword != ""}}<a class="btn btn-sm" href="/admin/orders/pending-ship?project={{selectedProject}}">{{tr("admin.orders.filter.reset", "重置")}}</a>{{end}}
+        </form>
         {* 空数据也渲染 <table>/<thead>：表头是「这里能看什么」的说明。 *}
         <div class="table-wrap table-scroll" tabindex="0">
         <table class="data-table data-table-wide">
@@ -55,8 +67,10 @@
             <tr>
                 <th>{{tr("admin.order.pendingShip.col.shipmentNo", "发货单")}}</th>
                 <th>{{tr("admin.order.pendingShip.col.orderNo", "订单号")}}</th>
+                <th>{{tr("admin.order.pendingShip.col.source", "来源")}}</th>
                 <th>{{tr("admin.order.pendingShip.col.customer", "客户")}}</th>
                 <th>{{tr("admin.order.pendingShip.col.total", "金额")}}</th>
+                <th>{{tr("admin.order.pendingShip.col.lines", "商品行数")}}</th>
                 <th>{{tr("admin.order.pendingShip.col.units", "件数")}}</th>
                 <th>{{tr("admin.order.pendingShip.col.remaining", "未发")}}</th>
                 <th>{{tr("admin.order.pendingShip.col.orderedAt", "下单时间")}}</th>
@@ -65,7 +79,7 @@
             </thead>
             <tbody>
             {{if len(rows) == 0}}
-            <tr><td colspan="8" class="cell-wrap">
+            <tr><td colspan="10" class="cell-wrap">
                 {{include "../partials/empty_state.html" map(
                     "title", tr("admin.order.pendingShip.emptyHeading", "暂无待发货订单"),
                     "desc", tr("admin.order.pendingShip.emptyDesc", "已付款且还有未发数量的订单会出现在这里。"))}}
@@ -75,16 +89,27 @@
             <tr>
                 <td data-label="{{tr("admin.order.pendingShip.col.shipmentNo", "发货单")}}">{{if r.LatestShipmentNo != ""}}<code>{{r.LatestShipmentNo}}</code>{{else}}—{{end}}</td>
                 <td data-label="{{tr("admin.order.pendingShip.col.orderNo", "订单号")}}"><code>{{r.OrderNo}}</code></td>
+                {* 来源是事实（orders.created_via）：访客结算 / 后台自建 / 接口。 *}
+                <td data-label="{{tr("admin.order.pendingShip.col.source", "来源")}}">{{if r.CreatedVia == "checkout"}}{{tr("admin.orders.created_via.checkout", "访客结算")}}{{else if r.CreatedVia == "admin"}}{{tr("admin.orders.created_via.admin", "后台自建")}}{{else if r.CreatedVia == "api"}}{{tr("admin.orders.created_via.api", "接口")}}{{else}}{{r.CreatedVia}}{{end}}</td>
                 <td data-label="{{tr("admin.order.pendingShip.col.customer", "客户")}}">{{r.CustomerName}}</td>
-                <td data-label="{{tr("admin.order.pendingShip.col.total", "金额")}}">{{r.Total}}</td>
+                <td data-label="{{tr("admin.order.pendingShip.col.total", "金额")}}"><strong>{{money(r.Total, currencyPrefix(r.Currency))}}</strong></td>
+                <td data-label="{{tr("admin.order.pendingShip.col.lines", "商品行数")}}">{{r.LineCount}}</td>
                 <td data-label="{{tr("admin.order.pendingShip.col.units", "件数")}}">{{r.ItemQuantity}}</td>
                 {* 「未发」= service 算好的 RemainingQuantity（件数合计 − 已发合计），模板不做减法。 *}
                 <td data-label="{{tr("admin.order.pendingShip.col.remaining", "未发")}}">{{r.RemainingQuantity}}</td>
-                <td data-label="{{tr("admin.order.pendingShip.col.orderedAt", "下单时间")}}">{{r.OrderedAt}}</td>
+                <td data-label="{{tr("admin.order.pendingShip.col.orderedAt", "下单时间")}}">{{dateTime(r.OrderedAt)}}</td>
                 <td class="col-actions" data-label="{{tr("admin.common.col.actions", "操作")}}">
+                    {{if r.Shippable}}
                     <button type="button" class="btn btn-sm btn-primary"
                             data-drawer-url="/admin/orders/ship-form?orderId={{r.OrderID}}"
                             data-drawer-title="{{tr("admin.order.pendingShip.shipTitle", "发货：")}}{{r.OrderNo}}">{{tr("admin.order.pendingShip.ship", "发货")}}</button>
+                    {{else}}
+                    {* 不可发：按钮禁用 + 一行说明。理由码由 service 给（它对着发货用例的每一步），
+                       文案在这里挑 —— 分档与取词属于显示。 *}
+                    <button type="button" class="btn btn-sm" disabled
+                            title="{{tr("admin.order.pendingShip.blocked.hint", "这张单现在发不出去，先按下面的说明处理。")}}">{{tr("admin.order.pendingShip.ship", "发货")}}</button>
+                    <p class="form-hint">{{if r.ShippableReason == "variant_missing"}}{{tr("admin.order.pendingShip.blocked.variantMissing", "有订单行没有关联商品规格，发货会被拒绝。")}}{{else if r.ShippableReason == "unmatched"}}{{tr("admin.order.pendingShip.blocked.unmatched", "有订单行的商品规格在库存里找不到对应货行，发货会被拒绝。")}}{{else if r.ShippableReason == "warehouse_missing"}}{{tr("admin.order.pendingShip.blocked.warehouseMissing", "有订单行没定发货仓，且这个工程没有可用的默认仓。")}}{{else if r.ShippableReason == "stock_insufficient"}}{{tr("admin.order.pendingShip.blocked.stockInsufficient", "发货仓的库存不够本次要发的件数，先补货或改发货仓。")}}{{else}}{{tr("admin.order.pendingShip.blocked.unknown", "这张单现在发不出去。")}}{{end}}</p>
+                    {{end}}
                 </td>
             </tr>
             {{end}}
@@ -92,6 +117,7 @@
             </tbody>
         </table>
         </div>
+        {{include "../partials/pagination.html"}}
     </section>
     {{end}}
 </div>

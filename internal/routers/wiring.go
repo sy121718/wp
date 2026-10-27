@@ -106,6 +106,12 @@ const (
 	portOrderAttachmentResolver = "order.SetAttachmentResolver"
 	portOrderStockRowLocator    = "inventory.SetStockRowLocator"
 	portOrderWarehouseResolver  = "inventory.SetWarehouseResolver"
+	// portOrderShipStockProbe 发货可发性投影（B6-a）：待发货页用它在行上给「能不能发」，
+	// 口径与发货用例的真实校验同源（库存行 quantity > 0、不跟踪行恒可发）。
+	portOrderShipStockProbe = "order.SetShipStockProbe"
+	// portOrderReturnWarehouseSource 工程仓库清单（B6-b）：退货页「原发货仓」把仓库 id
+	// 换成名字（同一个端口同时喂页面的入库仓下拉）。
+	portOrderReturnWarehouseSource = "order.SetWarehouseSource"
 	// —— block ↔ page 的装配期接线（FIX-05）——
 	// 块内容变更后的 stale 传播与删除前的引用检查；漏接的表现都是「无声的」，
 	// 因此两条都按 required-port 登记（判据见文件头：说不清「用户看到什么」就是 required）。
@@ -240,6 +246,10 @@ var wiringManifest = []wiringEntry{
 		"发货明细的 stock_id 留空（该列只用于追溯，发货照常进行）"},
 	{portOrderWarehouseResolver, "inventory（经订单装配注入）", "order 发货仓解析", wiringRequiredPort,
 		"发货时解析不到发货仓 → 整条发货失败（预占与扣减必须落在同一个仓）"},
+	{portOrderShipStockProbe, "inventory（经订单装配注入）", "order 待发货页可发守卫", wiringOptionalDegraded,
+		"待发货页不再禁用发不出去的单：按钮一律可点，点了由发货接口拒绝（行为退回加守卫之前）"},
+	{portOrderReturnWarehouseSource, "inventory（经订单装配注入）", "order 退货页原发货仓 / 入库仓下拉", wiringOptionalDegraded,
+		"退货页的「原发货仓」列恒显示「—」（id 换不出名字），入库仓下拉为空；退货与退款照常"},
 	{portPluginAdminAuthz, "admin", "plugin", wiringOptionalDegraded,
 		"插件读不到当前用户权限上下文（AdminAuthz() 返回 nil，调用方判空降级）"},
 	{portMailCipherSecret, "config app.secret", "mail", wiringOptionalDegraded,

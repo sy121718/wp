@@ -41,20 +41,30 @@ type ReturnResp struct {
 	StatusTone string `json:"-"`
 	Reason     string `json:"reason"`
 	// RefundAmount 整单的退款额（明细之和），单位分。
-	RefundAmount  int64             `json:"refundAmount"`
-	RefundLabel   string            `json:"refundLabel"`
-	UserID        *uint64           `json:"userId"`
-	CustomerEmail string            `json:"customerEmail"`
-	CustomerName  string            `json:"customerName"`
-	AdminNote     string            `json:"adminNote"`
-	ReviewerName  string            `json:"reviewerName"`
-	ReviewedAt    *utils.JSONTime   `json:"reviewedAt"`
-	ReceivedAt    *utils.JSONTime   `json:"receivedAt"`
-	RefundedAt    *utils.JSONTime   `json:"refundedAt"`
-	TransactionID string            `json:"transactionId"`
-	Items         []*ReturnItemResp `json:"items"`
-	CreateTime    utils.JSONTime    `json:"createTime"`
-	UpdateTime    utils.JSONTime    `json:"updateTime"`
+	RefundAmount  int64           `json:"refundAmount"`
+	RefundLabel   string          `json:"refundLabel"`
+	UserID        *uint64         `json:"userId"`
+	CustomerEmail string          `json:"customerEmail"`
+	CustomerName  string          `json:"customerName"`
+	AdminNote     string          `json:"adminNote"`
+	ReviewerName  string          `json:"reviewerName"`
+	ReviewedAt    *utils.JSONTime `json:"reviewedAt"`
+	ReceivedAt    *utils.JSONTime `json:"receivedAt"`
+	RefundedAt    *utils.JSONTime `json:"refundedAt"`
+	TransactionID string          `json:"transactionId"`
+	// OriginalWarehouseName 原发货仓（仓库视角，B6-b）：这批货原本从哪个仓出去的，
+	// 就该收回哪个仓。空串 = 这单还没发过货、下单时也没定仓（虚拟商品 / 无仓工程）。
+	//
+	// 只是**名字**：仓 id 由入库表单的仓库下拉回答，处理器不需要它。
+	OriginalWarehouseName string `json:"originalWarehouseName"`
+	// PendingInboundLines 待入库行数（明细里 received_quantity < quantity 的行数）。
+	//
+	// 仓库关心的是「还有几行没点完」，不是「还差几件」—— 一件一批的到货会被拆成多次，
+	// 行数才对应收货台上的待办条数。件数差额另由明细表给（模板不做减法）。
+	PendingInboundLines int               `json:"pendingInboundLines"`
+	Items               []*ReturnItemResp `json:"items"`
+	CreateTime          utils.JSONTime    `json:"createTime"`
+	UpdateTime          utils.JSONTime    `json:"updateTime"`
 }
 
 // ReturnDetailResp 退货单详情（含订单摘要：审核时不可能不看订单）。

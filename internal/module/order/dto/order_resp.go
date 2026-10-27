@@ -21,24 +21,34 @@ type OrderResp struct {
 	//
 	// json:"-"：分档是「怎么显示」不是数据，接口契约不该因为它变样；且它由
 	// orderenums.OrderStatusTone 唯一给出，模板不必（也不该）自己判状态值。
-	StatusTone    string  `json:"-"`
-	UserID        *uint64 `json:"userId"`
-	CustomerEmail string  `json:"customerEmail"`
-	CustomerName  string  `json:"customerName"`
-	CustomerPhone string  `json:"customerPhone"`
-	Currency      string  `json:"currency"`
-	Subtotal      int64   `json:"subtotal"`
-	DiscountTotal int64   `json:"discountTotal"`
-	ShippingTotal int64   `json:"shippingTotal"`
-	TaxTotal      int64   `json:"taxTotal"`
-	Total         int64   `json:"total"`
-	ShipName      string  `json:"shipName"`
-	ShipPhone     string  `json:"shipPhone"`
-	ShipProvince  string  `json:"shipProvince"`
-	ShipCity      string  `json:"shipCity"`
-	ShipDistrict  string  `json:"shipDistrict"`
-	ShipAddress   string  `json:"shipAddress"`
-	ShipZip       string  `json:"shipZip"`
+	StatusTone string `json:"-"`
+	// FulfillmentStatus 履约状态（迁移 652）：与 Status 正交的第二条事实轴。
+	//
+	// Status 回答「钱走到哪了」，它回答「货走到哪了」。仓库作业台按它筛，
+	// 客服看单也先看它 —— 「部分发货」「已退货」这两件事在 Status 上根本不存在。
+	FulfillmentStatus string `json:"fulfillmentStatus"`
+	// FulfillmentTone 履约徽标分档（ok / warn / danger / mute / info），**只给服务端模板用**。
+	//
+	// 与 StatusTone 同一手法：由 orderenums.FulfillmentTone 唯一给出，
+	// 模板不拿字典反查颜色（改一句词条就让徽章静默失效）。
+	FulfillmentTone string  `json:"-"`
+	UserID          *uint64 `json:"userId"`
+	CustomerEmail   string  `json:"customerEmail"`
+	CustomerName    string  `json:"customerName"`
+	CustomerPhone   string  `json:"customerPhone"`
+	Currency        string  `json:"currency"`
+	Subtotal        int64   `json:"subtotal"`
+	DiscountTotal   int64   `json:"discountTotal"`
+	ShippingTotal   int64   `json:"shippingTotal"`
+	TaxTotal        int64   `json:"taxTotal"`
+	Total           int64   `json:"total"`
+	ShipName        string  `json:"shipName"`
+	ShipPhone       string  `json:"shipPhone"`
+	ShipProvince    string  `json:"shipProvince"`
+	ShipCity        string  `json:"shipCity"`
+	ShipDistrict    string  `json:"shipDistrict"`
+	ShipAddress     string  `json:"shipAddress"`
+	ShipZip         string  `json:"shipZip"`
 	// ShipCountry / BillCountry 国家/地区代码快照（ISO 3166-1 alpha-2，空 = 未收集）。
 	ShipCountry        string          `json:"shipCountry"`
 	BillName           string          `json:"billName"`
@@ -149,9 +159,11 @@ type OrderDetailResp struct {
 
 // OrderListResp 列表结果。
 type OrderListResp struct {
-	List   []*OrderResp     `json:"list"`
-	Total  int64            `json:"total"`
-	Counts map[string]int64 `json:"counts"`
+	List  []*OrderResp `json:"list"`
+	Total int64        `json:"total"`
+	// Counts 按订单状态（钱）计数；FulfillmentCounts 按履约状态（货）计数。
+	Counts            map[string]int64 `json:"counts"`
+	FulfillmentCounts map[string]int64 `json:"fulfillmentCounts"`
 }
 
 // VisitorOrderListResp 访客自己的订单列表。
