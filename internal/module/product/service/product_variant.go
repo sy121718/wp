@@ -1355,6 +1355,9 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 	seenKeys := make(map[string]bool, len(req.Rows))
 	var updated, created []*productmodel.VariantEntity
 	changes := make([]*masterdatacontract.ChangeInput, 0, len(req.Rows))
+	// 仓库明细（B8）：每行变体提交的库存目标，按变体 id 归位，事务内统一校准。
+	// 与 SKU 改动解耦 —— 只改数量、不改编码的那一行同样要落库（否则「填了却没保存」）。
+	stockRows := make(map[string][]productdto.VariantStockRowResp, len(req.Rows))
 	for i, row := range req.Rows {
 		if vid := strings.TrimSpace(row.VariantID); vid != "" {
 			v := byID[vid]
@@ -1372,6 +1375,10 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 			}
 			seenKeys[key] = true
 			kept[v.ID] = true
+			// 既有变体**无条件**登记（哪怕是空清单）：表单是明细的权威清单，空表示
+			// 「这个变体不再挂任何货行」，保存时要据此裁掉引用。只在非空时登记的话，
+			// 删掉最后一行再保存就成了静默不动 —— 用户以为删了，库里还挂着。
+			stockRows[v.ID] = row.Stocks
 			code := normalizeVariantSKU(row.SKUCode)
 			if code == "" {
 				return nil, productenums.Err(productenums.ErrVariantSKUEmpty)
@@ -1430,10 +1437,26 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		v.SKUCode = code
 		v.Sort = i
 		owner[code] = v.ID
+		if len(row.Stocks) > 0 {
+			stockRows[v.ID] = row.Stocks
+		}
 		created = append(created, v)
 		changes = append(changes, variantChangeInput(p.ProjectID, v, masterdataenums.ActionCreate,
 			masterdataenums.OriginVariantGenerate, req.OperatorID, nil, variantChangeSnapshot(v, ref)))
 		res.Created++
+	}
+
+	// 仓库明细的落库计划在**写之前**算完（判重 / 顺序 / 拒绝都在这之前）：
+	// 拒绝时一笔都不写，与「清单整体动作」的事务口径一致。
+	// Prune 只对既有变体为真：新增变体的归属仓行是保存时才建的，表单里没有那一行
+	//（见 variantStockApply 的注释 —— 拿提交清单当权威会把它自己刚建的行裁掉）。
+	pruneStocks := make(map[string]bool, len(kept))
+	for id := range kept {
+		pruneStocks[id] = true
+	}
+	stockPlan, sperr := planVariantStockApply(stockRows, pruneStocks)
+	if sperr != nil {
+		return nil, sperr
 	}
 
 	// 清单外要删的既有变体：先查引用面（库存 / 捆绑成员 / 流水），跳过的行逐条记原因。
@@ -1470,6 +1493,21 @@ func (s *Service) SaveVariantList(ctx context.Context, req *productdto.SaveVaria
 		}
 		for _, v := range created {
 			if xerr := s.ensureVariantStockTx(ctx, tx, ref, v, v.SKUCode, nil); xerr != nil {
+				return xerr
+			}
+		}
+		// 仓库明细（B8）：关联清单 + 数量校准，一个变体一趟。
+		//
+		// 口径是**目标值** —— 编辑态显示当前在库，改了就是校准成它（与 dy_erp 的
+		// warehouse-sku 表单一致，也与库存 adjust 方向的既有语义一致）。
+		// 数量走库存契约的窄口（CalibrateVariantStocksTx → adjust 变动），**不直写
+		// inventory_stocks**：加锁序、流水、变体引用登记三件事都在库存域。
+		//
+		// 放在建行之后：新增变体的归属仓行已在 ensureVariantStockTx 里建好。
+		// 对象是**所有提交了明细的行**（不只是 SKU 改过的那些）：只改数量、编码没动的那一刻
+		// 该行不在 updated 里（它一个字都不写），跳过它等于「填了却没保存」。
+		for _, step := range stockPlan {
+			if xerr := s.applyVariantStockRowsTx(ctx, tx, p.ProjectID, p.ID, step); xerr != nil {
 				return xerr
 			}
 		}

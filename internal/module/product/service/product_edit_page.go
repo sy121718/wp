@@ -26,12 +26,13 @@ import (
 // ProductEditPage 商品编辑整页的读模型（取数编排 + 页级事实）。
 func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEditPageReq) (res *productdto.ProductEditPageResp, err error) {
 	view := &productdto.ProductEditPageResp{
-		Projects:         []projectdto.ProjectResp{},
-		WarehouseOptions: []productdto.WarehouseOptionResp{},
-		AttributeOptions: []productdto.AttributeOptionResp{},
-		Categories:       []*productdto.CategoryResp{},
-		Brands:           []*productdto.BrandResp{},
-		Tags:             []*productdto.TagResp{},
+		Projects:            []projectdto.ProjectResp{},
+		WarehouseOptions:    []productdto.WarehouseOptionResp{},
+		WarehouseSKUOptions: []productdto.WarehouseSKUGroupResp{},
+		AttributeOptions:    []productdto.AttributeOptionResp{},
+		Categories:          []*productdto.CategoryResp{},
+		Brands:              []*productdto.BrandResp{},
+		Tags:                []*productdto.TagResp{},
 	}
 	var firstErr error
 	fail := func(e error) {
@@ -95,6 +96,13 @@ func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEd
 			fail(werr)
 		} else {
 			view.WarehouseOptions = rows
+			// 每仓的候选货（B8 仓库明细的「添加」入口）：与新建页同一份取数（同一个端口），
+			// 编辑页此前只取仓库清单，没有候选货 —— 于是没法在编辑态往别的仓加一条货行。
+			if groups, gerr := s.pageWarehouses.WarehouseSKUOptions(ctx, selected, rows); gerr != nil {
+				fail(gerr)
+			} else {
+				view.WarehouseSKUOptions = groups
+			}
 		}
 	}
 
@@ -142,6 +150,8 @@ func (s *Service) ProductEditPage(ctx context.Context, req *productdto.ProductEd
 			fail(rerr)
 		} else {
 			view.Product = row
+			// 仓库明细（B8）：编辑表单要按仓列出「已挂的货行 + 当前在库」，这一屏才有消费方。
+			s.fillVariantListStocksForRow(ctx, selected, row)
 		}
 	}
 	if firstErr != nil {

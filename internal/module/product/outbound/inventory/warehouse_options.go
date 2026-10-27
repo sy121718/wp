@@ -109,6 +109,8 @@ func (o *Options) WarehouseSKUOptions(ctx context.Context, projectID string, war
 			}
 			items = append(items, productdto.WarehouseSKUItemResp{
 				SKUCode: code, ExternalSKU: r.ExternalSKU, Label: label,
+				StockID: r.ID, Name: r.Name, ImageURL: r.ImageURL,
+				Quantity: r.Quantity, TrackQuantity: r.TrackQuantity,
 			})
 		}
 		out = append(out, productdto.WarehouseSKUGroupResp{

@@ -336,6 +336,42 @@ button, input, select, textarea { font: inherit; color: inherit; }
     .transfer-line [data-line-stock] { grid-column: 1 / -1; }
 }
 
+/* ===== 商品表单的「仓库明细」（B8，admin/product/product_edit.html + variant_stock_panel.html）
+
+   形态对齐 dy_erp 的 warehouseDetail：按仓库分组，组内一行一条货（缩略图 / 名称 /
+   编码 / 数量 / 删除）。三处刻意收口：
+     · 一行一条事实：名称与编码分两列而不是拼一句 —— 编码是运营核对时真正读的东西；
+     · 数量框宽 96px 且右对齐（与调拨明细同一档），它是这一行唯一可编辑的格；
+     · 窄屏把编码与数量挪到第二行 —— 五列挤一行等于都读不了。 */
+.stock-panel { display: flex; flex-direction: column; gap: var(--sp-sm, 8px); }
+.stock-groups { display: flex; flex-direction: column; gap: var(--sp-md, 12px); }
+.stock-group { display: flex; flex-direction: column; gap: 4px; }
+.stock-group-head { display: flex; align-items: baseline; gap: var(--sp-sm, 8px); }
+.stock-group-name { font-weight: 600; }
+.stock-group-code { font-size: var(--ui-fs-2xs, 11px); color: var(--sky-c-text-mute, #6b7280); }
+.stock-rows { display: flex; flex-direction: column; gap: 4px; }
+.stock-row {
+    display: grid; grid-template-columns: 32px minmax(0, 1fr) minmax(0, 140px) 96px 32px;
+    gap: var(--sp-sm, 8px); align-items: center;
+}
+.stock-thumb {
+    width: 32px; height: 32px; object-fit: cover;
+    border: 1px solid var(--border, #d0d7de); border-radius: var(--ui-r-sm, 6px); background: #fff;
+}
+.stock-name { overflow-wrap: anywhere; }
+.stock-code { font-size: var(--ui-fs-2xs, 11px); color: var(--sky-c-text-mute, #6b7280); overflow-wrap: anywhere; }
+.stock-qty { text-align: right; }
+.stock-qty:disabled { opacity: .55; }
+.stock-add { display: flex; gap: var(--sp-sm, 8px); align-items: center; flex-wrap: wrap; }
+.stock-add select { min-width: min(100%, 240px); }
+.stock-empty { margin: 0; }
+@media (max-width: 640px) {
+    .stock-row { grid-template-columns: 32px minmax(0, 1fr) 32px; }
+    .stock-row .stock-code { grid-column: 2 / 3; }
+    .stock-row .stock-qty { grid-column: 2 / 3; text-align: left; }
+    .stock-row [data-stock-remove] { grid-column: 3 / 4; grid-row: 1; }
+}
+
 /* ===== 货源管理（admin/purchase/sources.html，issue #17） =====
    多端适配（硬规则）：
      · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；

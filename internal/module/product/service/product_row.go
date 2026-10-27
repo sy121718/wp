@@ -263,6 +263,16 @@ func formatScore(v float64) string {
 	return strconv.FormatFloat(v, 'f', 2, 64)
 }
 
+// fillVariantListStocksForRow 给编辑页的清单行补上仓库明细（就地写，见 product_variant_stock_rows.go）。
+//
+// 只在编辑页调用：列表页 / 详情页的清单行不用于校准，多取一次库存事实没有消费方。
+func (s *Service) fillVariantListStocksForRow(ctx context.Context, projectID string, row *productdto.ProductRowResp) {
+	if row == nil || len(row.Variants) == 0 {
+		return
+	}
+	s.fillVariantListStocks(ctx, projectID, row.Variants)
+}
+
 // variantListRows 变体「清单」表的初始行 —— 直接来自**库里已有的变体**。
 //
 // 关键语义（docs/14 §8「预览—保存」）：清单的种子是既有变体，**不是重算笛卡尔积** ——

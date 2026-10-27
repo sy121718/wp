@@ -181,7 +181,10 @@ type ProductEditPageResp struct {
 	HasProduct bool
 
 	WarehouseOptions []WarehouseOptionResp
-	AttributeOptions []AttributeOptionResp
+	// WarehouseSKUOptions 每仓的候选货（B8「仓库明细」的添加入口）：与新建页同一份形状，
+	// 编辑态往某个仓加一条货行时从这里选（候选 = 该仓已有的行，选它即复用、不新建）。
+	WarehouseSKUOptions []WarehouseSKUGroupResp
+	AttributeOptions    []AttributeOptionResp
 
 	// —— 行装配原料与成品 ——
 	// Detail 是这一行的商品详情；Categories 是**分类树**（分类选择器按树读）；行本身由读模型
@@ -247,6 +250,17 @@ type WarehouseSKUItemResp struct {
 	ExternalSKU string
 	// Label 候选的显示串（我们的 SKU，对方编码跟在后面 —— 运营手上可能是其中任意一个）。
 	Label string
+	// StockID 是那条货行的 id：仓库明细按它认行（编码可以改，行 id 不会）。
+	// 加行时带上它，服务端就不用按 (仓, 裸码) 再猜一次是哪一行。
+	StockID string
+	// Name / ImageURL 是迁移 642 的货品主档：商品表单的仓库明细按名称认货、带缩略图。
+	// 空串 = 那条货还没填主档，不是读失败 —— 模板退化成显示编码。
+	Name     string
+	ImageURL string
+	// Quantity / TrackQuantity 是选中之后的初值：数量框直接显示当前在库，
+	// 不跟踪（无限）的行按 TrackQuantity 关掉输入框 —— 无限不是「0 件」。
+	Quantity      int
+	TrackQuantity bool
 }
 
 // WarehouseSKUGroupResp 一个仓的候选货集合（模板按仓分组渲染 optgroup / datalist）。

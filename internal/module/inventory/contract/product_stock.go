@@ -26,6 +26,10 @@ type StockFact struct {
 	TrackQuantity bool
 	// CostPrice 元；nil = 尚未核算（0 是合法的显式成本）。
 	CostPrice *float64
+	// Name / ImageURL 货行主档（迁移 642）：商品页的「仓库明细」要按名称认货、带缩略图，
+	// 与库存台账页同一份主档字段。空串 = 这条货还没填过名称 / 图（不是错误）。
+	Name     string
+	ImageURL string
 }
 
 // ProductStockReader exposes only inventory facts used by product projections and deletion guards.
@@ -70,6 +74,32 @@ type ProductStockWriter interface {
 	EnsureVariantStockWithExternalTx(ctx context.Context, tx *gorm.DB, ref *productcontract.WarehouseRef, productID, variantID, skuCode, externalSKU string, quantity *int) (stockID string, err error)
 	NormalizeExternalSKU(raw string) (code string, err error)
 	CheckExternalSKUProductScope(ctx context.Context, projectID, warehouseID, externalSKU, productID string) (err error)
+	// CalibrateVariantStocksTx 把一批货行的库存**校准到目标值**（B8 商品表单的仓库明细）。
+	//
+	// 口径是 adjust：Quantity 是目标绝对量，不是增量。不跟踪（无限）的行**不参与校准**
+	// —— 调用方负责把它从 targets 里剔出去，这里对「不跟踪行 + 非 0 数量」原样报
+	// ErrStockUntrackedQuantity（库存侧不会替调用方把无限改成有限）。
+	//
+	// 为什么单列这条窄口、而不是让商品侧自己拼 ChangeStockReq：方向 / 原因 / 来源类型
+	// 是库存域的协议常量（adjust / manual_adjust / product_form），
+
+	// 让每个调用方各写一遍就是让它们各自漂移；而 InventoryService 上的 ChangeStockTx
+	// 宽到商品侧不该持有（那条口上还有 Reserve / Deduct / Transfer 二十来个能力）。
+	//
+	// tx 非 nil 时全部写入落在调用方事务里（商品与库存的数量校准同生共死）。
+	CalibrateVariantStocksTx(ctx context.Context, tx *gorm.DB, projectID, productID, variantID string, targets []ProductStockTarget) (err error)
+}
+
+// ProductStockTarget 一条「按目标值校准」的库存目标（仓 × 仓库 SKU 维度）。
+//
+// StockID 与 SKUCode 二选一即可：StockID 是调用方从引用清单里读到的既有行，
+// SKUCode 是裸码（不带仓码前缀）。两者都给时以本行在三处都对得上的那个为准 ——
+// 库存侧按 (仓, 裸码) 定行，StockID 只用于调用方自己的回执与判重。
+type ProductStockTarget struct {
+	StockID     string
+	WarehouseID string
+	SKUCode     string
+	Quantity    int
 }
 
 // ProductStockPort groups the two required capabilities supplied by one inventory service.

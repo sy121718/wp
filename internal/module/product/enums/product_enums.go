@@ -114,6 +114,12 @@ const (
 	ErrVariantSKUEmpty       = "ErrVariantSKUEmpty"       // 变体的 SKU 编码不能为空
 	ErrVariantOptionsInvalid = "ErrVariantOptionsInvalid" // 变体的规格组合不合法
 
+	// ErrVariantStockDuplicated 仓库明细里同一仓同一仓库 SKU 出现多次（B8）。
+	//
+	// 为什么单独一条而不是复用 ErrInvalidParam：这是运营**能改**的输入问题（合并成一行），
+	// 归口文案「参数无效」会让他翻遍整张表单去找哪一格错了。
+	ErrVariantStockDuplicated = "ErrVariantStockDuplicated"
+
 	// 保存时被跳过的一行（不整批失败，逐条回带原因；值即 i18n key）。
 	// 与定价工具的 PricingSkip* 同一形态：跳过是「这一行没做」，不是「整批失败」。
 	VariantSkipHasStock       = "VariantSkipHasStock"       // 该变体仍有非零库存

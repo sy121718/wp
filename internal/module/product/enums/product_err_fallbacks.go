@@ -58,6 +58,7 @@ var ProductErrFallbacks = map[string]string{
 	ErrContainerSKUTaken:         "该主体 SKU 在本工程已被其它商品占用（主体编码在工程内唯一）",
 	ErrVariantSKUEmpty:           "变体的 SKU 编码不能为空：请填写一个编码（或改回系统生成的编码）",
 	ErrVariantOptionsInvalid:     "变体的规格组合不合法：属性组或属性值不属于该商品",
+	ErrVariantStockDuplicated:    "同一个仓库里同一个 SKU 只能出现一次：请把它合并成一行再保存",
 	ErrVariantHasStock:           "变体仍有库存，不能删除（请改为停用）",
 	ErrPricingRuleTypeInvalid:    "定价规则类型不是内置类型",
 	ErrPricingRuleParamsInvalid:  "定价规则参数不合法（参数键 / 类型 / 取值范围）",

@@ -1,0 +1,71 @@
+{* admin/product/variant_stock_panel.html — 一个变体的「仓库明细」面板（B8）。
+
+   对齐 dy_erp 商品表单的 warehouseDetail：按仓库分组，每组 = 仓库名 + 仓码 +
+   组内每行（缩略图 / 名称 / 编码 / 在库数量框 / 删除），组外一个「选货 → 添加」入口。
+
+   三条口径写在这里，因为它决定了控件形态：
+   1. **数量是目标值，不是增量**。编辑态显示当前在库，改了就是「校准成它」；
+      不碰就是什么都不写。与 dy_erp 的 warehouse-sku 表单一致，也与库存 adjust
+      方向的既有语义一致（见 inventory/service/inventory_stock_calibrate.go 头注释）。
+   2. 关联不新建表：这块改的是 product_variants.warehouse_skus 里已有的引用 +
+      被引用货行的数量。行 id（stockId）是行身份，编码只是显示。
+   3. 不跟踪（无限）的行**可以填数字**：填了就是把它改成跟踪并校准到该数（变动路径的
+      既有口径，两列同一条 UPDATE）。空着 = 不动，「无限」保持不变。提示语明确说出这件事，
+      因为「填 0」与「留空」在这一行是两件不同的事。
+
+   入参（map）：groups（该变体已有明细，服务端已按仓分好组）、known（明细是否读到了）、t（取词）。
+   候选货（本工程每仓的货）**不在这里渲染**：整页一份 <template data-stock-catalog>
+   （见 product_edit.html），由 ui/product_variant_write.js 填进每行的下拉 ——
+   一个 200 变体的商品按行内联候选会渲出几万个 <option>。 *}
+{* 三个入参一律先兜底再读，理由（都是实测的 Jet 行为，v6.3.3）：
+   1. include 的 map 里传 nil 值时**键根本不落进 map**（newMap 对无效值调 SetMapIndex
+      被忽略），直接用 .groups 会报「there is no field or method 'groups'」——
+      所以只能靠 isset 判断，不能靠「传了 nil 就算空」。
+   2. range / len 遇 nil 切片会抛运行时错（「cannot range over nil pointer/interface」），
+      所以哪怕键在、值是 nil，也得先换成空切片再 len。 *}
+{{groups := slice()}}
+{{if isset(.groups)}}{{groups = .groups}}{{end}}
+{{known := false}}
+{{if isset(.known)}}{{known = .known}}{{end}}
+{{tr := .t}}
+{{hasGroups := false}}
+{{if isset(groups)}}{{hasGroups = len(groups) > 0}}{{end}}
+<div class="stock-panel" data-stock-panel data-stocks-known="{{if known}}1{{else}}0{{end}}"
+     data-i18n-qty="{{tr("admin.products.stocks.qtyLabel", "该仓在库数量（目标值）")}}"
+     data-i18n-untracked="{{tr("admin.products.stocks.untrackedHint", "这一行现在不跟踪库存（无限）。填一个数字就改为跟踪，并校准到该数量。")}}"
+     data-i18n-remove="{{tr("admin.products.stocks.remove", "移除这条货")}}"
+     data-i18n-unlimited="{{tr("admin.products.stocks.unlimited", "无限")}}"
+     data-i18n-duplicate="{{tr("admin.products.stocks.duplicated", "这个仓里的这条货已经挂上了：直接改它的数量即可，不用再加一行。")}}">
+    <div class="stock-groups" data-stock-groups>
+        {{if hasGroups}}{{range _, g := groups}}
+        <div class="stock-group" data-stock-group data-warehouse-id="{{g.WarehouseID}}" data-warehouse-code="{{g.WarehouseCode}}">
+            <div class="stock-group-head">
+                <span class="stock-group-name">{{g.WarehouseName}}</span>
+                <span class="stock-group-code">{{g.WarehouseCode}}</span>
+            </div>
+            <div class="stock-rows" data-stock-rows>
+                {{if isset(g.Rows)}}{{range _, r := g.Rows}}
+                <div class="stock-row" data-stock-row data-stock-id="{{r.StockID}}" data-warehouse-id="{{r.WarehouseID}}" data-sku-code="{{r.SKUCode}}">
+                    {{if r.ImageURL}}<img class="stock-thumb" src="{{r.ImageURL}}" alt="" loading="lazy">{{end}}
+                    <span class="stock-name">{{if r.Name}}{{r.Name}}{{else}}{{r.SKUCode}}{{end}}</span>
+                    <span class="stock-code">{{r.SKUCode}}</span>
+                    <input type="number" class="form-input stock-qty" min="0" step="1" inputmode="numeric"
+                           data-stock-qty value="{{if r.TrackQuantity}}{{r.Quantity}}{{end}}"
+                           placeholder="{{if r.TrackQuantity}}{{else}}{{tr("admin.products.stocks.unlimited", "无限")}}{{end}}"
+                           aria-label="{{tr("admin.products.stocks.qtyLabel", "该仓在库数量（目标值）")}}"
+                           {{if !r.TrackQuantity}}title="{{tr("admin.products.stocks.untrackedHint", "这一行现在不跟踪库存（无限）。填一个数字就改为跟踪，并校准到该数量。")}}"{{end}}>
+                    <button type="button" class="btn btn-sm btn-ghost" data-stock-remove aria-label="{{tr("admin.products.stocks.remove", "移除这条货")}}">×</button>
+                </div>
+                {{end}}{{end}}
+            </div>
+        </div>
+        {{end}}{{end}}
+    </div>
+    <p class="hint stock-empty" data-stock-empty {{if hasGroups}}hidden{{end}}>{{tr("admin.products.stocks.empty", "这个变体还没有挂任何仓库货行。")}}</p>
+    <div class="stock-add">
+        <select class="form-select" data-stock-add-select aria-label="{{tr("admin.products.stocks.addLabel", "选择要挂到本变体的仓库货品")}}">
+            <option value="">{{tr("admin.products.stocks.addPlaceholder", "选一条仓库里的货…")}}</option>
+        </select>
+        <button type="button" class="btn btn-sm" data-stock-add>{{tr("admin.products.stocks.add", "添加")}}</button>
+    </div>
+</div>

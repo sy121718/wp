@@ -28,6 +28,61 @@ type VariantListResp struct {
 	VariantID    string          `json:"variantId"`
 	SKUCode      string          `json:"skuCode"`
 	OptionValues json.RawMessage `json:"optionValues"`
+	// Stocks 这一行变体的**仓库明细**（B8）：每条 = 一个仓里的一条货行 + 目标数量。
+	//
+	// 语义是**目标值（校准）**，不是增量 —— 编辑态显示的是当前在库，改了就按新值校准。
+	// 与 dy_erp 的 warehouse-sku 表单一致：那张表单给的也是「这批货应该是多少」，
+	// 而不是「再加多少」。库存侧的 adjust 方向本来就是这个口径（见 inventory 契约）。
+	//
+	// 关联本身不新建表：变体 ↔ 货行的引用已经由 product_variants.warehouse_skus 承担，
+	// 这里只是「本次要校准成多少」的提交形状。
+	Stocks []VariantStockRowResp `json:"stocks"`
+}
+
+// VariantStockRowResp 仓库明细里的一行（仓 × 仓库 SKU × 目标数量）。
+//
+// 命名仍以 Resp 结尾：它同时是页面渲染用的行形状与写请求的行形状（一份定义，两个方向），
+// 与 VariantListResp 同一手法 —— 多造一个镜像类型就是多一处必须逐字段保持等价的定义。
+type VariantStockRowResp struct {
+	// WarehouseID 这条货行所在的仓（分组键）。
+	WarehouseID string `json:"warehouseId"`
+	// StockID 货行 id（inventory_stocks.id）。既有行必带；新增行可留空，
+	// 由 (WarehouseID, SKUCode) 定位 —— 服务端两者都试。
+	StockID string `json:"stockId"`
+	// SKUCode 仓库侧的**裸码**（不带仓码前缀）。
+	SKUCode string `json:"skuCode"`
+	// Quantity 数量：读出来是**当前在库**，提交回去是**目标值**。同一个字段的两面 ——
+	// 「编辑态显示当前值，改了就是校准」正是 dy_erp 那张表单的口径。
+	// 0 是合法值（「这批货卖光了」），与「不填」不是一回事。
+	Quantity int `json:"quantity"`
+	// TrackQuantity 该行**当前**是否跟踪数量（只读提示，提交时不用）。
+	// 不跟踪（无限）的行留空 = 不动；填了数字 = 改为跟踪并校准到该数 —— 变动路径的
+	// 既有口径，写回时 track_quantity 与 quantity 是同一条 UPDATE。
+	TrackQuantity bool `json:"trackQuantity"`
+
+	// —— 以下只用于渲染，提交时原样带回但不参与判定 ——
+	//
+	// 仓库名 / 仓短码：分组标题用（**分组在服务端**做，见 VariantStockGroupResp；
+	// 模板不做归并 —— 那需要可变 map + 有序键，属于业务计算）。
+	WarehouseCode string `json:"warehouseCode"`
+	WarehouseName string `json:"warehouseName"`
+	// Name / ImageURL 货行主档（迁移 642）：运营按名称认货，缩略图区分同码不同款。
+	Name     string `json:"name"`
+	ImageURL string `json:"imageUrl"`
+}
+
+// VariantStockGroupResp 一个变体在**某个仓**的仓库明细（页面按仓分组渲染）。
+//
+// 分组由服务端算好而不是交给模板：Jet 里按 warehouseId 归并需要可变 map + 有序键，
+// 模板侧做这件事就是「业务计算」；而分组口径（同仓一组的判定键）本来只有一处该定义。
+//
+// 写请求**不用**这个形状：提交的是扁平的 VariantStockRowResp 数组（stocks），
+// 分组只是读的一侧 —— 让同一份数据在写路径上也能分组提交，会多一层前后端必须对齐的结构。
+type VariantStockGroupResp struct {
+	WarehouseID   string
+	WarehouseCode string
+	WarehouseName string
+	Rows          []VariantStockRowResp
 }
 
 // VariantPreviewResp 预览返回的一行（尚未落库）。
