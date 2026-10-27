@@ -98,6 +98,11 @@ type Service struct {
 	// 与 pageTemplates 的区别是**宽度与失败语义**：那条只服务卡片区（id + 名字，读不到降级），
 	// 这条服务整页（要版本号与更新时间，读不到是装载失败）。合成一条会让卡片区把整页拖红。
 	pageDetailTemplates productcontract.DetailTemplatePort
+	// pagePublishRecords 发布记录页的只读端口（B9，装配期注入，可空）。
+	//
+	// 可空而不是必填：未注入时那一屏照常 200，只是给一句「发布能力未装配」——
+	// 与「读不到」是两档（未装配要人去查装配，读不到可以重试）。
+	pagePublishRecords productcontract.PublishRecordReader
 }
 
 // SetDetailTemplatePort 注入「详情页模板」整页的主数据端口（装配期调用）。
@@ -107,6 +112,15 @@ type Service struct {
 // 的 productPagePortWiring 注释 —— 装配段直接再写一行会让只调 setter 的路径静默漏接。
 func (s *Service) SetDetailTemplatePort(port productcontract.DetailTemplatePort) {
 	s.pageDetailTemplates = port
+}
+
+// SetPublishRecordPort 注入发布记录页的只读端口（B9，装配期调用）。
+//
+// 由 inbound/http 的 SetPublishRecordDeps 转交（装配段只调那一个 setter）：
+// 与 SetWarehouseOptionsPort / SetDetailTemplatePort 同一链路 —— 装配段直接再写一行，
+// 会让「只调 handle 的 setter」的路径静默漏接。
+func (s *Service) SetPublishRecordPort(port productcontract.PublishRecordReader) {
+	s.pagePublishRecords = port
 }
 
 // SetInventory 注入库存真源只读契约；漏接会静默跳过投影和删除守卫，装配期必须自检。

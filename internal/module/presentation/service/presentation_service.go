@@ -208,6 +208,9 @@ var _ presentationcontract.PresentationService = (*Service)(nil)
 // 后台商品详情页按 presentationcontract.DetailTemplateModePort 直接注入，缺一条方法即构建失败。
 var _ presentationcontract.DetailTemplateModePort = (*Service)(nil)
 
+// 发布记录读口断言（B9）：商品发布记录页按这条收窄端口注入，缺一条方法即构建失败。
+var _ presentationcontract.PublishRecordPort = (*Service)(nil)
+
 // 依赖扇出契约断言（pipeline.Fanout 的失效目标 + 自动重建实现）。
 var _ pipeline.DependencyTarget = (*Service)(nil)
 var _ pipeline.StaleRebuilder = (*Service)(nil)

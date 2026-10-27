@@ -144,6 +144,20 @@ type productPageReaderStub struct {
 	parentOptions    productdto.CategoryParentOptionsResp
 	parentOptionsErr error
 	parentOptionReqs []*productdto.ProductCategoryParentsReq
+
+	// 发布记录页（B9）：同一套三段口径 —— 桩记入参、回整份视图。
+	publishView *productdto.ProductPublishRecordPageResp
+	publishErr  error
+	publishReqs []*productdto.ProductPublishRecordPageReq
+}
+
+func (s *productPageReaderStub) ProductPublishRecordPage(_ context.Context, req *productdto.ProductPublishRecordPageReq) (*productdto.ProductPublishRecordPageResp, error) {
+	s.publishReqs = append(s.publishReqs, req)
+	if s.publishView == nil && s.publishErr == nil {
+		// 桩默认给「已装配但零行」：屏幕该是 200 + 空态，不是未装配提示。
+		return productPublishRecordPageViewStub(nil), nil
+	}
+	return s.publishView, s.publishErr
 }
 
 func (s *productPageReaderStub) CategoryParentOptions(_ context.Context, req *productdto.ProductCategoryParentsReq) (productdto.CategoryParentOptionsResp, error) {
@@ -427,6 +441,21 @@ func productPricingPageViewStub(mutate func(*productdto.ProductPricingPageResp))
 	view := &productdto.ProductPricingPageResp{
 		Projects: []projectdto.ProjectResp{}, PreviewSummary: map[string]any{},
 		PreviewRows: []map[string]any{}, History: []map[string]any{},
+	}
+	if mutate != nil {
+		mutate(view)
+	}
+	return view
+}
+
+// productPublishRecordPageViewStub 发布记录页视图的最小形状（B9）：
+// 工程清单空、已装配（Ready）、零行 —— 模板要能在这种最瘦的输入上渲染。
+func productPublishRecordPageViewStub(mutate func(*productdto.ProductPublishRecordPageResp)) *productdto.ProductPublishRecordPageResp {
+	view := &productdto.ProductPublishRecordPageResp{
+		Projects: []projectdto.ProjectResp{},
+		Records:  []productdto.PublishRecordRowResp{},
+		Limit:    productservice.ProductPublishRecordPageSize,
+		Ready:    true,
 	}
 	if mutate != nil {
 		mutate(view)

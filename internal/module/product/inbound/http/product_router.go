@@ -45,6 +45,7 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productmodel "go_wp/internal/module/product/model"
 	inventoryoutbound "go_wp/internal/module/product/outbound/inventory"
+	publishrecordoutbound "go_wp/internal/module/product/outbound/publishrecord"
 	productservice "go_wp/internal/module/product/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/permission"
@@ -61,11 +62,13 @@ import (
 // 导出是给测试用的：feature 测试自己起 gin 引擎注册路由，包一层 adminui.Page 时
 // 需要同一份模板名 —— 让测试抄一遍字符串就会与生产漂移。
 const (
-	ProductListPageTemplate           = "admin/product/products.html"
-	ProductNewPageTemplate            = "admin/product/products_new.html"
-	ProductEditPageTemplate           = "admin/product/product_edit.html"
-	ProductDetailPageTemplate         = "admin/product/product_detail.html"
-	ProductPricingPageTemplate        = "admin/product/product_pricing.html"
+	ProductListPageTemplate    = "admin/product/products.html"
+	ProductNewPageTemplate     = "admin/product/products_new.html"
+	ProductEditPageTemplate    = "admin/product/product_edit.html"
+	ProductDetailPageTemplate  = "admin/product/product_detail.html"
+	ProductPricingPageTemplate = "admin/product/product_pricing.html"
+	// ProductPublishRecordPageTemplate 商品发布记录页（B9）：当前发布状态一览，只读。
+	ProductPublishRecordPageTemplate  = "admin/product/product_publish_records.html"
 	ProductDetailTemplatePageTemplate = "admin/product/product_detail_template.html"
 	ProductAttributesPageTemplate     = "admin/product/product_attributes.html"
 	ProductAttributeRowsTemplate      = "admin/product/product_attribute_rows.html"
@@ -285,6 +288,9 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 「断言失败 → 静默降级」这条路径。presentations 的静态类型 PresentationService
 	// 已嵌入该端口，接口→接口赋值成立。
 	productPages.SetDetailTemplateModePort(presentations)
+	// 发布记录页（B9）：同一个 presentation service 的收窄读口（PublishRecordPort 已嵌入
+	// PresentationService），经 outbound 翻成「商品 → 逐语言发布明细」后交给读模型。
+	productPages.SetPublishRecordDeps(presentations)
 	// 详情页模板的四个写动作（新建 / 首次发布 / 切换 / 改 URL）挂在 /api/product 组，
 	// 而那两个契约在 SetupProductRoutes 里还拿不到 —— 同一批依赖在这里后置注入
 	//（与文件末尾 BindDetailTemplateModePort 同一个理由，见 product_detail_template_handle.go）。
@@ -320,6 +326,11 @@ func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageH
 	// 页面 GET 走页面组（Session + CSRF，无 Casbin）；写动作复用商品更新权限点
 	//（与 /products/attributes、/products/taxonomy 同一改动面：改的都是这个商品本身）。
 	pages.GET("/products/edit", adminui.PageAuthzAs("/api/product/update", http.MethodPost), adminui.PageSlot(ProductEditPageTemplate), productPages.ProductEditPage)
+	// 发布记录页（B9）：只读一屏 —— 商品现在发布成什么样（站点路径 / 发布时间 / 产物版本 /
+	// 是否上线 / 是否待重建）。**没有历史这一维**：库里没有记录每次发布尝试成功/失败的
+	// 明细表，所以这里不编造「上次失败」这类行。页内「重新发布」复用
+	// /api/product/detail-template/apply（已有权限点），本页只多一条 GET。
+	pages.GET("/products/publish-records", adminui.PageAuthz("/api/product/list"), adminui.PageSlot(ProductPublishRecordPageTemplate), productPages.ProductPublishRecordPage)
 	// 变体清单的组合预览（docs/14 §8 的「预览—保存」模型）：**只算不写** —— 纯计算，
 	// 因此不挂 Casbin（与 /product-attributes/value-rows 同一先例：页面组已有 Session + CSRF，
 	// 而这个端点落不了任何库）。返回的行由前端追加进清单，用户点保存才落库。
@@ -519,6 +530,21 @@ type ProductPageHandle struct {
 	seoContents contentcontract.ContentService
 }
 
+// SetPublishRecordDeps 注入发布记录页的只读端口（B9，装配期调用）。
+//
+// 实参 presentations 的静态类型 PresentationService 已嵌入 presentation 的
+// PublishRecordPort（presentation service 侧有编译期断言），因此这里不需要运行期类型断言。
+// 端口经 outbound/publishrecord 翻成「商品 → 逐语言明细」，再交给本模块 service 读模型
+// —— 与 SetInventoryDeps / SetDetailTemplateDeps 同一条链路（装配段只调这一个 setter）。
+//
+// 未注入时那一屏照常 200 并给一句「发布能力未装配」：那是装配缺陷的可见提示，
+// 不是「数据读不到」（后者可以重试）。
+func (h *ProductPageHandle) SetPublishRecordDeps(instances presentationcontract.PublishRecordPort) {
+	if wiring, ok := h.products.(productPagePortWiring); ok {
+		wiring.SetPublishRecordPort(publishrecordoutbound.New(instances))
+	}
+}
+
 // productPagePortWiring 装配期把两条页面只读端口交到**本模块 service 读模型**的接线面。
 //
 // 为什么由页面处理器转交、而不是装配段直接调 service 的 Set*：这两条依赖的到达点本来就
@@ -531,6 +557,7 @@ type productPagePortWiring interface {
 	SetWarehouseOptionsPort(productcontract.WarehouseOptionsPort)
 	SetEntityTemplatePort(productcontract.EntityTemplatePort)
 	SetDetailTemplatePort(productcontract.DetailTemplatePort)
+	SetPublishRecordPort(productcontract.PublishRecordReader)
 }
 
 // NewProductPageHandle 构造。
