@@ -198,7 +198,7 @@ func TestWholePageTemplatesOwnTheirText(t *testing.T) {
 
 // allowedPkgDirs pkg/ 下允许存在的包：横切能力，不是页面助手。
 var allowedPkgDirs = map[string]struct{}{
-	"auth": {}, "backpath": {}, "binding": {}, "bulkids": {}, "cache": {},
+	"actor": {}, "auth": {}, "backpath": {}, "binding": {}, "bulkids": {}, "cache": {},
 	"captcha": {}, "casbin": {}, "crypto": {}, "database": {}, "datarule": {},
 	"enums": {}, "facing": {}, "i18n": {}, "jsonx": {}, "logger": {},
 	"mailer": {}, "money": {}, "pagination": {}, "pathkit": {}, "queue": {},

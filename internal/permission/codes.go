@@ -634,6 +634,12 @@ const (
 	ProductDetailTemplateReapply Perm = "product:detail_template_reapply"
 	// 详情页模板回滚到快照（POST /api/product/detail-template/rollback-document）
 	ProductDetailTemplateRollback Perm = "product:detail_template_rollback"
+	// 商品发布历史（GET /api/product/publish-attempts）
+	//
+	// 独立权限点而不是复用 product:get / product:list：这条读的是**谁在什么时候点了发布、
+	// 失败原因原文**（运维向的审计信息），与「能不能看商品」是两件事 —— 复用会让
+	// 只该看商品的人顺手看到全站发布失败堆栈。
+	ProductPublishAttempts Perm = "product:publish_attempts"
 	// 商品详情（GET /api/product/get）
 	ProductGet Perm = "product:get"
 	// 商品列表（GET /api/product/list）
@@ -1141,6 +1147,7 @@ var specs = map[Perm]spec{
 	ProductDetailTemplateReapply:   {module: "product", name: "详情页模板套用预设"},
 	ProductDetailTemplateRollback:  {module: "product", name: "详情页模板回滚快照"},
 	ProductGet:                     {module: "product", name: "商品详情"},
+	ProductPublishAttempts:         {module: "product", name: "商品发布历史"},
 	ProductList:                    {module: "product", name: "商品列表"},
 	ProductPricingAdjustment:       {module: "product", name: "定价留痕详情"},
 	ProductPricingApply:            {module: "product", name: "定价应用落库"},

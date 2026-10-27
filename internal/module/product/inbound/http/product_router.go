@@ -114,7 +114,20 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	registerProductTaxonomyAPI(g, handle)
 	registerProductTagAPI(g, handle)
 	registerProductPricingAPI(g, handle)
+	registerProductPublishHistoryAPI(g, NewPublishAttemptHandle(svc))
 	return svc, svc
+}
+
+// registerProductPublishHistoryAPI 发布历史（迁移 673）。
+//
+// 单独一条权限点而不是复用 product:get / product:list：这条交的是**谁在什么时候点了发布、
+// 失败原因原文**（运维向审计信息）。混进「能看商品」的权限里，只该看商品的人会顺手
+// 看到全站发布失败堆栈。
+//
+// 出口是 JSON 而不是 HTML 片段：DOM 由发布记录页里已渲染的 Jet <template> 填充
+//（ui/json_swap.js 的同源机制，见 internal/templates/CLAUDE.md）。
+func registerProductPublishHistoryAPI(g *permission.RouteGroup, handle *PublishAttemptHandle) {
+	g.GET("/publish-attempts", permission.ProductPublishAttempts, handle.ProductPublishAttempts)
 }
 
 // registerProductCoreAPI 注册 商品本体（含变体） 的接口路由。
@@ -288,9 +301,12 @@ func SetupProductPages(pages *gin.RouterGroup,
 	// 「断言失败 → 静默降级」这条路径。presentations 的静态类型 PresentationService
 	// 已嵌入该端口，接口→接口赋值成立。
 	productPages.SetDetailTemplateModePort(presentations)
-	// 发布记录页（B9）：同一个 presentation service 的收窄读口（PublishRecordPort 已嵌入
-	// PresentationService），经 outbound 翻成「商品 → 逐语言发布明细」后交给读模型。
-	productPages.SetPublishRecordDeps(presentations)
+	// 发布记录页（B9）与发布历史（B11）：同一个 presentation service 的两个收窄读口
+	//（PublishRecordPort / PublishAttemptPort 都已嵌入 PresentationService），
+	// 经 outbound 翻成「商品 → 逐语言发布明细」与「商品 → 历次尝试」后交给读模型。
+	// 两个实参是同一个值，但不合并成一个参数：它们是两条独立能力，
+	// 将来若换掉其中一条的提供方，这里就是唯一的改动点。
+	productPages.SetPublishRecordDeps(presentations, presentations)
 	// 详情页模板的四个写动作（新建 / 首次发布 / 切换 / 改 URL）挂在 /api/product 组，
 	// 而那两个契约在 SetupProductRoutes 里还拿不到 —— 同一批依赖在这里后置注入
 	//（与文件末尾 BindDetailTemplateModePort 同一个理由，见 product_detail_template_handle.go）。
@@ -539,9 +555,12 @@ type ProductPageHandle struct {
 //
 // 未注入时那一屏照常 200 并给一句「发布能力未装配」：那是装配缺陷的可见提示，
 // 不是「数据读不到」（后者可以重试）。
-func (h *ProductPageHandle) SetPublishRecordDeps(instances presentationcontract.PublishRecordPort) {
+func (h *ProductPageHandle) SetPublishRecordDeps(instances presentationcontract.PublishRecordPort,
+	attempts presentationcontract.PublishAttemptPort) {
+	port := publishrecordoutbound.NewWithAttempts(instances, attempts)
 	if wiring, ok := h.products.(productPagePortWiring); ok {
-		wiring.SetPublishRecordPort(publishrecordoutbound.New(instances))
+		wiring.SetPublishRecordPort(port)
+		wiring.SetPublishAttemptPort(port)
 	}
 }
 
@@ -558,6 +577,9 @@ type productPagePortWiring interface {
 	SetEntityTemplatePort(productcontract.EntityTemplatePort)
 	SetDetailTemplatePort(productcontract.DetailTemplatePort)
 	SetPublishRecordPort(productcontract.PublishRecordReader)
+	// SetPublishAttemptPort 发布历史（迁移 673）：同一份适配器（publishrecord.Port）
+	// 同时实现两个读口 —— 它们读的是同一条产线的两半事实（当前状态 / 历次尝试）。
+	SetPublishAttemptPort(productcontract.PublishAttemptReader)
 }
 
 // NewProductPageHandle 构造。

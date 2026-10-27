@@ -7,7 +7,7 @@
 - 契约三件：`binding`（绑定唯一入口）、`facing`（错误事实 key+兜底+状态码）、`response`（JSON 出口）、`view`（视图结果接口）。
 - 基础设施：`i18n` `logger` `database` `cache` `rls` `jsonx` `utils` `money` `pagination` `pathkit` `safepath`。
 - 能力包（provider 型，实现放 `<pkg>/provider/`）：`auth` `casbin` `crypto` `captcha` `mailer` `queue` `upload` `validate` `sitehttps` `sitetz`。
-- 小工具：`datarule` `reqparams` `backpath` `bulkids` `enums` `ssrf`（出站目标的 SSRF 判定，webhook 与 mail 回调节点共用）。
+- 小工具：`datarule` `reqparams` `backpath` `bulkids` `enums` `actor`（把操作人经 ctx 传到 service，供发布会话 / 发布历史留痕，见 internal/middleware/builtin/actor_context.go）`ssrf`（出站目标的 SSRF 判定，webhook 与 mail 回调节点共用）。
 
 ## 硬约束
 - JSON 只经 `jsonx`（import 写 `json "go_wp/pkg/jsonx"`）；时间只经 `utils.JSONTime`（JSON 出 unix 毫秒，页面给 `time.Time` 由模板格式化）；日志只经 `logger` 结构化字段。
