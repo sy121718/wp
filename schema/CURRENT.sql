@@ -6,7 +6,7 @@
 -- 更新方式：bash scripts/schema-snapshot.sh
 -- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）
 -- 迁移台账版本：597-block-bulk-delete-grant-copy
--- 生成时间：2026-10-27T08:16:16+08:00
+-- 生成时间：2026-10-27T11:27:47+08:00
 
 --
 -- PostgreSQL database dump
@@ -48,16 +48,18 @@ CREATE FUNCTION public.fn_inventory_purchase_order_status_guard() RETURNS trigge
 DECLARE
     v_status text;
 BEGIN
-    -- 已经是人工终态：不再按明细行改判（终态单向）。
-    IF NEW.status IN ('finished', 'cancelled') THEN
+    -- 人工态（draft / exception / finished / cancelled）：不按明细行改判。
+    -- 草稿改行不该自动变成「已下单」；异常中的单收货会被服务层拒绝，
+    -- 行数据也就不会变 —— 推导在这里没有意义，只会把人的决定抹掉。
+    IF NEW.status NOT IN ('ordered', 'partial', 'received') THEN
         RETURN NEW;
     END IF;
 
     SELECT CASE
-               WHEN COUNT(*) = 0 THEN 'pending'
+               WHEN COUNT(*) = 0 THEN 'ordered'
                WHEN COUNT(*) FILTER (WHERE received_quantity < quantity) = 0 THEN 'received'
                WHEN COUNT(*) FILTER (WHERE received_quantity > 0) > 0 THEN 'partial'
-               ELSE 'pending'
+               ELSE 'ordered'
            END
       INTO v_status
       FROM inventory_purchase_order_lines
@@ -82,27 +84,26 @@ DECLARE
     v_order_id uuid;
     v_status   text;
 BEGIN
-    -- INSERT 时有 NEW、DELETE 时有 OLD；另一侧为 NULL，COALESCE 取到的那一侧就是本单。
     v_order_id := COALESCE(NEW.order_id, OLD.order_id);
     IF v_order_id IS NULL THEN
         RETURN NULL;
     END IF;
 
     SELECT CASE
-               WHEN COUNT(*) = 0 THEN 'pending'
+               WHEN COUNT(*) = 0 THEN 'ordered'
                WHEN COUNT(*) FILTER (WHERE received_quantity < quantity) = 0 THEN 'received'
                WHEN COUNT(*) FILTER (WHERE received_quantity > 0) > 0 THEN 'partial'
-               ELSE 'pending'
+               ELSE 'ordered'
            END
       INTO v_status
       FROM inventory_purchase_order_lines
      WHERE order_id = v_order_id;
 
-    -- 只在真的不一致时写：同一个值反复写会让 update_time 抖动，
-    -- 也让每次收货都被记成一次「采购单本身被修改」。
     UPDATE inventory_purchase_orders
        SET status = v_status, update_time = now()
-     WHERE id = v_order_id AND status IS DISTINCT FROM v_status;
+     WHERE id = v_order_id
+       AND status IN ('ordered', 'partial', 'received')
+       AND status IS DISTINCT FROM v_status;
 
     RETURN NULL;
 END;
@@ -852,7 +853,7 @@ CREATE TABLE public.inventory_purchase_orders (
     code text NOT NULL,
     source_id uuid NOT NULL,
     warehouse_id uuid NOT NULL,
-    status text DEFAULT 'pending'::text NOT NULL,
+    status text DEFAULT 'ordered'::text NOT NULL,
     ordered_at timestamp with time zone DEFAULT now() NOT NULL,
     expected_at timestamp with time zone,
     remark text DEFAULT ''::text NOT NULL,
@@ -860,7 +861,7 @@ CREATE TABLE public.inventory_purchase_orders (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     create_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_purchase_orders_created_at_not_null NOT NULL,
     update_time timestamp with time zone DEFAULT now() CONSTRAINT inventory_purchase_orders_updated_at_not_null NOT NULL,
-    CONSTRAINT inventory_purchase_orders_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'partial'::text, 'received'::text, 'finished'::text, 'cancelled'::text])))
+    CONSTRAINT inventory_purchase_orders_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'ordered'::text, 'partial'::text, 'received'::text, 'exception'::text, 'finished'::text, 'cancelled'::text])))
 );
 
 ALTER TABLE ONLY public.inventory_purchase_orders FORCE ROW LEVEL SECURITY;
@@ -2397,6 +2398,8 @@ CREATE TABLE public.orders (
     shipped_at timestamp with time zone,
     fx_rate numeric(18,8),
     fx_base_code text DEFAULT ''::text NOT NULL,
+    fulfillment_status text DEFAULT 'pending'::text NOT NULL,
+    CONSTRAINT ck_orders_fulfillment_status CHECK ((fulfillment_status = ANY (ARRAY['pending'::text, 'paid'::text, 'shipped'::text, 'partial'::text, 'received'::text, 'exception'::text, 'cancelled'::text, 'reship'::text, 'returned'::text, 'return_done'::text, 'refunded'::text, 'failed'::text]))),
     CONSTRAINT orders_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'paid'::character varying, 'shipped'::character varying, 'completed'::character varying, 'cancelled'::character varying, 'refunded'::character varying])::text[])))
 );
 
@@ -6751,6 +6754,13 @@ CREATE INDEX idx_orders_order_no_trgm ON public.orders USING gin (order_no ext_s
 
 
 --
+-- Name: idx_orders_project_fulfillment; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_orders_project_fulfillment ON public.orders USING btree (project_id, fulfillment_status);
+
+
+--
 -- Name: idx_orders_project_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8925,6 +8935,14 @@ ALTER TABLE ONLY public.document_snapshots
 
 ALTER TABLE ONLY public.document_snapshots
     ADD CONSTRAINT document_snapshots_source_template_version_id_fkey FOREIGN KEY (source_template_version_id) REFERENCES public.content_template_versions(id);
+
+
+--
+-- Name: inventory_stock_movements fk_inventory_movements_product; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE public.inventory_stock_movements
+    ADD CONSTRAINT fk_inventory_movements_product FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE RESTRICT;
 
 
 --
