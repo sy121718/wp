@@ -149,10 +149,7 @@ var pendingControllerQuery = map[string]bool{
 	"internal/module/order/inbound/http/order_shared.go":                   true,
 	"internal/module/order/inbound/http/return_page.go":                    true,
 	"internal/module/order/inbound/http/sales_page.go":                     true,
-	"internal/module/page/inbound/http/page_langs_handle.go":               true,
 	"internal/module/page/inbound/http/page_redirect.go":                   true,
-	"internal/module/page/inbound/http/page_schedule_handle.go":            true,
-	"internal/module/page/inbound/http/pages_handle.go":                    true,
 	"internal/module/page/inbound/http/page_site_slot_handle.go":           true,
 	"internal/module/page/inbound/http/page_translations_handle.go":        true,
 	"internal/module/project/inbound/http/project_handle.go":               true,
@@ -526,7 +523,6 @@ var pendingControllerUIImport = map[string]bool{
 	// adminui.MsgText（取词）—— 那是文案事实的共享定义处，不是 UI 线。
 	// 渲染出口本身已经交给 pageview.Render / 路由的 slot。
 	"internal/module/ai/inbound/http/ai_page.go":                                true,
-	"internal/module/page/inbound/http/page_langs_handle.go":                    true,
 	"internal/module/page/inbound/http/pages_handle.go":                         true,
 	"internal/module/admin/inbound/http/admin_err.go":                           true,
 	"internal/module/admin/inbound/http/admin_jump.go":                          true,
@@ -546,7 +542,6 @@ var pendingControllerUIImport = map[string]bool{
 	"internal/module/order/inbound/http/order_shared.go":                        true,
 	"internal/module/order/inbound/http/return_page.go":                         true,
 	"internal/module/page/inbound/http/page_jump.go":                            true,
-	"internal/module/page/inbound/http/page_schedule_handle.go":                 true,
 	"internal/module/page/inbound/http/page_translations_handle.go":             true,
 	"internal/module/plugin/inbound/http/plugin_err.go":                         true,
 	"internal/module/project/inbound/http/project_jump.go":                      true,

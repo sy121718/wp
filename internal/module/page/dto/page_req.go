@@ -26,9 +26,33 @@ type SaveDraftReq struct {
 }
 
 // ListReq 列出 Page 摘要（必须带工程 scope，防跨工程越权）。
+//
+// Lang / LangState 是**语言维度收窄**（可选，空 = 不收窄）：后台页面列表要能回答
+// 「哪些页面有 en-US 的线上页面」—— 这件事的事实分散在两处（pages.excluded_langs 与
+// page_publications），只有服务端聚合一次才不重复算。
+//
+// 取值域与派生判据同 pageenums.LangStatusOf：LangState 空 = 「这一语言有页面」
+// （已激活产物），excluded = 本页排除了它，published = 有产物，draft = 既没产物也没排除。
 type ListReq struct {
 	ProjectID string `form:"projectId" json:"projectId" binding:"required"`
 	ThemeID   string `form:"themeId" json:"themeId"`
+	// Lang 目标语言（空 = 不按语言收窄）。
+	Lang string `form:"lang" json:"lang"`
+	// LangState 该语言的产出状态（空 = 已发布；判据见 pageenums.LangStatusOf）。
+	LangState string `form:"state" json:"state"`
+}
+
+// PageListQueryReq 后台页面列表的查询串（筛选栏的三项）。
+//
+// 独立成一条查询 DTO 而不是让控制器读各自读 c.Query：键名与归一只有一份，
+// 且「读查询串」这条路径统一走 pkg/binding（控制器形状门禁的第 2 条）。
+//
+// State 不做 required / oneof 校验：手改 URL 的未知状态应回退成「不过滤」，
+// 而不是把一张列表变成 400 —— 一条过期的链接不该让整页不可用（与 focusProjectID 同口径）。
+type PageListQueryReq struct {
+	Project string `form:"project"`
+	Lang    string `form:"lang"`
+	State   string `form:"state"`
 }
 
 // DetailReq 查询 Page。

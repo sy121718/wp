@@ -17,7 +17,11 @@ const emptyStatePartial = "internal/templates/admin/partials/empty_state.html"
 
 // 状态徽标同理：形态只在 admin/partials/badge.html 里，模板里手写的 badge 只能减少。
 // 只数 <span class="badge badge-…">（td/div 上的 badge 是表格与卡片自己的类，不是这个形态）。
-const badgeBudget = 161
+//
+// 2026-10 定时上下线（PIPE-7）下线时从 163 降到 160（-3：
+// pages.html 的两个排定徽标 + 面板片段的空态徽标随文件一起删掉），
+// 预算只减不增，所以这里同步下调 —— 留在 163 会让「已经收口」与「一点没改」在清单上长得一样。
+const badgeBudget = 160
 
 const badgePartial = "internal/templates/admin/partials/badge.html"
 

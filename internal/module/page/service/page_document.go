@@ -440,6 +440,14 @@ func hash(data []byte) string {
 
 // List 列出页面摘要（不含草稿文档；DraftDocument 为空）。
 // 必须带 projectID；themeID 为空时列该工程全部，非空时只列挂在该主题下的页面。
+//
+// 语言维度（可选）：Lang 非空时按该语言的**产出状态**收窄，并把每一行的状态填进
+// PageResp.LangStatus。聚合只在这里做一次 —— 「这一页这一门语言现在是什么状态」由两个
+// 真源合成（pages.excluded_langs 与 page_publications），让调用方各自去拼就会出现
+// 第二份判据（「已排除但还留着产物算哪档」这类问题每个调用方答一遍）。
+//
+// 判据用 pageenums.LangStatusOf（与工作台的行状态同一函数）：列表与工作台对同一页同一语言
+// 给出不同说法，是最容易被当成 bug 报上来的形态。
 func (s *Service) List(ctx context.Context, req *pagedto.ListReq) (res []pagedto.PageResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, ErrInvalidParam
@@ -451,9 +459,37 @@ func (s *Service) List(ctx context.Context, req *pagedto.ListReq) (res []pagedto
 	if err != nil {
 		return nil, err
 	}
+	lang := strings.TrimSpace(req.Lang)
+	if lang == "" {
+		res = make([]pagedto.PageResp, 0, len(entities))
+		for i := range entities {
+			res = append(res, *pageResp(&entities[i]))
+		}
+		return res, nil
+	}
+	// 一次问回这批页面在该语言下的激活状态（逐页问会退化成 N 次往返）。
+	ids := make([]string, 0, len(entities))
+	for i := range entities {
+		ids = append(ids, entities[i].ID)
+	}
+	pubs, err := s.model.ListPublicationsByPages(ctx, ids, lang)
+	if err != nil {
+		return nil, err
+	}
+	published := make(map[string]bool, len(pubs))
+	for i := range pubs {
+		published[pubs[i].PageID] = strings.TrimSpace(pubs[i].ActivePath) != ""
+	}
+	want := pageenums.LangStatusParse(req.LangState, pageenums.LangStatusPublished)
 	res = make([]pagedto.PageResp, 0, len(entities))
 	for i := range entities {
-		res = append(res, *pageResp(&entities[i]))
+		state := pageenums.LangStatusOf(pageExcludesLang(&entities[i], lang), published[entities[i].ID])
+		if state != want {
+			continue
+		}
+		row := pageResp(&entities[i])
+		row.LangStatus = state
+		res = append(res, *row)
 	}
 	return res, nil
 }

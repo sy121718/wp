@@ -81,7 +81,7 @@ func (m *Model) ClaimPendingOutbox(ctx context.Context, lease time.Duration, lim
 	if secs <= 0 {
 		secs = 1
 	}
-	// 与 page_schedule_model.go 的 ClaimDueSchedules 同一形态：候选行由子查询选出并加
+	// 与 build_model.go 的 ClaimDueBuildJobs 同一形态：候选行由子查询选出并加
 	// FOR UPDATE SKIP LOCKED，外层 UPDATE 只按 id 命中这些行并用 RETURNING 写回实体。
 	var claimed []OutboxEventEntity
 	candidates := m.db.WithContext(ctx).Model(&OutboxEventEntity{}).

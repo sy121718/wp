@@ -9,9 +9,7 @@ package feature
 //
 // 判据矩阵：
 //   S2a-1 修订历史片段：CreatedAt 交 JSONTime 事实 → dateTime 渲染；零值渲染成空，不留 0001-01-01。
-//   S2a-3 列表行徽标：SchedulePendingAt 交 JSONTime 事实 → **站点时区**渲染；零值不显示徽标。
 //   S2b   发布回执状态条：ReceiptLastConverge 交 JSONTime 事实 → dateTimeSecond 秒精度；nil 不显示后缀。
-//   （S2a-2 面板行由 page_schedule_render_test.go 的 DB 用例断言：那条只有真库才拿得到时刻真值）
 
 import (
 	"go_wp/internal/adminui"
@@ -84,11 +82,11 @@ func pageTimePresPagesData(pages []map[string]any, extra map[string]any) map[str
 }
 
 // pageTimePresPageRow 一行页面（UpdatedAt 只求渲染成功，不在本批判据范围内）。
-func pageTimePresPageRow(id, path string, pending *utils.JSONTime) map[string]any {
+func pageTimePresPageRow(id, path string) map[string]any {
 	return map[string]any{
 		"ID": id, "ProjectID": "p1", "Kind": "home", "DraftPath": path,
 		"Active": false, "Staged": false, "Stale": false, "Version": int64(1),
-		"UpdatedAt": time.Now(), "SchedulePendingAt": pending, "ScheduleAlert": false,
+		"UpdatedAt": time.Now(),
 	}
 }
 
@@ -168,45 +166,6 @@ func TestHistoryFragmentRendersRevisionTime(t *testing.T) {
 	}
 }
 
-// TestPagesListScheduleBadgeUsesSiteTimezone S2a-3：列表行「已排定」徽标按**站点时区**渲染。
-//
-// 同一绝对时刻：本地（UTC）是 10:00、站点（Asia/Shanghai）是 18:00。模板若退回 dateTime
-// （或站点时区解析失效退回本地），断言立刻红 —— 这正是这个切片最容易写错的地方。
-func TestPagesListScheduleBadgeUsesSiteTimezone(t *testing.T) {
-	pageTimePresUseSeparatedTimezones(t)
-
-	at := time.Date(2026, 9, 30, 10, 0, 0, 0, time.UTC)
-	pending := utils.NewJSONTime(at)
-	zero := utils.NewJSONTime(time.Time{})
-	code, body := pageTimePresRender(t, "admin/page/pages", pageTimePresPagesData([]map[string]any{
-		pageTimePresPageRow("pg1", "/demo", &pending),
-		pageTimePresPageRow("pg2", "/draft", &zero),
-	}, nil))
-	if code != http.StatusOK {
-		t.Fatalf("列表页渲染失败: %d", code)
-	}
-	if !strings.Contains(body, "</html>") {
-		t.Fatalf("列表页响应不完整（缺 </html>）:\n%s", body)
-	}
-	if !strings.Contains(body, "已排定 2026-09-30 18:00</span>") {
-		t.Fatalf("徽标未按站点时区渲染到点时刻（期望 已排定 2026-09-30 18:00</span>）:\n%s", body)
-	}
-	if strings.Contains(body, "已排定 "+pageTimePresUTCStamp) {
-		t.Fatalf("徽标用的是本地时区口径（%s）—— 排定时刻必须按站点时区显示:\n%s", pageTimePresUTCStamp, body)
-	}
-	if n := strings.Count(body, "已排定"); n != 1 {
-		t.Fatalf("零值排定不该渲染出徽标（期望 1 个「已排定」，实际 %d 个）:\n%s", n, body)
-	}
-	// 空时刻的徽标是「零值守卫被绕过」的形态：文字在、时刻空 —— 断言里必须钉住它，
-	// 否则把零值交成「零值时间对象」而不是 nil 的退化会静默通过（页面上就是一条空徽标）。
-	if strings.Contains(body, "已排定 </span>") {
-		t.Fatalf("零值排定渲染出了空时刻的徽标 —— 整块都不该渲染:\n%s", body)
-	}
-	if strings.Contains(body, "0001-01-01") {
-		t.Fatalf("零值时间被渲染成了伪造时刻 0001-01-01:\n%s", body)
-	}
-}
-
 // TestPagesReceiptBannerUsesSecondPrecision S2b：回执状态条的收敛时刻到秒，nil 时整段后缀消失。
 //
 // 到秒是刻意的（截到分钟会让人对不上日志），用**本地**时区也是刻意的（观测值口径，不是
@@ -220,7 +179,7 @@ func TestPagesReceiptBannerUsesSecondPrecision(t *testing.T) {
 		"ReceiptOldest": "2m", "ReceiptLastConverge": &last,
 	}
 	code, body := pageTimePresRender(t, "admin/page/pages",
-		pageTimePresPagesData([]map[string]any{pageTimePresPageRow("pg1", "/demo", nil)}, receipt))
+		pageTimePresPagesData([]map[string]any{pageTimePresPageRow("pg1", "/demo")}, receipt))
 	if code != http.StatusOK {
 		t.Fatalf("列表页渲染失败: %d", code)
 	}
@@ -237,7 +196,7 @@ func TestPagesReceiptBannerUsesSecondPrecision(t *testing.T) {
 	// 观测没读到收敛时刻（observer 缺失 / 拉取失败 / 零值）→ 后缀整段不显示，
 	// 而不是渲染成空时刻或 0001-01-01。
 	code, body = pageTimePresRender(t, "admin/page/pages",
-		pageTimePresPagesData([]map[string]any{pageTimePresPageRow("pg1", "/demo", nil)},
+		pageTimePresPagesData([]map[string]any{pageTimePresPageRow("pg1", "/demo")},
 			map[string]any{
 				"ReceiptKnown": true, "ReceiptAlert": true, "ReceiptPending": int64(3),
 				"ReceiptOldest": "2m", "ReceiptLastConverge": (*utils.JSONTime)(nil),

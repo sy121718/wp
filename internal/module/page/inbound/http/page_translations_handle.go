@@ -21,6 +21,7 @@ import (
 	"errors"
 	pageview "go_wp/pkg/view"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -217,6 +218,13 @@ type pageTranslationsData struct {
 	// 与取数失败分开，是因为「改地址就能好」和「稍后重试」不是同一件事。
 	ParamInvalid bool
 	ParamError   pageMsg
+	// LangStates 这一页**出不出**每种站点语言（迁移 491 的 pages.excluded_langs）。
+	// 与下面的 Groups 是两个问题：Groups 答「这一门语言的文字是什么」，
+	// LangStates 答「这一门语言要不要产出」。行里放事实（key + 兜底），取词在模板里做。
+	LangStates []pagedto.PageLangResp
+	// LangStatesErr 产出范围**没读到**的降级事实：非空时那一块加一条提示，
+	// 但工作台的主职能（翻译与保存）照常可用。
+	LangStatesErr pageMsg
 }
 
 // 筛选取值（服务端渲染，纯链接，零 JS）。
@@ -307,9 +315,10 @@ func (h *pagesAdminHandle) renderTranslationsFailure(c *gin.Context, status int,
 // SavePageTranslations POST /admin/pages/translations/save：保存本页译文。
 //
 // 两条出口（表单带 hx-post，页面不离开）：
-//   · 成功 → JSON + written 计数，前端按 data-reload-on-ok 刷新（保住筛选与目标语言）；
-//   · 失败 → **只回逐行错误片段**（renderTranslationError），htmx 就地替换
-//     #page-translations-errors。页面与已填译文都不动。
+//
+//	· 成功 → JSON + written 计数，前端按 data-reload-on-ok 刷新（保住筛选与目标语言）；
+//	· 失败 → **只回逐行错误片段**（renderTranslationError），htmx 就地替换
+//	  #page-translations-errors。页面与已填译文都不动。
 //
 // 从前失败会重渲整个工作台（重查草稿、重建候选、重算全站完成度）。表单改 htmx 之后
 // 那个理由不成立 —— 页面没离开过，「回填输入」不需要；重渲只是把一次校验失败
@@ -496,6 +505,9 @@ func (h *pagesAdminHandle) buildPageTranslationsData(ctx context.Context, pageID
 		Lang: lang, Filter: normalizeTranslationFilter(filter),
 		IsDefaultLang: lang == defaultLang,
 	}
+	// 产出范围与译文表同一屏：两者都是「这一页 × 这一门语言」的属性，
+	// 分开在两处就会分叉（列表页的「语言」按钮正是这么坏的）。
+	data.LangStates, data.LangStatesErr = h.pageLangStatesOf(ctx, page.ID)
 	for _, code := range langs {
 		data.Langs = append(data.Langs, pagedto.TranslationLangOptionResp{Code: code, Label: code, Active: code == lang})
 	}
@@ -697,7 +709,6 @@ func translationBack(c *gin.Context) string {
 
 // translationBackMsg 回跳链接文字（复用本页标题词条，不新增全站词条）。
 var translationBackMsg = pageMsg{Key: pageenums.MsgPageTranslationsTitle, Fallback: "多语言"}
-
 
 // pageTranslationsSavedMsg 译文保存成功回执 —— 一句**带 %s 的整句词条** + 数字参数。
 //
@@ -1239,4 +1250,24 @@ var translationMissBackMsg = pageMsg{Key: pageenums.TranslationMissTitle, Fallba
 // translationMissJump 回缺译报告的提示页出口（取消某语言）。
 func translationMissJump(c *gin.Context, ok bool, msg pageMsg) {
 	pageJump(c, ok, msg, translationMissBack(c), translationMissBackMsg)
+}
+
+// pageTranslationsBack 写动作回跳工作台的目标地址（语言产出范围三条写动作共用）。
+//
+// 回跳目标就是工作台：写的是它里面的东西（这一页这一门语言的产出范围）。
+// 地址先按白名单从表单 action 的 query 读回（与工作台其它写动作同一口径）；
+// pageId / lang 是该页的**身份**而不是可选筛选，读不到就自己拼 —— 缺了它们回跳会落到
+// 控制台首页，用户刚改完的东西找不到。
+//
+// 这是「拼地址」不是「出口」：出口仍是 page_jump.go 的共享原语 pageJump，
+// 所以不新增一个自建 jump helper（那条路径是迁移的反方向）。
+func pageTranslationsBack(c *gin.Context, pageID, lang string) string {
+	if back := translationBack(c); strings.Contains(back, "pageId=") {
+		return back
+	}
+	back := pageTranslationsPath + "?pageId=" + url.QueryEscape(pageID)
+	if lang != "" {
+		back += "&lang=" + url.QueryEscape(lang)
+	}
+	return back
 }

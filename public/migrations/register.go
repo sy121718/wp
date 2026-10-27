@@ -110,8 +110,6 @@ func init() {
 	// 不在此处重复调用 —— 两处都调虽然被 sync.Once 兜住不重复执行，
 	// 但会让「谁负责注册」出现两个真源。
 	registerClientFilterEmptyI18n()
-	// 460：页面定时上下线待办表（PIPE-7，见 register_page_schedule.go）。
-	registerPageSchedules()
 	// 484-486：系统配置表 + 地理地区树 + 语言货币字典（见 register_sys_reference.go）。
 	registerSysReference()
 	// 491：pages.excluded_langs（页面级语言排除，见 register_page_excluded_langs.go）。
@@ -136,9 +134,6 @@ func init() {
 	registerSystemSettingsHintCurrencyNoConversion()
 	// 502：i18n 页语言标记词条（见 register_admin_i18n_option_ui_available.go）。
 	registerAdminI18nOptionUIAvailable()
-	// 506：page_schedules 全状态 page_id 复合索引（审计 DB-06，见 register_page_schedule_index.go）。
-	// 结构变更，刻意不带 TableName（表早已存在，带上会被「表存在即跳过」永远跳过）。
-	registerPageScheduleIndex()
 	// 507：分区子表的工程隔离对账（审计 DB-02，见 register_partition_rls_reconcile.go）。
 	// 目标是一个**动态集合**（当时库里有哪些分区），同样不能带 TableName。
 	registerPartitionRLSReconcile()

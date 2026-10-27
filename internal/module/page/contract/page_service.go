@@ -67,16 +67,6 @@ type (
 	RedirectDeleteReq         = pagedto.RedirectDeleteReq
 	RedirectMergeReq          = pagedto.RedirectMergeReq
 	RedirectProjectOptionResp = pagedto.RedirectProjectOptionResp
-
-	// 定时上下线（PIPE-7）。
-	ScheduleSetReq    = pagedto.ScheduleSetReq
-	ScheduleCancelReq = pagedto.ScheduleCancelReq
-	ScheduleListReq   = pagedto.ScheduleListReq
-	ScheduleItemResp  = pagedto.ScheduleItemResp
-	ScheduleListResp  = pagedto.ScheduleListResp
-	ScheduleRunResp   = pagedto.ScheduleRunResp
-	// SchedulePageSummaryResp 列表页的行内排定投影（每页一条待执行 + 一条最近失败）。
-	SchedulePageSummaryResp = pagedto.SchedulePageSummaryResp
 )
 
 // page_preview_problem.go — 预览编译失败里「作者可操作」的那一类，用**类型**标记（而不是错误文本）。
@@ -266,6 +256,10 @@ type PageService interface {
 
 	Create(ctx context.Context, req *pagedto.CreateReq) (res *pagedto.PageResp, err error)
 	// List 列出页面摘要（必须带 projectID；themeID 可选过滤主题）。
+	//
+	// 多一层可选的**语言维度**：req.Lang 非空时只返回该语言处于 req.LangState 状态的页面
+	// （空状态 = 已发布），并把每行的 LangStatus 填好。判据与工作台的行状态同源
+	// （pageenums.LangStatusOf），两个屏对同一页同一语言不会给出两种说法。
 	List(ctx context.Context, req *pagedto.ListReq) (res []pagedto.PageResp, err error)
 	// —— 页面级语言排除（迁移 491）——
 
@@ -448,36 +442,6 @@ type PageService interface {
 	DeleteRedirect(ctx context.Context, req *pagedto.RedirectDeleteReq) (err error)
 	// MergeRedirectChain 把多跳链合并为直达（A→B、B→C 合成 A→C）。
 	MergeRedirectChain(ctx context.Context, req *pagedto.RedirectMergeReq) (res *pagedto.RedirectItemResp, err error)
-
-	// ---- 定时上下线（PIPE-7）----
-	//
-	// 到点动作有两条路径（service/page_schedule_apply.go）：
-	//   · 上线 = 把该语言的符号链接原子切到**排定时冻结的暂存产物**，再落数据库 ——
-	//     **不重新编译**（编译是「按现在的站点环境产出一份字节」，与「把当时确认过的
-	//     那一份推上去」是两件事）；
-	//   · 下线 = 先删符号链接（或落一条 301 产物），再在一个事务里解除路由占用 +
-	//     清该语言的发布指针。
-	//
-	// 排定后草稿被改 → 到点**硬失败**（置 failed 并在后台可见，key 取 ErrRebuildRequired），
-	// 不按当前草稿重新编译。
-
-	// SetPageSchedule 排定一次到点动作（publish / offline）。
-	//
-	// 上线排定内含一次 Build：排定即冻结产物（没有暂存产物就无从「只切指针」），
-	// 「构建成功」同时是「这次排定可执行」的证明。
-	// 时间入参按**站点时区**解释，落库一律 UTC（列是 timestamptz）。
-	SetPageSchedule(ctx context.Context, req *pagedto.ScheduleSetReq) (res *pagedto.ScheduleItemResp, err error)
-	// CancelPageSchedule 取消一条尚未执行的排定（running 与终态的行按不存在处理）。
-	CancelPageSchedule(ctx context.Context, req *pagedto.ScheduleCancelReq) (err error)
-	// ListPageSchedules 列出某页面的排定（新到旧，带上限）。
-	ListPageSchedules(ctx context.Context, req *pagedto.ScheduleListReq) (res *pagedto.ScheduleListResp, err error)
-	// ListSchedulesForPages 批量取这批页面的排定投影（后台列表页的行内徽标）：
-	// 一次查询取回待执行与最近失败的记录，逐页问一次会把一次页面渲染变成几十次查询。
-	ListSchedulesForPages(ctx context.Context, pageIDs []string) (res map[string]pagedto.SchedulePageSummaryResp, err error)
-	// RunDueSchedules 执行一轮到点扫描：回收超时租约 → 分批认领 → 逐条执行
-	// （单条失败不中断整批）。调度器与运维手动触发共用这一个入口，
-	// 与 PurgeRetention 的「后台手动触发与定时任务共用」同一形状。
-	RunDueSchedules(ctx context.Context) (res *pagedto.ScheduleRunResp, err error)
 }
 
 // PageQueryReader 页面标题的只读视图：给 AI 工具的窄门。

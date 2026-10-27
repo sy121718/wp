@@ -78,13 +78,6 @@ func TestBusinessSentinelsAreRecognisable(t *testing.T) {
 		pageservice.ErrPathOccupied,
 		pageservice.ErrRebuildRequired,
 		pageservice.ErrNoStagedArtifact,
-		// 定时上下线（PIPE-7）：五个业务 sentinel 都要在判定表里被认成非 500，
-		// 且文案能被出口认出来 —— 漏一个的症状是「用户能自己修的问题被说成系统内部错误」。
-		pageservice.ErrScheduleNotFound,
-		pageservice.ErrScheduleInPast,
-		pageservice.ErrScheduleActionInvalid,
-		pageservice.ErrScheduleRunning,
-		pageservice.ErrScheduleOccupied,
 	}
 	c := pageErrCtx(t, "")
 	for _, err := range sentinels {

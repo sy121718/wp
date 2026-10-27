@@ -49,15 +49,6 @@ type PageDeleteFormReq struct {
 	ID string `form:"id"`
 }
 
-// ScheduleCancelFormReq 取消一条排定。
-//
-// ID 收成字符串再 ParseInt：绑定器把空串按数字解析时会整张表打回 400 JSON，
-// 而这一条走的是排定面板片段（失败要在面板里说话，不能丢一页 JSON 给运营）。
-type ScheduleCancelFormReq struct {
-	PageID string `form:"pageId"`
-	ID     string `form:"id"`
-}
-
 // PageTranslationsSaveFormReq 译文工作台保存表单。
 //
 // 行数据是四列**平行数组**（rowContext / rowSource / rowHash / rowTarget）：

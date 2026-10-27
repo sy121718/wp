@@ -69,7 +69,6 @@ var defaultDTOExposureAllow = map[string]string{
 	"ProviderCardResp.CSRFToken":        "CSRF 防护令牌：由服务端渲染时注入、随表单回传校验，本来就该出现在页面里；不是 API 凭据",
 	"ProviderCardBase.CSRFToken":        "同上：卡片视图的壳键（csrf_token / t / PermSet / Buttons），从页面基座借来给 include 进来的卡片用，不是 API 凭据",
 	"SessionListPageResp.CSRFToken":     "同上：会话列表页基座的壳键，供应商卡片从这里借 csrf_token；不是 API 凭据",
-	"PageFragmentResp.CSRFToken":        "同上：页面侧栏片段（语言状态 / 定时发布）的壳键，随片段表单回传校验；不是 API 凭据",
 	"TranslationMissPageResp.CSRFToken": "同上：未翻译清单报告片段的壳键，随表单回传校验；不是 API 凭据",
 	"Provider.HasAPIKey":                "布尔开关：只回答「这个供应商配没配过密钥」。密钥以 AES-GCM 密文落库、无任何读回明文的接口（连密文都不出），响应用 HasAPIKey 而不是回显密钥物",
 	"Session.ContextTokens":             "计量字段：上下文窗口已占用的 token 数（整型），不是凭据",

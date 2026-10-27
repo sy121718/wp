@@ -72,8 +72,6 @@ GET /admin/orders/new
 GET /admin/orders/overview
 GET /admin/orders/pending-ship
 GET /admin/orders/ship-form
-GET /admin/page-langs/panel
-GET /admin/page-schedules/panel
 GET /admin/page-translation-misses
 GET /admin/pages
 GET /admin/pages/translations
@@ -209,7 +207,6 @@ GET /api/page/list
 GET /api/page/publication/audit
 GET /api/page/redirect
 GET /api/page/revision/list
-GET /api/page/schedule/list
 GET /api/page/seo/patrol
 GET /api/page/site-slot/list
 GET /api/permission/detail
@@ -375,8 +372,6 @@ POST /admin/page-langs/exclude
 POST /admin/page-langs/republish
 POST /admin/page-langs/restore
 POST /admin/page-redirects/bulk-delete
-POST /admin/page-schedules/cancel
-POST /admin/page-schedules/set
 POST /admin/page-translation-misses/cancel
 POST /admin/pages/bulk-delete
 POST /admin/pages/create
@@ -550,8 +545,6 @@ POST /api/page/redirect/create
 POST /api/page/redirect/delete
 POST /api/page/redirect/merge
 POST /api/page/rollback
-POST /api/page/schedule/cancel
-POST /api/page/schedule/set
 POST /api/page/site-slot/bind
 POST /api/page/site-slot/unbind
 POST /api/page/url/update

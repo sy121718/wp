@@ -12,27 +12,6 @@ type PageLangStateResp struct {
 	Published bool `json:"published"`
 }
 
-// PageFragmentResp 页面侧栏片段（语言状态 / 定时发布两条）的**共用**视图。
-//
-// 两份片段的键集是同一个骨架：身份（CSRFToken / PageID / Path）+ 行 + 结论（Err / Done）。
-// 合成一个类型的理由是「片段也是渲染出口」：它们走 adminui.PrepareBare，注入的壳键
-// 只影响取值函数，行的形状由各自的 Row 类型决定。
-//
-// 不合并的理由也在此：共用骨架不等于共用语义，所以**各页的行类型分开**，
-// 这个结构体只承载骨架字段。
-type PageFragmentResp struct {
-	CSRFToken string
-	PageID    string
-	Path      string
-	Items     any
-	// Err / Done 是**事实**（key + 兜底 + 参数）或归口文案：取词在模板里发生。
-	Err  any
-	Done any
-	// DefaultAt 只有定时发布片段用：默认到点时刻（站点时区下的「一小时后」），
-	// 省掉每次手填 —— 运营多数排的是近期动作。语言片段为零值。
-	DefaultAt string
-}
-
 // TranslationMissPageResp 未翻译清单页（/admin/page-translation-misses）的视图。
 //
 // 它是**报告片段**：整页由前端壳承载，这个 handler 只出报告区那块。
@@ -61,35 +40,4 @@ type TranslationErrorsResp struct {
 	// Errors 逐行错误：Label 是「哪一行」（原文 context 名，可空 = 页面级），
 	// Msg 是词条事实 —— 两者在模板里合成一句。
 	Errors []TranslationRowErrorResp
-}
-
-// PageLangRowJSON 语言面板的一行 —— **JSON 出口专用**（局部刷新走 {code,msg,data}）。
-//
-// 与 PageLangResp 的关键差别：**这里只有状态码，没有文案**。
-//
-// 为什么：界面文案必须在 Jet 渲染期按请求语言取好（AGENTS.md「界面走模板的 t/tf」），
-// 而 JSON 响应没有人取词。如果在这里塞成品串，就等于让 Go 侧替渲染期做决定 ——
-// 那是既有的第①条错误（控制器取词）。所以：
-//
-//	· 模板里预置每种状态的节点，用 data-when="excluded|published|draft" 标出；
-//	· JSON 只给 status 码，前端按 data-when 显隐。
-//
-// 译文因此仍然全部在 Jet 里，前端不存第二份词表（与 admin.js 的 label() 同一手法）。
-type PageLangRowJSON struct {
-	Lang string `json:"lang"`
-	// Status 三档之一：excluded / published / draft（与模板的 data-when 取值对应）。
-	Status string `json:"status"`
-	// IsDefault 站点默认语言（不可排除）。
-	IsDefault bool `json:"isDefault"`
-	// CanRepublish 可以点「重新发布」（未排除即可）。
-	CanRepublish bool `json:"canRepublish"`
-	// IsExcluded 当前已排除（决定按钮组显示「恢复」还是「排除」）。
-	IsExcluded bool `json:"isExcluded"`
-}
-
-// PageLangsPanelJSONResp 语言面板的 data 部分。
-type PageLangsPanelJSONResp struct {
-	PageID string            `json:"pageId"`
-	Path   string            `json:"path"`
-	Items  []PageLangRowJSON `json:"items"`
 }

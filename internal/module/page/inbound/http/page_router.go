@@ -10,7 +10,7 @@ package pagehttp
 //     CSRF / Casbin 的对账面：漏看一条的表现不是编译错误，是「接口能删、页面上删不掉」
 //     这类两边都不报错、测试也不红的分叉。
 //     **按功能拆的是控制器**（`pages_handle.go` = 页面本体两面 + 版本历史、`page_translations_handle.go` =
-//     译文三件套、`page_langs_handle.go` / `page_schedule_handle.go` / `page_redirect.go` / `page_site_slot_handle.go` /
+//     译文三件套、`page_langs_handle.go` / `page_redirect.go` / `page_site_slot_handle.go` /
 //     `page_stale.go` 各一个功能、`page_jump.go` = 共享出口原语；
 //     一个功能一个文件，里面既有页面 handler 也有 JSON 接口 handler），不是路由。
 //
@@ -63,9 +63,7 @@ const PagesListPageTemplate = "admin/page/pages"
 // 片段出口（htmx 局部替换）：键集只有几个槽位，走 BareSlot。
 // 模板名归路由层 —— 控制器只交视图，不持有模板名。
 const (
-	PageLangsPanelTemplate    = "fragments/page_langs"
-	PageSchedulePanelTemplate = "fragments/page_schedule_panel"
-	PageHistoryListTemplate   = "fragments/history_list"
+	PageHistoryListTemplate = "fragments/history_list"
 
 	// PageTranslationsTemplate 翻译工作台（整页）。
 	PageTranslationsTemplate = "admin/page/page_translations"
@@ -107,11 +105,6 @@ func SetupPageRoutes(rg *permission.RouteGroup, db *gorm.DB,
 	// 因此这里不能保留第二个「启动时跑一次」的入口（同一段实现被两个 goroutine
 	// 并发重放虽幂等，仍会白白多跑一遍）。详见 service/page_publish_converge.go。
 	pageservice.StartPendingReceiptConvergenceScheduler(svc)
-	// 定时上下线调度（PIPE-7）：进程内 ticker（不依赖 asynq —— queue.enabled 默认 false，
-	// 挂在队列上会让未启用队列的部署静默不生效）。启动首跑补上进程停机期间到点的排定。
-	// 多实例下重复扫描安全：认领是一条 FOR UPDATE SKIP LOCKED 的原子语句，
-	// 同一瞬间只有一个实例领到同一条排定。
-	pageservice.StartPageScheduleScheduler(svc)
 	return svc
 }
 
@@ -170,43 +163,22 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	}
 
 	// ══ 页面级语言排除（只有页面面）══
-	// 没有接口通道：唯一使用者是运营在页面列表行内点开的那块面板，面板本身就是
-	// HTMX 片段（服务端渲染），不存在「脚本要批量排除某语言」的场景 —— 真出现时它该走的是
-	// 「发布范围」那条批量入口，而不是绕过界面直接改排除列。
+	// 没有接口通道：唯一使用者是运营在**翻译工作台**里改这一页的产出范围，
+	// 不存在「脚本要批量排除某语言」的场景 —— 真出现时它该走的是「发布范围」那条批量入口，
+	// 而不是绕过界面直接改排除列。
 	//
 	// 权限点：排除会**真的下线该语言的产物**（pageservice.ExcludePageLang 在同一事务里
 	// 清发布 / 暂存 / 路由 / 计划），因此复用「发布页面」；恢复只改产出范围（不自动重新发布），
 	// 同一条 —— 两者都是「这一页发不发这种语言」的同一件事，不该拆成两个权限点。
-	// 面板是只读展示，复用「页面详情」。
-	pages.GET("/page-langs/panel", builtin.CasbinMiddlewareForPath("/api/page/detail"),
-		adminui.BareSlot(PageLangsPanelTemplate), adminHandle.PageLangsPanel)
+	//
+	// 列表页行内那块 GET 面板（/page-langs/panel + fragments/page_langs.html）已删除：
+	// 同一份数据同时有 JSON 出口与 HTML 片段两个真源，而列表页那格按钮的实际表现是
+	// 「点了没反应」（data-when 拿布尔比字面量、行里没有 pageId、裸 tr 塞进 div）。
 	pages.POST("/page-langs/exclude", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangExclude)
 	pages.POST("/page-langs/restore", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangRestore)
 	// 显式重新发布（V4）：恢复排除只解除限制、不自动上线 —— 译好后要真的回到线上，
 	// 需要一个一次点击的入口（同步 Build + Publish，结果当场可见）。权限点同上。
 	pages.POST("/page-langs/republish", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangRepublish)
-
-	// ══ 定时上下线（PIPE-7）══
-	//   · JSON 接口（/api/page/schedule/{set,cancel,list}）：给工作台 / 脚本 / 后续的
-	//     批量排定用。错误经 pageErrorStatus / pageErrorMessage 分类，状态码与文案与其它
-	//     page 接口同源。
-	//   · 后台面板（/admin/page-schedules/{panel,set,cancel}）：HTMX 片段，
-	//     表单是 form-urlencoded（原生表单 + 隐藏 csrf_token 域），成功后重新渲染面板片段。
-	//     为什么不让 HTMX 直接打 JSON 接口：HTMX 的表单 POST 是 form-encoded，
-	//     而 JSON 接口只收 JSON —— 要么引入 json-enc 扩展（新增前端依赖），
-	//     要么在接口里做双形态绑定（两套解析路径，容易只测到一条）。
-	//
-	// 到点只切访问面指针、不重编译；排定后草稿被改则硬失败。
-	// 三条接口路由的权限点是新增的（page:schedule_*）—— authorizedAPI 组按实际路径 enforce，
-	// 权限点表里没有条目会让含超管在内全员 403（见 AGENTS.md §数据库）。
-	// 面板的鉴权显式复用这组接口的路径（页面路径与权限点路径不一致，直接按页面路径 enforce 会全员 403）。
-	g.POST("/schedule/set", permission.PageScheduleSet, handle.SetSchedule)
-	g.POST("/schedule/cancel", permission.PageScheduleCancel, handle.CancelSchedule)
-	g.GET("/schedule/list", permission.PageScheduleList, handle.ListSchedules)
-	pages.GET("/page-schedules/panel", builtin.CasbinMiddlewareForPath("/api/page/schedule/list"),
-		adminui.BareSlot(PageSchedulePanelTemplate), adminHandle.SchedulePanel)
-	pages.POST("/page-schedules/set", builtin.CasbinMiddlewareForPath("/api/page/schedule/set"), adminHandle.ScheduleSet)
-	pages.POST("/page-schedules/cancel", builtin.CasbinMiddlewareForPath("/api/page/schedule/cancel"), adminHandle.ScheduleCancel)
 
 	// ══ 页面翻译工作台（多语言 P5c，docs/06-D §7.8，只有页面面）══
 	// 入口是页面列表行内的「多语言」按钮，整页服务端渲染 + HTMX 片段刷新。
