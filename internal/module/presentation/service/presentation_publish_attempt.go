@@ -1,6 +1,6 @@
 package presentationservice
 
-// presentation_publish_attempt.go — 把每一次发布尝试写进 presentation_publish_attempts（迁移 671）。
+// presentation_publish_attempt.go — 把每一次发布尝试写进 presentation_publish_attempts（迁移 673）。
 //
 // ## 为什么在事务外写
 //

@@ -1,4 +1,4 @@
-// Package publishrecord 自动发布模块的只读出口 → 商品页面的适配器（B9 / 迁移 671）。
+// Package publishrecord 自动发布模块的只读出口 → 商品页面的适配器（B9 发布记录 / B11 发布历史）。
 //
 // 两个能力：PublishRecordPort（现在发布成什么样）与 PublishAttemptPort（都试过哪几次）。
 //

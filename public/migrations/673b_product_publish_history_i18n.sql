@@ -1,10 +1,10 @@
--- 672 · 发布历史（迁移 671 / B11）的文案词条。
+-- 673b · 发布历史（迁移 673 / B11）的文案词条。
 --
 --   台账 presentation_publish_attempts 记的是「谁在什么时候因为什么发了、或没发出去」。
 --   页面把它们读出来展示，所以十六种状态的词都落在 Jet 模板的 <template> 里；
 --   本迁移只 seed 这 15 个 key（中英各一行，共 30 行）。
 --
---   触发源七档与 671 的 ck_publish_attempts_trigger 逐字对应：多一档少一档都会让某次尝试
+--   触发源七档与 673 的 ck_publish_attempts_trigger 逐字对应：多一档少一档都会让某次尝试
 --   在页面上显示成空白（data-when 全不命中）。
 --
 -- 幂等：全部新增 key，DO NOTHING —— seed 是默认值来源，后台是真相来源。

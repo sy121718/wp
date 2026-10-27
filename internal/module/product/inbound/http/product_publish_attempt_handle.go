@@ -1,6 +1,6 @@
 package producthttp
 
-// product_publish_attempt_handle.go — 发布历史面板的控制器（迁移 671）。
+// product_publish_attempt_handle.go — 发布历史面板的控制器（迁移 673）。
 //
 // 交 **JSON 而不是 HTML 片段**：DOM 由发布记录页里已渲染的 Jet <template> 填充
 //（internal/templates/static/js/ui/json_swap.js 的同源机制，见 templates/CLAUDE.md）。

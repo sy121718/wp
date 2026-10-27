@@ -1,6 +1,6 @@
 package presentationcontract
 
-// publish_attempt.go — 发布历史的只读端口（迁移 671）。
+// publish_attempt.go — 发布历史的只读端口（迁移 673）。
 //
 // 与 publish_record.go 的分工：那个回答「现在发布成什么样」（当前指针 + 账本 + 产物版本），
 // 这个回答「都试过哪几次、哪次没成、谁点的、为什么」。前者读三张状态表，后者读只增的
@@ -22,7 +22,7 @@ import (
 type PublishAttemptRow struct {
 	ID int64
 	// Trigger 触发源：create / manual / template_switch / update_url / rollback /
-	// override / auto_rebuild（取值与迁移 671 的 CHECK 逐字一致）。
+	// override / auto_rebuild（取值与迁移 673 的 CHECK 逐字一致）。
 	Trigger string
 	// Outcome success / failed。
 	Outcome   string

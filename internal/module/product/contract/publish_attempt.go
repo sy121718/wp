@@ -1,6 +1,6 @@
 package productcontract
 
-// publish_attempt.go — 发布历史（迁移 671）的只读端口。
+// publish_attempt.go — 发布历史（迁移 673）的只读端口。
 //
 // 消费者是商品模块自己的页面（发布记录页的「发布历史」面板），实现方是
 // outbound/publishrecord 适配器：它把 presentation 的台账行翻成这一屏要的形状

@@ -139,7 +139,7 @@ type ProductPageReader interface {
 	//     可见提示，与「数据读不到」是两档 —— 混用会让「没接上」被说成「读不出来」。
 	ProductPublishRecordPage(ctx context.Context, req *productdto.ProductPublishRecordPageReq) (res *productdto.ProductPublishRecordPageResp, err error)
 
-	// ProductPublishAttempts 发布记录页「发布历史」面板的取数（迁移 671，JSON 出口）。
+	// ProductPublishAttempts 发布记录页「发布历史」面板的取数（迁移 673，JSON 出口）。
 	//
 	// 交事实不交 HTML：时间给毫秒数、结果与触发源给码值，页面里的 Jet <template> 按
 	// data-when 显隐 —— 后端不产 HTML 片段（internal/templates/CLAUDE.md §json_swap）。

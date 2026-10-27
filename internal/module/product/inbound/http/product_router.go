@@ -118,7 +118,7 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	return svc, svc
 }
 
-// registerProductPublishHistoryAPI 发布历史（迁移 671）。
+// registerProductPublishHistoryAPI 发布历史（迁移 673）。
 //
 // 单独一条权限点而不是复用 product:get / product:list：这条交的是**谁在什么时候点了发布、
 // 失败原因原文**（运维向审计信息）。混进「能看商品」的权限里，只该看商品的人会顺手
@@ -577,7 +577,7 @@ type productPagePortWiring interface {
 	SetEntityTemplatePort(productcontract.EntityTemplatePort)
 	SetDetailTemplatePort(productcontract.DetailTemplatePort)
 	SetPublishRecordPort(productcontract.PublishRecordReader)
-	// SetPublishAttemptPort 发布历史（迁移 671）：同一份适配器（publishrecord.Port）
+	// SetPublishAttemptPort 发布历史（迁移 673）：同一份适配器（publishrecord.Port）
 	// 同时实现两个读口 —— 它们读的是同一条产线的两半事实（当前状态 / 历次尝试）。
 	SetPublishAttemptPort(productcontract.PublishAttemptReader)
 }

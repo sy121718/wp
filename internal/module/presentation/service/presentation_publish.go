@@ -139,7 +139,7 @@ type publishIntent struct {
 	resolveDoc func(ctx context.Context, inst *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error)
 	// logicalPath 本次发布的逻辑路径；空串 = 沿用实例当前 url_path。
 	logicalPath string
-	// trigger 触发源（迁移 671 的 ck_publish_attempts_trigger 取值）。
+	// trigger 触发源（迁移 673 的 ck_publish_attempts_trigger 取值）。
 	// 只服务发布历史：它决定「这次是人工点的、换模板、改 URL、回滚，还是依赖失效自动重建」——
 	// 自动重建一次可能几十条，混在人工发布里会淹掉人真正关心的那几条。
 	// 空串由 publishTriggerOf 归一成 manual（未标触发源的老调用点按人工处理）。

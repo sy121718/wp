@@ -1,6 +1,6 @@
 package productdto
 
-// product_publish_attempt_resp.go — 发布历史的 JSON 出口形状（迁移 671）。
+// product_publish_attempt_resp.go — 发布历史的 JSON 出口形状（迁移 673）。
 //
 // **只交事实，不交展示形态**：触发源与结果给码值（create / manual / … / success / failed），
 // 文案由页面里的 Jet <template> 预置各档文本、按 data-when 显隐 —— 后端不产 HTML，
@@ -38,7 +38,7 @@ type PublishAttemptRowResp struct {
 	// 与 cLastOrderTimeText / RegisteredAtText 同一先例。
 	CreatedAtText string `json:"createdAtText"`
 	// Trigger 触发源码值：create / manual / template_switch / update_url / rollback /
-	// override / auto_rebuild（与迁移 671 的 CHECK 逐字一致）。
+	// override / auto_rebuild（与迁移 673 的 CHECK 逐字一致）。
 	Trigger string `json:"trigger"`
 	// Outcome success / failed。
 	Outcome   string `json:"outcome"`

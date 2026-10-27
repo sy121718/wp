@@ -1,6 +1,6 @@
 package productservice
 
-// product_publish_attempt_page.go — 发布记录页的「发布历史」面板取数（迁移 671）。
+// product_publish_attempt_page.go — 发布记录页的「发布历史」面板取数（迁移 673）。
 //
 // 这一格回答的是「这个商品都试过哪几次发布、谁点的、为什么没成」。台账在 presentation
 // 模块（presentation_publish_attempts），商品侧只做工程解析与入参归一，翻译在

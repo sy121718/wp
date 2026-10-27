@@ -4,7 +4,7 @@
    是不是最新的（stale）。一行一个商品，多语言的明细折在行内第二层（分页单位与
    「共 N 条」的口径一致 —— 按语言分行会让同一商品重复出现 N 次）。
 
-   历史压在行内（迁移 671 的 presentation_publish_attempts）：点行内「发布历史」按需展开，
+   历史压在行内（迁移 673 的 presentation_publish_attempts）：点行内「发布历史」按需展开，
    默认 10 条 + 「加载更多」。全记 —— 手动发布、换模板、改 URL、回滚、自动重建都留一行，
    失败也留（含原因原文），因为「昨晚发了三次为什么线上还是旧版」只有台账能答。
 
@@ -166,7 +166,7 @@
                     {{end}}
                     {* 发布历史：本行展开，数据走 JSON 接口，行由文件末尾的 <template> 填。
                        历史行容器与该按钮同在一个 <td> 里（不套抽屉：抽屉要求远程片段含 <form>）。
-                       可见性由菜单按钮 product.publish_attempts 决定（迁移 672b）。 *}
+                       可见性由菜单按钮 product.publish_attempts 决定（迁移 673c）。 *}
                     {{if canHistory}}
                     <button type="button" class="btn btn-sm btn-ghost"
                             hx-get="/api/product/publish-attempts?project={{selectedProject}}&amp;productId={{r.ProductID}}"
@@ -212,7 +212,7 @@
     </section>
     {{end}}
 
-    {* ═══ 发布历史（迁移 671）═══
+    {* ═══ 发布历史（迁移 673）═══
        数据走接口 GET /api/product/publish-attempts（JSON），行由本页 <template> 填 ——
        后端不产 HTML 片段（static/js/ui/json_swap.js 开头那条规矩）。
 

@@ -1,6 +1,6 @@
 package presentationmodel
 
-// presentation_publish_attempt_model.go — 发布尝试明细的写入与游标读（迁移 671）。
+// presentation_publish_attempt_model.go — 发布尝试明细的写入与游标读（迁移 673）。
 //
 // 为什么是独立表而不是扩 publication_receipts：那张表是**恢复用的补偿台账**
 // （pending → committed / rolled_back，只覆盖「访问面切换」那一段，成功后只留终态），
@@ -26,7 +26,7 @@ import (
 
 const tableNamePublishAttempts = "presentation_publish_attempts"
 
-// 触发源取值（与迁移 671 的 ck_publish_attempts_trigger 逐字一致）。
+// 触发源取值（与迁移 673 的 ck_publish_attempts_trigger 逐字一致）。
 const (
 	PublishTriggerCreate   = "create"
 	PublishTriggerManual   = "manual"
@@ -151,7 +151,7 @@ func (m *Model) PublishAttemptDB(ctx context.Context) *gorm.DB {
 
 // RecordPublishAttempt 写一条发布尝试（工程作用域内）。
 //
-// ctx 必须已带工程 scope（rls.InProjectScope）：本表在 671 里开了 FORCE RLS，
+// ctx 必须已带工程 scope（rls.InProjectScope）：本表在 673 里开了 FORCE RLS，
 // 缺 scope 的写入会被策略拒绝 —— 这正是要的（fail closed，而不是写进别人的工程）。
 func (m *Model) RecordPublishAttempt(ctx context.Context, e *PublishAttemptEntity) error {
 	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {

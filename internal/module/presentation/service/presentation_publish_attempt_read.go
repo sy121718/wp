@@ -1,6 +1,6 @@
 package presentationservice
 
-// presentation_publish_attempt_read.go — 发布历史读侧（迁移 671）。
+// presentation_publish_attempt_read.go — 发布历史读侧（迁移 673）。
 
 import (
 	"context"

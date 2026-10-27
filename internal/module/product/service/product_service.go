@@ -103,7 +103,7 @@ type Service struct {
 	// 可空而不是必填：未注入时那一屏照常 200，只是给一句「发布能力未装配」——
 	// 与「读不到」是两档（未装配要人去查装配，读不到可以重试）。
 	pagePublishRecords productcontract.PublishRecordReader
-	// pagePublishAttempts 发布历史面板的只读端口（迁移 671，装配期注入，可空）。
+	// pagePublishAttempts 发布历史面板的只读端口（迁移 673，装配期注入，可空）。
 	//
 	// 与 pagePublishRecords 分开：两条能力各有自己的降级（这一格未装配时面板说
 	// 「没接上」，而发布记录整页照常工作）。
@@ -128,7 +128,7 @@ func (s *Service) SetPublishRecordPort(port productcontract.PublishRecordReader)
 	s.pagePublishRecords = port
 }
 
-// SetPublishAttemptPort 注入发布历史面板的只读端口（迁移 671，装配期调用）。
+// SetPublishAttemptPort 注入发布历史面板的只读端口（迁移 673，装配期调用）。
 //
 // 同样由 inbound/http 的 SetPublishRecordDeps 转交：两条端口来自同一个 presentation 值，
 // 分成两个 setter 只因为它们各有降级，不是因为到达点不同。
