@@ -88,7 +88,7 @@ type CreateOrderReq struct {
 	// 为什么建单要能传币种：汇率快照（迁移 633）只有在「订单币 ≠ 基准币」时才成立 ——
 	// 订单币若恒取自全局默认值，它永远等于基准币，fx_rate 就恒为 NULL，折算永远不发生。
 	// 访客前台不传（全站单币种展示），后台代客建单 / API 调用可以显式指定外币单。
-	Currency           string         `json:"currency" form:"currency"`
+	Currency string `json:"currency" form:"currency"`
 	// ShippingTotal 由调用方给出（运费策略不属于商品域）。
 	// DiscountTotal 无 CouponCode 时一律忽略；有券时以服务端试算为准。
 	// Subtotal / Total 由服务端按商品价格算出，不接受传入。
@@ -132,13 +132,17 @@ type CreateOrderReq struct {
 
 // ListOrderReq 订单列表查询。
 type ListOrderReq struct {
-	ProjectID     string  `form:"projectId"`
-	Status        string  `form:"status"`
-	Keyword       string  `form:"keyword"`
-	PaymentMethod string  `form:"paymentMethod"`
-	Offset        int     `form:"offset"`
-	Limit         int     `form:"limit"`
-	UserID        *uint64 `form:"-"`
+	ProjectID     string `form:"projectId"`
+	Status        string `form:"status"`
+	Keyword       string `form:"keyword"`
+	PaymentMethod string `form:"paymentMethod"`
+	// CreatedVia / FulfillmentStatus 是 B7 的两个筛选维度（有对应事实的维度）。
+	// 团队 / 站点 / 销售 / 同步站点在 go_wp 没有实体，故不在此处（见报告）。
+	CreatedVia        string  `form:"createdVia"`
+	FulfillmentStatus string  `form:"fulfillmentStatus"`
+	Offset            int     `form:"offset"`
+	Limit             int     `form:"limit"`
+	UserID            *uint64 `form:"-"`
 }
 
 // GetOrderReq 订单详情查询。

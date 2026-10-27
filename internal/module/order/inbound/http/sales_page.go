@@ -52,7 +52,7 @@ type orderSalesPageHandle struct {
 
 // orderShipmentCounter 总览页需要的发货能力（一条只读）：待发货单数。
 type orderShipmentCounter interface {
-	ListPendingShip(ctx context.Context, projectID string) ([]*orderdto.PendingShipRow, error)
+	ListPendingShip(ctx context.Context, req *orderdto.PendingShipReq) (*orderdto.PendingShipPageResp, error)
 }
 
 // NewOrderSalesPageHandle 构造。svc 传全量 OrderService 即可 ——
@@ -193,8 +193,10 @@ func (h *orderSalesPageHandle) todoCounts(ctx context.Context, projectID string)
 	}
 	// 待发货：走订单契约的同一个读模型（ListPendingShip），不另写一份聚合。
 	if projectID != "" && h.shipments != nil {
-		if rows, err := h.shipments.ListPendingShip(ctx, projectID); err == nil {
-			pendingShip = len(rows)
+		// 只取第 1 页第 1 行：总览要的是**总单数**，一个数字就够 ——
+		// 整页拉回来数长度会在真实数据量下把总览页拖慢（Limit=1 时 List 只有一行）。
+		if page, err := h.shipments.ListPendingShip(ctx, &orderdto.PendingShipReq{ProjectID: projectID, Limit: 1}); err == nil && page != nil {
+			pendingShip = int(page.Total)
 		}
 	}
 	return alertCount, pendingShip

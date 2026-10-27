@@ -82,13 +82,15 @@ func (s *Service) ListOrders(ctx context.Context, req *orderdto.ListOrderReq) (r
 		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	list, total, err := s.orders.List(ctx, ordermodel.OrderFilter{
-		ProjectID:     req.ProjectID,
-		Status:        req.Status,
-		UserID:        req.UserID,
-		Keyword:       req.Keyword,
-		PaymentMethod: req.PaymentMethod,
-		Offset:        req.Offset,
-		Limit:         req.Limit,
+		ProjectID:         req.ProjectID,
+		Status:            req.Status,
+		UserID:            req.UserID,
+		Keyword:           req.Keyword,
+		PaymentMethod:     req.PaymentMethod,
+		CreatedVia:        req.CreatedVia,
+		FulfillmentStatus: req.FulfillmentStatus,
+		Offset:            req.Offset,
+		Limit:             req.Limit,
 	})
 	if err != nil {
 		return nil, err
@@ -97,10 +99,15 @@ func (s *Service) ListOrders(ctx context.Context, req *orderdto.ListOrderReq) (r
 	if err != nil {
 		return nil, err
 	}
+	fulfillmentCounts, err := s.orders.CountByFulfillment(ctx, req.ProjectID)
+	if err != nil {
+		return nil, err
+	}
 	res = &orderdto.OrderListResp{
-		List:   make([]*orderdto.OrderResp, 0, len(list)),
-		Total:  total,
-		Counts: counts,
+		List:              make([]*orderdto.OrderResp, 0, len(list)),
+		Total:             total,
+		Counts:            counts,
+		FulfillmentCounts: fulfillmentCounts,
 	}
 	for _, e := range list {
 		res.List = append(res.List, toOrderResp(e))
@@ -187,8 +194,10 @@ func (s *Service) GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrde
 func toOrderResp(e *ordermodel.OrderEntity) *orderdto.OrderResp {
 	r := &orderdto.OrderResp{
 		ID: e.ID, ProjectID: e.ProjectID, OrderNo: e.OrderNo, Status: e.Status,
-		StatusTone: orderenums.OrderStatusTone(e.Status),
-		UserID:     e.UserID, CustomerEmail: e.CustomerEmail, CustomerName: e.CustomerName,
+		StatusTone:        orderenums.OrderStatusTone(e.Status),
+		FulfillmentStatus: e.FulfillmentStatus,
+		FulfillmentTone:   orderenums.FulfillmentTone(e.FulfillmentStatus),
+		UserID:            e.UserID, CustomerEmail: e.CustomerEmail, CustomerName: e.CustomerName,
 		CustomerPhone: e.CustomerPhone, Currency: e.Currency,
 		Subtotal: e.Subtotal, DiscountTotal: e.DiscountTotal,
 		ShippingTotal: e.ShippingTotal, TaxTotal: e.TaxTotal, Total: e.Total,

@@ -126,6 +126,12 @@ func newOrderFixtureWithStock(t *testing.T, stock ordercontract.StockOperator) *
 	orders.SetWarehouseResolver(orderstock.NewWarehouseResolver(inv))
 	// 发货明细的 stock_id 快照（迁移 627）：同一个适配器也实现 StockRowLocator。
 	orders.SetStockRowLocator(orderstock.New(inv))
+	// 待发货页的「能不能发」投影（B6-a）：与生产装配同形 —— 库存侧读货行事实、
+	// 商品侧读变体引用的货行清单。漏了这一句，页面上所有单都会显示为「可发」，
+	// guard 的用例会假绿。
+	orders.SetShipStockProbe(orderstock.NewShipProbe(inv, products))
+	// 退货页的「原发货仓」要仓库 id → 名字（生产装配在 order_router 里做同一件事）。
+	orders.SetWarehouseSource(orderstock.NewWarehouseSource(inv))
 	return &orderFixture{
 		orders: orders, products: products, inventory: inv, users: users, mail: mail,
 		db: db, projectID: project.ID, warehouse: wh.ID, projects: projects,
@@ -145,6 +151,8 @@ func (f *orderFixture) serviceWithStock(stock ordercontract.StockOperator) *orde
 	svc.SetShipmentModels(ordermodel.NewOrderShipmentModel(f.db), ordermodel.NewOrderCarrierModel(f.db))
 	svc.SetWarehouseResolver(orderstock.NewWarehouseResolver(f.inventory))
 	svc.SetStockRowLocator(orderstock.New(f.inventory))
+	svc.SetShipStockProbe(orderstock.NewShipProbe(f.inventory, f.products))
+	svc.SetWarehouseSource(orderstock.NewWarehouseSource(f.inventory))
 	return svc
 }
 

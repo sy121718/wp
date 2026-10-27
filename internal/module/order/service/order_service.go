@@ -90,6 +90,17 @@ type Service struct {
 	shipments *ordermodel.OrderShipmentModel
 	// carriers 承运商仓储（迁移 627）。必填：发货表单的承运商下拉读它。
 	carriers *ordermodel.OrderCarrierModel
+	// warehouseSource 工程仓库清单（B6-b）：退货页「原发货仓」要把 id 换成名字。
+	//
+	// 与 warehouses（WarehouseResolver）分开：那个只回答「这一行从哪个仓出」，
+	// 认不出「这个工程有哪些仓」。允许为 nil —— 未注入时名称留空、页面显示「—」，
+	// 而不是伪造一个仓名。
+	warehouseSource ordercontract.ReturnWarehouseSource
+	// stockProbe 发货前的库存可发性投影（迁移 652，B6-a）。
+	//
+	// 允许为 nil：未注入时待发货页不禁用任何按钮（与接线前逐字一致），
+	// 由提交时的真实校验决定成败。生产装配必注入 —— 否则「点了才失败」的体验永远在。
+	stockProbe ordercontract.ShipStockProbe
 }
 
 // NewService 构造（参数直传，不用 Deps 结构体）。
@@ -134,6 +145,36 @@ func (s *Service) SetStockRowLocator(locator ordercontract.StockRowLocator) {
 	}
 	s.stockRowLocator = locator
 }
+
+// SetShipStockProbe 注入发货可发性投影（装配期调用；B6-a）。
+//
+// 实现放在库存侧（orderstock.ShipProbe）：只有库存域知道「这个变体在这仓还有多少」。
+// 未注入时待发货页不禁用任何按钮，其余行为与接线前逐字一致。
+func (s *Service) SetShipStockProbe(probe ordercontract.ShipStockProbe) {
+	if s == nil {
+		return
+	}
+	s.stockProbe = probe
+}
+
+// SetWarehouseSource 注入工程仓库清单（装配期调用；B6-b 退货页的「原发货仓」用）。
+//
+// 未注入时仓库 id 换不出名字，那一列显示「—」：名称只是帮助辨认，缺它不该让整页失败。
+func (s *Service) SetWarehouseSource(source ordercontract.ReturnWarehouseSource) {
+	if s == nil {
+		return
+	}
+	s.warehouseSource = source
+}
+
+// pendingShipPageDefault / pendingShipPageMax 待发货页的每页条数与上限。
+//
+// 与队列页的窗口口径一致（pkg/reqparams 的默认 20 / 上限 100，这里取到 200 ——
+// 仓库作业台一次勾选几十单是常态，而页码仍然有界）。
+const (
+	pendingShipPageDefault = 20
+	pendingShipPageMax     = 200
+)
 
 // SetShipmentModels 注入承运商与发货单仓储（装配期调用；S1 起为 required-port）。
 //

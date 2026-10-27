@@ -69,7 +69,23 @@
                 {{range _, tab := .StatusTabs}}
                 {{sv := tab.Value}}
                 {{cnt := (sv == "" ? .CountsAll : .Counts[sv])}}
-                <a class="badge badge-{{tab.Kind}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/orders?{{listQuery}}&status={{sv}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{statusLabel(sv)}}{{end}} {{cnt}}</a>
+                {* 点了状态徽章要保留同一条正交轴上的履约筛选：两条轴各自独立，
+                   互相覆盖的话运营点两下就回到「只剩一条筛选」的错觉。 *}
+                <a class="badge badge-{{tab.Kind}}{{if sv == .FilterStatus}} is-active{{end}}" href="/admin/orders?{{listQuery}}&status={{sv}}&fulfillment={{.FilterFulfillment}}" {{if sv == .FilterStatus}}aria-current="page"{{end}}>{{if sv == .FilterStatus}}✓ {{end}}{{if sv == ""}}{{tr("site.fragment.order.tab_all", "全部")}}{{else}}{{statusLabel(sv)}}{{end}} {{cnt}}</a>
+                {{end}}
+            </div>
+            {* 履约状态行（B7）：与上面「钱」的状态行并列的第二条事实轴。
+               计数只受工程约束（与服务端 CountByFulfillment 同口径），不受状态筛选影响。
+               分档（Kind）与文案（FulfillmentLabels）都由服务端给，模板不拿字典反查颜色。 *}
+            <div class="filter-row">
+                {{fcAll := 0}}{{range _, v := .FulfillmentCounts}}{{fcAll = fcAll + v}}{{end}}
+                {* 「全部」= 清掉履约筛选（与状态行的「全部」同一形态），计数是各履约状态之和。 *}
+                <a class="badge badge-mute{{if .FilterFulfillment == ""}} is-active{{end}}" href="/admin/orders?{{listQuery}}&status={{.FilterStatus}}" {{if .FilterFulfillment == ""}}aria-current="page"{{end}}>{{if .FilterFulfillment == ""}}✓ {{end}}{{tr("site.fragment.order.tab_all", "全部")}} {{fcAll}}</a>
+                {{range _, tab := .FulfillmentTabs}}
+                {{fv := tab.Value}}
+                {{fcnt := .FulfillmentCounts[fv]}}
+                {{fact := .FulfillmentLabels[fv]}}
+                <a class="badge badge-{{tab.Kind}}{{if fv == .FilterFulfillment}} is-active{{end}}" href="/admin/orders?{{listQuery}}&status={{.FilterStatus}}&fulfillment={{fv}}" {{if fv == .FilterFulfillment}}aria-current="page"{{end}}>{{if fv == .FilterFulfillment}}✓ {{end}}{{tr(fact.Key, fact.Fallback)}} {{fcnt}}</a>
                 {{end}}
             </div>
             <form method="get" action="/admin/orders" class="filter-fields">
@@ -77,9 +93,22 @@
                 {* 状态维度已由上面的徽章表达，这里只把它原样带回：条件筛选（关键词 / 支付方式）
                    提交时若丢掉 status，点了「筛选」就会被弹回全部状态。 *}
                 <input type="hidden" name="status" value="{{.FilterStatus}}">
+                {* 履约维度同样只带回、不在这里改（改它的是上面那行徽章）。 *}
+                <input type="hidden" name="fulfillment" value="{{.FilterFulfillment}}">
                 <div class="filter-field">
                     <label for="orders-filter-keyword">{{tr("admin.common.field.keyword", "关键词")}}</label>
                     <input type="text" class="form-input filter-search" id="orders-filter-keyword" name="keyword" value="{{.FilterKeyword}}" placeholder="{{tr("admin.orders.ph.keyword_short", "订单号 / 客户邮箱 / 客户姓名")}}" autocomplete="off">
+                </div>
+                {* 来源维度（B7）：有对应事实的维度才落到筛选条上 —— orders.created_via 是真的列，
+                   团队 / 站点 / 销售 / 同步站点在 go_wp 没有实体，故不在此处。 *}
+                <div class="filter-field">
+                    <label for="orders-filter-created-via">{{tr("admin.orders.col.created_via", "来源")}}</label>
+                    <select class="form-select" id="orders-filter-created-via" name="createdVia">
+                        {{range _, cv := .CreatedViaValues}}
+                        {{cvFact := .CreatedViaLabels[cv]}}
+                        <option value="{{cv}}" {{if cv == .FilterCreatedVia}}selected{{end}}>{{if cv == ""}}{{tr("admin.orders.filter.created_via_all", "全部来源")}}{{else}}{{tr(cvFact.Key, cvFact.Fallback)}}{{end}}</option>
+                        {{end}}
+                    </select>
                 </div>
                 <div class="filter-field">
                     <label for="orders-filter-payment">{{tr("admin.orders.col.payment", "支付方式")}}</label>
@@ -140,11 +169,11 @@
             <div class="table-wrap table-scroll" tabindex="0">
             <table class="data-table data-table-wide orders-page-table">
             <thead>
-            <tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{tr("admin.common.bulk.selectAll", "全选")}}"></th><th>{{tr("admin.orders.col.order_no", "订单号")}}</th><th>{{tr("admin.orders.col.status", "状态")}}</th><th>{{tr("admin.orders.col.customer", "客户")}}</th><th>{{tr("admin.orders.col.amount", "金额")}}</th><th>{{tr("admin.orders.col.payment", "支付方式")}}</th><th>{{tr("admin.orders.col.created_at", "下单时间")}}</th><th class="col-actions">{{tr("admin.orders.col.actions", "操作")}}</th></tr>
+            <tr><th class="col-check"><input type="checkbox" data-check-all aria-label="{{tr("admin.common.bulk.selectAll", "全选")}}"></th><th>{{tr("admin.orders.col.order_no", "订单号")}}</th><th>{{tr("admin.orders.col.status", "状态")}}</th><th>{{tr("admin.orders.col.fulfillment", "履约")}}</th><th>{{tr("admin.orders.col.created_via", "来源")}}</th><th>{{tr("admin.orders.col.customer", "客户")}}</th><th>{{tr("admin.orders.col.amount", "金额")}}</th><th>{{tr("admin.orders.col.payment", "支付方式")}}</th><th>{{tr("admin.orders.col.created_at", "下单时间")}}</th><th class="col-actions">{{tr("admin.orders.col.actions", "操作")}}</th></tr>
             </thead>
             <tbody>
             {{if len(orders) == 0}}
-            <tr><td colspan="8" class="cell-wrap">
+            <tr><td colspan="10" class="cell-wrap">
                 {{if .LoadErr != ""}}
                 {{include "../partials/empty_state.html" map("title", tr("admin.common.list.loadFailedTitle", "这一页的数据没能读出来"), "desc", tr("admin.common.list.loadFailedDesc", "页顶的提示说明了原因；稍后重试即可，也可以先切到别的菜单。"))}}
                 {{else if len(.Projects) == 0}}
@@ -160,12 +189,12 @@
                     {* 带着（可能已失效的）状态筛选时必须说出来：徽章全不亮 + 空列表看起来就像
                        「这个列表坏了」或者「我没有权限」。 *}
                     {{if .FilterStatus != ""}}{{tr("admin.returns.list.status_filter_lead", "当前还带着状态筛选「")}}{{statusLabel(.FilterStatus)}}{{tr("admin.returns.list.status_filter_tail", "」—— 点上面的「全部」可以清掉。")}}{{end}}</p>
-                    {{if isset(.Buttons["order.create"]) || .FilterStatus != "" || .FilterKeyword != "" || .FilterPayment != ""}}
+                    {{if isset(.Buttons["order.create"]) || .FilterStatus != "" || .FilterKeyword != "" || .FilterPayment != "" || .FilterFulfillment != "" || .FilterCreatedVia != ""}}
                     <div class="empty-actions">
                         {{if isset(.Buttons["order.create"])}}
                         <a class="btn btn-primary" href="/admin/orders/new?project={{selectedProject}}">＋ {{tr("admin.orders.action.create", "代客建单")}}</a>
                         {{end}}
-                        {{if .FilterStatus != "" || .FilterKeyword != "" || .FilterPayment != ""}}
+                        {{if .FilterStatus != "" || .FilterKeyword != "" || .FilterPayment != "" || .FilterFulfillment != "" || .FilterCreatedVia != ""}}
                         <a class="btn" href="/admin/orders?project={{selectedProject}}">{{tr("admin.orders.filter.reset", "重置")}}</a>
                         {{end}}
                     </div>
@@ -179,6 +208,9 @@
                 <td class="col-check" data-label="{{tr("admin.common.bulk.column", "选择")}}"><input type="checkbox" name="ids" value="{{o.ID}}" data-check-item aria-label="{{tr("admin.common.bulk.selectRow", "选择该行")}}"></td>
                 <td data-label="{{tr("admin.orders.col.order_no", "订单号")}}"><a class="row-title-link" href="/admin/orders?{{listQuery}}&orderId={{o.ID}}"><code>{{o.OrderNo}}</code></a></td>
                 <td data-label="{{tr("admin.orders.col.status", "状态")}}"><span class="badge badge-{{o.StatusTone}}">{{statusLabel(o.Status)}}</span></td>
+                {* 履约列（B7）：与状态列并列的两条事实轴。分档 FulfillmentTone 由服务端给。 *}
+                <td data-label="{{tr("admin.orders.col.fulfillment", "履约")}}">{{ffact := .FulfillmentLabels[o.FulfillmentStatus]}}{{include "../partials/badge.html" map("tone", o.FulfillmentTone, "label", tr(ffact.Key, ffact.Fallback))}}</td>
+                <td data-label="{{tr("admin.orders.col.created_via", "来源")}}">{{cvfact := .CreatedViaLabels[o.CreatedVia]}}{{if cvfact.Key}}{{tr(cvfact.Key, cvfact.Fallback)}}{{else if o.CreatedVia}}{{o.CreatedVia}}{{else}}—{{end}}</td>
                 <td data-label="{{tr("admin.orders.col.customer", "客户")}}">{{o.CustomerName}} <span class="hint">{{o.CustomerEmail}}</span></td>
                 <td data-label="{{tr("admin.orders.col.amount", "金额")}}"><strong>{{money(o.Total, currencyPrefix(o.Currency))}}</strong></td>
                 <td data-label="{{tr("admin.orders.col.payment", "支付方式")}}">{{if o.PaymentMethodTitle}}{{o.PaymentMethodTitle}}{{if o.PaymentMethod}}（{{o.PaymentMethod}}）{{end}}{{else}}{{if o.PaymentMethod}}{{o.PaymentMethod}}{{else}}—{{end}}{{end}}</td>

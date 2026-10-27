@@ -69,6 +69,37 @@ func returnStatusTabs() []orderdto.StatusTabResp {
 
 // —— 页面取数（视图组装：模板不做逻辑与算术）——
 
+// createdViaValues 来源维度的取值白名单（筛选下拉的选项；空串 = 不筛）。
+//
+// 顺序 = 下拉里的顺序：访客结算最常见、后台代客建单次之、接口单最少。
+var createdViaValues = []string{"", "checkout", "admin", "api"}
+
+// fulfillmentTabs 履约状态筛选行（取值 + 分档），取值清单取 model 的 FulfillmentStatuses。
+//
+// 取值清单只有一份（model 是数据层真源），这里只补分档 —— 分档是显示口径，放 enums。
+func fulfillmentTabs() []orderdto.StatusTabResp {
+	tabs := make([]orderdto.StatusTabResp, 0, len(orderenums.FulfillmentStatuses))
+	for _, v := range orderenums.FulfillmentStatuses {
+		tabs = append(tabs, orderdto.StatusTabResp{Value: v, Kind: orderenums.FulfillmentTone(v)})
+	}
+	return tabs
+}
+
+// fulfillmentPageFacts 履约状态事实表：取值白名单 + 生效筛选值 + 列表每一行。
+//
+// 与 returnStatusPageFacts 同一理由：**生效筛选值必须收进来** —— 空列表时页面上
+// 唯一会显示的状态就是它，漏掉它的症状是筛选值合法时一切正常、筛选值未知时整页报错。
+func fulfillmentPageFacts(filterValue string, orders []*orderdto.OrderResp) map[string]orderdto.StatusLabelFact {
+	list := append([]string(nil), orderenums.FulfillmentStatuses...)
+	list = append(list, filterValue)
+	for _, o := range orders {
+		if o != nil {
+			list = append(list, o.FulfillmentStatus)
+		}
+	}
+	return statusLabelFacts(list, orderenums.FulfillmentLabel)
+}
+
 // —— 订单管理页的展示文案映射 ——
 //
 // 状态、操作人、来源、支付、金额、地址、时间的标签：一律「key + 中文兜底」，见上面的 orderLabel。

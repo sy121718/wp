@@ -426,7 +426,78 @@ func toReturnResp(e *ordermodel.ReturnEntity, items []*ordermodel.ReturnItemEnti
 		}
 		res.Items = append(res.Items, line)
 	}
+	// 待入库行数：还有几行没点收（received_quantity < quantity）。
+	//
+	// 仓库关心的是收货台上的待办条数，不是件数差额 —— 一件一批的到货会被拆成多次点收。
+	// 计数在这里算好，模板不做减法（template_logic_test.go）。
+	for _, it := range items {
+		if it.ReceivedQuantity < it.Quantity {
+			res.PendingInboundLines++
+		}
+	}
 	return res
+}
+
+// attachReturnWarehouses 给退货单补「原发货仓」这一列（仓库视角，B6-b）。
+//
+// 口径分两级，先查事实、再查计划：
+//
+//  1. 已发过货的行 → 发货明细上**实际从哪个仓发出去的**（order_shipment_items.warehouse_id）；
+//  2. 还没发过货的行 → 下单时固化的发货仓（order_items.warehouse_id，迁移 628）。
+//
+// 两级都不回答的（历史行 + 没发过货）留空串，页面显示「—」：那确实没有这个事实，
+// 编一个默认仓出来就是伪造历史。
+//
+// **一张退货单只给一个仓名**（取第一行有答案的）：退货单绝大多数来自同一个仓，
+// 跨仓退货是少数；真跨仓时这一列指向其中一行，逐仓拆分要看明细 ——
+// 把「等 N 个仓」这类分档塞进 service 只会让这一列既不准又难读。
+func (s *Service) attachReturnWarehouses(ctx context.Context, projectID string, resps []*orderdto.ReturnResp, itemsByReturn map[uint64][]*ordermodel.ReturnItemEntity) {
+	if len(resps) == 0 {
+		return
+	}
+	itemIDs := make([]uint64, 0, len(resps)*2)
+	for _, r := range resps {
+		for _, it := range itemsByReturn[r.ID] {
+			itemIDs = append(itemIDs, it.OrderItemID)
+		}
+	}
+	if len(itemIDs) == 0 {
+		return
+	}
+	// ① 发货明细上的实际发货仓。
+	byShipment := map[uint64]string{}
+	if s.shipments != nil {
+		if got, err := s.shipments.WarehouseByOrderItem(ctx, itemIDs); err == nil {
+			byShipment = got
+		}
+	}
+	// ② 订单行上固化的发货仓（只补 ① 没答出来的那些，省一次全量读）。
+	missing := make([]uint64, 0, len(itemIDs))
+	for _, id := range itemIDs {
+		if byShipment[id] == "" {
+			missing = append(missing, id)
+		}
+	}
+	byItem := map[uint64]string{}
+	if len(missing) > 0 {
+		if got, err := s.items.WarehouseByIDs(ctx, missing); err == nil {
+			byItem = got
+		}
+	}
+	names := s.warehouseNames(ctx, projectID)
+	for _, r := range resps {
+		for _, it := range itemsByReturn[r.ID] {
+			whID := byShipment[it.OrderItemID]
+			if whID == "" {
+				whID = byItem[it.OrderItemID]
+			}
+			if whID == "" {
+				continue
+			}
+			r.OriginalWarehouseName = names[whID]
+			break
+		}
+	}
 }
 
 // yuanText 分 → 「x.xx 元」（与订单其它展示同口径）。
@@ -497,6 +568,9 @@ func (s *Service) ListReturns(ctx context.Context, req *orderdto.ReturnListReq) 
 	for _, e := range list {
 		res.List = append(res.List, toReturnResp(e, byReturn[e.ID], nil))
 	}
+	// 仓库视角的两列（B6-b）：原发货仓 + 待入库行数。前者要额外查两级仓事实，
+	// 后者在 toReturnResp 里已按明细算好。
+	s.attachReturnWarehouses(ctx, req.ProjectID, res.List, byReturn)
 	return res, nil
 }
 
@@ -537,7 +611,11 @@ func (s *Service) GetReturn(ctx context.Context, returnID uint64) (res *orderdto
 			return nil, lerr
 		}
 	}
-	return &orderdto.ReturnDetailResp{Return: toReturnResp(e, items, returnable), Order: orderResp}, nil
+	head := toReturnResp(e, items, returnable)
+	// 详情页也显示这一列（审核时先要知道货回哪个仓）。行集合就是本单明细。
+	s.attachReturnWarehouses(ctx, e.ProjectID, []*orderdto.ReturnResp{head},
+		map[uint64][]*ordermodel.ReturnItemEntity{e.ID: items})
+	return &orderdto.ReturnDetailResp{Return: head, Order: orderResp}, nil
 }
 
 // ApproveReturn 同意退货申请（AutoReceive=true 时一步完成入库 + 退款）。
@@ -695,7 +773,18 @@ func (s *Service) ReceiveReturn(ctx context.Context, req *orderdto.ReturnReceive
 		if note := strings.TrimSpace(req.Remark); note != "" {
 			fields["admin_note"] = note
 		}
-		return s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, fields)
+		if uerr := s.returns.UpdateFieldsTx(ctx, tx, e.ProjectID, e.ID, fields); uerr != nil {
+			return uerr
+		}
+		// 履约轴（迁移 652）：退货单结案 = 退货完成。
+		//
+		// 退款刚在 refundReturnTx 里把履约写成 refunded（全额退款会推进订单状态），
+		// 这里覆盖成 return_done：退款只是钱的终态，退货单走完才算货这条线收尾。
+		// 部分退货同样落 return_done —— 它表示「这次退货处理完了」，
+		// 剩余未退数量在退货单明细里，不在订单的单个枚举里。
+		return s.orders.UpdateFieldsTx(ctx, tx, e.ProjectID, e.OrderID, map[string]any{
+			"fulfillment_status": ordermodel.FulfillmentReturnDone,
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -781,6 +870,16 @@ func (s *Service) admitReceive(ctx context.Context, projectID string, returnID u
 					it.UnitPrice*int64(it.Quantity)); uerr != nil {
 					return uerr
 				}
+			}
+			// 履约轴（迁移 652）：货真的回到仓库了 —— 这是 status 表达不了的第二个事实
+			//（订单可能仍是 completed / shipped，钱还没退）。与入库同事务：
+			// 要么货和状态一起落，要么都不落。
+			//
+			// 不写 update_time：这是货的流水，不是订单内容的修改。
+			if uerr := s.orders.UpdateFieldsTx(ctx, tx, order.ProjectID, order.ID, map[string]any{
+				"fulfillment_status": ordermodel.FulfillmentReturned,
+			}); uerr != nil {
+				return uerr
 			}
 			return nil
 		case ordermodel.ReturnStatusReceived, ordermodel.ReturnStatusCompleted:

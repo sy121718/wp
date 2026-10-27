@@ -58,6 +58,10 @@ func init() {
 	registerOrderAndSiteSlots()
 	registerAnalyticsSeoAndPermissions()
 	registerAdminI18nSeedsAndLatest()
+	// 652 / 653：订单履约状态独立成列 + 回填（B7，见 register_order_fulfillment.go）。
+	registerOrderFulfillment()
+	// 654 / 655：B6 / B7 的界面词条。
+	registerOrderI18nB67()
 	registerPluginPatrolI18n()
 	registerBulkNoticeI18n()
 	registerAdminRemainingTemplatesI18n()

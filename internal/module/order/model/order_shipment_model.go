@@ -246,6 +246,37 @@ func (m *OrderShipmentModel) ListShipmentItemsByOrderItem(ctx context.Context,
 	return list, err
 }
 
+// WarehouseByOrderItem 若干订单行**实际从哪个仓发过**（itemID → 最近一次发货的仓）。
+//
+// 退货页要回答「这批货原本从哪个仓出去的」：那个仓才是该收回来的仓。
+// 取**最近一次**发货的仓（同一订单行可以分多次、从不同仓发）—— 退货处理的是最后收到的
+// 那批货，按最早那次算会把货引到错的仓。
+//
+// 没有任何发货记录的行不出现在结果里：调用方回落到订单行上固化的发货仓（order_items.warehouse_id）。
+func (m *OrderShipmentModel) WarehouseByOrderItem(ctx context.Context, orderItemIDs []uint64) (out map[uint64]string, err error) {
+	out = make(map[uint64]string, len(orderItemIDs))
+	if len(orderItemIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		OrderItemID uint64 `gorm:"column:order_item_id"`
+		WarehouseID string `gorm:"column:warehouse_id"`
+	}
+	// id DESC：同一行多次发货时，先出现的才是最近一次（后写的不覆盖）。
+	if err = m.db.WithContext(ctx).Model(&OrderShipmentItemEntity{}).
+		Select("order_item_id, warehouse_id").
+		Where("order_item_id IN ?", orderItemIDs).
+		Order("id DESC").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		if _, seen := out[r.OrderItemID]; !seen {
+			out[r.OrderItemID] = r.WarehouseID
+		}
+	}
+	return out, nil
+}
+
 // SumShippedQuantity 非事务版的已发数量账（只读列表路径用：不必为每条订单开事务）。
 func (m *OrderShipmentModel) SumShippedQuantity(ctx context.Context, orderID uint64,
 	itemIDs []uint64) (sum map[uint64]int, err error) {

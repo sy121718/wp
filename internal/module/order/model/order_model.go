@@ -128,6 +128,12 @@ type OrderEntity struct {
 	CarrierName string     `gorm:"column:carrier_name"`
 	TrackingNo  string     `gorm:"column:tracking_no"`
 	ShippedAt   *time.Time `gorm:"column:shipped_at"`
+
+	// FulfillmentStatus 履约状态（迁移 652）：独立于 Status 的第二条事实轴，取值见 Fulfillment* 常量。
+	//
+	// 它**不由 Status 推导**（FulfillmentOfStatus 只用于首次落库与历史回填）：
+	// 发货时用例知道「是否发完」，退货时用例知道「货是否回仓」，这些事实 status 表达不了。
+	FulfillmentStatus string `gorm:"column:fulfillment_status"`
 }
 
 // TableName 实现 gorm 表名。
@@ -136,6 +142,66 @@ type OrderEntity struct {
 // 报错是 relation "order_entities" does not exist —— 看起来像迁移没跑，实际只是名字对不上。
 func (OrderEntity) TableName() string { return "orders" }
 
+// 履约状态（迁移 652，B7）：与 status 正交的第二条事实轴。
+//
+// status 回答「钱走到哪了」（待付款 / 已付款 / 已退款 / 已取消），
+// fulfillment 回答「货走到哪了」（待发 / 部分发 / 已发 / 客户收到 / 退货 / 补发 / 异常）。
+// 两者**不互相推导**：一张「已退款且货已退回」的单，status = refunded、
+// fulfillment = returned —— 合成一个枚举就必然丢一半信息。
+//
+// 取值对齐 dy_erp 的 11 态，去掉 go_wp 没有实体支撑的两态（synced / syncing，那是
+// 多平台同步作业，go_wp 没有同步实体）。
+const (
+	FulfillmentPending    = "pending"
+	FulfillmentPaid       = "paid"
+	FulfillmentShipped    = "shipped"
+	FulfillmentPartial    = "partial"
+	FulfillmentReceived   = "received"
+	FulfillmentException  = "exception"
+	FulfillmentCancelled  = "cancelled"
+	FulfillmentReship     = "reship"
+	FulfillmentReturned   = "returned"
+	FulfillmentReturnDone = "return_done"
+	FulfillmentRefunded   = "refunded"
+	FulfillmentFailed     = "failed"
+)
+
+// 履约状态的**有序清单**在 enums（orderenums.FulfillmentStatuses）：控制器与模板只能
+// 看到 enums，看不到 model（分层判据：inbound 不 import model）。这里只留取值常量，
+// 写路径按常量引用，不按清单遍历 —— 清单是显示口径（筛选行从左到右的顺序）。
+
+// FulfillmentOfStatus 由订单状态推履约状态（**只用于首次落库与历史回填**）。
+//
+// 运行期的每一次流转都由用例显式写 fulfillment_status（发货知道是否发完、退货知道
+// 货是否回仓），这里的推导只回答「没有更具体事实时该给什么」。
+func FulfillmentOfStatus(status string) string {
+	switch status {
+	case OrderStatusPending:
+		return FulfillmentPending
+	case OrderStatusPaid:
+		return FulfillmentPaid
+	case OrderStatusShipped:
+		return FulfillmentShipped
+	case OrderStatusCompleted:
+		return FulfillmentReceived
+	case OrderStatusCancelled:
+		return FulfillmentCancelled
+	case OrderStatusRefunded:
+		return FulfillmentRefunded
+	default:
+		return FulfillmentPending
+	}
+}
+
+// IsManualFulfillment 「只能由人设定」的履约状态（异常 / 补发）。
+//
+// 这两件事系统没有可靠的自动判据：异常是「运营发现这批货出问题了」，
+// 补发是「同意给客户再发一次」。自动推导它们只会在没人操作时凭空造出状态。
+func IsManualFulfillment(v string) bool {
+	return v == FulfillmentException || v == FulfillmentReship ||
+		v == FulfillmentReturned || v == FulfillmentReturnDone
+}
+
 // OrderFilter 订单列表查询条件（条件一律以参数传入，方法内不写死业务条件）。
 type OrderFilter struct {
 	ProjectID     string
@@ -143,10 +209,16 @@ type OrderFilter struct {
 	UserID        *uint64
 	Keyword       string // 订单号 / 客户邮箱 / 客户姓名
 	PaymentMethod string
-	CreatedFrom   *time.Time
-	CreatedTo     *time.Time
-	Offset        int
-	Limit         int
+	// CreatedVia / FulfillmentStatus / OrderIDs 是 B7 的筛选维度（有对应事实的维度）。
+	//
+	// 团队 / 站点 / 销售 / 同步站点这些 dy_erp 的维度在 go_wp 没有实体（单团队多工程模型，
+	// 见报告），不在这里造：筛选条上只出现在数据库里真的有列的那几个。
+	CreatedVia        string
+	FulfillmentStatus string
+	CreatedFrom       *time.Time
+	CreatedTo         *time.Time
+	Offset            int
+	Limit             int
 }
 
 // OrderModel 订单头表访问单元。
@@ -167,9 +239,24 @@ func (m *OrderModel) Transaction(ctx context.Context, fn func(tx *gorm.DB) error
 // Create 落一单。
 // RLS（迁移 215）：orders 已启用 FORCE 策略，写入承 e.ProjectID 的工程作用域。
 func (m *OrderModel) Create(ctx context.Context, e *OrderEntity) (err error) {
+	fillFulfillment(e)
 	return rls.InProjectScope(ctx, m.db, e.ProjectID, func(tx *gorm.DB) error {
 		return tx.Model(&OrderEntity{}).Create(e).Error
 	})
+}
+
+// fillFulfillment 落库前补齐履约状态（空值 → 由订单状态推导）。
+//
+// 为什么必须在这里补、而不是只靠迁移里的 DEFAULT 'pending'：GORM 插入时会把结构体的
+// 零值 "" **显式写进 INSERT**，DEFAULT 只在列被省略时生效 —— 结果是每一条新建的订单都撞
+// ck_orders_fulfillment_status（表现是「落单失败」，而不是「状态不对」，很容易误判成迁移没跑）。
+//
+// 补推导值而不是恒定 pending：夹具与导入路径按真实状态造历史数据（直接给 status=paid），
+// 那时履约也该是 paid —— 否则「按履约筛选」在那种数据上会集体错位到「待履约」。
+func fillFulfillment(e *OrderEntity) {
+	if e != nil && strings.TrimSpace(e.FulfillmentStatus) == "" {
+		e.FulfillmentStatus = FulfillmentOfStatus(e.Status)
+	}
 }
 
 // CreateTx 事务内落一单。
@@ -179,6 +266,7 @@ func (m *OrderModel) Create(ctx context.Context, e *OrderEntity) (err error) {
 // 事务里看不见，同表写入还会自锁。设好之后该事务里**后续所有语句**（明细、状态日志、
 // 库存动作）都已在同一工程作用域内，等于顺带把整条下单链路覆盖了。
 func (m *OrderModel) CreateTx(ctx context.Context, tx *gorm.DB, e *OrderEntity) (err error) {
+	fillFulfillment(e)
 	if err = rls.ScopeTx(tx, e.ProjectID); err != nil {
 		return err
 	}
@@ -315,6 +403,12 @@ func (m *OrderModel) listLocked(tx *gorm.DB, f OrderFilter, list *[]*OrderEntity
 	if f.PaymentMethod != "" {
 		q = q.Where("payment_method = ?", f.PaymentMethod)
 	}
+	if f.CreatedVia != "" {
+		q = q.Where("created_via = ?", f.CreatedVia)
+	}
+	if f.FulfillmentStatus != "" {
+		q = q.Where("fulfillment_status = ?", f.FulfillmentStatus)
+	}
 	if f.CreatedFrom != nil {
 		q = q.Where("create_time >= ?", *f.CreatedFrom)
 	}
@@ -390,6 +484,52 @@ func (m *OrderModel) ListPendingCreatedBefore(ctx context.Context, projectID str
 	return list, err
 }
 
+// PendingShipFilter 待发货页的查询条件（条件一律以参数传入）。
+//
+// 关键词只匹配订单号 / 客户名：待发货是仓库作业台，手里拿的是拣货单上的订单号或收件人，
+// 客户邮箱不在拣货动作的输入里。
+type PendingShipFilter struct {
+	ProjectID string
+	Keyword   string
+	Offset    int
+	Limit     int
+}
+
+// ListPendingShipPage 待发货列表的一页：只含 **paid 且还有未发数量** 的订单。
+//
+// 「还有未发」在 SQL 里判，不在 Go 里过滤：先全量取回再过滤，页码与总数就与实际
+// 行数对不上（总数偏大、末页可能空白），真实数据量下不可用。判据与
+// service 侧逐行口径逐字一致 —— Σ订单行数量 > Σ发货明细数量。
+func (m *OrderModel) ListPendingShipPage(ctx context.Context, f PendingShipFilter) (list []*OrderEntity, total int64, err error) {
+	err = rls.InProjectScope(ctx, m.db, f.ProjectID, func(tx *gorm.DB) error {
+		q := tx.WithContext(ctx).Model(&OrderEntity{}).
+			Where("project_id = ? AND status = ?", f.ProjectID, OrderStatusPaid)
+		if kw := strings.TrimSpace(f.Keyword); kw != "" {
+			like := "%" + kw + "%"
+			q = q.Where("(order_no ILIKE ? OR customer_name ILIKE ?)", like, like)
+		}
+		q = q.Where(pendingShipRemainingSQL)
+		if cerr := q.Count(&total).Error; cerr != nil {
+			return cerr
+		}
+		limit := f.Limit
+		if limit <= 0 || limit > 200 {
+			limit = 20
+		}
+		return q.Omit("attribution").Order("create_time ASC").
+			Offset(f.Offset).Limit(limit).Find(&list).Error
+	})
+	return list, total, err
+}
+
+// pendingShipRemainingSQL 「还有未发数量」的判据（订单行数量合计 > 已发明细合计）。
+//
+// 单引号常量而不是两处各写一遍：待发货页与发货用例的「已发」必须是同一本账，
+// 各写一份迟早会分叉（分叉的表现是「列表上还有剩余、点发货却说没有」）。
+const pendingShipRemainingSQL = "(SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items AS oi WHERE oi.order_id = orders.id)" +
+	" > (SELECT COALESCE(SUM(si.quantity), 0) FROM order_shipment_items AS si" +
+	" JOIN order_shipments AS sh ON sh.id = si.shipment_id WHERE sh.order_id = orders.id)"
+
 // CountByStatus 按状态分组计数（列表页状态页签的角标）。
 func (m *OrderModel) CountByStatus(ctx context.Context, projectID string) (counts map[string]int64, err error) {
 	var rows []struct {
@@ -405,6 +545,29 @@ func (m *OrderModel) CountByStatus(ctx context.Context, projectID string) (count
 	counts = make(map[string]int64, len(rows))
 	for _, r := range rows {
 		counts[r.Status] = r.N
+	}
+	return counts, nil
+}
+
+// CountByFulfillment 按履约状态分组计数（订单列表履约徽章行的角标）。
+//
+// 与 CountByStatus 并列而不是带一个维度参数：两者的分组键不同、用途也不同
+// （一个回答「钱各有多少单」、一个回答「货各有多少单」），合成一个带参数的
+// 方法会把两种口径藏进一个字符串开关里。
+func (m *OrderModel) CountByFulfillment(ctx context.Context, projectID string) (counts map[string]int64, err error) {
+	var rows []struct {
+		FulfillmentStatus string `gorm:"column:fulfillment_status"`
+		N                 int64  `gorm:"column:n"`
+	}
+	if err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
+		return tx.Model(&OrderEntity{}).Select("fulfillment_status, COUNT(*) AS n").
+			Where("project_id = ?", projectID).Group("fulfillment_status").Scan(&rows).Error
+	}); err != nil {
+		return nil, err
+	}
+	counts = make(map[string]int64, len(rows))
+	for _, r := range rows {
+		counts[r.FulfillmentStatus] = r.N
 	}
 	return counts, nil
 }

@@ -51,6 +51,25 @@ type OrderListPageResp struct {
 	FilterKeyword string
 	FilterPayment string
 
+	// FulfillmentTabs 履约状态的徽章行（B7）：取值 + 分档，与 StatusTabs 同形状。
+	//
+	// 与 StatusTabs 并列而不是合并：两条正交的事实轴各有自己的筛选维度，
+	// 合成一行会让「已付款 且 部分发货」这种组合无法表达。
+	FulfillmentTabs []StatusTabResp
+	// FulfillmentCounts 各履约状态的计数（角标用；已补齐零值，模板可安全比较）。
+	FulfillmentCounts map[string]int64
+	// FulfillmentLabels 履约状态 → 词条事实（模板用 tr(key, fallback) 取词）。
+	//
+	// 用 map 而不是函数：履约状态只有 12 个固定取值，模板要在筛选行与列表行两处取词，
+	// 预先摊平成事实表比每个调用点过一道闭包更直白（与退货页 ReturnStatusLabels 同形）。
+	FulfillmentLabels map[string]StatusLabelFact
+	FilterFulfillment string
+	// CreatedViaValues / FilterCreatedVia 来源筛选（自建 / 线上 / 接口）。
+	CreatedViaValues []string
+	FilterCreatedVia string
+	// CreatedViaLabels 来源 → 词条事实（复用迁移 448 的 admin.orders.created_via.*）。
+	CreatedViaLabels map[string]StatusLabelFact
+
 	// LoadErr 这一次没读出来的原因（空串 = 正常）：模板据此把「装载失败」与「还没有订单」分开。
 	LoadErr string
 	// ListQuery 列表上下文（拼进页内链接的 query；不含 status）。

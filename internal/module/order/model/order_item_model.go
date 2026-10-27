@@ -94,6 +94,30 @@ func (m *OrderItemModel) ListByOrderIDTx(ctx context.Context, tx *gorm.DB, order
 	return list, err
 }
 
+// WarehouseByIDs 若干订单行**下单时固化的**发货仓（itemID → 仓 id，未固化的不出现）。
+//
+// 退货页的「原发货仓」用它兜底：还没发过货就退货的行没有发货明细可查，
+// 但下单时已经定好从哪个仓出 —— 那仍然是「这批货本来该回哪儿」的答案。
+func (m *OrderItemModel) WarehouseByIDs(ctx context.Context, ids []uint64) (out map[uint64]string, err error) {
+	out = make(map[uint64]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		ID          uint64  `gorm:"column:id"`
+		WarehouseID *string `gorm:"column:warehouse_id"`
+	}
+	if err = m.DB(ctx).Select("id, warehouse_id").Where("id IN ?", ids).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		if r.WarehouseID != nil && *r.WarehouseID != "" {
+			out[r.ID] = *r.WarehouseID
+		}
+	}
+	return out, nil
+}
+
 // CountByOrderID 订单项条数（校验「有头必有项」）。
 func (m *OrderItemModel) CountByOrderID(ctx context.Context, orderID uint64) (count int64, err error) {
 	err = m.DB(ctx).Where("order_id = ?", orderID).Count(&count).Error

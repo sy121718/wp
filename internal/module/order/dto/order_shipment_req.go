@@ -71,14 +71,26 @@ type ListCarrierReq struct {
 	IncludeDisabled bool `form:"includeDisabled" json:"includeDisabled"`
 }
 
-// PendingShipReq 待发货列表的查询串（工程维度）。
+// PendingShipReq 待发货列表的查询串（工程维度 + 关键词 + 分页窗口）。
+//
+// 关键词只匹配**订单号 / 客户名**：待发货是仓库作业台，运营手里拿的是拣货单上的
+// 订单号或收件人姓名，客户邮箱不在其中。
 type PendingShipReq struct {
 	ProjectID string `form:"projectId" json:"projectId"`
+	Keyword   string `form:"keyword" json:"keyword"`
+	Offset    int    `form:"offset" json:"offset"`
+	Limit     int    `form:"limit" json:"limit"`
 }
 
 // ShipmentPageQueryReq 发货三屏的查询串（工程上下文）。
 //
 // 键名是已发布 URL 的一部分（书签 / 外部链接都按它拼），所以 form tag 不能随手改。
+//
+// Keyword / Page / Limit 只有待发货页用（承运商页忽略）：筛选与分页是同一屏的
+// 同一次请求，两者必须共用一条查询串 —— 翻页丢掉关键词会让「第 2 页」变成另一批单。
 type ShipmentPageQueryReq struct {
 	ProjectID string `form:"project" json:"project"`
+	Keyword   string `form:"keyword" json:"keyword"`
+	Page      int    `form:"page" json:"page"`
+	Limit     int    `form:"limit" json:"limit"`
 }

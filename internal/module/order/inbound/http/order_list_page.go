@@ -66,8 +66,27 @@ type orderFilter struct {
 	Keyword string
 	// PaymentMethod 支付方式筛选（如 paypal）。
 	PaymentMethod string
+	// CreatedVia 来源筛选（checkout 访客结算 / admin 后台自建 / api 接口）—— B7。
+	CreatedVia string
+	// Fulfillment 履约状态筛选（迁移 652 的第二条事实轴）—— B7。
+	Fulfillment string
 	// OrderID 非 0 时在列表下方渲染详情块（同一个页面，靠查询参数切换，不新开路由）。
 	OrderID uint64
+}
+
+// orderFilterOf 从查询串取筛选条件（含 B7 新增的来源与履约两维）。
+//
+// 抽成函数（而不是塞进 OrdersPage 里）：那个方法已经在 60 行台账上，
+// 每加一个维度就把「读参数」和「调 service / 组装视图」混得更紧一次。
+func orderFilterOf(c *gin.Context) orderFilter {
+	return orderFilter{
+		Status:        strings.TrimSpace(c.Query("status")),
+		Keyword:       strings.TrimSpace(c.Query("keyword")),
+		PaymentMethod: strings.TrimSpace(c.Query("paymentMethod")),
+		CreatedVia:    strings.TrimSpace(c.Query("createdVia")),
+		Fulfillment:   strings.TrimSpace(c.Query("fulfillment")),
+		OrderID:       orderQueryID(c.Query("orderId")),
+	}
 }
 
 // orderStatusValues 状态维度的取值白名单（含空串 = 「全部」）。
@@ -102,45 +121,9 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 	}
 
 	page, limit := orderListWindow(c)
-	filter := orderFilter{
-		Status:        strings.TrimSpace(c.Query("status")),
-		Keyword:       strings.TrimSpace(c.Query("keyword")),
-		PaymentMethod: strings.TrimSpace(c.Query("paymentMethod")),
-		OrderID:       orderQueryID(c.Query("orderId")),
-	}
-
-	var orders []*orderdto.OrderResp
-	// 计数表一开始就补齐零值（理由同退货页：模板会拿计数做数值比较，nil 参与比较会让整页 500）。
-	counts := countsFilled(nil, orderStatusValues)
-	var total int64
-	if selected != "" {
-		list, lerr := h.orders.ListOrders(ctx, &orderdto.ListOrderReq{
-			ProjectID:     selected,
-			Status:        filter.Status,
-			Keyword:       filter.Keyword,
-			PaymentMethod: filter.PaymentMethod,
-			Offset:        (page - 1) * limit,
-			Limit:         limit,
-		})
-		if lerr != nil {
-			loadErrText = firstNonEmpty(loadErrText, orderFacingError(c, lerr))
-		} else {
-			// 计数不受筛选影响（它回答「各状态各有多少单」这个全局问题），用服务端给的整份计数。
-			orders, counts, total = list.List, countsFilled(list.Counts, orderStatusValues), list.Total
-		}
-	}
-
-	var detail *orderdto.OrderDetailResp
-	if selected != "" && filter.OrderID > 0 {
-		det, derr := h.orders.GetOrder(ctx, &orderdto.GetOrderReq{
-			ProjectID: selected, OrderID: filter.OrderID,
-		})
-		if derr != nil {
-			loadErrText = firstNonEmpty(loadErrText, orderFacingError(c, derr))
-		} else {
-			detail = det
-		}
-	}
+	filter := orderFilterOf(c)
+	data := h.ordersPageData(c, selected, filter, page, limit, loadErrText)
+	orders := data.Orders
 
 	view := &orderdto.OrderListPageResp{
 		// 标题是 i18n key：渲染出口按当前语言取词（模板不再看到裸 key）。
@@ -150,23 +133,31 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 		SelectedProject: selected,
 		// 取数结果：dto 原样交给模板。
 		Orders: orders,
-		Counts: counts,
-		Total:  total,
-		Detail: detail,
+		Counts: data.Counts,
+		Total:  data.Total,
+		Detail: data.Detail,
 		// 状态徽章行的「取值 + 分档」+ 当前生效值。
 		// 分档与取值一起给（orderStatusTabs）：模板不再逐个判状态选 badge 类。
 		StatusTabs: orderStatusTabs(),
 		// 「全部」徽章的计数（各状态之和）：模板里跨类型累加不值得押注，求和放这里一行。
-		CountsAll: countsAll(counts),
+		CountsAll: countsAll(data.Counts),
 		// 状态 → 当前语言标签（enums 的 (key, fallback) 是两返回值，模板接不住，
 		// 这里收敛成单值函数；**取词仍发生在模板调用点**，Go 不预先拼行视图）。
 		OrderStatusLabel: orderStatusLabelFunc(c),
 		FilterStatus:     filter.Status,
+		// B7：履约徽章行 + 事实表 + 来源维度（与状态维度并列，两条正交轴各有自己的筛选）。
+		FulfillmentTabs:   fulfillmentTabs(),
+		FulfillmentLabels: fulfillmentPageFacts(filter.Fulfillment, orders),
+		FilterFulfillment: filter.Fulfillment,
+		CreatedViaValues:  createdViaValues,
+		FilterCreatedVia:  filter.CreatedVia,
+		CreatedViaLabels:  statusLabelFacts(createdViaValues, orderenums.CreatedViaLabel),
 		// 筛选回显与空态判据都由模板自己算（FilterActive 那种布尔不再由 Go 预先决定）。
-		FilterKeyword: filter.Keyword,
-		FilterPayment: filter.PaymentMethod,
+		FilterKeyword:     filter.Keyword,
+		FilterPayment:     filter.PaymentMethod,
+		FulfillmentCounts: data.FulfillmentCounts,
 		// 这一次没读出来的原因（空串 = 正常）：模板据此把「装载失败」与「还没有订单」分开。
-		LoadErr: loadErrText,
+		LoadErr: data.LoadErr,
 		// 列表上下文（拼进页内链接的 query；不含 status，见 orderListQuery）。
 		ListQuery: orderListQuery(selected, filter, page, limit),
 		// 国家/地区代码 → 当前语言的显示名。函数值直接进数据：模板里
@@ -177,19 +168,72 @@ func (h *orderPageHandle) OrdersPage(c *gin.Context) {
 	}
 	// 分页事实：基址由 backpath 拼（带白名单参数），故 path 传空 —— AttachPagination 不动 Base。
 	_ = adminui.AttachPaginationView(view, "", nil, pagination.Page{
-		Total: total, Page: page, Limit: limit,
+		Total: data.Total, Page: page, Limit: limit,
 		Base: backpath.WithParams("/admin/orders", map[string]string{
 			"project": selected, "status": filter.Status, "keyword": filter.Keyword,
-			"paymentMethod": filter.PaymentMethod,
+			"paymentMethod": filter.PaymentMethod, "createdVia": filter.CreatedVia,
+			"fulfillment": filter.Fulfillment,
 		}),
 	})
 	pageview.Render(c, view)
 }
 
+// ordersPageData 订单列表页的三块取数（列表 + 状态计数 + 履约计数 + 详情）。
+//
+// 从 handler 里抽出来的理由与 orderFilterOf 同：OrdersPage 已经在 60 行 / 语句数台账上，
+// 而「取哪些数据、失败时怎么降级」是自成一段的东西 —— 混在视图组装里，
+// 每加一个维度都要动那个方法。
+//
+// 降级口径不变：工程列表读不出来时不再取数与详情（selected 只能来自 URL，
+// 拿可能属于别的工程的参数去查，查出来的是哪个工程的单都说不清）。
+func (h *orderPageHandle) ordersPageData(c *gin.Context, selected string, filter orderFilter,
+	page, limit int, loadErrText string) *orderdto.OrderListPageResp {
+	ctx := c.Request.Context()
+	// 计数表一开始就补齐零值：模板会拿计数做数值比较，nil 参与比较会让整页 500。
+	out := &orderdto.OrderListPageResp{
+		LoadErr:           loadErrText,
+		Counts:            countsFilled(nil, orderStatusValues),
+		FulfillmentCounts: countsFilled(nil, orderenums.FulfillmentStatuses),
+	}
+	if selected == "" {
+		return out
+	}
+	list, lerr := h.orders.ListOrders(ctx, &orderdto.ListOrderReq{
+		ProjectID:         selected,
+		Status:            filter.Status,
+		Keyword:           filter.Keyword,
+		PaymentMethod:     filter.PaymentMethod,
+		CreatedVia:        filter.CreatedVia,
+		FulfillmentStatus: filter.Fulfillment,
+		Offset:            (page - 1) * limit,
+		Limit:             limit,
+	})
+	if lerr != nil {
+		out.LoadErr = firstNonEmpty(out.LoadErr, orderFacingError(c, lerr))
+		return out
+	}
+	// 计数不受筛选影响（它回答「各状态各有多少单」这个全局问题），用服务端给的整份计数。
+	out.Orders, out.Total = list.List, list.Total
+	out.Counts = countsFilled(list.Counts, orderStatusValues)
+	out.FulfillmentCounts = countsFilled(list.FulfillmentCounts, orderenums.FulfillmentStatuses)
+	if filter.OrderID == 0 {
+		return out
+	}
+	det, derr := h.orders.GetOrder(ctx, &orderdto.GetOrderReq{ProjectID: selected, OrderID: filter.OrderID})
+	if derr != nil {
+		out.LoadErr = firstNonEmpty(out.LoadErr, orderFacingError(c, derr))
+		return out
+	}
+	out.Detail = det
+	return out
+}
+
 // orderListQuery 列表上下文 → 查询串（拼进表单 action；空值不拼）。
 //
-// 刻意**不含 status**：徽章链接要覆盖它、写表单要保留它，两者各自显式拼，
-// 混进基础串里会出现「点了别的状态徽章却还带着旧状态」。
+// 刻意**不含 status 与 fulfillment**：这两条是徽章维度（点一下就要覆盖旧值），
+// 混进基础串里会出现「点了别的徽章却还带着旧值」—— 而且重复的同名参数在
+// url.Values.Encode 里是两条、读回来只认第一条，症状是「点了没反应」。
+// 每个用到它们的链接都显式拼一次（见 orders.html 的状态行 / 履约行 / 详情链接）。
 func orderListQuery(projectID string, filter orderFilter, page, limit int) string {
 	q := url.Values{}
 	set := func(key, value string) {
@@ -200,6 +244,7 @@ func orderListQuery(projectID string, filter orderFilter, page, limit int) strin
 	set("project", projectID)
 	set("keyword", filter.Keyword)
 	set("paymentMethod", filter.PaymentMethod)
+	set("createdVia", filter.CreatedVia)
 	if filter.OrderID > 0 {
 		set("orderId", strconv.FormatUint(filter.OrderID, 10))
 	}

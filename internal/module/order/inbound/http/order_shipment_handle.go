@@ -63,12 +63,12 @@ func (h *Handle) ListPendingShip(c *gin.Context) {
 	if !ok {
 		return
 	}
-	rows, err := h.svc.ListPendingShip(c.Request.Context(), req.ProjectID)
+	res, err := h.svc.ListPendingShip(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorAuto(c, http.StatusBadRequest, "order", err)
 		return
 	}
-	response.Success(c, rows)
+	response.Success(c, res)
 }
 
 // ShipForm 发货表单数据（GET /api/order/shipment/form?orderId=）。

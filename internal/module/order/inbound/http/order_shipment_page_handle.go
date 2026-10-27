@@ -22,6 +22,8 @@ import (
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/text"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/pagination"
+	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 )
@@ -47,7 +49,8 @@ func NewOrderShipmentPageHandle(svc ordercontract.OrderService, projects project
 // PendingShipPage 待发货列表（GET /admin/orders/pending-ship）。
 //
 // 一行 = 一张「paid 且还有未发数量」的订单；每个数字（件数 / 已发 / 剩余）都由 service
-// 算好（模板不做减法，template_logic_test.go）。
+// 算好（模板不做减法，template_logic_test.go），连「这一单现在能不能发」也是算好的事实
+// （B6-a 的守卫：不可发时按钮 disabled + 一行说明，对齐 dy_erp 仓库发货台）。
 //
 // 装载失败**不拿走整页**：空列表 + 归口提示 + 页壳（与订单页其它出口同一形状）——
 // 页面 GET 失败时用户要能改地址栏 / 刷新，而不是看到一个 JSON 文档。
@@ -56,50 +59,87 @@ func (h *orderShipmentPageHandle) PendingShipPage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, loadFailed := h.pendingShipView(c, query.ProjectID)
-	_ = loadFailed
+	data, _ := h.pendingShipView(c, query)
 	pageview.Render(c, data)
+}
+
+// pendingShipWindow 分页窗口（与其它列表页同一口径：默认 20、上限 100）。
+//
+// 不用 orderListWindow：那个读的是 c.Query（本文件不在 pendingControllerQuery
+// 台账里，也没有理由进台账）—— 分页参数已经在绑定过的 query 结构里了。
+func pendingShipWindow(query *orderdto.ShipmentPageQueryReq) (page, limit int) {
+	page, limit = query.Page, query.Limit
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return page, limit
 }
 
 // pendingShipView 取齐待发货页的数据并组成视图。
 //
 // 装载失败**不拿走整页**：空列表 + 归口提示 + 页壳（与订单页其它出口同一形状）——
 // 页面 GET 失败时用户要能改地址栏 / 刷新，而不是看到一个 JSON 文档。
-func (h *orderShipmentPageHandle) pendingShipView(c *gin.Context, requested string) (gin.H, bool) {
+func (h *orderShipmentPageHandle) pendingShipView(c *gin.Context, query *orderdto.ShipmentPageQueryReq) (gin.H, bool) {
 	ctx := c.Request.Context()
+	page, limit := pendingShipWindow(query)
 	projects, loadErr := h.projects.List(ctx)
 	loadFailed := loadErr != nil
 	if loadFailed {
 		projects = nil
 	}
-	selected := strings.TrimSpace(requested)
+	selected := strings.TrimSpace(query.ProjectID)
 	if selected == "" && len(projects) > 0 {
 		selected = projects[0].ID
 	}
 	rows := []*orderdto.PendingShipRow{}
+	total := int64(0)
 	pageErr := ""
 	if loadFailed {
 		pageErr = orderFacingError(c, loadErr)
 	} else if selected != "" {
-		list, err := h.svc.ListPendingShip(ctx, selected)
+		res, err := h.svc.ListPendingShip(ctx, &orderdto.PendingShipReq{
+			ProjectID: selected,
+			Keyword:   strings.TrimSpace(query.Keyword),
+			Offset:    (page - 1) * limit,
+			Limit:     limit,
+		})
 		if err != nil {
 			loadFailed = true
 			pageErr = orderFacingError(c, err)
-		} else {
-			rows = list
+		} else if res != nil {
+			rows, total = res.List, res.Total
+			if rows == nil {
+				rows = []*orderdto.PendingShipRow{}
+			}
 		}
 	}
 	tr := text.TranslateFunc(c)
-	return gin.H{
+	view := gin.H{
 		"title":           tr(orderenums.PendingShipTitle, "待发货"),
 		"menu":            "orders-pending-ship",
 		"Projects":        projects,
 		"SelectedProject": selected,
 		"Rows":            rows,
+		"Total":           total,
+		"FilterKeyword":   strings.TrimSpace(query.Keyword),
 		"LoadFailed":      loadFailed,
 		"Err":             pageErr,
 		"LoadError":       pageErr,
-	}, loadFailed
+	}
+	// 分页事实按视图键直挂：本文件不 import internal/adminui（控制器禁 UI 线依赖），
+	// 而翻页基址在这里就能算全 —— 与 reqparams.FilterBaseURL 同一实现。
+	view[pageview.PaginationKey] = pagination.Page{
+		Total: total, Page: page, Limit: limit,
+		Base: reqparams.FilterBaseURL(pendingShipPath,
+			map[string]string{"project": selected, "keyword": strings.TrimSpace(query.Keyword)}),
+	}
+	return view, loadFailed
 }
 
 // carrierView 取齐承运商页的数据并组成视图（装载失败与待发货页同一形状）。
