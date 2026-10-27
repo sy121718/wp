@@ -72,7 +72,6 @@ GET /admin/orders/new
 GET /admin/orders/overview
 GET /admin/orders/pending-ship
 GET /admin/orders/ship-form
-GET /admin/page-langs/panel
 GET /admin/page-schedules/panel
 GET /admin/page-translation-misses
 GET /admin/pages

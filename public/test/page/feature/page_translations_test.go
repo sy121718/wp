@@ -205,8 +205,11 @@ func TestPageTranslationsWorkbenchRenders(t *testing.T) {
 	if n := strings.Count(body, `class="data-table data-table-wide tr-table"`); n != 1 {
 		t.Fatalf("多组件应共用一张编辑表，实际 %d 张", n)
 	}
-	if n := strings.Count(body, "<thead>"); n != 1 {
-		t.Fatalf("多组件应共用一个表头，实际 %d 个", n)
+	// 每张表**恰好一个**表头：合并后页面上的表不止一张（产出范围 + 编辑表），
+	// 所以判据写成「表头数 == 数据表数」而不是钉死 1 —— 钉死会让「新增一张表」
+	// 与「漏了表头」两种情形混在同一个红里。
+	if tables, heads := strings.Count(body, "class=\"data-table"), strings.Count(body, "<thead>"); tables != heads {
+		t.Fatalf("每张数据表应当恰好一个表头，实际 %d 张表 / %d 个表头", tables, heads)
 	}
 	// 分组行带**本组**条数 —— 合并不丢「这一行属于哪个组件」的信息（原先是每组一个 <h2>）。
 	// span 属性用 [^>]* 通配，判据只认「组件名 + 该组条数」这个语义，不跟样式耦合。
@@ -249,6 +252,46 @@ func TestPagesListShowsTranslationsEntry(t *testing.T) {
 	}
 	if !strings.Contains(body, ">多语言</a>") {
 		t.Fatalf("页面列表缺少「多语言」按钮文案\n%s", body)
+	}
+	// 「语言」那一格已并入工作台：列表操作列不该再出现产出范围入口
+	// （它与「多语言」并排时，运营要记哪个管哪件；而它本身是坏的 —— 面板吐裸 tr、
+	// data-when 拿布尔比字面量、行里没有 pageId）。
+	if strings.Contains(body, "/admin/page-langs/panel") {
+		t.Fatalf("页面列表仍有已删除的语言面板入口\n%s", body)
+	}
+}
+
+// TestPageTranslationsRendersLangScope 工作台里的「语言产出范围」区块：
+// 每门站点语言一行，未排除的给「排除」，默认语言不可排除；排除后改给「恢复」。
+//
+// 这条守的是**合并后的入口**：从前它在页面列表行内那块 HTMX 面板里（点了没反应），
+// 现在与译文表同屏 —— 数据来自同一份 PageLangStates，渲染在服务端完成。
+func TestPageTranslationsRendersLangScope(t *testing.T) {
+	router, _, db, _, pageID := newTranslationEnv(t)
+	body := getTranslationPage(t, router, pageID, "en-US")
+	for _, want := range []string{
+		"语言产出范围",
+		`action="/admin/page-langs/exclude"`,
+		`action="/admin/page-langs/republish"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("工作台缺少产出范围元素 %q\n%s", want, body)
+		}
+	}
+	if !strings.Contains(body, "始终产出") {
+		t.Fatalf("默认语言那一行应说明不可排除\n%s", body)
+	}
+
+	// 排除 en-US 之后：该行改出「恢复」，状态徽章改「已排除」。
+	if err := db.Exec("UPDATE pages SET excluded_langs = ARRAY['en-US']::text[] WHERE id = ?", pageID).Error; err != nil {
+		t.Fatalf("设置排除列失败: %v", err)
+	}
+	body = getTranslationPage(t, router, pageID, "en-US")
+	if !strings.Contains(body, `action="/admin/page-langs/restore"`) {
+		t.Fatalf("已排除语言应给「恢复」入口\n%s", body)
+	}
+	if !strings.Contains(body, "已排除") {
+		t.Fatalf("已排除语言的状态徽章缺失\n%s", body)
 	}
 }
 

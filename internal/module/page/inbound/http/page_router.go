@@ -63,7 +63,6 @@ const PagesListPageTemplate = "admin/page/pages"
 // 片段出口（htmx 局部替换）：键集只有几个槽位，走 BareSlot。
 // 模板名归路由层 —— 控制器只交视图，不持有模板名。
 const (
-	PageLangsPanelTemplate    = "fragments/page_langs"
 	PageSchedulePanelTemplate = "fragments/page_schedule_panel"
 	PageHistoryListTemplate   = "fragments/history_list"
 
@@ -170,16 +169,17 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	}
 
 	// ══ 页面级语言排除（只有页面面）══
-	// 没有接口通道：唯一使用者是运营在页面列表行内点开的那块面板，面板本身就是
-	// HTMX 片段（服务端渲染），不存在「脚本要批量排除某语言」的场景 —— 真出现时它该走的是
-	// 「发布范围」那条批量入口，而不是绕过界面直接改排除列。
+	// 没有接口通道：唯一使用者是运营在**翻译工作台**里改这一页的产出范围，
+	// 不存在「脚本要批量排除某语言」的场景 —— 真出现时它该走的是「发布范围」那条批量入口，
+	// 而不是绕过界面直接改排除列。
 	//
 	// 权限点：排除会**真的下线该语言的产物**（pageservice.ExcludePageLang 在同一事务里
 	// 清发布 / 暂存 / 路由 / 计划），因此复用「发布页面」；恢复只改产出范围（不自动重新发布），
 	// 同一条 —— 两者都是「这一页发不发这种语言」的同一件事，不该拆成两个权限点。
-	// 面板是只读展示，复用「页面详情」。
-	pages.GET("/page-langs/panel", builtin.CasbinMiddlewareForPath("/api/page/detail"),
-		adminui.BareSlot(PageLangsPanelTemplate), adminHandle.PageLangsPanel)
+	//
+	// 列表页行内那块 GET 面板（/page-langs/panel + fragments/page_langs.html）已删除：
+	// 同一份数据同时有 JSON 出口与 HTML 片段两个真源，而列表页那格按钮的实际表现是
+	// 「点了没反应」（data-when 拿布尔比字面量、行里没有 pageId、裸 tr 塞进 div）。
 	pages.POST("/page-langs/exclude", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangExclude)
 	pages.POST("/page-langs/restore", builtin.CasbinMiddlewareForPath("/api/page/publish"), adminHandle.PageLangRestore)
 	// 显式重新发布（V4）：恢复排除只解除限制、不自动上线 —— 译好后要真的回到线上，

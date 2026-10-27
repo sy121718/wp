@@ -79,6 +79,85 @@
     </section>
     {{else}}
 
+    {* 产出范围（迁移 491）：这一页**出不出**每种站点语言。
+       与下面的译文表是两个问题 —— 译文表答「这一门语言的文字是什么」，这里答
+       「这一门语言要不要产出」。法务页只做中文、首页做全语言，就是靠这里。
+       列在这里而不是页面列表操作列：那格按钮与「多语言」并列，运营要记哪个管哪件。 *}
+    <section class="card list-card" aria-labelledby="page-langs-heading">
+        <div class="list-toolbar">
+            <strong id="page-langs-heading">{{ .["t"]("admin.page.langs.title", "语言产出范围") }}</strong>
+            <span class="help">
+                <button type="button" class="help-btn" aria-label="{{ .["t"]("admin.common.help.label", "查看说明") }}" aria-expanded="false">?</button>
+                <span class="help-pop" role="tooltip">{{ .["t"]("admin.page.langs.note", "排除某语言会同时下线该语言已发布的产物（访问面入口随之消失），它也不再出现在语言切换器、hreflang 与 sitemap 里；恢复只解除排除，重新上线请点「重新发布」。") }}</span>
+            </span>
+        </div>
+        {* 三个新键都用 isset 包一层：直接渲染本模板的单测用 map 造数据，
+           缺键时点号取值会中断整页（HTTP 仍 200，后面整块消失）。 *}
+        {{if isset(.LangStatesErr) && (.LangStatesErr.Key != "" || .LangStatesErr.Fallback != "")}}
+        <p role="alert">{{include "../partials/badge.html" map("tone", "warn", "label", tf(.LangStatesErr.Key, .LangStatesErr.Fallback, .LangStatesErr.Args))}}</p>
+        {{end}}
+        {* 空态表头常驻（门禁 check-empty-state-table-head.sh）：table 不进 if，空态整行进 tbody。 *}
+        <div class="table-wrap table-scroll">
+            <table class="data-table">
+                <thead>
+                <tr>
+                    <th>{{ .["t"]("admin.page.langs.col.lang", "语言") }}</th>
+                    <th>{{ .["t"]("admin.page.langs.col.status", "状态") }}</th>
+                    <th>{{ .["t"]("admin.page.langs.col.note", "说明") }}</th>
+                    <th class="col-actions">{{ .["t"]("admin.page.langs.col.actions", "操作") }}</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{if !isset(.LangStates) || len(.LangStates) == 0}}
+                <tr>
+                    <td colspan="4" class="text-mute">{{ .["t"]("admin.page.langs.empty", "这个页面还没有可展示的语言（站点语言清单为空）。") }}</td>
+                </tr>
+                {{else}}
+                {{range _, r := .LangStates}}
+                <tr>
+                    <td class="text-mono">{{r.Lang}}</td>
+                    <td>
+                        {* 档位取词表内的 ok/warn/mute（ui.css 的 .badge-<tone> 别名）：
+                           自造档在 ui.css 里没有别名，页面不报错、只是静默失色。 *}
+                        {{badge := "mute"}}{{if r.Excluded}}{{badge = "warn"}}{{else if r.Published}}{{badge = "ok"}}{{end}}
+                        {{include "../partials/badge.html" map("tone", badge, "label", tr(r.StatusKey, r.StatusFallback))}}
+                    </td>
+                    <td class="text-sm">{{if r.NoteKey != "" || r.NoteFallback != ""}}{{tr(r.NoteKey, r.NoteFallback)}}{{else}}—{{end}}</td>
+                    <td class="col-actions">
+                        {{if r.CanRepublish}}
+                        <form method="post" action="/admin/page-langs/republish">
+                            <input type="hidden" name="csrf_token" value="{{csrf}}">
+                            <input type="hidden" name="pageId" value="{{.PageID}}">
+                            <input type="hidden" name="lang" value="{{r.Lang}}">
+                            <button type="submit" class="btn btn-sm">{{tr("admin.page.langs.action.republish", "重新发布")}}</button>
+                        </form>
+                        {{end}}
+                        {{if r.IsDefault}}
+                        <span class="text-mute text-sm">{{tr("admin.page.langs.action.keep", "始终产出")}}</span>
+                        {{else if r.Excluded}}
+                        <form method="post" action="/admin/page-langs/restore">
+                            <input type="hidden" name="csrf_token" value="{{csrf}}">
+                            <input type="hidden" name="pageId" value="{{.PageID}}">
+                            <input type="hidden" name="lang" value="{{r.Lang}}">
+                            <button type="submit" class="btn btn-sm">{{tr("admin.page.langs.action.restore", "恢复")}}</button>
+                        </form>
+                        {{else}}
+                        <form method="post" action="/admin/page-langs/exclude">
+                            <input type="hidden" name="csrf_token" value="{{csrf}}">
+                            <input type="hidden" name="pageId" value="{{.PageID}}">
+                            <input type="hidden" name="lang" value="{{r.Lang}}">
+                            <button type="submit" class="btn btn-sm btn-danger">{{tr("admin.page.langs.action.exclude", "排除")}}</button>
+                        </form>
+                        {{end}}
+                    </td>
+                </tr>
+                {{end}}
+                {{end}}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
     {* 逐行错误区：整页渲染与 htmx 片段共用一个 partial。
        id 是 htmx 的替换目标（保存失败时就地换这一块，不重渲整页）。 *}
     <div id="page-translations-errors">{{include "../../fragments/translation_errors.html" .}}</div>

@@ -138,8 +138,7 @@
            放在表格**之上**而不是行内：面板含表单与一份排定清单，塞进某一列会把表格挤变形；
            面板标题里带页面路径，因此不依赖「它出现在哪一行下方」来表明归属。 *}
         <div id="page-schedule-host"></div>
-        {* 语言产出范围面板的落点（行内「语言」按钮）：与排定面板同形的 HTMX 片段。 *}
-        <div id="page-langs-host"></div>
+
         <div class="list-toolbar">
             <strong>{{ .["t"]("admin.pages.list_heading", "页面列表") }}</strong>
         </div>
@@ -219,14 +218,6 @@
                         <button type="button" class="btn btn-sm btn-ghost"
                                 hx-get="/admin/page-schedules/panel?pageId={{p.ID}}"
                                 hx-target="#page-schedule-host" hx-swap="innerHTML">{{tr("admin.pages.action.schedule", "定时")}}</button>
-                        {* 语言产出范围：把该页各语言的产出状态换进 #page-langs-host（排除/恢复在片段内提交）。 *}
-                        <button type="button" class="btn btn-sm btn-ghost"
-                                hx-get="/admin/page-langs/panel?pageId={{p.ID}}"
-                                hx-ext="json-swap"
-                                hx-target="#page-langs-host" hx-swap="innerHTML"
-                                data-json-template="#tpl-page-lang-row"
-                                data-json-rows="items"
-                                data-json-key="lang">{{tr("admin.pages.action.langs", "语言")}}</button>
                         {{if p.Active}}
                         <a class="btn btn-sm btn-ghost" href="/site{{p.DraftPath}}/" target="_blank">{{tr("admin.pages.action.live", "线上")}}</a>
                         {{end}}
@@ -318,43 +309,3 @@
     {{end}}
 </div>
 {{end}}
-
-{* 局部刷新的行模板（ui/json_swap.js 用）：后端回 JSON，前端按这份 Jet 渲染好的模板填行。
-   文案全部在这里按请求语言取好 —— data-when 标出每种状态属于哪一档，
-   JSON 只给状态码（excluded / published / draft），前端不存第二份词表。
-
-   pageId 不写在模板里：模板被多个页面行复用，写死一个 id 必然错。
-   它由 data-json-extra 从**被点按钮所在的那一行**取（见 hx-include 的用法），
-   行的 hidden[ name=pageId ] 由 json_swap 用 data-field 填进去。 *}
-<template id="tpl-page-lang-row">
-    <tr data-row>
-        <td class="text-mono">
-            <span data-field="lang"></span>
-            <input type="hidden" name="lang" data-field="lang" data-field-attr="value">
-        </td>
-        <td>
-            <span data-when="excluded">{{tr("admin.page.langs.status.excluded", "已排除")}}</span>
-            <span data-when="published">{{tr("admin.page.langs.status.published", "已发布")}}</span>
-            <span data-when="draft">{{tr("admin.page.langs.status.draft", "未发布")}}</span>
-        </td>
-        <td class="text-sm">
-            <span data-when="default" data-when-field="isDefault">{{tr("admin.page.langs.note.default", "站点默认语言，始终产出")}}</span>
-        </td>
-        <td class="col-actions">
-            <form method="post" action="/admin/page-langs/restore"
-                  data-when="yes" data-when-field="isExcluded"
-                  hx-post="/admin/page-langs/restore" hx-ext="json-swap" hx-swap="none">
-                <input type="hidden" name="csrf_token" value="{{csrf}}">
-                <input type="hidden" name="pageId" data-field="pageId" data-field-attr="value">
-                <button type="submit" class="btn btn-sm">{{tr("admin.page.langs.action.restore", "恢复")}}</button>
-            </form>
-            <form method="post" action="/admin/page-langs/exclude"
-                  data-when="no" data-when-field="isExcluded"
-                  hx-post="/admin/page-langs/exclude" hx-ext="json-swap" hx-swap="none">
-                <input type="hidden" name="csrf_token" value="{{csrf}}">
-                <input type="hidden" name="pageId" data-field="pageId" data-field-attr="value">
-                <button type="submit" class="btn btn-sm btn-danger">{{tr("admin.page.langs.action.exclude", "排除")}}</button>
-            </form>
-        </td>
-    </tr>
-</template>

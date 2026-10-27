@@ -62,34 +62,3 @@ type TranslationErrorsResp struct {
 	// Msg 是词条事实 —— 两者在模板里合成一句。
 	Errors []TranslationRowErrorResp
 }
-
-// PageLangRowJSON 语言面板的一行 —— **JSON 出口专用**（局部刷新走 {code,msg,data}）。
-//
-// 与 PageLangResp 的关键差别：**这里只有状态码，没有文案**。
-//
-// 为什么：界面文案必须在 Jet 渲染期按请求语言取好（AGENTS.md「界面走模板的 t/tf」），
-// 而 JSON 响应没有人取词。如果在这里塞成品串，就等于让 Go 侧替渲染期做决定 ——
-// 那是既有的第①条错误（控制器取词）。所以：
-//
-//	· 模板里预置每种状态的节点，用 data-when="excluded|published|draft" 标出；
-//	· JSON 只给 status 码，前端按 data-when 显隐。
-//
-// 译文因此仍然全部在 Jet 里，前端不存第二份词表（与 admin.js 的 label() 同一手法）。
-type PageLangRowJSON struct {
-	Lang string `json:"lang"`
-	// Status 三档之一：excluded / published / draft（与模板的 data-when 取值对应）。
-	Status string `json:"status"`
-	// IsDefault 站点默认语言（不可排除）。
-	IsDefault bool `json:"isDefault"`
-	// CanRepublish 可以点「重新发布」（未排除即可）。
-	CanRepublish bool `json:"canRepublish"`
-	// IsExcluded 当前已排除（决定按钮组显示「恢复」还是「排除」）。
-	IsExcluded bool `json:"isExcluded"`
-}
-
-// PageLangsPanelJSONResp 语言面板的 data 部分。
-type PageLangsPanelJSONResp struct {
-	PageID string            `json:"pageId"`
-	Path   string            `json:"path"`
-	Items  []PageLangRowJSON `json:"items"`
-}
