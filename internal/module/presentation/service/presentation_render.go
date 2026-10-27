@@ -868,7 +868,17 @@ func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.I
 	// 分阶段耗时（PERF-01 验收）：成功与失败都发一条 Info（失败时带原因），
 	// 于是「锁等待还剩多少 / 编译占多少 / 有没有被冲突重试拖长」在生产上可见。
 	metrics := publishSessionMetrics{startedAt: time.Now()}
-	defer func() { s.logPublishSession(inst, metrics, err) }()
+	// frozenLangs 失败前最后一次冻结出来的语言集合：发布历史里要回答「尝试发哪些语言」，
+	// 失败时编译结果不存在，只能取冻结阶段那一份（冻结成功之后才有值）。
+	// 声明在 defer 之前：defer 里的闭包要捕获它。
+	var frozenLangs []string
+	// 发布历史与分阶段日志在同一处收口：两者都要覆盖失败路径（失败时事务已回滚，
+	// 产物表里连行都没有），所以都放在 defer 里、都在事务之外。
+	// recordPublishAttempt 内部永不返回错误 —— 写历史失败不该把一次成功的发布判成失败。
+	defer func() {
+		s.logPublishSession(inst, metrics, err)
+		s.recordPublishAttempt(ctx, inst, intent, frozenLangs, metrics.attempts, primaryArtifactID, err, metrics.total())
+	}()
 
 	var moved error
 	for attempt := 1; attempt <= publishAttempts; attempt++ {
@@ -880,6 +890,7 @@ func (s *Service) publishAllLangs(ctx context.Context, inst *presentationmodel.I
 			return "", ferr
 		}
 		metrics.langs = len(frozen.langs)
+		frozenLangs = frozen.langs
 
 		results, compileWork, cerr := s.compileLangs(ctx, inst, frozen)
 		metrics.compile += compileWork

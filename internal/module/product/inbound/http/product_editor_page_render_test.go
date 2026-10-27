@@ -176,6 +176,12 @@ func (s *editorStub) ProductPublishRecordPage(context.Context, *productdto.Produ
 	return productPublishRecordPageViewStub(nil), nil
 }
 
+// ProductPublishAttempts 发布历史（B11，接口的一部分）；本文件不会调到它。
+func (s *editorStub) ProductPublishAttempts(context.Context, *productdto.PublishAttemptListReq) (*productdto.PublishAttemptListResp, error) {
+	s.record("ProductPublishAttempts")
+	return &productdto.PublishAttemptListResp{Ready: true, Rows: []productdto.PublishAttemptRowResp{}}, nil
+}
+
 // CategoryParentOptions 父级候选片段走读模型（第十四个方法）；本文件不会调到它。
 func (s *editorStub) CategoryParentOptions(context.Context, *productdto.ProductCategoryParentsReq) (productdto.CategoryParentOptionsResp, error) {
 	s.record("CategoryParentOptions")

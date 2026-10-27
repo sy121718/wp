@@ -256,6 +256,9 @@ func (s *Service) RebuildInstance(ctx context.Context, instanceID string) error 
 			// 否则一次实体数据更新就会把可视化自定义静默冲回模板文档。
 			return instanceDocumentFor(fresh, tpl), nil
 		},
+		// 本方法只有两个驱动源（依赖失效与构建队列 executor），都是自动重建：
+		// 没有用户身份，操作人记成系统（actor 零值）。
+		trigger: presentationmodel.PublishTriggerAuto,
 	})
 	return err
 }

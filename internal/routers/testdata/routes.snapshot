@@ -232,6 +232,7 @@ GET /api/product/pricing/adjustment
 GET /api/product/pricing/history
 GET /api/product/pricing/roundings
 GET /api/product/pricing/rules
+GET /api/product/publish-attempts
 GET /api/product/tag/get
 GET /api/product/tag/list
 GET /api/product/tag/products

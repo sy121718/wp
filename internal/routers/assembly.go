@@ -507,8 +507,13 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	}
 
 	// 三层链（SessionAuth + CSRF + Casbin）外面再包一层声明式路由组：注册即声明权限点。
+	//
+	// ActorContextMiddleware 排在 SessionAuth 之后：它只是把身份从 gin.Context 搬进
+	// 请求的 context.Context，让 service 层（发布会话 / 发布历史）能记「谁点的」，
+	// 而不必给每个 contract 方法加参数。见 internal/middleware/builtin/actor_context.go。
 	authorizedAPI := permission.NewRouteGroup(
-		api.Group("", builtin.SessionAuthMiddleware(), builtin.CSRFMiddleware(), builtin.CasbinMiddleware()))
+		api.Group("", builtin.SessionAuthMiddleware(), builtin.ActorContextMiddleware(),
+			builtin.CSRFMiddleware(), builtin.CasbinMiddleware()))
 	a.api = api
 	a.authorizedAPI = authorizedAPI
 	// 系统设置页（/admin/system）：读写 sys_config 的 i18n / trade 两组全局默认值。

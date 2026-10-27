@@ -4,9 +4,9 @@
    是不是最新的（stale）。一行一个商品，多语言的明细折在行内第二层（分页单位与
    「共 N 条」的口径一致 —— 按语言分行会让同一商品重复出现 N 次）。
 
-   **这一屏没有「历史」这一维，这是刻意的**：库里没有记录每次发布尝试成功/失败的明细表
-   （发布回执只覆盖访问面切换那一段，完成后只留终态）。所以这里不给「上次失败」「第几次」
-   这类行 —— 那些数字得有真源支撑，编不出来。要历史，先建表（代价见交付报告）。
+   历史压在行内（迁移 671 的 presentation_publish_attempts）：点行内「发布历史」按需展开，
+   默认 10 条 + 「加载更多」。全记 —— 手动发布、换模板、改 URL、回滚、自动重建都留一行，
+   失败也留（含原因原文），因为「昨晚发了三次为什么线上还是旧版」只有台账能答。
 
    「重新发布」不新开接口：复用 /api/product/detail-template/apply（已有的权限点与写入口，
    模板 ID 留空 = 沿用实例当前绑定，语义就是「按现在的模板再发一次」）。给同一个动作
@@ -23,6 +23,7 @@
 {{records := .Records}}
 {{total := .Total}}
 {{ready := .Ready}}
+{{canHistory := isset(.Buttons["product.publish_attempts"])}}
 {{fKeyword := .FilterKeyword}}
 {{fStatus := .FilterStatus}}
 <div class="stack">
@@ -32,7 +33,7 @@
                 <h1>{{tr("admin.products.publish.title", "发布记录")}}</h1>
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{tr("admin.inventory.help.label", "查看说明")}}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{tr("admin.products.publish.lead", "这里看的是每个商品**当前**的发布状态：有没有建详情页实例、线上路径是什么、什么时候发的、产物是哪一版、要不要重建。")}} {{tr("admin.products.publish.noHistory", "本页只给当前状态，不列发布历史 —— 系统里没有记录每次发布成败的明细表，所以不显示「上次失败」这类信息。")}} {{tr("admin.products.publish.staleHint", "「待重建」表示商品的字段或模板变过、线上还是旧产物：点「重新发布」按当前模板再发一次。")}}</span>
+                    <span class="help-pop" role="tooltip">{{tr("admin.products.publish.lead", "这里看的是每个商品**当前**的发布状态：有没有建详情页实例、线上路径是什么、什么时候发的、产物是哪一版、要不要重建。")}} {{tr("admin.products.publish.history.hint", "行内「发布历史」列出这个商品的每一次发布尝试（含自动重建与失败），默认最近 10 次，可加载更多。")}} {{tr("admin.products.publish.staleHint", "「待重建」表示商品的字段或模板变过、线上还是旧产物：点「重新发布」按当前模板再发一次。")}}</span>
                 </span>
             </div>
             <p class="page-sub">{{tr("admin.products.publish.programLead", "发布的具体动作在多语言的")}}<a href="/admin/product-translations?project={{selectedProject}}">{{tr("admin.products.publish.programLink", "翻译与发布")}}</a>{{tr("admin.products.publish.programTail", "页；模板绑定在商品的编辑页。本页与它们读同一份发布真源。")}}</p>
@@ -163,6 +164,41 @@
                         <button type="submit" class="btn btn-sm" data-requires-js hidden disabled>{{tr("admin.products.publish.republish", "重新发布")}}</button>
                     </form>
                     {{end}}
+                    {* 发布历史：本行展开，数据走 JSON 接口，行由文件末尾的 <template> 填。
+                       历史行容器与该按钮同在一个 <td> 里（不套抽屉：抽屉要求远程片段含 <form>）。
+                       可见性由菜单按钮 product.publish_attempts 决定（迁移 672b）。 *}
+                    {{if canHistory}}
+                    <button type="button" class="btn btn-sm btn-ghost"
+                            hx-get="/api/product/publish-attempts?project={{selectedProject}}&amp;productId={{r.ProductID}}"
+                            hx-ext="json-swap"
+                            hx-target="#ph-{{r.ProductID}}" hx-swap="innerHTML"
+                            data-json-template="#tpl-publish-attempt"
+                            data-json-rows="rows"
+                            data-json-key="id"
+                            data-json-more="page"
+                            data-json-more-target="#ph-more-{{r.ProductID}}"
+                            data-json-empty-target="#ph-empty-{{r.ProductID}}"
+                            data-json-reveal="#ph-box-{{r.ProductID}}">{{tr("admin.products.publish.history.title", "发布历史")}}</button>
+                    {* 历史行容器：初始 hidden，由上面按钮的 data-json-reveal 放出。
+                       放在操作列里（表格列数不变）；行内容由 #tpl-publish-attempt 填充。
+                       与按钮同一个 canHistory 分支：没有按钮就没人能把它打开。 *}
+                    <div class="ph-box" id="ph-box-{{r.ProductID}}" hidden>
+                        <p class="page-sub">{{tr("admin.products.publish.history.lead", "每一次发布尝试都记在这里，含自动重建与失败：失败会留下原因原文。默认显示最近 10 次。")}}</p>
+                        <div class="ph-list" id="ph-{{r.ProductID}}" role="list"></div>
+                        <p class="page-sub ph-empty" id="ph-empty-{{r.ProductID}}" hidden>{{tr("admin.products.publish.history.empty", "这个商品还没有发布尝试记录。")}}</p>
+                        <button type="button" class="btn btn-sm" id="ph-more-{{r.ProductID}}" hidden
+                                hx-get="/api/product/publish-attempts?project={{selectedProject}}&amp;productId={{r.ProductID}}&amp;page=2"
+                                hx-ext="json-swap"
+                                hx-target="#ph-{{r.ProductID}}" hx-swap="innerHTML"
+                                data-json-template="#tpl-publish-attempt"
+                                data-json-rows="rows"
+                                data-json-key="id"
+                                data-json-patch="append"
+                                data-json-more="page"
+                                data-json-empty-target="#ph-empty-{{r.ProductID}}"
+                                data-json-more-hide>{{tr("admin.products.publish.history.more", "加载更多")}}</button>
+                    </div>
+                    {{end}}
                     <a class="btn btn-sm" href="/admin/products/edit?project={{selectedProject}}&id={{r.ProductID}}">{{tr("admin.products.row.edit", "编辑")}}</a>
                 </td>
             </tr>
@@ -175,5 +211,46 @@
         {{include "../partials/pagination.html"}}
     </section>
     {{end}}
+
+    {* ═══ 发布历史（迁移 671）═══
+       数据走接口 GET /api/product/publish-attempts（JSON），行由本页 <template> 填 ——
+       后端不产 HTML 片段（static/js/ui/json_swap.js 开头那条规矩）。
+
+       形态照 internal/templates/admin/page/pages.html:222-229（全仓唯一的 json-swap 用法）：
+       行内按钮 hx-get 打接口、hx-target 指到本行的历史容器、data-json-* 声明模板与行数组。
+       「加载更多」复用同一接口：data-json-patch="append" 追加、data-json-more="page" 由
+       扩展自己把页码推进到下一页，没有下一页时 data-json-more-hide 让这个按钮消失 ——
+       页面里因此没有一行 JS，页码状态也不散在 DOM 属性里由脚本维护。
+
+       接口口径是**累计**（page=N 取最新 N*size 条）：台账只增不删，重复请求同一页恒定
+       返回同一批前缀，扩展按 data-json-key 去重后追加，连点不会插出重复行。 *}
+    <template id="tpl-publish-attempt">
+        <div class="ph-row" data-row>
+            <span class="ph-time" data-field="createdAtText"></span>
+            <span class="ph-outcome">
+                <span data-when="success" data-when-field="outcome">{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.products.publish.history.ok", "成功"))}}</span>
+                <span data-when="failed" data-when-field="outcome">{{include "../partials/badge.html" map("tone", "danger", "label", tr("admin.products.publish.history.failed", "失败"))}}</span>
+            </span>
+            <span class="ph-trigger">
+                {{tr("admin.products.publish.history.trigger", "触发")}}
+                <span data-when="create" data-when-field="trigger">{{tr("admin.products.publish.history.t.create", "首次发布")}}</span>
+                <span data-when="manual" data-when-field="trigger">{{tr("admin.products.publish.history.t.manual", "手动发布")}}</span>
+                <span data-when="template_switch" data-when-field="trigger">{{tr("admin.products.publish.history.t.switch", "换模板")}}</span>
+                <span data-when="update_url" data-when-field="trigger">{{tr("admin.products.publish.history.t.url", "改 URL")}}</span>
+                <span data-when="rollback" data-when-field="trigger">{{tr("admin.products.publish.history.t.rollback", "回滚")}}</span>
+                <span data-when="override" data-when-field="trigger">{{tr("admin.products.publish.history.t.override", "改文档")}}</span>
+                <span data-when="auto_rebuild" data-when-field="trigger">{{tr("admin.products.publish.history.t.auto", "自动重建")}}</span>
+            </span>
+            <span class="ph-who" data-field="operatorName"></span>
+            <span class="ph-langs" data-field="langsText"></span>
+            <span class="ph-artifact" data-field="artifactHash"></span>
+            <span class="ph-cost">
+                <span data-field="durationText"></span>
+                <span data-field="attemptsText"></span>
+            </span>
+            <span class="ph-error" data-field="errorText"></span>
+        </div>
+    </template>
+
 </div>
 {{end}}

@@ -35,6 +35,19 @@
  *   data-json-patch     可选："replace"（默认，整块重渲染）| "append" | "prepend"
  *   data-json-remove    可选：成功响应里 data 的某个键 → 其值匹配 data-json-key 时删掉那行
  *   data-json-norender  可选：不渲染任何内容（用于「删除成功只需移除节点」的场景）
+ *   data-json-more      可选：页码参数名（如 "page"）—— 响应成功后把本元素的 hx-get
+ *                       里的该参数推进到 data.page + 1（累计加载 = 取最新 N 条，
+ *                       重复请求同一页是幂等的）。与下面两条配合时兼管可见性。
+ *   data-json-more-target 可选：选择器 —— 把「推进后的 URL」写到这个元素的 hx-get 上。
+ *                       触发按钮与「加载更多」是两个元素（前者带上查询参数、后者在面板里），
+ *                       由扩展把参数搬过去，页面就不必为每行生成一个更多按钮。
+ *   data-json-more-hide 可选：与 data-json-more 同用 —— hasMore 为假时隐藏本元素。
+ *                       只给「加载更多」那个按钮用：触发按钮不该在没有下一页时消失。
+ *   data-json-reveal    可选：选择器（可用逗号给多个）—— 响应成功后把这些元素从
+ *                       hidden 变可见（行内那个「历史」按钮用它把本行的历史行放出来）。
+ *   data-json-empty-target 可选：选择器 —— 空结果时把它从 hidden 放出、非空时收回。
+ *                       「这个商品还没有记录」这类文案要留在 Jet 里（词表在前端只此一份），
+ *                       所以由扩展统一管显隐，不写第二条脚本。
  *
  * ## 文案怎么来（关键设计）
  *
@@ -244,6 +257,8 @@
             if (patch === 'append' || patch === 'prepend') {
                 // 增量：不要 htmx 换整块，只把新行插进去。
                 tasks.length = 0;
+                // 去重：累计接口重复请求同一页时不产生重复行（data-json-key 为行唯一键）。
+                if (keyField) { holder = dropKnownRows(holder, target, keyField); }
                 var anchor = patch === 'append' ? null : target.firstChild;
                 target.insertBefore(holder, anchor);
                 if (global.htmx && typeof global.htmx.process === 'function') { global.htmx.process(target); }
@@ -253,10 +268,116 @@
                 if (rows.length === 0) { target.setAttribute('data-json-empty', '1'); }
                 else { target.removeAttribute('data-json-empty'); }
             }
+            // 空态文案的显隐：只在「整块重渲染」时判（append 只会让行变多，不会变空）。
+            if (patch !== 'append' && patch !== 'prepend') {
+                toggleEmpty(elt, rows.length === 0);
+            }
+
+            // 累计加载的两件收尾（两种 patch 都要跑）：推进页码 / 放出被隐藏的面板。
+            advanceMore(elt, body.data);
+            revealTargets(elt);
 
             if (body.message) { toast(body.message, true); }
         }
     });
+
+    /**
+     * dropKnownRows 摘掉「目标里已经有同 key 的行」，返回新的 fragment。
+     *
+     * 为什么前端也要去重：累计接口（取最新 N 条）在重复点击「加载更多」时会重复下发
+     * 已经渲染过的行。靠后端做去重就得放弃累计语义、改成游标分页；而游标会让前端
+     * 存一个刷新即丢的隐形状态。行唯一键本来就在 data-json-key 里，这里顺手用掉。
+     */
+    function dropKnownRows(frag, target, keyField) {
+        // 只按「属性存在」取节点、再比 value：属性选择器里带值（[k="v"]）在这个仓的
+        // 测试桩（vm + 手写 DOM）里不成立，而这里只需要一个键集合。
+        var known = {};
+        var existing = target.querySelectorAll ? target.querySelectorAll('[data-row-key]') : [];
+        for (var e = 0; e < existing.length; e++) {
+            known[existing[e].getAttribute('data-row-key')] = 1;
+        }
+        var next = document.createDocumentFragment();
+        // slice：appendChild 会把节点从 frag 里移走，边遍历边移动会跳过元素。
+        var kids = (frag.children || []).slice();
+        for (var i = 0; i < kids.length; i++) {
+            var row = kids[i];
+            var key = row.getAttribute ? row.getAttribute('data-row-key') : null;
+            if (key === null || key === '' || !Object.prototype.hasOwnProperty.call(known, key)) {
+                next.appendChild(row);
+            }
+        }
+        return next;
+    }
+
+    /**
+     * toggleEmpty 按 data-json-empty-target 显示/收回空态文案节点。
+     *
+     * 文案本身留在 Jet 模板里（前端不存第二份词表）；扩展只做显隐。
+     */
+    function toggleEmpty(elt, empty) {
+        var sel = elt.getAttribute ? elt.getAttribute('data-json-empty-target') : null;
+        if (!sel || !document.querySelectorAll) { return; }
+        var nodes = document.querySelectorAll(sel);
+        for (var i = 0; i < nodes.length; i++) {
+            if (empty) { nodes[i].removeAttribute('hidden'); }
+            else { nodes[i].setAttribute('hidden', ''); }
+        }
+    }
+
+    /**
+     * revealTargets 把 elt 用 data-json-reveal 点名的元素从 hidden 放出来。
+     *
+     * 用途是「打开面板」：面板与「加载更多」都渲染在页面里但初始 hidden，
+     * 第一次请求成功后由这个属性放出 —— 比另写一段脚本管可见性省一整套状态。
+     */
+    function revealTargets(elt) {
+        var sel = elt.getAttribute ? elt.getAttribute('data-json-reveal') : null;
+        if (!sel) { return; }
+        var nodes = document.querySelectorAll ? document.querySelectorAll(sel) : [];
+        for (var i = 0; i < nodes.length; i++) {
+            nodes[i].removeAttribute('hidden');
+        }
+    }
+
+    /**
+     * advanceMore 推进「加载更多」按钮：页码 +1，没有下一页就自己隐藏。
+     *
+     * 触发元素上声明 data-json-more="page"，响应里给 page / hasMore 两个事实 ——
+     * 前端不需要另写脚本管页码状态，这一点与「DOM 由模板填充」是同一个思路。
+     */
+    function advanceMore(elt, data) {
+        var param = elt.getAttribute && elt.getAttribute('data-json-more');
+        if (!param) { return; }
+        var carry = elt.getAttribute && elt.getAttribute('data-json-more-target');
+        if (carry) {
+            var host = document.querySelector ? document.querySelector(carry) : null;
+            if (host) {
+                host.setAttribute('hx-get', nextPageURL(elt, param, data));
+                if (data && data.hasMore) { host.removeAttribute('hidden'); }
+            }
+        }
+        var hasMore = !!(data && data.hasMore);
+        var page = Number(data && data.page) || 0;
+        if (!hasMore) {
+            if (elt.hasAttribute('data-json-more-hide')) {
+                elt.hidden = true;
+                elt.setAttribute('aria-disabled', 'true');
+            }
+            return;
+        }
+        elt.hidden = false;
+        elt.removeAttribute('aria-disabled');
+        elt.setAttribute('hx-get', nextPageURL(elt, param, data));
+    }
+
+    /** nextPageURL 把 elt 的 hx-get 里的页码推进到 data.page + 1（缺参数时补上）。 */
+    function nextPageURL(elt, param, data) {
+        var url = elt.getAttribute('hx-get') || '';
+        var next = String((Number(data && data.page) || 0) + 1);
+        var re = new RegExp('([?&])' + param + '=\\d+');
+        if (re.test(url)) { return url.replace(re, '$1' + param + '=' + next); }
+        return url + (url.indexOf('?') >= 0 ? '&' : '?') + param + '=' + next;
+    }
 
     function removeRow(target, keyField, value) {
         if (!keyField || value === null || value === undefined) { return; }

@@ -319,6 +319,10 @@ func (s failedAttributeListService) ProductAttributesPage(ctx context.Context, r
 	return s.reader.ProductAttributesPage(ctx, req)
 }
 
+func (s failedAttributeListService) ProductPublishAttempts(ctx context.Context, req *productdto.PublishAttemptListReq) (*productdto.PublishAttemptListResp, error) {
+	return s.reader.ProductPublishAttempts(ctx, req)
+}
+
 func TestProductEditPageAttributeListFailure(t *testing.T) {
 	_, f := newVariantPageEngine(t)
 	if f == nil {

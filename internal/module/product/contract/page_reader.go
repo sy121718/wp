@@ -139,6 +139,15 @@ type ProductPageReader interface {
 	//     可见提示，与「数据读不到」是两档 —— 混用会让「没接上」被说成「读不出来」。
 	ProductPublishRecordPage(ctx context.Context, req *productdto.ProductPublishRecordPageReq) (res *productdto.ProductPublishRecordPageResp, err error)
 
+	// ProductPublishAttempts 发布记录页「发布历史」面板的取数（迁移 671，JSON 出口）。
+	//
+	// 交事实不交 HTML：时间给毫秒数、结果与触发源给码值，页面里的 Jet <template> 按
+	// data-when 显隐 —— 后端不产 HTML 片段（internal/templates/CLAUDE.md §json_swap）。
+	//
+	// 三条判据这一屏特有：空 productId 与不存在的工程都是 400（参数不合法）；台账端口
+	// 未装配返回 Ready=false 且 200（装配缺陷与「读不到」是两档）。
+	ProductPublishAttempts(ctx context.Context, req *productdto.PublishAttemptListReq) (res *productdto.PublishAttemptListResp, err error)
+
 	// CategoryParentOptions 分类抽屉「父级」候选的一屏（搜索式）。
 	//
 	// 参数级判据在服务端给：工程不存在 / 没给工程一律返回业务错误（出口给 400），

@@ -149,6 +149,19 @@ type productPageReaderStub struct {
 	publishView *productdto.ProductPublishRecordPageResp
 	publishErr  error
 	publishReqs []*productdto.ProductPublishRecordPageReq
+
+	// 发布历史（B11）：只读 JSON 接口，桩同样记入参。
+	attemptView *productdto.PublishAttemptListResp
+	attemptErr  error
+	attemptReqs []*productdto.PublishAttemptListReq
+}
+
+func (s *productPageReaderStub) ProductPublishAttempts(_ context.Context, req *productdto.PublishAttemptListReq) (*productdto.PublishAttemptListResp, error) {
+	s.attemptReqs = append(s.attemptReqs, req)
+	if s.attemptView == nil && s.attemptErr == nil {
+		return &productdto.PublishAttemptListResp{Ready: true, Rows: []productdto.PublishAttemptRowResp{}}, nil
+	}
+	return s.attemptView, s.attemptErr
 }
 
 func (s *productPageReaderStub) ProductPublishRecordPage(_ context.Context, req *productdto.ProductPublishRecordPageReq) (*productdto.ProductPublishRecordPageResp, error) {

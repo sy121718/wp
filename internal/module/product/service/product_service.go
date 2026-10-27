@@ -103,6 +103,11 @@ type Service struct {
 	// 可空而不是必填：未注入时那一屏照常 200，只是给一句「发布能力未装配」——
 	// 与「读不到」是两档（未装配要人去查装配，读不到可以重试）。
 	pagePublishRecords productcontract.PublishRecordReader
+	// pagePublishAttempts 发布历史面板的只读端口（迁移 671，装配期注入，可空）。
+	//
+	// 与 pagePublishRecords 分开：两条能力各有自己的降级（这一格未装配时面板说
+	// 「没接上」，而发布记录整页照常工作）。
+	pagePublishAttempts productcontract.PublishAttemptReader
 }
 
 // SetDetailTemplatePort 注入「详情页模板」整页的主数据端口（装配期调用）。
@@ -121,6 +126,14 @@ func (s *Service) SetDetailTemplatePort(port productcontract.DetailTemplatePort)
 // 会让「只调 handle 的 setter」的路径静默漏接。
 func (s *Service) SetPublishRecordPort(port productcontract.PublishRecordReader) {
 	s.pagePublishRecords = port
+}
+
+// SetPublishAttemptPort 注入发布历史面板的只读端口（迁移 671，装配期调用）。
+//
+// 同样由 inbound/http 的 SetPublishRecordDeps 转交：两条端口来自同一个 presentation 值，
+// 分成两个 setter 只因为它们各有降级，不是因为到达点不同。
+func (s *Service) SetPublishAttemptPort(port productcontract.PublishAttemptReader) {
+	s.pagePublishAttempts = port
 }
 
 // SetInventory 注入库存真源只读契约；漏接会静默跳过投影和删除守卫，装配期必须自检。

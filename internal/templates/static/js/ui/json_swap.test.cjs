@@ -38,7 +38,7 @@ function makeEnv(templateRow) {
             removeAttribute(k) { delete this.attrs[k]; },
             appendChild(c) {
                 // 真实 DOM：appendChild(DocumentFragment) 移动它的子节点，而不是插入 fragment 本身。
-                if (c && c.tagName === '#fragment') {
+                if (c && String(c.tagName).toUpperCase() === '#FRAGMENT') {
                     c.children.slice().forEach((ch) => { this.children.push(ch); ch.parentNode = this; c.removeChild(ch); });
                     return c;
                 }
@@ -47,6 +47,13 @@ function makeEnv(templateRow) {
                 return c;
             },
             insertBefore(c, ref) {
+                // 真实 DOM：插入 DocumentFragment 时移动的是它的子节点（与 appendChild 同一语义）。
+                // 少了这段，「追加 N 行」会被桩记成「插入 1 个 fragment 节点」，断言全错。
+                if (c && String(c.tagName).toUpperCase() === '#FRAGMENT') {
+                    const moving = c.children.slice();
+                    moving.forEach((ch) => { c.removeChild(ch); this.insertBefore(ch, ref); });
+                    return c;
+                }
                 const i = ref ? this.children.indexOf(ref) : -1;
                 if (i < 0) { this.children.push(c); } else { this.children.splice(i, 0, c); }
                 c.parentNode = this;
@@ -317,4 +324,73 @@ test('data-when：全部不命中时该单元格为空（不残留别的状态�
 
     const root = env.win.WBJSON.fillRow(tpl, { status: 'draft' }, null);
     assert.equal(root.children[0].children.length, 0);
+});
+
+
+// ── 累计加载（data-json-more）──────────────────────────────────────────────
+// 这两条守的是「加载更多」的静默退化：重复点击会插重复行、没有下一页时按钮还在，
+// 两者在界面上都不报错，只是越点越长。
+
+test('data-json-patch=append：按 data-json-key 去重，重复页不产生重复行', () => {
+    const env = makeEnv(['lang']);
+    const { target, elt, tasks, detail } = swapDetail(env, JSON.stringify({
+        code: 0, message: '', data: { items: [{ lang: 'zh' }, { lang: 'en' }], page: 1, hasMore: true }
+    }));
+    elt.setAttribute('data-json-patch', 'append');
+    env.ext.def.htmx_before_swap(elt, detail);
+
+    assert.equal(target.children.length, 2, '首次追加两行');
+
+    // 同一页再来一次（用户连点）：一行都不该新增
+    const again = swapDetail(env, JSON.stringify({
+        code: 0, message: '', data: { items: [{ lang: 'zh' }, { lang: 'en' }], page: 1, hasMore: true }
+    }));
+    again.elt.setAttribute('data-json-patch', 'append');
+    // 把已渲染的两行搬到新 target 上，模拟「目标里已有这两行」
+    target.children.slice().forEach((c) => again.target.appendChild(c));
+    env.ext.def.htmx_before_swap(again.elt, again.detail);
+    assert.equal(again.target.children.length, 2, '重复页不该新增行');
+});
+
+test('data-json-more：hasMore 为假时隐藏按钮，不再推进页码', () => {
+    const env = makeEnv(['lang']);
+    const { target, elt, detail } = swapDetail(env, JSON.stringify({
+        code: 0, message: '', data: { items: [{ lang: 'zh' }], page: 3, hasMore: false }
+    }));
+    elt.setAttribute('data-json-patch', 'append');
+    elt.setAttribute('data-json-more', 'page');
+    elt.setAttribute('data-json-more-hide', '');
+    elt.setAttribute('hx-get', '/api/product/publish-attempts?productId=p1&page=3');
+    env.ext.def.htmx_before_swap(elt, detail);
+
+    assert.equal(elt.hidden, true, '没有下一页必须隐藏「加载更多」按钮');
+    assert.equal(elt.getAttribute('hx-get'), '/api/product/publish-attempts?productId=p1&page=3', '页码不推进');
+    assert.equal(target.children.length, 1);
+});
+
+test('data-json-more：hasMore 为真时把 hx-get 的页码推进到 page+1', () => {
+    const env = makeEnv(['lang']);
+    const { target, elt, detail } = swapDetail(env, JSON.stringify({
+        code: 0, message: '', data: { items: [{ lang: 'zh' }], page: 1, hasMore: true }
+    }));
+    elt.setAttribute('data-json-patch', 'append');
+    elt.setAttribute('data-json-more', 'page');
+    elt.setAttribute('hx-get', '/api/product/publish-attempts?productId=p1&page=1');
+    env.ext.def.htmx_before_swap(elt, detail);
+
+    assert.equal(elt.hidden, false, '有下一页（且已显式放出来）');
+    assert.equal(elt.getAttribute('hx-get'), '/api/product/publish-attempts?productId=p1&page=2');
+    assert.equal(target.children.length, 1);
+});
+
+test('data-json-more：hx-get 里还没有 page 参数时补上', () => {
+    const env = makeEnv(['lang']);
+    const { elt, detail } = swapDetail(env, JSON.stringify({
+        code: 0, message: '', data: { items: [{ lang: 'zh' }], page: 1, hasMore: true }
+    }));
+    elt.setAttribute('data-json-patch', 'append');
+    elt.setAttribute('data-json-more', 'page');
+    elt.setAttribute('hx-get', '/api/product/publish-attempts?productId=p1');
+    env.ext.def.htmx_before_swap(elt, detail);
+    assert.equal(elt.getAttribute('hx-get'), '/api/product/publish-attempts?productId=p1&page=2');
 });

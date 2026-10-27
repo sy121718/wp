@@ -43,6 +43,10 @@ type PresentationService interface {
 	// 与 DetailTemplateModePort 同一手法 —— 收窄端口声明在 publish_record.go，
 	// 主服务嵌它，装配层持有的本接口值因此直接满足那条端口，注入无需运行期断言。
 	PublishRecordPort
+	// PublishAttemptPort 发布历史只读口（迁移 671）：按实体分页读「都试过哪几次、谁点的、
+	// 为什么没成」。与 PublishRecordPort 同一手法 —— 收窄端口声明在 publish_attempt.go，
+	// 主服务嵌它，装配层持有的本接口值直接满足那条端口，注入无需运行期断言。
+	PublishAttemptPort
 	// ClearOverride 清除实例级文档覆盖并按（新）模板重建：放弃自定义 / 换底稿。
 	// 语义等同端口的 ReapplyPreset，保留它是因为既有调用点用这个名字。
 	ClearOverride(ctx context.Context, req *presentationdto.ClearOverrideReq) (res *presentationdto.InstanceResp, err error)

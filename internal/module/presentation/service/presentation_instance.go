@@ -159,6 +159,7 @@ func (s *Service) CreateInstance(ctx context.Context, req *presentationdto.Creat
 			return s.resolveBoundTemplate(ctx, fresh, req.TemplateID)
 		},
 		logicalPath: logicalPath,
+		trigger:     presentationmodel.PublishTriggerCreate,
 	}); err != nil {
 		return nil, publishFailedErr(err)
 	}
@@ -514,7 +515,8 @@ func (s *Service) SaveOverrideDocument(ctx context.Context, req *presentationdto
 			pending.RenderMode = presentationmodel.RenderModeDocument
 			return instanceDocumentFor(&pending, bound), nil
 		},
-		mode: mode,
+		mode:    mode,
+		trigger: presentationmodel.PublishTriggerOverride,
 	}); err != nil {
 		return nil, publishFailedErr(err)
 	}
@@ -543,11 +545,18 @@ func (s *Service) ReapplyPreset(ctx context.Context, req *presentationdto.Reappl
 	// 实例锁由发布会话分段持有（PERF-01）：解析绑定与编译在锁外，版本分配与指针推进在锁内。
 	switchTo := strings.TrimSpace(req.TemplateID)
 	mode := &instanceModePending{renderMode: presentationmodel.RenderModeTemplate}
+	// 触发源：带 templateId 是「换模板」，不带是「放弃独立文档回到跟随模板」——
+	// 两者在发布历史上要能分开看（后者是撤销操作，前者是决策）。
+	trigger := presentationmodel.PublishTriggerSwitch
+	if switchTo == "" {
+		trigger = presentationmodel.PublishTriggerManual
+	}
 	if _, err = s.publishAllLangs(ctx, inst, publishIntent{
 		resolveDoc: func(ctx context.Context, fresh *presentationmodel.InstanceEntity) (*contenttemplatecontract.ResolvedTemplate, error) {
 			return s.resolveBoundTemplate(ctx, fresh, switchTo)
 		},
-		mode: mode,
+		mode:    mode,
+		trigger: trigger,
 	}); err != nil {
 		return nil, publishFailedErr(err)
 	}
@@ -622,6 +631,7 @@ func (s *Service) UpdateURL(ctx context.Context, req *presentationdto.UpdateURLR
 			return s.resolveBoundTemplate(ctx, fresh, "")
 		},
 		logicalPath: newLogical,
+		trigger:     presentationmodel.PublishTriggerURL,
 	})
 	if err != nil {
 		return nil, publishFailedErr(err)
@@ -1051,7 +1061,8 @@ func (s *Service) RollbackDocument(ctx context.Context, req *presentationdto.Rol
 			pending.RenderMode = presentationmodel.RenderModeDocument
 			return instanceDocumentFor(&pending, bound), nil
 		},
-		mode: mode,
+		mode:    mode,
+		trigger: presentationmodel.PublishTriggerRollback,
 	}); err != nil {
 		return nil, publishFailedErr(err)
 	}
