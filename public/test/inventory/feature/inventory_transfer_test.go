@@ -52,6 +52,19 @@ func (s *stubAttachments) ResolveAttachments(ctx context.Context, projectID stri
 	return out, nil
 }
 
+// mustApproveTransfer 同意一张刚建的调拨申请（迁移 651 起建单落 requested，出货前必须先同意）。
+//
+// 单独一个 helper 而不是在每个用例里写三行：调拨的**被测行为**不是审批本身
+// （审批有自己的用例），其余用例只需要「这张单已经批过了」这个前置。
+func mustApproveTransfer(t *testing.T, f *invFixture, id string) {
+	t.Helper()
+	if _, err := f.inventory.ApproveTransfer(context.Background(), &inventorydto.TransferApproveReq{
+		ProjectID: f.projectID, ID: id,
+	}); err != nil {
+		t.Fatalf("同意调拨失败: %v", err)
+	}
+}
+
 // transferStockID 该变体在某仓的库存行 id（调拨明细要用它）。
 func (f *invFixture) transferStockID(t *testing.T, variantID, warehouseID string) string {
 	t.Helper()
@@ -202,6 +215,7 @@ func TestTransferRequiresVoucherOnShipAndReceive(t *testing.T) {
 	}
 
 	// ④ 无凭证出货被拒。
+	mustApproveTransfer(t, f, created.ID)
 	if _, err := f.inventory.ShipTransfer(ctx, &inventorydto.TransferShipReq{
 		ProjectID: f.projectID, ID: created.ID,
 	}); !errors.Is(err, inventoryenums.Err(inventoryenums.ErrAttachmentRequired)) {
@@ -265,6 +279,7 @@ func TestTransferUnknownAttachmentRollsBack(t *testing.T) {
 	}
 
 	// 一张合法 + 一张不存在：整体拒绝。
+	mustApproveTransfer(t, f, created.ID)
 	if _, err := f.inventory.ShipTransfer(ctx, &inventorydto.TransferShipReq{
 		ProjectID: f.projectID, ID: created.ID, AttachmentIDs: []int64{1, 999},
 	}); !errors.Is(err, inventoryenums.Err(inventoryenums.ErrAttachmentNotFound)) {
@@ -303,6 +318,7 @@ func TestTransferFullChain(t *testing.T) {
 	}
 
 	// 出货：源仓 −5、流水 +1（transfer_out）、状态 in_transit。
+	mustApproveTransfer(t, f, created.ID)
 	if _, err := f.inventory.ShipTransfer(ctx, &inventorydto.TransferShipReq{
 		ProjectID: f.projectID, ID: created.ID, AttachmentIDs: []int64{1},
 	}); err != nil {
@@ -370,6 +386,7 @@ func TestTransferUnclaimedStock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("未认领行的调拨建单失败: %v", err)
 	}
+	mustApproveTransfer(t, f, created.ID)
 	if _, err := f.inventory.ShipTransfer(ctx, &inventorydto.TransferShipReq{
 		ProjectID: f.projectID, ID: created.ID, AttachmentIDs: []int64{1},
 	}); err != nil {
@@ -454,6 +471,7 @@ func TestTransferAttachmentUniqueIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建单失败: %v", err)
 	}
+	mustApproveTransfer(t, f, created.ID)
 	if _, err := f.inventory.ShipTransfer(ctx, &inventorydto.TransferShipReq{
 		ProjectID: f.projectID, ID: created.ID, AttachmentIDs: []int64{1},
 	}); err != nil {
@@ -502,6 +520,7 @@ func TestTransferCancelOnlyPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建第二张单失败: %v", err)
 	}
+	mustApproveTransfer(t, f, shipped.ID)
 	if _, err := f.inventory.ShipTransfer(ctx, &inventorydto.TransferShipReq{
 		ProjectID: f.projectID, ID: shipped.ID, AttachmentIDs: []int64{1},
 	}); err != nil {

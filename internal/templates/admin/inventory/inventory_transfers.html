@@ -1,12 +1,23 @@
-{* admin/inventory_transfers.html — 调拨单（迁移 627，W3）
+{* admin/inventory/inventory_transfers.html — 调拨单（迁移 630 + 651）
 
-   状态机：pending → in_transit → completed，或 pending → cancelled。
-   **出货与签收各需凭证附件**（用户明确要求）：两张弹层里凭证是必填的，
-   一张都没有时前端不发请求、服务端也会拒（ErrAttachmentRequired）。
+   状态机：requested → pending → in_transit → completed，
+   另有 requested → rejected（驳回）与 requested/pending → cancelled。
+   **出货与签收各需凭证附件**：那两个抽屉里凭证是必填的，一张都没有时服务端直接拒
+   （ErrAttachmentRequired）。
 
-   列表：单号 / 源仓 → 目标仓 / 状态 / 品类数 / 总数量 / 创建时间 / 操作。
+   列表：单号 / 仓库 / 状态 / 品类数 / 总数量 / 创建时间 / 驳回原因 / 操作。
    「品类数 / 总数量」由 service（SQL 聚合）算好，模板不做聚合。
-   建单 / 出货 / 签收 / 取消全部走 JSON API（data-write-api），页面不另挂写端点。 *}
+
+   按钮按状态分档，摆一个点了必失败的按钮只是噪声：
+     requested → 同意 / 驳回 / 取消
+     pending   → 出货 / 取消
+     in_transit → 签收
+
+   写表单全部走 JSON 端点（data-write + data-write-url + data-write-status）：
+   binding.JSON 按 Content-Type 自适应，表单体与 JSON 都能进同一个 handler。
+
+   明细行是 lines[i].stockId / lines[i].quantity：表单没有嵌套数组语法，DTO 的
+   BindForm 收这个形状（见 inventory_transfer_req.go）。 *}
 {{extends "../layout.html"}}
 {{block body()}}
 {{tr := .["t"]}}
@@ -21,14 +32,14 @@
                 <h1>{{tr("admin.inventory.transfers.title", "调拨单")}}</h1>
                 <span class="help">
                     <button type="button" class="help-btn" aria-label="{{tr("admin.inventory.help.label", "查看说明")}}" aria-expanded="false">?</button>
-                    <span class="help-pop" role="tooltip">{{tr("admin.inventory.transfers.hint", "调拨是仓库之间的移库：建单时定两个仓，出货扣源仓、签收加目标仓。出货与签收都必须上传凭证附件 —— 一张没有凭证的移库事后无法证明货是谁交出去的、谁签收的。")}}</span>
+                    <span class="help-pop" role="tooltip">{{tr("admin.inventory.transfers.hint", "调拨是仓库之间的移库：申请 → 同意 → 出货（扣源仓）→ 签收（加目标仓）。出货与签收都必须上传凭证附件 —— 一张没有凭证的移库事后无法证明货是谁交出去的、谁签收的。")}}</span>
                 </span>
             </div>
-            <p class="page-sub">{{tr("admin.inventory.transfers.sub", "调拨用的是可售数量（被订单预占的部分不能调拨）。无归属的货也可以调拨 —— 它同样是仓库里的一批货。")}}</p>
+            <p class="page-sub">{{tr("admin.inventory.transfers.sub", "调拨用的是可售数量（被订单预占的部分不能调拨）。无归属的货也可以调拨 —— 它同样是仓库里的一批货。建单只是申请，同意之后才能出货。")}}</p>
         </div>
         <div class="page-actions">
             <button type="button" class="btn btn-primary" data-drawer-open="#tpl-transfer-create"
-                    data-drawer-title="{{tr("admin.inventory.transfers.create", "新建调拨单")}}">＋ {{tr("admin.inventory.transfers.create", "新建调拨单")}}</button>
+                    data-drawer-title="{{tr("admin.inventory.transfers.create", "发起调拨申请")}}">＋ {{tr("admin.inventory.transfers.create", "发起调拨申请")}}</button>
             {{if len(.Projects) > 1}}
             <form class="page-context" method="get" action="/admin/inventory/transfers">
                 <label class="sr-only" for="tr-project">{{tr("admin.inventory.field.project", "站点工程")}}</label>
@@ -85,15 +96,16 @@
                 <th>{{tr("admin.inventory.transfers.col.items", "品类数")}}</th>
                 <th>{{tr("admin.inventory.transfers.col.totalQty", "总数量")}}</th>
                 <th>{{tr("admin.inventory.transfers.col.createdAt", "创建时间")}}</th>
+                <th>{{tr("admin.inventory.transfers.col.rejected", "驳回原因")}}</th>
                 <th class="col-actions">{{tr("admin.common.col.actions", "操作")}}</th>
             </tr>
             </thead>
             <tbody>
             {{if len(rows) == 0}}
-            <tr><td colspan="7" class="cell-wrap">
+            <tr><td colspan="8" class="cell-wrap">
                 {{include "../partials/empty_state.html" map(
                     "title", tr("admin.inventory.transfers.emptyHeading", "还没有调拨单"),
-                    "desc", tr("admin.inventory.transfers.emptyDesc", "仓库之间移库时用「新建调拨单」：建单 → 出货（需凭证）→ 签收（需凭证）。"))}}
+                    "desc", tr("admin.inventory.transfers.emptyDesc", "仓库之间移库时用「发起调拨申请」：申请 → 同意 → 出货（需凭证）→ 签收（需凭证）。"))}}
             </td></tr>
             {{else}}
             {{range _, r := rows}}
@@ -104,29 +116,37 @@
                 </td>
                 <td data-label="{{tr("admin.inventory.transfers.col.status", "状态")}}">
                     {* 配色按「还需要人做什么」分档：完成后不需要动（success）、在途要盯（info）、
-                       待出货要发（warning）、取消不用管（mute）。 *}
-                    {* 展示文案按 Status 在模板侧取词（dto 不带展示字段）：
-                       「中文兜底留在取词调用点」与 inventory 模块既有口径一致。 *}
+                       待审批/待出货要人动手（warning）、驳回要回话（danger）、取消不用管（mute）。 *}
                     {{if r.Status == "completed"}}{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.inventory.transfers.status.completed", "已完成"))}}
                     {{else if r.Status == "in_transit"}}{{include "../partials/badge.html" map("tone", "info", "label", tr("admin.inventory.transfers.status.in_transit", "在途"))}}
                     {{else if r.Status == "pending"}}{{include "../partials/badge.html" map("tone", "warning", "label", tr("admin.inventory.transfers.status.pending", "待出货"))}}
+                    {{else if r.Status == "requested"}}{{include "../partials/badge.html" map("tone", "warning", "label", tr("admin.inventory.transfers.status.requested", "待审批"))}}
+                    {{else if r.Status == "rejected"}}{{include "../partials/badge.html" map("tone", "danger", "label", tr("admin.inventory.transfers.status.rejected", "已驳回"))}}
                     {{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.inventory.transfers.status.cancelled", "已取消"))}}{{end}}
+                    {{if r.ApprovedName != ""}}<span class="move-meta">{{r.ApprovedName}}</span>{{end}}
                 </td>
                 <td data-label="{{tr("admin.inventory.transfers.col.items", "品类数")}}">{{r.ItemCount}}</td>
                 <td data-label="{{tr("admin.inventory.transfers.col.totalQty", "总数量")}}">{{r.TotalQuantity}}</td>
                 <td data-label="{{tr("admin.inventory.transfers.col.createdAt", "创建时间")}}">{{r.CreateTime}}</td>
+                <td data-label="{{tr("admin.inventory.transfers.col.rejected", "驳回原因")}}">{{if r.RejectedReason != ""}}{{r.RejectedReason}}{{else}}—{{end}}</td>
                 <td class="col-actions" data-label="{{tr("admin.common.col.actions", "操作")}}">
-                    {* 出货：仅 pending；签收：仅 in_transit；取消：仅 pending。
-                       按钮按状态分档渲染 —— 摆一个点了必失败的按钮只是噪声。 *}
+                    {{if r.Status == "requested"}}
+                    <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-transfer-approve-{{r.ID}}"
+                            data-drawer-title="{{tr("admin.inventory.transfers.approveTitle", "同意这次调拨")}}">{{tr("admin.inventory.transfers.approve", "同意")}}</button>
+                    <button type="button" class="btn btn-sm btn-danger" data-drawer-open="#tpl-transfer-reject-{{r.ID}}"
+                            data-drawer-title="{{tr("admin.inventory.transfers.rejectTitle", "驳回这次调拨")}}">{{tr("admin.inventory.transfers.reject", "驳回")}}</button>
+                    {{end}}
                     {{if r.Status == "pending"}}
                     <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-transfer-ship-{{r.ID}}"
                             data-drawer-title="{{tr("admin.inventory.transfers.ship", "出货（需凭证）")}}">{{tr("admin.inventory.transfers.ship", "出货")}}</button>
-                    <button type="submit" form="tr-cancel-{{r.ID}}" class="btn btn-sm btn-danger"
-                            data-confirm="{{tr("admin.inventory.transfers.cancelConfirm", "取消这张调拨单？")}}" data-confirm-danger>{{tr("admin.inventory.transfers.cancel", "取消")}}</button>
                     {{end}}
                     {{if r.Status == "in_transit"}}
                     <button type="button" class="btn btn-sm btn-primary" data-drawer-open="#tpl-transfer-receive-{{r.ID}}"
                             data-drawer-title="{{tr("admin.inventory.transfers.receive", "签收（需凭证）")}}">{{tr("admin.inventory.transfers.receive", "签收")}}</button>
+                    {{end}}
+                    {{if r.Status == "requested" || r.Status == "pending"}}
+                    <button type="submit" form="tr-cancel-{{r.ID}}" class="btn btn-sm btn-ghost" data-requires-js hidden disabled
+                            data-confirm="{{tr("admin.inventory.transfers.cancelConfirm", "取消这张调拨单？")}}" data-confirm-danger>{{tr("admin.inventory.transfers.cancel", "取消")}}</button>
                     {{end}}
                 </td>
             </tr>
@@ -140,9 +160,11 @@
 
     {* ===== 取消（隐藏表单，按钮用 form="<id>" 关联） ===== *}
     {{range _, r := rows}}
-    {{if r.Status == "pending"}}
-    <form id="tr-cancel-{{r.ID}}" data-write-api="/api/inventory/transfer/cancel" data-write-nav method="post" class="hidden-form">
+    {{if r.Status == "requested" || r.Status == "pending"}}
+    <form id="tr-cancel-{{r.ID}}" data-write="custom" data-write-url="/api/inventory/transfer/cancel"
+          data-write-reload class="hidden-form">
         {{include "../partials/csrf_field.html" map("csrf", csrf)}}
+        <p class="form-hint" data-write-status role="status" hidden></p>
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="id" value="{{r.ID}}">
         <input type="hidden" name="remark" value="{{tr("admin.inventory.transfers.cancelRemark", "运营在列表页取消")}}">
@@ -150,29 +172,91 @@
     {{end}}
     {{end}}
 
+    {* ===== 同意调拨（可改目标仓） ===== *}
+    {{range _, r := rows}}
+    {{if r.Status == "requested"}}
+    <template id="tpl-transfer-approve-{{r.ID}}">
+        <form data-write="custom" data-write-url="/api/inventory/transfer/approve" data-write-reload>
+            {{include "../partials/csrf_field.html" map("csrf", csrf)}}
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{r.ID}}">
+            <p class="hint">{{r.TransferNo}}<code>{{r.FromCode}}</code> → <code>{{r.ToCode}}</code> · {{r.TotalQuantity}} {{tr("admin.inventory.transfers.units", "件")}}</p>
+            <p class="hint">{{tr("admin.inventory.transfers.approveHint", "同意时会再核一次源仓可售：申请到现在这段时间里，这批货可能已被订单预占。")}}</p>
+            <div class="form-group">
+                <label class="form-label" for="tr-approve-to-{{r.ID}}">{{tr("admin.inventory.transfers.approveToWh", "目标仓（可改）")}}</label>
+                <select class="form-select" id="tr-approve-to-{{r.ID}}" name="toWarehouseId">
+                    <option value="">{{tr("admin.inventory.transfers.approveKeepTo", "沿用申请时的目标仓")}}</option>
+                    {{range _, w := $.Warehouses}}
+                    <option value="{{w.ID}}">{{w.Name}} ({{w.Code}})</option>
+                    {{end}}
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="tr-approve-remark-{{r.ID}}">{{tr("admin.inventory.transfers.remark", "备注")}}</label>
+                <input type="text" class="form-input" id="tr-approve-remark-{{r.ID}}" name="remark" maxlength="200" autocomplete="off">
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{tr("admin.inventory.transfers.approveSubmit", "确认同意")}}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+    {{end}}
+
+    {* ===== 驳回（理由必填） ===== *}
+    {{range _, r := rows}}
+    {{if r.Status == "requested"}}
+    <template id="tpl-transfer-reject-{{r.ID}}">
+        <form data-write="custom" data-write-url="/api/inventory/transfer/reject" data-write-reload>
+            {{include "../partials/csrf_field.html" map("csrf", csrf)}}
+            <p class="form-hint" data-write-status role="status" hidden></p>
+            <input type="hidden" name="projectId" value="{{selectedProject}}">
+            <input type="hidden" name="id" value="{{r.ID}}">
+            <p class="hint">{{r.TransferNo}}<code>{{r.FromCode}}</code> → <code>{{r.ToCode}}</code> · {{r.TotalQuantity}} {{tr("admin.inventory.transfers.units", "件")}}</p>
+            <div class="form-group">
+                <label class="form-label req" for="tr-reject-reason-{{r.ID}}">{{tr("admin.inventory.transfers.rejectReason", "驳回理由")}}</label>
+                <textarea class="form-textarea" id="tr-reject-reason-{{r.ID}}" name="reason" rows="3" required maxlength="500"
+                          placeholder="{{tr("admin.inventory.transfers.rejectReasonPh", "写清楚为什么调不了：库存不够 / 目标仓满了 / 换个仓再提……")}}"></textarea>
+                <p class="hint">{{tr("admin.inventory.transfers.rejectReasonHint", "理由会显示在列表的「驳回原因」列，申请人据此决定怎么改。")}}</p>
+            </div>
+            <div class="action-row">
+                <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
+                <button type="submit" class="btn btn-danger" data-requires-js hidden disabled>{{tr("admin.inventory.transfers.rejectSubmit", "确认驳回")}}</button>
+            </div>
+        </form>
+    </template>
+    {{end}}
+    {{end}}
+
     {* ===== 出货（需凭证） ===== *}
     {{range _, r := rows}}
     {{if r.Status == "pending"}}
     <template id="tpl-transfer-ship-{{r.ID}}">
-        <form data-write-api="/api/inventory/transfer/ship" data-write-nav method="post">
+        <form data-write="custom" data-write-url="/api/inventory/transfer/ship" data-write-reload>
             {{include "../partials/csrf_field.html" map("csrf", csrf)}}
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{r.ID}}">
             <p class="hint">{{r.TransferNo}}<code>{{r.FromCode}}</code> → <code>{{r.ToCode}}</code> · {{r.TotalQuantity}} {{tr("admin.inventory.transfers.units", "件")}}</p>
-            {* 凭证必填：服务端在 AttachmentIDs 为空时直接拒（ErrAttachmentRequired）。
-               前端在这里把「至少一张」写出来，避免用户点了提交才看到错误。 *}
             <div class="form-group">
                 <label class="form-label req">{{tr("admin.inventory.transfers.attachments", "出货凭证")}}</label>
                 <p class="hint">{{tr("admin.inventory.transfers.shipAttachHint", "至少上传一张出货凭证（交货单 / 出库单照片）。没有凭证的移库事后无法证明货是谁交出去的。")}}</p>
-                <div data-media-picker data-media-multiple="1" data-media-name="attachmentIds"></div>
+                <div class="attach-pick" data-attach-pick>
+                    <div class="attach-grid" data-attach-grid></div>
+                    <p class="attach-empty" data-attach-empty>{{tr("admin.inventory.transfers.attachEmpty", "还没有选凭证")}}</p>
+                    <button type="button" class="btn btn-sm" data-attach-add>{{tr("admin.inventory.transfers.attachAdd", "从媒体库选凭证")}}</button>
+                    <div data-attach-values data-attach-name="attachmentIds"></div>
+                </div>
             </div>
             <div class="form-group">
-                <label class="form-label">{{tr("admin.inventory.transfers.remark", "备注")}}</label>
-                <input type="text" class="form-input" name="remark" maxlength="200" autocomplete="off">
+                <label class="form-label" for="tr-ship-remark-{{r.ID}}">{{tr("admin.inventory.transfers.remark", "备注")}}</label>
+                <input type="text" class="form-input" id="tr-ship-remark-{{r.ID}}" name="remark" maxlength="200" autocomplete="off">
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-                <button type="submit" class="btn btn-primary">{{tr("admin.inventory.transfers.shipSubmit", "确认出货")}}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{tr("admin.inventory.transfers.shipSubmit", "确认出货")}}</button>
             </div>
         </form>
     </template>
@@ -183,37 +267,46 @@
     {{range _, r := rows}}
     {{if r.Status == "in_transit"}}
     <template id="tpl-transfer-receive-{{r.ID}}">
-        <form data-write-api="/api/inventory/transfer/receive" data-write-nav method="post">
+        <form data-write="custom" data-write-url="/api/inventory/transfer/receive" data-write-reload>
             {{include "../partials/csrf_field.html" map("csrf", csrf)}}
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="id" value="{{r.ID}}">
             <p class="hint">{{r.TransferNo}}<code>{{r.FromCode}}</code> → <code>{{r.ToCode}}</code> · {{r.TotalQuantity}} {{tr("admin.inventory.transfers.units", "件")}}</p>
             <div class="form-group">
                 <label class="form-label req">{{tr("admin.inventory.transfers.attachments", "签收凭证")}}</label>
                 <p class="hint">{{tr("admin.inventory.transfers.receiveAttachHint", "至少上传一张签收凭证（签收单 / 收货人签字照片）。没有凭证的移库事后无法证明是谁签收的。")}}</p>
-                <div data-media-picker data-media-multiple="1" data-media-name="attachmentIds"></div>
+                <div class="attach-pick" data-attach-pick>
+                    <div class="attach-grid" data-attach-grid></div>
+                    <p class="attach-empty" data-attach-empty>{{tr("admin.inventory.transfers.attachEmpty", "还没有选凭证")}}</p>
+                    <button type="button" class="btn btn-sm" data-attach-add>{{tr("admin.inventory.transfers.attachAdd", "从媒体库选凭证")}}</button>
+                    <div data-attach-values data-attach-name="attachmentIds"></div>
+                </div>
             </div>
             <div class="form-group">
-                <label class="form-label">{{tr("admin.inventory.transfers.remark", "备注")}}</label>
-                <input type="text" class="form-input" name="remark" maxlength="200" autocomplete="off">
+                <label class="form-label" for="tr-receive-remark-{{r.ID}}">{{tr("admin.inventory.transfers.remark", "备注")}}</label>
+                <input type="text" class="form-input" id="tr-receive-remark-{{r.ID}}" name="remark" maxlength="200" autocomplete="off">
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-                <button type="submit" class="btn btn-primary">{{tr("admin.inventory.transfers.receiveSubmit", "确认签收")}}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{tr("admin.inventory.transfers.receiveSubmit", "确认签收")}}</button>
             </div>
         </form>
     </template>
     {{end}}
     {{end}}
 
-    {* ===== 新建调拨单 ===== *}
+    {* ===== 发起调拨申请 =====
+       明细行在抽屉里动态增删（ui/transfer_lines.js）：表单没有嵌套数组语法，
+       行用 lines[i].stockId / lines[i].quantity 提交，DTO 的 BindForm 收这个形状。 *}
     <template id="tpl-transfer-create">
-        <form data-write-api="/api/inventory/transfer/create" data-write-nav method="post">
+        <form data-write="custom" data-write-url="/api/inventory/transfer/create" data-write-reload>
             {{include "../partials/csrf_field.html" map("csrf", csrf)}}
+            <p class="form-hint" data-write-status role="status" hidden></p>
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <div class="form-group">
-                <label class="form-label req">{{tr("admin.inventory.transfers.fromWarehouse", "源仓")}}</label>
-                <select class="form-select" name="fromWarehouseId" required>
+                <label class="form-label req" for="tr-from">{{tr("admin.inventory.transfers.fromWarehouse", "源仓")}}</label>
+                <select class="form-select" id="tr-from" name="fromWarehouseId" required data-transfer-from>
                     <option value="">{{tr("admin.inventory.create.warehousePh", "选择仓库")}}</option>
                     {{range _, w := .Warehouses}}
                     <option value="{{w.ID}}">{{w.Name}} ({{w.Code}})</option>
@@ -221,26 +314,31 @@
                 </select>
             </div>
             <div class="form-group">
-                <label class="form-label req">{{tr("admin.inventory.transfers.toWarehouse", "目标仓")}}</label>
-                <select class="form-select" name="toWarehouseId" required>
+                <label class="form-label req" for="tr-to">{{tr("admin.inventory.transfers.toWarehouse", "目标仓")}}</label>
+                <select class="form-select" id="tr-to" name="toWarehouseId" required>
                     <option value="">{{tr("admin.inventory.create.warehousePh", "选择仓库")}}</option>
                     {{range _, w := .Warehouses}}
                     <option value="{{w.ID}}">{{w.Name}} ({{w.Code}})</option>
                     {{end}}
                 </select>
-                <p class="hint">{{tr("admin.inventory.transfers.sameWarehouseHint", "源仓与目标仓不能相同 —— 自己搬给自己不是调拨。")}}</p>
+                <p class="hint">{{tr("admin.inventory.transfers.sameWarehouseHint", "源仓与目标仓不能相同 —— 自己搬给自己不是调拨。目标仓在同意时还能改。")}}</p>
             </div>
             <div class="form-group">
-                <label class="form-label">{{tr("admin.inventory.transfers.remark", "备注")}}</label>
-                <input type="text" class="form-input" name="remark" maxlength="200" autocomplete="off">
+                <label class="form-label req">{{tr("admin.inventory.transfers.lines", "调拨明细")}}</label>
+                <p class="hint">{{tr("admin.inventory.transfers.linesHint", "先选源仓，再逐行挑那里的货与件数；同一行货只能出现一次。")}}</p>
+                <div class="transfer-lines" data-transfer-lines data-transfer-lines-name="lines" data-transfer-options-url="/api/inventory/transfer/stock-options">
+                    <div data-transfer-lines-body></div>
+                    <p class="hint" data-transfer-lines-empty hidden>{{tr("admin.inventory.transfers.linesEmpty", "这个仓里没有可调的货（可售为 0）")}}</p>
+                    <button type="button" class="btn btn-sm" data-transfer-line-add>{{tr("admin.inventory.transfers.lineAdd", "加一行")}}</button>
+                </div>
             </div>
             <div class="form-group">
-                <label class="form-label">{{tr("admin.inventory.transfers.requestAttachments", "申请凭证（可选）")}}</label>
-                <div data-media-picker data-media-multiple="1" data-media-name="attachmentIds"></div>
+                <label class="form-label" for="tr-create-remark">{{tr("admin.inventory.transfers.remark", "备注")}}</label>
+                <input type="text" class="form-input" id="tr-create-remark" name="remark" maxlength="200" autocomplete="off">
             </div>
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-                <button type="submit" class="btn btn-primary">{{tr("admin.inventory.transfers.createSubmit", "建单")}}</button>
+                <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{tr("admin.inventory.transfers.createSubmit", "提交申请")}}</button>
             </div>
         </form>
     </template>

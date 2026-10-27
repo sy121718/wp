@@ -307,6 +307,35 @@ button, input, select, textarea { font: inherit; color: inherit; }
     background: #fff;
 }
 
+
+/* ===== 调拨单：凭证附件字段 + 建单明细行（admin/inventory/inventory_transfers.html）
+
+   两个控件都是「一行一条事实」的紧凑布局：凭证是缩略图 + 文件名，
+   明细是「货品下拉 + 件数 + 删除」。宽度一律 min(100%, …)，
+   触屏一列堆叠（375 宽下两个并排会让下拉只剩 100px，选货品等于盲选）。 */
+.attach-pick { display: flex; flex-direction: column; gap: var(--sp-sm, 8px); }
+.attach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 96px), 1fr)); gap: var(--sp-sm, 8px); }
+.attach-cell {
+    position: relative; margin: 0; padding: 6px;
+    display: flex; flex-direction: column; gap: 4px; align-items: center;
+    border: 1px solid var(--border, #d0d7de); border-radius: var(--ui-r-sm, 6px);
+    background: #fff;
+}
+.attach-cell img { width: 100%; height: 64px; object-fit: contain; border-radius: 4px; background: #f6f8fa; }
+.attach-file { font-size: var(--ui-fs-2xs, 11px); word-break: break-all; text-align: center; }
+.attach-meta { font-size: var(--ui-fs-2xs, 11px); color: var(--sky-c-text-mute, #6b7280); text-align: center; }
+.attach-del { position: absolute; top: 2px; right: 2px; padding: 0 6px; line-height: 1.4; }
+.attach-empty { margin: 0; font-size: var(--ui-fs-sm, 13px); color: var(--sky-c-text-mute, #6b7280); }
+
+.transfer-lines { display: flex; flex-direction: column; gap: var(--sp-sm, 8px); }
+.transfer-line { display: grid; grid-template-columns: minmax(0, 1fr) 96px 32px; gap: var(--sp-sm, 8px); align-items: center; }
+.transfer-line [data-line-qty] { text-align: right; }
+@media (max-width: 480px) {
+    /* 窄屏：下拉独占一行，件数与删除并排 —— 三者挤一行时下拉只剩可读宽度的一半。 */
+    .transfer-line { grid-template-columns: minmax(0, 1fr) 32px; }
+    .transfer-line [data-line-stock] { grid-column: 1 / -1; }
+}
+
 /* ===== 货源管理（admin/purchase/sources.html，issue #17） =====
    多端适配（硬规则）：
      · 输入宽度一律 min(100%, <设计宽度>)，容器 flex+wrap，窄屏折行不溢出；

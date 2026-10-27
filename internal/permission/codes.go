@@ -190,9 +190,15 @@ const (
 	//
 	// 为什么拆这么细：出货与签收是**两个不同的人**做的事（一个人发货、另一个人签收），
 	// 合成一条会让「只有发货权的人」也能把自己的货签成已到。
-	InventoryTransferList    Perm = "inventory:transfer_list"
-	InventoryTransferGet     Perm = "inventory:transfer_get"
+	InventoryTransferList Perm = "inventory:transfer_list"
+	InventoryTransferGet  Perm = "inventory:transfer_get"
+	// InventoryTransferOptions 建单抽屉的候选货品（GET /api/inventory/transfer/stock-options）。
+	// 与 transfer_get 分开是因为「一条 API 路由一个独立权限点」：共用一个 code 时
+	// sys_permission.permission_code 只能记一条路径，另一条对所有人 403。
+	InventoryTransferOptions Perm = "inventory:transfer_options"
 	InventoryTransferCreate  Perm = "inventory:transfer_create"
+	InventoryTransferApprove Perm = "inventory:transfer_approve"
+	InventoryTransferReject  Perm = "inventory:transfer_reject"
 	InventoryTransferShip    Perm = "inventory:transfer_ship"
 	InventoryTransferReceive Perm = "inventory:transfer_receive"
 	InventoryTransferCancel  Perm = "inventory:transfer_cancel"
@@ -917,7 +923,10 @@ var specs = map[Perm]spec{
 	InventoryStockAlert:         {module: "inventory", name: "库存预警"},
 	InventoryTransferList:       {module: "inventory", name: "调拨单列表"},
 	InventoryTransferGet:        {module: "inventory", name: "调拨单详情"},
+	InventoryTransferOptions:    {module: "inventory", name: "调拨候选货品"},
 	InventoryTransferCreate:     {module: "inventory", name: "建调拨单"},
+	InventoryTransferApprove:    {module: "inventory", name: "同意调拨"},
+	InventoryTransferReject:     {module: "inventory", name: "驳回调拨"},
 	InventoryTransferShip:       {module: "inventory", name: "调拨出货"},
 	InventoryTransferReceive:    {module: "inventory", name: "调拨签收"},
 	InventoryTransferCancel:     {module: "inventory", name: "取消调拨"},

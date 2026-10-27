@@ -93,16 +93,21 @@ func SetupInventoryRoutes(rg *permission.RouteGroup, pages *gin.RouterGroup, db 
 	g.POST("/reason/create", permission.InventoryReasonCreate, handle.CreateReason)
 	g.POST("/reason/update", permission.InventoryReasonUpdate, handle.UpdateReason)
 
-	// 调拨单（迁移 630，W3）：仓库间移库，出货与签收**各需凭证附件**。
-	// 六条独立权限点（出货与签收是两个不同的人做的事，见 permission/codes.go）。
+	// 调拨单（迁移 630 + 651）：仓库间移库，**先申请再审批**，出货与签收各需凭证附件。
+	// 八条独立权限点（同意 / 驳回 / 出货 / 签收是四个不同的人可能做的事，见 permission/codes.go）。
 	transferPages := NewInventoryTransferPageHandle(svc, project, nil)
 	tg := rg.Group("/inventory/transfer")
 	tg.GET("/list", permission.InventoryTransferList, transferPages.InventoryTransferListJSON)
 	tg.GET("/get", permission.InventoryTransferGet, transferPages.InventoryTransferDetail)
-	tg.POST("/create", permission.InventoryTransferCreate, transferPages.InventoryTransferCreate)
-	tg.POST("/ship", permission.InventoryTransferShip, transferPages.InventoryTransferShip)
-	tg.POST("/receive", permission.InventoryTransferReceive, transferPages.InventoryTransferReceive)
-	tg.POST("/cancel", permission.InventoryTransferCancel, transferPages.InventoryTransferCancel)
+	// 建单候选（哪个仓里哪些货可调）：独立权限点 —— 一条 API 路由一个 code
+	//（共用 transfer_get 会让其中一条路径对所有人 403，见 permission/codes.go）。
+	tg.GET("/stock-options", permission.InventoryTransferOptions, transferPages.InventoryTransferStockOptions)
+	tg.POST("/create", permission.InventoryTransferCreate, transferPages.CreateTransfer)
+	tg.POST("/approve", permission.InventoryTransferApprove, transferPages.ApproveTransfer)
+	tg.POST("/reject", permission.InventoryTransferReject, transferPages.RejectTransfer)
+	tg.POST("/ship", permission.InventoryTransferShip, transferPages.ShipTransfer)
+	tg.POST("/receive", permission.InventoryTransferReceive, transferPages.ReceiveTransfer)
+	tg.POST("/cancel", permission.InventoryTransferCancel, transferPages.CancelTransfer)
 
 	// 商品侧缓存同步与对账（issue #16 验收 6/7）：提交后的独立步骤，不进变动事务。
 

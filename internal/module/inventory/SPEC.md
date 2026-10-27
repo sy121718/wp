@@ -23,11 +23,14 @@ parent: go-wp-modules
 
 ## 仓库商品 SKU（迁移 621）
 
-库存行 `inventory_stocks` 就是仓库侧 SKU 主档，**`variant_id` / `product_id` 可空**：
+库存行 `inventory_stocks` 就是仓库侧 SKU 主档（迁移 642 起带名称 / 图片 / 条码 / 运费 / 币种 / 汇率 / 状态 / 备注）。
+它的身份是 **仓库 × 仓库 SKU**（`UNIQUE (warehouse_id, sku_code)`，迁移 244；迁移 641 删掉了更早的
+`(variant_id, warehouse_id)` 唯一键）：同一个变体在同一仓可以有**多条**货行（自有码 / 客户码 / 不同批次）。
 
-- NULL = 仓库里已有货、还没对应到商品（客户寄卖 / 清关到仓 / 手工补录）；
-- 「认领」把两列填上（单向、**不自动合并**：目标 (变体, 仓) 已有行时拒绝，两行库存是两份事实）；
-- 「解除认领」仅当 `quantity = 0 且 reserved_quantity = 0`。
+- `variant_id` / `product_id` 是**线索列**，可空、不唯一、不参与定位（2026-10 去认领，迁移 638）；
+- 「这条货属于哪个变体」的真源在商品侧 `product_variants.warehouse_skus`（jsonb 数组，迁移 637）：
+  元素 `{stockId, warehouseId, warehouseCode, skuCode}`，一个变体可引用多条货行、一条货行也可被多个变体引用；
+- 认领 / 解除认领两个动作已下线：归属由商品建档时「从仓库选」那一步写入引用，不再有独立状态迁移。
 
 **编码永远是裸码**（`DRAWERSMOKE_001`），仓码前缀只属于商品侧（迁移 262 / 246 + 两个巡检脚本）。
 
@@ -47,11 +50,15 @@ available = quantity - reserved_quantity
 
 只在「出库且行 / 请求都没写仓」时启用，用**可售**（不是 quantity）按 `deduct_priority → 仓短码 → 仓 id` 分配。显式指定的仓永远优先。可售不足**整单拒绝**。
 
-## 调拨（迁移 627）
+## 调拨（迁移 630 + 审批 651）
 
-状态：`pending → in_transit → completed`，或 `pending → cancelled`。
+状态：`requested → pending → in_transit → completed`，另有 `requested → rejected`（驳回）与
+`requested/pending → cancelled`。
 
-- 明细指向**库存行**（`stock_id`）而不是变体：未认领的货同样可以调拨；
+- **建单一律落 requested**：同意（`ApproveTransfer`）时才转 pending，且那一刻**重校源仓可售**
+  （申请到同意之间货可能被订单预占）；同意时可改目标仓；
+- 驳回（`RejectTransfer`）理由必填（纯文本 ≤500 字），不动库存；
+- 明细指向**库存行**（`stock_id`）而不是变体：无归属的货（`variant_id` 为空）同样可以调拨；
 - **出货与签收各需至少一张凭证附件**（缺即拒绝、整体回滚）；
 - 调拨用可售；建单即定两个仓（`from <> to` 由 DDL 约束）。
 

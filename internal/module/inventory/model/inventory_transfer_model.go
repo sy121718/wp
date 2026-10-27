@@ -14,7 +14,8 @@ package inventorymodel
 //     这样才能表达「无归属的货也能调拨」；
 //  2. 出货与签收**各需至少一张凭证**（service 强制，本层只负责落库）——
 //     一张没有凭证的移库事后无法证明「货是谁交出去的、谁签收的」；
-//  3. 状态单向：pending → in_transit → completed，或 pending → cancelled。
+//  3. 状态单向：requested → pending → in_transit → completed，
+//     另有 requested → rejected（驳回）与 requested/pending → cancelled。
 //     in_transit 不能直接取消（货在路上），要走反向调拨或先签收。
 
 import (
@@ -28,7 +29,7 @@ import (
 	"go_wp/pkg/rls"
 )
 
-// TransferEntity 调拨单头（迁移 630）。
+// TransferEntity 调拨单头（迁移 630；审批链路见 651）。
 type TransferEntity struct {
 	ID              string     `gorm:"column:id;primaryKey"`
 	ProjectID       string     `gorm:"column:project_id;not null"`
@@ -42,6 +43,20 @@ type TransferEntity struct {
 	ReceivedBy      int64      `gorm:"column:received_by;not null"`
 	ShippedAt       *time.Time `gorm:"column:shipped_at"`
 	ReceivedAt      *time.Time `gorm:"column:received_at"`
+	// 审批链路（迁移 651）：申请 → 同意 / 驳回。三个时刻各自为政：
+	// 一张被驳回的单没有 approved_at，一张还在待审批的单两个都没有。
+	RequestedBy int64      `gorm:"column:requested_by;not null"`
+	RequestedAt *time.Time `gorm:"column:requested_at"`
+	ApprovedBy  int64      `gorm:"column:approved_by;not null"`
+	ApprovedAt  *time.Time `gorm:"column:approved_at"`
+	// ApprovedName / RejectedName 审批人姓名**快照**（对齐 order_shipments.operator_name）：
+	// 后台账号被删或改名后，单据仍要能回答「当时是谁批的」—— 那是一次追责事实。
+	ApprovedName string     `gorm:"column:approved_name;not null"`
+	RejectedBy   int64      `gorm:"column:rejected_by;not null"`
+	RejectedAt   *time.Time `gorm:"column:rejected_at"`
+	RejectedName string     `gorm:"column:rejected_name;not null"`
+	// RejectedReason 驳回原因（纯文本，运营写给申请人看）：只有 rejected 态有值。
+	RejectedReason string `gorm:"column:rejected_reason;not null"`
 	// RequestID 幂等键：空串 = 没有幂等键（合法状态），非空时同工程唯一。
 	RequestID  string    `gorm:"column:request_id;not null"`
 	CreateTime time.Time `gorm:"column:create_time;not null"`
@@ -234,6 +249,16 @@ type TransferListRow struct {
 	// ShippedAt / ReceivedAt 可空：还没到那一步。
 	ShippedAt  *time.Time `gorm:"column:shipped_at"`
 	ReceivedAt *time.Time `gorm:"column:received_at"`
+	// 审批链路（迁移 651）：申请人 / 审批人姓名在 service 侧经 admin 契约补齐，
+	// model 只给 id 与时刻（不跨模块 JOIN 别人的表）。
+	RequestedBy    int64      `gorm:"column:requested_by"`
+	RequestedAt    *time.Time `gorm:"column:requested_at"`
+	ApprovedBy     int64      `gorm:"column:approved_by"`
+	ApprovedAt     *time.Time `gorm:"column:approved_at"`
+	ApprovedName   string     `gorm:"column:approved_name"`
+	RejectedAt     *time.Time `gorm:"column:rejected_at"`
+	RejectedName   string     `gorm:"column:rejected_name"`
+	RejectedReason string     `gorm:"column:rejected_reason"`
 }
 
 // ListTransfers 调拨单列表（按工程 / 状态 / 关键词过滤 + 分页；limit <= 0 表示不限）。
@@ -242,6 +267,8 @@ func (m *Model) ListTransfers(ctx context.Context, f TransferListFilter, limit, 
 		q := tx.WithContext(ctx).Table("inventory_transfers AS t").
 			Select("t.id, t.transfer_no, t.status, t.remark, t.from_warehouse_id, t.to_warehouse_id, "+
 				"t.create_time, t.shipped_at, t.received_at, "+
+				"t.requested_by, t.requested_at, t.approved_by, t.approved_at, t.approved_name, "+
+				"t.rejected_at, t.rejected_name, t.rejected_reason, "+
 				"fw.code AS from_code, fw.name AS from_name, "+
 				"tw.code AS to_code, tw.name AS to_name, "+
 				"COALESCE(i.item_count, 0) AS item_count, COALESCE(i.total_quantity, 0) AS total_quantity").

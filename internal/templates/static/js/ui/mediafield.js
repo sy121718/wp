@@ -97,6 +97,11 @@
     var tree = null;
     var pickHandler = null;
     var state = { page: 1, search: '', total: 0, limit: 48 };
+    // pickedItems 按 url 记住被选中的完整 item（含 id / file_name / file_size）。
+    // 为什么需要：多选回调原来只给 url 数组，而「附件」这类字段要的是**媒体 id**
+    // （后端存 attachment_id，不是地址）。多给一个 items 参数是对既有回调的兼容扩展：
+    // 只声明一个形参的调用方（图集）不受影响。
+    var pickedItems = {};
 
     function buildModal() {
         var wrap = document.createElement('div');
@@ -147,8 +152,11 @@
                 // **先取出 handler 再关窗**：closeModal 会把 pickHandler 置空，
                 // 反过来的话回调永远不会执行 —— 表现是「选了 7 张、点了确定，什么都没发生」。
                 var handler = pickHandler;
+                // items 与 picked 同序同长：需要 id 的字段（附件）按 url 取回完整项。
+                // 只声明一个形参的调用方（图集）不受影响。
+                var items = picked.map(function (url) { return pickedItems[url] || {}; });
                 closeModal();
-                if (handler) { handler(picked); }
+                if (handler) { handler(picked, items); }
             });
         }
 
@@ -187,6 +195,7 @@
         // 富文本的附件要能挑任意文件（PDF/压缩包…），由调用方给 'all'。
         state.fileType = (opts && opts.fileType) || 'image';
         state.picked = [];
+        pickedItems = {};
         state.categoryId = state.categoryId || 0;
         modal.hidden = false;
         state.page = 1;
@@ -271,11 +280,15 @@
                         if (state.multi) {
                             if (at >= 0) {
                                 state.picked.splice(at, 1);
+                                delete pickedItems[item.url];
                             } else {
                                 state.picked.push(item.url);
+                                pickedItems[item.url] = item;
                             }
                         } else {
                             state.picked = at >= 0 ? [] : [item.url];
+                            pickedItems = {};
+                            if (at < 0) { pickedItems[item.url] = item; }
                         }
                         syncPickedCells();
                         syncMultiBar();
@@ -479,7 +492,7 @@
     WBUI.openMediaPicker = function (onPick, opts) {
         openModal(onPick, opts || {});
     };
-    // 多选入口（onPick(urls)）。图集用它。
+    // 多选入口（onPick(urls, items)）。图集只用 urls；附件要 id，读第二个参数。
     WBUI.openMediaPickerMulti = function (onPick, opts) {
         var merged = opts || {};
         merged.multi = true;

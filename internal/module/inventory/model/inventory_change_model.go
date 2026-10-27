@@ -56,9 +56,9 @@ func (ReasonEntity) TableName() string { return "inventory_change_reasons" }
 // Quantity 是绝对变化量（恒 > 0），Delta 是带符号的实际变化量；
 // ReasonCode 是快照列（原因字典条目被删后历史流水仍可读）。
 type MovementEntity struct {
-	ID              string  `gorm:"column:id;primaryKey"`
-	ProjectID       string  `gorm:"column:project_id;not null"`
-	WarehouseID     string  `gorm:"column:warehouse_id;not null"`
+	ID          string `gorm:"column:id;primaryKey"`
+	ProjectID   string `gorm:"column:project_id;not null"`
+	WarehouseID string `gorm:"column:warehouse_id;not null"`
 	// ProductID / VariantID 是**线索列**（迁移 649 起可空）：货行的身份是「仓 × 仓库 SKU」，
 	// 归属在 product_variants.warehouse_skus。无归属货行（台账页直接建的行）的流水
 	// 这两列为 NULL —— 空串是 uuid 的非法输入，写进去会 22P02。
@@ -88,9 +88,9 @@ type MovementEntity struct {
 	StockName     string `gorm:"column:stock_name;not null"`
 	StockImageURL string `gorm:"column:stock_image_url;not null"`
 	SourceType    string `gorm:"column:source_type;not null"`
-	SourceRef  string  `gorm:"column:source_ref;not null"`
-	Remark     string  `gorm:"column:remark;not null"`
-	OperatorID string  `gorm:"column:operator_id;not null"`
+	SourceRef     string `gorm:"column:source_ref;not null"`
+	Remark        string `gorm:"column:remark;not null"`
+	OperatorID    string `gorm:"column:operator_id;not null"`
 	// UnitCost 是这次变动时刻的**成本留痕**（元，迁移 256）：出库 = 扣减时该库存行的
 	// 当前成本；入库 = 本次显式成本（采购 / 生产单价），无显式成本时记库存行当前成本。
 	// 可空：nil = 当时该 (仓库, SKU) 尚未核算（0 是合法的显式成本，两者不能混）。
@@ -104,11 +104,11 @@ func (MovementEntity) TableName() string { return "inventory_stock_movements" }
 
 // MovementRow 流水 + 仓库 + 原因展示信息的只读投影（本模块三张表 join 的唯一处）。
 type MovementRow struct {
-	ID              string  `gorm:"column:id"`
-	ProjectID       string  `gorm:"column:project_id"`
-	WarehouseID     string  `gorm:"column:warehouse_id"`
-	WarehouseCode   string  `gorm:"column:warehouse_code"`
-	WarehouseName   string  `gorm:"column:warehouse_name"`
+	ID            string `gorm:"column:id"`
+	ProjectID     string `gorm:"column:project_id"`
+	WarehouseID   string `gorm:"column:warehouse_id"`
+	WarehouseCode string `gorm:"column:warehouse_code"`
+	WarehouseName string `gorm:"column:warehouse_name"`
 	// ProductID / VariantID 与 MovementEntity 同义（迁移 649 起可空、仅作线索）。
 	ProductID       *string `gorm:"column:product_id"`
 	VariantID       *string `gorm:"column:variant_id"`
@@ -128,9 +128,9 @@ type MovementRow struct {
 	StockName     string `gorm:"column:stock_name"`
 	StockImageURL string `gorm:"column:stock_image_url"`
 	SourceType    string `gorm:"column:source_type"`
-	SourceRef  string  `gorm:"column:source_ref"`
-	Remark     string  `gorm:"column:remark"`
-	OperatorID string  `gorm:"column:operator_id"`
+	SourceRef     string `gorm:"column:source_ref"`
+	Remark        string `gorm:"column:remark"`
+	OperatorID    string `gorm:"column:operator_id"`
 	// UnitCost 与 MovementEntity 同义（成本留痕，元，可空）。
 	UnitCost  *float64  `gorm:"column:unit_cost"`
 	BatchID   string    `gorm:"column:batch_id"`

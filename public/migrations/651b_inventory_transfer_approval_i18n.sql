@@ -1,0 +1,55 @@
+-- 651b · 调拨审批（迁移 651 / B5）的文案词条：新状态徽标、同意 / 驳回两个抽屉、
+-- 建单抽屉的明细行控件，以及两条驳回业务错误。
+--
+-- 只 seed **本批新增**的 key：631 已覆盖调拨页原有的 40 条（标题 / 列头 / 出货签收抽屉 /
+-- 三态徽标），改值那几条走 650 的做法（ON CONFLICT DO UPDATE）。这里全部是新增，
+-- 幂等用 DO NOTHING —— seed 是默认值来源，后台是真相来源。
+INSERT INTO sys_i18n (item_key, lang, item_value, http_code, category, remark, status, create_time, update_time)
+VALUES
+('admin.inventory.transfers.approve', 'zh-CN', '同意', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.approve', 'en-US', 'Approve', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.approveHint', 'zh-CN', '同意时会再核一次源仓可售：申请到现在这段时间里，这批货可能已被订单预占。', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.approveHint', 'en-US', 'Approving re-checks the source warehouse''s available quantity — since the request, orders may have reserved that stock.', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.approveKeepTo', 'zh-CN', '沿用申请时的目标仓', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.approveKeepTo', 'en-US', 'Keep the requested destination', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.approveSubmit', 'zh-CN', '确认同意', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.approveSubmit', 'en-US', 'Approve', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.approveTitle', 'zh-CN', '同意这次调拨', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.approveTitle', 'en-US', 'Approve this transfer', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.approveToWh', 'zh-CN', '目标仓（可改）', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.approveToWh', 'en-US', 'Destination (editable)', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.attachAdd', 'zh-CN', '从媒体库选凭证', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.attachAdd', 'en-US', 'Pick vouchers from media library', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.attachEmpty', 'zh-CN', '还没有选凭证', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.attachEmpty', 'en-US', 'No vouchers picked yet', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.col.rejected', 'zh-CN', '驳回原因', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.col.rejected', 'en-US', 'Rejection reason', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.lineAdd', 'zh-CN', '加一行', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.lineAdd', 'en-US', 'Add a line', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.lines', 'zh-CN', '调拨明细', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.lines', 'en-US', 'Transfer lines', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.linesHint', 'zh-CN', '先选源仓，再逐行挑那里的货与件数；同一行货只能出现一次。', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.linesHint', 'en-US', 'Pick the source warehouse first, then choose goods and quantities line by line. The same stock row may appear only once.', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.linesEmpty', 'zh-CN', '这个仓里没有可调的货（可售为 0）', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.linesEmpty', 'en-US', 'Nothing transferable in this warehouse (available is 0)', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.reject', 'zh-CN', '驳回', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.reject', 'en-US', 'Reject', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.rejectReason', 'zh-CN', '驳回理由', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.rejectReason', 'en-US', 'Rejection reason', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.rejectReasonHint', 'zh-CN', '理由会显示在列表的「驳回原因」列，申请人据此决定怎么改。', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.rejectReasonHint', 'en-US', 'The reason shows in the list''s rejection column so the requester knows what to change.', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.rejectReasonPh', 'zh-CN', '写清楚为什么调不了：库存不够 / 目标仓满了 / 换个仓再提……', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.rejectReasonPh', 'en-US', 'Say why it cannot move: not enough stock / destination full / request again for another warehouse…', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.rejectSubmit', 'zh-CN', '确认驳回', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.rejectSubmit', 'en-US', 'Confirm rejection', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.rejectTitle', 'zh-CN', '驳回这次调拨', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.rejectTitle', 'en-US', 'Reject this transfer', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.status.rejected', 'zh-CN', '已驳回', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.status.rejected', 'en-US', 'Rejected', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.status.requested', 'zh-CN', '待审批', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('admin.inventory.transfers.status.requested', 'en-US', 'Awaiting approval', 200, 'inventory', 'internal/templates/admin/inventory/inventory_transfers.html', 1, now(), now()),
+('ErrTransferRejectReasonRequired', 'zh-CN', '驳回必须写明理由（申请人据此决定怎么改）', 200, 'inventory', 'internal/module/inventory/enums/inventory_enums.go', 1, now(), now()),
+('ErrTransferRejectReasonRequired', 'en-US', 'A rejection must state a reason so the requester knows what to change', 200, 'inventory', 'internal/module/inventory/enums/inventory_enums.go', 1, now(), now()),
+('ErrTransferRejectReasonTooLong', 'zh-CN', '驳回理由过长：最多 500 个字符', 200, 'inventory', 'internal/module/inventory/enums/inventory_enums.go', 1, now(), now()),
+('ErrTransferRejectReasonTooLong', 'en-US', 'Rejection reason is too long: at most 500 characters', 200, 'inventory', 'internal/module/inventory/enums/inventory_enums.go', 1, now(), now())
+ON CONFLICT (item_key, lang) DO NOTHING;

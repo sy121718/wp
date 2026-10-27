@@ -48,10 +48,24 @@ const (
 
 	// —— 调拨页（迁移 630，W3）——
 	InventoryTransfersTitle           = "admin.inventory.transfers.title"
+	InventoryTransfersStatusRequested = "admin.inventory.transfers.status.requested"
 	InventoryTransfersStatusPending   = "admin.inventory.transfers.status.pending"
 	InventoryTransfersStatusInTransit = "admin.inventory.transfers.status.in_transit"
 	InventoryTransfersStatusCompleted = "admin.inventory.transfers.status.completed"
+	InventoryTransfersStatusRejected  = "admin.inventory.transfers.status.rejected"
 	InventoryTransfersStatusCancelled = "admin.inventory.transfers.status.cancelled"
+	// 审批（迁移 651）：同意 / 驳回两个动作与驳回原因列。
+	InventoryTransfersApprove        = "admin.inventory.transfers.approve"
+	InventoryTransfersReject         = "admin.inventory.transfers.reject"
+	InventoryTransfersApproveTitle   = "admin.inventory.transfers.approveTitle"
+	InventoryTransfersRejectTitle    = "admin.inventory.transfers.rejectTitle"
+	InventoryTransfersApproveSubmit  = "admin.inventory.transfers.approveSubmit"
+	InventoryTransfersRejectSubmit   = "admin.inventory.transfers.rejectSubmit"
+	InventoryTransfersRejectReason   = "admin.inventory.transfers.rejectReason"
+	InventoryTransfersRejectReasonPh = "admin.inventory.transfers.rejectReasonPh"
+	InventoryTransfersApproveToWh    = "admin.inventory.transfers.approveToWh"
+	InventoryTransfersColRejected    = "admin.inventory.transfers.col.rejected"
+	InventoryTransfersLinesEmpty     = "admin.inventory.transfers.linesEmpty"
 
 	// —— 单条与批量写动作的结论文案（失败出口的事实形态：key + 中文兜底 + `%s` 参数）——
 	InventoryActionDone             = "admin.inventory.actionDone"

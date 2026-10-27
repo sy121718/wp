@@ -6,7 +6,7 @@
 -- 更新方式：bash scripts/schema-snapshot.sh
 -- 漂移检测：bash scripts/schema-snapshot.sh --check（CI 里跑）
 -- 迁移台账版本：597-block-bulk-delete-grant-copy
--- 生成时间：2026-10-26T21:43:52+08:00
+-- 生成时间：2026-10-27T08:16:16+08:00
 
 --
 -- PostgreSQL database dump
@@ -1334,8 +1334,17 @@ CREATE TABLE public.inventory_transfers (
     request_id text DEFAULT ''::text NOT NULL,
     create_time timestamp with time zone DEFAULT now() NOT NULL,
     update_time timestamp with time zone DEFAULT now() NOT NULL,
+    requested_by bigint DEFAULT 0 NOT NULL,
+    requested_at timestamp with time zone,
+    approved_by bigint DEFAULT 0 NOT NULL,
+    approved_at timestamp with time zone,
+    approved_name text DEFAULT ''::text NOT NULL,
+    rejected_by bigint DEFAULT 0 NOT NULL,
+    rejected_at timestamp with time zone,
+    rejected_name text DEFAULT ''::text NOT NULL,
+    rejected_reason text DEFAULT ''::text NOT NULL,
     CONSTRAINT ck_inventory_transfers_diff_wh CHECK ((from_warehouse_id <> to_warehouse_id)),
-    CONSTRAINT ck_inventory_transfers_status CHECK ((status = ANY (ARRAY['pending'::text, 'in_transit'::text, 'completed'::text, 'cancelled'::text])))
+    CONSTRAINT ck_inventory_transfers_status CHECK ((status = ANY (ARRAY['requested'::text, 'pending'::text, 'in_transit'::text, 'completed'::text, 'rejected'::text, 'cancelled'::text])))
 );
 
 ALTER TABLE ONLY public.inventory_transfers FORCE ROW LEVEL SECURITY;
@@ -6368,6 +6377,13 @@ CREATE INDEX idx_inventory_stocks_warehouse_external_sku ON public.inventory_sto
 --
 
 CREATE INDEX idx_inventory_stocks_warehouse_nonzero ON public.inventory_stocks USING btree (warehouse_id) WHERE (quantity <> 0);
+
+
+--
+-- Name: idx_inventory_transfers_requested; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_inventory_transfers_requested ON public.inventory_transfers USING btree (project_id, create_time DESC) WHERE (status = 'requested'::text);
 
 
 --
