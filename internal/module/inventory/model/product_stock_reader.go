@@ -33,6 +33,8 @@ func (m *Model) StockFactsByStockIDs(ctx context.Context, projectID string, stoc
 			ReservedQuantity: e.ReservedQuantity,
 			TrackQuantity:    e.TrackQuantity,
 			CostPrice:        e.CostPrice,
+			Name:             e.Name,
+			ImageURL:         e.ImageURL,
 		})
 	}
 	return facts, nil

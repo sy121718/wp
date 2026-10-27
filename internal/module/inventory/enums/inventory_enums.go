@@ -274,6 +274,11 @@ const (
 	// 与发货**扣减**（写 sale_out 流水）。流水上必须能分出后者 —— service 靠它判断
 	// 「这次出库要同时释放预占」（否则 reserved 会永远挂在账上）。
 	MovementSourceOrderShipment = "order_shipment"
+	// MovementSourceProductForm 来源类型：商品表单的仓库明细（B8）。
+	//
+	// 与库存页行内编辑同一条 adjust 口径（目标绝对量），但**来源不同**：
+	// 运营在商品页改的是「这批货应该是多少」，对账时要能和「在库存页盘点」区分开。
+	MovementSourceProductForm = "product_form"
 )
 
 // errFallbacks 每个错误常量的中文兜底（与声明的 key 一起交给 pkg/facing.New）。

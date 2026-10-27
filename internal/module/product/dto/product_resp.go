@@ -235,6 +235,18 @@ type VariantListRowResp struct {
 	CostPrice    *float64
 	Enabled      bool
 	StockTotal   int
+	// Stocks 该变体的**仓库明细**（B8）：按仓分组的货行 + 当前在库。
+	//
+	// 编辑态显示的就是当前在库 —— 保存时把这些行原样带回、改过的数量即「目标值」。
+	// 分组由服务端算好（见 dto.VariantStockGroupResp 的注释：模板不做归并）。
+	Stocks []VariantStockGroupResp
+	// StocksKnown 明细是否真的读到了。
+	//
+	// 与「Stocks 为空」的区别很重要：读失败时明细留空，但那份空**不可信** ——
+	// 前端不能把「空」当成「这个变体没挂货」提交，那会在一次读故障之后
+	// 把用户原有的关联全裁掉（见 product_variant_stock_rows.go 的 Prune）。
+	// 前端只在 StocksKnown 为真时才组装这一行的 stocks。
+	StocksKnown bool
 }
 
 // CategoryCheckRowResp 分类勾选框的一行（勾选态由服务端算好，模板不做集合运算）。

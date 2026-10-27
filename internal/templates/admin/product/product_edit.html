@@ -353,10 +353,23 @@
                         <td>{{amountDash(v.ComparePrice)}}</td>
                         <td>{{amountDash(v.CostPrice)}}</td>
                         <td>{{if v.Enabled}}{{include "../partials/badge.html" map("tone", "success", "label", tr("admin.products.variant.enabled", "启用"))}}{{else}}{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.products.variant.disabled", "停用"))}}{{end}}</td>
-                        <td>{{v.StockTotal}}</td>
+                        <td>
+                            {{v.StockTotal}}
+                            {* 仓库明细（B8）：展开到下一行的整幅面板里改 —— 塞进这一格会变成
+                               一格里三条货 + 三个数量框，翻两屏都读不出一行变体的库存。 *}
+                            <button type="button" class="btn btn-sm btn-ghost" data-variant-stocks-toggle
+                                    aria-expanded="false">{{ .["t"]("admin.products.stocks.toggle", "仓库明细") }}</button>
+                        </td>
                         <td class="col-actions">
                             <a class="btn btn-sm" href="/admin/inventory?project={{selectedProject}}&amp;sku={{v.SKUCode}}">{{ .["t"]("admin.products.variant.stockLink", "各仓库存") }}</a>
                             <button type="button" class="btn btn-sm btn-danger" data-variant-remove>{{ .["t"]("admin.products.variant.remove", "移除") }}</button>
+                        </td>
+                    </tr>
+                    {* 明细行紧跟在变体行后：折叠时整行隐藏。data-variant-stocks-row 与上面的
+                       data-variant-id 一一对应，JS 按前一行取归属变体。 *}
+                    <tr data-variant-stocks-row hidden>
+                        <td colspan="8">
+                            {{include "variant_stock_panel.html" map("groups", v.Stocks, "known", v.StocksKnown, "t", tr)}}
                         </td>
                     </tr>
                     {{end}}
@@ -376,6 +389,30 @@
                 <button type="submit" class="btn btn-primary" data-requires-js hidden disabled>{{ .["t"]("admin.products.variant.saveList", "保存变体清单") }}</button>
             </div>
         </form>
+        {* 仓库明细的候选货（**整页一份**）：每个仓的货品清单，JS 把它填进每行的下拉。
+           不在每行内联：一个 200 变体的商品按行渲候选会渲出几万个 <option>。
+           这里只出机器可读的数据，不参与提交（<template> 里的控件不进表单）。 *}
+        {{if isset(.WarehouseSKUOptions)}}
+        {{skuGroups := .WarehouseSKUOptions}}
+        <template data-stock-catalog>
+            {{range _, cg := skuGroups}}
+            <optgroup label="{{cg.Label}}" data-warehouse-id="{{cg.WarehouseID}}" data-warehouse-code="{{cg.WarehouseCode}}">
+                {{range _, it := cg.Items}}
+                <option value="{{it.StockID}}"
+                        data-warehouse-id="{{cg.WarehouseID}}"
+                        data-warehouse-code="{{cg.WarehouseCode}}"
+                        data-stock-id="{{it.StockID}}"
+                        data-sku-code="{{it.SKUCode}}"
+                        data-name="{{it.Name}}"
+                        data-image="{{it.ImageURL}}"
+                        data-quantity="{{it.Quantity}}"
+                        data-track="{{if it.TrackQuantity}}1{{else}}0{{end}}">{{it.Label}}</option>
+                {{end}}
+            </optgroup>
+            {{end}}
+        </template>
+        {{end}}
+
         {* 清单行的结构只写一份：JS 追加新行时克隆它（列数、按钮、data 属性与既有行逐字一致）。 *}
         <template data-variant-row-tpl>
             <tr data-variant-row data-variant-id="" data-option-values="">
@@ -385,9 +422,18 @@
                 <td>—</td>
                 <td>—</td>
                 <td>{{include "../partials/badge.html" map("tone", "mute", "label", tr("admin.products.variant.pendingSave", "保存后生效"))}}</td>
-                <td>—</td>
+                <td>
+                    —
+                    <button type="button" class="btn btn-sm btn-ghost" data-variant-stocks-toggle
+                            aria-expanded="false">{{ .["t"]("admin.products.stocks.toggle", "仓库明细") }}</button>
+                </td>
                 <td class="col-actions">
                     <button type="button" class="btn btn-sm btn-danger" data-variant-remove>{{ .["t"]("admin.products.variant.remove", "移除") }}</button>
+                </td>
+            </tr>
+            <tr data-variant-stocks-row hidden>
+                <td colspan="8">
+                    {{include "variant_stock_panel.html" map("groups", nil, "known", true, "t", tr)}}
                 </td>
             </tr>
         </template>

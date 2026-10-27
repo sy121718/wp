@@ -598,6 +598,10 @@ type StockFactRow struct {
 	Quantity         int      `gorm:"column:quantity"`
 	ReservedQuantity int      `gorm:"column:reserved_quantity"`
 	CostPrice        *float64 `gorm:"column:cost_price"`
+	// 主档两列（迁移 642）：商品页的仓库明细按名称认货、带缩略图。stockRowsQuery 一直
+	// 在 select 里带着它们，此前只是没有投影结构接收（台账页走的是另一个结构）。
+	Name     string `gorm:"column:name"`
+	ImageURL string `gorm:"column:image_url"`
 }
 
 // ProductWarehouseStockRow 一个商品在**各仓**的库存行（分仓聚合的只读投影）。
