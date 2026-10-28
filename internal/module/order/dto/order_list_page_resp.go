@@ -218,6 +218,12 @@ type OrderNewPageResp struct {
 	ShipCountries []CountryOptionResp
 	BillCountries []CountryOptionResp
 
+	// 币种下拉的选项（迁移 633 之后后台可代客建外币单）。
+	//
+	// 首位是「用站点默认币」空项 —— 与国家的「（不填写）」不同：那不是一个「没值」的
+	// 档位，而是一个确定的语义（订单币取站点默认，此时不写汇率快照）。
+	CurrencyOptions []CountryOptionResp
+
 	// RowAddURL 加一行的链接（带当前表单的查询串）。
 	RowAddURL string
 

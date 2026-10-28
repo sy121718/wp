@@ -238,6 +238,13 @@
                 </span>
             </h2>
             <div class="form-stack">
+                {* 币种（汇率快照见迁移 633，词条见迁移 675）：空 = 站点默认币。选成外币之后服务端会按当时汇率写一份快照，
+                   汇率未配置时快照留空、报表里显示「未固化」——那是合法状态，不阻断下单。 *}
+                <label class="form-label" for="order-new-currency">{{ .["t"]("admin.order_new.field.currency", "订单币种") }}</label>
+                {{if isset(.CurrencyOptions)}}<select class="form-select" id="order-new-currency" name="currency">
+                    {{range .CurrencyOptions}}<option value="{{.Code}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+                </select>{{end}}
+                <p class="hint">{{ .["t"]("admin.order_new.hint.currency", "外币单按当前汇率写一份快照；没有配汇率也能下单，报表里显示「未固化」。") }}</p>
                 <label class="form-label" for="order-new-shipping-total">{{ .["t"]("admin.order_new.field.shipping_total", "运费（单位：分）") }}</label>
                 <input type="number" class="form-input" id="order-new-shipping-total" name="shippingTotal" min="0" value="{{formValue(.Echo, "shippingTotal", .Form.ShippingTotal)}}" aria-invalid="{{if .FieldErrors["shippingTotal"]}}true{{end}}" placeholder="{{ .["t"]("admin.order_new.ph.shipping_total", "如 1500 表示 15.00 元；留空按 0") }}" autocomplete="off">
                 {{if .FieldErrors["shippingTotal"]}}<p class="form-error">{{.FieldErrors["shippingTotal"]}}</p>{{end}}

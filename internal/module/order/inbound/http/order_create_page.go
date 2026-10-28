@@ -80,11 +80,13 @@ type orderCreateForm struct {
 	CustomerPhone    string
 	PayMethod        string
 	PayTitle         string
-	ShippingTotal    string
-	CouponCode       string
-	Remark           string
-	AdminNote        string
-	RequestID        string
+	// Currency 订单币种（ISO 4217）。空 = 用站点默认币。
+	Currency      string
+	ShippingTotal string
+	CouponCode    string
+	Remark        string
+	AdminNote     string
+	RequestID     string
 	// ProvisionAccount 复选框：默认 false（**不开号**），勾上才开号并发初始密码。
 	ProvisionAccount bool
 	// SameBilling 复选框：勾上则账单地址不渲染，由服务端复制收货地址。
@@ -288,7 +290,10 @@ func (h *orderCreatePageHandle) render(c *gin.Context, form orderCreateForm, fie
 		// 国家/地区下拉的选项（含首位「（不填写）」空项，国家是选填）。
 		ShipCountries: toCountryOptionResps(shipCountries),
 		BillCountries: toCountryOptionResps(billCountries),
-		RowAddURL:     "/admin/orders/new?" + rowAdd.Encode(),
+		// 币种下拉（迁移 633）：后台代客建单可指定外币，空 = 站点默认币。
+		CurrencyOptions: toCountryOptionResps(
+			currencyOptionViews(tr, h.currencyList(c), form.Currency)),
+		RowAddURL: "/admin/orders/new?" + rowAdd.Encode(),
 		// 错误出口：字段级（标红 + 行内文案）与页级（顶部提示栏）分开。
 		Err: pageErr,
 		// FieldErrors 是**稀疏** map：模板用 chain 索引读（缺键 falsy），
@@ -331,6 +336,69 @@ func (h *orderCreatePageHandle) countryList(c *gin.Context) []sysconfigcontract.
 		return nil
 	}
 	return opts
+}
+
+// currencyList 取启用币种清单（字典未接入或读取失败时返回 nil）。
+//
+// 读失败同样**不升级成整页错误**：币种下拉空着时页面只剩「用站点默认币」那一项，
+// 建单照常（不给币种就取默认），真因由 sysconfig 侧记日志。
+func (h *orderCreatePageHandle) currencyList(c *gin.Context) []sysconfigcontract.DictOption {
+	if h.dict == nil {
+		return nil
+	}
+	opts, err := h.dict.ListDictOptions(c.Request.Context(), currencyDictType)
+	if err != nil {
+		return nil
+	}
+	return opts
+}
+
+// currencyDictType 币种字典的类型名（与 sysconfig 的 model.DictTypeCurrency 同值）。
+//
+// 写字面量而不是 import 那个 model：页面只依赖 sysconfig 的 contract，
+// 为一个字符串常量把 model 拉进来会破模块边界。
+const currencyDictType = "currency"
+
+// currencyOptionViews 币种清单 → 下拉视图。
+//
+// 与国家的差别：首位是「用站点默认币」而不是「（不填写）」—— 币种有确定的默认值，
+// 空值表达的是「取默认」，不是「这一项没有值」。默认项上直接写出那个默认币代码，
+// 运营不必去设置页确认「默认到底是什么」。
+//
+// 已提交但字典里没有的码**原样补进列表并选中**（与国家同一手法）：看到的就是会落库的，
+// 而不是「下拉里没有，于是浏览器悄悄改选了第一项」。
+func currencyOptionViews(tr translate, currencies []sysconfigcontract.DictOption, submitted string) []countryOptionView {
+	def := strings.ToUpper(strings.TrimSpace(i18n.GetDefaultCurrency()))
+	selected := strings.ToUpper(strings.TrimSpace(submitted))
+	if selected == "" {
+		selected = def
+	}
+	out := make([]countryOptionView, 0, len(currencies)+2)
+	out = append(out, countryOptionView{
+		Label:    tr(orderenums.OrderNewFieldCurrencyUse, "用站点默认币") + "（" + def + "）",
+		Selected: selected == "" || selected == def,
+	})
+	hit := false
+	for _, o := range currencies {
+		code := strings.ToUpper(strings.TrimSpace(o.Code))
+		if code == "" {
+			continue
+		}
+		label := strings.TrimSpace(o.Label)
+		if label == "" {
+			label = code
+		}
+		if code == selected {
+			hit = true
+		}
+		out = append(out, countryOptionView{Code: code, Label: label, Selected: code == selected})
+	}
+	if !hit && selected != def {
+		// 提交了字典里没有的码：补一行并选中，让「看到的」等于「会落库的」。
+		// 建单时 service 会以 ErrCurrencyUnknown 拒掉它（迁移 633 的白名单）。
+		out = append(out, countryOptionView{Code: selected, Label: selected, Selected: true})
+	}
+	return out
 }
 
 // countryOptionViews 国家清单 → 下拉视图。
@@ -439,6 +507,7 @@ func orderCreateFormFromPost(c *gin.Context) orderCreateForm {
 		CustomerPhone:    strings.TrimSpace(c.PostForm("customerPhone")),
 		PayMethod:        strings.TrimSpace(c.PostForm("paymentMethod")),
 		PayTitle:         strings.TrimSpace(c.PostForm("paymentMethodTitle")),
+		Currency:         strings.ToUpper(strings.TrimSpace(c.PostForm("currency"))),
 		ShippingTotal:    strings.TrimSpace(c.PostForm("shippingTotal")),
 		CouponCode:       strings.TrimSpace(c.PostForm("couponCode")),
 		Remark:           strings.TrimSpace(c.PostForm("remark")),
@@ -561,6 +630,7 @@ func orderCreateReqFromForm(c *gin.Context, form orderCreateForm) (*orderdto.Cre
 		Billing:               billing,
 		PaymentMethod:         form.PayMethod,
 		PaymentMethodTitle:    form.PayTitle,
+		Currency:              form.Currency,
 		ShippingTotal:         shippingTotal,
 		CouponCode:            form.CouponCode,
 		Remark:                form.Remark,
