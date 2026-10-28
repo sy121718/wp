@@ -128,21 +128,9 @@ func acquireRedis(t *testing.T) (string, string, error) {
 	return addr, "container", nil
 }
 
-// pgProbeDSN 按 DSN 形态追加探测超时，避免 URL 与关键字语法混用。
-func pgProbeDSN(dsn string) string {
-	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
-		separator := "?"
-		if strings.Contains(dsn, "?") {
-			separator = "&"
-		}
-		return dsn + separator + "connect_timeout=5"
-	}
-	return dsn + " connect_timeout=5"
-}
-
 // pingPG 探测 PG 端点连通性（connect_timeout=5s，避免不可达地址长时间挂起）。
 func pingPG(ep PGEndpoint) error {
-	dsn := pgProbeDSN(pgDSN(ep.Host, ep.Port, ep.User, ep.Password, ep.Database))
+	dsn := pgAppendParams(pgDSN(ep.Host, ep.Port, ep.User, ep.Password, ep.Database), [2]string{"connect_timeout", "5"})
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return err

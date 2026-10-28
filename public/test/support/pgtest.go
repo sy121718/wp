@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -67,10 +68,35 @@ func pgDSN(host, port, user, password, dbname string) string {
 	// 提交路径的 WAL 刷盘是纯开销。实测全量 -p 16 从 227s 降到 181s（约 20%）。
 	// 只作用于测试连接，不碰生产库；崩库最多丢最后几个未落盘的事务，测试场景无所谓。
 	//
-	// **注意这里返回的是 URL 形式**（dbdriver.PostgresDSN 的产物），追加参数必须用
-	// 查询串语法 `&k=v`。此前这里拼的是关键字格式的 ` search_path=...`（空格分隔），
-	// 与 URL 混用会让 pgx 报 extra key/value separator —— 那个坑在改 DSN 时踩过一次。
-	return dsn + "&synchronous_commit=off"
+	return pgAppendParams(dsn, [2]string{"synchronous_commit", "off"})
+}
+
+// pgAppendParams 按 DSN 自身形态（URL 或关键字）追加连接参数，是拼接的唯一入口。
+//
+// 为什么必须收口：pgDSN 返回 URL 形式（dbdriver.PostgresDSN 的产物），追加参数只能用
+// 查询串语法 `&k=v`；用关键字格式的 ` k=v`（空格分隔）拼上去，pgx 会报
+// `extra key/value separator "=" in URI query parameter`。2026-10-27 的严格模式回归
+// 就是 testenv.go 直接 `+ " connect_timeout=5"` 造成的 —— 连库之前就死，任何「严格模式
+// 通过/失败」的结论都不成立。把分隔符判断留给调用方，这个坑就一定会再踩一次。
+func pgAppendParams(dsn string, params ...[2]string) string {
+	isURL := strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://")
+	for _, kv := range params {
+		if isURL {
+			separator := "?"
+			if strings.Contains(dsn, "?") {
+				separator = "&"
+			}
+			dsn += separator + kv[0] + "=" + url.QueryEscape(kv[1])
+			continue
+		}
+		// 关键字格式：含空格、引号或等号的值必须单引号包裹，否则会被解析成别的键。
+		value := kv[1]
+		if strings.ContainsAny(value, " '\\") {
+			value = "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(value) + "'"
+		}
+		dsn += " " + kv[0] + "=" + value
+	}
+	return dsn
 }
 
 // mustAtoi 端口解析：port 在调用点恒为数字字符串，解析失败说明参数装配错了。
@@ -175,7 +201,7 @@ func newTestDatabase(t *testing.T, ep PGEndpoint, useTemplate, translateError bo
 	// 表结构全在 public（模板库由生产迁移建成）；search_path 带上 ext_shared 供 trgm
 	// 索引使用 —— 扩展随模板库一起复制过来，不需要再装。
 	// search_path 走查询串参数（pgDSN 返回 URL 形式；不能再用关键字格式的空格分隔）。
-	dsn := pgDSN(host, port, user, password, name) + "&search_path=public%2C" + sharedExtSchema
+	dsn := pgAppendParams(pgDSN(host, port, user, password, name), [2]string{"search_path", "public," + sharedExtSchema})
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{TranslateError: translateError})
 	if err != nil {
 		// 连接失败时尽力清理，避免残留库堆积。

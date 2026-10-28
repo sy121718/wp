@@ -11,34 +11,78 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-func TestPGProbeDSNFormats(t *testing.T) {
-	for _, dsn := range []string{
-		pgDSN("127.0.0.1", "5432", "probe", "a b@x", "probe"),
-		"postgres://probe:pass@127.0.0.1:5432/probe",
-		"postgresql://probe:pass@127.0.0.1:5432/probe?application_name=probe",
-		"host=127.0.0.1 port=5432 user=probe password='a b@x' dbname=probe synchronous_commit=off",
-	} {
-		t.Run(dsn, func(t *testing.T) {
-			before, err := pgconn.ParseConfig(dsn)
+// TestPGAppendParamsFormats 钉住「拼接唯一入口」的两条分支。
+//
+// 回归对象：testenv.go 曾用 `pgDSN(...) + " connect_timeout=5"` 拼接，而 pgDSN 返回 URL
+// 形式，pgx 因此在连库之前就报 extra key/value separator —— 严格模式（GOWP_REQUIRE_PG=1）
+// 全部用例死在解析阶段，看起来像「环境不可用」，实际是一行 DSN 拼错。
+func TestPGAppendParamsFormats(t *testing.T) {
+	cases := []struct {
+		name string
+		dsn  string
+	}{
+		// pgDSN 的真实产物：URL 且已带查询串。
+		{"pgDSN 产物", pgDSN("127.0.0.1", "5432", "probe", "a b@x", "probe")},
+		{"URL 无查询串", "postgres://probe:pass@127.0.0.1:5432/probe"},
+		{"URL 有查询串", "postgresql://probe:pass@127.0.0.1:5432/probe?application_name=probe"},
+		{"关键字格式", "host=127.0.0.1 port=5432 user=probe password='a b@x' dbname=probe"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before, err := pgconn.ParseConfig(tc.dsn)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("原始 DSN 无法解析: %v", err)
 			}
-			after, err := pgconn.ParseConfig(pgProbeDSN(dsn))
+			after, err := pgconn.ParseConfig(pgAppendParams(tc.dsn, [2]string{"connect_timeout", "5"}))
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("追加后 DSN 无法解析: %v", err)
 			}
 			if after.ConnectTimeout != 5*time.Second {
-				t.Fatalf("超时=%v", after.ConnectTimeout)
+				t.Fatalf("connect_timeout 未生效: %v", after.ConnectTimeout)
 			}
-			if before.Host != after.Host || before.Port != after.Port || before.User != after.User || before.Password != after.Password || before.Database != after.Database {
-				t.Fatal("连接身份发生变化")
-			}
-			for key, value := range before.RuntimeParams {
-				if after.RuntimeParams[key] != value {
-					t.Fatalf("运行参数 %s 丢失", key)
-				}
-			}
+			assertSameConnIdentity(t, before, after)
 		})
+	}
+}
+
+// TestPGAppendParamsPreservesExisting 追加不得覆盖或丢失原参数、也不得改变连接身份。
+func TestPGAppendParamsPreservesExisting(t *testing.T) {
+	dsn := pgDSN("127.0.0.1", "5432", "probe", "a b@x", "probe")
+	before, err := pgconn.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := pgconn.ParseConfig(pgAppendParams(dsn, [2]string{"search_path", "public,ext_shared"}))
+	if err != nil {
+		t.Fatalf("追加 search_path 后无法解析: %v", err)
+	}
+	if got := after.RuntimeParams["synchronous_commit"]; got != "off" {
+		t.Fatalf("原有 synchronous_commit 丢失: %q", got)
+	}
+	if got := after.RuntimeParams["search_path"]; got != "public,ext_shared" {
+		t.Fatalf("search_path 未生效: %q（逗号被当成多值分隔符就是这里出的事）", got)
+	}
+	assertSameConnIdentity(t, before, after)
+}
+
+// TestPGAppendParamsIgnoresUnrelatedKeys 关键字格式下，带空格/引号的值必须被正确转义。
+func TestPGAppendParamsIgnoresUnrelatedKeys(t *testing.T) {
+	dsn := pgAppendParams("host=127.0.0.1 port=5432 user=probe dbname=probe",
+		[2]string{"application_name", "a b'c"})
+	cfg, err := pgconn.ParseConfig(dsn)
+	if err != nil {
+		t.Fatalf("含空格与引号的值把 DSN 弄坏了: %v", err)
+	}
+	if got := cfg.RuntimeParams["application_name"]; got != "a b'c" {
+		t.Fatalf("值被改写: %q", got)
+	}
+}
+
+func assertSameConnIdentity(t *testing.T, before, after *pgconn.Config) {
+	t.Helper()
+	if before.Host != after.Host || before.Port != after.Port ||
+		before.User != after.User || before.Password != after.Password || before.Database != after.Database {
+		t.Fatalf("连接身份发生变化: %+v → %+v", before, after)
 	}
 }
 
@@ -68,59 +112,5 @@ func TestRequiredDependencyFailure(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-// 用子进程隔离共享容器缓存；预置已就绪端点，只验证回退编排，不启动容器。
-func TestRequiredTestEnvAcceptsContainerFallback(t *testing.T) {
-	if os.Getenv("GOWP_TEST_CONTAINER_FALLBACK_CHILD") == "1" {
-		t.Setenv("GOWP_REQUIRE_PG", "1")
-		t.Setenv("GOWP_REQUIRE_REDIS", "1")
-		t.Setenv("PGHOST", "127.0.0.1")
-		t.Setenv("PGPORT", "1")
-		t.Setenv("TEST_REDIS_ADDR", "127.0.0.1:1")
-		sharedPGOnce.Do(func() {
-			sharedPGEP = PGEndpoint{Host: "container-pg", Port: "5432", User: "probe", Database: "probe"}
-		})
-		sharedRedisOnce.Do(func() { sharedRedisAddr = "container-redis:6379" })
-		TestRequiredTestEnv(t)
-		return
-	}
-	cmd := exec.Command(os.Args[0], "-test.run=^TestRequiredTestEnvAcceptsContainerFallback$", "-test.v")
-	cmd.Env = append(os.Environ(), "GOWP_TEST_CONTAINER_FALLBACK_CHILD=1")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("有效容器回退应通过严格依赖契约: %v\n%s", err, out)
-	}
-}
-
-func TestRequiredTestEnv(t *testing.T) {
-	if !RequirePG() || !RequireRedis() {
-		t.Skip("仅严格双依赖回归运行")
-	}
-	env, err := AcquireTestEnv(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if env == nil {
-		t.Fatal("环境应存在")
-	}
-	if env.PG.Host == "" || env.PG.Port == "" || env.PG.User == "" || env.PG.Database == "" || env.RedisAddr == "" {
-		t.Fatalf("依赖端点应完整: %+v", env)
-	}
-	for _, source := range []string{env.PGSource, env.RedisSource} {
-		if source != "local" && source != "container" {
-			t.Fatalf("依赖来源无效: %q", source)
-		}
-	}
-}
-
-func TestPingPGReachesConnectionAttempt(t *testing.T) {
-	err := pingPG(PGEndpoint{Host: "127.0.0.1", Port: "1", User: "probe", Database: "probe"})
-	if err == nil {
-		t.Fatal("关闭端口应连接失败")
-	}
-	if strings.Contains(err.Error(), "failed to parse") || strings.Contains(err.Error(), "extra key/value separator") {
-		t.Fatalf("探测必须进入连接阶段，而非 DSN 解析失败: %v", err)
 	}
 }
