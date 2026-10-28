@@ -153,11 +153,13 @@ func (s *Service) ConvertedOverview(ctx context.Context, req *orderdto.SalesOver
 	projectID := strings.TrimSpace(req.ProjectID)
 	filter := ordermodel.OrderSalesFilter{Statuses: statuses}
 	base := strings.ToUpper(strings.TrimSpace(orderCurrency()))
-	rows, err := s.orders.ListFXOrdersByRange(ctx, projectID, from, to, filter)
+	// 只取「快照基准币 = 当前基准币」的订单：基准币改过的工程里，旧快照折算到的
+	// 是另一个币，加进来会让标签「折算到 <base>」成为假话（见 model 的同名注释）。
+	rows, err := s.orders.ListFXOrdersByRange(ctx, projectID, from, to, filter, base)
 	if err != nil {
 		return nil, err
 	}
-	unconverted, err := s.orders.CountUnconvertedOrders(ctx, projectID, from, to, filter)
+	unconverted, err := s.orders.CountUnconvertedOrders(ctx, projectID, from, to, filter, base)
 	if err != nil {
 		return nil, err
 	}

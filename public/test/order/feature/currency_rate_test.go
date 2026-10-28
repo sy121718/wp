@@ -193,3 +193,98 @@ func TestConvertedOverview(t *testing.T) {
 		t.Fatalf("未固化订单数应为 1，实际 %d", overview.Converted.UnconvertedOrders)
 	}
 }
+
+// TestConvertedOverviewGroupsByBaseCode 折算块只数「快照基准币 = 当前基准币」的订单。
+//
+// 快照汇率的语义是「1 单位订单币 = rate 单位**当时的**基准币」。基准币是运行期配置，
+// 可以改；改过之后，旧快照折算到的是另一个币。把两种基准币的折算值直接相加，
+// 数字算得出来、标签「折算到 <当前基准币>」却是假的。
+//
+// 会红断言：
+//
+//	1  基准币对不上的快照订单不进 ConvertedSales（金额为 0，不给假数字）
+//	2  它计入 UnconvertedOrders（「无法折算到当前基准币」）
+//	3  Converted + Unconverted == 区间内订单总数（两侧互补，页面不出现对不上的缺口）
+func TestConvertedOverviewGroupsByBaseCode(t *testing.T) {
+	f := newOrderFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	_, vid := f.addProduct(t, "折算分组商品", 100, 10)
+
+	if _, err := f.orders.SetRate(ctx, &orderdto.SetRateReq{
+		BaseCode: "USD", QuoteCode: "CNY", Rate: "7.20",
+	}); err != nil {
+		t.Fatalf("写汇率失败: %v", err)
+	}
+	// 当前基准币（i18n 默认货币）下的快照单：正常折算。
+	fxReq := f.createBaseReq(vid, 1)
+	fxReq.Currency = "USD"
+	cur, err := f.orders.CreateOrder(ctx, fxReq)
+	if err != nil {
+		t.Fatalf("建单失败: %v", err)
+	}
+	f.payOrder(t, cur.ID)
+	if err := f.db.Exec("UPDATE orders SET total = 10000, subtotal = 10000 WHERE id = ?", cur.ID).
+		Error; err != nil {
+		t.Fatalf("改订单金额失败: %v", err)
+	}
+
+	// 旧基准币下的快照单：把 fx_base_code 改成 USD，等价于「基准币配置从 USD 改成 CNY 之前
+	// 固化的快照」。第三单把基准币清成空串（未固化的正式表示），一并覆盖。
+	old, err := f.orders.CreateOrder(ctx, fxReq)
+	if err != nil {
+		t.Fatalf("建第二单失败: %v", err)
+	}
+	f.payOrder(t, old.ID)
+	if err := f.db.Exec("UPDATE orders SET total = 10000, subtotal = 10000 WHERE id = ?", old.ID).
+		Error; err != nil {
+		t.Fatalf("改第二单金额失败: %v", err)
+	}
+	if err := f.db.Exec("UPDATE orders SET fx_base_code = 'USD' WHERE id = ?", old.ID).Error; err != nil {
+		t.Fatalf("改基准币失败: %v", err)
+	}
+	broken, err := f.orders.CreateOrder(ctx, fxReq)
+	if err != nil {
+		t.Fatalf("建第三单失败: %v", err)
+	}
+	f.payOrder(t, broken.ID)
+	// fx_base_code 是 NOT NULL DEFAULT ''（迁移 633:38）：空串就是「未固化」的正式表示。
+	if err := f.db.Exec("UPDATE orders SET fx_base_code = '' WHERE id = ?", broken.ID).Error; err != nil {
+		t.Fatalf("清基准币失败: %v", err)
+	}
+
+	day := func(offset int) string {
+		return time.Now().UTC().AddDate(0, 0, offset).Format("2006-01-02")
+	}
+	req := &orderdto.SalesOverviewReq{
+		ProjectID: f.projectID, From: day(-30), To: day(0), Status: "paid",
+	}
+	overview, err := f.orders.SalesOverview(ctx, req)
+	if err != nil {
+		t.Fatalf("读销售概览失败: %v", err)
+	}
+	if overview.Converted == nil {
+		t.Fatalf("有汇率快照时应给出折算块")
+	}
+	// ① 只有基准币对得上的那单参与折算：10000 × 7.20 = 72000 分。
+	if overview.Converted.ConvertedSales != 72000 {
+		t.Fatalf("折算销售额只该含当前基准币的快照 = 72000 分，实际 %d"+
+			"（基准币不同的旧快照被算进来了，页面标签会变成假话）",
+			overview.Converted.ConvertedSales)
+	}
+	if overview.Converted.ConvertedOrders != 1 {
+		t.Fatalf("已折算订单数应为 1，实际 %d", overview.Converted.ConvertedOrders)
+	}
+	// ② 其余两单（基准币不符 / 快照基准币为空串）都算未折算。
+	if overview.Converted.UnconvertedOrders != 2 {
+		t.Fatalf("未折算订单数应为 2，实际 %d", overview.Converted.UnconvertedOrders)
+	}
+	// ③ 两侧互补：等于区间内已付款订单总数。
+	if got, want := overview.Converted.ConvertedOrders+overview.Converted.UnconvertedOrders,
+		int64(3); got != want {
+		t.Fatalf("已折算 + 未折算应等于区间订单总数 %d，实际 %d", want, got)
+	}
+}
+

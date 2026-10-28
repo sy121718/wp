@@ -121,42 +121,64 @@ type FXOrderRow struct {
 	FXBaseCode string `gorm:"column:fx_base_code"`
 }
 
-// ListFXOrdersByRange 区间内有汇率快照的订单（迁移 633，W5）。
+// ListFXOrdersByRange 区间内**可折算到 baseCode** 的订单（迁移 633，W5）。
 //
 // 逐单而不是一条聚合 SQL：每张单的**快照汇率不同**（下单时刻不同），
 // 「每行乘以自己的汇率」需要逐行算 —— 而折算必须与 service 的 big.Rat 口径
 // 完全一致，否则页面上的数字与 service 算的会各算一套。
+//
+// 为什么必须按 fx_base_code 分组（W5 复审补的口子）：快照汇率的语义是
+// 「1 单位订单币 = rate 单位 **基准币**」，而基准币来自运行期配置，可以改。
+// 只筛 fx_rate IS NOT NULL 会把「当年按 USD 基准折算的快照」与「现在按 CNY 基准的快照」
+// 一起加总，页面标签却写着「折算到 CNY」—— 数字是对的加总、语义是假的。
+// 基准币对不上的订单与「没有快照」同等处理：都不进折算，都计入未折算。
 func (m *OrderModel) ListFXOrdersByRange(ctx context.Context, projectID string, from, to time.Time,
-	f OrderSalesFilter) (rows []FXOrderRow, err error) {
+	f OrderSalesFilter, baseCode string) (rows []FXOrderRow, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return nil, ErrProjectRequired
 	}
 	if from.IsZero() || to.IsZero() {
 		return nil, ErrRangeRequired
 	}
+	base := normalizeCurrencyCode(baseCode)
+	if base == "" {
+		return nil, ErrRangeRequired
+	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return salesScope(
 			tx.Table(OrderEntity{}.TableName()+" AS o").
 				Select("o.id, o.total, CAST(o.fx_rate AS text) AS fx_rate, o.fx_base_code").
-				Where("o.fx_rate IS NOT NULL"),
+				Where("o.fx_rate IS NOT NULL").
+				Where("upper(o.fx_base_code) = ?", base),
 			projectID, from, to, f,
 		).Order("o.id ASC").Scan(&rows).Error
 	})
 	return rows, err
 }
 
-// CountUnconvertedOrders 区间内**没有**汇率快照的订单数（迁移 633，W5）。
+// CountUnconvertedOrders 区间内**无法折算到 baseCode** 的订单数（迁移 633，W5）。
+//
+// 两种情况都算：没有快照（fx_rate IS NULL），以及快照的基准币不是现在的 baseCode
+// （快照存在但语义不是「折算到 baseCode」）。两者必须与 ListFXOrdersByRange 互补，
+// 否则「已折算 + 未折算」会小于区间订单总数，页面上出现对不上的缺口。
 func (m *OrderModel) CountUnconvertedOrders(ctx context.Context, projectID string, from, to time.Time,
-	f OrderSalesFilter) (n int64, err error) {
+	f OrderSalesFilter, baseCode string) (n int64, err error) {
 	if strings.TrimSpace(projectID) == "" {
 		return 0, ErrProjectRequired
 	}
 	if from.IsZero() || to.IsZero() {
 		return 0, ErrRangeRequired
 	}
+	base := normalizeCurrencyCode(baseCode)
+	if base == "" {
+		return 0, ErrRangeRequired
+	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
 		return salesScope(
-			tx.Table(OrderEntity{}.TableName()+" AS o").Where("o.fx_rate IS NULL"),
+			tx.Table(OrderEntity{}.TableName()+" AS o").
+				// fx_base_code 是 NOT NULL DEFAULT ''（迁移 633:38），空串表示「未固化」。
+				// 空串 <> 'CNY' 为真 —— 这类行与没有快照的行同等处理，两侧计数因此互补。
+				Where("o.fx_rate IS NULL OR upper(o.fx_base_code) <> ?", base),
 			projectID, from, to, f,
 		).Count(&n).Error
 	})
