@@ -23,7 +23,9 @@ import (
 	"context"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,8 +134,11 @@ func TestPostgresDSNStatementTimeoutAndTimeZone(t *testing.T) {
 //
 // 数据库连不上时 Skip（本仓口径：PG 不可用则 t.Skip），但只要连上了就必须能 Open 成功。
 func TestOpenPostgresWorksThroughGorm(t *testing.T) {
-	// 连接参数取本机默认可用的那组；连不上就跳过，不把「没装库」当成失败。
-	cfg := Config{Host: "127.0.0.1", Port: 5432, User: "sky", Password: "", DBName: "artex"}
+	// 连接参数默认对齐 config.yaml.example，可用标准 libpq 环境变量覆盖。
+	//
+	// 以前把库名写死成 `artex` —— 那是另一个项目的库，与本仓无关：换一台机器（含 CI）
+	// 就没这个库，测试永久 Skip；恰好装了它的机器上，验的也是别人的库。
+	cfg := openTestConfig()
 
 	db, err := gorm.Open(OpenPostgres(cfg), &gorm.Config{})
 	if err != nil {
@@ -166,6 +171,40 @@ func TestOpenPostgresWorksThroughGorm(t *testing.T) {
 	}
 	if dbName != cfg.DBName {
 		t.Errorf("连到了库 %q，应为 %q —— 空密码吃掉了 dbname", dbName, cfg.DBName)
+	}
+}
+
+// skipOrFailPG 依赖不可用时的口径：宽松模式 Skip，严格模式（GOWP_REQUIRE_PG=1）必须红。
+//
+// 只写 t.Skipf 时，`GOWP_REQUIRE_PG=1 go test ./...` 会把「库不在」报成 ok，
+// 看起来全绿，实际一条真连接都没跑。
+func skipOrFailPG(t *testing.T, err error) {
+	t.Helper()
+	if v := strings.TrimSpace(os.Getenv("GOWP_REQUIRE_PG")); v == "1" || strings.EqualFold(v, "true") {
+		t.Fatalf("PostgreSQL 不可用，而 GOWP_REQUIRE_PG=1 要求本次测试必须真跑：%v", err)
+	}
+	t.Skipf("本机没有可用的 PG（跳过）：%v", err)
+}
+
+// openTestConfig 真实连接用的 Config：默认对齐 config.yaml.example，
+// 可用标准 libpq 环境变量（PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE）覆盖。
+func openTestConfig() Config {
+	envOr := func(key, fallback string) string {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return v
+		}
+		return fallback
+	}
+	port, err := strconv.Atoi(envOr("PGPORT", "5432"))
+	if err != nil {
+		panic("PGPORT 不是数字: " + os.Getenv("PGPORT"))
+	}
+	return Config{
+		Host:     envOr("PGHOST", "127.0.0.1"),
+		Port:     port,
+		User:     envOr("PGUSER", "root"),
+		Password: os.Getenv("PGPASSWORD"),
+		DBName:   envOr("PGDATABASE", "wp"),
 	}
 }
 
