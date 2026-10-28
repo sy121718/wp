@@ -44,6 +44,12 @@ const (
 	ErrCustomerEmailInvalid  = "order.err.customerEmailInvalid"
 	ErrOrderNoInvalid        = "order.err.orderNoInvalid"
 	ErrStatusInvalid         = "order.err.statusInvalid"
+	// ErrCurrencyUnknown 建单请求里的币种不在系统货币字典的启用项里。
+	//
+	// 为什么必须校验：币种只决定「汇率快照能不能成立」，非法币种不报错的话
+	// fx_rate 会静默留 NULL —— 那张单看起来与「没配汇率」完全一样，
+	// 没人能从页面上分出「这个币种根本不存在」与「这个币对还没配汇率」。
+	ErrCurrencyUnknown = "order.err.currencyUnknown"
 	// ErrNoteTooLong 备注超长：直接拒绝而不是静默截断 —— 截断会让运营以为写进去了。
 	ErrNoteTooLong = "order.err.noteTooLong"
 )
@@ -159,6 +165,7 @@ var errFallbacks = map[string]string{
 	ErrCustomerEmailInvalid:       "客户邮箱格式不正确",
 	ErrOrderNoInvalid:             "订单号格式不合法",
 	ErrStatusInvalid:              "订单状态取值不合法",
+	ErrCurrencyUnknown:            "该币种不在系统货币字典里（可能已被停用），请重新选择",
 	ErrNoteTooLong:                "备注内容过长",
 	ErrOrderNotFound:              "订单不存在",
 	ErrOrderNoTaken:               "订单号已被占用",
@@ -210,6 +217,8 @@ var UserFacingMessages = []string{
 	ErrInvalidParam, ErrProjectRequired, ErrItemsRequired, ErrItemLimitExceeded,
 	ErrQuantityInvalid, ErrCustomerEmailRequired, ErrCustomerEmailInvalid,
 	ErrOrderNoInvalid, ErrStatusInvalid,
+	// 币种：后台建单页的币种下拉会把这条直接展示给操作者。
+	ErrCurrencyUnknown,
 	ErrOrderNotFound, ErrOrderNoTaken, ErrOrderHasNoItems,
 	ErrStatusTransition, ErrOrderNotCancellable, ErrOrderNotRefundable,
 	ErrAlreadyCancelled, ErrAlreadyRefunded, ErrCancelReasonRequired,
@@ -586,6 +595,14 @@ const (
 
 	// 代客建单页国家/地区下拉的「（不填写）」空项。
 	OrderNewFieldCountryNone = "admin.order_new.field.country_none"
+
+	// 代客建单页的币种下拉（迁移 633 之后后台可建外币单）。
+	//
+	// 三个 key 一组：标签、说明、以及「不指定」空项的文案。空项不叫「不填写」——
+	// 币种有确定的默认值（站点默认币），空项表达的是「用默认」，那与「没填」不是一件事。
+	OrderNewFieldCurrency    = "admin.order_new.field.currency"
+	OrderNewFieldCurrencyUse = "admin.order_new.field.currency_default"
+	OrderNewHintCurrency     = "admin.order_new.hint.currency"
 )
 
 // FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。

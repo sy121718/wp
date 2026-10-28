@@ -101,6 +101,12 @@ type Service struct {
 	// 允许为 nil：未注入时待发货页不禁用任何按钮（与接线前逐字一致），
 	// 由提交时的真实校验决定成败。生产装配必注入 —— 否则「点了才失败」的体验永远在。
 	stockProbe ordercontract.ShipStockProbe
+	// currencies 启用币种清单（建单校验 req.Currency）。
+	//
+	// 允许为 nil：未注入时**跳过校验**（纯单测 / 未接字典的装配仍可建单）。
+	// 生产必须注入 —— 否则一个不存在的币种会被静默写进 orders.currency，
+	// 而 fx_rate 恒 NULL，报表里与「汇率没配」长得一模一样。
+	currencies ordercontract.CurrencyLister
 }
 
 // NewService 构造（参数直传，不用 Deps 结构体）。
@@ -189,6 +195,17 @@ func (s *Service) SetShipmentModels(shipments *ordermodel.OrderShipmentModel, ca
 
 // 编译期断言：本 service 实现模块对外契约。
 var _ ordercontract.OrderService = (*Service)(nil)
+
+// SetCurrencyLister 注入启用币种清单（装配期调用；建单校验与建单页下拉用）。
+//
+// 未注入时建单**跳过币种校验**（理由见字段注释）。注入之后仍然只有「给了币种」才校验：
+// 空币种表示「用站点默认币」，那个值本来就来自系统配置，不需要再审一遍。
+func (s *Service) SetCurrencyLister(lister ordercontract.CurrencyLister) {
+	if s == nil {
+		return
+	}
+	s.currencies = lister
+}
 
 // SetProjects 注入工程契约（装配期调用）。
 //

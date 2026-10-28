@@ -10,6 +10,7 @@ import (
 
 	ordercontract "go_wp/internal/module/order/contract"
 	ordermodel "go_wp/internal/module/order/model"
+	"go_wp/internal/module/order/outbound/currencydict"
 	orderservice "go_wp/internal/module/order/service"
 	productcontract "go_wp/internal/module/product/contract"
 	projectcontract "go_wp/internal/module/project/contract"
@@ -77,6 +78,13 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	// service 用它把事实换成名字）。不注则那一列恒为「—」，且不会报错。
 	if warehouses != nil {
 		svc.SetWarehouseSource(warehouses)
+	}
+	// 币种白名单（迁移 633 的补口）：建单校验 req.Currency，建单页给下拉供数。
+	// 适配器包住 sysconfig 的 DictReader（同一实例，按进程缓存一份代码集合）——
+	// 订单模块不 import 字典的 model / dto，方向由 ordercontract.CurrencyLister 承载。
+	// dict 为 nil 时不注入：service 与页面都按「没有字典」降级（跳过校验 / 只剩默认项）。
+	if dict != nil {
+		svc.SetCurrencyLister(currencydict.New(dict))
 	}
 	h := NewHandle(svc)
 	// 待付款超时自动取消（TX-001）：进程内定时扫描，失败不阻断启动。

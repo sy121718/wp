@@ -112,6 +112,9 @@ const (
 	// portOrderReturnWarehouseSource 工程仓库清单（B6-b）：退货页「原发货仓」把仓库 id
 	// 换成名字（同一个端口同时喂页面的入库仓下拉）。
 	portOrderReturnWarehouseSource = "order.SetWarehouseSource"
+	// portOrderCurrencyLister 启用币种清单（迁移 633 的补口）：建单校验 req.Currency、
+	// 建单页给币种下拉供数。实现在 order/outbound/currencydict，包住 sysconfig 的 DictReader。
+	portOrderCurrencyLister = "order.SetCurrencyLister"
 	// —— block ↔ page 的装配期接线（FIX-05）——
 	// 块内容变更后的 stale 传播与删除前的引用检查；漏接的表现都是「无声的」，
 	// 因此两条都按 required-port 登记（判据见文件头：说不清「用户看到什么」就是 required）。
@@ -250,6 +253,8 @@ var wiringManifest = []wiringEntry{
 		"待发货页不再禁用发不出去的单：按钮一律可点，点了由发货接口拒绝（行为退回加守卫之前）"},
 	{portOrderReturnWarehouseSource, "inventory（经订单装配注入）", "order 退货页原发货仓 / 入库仓下拉", wiringOptionalDegraded,
 		"退货页的「原发货仓」列恒显示「—」（id 换不出名字），入库仓下拉为空；退货与退款照常"},
+	{portOrderCurrencyLister, "sysconfig（经 order/outbound/currencydict 适配）", "order 建单币种校验 / 建单页币种下拉", wiringOptionalDegraded,
+		"建单不再校验币种（写进 orders.currency 的可能是字典里没有的码），建单页币种下拉只剩「用站点默认币」一项；外币单仍可建"},
 	{portPluginAdminAuthz, "admin", "plugin", wiringOptionalDegraded,
 		"插件读不到当前用户权限上下文（AdminAuthz() 返回 nil，调用方判空降级）"},
 	{portMailCipherSecret, "config app.secret", "mail", wiringOptionalDegraded,

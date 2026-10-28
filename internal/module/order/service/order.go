@@ -134,6 +134,12 @@ func (s *Service) createOrder(ctx context.Context, req *orderdto.CreateOrderReq,
 	if err = validateCreateOrderReq(req); err != nil {
 		return nil, err
 	}
+	// 币种白名单（迁移 633 的补口）：非法币种会让 fx_rate 静默留 NULL，
+	// 那张单在报表里与「这个币对还没配汇率」完全同形。放在幂等查之前 ——
+	// 一个不存在的币种不该因为「撞上了既有 request_id」被放过去。
+	if err = s.validateOrderCurrency(ctx, req); err != nil {
+		return nil, err
+	}
 	projectID := strings.TrimSpace(req.ProjectID)
 
 	// 幂等：同一 request_id 命中既有单就原样返回，绝不再扣一次库存。
@@ -220,6 +226,36 @@ func validateCreateOrderReq(req *orderdto.CreateOrderReq) error {
 		return orderenums.Err(orderenums.ErrItemLimitExceeded)
 	}
 	return nil
+}
+
+// validateOrderCurrency 校验请求里的币种在本系统的货币字典启用项里。
+//
+// 三档处理，判据都是「用户看到什么」：
+//
+//	· 没给币种（空串）→ 放行：它表示「用站点默认币」，那个值本来就来自系统配置；
+//	· 未注入字典 → 放行：字典读不到是装配 / 基础设施问题，不该表现成「客户下不了单」；
+//	· 字典读到了但里面没有这个币 → ErrCurrencyUnknown（含"可能已被停用"的提示）。
+func (s *Service) validateOrderCurrency(ctx context.Context, req *orderdto.CreateOrderReq) error {
+	want := strings.ToUpper(strings.TrimSpace(req.Currency))
+	if want == "" || s.currencies == nil {
+		return nil
+	}
+	codes, err := s.currencies.ListCurrencyCodes(ctx)
+	if err != nil {
+		// 读失败不拦单：与「未注入」同一档（可见降级是日志，不是拒绝下单）。
+		return nil
+	}
+	if len(codes) == 0 {
+		// 字典一张行都没有 = 还没 seed（迁移没跑）。这时**不能**用它当白名单，
+		// 否则整个站点的外币单全部被拒，而真因是一个没跑的迁移。
+		return nil
+	}
+	for _, c := range codes {
+		if strings.EqualFold(strings.TrimSpace(c), want) {
+			return nil
+		}
+	}
+	return orderenums.Err(orderenums.ErrCurrencyUnknown)
 }
 
 // orderByRequestID 幂等键命中则返回既有单的响应；无键或未命中返回 nil。

@@ -504,6 +504,23 @@ type StockRowLocator interface {
 	LocateStockRow(ctx context.Context, projectID, variantID, warehouseID string) (stockID string, err error)
 }
 
+// CurrencyLister 启用币种清单：建单时校验 req.Currency、建单页给币种下拉供数。
+//
+// 只回答「现在哪些币种是启用的」，不暴露字典项的名称 / 符号 / 排序 ——
+// 展示标签是页面的事，订单只需要一个集合。
+//
+// 为什么必须校验：币种决定汇率快照能不能成立（迁移 633）。非法币种不报错的话
+// `orders.fx_rate` 会静默留 NULL，那张单在报表里与「这个币对还没配汇率」**完全同形**，
+// 运营分不出「币种根本不存在」与「汇率没配」。
+//
+// 由本模块的 outbound 适配器实现（order/outbound/currencydict，包住 sysconfig 的
+// DictReader）：订单模块不 import 字典的 model，字典模块也不需要认识订单。
+type CurrencyLister interface {
+	// ListCurrencyCodes 当前启用的币种代码（ISO 4217，大写，去重）。
+	// 读失败返回 error —— 调用方决定「不算校验」还是「拦下建单」。
+	ListCurrencyCodes(ctx context.Context) (codes []string, err error)
+}
+
 // WarehouseResolver 订单侧解析「这一行从哪个仓出」的唯一入口（迁移 628，S2）。
 //
 // 只回答一个问题：给定工程与可选仓，返回确定的仓 id（空字符串 = 该工程没有可用仓）。
