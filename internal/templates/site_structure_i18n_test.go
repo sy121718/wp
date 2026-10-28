@@ -144,7 +144,10 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 					"Stale": true, "Staged": false, "Version": 3, "UpdatedAt": utils.NewJSONTime(time.Date(2026, 1, 2, 0, 0, 0, 0, time.Local)),
 				}},
 			},
-			wants: []string{"新建站点工程", "创建工程", "新建页面", "创建页面", "页面列表", "已发布", "有更新未发布", "编辑", "预览", "多语言", "线上"},
+			// 「预览」「线上」已合并成一个「打开页面」入口：已发布的直开线上真页面（此行的
+			// Active=true → href 是 /site/about/），未发布的才打开草稿渲染。并排两个按钮
+			// 让用户先猜哪个对应自己想看的那个，而「线上 / 草稿」状态列已经说了。
+			wants: []string{"新建站点工程", "创建工程", "新建页面", "创建页面", "页面列表", "已发布", "有更新未发布", "编辑", "打开页面", "多语言", `href="/site/about/"`},
 		},
 		{
 			name: "admin/page/page_translations",

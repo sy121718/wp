@@ -242,12 +242,13 @@
                     <td class="text-mute text-sm">{{dateTime(p.UpdatedAt)}}</td>
                     <td class="col-actions">
                         <a class="btn btn-sm" href="/workbench?id={{p.ID}}">{{tr("admin.pages.action.edit", "编辑")}}</a>
-                        <a class="btn btn-sm btn-ghost" href="/workbench/preview?id={{p.ID}}" target="_blank">{{tr("admin.pages.action.preview", "预览")}}</a>
+                        {* 一个入口看内容：已发布的打开线上真页面，没上线的打开草稿渲染。
+                           「这页现在长什么样」是同一件事，不拆成「预览」「线上」两个并列按钮 ——
+                           两个按钮并排时，用户还得先猜哪个才对应自己想的那个；
+                           而「你看的是线上还是草稿」状态列已经说了，按钮不必再说一遍。 *}
+                        <a class="btn btn-sm btn-ghost" href="{{if p.Active}}/site{{p.DraftPath}}/{{else}}/workbench/preview?id={{p.ID}}{{end}}" target="_blank">{{tr("admin.pages.action.open", "打开页面")}}</a>
                         {* 多语言工作台入口（决策 F10：行内按钮，不做独立菜单） *}
                         <a class="btn btn-sm btn-ghost" href="/admin/pages/translations?pageId={{p.ID}}">{{tr("admin.pages.action.translations", "多语言")}}</a>
-                        {{if p.Active}}
-                        <a class="btn btn-sm btn-ghost" href="/site{{p.DraftPath}}/" target="_blank">{{tr("admin.pages.action.live", "线上")}}</a>
-                        {{end}}
                         {{if canDelete}}
                         <button type="submit" form="page-del-{{p.ID}}" class="btn btn-sm btn-danger">{{ .["t"]("admin.common.action.delete", "删除") }}</button>
                         {{end}}

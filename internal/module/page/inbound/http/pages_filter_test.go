@@ -390,3 +390,62 @@ func TestPagesListLangEmptyState(t *testing.T) {
 		t.Error("筛了语言却给出「还没有页面」：用户会去建重复的页面，而真相是这个语言没排上产出")
 	}
 }
+// TestPagesListActionsOneOpenEntry 操作列的「看内容」只留一个入口，且已发布/未发布各走各的目标。
+//
+// 曾经是并排的「预览」（草稿渲染）与「线上」（静态产物）两个按钮。它们回答的是同一个问题
+//（这页现在长什么样），差别只在看不看得到线上那份 —— 而这一差别状态列已经写了，
+// 并排两个按钮的结果是让用户先猜哪个对应自己想看的那个。
+//
+// 断言的是**分流**而不是「只有一个 <a>」：数量对、目标错（未发布的行却链到 /site）
+// 比两个按钮更糟 —— 点开是 404，而列表看起来完全正常。
+func TestPagesListActionsOneOpenEntry(t *testing.T) {
+	published := pageRowForOpen(true)
+	draft := pageRowForOpen(false)
+
+	t.Run("已发布→线上真页面", func(t *testing.T) {
+		h, pages, _ := newFilterPagesHandle(t, oneProject())
+		pages.rows = []pagedto.PageResp{published}
+		body := renderPagesList(t, h, "").Body.String()
+		if !strings.Contains(body, `href="/site/about/"`) {
+			t.Fatalf("已发布的行没有指向线上产物：%s", body)
+		}
+		if strings.Contains(body, "/workbench/preview?id=") {
+			t.Error("已发布的行仍给了草稿预览入口：同一行两个「看内容」入口又回来了")
+		}
+	})
+
+	t.Run("未发布→草稿渲染", func(t *testing.T) {
+		h, pages, _ := newFilterPagesHandle(t, oneProject())
+		pages.rows = []pagedto.PageResp{draft}
+		body := renderPagesList(t, h, "").Body.String()
+		if !strings.Contains(body, "/workbench/preview?id=pg1") {
+			t.Fatalf("没有线上产物的行没有退回草稿渲染：%s", body)
+		}
+		if strings.Contains(body, `href="/site/about/"`) {
+			t.Error("未发布的行链到了线上产物：点开是 404，而列表看起来正常")
+		}
+	})
+
+	t.Run("两个按钮名都不再出现", func(t *testing.T) {
+		h, pages, _ := newFilterPagesHandle(t, oneProject())
+		pages.rows = []pagedto.PageResp{published}
+		body := renderPagesList(t, h, "").Body.String()
+		if !strings.Contains(body, "打开页面") {
+			t.Fatalf("没有「打开页面」入口：%s", body)
+		}
+		if strings.Contains(body, "预览") || strings.Contains(body, ">线上<") {
+			t.Error("旧的「预览」「线上」按钮名仍出现在操作列")
+		}
+	})
+}
+
+// pageRowForOpen 造一行列表数据（只填「打开页面」入口判据用到的字段）。
+func pageRowForOpen(active bool) pagedto.PageResp {
+	row := pagedto.PageResp{ID: "pg1", ProjectID: "p1", Kind: "page", DraftPath: "/about", DraftVersion: 1}
+	if active {
+		artifact := "a1"
+		row.ActiveArtifactID = &artifact
+	}
+	return row
+}
+
