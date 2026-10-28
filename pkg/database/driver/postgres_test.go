@@ -147,7 +147,7 @@ func TestOpenPostgresWorksThroughGorm(t *testing.T) {
 		// 失败，报 unknown time zone）。用「能不能建立最朴素的连接」区分这两件事：
 		// 朴素连接也连不上 = 环境没有库，跳过；朴素连接能上、本例却失败 = 组装缺陷，判失败。
 		if probeErr := probePostgresReachable(cfg); probeErr != nil {
-			t.Skipf("本机没有可用的 PG（跳过）：%v", probeErr)
+			skipOrFailPG(t, probeErr)
 		}
 		t.Fatalf("库连得上，但 OpenPostgres 组装的 DSN 让 gorm.Open 失败 —— 这是真缺陷，不是环境问题：%v", err)
 	}
@@ -186,8 +186,13 @@ func skipOrFailPG(t *testing.T, err error) {
 	t.Skipf("本机没有可用的 PG（跳过）：%v", err)
 }
 
-// openTestConfig 真实连接用的 Config：默认对齐 config.yaml.example，
-// 可用标准 libpq 环境变量（PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE）覆盖。
+// openTestConfig 真实连接用的 Config：默认对齐 config.yaml.example 与 CI 的
+// postgres 服务凭据（127.0.0.1:5432 root/root/wp），可用标准 libpq 环境变量
+// PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE 覆盖。
+//
+// 口令默认与 public/test/support 的 DefaultPGPassword 一致（都是 "root"）：
+// CI 的 service 容器就是 POSTGRES_PASSWORD=root（.github/workflows/go-test.yml），
+// 默认空口令会让这两条测试在 integration job 里认证失败，进而把真缺陷淹掉。
 func openTestConfig() Config {
 	envOr := func(key, fallback string) string {
 		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
@@ -203,7 +208,7 @@ func openTestConfig() Config {
 		Host:     envOr("PGHOST", "127.0.0.1"),
 		Port:     port,
 		User:     envOr("PGUSER", "root"),
-		Password: os.Getenv("PGPASSWORD"),
+		Password: envOr("PGPASSWORD", "root"),
 		DBName:   envOr("PGDATABASE", "wp"),
 	}
 }
@@ -212,13 +217,34 @@ func openTestConfig() Config {
 //
 // 只用于把「环境没有库」与「我们组装的串有问题」分开：前者 Skip，后者必须红。
 func probePostgresReachable(cfg Config) error {
-	probe := "postgres://" + url.User(cfg.User).String() + "@" +
-		net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)) + "/" + cfg.DBName + "?sslmode=disable"
-	conn, err := pgx.Connect(context.Background(), probe)
+	conn, err := pgx.Connect(context.Background(), probePostgresDSN(cfg))
 	if err != nil {
 		return err
 	}
 	return conn.Close(context.Background())
+}
+
+// probePostgresDSN 探针连接串：**必须带口令**，且口令要由标准库转义。
+//
+// 两个理由：
+//   - 不带口令时，「库在、口令错或 DSN 组装错」会被探针报成「连不上」，于是被判成
+//     「环境没有库」而 Skip —— 真缺陷就这样绿了；
+//   - 手拼 `user:pass@host` 时，口令里的 @ / : / # 会把 host 切断
+//     （password="p@ss" 解析成 host=ss@...，"p:ss/x" 报 invalid port）。
+//
+// 单独成函数是为了能被断言（见 TestProbePostgresDSNKeepsIdentity）：
+// 只靠「连不上就 Skip」的间接判据，口令被丢弃这件事在端口关闭时看不出来。
+func probePostgresDSN(cfg Config) string {
+	u := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(cfg.User, cfg.Password),
+		Host:   net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
+		Path:   "/" + cfg.DBName,
+	}
+	query := u.Query()
+	query.Set("sslmode", "disable")
+	u.RawQuery = query.Encode()
+	return u.String()
 }
 
 // TestPostgresDSNIPv6Host IPv6 字面量 host 必须加方括号，否则端口分隔符无从判断。
@@ -233,5 +259,32 @@ func TestPostgresDSNIPv6Host(t *testing.T) {
 	}
 	if parsed.Host != "::1" || parsed.Port != 5432 {
 		t.Errorf("地址解析成了 %s:%d，应为 [::1]:5432（dsn=%q）", parsed.Host, parsed.Port, dsn)
+	}
+}
+
+// TestProbePostgresDSNKeepsIdentity 探针串必须原样带上 user/口令/库，且口令含特殊字符不被切坏。
+//
+// 为什么直接断言串而不是「连不上就 Skip」：端口关闭时，口令对不对都是 connection refused，
+// 丢弃口令这件事在那种判据下看不出来 —— 而丢弃口令恰好会把「库在、口令错」误判成
+// 「环境没有库」而 Skip，真 DSN 缺陷就此绿掉。
+func TestProbePostgresDSNKeepsIdentity(t *testing.T) {
+	const password = "p@ss:w/rd#x"
+	cfg := Config{Host: "127.0.0.1", Port: 5432, User: "probe", Password: password, DBName: "probe"}
+
+	parsed, err := pgx.ParseConfig(probePostgresDSN(cfg))
+	if err != nil {
+		t.Fatalf("探针串无法解析（口令里的特殊字符把 URL 切坏了）: %v", err)
+	}
+	if parsed.Host != cfg.Host || parsed.Port != uint16(cfg.Port) {
+		t.Errorf("地址解析成 %s:%d，应为 %s:%d", parsed.Host, parsed.Port, cfg.Host, cfg.Port)
+	}
+	if parsed.User != cfg.User {
+		t.Errorf("用户解析成 %q，应为 %q", parsed.User, cfg.User)
+	}
+	if parsed.Password != password {
+		t.Errorf("口令解析成 %q，应为 %q —— 探针丢了口令，「库在、口令错」会被当成「库不在」而 Skip", parsed.Password, password)
+	}
+	if parsed.Database != cfg.DBName {
+		t.Errorf("库名解析成 %q，应为 %q", parsed.Database, cfg.DBName)
 	}
 }

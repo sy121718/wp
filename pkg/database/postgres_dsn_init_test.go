@@ -11,8 +11,10 @@ package database
 
 import (
 	"context"
-	"fmt"
+	"net"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -50,7 +52,7 @@ func pgTestParams() (host, port, user, password, dbname string) {
 	return envOr("PGHOST", "127.0.0.1"),
 		envOr("PGPORT", "5432"),
 		envOr("PGUSER", "root"),
-		os.Getenv("PGPASSWORD"), // 默认空口令：本地无密码账号很常见，正是本文件要钉的场景
+		envOr("PGPASSWORD", "root"), // 与 public/test/support 的 DefaultPGPassword / CI 的 POSTGRES_PASSWORD 一致
 		envOr("PGDATABASE", "wp")
 }
 
@@ -117,14 +119,53 @@ func probePGReachable(cfg *viper.Viper) error {
 	password := cfg.GetString("database.password")
 	dbname := cfg.GetString("database.dbname")
 
-	auth := user
-	if password != "" {
-		auth = user + ":" + password
-	}
-	probe := fmt.Sprintf("postgres://%s@%s:%d/%s?sslmode=disable", auth, host, port, dbname)
-	conn, err := pgx.Connect(context.Background(), probe)
+	conn, err := pgx.Connect(context.Background(), probePGDSN(host, port, user, password, dbname))
 	if err != nil {
 		return err
 	}
 	return conn.Close(context.Background())
+}
+
+// probePGDSN 探针连接串：**必须带口令**，且口令由标准库转义。
+//
+// 两个理由：
+//   - 不带口令时，「库在、口令错」会被探针报成「连不上」，于是被判成「环境没有库」而 Skip，
+//     真 DSN 缺陷就此绿掉；
+//   - 手拼 `user:pass@host` 时，口令里的 @ / : / # 会把 host 切断
+//     （password="p@ss" 解析成 host=ss@...，"p:ss/x" 报 invalid port）。
+//
+// 单独成函数是为了能被断言（见 TestProbePGDSNKeepsIdentity）：端口关闭时口令对不对都是
+// connection refused，丢弃口令这件事在那种间接判据下看不出来。
+func probePGDSN(host string, port int, user, password, dbname string) string {
+	u := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(user, password),
+		Host:   net.JoinHostPort(host, strconv.Itoa(port)),
+		Path:   "/" + dbname,
+	}
+	query := u.Query()
+	query.Set("sslmode", "disable")
+	u.RawQuery = query.Encode()
+	return u.String()
+}
+
+// TestProbePGDSNKeepsIdentity 探针串必须原样带上 user/口令/库，口令含特殊字符不被切坏。
+func TestProbePGDSNKeepsIdentity(t *testing.T) {
+	const password = "p@ss:w/rd#x"
+	parsed, err := pgx.ParseConfig(probePGDSN("127.0.0.1", 5432, "probe", password, "probe"))
+	if err != nil {
+		t.Fatalf("探针串无法解析（口令里的特殊字符把 URL 切坏了）: %v", err)
+	}
+	if parsed.Host != "127.0.0.1" || parsed.Port != 5432 {
+		t.Errorf("地址解析成 %s:%d，应为 127.0.0.1:5432", parsed.Host, parsed.Port)
+	}
+	if parsed.User != "probe" {
+		t.Errorf("用户解析成 %q", parsed.User)
+	}
+	if parsed.Password != password {
+		t.Errorf("口令解析成 %q，应为 %q —— 探针丢了口令，「库在、口令错」会被当成「库不在」而 Skip", parsed.Password, password)
+	}
+	if parsed.Database != "probe" {
+		t.Errorf("库名解析成 %q", parsed.Database)
+	}
 }

@@ -86,7 +86,11 @@ func pgAppendParams(dsn string, params ...[2]string) string {
 			if strings.Contains(dsn, "?") {
 				separator = "&"
 			}
-			dsn += separator + kv[0] + "=" + url.QueryEscape(kv[1])
+			// 空格必须编成 %20，不能用 QueryEscape 的 `+`：pgx 不解码 `+`，
+			// 值 "a b" 会原样读回 "a+b"。pkg/database/driver/postgres.go 的
+			// encodePostgresQuery 为同一条教训留了注释 —— 两条路径得一致。
+			// 下面这种写法就是 url.Values.Encode 的语义（它会用 `+`），再换回来。
+			dsn += separator + kv[0] + "=" + strings.ReplaceAll(url.QueryEscape(kv[1]), "+", "%20")
 			continue
 		}
 		// 关键字格式：含空格、引号或等号的值必须单引号包裹，否则会被解析成别的键。

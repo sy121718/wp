@@ -65,6 +65,25 @@ func TestPGAppendParamsPreservesExisting(t *testing.T) {
 	assertSameConnIdentity(t, before, after)
 }
 
+// TestPGAppendParamsEscapesSpacesAsPercent20 URL 分支的空格必须是 %20，不能是 `+`。
+//
+// pgx 不解码 `+`：值 "a b" 会原样读回 "a+b"。这条与 pkg/database/driver/postgres.go
+// 的 encodePostgresQuery 是同一条教训（那边为它留了注释），两条路径行为必须一致。
+func TestPGAppendParamsEscapesSpacesAsPercent20(t *testing.T) {
+	for _, dsn := range []string{
+		"postgres://probe:pass@127.0.0.1:5432/probe",
+		"postgres://probe:pass@127.0.0.1:5432/probe?application_name=probe",
+	} {
+		cfg, err := pgconn.ParseConfig(pgAppendParams(dsn, [2]string{"options", "-c statement_timeout=5000"}))
+		if err != nil {
+			t.Fatalf("带空格的值把 DSN 弄坏了: %v", err)
+		}
+		if got := cfg.RuntimeParams["options"]; got != "-c statement_timeout=5000" {
+			t.Errorf("带空格的值被改写: %q（空格编成 `+` 时 pgx 不会解码）", got)
+		}
+	}
+}
+
 // TestPGAppendParamsIgnoresUnrelatedKeys 关键字格式下，带空格/引号的值必须被正确转义。
 func TestPGAppendParamsIgnoresUnrelatedKeys(t *testing.T) {
 	dsn := pgAppendParams("host=127.0.0.1 port=5432 user=probe dbname=probe",
@@ -112,5 +131,65 @@ func TestRequiredDependencyFailure(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// 用子进程隔离共享容器缓存；预置已就绪端点，只验证回退编排，不启动容器。
+func TestRequiredTestEnvAcceptsContainerFallback(t *testing.T) {
+	if os.Getenv("GOWP_TEST_CONTAINER_FALLBACK_CHILD") == "1" {
+		t.Setenv("GOWP_REQUIRE_PG", "1")
+		t.Setenv("GOWP_REQUIRE_REDIS", "1")
+		t.Setenv("PGHOST", "127.0.0.1")
+		t.Setenv("PGPORT", "1")
+		t.Setenv("TEST_REDIS_ADDR", "127.0.0.1:1")
+		sharedPGOnce.Do(func() {
+			sharedPGEP = PGEndpoint{Host: "container-pg", Port: "5432", User: "probe", Database: "probe"}
+		})
+		sharedRedisOnce.Do(func() { sharedRedisAddr = "container-redis:6379" })
+		TestRequiredTestEnv(t)
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRequiredTestEnvAcceptsContainerFallback$", "-test.v")
+	cmd.Env = append(os.Environ(), "GOWP_TEST_CONTAINER_FALLBACK_CHILD=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("有效容器回退应通过严格依赖契约: %v\n%s", err, out)
+	}
+}
+
+func TestRequiredTestEnv(t *testing.T) {
+	if !RequirePG() || !RequireRedis() {
+		t.Skip("仅严格双依赖回归运行")
+	}
+	env, err := AcquireTestEnv(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env == nil {
+		t.Fatal("环境应存在")
+	}
+	if env.PG.Host == "" || env.PG.Port == "" || env.PG.User == "" || env.PG.Database == "" || env.RedisAddr == "" {
+		t.Fatalf("依赖端点应完整: %+v", env)
+	}
+	for _, source := range []string{env.PGSource, env.RedisSource} {
+		if source != "local" && source != "container" {
+			t.Fatalf("依赖来源无效: %q", source)
+		}
+	}
+}
+
+// TestPingPGReachesConnectionAttempt 钉住**调用点**真的走了 pgAppendParams。
+//
+// 只测 pgAppendParams 本身不够：pingPG 若被改回 `pgDSN(...) + " connect_timeout=5"`，
+// 单元测试照样全绿，而严格模式会在连库之前就死在 DSN 解析上 —— 那个缺陷正是这一批要
+// 根除的，所以必须在调用点上也留一条判据。判据是「进入了连接阶段」：关闭端口应报连接
+// 被拒，而不是 failed to parse / extra key/value separator。
+func TestPingPGReachesConnectionAttempt(t *testing.T) {
+	err := pingPG(PGEndpoint{Host: "127.0.0.1", Port: "1", User: "probe", Database: "probe"})
+	if err == nil {
+		t.Fatal("关闭端口应连接失败")
+	}
+	if strings.Contains(err.Error(), "failed to parse") || strings.Contains(err.Error(), "extra key/value separator") {
+		t.Fatalf("探测必须进入连接阶段，而非 DSN 解析失败: %v", err)
 	}
 }
