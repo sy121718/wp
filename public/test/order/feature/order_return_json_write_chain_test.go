@@ -39,6 +39,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	orderdto "go_wp/internal/module/order/dto"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	projectmodel "go_wp/internal/module/project/model"
@@ -97,7 +98,7 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 					cap.add(c.Request.URL.Path, string(body), c.Writer.Status())
 				}
 			})
-			e.GET("/admin/returns", returnPages.ReturnsPage)
+			e.GET("/admin/returns", adminui.PageSlot(orderhttp.ReturnListPageTemplate), returnPages.ReturnsPage)
 			e.POST("/api/order/return/approve", h.ApproveReturn)
 			e.POST("/api/order/return/reject", h.RejectReturn)
 			e.POST("/api/order/return/receive", h.ReceiveReturn)

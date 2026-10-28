@@ -82,9 +82,13 @@ func newOrderPageEngine(t *testing.T, projects projectcontract.ProjectService) *
 		InitComponents: true, // adminui.Prepare 需要 i18n / 会话组件
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
+			// 三条路由都按生产形状挂载：页面出口（PageSlot）必须与产品路由一致。
+			// 此前只有 /admin/orders 套了 PageSlot，/admin/coupons 与 /admin/returns 直接挂 handler，
+			// 于是 view.Render 找不到出口、报「视图出口未装配」并回 500 —— 那是夹具缺口，不是产品回归，
+			// 但它让同一张表里两行以 500 沦陷，反而把真正要验的「装载失败降级仍回 200」盖掉了。
 			e.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), orders.OrdersPage)
-			e.GET("/admin/coupons", coupons.CouponsPage)
-			e.GET("/admin/returns", returns.ReturnsPage)
+			e.GET("/admin/coupons", adminui.PageSlot(orderhttp.CouponListPageTemplate), coupons.CouponsPage)
+			e.GET("/admin/returns", adminui.PageSlot(orderhttp.ReturnListPageTemplate), returns.ReturnsPage)
 		},
 	})
 	if err != nil {

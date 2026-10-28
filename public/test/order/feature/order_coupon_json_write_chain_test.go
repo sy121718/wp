@@ -37,6 +37,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/adminui"
 	orderdto "go_wp/internal/module/order/dto"
 	orderhttp "go_wp/internal/module/order/inbound/http"
 	projectmodel "go_wp/internal/module/project/model"
@@ -279,7 +280,7 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 				// 只记写请求的实际内容与响应码：这是「基座发出去的到底是什么类型」的权威来源。
 				cap.add(c.Request.URL.Path, string(body), c.Writer.Status())
 			})
-			e.GET("/admin/coupons", couponsPage.CouponsPage)
+			e.GET("/admin/coupons", adminui.PageSlot(orderhttp.CouponListPageTemplate), couponsPage.CouponsPage)
 			e.POST("/api/order/coupon/update", h.UpdateCoupon)
 			e.POST("/api/order/coupon/delete", h.DeleteCoupon)
 		},
