@@ -8,8 +8,15 @@ package architecture
 //
 // 落到两个可判定的形状：
 //
-//  1. 每个 enums 包里的 `Err*` 常量，值必须在同包的 `errFallbacks` 表里有一句中文兜底；
+//  1. 每个 enums 包里的 `Err*` 常量，值必须在同包的**错误兜底表**里有一句中文兜底；
 //     反过来，表里的每个 key 必须对应一条真实常量（防错别字、防死条目）。
+//
+//     兜底表的名字不钉死：`errFallbacks`（多数模块）与首字母大写的 `*ErrFallbacks`
+//     （product 的 `ProductErrFallbacks`）都算。钉名字的代价是**改了名字的门禁会盯着一张
+//     没人读的表**——product 曾同时存在 `errFallbacks`（死表）与 `ProductErrFallbacks`（活表），
+//     门禁验的是死表，于是活表缺条目时线上文案是对的、门禁却红，反之亦然。
+//     明细词条表（`ErrDetailFallbacks`）与小写前缀表（webhook 的 `deliveryErrFallbacks`）
+//     的 key 不是 `Err*` 常量，不参与本条判据。
 //  2. service / model 层不许用 `errors.New(xxxenums.ErrYyy)` 构造业务错误 ——
 //     那样构造出来的是**裸 key**：`facing.FactOf` 只能把 key 本身当兜底，
 //     词条库读不到时客户端拿到的就是 `order.err.orderNotFound` 这样的字符串。
@@ -58,7 +65,7 @@ func TestErrorFallbacksCoverDeclarations(t *testing.T) {
 		}
 		files, _ := filepath.Glob(filepath.Join(dir, "*.go"))
 		declared := map[string]string{} // 常量值 → 常量名
-		fallbacks := map[string]bool{}  // errFallbacks 表里出现的 key（字面量值）
+		fallbacks := map[string]bool{}  // 错误兜底表里出现的 key（字面量值）
 		hasErrFactory := false
 
 		// 先把整包的 const 表建起来：兜底表的 key 是常量标识符，
@@ -111,10 +118,13 @@ func TestErrorFallbacksCoverDeclarations(t *testing.T) {
 					hasErrFactory = true
 				}
 			}
-			// errFallbacks 是 var 块里的复合字面量，**在包内任意一个文件里**都可能
-			// （ai 的常量分散在 7 个文件、兜底表集中在一处）。这里对包里每个文件都扫一遍。
-			for _, entry := range mapLiteralKeys(t, file, "errFallbacks", pkgConsts) {
-				fallbacks[entry] = true
+			// 兜底表是 var 块里的复合字面量，**在包内任意一个文件里**都可能
+			// （ai 的常量分散在 7 个文件、兜底表集中在一处）。这里对包里每个文件都扫一遍，
+			// 把该文件里所有「错误兜底表」的 key 并进来（见 isErrorFallbackTable）。
+			for _, name := range errorFallbackTableNames(t, file) {
+				for _, entry := range mapLiteralKeys(t, file, name, pkgConsts) {
+					fallbacks[entry] = true
+				}
 			}
 		}
 		if len(declared) == 0 {
@@ -128,12 +138,12 @@ func TestErrorFallbacksCoverDeclarations(t *testing.T) {
 		}
 		for value, name := range declared {
 			if !fallbacks[value] {
-				t.Errorf("%s：%s = %q 没有在 errFallbacks 里给中文兜底", relToRoot(t, root, dir), name, value)
+				t.Errorf("%s：%s = %q 没有在错误兜底表里给中文兜底", relToRoot(t, root, dir), name, value)
 			}
 		}
 		for value := range fallbacks {
 			if _, ok := declared[value]; !ok {
-				t.Errorf("%s：errFallbacks 里的 %q 不对应任何 Err* 常量（拼写错误或常量已删）",
+				t.Errorf("%s：错误兜底表里的 %q 不对应任何 Err* 常量（拼写错误或常量已删）",
 					relToRoot(t, root, dir), value)
 			}
 		}
@@ -197,6 +207,48 @@ func pkgName(sel *ast.SelectorExpr) string {
 		return id.Name + "." + sel.Sel.Name
 	}
 	return sel.Sel.Name
+}
+
+// errorFallbackTableNames 一个文件里所有「错误兜底表」的变量名。
+//
+// 判据只认两种确切形态，不用「以 Fallbacks 结尾」这类模糊前缀 —— 那会把明细词条表
+// （ErrDetailFallbacks，key 是 admin.* 界面词条）、跳过原因表（VariantSkipFallbacks）、
+// 投递编码串判定表（deliveryErrFallbacks，key 是 DeliveryErr* 常量）一并扫进来，
+// 它们的 key 不对应 Err* 常量，反向判据会立刻全红。
+//
+//	① errFallbacks                 —— 多数模块的形态
+//	② 导出名 *ErrFallbacks         —— product 的 ProductErrFallbacks（唯一例外）
+func errorFallbackTableNames(t *testing.T, file string) []string {
+	t.Helper()
+	fset := token.NewFileSet()
+	parsed, err := parser.ParseFile(fset, file, nil, 0)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	ast.Inspect(parsed, func(n ast.Node) bool {
+		vs, ok := n.(*ast.ValueSpec)
+		if !ok {
+			return true
+		}
+		for _, id := range vs.Names {
+			if id.Name == "errFallbacks" || isExportedErrFallbacks(id.Name) {
+				out = append(out, id.Name)
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// isExportedErrFallbacks 名字形如 ProductErrFallbacks / 任何导出名 + ErrFallbacks。
+//
+// 排除 ErrDetailFallbacks：它是明细词条的兜底表（key 形如 admin.products.detail.*）。
+func isExportedErrFallbacks(name string) bool {
+	if name == "ErrDetailFallbacks" || !strings.HasSuffix(name, "ErrFallbacks") {
+		return false
+	}
+	return name != "" && name[0] >= 'A' && name[0] <= 'Z'
 }
 
 // mapLiteralKeys 取 `var <name> = map[string]string{ K: V, ... }` 里 K 的字符串值。
