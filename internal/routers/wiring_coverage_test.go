@@ -87,8 +87,12 @@ var moduleInternalSetters = map[string]string{
 	// 发布记录页（B9）：与上面两条同形态 —— 形参 presentations（静态类型 PresentationService
 	// 已嵌入 presentation 的 PublishRecordPort，编译期成立）交进来，在转交方法内部包成
 	// outbound/publishrecord 再注入读模型。不需要运行期断言，也没有第二个真端口要 marks。
-	"SetPublishRecordDeps":    "product.SetupProductPages：形参 instances 转交；它在转交方法内注入真端口 product.SetPublishRecordPort（本模块读模型字段）",
-	"SetPublishRecordPort":    "product.SetPublishRecordPort：moduleInbound 的转交方法把 outbound/publishrecord 适配器交到 service 读模型，本行即那个真端口",
+	"SetPublishRecordDeps": "product.SetupProductPages：形参 instances 转交；它在转交方法内注入真端口 product.SetPublishRecordPort（本模块读模型字段）",
+	"SetPublishRecordPort": "product.SetPublishRecordPort：moduleInbound 的转交方法把 outbound/publishrecord 适配器交到 service 读模型，本行即那个真端口",
+	// 发布历史（迁移 673）：与上一条**同一次转交**交进同一份适配器 —— 该适配器同时实现
+	// 「当前发布状态」与「历次发布尝试」两个读口（迁移 673 新建 product_publish_attempts）。
+	// 不是第二个端口，所以不单独进 manifest、也不需要第二个 marks 标记点。
+	"SetPublishAttemptPort":   "product.SetPublishAttemptPort：发布历史读口，与 SetPublishRecordPort 同一份 outbound/publishrecord 适配器、同一次转交",
 	"SetSeoTitleSources":      "product.SetupProductPages：形参 pageSvc 转交 SEO 标题候选来源",
 	"SetI18nStaleMarker":      "product.NewProductTranslationHandle：构造参数 pages（失效标记）转交",
 	"SetTranslationInstances": "product.NewProductTranslationHandle：构造参数 instances 转交",
