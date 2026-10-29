@@ -24,28 +24,9 @@ type fragmentStyleGroup struct {
 // fragmentStyleGroups 全部片段基座样式族（顺序即产物里的拼接顺序）。
 func fragmentStyleGroups() []fragmentStyleGroup { return nil }
 
-// fragmentUnstyledCapabilities 已知**暂无**片段基座样式的能力 → 现状说明。
-//
-// 说明写的是实测事实（这些类名在全仓库没有任何样式定义），不是「不需要」的托词：
-// 它们是「片段裸 HTML」问题的剩余部分，归属与整改需要单独判断（有的该进基座族、
-// 有的该走组件私有层、有的只是纯文本）。登记在这里的价值是让「哪些片段还没有样式」
-// 一眼可查，而不是让下一个人重新 grep 一遍。
-func fragmentUnstyledCapabilities() map[string]string {
-	return map[string]string{
-		// 会员身份两个能力（BIZ-3）：模板只输出等级名 / 权益短句 / 一句降级文案，
-		// .sky-membership-* 是保留命名空间下的**语义钩子**（站点主题可覆写），
-		// 基座里刻意不给布局 —— 徽标与面板的宽窄由放置它的容器决定，
-		// 进基座会与「容器决定浮层怎么摆」的分工打架。
-		"membershipBadge": "会员角标只输出一个等级名或一句降级文案（.sky-membership-tier 无布局诉求），归属待定：需要主题级排版时再按族建基座族",
-		"membershipPanel": "会员面板输出等级 + 权益短句（.sky-membership-* 为语义钩子），当前无布局样式；宽窄由放置它的容器组件决定",
-		// 评论两个能力（BIZ-5）：模板输出列表 / 表单 / 一句降级文案，
-		// .sky-comment-* 同样是保留命名空间下的**语义钩子**（站点主题可覆写），
-		// 基座刻意不给布局 —— 列表密度与表单宽窄由放置它的容器组件决定，
-		// 进基座会与「容器决定排版」的分工打架（与会员片段同一取舍）。
-		"commentList":   "评论列表 + 提交表单：.sky-comment-* 为语义钩子，当前无布局样式；宽窄由放置它的容器组件决定",
-		"commentSubmit": "评论提交结果只输出一句人话（.sky-comment-result 无布局诉求），当前无样式定义",
-	}
-}
+// fragmentUnstyledCapabilities 返回仍需样式归属的产品片段能力。
+// 业务能力已迁为静态组件和 JSON 数据，当前没有遗留产品片段。
+func fragmentUnstyledCapabilities() map[string]string { return map[string]string{} }
 
 // FragmentStyleCapabilities 有基座样式族的片段能力（供 runtimefragment 侧对表测试）。
 func FragmentStyleCapabilities() []string {

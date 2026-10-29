@@ -14,8 +14,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	commentcontract "go_wp/internal/module/comment/contract"
-	membershipcontract "go_wp/internal/module/membership/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 )
@@ -29,19 +27,6 @@ import (
 // （required-* 缺失即装配缺陷并 fail-fast，optional-degraded 缺失写启动日志）。
 // 这里**不再抄一份必填清单** —— 同一份判据留两份真源必然漂移。
 type Deps struct {
-	// MembershipReader 会员身份读取（membership；可缺 → 会员片段显示「功能暂不可用」）。
-	MembershipReader membershipcontract.Reader
-	// CommentPort 评论读写端口（comment；可缺）。收窄到 FragmentPort：片段层拿不到
-	// 后台审核（通过 / 驳回）与审核队列 —— 越权防护靠接口形状，不靠调用方自觉。
-	CommentPort commentcontract.FragmentPort
-	// CommentSourceHasher 来源 IP → 带盐哈希（装配层闭包；可缺 → 空哈希）。
-	//
-	// 做成**注入的函数**而不是在本包算：哈希口径（盐从哪来、怎么拼、用什么摘要）
-	// 属于评论模块 —— 本包 import 它的 service 会被架构门禁拦下
-	// （internal/architecture 的 TestNoCrossModuleServiceModelImport：跨模块只允许 contract）。
-	// 未注入时落**空哈希**（不是明文、也不是假哈希）：调用方据此略过来源维度的限流与取证，
-	// 而「拿不到来源」与「来源是空串」在库里必须分得开（后者会让所有请求共用一个来源额度）。
-	CommentSourceHasher func(ip string) string
 	// SitePageResolver 系统页面槽位解析（page；可缺 → 槽位一律为空）。
 	// 只依赖 page 模块的**受限读接口**：片段层拿不到发布 / 删除 / 改 URL 的能力。
 	SitePageResolver pagecontract.SitePageResolver
@@ -88,7 +73,7 @@ func SetDependencies(d Deps) {
 // 典型用法（接管还原函数，用例结束自动复原）：
 //
 //	t.Cleanup(runtimefragment.MutateDepsForTest(func(d *runtimefragment.Deps) {
-//		d.CommentPort = svc
+//		d.FragmentProject = svc
 //	}))
 //
 // 返回值可以丢弃 —— 那样变更一直保留到进程结束，语义与改造前逐个 setter 完全相同

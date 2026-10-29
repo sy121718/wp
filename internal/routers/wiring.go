@@ -126,7 +126,6 @@ const (
 	portDataRuleDeptResolver          = "builtin.SetDataRuleDeptResolver"
 	portInventoryProductCatalog       = "inventory.SetProductCatalog"
 	portPurchaseVariantCatalog        = "purchase.SetVariantCatalog"
-	portRuntimeFragCommentHasher      = "runtimefragment.SetDependencies.CommentSourceHasher"
 	portWorkbenchInstanceOverrideDeps = "workbench.SetInstanceOverrideDeps"
 	portWorkbenchNavigationPicker     = "workbench.SetNavigationPicker"
 	portContentTemplateImpactPort     = "contenttemplate.SetImpactPort"
@@ -166,11 +165,9 @@ const (
 	portOrderMembershipReader    = "order.SetMembershipReader"
 	portMembershipPurchaseSource = "membership.SetPurchaseSource"
 	portCartMembershipReader     = "cart.SetMembershipReader"
-	portRuntimeFragMembership    = "runtimefragment.SetDependencies.MembershipReader"
 	// —— 站点级基础运费（BIZ-3 的后续小批）——
 	portCartShippingPolicy = "cart.SetShippingPolicyReader"
 	// —— 评论（BIZ-5）——
-	portRuntimeFragComment  = "runtimefragment.SetDependencies.CommentPort"
 	portCommentEntityPolicy = "comment.SetEntityPolicy"
 )
 
@@ -298,8 +295,6 @@ var wiringManifest = []wiringEntry{
 		"库存页的「商品 → 变体」下拉为空（用户看到空列表，不是错误）"},
 	{portPurchaseVariantCatalog, "product + inventory", "purchase（采购行 SKU 下拉）", wiringOptionalDegraded,
 		"采购入库页的 SKU 下拉为空（用户看到空列表，不是错误；入库入口仍可手工填编码）"},
-	{portRuntimeFragCommentHasher, "装配层（盐来自配置）", "runtimefragment", wiringOptionalDegraded,
-		"评论来源 IP 哈希退化为无盐 / 会话密钥回退（resolvePurposeSecret 记 Warn）"},
 	{portWorkbenchInstanceOverrideDeps, "presentation", "workbench", wiringOptionalDegraded,
 		"实例编辑模式（?instance= 画布改覆盖文档）的保存走不通：编辑者改了画布不生效"},
 	{portWorkbenchNavigationPicker, "navigation", "workbench", wiringOptionalDegraded,
@@ -385,22 +380,16 @@ var wiringManifest = []wiringEntry{
 		"会员归属的自动升级整体不可用：日结调度器禁用（启动日志有 Warn）、后台「立即重算」报错，等级只能手工维护"},
 	{portCartMembershipReader, "membership", "cart", wiringOptionalDegraded,
 		"会员免运费不生效：结算运费与接入前逐字一致（有基准运费时会员照付）"},
-	{portRuntimeFragMembership, "membership", "runtimefragment", wiringOptionalDegraded,
-		"会员片段渲染一句可见文案「会员信息暂时不可用」（不是 500：片段 5xx 会让 htmx 不 swap，访客什么都看不到）"},
 	{portCartShippingPolicy, "project", "cart", wiringOptionalDegraded,
 		"站点级基础运费与满额免运费都不生效：结算运费恒为 0（与接入前逐字一致，故无回归，但后台配了运费会看起来没生效）"},
 
 	// —— 评论（BIZ-5）——
 	//
-	// 两条都判 optional-degraded，判据是文件头那两条（「说得清未注入时用户看到什么」）：
+	// 差异化规则端口按 optional-degraded 登记：未注入时规则未启用，装配期留一条 Warn。
 	//
-	//	· 片段端口未注入 → 评论片段渲染一句可见文案「评论功能暂时不可用」（不是 500：
-	//	  片段 5xx 会让 htmx 不 swap，访客什么都看不到）；
 	//	· 差异化规则端口未注入 → 规则未启用（提交照常进审核队列，等价于功能开关关闭），
 	//	  且装配期会留一条 Warn。它与「买过才能评」之间的差别是**产品策略**而不是安全边界，
 	//	  所以刻意不采用「未注入即拒绝」那种 fail-closed（那会把装配漏行放大成整站不可评论）。
-	{portRuntimeFragComment, "comment", "runtimefragment", wiringOptionalDegraded,
-		"评论片段渲染一句可见文案「评论功能暂时不可用」（不是 500）"},
 	{portCommentEntityPolicy, "product（或其它拥有实体的模块）", "comment", wiringOptionalDegraded,
 		"差异化评论规则（如「商品评论必须买过」）未启用：所有提交一律进审核队列，启动日志有 Warn"},
 }

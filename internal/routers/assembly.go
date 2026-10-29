@@ -47,7 +47,6 @@ import (
 	commentcontract "go_wp/internal/module/comment/contract"
 	commenthttp "go_wp/internal/module/comment/inbound/http"
 	commentmcp "go_wp/internal/module/comment/inbound/mcp"
-	commentservice "go_wp/internal/module/comment/service"
 	captcharouter "go_wp/internal/module/common/captcha/router"
 	contentcontract "go_wp/internal/module/content/contract"
 	contenthttp "go_wp/internal/module/content/inbound/http"
@@ -241,7 +240,6 @@ type assembly struct {
 
 	// commentSvc 评论模块契约（BIZ-5）。装配在订单之后：它只依赖工程契约与 adminPages，
 	// 但排在交易域之后便于阅读（评论是内容侧的横切能力，独立模块）。
-	// 片段层用的是它的**收窄接口**（commentcontract.FragmentPort），见 wireRuntimeAccessFace。
 	commentSvc commentcontract.CommentService
 
 	// fragDeps 片段层依赖快照（internal/module/runtimefragment）。
@@ -1415,11 +1413,6 @@ func (a *assembly) wireRuntimeAccessFace() {
 		logger.Scene("init").Warn("project 模块未提供站点运费规则读取端口（ShippingPolicyReader）：" +
 			"结算运费恒为 0 —— 站点级基础运费与满额免运费都不会生效")
 	}
-	// 片段层的会员身份（BIZ-3）：两个新能力（membershipBadge / membershipPanel）的读取端口
-	// 与文案出口。可选降级 —— 未注入时片段渲染「会员信息暂时不可用」这句**可见文案**，
-	// 而不是 500（片段端点把 error 变成 500，htmx 不 swap，用户什么都看不到）。
-	a.fragDeps.MembershipReader = a.membershipSvc
-	marks.mark(portRuntimeFragMembership)
 	// 商品评论差异化规则的**输入**（order → product）：把「某访客买过某商品吗」交给
 	// 商品模块，由它实现 commentcontract.EntityPolicy（紧接着的下一段把它注入 comment）。
 	//
@@ -1438,20 +1431,7 @@ func (a *assembly) wireRuntimeAccessFace() {
 		logger.Scene("init").Warn("order 模块未实现购买事实只读端口（productcontract.PurchaseChecker）：" +
 			"「商品评论必须买过」这条规则不生效，任何登录访客都能提交")
 	}
-	// 评论片段（BIZ-5）：两个能力（commentList / commentSubmit）的读写端口、文案出口与
-	// 来源 IP 哈希的盐。**可选降级** —— 未注入时片段渲染「评论功能暂时不可用」这句
-	// 可见文案，而不是 500（片段端点把 error 变成 500，htmx 不 swap，用户什么都看不到）。
 	if a.commentSvc != nil {
-		a.fragDeps.CommentPort = a.commentSvc
-		// 哈希口径留在评论模块（本包 import 它的 service 会被架构门禁拦下），
-		// 装配层只把「盐从哪来」这件事接上：按用途分离密钥（同 cart cookie / 支付回调的
-		// 既有手法），未配置时回退会话密钥并告警（resolvePurposeSecret 内部记 Warn）。
-		commentSalt := resolvePurposeSecret("comment.ip_pepper", "评论来源 IP 哈希", sessionSecret)
-		a.fragDeps.CommentSourceHasher = func(ip string) string {
-			return commentservice.HashSourceIP(commentSalt, ip)
-		}
-		marks.mark(portRuntimeFragCommentHasher)
-		marks.mark(portRuntimeFragComment)
 		// 差异化规则的提供方（「商品评论必须买过」这类）：由**拥有该实体的模块**实现。
 		//
 		// 本批 product 尚未实现该端口 → 不注入 = **放行**（判断与理由见
