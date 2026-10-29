@@ -12,7 +12,7 @@ parent: go-wp-modules
 
 一个 Page 绑定一个规范化公开 URL，独占该 URL，可独立构建、发布、回滚、取消发布。
 
-拥有：页面文档（可编辑 AST）、修订快照、发布计划与语言范围、待重建标记、页面路由与重定向、站点槽位绑定、定时发布、构建意图与草稿版本号。
+拥有：页面文档（可编辑 AST）、修订快照、发布计划与语言范围、待重建标记、页面路由与重定向、定时发布、构建意图与草稿版本号。
 
 ## 边界
 
@@ -26,10 +26,11 @@ parent: go-wp-modules
 
 `contract` → `publication`、`artifact`、`build`、`blueprint`、`media`（均只 import 接口）、`internal/pipeline`、`internal/builder`、`internal/seo`。
 
-反向：`navigation`、`content`、`product`、`presentation`、`admin`、`runtimefragment`、`workbench` 消费本模块契约（`SitePageResolver`、`PageDependencyLookup`、`PagePathKindLookup` 等只读面）。
+反向：`navigation`、`content`、`product`、`presentation`、`admin`、`workbench` 消费本模块契约（`PublishedPageLocator`、`PageDependencyLookup`、`PagePathKindLookup` 等只读面）。
 
 ## 关键契约
 
-- `SitePageResolver.ResolveSitePages`：只返回已绑定且已发布的槽位，未发布不猜默认值。
+- `PublishedPageLocator.PublishedPagePath`：按工程、页面ID与精确语言读取已激活Publication并确认产物可读，不回退最近语言或猜默认页。
+- `ActionTargetReferenceReader`：读取显式动作依赖与引用者；下线/删除保护和待重建沿同一依赖事实。
 - `PageDependencyLookup.FindPagesByDependency`：反查命中集合与「按依赖标记待重建」逐字一致（同一张表、同一对指针）。
 - `BuildQueueEnqueuer.EnqueuePageBuild`：工程 id、语言、意图由调用方显式带出——队列不反查来源表。

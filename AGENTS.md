@@ -88,12 +88,12 @@ bash scripts/check-all.sh     # 门禁全集（--with-db 含需要库的那组�
      URL→文件的关系完全由发布状态决定。
    - **明确注册的访客业务 API**（购物车、会话、订单、AI 采集等）：按自身鉴权、CSRF、限流与模块契约
      处理业务数据；**不得**为渲染页面而回读页面/区块 AST 或执行 Jet，返回值是数据不是页面。
-     「明确注册」是判据不是形容词：能力必须逐条声明（`internal/module/runtimefragment` 的能力白名单 /
-     独立模块路由 + 权限点），不是任意路径都能当业务 API。
+     「明确注册」是判据不是形容词：能力必须在所属模块路由逐条声明权限点或显式访客鉴权豁免，
+     不是任意路径都能当业务 API。
    - **构建与预览**：在控制面解析文档与模板，不服务访客请求。
-   - **存量 HTML 动态片段**：逐条登记在迁移台账里，随业务区块改造逐批迁成 JSON；
-     **不得因为「现在已经是 HTML」就新增同类调用点**。台账见
-     `public/docs/业务区块解耦-B0台账.md`（当前 22 处）。
+   - **已退役 HTML 动态片段**：原22项能力已迁为所属模块JSON或清退无消费者能力，
+     不得恢复运行时HTML出口或新增同类调用点。历史基线见`public/docs/业务区块解耦-B0台账.md`，
+     实际清退与活跃产物验证见`public/docs/可视化体系交付审计-2026-10-29.md`。
 
    两处既有特例仍然成立，但它们不是上面四档之外的新例外：POST /analytics/collect
    （只写一条、响应恒 204）与 AccessGuard 只读访客会话（不查 PG、不写、不续期、fail closed）。
@@ -129,7 +129,7 @@ bash scripts/check-all.sh     # 门禁全集（--with-db 含需要库的那组�
 |---|---|---|
 | JSON | 所有写动作、所有非页面请求、页面 GET 失败 | {code,message,data} + 真实状态码 |
 | 页面视图 | 页面 GET 成功 | 控制器 pageview.Render(c, data)；router 用 adminui.PageSlot / BareSlot 渲染 Jet |
-| 字节流 | 构建器预览、runtime fragment、下载、SSE | 直接写 body 后 return nil, response.ErrHandled |
+| 字节流 | 构建器预览、下载、SSE | 直接写 body 后 return nil, response.ErrHandled |
 
 - 状态码在错误声明处给（facing.WithStatus），出口只调 response.ErrorStatusAuto：400 参数 / 401 未登录 / 403 无权限 / 404 不存在 / 409 冲突与版本 / 500 其余。
 - 成功写动作只回 JSON；导航由前端 data-write-nav 决定，后端不发 302 / HX-Redirect。
