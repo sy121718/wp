@@ -269,6 +269,18 @@ func (s *Service) migrateSchema(ctx context.Context, m *plugincomp.Manifest, fil
 				return fmt.Errorf("清理旧 schema %s: %w", schemaName, err)
 			}
 		}
+		// **降权执行**：在事务内切到插件专用角色，让数据库权限成为真正的沙箱。
+		//
+		// 为什么不能只靠 validatePluginStatement 的正则：实测（2026-10-29）它可被
+		// `DO $$ BEGIN EXECUTE 'DROP' || ' TABLE public.sys_config'; END $$` 绕过 ——
+		// 拼接出来的语句文本里没有连续的 "drop ... table" 模式。同一次实测还证明
+		// `SET LOCAL search_path` **不是安全边界**：显式全限定名（public.xxx）照样生效。
+		//
+		// 换成角色权限后，同一实验的结果是 `permission denied for schema public` ——
+		// 因为 go_wp_app 对 public 没有 CREATE 权限。这是数据库强制，不依赖文本匹配。
+		if err := s.setLocalPluginRole(tx); err != nil {
+			return err
+		}
 		// 锁定 search_path：迁移里未限定 schema 的对象全部落在插件自己的 schema，
 		// 不会外溢到 public（与 validatePluginStatement 的 public. 拒绝互为纵深）。
 		if err := s.m.ExecTx(ctx, tx, "SET LOCAL search_path TO "+quoteSchemaIdent(schemaName)); err != nil {
@@ -293,12 +305,23 @@ func (s *Service) migrateSchema(ctx context.Context, m *plugincomp.Manifest, fil
 
 // pluginSQLDeny 插件迁移语句的危险模式黑名单。
 //
-// 背景（全项目审查发现）：迁移 SQL 直接来自插件 zip，此前逐条 tx.Exec 无任何
-// 限制 —— 拥有 plugin:install 权限的低权管理员可借插件包执行任意 SQL（等价提权 DBA，
-// 可 INSERT sys_admin / 改 sys_casbin_rule）。插件迁移的正当需求只有「在自己的
-// plugin_<id> schema 下建表、建索引、填默认数据」，因此执行器加了两道防线：
-//  1. 执行前 SET LOCAL search_path 锁定到插件自己的 schema（未限定对象不外溢）；
-//  2. 下列模式一律拒绝（跨库破坏、角色与权限变更、文件与外部访问、系统目录直读）。
+// **它不是安全边界，只是一道快速失败提示。** 真正挡住越权的是数据库权限：
+// 迁移在事务内 SET LOCAL ROLE 到 PluginMigrationRole（对 public 无 CREATE 权限），
+// 见 setLocalPluginRole 的说明。保留这份正则的收益只有一个 —— 明显越权的语句
+// 在**执行前**就给出可读的原因，而不是让运维去读 `permission denied for schema public`。
+//
+// 为什么必须这样定性（实测 2026-10-29，本机 wp 库）：
+//
+//	· `DO $$ BEGIN EXECUTE 'DROP' || ' TABLE public.sys_config'; END $$` 执行成功 ——
+//	  拼接后的语句文本里没有连续的 "drop ... table" 模式，黑名单一条都不命中（表真被删了，
+//	  随后由迁移重建；事故记录见 public/docs/业务区块解耦-B0台账.md §12）；
+//	· `SET LOCAL search_path TO plugin_x` 之后 `CREATE TABLE public.y` 仍然成功 ——
+//	  search_path 只影响**未限定**的名字，不是权限。
+//
+// 同一实验换成受限角色后，前者报 `must be owner of table`、后者报
+// `permission denied for schema public`：这才是"拦住"。
+//
+// 所以下面的模式可以继续补，但不要因为"黑名单覆盖了"就认为沙箱成立。
 var pluginSQLDeny = []*regexp.Regexp{
 	regexp.MustCompile(`\bdrop\s+(database|schema|tablespace)\b`),
 	regexp.MustCompile(`\b(create|alter|drop)\s+(role|user)\b`),
@@ -312,6 +335,34 @@ var pluginSQLDeny = []*regexp.Regexp{
 	regexp.MustCompile(`\bpg_authid\b|\bpg_shadow\b|\bpg_catalog\b|\binformation_schema\b`),
 	regexp.MustCompile(`\bpublic\s*\.`),
 	regexp.MustCompile(`\bdblink\b|\bpostgres_fdw\b`),
+}
+
+// PluginMigrationRole 插件迁移执行时切入的数据库角色（非超级用户）。
+//
+// 由 scripts/rls-role-setup.sh 创建（NOSUPERUSER NOBYPASSRLS），并只在**插件 schema**
+// 上有建表权限；对 public 没有 CREATE 权限 —— 这就是沙箱本身。
+//
+// 为什么在事务内 SET LOCAL ROLE 而不是另开连接：
+//
+//	· 迁移与「清理旧 schema」必须同一个事务（任一条失败整体回滚，不留半成品）；
+//	· SET LOCAL 只作用于当前事务，事务结束自动恢复 —（不会污染连接池里的复用连接）。
+//
+// 前提：应用连接必须是该角色的成员（POSTGRES 的 SET ROLE 要求 membership）。
+var PluginMigrationRole = "go_wp_app"
+
+// setLocalPluginRole 把当前事务的执行身份切到插件迁移角色。
+//
+// 切不过去时**直接失败**而不是退回超级用户继续跑：退回等于沙箱静默失效，而插件
+// 迁移来自外部 zip —— 那种"看起来装了防护、实际没有"的状态比明确报错危险得多。
+func (s *Service) setLocalPluginRole(tx *gorm.DB) error {
+	role := strings.TrimSpace(PluginMigrationRole)
+	if role == "" {
+		return fmt.Errorf("插件迁移角色未配置：拒绝在超级用户身份下执行外部 SQL")
+	}
+	if err := s.m.ExecTx(context.Background(), tx, "SET LOCAL ROLE "+quoteSchemaIdent(role)); err != nil {
+		return fmt.Errorf("切换到插件迁移角色 %s 失败（请先跑 scripts/rls-role-setup.sh）：%w", role, err)
+	}
+	return nil
 }
 
 // sqlBlockCommentRe 块注释（校验前剥离，避免注释文本触发误判）。
