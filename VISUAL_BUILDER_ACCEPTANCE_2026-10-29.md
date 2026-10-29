@@ -55,3 +55,14 @@
 
 - 编辑：`http://127.0.0.1:8080/workbench?id=5dcd8f05-90b1-4ba7-a176-8ce5e8aaa9ac`
 - 发布：`http://127.0.0.1:8080/zh/studio-canvas`
+
+## 基础元素密度调整
+
+按桌面编辑器使用场景，将十二种基础元素改为四列三行的纯图标网格。名称和 HTML 标识移入公共悬浮卡，鼠标悬浮或键盘聚焦显示；点击、拖拽时关闭提示，继续原有插入操作。组合区块和业务组件保留名称，手机和平板画布预览继续保留。
+
+本批仅修改前端 JS/CSS：组件库维护展示与操作绑定，公共悬浮卡增加操作按钮提示模式。删除原有常驻标签及对应样式，没有新增后端展示形状或门禁豁免。
+
+- `go build -o /tmp/gowp-builder-compact-app ./cmd` 通过。
+- `go test ./internal/templates ./internal/module/workbench/inbound/http ./public/test/workbench/feature` 通过。
+- `bash scripts/check-all.sh` 通过，共 27 项；工作台门禁覆盖构建器及组件包，包含 go vet。
+- 浏览器验证四列网格、键盘聚焦提示、`img` 搜索、进入按钮检查器、撤销及保存；临时插入已撤销。鼠标悬浮沿用公共悬浮卡，未进行实体鼠标悬停或拖拽实测。
