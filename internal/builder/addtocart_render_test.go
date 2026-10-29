@@ -68,3 +68,28 @@ func TestAddToCartRejectsRetiredProductWiring(t *testing.T) {
 		}
 	}
 }
+
+func TestAddToCartUnavailableCurrentProductKeepsPublishedPage(t *testing.T) {
+	set, err := templates.NewEmbeddedComponentSet()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, variants := range []string{`[]`, `[{"id":"off","enabled":false}]`} {
+		page := addToCartDoc(t, map[string]any{"showQuantity": true})
+		page.Root = append([]*core.Node{{ID: "context", Type: "core.heading", Props: json.RawMessage(`{"text":"合法当前商品仍显示"}`)}}, page.Root...)
+		compiled, err := Compile(page, WithComponentSet(set), WithCompileMode(CompileModePublish), WithProjectID("proj-9"), WithArchiveEntity("product", "product-current"), WithContentResolver(addToCartResolver{"product.options": "[]", "product.variants": variants}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"合法当前商品仍显示", `type="button" disabled`, `role="status">当前商品暂不可购买</p>`} {
+			if !strings.Contains(compiled.HTML, want) {
+				t.Fatalf("禁用态缺少%s: %s", want, compiled.HTML)
+			}
+		}
+		for _, bad := range []string{`<form `, `data-write=`, `data-site-read=`, `data-requires-js`, `sky-incomplete`, `name="variantId"`, `name="quantity"`} {
+			if strings.Contains(compiled.HTML, bad) {
+				t.Fatalf("不可购商品不得输出%s: %s", bad, compiled.HTML)
+			}
+		}
+	}
+}

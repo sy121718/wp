@@ -61,3 +61,5 @@
 /* 交互反馈（:hover 提亮 / :active 按压）不在这里写：
    样式源只支持 max-width 断点（桌面优先），而 hover 的规则必须包在 @media (hover: hover) 里
    —— 触屏上那类规则根本不该输出。两条都由 Go 侧的 CSSBuckets.AddHover / AddActive 生成。 */
+
+& .sky-cart-add-btn:disabled { opacity: 0.55; cursor: not-allowed; }

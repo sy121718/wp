@@ -19,7 +19,9 @@ type Row struct{ VariantID, Label string }
 
 // View 加购组件渲染视图。
 type View struct {
-	CartReadURL string
+	// UnavailableText 为当前合法商品无可购买规格时的静态禁用提示。
+	UnavailableText string
+	CartReadURL     string
 
 	// Action 公开访客加购 API。
 	Action string
@@ -51,7 +53,8 @@ type View struct {
 // 作者填了自定义文案，那条文案属于内容，走 sys_translation 的内容翻译链路。
 // 两条链路各管一段，互不覆盖。
 const (
-	TextKeyButton = "site.component.addToCart.button"
+	TextKeyButton      = "site.component.addToCart.button"
+	TextKeyUnavailable = "site.component.addToCart.unavailable"
 	// TextKeyQtyAria 数量输入框的无障碍名（模板里此前硬编码「数量」）。
 	TextKeyQtyAria     = "site.component.addToCart.qtyAria"
 	TextKeyVariantAria = "site.component.addToCart.variantAria"
@@ -78,6 +81,9 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 		// BuildView 已落中文兜底；这里补上零值构造（测试直连 View）的情况。
 		v.QtyAria = textFallbackQtyAria
 		return
+	}
+	if v.UnavailableText != "" {
+		v.UnavailableText = text(TextKeyUnavailable, "当前商品暂不可购买")
 	}
 	v.QtyAria = text(TextKeyQtyAria, textFallbackQtyAria)
 	v.VariantAria = text(TextKeyVariantAria, "请选择规格")
@@ -128,7 +134,8 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 	groups := product.ParseOptionGroups(rawOptions)
 	options := product.ParseVariantOptions(rawVariants, groups, "", view.ProjectID, view.Lang)
 	if len(options) == 0 {
-		return View{}, fmt.Errorf("%w: 当前商品暂无可购买规格", core.ErrIncompleteNode)
+		view.UnavailableText = "当前商品暂不可购买"
+		return view, nil
 	}
 	for _, option := range options {
 		view.Rows = append(view.Rows, Row{VariantID: option.ID, Label: option.Labels})

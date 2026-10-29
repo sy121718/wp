@@ -70,11 +70,27 @@ func TestLegacyProductWiringRequiresExplicitConversion(t *testing.T) {
 	}
 }
 
-// 无可用变体属于未完成节点，由预览调用方局部占位，发布必须拒绝。
-func TestBuildViewEmptyVariantsIsIncomplete(t *testing.T) {
-	content := stubContent{"product.options": optionsJSON, "product.variants": ""}
-	if _, err := BuildView(baseProps(), content, "proj-1", ""); !errors.Is(err, core.ErrIncompleteNode) {
-		t.Fatalf("无可用变体必须标记未完成: %v", err)
+// 合法当前商品无启用规格属于业务空态，不是作者配置不完整。
+func TestBuildViewEmptyVariantsIsUnavailable(t *testing.T) {
+	for _, raw := range []string{"", "[]", `[{"id":"off","enabled":false}]`} {
+		content := stubContent{"product.options": optionsJSON, "product.variants": raw}
+		view, err := BuildView(baseProps(), content, "proj-1", "")
+		if err != nil || len(view.Rows) != 0 || view.UnavailableText == "" {
+			t.Fatalf("无可购买规格应可编译禁用态: %+v %v", view, err)
+		}
+		attrs, _ := view.DeclareFeatures()
+		if len(attrs) != 0 {
+			t.Fatalf("禁用购买不能启用私有读写增强: %v", attrs)
+		}
+		view.ApplyI18n(func(key, fallback string) string {
+			if key == TextKeyUnavailable {
+				return "This product is currently unavailable."
+			}
+			return fallback
+		})
+		if view.UnavailableText != "This product is currently unavailable." {
+			t.Fatal("禁用提示必须跟随编译语言")
+		}
 	}
 }
 
