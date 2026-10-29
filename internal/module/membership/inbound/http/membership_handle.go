@@ -66,8 +66,12 @@ func membershipFail(c *gin.Context, err error) {
 // 在接口上给了原因、在页面上只说「服务器内部错误」，而两边都不报错。
 func membershipText(c *gin.Context, err error) string {
 	fact, business := facing.FactOf(err)
-	text := response.MessageOf(c, membershipErrScene, err)
-	if business && fact.Tail != "" {
+	if !business {
+		return response.MessageOf(c, membershipErrScene, err)
+	}
+	// MessageOf现已保留Tail；本域先取不带明细的声明事实，定位信息只按既有语言标点添加一次。
+	text := response.MessageOf(c, membershipErrScene, facing.New(fact.Key, fact.Fallback))
+	if fact.Tail != "" {
 		text += membershipDetailSep(response.RequestLanguage(c)) + fact.Tail
 	}
 	return text

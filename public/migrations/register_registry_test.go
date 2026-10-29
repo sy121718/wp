@@ -1,19 +1,35 @@
 package migrations
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"io/fs"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-// TestEmbeddedSQLFilesAllRegistered 保证磁盘上的 .sql 与注册台账**双向**一一对应。
-//
-// 单向比对只能抓住一半问题：只查「磁盘 → 台账」抓得住「新增 SQL 忘了注册」，
-// 只查「台账 → 磁盘」才抓得住「登记了但文件被删」。
-//
-// 为什么必须有这个测试：迁移未注册不会报错，程序照常启动，只是那段 DDL 永远不执行。
-// 本仓库真实发生过（195 未注册，导致一批测试在缺列上失败）。
+// retainedSQLArchives记录两分支实际运行过的同义历史文件，不作为第二次执行登记。
+// 固定双方原文hash，任何改写或正式登记丢失都失败，不能放过任意未注册SQL。
+var retainedSQLArchives = map[string]struct {
+	canonical       string
+	archiveSHA256   string
+	canonicalSHA256 string
+}{
+	"679_blocks_version_preset.sql": {
+		"676_blocks_version_preset.sql",
+		"884ea197e39ccfe724da045879e758a84a02340ba02ed1ba659fcd8e2ed66cd0",
+		"6f1f1718de491e575cfc5ffd5da8dcced9fec1dc2c93d6a4e3fac174b006d66f",
+	},
+	"680_i18n_block_version_conflict.sql": {
+		"677_i18n_block_version_conflict.sql",
+		"a6a625ab05ca0c4c5958a855d15cc72696dacf2adec61de010df3d8a42795de5",
+		"f1db1f4cb33dd64d08a1805099fbcd94eb41cf745e7c730fa06763248cafb788",
+	},
+}
+
+// TestEmbeddedSQLFilesAllRegistered保证每个SQL有唯一执行登记或精确历史归档。
+// 正式登记与历史归档分开计数，不伪造执行过679/680。
 func TestEmbeddedSQLFilesAllRegistered(t *testing.T) {
 	entries, err := fs.ReadDir(migrationSQLFS, ".")
 	if err != nil {
@@ -21,18 +37,19 @@ func TestEmbeddedSQLFilesAllRegistered(t *testing.T) {
 	}
 	onDisk := make(map[string]struct{}, len(entries))
 	for _, e := range entries {
-		if e.IsDir() {
-			continue
+		if !e.IsDir() {
+			onDisk[e.Name()] = struct{}{}
 		}
-		onDisk[e.Name()] = struct{}{}
 	}
 	if len(onDisk) == 0 {
 		t.Fatal("嵌入的 SQL 列表为空，//go:embed *.sql 可能已失效")
 	}
-
 	for name := range onDisk {
+		if _, archived := retainedSQLArchives[name]; archived {
+			continue
+		}
 		if _, ok := registeredSQLFiles[name]; !ok {
-			t.Errorf("迁移 SQL %s 未被任何 register/registerSeed 引用（新增了 SQL 但忘了注册，该迁移永远不会执行）", name)
+			t.Errorf("迁移 SQL %s 没有正式登记或精确历史归档", name)
 		}
 	}
 	for name := range registeredSQLFiles {
@@ -40,8 +57,26 @@ func TestEmbeddedSQLFilesAllRegistered(t *testing.T) {
 			t.Errorf("注册台账引用了 %s，但嵌入文件系统里没有这个文件", name)
 		}
 	}
-	if len(onDisk) != len(registeredSQLFiles) {
-		t.Errorf("磁盘 SQL 数 %d != 注册台账数 %d", len(onDisk), len(registeredSQLFiles))
+	for name, archive := range retainedSQLArchives {
+		if _, executed := registeredSQLFiles[name]; executed {
+			t.Errorf("历史归档%s不得再次登记执行，唯一正式文件为%s", name, archive.canonical)
+		}
+		if _, registered := registeredSQLFiles[archive.canonical]; !registered {
+			t.Errorf("历史归档%s对应的正式文件%s没有登记", name, archive.canonical)
+		}
+		for file, want := range map[string]string{name: archive.archiveSHA256, archive.canonical: archive.canonicalSHA256} {
+			raw, readErr := migrationSQLFS.ReadFile(file)
+			if readErr != nil {
+				t.Errorf("迁移原文%s不可读: %v", file, readErr)
+				continue
+			}
+			if got := fmt.Sprintf("%x", sha256.Sum256(raw)); got != want {
+				t.Errorf("迁移历史原文%s被改写: hash=%s want=%s", file, got, want)
+			}
+		}
+	}
+	if len(onDisk) != len(registeredSQLFiles)+len(retainedSQLArchives) {
+		t.Errorf("磁盘 SQL 数 %d != 正式登记%d + 精确历史归档%d", len(onDisk), len(registeredSQLFiles), len(retainedSQLArchives))
 	}
 }
 

@@ -144,3 +144,15 @@ func TestMembershipTextInternalErrorStaysGeneric(t *testing.T) {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// 词条缺失时沿声明兜底，定位数据仍恰好出现一次。
+func TestMembershipDetailFallbackDoesNotDuplicate(t *testing.T) {
+	i18n.InjectForTest(nil, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+	err := membershipenums.ErrDetail(membershipenums.ErrDefaultTierMissing, "project-unique-marker")
+	code, got := membershipJSONRecorder(t, "zh-CN", err)
+	want := membershipenums.FallbackFor(membershipenums.ErrDefaultTierMissing) + "：project-unique-marker"
+	if code != http.StatusBadRequest || got != want {
+		t.Fatalf("兜底与唯一定位信息应保持: code=%d got=%q want=%q", code, got, want)
+	}
+}
