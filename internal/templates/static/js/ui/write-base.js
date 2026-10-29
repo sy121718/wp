@@ -577,7 +577,7 @@
     }
 
     function previewReadOnly() {
-        return !!document.querySelector('meta[name="site-preview-mode"][content="readonly"]');
+        return !!(window.WPSitePreview && window.WPSitePreview.active);
     }
 
     function previewStatus(form) {

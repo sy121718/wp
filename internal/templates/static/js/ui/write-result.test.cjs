@@ -7,8 +7,8 @@ function env(attrs={},response={ok:true,status:200,payload:{code:200,message:'�
  const instance={getAttribute:()=> 'instance-A'},input={name:'account',value:'用户已填写的值',type:'text',disabled:false,tagName:'INPUT',getAttribute:n=>n==='name'?'account':null,hasAttribute:()=>false};
  const form={tagName:'FORM',getAttribute:n=>values[n]??null,hasAttribute:n=>n in values,setAttribute(){},closest:()=>instance,dispatchEvent(){},
  querySelector:s=>s==='[data-write-status]'?status:null,querySelectorAll:s=>s==='[name]'?[input]:[]};
- const document={readyState:'loading',addEventListener:(n,f)=>{listeners[n]=f;},querySelector:selector=>response.preview && selector==='meta[name="site-preview-mode"][content="readonly"]'?{}:null,createElement:()=>({setAttribute(){},appendChild(){},textContent:''})};
- const window={document,location:{assign:url=>nav.push(url),reload:()=>nav.push('reload')},WPSiteSession:{csrfToken:'visitor-csrf'},confirm:()=>true};
+ const document={readyState:'loading',addEventListener:(n,f)=>{listeners[n]=f;},querySelector:()=>null,createElement:()=>({setAttribute(){},appendChild(){},textContent:''})};
+ const window={document,location:{assign:url=>nav.push(url),reload:()=>nav.push('reload')},WPSitePreview:Object.freeze({active:!!response.preview,state:'default'}),WPSiteSession:{csrfToken:'visitor-csrf'},confirm:()=>true};
  const context={window,document,FormData:Body,CustomEvent:class{},sessionStorage:{},fetch:async(url,opts)=>{calls.push({url,opts});return{ok:response.ok,status:response.status,redirected:!!response.redirected,url:'/admin/login',headers:{get:n=>n==='Content-Type'?(response.type||'application/json'):null},json:async()=>response.payload};}};
  vm.createContext(context);vm.runInContext(source,context);context.WBUI=window.WBUI;document.activeElement=input;
  return {window,form,status,input,nav,calls,context,listeners,submit:async()=>{listeners.submit({target:form,submitter:null,preventDefault(){}});await new Promise(setImmediate);await new Promise(setImmediate);}};
