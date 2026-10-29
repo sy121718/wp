@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	workbenchhttp "go_wp/internal/module/workbench/inbound/http"
 	"go_wp/internal/templates"
 	"go_wp/public/test/support"
@@ -33,7 +34,7 @@ func newAdminShellEngine(t *testing.T) *gin.Engine {
 		RouteRegistrar: func(e *gin.Engine) {
 			// 默认路由未装配时需自行挂 Jet 渲染器（生产由 routers.SetupRoutes 装配）。
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.GET("/admin", home.Dashboard)
+			e.GET("/admin", adminui.PageSlot(workbenchhttp.DashboardPageTemplate), home.Dashboard)
 		},
 	})
 	if err != nil {

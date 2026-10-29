@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	adminmodel "go_wp/internal/module/admin/model"
 	adminservice "go_wp/internal/module/admin/service"
@@ -29,8 +30,8 @@ func newDepartmentMenuPageEngine(t *testing.T, db *gorm.DB) *gin.Engine {
 		ConfigPath: support.NewComponentTestConfig(t), GinMode: gin.TestMode, InitComponents: true,
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.GET("/admin/departments", h.DepartmentsPage)
-			e.GET("/admin/menus", h.MenusPage)
+			e.GET("/admin/departments", adminui.PageSlot(adminhttp.DepartmentsPageTemplate), h.DepartmentsPage)
+			e.GET("/admin/menus", adminui.PageSlot(adminhttp.MenusPageTemplate), h.MenusPage)
 		},
 	})
 	if err != nil {

@@ -128,6 +128,10 @@ func TestTranslateForms(t *testing.T) {
 		{"中文直值原样", "zh-CN", "请求的资源不存在", "请求的资源不存在"},
 		// 协议外占位符（%d）：模板命中但拒绝注入，按 key 原文降级
 		{"协议外占位符", "zh-CN", "ErrTestIntPlaceholder|3", "ErrTestIntPlaceholder|3"},
+		// 内部错误 key 未命中译文时**不许裸奔**：给中文兜底，而不是把 key 发给客户端。
+		// 触发路径：i18n 缓存只装了部分词条（启动后词条表短暂不可用、测试注入等），
+		// 500 响应体就会是 `MsgInternalError` 这个内部标识符。
+		{"内部错误key未命中给兜底", "en-US", InternalKey, InternalFallback},
 	}
 
 	for _, tc := range cases {

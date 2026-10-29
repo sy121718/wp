@@ -355,12 +355,33 @@ func normalizeLang(raw, fallback string) string {
 //  3. key: detail：拼接消息兼容（如 "ErrInvalidParams: xxx"），仅翻译 key 前缀。
 //
 // 均未命中时原样返回，保证改造窗口期（库缺资源）不出现异常输出。
+//
+// **例外：内部错误 key 不许裸奔**。InternalKey 是"系统出了故障"那条归口文案的 key，
+// 它的兜底原文（InternalFallback）在本包里就有。译文取不到时若原样回 key，
+// 客户端与用户看到的是 `MsgInternalError` 这个内部标识符 —— 既是界面 key 外泄，
+// 也丢失了"系统内部错误"这个唯一有用的信息。实测触发路径：i18n 缓存只装了部分词条
+// （例如启动后词条表短暂不可用、或测试注入），500 响应体就是裸 key。
 func translate(c *gin.Context, message string) string {
+	if text, ok := translateKnown(c, message); ok {
+		return text
+	}
+	if message == InternalKey {
+		return InternalFallback
+	}
+	return message
+}
+
+// translateKnown 与 translate 同义，但第二个返回值表示"命中译文"。
+//
+// 拆出来是为了让"未命中"这条路只在一处兜底：原先 translate 的每个分支都用
+// `text != key` 判断命中，未命中的尾部逻辑（原样返回）无法插话，
+// 于是"未命中时给什么"这件事根本没地方写。
+func translateKnown(c *gin.Context, message string) (string, bool) {
 	lang := requestLanguage(c)
 
 	// 形态 1：纯 key
 	if text := i18n.GetText(message, lang); text != message {
-		return text
+		return text, true
 	}
 
 	// 形态 2：key|param1|param2
@@ -370,14 +391,14 @@ func translate(c *gin.Context, message string) string {
 			// 协议限定：模板只允许 %s / %[n]s / %%（参数按字符串注入）。
 			// 含 %d/%f 等协议外占位符时不做注入，按 key 原文降级，避免 Go 格式错误输出。
 			if !i18n.HasStringPlaceholdersOnly(text) {
-				return message
+				return message, false
 			}
 			args := strings.Split(message[idx+1:], "|")
 			anyArgs := make([]interface{}, len(args))
 			for i, a := range args {
 				anyArgs[i] = a
 			}
-			return fmt.Sprintf(text, anyArgs...)
+			return fmt.Sprintf(text, anyArgs...), true
 		}
 	}
 
@@ -385,9 +406,9 @@ func translate(c *gin.Context, message string) string {
 	if idx := strings.Index(message, ": "); idx > 0 {
 		prefix := message[:idx]
 		if text := i18n.GetText(prefix, lang); text != prefix {
-			return text + message[idx:]
+			return text + message[idx:], true
 		}
 	}
 
-	return message
+	return message, false
 }

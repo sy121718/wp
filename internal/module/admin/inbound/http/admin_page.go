@@ -1977,7 +1977,13 @@ func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
 	if adminDrawerHX(c) {
 		// 成功态片段只读 PermSaved 一个键（见模板）：不取树也不给列表数据，
 		// 少一次查询，也避免「回执里那棵树的勾选」被误读成本次保存的结果快照。
-		pageview.Render(c, &admindto.PermSavedResp{PermSaved: true})
+		//
+		// 走 RenderBare 而不是 pageview.Render：这条路由是**写动作**，注册处没有
+		// PageSlot / BareSlot（见 admin_pages_router.go），而 pageview.Render 的槽就是
+		// 路由挂上来的 —— 没槽时它报「视图出口未装配」并回 500。失败分支一直是对的
+		// （它直接调 adminui.PrepareBareView + c.HTML），只有成功分支走了槽。
+		// 症状：htmx 保存**成功**反而 500，而失败路径正常。
+		adminui.RenderBare(c, RolePermissionsFragmentTemplate, &admindto.PermSavedResp{PermSaved: true})
 		return
 	}
 	adminRolesPage.done(c)

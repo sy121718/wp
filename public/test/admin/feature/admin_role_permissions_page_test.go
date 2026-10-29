@@ -25,6 +25,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	admindto "go_wp/internal/module/admin/dto"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	adminmodel "go_wp/internal/module/admin/model"
@@ -50,7 +51,7 @@ func newAdminRolePermissionsEngine(t *testing.T, svc *fakeRoleService) *gin.Engi
 		InitComponents: true, // 让 adminui.Prepare 拿到 i18n / 会话组件
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.GET("/admin/roles/permissions/drawer", handle.RolePermissionsDrawer)
+			e.GET("/admin/roles/permissions/drawer", adminui.BareSlot(adminhttp.RolePermissionsFragmentTemplate), handle.RolePermissionsDrawer)
 			e.POST("/admin/roles/permissions/save", handle.RolePermissionsSave)
 		},
 	})

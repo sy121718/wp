@@ -30,6 +30,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"go_wp/internal/adminui"
 	maildto "go_wp/internal/module/mail/dto"
 	mailhttp "go_wp/internal/module/mail/inbound/http"
 	mailmodel "go_wp/internal/module/mail/model"
@@ -116,7 +117,11 @@ func newMailI18nEnv(t *testing.T) (*gin.Engine, *mailservice.Service, *gorm.DB) 
 	})
 	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	h := mailhttp.NewMailPageHandle(svc)
-	engine.GET("/admin/mail/templates", h.MailTemplatesPage)
+	// 页面出口必须与生产路由一致（adminui.PageAuthz → adminui.PageSlot → handler）：
+	// 只挂 handler 时 view.Render 拿不到出口，报「视图出口未装配」→ 500，
+	// 而本用例要证的是「真词条下的分页文案」，会被这个夹具缺口盖掉。
+	engine.GET("/admin/mail/templates",
+		adminui.PageSlot(mailhttp.TemplatesPageTemplate), h.MailTemplatesPage)
 	return engine, svc, db
 }
 
