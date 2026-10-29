@@ -51,9 +51,6 @@ import (
 )
 
 // SetupPageRoutes 自装配 page 模块并注册全部路由。
-// SiteSlotsPageTemplate 系统页面槽位页的模板名。
-const SiteSlotsPageTemplate = "admin/page/site_slots.html"
-
 // RedirectPageTemplate 重定向管理页的模板名（页面出口由页面槽带进上下文）。
 const RedirectPageTemplate = "admin/page/page_redirects.html"
 
@@ -224,25 +221,4 @@ func registerPageRoutes(g *permission.RouteGroup, pages, workbenchPages *gin.Rou
 	g.POST("/redirect/merge", permission.PageRedirectMerge, handle.RedirectMerge)
 	pages.POST("/page-redirects/bulk-delete", builtin.CasbinMiddlewareForPath("/api/page/redirect/delete"), handle.RedirectBulkDelete)
 
-	// ══ 系统页面槽位（BIZ-1）══
-	// 槽位把「结算页是哪一页」这类事实固定下来，供链接生成与跳转使用。
-	// 接口面（/api/page/site-slot/{list,bind,unbind}）给构建期与其它模块；
-	// 页面面（/admin/site-slots）是运营配置它那一页 —— 侧栏入口是 sys_menus 里
-	// 「内容」分组下的「系统页面」（迁移 140 落行，224 收口归位）。
-	//
-	// 两侧用不同的 handler 是对的：接口面回 JSON、页面面回整页 HTML，
-	// 但**权限点同源**（页面侧显式指向接口路径），改一处不会漏另一处。
-	g.GET("/site-slot/list", permission.PageSiteSlotList, handle.ListSiteSlots)
-	g.POST("/site-slot/bind", permission.PageSiteSlotBind, handle.BindSiteSlot)
-	g.POST("/site-slot/unbind", permission.PageSiteSlotUnbind, handle.UnbindSiteSlot)
-	if svc == nil || projects == nil {
-		return
-	}
-	siteSlotPage := NewSiteSlotPageHandle(svc, projects)
-	pages.GET("/site-slots",
-		adminui.PageAuthz("/api/page/list"),
-		adminui.PageSlot(SiteSlotsPageTemplate),
-		siteSlotPage.SiteSlotsPage)
-	pages.POST("/site-slots/bind", builtin.CasbinMiddlewareForPath("/api/page/site-slot/bind"), siteSlotPage.SiteSlotBind)
-	pages.POST("/site-slots/unbind", builtin.CasbinMiddlewareForPath("/api/page/site-slot/unbind"), siteSlotPage.SiteSlotUnbind)
 }

@@ -2,7 +2,7 @@ package templates
 
 // site_structure_i18n_test.go — 站点结构类后台模板的取词与渲染回归（审计 I18N-001 组E）。
 //
-// 覆盖 9 个模板：site_slots / theme / theme_settings / pages / page_translations /
+// 覆盖 8 个模板：theme / theme_settings / pages / page_translations /
 // blocks / navigations / navigation_translations / menus。
 //
 // 为什么必须真渲染：这些模板里有大量 range 内取词（{{tr := .["t"]}} 之后在 range 里
@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"go_wp/pkg/i18n"
 	"go_wp/pkg/utils"
 
 	"github.com/CloudyKit/jet/v6"
@@ -29,7 +28,6 @@ import (
 
 // siteStructureTemplates 本批模板名（不带 .html 扩展）。
 var siteStructureTemplates = []string{
-	"admin/page/site_slots",
 	"admin/project/theme",
 	"admin/project/theme_settings",
 	"admin/page/pages",
@@ -48,7 +46,7 @@ func siteStructureData() map[string]any {
 	}
 }
 
-// TestSiteStructureTemplatesParse 九个模板都必须能整份解析（extends layout.html 一起解析）。
+// TestSiteStructureTemplatesParse 八个模板都必须能整份解析（extends layout.html 一起解析）。
 func TestSiteStructureTemplatesParse(t *testing.T) {
 	loader := jet.NewOSFileSystemLoader(".")
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".html"}))
@@ -60,36 +58,13 @@ func TestSiteStructureTemplatesParse(t *testing.T) {
 	}
 }
 
-// TestSiteStructureTemplatesRender 九个模板都必须能渲染到尾部，且关键文案/字段在输出里。
+// TestSiteStructureTemplatesRender 八个模板都必须能渲染到尾部，且关键文案/字段在输出里。
 func TestSiteStructureTemplatesRender(t *testing.T) {
 	cases := []struct {
 		name  string
 		data  map[string]any
 		wants []string
 	}{
-		{
-			name: "admin/page/site_slots",
-			data: map[string]any{
-				// Err 是「本页装载失败」槽：handler 给**事实**（key + 中文兜底），
-				// 两项都空 = 无提示；取词由模板的 tf 做。给空串会让模板的 .Err.Key 报错。
-				"Err": map[string]any{"Key": "", "Fallback": ""}, "Ok": "", "SelectedProject": "p1",
-				"Projects":   []map[string]any{{"ID": "p1", "Name": "官网"}},
-				"BoundCount": 1, "Total": 1, "UnpublishedCount": 0, "DeletedCount": 0,
-				// 分档由组装侧给（page 模块的 unpublishedSlotsTone / deletedSlotsTone）：
-				// 这里计数都是 0 → 两档都是中性，模板读 badge-{{.UnpublishedTone}}。
-				"UnpublishedTone": "mute", "DeletedTone": "mute",
-				"NoPages": false,
-				"Rows": []map[string]any{{
-					"Slot":        "checkout",
-					"SlotNameKey": "admin.site_slots.slot.checkout", "SlotNameFallback": "结算页",
-					"UsageKey": "admin.site_slots.usage.checkout", "UsageFallback": "购物车去结算",
-					"Unbound": false, "PageDeleted": false,
-					"DraftPath": "/checkout", "Published": false, "PublicURL": "", "Path": "",
-					"Bound": true, "PageOptions": []map[string]any{},
-				}},
-			},
-			wants: []string{"系统页面", "概览", "槽位", "解绑", "草稿路径", "这个工程还没有页面"},
-		},
 		{
 			name: "admin/project/theme",
 			data: map[string]any{
@@ -559,252 +534,4 @@ func seededI18nKeys(t *testing.T) map[string]map[string]bool {
 		}
 	}
 	return seeded
-}
-
-// —— 槽位状态展示：档位与文案由模板按事实选（task-103） ——
-//
-// 原先 handler 的行投影直接给 `Badge`（"badge-mute" 这类**类名**）与 `StateLabel`（已取好词的文案），
-// 页头两个档位也由 Go 的 unpublishedSlotsTone / deletedSlotsTone 给。现在 Go 只给事实
-//（Bound / PageDeleted / Published 与两个计数），选档与取词都在 internal/templates/admin/page/site_slots.html。
-// 这一组用例钉的正是「搬过去之后判据没走样」：四档、矛盾事实的优先级、完整零值事实、
-// 缺键健壮性、页头 `n != 0`（含负数）、词条 key 与 seed 对账、中英与缺词回退。
-
-// siteSlotRowFacts 一行槽位的事实（与 handler 的 siteSlotRow 投影同形）。
-func siteSlotRowFacts(slot string, facts map[string]any) map[string]any {
-	// 槽位名与用途现在交 **key + 兜底** 两个事实（取词在模板里做），不再是一个成品串。
-	// 用真实词条 key，模板的 tr 才能按当前语言取词。
-	row := map[string]any{
-		"Slot": slot, "SlotNameKey": "admin.site_slots.slot.checkout", "SlotNameFallback": "结算页",
-		"UsageKey": "admin.site_slots.usage.checkout", "UsageFallback": "购物车去结算",
-		"DraftPath": "/checkout", "Path": "", "PublicURL": "",
-		"PageOptions": []map[string]any{},
-	}
-	for k, v := range facts {
-		row[k] = v
-	}
-	return row
-}
-
-// renderSiteSlotsPage 真渲染 admin/page/site_slots（连 layout），返回整页输出。
-//
-// extra 里的键值覆盖默认数据；**值为 nil 表示「这个键缺席」**（¬ 用于测缺键健壮性）。
-func renderSiteSlotsPage(t *testing.T, rows []map[string]any, extra map[string]any) string {
-	t.Helper()
-	data := siteStructureData()
-	data["Err"] = map[string]any{"Key": "", "Fallback": ""}
-	data["SelectedProject"] = "p1"
-	data["Projects"] = []map[string]any{{"ID": "p1", "Name": "官网"}}
-	data["BoundCount"] = 1
-	data["Total"] = 1
-	data["UnpublishedCount"] = 0
-	data["DeletedCount"] = 0
-	// 列表区分支的前提：有工程、有页面、本次没有装载失败（本组用例测的是行的档位，不是空态）。
-	data["NoProjectEmpty"] = false
-	data["NoPages"] = false
-	data["Rows"] = rows
-	for k, v := range extra {
-		if v == nil {
-			delete(data, k)
-			continue
-		}
-		data[k] = v
-	}
-	set := jet.NewSet(jet.NewOSFileSystemLoader("."), jet.WithTemplateNameExtensions([]string{"", ".html"}))
-	injectGlobals(set)
-	out, err := render(t, set, "admin/page/site_slots", data)
-	if err != nil {
-		t.Fatalf("渲染 admin/page/site_slots 失败: %v", err)
-	}
-	if !strings.Contains(out, "</html>") {
-		t.Fatalf("未渲染到布局尾部（渲染在中途中断）:\n%s", out)
-	}
-	return out
-}
-
-// TestSiteSlotRowToneFromFacts 行徽章的四个档位 + 矛盾事实的优先级。
-func TestSiteSlotRowToneFromFacts(t *testing.T) {
-	cases := []struct {
-		name  string
-		facts map[string]any
-		want  string // 期望的整段徽章（类名 + 文案）
-	}{
-		{
-			name:  "未绑定（中性档）",
-			facts: map[string]any{"Bound": false, "PageDeleted": false, "Published": false, "Unbound": true},
-			want:  `<span class="badge badge-mute">未绑定</span>`,
-		},
-		{
-			// 完整零值事实行：与「未绑定」走同一条路径（旧行为也是 !Bound → unbound/mute），
-			// 不允许出现「零值就什么徽章都不渲染」的第三种形态。
-			name:  "完整零值事实行仍是未绑定",
-			facts: map[string]any{"Bound": false, "PageDeleted": false, "Published": false, "Unbound": true},
-			want:  `<span class="badge badge-mute">未绑定</span>`,
-		},
-		{
-			// 矛盾事实：未绑定却带 PageDeleted=true —— 旧 switch 先判 !Bound，所以仍是 unbound/mute。
-			name:  "矛盾事实（!Bound 且 PageDeleted）按未绑定优先",
-			facts: map[string]any{"Bound": false, "PageDeleted": true, "Published": false, "Unbound": true},
-			want:  `<span class="badge badge-mute">未绑定</span>`,
-		},
-		{
-			name:  "绑定但页面已删除（危险档）",
-			facts: map[string]any{"Bound": true, "PageDeleted": true, "Published": false, "Unbound": false},
-			want:  `<span class="badge badge-danger">绑定已失效</span>`,
-		},
-		{
-			name:  "绑定且已发布（成功档）",
-			facts: map[string]any{"Bound": true, "PageDeleted": false, "Published": true, "Unbound": false},
-			want:  `<span class="badge badge-ok">已发布</span>`,
-		},
-		{
-			name:  "绑定但未发布（降级档）",
-			facts: map[string]any{"Bound": true, "PageDeleted": false, "Published": false, "Unbound": false},
-			want:  `<span class="badge badge-warn">已绑定但未发布</span>`,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			out := renderSiteSlotsPage(t, []map[string]any{siteSlotRowFacts("checkout", tc.facts)}, nil)
-			if !strings.Contains(out, tc.want) {
-				t.Errorf("期望输出含 %s，实际没有（档位或文案与事实不符）", tc.want)
-			}
-			// 一行只该有一个状态徽章：按「整段徽章（类名 + 文案）」精确计数，
-			// 四段之和必须恰好为 1，否则「同时渲染两档 / 一个都不渲染」这类穿透发现不了。
-			// 用整段而不是类名计数：页头三个计数徽章面对同类名（且带计数后缀），只按类名会一起数进来。
-			sum := 0
-			for _, span := range []string{
-				`<span class="badge badge-mute">未绑定</span>`,
-				`<span class="badge badge-danger">绑定已失效</span>`,
-				`<span class="badge badge-ok">已发布</span>`,
-				`<span class="badge badge-warn">已绑定但未发布</span>`,
-			} {
-				sum += strings.Count(out, span)
-			}
-			if sum != 1 {
-				t.Errorf("行内状态徽章数量应为 1，实际 %d（分支穿透或漏渲染）", sum)
-			}
-		})
-	}
-}
-
-// TestSiteSlotRowMissingFactsFallBackToUnbound 缺 Bound/PageDeleted/Published 的行必须稳健。
-//
-// 只覆盖「行里其它必需事实（SlotName / Slot / Usage / BindLabel / PageOptions）齐全、仅缺这三个布尔」
-// 这一种夹具形态 —— 不宣称任意空 map 都能渲染出完整页（那会把渲染期的其它必需键也一并放弃）。
-func TestSiteSlotRowMissingFactsFallBackToUnbound(t *testing.T) {
-	out := renderSiteSlotsPage(t, []map[string]any{siteSlotRowFacts("checkout", nil)}, nil)
-	if !strings.Contains(out, `<span class="badge badge-mute">未绑定</span>`) {
-		t.Errorf("缺三个布尔时该落「未绑定/中性」档（与完整零值事实同一条路径），实际输出里没有")
-	}
-}
-
-// TestSiteSlotHeaderToneFromCounts 页头两个档位的判据是 `n != 0`（**含负数非零**），且缺键落中性。
-func TestSiteSlotHeaderToneFromCounts(t *testing.T) {
-	row := siteSlotRowFacts("checkout", map[string]any{
-		"Bound": true, "PageDeleted": false, "Published": true, "Unbound": false,
-	})
-	cases := []struct {
-		name                     string
-		unpublished, deleted     any // nil = 键缺席
-		wantUnpublished, wantDel string
-	}{
-		{name: "计数都是 0", unpublished: 0, deleted: 0, wantUnpublished: "badge-mute", wantDel: "badge-mute"},
-		{name: "未发布有值", unpublished: 3, deleted: 0, wantUnpublished: "badge-warn", wantDel: "badge-mute"},
-		{name: "已删除有值", unpublished: 0, deleted: 2, wantUnpublished: "badge-mute", wantDel: "badge-danger"},
-		// 旧 helper 是 `n != 0`：负数同样算「有」，这条用例专门防止有人把判据改成 `> 0`。
-		{name: "负数也算非零", unpublished: -1, deleted: -1, wantUnpublished: "badge-warn", wantDel: "badge-danger"},
-		{name: "计数键缺席落中性", unpublished: nil, deleted: nil, wantUnpublished: "badge-mute", wantDel: "badge-mute"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			// nil 表示「这个计数键缺席」：必须把键显式放进 extra 并置 nil，
-			// 否则 helper 的默认值会让「缺席」这一档悄悄变成「值为 0」，判据就成了空转。
-			extra := map[string]any{"UnpublishedCount": tc.unpublished, "DeletedCount": tc.deleted}
-			out := renderSiteSlotsPage(t, []map[string]any{row}, extra)
-			if !strings.Contains(out, `badge `+tc.wantUnpublished+`">已绑定但未发布`) {
-				t.Errorf("「已绑定但未发布」计数徽章的档位应为 %s", tc.wantUnpublished)
-			}
-			if !strings.Contains(out, `badge `+tc.wantDel+`">绑定的页面已被删除`) {
-				t.Errorf("「绑定的页面已被删除」计数徽章的档位应为 %s", tc.wantDel)
-			}
-		})
-	}
-}
-
-// TestSiteSlotStateKeysComeFromSeededKeys 模板里的状态词条 key 必须与 seed 双语成对。
-//
-// 判据与 block_row.html 的 kind 对账同形（TestBlockRowLabelsComeFromSeededKeys）：
-// 模板里的中文只是 t() 的兜底，真正显示什么由 sys_i18n 的词条决定 ——
-// key 拼错或漏 seed 的症状是「中文环境看着正常、英文环境露出 key 本身」。
-func TestSiteSlotStateKeysComeFromSeededKeys(t *testing.T) {
-	stateKeyRe := regexp.MustCompile(`"(admin\.site_slots\.state\.[a-z]+)"`)
-	keys := keySetOf(stateKeyRe, adminTemplateSource(t, "site_slots.html"))
-
-	// 非空自检：解析塌成 0（正则写坏 / 文件被搬走）时下面的断言会变成空转。
-	if len(keys) != 4 {
-		t.Fatalf("模板里应恰好解析出 4 个状态 key，实际 %d 个：%v", len(keys), sortedKeys(keys))
-	}
-	seeded := seededI18nKeys(t)
-	for _, key := range sortedKeys(keys) {
-		langs := seeded[key]
-		if langs == nil {
-			t.Errorf("site_slots.html 用了 key %s，但迁移里没有这条词条", key)
-			continue
-		}
-		for _, lang := range []string{"zh-CN", "en-US"} {
-			if !langs[lang] {
-				t.Errorf("key %s 缺 %s 词条（模板里的中文只是 t() 兜底）", key, lang)
-			}
-		}
-	}
-}
-
-// TestSiteSlotStateLabelFollowsLanguageAndFallback 中英两语与缺词回退链。
-//
-// 三级判据：① 词条有请求语言 → 出该语言译文；② 只有默认语言（zh-CN）→ 回退默认语言，
-// 不是模板兜底、更不是 key 本身；③ 什么都没有 → 落模板里的中文兜底，且不得露出裸 key。
-func TestSiteSlotStateLabelFollowsLanguageAndFallback(t *testing.T) {
-	publishedRow := siteSlotRowFacts("checkout", map[string]any{
-		"Bound": true, "PageDeleted": false, "Published": true, "Unbound": false,
-	})
-	deletedRow := siteSlotRowFacts("checkout", map[string]any{
-		"Bound": true, "PageDeleted": true, "Published": false, "Unbound": false,
-	})
-
-	// 缓存是包级单例：本用例注入的词条必须清理，否则后面的用例会按注入值取词。
-	t.Cleanup(func() { i18n.InjectForTest(map[string]map[string]string{}, nil) })
-
-	t.Run("有请求语言就出译文", func(t *testing.T) {
-		i18n.InjectForTest(map[string]map[string]string{
-			"admin.site_slots.state.published": {"zh-CN": "已发布", "en-US": "Published"},
-		}, nil)
-		out := renderSiteSlotsPage(t, []map[string]any{publishedRow}, nil)
-		if !strings.Contains(out, "Published") {
-			t.Errorf("英文词条存在时应出英文译文，实际没有")
-		}
-		if strings.Contains(out, "admin.site_slots.state.published") {
-			t.Errorf("输出里露出了裸 key（取词没生效）")
-		}
-	})
-
-	t.Run("只有默认语言就回退默认语言", func(t *testing.T) {
-		i18n.InjectForTest(map[string]map[string]string{
-			"admin.site_slots.state.deleted": {"zh-CN": "注入的默认语言文案"},
-		}, nil)
-		out := renderSiteSlotsPage(t, []map[string]any{deletedRow}, nil)
-		if !strings.Contains(out, "注入的默认语言文案") {
-			t.Errorf("请求语言缺词时应回退默认语言词条，实际没有（回退链断了）")
-		}
-	})
-
-	t.Run("没有任何词条就落模板兜底且不露 key", func(t *testing.T) {
-		i18n.InjectForTest(map[string]map[string]string{}, nil)
-		out := renderSiteSlotsPage(t, []map[string]any{publishedRow}, nil)
-		if !strings.Contains(out, `<span class="badge badge-ok">已发布</span>`) {
-			t.Errorf("无词条时应落模板里的中文兜底「已发布」")
-		}
-		if strings.Contains(out, "admin.site_slots.state.") {
-			t.Errorf("输出里露出了状态词条的裸 key")
-		}
-	})
 }

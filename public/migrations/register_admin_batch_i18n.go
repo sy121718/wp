@@ -36,7 +36,7 @@ func registerAdminBatchI18nSeed() {
 	registerSeed(Seed{
 		Version:   "432-i18n-admin-batch",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 70 THEN 1 ELSE 0 END FROM sys_i18n " +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 66 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE lang = 'en-US' AND item_key IN (" +
 			"'admin.article.edit.visualCreate','admin.article.edit.visualGo'," +
 			"'admin.article.edit.visualHeading','admin.article.edit.visualIntro'," +
@@ -68,8 +68,8 @@ func registerAdminBatchI18nSeed() {
 			"'admin.products.create.title','admin.products.detailTemplate.title'," +
 			"'admin.settings.locales.mode.all_prefix','admin.settings.locales.mode.default_plain'," +
 			"'admin.settings.locales.mode_label','admin.settings.locales.mode.off'," +
-			"'admin.site_slots.bind_panel.page','admin.site_slots.load_failed.reload'," +
-			"'admin.site_slots.no_project_list','admin.site_slots.select_page_placeholder'," +
+			"" +
+			"" +
 			"'admin.theme.confirm_delete_note','admin.theme.empty_desc'," +
 			"'admin.theme.empty_title','admin.theme.no_project_action'," +
 			"'admin.theme.no_project_desc','admin.inventory.adjust.direction.adjust'," +

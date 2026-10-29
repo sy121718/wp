@@ -291,12 +291,12 @@ func TestBackendExclusiveClassesStayInControlPlane(t *testing.T) {
 	}
 	// 控制面之外的模板。fragments/*.html 不在列表里：它们是后台 / 工作台页面片段
 	// （workbench 的 inspector_panel / outline_tree、project 的 global_panel / settings_panel、
-	// product 的 seo_score、content 的 article_import），由后台页面渲染、同样直引整份 ui.css；
-	// 站点运行时片段是 fragments/*.jet（cart_view / order_list / user_login …）。
+	// product 的 seo_score、content 的 article_import），由后台页面渲染、同样直引整份 ui.css。
+	// 站点业务已迁为静态组件；随组件包内置的Jet、平铺组件和文档骨架都必须在扫描内，不能靠已删运行时片段凑数量。
 	patterns := []string{
-		"components/*/*.jet", "components/*/*.html",
+		"../builder/components/*/*.jet", "components/*.jet", "components/*/*.jet", "components/*.html", "components/*/*.html",
 		"fragments/*.jet",
-		"user/*.html", "partials/*.html", "*.html",
+		"partials/*.html", "*.html", "*.jet",
 	}
 	var files []string
 	for _, pat := range patterns {

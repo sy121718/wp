@@ -7,7 +7,7 @@ func init() {
 		// 门槛判据**逐条枚举本批自己的 item_key**（上界封闭）：条目恰好 488 条
 		//（244 个 key × zh-CN / en-US）。用 LIKE 前缀或全库总量都不行 ——
 		// 前者会被同前缀的其它批次顶高（058 的静默跳过），后者永远追不平（076 的每次重跑）。
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 488 THEN 1 ELSE 0 END FROM sys_i18n " +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) = 428 THEN 1 ELSE 0 END FROM sys_i18n " +
 			"WHERE item_key IN (" +
 			"'admin.article.err.missingID', 'admin.article.err.missingSlug', 'admin.article.err.missingTitle', 'admin.article.import.action.drop', 'admin.article.import.action.placeholder', 'admin.article.import.action.trim', " +
 			"'admin.article.import.action.unwrap', 'admin.article.import.err.depsMissing', 'admin.article.import.err.emptyBody', 'admin.article.import.err.noPageCapability', 'admin.article.import.err.noPath', 'admin.article.import.err.noProject', " +
@@ -29,12 +29,12 @@ func init() {
 			"'admin.navigations.panel.blockName.panel', 'admin.navigations.source.article', 'admin.navigations.source.category', 'admin.navigations.source.page', 'admin.navigations.source.product', 'admin.page_translations.origin.block', " +
 			"'admin.page_translations.origin.footer', 'admin.page_translations.origin.header', 'admin.page_translations.reuse.moreSuffix', 'admin.page_translations.reuse.pathSeparator', 'admin.pages.history.loadFailed', 'admin.seo.score.grade.excellent', " +
 			"'admin.seo.score.grade.good', 'admin.seo.score.grade.missing', 'admin.seo.score.grade.needsWork', 'admin.seo.score.grade.poor', 'admin.seo.score.issueFormat', 'admin.seo.score.serpDescEmpty', " +
-			"'admin.seo.score.serpTitleEmpty', 'admin.site_slots.action.bind', 'admin.site_slots.action.rebind', 'admin.site_slots.err.noPage', 'admin.site_slots.err.noProject', 'admin.site_slots.ok.bound', " +
-			"'admin.site_slots.ok.unbound', 'admin.site_slots.slot.account.name', 'admin.site_slots.slot.account.usage', 'admin.site_slots.slot.blog.name', 'admin.site_slots.slot.blog.usage', 'admin.site_slots.slot.cart.name', " +
-			"'admin.site_slots.slot.cart.usage', 'admin.site_slots.slot.checkout.name', 'admin.site_slots.slot.checkout.usage', 'admin.site_slots.slot.forgot.name', 'admin.site_slots.slot.forgot.usage', 'admin.site_slots.slot.login.name', " +
-			"'admin.site_slots.slot.login.usage', 'admin.site_slots.slot.orders.name', 'admin.site_slots.slot.orders.usage', 'admin.site_slots.slot.register.name', 'admin.site_slots.slot.register.usage', 'admin.site_slots.slot.reset.name', " +
-			"'admin.site_slots.slot.reset.usage', 'admin.site_slots.slot.shop.name', 'admin.site_slots.slot.shop.usage', 'admin.site_slots.state.deleted', 'admin.site_slots.state.published', 'admin.site_slots.state.unbound', " +
-			"'admin.site_slots.state.unpublished', 'admin.theme_settings.block.unset', 'admin.theme_settings.err.fieldInvalid', 'admin.theme_settings.label.accentColor', 'admin.theme_settings.label.bodyColor', 'admin.theme_settings.label.bodySize', " +
+			"'admin.seo.score.serpTitleEmpty', " +
+			"" +
+			"" +
+			"" +
+			"" +
+			"'admin.theme_settings.block.unset', 'admin.theme_settings.err.fieldInvalid', 'admin.theme_settings.label.accentColor', 'admin.theme_settings.label.bodyColor', 'admin.theme_settings.label.bodySize', " +
 			"'admin.theme_settings.label.borderColor', 'admin.theme_settings.label.borderStyle', 'admin.theme_settings.label.borderWidth', 'admin.theme_settings.label.button', 'admin.theme_settings.label.buttonBackground', 'admin.theme_settings.label.buttonTextColor', " +
 			"'admin.theme_settings.label.cardSurface', 'admin.theme_settings.label.colors', 'admin.theme_settings.label.dangerColor', 'admin.theme_settings.label.defaultShadow', 'admin.theme_settings.label.easing', 'admin.theme_settings.label.entrance', " +
 			"'admin.theme_settings.label.fontFamily', 'admin.theme_settings.label.fontWeight', 'admin.theme_settings.label.globalRadius', 'admin.theme_settings.label.headingColor', 'admin.theme_settings.label.headingSize', 'admin.theme_settings.label.headingSpacing', " +

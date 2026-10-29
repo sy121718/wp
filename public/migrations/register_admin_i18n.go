@@ -650,7 +650,7 @@ func registerAdminI18nSeedsAndLatest() {
 	registerSeed(Seed{
 		Version:   "192-i18n-seed-admin-site-structure",
 		TableName: "sys_i18n",
-		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 298 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN (" +
+		ConditionSQL: "SELECT CASE WHEN COUNT(*) >= 237 THEN 1 ELSE 0 END FROM sys_i18n WHERE lang = 'zh-CN' AND item_key IN (" +
 			"'admin.blocks.action.delete', 'admin.blocks.action.edit', 'admin.blocks.blocks_aria', 'admin.blocks.blocks_empty', " +
 			"'admin.blocks.blocks_heading', 'admin.blocks.col.actions', 'admin.blocks.col.kind', 'admin.blocks.col.name', " +
 			"'admin.blocks.col.reuse', 'admin.blocks.col.updated_at', 'admin.blocks.confirm_delete_prefix', 'admin.blocks.confirm_delete_suffix', " +
@@ -702,22 +702,22 @@ func registerAdminI18nSeedsAndLatest() {
 			"'admin.pages.create_page_heading', 'admin.pages.create_page_submit', 'admin.pages.create_project_heading', 'admin.pages.create_project_submit', " +
 			"'admin.pages.empty', 'admin.pages.list_heading', 'admin.pages.no_project', 'admin.pages.path_placeholder', " +
 			"'admin.pages.project_name_placeholder', 'admin.pages.status.draft', 'admin.pages.status.published', 'admin.pages.status.staged', " +
-			"'admin.pages.status.stale', 'admin.pages.table_aria', 'admin.site_slots.action.unbind', 'admin.site_slots.bound_count', " +
-			"'admin.site_slots.col.actions', 'admin.site_slots.col.bound', 'admin.site_slots.col.slot', 'admin.site_slots.col.usage', " +
-			"'admin.site_slots.deleted_count', 'admin.site_slots.deleted_page.lead', 'admin.site_slots.deleted_page.strong', 'admin.site_slots.deleted_page.tail', " +
-			"'admin.site_slots.draft_path', 'admin.site_slots.err_prefix', 'admin.site_slots.foot.lead', 'admin.site_slots.foot.strong', " +
-			"'admin.site_slots.foot.tail', 'admin.site_slots.intro1.lead', 'admin.site_slots.intro1.mid', 'admin.site_slots.intro1.strong', " +
-			"'admin.site_slots.intro1.strong2', 'admin.site_slots.intro1.tail', 'admin.site_slots.intro2.lead', 'admin.site_slots.intro2.mid', " +
-			"'admin.site_slots.intro2.strong', 'admin.site_slots.intro2.strong2', 'admin.site_slots.intro2.tail', 'admin.site_slots.intro3.mid1', " +
-			"'admin.site_slots.intro3.mid2', 'admin.site_slots.intro3.strong', 'admin.site_slots.intro3.strong2', 'admin.site_slots.intro3.strong3', " +
-			"'admin.site_slots.intro3.tail', 'admin.site_slots.no_pages.lead', 'admin.site_slots.no_pages.mid', 'admin.site_slots.no_pages.strong', " +
-			"'admin.site_slots.no_pages.strong2', 'admin.site_slots.no_pages.tail', 'admin.site_slots.no_pages_inline', 'admin.site_slots.no_project.lead', " +
-			"'admin.site_slots.no_project.tail', 'admin.site_slots.no_rows', 'admin.site_slots.overview.hint.lead', 'admin.site_slots.overview.hint.mid', " +
-			"'admin.site_slots.overview.hint.strong', 'admin.site_slots.overview.hint.strong2', 'admin.site_slots.overview.hint.tail', 'admin.site_slots.overview.title', " +
-			"'admin.site_slots.page_deleted', 'admin.site_slots.pages_link', 'admin.site_slots.pick_project', 'admin.site_slots.public_path', " +
-			"'admin.site_slots.select_page', 'admin.site_slots.slots.count_suffix', 'admin.site_slots.slots.title', 'admin.site_slots.title', " +
-			"'admin.site_slots.unbound', 'admin.site_slots.unpublished.lead', 'admin.site_slots.unpublished.lead2', 'admin.site_slots.unpublished.strong', " +
-			"'admin.site_slots.unpublished.tail', 'admin.site_slots.unpublished.tail2', 'admin.site_slots.unpublished_count', 'admin.theme.action.activate', " +
+			"'admin.pages.status.stale', 'admin.pages.table_aria', " +
+			"" +
+			"" +
+			"" +
+			"" +
+			"" +
+			"" +
+			"" +
+			"" +
+			"" +
+			"" +
+			"" +
+			"" +
+			"" +
+			"" +
+			"'admin.theme.action.activate', " +
 			"'admin.theme.action.delete', 'admin.theme.action.settings', 'admin.theme.col.actions', 'admin.theme.col.created_at', " +
 			"'admin.theme.col.name', 'admin.theme.col.status', 'admin.theme.col.updated_at', 'admin.theme.confirm_delete_prefix', " +
 			"'admin.theme.confirm_delete_suffix', 'admin.theme.create', 'admin.theme.empty', 'admin.theme.heading', " +

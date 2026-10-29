@@ -19,19 +19,6 @@ type PageLangFormReq struct {
 	Lang   string `form:"lang"`
 }
 
-// SiteSlotBindFormReq 绑定 / 换绑系统页面槽位。
-type SiteSlotBindFormReq struct {
-	ProjectID string `form:"projectId"`
-	Slot      string `form:"slot"`
-	PageID    string `form:"pageId"`
-}
-
-// SiteSlotUnbindFormReq 解绑系统页面槽位。
-type SiteSlotUnbindFormReq struct {
-	ProjectID string `form:"projectId"`
-	Slot      string `form:"slot"`
-}
-
 // ProjectCreateFormReq 新建站点工程（表单只有一个名称字段）。
 type ProjectCreateFormReq struct {
 	Name string `form:"name"`

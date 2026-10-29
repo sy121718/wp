@@ -98,16 +98,6 @@ const (
 
 	// —— 系统页面槽位页（page_site_slot_handle.go）——
 	//
-	// SiteSlotsTitle 页面标题（页头与回跳链接文字共用同一条词条）。
-	SiteSlotsTitle = "admin.site_slots.title"
-	// SiteSlotBoundOk 绑定 / 换绑成功回执。
-	SiteSlotBoundOk = "admin.site_slots.ok.bound"
-	// SiteSlotUnboundOk 解绑成功回执。
-	SiteSlotUnboundOk = "admin.site_slots.ok.unbound"
-	// SiteSlotNoProject 没有可用的站点工程（本页自造的参数级提示）。
-	SiteSlotNoProject = "admin.site_slots.err.noProject"
-	// SiteSlotNoPage 提交时没选页面（本页自造的参数级提示）。
-	SiteSlotNoPage = "admin.site_slots.err.noPage"
 
 	// —— 重定向管理页（page_redirect.go）——
 	//

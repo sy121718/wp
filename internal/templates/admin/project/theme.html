@@ -36,7 +36,6 @@
                 </select>
             </form>
             {{end}}
-            <a class="btn" href="/admin/site-slots">{{ .["t"]("admin.theme.site_slots_link", "系统页面槽位") }}</a>
             {* 新建走右侧抽屉：表单本体在页面底部的 <template>（layout 提供抽屉外壳、drawer.js 克隆内容）。
                注意 hx-headers 只对 htmx 请求生效，原生表单必须自带 csrf_token 隐藏域。 *}
             {* 新建入口只在有工程时给：主题必须挂在工程下，抽屉表单的 projectId 取的是当前选中工程，

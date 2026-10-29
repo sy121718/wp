@@ -1,6 +1,6 @@
-"""站点装配：内容模板（归档）/ 站点槽位 / 导航菜单。
+"""站点装配：内容模板（归档）/ 显式页面动作 / 导航菜单。
 
-用法：python3 scripts/wp-import/site_build.py
+用法：先完成 page_build.py，并按 WP_DEFAULT_LANG 构建、发布 pages.json 中已有 shop；再运行本脚本。
 产物：tmp/wp-import/map/nav.json
 """
 from __future__ import annotations
@@ -8,11 +8,13 @@ from __future__ import annotations
 import os
 import sys
 import time
+from urllib.parse import urlencode
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 
 P = C.project_id()
+DEFAULT_LANG = os.environ.get("WP_DEFAULT_LANG", "en-AU")
 INTERVAL = 60.0 / 90.0
 _last = [0.0]
 
@@ -47,8 +49,20 @@ def wrap(root, title="", desc=""):
     return {"settings": {"layout": {"mode": "full"}, "seo": seo}, "root": root}
 
 
-def archive_doc(kind, title):
+def require_published_shop(shop_page_id):
+    """在创建任何归档或导航前检查明确的 Shop 目标，不猜页、不代发布。"""
+    if not shop_page_id:
+        raise RuntimeError("pages.json 缺少已有 shop 页面 ID；先运行 page_build.py 创建页面")
+    detail = call("/api/page/detail?" + urlencode({"projectId": P, "id": shop_page_id}), None, "GET")
+    if not any(pub.get("lang") == DEFAULT_LANG and pub.get("activePath") and pub.get("artifactId") and pub.get("artifactHash")
+               for pub in detail.get("publications", [])):
+        raise RuntimeError(f"shop 页面 {shop_page_id} 尚未发布 {DEFAULT_LANG}；请先构建并发布该已有页面，再运行 site_build.py")
+
+
+def archive_doc(kind, title, shop_page_id):
     """归档模板：标题 + 按归档上下文筛选的商品列表（filterFromArchive=on）。"""
+    if not shop_page_id:
+        raise ValueError("创建归档模板前必须提供已有 shop 页面 ID")
     return wrap([{
         "id": f"archive-{kind}-sec",
         "type": "core.container",
@@ -62,6 +76,7 @@ def archive_doc(kind, title):
              "props": {"tag": "h1", "text": title, "typography": {
                  "desktop": {"fontSize": "34px"}, "tablet": {"fontSize": "30px"}, "mobile": {"fontSize": "26px"}}}},
             {"id": f"archive-{kind}-list", "type": "core.productList",
+             "actions": {"list": {"kind": "page", "pageId": shop_page_id}},
              "props": {"collectionSource": "content:product", "collectionLimit": 24, "columns": "4",
                        "layout": "grid", "pageSize": 12, "filterFromArchive": "on",
                        "filters": "categories,brands,attributes", "toolbar": "sort,pageSize",
@@ -78,19 +93,10 @@ def main():
     pages = C.load_map("pages.json")
     out = C.load_map("nav.json")
 
-    # --- 1. 站点槽位 ---
-    for slot, key in (("shop", "shop"), ("blog", "blog")):
-        p = pages.get(key)
-        if not p:
-            print(f"  槽位 {slot}: 缺页面 {key}，跳过")
-            continue
-        try:
-            call("/api/page/site-slot/bind", {"projectId": P, "slot": slot, "pageId": p["id"]})
-            print(f"  槽位 {slot} → {key}")
-        except Exception as e:  # noqa: BLE001
-            print(f"  槽位 {slot} 绑定失败: {str(e)[:160]}")
+    shop_page_id = (pages.get("shop") or {}).get("id", "")
+    require_published_shop(shop_page_id)
 
-    # --- 2. 归档模板（分类 / 品牌 / 标签）---
+    # --- 1. 归档模板（分类 / 品牌 / 标签）---
     tpl_ids = out.get("templates", {})
     for et, title in (("product_category", "分类"), ("product_brand", "品牌"), ("product_tag", "标签")):
         if et in tpl_ids:
@@ -98,7 +104,7 @@ def main():
         try:
             d = call("/api/contenttemplate/create", {
                 "projectId": P, "entityType": et, "name": f"{title}归档页",
-                "templateRole": "archive", "draftDocument": archive_doc(et.replace("product_", ""), title),
+                "templateRole": "archive", "draftDocument": archive_doc(et.replace("product_", ""), title, shop_page_id),
             })
             tpl_ids[et] = d["id"]
             print(f"  归档模板 {et} → {d['id']}")
@@ -107,7 +113,7 @@ def main():
     out["templates"] = tpl_ids
     C.save_map("nav.json", out)
 
-    # --- 3. 触发分类归档实例（更新分类会让 archiveEnsurer 建归档页）---
+    # --- 2. 触发分类归档实例（更新分类会让 archiveEnsurer 建归档页）---
     cats = C.load_map("terms.json")
     for ttid, e in cats.items():
         if e.get("kind") != "category":
@@ -117,7 +123,7 @@ def main():
         except Exception as ex:  # noqa: BLE001
             print(f"  归档实例 {e['name']} 失败: {str(ex)[:140]}")
 
-    # --- 4. 导航 ---
+    # --- 3. 导航 ---
     navs = out.get("nav", {})
     header = [
         ("Shop", "/shop"),
