@@ -37,10 +37,6 @@ import (
 // （required-* 缺失即装配缺陷并 fail-fast，optional-degraded 缺失写启动日志）。
 // 这里**不再抄一份必填清单** —— 同一份判据留两份真源必然漂移。
 type Deps struct {
-	// VariantAvailabilityProvider 变体可用量（product；required-contract）。
-	VariantAvailabilityProvider productcontract.VariantAvailabilityLookupPort
-	// VariantSnapshotProvider 变体实时快照（product；required-contract）。
-	VariantSnapshotProvider productcontract.VariantSnapshotPort
 	// CartProvider 购物车与结算（cart；required-port）。
 	CartProvider cartcontract.CartService
 	// MembershipReader 会员身份读取（membership；可缺 → 会员片段显示「功能暂不可用」）。

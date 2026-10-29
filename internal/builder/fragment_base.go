@@ -74,20 +74,18 @@ func ordersFragmentCapabilities() []string {
 // 一眼可查，而不是让下一个人重新 grep 一遍。
 func fragmentUnstyledCapabilities() map[string]string {
 	return map[string]string{
-		"loginPanel":                 "登录面板只输出一段提示文本（.sky-fragment-login-panel 无布局诉求），当前无样式定义",
-		"loginForm":                  "账号表单片段用 .sky-user-* 类，插在 core.userForms 容器内、依赖它的节点作用域，样式由 userforms 组件私有层提供",
-		"registerForm":               "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
-		"forgotForm":                 "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
-		"resetForm":                  "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
-		"accountPanel":               "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
-		"accountProfileForm":         "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
-		"accountPreferenceForm":      "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
-		"accountPasswordForm":        "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
-		"accountSessionsPanel":       "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
-		"productList":                "商品列表片段由 core.productList 组件用同一个 node id 渲染（类名与静态产物同源），样式来自组件私有层",
-		"searchResults":              "搜索结果片段的 .sky-search-* 当前没有任何样式定义（遗留的裸 HTML），整改归属待定",
-		"productLivePrice":           "实时价格片段只输出一个价格文本（.sky-live-price 无布局诉求），当前无样式定义",
-		"productVariantAvailability": "实时库存片段只输出一句库存文案（.sky-variant-stock-msg 无布局诉求），当前无样式定义",
+		"loginPanel":            "登录面板只输出一段提示文本（.sky-fragment-login-panel 无布局诉求），当前无样式定义",
+		"loginForm":             "账号表单片段用 .sky-user-* 类，插在 core.userForms 容器内、依赖它的节点作用域，样式由 userforms 组件私有层提供",
+		"registerForm":          "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
+		"forgotForm":            "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
+		"resetForm":             "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
+		"accountPanel":          "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
+		"accountProfileForm":    "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
+		"accountPreferenceForm": "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
+		"accountPasswordForm":   "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
+		"accountSessionsPanel":  "同 loginForm：账号表单片段走 userforms 的节点作用域，属组件私有层",
+		"productList":           "商品列表片段由 core.productList 组件用同一个 node id 渲染（类名与静态产物同源），样式来自组件私有层",
+		"searchResults":         "搜索结果片段的 .sky-search-* 当前没有任何样式定义（遗留的裸 HTML），整改归属待定",
 		// 会员身份两个能力（BIZ-3）：模板只输出等级名 / 权益短句 / 一句降级文案，
 		// .sky-membership-* 是保留命名空间下的**语义钩子**（站点主题可覆写），
 		// 基座里刻意不给布局 —— 徽标与面板的宽窄由放置它的容器决定，

@@ -46,6 +46,7 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	if v == nil {
 		return
 	}
+	v.LiveLabels = TranslateLiveLabels(text)
 	base := defaultLabels()
 	if text == nil {
 		v.StockNote = textFallbackStockNote
@@ -57,5 +58,22 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 		Categories: text(TextKeyCategories, base.Categories),
 		Reviews:    text(TextKeyReviews, base.Reviews),
 		Brand:      text(TextKeyBrand, base.Brand),
+	}
+}
+
+// LiveLabels 在构建期冻结文案；动态接口只交语言无关的商品事实。
+type LiveLabels struct{ Delisted, Updated, Unknown, Out, Low, In string }
+
+func TranslateLiveLabels(text func(string, string) string) LiveLabels {
+	if text == nil {
+		text = func(_, fallback string) string { return fallback }
+	}
+	return LiveLabels{
+		Delisted: text("site.fragment.live_price.delisted", "该规格已下架，以结算为准"),
+		Updated:  text("site.fragment.live_price.updated", "价格已更新为 %s，以结算为准"),
+		Unknown:  text("site.fragment.stock.checkout", "以结算时库存为准"),
+		Out:      text("site.fragment.stock.out", "暂时缺货"),
+		Low:      text("site.fragment.stock.low", "仅剩 %d 件"),
+		In:       text("site.fragment.stock.in", "库存充足"),
 	}
 }

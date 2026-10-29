@@ -146,8 +146,8 @@ func TestBuildViewRendersOptionsAndStock(t *testing.T) {
 		"sky-selector-radio",
 		"<label class=\"sky-selector-value\" for=\"sky-sel-s1-color-red\">红</label>",
 		// 工程 id 必须在地址里（片段侧当必填参数）；& 经 Jet 转义成 &amp;，htmx 读到的仍是 &。
-		"/_fragments/productVariantAvailability?projectId=proj-1&amp;variantIds=var-1",
-		"hx-trigger=\"load, every 60s\"",
+		"/api/site/product/variants?projectId=proj-1&amp;variantIds=var-1",
+		"data-site-poll=\"60\"",
 		`aria-live="polite"`,
 		StockFallback,
 	} {
@@ -223,8 +223,8 @@ func TestBuildViewStockFragmentURLCarriesRenderProject(t *testing.T) {
 		t.Fatalf("应有组合行")
 	}
 	for _, vo := range view.VariantOptions {
-		if !strings.Contains(vo.StockAvailabilityGet, "projectId="+projectID) {
-			t.Fatalf("可用量片段地址缺本次渲染的工程 %s: %q", projectID, vo.StockAvailabilityGet)
+		if !strings.Contains(vo.StockFactsURL, "projectId="+projectID) {
+			t.Fatalf("可用量片段地址缺本次渲染的工程 %s: %q", projectID, vo.StockFactsURL)
 		}
 	}
 
@@ -245,7 +245,7 @@ func TestBuildViewStockFragmentURLCarriesRenderProject(t *testing.T) {
 	}{Classes: "sky-c-s1", NodeID: "s1", V: view}); err != nil {
 		t.Fatalf("渲染模板失败: %v", err)
 	}
-	if !strings.Contains(buf.String(), `hx-get="/_fragments/productVariantAvailability?projectId=proj-9&amp;variantIds=var-1"`) {
+	if !strings.Contains(buf.String(), `data-site-read="/api/site/product/variants?projectId=proj-9&amp;variantIds=var-1"`) {
 		t.Fatalf("产物里的可用量片段地址没带工程:\n%s", buf.String())
 	}
 }

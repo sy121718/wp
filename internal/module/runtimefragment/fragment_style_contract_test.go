@@ -32,7 +32,7 @@ var builtinFragmentCapabilities = []string{
 	"commentList", "commentSubmit",
 	"forgotForm", "loginForm", "loginPanel", "membershipBadge", "membershipPanel",
 	"orderDetail", "ordersList",
-	"productList", "productLivePrice", "productVariantAvailability",
+	"productList",
 	"registerForm", "resetForm", "returnRequest", "searchResults",
 }
 

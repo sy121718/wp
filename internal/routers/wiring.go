@@ -155,20 +155,18 @@ const (
 	// 片段层端口都由装配期唯一一次 runtimefragment.SetDependencies 提交：装配点先把各段落的
 	// 提供方攒进 assembly.fragDeps（见 assembly.go / assembly_publish.go），全部就位后才提交。
 	// 端口值因此写成「提交点.字段名」——从清单可以直接对到 Deps 的具体字段。
-	portRuntimeFragVariantAvailability = "runtimefragment.SetDependencies.VariantAvailabilityProvider"
-	portRuntimeFragVariantSnapshot     = "runtimefragment.SetDependencies.VariantSnapshotProvider"
-	portRuntimeFragCart                = "runtimefragment.SetDependencies.CartProvider"
-	portRuntimeFragCollectionResolver  = "runtimefragment.SetDependencies.CollectionResolver"
-	portRuntimeFragProductDataSource   = "runtimefragment.SetDependencies.ProductDataSource"
-	portRuntimeFragContentSearch       = "runtimefragment.SetDependencies.ContentSearchProvider"
-	portRuntimeFragProductSearch       = "runtimefragment.SetDependencies.ProductSearchProvider"
-	portRuntimeFragPublishedLocator    = "runtimefragment.SetDependencies.PublishedEntityLocator"
-	portRuntimeFragSitePageResolver    = "runtimefragment.SetDependencies.SitePageResolver"
-	portRuntimeFragProject             = "runtimefragment.SetDependencies.FragmentProject"
-	portRuntimeFragVisitorOrderReader  = "runtimefragment.SetDependencies.VisitorOrderReader"
-	portRuntimeFragVisitorReturn       = "runtimefragment.SetDependencies.VisitorReturnProvider"
-	portRuntimeFragVisitorIdentity     = "runtimefragment.SetDependencies.VisitorIdentityMiddleware"
-	portRuntimeFragVisitorAccount      = "runtimefragment.SetDependencies.VisitorAccountPort"
+	portRuntimeFragCart               = "runtimefragment.SetDependencies.CartProvider"
+	portRuntimeFragCollectionResolver = "runtimefragment.SetDependencies.CollectionResolver"
+	portRuntimeFragProductDataSource  = "runtimefragment.SetDependencies.ProductDataSource"
+	portRuntimeFragContentSearch      = "runtimefragment.SetDependencies.ContentSearchProvider"
+	portRuntimeFragProductSearch      = "runtimefragment.SetDependencies.ProductSearchProvider"
+	portRuntimeFragPublishedLocator   = "runtimefragment.SetDependencies.PublishedEntityLocator"
+	portRuntimeFragSitePageResolver   = "runtimefragment.SetDependencies.SitePageResolver"
+	portRuntimeFragProject            = "runtimefragment.SetDependencies.FragmentProject"
+	portRuntimeFragVisitorOrderReader = "runtimefragment.SetDependencies.VisitorOrderReader"
+	portRuntimeFragVisitorReturn      = "runtimefragment.SetDependencies.VisitorReturnProvider"
+	portRuntimeFragVisitorIdentity    = "runtimefragment.SetDependencies.VisitorIdentityMiddleware"
+	portRuntimeFragVisitorAccount     = "runtimefragment.SetDependencies.VisitorAccountPort"
 	// portAccessGuardLoginProbe 访问面守卫的访客登录态探针（PIPE-6 AccessGuard）。
 	portAccessGuardLoginProbe = "builtin.SetAccessGuardLoginProbe"
 	// —— BIZ-3 会员体系的消费侧接线（本批）——
@@ -366,10 +364,6 @@ var wiringManifest = []wiringEntry{
 		"概览页的 KPI / 趋势 / 热销榜 / 文章浏览量显示为空态（页面壳与页面列表照常）"},
 
 	// —— 运行时片段层（访问面）——
-	{portRuntimeFragVariantAvailability, "product", "runtimefragment", wiringRequiredContract,
-		"商品详情规格选择器永远显示「以结算时库存为准」"},
-	{portRuntimeFragVariantSnapshot, "product", "runtimefragment", wiringRequiredContract,
-		"实时价格核对永远保持沉默（空片段，访客看到产物里的构建期价格）"},
 	{portRuntimeFragCart, "cart", "runtimefragment", wiringRequiredPort,
 		"购物车 / 结算六个能力一律「暂不可用」"},
 	{portRuntimeFragCollectionResolver, "集合源注册表（core）", "runtimefragment", wiringRequiredPort,

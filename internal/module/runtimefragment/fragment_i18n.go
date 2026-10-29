@@ -3,8 +3,6 @@ package runtimefragment
 // fragment_i18n.go — 片段访客文案取词（I18N-012，site.fragment.*）。
 
 import (
-	"fmt"
-
 	rfenums "go_wp/internal/module/runtimefragment/enums"
 )
 
@@ -55,18 +53,5 @@ func checkoutViewLabelsOf(r *Request) checkoutViewLabels {
 		OrderNoPrefix: r.tr(rfenums.CheckoutOrderNo, "订单号："),
 		TotalPrefix:   r.tr(rfenums.CheckoutTotal, "合计："),
 		AccountMailed: r.tr(rfenums.CheckoutAccountMailed, "账号初始密码已发送至 %s，登录后可在账号中心查看订单。"),
-	}
-}
-
-func availabilityMessageOf(r *Request, known bool, n int) string {
-	switch {
-	case !known:
-		return r.tr(rfenums.StockCheckout, "以结算时库存为准")
-	case n <= 0:
-		return r.tr(rfenums.StockOut, "暂时缺货")
-	case n <= AvailabilityLowStockThreshold:
-		return fmt.Sprintf(r.tr(rfenums.StockLow, "仅剩 %d 件"), n)
-	default:
-		return r.tr(rfenums.StockIn, "库存充足")
 	}
 }

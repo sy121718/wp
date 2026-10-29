@@ -371,8 +371,8 @@ func TestProductTemplateRendersVariantStockFragment(t *testing.T) {
 	for _, want := range []string{
 		// 工程 id 必须在地址里（片段侧当必填参数）：Jet 把属性值里的 & 转义成 &amp;，
 		// htmx 读到的仍是 & —— 断言按产物字节写，才能同时钉住「参数没被丢掉」。
-		"/_fragments/productVariantAvailability?projectId=proj-1&amp;variantIds=var-1",
-		"hx-trigger=\"load, every 60s\"",
+		"/api/site/product/variants?projectId=proj-1&amp;variantIds=var-1",
+		"data-site-poll=\"60\"",
 		`aria-live="polite"`,
 		"以结算时库存为准", // 无脚本时的兜底文案（降级策略）
 	} {
@@ -409,11 +409,11 @@ func TestBuildViewFragmentURLsCarryRenderProject(t *testing.T) {
 		t.Fatalf("应有两个组合行，实际 %+v", view.VariantOptions)
 	}
 	for _, vo := range view.VariantOptions {
-		if !strings.Contains(vo.StockAvailabilityGet, "projectId="+projectID) {
-			t.Fatalf("可用量片段地址缺本次渲染的工程 %s: %q", projectID, vo.StockAvailabilityGet)
+		if !strings.Contains(vo.StockFactsURL, "projectId="+projectID) {
+			t.Fatalf("可用量片段地址缺本次渲染的工程 %s: %q", projectID, vo.StockFactsURL)
 		}
-		if !strings.Contains(vo.LivePriceGet, "projectId="+projectID) {
-			t.Fatalf("价格核对片段地址缺本次渲染的工程 %s: %q", projectID, vo.LivePriceGet)
+		if !strings.Contains(vo.PriceFactsURL, "projectId="+projectID) {
+			t.Fatalf("价格核对片段地址缺本次渲染的工程 %s: %q", projectID, vo.PriceFactsURL)
 		}
 	}
 
@@ -430,7 +430,7 @@ func TestBuildViewFragmentURLsCarryRenderProject(t *testing.T) {
 		t.Fatalf("渲染 product 模板失败: %v", err)
 	}
 	// 产物里是 HTML 转义后的 &amp;（Jet 默认转义属性值，htmx 读到的仍是 &）。
-	if !strings.Contains(buf.String(), `hx-get="/_fragments/productVariantAvailability?projectId=proj-9&amp;variantIds=var-1"`) {
+	if !strings.Contains(buf.String(), `data-site-read="/api/site/product/variants?projectId=proj-9&amp;variantIds=var-1"`) {
 		t.Fatalf("产物里的可用量片段地址没带工程:\n%s", buf.String())
 	}
 }
@@ -456,7 +456,7 @@ func TestBuildViewWithoutProjectOmitsFragmentURLs(t *testing.T) {
 		t.Fatalf("应仍有组合行（缺工程只影响片段位）")
 	}
 	for _, vo := range view.VariantOptions {
-		if vo.StockAvailabilityGet != "" || vo.LivePriceGet != "" {
+		if vo.StockFactsURL != "" || vo.PriceFactsURL != "" {
 			t.Fatalf("缺工程时不应烘片段地址: %+v", vo)
 		}
 	}

@@ -32,11 +32,11 @@ func TestBuildViewFragmentURLsCarryLang(t *testing.T) {
 		t.Fatalf("应有组合行")
 	}
 	for _, vo := range view.VariantOptions {
-		if !strings.Contains(vo.StockAvailabilityGet, "lang=en-US") {
-			t.Errorf("可用量片段 URL 应带语言，实际 %q", vo.StockAvailabilityGet)
+		if !strings.Contains(vo.StockFactsURL, "lang=en-US") {
+			t.Errorf("可用量片段 URL 应带语言，实际 %q", vo.StockFactsURL)
 		}
-		if vo.LivePriceGet != "" && !strings.Contains(vo.LivePriceGet, "lang=en-US") {
-			t.Errorf("价格核对片段 URL 应带语言，实际 %q", vo.LivePriceGet)
+		if vo.PriceFactsURL != "" && !strings.Contains(vo.PriceFactsURL, "lang=en-US") {
+			t.Errorf("价格核对片段 URL 应带语言，实际 %q", vo.PriceFactsURL)
 		}
 	}
 }
@@ -51,11 +51,11 @@ func TestBuildViewFragmentURLsOmitEmptyLang(t *testing.T) {
 		t.Fatalf("BuildView: %v", err)
 	}
 	for _, vo := range view.VariantOptions {
-		if strings.Contains(vo.StockAvailabilityGet, "lang=") {
-			t.Errorf("空语言不该拼出 lang 参数，实际 %q", vo.StockAvailabilityGet)
+		if strings.Contains(vo.StockFactsURL, "lang=") {
+			t.Errorf("空语言不该拼出 lang 参数，实际 %q", vo.StockFactsURL)
 		}
-		if strings.Contains(vo.LivePriceGet, "lang=") {
-			t.Errorf("空语言不该拼出 lang 参数，实际 %q", vo.LivePriceGet)
+		if strings.Contains(vo.PriceFactsURL, "lang=") {
+			t.Errorf("空语言不该拼出 lang 参数，实际 %q", vo.PriceFactsURL)
 		}
 	}
 }

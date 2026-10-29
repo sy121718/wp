@@ -121,10 +121,12 @@ func uiCSSSections() []uiCSSSection {
 // 这里登记的是事实：这些资源要么只驱动行为（没有配套外观），要么外观属于宿主页面。
 func uiCSSSectionResourcesWithoutStyle() map[string]string {
 	return map[string]string{
-		"htmx.min.js":  "行为库：htmx 指令不带来任何基座外观（它的过渡类在 htmx 源码里）",
-		"_util.js":     "基座助手：只提供 WBUI 注册表与工具函数，无样式",
-		"index.js":     "基座入口：DOM 扫描与 htmx:after:swap 重扫，无样式",
-		"iconfield.js": "图标选择字段的外观属于宿主页面的表单布局（后台外壳的 theme.css），没有独立基座段；产物里没有它的消费方",
+		"site-data.js":    "公开数据读取的行为基座，无样式，外观由宿主页面提供",
+		"site-product.js": "商品事实展示的行为脚本，无样式，外观归宿主组件",
+		"htmx.min.js":     "行为库：htmx 指令不带来任何基座外观（它的过渡类在 htmx 源码里）",
+		"_util.js":        "基座助手：只提供 WBUI 注册表与工具函数，无样式",
+		"index.js":        "基座入口：DOM 扫描与 htmx:after:swap 重扫，无样式",
+		"iconfield.js":    "图标选择字段的外观属于宿主页面的表单布局（后台外壳的 theme.css），没有独立基座段；产物里没有它的消费方",
 	}
 }
 
@@ -302,7 +304,7 @@ func repairCommentBoundaries(text string) string {
 	if text == "" {
 		return text
 	}
-	const ( 
+	const (
 		openMark  = "/*"
 		closeMark = "*/"
 	)

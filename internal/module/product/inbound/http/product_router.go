@@ -31,6 +31,7 @@ package producthttp
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -118,6 +119,11 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	return svc, svc
 }
 
+// SetupProductPublicRoutes 访客只读数据入口，独立于后台会话与权限域。
+func SetupProductPublicRoutes(router *gin.Engine, svc productcontract.PublicVariantReader) {
+	router.GET("/api/site/product/variants", builtin.RequestRateLimitMiddleware(90, time.Minute), NewProductPublicHandle(svc).Variants)
+}
+
 // registerProductPublishHistoryAPI 发布历史（迁移 673）。
 //
 // 单独一条权限点而不是复用 product:get / product:list：这条交的是**谁在什么时候点了发布、
@@ -125,7 +131,7 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 // 看到全站发布失败堆栈。
 //
 // 出口是 JSON 而不是 HTML 片段：DOM 由发布记录页里已渲染的 Jet <template> 填充
-//（ui/json_swap.js 的同源机制，见 internal/templates/CLAUDE.md）。
+// （ui/json_swap.js 的同源机制，见 internal/templates/CLAUDE.md）。
 func registerProductPublishHistoryAPI(g *permission.RouteGroup, handle *PublishAttemptHandle) {
 	g.GET("/publish-attempts", permission.ProductPublishAttempts, handle.ProductPublishAttempts)
 }

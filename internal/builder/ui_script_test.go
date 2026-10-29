@@ -14,11 +14,13 @@ import (
 // uiSrcForTest 构造件名 → 源码，模拟装配层从 embed 读出的结果。
 func uiSrcForTest() map[string]string {
 	return map[string]string{
-		"_util.js":    "/* util */ window.WBUI=window.WBUI||{};",
-		"htmx.min.js": "/* htmx */ var htmx=function(){};",
-		"select.js":   "/* select */ WBUI.register(function(){});",
-		"modal.js":    "/* modal */ WBUI.register(function(){});",
-		"index.js":    "/* index */ WBUI.scan(document);",
+		"_util.js":        "/* util */ window.WBUI=window.WBUI||{};",
+		"site-data.js":    "/* site-data */",
+		"site-product.js": "/* site-product */",
+		"htmx.min.js":     "/* htmx */ var htmx=function(){};",
+		"select.js":       "/* select */ WBUI.register(function(){});",
+		"modal.js":        "/* modal */ WBUI.register(function(){});",
+		"index.js":        "/* index */ WBUI.scan(document);",
 	}
 }
 
@@ -119,7 +121,7 @@ func uiScriptForTest(t *testing.T, content string, sources map[string]string) st
 }
 
 func TestUIAssetRegistryAndSelection(t *testing.T) {
-	want := []string{"_util.js", "htmx.min.js", "select.js", "modal.js", "drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js", "index.js"}
+	want := []string{"_util.js", "site-data.js", "site-product.js", "htmx.min.js", "select.js", "modal.js", "drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js", "index.js"}
 	got := UIAssetFiles()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("资源清单 = %v", got)

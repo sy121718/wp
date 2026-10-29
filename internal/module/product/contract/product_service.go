@@ -17,6 +17,7 @@ import (
 // issue #35 起嵌入 ProductDataSource：构建期只该拿到**受限的那一半**（读集合 / 字段 / 元数据），
 // 而装配处拿到的 ProductService 天然也能当数据源传出去 —— 不必再做一次类型断言。
 type ProductService interface {
+	PublicVariantReader
 	// ProductDataSource 构建期数据源（只读；写方法不在它上面）。
 	ProductDataSource
 	// VariantSnapshotPort 订单域按下单快照取商品事实（只读，一个方法）。

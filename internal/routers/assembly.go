@@ -1330,29 +1330,13 @@ func (a *assembly) wireProductInventoryPorts() {
 	}
 	availabilitySetter.SetAvailabilityPort(availabilityPort)
 	marks.mark(portProductAvailability)
-	// 商品变体可用量片段（issue #24）：商品详情规格选择器旁的「实时库存」走访问面片段端点。
-	// 同一份注入模式：product 模块实现 VariantAvailabilityLookupPort（内部再调 inventory 的
-	// VariantAvailabilityPort 读真源），片段层只管渲染结论。与库存端口一样 fail-fast ——
-	// 漏接的表现是「页面上永远显示以结算时库存为准」，比启动时报错隐蔽得多。
-	// 运行时兜底，理由见上面「为什么保留」；编译期断言在 product/service/variant_availability.go。
+	// 可用量查询供购物车读取；公开商品数据由商品模块自己的 JSON 接口提供。
 	availabilityLookup, ok := productSvc.(productcontract.VariantAvailabilityLookupPort)
 	if !ok {
 		panic("商品模块未实现变体可用量查询端口（VariantAvailabilityLookupPort）")
 	}
-	a.fragDeps.VariantAvailabilityProvider = availabilityLookup
 	a.availabilityLookup = availabilityLookup
-	marks.mark(portRuntimeFragVariantAvailability)
-	// 商品实时价格核对片段（BIZ-2）：定价工具改价只落库、不进构建管线，所以产物里的价
-	// 与库里的当前价在时间窗内可能不一致；片段读**当前事实**并在不一致时给访客一句交代。
-	// 端口直接复用订单域的 VariantSnapshotPort（按变体 id 读当前价 / 启用态，收窄只读），
-	// 不为「读个价」再造一条几乎相同的端口。断言 + 注入，与上面同模式。
-	// 运行时兜底，理由见上面「为什么保留」；编译期断言在 product/service/product_variant_snapshot.go。
-	variantSnapshots, ok := productSvc.(productcontract.VariantSnapshotPort)
-	if !ok {
-		panic("商品模块未实现变体快照端口（VariantSnapshotPort）")
-	}
-	a.fragDeps.VariantSnapshotProvider = variantSnapshots
-	marks.mark(portRuntimeFragVariantSnapshot)
+
 }
 
 // wireRuntimeAccessFace 访问面运行时能力：购物车与结算、支付回调、访问统计打点，

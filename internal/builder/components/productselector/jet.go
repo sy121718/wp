@@ -25,12 +25,14 @@ type View struct {
 
 	// ShowStock 是否在每档组合挂实时可用量片段（构建期只烘变体 id，可用量现取）。
 	//
-	// 片段的**地址**不在这里：它随每档组合烘在 VariantOption.StockAvailabilityGet 上
+	// 片段的**地址**不在这里：它随每档组合烘在 VariantOption.StockFactsURL 上
 	// （与实时价格核对位同形）—— 地址里必须带工程 id，而工程只有构建期知道，
 	// 由 product 包的拼装函数一处产出，两个组件共用同一份口径。
 	ShowStock bool
 	// StockFallback 无脚本时的兜底文案。
+	Currency      string
 	StockFallback string
+	LiveLabels    product.LiveLabels
 
 	// HasEmpty / EmptyText 无规格时的空态（文案留空则整块不输出）。
 	HasEmpty  bool
@@ -43,9 +45,7 @@ type View struct {
 // 取不到（越界字段 / 缺解析器）即报错终止构建 —— 静默渲染一个没有规格的选择器
 // 比构建失败危险得多（页面上看不出少了什么）。
 //
-// projectID 为本次编译的站点工程 id（core.RenderContext.ProjectID），经 ParseVariantOptions
-// 烘进实时价格核对片段的 URL（口径只有一份：与商品详情组件共用同一个解析函数）。
-// lang 同理进那两个片段 URL（I18N-011）：片段语言只从 lang 参数来，不带就回落工程默认语言。
+// projectID 显式写入只读数据 URL；文案由 ApplyI18n 在构建期冻结。
 func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (View, error) {
 	if p == nil {
 		return View{}, fmt.Errorf("规格选择器属性为空")
@@ -71,7 +71,9 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 		VariantOptions: rows,
 		HasOptions:     len(groups) > 0 && len(rows) > 1,
 		ShowStock:      ShowStock(p),
+		Currency:       EffectiveCurrency(p),
 		StockFallback:  StockFallback,
+		LiveLabels:     product.TranslateLiveLabels(nil),
 	}
 	if !view.HasOptions {
 		view.EmptyText = EffectiveEmptyText(p)
@@ -80,15 +82,19 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 	return view, nil
 }
 
-// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：每档规格按需挂实时库存位
-// （hx-get），并可选挂实时价格核对位。没有规格组合时模板整块不输出这些 span。
+// DeclareFeatures 只有实际输出数据位时才注入读取脚本。
 func (v View) DeclareFeatures() (attrs, classes []string) {
 	// 按**实际烘出的 URL** 判断（不是「网格有规格就登记」）：缺工程 id 时两个片段位
 	// 都是空串、模板不输出 hx-get，此时登记会让产物白白多注入一份 htmx 脚本。
 	for _, vo := range v.VariantOptions {
-		if (v.ShowStock && vo.StockAvailabilityGet != "") || vo.LivePriceGet != "" {
-			return []string{"hx-get", "hx-trigger", "hx-swap"}, nil
+		if (v.ShowStock && vo.StockFactsURL != "") || vo.PriceFactsURL != "" {
+			return []string{"data-site-read", "data-site-product"}, nil
 		}
 	}
 	return nil, nil
+}
+
+func (v *View) ApplyI18n(text func(string, string) string) {
+	v.LiveLabels = product.TranslateLiveLabels(text)
+	v.StockFallback = v.LiveLabels.Unknown
 }
