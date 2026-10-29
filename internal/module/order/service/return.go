@@ -171,6 +171,13 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		}
 		var total int64
 		items = make([]*ordermodel.ReturnItemEntity, 0, len(req.Items))
+		// claimed 累计**同一个 orderItem** 在本请求里已经被申请的数量。
+		//
+		// 为什么必须累计（B04）：逐行比对 `line.Quantity > returnable[id]` 只看单行。
+		// 前端/接口重复提交同一个 orderItemID（两行各 2 件、可退 2 件）时，每行单独
+		// 都"不超过可退"，于是整批通过、退款数量翻倍 —— 而库存回仓数量也一起翻。
+		// 这是"重复明细放大退款"的典型形态：校验和累加用了两个不同的口径。
+		claimed := make(map[uint64]int, len(req.Items))
 		for _, line := range req.Items {
 			it := byID[line.OrderItemID]
 			if it == nil {
@@ -179,7 +186,8 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 			if line.Quantity <= 0 || line.Quantity > maxReturnQuantity {
 				return orderenums.Err(orderenums.ErrReturnQuantityInvalid)
 			}
-			if line.Quantity > returnable[it.ID] {
+			claimed[it.ID] += line.Quantity
+			if claimed[it.ID] > returnable[it.ID] {
 				return fmt.Errorf("%s：%s", orderenums.ErrReturnQuantityExceeded, it.ProductName)
 			}
 			amount := lineRefundAmount(it, line.Quantity)
