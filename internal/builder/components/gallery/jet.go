@@ -223,7 +223,7 @@ func resolveSourceContent(p *Props, content core.ContentResolver) (items []Item,
 		return p.Items, true, nil
 	}
 	if content == nil {
-		return nil, false, fmt.Errorf("编译上下文缺少内容解析器")
+		return nil, false, core.ErrContentResolverRequired
 	}
 	v, err := content.ResolveString(p.Binding.Field)
 	if err != nil {

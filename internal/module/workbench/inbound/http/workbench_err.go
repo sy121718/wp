@@ -21,7 +21,7 @@ package workbenchhttp
 //   - **类型标记**：page/service 对「作者可操作的组件校验问题」打了
 //     pagecontract.PreviewProblem（见 writePreviewCompileRejected 的 ①）—— 这是主路径，
 //     结构化、可 errors.As；
-//   - 预览编译（renderPreview）的其余失败按**文档事实**判：文档有没有字段绑定、有没有过校验；
+//   - 预览编译（renderPreview）的其余失败按**错误链事实与文档校验**判：组件是否真的缺少内容解析器、文档有没有过校验；
 //   - 模板预览（renderTemplatePreview）按**模块哨兵 key** 判：presentation / contenttemplate
 //     的哨兵是字符串常量（errors.New(<常量>) 在各调用点新建），errors.Is 拿不到同一个值 ——
 //     与 workbench_page.go 判 ErrDetachConfirmRequired 是同一口径，匹配的是代码里定义的
@@ -49,7 +49,7 @@ const workbenchErrScene = "workbench"
 //
 // 它是**归口**：只兜「归不了因」的失败 —— 装配缺失、组件模板加载失败、导航解析器未注入
 // 这类内部问题（原文只进结构化日志）。能归因的两类各有出口：作者可操作的组件校验提示走
-// PreviewProblem 分支（带原文），文档事实能说清的走 workbench.err.*。
+// PreviewProblem 分支（带原文），错误链事实或文档校验能说清的走 workbench.err.*。
 //
 // 兜底值与 058 已 seed 的词条值相同，是为了让「i18n 已初始化 / 未初始化」两种环境下
 // 响应体一致 —— 否则测试里看到的是兜底长句、生产里看到的是词条短句。
@@ -108,7 +108,7 @@ func workbenchCompileFallbackText(c *gin.Context) string {
 //
 //	① errors.As 命中 *pagecontract.PreviewProblem —— 组件校验问题（「手风琴至少需要一个
 //	   折叠项」这类），带原文透出：这是工作台画布的核心价值，作者据此直接在画布上修；
-//	② 文档事实能说清的（字段绑定 / 文档没过校验）—— 走 workbench.err.* 可行动文案；
+//	② 真实编译错误链或文档校验能说清的 —— 走 workbench.err.* 可行动文案；
 //	③ 其余（装配缺失、组件模板加载失败）—— 归口文案，**原文只进结构化日志**。
 //
 // 先判 ① 再判 ②：带标记的问题优先（校验在编译里最先发生，作者先修它再看别的）。
@@ -120,7 +120,7 @@ func writePreviewCompileRejected(c *gin.Context, document json.RawMessage, kind 
 		With("doc_kind", workbenchservice.PreviewDocKindName(kind)).
 		Error(err, "预览编译失败")
 
-	// 判据（类型标记 ① → 文档事实 ② → 归不了因 ③）全在 service.ClassifyPreviewRejection：
+	// 判据（类型标记 ① → 错误链事实与校验 ② → 归不了因 ③）全在 service.ClassifyPreviewRejection：
 	// 它按错误链与文档事实给回「可直接透出的原文」或「可行动文案的 key」，
 	// 本函数只负责把它翻成状态码与响应体（与画布其它出口同一形态）。
 	problem, key := workbenchservice.ClassifyPreviewRejection(document, kind, err)

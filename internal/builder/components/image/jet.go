@@ -77,7 +77,7 @@ func BuildView(node *core.Node, p *Props, class, customID string, content core.C
 	src := upload.StorageURL(p.Src)
 	if p.Binding != nil && p.Binding.Field != "" {
 		if content == nil {
-			return View{}, fmt.Errorf("编译上下文缺少内容解析器，无法解析绑定 %q", p.Binding.Field)
+			return View{}, fmt.Errorf("%w，无法解析绑定 %q", core.ErrContentResolverRequired, p.Binding.Field)
 		}
 		v, err := content.ResolveString(p.Binding.Field)
 		if err != nil {

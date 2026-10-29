@@ -18,7 +18,7 @@ package service
 // 与 HTTP 无关 —— 只有「写什么状态码、取什么文案」是 HTTP 关切，那部分留在 handler。
 //
 // 三条口径各自独立，不要互相借判据：
-//   - 编译失败（页面 / 块 / 结构模板）→ 文档事实（有没有字段绑定、有没有过校验）；
+//   - 编译失败（页面 / 块 / 结构模板）→ 错误链事实（缺少内容解析器）与文档校验；
 //   - 模板预览失败（有样例实体）→ 模块哨兵字符串；
 //   - 实例覆盖文档保存失败 → 渲染链路的错误包装。
 
@@ -422,7 +422,7 @@ func (s *Service) RenderPreview(ctx context.Context, document json.RawMessage, p
 // 分级顺序固定：① errors.As 命中 *pagecontract.PreviewProblem —— 组件校验问题
 // （「手风琴至少需要一个折叠项」这类），带原文透出：这是工作台画布的核心价值，
 // 作者据此直接在画布上修；校验在编译里最先发生，作者先修它再看别的。
-// ② 文档事实能说清的（字段绑定 / 文档没过校验）—— 走 workbench.err.* 可行动文案；
+// ② 错误链或文档校验能说清的——走 workbench.err.* 可行动文案；
 // ③ 其余（装配缺失、组件模板加载失败）—— 归口文案，**原文只进结构化日志**。
 func ClassifyPreviewRejection(document json.RawMessage, kind PreviewDocKind, err error) (problem, key string) {
 	// ① 作者可操作的组件校验提示（产生处带类型标记，不靠嗅探文本）。
@@ -432,96 +432,32 @@ func ClassifyPreviewRejection(document json.RawMessage, kind PreviewDocKind, err
 			return msg, ""
 		}
 	}
-	// ② 文档事实能说清原因的。
-	if k, ok := PreviewCompileFacingKey(document, kind); ok {
+	// ② 按真实编译错误事实或文档校验结果归因。
+	if k, ok := PreviewCompileFacingKey(document, kind, err); ok {
 		return "", k
 	}
 	return "", ""
 }
 
-// PreviewCompileFacingKey 预览编译失败的分类（判据是**文档事实**，不嗅探错误字符串）。
-//
-// 为什么能这么判：这条管线（page.CompilePreview → compileDocument）**从不注入内容解析器**
-// —— 页面 / 全局块 / 结构模板都不是内容实体实例，所以「文档里声明了字段绑定」与
-// 「编译会失败」是同一件事，且失败原因可以精确归因。
-//
-//  1. 有字段绑定       → 结构模板 / 页面块两条不同处置的文案；
-//  2. 文档没过容错校验 → 组件配置不完整（作者在检查器里就能补齐）；
-//  3. 其余             → 归不了因（装配缺失 / 组件模板加载失败等内部问题），调用方给归口文案。
-//
-// 与 ①（PreviewProblem 类型标记）的分工：校验类问题在产生处就被标记，走 ① 带**原文**透出；
-// 这里的第 2 条是**同判据的兜底** —— 标记要靠 page/service 的失败路径补上，而这个 422 出口
-// 是通用的（将来别的编译入口也走它），兜底保证「标记缺失时仍给一句可行动文案」，
-// 而不是退回泛化句。
-//
-// 只在编译**已经失败**之后调用：校验通过而编译失败的文档不会被误判成「配置问题」。
-func PreviewCompileFacingKey(document json.RawMessage, kind PreviewDocKind) (string, bool) {
-	page, err := builder.ParsePage(document)
-	if err != nil || page == nil {
-		return "", false
-	}
-	if DocumentHasFieldBinding(page) {
+// PreviewCompileFacingKey 按真实编译错误事实与文档校验结果分类预览失败。
+// 集合组件也会声明字段引用，因此不能用「文档包含字段绑定」推断实体上下文缺失。
+// 只有组件实际返回 ErrContentResolverRequired 才给实体绑定的处置提示，
+// 其它内部错误保留安全归口，不把错误原文交给作者。
+func PreviewCompileFacingKey(document json.RawMessage, kind PreviewDocKind, compileErr error) (string, bool) {
+	if errors.Is(compileErr, core.ErrContentResolverRequired) {
 		if kind == PreviewDocStructureTemplate {
 			return workbenchenums.ErrStructureTemplateFieldBinding, true
 		}
 		return workbenchenums.ErrPreviewFieldBindingUnsupported, true
 	}
+	page, err := builder.ParsePage(document)
+	if err != nil || page == nil {
+		return "", false
+	}
 	if _, verr := builder.ValidatePageTolerant(page); verr != nil {
 		return workbenchenums.ErrPreviewDocumentInvalid, true
 	}
 	return "", false
-}
-
-// DocumentHasFieldBinding 文档里是否声明了字段绑定。
-//
-// 两条来源都要查，漏一条就漏一类组件 —— 而漏掉的那一类正是最容易出现在结构模板里的：
-//
-//  1. builder.CollectFieldRefs —— 只认实现了 core.FieldBindingProvider 的组件
-//     （product / productcard / productlist / productselector，绑定藏在各自的槽位结构里）；
-//  2. 通用扫描 binding.field —— heading / text / image / gallery / button 的绑定是**普通
-//     props 字段**（形状统一：{"binding":{"field":...}}），不在 (1) 的收集范围里。
-//
-// 判据是「props 里 binding.field 非空」这一**文档事实**，不是错误字符串。
-func DocumentHasFieldBinding(page *builder.Page) bool {
-	if page == nil {
-		return false
-	}
-	if refs, err := builder.CollectFieldRefs(page); err == nil && len(refs) > 0 {
-		return true
-	}
-	for _, n := range page.Root {
-		if nodeHasBindingField(n) {
-			return true
-		}
-	}
-	return false
-}
-
-// nodeHasBindingField 递归查找 binding.field 非空的节点。
-//
-// props 解不出该形状只说明「这个组件没有这种绑定」，不构成判定失败（各组件 props 差异很大，
-// 用最小的探针结构而不是逐组件反序列化）。
-func nodeHasBindingField(n *core.Node) bool {
-	if n == nil {
-		return false
-	}
-	if len(n.Props) > 0 {
-		var probe struct {
-			Binding *struct {
-				Field string `json:"field"`
-			} `json:"binding"`
-		}
-		if err := json.Unmarshal(n.Props, &probe); err == nil &&
-			probe.Binding != nil && strings.TrimSpace(probe.Binding.Field) != "" {
-			return true
-		}
-	}
-	for _, c := range n.Children {
-		if nodeHasBindingField(c) {
-			return true
-		}
-	}
-	return false
 }
 
 // TemplatePreviewFacingKey 模板预览（有样例实体）失败的分类。

@@ -11,7 +11,7 @@ package workbenchhttp
 //
 // 漏配的表现是「英文站点显示中文」或「页面上原样显示 workbench.err.xxx」，前者不会报错、
 // 后者要等用户看见，所以在这里按**全量**对账：key 集合相等、zh 兜底与词条逐字相同、
-// en 词条非空且不是中文复制。分类判据（文档事实 / 哨兵 key）也一并钉住，避免将来有人
+// en 词条非空且不是中文复制。分类判据（错误链事实 / 哨兵 key）也一并钉住，避免将来有人
 // 把「结构模板带字段绑定」退回成一句泛化的「预览编译失败」。
 
 import (
@@ -27,6 +27,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/builder/core"
 	pagecontract "go_wp/internal/module/page/contract"
 	workbenchenums "go_wp/internal/module/workbench/enums"
 	workbenchservice "go_wp/internal/module/workbench/service"
@@ -38,38 +39,41 @@ const (
 	facingStructureHeaderBinding      = facingDocPrefix + `[{"type":"core.heading","id":"h1","props":{"binding":{"field":"post.title"}}}]}`
 	facingStructureProductCardBinding = facingDocPrefix + `[{"type":"core.productCard","id":"pc1","props":{"titleField":"item.name"}}]}`
 	facingCleanDoc                    = facingDocPrefix + `[{"type":"core.text","id":"t1","props":{"text":"正文"}}]}`
+	facingCollectionDoc               = facingDocPrefix + `[{"type":"core.productList","id":"pl1","props":{"collectionSource":"content:product","titleField":"item.name"}}]}`
 	facingInvalidSettingsDoc          = `{"settings":{"layout":{"mode":"boxed"}},"root":[]}`
 )
 
-// TestPreviewCompileFacingKey 预览编译失败的分类（判据是文档事实，不嗅探错误字符串）。
+// TestPreviewCompileFacingKey 预览编译失败的分类（判据是错误链事实，不嗅探错误字符串）。
 func TestPreviewCompileFacingKey(t *testing.T) {
+	bindingErr := fmt.Errorf("节点字段解析: %w", core.ErrContentResolverRequired)
 	cases := []struct {
 		name    string
 		doc     string
 		kind    workbenchservice.PreviewDocKind
+		err     error
 		wantKey string
 		wantOK  bool
 	}{
 		{
 			// 本任务的核心场景：结构模板里带了字段绑定（画布拖入 heading 后填了绑定字段）。
 			name: "结构模板含 heading 字段绑定", doc: facingStructureHeaderBinding,
-			kind:    workbenchservice.PreviewDocStructureTemplate,
+			kind: workbenchservice.PreviewDocStructureTemplate, err: bindingErr,
 			wantKey: workbenchenums.ErrStructureTemplateFieldBinding, wantOK: true,
 		},
 		{
-			// 自报型组件（FieldBindingProvider）走的是另一条收集路径，必须同样命中。
+			// 自报型组件同样以真实编译错误链为判据。
 			name: "结构模板含商品卡字段绑定（自报型组件）", doc: facingStructureProductCardBinding,
-			kind:    workbenchservice.PreviewDocStructureTemplate,
+			kind: workbenchservice.PreviewDocStructureTemplate, err: bindingErr,
 			wantKey: workbenchenums.ErrStructureTemplateFieldBinding, wantOK: true,
 		},
 		{
 			name: "页面含字段绑定按页面口径", doc: facingStructureHeaderBinding,
-			kind:    workbenchservice.PreviewDocPage,
+			kind: workbenchservice.PreviewDocPage, err: bindingErr,
 			wantKey: workbenchenums.ErrPreviewFieldBindingUnsupported, wantOK: true,
 		},
 		{
 			name: "全局块含字段绑定按页面口径", doc: facingStructureHeaderBinding,
-			kind:    workbenchservice.PreviewDocBlock,
+			kind: workbenchservice.PreviewDocBlock, err: bindingErr,
 			wantKey: workbenchenums.ErrPreviewFieldBindingUnsupported, wantOK: true,
 		},
 		{
@@ -83,13 +87,23 @@ func TestPreviewCompileFacingKey(t *testing.T) {
 			kind: workbenchservice.PreviewDocPage, wantKey: "", wantOK: false,
 		},
 		{
+			name: "合法集合项绑定不覆盖其它编译错误", doc: facingCollectionDoc,
+			kind: workbenchservice.PreviewDocPage, err: errors.New("内部动作解析失败"),
+			wantKey: "", wantOK: false,
+		},
+		{
+			name: "相同错误文本不能冒充错误事实", doc: facingStructureHeaderBinding,
+			kind: workbenchservice.PreviewDocPage, err: errors.New("编译上下文缺少内容解析器"),
+			wantKey: "", wantOK: false,
+		},
+		{
 			name: "非法 JSON 归口", doc: "{",
 			kind: workbenchservice.PreviewDocPage, wantKey: "", wantOK: false,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			gotKey, gotOK := workbenchservice.PreviewCompileFacingKey([]byte(tc.doc), tc.kind)
+			gotKey, gotOK := workbenchservice.PreviewCompileFacingKey([]byte(tc.doc), tc.kind, tc.err)
 			if gotOK != tc.wantOK || gotKey != tc.wantKey {
 				t.Fatalf("分类不符：got (%q, %v)，want (%q, %v)", gotKey, gotOK, tc.wantKey, tc.wantOK)
 			}
@@ -222,7 +236,7 @@ func TestWorkbenchFacingFallbacksCoverExpectedKeys(t *testing.T) {
 //
 // 直接驱动 422 的写出口，断言 ① 状态码仍是 422、② 每一级给出预期的文案、
 // ③ **不该出现的文本不出现**（内部原文 / 裸 key）。
-// 三级分别对应：类型标记（作者可操作的组件校验提示）、文档事实（字段绑定）、归口（内部错误）。
+// 三级分别对应：类型标记（作者可操作的组件校验提示）、错误链事实（字段绑定）、归口（内部错误）。
 func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -233,7 +247,7 @@ func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 	problemErr := fmt.Errorf("%w: %w", pagecontract.ErrPreviewCompileFailed,
 		fmt.Errorf("%w: %w", errors.New("页面编译失败"), problem))
 
-	bindingErr := errors.New("预览编译失败: 页面编译失败: 编译上下文缺少内容解析器，无法解析绑定 \"post.title\"")
+	bindingErr := fmt.Errorf("预览编译失败: 页面编译失败: %w，无法解析绑定 %q", core.ErrContentResolverRequired, "post.title")
 	internalErr := errors.New("预览编译失败: 页面编译失败: 节点 nav1: 已绑定导航（位置 \"header\" / 菜单项 \"\"），" +
 		"但构建期缺少导航解析器或工程 ID（装配未注入）")
 
@@ -252,10 +266,22 @@ func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 			notContains: []string{"workbench.err."},
 		},
 		{
-			name: "级别②文档事实：结构模板字段绑定给可归因文案", doc: facingStructureHeaderBinding,
+			name: "级别②错误链事实：结构模板字段绑定给可归因文案", doc: facingStructureHeaderBinding,
 			kind: workbenchservice.PreviewDocStructureTemplate, err: bindingErr,
 			wantBody:    workbenchFacingFallbacks[workbenchenums.ErrStructureTemplateFieldBinding],
 			notContains: []string{"编译上下文缺少内容解析器", "post.title", "页面编译失败", "workbench.err."},
+		},
+		{
+			name: "级别②错误链事实：普通页面仍拒绝实体字段绑定", doc: facingStructureHeaderBinding,
+			kind: workbenchservice.PreviewDocPage, err: bindingErr,
+			wantBody:    workbenchFacingFallbacks[workbenchenums.ErrPreviewFieldBindingUnsupported],
+			notContains: []string{"编译上下文缺少内容解析器", "post.title", "页面编译失败", "workbench.err."},
+		},
+		{
+			name: "级别③归口：合法集合项不能把内部错误改成字段上下文错误", doc: facingCollectionDoc,
+			kind: workbenchservice.PreviewDocPage, err: internalErr,
+			wantBody:    workbenchCompileFallback,
+			notContains: []string{"装配未注入", "导航解析器", "nav1", "页面编译失败", "字段绑定", "workbench.err."},
 		},
 		{
 			name: "级别③归口：内部错误只给归口文案", doc: facingCleanDoc, kind: workbenchservice.PreviewDocPage, err: internalErr,

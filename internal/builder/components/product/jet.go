@@ -213,7 +213,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string, s
 		return View{}, fmt.Errorf("至少需要声明一个商品字段（主图/图集/标题/副标题/价格/划线价/描述/规格维度/变体组合）")
 	}
 	if content == nil {
-		return View{}, fmt.Errorf("编译上下文缺少内容解析器，无法解析商品字段（数据源 %s）", source)
+		return View{}, fmt.Errorf("%w，无法解析商品字段（数据源 %s）", core.ErrContentResolverRequired, source)
 	}
 
 	// StockNote 先落中文兜底：ApplyI18n 会在 BuildView 之后按语言覆盖；

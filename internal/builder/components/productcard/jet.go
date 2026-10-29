@@ -68,7 +68,7 @@ func BuildView(p *Props, content core.ContentResolver, siteLink func(string) str
 		return View{}, fmt.Errorf("至少需要声明一个商品字段（主图 / 标题 / 价格 / 划线价 / 标签 / 链接）")
 	}
 	if content == nil {
-		return View{}, fmt.Errorf("编译上下文缺少内容解析器，无法解析商品字段")
+		return View{}, fmt.Errorf("%w，无法解析商品字段", core.ErrContentResolverRequired)
 	}
 
 	view = View{TitleTag: effectiveTitleTag(p), Currency: effectiveCurrency(p)}

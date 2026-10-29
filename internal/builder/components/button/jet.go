@@ -128,7 +128,7 @@ func buildAttrs(p *Props, content core.ContentResolver, siteLink func(string) st
 		attrs = ` type="button" data-modal-open="` + html.EscapeString(p.Value) + `"`
 	case ActionLink:
 		if content == nil {
-			return "", "", fmt.Errorf("编译上下文缺少内容解析器，无法解析动态链接")
+			return "", "", fmt.Errorf("%w，无法解析动态链接", core.ErrContentResolverRequired)
 		}
 		// 绑定缺失必须在此拦截：validateExtra 只在「文本与绑定双空」时报错，
 		// 因此 {"text":"x","action":"link"}（Binding 为 nil）能通过校验抵达这里，
