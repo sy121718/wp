@@ -379,8 +379,8 @@ func validateDraft(rawPath string, rawDoc json.RawMessage) (path string, doc jso
 	if err != nil {
 		return "", nil, ErrInvalidDocument
 	}
-	// 容错校验：编辑中间态允许「某个组件还没配好」（编译时跳过该节点），
-	// 只拦截致命问题（设置非法 / 深度超限）。
+	// 容错校验：编辑中间态允许「某个组件还没配好」（预览时只为该节点显示占位），
+	// 非法属性、绑定、重复 ID、设置与深度仍拒绝。
 	if _, err = builder.ValidatePageTolerant(page); err != nil {
 		// 明细走 ErrorDetail 协议（可翻译），不是 builder 的中文原文 ——
 		// ErrInvalidDocument 落 400，两个出口都会把它展示给用户（见 page_document.go）。
@@ -704,12 +704,8 @@ var errCompileFailed = errors.New("页面编译失败")
 // 内核，它的错误形状被构建期与其它模块一起依赖，改它要动别人的调用面；这里只需要在**失败
 // 路径**上补一个类型标记，代价是失败时多一次纯内存校验（ValidatePageTolerant 不查库、不渲染）。
 //
-// 判据为什么可信：Compile 的第一件事就是同一个 ValidatePageTolerant（builder.go 的
-// Compile 开头），校验不过它会**原样返回**该错误 —— 所以「复算报错」与「编译因此失败」
-// 是同一件事，且两边文本逐字相同（不会出现「标记的原因不是真正的原因」）。
-//
-// 副作用：文档里存在「配置不完整」节点时，ValidatePageTolerant 会再记一条 Warn
-// （Compile 里那次已经记过）。它只在编译已经失败时发生，可接受。
+// 判据为什么可信：Compile 解析用途后，预览模式执行同一个 ValidatePageTolerant；
+// 校验错误原样返回，所以复算可精确识别作者可操作的配置错误。
 func previewValidationProblem(page *builder.Page) error {
 	if page == nil {
 		return nil

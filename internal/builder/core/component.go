@@ -123,20 +123,34 @@ func Types() (types []string) {
 }
 
 // ErrIncompleteNode 标记「节点配置不完整」（如轮播未拖入 slide）——
-// 属于编辑中间态，可由容错校验跳过该节点而非阻断整页；
+// 属于编辑中间态，可由预览显示局部占位而非阻断整页；
 // 与「配置非法」（非法 props / 属性 key / 超长名称）区分，后者必须拒绝。
 var ErrIncompleteNode = errors.New("节点配置不完整")
 
-// ValidateNode 校验单个节点：按类型分发到已注册组件。
-// plugin.* 前缀为运行时插件组件（registry 不感知），只做结构校验
-// （ID 唯一/无子节点）；props 值校验在渲染装配（builder.decodePluginProps，
-// 白名单与 spec 同源），未安装/未启用的插件节点在编译期报明确错误。
-func ValidateNode(node *Node, ids map[string]bool) (err error) {
+// selfValidator 由允许子节点的组件实现：自身规则与树遍历分离，
+// 以便草稿容错只记录未完成节点，并继续检查其余子节点。
+// Component.Validate 仍保留严格校验整棵子树的语义。
+type selfValidator interface {
+	ValidateSelf(node *Node, ids map[string]bool) error
+}
+
+// ValidateNode 严格校验节点及子树。
+func ValidateNode(node *Node, ids map[string]bool) error {
+	return validateNode(node, ids, nil)
+}
+
+// ValidateNodeTolerant 只容忍显式标记的未完成节点，仍校验全部后续节点。
+// incomplete 按真实节点 ID 记录，不把其父容器或兄弟节点一起跳过。
+func ValidateNodeTolerant(node *Node, ids map[string]bool, incomplete map[string]bool) error {
+	return validateNode(node, ids, incomplete)
+}
+
+func validateNode(node *Node, ids map[string]bool, incomplete map[string]bool) error {
 	if node == nil {
 		return fmt.Errorf("节点为空")
 	}
 	if strings.HasPrefix(node.Type, "plugin.") {
-		if err = ValidateNodeID(node.ID, node.Name, ids); err != nil {
+		if err := ValidateNodeID(node.ID, node.Name, ids); err != nil {
 			return err
 		}
 		if len(node.Children) > 0 {
@@ -148,7 +162,36 @@ func ValidateNode(node *Node, ids map[string]bool) (err error) {
 	if err != nil {
 		return fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
-	return comp.Validate(node, ids)
+	local, hasChildren := comp.(selfValidator)
+	if hasChildren {
+		err = local.ValidateSelf(node, ids)
+	} else {
+		err = comp.Validate(node, ids)
+	}
+	if err != nil {
+		if incomplete == nil || !errors.Is(err, ErrIncompleteNode) {
+			return err
+		}
+		incomplete[node.ID] = true
+	}
+	if hasChildren {
+		return validateChildren(node, ids, incomplete)
+	}
+	return nil
+}
+
+// ValidateChildren 供容器组件的严格 Validate 入口共享子树遍历。
+func ValidateChildren(node *Node, ids map[string]bool) error {
+	return validateChildren(node, ids, nil)
+}
+
+func validateChildren(node *Node, ids map[string]bool, incomplete map[string]bool) error {
+	for i, child := range node.Children {
+		if err := validateNode(child, ids, incomplete); err != nil {
+			return fmt.Errorf("节点 %s 子节点 %d: %w", node.ID, i, err)
+		}
+	}
+	return nil
 }
 
 // SpecProvider 可选接口：组件通过 PropsSpec() 暴露一个带 ct tag 的 props 结构体，

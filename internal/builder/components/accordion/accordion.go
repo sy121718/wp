@@ -88,7 +88,15 @@ type Props struct {
 }
 
 // Validate 校验：标题数需与 children 一致且至少一个。
-func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
+func (c *Component) Validate(node *core.Node, ids map[string]bool) error {
+	if err := c.ValidateSelf(node, ids); err != nil {
+		return err
+	}
+	return core.ValidateChildren(node, ids)
+}
+
+// ValidateSelf 只检查自身；树遍历由 core 统一执行。
+func (c *Component) ValidateSelf(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
 		return err
 	}
@@ -107,11 +115,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	for i, it := range p.Items {
 		if it.Title == "" {
 			return fmt.Errorf("节点 %s: 第 %d 个折叠项缺少标题", node.ID, i+1)
-		}
-	}
-	for _, child := range node.Children {
-		if err = core.ValidateNode(child, ids); err != nil {
-			return fmt.Errorf("节点 %s 子节点: %w", node.ID, err)
 		}
 	}
 	if adv := core.AdvancedOf(&p); adv != nil {

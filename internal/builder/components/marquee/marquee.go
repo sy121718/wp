@@ -72,7 +72,15 @@ type Props struct {
 }
 
 // Validate 校验：至少一个内容节点。
-func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
+func (c *Component) Validate(node *core.Node, ids map[string]bool) error {
+	if err := c.ValidateSelf(node, ids); err != nil {
+		return err
+	}
+	return core.ValidateChildren(node, ids)
+}
+
+// ValidateSelf 只检查自身；树遍历由 core 统一执行。
+func (c *Component) ValidateSelf(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
 		return err
 	}
@@ -89,11 +97,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	case "", DirLeft, DirRight:
 	default:
 		return fmt.Errorf("节点 %s: 无效的滚动方向 %q", node.ID, p.Direction)
-	}
-	for _, child := range node.Children {
-		if err = core.ValidateNode(child, ids); err != nil {
-			return fmt.Errorf("节点 %s 子节点: %w", node.ID, err)
-		}
 	}
 	if adv := core.AdvancedOf(&p); adv != nil {
 		return core.ValidateAdvanced(adv, node.ID, ids)

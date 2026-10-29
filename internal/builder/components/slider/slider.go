@@ -94,12 +94,17 @@ type Props struct {
 }
 
 // Validate 校验：叶子校验由子树递归完成；slider 要求至少一个 slide。
-func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
-	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
+func (c *Component) Validate(node *core.Node, ids map[string]bool) error {
+	if err := c.ValidateSelf(node, ids); err != nil {
 		return err
 	}
-	if len(node.Children) == 0 {
-		return fmt.Errorf("%w: 节点 %s: 轮播至少需要一个 slide（把组件拖入内部）", core.ErrIncompleteNode, node.ID)
+	return core.ValidateChildren(node, ids)
+}
+
+// ValidateSelf 只检查自身；树遍历由 core 统一执行。
+func (c *Component) ValidateSelf(node *core.Node, ids map[string]bool) (err error) {
+	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
+		return err
 	}
 	var p Props
 	if len(node.Props) > 0 {
@@ -107,19 +112,19 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 			return fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
 		}
 	}
-	if p.PerView.Desktop < 0 || p.PerView.Desktop > 4 || p.PerView.Tablet > 4 || p.PerView.Mobile > 4 {
+	if p.PerView.Desktop < 0 || p.PerView.Desktop > 4 || p.PerView.Tablet < 0 || p.PerView.Tablet > 4 || p.PerView.Mobile < 0 || p.PerView.Mobile > 4 {
 		return fmt.Errorf("节点 %s: 每屏显示数需在 0~4 之间", node.ID)
 	}
-	for _, child := range node.Children {
-		if err = core.ValidateNode(child, ids); err != nil {
-			return fmt.Errorf("节点 %s 子节点: %w", node.ID, err)
-		}
-	}
 	if adv := core.AdvancedOf(&p); adv != nil {
-		return core.ValidateAdvanced(adv, node.ID, ids)
+		if err = core.ValidateAdvanced(adv, node.ID, ids); err != nil {
+			return err
+		}
 	}
 	if err = core.ValidateSpec(&p, node.ID); err != nil {
 		return err
+	}
+	if len(node.Children) == 0 {
+		return fmt.Errorf("%w: 节点 %s: 轮播至少需要一个 slide（把组件拖入内部）", core.ErrIncompleteNode, node.ID)
 	}
 	return nil
 }

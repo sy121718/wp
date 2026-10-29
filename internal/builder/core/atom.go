@@ -106,13 +106,16 @@ func (a Atom[P]) Validate(node *Node, ids map[string]bool) (err error) {
 	if err = ValidateSpec(&p, node.ID); err != nil {
 		return err
 	}
+	// 未完成状态不能绕过 Advanced 的安全校验与自定义 ID 查重。
+	if adv := AdvancedOf(&p); adv != nil {
+		if err = ValidateAdvanced(adv, node.ID, ids); err != nil {
+			return err
+		}
+	}
 	if a.Spec.ValidateExtra != nil {
 		if err = a.Spec.ValidateExtra(&p, node.ID); err != nil {
 			return fmt.Errorf("节点 %s: %w", node.ID, err)
 		}
-	}
-	if adv := AdvancedOf(&p); adv != nil {
-		return ValidateAdvanced(adv, node.ID, ids)
 	}
 	return nil
 }

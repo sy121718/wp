@@ -19,7 +19,6 @@ import (
 	"sync"
 
 	"go_wp/pkg/i18n"
-	"go_wp/pkg/logger"
 
 	"github.com/CloudyKit/jet/v6"
 
@@ -499,17 +498,28 @@ func resolveCompileI18n(cfg *compileConfig) (string, func(key, fallback string) 
 // 给合法复杂度留余量，同时拦住无限嵌套（含未来插件预设塞深层结构）。
 const MaxNodeDepth = 10
 
-// ValidatePage 只校验页面文档结构，不执行 HTML/CSS 渲染与外部解析。
-// 草稿保存入口使用它拒绝非法 Layout、重复 Node ID、未知组件与非法 Props；
-// 媒体/CMS Binding 在正式 Build 阶段由注入的 Resolver 解析。
-func ValidatePage(p *Page) (err error) {
+// ValidatePage 严格校验页面文档与全部节点；正式发布不得跳过未完成组件。
+func ValidatePage(p *Page) error {
+	return validatePageNodes(p, nil)
+}
+
+// ValidatePageTolerant 用于草稿保存和预览：只标记未完成节点，
+// 同一容器中的其它节点继续校验和渲染；非法属性、重复 ID 与结构错误仍拒绝。
+func ValidatePageTolerant(p *Page) (incompleteIDs map[string]bool, err error) {
+	incompleteIDs = map[string]bool{}
+	if err = validatePageNodes(p, incompleteIDs); err != nil {
+		return nil, err
+	}
+	return incompleteIDs, nil
+}
+
+func validatePageNodes(p *Page, incompleteIDs map[string]bool) error {
 	if p == nil {
 		return ErrPageDocumentEmpty
 	}
-	if err = validateSettings(&p.Settings); err != nil {
+	if err := validateSettings(&p.Settings); err != nil {
 		return &PageSettingsError{Err: err}
 	}
-	// 深度防线：超限拒绝（草稿保存即拦截，编译期同样经过此处）。
 	for i, n := range p.Root {
 		if d := nodeDepth(n); d > MaxNodeDepth {
 			return &NodeDepthError{Index: i, Depth: d, Max: MaxNodeDepth}
@@ -517,52 +527,17 @@ func ValidatePage(p *Page) (err error) {
 	}
 	ids := map[string]bool{}
 	for i, n := range p.Root {
-		if err = core.ValidateNode(n, ids); err != nil {
+		var err error
+		if incompleteIDs == nil {
+			err = core.ValidateNode(n, ids)
+		} else {
+			err = core.ValidateNodeTolerant(n, ids, incompleteIDs)
+		}
+		if err != nil {
 			return &NodeInvalidError{Index: i, Err: err}
 		}
 	}
 	return nil
-}
-
-// ValidatePageTolerant 容错校验：致命问题（设置非法 / 组件树深度超限）仍返回错误，
-// 单节点配置不完整（如「轮播未拖入 slide」）只记入 skipped 并跳过，不阻断整页。
-//
-// 用于编译/预览与草稿保存：编辑过程中的「某个组件还没配好」是正常中间态，
-// 不应导致整页编译失败（用户补齐后重新预览即可）。
-// 需要严格拒绝非法文档的入口仍用 ValidatePage。
-func ValidatePageTolerant(p *Page) (skippedIDs map[string]bool, err error) {
-	if p == nil {
-		return nil, errors.New("页面文档为空")
-	}
-	if err = validateSettings(&p.Settings); err != nil {
-		return nil, fmt.Errorf("页面设置: %w", err)
-	}
-	for i, n := range p.Root {
-		if d := nodeDepth(n); d > MaxNodeDepth {
-			return nil, fmt.Errorf("顶级节点 %d: 组件树深度 %d 超过上限 %d（嵌套失控，请简化结构）", i, d, MaxNodeDepth)
-		}
-	}
-	ids := map[string]bool{}
-	skippedIDs = map[string]bool{}
-	var reasons []string
-	for i, n := range p.Root {
-		verr := core.ValidateNode(n, ids)
-		if verr == nil {
-			continue
-		}
-		// 仅跳过「配置不完整」类（编辑中间态，如轮播未拖入 slide）；
-		// 非法 props / 非法属性 key / 未知组件等配置错误仍必须拒绝。
-		if errors.Is(verr, core.ErrIncompleteNode) {
-			skippedIDs[n.ID] = true
-			reasons = append(reasons, fmt.Sprintf("顶级节点 %d: %v", i, verr))
-			continue
-		}
-		return nil, &NodeInvalidError{Index: i, Err: verr}
-	}
-	if len(reasons) > 0 {
-		logger.Scene("build").With("skipped", reasons).Warn("部分节点配置不完整，已跳过渲染（其余节点照常编译）")
-	}
-	return skippedIDs, nil
 }
 
 // nodeDepth 节点子树深度（自身为 1）。
@@ -636,15 +611,19 @@ func buildComponentSchemas() (map[string]json.RawMessage, error) {
 
 // Compile 编译页面文档。确定性保证：同一输入产生完全相同的输出。
 func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
-	// 容错校验：配置不完整的节点（如轮播未拖入 slide）被跳过渲染，不阻断整页；
-	// 配置非法（非法 props / 未知组件等）仍返回错误（详见 ValidatePageTolerant）。
-	skippedIDs, err := ValidatePageTolerant(p)
-	if err != nil {
-		return nil, err
-	}
 	cfg := &compileConfig{}
 	for _, opt := range opts {
 		opt(cfg)
+	}
+	// 用途先于校验：预览保留未完成控件的局部占位，发布必须全部完成。
+	var incompleteIDs map[string]bool
+	if cfg.mode == CompileModePublish {
+		err = ValidatePage(p)
+	} else {
+		incompleteIDs, err = ValidatePageTolerant(p)
+	}
+	if err != nil {
+		return nil, err
 	}
 	if cfg.set == nil {
 		return nil, errors.New("编译缺少组件模板 Set：请通过 WithComponentSet 注入（templates.NewComponentSet）")
@@ -677,7 +656,8 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	var htmlBuf strings.Builder
 	ctx := &core.RenderContext{
 		CSS: &b, Context: buildCtx, Content: cfg.content, Block: cfg.block,
-		Plugin: cfg.plugin, Collection: cfg.collection,
+		IncompleteNodes: incompleteIDs,
+		Plugin:          cfg.plugin, Collection: cfg.collection,
 		Product: cfg.product, ContentSource: cfg.contentSource,
 		Navigation: cfg.navigation, ProjectID: cfg.projectID, CurrentPath: cfg.currentPath,
 		Lang: lang, Translate: translate, Locales: cfg.locales,
@@ -727,9 +707,6 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	rootNodes := expandStructureSlots(p.Root, cfg.structureSlots)
 	roots := make([]rootView, 0, len(rootNodes))
 	for _, n := range rootNodes {
-		if skippedIDs[n.ID] {
-			continue // 配置不完整，已在校验阶段跳过（日志已记录原因）
-		}
 		// Jet 路径：nodeViewOf 把 Node 转 view 树（含 CSS 编译与递归），renderView 渲染根 view。
 		v, verr := nodeViewOf(n, true, ctx)
 		if verr != nil {

@@ -99,13 +99,16 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	if p.Mode == ModeRichText && len(p.Text) > 30000 {
 		return fmt.Errorf("富文本过长（上限 30000 字符）")
 	}
-	if p.Text == "" && (p.Binding == nil || p.Binding.Field == "") {
-		return fmt.Errorf("必须提供内容或 CMS 绑定")
-	}
 	if p.Excerpt > 0 && p.Mode != ModeRichText {
 		return fmt.Errorf("摘要模式仅限富文本绑定场景")
 	}
-	return core.ValidateTextStyle(nodeID, &p.Typography)
+	if err = core.ValidateTextStyle(nodeID, &p.Typography); err != nil {
+		return err
+	}
+	if strings.TrimSpace(p.Text) == "" && (p.Binding == nil || p.Binding.Field == "") {
+		return fmt.Errorf("%w: 必须提供内容或 CMS 绑定", core.ErrIncompleteNode)
+	}
+	return nil
 }
 
 // truncateRunes 按字符数截断（摘要）。

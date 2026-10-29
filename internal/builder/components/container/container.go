@@ -366,7 +366,15 @@ func attrValueSafe(v string) bool {
 }
 
 // Validate 校验容器节点及整棵子树。
-func (Container) Validate(node *core.Node, ids map[string]bool) (err error) {
+func (c Container) Validate(node *core.Node, ids map[string]bool) error {
+	if err := c.ValidateSelf(node, ids); err != nil {
+		return err
+	}
+	return core.ValidateChildren(node, ids)
+}
+
+// ValidateSelf 只检查自身；树遍历由 core 统一执行。
+func (c Container) ValidateSelf(node *core.Node, ids map[string]bool) (err error) {
 	if !nodeIDRe.MatchString(node.ID) {
 		return fmt.Errorf("无效的节点 ID: %q", node.ID)
 	}
@@ -386,11 +394,6 @@ func (Container) Validate(node *core.Node, ids map[string]bool) (err error) {
 	}
 	if err = validateProps(&p); err != nil {
 		return fmt.Errorf("节点 %s: %w", node.ID, err)
-	}
-	for i, child := range node.Children {
-		if err = core.ValidateNode(child, ids); err != nil {
-			return fmt.Errorf("节点 %s 子节点 %d: %w", node.ID, i, err)
-		}
 	}
 	return nil
 }

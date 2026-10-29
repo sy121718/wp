@@ -1,0 +1,1 @@
+<div class="{{ .Classes }}" data-sky-incomplete="true" data-sky-id="{{ .NodeID }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" stroke-dasharray="3 3"/><path d="M12 8v8m-4-4h8"/></svg><span>{{ if .Text }}{{ .Text }} · {{ end }}{{ .V }}</span></div>

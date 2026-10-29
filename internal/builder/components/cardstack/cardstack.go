@@ -334,7 +334,15 @@ func (c *Component) Palette() core.PaletteMeta {
 }
 
 // Validate 校验：props 合法性 + 尺寸为 CSS 安全值 + 子节点递归校验。
-func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
+func (c *Component) Validate(node *core.Node, ids map[string]bool) error {
+	if err := c.ValidateSelf(node, ids); err != nil {
+		return err
+	}
+	return core.ValidateChildren(node, ids)
+}
+
+// ValidateSelf 只检查自身；树遍历由 core 统一执行。
+func (c *Component) ValidateSelf(node *core.Node, ids map[string]bool) (err error) {
 	if err = core.ValidateNodeID(node.ID, node.Name, ids); err != nil {
 		return err
 	}
@@ -360,11 +368,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	} {
 		if f.val != "" && !core.IsSafeCSSValue(f.val) {
 			return fmt.Errorf("节点 %s: 无效的%s: %q", node.ID, f.key, f.val)
-		}
-	}
-	for _, child := range node.Children {
-		if err = core.ValidateNode(child, ids); err != nil {
-			return fmt.Errorf("节点 %s 卡片: %w", node.ID, err)
 		}
 	}
 	if adv := core.AdvancedOf(&p); adv != nil {
