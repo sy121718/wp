@@ -154,13 +154,13 @@ func (h *Handle) renderEntityPreview(c *gin.Context, req *presentationdto.Previe
 		logger.Scene("content_template").With("path", c.Request.URL.Path).Error(err, "模板编译失败")
 		// 可归因的几类（模板类型串用 / 字段绑定越界 / 工程作用域没定下来）给能照着做的文案，
 		// 其余归口：分类判据见 service.TemplatePreviewFacingKey。
+		message := workbenchCompileFallbackText(c)
 		if key, ok := workbenchservice.TemplatePreviewFacingKey(err.Error()); ok {
 			if text := workbenchFacingText(c, key); text != "" {
-				c.String(http.StatusUnprocessableEntity, text)
-				return
+				message = text
 			}
 		}
-		c.String(http.StatusUnprocessableEntity, workbenchCompileFallbackText(c))
+		c.String(http.StatusUnprocessableEntity, message)
 		return
 	}
 	html := res.HTML

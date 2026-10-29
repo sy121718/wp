@@ -118,6 +118,7 @@ const (
 	// —— block ↔ page 的装配期接线（FIX-05）——
 	// 块内容变更后的 stale 传播与删除前的引用检查；漏接的表现都是「无声的」，
 	// 因此两条都按 required-port 登记（判据见文件头：说不清「用户看到什么」就是 required）。
+	portBlockPresetResolver        = "block.SetPresetResolver"
 	portBlockStalePropagator       = "block.SetStalePropagator"
 	portBlockReferenceUsageChecker = "block.SetReferenceUsageChecker"
 	// —— FIX-25：此前「已注入但未进盘点表」的 11 处（自检覆盖空洞）——
@@ -303,6 +304,8 @@ var wiringManifest = []wiringEntry{
 		"模板影响面与删除保护退化为仅查本模块表与实例外键（删模板不再拦页面引用）"},
 	{portProjectStructureTemplates, "contenttemplate", "project（主题设置）", wiringOptionalDegraded,
 		"主题设置页的「选结构模板」下拉只有「不绑定」"},
+	{portBlockPresetResolver, "builder", "block", wiringRequiredPort,
+		"首次业务预设无法解析，创建不能获得权威文档"},
 	{portBlockStalePropagator, "block", "page / presentation", wiringRequiredPort,
 		"块变更不传播 → 改了页眉块站点停旧字节且无报错"},
 	{portBlockReferenceUsageChecker, "block", "block（删除保护）", wiringRequiredPort,

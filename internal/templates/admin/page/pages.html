@@ -17,7 +17,7 @@
 {* 筛选栏的回显值：链索引取值（缺键安全），不参与 if 判断 —— 直接判断缺键会让整页中断。 *}
 {{selectedProject := .["SelectedProject"]}}
 {* 语言维度筛选的回显值（链索引取值，缺键给空串）。 *}
-{{selectedLang := .["SelectedLang"]}}
+{{selectedLang := ""}}{{if isset(.SelectedLang)}}{{selectedLang = .SelectedLang}}{{end}}
 <div class="stack">
     <header class="page-head">
         <div class="page-head-main">
@@ -247,7 +247,7 @@
                            两个按钮并排时，用户还得先猜哪个才对应自己想的那个；
                            而「你看的是线上还是草稿」状态列已经说了，按钮不必再说一遍。 *}
                         {{openPath := ""}}{{if p.Active && p.ActivePath != ""}}{{openPath = p.ActivePath}}{{end}}
-                        {{if selectedLang != ""}}{{openPath = ""}}{{range _, pub := p.Publications}}{{if pub.Lang == selectedLang && pub.ActivePath != ""}}{{openPath = pub.ActivePath}}{{end}}{{end}}{{end}}
+                        {{if selectedLang != ""}}{{openPath = ""}}{{if isset(p.Publications)}}{{range _, pub := p.Publications}}{{if pub.Lang == selectedLang && pub.ActivePath != ""}}{{openPath = pub.ActivePath}}{{end}}{{end}}{{end}}{{end}}
                         <a class="btn btn-sm btn-ghost" href="{{if openPath != ""}}{{openPath}}{{else}}/workbench/preview?id={{p.ID}}{{end}}" target="_blank">{{tr("admin.pages.action.open", "打开页面")}}</a>
                         {* 多语言工作台入口（决策 F10：行内按钮，不做独立菜单） *}
                         <a class="btn btn-sm btn-ghost" href="/admin/pages/translations?pageId={{p.ID}}">{{tr("admin.pages.action.translations", "多语言")}}</a>

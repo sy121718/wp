@@ -237,7 +237,8 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 		// 英文界面会拿到中英混杂的一句。
 		if status, ok := facing.StatusOf(uerr); ok && status == http.StatusConflict {
 			response.ErrorWithMessage(c, http.StatusConflict,
-				response.MsgText(c, versionConflictMsg(uerr)))
+				response.ArgsText(c, blockenums.ErrBlockVersionConflict,
+					blockenums.FallbackFor(blockenums.ErrBlockVersionConflict), versionConflictArgs(uerr)))
 			return
 		}
 		// 这条分支原先**只回 500 归口文案、不落任何日志**（F 线实测：合成 payload 触发 500，
@@ -252,20 +253,13 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 	response.SuccessWithMessage(c, blockenums.ContentSavedRebuildQueued, updated)
 }
 
-// versionConflictMsg 从版本冲突错误取「key + 兜底 + 版本号参数」这条事实。
-//
-// 取不到版本号时退化成不带参数的文案（词条里的 %s 会被 ArgsText 的兜底逻辑处理：
-// 参数为空时直接用词条原文）。
-func versionConflictMsg(err error) facing.Msg {
-	msg := facing.Msg{
-		Key:      blockenums.ErrBlockVersionConflict,
-		Fallback: blockenums.FallbackFor(blockenums.ErrBlockVersionConflict),
-	}
+// versionConflictArgs 只转交冲突错误携带的版本参数，由JSON出口按声明事实取词。
+func versionConflictArgs(err error) []string {
 	var withVersion interface{ Version() string }
 	if errors.As(err, &withVersion) {
-		msg.Args = []string{withVersion.Version()}
+		return []string{withVersion.Version()}
 	}
-	return msg
+	return nil
 }
 
 // blockErrScene 页面出口的日志场景名（与 block 模块其它 logger.Scene("block") 调用点一致）。

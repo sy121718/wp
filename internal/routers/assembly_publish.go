@@ -86,6 +86,7 @@ func (a *assembly) buildPublishingModules() {
 		panic("区块模块未实现受控预设解析器注入")
 	}
 	presetSetter.SetPresetResolver(builder.BusinessPresetRegistry{})
+	marks.mark(portBlockPresetResolver)
 
 	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线；实例行需 project_id 外键）。
 	// blockSvc 注入用于内容模板内部的全局块引用展开（页眉/页脚等，构建期内联）。

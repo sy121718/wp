@@ -32,7 +32,7 @@ func TestPagesListTemplate(t *testing.T) {
 			"Buttons":  map[string]any{"project.create": true, "page.create": true},
 			"Projects": []map[string]any{{"ID": "p1", "Name": "站点A"}},
 			"Pages": []map[string]any{
-				{"ID": "pg1", "ProjectID": "p1", "Kind": "home", "DraftPath": "/demo", "Active": true, "Staged": true, "Stale": true, "Version": int64(3), "UpdatedAt": now},
+				{"ID": "pg1", "ProjectID": "p1", "Kind": "home", "DraftPath": "/demo", "ActivePath": "/site/demo/", "Publications": []map[string]any{{"Lang": "zh-CN", "ActivePath": "/site/demo/"}}, "Active": true, "Staged": true, "Stale": true, "Version": int64(3), "UpdatedAt": now},
 				{"ID": "pg2", "ProjectID": "p1", "Kind": "home", "DraftPath": "/draft", "Active": false, "Staged": false, "Stale": false, "Version": int64(1), "UpdatedAt": now},
 			},
 		})

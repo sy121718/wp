@@ -140,8 +140,9 @@ func TestSiteStructureTemplatesRender(t *testing.T) {
 				// 一页两个创建入口 → 两个权限码都要给（缺一个按钮就不渲染，wants 会红）。
 				"Buttons": map[string]any{"project.create": true, "page.create": true},
 				"Pages": []map[string]any{{
-					"ID": "pg1", "DraftPath": "/about", "Kind": "page", "Active": true,
-					"Stale": true, "Staged": false, "Version": 3, "UpdatedAt": utils.NewJSONTime(time.Date(2026, 1, 2, 0, 0, 0, 0, time.Local)),
+					"ID": "pg1", "DraftPath": "/about", "Kind": "page", "Active": true, "ActivePath": "/site/about/",
+					"Publications": []map[string]any{{"Lang": "zh-CN", "ActivePath": "/site/about/"}},
+					"Stale":        true, "Staged": false, "Version": 3, "UpdatedAt": utils.NewJSONTime(time.Date(2026, 1, 2, 0, 0, 0, 0, time.Local)),
 				}},
 			},
 			// 「预览」「线上」已合并成一个「打开页面」入口：已发布的直开线上真页面（此行的

@@ -26,6 +26,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/builder/core"
+	blockmodel "go_wp/internal/module/block/model"
+	blockservice "go_wp/internal/module/block/service"
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplatemodel "go_wp/internal/module/contenttemplate/model"
 	contenttemplateservice "go_wp/internal/module/contenttemplate/service"
@@ -92,12 +94,13 @@ func newWorkbenchTemplateEnv(t *testing.T) *workbenchTemplateEnv {
 		t.Fatalf("注册实体类型 article 失败：%v", err)
 	}
 	templatesSvc := contenttemplateservice.NewService(contenttemplatemodel.NewModel(db), projects, registry)
-	pages := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projects, nil, nil, nil, nil, nil)
+	blocks := blockservice.NewService(blockmodel.NewBlockModel(db), projects)
+	pages := pageservice.NewService(pagemodel.NewPageModel(db), nil, nil, projects, blocks, nil, nil, nil, nil)
 
 	// 工作台处理器直挂（页面路由本来只挂 Session + CSRF + 权限上下文，业务鉴权不在页面组）：
 	// 本用例测的是模板目标的分流与渲染，不是中间件链。
 	previewPort := &workbenchRecorderPreviewPort{}
-	h := workbenchhttp.New(pages, projects, nil, nil, nil, templatesSvc, previewPort)
+	h := workbenchhttp.New(pages, projects, blocks, nil, nil, templatesSvc, previewPort)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

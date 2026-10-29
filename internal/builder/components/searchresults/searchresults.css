@@ -76,7 +76,7 @@
 
 & .sky-search-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sky-space-7, 16px); }
 & .sky-search-list > li { border-bottom: 1px solid var(--sky-c-border, #e5e7eb); padding-bottom: var(--sky-space-7, 16px); }
-& .sky-search-title { color: var(--sky-c-text, #171717); font-size: 1.125rem; font-weight: 600; text-decoration: none; }
+& .sky-search-title { color: var(--sky-c-text, #111827); font-size: 1.125rem; font-weight: 600; text-decoration: none; }
 & .sky-search-title:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
 & .sky-search-excerpt { margin: 8px 0 0; color: var(--sky-c-text-mute, #6b7280); line-height: 1.65; }
 @hover & .sky-search-title:hover { text-decoration: underline; text-underline-offset: 4px; }
