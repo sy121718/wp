@@ -1,6 +1,8 @@
 package builder
 
 import (
+	"context"
+	"go_wp/internal/builder/source"
 	"go_wp/internal/templates"
 	"strings"
 	"testing"
@@ -15,7 +17,7 @@ func TestPreviewReadOnlyFactDoesNotEnterPublishedDocument(t *testing.T) {
 	}
 	const marker = `<meta name="site-preview-mode" content="readonly">`
 	for _, mode := range []CompileMode{CompileModePreview, CompileModePublish} {
-		compiled, err := Compile(page, WithComponentSet(set), WithCompileMode(mode), WithTrackSource("auditTrackingCall();"))
+		compiled, err := Compile(page, WithComponentSet(set), WithCompileMode(mode), WithTrackSource("auditTrackingCall();"), WithContext(source.WithPreviewState(context.Background(), source.PreviewSuccess)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -25,6 +27,9 @@ func TestPreviewReadOnlyFactDoesNotEnterPublishedDocument(t *testing.T) {
 		}
 		if strings.Contains(html, "auditTrackingCall();") != (mode == CompileModePublish) {
 			t.Fatalf("用途%s统计采集隔离失败", mode)
+		}
+		if strings.Contains(html, `<meta name="site-preview-state" content="success">`) != (mode == CompileModePreview) {
+			t.Fatalf("发布不能携带模拟状态: %s", mode)
 		}
 		if strings.Contains(html, marker) != (mode == CompileModePreview) || strings.Contains(html, `class="sky-preview-notice"`) != (mode == CompileModePreview) {
 			t.Fatalf("用途%s只读标记不一致", mode)

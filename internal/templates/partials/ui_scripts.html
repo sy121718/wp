@@ -3,6 +3,8 @@
    htmx 排在最前：控件入口 index.js 监听 htmx:after:swap 重扫，后台所有局部刷新
    都建立在它之上（原先从 CDN 引，CDN 不可达时下拉/抽屉/按钮会静默退化成整页刷新）。 *}
 <script src="/static/js/ui/htmx.min.js"></script>
+<script src="/static/js/ui/site-preview.js"></script>
+<script src="/static/js/ui/site-actions.js"></script>
 {* 写表单的唯一基座：整形（删空值键 / 嵌套字段）+ 提交 + 收尾（toast / 导航 / 刷新）。
    紧随 htmx 之后、任何控件之前 —— 它在 document 上以捕获阶段接 submit，
    晚加载会让早期提交走原生提交（整页跳转）。

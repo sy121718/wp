@@ -57,6 +57,8 @@ var uiBaseClasses = []string{
 }
 
 var uiBlocks = []uiBlock{
+	{file: "site-preview.js", attrs: []string{"data-site-read", "data-write", "data-component-instance"}, prefixes: []string{"hx-"}, noStyle: true},
+	{file: "site-actions.js", attrs: []string{"data-component-action"}, noStyle: true},
 	{file: "site-data.js", attrs: []string{"data-site-read"}, noStyle: true},
 	{file: "site-catalog.js", attrs: []string{"data-site-catalog", "data-site-search"}, noStyle: true},
 	{file: "site-product.js", attrs: []string{"data-site-product"}, noStyle: true},

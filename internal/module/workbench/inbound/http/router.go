@@ -185,8 +185,8 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 	// 编辑器外壳（?id= 页面 / ?block= 全局块 / ?template= 内容模板）。
 	g.GET("/workbench", adminui.PageSlot(CanvasLayoutTemplate), h.Workbench)
 	// 预览编译直出（GET 已保存草稿 / POST 未保存草稿）。
-	g.GET("/workbench/preview", h.Preview)
-	g.POST("/workbench/preview", h.PreviewDraft)
+	g.GET("/workbench/preview", previewContext, h.Preview)
+	g.POST("/workbench/preview", previewContext, h.PreviewDraft)
 	// 检查器面板片段（HTMX）：schema → 表单 HTML 由服务端渲染。
 	g.POST("/workbench/inspector", adminui.BareSlot(InspectorPanelTemplate), h.InspectorPanel)
 	// 结构树片段（HTMX）：树 HTML 由服务端渲染，客户端只做一次事件委托。
@@ -194,10 +194,10 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 	// SEO 评分：只读分析草稿，返回评分与逐项建议。
 	g.POST("/workbench/seo-score", h.SEOScore)
 	// 全局块画布预览（块编辑模式 iframe 内嵌）。
-	g.GET("/workbench/block/preview", h.BlockPreview)
+	g.GET("/workbench/block/preview", previewContext, h.BlockPreview)
 	// 内容模板画布预览（EDT-001）：GET 已保存 / POST 未保存草稿。
-	g.GET("/workbench/template/preview", h.TemplatePreview)
-	g.POST("/workbench/template/preview", h.TemplatePreviewDraft)
+	g.GET("/workbench/template/preview", previewContext, h.TemplatePreview)
+	g.POST("/workbench/template/preview", previewContext, h.TemplatePreviewDraft)
 	// 实例编辑模式保存（docs/04-C）：覆盖文档 + 重编译发布，只改本实例。
 	//
 	// Casbin 必须在这里显式挂（与下一行 navigation/create 同一形态）：workbenchPages

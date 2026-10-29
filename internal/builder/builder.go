@@ -24,6 +24,7 @@ import (
 
 	// 内置组件在各自包的 init() 中 core.Register；import 触发见 jetview.go（唯一 hub）。
 	"go_wp/internal/builder/core"
+	"go_wp/internal/builder/source"
 
 	contentcontract "go_wp/internal/module/content/contract"
 	mediacontract "go_wp/internal/module/media/contract"
@@ -60,6 +61,7 @@ func ParsePage(data []byte) (p *Page, err error) {
 type CompiledPage struct {
 	// PreviewReadOnly 是编译用途事实，预览禁止访客写操作；不进入作者文档。
 	PreviewReadOnly bool
+	PreviewState    source.PreviewState
 	PreviewNotice   string
 	// Lang 本次编译的目标语言（注入 <html lang>，多语言 P3）。
 	// 空表示未知，RenderDocument 回退站点默认语言（保持单语言产物字节不变）。
@@ -817,6 +819,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	return &CompiledPage{
 		PreviewNotice:     ctx.Text("workbench.preview.readonly", "模拟预览：不会提交真实数据，请在发布页面中操作。"),
 		PreviewReadOnly:   cfg.mode != CompileModePublish,
+		PreviewState:      source.PreviewStateFrom(cfg.ctx),
 		Lang:              lang,
 		Title:             seoTitle,
 		MetaDescription:   seoDescription,
@@ -903,6 +906,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 	v := documentView{
 		PreviewNotice:     c.PreviewNotice,
 		PreviewReadOnly:   c.PreviewReadOnly,
+		PreviewState:      c.PreviewState,
 		Lang:              lang,
 		Dir:               DirAttr(lang),
 		Title:             c.Title,
@@ -954,6 +958,7 @@ func DirAttr(lang string) string {
 type documentView struct {
 	PreviewNotice     string
 	PreviewReadOnly   bool
+	PreviewState      source.PreviewState
 	Lang              string // <html lang>（目标语言，空回退默认语言）
 	Dir               string // <html dir>（仅 RTL 非空，缺省 = LTR）
 	Title             string

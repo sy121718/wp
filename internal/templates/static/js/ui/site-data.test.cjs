@@ -11,9 +11,9 @@ function element(attrs) {
         get classList() { return {toggle:(k,on)=>on?this.classes.add(k):this.classes.delete(k)}; }
     };
 }
-function env(fetch) {
+function env(fetch, preview) {
     const document={readyState:'loading',addEventListener(){},querySelectorAll(){return [];}};
-    const window={document,location:{href:'https://shop.test/shop',origin:'https://shop.test'},fetch};
+    const window={document,WPSitePreview:preview,location:{href:'https://shop.test/shop',origin:'https://shop.test'},fetch};
     const ctx=vm.createContext({window,URL,Map,Promise,CustomEvent:class {constructor(type, options){this.type=type;Object.assign(this,options);}}});
     for (const name of ['site-data','site-product']) vm.runInContext(fs.readFileSync(__dirname+'/'+name+'.js','utf8'),ctx);
     return window.WPSiteData;
@@ -75,4 +75,26 @@ test('非成功状态和业务错误不清空原内容，恢复后移除错误�
     assert.equal(price.events.at(-1).detail.message,'暂不可用');
     ok=true; await api.refresh(price);
     assert.equal(price.textContent,''); assert.equal(price.attrs['data-site-error'],undefined);
+});
+
+test('模拟预览零真实读取，跳过prepare并只消费组件声明的状态',async()=>{
+    let fetches=0,preparations=0,realRenders=0;
+    const api=env(async()=>{fetches++;throw new Error('预览不得读取真实session');},{active:true,state:'forbidden'});
+    const states=[];
+    api.register('privateAccount',()=>realRenders++,()=>preparations++);
+    api.registerPreview('privateAccount',(root,state)=>{states.push(state);root.textContent='模拟 '+state;},['default','forbidden']);
+    const root=element({'data-site-view':'privateAccount','data-site-read':'/api/site/user/account'});
+    await api.refresh(root);
+    assert.equal(fetches,0);assert.equal(preparations,0);assert.equal(realRenders,0);
+    assert.deepEqual(states,['forbidden']);assert.equal(root.textContent,'模拟 forbidden');assert.equal(root.attrs['data-site-simulated'],'true');
+    assert.equal(root.attrs['aria-busy'],'false');assert.equal(root.events.length,0);
+});
+test('组件未声明当前模拟状态则回default，未接模拟renderer仍不得读真实数据',async()=>{
+    let fetches=0;
+    const api=env(async()=>{fetches++;},{active:true,state:'out-of-stock'});
+    api.register('privateAccount',()=>{throw new Error('不能用真实renderer');});
+    const root=element({'data-site-view':'privateAccount','data-site-read':'/api/site/user/account'});
+    await api.refresh(root);assert.equal(root.textContent,'原内容');
+    api.registerPreview('privateAccount',(node,state)=>node.textContent=state,['default','unauthenticated']);
+    await api.refresh(root);assert.equal(root.textContent,'default');assert.equal(fetches,0);
 });

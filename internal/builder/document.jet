@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 {{ if .PreviewReadOnly }}<meta name="site-preview-mode" content="readonly">
+<meta name="site-preview-state" content="{{ .PreviewState }}">
 {{ end }}
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {{ if .Title }}<title>{{ .Title }}</title>

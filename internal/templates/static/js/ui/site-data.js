@@ -1,7 +1,7 @@
 /* 静态产物的数据读取基座。业务数据只能进入前端视图，接口不携带 HTML。 */
 (function (global) {
     'use strict';
-    var views = Object.create(null), preparations = Object.create(null), pending = new Map(), ready = false;
+    var views = Object.create(null), preparations = Object.create(null), previews = Object.create(null), pending = new Map(), ready = false;
     var selector = '[data-site-read][data-site-view]';
 
     function endpoint(raw) {
@@ -31,12 +31,24 @@
         el._siteGeneration = generation;
         el.setAttribute('aria-busy', 'true');
         return Promise.resolve().then(function () {
-                var prepare = preparations[el.getAttribute('data-site-view')];
+                var name = el.getAttribute('data-site-view');
+                if (global.WPSitePreview && global.WPSitePreview.active) {
+                    el.setAttribute('data-site-simulated', 'true');
+                    var preview = previews[name];
+                    if (preview) {
+                        var state = global.WPSitePreview.state;
+                        if (preview.states && preview.states.indexOf(state) === -1) state = 'default';
+                        preview.render(el, state);
+                    }
+                    return null;
+                }
+                var prepare = preparations[name];
                 if (prepare) prepare(el);
                 return request(endpoint(el.getAttribute('data-site-read')));
             })
             .then(function (data) {
                 if (!el.isConnected || el._siteGeneration !== generation) return;
+                if (global.WPSitePreview && global.WPSitePreview.active) return;
                 render(el, data);
                 el.removeAttribute('data-site-error');
                 el.dispatchEvent(new CustomEvent('site:data', {bubbles:true, detail:{data:data}}));
@@ -56,7 +68,7 @@
         el._siteMounted = true;
         refresh(el);
         var seconds = Number(el.getAttribute('data-site-poll'));
-        if (seconds >= 30) {
+        if (seconds >= 30 && !(global.WPSitePreview && global.WPSitePreview.active)) {
             function poll() {
                 if (!el.isConnected) return;
                 if (global.document.visibilityState !== 'hidden') refresh(el);
@@ -78,6 +90,13 @@
     }
     global.WPSiteData = {
         register:function (name, render, prepare) { views[name] = render; preparations[name] = prepare; if (ready) scan(global.document); },
+        registerPreview:function (name, render, states) {
+            previews[name] = {render:render, states:states};
+            if (ready && global.WPSitePreview && global.WPSitePreview.active) {
+                var roots=global.document.querySelectorAll(selector);
+                roots.forEach(function(root){ if(root.getAttribute('data-site-view')===name) refresh(root); });
+            }
+        },
         refresh:refresh
     };
     if (global.document.readyState === 'loading') global.document.addEventListener('DOMContentLoaded', start, {once:true});
