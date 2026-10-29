@@ -31,6 +31,7 @@ import (
 func initUploadForTest(t *testing.T) {
 	t.Helper()
 	cfg := viper.New()
+	cfg.Set("upload.base_url", "https://media.example.test")
 	cfg.Set("upload.default_provider", "local")
 	if err := upload.Init(cfg); err != nil {
 		t.Fatalf("初始化上传组件失败: %v", err)
@@ -107,7 +108,7 @@ func cleanupUploadedFile(t *testing.T, resp *mediadto.AttachmentResp) {
 	if resp == nil || resp.URL == "" {
 		return
 	}
-	key := strings.TrimPrefix(resp.URL, "/storage/")
+	key := upload.StorageKey(resp.URL)
 	t.Cleanup(func() {
 		path := filepath.Join("public", "storage", filepath.FromSlash(key))
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -138,7 +139,7 @@ func TestMediaUploadSuccess(t *testing.T) {
 	if resp.MimeType != "image/png" {
 		t.Fatalf("MIME 类型不正确: got=%q", resp.MimeType)
 	}
-	if resp.URL == "" || !strings.HasPrefix(resp.URL, "/storage/") {
+	if resp.URL == "" || !strings.HasPrefix(resp.URL, upload.BaseURL()+"/") {
 		t.Fatalf("URL 应指向存储: %q", resp.URL)
 	}
 	// 大小跟着夹具走，不再钉死一句字面量：夹具字节改了（比如为了让 MIME 嗅探成立

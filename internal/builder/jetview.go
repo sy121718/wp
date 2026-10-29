@@ -455,11 +455,9 @@ func buttonViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nod
 
 // containerViewOf 转换 container 节点（对应 Container.Render 流程）。
 func containerViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p containerPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
+	p, err := decodeProps[containerPkg.Props](node)
+	if err != nil {
+		return nil, err
 	}
 
 	// 滚动显现注入（container 的 Interaction 为顶层字段，不走 advancedClasses）。
@@ -558,11 +556,9 @@ func textViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeV
 // 说明：image 的 customID 位置随点击动作分支变化（img 前 / a 上 / 忽略），
 // 故 class 与 customID 传入 BuildView 预计算完整 HTML，模板仅原样输出。
 func imageViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p imagePkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
+	p, err := decodeProps[imagePkg.Props](node)
+	if err != nil {
+		return nil, err
 	}
 
 	var extraClasses []string
@@ -649,11 +645,9 @@ type cardstackView struct {
 }
 
 func cardstackViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p cardstackPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
+	p, err := decodeProps[cardstackPkg.Props](node)
+	if err != nil {
+		return nil, err
 	}
 
 	// 先解析视图（内容集合模式要在这里展开成 N 张卡），再按实际卡片数编译 CSS ——
@@ -1017,11 +1011,9 @@ func counterViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 
 // galleryViewOf 转换 gallery 节点（对应 core.Atom 基座的 Render 流程）。
 func galleryViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p galleryPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
+	p, err := decodeProps[galleryPkg.Props](node)
+	if err != nil {
+		return nil, err
 	}
 
 	var extraClasses []string
@@ -1065,11 +1057,9 @@ func galleryViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*no
 
 // sliderViewOf 转换 slider 节点（对应 Component.Render 流程，children 为各 slide）。
 func sliderViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p sliderPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
+	p, err := decodeProps[sliderPkg.Props](node)
+	if err != nil {
+		return nil, err
 	}
 
 	// Advanced 通用层：与 atomViewOf 同源。container/slider 此前整段跳过 Advanced，

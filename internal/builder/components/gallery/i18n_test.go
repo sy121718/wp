@@ -27,7 +27,7 @@ func (r galleryResolver) ResolveString(string) (string, error) { return r.value,
 
 // TestBuildViewLocalizesAuthorItemLink 作者手填的集合项 link 按语言加前缀。
 func TestBuildViewLocalizesAuthorItemLink(t *testing.T) {
-	p := Props{ClickAction: ClickLink, Items: []Item{{URL: "/storage/a.jpg", Link: "/about"}}}
+	p := Props{ClickAction: ClickLink, Items: []Item{{URL: "https://media.example.test/storage/a.jpg", Link: "/about"}}}
 	view, err := BuildView("g1", &p, nil, siteLinkOf)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
@@ -39,7 +39,7 @@ func TestBuildViewLocalizesAuthorItemLink(t *testing.T) {
 
 // TestBuildViewLocalizesDefaultLink 兜底链接（作者在组件属性上填的）同样本地化。
 func TestBuildViewLocalizesDefaultLink(t *testing.T) {
-	p := Props{ClickAction: ClickLink, DefaultLink: "/about", Items: []Item{{URL: "/storage/a.jpg"}}}
+	p := Props{ClickAction: ClickLink, DefaultLink: "/about", Items: []Item{{URL: "https://media.example.test/storage/a.jpg"}}}
 	view, err := BuildView("g1", &p, nil, siteLinkOf)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
@@ -52,7 +52,7 @@ func TestBuildViewLocalizesDefaultLink(t *testing.T) {
 // TestBuildViewKeepsBindingLinkUntouched CMS 绑定值里的 link 不本地化。
 func TestBuildViewKeepsBindingLinkUntouched(t *testing.T) {
 	p := Props{ClickAction: ClickLink, Binding: &Binding{Field: "post.gallery"}}
-	resolver := galleryResolver{value: "[{\"url\":\"/storage/a.jpg\",\"link\":\"/about\"}]"}
+	resolver := galleryResolver{value: "[{\"url\":\"https://media.example.test/storage/a.jpg\",\"link\":\"/about\"}]"}
 	view, err := BuildView("g1", &p, resolver, siteLinkOf)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
@@ -64,7 +64,7 @@ func TestBuildViewKeepsBindingLinkUntouched(t *testing.T) {
 
 // TestBuildViewWithoutSiteLink 未注入本地化器时原样输出（单测 / 独立编译路径）。
 func TestBuildViewWithoutSiteLink(t *testing.T) {
-	p := Props{ClickAction: ClickLink, Items: []Item{{URL: "/storage/a.jpg", Link: "/about"}}}
+	p := Props{ClickAction: ClickLink, Items: []Item{{URL: "https://media.example.test/storage/a.jpg", Link: "/about"}}}
 	view, err := BuildView("g1", &p, nil, nil)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
@@ -76,7 +76,7 @@ func TestBuildViewWithoutSiteLink(t *testing.T) {
 
 // TestBuildViewExternalLinkUntouched 外链不因本地化被改写。
 func TestBuildViewExternalLinkUntouched(t *testing.T) {
-	p := Props{ClickAction: ClickLink, Items: []Item{{URL: "/storage/a.jpg", Link: "https://example.com/x"}}}
+	p := Props{ClickAction: ClickLink, Items: []Item{{URL: "https://media.example.test/storage/a.jpg", Link: "https://example.com/x"}}}
 	view, err := BuildView("g1", &p, nil, siteLinkOf)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)

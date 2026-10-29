@@ -62,7 +62,7 @@ var presetRatios = map[string]string{
 
 // Item 单图项：URL + 单图覆盖元数据。
 type Item struct {
-	URL     string `json:"url"`
+	URL     string `json:"url" ct:"media"`
 	Alt     string `json:"alt,omitempty"`
 	Caption string `json:"caption,omitempty"`
 	Link    string `json:"link,omitempty"`

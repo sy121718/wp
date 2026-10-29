@@ -2,7 +2,8 @@
 
 import { commit, get, set } from './base.js';
 import { unitInput } from './spacing.js';
-import { csrfHeaders } from '../../core.js';
+import { csrfHeaders, meta } from '../../core.js';
+import { normalizeMediaURL } from '../../media-url.js';
 
 // 富文本编辑器（Trix 2.x，本地 vendor 资源 /static/vendor/trix/）：
 // 工具条与构建期白名单对齐（加粗/斜体/删除线/列表/引用/代码/链接），
@@ -97,7 +98,7 @@ function bindRichAttachmentUpload(editor, wrap, ctx, path, input) {
         xhr.onload = function () {
             var payload = null;
             try { payload = JSON.parse(xhr.responseText); } catch (e) { payload = null; }
-            var url = (payload && payload.data && payload.data.url) ? payload.data.url : '';
+            var url = normalizeMediaURL(payload && payload.data && payload.data.url, meta.mediaBaseUrl);
             var failed = xhr.status < 200 || xhr.status >= 300 || (payload && payload.code >= 400) || !url;
             if (failed) {
                 fail((payload && payload.message) || ('上传失败（HTTP ' + xhr.status + '）'));

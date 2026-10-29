@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -377,20 +378,17 @@ func (s *Service) CategoryTree(ctx context.Context) ([]mediadto.CategoryTreeNode
 // --- 辅助函数 ---
 
 func entityToResp(e *mediamodel.AttachmentEntity) *mediadto.AttachmentResp {
-	// URL 在**读取时**按当前 upload.base_url 派生，不直接用库里那一列。
-	//
-	// 库里存的是上传当时的字符串：配了 base_url 才是绝对地址，没配就是
-	// "/storage/<id>.<ext>"；换域名后存量行还指着旧主机。派生之后
-	// 「配置一改、全站媒体链接同时跟上」，与变体走同一条路（见 variantEntityToResp）。
-	// file_path 才是内容真源，url 列只作历史兜底（它的前缀形态已被 StorageURL 归一）。
+	// 本地资产按存储键和当前完整基址派生；外部存储保留它自己的域名。
 	key := strings.TrimSpace(e.FilePath)
-	if key == "" && e.URL != nil {
-		key = *e.URL
+	if e.StorageType != "local" && e.URL != nil {
+		key = strings.TrimSpace(*e.URL)
+	} else if key == "" && e.URL != nil {
+		// 已知属于本地附件的历史 URL 可以去掉旧域名后重新派生。
+		if old, err := url.Parse(strings.TrimSpace(*e.URL)); err == nil {
+			key = old.Path
+		}
 	}
-	url := upload.StorageURL(key)
-	if url == "" && e.URL != nil {
-		url = *e.URL
-	}
+	mediaURL := upload.StorageURL(key)
 	mime := ""
 	if e.MimeType != nil {
 		mime = *e.MimeType
@@ -411,7 +409,7 @@ func entityToResp(e *mediamodel.AttachmentEntity) *mediadto.AttachmentResp {
 		FileType:    e.FileType,
 		MimeType:    mime,
 		StorageType: e.StorageType,
-		URL:         url,
+		URL:         mediaURL,
 		MD5:         md5,
 		ExtraInfo:   extra,
 		CreateTime:  e.CreateTime.Format("2006-01-02 15:04:05"),
@@ -1118,25 +1116,10 @@ func (s *Service) SyncReferences(ctx context.Context, req *mediacontract.SyncRef
 
 // attachmentIDByURL 把产物中的媒体 URL 解析为附件 ID：
 // 先按原图 file_path 反查，未命中再按变体 file_path 反查（页面可能直接引用 _thumb/_medium）。
-// 非 /storage 前缀、路径含 ..、或查不到附件时返回 false（静默跳过，不影响构建）。
-func (s *Service) attachmentIDByURL(ctx context.Context, url string) (uint64, bool) {
-	const prefix = "/storage/"
-	raw := strings.TrimSpace(url)
+// 非本地媒体地址、路径越界、或查不到附件时返回 false。
+func (s *Service) attachmentIDByURL(ctx context.Context, mediaURL string) (uint64, bool) {
+	raw := localMediaStorageKey(mediaURL)
 	if raw == "" {
-		return 0, false
-	}
-	// 兼容绝对 URL（upload.base_url 配置了站点域名时的产物形态）。
-	if idx := strings.Index(raw, prefix); idx >= 0 {
-		raw = raw[idx+len(prefix):]
-	} else if !strings.HasPrefix(raw, prefix) {
-		return 0, false
-	}
-	// 去掉查询串与锚点（构建产物里可能带 ?v=xxx 之类的缓存参数）。
-	if i := strings.IndexAny(raw, "?#"); i >= 0 {
-		raw = raw[:i]
-	}
-	raw = strings.TrimPrefix(raw, "/")
-	if raw == "" || strings.Contains(raw, "..") {
 		return 0, false
 	}
 	if att, err := s.am.GetByFilePath(ctx, raw); err == nil && att != nil {
@@ -1147,6 +1130,16 @@ func (s *Service) attachmentIDByURL(ctx context.Context, url string) (uint64, bo
 		return 0, false
 	}
 	return v.AttachmentID, true
+}
+
+// localMediaStorageKey 只接受历史本地相对地址和当前媒体域名，不把外链当作本地附件。
+func localMediaStorageKey(raw string) string {
+	raw = strings.TrimSpace(raw)
+	base := upload.BaseURL()
+	if !strings.HasPrefix(raw, "/storage/") && (base == "" || !strings.HasPrefix(raw, base+"/")) {
+		return ""
+	}
+	return upload.StorageKey(raw)
 }
 
 // collectStorageURLs 从 HTML 产物中提取媒体 URL（/storage/...）。
@@ -1160,24 +1153,34 @@ func collectStorageURLs(html string) []string {
 		if idx < 0 {
 			break
 		}
-		html = html[idx:]
-		end := 0
-		for end < len(html) {
-			c := html[end]
-			if c == '"' || c == '\'' || c == ')' || c == '<' || c == '>' || c == ' ' || c == '\n' || c == '\r' || c == '\t' {
-				break
-			}
+		start := idx
+		for start > 0 && !mediaURLDelimiter(html[start-1]) {
+			start--
+		}
+		end := idx
+		for end < len(html) && !mediaURLDelimiter(html[end]) {
 			end++
 		}
-		url := html[:end]
+		mediaURL := html[start:end]
 		html = html[end:]
-		if _, ok := seen[url]; ok {
+		if localMediaStorageKey(mediaURL) == "" {
 			continue
 		}
-		seen[url] = struct{}{}
-		out = append(out, url)
+		if _, ok := seen[mediaURL]; ok {
+			continue
+		}
+		seen[mediaURL] = struct{}{}
+		out = append(out, mediaURL)
 	}
 	return out
+}
+
+func mediaURLDelimiter(c byte) bool {
+	switch c {
+	case '"', '\'', '(', ')', '<', '>', ' ', ',', '\n', '\r', '\t':
+		return true
+	}
+	return false
 }
 
 // SyncReferencesFromHTML 构建期入口：从产物 HTML 收集 /storage 引用并全量同步到 refs。

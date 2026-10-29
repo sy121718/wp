@@ -1,6 +1,9 @@
 package config
 
 import (
+	"strings"
+
+	"go_wp/internal/seo"
 	"go_wp/pkg/auth"
 	"go_wp/pkg/cache"
 	"go_wp/pkg/captcha"
@@ -126,11 +129,12 @@ var runtimeComponents = []runtimeComponent{
 		Close: auth.Close,
 	},
 	{
-		Name: "upload",
+		Name:     "upload",
+		Critical: true,
 		Enabled: func(cfg *viper.Viper) bool {
 			return cfg.GetBool("upload.enabled")
 		},
-		Init:  upload.Init,
+		Init:  initUpload,
 		Ready: upload.Ready,
 		Close: upload.Close,
 	},
@@ -157,4 +161,12 @@ var runtimeComponents = []runtimeComponent{
 		},
 		Close: captcha.Close,
 	},
+}
+
+// initUpload 复用站点既有可信基址；显式媒体域名可覆盖站点域名。
+func initUpload(cfg *viper.Viper) error {
+	if strings.TrimSpace(cfg.GetString("upload.base_url")) == "" && seo.SiteBaseURL() != "" {
+		cfg.Set("upload.base_url", seo.SiteBaseURL())
+	}
+	return upload.Init(cfg)
 }

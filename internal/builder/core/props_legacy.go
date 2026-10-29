@@ -172,5 +172,8 @@ func DecodeProps[P any](raw json.RawMessage) (P, error) {
 			return p, err
 		}
 	}
+	if err := normalizeMediaProps(&p); err != nil {
+		return p, err
+	}
 	return p, nil
 }

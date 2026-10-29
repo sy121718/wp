@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -20,9 +22,6 @@ import (
 // （provider 包未导出该常量，这里同步维护，LocalDir 未初始化兜底用）。
 const localProviderDefaultDir = "public/storage"
 
-// defaultMediaBaseURL 媒体资源对外前缀的缺省值（未配置 upload.base_url 时）。
-const defaultMediaBaseURL = "/storage"
-
 var (
 	stateMu         sync.RWMutex
 	runtimeMu       sync.RWMutex
@@ -35,14 +34,8 @@ var (
 		allowedExtensions: map[string]struct{}{},
 		allowedMIMETypes:  map[string]struct{}{},
 	}
-	// mediaBaseURL 媒体资源的对外前缀（upload.base_url 配置，形如
-	// "http://host:8080/storage"；未配置时 "/storage"）。
-	//
-	// 存在的理由：**URL 是派生值，不该在入库那一刻把域名冻进 sys_attachment.url**。
-	// 冻结版有三处各拼各的（provider 上传结果、附件读回、变体读回），配了 base_url
-	// 也只有第一处生效；换域名时更要靠迁移回填，且回填不到已经复制进产物与 Page
-	// Document 的那些副本。改成读取时派生后，配置一改、全站同时生效。
-	mediaBaseURL = defaultMediaBaseURL
+	// mediaBaseURL 是初始化时校验过的完整媒体基址。URL 由存储键按当前配置派生。
+	mediaBaseURL string
 )
 
 type providerEntry struct {
@@ -79,6 +72,10 @@ func Init(v *viper.Viper) error {
 	if v == nil {
 		return fmt.Errorf("upload 初始化配置为空")
 	}
+	baseURL, err := uploadprovider.MediaBaseURL(v)
+	if err != nil {
+		return err
+	}
 
 	if err := registerBuiltinProviders(); err != nil {
 		return err
@@ -95,7 +92,7 @@ func Init(v *viper.Viper) error {
 	stateMu.Lock()
 	configSource = v
 	defaultProvider = selected
-	mediaBaseURL = mediaBaseURLFromConfig(v)
+	mediaBaseURL = baseURL
 	rules, err := parseValidationRules(v)
 	if err != nil {
 		stateMu.Unlock()
@@ -153,6 +150,7 @@ func Close() error {
 	stateMu.Lock()
 	inited = false
 	configSource = nil
+	mediaBaseURL = ""
 	stateMu.Unlock()
 
 	return closeErr
@@ -180,91 +178,84 @@ func LocalDir() string {
 	return filepath.Clean(localProviderDefaultDir)
 }
 
-// mediaBaseURLFromConfig 解析 upload.base_url 得到媒体对外前缀。
-//
-// 配置值是**站点根**（如 "http://host:8080"），本函数补上 "/storage" 路径段 ——
-// 与 provider 侧 local.go 的拼接口径逐字一致（那边也是 siteURL + "/storage"）。
-// 配了 "/" 或带尾斜杠都归一；配成已含 "/storage" 的值不再重复追加。
-func mediaBaseURLFromConfig(v *viper.Viper) string {
-	if v == nil {
-		return defaultMediaBaseURL
-	}
-	raw := strings.TrimRight(strings.ReplaceAll(strings.TrimSpace(v.GetString("upload.base_url")), "\\", "/"), "/")
-	if raw == "" {
-		return defaultMediaBaseURL
-	}
-	if strings.HasSuffix(raw, "/storage") {
-		return raw
-	}
-	return raw + "/storage"
-}
-
 // BaseURL 媒体资源的对外前缀（不含末尾斜杠）。
-//
-// 未配置 upload.base_url 时是 "/storage"（相对路径），配置站点根后是完整地址
-// （"http://host:8080/storage"）。需要给用户「完整链接」的地方一律经它拼接，
-// 不要自己写 "/storage/..." —— 写死的那一处不会跟着配置走。
+// 未初始化时为空；调用方不得回退成相对路径。
 func BaseURL() string {
 	stateMu.RLock()
 	base := mediaBaseURL
 	stateMu.RUnlock()
-	if strings.TrimSpace(base) == "" {
-		return defaultMediaBaseURL
-	}
 	return strings.TrimRight(base, "/")
 }
 
-// StorageKey 从「存储键 / 相对 URL / 绝对 URL」中取出存储键（相对 storage 根的那一段）。
-//
-// 三种历史写法都要认，否则存量行会漂：
-//
-//	"482.jpg"                        → "482.jpg"
-//	"/storage/482.jpg"               → "482.jpg"（入库缺省形态）
-//	"http://old-host/storage/482.jpg" → "482.jpg"（配过 base_url 的旧数据）
-//
-// 取不到键（外链 CDN / data: URI / 空串）返回空串 —— 调用方据此区分
-// 「这是我们自己存的媒体」与「这是作者贴的外部地址」，不要替前者静默改写。
+// StorageKey 从本地存储键或可信媒体地址提取相对 storage 根的键。
+// 兼容 key、storage/key、/storage/key；完整地址仅接受当前配置的域名和路径前缀。
+// 任意外链即使包含 /storage/ 也不视为本地资产；历史附件的迁移由已知 file_path 决定。
+// 危险协议、越界路径或空值返回空串。
 func StorageKey(raw string) string {
 	u := strings.TrimSpace(raw)
 	if u == "" {
 		return ""
 	}
-	if idx := strings.Index(u, "/storage/"); idx >= 0 {
-		return strings.TrimLeft(u[idx+len("/storage/"):], "/")
-	}
-	lower := strings.ToLower(u)
-	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") ||
-		strings.HasPrefix(lower, "data:") || strings.HasPrefix(lower, "blob:") ||
-		strings.HasPrefix(u, "//") {
+	parsed, err := url.Parse(u)
+	if err != nil || parsed.User != nil || strings.Contains(u, "\\") {
 		return ""
 	}
+	if parsed.IsAbs() || parsed.Host != "" {
+		base, baseErr := url.Parse(BaseURL())
+		if baseErr != nil || base.Host == "" || !strings.EqualFold(parsed.Host, base.Host) || parsed.Scheme != base.Scheme {
+			return ""
+		}
+		prefix := strings.TrimRight(base.Path, "/") + "/"
+		if !strings.HasPrefix(parsed.Path, prefix) {
+			return ""
+		}
+		u = strings.TrimPrefix(parsed.Path, prefix)
+	} else {
+		u = parsed.Path
+	}
 	key := strings.TrimLeft(u, "/")
-	// "storage/482.jpg" 这种缺前导斜杠的写法同样要剥段 —— 不剥会拼成
-	// "/storage/storage/482.jpg"（实测踩过）。
 	if rest, ok := strings.CutPrefix(key, "storage/"); ok {
-		return rest
+		key = rest
+	}
+	if key == "" || key == ".." || strings.HasPrefix(key, "../") || path.Clean(key) != key || strings.Contains(key, "\x00") {
+		return ""
 	}
 	return key
 }
 
 // StorageURL 把存储标识拼成对外可用的媒体 URL。
 //
-// 能取出存储键的一律**按当前配置重新拼**（不保留原串里的主机名）：
-// 换域名后存量附件要跟着新配置走，而不是永远指着旧主机。
-// 取不到键但本身是绝对地址（CDN 外链 / data: URI）时原样返回 ——
-// 补前缀会拼出 "http://host/storage/https://cdn/x.jpg" 这种废串。
-//
-// 传空串返回空串（调用方据此判「没配图」，不是返回 "/storage/" 这种半截地址）。
+// 已知本地资产应传 file_path 存储键，以便换域名后按新配置派生。
+// 任意外部 HTTP(S) 地址保留原域名；危险协议与无法归一的值返回空。
 func StorageURL(raw string) string {
 	u := strings.TrimSpace(raw)
 	if u == "" {
 		return ""
 	}
-	if key := StorageKey(u); key != "" {
-		return BaseURL() + "/" + key
+	parsed, err := url.Parse(u)
+	if err != nil || parsed.User != nil || strings.ContainsAny(u, "\\\x00\r\n\t") {
+		return ""
 	}
-	// 取不到键：data: / blob: / //host 这类，原样返回。
-	return u
+	if parsed.IsAbs() || parsed.Host != "" {
+		if parsed.Scheme == "" && parsed.Host != "" {
+			parsed.Scheme = "https"
+		}
+		if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+			return ""
+		}
+		return parsed.String()
+	}
+	if strings.HasPrefix(parsed.Path, "/") && !strings.HasPrefix(parsed.Path, "/storage/") {
+		return ""
+	}
+	if key := StorageKey(u); key != "" && BaseURL() != "" {
+		base, _ := url.Parse(BaseURL())
+		base.Path += "/" + key
+		base.RawQuery = parsed.RawQuery
+		base.Fragment = parsed.Fragment
+		return base.String()
+	}
+	return ""
 }
 
 func Ready() error {

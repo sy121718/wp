@@ -446,8 +446,7 @@ func decodeFile(srcPath string) (image.Image, error) {
 	return decodeImage(f)
 }
 
-// variantEntityToResp 变体实体 → DTO（url 按 local 存储语义拼接 /storage 前缀，
-// 供前端直接预览缩略图；base_url 站点域名场景下为相对路径，不影响打包下载）。
+// variantEntityToResp 变体实体 → DTO，完整 URL 与原图共用当前媒体基址。
 func variantEntityToResp(e *mediamodel.MediaVariantEntity) mediato.VariantResp {
 	mime := ""
 	if e.MimeType != nil {
@@ -472,7 +471,7 @@ func variantEntityToResp(e *mediamodel.MediaVariantEntity) mediato.VariantResp {
 	}
 }
 
-// ProbeImageVariants 按公开 URL（/storage/...）探测已就绪的图片变体，
+// ProbeImageVariants 按本地媒体公开 URL探测已就绪的图片变体，
 // 供构建期响应式图片（srcset）使用：宽度取变体类型的标准边，
 // URL 取记录里的**真实路径**（带内容指纹）；升序去重，
 // 保证同一文档重复编译产物字节一致。
@@ -481,12 +480,8 @@ func variantEntityToResp(e *mediamodel.MediaVariantEntity) mediato.VariantResp {
 // 为什么 URL 由这里给出、而不是让调用方按宽度自己拼：变体名带
 // <generation>-<hash8> 指纹，只有本模块（以及它查的记录）知道这两段。
 func (s *Service) ProbeImageVariants(ctx context.Context, url string) []mediato.VariantRef {
-	const prefix = "/storage/"
-	if !strings.HasPrefix(url, prefix) {
-		return nil
-	}
-	rel := strings.TrimPrefix(url, prefix)
-	if rel == "" || strings.Contains(rel, "..") {
+	rel := localMediaStorageKey(url)
+	if rel == "" {
 		return nil
 	}
 	att, err := s.am.GetByFilePath(ctx, rel)

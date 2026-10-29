@@ -21,6 +21,7 @@ import (
 	"go_wp/pkg/i18n"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
+	"go_wp/pkg/upload"
 )
 
 // TemplatePreview 基于已保存模板 + 样例实体编译预览（画布 iframe GET）。
@@ -199,7 +200,8 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 		renderModeLabel = workbenchShortText(c, workbenchenums.ModeDocument)
 	}
 	metaJSON, merr := json.Marshal(gin.H{
-		"target": workbenchTargetOf(EditTargetInstance), "pageId": inst.ID,
+		"mediaBaseUrl": upload.BaseURL(),
+		"target":       workbenchTargetOf(EditTargetInstance), "pageId": inst.ID,
 		"saveBase": "instance", "entityType": inst.EntityType, "entityId": inst.EntityID,
 		"projectId": inst.ProjectID, "draftPath": "", "instanceMode": true,
 		"renderMode": renderMode,

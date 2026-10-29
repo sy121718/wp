@@ -151,9 +151,6 @@ var Widget = core.Atom[Props]{
 
 // validateExtra 关系性校验：媒体源互斥、比例取值、滤镜/缩放值域、绑定路径。
 func validateExtra(p *Props, nodeID string) (err error) {
-	if p.Src == "" && (p.Binding == nil || p.Binding.Field == "") {
-		return fmt.Errorf("必须提供图片地址或 CMS 绑定")
-	}
 	if p.AspectRatio == "custom" && p.AspectRatioValue == "" {
 		return fmt.Errorf("自定义比例必须提供 w / h 值")
 	}
@@ -186,6 +183,9 @@ func validateExtra(p *Props, nodeID string) (err error) {
 	}
 	if p.Binding != nil && p.Binding.Field != "" && !fieldPathRe.MatchString(p.Binding.Field) {
 		return fmt.Errorf("无效的绑定字段路径: %q", p.Binding.Field)
+	}
+	if strings.TrimSpace(p.Src) == "" && (p.Binding == nil || p.Binding.Field == "") {
+		return fmt.Errorf("%w: 必须提供图片地址或 CMS 绑定", core.ErrIncompleteNode)
 	}
 	return nil
 }

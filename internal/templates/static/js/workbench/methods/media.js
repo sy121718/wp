@@ -1,8 +1,10 @@
-// workbench/methods/media.js — 媒体库选择器（docs/09 §3 拆分）。
+// workbench/methods/media.js — 媒体库选择器。
 // 方法以 `this` 互调，由 index.js 用 Object.assign 合并为同一个 workbench 实例。
 import {
     meta, initialDoc, getCSRFToken, csrfHeaders, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER,
 } from '../core.js';
+
+import { normalizeMediaURL } from '../media-url.js';
 
 export const mediaMethods = {
             // ---------------- 媒体库选择器 ----------------
@@ -13,10 +15,11 @@ export const mediaMethods = {
             _mediaTree: [],
             resolveAssetUrl(assetIdOrUrl) {
                 if (!assetIdOrUrl) return '';
-                if (/^https?:|^\//.test(assetIdOrUrl)) return assetIdOrUrl;
+                var normalized = normalizeMediaURL(assetIdOrUrl, meta.mediaBaseUrl);
+                if (normalized && !/^\d+$/.test(String(assetIdOrUrl))) return normalized;
                 var list = this._mediaCache || [];
                 for (var i = 0; i < list.length; i++) {
-                    if (String(list[i].id) === String(assetIdOrUrl)) return list[i].url;
+                    if (String(list[i].id) === String(assetIdOrUrl)) return normalizeMediaURL(list[i].url, meta.mediaBaseUrl);
                 }
                 return '';
             },
@@ -103,6 +106,7 @@ export const mediaMethods = {
                             return;
                         }
                         list.forEach(function (item) {
+                            item.url = normalizeMediaURL(item.url, meta.mediaBaseUrl);
                             if (!item.url) return;
                             var cell = document.createElement('button');
                             cell.type = 'button'; cell.className = 'wb-media-cell'; cell.title = item.file_name || '';
@@ -136,6 +140,8 @@ export const mediaMethods = {
                     .then(function (j) {
                         if (j.code && j.code >= 400) { alert(j.message || '上传失败'); return; }
                         var item = (j.data && (j.data.file || j.data)) || {};
+                        item.url = normalizeMediaURL(item.url, meta.mediaBaseUrl);
+                        if (!item.url) { alert('上传响应缺少有效的完整媒体地址'); return; }
                         // 对齐 WP：上传完成即回填当前字段并关闭弹窗（不再要求用户再点一次）。
                         if (self._mediaPickTarget && item.url) {
                             var pick = self._mediaPickTarget;

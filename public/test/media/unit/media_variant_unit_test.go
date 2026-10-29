@@ -28,6 +28,7 @@ func initVariantUploadForTest(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
 	cfg := viper.New()
+	cfg.Set("upload.base_url", "https://media.example.test")
 	cfg.Set("upload.default_provider", "local")
 	cfg.Set("upload.local_dir", tmp)
 	if err := upload.Init(cfg); err != nil {

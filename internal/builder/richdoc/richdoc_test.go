@@ -183,8 +183,8 @@ func TestImportedTreeCompiles(t *testing.T) {
 <ul><li>列表项</li></ul>
 <ol><li>有序项</li></ol>
 <blockquote>引用内容<cite>出处</cite></blockquote>
-<img src="/storage/image/x.webp" alt="图">
-<figure><img src="/storage/image/y.webp" alt="图二"><figcaption>图注</figcaption></figure>
+<img src="https://media.example.test/storage/image/x.webp" alt="图">
+<figure><img src="https://media.example.test/storage/image/y.webp" alt="图二"><figcaption>图注</figcaption></figure>
 <hr>
 <table><caption>表</caption><thead><tr><th>H</th></tr></thead><tbody><tr><td>D</td></tr></tbody></table>`
 

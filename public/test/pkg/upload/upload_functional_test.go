@@ -13,6 +13,7 @@ import (
 
 func TestUploadRejectsFileOverMaxSize(t *testing.T) {
 	cfg := viper.New()
+	cfg.Set("upload.base_url", "https://media.example.test")
 	cfg.Set("upload.enabled", true)
 	cfg.Set("upload.default_provider", "local")
 	cfg.Set("upload.local_dir", t.TempDir())
@@ -42,6 +43,7 @@ func TestUploadRejectsFileOverMaxSize(t *testing.T) {
 
 func TestUploadRejectsDisallowedExtension(t *testing.T) {
 	cfg := viper.New()
+	cfg.Set("upload.base_url", "https://media.example.test")
 	cfg.Set("upload.enabled", true)
 	cfg.Set("upload.default_provider", "local")
 	cfg.Set("upload.local_dir", t.TempDir())
@@ -71,6 +73,7 @@ func TestUploadRejectsDisallowedExtension(t *testing.T) {
 
 func TestUploadRejectsDisallowedMimeType(t *testing.T) {
 	cfg := viper.New()
+	cfg.Set("upload.base_url", "https://media.example.test")
 	cfg.Set("upload.enabled", true)
 	cfg.Set("upload.default_provider", "local")
 	cfg.Set("upload.local_dir", t.TempDir())
@@ -102,6 +105,7 @@ var pngMagic = []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0
 
 func TestUploaderFacadeUsesFixedRequestAndProvider(t *testing.T) {
 	cfg := viper.New()
+	cfg.Set("upload.base_url", "https://media.example.test")
 	cfg.Set("upload.enabled", true)
 	cfg.Set("upload.default_provider", "local")
 	cfg.Set("upload.local_dir", t.TempDir())
@@ -142,6 +146,7 @@ func TestUploaderFacadeUsesFixedRequestAndProvider(t *testing.T) {
 // Size 谎报 0（未知大小）：不得绕过大小校验——流式读取实际 11B > 10B 应报错。
 func TestUploadRejectsUnknownSizeFileOverMaxSize(t *testing.T) {
 	cfg := viper.New()
+	cfg.Set("upload.base_url", "https://media.example.test")
 	cfg.Set("upload.enabled", true)
 	cfg.Set("upload.default_provider", "local")
 	cfg.Set("upload.local_dir", t.TempDir())
@@ -172,6 +177,7 @@ func TestUploadRejectsUnknownSizeFileOverMaxSize(t *testing.T) {
 // Size 为 0 但实际未超限：流式限制不应误伤，上传成功且返回实际大小。
 func TestUploadAcceptsUnknownSizeFileWithinLimit(t *testing.T) {
 	cfg := viper.New()
+	cfg.Set("upload.base_url", "https://media.example.test")
 	cfg.Set("upload.enabled", true)
 	cfg.Set("upload.default_provider", "local")
 	cfg.Set("upload.local_dir", t.TempDir())

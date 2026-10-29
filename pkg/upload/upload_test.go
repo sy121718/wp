@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"strings"
 	"testing"
-
-	"github.com/spf13/viper"
 )
 
 func TestDetectDangerousContentRejectsSVG(t *testing.T) {
@@ -84,84 +82,44 @@ func TestValidateFileAcceptsWebpDeclaredAsOctetStream(t *testing.T) {
 	}
 }
 
-// TestMediaBaseURLFromConfig 钉住 upload.base_url → 对外前缀的拼接口径。
-//
-// 与 provider 侧 local.go 的 "siteURL + /storage" 必须逐字一致：两处拼法分叉时，
-// 新上传拿到一种前缀、历史附件派生另一种，表现是「同一张图两个地址」。
-func TestMediaBaseURLFromConfig(t *testing.T) {
-	cases := []struct {
-		name string
-		raw  string
-		want string
-	}{
-		{"未配置", "", "/storage"},
-		{"站点根", "http://host:8080", "http://host:8080/storage"},
-		{"站点根带尾斜杠", "https://www.example.com/", "https://www.example.com/storage"},
-		{"已含 storage 段不重复追加", "https://cdn.example.com/storage", "https://cdn.example.com/storage"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			v := viper.New()
-			if tc.raw != "" {
-				v.Set("upload.base_url", tc.raw)
-			}
-			if got := mediaBaseURLFromConfig(v); got != tc.want {
-				t.Fatalf("mediaBaseURLFromConfig(%q) = %q，期望 %q", tc.raw, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestStorageURL 钉住「存储标识 → 对外 URL」的归一（未配 base_url 的缺省形态）。
-//
-// 三种历史写法都要认，且**换了主机名要跟着配置走**：库里与 Page Document 里
-// 存在配过旧 base_url 的绝对地址，若原样返回，换域名后它们会永远指着旧主机。
+// 本地存储键可重拼；任意外链即使带 storage 段也不能改成本站域名。
 func TestStorageURL(t *testing.T) {
-	old := mediaBaseURL
-	mediaBaseURL = defaultMediaBaseURL
-	t.Cleanup(func() { mediaBaseURL = old })
-
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{"空串给空串", "", ""},
-		{"纯存储键", "482.jpg", "/storage/482.jpg"},
-		{"相对 URL", "/storage/482.jpg", "/storage/482.jpg"},
-		{"无前导斜杠的 storage 段", "storage/482.jpg", "/storage/482.jpg"},
-		{"历史绝对地址按配置重拼", "http://old-host/storage/482.jpg", "/storage/482.jpg"},
-		{"变体文件同样归一", "http://old-host/storage/482_thumb.jpg", "/storage/482_thumb.jpg"},
-		{"外链原样返回", "https://cdn.example.com/x.jpg", "https://cdn.example.com/x.jpg"},
-		{"协议相对原样返回", "//cdn.example.com/x.jpg", "//cdn.example.com/x.jpg"},
-		{"data URI 原样返回", "data:image/png;base64,AAAA", "data:image/png;base64,AAAA"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := StorageURL(tc.in); got != tc.want {
-				t.Fatalf("StorageURL(%q) = %q，期望 %q", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestStorageURLWithBaseURL 配了站点根时，所有形态都要带上域名。
-func TestStorageURLWithBaseURL(t *testing.T) {
 	old := mediaBaseURL
 	mediaBaseURL = "https://www.example.com/storage"
 	t.Cleanup(func() { mediaBaseURL = old })
-
-	for _, in := range []string{"482.jpg", "/storage/482.jpg", "http://old-host/storage/482.jpg"} {
-		if got, want := StorageURL(in), "https://www.example.com/storage/482.jpg"; got != want {
-			t.Fatalf("StorageURL(%q) = %q，期望 %q", in, got, want)
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"482.jpg", "https://www.example.com/storage/482.jpg"},
+		{"/storage/482.jpg", "https://www.example.com/storage/482.jpg"},
+		{"/storage/482.jpg?v=2#photo", "https://www.example.com/storage/482.jpg?v=2#photo"},
+		{"/uploads/482.jpg", ""},
+		{"storage/482.jpg", "https://www.example.com/storage/482.jpg"},
+		{"folder/a b.jpg", "https://www.example.com/storage/folder/a%20b.jpg"},
+		{"https://external.example/storage/482.jpg", "https://external.example/storage/482.jpg"},
+		{"https://cdn.example.com/x.jpg", "https://cdn.example.com/x.jpg"},
+		{"//cdn.example.com/x.jpg", "https://cdn.example.com/x.jpg"},
+		{"data:image/png;base64,AAAA", ""},
+		{"javascript:alert(1)", ""},
+		{"blob:https://www.example.com/id", ""},
+		{"../escape.jpg", ""},
+		{"/storage/%2e%2e/escape.jpg", ""},
+	}
+	for _, tc := range cases {
+		if got := StorageURL(tc.in); got != tc.want {
+			t.Errorf("StorageURL(%q) = %q，期望 %q", tc.in, got, tc.want)
 		}
 	}
-	if got := BaseURL(); got != "https://www.example.com/storage" {
-		t.Fatalf("BaseURL() = %q", got)
+	for _, raw := range []string{"482.jpg", "/storage/482.jpg", "https://www.example.com/storage/482.jpg?v=1#image"} {
+		if key := StorageKey(raw); key != "482.jpg" {
+			t.Errorf("StorageKey(%q)=%q", raw, key)
+		}
 	}
-	// 外链不受 base_url 影响。
-	if got := StorageURL("https://cdn.example.com/x.jpg"); got != "https://cdn.example.com/x.jpg" {
-		t.Fatalf("外链被改写: %q", got)
+	if key := StorageKey("https://external.example/storage/482.jpg"); key != "" {
+		t.Fatalf("外链不应被认作本地附件: %q", key)
+	}
+	mediaBaseURL = ""
+	if got := StorageURL("482.jpg"); got != "" {
+		t.Fatalf("未初始化不能退回相对路径: %q", got)
 	}
 }
 

@@ -1,48 +1,10 @@
 // workbench/methods/controls/media.js — 媒体选择与图片列表控件（从 methods/inspector.js 提取）。
 
-import { commit, get } from './base.js';
+import { commit, get, set } from './base.js';
+import { createMediaField } from './media-field.js';
 
-// mediaControl 媒体选择控件：缩略图预览 + 媒体库选择 + 清除 + 外链粘贴（统一回填 URL）。
 export function mediaControl(ctx, label, path, ctl) {
-    var wrap = document.createElement('div'); wrap.className = 'wb-field';
-    var caption = document.createElement('label'); caption.textContent = label; wrap.appendChild(caption);
-    var val = get(ctx, path) == null ? '' : String(get(ctx, path));
-    var box = document.createElement('div');
-    box.className = 'wb-media-field' + (val ? ' has-image' : '');
-    var img = document.createElement('img'); img.alt = '';
-    var src = ctx.self.resolveAssetUrl(val);
-    if (src) img.src = src; else img.classList.add('is-empty');
-    var tip = document.createElement('span'); tip.className = 'wb-media-tip';
-    tip.textContent = src ? '' : '点击选择图片';
-    box.appendChild(img); box.appendChild(tip);
-    var ext = document.createElement('input'); ext.type='text'; ext.placeholder='或粘贴图片地址（https://…）';
-    ext.value = val;
-    function set(v, url) {
-        commit(ctx, path, v);
-        ext.value = v;
-        if (url) { img.src = url; img.classList.remove('is-empty'); tip.textContent = ''; }
-        else { img.src = ''; img.classList.add('is-empty'); tip.textContent = '点击选择图片'; }
-        box.classList.toggle('has-image', !!url);
-    }
-    box.addEventListener('click', function () {
-        ctx.self.openMediaPicker(function (u) {
-            set(u, u);
-        });
-    });
-    wrap.appendChild(box);
-    var row = document.createElement('div'); row.className = 'wb-media-row';
-    var pick = document.createElement('button'); pick.type='button'; pick.className='wb-btn wb-btn-secondary wb-btn-sm'; pick.textContent='媒体库';
-    pick.addEventListener('click', function(){ ctx.self.openMediaPicker(function(u){ set(u, u); }); });
-    var clear = document.createElement('button'); clear.type='button'; clear.className='wb-btn wb-btn-ghost wb-btn-sm'; clear.textContent='清除';
-    clear.addEventListener('click', function(){ set('', ''); });
-    row.appendChild(pick); row.appendChild(clear);
-    wrap.appendChild(row);
-    ext.addEventListener('change', function(){
-        var v = ext.value.trim();
-        set(v, v);
-    });
-    wrap.appendChild(ext);
-    ctx.panel.appendChild(wrap);
+    createMediaField(ctx, label, path, get(ctx, path), function (url) { commit(ctx, path, url); });
 }
 
 // mediaListControl 多图列表（后端 []string，媒体库逐张添加/移除；用于背景轮播）。

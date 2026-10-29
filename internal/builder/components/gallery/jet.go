@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"go_wp/internal/builder/core"
+	"go_wp/pkg/upload"
 )
 
 // CompileCSS 导出图集样式编译（复用 render 内部的 compileCSS）。
@@ -58,7 +59,7 @@ type View struct {
 	NextIcon string
 }
 
-// 访客面组件文案 key：site.component.{type}.{prop}（docs/06-D §10.3）。
+// 访客面组件文案 key：site.component.{type}.{prop}。
 const (
 	// TextKeyPrev 轮播「上一张」箭头的词条 key。
 	TextKeyPrev = "site.component.gallery.prev"
@@ -247,6 +248,7 @@ func resolveSourceContent(p *Props, content core.ContentResolver) (items []Item,
 func filterUnsafeItems(items []Item) []Item {
 	out := make([]Item, 0, len(items))
 	for _, it := range items {
+		it.URL = upload.StorageURL(it.URL)
 		if it.URL == "" || !core.IsSafeURL(it.URL) {
 			continue
 		}

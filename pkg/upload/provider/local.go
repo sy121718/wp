@@ -21,7 +21,6 @@ import (
 const (
 	localName       string = "local"
 	defaultLocalDir string = "public/storage"
-	defaultLocalURL string = "/storage"
 )
 
 type localProvider struct {
@@ -49,19 +48,18 @@ func (p *localProvider) Init(v *viper.Viper) error {
 	if p.inited {
 		return nil
 	}
+	baseURL, err := MediaBaseURL(v)
+	if err != nil {
+		return err
+	}
 
 	p.rootDir = filepath.Clean(defaultLocalDir)
-	p.baseURL = strings.TrimRight(strings.ReplaceAll(defaultLocalURL, "\\", "/"), "/")
+	p.baseURL = baseURL
 	if v != nil {
 		// upload.local_dir 可覆盖存储根目录（默认 public/storage），
 		// 测试环境用它指向临时目录，避免污染仓库目录。
 		if dir := strings.TrimSpace(v.GetString("upload.local_dir")); dir != "" {
 			p.rootDir = filepath.Clean(dir)
-		}
-		// upload.base_url 提供站点完整域名（如 http://localhost:8080），
-		// 拼接 /storage 作为资源前缀；未配置时保持相对路径 /storage
-		if siteURL := strings.TrimRight(strings.ReplaceAll(strings.TrimSpace(v.GetString("upload.base_url")), "\\", "/"), "/"); siteURL != "" {
-			p.baseURL = siteURL + p.baseURL
 		}
 		// 大小上限：GetSizeInBytes 支持 "10MB"/"1GB" 等可读格式；解析失败返回 0（不限制）。
 		p.maxSize = int64(v.GetSizeInBytes("upload.max_size"))

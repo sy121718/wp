@@ -2,6 +2,7 @@
 // 约定：所有函数首参为 ctx = { panel, node, self }；ctx.panel 可被临时改写（slot 填充 / 分组挂载）。
 
 import { wbColorPicker, optionLabel } from '../../core.js';
+import { createMediaField } from './media-field.js';
 
 export function get(ctx, path) {
     return path.split('.').reduce(function (value, key) { return value == null ? undefined : value[key]; }, ctx.node);
@@ -39,6 +40,10 @@ export function heading(ctx, text) {
 }
 
 export function field(ctx, label, path, kind, choices, after, extra) {
+    if (kind === 'input' && /\.(src|bgImage)$/.test(path)) {
+        createMediaField(ctx, label, path, get(ctx, path), function (url) { commit(ctx, path, url, after); });
+        return;
+    }
     var wrap = document.createElement('div'); wrap.className = 'wb-field';
     if (kind === 'segment') {
         // 分段按钮组:choices = [[value, text]],当前值高亮。
@@ -127,56 +132,7 @@ export function field(ctx, label, path, kind, choices, after, extra) {
     } else {
         wrap.appendChild(input);
     }
-    // 媒体类字段：缩略图预览 + 媒体库选择 + 清除（对齐 Elementor 图片控件）。
-    // src/bgImage 尾缀：直接回填 URL（画布/产物直出，构建期零解析）。
-    if (kind === 'input' && /\.(src|bgImage)$/.test(path)) {
-        var setPreview = function (url) {
-            previewImg.src = url || '';
-            previewImg.classList.toggle('is-empty', !previewImg.src);
-            previewTip.textContent = previewImg.src ? '' : '点击选择图片';
-        };
-        var applyPick = function (url) {
-            commit(ctx, path, url);
-            input.value = url;
-            setPreview(url);
-        };
-        var previewBox = document.createElement('div');
-        previewBox.className = 'wb-media-field' + (input.value ? ' has-image' : '');
-        var previewImg = document.createElement('img');
-        previewImg.alt = '';
-        var initialURL = ctx.self.resolveAssetUrl(input.value);
-        if (initialURL) previewImg.src = initialURL; else previewImg.classList.add('is-empty');
-        var pickFromPreview = function () {
-            ctx.self.openMediaPicker(applyPick);
-        };
-        previewBox.appendChild(previewImg);
-        var previewTip = document.createElement('span');
-        previewTip.className = 'wb-media-tip';
-        previewTip.textContent = initialURL ? '' : '点击选择图片';
-        previewBox.appendChild(previewTip);
-        previewBox.addEventListener('click', pickFromPreview);
-        var pickBtn = document.createElement('button');
-        pickBtn.type = 'button'; pickBtn.className = 'wb-btn wb-btn-secondary wb-btn-sm';
-        pickBtn.textContent = '媒体库';
-        pickBtn.addEventListener('click', pickFromPreview);
-        var clearBtn = document.createElement('button');
-        clearBtn.type = 'button'; clearBtn.className = 'wb-btn wb-btn-ghost wb-btn-sm';
-        clearBtn.textContent = '清除';
-        clearBtn.addEventListener('click', function () {
-            input.value = '';
-            commit(ctx, path, '');
-            previewImg.src = '';
-            previewImg.classList.add('is-empty');
-            previewTip.textContent = '点击选择图片';
-        });
-        var row = document.createElement('div'); row.className = 'wb-media-row';
-        row.appendChild(pickBtn); row.appendChild(clearBtn);
-        wrap.removeChild(input);
-        wrap.appendChild(previewBox);
-        wrap.appendChild(row);
-        ctx.panel.appendChild(wrap);
-        return;
-    }
+
     ctx.panel.appendChild(wrap);
 }
 

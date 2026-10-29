@@ -15,6 +15,7 @@ func newTempLocalProvider(t *testing.T) (Provider, string) {
 	t.Helper()
 	dir := t.TempDir()
 	v := viper.New()
+	v.Set("upload.base_url", "https://media.example.test")
 	v.Set("upload.local_dir", dir)
 	p := NewLocalProvider()
 	if err := p.Init(v); err != nil {

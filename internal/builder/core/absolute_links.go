@@ -15,14 +15,14 @@ package core
 //     碰不到组件输出、属性值、JSON-LD、<script> 里的字符串；
 //   · 输入已过 SanitizeRichHTML 白名单，只剩受控标签与 href/src 属性。
 //
-// 未配置站点基址（WP_SITE_BASE_URL 空）时原样返回：宁可留相对路径，
-// 也不能猜一个域名。
+// 本地媒体使用独立的可信媒体基址；其它站内链接使用站点基址。
 
 import (
 	"regexp"
 	"strings"
 
 	"go_wp/internal/seo"
+	"go_wp/pkg/upload"
 )
 
 // richRootRelativeAttrRe 富文本里需要绝对化的地址属性。
@@ -33,7 +33,7 @@ var richRootRelativeAttrRe = regexp.MustCompile(`(?i)\b(href|src)="(/[^"]*)"`)
 
 // AbsolutizeInternalLinks 把 HTML 片段里的站内根相对地址补成绝对 URL。
 func AbsolutizeInternalLinks(html string) string {
-	if html == "" || seo.SiteBaseURL() == "" || !strings.Contains(html, "=\"/") {
+	if html == "" || (seo.SiteBaseURL() == "" && upload.BaseURL() == "") || !strings.Contains(html, "=\"/") {
 		return html
 	}
 	return richRootRelativeAttrRe.ReplaceAllStringFunc(html, func(m string) string {
@@ -43,6 +43,9 @@ func AbsolutizeInternalLinks(html string) string {
 		}
 		if strings.HasPrefix(sub[2], "//") {
 			return m
+		}
+		if strings.EqualFold(sub[1], "src") && strings.HasPrefix(sub[2], "/storage/") {
+			return sub[1] + "=\"" + upload.StorageURL(sub[2]) + "\""
 		}
 		return sub[1] + "=\"" + seo.AbsoluteSiteURL(sub[2]) + "\""
 	})

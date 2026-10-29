@@ -17,6 +17,7 @@ import (
 	workbenchservice "go_wp/internal/module/workbench/service"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/safepath"
+	"go_wp/pkg/upload"
 	"go_wp/pkg/utils"
 )
 
@@ -73,11 +74,12 @@ func (h *Handle) Workbench(c *gin.Context) {
 	metaJSON, err := json.Marshal(gin.H{
 		// target 编辑目标描述符（EDT-017）：前端按它决定保存端点与请求体键名，
 		// 不认识任何一种目标类型 —— 新增目标时前端零改动。
-		"target":    workbenchTargetOf(EditTargetPage),
-		"pageId":    page.ID,
-		"projectId": page.ProjectID,
-		"draftPath": page.DraftPath,
-		"version":   page.DraftVersion,
+		"mediaBaseUrl": upload.BaseURL(),
+		"target":       workbenchTargetOf(EditTargetPage),
+		"pageId":       page.ID,
+		"projectId":    page.ProjectID,
+		"draftPath":    page.DraftPath,
+		"version":      page.DraftVersion,
 		// 全局块引用（core.globalref）候选：本工程全部块（组件库「全局块」分组）。
 		"blocks": h.svc.BlockSummaries(c.Request.Context(), page.ProjectID),
 		// 全局设置面板：页面挂接的主题与当前设置（颜色/字体），可就地修改保存。
@@ -146,14 +148,15 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 	}
 	meta := gin.H{
 		// target 编辑目标描述符（EDT-017）。
-		"target":    workbenchTargetOf(EditTargetBlock),
-		"pageId":    block.ID, // 复用键名：前端保存逻辑按 saveBase 切换接口
-		"projectId": block.ProjectID,
-		"saveBase":  "block",
-		"blockName": block.Name,
-		"kind":      block.Kind,
-		"draftPath": "",
-		"version":   0,
+		"mediaBaseUrl": upload.BaseURL(),
+		"target":       workbenchTargetOf(EditTargetBlock),
+		"pageId":       block.ID, // 复用键名：前端保存逻辑按 saveBase 切换接口
+		"projectId":    block.ProjectID,
+		"saveBase":     "block",
+		"blockName":    block.Name,
+		"kind":         block.Kind,
+		"draftPath":    "",
+		"version":      0,
 	}
 	// returnUrl：菜单页「新建面板块并编辑」一路带过来的回跳目标。
 	//
@@ -264,6 +267,7 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 	}
 	metaJSON, err := json.Marshal(gin.H{
 		// target 编辑目标描述符（EDT-017）。
+		"mediaBaseUrl": upload.BaseURL(),
 		"target":       workbenchTargetOf(EditTargetTemplate),
 		"pageId":       tpl.ID,
 		"saveBase":     "template",

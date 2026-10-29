@@ -32,6 +32,7 @@ func initMediaCenterUpload(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := viper.New()
+	cfg.Set("upload.base_url", "https://media.example.test")
 	cfg.Set("upload.default_provider", "local")
 	cfg.Set("upload.local_dir", dir)
 	if err := upload.Init(cfg); err != nil {
@@ -83,8 +84,8 @@ func TestMediaCenterStableNaming(t *testing.T) {
 	}
 
 	wantKey := fmt.Sprintf("%d.png", resp.ID)
-	if resp.URL != "/storage/"+wantKey {
-		t.Fatalf("URL 应按附件 ID 命名: got=%q want=%q", resp.URL, "/storage/"+wantKey)
+	if resp.URL != upload.BaseURL()+"/"+wantKey {
+		t.Fatalf("URL 应按附件 ID 命名: got=%q want=%q", resp.URL, upload.BaseURL()+"/"+wantKey)
 	}
 	var filePath string
 	if err := db.Raw("SELECT file_path FROM sys_attachment WHERE id = ?", resp.ID).Scan(&filePath).Error; err != nil {
@@ -161,7 +162,7 @@ func TestMediaCenterReplaceKeepsURLBumpsGeneration(t *testing.T) {
 		t.Fatalf("上传失败: %v", err)
 	}
 	urlBefore := first.URL
-	key := strings.TrimPrefix(urlBefore, "/storage/")
+	key := upload.StorageKey(urlBefore)
 
 	replaced, err := svc.Replace(ctx, first.ID, newUploadFileHeader(t, "photo-v2.png", "image/png", "v2-bytes-longer"))
 	if err != nil {
