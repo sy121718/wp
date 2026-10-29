@@ -68,7 +68,7 @@ export function openBusinessPreset(self, preset, meta) {
     form.setAttribute('data-write', 'custom');
     form.setAttribute('data-write-url', '/api/block/create');
     form.setAttribute('data-write-handler', 'workbench.presetCreate');
-    form.setAttribute('data-write-status', '#wb-business-preset-status');
+    form.setAttribute('data-msg-failed', '创建失败，请稍后重试。');
     const title = element('h3', 'wb-confirm-title', preset.label || '业务预设');
     title.id = 'wb-business-preset-title';
     const description = element('p', 'wb-confirm-msg', preset.description || '命名后创建可复用区块，再插入当前页面。以后可在全局块中直接引用。');
@@ -108,7 +108,7 @@ export function openBusinessPreset(self, preset, meta) {
         const input = element('input'); input.type = 'hidden'; input.name = key; input.value = String(fields[key]); form.append(input);
     });
     const status = element('p', 'wb-business-preset-status');
-    status.id = 'wb-business-preset-status'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+    status.id = 'wb-business-preset-status'; status.setAttribute('data-write-status', ''); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
     form.append(status);
     const actions = element('div', 'wb-confirm-actions');
     const cancel = element('button', 'btn', '取消'); cancel.type = 'button';

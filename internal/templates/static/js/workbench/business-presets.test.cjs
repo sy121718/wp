@@ -3,16 +3,21 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function setup(blocks = []) {
+function setup(blocks = [], options = {}) {
     let document;
     class Element {
         constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.events = {}; this.attributes = {}; this.isConnected = true; this.value = ''; this.textContent = ''; this.dataset = {}; this.style = {}; this.classList = {toggle(){}}; }
         append(...nodes) { nodes.forEach(node => { node.parent = this; this.children.push(node); }); }
         appendChild(node) { this.append(node); }
         setAttribute(key, value) { this.attributes[key] = value; }
-        getAttribute(key) { return this.attributes[key] ?? null; }
+        getAttribute(key) { return this.attributes[key] ?? (['name','type'].includes(key) ? this[key] ?? null : null); }
+        hasAttribute(key) { return key in this.attributes; }
+        removeAttribute(key) { delete this.attributes[key]; }
         addEventListener(key, fn) { this.events[key] = fn; }
-        querySelector(selector) { if (selector === '.wb-palette-icon') return {innerHTML:''}; return all(this).find(node => selector === '[name="name"]' && node.name === 'name'); }
+        querySelector(selector) { if (selector === '.wb-palette-icon') return {innerHTML:''}; return this.querySelectorAll(selector)[0] || null; }
+        querySelectorAll(selector) { return all(this).slice(1).filter(node => selector.split(',').some(part=>matches(node,part.trim()))); }
+        closest(selector) { for(let node=this;node;node=node.parent)if(matches(node,selector))return node;return null; }
+        dispatchEvent() {}
         focus() { document.activeElement = this; }
         select() { this.selected = true; }
         showModal() { this.open = true; }
@@ -20,8 +25,14 @@ function setup(blocks = []) {
         remove() { this.parent.children = this.parent.children.filter(node => node !== this); this.isConnected = false; }
         fire(key) { const event = { prevented:false, preventDefault() { this.prevented = true; } }; if (this.events[key]) this.events[key](event); return event; }
     }
+    function matches(node, selector) {
+        if(selector==='[name]')return !!node.name;
+        const attr=selector.match(/^(\w+)?\[([\w-]+)(?:="([^"]*)")?\]$/);
+        return !!attr && (!attr[1] || node.tagName===attr[1].toUpperCase()) && (attr[3]!==undefined ? node.getAttribute(attr[2])===attr[3] : node.hasAttribute(attr[2]));
+    }
     function all(root) { return [root, ...root.children.flatMap(all)]; }
-    document = { body:new Element('body'), activeElement:null, createElement:tag=>new Element(tag), createTextNode:text=>Object.assign(new Element('text'),{textContent:text}), getElementById:id=>all(document.body).find(node=>node.id===id) };
+    const listeners={};
+    document = { readyState:'loading',addEventListener:(name,fn)=>listeners[name]=fn,querySelector:()=>null,body:new Element('body'), activeElement:null, createElement:tag=>new Element(tag), createTextNode:text=>Object.assign(new Element('text'),{textContent:text}), getElementById:id=>all(document.body).find(node=>node.id===id) };
     const opener = new Element('button'); document.activeElement = opener;
     const handlers = new Map(), state = { inserts:[], notices:[], renders:0, edits:0, registrations:0 };
     const base = { registerResultHandler(name, fn) { assert.equal(handlers.has(name),false,'能力不能重复注册'); handlers.set(name,fn); state.registrations++; } };
@@ -34,11 +45,14 @@ function setup(blocks = []) {
     };
     const meta = {projectId:'project-A',blocks};
     const preset = {presetKey:'user.account',presetVersion:2,label:'账号中心',category:'general'};
-    const window = { WBUI:{writeBase:base} };
-    const sandbox = vm.createContext({document,window});
+    const window = options.realBase ? {} : { WBUI:{writeBase:base} };
+    const requests=[];
+    const sandbox = vm.createContext({document,window,FormData,CustomEvent:class{},fetch:async(url,opts)=>{requests.push({url,opts});const response=options.response;return{ok:response.ok,headers:{get:name=>name==='Content-Type'?'application/json':null},json:async()=>response.payload};}});
+    if(options.realBase){vm.runInContext(fs.readFileSync(__dirname+'/../ui/write-base.js','utf8'),sandbox);sandbox.WBUI=window.WBUI;}
     vm.runInContext(fs.readFileSync(__dirname+'/business-presets.js','utf8').replace(/export function /g,'function '),sandbox);
     function open() { sandbox.openBusinessPreset(self,preset,meta); return document.getElementById('wb-business-preset-dialog'); }
-    return {document,opener,handlers,state,self,meta,preset,window,open,all,sandbox};
+    async function submit(form){listeners.submit({target:form,preventDefault(){}});await new Promise(setImmediate);await new Promise(setImmediate);}
+    return {document,opener,handlers,state,self,meta,preset,window,open,all,sandbox,submit,requests};
 }
 
 test('首次命名只声明来源，省略文档并沿唯一写基座提交', () => {
@@ -114,4 +128,14 @@ test('真实调色板保留基础组件拖放，业务预设点击命名且元�
     const business=e.all(root).find(node=>node.className==='wb-palette-item wb-preset-item');
     assert.equal(business.draggable,false);assert.equal(business.events.dragstart,undefined);business.fire('click');
     assert.ok(e.document.getElementById('wb-business-preset-dialog'));assert.equal(e.state.inserts.length,0);
+});
+
+test('真实写基座的409与服务失败显示在命名弹窗内，保留名称和焦点、不插引用',async()=>{
+ for(const response of [{ok:false,payload:{code:409,message:'区块名称已存在',data:null}},{ok:false,payload:{code:500,message:'暂时无法保存',data:null}}]){
+  const e=setup([],{realBase:true,response}),dialog=e.open(),nodes=e.all(dialog),form=nodes.find(n=>n.tagName==='FORM'),name=nodes.find(n=>n.name==='name');
+  name.value='我刚填写的区块';name.focus();await e.submit(form);
+  assert.equal(e.requests.length,1);assert.equal(e.requests[0].url,'/api/block/create');assert.equal(e.requests[0].opts.body.get('name'),'我刚填写的区块');assert.equal(e.requests[0].opts.body.has('document'),false);
+  const status=nodes.find(n=>n.id==='wb-business-preset-status');assert.equal(status.textContent,response.payload.message);assert.equal(status.getAttribute('data-tone'),'error');assert.equal(status.hidden,false);
+  assert.equal(name.value,'我刚填写的区块');assert.equal(e.document.activeElement,name);assert.equal(dialog.open,true);assert.equal(e.state.inserts.length,0);assert.equal(form.getAttribute('aria-busy'),'false');
+ }
 });
