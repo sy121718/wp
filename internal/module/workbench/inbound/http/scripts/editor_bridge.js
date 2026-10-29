@@ -418,7 +418,7 @@
   }
   var stateStyle = document.createElement('style');
   stateStyle.textContent = [
-    '.wb-quick-label{font:500 11px/28px system-ui,sans-serif;padding:0 8px;max-width:180px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}',
+    '.wb-quick-label{color:#fff!important;font:500 11px/28px system-ui,sans-serif;padding:0 8px;max-width:180px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}',
     '.wb-quick-bar{background:#18181b!important;border-radius:5px!important;gap:0!important;}',
     '.wb-quick-bar button{color:#fff!important;min-width:28px;height:28px;}',
     'html:not([data-wb-preview]) [data-wb-hidden="true"]{display:block!important;opacity:.35;}',
