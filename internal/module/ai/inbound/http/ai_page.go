@@ -81,8 +81,26 @@ import (
 	pageview "go_wp/pkg/view"
 )
 
-// fabSessionKey 悬浮球的会话键（EnsureSession 按 userID 隔离，所以每个人一条）。
+// fabSessionKey 悬浮球会话键的**前缀**。
+//
+// 会话键在 ai_session 表上全局唯一（uk_ai_session_key），所以「每个人一条悬浮球会话」
+// 不能靠同一个常量 + 服务层按 userID 过滤来实现 —— 第一个人的那条会把 key 占住，
+// 后来者要么命中它（读别人的历史），要么报冲突。真实形态是**按用户派生 key**：
+//
+//	admin-fab:<userID>
+//
+// 服务层的归属校验（EnsureSession / RecentDialogue 比对 create_by）是第二道防线：
+// 即使有人手工构造出别人的 key，也读不到内容。
 const fabSessionKey = "admin-fab"
+
+// fabSessionKeyOf 按用户派生悬浮球会话键。
+//
+// 为什么不用「常量 + 服务层过滤」：uk_ai_session_key 是全局唯一约束，
+// 同一个常量只能存在一行。派生 key 让每个用户各占一行，唯一约束反而成了护栏
+// （同一用户并发提问时只会写入一条）。
+func fabSessionKeyOf(uid int64) string {
+	return fabSessionKey + ":" + strconv.FormatInt(uid, 10)
+}
 
 // fabInputLimit 一次提问的字符上限。
 //
@@ -118,13 +136,14 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 		truncated = true
 	}
 
+	uid := userID(c)
 	res, err := h.svc.SendMessage(c.Request.Context(), aidto.SendMessageReq{
-		SessionKey:  fabSessionKey,
+		SessionKey:  fabSessionKeyOf(uid),
 		ProviderKey: providerKey,
 		Model:       model,
 		Input:       composeFabInput(c, input),
 		UserText:    input,
-		UserID:      userID(c),
+		UserID:      uid,
 	})
 	if err != nil {
 		h.renderFabError(c, fabMsg(aienums.MsgFabFailed), c.PostForm("ctxPath"))
@@ -1315,7 +1334,7 @@ type sessionServicePort interface {
 	FoldPlan(ctx context.Context, req aidto.FoldPlanReq) (*aidto.FoldPlanResult, error)
 	SendMessage(ctx context.Context, req aidto.SendMessageReq) (*aidto.SendMessageResult, error)
 	SendMessageStream(ctx context.Context, req aidto.SendMessageReq, emit func(aiservice.StreamEvent)) (*aidto.SendMessageResult, error)
-	RecentDialogue(ctx context.Context, key string, limit int) ([]aidto.DialogueTurn, error)
+	RecentDialogue(ctx context.Context, key string, limit int, userID int64) ([]aidto.DialogueTurn, error)
 }
 
 // SessionPageHandle 会话管理页处理器。

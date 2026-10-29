@@ -146,7 +146,7 @@ func (s *aiSessionsRenderStub) SendMessageStream(context.Context, aidto.SendMess
 	return nil, errors.New("aiSessionsRenderStub: 用例不流式发消息")
 }
 
-func (s *aiSessionsRenderStub) RecentDialogue(context.Context, string, int) ([]aidto.DialogueTurn, error) {
+func (s *aiSessionsRenderStub) RecentDialogue(context.Context, string, int, int64) ([]aidto.DialogueTurn, error) {
 	return nil, errors.New("aiSessionsRenderStub: 用例不读最近对话")
 }
 

@@ -315,3 +315,79 @@ func TestAISessionConcurrentEnsureSameKeyKeepsSingleSession(t *testing.T) {
 		t.Fatalf("同一 key 的并发写入应只留一条会话，实际 %d 条", total)
 	}
 }
+
+// TestSessionIsolatedByOwner 同一把 session_key 在**不同用户**手里不能互相读到。
+//
+// 守的缺陷形态（SEC-05）：ai_session.session_key 是**全局唯一**，而 EnsureSession 与
+// RecentDialogue 此前只按 key 查、不比对 create_by —— 悬浮球那条固定 key
+// （admin-fab）于是成了所有人共用的一条会话：A 问过的问题，B 打开面板就看到全部历史。
+// 代码注释写着「按 userID 隔离」，实现里没有；这类"注释承诺了、代码没做"的缺陷
+// 只有断真实数据才抓得到。
+//
+// 两层防线各一条判据：
+//  1. EnsureSession：别人拿着同一把 key 续写，必须拿不到那条会话；
+//  2. RecentDialogue：即便 key 被猜到，也读不出别人的对话历史。
+func TestSessionIsolatedByOwner(t *testing.T) {
+	svc, db := newAISessionService(t)
+	ctx := context.Background()
+
+	const (
+		alice int64 = 1001
+		bob   int64 = 1002
+		key         = "admin-fab:1001" // Alice 派生出来的 key（Bob 不该能用）
+	)
+
+	// Alice 建会话并落一轮对话。
+	sess, err := svc.EnsureSession(ctx, key, "openai", "gpt-x", "Alice 的会话", alice)
+	if err != nil {
+		t.Fatalf("Alice 建会话失败: %v", err)
+	}
+	if sess.CreateBy != alice {
+		t.Fatalf("会话归属应为 %d，实际 %d", alice, sess.CreateBy)
+	}
+
+	if _, err := svc.AppendEvent(ctx, aidto.AppendEventReq{
+		SessionID: sess.ID, Kind: string(aienums.EventKindUser),
+		Content: "ALICE-SECRET-QUESTION",
+		UserID:  alice,
+	}); err != nil {
+		t.Fatalf("写 Alice 的用户事件失败: %v", err)
+	}
+
+	// ① Bob 用同一把 key 续写：必须被拒（归属不符按「不存在」处理）。
+	if _, err := svc.EnsureSession(ctx, key, "openai", "gpt-x", "Bob 想续写", bob); err == nil {
+		t.Fatal("Bob 拿 Alice 的 key 建/续会话竟然成功了 —— 会话归属没有校验")
+	}
+
+	// ② Bob 读历史：必须是空（不是 Alice 的内容，也不报错泄露"这把 key 有主"）。
+	turns, err := svc.RecentDialogue(ctx, key, 10, bob)
+	if err != nil {
+		t.Fatalf("读历史不该报错（归属不符按无会话处理），实际: %v", err)
+	}
+	for _, turn := range turns {
+		if strings.Contains(turn.Text, "ALICE-SECRET-QUESTION") {
+			t.Fatalf("Bob 读到了 Alice 的对话历史：%q", turn.Text)
+		}
+	}
+	if len(turns) != 0 {
+		t.Fatalf("Bob 不该看到任何轮次，实际 %d 条", len(turns))
+	}
+
+	// ③ Alice 自己读得到（证明上面不是"谁都读不到"）。
+	own, err := svc.RecentDialogue(ctx, key, 10, alice)
+	if err != nil {
+		t.Fatalf("Alice 读自己的历史失败: %v", err)
+	}
+	if len(own) == 0 {
+		t.Fatal("Alice 读不到自己的对话历史")
+	}
+
+	// ④ 会话总数仍是 1：Bob 那次失败没有偷偷建出第二条。
+	var count int64
+	if err := db.Model(&aimodel.AISessionEntity{}).Where("session_key = ?", key).Count(&count).Error; err != nil {
+		t.Fatalf("统计会话数失败: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("同一把 key 应只有 1 条会话，实际 %d", count)
+	}
+}

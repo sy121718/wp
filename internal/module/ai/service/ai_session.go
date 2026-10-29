@@ -161,6 +161,15 @@ func (s *SessionService) EnsureSession(ctx context.Context, key, providerKey, mo
 	if cur, err := s.model.FindSessionByKey(ctx, key); err != nil {
 		return nil, err
 	} else if cur != nil {
+		// **归属校验**（SEC-05）：session_key 在表上是全局唯一，所以同一把 key
+		// 在任何人手里都会命中同一条会话。此前这里只校验绑定（供应商/模型），
+		// 不看 create_by —— 于是「按 userID 隔离」只写在注释里（见 ai_page.go 的
+		// fabSessionKey 注释），实现上任何管理员都能续写并读到别人的对话。
+		// 归属不符按「不存在」处理而不是报错：报错等于告诉调用方"这把 key 有主"，
+		// 而对方本来就不该知道。
+		if cur.CreateBy != userID {
+			return nil, ErrSessionNotFound
+		}
 		// 命中已有会话时校验绑定是否一致：同一个会话键被换到别的供应商 / 模型上，
 		// 会让两个模型的历史与计量互相污染 —— 明确报错而不是静默复用。
 		if err := checkSessionBinding(cur, providerKey, modelID); err != nil {
@@ -1566,7 +1575,7 @@ const dialogueTurnLimit = 12
 // RecentDialogue 取会话键下最近的若干轮对话，按时间**正序**返回。
 //
 // 会话不存在或没有提问时返回 nil（不是错误）—— 首访就走这条路。
-func (s *SessionService) RecentDialogue(ctx context.Context, key string, limit int) ([]aidto.DialogueTurn, error) {
+func (s *SessionService) RecentDialogue(ctx context.Context, key string, limit int, userID int64) ([]aidto.DialogueTurn, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil, ErrSessionKeyMissing
@@ -1578,7 +1587,10 @@ func (s *SessionService) RecentDialogue(ctx context.Context, key string, limit i
 	if err != nil {
 		return nil, err
 	}
-	if sess == nil {
+	// **归属校验**（SEC-05）：历史里是用户与模型的全部对话原文，跨用户读到就是泄漏。
+	// 归属不符按「没有这条会话」返回（nil），与首访同形 —— 调用方无从区分
+	// "没问过" 与 "不是你的"，不给出可探测的信号。
+	if sess == nil || sess.CreateBy != userID {
 		return nil, nil
 	}
 
