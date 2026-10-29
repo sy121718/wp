@@ -28,5 +28,5 @@ func BuildView(p *Props, _, _ string) View {
 	return v
 }
 func (v View) DeclareFeatures() (attrs, classes []string) {
-	return []string{"data-user-form", "data-site-read", "data-site-view", "data-write"}, nil
+	return []string{"data-component-instance", "data-user-form", "data-site-read", "data-site-view", "data-write"}, nil
 }
