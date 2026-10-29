@@ -28,6 +28,7 @@ func artifactIndexHTML(t *testing.T, hash string) string {
 // TestPageArtifactHreflangPerLanguage 同一页两种语言的产物 head 各自输出
 // 互指链接（含 x-default 指向默认语言）。
 func TestPageArtifactHreflangPerLanguage(t *testing.T) {
+	t.Setenv("WP_SITE_BASE_URL", "https://page.example.test")
 	db, svc, projects, projectID := newPageService(t)
 	ctx := context.Background()
 	withLangPrefix(t)
@@ -43,7 +44,7 @@ func TestPageArtifactHreflangPerLanguage(t *testing.T) {
 	}
 
 	page := createPage(t, svc, projectID, "/about", headingDocument)
-	// 构建返回值不必留存：断言以 page_artifacts（真源）为准。
+	// 构建返回值不必留存：断言以 page_publications 当前激活记录为准。
 	_, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
 	if err != nil {
 		t.Fatalf("zh 构建失败: %v", err)
@@ -54,37 +55,31 @@ func TestPageArtifactHreflangPerLanguage(t *testing.T) {
 	}
 	// 互指 hreflang 要求两种语言都「在访问面上已发布」：只构建不发布时，
 	// 切换器与 hreflang 会把另一种语言当作尚不存在而省略（审计 I18N-021）。
-	// 发布顺序同样重要 —— 后发布的语言会让先前构建的产物落后，须重建一次。
+	// 后发布语言会自动刷新其它已发布语言，断言最终激活产物。
 	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID}); err != nil {
 		t.Fatalf("zh 发布失败: %v", err)
 	}
 	if _, err = svc.Publish(ctx, &pagedto.PublishReq{ID: page.ID, Lang: "en-US"}); err != nil {
 		t.Fatalf("en 发布失败: %v", err)
 	}
-	// en 发布之后 zh 的产物落后了（它的 hreflang 是在 en 尚未发布时生成的），
-	// 重建一次让它吸收 en 的存在 —— 静态站点的构建语义。
-	if _, err = svc.Build(ctx, &pagedto.BuildReq{ID: page.ID}); err != nil {
+	// 站点状态稳定后的重建应保持当前激活产物字节。
+	zhHash := activeHashOfLang(t, db, page.ID, "zh-CN")
+	built, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
+	if err != nil {
 		t.Fatalf("zh 重建失败: %v", err)
 	}
-
-	var arts []struct{ Lang, ArtifactHash string }
-	if err = db.Raw("SELECT lang, artifact_hash FROM page_artifacts WHERE page_id = ? ORDER BY lang", page.ID).
-		Scan(&arts).Error; err != nil {
-		t.Fatalf("查询产物行失败: %v", err)
-	}
-	latest := map[string]string{}
-	for _, a := range arts {
-		latest[a.Lang] = a.ArtifactHash
+	if built.StagedHash != zhHash {
+		t.Fatalf("稳定重建改变产物 hash: %s（当前激活 %s）", built.StagedHash, zhHash)
 	}
 
 	want := []string{
-		"hreflang=\"zh-CN\" href=\"/about\"",
-		"hreflang=\"en-US\" href=\"/en/about\"",
-		"hreflang=\"x-default\" href=\"/about\"",
+		"hreflang=\"zh-CN\" href=\"https://page.example.test/about\"",
+		"hreflang=\"en-US\" href=\"https://page.example.test/en/about\"",
+		"hreflang=\"x-default\" href=\"https://page.example.test/about\"",
 	}
 	for _, c := range []struct{ name, hash string }{
-		{"zh-CN", latest["zh-CN"]},
-		{"en-US", latest["en-US"]},
+		{"zh-CN", zhHash},
+		{"en-US", activeHashOfLang(t, db, page.ID, "en-US")},
 	} {
 		html := artifactIndexHTML(t, c.hash)
 		for _, w := range want {
