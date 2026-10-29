@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"go_wp/internal/builder"
+	"go_wp/internal/builder/core"
 	"go_wp/internal/templates"
 	"go_wp/pkg/logger"
 )
@@ -146,6 +147,8 @@ type CompileUsage struct {
 	// 文档内 globalref 由静态扫描登记，这里只收「文档外」的引用（面板块在 navigations 行上）。
 	// 漏记的表现是「改了面板块，带该面板的页面不重建」——菜单面板通常挂在页眉，全站可见。
 	Blocks map[string]bool
+	// ActionTargets 是组件实际读取成功的跨页动作目标。
+	ActionTargets map[core.ActionKind]map[string]bool
 	// siteLangs 本次发布冻结的站点语言表（审计 I18N-02，见 SetSiteLangs）。
 	siteLangs []string
 	// plan 本次发布冻结的发布计划（审计 I18N-01，见 SetPublicationPlan）。

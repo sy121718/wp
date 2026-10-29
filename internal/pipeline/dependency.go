@@ -44,6 +44,9 @@ const (
 	DepKindMedia = "media"
 	// DepKindBlock 全局块内容变化（页眉/页脚内联进产物）。
 	DepKindBlock = "block"
+	// 显式动作依赖目标的公开路径与发布状态。
+	DepKindPageTarget         = "page_target"
+	DepKindPresentationTarget = "presentation_target"
 	// DepKindSiteSlot 系统页面槽位（BIZ-1）换绑：产物里的链接路径烘在字节里。
 	//
 	// 与 DepKindBlock 的区别在于「依赖的是站点结构」而不是内容：页面文档里没有
