@@ -341,7 +341,7 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	// TargetLangs 非空时 published 不参与判定。预览（targetLangs 为空）沿用访问面口径：
 	// 预览没有「本次要上线谁」这件事，它面向的是线上现状 + 这份草稿内容。
 	siteOpts, serr := pipeline.SiteCompileOptions(pipeline.SiteCompilePorts{
-		Project: s.project, Navigation: s.navigation, SitePages: s.sitePages, MediaProbe: s.mediaProbe,
+		Project: s.project, Navigation: s.navigation, MediaProbe: s.mediaProbe,
 		RoutePublished: func(accessPath string) bool {
 			state, ierr := s.publication.Inspect(accessPath)
 			return ierr == nil && state != nil && state.Kind != "none"

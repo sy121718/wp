@@ -9,7 +9,6 @@ import (
 type globalrefUsage map[string]bool
 
 func (u globalrefUsage) UseBlock(id string)   { u[id] = true }
-func (u globalrefUsage) UseSiteSlot(string)   {}
 func (u globalrefUsage) UseMenu(string)       {}
 func (u globalrefUsage) UseNavigation(string) {}
 

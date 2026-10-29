@@ -2,7 +2,7 @@ package pipeline
 
 // compile_site.go — 站点级 CompileOption 装配（page / presentation 共用，EDT-003）。
 //
-// 基础层约定：凡「导航 / 槽位 / 当前路径 / hreflang / srcset」一律经
+// 基础层约定：凡「导航 / 当前路径 / hreflang / srcset」一律经
 // SiteCompileOptions 注入；page.compileDocument 与 presentation.renderHTML
 // 均调用此函数，禁止在模块内再写一份。模块差异项（插件、页眉页脚、实体解析器）
 // 在各自路径上追加即可。
@@ -14,7 +14,6 @@ import (
 	"go_wp/internal/builder"
 	mediacontract "go_wp/internal/module/media/contract"
 	navigationcontract "go_wp/internal/module/navigation/contract"
-	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/internal/seo"
 )
@@ -23,7 +22,6 @@ import (
 type SiteCompilePorts struct {
 	Project    projectcontract.ProjectService
 	Navigation navigationcontract.NavigationService
-	SitePages  pagecontract.SitePageResolver
 	// RoutePublished 报告某个访问路径是否真的已发布（审计 I18N-021，可空）。
 	//
 	// 可空是刻意的：为 nil 时语言切换器按「全部已发布」输出，行为与接入前逐字一致；
@@ -129,18 +127,6 @@ func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []bui
 			// 在重建后换掉菜单链接（与 hreflang 同一条失效）。
 			Rule: &rule, SiteLangs: inputs.SiteLangs,
 		}))
-	}
-	if ports.SitePages != nil {
-		if sitePages, serr := ports.SitePages.ResolveSitePages(p.Ctx, p.ProjectID, p.Lang); serr != nil {
-			return nil, serr
-		} else if len(sitePages) > 0 {
-			// 槽位值在**注入前**就补成绝对地址：组件拿到 ctx.SitePage("shop") 时
-			// 直接就是可用地址，不需要（也不应该）各自再拼一次基址。
-			for slot, href := range sitePages {
-				sitePages[slot] = AbsoluteSiteURL(href)
-			}
-			opts = append(opts, builder.WithSitePages(sitePages))
-		}
 	}
 	if lp := p.LogicalPath; lp != "" {
 		// 冻结输入随 ctx 回到内核并写进 Manifest（发布事实，审计 I18N-01/02）。

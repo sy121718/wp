@@ -124,16 +124,10 @@ type BuildInput struct {
 }
 
 // CompileUsage 收集编译期**真实消费**的产物依赖线索（审计 VIS-006）。
-//
-// 为什么必须构建期记录而不是静态推导：页面文档里没有「我用了系统页面槽位」这种声明，
-// 是否输出该链接取决于组件渲染时到底取了哪个槽位。静态扫节点类型要维护一张
-// 「组件 → 槽位」映射表，而那张表与渲染代码迟早漂移 —— 记录下来的是事实。
 type CompileUsage struct {
-	// SiteSlots 本次编译消费过的系统页面槽位集合。
-	SiteSlots map[string]bool
 	// Menus 本次编译消费过的导航位置集合（header / footer）。
 	//
-	// 与 SiteSlots 同一来源：core.nav 绑定菜单位置时经 RenderContext.UseMenu 记录。
+	// core.nav 绑定菜单位置时经 RenderContext.UseMenu 记录。
 	// 位置而不是菜单项 id —— 产物依赖的是「这个位置的菜单内容」，菜单项增删改都属于它。
 	Menus map[string]bool
 	// Navigations 本次编译消费过的**具体菜单项**集合（core.nav 绑定 navigation id 时）。
@@ -174,17 +168,6 @@ func (u *CompileUsage) UseContentTranslation() {
 		return
 	}
 	u.ContentTranslation = true
-}
-
-// UseSiteSlot 记录一次槽位消费（由 builder 的 RenderContext 在取值时调用）。
-func (u *CompileUsage) UseSiteSlot(slot string) {
-	if u == nil || slot == "" {
-		return
-	}
-	if u.SiteSlots == nil {
-		u.SiteSlots = map[string]bool{}
-	}
-	u.SiteSlots[slot] = true
 }
 
 // UseMenu 记录一次导航位置消费（由 builder 的 RenderContext 在取值时调用）。
@@ -254,19 +237,6 @@ func (u *CompileUsage) MenuList() []string {
 	out := make([]string, 0, len(u.Menus))
 	for kind := range u.Menus {
 		out = append(out, kind)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// SiteSlotList 已消费槽位的确定性排序列表。
-func (u *CompileUsage) SiteSlotList() []string {
-	if u == nil || len(u.SiteSlots) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(u.SiteSlots))
-	for slot := range u.SiteSlots {
-		out = append(out, slot)
 	}
 	sort.Strings(out)
 	return out

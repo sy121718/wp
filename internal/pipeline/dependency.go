@@ -47,11 +47,6 @@ const (
 	// 显式动作依赖目标的公开路径与发布状态。
 	DepKindPageTarget         = "page_target"
 	DepKindPresentationTarget = "presentation_target"
-	// DepKindSiteSlot 系统页面槽位（BIZ-1）换绑：产物里的链接路径烘在字节里。
-	//
-	// 与 DepKindBlock 的区别在于「依赖的是站点结构」而不是内容：页面文档里没有
-	// 「我用了购物车槽位」这种声明，因此这条依赖只能由构建期记录（VIS-006）。
-	DepKindSiteSlot = "site_slot"
 	// DepKindSiteSetting 站点/工程设置变化。
 	DepKindSiteSetting = "site_setting"
 	// DepKindI18N 界面词条或内容译文变化（构建期取词进产物字节）。
@@ -96,11 +91,6 @@ func ContentTemplateKey(templateID string) DepKey {
 }
 
 // BlockKey 全局块依赖键，如 block:{blockID}。
-// SiteSlotKey 系统页面槽位的依赖键（槽位名，如 cart / checkout）。
-func SiteSlotKey(slot string) DepKey {
-	return DepKey{Kind: DepKindSiteSlot, Key: slot}
-}
-
 func BlockKey(blockID string) DepKey {
 	return DepKey{Kind: DepKindBlock, Key: "block:" + blockID}
 }

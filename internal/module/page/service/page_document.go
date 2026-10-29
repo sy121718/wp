@@ -737,7 +737,7 @@ func (s *Service) assembleCompile(ctx context.Context, in pipeline.BuildInput) (
 	projectID, currentPath := s.pageContextOfWithDefault(ctx, in.PageID, in.Lang, planDefaultLang(in.Plan))
 	// 语言来自构建输入（内核按 PageRecord.Lang 注入，见 pipeline.BuildInput）；
 	// 访问路径仍取页面记录的逻辑路径，前缀在 compileDocument 内单点计算。
-	// 依赖线索记录器（审计 VIS-006）：构建路径传入，编译期记录消费过的系统页面槽位。
+	// 依赖线索记录器（审计 VIS-006）：构建路径传入，编译期记录消费过的显式动作目标与菜单。
 	// 发布模式（CompileModePublish）：显式绑定但拿不到的结构依赖让本次构建失败。
 	// 归因收集器来自内核的 BuildInput（与 Usage 同一条路子），编译期填充、由内核写进 Manifest。
 	// 发布计划同样来自构建输入（审计 I18N-01）：它是这次构建的站点环境的一部分，
@@ -861,7 +861,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 		mediaProbe = s.media.ProbeImageVariants
 	}
 	siteOpts, serr := pipeline.SiteCompileOptions(pipeline.SiteCompilePorts{
-		Project: s.project, Navigation: s.navigation, SitePages: s, MediaProbe: mediaProbe,
+		Project: s.project, Navigation: s.navigation, MediaProbe: mediaProbe,
 		// 语言切换器的发布状态查询（审计 I18N-021）：已登记但未发布的语言不进切换器 ——
 		// 那不是「暂时没有内容」，而是一个必然 404 的链接。
 		//

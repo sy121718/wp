@@ -71,21 +71,7 @@ type RenderContext struct {
 	// ProjectID 本次编译所属站点工程 ID：导航等「站点级资源」按它取数据。
 	// 页面文档本身不携带工程 ID，由装配层（page service）从 pages 表注入。
 	ProjectID string
-	// SitePages 系统页面槽位 → **当前语言**的线上路径（BIZ-1）。
-	//
-	// 来源：page_site_slots 绑定 + page_publications 激活状态，装配层解析后注入，
-	// 构建与片段层共用同一份解析（各解一次迟早分叉）。
-	//
-	// **只含已绑且已发布的槽位**：没有条目就是「这个站还没指定结算页」，
-	// 组件据此不输出链接，而不是猜一个默认路径 —— 猜错的链接比没有链接难查得多。
-	//
-	// 路径已是最终访问路径（含语言前缀），组件不要自己再拼语言前缀：
-	// 那是 pipeline.LangURLRule 的唯一职责，各处手拼是既有明文禁令。
-	// 私有 + 只经 SitePage(slot) 读取：直接读 map 会漏记「本页用了这个槽位」，
-	// 而漏记的后果是槽位换绑后该页不被标记待重建 —— 产物里的链接仍指向旧路径，
-	// 页面上看不出任何异常（详见 VIS-006）。
-	sitePages map[string]string
-	// usage 渲染期依赖线索记录器（可选）：取值时记录消费过的槽位。
+	// usage 渲染期依赖线索记录器（可选）：记录实际消费的导航、区块与动作目标。
 	usage UsageRecorder
 	// archiveEntityType / archiveEntityID 当前归档实例的实体（审计 EDT-004）。
 	//
@@ -331,16 +317,13 @@ type NavigationResolver interface {
 	ResolveNavigation(projectID, navigationID string) ([]NavigationItem, error)
 }
 
-// 系统页面槽位键（BIZ-1）。
-//
 // UsageRecorder 记录渲染期**真实消费**的依赖线索（审计 VIS-006）。
 //
 // 由 pipeline 侧的收集器实现；core 只声明接口，不认识具体实现（避免反向 import）。
 type UsageRecorder interface {
-	UseSiteSlot(slot string)
 	// UseMenu 记录一次导航菜单消费（菜单位置 header / footer）。
 	//
-	// 与 UseSiteSlot 同一理由：页面文档里「绑定了导航位置」这件事要经渲染才算数，
+	// 页面文档里「绑定了导航位置」这件事要经渲染才算数，
 	// 记录下来的才是事实（静态扫节点类型要维护一张「组件 → 依赖」映射表，迟早漂移）。
 	UseMenu(kind string)
 	// UseNavigation 记录一次「按具体菜单项」的导航消费（规则同 UseMenu）。
@@ -468,14 +451,6 @@ func SiteLinkOrSame(siteLink func(string) string, href string) string {
 	return siteLink(href)
 }
 
-// SetSitePages 注入槽位 → 当前语言线上路径映射（由 builder 装配期调用）。
-func (c *RenderContext) SetSitePages(pages map[string]string) {
-	if c == nil {
-		return
-	}
-	c.sitePages = pages
-}
-
 // SetUsageRecorder 注入依赖线索记录器（未注入时渲染路径只取值、不记录）。
 func (c *RenderContext) SetUsageRecorder(r UsageRecorder) {
 	if c == nil {
@@ -484,23 +459,9 @@ func (c *RenderContext) SetUsageRecorder(r UsageRecorder) {
 	c.usage = r
 }
 
-// SitePage 取槽位当前语言的线上路径，**并记录本次渲染消费了该槽位**。
-//
-// 记录放在取值这一步而不是调用方：漏记的表现是「改了槽位绑定，引用它的页面不被标记
-// 待重建」，站点上旧链接继续生效且无人报错。取值即记录之后，新增消费点自动被覆盖。
-func (c *RenderContext) SitePage(slot string) string {
-	if c == nil {
-		return ""
-	}
-	if c.usage != nil && slot != "" {
-		c.usage.UseSiteSlot(slot)
-	}
-	return c.sitePages[slot]
-}
-
 // UseMenu 记录一次导航菜单消费（菜单位置 header / footer）。
 //
-// 记录时机与 SitePage 同源（审计 VIS-006 的口径）：**取值即记录**。
+// 记录时机（审计 VIS-006）：**取值即记录**。
 // 漏记的表现是「改了导航，引用它的页面不被标记待重建」—— 导航在页眉/页脚，
 // 全站可见，产物里却一直是旧链接，且没有任何报错。
 // 未注入收集器时（预览 / 单测直连）是空操作，调用方不必自己判断。

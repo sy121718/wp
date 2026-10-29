@@ -143,9 +143,7 @@ type compileConfig struct {
 	navigation    core.NavigationResolver
 	projectID     string
 	currentPath   string
-	// sitePages 系统页面槽位 → 当前语言线上路径（BIZ-1，装配层解析后传入）。
-	sitePages map[string]string
-	// usage 依赖线索记录器（可选，审计 VIS-006）：编译期记录消费过的系统页面槽位。
+	// usage 依赖线索记录器（可选，审计 VIS-006）：编译期记录实际消费的导航、区块和动作目标。
 	usage core.UsageRecorder
 	// archiveEntityType / archiveEntityID 当前归档实例的实体（审计 EDT-004）：
 	// 归档页里的集合组件据此取筛选值，而不是把筛选条件写死在 Props 里。
@@ -368,15 +366,6 @@ func WithAssetProbe(fn func(string) []mediacontract.VariantRef) CompileOption {
 // 为空表示未知（如块预览），导航不标记当前项。
 func WithCurrentPath(path string) CompileOption {
 	return func(c *compileConfig) { c.currentPath = path }
-}
-
-// WithSitePages 注入系统页面槽位 → 当前语言线上路径（BIZ-1）。
-//
-// 由装配层经 page.ResolveSitePages 解析后传入（只含已绑且已发布的槽位）；
-// 未注入或为空时，依赖槽位的组件不输出链接 —— 这是**正常状态**（新站还没配），
-// 不是错误，所以不报构建失败。
-func WithSitePages(pages map[string]string) CompileOption {
-	return func(c *compileConfig) { c.sitePages = pages }
 }
 
 // WithThemeSettings 注入主题设置（主题色编译为 :root CSS 变量进产物 head，
@@ -696,8 +685,6 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		CanvasSlotFrames: cfg.canvasSlotFrames,
 	}
 	ctx.Block = snapshotBlockReads(ctx.Block)
-	// 槽位映射与依赖线索记录器走 setter：sitePages 是私有的（取值即记录，见 core.SitePage）。
-	ctx.SetSitePages(cfg.sitePages)
 	ctx.SetUsageRecorder(cfg.usage)
 	// 引用失败策略（审计 ARCH-05）：发布期「显式绑定但拿不到」直接失败，
 	// 预览期降级为带归因的占位；两种情况都经收集器留痕（若注入了收集器）。
