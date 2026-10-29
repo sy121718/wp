@@ -9,7 +9,7 @@ import (
 )
 
 func TestWorkbenchActionTargetAvailabilitySeedPreparesAndReplays(t *testing.T) {
-	seed := findSeedByVersion(t, "695-workbench-action-target-availability-i18n")
+	seed := findSeedByVersion(t, "695a-workbench-action-target-availability-i18n")
 	db := support.NewMigratedPGTestDB(t)
 	if err := db.Connection(func(conn *gorm.DB) error {
 		if err := conn.Exec("PREPARE workbench_action_target_seed AS " + seed.SQL).Error; err != nil {
