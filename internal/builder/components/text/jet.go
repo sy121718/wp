@@ -61,8 +61,11 @@ func BuildView(p *Props, content core.ContentResolver) (View, error) {
 		return View{IsPlain: true, PlainTag: plainTag, Text: c}, nil
 	}
 
-	// 清洗后补绝对地址：正文是内容作者写的 HTML，站内链接只能在构建期归一
-	// （组件输出的链接各自在自己的数据入口就已是绝对，见 core.AbsolutizeInternalLinks）。
+	// 动态绑定与静态内容共用媒体地址规则；未知相对地址不能随当前页面猜域名。
+	c, err := core.NormalizeRichMediaURLs(c)
+	if err != nil {
+		return View{}, fmt.Errorf("正文内容: %w", err)
+	}
 	rich := core.AbsolutizeInternalLinks(sanitizeRichHTML(c))
 	if p.Excerpt > 0 {
 		rich = html.EscapeString(truncateRunes(stripRichTags(c), p.Excerpt))

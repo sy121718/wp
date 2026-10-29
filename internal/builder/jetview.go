@@ -271,6 +271,9 @@ func decodeProps[P any](node *core.Node) (P, error) {
 	if err != nil {
 		return p, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
 	}
+	if err := core.NormalizeRichMediaProps(&p); err != nil {
+		return p, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
 	return p, nil
 }
 

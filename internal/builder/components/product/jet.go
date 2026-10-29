@@ -274,7 +274,11 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string, s
 			rawComparePrice = strings.TrimSpace(value)
 			view.HasComparePrice, view.ComparePrice = true, view.Currency+rawComparePrice
 		case slotDescription:
-			view.HasDescription, view.DescriptionHTML = true, core.RichTextHTML(value)
+			normalized, err := core.NormalizeRichMediaURLs(value)
+			if err != nil {
+				return View{}, fmt.Errorf("商品描述字段 %s: %w", s.Field, err)
+			}
+			view.HasDescription, view.DescriptionHTML = true, core.RichTextHTML(normalized)
 		case slotOptions:
 			rawOptions = value
 		case slotVariants:
