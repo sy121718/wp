@@ -1,7 +1,11 @@
 // Package blockenums 统一管理 block 模块响应消息与错误消息。
 package blockenums
 
-import "go_wp/pkg/facing"
+import (
+	"net/http"
+
+	"go_wp/pkg/facing"
+)
 
 const (
 	MsgBlockTitle = "MsgBlockTitle" // 全局块
@@ -12,12 +16,14 @@ const (
 	// ErrBlockProjectRequired 缺可作用域的工程（DB-009）：只带 id 的入口要逐工程定位归属，
 	// 而工程清单为空或读不到。显式失败而不是静默返回「块不存在」——后者会把
 	// 「读不到工程表」伪装成「块不存在」。
-	ErrBlockProjectRequired = "ErrBlockProjectRequired" // 缺少可作用域的工程，无法定位块的工程归属
-	ErrBlockNameRequired    = "ErrBlockNameRequired"    // 块名称不能为空
-	ErrBlockInvalidDoc      = "ErrBlockInvalidDoc"      // 块文档不合法
-	ErrBlockInvalidKind     = "ErrBlockInvalidKind"     // 块类型不合法
-	ErrBlockInvalidCategory = "ErrBlockInvalidCategory" // 块分类不合法
-	ErrBlockDuplicate       = "ErrBlockDuplicate"       // 同名块已存在
+	ErrBlockProjectRequired   = "ErrBlockProjectRequired"   // 缺少可作用域的工程，无法定位块的工程归属
+	ErrBlockNameRequired      = "ErrBlockNameRequired"      // 块名称不能为空
+	ErrBlockInvalidDoc        = "ErrBlockInvalidDoc"        // 块文档不合法
+	ErrBlockInvalidKind       = "ErrBlockInvalidKind"       // 块类型不合法
+	ErrBlockInvalidCategory   = "ErrBlockInvalidCategory"   // 块分类不合法
+	ErrBlockDuplicate         = "ErrBlockDuplicate"         // 同名块已存在
+	ErrBlockPresetInvalid     = "ErrBlockPresetInvalid"     // 预设来源与文档组合不合法
+	ErrBlockPresetUnavailable = "ErrBlockPresetUnavailable" // 所选预设或版本不可用
 
 	// ErrBlockVersionConflict 保存时 expectedVersion 与库里不一致（B2：并发编辑同一全局块）。
 	//
@@ -85,22 +91,35 @@ const (
 //
 // 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
 var errFallbacks = map[string]string{
-	ErrBlockVersionConflict:  "该全局块已被其他人修改（当前第 %s 版），请刷新后重试",
-	ErrBlockParamRequired:    "块参数不能为空",
-	ErrBlockNotFound:         "全局块不存在",
-	ErrProjectNotFound:       "工程不存在",
-	ErrBlockProjectRequired:  "缺少可作用域的站点工程，无法定位全局块的工程归属",
-	ErrBlockNameRequired:     "块名称不能为空",
-	ErrBlockInvalidDoc:       "块文档不合法",
-	ErrBlockInvalidKind:      "块类型不合法",
-	ErrBlockInvalidCategory:  "块分类不合法",
-	ErrBlockDuplicate:        "同名块已存在",
-	ErrBlockInvalidReuseMode: "块复用方式不合法（仅支持 global/template）",
-	ErrBlockInUse:            "全局块已被页面或主题引用，无法删除或切换为一次性复制；可强制删除（引用页面将退化为无该块）",
+	ErrBlockVersionConflict:   "该全局块已被其他人修改（当前第 %s 版），请刷新后重试",
+	ErrBlockParamRequired:     "块参数不能为空",
+	ErrBlockNotFound:          "全局块不存在",
+	ErrProjectNotFound:        "工程不存在",
+	ErrBlockProjectRequired:   "缺少可作用域的站点工程，无法定位全局块的工程归属",
+	ErrBlockNameRequired:      "块名称不能为空",
+	ErrBlockInvalidDoc:        "块文档不合法",
+	ErrBlockInvalidKind:       "块类型不合法",
+	ErrBlockInvalidCategory:   "块分类不合法",
+	ErrBlockDuplicate:         "同名块已存在",
+	ErrBlockPresetInvalid:     "预设标识、版本或文档组合不合法",
+	ErrBlockPresetUnavailable: "所选预设或版本不可用",
+	ErrBlockInvalidReuseMode:  "块复用方式不合法（仅支持 global/template）",
+	ErrBlockInUse:             "全局块已被页面或主题引用，无法删除或切换为一次性复制；可强制删除（引用页面将退化为无该块）",
 }
 
 // Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
-func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+func Err(key string) error {
+	err := facing.New(key, errFallbacks[key])
+	switch key {
+	case ErrBlockNotFound, ErrProjectNotFound:
+		return facing.WithStatus(err, http.StatusNotFound)
+	case ErrBlockDuplicate, ErrBlockInUse, ErrBlockVersionConflict:
+		return facing.WithStatus(err, http.StatusConflict)
+	case ErrBlockPresetInvalid, ErrBlockPresetUnavailable:
+		return facing.WithStatus(err, http.StatusBadRequest)
+	}
+	return err
+}
 
 // FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
 // 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。

@@ -70,6 +70,8 @@ var (
 	ErrInvalidCategory = blockenums.Err(blockenums.ErrBlockInvalidCategory)
 	// ErrDuplicate 同工程同名块已存在。
 	ErrDuplicate = blockenums.Err(blockenums.ErrBlockDuplicate)
+	// ErrPresetUnavailable 指定的受控预设或版本不存在（400），不降级为空文档。
+	ErrPresetUnavailable = blockenums.Err(blockenums.ErrBlockPresetUnavailable)
 	// ErrInvalidReuseMode 块复用方式不合法（非 global/template）。
 	ErrInvalidReuseMode = blockenums.Err(blockenums.ErrBlockInvalidReuseMode)
 	// ErrBlockInUse global 块仍被页面/主题引用：删除或切换 global→template 前须先解除引用或 Force。

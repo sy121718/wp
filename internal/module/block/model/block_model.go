@@ -118,7 +118,7 @@ func (m *Model) ListByProject(ctx context.Context, projectID, kind, category, re
 
 // ExistsByName 判断工程下是否已存在同名块（大小写不敏感，参数化单条查询）。
 // 用于 Create 前判重：避免拉全量 Document(jsonb) 大字段后在内存 EqualFold。
-// 注意：并发下同名仍可能穿透（需 DB 唯一索引兜底，见 service 层说明）。
+// 并发通过预检后由迁移038的同工程LOWER(name)唯一索引兜底。
 func (m *Model) ExistsByName(ctx context.Context, projectID, name string) (exists bool, err error) {
 	var count int64
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {

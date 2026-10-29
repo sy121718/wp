@@ -152,6 +152,15 @@
 .wb-media-cell img { width: 100%; height: 84px; object-fit: cover; border-radius: 5px; display: block; background: #f3f4f6; }
 .wb-media-cell span { display: block; margin-top: 4px; font-size: 11px; color: var(--sky-c-text-mute, #6b7280); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wb-field { position: relative; }
+
+/* 业务预设首次创建：沿用原生dialog与工作台控件，不另建弹层系统。 */
+.wb-business-preset-dialog { width: min(92vw, 420px); }
+.wb-business-preset-dialog .wb-field input { box-sizing: border-box; min-height: 40px; }
+.wb-business-preset-dialog .wb-field .wb-confirm-msg { margin-top: 8px; }
+.wb-business-preset-existing { display: flex; flex-wrap: wrap; gap: 8px; }
+.wb-business-preset-existing p { flex-basis: 100%; }
+.wb-business-preset-status { margin: 0; min-height: 20px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.wb-business-preset-status[data-tone="error"] { color: var(--sky-c-danger, #b91c1c); }
 /* 输入框与媒体按钮同行:按钮绝对定位右侧,输入框留出空间 */
 /* ===== 组件库插入位置提示 ===== */
 .wb-library-hint {

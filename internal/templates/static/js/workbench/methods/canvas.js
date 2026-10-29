@@ -5,6 +5,7 @@ import {
 } from '../core.js';
 
 import { starterPresets } from '../starter-presets.js';
+import { openBusinessPreset, presetIdentity } from '../business-presets.js';
 import { libraryCategories, categoryOf, elementAppearance, initialInspectorTabOf } from '../experience.js';
 
 export const canvasMethods = {
@@ -161,7 +162,8 @@ export const canvasMethods = {
                     var button = document.createElement('button');
                     button.type = 'button';
                     button.className = 'wb-palette-item wb-preset-item';
-                    button.draggable = true;
+                    // 首次业务预设先命名；创建后的全局块沿用原拖放入口。
+                    button.draggable = !p.presetKey;
                     // 有缩略图显示图，无则仅文字（label 恒显示）。
                     if (p.thumbnail) {
                         var img = document.createElement('img');
@@ -178,17 +180,17 @@ export const canvasMethods = {
                     strong.textContent = p.label || p.id;
                     button.appendChild(strong);
                     var span = document.createElement('span');
-                    span.textContent = p.category || '区块预设';
+                    span.textContent = p.presetKey ? '业务预设 · 创建后可复用' : (p.category || '区块预设');
                     button.appendChild(span);
                     button.addEventListener('click', function () {
                         self.insertPreset(p);
                         self.showEdit();
                     });
-                    button.addEventListener('dragstart', function (event) {
-                        // 预设拖拽：复用 globalref 的 id 传值机制（document 已在
+                    if (!p.presetKey) button.addEventListener('dragstart', function (event) {
+                        // 展示预设拖拽：复用 globalref 的 id 传值机制（document 已在
                         // meta.presets 内存中，无需把整段 AST 序列化进 DataTransfer）。
                         event.dataTransfer.effectAllowed = 'copy';
-                        event.dataTransfer.setData('application/x-wb-preset', p.id);
+                        event.dataTransfer.setData('application/x-wb-preset', presetIdentity(p));
                     });
                     return button;
                 }
@@ -202,7 +204,7 @@ export const canvasMethods = {
                 });
                 // 区块预设分组：插件 manifest 声明的预组合 AST 片段（docs/06 §5.2），
                 // 作为独立分组挂在组件页签末尾，一键插入整段结构。
-                var presets = starterPresets.concat(meta.presets || []);
+                var presets = starterPresets.concat(meta.presets || [], meta.businessPresets || []);
                 if (presets.length && (f || this.libraryCategory === 'presets' || this.libraryCategory === 'all')) {
                     makeGroup('区块预设', 'presets', function () {
                         return presets.filter(function (p) {
@@ -419,6 +421,7 @@ export const canvasMethods = {
             // 与 insertComponent 互补：insertComponent 插入单个 paletteItem，本方法插入整段。
             insertPreset(preset) {
                 if (!preset) return;
+                if (preset.presetKey) { openBusinessPreset(this, preset, meta); return; }
                 var nodes = preset.document;
                 if (!Array.isArray(nodes) || !nodes.length) return;
                 this.snapshot();
@@ -620,7 +623,7 @@ export const canvasMethods = {
                     // 预设拖入：按 id 找回预设并整段插入（与点击一致的顶级平铺）。
                     var presetID = event.dataTransfer.getData('application/x-wb-preset');
                     if (presetID) {
-                        var preset = starterPresets.concat(meta.presets || []).filter(function (x) { return x.id === presetID; })[0];
+                        var preset = starterPresets.concat(meta.presets || [], meta.businessPresets || []).filter(function (x) { return presetIdentity(x) === presetID; })[0];
                         if (preset) self.insertPreset(preset);
                         return;
                     }

@@ -47,4 +47,7 @@ type BlockResp struct {
 	// Version 当前并发版本（B2）。前端保存时把它原样带回来当 expectedVersion，
 	// 编辑器不需要自己维护一个计数器 —— 那会让"编辑器的计数"与"库里的版本"成为两个真源。
 	Version int64 `json:"version"`
+	// 来源是存储事实，用于工作台显式选择已有实例，不由前端猜文档内容。
+	PresetKey     *string `json:"presetKey,omitempty"`
+	PresetVersion *int    `json:"presetVersion,omitempty"`
 }

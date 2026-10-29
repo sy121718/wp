@@ -1,6 +1,10 @@
 package blockdto
 
 import (
+	"net/url"
+	"unicode/utf8"
+
+	blockenums "go_wp/internal/module/block/enums"
 	json "go_wp/pkg/jsonx"
 )
 
@@ -11,7 +15,33 @@ type CreateReq struct {
 	Kind      string          `json:"kind" form:"kind"`           // docs/02-D §4 类型白名单，默认 block
 	Category  string          `json:"category" form:"category"`   // 自由分类（默认 general），白名单 ^[a-z0-9_-]{1,50}$
 	ReuseMode string          `json:"reuseMode" form:"reuseMode"` // global（默认） | template，docs/02-D §5
-	Document  json.RawMessage `json:"document" form:"document"`
+	Document  json.RawMessage `json:"document" form:"-" binding:"excluded_with=PresetKey"`
+	// 业务预设只提交来源，文档由受控注册解析；不允许客户端覆盖预设AST。
+	PresetKey     string `json:"presetKey,omitempty" form:"presetKey" binding:"required_with=PresetVersion,max=100"`
+	PresetVersion int    `json:"presetVersion,omitempty" form:"presetVersion" binding:"required_with=PresetKey,excluded_without=PresetKey,omitempty,min=1,max=2147483647"`
+}
+
+// Validate 校验预设来源与文档互斥；service直连、MCP同样执行此请求约束。
+func (r *CreateReq) Validate() error {
+	if r.PresetKey == "" {
+		if r.PresetVersion == 0 {
+			return nil
+		}
+	} else if utf8.RuneCountInString(r.PresetKey) <= 100 && r.PresetVersion > 0 && r.PresetVersion <= 2147483647 && len(r.Document) == 0 {
+		return nil
+	}
+	return blockenums.Err(blockenums.ErrBlockPresetInvalid)
+}
+
+// BindForm 补绑定RawMessage；JSON仍由binding.JSON按原生值绑定。
+func (r *CreateReq) BindForm(values url.Values) error {
+	if documents, present := values["document"]; present {
+		if r.PresetKey != "" || len(documents) != 1 {
+			return blockenums.Err(blockenums.ErrBlockPresetInvalid)
+		}
+		r.Document = json.RawMessage(documents[0])
+	}
+	return r.Validate()
 }
 
 // UpdateReq 更新全局块请求（编辑器整树保存）。

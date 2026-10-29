@@ -43,8 +43,9 @@ var _ blockcontract.BlockService = (*Service)(nil)
 
 // Service 全局块业务服务：跨页面复用的结构片段（页眉/页脚/区块）。
 type Service struct {
-	model    *blockmodel.Model
-	projects projectcontract.ProjectService
+	presetResolver blockcontract.PresetResolver
+	model          *blockmodel.Model
+	projects       projectcontract.ProjectService
 	// propagate 全局块内容变更/删除后的 stale 传播器（编排层注入，可空）。
 	// block 不直接依赖 page 模块，传播由注入的回调完成，避免 block↔page 装配循环。
 	propagate func(ctx context.Context, blockID string) error

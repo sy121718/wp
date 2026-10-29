@@ -24,6 +24,7 @@ import (
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
 	blockmodel "go_wp/internal/module/block/model"
+	"go_wp/pkg/database"
 	"go_wp/pkg/facing"
 	"go_wp/pkg/utils"
 )
@@ -108,12 +109,12 @@ func (s *Service) Create(ctx context.Context, req *blockdto.CreateReq) (res *blo
 	if err != nil {
 		return nil, err
 	}
-	document, err := validateDocument(req.Document)
+	document, err := s.resolveCreateDocument(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	// 判重：参数化单条查询（LOWER(name)），避免拉全量 Document(jsonb) 后内存 EqualFold。
-	// 并发下同名仍可能穿透（需 DB 唯一索引兜底，见 model 层 ExistsByName 说明）。
+	// 并发通过预检后由迁移038的唯一索引兜底，冲突仍按同名拒绝。
 	exists, err := s.model.ExistsByName(ctx, req.ProjectID, strings.TrimSpace(req.Name))
 	if err != nil {
 		return nil, err
@@ -131,7 +132,14 @@ func (s *Service) Create(ctx context.Context, req *blockdto.CreateReq) (res *blo
 		Name:      strings.TrimSpace(req.Name), Kind: kind, Category: category, ReuseMode: reuseMode, Document: document,
 		CreateTime: now, UpdatedAt: now,
 	}
+	if req.PresetKey != "" {
+		key, version := req.PresetKey, req.PresetVersion
+		entity.PresetKey, entity.PresetVersion = &key, &version
+	}
 	if err = s.model.Create(ctx, entity); err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) || database.IsUniqueViolation(err) {
+			return nil, ErrDuplicate
+		}
 		return nil, err
 	}
 	return blockRespPtr(entity), nil
@@ -269,7 +277,7 @@ func blockResp(e *blockmodel.BlockEntity) blockdto.BlockResp {
 	return blockdto.BlockResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Kind: e.Kind, Category: e.Category,
 		ReuseMode: e.ReuseMode, Document: e.Document, CreatedAt: utils.NewJSONTime(e.CreateTime), UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
-		Version: e.Version,
+		Version: e.Version, PresetKey: e.PresetKey, PresetVersion: e.PresetVersion,
 	}
 }
 

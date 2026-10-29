@@ -63,7 +63,7 @@ func (h *Handle) Create(c *gin.Context) {
 	}
 	res, err := h.svc.Create(c.Request.Context(), req)
 	if err != nil {
-		response.ErrorWithMessage(c, blockErrorStatus(err), blockErrorMessage(err))
+		response.ErrorStatusAuto(c, "block", err)
 		return
 	}
 	response.Success(c, res)
