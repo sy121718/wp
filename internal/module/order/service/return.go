@@ -640,6 +640,32 @@ func (s *Service) ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewR
 	}
 	now := time.Now()
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
+		return s.approveReturnTx(ctx, tx, projectID, req, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	// 单条入口的返回体与改造前一致：AutoReceive 时连入库一起做完。
+	if !req.AutoReceive {
+		return s.returnRespOf(ctx, req.ReturnID)
+	}
+	// 一步到底：现实里货往往早就到了（客户先联系客服、客服再走系统）。
+	// 这里不再开事务嵌套 —— ReceiveReturn 自带三段式与幂等。
+	return s.ReceiveReturn(ctx, &orderdto.ReturnReceiveReq{
+		ReturnID:      req.ReturnID,
+		WarehouseID:   req.WarehouseID,
+		TransactionID: req.TransactionID,
+		Remark:        strings.TrimSpace(req.Remark),
+		OperatorType:  req.OperatorType,
+		OperatorID:    req.OperatorID,
+		OperatorName:  req.OperatorName,
+	})
+}
+
+// approveReturnTx 同意退货的事务体（供单条与批量共用，B06）。
+func (s *Service) approveReturnTx(ctx context.Context, tx *gorm.DB, projectID string,
+	req *orderdto.ReturnReviewReq, now time.Time) error {
+	{
 		if serr := rls.ScopeTx(tx, projectID); serr != nil {
 			return serr
 		}
@@ -661,23 +687,41 @@ func (s *Service) ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewR
 			"reviewed_at":   now,
 			"update_time":   now,
 		})
-	})
-	if err != nil {
-		return nil, err
 	}
-	if !req.AutoReceive {
-		return s.returnRespOf(ctx, req.ReturnID)
+}
+
+// ApproveReturnBatch 批量同意退货：**整批同一事务**（B06）。
+//
+// 批量一律不自动入库（AutoReceive=false）：批档白名单里也没有那个键，
+// 两个入口的语义必须一致。
+//
+// 工程定位在**事务外**逐条做（与单条同因：rls.InProjectScope 会另开事务、
+// 另取连接，放进已开的事务里既看不到未提交数据，又可能自锁）。
+func (s *Service) ApproveReturnBatch(ctx context.Context, reqs []*orderdto.ReturnReviewReq) (err error) {
+	type located struct {
+		projectID string
+		req       *orderdto.ReturnReviewReq
 	}
-	// 一步到底：现实里货往往早就到了（客户先联系客服、客服再走系统）。
-	// 这里不再开事务嵌套 —— ReceiveReturn 自带三段式与幂等。
-	return s.ReceiveReturn(ctx, &orderdto.ReturnReceiveReq{
-		ReturnID:      req.ReturnID,
-		WarehouseID:   req.WarehouseID,
-		TransactionID: req.TransactionID,
-		Remark:        strings.TrimSpace(req.Remark),
-		OperatorType:  req.OperatorType,
-		OperatorID:    req.OperatorID,
-		OperatorName:  req.OperatorName,
+	plan := make([]located, 0, len(reqs))
+	for _, req := range reqs {
+		if req == nil || req.ReturnID == 0 {
+			return orderenums.Err(orderenums.ErrInvalidParam)
+		}
+		projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
+		if perr != nil {
+			return perr
+		}
+		req.AutoReceive = false
+		plan = append(plan, located{projectID: projectID, req: req})
+	}
+	now := time.Now()
+	return s.returns.Transaction(ctx, func(tx *gorm.DB) error {
+		for _, p := range plan {
+			if terr := s.approveReturnTx(ctx, tx, p.projectID, p.req, now); terr != nil {
+				return terr
+			}
+		}
+		return nil
 	})
 }
 
@@ -698,6 +742,18 @@ func (s *Service) RejectReturn(ctx context.Context, req *orderdto.ReturnReviewRe
 	}
 	now := time.Now()
 	err = s.returns.Transaction(ctx, func(tx *gorm.DB) error {
+		return s.rejectReturnTx(ctx, tx, projectID, req, remark, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.returnRespOf(ctx, req.ReturnID)
+}
+
+// rejectReturnTx 拒绝退货的事务体（供单条与批量共用，B06）。
+func (s *Service) rejectReturnTx(ctx context.Context, tx *gorm.DB, projectID string,
+	req *orderdto.ReturnReviewReq, remark string, now time.Time) error {
+	{
 		if serr := rls.ScopeTx(tx, projectID); serr != nil {
 			return serr
 		}
@@ -719,11 +775,41 @@ func (s *Service) RejectReturn(ctx context.Context, req *orderdto.ReturnReviewRe
 			"reviewed_at":   now,
 			"update_time":   now,
 		})
-	})
-	if err != nil {
-		return nil, err
 	}
-	return s.returnRespOf(ctx, req.ReturnID)
+}
+
+// RejectReturnBatch 批量拒绝退货：**整批同一事务**（B06）。
+func (s *Service) RejectReturnBatch(ctx context.Context, reqs []*orderdto.ReturnReviewReq) (err error) {
+	type located struct {
+		projectID string
+		req       *orderdto.ReturnReviewReq
+		remark    string
+	}
+	plan := make([]located, 0, len(reqs))
+	for _, req := range reqs {
+		if req == nil || req.ReturnID == 0 {
+			return orderenums.Err(orderenums.ErrInvalidParam)
+		}
+		remark := strings.TrimSpace(req.Remark)
+		if remark == "" {
+			// 没有理由的拒绝，客户只会再申请一次 —— 那对双方都是浪费。
+			return orderenums.Err(orderenums.ErrReturnRejectReasonRequired)
+		}
+		projectID, perr := s.locateReturnProject(ctx, req.ReturnID)
+		if perr != nil {
+			return perr
+		}
+		plan = append(plan, located{projectID: projectID, req: req, remark: remark})
+	}
+	now := time.Now()
+	return s.returns.Transaction(ctx, func(tx *gorm.DB) error {
+		for _, p := range plan {
+			if terr := s.rejectReturnTx(ctx, tx, p.projectID, p.req, p.remark, now); terr != nil {
+				return terr
+			}
+		}
+		return nil
+	})
 }
 
 // ReceiveReturn 确认收货：入库 + 退款。

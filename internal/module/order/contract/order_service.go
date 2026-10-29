@@ -77,6 +77,12 @@ type OrderService interface {
 	ListOrders(ctx context.Context, req *orderdto.ListOrderReq) (res *orderdto.OrderListResp, err error)
 	// ChangeStatus 状态流转（哪条边合法由状态机判定）。
 	ChangeStatus(ctx context.Context, req *orderdto.ChangeStatusReq) (err error)
+
+	// ChangeStatusBatch 批量状态流转：**整批同一事务**，任一条失败全部回滚。
+	//
+	// 与循环调 ChangeStatus 的区别就是事务边界：那样每条各开一个事务，
+	// 第 N 条失败时前 N-1 条已经提交，用户看到"整批被拒"而库里已经改了。
+	ChangeStatusBatch(ctx context.Context, reqs []*orderdto.ChangeStatusReq) (err error)
 	// PayOrder 支付落账：pending 推进到 paid，写 paid_at / 支付通道 / 支付流水号。
 	//
 	// 幂等：已经是 paid / shipped / completed 时原样返回成功且**不改任何列** ——
@@ -89,6 +95,9 @@ type OrderService interface {
 	// 不再有「状态已取消、库存没回来 → 返回 Warnings 留痕给人工」这条半截路径 ——
 	// 那正是 AGENTS.md 禁止的跨模块补偿（同库跨模块必须事务透传）。
 	CancelOrder(ctx context.Context, req *orderdto.CancelOrderReq) (res *orderdto.CancelOrderResp, err error)
+
+	// CancelOrderBatch 批量取消：**整批同一事务**，任一条失败全部回滚（含库存归还与券释放）。
+	CancelOrderBatch(ctx context.Context, reqs []*orderdto.CancelOrderReq) (err error)
 	// UpdateOrderNote 改订单的后台备注（adminNote）。
 	//
 	// 备注不是状态流转：它不改变订单处在哪一步，因此不写 status_logs ——
@@ -147,8 +156,12 @@ type ReturnService interface {
 	GetReturn(ctx context.Context, returnID uint64) (res *orderdto.ReturnDetailResp, err error)
 	// ApproveReturn 同意（AutoReceive=true 时一步完成入库 + 退款）。
 	ApproveReturn(ctx context.Context, req *orderdto.ReturnReviewReq) (res *orderdto.ReturnResp, err error)
+	// ApproveReturnBatch 批量同意退货：**整批同一事务**（B06）。批量一律不自动入库。
+	ApproveReturnBatch(ctx context.Context, reqs []*orderdto.ReturnReviewReq) (err error)
 	// RejectReturn 拒绝（必须给理由 —— 客户要知道为什么，否则他会再申请一次）。
 	RejectReturn(ctx context.Context, req *orderdto.ReturnReviewReq) (res *orderdto.ReturnResp, err error)
+	// RejectReturnBatch 批量拒绝退货：**整批同一事务**（B06）。
+	RejectReturnBatch(ctx context.Context, reqs []*orderdto.ReturnReviewReq) (err error)
 	// ReceiveReturn 确认收货：入库 + 退款。
 	//
 	// 幂等且**可重入**：入库成功后网络断了、再点一次只会补做没完成的那一步

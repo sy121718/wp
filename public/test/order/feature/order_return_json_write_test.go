@@ -217,19 +217,8 @@ func TestReturnBulkApproveApprovesWithoutReceiving(t *testing.T) {
 
 	body := `{"ids":["` + strconv.FormatUint(a, 10) + `","` + strconv.FormatUint(b, 10) + `"],"remark":"批量同意"}`
 	res := orderBulkSend(t, engine, "/api/order/return/approve", body)
-	if res.Updated != 2 || res.Skipped != 0 {
-		t.Fatalf("两条待审申请都应被同意，实际 updated=%d skipped=%d（%+v）", res.Updated, res.Skipped, res.Items)
-	}
-	if len(res.Items) != 2 {
-		t.Fatalf("应逐条回执 2 条，实际 %d", len(res.Items))
-	}
-	for _, it := range res.Items {
-		if !it.Updated {
-			t.Errorf("申请 %s 应被同意，实际未更新：%s", it.ID, it.Message)
-		}
-		if it.Message != "" {
-			t.Errorf("成功的条目不该带原因，实际 %q", it.Message)
-		}
+	if res.Updated != 2 {
+		t.Fatalf("两条待审申请都应被同意，实际 updated=%d", res.Updated)
 	}
 	// **批量不自动入库**：状态停在 approved（等仓库点货），库存一个都不许动。
 	for _, id := range []uint64{a, b} {
@@ -242,13 +231,17 @@ func TestReturnBulkApproveApprovesWithoutReceiving(t *testing.T) {
 	}
 }
 
-// TestReturnBulkApproveSkipsUnreviewableInvalidAndMissing 业务档：一条能审 + 已被审过 + 不存在 + 非 id。
-func TestReturnBulkApproveSkipsUnreviewableInvalidAndMissing(t *testing.T) {
+// TestReturnBulkApproveRejectsWholeBatchWhenAnyUnreviewable 业务档：整批 409 + data.items，
+// 且一条都不许改（AGENTS.md §写操作：批量要么全成、要么全败）。
+//
+// 旧行为是「成功 1 / 跳过 3」逐条回执。用户拿到那个结果既不知道是哪条挡住的，
+// 也没法只重试那一条 —— 而这一批本可以整批回滚、改完再提交。
+func TestReturnBulkApproveRejectsWholeBatchWhenAnyUnreviewable(t *testing.T) {
 	f := newOrderFixture(t)
 	if f == nil {
 		return
 	}
-	_, vid := f.addProduct(t, "退货批档跳过商品", 30, 30)
+	_, vid := f.addProduct(t, "退货批档拒绝整批商品", 30, 30)
 	pending := f.newReturn(t, "ret-skip-pending@example.com", vid, 1)
 	already := f.newReturn(t, "ret-skip-already@example.com", vid, 1)
 	// 已被别人审过：直接走单档同意，把它变成不可再审的起点。
@@ -264,36 +257,41 @@ func TestReturnBulkApproveSkipsUnreviewableInvalidAndMissing(t *testing.T) {
 	engine := gin.New()
 	engine.POST("/api/order/return/approve", h.ApproveReturn)
 
-	ids := []string{
-		strconv.FormatUint(pending, 10),
-		strconv.FormatUint(already, 10),
-		strconv.FormatUint(missing, 10),
-		"abc", // 非 id：形状先行，不必碰库
+	// ① 混进一条已审过的：整批拒绝，待审的那条也不能被同意。
+	body := `{"ids":["` + strconv.FormatUint(pending, 10) + `","` +
+		strconv.FormatUint(already, 10) + `"],"remark":"批档业务档"}`
+	rejected := orderBulkRejectSend(t, engine, "/api/order/return/approve", body)
+	if len(rejected.Data.Items) != 1 {
+		t.Fatalf("应给出挡住整批的那一条，实际 %d 条：%+v", len(rejected.Data.Items), rejected.Data.Items)
 	}
-	body := `{"ids":["` + strings.Join(ids, `","`) + `"],"remark":"批档业务档"}`
-	res := orderBulkSend(t, engine, "/api/order/return/approve", body)
-	if res.Updated != 1 || res.Skipped != 3 {
-		t.Fatalf("应 1 成功 3 跳过，实际 updated=%d skipped=%d（%+v）", res.Updated, res.Skipped, res.Items)
+	if rejected.Data.Items[0].Message == "" {
+		t.Errorf("明细必须带原因：%+v", rejected.Data.Items[0])
 	}
-	if len(res.Items) != 4 {
-		t.Fatalf("逐条回执必须与请求的 ids 一一对应（4 条），实际 %d", len(res.Items))
+	if got := f.returnStatusOf(t, pending); got != "requested" {
+		t.Fatalf("整批被拒时待审的那条不该被同意，实际 %s", got)
 	}
-	for i, it := range res.Items {
-		if it.ID != ids[i] {
-			t.Errorf("回执顺序应守住请求顺序：第 %d 条应是 %s，实际 %s", i, ids[i], it.ID)
-		}
-		if it.Updated && it.ID != ids[0] {
-			t.Errorf("只有待审的那条能成功，实际 %s 也被标记成功", it.ID)
-		}
-		if !it.Updated && it.Message == "" {
-			t.Errorf("被跳过的 %s 必须带上原因（页面只看到「被跳过」就不知道为什么）", it.ID)
-		}
+
+	// ② 混进不存在的单：同样整批拒绝。
+	body2 := `{"ids":["` + strconv.FormatUint(pending, 10) + `","` +
+		strconv.FormatUint(missing, 10) + `"],"remark":"批档缺单"}`
+	_ = orderBulkRejectSend(t, engine, "/api/order/return/approve", body2)
+	if got := f.returnStatusOf(t, pending); got != "requested" {
+		t.Fatalf("整批被拒时待审的那条不该被同意，实际 %s", got)
 	}
-	if got := f.returnStatusOf(t, pending); got != "approved" {
-		t.Fatalf("待审的那条应被同意，实际 %s", got)
+
+	// ③ 混进非 id：形状先行，同样整批拒绝（且不碰库）。
+	body3 := `{"ids":["` + strconv.FormatUint(pending, 10) + `","abc"],"remark":"批档形状"}`
+	shapeRejected := orderBulkRejectSend(t, engine, "/api/order/return/approve", body3)
+	if len(shapeRejected.Data.Items) != 1 || shapeRejected.Data.Items[0].ID != "abc" {
+		t.Fatalf("形状错应精确指出那一条，实际 %+v", shapeRejected.Data.Items)
 	}
-	if got := f.returnStatusOf(t, already); got != "approved" {
-		t.Fatalf("已被审过的那条状态不该被二次改写，实际 %s", got)
+
+	// ④ 反证：全是可审的时照常成功。
+	c := f.newReturn(t, "ret-skip-ok@example.com", vid, 1)
+	bodyOK := `{"ids":["` + strconv.FormatUint(c, 10) + `"],"remark":"批档合法"}`
+	okRes := orderBulkSend(t, engine, "/api/order/return/approve", bodyOK)
+	if okRes.Updated != 1 {
+		t.Fatalf("单条可审时应成功，实际 updated=%d", okRes.Updated)
 	}
 }
 
@@ -326,8 +324,8 @@ func TestReturnBulkRejectRequiresReasonBeforeAnyWrite(t *testing.T) {
 
 	// ② 给足理由：两条都拒绝。
 	res := orderBulkSend(t, engine, "/api/order/return/reject", `{"ids":[`+ids+`],"remark":"尺码不合适，客户已确认"}`)
-	if res.Updated != 2 || res.Skipped != 0 {
-		t.Fatalf("两条都该被拒绝，实际 updated=%d skipped=%d（%+v）", res.Updated, res.Skipped, res.Items)
+	if res.Updated != 2 {
+		t.Fatalf("两条都该被拒绝，实际 updated=%d", res.Updated)
 	}
 	for _, id := range []uint64{a, b} {
 		if got := f.returnStatusOf(t, id); got != "rejected" {

@@ -144,6 +144,7 @@ const ErrInternal = "操作失败，请稍后重试"
 // 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
 // 对账由 order_enums_test.go 的双向断言守（新增 Err* 没给兜底要红；表里留着已删的 key 也要红）。
 var errFallbacks = map[string]string{
+	ErrBulkRejected: "整批未执行：有条目不能处理，请按明细修正后重试",
 	// 发货与承运商（迁移 627-629，S1-S3）：这些 key 由本批引入，兜底必须同批给 ——
 	// 缺兜底时 facing.FactOf 取不到原文，界面上会出现裸 key。
 	ErrCarrierCodeTaken:           "该承运商编码已被占用",
@@ -296,6 +297,15 @@ const (
 	BulkCouponTargetInvalid = "order.bulk.couponTargetInvalid"
 	// BulkCancelReasonRequired 批量取消缺原因：整批不处理，回一句可展示的提示。
 	BulkCancelReasonRequired = "order.bulk.cancelReasonRequired"
+
+	// ErrBulkRejected 整批被拒（B06）：批量写要么全成、要么全败。
+	//
+	// 为什么必须有这条而不是继续用「updated / skipped 计数 + 逐条原因」：
+	// AGENTS.md §写操作写明「批量要么全成要么全败：不推算 skipped、不返回逐条回执；
+	// 拒绝时把 id / 名称 / 原因放 data.items」。逐条提交的后果是用户拿到
+	// 「成功 49 / 跳过 1」，既不知道是哪一条，也没法只重试那一条 ——
+	// 而那一批本可以整批回滚、让他改完再提交。
+	ErrBulkRejected = "order.err.bulkRejected"
 	// BulkReturnRejectReasonRequired 批量拒绝退货缺理由（与订单侧同口径）。
 	BulkReturnRejectReasonRequired = "order.bulk.returnRejectReasonRequired"
 )

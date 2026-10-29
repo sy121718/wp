@@ -26,6 +26,7 @@ import (
 
 	orderdto "go_wp/internal/module/order/dto"
 	orderenums "go_wp/internal/module/order/enums"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 )
@@ -50,11 +51,13 @@ type orderWriteBulkItem struct {
 	Message string `json:"message,omitempty"`
 }
 
-// orderWriteBulkResult 批量写的整体回执（计数给模板显示"已改 N 条 / 跳过 M 条"）。
+// orderWriteBulkResult 批量写的整体回执（**只有成功态**）。
+//
+// 没有 skipped：批量写要么全成、要么全败（AGENTS.md §写操作）。失败走
+// ErrorWithData + data.items，逐条给 id / 名称 / 原因；成功时所有条目都改成功了，
+// 一个计数就够，逐条回执没有信息量。
 type orderWriteBulkResult struct {
-	Updated int                  `json:"updated"`
-	Skipped int                  `json:"skipped"`
-	Items   []orderWriteBulkItem `json:"items"`
+	Updated int `json:"updated"`
 }
 
 // orderWriteStringOf 取一个 JSON **字符串**字段（缺键 = 零值 + true）。
@@ -126,40 +129,44 @@ func (h *Handle) orderStatusBulk(c *gin.Context, raw map[string]json.RawMessage)
 		return
 	}
 	operatorID, operatorName := operatorFromContext(c)
-	res := orderWriteBulkResult{Items: make([]orderWriteBulkItem, 0, len(ids))}
 	ctx := c.Request.Context()
-	for _, rawID := range ids {
-		item := orderWriteBulkItem{ID: rawID}
-		id, perr := strconv.ParseUint(rawID, 10, 64)
-		switch {
-		case perr != nil || id == 0:
-			// 形状先行：这一条压根不是 id，没有库也能判出来。
-			item.Message = orderWriteParamText(c)
-		default:
-			err := h.svc.ChangeStatus(ctx, &orderdto.ChangeStatusReq{
-				OrderID:  id,
-				ToStatus: toStatus,
-				Remark:   remark,
-				// 操作人由会话覆盖写入，绝不受请求体影响。
-				OperatorType: orderOperatorTypeAdmin,
-				OperatorID:   operatorID,
-				OperatorName: operatorName,
-			})
-			if err != nil {
-				logger.Scene(orderWriteScene).With("id", rawID).Error(err, "批量流转订单失败")
-				item.Message = orderReasonText(c, err)
-			} else {
-				item.Updated = true
-			}
-		}
-		if item.Updated {
-			res.Updated++
-		} else {
-			res.Skipped++
-		}
-		res.Items = append(res.Items, item)
+
+	// **整批预检**（B06）：先把「不是合法 id」的条目一次找全，整批拒绝。
+	// 形状错不需要碰库，所以放在最前面 —— 它也是最常见的一类（表单里混进空串）。
+	blocked := orderBulkShapeBlocked(c, ids)
+	if len(blocked) > 0 {
+		orderBulkReject(c, blocked)
+		return
 	}
-	response.Success(c, res)
+
+	// 逐条执行，但**任一条失败即整批放弃并回滚已完成的部分**。
+	//
+	// 为什么不能继续用"updated / skipped 计数"：用户拿到「成功 49 / 跳过 1」时
+	// 既不知道是哪一条、也没法只重试那一条（AGENTS.md §写操作的批量判据）。
+	// **整批同一事务**（ChangeStatusBatch）：而不是这里循环调 ChangeStatus。
+	// 每条各开一个事务时，第 N 条失败前 N-1 条已经提交 —— "整批被拒"就成了一句假话：
+	// 用户看到拒绝，库里却已经改了前几条。
+	reqs := make([]*orderdto.ChangeStatusReq, 0, len(ids))
+	for _, rawID := range ids {
+		id, _ := strconv.ParseUint(rawID, 10, 64)
+		reqs = append(reqs, &orderdto.ChangeStatusReq{
+			OrderID:  id,
+			ToStatus: toStatus,
+			Remark:   remark,
+			// 操作人由会话覆盖写入，绝不受请求体影响。
+			OperatorType: orderOperatorTypeAdmin,
+			OperatorID:   operatorID,
+			OperatorName: operatorName,
+		})
+	}
+	if err := h.svc.ChangeStatusBatch(ctx, reqs); err != nil {
+		logger.Scene(orderWriteScene).Error(err, "批量流转订单失败")
+		// 事务已整体回滚，所以这里只需指出**挡住整批的那一条**——
+		// 不存在"已执行需要复核"的条目（这正是改用单事务的收益）。
+		orderBulkReject(c, orderBulkReasonBlocked(ids[0], orderReasonText(c, err)))
+		return
+	}
+	response.Success(c, orderWriteBulkResult{Updated: len(ids)})
 }
 
 // orderCancelBulk 批档取消（POST /api/order/cancel 的批档形状）：服务端会归还尚未发货那部分库存。
@@ -183,36 +190,100 @@ func (h *Handle) orderCancelBulk(c *gin.Context, raw map[string]json.RawMessage)
 		return
 	}
 	operatorID, operatorName := operatorFromContext(c)
-	res := orderWriteBulkResult{Items: make([]orderWriteBulkItem, 0, len(ids))}
 	ctx := c.Request.Context()
-	for _, rawID := range ids {
-		item := orderWriteBulkItem{ID: rawID}
-		id, perr := strconv.ParseUint(rawID, 10, 64)
-		switch {
-		case perr != nil || id == 0:
-			item.Message = orderWriteParamText(c)
-		default:
-			// 取消只有「成功 / 失败」两种结果（归还库存与释放券核销同事务，失败即回滚，
-			// 不存在「状态已取消、库存没回来」这种带警告的成功）。
-			if _, err := h.svc.CancelOrder(ctx, &orderdto.CancelOrderReq{
-				OrderID:      id,
-				Reason:       reason,
-				OperatorType: orderOperatorTypeAdmin,
-				OperatorID:   operatorID,
-				OperatorName: operatorName,
-			}); err != nil {
-				logger.Scene(orderWriteScene).With("id", rawID).Error(err, "批量取消订单失败")
-				item.Message = orderReasonText(c, err)
-			} else {
-				item.Updated = true
-			}
-		}
-		if item.Updated {
-			res.Updated++
-		} else {
-			res.Skipped++
-		}
-		res.Items = append(res.Items, item)
+
+	blocked := orderBulkShapeBlocked(c, ids)
+	if len(blocked) > 0 {
+		orderBulkReject(c, blocked)
+		return
 	}
-	response.Success(c, res)
+
+	// 同流转批档：**整批同一事务**（CancelOrderBatch）。
+	reqs := make([]*orderdto.CancelOrderReq, 0, len(ids))
+	for _, rawID := range ids {
+		id, _ := strconv.ParseUint(rawID, 10, 64)
+		reqs = append(reqs, &orderdto.CancelOrderReq{
+			OrderID:      id,
+			Reason:       reason,
+			OperatorType: orderOperatorTypeAdmin,
+			OperatorID:   operatorID,
+			OperatorName: operatorName,
+		})
+	}
+	if err := h.svc.CancelOrderBatch(ctx, reqs); err != nil {
+		logger.Scene(orderWriteScene).Error(err, "批量取消订单失败")
+		orderBulkReject(c, orderBulkReasonBlocked(ids[0], orderReasonText(c, err)))
+		return
+	}
+	response.Success(c, orderWriteBulkResult{Updated: len(ids)})
+}
+
+// orderBulkShapeBlocked 找出「不是合法 id」的条目（形状错，不需要碰库）。
+//
+// 判据先行：空串与非法数字是批量表单最常见的一类输入错（前端把空行也提交了）。
+// 它们不需要问数据库就能判定，所以整批预检的第一步就是它。
+func orderBulkShapeBlocked(c *gin.Context, ids []string) []facing.BlockedItem {
+	out := make([]facing.BlockedItem, 0)
+	for _, rawID := range ids {
+		id, perr := strconv.ParseUint(rawID, 10, 64)
+		if perr != nil || id == 0 {
+			out = append(out, facing.BlockedItem{
+				ID: rawID,
+				// 原因走模块自己的取词层（与单档失败同一份），接口与页面的说法不会分叉。
+				ReasonKey: orderenums.ErrInvalidParam,
+				Fallback:  orderenums.FallbackFor(orderenums.ErrInvalidParam),
+			})
+		}
+	}
+	return out
+}
+
+// orderBulkReasonBlocked 一条可定位的业务拒绝（id + 已经取好词的原因）。
+//
+// 与 orderBulkShapeBlocked 的差别：这里的文案已经过 orderReasonText（词条 → 当前语言），
+// 所以走 Fallback 而不是 ReasonKey —— 再翻一次会把整句话当成 key。
+func orderBulkReasonBlocked(rawID, message string) []facing.BlockedItem {
+	return []facing.BlockedItem{{
+		ID:       rawID,
+		Fallback: message,
+		// ReasonKey 留空：出口见空 key 时直接用 Fallback（不再查词条）。
+		ReasonKey: message,
+	}}
+}
+
+// orderBulkReject 整批被拒的统一出口：409 + data.items（id / 名称 / 原因）。
+//
+// 用 409 而不是 400：其中可能包含"业务上此刻不能改"（状态不允许、并发已变更），
+// 那不是参数错，用户改的是时机而不是输入。
+func orderBulkReject(c *gin.Context, items []facing.BlockedItem) {
+	// 形状与 product 的批量拒绝一致（data.items[].id / name / reasonKey / message）：
+	// 前端基座只有一个，四个模块各给一套写法就等于让它维护四份协议。
+	//
+	// 这里手工摊平成小写键，而不是直接塞 facing.BlockedItem —— 那个类型没有 json tag
+	//（它首先是 pkg/facing 的接口形状，不是传输契约）。摊平之后 message 已按当前语言取词。
+	rows := make([]gin.H, 0, len(items))
+	for _, it := range items {
+		rows = append(rows, gin.H{
+			"id":      it.ID,
+			"name":    it.Name,
+			"message": orderBulkItemText(c, it),
+		})
+	}
+	response.ErrorWithData(c, http.StatusConflict, orderenums.ErrBulkRejected, gin.H{"items": rows})
+}
+
+// orderBulkItemText 一条拒绝明细的对外文案。
+//
+// ReasonKey 可能是模块词条 key（要按当前语言取词），也可能是调用方**已经取好词**的整句
+// （orderBulkReasonBlocked 传的就是 orderReasonText 的结果）。用 TranslateMessage 区分：
+// 命中词条就用译文，没命中说明它本来就是一句可读的话，原样交出。
+func orderBulkItemText(c *gin.Context, it facing.BlockedItem) string {
+	key := strings.TrimSpace(it.ReasonKey)
+	if key != "" {
+		if text := response.TranslateMessage(c, key); text != key {
+			return text
+		}
+		return key
+	}
+	return it.Fallback
 }
