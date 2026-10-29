@@ -31,10 +31,7 @@ import (
 
 // normalizeLang 归一化产物语言：空 → 全局默认语言（sys_config 的 i18n 组 default_lang，未初始化回退 zh-CN）。
 //
-// 必要性：lang 是 page_artifacts 唯一键 (page_id, version, lang) 的第三维，
-// 落库为空会让唯一键退化成 (page_id, version)，同页多语言重新互相覆盖
-// （docs/06-D-site-i18n.md §15.5 第 1 条）。调用方（page 装配层）通常已显式传语言，
-// 本函数是契约层直调与历史调用方的兜底，保证任何路径都不会写入空 lang。
+// 调用方通常已显式传语言；本函数保证契约层直调也记录准确语言，禁止空语言元数据。
 func normalizeLang(lang string) string {
 	if l := strings.TrimSpace(lang); l != "" {
 		return l
@@ -113,12 +110,11 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 		CreatedAt:                 now,
 	}
 
-	lang := normalizeLang(req.Lang)
 	err = s.model.Transaction(ctx, func(tx *gorm.DB) error {
-		// 唯一冲突是不是「版本冲突」是业务判定，留在 service；SQL 在 model 的具名方法里。
+		// 唯一冲突的同内容幂等/不同内容身份冲突由 service 在事务回滚后区分。
 		if cerr := s.model.CreateArtifactTx(ctx, tx, entity); cerr != nil {
 			if database.IsUniqueViolation(cerr) {
-				return errArtifactVersionConflict
+				return errArtifactIdentityConflict
 			}
 			return cerr
 		}
@@ -150,20 +146,21 @@ func (s *Service) Record(ctx context.Context, req *artifactdto.RecordReq) (res *
 		return nil
 	})
 	if err != nil {
-		if errors.Is(err, errArtifactVersionConflict) {
-			if existing, gerr := s.model.GetByPageVersion(ctx, req.PageID, req.Version, lang); gerr == nil {
-				if existing.ArtifactHash == req.ArtifactHash {
-					return toResp(existing), nil
-				}
-				return nil, artifactenums.Err(artifactenums.ErrArtifactMismatch)
+		if errors.Is(err, errArtifactIdentityConflict) {
+			// 并发同内容归档的另一事务已完成，复用其身份；不同内容复用 ID 则拒绝。
+			if existing, exists, readErr := s.findByHash(ctx, req.PageID, req.ArtifactHash); readErr != nil {
+				return nil, readErr
+			} else if exists {
+				return toResp(existing), nil
 			}
+			return nil, artifactenums.Err(artifactenums.ErrArtifactMismatch)
 		}
 		return nil, mapPersistenceError(err)
 	}
 	return toResp(entity), nil
 }
 
-var errArtifactVersionConflict = errors.New("artifact version conflict")
+var errArtifactIdentityConflict = errors.New("artifact identity conflict")
 
 // Detail 按 (pageId, hash) 查询产物元数据。
 // nil/空参数属于请求不合法（ErrInvalidParam），与产物是否存在无关；
@@ -226,87 +223,9 @@ func (s *Service) findByHash(ctx context.Context, pageID, hash string) (e *artif
 	return e, true, nil
 }
 
-// EnsureRecord 幂等归档：同 (pageID, hash) 直接返回；同 (pageID, version, lang)
-// 重构建（编译器升级导致 hash 变化）时替换该行产物指针与对象闭包；
-// 否则新建。确定性构建模型下「同版本同语言」产物的唯一正确语义。
-//
-// 语言维度（多语言 P3）：替换范围严格限定在同一语言内 —— 同页不同语言各占一行，
-// 构建 en-US 绝不触碰 zh-CN 的行，路由 artifact_id 因此始终指向正确语言的产物。
-func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) (res *artifactdto.ArtifactResp, err error) {
-	if err = validateRecordReq(req); err != nil {
-		return nil, err
-	}
-	lang := normalizeLang(req.Lang)
-	if e, exists, err := s.findByHash(ctx, req.PageID, req.ArtifactHash); err != nil {
-		return nil, err
-	} else if exists {
-		return toResp(e), nil
-	}
-	// 同版本同语言已有记录：替换产物内容（UNIQUE(page_id, version, lang) 允许恰好一行）。
-	if e, err := s.model.GetByPageVersion(ctx, req.PageID, req.Version, lang); err == nil {
-		var parsedManifest struct {
-			Files map[string]string `json:"files"`
-		}
-		// 与 Record 同一校验语义：空 files（{} / null / 缺键）一律拒绝。
-		if err = json.Unmarshal(req.Manifest, &parsedManifest); err != nil || len(parsedManifest.Files) == 0 {
-			return nil, artifactenums.Err(artifactenums.ErrInvalidArtifact)
-		}
-		now := time.Now().UTC()
-		// 同 Record：只写 manifest 一个真源（理由见 Record 里的注释与迁移 305）。
-		newEntity := &artifactmodel.PageArtifactEntity{
-			ID:                        e.ID,
-			PageID:                    req.PageID,
-			Version:                   req.Version,
-			Lang:                      lang,
-			SourceDocument:            req.SourceDocument,
-			PageDocumentSchemaVersion: req.SchemaVersion,
-			SourceHash:                req.SourceHash,
-			BuildInputHash:            req.BuildInputHash,
-			ArtifactProvider:          req.ArtifactProvider,
-			ArtifactKey:               req.ArtifactKey,
-			ArtifactHash:              req.ArtifactHash,
-			CompilerVersion:           req.CompilerVersion,
-			RegistryVersion:           req.RegistryVersion,
-			Manifest:                  req.Manifest,
-			PayloadState:              e.PayloadState,
-			Note:                      e.Note,
-			CreatedBy:                 e.CreatedBy,
-			CreatedAt:                 e.CreatedAt,
-		}
-		objects := make([]artifactmodel.PageArtifactObjectEntity, 0, len(parsedManifest.Files))
-		contentObjects := make([]artifactmodel.ContentObjectEntity, 0, len(parsedManifest.Files))
-		seen := make(map[string]struct{}, len(parsedManifest.Files))
-		// 闭包记按内容哈希去重（多个文件名共享同一内容时只归档一条），
-		// 但 object_key 必须精确到**文件**（见 artifactObjectKey）：
-		// 文件名按字典序遍历，保证「首个引用该 hash 的文件」是确定的。
-		for _, fileName := range sortedManifestFiles(parsedManifest.Files) {
-			fileHash := strings.TrimSpace(parsedManifest.Files[fileName])
-			if fileHash == "" {
-				continue
-			}
-			if _, dup := seen[fileHash]; dup {
-				continue
-			}
-			seen[fileHash] = struct{}{}
-			objects = append(objects, artifactmodel.PageArtifactObjectEntity{
-				ArtifactID: e.ID, ContentHash: fileHash,
-			})
-			contentObjects = append(contentObjects, artifactmodel.ContentObjectEntity{
-				ContentHash: fileHash,
-				Provider:    req.ArtifactProvider,
-				ObjectKey:   artifactObjectKey(req.ArtifactKey, fileName),
-				ByteSize:    0,
-				CreatedAt:   now,
-			})
-		}
-		if err = s.model.ReplaceArtifactContent(ctx, e.ID, newEntity, objects, contentObjects); err != nil {
-			return nil, mapPersistenceError(err)
-		}
-		return toResp(newEntity), nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-	// 全新记录。
+// EnsureRecord 与 Record 共用不可变归档入口：同页同 hash 复用身份，
+// 新 hash 新建产物与闭包。草稿版本不代表产物身份，重建不得改写已发布指针引用的旧行。
+func (s *Service) EnsureRecord(ctx context.Context, req *artifactdto.RecordReq) (*artifactdto.ArtifactResp, error) {
 	return s.Record(ctx, req)
 }
 

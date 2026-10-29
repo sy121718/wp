@@ -91,16 +91,16 @@ func TestArtifactContentObjectFirstWriterWins(t *testing.T) {
 	}
 }
 
-// TestArtifactContentObjectFirstWriterWinsOnReplace 固化替换路径下同样的语义：
-// EnsureRecord 同版本替换（不同 hash/provider）时，与新闭包共享的旧 hash
-// 仍保持首条定位，不被替换请求的 provider 覆盖。
-func TestArtifactContentObjectFirstWriterWinsOnReplace(t *testing.T) {
+// TestArtifactContentObjectFirstWriterWinsOnRebuild 固化重建路径下同样的语义：
+// EnsureRecord 同版本重建（不同 hash/provider）时，与新闭包共享的旧 hash
+// 仍保持首条定位，不被重建请求的 provider 覆盖。
+func TestArtifactContentObjectFirstWriterWinsOnRebuild(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
 
 	mustRecord(t, svc, validReq()) // v1: hash=artifact-hash-a, files: hash-html/hash-manifest, provider=local
 
-	// 替换：同 version=1，hash 变为 v2，provider 变为 s3，但 manifest 复用 hash-html。
+	// 重建：同 version=1，hash 变为 v2，provider 变为 s3，但 manifest 复用 hash-html。
 	reqB := validReq()
 	reqB.ArtifactID = testArtifactID2
 	reqB.ArtifactHash = artifactHashV2
@@ -108,7 +108,7 @@ func TestArtifactContentObjectFirstWriterWinsOnReplace(t *testing.T) {
 	reqB.ArtifactKey = "bucket/artifacts/artifact-hash-b"
 	reqB.Manifest = json.RawMessage(`{"canonicalPath":"/b.html","files":{"index.html":"hash-html"}}`)
 	if _, err := svc.EnsureRecord(ctx, reqB); err != nil {
-		t.Fatalf("EnsureRecord 替换失败: %v", err)
+		t.Fatalf("EnsureRecord 重建失败: %v", err)
 	}
 
 	// 共享 hash-html 保持首条 local 定位。
@@ -117,6 +117,6 @@ func TestArtifactContentObjectFirstWriterWinsOnReplace(t *testing.T) {
 		t.Fatalf("hash-html 内容对象应存在")
 	}
 	if provider != "local" || key != "artifacts/artifact-hash-a/index.html" {
-		t.Fatalf("替换路径下 first-writer-wins 被破坏：hash-html 应为 (local, artifacts/artifact-hash-a/index.html)，实际 (%s, %s)", provider, key)
+		t.Fatalf("重建路径下 first-writer-wins 被破坏：hash-html 应为 (local, artifacts/artifact-hash-a/index.html)，实际 (%s, %s)", provider, key)
 	}
 }

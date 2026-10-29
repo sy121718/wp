@@ -19,13 +19,9 @@ const (
 )
 
 // PageArtifactEntity 对应 page_artifacts 表：构建产物的数据库元数据投影。
-// UNIQUE(page_id, version, lang) 对齐生产 DDL（init_builder_schema.sql:238 + 迁移
-// 061-page-artifacts-lang）：同一草稿版本下「每个语言」各恰一行，同页多语言产物
-// 并存互不覆盖；同版本同语言重构建仍为替换语义的 DB 层兜底。
-// 索引名 uk_page_artifacts_page_version_lang 与迁移 061 保持一致，AutoMigrate 同名同形。
-//
-// Lang 是唯一键第三维：空值会让唯一键退化为 (page_id, version) 互相覆盖，
-// 因此 service 落库前必须归一化为站点默认语言。
+// UNIQUE(page_id, artifact_hash) 是内容身份：同页相同字节复用一行；同一草稿版本
+// 可以构建出不同内容（共享块、语言或编译器变化），每份内容拥有独立、不可变的行与闭包。
+// Lang 记录构建语言，service 落库前归一化为站点默认语言。
 //
 // 关于 DDL 里那个不在本结构体上的 build_input_manifest 列（审计 DB-02，迁移 305）：
 // 它历史上被写入与 manifest 同字节的输出清单（Record / EnsureRecord 两列同取
@@ -37,16 +33,16 @@ const (
 // source_document 与 source_hash / build_input_hash 承载。
 type PageArtifactEntity struct {
 	ID                        string          `gorm:"column:id;primaryKey"`
-	PageID                    string          `gorm:"column:page_id;not null;uniqueIndex:uk_page_artifacts_page_version_lang"`
-	Version                   int64           `gorm:"column:version;not null;uniqueIndex:uk_page_artifacts_page_version_lang"`
-	Lang                      string          `gorm:"column:lang;not null;default:'zh-CN';uniqueIndex:uk_page_artifacts_page_version_lang"`
+	PageID                    string          `gorm:"column:page_id;not null;uniqueIndex:uk_page_artifacts_page_hash,priority:1"`
+	Version                   int64           `gorm:"column:version;not null"`
+	Lang                      string          `gorm:"column:lang;not null;default:'zh-CN'"`
 	SourceDocument            json.RawMessage `gorm:"column:source_document;type:jsonb;not null"`
 	PageDocumentSchemaVersion int             `gorm:"column:page_document_schema_version;not null"`
 	SourceHash                string          `gorm:"column:source_hash;not null"`
 	BuildInputHash            string          `gorm:"column:build_input_hash;not null"`
 	ArtifactProvider          string          `gorm:"column:artifact_provider;not null"`
 	ArtifactKey               string          `gorm:"column:artifact_key;not null"`
-	ArtifactHash              string          `gorm:"column:artifact_hash;not null"`
+	ArtifactHash              string          `gorm:"column:artifact_hash;not null;uniqueIndex:uk_page_artifacts_page_hash,priority:2"`
 	CompilerVersion           string          `gorm:"column:compiler_version;not null"`
 	RegistryVersion           string          `gorm:"column:registry_version;not null"`
 	Manifest                  json.RawMessage `gorm:"column:manifest;type:jsonb;not null"`
@@ -94,7 +90,7 @@ const pageArtifactSummaryColumns = "id, page_id, version, lang, source_hash, bui
 
 // PageArtifactSummary page_artifacts 的列表投影（对应 pageArtifactSummaryColumns）。
 //
-// 需要源码或清单的路径走详情口径：GetByID / GetByHash / GetByPageVersion —— 它们返回
+// 需要源码或清单的路径走详情口径：GetByID / GetByHash —— 它们返回
 // 完整实体（含 source_document 与 manifest），服务的是回滚、依赖反序列化与缺文件重建。
 type PageArtifactSummary struct {
 	ID               string    `gorm:"column:id"`
@@ -158,70 +154,12 @@ func (m *Model) GetByHash(ctx context.Context, pageID, hash string) (e *PageArti
 	return e, nil
 }
 
-// GetByPageVersion 按 (pageID, version, lang) 查询产物记录。
-// page_artifacts 以 (page_id, version, lang) 唯一：同页多语言各占一行、互不覆盖；
-// 同一语言同一草稿版本重构建（编译器升级导致 hash 变化）时替换该行产物指针。
-// lang 由调用方传入（不写死业务条件）；空 lang 匹配不到任何行，service 必须先归一化。
-func (m *Model) GetByPageVersion(ctx context.Context, pageID string, version int64, lang string) (e *PageArtifactEntity, err error) {
-	e = &PageArtifactEntity{}
-	if err = m.DB(ctx).Where("page_id = ? AND version = ? AND lang = ?", pageID, version, lang).First(e).Error; err != nil {
-		return nil, err
-	}
-	return e, nil
-}
-
-// ReplaceArtifactContent 同版本重构建时替换产物指针与归档内容（含对象闭包重建）。
-// contentObjects 为需幂等写入的共享内容对象（content_objects），与产物行、闭包
-// 在同一事务内提交——此前内容对象在事务外写入，替换失败会残留孤儿行。
-func (m *Model) ReplaceArtifactContent(ctx context.Context, id string, entity *PageArtifactEntity, objects []PageArtifactObjectEntity, contentObjects []ContentObjectEntity) (err error) {
-	return m.Transaction(ctx, func(tx *gorm.DB) error {
-		if err = tx.Model(&PageArtifactEntity{}).Where("id = ?", id).Updates(map[string]any{
-			"source_document":              entity.SourceDocument,
-			"page_document_schema_version": entity.PageDocumentSchemaVersion,
-			"source_hash":                  entity.SourceHash,
-			"build_input_hash":             entity.BuildInputHash,
-			"artifact_provider":            entity.ArtifactProvider,
-			"artifact_key":                 entity.ArtifactKey,
-			"artifact_hash":                entity.ArtifactHash,
-			"compiler_version":             entity.CompilerVersion,
-			"registry_version":             entity.RegistryVersion,
-			"manifest":                     entity.Manifest,
-		}).Error; err != nil {
-			return err
-		}
-		if err = tx.Where("artifact_id = ?", id).Delete(&PageArtifactObjectEntity{}).Error; err != nil {
-			return err
-		}
-		// 共享内容对象必须**先落**：page_artifact_objects.content_hash 有外键指向
-		// content_objects(content_hash)，顺序反过来就是「先插引用、后插被引用行」，
-		// 直接外键违例（多语言第二次发布的归档路径踩过）。
-		// 事务内 ON CONFLICT DO NOTHING 幂等写入（first-writer-wins）。
-		// 冲突 target 收窄到 content_hash：只有「同一内容已登记」才跳过，
-		// 其它唯一冲突（例如 object_key 派生错了）必须显式报错而不是静默丢弃。
-		if len(contentObjects) > 0 {
-			if err = tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "content_hash"}}, DoNothing: true}).CreateInBatches(contentObjects, 100).Error; err != nil {
-				return err
-			}
-		}
-		// 闭包：内容对象就位之后再插引用。
-		if len(objects) > 0 {
-			for i := range objects {
-				objects[i].ArtifactID = id
-			}
-			if err = tx.CreateInBatches(objects, 100).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
 // CreateArtifactTx 在外层事务内插入产物元数据行（page_artifacts）。
 //
 // 与 CreateArtifactObjectTx / EnsureContentObjectTx 同一批：Record 把「产物行 + 共享内容
 // 对象 + 闭包」三类**本模块表**的写入放进同一个事务原子提交（AGENTS.md「model 层定位」
 // 允许聚合内原子组合），因此三条写入都以 …Tx 具名方法暴露、句柄由 service 透传 ——
-// service 不再在事务回调里拼 Create。唯一冲突是不是业务错误（版本冲突）由 service 判定：
+// service 不再在事务回调里拼 Create。唯一冲突是不是业务错误（内容身份冲突）由 service 判定：
 // 那是「映射成哪个业务错误」的决策，不是 SQL，所以本方法只把原始错误原样返回。
 //
 // SQL 文本与原 service 内联实现逐字一致（GORM 的 Create）。
@@ -232,7 +170,7 @@ func (m *Model) CreateArtifactTx(ctx context.Context, tx *gorm.DB, e *PageArtifa
 // CreateArtifactObjectTx 在外层事务内插入「产物 → 内容对象」闭包行（page_artifact_objects）。
 //
 // 调用方必须先写完 content_objects 再写闭包行：content_hash 有外键指向 content_objects，
-// 顺序反过来就是「先插引用、后插被引用行」的外键违例（见 ReplaceArtifactContent 同一段注释）。
+// 顺序反过来就是「先插引用、后插被引用行」的外键违例。
 func (m *Model) CreateArtifactObjectTx(ctx context.Context, tx *gorm.DB, o *PageArtifactObjectEntity) error {
 	return tx.WithContext(ctx).Create(o).Error
 }
@@ -416,11 +354,11 @@ func (m *Model) TranslationMisses(ctx context.Context, pageIDs []string) (rows [
 
 // ListByPage 按版本倒序读取页面的产物记录列表（跨语言，含每个语言的各版本行）。
 // 有意不按语言过滤：这是「本页产物全景」视图，语言维度由每行 Lang 自带；
-// 需要单语言切片时按 GetByPageVersion 或调用方自行过滤。
+// 需要单语言切片时由调用方按每行 Lang 过滤。
 //
 // 返回**列表投影**（PageArtifactSummary，列白名单 = pageArtifactSummaryColumns）：
 // 列表语义不需要 source_document 与 manifest，携带它们只会让每行多付一个可能上 MB 的
-// JSONB（审计 DB-02）。需要源码 / 清单时走详情口径的 GetByID / GetByHash / GetByPageVersion。
+// JSONB（审计 DB-02）。需要源码 / 清单时走详情口径的 GetByID / GetByHash。
 //
 // 当前树内暂无调用方（产物历史视图尚未接线）；保留它作为唯一的列表入口，并在签名上
 // 就堵死「顺手 Find 完整实体」这条回头路 —— 谁要列表就用这里返回的投影类型。

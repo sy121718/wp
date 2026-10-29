@@ -3,7 +3,7 @@ package unit
 // manifest_projection_test.go — 审计 DB-02：重复 manifest 列的收敛与列表查询的列白名单。
 //
 // 三组断言（全部对着真实 PostgreSQL + 生产迁移建出的表，不用 AutoMigrate）：
-//  1. 写入侧不再产出同字节的第二份 manifest：Record / EnsureRecord（含「同版本替换」路径）
+//  1. 写入侧不再产出同字节的第二份 manifest：Record / EnsureRecord（含同版本重建路径）
 //     落库后 page_artifacts.build_input_manifest 必须是 NULL（305 已把该列放开为可空），
 //     而 manifest 仍是本次归档的那份输出清单 —— 真源没丢，只是不再有第二份副本；
 //  2. ListByPage / ListGCCandidates 实际发出的 SQL 只取白名单列，
@@ -192,9 +192,9 @@ func TestRecordDoesNotWriteDuplicateManifestColumn(t *testing.T) {
 	}
 }
 
-// TestEnsureRecordReplaceDoesNotWriteDuplicateManifestColumn 同版本同语言替换
+// TestEnsureRecordRebuildDoesNotWriteDuplicateManifestColumn 同版本同语言重建
 // （编译器升级导致的 hash 变化）路径同样不得写第二份 manifest。
-func TestEnsureRecordReplaceDoesNotWriteDuplicateManifestColumn(t *testing.T) {
+func TestEnsureRecordRebuildDoesNotWriteDuplicateManifestColumn(t *testing.T) {
 	db, _ := captureDB(t)
 	svc := artifactservice.NewService(artifactmodel.NewArtifactModel(db))
 	ctx := context.Background()
@@ -204,16 +204,16 @@ func TestEnsureRecordReplaceDoesNotWriteDuplicateManifestColumn(t *testing.T) {
 	reqB.ArtifactID = testArtifactID2
 	reqB.ArtifactHash = artifactHashV2
 	if _, err := svc.EnsureRecord(ctx, reqB); err != nil {
-		t.Fatalf("EnsureRecord 替换路径应成功: %v", err)
+		t.Fatalf("EnsureRecord 重建路径应成功: %v", err)
 	}
 
 	var dup sql.NullString
-	if err := db.Raw("SELECT build_input_manifest::text FROM page_artifacts WHERE id = ?", testArtifactID).
+	if err := db.Raw("SELECT build_input_manifest::text FROM page_artifacts WHERE id = ?", testArtifactID2).
 		Scan(&dup).Error; err != nil {
 		t.Fatalf("读取 build_input_manifest 失败: %v", err)
 	}
 	if dup.Valid {
-		t.Fatalf("替换路径也不得写重复 manifest 列，实际写入 %d 字节", len(dup.String))
+		t.Fatalf("重建路径也不得写重复 manifest 列，实际写入 %d 字节", len(dup.String))
 	}
 }
 

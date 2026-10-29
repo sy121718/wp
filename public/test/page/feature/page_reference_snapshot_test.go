@@ -1,6 +1,7 @@
 package feature
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -84,6 +85,16 @@ func TestPageBuildPublishKeepsFrozenBlockVersionAndDocument(t *testing.T) {
 	if manifest.References == nil || len(manifest.References.Blocks) != 2 || manifest.References.Blocks[inner.ID].Version != inner.Version || !reflect.DeepEqual(sourceDoc, frozenDoc) {
 		t.Fatalf("产物必须记录准确的id/version/document: %+v", manifest.References)
 	}
+	// 后续构建不能改写 Publication 正在使用的产物身份、清单和文件字节。
+	type artifactRow struct {
+		ID, ArtifactHash, ArtifactKey string
+		Manifest, SourceDocument      json.RawMessage
+	}
+	var activeBefore artifactRow
+	if err = db.Table("page_artifacts").Where("page_id = ? AND artifact_hash = ?", page.ID, published.ActiveHash).First(&activeBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	oldHTML := []byte(html)
 	// 新构建属于新的发布决策，不能永久固定旧块；语言计划仍按原合同沿用。
 	rebuilt, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
 	if err != nil {
@@ -92,5 +103,30 @@ func TestPageBuildPublishKeepsFrozenBlockVersionAndDocument(t *testing.T) {
 	html, next := read(rebuilt.StagedHash)
 	if strings.Count(html, "NEW-LIVE-COPY") != 2 || next.References.Blocks[inner.ID].Version != updated.Version {
 		t.Fatal("新构建必须固定新块版本")
+	}
+	var activeAfter artifactRow
+	if err = db.Table("page_artifacts").Where("id = ?", activeBefore.ID).First(&activeAfter).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(activeBefore, activeAfter) {
+		t.Fatalf("Build未Publish不得改写活跃产物: before=%+v after=%+v", activeBefore, activeAfter)
+	}
+	var pub struct{ ArtifactID, ArtifactHash string }
+	if err = db.Table("page_publications").Select("artifact_id, artifact_hash").Where("page_id = ?", page.ID).First(&pub).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pub.ArtifactID != activeAfter.ID || pub.ArtifactHash != activeAfter.ArtifactHash {
+		t.Fatalf("Publication与归档产物必须保持一致: pub=%+v row=%+v", pub, activeAfter)
+	}
+	retainedHTML, _ := read(pub.ArtifactHash)
+	if !bytes.Equal(oldHTML, []byte(retainedHTML)) {
+		t.Fatal("构建未发布改变旧活跃产物字节")
+	}
+	var newRow artifactRow
+	if err = db.Table("page_artifacts").Where("page_id = ? AND artifact_hash = ?", page.ID, rebuilt.StagedHash).First(&newRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	if newRow.ID == activeBefore.ID {
+		t.Fatal("不同内容必须使用新的产物ID")
 	}
 }

@@ -70,7 +70,6 @@ func TestArtifactMapPersistenceError(t *testing.T) {
 		svc := newService(t)
 		mustRecord(t, svc, validReq())
 		reqB := validReq()
-		reqB.ArtifactID = testArtifactID2
 		reqB.ArtifactHash = artifactHashV2
 		_, err := svc.Record(context.Background(), reqB)
 		requireErrMsg(t, err, artifactenums.ErrArtifactMismatch)

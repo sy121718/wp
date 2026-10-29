@@ -31,7 +31,7 @@ const (
 // newService 建隔离测试库并装配 service。
 //
 // 表结构来自生产迁移（page_artifacts / content_objects / page_artifact_objects 三表、
-// UNIQUE(page_id, version, lang) 与两条外键都由生产 DDL 建立）—— 过去这里是 AutoMigrate
+// UNIQUE(page_id, artifact_hash) 与两条外键都由生产 DDL 建立）—— 过去这里是 AutoMigrate
 // 建表 + 逐条手抄约束，抄漏一条就让测试跑在一套不存在的约束上：「同一产物的第二个内容对象
 // 撞唯一键」这类真实缺陷会被静默放过（本项目已实证过一次）。
 //

@@ -3,8 +3,8 @@ package unit
 // ensure_record_lang_test.go — page_artifacts 的语言维度（多语言 P3 前置，
 // docs/06-D-site-i18n.md §15.5 第 1 条）。
 //
-// 覆盖：同页两语言各登记一行互不覆盖、同语言同版本仍为替换语义、
-// 空语言兜底站点默认语言、按语言取行（GetByPageVersion）、响应回带 lang。
+// 覆盖：同页两语言各登记一行互不覆盖、同语言同版本新内容保持独立身份、
+// 空语言兜底站点默认语言、按内容哈希精确取行、响应回带 lang。
 
 import (
 	"context"
@@ -84,7 +84,7 @@ func TestArtifactEnsureRecordSamePageTwoLangsCoexist(t *testing.T) {
 	}
 
 	// 先登记的语言行未被后续语言覆盖（核心回归点）。
-	zhRow, err := svc.Model().GetByPageVersion(ctx, testPageID, 1, "zh-CN")
+	zhRow, err := svc.Model().GetByHash(ctx, testPageID, "hash-zh")
 	if err != nil {
 		t.Fatalf("按语言查询 zh-CN 行失败: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestArtifactEnsureRecordSamePageTwoLangsCoexist(t *testing.T) {
 	if zhRow.Lang != "zh-CN" {
 		t.Fatalf("zh-CN 行 lang 错误: %q", zhRow.Lang)
 	}
-	enRow, err := svc.Model().GetByPageVersion(ctx, testPageID, 1, "en-US")
+	enRow, err := svc.Model().GetByHash(ctx, testPageID, "hash-en")
 	if err != nil {
 		t.Fatalf("按语言查询 en-US 行失败: %v", err)
 	}
@@ -108,9 +108,9 @@ func TestArtifactEnsureRecordSamePageTwoLangsCoexist(t *testing.T) {
 	}
 }
 
-// TestArtifactEnsureRecordSameLangSameVersionReplaces 同一语言同一版本重构建
-// （编译器升级导致 hash 变化）仍是替换语义：行 ID 不变、指针更新、行数不增。
-func TestArtifactEnsureRecordSameLangSameVersionReplaces(t *testing.T) {
+// TestArtifactEnsureRecordSameLangSameVersionAppends 同一语言同一版本重构建
+// 新内容新行，旧语言产物及其它语言产物均保持不变。
+func TestArtifactEnsureRecordSameLangSameVersionAppends(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
 
@@ -118,7 +118,7 @@ func TestArtifactEnsureRecordSameLangSameVersionReplaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("首次归档失败: %v", err)
 	}
-	// 另一语言先行登记：替换必须只发生在本语言内。
+	// 先登记另一语言，后续重建不得影响它。
 	if _, err = svc.EnsureRecord(ctx, langReq("en-US", 1, testArtifactID3, "hash-en", "artifacts/hash-en", "/en-US/about")); err != nil {
 		t.Fatalf("归档 en-US 失败: %v", err)
 	}
@@ -127,17 +127,17 @@ func TestArtifactEnsureRecordSameLangSameVersionReplaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("同语言同版本重构建失败: %v", err)
 	}
-	if second.ID != first.ID {
-		t.Fatalf("同语言同版本应原地替换，行 ID 应保持 %s，实际 %s", first.ID, second.ID)
+	if second.ID == first.ID {
+		t.Fatalf("同语言同版本新内容必须使用新ID: %s", first.ID)
 	}
 	if second.ArtifactHash != "hash-zh-v2" || second.ArtifactKey != "artifacts/hash-zh-v2" {
-		t.Fatalf("替换后指针未更新: hash=%s key=%s", second.ArtifactHash, second.ArtifactKey)
+		t.Fatalf("新产物指针不正确: hash=%s key=%s", second.ArtifactHash, second.ArtifactKey)
 	}
-	if got := rowsByLang(t, svc, testPageID); got["zh-CN"] != 1 || got["en-US"] != 1 || len(got) != 2 {
-		t.Fatalf("替换后行数应保持 2（每语言一行），实际 %v", got)
+	if got := rowsByLang(t, svc, testPageID); got["zh-CN"] != 2 || got["en-US"] != 1 || len(got) != 2 {
+		t.Fatalf("新旧中文两行、英文一行必须并存，实际 %v", got)
 	}
-	// en-US 行未被替换波及。
-	enRow, err := svc.Model().GetByPageVersion(ctx, testPageID, 1, "en-US")
+	// en-US 行保持原身份与内容。
+	enRow, err := svc.Model().GetByHash(ctx, testPageID, "hash-en")
 	if err != nil {
 		t.Fatalf("查询 en-US 行失败: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestArtifactEnsureRecordSameLangSameVersionReplaces(t *testing.T) {
 }
 
 // TestArtifactEnsureRecordEmptyLangFallsBackToDefault 空语言（存量调用方）落库为
-// 站点默认语言，绝不留空 —— 否则唯一键退化为 (page_id, version)。
+// 站点默认语言，绝不留空。
 func TestArtifactEnsureRecordEmptyLangFallsBackToDefault(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
@@ -161,7 +161,7 @@ func TestArtifactEnsureRecordEmptyLangFallsBackToDefault(t *testing.T) {
 	if resp.Lang != defaultLang {
 		t.Fatalf("空语言应兜底为默认语言 %q，实际 %q", defaultLang, resp.Lang)
 	}
-	row, err := svc.Model().GetByPageVersion(ctx, testPageID, 1, defaultLang)
+	row, err := svc.Model().GetByHash(ctx, testPageID, "hash-default")
 	if err != nil {
 		t.Fatalf("按默认语言查询失败: %v", err)
 	}
@@ -169,22 +169,22 @@ func TestArtifactEnsureRecordEmptyLangFallsBackToDefault(t *testing.T) {
 		t.Fatalf("默认语言行错误: id=%s lang=%s", row.ID, row.Lang)
 	}
 
-	// 显式传默认语言与空语言命中同一行 → 归一化口径一致（不会各占一行）。
+	// 显式默认语言与空语言按同一语言记录，但内容不同仍须独立归档。
 	explicit, err := svc.EnsureRecord(ctx, langReq(defaultLang, 1, testArtifactID2, "hash-default-2", "artifacts/hash-default-2", "/about"))
 	if err != nil {
 		t.Fatalf("显式默认语言归档失败: %v", err)
 	}
-	if explicit.ID != testArtifactID {
-		t.Fatalf("显式默认语言应替换同一行，行 ID 应保持 %s，实际 %s", testArtifactID, explicit.ID)
+	if explicit.ID == testArtifactID || explicit.Lang != resp.Lang {
+		t.Fatalf("新内容须独立归档且语言一致: old=%+v new=%+v", resp, explicit)
 	}
-	if got := rowsByLang(t, svc, testPageID); len(got) != 1 || got[defaultLang] != 1 {
-		t.Fatalf("归一化后应只有默认语言一行，实际 %v", got)
+	if got := rowsByLang(t, svc, testPageID); len(got) != 1 || got[defaultLang] != 2 {
+		t.Fatalf("归一化后应有默认语言的新旧两行，实际 %v", got)
 	}
 }
 
-// TestArtifactGetByPageVersionLangScoped 按语言取行：语言维度参与查询，
-// 不存在的语言返回 ErrRecordNotFound（而不是随机命中其他语言的行）。
-func TestArtifactGetByPageVersionLangScoped(t *testing.T) {
+// TestArtifactGetByHashPreservesLang 按语言取行：语言维度参与查询，
+// 不存在的内容返回 ErrRecordNotFound，不回退到其它语言产物。
+func TestArtifactGetByHashPreservesLang(t *testing.T) {
 	svc := newService(t)
 	ctx := context.Background()
 
@@ -203,7 +203,7 @@ func TestArtifactGetByPageVersionLangScoped(t *testing.T) {
 		{"en-US", "hash-en-7"},
 	}
 	for _, c := range cases {
-		row, err := svc.Model().GetByPageVersion(ctx, testPageID, 7, c.lang)
+		row, err := svc.Model().GetByHash(ctx, testPageID, c.want)
 		if err != nil {
 			t.Fatalf("查询 %s 行失败: %v", c.lang, err)
 		}
@@ -211,7 +211,7 @@ func TestArtifactGetByPageVersionLangScoped(t *testing.T) {
 			t.Fatalf("%s 行错配: hash=%s lang=%s", c.lang, row.ArtifactHash, row.Lang)
 		}
 	}
-	if _, err := svc.Model().GetByPageVersion(ctx, testPageID, 7, "ja-JP"); err != gorm.ErrRecordNotFound {
+	if _, err := svc.Model().GetByHash(ctx, testPageID, "missing"); err != gorm.ErrRecordNotFound {
 		t.Fatalf("未登记语言应返回 ErrRecordNotFound，实际 %v", err)
 	}
 }
