@@ -224,11 +224,25 @@ test('buildBody 全空的行被跳过（不产生空对象）', () => {
     assert.deepEqual(JSON.parse(body.get('values')), [{ key: '有值' }]);
 });
 
-test('buildBody 一行 template 都没有时不发该键', () => {
+test('buildBody 数组型 data-write-json 一行都没有时发空数组（清空是明确意图）', () => {
     const m = load();
     const f = form({ 'data-write': 'update', 'data-write-json': 'values' }, [], {});
     const body = m.buildBody(f, null);
-    assert.equal(body.has('values'), false);
+    // 「删光所有行」= 清空；「键不存在」= 本次不改。两者混同的后果是
+    // 用户删完所有行后保存什么都没发生，而界面已显示成功。
+    assert.equal(body.has('values'), true, '清空必须发空数组，而不是省略该键');
+    assert.equal(body.get('values'), '[]');
+});
+
+test('buildBody 单对象型 data-write-json 清空时不发键（没有空对象的合法形态）', () => {
+    const m = load();
+    const f = form({
+        'data-write': 'update', 'data-write-json': 'ruleParams',
+        'data-write-json-single': 'ruleParams',
+    }, [], {});
+    const body = m.buildBody(f, null);
+    // {} 会被后端当成「填了个空结构」，与「本次不改」不同，所以清空时省略。
+    assert.equal(body.has('ruleParams'), false);
 });
 
 test('bulkIDs 去重并跳过空值', () => {

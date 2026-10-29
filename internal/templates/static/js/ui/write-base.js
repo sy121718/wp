@@ -226,7 +226,19 @@
                     rows.push(obj);
                 }
             }
-            if (rows.length === 0) return;            // 一行都没有：不发这个键
+            // 一行都没有：**发空数组**，不发"键不存在"。
+            //
+            // 语义判据（与 data-write-lines 一致，也与三个 *string/*slice DTO 的约定一致）：
+            // 「删光所有行」是明确的清空意图，而"键不存在"表示本次不改。
+            // 让两者都表现成"不发键"，用户删完所有行后保存 = 什么都没发生，
+            // 而界面已经显示成功 —— 这正是 data-write-keep-empty 那条缺陷的同一种形态。
+            //
+            // 单对象（data-write-json-single）例外：它没有"空对象"的合法形态
+            // （{} 会被后端当成"填了个空结构"），所以清空时仍不发键。
+            if (rows.length === 0) {
+                if (!isSingleRow(name, form)) out[name] = [];
+                return;
+            }
             out[name] = rows.length === 1 && !/\[\]$/.test(name) && isSingleRow(name, form)
                 ? rows[0]
                 : rows;
