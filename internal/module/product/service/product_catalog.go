@@ -48,7 +48,7 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 	if size == 0 {
 		size = 12
 	}
-	out := &productdto.PublicCatalogResp{Items: []productdto.PublicCatalogItem{}, Page: page, PageSize: size}
+	out := &productdto.PublicCatalogResp{Items: []productdto.PublicCatalogItemResp{}, Page: page, PageSize: size}
 	if s.publicCatalogIndex == nil {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}
@@ -102,7 +102,7 @@ func (s *Service) PublicCatalog(ctx context.Context, req *productdto.PublicCatal
 		if row.ProjectID != req.ProjectID || row.Status != productenums.StatusPublished || paths[row.ID] == "" {
 			continue
 		}
-		item := productdto.PublicCatalogItem{ID: row.ID, Name: values[i]["name"], Subtitle: values[i]["subtitle"], URL: seo.AbsoluteSiteURL(paths[row.ID]), Images: imageURLs(row), Slug: row.Slug, Unit: row.Unit, Tags: []string{}}
+		item := productdto.PublicCatalogItemResp{ID: row.ID, Name: values[i]["name"], Subtitle: values[i]["subtitle"], URL: seo.AbsoluteSiteURL(paths[row.ID]), Images: imageURLs(row), Slug: row.Slug, Unit: row.Unit, Tags: []string{}}
 		var alts []string
 		_ = json.Unmarshal(row.ImageAlts, &alts)
 		if len(alts) > 0 {

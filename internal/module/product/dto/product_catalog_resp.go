@@ -11,8 +11,8 @@ type PublicCatalogReq struct {
 	PageSize  int    `form:"pageSize" binding:"min=0,max=60"`
 }
 
-// PublicCatalogItem 是已上线商品的公开事实；金额为整数分。
-type PublicCatalogItem struct {
+// PublicCatalogItemResp 是已上线商品的公开事实；金额为整数分。
+type PublicCatalogItemResp struct {
 	ID           string   `json:"id"`
 	Name         string   `json:"name"`
 	Subtitle     string   `json:"subtitle"`
@@ -28,8 +28,8 @@ type PublicCatalogItem struct {
 }
 
 type PublicCatalogResp struct {
-	Items    []PublicCatalogItem `json:"items"`
-	Total    int64               `json:"total"`
-	Page     int                 `json:"page"`
-	PageSize int                 `json:"pageSize"`
+	Items    []PublicCatalogItemResp `json:"items"`
+	Total    int64                   `json:"total"`
+	Page     int                     `json:"page"`
+	PageSize int                     `json:"pageSize"`
 }
