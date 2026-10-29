@@ -18,8 +18,8 @@ import (
 	json "go_wp/pkg/jsonx"
 	"strings"
 
-	"go_wp/internal/builder/components/productbinding"
 	"go_wp/internal/builder/core"
+	"go_wp/internal/builder/productbinding"
 )
 
 // Type 组件类型标识。

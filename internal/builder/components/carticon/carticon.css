@@ -271,13 +271,13 @@
 }
 & .sky-cart-checkout {
   border: 0;
-  background: var(--sky-c-text, #202124);
+  background: var(--sky-c-text, #111827);
   font: inherit;
   cursor: pointer;
 }
 & .sky-cart-empty {
   padding: 48px 24px;
-  border: 1px dashed var(--sky-c-border, #d8d9dc);
+  border: 1px dashed var(--sky-c-border, #e5e7eb);
   border-radius: 16px;
   text-align: center;
 }

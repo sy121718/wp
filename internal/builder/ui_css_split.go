@@ -122,6 +122,9 @@ func uiCSSSections() []uiCSSSection {
 func uiCSSSectionResourcesWithoutStyle() map[string]string {
 	return map[string]string{
 		"site-data.js":     "公开数据读取的行为基座，无样式，外观由宿主页面提供",
+		"site-preview.js":  "统一受控模拟预览状态，只有行为，无独立样式",
+		"site-actions.js":  "解析后组件动作的行为分发，无样式，外观归宿主组件",
+		"site-orders.js":   "订单售后JSON视图行为，外观由订单组件静态CSS提供",
 		"requires_js.js":   "放行依赖脚本的提交按钮，只有行为，无样式",
 		"write-base.js":    "统一写请求的行为基座，无样式，展示外观由宿主提供",
 		"site-commerce.js": "消费购物车事实的行为脚本，外观由静态壳与组件样式提供",

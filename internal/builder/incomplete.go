@@ -12,8 +12,8 @@ func incompleteViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) *
 	ctx.CSS.Add(core.BreakpointDesktop, "."+core.NodeClass(node.ID), []string{
 		"min-height: 72px", "width: 100%", "box-sizing: border-box",
 		"display: flex", "align-items: center", "justify-content: center", "gap: 8px",
-		"padding: 16px", "border: 1px dashed #a1a1aa", "border-radius: 8px",
-		"background: #fafafa", "color: #71717a", "font: 13px/1.5 sans-serif",
+		"padding: 16px", "border: 1px dashed var(--sky-c-border, #e5e7eb)", "border-radius: 8px",
+		"background: var(--sky-c-surface-muted, #f3f4f6)", "color: var(--sky-c-text-muted, #6b7280)", "font: 13px/1.5 sans-serif",
 	})
 	return &nodeView{
 		Type: node.Type, Template: "incomplete", NodeID: node.ID,

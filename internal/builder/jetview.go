@@ -54,7 +54,7 @@ import (
 	navPkg "go_wp/internal/builder/components/nav"
 	orderlistPkg "go_wp/internal/builder/components/orderlist"
 	productPkg "go_wp/internal/builder/components/product"
-	"go_wp/internal/builder/components/productbinding"
+	"go_wp/internal/builder/productbinding"
 	productcardPkg "go_wp/internal/builder/components/productcard"
 	productlistPkg "go_wp/internal/builder/components/productlist"
 	productselectorPkg "go_wp/internal/builder/components/productselector"
