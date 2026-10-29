@@ -899,8 +899,8 @@ func refCodeOf(ref *productcontract.WarehouseRef) string {
 //
 // 641 之后「某变体有哪些货」不再由 inventory_stocks.variant_id 回答（同一变体在同一仓
 // 可以有多条货行、一条货行也可以被多个变体引用），而是经商品侧的引用清单取货行 id，
-// 再按 id 求和 —— 可售 = Σ(quantity - reserved_quantity)，只算跟踪行（不跟踪 = 无限，
-// 数量不构成约束，与出库路径的语义一致）。
+// 再按 id 求和 —— 全部引用均有跟踪事实时，可售 = Σ(quantity - reserved_quantity)。
+// 任一行不跟踪即没有有限上限；缺失事实与无引用也不能伪装成已确认缺货。
 //
 // 引用读口未注入（纯库存单测路径）时返回空结果：调用方按「未知」兜底，
 // 而真正的扣减判定仍在写路径的行锁里，不靠这个投影值。
@@ -926,15 +926,27 @@ func (s *Service) AvailableQuantities(ctx context.Context, projectID string, var
 		byStock[f.StockID] = f
 	}
 	for variantID, ids := range byVariant {
-		total := 0
-		for _, id := range ids {
-			if f := byStock[id]; f != nil && f.TrackQuantity {
-				total += availableOf(f.Quantity, f.ReservedQuantity)
-			}
+		if total, known := finiteStockAvailability(ids, byStock); known {
+			out[variantID] = total
 		}
-		out[variantID] = total
 	}
 	return out, nil
+}
+
+// finiteStockAvailability 仅在全部引用具有有限库存时给出数量；0 仍是已确认缺货。
+func finiteStockAvailability(ids []string, byStock map[string]*inventorycontract.StockFact) (int, bool) {
+	if len(ids) == 0 {
+		return 0, false
+	}
+	total := 0
+	for _, id := range ids {
+		f := byStock[id]
+		if f == nil || !f.TrackQuantity {
+			return 0, false
+		}
+		total += availableOf(f.Quantity, f.ReservedQuantity)
+	}
+	return total, true
 }
 
 const (

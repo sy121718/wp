@@ -40,7 +40,8 @@ type WarehouseRef struct {
 // 未注入时（纯商品单测路径）捆绑配置仍可保存与读取（配置本身不依赖库存），
 // 但整单校验必须 fail-closed：拿不到权威可用量就返回错误，绝不按「无限制」放行。
 type VariantAvailabilityPort interface {
-	// AvailableQuantities 批量读 SKU 的可用量（键为变体 id；无库存记录的 id 值为 0）。
+	// AvailableQuantities 批量读 SKU 的有限可用量（键为变体 id）。
+	// 不跟踪、缺失事实或无库存引用时不返回该键；已确认的跟踪库存售罄返回 0。
 	// ProjectID 用于限定工程，避免跨工程读到同名变体。
 	AvailableQuantities(ctx context.Context, projectID string, variantIDs []string) (out map[string]int, err error)
 }
