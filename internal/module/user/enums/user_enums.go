@@ -192,31 +192,6 @@ const (
 	KeyCustomerMembershipUnavailable    = "admin.customer_detail.membership.unavailable"
 	KeyCustomerMembershipNoProject      = "admin.customer_detail.membership.no_project"
 	KeyCustomerMembershipFailed         = "admin.customer_detail.membership.failed"
-
-	// 访客侧重定向页的浏览器标题（pageTitles 表）。
-	KeyUserPageLogin        = "user.page.login"
-	KeyUserPageRegister     = "user.page.register"
-	KeyUserPageRegisterDone = "user.page.register_done"
-	KeyUserPageForgot       = "user.page.forgot"
-	KeyUserPageReset        = "user.page.reset"
-	KeyUserPageMessage      = "user.page.message"
-	KeyUserPageAccount      = "user.page.account"
-
-	// 访客结果页（user/message）的标题与正文。
-	KeyUserMessageActivationInvalidTitle = "user.message.activation_invalid.title"
-	KeyUserMessageActivationFailedTitle  = "user.message.activation_failed.title"
-	KeyUserMessageActivatedBody          = "user.message.activated.body"
-	KeyUserMessageResendFailedTitle      = "user.message.resend_failed.title"
-	KeyUserMessageResendDoneTitle        = "user.message.resend_done.title"
-	KeyUserMessageResendDoneBody         = "user.message.resend_done.body"
-	KeyUserMessageLogoutFailedTitle      = "user.message.logout_failed.title"
-	KeyUserMessageResetMailTitle         = "user.message.reset_mail.title"
-	KeyUserMessageLinkInvalidTitle       = "user.message.link_invalid.title"
-	KeyUserMessagePasswordResetTitle     = "user.message.password_reset.title"
-	KeyUserMessagePasswordResetBody      = "user.message.password_reset.body"
-	KeyUserMessageAccountOpenFailedTitle = "user.message.account_open_failed.title"
-	KeyUserMessagePasswordChangedTitle   = "user.message.password_changed.title"
-	KeyUserMessagePasswordChangedBody    = "user.message.password_changed.body"
 )
 
 // 词条缺失时的中文兜底（与库内 zh-CN 值逐字一致：不一致时，兜底生效与否会表现出两种文案）。

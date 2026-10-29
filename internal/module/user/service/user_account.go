@@ -42,7 +42,7 @@ package userservice
 //  1. **激活码存 hash 不存明文**：它是凭据，与密码同级别。库被读走时明文凭据等于可直接激活账号。
 //     校验时把用户输入的码 hash 后等值比对（等值查询仍然可用，因为没有加盐的随机码本身足够长）。
 //  2. **码长 8 位字母数字而不是 6 位纯数字**：6 位数字只有 100 万种组合，在「无尝试次数限制」
-//     的前提下可以被脚本跑穿（本项目尚未给验证码入口做限流）。
+//     的前提下可以被脚本跑穿；访客验证码JSON入口另叠敏感操作限流。
 //  3. **接口不返回激活码**：那是用户邮箱里的东西；接口回传它，任何调用方都能直接激活，
 //     验证邮箱这一步就白做了。
 
@@ -119,8 +119,6 @@ func (s *Service) GetAccount(ctx context.Context, userID uint64) (res *userdto.A
 		Status:            u.Status,
 		RegisteredAt:      utils.NewJSONTimePtr(u.RegisteredAt),
 		LastLoginTime:     utils.NewJSONTimePtr(u.LastLoginTime),
-		RegisteredAtText:  formatTime(u.RegisteredAt),
-		LastLoginTimeText: formatTime(u.LastLoginTime),
 		LastLoginIP:       deref(u.LastLoginIP),
 		LastLoginLocation: deref(u.LastLoginLocation),
 	}

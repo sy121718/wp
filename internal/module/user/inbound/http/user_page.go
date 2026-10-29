@@ -1,84 +1,10 @@
 package userhttp
 
-// 这一页回答的是 RFM 回答不了的问题：**这段时间来的新人，之后还回不回来**。
-// RFM 是横截面（此刻谁值多少），群组留存是纵向的（同一批人随时间怎么衰减）。
-//
-// 矩阵的形状（行 = 首单所在月，列 = 相对月序号）与每一格的取值全在订单模块
-// （ordercontract.CustomerCohortReader）。本页不重算任何比例 —— 页头「共 N 个新客户」
-// 必须与客户概览页的「新客」是同一个数，各算一次就会分叉。
-//
-// **空格的语义要在页面上说清楚**：还没到的月份是空白，不是 0%。两者混在一起时
-// 最新几个月的留存率会显示成一片 0%，读起来像断崖式流失，而真实原因是时间还没到。
-
-// 这一页只回答一个问题：**这段时间客户是怎么变的** —— 来了多少新客、多少人回来下单、
-// 复购率多少。四个数出自订单模块的一条聚合（ordercontract.CustomerGrowthReader），
-// 本页不做任何自己的算术（口径的解释权只在拥有 orders 表的模块）。
-//
-// **为什么这一页不做「自定义区间」**：自定义要一套收敛规则（日期非法、首尾颠倒、
-// 终点在未来、跨度超长），概览页已经解决过一次。在这里先复制一遍的代价不是多写二十行，
-// 而是**两套收敛规则迟早分叉**（一个把未来日期收成今天、另一个报错），
-// 而运营看不出哪一页是对的。先只给预设；真有人要自定义时，正确做法是把它收口成
-// 共享实现（`pkg/`），而不是让这一页长出自己的版本。
-
-// 这一页回答「这些人各自值多少」：把区间内下过单的人按 R（多久没来）/ F（来了几次）/
-// M（花了多少）各打 1-5 分，总分决定分段（高价值 / 潜力 / 一般）。
-//
-// **打分是相对的**：每一维的五分位都按当次查询的那批人算，所以页面上的分数必须
-// 与「分位」两个字一起读 —— 一个人在这个区间是 R=5，换一个区间可能只有 R=3。
-// 这一点写在页头说明里，而不是只留在代码注释里（否则它一定会被读成绝对等级）。
-//
-// 客户名来自客户模块（订单模块只交 id）：RFM 的口径在订单侧、客户的资料在客户侧，
-// 页面负责把两边拼起来 —— 这也是这一页属于「客户模块的页面」而不是订单模块的原因。
-
-// handler 的职责边界（见 internal/module/CLAUDE.md）：绑定参数 → 调 service → 输出响应。
-// 这里**不做业务判断**：邮箱格式、密码强度、账号状态全部在 service 里，
-// 这里只负责把表单字段搬进 dto，以及把 service 的错误搬回页面。
-
-// 只有两个：attachUserSession（尽力解析，不阻断）与 requireUser（要求已登录）。
-// 刻意不做「按权限点鉴权」的中间件：访客能做的事全是「操作自己的账号」，
-// 归属校验写在 service 的 SQL 条件里（`WHERE id = ? AND user_id = ?`）比写在中间件里可靠 ——
-// 中间件只能判断「登录没有」，判断不了「这条记录是不是他的」。
-
-// Package userhttp 用户模块（访客账号）的 HTTP 接入层：注册 / 验证 / 登录 / 账号中心。
-//
-// # 为什么这些路由不在 /api 下
-//
-// /api 那组挂了 SessionAuthMiddleware + CSRFMiddleware + CasbinMiddleware 三件套，
-// 它们是**管理后台**的认证体系：Casbin 的 subject 是 sys_admin.id，权限点是后台菜单的权限点。
-// 访客账号没有权限点、也不该进 Casbin 的策略表（那会让「登录」这件事变成一次授权决策）。
-//
-// 所以访客侧自带一套**更窄**的链路：自己的 cookie 会话 + 自己的 CSRF token，
-// 没有 Casbin。少一层不是省事，而是把「谁有权做什么」收敛到业务代码里 ——
-// 访客能做的事只有「操作自己的账号」，这个判断不需要策略引擎。
-
-// cookie 里只放会话令牌本身，业务字段一律不入 cookie：
-// cookie 是客户端可见的（虽然签名防篡改），放进去的东西改起来麻烦、还会随每个请求来回传。
-
-// **只加展示、不加领域**：本文件没有任何写方法 —— 不指定等级、不解锁、不重算。
-// 那些是 membership 模块自己的后台页（/admin/membership/*）的职责，各带各的权限点；
-// 在客户页上顺手给一个「改他的等级」按钮，等于把两个权限点合成了一个。
-//
-// 端口经装配期注入，形态照既有的 CustomerAdminPort / CustomerOrderSummaryReader：
-//	Reader       —— 读一条会员身份（收窄的只读接口，拿不到等级 CRUD 与归属写入）；
-//	FacingTexter —— 把会员模块的业务错误转成一句话（客户页拿不到它的 enums 白名单，
-//	                没有这条出口就只能直出 err.Error() 或一律通用提示）。
-//
-// 两处「不炸页」的兜底：
-//   · 端口未注入 / 没选工程 / 解析失败一律给**可见文案**，且渲染键**始终存在**
-//     （Jet 的 `{{if .X}}` 遇到缺键会中断整页渲染 → 500，见 internal/templates/CLAUDE.md）；
-//   · 等级名等字段用 isset 兜底，缺键不炸（渲染键恒设零值，模板侧仍有判断）。
-
-// 这一组全部挂在 requireUser 之下：未登录一律 302 到登录页。
-// userID **只从会话里取**，页面上的表单里没有、也不接受任何用户 id 字段 ——
-// 从请求参数取 id 的账号接口是「谁都能改别人的资料」，而且它看起来完全正常。
-
-// 全部走**原生表单**（无 JS 依赖）：访客侧是公开页面，必须在脚本不可用时也能完成注册与登录。
-// 每个表单显式带 csrf_token 隐藏域（原生表单不会自动带 HTMX 的 hx-headers）。
+// 后台客户管理页面与独立访客cookie、CSRF、会话基础。访客账号表单仅走site JSON入口。
 
 import (
 	"context"
 	"errors"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -90,7 +16,6 @@ import (
 	gsessions "github.com/gorilla/sessions"
 
 	"go_wp/internal/adminui"
-	"go_wp/internal/builder"
 	"go_wp/internal/middleware/builtin"
 	membershipcontract "go_wp/internal/module/membership/contract"
 	membershipdto "go_wp/internal/module/membership/dto"
@@ -102,12 +27,8 @@ import (
 	userenums "go_wp/internal/module/user/enums"
 	userservice "go_wp/internal/module/user/service"
 	"go_wp/internal/shell"
-	"go_wp/internal/templates"
 	"go_wp/pkg/auth"
-	"go_wp/pkg/binding"
 	"go_wp/pkg/crypto"
-	"go_wp/pkg/i18n"
-	"go_wp/pkg/logger"
 	"go_wp/pkg/pagination"
 	"go_wp/pkg/reqparams"
 	"go_wp/pkg/response"
@@ -281,7 +202,7 @@ func customerErrFactOf(f adminui.ErrFact) customerMsg {
 }
 
 // customerErrText 错误 → 成品文本。只给**必须交文本**的槽位用：
-// 模板直接渲染的 {{.Err}} 之类（访客页模板不在本模块写权限内，见 userTextOf 注释）。
+// 后台模板的错误提示由共享adminui出口取词。
 func customerErrText(c *gin.Context, err error) string {
 	return adminui.MsgText(c, customerErrMsg(c, err))
 }
@@ -301,7 +222,7 @@ func (l userLabel) msg() customerMsg {
 
 // customerLabelText 标签 → 成品文本。只给**必须交文本**的槽位用：
 // 后台页的 <title>（layout.html 无条件读它，而那个模板不在本模块写权限内）与
-// 访客页模板里直接渲染的 {{ .["error"] }} / {{ .["message"] }}（见 userTextOf）。
+// 后台模板直接渲染的错误槽位。
 // 其余槽位一律给事实 + 模板取词。
 func customerLabelText(c *gin.Context, l userLabel) string {
 	return adminui.MsgText(c, l.msg())
@@ -1955,148 +1876,6 @@ type Handle struct {
 // NewHandle 构造。
 func NewHandle(svc *userservice.Service) *Handle { return &Handle{svc: svc} }
 
-// pageTitles 模板名 → 浏览器标题（key + 中文兜底）。
-//
-// 集中一张表而不是让每个 handler 各自传：这张表同时是「访客侧有哪些页面」的清单，
-// 新增页面时若忘了在这里登记，页面标题会退化成站点名 —— 一眼可见，不会静默出错。
-//
-// 值不是裸中文：<title> 是**直接渲染**的文本，硬写中文等于英文界面里标题永远中文。
-var pageTitles = map[string]userLabel{
-	"user/login":         {userenums.KeyUserPageLogin, "登录"},
-	"user/register":      {userenums.KeyUserPageRegister, "注册"},
-	"user/register_done": {userenums.KeyUserPageRegisterDone, "注册成功"},
-	"user/forgot":        {userenums.KeyUserPageForgot, "找回密码"},
-	"user/reset":         {userenums.KeyUserPageReset, "重置密码"},
-	"user/message":       {userenums.KeyUserPageMessage, "提示"},
-	"user/account":       {userenums.KeyUserPageAccount, "账号中心"},
-}
-
-// userTextOf 访客页**文本槽位**取词：这些槽位没有渲染期。
-//
-// 访客页模板（internal/templates/user/**，不在本模块写权限内）读的是
-// `{{ .["error"] }}` / `{{ .["message"] }}` / `{{ .["title"] }}` —— **直接渲染的成品文本**，
-// 拿不到 .["t"]（那是 adminui.Prepare 注入后台页面的）。所以这里必须交文本，
-// 但取词本身走共享出口 adminui.MsgText（不再是 shell.TranslateFor(c)(key, fallback) 那种
-// 在模块里拼句子的写法）。等访客模板纳入权限后，这两处应当改成模板取词。
-func userTextOf(c *gin.Context, l userLabel) string {
-	return customerLabelText(c, l)
-}
-
-// userTr 访客页的取词函数（= 后台模板注入的 .["t"]：internal/templates.TranslateFunc
-// 按 response.RequestLanguage 取词，与 shell.TranslateFor 是同一实现）。
-//
-// 只服务两处：① render 注入 data["t"] 给模板里的 `{{ .["t"](...) }}`；
-// ② userTextFilled 的具名占位符填充（i18n.FillTranslate 要一个取词函数，
-// 而 adminui 只导出「事实 → 文本」，不导出取词函数本身）。
-func userTr(c *gin.Context) func(key, fallback string) string {
-	return templates.TranslateFunc(response.RequestLanguage(c))
-}
-
-// userTextFilled 取词并按命名参数填充 `{name}` 占位符（复用 pkg/i18n 的实现）。
-//
-// 词条被改坏（填完仍有残留占位符）时 FillTranslate 自动回落中文兜底再填一次；
-// 参数缺失也不补默认值：补 0 会渲染出一句「看起来像结论」的错话，
-// 而页面显示代码里的原文至少能让人看出「这句没配好」。
-//
-// 走 FillTranslate 而不是 adminui.TranslateArgs：后者的占位符协议是 `%s` 位置参数，
-// 而这两条词条（user.message.activated.body / resend_done.body）用的是 `{username}` /
-// `{email}` 具名占位符 —— 改词条等于改运营可能已经改过的数据，不在本批范围内。
-func userTextFilled(c *gin.Context, l userLabel, kv map[string]string) string {
-	return i18n.FillTranslate(userTr(c), l.key, l.fallback, kv)
-}
-
-// render 渲染访客页面，自动补齐 CSRF token 与当前登录用户。
-//
-// 每个页面都要拿到这两样，逐个 handler 手写必然会漏掉一个 —— 漏掉 CSRF token 的表现是
-// 「页面能打开，一提交就 403」，而报错信息指向中间件，排查会绕很远。
-//
-// 为什么这里是 c.HTML 而不是 pageview.Render：**访客页的失败是产品行为**。
-// 登录密码错、注册校验不过、忘记密码格式不对 —— 这些都要把用户刚填的东西留在原地、
-// 在旁边说一句错在哪，而不是甩一段 JSON 让他自己回去重填。所以 status 是入参
-// （200 / 400 / 401 / 500 各有语义），视图也已经全是强类型 dto（AccountPageResp 等）。
-//
-// 后台页的失败出口是另一条判据：那些页面不带用户输入，失败时给一个提示就够
-// （用户裁定：所有提示只需要一个提示，不渲染完整页）。
-func (h *Handle) render(c *gin.Context, status int, name string, anyView any) {
-	// 收 any 而不是 gin.H：访客页的视图是强类型结构体（每个字段带 view 标签对应模板的
-	// 小写键），这里统一摊平成 map 再补页壳键（csrf_token / user / lang / t / dir / site / title）。
-	//
-	// 为什么不把壳键做成视图字段：它们是**页壳关切**，每一屏都要、内容与业务无关，
-	// 让 6 个视图各声明一遍 csrf_token/lang/t 只会让「这一屏要什么业务数据」淹没在壳键里。
-	data := adminui.ViewMap(anyView)
-	if data == nil {
-		data = gin.H{}
-	}
-	if _, ok := data["csrf_token"]; !ok {
-		token, err := builtin.EnsureCSRFTokenWith(c, userCSRFStore{})
-		if err != nil {
-			logger.Scene("user").Error(err, "生成访客 CSRF token 失败")
-		}
-		data["csrf_token"] = token
-	}
-	if _, ok := data["user"]; !ok {
-		data["user"] = currentSession(c)
-	}
-	// 界面语言与取词函数同源（response.RequestLanguage 的判定链：语言 Cookie → query lang
-	// → Accept-Language → 默认语言）。两者分家会出现「正文按请求语言取词、<html lang>
-	// 恒 zh-CN」这类只在部分页面显现的不一致。
-	if _, ok := data["lang"]; !ok {
-		data["lang"] = response.RequestLanguage(c)
-	}
-	// i18n 取词函数（与后台 adminui.Prepare 注入的 data["t"] 同源）：访客页面模板用
-	// {{ .["t"]("user.x", "中文兜底") }} 取词。
-	//
-	// **必须在这里无条件注入**：chain 索引 + 函数调用在缺 t 时是静默空串
-	// （不报错、不 500、无日志），漏掉的后果是整页文案一起变空白
-	// （见 internal/templates/CLAUDE.md「缺键的两种后果」）。
-	if _, ok := data["t"]; !ok {
-		data["t"] = userTr(c)
-	}
-	// 书写方向（审计 I18N-02）：访客页面与静态产物用同一条规则
-	// （builder.DirAttr：RTL 才落字节，LTR 是 HTML 缺省）。判据各写一份就会出现
-	// 「静态页是 rtl、账号页不是」这类只在部分页面显现的方向错误。
-	if _, ok := data["dir"]; !ok {
-		lang, _ := data["lang"].(string)
-		data["dir"] = builder.DirAttr(lang)
-	}
-	if _, ok := data["site"]; !ok {
-		data["site"] = "go_wp"
-	}
-	if _, ok := data["title"]; !ok {
-		data["title"] = userTextOf(c, pageTitles[name])
-	}
-	c.HTML(status, name, data)
-}
-
-// userPageMessage 访客页出口的错误文案：业务错误取当前语言，其余归口 + 记日志。
-//
-// 判定与归口都收敛到共享的 adminui（判据是 pkg/response.IsBusinessError 的**形态**）。
-// 本模块不再维护 userenums.UserFacingMessages 那份白名单 —— 它是第二份真相：
-// service 换了措辞、或某个 key 改由别的模块提供，白名单就静默失配，
-// 而两种症状都不报错（有时把内部错误当业务文案透出，有时把业务文案吞成归口）。
-//
-// 为什么访客页必须交成品文本：模板里的 {{ .["error"] }} / {{ .["message"] }} 是
-// **直接渲染**的文本、不经过 pkg/response 的 translate —— 只给 key 的话，
-// 注册失败时访客看到的是「user.err.usernameTaken」。
-func userPageMessage(c *gin.Context, err error) string {
-	if err == nil {
-		return ""
-	}
-	return adminui.PageErrorText(c, "user", err)
-}
-
-// userKeyText 参数级提示的取词出口：没有 error 对象、文案就是 enums 里的某个常量
-// （缺 device 标识、登出失败归口等场景直接传常量给模板）。
-//
-// 与 userPageMessage 同一份判据（只是入参是字符串）：形态不像业务 key 的一律落归口文案
-// —— 归口文案是「未命中时的返回值」，不是业务文案。
-func userKeyText(c *gin.Context, key string) string {
-	if fact, ok := adminui.BusinessErrFact(errors.New(key)); ok {
-		return adminui.ErrorFactText(c, fact)
-	}
-	return adminui.MsgText(c, adminui.InternalMsg())
-}
-
 // clientIP 取访客真实 IP。
 //
 // 用 c.ClientIP()（gin 依据 TrustedProxies 决定是否采信 X-Forwarded-For）：
@@ -2106,7 +1885,7 @@ func clientIP(c *gin.Context) string {
 	return strings.TrimSpace(c.ClientIP())
 }
 
-// locale 取界面语言（访客页面目前只有 zh-CN，保留参数位是为了邮件模板的语言选择）。
+// locale 取账号邮件模板的请求语言。
 func locale(c *gin.Context) string {
 	if v := strings.TrimSpace(c.Query("lang")); v != "" {
 		return v
@@ -2114,25 +1893,14 @@ func locale(c *gin.Context) string {
 	return "zh-CN"
 }
 
-// isNotFound 判断是否为「没找到」类业务错误（用于决定 404 还是 400）。
-func isNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return msg == userenums.ErrSessionNotFound || msg == userenums.ErrUserNotFound
-}
-
-var _ = errors.New
-
 const (
 	// ctxUserSession context 中存放当前访客会话的键。
 	ctxUserSession = "user_auth_session"
 )
 
-// touchThrottleInterval 活跃时间写库的最小间隔。
+// touchThrottleInterval Redis活跃时间更新的最小间隔。
 //
-// 不节流的话每个请求都会产生一条 UPDATE：一个页面带十几个资源请求就是十几次写。
+// 不节流时每个JSON请求都会更新Redis；设备界面不需要秒级活跃精度。
 // 活跃时间的精度要求本来就低（界面上显示「最近活跃」），60 秒完全够。
 const touchThrottleInterval = 60 * time.Second
 
@@ -2170,7 +1938,7 @@ func shouldTouch(sessionHash string) bool {
 // attachUserSession 尽力解析访客会话并挂到 context，**不阻断请求**。
 //
 // 未登录不是错误：注册页、登录页本身就要在未登录时可访问。
-// 需要登录的入口再叠 requireUser。
+// 私有JSON入口再叠requireSiteUser。
 func attachUserSession(svc *userservice.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := readUserToken(c)
@@ -2190,38 +1958,6 @@ func attachUserSession(svc *userservice.Service) gin.HandlerFunc {
 		}
 		c.Next()
 	}
-}
-
-// requireUser 要求已登录：页面请求 302 到登录页（带 next 回跳），其余返回 401。
-//
-// next 必须是本站路径（见 safeNext）：不加限制的话
-// `/user/login?next=https://evil.example` 看起来就是本站的登录链接，
-// 登录成功后把用户送去别处 —— 典型的开放重定向。
-func requireUser() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if currentSession(c) != nil {
-			c.Next()
-			return
-		}
-		if wantsJSON(c) {
-			// JSON 响应统一走 pkg/response（模块规范：不自己拼 {code,message} 结构）。
-			response.ErrorWithMessage(c, http.StatusUnauthorized, userenums.ErrNotLoggedIn)
-			c.Abort()
-			return
-		}
-		next := c.Request.URL.RequestURI()
-		c.Redirect(http.StatusFound, "/user/login?next="+url.QueryEscape(next))
-		c.Abort()
-	}
-}
-
-// wantsJSON 判断调用方期望 JSON 而不是页面（HTMX / fetch 请求）。
-func wantsJSON(c *gin.Context) bool {
-	if c.GetHeader("HX-Request") != "" {
-		return false // HTMX 要的是 HTML 片段
-	}
-	accept := c.GetHeader("Accept")
-	return accept != "" && !strings.Contains(accept, "text/html")
 }
 
 // currentSession 取当前请求的访客会话；未登录返回 nil。
@@ -2245,23 +1981,6 @@ func currentToken(c *gin.Context) string {
 		}
 	}
 	return readUserToken(c)
-}
-
-// safeNext 校验回跳地址：只允许本站绝对路径。
-//
-// 允许的形态：以单个 "/" 开头且不是 "//"（"//evil.com" 在浏览器里是协议相对 URL，
-// 会跳到外站）。其余一律回落到 fallback。
-func safeNext(next, fallback string) string {
-	next = strings.TrimSpace(next)
-	if next == "" || next[0] != '/' || (len(next) > 1 && next[1] == '/') {
-		return fallback
-	}
-	// 反斜杠：历史浏览器把 `/\evil.com` 也当协议相对 URL 处理，这里一并挡掉，
-	// 代价是拒绝一个几乎不存在的合法路径。
-	if strings.Contains(next, "\\") {
-		return fallback
-	}
-	return next
 }
 
 const (
@@ -2645,490 +2364,6 @@ func customerPageDayEnd(raw string) *time.Time {
 	}
 	end := day.AddDate(0, 0, 1).Add(-time.Nanosecond)
 	return &end
-}
-
-// accountNextTarget 取「保存类操作完成后的站内回跳目标」；没有或不可信则返回空串。
-//
-// 为什么需要它：账号表单现在是**片段**，可以出现在作者自己排的账号页上。
-// 提交后停在内置账号页，会让作者页面上的账号中心半途跳到另一个页面 ——
-// 那正好抵消了「把账号功能放到自己页面上」的意义。
-//
-// 为什么必须校验而不是照抄表单值：直接把 next 塞进 Location 就是**开放重定向**，
-// 站点会变成任意目的地的跳板，而页面看起来一切正常，没人会去查。
-// 规则取最保守的一档（站内相对路径），够用且不留解释空间：
-//   - 必须以单个 / 开头（//evil.com 是协议相对 URL，会被浏览器当外部站点）；
-//   - 不得含反斜杠（多数浏览器把它归一成正斜杠，于是「斜杠 + 反斜杠 + 主机名」会被解析成站外地址）；
-//   - 不得含控制字符（换行会污染响应头）；
-//   - 长度封顶，避免把超长串带进 Location。
-func accountNextTarget(c *gin.Context) string {
-	next := binding.Field(c, "next")
-	if next == "" || len(next) > 512 {
-		return ""
-	}
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
-		return ""
-	}
-	if strings.ContainsAny(next, "\\\r\n") {
-		return ""
-	}
-	return next
-}
-
-// redirectAfterSave 保存成功后的落点：带了合法的站内 next 就回跳，否则留在内置账号页。
-//
-// 只在**成功**路径上回跳：失败必须把错误显示出来，而错误现在只有内置账号页会渲染。
-// 把失败也送走，用户会得到一个「点了保存、页面刷新了、什么都没变」的界面。
-func redirectAfterSave(c *gin.Context) bool {
-	target := accountNextTarget(c)
-	if target == "" {
-		return false
-	}
-	c.Redirect(http.StatusFound, target)
-	return true
-}
-
-// ShowAccount 账号中心。
-func (h *Handle) ShowAccount(c *gin.Context) {
-	sess := currentSession(c)
-	if sess == nil {
-		// 理论上 requireUser 已经挡掉，这里是纵深防御：
-		// 少一次判空就少一处「改装配顺序时静默变成 500」的地方。
-		c.Redirect(http.StatusFound, "/user/login?next=%2Fuser%2Faccount")
-		return
-	}
-	h.renderAccount(c, http.StatusOK, "")
-}
-
-// renderAccount 渲染账号中心（actionError 非空时在页面上显示一条错误）。
-func (h *Handle) renderAccount(c *gin.Context, status int, actionError string) {
-	sess := currentSession(c)
-	if sess == nil {
-		c.Redirect(http.StatusFound, "/user/login?next=%2Fuser%2Faccount")
-		return
-	}
-	account, err := h.svc.GetAccount(c.Request.Context(), sess.UserID)
-	if err != nil {
-		h.renderMessage(c, http.StatusInternalServerError, false, userTextOf(c, userMsgAccountOpenFailedTitle), userPageMessage(c, err))
-		return
-	}
-	sessions, serr := h.svc.ListSessions(c.Request.Context(), sess.UserID, currentToken(c))
-	if serr != nil {
-		// 设备列表拉不到不该让整页打不开：资料与偏好仍然可用。
-		sessions = nil
-	}
-	h.render(c, status, "user/account", &userdto.AccountPageResp{
-		Account:     account,
-		Sessions:    sessions,
-		ActionError: actionError,
-	})
-}
-
-// DoUpdateProfile 保存资料。
-func (h *Handle) DoUpdateProfile(c *gin.Context) {
-	sess := currentSession(c)
-	if sess == nil {
-		c.Redirect(http.StatusFound, "/user/login")
-		return
-	}
-	req, err := binding.ParseForm[userdto.UpdateProfileReq](c)
-	if err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
-		return
-	}
-	// 归属账号只认登录态：表单里没有、也不该有 userID。
-	req.UserID = sess.UserID
-	err = h.svc.UpdateProfile(c.Request.Context(), req)
-	if err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
-		return
-	}
-	if redirectAfterSave(c) {
-		return
-	}
-	h.renderAccount(c, http.StatusOK, "")
-}
-
-// DoUpdatePreference 保存偏好。
-func (h *Handle) DoUpdatePreference(c *gin.Context) {
-	sess := currentSession(c)
-	if sess == nil {
-		c.Redirect(http.StatusFound, "/user/login")
-		return
-	}
-	req, err := binding.ParseForm[userdto.UpdatePreferenceReq](c)
-	if err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
-		return
-	}
-	req.UserID = sess.UserID
-	err = h.svc.UpdatePreference(c.Request.Context(), req)
-	if err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
-		return
-	}
-	if redirectAfterSave(c) {
-		return
-	}
-	h.renderAccount(c, http.StatusOK, "")
-}
-
-// DoChangePassword 修改密码。
-//
-// 改密成功后 service 会撤销该用户的**全部**会话（含当前这一个），
-// 所以这里必须清 cookie 并把人送回登录页 —— 留着 cookie 会让人看到
-// 「还在账号中心、但每个操作都跳登录页」的诡异状态。
-func (h *Handle) DoChangePassword(c *gin.Context) {
-	sess := currentSession(c)
-	if sess == nil {
-		c.Redirect(http.StatusFound, "/user/login")
-		return
-	}
-	req, err := binding.ParseForm[userdto.ChangePasswordReq](c)
-	if err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
-		return
-	}
-	req.UserID = sess.UserID
-	err = h.svc.ChangePassword(c.Request.Context(), req)
-	if err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
-		return
-	}
-	_ = clearUserSession(c)
-	h.renderMessage(c, http.StatusOK, true, userTextOf(c, userMsgPasswordChangedTitle),
-		userTextOf(c, userMsgPasswordChangedBody))
-}
-
-// DoRevokeSession 踢掉某台设备。
-func (h *Handle) DoRevokeSession(c *gin.Context) {
-	sess := currentSession(c)
-	if sess == nil {
-		c.Redirect(http.StatusFound, "/user/login")
-		return
-	}
-	// 设备标识是会话令牌的 sha256（Redis 索引成员），不是数据库行 id —— 会话不落库。
-	req, err := binding.ParseForm[userdto.RevokeSessionReq](c)
-	if err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
-		return
-	}
-	sessionHash := strings.TrimSpace(req.ID)
-	if sessionHash == "" {
-		h.renderAccount(c, http.StatusBadRequest, userKeyText(c, userenums.ErrSessionNotFound))
-		return
-	}
-	if err := h.svc.RevokeSession(c.Request.Context(), sess.UserID, sessionHash); err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
-		return
-	}
-	if redirectAfterSave(c) {
-		return
-	}
-	h.renderAccount(c, http.StatusOK, "")
-}
-
-// DoRevokeOtherSessions 退出其它所有设备。
-func (h *Handle) DoRevokeOtherSessions(c *gin.Context) {
-	sess := currentSession(c)
-	if sess == nil {
-		c.Redirect(http.StatusFound, "/user/login")
-		return
-	}
-	if _, err := h.svc.RevokeOtherSessions(c.Request.Context(), sess.UserID, currentToken(c)); err != nil {
-		h.renderAccount(c, http.StatusBadRequest, userPageMessage(c, err))
-		return
-	}
-	if redirectAfterSave(c) {
-		return
-	}
-	h.renderAccount(c, http.StatusOK, "")
-}
-
-// 访客结果页（user/message）的标题与正文（key + 中文兜底）。
-//
-// 这些文本是**直接渲染**进页面的（renderMessage 把成品文案塞进 gin.H 的 title/message），
-// 硬写中文等于英文界面恒中文。带变量的正文用 %s 占位 —— 词条协议只允许字符串占位符，
-// 因此变量先经 fmt.Sprintf 字符串化（用户名 / 邮箱本来就是字符串，无需转换）。
-var (
-	userMsgActivationInvalidTitle = userLabel{userenums.KeyUserMessageActivationInvalidTitle, "验证链接无效"}
-	userMsgActivationFailedTitle  = userLabel{userenums.KeyUserMessageActivationFailedTitle, "验证未通过"}
-	// userMsgActivatedTitle 复用访客消息词条 user.msg.activateSuccess（值同为「邮箱验证成功」）：
-	// 同一句话在消息通道与结果页各留一条词条，翻译改动时必然分叉。
-	userMsgActivatedTitle = userLabel{userenums.MsgActivateSuccess, "邮箱验证成功"}
-	userMsgActivatedBody  = userLabel{userenums.KeyUserMessageActivatedBody, "账号 {username} 已激活，现在可以登录了。"}
-
-	userMsgResendFailedTitle = userLabel{userenums.KeyUserMessageResendFailedTitle, "重发失败"}
-	userMsgResendDoneTitle   = userLabel{userenums.KeyUserMessageResendDoneTitle, "验证邮件已重发"}
-	userMsgResendDoneBody    = userLabel{userenums.KeyUserMessageResendDoneBody,
-		"如果 {email} 是一个待验证的账号，新的验证邮件已经发出，请查收。"}
-
-	userMsgLogoutFailedTitle = userLabel{userenums.KeyUserMessageLogoutFailedTitle, "登出失败"}
-	userMsgResetMailTitle    = userLabel{userenums.KeyUserMessageResetMailTitle, "重置邮件已提交"}
-	userMsgLinkInvalidTitle  = userLabel{userenums.KeyUserMessageLinkInvalidTitle, "链接无效"}
-
-	userMsgPasswordResetTitle = userLabel{userenums.KeyUserMessagePasswordResetTitle, "密码已重置"}
-	userMsgPasswordResetBody  = userLabel{userenums.KeyUserMessagePasswordResetBody, "请使用新密码登录。"}
-
-	userMsgAccountOpenFailedTitle = userLabel{userenums.KeyUserMessageAccountOpenFailedTitle, "打不开账号中心"}
-	userMsgPasswordChangedTitle   = userLabel{userenums.KeyUserMessagePasswordChangedTitle, "密码已修改"}
-	userMsgPasswordChangedBody    = userLabel{userenums.KeyUserMessagePasswordChangedBody,
-		"为安全起见，所有设备（包括当前这台）都已退出登录，请用新密码重新登录。"}
-)
-
-// ShowRegister 注册页。
-func (h *Handle) ShowRegister(c *gin.Context) {
-	if currentSession(c) != nil {
-		// 已登录还去注册页，说明多半是点了旧书签：直接送回账号中心，
-		// 不显示一个「注册新账号」的表单让人以为自己没登录。
-		c.Redirect(http.StatusFound, "/user/account")
-		return
-	}
-	h.render(c, http.StatusOK, "user/register", &userdto.RegisterPageResp{
-		Form: emptyRegisterForm(),
-	})
-}
-
-// DoRegister 提交注册。
-func (h *Handle) DoRegister(c *gin.Context) {
-	req, err := binding.ParseForm[userdto.RegisterReq](c)
-	if err != nil {
-		h.render(c, http.StatusBadRequest, "user/register", &userdto.RegisterPageResp{
-			Error: userPageMessage(c, err),
-			Form:  emptyRegisterForm(),
-		})
-		return
-	}
-	// 回显用的三档只有这三个字段（密码不回显）。
-	form := adminui.ViewMap(&userdto.RegisterFormResp{Username: req.Username, Email: req.Email, Nickname: req.Nickname})
-	// 注册来源与语言由服务端取，表单里没有这两档。
-	req.RegisterIP = clientIP(c)
-	req.Locale = locale(c)
-	res, err := h.svc.Register(c.Request.Context(), req)
-	if err != nil {
-		// 失败时**回填已填内容**（不含密码）：让人重新把所有字段打一遍是最容易劝退的一步。
-		h.render(c, http.StatusBadRequest, "user/register", &userdto.RegisterPageResp{
-			Error: userPageMessage(c, err),
-			Form:  form,
-		})
-		return
-	}
-	h.render(c, http.StatusOK, "user/register_done", &userdto.RegisterDonePageResp{
-		Email: res.Email,
-		// MailQueued=false 时页面要提示「可以点重发」——邮件没发出去时
-		// 只显示「验证邮件已发送」会让用户一直等一封不会到的信。
-		MailQueued: res.MailQueued,
-	})
-}
-
-// Activate 邮箱验证（GET，链接来自邮件）。
-func (h *Handle) Activate(c *gin.Context) {
-	// GET 链接：参数在查询串里。gin 的 ShouldBind 对 GET 绑查询串，
-	// 与 POST 共用同一份 DTO 与同一个入口。
-	req, err := binding.ParseForm[userdto.ActivateEmailReq](c)
-	if err != nil {
-		req = &userdto.ActivateEmailReq{}
-	}
-	if req.Key == "" {
-		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgActivationInvalidTitle), userKeyText(c, userenums.ErrActivationInvalid))
-		return
-	}
-	req.Locale = locale(c)
-	res, err := h.svc.ActivateEmail(c.Request.Context(), req)
-	if err != nil {
-		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgActivationFailedTitle), userPageMessage(c, err))
-		return
-	}
-	h.renderMessage(c, http.StatusOK, true, userTextOf(c, userMsgActivatedTitle),
-		userTextFilled(c, userMsgActivatedBody, map[string]string{"username": res.Username}))
-}
-
-// DoResendActivation 重发验证邮件。
-func (h *Handle) DoResendActivation(c *gin.Context) {
-	req, err := binding.ParseForm[userdto.ResendActivationReq](c)
-	if err != nil {
-		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgResendFailedTitle), userKeyText(c, userenums.ErrEmailRequired))
-		return
-	}
-	email := req.Email
-	if email == "" {
-		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgResendFailedTitle), userKeyText(c, userenums.ErrEmailRequired))
-		return
-	}
-	req.Locale = locale(c)
-	if err := h.svc.ResendActivation(c.Request.Context(), req); err != nil {
-		// 与密码重置不同，这里**如实报错**：重发接口要求填的邮箱本身就能通过注册接口
-		// 探测出是否被占用，在这里沉默不会多保护任何信息，只会让「邮箱打错了」的人
-		// 盯着「已发送」干等。
-		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgResendFailedTitle), userPageMessage(c, err))
-		return
-	}
-	h.renderMessage(c, http.StatusOK, true, userTextOf(c, userMsgResendDoneTitle),
-		userTextFilled(c, userMsgResendDoneBody, map[string]string{"email": email}))
-}
-
-// ShowLogin 登录页。
-func (h *Handle) ShowLogin(c *gin.Context) {
-	if currentSession(c) != nil {
-		c.Redirect(http.StatusFound, "/user/account")
-		return
-	}
-	h.render(c, http.StatusOK, "user/login", &userdto.LoginPageResp{
-		Next:    c.Query("next"),
-		Account: "",
-	})
-}
-
-// DoLogin 提交登录。
-func (h *Handle) DoLogin(c *gin.Context) {
-	req, err := binding.ParseForm[userdto.LoginReq](c)
-	if err != nil {
-		req = &userdto.LoginReq{}
-	}
-	account := req.Account
-	// next 是跨表单共享的隐藏域（登录 / 注册 / 重置都带），不进 LoginReq。
-	next := safeNext(binding.Field(c, "next"), "/user/account")
-
-	res, err := h.svc.Login(c.Request.Context(), req, userservice.SessionMeta{
-		IP:        clientIP(c),
-		UserAgent: c.Request.UserAgent(),
-	})
-	if err != nil {
-		h.render(c, http.StatusUnauthorized, "user/login", &userdto.LoginPageResp{
-			Error:   userPageMessage(c, err),
-			Account: account,
-			Next:    next,
-		})
-		return
-	}
-
-	if werr := writeUserToken(c, res.Token, req.RememberMe); werr != nil {
-		// cookie 写不进去 → 会话虽然是真建了的，但这个浏览器拿不到令牌。
-		// 提示重新登录比「看着像登录成功、下一页又回到登录页」好排查。
-		//
-		// 文案走 userKeyText 取词：{{ .["error"] }} 是**直接渲染**的槽位，
-		// 直接把 enums 常量塞进去，访客看到的是「user.err.internal」这个裸 key。
-		h.render(c, http.StatusInternalServerError, "user/login", &userdto.LoginPageResp{
-			Error:   userKeyText(c, userenums.ErrInternal),
-			Account: account,
-			Next:    next,
-		})
-		return
-	}
-
-	// 登录成功必须**轮换 CSRF token**：匿名阶段会话里的 token 可能已被预置
-	//（子域 Set-Cookie 注入），沿用旧值会让攻击者预知登录后的 token。
-	if _, rerr := builtin.RotateCSRFTokenWith(c, userCSRFStore{}); rerr != nil {
-		// 轮换失败不阻断登录：用户已经登录成功，此处只是 CSRF token 没换新。
-		// 下一次渲染表单时 EnsureCSRFTokenWith 会补一个。
-		_ = rerr
-	}
-
-	c.Redirect(http.StatusFound, next)
-}
-
-// Logout 登出（POST：GET 登出会被浏览器预取或图片标签意外触发）。
-func (h *Handle) Logout(c *gin.Context) {
-	if err := h.svc.Logout(c.Request.Context(), currentToken(c)); err != nil {
-		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgLogoutFailedTitle), userPageMessage(c, err))
-		return
-	}
-	// 先撤销服务端会话再清 cookie：反过来的话，若撤销失败，用户看到的是
-	// 「已经登出」（cookie 没了），但服务端会话仍然有效。
-	if err := clearUserSession(c); err != nil {
-		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgLogoutFailedTitle), userKeyText(c, userenums.ErrInternal))
-		return
-	}
-	c.Redirect(http.StatusFound, "/user/login")
-}
-
-// ShowForgot 申请重置密码页。
-func (h *Handle) ShowForgot(c *gin.Context) {
-	h.render(c, http.StatusOK, "user/forgot", &userdto.ForgotPageResp{
-		Email: c.Query("email"),
-	})
-}
-
-// DoForgot 提交重置申请。
-//
-// **无论邮箱是否存在都显示同一句成功文案**：这个接口是匿名的、只需一个字段，
-// 如实报错就等于提供了一个「查这个邮箱注册过没有」的接口。
-func (h *Handle) DoForgot(c *gin.Context) {
-	req, err := binding.ParseForm[userdto.PasswordResetReqRequest](c)
-	if err != nil {
-		req = &userdto.PasswordResetReqRequest{}
-	}
-	email := req.Email
-	if email == "" {
-		// 同上：裸 key 进直接渲染的槽位等于把 item_key 摆给访客看。
-		h.render(c, http.StatusBadRequest, "user/forgot", &userdto.ForgotPageResp{
-			Error: userKeyText(c, userenums.ErrEmailRequired),
-			Email: email,
-		})
-		return
-	}
-	req.Locale = locale(c)
-	if err := h.svc.RequestPasswordReset(c.Request.Context(), req); err != nil {
-		h.render(c, http.StatusBadRequest, "user/forgot", &userdto.ForgotPageResp{
-			Error: userPageMessage(c, err),
-			Email: email,
-		})
-		return
-	}
-	h.renderMessage(c, http.StatusOK, true, userTextOf(c, userMsgResetMailTitle), userKeyText(c, userenums.MsgResetMailSent))
-}
-
-// ShowReset 重置密码页（链接来自邮件，带 email + key）。
-func (h *Handle) ShowReset(c *gin.Context) {
-	req, _ := binding.Form[userdto.ResetLinkReq](c)
-	email, key := req.Email, req.Key
-	if email == "" || key == "" {
-		h.renderMessage(c, http.StatusBadRequest, false, userTextOf(c, userMsgLinkInvalidTitle), userKeyText(c, userenums.ErrActivationInvalid))
-		return
-	}
-	h.render(c, http.StatusOK, "user/reset", &userdto.ResetPageResp{
-		Email: email,
-		Key:   key,
-	})
-}
-
-// DoReset 提交新密码。
-func (h *Handle) DoReset(c *gin.Context) {
-	req, err := binding.ParseForm[userdto.ResetPasswordReq](c)
-	if err != nil {
-		req = &userdto.ResetPasswordReq{}
-	}
-	email, key := req.Email, req.Key
-	err = h.svc.ResetPassword(c.Request.Context(), req)
-	if err != nil {
-		h.render(c, http.StatusBadRequest, "user/reset", &userdto.ResetPageResp{
-			Error: userPageMessage(c, err),
-			Email: email,
-			Key:   key,
-		})
-		return
-	}
-	h.renderMessage(c, http.StatusOK, true, userTextOf(c, userMsgPasswordResetTitle), userTextOf(c, userMsgPasswordResetBody))
-}
-
-// renderMessage 渲染通用结果页（激活 / 重发 / 重置这类一次性结果）。
-//
-// 不为每种结果写一个模板：它们结构完全相同（一个标题 + 一段话 + 一个去处），
-// 拆成五个模板只会让「改一次文案要改五个文件」。
-func (h *Handle) renderMessage(c *gin.Context, status int, ok bool, title, message string) {
-	h.render(c, status, "user/message", &userdto.MessagePageResp{
-		OK:      ok,
-		Title:   title,
-		Message: message,
-	})
-}
-
-// emptyRegisterForm 注册表单的初始值。
-//
-// 返回**已摊平的 map** 而不是结构体：访客模板用 `.["form"]["username"]` 链式索引，
-// 而 adminui.ViewMap 不递归摊平嵌套结构体 —— 交结构体进去模板索引会失败。
-// 这是访客模板的既有读法（它整页都是 map 索引），不为这次迁移改模板。
-func emptyRegisterForm() gin.H {
-	return adminui.ViewMap(&userdto.RegisterFormResp{})
 }
 
 // toAnySlice 把切片投影成 []any（视图不 import 各来源的契约类型：

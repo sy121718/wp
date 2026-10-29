@@ -11,13 +11,8 @@ package userhttp
 // 走 Casbin 权限点，与 /api/customer/* 完全同源，一个字符都不改。
 // pages 为 nil 时跳过注册 —— 与 rg == nil 早退同构，装配不因缺少页面组而失败。
 
-// 挂载位置：**直接挂在 engine 上**（公开路由），不进 /api 那组。
-// 原因见包注释：/api 挂着管理后台的三件套（Session + CSRF + Casbin），
-// 而访客账号没有权限点、也不该进 Casbin 的策略表。
-// 这里的链路是「自己的 cookie 会话 + 自己的 CSRF token」，没有 Casbin —— 少一层不是省事，
-// 而是把「谁有权做什么」收敛到业务代码：访客能做的只有「操作自己的账号」。
-//
-// 公开路由的先例：mailhttp.SetupTrackingRoutes（营销追踪端点）。
+// 访客JSON路由由 setupSiteUserRoutes 注册在独立的 /api/site/user 组。
+// 该组使用访客 cookie、CSRF 与逐路由公开权限声明，不进入后台会话链。
 
 import (
 	"time"
@@ -25,7 +20,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"go_wp/internal/middleware/builtin"
 	usercontract "go_wp/internal/module/user/contract"
 	usermodel "go_wp/internal/module/user/model"
 	userservice "go_wp/internal/module/user/service"
@@ -61,39 +55,6 @@ func SetupUserRoutes(
 	)
 	h := NewHandle(svc)
 	setupSiteUserRoutes(router, h)
-
-	// CSRF：用访客自己的 token 存取器（存在访客会话里）。
-	// 直接用 builtin.CSRFMiddleware() 会去读后台的 gowp_session，
-	// 结果就是「访客表单永远 403」或「把后台的 token 顶掉」。
-	csrf := builtin.CSRFMiddlewareWith(userCSRFStore{})
-
-	// 公开组：注册 / 验证 / 登录 / 登出 / 密码重置。未登录也要能访问。
-	public := router.Group("/user", attachUserSession(svc), csrf)
-	{
-		public.GET("/register", h.ShowRegister)
-		sensitive := builtin.RequestRateLimitMiddleware(userSensitiveRateLimit, userSensitiveRateWindow)
-		public.POST("/register", sensitive, h.DoRegister)
-		public.GET("/activate", h.Activate)
-		public.POST("/resend", sensitive, h.DoResendActivation)
-		public.GET("/login", h.ShowLogin)
-		public.POST("/login", sensitive, h.DoLogin)
-		public.POST("/logout", h.Logout)
-		public.GET("/forgot", h.ShowForgot)
-		public.POST("/forgot", sensitive, h.DoForgot)
-		public.GET("/reset", h.ShowReset)
-		public.POST("/reset", sensitive, h.DoReset)
-	}
-
-	// 账号中心：必须已登录。
-	private := router.Group("/user", attachUserSession(svc), csrf, requireUser())
-	{
-		private.GET("/account", h.ShowAccount)
-		private.POST("/account/profile", h.DoUpdateProfile)
-		private.POST("/account/preference", h.DoUpdatePreference)
-		private.POST("/account/password", h.DoChangePassword)
-		private.POST("/account/sessions/revoke", h.DoRevokeSession)
-		private.POST("/account/sessions/revoke-others", h.DoRevokeOtherSessions)
-	}
 
 	// 会话没有保留期任务：状态与设备台账都在 Redis，随 TTL 自然消失
 	// （原先的 user_sessions 台账清理任务随那张表一起删除）。

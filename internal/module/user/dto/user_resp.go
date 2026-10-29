@@ -30,21 +30,18 @@ type ActivateResp struct {
 // 聚成一个结构体而不是三个接口：账号中心一屏就要这些，
 // 拆成三个请求只会让页面出现「上半截已经显示、下半截还在转」的中间态。
 type AccountResp struct {
-	UserID        uint64          `json:"userId"`
-	Username      string          `json:"username"`
-	Email         string          `json:"email"`
-	EmailVerified bool            `json:"emailVerified"`
-	Nickname      string          `json:"nickname"`
-	DisplayName   string          `json:"displayName"`
-	Avatar        string          `json:"avatar"`
-	Status        int             `json:"status"`
-	RegisteredAt  *utils.JSONTime `json:"registeredAt"`
-	LastLoginTime *utils.JSONTime `json:"lastLoginTime"`
-	// 旧内置页面仍使用这两个字段；站点 JSON 不携带格式化展示值。
-	RegisteredAtText  string `json:"-"`
-	LastLoginTimeText string `json:"-"`
-	LastLoginIP       string `json:"lastLoginIp"`
-	LastLoginLocation string `json:"lastLoginLocation"`
+	UserID            uint64          `json:"userId"`
+	Username          string          `json:"username"`
+	Email             string          `json:"email"`
+	EmailVerified     bool            `json:"emailVerified"`
+	Nickname          string          `json:"nickname"`
+	DisplayName       string          `json:"displayName"`
+	Avatar            string          `json:"avatar"`
+	Status            int             `json:"status"`
+	RegisteredAt      *utils.JSONTime `json:"registeredAt"`
+	LastLoginTime     *utils.JSONTime `json:"lastLoginTime"`
+	LastLoginIP       string          `json:"lastLoginIp"`
+	LastLoginLocation string          `json:"lastLoginLocation"`
 
 	// 资料（user_profiles），未建行时为零值。
 	ProfileLocale   string `json:"profileLocale"`
