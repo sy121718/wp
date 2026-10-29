@@ -81,3 +81,10 @@ test('预览成功使用示例事实，不生成真实请求键或发起私有�
  const e=environment(),w=widget('a');e.widgets.push(w);e.window.WPSitePreview={active:true,state:'success'};
  e.previews.ordersList(w.root,'success');assert.equal(w.panels.result.hidden,false);assert.equal(w.q.get('[data-orders-result-number]').textContent,'PREVIEW-RMA-001');assert.equal(w.form.querySelector('[name="requestId"]').value,'');assert.equal(e.refreshed.length,0);
 });
+test('多账号宿主的同一认证事实只刷新一次，订单当前申请步骤不被全局切换',()=>{
+ const e=environment(),a=widget('a'),b=widget('b');e.widgets.push(a,b);prepare(e,b);
+ const userRoot=node({'data-user-form':'account'}),event={target:userRoot,detail:{data:{authenticated:true}}};
+ e.events['site:data'](event);e.events['site:data'](event);
+ assert.deepEqual(e.refreshed,[a.root,b.root]);assert.equal(b.panels.return.hidden,false);
+ assert.equal(a.root.getAttribute('data-orders-active'),null);assert.equal(b.root.getAttribute('data-orders-active'),'return');
+});
