@@ -234,22 +234,61 @@ func (m *Model) CountRolledDays(ctx context.Context, projectID string, from, to 
 	return n, err
 }
 
-// RollupTotals 历史窗口的合计（PV / UV），只读汇总表。
+// RollupTotals 历史窗口的合计（PV / UV）。
+//
+// **PV 取汇总，UV 取明细去重**（PUB-07 / B07）。这不是折中，是唯一正确的口径：
+//
+//   - PV 可以相加：一天 10 次 + 一天 20 次 = 区间 30 次。汇总表成立的前提就是这个。
+//   - UV **不能相加**：`page_views_daily.visitors` 是**按天**去重的计数，同一个人
+//     周一与周三各来一次时两天各记 1，SUM 得 2 —— 而区间内的真实 UV 是 1。
+//     SUM(按天 UV) 得到的其实是"人次"，把它显示成"访客数"会让回访率高的站
+//     看起来访客接近 PV，而实际上只是同一小撮人在反复来。
+//
+// 所以 UV 回到明细表做 COUNT(DISTINCT visitor_hash)：去重必须发生在**区间**这一层，
+// 而只有明细里有逐条的 visitor_hash。代价是一次明细扫描 —— 但它只在"窗口完全在过去"
+// 这条路径上发生，而那条路径本来就已经用了汇总表（省掉的正是这次扫描之外的开销）；
+// 给一个错的数字省一次查询，不是优化。
+//
+// 按天维度（RollupByDay）仍读汇总表：那里的每一天各自去重，SUM 的问题不存在。
 func (m *Model) RollupTotals(ctx context.Context, projectID string, from, to time.Time) (views, visitors int64, err error) {
-	var row struct {
-		Views    int64 `gorm:"column:views"`
+	// 两条查询用两个变量：Scan 会复用同一个结构体，第二次扫描把第一次的字段清零 ——
+	// 实测症状是 PV 恒为 0（第一次算出 4，第二次只填 visitors，views 变 0）。
+	var agg struct {
+		Views int64 `gorm:"column:views"`
+	}
+	var uv struct {
 		Visitors int64 `gorm:"column:visitors"`
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, func(tx *gorm.DB) error {
-		return tx.Table(tableNameDailyStats).
-			Select("COALESCE(SUM(views), 0) AS views, COALESCE(SUM(visitors), 0) AS visitors").
+		if derr := tx.Table(tableNameDailyStats).
+			Select("COALESCE(SUM(views), 0) AS views").
 			Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopeAll, from, to).
-			Scan(&row).Error
+			Scan(&agg).Error; derr != nil {
+			return derr
+		}
+		// UV：优先在明细上做**区间级**去重（正确口径，见本函数头注释）。
+		if derr := tx.Model(&PageViewEntity{}).
+			Select(colVisitors).
+			Where(dailyStatViewWindow, projectID, from, to).
+			Scan(&uv).Error; derr != nil {
+			return derr
+		}
+		// 明细被保留期清理过的那段历史：明细里一条都不剩，但汇总行还在。
+		// 此时退回 SUM(按天 UV) —— 它给出的是"人次"而不是人数，但那比 0 诚实：
+		// 0 会让"三年前的流量"看起来像零访问，而 SUM 至少与"按天 UV 之和"自洽。
+		// 两种口径都记不住的场景不存在：明细在就用明细，明细不在就用汇总。
+		if uv.Visitors == 0 && agg.Views > 0 {
+			return tx.Table(tableNameDailyStats).
+				Select("COALESCE(SUM(visitors), 0) AS visitors").
+				Where("project_id = ? AND scope = ? AND day >= ?::date AND day < ?::date", projectID, ScopeAll, from, to).
+				Scan(&uv).Error
+		}
+		return nil
 	})
 	if err != nil {
 		return 0, 0, err
 	}
-	return row.Views, row.Visitors, nil
+	return agg.Views, uv.Visitors, nil
 }
 
 // RollupByDay 历史窗口的按天序列（升序；只含有点击的天，与明细口径一致）。
