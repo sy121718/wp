@@ -166,32 +166,28 @@ func TestBlockSaveConcurrentOnlyOneWins(t *testing.T) {
 	}
 }
 
-// TestBlockSaveWithoutExpectedVersionOverwrites 0 表示不校验（显式覆盖式保存）。
-//
-// 这条不是"允许随便覆盖"，而是把两种语义**显式区分**：传 0 的调用方明确表示
-// "我知道我在覆盖"（新建后立即保存、迁移、测试夹具）。浏览器与 AI 入口一律带真值。
-func TestBlockSaveWithoutExpectedVersionOverwrites(t *testing.T) {
+// 缺失版本不得获得覆盖通道，拒绝后文档和版本都保持原值。
+func TestBlockSaveWithoutExpectedVersionRejects(t *testing.T) {
 	env := newRefEnv(t)
 	if env == nil {
 		return
 	}
-	block := newVersionBlock(t, env, "不校验版本块")
+	block := newVersionBlock(t, env, "缺版本不能覆盖")
 	ctx := context.Background()
-
-	if _, err := env.blocks.Update(ctx, &blockdto.UpdateReq{
-		ID: block.ID, Document: []byte(docWithMarker("a1")),
-	}); err != nil {
-		t.Fatalf("不带 expectedVersion 的保存应成功: %v", err)
+	before, readErr := env.blocks.Detail(ctx, &blockdto.DetailReq{ProjectID: env.projectID, ID: block.ID})
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
-	again, err := env.blocks.Update(ctx, &blockdto.UpdateReq{
-		ID: block.ID, Document: []byte(docWithMarker("a2")),
-	})
+	_, err := env.blocks.Update(ctx, &blockdto.UpdateReq{ID: block.ID, Document: []byte(docWithMarker("must-not-save"))})
+	if status, ok := facing.StatusOf(err); !ok || status != http.StatusBadRequest {
+		t.Fatalf("缺版本必须400: %v", err)
+	}
+	current, err := env.blocks.Detail(ctx, &blockdto.DetailReq{ProjectID: env.projectID, ID: block.ID})
 	if err != nil {
-		t.Fatalf("第二次不带版本的保存也应成功: %v", err)
+		t.Fatal(err)
 	}
-	// 不校验时不涨版本：version 只在"按版本改"这条路上自增。
-	if again.Version != 1 {
-		t.Errorf("不校验版本的保存不该改 version，实际 %d", again.Version)
+	if current.Version != block.Version || string(current.Document) != string(before.Document) {
+		t.Fatalf("拒绝后版本与文档应保持: before=%+v after=%+v", block, current)
 	}
 }
 

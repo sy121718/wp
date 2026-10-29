@@ -153,7 +153,7 @@ func TestBlockDocumentValidationOnUpdate(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := e.svc.Update(ctx, &blockdto.UpdateReq{
-				ID: created.ID, Name: "不应生效-" + tc.name, Document: json.RawMessage(tc.doc),
+				ID: created.ID, ExpectedVersion: uint64(created.Version), Name: "不应生效-" + tc.name, Document: json.RawMessage(tc.doc),
 			})
 			errContains(t, err, blockenums.ErrBlockInvalidDoc)
 			got, err := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})

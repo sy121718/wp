@@ -109,20 +109,20 @@ func TestRLS_BlockLocate_ServiceFindsOwnerAcrossProjects(t *testing.T) {
 
 	// Update 会先经定位跳取块：定位失败就会在此报「块不存在」。
 	name := "B 的块（改后）"
-	res, err := svc.Update(ctx, &blockdto.UpdateReq{ID: idB, Name: name})
+	res, err := svc.Update(ctx, &blockdto.UpdateReq{ID: idB, ExpectedVersion: 1, Name: name})
 	if err != nil {
 		t.Fatalf("多工程下只带 id 更新应成功（逐工程定位 + 事务作用域）: %v", err)
 	}
 	if res.ProjectID != pB {
 		t.Fatalf("应定位到工程 B，实际 %s", res.ProjectID)
 	}
-	resA, err := svc.Update(ctx, &blockdto.UpdateReq{ID: idA, Name: "A 的块（改后）"})
+	resA, err := svc.Update(ctx, &blockdto.UpdateReq{ID: idA, ExpectedVersion: 1, Name: "A 的块（改后）"})
 	if err != nil || resA.ProjectID != pA {
 		t.Fatalf("应定位到工程 A，实际 %+v（err=%v）", resA, err)
 	}
 
 	// 不存在的 id：逐工程全部未命中 → 模块的 ErrNotFound（不是静默的空响应）。
-	if _, err := svc.Update(ctx, &blockdto.UpdateReq{ID: uuid.NewString(), Name: "x"}); !errors.Is(err, blockservice.ErrNotFound) {
+	if _, err := svc.Update(ctx, &blockdto.UpdateReq{ID: uuid.NewString(), ExpectedVersion: 1, Name: "x"}); !errors.Is(err, blockservice.ErrNotFound) {
 		t.Fatalf("不存在的块应 ErrNotFound，实际 %v", err)
 	}
 }
@@ -176,7 +176,7 @@ func TestRLS_BlockLocate_WritesLandOnOwnerRow(t *testing.T) {
 	idB := seedScopeBlock(t, db, pB, "B 的块")
 
 	name := "B 的块（改后）"
-	if _, err := svc.Update(ctx, &blockdto.UpdateReq{ID: idB, Name: name}); err != nil {
+	if _, err := svc.Update(ctx, &blockdto.UpdateReq{ID: idB, ExpectedVersion: 1, Name: name}); err != nil {
 		t.Fatalf("更新失败: %v", err)
 	}
 	m := blockmodel.NewBlockModel(db)
@@ -207,7 +207,7 @@ func TestRLS_BlockLocate_EmptyProjectTableFailsExplicitly(t *testing.T) {
 	svc := blockservice.NewService(blockmodel.NewBlockModel(db),
 		projectservice.NewService(projectmodel.NewProjectModel(db)))
 
-	_, err := svc.Update(context.Background(), &blockdto.UpdateReq{ID: uuid.NewString(), Name: "x"})
+	_, err := svc.Update(context.Background(), &blockdto.UpdateReq{ID: uuid.NewString(), ExpectedVersion: 1, Name: "x"})
 	if !errors.Is(err, blockservice.ErrProjectRequired) {
 		t.Fatalf("无工程时定位应显式失败 ErrProjectRequired（而不是静默 ErrNotFound），实际 %v", err)
 	}

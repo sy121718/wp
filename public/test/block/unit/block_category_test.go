@@ -116,10 +116,11 @@ func TestBlockCategoryUpdate(t *testing.T) {
 	created := e.createBlock(t, "分类块", "")
 
 	t.Run("ChangeCategory", func(t *testing.T) {
-		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, Category: "product"})
+		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, ExpectedVersion: uint64(created.Version), Category: "product"})
 		if err != nil {
 			t.Fatalf("改分类应成功: %v", err)
 		}
+		created.Version = res.Version
 		if res.Category != "product" {
 			t.Fatalf("分类未更新: %q", res.Category)
 		}
@@ -134,17 +135,18 @@ func TestBlockCategoryUpdate(t *testing.T) {
 	})
 
 	t.Run("EmptyCategoryKeepsExisting", func(t *testing.T) {
-		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, Category: "  "})
+		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, ExpectedVersion: uint64(created.Version), Category: "  "})
 		if err != nil {
 			t.Fatalf("空分类应保留原值: %v", err)
 		}
+		created.Version = res.Version
 		if res.Category != "product" {
 			t.Fatalf("空分类不应覆盖，实际: %q", res.Category)
 		}
 	})
 
 	t.Run("InvalidCategoryRejected", func(t *testing.T) {
-		_, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, Category: "商品区块"})
+		_, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, ExpectedVersion: uint64(created.Version), Category: "商品区块"})
 		errContains(t, err, blockenums.ErrBlockInvalidCategory)
 		got, derr := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
 		if derr != nil {

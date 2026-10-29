@@ -6,7 +6,7 @@ package workbenchhttp
 // 工作台在这条链路上是**搬运方**：workbench_page.go 只在 safepath.LocalReturnPath 认下的值上
 // 把 returnUrl 写进 meta（`<script type="application/json" id="wb-meta">`），非法值与没传
 // 对用户是同一件事 —— meta 里没有这个键，保存后留在工作台。真正决定跳不跳的是消费侧
-// SaveBlockContent（见 internal/module/block/inbound/http/*_return_url_test.go）。
+// 前端api.js的returnAfterSave；服务端保存端点始终只返回JSON。
 //
 // 所以这里断言的是可观测输出：200 + wb-meta 槽里的 returnUrl 键在/不在（按 JSON 解析，
 // 不靠字符串猜测），并且被拒的值一个字符都不许出现在整页正文里。
@@ -35,7 +35,7 @@ func newWorkbenchBlockReturnURLRouter(t *testing.T) *gin.Engine {
 	router := gin.New()
 	router.HTMLRender = templates.NewJetHTMLRender("../../../../templates", true)
 	deps := workbenchModeDeps{blocks: &workbenchBlockStub{block: &blockdto.BlockResp{
-		ID: "block-1", ProjectID: "project-1", Name: "页眉", Kind: "header",
+		ID: "block-1", ProjectID: "project-1", Name: "页眉", Kind: "header", Version: 7,
 		Document: json.RawMessage(`{"type":"root"}`),
 	}}}
 	router.GET("/workbench", adminui.PageSlot(CanvasLayoutTemplate), deps.newHandle().Workbench)
@@ -158,3 +158,22 @@ func TestWorkbenchBlockReturnURLRejectionIsNotEchoed(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestWorkbenchBlockCarriesReadVersionAndExpectedVersionKey(t *testing.T) {
+	rec := fetchWorkbenchBlock(t, newWorkbenchBlockReturnURLRouter(t), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("工作台应成功: %d %s", rec.Code, rec.Body.String())
+	}
+	meta := workbenchMetaSlot(t, rec.Body.String())
+	if meta["version"] != float64(7) {
+		t.Fatalf("必须透传读取到的版本7: %v", meta)
+	}
+	target, ok := meta["target"].(map[string]any)
+	if !ok {
+		t.Fatalf("缺目标描述符: %v", meta)
+	}
+	spec, ok := target["saveBody"].(map[string]any)
+	if !ok || spec["versionKey"] != "expectedVersion" {
+		t.Fatalf("区块必须按expectedVersion保存: %v", target)
+	}
+}

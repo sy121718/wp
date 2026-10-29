@@ -143,6 +143,10 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 	if req == nil || strings.TrimSpace(req.ID) == "" {
 		return nil, ErrParamRequired
 	}
+	if req.ExpectedVersion == 0 || req.ExpectedVersion > uint64(1<<63-1) {
+		return nil, facing.WithStatus(ErrParamRequired, http.StatusBadRequest)
+	}
+
 	entity, err := s.getExistingBlock(ctx, req.ID)
 	if err != nil {
 		return nil, err
@@ -185,7 +189,7 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 	now := time.Now().UTC()
 	// 写路径带工程作用域（DB-009 第二批）：entity 是上面定位到的块，自带 ProjectID。
 	//
-	// 并发（B2）：req.ExpectedVersion > 0 时按 version 做条件更新；命中 0 行说明
+	// 并发（B2）：按调用方的正数版本做条件更新；命中 0 行说明
 	// 库里的版本已经不是调用方读到的那个 —— 别人先改过。entity 在上面刚定位成功，
 	// 所以"未命中"只可能是版本冲突，不可能是块被删。
 	affected, err := s.model.UpdateDocumentTx(ctx, entity.ProjectID, entity.ID, req.ExpectedVersion,
@@ -193,12 +197,10 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 	if err != nil {
 		return nil, err
 	}
-	if req.ExpectedVersion > 0 && affected == 0 {
+	if affected == 0 {
 		return nil, s.versionConflict(ctx, entity.ProjectID, entity.ID)
 	}
-	if req.ExpectedVersion > 0 {
-		entity.Version = int64(req.ExpectedVersion) + 1
-	}
+	entity.Version = int64(req.ExpectedVersion) + 1
 	entity.Name, entity.Kind, entity.Category, entity.ReuseMode, entity.Document, entity.UpdatedAt = name, kind, category, reuseMode, document, now
 	s.propagateStale(ctx, entity.ID, entity.ReuseMode)
 	return blockRespPtr(entity), nil

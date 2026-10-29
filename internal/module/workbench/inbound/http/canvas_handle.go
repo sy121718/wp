@@ -156,7 +156,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		"blockName":    block.Name,
 		"kind":         block.Kind,
 		"draftPath":    "",
-		"version":      0,
+		"version":      block.Version,
 	}
 	// returnUrl：菜单页「新建面板块并编辑」一路带过来的回跳目标。
 	//
@@ -192,6 +192,7 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 		Title:    workbenchShortText(c, workbenchenums.TitleBlockPrefix) + block.Name,
 		PageID:   block.ID,
 		IsBlock:  true,
+		Version:  block.Version,
 		Document: utils.JsonSafe(string(documentJSON)),
 		Meta:     utils.JsonSafe(string(metaJSON)),
 		Schemas:  utils.JsonSafe(string(schemasJSON)),

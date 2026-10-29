@@ -149,15 +149,14 @@ func (m *Model) GetByID(ctx context.Context, id string, projectID string) (e *Bl
 	return e, nil
 }
 
-// UpdateDocument 更新块名称、类型、分类、复用方式与文档（覆盖式，编辑器整树保存）。
+// UpdateDocumentTx 按调用方版本原子更新块元数据与编辑器文档。
 //
 // projectID 非空时在工程作用域内写（blocks 带 FORCE 策略）：越界写会被 WITH CHECK
 // 直接拒绝而不是静默改到别的工程。为空沿用「不限工程」的历史形态（DB-009 剩余清单）。
-// UpdateDocumentTx 带乐观并发条件的更新（B2 迁移 679 的 blocks.version）。
+// blocks.version 来自 B2 迁移 679。
 //
-// expectedVersion = 0 表示不校验（显式选择覆盖式保存）；> 0 时 WHERE 上带 version 条件，
-// **version 自增**。返回 (是否命中)。未命中有两种可能 —— 块不存在，或版本已被别人改过；
-// 两者由调用方区分（service 先定位过存在性，所以未命中即冲突）。
+// expectedVersion 必须为正数；WHERE与version自增在同一条UPDATE内，缺失版本拒绝。
+// 返回是否命中，由service区分不存在与并发冲突。
 //
 // 为什么把自增放在 SQL 而不是 Go 侧算：并发两请求各自读到 v=3、各自写 v=4，
 // 后写的那条会覆盖前一条 —— 版本号自增必须在**同一条 UPDATE** 里由数据库做，
@@ -168,30 +167,23 @@ func (m *Model) UpdateDocumentTx(ctx context.Context, projectID, id string, expe
 		"name": name, "kind": kind, "category": category, "reuse_mode": reuseMode,
 		"document": document, "update_time": updatedAt,
 	}
-	if expectedVersion > 0 {
-		updates["version"] = gorm.Expr("version + 1")
+	if expectedVersion == 0 {
+		return 0, gorm.ErrInvalidData
 	}
+	updates["version"] = gorm.Expr("version + 1")
 	apply := func(db *gorm.DB) error {
 		q := db.Model(&BlockEntity{}).Where("id = ?", id)
-		if expectedVersion > 0 {
-			q = q.Where("version = ?", expectedVersion)
-		}
+		q = q.Where("version = ?", expectedVersion)
 		res := q.Updates(updates)
 		affected, err = res.RowsAffected, res.Error
 		return res.Error
 	}
 	if strings.TrimSpace(projectID) == "" {
-		return affected, apply(m.DB(ctx))
+		err = apply(m.DB(ctx))
+		return affected, err
 	}
 	err = rls.InProjectScope(ctx, m.db, projectID, apply)
 	return affected, err
-}
-
-// UpdateDocument 覆盖式更新（不带版本条件）。保留给迁移与测试夹具；
-// 浏览器与 AI 入口走 UpdateDocumentTx。
-func (m *Model) UpdateDocument(ctx context.Context, projectID, id string, name, kind, category, reuseMode string, document json.RawMessage, updatedAt time.Time) (err error) {
-	_, err = m.UpdateDocumentTx(ctx, projectID, id, 0, name, kind, category, reuseMode, document, updatedAt)
-	return err
 }
 
 // BlockDocRefRow 文档树里引用了目标块的其它全局块（只读定位数据，审计 ARCH-02）。

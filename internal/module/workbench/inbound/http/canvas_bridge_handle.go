@@ -217,7 +217,7 @@ type TargetEndpoint struct {
 // TargetSaveBody 保存请求体的构造方式。
 //
 // 三种目标的键名各不相同（page 用 draftDocument + expectedVersion + draftPath，
-// block 用 document 且额外带 name，template 用 draftDocument 无版本），
+// block 用 document + expectedVersion 且额外带 name，template 用 draftDocument 无版本），
 // 键名放数据里，前端就不必认识任何一种目标。
 type TargetSaveBody struct {
 	// IDKey 目标 id 的键名。
@@ -268,11 +268,8 @@ var workbenchTargets = map[string]EditTarget{
 		Type: EditTargetBlock,
 		Save: TargetEndpoint{Path: "/admin/blocks/save-content"},
 		SaveBody: TargetSaveBody{
-			IDKey: "id", DocumentKey: "document",
-			// returnUrl：菜单页「新建面板块并编辑」带过来的回跳目标，随保存请求体回传。
-			// 白名单校验两处都做（这里只做搬运，消费侧 SaveBlockContent 再校验一次）——
-			// 前端 meta 是可被改写的中间态，不能当成「已经校验过了」。
-			Extras: map[string]string{"name": "blockName", "returnUrl": "returnUrl"},
+			IDKey: "id", DocumentKey: "document", VersionKey: "expectedVersion",
+			Extras: map[string]string{"name": "blockName"},
 		},
 		// 全局块没有 URL、没有独立产物：它是被引用展开进别人的产物的。
 		Caps: TargetCapabilities{},

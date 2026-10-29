@@ -59,7 +59,7 @@ func (s *stubBlockService) Create(context.Context, *blockdto.CreateReq) (*blockd
 
 func (s *stubBlockService) Update(context.Context, *blockdto.UpdateReq) (*blockdto.BlockResp, error) {
 	s.updateCall++
-	return nil, s.updateErr
+	return &blockdto.BlockResp{ID: "b-1", Version: 2}, s.updateErr
 }
 
 func (s *stubBlockService) Delete(context.Context, *blockdto.DeleteReq) error {
@@ -118,6 +118,9 @@ func TestSaveBlockContentBindFailIsControlledJSON(t *testing.T) {
 		{"非法 JSON", `{"id":`},
 		{"缺必填 id", `{"name":"页脚"}`},
 		{"字段类型不符", `{"id":{"nested":1}}`},
+		{"缺少读取版本", `{"id":"b-1"}`},
+		{"零版本不能覆盖", `{"id":"b-1","expectedVersion":0}`},
+		{"版本超出数据库范围", `{"id":"b-1","expectedVersion":9223372036854775808}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -150,7 +153,7 @@ func TestSaveBlockContentBindFailIsControlledJSON(t *testing.T) {
 // TestSaveBlockContentBlockMissingIsControlledJSON 块不存在 → 404 JSON + 模块词条文案。
 func TestSaveBlockContentBlockMissingIsControlledJSON(t *testing.T) {
 	svc := &stubBlockService{detailErr: blockcontract.ErrNotFound}
-	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1"}`)
+	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1","expectedVersion":1}`)
 
 	if status != http.StatusNotFound {
 		t.Fatalf("块不存在应为 404，实际 %d", status)
@@ -165,7 +168,7 @@ func TestSaveBlockContentBlockMissingIsControlledJSON(t *testing.T) {
 // 契约上不该出现，但不能静默继续 —— 那会把一次写操作建在空块上。
 func TestSaveBlockContentNilBlockWithoutErrorIsNotFound(t *testing.T) {
 	svc := &stubBlockService{}
-	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1"}`)
+	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1","expectedVersion":1}`)
 
 	if status != http.StatusNotFound {
 		t.Fatalf("(nil, nil) 应落 404，实际 %d", status)
@@ -184,7 +187,7 @@ func TestSaveBlockContentNilBlockWithoutErrorIsNotFound(t *testing.T) {
 func TestSaveBlockContentDetailInternalErrorHidesDetail(t *testing.T) {
 	const internal = `pq: relation "blocks" does not exist (SQLSTATE 42P01)`
 	svc := &stubBlockService{detailErr: errors.New(internal)}
-	status, raw, parsed := saveContentResp(t, svc, `{"id":"b-1"}`)
+	status, raw, parsed := saveContentResp(t, svc, `{"id":"b-1","expectedVersion":1}`)
 
 	if status != http.StatusInternalServerError {
 		t.Fatalf("内部故障应为 500（不能伪装成 404），实际 %d", status)
@@ -202,7 +205,7 @@ func TestSaveBlockContentDetailInternalErrorHidesDetail(t *testing.T) {
 // 描述符（workbench target）给的键名照常工作，响应仍是 JSON 且带 code=200。
 func TestSaveBlockContentSuccessStillJSON(t *testing.T) {
 	svc := &stubBlockService{detail: &blockdto.BlockResp{ID: "b-1", Name: "页脚"}}
-	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1","document":{"root":[]}}`)
+	status, _, parsed := saveContentResp(t, svc, `{"id":"b-1","document":{"root":[]},"expectedVersion":1}`)
 
 	if status != http.StatusOK {
 		t.Fatalf("成功路径应为 200，实际 %d", status)

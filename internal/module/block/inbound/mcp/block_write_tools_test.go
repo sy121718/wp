@@ -180,13 +180,16 @@ func TestBlockCreateRequiresName(t *testing.T) {
 // 而不是把 kind / document 抹掉。
 func TestBlockUpdateMergesCurrentValues(t *testing.T) {
 	s := &stubBlockRW{detail: &blockdto.BlockResp{
-		ID: "b1", Name: "旧名", Kind: "footer", Category: "general",
+		ID: "b1", Name: "旧名", Kind: "footer", Category: "general", Version: 7,
 		ReuseMode: "global", Document: json.RawMessage(`{"settings":{},"root":[{"x":1}]}`),
 	}}
 	if _, err := invokeBlock(t, blockTool(t, "block_update", s, true), map[string]any{
-		"projectId": "pr1", "blockId": "b1", "category": "legal",
+		"projectId": "pr1", "blockId": "b1", "category": "legal", "expectedVersion": 3,
 	}, true); err != nil {
 		t.Fatalf("调用失败: %v", err)
+	}
+	if s.updated.ExpectedVersion != 3 {
+		t.Fatalf("必须传调用方版本3，不能偷用最新版本7: %+v", s.updated)
 	}
 	if s.updated.Name != "旧名" {
 		t.Errorf("name 应合并回原值，实得 %q", s.updated.Name)
@@ -247,5 +250,13 @@ func TestBlockDeleteRequiresID(t *testing.T) {
 	}
 	if s.deleted != nil {
 		t.Error("参数不合法时不该调用 service")
+	}
+}
+
+func TestBlockUpdateRejectsMissingVersion(t *testing.T) {
+	s := &stubBlockRW{}
+	_, err := invokeBlock(t, blockTool(t, "block_update", s, true), map[string]any{"projectId": "pr1", "blockId": "b1"}, true)
+	if err == nil || s.updated != nil {
+		t.Fatalf("缺读取版本必须在调用服务前拒绝: err=%v updated=%+v", err, s.updated)
 	}
 }

@@ -23,28 +23,20 @@ type UpdateReq struct {
 	ReuseMode string          `json:"reuseMode" form:"reuseMode"` // 空 then 保留原值；global→template 需无引用（否则 ErrBlockInUse）
 	Document  json.RawMessage `json:"document" form:"document"`
 
-	// ExpectedVersion 乐观并发基准（B2 迁移 679 的 blocks.version）。
-	//
-	// 0 表示**不校验**，只给「显式知道自己在做什么」的调用方用（新建后立即保存、
-	// 数据迁移、测试夹具）。浏览器与 AI 入口都必须带真值 —— 不带就等于回到覆盖式保存，
-	// 而覆盖式保存丢失的是别人刚改的整棵树，且不报错。
-	//
-	// 用 uint64 而不是 *uint64：0 与"缺失"在这里是同一件事（不校验），
-	// 多一个指针只会让调用方多一层判空。
-	ExpectedVersion uint64 `json:"expectedVersion" form:"expectedVersion"`
+	// ExpectedVersion 必须是调用方读取到的并发版本，缺失或0一律拒绝。
+	ExpectedVersion uint64 `json:"expectedVersion" form:"expectedVersion" binding:"required,min=1,max=9223372036854775807"`
 }
 
 // SaveContentReq 工作台保存块内容（POST /admin/blocks/save-content）的请求体。
 //
 // 与 UpdateReq 的区别只在用途：工作台只改文档，名称留空表示沿用现值；
-// ReturnURL 是保存后的站内回跳目标（菜单页新建面板块时带回来，普通块编辑为空）。
+// 保存后的导航由工作台前端按受控meta决定，不是保存请求的一部分。
 type SaveContentReq struct {
-	ID        string          `json:"id" form:"id" binding:"required"`
-	Name      string          `json:"name" form:"name"`
-	Document  json.RawMessage `json:"document" form:"document"`
-	ReturnURL string          `json:"returnUrl" form:"returnUrl"`
-	// ExpectedVersion 同 UpdateReq.ExpectedVersion：0 = 不校验。
-	ExpectedVersion uint64 `json:"expectedVersion" form:"expectedVersion"`
+	ID       string          `json:"id" form:"id" binding:"required"`
+	Name     string          `json:"name" form:"name"`
+	Document json.RawMessage `json:"document" form:"document"`
+	// ExpectedVersion 同 UpdateReq.ExpectedVersion，必须提供真实版本。
+	ExpectedVersion uint64 `json:"expectedVersion" form:"expectedVersion" binding:"required,min=1,max=9223372036854775807"`
 }
 
 // DetailReq 按 ID 查询块请求。

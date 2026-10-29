@@ -85,7 +85,7 @@ func TestBlockStalePropagationBranch(t *testing.T) {
 	e.svc.SetStalePropagator(func(context.Context, string) error { calls++; return nil })
 
 	global := e.createBlock(t, "引用块", "block")
-	if _, err := e.svc.Update(context.Background(), &blockdto.UpdateReq{ID: global.ID, Name: "引用块2"}); err != nil {
+	if _, err := e.svc.Update(context.Background(), &blockdto.UpdateReq{ID: global.ID, ExpectedVersion: uint64(global.Version), Name: "引用块2"}); err != nil {
 		t.Fatalf("更新 global 块失败: %v", err)
 	}
 	if calls != 1 {
@@ -98,7 +98,7 @@ func TestBlockStalePropagationBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建 template 块失败: %v", err)
 	}
-	if _, err := e.svc.Update(context.Background(), &blockdto.UpdateReq{ID: tpl.ID, Name: "复制块2"}); err != nil {
+	if _, err := e.svc.Update(context.Background(), &blockdto.UpdateReq{ID: tpl.ID, ExpectedVersion: uint64(tpl.Version), Name: "复制块2"}); err != nil {
 		t.Fatalf("更新 template 块失败: %v", err)
 	}
 	if calls != 1 {
@@ -138,14 +138,14 @@ func TestBlockUpdateSwitchGlobalToTemplateGuard(t *testing.T) {
 	e.svc.SetReferenceChecker(func(context.Context, string) (bool, error) { return true, nil })
 	b := e.createBlock(t, "引用块", "cta")
 
-	_, err := e.svc.Update(context.Background(), &blockdto.UpdateReq{ID: b.ID, Name: "引用块", ReuseMode: "template"})
+	_, err := e.svc.Update(context.Background(), &blockdto.UpdateReq{ID: b.ID, ExpectedVersion: uint64(b.Version), Name: "引用块", ReuseMode: "template"})
 	if !errors.Is(err, blockcontract.ErrBlockInUse) {
 		t.Fatalf("期望 ErrBlockInUse，实际 %v", err)
 	}
 
 	// 无引用时可切换。
 	e.svc.SetReferenceChecker(func(context.Context, string) (bool, error) { return false, nil })
-	res, err := e.svc.Update(context.Background(), &blockdto.UpdateReq{ID: b.ID, Name: "引用块", ReuseMode: "template"})
+	res, err := e.svc.Update(context.Background(), &blockdto.UpdateReq{ID: b.ID, ExpectedVersion: uint64(b.Version), Name: "引用块", ReuseMode: "template"})
 	if err != nil || res.ReuseMode != "template" {
 		t.Fatalf("无引用切换应成功，res=%+v err=%v", res, err)
 	}

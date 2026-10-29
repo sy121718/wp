@@ -146,7 +146,7 @@ func TestNavigationPanelBlockDependencyAndInvalidation(t *testing.T) {
 		t.Fatalf("面板引用的块应登记恰好 1 条 block:{id} 依赖，实际 %d 条", n)
 	}
 	changed := json.RawMessage("{\"settings\":{\"layout\":{\"mode\":\"full\"}},\"root\":[{\"id\":\"pn1\",\"type\":\"core.heading\",\"props\":{\"text\":\"面板改后文本\",\"tag\":\"div\"}}]}")
-	if _, err := blocks.Update(ctx, &blockdto.UpdateReq{ID: block.ID, Name: "页眉菜单·产品面板", Document: changed}); err != nil {
+	if _, err := blocks.Update(ctx, &blockdto.UpdateReq{ID: block.ID, ExpectedVersion: uint64(block.Version), Name: "页眉菜单·产品面板", Document: changed}); err != nil {
 		t.Fatalf("更新面板块失败: %v", err)
 	}
 	if !navPageStale(t, db, pageID) {

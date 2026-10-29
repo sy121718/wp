@@ -379,7 +379,7 @@ func TestBlockUpdateSuccess(t *testing.T) {
 	t.Run("FullUpdate", func(t *testing.T) {
 		created := e.createBlock(t, "旧名", "")
 		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{
-			ID: created.ID, Name: "新名", Kind: blockmodel.KindFooter,
+			ID: created.ID, ExpectedVersion: uint64(created.Version), Name: "新名", Kind: blockmodel.KindFooter,
 			Document: json.RawMessage(`{"settings":{"layout":{"mode":"full"}},"root":[]}`),
 		})
 		if err != nil {
@@ -397,7 +397,7 @@ func TestBlockUpdateSuccess(t *testing.T) {
 
 	t.Run("PartialNameOnly", func(t *testing.T) {
 		created := e.createBlock(t, "原名称", blockmodel.KindHeader)
-		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, Name: "  新名称  "})
+		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, ExpectedVersion: uint64(created.Version), Name: "  新名称  "})
 		if err != nil {
 			t.Fatalf("部分更新应成功: %v", err)
 		}
@@ -408,7 +408,7 @@ func TestBlockUpdateSuccess(t *testing.T) {
 
 	t.Run("PartialKindOnly", func(t *testing.T) {
 		created := e.createBlock(t, "类型块", blockmodel.KindBlock)
-		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, Kind: " header "})
+		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, ExpectedVersion: uint64(created.Version), Kind: " header "})
 		if err != nil {
 			t.Fatalf("只改 kind 应成功: %v", err)
 		}
@@ -420,7 +420,7 @@ func TestBlockUpdateSuccess(t *testing.T) {
 	t.Run("PartialDocumentOnly", func(t *testing.T) {
 		created := e.createBlock(t, "文档块", "")
 		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{
-			ID:       created.ID,
+			ID: created.ID, ExpectedVersion: uint64(created.Version),
 			Document: json.RawMessage(`{"settings":{"layout":{"mode":"full"}},"root":[{"id":"n1","type":"core.container","props":{"tag":"div","layout":{"engine":"flex","flex":{}}}}]}`),
 		})
 		if err != nil {
@@ -442,7 +442,7 @@ func TestBlockUpdateSuccess(t *testing.T) {
 	t.Run("BoxedWithoutMaxWidthRejected", func(t *testing.T) {
 		created := e.createBlock(t, "版心块", "")
 		_, err := e.svc.Update(ctx, &blockdto.UpdateReq{
-			ID:       created.ID,
+			ID: created.ID, ExpectedVersion: uint64(created.Version),
 			Document: json.RawMessage(`{"settings":{"layout":{"mode":"boxed"}},"root":[]}`),
 		})
 		errContains(t, err, blockenums.ErrBlockInvalidDoc)
@@ -455,7 +455,7 @@ func TestBlockUpdateSuccess(t *testing.T) {
 
 	t.Run("EmptyNameKeepsExisting", func(t *testing.T) {
 		created := e.createBlock(t, "保留名", "")
-		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, Name: "  "})
+		res, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, ExpectedVersion: uint64(created.Version), Name: "  "})
 		if err != nil {
 			t.Fatalf("空白名称应保留原名: %v", err)
 		}
@@ -478,12 +478,12 @@ func TestBlockUpdateInvalidRequest(t *testing.T) {
 		errContains(t, err, blockenums.ErrBlockParamRequired)
 	})
 	t.Run("NotExist", func(t *testing.T) {
-		_, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: uuid.NewString(), Name: "无名氏"})
+		_, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: uuid.NewString(), ExpectedVersion: 1, Name: "无名氏"})
 		errContains(t, err, blockenums.ErrBlockNotFound)
 	})
 	t.Run("InvalidDocumentRejected", func(t *testing.T) {
 		created := e.createBlock(t, "改文档", "")
-		_, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, Name: "不应生效", Document: json.RawMessage(`[]`)})
+		_, err := e.svc.Update(ctx, &blockdto.UpdateReq{ID: created.ID, ExpectedVersion: uint64(created.Version), Name: "不应生效", Document: json.RawMessage(`[]`)})
 		errContains(t, err, blockenums.ErrBlockInvalidDoc)
 		got, _ := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: created.ID})
 		if got.Name != "改文档" {

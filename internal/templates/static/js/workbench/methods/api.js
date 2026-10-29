@@ -57,6 +57,7 @@ export const apiMethods = {
         try {
             var data = await this.persistDraft(savedDocument);
             this.afterSave(data, savedDocument);
+            this.returnAfterSave(savedDocument);
             return true;
         } catch (error) {
             this.saveState = 'error';
@@ -67,8 +68,15 @@ export const apiMethods = {
             this.renderUI();
         }
     },
+    returnAfterSave(savedDocument) {
+        if (!meta.target || meta.target.type !== 'block' || savedDocument !== JSON.stringify(this.doc)) return;
+        var path = String(meta.returnUrl || '').trim();
+        if (!path || path.length > 512 || path[0] !== '/' || path.indexOf('//') !== -1 || /[\\\x00-\x1f\x7f]/.test(path)) return;
+        var target = new URL(path, window.location.href);
+        if (target.origin === window.location.origin) window.location.assign(target.href);
+    },
     afterSave(data, savedDocument) {
-        this.draftVersion = data.draftVersion || this.draftVersion;
+        this.draftVersion = data.draftVersion || data.version || this.draftVersion;
         // 请求发出后的输入尚未持久化，不能被迟到的成功响应标记为已保存。
         var unchanged = savedDocument === JSON.stringify(this.doc);
         this.saveState = unchanged ? 'saved' : 'dirty';

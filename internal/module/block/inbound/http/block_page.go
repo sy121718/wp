@@ -42,7 +42,6 @@ import (
 	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
-	"go_wp/pkg/safepath"
 	"go_wp/pkg/utils"
 	pageview "go_wp/pkg/view"
 )
@@ -195,7 +194,7 @@ func (h *blockPageHandle) BlocksList(c *gin.Context) {
 // 工作台块编辑的保存入口：保存后由 block service 统一编排 stale
 // （传播器已在装配层注入，REST /api/block/update 与本保存路径同源传播）。
 func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
-	// 请求体形状（含 ReturnURL 的来源与语义）在 blockdto.SaveContentReq。
+	// 请求体只含文档与调用方版本，保存成功只返回JSON。
 	req, err := binding.ParseJSON[blockdto.SaveContentReq](c)
 	if err != nil {
 		// JSON 端点：出口必须是 JSON。调用方是工作台的 saveDraft，它对响应做 r.json()、
@@ -226,9 +225,10 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 	if strings.TrimSpace(req.Name) != "" {
 		name = strings.TrimSpace(req.Name)
 	}
-	if _, uerr := h.blocks.Update(c.Request.Context(), &blockcontract.UpdateReq{
+	updated, uerr := h.blocks.Update(c.Request.Context(), &blockcontract.UpdateReq{
 		ID: req.ID, Name: name, Document: req.Document, ExpectedVersion: req.ExpectedVersion,
-	}); uerr != nil {
+	})
+	if uerr != nil {
 		// 版本冲突（409）与其它失败分开：它是**可重试的用户动作**，不该打 500 归口文案，
 		// 也不该被当成基础设施故障写进 500 日志。前端据 409 + 模块文案提示"刷新后重试"。
 		//
@@ -248,24 +248,8 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 		response.ErrorWithMessage(c, http.StatusInternalServerError, adminui.MsgInternalError)
 		return
 	}
-	// 回跳（303 PRG）：只有**站内相对路径**才接受，其它一律拒绝并落默认列表页。
-	//
-	// 开放重定向在后台同样是「看起来像本站自己发起的跳转」：//evil.example.com 是协议
-	// 相对 URL，浏览器会当外站处理；绝对 URL 更直接。判据与语言切换回跳共用同一份
-	//（pkg/safepath.LocalReturnPath，task-75 自 shell 迁入）。没传（普通块编辑）时不跳，
-	// 保存后留在工作台。
-	if raw := strings.TrimSpace(req.ReturnURL); raw != "" {
-		target := safepath.LocalReturnPath(raw)
-		if target == "" {
-			target = "/admin/blocks"
-		}
-		c.Redirect(http.StatusSeeOther, target)
-		return
-	}
-	// 成功回执走 response 出口（与上面错误路径同族）：message 传 key，由 response 层按键取词，
-	// 不再把中文写在这里 —— 原先在控制器里手拼一个只含 message 的 map 直接返回
-	// 是英文界面上唯一说中文的那一句（同文件其余路径都走了 response + enums）。
-	response.SuccessWithMessage(c, blockenums.ContentSavedRebuildQueued)
+	// 所有保存成功统一JSON；导航由工作台基于已校验的meta.returnUrl决定。
+	response.SuccessWithMessage(c, blockenums.ContentSavedRebuildQueued, updated)
 }
 
 // versionConflictMsg 从版本冲突错误取「key + 兜底 + 版本号参数」这条事实。

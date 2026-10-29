@@ -7,7 +7,7 @@ function methods(file, name, globals = {}) {
     const source = fs.readFileSync(__dirname + '/methods/' + file + '.js', 'utf8')
         .replace(/^import\s*\{[\s\S]*?\}\s*from\s*'[^']*';/gm, '')
         .replace('export const ' + name, 'var ' + name);
-    const context = vm.createContext({ console, JSON, URLSearchParams, setTimeout, clearTimeout,
+    const context = vm.createContext({ console, JSON, URL, URLSearchParams, setTimeout, clearTimeout,
         meta: { pageId: 'page-1', draftPath: '/demo', target: { type: 'page', save: { path: '/api/page/draft/save' }, saveBody: { versionKey: 'expectedVersion' } } },
         csrfHeaders: (h) => h, ...globals });
     vm.runInContext(source, context);
@@ -92,14 +92,14 @@ test('撤销重做须使旧节点引用失效并立即更新按钮状态', () =>
 
 for (const [type, spec] of [
     ['page', {idKey:'id',documentKey:'draftDocument',versionKey:'expectedVersion',pathKey:'draftPath'}],
-    ['block', {idKey:'blockId',documentKey:'document',versionKey:'version'}],
+    ['block', {idKey:'blockId',documentKey:'document',versionKey:'expectedVersion'}],
     ['template', {idKey:'templateId',documentKey:'draft',extras:{context:'contextKey'}}]
 ]) test('目标描述符决定保存路径、字段和版本：' + type, async () => {
     let sent;
     const metadata = {pageId:'target-1',draftPath:'/demo',contextKey:'product',target:{type,save:{path:'/api/'+type+'/save'},saveBody:spec}};
     const {wb} = editor({meta:metadata, fetch:async (url, options)=>{
         sent={url, body:JSON.parse(options.body)};
-        return {ok:true,json:async()=>({code:200,data:{draftVersion:2}})};
+        return {ok:true,json:async()=>({code:200,data:type==='block'?{version:2}:{draftVersion:2}})};
     }});
     const before=JSON.parse(JSON.stringify(wb.doc));
     await wb.saveDraft();
@@ -110,6 +110,45 @@ for (const [type, spec] of [
     else assert.equal('expectedVersion' in sent.body,false);
     if(spec.pathKey) assert.equal(sent.body.draftPath,'/demo');
     if(spec.extras) assert.equal(sent.body.context,'product');
+});
+
+test('区块连续保存须使用上次回执版本，409不更改版本与用户输入',async()=>{
+    const sent=[];
+    const metadata={pageId:'b1',target:{type:'block',save:{path:'/admin/blocks/save-content'},saveBody:{documentKey:'document',versionKey:'expectedVersion'}}};
+    const {wb}=editor({meta:metadata,fetch:async(url,options)=>{
+        sent.push(JSON.parse(options.body));
+        return sent.length===1?{ok:true,json:async()=>({code:200,data:{version:2}})}:{ok:false,status:409,json:async()=>({code:409,message:'区块已更新到第3版'})};
+    }});
+    assert.equal(await wb.saveDraft(),true);
+    wb.doc.root[0].props.text='并发冲突后仍保留';
+    assert.equal(await wb.saveDraft(),false);
+    assert.deepEqual(sent.map(x=>x.expectedVersion),[1,2]);
+    assert.equal(wb.draftVersion,2);
+    assert.equal(wb.doc.root[0].props.text,'并发冲突后仍保留');
+    assert.equal(wb.saveState,'error');
+    assert.match(wb.notice,/第3版/);
+});
+
+for(const path of ['/admin/blocks?page=2','//evil.example/x','https://evil.example/x','/\\evil.example/x','/admin/blocks\nevil']) test('区块保存仅前端决定安全回跳：'+path,async()=>{
+    const navigation=[];
+    const metadata={pageId:'b1',returnUrl:path,target:{type:'block',save:{path:'/admin/blocks/save-content'},saveBody:{versionKey:'expectedVersion'}}};
+    const {wb}=editor({meta:metadata,window:{location:{href:'https://site.test/workbench',origin:'https://site.test',assign:url=>navigation.push(url)}},fetch:async()=>({ok:true,json:async()=>({code:200,data:{version:2}})})});
+    assert.equal(await wb.saveDraft(),true);
+    assert.equal(navigation.length,path==='/admin/blocks?page=2'?1:0);
+    if(navigation.length) assert.equal(navigation[0],'https://site.test/admin/blocks?page=2');
+});
+
+test('区块请求期间继续编辑不得回跳丢失未保存输入',async()=>{
+    let complete;
+    let navigations=0;
+    const metadata={pageId:'b1',returnUrl:'/admin/blocks',target:{type:'block',save:{path:'/admin/blocks/save-content'},saveBody:{versionKey:'expectedVersion'}}};
+    const {wb}=editor({meta:metadata,window:{location:{href:'https://site.test/workbench',origin:'https://site.test',assign:()=>navigations++}},fetch:()=>new Promise(resolve=>complete=resolve)});
+    const pending=wb.saveDraft();
+    wb.doc.root[0].props.text='保存进行中新输入';
+    complete({ok:true,json:async()=>({code:200,data:{version:2}})});
+    await pending;
+    assert.equal(navigations,0);
+    assert.equal(wb.saveState,'dirty');
 });
 
 test('粘贴样式不得替换目标文字、链接或内容绑定',()=>{

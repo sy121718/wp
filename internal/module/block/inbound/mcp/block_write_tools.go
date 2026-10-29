@@ -69,11 +69,12 @@ type BlockCreateArgs struct {
 // 服务端的 UpdateReq 是整树覆盖：`name` 与 `kind` 必填。
 // 工具层先读现状再合并 —— 调用方只说「改个名字」时不该把 kind 抹掉。
 type BlockUpdateArgs struct {
-	ProjectID string `json:"projectId"`
-	BlockID   string `json:"blockId"`
-	Name      string `json:"name,omitempty"`
-	Category  string `json:"category,omitempty"`
-	ReuseMode string `json:"reuseMode,omitempty"`
+	ExpectedVersion uint64 `json:"expectedVersion"`
+	ProjectID       string `json:"projectId"`
+	BlockID         string `json:"blockId"`
+	Name            string `json:"name,omitempty"`
+	Category        string `json:"category,omitempty"`
+	ReuseMode       string `json:"reuseMode,omitempty"`
 }
 
 type blockResult struct {
@@ -195,12 +196,13 @@ func WriteTools(w blockcontract.BlockWriter, r blockcontract.BlockReader, store 
 			"有引用时会报「块正在被使用」。改分类不影响引用。",
 		permission.BlockUpdate,
 		mcp.Object("改块元数据", map[string]mcp.Schema{
-			"projectId": mcp.String("工程 id"),
-			"blockId":   mcp.String("块 id"),
-			"name":      mcp.String("新名称，省略 = 不改"),
-			"category":  mcp.String("新分类，省略 = 保留原值"),
-			"reuseMode": mcp.Enum("新复用模式，省略 = 保留原值", blockReuseGlobal, blockReuseTemplate),
-		}, "projectId", "blockId"),
+			"projectId":       mcp.String("工程 id"),
+			"blockId":         mcp.String("块 id"),
+			"expectedVersion": mcp.Integer("调用方读取到的版本，必须提供，不能用最新版本代替"),
+			"name":            mcp.String("新名称，省略 = 不改"),
+			"category":        mcp.String("新分类，省略 = 保留原值"),
+			"reuseMode":       mcp.Enum("新复用模式，省略 = 保留原值", blockReuseGlobal, blockReuseTemplate),
+		}, "projectId", "blockId", "expectedVersion"),
 		store,
 		func(ctx context.Context, args BlockUpdateArgs) (mcp.Result, error) {
 			projectID := strings.TrimSpace(args.ProjectID)
@@ -208,17 +210,21 @@ func WriteTools(w blockcontract.BlockWriter, r blockcontract.BlockReader, store 
 			if blockID == "" {
 				return mcp.Result{}, &mcp.ArgsError{Msg: "blockId 不能为空"}
 			}
+			if args.ExpectedVersion == 0 || args.ExpectedVersion > uint64(1<<63-1) {
+				return mcp.Result{}, &mcp.ArgsError{Msg: "expectedVersion 必须是读取到的有效版本"}
+			}
 			cur, err := r.Detail(ctx, &blockdto.DetailReq{ProjectID: projectID, ID: blockID})
 			if err != nil {
 				return mcp.Result{}, err
 			}
 			req := &blockdto.UpdateReq{
-				ID:        blockID,
-				Name:      firstNonEmpty(strings.TrimSpace(args.Name), cur.Name),
-				Kind:      cur.Kind,
-				Category:  strings.TrimSpace(args.Category),
-				ReuseMode: strings.TrimSpace(args.ReuseMode),
-				Document:  cur.Document,
+				ID:              blockID,
+				ExpectedVersion: args.ExpectedVersion,
+				Name:            firstNonEmpty(strings.TrimSpace(args.Name), cur.Name),
+				Kind:            cur.Kind,
+				Category:        strings.TrimSpace(args.Category),
+				ReuseMode:       strings.TrimSpace(args.ReuseMode),
+				Document:        cur.Document,
 			}
 			if req.Name == "" {
 				return mcp.Result{}, &mcp.ArgsError{Msg: "这个块没有名称，请显式给出 name"}
@@ -298,7 +304,7 @@ func blockDetailText(blk *blockdto.BlockResp) string {
 	fmt.Fprintf(&b, "* 类型：%s，分类：%s\n", emptyAsDash(blk.Kind), emptyAsDash(blk.Category))
 	fmt.Fprintf(&b, "* %s\n", reuseModeText(blk.ReuseMode))
 	fmt.Fprintf(&b, "* 文档：%d 字节（结构由编辑器维护）\n", len(blk.Document))
-	fmt.Fprintf(&b, "* 更新于 %s", blk.UpdatedAt.String())
+	fmt.Fprintf(&b, "* 版本 %d\n* 更新于 %s", blk.Version, blk.UpdatedAt.String())
 	return b.String()
 }
 
