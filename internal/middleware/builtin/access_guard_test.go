@@ -444,3 +444,42 @@ func TestAccessUnlockRejectsOpenRedirect(t *testing.T) {
 		}
 	}
 }
+
+// TestAccessGuardCoversContentVariants 守卫必须覆盖同一份产物的**所有访问变体**。
+//
+// 为什么单独一条：静态面不是只有 `/about` 一种命中方式。同一份受限产物还能通过
+//   · 预压缩字节（构建期生成的 `.gz`，由 PrecompressedAssetMiddleware 直出）
+//   · 显式文件名（`/about/index.html`，已在上一条覆盖）
+//   · 大小写与重复斜杠（静态面按路径归一后命中同一文件）
+// 到达浏览器。守卫只认「条目名」时，前一类会被 `ResolveActiveEntry` 判成
+// 「不是激活条目」而**直接放行** —— 因为它们不以 `/index.html` 结尾。
+//
+// 本用例的判据：任何变体都不许出现 200 + 受限内容。
+func TestAccessGuardCoversContentVariants(t *testing.T) {
+	t.Setenv("GO_WP_ARTIFACT_ROOT", t.TempDir())
+	if err := auth.Init(nil); err != nil {
+		t.Fatalf("初始化会话密钥失败: %v", err)
+	}
+	newGuardTestSite(t, map[string]guardTestEntry{
+		"about": {HTML: "<html><body>SECRET-ABOUT</body></html>", Access: passwordGuard(t, "s3cret")},
+	})
+	r := newGuardTestRouter()
+
+	// 受限产物的各种访问写法。每一项都必须被拦（403），且不能泄漏受限内容。
+	for _, path := range []string{
+		"/about",
+		"/about/",
+		"/about/index.html",
+		"/about/index.html.gz",  // 预压缩变体：静态面会直出它
+		"/about/index.html.br",  // brotli 变体（若将来生成）
+		"/About",                // 大小写变体
+		"/ABOUT/index.html",     // 目录大小写变体
+		"//about//index.html",   // 重复斜杠
+		"/about/index.html?x=1", // 带查询串
+	} {
+		rec := guardGet(r, path)
+		if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), "SECRET-ABOUT") {
+			t.Errorf("%s 绕过了守卫（code=%d）—— 受限产物的任何访问变体都必须 403", path, rec.Code)
+		}
+	}
+}
