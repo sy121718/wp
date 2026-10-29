@@ -26,7 +26,7 @@ type cartIconTestData struct {
 }
 
 // renderCartIconHTML 用组件自带的模板源码渲染一次购物车图标，返回产物 HTML。
-func renderCartIconHTML(t *testing.T, p *Props, cartURL string) string {
+func renderCartIconHTML(t *testing.T, p *Props) string {
 	t.Helper()
 	src, ok := core.OwnedTemplate("cart_icon")
 	if !ok {
@@ -44,7 +44,7 @@ func renderCartIconHTML(t *testing.T, p *Props, cartURL string) string {
 	data := cartIconTestData{
 		Classes: "sky-c-n1",
 		NodeID:  "n1",
-		V:       BuildView(p, "proj-1", "zh-CN", cartURL),
+		V:       BuildView(p, "proj-1", "zh-CN"),
 	}
 	if err := tpl.Execute(&buf, make(jet.VarMap), data); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -57,7 +57,7 @@ func renderCartIconHTML(t *testing.T, p *Props, cartURL string) string {
 // 没有这对控件，触屏上就没有任何办法展开浮层（:hover 永不触发）——
 // 这不是样式差异，是「购物车图标点了没反应」。
 func TestCartIconJetHoverTouchToggleBindsPanel(t *testing.T) {
-	html := renderCartIconHTML(t, &Props{Mode: ModeHover}, "/cart")
+	html := renderCartIconHTML(t, &Props{Mode: ModeHover})
 
 	// 必须是 checkbox：radio 点不掉，触屏展开后再也收不回去。
 	if !strings.Contains(html, `type="checkbox" class="sky-cart-icon-toggle" id="sky-cart-icon-toggle-n1"`) {
@@ -78,7 +78,7 @@ func TestCartIconJetHoverTouchToggleBindsPanel(t *testing.T) {
 // CSS 侧用兄弟选择器（~）驱动浮层显隐与覆盖层接管点击，顺序错了选择器一律不命中，
 // 而且产物看起来完全正常 —— 只有触屏上点不动才发现。
 func TestCartIconJetHoverToggleOrder(t *testing.T) {
-	html := renderCartIconHTML(t, &Props{Mode: ModeHover}, "/cart")
+	html := renderCartIconHTML(t, &Props{Mode: ModeHover})
 
 	toggle := strings.Index(html, `class="sky-cart-icon-toggle"`)
 	link := strings.Index(html, `class="sky-cart-icon-trigger"`)
@@ -99,7 +99,7 @@ func TestCartIconJetHoverToggleOrder(t *testing.T) {
 // 不该混进 checkbox —— 两套开合机制并存只会互相打架（键盘停靠点也白白多一个）。
 func TestCartIconJetDetailsModesHaveNoTouchToggle(t *testing.T) {
 	for _, mode := range []string{ModeDropdown, ModeDrawer, ModeModal} {
-		html := renderCartIconHTML(t, &Props{Mode: mode}, "/cart")
+		html := renderCartIconHTML(t, &Props{Mode: mode})
 		if strings.Contains(html, "sky-cart-icon-toggle") || strings.Contains(html, "sky-cart-icon-cover") {
 			t.Errorf("形态 %s 不该出现触屏开合控件\nHTML=%s", mode, html)
 		}
@@ -109,12 +109,13 @@ func TestCartIconJetDetailsModesHaveNoTouchToggle(t *testing.T) {
 	}
 }
 
-// TestCartIconJetSlotLinkSurvives 有购物车槽位时，桌面那条「点图标去购物车页」的链接
-// 必须原样保留：触屏覆盖层是纯 CSS 的 @hovernone 规则，改不动 DOM，
-// 所以链接不能因为加了触屏交互而被换掉。
-func TestCartIconJetSlotLinkSurvives(t *testing.T) {
-	html := renderCartIconHTML(t, &Props{Mode: ModeHover}, "/cart")
-	if !strings.Contains(html, `class="sky-cart-icon-trigger" href="/cart"`) {
-		t.Errorf("hover 形态的图标链接被改动了（桌面点击应仍是原行为）\nHTML=%s", html)
+// hover 的触发器只控制自己的浮层，不再依赖系统购物车页面。
+func TestCartIconHoverHasNoImplicitPageLink(t *testing.T) {
+	html := renderCartIconHTML(t, &Props{Mode: ModeHover})
+	if strings.Contains(html, `href="/cart"`) || strings.Contains(html, `href="#"`) {
+		t.Fatal("出现隐式页面链接")
+	}
+	if !strings.Contains(html, `data-component-instance="n1"`) || !strings.Contains(html, `data-component-part="cart"`) {
+		t.Fatal("缺少实例与区域声明")
 	}
 }

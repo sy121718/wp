@@ -1,7 +1,9 @@
 package feature
 
 import (
+	"bytes"
 	"context"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -113,8 +115,17 @@ func TestCartPublicDataProtocol(t *testing.T) {
 		t.Fatal("失败请求改变了购物车")
 	}
 	request(http.MethodPost, "/api/site/cart/add", "application/json", strings.Replace(addBody, f.projectID, uuid.NewString(), 1), csrf, 404)
-	// 表单形状走同一处理器，收货人缺省在 service 归一，客户端身份被屏蔽。
+	// 未配置任何系统槽位或页面也可结算；页面只提供表单和显式流程目标。
+	// 地址缺失先拒绝，修改后沿用同一 requestId 重试，不留下订单或库存预占。
 	values := url.Values{"projectId": {f.projectID}, "email": {"json-buyer@example.com"}, "name": {"数据访客"}, "phone": {"13800000000"}, "address": {"测试地址"}, "country": {"CN"}, "requestId": {"public-data-checkout"}, "userId": {"987654321"}, "ipAddress": {"attacker"}, "cookie": {"attacker"}}
+	values.Del("address")
+	request(http.MethodPost, "/api/site/cart/checkout", "application/x-www-form-urlencoded", values.Encode(), csrf, 400)
+	before, err := f.orders.ListOrders(context.Background(), &orderdto.ListOrderReq{ProjectID: f.projectID, Limit: 50})
+	if err != nil || before.Total != 0 || f.reservedOf(t, variant) != 0 {
+		t.Fatalf("校验失败不得建单或预占库存: orders=%+v err=%v", before, err)
+	}
+	values.Set("address", "测试地址")
+	// 表单形状走同一处理器，收货人缺省在 service 归一，客户端身份被屏蔽。
 	checked := request(http.MethodPost, "/api/site/cart/checkout", "application/x-www-form-urlencoded", values.Encode(), csrf, 200)
 	var checkout struct {
 		Data cartdto.CheckoutResp `json:"data"`
@@ -131,6 +142,47 @@ func TestCartPublicDataProtocol(t *testing.T) {
 	}
 	if detail.Head.ShipName != "数据访客" || detail.Head.ShipPhone != "13800000000" || detail.Head.IPAddress == "attacker" || (detail.Head.UserID != nil && *detail.Head.UserID == 987654321) {
 		t.Fatalf("可信元数据或收货缺省错误:%+v", detail.Head)
+	}
+	if detail.Head.PaidAt != nil {
+		t.Fatal("支付失败不得写入付款时间")
+	}
+	// 模拟首个响应丢失：重发的是原签名购物车与原 requestId，不能信任请求体自报 cookie。
+	// JSON 与浏览器 FormData 必须命中同一订单，金额、状态和库存效果相等。
+	jsonBody := `{"projectId":"` + f.projectID + `","email":"json-buyer@example.com","name":"数据访客","phone":"13800000000","shipping":{"address":"测试地址","country":"CN"},"requestId":"public-data-checkout"}`
+	var multipartBody bytes.Buffer
+	writer := multipart.NewWriter(&multipartBody)
+	for key, entries := range values {
+		for _, value := range entries {
+			if err := writer.WriteField(key, value); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, retry := range []struct{ name, contentType, body string }{
+		{"JSON", "application/json", jsonBody},
+		{"FormData", writer.FormDataContentType(), multipartBody.String()},
+	} {
+		cookies[cartcontract.CartCookieName] = cartCookie
+		replayed := request(http.MethodPost, "/api/site/cart/checkout", retry.contentType, retry.body, csrf, 200)
+		var same struct {
+			Data cartdto.CheckoutResp `json:"data"`
+		}
+		if err := json.Unmarshal(replayed.Body.Bytes(), &same); err != nil {
+			t.Fatal(err)
+		}
+		if same.Data.OrderID != checkout.Data.OrderID || same.Data.OrderNo != checkout.Data.OrderNo || same.Data.Total != checkout.Data.Total || same.Data.Currency != checkout.Data.Currency || same.Data.Paid != checkout.Data.Paid || same.Data.Status != checkout.Data.Status || same.Data.PaymentError != checkout.Data.PaymentError {
+			t.Fatalf("%s 重试与首次订单事实不等: first=%+v retry=%+v", retry.name, checkout.Data, same.Data)
+		}
+	}
+	list, err := f.orders.ListOrders(context.Background(), &orderdto.ListOrderReq{ProjectID: f.projectID, Limit: 50})
+	if err != nil || list.Total != 1 {
+		t.Fatalf("多种形状重试只能创建同一单: %+v err=%v", list, err)
+	}
+	if got := f.reservedOf(t, variant); got != snapshot.Data.ItemCount {
+		t.Fatalf("库存预占必须等于首次购物车件数: reserved=%d cart=%d", got, snapshot.Data.ItemCount)
 	}
 	final := request(http.MethodGet, "/api/site/cart?projectId="+f.projectID, "", "", "", 200)
 	if err := json.Unmarshal(final.Body.Bytes(), &snapshot); err != nil {

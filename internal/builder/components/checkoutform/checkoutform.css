@@ -127,7 +127,7 @@
   font-size: 15px;
   font-weight: 600;
   color: var(--sky-btn-color, #fff);
-  background: var(--sky-btn-bg, var(--sky-c-primary, #2563eb));
+  background: var(--sky-btn-bg, var(--sky-c-primary, #171717));
   border: none;
   border-radius: var(--sky-radius-md, 6px);
   cursor: pointer;
@@ -135,10 +135,35 @@
 }
 /* 悬停提亮进 hover 桶（构建期包 @media (hover: hover)），触屏上不输出。 */
 @hover & .sky-checkout-submit:hover {
-  background: var(--sky-btn-hover-bg, var(--sky-c-primary-deep, #1d4ed8));
+  background: var(--sky-btn-hover-bg, var(--sky-c-primary-deep, #333333));
 }
 
 /* 触屏等价形态：按压反馈（@active 不包媒体查询，手指按下即触发）。 */
 @active & .sky-checkout-submit:active {
-  background: var(--sky-btn-hover-bg, var(--sky-c-primary-deep, #1d4ed8));
+  background: var(--sky-btn-hover-bg, var(--sky-c-primary-deep, #333333));
+}
+
+& [hidden] {
+  display: none;
+}
+& .sky-checkout-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+& .sky-checkout-back {
+  align-self: flex-start;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+& [data-checkout-result] {
+  padding: 28px;
+  border: 1px solid var(--sky-c-border, #e5e7eb);
+  border-radius: 16px;
+  background: var(--sky-c-surface-alt, #f7f7f8);
 }

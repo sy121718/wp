@@ -237,3 +237,52 @@
 /* 鼠标悬停展开的那条不在这里写：样式源只支持 max-width 断点，而 hover 的规则必须包在
    @media (hover: hover) 里（触屏上不该输出）。它由 Go 侧的 CSSBuckets.AddHover 生成。 */
 @endif
+
+/* hidden 是状态真源，不能被 flex 等布局声明覆盖。 */
+& [hidden] {
+  display: none;
+}
+
+@if inline
+& {
+  display: block;
+  width: 100%;
+}
+& .sky-cart-inline-title {
+  margin: 0 0 24px;
+  font-size: 24px;
+  font-weight: 600;
+}
+& .sky-cart-items {
+  gap: 0;
+}
+& .sky-cart-item {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--sky-c-border, #e5e7eb);
+}
+& .sky-cart-name {
+  flex-basis: 40%;
+  font-weight: 500;
+}
+& .sky-cart-total {
+  padding-top: 20px;
+  border-top: 0;
+  font-size: 20px;
+}
+& .sky-cart-checkout {
+  border: 0;
+  background: var(--sky-c-text, #202124);
+  font: inherit;
+  cursor: pointer;
+}
+& .sky-cart-empty {
+  padding: 48px 24px;
+  border: 1px dashed var(--sky-c-border, #d8d9dc);
+  border-radius: 16px;
+  text-align: center;
+}
+@endif
+
+&[data-cart-panel-dismissed] .sky-cart-icon-panel {
+  display: none;
+}

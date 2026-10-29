@@ -6,12 +6,15 @@ package carticon
 //   · 三种浮层用 <details>（无 JS 也能开合），只有 hover 形态不用 —— 桌面靠 CSS 悬停，
 //     触屏靠 sr-only checkbox + 覆盖层 label 的「点击展开」（见 carticon.css 的 @hovernone）；
 //   · 片段地址必须带工程 id（不带就永远拉不到购物车），且语言只在非空时带上；
-//   · 槽位没配时图标退化为不可点（HasCartURL=false），模板据此不输出死链；
+//   · 未配置结算动作时只展示购物车，不推断全站页面；
 //   · 缺工程 id 时给可见提示，而不是渲染一个点开永远空着的图标。
 
 import (
+	"errors"
 	"strings"
 	"testing"
+
+	"go_wp/internal/builder/core"
 )
 
 func baseProps() *Props { return &Props{} }
@@ -39,19 +42,19 @@ func TestEffectiveMode(t *testing.T) {
 // TestBuildViewUsesDetailsExceptHover 浮层外壳：三种形态用 details，hover 不用。
 func TestBuildViewUsesDetailsExceptHover(t *testing.T) {
 	for _, mode := range []string{ModeDropdown, ModeDrawer, ModeModal} {
-		v := BuildView(&Props{Mode: mode}, "proj-1", "zh-CN", "/cart")
+		v := BuildView(&Props{Mode: mode}, "proj-1", "zh-CN")
 		if !v.UseDetails {
 			t.Errorf("形态 %s 应使用 <details>（原生可展开、键盘可达、无 JS 也能开）", mode)
 		}
 	}
-	if v := BuildView(&Props{Mode: ModeHover}, "proj-1", "zh-CN", "/cart"); v.UseDetails {
+	if v := BuildView(&Props{Mode: ModeHover}, "proj-1", "zh-CN"); v.UseDetails {
 		t.Error("hover 形态不该用 details：桌面靠 CSS 悬停，触屏靠 checkbox 点击展开")
 	}
 }
 
 // TestBuildViewURLsCarrayProjectAndLang 片段地址必须带工程 id 与语言。
 func TestBuildViewURLsCarrayProjectAndLang(t *testing.T) {
-	v := BuildView(baseProps(), "proj-9", "en-US", "/cart")
+	v := BuildView(baseProps(), "proj-9", "en-US")
 	if !strings.Contains(v.CartViewURL, "projectId=proj-9") {
 		t.Fatalf("购物车片段地址缺少工程 id: %q", v.CartViewURL)
 	}
@@ -68,7 +71,7 @@ func TestBuildViewURLsCarrayProjectAndLang(t *testing.T) {
 
 // TestBuildViewOmitsEmptyLang 语言为空时不带 lang 参数（单语言站点不做无用判断）。
 func TestBuildViewOmitsEmptyLang(t *testing.T) {
-	v := BuildView(baseProps(), "proj-9", "  ", "/cart")
+	v := BuildView(baseProps(), "proj-9", "  ")
 	if strings.Contains(v.CartViewURL, "lang=") {
 		t.Fatalf("语言为空时不该带 lang 参数: %q", v.CartViewURL)
 	}
@@ -80,7 +83,7 @@ func TestBuildViewOmitsEmptyLang(t *testing.T) {
 // 把它当致命错误会让「一个图标坏了整页发布不了」。
 func TestBuildViewWithoutProjectRendersNotice(t *testing.T) {
 	for _, pid := range []string{"", "   "} {
-		v := BuildView(baseProps(), pid, "zh-CN", "/cart")
+		v := BuildView(baseProps(), pid, "zh-CN")
 		if v.Notice == "" {
 			t.Fatal("缺工程 id 时应给可见提示，而不是渲染一个点开永远空着的图标")
 		}
@@ -90,29 +93,48 @@ func TestBuildViewWithoutProjectRendersNotice(t *testing.T) {
 	}
 }
 
-// TestBuildViewCartURLFallback 槽位没配时图标不可点（不输出死链）。
-func TestBuildViewCartURLFallback(t *testing.T) {
-	v := BuildView(baseProps(), "proj-1", "zh-CN", "")
-	if v.HasCartURL {
-		t.Fatal("槽位没配时不该有购物车页链接")
+// 未配置动作时保留纯购物车，不猜测任何全站页面。
+func TestBuildViewDoesNotInferCheckoutTarget(t *testing.T) {
+	v := BuildView(baseProps(), "proj-1", "zh-CN")
+	if v.HasCheckoutAction || v.CheckoutAction.URL != "" {
+		t.Fatal("不能推断结算目标")
 	}
-	v2 := BuildView(baseProps(), "proj-1", "zh-CN", "  /cart  ")
-	if !v2.HasCartURL || v2.CartURL != "/cart" {
-		t.Fatalf("槽位路径应去空白后使用，实际 %q (has=%v)", v2.CartURL, v2.HasCartURL)
+	inline := BuildView(&Props{Mode: ModeInline}, "proj-1", "zh-CN")
+	if !inline.Inline || inline.UseDetails {
+		t.Fatal("完整购物车应直接可见")
+	}
+}
+
+func TestCheckoutActionConsumesOnlyResolvedTarget(t *testing.T) {
+	node := &core.Node{ID: "cart-a", Actions: map[string]core.ActionTarget{"checkout": {Kind: core.ActionInstance, NodeID: "checkout-b", PartKey: "checkout"}}}
+	v := BuildView(baseProps(), "project", "zh")
+	if err := v.ResolveActions(node, &core.RenderContext{}); !errors.Is(err, core.ErrIncompleteNode) {
+		t.Fatalf("未注入解析器应保留明确缺配置错误: %v", err)
+	}
+	ctx := &core.RenderContext{}
+	want := core.ResolvedAction{Kind: core.ActionInstance, InstanceID: "frozen-checkout-b", PartKey: "checkout"}
+	ctx.SetActionResolver(func(got *core.Node, key string) (core.ResolvedAction, error) {
+		if got != node || key != "checkout" {
+			t.Fatal("组件改写了动作解析输入")
+		}
+		return want, nil
+	})
+	if err := v.ResolveActions(node, ctx); err != nil || !v.HasCheckoutAction || v.CheckoutAction != want {
+		t.Fatalf("组件应原样消费受控目标: %v %+v", err, v.CheckoutAction)
 	}
 }
 
 // TestBuildViewIconFallback 图标名未知时回退默认图标（不做成空图标）。
 func TestBuildViewIconFallback(t *testing.T) {
-	v := BuildView(&Props{Icon: "not-a-real-icon-name"}, "proj-1", "zh-CN", "/cart")
+	v := BuildView(&Props{Icon: "not-a-real-icon-name"}, "proj-1", "zh-CN")
 	if strings.TrimSpace(v.IconSVG) == "" {
 		t.Fatal("未知图标名应回退默认购物车图标，而不是输出空")
 	}
 }
 
-// TestApplyI18n 界面文案：默认标签与两处运行态文案取译文，作者自定义的标签不动。
+// TestApplyI18n 界面文案：默认标签与运行态文案取译文，作者自定义的标签不动。
 //
-// 判据是**收到的 key 集合**，不是「只收到标签那一个」：加载中 / 查看购物车这两句是图标
+// 判据是**收到的 key 集合**，不是「只收到标签那一个」：加载中文案是图标
 // 自己产出的固定文案（作者填不到），与「作者是否自定义标签」各管一段 —— 实现在这两件事上
 // 不许互相早退。所以这里同时钉两个方向：该取的都取了、不该取的一个也没多取。
 func TestApplyI18n(t *testing.T) {
@@ -125,8 +147,6 @@ func TestApplyI18n(t *testing.T) {
 			return "Cart"
 		case TextKeyLoading:
 			return "Loading…"
-		case TextKeyViewCart:
-			return "View cart"
 		}
 		if !strings.HasPrefix(key, "site.fragment.cart.") && !strings.HasPrefix(key, "site.fragment.stock.") {
 			t.Errorf("多取了文案键: %q", key)
@@ -136,10 +156,10 @@ func TestApplyI18n(t *testing.T) {
 	if v.Label != "Cart" {
 		t.Fatalf("默认标签应取译文，实际 %q", v.Label)
 	}
-	if v.LoadingText != "Loading…" || v.ViewCartText != "View cart" {
-		t.Fatalf("运行态文案应取译文，实际 %q / %q", v.LoadingText, v.ViewCartText)
+	if v.LoadingText != "Loading…" {
+		t.Fatalf("运行态文案应取译文，实际 %q", v.LoadingText)
 	}
-	if len(asked) != 15 {
+	if len(asked) != 14 {
 		t.Fatalf("无提示的正常渲染应包含静态购物车和图标的运行态文案，实际取了 %d 条: %v", len(asked), asked)
 	}
 	// 空值的降级提示不许被「无中生有」地填上：正常渲染的图标凭空多一行提示，
@@ -148,7 +168,7 @@ func TestApplyI18n(t *testing.T) {
 		t.Fatalf("空提示不该被翻译函数填出内容，实际 %q", v.Notice)
 	}
 
-	// 作者自定义标签 → 标签那条不翻译（它属于内容，走 Translatable 链路）；两句运行态照旧。
+	// 作者自定义标签 → 标签那条不翻译（它属于内容，走 Translatable 链路）；运行态照旧。
 	v2 := &View{Label: "我的车"}
 	v2.ApplyI18n(func(key, fallback string) string {
 		if key == TextKeyLabel {

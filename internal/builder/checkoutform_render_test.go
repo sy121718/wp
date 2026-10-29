@@ -75,7 +75,10 @@ func TestCheckoutFormRendersNativeForm(t *testing.T) {
 
 	for _, want := range []string{
 		// 原生提交语义（无 JS 时整页提交照旧可用）。
-		`<form class="sky-c-cf1 sky-checkout" method="post" action="/api/site/cart/checkout"`,
+		`<div class="sky-c-cf1 sky-checkout" data-component-instance="cf1"`,
+		`<section data-component-part="checkout" tabindex="-1"><form class="sky-checkout-form" method="post" action="/api/site/cart/checkout"`,
+		`data-write-handler="commerce.checkout"`,
+		`data-component-part="result"`,
 		// 统一写基座提交数据，结果区域独立保留。
 		`data-write="custom" data-write-url="/api/site/cart/checkout"`,
 		// projectId / lang 在构建期烘进隐藏字段。

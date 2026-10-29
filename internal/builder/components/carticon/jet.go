@@ -17,9 +17,11 @@ import (
 type CartLabels struct{ Empty, Qty, Update, Total, Checkout, Clear, Remove, OffShelf, Out, Low, In, Unknown string }
 
 type View struct {
-	ProjectID    string
-	CheckoutHref string
-	CartLabels   CartLabels
+	ProjectID         string
+	CheckoutAction    core.ResolvedAction
+	HasCheckoutAction bool
+	CartLabels        CartLabels
+	Inline            bool
 
 	// Mode 展示形态。
 	Mode string
@@ -32,23 +34,15 @@ type View struct {
 	// 此前硬编码在模板里：它是访客在数据返回前唯一看得到的东西，
 	// 英文站点上多出这一句中文会显得整个浮层没接多语言。
 	LoadingText string
-	// ViewCartText 占位文案里指向购物车页的兜底链接文字。
-	//
-	// 无 JS 时数据无法载入，这个链接是访客唯一的出路 —— 文案同样不能是硬编码中文。
-	ViewCartText string
 	// ShowLabel 图标旁是否显示文字。
 	ShowLabel bool
 	// ShowCount 是否显示件数角标。
 	ShowCount bool
-	// UseDetails 外壳用 <details>（dropdown / drawer / modal）还是纯链接（hover）。
+	// UseDetails 外壳用 <details>（dropdown / drawer / modal）；hover 由独立开关控制。
 	//
 	// <details> 是原生可展开元素：无 JS 也能开合、键盘可达、触屏可用 ——
 	// 不自己实现开合状态，那是这几类浮层最容易写错的地方（焦点陷阱、点外部不关）。
 	UseDetails bool
-	// CartURL 购物车页的线上路径（槽位 cart）；空 = 这个站还没指定购物车页。
-	CartURL string
-	// HasCartURL CartURL 是否可用（模板据此决定图标是否可点）。
-	HasCartURL bool
 	// CartViewURL 购物车内容数据地址（打开浮层时现拉）。
 	CartViewURL string
 	// SummaryURL 件数角标数据地址。
@@ -65,24 +59,21 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 // BuildView 生成购物车图标视图。
 //
 // projectID 来自构建上下文（数据地址要带它），lang 决定要不要带语言参数，
-// cartURL 来自系统页面槽位（无 JS 时的兜底链接目标）。
-func BuildView(p *Props, projectID, lang, cartURL string) View {
+// 动作目标由 ResolveActions 单独消费编译器的受控结果。
+func BuildView(p *Props, projectID, lang string) View {
 	mode := effectiveMode(p)
 	view := View{
-		Mode:         mode,
-		ProjectID:    strings.TrimSpace(projectID),
-		CheckoutHref: strings.TrimSpace(p.CheckoutHref),
-		CartLabels:   CartLabels{Empty: "购物车是空的", Qty: "数量", Update: "更新", Total: "合计", Checkout: "去结算", Clear: "清空购物车", Remove: "移除", OffShelf: "商品已下架，请移除", Out: "暂时缺货", Low: "仅剩 %d 件", In: "库存充足", Unknown: "以结算时库存为准"},
-		IconSVG:      iconSVG(p),
-		Label:        effectiveLabel(p),
-		LoadingText:  textFallbackLoading,
-		ViewCartText: textFallbackViewCart,
-		ShowLabel:    p.ShowLabel,
-		ShowCount:    p.ShowCount,
-		UseDetails:   mode != ModeHover,
-		CartURL:      strings.TrimSpace(cartURL),
+		Mode:        mode,
+		ProjectID:   strings.TrimSpace(projectID),
+		CartLabels:  CartLabels{Empty: "购物车是空的", Qty: "数量", Update: "更新", Total: "合计", Checkout: "去结算", Clear: "清空购物车", Remove: "移除", OffShelf: "商品已下架，请移除", Out: "暂时缺货", Low: "仅剩 %d 件", In: "库存充足", Unknown: "以结算时库存为准"},
+		IconSVG:     iconSVG(p),
+		Label:       effectiveLabel(p),
+		LoadingText: textFallbackLoading,
+		ShowLabel:   p.ShowLabel,
+		ShowCount:   p.ShowCount,
+		UseDetails:  mode != ModeHover && mode != ModeInline,
+		Inline:      mode == ModeInline,
 	}
-	view.HasCartURL = view.CartURL != ""
 	if strings.TrimSpace(projectID) == "" {
 		// 没有工程 id 就取不到购物车（JSON API按工程定位）。留一句可见提示，
 		// 而不是渲染一个点开永远空着的图标 —— 那种「看起来正常但不工作」最难查。
@@ -101,13 +92,23 @@ func BuildView(p *Props, projectID, lang, cartURL string) View {
 	return view
 }
 
+func (v *View) ResolveActions(node *core.Node, ctx *core.RenderContext) error {
+	if _, ok := node.Actions["checkout"]; !ok {
+		return nil
+	}
+	action, err := ctx.ResolveAction(node, "checkout")
+	if err != nil {
+		return err
+	}
+	v.CheckoutAction, v.HasCheckoutAction = action, true
+	return nil
+}
+
 // 界面文案键（多语言 P5b）。
 const (
 	TextKeyLabel = "site.component.cartIcon.label"
 	// TextKeyLoading 浮层里购物车数据拉回来之前的占位文案（模板里此前硬编码）。
 	TextKeyLoading = "site.component.cartIcon.loading"
-	// TextKeyViewCart 占位文案里指向购物车页的兜底链接（无 JS 时唯一的出路）。
-	TextKeyViewCart = "site.component.cartIcon.viewCart"
 	// TextKeyNotice 缺站点工程时的降级提示。
 	TextKeyNotice = "site.component.cartIcon.notice"
 )
@@ -116,9 +117,8 @@ const (
 const (
 	// textFallbackLabel 标签文字的中文兜底。
 	textFallbackLabel = defaultLabel
-	// textFallbackLoading / textFallbackViewCart 浮层占位文案的中文兜底。
-	textFallbackLoading  = "正在加载购物车…"
-	textFallbackViewCart = "查看购物车"
+	// textFallbackLoading 浮层占位文案的中文兜底。
+	textFallbackLoading = "正在加载购物车…"
 	// noticeNoProject 缺站点工程时的提示：BuildView 把它写进 View.Notice 作为初值。
 	noticeNoProject = "购物车暂不可用（未取到站点工程）"
 )
@@ -136,7 +136,6 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 		// BuildView 已落中文兜底；这里补上零值构造（测试直连 View）的情况。
 		v.Label = textFallbackLabel
 		v.LoadingText = textFallbackLoading
-		v.ViewCartText = textFallbackViewCart
 		return
 	}
 	// 标签文字：作者填过的那条走内容翻译（Translatable 白名单），这里只管缺省值。
@@ -156,7 +155,6 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 	v.CartLabels.In = text("site.fragment.stock.in", v.CartLabels.In)
 	v.CartLabels.Unknown = text("site.fragment.stock.checkout", v.CartLabels.Unknown)
 	v.LoadingText = text(TextKeyLoading, textFallbackLoading)
-	v.ViewCartText = text(TextKeyViewCart, textFallbackViewCart)
 	// 提示语只在「缺站点工程」这条降级路径上有值：空值时不填，
 	// 否则正常渲染的图标会凭空多出一行提示（与 orderlist 同一规则）。
 	if v.Notice != "" {
@@ -167,12 +165,15 @@ func (v *View) ApplyI18n(text func(key, fallback string) string) {
 // DeclareFeatures 登记 JSON 读写基座及浮层增强。
 // 原生 details 形态额外启用点外部和 Esc 关闭；悬停形态的开合由 CSS 接管。
 func (v View) DeclareFeatures() (attrs, classes []string) {
-	attrs = append(attrs, "data-cart-icon")
+	attrs = append(attrs, "data-cart-icon", "data-component-instance")
 	if v.Notice != "" {
 		// 提示分支只有一句话，没有浮层，也就没有读写基座与面板属性。
 		return attrs, nil
 	}
-	attrs = append(attrs, "data-site-read", "data-site-cart", "data-write", "data-requires-js")
+	attrs = append(attrs, "data-site-read", "data-site-cart", "data-write", "data-requires-js", "data-component-part")
+	if v.HasCheckoutAction {
+		attrs = append(attrs, "data-component-action")
+	}
 	if v.UseDetails {
 		attrs = append(attrs, "data-cart-icon-panel")
 		if v.ShowCount {

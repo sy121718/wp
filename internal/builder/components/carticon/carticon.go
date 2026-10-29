@@ -16,6 +16,8 @@ const Type = "core.cartIcon"
 
 // 展示形态。
 const (
+	// ModeInline 在页面正文内完整展示购物车。
+	ModeInline = "inline"
 	// ModeDropdown 下拉浮层：图标下方（或上方）浮出一块。
 	ModeDropdown = "dropdown"
 	// ModeDrawer 侧边抽屉：从一侧滑出，占满纵向。
@@ -42,18 +44,16 @@ const (
 
 // Props 购物车图标属性。
 type Props struct {
-	CheckoutHref string `json:"checkoutHref,omitempty" ct:"url,maxlen=500,sec=content,label=结算页面地址"`
-
 	// Mode 展示形态。
-	Mode string `json:"mode,omitempty" ct:"select,dropdown=下拉浮层,drawer=侧边抽屉,modal=居中弹窗,hover=悬停浮层,default=dropdown,sec=content,label=展示形态"`
+	Mode string `json:"mode,omitempty" ct:"select,inline=页面内完整购物车,dropdown=下拉浮层,drawer=侧边抽屉,modal=居中弹窗,hover=悬停浮层,default=dropdown,sec=content,label=展示形态"`
 	// Align 下拉浮层的贴边（dropdown 形态）。
 	Align string `json:"align,omitempty" ct:"select,right=右对齐,left=左对齐,default=right,sec=style,label=浮层对齐"`
 	// DrawerSide 抽屉贴哪一侧（drawer 形态）。
 	DrawerSide string `json:"drawerSide,omitempty" ct:"select,right=右侧,left=左侧,default=right,sec=style,label=抽屉方向"`
 	// Icon 图标名（core 内置图标库，如 shopping-cart / shopping-basket）。
-	Icon string `json:"icon,omitempty" ct:"text,maxlen=40,sec=style,label=图标名"`
+	Icon string `json:"icon,omitempty" ct:"string,maxlen=40,sec=style,label=图标名"`
 	// Label 标签文字（同时是无障碍标签；留空用「购物车」）。
-	Label string `json:"label,omitempty" ct:"text,maxlen=20,sec=content,label=文字"`
+	Label string `json:"label,omitempty" ct:"string,maxlen=20,sec=content,label=文字"`
 	// ShowLabel 是否在图标旁显示文字（默认只显示图标）。
 	ShowLabel bool `json:"showLabel,omitempty" ct:"bool,sec=content,label=显示文字"`
 	// ShowCount 是否显示件数角标（读取购物车 itemCount）。
@@ -64,8 +64,18 @@ type Props struct {
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
+type Component struct{ core.Atom[Props] }
+
+func (*Component) Actions() []core.ActionSpec {
+	return []core.ActionSpec{{Key: "checkout", AllowedKinds: []core.ActionKind{core.ActionPage, core.ActionPresentation, core.ActionInstance}, TargetCapability: "commerce.checkout"}}
+}
+func (*Component) RequiredActions() []string { return nil }
+func (*Component) Parts() []core.PartSpec {
+	return []core.PartSpec{{Key: "cart", Capabilities: []string{"commerce.cart"}}}
+}
+
 // Widget 基座实例。
-var Widget = core.Atom[Props]{
+var Widget = &Component{Atom: core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		DisplayName:     "购物车图标",
 		Hint:            "页头购物车入口（下拉 / 抽屉 / 弹窗 / 悬停）",
@@ -83,12 +93,12 @@ var Widget = core.Atom[Props]{
 		// 标签文字是作者填的文案，参与内容翻译。
 		Translatable: []string{"label"},
 	},
-}
+}}
 
 // effectiveMode 有效形态（未知值兜底下拉浮层）。
 func effectiveMode(p *Props) string {
 	switch p.Mode {
-	case ModeDrawer, ModeModal, ModeHover:
+	case ModeInline, ModeDrawer, ModeModal, ModeHover:
 		return p.Mode
 	default:
 		return ModeDropdown
@@ -150,6 +160,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 		"drawer":     "",
 		"modal":      "",
 		"hover":      "",
+		"inline":     "",
 		"drawerLeft": drawerLeft,
 		"alignLeft":  alignLeft,
 	}
@@ -188,7 +199,7 @@ func init() {
 	// 十几行补上这个差距，不自己实现整套开合（收起仍由原生 details 负责）。
 	core.RegisterEnhanceBlock(core.EnhanceBlock{
 		Fns:    []string{"initCartIconPanels"},
-		Feats:  []string{"data-cart-icon-panel"},
+		Feats:  []string{"data-cart-icon"},
 		Source: cartIconEnhanceJS,
 	})
 }

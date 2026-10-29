@@ -94,10 +94,15 @@ type CouponView struct {
 }
 
 // View 结算表单渲染视图（供 checkoutform.jet 使用）。
-type ResultLabels struct{ Paid, Pending, OrderNo, AccountMailed string }
+type ResultLabels struct{ Paid, Pending, PaymentFailed, OrderNo, AccountMailed string }
 
 type View struct {
-	ResultLabels ResultLabels
+	ResultLabels     ResultLabels
+	BackAction       core.ResolvedAction
+	SuccessAction    core.ResolvedAction
+	HasBackAction    bool
+	HasSuccessAction bool
+	BackLabel        string
 
 	CartReadURL string
 
@@ -186,8 +191,9 @@ func BuildView(p *Props, ctx *core.RenderContext) (View, error) {
 		hidden = append(hidden, HiddenView{Name: "lang", Value: lang})
 	}
 	return View{
+		BackLabel:    "返回购物车",
 		Action:       ActionPath,
-		ResultLabels: ResultLabels{Paid: "下单成功", Pending: "订单已创建，支付未完成", OrderNo: "订单号：", AccountMailed: "账号信息已发送至您的邮箱。"},
+		ResultLabels: ResultLabels{Paid: "订单已付款", Pending: "订单已创建，等待付款", PaymentFailed: "支付暂未成功。订单已保留，请勿重复下单。", OrderNo: "订单号：", AccountMailed: "账号信息已发送至您的邮箱。"},
 		CartReadURL:  "/api/site/cart?" + url.Values{"projectId": {projectID}}.Encode(),
 		SubmitLabel:  submit,
 		Groups:       groups,
@@ -197,6 +203,24 @@ func BuildView(p *Props, ctx *core.RenderContext) (View, error) {
 		},
 		Hidden: hidden,
 	}, nil
+}
+
+func (v *View) ResolveActions(node *core.Node, ctx *core.RenderContext) error {
+	for _, key := range []string{"back", "success"} {
+		if _, ok := node.Actions[key]; !ok {
+			continue
+		}
+		action, err := ctx.ResolveAction(node, key)
+		if err != nil {
+			return err
+		}
+		if key == "back" {
+			v.BackAction, v.HasBackAction = action, true
+		} else {
+			v.SuccessAction, v.HasSuccessAction = action, true
+		}
+	}
+	return nil
 }
 
 // fieldViewOf 单个字段 → 渲染视图（作者覆盖优先，清单默认兜底）。
@@ -253,7 +277,11 @@ func (v View) DeclareFeatures() (attrs, classes []string) {
 	if v.Notice != "" {
 		return nil, nil
 	}
-	return []string{"data-write", "data-site-read", "data-site-cart", "data-requires-js"}, nil
+	attrs = []string{"data-write", "data-site-read", "data-site-cart", "data-requires-js", "data-component-instance", "data-component-part"}
+	if v.HasBackAction || v.HasSuccessAction {
+		attrs = append(attrs, "data-component-action")
+	}
+	return attrs, nil
 }
 
 // ApplyI18n 在构建期翻译静态表单和结果文案，访客 API 不生成界面文本。
@@ -261,8 +289,10 @@ func (v *View) ApplyI18n(t func(string, string) string) {
 	if v == nil || t == nil {
 		return
 	}
+	v.BackLabel = t("site.component.checkoutForm.back", v.BackLabel)
 	v.ResultLabels.Paid = t("site.fragment.checkout.title_paid", v.ResultLabels.Paid)
 	v.ResultLabels.Pending = t("site.fragment.checkout.title_pending", v.ResultLabels.Pending)
+	v.ResultLabels.PaymentFailed = t("site.component.checkoutForm.paymentFailed", v.ResultLabels.PaymentFailed)
 	v.ResultLabels.OrderNo = t("site.fragment.checkout.order_no", v.ResultLabels.OrderNo)
 	v.ResultLabels.AccountMailed = t("site.component.checkoutForm.accountMailed", v.ResultLabels.AccountMailed)
 	v.Coupon.Label = t("site.component.checkoutForm.coupon", v.Coupon.Label)

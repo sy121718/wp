@@ -5,7 +5,7 @@ const vm=require('node:vm');
 function node(attrs={}) {
  const values={...attrs},classes=new Set();
  return {value:'',textContent:'',hidden:false,disabled:false,classes,
- getAttribute:k=>values[k]??null,setAttribute:(k,v)=>{values[k]=String(v);},hasAttribute:k=>k in values,
+ getAttribute:k=>values[k]??null,setAttribute:(k,v)=>{values[k]=String(v);},hasAttribute:k=>k in values,removeAttribute:k=>{delete values[k];},
  classList:{toggle:(k,on)=>on?classes.add(k):classes.delete(k)}};
 }
 function row() {
@@ -14,10 +14,10 @@ function row() {
  r.querySelector=s=>parts.get(s)||null;r.parts=parts;return r;
 }
 function env() {
- const views={},events={},refreshed=[],document={activeElement:null,addEventListener:(name,fn)=>{events[name]=fn;},querySelectorAll:()=>[]};
- const window={document,crypto:{randomUUID:()=> 'generated-request'},WPSiteData:{register:(name,fn)=>{views[name]=fn;},refresh:r=>refreshed.push(r)}};
+ const views={},previews={},events={},handlers={},actions=[],refreshed=[],document={activeElement:null,addEventListener:(name,fn)=>{events[name]=fn;},querySelectorAll:()=>[]};
+ const window={document,WBUI:{writeBase:{registerResultHandler:(name,fn)=>{handlers[name]=fn;}}},WPSiteActions:{run:(form,key)=>actions.push({form,key})},crypto:{randomUUID:()=> 'generated-request'},WPSiteData:{register:(name,fn)=>{views[name]=fn;},registerPreview:(name,fn)=>{previews[name]=fn;},refresh:r=>refreshed.push(r)}};
  vm.runInNewContext(fs.readFileSync(__dirname+'/site-commerce.js','utf8'),{window,Map,Number,String});
- return {views,events,document,refreshed};
+ return {views,previews,events,handlers,actions,document,refreshed};
 }
 function cartRoot() {
  const rows=[],host={querySelectorAll:()=>rows.slice(),appendChild(r){const old=rows.indexOf(r);if(old>=0)rows.splice(old,1);rows.push(r);r.remove=()=>rows.splice(rows.indexOf(r),1);}},parts=new Map();
@@ -52,12 +52,39 @@ test('结算幂等键只在运行时首次生成，失败响应不会清空输�
  const e=env(),key=node(),root={querySelector:()=>key};
  e.views.cartState(root);assert.equal(key.value,'generated-request');key.value='already-entered';e.views.cartState(root);assert.equal(key.value,'already-entered');
 });
-test('成功事件只刷新数据读者，未付款仍保留订单号并阻止重复结算',()=>{
+test('具名结果只更新提交的结算实例，未付款保留订单号且禁止重复建单',()=>{
  const e=env(),parts=new Map(),button=node();
- for(const s of ['[data-checkout-result]','[data-checkout-title]','[data-checkout-order]','[data-checkout-total]','[data-checkout-account]'])parts.set(s,node());
- const form=node({'data-site-checkout':'','data-label-paid':'完成','data-label-pending':'待付款'});
- form.querySelector=s=>parts.get(s)||null;form.querySelectorAll=s=>s==='button[type="submit"]'?[button]:parts.has(s)?[parts.get(s)]:[];
+ for(const s of ['[data-checkout-result]','[data-checkout-title]','[data-checkout-order]','[data-checkout-total]','[data-checkout-account]','[data-checkout-payment-error]'])parts.set(s,node());
+ const root=node({'data-label-paid':'完成','data-label-pending':'待付款'});
+ root.querySelector=s=>parts.get(s)||null;root.querySelectorAll=s=>parts.has(s)?[parts.get(s)]:[];
+ const form=node();form.closest=()=>root;form.querySelectorAll=s=>s==='button[type="submit"]'?[button]:[];
+ const otherTitle=node();otherTitle.textContent='另一个实例';
  const reader=node();e.document.querySelectorAll=()=>[reader];
- e.events['write:success']({target:form,detail:{url:'/api/site/cart/checkout',data:{paid:false,orderNo:'ORDER-42',total:1234,currency:'CNY',accountMailed:false}}});
+ assert.equal(e.handlers['commerce.checkout']({form,data:{paid:false,orderNo:'ORDER-42',total:1234,currency:'CNY',accountMailed:false,paymentError:'declared.error.key'}}),true);
  assert.equal(parts.get('[data-checkout-title]').textContent,'待付款');assert.equal(parts.get('[data-checkout-order]').textContent,'ORDER-42');assert.equal(button.disabled,true);assert.equal(e.refreshed[0],reader);
+ assert.equal(otherTitle.textContent,'另一个实例');assert.equal(e.actions[0].form,form);assert.equal(e.actions[0].key,'success');
+ assert.equal(e.events['write:success'],undefined);
+});
+test('一个实例的数量成功只清理本表单脏标记，另一实例失败输入在失焦刷新后仍保留',()=>{
+ const e=env(),a=cartRoot(),b=cartRoot();
+ for(const cart of [a,b])e.views.cart(cart.root,{items:[item()],total:2468,currency:'CNY',empty:false});
+ const qa=a.rows[0].parts.get('[name="quantity"]'),qb=b.rows[0].parts.get('[name="quantity"]');
+ qa.value='3';qa.setAttribute('data-cart-dirty','');qb.value='';qb.setAttribute('data-cart-dirty','');
+ e.document.activeElement=null;e.document.querySelectorAll=()=>[a.root,b.root];
+ e.handlers['commerce.cart']({form:{querySelector:()=>qa}});
+ assert.equal(qa.hasAttribute('data-cart-dirty'),false);assert.equal(qb.hasAttribute('data-cart-dirty'),true);
+ e.views.cart(b.root,{items:[item({quantity:3})],total:3702,currency:'CNY',empty:false});
+ assert.equal(qb.value,'');assert.equal(e.refreshed.length,2);
+});
+
+test('购物车模拟预览使用固定事实区分空车与缺货，不刷新真实私有数据',()=>{
+ const e=env(),c=cartRoot();e.previews.cart(c.root,'out-of-stock');
+ assert.equal(c.rows[0].parts.get('[data-cart-stock]').textContent,'缺货');
+ assert.equal(c.parts.get('[data-cart-total]').textContent,'CNY 98.00');
+ e.previews.cart(c.root,'empty');assert.equal(c.rows.length,0);assert.equal(c.parts.get('[data-cart-empty]').hidden,false);assert.equal(e.refreshed.length,0);
+});
+test('结算模拟校验错误保留本表单内容且不生成真实请求键',()=>{
+ const e=env(),status=node(),key=node(),email=node();email.value='buyer@example.test';
+ const root=node({'data-site-checkout':''});root.querySelector=s=>s==='[data-write-status]'?status:s==='[name="requestId"]'?key:email;root.querySelectorAll=s=>s==='[data-write-status]'?[status]:[];
+ e.previews.cartState(root,'validation-error');assert.match(status.textContent,/检查必填/);assert.equal(email.value,'buyer@example.test');assert.equal(key.value,'');assert.equal(e.refreshed.length,0);
 });

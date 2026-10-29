@@ -742,8 +742,7 @@ func productSelectorViewOf(node *core.Node, topLevel bool, ctx *core.RenderConte
 
 // cartIconViewOf 转换购物车图标节点（BIZ-1 访问面）。
 //
-// 手写而不是走 contentAtomViewOf：它除了构建上下文还需要**槽位路径**
-// （无 JS 时图标的兜底链接目标），而那个通用助手只把内容解析器传给 BuildView。
+// 动作只使用构建上下文解析后的目标，不依赖全站唯一购物车页面。
 func cartIconViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
 	var p carticonPkg.Props
 	if len(node.Props) > 0 {
@@ -753,7 +752,10 @@ func cartIconViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*n
 	}
 	classes, customID := advancedClasses(node, &p, ctx)
 	carticonPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	view := carticonPkg.BuildView(&p, ctx.ProjectID, ctx.Lang, ctx.SitePage(core.SiteSlotCart))
+	view := carticonPkg.BuildView(&p, ctx.ProjectID, ctx.Lang)
+	if err := view.ResolveActions(node, ctx); err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
 	applyI18n(&view, ctx)
 	declareViewFeatures(&view, ctx)
 	return &nodeView{
@@ -838,6 +840,9 @@ func userFormsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	classes, customID := advancedClasses(node, &p, ctx)
 	userformsPkg.CompileCSS(node.ID, &p, ctx.CSS)
 	view := userformsPkg.BuildView(&p, ctx.ProjectID, ctx.Lang)
+	if err := view.ResolveActions(node, ctx); err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
 	// applyI18n：视图实现了 core.I18nAware，固定文案（含带计数的成品文案）在渲染前回填。
 	applyI18n(&view, ctx)
 	declareViewFeatures(&view, ctx)
@@ -1159,6 +1164,10 @@ func checkoutFormViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}
+	if err := view.ResolveActions(node, ctx); err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
+	applyI18n(&view, ctx)
 	declareViewFeatures(view, ctx)
 	return &nodeView{
 		Type:     checkoutformPkg.Type,

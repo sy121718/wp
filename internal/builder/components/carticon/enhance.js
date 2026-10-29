@@ -1,37 +1,63 @@
-/* carticon enhance — 点浮层外部 / 按 Esc 收起购物车浮层。
- *
- * <details> 是原生的可展开元素：开合、键盘、触屏都由浏览器负责，这里只补它唯一的缺口 ——
- * 点外部不关。不自己实现整套开合状态：那才是这类浮层最容易写错的地方（焦点陷阱、
- * 重复绑定、Esc 与点击互相打架）。收起仍由原生负责（removeAttribute('open') 即原生收起）。
- *
- * 只在页面里出现过 data-cart-icon-panel 时注入（见 core.RegisterEnhanceBlock 的 Feats）。
- */
+/* 原生开合补上视口避让、外点关闭和 Esc 后焦点归还。 */
 function initCartIconPanels() {
-  var roots = document.querySelectorAll('details[data-cart-icon-panel]');
-  if (!roots.length) {
-    return;
-  }
-
-  function closeAll(except) {
-    for (var i = 0; i < roots.length; i++) {
-      if (roots[i] !== except) {
-        roots[i].removeAttribute('open');
-      }
+  if (initCartIconPanels.ready) return;
+  initCartIconPanels.ready = true;
+  var roots = document.querySelectorAll('[data-cart-icon]');
+  function place(root) {
+    var mode = root.getAttribute('data-cart-icon');
+    if (mode !== 'dropdown' && mode !== 'hover') return;
+    var panel = root.querySelector('.sky-cart-icon-panel');
+    if (!panel || !panel.getClientRects().length) return;
+    panel.style.transform = '';
+    panel.style.top = '';
+    panel.style.bottom = '';
+    panel.style.maxHeight = '';
+    var rect = panel.getBoundingClientRect();
+    var width = document.documentElement.clientWidth;
+    var height = document.documentElement.clientHeight;
+    var gap = 16;
+    var shift = rect.left < gap ? gap - rect.left : rect.right > width - gap ? width - gap - rect.right : 0;
+    panel.style.transform = 'translateX(' + shift + 'px)';
+    var anchor = root.getBoundingClientRect();
+    var below = height - anchor.bottom - gap - 8;
+    var above = anchor.top - gap - 8;
+    if (rect.bottom > height - gap && above > below) {
+      panel.style.top = 'auto';
+      panel.style.bottom = 'calc(100% + 8px)';
+      panel.style.maxHeight = Math.max(80, above) + 'px';
+    } else {
+      panel.style.maxHeight = Math.max(80, below) + 'px';
     }
   }
-
-  document.addEventListener('click', function (event) {
-    for (var i = 0; i < roots.length; i++) {
-      var root = roots[i];
-      if (root.hasAttribute('open') && !root.contains(event.target)) {
-        root.removeAttribute('open');
-      }
+  function open(root) {
+    var details = root.querySelector('details[data-cart-icon-panel]');
+    var toggle = root.querySelector('.sky-cart-icon-toggle');
+    return details && details.hasAttribute('open') || toggle && toggle.checked || root.getAttribute('data-cart-icon') === 'hover' && root.matches(':hover');
+  }
+  function close(root, focus) {
+    var details = root.querySelector('details[data-cart-icon-panel]');
+    var toggle = root.querySelector('.sky-cart-icon-toggle');
+    if (details) details.removeAttribute('open');
+    if (toggle) toggle.checked = false;
+    if (focus) {
+      var trigger = details ? details.querySelector('summary') : toggle;
+      if (trigger) trigger.focus();
+      if (root.getAttribute('data-cart-icon') === 'hover') root.setAttribute('data-cart-panel-dismissed', '');
     }
+  }
+  roots.forEach(function(root) {
+    var details = root.querySelector('details[data-cart-icon-panel]');
+    if (details) details.addEventListener('toggle', function() { if (details.open) place(root); });
+    root.addEventListener('mouseenter', function() { root.removeAttribute('data-cart-panel-dismissed'); place(root); });
+    root.addEventListener('focusin', function() { root.removeAttribute('data-cart-panel-dismissed'); place(root); });
+    root.addEventListener('change', function() { place(root); });
   });
-
-  document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape' || event.key === 'Esc') {
-      closeAll(null);
-    }
+  document.addEventListener('click', function(event) {
+    roots.forEach(function(root) { if (open(root) && !root.contains(event.target)) close(root, false); });
   });
+  document.addEventListener('keydown', function(event) {
+    if (event.key !== 'Escape' && event.key !== 'Esc') return;
+    roots.forEach(function(root) { if (open(root)) close(root, root.contains(document.activeElement)); });
+  });
+  window.addEventListener('resize', function() { roots.forEach(function(root) { if (open(root)) place(root); }); });
 }

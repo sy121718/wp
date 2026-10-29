@@ -50,11 +50,11 @@ type Field struct {
 	// Key 字段标识：必须是 ordercontract 清单里的 key。
 	Key string `json:"key"`
 	// Label 标签文案覆盖（空 = 用清单默认标签）。
-	Label string `json:"label,omitempty" ct:"text,maxlen=60,sec=content,label=标签"`
+	Label string `json:"label,omitempty" ct:"string,maxlen=60,sec=content,label=标签"`
 	// Required 必填覆盖（只能加严，不能放松清单必填项）。
 	Required bool `json:"required,omitempty" ct:"bool,sec=content,label=必填"`
 	// Placeholder 占位提示（空 = 不输出 placeholder 属性）。
-	Placeholder string `json:"placeholder,omitempty" ct:"text,maxlen=120,sec=content,label=占位提示"`
+	Placeholder string `json:"placeholder,omitempty" ct:"string,maxlen=120,sec=content,label=占位提示"`
 }
 
 // Props 结算表单属性。
@@ -68,15 +68,28 @@ type Props struct {
 	// 字段必须都在**，否则校验失败 —— 关掉必填字段等于让每一次提交必然被服务端拒。
 	Fields []Field `json:"fields,omitempty"`
 	// SubmitLabel 提交按钮文字（空 = 内置默认「提交订单」）。
-	SubmitLabel string `json:"submitLabel,omitempty" ct:"text,maxlen=40,sec=content,label=提交按钮文字"`
+	SubmitLabel string `json:"submitLabel,omitempty" ct:"string,maxlen=40,sec=content,label=提交按钮文字"`
 	// CollectBilling 是否收集账单地址（关时整组不渲染，账单缺省与收货地址相同）。
 	CollectBilling bool `json:"collectBilling,omitempty" ct:"bool,sec=content,label=收集账单地址"`
 	// Advanced 通用高级属性（docs/02-C0）。
 	Advanced core.AdvancedProps `json:"advanced" ct:"group"`
 }
 
+type Component struct{ core.Atom[Props] }
+
+func (*Component) Actions() []core.ActionSpec {
+	return []core.ActionSpec{
+		{Key: "back", AllowedKinds: []core.ActionKind{core.ActionPage, core.ActionPresentation, core.ActionInstance}, TargetCapability: "commerce.cart"},
+		{Key: "success", AllowedKinds: []core.ActionKind{core.ActionLocal, core.ActionInstance}, TargetCapability: "commerce.checkout.result"},
+	}
+}
+func (*Component) RequiredActions() []string { return nil }
+func (*Component) Parts() []core.PartSpec {
+	return []core.PartSpec{{Key: "checkout", Capabilities: []string{"commerce.checkout"}}, {Key: "result", Capabilities: []string{"commerce.checkout.result"}}}
+}
+
 // Widget 基座实例。
-var Widget = core.Atom[Props]{
+var Widget = &Component{Atom: core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		DisplayName:     "结算表单",
 		Hint:            "购物车结算：字段来自订单契约，标签与顺序可配",
@@ -93,7 +106,7 @@ var Widget = core.Atom[Props]{
 		// 是**作者填的内容**，按内容翻译走；按钮文字同。键 / 必填 / 顺序一律不翻译。
 		Translatable: []string{"submitLabel", "label", "placeholder"},
 	},
-}
+}}
 
 // DefaultFieldProps 组件库插入时的默认字段列表（清单里 DefaultOn 的字段，只带 key）。
 //
