@@ -43,14 +43,22 @@ func userLoginLabelsOf(text func(string, string) string) userLoginLabels {
 // userRegisterLabels 注册表单。
 type userRegisterLabels struct {
 	userCommonLabels
-	Username   string
-	Email      string
-	Nickname   string
-	Password   string
-	Submit     string
-	AfterNote  string
-	HasAccount string
-	Login      string
+	Username     string
+	Email        string
+	Nickname     string
+	Password     string
+	Submit       string
+	AfterNote    string
+	HasAccount   string
+	Login        string
+	VerifyCode   string
+	VerifySubmit string
+	VerifyNote   string
+	Resend       string
+	HaveCode     string
+	BackRegister string
+	MailFailed   string
+	Activated    string
 }
 
 func userRegisterLabelsOf(text func(string, string) string) userRegisterLabels {
@@ -61,9 +69,17 @@ func userRegisterLabelsOf(text func(string, string) string) userRegisterLabels {
 		Nickname:         text("site.fragment.user.register.nickname", "昵称（可选）"),
 		Password:         text("site.fragment.user.register.password", "密码"),
 		Submit:           text("site.fragment.user.register.submit", "注册"),
-		AfterNote:        text("site.fragment.user.register.after_note", "注册后需要去邮箱点激活链接才能登录。"),
+		AfterNote:        text("site.fragment.user.register.after_note", "注册后在这里输入邮箱验证码，完成账号激活。"),
 		HasAccount:       text("site.fragment.user.register.has_account", "已经有账号？"),
 		Login:            text("site.fragment.user.register.login", "去登录"),
+		VerifyCode:       text("site.fragment.user.register.verify_code", "邮箱验证码"),
+		VerifySubmit:     text("site.fragment.user.register.verify_submit", "完成激活"),
+		VerifyNote:       text("site.fragment.user.register.verify_note", "请输入邮箱收到的 8 位验证码。"),
+		Resend:           text("site.fragment.user.register.resend", "重新发送验证码"),
+		HaveCode:         text("site.fragment.user.register.have_code", "已有验证码？"),
+		BackRegister:     text("site.fragment.user.register.back_register", "返回注册"),
+		MailFailed:       text("site.fragment.user.register.mail_failed", "账号已创建，验证邮件暂未发送，请重试发送验证码。"),
+		Activated:        text("site.fragment.user.register.activated", "邮箱验证成功，请登录。"),
 	}
 }
 
@@ -74,15 +90,17 @@ type userForgotLabels struct {
 	Submit    string
 	Privacy   string
 	BackLogin string
+	Sent      string
 }
 
 func userForgotLabelsOf(text func(string, string) string) userForgotLabels {
 	return userForgotLabels{
 		userCommonLabels: userCommonLabelsOf(text),
 		Email:            text("site.fragment.user.forgot.email", "注册邮箱"),
-		Submit:           text("site.fragment.user.forgot.submit", "发送重置链接"),
-		Privacy:          text("site.fragment.user.forgot.privacy", "无论邮箱是否存在，提交后都会显示同一句提示 —— 那样可以避免被人拿来试探哪些邮箱注册过。"),
+		Submit:           text("site.fragment.user.forgot.submit", "发送重置验证码"),
+		Privacy:          text("site.fragment.user.forgot.privacy", "如果该邮箱已注册，你将收到一封包含重置验证码的邮件。"),
 		BackLogin:        text("site.fragment.user.forgot.back_login", "返回登录"),
+		Sent:             text("site.fragment.user.forgot.sent", "若邮箱已注册，请查收 8 位验证码并设置新密码。"),
 	}
 }
 
@@ -90,6 +108,7 @@ func userForgotLabelsOf(text func(string, string) string) userForgotLabels {
 type userResetLabels struct {
 	userCommonLabels
 	Email      string
+	Code       string
 	Password   string
 	Submit     string
 	RevokeNote string
@@ -99,6 +118,7 @@ func userResetLabelsOf(text func(string, string) string) userResetLabels {
 	return userResetLabels{
 		userCommonLabels: userCommonLabelsOf(text),
 		Email:            text("site.fragment.user.reset.email", "邮箱"),
+		Code:             text("site.fragment.user.reset.code", "邮箱验证码"),
 		Password:         text("site.fragment.user.reset.password", "新密码"),
 		Submit:           text("site.fragment.user.reset.submit", "设置新密码"),
 		RevokeNote:       text("site.fragment.user.reset.revoke_note", "改完密码会撤销该账号的全部登录会话（包括其它设备）。"),

@@ -13,17 +13,24 @@ function env(options={}){
   for(const name of ['login','register','forgot','reset','account','profile','preference','password','sessions']){
    const sec=item({'data-user-section':name}),form=item({'data-write-url':'/api/site/user/'+(name==='profile'?'account/profile':name)}),fieldset=item();fieldset.closest=()=>sec;fieldsets.push(fieldset);
    let fields=[item({name:'nickname'})];fields[0].name='nickname';fields[0].type='text';
+   if(name==='register')fields=[Object.assign(item({name:'email'}),{name:'email',type:'email'}),Object.assign(item({name:'password'}),{name:'password',type:'password'})];
+   if(name==='forgot')fields=[Object.assign(item({name:'email'}),{name:'email',type:'email'})];
    if(name==='profile')fields.push(Object.assign(item({name:'locale','data-user-field':'profileLocale'}),{name:'locale',type:'hidden'}));
    if(name==='login'||name==='password'||name==='reset')fields=[Object.assign(item({name:'password'}),{name:'password',type:'password'})];
-   if(name==='reset')fields.unshift(Object.assign(item({name:'key'}),{name:'key',type:'hidden'}),Object.assign(item({name:'email'}),{name:'email',type:'email'}));
-   form.fields=fields;form.closest=()=>r;form.querySelectorAll=s=>s==='input[type="password"]'?fields.filter(f=>f.type==='password'):fields;form.reset=()=>fields.forEach(f=>f.value='');
+   if(name==='reset')fields.unshift(Object.assign(item({name:'key'}),{name:'key',type:'text'}),Object.assign(item({name:'email'}),{name:'email',type:'email'}));
+   form.fields=fields;form.closest=()=>r;form.querySelector=s=>fields.find(f=>s==='[name="'+f.name+'"]')||null;form.querySelectorAll=s=>s==='input[type="password"]'?fields.filter(f=>f.type==='password'):s.startsWith('[name=')?fields.filter(f=>s.includes('[name="'+f.name+'"]')):fields;form.reset=()=>fields.forEach(f=>f.value='');
    fields.forEach(f=>{f.closest=s=>s==='form'?form:sec;f.focus=()=>{document.activeElement=f;};});
-   formStatuses[name]=item();sec.querySelector=s=>s==='[data-write-status]'?formStatuses[name]:fields[0];sec.focus=()=>{document.activeElement=sec;};sections[name]=sec;forms[name]=form;
+   formStatuses[name]=item();sec.querySelector=s=>s==='[data-write-status]'?formStatuses[name]:s.startsWith('[name=')?form.querySelector(s):fields[0];sec.focus=()=>{document.activeElement=sec;};sections[name]=sec;forms[name]=form;
+  }
+  for(const [name,field] of [['activate','key'],['resend','email']]){
+   const form=item({'data-write-url':'/api/site/user/'+name});form.hidden=true;form.closest=()=>r;
+   form.fields=[Object.assign(item({name:field}),{name:field,type:'text'})];form.fields[0].focus=()=>{document.activeElement=form.fields[0];};
+   form.querySelector=()=>form.fields[0];form.querySelectorAll=s=>s==='input[type="password"]'?[]:form.fields;forms[name]=form;
   }
   const accountRead=item(),devicesRead=item();accountRead.closest=devicesRead.closest=()=>r;
   r.closest=()=>r;
-  r.querySelector=s=>{if(s==='[data-user-title]')return title;if(s==='[data-component-action="authenticated"]')return r.authAction||null;const titleMode=s.match(/^\[data-user-mode-title="([^"]+)"\]$/);if(titleMode)return {textContent:'title-'+titleMode[1]};const label=s.match(/^\[data-user-preview-label="([^"]+)"\]$/);if(label)return {textContent:'preview-'+label[1]};const m=s.match(/^\[data-user-section="([^"]+)"\]$/);if(m)return sections[m[1]];if(s==='[data-user-account-read]')return accountRead;if(s==='[data-user-devices-read]')return devicesRead;if(s==='[data-user-guest]')return guest;if(s==='[data-site-status]')return status;if(s==='[data-user-retry]')return retry;return null;};
-  r.querySelectorAll=s=>s.startsWith('[data-user-section="reset"]')?forms.reset.fields.filter(f=>f.name==='key'||f.name==='email'):s==='[data-user-fields]'?fieldsets:s==='[data-user-section]'?Object.values(sections):s==='[data-user-value]'?facts:s.includes('[data-user-section="profile"] form')?[forms.profile,forms.preference]:s==='input[type="password"]'?Object.values(forms).flatMap(f=>f.fields.filter(x=>x.type==='password')):[];
+  r.querySelector=s=>{if(s==='[data-user-register-entry]')return forms.register;if(s==='[data-user-register-verify]')return forms.activate;if(s==='[data-user-register-resend]')return forms.resend;if(s.startsWith('[data-user-flow-label='))return {textContent:'flow-'+s.split('\"')[1]};if(s==='[data-user-title]')return title;if(s==='[data-component-action="authenticated"]')return r.authAction||null;const titleMode=s.match(/^\[data-user-mode-title="([^"]+)"\]$/);if(titleMode)return {textContent:'title-'+titleMode[1]};const label=s.match(/^\[data-user-preview-label="([^"]+)"\]$/);if(label)return {textContent:'preview-'+label[1]};const m=s.match(/^\[data-user-section="([^"]+)"\]$/);if(m)return sections[m[1]];if(s==='[data-user-account-read]')return accountRead;if(s==='[data-user-devices-read]')return devicesRead;if(s==='[data-user-guest]')return guest;if(s==='[data-site-status]')return status;if(s==='[data-user-retry]')return retry;return null;};
+  r.querySelectorAll=s=>s==='[data-user-register-verify], [data-user-register-resend]'?[forms.activate,forms.resend]:s==='[data-user-register-step]'?[]:s.startsWith('[data-user-section="reset"]')?forms.reset.fields.filter(f=>f.name==='key'||f.name==='email'):s==='[data-user-fields]'?fieldsets:s==='[data-user-section]'?Object.values(sections):s==='[data-user-value]'?facts:s.includes('[data-user-section="profile"] form')?[forms.profile,forms.preference]:s==='input[type="password"]'?Object.values(forms).flatMap(f=>f.fields.filter(x=>x.type==='password')):[];
   roots.push(r);return{r,sections,forms,fieldsets,facts,status,guest,retry,accountRead,devicesRead,title,formStatuses};
  }
  return{views,previews,window,fetches,events,handlers,refreshes,roots,nav,document,root,runAgain,registrations};
@@ -105,11 +112,26 @@ test('跨实例账号目标先验证访客会话，响应后只聚焦目标，�
  assert.equal(c.sections.account.hidden,true);assert.equal(c.r._userPendingPart,undefined);
 });
 
-test('注册与重置成功回到同一账号区块登录，并保持可见成功反馈',()=>{
- for(const action of ['register','reset']){
-  const e=env(),a=e.root('A',action);e.views.userSession(a.r,{authenticated:false});
-  e.handlers['user.forms']({form:a.forms[action],instanceId:'A',data:null,text:'操作成功，请登录'});
-  e.views.userSession(a.r,{authenticated:false});
-  assert.equal(a.sections.login.hidden,false);assert.equal(a.sections[action].hidden,true);assert.equal(a.status.textContent,'操作成功，请登录');assert.equal(a.status.getAttribute('data-tone'),'info');
- }
+test('注册成功在当前区块输入验证码，可重发且邮件失败有明确提示',()=>{
+ const e=env(),a=e.root('A','register'),b=e.root('B','register');e.views.userSession(a.r,{authenticated:false});
+ a.forms.register.fields[0].value='person@example.invalid';
+ e.handlers['user.forms']({form:a.forms.register,instanceId:'A',data:{mailQueued:false},text:'成功'});
+ e.views.userSession(a.r,{authenticated:false});
+ assert.equal(a.sections.register.hidden,false);assert.equal(a.forms.register.hidden,true);assert.equal(a.forms.activate.hidden,false);assert.equal(a.forms.resend.hidden,false);
+ assert.equal(a.forms.resend.fields[0].value,'person@example.invalid');assert.equal(a.status.textContent,'flow-activation-mail-failed');
+ assert.equal(b.forms.activate.hidden,true);assert.equal(b.forms.register.hidden,false);
+ e.handlers['user.forms']({form:a.forms.resend,instanceId:'A',text:'成功'});e.views.userSession(a.r,{authenticated:false});assert.equal(a.status.textContent,'flow-activation-sent');
+ a.forms.activate.fields[0].value='ABCD1234';e.handlers['user.forms']({form:a.forms.activate,instanceId:'A',text:'成功'});e.views.userSession(a.r,{authenticated:false});
+ assert.equal(a.sections.login.hidden,false);assert.equal(a.status.textContent,'flow-activated');assert.equal(a.forms.activate.fields[0].value,'');assert.equal(a.forms.activate.hidden,true);
+});
+
+test('找回成功携带邮箱打开验证码重置表单，错误保留输入，成功清秘密',()=>{
+ const e=env(),a=e.root('A','forgot'),b=e.root('B','forgot');e.views.userSession(a.r,{authenticated:false});a.forms.forgot.fields[0].value='reset@example.invalid';
+ e.handlers['user.forms']({form:a.forms.forgot,instanceId:'A',text:'成功'});e.views.userSession(a.r,{authenticated:false});
+ const key=a.forms.reset.fields.find(f=>f.name==='key'),email=a.forms.reset.fields.find(f=>f.name==='email'),password=a.forms.reset.fields.find(f=>f.name==='password');
+ assert.equal(a.sections.reset.hidden,false);assert.equal(email.value,'reset@example.invalid');assert.equal(a.status.textContent,'flow-reset-sent');assert.notEqual(key.type,'hidden');
+ assert.equal(b.r.getAttribute('data-user-active'),null);key.value='BAD-CODE';password.value='keep-secret';e.document.activeElement=key;
+ e.events['site:data:error']({target:a.r,detail:{message:'失败'}});assert.equal(key.value,'BAD-CODE');assert.equal(password.value,'keep-secret');assert.equal(e.document.activeElement,key);
+ e.handlers['user.forms']({form:a.forms.reset,instanceId:'A',text:'密码已重置，请登录'});e.views.userSession(a.r,{authenticated:false});
+ assert.equal(a.sections.login.hidden,false);assert.equal(a.status.textContent,'密码已重置，请登录');assert.equal(key.value,'');assert.equal(password.value,'');
 });

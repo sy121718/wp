@@ -402,6 +402,11 @@ func (s *Service) ResetPassword(ctx context.Context, req *userdto.ResetPasswordR
 	if herr != nil {
 		return herr
 	}
+	// 先撤销外部 Redis 会话，再消费一次性重置码；撤销失败时保留凭据以便重试。
+	// Redis 撤销幂等；后续数据库更新失败只会要求用户重新登录，不会保留旧凭据访问。
+	if err := s.RevokeAllSessions(ctx, e.ID); err != nil {
+		return err
+	}
 	now := time.Now()
 	return s.m.UpdateFields(ctx, e.ID, map[string]any{
 		"password":              string(hashed),

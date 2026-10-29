@@ -44,6 +44,21 @@
         }
         if (root._userPreviewState) applyPreviewState(root);
     }
+    function flowLabel(root, key) {
+        var node = root.querySelector('[data-user-flow-label="' + key + '"]');
+        return node ? node.textContent : '';
+    }
+    function registerStep(root, verification) {
+        var entry = root.querySelector('[data-user-register-entry]');
+        if (entry) entry.hidden = verification;
+        root.querySelectorAll('[data-user-register-verify], [data-user-register-resend]').forEach(function (form) { form.hidden = !verification; });
+        root.querySelectorAll('[data-user-register-step]').forEach(function (button) { button.hidden = (button.getAttribute('data-user-register-step') === 'verify') === verification; });
+        if (verification) {
+            var verify = root.querySelector('[data-user-register-verify]');
+            var code = verify && verify.querySelector('[name="key"]');
+            if (code && code.focus) code.focus();
+        }
+    }
     function fillForm(form, data) {
         if (form.hasAttribute('data-user-dirty')) return;
         form.querySelectorAll('input[name],select[name],textarea[name]').forEach(function (input) {
@@ -175,6 +190,8 @@
     }, previewStates);
     global.document.addEventListener('click', function (event) {
         var retry=event.target.closest('[data-user-retry]');if(retry){var retryRoot=owner(retry);if(retryRoot)global.WPSiteData.refresh(retryRoot);return;}
+        var step = event.target.closest('[data-user-register-step]');
+        if (step) { var stepRoot = owner(step); if (stepRoot) registerStep(stepRoot, step.getAttribute('data-user-register-step') === 'verify'); return; }
         var button = event.target.closest('[data-user-mode]'), root = owner(button);
         if (root) { delete root._userNotice; show(root, button.getAttribute('data-user-mode'), true); }
     });
@@ -218,10 +235,48 @@
             show(root, 'account', false);
             if (action) writeText(root, '[data-site-status]', previewLabel(root, 'action-unavailable'));
         }
-        if (url === '/api/site/user/register' || url === '/api/site/user/logout' || url === '/api/site/user/account/password' || url === '/api/site/user/reset') {
+        if (url === '/api/site/user/register') {
+            var resend = root.querySelector('[data-user-register-resend]');
+            var email = ctx.form.querySelector('[name="email"]');
+            registerStep(root, true);
+            if (resend) {
+                resend.hidden = false;
+                var resendEmail = resend.querySelector('[name="email"]');
+                if (resendEmail && email) resendEmail.value = email.value;
+            }
+            root.setAttribute('data-user-active', 'register');
+            root._userNotice = flowLabel(root, ctx.data && ctx.data.mailQueued === false ? 'activation-mail-failed' : 'activation-sent');
+            ctx.form.querySelectorAll('input[type="password"]').forEach(function (input) { input.value = ''; });
+        }
+        if (url === '/api/site/user/activate') {
+            root.setAttribute('data-user-active', 'login');
+            root._userNotice = flowLabel(root, 'activated');
+            registerStep(root, false);
+            ctx.form.querySelectorAll('[name="key"]').forEach(function (input) { input.value = ''; });
+            root.querySelectorAll('input[type="password"]').forEach(function (input) { input.value = ''; });
+        }
+        if (url === '/api/site/user/resend') {
+            root._userNotice = flowLabel(root, 'activation-sent');
+        }
+        if (url === '/api/site/user/forgot') {
+            var reset = root.querySelector('[data-user-section="reset"]');
+            var forgotEmail = ctx.form.querySelector('[name="email"]');
+            var resetEmail = reset && reset.querySelector('[name="email"]');
+            var resetKey = reset && reset.querySelector('[name="key"]');
+            if (resetEmail && forgotEmail) resetEmail.value = forgotEmail.value;
+            if (resetKey) resetKey.value = '';
+            root.setAttribute('data-user-active', 'reset');
+            root._userNotice = flowLabel(root, 'reset-sent');
+            show(root, 'reset', false);
+            if (resetKey && resetKey.focus) resetKey.focus();
+        }
+        if (url === '/api/site/user/logout' || url === '/api/site/user/account/password' || url === '/api/site/user/reset') {
             root.setAttribute('data-user-active', 'login');
             root._userNotice = ctx.text || '';
             root.querySelectorAll('input[type="password"]').forEach(function (input) { input.value = ''; });
+            if (url === '/api/site/user/reset') {
+                ctx.form.querySelectorAll('[name="key"], [name="password"]').forEach(function (input) { input.value = ''; });
+            }
         }
         refreshAll();
         return true;

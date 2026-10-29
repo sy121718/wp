@@ -17,6 +17,8 @@ func setupSiteUserRoutes(router *gin.Engine, h *Handle) {
 	api.POST("/login", permission.Exempt, limit, h.SiteLogin)
 	api.POST("/register", permission.Exempt, limit, h.SiteRegister)
 	api.POST("/forgot", permission.Exempt, limit, h.SiteForgot)
+	api.POST("/activate", permission.Exempt, limit, h.SiteActivate)
+	api.POST("/resend", permission.Exempt, limit, h.SiteResendActivation)
 	api.POST("/reset", permission.Exempt, limit, h.SiteReset)
 	api.POST("/logout", permission.Exempt, h.SiteLogout)
 	own := api.Group("", requireSiteUser())

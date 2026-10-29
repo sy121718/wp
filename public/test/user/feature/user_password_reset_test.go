@@ -15,6 +15,8 @@ import (
 
 	userdto "go_wp/internal/module/user/dto"
 	usermodel "go_wp/internal/module/user/model"
+	"go_wp/pkg/cache"
+	"go_wp/public/test/support"
 )
 
 // activeUser 造一个已激活用户并返回（含明文激活码时为注册流程）。
@@ -43,6 +45,9 @@ func activeUser(t *testing.T, f *userFixture, username, email, password string) 
 
 // TestPasswordResetFlow 申请 → 收码 → 改密 → 旧密码失效。
 func TestPasswordResetFlow(t *testing.T) {
+	if err := support.SetupRedisForTest(t); err != nil {
+		t.Skipf("本地 Redis 不可用，跳过密码重置会话撤销: %v", err)
+	}
 	f := newUserFixture(t)
 	if f == nil {
 		return
@@ -146,5 +151,47 @@ func TestRegisterCodeCannotResetPassword(t *testing.T) {
 	row, _ := f.m.GetByEmail(ctx, "erin@example.com")
 	if row.Status != usermodel.UserStatusPending {
 		t.Fatal("账号状态不该被改动")
+	}
+}
+
+// TestPasswordResetRetriesAfterSessionStoreFailure Redis不可用不能先消费验证码或改密码。
+func TestPasswordResetRetriesAfterSessionStoreFailure(t *testing.T) {
+	if err := support.SetupRedisForTest(t); err != nil {
+		t.Skipf("Redis不可用: %v", err)
+	}
+	f := newUserFixture(t)
+	if f == nil {
+		return
+	}
+	ctx := context.Background()
+	activeUser(t, f, "retrycode", "retry-code@example.invalid", "old-password-123")
+	f.mail.calls = nil
+	if err := f.svc.RequestPasswordReset(ctx, &userdto.PasswordResetReqRequest{Email: "retry-code@example.invalid"}); err != nil {
+		t.Fatal(err)
+	}
+	code, _ := f.mail.calls[0].Vars["code"].(string)
+	before, err := f.m.GetByEmail(ctx, "retry-code@example.invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cache.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := &userdto.ResetPasswordReq{Email: "retry-code@example.invalid", Key: code, NewPassword: "new-password-123"}
+	if err := f.svc.ResetPassword(ctx, req); err == nil {
+		t.Fatal("会话存储失败时不应报告改密成功")
+	}
+	after, err := f.m.GetByEmail(ctx, req.Email)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Password != after.Password || before.ActivationKey == nil || after.ActivationKey == nil || *before.ActivationKey != *after.ActivationKey {
+		t.Fatal("撤销失败已消费验证码或部分改密")
+	}
+	if err := support.SetupRedisForTest(t); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.ResetPassword(ctx, req); err != nil {
+		t.Fatalf("恢复会话存储后同一个验证码应可重试: %v", err)
 	}
 }

@@ -1,6 +1,8 @@
 package feature
 
 import (
+	"bytes"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -265,4 +267,112 @@ func TestSiteUserAvatarUsesTrustedMediaOrigin(t *testing.T) {
 	readAvatar("/storage/483.jpg", "https://media-b.example.test/storage/483.jpg")
 	readAvatar("https://external.example/storage/483.jpg", "https://external.example/storage/483.jpg")
 	readAvatar("javascript:alert(1)", "")
+}
+
+// TestSiteUserCodeFlowJSONAndFormData 完整验证码链只通过测试邮件端口接码，不触达 SMTP。
+func TestSiteUserCodeFlowJSONAndFormData(t *testing.T) {
+	for _, encoding := range []string{"json", "multipart"} {
+		t.Run(encoding, func(t *testing.T) {
+			env := newUserHTTPEnv(t)
+			guest := env.get(t, "/api/site/user/session", nil)
+			cookies := siteCookies(nil, guest)
+			csrf := guest.Header().Get("X-CSRF-Token")
+			post := func(path string, values map[string]string, withCSRF bool) *httptest.ResponseRecorder {
+				t.Helper()
+				var req *http.Request
+				if encoding == "json" {
+					body, err := json.Marshal(values)
+					if err != nil {
+						t.Fatal(err)
+					}
+					req = httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+					req.Header.Set("Content-Type", "application/json")
+				} else {
+					var body bytes.Buffer
+					writer := multipart.NewWriter(&body)
+					for key, value := range values {
+						if err := writer.WriteField(key, value); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if err := writer.Close(); err != nil {
+						t.Fatal(err)
+					}
+					req = httptest.NewRequest(http.MethodPost, path, &body)
+					req.Header.Set("Content-Type", writer.FormDataContentType())
+				}
+				if withCSRF {
+					req.Header.Set("X-CSRF-Token", csrf)
+				}
+				for _, cookie := range cookies {
+					req.AddCookie(cookie)
+				}
+				rec := httptest.NewRecorder()
+				env.router.ServeHTTP(rec, req)
+				cookies = siteCookies(cookies, rec)
+				if rotated := rec.Header().Get("X-CSRF-Token"); rotated != "" {
+					csrf = rotated
+				}
+				return rec
+			}
+			codeOf := func(template string) string {
+				t.Helper()
+				for index := len(env.mail.calls) - 1; index >= 0; index-- {
+					mail := env.mail.calls[index]
+					if mail.TemplateKey == template {
+						code, _ := mail.Vars["code"].(string)
+						if len(code) != 8 {
+							t.Fatalf("验证码长度应8，实际%d", len(code))
+						}
+						return code
+					}
+				}
+				t.Fatalf("测试邮件接收器未收到%s", template)
+				return ""
+			}
+			noSecret := func(rec *httptest.ResponseRecorder, secret string) {
+				t.Helper()
+				if strings.Contains(rec.Body.String(), secret) {
+					t.Fatal("JSON泄漏邮箱验证码")
+				}
+			}
+			siteData(t, post("/api/site/user/activate", map[string]string{"key": "BAD-CODE"}, false), http.StatusForbidden)
+			registration := post("/api/site/user/register", map[string]string{"username": "codeflow", "email": "codeflow@example.invalid", "password": "initial-password"}, true)
+			registered := siteData(t, registration, http.StatusOK)["data"].(map[string]any)
+			if registered["mailQueued"] != true || registered["email"] != "codeflow@example.invalid" {
+				t.Fatalf("注册邮件事实不完整: %+v", registered)
+			}
+			originalCode := codeOf("register_verify")
+			noSecret(registration, originalCode)
+			siteData(t, post("/api/site/user/resend", map[string]string{"email": "codeflow@example.invalid"}, true), http.StatusOK)
+			activationCode := codeOf("register_verify")
+			if originalCode == activationCode {
+				t.Fatal("重发未轮换激活码")
+			}
+			siteData(t, post("/api/site/user/activate", map[string]string{"key": originalCode}, true), http.StatusBadRequest)
+			activated := post("/api/site/user/activate", map[string]string{"key": activationCode}, true)
+			siteData(t, activated, http.StatusOK)
+			noSecret(activated, activationCode)
+			siteData(t, post("/api/site/user/activate", map[string]string{"key": activationCode}, true), http.StatusBadRequest)
+			logged := siteData(t, post("/api/site/user/login", map[string]string{"account": "codeflow", "password": "initial-password"}, true), http.StatusOK)
+			if logged["data"].(map[string]any)["authenticated"] != true {
+				t.Fatal("激活后不能登录")
+			}
+			siteData(t, post("/api/site/user/forgot", map[string]string{"email": "codeflow@example.invalid"}, true), http.StatusOK)
+			resetCode := codeOf("password_reset")
+			siteData(t, post("/api/site/user/reset", map[string]string{"email": "codeflow@example.invalid", "key": "BAD-CODE", "password": "new-password-123"}, true), http.StatusBadRequest)
+			reset := post("/api/site/user/reset", map[string]string{"email": "codeflow@example.invalid", "key": resetCode, "password": "new-password-123"}, true)
+			siteData(t, reset, http.StatusOK)
+			noSecret(reset, resetCode)
+			state := siteData(t, env.get(t, "/api/site/user/session", cookies), http.StatusOK)
+			if state["data"].(map[string]any)["authenticated"] != false {
+				t.Fatal("重置密码后旧访客会话仍有效")
+			}
+			siteData(t, post("/api/site/user/login", map[string]string{"account": "codeflow", "password": "initial-password"}, true), http.StatusUnauthorized)
+			login := siteData(t, post("/api/site/user/login", map[string]string{"account": "codeflow", "password": "new-password-123"}, true), http.StatusOK)
+			if login["data"].(map[string]any)["authenticated"] != true {
+				t.Fatal("重置后新密码不能登录")
+			}
+		})
+	}
 }

@@ -73,6 +73,33 @@ func (h *Handle) SiteLogout(c *gin.Context) {
 	response.Success(c, h.svc.SiteSession(0))
 }
 
+func (h *Handle) SiteActivate(c *gin.Context) {
+	req, ok := binding.JSON[userdto.ActivateEmailReq](c)
+	if !ok {
+		return
+	}
+	req.Locale = locale(c)
+	data, err := h.svc.ActivateEmail(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorStatusAuto(c, "user", err)
+		return
+	}
+	response.Success(c, data)
+}
+
+func (h *Handle) SiteResendActivation(c *gin.Context) {
+	req, ok := binding.JSON[userdto.ResendActivationReq](c)
+	if !ok {
+		return
+	}
+	req.Locale = locale(c)
+	if err := h.svc.ResendActivation(c.Request.Context(), req); err != nil {
+		response.ErrorStatusAuto(c, "user", err)
+		return
+	}
+	response.Success(c, nil)
+}
+
 func (h *Handle) SiteForgot(c *gin.Context) {
 	req, ok := binding.JSON[userdto.PasswordResetReqRequest](c)
 	if !ok {

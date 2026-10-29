@@ -3,9 +3,9 @@ package userforms
 // userforms_test.go — 访客账号表单组件的视图测试。
 //
 // 钉住的是**不变量**：
-//   · 每个形态都要解析到正确的片段能力与内置页面（两张表放一起就是为了不漏改其一）；
-//   · 片段地址必须带工程 id（不带就永远拉不到表单）；
-//   · 缺工程 id 时给可见提示，而不是渲染一个永远空着的容器。
+//   · 所有形态复用同一个静态账号区块；
+//   · 初值和文案不依赖运行时 HTML 或固定业务页面；
+//   · 作者自定义标题与各模式基础样式保持一致。
 
 import (
 	"strings"
@@ -75,15 +75,12 @@ func TestEffectiveTitle(t *testing.T) {
 	}
 }
 
-// TestCompileCSSIncludesFragmentStyles 组件必须把片段内容的基础样式一起带上。
-//
-// 片段 HTML 是运行时渲染的，页面作者在编辑器里看不到它 ——
-// 不带样式的结果是「登录表单是一列裸输入框」。
+// TestCompileCSSIncludesFragmentStyles 组件必须编译账号表单所有模式的基础样式。
 func TestCompileCSSIncludesFragmentStyles(t *testing.T) {
 	var b core.CSSBuckets
 	CompileCSS("t", &Props{Color: "#c00"}, &b)
 	css := b.String()
-	// 账号中心四块用到的新类也要在（片段 HTML 运行时才渲染，样式必须由组件带上）。
+	// 账号资料与设备列表使用同一套局部样式。
 	for _, want := range []string{
 		".sky-user-form", ".sky-user-input", ".sky-user-submit", "#c00",
 		".sky-user-meta", ".sky-user-grid", ".sky-user-device", ".sky-user-tag",

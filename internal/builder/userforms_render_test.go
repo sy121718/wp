@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"go_wp/internal/templates"
+	"golang.org/x/net/html"
 )
 
 // userFormsDoc 含一个账号表单节点的最小文档。
@@ -57,4 +58,38 @@ func TestUserFormsCompilesStaticJSONForms(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestUserFormsCodeFlowPublishesUsableInputs(t *testing.T) {
+	set, err := templates.NewComponentSet("../templates/components")
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled, err := Compile(userFormsDoc(t, map[string]any{"mode": "register"}), WithComponentSet(set), WithCompileMode(CompileModePublish))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`data-write-url="/api/site/user/activate"`, `data-write-url="/api/site/user/resend"`, `data-user-register-entry`, `data-user-register-verify hidden`, `data-user-register-resend hidden`, `autocomplete="one-time-code"`, `minlength="8" maxlength="8"`, `发送重置验证码`, `邮箱验证码`} {
+		if !strings.Contains(compiled.HTML, want) {
+			t.Fatalf("默认账号流程缺少可操作内容%s", want)
+		}
+	}
+	if strings.Contains(compiled.HTML, `type="hidden" name="key"`) {
+		t.Fatal("邮箱验证码不能依赖隐藏字段或固定重置链接")
+	}
+	tree, err := html.Parse(strings.NewReader(compiled.HTML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inspect func(*html.Node, bool)
+	inspect = func(node *html.Node, inForm bool) {
+		form := node.Type == html.ElementNode && node.Data == "form"
+		if form && inForm {
+			t.Fatal("账号流程不能嵌套form")
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			inspect(child, inForm || form)
+		}
+	}
+	inspect(tree, false)
 }
