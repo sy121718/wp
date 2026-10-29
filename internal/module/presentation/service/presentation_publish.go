@@ -153,6 +153,7 @@ type publishIntent struct {
 // 「不可变」是就本次编译而言：编译阶段只读它，不再回库读语言清单或模板
 // （唯一例外是编译期实体字段 —— 那本来就是构建期数据源，见 renderHTML）。
 type publishFreeze struct {
+	references *pipeline.ReferenceSnapshot
 	// langs 本次要上线的语言集合：既是逐语言编译的范围，也是产物里 hreflang
 	// 互指的判定依据（SEO-026：必须是同一个切片，中间不再推导第二次）。
 	langs []string
@@ -214,11 +215,16 @@ func (s *Service) freezePublish(ctx context.Context, inst *presentationmodel.Ins
 		// 输入解析失败单独标记：调用方据此原样透出（口径见 publishInputError）。
 		return nil, timing, &publishInputError{err: terr}
 	}
+	references, refErr := s.freezeReferences(ctx, inst.ProjectID, tpl.Document)
+	if refErr != nil {
+		return nil, timing, refErr
+	}
 	logicalPath := pipeline.LogicalPathOf(ctx, s.project, inst.ProjectID, intent.logicalPath)
 	if logicalPath == "" {
 		logicalPath = s.instanceLogicalPath(ctx, inst)
 	}
 	return &publishFreeze{
+		references:  references,
 		langs:       langs,
 		rule:        pipeline.LangURLRuleForProject(ctx, s.project, inst.ProjectID),
 		logicalPath: logicalPath,
@@ -238,6 +244,7 @@ func (s *Service) compileLangs(ctx context.Context, inst *presentationmodel.Inst
 	frozen *publishFreeze) (results []langBuildResult, work time.Duration, err error) {
 	start := time.Now()
 	defer func() { work = time.Since(start) }()
+	ctx = pipeline.WithReferenceSnapshot(ctx, frozen.references)
 	results = make([]langBuildResult, 0, len(frozen.langs))
 	for _, lang := range frozen.langs {
 		accessPath, perr := pipeline.SitePath(frozen.rule, lang, frozen.logicalPath)

@@ -796,7 +796,29 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	if err != nil {
 		return nil, err
 	}
-	resolver := newBlockResolverAdapter(s, ctx, projectID)
+	var resolver core.BlockResolver = newBlockResolverAdapter(s, ctx, projectID)
+	structurePort := s.structureTemplates
+	if mode == builder.CompileModePublish {
+		frozen := pipeline.ReferenceSnapshotFromContext(ctx, projectID)
+		if plan != nil && plan.References != nil {
+			frozen = plan.References.Clone()
+		}
+		if frozen == nil {
+			raw, marshalErr := json.Marshal(page)
+			if marshalErr != nil {
+				return nil, marshalErr
+			}
+			frozen, err = s.freezeReferences(ctx, projectID, raw)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if frozen.ProjectID != projectID {
+			return nil, fmt.Errorf("冻结区块工程不匹配")
+		}
+		resolver = frozen
+		structurePort = frozen
+	}
 	// 构建语言与取词函数：WithLanguage 决定 RenderContext.Lang；
 	// WithTranslator 注入「构建开始时刻冻结」的词条快照——构建中途刷新 i18n 缓存
 	// 不影响本次产物字节（确定性构建不变量，docs/06-D §2.3/§12）。
@@ -875,7 +897,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	// 文本要经叠加了解析器的 slotResolver 才能进候选集合（否则模板里的文案永远不翻译，
 	// 且不报任何错）。
 	slotRes, slotErr := pipeline.BuildStructureSlots(ctx, pipeline.StructureSlotInput{
-		Port: s.structureTemplates, ProjectID: projectID, Structure: page.Settings.Structure,
+		Port: structurePort, ProjectID: projectID, Structure: page.Settings.Structure,
 		Inner: resolver, Mode: mode, Diagnostics: diags,
 	})
 	if slotErr != nil {

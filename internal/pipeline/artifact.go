@@ -81,6 +81,8 @@ type Manifest struct {
 	// omitempty 是确定性与历史兼容的关键：没有冻结语言输入的产物（预览编译、
 	// 未接入发布计划的来源）不带这个键，字节与加字段前逐字节一致（hash 不变）。
 	SiteDefaultLang string `json:"siteDefaultLang,omitempty"`
+	// References 支持按该产物真实输入恢复，禁止回读区块最新值。
+	References *ReferenceSnapshot `json:"references,omitempty"`
 	// TranslationMisses 构建期内容译文缺失统计（审计 I18N-02）。
 	//
 	// 为什么进 Manifest 而不是只记日志：日志是给人看的、会滚动消失、也无法在发布

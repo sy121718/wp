@@ -167,6 +167,11 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 	if err != nil {
 		return nil, err
 	}
+	plan.References, err = s.freezeReferences(ctx, page.ProjectID, page.DraftDocument)
+	if err != nil {
+		return nil, err
+	}
+	persistPlan = true
 	path, err := s.sitePathOfWithPlan(ctx, lang, page, &plan)
 	if err != nil {
 		return nil, err
@@ -266,6 +271,11 @@ func (s *Service) PublishAllLanguages(ctx context.Context, req *pagedto.PublishR
 	if err != nil {
 		return nil, err
 	}
+	references, err := s.freezeReferences(ctx, page.ProjectID, page.DraftDocument)
+	if err != nil {
+		return nil, err
+	}
+	ctx = pipeline.WithReferenceSnapshot(ctx, references)
 	res = &pagedto.PublishAllResp{
 		PageID:  page.ID,
 		Results: make([]pagedto.LangPublishResp, 0, len(langs)),
@@ -975,7 +985,7 @@ func publicationPlanFromManifest(raw []byte) *pipeline.PublicationPlan {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil
 	}
-	plan := pipeline.PublicationPlan{SiteLangs: m.SiteLangs, DefaultLang: m.SiteDefaultLang}
+	plan := pipeline.PublicationPlan{SiteLangs: m.SiteLangs, DefaultLang: m.SiteDefaultLang, References: m.References.Clone()}
 	if plan.Empty() {
 		return nil
 	}

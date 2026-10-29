@@ -865,6 +865,7 @@ func (p *Publisher) compileArtifact(ctx context.Context, in BuildInput) (a *Arti
 		// is_default 一改，既有产物的 x-default 仍会换目标。
 		if plan := in.Usage.PublicationPlan(); plan != nil {
 			m.SiteDefaultLang = plan.DefaultLang
+			m.References = plan.References.Clone()
 		}
 		// 缺译统计：两个字段**量纲不同**（见 ManifestTranslationMisses 的注释）——
 		// candidates 是去重后的可翻译字段数，misses 是渲染期取词未命中的**调用次数**

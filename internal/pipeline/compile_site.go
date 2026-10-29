@@ -154,7 +154,11 @@ func SiteCompileOptions(ports SiteCompilePorts, p SiteCompileParams) (opts []bui
 		// 记进 Manifest 会被读成「这次发布冻结了它」。
 		// （预览路径本来也没有收集器，这里再加一道判据是为了语义准确，而不是兜底。）
 		if publishFact {
-			CompileUsageFromContext(p.Ctx).SetPublicationPlan(PlanOfSiteLangInputs(inputs))
+			frozen := PlanOfSiteLangInputs(inputs)
+			if p.Plan != nil {
+				frozen.References = p.Plan.References.Clone()
+			}
+			CompileUsageFromContext(p.Ctx).SetPublicationPlan(frozen)
 		}
 		// 判定依据二选一（SEO-026）：
 		//

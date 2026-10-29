@@ -169,6 +169,11 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 	// 编译期依赖线索收集器（审计遗留缺口）：模板里的 core.nav 绑定菜单位置时，
 	// 渲染期经 RenderContext.UseMenu 记录本次真正消费了哪个位置，构建后写进依赖表。
 	// 不收集的表现是「改了导航，自动发布详情页永远停在旧字节」且没有任何报错。
+	references, err := s.freezeReferences(ctx, projectID, tpl.Document)
+	if err != nil {
+		return built, err
+	}
+	ctx = pipeline.WithReferenceSnapshot(ctx, references)
 	usage := &pipeline.CompileUsage{}
 	// 降级归因收集器（审计 ARCH-05，与手工页面路径同一口径）：编译期记录「被容忍的
 	// 降级」，构建成功后写进产物 Manifest.Diagnostics；失败路径根本产不出 Manifest。
@@ -190,7 +195,7 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 	// 某一类产物不重建」这种静默失效。
 	var collectionSources []string
 	if pageDoc, perr := builder.ParsePage(tpl.Document); perr == nil {
-		slotDeps = pipeline.StructureSlotDependencies(ctx, s, projectID, pageDoc.Settings.Structure)
+		slotDeps = pipeline.StructureSlotDependencies(ctx, references, projectID, pageDoc.Settings.Structure)
 		collectionSources = core.CollectionSourcesOf(pageDoc.Root)
 	}
 	sourceHash := pipeline.SHA256(tpl.Document)
@@ -211,6 +216,7 @@ func (s *Service) buildArtifact(ctx context.Context, entityType, entityID, urlPa
 		SourceType:                pipeline.SourceTypePresentation,
 		CanonicalPath:             urlPath,
 		SourceHash:                sourceHash,
+		References:                references.Clone(),
 		BuildInputHash:            sourceHash,
 		Lang:                      strings.TrimSpace(lang),
 		Dependencies:              deps,
@@ -288,7 +294,19 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	}
 	// projectID 必须一起传：块查询以工程归属做越权防护，缺它只会拿到「参数缺失」，
 	// 表现是页眉/页脚在这一层静默消失（降级不报错，产物只是少一截）。
-	blockAdapter := newBlockResolverAdapter(s.blocks, buildCtx, projectID)
+	var blockAdapter core.BlockResolver = newBlockResolverAdapter(s.blocks, buildCtx, projectID)
+	var structurePort pipeline.StructureTemplatePort = s
+	if mode == builder.CompileModePublish {
+		frozen := pipeline.ReferenceSnapshotFromContext(ctx, projectID)
+		if frozen == nil {
+			frozen, err = s.freezeReferences(ctx, projectID, tpl.Document)
+			if err != nil {
+				return nil, err
+			}
+		}
+		blockAdapter = frozen
+		structurePort = frozen
+	}
 	// 当前商品详情和归档模板都携带真实实例实体；加购只认product类型，
 	// 归档集合仍按自身的源类型校验实体。**归档模板**渲染的是「实例实体下面的内容列表」，
 	// 列表组件（core.productList 的 filterFromArchive）据此把筛选值落到实例实体上。
@@ -354,7 +372,7 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	// 必须在取词器构造**之前**算出槽位：结构模板文档不在块表里，它的可翻译文本要经
 	// 叠加了解析器的 slotResolver 才能进候选集合（否则模板里的文案永远不翻译且无人报错）。
 	slotRes, slotErr := pipeline.BuildStructureSlots(ctx, pipeline.StructureSlotInput{
-		Port: s, ProjectID: projectID, Structure: page.Settings.Structure,
+		Port: structurePort, ProjectID: projectID, Structure: page.Settings.Structure,
 		Inner: blockAdapter, Mode: mode, Diagnostics: diags,
 	})
 	if slotErr != nil {

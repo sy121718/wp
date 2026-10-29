@@ -48,6 +48,8 @@ type PublicationPlan struct {
 	// 以及「默认语言无前缀」规则下哪一条不带前缀。is_default 是清单里的一个可改
 	// 布尔位，改动它会让既有产物的 x-default 换目标 —— 与语言集合本身无关。
 	DefaultLang string `json:"defaultLang"`
+	// References 固定本次编译消费的公开区块配置。
+	References *ReferenceSnapshot `json:"references,omitempty"`
 }
 
 // Empty 计划是否为空（两个输入都没有）。
@@ -66,6 +68,7 @@ func (p PublicationPlan) Normalize() PublicationPlan {
 	return PublicationPlan{
 		SiteLangs:   p.normalizedLangs(),
 		DefaultLang: strings.TrimSpace(p.DefaultLang),
+		References:  p.References.Clone(),
 	}
 }
 
