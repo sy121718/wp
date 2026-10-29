@@ -390,10 +390,11 @@ func TestPagesListLangEmptyState(t *testing.T) {
 		t.Error("筛了语言却给出「还没有页面」：用户会去建重复的页面，而真相是这个语言没排上产出")
 	}
 }
+
 // TestPagesListActionsOneOpenEntry 操作列的「看内容」只留一个入口，且已发布/未发布各走各的目标。
 //
 // 曾经是并排的「预览」（草稿渲染）与「线上」（静态产物）两个按钮。它们回答的是同一个问题
-//（这页现在长什么样），差别只在看不看得到线上那份 —— 而这一差别状态列已经写了，
+// （这页现在长什么样），差别只在看不看得到线上那份 —— 而这一差别状态列已经写了，
 // 并排两个按钮的结果是让用户先猜哪个对应自己想看的那个。
 //
 // 断言的是**分流**而不是「只有一个 <a>」：数量对、目标错（未发布的行却链到 /site）
@@ -406,7 +407,7 @@ func TestPagesListActionsOneOpenEntry(t *testing.T) {
 		h, pages, _ := newFilterPagesHandle(t, oneProject())
 		pages.rows = []pagedto.PageResp{published}
 		body := renderPagesList(t, h, "").Body.String()
-		if !strings.Contains(body, `href="/site/about/"`) {
+		if !strings.Contains(body, `href="/zh/about"`) {
 			t.Fatalf("已发布的行没有指向线上产物：%s", body)
 		}
 		if strings.Contains(body, "/workbench/preview?id=") {
@@ -421,11 +422,21 @@ func TestPagesListActionsOneOpenEntry(t *testing.T) {
 		if !strings.Contains(body, "/workbench/preview?id=pg1") {
 			t.Fatalf("没有线上产物的行没有退回草稿渲染：%s", body)
 		}
-		if strings.Contains(body, `href="/site/about/"`) {
+		if strings.Contains(body, `href="/zh/about"`) {
 			t.Error("未发布的行链到了线上产物：点开是 404，而列表看起来正常")
 		}
 	})
 
+	t.Run("缺少真实激活路径不猜URL", func(t *testing.T) {
+		h, pages, _ := newFilterPagesHandle(t, oneProject())
+		row := published
+		row.ActivePath = nil
+		pages.rows = []pagedto.PageResp{row}
+		body := renderPagesList(t, h, "").Body.String()
+		if !strings.Contains(body, "/workbench/preview?id=pg1") || strings.Contains(body, `href="/site/about/"`) {
+			t.Fatalf("缺少发布路径必须回草稿入口: %s", body)
+		}
+	})
 	t.Run("两个按钮名都不再出现", func(t *testing.T) {
 		h, pages, _ := newFilterPagesHandle(t, oneProject())
 		pages.rows = []pagedto.PageResp{published}
@@ -445,7 +456,8 @@ func pageRowForOpen(active bool) pagedto.PageResp {
 	if active {
 		artifact := "a1"
 		row.ActiveArtifactID = &artifact
+		activePath := "/zh/about"
+		row.ActivePath = &activePath
 	}
 	return row
 }
-

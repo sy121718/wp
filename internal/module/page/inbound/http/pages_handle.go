@@ -294,9 +294,12 @@ func (h *pagesAdminHandle) pageRowsOf(pages []pagedto.PageResp) []pagedto.PageRo
 	for _, p := range pages {
 		row := pagedto.PageRowResp{
 			ID: p.ID, ProjectID: p.ProjectID, Kind: p.Kind,
-			DraftPath: p.DraftPath, Active: p.ActiveArtifactID != nil,
+			DraftPath: p.DraftPath, Publications: p.Publications, Active: p.ActiveArtifactID != nil,
 			Staged: p.StagedArtifactID != nil, Stale: p.Stale,
 			Version: p.DraftVersion, UpdatedAt: p.UpdatedAt,
+		}
+		if p.ActivePath != nil {
+			row.ActivePath = *p.ActivePath
 		}
 		// 按语言筛选时每行带上「这一门语言在这页是什么状态」：徽标让用户确认
 		// 「我筛的是已发布，眼前这行确实有 en-US 的线上页面」，而不是只信筛选条件。

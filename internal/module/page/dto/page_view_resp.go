@@ -29,15 +29,17 @@ type PageLangResp struct {
 
 // PageRowResp 列表行投影：时间交事实，UI 文案由 Jet 选择。
 type PageRowResp struct {
-	ID        string
-	ProjectID string
-	Kind      string
-	DraftPath string
-	Active    bool
-	Staged    bool
-	Stale     bool
-	Version   int64
-	UpdatedAt utils.JSONTime
+	ID           string
+	ProjectID    string
+	Kind         string
+	DraftPath    string
+	ActivePath   string
+	Publications []PagePublicationResp
+	Active       bool
+	Staged       bool
+	Stale        bool
+	Version      int64
+	UpdatedAt    utils.JSONTime
 
 	// LangScope 按语言维度筛选时，本行在**那一门语言**下的产出状态（空 = 本次没按语言筛，
 	// 行上不该出现语言徽标）。
