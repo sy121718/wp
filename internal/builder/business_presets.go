@@ -22,6 +22,9 @@ type BusinessPreset struct {
 //go:embed presets/commerce-cart-checkout.v1.json
 var commerceCartCheckoutV1 []byte
 
+//go:embed presets/user-account.v1.json
+var userAccountV1 []byte
+
 type businessPresetEntry struct {
 	meta     BusinessPreset
 	document []byte
@@ -31,6 +34,10 @@ var businessPresetEntries = []businessPresetEntry{{
 	meta: BusinessPreset{PresetKey: "commerce.cart-checkout", PresetVersion: 1,
 		Label: "购物车与结算", Description: "完整的商品确认、收货信息与订单结果流程。", Category: "commerce", Kind: "block"},
 	document: commerceCartCheckoutV1,
+}, {
+	meta: BusinessPreset{PresetKey: "user.account", PresetVersion: 1,
+		Label: "账号中心", Description: "登录注册、找回密码、资料与登录设备的一体账号流程。", Category: "account", Kind: "block"},
+	document: userAccountV1,
 }}
 
 // BusinessPresets 与ResolvePreset共享同一清单，返回独立元数据副本。
