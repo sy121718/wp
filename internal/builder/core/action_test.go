@@ -59,3 +59,28 @@ func TestActionResolverIsExplicitAndNodeActionsRoundTrip(t *testing.T) {
 		t.Fatalf("受控解析结果: %+v %v", got, err)
 	}
 }
+
+type actionTestComponent struct{}
+
+func (actionTestComponent) Type() string                          { return "test.actions" }
+func (actionTestComponent) Validate(*Node, map[string]bool) error { return nil }
+func (actionTestComponent) Actions() []ActionSpec {
+	return []ActionSpec{{Key: "open", AllowedKinds: []ActionKind{ActionInstance}}, {Key: "other", AllowedKinds: []ActionKind{ActionLocal}}}
+}
+func (actionTestComponent) RequiredActions() []string { return []string{"open"} }
+
+func TestActionDeclarationsRejectInvalidAfterIncomplete(t *testing.T) {
+	component := actionTestComponent{}
+	node := &Node{ID: "source"}
+	if err := ValidateNodeActions(node, component); !errors.Is(err, ErrIncompleteNode) {
+		t.Fatalf("缺必需动作应可保存草稿: %v", err)
+	}
+	node.Actions = map[string]ActionTarget{"open": {Kind: ActionInstance}, "other": {Kind: ActionExternal, URL: "https://example.test"}}
+	if err := ValidateNodeActions(node, component); err == nil || errors.Is(err, ErrIncompleteNode) {
+		t.Fatalf("未完成不能吞掉后续非法目标种类: %v", err)
+	}
+	node.Actions = map[string]ActionTarget{"undeclared": {Kind: ActionLocal, PartKey: "result"}}
+	if err := ValidateNodeActions(node, component); err == nil {
+		t.Fatal("组件未声明动作必须拒绝")
+	}
+}

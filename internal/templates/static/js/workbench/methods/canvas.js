@@ -662,9 +662,12 @@ export const canvasMethods = {
             prepareInsertedNodes(nodes) {
                 var allocate = this.makeIdAllocator();
                 var anchors = {};
+                var instanceIds = {};
                 (function assign(list) {
                     list.forEach(function (node) {
-                        node.id = allocate(node.id || 'node');
+                        var previousId = node.id;
+                        node.id = allocate(previousId || 'node');
+                        if (previousId) instanceIds[previousId] = node.id;
                         var advanced = node.props && node.props.advanced;
                         if (advanced && advanced.customId) {
                             var previous = advanced.customId;
@@ -676,16 +679,19 @@ export const canvasMethods = {
                 })(nodes);
                 (function link(list) {
                     list.forEach(function (node) {
-                        if (node.type === 'core.button' && node.props.action === 'anchor' && anchors[node.props.value]) node.props.value = anchors[node.props.value];
+                        if (node.type === 'core.button' && node.props && node.props.action === 'anchor' && anchors[node.props.value]) node.props.value = anchors[node.props.value];
+                        Object.keys(node.actions || {}).forEach(function (key) {
+                            var target = node.actions[key];
+                            if (target.kind === 'instance' && instanceIds[target.nodeId]) target.nodeId = instanceIds[target.nodeId];
+                        });
                         link(node.children || []);
                     });
                 })(nodes);
             },
             deepCopyStripMeta(node) {
                 var copy = clone(node);
-                copy.id = '';
                 copy.locked = false; copy.hidden = false;
-                (function strip(list) { (list || []).forEach(function (c) { c.id = ''; c.locked = false; c.hidden = false; strip(c.children); }); })(copy.children);
+                (function strip(list) { (list || []).forEach(function (c) { c.locked = false; c.hidden = false; strip(c.children); }); })(copy.children);
                 return copy;
             },
             copyNode() {

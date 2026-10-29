@@ -414,3 +414,25 @@ test('画布只回填最新局部结果并正常恢复当前失败', async () =>
     await settleCanvas();
     assert.equal(timers.length, 1, '只有当前失败仍应回退全页刷新');
 });
+
+
+test('复制实例同时重映射组内动作，组外目标保持显式引用且不修改原稿', () => {
+    let next = 0;
+    const wb = Object.assign({ makeIdAllocator: () => () => 'copy-' + (++next) },
+        methods('canvas', 'canvasMethods', { clone: value => JSON.parse(JSON.stringify(value)) }));
+    wb.makeIdAllocator = () => () => 'copy-' + (++next);
+    const original = {id: 'flow', type: 'core.container', props: {}, locked: true, children: [
+        { id: 'source', type: 'core.cartIcon', props: {}, actions: {
+            checkout: {kind: 'instance', nodeId: 'checkout', partKey: 'checkout'},
+            outside: {kind: 'instance', nodeId: 'outside', partKey: 'cart'} } },
+        { id: 'checkout', type: 'core.checkoutForm', props: {}, actions: {success: {kind: 'local', partKey: 'result'}} }
+    ]};
+    const before = JSON.stringify(original);
+    const copy = wb.deepCopyStripMeta(original);
+    wb.prepareInsertedNodes([copy]);
+    assert.equal(copy.children[0].actions.checkout.nodeId, copy.children[1].id);
+    assert.equal(copy.children[0].actions.outside.nodeId, 'outside');
+    assert.equal(copy.children[1].actions.success.kind, 'local');
+    assert.equal(copy.locked, false);
+    assert.equal(JSON.stringify(original), before);
+});

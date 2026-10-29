@@ -688,6 +688,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 		Features:         features,
 		CanvasSlotFrames: cfg.canvasSlotFrames,
 	}
+	ctx.Block = snapshotBlockReads(ctx.Block)
 	// 槽位映射与依赖线索记录器走 setter：sitePages 是私有的（取值即记录，见 core.SitePage）。
 	ctx.SetSitePages(cfg.sitePages)
 	ctx.SetUsageRecorder(cfg.usage)
@@ -698,7 +699,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	ctx.SetSiteLinkResolver(cfg.siteLinkResolver)
 	// 菜单悬浮面板（超级菜单）：把「块 → HTML」的渲染能力挂到 ctx 上（见 core.RenderContext）。
 	// 未注入块解析器时闭包为 nil，navViewOf 侧退化为「不展开面板」（编辑器画布 / 单测）。
-	ctx.SetPanelRenderer(panelRenderer(ctx, cfg.block, cfg.set))
+	ctx.SetPanelRenderer(panelRenderer(ctx, ctx.Block, cfg.set))
 	// 顶层节点先建 view 树（含 CSS 编译），再统一渲染：main 地标要先知道每个顶层节点的
 	// 语义标签，才能决定包裹区间（渲染顺序与逐节点渲染完全一致）。
 	type rootView struct {
@@ -711,6 +712,9 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	// 结构槽位展开（审计 VIS-001）：绑定变成 root 首尾的 core.layoutSlot 节点，
 	// 页眉页脚因此进入 AST，与页面里的节点走同一条渲染与 CSS 收集路径。
 	rootNodes := expandStructureSlots(p.Root, cfg.structureSlots)
+	if err := configureActions(rootNodes, ctx); err != nil {
+		return nil, err
+	}
 	roots := make([]rootView, 0, len(rootNodes))
 	for _, n := range rootNodes {
 		// Jet 路径：nodeViewOf 把 Node 转 view 树（含 CSS 编译与递归），renderView 渲染根 view。

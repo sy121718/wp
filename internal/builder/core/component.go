@@ -151,6 +151,9 @@ func validateNode(node *Node, ids map[string]bool, incomplete map[string]bool) e
 		return fmt.Errorf("节点为空")
 	}
 	if strings.HasPrefix(node.Type, "plugin.") {
+		if len(node.Actions) > 0 {
+			return fmt.Errorf("节点 %s: 插件未声明动作", node.ID)
+		}
 		if err := ValidateNodeID(node.ID, node.Name, ids); err != nil {
 			return err
 		}
@@ -172,6 +175,12 @@ func validateNode(node *Node, ids map[string]bool, incomplete map[string]bool) e
 	if err != nil {
 		if incomplete == nil || !errors.Is(err, ErrIncompleteNode) {
 			return err
+		}
+		incomplete[node.ID] = true
+	}
+	if actionErr := ValidateNodeActions(node, comp); actionErr != nil {
+		if incomplete == nil || !errors.Is(actionErr, ErrIncompleteNode) {
+			return actionErr
 		}
 		incomplete[node.ID] = true
 	}

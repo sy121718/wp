@@ -62,9 +62,6 @@ func BuildView(node *core.Node, block core.BlockResolver) (View, []*core.Node, e
 
 	// 块节点 ID 统一加前缀，保证文档内唯一、sky-c-<id> CSS 类不冲突。
 	prefix := node.ID + "-b-"
-	out := make([]*core.Node, 0, len(roots))
-	for _, r := range roots {
-		out = append(out, cloneWithIDPrefix(r, prefix))
-	}
+	out := core.CloneNodes(roots, func(id string) string { return prefix + id })
 	return View{}, out, nil
 }

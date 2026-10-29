@@ -73,22 +73,6 @@ func (c *Component) Validate(node *core.Node, ids map[string]bool) (err error) {
 	return nil
 }
 
-// cloneWithIDPrefix 深拷贝节点树并为全部节点 ID 加前缀（CSS sky-c-<id> 类随之隔离）。
-func cloneWithIDPrefix(node *core.Node, prefix string) *core.Node {
-	if node == nil {
-		return nil
-	}
-	clone := *node
-	clone.ID = prefix + node.ID
-	if len(node.Children) > 0 {
-		clone.Children = make([]*core.Node, len(node.Children))
-		for i, child := range node.Children {
-			clone.Children[i] = cloneWithIDPrefix(child, prefix)
-		}
-	}
-	return &clone
-}
-
 // globalrefTemplate 组件模板。与 .go / .css 同目录：改结构不必去 internal/templates/components/ 找
 // （注册后由 loader 优先采用，见 core.RegisterTemplate）。
 //

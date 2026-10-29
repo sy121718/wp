@@ -1,8 +1,6 @@
 package builder
 
 import (
-	json "go_wp/pkg/jsonx"
-
 	"go_wp/internal/builder/core"
 
 	"github.com/google/uuid"
@@ -14,32 +12,16 @@ import (
 // 调用方：blueprint（整页初始化）、block（片段模板「插入-复制」）。两者复用同一套
 // 「复制 AST + 重新生成 Node ID」机制，只是目标层级不同（完整 Page vs Page 子树）。
 func ClonePageWithNewIDs(page *Page) *Page {
-	cloned := &Page{Settings: page.Settings, Root: make([]*core.Node, 0, len(page.Root))}
-	for _, n := range page.Root {
-		cloned.Root = append(cloned.Root, CloneNodeWithNewIDs(n))
+	if page == nil {
+		return nil
 	}
-	return cloned
+	cloned := *page
+	cloned.Root = core.CloneNodes(page.Root, func(string) string { return uuid.NewString() })
+	return &cloned
 }
 
 // CloneNodeWithNewIDs 递归复制 AST 节点：每个 node.ID 换新 UUID，Children 递归复制。
 // Type/Props/编辑元数据（Name/Hidden/Locked）原样保留，仅重写 ID。
 func CloneNodeWithNewIDs(n *core.Node) *core.Node {
-	if n == nil {
-		return nil
-	}
-	cloned := &core.Node{
-		ID:     uuid.NewString(),
-		Type:   n.Type,
-		Props:  append(json.RawMessage(nil), n.Props...),
-		Name:   n.Name,
-		Hidden: n.Hidden,
-		Locked: n.Locked,
-	}
-	if len(n.Children) > 0 {
-		cloned.Children = make([]*core.Node, 0, len(n.Children))
-		for _, c := range n.Children {
-			cloned.Children = append(cloned.Children, CloneNodeWithNewIDs(c))
-		}
-	}
-	return cloned
+	return core.CloneNodes([]*core.Node{n}, func(string) string { return uuid.NewString() })[0]
 }
