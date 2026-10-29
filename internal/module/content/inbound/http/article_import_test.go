@@ -58,7 +58,7 @@ func (failingContentService) Get(context.Context, *contentdto.GetReq) (*contentd
 func TestArticleImportDocumentCompiles(t *testing.T) {
 	data := map[string]any{
 		"title":        "文章标题（正文里的）",
-		"body":         `<h2>小节</h2><p>正文 <strong>加粗</strong></p><ul><li>列表项</li></ul><blockquote>引用</blockquote><hr><img src="/storage/image/a.webp" alt="图">`,
+		"body":         `<h2>小节</h2><p>正文 <strong>加粗</strong></p><ul><li>列表项</li></ul><blockquote>引用</blockquote><hr><img src="https://assets.example.test/storage/image/a.webp" alt="图">`,
 		"excerpt":      "摘要",
 		"focusKeyword": "主关键词",
 		// 遗留的 SEO 字段（2026-09-30 已与标题 / 摘要合并）：必须被忽略。
@@ -102,7 +102,7 @@ func TestArticleImportDocumentCompiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("导入出来的页面编译失败：%v", err)
 	}
-	for _, want := range []string{"小节", "正文", "列表项", "引用"} {
+	for _, want := range []string{"小节", "正文", "列表项", "引用", `src="https://assets.example.test/storage/image/a.webp"`} {
 		if !strings.Contains(compiled.HTML, want) {
 			t.Errorf("编译产物缺少内容 %q", want)
 		}

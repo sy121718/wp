@@ -738,11 +738,13 @@
     if (!window.__wbWriteBaseBound) {
         window.__wbWriteBaseBound = true;
         document.addEventListener('submit', onSubmit, true);
-        document.addEventListener('htmx:configRequest', function (event) {
-            var detail=event.detail || {};
-            if (!previewReadOnly() || /^(get|head|options)$/i.test(detail.verb || 'get')) return;
+        document.addEventListener('htmx:config:request', function (event) {
+            var ctx = event.detail && event.detail.ctx;
+            var request = ctx && ctx.request;
+            if (!previewReadOnly() || !request || /^(get|head|options)$/i.test(request.method || 'GET')) return;
             event.preventDefault();
-            if (detail.elt) previewStatus(detail.elt.closest('form') || detail.elt);
+            var source = ctx.sourceElement;
+            if (source) previewStatus(source.closest('form') || source);
         });
         document.addEventListener('DOMContentLoaded', consumeFlash);
         if (document.readyState !== 'loading') consumeFlash();

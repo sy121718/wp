@@ -41,6 +41,6 @@ test('编辑预览统一阻止JSON写、原生POST和HTMX写，保留输入且�
  const e=env({}, {preview:true});await e.submit();assert.equal(e.calls.length,0);assert.match(e.status.textContent,/模拟预览/);assert.equal(e.input.value,'用户已填写的值');
  const native={...e.form,hasAttribute:()=>false,getAttribute:n=>n==='method'?'post':null};let stopped=false;
  e.listeners.submit({target:native,preventDefault(){stopped=true;}});assert.equal(stopped,true);assert.equal(e.calls.length,0);
- let htmxStopped=false;e.listeners['htmx:configRequest']({detail:{verb:'POST',elt:{closest:()=>e.form}},preventDefault(){htmxStopped=true;}});assert.equal(htmxStopped,true);
- let readStopped=false;e.listeners['htmx:configRequest']({detail:{verb:'GET'},preventDefault(){readStopped=true;}});assert.equal(readStopped,false);
+ let htmxStopped=false;e.listeners['htmx:config:request']({detail:{ctx:{request:{method:'POST',action:'/api/site/user/login'},sourceElement:{closest:()=>e.form}}},preventDefault(){htmxStopped=true;}});assert.equal(htmxStopped,true);
+ let readStopped=false;e.listeners['htmx:config:request']({detail:{ctx:{request:{method:'GET',action:'/static/logo.svg'}}},preventDefault(){readStopped=true;}});assert.equal(readStopped,false);
 });

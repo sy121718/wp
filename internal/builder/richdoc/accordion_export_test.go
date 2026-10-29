@@ -44,7 +44,7 @@ func canvasAccordion(t *testing.T) *core.Node {
 	t.Helper()
 	first := mustNode(t, textpkg.Type, textpkg.Props{Mode: textpkg.ModeRichText, Text: "<p>第一项正文</p>"})
 	second := mustNode(t, textpkg.Type, textpkg.Props{Mode: textpkg.ModeRichText,
-		Text: `<p>第二项正文 <strong>加粗</strong></p><figure><img src="/img/logo.webp"><figcaption>第二项的插图</figcaption></figure>`})
+		Text: `<p>第二项正文 <strong>加粗</strong></p><figure><img src="https://assets.example.test/img/logo.webp"><figcaption>第二项的插图</figcaption></figure>`})
 	return mustNode(t, accordionpkg.Type, accordionpkg.Props{Items: []accordionpkg.Item{
 		{Title: "折叠项一"},
 		{Title: "折叠项二"},
@@ -64,7 +64,7 @@ func TestAccordionExportsToDetails(t *testing.T) {
 		"<details><summary>折叠项一</summary><p>第一项正文</p></details>",
 		"<details><summary>折叠项二</summary><p>第二项正文 <strong>加粗</strong></p>",
 		// 图注在 <figcaption>，而导出前过一次白名单清洗 —— alt 回填同时在这里生效。
-		`<figure><img src="/img/logo.webp" alt="第二项的插图"><figcaption>第二项的插图</figcaption></figure>`,
+		`<figure><img src="https://assets.example.test/img/logo.webp" alt="第二项的插图"><figcaption>第二项的插图</figcaption></figure>`,
 		"</details>",
 	} {
 		if !strings.Contains(out.HTML, want) {
@@ -133,7 +133,7 @@ func TestAccordionExportCompilesToArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("编译失败：%v", err)
 	}
-	for _, want := range []string{"折叠项一", "第一项正文", "折叠项二", "第二项正文", "第二项的插图"} {
+	for _, want := range []string{"折叠项一", "第一项正文", "折叠项二", "第二项正文", "第二项的插图", `src="https://assets.example.test/img/logo.webp"`} {
 		if !strings.Contains(compiled.HTML, want) {
 			t.Errorf("产物缺少 %q\n%s", want, compiled.HTML)
 		}

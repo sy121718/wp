@@ -18,7 +18,7 @@ test('模拟状态只来自预览meta，发布页面忽略遗留状态且上下�
 test('模拟预览阻止旧片段/私人JSON的HTMX读取，不影响静态资源',()=>{
  const {events}=preview('readonly');
  for(const [path,blocked] of [['/api/site/user/account',true],['/_fragments/orderList',true],['/static/logo.svg',false]]){
-  let prevented=0;events['htmx:configRequest']({detail:{path},preventDefault:()=>prevented++});assert.equal(prevented,blocked?1:0);
+  let prevented=0;events['htmx:config:request']({detail:{ctx:{request:{action:path,method:'GET'}}},preventDefault:()=>prevented++});assert.equal(prevented,blocked?1:0);
  }
- assert.equal(preview(null).events['htmx:configRequest'],undefined);
+ assert.equal(preview(null).events['htmx:config:request'],undefined);
 });

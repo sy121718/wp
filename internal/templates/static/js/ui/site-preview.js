@@ -8,8 +8,9 @@
     var state = active && marker && states.indexOf(marker.content) !== -1 ? marker.content : 'default';
     global.WPSitePreview = Object.freeze({active:active, state:state, states:Object.freeze(states)});
     // 迁移期间残余HTMX读取同样不能把真实访客账号或订单装进模拟画布。
-    if (active) global.document.addEventListener('htmx:configRequest', function (event) {
-        var path = event.detail && event.detail.path;
+    if (active) global.document.addEventListener('htmx:config:request', function (event) {
+        var ctx = event.detail && event.detail.ctx;
+        var path = ctx && ctx.request && ctx.request.action;
         if (typeof path !== 'string') return;
         var url;
         try { url = new URL(path, global.location.href); } catch (_) { event.preventDefault(); return; }
