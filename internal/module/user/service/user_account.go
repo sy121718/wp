@@ -51,6 +51,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"go_wp/pkg/logger"
 	"net/mail"
 	"strings"
 	"time"
@@ -58,10 +59,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
-	"go_wp/internal/module/mail/contract"
-	"go_wp/internal/module/user/contract"
-	"go_wp/internal/module/user/dto"
-	"go_wp/internal/module/user/enums"
+	mailcontract "go_wp/internal/module/mail/contract"
+	usercontract "go_wp/internal/module/user/contract"
+	userdto "go_wp/internal/module/user/dto"
+	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
 	"go_wp/pkg/crypto"
 	"go_wp/pkg/utils"
@@ -403,7 +404,7 @@ func (s *Service) ResetPassword(ctx context.Context, req *userdto.ResetPasswordR
 		return herr
 	}
 	now := time.Now()
-	return s.m.UpdateFields(ctx, e.ID, map[string]any{
+	if uerr := s.m.UpdateFields(ctx, e.ID, map[string]any{
 		"password":              string(hashed),
 		"activation_key":        nil,
 		"activation_expires_at": nil,
@@ -412,7 +413,26 @@ func (s *Service) ResetPassword(ctx context.Context, req *userdto.ResetPasswordR
 		"login_failure_count": 0,
 		"locked_until_time":   nil,
 		"update_time":         now,
-	})
+	}); uerr != nil {
+		return uerr
+	}
+	// **撤销全部会话**（SEC-04）：重置密码的典型场景就是"账号可能已被盗"——
+	// 此时攻击者若已握有一个有效会话，改密码并不影响它（会话是 Redis 里的独立凭据，
+	// 不随密码变化失效）。不撤销等于把盗号者继续留在里面。
+	//
+	// 与 ChangePassword 的区别：那里用户是自己改的，撤销后要重新登录；
+	// 这里用户刚通过邮件码证明身份，同样必须重新登录 —— 两条路的口径一致，
+	// 否则"改密会踢下线、重置密码不会"就是一条只有攻击者知道的口子。
+	//
+	// 会话撤销失败**不让重置失败**：密码已经落库，此时报错会让用户以为改密没成功，
+	// 而他已经无法用旧密码登录（那才是真正把人锁在门外的结果）。
+	// 记结构化日志并按成功返回 —— 「密码改了但会话没清干净」是运维要处理的事，
+	// 不是要让重置者重试一遍的事。
+	if rerr := s.RevokeAllSessions(ctx, e.ID); rerr != nil {
+		logger.Scene("user").With("user_id", e.ID).Error(rerr,
+			"重置密码后撤销会话失败（密码已更新，需人工清理残留会话）")
+	}
+	return nil
 }
 
 const (

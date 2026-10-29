@@ -22,6 +22,7 @@ import (
 	userdto "go_wp/internal/module/user/dto"
 	userenums "go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
+	"go_wp/pkg/logger"
 	"go_wp/pkg/utils"
 )
 
@@ -124,6 +125,22 @@ func (s *Service) SetCustomerStatus(ctx context.Context, req *userdto.CustomerSt
 	if e.Status != req.Status {
 		if err = s.m.SetStatus(ctx, req.CustomerID, req.Status); err != nil {
 			return nil, err
+		}
+		// **停用即撤销会话**（SEC-04）：停用的语义是"这个人现在不该再进来"，
+		// 而他手里那个会话是 Redis 里的独立凭据，不随账号状态变化失效。
+		// 不撤销的话，被停用的用户仍然能继续访问，直到会话自然过期（"记住我"可能是几天）——
+		// 后台看到的状态是"已停用"，实际却还在用。
+		//
+		// 只在**转入停用**时撤销：从停用恢复成正常时撤销没有意义（他本来就被挡着），
+		// 反而会让刚被解封的用户莫名其妙要重新登录。
+		if req.Status == usermodel.UserStatusDisabled {
+			// 会话撤销失败**不让停用失败**：状态已经改了，报错只会让后台显示一个
+			// 与库不一致的结果（用户看到"操作失败"，实际已停用）。记日志，
+			// 让运维知道有残留会话要清 —— 「停用生效了但会话没清干净」是运维事项。
+			if rerr := s.RevokeAllSessions(ctx, req.CustomerID); rerr != nil {
+				logger.Scene("user").With("user_id", req.CustomerID).Error(rerr,
+					"停用账号后撤销会话失败（状态已更新，需人工清理残留会话）")
+			}
 		}
 	}
 	// StatusLabel 是**留给出口填的**展示文案（真源在 userenums.StatusLabel，key + 中文兜底）。
