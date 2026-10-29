@@ -26,6 +26,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"io"
 	"net/http"
@@ -97,7 +98,7 @@ func TestReturnJSONWriteChainTemplateToHandler(t *testing.T) {
 					cap.add(c.Request.URL.Path, string(body), c.Writer.Status())
 				}
 			})
-			e.GET("/admin/returns", returnPages.ReturnsPage)
+			e.GET("/admin/returns", adminui.PageSlot(orderhttp.ReturnListPageTemplate), returnPages.ReturnsPage)
 			e.POST("/api/order/return/approve", h.ApproveReturn)
 			e.POST("/api/order/return/reject", h.RejectReturn)
 			e.POST("/api/order/return/receive", h.ReceiveReturn)

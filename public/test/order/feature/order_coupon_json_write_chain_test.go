@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go_wp/internal/adminui"
 	json "go_wp/pkg/jsonx"
 	"io"
 	"mime/multipart"
@@ -279,7 +280,7 @@ func TestOrderCouponJSONWriteChainTemplateToHandler(t *testing.T) {
 				// 只记写请求的实际内容与响应码：这是「基座发出去的到底是什么类型」的权威来源。
 				cap.add(c.Request.URL.Path, string(body), c.Writer.Status())
 			})
-			e.GET("/admin/coupons", couponsPage.CouponsPage)
+			e.GET("/admin/coupons", adminui.PageSlot(orderhttp.CouponListPageTemplate), couponsPage.CouponsPage)
 			e.POST("/api/order/coupon/update", h.UpdateCoupon)
 			e.POST("/api/order/coupon/delete", h.DeleteCoupon)
 		},

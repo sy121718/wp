@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	"go_wp/internal/templates"
 	"go_wp/public/test/support"
@@ -47,7 +48,7 @@ func newAdminRolesPageEngineWith(t *testing.T, svc *fakeRoleService) *gin.Engine
 		InitComponents: true, // 让 adminui.Prepare 拿到 i18n / 会话组件
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.GET("/admin/roles", handle.RolesPage)
+			e.GET("/admin/roles", adminui.PageSlot(adminhttp.RolesPageTemplate), handle.RolesPage)
 		},
 	})
 	if err != nil {

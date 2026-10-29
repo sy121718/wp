@@ -1817,7 +1817,7 @@ func (h *AdminPagesHandle) RolesPage(c *gin.Context) {
 // 角色分权这件事实际上只能靠直接改库完成。这个抽屉就是它的落点。
 //
 // 形态：角色列表行的「权限分配」按钮按需拉片段（data-drawer-url → RolePermissionsDrawer），
-// 保存回同页（RolePermissionsSave）。它曾经是一个独立页面，改成抽屉的理由与两条硬约束
+// 保存由既有 /api/role/menu/save 返回 JSON。抽屉的形状约束
 // 写在 internal/templates/admin/system/role_permissions.html 的文件头 —— 其中一条是
 // 片段里不能出现 <script>（drawer.js 的 fragmentRoot 校验），所以父子联动住在
 // internal/templates/static/js/ui/perm-tree.js。
@@ -1874,18 +1874,13 @@ func flattenPermissionTree(tr adminLabelTranslate, nodes []admindto.MenuTreeNode
 
 // rolePermissionsDrawerData 抽屉的数据装配：授权树 + 勾选集合 → 深度优先展平行。
 //
-// checkedOverride 非 nil 时用它代替库里的勾选集合。这是保存失败路径的关键：树要重取
-// （菜单结构可能刚被别处改过），但**勾选必须用本次提交的值** —— 用库里的值会把用户
-// 刚勾的那一屏整块回退成保存前的旧状态，而他正需要在这里改掉那个错误重试。
-func (h *AdminPagesHandle) rolePermissionsDrawerData(c *gin.Context, roleID uint64, checkedOverride []uint64) (*admindto.RolePermissionsResp, error) {
+// 勾选只在打开抽屉时读取；保存由JSON写基座保留当前输入，不重新取树。
+func (h *AdminPagesHandle) rolePermissionsDrawerData(c *gin.Context, roleID uint64) (*admindto.RolePermissionsResp, error) {
 	tree, err := h.roles.RolePermissionTree(c.Request.Context(), roleID)
 	if err != nil {
 		return nil, err
 	}
 	checkedIDs := tree.MenuIDs
-	if checkedOverride != nil {
-		checkedIDs = checkedOverride
-	}
 	checked := make(map[uint64]struct{}, len(checkedIDs))
 	for _, id := range checkedIDs {
 		checked[id] = struct{}{}
@@ -1908,7 +1903,7 @@ func (h *AdminPagesHandle) RolePermissionsDrawer(c *gin.Context) {
 		c.Status(http.StatusBadRequest)
 		return
 	}
-	data, err := h.rolePermissionsDrawerData(c, roleID, nil)
+	data, err := h.rolePermissionsDrawerData(c, roleID)
 	if err != nil {
 		// 角色不存在或树查询失败：记一条带 user_id 的结构化日志（原文只进日志），
 		// 响应里不出现任何内部细节。
@@ -1917,70 +1912,6 @@ func (h *AdminPagesHandle) RolePermissionsDrawer(c *gin.Context) {
 		return
 	}
 	pageview.Render(c, data)
-}
-
-// RolePermissionsSave 保存角色权限（POST /admin/roles/permissions/save）。
-//
-// 全量替换语义：提交上来的 menu_ids 就是该角色的完整授权集合，未勾选的一律撤销。
-// **一个都没勾是合法提交**（清空该角色的全部权限），绝不能当成「没选，忽略本次提交」。
-//
-// 角色 id 与操作者都不信前端：role_id 走参数校验，操作者从会话注入（超管保护的判定依据，
-// 见 RoleMenuSave）。menu_ids 由 service 侧过白名单（不在 sys_menus 里的 id 直接丢弃），
-// 所以这里不做数量上限——请求方塞再多 id 也只经哈希查表，不进 SQL。
-//
-// 两条出口（与其它抽屉写表单同一套分档，见 templates/CLAUDE.md「写表单失败时原地留住输入」）：
-//
-//	· htmx 失败 → 200 + 片段自身（错误槽 + 用**本次提交的勾选**渲回的树），输入不丢；
-//	· htmx 成功 → 200 + 成功态片段（就地回执 + 「关闭」），不刷新整页：
-//	  列表页的角色行没有任何一列体现权限集合，没有可刷的新数据；
-//	· 原生成功 / 失败 → 整页提示（shell.RenderJump，见 admin_jump.go）—— 成功 1 秒后自动
-//	  回角色列表，失败不自动跳。
-//
-// 不带成功回执进 URL：抽屉里那句回执走模板自身的成功态（admin.roles.perm.saved），
-// 列表页那条成功提示由提示页在响应体里给出。
-func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
-	roleID := reqparams.ParseUint(c.PostForm("role_id"))
-	raw := c.PostFormArray("menu_ids")
-	menuIDs := make([]uint64, 0, len(raw))
-	for _, v := range raw {
-		if id := reqparams.ParseUint(v); id != 0 {
-			menuIDs = append(menuIDs, id)
-		}
-	}
-	if roleID == 0 {
-		// 缺 role_id：没有可回的抽屉（片段由 role_id 决定），整页提示回角色列表并说明原因。
-		adminRolesPage.paramFail(c)
-		return
-	}
-
-	if _, err := h.roles.RoleMenuSave(c.Request.Context(), &admindto.RoleMenuSaveReq{
-		RoleID:     roleID,
-		MenuIDs:    menuIDs,
-		OperatorID: builtin.CurrentUserID(c),
-	}); err != nil {
-		msg := adminErrMsg(c, err)
-		data, treeErr := h.rolePermissionsDrawerData(c, roleID, menuIDs)
-		if !adminDrawerHX(c) || treeErr != nil {
-			// 原生提交（禁用 JS）：页面里没有就地放错误的位置，整页提示回列表。
-			// htmx 但树也取不回来时走同一出口 —— 此时只剩空树可渲，片段会退化成
-			// 「没有可分配的菜单」的空态，那比一句通用错误更误导（像权限被清空了）。
-			adminRolesPage.fail(c, msg)
-			return
-		}
-		// 权限树片段里的错误槽是**文本**（模板直接渲染 .Err），取词落在这一层。
-		data.Err = adminui.MsgText(c, msg)
-		// 失败回同一张抽屉片段（htmx outerHTML 局部替换，见 menuEditFail 的说明）。
-		c.HTML(http.StatusOK, RolePermissionsFragmentTemplate, adminui.PrepareBareView(c, data))
-		return
-	}
-
-	if adminDrawerHX(c) {
-		// 成功态片段只读 PermSaved 一个键（见模板）：不取树也不给列表数据，
-		// 少一次查询，也避免「回执里那棵树的勾选」被误读成本次保存的结果快照。
-		pageview.Render(c, &admindto.PermSavedResp{PermSaved: true})
-		return
-	}
-	adminRolesPage.done(c)
 }
 
 // RolesCreate 新建角色（POST /admin/roles/create）。

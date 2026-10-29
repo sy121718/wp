@@ -1,20 +1,6 @@
 package feature
 
-// admin_role_permissions_page_test.go — 角色权限分配的抽屉片段
-// （GET /admin/roles/permissions/drawer）与其保存出口的用例。
-//
-// 覆盖四件在别处看不到的事：
-//  1. 片段形状符合 ui/drawer.js 的 fragmentRoot 校验（唯一根 + data-drawer-fragment + 含 form，
-//     且**不含 <script>**）—— 形状不合的响应在浏览器里表现为「编辑表单加载失败，请重试」，
-//     后端测试不钉这一条，就只能靠人肉点开抽屉才发现；
-//  2. 勾选态是**服务端渲染**的（禁用 JS 时片段也必须正确）—— 目录与菜单的 checkbox
-//     都要 checked，因为「只勾按钮、没勾它所属的菜单」这个陷阱的补齐发生在服务端；
-//  3. 保存失败时回到片段里的是**本次提交的勾选**，不是库里的旧值（用户刚勾的那一屏不能丢）；
-//  4. 表单解析：空值、非数字、重复 id 都不该让保存失败（真实落库集合由 service 侧
-//     重新过滤，那里有真实 PostgreSQL 用例钉着）。
-//
-// 走真实链路：gin 路由 → AdminPagesHandle → adminui.Prepare → Jet 模板 → 响应体。
-// 角色服务用本包的假实现（admin_err_response_test.go 里的 fakeRoleService）。
+// 权限抽屉GET保留真实Jet树；保存直连既有JSON API，核绑定、身份、状态和无泄漏。
 
 import (
 	"errors"
@@ -22,13 +8,16 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
+	"go_wp/internal/adminui"
 	admindto "go_wp/internal/module/admin/dto"
 	adminhttp "go_wp/internal/module/admin/inbound/http"
 	adminmodel "go_wp/internal/module/admin/model"
 	"go_wp/internal/templates"
+	"go_wp/pkg/jsonx"
 	"go_wp/public/test/support"
 
 	"github.com/gin-gonic/gin"
@@ -43,15 +32,23 @@ var (
 // newAdminRolePermissionsEngine 装配带真实 Jet 渲染的角色权限分配抽屉路由。
 func newAdminRolePermissionsEngine(t *testing.T, svc *fakeRoleService) *gin.Engine {
 	t.Helper()
+	return newAdminRolePermissionsEngineWithUser(t, svc, 123)
+}
+
+func newAdminRolePermissionsEngineWithUser(t *testing.T, svc *fakeRoleService, userID uint64) *gin.Engine {
+	t.Helper()
 	handle := adminhttp.NewAdminPagesHandle(nil, svc, nil, nil, nil, nil)
+	api := adminhttp.NewHandleWithDeps(nil, svc, nil, nil, nil, nil)
 	engine, cleanup, err := support.SetupTestBootstrap(support.BootstrapOptions{
 		ConfigPath:     support.NewComponentTestConfig(t),
 		GinMode:        gin.TestMode,
 		InitComponents: true, // 让 adminui.Prepare 拿到 i18n / 会话组件
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
-			e.GET("/admin/roles/permissions/drawer", handle.RolePermissionsDrawer)
-			e.POST("/admin/roles/permissions/save", handle.RolePermissionsSave)
+			e.GET("/admin/roles/permissions/drawer", adminui.BareSlot(adminhttp.RolePermissionsFragmentTemplate), handle.RolePermissionsDrawer)
+			e.POST("/api/role/menu/save", func(c *gin.Context) {
+				c.Set("user_id", int64(userID))
+			}, api.RoleMenuSave)
 		},
 	})
 	if err != nil {
@@ -130,10 +127,10 @@ func fetchRolePermissionsDrawer(t *testing.T, engine *gin.Engine, path string) (
 	return recorder.Code, recorder.Body.String()
 }
 
-// postRolePermissions 提交保存表单；hx 为真时带 HX-Request 头（抽屉里的真实路径）。
+// postRolePermissions 使用基座字段名提交；旧HX头不得改变JSON契约。
 func postRolePermissions(t *testing.T, engine *gin.Engine, form url.Values, hx bool) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/admin/roles/permissions/save", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/api/role/menu/save", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if hx {
 		req.Header.Set("HX-Request", "true")
@@ -154,6 +151,15 @@ func TestAdminRolePermissionsDrawerRendersCheckedNodes(t *testing.T) {
 	assertDrawerFragment(t, body)
 	if !strings.Contains(body, "<form") {
 		t.Fatal("片段必须自带表单（drawer.js 的 fragmentRoot 要求）")
+	}
+
+	for _, attr := range []string{`action="/api/role/menu/save"`, `data-write="update"`, `data-write-url="/api/role/menu/save"`, `data-write-status`, `data-drawer-close`} {
+		if !strings.Contains(body, attr) {
+			t.Fatalf("权限表单缺少既有JSON写基座声明 %s", attr)
+		}
+	}
+	if strings.Contains(body, "/admin/roles/permissions/save") {
+		t.Fatal("权限表单仍调用旧HTML写出口")
 	}
 
 	// 目录（1）也必须在勾选态里：目录没有权限码，反查永远查不出它，
@@ -222,196 +228,108 @@ func TestAdminRolePermissionsDrawerNotFound(t *testing.T) {
 	}
 }
 
-// TestAdminRolePermissionsSaveParsesMenuIDs 表单里混着脏值时保存仍然成功，且不丢合法 id。
+func assertRolePermissionsJSON(t *testing.T, rec *httptest.ResponseRecorder, status int) string {
+	t.Helper()
+	if rec.Code != status || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("期望JSON %d，实际 %d: %s", status, rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := jsonx.Unmarshal(rec.Body.Bytes(), &payload); err != nil || payload.Code != status || payload.Message == "" {
+		t.Fatalf("JSON状态或文案不符: %s (%v)", rec.Body.String(), err)
+	}
+	if rec.Header().Get("Location") != "" || rec.Header().Get("HX-Redirect") != "" {
+		t.Fatal("API写响应不应导航")
+	}
+	for _, raw := range []string{"<form", "data-jump-state", "duplicate key", "relation does not exist", "SQLSTATE"} {
+		if strings.Contains(rec.Body.String(), raw) {
+			t.Fatalf("响应包含HTML或内部错误 %q: %s", raw, rec.Body.String())
+		}
+	}
+	return payload.Message
+}
+
+// 绑定只交真实输入，集合去重和授权规则仍由RoleMenuSave服务负责。
 func TestAdminRolePermissionsSaveParsesMenuIDs(t *testing.T) {
 	svc := &fakeRoleService{}
 	engine := newAdminRolePermissionsEngine(t, svc)
-
-	form := url.Values{}
-	form.Set("role_id", "7")
-	form.Add("menu_ids", "3")
-	form.Add("menu_ids", "3")   // 重复：handler 不去重（service 侧 ListByIDs 天然去重）
-	form.Add("menu_ids", "")    // 空值
-	form.Add("menu_ids", "abc") // 非数字：解析成 0 后被丢弃
-	form.Add("menu_ids", "12")
-
-	recorder := postRolePermissions(t, engine, form, false)
-
-	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `data-jump-state="ok"`) {
-		t.Fatalf("保存成功应渲染成功提示页（200），实际 %d，体: %s", recorder.Code, recorder.Body.String())
+	rec := postRolePermissions(t, engine, url.Values{"role_id": {"7"}, "menu_ids": {"3", "3", "12"}, "operator_id": {"999"}}, false)
+	assertRolePermissionsJSON(t, rec, http.StatusOK)
+	if svc.lastMenuSave == nil || svc.lastMenuSave.RoleID != 7 || !slices.Equal(svc.lastMenuSave.MenuIDs, []uint64{3, 3, 12}) {
+		t.Fatalf("输入未原样交服务: %+v", svc.lastMenuSave)
 	}
-	if svc.lastMenuSave == nil {
-		t.Fatal("没有调用服务层")
-	}
-	if svc.lastMenuSave.RoleID != 7 {
-		t.Fatalf("role_id 传递不符: %d", svc.lastMenuSave.RoleID)
-	}
-	want := []uint64{3, 3, 12}
-	got := svc.lastMenuSave.MenuIDs
-	if len(got) != len(want) {
-		t.Fatalf("合法 id 数量不符: got=%v want=%v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("合法 id 不符: got=%v want=%v", got, want)
-		}
+	if svc.lastMenuSave.OperatorID != 123 {
+		t.Fatalf("操作者必须来自会话: %+v", svc.lastMenuSave)
 	}
 }
 
-// TestAdminRolePermissionsSaveEmptySelectionIsSubmitted 一个都没勾也是合法提交（清空权限）。
-//
-// 这一条最容易在实现里写错：把「空集合」当成「没选，忽略本次提交」会让运营
-// 永远清不掉一个多余角色上的权限，而且页面上没有任何异常。
 func TestAdminRolePermissionsSaveEmptySelectionIsSubmitted(t *testing.T) {
 	svc := &fakeRoleService{}
 	engine := newAdminRolePermissionsEngine(t, svc)
-
-	form := url.Values{}
-	form.Set("role_id", "7")
-	form.Set("menu_ids", "") // 浏览器在全部取消勾选时给不出任何 menu_ids
-
-	recorder := postRolePermissions(t, engine, form, false)
-
-	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `data-jump-state="ok"`) {
-		t.Fatalf("空提交应渲染成功提示页（200），实际 %d，体: %s", recorder.Code, recorder.Body.String())
-	}
-	if svc.lastMenuSave == nil {
-		t.Fatal("空提交也必须调用服务层（否则清空权限无从生效）")
-	}
-	if len(svc.lastMenuSave.MenuIDs) != 0 {
-		t.Fatalf("空提交不应带出任何 id: %v", svc.lastMenuSave.MenuIDs)
+	assertRolePermissionsJSON(t, postRolePermissions(t, engine, url.Values{"role_id": {"7"}}, false), http.StatusOK)
+	if svc.lastMenuSave == nil || len(svc.lastMenuSave.MenuIDs) != 0 {
+		t.Fatalf("空勾选必须交服务清空: %+v", svc.lastMenuSave)
 	}
 }
 
-// TestAdminRolePermissionsSaveRejectsMissingRoleID 缺 role_id 时渲染失败提示页，不落库。
-//
-// 页面写失败从 400 + JSON 改为「整页提示」（见 admin_page_write_failed_test.go 文件头）。
-// **核心意图不变**：参数不合法时绝不调用服务层（不落库）。
-func TestAdminRolePermissionsSaveRejectsMissingRoleID(t *testing.T) {
-	svc := &fakeRoleService{}
-	engine := newAdminRolePermissionsEngine(t, svc)
-
-	recorder := postRolePermissions(t, engine, url.Values{"menu_ids": {"3"}}, false)
-
-	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `data-jump-state="err"`) {
-		t.Fatalf("缺 role_id 应渲染失败提示页（200），实际 %d（body=%s）", recorder.Code, recorder.Body.String())
-	}
-	if svc.lastMenuSave != nil {
-		t.Fatal("缺 role_id 不应调用服务层")
-	}
-}
-
-// TestAdminRolePermissionsSaveMissingRoleIDHtmxStillRedirects 缺 role_id 的 htmx 请求走 HX-Redirect。
-//
-// 抽屉里提交的请求都是 htmx 请求：此时附近没有可写的片段（缺 role_id 连树都取不了），
-// 只能整页跳回列表 —— 用 HX-Redirect 而不是 302（XHR 会自己跟随 302，最终响应里读不到
-// Location，整页 HTML 会被塞进片段的位置）。
-func TestAdminRolePermissionsSaveMissingRoleIDHtmxStillRedirects(t *testing.T) {
-	svc := &fakeRoleService{}
-	engine := newAdminRolePermissionsEngine(t, svc)
-
-	recorder := postRolePermissions(t, engine, url.Values{"menu_ids": {"3"}}, true)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("htmx 分支应 200 + HX-Redirect，实际 %d", recorder.Code)
-	}
-	loc := recorder.Header().Get("HX-Redirect")
-	if loc != "/admin/roles" {
-		t.Fatalf("htmx 回跳目标不符: %q", loc)
-	}
-	if svc.lastMenuSave != nil {
-		t.Fatal("缺 role_id 不应调用服务层")
+func TestAdminRolePermissionsSaveRejectsInvalidInput(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		form url.Values
+	}{
+		{"缺角色", url.Values{"menu_ids": {"3"}}},
+		{"非数字菜单", url.Values{"role_id": {"7"}, "menu_ids": {"abc"}}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &fakeRoleService{}
+			engine := newAdminRolePermissionsEngine(t, svc)
+			for _, hx := range []bool{false, true} {
+				assertRolePermissionsJSON(t, postRolePermissions(t, engine, tt.form, hx), http.StatusBadRequest)
+			}
+			if svc.lastMenuSave != nil {
+				t.Fatal("非法输入不得调用服务")
+			}
+		})
 	}
 }
 
-// TestAdminRolePermissionsSaveHtmxFailureKeepsSelectionAndShape 失败时回片段自身：错误槽 + 提交的勾选。
-//
-// 两个断言各自防一类静默缺陷：
-//
-//	· 片段形状 —— 形状不合时 htmx 虽然会 swap 进去，但再下一次提交时抽屉里的节点已不是
-//	  片段根，后续失败就无法再就地回报；
-//	· **勾选来自本次提交**（节点 4 库里没勾、这次勾上了）—— 用库里的值渲回去会把用户
-//	  刚勾的那一屏整块抹掉，而他正需要在这里改掉那个错误重试。
-func TestAdminRolePermissionsSaveHtmxFailureKeepsSelectionAndShape(t *testing.T) {
-	svc := &fakeRoleService{permTree: permTreeFixture(), menuSaveErr: errFakeRoleSave}
-	engine := newAdminRolePermissionsEngine(t, svc)
-
-	form := url.Values{}
-	form.Set("role_id", "7")
-	for _, id := range []string{"1", "2", "3", "4"} {
-		form.Add("menu_ids", id)
-	}
-
-	recorder := postRolePermissions(t, engine, form, true)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("htmx 失败应 200（5xx 会被 htmx 判成不 swap，用户什么都看不到），实际 %d", recorder.Code)
-	}
-	if recorder.Header().Get("HX-Redirect") != "" {
-		t.Fatal("树可取回来时必须就地回报，不能整页跳走")
-	}
-	body := recorder.Body.String()
-	assertDrawerFragment(t, body)
-	if !strings.Contains(body, `role="alert"`) {
-		t.Fatal("失败片段缺少错误槽（role=alert）")
-	}
-	if strings.Contains(body, errFakeRoleSave.Error()) {
-		t.Fatalf("失败片段泄漏了内部错误原文：%s", body)
-	}
-	if !strings.Contains(permCheckbox(t, body, "4"), "checked") {
-		t.Fatal("失败回片段时勾选必须来自本次提交（节点 4 是这次才勾上的）")
-	}
-}
-
-// TestAdminRolePermissionsSaveHtmxFailureFallsBackToList 连树都取不回来时整页回列表。
-//
-// 只剩空树可渲的片段会退化成「没有可分配的菜单」的空态 —— 那比一句通用错误更误导
-// （看起来像这个角色的权限被清空了）。
-func TestAdminRolePermissionsSaveHtmxFailureFallsBackToList(t *testing.T) {
+func TestAdminRolePermissionsSaveFailureIsJSON(t *testing.T) {
 	svc := &fakeRoleService{err: errFakeRoleSave}
 	engine := newAdminRolePermissionsEngine(t, svc)
-
-	form := url.Values{"role_id": {"7"}, "menu_ids": {"3"}}
-	recorder := postRolePermissions(t, engine, form, true)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("htmx 分支应 200 + HX-Redirect，实际 %d", recorder.Code)
+	form := url.Values{"role_id": {"7"}, "menu_ids": {"1", "2", "3", "4"}}
+	assertRolePermissionsJSON(t, postRolePermissions(t, engine, form, true), http.StatusInternalServerError)
+	if svc.lastMenuSave == nil || !slices.Equal(svc.lastMenuSave.MenuIDs, []uint64{1, 2, 3, 4}) {
+		t.Fatalf("失败请求仍须交完整勾选: %+v", svc.lastMenuSave)
 	}
-	loc := recorder.Header().Get("HX-Redirect")
-	if loc != "/admin/roles" {
-		t.Fatalf("htmx 回跳目标不符: %q", loc)
+	// 失败不返回替换片段；浏览器保留原DOM和输入，由write-base显示JSON文案。
+}
+
+func TestAdminRolePermissionsSaveJSONMatchesForm(t *testing.T) {
+	svc := &fakeRoleService{}
+	engine := newAdminRolePermissionsEngine(t, svc)
+	form := url.Values{"role_id": {"7"}, "menu_ids": {"1", "2", "3"}}
+	formMessage := assertRolePermissionsJSON(t, postRolePermissions(t, engine, form, false), http.StatusOK)
+	formReq := *svc.lastMenuSave
+	req := httptest.NewRequest(http.MethodPost, "/api/role/menu/save", strings.NewReader(`{"role_id":7,"menu_ids":[1,2,3],"operator_id":999}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+	if message := assertRolePermissionsJSON(t, rec, http.StatusOK); message != formMessage {
+		t.Fatalf("JSON和表单成功文案不一致: %q != %q", message, formMessage)
 	}
-	if strings.Contains(recorder.Body.String(), "没有可分配的菜单") {
-		t.Fatal("树取不回来时不能渲染空态片段（会被读成「权限被清空了」）")
+	got := svc.lastMenuSave
+	if got.RoleID != formReq.RoleID || got.OperatorID != formReq.OperatorID || !slices.Equal(got.MenuIDs, formReq.MenuIDs) {
+		t.Fatalf("JSON/表单效果不等: %+v != %+v", got, formReq)
 	}
 }
 
-// TestAdminRolePermissionsSaveHtmxSuccessShowsReceipt 成功后抽屉里就地给回执，不整页跳走。
-func TestAdminRolePermissionsSaveHtmxSuccessShowsReceipt(t *testing.T) {
-	svc := &fakeRoleService{permTree: permTreeFixture()}
-	engine := newAdminRolePermissionsEngine(t, svc)
-
-	form := url.Values{}
-	form.Set("role_id", "7")
-	for _, id := range []string{"1", "2", "3"} {
-		form.Add("menu_ids", id)
-	}
-	recorder := postRolePermissions(t, engine, form, true)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("htmx 成功应 200 + 成功态片段，实际 %d", recorder.Code)
-	}
-	if recorder.Header().Get("HX-Redirect") != "" {
-		t.Fatal("成功不该整页跳走：列表页的角色行没有任何一列体现权限集合，没有可刷的新数据")
-	}
-	body := recorder.Body.String()
-	assertDrawerFragment(t, body)
-	if !strings.Contains(body, "权限已保存") {
-		t.Fatalf("成功态缺少回执文案（否则用户关掉抽屉后无从判断是否生效）：%s", body)
-	}
-	if !strings.Contains(body, "data-drawer-close") {
-		t.Fatal("成功态必须给一条关闭抽屉的出口")
-	}
-	if strings.Contains(body, `name="menu_ids"`) {
-		t.Fatal("成功态不该再渲染权限树（勾选已提交，回执里那棵树会被误读成本次保存的结果快照）")
+func TestAdminRolePermissionsSaveRequiresSessionIdentity(t *testing.T) {
+	svc := &fakeRoleService{}
+	engine := newAdminRolePermissionsEngineWithUser(t, svc, 0)
+	assertRolePermissionsJSON(t, postRolePermissions(t, engine, url.Values{"role_id": {"7"}, "operator_id": {"999"}}, false), http.StatusUnauthorized)
+	if svc.lastMenuSave != nil {
+		t.Fatal("未登录不得调用服务")
 	}
 }

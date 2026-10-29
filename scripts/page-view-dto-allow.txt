@@ -15,9 +15,9 @@
 #
 # 全仓 gin.H 页面视图 **归零**：控制器现场拼 map 交给模板这个形态已经从代码里消失。
 #
-# ## 剩下 4 处 c.HTML 全部是 htmx 局部替换或独立失败页，不是欠账
+# ## 剩余 c.HTML 全部是 htmx 局部替换或独立失败页，不是欠账
 #
-#   · admin 三处（menuEditFail / permissionEditFail / rolePermissions 保存失败）：
+#   · admin 两处（menuEditFail / permissionEditFail）：
 #     表单带 hx-post + hx-target="closest [data-drawer-fragment]"，失败就是把**抽屉**
 #     换成一个带错误提示的抽屉 —— htmx 的局部替换，不是整页重渲。路由是写动作，
 #     没有 PageSlot，模板名由 *_router.go 的常量给出。
@@ -33,9 +33,9 @@
 #
 # 格式：<文件> gin=<n> html=<n>；末行 --total 是本仓当前值（**双向精确匹配**）。
 
-internal/module/admin/inbound/http/admin_page.go gin=0 html=3
+internal/module/admin/inbound/http/admin_page.go gin=0 html=2
 internal/module/page/inbound/http/page_translations_handle.go gin=0 html=1
 internal/module/user/inbound/http/user_page.go gin=0 html=1
 internal/module/workbench/inbound/http/inspector_handle.go gin=0 html=1
 
---total gin=0 html=6
+--total gin=0 html=5

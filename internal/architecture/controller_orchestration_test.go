@@ -30,7 +30,7 @@ const controllerStatementBudget = 6
 var pendingControllerStatements = map[string]struct{ offenders, max int }{
 	"internal/module/admin/inbound/http/admin_handle.go":                        {offenders: 8, max: 13},
 	"internal/module/admin/inbound/http/admin_i18n_write.go":                    {offenders: 1, max: 33},
-	"internal/module/admin/inbound/http/admin_page.go":                          {offenders: 36, max: 37},
+	"internal/module/admin/inbound/http/admin_page.go":                          {offenders: 35, max: 37},
 	"internal/module/ai/inbound/http/ai_handle.go":                              {offenders: 4, max: 28},
 	"internal/module/ai/inbound/http/ai_page.go":                                {offenders: 6, max: 24},
 	"internal/module/analytics/inbound/http/analytics_handle.go":                {offenders: 1, max: 7},

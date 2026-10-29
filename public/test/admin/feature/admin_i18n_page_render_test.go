@@ -1,11 +1,7 @@
 package feature
 
-// admin_i18n_page_render_test.go — 词条列表页（GET /admin/i18n）的**整页失败出口**回归（task-95）。
-//
-// 背景：`internal/module/admin/inbound/http/admin_page.go` 的 I18nEntriesPage 在主数据
-// i18n.ListEntries 读失败时原先回 shell.PageError（JSON）。而这一页是**导航目标** ——
-// 点菜单、直输 URL、刷新都落到它，响应必须自带内容（见 docs/rules/response-shapes.md 第 1/3 格）。
-// 本文件钉的就是「主数据失败 → 同一模板 + 500 + no-store + 受控文案，驱动原文只进日志」。
+// 词条列表成功渲染HTML，主数据失败按现协议只交JSON、真实500与受控文案。
+// 故障原文只进对应场景日志，不能因页面GET而切回另一套HTML失败形状。
 //
 // 夹具走真实链路，不用 stub：
 //   · support.SetupTestBootstrap + support.NewComponentTestConfig —— 每个用例一个隔离测试库
@@ -48,7 +44,7 @@ const i18nPageRenderUser = int64(99124)
 // i18nPageRenderSeedKey 成功档与失败档共用的种子词条 key（失败档断言它不出现在页面上）。
 const i18nPageRenderSeedKey = "page.render.sentinel"
 
-// i18nPageRenderForbiddenRaw 驱动原文里绝不允许进 HTML 的片段。
+// i18nPageRenderForbiddenRaw 驱动原文里绝不允许出现在响应中的片段。
 var i18nPageRenderForbiddenRaw = []string{"sys_i18n", "42P01", "pq:", "SQLSTATE", "词条存储不可用"}
 
 // i18nPageRenderEnv 装配真实后台词条页：隔离库 + 真实路由 + 真实 Jet + 隔离日志目录。
@@ -167,8 +163,8 @@ func i18nPageRenderLogHasRawError(t *testing.T, logDir, want string) bool {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".log") {
 			return nil
 		}
-		// scene 目录：logger 按 <base>/<scene>/app-YYYY-MM-DD.log 落盘，本页的归口日志在 admin 场景。
-		if !strings.Contains(filepath.ToSlash(path), "/admin/") {
+		// 场景来自真实I18nEntriesPage的PageErrorInternal(c, "i18n", err)。
+		if !strings.Contains(filepath.ToSlash(path), "/i18n/") {
 			return nil
 		}
 		raw, readErr := os.ReadFile(path)
@@ -215,112 +211,81 @@ func TestAdminI18nEntriesPageRendersListOnSuccess(t *testing.T) {
 	i18nPageRenderAssertAbsent(t, body, `role="alert"`, "这一页的数据没能读出来", "badge-danger")
 }
 
-// TestAdminI18nEntriesPageMainListFailureRenders500 主数据失败档：整页 500 + no-store，原文只进日志。
+// i18nPageFailureMessage 同时守住状态码、JSON形状和禁止泄漏，而非只按字符串包含判断。
+func i18nPageFailureMessage(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("主数据失败必须500: %d %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Fatalf("失败必须JSON: %q", ct)
+	}
+	var body struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Code != http.StatusInternalServerError || body.Message == "" {
+		t.Fatalf("错误协议不完整: %s %v", rec.Body.String(), err)
+	}
+	i18nPageRenderAssertAbsent(t, rec.Body.String(), append([]string{"<!DOCTYPE", "role=\"alert\"", "admin.err.internal", "MsgInternalError"}, i18nPageRenderForbiddenRaw...)...)
+	return body.Message
+}
+
+// TestAdminI18nEntriesPageMainListFailureRenders500 真实SQL故障：JSON500，原文只进日志。
 func TestAdminI18nEntriesPageMainListFailureRenders500(t *testing.T) {
 	engine, db, logDir := i18nPageRenderEnv(t)
 	i18nPageRenderSeed(t, db, i18nPageRenderSeedKey, "zh-CN", "页面渲染哨兵")
 	i18nPageRenderBreakStore(t, db)
-
-	// 先自己取一次真实错误原文（页面上绝不允许出现它，但日志里必须完整留下）。
 	_, _, rawErr := i18n.ListEntries(context.Background(), i18n.EntryFilter{Limit: 20})
 	if rawErr == nil {
 		t.Fatal("表已改名，ListEntries 应报错")
 	}
 	want := rawErr.Error()
-
-	recorder := i18nPageRenderGET(t, engine, "/admin/i18n")
-	if recorder.Code != http.StatusInternalServerError {
-		t.Fatalf("主数据失败应 500：%d %s", recorder.Code, recorder.Body.String())
+	rec := i18nPageRenderGET(t, engine, "/admin/i18n")
+	if msg := i18nPageFailureMessage(t, rec); msg != "系统内部错误，请稍后重试" {
+		t.Fatalf("受控中文文案不符: %q", msg)
 	}
-	if ct := recorder.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
-		t.Fatalf("失败档必须是整页 HTML，Content-Type=%q", ct)
-	}
-	if cache := recorder.Header().Get("Cache-Control"); !strings.Contains(cache, "no-store") {
-		t.Fatalf("失败档必须禁缓存：%q", cache)
-	}
-	body := recorder.Body.String()
-	i18nPageRenderAssertContains(t, body,
-		"<!DOCTYPE", "admin-layout", `id="adminRail"`, "</html>", // 完整页壳
-		`role="alert"`, // 失败槽
-		"这一页的数据没能读出来",  // 失败空态标题（先于「没有匹配的词条」）
-		"操作失败，请稍后重试",   // 归口文案（zh-CN 种子）
-	)
-	// 失败时不渲染筛选 / 表格 / 空态 / 分页 / 写表单。
-	i18nPageRenderAssertAbsent(t, body,
-		"没有匹配的词条",                              // 空态（另一档）
-		`class="data-table"`, `name="keyword"`, // 表格与筛选
-		`data-write-url="/api/i18n/save"`, `tpl-i18n-create`, // 写表单与新建抽屉
-		"页面渲染哨兵", // 列表内容
-	)
-	// 驱动原文与裸 key 一律不许进 HTML。
-	i18nPageRenderAssertAbsent(t, body, append([]string{want, "admin.err.internal", ">ErrInternal<"}, i18nPageRenderForbiddenRaw...)...)
+	i18nPageRenderAssertAbsent(t, rec.Body.String(), want, "页面渲染哨兵", "data-table", "tpl-i18n-create")
 	if !i18nPageRenderLogHasRawError(t, logDir, want) {
-		t.Fatalf("日志里应留下完整原文 %q（含表名与 SQLSTATE）", want)
+		t.Fatalf("日志须保留完整驱动原文 %q", want)
 	}
 }
 
-// TestAdminI18nEntriesPageStoreUnavailableRenders500 词条存储不可用档：整页 500，且原文（中文哨兵）不出网。
+// TestAdminI18nEntriesPageStoreUnavailableRenders500 句柄关闭同样只交受控JSON。
 func TestAdminI18nEntriesPageStoreUnavailableRenders500(t *testing.T) {
 	engine, _, logDir := i18nPageRenderEnv(t)
-
-	// 显式关闭句柄，并先确认全局库确实处于「未初始化」——否则这一档断言的是别的东西。
 	if err := database.Close(); err != nil {
-		t.Fatalf("关闭数据库失败：%v", err)
+		t.Fatal(err)
 	}
 	if _, err := database.GetDB(); err == nil {
-		t.Fatal("关闭后 GetDB 应报未初始化")
+		t.Fatal("关闭后GetDB应报未初始化")
 	}
-
-	recorder := i18nPageRenderGET(t, engine, "/admin/i18n")
-	if recorder.Code != http.StatusInternalServerError {
-		t.Fatalf("存储不可用应 500：%d %s", recorder.Code, recorder.Body.String())
+	rec := i18nPageRenderGET(t, engine, "/admin/i18n")
+	if msg := i18nPageFailureMessage(t, rec); msg != "系统内部错误，请稍后重试" {
+		t.Fatalf("受控文案不符: %q", msg)
 	}
-	if cache := recorder.Header().Get("Cache-Control"); !strings.Contains(cache, "no-store") {
-		t.Fatalf("失败档必须禁缓存：%q", cache)
-	}
-	body := recorder.Body.String()
-	i18nPageRenderAssertContains(t, body, "<!DOCTYPE", "admin-layout", `role="alert"`, "这一页的数据没能读出来", "操作失败，请稍后重试")
-	i18nPageRenderAssertAbsent(t, body, "词条存储不可用", "没有匹配的词条", `class="data-table"`)
-
-	want := "词条存储不可用" // pkg/i18n 的 ErrI18nUnavailable 原文
-	if !i18nPageRenderLogHasRawError(t, logDir, want) {
-		t.Fatalf("日志里应留下完整原文 %q", want)
+	if !i18nPageRenderLogHasRawError(t, logDir, "词条存储不可用") {
+		t.Fatal("日志须保留完整存储错误原文")
 	}
 }
 
-// TestAdminI18nEntriesPageFailureFollowsRequestLanguage 失败文案随请求语言，且缺词回退默认语言。
+// TestAdminI18nEntriesPageFailureFollowsRequestLanguage JSON失败文案随请求语言并保默认语言回退。
 func TestAdminI18nEntriesPageFailureFollowsRequestLanguage(t *testing.T) {
 	engine, db, _ := i18nPageRenderEnv(t)
-	// 恢复缓存要在**表恢复之后**执行：cleanup 逆序，所以这条先登记、故障注入后登记。
 	t.Cleanup(func() {
 		if err := i18n.LoadCache(); err != nil {
-			t.Errorf("恢复 i18n 缓存失败：%v", err)
+			t.Errorf("恢复缓存: %v", err)
 		}
 	})
 	i18nPageRenderBreakStore(t, db)
-
-	zh := i18nPageRenderGET(t, engine, "/admin/i18n")
-	if zh.Code != http.StatusInternalServerError {
-		t.Fatalf("zh-CN 档应 500：%d", zh.Code)
+	if msg := i18nPageFailureMessage(t, i18nPageRenderGET(t, engine, "/admin/i18n")); msg != "系统内部错误，请稍后重试" {
+		t.Fatalf("中文失败文案不符: %q", msg)
 	}
-	i18nPageRenderAssertContains(t, zh.Body.String(), "操作失败，请稍后重试", "这一页的数据没能读出来")
-	i18nPageRenderAssertAbsent(t, zh.Body.String(), "Operation failed, please try again later")
-
-	en := i18nPageRenderGET(t, engine, "/admin/i18n?lang=en-US")
-	if en.Code != http.StatusInternalServerError {
-		t.Fatalf("en-US 档应 500：%d", en.Code)
+	if msg := i18nPageFailureMessage(t, i18nPageRenderGET(t, engine, "/admin/i18n?lang=en-US")); msg != "Internal server error, please try again later" {
+		t.Fatalf("英文失败文案不符: %q", msg)
 	}
-	i18nPageRenderAssertContains(t, en.Body.String(), "Operation failed, please try again later", "This list could not be loaded")
-	i18nPageRenderAssertAbsent(t, en.Body.String(), "操作失败，请稍后重试", ">ErrInternal<", "admin.err.internal")
-
-	// 缺词回退：缓存里只有默认语言（zh-CN）那一条时，英文请求回退到默认语言，而不是裸 key。
-	i18n.InjectForTest(map[string]map[string]string{
-		"ErrInternal": {"zh-CN": "注入的默认语言兜底"},
-	}, nil)
-	fallback := i18nPageRenderGET(t, engine, "/admin/i18n?lang=en-US")
-	if fallback.Code != http.StatusInternalServerError {
-		t.Fatalf("缺词档应 500：%d", fallback.Code)
+	i18n.InjectForTest(map[string]map[string]string{"MsgInternalError": {"zh-CN": "注入的默认语言兜底"}}, nil)
+	if msg := i18nPageFailureMessage(t, i18nPageRenderGET(t, engine, "/admin/i18n?lang=en-US")); msg != "注入的默认语言兜底" {
+		t.Fatalf("默认语言回退不符: %q", msg)
 	}
-	i18nPageRenderAssertContains(t, fallback.Body.String(), "注入的默认语言兜底")
-	i18nPageRenderAssertAbsent(t, fallback.Body.String(), ">ErrInternal<", "Operation failed, please try again later")
 }

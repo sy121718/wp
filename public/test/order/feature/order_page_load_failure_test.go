@@ -83,8 +83,8 @@ func newOrderPageEngine(t *testing.T, projects projectcontract.ProjectService) *
 		RouteRegistrar: func(e *gin.Engine) {
 			e.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 			e.GET("/admin/orders", adminui.PageSlot(orderhttp.OrderListPageTemplate), orders.OrdersPage)
-			e.GET("/admin/coupons", coupons.CouponsPage)
-			e.GET("/admin/returns", returns.ReturnsPage)
+			e.GET("/admin/coupons", adminui.PageSlot(orderhttp.CouponListPageTemplate), coupons.CouponsPage)
+			e.GET("/admin/returns", adminui.PageSlot(orderhttp.ReturnListPageTemplate), returns.ReturnsPage)
 		},
 	})
 	if err != nil {

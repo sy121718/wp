@@ -166,13 +166,6 @@ type PermissionEditFailResp struct {
 type RolePermissionsResp struct {
 	Role any
 	Rows any
-	// Err 权限树片段里的错误槽（模板直接渲染文本）。
-	Err string
-}
-
-// PermSavedResp 权限保存成功后的片段（只渲染一个「已保存」标记）。
-type PermSavedResp struct {
-	PermSaved bool
 }
 
 // DataruleEditorResp 数据规则条件编辑器片段。

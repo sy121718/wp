@@ -1,52 +1,14 @@
-{* admin/role_permissions.html — 角色权限分配的**抽屉片段**（不再是一个独立页面）。
-
-   形态：由角色列表行的「权限分配」按钮按需 GET（data-drawer-url=/admin/roles/permissions/drawer），
-   抽屉取回后作为单个片段插入 .drawer-body。三条硬约束来自 ui/drawer.js 的 fragmentRoot 校验，
-   改这个文件前先读那段：
-     ① 根元素必须是唯一元素且带 data-drawer-fragment，并且自身或后代含 <form>；
-     ② 片段里**不能出现** script / style / link / meta / base / iframe / object / embed / svg /
-        math / template —— 父子联动的脚本因此住在 static/js/ui/perm-tree.js（基座控件），
-        由抽屉打开时的 WBUI.scan 认领，而不是内联在这里；
-     ③ 所有 href / src / action / hx-* 必须是同源。
-
-   为什么从整页改成抽屉：勾选的是「目录 → 菜单 → 按钮」三层，一棵树只属于一个角色，
-   而列表页天然是「一个角色一行」。整页形态要用户离开列表、选角色、再回来，
-   而抽屉把这段来回省掉（列表页上下文一直留在视口里）。
-
-   服务端渲染整棵勾选树：勾选态来自 sys_casbin_rule 的 p 策略（反查菜单 + 向上补齐祖先），
-   所以**禁用 JS 时片段依然显示正确的勾选状态**。JS 只负责父子联动的即时反馈 ——
-   真正的补齐在服务端（RoleMenuSave 里的 withAncestorMenuIDs），前端漏补不会写坏数据。
-
-   联动方向（安全相关，改之前先读这段）：**只向上补齐**。勾选子项会把所属菜单与目录一并勾上
-   （否则会出现「接口能调、侧栏没有入口」的分裂授权）；取消父项会把整棵子树取消。
-   反方向的「勾菜单自动勾全部按钮」是提权 —— 一次「页面管理」会顺手给出「删除页面 / 发布页面」，
-   本项目不做。
-
-   保存的两条出口（见 RolePermissionsSave）：
-     · htmx 提交失败 → 200 + **本片段自身**（错误槽 + 服务端重新渲染的树），勾选不回退成库里的旧值，
-       用户刚勾的那一屏不丢；
-     · htmx 提交成功 → 200 + 下面的成功态（就地确认），用户点「关闭」回列表。
-   原生提交（禁用 JS）走 303 分支，成功/失败都回角色列表并带 ?err=。 *}
+{* 权限抽屉由GET读取现有授权树；保存复用/api/role/menu/save和唯一write-base。
+   JSON成功与失败都显示在表单状态槽，勾选留在原DOM，不重新渲染权限树。
+   片段保持唯一data-drawer-fragment根和form，禁止内联脚本。
+   父子联动由ui/perm-tree.js负责，权威授权补齐仍由RoleMenuSave服务处理。 *}
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
-{{saved := false}}
-{{if isset(.PermSaved)}}{{saved = .PermSaved}}{{end}}
 <div data-drawer-fragment class="perm-drawer">
-    {{if saved}}
-    {* 成功态：保存是「整棵树全量替换」，它的结果不体现在角色列表的任何一列上，
-       所以必须就地给一句回执 —— 否则用户关掉抽屉后无从判断这次保存是否生效。 *}
-    <p class="badge badge-success" role="status">{{tr("admin.roles.perm.saved", "权限已保存")}}</p>
-    <div class="form-actions">
-        <button type="button" class="btn btn-primary" data-drawer-close>{{tr("shell.action.close", "关闭")}}</button>
-    </div>
-    {{else}}
-    {* 错误槽在 <form> 之外、host 之内：放进 form 里会被下一次提交整块换掉。 *}
-    {{if isset(.Err)}}{{if .Err != ""}}
-    <p class="badge badge-warning" role="alert">{{.Err}}</p>
-    {{end}}{{end}}
     <p class="perm-intro">{{tr("admin.roles.perm.intro", "勾选该角色可用的目录、菜单与按钮。勾选子项会自动补齐它所属的菜单与目录（不补齐会出现「接口能调、侧栏却没有入口」的分裂授权）；取消父项会同时取消其下全部子项。保存按整棵树的当前勾选做全量替换。")}}</p>
 
-    <form action="/admin/roles/permissions/save" method="post">
+    <form action="/api/role/menu/save" method="post" data-write="update" data-write-url="/api/role/menu/save">
+        <p data-write-status role="status" aria-live="polite"></p>
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="role_id" value="{{.Role.RoleID}}">
 
@@ -113,5 +75,4 @@
             <button type="submit" class="btn btn-primary">{{tr("admin.roles.perm.action.save", "保存权限")}}</button>
         </div>
     </form>
-    {{end}}
 </div>
