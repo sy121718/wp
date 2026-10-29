@@ -14,10 +14,11 @@ import (
 
 // Node 组件树节点通用结构。Props 由各组件自行解码为自己的 props 类型。
 type Node struct {
-	ID       string          `json:"id"`
-	Type     string          `json:"type"`
-	Props    json.RawMessage `json:"props"`
-	Children []*Node         `json:"children"`
+	ID       string                  `json:"id"`
+	Type     string                  `json:"type"`
+	Props    json.RawMessage         `json:"props"`
+	Children []*Node                 `json:"children"`
+	Actions  map[string]ActionTarget `json:"actions,omitempty"`
 
 	// --- 编辑元数据（Visual Workbench 03-A，持久化于 Page Document，不参与编译产物） ---
 

@@ -21,7 +21,8 @@ import (
 // 写入 strings.Builder），故移除了原 HTML 字段；nodeViewOf 只经 CSS/Content/Block
 // 编译 CSS 与驱动递归。
 type RenderContext struct {
-	CSS *CSSBuckets
+	actionResolver ActionResolver
+	CSS            *CSSBuckets
 	// IncompleteNodes 仅草稿预览使用：按节点 ID 生成局部占位，不修改输入 AST。
 	// 正式发布严格校验，因此该集合为空。
 	IncompleteNodes map[string]bool
