@@ -146,19 +146,19 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 		t.Logf("激活状态: lang=%s active_path=%s artifact_hash=%s", p.Lang, p.ActivePath, p.ArtifactHash)
 	}
 
-	// ---- 证据 3：page_artifacts 每语言一行，hash 不同 ----
+	// ---- 证据 3：当前 Publication 每语言精确引用一份产物，历史产物可同时保留 ----
 	type artRow struct {
 		Lang         string
 		ArtifactHash string
 		ArtifactKey  string
 	}
 	var arts []artRow
-	if err = db.Raw("SELECT lang, artifact_hash, artifact_key FROM page_artifacts WHERE page_id = ? ORDER BY lang", page.ID).
+	if err = db.Raw("SELECT a.lang, a.artifact_hash, a.artifact_key FROM page_artifacts a JOIN page_publications p ON p.artifact_id = a.id WHERE p.page_id = ? ORDER BY a.lang", page.ID).
 		Scan(&arts).Error; err != nil {
 		t.Fatalf("查询产物行失败: %v", err)
 	}
 	if len(arts) != 2 || arts[0].ArtifactHash == arts[1].ArtifactHash {
-		t.Fatalf("应两语言各一行且 hash 不同，实际 %+v", arts)
+		t.Fatalf("当前发布应两语言各一份产物且 hash 不同，实际 %+v", arts)
 	}
 	for _, a := range arts {
 		t.Logf("产物行: lang=%s hash=%s key=%s", a.Lang, a.ArtifactHash, a.ArtifactKey)
@@ -166,7 +166,7 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 
 	// ---- 证据 4：FS 激活链接（默认语言在 active/about，非默认语言在 active/en/about）----
 	root := artifactRootOf(t)
-	// 期望值取**产物表**（真源）而不是构建那一刻的返回值：多语言逐个发布时，
+	// 期望值取当前 Publication 引用的产物，而不是构建那一刻的返回值：多语言逐个发布时，
 	// 后面某种语言的发布会让先前构建好的产物「落后于站点级状态」（语言切换器按
 	// 访问面过滤，集合变了），发布时按当前草稿重新构建并落新产物行 —— 这是正确
 	// 行为，激活链接指向的应当是那份最新产物。
@@ -201,18 +201,19 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 		t.Logf("HTTP GET /site/%s/ -> %d, %d bytes", rel, rec.Code, rec.Body.Len())
 	}
 
-	// en 发布之后，zh 的产物已经「落后」——它的语言切换器与 hreflang 是在 en 尚未
-	// 发布时生成的。静态站点里先发布的语言需要重建一次才能互指，这是构建语义，
-	// 不是缺陷；重建后 zh 的产物也会记录进 page_artifacts。
-	if _, err = svc.Build(ctx, &pagedto.BuildReq{ID: page.ID}); err != nil {
+	// 两语言上线后，Build只新增不可变产物，不能改变当前Publication或活跃字节。
+	rebuilt, err := svc.Build(ctx, &pagedto.BuildReq{ID: page.ID})
+	if err != nil {
 		t.Fatalf("zh 重建失败: %v", err)
 	}
-	if err = db.Raw("SELECT lang, artifact_hash, artifact_key FROM page_artifacts WHERE page_id = ? ORDER BY lang", page.ID).
+	if err = db.Raw("SELECT a.lang, a.artifact_hash, a.artifact_key FROM page_artifacts a JOIN page_publications p ON p.artifact_id = a.id WHERE p.page_id = ? ORDER BY a.lang", page.ID).
 		Scan(&arts).Error; err != nil {
 		t.Fatalf("重新查询产物行失败: %v", err)
 	}
 	for _, a := range arts {
-		activeHash[a.Lang] = a.ArtifactHash
+		if activeHash[a.Lang] != a.ArtifactHash {
+			t.Fatalf("仅Build改变了当前发布的产物: %s", a.Lang)
+		}
 	}
 	t.Logf("zh 重建后产物: zh=%s en=%s", activeHash["zh-CN"], activeHash["en-US"])
 
@@ -259,7 +260,7 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 	t.Logf("sitemap.xml:\n%s", sitemap)
 
 	// ---- 证据 7：确定性——同输入两次构建字节相同 ----
-	first, err := os.ReadFile(filepath.Join(root, "artifacts", activeHash["zh-CN"], "index.html"))
+	first, err := os.ReadFile(filepath.Join(root, "artifacts", rebuilt.StagedHash, "index.html"))
 	if err != nil {
 		t.Fatalf("读取产物失败: %v", err)
 	}
@@ -270,8 +271,8 @@ func TestPageBilingualSiteOnline(t *testing.T) {
 	// 对比基准取**刚刚那次重建**的产物，而不是最早那次：站点状态（哪些语言已发布）
 	// 是构建输入的一部分，跨状态比 hash 比的是两个不同的输入。确定性要求的是
 	// 「同一状态、同一草稿」重复构建字节相同 —— 这正是下面这次比对。
-	if again.StagedHash != activeHash["zh-CN"] {
-		t.Fatalf("同输入两次构建 hash 不同: %s vs %s", activeHash["zh-CN"], again.StagedHash)
+	if again.StagedHash != rebuilt.StagedHash {
+		t.Fatalf("同输入两次构建 hash 不同: %s vs %s", rebuilt.StagedHash, again.StagedHash)
 	}
 	second, err := os.ReadFile(filepath.Join(root, "artifacts", again.StagedHash, "index.html"))
 	if err != nil {

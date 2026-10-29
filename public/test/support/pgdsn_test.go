@@ -13,9 +13,32 @@ package support
 
 import (
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
+
+func TestPGProbePreservesDSNShapesAndTimeout(t *testing.T) {
+	for _, dsn := range []string{
+		pgDSN("127.0.0.1", "5432", "root", "a b", "wp_test"),
+		"host=127.0.0.1 port=5432 user=root password='a b' dbname=wp_test sslmode=disable TimeZone=Asia/Shanghai synchronous_commit=off",
+	} {
+		config, err := pgProbeConfig(dsn)
+		if err != nil {
+			t.Fatalf("连接探测配置解析失败: %v", err)
+		}
+		if config.ConnectTimeout != 5*time.Second || config.Database != "wp_test" || config.Password != "a b" || config.RuntimeParams["synchronous_commit"] != "off" || config.RuntimeParams["TimeZone"] != "Asia/Shanghai" {
+			t.Fatalf("连接探测改变了端点、运行参数或未设置超时")
+		}
+	}
+}
+
+func TestPGProbeUsesRealEndpoint(t *testing.T) {
+	if err := pingPG(localPGEndpoint()); err != nil {
+		FailIfRequiredPG(t, err)
+		t.Skipf("本地 PostgreSQL 不可用: %v", err)
+	}
+}
 
 // TestPgDSNPasswordShapes 各种密码形态都必须无损落到 password 字段，且不吃掉 dbname。
 func TestPgDSNPasswordShapes(t *testing.T) {

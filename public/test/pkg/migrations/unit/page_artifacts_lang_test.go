@@ -223,13 +223,13 @@ func TestMigrationsRunTwiceIsIdempotent(t *testing.T) {
 		t.Fatalf("重复执行全部迁移失败（幂等性被破坏）: %v", err)
 	}
 
-	// 061 的成果在「全量迁移」路径下同样成立。
+	// 691 将061的语言版本唯一键替换为内容唯一键；完整链重放必须保留最终形状。
 	var idxCount int64
 	if err := db.Raw(`SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema()
-		AND tablename = 'page_artifacts' AND indexname = 'uk_page_artifacts_page_version_lang'`).Scan(&idxCount).Error; err != nil {
+		AND tablename = 'page_artifacts' AND indexname = 'uk_page_artifacts_page_hash'`).Scan(&idxCount).Error; err != nil {
 		t.Fatalf("查询新唯一键失败: %v", err)
 	}
 	if idxCount != 1 {
-		t.Fatalf("全量迁移后应存在唯一键 uk_page_artifacts_page_version_lang，实际 %d", idxCount)
+		t.Fatalf("全量迁移后应存在内容唯一键 uk_page_artifacts_page_hash，实际 %d", idxCount)
 	}
 }
