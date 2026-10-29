@@ -87,9 +87,7 @@ type Service struct {
 	// 各解一次迟早会出现「手工页有国家、自动发布页没有」的分叉。
 	checkoutCountries func(ctx context.Context, lang string) []core.CheckoutCountry
 	// navigation 公开站点菜单（EDT-003）：core.nav 构建期解析。
-	navigation navigationcontract.NavigationService
-	// sitePages 系统页面槽位（EDT-003）：购物车/登录等链接烘进详情页产物。
-	sitePages   pagecontract.SitePageResolver
+	navigation  navigationcontract.NavigationService
 	actionPages pagecontract.PublishedPageLocator
 	// mediaProbe 响应式图片变体探测（EDT-003）；nil 时不输出 srcset。
 	mediaProbe func(ctx context.Context, url string) []mediacontract.VariantRef
@@ -235,9 +233,6 @@ func (s *Service) SetCheckoutCountries(fn func(ctx context.Context, lang string)
 
 // SetNavigationService 注入公开站点导航（EDT-003，装配期调用）。
 func (s *Service) SetNavigationService(nav navigationcontract.NavigationService) { s.navigation = nav }
-
-// SetSitePageResolver 注入系统页面槽位解析（EDT-003，装配期调用）。
-func (s *Service) SetSitePageResolver(r pagecontract.SitePageResolver) { s.sitePages = r }
 
 // SetMediaProbe 注入响应式图片变体探测（EDT-003，装配期调用）。
 func (s *Service) SetMediaProbe(probe func(ctx context.Context, url string) []mediacontract.VariantRef) {

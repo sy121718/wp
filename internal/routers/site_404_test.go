@@ -103,7 +103,7 @@ func TestSiteFaceNotFoundUnconfiguredKeepsLegacyBehavior(t *testing.T) {
 
 // TestSiteFaceCustomNotFoundScopedToSiteFace 自定义 404 只作用于访问面。
 //
-// 控制面（/api、/admin、/_fragments…）的未匹配路径必须保持统一 JSON —— 后台/接口
+// 控制面（/api、/admin 等）的未匹配路径必须保持统一 JSON —— 后台/接口
 // 拿到一段 HTML 会让前端解析出错。
 //
 // 边界判据随挂载点变化：站点**独占域名根**之后，「访问面」不再是「/site 前缀」
@@ -123,7 +123,7 @@ func TestSiteFaceCustomNotFoundScopedToSiteFace(t *testing.T) {
 
 	router := newSiteFaceRouter()
 	// 控制面路径：必须保持 JSON。
-	for _, path := range []string{"/api/ghost", "/admin/ghost", "/_fragments/ghost", "/storage/ghost"} {
+	for _, path := range []string{"/api/ghost", "/admin/ghost", "/storage/ghost"} {
 		rec := doGet(router, path)
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s 状态码期望 404，实际 %d", path, rec.Code)
@@ -133,7 +133,7 @@ func TestSiteFaceCustomNotFoundScopedToSiteFace(t *testing.T) {
 		}
 	}
 	// 站点路径（含形如 /siteadmin 的前缀相似路径）：走站点 404 页。
-	for _, path := range []string{"/siteadmin/ghost", "/ghost", "/a/b/c"} {
+	for _, path := range []string{"/siteadmin/ghost", "/ghost", "/a/b/c", "/_fragments/ghost"} {
 		rec := doGet(router, path)
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s 状态码期望 404，实际 %d", path, rec.Code)

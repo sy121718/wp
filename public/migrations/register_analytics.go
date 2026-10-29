@@ -291,11 +291,11 @@ func registerAnalyticsSeoAndPermissions() {
 		SQL:       mustSQL("173_partition_append_only_tables.sql"),
 	})
 
-	// 判定约束定义里是否已包含 site_slot：只看「约束存在」无法区分扩展前后。
+	// 174扩展或692显式目标后继约束均算已完成，禁止重启时退回旧枚举。
 	register(Migration{
 		Version:   "174-site-slot-dependency-kind",
 		TableName: "page_dependencies",
-		CheckSQL:  "SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid JOIN pg_namespace n ON n.oid = t.relnamespace WHERE n.nspname = current_schema() AND t.relname = ? AND c.conname = 'page_dependencies_dependency_kind_check' AND pg_get_constraintdef(c.oid) LIKE '%site_slot%'",
+		CheckSQL:  "SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid JOIN pg_namespace n ON n.oid = t.relnamespace WHERE n.nspname = current_schema() AND t.relname = ? AND c.conname = 'page_dependencies_dependency_kind_check' AND (pg_get_constraintdef(c.oid) LIKE '%site_slot%' OR pg_get_constraintdef(c.oid) LIKE '%page_target%')",
 		SQL:       mustSQL("174_site_slot_dependency_kind.sql"),
 	})
 

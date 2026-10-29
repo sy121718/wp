@@ -49,8 +49,8 @@ func TestDocumentConversionAtomicConflictAndReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	plan := []pagecontract.DocumentConversion{
-		{Kind: "page", ID: page.ID, ExpectedVersion: 1, ExpectedHash: digest, Document: json.RawMessage(slotPlainDocument)},
-		{Kind: "template", ID: tpl.ID, ExpectedVersion: 1, ExpectedHash: tplHash, Document: json.RawMessage(slotPlainDocument)},
+		{Kind: "page", ID: page.ID, ExpectedVersion: 1, ExpectedHash: digest, Document: json.RawMessage(plainActionDocument)},
+		{Kind: "template", ID: tpl.ID, ExpectedVersion: 1, ExpectedHash: tplHash, Document: json.RawMessage(plainActionDocument)},
 	}
 	assertVersions := func(want int64) {
 		t.Helper()
@@ -96,7 +96,7 @@ func TestDocumentConversionAtomicConflictAndReplay(t *testing.T) {
 		t.Fatalf("重放记录必须相等: %+v %+v %v", records, replayed, err)
 	}
 	assertVersions(2)
-	if _, err = api.SaveDraft(ctx, &pagedto.SaveDraftReq{ID: page.ID, ExpectedVersion: 2, DraftPath: "/convert", DraftDocument: json.RawMessage(slotPlainDocument)}); err != nil {
+	if _, err = api.SaveDraft(ctx, &pagedto.SaveDraftReq{ID: page.ID, ExpectedVersion: 2, DraftPath: "/convert", DraftDocument: json.RawMessage(plainActionDocument)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = svc.ApplyDocumentConversions(ctx, projectID, plan, templates); err == nil {

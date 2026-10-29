@@ -134,32 +134,29 @@ const (
 	// —— 换图失效通知（媒体变体的缓存与失效）——
 	// media 索要的端口（契约见 mediacontract.StaleMarker），由 page / presentation
 	// 各自实现一条收窄实现后经 media.SetStaleMarkers 注入。
-	portMediaStaleMarkerPage          = "media.SetStaleMarker(page)"
-	portMediaStaleMarkerPresentation  = "media.SetStaleMarker(presentation)"
-	portPresentationBuildQueue        = "presentation.SetBuildQueue"
-	portPresentationProductDataSource = "presentation.SetProductDataSource"
-	portPresentationCheckoutCountries = "presentation.SetCheckoutCountries"
-	portPresentationSiteAssembly      = "presentation.SetNavigationService/SetSitePageResolver/SetMediaProbe/SetPluginService"
-	portPipelinePageRebuilder         = "pipeline.Fanout.SetRebuilder(page)"
-	portPipelinePresentationRebuilder = "pipeline.Fanout.SetRebuilder(presentation)"
-	portContentDependencyInvalidator  = "content.SetDependencyInvalidator"
-	portProductDependencyInvalidator  = "product.SetDependencyInvalidator"
-	portContentTemplateInvalidator    = "contenttemplate.SetInvalidator"
-	portNavigationSourceResolver      = "navigation.SetSourceResolver"
-	portNavigationMenuDispatcher      = "navigation.SetMenuStaleDispatcher"
-	portDashboardBlueprints           = "dashboard.SetBlueprints"
+	portMediaStaleMarkerPage             = "media.SetStaleMarker(page)"
+	portMediaStaleMarkerPresentation     = "media.SetStaleMarker(presentation)"
+	portPresentationBuildQueue           = "presentation.SetBuildQueue"
+	portPresentationProductDataSource    = "presentation.SetProductDataSource"
+	portPresentationCheckoutCountries    = "presentation.SetCheckoutCountries"
+	portPresentationSiteAssembly         = "presentation.SetNavigationService/SetMediaProbe/SetPluginService"
+	portPagePublishedInstanceLocator     = "page.SetPublishedInstanceLocator"
+	portPresentationPublishedPageLocator = "presentation.SetPublishedPageLocator"
+	portActionTargetReferences           = "page/presentation.SetActionTargetReferences/SetActionTargetInvalidator"
+	portPipelinePageRebuilder            = "pipeline.Fanout.SetRebuilder(page)"
+	portPipelinePresentationRebuilder    = "pipeline.Fanout.SetRebuilder(presentation)"
+	portContentDependencyInvalidator     = "content.SetDependencyInvalidator"
+	portProductDependencyInvalidator     = "product.SetDependencyInvalidator"
+	portContentTemplateInvalidator       = "contenttemplate.SetInvalidator"
+	portNavigationSourceResolver         = "navigation.SetSourceResolver"
+	portNavigationMenuDispatcher         = "navigation.SetMenuStaleDispatcher"
+	portDashboardBlueprints              = "dashboard.SetBlueprints"
 	// 概览页的跨模块只读数据（订单聚合 / 访问统计 / 路径→页面类型）。
 	// 三条依赖都由 setter 注入：概览页是唯一同时需要它们的页面，其余页面不受影响。
-	portDashboardOverview = "dashboard.SetOverviewPorts(frontend)"
-	// 片段层端口都由装配期唯一一次 runtimefragment.SetDependencies 提交：装配点先把各段落的
-	// 提供方攒进 assembly.fragDeps（见 assembly.go / assembly_publish.go），全部就位后才提交。
-	// 端口值因此写成「提交点.字段名」——从清单可以直接对到 Deps 的具体字段。
-	portPublicSearchContent         = "content.PublicSearchService.articles"
-	portPublicSearchProduct         = "content.PublicSearchService.products"
-	portPublicSearchIndex           = "content.PublicSearchService.publications"
-	portRuntimeFragSitePageResolver = "runtimefragment.SetDependencies.SitePageResolver"
-	portRuntimeFragProject          = "runtimefragment.SetDependencies.FragmentProject"
-	portRuntimeFragVisitorIdentity  = "runtimefragment.SetDependencies.VisitorIdentityMiddleware"
+	portDashboardOverview   = "dashboard.SetOverviewPorts(frontend)"
+	portPublicSearchContent = "content.PublicSearchService.articles"
+	portPublicSearchProduct = "content.PublicSearchService.products"
+	portPublicSearchIndex   = "content.PublicSearchService.publications"
 	// portAccessGuardLoginProbe 访问面守卫的访客登录态探针（PIPE-6 AccessGuard）。
 	portAccessGuardLoginProbe = "builtin.SetAccessGuardLoginProbe"
 	// —— BIZ-3 会员体系的消费侧接线（本批）——
@@ -331,6 +328,12 @@ var wiringManifest = []wiringEntry{
 		"含结算表单（且表单收集国家）的页面构建失败，报「未注入国家清单」（手工页整页发不出去）"},
 	{portPresentationCheckoutCountries, "sysconfig", "presentation", wiringRequiredPort,
 		"自动发布详情页里的结算表单构建失败（与手工页面同一条判据，来源实例是同一个）"},
+	{portPagePublishedInstanceLocator, "presentation", "page", wiringRequiredPort,
+		"页面无法解析已发布实例的显式动作目标，发布被拒绝"},
+	{portPresentationPublishedPageLocator, "page", "presentation", wiringRequiredPort,
+		"实例无法解析已发布页面的显式动作目标，发布被拒绝"},
+	{portActionTargetReferences, "发布源引用与pipeline失效扇出", "page / presentation", wiringRequiredPort,
+		"显式目标删除保护或改址下线失效通知缺失，可能留下死链接"},
 	{portPresentationSiteAssembly, "navigation/page/media/plugin", "presentation", wiringRequiredPort,
 		"自动发布详情页缺头尾菜单 / 槽位链接 / 响应式 srcset / 插件组件（只有详情页受影响）"},
 	{portPipelinePageRebuilder, "page", "pipeline.Fanout", wiringRequiredPort,
@@ -352,19 +355,13 @@ var wiringManifest = []wiringEntry{
 	{portDashboardOverview, "order/analytics/page", "dashboard", wiringOptionalDegraded,
 		"概览页的 KPI / 趋势 / 热销榜 / 文章浏览量显示为空态（页面壳与页面列表照常）"},
 
-	// —— 运行时片段层（访问面）——
+	// —— 公开站内搜索数据——
 	{portPublicSearchContent, "content", "content.PublicSearchService", wiringRequiredContract,
 		"站内搜索永远没有内容结果"},
 	{portPublicSearchProduct, "product", "content.PublicSearchService", wiringRequiredContract,
 		"站内搜索永远没有商品结果"},
 	{portPublicSearchIndex, "presentation", "content.PublicSearchService", wiringRequiredContract,
 		"搜索结果永远不给链接（路径解析缺失，宁可不给链接也不输出死链）"},
-	{portRuntimeFragSitePageResolver, "page", "runtimefragment", wiringOptionalDegraded,
-		"槽位链接不渲染（不输出死链）+ 日志告警，其余片段照常"},
-	{portRuntimeFragProject, "project", "runtimefragment", wiringOptionalDegraded,
-		"片段语言回落默认语言（单语言站点即此形态，多语言站点才会看出来）"},
-	{portRuntimeFragVisitorIdentity, "user", "runtimefragment", wiringRequiredPort,
-		"片段层永远按未登录渲染（已登录访客看到登录引导）"},
 	// AccessGuard 的登录态探针刻意是 **optional-degraded**：未注入时守卫对
 	// 「登录用户可见」恒判未登录，表现为已登录访客也只看到守卫页（可见、可诊断），
 	// 而不是放行未授权访客。判据（文件头那两条）成立：能说清用户看到什么，

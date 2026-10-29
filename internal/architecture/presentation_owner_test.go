@@ -119,7 +119,6 @@ var pendingModuleText = map[string]int{
 	"internal/module/order/inbound/http/return_page.go":                      1,
 	"internal/module/page/inbound/http/page_jump.go":                         1,
 	"internal/module/plugin/service/plugin.go":                               1,
-	"internal/module/runtimefragment/facing.go":                              2,
 	"internal/module/sysconfig/inbound/http/sysconfig_admin_pages.go":        4,
 	"internal/module/user/inbound/http/customer_bulk_write.go":               3,
 	"internal/module/user/inbound/http/user_page.go":                         1,

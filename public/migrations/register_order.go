@@ -27,18 +27,11 @@ func registerOrderAndSiteSlots() {
 		SQL: mustSQL("136_order_permissions.sql"),
 	})
 
-	// 138：系统页面槽位表（BIZ-1：把「结算页是哪一页」这类事实固定下来）。
-	// 条件用「表存在」而不是「有行」——空表是合法状态（新工程一个槽位都没绑）。
+	// 138：旧唯一业务槽位表。692已退役时识别后继约束，不在每次启动复建旧表。
 	register(Migration{
-		Version:   "138-page-site-slots",
-		TableName: "page_site_slots",
-		// CheckSQL 必须接收迁移器传入的表名参数（CAST(? AS text)）——
-		// 少了这个占位符，迁移器既无法把它当作「表是否已存在」的检测，
-		// 也不会执行建表 SQL（表现是「表不存在」，而不是迁移报错）。
-		CheckSQL: "SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END FROM information_schema.tables " +
-			"WHERE table_schema = current_schema() AND (CAST(? AS text) IS NOT NULL) " +
-			"AND table_name = 'page_site_slots'",
-		SQL: mustSQL("138_page_site_slots.sql"),
+		Version: "138-page-site-slots", TableName: "page_site_slots",
+		CheckSQL: `SELECT CASE WHEN to_regclass(CAST(? AS text)) IS NOT NULL OR EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('page_dependencies') AND conname='page_dependencies_dependency_kind_check' AND POSITION('page_target' IN pg_get_constraintdef(oid))>0 AND POSITION('site_slot' IN pg_get_constraintdef(oid))=0) THEN 1 ELSE 0 END`,
+		SQL:      mustSQL("138_page_site_slots.sql"),
 	})
 
 	// 139：槽位权限点 + 超管策略（3 个权限点全部存在才算已 seed）。

@@ -47,7 +47,6 @@ import (
 	producthttp "go_wp/internal/module/product/inbound/http"
 	projectcontract "go_wp/internal/module/project/contract"
 	projecthttp "go_wp/internal/module/project/inbound/http"
-	runtimefragment "go_wp/internal/module/runtimefragment"
 	sysconfigcheckout "go_wp/internal/module/sysconfig/outbound/checkoutcountries"
 	userhttp "go_wp/internal/module/user/inbound/http"
 	workbenchhttp "go_wp/internal/module/workbench/inbound/http"
@@ -411,18 +410,6 @@ func (a *assembly) wirePublishingPorts() {
 	if config.RunMigrationsEnabled() {
 		partition.StartScheduler(context.Background(), a.db)
 	}
-	// 系统页面槽位解析器接给片段层（BIZ-1）：购物车片段的「去结算」、结算结果的
-	// 「查看订单」都要按槽位取路径。传的是 pageService —— 它嵌入了只读的
-	// SitePageResolver，发布 / 删除 / 改 URL 那部分能力传不进片段层。
-	a.fragDeps.SitePageResolver = pageService
-	marks.mark(portRuntimeFragSitePageResolver)
-	a.fragDeps.FragmentProject = projectService
-	marks.mark(portRuntimeFragProject)
-	// 访客身份解析中间件：片段端点需要知道「这个请求是谁」。
-	// 它与后台的 SessionAuthMiddleware 是两套身份（不同 cookie、不同存储），
-	// 挂在片段组上只做「尽力解析」，未登录不阻断 —— 必须登录的能力自己渲染引导文案。
-	a.fragDeps.VisitorIdentityMiddleware = userhttp.VisitorIdentityMiddleware(a.userSvc)
-	marks.mark(portRuntimeFragVisitorIdentity)
 	// 访问面守卫的登录态探针（PIPE-6 AccessGuard，「登录用户可见」）。
 	// 传的是收窄后的 UserService（只用到 ResolveVisitorID 一条只读能力）：
 	// 守卫拿不到注册 / 改密码 / 踢设备，越权防护靠接口形状。
@@ -470,19 +457,17 @@ func (a *assembly) wirePublishingPorts() {
 		panic("发布实例模块未提供结算国家清单注入点（SetCheckoutCountries）")
 	}
 	marks.mark(portPresentationCheckoutCountries)
-	// 自动发布详情页与手工页面共用站点级装配（EDT-003）：导航 / 槽位 / 响应式图片。
+	// 自动发布详情页与手工页面共用站点级装配（EDT-003）：导航 / 响应式图片。
 	if setter, ok := presentationSvc.(interface {
 		SetNavigationService(navigationcontract.NavigationService)
-		SetSitePageResolver(pagecontract.SitePageResolver)
 		SetMediaProbe(func(context.Context, string) []mediacontract.VariantRef)
 		SetPluginService(plugincontract.PluginService)
 	}); ok {
 		setter.SetNavigationService(navigationSvc)
-		setter.SetSitePageResolver(pageService)
 		setter.SetMediaProbe(mediaSvc.ProbeImageVariants)
 		setter.SetPluginService(pluginSvc)
 	} else {
-		panic("发布实例模块未提供站点装配注入点（SetNavigationService / SetSitePageResolver / SetMediaProbe / SetPluginService）")
+		panic("发布实例模块未提供站点装配注入点（SetNavigationService / SetMediaProbe / SetPluginService）")
 	}
 	marks.mark(portPresentationSiteAssembly)
 	pageActionTargets, pageOK := pageService.(pagecontract.PublishedPageLocator)
@@ -497,7 +482,9 @@ func (a *assembly) wirePublishingPorts() {
 		panic("发布动作目标解析端口未装配")
 	}
 	pageActionSetter.SetPublishedInstanceLocator(instanceActionTargets)
+	marks.mark(portPagePublishedInstanceLocator)
 	instanceActionSetter.SetPublishedPageLocator(pageActionTargets)
+	marks.mark(portPresentationPublishedPageLocator)
 
 	// 换图失效通知（媒体变体的缓存与失效）：media 拿到「谁引用了这张图」后回调引用方
 	// 标记待重建。变体文件名带内容指纹（这是 /storage 敢给 immutable 长缓存的前提），
@@ -625,6 +612,7 @@ func (a *assembly) startRuntimeTasks() {
 	fanout.SetRebuilder(pipeline.SourceTypePresentation, presentationRebuilder)
 	marks.mark(portPipelinePresentationRebuilder)
 	wireActionTargetReferences(pageService, blockSvc, a.contentTemplateSvc, presentationSvc, fanout)
+	marks.mark(portActionTargetReferences)
 	contentSvc.SetDependencyInvalidator(fanout)
 	marks.mark(portContentDependencyInvalidator)
 	// 商品写路径的静态产物失效（审计 ARCH-01）：与 content 侧同一手法 —— 商品模块只声明
@@ -784,22 +772,17 @@ func (a *assembly) mountAdminPages() {
 // 可选端口未接入写进启动日志 —— 降级必须可见，而不是只在代码注释里写一句「未注入时降级」。
 func (a *assembly) runSelfCheck() {
 	mustAllPortsWired(a.marks)
-	// 必需端口全部到位之后才提交片段层依赖快照：顺序保证「自检不过 → 快照根本不提交」，
-	// 不会留下一个「装了一半」的包级依赖供后续代码误读。
-	runtimefragment.SetDependencies(a.fragDeps)
 	// 权限点声明同步（审计 SEC-011）：路由装配完成后，把声明表幂等 upsert 进库
 	// （只补缺失的权限点与超管策略，不动人工的角色 / 用户授权，见 internal/permission/sync.go）。
 	syncDeclaredPermissions(a.db)
 	logDegradedOptional(a.marks)
 }
 
-// mountPublicFace 公开端点与兜底路由：运行时片段端点 + 未匹配路由处理。
+// mountPublicFace 注册模块所有的访客JSON数据端点。
 func (a *assembly) mountPublicFace() {
 	producthttp.SetupProductPublicRoutes(a.router, a.productSvc)
 	producthttp.SetupProductCatalogRoutes(a.router, a.productSvc)
 	producthttp.SetupProductOptionsRoutes(a.router, a.productSvc)
-	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
-	runtimefragment.SetupFragmentRoutes(a.router)
 
 	// 未匹配路由的兜底**不在这里设**：访问面挂在根上（站点独占域名根），
 	// NoRoute 由 setupStaticFace 一次性装成「站点中间件链 → 静态文件 → 站点 404」。

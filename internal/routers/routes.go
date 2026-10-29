@@ -118,7 +118,7 @@ func setupStaticFace(router *gin.Engine) {
 	// 控制面的显式路由优先匹配，剩下的路径全部按激活产物解析。
 	//
 	// 这条路径顺带解决了「站点与接口不同域」的问题：站内绝对链接（href="/shop"）、
-	// 媒体（/storage）与动态片段（/_fragments）现在天然同域生效，
+	// 媒体（/storage）与模块数据接口（/api/site）天然同域生效，
 	// 不再需要独立端口的预览服务器去代理。
 	chain := append(siteFaceChain(siteFaceRootPath), siteFileServeMiddleware(root), notFoundHandler())
 	router.NoRoute(chain...)
@@ -345,7 +345,7 @@ func notFoundHandler() gin.HandlerFunc {
 // 前者给站点 404 页、后者给 JSON，两者混用会让其中一边彻底失效。
 var controlPlanePrefixes = []string{
 	"/api/", "/api", "/admin/", "/admin", "/workbench/", "/workbench",
-	"/_fragments/", "/_fragments", "/storage/", "/storage", "/static/", "/static",
+	"/storage/", "/storage", "/static/", "/static",
 	"/livez", "/readyz", "/analytics/", "/payment/",
 }
 

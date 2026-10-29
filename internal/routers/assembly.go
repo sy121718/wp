@@ -93,7 +93,6 @@ import (
 	pubhttp "go_wp/internal/module/publication/inbound/http"
 	purchasecontract "go_wp/internal/module/purchase/contract"
 	purchasehttp "go_wp/internal/module/purchase/inbound/http"
-	runtimefragment "go_wp/internal/module/runtimefragment"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 	sysconfighttp "go_wp/internal/module/sysconfig/inbound/http"
 	sysconfigmodel "go_wp/internal/module/sysconfig/model"
@@ -241,14 +240,6 @@ type assembly struct {
 	// commentSvc 评论模块契约（BIZ-5）。装配在订单之后：它只依赖工程契约与 adminPages，
 	// 但排在交易域之后便于阅读（评论是内容侧的横切能力，独立模块）。
 	commentSvc commentcontract.CommentService
-
-	// fragDeps 片段层依赖快照（internal/module/runtimefragment）。
-	//
-	// 为什么要先攒着、最后一次性提交（见 runSelfCheck）：片段层的依赖散落在多个装配段
-	// （商品端口 / 访问面 / 发布端口），它们的提供方要到各自段落才构造完成；攒进一个
-	// 结构体后一次提交，既保住「依赖一次到齐」的语义，又不必为凑一次调用而重排装配顺序
-	// （装配顺序本身承载依赖关系，重排的风险远大于这里多攒几行）。
-	fragDeps runtimefragment.Deps
 }
 
 // dataRuleSnapshotPort 装配期消费的数据权限快照端口（admin 实现，只取装配需要的四条）。
@@ -695,7 +686,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 	// 会员等级与权益（BIZ-3）：等级按工程定义、归属按 (project, user) 唯一。
 	// 装配位置在 userSvc 之后（两者都围绕访客账号，但会员是**独立领域** ——
 	// AGENTS.md 的命名约束把 admin / user 定义为两个独立领域，会员等级要被
-	// order / cart / runtimefragment 消费，塞进 user 会让片段层拿到完整 UserService）、
+	// order / cart 消费，塞进 user 会让片段层拿到完整 UserService）、
 	// orderSvc 之前（订单侧是消费方：折扣要读会员身份）。
 	//
 	// 消费额批量只读端口（membershipcontract.PurchaseSource）由**订单侧实现**，
@@ -728,7 +719,7 @@ func (a *assembly) buildIdentityAndCommerce() {
 	// 建单会读商品事实落快照、并扣减库存，两者缺失都只能在建单那一刻失败，故不设可选依赖。
 	// guest 传 userSvc：订单用它为访客下单自动开号（收窄的单方法接口，见 user contract）。
 	// orderSvc 的消费方有三个：cart（结算建单 + 支付落账）、order 模块后台页（订单管理）、
-	// runtimefragment（访客订单片段）。契约里同时含访客查询与优惠码两组能力，
+	// 访客订单JSON查询。契约里同时含访客查询与优惠码两组能力，
 	// 各消费方拿到的都是同一个实现 —— 不加壳、不复制。
 	//
 	// 库存能力**经适配器**注入（orderstock）：订单契约的入参是订单自己的语义类型

@@ -468,16 +468,7 @@ func (s *Service) buildDependencies(ctx context.Context, in pipeline.BuildInput)
 		// 这条正是上面注释点名要防的失效，只是触发者是 RLS 而不是代码笔误。
 		deps = append(deps, pipeline.I18NContentDependency(i18n.ContentRevisionForProject(ctx, projectID)))
 	}
-	// 系统页面槽位（审计 VIS-006）：只登记**本页真实消费过**的槽位，来源是编译期记录。
-	//
-	// 与下面从文档静态推导的依赖不同：文档里没有「我用了购物车槽位」这种声明，
-	// 那是组件渲染时才取的。静态扫节点类型要维护一张「组件 → 槽位」映射表，
-	// 而那张表与渲染代码迟早漂移 —— 漂移的表现是槽位换绑后该页不重建，
-	// 站点上旧链接继续生效且无人报错。
-	for _, slot := range in.Usage.SiteSlotList() {
-		deps = append(deps, pipeline.Dependency{Kind: pipeline.DepKindSiteSlot, Key: slot})
-	}
-	// 公开站点导航（审计遗留缺口）：判据与槽位逐字一致 —— 只登记**本次编译真实消费过**
+	// 公开站点导航（审计遗留缺口）：只登记**本次编译真实消费过**
 	// 的菜单位置（core.nav 绑定 menu=header/footer，渲染期经 RenderContext.UseMenu 记录）。
 	//
 	// 为什么用编译期记录而不是静态扫文档：绑定可能藏在页眉/页脚块里（块文档不参与

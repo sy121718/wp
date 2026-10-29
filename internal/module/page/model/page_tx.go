@@ -20,7 +20,6 @@ package pagemodel
 
 import (
 	"context"
-	"errors"
 	json "go_wp/pkg/jsonx"
 	"strings"
 	"time"
@@ -226,47 +225,6 @@ func (m *Model) SoftDeleteTx(ctx context.Context, tx *gorm.DB, projectID, pageID
 		return err
 	}
 	return m.softDeleteTx(ctx, tx, projectID, pageID, at)
-}
-
-// UpsertSiteSlotTx 在外部事务内绑定槽位（同工程同槽位已有绑定时原地换页）。
-func (m *Model) UpsertSiteSlotTx(ctx context.Context, tx *gorm.DB, e *SiteSlotEntity) error {
-	if err := rls.ScopeTx(tx, e.ProjectID); err != nil {
-		return err
-	}
-	var existing SiteSlotEntity
-	ferr := tx.WithContext(ctx).Model(&SiteSlotEntity{}).
-		Where("project_id = ? AND slot = ?", e.ProjectID, e.Slot).First(&existing).Error
-	switch {
-	case ferr == nil:
-		return tx.WithContext(ctx).Model(&SiteSlotEntity{}).Where("id = ?", existing.ID).Updates(map[string]any{
-			"page_id":     e.PageID,
-			"update_time": e.UpdatedAt,
-		}).Error
-	case errors.Is(ferr, gorm.ErrRecordNotFound):
-		return tx.WithContext(ctx).Model(&SiteSlotEntity{}).Create(e).Error
-	default:
-		return ferr
-	}
-}
-
-// DeleteSiteSlotTx 在外部事务内解绑槽位；返回受影响行数（0 = 本来就没绑）。
-func (m *Model) DeleteSiteSlotTx(ctx context.Context, tx *gorm.DB, projectID, slot string) (int64, error) {
-	if err := rls.ScopeTx(tx, projectID); err != nil {
-		return 0, err
-	}
-	res := tx.WithContext(ctx).Model(&SiteSlotEntity{}).
-		Where("project_id = ? AND slot = ?", projectID, slot).Delete(&SiteSlotEntity{})
-	return res.RowsAffected, res.Error
-}
-
-// MarkStaleForProjectTx 在外部事务内把该工程全部未删除页面标记为待重建。
-func (m *Model) MarkStaleForProjectTx(ctx context.Context, tx *gorm.DB, projectID string, at time.Time) error {
-	if err := rls.ScopeTx(tx, projectID); err != nil {
-		return err
-	}
-	return tx.WithContext(ctx).Model(&PageEntity{}).
-		Where("project_id = ? AND deleted_at IS NULL AND stale = ?", projectID, false).
-		Updates(map[string]any{"stale": true, "update_time": at}).Error
 }
 
 // MarkStaleByDependencyTx 在外部事务内按依赖源 (kind,key) 精确标记指定工程的受影响页面。

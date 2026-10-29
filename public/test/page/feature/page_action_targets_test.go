@@ -16,10 +16,12 @@ import (
 	json "go_wp/pkg/jsonx"
 )
 
+const plainActionDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.text","id":"t1","props":{"text":"PLAIN-PAGE"}}]}`
+
 func TestFirstPublishSelfActionUsesFrozenPathAndOtherDraftFails(t *testing.T) {
 	_, api, projectID := newPageService(t)
 	ctx := context.Background()
-	self, err := api.Create(ctx, &pagedto.CreateReq{ProjectID: projectID, Kind: "home", ContentTargetType: "none", DraftPath: "/self-checkout", DraftDocument: json.RawMessage(slotPlainDocument)})
+	self, err := api.Create(ctx, &pagedto.CreateReq{ProjectID: projectID, Kind: "home", ContentTargetType: "none", DraftPath: "/self-checkout", DraftDocument: json.RawMessage(plainActionDocument)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +42,7 @@ func TestFirstPublishSelfActionUsesFrozenPathAndOtherDraftFails(t *testing.T) {
 	if err != nil || len(refs) != 1 || refs[0].ID != self.ID {
 		t.Fatalf("自身也须登记真实目标依赖: %+v %v", refs, err)
 	}
-	draft, err := api.Create(ctx, &pagedto.CreateReq{ProjectID: projectID, Kind: "search", ContentTargetType: "none", DraftPath: "/other-draft", DraftDocument: json.RawMessage(slotPlainDocument)})
+	draft, err := api.Create(ctx, &pagedto.CreateReq{ProjectID: projectID, Kind: "search", ContentTargetType: "none", DraftPath: "/other-draft", DraftDocument: json.RawMessage(plainActionDocument)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +58,7 @@ func TestFirstPublishSelfActionUsesFrozenPathAndOtherDraftFails(t *testing.T) {
 func TestPublishedPageActionTargetIsScopedExactAndReadable(t *testing.T) {
 	_, svc, projectID := newPageService(t)
 	ctx := context.Background()
-	target, err := svc.Create(ctx, &pagedto.CreateReq{ProjectID: projectID, Kind: "home", ContentTargetType: "none", DraftPath: "/chosen-checkout", DraftDocument: json.RawMessage(slotPlainDocument)})
+	target, err := svc.Create(ctx, &pagedto.CreateReq{ProjectID: projectID, Kind: "home", ContentTargetType: "none", DraftPath: "/chosen-checkout", DraftDocument: json.RawMessage(plainActionDocument)})
 	if err != nil {
 		t.Fatal(err)
 	}

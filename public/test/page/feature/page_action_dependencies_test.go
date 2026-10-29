@@ -39,12 +39,12 @@ func TestPublishedActionDependencyImpactAndDeleteProtection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	target := create("/controlled-target", slotPlainDocument)
+	target := create("/controlled-target", plainActionDocument)
 	publish(target)
 	sourceDoc := fmt.Sprintf(`{"settings":{"layout":{"mode":"full"}},"root":[{"id":"cart","type":"core.cartIcon","props":{"mode":"inline"},"actions":{"checkout":{"kind":"page","pageId":%q}}}]}`, target)
 	consumer := create("/actual-consumer", sourceDoc)
 	publish(consumer)
-	plain := create("/unrelated", slotPlainDocument)
+	plain := create("/unrelated", plainActionDocument)
 	publish(plain)
 	key := pipeline.PageTargetKey(target)
 	refs, err := svc.FindPagesByDependency(ctx, projectID, key.Kind, key.Key)
@@ -114,7 +114,7 @@ func TestPublishedActionDependencyImpactAndDeleteProtection(t *testing.T) {
 		t.Fatal("目标该语言下线后不能再发布死链接")
 	}
 	// 尚未构建的文档同样进入删除保护，而不靠虚构产物依赖。
-	draftTarget := create("/draft-target", slotPlainDocument)
+	draftTarget := create("/draft-target", plainActionDocument)
 	draftRef := create("/draft-ref", strings.ReplaceAll(sourceDoc, target, draftTarget))
 	current, err := svc.ListActionTargetReferences(ctx, projectID, "page", draftTarget)
 	if err != nil || !reflect.DeepEqual(current, []source.ActionTargetReference{{SourceKind: "page", SourceID: draftRef}}) {

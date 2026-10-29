@@ -39,13 +39,6 @@ type (
 	UpdateURLReq    = pagedto.UpdateURLReq
 	PublishResp     = pagedto.PublishResp
 
-	// 系统页面槽位（BIZ-1）。
-	SiteSlotListReq   = pagedto.SiteSlotListReq
-	SiteSlotBindReq   = pagedto.SiteSlotBindReq
-	SiteSlotUnbindReq = pagedto.SiteSlotUnbindReq
-	SiteSlotListResp  = pagedto.SiteSlotListResp
-	SiteSlotItemResp  = pagedto.SiteSlotItemResp
-
 	// 待重建页面的只读反查（反查面）。跨模块调用方只依赖 contract，不直接 import page/dto。
 	StalePageListReq       = pagedto.StalePageListReq
 	StalePageListResp      = pagedto.StalePageListResp
@@ -125,16 +118,6 @@ func (p *PreviewProblem) Unwrap() error {
 // ==========================================================================
 // 索要的端口：本模块需要外部给什么（由对方实现）
 // ==========================================================================
-
-// SitePageResolver 系统页面槽位解析能力（构建期与片段层消费的**只读**面）。
-//
-// 单独成接口而不是直接把 PageService 递出去：消费方只需要「槽位 → 当前语言线上路径」
-// 这一条读能力，拿到整个 PageService 等于把发布、删除、改 URL 也一起给了 —— 越权防护靠接口形状。
-type SitePageResolver interface {
-	// ResolveSitePages 返回「槽位 → 已发布路径」，只含已绑且已发布的槽位。
-	// 未绑定或未发布一律不出现（调用方据此不输出链接，而不是猜一个默认值）。
-	ResolveSitePages(ctx context.Context, projectID, lang string) (map[string]string, error)
-}
 
 // 预览编译错误哨兵：workbench 预览复用本契约的编译能力时，
 // 经 errors.Is 精确分类 HTTP 状态码（解析失败 400 / 编译失败 422 / 其余 500），
@@ -247,8 +230,6 @@ const (
 
 // PageService 手工 Page 草稿、修订与发布管理能力。
 type PageService interface {
-	// SitePageResolver 槽位解析（构建期与片段层经这个只读面取「结算页在哪」）。
-	SitePageResolver
 	// PageDependencyLookup 按依赖键只读反查页面（反查面；写路径是下面的 MarkStaleByDependency）。
 	PageDependencyLookup
 	// PagePathKindLookup 按线上访问路径批量反查页面类型（只读，跨模块聚合用）。
@@ -335,17 +316,6 @@ type PageService interface {
 	// UpdateURL 修改访问路径，旧路径按策略 301 或取消激活。
 	UpdateURL(ctx context.Context, req *pagedto.UpdateURLReq) (res *pagedto.PublishResp, err error)
 
-	// ListSiteSlots 列出系统页面槽位及其绑定状态（含**未绑定**的槽位，后台要一眼看全）。
-	ListSiteSlots(ctx context.Context, req *pagedto.SiteSlotListReq) (res *pagedto.SiteSlotListResp, err error)
-	// BindSiteSlot 把槽位绑到页面（校验页面存在、属本工程、未删除），并标记该工程页面待重建。
-	BindSiteSlot(ctx context.Context, req *pagedto.SiteSlotBindReq) (err error)
-	// UnbindSiteSlot 解绑槽位（幂等），并标记该工程页面待重建。
-	UnbindSiteSlot(ctx context.Context, req *pagedto.SiteSlotUnbindReq) (err error)
-	// SiteSlotRefsOfPage 列出引用了某页面的槽位键（页面删除前的引用检查）。
-	//
-	// projectID 必填（DB-009 切角色收口）：page_site_slots 带 FORCE 策略，
-	// 不带作用域时非超级角色读出来恒为空集（fail closed 不报错）。
-	SiteSlotRefsOfPage(ctx context.Context, projectID, pageID string) (slots []string, err error)
 	// RebuildArtifact 按产物元数据里冻结的 source_document 重建丢失的产物文件
 	// （灾难恢复：只重建文件，不激活、不改 DB 指针）。重建后调用方须比对
 	// HashMatched：只有构建输入（源文档 + 组件注册表 + 编译期依赖）全部未变，
