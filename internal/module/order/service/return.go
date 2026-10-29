@@ -188,7 +188,11 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 			}
 			claimed[it.ID] += line.Quantity
 			if claimed[it.ID] > returnable[it.ID] {
-				return fmt.Errorf("%s：%s", orderenums.ErrReturnQuantityExceeded, it.ProductName)
+				// 分隔符必须是 **ASCII 冒号**：facing.FactOf 只认它（全角是"写错了"的形态，
+				// 刻意不受支持 —— 见 inventory 的 TestInventoryErrMsgSplitsFacts）。
+				// 用了全角，这条错误会被判成内部错误，用户看到 500「系统内部错误」，
+				// 而真因是"退货数量超过可退数量：某商品"——一句本可以行动的话。
+				return fmt.Errorf("%s: %s", orderenums.ErrReturnQuantityExceeded, it.ProductName)
 			}
 			amount := lineRefundAmount(it, line.Quantity)
 			total += amount
