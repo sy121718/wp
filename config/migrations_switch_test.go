@@ -72,3 +72,25 @@ func TestForceMigrationsOverridesConfig(t *testing.T) {
 		t.Fatal("ForceMigrations 之后必须强制执行迁移与 seed")
 	}
 }
+
+// TestSuppressWorkersTurnsOffQueueWorker 显式迁移命令必须关掉后台消费者（PUB-07）。
+//
+// 判据是**进程角色**而不是组件配置：-migrate-only 走的是与正常启动同一条
+// InitComponents 链路，队列 / 邮件自动化 / Webhook 重试在初始化时就可能起
+// goroutine。一个"只迁库"的命令顺手开始消费，迁移期间表正在被改 ——
+// 读写语义没有保证；CI 里更常见的症状是进程跑完不退出。
+//
+// 实现走 viper 键（pkg/queue 读它，而 pkg 不能反向 import config），
+// 所以这条测试断言的正是"那个键被改了"，而不是某个包级布尔。
+func TestSuppressWorkersTurnsOffQueueWorker(t *testing.T) {
+	// 前置：模拟正常启动配置（run_worker = true）。
+	v := viper.GetViper()
+	v.Set("queue.run_worker", true)
+	t.Cleanup(func() { v.Set("queue.run_worker", true) })
+
+	SuppressWorkers()
+
+	if got := viper.GetBool("queue.run_worker"); got {
+		t.Fatalf("SuppressWorkers 之后 queue.run_worker 应为 false（否则 -migrate-only 会启动消费者），实际 %v", got)
+	}
+}

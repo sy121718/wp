@@ -43,6 +43,29 @@ func ForceMigrations() { forceMigrations.Store(true) }
 // forceMigrationsSet 供测试复位（生产路径只置位、不复位）。
 func forceMigrationsSet(v bool) { forceMigrations.Store(v) }
 
+// keyRunWorker 配置键（queue 段）：是否启动后台消费者。
+const keyRunWorker = "queue.run_worker"
+
+// SuppressWorkers 让本进程**不启动后台消费者**（-migrate-only 专用）。
+//
+// 为什么需要它（PUB-07 / B07）：-migrate-only 走的是与正常启动同一条
+// loadAndPrepareRuntime → config.InitComponents 链路，而队列、邮件自动化、
+// Webhook 重试这些组件在初始化时就可能起后台 goroutine。于是一个"只迁库"的命令
+// 会顺手开始消费：迁移期间表正在被改，消费者的读写语义没有保证；更常见的是
+// 它在 CI 里跑完之后进程不退出（goroutine 还在等任务）。
+//
+// 判据是**进程角色**而不是某个组件的业务配置：显式迁移命令不该消费任何东西。
+//
+// 实现走 viper 键而不是包级布尔：pkg/queue 读的是 viper（它是基础层，
+// 不能反向 import config —— 依赖方向是 config → pkg）。所以这里改的是
+// 全局 viper 实例上的键，组件初始化时读到的就是被抑制后的值。
+// **必须在 config.InitComponents() 之前调用。**
+func SuppressWorkers() {
+	if v := viper.GetViper(); v != nil {
+		v.Set(keyRunWorker, false)
+	}
+}
+
 var migrationsSkipLogged sync.Once
 
 // logMigrationsSkipped 跳过时打一条 INFO，且只打一次。

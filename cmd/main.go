@@ -54,6 +54,12 @@ func main() {
 	// 迁移会一声不吭地什么都不做，退出码还是 0。必须在 config.InitComponents() 之前置位。
 	if *migrateOnly {
 		config.ForceMigrations()
+		// 显式迁移命令**只迁库**，不起任何后台消费者（PUB-07）。
+		//
+		// 与 ForceMigrations 同一位置（都在 InitComponents 之前）：队列 / 邮件自动化 /
+		// Webhook 重试这些组件在初始化时就可能起 goroutine，而迁移期间表正在被改，
+		// 消费者的读写语义没有保证；CI 里更常见的症状是进程跑完不退出。
+		config.SuppressWorkers()
 	}
 
 	if err := run(*migrateOnly); err != nil {
