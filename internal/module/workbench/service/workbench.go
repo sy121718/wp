@@ -120,7 +120,7 @@ func (s *Service) ThemeSettingsOf(ctx context.Context, page *pagecontract.PageRe
 	return theme.Settings
 }
 
-// BlockSummaries 工程块列表的轻量投影（id/name/kind/category/reuseMode，不含文档大字段）。
+// BlockSummaries 工程块列表的轻量投影（含工程与预设来源事实，不含文档大字段）。
 // category 供 workbench 全局块按分类分组；reuseMode 供「引用/复制」双动作分流（docs/02-D §5.3）。
 //
 // 返回 []map[string]any 而不是 gin.H：这是契约无关的形状投影，service 不认识 gin。
@@ -132,7 +132,7 @@ func (s *Service) BlockSummaries(ctx context.Context, projectID string) []map[st
 	}
 	out := make([]map[string]any, 0, len(blocks))
 	for _, b := range blocks {
-		out = append(out, map[string]any{"id": b.ID, "name": b.Name, "kind": b.Kind, "category": b.Category, "reuseMode": b.ReuseMode})
+		out = append(out, map[string]any{"id": b.ID, "projectId": b.ProjectID, "name": b.Name, "kind": b.Kind, "category": b.Category, "reuseMode": b.ReuseMode, "presetKey": b.PresetKey, "presetVersion": b.PresetVersion})
 	}
 	return out
 }

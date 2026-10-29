@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/adminui"
+	"go_wp/internal/builder"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
 	presentationdto "go_wp/internal/module/presentation/dto"
@@ -200,8 +201,10 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 		renderModeLabel = workbenchShortText(c, workbenchenums.ModeDocument)
 	}
 	metaJSON, merr := json.Marshal(gin.H{
-		"mediaBaseUrl": upload.BaseURL(),
-		"target":       workbenchTargetOf(EditTargetInstance), "pageId": inst.ID,
+		"mediaBaseUrl":    upload.BaseURL(),
+		"businessPresets": builder.BusinessPresets(),
+		"blocks":          h.svc.BlockSummaries(c.Request.Context(), inst.ProjectID),
+		"target":          workbenchTargetOf(EditTargetInstance), "pageId": inst.ID,
 		"saveBase": "instance", "entityType": inst.EntityType, "entityId": inst.EntityID,
 		"projectId": inst.ProjectID, "draftPath": "", "instanceMode": true,
 		"renderMode": renderMode,

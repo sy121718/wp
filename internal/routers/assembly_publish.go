@@ -78,6 +78,15 @@ func (a *assembly) buildPublishingModules() {
 	projectService := a.projectService
 	publicationSvc := a.publicationSvc
 
+	// 业务预设文档仅来自构建器权威注册表，控制面Create不接受客户端覆写。
+	presetSetter, ok := blockSvc.(interface {
+		SetPresetResolver(blockcontract.PresetResolver)
+	})
+	if !ok {
+		panic("区块模块未实现受控预设解析器注入")
+	}
+	presetSetter.SetPresetResolver(builder.BusinessPresetRegistry{})
+
 	// 自动发布实例（内容实体驱动，复用编译/存储/激活管线；实例行需 project_id 外键）。
 	// blockSvc 注入用于内容模板内部的全局块引用展开（页眉/页脚等，构建期内联）。
 	presentationSvc := presentationhttp.SetupPresentationRoutes(authorizedAPI, db, contentTemplateSvc, entityRegistry, projectService, blockSvc, collectionRegistry, publicationSvc)
