@@ -72,7 +72,7 @@ type Props struct {
 	// LinkPrefix 链接前缀（如 /products/）；留空表示 LinkField 已是完整地址。
 	LinkPrefix string `json:"linkPrefix,omitempty" ct:"text,maxlen=200,sec=content,label=链接前缀"`
 	// Currency 货币符号（价格槽位前缀；留空用默认符号）。
-	Currency string `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
+	Currency string `json:"currency,omitempty" ct:"string,maxlen=8,sec=content,label=货币符号"`
 	// TitleTag 标题标签层级（h2~h4，默认 h3）。
 	TitleTag string `json:"titleTag,omitempty" ct:"select,h2=二级标题,h3=三级标题,h4=四级标题,default=h3,sec=content,label=标题层级"`
 	// Advanced 通用高级属性（docs/02-C0）。

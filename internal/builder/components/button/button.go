@@ -114,7 +114,7 @@ type Binding struct {
 // Props button 属性。
 type Props struct {
 	// Text 按钮文本（或绑定）。
-	Text string `json:"text,omitempty" ct:"text,maxlen=200,sec=content"`
+	Text string `json:"text,omitempty" ct:"string,maxlen=200,sec=content"`
 	// Binding 动态 CMS 链接绑定（如 post.permalink）。
 	Binding *Binding `json:"binding,omitempty"`
 	// Action 动作类型：internal/external/anchor/native/modal/link（默认 external）。

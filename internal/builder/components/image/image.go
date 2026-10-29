@@ -84,9 +84,9 @@ type Props struct {
 	// Src 图片地址：媒体库选择回填 URL 或外部绝对 URL（媒体库/外链统一，构建期直出）。
 	Src string `json:"src,omitempty" ct:"media,sec=content,label=图片地址"`
 	// Alt 局部替代文本。
-	Alt string `json:"alt,omitempty" ct:"text,maxlen=500,sec=content,label=替代文字"`
+	Alt string `json:"alt,omitempty" ct:"string,maxlen=500,sec=content,label=替代文字"`
 	// Title 局部标题。
-	Title string `json:"title,omitempty" ct:"text,maxlen=500,sec=content,label=标题"`
+	Title string `json:"title,omitempty" ct:"string,maxlen=500,sec=content,label=标题"`
 	// Caption 图注（非空时输出 <figure>/<figcaption>）。
 	Caption string `json:"caption,omitempty" ct:"text,maxlen=500,sec=content,label=图注"`
 

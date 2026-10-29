@@ -90,7 +90,7 @@ type Props struct {
 	// BrandLinkPrefix 品牌归档页的站内路径前缀。
 	BrandLinkPrefix string `json:"brandLinkPrefix,omitempty" ct:"text,maxlen=80,sec=content,label=品牌链接前缀"`
 	// Currency 货币符号（价格槽位前缀；留空用默认符号）。
-	Currency string `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
+	Currency string `json:"currency,omitempty" ct:"string,maxlen=8,sec=content,label=货币符号"`
 	// TitleTag 标题标签层级（h1~h3，默认 h2；h1 由页面标题承担时选 h2）。
 	TitleTag string `json:"titleTag,omitempty" ct:"select,h1=一级标题,h2=二级标题,h3=三级标题,default=h2,sec=content,label=标题层级"`
 	// Advanced 通用高级属性（docs/02-C0）。
