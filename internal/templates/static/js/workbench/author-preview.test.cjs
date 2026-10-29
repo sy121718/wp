@@ -3,7 +3,7 @@ const source=name=>fs.readFileSync(__dirname+'/'+name+'.js','utf8').replace(/^im
 function env(responses={}){
  class Element{
   constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.attributes={};this.events={};this.value='';this.style={};this.elements={};}
-  appendChild(node){node.parent=this;this.children.push(node);if(node.name)this.elements[node.name]=node;return node;}
+  appendChild(node){node.parent=this;node.parentNode=this;this.children.push(node);if(node.name)this.elements[node.name]=node;return node;}
   setAttribute(k,v){this.attributes[k]=v;}getAttribute(k){return this.attributes[k]??null;}
   addEventListener(k,fn){this.events[k]=fn;}contains(node){return node===this||this.children.some(child=>child.contains(node));}
   get options(){return this.children;}submit(){this.submitted=true;}
@@ -62,4 +62,26 @@ test('下拉只显示实际支持的状态，切换不触碰草稿和撤销栈',
  e.ctx.previewMethods.syncPreviewControls.call(self);assert.equal(wrapper.hidden,false);assert.equal(select.options[2].hidden,true);
  e.ctx.previewMethods.setPreviewState.call(self,'success');assert.equal(reloads,0);
  e.ctx.previewMethods.setPreviewState.call(self,'empty');assert.equal(reloads,1);assert.deepEqual(self.doc,{root:[]});assert.deepEqual(self.undoStack,['original']);assert.equal(self.previewState,'empty');
+});
+
+test('目标请求验证激活状态，存量无效选择只提示不改绑定且默认流程可恢复',async()=>{
+ const e=env({'/api/page/list':[]});
+ const props={collectionSource:{kind:'products'},titleField:'product.title'},node={id:'list',type:'core.productList',props,actions:{list:{kind:'page',pageId:'directory-target'}}};
+ let snapshots=0;const self={tab:'content',findNode:()=>node,snapshot:()=>snapshots++,renderTree(){},refreshCanvas(){},renderUI(){}};
+ e.ctx.renderActionTargets({self,node,panel:e.panel},{projectId:'project-A',componentActions:{'core.productList':[{key:'list',allowedKinds:['page','presentation']}]}});await settle();
+ assert.ok(e.requests.every(path=>new URL(path,'https://editor.test').searchParams.get('actionTargetsOnly')==='true'));
+ const select=walk(e.panel).find(n=>n.tagName==='SELECT');
+ assert.equal(select.value,'page:directory-target');assert.ok(select.options.some(option=>(option.textContent||'').includes('当前目标不可用')));
+ assert.ok(walk(e.panel).some(n=>n.getAttribute('role')==='alert'&&(n.textContent||'').includes('恢复默认流程')));
+ assert.equal(node.actions.list.pageId,'directory-target');assert.equal(node.props,props);assert.equal(snapshots,0);
+ select.value='';select.events.change();assert.equal(node.actions,undefined);assert.equal(node.props,props);assert.equal(snapshots,1);
+});
+
+test('失败画布没有语言时仍可恢复存量动作默认流程，不猜候选语言',()=>{
+ const e=env();e.frame.contentDocument.documentElement.lang='';
+ const node={id:'list',type:'core.productList',actions:{list:{kind:'page',pageId:'old'}}};
+ const self={tab:'content',findNode:()=>node,snapshot(){},renderTree(){},refreshCanvas(){},renderUI(){}};
+ e.ctx.renderActionTargets({self,node,panel:e.panel},{projectId:'project-A',componentActions:{'core.productList':[{key:'list',allowedKinds:['page']}]}});
+ const select=walk(e.panel).find(n=>n.tagName==='SELECT');assert.equal(select.disabled,false);assert.equal(e.requests.length,0);
+ select.value='';select.events.change();assert.equal(node.actions,undefined);
 });

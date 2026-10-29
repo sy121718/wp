@@ -182,7 +182,10 @@ type DeleteReq struct {
 
 // ListReq 按类型列表。
 type ListReq struct {
-	EntityType string `form:"entityType"`
+	Lang string `form:"lang" json:"lang"`
+	// ActionTargetsOnly 要求精确语言的真实激活目标，不以账本存在代替可解析。
+	ActionTargetsOnly bool   `form:"actionTargetsOnly" json:"actionTargetsOnly"`
+	EntityType        string `form:"entityType"`
 	// ProjectID 工程作用域（DB-009 第二批）：列表只返回本工程的实例，
 	// 可空时取唯一工程；多工程时必须显式指定。
 	ProjectID string `form:"projectId" json:"projectId"`

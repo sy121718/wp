@@ -6,7 +6,7 @@ package workbenchhttp
 // 或其它测试失败 ——
 //
 //	① workbenchenums 的 key 常量（enums/workbench_enums.go）；
-//	② Go 里的中文兜底（workbench_err.go 的 workbenchFacingFallbacks）；
+//	② 枚举声明处的中文兜底（workbenchenums.FallbackFor）；
 //	③ 迁移 292 的中英词条（public/migrations/292_workbench_facing_i18n.sql）。
 //
 // 漏配的表现是「英文站点显示中文」或「页面上原样显示 workbench.err.xxx」，前者不会报错、
@@ -27,6 +27,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"go_wp/internal/builder"
 	"go_wp/internal/builder/core"
 	pagecontract "go_wp/internal/module/page/contract"
 	workbenchenums "go_wp/internal/module/workbench/enums"
@@ -42,6 +43,18 @@ const (
 	facingCollectionDoc               = facingDocPrefix + `[{"type":"core.productList","id":"pl1","props":{"collectionSource":"content:product","titleField":"item.name"}}]}`
 	facingInvalidSettingsDoc          = `{"settings":{"layout":{"mode":"boxed"}},"root":[]}`
 )
+
+// workbenchFacingFallbacks 仅为历史迁移292的对账集合，生产出口统一取声明处兜底。
+var workbenchFacingFallbacks = map[string]string{
+	workbenchenums.ErrStructureTemplateFieldBinding:  workbenchenums.FallbackFor(workbenchenums.ErrStructureTemplateFieldBinding),
+	workbenchenums.ErrPreviewFieldBindingUnsupported: workbenchenums.FallbackFor(workbenchenums.ErrPreviewFieldBindingUnsupported),
+	workbenchenums.ErrPreviewDocumentInvalid:         workbenchenums.FallbackFor(workbenchenums.ErrPreviewDocumentInvalid),
+	workbenchenums.ErrTemplateEntityTypeMismatch:     workbenchenums.FallbackFor(workbenchenums.ErrTemplateEntityTypeMismatch),
+	workbenchenums.ErrTemplateFieldBindingInvalid:    workbenchenums.FallbackFor(workbenchenums.ErrTemplateFieldBindingInvalid),
+	workbenchenums.ErrTemplateProjectScope:           workbenchenums.FallbackFor(workbenchenums.ErrTemplateProjectScope),
+	workbenchenums.ErrInstanceNoDocument:             workbenchenums.FallbackFor(workbenchenums.ErrInstanceNoDocument),
+	workbenchenums.ErrInstanceSaveRejected:           workbenchenums.FallbackFor(workbenchenums.ErrInstanceSaveRejected),
+}
 
 // TestPreviewCompileFacingKey 预览编译失败的分类（判据是错误链事实，不嗅探错误字符串）。
 func TestPreviewCompileFacingKey(t *testing.T) {
@@ -90,6 +103,11 @@ func TestPreviewCompileFacingKey(t *testing.T) {
 			name: "合法集合项绑定不覆盖其它编译错误", doc: facingCollectionDoc,
 			kind: workbenchservice.PreviewDocPage, err: errors.New("内部动作解析失败"),
 			wantKey: "", wantOK: false,
+		},
+		{
+			name: "失效发布目标按真实错误链提示重选", doc: facingCollectionDoc,
+			kind: workbenchservice.PreviewDocPage, err: fmt.Errorf("%w: /private/active/path", builder.ErrPublishedActionUnavailable),
+			wantKey: workbenchenums.ErrPreviewActionTargetUnavailable, wantOK: true,
 		},
 		{
 			name: "相同错误文本不能冒充错误事实", doc: facingStructureHeaderBinding,
@@ -206,7 +224,7 @@ func TestWorkbenchFacingFallbacksMatchMigration292(t *testing.T) {
 	}
 }
 
-// TestWorkbenchFacingFallbacksCoverExpectedKeys 兜底表就是「可展示文案白名单」：只增不减地钉住。
+// TestWorkbenchFacingFallbacksCoverExpectedKeys 历史迁移292对应的声明必须保有兜底。
 //
 // 与 enums 的对账在 public/test/enums（那边按模块列文件，尚未纳入 workbench）；这里至少保证
 // 新增 key 时必须显式回来看一眼这张表，而不是把内部错误顺手放出去。
@@ -276,6 +294,12 @@ func TestWritePreviewCompileRejectedFacingText(t *testing.T) {
 			kind: workbenchservice.PreviewDocPage, err: bindingErr,
 			wantBody:    workbenchFacingFallbacks[workbenchenums.ErrPreviewFieldBindingUnsupported],
 			notContains: []string{"编译上下文缺少内容解析器", "post.title", "页面编译失败", "workbench.err."},
+		},
+		{
+			name: "失效跳转目标的422只给安全重选提示", doc: facingCollectionDoc, kind: workbenchservice.PreviewDocPage,
+			err:         fmt.Errorf("%w: 路径 /private/active/chosen 已被非符号链接占位", builder.ErrPublishedActionUnavailable),
+			wantBody:    workbenchenums.FallbackFor(workbenchenums.ErrPreviewActionTargetUnavailable),
+			notContains: []string{"/private/active", "非符号链接", "workbench.err.", "字段绑定"},
 		},
 		{
 			name: "级别③归口：合法集合项不能把内部错误改成字段上下文错误", doc: facingCollectionDoc,

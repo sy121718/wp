@@ -39,6 +39,9 @@ const ErrStructureTemplateFieldBinding = "workbench.err.structureTemplateFieldBi
 // 与结构模板同因不同处置：页面与块也不是实体实例，绑定只能来自脏数据或误拖入。
 const ErrPreviewFieldBindingUnsupported = "workbench.err.previewFieldBindingUnsupported"
 
+// ErrPreviewActionTargetUnavailable 已保存的跳转目标当前无法按发布契约解析。
+const ErrPreviewActionTargetUnavailable = "workbench.err.previewActionTargetUnavailable"
+
 // ErrPreviewDocumentInvalid 文档本身没通过校验（组件配置不完整，作者可操作）。
 const ErrPreviewDocumentInvalid = "workbench.err.previewDocumentInvalid"
 
@@ -200,6 +203,7 @@ const (
 // 逐字一致的理由：兜底只在词条缺席时可见，与词条不一致会让人以为「词条写坏了」。
 // 对账由 internal/architecture 的 error_fallback_ownership_test.go 双向守。
 var errFallbacks = map[string]string{
+	ErrPreviewActionTargetUnavailable:       "所选跳转目标当前不可用。请选中相关组件，在内容检查器的「跳转到」中重新选择可用的已发布目标，或恢复默认流程；需要保留该目标时，请先重新发布目标页面。",
 	ErrStructureTemplateFieldBinding:        "这份页眉 / 页脚里有「字段绑定」：结构模板是站点级结构，不是某个内容实体的实例，同一份页眉在商品页与文章页会拿到不同的值，所以构建时不解析绑定。请到画布里选中带绑定的组件（标题 / 正文 / 图片 / 商品卡等），清空它的绑定槽位改用静态内容；要让某段内容随实体变化，请把那个组件放进对应的内容模板。",
 	ErrPreviewFieldBindingUnsupported:       "这份文档里有「字段绑定」，但页面与全局块不是内容实体实例，编译时不解析绑定。请到画布里选中带绑定的组件，清空绑定槽位改用静态内容（或删掉该组件）；需要按实体字段显示的内容，请放进对应的内容模板。",
 	ErrPreviewDocumentInvalid:               "画布文档没通过校验：多半是某个组件的配置不完整（组件必需的槽位留空 —— 例如轮播没有 slide、表单缺提交按钮、图片缺地址），或组件树嵌套超过上限。请按画布与检查器里的提示逐项补齐、把结构拍平，再重新预览。",

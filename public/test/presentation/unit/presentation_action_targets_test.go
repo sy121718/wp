@@ -63,10 +63,25 @@ func TestPublishedInstanceActionTargetIsScopedExactAndReadable(t *testing.T) {
 	if _, err := f.pres.PublishedInstancePath(ctx, uuid.NewString(), instance.ID, pub.Lang); err == nil {
 		t.Fatal("不能引用别的工程实例")
 	}
+	choices, err := f.pres.List(ctx, &presentationdto.ListReq{ProjectID: f.projectID, Lang: pub.Lang, ActionTargetsOnly: true})
+	if err != nil || len(choices) != 1 || choices[0].ID != instance.ID {
+		t.Fatalf("真实激活实例可选: %+v %v", choices, err)
+	}
+	missing, err := f.pres.List(ctx, &presentationdto.ListReq{ProjectID: f.projectID, Lang: "missing-language", ActionTargetsOnly: true})
+	if err != nil || len(missing) != 0 {
+		t.Fatalf("候选不得回退其它语言: %+v %v", missing, err)
+	}
+	if _, err := f.pres.List(ctx, &presentationdto.ListReq{ProjectID: f.projectID, ActionTargetsOnly: true}); err == nil {
+		t.Fatal("动作候选必须指定精确语言")
+	}
 	if err := os.Remove(filepath.Join(pipeline.ActiveRoot(), strings.TrimPrefix(pub.ActivePath, "/"), "index.html")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.pres.PublishedInstancePath(ctx, f.projectID, instance.ID, pub.Lang); err == nil {
 		t.Fatal("缺文件实例不得形成死链接")
+	}
+	choices, err = f.pres.List(ctx, &presentationdto.ListReq{ProjectID: f.projectID, Lang: pub.Lang, ActionTargetsOnly: true})
+	if err != nil || len(choices) != 0 {
+		t.Fatalf("损坏实例不应列为动作候选: %+v %v", choices, err)
 	}
 }

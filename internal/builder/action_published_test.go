@@ -36,7 +36,7 @@ func TestPublishedActionsCompileOnlyResolvedPaths(t *testing.T) {
 			}
 			failure := errors.New("跨工程或目标不存在")
 			_, err = Compile(page, checkoutCompileOptions(t, WithCompileMode(CompileModePreview), WithPublishedActionPaths(func(string) (string, error) { return "", failure }, func(string) (string, error) { return "", failure }))...)
-			if !errors.Is(err, failure) {
+			if !errors.Is(err, failure) || !errors.Is(err, ErrPublishedActionUnavailable) {
 				t.Fatalf("预览不能容忍越界: %v", err)
 			}
 		})

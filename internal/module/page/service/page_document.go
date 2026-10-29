@@ -460,6 +460,9 @@ func (s *Service) List(ctx context.Context, req *pagedto.ListReq) (res []pagedto
 		return nil, err
 	}
 	lang := strings.TrimSpace(req.Lang)
+	if req.ActionTargetsOnly && lang == "" {
+		return nil, ErrInvalidParam
+	}
 	if lang == "" {
 		res = make([]pagedto.PageResp, 0, len(entities))
 		for i := range entities {
@@ -480,6 +483,15 @@ func (s *Service) List(ctx context.Context, req *pagedto.ListReq) (res []pagedto
 	publications := make(map[string][]pagedto.PagePublicationResp, len(pubs))
 	for i := range pubs {
 		pub := pubs[i]
+		if req.ActionTargetsOnly {
+			if pub.ArtifactID == nil || *pub.ArtifactID == "" {
+				continue
+			}
+			path, pathErr := pipeline.ActivePublishedPath(s.publication, s.store, pub.ActivePath, pub.ArtifactHash)
+			if pathErr != nil || path == "" {
+				continue
+			}
+		}
 		published[pub.PageID] = strings.TrimSpace(pub.ActivePath) != ""
 		publications[pub.PageID] = append(publications[pub.PageID], pagedto.PagePublicationResp{
 			Lang: pub.Lang, ActivePath: pub.ActivePath, ArtifactID: pub.ArtifactID,
@@ -489,6 +501,9 @@ func (s *Service) List(ctx context.Context, req *pagedto.ListReq) (res []pagedto
 	want := pageenums.LangStatusParse(req.LangState, pageenums.LangStatusPublished)
 	res = make([]pagedto.PageResp, 0, len(entities))
 	for i := range entities {
+		if req.ActionTargetsOnly && !published[entities[i].ID] {
+			continue
+		}
 		state := pageenums.LangStatusOf(pageExcludesLang(&entities[i], lang), published[entities[i].ID])
 		if state != want {
 			continue
@@ -958,7 +973,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 			return nil, fmt.Errorf("%w: %w", errCompileFailed,
 				pagecontract.NewPreviewProblem(verr.Error(), errCompileFailed))
 		}
-		return nil, fmt.Errorf("%w: %v", errCompileFailed, err)
+		return nil, fmt.Errorf("%w: %w", errCompileFailed, err)
 	}
 	// L3 构建期缺失告警（决策 F14 第三层）：统计本页未命中译文数并记日志，
 	// **不阻断构建**（缺译文已在取词器内回退原文，产物照常产出）。

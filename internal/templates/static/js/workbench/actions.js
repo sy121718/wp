@@ -44,10 +44,6 @@ export function renderActionTargets(ctx, meta) {
     var summary = document.createElement('summary');
     summary.textContent = editorLabel('destinations', '跳转到'); group.appendChild(summary);
     ctx.panel.appendChild(group);
-    if (!lang) {
-        var pending = document.createElement('p'); pending.className = 'wb-empty';
-        pending.textContent = editorLabel('preview-first', '画布就绪后可选择目标'); group.appendChild(pending); return;
-    }
     var fields = specs.map(function (spec) {
         var field = document.createElement('div'); field.className = 'wb-field';
         var label = document.createElement('label');
@@ -68,7 +64,19 @@ export function renderActionTargets(ctx, meta) {
     });
     var message = document.createElement('p'); message.className = 'wb-empty'; message.setAttribute('role','status');
     message.textContent = editorLabel('targets-loading', '正在读取已发布目标…'); group.appendChild(message);
-    var query = new URLSearchParams({projectId:meta.projectId,lang:lang});
+    if (!lang) {
+        message.textContent = editorLabel('preview-first', '画布就绪后可选择目标');
+        fields.forEach(function (field) {
+            if (!field.currentValue) return;
+            field.select.disabled = false;
+            field.select.addEventListener('change', function () {
+                if (!ctx.panel.contains(group) || ctx.self.findNode(ctx.node.id) !== ctx.node) return;
+                applyActionTarget(ctx.self, ctx.node, field.spec.key, field.select.value, []);
+            });
+        });
+        return;
+    }
+    var query = new URLSearchParams({projectId:meta.projectId,lang:lang,actionTargetsOnly:"true"});
     function read(path) {
         return fetch(path + '?' + query.toString(), {credentials:'same-origin',redirect:'error',headers:{Accept:'application/json'}}).then(function (response) {
             return response.json().catch(function () { throw new Error(editorLabel('targets-failed','目标读取失败，请重试')); }).then(function (body) {
@@ -85,6 +93,15 @@ export function renderActionTargets(ctx, meta) {
         var targets = publishedTargets(data[0],'page',meta.projectId,lang).concat(publishedTargets(data[1],'presentation',meta.projectId,lang));
         fields.forEach(function (field) {
             var choices = targets.filter(function (target) { return field.spec.allowedKinds.indexOf(target.kind) !== -1; });
+            var current = ctx.node.actions && ctx.node.actions[field.spec.key];
+            var checked = current && (current.kind === 'page' ? results[0] : current.kind === 'presentation' ? results[1] : null);
+            if (checked && checked.status === 'fulfilled' && !choices.some(function (choice) { return choice.kind + ':' + choice.id === field.currentValue; })) {
+                var retained = Array.from(field.select.options).find(function (option) { return option.value === field.currentValue; });
+                if (retained) retained.textContent = editorLabel('target-unavailable', '当前目标不可用，请重新选择');
+                var hint = document.createElement('p'); hint.className = 'wb-empty'; hint.setAttribute('role', 'alert');
+                hint.textContent = editorLabel('target-reselect', '当前跳转目标不可用，请重新选择已发布目标或恢复默认流程。');
+                field.select.parentNode.appendChild(hint);
+            }
             choices.forEach(function (choice) {
                 var value = choice.kind + ':' + choice.id;
                 var existing = Array.from(field.select.options).find(function (option) { return option.value === value; });

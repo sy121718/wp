@@ -9,7 +9,7 @@ package workbenchhttp
 //
 // 三件套（与 admin 的 admin_err.go 同形；page 那份已收敛到 internal/adminui.PageErrorFact）：
 //
-//	① 白名单   —— workbenchFacingFallbacks：键 = workbenchenums 的 key，值 = 中文兜底。
+//	① 声明处兜底 —— workbenchenums.FallbackFor：只取已声明错误的中文兜底。
 //	              没登记 = 不给用户看（走归口文案），漏登记只会少一句提示（一眼可见），
 //	              而漏判的方向恰好相反 —— 内部字符串只要长得像 key 就会被透出。
 //	② 归口文案 —— workbenchenums.MsgCompileFailed（缺词条回落中文原文），
@@ -55,42 +55,13 @@ const workbenchErrScene = "workbench"
 // 响应体一致 —— 否则测试里看到的是兜底长句、生产里看到的是词条短句。
 const workbenchCompileFallback = "预览编译失败"
 
-// workbenchFacingFallbacks 可展示文案的中文兜底（键 = workbenchenums 常量）。
-//
-// 每条都在说「怎么办」：这些 422 是画布上的死路，作者除了这句话没有任何别的线索。
-// 取值同时 seed 进 sys_i18n（迁移 292），英文站点取的是词条里的 en-US 一行。
-var workbenchFacingFallbacks = map[string]string{
-	workbenchenums.ErrStructureTemplateFieldBinding: "这份页眉 / 页脚里有「字段绑定」：结构模板是站点级结构，不是某个内容实体的实例，" +
-		"同一份页眉在商品页与文章页会拿到不同的值，所以构建时不解析绑定。请到画布里选中带绑定的组件" +
-		"（标题 / 正文 / 图片 / 商品卡等），清空它的绑定槽位改用静态内容；要让某段内容随实体变化，" +
-		"请把那个组件放进对应的内容模板。",
-	workbenchenums.ErrPreviewFieldBindingUnsupported: "这份文档里有「字段绑定」，但页面与全局块不是内容实体实例，编译时不解析绑定。" +
-		"请到画布里选中带绑定的组件，清空绑定槽位改用静态内容（或删掉该组件）；" +
-		"需要按实体字段显示的内容，请放进对应的内容模板。",
-	workbenchenums.ErrPreviewDocumentInvalid: "画布文档没通过校验：多半是某个组件的配置不完整（组件必需的槽位留空 —— " +
-		"例如轮播没有 slide、表单缺提交按钮、图片缺地址），或组件树嵌套超过上限。" +
-		"请按画布与检查器里的提示逐项补齐、把结构拍平，再重新预览。",
-	workbenchenums.ErrTemplateEntityTypeMismatch: "这套模板是给另一种内容类型用的（例如拿商品模板渲染文章），不能这样预览 —— " +
-		"模板的数据源与当前实体的字段对不上。请换成与当前类型一致的模板；" +
-		"要新建就到「内容模板」页按当前类型建一套。",
-	workbenchenums.ErrTemplateFieldBindingInvalid: "模板里的字段绑定越界：绑定的字段不属于当前内容类型的数据源，或字段名已被改名 / 删除。" +
-		"请回到工作台检查带绑定的组件，改用本类型数据源里确实存在的字段（白名单由实体类型决定）。",
-	workbenchenums.ErrTemplateProjectScope: "预览的工程作用域没定下来：站点里有多个工程时必须显式指定。" +
-		"请从对应工程的入口（页面列表 / 商品详情）重新打开工作台，让地址里带上 projectId。",
-	workbenchenums.ErrInstanceNoDocument: "这个实例还没有可编辑的文档：它既没有发布过快照，也没有自己的覆盖文档。" +
-		"请先到它的详情页点「重新套用预设」生成初始文档，再回到工作台编辑。",
-	workbenchenums.ErrInstanceSaveRejected: "保存没通过：这份文档没有编译成功（组件必需槽位留空 / 字段绑定越界 / " +
-		"引用的模板或块不可用都会走到这里）。你的改动没有写入，线上内容保持不变 —— " +
-		"请按画布与检查器里的提示修正后重试；想回到跟随模板的状态，用详情页的「重新套用预设」。",
-}
-
-// workbenchFacingText 命中可展示文案 → 当前语言的文本；未登记 → 返回空串（调用方走归口文案）。
+// workbenchFacingText 按已分类的错误key取声明处兜底与当前语言文本；未声明则归口。
 //
 // 取词直接经 i18n.TranslateFunc，语言取自请求；这些成品文本会进
 // 预览 iframe 的 body 与 JSON message，不经过 pkg/response 的翻译层。
 func workbenchFacingText(c *gin.Context, key string) string {
-	fallback, ok := workbenchFacingFallbacks[key]
-	if !ok {
+	fallback := workbenchenums.FallbackFor(key)
+	if fallback == "" {
 		return ""
 	}
 	return i18n.TranslateFunc(response.RequestLanguage(c))(key, fallback)
@@ -142,7 +113,7 @@ func writePreviewCompileRejected(c *gin.Context, document json.RawMessage, kind 
 
 // workbenchShortFallbacks 受控短句的中文兜底（键 = workbenchenums 常量，值 = 包内中文原文）。
 //
-// 与 workbenchFacingFallbacks 的分工：那张表是**可归因长文案**（错在哪 + 怎么办），
+// 与枚举声明处的分工：可归因长文案由声明处给（错在哪 + 怎么办），
 // 这张表是画布出口的**固定短句** —— 少一个参数、记录不存在、能力未装配、序列化失败。
 //
 // 为什么单独一张表而不是塞进调用点：调用点有四十余处，`c.String(code, key, "中文")`

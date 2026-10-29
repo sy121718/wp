@@ -444,6 +444,9 @@ func ClassifyPreviewRejection(document json.RawMessage, kind PreviewDocKind, err
 // 只有组件实际返回 ErrContentResolverRequired 才给实体绑定的处置提示，
 // 其它内部错误保留安全归口，不把错误原文交给作者。
 func PreviewCompileFacingKey(document json.RawMessage, kind PreviewDocKind, compileErr error) (string, bool) {
+	if errors.Is(compileErr, builder.ErrPublishedActionUnavailable) {
+		return workbenchenums.ErrPreviewActionTargetUnavailable, true
+	}
 	if errors.Is(compileErr, core.ErrContentResolverRequired) {
 		if kind == PreviewDocStructureTemplate {
 			return workbenchenums.ErrStructureTemplateFieldBinding, true

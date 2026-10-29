@@ -40,6 +40,8 @@ type ListReq struct {
 	Lang string `form:"lang" json:"lang"`
 	// LangState 该语言的产出状态（空 = 已发布；判据见 pageenums.LangStatusOf）。
 	LangState string `form:"state" json:"state"`
+	// ActionTargetsOnly 只列出在精确语言中可被构建器解析的激活目标。
+	ActionTargetsOnly bool `form:"actionTargetsOnly" json:"actionTargetsOnly"`
 }
 
 // PageListQueryReq 后台页面列表的查询串（筛选栏的三项）。

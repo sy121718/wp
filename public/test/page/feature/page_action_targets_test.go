@@ -108,10 +108,61 @@ func TestPublishedPageActionTargetIsScopedExactAndReadable(t *testing.T) {
 	if err != nil || !strings.Contains(string(html), `href="`+pub.ActivePath+`"`) {
 		t.Fatalf("真实构建须输出目标Publication路径: err=%v", err)
 	}
+	choices, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID, Lang: pub.Lang, ActionTargetsOnly: true})
+	if err != nil || len(choices) != 1 || choices[0].ID != target.ID {
+		t.Fatalf("合法激活目标必须可选: %+v %v", choices, err)
+	}
+	if _, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID, ActionTargetsOnly: true}); err == nil {
+		t.Fatal("动作候选必须指定精确语言")
+	}
+	active := filepath.Join(pipeline.ActiveRoot(), strings.TrimPrefix(pub.ActivePath, "/"))
+	link, err := os.Readlink(active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{}
+	for _, name := range []string{"manifest.json", "index.html"} {
+		files[name], err = os.ReadFile(filepath.Join(active, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Remove(active); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(active, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(active, name), content, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := locator.PublishedPagePath(ctx, projectID, target.ID, pub.Lang); err == nil {
+		t.Fatal("相同内容的普通目录仍违反真实激活契约")
+	}
+	choices, err = svc.List(ctx, &pagedto.ListReq{ProjectID: projectID, Lang: pub.Lang, ActionTargetsOnly: true})
+	if err != nil || len(choices) != 0 {
+		t.Fatalf("普通目录占位不能作为可选跳转目标: %+v %v", choices, err)
+	}
+	ledger, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID, Lang: pub.Lang})
+	if err != nil || len(ledger) != 1 || ledger[0].ID != target.ID {
+		t.Fatalf("普通列表仍应如实保留发布账本: %+v %v", ledger, err)
+	}
+	if err := os.RemoveAll(active); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(link, active); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Remove(filepath.Join(pipeline.ActiveRoot(), strings.TrimPrefix(pub.ActivePath, "/"), "index.html")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := locator.PublishedPagePath(ctx, projectID, target.ID, pub.Lang); err == nil {
 		t.Fatal("缺失产物不能作为已发布目标")
+	}
+	choices, err = svc.List(ctx, &pagedto.ListReq{ProjectID: projectID, Lang: pub.Lang, ActionTargetsOnly: true})
+	if err != nil || len(choices) != 0 {
+		t.Fatalf("文件损坏目标不能列作候选: %+v %v", choices, err)
 	}
 }

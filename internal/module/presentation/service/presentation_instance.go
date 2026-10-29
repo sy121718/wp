@@ -211,6 +211,10 @@ func (s *Service) List(ctx context.Context, req *presentationdto.ListReq) (list 
 	if req == nil {
 		req = &presentationdto.ListReq{}
 	}
+	lang := strings.TrimSpace(req.Lang)
+	if req.ActionTargetsOnly && lang == "" {
+		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
+	}
 	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
 	if err != nil {
 		return nil, err
@@ -224,6 +228,20 @@ func (s *Service) List(ctx context.Context, req *presentationdto.ListReq) (list 
 		resp, rerr := s.toResp(ctx, r)
 		if rerr != nil {
 			return nil, rerr
+		}
+		if req.ActionTargetsOnly {
+			active := false
+			for _, pub := range resp.Publications {
+				if pub.Lang != lang || pub.ArtifactID == nil || *pub.ArtifactID == "" {
+					continue
+				}
+				path, pathErr := pipeline.ActivePublishedPath(s.publication, s.store, pub.ActivePath, pub.ArtifactHash)
+				active = pathErr == nil && path != ""
+				break
+			}
+			if !active {
+				continue
+			}
 		}
 		out = append(out, resp)
 	}
