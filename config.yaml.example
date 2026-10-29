@@ -167,14 +167,12 @@ upload:
   enabled: true
   default_provider: local
   max_size: 10MB
-  # 媒体资源的对外前缀：**站点根地址**（如 https://www.example.com），
-  # 系统补 "/storage" 路径段。配置后媒体库、附件接口与构建产物里给出的是完整链接；
-  # 留空/不写则是相对路径 /storage/<id>.<ext>。
-  #
-  # 为什么建议配：发布到独立域名或 CDN 时，相对路径会指回 CMS 自己那一台；
-  # 而完整链接是**读取时按本配置派生**的（不是入库时冻结），改这里全站同时跟上，
-  # 不需要回填 sys_attachment.url，也不会漏掉已经复制进 Page Document 的引用。
-  # base_url: "https://www.example.com"
+  # 媒体资源必须使用完整 HTTP(S) 地址。站点根会自动补 /storage；
+  # 已含 /storage 时不重复追加。CDN 可以单独配置域名及路径前缀。
+  # 未单独配置时复用可信 WP_SITE_BASE_URL；release 模式两者都缺失则拒绝启动。
+  # debug/test 模式仅按 server.port 使用 http://127.0.0.1:<端口>/storage，
+  # 不读取请求 Host。域名变化后附件与变体读取按新配置派生；已发布页面需重新发布。
+  # base_url: "https://media.example.com"
   allowed_extensions: [".jpg", ".jpeg", ".png", ".gif", ".pdf", ".txt"]
   allowed_mime_types: ["image/jpeg", "image/png", "image/gif", "application/pdf", "text/plain"]
 
