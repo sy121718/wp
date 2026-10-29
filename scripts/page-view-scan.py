@@ -15,10 +15,14 @@ check-page-view-dto.sh 的扫描器。单独成文件而不是内嵌在 shell �
 从前是单行判定，并注明「跨行时宁可多算」。那个保守取法的代价后来变成了实质问题：
 台账挂着一批跨行写的 JSON-RPC 载荷，永远迁不掉 —— 数字看着像永远做不完。
 
-不计入的三类：
+不计入的四类：
   · JSON 出口语句里的 gin.H（不是模板契约）
   · 空字面量 gin.H{}（没有键，不可能是视图）
   · []gin.H / map[string]gin.H（容器类型与 append）
+  · **内部结构构造器**：函数签名返回 map[string]any / []gin.H / map[string]gin.H 时，
+    函数体里攒的 gin.H 是中间产物，不是一个视图。典型形态是把页面脚本要用的
+    元数据摊成 map 再 json.Marshal 成字符串槽（模板读的是那个字符串，不是这个 map）。
+    不排除它，门禁会把这类合法写法永久挂成"欠账"。
 
 注意 `type Xxx gin.H` 这一行本身不算，但它的字面量仍按语句计入 —— 具名视图别名是
 「显式命名的视图」，本门禁要消灭的是「控制器里现场拼一份 map」，不是它。
@@ -67,12 +71,25 @@ def statements(src):
     return out
 
 
+# NON_VIEW_RETURN 函数签名返回「内部结构」而非视图：函数体里的 gin.H 不算页面视图。
+#
+# 判据是返回类型，不是函数名（名字随时会改）。三种返回形态都是中间产物：
+#   map[string]any / map[string]interface{}  —— 元数据表，通常随后 json.Marshal
+#   []gin.H / map[string]gin.H               —— 控件/选项列表，之后还会被再加工
+NON_VIEW_RETURN = re.compile(
+    r"^func\b[^{]*\b(map\[string\](any|interface\{\})|\[\]gin\.H|map\[string\]gin\.H)\s*\{"
+)
+
+
 def main():
     path = sys.argv[1]
     src = open(path, encoding="utf-8").read()
     gin = 0
     for st in statements(src):
         if JSON_EGRESS.search(st):
+            continue
+        # 内部结构构造器：它的 gin.H 不进模板。
+        if NON_VIEW_RETURN.search(st.strip()):
             continue
         # 注释里提到的 gin.H（技术说明）不是代码：先把注释行剔掉再数。
         code_only = "\n".join(re.sub(r"//.*$", "", ln) for ln in st.split("\n"))

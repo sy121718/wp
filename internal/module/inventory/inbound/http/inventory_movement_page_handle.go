@@ -42,9 +42,11 @@ func (h *inventoryPageHandle) InventoryMovementsPage(c *gin.Context) {
 
 // movementsData 取齐流水页的数据并组成视图。
 //
-// 返回 gin.H：与台账页 / 调拨页同一手法 —— 失败页（inventoryPageErrorData）与正常页
-// 共用一套键，两套强类型形状会各自漂一份。
-func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.MovementPageReq) (gin.H, error) {
+// 返回 InventoryPageResp（与其它库存页同一个视图类型）："键集齐全由类型保证" ——
+// 漏一个字段是零值、而不是模板取不到键导致整页中断。此前这里返回 gin.H，理由是
+// "失败页与正常页共用一套键"，但失败页早已是强类型 inventoryLoadFailedView，
+// 那条理由不成立，gin.H 只是没跟着迁完的残留。
+func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.MovementPageReq) (*inventorydto.InventoryPageResp, error) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
@@ -81,23 +83,23 @@ func (h *inventoryPageHandle) movementsData(c *gin.Context, query *inventorydto.
 		"timeFrom":    query.TimeFrom,
 		"timeTo":      query.TimeTo,
 	})
-	return gin.H{
-		"title":           tr(inventoryenums.InventoryMovementsTitle, "库存流水"),
-		"menu":            "inventory-movements",
-		"Projects":        projectOptions(projects),
-		"SelectedProject": selected,
-		"Warehouses":      warehouses,
-		"Reasons":         reasons,
-		"Directions":      directionOptions(tr),
-		"Movements":       rows,
-		"FilterSKU":       strings.TrimSpace(query.SKUCode),
-		"FilterWarehouse": strings.TrimSpace(query.WarehouseID),
-		"FilterDirection": strings.TrimSpace(query.Direction),
-		"FilterReason":    strings.TrimSpace(query.ReasonCode),
-		"FilterTimeFrom":  strings.TrimSpace(query.TimeFrom),
-		"FilterTimeTo":    strings.TrimSpace(query.TimeTo),
-		"ListQuery":       binding.ListQuery(c, inventoryMovementsBackKeys...),
-		"Pagination":      pg,
+	return &inventorydto.InventoryPageResp{
+		Title:           tr(inventoryenums.InventoryMovementsTitle, "库存流水"),
+		Menu:            "inventory-movements",
+		Projects:        projectOptions(projects),
+		SelectedProject: selected,
+		Warehouses:      warehouses,
+		Reasons:         reasons,
+		Directions:      directionOptions(tr),
+		Movements:       rows,
+		FilterSKU:       strings.TrimSpace(query.SKUCode),
+		FilterWarehouse: strings.TrimSpace(query.WarehouseID),
+		FilterDirection: strings.TrimSpace(query.Direction),
+		FilterReason:    strings.TrimSpace(query.ReasonCode),
+		FilterTimeFrom:  strings.TrimSpace(query.TimeFrom),
+		FilterTimeTo:    strings.TrimSpace(query.TimeTo),
+		ListQuery:       binding.ListQuery(c, inventoryMovementsBackKeys...),
+		Pagination:      pg,
 	}, nil
 }
 

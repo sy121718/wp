@@ -39,9 +39,9 @@ func (h *inventoryTransferPageHandle) InventoryTransfersPage(c *gin.Context) {
 	pageview.Render(c, data)
 }
 
-// transfersData 取齐调拨页的数据并组成视图。
+// transfersData 取齐调拨页的数据并组成视图（强类型，见 TransferListPageResp）。
 func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
-	query *inventorydto.ListTransferReq) (gin.H, error) {
+	query *inventorydto.ListTransferReq) (*inventorydto.TransferListPageResp, error) {
 	ctx := c.Request.Context()
 	projects, err := h.projects.List(ctx)
 	if err != nil {
@@ -73,18 +73,18 @@ func (h *inventoryTransferPageHandle) transfersData(c *gin.Context,
 	if werr != nil {
 		return nil, werr
 	}
-	return gin.H{
-		"Warehouses":      warehouses,
-		"title":           tr(inventoryenums.InventoryTransfersTitle, "调拨单"),
-		"menu":            "inventory-transfers",
-		"Projects":        projects,
-		"SelectedProject": selected,
-		"Rows":            list,
-		"FilterStatus":    query.Status,
-		"Keyword":         query.Keyword,
-		"StatusOptions":   transferStatusOptions(tr),
-		"ListQuery":       binding.ListQuery(c, inventoryTransferBackKeys...),
-		"Pagination":      pg,
+	return &inventorydto.TransferListPageResp{
+		Warehouses:      warehouses,
+		Title:           tr(inventoryenums.InventoryTransfersTitle, "调拨单"),
+		Menu:            "inventory-transfers",
+		Projects:        projectOptions(projects),
+		SelectedProject: selected,
+		Rows:            list,
+		FilterStatus:    query.Status,
+		Keyword:         query.Keyword,
+		StatusOptions:   transferStatusOptions(tr),
+		ListQuery:       binding.ListQuery(c, inventoryTransferBackKeys...),
+		Pagination:      pg,
 	}, nil
 }
 

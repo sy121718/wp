@@ -57,6 +57,14 @@ PLAIN_SCRIPTS=(
   check-write-attributes.sh
   check-write-combinations.sh
   check-write-fields.sh
+  # 这两条曾经只在 scripts/ 下摆着、从未进过任何数组 —— 于是永远不会变红。
+  # check-page-view-dto.sh 的台账里写着「gin.H 归零」，实际还在增长（mail 1 / order 2 /
+  # inventory 3），因为没人跑它。纳管时已把 gin.H 清零。
+  check-page-view-dto.sh
+  check-component-colors.sh
+  # 扫描器判据自己的测试：门禁误判是双向损失（多算 = 合法写法永久挂账，
+  # 少算 = 真视图混过去），所以判据本休也得有判据。
+  tests/test_page_view_scan.py
 )
 
 # 需要真实 PostgreSQL，且必须在迁移（go run ./cmd -migrate-only）之后。
