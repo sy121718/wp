@@ -79,6 +79,10 @@ DB_SCRIPTS=(
   # 没有 config.yaml，脚本以 exit 2 结束，整个 unit job 因此长期是红的（与代码无关）。
   check-inventory-sku-format.sh
   check-stock-sku-prefix-collisions.sh
+  # B08 / DB-11 的只读前置：报告前缀重复索引，不自动删除
+  #（删索引不可逆，且"看起来冗余"与"真冗余"要靠扫描次数与执行计划区分）。
+  # 无库时脚本自己打印"跳过"并退出 0 —— 与上面两条同口径。
+  check-duplicate-indexes.sh
 )
 
 declare -a SELECTED=()
