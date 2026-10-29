@@ -68,7 +68,7 @@ func TestProductBindingSpecificProductAndVariant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := &productdto.PublicProductOptionsResp{ID: bindingProductID, Name: "设计杯", Variants: []productdto.PublicProductVariantOption{{ID: bindingVariantID, SKU: "CUP", Price: 2900, Options: map[string]string{}}}}
+	data := &productdto.PublicProductOptionsResp{ID: bindingProductID, Name: "设计杯", Variants: []productdto.PublicProductVariantOptionResp{{ID: bindingVariantID, SKU: "CUP", Price: 2900, Options: map[string]string{}}}}
 	src := bindingProductSource{data: data}
 	props := `{"productSource":"specific","productId":"` + bindingProductID + `","variantId":"` + bindingVariantID + `"}`
 	opts := []CompileOption{WithCompileMode(CompileModePublish), WithComponentSet(set), WithProjectID(bindingProductID), WithProductDataSource(src)}
