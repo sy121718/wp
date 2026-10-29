@@ -185,6 +185,10 @@ func matchHandler(path, mod string, handlerDTO map[string]string) string {
 		return ""
 	}
 	rest := segs[2:]
+	if segs[1] != mod {
+		// API资源名与聚合目录不同时，保留资源名以匹配 RoleMenuSave 等真实方法。
+		rest = segs[1:]
+	}
 
 	// 候选键**只认同模块**的 "mod:Handler"。
 	//
@@ -234,6 +238,9 @@ func matchHandler(path, mod string, handlerDTO map[string]string) string {
 		if len(camel) > 0 {
 			cands = append(cands, verb+strings.Join(camel, ""))
 			cands = append(cands, verb+camel[len(camel)-1])
+			if segs[1] != mod {
+				cands = append(cands, strings.Join(camel, "")+verb)
+			}
 		}
 		// 只有路径**没有任何资源段**时才试裸动词（`/api/x/publish` → Publish）。
 		// 有资源段时不能回退到裸动词：`/api/product/detail-template/create` 会因此
@@ -275,11 +282,14 @@ func matchHandler(path, mod string, handlerDTO map[string]string) string {
 	return ""
 }
 
-// moduleOfRoutePath 从 /api/<mod>/... 取出模块名（与 handler 声明的模块目录同名）。
+// moduleOfRoutePath 从API路径确定处理器所属模块；角色路由复用admin聚合。
 func moduleOfRoutePath(path string) string {
 	segs := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segs) < 2 {
 		return ""
+	}
+	if segs[1] == "role" {
+		return "admin"
 	}
 	return segs[1]
 }

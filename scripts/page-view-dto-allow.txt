@@ -23,8 +23,6 @@
 #     没有 PageSlot，模板名由 *_router.go 的常量给出。
 #   · page 一处：译文保存失败的逐行错误片段（htmx 替换 #page-translations-errors）。
 #     逐行错误说"哪一行有什么问题"，塞不进 toast，所以必须回一个片段。
-#   · user 一处：访客页（登录/注册/找回）。layout.html 明确写着"访客侧要求无脚本可用"，
-#     失败重渲是传统表单的常规做法，也不该引入 htmx。
 #   · workbench 一处：编辑器打不开时的失败壳。layout 本身不可用，失败页不能依赖它的
 #     任何键，也不依赖 JS。
 #
@@ -35,7 +33,6 @@
 
 internal/module/admin/inbound/http/admin_page.go gin=0 html=2
 internal/module/page/inbound/http/page_translations_handle.go gin=0 html=1
-internal/module/user/inbound/http/user_page.go gin=0 html=1
 internal/module/workbench/inbound/http/inspector_handle.go gin=0 html=1
 
---total gin=0 html=5
+--total gin=0 html=4
