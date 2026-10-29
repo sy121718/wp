@@ -3,6 +3,7 @@
 import {
     meta, initialDoc, getCSRFToken, csrfHeaders, wbParseColor, wbHslToHsv, wbHsvToRgb, wbRgbToHsv, wbColorPicker, themePrimary, controlLabel, optionLabel, clone, componentSchemas, CONTROL_LABELS, OPTION_LABELS, paletteItems, paletteGroups, MAX_NEST_DEPTH, WB_CP_CHECKER, buildInsertNode,
 } from '../core.js';
+import { previewRequestURL } from '../preview.js';
 
 import { starterPresets } from '../starter-presets.js';
 import { openBusinessPreset, presetIdentity } from '../business-presets.js';
@@ -491,6 +492,9 @@ export const canvasMethods = {
                     var csrf = document.createElement('input'); csrf.type = 'hidden'; csrf.name = 'csrf_token'; form.appendChild(csrf);
                     document.body.appendChild(form);
                 }
+                form.action = previewRequestURL(meta.saveBase === 'block' ? '/workbench/block/preview' : '/workbench/preview', this.previewState);
+                if (!form.elements.projectId) { var project = document.createElement('input'); project.name = 'projectId'; form.appendChild(project); }
+                form.elements.projectId.value = meta.projectId || '';
                 form.elements.id.value = meta.pageId;
                 form.elements.expectedVersion.value = this.draftVersion;
                 form.elements.draftDocument.value = JSON.stringify(this.doc);
@@ -515,6 +519,7 @@ export const canvasMethods = {
                     });
                     document.body.appendChild(form);
                 }
+                form.action = previewRequestURL('/workbench/template/preview', this.previewState);
                 form.elements.id.value = meta.saveBase === 'instance' ? '' : meta.pageId;
                 form.elements.instance.value = meta.saveBase === 'instance' ? meta.pageId : '';
                 form.elements.entityType.value = meta.entityType || '';
@@ -535,7 +540,7 @@ export const canvasMethods = {
                     body.set('projectId', meta.projectId || '');
                     body.set('draftDocument', JSON.stringify(this.doc));
                     body.set('csrf_token', getCSRFToken());
-                    return fetch('/workbench/template/preview', {
+                    return fetch(previewRequestURL('/workbench/template/preview', this.previewState), {
                         method: 'POST',
                         headers: csrfHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
                         body: body.toString(),
@@ -548,7 +553,8 @@ export const canvasMethods = {
                 body.set('expectedVersion', this.draftVersion);
                 body.set('draftDocument', JSON.stringify(this.doc));
                 body.set('csrf_token', getCSRFToken());
-                return fetch('/workbench/preview', {
+                body.set('projectId', meta.projectId || '');
+                return fetch(previewRequestURL(meta.saveBase === 'block' ? '/workbench/block/preview' : '/workbench/preview', this.previewState), {
                     method: 'POST',
                     headers: csrfHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
                     body: body.toString(),

@@ -1029,3 +1029,9 @@ button.wb-color-swatch:hover { border-color: var(--sky-c-primary, #3d444f); }
 @media (hover: none) {
     .wb-palette-item.is-slot-locked { background: var(--sky-c-bg-soft, #f3f4f6); }
 }
+
+/* 预览状态是画布工具，不进入文档或发布配置。 */
+.wb-preview-states:not([hidden]) { display: flex; align-items: center; gap: 6px; white-space: nowrap; font-size: var(--ui-fs-xs); }
+.wb-preview-states select { max-width: 140px; min-height: 30px; padding: 4px 6px; color: inherit; background: var(--sky-c-surface); border: 1px solid var(--sky-c-border); border-radius: 6px; }
+.wb-control-group { margin-top: 16px; border-top: 1px solid var(--sky-c-border); padding-top: 12px; }
+.wb-control-group > summary { cursor: pointer; font-weight: 600; margin-bottom: 12px; }

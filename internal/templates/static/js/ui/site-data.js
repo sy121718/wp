@@ -102,6 +102,20 @@
                 roots.forEach(function(root){ if(root.getAttribute('data-site-view')===name) refresh(root); });
             }
         },
+        supportedPreviewStates:function (root) {
+            var helper = global.WPSitePreview;
+            if (!helper || !helper.active) return [];
+            var present = Object.create(null);
+            var scope = root || global.document;
+            var nodes = Array.from(scope.querySelectorAll(selector));
+            if (scope.matches && scope.matches(selector)) nodes.unshift(scope);
+            nodes.forEach(function (node) {
+                var preview = previews[node.getAttribute('data-site-view')];
+                if (!preview || !Array.isArray(preview.states)) return;
+                preview.states.forEach(function (state) { if (helper.states.indexOf(state) !== -1) present[state] = true; });
+            });
+            return helper.states.filter(function (state) { return present[state]; });
+        },
         refresh:refresh
     };
     if (global.document.readyState === 'loading') global.document.addEventListener('DOMContentLoaded', start, {once:true});

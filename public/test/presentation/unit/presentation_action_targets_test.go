@@ -34,6 +34,26 @@ func TestPublishedInstanceActionTargetIsScopedExactAndReadable(t *testing.T) {
 		t.Fatalf("真实发布应登记语言: %+v %v", rows, err)
 	}
 	pub := rows[0]
+	listed, err := f.pres.List(ctx, &presentationdto.ListReq{ProjectID: f.projectID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var selected *presentationdto.InstanceResp
+	for _, row := range listed {
+		if row.ID == instance.ID {
+			selected = row
+			break
+		}
+	}
+	if selected == nil || len(selected.Publications) != len(rows) {
+		t.Fatal("作者目标列表未暴露真实逐语言Publication")
+	}
+	for i, published := range selected.Publications {
+		if published.Lang != rows[i].Lang || published.ActivePath != rows[i].ActivePath || published.ArtifactHash != rows[i].ArtifactHash || published.ArtifactID == nil || rows[i].ArtifactID == nil || *published.ArtifactID != *rows[i].ArtifactID {
+			t.Fatalf("目标列表语言事实与Publication不同：%+v %+v", published, rows[i])
+		}
+	}
+
 	if got, err := f.pres.PublishedInstancePath(ctx, f.projectID, instance.ID, pub.Lang); err != nil || got != pub.ActivePath {
 		t.Fatalf("实例路径必须等于目标语言Publication: %s %+v %v", got, pub, err)
 	}

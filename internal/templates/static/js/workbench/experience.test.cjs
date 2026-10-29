@@ -7,9 +7,10 @@ function methods(file, name, globals = {}) {
     const source = fs.readFileSync(__dirname + '/methods/' + file + '.js', 'utf8')
         .replace(/^import\s*\{[\s\S]*?\}\s*from\s*'[^']*';/gm, '')
         .replace('export const ' + name, 'var ' + name);
-    const context = vm.createContext({ console, JSON, URL, URLSearchParams, setTimeout, clearTimeout,
+    const context = vm.createContext({ console, JSON, URL, URLSearchParams, setTimeout, clearTimeout, window:{location:{href:"https://editor.test/workbench"}},
         meta: { pageId: 'page-1', draftPath: '/demo', target: { type: 'page', save: { path: '/api/page/draft/save' }, saveBody: { versionKey: 'expectedVersion' } } },
         csrfHeaders: (h) => h, ...globals });
+    vm.runInContext(fs.readFileSync(__dirname + '/preview.js','utf8').replace(/export (function|const) /g,'$1 '), context);
     vm.runInContext(source, context);
     return context[name];
 }
@@ -351,7 +352,7 @@ function canvasEditor() {
     const submissions = [];
     const frame = { name: 'wb-canvas', contentDocument: { querySelector() { return {}; } }, contentWindow: { postMessage(message) { messages.push(message); } } };
     const form = {
-        elements: { id: {}, expectedVersion: {}, draftDocument: {}, csrf_token: {} },
+        elements: { id: {}, projectId: {}, expectedVersion: {}, draftDocument: {}, csrf_token: {} },
         submit() { submissions.push(JSON.parse(this.elements.draftDocument.value)); }
     };
     const document = { getElementById(id) { return id === 'wb-canvas' ? frame : id === 'wb-preview-form' ? form : null; } };

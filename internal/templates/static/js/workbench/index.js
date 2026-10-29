@@ -25,6 +25,7 @@ import { mediaMethods } from './methods/media.js';
 import { apiMethods } from './methods/api.js';
 import { workspaceMethods } from './methods/workspace.js';
 import { shortcutsMethods } from './methods/shortcuts.js';
+import { previewMethods } from './preview.js';
 
 /** workbench 实例工厂：初始状态 + 各功能模块方法合并。 */
 export function workbench() {
@@ -35,6 +36,7 @@ export function workbench() {
 
         // 视图状态
         device: 'desktop',
+        previewState: 'default',
         tab: 'content',         // 内容 / 布局 / 样式 / 动效
         view: 'library',           // 左侧面板视图：edit / library / settings / global / history
         paletteOpen: { basic: true },  // 组件库手风琴展开状态（默认展开基础组件）
@@ -86,7 +88,7 @@ export function workbench() {
     },
         stateMethods, canvasMethods, historyMethods, nodesMethods,
         panelsMethods, treeMethods, inspectorMethods, mediaMethods,
-        apiMethods, workspaceMethods, shortcutsMethods);
+        apiMethods, workspaceMethods, shortcutsMethods, previewMethods);
 }
 
 // 直接装配原生事件，避免宿主 Webview 的 Alpine 表达式缓存影响工作台操作。

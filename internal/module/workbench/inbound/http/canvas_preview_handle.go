@@ -221,10 +221,11 @@ func (h *Handle) workbenchInstance(c *gin.Context, instanceID string) {
 		renderModeLabel = workbenchShortText(c, workbenchenums.ModeDocument)
 	}
 	metaJSON, merr := json.Marshal(gin.H{
-		"mediaBaseUrl":    upload.BaseURL(),
-		"businessPresets": builder.BusinessPresets(),
-		"blocks":          h.svc.BlockSummaries(c.Request.Context(), inst.ProjectID),
-		"target":          workbenchTargetOf(EditTargetInstance), "pageId": inst.ID,
+		"mediaBaseUrl":     upload.BaseURL(),
+		"businessPresets":  builder.BusinessPresets(),
+		"componentActions": builder.ComponentActions(),
+		"blocks":           h.svc.BlockSummaries(c.Request.Context(), inst.ProjectID),
+		"target":           workbenchTargetOf(EditTargetInstance), "pageId": inst.ID,
 		"saveBase": "instance", "entityType": inst.EntityType, "entityId": inst.EntityID,
 		"projectId": inst.ProjectID, "draftPath": "", "instanceMode": true,
 		"renderMode": renderMode,

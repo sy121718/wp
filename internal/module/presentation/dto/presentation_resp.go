@@ -53,14 +53,21 @@ type PreviewInstanceResp struct {
 	TemplateVersion   int64  `json:"templateVersion"`
 }
 
-// InstanceResp 实例响应。
-//
-// Status 由 active_artifact_id 指针推导（active / draft），不是表列。
+// InstancePublicationResp 是每门语言的真实激活记录，不用最近发布镜像代替。
+type InstancePublicationResp struct {
+	Lang         string  `json:"lang"`
+	ActivePath   string  `json:"activePath"`
+	ArtifactID   *string `json:"artifactId,omitempty"`
+	ArtifactHash string  `json:"artifactHash"`
+}
+
+// InstanceResp 实例响应，Status由active_artifact_id指针推导。
 type InstanceResp struct {
-	ID         string `json:"id"`
-	ProjectID  string `json:"projectId"`
-	EntityType string `json:"entityType"`
-	EntityID   string `json:"entityId"`
+	Publications []InstancePublicationResp `json:"publications,omitempty"`
+	ID           string                    `json:"id"`
+	ProjectID    string                    `json:"projectId"`
+	EntityType   string                    `json:"entityType"`
+	EntityID     string                    `json:"entityId"`
 	// InstanceRole 实例角色（审计 EDT-004）：detail = 实体详情页，archive = 归档列表页。
 	// 同一个分类可以同时有这两张页面；空值按 detail 处理（既有行为不变）。
 	InstanceRole string `json:"instanceRole,omitempty"`

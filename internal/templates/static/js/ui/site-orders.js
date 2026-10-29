@@ -154,9 +154,9 @@
                 if(state==='success')renderResult(root,{returnNo:'PREVIEW-RMA-001',refundAmount:2900});
                 else{var form=part(root,'return').querySelector('form');text(form,'[data-write-status]',label(root,state==='submitting'?'Loading':'ReturnPlaceholder'));form.querySelector('[data-write-status]').hidden=false;}
             }
-        });
-        global.WPSiteData.registerPreview('orderDetail',function(host){renderDetail(host,sample);});
-        global.WPSiteData.registerPreview('orderReturnable',function(host){renderReturnable(host,{canRequest:true,items:[{orderItemId:101,returnable:2}]});});
-        global.WPSiteData.registerPreview('orderReturns',function(host){renderReturns(host,{list:[]});});
+        },['default','unauthenticated','service-error','forbidden','not-found','loading','empty','validation-error','submitting','success']);
+        global.WPSiteData.registerPreview('orderDetail',function(host){renderDetail(host,sample);},['default']);
+        global.WPSiteData.registerPreview('orderReturnable',function(host){renderReturnable(host,{canRequest:true,items:[{orderItemId:101,returnable:2}]});},['default']);
+        global.WPSiteData.registerPreview('orderReturns',function(host){renderReturns(host,{list:[]});},['default']);
     }
 })(window);

@@ -89,17 +89,19 @@
             if (state === 'empty') return {items:[],total:0,itemCount:0,lineCount:0,currency:'CNY',empty:true};
             return {items:[{variantId:'preview-item',productName:'预览商品 · 亚麻手提包',variantLabel:'自然色 · 标准款',unitPrice:4900,lineTotal:9800,quantity:2,available:state==='out-of-stock'?0:null,maxQuantity:state==='out-of-stock'?0:99,missing:false}],total:9800,itemCount:2,lineCount:1,currency:'CNY',empty:false};
         }
+        var cartPreviewStates = ['default','loading','empty','service-error','validation-error','submitting','out-of-stock'];
+        var checkoutPreviewStates = ['default','success','validation-error','service-error','variant-required','submitting'];
         global.WPSiteData.registerPreview('cart',function(root,state){
             views.cart(root,previewSnapshot(state));
             var status={loading:'正在加载购物车…','service-error':'预览：购物车暂时无法读取，请重试。','validation-error':'预览：请填写有效数量。',submitting:'正在更新购物车…'}[state];
             if(status) text(root,'[data-site-status]',status);
             if(state==='loading') visible(root,'[data-cart-items], [data-cart-total-wrap], [data-cart-clear], [data-cart-checkout]',false);
-        });
-        global.WPSiteData.registerPreview('cartCount',function(root,state){views.cartCount(root,previewSnapshot(state));});
+        },cartPreviewStates);
+        global.WPSiteData.registerPreview('cartCount',function(root,state){views.cartCount(root,previewSnapshot(state));},['default','empty']);
         global.WPSiteData.registerPreview('cartState',function(root,state){
             if(state==='success' && root.hasAttribute('data-site-checkout')) checkoutResult(root,{paid:true,orderNo:'PREVIEW-ORDER',total:9800,currency:'CNY',accountMailed:false});
             var message={'validation-error':'预览：请检查必填信息。','service-error':'预览：服务暂时不可用，填写内容已保留。','variant-required':'预览：请选择商品规格。',submitting:'预览：正在提交…'}[state];
             if(message) { text(root,'[data-write-status]',message); visible(root,'[data-write-status]',true); }
-        });
+        },checkoutPreviewStates);
     }
 })(window);

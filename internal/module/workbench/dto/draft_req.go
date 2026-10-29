@@ -57,3 +57,11 @@ type PreviewDraftReq struct {
 	DraftDocument   string `form:"draftDocument"`
 	ExpectedVersion string `form:"expectedVersion"`
 }
+
+// BlockPreviewDraftReq 块编辑器未保存预览，工程与并发版本必须与原块相符。
+type BlockPreviewDraftReq struct {
+	ID              string `form:"id"`
+	ProjectID       string `form:"projectId"`
+	DraftDocument   string `form:"draftDocument"`
+	ExpectedVersion string `form:"expectedVersion"`
+}

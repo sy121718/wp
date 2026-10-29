@@ -116,3 +116,15 @@ test('读取失败事件携带真实HTTP状态，非JSON错误不泄漏解析原
     assert.equal(root.events.at(-1).detail.status,502);
     assert.equal(root.events.at(-1).detail.message,'数据读取失败');
 });
+
+test('作者模拟状态目录只汇总当前画布里已注册且闭口的状态，零请求',()=>{
+ let fetches=0;
+ const api=env(async()=>{fetches++;},{active:true,state:'default',states:['default','loading','empty','success']});
+ api.registerPreview('account',()=>{},['default','success','made-up']);
+ api.registerPreview('cart',()=>{},['default','loading','empty']);
+ api.registerPreview('absent',()=>{},['success']);
+ const account=element({'data-site-read':'/api/site/user/account','data-site-view':'account'}),cart=element({'data-site-read':'/api/site/cart/state','data-site-view':'cart'});
+ const root={querySelectorAll:()=>[account,cart]};
+ assert.deepEqual(Array.from(api.supportedPreviewStates(root)),['default','loading','empty','success']);assert.equal(fetches,0);
+ const real=env(async()=>{fetches++;},{active:false,states:['default']});assert.equal(real.supportedPreviewStates(root).length,0);assert.equal(fetches,0);
+});

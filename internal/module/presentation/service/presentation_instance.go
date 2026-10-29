@@ -359,6 +359,13 @@ func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntit
 		URLPath: e.URLPath, TemplateID: e.TemplateID, Stale: e.Stale,
 		UpdatedAt: e.UpdatedAt.Format("2006-01-02 15:04"),
 	}
+	publications, err := s.m.ListPublications(ctx, e.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, publication := range publications {
+		resp.Publications = append(resp.Publications, presentationdto.InstancePublicationResp{Lang: publication.Lang, ActivePath: publication.ActivePath, ArtifactID: publication.ArtifactID, ArtifactHash: publication.ArtifactHash})
+	}
 	if e.ActiveArtifactID != nil {
 		resp.Status = presentationenums.StatusActive
 		resp.ArtifactID = *e.ActiveArtifactID

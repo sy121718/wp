@@ -4,6 +4,7 @@
 import { csrfHeaders, meta, morphHTML, wbLinkedPatch, controlLabel } from '../core.js';
 import { fillInspectorSlots, inlineSlots, renderInspectorExtras, sectionFor } from './controls/misc.js';
 import { inspectorTabOf } from '../experience.js';
+import { renderActionTargets } from '../actions.js';
 import { set } from './controls/base.js';
 import { upgradeNativeSelects, renderFieldHints, refreshFieldHints } from './controls/selects.js';
 
@@ -291,6 +292,7 @@ export const inspectorMethods = {
                     // 原生字段与复杂字段使用同一个公共下拉。
                     upgradeNativeSelects(ctx);
                     renderInspectorExtras(ctx);
+                    renderActionTargets(ctx, meta);
                     panel.querySelectorAll('.wb-field').forEach(function (field, index) {
                         var label = field.querySelector('label');
                         var input = field.querySelector('input:not([type=hidden]), textarea, select');

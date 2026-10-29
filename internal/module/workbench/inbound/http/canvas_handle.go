@@ -75,13 +75,14 @@ func (h *Handle) Workbench(c *gin.Context) {
 	metaJSON, err := json.Marshal(gin.H{
 		// target 编辑目标描述符（EDT-017）：前端按它决定保存端点与请求体键名，
 		// 不认识任何一种目标类型 —— 新增目标时前端零改动。
-		"mediaBaseUrl":    upload.BaseURL(),
-		"businessPresets": builder.BusinessPresets(),
-		"target":          workbenchTargetOf(EditTargetPage),
-		"pageId":          page.ID,
-		"projectId":       page.ProjectID,
-		"draftPath":       page.DraftPath,
-		"version":         page.DraftVersion,
+		"mediaBaseUrl":     upload.BaseURL(),
+		"businessPresets":  builder.BusinessPresets(),
+		"componentActions": builder.ComponentActions(),
+		"target":           workbenchTargetOf(EditTargetPage),
+		"pageId":           page.ID,
+		"projectId":        page.ProjectID,
+		"draftPath":        page.DraftPath,
+		"version":          page.DraftVersion,
 		// 全局块引用（core.globalref）候选：本工程全部块（组件库「全局块」分组）。
 		"blocks": h.svc.BlockSummaries(c.Request.Context(), page.ProjectID),
 		// 全局设置面板：页面挂接的主题与当前设置（颜色/字体），可就地修改保存。
@@ -150,17 +151,18 @@ func (h *Handle) workbenchBlock(c *gin.Context, blockID string) {
 	}
 	meta := gin.H{
 		// target 编辑目标描述符（EDT-017）。
-		"mediaBaseUrl":    upload.BaseURL(),
-		"businessPresets": builder.BusinessPresets(),
-		"target":          workbenchTargetOf(EditTargetBlock),
-		"pageId":          block.ID, // 复用键名：前端保存逻辑按 saveBase 切换接口
-		"projectId":       block.ProjectID,
-		"saveBase":        "block",
-		"blockName":       block.Name,
-		"kind":            block.Kind,
-		"blocks":          h.svc.BlockSummaries(c.Request.Context(), block.ProjectID),
-		"draftPath":       "",
-		"version":         block.Version,
+		"mediaBaseUrl":     upload.BaseURL(),
+		"businessPresets":  builder.BusinessPresets(),
+		"componentActions": builder.ComponentActions(),
+		"target":           workbenchTargetOf(EditTargetBlock),
+		"pageId":           block.ID, // 复用键名：前端保存逻辑按 saveBase 切换接口
+		"projectId":        block.ProjectID,
+		"saveBase":         "block",
+		"blockName":        block.Name,
+		"kind":             block.Kind,
+		"blocks":           h.svc.BlockSummaries(c.Request.Context(), block.ProjectID),
+		"draftPath":        "",
+		"version":          block.Version,
 	}
 	// returnUrl：菜单页「新建面板块并编辑」一路带过来的回跳目标。
 	//
@@ -272,19 +274,20 @@ func (h *Handle) workbenchTemplate(c *gin.Context, templateID string) {
 	}
 	metaJSON, err := json.Marshal(gin.H{
 		// target 编辑目标描述符（EDT-017）。
-		"mediaBaseUrl":    upload.BaseURL(),
-		"businessPresets": builder.BusinessPresets(),
-		"target":          workbenchTargetOf(EditTargetTemplate),
-		"pageId":          tpl.ID,
-		"saveBase":        "template",
-		"templateName":    tpl.Name,
-		"entityType":      entityType,
-		"entityId":        entityID,
-		"noEntity":        noEntity,
-		"blocks":          h.svc.BlockSummaries(c.Request.Context(), projectID),
-		"projectId":       projectID,
-		"draftPath":       "",
-		"version":         tpl.DraftVersion,
+		"mediaBaseUrl":     upload.BaseURL(),
+		"businessPresets":  builder.BusinessPresets(),
+		"componentActions": builder.ComponentActions(),
+		"target":           workbenchTargetOf(EditTargetTemplate),
+		"pageId":           tpl.ID,
+		"saveBase":         "template",
+		"templateName":     tpl.Name,
+		"entityType":       entityType,
+		"entityId":         entityID,
+		"noEntity":         noEntity,
+		"blocks":           h.svc.BlockSummaries(c.Request.Context(), projectID),
+		"projectId":        projectID,
+		"draftPath":        "",
+		"version":          tpl.DraftVersion,
 	})
 	if err != nil {
 		logger.Scene(workbenchErrScene).With("path", c.Request.URL.Path).With("templateId", templateID).

@@ -52,6 +52,7 @@ export const shortcutsMethods = {
                 this.registerPluginPalette();
                 this.initWorkspace();
                 this.setDevice(this.device);
+                this.initPreviewControls();
                 this.renderPalette();
                 this.renderTree();
                 this.renderUI();
@@ -186,6 +187,7 @@ export const shortcutsMethods = {
                 var frame = document.getElementById('wb-canvas');
                 if (frame) frame.addEventListener('load', function () {
                     self.bindCanvasDrop();
+                    self.syncPreviewControls();
                     self.markTreeSelection();
                     self.syncCanvasState();
                 });

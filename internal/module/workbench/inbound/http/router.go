@@ -195,6 +195,7 @@ func SetupWorkbenchRoutes(workbenchPages *gin.RouterGroup,
 	g.POST("/workbench/seo-score", h.SEOScore)
 	// 全局块画布预览（块编辑模式 iframe 内嵌）。
 	g.GET("/workbench/block/preview", previewContext, h.BlockPreview)
+	g.POST("/workbench/block/preview", builtin.CasbinMiddlewareForPath("/api/block/update"), previewContext, h.BlockPreviewDraft)
 	// 内容模板画布预览（EDT-001）：GET 已保存 / POST 未保存草稿。
 	g.GET("/workbench/template/preview", previewContext, h.TemplatePreview)
 	g.POST("/workbench/template/preview", previewContext, h.TemplatePreviewDraft)
