@@ -13,6 +13,8 @@
         if (pending.has(url)) return pending.get(url);
         var work = global.fetch(url, {credentials:'same-origin', headers:{Accept:'application/json'}, redirect:'error'})
             .then(function (res) {
+                var csrf = res.headers && res.headers.get('X-CSRF-Token');
+                if (csrf) { global.WPSiteSession = global.WPSiteSession || {}; global.WPSiteSession.csrfToken = csrf; }
                 return res.json().then(function (body) {
                     if (!res.ok || !body || (body.code !== 0 && body.code !== 200)) throw new Error(body && body.message || '数据读取失败');
                     return body.data;

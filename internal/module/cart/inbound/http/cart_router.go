@@ -1,21 +1,13 @@
-// Package carthttp 购物车模块的 HTTP 接入层：当前只有一条**支付回调**端点。
-//
-// 为什么本模块此前没有 inbound/http、现在也只有这一条：购物车的其余能力全部经访问面的
-// /_fragments 端点暴露（它们要读客户端签名 cookie，参数也受片段协议约束）。
-// 而支付回调是**通道服务端打过来**的通知：它没有会话、没有 cookie、带的是原始报文，
-// 用片段端点去接会同时撞上「参数长度上限」与「上下文白名单」两条协议约束，
-// 而且它本来就不是浏览器发起的请求。
-//
-// 越权防护在这条链路上只有一件事可做：**验签**（见 PaymentGateway.VerifyCallback）。
-// 所以它直挂公开路由，不进 /api 的三层链 —— 通道不可能持有后台会话与 CSRF token。
 package carthttp
 
 import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"go_wp/internal/middleware/builtin"
 
 	"go_wp/pkg/logger"
 
@@ -111,4 +103,19 @@ func SetupCartRoutes(router *gin.Engine, svc cartcontract.CartService) {
 	}
 	h := NewCallbackHandle(svc)
 	router.POST("/payment/callback", h.PaymentCallback)
+}
+
+// SetupCartPublicRoutes 公开访客业务 API，身份与 CSRF 从访客域注入。
+func SetupCartPublicRoutes(router *gin.Engine, svc cartcontract.CartService, middleware ...gin.HandlerFunc) {
+	if router == nil || svc == nil {
+		return
+	}
+	g := router.Group("/api/site/cart", middleware...)
+	g.Use(builtin.RequestRateLimitMiddleware(90, time.Minute))
+	h := NewCartPublicHandle(svc)
+	g.GET("", h.View)
+	g.POST("/add", h.Add)
+	g.POST("/quantity", h.SetQuantity)
+	g.POST("/clear", h.Clear)
+	g.POST("/checkout", h.Checkout)
 }

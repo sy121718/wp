@@ -59,6 +59,9 @@ var uiBaseClasses = []string{
 var uiBlocks = []uiBlock{
 	{file: "site-data.js", attrs: []string{"data-site-read"}, noStyle: true},
 	{file: "site-product.js", attrs: []string{"data-site-product"}, noStyle: true},
+	{file: "write-base.js", attrs: []string{"data-write"}, noStyle: true},
+	{file: "requires_js.js", attrs: []string{"data-requires-js"}, noStyle: true},
+	{file: "site-commerce.js", attrs: []string{"data-site-cart"}, noStyle: true},
 	// htmx 是访问面所有 hx-* 属性的唯一执行者，也是控件入口 index.js 监听
 	// htmx:after:swap 的前提。产物此前从不携带它 —— 组件按 HTMX 约定写出的
 	// hx-get / hx-post 在访问面全部是哑属性（组件自己降级成原生表单，功能
@@ -264,9 +267,11 @@ func uiAssetsFor(attrs htmlFeatures, css string, sources map[string]string) (str
 func uiAssetsForScan(scan htmlScan, css string, sources map[string]string) (string, string, error) {
 	files, needStyleFromAttrs := usedUIFiles(scan.attrs)
 	needStyle := needStyleFromAttrs || hasUIBaseClass(scan.classes)
-	// 片段基座样式与控件基座**彼此独立**（审计 UIK-005）：页面只写 hx-post="/_fragments/cartAdd"
-	// 而没有用任何控件类时，它仍需要购物车片段的样式 —— 不能因为「没有控件」而整页零注入。
+	// 数据组件和遗留片段的基座样式不依赖控件类，按各自消费特征注入。
 	fragCSS := fragmentBaseCSSFor(scan.frags)
+	if _, ok := scan.attrs["data-site-cart"]; ok {
+		fragCSS = joinCSS(fragCSS, cartFragmentBaseCSS())
+	}
 	if len(files) == 0 && !needStyle && fragCSS == "" {
 		return "", "", nil
 	}

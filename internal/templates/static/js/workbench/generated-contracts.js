@@ -44,10 +44,9 @@ export const paletteSpec = {
         "core.addToCart": {
             "type": "core.addToCart",
             "displayName": "加购按钮",
-            "hint": "加入购物车（提交到购物车片段）",
+            "hint": "加入购物车（价格与库存由服务校验）",
             "category": "basic",
             "defaultProps": {
-                "cartTarget": "#cart",
                 "currency": "¥",
                 "label": "加入购物车",
                 "optionsField": "product.options",

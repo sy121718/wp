@@ -60,6 +60,12 @@ func (s *Service) Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (r
 		return nil, cartenums.Err(cartenums.ErrPhoneRequired)
 	}
 	shipping := req.Shipping
+	if strings.TrimSpace(shipping.Name) == "" {
+		shipping.Name = name
+	}
+	if strings.TrimSpace(shipping.Phone) == "" {
+		shipping.Phone = phone
+	}
 	if strings.TrimSpace(shipping.Address) == "" {
 		return nil, cartenums.Err(cartenums.ErrAddressRequired)
 	}
@@ -125,7 +131,6 @@ func (s *Service) Checkout(ctx context.Context, req *cartdto.CartCheckoutReq) (r
 		OrderNo:       created.OrderNo,
 		Status:        created.Status,
 		Total:         created.Total,
-		TotalLabel:    centsLabel(created.Total),
 		Currency:      created.Currency,
 		Email:         email,
 		AccountMailed: created.AccountMailed,

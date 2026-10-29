@@ -155,7 +155,6 @@ const (
 	// 片段层端口都由装配期唯一一次 runtimefragment.SetDependencies 提交：装配点先把各段落的
 	// 提供方攒进 assembly.fragDeps（见 assembly.go / assembly_publish.go），全部就位后才提交。
 	// 端口值因此写成「提交点.字段名」——从清单可以直接对到 Deps 的具体字段。
-	portRuntimeFragCart               = "runtimefragment.SetDependencies.CartProvider"
 	portRuntimeFragCollectionResolver = "runtimefragment.SetDependencies.CollectionResolver"
 	portRuntimeFragProductDataSource  = "runtimefragment.SetDependencies.ProductDataSource"
 	portRuntimeFragContentSearch      = "runtimefragment.SetDependencies.ContentSearchProvider"
@@ -364,8 +363,6 @@ var wiringManifest = []wiringEntry{
 		"概览页的 KPI / 趋势 / 热销榜 / 文章浏览量显示为空态（页面壳与页面列表照常）"},
 
 	// —— 运行时片段层（访问面）——
-	{portRuntimeFragCart, "cart", "runtimefragment", wiringRequiredPort,
-		"购物车 / 结算六个能力一律「暂不可用」"},
 	{portRuntimeFragCollectionResolver, "集合源注册表（core）", "runtimefragment", wiringRequiredPort,
 		"商品列表片段直接报「集合解析器未接入（装配缺陷）」"},
 	{portRuntimeFragProductDataSource, "product", "runtimefragment", wiringRequiredPort,

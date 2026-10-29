@@ -357,8 +357,9 @@ func TestCartSetQuantityZeroRemovesLine(t *testing.T) {
 		t.Fatalf("前置条件：应 2 行 3 件，实际 %d 行 %d 件", snap.LineCount, snap.ItemCount)
 	}
 
+	zero := 0
 	after, err := f.cart.SetQuantity(ctx, &cartdto.CartSetQuantityReq{
-		ProjectID: f.projectID, VariantID: v1, Quantity: 0, Cookie: snap.Cookie,
+		ProjectID: f.projectID, VariantID: v1, Quantity: &zero, Cookie: snap.Cookie,
 	})
 	if err != nil {
 		t.Fatalf("移除失败: %v", err)

@@ -1,26 +1,12 @@
 // Package addtocart 实现 core.addToCart 加购组件。
-//
-// 为什么需要它：购物车与结算的片段能力已经落地，但静态产物里没有任何地方能发起加购 ——
-// 页面作者得手写一段带 hidden variantId 的表单，还得自己知道片段端点、幂等键与降级怎么写。
-// 本组件把那件事变成一次拖拽：变体 id 在**构建期**从商品数据解析并烘进产物，
-// 与规格选择器同源（同一个 product.variants 字段、同一份解析函数），
-// 所以「详情页显示的规格组合」与「能加购的变体」不会各说各话。
-//
-// 两条路径同一个 action：
-//
-//	· 有 HTMX —— hx-post 局部刷新购物车容器（默认 #cart）；
-//	· 无 JS —— 原生表单 POST 到同一端点，浏览器整页跳到片段 HTML（可用但朴素）。
-//
-// 为什么不做「选规格再加购」的联动：那需要 JS 把 radio 的选中值塞进表单，而规格选择器
-// 目前是纯原生 radio（不驱动任何别的元素）。强行加联动会让「无 JS 时按钮提交一个错的变体」——
-// 那种错比「多变体商品在卡片上只提供一键加购」严重得多。多变体场景请用逐变体模式，
-// 或在详情页把规格选择器与逐变体列表放在一起。
+// 构建期从商品数据解析变体并输出静态表单；访问时由统一写基座提交 JSON API，
+// 购物车读者收到成功事件后刷新事实。多变体商品可逐变体展示，价格与库存由服务校验。
 package addtocart
 
 import (
 	_ "embed" // addtocart.css / add_to_cart.jet 经 //go:embed 打进二进制
-	json "go_wp/pkg/jsonx"
 	"fmt"
+	json "go_wp/pkg/jsonx"
 	"strings"
 
 	"go_wp/internal/builder/core"
@@ -40,14 +26,13 @@ const (
 	ModePerVariant = "perVariant"
 )
 
-// CartAddPath 加购片段端点（片段层的固定路径，与 runtimefragment 的注册一致）。
-const CartAddPath = "/_fragments/cartAdd"
+// CartAddPath 公开访客加购 API。
+const CartAddPath = "/api/site/cart/add"
 
 // 缺省值与上限。
 const (
-	defaultLabel      = "加入购物车"
-	defaultCartTarget = "#cart"
-	defaultCurrency   = "¥"
+	defaultLabel    = "加入购物车"
+	defaultCurrency = "¥"
 	// defaultColor 缺省主色（主题 Token + 兜底，与 badge/button 的取色约定对齐）。
 	defaultColor = "var(--sky-c-primary, #2563eb)"
 )
@@ -69,8 +54,6 @@ type Props struct {
 	ShowQuantity bool `json:"showQuantity,omitempty" ct:"bool,sec=content,label=数量输入"`
 	// Label 按钮文字。
 	Label string `json:"label,omitempty" ct:"text,maxlen=20,sec=content,label=按钮文字"`
-	// CartTarget 加购后要刷新的购物车容器选择器（HTMX 用；无 JS 时忽略）。
-	CartTarget string `json:"cartTarget,omitempty" ct:"text,maxlen=60,sec=style,label=购物车容器选择器"`
 	// Color 按钮主色（色值或主题 Token）。
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style,label=按钮颜色"`
 	// Advanced 通用高级属性（docs/02-C0）。
@@ -96,7 +79,7 @@ func (p *Props) NormalizeLegacy(raw json.RawMessage) error {
 var Widget = core.Atom[Props]{
 	Spec: core.AtomSpec[Props]{
 		DisplayName:     "加购按钮",
-		Hint:            "加入购物车（提交到购物车片段）",
+		Hint:            "加入购物车（价格与库存由服务校验）",
 		PaletteCategory: core.PaletteCategoryBasic,
 		DefaultProps: map[string]any{
 			"source":        "product",
@@ -105,7 +88,6 @@ var Widget = core.Atom[Props]{
 			"variantMode":   "single",
 			"showQuantity":  false,
 			"label":         "加入购物车",
-			"cartTarget":    "#cart",
 			"currency":      "¥",
 		},
 		TypeName:      Type,
@@ -142,31 +124,6 @@ func effectiveLabel(p *Props) string {
 		return t
 	}
 	return defaultLabel
-}
-
-// effectiveTarget 有效购物车容器选择器。
-//
-// 空白值与「看起来不像选择器」的值都兜底：一个错的选择器会让 HTMX 静默不刷新
-// （控制台一条警告，页面上什么都不会发生），比回退到默认值难查得多。
-func effectiveTarget(p *Props) string {
-	t := strings.TrimSpace(p.CartTarget)
-	if t == "" || !looksLikeSelector(t) {
-		return defaultCartTarget
-	}
-	return t
-}
-
-// looksLikeSelector 粗判一个字符串像不像 CSS 选择器（#id / .class / [attr] / 字母开头）。
-func looksLikeSelector(s string) bool {
-	if s == "" {
-		return false
-	}
-	switch s[0] {
-	case '#', '.', '[':
-		return len(s) > 1
-	}
-	c := s[0]
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 // effectiveCurrency 有效货币符号。
@@ -212,8 +169,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	// 提亮规则会一直亮着、按压规则会把按钮一直压暗，而且不报任何错。
 	b.AddHover(sel+" .sky-cart-add-btn:hover", []string{"filter: brightness(1.08)"})
 	b.AddActive(sel+" .sky-cart-add-btn:active", []string{"filter: brightness(0.94)"})
-	// 购物车**片段**的样式不在这里注入（审计 UIK-005）：片段样式已归基座
-	// （internal/builder/fragment_base.go），按 hx-* 指向 /_fragments/ 的特征判定。
+	// 购物车列表样式由基座按 data-site-cart 注入，按钮组件只负责自身外观。
 }
 
 //go:embed add_to_cart.jet

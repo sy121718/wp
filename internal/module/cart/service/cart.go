@@ -48,7 +48,7 @@ package cartservice
 //	                            未注入 = 站点没配运费（base 恒 0 ⇒ 收不到钱）。
 //
 // 为什么运费不从请求里取：结算入参里凡是从表单取的东西都是客户端可伪造的
-//（参见 renderCheckout 的取值方式）。运费是收银台上的一笔钱，谁传谁就能免单 ——
+//（由访客 API 从可信请求上下文填入）。运费是收银台上的一笔钱，谁传谁就能免单 ——
 // 所以本文件的两个输入（站点规则、商品小计）都由服务端自己读。
 
 import (
@@ -57,7 +57,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"fmt"
 	json "go_wp/pkg/jsonx"
 	"net/url"
 	"strconv"
@@ -88,41 +87,6 @@ import (
 func cartCurrency() string {
 	return i18n.GetDefaultCurrency()
 }
-
-// availabilityLowStockThreshold 低库存提示阈值（<= 这个数就提示「仅剩 N 件」）。
-// 与 productVariantAvailability 片段的阈值同口径：两处对同一批库存说不同的话，
-// 是最容易被当成 bug 的那种不一致。
-const availabilityLowStockThreshold = 5
-
-// 购物车可用性文案：**词条 key + 中文兜底**成对放进 CartItem。
-//
-// 取词发生在渲染侧（fragments/cart_view.jet 由 runtimefragment 渲染）：service 层没有
-// 请求语言，在这里调 tr 只会拿到默认语言、把界面语言写错。渲染侧改成
-// `tr(AvailableKey, AvailableText)`（带参数的再走 i18n.FillTranslate）即完成多语言。
-//
-// key 尽量复用访客片段已有的 site.fragment.stock.*（库存提示在商品卡与购物车里
-// 必须是同一句话）；只有库里没有的两句才新引入。带计数的兜底仍用 %d 是因为
-// 存量 site.fragment.stock.low 词条本身就是 `%d` 形态（存量占位符由各自批次迁移），
-// 新引入的 site.fragment.stock.insufficient 用 `{count}`。
-const (
-	cartStockKeyOffShelf  = "site.fragment.stock.off_shelf"
-	cartStockTextOffShelf = "商品已下架，请移除"
-
-	cartStockKeyOut  = "site.fragment.stock.out"
-	cartStockTextOut = "暂时缺货"
-
-	cartStockKeyInsufficient  = "site.fragment.stock.insufficient"
-	cartStockTextInsufficient = "库存仅剩 %d 件"
-
-	cartStockKeyLow  = "site.fragment.stock.low"
-	cartStockTextLow = "仅剩 %d 件"
-
-	cartStockKeyIn  = "site.fragment.stock.in"
-	cartStockTextIn = "库存充足"
-
-	cartStockKeyCheckout  = "site.fragment.stock.checkout"
-	cartStockTextCheckout = "以结算时库存为准"
-)
 
 // View 只读查询购物车。
 func (s *Service) View(ctx context.Context, req *cartdto.CartViewReq) (res *cartdto.CartSnapshot, err error) {
@@ -177,31 +141,32 @@ func (s *Service) Add(ctx context.Context, req *cartdto.CartAddReq) (res *cartdt
 
 // SetQuantity 设置某变体数量（0 = 移除）。
 func (s *Service) SetQuantity(ctx context.Context, req *cartdto.CartSetQuantityReq) (res *cartdto.CartSnapshot, err error) {
-	if req == nil {
+	if req == nil || req.Quantity == nil {
 		return nil, cartenums.Err(cartenums.ErrInvalidParam)
 	}
+	quantity := *req.Quantity
 	projectID, variantID, err := s.validateLine("", req.ProjectID, req.VariantID)
 	if err != nil {
 		return nil, err
 	}
-	if req.Quantity < 0 || req.Quantity > maxLineQuantity {
+	if quantity < 0 || quantity > maxLineQuantity {
 		return nil, cartenums.Err(cartenums.ErrQuantityInvalid)
 	}
 	p, _ := s.codec.decode(req.Cookie)
-	if p.lineOf(variantID) == 0 && req.Quantity == 0 {
+	if p.lineOf(variantID) == 0 && quantity == 0 {
 		// 移除一个本来就不在车里的商品：幂等返回当前车，不是错误。
 		return s.snapshotOf(ctx, projectID, p, "")
 	}
-	if req.Quantity == 0 {
+	if quantity == 0 {
 		return s.applyChange(ctx, projectID, p.withLine(variantID, 0))
 	}
 	if _, err = s.fetchVariant(ctx, projectID, variantID); err != nil {
 		return nil, err
 	}
-	if err = s.checkAvailability(ctx, projectID, variantID, req.Quantity); err != nil {
+	if err = s.checkAvailability(ctx, projectID, variantID, quantity); err != nil {
 		return nil, err
 	}
-	return s.applyChange(ctx, projectID, p.withLine(variantID, req.Quantity))
+	return s.applyChange(ctx, projectID, p.withLine(variantID, quantity))
 }
 
 // Clear 清空购物车。
@@ -328,14 +293,12 @@ func (s *Service) snapshotOf(ctx context.Context, projectID string, p cartPayloa
 			VariantID:   l.VariantID,
 			Quantity:    l.Quantity,
 			MaxQuantity: maxLineQuantity,
-			Removable:   true,
 		}
 		sn := byID[l.VariantID]
 		if sn == nil || !sn.Enabled || (sn.ProjectID != "" && sn.ProjectID != projectID) {
 			// 下架的商品留在车里让访客自己删，但**不计入小计** ——
 			// 把下架商品的钱算进总额，会让购物车的数字和结算页永远对不上。
 			item.Missing = true
-			item.AvailableKey, item.AvailableText = cartStockKeyOffShelf, cartStockTextOffShelf
 			item.MaxQuantity = 0
 			res.Items = append(res.Items, item)
 			continue
@@ -347,32 +310,15 @@ func (s *Service) snapshotOf(ctx context.Context, projectID string, p cartPayloa
 		item.SKU = sn.SKU
 		item.UnitPrice = sn.Price
 		item.LineTotal = sn.Price * int64(l.Quantity)
-		item.UnitPriceLabel = centsLabel(sn.Price)
-		item.LineTotalLabel = centsLabel(item.LineTotal)
 
 		if q, known := avail[l.VariantID]; known {
-			item.Available = q
-			item.AvailableKnown = true
-			item.InStock = q > 0
-			switch {
-			case q <= 0:
-				item.AvailableKey, item.AvailableText = cartStockKeyOut, cartStockTextOut
-			case q < l.Quantity:
-				item.AvailableKey = cartStockKeyInsufficient
-				item.AvailableText = fmt.Sprintf(cartStockTextInsufficient, q)
-			case q <= availabilityLowStockThreshold:
-				item.AvailableKey = cartStockKeyLow
-				item.AvailableText = fmt.Sprintf(cartStockTextLow, q)
-			default:
-				item.AvailableKey, item.AvailableText = cartStockKeyIn, cartStockTextIn
-			}
-			if q > 0 && q < item.MaxQuantity {
+			available := q
+			item.Available = &available
+			if q <= 0 {
+				item.MaxQuantity = 0
+			} else if q < item.MaxQuantity {
 				item.MaxQuantity = q
 			}
-		} else {
-			// 「未知」不是「缺货」：库存端口未接入时页面照样可用，结论交给结算。
-			item.AvailableKey, item.AvailableText = cartStockKeyCheckout, cartStockTextCheckout
-			item.InStock = true
 		}
 
 		res.Items = append(res.Items, item)
@@ -380,18 +326,12 @@ func (s *Service) snapshotOf(ctx context.Context, projectID string, p cartPayloa
 		res.Total += item.LineTotal
 	}
 	res.LineCount = len(res.Items)
-	res.TotalLabel = centsLabel(res.Total)
 	res.Empty = res.LineCount == 0
 	return res, nil
 }
 
-// centsLabel 分 → 展示串（仅用于展示，不参与计算）。
-func centsLabel(cents int64) string {
-	return fmt.Sprintf("¥%.2f", float64(cents)/100)
-}
-
 // cookie 的名字与寿命定义在契约包（cartcontract.CartCookieName / CartCookieMaxAgeSeconds）：
-// 写它的是访问面的片段处理器，而跨模块只能依赖 contract 与不可变 dto。
+// 写它的是公开访客 API，而跨模块只能依赖 contract 与不可变 dto。
 const (
 	// cartCookieVersion 载荷版本。格式变了就升版本，老 cookie 直接判废 ——
 	// 比写兼容代码便宜，也比「解析出半个购物车」安全。

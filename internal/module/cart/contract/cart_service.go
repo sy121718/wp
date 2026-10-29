@@ -9,8 +9,8 @@ import (
 
 // 购物车 cookie 的名字与寿命。
 //
-// 放在契约包而不是 service 包：写这个 cookie 的是**访问面的片段处理器**，
-// 而跨模块只允许依赖对方的 contract 与不可变 dto —— 片段层不该为了一个 cookie 名
+// 放在契约包而不是 service 包：写这个 cookie 的是**公开访客 API**，
+// 而跨模块只允许依赖对方的 contract 与不可变 dto —— 处理器不该为了一个 cookie 名
 // 去碰购物车模块的 service。
 const (
 	// CartCookieName 购物车 cookie 名。
@@ -31,7 +31,7 @@ type CartService interface {
 	SetQuantity(ctx context.Context, req *cartdto.CartSetQuantityReq) (res *cartdto.CartSnapshot, err error)
 	// Clear 清空购物车。
 	Clear(ctx context.Context, req *cartdto.CartViewReq) (res *cartdto.CartSnapshot, err error)
-	// View 只读查询（渲染购物车与计数片段）。
+	// View 只读查询（返回购物车与计数事实）。
 	View(ctx context.Context, req *cartdto.CartViewReq) (res *cartdto.CartSnapshot, err error)
 	// Checkout 结算：cookie 购物车 → 订单 → 支付 → 落账。
 	//
@@ -54,7 +54,7 @@ type CartService interface {
 type PaymentGateway interface {
 	// Method 通道标识，落 orders.payment_method（如 paypal）。
 	Method() string
-	// Title 通道展示名，落 orders.payment_method_title，也是片段里给访客看的名字。
+	// Title 通道展示名，落 orders.payment_method_title，也是前端给访客展示的名字。
 	Title() string
 	// Charge 发起扣款。成功返回通道流水号。
 	//

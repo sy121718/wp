@@ -28,7 +28,7 @@ func fragmentCSSFor(t *testing.T, html string) string {
 // TestFragmentBaseStyleInjectedByHxTargetOnly 判据是「页面指向 /_fragments/ 的 htmx 请求」，
 // 而不是「用了哪个组件」——UIK-005 的原始症状就是自定义入口拿不到样式。
 func TestFragmentBaseStyleInjectedByHxTargetOnly(t *testing.T) {
-	css := fragmentCSSFor(t, "<button type='button' hx-post='/_fragments/cartAdd?projectId=p1'>加购</button>")
+	css := fragmentCSSFor(t, "<div data-site-cart>购物车</div>")
 	if !strings.Contains(css, ".sky-cart-item {") {
 		t.Fatalf("只写 hx-post 指向购物车片段的页面必须拿到购物车片段样式（页面上没有任何官方组件）；实际 CSS:\n%s", css)
 	}
@@ -49,11 +49,11 @@ func TestFragmentBaseStylePerCapability(t *testing.T) {
 		want    []string
 		notWant []string
 	}{
-		{"只有购物车", "<div hx-get='/_fragments/cartView' hx-trigger='load'></div>", []string{".sky-cart-item {"}, []string{".sky-orders-item {"}},
+		{"只有购物车", "<div data-site-cart></div>", []string{".sky-cart-item {"}, []string{".sky-orders-item {"}},
 		{"只有订单", "<div hx-get='/_fragments/ordersList?projectId=p1' hx-trigger='load'></div>", []string{".sky-orders-item {", ".sky-order-line-total {"}, []string{".sky-cart-item {"}},
-		{"两者都有", "<div hx-get='/_fragments/cartView'></div><div hx-get='/_fragments/orderDetail'></div>", []string{".sky-cart-item {", ".sky-orders-item {"}, nil},
+		{"两者都有", "<div data-site-cart></div><div hx-get='/_fragments/orderDetail'></div>", []string{".sky-cart-item {", ".sky-orders-item {"}, nil},
 		{"退货也在订单族", "<form hx-post='/_fragments/returnRequest'></form>", []string{".sky-return-form {"}, []string{".sky-cart-item {"}},
-		{"结算在购物车族", "<form hx-post='/_fragments/checkout'></form>", []string{".sky-cart-checkout {"}, []string{".sky-orders-item {"}},
+		{"结算在购物车族", "<form data-site-cart></form>", []string{".sky-cart-checkout {"}, []string{".sky-orders-item {"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -77,8 +77,8 @@ func TestFragmentBaseStyleNotInjectedWithoutFragmentReference(t *testing.T) {
 	for _, html := range []string{
 		"<div hx-get='/api/products?q=1'></div>",
 		"<form hx-post='/cart'></form>",
-		"<div data-fragments='/_fragments/cartView'></div>", // 非 htmx 属性：不是消费入口
-		"<script>var s = '/_fragments/cartView';</script>",  // 脚本里的字符串不算引用
+		"<div data-fragments='/_fragments/ordersList'></div>", // 非 htmx 属性：不是消费入口
+		"<script>var s = '/_fragments/ordersList';</script>",  // 脚本里的字符串不算引用
 	} {
 		css := fragmentCSSFor(t, html)
 		if strings.Contains(css, ".sky-cart-item {") {
@@ -106,9 +106,9 @@ func TestFragmentBaseStyleOnlyOnceInProduct(t *testing.T) {
 // TestFragmentBaseStyleInRealProductDocument 产物级：写了 hx-post 就拿到样式（不经组件登记）。
 func TestFragmentBaseStyleInRealProductDocument(t *testing.T) {
 	doc, err := RenderDocument(&CompiledPage{
-		HTML:     "<button type='button' hx-post='/_fragments/cartAdd'>加购</button>",
+		HTML:     "<div data-site-cart></div>",
 		UIStyle:  "/* ui css */",
-		Features: core.NewFeatureSet(),
+		Features: nil,
 	})
 	if err != nil {
 		t.Fatalf("RenderDocument: %v", err)
@@ -132,8 +132,8 @@ func TestFragmentCapabilityTablesCoverEachOther(t *testing.T) {
 			t.Errorf("能力 %s 同时在「有样式族」与「无样式族」表里：两张表必须互斥", c)
 		}
 	}
-	if len(styled) < 8 {
-		t.Fatalf("有样式族只登记了 %d 个能力（预期 ≥8）：表可能被清空", len(styled))
+	if len(styled) != 3 {
+		t.Fatalf("有样式族只登记了 %d 个能力（订单族 3 个能力；购物车已迁 JSON）：表可能被清空", len(styled))
 	}
 	for name, reason := range unstyled {
 		if len([]rune(strings.TrimSpace(reason))) < 12 {

@@ -128,7 +128,9 @@ func TestApplyI18n(t *testing.T) {
 		case TextKeyViewCart:
 			return "View cart"
 		}
-		t.Errorf("多取了文案键: %q", key)
+		if !strings.HasPrefix(key, "site.fragment.cart.") && !strings.HasPrefix(key, "site.fragment.stock.") {
+			t.Errorf("多取了文案键: %q", key)
+		}
 		return fallback
 	})
 	if v.Label != "Cart" {
@@ -137,8 +139,8 @@ func TestApplyI18n(t *testing.T) {
 	if v.LoadingText != "Loading…" || v.ViewCartText != "View cart" {
 		t.Fatalf("运行态文案应取译文，实际 %q / %q", v.LoadingText, v.ViewCartText)
 	}
-	if len(asked) != 3 {
-		t.Fatalf("无提示的正常渲染只该取标签与两句运行态文案，实际取了 %d 条: %v", len(asked), asked)
+	if len(asked) != 15 {
+		t.Fatalf("无提示的正常渲染应包含静态购物车和图标的运行态文案，实际取了 %d 条: %v", len(asked), asked)
 	}
 	// 空值的降级提示不许被「无中生有」地填上：正常渲染的图标凭空多一行提示，
 	// 与「缺站点工程」那条真降级混在一起，用户无从分辨。

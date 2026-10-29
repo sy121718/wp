@@ -14,13 +14,16 @@ import (
 // uiSrcForTest 构造件名 → 源码，模拟装配层从 embed 读出的结果。
 func uiSrcForTest() map[string]string {
 	return map[string]string{
-		"_util.js":        "/* util */ window.WBUI=window.WBUI||{};",
-		"site-data.js":    "/* site-data */",
-		"site-product.js": "/* site-product */",
-		"htmx.min.js":     "/* htmx */ var htmx=function(){};",
-		"select.js":       "/* select */ WBUI.register(function(){});",
-		"modal.js":        "/* modal */ WBUI.register(function(){});",
-		"index.js":        "/* index */ WBUI.scan(document);",
+		"_util.js":         "/* util */ window.WBUI=window.WBUI||{};",
+		"site-data.js":     "/* site-data */",
+		"site-product.js":  "/* site-product */",
+		"requires_js.js":   "/* requires_js */",
+		"write-base.js":    "/* write-base */",
+		"site-commerce.js": "/* site-commerce */",
+		"htmx.min.js":      "/* htmx */ var htmx=function(){};",
+		"select.js":        "/* select */ WBUI.register(function(){});",
+		"modal.js":         "/* modal */ WBUI.register(function(){});",
+		"index.js":         "/* index */ WBUI.scan(document);",
 	}
 }
 
@@ -121,7 +124,7 @@ func uiScriptForTest(t *testing.T, content string, sources map[string]string) st
 }
 
 func TestUIAssetRegistryAndSelection(t *testing.T) {
-	want := []string{"_util.js", "site-data.js", "site-product.js", "htmx.min.js", "select.js", "modal.js", "drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js", "index.js"}
+	want := []string{"_util.js", "site-data.js", "site-product.js", "write-base.js", "requires_js.js", "site-commerce.js", "htmx.min.js", "select.js", "modal.js", "drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js", "index.js"}
 	got := UIAssetFiles()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("资源清单 = %v", got)
@@ -165,8 +168,8 @@ func TestUIAssetsExplicitNoScriptMode(t *testing.T) {
 // 判据：出现任一 hx-* 属性即注入，一个都没有就不注入。
 func TestHtmxInjectedOnlyWhenUsed(t *testing.T) {
 	for _, html := range []string{
-		`<div hx-get="/_fragments/cartView" hx-trigger="load"></div>`,
-		`<button HX-POST="/_fragments/cartAdd">加购</button>`,
+		`<div hx-get="/_fragments/ordersList" hx-trigger="load"></div>`,
+		`<button HX-POST="/_fragments/returnRequest">加购</button>`,
 		`<form hx-swap="outerHTML"><input name="q"></form>`,
 	} {
 		if got := uiScriptForTest(t, html, uiSrcForTest()); !strings.Contains(got, "/* htmx */") {

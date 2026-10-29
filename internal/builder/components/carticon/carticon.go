@@ -1,14 +1,6 @@
-// Package carticon 实现 core.cartIcon 购物车悬浮组件。
-//
-// 它解决的是「访客怎么找到购物车」：一个图标，点开就能看到车里有什么、改数量、去结算 ——
-// 不用离开当前页面。四种形态（下拉浮层 / 侧边抽屉 / 居中弹窗 / 悬停浮层）共用同一份内容：
-// **片段现拉的 cartView**，绝不是构建期烘进产物的静态列表。
-//
-// 内容必须实时：购物车是每个访客各不相同的动态状态，烘进静态产物等于把某一个人的车
-// 发布给所有人。所以产物里只有图标与外壳，内容由 /_fragments/cartView 现取。
-//
-// 无 JS 时：<details> 仍能原生展开，但片段拉不进来 —— 因此浮层里**始终**留一个指向
-// 购物车页（槽位 cart）的链接兜底；槽位没配时图标退化为不可点的展示件（不猜路径）。
+// Package carticon 实现 core.cartIcon 购物车入口。
+// 下拉、抽屉、弹窗与悬停浮层共用静态外壳和行模板，访问时读取访客 JSON 购物车。
+// 图标与列表共享同一事实请求；数量修改走统一写基座，成功后刷新读者。
 package carticon
 
 import (
@@ -35,10 +27,10 @@ const (
 	ModeHover = "hover"
 )
 
-// 片段路径（与 runtimefragment 的注册一致，改一处必须改两处）。
+// 列表与角标共用公开购物车事实 URL，由读基座合并请求。
 const (
-	cartViewPath    = "/_fragments/cartView"
-	cartSummaryPath = "/_fragments/cartSummary"
+	cartViewPath    = "/api/site/cart"
+	cartSummaryPath = "/api/site/cart"
 )
 
 const (
@@ -50,6 +42,8 @@ const (
 
 // Props 购物车图标属性。
 type Props struct {
+	CheckoutHref string `json:"checkoutHref,omitempty" ct:"url,maxlen=500,sec=content,label=结算页面地址"`
+
 	// Mode 展示形态。
 	Mode string `json:"mode,omitempty" ct:"select,dropdown=下拉浮层,drawer=侧边抽屉,modal=居中弹窗,hover=悬停浮层,default=dropdown,sec=content,label=展示形态"`
 	// Align 下拉浮层的贴边（dropdown 形态）。
@@ -62,7 +56,7 @@ type Props struct {
 	Label string `json:"label,omitempty" ct:"text,maxlen=20,sec=content,label=文字"`
 	// ShowLabel 是否在图标旁显示文字（默认只显示图标）。
 	ShowLabel bool `json:"showLabel,omitempty" ct:"bool,sec=content,label=显示文字"`
-	// ShowCount 是否显示件数角标（由 cartSummary 片段现取）。
+	// ShowCount 是否显示件数角标（读取购物车 itemCount）。
 	ShowCount bool `json:"showCount,omitempty" ct:"bool,sec=content,label=件数角标"`
 	// Color 图标与角标主色（色值或主题 Token）。
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style,label=图标颜色"`
@@ -176,9 +170,7 @@ func compileCSS(id string, p *Props, b *core.CSSBuckets) {
 	if mode == ModeHover {
 		b.AddHover(sel+" .sky-cart-icon-hoverwrap:hover .sky-cart-icon-panel", []string{"display: block"})
 	}
-	// 购物车**片段**的样式不在这里注入（审计 UIK-005）：片段样式已归基座
-	// （internal/builder/fragment_base.go），按「页面里有没有指向 /_fragments/ 的 htmx 请求」
-	// 判定 —— 否则「片段有没有样式」会取决于页面上放没放这个组件。
+	// 购物车列表样式由基座按 data-site-cart 注入。
 }
 
 //go:embed enhance.js
@@ -191,6 +183,7 @@ var cartIconTemplate string
 func init() {
 	core.Register(Widget)
 	core.RegisterTemplate("cart_icon", cartIconTemplate)
+	core.RegisterTemplate("site_cart", siteCartTemplate)
 	// 点遮罩 / 按 Esc 关闭浮层：<details> 原生只支持点 summary 收起，点外部不关。
 	// 十几行补上这个差距，不自己实现整套开合（收起仍由原生 details 负责）。
 	core.RegisterEnhanceBlock(core.EnhanceBlock{
@@ -199,3 +192,6 @@ func init() {
 		Source: cartIconEnhanceJS,
 	})
 }
+
+//go:embed site_cart.jet
+var siteCartTemplate string

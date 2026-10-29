@@ -1,35 +1,8 @@
 package builder
 
-// fragment_base.go — 运行时片段的**基座样式**（审计 UIK-003 第二层 / UIK-005）。
-//
-// 为什么片段样式归基座、而不是归组件：
-//   片段 HTML 是运行时渲染的（/_fragments/<capability>），页面作者在编辑器里看不到它，
-//   也很难针对它调样式。此前这份样式由 core.cartIcon / core.addToCart / core.orderList
-//   在构建期调 AddCartFragmentCSS / AddOrdersFragmentCSS 注入 —— 于是「片段有没有样式」
-//   取决于「页面上有没有放那几个组件」：只放一个自定义按钮（作者自己写
-//   hx-post="/_fragments/cartAdd"）的页面，购物车片段刷新出来就是一列裸 HTML。
-//   现在改成按**页面里是否存在指向 /_fragments/ 的 htmx 请求**判定（fragment_caps.go），
-//   任何方式引用片段都能拿到样式；组件那边不再负责片段样式。
-//
-// 为什么按**族**切分，而不是一份大表：
-//   体积。只用购物车片段的页面不该带上订单片段那份 CSS（UIK-005 的 verification 第二条）。
-//   族 = 「一份片段模板渲染出来的内容」：cartView / cartAdd / cartSetQty / cartClear /
-//   checkout 渲染的都是 cart_view.jet（同一批 .sky-cart-* 类），订单侧同理。
-//
-// 样式口径（与迁移前逐字一致，产物视觉零变化）：只做布局与层次（对齐、间距、可点区域、
-// 分隔线），颜色一律走主题令牌（带兜底），不带动画、不带定位 —— 浮层怎么摆由容器组件决定。
-// 站点主题仍可覆盖这些全局类（它们是保留命名空间 sky- 下的基座类）。
-//
-// 新增片段时照这条判据分派（两层各有归属，别混）：
-//   · 片段的样式**由片段模板自己消费**（类名写在 fragments/*.jet 里、且不依赖页面上的
-//     组件作用域）→ 归基座，在这里建/扩展一个族，并把能力名登记进族的 caps；
-//   · 片段插在某个组件容器内、类名依赖该组件的作用域（.sky-c-{id} 下的 .sky-user-*
-//     就是这种）→ 属**组件私有层**，不进基座 —— 进了会与「一组件一作用域」的隔离规则打架。
-//
-// 未归基座的能力必须显式登记（fragmentUnstyledCapabilities，含现状说明）：漏登记会让
-// 「新片段有没有样式」变成没人能回答的问题，而这正是本条目要消灭的那类隐式耦合。
-// 两个方向的清单都由测试钉住：builder 侧 TestFragmentCapabilityTablesCoverEachOther，
-// runtimefragment 侧 TestFragmentStyleTablesCoverRegistry（对表 runtimefragment.Types()）。
+// fragment_base.go 保留尚未迁移的订单片段样式清单，以及 JSON 购物车静态外壳的基座样式。
+// 购物车按 data-site-cart 选取样式，订单片段仍按能力名选取；两者均只控制布局和主题令牌。
+// 账号等仍依赖组件节点作用域的样式不进入全局基座，对表测试钉住每个遗留能力的归属。
 
 import (
 	"sort"
@@ -51,14 +24,8 @@ type fragmentStyleGroup struct {
 // fragmentStyleGroups 全部片段基座样式族（顺序即产物里的拼接顺序）。
 func fragmentStyleGroups() []fragmentStyleGroup {
 	return []fragmentStyleGroup{
-		{id: "cart", caps: cartFragmentCapabilities(), css: cartFragmentBaseCSS()},
 		{id: "orders", caps: ordersFragmentCapabilities(), css: ordersFragmentBaseCSS()},
 	}
-}
-
-// cartFragmentCapabilities 购物车族的片段能力。
-func cartFragmentCapabilities() []string {
-	return []string{"cartSummary", "cartView", "cartAdd", "cartSetQty", "cartClear", "checkout"}
 }
 
 // ordersFragmentCapabilities 订单族的片段能力（含退货申请：它渲染在同一份订单片段里）。
@@ -150,7 +117,7 @@ func (g fragmentStyleGroup) matches(caps htmlFeatures) bool {
 
 // ===== 购物车族 =====
 
-// cartFragmentBaseCSS 购物车片段的基座样式（自 components/carticon/cartfrag.go 迁移）。
+// cartFragmentBaseCSS JSON 购物车静态外壳的基座样式。
 func cartFragmentBaseCSS() string {
 	b := core.NewCSSBuckets()
 	b.Add(core.BreakpointDesktop, ".sky-cart", []string{

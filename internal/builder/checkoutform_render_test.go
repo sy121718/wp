@@ -3,12 +3,12 @@ package builder
 // checkoutform_render_test.go — core.checkoutForm 的真实编译产物断言（含构建期数据注入）。
 //
 // 为什么必须是「真编译产物」而不是单测直调 BuildView：本组件的价值一半在于
-// **烘进静态产物**的那部分 —— 国家下拉的选项、隐藏字段、片段地址、字段顺序。
+// **烘进静态产物**的那部分 —— 国家下拉的选项、隐藏字段、JSON API 地址、字段顺序。
 // 这些只有在 renderView → 模板 → HTML 这条完整链路上才成立（模板写错 / 特征漏登记 /
 // 注入没接上，BuildView 的单测都不会红）。
 //
 // 覆盖：
-//  1. 表单壳与提交语义（原生 action + hx-post 指向片段端点）；
+//  1. 表单壳与提交语义（统一写基座指向 JSON API）；
 //  2. projectId / lang 作为隐藏字段（POST 只读表单体，URL query 到不了处理器）；
 //  3. 国家是原生 <select>、选项构建期烘焙、默认国家预选中、且**不带** data-ui-select（零 JS）；
 //  4. 字段顺序与分组（作者配置顺序 → 渲染顺序）；
@@ -75,13 +75,13 @@ func TestCheckoutFormRendersNativeForm(t *testing.T) {
 
 	for _, want := range []string{
 		// 原生提交语义（无 JS 时整页提交照旧可用）。
-		`<form class="sky-c-cf1 sky-checkout" method="post" action="/_fragments/checkout"`,
-		// htmx 路径：提交后片段结果替换表单自身。
-		`hx-post="/_fragments/checkout" hx-target="closest .sky-checkout" hx-swap="outerHTML"`,
-		// projectId / lang 必须是隐藏字段：片段端 POST 只读表单体。
+		`<form class="sky-c-cf1 sky-checkout" method="post" action="/api/site/cart/checkout"`,
+		// 统一写基座提交数据，结果区域独立保留。
+		`data-write="custom" data-write-url="/api/site/cart/checkout"`,
+		// projectId / lang 在构建期烘进隐藏字段。
 		`<input type="hidden" name="projectId" value="p-1">`,
 		`<input type="hidden" name="lang" value="zh-CN">`,
-		`<button type="submit" class="sky-checkout-submit">提交订单</button>`,
+		`<button type="submit" class="sky-checkout-submit" data-requires-js hidden disabled>提交订单</button>`,
 		`<fieldset class="sky-checkout-group" data-group="contact">`,
 		`<fieldset class="sky-checkout-group" data-group="shipping">`,
 	} {
@@ -90,14 +90,14 @@ func TestCheckoutFormRendersNativeForm(t *testing.T) {
 		}
 	}
 	// 提交地址的 query 里不得再拼 projectId（POST 时到不了处理器，是「看着对」的坏写法）。
-	if strings.Contains(html, `action="/_fragments/checkout?`) {
+	if strings.Contains(html, `action="/api/site/cart/checkout?`) {
 		t.Fatalf("projectId / lang 应走隐藏字段而不是 URL 查询\nHTML=%s", html)
 	}
 }
 
-// TestCheckoutFormRendersCouponField 结算表单固定渲染一行优惠码，字段名与片段端一致。
+// TestCheckoutFormRendersCouponField 结算表单固定渲染一行优惠码，字段名与 DTO 一致。
 //
-// 钉的是**两端接得上**：组件输出 name="couponCode"，而 runtimefragment 的 renderCheckout
+// 钉的是**两端接得上**：组件输出 name="couponCode"，而 DTO 的表单绑定
 // 就读 paramOf(r, "couponCode")。名字写错属于静默失效：表单照常渲染、提交时券被当成没填，
 // 页面上完全看不出异常 —— 与 projectId / lang 必须走隐藏字段（不能只挂 URL）是同一类判据。
 func TestCheckoutFormRendersCouponField(t *testing.T) {

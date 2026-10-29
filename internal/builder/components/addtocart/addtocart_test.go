@@ -7,7 +7,6 @@ package addtocart
 //   · 变体标签与价格与规格选择器同源（复用 product 包的解析，测试用同一份 JSON 形状）；
 //   · 未启用的变体不出现在可加购列表里（停用的规格不能买）；
 //   · 没有启用变体时留提示而不是让整页构建失败（那是数据状态，不是配置错误）；
-//   · 购物车容器选择器写错时回退默认值（错的选择器会让 HTMX 静默不刷新）。
 
 import (
 	"fmt"
@@ -93,7 +92,7 @@ func TestBuildViewSingleMode(t *testing.T) {
 	if !strings.Contains(row.Price, "99.00") {
 		t.Fatalf("价格应带货币符号与数值，实际 %q", row.Price)
 	}
-	if v.Action != CartAddPath || v.Target != defaultCartTarget || v.ProjectID != "proj-1" {
+	if v.Action != CartAddPath || v.ProjectID != "proj-1" {
 		t.Fatalf("表单基础字段不对: %+v", v)
 	}
 }
@@ -173,31 +172,6 @@ func TestBuildViewPropagatesResolveError(t *testing.T) {
 	content := stubContent{"product.options": optionsJSON} // 缺 variants 字段
 	if _, err := BuildView(baseProps(), content, "proj-1", ""); err == nil {
 		t.Fatal("变体字段解析失败时应上抛错误")
-	}
-}
-
-// TestEffectiveTargetFallsBack 购物车容器选择器：空白或不像选择器一律回退默认值。
-func TestEffectiveTargetFallsBack(t *testing.T) {
-	tests := []struct {
-		in   string
-		want string
-	}{
-		{"", defaultCartTarget},
-		{"   ", defaultCartTarget},
-		{"#cart", "#cart"},
-		{".cart-host", ".cart-host"},
-		{"[data-cart]", "[data-cart]"},
-		{"cart", "cart"},
-		{"  #my-cart  ", "#my-cart"},
-		// 单独一个符号不是选择器：留给 HTMX 只会在控制台留一条警告，页面上什么都不发生。
-		{"#", defaultCartTarget},
-		{".", defaultCartTarget},
-	}
-	for _, tt := range tests {
-		got := effectiveTarget(&Props{CartTarget: tt.in})
-		if got != tt.want {
-			t.Errorf("effectiveTarget(%q)=%q, want=%q", tt.in, got, tt.want)
-		}
 	}
 }
 

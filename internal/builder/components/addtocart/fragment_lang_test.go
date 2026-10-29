@@ -1,12 +1,6 @@
 package addtocart
 
-// fragment_lang_test.go — 加购表单必须把语言带进 POST（I18N-011）。
-//
-// 加购是 POST，而片段端点收集参数时**只读 PostForm**（runtimefragment.
-// collectFragmentParams）：query 串会被整个忽略，所以语言只能走表单 hidden 域 ——
-// 不能像 GET 片段那样拼在 action 的查询串里。
-//
-// 不带语言的表现是：片段恒回落工程默认语言，英文站加购一次，购物车面板换成中文。
+// 加购表单保留构建语言，避免组件数据读写与页面语言脱节。
 
 import "testing"
 

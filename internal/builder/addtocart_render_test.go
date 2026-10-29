@@ -66,12 +66,12 @@ func TestAddToCartCompilesToWorkingForm(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`action="/_fragments/cartAdd"`,    // 提交端点
-		`hx-post="/_fragments/cartAdd"`,   // HTMX 路径
-		`hx-target="#cart"`,               // 购物车容器（默认值真的进了产物）
-		`name="projectId" value="proj-9"`, // 工程 id 来自构建上下文
-		`name="variantId" value="v-red"`,  // 变体 id 烘进 hidden input
-		`name="quantity"`,                 // 数量输入（showQuantity=true）
+		`action="/api/site/cart/add"`,         // 提交端点
+		`data-write-url="/api/site/cart/add"`, // 统一写基座
+		`data-write="custom"`,                 // 购物车容器（默认值真的进了产物）
+		`name="projectId" value="proj-9"`,     // 工程 id 来自构建上下文
+		`name="variantId" value="v-red"`,      // 变体 id 烘进 hidden input
+		`name="quantity"`,                     // 数量输入（showQuantity=true）
 		`type="submit"`,
 		`>马上买<`, // 作者自定义的按钮文字
 	} {

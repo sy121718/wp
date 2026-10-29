@@ -98,7 +98,7 @@ func TestCheckWiringIgnoresMissingOptionalPorts(t *testing.T) {
 // （否则清单会慢慢与实际装配脱节，越用越不可信）。
 func TestCheckWiringReportsUnknownMarks(t *testing.T) {
 	marks := newWiringMarks()
-	marks.mark(portRuntimeFragCart)
+	marks.mark(portRuntimeFragVisitorOrderReader)
 	marks.mark("product.SetSomethingNew")
 
 	missing, unknown := CheckWiring(marks)

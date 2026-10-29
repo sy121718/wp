@@ -10,7 +10,11 @@
 // UserFacingMessages 做白名单，不在表里的一律收口到 ErrInternal。
 package cartenums
 
-import "go_wp/pkg/facing"
+import (
+	"net/http"
+
+	"go_wp/pkg/facing"
+)
 
 const (
 	MsgCartUpdated = "cart.msg.updated"
@@ -115,7 +119,16 @@ var errFallbacks = map[string]string{
 }
 
 // Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
-func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+func Err(key string) error {
+	status := http.StatusBadRequest
+	switch key {
+	case ErrInternal:
+		status = http.StatusInternalServerError
+	case ErrVariantNotFound, ErrCartItemAbsent, ErrCallbackOrderMissing:
+		status = http.StatusNotFound
+	}
+	return facing.WithStatus(facing.New(key, errFallbacks[key]), status)
+}
 
 // FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
 // 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。

@@ -1415,8 +1415,6 @@ func (a *assembly) wireRuntimeAccessFace() {
 		logger.Scene("init").Warn("project 模块未提供站点运费规则读取端口（ShippingPolicyReader）：" +
 			"结算运费恒为 0 —— 站点级基础运费与满额免运费都不会生效")
 	}
-	a.fragDeps.CartProvider = cartSvc
-	marks.mark(portRuntimeFragCart)
 	// 片段层的会员身份（BIZ-3）：两个新能力（membershipBadge / membershipPanel）的读取端口
 	// 与文案出口。可选降级 —— 未注入时片段渲染「会员信息暂时不可用」这句**可见文案**，
 	// 而不是 500（片段端点把 error 变成 500，htmx 不 swap，用户什么都看不到）。
@@ -1479,6 +1477,7 @@ func (a *assembly) wireRuntimeAccessFace() {
 	// 所以它不进 /api 的三层链，也不走片段端点（片段有参数与上下文两条协议约束，
 	// 而回调带的是原始报文）。
 	carthttp.SetupCartRoutes(router, cartSvc)
+	carthttp.SetupCartPublicRoutes(router, cartSvc, userhttp.VisitorIdentityMiddleware(a.userSvc), userhttp.VisitorCSRFMiddleware())
 	// 访问统计（BIZ-8）：打点端点挂**公开路由** —— 访客浏览器直连，没有后台会话也没有
 	// CSRF token（与 mail 追踪、支付回调同一位置与同一理由）。越权防护靠接口形状：
 	// 公开路由拿到的那份契约只有「写一条浏览记录」，查询与删除能力传不出去。

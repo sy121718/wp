@@ -3,27 +3,20 @@ package checkoutform
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"go_wp/internal/builder/core"
 	ordercontract "go_wp/internal/module/order/contract"
 )
 
-// FragmentPath 结算片段地址（构建期烘进表单 action / hx-post）。
-//
-// 片段端点只按 type 路由（POST /_fragments/{type}），type 就是订单侧的结算能力名
-// （见 runtimefragment/cart.go 的 Register(Spec{Type: "checkout", Method: "POST", ...})）。
-// 写错这里是**静默失效**：表单照常渲染、提交后 404，页面上看不出任何异常。
-const FragmentPath = "/_fragments/checkout"
+// ActionPath 公开访客结算 API。
+const ActionPath = "/api/site/cart/checkout"
 
-// DefaultSubmitLabel 提交按钮的默认文字（Props 未填时用）。
-//
-// 本批不做多语言表单文案（组件固定文案的 sys_i18n 取词不在本批范围），
-// 因此这里直接给中文；产物按当前构建语言输出同一份文字。
+// DefaultSubmitLabel 提交按钮缺省文案，ApplyI18n 在构建期取词。
 const DefaultSubmitLabel = "提交订单"
 
-// 优惠码那一行的文案（与 DefaultSubmitLabel 同口径：组件固定文案目前只有中文，
-// 见上面的说明）。单独给券这一行接 i18n 会让组件内出现两套文案来源，不做。
+// 优惠码输入的缺省文案。
 const (
 	CouponFieldLabel       = "优惠码"
 	CouponFieldPlaceholder = "有优惠码就填在这里"
@@ -51,7 +44,7 @@ func groupTitleOf(group string) string {
 	return group
 }
 
-// HiddenView 隐藏字段（projectId / lang：片段端 POST 只读表单体，URL 上的 query 到不了处理器）。
+// HiddenView 构建期确定的 projectId 与 lang。
 type HiddenView struct {
 	Name  string
 	Value string
@@ -66,7 +59,7 @@ type OptionView struct {
 
 // FieldView 单个字段的渲染视图。
 type FieldView struct {
-	// Key 提交参数名（表单 name 与返回给片段端的键）。
+	// Key 提交参数名（表单 name 与 DTO 绑定键）。
 	Key string
 	// Label 标签文案（作者覆盖优先，否则清单默认）。
 	Label string
@@ -92,14 +85,7 @@ type GroupView struct {
 	Fields []FieldView
 }
 
-// CouponView 优惠码输入行的渲染视图。
-//
-// 为什么券**不走 Groups**（不是「字段清单里的一个字段」）：`Fields` 来自订单契约的
-// CheckoutField，描述的是收货 / 账单**地址信息**；券码是结算动作的参数，不落进地址、
-// 不参与运费与库存计算。它由组件固定渲染一行，字段名固定 `couponCode`
-// （与 runtimefragment renderCheckout 读的参数名一致），也不做开关 ——
-// 券是结算的通用能力：有输入框而无券可用只是「填了会被明确拒绝」，无害；
-// 而没有入口则等于券对访客整体不可用。
+// CouponView 优惠码是结算动作的参数，固定绑定 couponCode，不进入收货/账单地址。
 type CouponView struct {
 	// Label 输入框标签（空 = 整行不渲染）。
 	Label string
@@ -108,10 +94,16 @@ type CouponView struct {
 }
 
 // View 结算表单渲染视图（供 checkoutform.jet 使用）。
+type ResultLabels struct{ Paid, Pending, OrderNo, AccountMailed string }
+
 type View struct {
+	ResultLabels ResultLabels
+
+	CartReadURL string
+
 	// Notice 非空表示本组件处于「不可用」状态（缺站点工程）：只渲染提示，不渲染表单。
 	Notice string
-	// Action 提交地址（原生 POST 的降级路径，无 JS 时整页提交）。
+	// Action 由统一写基座使用的 JSON API。
 	Action string
 	// SubmitLabel 提交按钮文字。
 	SubmitLabel string
@@ -194,9 +186,11 @@ func BuildView(p *Props, ctx *core.RenderContext) (View, error) {
 		hidden = append(hidden, HiddenView{Name: "lang", Value: lang})
 	}
 	return View{
-		Action:      FragmentPath,
-		SubmitLabel: submit,
-		Groups:      groups,
+		Action:       ActionPath,
+		ResultLabels: ResultLabels{Paid: "下单成功", Pending: "订单已创建，支付未完成", OrderNo: "订单号：", AccountMailed: "账号信息已发送至您的邮箱。"},
+		CartReadURL:  "/api/site/cart?" + url.Values{"projectId": {projectID}}.Encode(),
+		SubmitLabel:  submit,
+		Groups:       groups,
 		Coupon: CouponView{
 			Label:       CouponFieldLabel,
 			Placeholder: CouponFieldPlaceholder,
@@ -254,15 +248,32 @@ func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
 	compileCSS(id, p, b)
 }
 
-// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：表单输出 hx-post /
-// hx-target / hx-swap 三个属性，产物据此注入 htmx 与片段基座样式。
-//
-// 「不可用」提示分支（Notice）不输出任何 hx-*，因此一个字节都不该带。
-// 原生 select 刻意**不**加 data-ui-select：那是控件基座的 JS 替身，而本组件的
-// 访问面约束是零客户端 JS。
+// DeclareFeatures 仅为可提交表单登记 JSON 读写与渐进启用基座；国家下拉保持原生控件。
 func (v View) DeclareFeatures() (attrs, classes []string) {
 	if v.Notice != "" {
 		return nil, nil
 	}
-	return []string{"hx-post", "hx-target", "hx-swap"}, nil
+	return []string{"data-write", "data-site-read", "data-site-cart", "data-requires-js"}, nil
+}
+
+// ApplyI18n 在构建期翻译静态表单和结果文案，访客 API 不生成界面文本。
+func (v *View) ApplyI18n(t func(string, string) string) {
+	if v == nil || t == nil {
+		return
+	}
+	v.ResultLabels.Paid = t("site.fragment.checkout.title_paid", v.ResultLabels.Paid)
+	v.ResultLabels.Pending = t("site.fragment.checkout.title_pending", v.ResultLabels.Pending)
+	v.ResultLabels.OrderNo = t("site.fragment.checkout.order_no", v.ResultLabels.OrderNo)
+	v.ResultLabels.AccountMailed = t("site.component.checkoutForm.accountMailed", v.ResultLabels.AccountMailed)
+	v.Coupon.Label = t("site.component.checkoutForm.coupon", v.Coupon.Label)
+	v.Coupon.Placeholder = t("site.component.checkoutForm.couponPlaceholder", v.Coupon.Placeholder)
+	if v.SubmitLabel == DefaultSubmitLabel {
+		v.SubmitLabel = t("site.component.checkoutForm.submit", v.SubmitLabel)
+	}
+	if v.Notice != "" {
+		v.Notice = t("site.component.checkoutForm.unavailable", v.Notice)
+	}
+	for i := range v.Groups {
+		v.Groups[i].Title = t("site.component.checkoutForm.group."+v.Groups[i].Key, v.Groups[i].Title)
+	}
 }

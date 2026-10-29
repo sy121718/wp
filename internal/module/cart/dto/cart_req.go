@@ -1,6 +1,10 @@
 package cartdto
 
-import ordercontract "go_wp/internal/module/order/contract"
+import (
+	"net/url"
+
+	ordercontract "go_wp/internal/module/order/contract"
+)
 
 // TrackCookies 访客追踪 cookie 的原始值（流量来源 / 首触 / 会话 / 浏览轨迹）。
 //
@@ -19,10 +23,10 @@ type TrackCookies struct {
 
 // CartAddReq 加入购物车（同变体累加数量）。
 type CartAddReq struct {
-	ProjectID string
-	VariantID string
-	Quantity  int
-	Cookie    string
+	ProjectID string `json:"projectId" form:"projectId" binding:"required,uuid"`
+	VariantID string `json:"variantId" form:"variantId" binding:"required,uuid"`
+	Quantity  int    `json:"quantity" form:"quantity"`
+	Cookie    string `json:"-" form:"-"`
 }
 
 // CartSetQuantityReq 直接设置某变体的数量（0 = 从购物车移除）。
@@ -30,16 +34,16 @@ type CartAddReq struct {
 // 用「设置」而不是「加减」：加号按钮连点两次与网络重发会各发一个请求，
 // 加减语义下这就是两件商品，而设置语义下结果恒定 —— 幂等在这里是免费的。
 type CartSetQuantityReq struct {
-	ProjectID string
-	VariantID string
-	Quantity  int
-	Cookie    string
+	ProjectID string `json:"projectId" form:"projectId" binding:"required,uuid"`
+	VariantID string `json:"variantId" form:"variantId" binding:"required,uuid"`
+	Quantity  *int   `json:"quantity" form:"quantity" binding:"required"`
+	Cookie    string `json:"-" form:"-"`
 }
 
 // CartViewReq 只读查询购物车。
 type CartViewReq struct {
-	ProjectID string
-	Cookie    string
+	ProjectID string `json:"projectId" form:"projectId" binding:"required,uuid"`
+	Cookie    string `json:"-" form:"-"`
 }
 
 // PaymentCallbackReq 支付通道的异步回调。
@@ -55,23 +59,23 @@ type PaymentCallbackReq struct {
 
 // CartCheckoutReq 结算：把 cookie 里的购物车变成一张订单并完成支付。
 type CartCheckoutReq struct {
-	ProjectID string
-	Cookie    string
+	ProjectID string `json:"projectId" form:"projectId" binding:"required,uuid"`
+	Cookie    string `json:"-" form:"-"`
 
 	// 联系与收货信息。邮箱是必填的：订单归属、访客自动开号的账号、初始密码
 	// 都发到这个地址上，缺了它就等于下了一单无处可查的订单。
-	Email string
-	Name  string
-	Phone string
+	Email string `json:"email" form:"email"`
+	Name  string `json:"name" form:"name"`
+	Phone string `json:"phone" form:"phone"`
 	// Shipping 收货地址（复用订单域的不可变 DTO，避免两处字段名悄悄分叉）。
-	Shipping ordercontract.OrderAddress
-	Billing  ordercontract.OrderAddress
+	Shipping ordercontract.OrderAddress `json:"shipping" form:"-"`
+	Billing  ordercontract.OrderAddress `json:"billing" form:"-"`
 	// Remark 客户备注（与后台备注 adminNote 分开）。
-	Remark string
-	// RequestID 幂等键：结算页渲染时生成，重复提交只落一单。
-	RequestID string
+	Remark string `json:"remark" form:"remark"`
+	// RequestID 幂等键：访问时在浏览器生成，重复提交只落一单。
+	RequestID string `json:"requestId" form:"requestId" binding:"required,max=100"`
 	// Locale 访客语言（决定自动开号的初始密码邮件用哪套模板）。
-	Locale string
+	Locale string `json:"locale" form:"locale"`
 
 	// CouponCode 优惠码（可选，空 = 不用券）。
 	//
@@ -80,14 +84,14 @@ type CartCheckoutReq struct {
 	// 在 cart 侧重写一份券规则，必然与后台代客建单页那条路径漂移，而漂移只在写库那一刻暴露。
 	// 券不可用的原因由 order 的 enums 分四种给出（不存在 / 已过期 / 不可用 / 已达限次），
 	// 不要在这里压成一句「优惠码无效」。
-	CouponCode string
+	CouponCode string `json:"couponCode" form:"couponCode"`
 
-	Tracking TrackCookies
+	Tracking TrackCookies `json:"-" form:"-"`
 
 	// 以下由 inbound 覆盖写入，客户端不可伪造。
-	UserID    *uint64
-	IPAddress string
-	UserAgent string
+	UserID    *uint64 `json:"-" form:"-"`
+	IPAddress string  `json:"-" form:"-"`
+	UserAgent string  `json:"-" form:"-"`
 
 	// 这里**刻意没有运费入参**（本批移除了曾经存在的 ShippingTotal 字段）。
 	//
@@ -98,4 +102,11 @@ type CartCheckoutReq struct {
 	// 为什么不保留一个「服务端写入」的字段：它在本链路里恒为 0（没有任何调用方写入），
 	// 却又长得像「能控制运费」—— 下一个照着它写的人会以为它生效，而更糟的是
 	// 会有人把这层服务端覆盖忘掉，于是运费重新变成客户端可控的一笔钱。
+}
+
+// BindForm 只将结算表单的平面地址字段映射为契约对象，业务缺省由 service 决定。
+func (r *CartCheckoutReq) BindForm(v url.Values) error {
+	r.Shipping = ordercontract.OrderAddress{Name: v.Get("shipName"), Phone: v.Get("shipPhone"), Country: v.Get("country"), Province: v.Get("province"), City: v.Get("city"), District: v.Get("district"), Address: v.Get("address"), Zip: v.Get("zip")}
+	r.Billing = ordercontract.OrderAddress{Name: v.Get("billName"), Phone: v.Get("billPhone"), Country: v.Get("billCountry"), Province: v.Get("billProvince"), City: v.Get("billCity"), District: v.Get("billDistrict"), Address: v.Get("billAddress"), Zip: v.Get("billZip")}
+	return nil
 }

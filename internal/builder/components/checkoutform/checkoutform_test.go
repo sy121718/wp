@@ -285,15 +285,15 @@ func TestBuildViewRequiredCanOnlyTighten(t *testing.T) {
 	}
 }
 
-// TestBuildViewHiddenAndAction projectId / lang 进隐藏字段（片段端 POST 只读表单体）。
+// TestBuildViewHiddenAndAction projectId / lang 进隐藏字段。
 func TestBuildViewHiddenAndAction(t *testing.T) {
 	ctx := testContext()
 	view, err := BuildView(&Props{}, ctx)
 	if err != nil {
 		t.Fatalf("BuildView: %v", err)
 	}
-	if view.Action != FragmentPath {
-		t.Fatalf("提交地址应为 %q，得到 %q", FragmentPath, view.Action)
+	if view.Action != ActionPath {
+		t.Fatalf("提交地址应为 %q，得到 %q", ActionPath, view.Action)
 	}
 	got := map[string]string{}
 	for _, h := range view.Hidden {
@@ -307,7 +307,7 @@ func TestBuildViewHiddenAndAction(t *testing.T) {
 	}
 }
 
-// TestDeclareFeatures 表单分支登记 hx-* 三个属性（产物据此注入 htmx 与片段基座样式）。
+// TestDeclareFeatures 表单分支登记统一 JSON 读写基座。
 func TestDeclareFeatures(t *testing.T) {
 	ctx := testContext()
 	view, err := BuildView(&Props{}, ctx)
@@ -315,7 +315,7 @@ func TestDeclareFeatures(t *testing.T) {
 		t.Fatalf("BuildView: %v", err)
 	}
 	attrs, classes := view.DeclareFeatures()
-	for _, want := range []string{"hx-post", "hx-target", "hx-swap"} {
+	for _, want := range []string{"data-write", "data-site-read", "data-site-cart"} {
 		if !contains(attrs, want) {
 			t.Errorf("表单分支应登记 %q，得到 %v", want, attrs)
 		}
@@ -327,11 +327,11 @@ func TestDeclareFeatures(t *testing.T) {
 
 // TestFieldCatalogAlignedWithCheckoutChain 字段库必须与结算链路的收参逐条对齐。
 //
-// 判据是 runtimefragment/cart.go 的 renderCheckout —— 那张 paramOf 调用表就是
+// 判据是 cart/dto/cart_req.go 的 CartCheckoutReq.BindForm —— 那张 paramOf 调用表就是
 // 「结算链路实际收的参数」。清单与它分叉时：多一个 = 凭空发明（没人读它），
 // 少一个 = 访客填了会被静默丢弃（页面上看不出任何异常）。
 func TestFieldCatalogAlignedWithCheckoutChain(t *testing.T) {
-	// 来源：runtimefragment/cart.go 的 renderCheckout（收货 / 账单 / 备注 / 链路参数）。
+	// 来源：cart/dto/cart_req.go 的 CartCheckoutReq.BindForm（收货 / 账单 / 备注 / 链路参数）。
 	want := []string{
 		"email", "name", "phone",
 		"shipName", "shipPhone", "country", "province", "city", "district", "address", "zip",
@@ -351,7 +351,7 @@ func TestFieldCatalogAlignedWithCheckoutChain(t *testing.T) {
 	if len(got) != len(want) {
 		t.Errorf("字段清单有 %d 项、结算链路收 %d 项（多出来的必须能说出谁读它）", len(got), len(want))
 	}
-	// 金额与归属类永远不进字段库（信任边界，见 runtimefragment/cart.go 的运费注释）。
+	// 金额与归属类永远不进字段库（信任边界，见 cart/service/cart_checkout.go 的运费边界）。
 	for _, forbidden := range []string{"shippingTotal", "total", "subtotal", "discountTotal", "userId", "user", "paid"} {
 		if got[forbidden] {
 			t.Errorf("字段库不该包含 %q（金额与归属是收银台上的东西，不能让客户端填）", forbidden)

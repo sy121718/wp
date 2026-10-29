@@ -15,7 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"go_wp/internal/builder/core"
-	cartcontract "go_wp/internal/module/cart/contract"
 	commentcontract "go_wp/internal/module/comment/contract"
 	contentcontract "go_wp/internal/module/content/contract"
 	membershipcontract "go_wp/internal/module/membership/contract"
@@ -37,8 +36,6 @@ import (
 // （required-* 缺失即装配缺陷并 fail-fast，optional-degraded 缺失写启动日志）。
 // 这里**不再抄一份必填清单** —— 同一份判据留两份真源必然漂移。
 type Deps struct {
-	// CartProvider 购物车与结算（cart；required-port）。
-	CartProvider cartcontract.CartService
 	// MembershipReader 会员身份读取（membership；可缺 → 会员片段显示「功能暂不可用」）。
 	MembershipReader membershipcontract.Reader
 	// CommentPort 评论读写端口（comment；可缺）。收窄到 FragmentPort：片段层拿不到

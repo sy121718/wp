@@ -4,8 +4,8 @@
  * 合并在这里，因为它们做的是同一件事的三个阶段：
  *
  *   ① 整形   DOM 表单 → 请求体（删空值键、嵌套字段、多行文本、裸 HTML）
- *   ② 提交   formdata + htmx（hx-post / hx-swap="none" / hx-disable 由基座自动加）
- *   ③ 收尾   取 X-Message → toast；导航 / 刷新 / 关抽屉；bulk 回执
+ *   ② 提交   fetch + FormData + JSON 响应
+ *   ③ 收尾   取 JSON message → toast；导航 / 刷新 / 关抽屉；bulk 回执
  *
  * ═══ 契约（模板侧全部声明式，不写内联 JS）═══════════════════════════════════
  *
@@ -61,7 +61,7 @@
  *     那条路径已删除，这些属性一并删掉。
  *   · bulk 的 ids 从 [name=ids]:checked 取。
  *   · 宿主元素从 closest('[data-write]') 找。
- *   · 提交期间自动禁按钮（hx-disable），settle 后恢复。
+ *   · 提交期间自动禁按钮，请求结束后恢复。
  */
 // ── 关于行数（方案目标 ≤450，当前 ~735）────────────────────────────────────
 //
@@ -498,27 +498,28 @@
 
     // ── ② 提交 ──────────────────────────────────────────────────────────────
     //
-    // 走 htmx（formdata + X-Message 头），不用 fetch：
-    //   · 服务端 binding.JSON[T] 本来就同时接受 JSON 体与 formdata（实测）；
-    //   · htmx 自带 CSRF 头注入、hx-disable 提交期禁用、错误事件；
-    //   · 旧 json_write 的 fetch 路径是为「前端声明类型 + JSON 严格解码」服务的，
-    //     那条路已不需要。
+    // 同一基座提交 FormData 并消费 JSON；访客 API 使用运行时获取的访客令牌。
     function send(form, submitter, body) {
         var url = attr(form, submitter, 'data-write-url');
-        var headers = { 'HX-Request': 'true' };
-        // CSRF：既有约定读 csrf_token 表单字段或 sessionStorage —— htmx 会自动带
-        // 表单里的 csrf_token；这里只补齐 meta 里那份。
-        var token = form.querySelector('[name="csrf_token"]');
-        if (!token) {
+        var visitor = url.indexOf('/api/site/') === 0;
+        var headers = { Accept:'application/json' };
+        if (visitor) {
+            var csrf = window.WPSiteSession && window.WPSiteSession.csrfToken;
+            if (!csrf) return Promise.reject(new Error('访客会话尚未就绪，请稍后重试'));
+            headers['X-CSRF-Token'] = csrf;
+        } else if (!form.querySelector('[name="csrf_token"]')) {
             var fromMeta = document.querySelector('meta[name="csrf-token"]');
             if (fromMeta) headers['X-CSRF-Token'] = fromMeta.getAttribute('content') || '';
         }
         return fetch(url, {
-            method: 'POST',
-            body: body,
-            headers: headers,
-            credentials: 'same-origin',
-            redirect: 'follow'
+            method:'POST', body:body, headers:headers, credentials:'same-origin',
+            redirect:visitor ? 'error' : 'follow'
+        }).then(function (res) {
+            if (visitor) {
+                var next = res.headers.get('X-CSRF-Token');
+                if (next) window.WPSiteSession.csrfToken = next;
+            }
+            return res;
         });
     }
 
@@ -551,6 +552,7 @@
     }
 
     function afterSuccess(form, submitter, data, text) {
+        form.dispatchEvent(new CustomEvent('write:success', {bubbles:true, detail:{data:data, url:attr(form,submitter,'data-write-url')}}));
         toast(text, true);
         var closeSel = attr(form, submitter, 'data-write-close');
         if (closeSel) {
@@ -623,9 +625,9 @@
                 }
                 return finishOk(form, submitter, mode, payload, text);
             });
-        }).catch(function () {
-            // 网络层失败：输入与勾选一律不动，只点一句错。
-            setStatus(form, msg(form, submitter, 'failed'), 'error');
+        }).catch(function (err) {
+            // 网络层失败：输入与勾选一律保留。
+            setStatus(form, msg(form, submitter, 'failed') || err.message, 'error');
         }).then(function () {
             lock(form, false);
         });

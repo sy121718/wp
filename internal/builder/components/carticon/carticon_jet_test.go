@@ -34,6 +34,7 @@ func renderCartIconHTML(t *testing.T, p *Props, cartURL string) string {
 	}
 	loader := jet.NewInMemLoader()
 	loader.Set("cart_icon", src)
+	loader.Set("site_cart", siteCartTemplate)
 	set := jet.NewSet(loader, jet.WithTemplateNameExtensions([]string{"", ".jet"}))
 	tpl, err := set.GetTemplate("cart_icon")
 	if err != nil {
