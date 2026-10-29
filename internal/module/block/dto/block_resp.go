@@ -43,4 +43,8 @@ type BlockResp struct {
 	Document  json.RawMessage `json:"document"`
 	CreatedAt utils.JSONTime  `json:"createdAt"`
 	UpdatedAt utils.JSONTime  `json:"updatedAt"`
+
+	// Version 当前并发版本（B2）。前端保存时把它原样带回来当 expectedVersion，
+	// 编辑器不需要自己维护一个计数器 —— 那会让"编辑器的计数"与"库里的版本"成为两个真源。
+	Version int64 `json:"version"`
 }

@@ -10,7 +10,9 @@ import (
 	"context"
 	"errors"
 	json "go_wp/pkg/jsonx"
+	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,7 +22,9 @@ import (
 	"go_wp/internal/builder"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
+	blockenums "go_wp/internal/module/block/enums"
 	blockmodel "go_wp/internal/module/block/model"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/utils"
 )
 
@@ -180,8 +184,20 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 	}
 	now := time.Now().UTC()
 	// 写路径带工程作用域（DB-009 第二批）：entity 是上面定位到的块，自带 ProjectID。
-	if err = s.model.UpdateDocument(ctx, entity.ProjectID, entity.ID, name, kind, category, reuseMode, document, now); err != nil {
+	//
+	// 并发（B2）：req.ExpectedVersion > 0 时按 version 做条件更新；命中 0 行说明
+	// 库里的版本已经不是调用方读到的那个 —— 别人先改过。entity 在上面刚定位成功，
+	// 所以"未命中"只可能是版本冲突，不可能是块被删。
+	affected, err := s.model.UpdateDocumentTx(ctx, entity.ProjectID, entity.ID, req.ExpectedVersion,
+		name, kind, category, reuseMode, document, now)
+	if err != nil {
 		return nil, err
+	}
+	if req.ExpectedVersion > 0 && affected == 0 {
+		return nil, s.versionConflict(ctx, entity.ProjectID, entity.ID)
+	}
+	if req.ExpectedVersion > 0 {
+		entity.Version = int64(req.ExpectedVersion) + 1
 	}
 	entity.Name, entity.Kind, entity.Category, entity.ReuseMode, entity.Document, entity.UpdatedAt = name, kind, category, reuseMode, document, now
 	s.propagateStale(ctx, entity.ID, entity.ReuseMode)
@@ -251,8 +267,47 @@ func blockResp(e *blockmodel.BlockEntity) blockdto.BlockResp {
 	return blockdto.BlockResp{
 		ID: e.ID, ProjectID: e.ProjectID, Name: e.Name, Kind: e.Kind, Category: e.Category,
 		ReuseMode: e.ReuseMode, Document: e.Document, CreatedAt: utils.NewJSONTime(e.CreateTime), UpdatedAt: utils.NewJSONTime(e.UpdatedAt),
+		Version: e.Version,
 	}
 }
+
+// versionConflict 构造 409 版本冲突错误，并把**当前版本号**带进消息。
+//
+// 为什么要带当前版本：只说"已被修改"时，前端只能让用户手动刷新整页；
+// 带上版本号后，前端可以提示"当前是第 N 版"并允许在确认后重试。
+// 版本号是公开数据（它就是 etag 的语义），不是内部细节。
+func (s *Service) versionConflict(ctx context.Context, projectID, id string) error {
+	cur, cerr := s.model.GetByID(ctx, id, projectID)
+	if cerr != nil || cur == nil {
+		return facing.WithStatus(blockenums.Err(blockenums.ErrBlockVersionConflict), http.StatusConflict)
+	}
+	// 版本号走 facing.BlockedError 之外的**参数化事实**：出口用 response.MsgText +
+	// facing.Msg.Args 填充 %s。不在这里自己 Sprintf —— 那样译文里就没有占位符可用了，
+	// 英文界面拿到的是中英混杂的一句。
+	return facing.WithStatus(&versionConflictError{version: cur.Version}, http.StatusConflict)
+}
+
+// versionConflictError 携带当前版本号的冲突错误（对外文案由出口按 key + Args 取）。
+//
+// 实现 facing.Source（Facing 给 key + 兜底）让出口能识别它是业务错误；
+// Version() 供出口取参数。单独成类型而不是 fmt.Errorf("%w|%d")：
+// `key|param` 是 pkg/response.translate 认识的形态，但 facing.FactOf 只按
+// "单段 key / key: 明细" 切，带竖线的那串整体过不了业务判据，会退成 500。
+type versionConflictError struct{ version int64 }
+
+func (e *versionConflictError) Error() string { return blockenums.ErrBlockVersionConflict }
+
+// Is 按 key 匹配（与 facing.Error.Is 同形）：调用方用 errors.Is(err, ErrBlockVersionConflict)
+// 判类别，而不是断言具体类型 —— 断言类型会把「谁包装了谁」变成契约的一部分。
+func (e *versionConflictError) Is(target error) bool {
+	return target != nil && target.Error() == blockenums.ErrBlockVersionConflict
+}
+func (e *versionConflictError) Facing() (string, string) {
+	return blockenums.ErrBlockVersionConflict, blockenums.FallbackFor(blockenums.ErrBlockVersionConflict)
+}
+
+// Version 当前版本号（出口用它填 %s）。
+func (e *versionConflictError) Version() string { return strconv.FormatInt(e.version, 10) }
 
 func blockRespPtr(e *blockmodel.BlockEntity) *blockdto.BlockResp {
 	r := blockResp(e)

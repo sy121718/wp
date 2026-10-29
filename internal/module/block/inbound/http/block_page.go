@@ -24,6 +24,7 @@ package blockhttp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -38,6 +39,7 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	"go_wp/pkg/binding"
+	"go_wp/pkg/facing"
 	"go_wp/pkg/logger"
 	"go_wp/pkg/response"
 	"go_wp/pkg/safepath"
@@ -225,8 +227,19 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 		name = strings.TrimSpace(req.Name)
 	}
 	if _, uerr := h.blocks.Update(c.Request.Context(), &blockcontract.UpdateReq{
-		ID: req.ID, Name: name, Document: req.Document,
+		ID: req.ID, Name: name, Document: req.Document, ExpectedVersion: req.ExpectedVersion,
 	}); uerr != nil {
+		// 版本冲突（409）与其它失败分开：它是**可重试的用户动作**，不该打 500 归口文案，
+		// 也不该被当成基础设施故障写进 500 日志。前端据 409 + 模块文案提示"刷新后重试"。
+		//
+		// 文案带当前版本号：走 response.MsgText + Args 这条既有的参数化通道
+		// （词条里是 %s），而不是把版本号拼进错误串 —— 拼进去就没有占位符可用，
+		// 英文界面会拿到中英混杂的一句。
+		if status, ok := facing.StatusOf(uerr); ok && status == http.StatusConflict {
+			response.ErrorWithMessage(c, http.StatusConflict,
+				response.MsgText(c, versionConflictMsg(uerr)))
+			return
+		}
 		// 这条分支原先**只回 500 归口文案、不落任何日志**（F 线实测：合成 payload 触发 500，
 		// 日志里空空如也，排障无从下手）。响应形状不变（仍是归口文案），
 		// 错误原文只进结构化日志 —— 与同文件其它写路径（CreateBlock / DeleteBlock）的写法一致。
@@ -253,6 +266,22 @@ func (h *blockPageHandle) SaveBlockContent(c *gin.Context) {
 	// 不再把中文写在这里 —— 原先在控制器里手拼一个只含 message 的 map 直接返回
 	// 是英文界面上唯一说中文的那一句（同文件其余路径都走了 response + enums）。
 	response.SuccessWithMessage(c, blockenums.ContentSavedRebuildQueued)
+}
+
+// versionConflictMsg 从版本冲突错误取「key + 兜底 + 版本号参数」这条事实。
+//
+// 取不到版本号时退化成不带参数的文案（词条里的 %s 会被 ArgsText 的兜底逻辑处理：
+// 参数为空时直接用词条原文）。
+func versionConflictMsg(err error) facing.Msg {
+	msg := facing.Msg{
+		Key:      blockenums.ErrBlockVersionConflict,
+		Fallback: blockenums.FallbackFor(blockenums.ErrBlockVersionConflict),
+	}
+	var withVersion interface{ Version() string }
+	if errors.As(err, &withVersion) {
+		msg.Args = []string{withVersion.Version()}
+	}
+	return msg
 }
 
 // blockErrScene 页面出口的日志场景名（与 block 模块其它 logger.Scene("block") 调用点一致）。
