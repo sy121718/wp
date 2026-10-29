@@ -58,6 +58,9 @@ func ParsePage(data []byte) (p *Page, err error) {
 
 // CompiledPage 页面文档的静态编译输出。
 type CompiledPage struct {
+	// PreviewReadOnly 是编译用途事实，预览禁止访客写操作；不进入作者文档。
+	PreviewReadOnly bool
+	PreviewNotice   string
 	// Lang 本次编译的目标语言（注入 <html lang>，多语言 P3）。
 	// 空表示未知，RenderDocument 回退站点默认语言（保持单语言产物字节不变）。
 	Lang string
@@ -812,6 +815,8 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	}
 
 	return &CompiledPage{
+		PreviewNotice:     ctx.Text("workbench.preview.readonly", "模拟预览：不会提交真实数据，请在发布页面中操作。"),
+		PreviewReadOnly:   cfg.mode != CompileModePublish,
 		Lang:              lang,
 		Title:             seoTitle,
 		MetaDescription:   seoDescription,
@@ -889,13 +894,21 @@ func RenderDocument(c *CompiledPage) (string, error) {
 	if lang == "" {
 		lang = i18n.GetDefaultLang()
 	}
+	tracking := c.TrackConfig + c.TrackSource
+	ga4Head := c.GA4Head
+	if c.PreviewReadOnly {
+		tracking = ""
+		ga4Head = ""
+	}
 	v := documentView{
+		PreviewNotice:     c.PreviewNotice,
+		PreviewReadOnly:   c.PreviewReadOnly,
 		Lang:              lang,
 		Dir:               DirAttr(lang),
 		Title:             c.Title,
 		MetaDescription:   c.MetaDescription,
 		SEOHead:           c.SEOHead,
-		GA4Head:           c.GA4Head,
+		GA4Head:           ga4Head,
 		SearchConsoleHead: c.SearchConsoleHead,
 		// 自定义注入代码是**管理员原文**，模板里必须 unsafe 输出：转义会把脚本变成
 		// 页面上的可见文本（功能直接失效）。风险由信任边界承担 —— 只有后台有
@@ -911,7 +924,7 @@ func RenderDocument(c *CompiledPage) (string, error) {
 		// 二是它要尽早写 cookie —— 排在交互脚本后面的话，前一个脚本抛错会连坐，
 		// 而归因丢数据是静默的，没人会发现少了什么。
 		// 打点配置（工程 ID / 语言）排在采集脚本之前：脚本运行时就要读它。
-		EnhanceScript: c.TrackConfig + c.TrackSource + enhanceScriptFor(scan.attrs, c.EnhanceSource) + uiScript,
+		EnhanceScript: tracking + enhanceScriptFor(scan.attrs, c.EnhanceSource) + uiScript,
 	}
 	var sb strings.Builder
 	if err := documentTemplate().Execute(&sb, nil, v); err != nil {
@@ -939,6 +952,8 @@ func DirAttr(lang string) string {
 
 // documentView 文档骨架渲染数据（CompiledPage 拍平 + 增强脚本进模板）。
 type documentView struct {
+	PreviewNotice     string
+	PreviewReadOnly   bool
 	Lang              string // <html lang>（目标语言，空回退默认语言）
 	Dir               string // <html dir>（仅 RTL 非空，缺省 = LTR）
 	Title             string
