@@ -243,7 +243,7 @@ func TestProductEditVariantsUseJSONWriteBase(t *testing.T) {
 		`data-write-builder="product-variant-rows"`,
 		`data-write-reload`,
 		`data-write-url="/api/product/variant/create"`,
-		`data-preview-url="/admin/products/variant/preview"`,
+		`data-preview-url="/api/product/variant/preview"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("变体区缺少基座声明 %q", want)
@@ -253,6 +253,7 @@ func TestProductEditVariantsUseJSONWriteBase(t *testing.T) {
 		`action="/admin/products/variant/save"`,
 		`action="/admin/products/variant/create"`,
 		`action="/admin/products/variant/generate"`,
+		`data-preview-url="/admin/products/variant/preview"`,
 		`name="rows"`,
 	} {
 		if strings.Contains(body, bad) {

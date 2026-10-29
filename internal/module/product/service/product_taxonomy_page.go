@@ -80,6 +80,11 @@ func (s *Service) QueryCategories(ctx context.Context, query *productdto.Catalog
 
 func (s *Service) SearchCategoryParents(ctx context.Context, query *productdto.CatalogTaxonomyReq) ([]*productdto.CategoryResp, error) {
 	q := normalizedTaxonomyQuery(query)
+	scope, err := s.ResolveCatalogScope(ctx, q.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	q.ProjectID = scope.ProjectID
 	projectID := q.ProjectID
 	out := []*productdto.CategoryResp{}
 	if q.Keyword == "" {

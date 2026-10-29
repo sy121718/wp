@@ -1,33 +1,7 @@
 package producthttp
 
-// product_router.go — product 模块**唯一的**路由声明点，同时也是模块装配入口。
-//
-// 两条硬规则（与 page 模块同一套形状）：
-//
-//  1. **路由只有一份**。本模块全部入口 —— `/api/product/*` 的接口面与 `/admin/*` 的页面面
-//     —— 都只在这个文件里声明。以前拆成 product_router.go（API）+ product_page_router.go
-//     （页面）两份，于是回答「这个模块一共暴露了哪些入口」要跨两个文件拼，而路由正是权限点 /
-//     CSRF / Casbin 的对账面：漏看一条的表现不是编译错误，而是「接口能删、页面删不掉」这类
-//     两边都不报错、测试也不红的分叉。**按业务域拆的是控制器**（product_subject_handle.go 商品主体：
-//     CRUD / 变体 / 列表与编辑页 / 捆绑配置 / 定价；product_taxonomy_handle.go 分类与品牌；
-//     product_tag_handle.go 标签；product_attributes_handle.go 属性；product_detail_template_handle.go 详情页模板；
-//     product_score_handle.go SEO 评分；product_translations_handle.go 译文；
-//     product_bulk_handle.go 批量回执文案与 id 归一）。同一域里接口面在前、页面面在后，
-//     所以找一个动作只需认一个文件。
-//
-//  2. **同一功能的页面与接口挨着写**。一个业务动作有两条通道：JSON 接口（工作台 / 脚本 /
-//     批量 / 构建期）与后台页面（运营）。它们在权限点路径、拒绝规则上必须同源，所以下面按
-//     业务域分节，每节接口面在前、页面面在后。
-//
-// 中间件链：`/api/product` 组走 authorizedAPI 的三层链（SessionAuth + CSRF + Casbin，
-// 权限点作为第二实参声明，供 check-permission-gaps.sh 对账）；`/admin` 页面组的
-// Session + CSRF + 权限上下文由装配层统一挂好，**页面写动作一律按「对应接口的路径」显式挂
-// Casbin**（页面路径与权限点路径不一致，直接按页面路径 enforce 会因权限点表里没有那条路径
-// 而拒绝所有用户，含超管）。
-//
-// 只读片段（变体预览、SEO 评分、属性值行、成员解析、标签命中）**不挂 Casbin**：它们
-// 不落库、不写产物，页面组已有 Session + CSRF；给只读片段单挂权限点反而会造出
-// 「能看编辑页却打不开评分」的状态。这一条在下面的注释里逐处写明。
+// 商品模块的路由与装配唯一入口。业务 API 使用独立权限点和 JSON 契约；
+// 成功页面由 PageSlot 渲染，构建预览成功直接传递产物字节。
 
 import (
 	"net/http"
@@ -72,15 +46,9 @@ const (
 	ProductDetailTemplatePageTemplate = "admin/product/product_detail_template.html"
 	ProductAttributesPageTemplate     = "admin/product/product_attributes.html"
 	ProductCategoriesPageTemplate     = "admin/product/product_categories.html"
-	ProductCategoryParentsTemplate    = "admin/product/product_category_parent_options.html"
 	ProductBrandsPageTemplate         = "admin/product/product_brands.html"
 	ProductTagsPageTemplate           = "admin/product/product_tags.html"
-	ProductTagHitsTemplate            = "admin/product/product_tag_hits.html"
 	ProductTranslationsPageTemplate   = "admin/product/product_translations.html"
-	EntitySeoDrawerTemplate           = "admin/product/entity_seo_drawer.html"
-	SeoScoreFragmentTemplate          = "fragments/seo_score"
-	// ProductPreviewNoticeTemplate 预览 iframe 的替代页（商品与文章共用这一份）。
-	ProductPreviewNoticeTemplate = "admin/preview_notice.html"
 )
 
 // ══ 接口面装配（authorizedAPI 三层链）══
@@ -98,7 +66,7 @@ const (
 // 读模型（contract.ProductPageReader）只有页面面用得到，而页面装配
 // （assembly_publish.go 的 SetupProductPages）与接口面装配在不同方法里 —— 由装配层
 // 把这两条一起往下传，页面处理器就不必在请求期断言，漏接变成编译错误。
-func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectcontract.ProjectService) (productcontract.ProductService, productcontract.ProductPageReader) {
+func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectcontract.ProjectService) (productcontract.ProductService, productcontract.ProductPageReader, *ProductHandle) {
 	svc := productservice.NewService(productmodel.NewModel(db), project)
 	svc.SetContentStore(i18n.NewDBContentStore(db))
 	handle := NewProductHandle(svc)
@@ -112,7 +80,7 @@ func SetupProductRoutes(rg *permission.RouteGroup, db *gorm.DB, project projectc
 	registerProductTagAPI(g, handle)
 	registerProductPricingAPI(g, handle)
 	registerProductPublishHistoryAPI(g, NewPublishAttemptHandle(svc))
-	return svc, svc
+	return svc, svc, handle
 }
 
 // SetupProductPublicRoutes 访客只读数据入口，独立于后台会话与权限域。
@@ -148,8 +116,7 @@ func registerProductCoreAPI(g *permission.RouteGroup, handle *ProductHandle) {
 	g.POST("/create", permission.ProductCreate, handle.Create)
 	g.POST("/update", permission.ProductUpdate, handle.Update)
 	g.POST("/delete", permission.ProductDelete, handle.Delete)
-	// 批量删除：与单条同一个权限点、同一个 service 方法，回执从「整页提示」换成
-	// JSON（ui/write-base.js 基座消费 data.deleted / data.skipped / data.items[].message）。
+	// 批量删除独立授权；服务层同一事务全成或全败。
 	g.POST("/bulk-delete", permission.ProductBulkDelete, handle.BulkDelete)
 	g.POST("/variant/create", permission.ProductVariantCreate, handle.CreateVariant)
 	// 组合生成（issue #8）：勾选属性值 → 笛卡尔积写变体（幂等，超上限整体拒绝）。
@@ -213,6 +180,7 @@ func registerProductTaxonomyAPI(g *permission.RouteGroup, handle *ProductHandle)
 	// 分类是树（list 返回树、get 取单节点），品牌是平铺列表。
 	// 分类与品牌都可跨商品复用，故与商品资源并列而不是嵌在商品路径下。
 	g.GET("/category/list", permission.ProductCategoryList, handle.ListCategories)
+	g.GET("/category/parents", permission.ProductCategoryParents, handle.ProductCategoryParents)
 	g.GET("/category/get", permission.ProductCategoryGet, handle.GetCategory)
 	g.POST("/category/create", permission.ProductCategoryCreate, handle.CreateCategory)
 	g.POST("/category/update", permission.ProductCategoryUpdate, handle.UpdateCategory)
@@ -276,7 +244,7 @@ func registerProductPricingAPI(g *permission.RouteGroup, handle *ProductHandle) 
 
 // SetupProductPages 装配 product 域后台页面，返回页面处理器。
 // reader 是 products 的读模型面（同一个实现，类型不同）；两者都是构造页处理器的必需实参。
-func SetupProductPages(pages *gin.RouterGroup,
+func SetupProductPages(pages *gin.RouterGroup, api *permission.RouteGroup, writeHandle *ProductHandle,
 	products productcontract.ProductService,
 	reader productcontract.ProductPageReader,
 	projects projectcontract.ProjectService,
@@ -309,14 +277,15 @@ func SetupProductPages(pages *gin.RouterGroup,
 	productPages.SetPublishRecordDeps(presentations, presentations)
 	// 详情页模板的四个写动作（新建 / 首次发布 / 切换 / 改 URL）挂在 /api/product 组，
 	// 而那两个契约在 SetupProductRoutes 里还拿不到 —— 同一批依赖在这里后置注入
-	//（与文件末尾 BindDetailTemplateModePort 同一个理由，见 product_detail_template_handle.go）。
-	BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
+	// 依赖保存在本次装配的处理器实例上，不使用包级可变状态。
+	writeHandle.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: contentTemplates, Instances: presentations, Products: products, Projects: projects,
 	})
-	// 编辑期 title 唯一性检查的全站数据源（审计 SEO-018）：页面草稿与文章标题
-	// 必须和商品域在同一份索引里，否则跨内容的重复标题检不出来。两份契约都可空。
+	// 编辑期标题索引仅纳入可按工程过滤的数据源；可选依赖缺失与文章契约
+	// 缺少工程过滤能力都显式记录在 coverage，不能当作全站检查通过。
 	productPages.SetSeoTitleSources(pageSvc, contentSvc)
 
+	registerProductReadAPI(api.Group("/product"), productPages)
 	registerProductListPages(pages, productPages)
 	registerProductTemplatePages(pages, productPages)
 	registerProductAttributePages(pages, productPages)
@@ -324,6 +293,14 @@ func SetupProductPages(pages *gin.RouterGroup,
 	registerProductTagPages(pages, productPages)
 	registerProductPricingPages(pages, productPages)
 	return productPages
+}
+
+// registerProductReadAPI 注册只读计算入口；只读仍须逐条授权。
+func registerProductReadAPI(g *permission.RouteGroup, handle *ProductPageHandle) {
+	g.POST("/variant/preview", permission.ProductVariantPreview, handle.PreviewVariant)
+	g.POST("/seo-score", permission.ProductSEOScore, handle.SeoScore)
+	g.POST("/category/seo-score", permission.ProductCategorySEOScore, handle.CategorySeoScore)
+	g.POST("/brand/seo-score", permission.ProductBrandSEOScore, handle.BrandSeoScore)
 }
 
 // registerProductListPages 注册商品列表 / 新建 / 详情 / 编辑的页面路由。
@@ -347,36 +324,8 @@ func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageH
 	// 明细表，所以这里不编造「上次失败」这类行。页内「重新发布」复用
 	// /api/product/detail-template/apply（已有权限点），本页只多一条 GET。
 	pages.GET("/products/publish-records", adminui.PageAuthz("/api/product/list"), adminui.PageSlot(ProductPublishRecordPageTemplate), productPages.ProductPublishRecordPage)
-	// 变体清单的组合预览（AGENTS.md §8 的「预览—保存」模型）：**只算不写** —— 纯计算，
-	// 因此不挂 Casbin（与 /product-attributes/value-rows 同一先例：页面组已有 Session + CSRF，
-	// 而这个端点落不了任何库）。返回的行由前端追加进清单，用户点保存才落库。
-	// 变体的四个写动作（新建 / 生成 / 删除 / 清单保存）已全部在 /api/product/variant/* 。
-	pages.POST("/products/variant/preview", productPages.ProductsVariantPreview)
-	// 删除 / 批量删除 / 批量改价 / 挂属性组**都没有页面 POST**：模板用 ui/write-base.js 直调
-	// /api/product/{delete,bulk-delete,bulk-pricing,update}。页面组只剩读入口与三个只算不写的
-	// 预览端点（变体组合、评分面板、SEO 抽屉）。
-	// 双轨写动作（迁移 282）没有页面 POST：模板用 ui/write-base.js 直调
-	// /api/product/detail-template/*（见上面接口面那一节）。
-	// 产物指针回滚（rollback-artifact）连页面入口一起**删除**：它要求调用方手上有一个
-	// 产物 hash，而后台上没有任何地方给出这个事实（模板里从来没渲染过这个表单），
-	// 留着就是一条「有路由、无入口」的死端点。
-	// 商品评分（issue #33）：评分是独立明细表（#30），增删复用商品更新权限点 ——
-	// 评分属商品维护，不另立权限点与菜单。
-
-	// SEO 评分（审计 SEO-016）：商品 / 分类 / 品牌页的编辑期评分，按页型自动选权重档案。
-	// **只读计算**（不写库、不写产物、不激活 URL），因此与文章编辑页的评分侧栏一样
-	// 不叠加 Casbin 权限点 —— 页面组已有 Session + CSRF；评分是提示性的，不拦保存。
-	pages.POST("/products/seo-score", adminui.BareSlot(SeoScoreFragmentTemplate), productPages.ProductScorePanel)
-	// SEO 评分抽屉片段（商品 / 分类 / 品牌共用一个）：四处入口（商品编辑页、两个表单页、
-	// 两个列表页的行内按钮）统一落到这里。与上面两个 POST 端点**同一取舍** ——
-	// 只读计算（不写库、不写产物），页面组已有 Session + CSRF，不叠加 Casbin 权限点；
-	// 给一个只读片段单独挂权限点，会让「能看编辑页却打不开评分」这种状态冒出来。
-	pages.GET("/products/seo/drawer", adminui.PageSlot(EntitySeoDrawerTemplate), productPages.EntitySeoDrawer)
-	// 详情页真实预览帧（iframe 直接 src）：页面组鉴权（Session），理由同上一行 ——
-	// 只读渲染、不落库，而 iframe 无法携带 CSRF 头。
-	pages.GET("/products/preview-frame", adminui.BareSlot(ProductPreviewNoticeTemplate), productPages.ProductPreviewFrame)
-	pages.POST("/product-categories/seo-score", adminui.BareSlot(SeoScoreFragmentTemplate), productPages.ProductCategoryScorePanel)
-	pages.POST("/product-brands/seo-score", adminui.BareSlot(SeoScoreFragmentTemplate), productPages.ProductBrandScorePanel)
+	// 成功为构建产物字节；错误只给 JSON，由父页展示提示。
+	pages.GET("/products/preview-frame", adminui.PageAuthzAs("/api/presentation/preview", http.MethodPost), productPages.ProductPreviewFrame)
 }
 
 // registerProductTemplatePages 注册详情页模板（issue #14）+ 捆绑配置（issue #20）的页面路由。
@@ -390,7 +339,7 @@ func registerProductTemplatePages(pages *gin.RouterGroup, productPages *ProductP
 	// 新建 / 首次发布 / 切换模板 / 改 URL 四个写动作已迁到 /api/product/detail-template/*，
 	// 页面前端走 ui/write-base.js。
 	pages.GET("/products/template", adminui.PageAuthz("/api/product/get"), adminui.PageSlot(ProductDetailTemplatePageTemplate), productPages.ProductDetailTemplatePage)
-	pages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), adminui.PageSlot(ProductDetailTemplatePageTemplate), productPages.ProductDetailTemplatePreview)
+	pages.POST("/products/template/preview", builtin.CasbinMiddlewareForPath("/api/presentation/preview"), productPages.ProductDetailTemplatePreview)
 }
 
 // registerProductAttributePages 注册属性库（issue #7）的页面路由。
@@ -412,9 +361,8 @@ func registerProductTaxonomyPages(pages *gin.RouterGroup, productPages *ProductP
 	// 没有「子级懒加载」端点。品牌是独立实体（logo / 描述 / slug / SEO 字段）。
 	// 写动作复用商品 API 权限点做 Casbin 鉴权。
 	pages.GET("/product-categories", adminui.PageAuthz("/api/product/category/list"), adminui.PageSlot(ProductCategoriesPageTemplate), productPages.ProductCategoriesPage)
-	pages.GET("/product-categories/parents", adminui.PageAuthz("/api/product/category/list"), adminui.BareSlot(ProductCategoryParentsTemplate), productPages.ProductCategoryParents)
 	// 分类的写动作没有页面 POST：模板用 ui/write-base.js 直调 /api/product/category/*。
-	// 页面组只剩两个读入口（列表页与父级候选搜索）。
+	// 父级候选搜索是 /api/product/category/parents JSON API。
 	pages.GET("/product-brands", adminui.PageAuthz("/api/product/brand/list"), adminui.PageSlot(ProductBrandsPageTemplate), productPages.ProductBrandsPage)
 	// 品牌的写动作没有页面 POST：模板用 ui/write-base.js 直调 /api/product/brand/*。
 	// 商品挂载分类（多个 + 主分类）与品牌也没有：属于商品更新，走 /api/product/update。
@@ -428,9 +376,7 @@ func registerProductTagPages(pages *gin.RouterGroup, productPages *ProductPageHa
 	// 手工标签 + 内置规则的自动标签（规则只接受白名单参数）。
 	// 写动作复用商品标签 API 权限点做 Casbin 鉴权；「重算」是显式重算时机之一。
 	pages.GET("/product-tags", adminui.PageAuthz("/api/product/tag/list"), adminui.PageSlot(ProductTagsPageTemplate), productPages.ProductTagsPage)
-	// 命中商品片段（审计 PERF-02）：标签页首屏不再逐标签内联命中商品，展开时按页取。
-	// 命中片段复用标签读取权限，避免可展开内容绕过列表授权。
-	pages.GET("/product-tags/hits", adminui.PageAuthz("/api/product/tag/list"), adminui.PageSlot(ProductTagHitsTemplate), productPages.ProductTagHitsFragment)
+	// 命中商品通过 /api/product/tag/products 按页查询。
 	// 商品挂手工标签同样走 /api/product/update（自动标签不在这份表单里）。
 }
 
@@ -470,24 +416,6 @@ func SetupProductTranslationRoutes(apiRoot *permission.RouteGroup, adminPages *g
 	// 权限点与页面写的端点对不上，而两边都不报错。
 	apiRoot.Group("/product").POST("/translations/save", permission.ProductTranslationsSave, handle.SaveProductTranslations)
 	return handle
-}
-
-// ══ 后置注入（装配顺序倒不过来的一条依赖）══
-
-// detailTemplateModePort 双轨能力（迁移 282）在**接口面**的注入点：装配期写一次，之后只读。
-//
-// 为什么是包级变量而不是构造参数：product 的接口面在 assembly.go 里装配，而 presentation
-// （提供双轨能力的那个模块）在 assembly_publish.go 才建出来 —— 顺序反不过来。
-// 与 inventoryhttp.SetProductCatalog 同一手法（跨模块循环依赖在装配期的唯一解法）。
-//
-// 未注入时两个端点回 500 归口文案：装配缺陷必须可见，不能静默成功。真实装配里
-// assembly_publish.go 紧跟 presentation 建好之后调 BindDetailTemplateModePort，
-// 漏了就是启动期接线错误，而不是运行期的空操作。
-var detailTemplateModePort presentationcontract.DetailTemplateModePort
-
-// BindDetailTemplateModePort 绑定双轨能力（装配期调用一次）。
-func BindDetailTemplateModePort(port presentationcontract.DetailTemplateModePort) {
-	detailTemplateModePort = port
 }
 
 // ===================================================================// 模块入口：两个处理器类型、构造与装配注入
@@ -598,7 +526,9 @@ func (h *ProductPageHandle) SetInventoryDeps(inventory inventorycontract.Invento
 // 页面面处理器是 ProductPageHandle（见 product_page.go）。
 // ===================================================================// ProductHandle product 接口处理器。
 type ProductHandle struct {
-	svc productcontract.ProductService
+	svc          productcontract.ProductService
+	templateDeps productservice.DetailTemplateDeps
+	modePort     presentationcontract.DetailTemplateModePort
 }
 
 // NewProductHandle 构造。

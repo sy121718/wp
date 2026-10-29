@@ -15,16 +15,11 @@
             <input aria-label="{{tr("admin.product_categories.label.slug", "URL 段")}}" class="form-input" type="text" name="slug" value="{{entity.Slug}}" placeholder="{{tr("admin.product_categories.label.slug", "URL 段")}}" autocomplete="off">
             {{parent := entity.ParentID}}
             {{id := entity.ID}}
-            <div data-category-parent-picker data-category-project="{{.Project}}">
+            <div data-category-parent-picker data-category-project="{{.Project}}" data-category-empty="{{tr("admin.product_categories.parentSearch.empty", "没有匹配的分类")}}" data-category-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
             <label for="category-parent-search-{{if create}}new{{else}}{{entity.ID}}{{end}}">{{tr("admin.product_categories.parentSearch.label", "搜索父级分类")}}</label>
 
             <input id="category-parent-search-{{if create}}new{{else}}{{entity.ID}}{{end}}" type="search" class="form-input" autocomplete="off"
                    placeholder="{{tr("admin.product_categories.parentSearch.placeholder", "按名称搜索父级")}}"
-                   hx-get="/admin/product-categories/parents?project={{.Project}}"
-                   hx-vals="js:{keyword: this.value}"
-                   hx-trigger="input changed delay:180ms, search"
-                   hx-target="closest [data-category-parent-picker] [data-category-parent-results]"
-                   hx-swap="innerHTML"
                    data-category-parent-search>
             <select aria-label="{{tr("admin.product_categories.label.parent", "父级分类")}}" class="form-select" name="parentId" data-category-parent-select>
                 <option value="" {{if parent == ""}}selected{{end}}>{{tr("admin.product_categories.option.topLevel", "（顶级分类）")}}</option>
@@ -50,9 +45,9 @@
         <p class="form-hint" data-write-status role="status" hidden></p>
         <div class="action-row">
             <button type="button" class="btn btn-ghost" data-drawer-close>{{tr("admin.common.action.cancel", "取消")}}</button>
-            {{if !create}}<button type="button" class="btn" hx-post="/admin/product-categories/seo-score" hx-include="closest form" hx-target="#category-seo-score-{{entity.ID}}" hx-swap="innerHTML">{{tr("admin.product_categories.seoScore", "SEO 评分")}}</button>{{end}}
-        {{if !create}}<div id="category-seo-score-{{entity.ID}}" class="wb-seo-panel"></div>{{end}}
             <button type="submit" class="btn btn-primary" data-requires-js hidden>{{if create}}{{tr("admin.product_categories.create.submit", "新建分类")}}{{else}}{{tr("admin.product_categories.list.save", "保存分类")}}{{end}}</button>
+            {{if !create}}<button type="submit" formnovalidate class="btn" data-write="custom" data-write-url="/api/product/category/seo-score" data-write-handler="product.seo">{{tr("admin.product_categories.seoScore", "SEO 评分")}}</button>{{end}}
         </div>
-            </form>
+        {{if !create}}{{include "product_seo_panel.html"}}{{end}}
+    </form>
 </div>

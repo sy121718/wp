@@ -1,4 +1,4 @@
-// product_page_req.go — 后台页面（GET 页面 / POST 片段）的入参形状与字段解析。
+// product_page_req.go — 后台页面与只读计算的入参形状与字段解析。
 //
 // 页面请求与接口请求走同一个绑定入口（pkg/binding）：控制器里不再出现 c.Query /
 // c.PostForm，字段名（表单 name、查询串键名）只在这里声明一次。
@@ -43,24 +43,21 @@ func SelectionsFromForm(vals url.Values) []VariantSelectionReq {
 	return out
 }
 
-// ScorePanelReq 编辑期评分片段（三个面板共用：工程 + 实体 id）。
+// ScorePanelReq 商品、分类与品牌评分的只读请求。
 type ScorePanelReq struct {
-	ProjectID string `form:"projectId"`
-	// ProductID 商品评分面板用。
-	ProductID string `form:"productId"`
-	// ID 分类 / 品牌评分面板用。
-	ID string `form:"id"`
+	ProjectID string `form:"projectId" json:"projectId" binding:"required"`
+	ID        string `form:"id" json:"id" binding:"required"`
 }
 
 // VariantPreviewFormReq 生成组合「预览」的表单入参（不落库）。
 type VariantPreviewFormReq struct {
-	ProductID   string `form:"productId"`
-	ProjectID   string `form:"projectId"`
-	WarehouseID string `form:"warehouseId"`
+	ProductID   string `json:"productId" form:"productId"`
+	ProjectID   string `json:"projectId" form:"projectId"`
+	WarehouseID string `json:"warehouseId" form:"warehouseId"`
 	// OptionValues 清单里已有组合的 option_values（每行一条 JSON 串）。
-	OptionValues []string `form:"optionValues"`
+	OptionValues []string `json:"optionValues" form:"optionValues"`
 	// Selections 属性组合勾选（attr:<属性组 id>）。
-	Selections []VariantSelectionReq
+	Selections []VariantSelectionReq `json:"selections" form:"-"`
 }
 
 // BindForm 收 attr: 前缀的勾选。
@@ -106,9 +103,7 @@ type ProductDetailPageReq struct {
 type ProductEditPageReq struct {
 	// ProjectID 查询串 / 表单里的工程 id；空串 = 取工程清单的第一个。
 	ProjectID string `form:"project"`
-	// ProductID 要编辑的商品 id；空串 = 没给参数 → **200 空表单**（不是 404）：
-	// 编辑页是写入口，让运营看到一个空表单比看到一个 404 有用（详情页反过来）。
-	// 给了 id 但库里没有才是 404（与详情页同一档：空态、不进失败槽）。
+	// ProductID 要编辑的商品 id；缺失或不存在统一返回 404 JSON。
 	ProductID string `form:"product"`
 }
 
@@ -146,12 +141,6 @@ type SaveProductTranslationsReq struct {
 
 // ProductPreviewFrameReq 商品预览帧的查询串参数（键名沿用编辑页里的 productId）。
 type ProductPreviewFrameReq struct {
-	ProjectID string `form:"project"`
-	ProductID string `form:"productId"`
-}
-
-// ProductSeoDrawerReq 商品 SEO 抽屉的查询串参数（与预览帧同形）。
-type ProductSeoDrawerReq struct {
 	ProjectID string `form:"project"`
 	ProductID string `form:"productId"`
 }

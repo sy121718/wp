@@ -23,7 +23,9 @@ import "net/http"
 // errStatuses 业务错误 key → HTTP 状态码。未登记的 key 走 pkg/response 的默认分档
 // （业务 400 / 非业务 500）。
 var errStatuses = map[string]int{
-	ErrVariantListDuplicated: http.StatusConflict,
+	ErrDetailTemplateUnavailable:  http.StatusInternalServerError,
+	ErrDetailTemplatePreviewEmpty: http.StatusInternalServerError,
+	ErrVariantListDuplicated:      http.StatusConflict,
 	// —— 404：资源不存在 ——
 	ErrNotFound:                  http.StatusNotFound,
 	ErrAttrNotFound:              http.StatusNotFound,

@@ -12,8 +12,8 @@ package productservice
 //     · 显式调用（接口 / 后台「重算」按钮，可按标签或按工程）。
 //     重算只替换**自己那一个 tag id** 的商品归属（model.ReplaceTagProductsTx 按元素
 //     摘挂），因此永远不会覆盖手工标签，也不会动其它自动标签；
-//  4. 后台可查看某标签命中哪些商品（GetTag / ListTagProducts 接口 + 页面按需片段：
-//     首屏只给数量，展开某个标签才按页取，见 ListTagProductsPage）。
+//  4. 后台可查看某标签命中哪些商品（GetTag / ListTagProducts 接口：
+//     首屏只给数量，展开某个标签才按页取，见 ListTagProducts）。
 //
 // 边界：标签只描述「商品有什么标记」，不生成 URL、不写产物；静态化在发布管线里。
 
@@ -358,41 +358,9 @@ func tagListFilter(req *productdto.ListTagReq) (rawProjectID, kind, keyword stri
 	return req.ProjectID, strings.TrimSpace(req.Kind), strings.TrimSpace(req.Keyword)
 }
 
-// ListTagProducts 某标签命中的商品（验收 4：后台可查看某标签命中哪些商品）。
-func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagProductsReq) (list []*productdto.TagProductResp, err error) {
-	if req == nil || req.TagID == "" {
-		return nil, productenums.Err(productenums.ErrInvalidParam)
-	}
-	projectID, err := s.resolveProjectID(ctx, req.ProjectID)
-	if err != nil {
-		return nil, err
-	}
-	if _, gerr := s.m.GetTag(ctx, req.TagID, projectID); gerr != nil {
-		return nil, mapTagNotFound(gerr)
-	}
-	limit := req.Limit
-	if limit <= 0 {
-		limit = defaultTagProducts
-	}
-	if limit > maxTagProducts {
-		limit = maxTagProducts
-	}
-	rows, err := s.m.ListProductsByTag(ctx, req.TagID, projectID, limit)
-	if err != nil {
-		return nil, err
-	}
-	return toTagProductResps(rows), nil
-}
-
-// ListTagProductsPage 某标签命中商品的一页（后台展开区按需取；审计 PERF-02）。
-//
-// 与 ListTagProducts 的分工：那个是接口形态（不翻页、只要一个上限），这个是后台页形态。
-// 命中商品从首屏移到这里之后，标签页的 SQL 条数与标签数彻底脱钩：展开一个标签才会
-// 发这一组查询（标签存在性 + 总数 + 本页行），与页面上有多少标签无关。
-//
-// 越界的 page 不报错：收敛到最后一页（Total 仍是真实值），不会把一个翻页越界
-// 变成一条错误提示 —— 翻页本来就是可以走到头再点一下的操作。
-func (s *Service) ListTagProductsPage(ctx context.Context, req *productdto.ListTagProductsPageReq) (res *productdto.TagProductsListResp, err error) {
+// ListTagProducts 返回工程内标签命中的一页商品和同口径总数。
+// 空页码归一为第一页，越界页码收敛至最后一页；首屏无需逐标签读取商品。
+func (s *Service) ListTagProducts(ctx context.Context, req *productdto.ListTagProductsReq) (res *productdto.TagProductsListResp, err error) {
 	if req == nil || req.TagID == "" {
 		return nil, productenums.Err(productenums.ErrInvalidParam)
 	}

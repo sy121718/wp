@@ -487,12 +487,13 @@ func newDetailTemplatePageEngine(t *testing.T) (*gin.Engine, *detailFixture) {
 	// 新建 / 首次发布 / 切换三个写动作已从页面 POST 迁到 /api/product/detail-template/*：
 	// 页面表单走 ui/write-base.js 直调接口，页面只剩下整页 GET 与只读预览。
 	// 写动作的依赖在装配层后置注入（SetupProductPages 里那一次），这里照同一形状注入一遍。
-	producthttp.BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
+	api := producthttp.NewProductHandle(f.products)
+	api.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: f.templates, Instances: f.pres, Products: f.products, Projects: f.projects,
 	})
 	engine.GET("/admin/products/template", adminui.PageSlot(producthttp.ProductDetailTemplatePageTemplate), handle.ProductDetailTemplatePage)
-	engine.POST("/admin/products/template/preview", adminui.PageSlot(producthttp.ProductDetailTemplatePageTemplate), handle.ProductDetailTemplatePreview)
-	api := producthttp.NewProductHandle(f.products)
+	engine.POST("/admin/products/template/preview", handle.ProductDetailTemplatePreview)
+	engine.GET("/admin/products/preview-frame", handle.ProductPreviewFrame)
 	engine.POST("/api/product/detail-template/create", api.CreateDetailTemplate)
 	engine.POST("/api/product/detail-template/publish", api.PublishDetailTemplate)
 	engine.POST("/api/product/detail-template/apply", api.ApplyDetailTemplate)
@@ -540,9 +541,6 @@ func TestProductDetailTemplatePageFlow(t *testing.T) {
 	}
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
 		t.Fatalf("预览应返回 HTML，实际 Content-Type=%q", ct)
-	}
-	if got := rec.Header().Get("X-Preview-Template"); !strings.Contains(got, "极简详情页") {
-		t.Fatalf("预览响应头应标明实际使用的模板，实际 %q", got)
 	}
 	if !strings.Contains(rec.Body.String(), "极简版式") {
 		t.Fatalf("页面预览应渲染选中模板: %s", rec.Body.String())

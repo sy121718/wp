@@ -16,7 +16,6 @@ import (
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
-	productservice "go_wp/internal/module/product/service"
 	projectdto "go_wp/internal/module/project/dto"
 	"go_wp/internal/templates"
 )
@@ -156,7 +155,7 @@ func TestDetailTemplateWriteKeepsDeclaredErrorStatus(t *testing.T) {
 		name   string
 		err    error
 		status int
-	}{{"查询故障", &productservice.DetailTemplateProductLookupError{Err: errors.New("private query")}, http.StatusInternalServerError}, {"商品不存在", productenums.Err(productenums.ErrNotFound), http.StatusNotFound}, {"冲突", productenums.Err(productenums.ErrSkuTaken), http.StatusConflict}} {
+	}{{"查询故障", errors.New("private query"), http.StatusInternalServerError}, {"商品不存在", productenums.Err(productenums.ErrNotFound), http.StatusNotFound}, {"冲突", productenums.Err(productenums.ErrSkuTaken), http.StatusConflict}} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)

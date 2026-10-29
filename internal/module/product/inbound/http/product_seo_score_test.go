@@ -1,19 +1,8 @@
 package producthttp
 
-// product_seo_score_test.go — 商品 / 分类 / 品牌评分接线的测试（审计 SEO-016 / SEO-018）。
-//
-// 原 dashboard/inbound/http/seo_entity_score_test.go，随商品页搬回本模块。
-//
-// 三层各钉一段：
-//   - 纯逻辑：页面草稿取标题、商品描述去标签、评分视图把冲突页面装进片段数据；
-//   - 片段渲染：fragments/seo_score 真的渲染出页型理由与冲突页面清单；
-//   - 页面渲染：三个后台页面的评分挂载点（按钮 + 结果容器）确实在 HTML 里 ——
-//     端点写好了但页面上没有入口，等于这个能力不存在（SEO-016 的根因就是这种缺口）。
-//
-// 不碰数据库：这一组全是纯函数与模板渲染，与模块内就近单测的定位一致。
+// 商品页面挂载前端 SEO 控件与媒体控件的模板契约。
 
 import (
-	"fmt"
 	json "go_wp/pkg/jsonx"
 	"os"
 	"strings"
@@ -23,84 +12,7 @@ import (
 
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
-	"go_wp/internal/seo/scoring"
 )
-
-// TestPageDraftTitleExtractsSeoTitle 页面草稿的标题索引取的是 settings.seo.title。
-func TestPageDraftTitleExtractsSeoTitle(t *testing.T) {
-	doc := json.RawMessage(`{"settings":{"seo":{"title":"  关于我们  "}},"root":[]}`)
-	if got := pageDraftTitle(doc); got != "关于我们" {
-		t.Fatalf("应取到 trim 后的 settings.seo.title，实际 %q", got)
-	}
-	if got := pageDraftTitle(json.RawMessage(`{"settings":{}}`)); got != "" {
-		t.Fatalf("没有 SEO 标题时应返回空串，实际 %q", got)
-	}
-	if got := pageDraftTitle(nil); got != "" {
-		t.Fatalf("空文档应返回空串，实际 %q", got)
-	}
-	if got := pageDraftTitle(json.RawMessage(`不是 JSON`)); got != "" {
-		t.Fatalf("坏 JSON 应返回空串而不是 panic，实际 %q", got)
-	}
-}
-
-// TestEntityPlainTextStripsTags 商品描述（JSONB 两种形态）→ 纯文本。
-func TestEntityPlainTextStripsTags(t *testing.T) {
-	rich := json.RawMessage(`{"html":"<p>纯棉 <strong>透气</strong></p>"}`)
-	if got := entityPlainText(rich); got != "纯棉 透气" {
-		t.Fatalf("富文本描述应去标签，实际 %q", got)
-	}
-	plain := json.RawMessage(`"夏季新品"`)
-	if got := entityPlainText(plain); got != "夏季新品" {
-		t.Fatalf("字符串描述应原样返回，实际 %q", got)
-	}
-	if got := entityPlainText(nil); got != "" {
-		t.Fatalf("空描述应返回空串，实际 %q", got)
-	}
-}
-
-// TestEntityScoreViewCarriesDuplicatePages 评分视图把冲突页面原样带进片段数据。
-func TestEntityScoreViewCarriesDuplicatePages(t *testing.T) {
-	in := &scoring.EntityPageInput{Kind: scoring.KindProduct, Name: "纯棉 T 恤", Slug: "tee"}
-	res := scoring.ScoreEntityPage(in)
-	dups := []scoring.TitleEntry{
-		{Title: "纯棉 T 恤", Page: "/tee-b"},
-		{Title: "纯棉 T 恤", Page: "/tee-c"},
-	}
-	sv := entityScoreView(in, res, dups)
-	if len(sv.Duplicates) != 2 || sv.Duplicates[0].Page != "/tee-b" || sv.Duplicates[1].Page != "/tee-c" {
-		t.Fatalf("冲突页面应逐个列出，实际 %+v", sv.Duplicates)
-	}
-	if sv.ProfileType != "product" || sv.ProfileReason == "" {
-		t.Fatalf("商品页应回显页型与理由，实际 type=%q reason=%q", sv.ProfileType, sv.ProfileReason)
-	}
-}
-
-// TestSeoScoreFragmentRendersProfileAndDuplicates 片段渲染出页型回显与冲突清单。
-func TestSeoScoreFragmentRendersProfileAndDuplicates(t *testing.T) {
-	in := &scoring.EntityPageInput{Kind: scoring.KindProduct, Name: "纯棉 T 恤", Slug: "tee"}
-	res := scoring.ScoreEntityPage(in)
-	sv := entityScoreView(in, res, []scoring.TitleEntry{{Title: "纯棉 T 恤", Kind: "product", Page: "/tee-b"}})
-	// t 必须给：fragments/seo_score 的 data 是 gin.H（不是 struct），模板用 .["t"] 取词；
-	// 缺 t 时 Jet 把取词调用求值成空串（不报错、不 500），下面这几条断言会看不到任何文案。
-	body := renderAdminTemplate(t, "fragments/seo_score", gin.H{"Score": sv, "t": testTranslateFunc(), "tn": testNamedTranslateFunc()})
-	for _, want := range []string{
-		"SEO 评分（0-100）", "页型权重：product", "标题重复", "/tee-b", "重复的 title（纯棉 T 恤）",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("片段里应出现 %q，实际输出：%s", want, body)
-		}
-	}
-}
-
-// TestSeoScoreFragmentRendersEntityEmptyState 读不到实体时给一句可读的话，不是空白面板。
-func TestSeoScoreFragmentRendersEntityEmptyState(t *testing.T) {
-	body := renderAdminTemplate(t, "fragments/seo_score",
-		gin.H{"Score": productdto.ScoreResp{EmptyKey: "product.err.notFound", EmptyFallback: "读不到这个商品，无法评分"},
-			"t": testTranslateFunc(), "tn": testNamedTranslateFunc()})
-	if !strings.Contains(body, "读不到这个商品，无法评分") {
-		t.Fatalf("空态应显示传入的文案，实际输出：%s", body)
-	}
-}
 
 // TestProductScorePanelsAreWiredIntoAdminTemplates 三个后台页面的评分入口与结果容器。
 func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
@@ -117,10 +29,11 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		"AttributeChecks": []gin.H{},
 		"ImagesInput":     "", "ImageAltsInput": "", "WeightInput": "", "DefaultPriceInput": "",
 	}))
-	// 商品编辑页只留**抽屉入口**：评测内容（分数容器、隐藏字段、评分按钮）已移进
-	// admin/product/entity_seo_drawer.html —— 它们不该再常驻在编辑页上。
+	// 抽屉结构预置在前端 template 中，打开后请求 JSON 事实。
 	for _, want := range []string{
-		`data-drawer-url="/admin/products/seo/drawer?productId=p1`,
+		`data-drawer-open="#tpl-product-seo"`,
+		`data-write-url="/api/product/seo-score"`,
+		`name="id" value="p1"`,
 		"SEO 评分",
 	} {
 		if !strings.Contains(products, want) {
@@ -128,7 +41,7 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		}
 	}
 	if strings.Contains(products, `id="product-seo-score-p1"`) {
-		t.Error("评分容器不应再常驻编辑页：它属于抽屉片段")
+		t.Error("评分容器不应依赖后端生成的实体 DOM id")
 	}
 
 	categories := renderAdminTemplate(t, "admin/product/product_categories.html", productPageLayoutData(gin.H{
@@ -139,7 +52,7 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		"Buttons": map[string]any{"product.category_update": true},
 		"Err":     "",
 	}))
-	for _, want := range []string{"hx-post=\"/admin/product-categories/seo-score\"", "id=\"category-seo-score-c1\""} {
+	for _, want := range []string{`data-write-url="/api/product/category/seo-score"`, `data-write-handler="product.seo"`} {
 		if !strings.Contains(categories, want) {
 			t.Fatalf("分类页应包含 %q，实际输出：%s", want, categories)
 		}
@@ -152,22 +65,10 @@ func TestProductScorePanelsAreWiredIntoAdminTemplates(t *testing.T) {
 		"Buttons": map[string]any{"product.brand_update": true},
 		"Err":     "",
 	}))
-	for _, want := range []string{"hx-post=\"/admin/product-brands/seo-score\"", "id=\"brand-seo-score-b1\""} {
+	for _, want := range []string{`data-write-url="/api/product/brand/seo-score"`, `data-write-handler="product.seo"`} {
 		if !strings.Contains(brands, want) {
 			t.Fatalf("品牌页应包含 %q，实际输出：%s", want, brands)
 		}
-	}
-}
-
-// testNamedTranslateFunc 具名占位符版本（模板里的 tn）：把 {name} 换成实参，其余同 testTranslateFunc。
-func testNamedTranslateFunc() func(key, fallback string, args map[string]any) string {
-	tr := testTranslateFunc()
-	return func(key, fallback string, args map[string]any) string {
-		out := tr(key, fallback)
-		for k, v := range args {
-			out = strings.ReplaceAll(out, "{"+k+"}", fmt.Sprint(v))
-		}
-		return out
 	}
 }
 
@@ -193,34 +94,6 @@ func productRowForRender() *productdto.ProductResp {
 		ID: "p1", ProjectID: "p1", Name: "测试商品", Slug: "tee", Status: "published", PriceMin: 59, PriceMax: 99, VariantCount: 1,
 		Variants:   []*productdto.VariantResp{{ID: "v1", SKUCode: "SZ_TEE_001", Price: 59, Enabled: true, StockTotal: 10, OptionValues: json.RawMessage("{}")}},
 		Attributes: []*productdto.AttributeResp{attr}, Categories: []*productdto.CategoryResp{{ID: "c1", Name: "男装"}}, Rating: &productdto.RatingResp{},
-	}
-}
-
-// TestProductSeoDrawerFragmentRenders 抽屉片段：评分按钮、提交端点与结果容器都在这里。
-//
-// 与编辑页那条断言是一对：编辑页只剩入口，而入口指向的片段若接错（端点写错、容器 id 与
-// hx-target 不一致、缺 csrf 隐藏域），用户点开抽屉会看到一个按不动的按钮 —— 页面测试全绿。
-func TestProductSeoDrawerFragmentRenders(t *testing.T) {
-	body := renderAdminTemplate(t, "admin/product/entity_seo_drawer.html", productPageLayoutData(gin.H{
-		"Score":        productdto.ScoreResp{OK: true, Total: 72, Grade: "C"},
-		"TargetID":     "product-seo-score-p1",
-		"HiddenFields": []productdto.SeoHiddenFieldResp{{Name: "projectId", Value: "proj-1"}, {Name: "productId", Value: "p1"}},
-	}))
-	for _, want := range []string{
-		"data-drawer-fragment",
-		`action="/admin/products/seo-score"`, `hx-post="/admin/products/seo-score"`,
-		`hx-target="#product-seo-score-p1"`, `id="product-seo-score-p1"`,
-		`name="productId" value="p1"`, `name="csrf_token"`,
-		"data-drawer-close",
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("抽屉片段缺少 %q", want)
-		}
-	}
-	for _, bad := range []string{"<script", "<iframe"} {
-		if strings.Contains(body, bad) {
-			t.Errorf("抽屉片段出现 %q：drawer.js 会判非法", bad)
-		}
 	}
 }
 

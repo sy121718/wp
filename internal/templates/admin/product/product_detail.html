@@ -156,7 +156,7 @@
     {{end}}
     {{end}}
 
-    <form id="product-preview-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/template/preview" target="_blank">
+    <form id="product-preview-{{p.ID}}" class="hidden-form" method="post" action="/admin/products/template/preview" data-product-preview-form data-preview-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
         <input type="hidden" name="csrf_token" value="{{csrf}}">
         <input type="hidden" name="projectId" value="{{selectedProject}}">
         <input type="hidden" name="productId" value="{{p.ID}}">

@@ -141,8 +141,7 @@
                         {{if t.ProductCount > 0}}
 
                         <button type="button" class="btn btn-sm" id="tag-hit-count-{{t.ID}}"
-                                hx-get="/admin/product-tags/hits?project={{selectedProject}}&id={{t.ID}}&page=1"
-                                hx-target="#tag-hits-panel" hx-swap="innerHTML">{{t.ProductCount}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</button>
+                                data-product-tag-hits="{{t.ID}}" data-project-id="{{selectedProject}}">{{t.ProductCount}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</button>
                         {{else}}<span class="text-mute">0{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</span>{{end}}
                     </td>
 
@@ -170,7 +169,7 @@
     </section>
 
 
-    <div id="tag-hits-panel" role="region" aria-live="polite" aria-label="{{ .["t"]("admin.product_tags.list.hitAria", "命中的商品") }}"></div>
+    {{include "product_tag_hits.html"}}
 
 
     <details class="section-fold card">

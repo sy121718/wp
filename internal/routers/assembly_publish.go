@@ -245,7 +245,7 @@ func (a *assembly) buildPublishingModules() {
 	// 商品详情页的双轨写动作（迁移 282）在**接口面**也要用同一份 presentation 能力：
 	// product 的接口面早于本段装配（assembly.go 的 SetupProductRoutes），所以是后置绑定
 	// 而不是构造参数。漏接的表现是两个端点回 500（装配缺陷可见），不是静默成功。
-	producthttp.BindDetailTemplateModePort(a.presentationSvc)
+	a.productHandle.SetDetailTemplateModePort(a.presentationSvc)
 	a.pluginSvc = pluginSvc
 	a.collectionResolver = collectionResolver
 	a.pageService = pageService
@@ -730,7 +730,7 @@ func (a *assembly) mountAdminPages() {
 	userhttp.SetupCustomerPages(a.adminPages, a.userAdminSvc, a.orderSvc, a.projectService,
 		a.membershipSvc, a.orderSvc, a.orderSvc, a.orderSvc, a.orderSvc,
 		membershipAdmin, membershipTiers)
-	producthttp.SetupProductPages(a.adminPages, a.productSvc, a.productReader, a.projectService,
+	producthttp.SetupProductPages(a.adminPages, a.authorizedAPI, a.productHandle, a.productSvc, a.productReader, a.projectService,
 		a.contentTemplateSvc, a.presentationSvc, a.inventorySvc, a.pageService, a.contentSvc)
 	// 商品译文工作台：整页 GET 挂 /admin 组，保存挂 authorizedAPI 组（模板用 ui/write-base.js 提交）。
 	// 两条路由由同一个函数注册 —— 保存是接口端点，而页面组与接口组分别由 assembly.go（接口）

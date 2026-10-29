@@ -1,14 +1,54 @@
-/* Category tree state. HTMX owns all data requests — including the parent search.
- *
- * 分类列表现在由服务端一次渲染整棵树（顶级分类带全部子类），所以这里没有
- * 「展开 / 折叠子树」的逻辑：折叠过的东西会让人以为页面上没有那些分类。
- * 留下的只有一件事：① 勾选态（批量删除的条与全选）。
- *
- * ② 父级下拉的远程搜索**已迁到模板声明**（hx-get + hx-trigger="input changed delay:180ms"）：
- * 控件调 htmx.ajax 是层次倒置 —— 控件不该依赖传输层 API，浏览器里没 htmx 时整个控件失效。
- * 声明式写在 product_category_form.html 的搜索输入框上，防抖由 hx-trigger 的 delay 承担。 */
+/* 分类树勾选态与父级候选搜索。搜索只消费JSON，选择与展示留在前端。 */
 (function () {
     'use strict';
+    var searches = new WeakMap();
+    function searchParents(input) {
+        var picker = input.closest('[data-category-parent-picker]');
+        var previous = searches.get(picker);
+        if (previous) { clearTimeout(previous.timer); if (previous.abort) previous.abort.abort(); }
+        var state = {timer: null, abort: null};
+        searches.set(picker, state);
+        var results = picker.querySelector('[data-category-parent-results]');
+        results.replaceChildren();
+        state.timer = setTimeout(function () {
+            state.abort = new AbortController();
+            var query = new URLSearchParams({projectId: picker.getAttribute('data-category-project'), keyword: input.value, page: '1', size: '50'});
+            fetch('/api/product/category/parents?' + query.toString(), {credentials: 'same-origin', redirect: 'error', signal: state.abort.signal, headers: {'Accept': 'application/json'}})
+                .then(function (response) {
+                    if (!(response.headers.get('content-type') || '').includes('application/json')) throw new Error(picker.getAttribute('data-category-failed'));
+                    return response.json().then(function (payload) {
+                        if (!payload || typeof payload !== 'object' || typeof payload.code !== 'number') throw new Error();
+                        if (!response.ok || payload.code >= 400) {
+                            var error = new Error(typeof payload.message === 'string' ? payload.message : '');
+                            error.productReadMessage = true;
+                            throw error;
+                        }
+                        if (!Array.isArray(payload.data)) throw new Error();
+                        return payload.data;
+                    });
+                }).then(function (categories) {
+                    if (searches.get(picker) !== state || !picker.isConnected) return;
+                    var own = picker.closest('form').querySelector('[name="id"]');
+                    categories.forEach(function (category) {
+                        // 自身不可被选作父级；循环与工程边界仍由后端校验。
+                        if (own && own.value === category.id) return;
+                        var choice = document.createElement('button');
+                        choice.type = 'button'; choice.className = 'btn btn-sm';
+                        choice.setAttribute('data-category-parent-choice', category.id);
+                        choice.textContent = '　'.repeat(Math.max(0, Math.min(32, category.depth || 0))) + category.name;
+                        results.appendChild(choice);
+                    });
+                    if (!results.children.length) results.textContent = picker.getAttribute('data-category-empty');
+                }).catch(function (error) {
+                    if (error.name !== 'AbortError' && searches.get(picker) === state && picker.isConnected) results.textContent = error.productReadMessage && error.message || picker.getAttribute('data-category-failed');
+                });
+        }, 180);
+    }
+    function searchEvent(event) {
+        if (event.target.matches('[data-category-parent-search]')) searchParents(event.target);
+    }
+    document.addEventListener('input', searchEvent);
+    document.addEventListener('search', searchEvent);
     function syncSelection(form) {
         if (!form) return;
         var boxes = Array.from(form.querySelectorAll('[data-check-item]'));

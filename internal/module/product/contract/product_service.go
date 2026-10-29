@@ -43,7 +43,7 @@ type ProductService interface {
 	// —— 批量用例（task-156，dd.txt §5.1）——
 	// 六个批量操作各自一个用例：控制器只解析请求、调用例、把结果映射成既有响应，
 	// 不再自己循环调单条用例、也不再累加任何计数（dd.txt §5.5）。
-	// 结果一律是 productdto.BulkResultResp 的四个桶：Requested / Succeeded / Skipped / Failed。
+	// 批量写同一事务全成或全败；拒绝明细通过错误 data.items 返回。
 	BulkDeleteProducts(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error)
 	BulkDeleteProductCategories(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error)
 	BulkDeleteProductBrands(ctx context.Context, req *productdto.BulkDeleteReq) (res *productdto.BulkResultResp, err error)
@@ -118,7 +118,7 @@ type ProductService interface {
 	//   · 自动标签只接受内置规则类型与白名单参数，不接受自由表达式，非法规则被拒绝；
 	//   · 自动标签的归属由明确定义的重算时机维护（商品/变体写操作后、标签定义变更后、
 	//     显式调用），重算只替换自己那一个 tag id，绝不覆盖手工标签；
-	//   · GetTag / ListTagProducts / ListTagProductsPage 提供「某标签命中哪些商品」
+	//   · GetTag / ListTagProducts 提供「某标签命中哪些商品」
 	//     （后台核对用；页面走按页的那个，见审计 PERF-02）。
 	CreateTag(ctx context.Context, req *productdto.CreateTagReq) (res *productdto.TagResp, err error)
 	UpdateTag(ctx context.Context, req *productdto.UpdateTagReq) (res *productdto.TagResp, err error)
@@ -127,12 +127,8 @@ type ProductService interface {
 	// CountTags 标签总数：与 ListTags 同一份过滤条件（工程 + kind + 关键词），
 	// 供后台标签页的分页算总页数（命中计数那一列不受它影响）。
 	CountTags(ctx context.Context, req *productdto.ListTagReq) (n int64, err error)
-	// ListTagProducts 某标签命中的商品（limit <= 0 用服务端默认上限）。
-	ListTagProducts(ctx context.Context, req *productdto.ListTagProductsReq) (list []*productdto.TagProductResp, err error)
-	// ListTagProductsPage 某标签命中商品的一页（后台展开区按需取；审计 PERF-02）。
-	// 与 ListTagProducts 并列而不是替换它：接口形态仍要「一次拿一段」的语义，
-	// 页面形态要的是「总数 + 第几页 + 本页行」。
-	ListTagProductsPage(ctx context.Context, req *productdto.ListTagProductsPageReq) (res *productdto.TagProductsListResp, err error)
+	// ListTagProducts 返回分页商品与总数，后台与 API 复用同一份事实。
+	ListTagProducts(ctx context.Context, req *productdto.ListTagProductsReq) (*productdto.TagProductsListResp, error)
 	DeleteTag(ctx context.Context, req *productdto.DeleteTagReq) (err error)
 	// ListTagRuleTypes 内置规则类型清单（后台规则下拉与参数说明的唯一来源）。
 	ListTagRuleTypes(ctx context.Context) (list []*productdto.TagRuleTypeResp)

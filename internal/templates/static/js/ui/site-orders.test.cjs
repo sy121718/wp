@@ -88,3 +88,18 @@ test('多账号宿主的同一认证事实只刷新一次，订单当前申请�
  assert.deepEqual(e.refreshed,[a.root,b.root]);assert.equal(b.panels.return.hidden,false);
  assert.equal(a.root.getAttribute('data-orders-active'),null);assert.equal(b.root.getAttribute('data-orders-active'),'return');
 });
+
+test('商品srcdoc预览使用文档base解析订单读取URL，opaque origin仍可渲染和就地查看模拟详情',()=>{
+ const e=environment(),w=widget('preview-orders');e.widgets.push(w);
+ e.window.location={href:'about:srcdoc',origin:'null'};
+ e.window.document.baseURI='https://example.test/';
+ e.window.WPSitePreview={active:true};
+ e.previews.ordersList(w.root,'default');
+ assert.equal(w.q.get('[data-orders-list]').children.length,1);
+ assert.equal(w.q.get('[data-orders-prev]').disabled,true);
+ assert.equal(w.q.get('[data-orders-count]').textContent,'1');
+ const open=w.q.get('[data-orders-list]').children[0].querySelector('[data-order-open]');
+ click(e,w,{'data-order-open':'','data-order-id':open.getAttribute('data-order-id')});
+ assert.equal(w.hosts.detail.getAttribute('data-site-read'),'/api/site/orders/detail?projectId=project&orderId=1001');
+ assert.ok(e.refreshed.includes(w.hosts.detail));
+});

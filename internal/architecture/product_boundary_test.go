@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// 商品模块作为「范例模块」的边界判据（PLAN.md 阶段 2 的商品落地部分）。
+// 商品模块作为范例的职责边界，判据以 AGENTS.md 为准。
 //
 // 这些判据在其他模块还是存量债，在商品模块是**零容忍**：它就是「改完之后长什么样」的样品，
 // 样品一旦回退，后面十个模块照抄的就是回退后的样子。
@@ -21,6 +21,8 @@ var productPresentationFields = map[string]bool{
 	"StatusLabel": true, "TypeLabel": true, "KindLabel": true,
 	"LabelKey": true, "LabelFallback": true, "TextKey": true,
 	"LabelText": true, "DisplayText": true, "DisplayName": true,
+	"HiddenFields": true, "SerpTitle": true, "SerpDesc": true, "SerpURL": true,
+	"HasSerpTitle": true, "HasSerpDesc": true, "HasSerpURL": true,
 }
 
 // TestProductDTOHasNoPresentationFields dto 只放数据：§展示字段与页面状态方法都不许有。
@@ -152,4 +154,20 @@ func parseDir(t *testing.T, dir string) map[string]map[string]*ast.File {
 		out[name] = files
 	}
 	return out
+}
+
+// 商品业务数据不得通过共享评分视图包重新带回颜色、DOM目标和HTML片段契约。
+func TestProductBusinessLayersDoNotImportScoreView(t *testing.T) {
+	root := repoRoot(t)
+	for _, dir := range []string{"dto", "service", "inbound/http"} {
+		for _, pkg := range parseDir(t, filepath.Join(root, "internal/module/product", dir)) {
+			for name, file := range pkg {
+				for _, spec := range file.Imports {
+					if spec.Path.Value == `"go_wp/internal/seo/scoreview"` {
+						t.Errorf("%s: 商品只消费评分事实，展示归前端", name)
+					}
+				}
+			}
+		}
+	}
 }

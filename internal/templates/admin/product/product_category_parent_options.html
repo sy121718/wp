@@ -1,3 +1,0 @@
-{{tr := .["t"]}}
-{{range _, category := .Result}}<button type="button" class="btn btn-sm" data-category-parent-choice="{{category.ID}}">{{repeat("　", category.Depth)}}{{category.Name}}</button>{{end}}
-{{if len(.Result) == 0}}<span class="text-mute">{{tr("admin.product_categories.parentSearch.empty", "没有匹配的分类")}}</span>{{end}}

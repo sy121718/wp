@@ -1,54 +1,14 @@
-{* 标签命中列表消费 Result 原对象；页码、区间与链接由模板生成。读取失败由 JSON 出口处理。 *}
-{{if isset(.Result.Items)}}
-{* 命中数回写（htmx 4 的 partial 指令）。
-   用 <template hx type="partial"> 而不是 <hx-partial>：两者在本仓 vendored bundle 下等价
-   （bundle 的 #Ie 把 <hx-名> 通用改写成 <template hx type="名">，实测都能更新目标、不留残留），
-   但后者**依赖那条改写**。写成 template 形态时用的是 bundle 原生路径，上游哪天只留 native
-   形态也不影响这里。
-
-   partial 是**服务端 swap 指令**而不是 DOM 元素：htmx 读取 hx-target 后执行换入，
-   再把信封整段丢弃 —— 它永远不会出现在页面里（不像 hx-swap-oob 那样靠元素自身的 id
-   找落点、再从响应里摘掉自己）。所以这里不需要「外层元素必须是顶层、必须有 id」那两条
-   形状约束：唯一要求是 hx-target 指向页面上那个按钮。
-
-   默认 swap 是 innerHTML：把文字写进按钮内部，按钮的 hx-get / hx-target / class 全部保留
-   —— 用户回写后仍可点它继续看下一页。
-
-   为什么不带 hx-get：这条指令只负责把过时的数字换掉。带上 GET 会让它成为第三个
-   可点入口，而真实翻页按钮只有上/下两个。 *}
-<template hx type="partial" hx-target="#tag-hit-count-{{.Result.TagID}}">{{.Result.Total}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</template>
-{{end}}
-<section class="card card-body">
-    <h2 class="card-title mb-lg">{{ .["t"]("admin.product_tags.list.hitTitle", "命中的商品") }}</h2>
-    {{if isset(.Result.Items)}}
-    <div class="hits-head">
-        <strong>{{.Result.TagName}}</strong>
-        <span class="hint">{{ .["t"]("admin.product_tags.list.hitLead", "命中 ") }}{{.Result.Total}}{{ .["t"]("admin.product_tags.list.hitCountTail", " 个商品") }}</span>
-    </div>
-    {{if len(.Result.Items) == 0}}
-    <p class="hint">{{ .["t"]("admin.product_tags.list.hitEmpty", "当前没有商品命中这个标签。") }}</p>
-    {{else}}
-    <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{ .["t"]("admin.product_tags.list.hitAria", "命中的商品") }}">
-        <table class="data-table data-table-wide">
-            <thead><tr><th>{{ .["t"]("admin.product_tags.col.product", "商品") }}</th><th>{{ .["t"]("admin.product_tags.col.slug", "URL 段") }}</th><th>{{ .["t"]("admin.product_tags.col.state", "状态") }}</th></tr></thead>
-            <tbody>
-            {{range _, p := .Result.Items}}
-            <tr>
-                <td><strong>{{p.Name}}</strong></td>
-                <td>{{if p.Slug}}<code>{{p.Slug}}</code>{{else}}<span class="text-mute">—</span>{{end}}</td>
-                <td><span class="badge">{{p.Status}}</span></td>
-            </tr>
-            {{end}}
-            </tbody>
-        </table>
-    </div>
-    <nav class="pagination" aria-label="{{ .["t"]("shell.pagination.label", "分页") }}">
-        {{tr := .["t"]}}{{page := .Result.Page}}{{size := .Result.PageSize}}{{base := pageBase(.["req_path"], "page", "id", "project", "size")}}{{from := (page - 1) * size + 1}}{{to := from + len(.Result.Items) - 1}}<div class="pagination-info">{{sprintf(tr("shell.pagination.info", "共 %s 条，第 %s-%s 条"), .Result.Total, from, to)}}</div>
-        <div class="pagination-pages">
-            {{if page > 1}}<button type="button" class="pagination-btn" hx-get="{{queryURL(base, "id", .Result.TagID, "page", page - 1, "project", .Query.ProjectID)}}" hx-target="#tag-hits-panel" hx-swap="innerHTML">{{ .["t"]("shell.pagination.prev", "上一页") }}</button>{{else}}<span class="pagination-btn is-disabled">{{ .["t"]("shell.pagination.prev", "上一页") }}</span>{{end}}
-            {{if page * size < .Result.Total}}<button type="button" class="pagination-btn" hx-get="{{queryURL(base, "id", .Result.TagID, "page", page + 1, "project", .Query.ProjectID)}}" hx-target="#tag-hits-panel" hx-swap="innerHTML">{{ .["t"]("shell.pagination.next", "下一页") }}</button>{{else}}<span class="pagination-btn is-disabled">{{ .["t"]("shell.pagination.next", "下一页") }}</span>{{end}}
-        </div>
-    </nav>
-    {{end}}
-    {{end}}
+{* 标签命中视图仅消费 /api/product/tag/products 的分页事实。 *}
+{{tr := .["t"]}}
+<section id="tag-hits-panel" class="card card-body" data-product-tag-panel role="region" aria-live="polite" aria-labelledby="tag-hits-title" hidden
+ data-count-tail="{{tr("admin.product_tags.list.hitCountTail", " 个商品")}}" data-page-info="{{tr("shell.pagination.info", "共 %s 条，第 %s-%s 条")}}" data-failed="{{tr("MsgInternalError", "系统内部错误，请稍后重试")}}">
+ <h2 id="tag-hits-title" class="card-title">{{tr("admin.product_tags.list.hitTitle", "命中的商品")}}</h2>
+ <p class="form-hint" data-tag-status role="status" hidden></p>
+ <div data-tag-result hidden>
+ <div class="hits-head"><strong data-tag-name></strong><span class="hint">{{tr("admin.product_tags.list.hitLead", "命中 ")}}<span data-tag-total></span>{{tr("admin.product_tags.list.hitCountTail", " 个商品")}}</span></div>
+ <div class="table-wrap table-scroll" tabindex="0" role="region" aria-label="{{tr("admin.product_tags.list.hitAria", "命中的商品")}}"><table class="data-table data-table-wide"><thead><tr><th>{{tr("admin.product_tags.col.product", "商品")}}</th><th>{{tr("admin.product_tags.col.slug", "URL 段")}}</th><th>{{tr("admin.product_tags.col.state", "状态")}}</th></tr></thead><tbody data-tag-rows></tbody></table></div>
+ <nav class="pagination" aria-label="{{tr("shell.pagination.label", "分页")}}"><div class="pagination-info" data-tag-page-info></div><div class="pagination-pages"><button type="button" class="pagination-btn" data-tag-page="-1">{{tr("shell.pagination.prev", "上一页")}}</button><button type="button" class="pagination-btn" data-tag-page="1">{{tr("shell.pagination.next", "下一页")}}</button></div></nav>
+ </div>
+ <template data-tag-row><tr><td><strong data-tag-product-name></strong></td><td><code data-tag-product-slug></code></td><td><span class="badge" data-tag-product-status></span></td></tr></template>
+ <template data-tag-empty><tr><td colspan="3"><p class="hint">{{tr("admin.product_tags.list.hitEmpty", "当前没有商品命中这个标签。")}}</p></td></tr></template>
 </section>

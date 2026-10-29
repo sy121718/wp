@@ -19,6 +19,7 @@ import (
 	contenttemplatedto "go_wp/internal/module/contenttemplate/dto"
 	contenttemplateenums "go_wp/internal/module/contenttemplate/enums"
 	productdto "go_wp/internal/module/product/dto"
+	"golang.org/x/net/html"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -292,8 +293,18 @@ func TestCatalogEmptyCellPlaceholderIsConsistent(t *testing.T) {
 
 func assertEmptyCellPlaceholder(t *testing.T, name, out, placeholder string) {
 	t.Helper()
-	if strings.Contains(out, "未填") {
-		t.Errorf("%s 仍渲染出「未填」—— 同一张表里两种空值写法会让人以为它们代表不同的状态", name)
+	doc, err := html.Parse(strings.NewReader(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cell := range peAll(doc, func(n *html.Node) bool { return peEl(n, "td") }) {
+		// 抽屉和SEO字典里的提示不属于列表空值；只检查可见表格单元格。
+		if peUp(cell, func(n *html.Node) bool { return peEl(n, "template") }) != nil {
+			continue
+		}
+		if strings.TrimSpace(peText(cell)) == "未填" {
+			t.Errorf("%s 列表空值仍使用未填", name)
+		}
 	}
 	// slug 列一处（SEO 标题列已随字段合并移除，2026-09-30）。
 	if got := strings.Count(out, placeholder); got < 1 {

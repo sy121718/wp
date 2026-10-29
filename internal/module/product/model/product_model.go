@@ -312,7 +312,8 @@ func (m *Model) List(ctx context.Context, projectID, keyword, status string, lim
 		if status != "" {
 			q = q.Where("status = ?", status)
 		}
-		return q.Order("sort ASC, create_time DESC").Limit(limit).Offset(offset).Find(&list).Error
+		// 同一批导入可有相同排序与创建时刻；唯一尾键保证分页无重复或遗漏。
+		return q.Order("sort ASC, create_time DESC, id ASC").Limit(limit).Offset(offset).Find(&list).Error
 	})
 	return list, err
 }

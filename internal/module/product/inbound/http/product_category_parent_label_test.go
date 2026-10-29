@@ -19,7 +19,7 @@ func TestCategoryDrawerRetainsMissingParent(t *testing.T) {
 		if !strings.Contains(body, `data-write-keep-empty="parentId"`) {
 			t.Fatal("提升顶级的空串语义丢失")
 		}
-		if strings.Contains(body, `name="keyword"`) || !strings.Contains(body, `hx-vals="js:{keyword: this.value}"`) {
+		if strings.Contains(body, `name="keyword"`) || !strings.Contains(body, `data-category-parent-search`) {
 			t.Fatal("父级搜索词只能进入查询请求，不应混入分类写表单")
 		}
 	}

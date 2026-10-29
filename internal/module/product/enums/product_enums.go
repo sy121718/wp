@@ -311,15 +311,8 @@ const (
 	BulkProductPartial  = "product.bulk.productPartial"
 	BulkProductDone     = "product.bulk.productDone"
 
-	// 批量改价：没勾选 / 四种结论。
-	//
-	// NoneSelected 是活的（BulkPricing 的空勾选守卫）；其余四条结论句改用 JSON 回执的
-	// message + data.skipped/items，Go 侧已无消费者。
+	// 批量改价的空勾选错误，结果计数通过 JSON 事实返回。
 	BulkPricingNoneSelected = "product.bulk.pricingNoneSelected"
-	BulkPricingNoChange     = "product.bulk.pricingNoChange"
-	BulkPricingApplied      = "product.bulk.pricingApplied"
-	BulkPricingAllSkip      = "product.bulk.pricingAllSkip"
-	BulkPricingPartial      = "product.bulk.pricingPartial"
 
 	// 变体清单保存：无变化 / 已保存 / 跳过段。
 	BulkVariantNoChange = "product.bulk.variantSaveNoChange"

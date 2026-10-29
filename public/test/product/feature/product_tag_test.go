@@ -85,7 +85,7 @@ func TestTagManualAttachAndGuards(t *testing.T) {
 	}
 	// 验收 4 的接口形态：ListTagProducts。
 	hits, err := f.svc.ListTagProducts(ctx, &productdto.ListTagProductsReq{ProjectID: f.projectID, TagID: manual.ID})
-	if err != nil || len(hits) != 1 || hits[0].Name != "清仓商品" {
+	if err != nil || len(hits.Items) != 1 || hits.Items[0].Name != "清仓商品" {
 		t.Fatalf("ListTagProducts 应返回命中商品，实际 %v %+v", err, hits)
 	}
 
@@ -486,7 +486,7 @@ func newTagPageEngine(t *testing.T) (*gin.Engine, *attrFixture) {
 	handle := producthttp.NewProductPageHandle(f.svc, f.svc, f.projects)
 	engine.GET("/admin/product-tags", adminui.PageSlot(producthttp.ProductTagsPageTemplate), handle.ProductTagsPage)
 	// 命中商品片段（PERF-02）：标签页首屏只给数量，展开时按页取这一段。
-	engine.GET("/admin/product-tags/hits", adminui.PageSlot(producthttp.ProductTagHitsTemplate), handle.ProductTagHitsFragment)
+	engine.GET("/api/product/tag/products", producthttp.NewProductHandle(f.svc).ListTagProducts)
 	engine.GET("/admin/products", adminui.PageSlot(producthttp.ProductListPageTemplate), handle.ProductsPage)
 	// 商品级表单（含手工标签勾选）已整块移到商品详情页，这里一并注册。
 	engine.GET("/admin/products/detail", adminui.PageSlot(producthttp.ProductDetailPageTemplate), handle.ProductDetailPage)
@@ -564,7 +564,7 @@ func TestTagAdminPages(t *testing.T) {
 		"商品标签", "清仓", "新品", "手工", "自动", "上架 30 天内",
 		"命中的商品", "内置规则类型", ">重算</button>", ">删除</button>",
 		// 命中商品的展开入口（片段端点 + 落点容器）：列表里那个「N 个商品」是按钮。
-		`hx-get="/admin/product-tags/hits?project=`, `hx-target="#tag-hits-panel"`,
+		`data-product-tag-hits="`, `id="tag-hits-panel"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("标签页缺少 %q", want)
@@ -575,15 +575,13 @@ func TestTagAdminPages(t *testing.T) {
 	if strings.Contains(body, "上架商品") {
 		t.Fatal("标签页首屏不应内联命中商品（PERF-02：命中商品改为展开时按页取）")
 	}
-	rec = httptestGet(engine, "/admin/product-tags/hits?project="+f.projectID+"&id="+manualID+"&page=1")
+	rec = httptestGet(engine, "/api/product/tag/products?projectId="+f.projectID+"&id="+manualID+"&page=1")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("命中商品片段应 200，实际 %d：%s", rec.Code, rec.Body.String())
 	}
-	hitsBody := rec.Body.String()
-	for _, want := range []string{"上架商品", "清仓", "命中", "个商品"} {
-		if !strings.Contains(hitsBody, want) {
-			t.Fatalf("命中商品片段缺少 %q：%s", want, hitsBody)
-		}
+	hitsData := decodeTagProducts(t, rec)
+	if hitsData.Total != 1 || hitsData.TagName != "清仓" || len(hitsData.Items) != 1 || hitsData.Items[0].Name != "上架商品" {
+		t.Fatalf("命中事实缺失：%+v", hitsData)
 	}
 	// 标签挂载：手工标签勾选框与「保存手工标签」在**编辑页**（详情页只读展示标签）。
 	rec = httptestGet(engine, "/admin/products/edit?project="+f.projectID+"&product="+p.ID)
@@ -626,8 +624,8 @@ func tagProductIDs(t *testing.T, f *attrFixture, tagID string) []string {
 	if err != nil {
 		t.Fatalf("查询标签命中商品失败: %v", err)
 	}
-	out := make([]string, 0, len(hits))
-	for _, h := range hits {
+	out := make([]string, 0, len(hits.Items))
+	for _, h := range hits.Items {
 		out = append(out, h.ID)
 	}
 	return out

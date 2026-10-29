@@ -3,13 +3,10 @@ package producthttp
 import (
 	"context"
 	"github.com/gin-gonic/gin"
-	"go_wp/internal/adminui"
 	productdto "go_wp/internal/module/product/dto"
-	"go_wp/internal/templates"
+	json "go_wp/pkg/jsonx"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -22,22 +19,25 @@ func (s *parentSearchStub) SearchCategoryParents(_ context.Context, q *productdt
 	s.req = q
 	return []*productdto.CategoryResp{{ID: "cat-1", Name: "上衣"}, {ID: "cat-2", Name: "裤子"}}, nil
 }
-func TestProductCategoryParentsRendersPickedOptions(t *testing.T) {
+func TestProductCategoryParentsReturnsFacts(t *testing.T) {
 	stub := &parentSearchStub{}
-	h := &ProductPageHandle{products: stub}
+	h := NewProductHandle(stub)
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.GET("/pick", adminui.BareSlot(ProductCategoryParentsTemplate), h.ProductCategoryParents)
+	engine.GET("/pick", h.ProductCategoryParents)
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/pick?project=p1&keyword=衣&page=2", nil))
 	if rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
-	for _, want := range []string{`data-category-parent-choice="cat-1"`, `data-category-parent-choice="cat-2"`, ">上衣<", ">裤子<"} {
-		if !strings.Contains(rec.Body.String(), want) {
-			t.Errorf("缺少%s", want)
-		}
+	var payload struct {
+		Data []*productdto.CategoryResp `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Data) != 2 || payload.Data[0].ID != "cat-1" || payload.Data[1].Name != "裤子" {
+		t.Fatalf("候选事实缺失：%s", rec.Body.String())
 	}
 	if stub.req == nil || stub.req.ProjectID != "p1" || stub.req.Keyword != "衣" || stub.req.Page != 2 {
 		t.Fatalf("查询参数=%+v", stub.req)

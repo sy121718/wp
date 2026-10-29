@@ -1,0 +1,10 @@
+{* 评分展示只在前端；后端不返回HTML、色标、DOM定位或翻译后的句子。 *}
+{{tr := .["t"]}}
+<div class="wb-seo-panel" data-product-seo-panel role="region" aria-live="polite" hidden>
+    <div class="wb-seo-head"><span class="wb-seo-total" data-seo-total></span><span class="wb-seo-grade" data-seo-grade></span><span class="wb-seo-tip">{{tr("workbench.ui.seo.totalTip", "SEO 评分（0-100）")}}</span></div>
+    <p class="wb-seo-tip">{{tr("workbench.ui.seo.profileWeight", "页型权重：")}}<span data-seo-profile></span></p>
+    <div data-seo-sections></div>
+    <div class="wb-seo-dup" data-seo-duplicates hidden><p class="badge badge-warning">{{tr("workbench.ui.seo.dupPrefix", "标题重复：另有 ")}}<span data-seo-duplicate-count></span>{{tr("workbench.ui.seo.dupSuffix", " 个页面用了同一个标题")}}</p><ul class="wb-seo-issues" data-seo-duplicate-list></ul></div>
+    <p class="wb-seo-tip" data-seo-coverage hidden>{{tr("admin.seo.coverage.incomplete", "重复标题检查未覆盖以下来源：")}}<span data-seo-omitted></span></p>
+    <div class="wb-seo-serp"><div class="wb-serp-title" data-seo-title data-empty="{{tr("admin.seo.serp.titleEmpty", "（未填写标题）")}}"></div><div class="wb-serp-url" data-seo-url data-empty="{{tr("admin.seo.serp.urlEmpty", "（线上路径未知）")}}"></div><div class="wb-serp-desc" data-seo-description data-empty="{{tr("admin.seo.serp.descEmpty", "（未填写描述）")}}"></div></div>
+</div>

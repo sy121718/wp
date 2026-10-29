@@ -59,7 +59,7 @@ func newScopeTransmitEngine(t *testing.T) (*gin.Engine, *scopeTransmitFixture) {
 	grantProductPerms(engine)
 	handle := producthttp.NewProductPageHandle(base.products, base.products, base.projects)
 	engine.GET("/admin/products/detail", adminui.PageSlot(producthttp.ProductDetailPageTemplate), handle.ProductDetailPage)
-	engine.POST("/admin/products/variant/preview", handle.ProductsVariantPreview)
+	engine.POST("/admin/products/variant/preview", handle.PreviewVariant)
 	return engine, f
 }
 

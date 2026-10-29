@@ -217,6 +217,7 @@ type assembly struct {
 	// SetupProductRoutes 一次产出两条，页面装配要用第二条：页面处理器用它取数，
 	// 漏接在读模型参数处就是编译错误（曾经靠请求期类型断言兜底，见 productPageHandle.reader）。
 	productReader productcontract.ProductPageReader
+	productHandle *producthttp.ProductHandle
 
 	mailSvc      mailcontract.MailService
 	userSvc      usercontract.UserService
@@ -573,7 +574,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 		concrete.SetAttachmentResolver(mediaatt.New(a.mediaSvc))
 	}
 	// 商品域（issue #5）：商品与变体管理。商品是独立领域模块，不再寄居内容表。
-	productSvc, productReader := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
+	productSvc, productReader, productHandle := producthttp.SetupProductRoutes(authorizedAPI, db, projectService)
 	// product ↔ inventory 是循环依赖：product 的 Setup 要 inventory 契约，而库存页面
 	// 要 product 契约做「商品 → 变体」下拉，任何固定顺序都装配不出来。
 	// 所以 products 不进参数表，改为后置注入（装配期写一次、之后只读；
@@ -643,6 +644,7 @@ func (a *assembly) buildAPIAndCoreCRUD() {
 	a.purchaseSvc = purchaseSvc
 	a.productSvc = productSvc
 	a.productReader = productReader
+	a.productHandle = productHandle
 }
 
 // buildIdentityAndCommerce 装配身份侧与交易侧模块：mail → user → webhook → order。

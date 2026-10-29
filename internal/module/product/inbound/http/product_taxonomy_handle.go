@@ -33,24 +33,19 @@ func (h *ProductPageHandle) ProductCategoriesPage(c *gin.Context) {
 	}
 	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result), pageview.Object("Categories", categories)))
 }
-func (h *ProductPageHandle) ProductCategoryParents(c *gin.Context) {
+
+// ProductCategoryParents 返回父级候选原对象，按钮与层级缩进由前端生成。
+func (h *ProductHandle) ProductCategoryParents(c *gin.Context) {
 	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
 	if !ok {
 		return
 	}
-	scope, err := h.products.ResolveCatalogScope(c.Request.Context(), req.ProjectID)
+	result, err := h.svc.SearchCategoryParents(c.Request.Context(), req)
 	if err != nil {
-		pageview.Fail(c, err)
+		response.ErrorStatusAuto(c, "product", err)
 		return
 	}
-	req.ProjectID = scope.ProjectID
-	result, err := h.products.SearchCategoryParents(c.Request.Context(), req)
-	if err != nil {
-		pageview.Fail(c, err)
-		return
-	}
-
-	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result)))
+	response.SuccessWithMessage(c, productenums.MsgListSuccess, result)
 }
 func (h *ProductPageHandle) ProductBrandsPage(c *gin.Context) {
 	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
@@ -143,14 +138,14 @@ func (h *ProductHandle) DeleteCategory(c *gin.Context) {
 // —— 批量删除（JSON 端点）——
 //
 // 四套归类（分类 / 品牌 / 标签 / 属性组）的批量删除形状逐字相同：身体是 {ids, projectId}、
-// 权限点复用各自的单删、成功只回一条 JSON 回执。所以只有一个入口 bulkDeleteByIDs，
+// 权限点各自独立、成功只回一条 JSON 回执。所以只有一个入口 bulkDeleteByIDs，
 // 差别只在传给用例的**方法值**。
 //
 // 抽一个入口的理由只剩「同口径」：四个端点共用一段「绑请求 → 调用例 → 写响应」，
 // 差别只在传给用例的**方法值**。归一与上限、空勾选判定、整批拒绝的明细都在 service ——
 // 入口不做计算（判据见 internal/module/CLAUDE.md 的控制器形状那条）。
 
-// BulkDeleteCategories 批量删除分类（页面 /admin/product-categories/bulk-delete 的承接方）。
+// BulkDeleteCategories 批量删除分类（JSON API）。
 func (h *ProductHandle) BulkDeleteCategories(c *gin.Context) {
 	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductCategories)
 }

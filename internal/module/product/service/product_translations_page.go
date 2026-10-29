@@ -200,17 +200,14 @@ func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.S
 
 	port, perr := s.translationPort()
 	if perr != nil {
-		logger.Scene("product").With("project", projectID).Error(perr, "内容译文存储不可用")
-		view.Errors = translationRowErrorFacts(productenums.MsgTranslationSaveFailed)
-		return view, nil
+		return nil, perr
 	}
 
 	// 第二步：变更判定。只有译文文本确实变化才写库并触发重建（幂等，重复保存零写入）。
 	// 变更判定按**本工程**读现有译文（工程行优先、回落全局行）。
 	before, berr := port.LoadDetailsForProject(ctx, projectID, lang, translationWriteHashes(items))
 	if berr != nil {
-		logger.Scene("product").With("project", projectID).Error(berr, "读取现有译文失败，按全部变更处理")
-		before = map[string]i18n.ContentTargetInfo{}
+		return nil, berr
 	}
 	pending := make([]i18n.ContentWriteItem, 0, len(items))
 	changedKeys := make([]string, 0, len(items))
@@ -232,9 +229,7 @@ func (s *Service) SaveProductTranslations(ctx context.Context, req *productdto.S
 		var uerr error
 		written, uerr = port.Upsert(ctx, pending)
 		if uerr != nil {
-			logger.Scene("product").With("project", projectID).With("lang", lang).Error(uerr, "写入商品译文失败")
-			view.Errors = translationRowErrorFacts(productenums.MsgTranslationSaveFailed)
-			return view, nil
+			return nil, uerr
 		}
 	}
 

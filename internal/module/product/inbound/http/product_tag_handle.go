@@ -1,6 +1,6 @@
 package producthttp
 
-// product_tag.go — 标签库：手工标签与自动标签的接口面、管理页、命中片段与规则参数渲染。
+// 标签库：标签定义、规则重算、分页命中 JSON 与管理页。
 //
 // 标签归属是商品的属性（挂载表单在商品详情页），但它的定义、重算与命中查询是独立的一套 ——
 // 与分类 / 品牌（product_taxonomy_handle.go）分开：标签有规则注册表与重算时机，改动频率与归类树完全不同。
@@ -121,34 +121,11 @@ func (h *ProductHandle) RecalcTags(c *gin.Context) {
 	response.SuccessWithMessage(c, productenums.MsgUpdateSuccess, res)
 }
 
-// CreateCategory 新建分类（parentId 为空即顶级）。
-
 func (h *ProductHandle) BulkDeleteTags(c *gin.Context) {
 	h.bulkDeleteByIDs(c, h.svc.BulkDeleteProductTags)
 }
 
-// bulkDeleteByIDs 四套归类（分类 / 品牌 / 标签 / 属性组）的共用入口：解析 → 归一 → 调用例 → 映射回执。
-//
-
-// ==========================================================================
-// 标签库（手工标签 + 自动标签）：列表、命中片段、抽屉与批量改挂。
-//
-// 自动标签的命中来自规则重算（ProductTagsRecalc）；命中预览是 HTMX 片段，
-// 与列表共用同一份规则参数渲染（ruleParamText）。
-//
-// 与本模块其它后台页同一模式：GET 渲染完整页，只用 GET/POST。三处差异：
-//
-//	· 建手工标签并挂到商品（挂载表单在商品**详情页**的「商品标签」区块 ——
-//	  标签归属是商品的属性，列表页只回答「有哪些商品」，见 admin-ui-logic §1）；
-//	· 自动标签只给内置规则类型 + 白名单参数（规则类型下拉来自 service 的注册表，
-//	  参数输入框固定三格：days / minPrice / maxPrice，服务端按规则类型取值并严格校验）；
-//	· 标签列表用标准表格（标签 / URL 段 / 类型 / 规则 / 命中 / 重算时间 / 操作），
-//	  规则标签额外显示规则描述与重算时间；「命中的商品」按需加载（审计 PERF-02）：
-//	  首屏只给数量，展开某个标签才按页取片段，见 ProductTagHitsFragment。
-//
-// 重算时机在页面上写明（商品/变体写操作后、标签定义变更后、这里的「重算」按钮）。
-// ==========================================================================
-
+// ProductTagsPage 只读取列表与规则事实，命中商品由 JSON API 按需查询。
 func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 	req, ok := binding.Query[productdto.CatalogTaxonomyReq](c)
 	if !ok {
@@ -167,18 +144,4 @@ func (h *ProductPageHandle) ProductTagsPage(c *gin.Context) {
 	}
 	rules := h.products.ListTagRuleTypes(c.Request.Context())
 	pageview.Render(c, pageview.Objects(pageview.Object("Scope", scope), pageview.Object("Query", req), pageview.Object("Result", result), pageview.Object("RuleTypes", rules)))
-}
-
-// ProductTagHitsFragment 只读命中结果交原对象，失败由统一 JSON 出口给真实状态码。
-func (h *ProductPageHandle) ProductTagHitsFragment(c *gin.Context) {
-	req, ok := binding.Query[productdto.ListTagProductsPageReq](c)
-	if !ok {
-		return
-	}
-	result, err := h.products.ListTagProductsPage(c.Request.Context(), req)
-	if err != nil {
-		pageview.Fail(c, err)
-		return
-	}
-	pageview.Render(c, pageview.Objects(pageview.Object("Query", req), pageview.Object("Result", result)))
 }

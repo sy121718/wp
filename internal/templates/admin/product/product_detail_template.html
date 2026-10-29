@@ -76,7 +76,7 @@
             {{range _, t := .Templates}}{{if t.ID == defaultID}}<span class="badge badge-mute">{{ .["t"]("admin.product_detail_template.named.typeDefaultLabel", "类型默认") }}：{{t.Name}}</span>{{end}}{{end}}
         </p>
 
-        <form method="post" action="/admin/products/template/preview" target="_blank" class="form-inline">
+        <form method="post" action="/admin/products/template/preview" data-product-preview-form data-preview-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}" class="form-inline">
             <input type="hidden" name="csrf_token" value="{{csrf}}">
             <input type="hidden" name="projectId" value="{{selectedProject}}">
             <input type="hidden" name="productId" value="{{.Product.ID}}">

@@ -1,13 +1,13 @@
 package productservice_test
 
 // product_detail_template_ops_test.go — 「详情页模板」写动作与预览编排的 service 层直接判据
-//（dd.txt 第十一章合并门槛第 6 条「SEO 评分、模板发布及 URLPath 规则有独立测试」）。
+// 断言模板复制作用域、发布编排、迁址参数与预览读取边界。
 //
 // 此前这条门槛只由端点级 feature 测试（public/test/product/...）覆盖：那里的断言落在
 // 「页面渲染出什么」上，而这一层真正的可判定面是**编排顺序**与**传到端口的参数** ——
 //   · CreateDetailTemplate 先取文档、再建模板（反了会在取文档失败时留下一套没有内容的模板）；
 //   · PublishDetailTemplate 只在 urlPath 为空时才查商品（非空时查商品是多一次无用取数）；
-//   · 取商品失败必须可 errors.As 分流（它和「建实例失败」走两张不同的文案表）。
+//   · 各依赖失败原样传播，错误事实由声明处携带。
 // 这三条全反了页面照样 200、feature 测试全绿 —— 所以这里要 service 层的直接判据。
 //
 // 四个端口全部 fake，不连数据库：Templates（contenttemplate 契约）、Instances（本文件被测的
@@ -91,10 +91,11 @@ type fakeDetailTemplates struct {
 	resolveErr        error
 	resolveTemplateID string
 
-	getIDs     []string
-	getErr     error
-	getDoc     json.RawMessage
-	getNilResp bool // 模拟契约违约：Get 成功但返回 (nil, nil)
+	getProjects []string
+	getIDs      []string
+	getErr      error
+	getDoc      json.RawMessage
+	getNilResp  bool // 模拟契约违约：Get 成功但返回 (nil, nil)
 
 	createReqs []*contenttemplatecontract.CreateReq
 	createErr  error
@@ -118,15 +119,16 @@ func (f *fakeDetailTemplates) ResolveTemplateScoped(_ context.Context, projectID
 	return &contenttemplatecontract.ResolvedTemplate{TemplateID: f.resolveTemplateID, EntityType: entityType}, nil
 }
 
-func (f *fakeDetailTemplates) Get(_ context.Context, req *contenttemplatecontract.GetReq) (*contenttemplatecontract.TemplateResp, error) {
-	f.getIDs = append(f.getIDs, req.ID)
+func (f *fakeDetailTemplates) GetScoped(_ context.Context, projectID, id string) (*contenttemplatecontract.TemplateResp, error) {
+	f.getProjects = append(f.getProjects, projectID)
+	f.getIDs = append(f.getIDs, id)
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
 	if f.getNilResp {
 		return nil, nil
 	}
-	return &contenttemplatecontract.TemplateResp{ID: req.ID, DraftDocument: f.getDoc}, nil
+	return &contenttemplatecontract.TemplateResp{ID: id, DraftDocument: f.getDoc}, nil
 }
 
 func (f *fakeDetailTemplates) Create(_ context.Context, req *contenttemplatecontract.CreateReq) (*contenttemplatecontract.TemplateResp, error) {
@@ -305,6 +307,9 @@ func TestDetailTemplateDocumentExplicitIDTrimsAndSkipsResolve(t *testing.T) {
 	}
 	if len(templates.resolveScopedProjects) != 0 {
 		t.Fatalf("显式指定模板时 ResolveTemplateScoped 被调用 %d 次（%v）：不该查默认模板", len(templates.resolveScopedProjects), templates.resolveScopedProjects)
+	}
+	if len(templates.getProjects) != 1 || templates.getProjects[0] != detailTemplateTestProjectID {
+		t.Fatalf("指定模板读取必须保持工程作用域：%v", templates.getProjects)
 	}
 	if len(templates.getIDs) != 1 || templates.getIDs[0] != "tpl-explicit" {
 		t.Fatalf("Get 收到的 id = %v，want [tpl-explicit]（前后空白应被 TrimSpace 掉）", templates.getIDs)
@@ -496,10 +501,7 @@ func TestPublishDetailTemplateExplicitURLPathSkipsProductLookup(t *testing.T) {
 	}
 }
 
-// urlPath 为空 + 取商品失败：错误必须能被 errors.As 分流成 *DetailTemplateProductLookupError，
-// errors.Is 能到底层哨兵，且此时不建实例。
-//
-// 不分流的后果是文案错位：商品早已不在，用户却看到「这个商品还没有详情页实例」，于是去点一次发布。
+// 商品查询失败原样返回，统一响应出口沿错误声明处取状态和文案。
 func TestPublishDetailTemplateProductLookupFailureIsDistinguishable(t *testing.T) {
 	ctx := context.Background()
 	instances := &fakeDetailInstances{}
@@ -513,15 +515,8 @@ func TestPublishDetailTemplateProductLookupFailureIsDistinguishable(t *testing.T
 	if err == nil {
 		t.Fatalf("取商品失败应报错，实际 nil")
 	}
-	var lookupErr *productservice.DetailTemplateProductLookupError
-	if !errors.As(err, &lookupErr) {
-		t.Fatalf("err = %T（%v），want *DetailTemplateProductLookupError：调用方靠它分流两张文案表", err, err)
-	}
 	if !errors.Is(err, errDetailTemplateProductRead) {
-		t.Fatalf("errors.Is(err, 底层哨兵) = false（err=%v）：Unwrap 没把底层原因暴露出来", err)
-	}
-	if !errors.Is(lookupErr.Err, errDetailTemplateProductRead) {
-		t.Fatalf("包装内的 Err = %v，want %v", lookupErr.Err, errDetailTemplateProductRead)
+		t.Fatalf("未保留商品读取错误：%v", err)
 	}
 	if len(instances.createReqs) != 0 {
 		t.Fatalf("取商品失败却建了 %d 个实例：应当直接返回，不继续建实例", len(instances.createReqs))
@@ -582,7 +577,7 @@ func TestPublishDetailTemplateDerivesURLPathFromProjectRules(t *testing.T) {
 	}
 }
 
-// 建实例失败：原样冒泡，且**不能**被包装成取商品失败（两张文案表不能串）。
+// 建实例失败原样传播，不更换错误事实。
 func TestPublishDetailTemplateCreateInstanceFailureIsNotProductLookup(t *testing.T) {
 	ctx := context.Background()
 	instances := &fakeDetailInstances{createErr: errDetailTemplateCreateInst}
@@ -592,10 +587,6 @@ func TestPublishDetailTemplateCreateInstanceFailureIsNotProductLookup(t *testing
 		detailTemplateTestProjectID, detailTemplateTestProductID, detailTemplateTestTemplateID, "/explicit/path")
 	if !errors.Is(err, errDetailTemplateCreateInst) {
 		t.Fatalf("err = %v，want %v（建实例失败应原样冒泡）", err, errDetailTemplateCreateInst)
-	}
-	var lookupErr *productservice.DetailTemplateProductLookupError
-	if errors.As(err, &lookupErr) {
-		t.Fatalf("建实例失败被包装成 *DetailTemplateProductLookupError：调用方会按「商品取数失败」翻文案，而商品其实读到了")
 	}
 	if len(instances.createReqs) != 1 {
 		t.Fatalf("CreateInstance 被调用 %d 次，want 1", len(instances.createReqs))

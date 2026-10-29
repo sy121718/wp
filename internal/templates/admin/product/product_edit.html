@@ -34,7 +34,7 @@
 
             {{if isset(.Product)}}
             <button type="button" class="btn"
-                    data-drawer-url="/admin/products/seo/drawer?productId={{.Product.ID}}&project={{.Scope.ProjectID}}"
+                    data-drawer-open="#tpl-product-seo"
                     data-drawer-title="{{ .["t"]("admin.products.seo.title", "SEO 检查") }}">{{ .["t"]("admin.products.row.seoScore", "SEO 评分") }}</button>
             {{end}}
             <a class="btn btn-ghost" href="{{queryURL("/admin/products", "project", .Scope.ProjectID)}}">← {{ .["t"]("admin.product_detail.back", "返回列表") }}</a>
@@ -208,7 +208,7 @@
         </div>
     {{if editBlocked}}</fieldset></section>{{else}}</form>{{end}}
     <aside class="product-edit-aside">
-        <section class="card card-body">
+        <section class="card card-body" data-product-preview data-preview-url="/admin/products/preview-frame?productId={{.Product.ID}}&amp;project={{.Scope.ProjectID}}" data-preview-failed="{{ .["t"]("MsgInternalError", "系统内部错误，请稍后重试") }}">
 
             <h2 class="card-title">{{ .["t"]("admin.products.preview.heading", "详情页预览") }}
                 <span class="help">
@@ -217,14 +217,15 @@
                 </span>
             </h2>
             {{if isset(.Product)}}
+            <p class="form-hint" data-product-preview-status role="status" hidden></p>
             <div class="preview-thumb" data-preview-thumb data-preview-height="1600" data-preview-zoom="{{ .["t"]("admin.products.preview.heading", "详情页预览")}}" role="button" tabindex="0">
-                <iframe id="product-preview-frame" name="product-preview-frame" sandbox="allow-same-origin"
-                        src="/admin/products/preview-frame?productId={{.Product.ID}}&amp;project={{.Scope.ProjectID}}"
+                <iframe id="product-preview-frame" name="product-preview-frame" sandbox="allow-scripts"
+                        data-product-preview-frame
                         title="{{ .["t"]("admin.products.preview.heading", "详情页预览") }}"></iframe>
             </div>
             <div class="action-row">
-                <a class="btn btn-ghost" href="/admin/products/preview-frame?productId={{.Product.ID}}&amp;project={{.Scope.ProjectID}}" target="product-preview-frame">{{ .["t"]("admin.products.preview.refresh", "刷新预览") }}</a>
-                <a class="btn btn-ghost" href="/admin/products/preview-frame?productId={{.Product.ID}}&amp;project={{.Scope.ProjectID}}" target="_blank" rel="noopener">{{ .["t"]("admin.products.preview.openFull", "新标签打开（1:1）") }}</a>
+                <button type="button" class="btn btn-ghost" data-product-preview-refresh>{{ .["t"]("admin.products.preview.refresh", "刷新预览") }}</button>
+                <button type="button" class="btn btn-ghost" data-product-preview-open>{{ .["t"]("admin.products.preview.openFull", "新标签打开（1:1）") }}</button>
             </div>
             {{else}}
             <p class="page-sub">{{ .["t"]("admin.products.preview.needSave", "保存这个商品后，这里会显示它的详情页真实形态。") }}</p>
@@ -485,7 +486,7 @@
     <template id="tpl-variant-generate-{{p.ID}}">
         <div class="form-stack" data-variant-generate
              data-product="{{p.ID}}" data-project="{{selectedProject}}" data-csrf="{{csrf}}"
-             data-preview-url="/admin/products/variant/preview"
+             data-preview-url="/api/product/variant/preview"
              data-msg-added="{{ .["t"]("admin.products.combo.added", "已追加 %d 行到清单（还没保存）") }}"
              data-msg-none="{{ .["t"]("admin.products.combo.none", "没有需要追加的组合：清单与库里都已有") }}"
              data-msg-failed="{{ .["t"]("admin.products.combo.failed", "生成失败：") }}">
@@ -538,8 +539,10 @@
     {{end}}
     {{end}}
 </div>
+{{if isset(.Product)}}<template id="tpl-product-seo">{{include "entity_seo_drawer.html"}}</template>{{end}}
 <script type="application/json" id="product-display-data">{{writeJson(.Product)}}</script>
 <script src="/static/vendor/trix/trix.umd.js"></script>
 
 <script src="/static/js/rich-editor/index.js"></script>
+{{include "product_seo_dictionary.html"}}
 {{end}}

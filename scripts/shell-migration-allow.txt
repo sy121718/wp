@@ -68,7 +68,6 @@ exit:page:jump	1	down	页面写操作迁到 JSON API 后逐步归零；task-152�
 exit:page:ownhelper	4	down	模块自建出口 helper 收敛到统一归口后归零；按门禁实测补记 7 → 6 → 5（批3 删除 page_schedule_handle.go 后 6 → 5）
 exit:plugin:jump	2	down	页面写操作迁到 JSON API 后逐步归零
 exit:plugin:ownhelper	2	down	模块自建出口 helper 收敛到统一归口后归零
-exit:product:ownhelper	3	down	模块自建出口 helper 收敛到统一归口后归零；task-153 控制器取词收口（片段接 adminui.PrepareFragment、成品串槽位改事实）+ 路由按功能拆分，按门禁实测 14 → 13
 exit:project:jump	1	down	页面写操作迁到 JSON API 后逐步归零；task-153 控制器取词收口（片段接 adminui.PrepareFragment、成品串槽位改事实）+ 路由按功能拆分，按门禁实测 2 → 1
 exit:project:ownhelper	3	down	模块自建出口 helper 收敛到统一归口后归零
 exit:purchase:ownhelper	2	keep	写动作只剩两个出口：purchaseFail（错误 → 4xx/5xx + JSON）与 purchaseFailMsg（参数级提示 → 400）。与 exit:inventory:ownhelper 同一形态（原先的 purchaseFormFail 薄转发已删，只留真出口），是终局形态而非过渡

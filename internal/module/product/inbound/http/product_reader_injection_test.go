@@ -44,8 +44,8 @@ func TestPageHandleReaderIsConstructorRequired(t *testing.T) {
 // TestSetupProductRoutesReturnsReader 接口面装配产出读模型，页面面装配把它收下（同一类型）。
 func TestSetupProductRoutesReturnsReader(t *testing.T) {
 	routes := reflect.TypeOf(SetupProductRoutes)
-	if routes.NumOut() != 2 {
-		t.Fatalf("SetupProductRoutes 应返回 (ProductService, ProductPageReader) 两个值，实际 %d 个", routes.NumOut())
+	if routes.NumOut() != 3 {
+		t.Fatalf("SetupProductRoutes 应返回 (ProductService, ProductPageReader, *ProductHandle) 三个值，实际 %d 个", routes.NumOut())
 	}
 	if got, want := routes.Out(0), reflect.TypeOf((*productcontract.ProductService)(nil)).Elem(); got != want {
 		t.Fatalf("第 1 个返回值应为 %v，实际 %v", want, got)
@@ -53,12 +53,15 @@ func TestSetupProductRoutesReturnsReader(t *testing.T) {
 	if got, want := routes.Out(1), readerIfaceType(); got != want {
 		t.Fatalf("第 2 个返回值应为读模型 %v，实际 %v（装配层拿不到读模型 = 页面装配只能断言）", want, got)
 	}
-	pages := reflect.TypeOf(SetupProductPages)
-	if pages.NumIn() < 4 {
-		t.Fatalf("SetupProductPages 形参不足（pages / products / reader / projects …），实际 %d 个", pages.NumIn())
+	if got, want := routes.Out(2), reflect.TypeOf((*ProductHandle)(nil)); got != want {
+		t.Fatalf("第 3 个返回值应为实例注入目标 %v，实际 %v", want, got)
 	}
-	if got, want := pages.In(2), readerIfaceType(); got != want {
-		t.Fatalf("SetupProductPages 第 3 个形参应为读模型 %v，实际 %v", want, got)
+	pages := reflect.TypeOf(SetupProductPages)
+	if pages.NumIn() < 6 {
+		t.Fatalf("SetupProductPages 形参不足（pages / api / writeHandle / products / reader / projects …），实际 %d 个", pages.NumIn())
+	}
+	if got, want := pages.In(4), readerIfaceType(); got != want {
+		t.Fatalf("SetupProductPages 第 5 个形参应为读模型 %v，实际 %v", want, got)
 	}
 }
 

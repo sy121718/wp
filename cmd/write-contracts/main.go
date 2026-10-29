@@ -235,6 +235,15 @@ func matchHandler(path, mod string, handlerDTO map[string]string) string {
 		camel = append(camel, camelWord(w))
 	}
 
+	// 资源名本身就是处理器名时，优先精确匹配，避免 SEO 与分类/品牌 SEO 相互歧义。
+	if verb == "" {
+		for _, id := range idsOf(strings.Join(camel, "")) {
+			if _, ok := handlerDTO[id]; ok {
+				return id
+			}
+		}
+	}
+
 	if verb != "" {
 		var cands []string
 		if len(camel) > 0 {

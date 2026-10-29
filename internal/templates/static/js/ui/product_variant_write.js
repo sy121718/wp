@@ -4,7 +4,7 @@
  * 四条规则决定这段脚本的形态：
  * 1. 事件用 document 级委托 —— 抽屉内容是从 <template> 克隆进 DOM 的，逐个绑监听会在
  *    抽屉关闭时失效；委托对克隆前后的元素一视同仁。
- * 2. 「生成」是一次**不落库**的取数：POST 到 /admin/products/variant/preview，把返回的行
+ * 2. 「生成」是一次**不落库**的取数：POST 到 /api/product/variant/preview，把返回的行
  *    按清单行的同一种结构（<template data-variant-row-tpl>）追加进 DOM。
  * 3. 「保存」交给写基座（ui/write-base.js）：清单行不是具名控件，基座收不到它们，
  *    因此这里注册一个 data-write-builder —— 把清单如实组装成 rows；组合合法性与唯一性
@@ -83,17 +83,27 @@
         row.setAttribute('data-stock-id', opt.getAttribute('data-stock-id') || '');
         row.setAttribute('data-warehouse-id', opt.getAttribute('data-warehouse-id') || '');
         row.setAttribute('data-sku-code', opt.getAttribute('data-sku-code') || '');
-        var html = '';
         if (image) {
-            html += '<img class="stock-thumb" src="' + image + '" alt="" loading="lazy">';
+            var thumbnail = global.document.createElement('img');
+            thumbnail.className = 'stock-thumb'; thumbnail.src = image; thumbnail.alt = ''; thumbnail.loading = 'lazy';
+            row.appendChild(thumbnail);
         }
-        html += '<span class="stock-name">' + name + '</span>';
-        html += '<span class="stock-code">' + (opt.getAttribute('data-sku-code') || '') + '</span>';
-        html += '<input type="number" class="form-input stock-qty" min="0" step="1" inputmode="numeric" data-stock-qty value="' + qty + '"' +
-            (tracked ? '' : ' placeholder="' + (i18n.unlimited || '') + '" title="' + (i18n.untracked || '') + '"') +
-            ' aria-label="' + (i18n.qtyLabel || '') + '">';
-        html += '<button type="button" class="btn btn-sm btn-ghost" data-stock-remove aria-label="' + (i18n.remove || '') + '">×</button>';
-        row.innerHTML = html;
+        var nameNode = global.document.createElement('span');
+        nameNode.className = 'stock-name'; nameNode.textContent = name;
+        row.appendChild(nameNode);
+        var code = global.document.createElement('span');
+        code.className = 'stock-code'; code.textContent = opt.getAttribute('data-sku-code') || '';
+        row.appendChild(code);
+        var quantity = global.document.createElement('input');
+        quantity.type = 'number'; quantity.className = 'form-input stock-qty'; quantity.min = '0'; quantity.step = '1';
+        quantity.setAttribute('inputmode', 'numeric'); quantity.setAttribute('data-stock-qty', ''); quantity.value = qty;
+        quantity.setAttribute('aria-label', i18n.qtyLabel || '');
+        if (!tracked) { quantity.placeholder = i18n.unlimited || ''; quantity.title = i18n.untracked || ''; }
+        row.appendChild(quantity);
+        var remove = global.document.createElement('button');
+        remove.type = 'button'; remove.className = 'btn btn-sm btn-ghost'; remove.textContent = '×';
+        remove.setAttribute('data-stock-remove', ''); remove.setAttribute('aria-label', i18n.remove || '');
+        row.appendChild(remove);
         return row;
     }
 
@@ -114,7 +124,9 @@
         var label = '';
         var og = opt.closest('optgroup');
         if (og && og.getAttribute('label')) { label = og.getAttribute('label'); }
-        head.innerHTML = '<span class="stock-group-name">' + (label || warehouseID) + '</span>';
+        var name = global.document.createElement('span');
+        name.className = 'stock-group-name'; name.textContent = label || warehouseID;
+        head.appendChild(name);
         var rows = global.document.createElement('div');
         rows.className = 'stock-rows';
         rows.setAttribute('data-stock-rows', '');

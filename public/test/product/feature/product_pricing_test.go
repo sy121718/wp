@@ -784,8 +784,8 @@ func tagHitIDs(t *testing.T, f *pricingFixture, tagID string) []string {
 	if err != nil {
 		t.Fatalf("查询标签命中商品失败: %v", err)
 	}
-	out := make([]string, 0, len(hits))
-	for _, h := range hits {
+	out := make([]string, 0, len(hits.Items))
+	for _, h := range hits.Items {
 		out = append(out, h.ID)
 	}
 	return out

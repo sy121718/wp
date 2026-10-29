@@ -83,6 +83,14 @@ func TestUIAssetEntry(t *testing.T) {
 	if htmxIdx := idx("ui/htmx.min.js"); htmxIdx >= 0 && htmxIdx > utilIdx {
 		t.Fatal("前置库（htmx）必须排在控件助手之前")
 	}
+	// 商品的JSON消费者必须在写协议基座之后、统一扫描入口之前装配。
+	writeIdx := idx("ui/write-base.js")
+	for _, name := range []string{"ui/product-seo.js", "ui/product-tag-hits.js", "ui/product-preview.js", "ui/product-category-tree.js"} {
+		position := idx(name)
+		if writeIdx < 0 || position <= writeIdx || position >= indexIdx {
+			t.Fatalf("商品控件 %s 必须在写基座与统一扫描入口之间加载", name)
+		}
+	}
 	node, nodeErr := exec.LookPath("node")
 	seen := map[string]bool{}
 	for _, match := range matches {

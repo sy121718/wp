@@ -1,15 +1,15 @@
 /* ui/preview-zoom.js — 详情页预览的就地放大（点击右栏缩略 → 覆盖层里看大的）。
 
  * 为什么不用抽屉：抽屉基座（ui/drawer.js）的片段校验**禁止 iframe**，而预览必须是 iframe
- *（详情页是完整文档，自带样式与脚本；塞进 srcdoc 会与后台页面同源、脚本可能互扰）。
+ *（详情页是完整文档，自带样式与脚本；通过仅 allow-scripts 的 iframe 隔离执行）。
  * 放宽那条白名单是为一个预览松安全边界，代价不对等。
  *
  * 为什么不用新标签页（唯一替代方案）：换标签会离开正在编辑的表单，而预览的用法是
  *「扫一眼 → 继续改」。覆盖层大（92vw×88vh）、内层仍按 1440 宽渲染（scale≈0.9，接近 1:1），
  * Esc 或点背景即回到编辑。真要 1:1，覆盖层里仍留了「新标签打开」的出口。
  *
- * 覆盖层里的 iframe 会**再请求一次**预览帧（渲染一次）—— 这是点击才发生的成本，
- * 换来的是「不打断编辑」；不缓存 DOM 副本是为了避免两份预览不同步（保存后要刷新两处）。
+ * 商品预览复制已经校验成功的 srcdoc，不再次请求可能返回 JSON 错误的端点；
+ * 其它使用 src 的预览仍保持原行为。
  */
 (function (global) {
     'use strict';
@@ -40,7 +40,7 @@
         return Math.min(1, avail / viewport);
     }
 
-    function open(src, title) {
+    function open(src, title, srcdoc, failed) {
         close();
         mask = document.createElement('div');
         mask.className = 'preview-zoom-mask';
@@ -58,7 +58,12 @@
         label.textContent = title || '';
         var full = document.createElement('a');
         full.className = 'btn btn-ghost';
-        full.href = src;
+        full.href = srcdoc ? '#' : src;
+        if (srcdoc) full.addEventListener('click', function (event) {
+            event.preventDefault();
+            var shown = WBUI.productPreview && WBUI.productPreview.showDocument(WBUI.productPreview.openWindow(), srcdoc, title);
+            if (!shown && WBUI.toast) WBUI.toast(failed, {type: 'error'});
+        });
         full.target = '_blank';
         full.rel = 'noopener';
         full.textContent = '新标签打开（1:1）';
@@ -73,8 +78,8 @@
 
         var frame = document.createElement('iframe');
         frame.className = 'preview-zoom-frame';
-        frame.setAttribute('sandbox', '');
-        frame.src = src;
+        frame.setAttribute('sandbox', srcdoc ? 'allow-scripts' : '');
+        if (srcdoc) frame.srcdoc = srcdoc; else frame.src = src;
 
         box.appendChild(bar);
         box.appendChild(frame);
@@ -120,7 +125,9 @@
                 return;
             }
             var trigger = function () {
-                open(frame.getAttribute('src'), root.getAttribute('data-preview-zoom') || '');
+                if (frame.hidden || (!frame.getAttribute('src') && !frame.getAttribute('srcdoc'))) return;
+                var host = root.closest('[data-product-preview]');
+                open(frame.getAttribute('src'), root.getAttribute('data-preview-zoom') || '', frame.getAttribute('srcdoc'), host && host.getAttribute('data-preview-failed') || '');
             };
             root.addEventListener('click', trigger);
             // 容器声明了 role="button" + tabindex="0"：那就必须能用键盘触发。

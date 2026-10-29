@@ -82,10 +82,10 @@ func newProjectScopeEngine(t *testing.T) (*gin.Engine, *projectScopeFixture) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	// 改 URL / 切换模板 / 首次发布三个写动作已从页面 POST 迁到 /api/product/detail-template/*。
-	producthttp.BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
+	api := producthttp.NewProductHandle(base.products)
+	api.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
 	})
-	api := producthttp.NewProductHandle(base.products)
 	engine.POST("/api/product/detail-template/update-url", api.UpdateDetailTemplateURL)
 	engine.POST("/api/product/detail-template/apply", api.ApplyDetailTemplate)
 	engine.POST("/api/product/detail-template/publish", api.PublishDetailTemplate)

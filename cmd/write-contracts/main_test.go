@@ -134,3 +134,12 @@ func TestDTOFieldsKeepJSONContainersHandledByFormBinder(t *testing.T) {
 		t.Fatalf("双入口字段语义发生变化：%+v", got["testdto.Params"])
 	}
 }
+
+func TestProductReadCalculationsMatchExactHandlers(t *testing.T) {
+	bindings := map[string]string{"product:SeoScore": "productdto.ScorePanelReq", "product:CategorySeoScore": "productdto.ScorePanelReq", "product:BrandSeoScore": "productdto.ScorePanelReq", "product:PreviewVariant": "productdto.VariantPreviewFormReq"}
+	for path, want := range map[string]string{"/api/product/seo-score": "product:SeoScore", "/api/product/category/seo-score": "product:CategorySeoScore", "/api/product/brand/seo-score": "product:BrandSeoScore", "/api/product/variant/preview": "product:PreviewVariant"} {
+		if got := matchHandler(path, "product", bindings); got != want {
+			t.Fatalf("%s: got %s, want %s", path, got, want)
+		}
+	}
+}

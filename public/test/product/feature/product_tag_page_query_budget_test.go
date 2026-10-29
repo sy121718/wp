@@ -2,7 +2,7 @@
 //
 // 审计原文：标签页先 listTags，再对每个标签 GetTag 取命中商品；注释把「标签是个位数」
 // 当边界，但协议没有使这个假设成立，命中数据也会一起撑大页面。整改后首屏只发
-// 「工程列表 + 标签列表 + 一次批量计数」，命中商品改成展开时按页取（片段端点）。
+// 「工程列表 + 标签列表 + 一次批量计数」，命中商品改成展开时按页取（JSON 端点）。
 //
 // 本文件钉住四件事（都是可断言的行为，不是「看起来快了」）：
 //  1. 1 / 100 / 1000 个标签时首屏 SQL 条数**完全相等**；
@@ -122,7 +122,7 @@ func newTagQueryFixture(t *testing.T) *tagPageFixture {
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	h := producthttp.NewProductPageHandle(svc, svc, projects)
 	engine.GET("/admin/product-tags", adminui.PageSlot(producthttp.ProductTagsPageTemplate), h.ProductTagsPage)
-	engine.GET("/admin/product-tags/hits", adminui.PageSlot(producthttp.ProductTagHitsTemplate), h.ProductTagHitsFragment)
+	engine.GET("/api/product/tag/products", producthttp.NewProductHandle(svc).ListTagProducts)
 	return &tagPageFixture{engine: engine, db: db, projects: projects, counter: counter}
 }
 
@@ -234,7 +234,7 @@ func TestTagPageFirstPaintQueryCountIsConstant(t *testing.T) {
 		if got := strings.Count(body, `name="ids"`); got != wantRows {
 			t.Fatalf("标签数=%d 时第 1 页应渲染 %d 行，实际 %d 行", n, wantRows, got)
 		}
-		if hasPager := strings.Contains(body, `class="pagination"`); hasPager != (n > perPage) {
+		if hasPager := strings.Contains(body, `<a class="pagination-btn" href=`); hasPager != (n > perPage) {
 			t.Fatalf("标签数=%d 时分页条%s出现", n, map[bool]string{true: "应", false: "不应"}[n > perPage])
 		}
 		if n < 1000 && strings.Contains(body, "标签 0999") {
@@ -373,13 +373,13 @@ func assertTagPagesCoverAll(t *testing.T, f *tagPageFixture, projectID string, w
 	}
 }
 
-// TestTagHitsFragmentPagesWithinProjectScope 命中商品按页取，且工程边界不退化。
+// TestTagProductsPagesWithinProjectScope 命中商品按页取，且工程边界不退化。
 //
 // 两个工程各一个标签：甲工程 120 个商品、乙工程 3 个商品；再故意让乙工程的 1 个商品
 // 挂着**甲工程的标签 id**（真实库里完全可能出现的越界引用，也是 RLS 换角色前唯一能靠
 // 显式谓词挡住的那类脏数据）。断言：甲工程看到的命中数不多不少 120，乙工程的商品名
 // 一个都不出现；用乙工程的标签 id 去查甲工程直接「标签不存在」。
-func TestTagHitsFragmentPagesWithinProjectScope(t *testing.T) {
+func TestTagProductsPagesWithinProjectScope(t *testing.T) {
 	f := newTagQueryFixture(t)
 	if f == nil {
 		return
@@ -407,22 +407,22 @@ func TestTagHitsFragmentPagesWithinProjectScope(t *testing.T) {
 	}
 
 	// 逐页取：默认每页 50 条，120 个商品 = 1/2/3 页各 50/50/20，第 4 页收敛到第 3 页。
-	// 分页文案断言到「第 X-Y 条」而不是只断言页号：切片边界错了（少取一行 / 重叠一行）
-	// 在只有页号的断言下看不出来。
+	// 断言每页条数、页码、总量与跨页并集，证明没有重叠或漏行。
 	seen := map[string]bool{}
 	for page, want := range map[int][3]int{1: {50, 1, 50}, 2: {50, 51, 100}, 3: {20, 101, 120}} {
-		wantCount, from, to := want[0], want[1], want[2]
-		rec := httptestGet(f.engine, fmt.Sprintf("/admin/product-tags/hits?project=%s&id=%s&page=%d", projectA, tagA, page))
+		wantCount := want[0]
+		rec := httptestGet(f.engine, fmt.Sprintf("/api/product/tag/products?projectId=%s&id=%s&page=%d", projectA, tagA, page))
 		if rec.Code != http.StatusOK {
-			t.Fatalf("片段应 200，实际 %d：%s", rec.Code, rec.Body.String())
+			t.Fatalf("JSON 应 200，实际 %d：%s", rec.Code, rec.Body.String())
 		}
 		body := rec.Body.String()
-		names := fragmentProductNames(body)
-		if len(names) != wantCount {
-			t.Fatalf("第 %d 页应有 %d 个商品，实际 %d 个", page, wantCount, len(names))
+		data := decodeTagProducts(t, rec)
+		names := make([]string, 0, len(data.Items))
+		for _, item := range data.Items {
+			names = append(names, item.Name)
 		}
-		if !strings.Contains(body, fmt.Sprintf("第 %d-%d 条", from, to)) {
-			t.Fatalf("第 %d 页应显示「第 %d-%d 条」的分页信息：%s", page, from, to, body)
+		if len(names) != wantCount || data.Page != page || data.Total != 120 || data.PageSize != 50 {
+			t.Fatalf("第 %d 页事实不符：%+v", page, data)
 		}
 		// 工程边界：别的工程的商品名一个都不能出现（含越界挂着本标签 id 的那个）。
 		for _, foreign := range []string{"乙商品", "越界商品"} {
@@ -439,14 +439,15 @@ func TestTagHitsFragmentPagesWithinProjectScope(t *testing.T) {
 	}
 
 	// 越界页码不报错：回到最后一页（翻页走到头再点一下是正常操作，不该变成错误提示）。
-	rec = httptestGet(f.engine, fmt.Sprintf("/admin/product-tags/hits?project=%s&id=%s&page=4", projectA, tagA))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "第 101-120 条") {
-		t.Fatalf("越界页码应收敛到最后一页，实际 %d：%s", rec.Code, rec.Body.String())
+	rec = httptestGet(f.engine, fmt.Sprintf("/api/product/tag/products?projectId=%s&id=%s&page=4", projectA, tagA))
+	last := decodeTagProducts(t, rec)
+	if last.Page != 3 || len(last.Items) != 20 || last.Total != 120 {
+		t.Fatalf("越界页码应收敛到最后一页：%+v", last)
 	}
 
 	// 用别的工程的标签 id 查本工程：直接「标签不存在」，不是「查到 0 条」（后者会让
 	// 「这个标签是空的」与「这个标签不属于你」看起来一样）。
-	rec = httptestGet(f.engine, fmt.Sprintf("/admin/product-tags/hits?project=%s&id=%s&page=1", projectA, tagB))
+	rec = httptestGet(f.engine, fmt.Sprintf("/api/product/tag/products?projectId=%s&id=%s&page=1", projectA, tagB))
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
 		t.Fatalf("跨工程标签应回 JSON 404，实际 %d：%s", rec.Code, rec.Body.String())
 	}
@@ -456,7 +457,7 @@ func TestTagHitsFragmentPagesWithinProjectScope(t *testing.T) {
 
 	// 空工程（无标签、无商品）拿别的工程的标签 id 也一样：不泄露任何商品。
 	projectC := f.newProject(t, "丙工程")
-	rec = httptestGet(f.engine, fmt.Sprintf("/admin/product-tags/hits?project=%s&id=%s&page=1", projectC, tagA))
+	rec = httptestGet(f.engine, fmt.Sprintf("/api/product/tag/products?projectId=%s&id=%s&page=1", projectC, tagA))
 	if body := rec.Body.String(); rec.Code != http.StatusNotFound || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") || !strings.Contains(body, "标签不存在") || len(fragmentProductNames(body)) != 0 {
 		t.Fatalf("空工程查别的工程的标签应是「标签不存在」且不泄露任何商品：%s", body)
 	}

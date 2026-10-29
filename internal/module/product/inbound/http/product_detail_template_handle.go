@@ -2,11 +2,8 @@ package producthttp
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	contenttemplatecontract "go_wp/internal/module/contenttemplate/contract"
 	presentationcontract "go_wp/internal/module/presentation/contract"
-	presentationenums "go_wp/internal/module/presentation/enums"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
@@ -14,254 +11,85 @@ import (
 	dtoutbound "go_wp/internal/module/product/outbound/detailtemplate"
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/pkg/binding"
-	"go_wp/pkg/facing"
 	"go_wp/pkg/response"
 	pageview "go_wp/pkg/view"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-// product_detail_template_handle.go — 商品详情页模板（issue #14）与 SEO 评分的 **HTTP 层**。
-//
-// 这两块过去同文件、且逻辑也都在这里；拆分后本文件只做 HTTP 该做的事：请求绑定、
-// 权限入口（路由在 product_router.go）、调用 service 用例、HTTP 错误映射与响应渲染。
-// 两块能力的实现位置：
-//
-//	· 详情页模板：模板文档组装 / 首次发布 / 切换模板 / 改 URL / 预览编排 →
-//	  internal/module/product/service/product_detail_template_ops.go；
-//	  模板业务读取 → internal/module/product/service/product_detail_template_page.go
-//	  （两个文件名像、职责不同，改之前看各自文件头）。
-//
-// SEO 评分的视图层在 product_score_handle.go（三个实体共用），不在本文件。
+// 详情模板写接口只做绑定、调用商品用例与统一 JSON 响应。
+var productActionDoneMsg = productenums.ActionDoneMessage()
 
-// productActionDoneFallback 单条写动作的通用成功回执的中文兜底（key 在
-// productenums.ProductsActionDone）。
-//
-// 不复用 enums 的 MsgCreateSuccess / MsgUpdateSuccess：那几个 key 的值在词条表里是
-// 「Blueprint 创建成功」这类**蓝图域**的句子（058/430 早先 seed），商品页用它会显示成
-// 「Blueprint 创建成功」。这里另起一条商品域 key（登记前走中文兜底）。
-const productActionDoneFallback = "操作已完成"
-
-// productActionDoneMsg 单条写动作（新建 / 修改 / 保存）的成功回执事实。
-var productActionDoneMsg = facing.Msg{Key: productenums.ProductsActionDone, Fallback: productActionDoneFallback}
-
-// 编译期断言：service 用例声明的两个窄端口由本包这两个契约面满足 ——
-// 端口是「评分输入 / 模板编排真正需要什么」的形状，契约改宽改窄时这里先报错。
 var (
 	_ productservice.ProductReadPort            = (productcontract.ProductService)(nil)
 	_ productservice.DetailTemplateInstancePort = (ProductDetailTemplatePort)(nil)
 )
 
-var errModeUnavailable = errors.New("详情页双轨能力未装配")
+// SetDetailTemplateWriteDeps 为当前处理器注入详情模板依赖；只在路由装配期调用。
+func (h *ProductHandle) SetDetailTemplateWriteDeps(deps productservice.DetailTemplateDeps) {
+	h.templateDeps = deps
+}
 
-// ReapplyDetailTemplatePreset POST /api/product/detail-template/reapply-preset：
-// 重新套用预设 —— 放弃该商品实例的独立文档，回到跟随模板并重建（迁移 282 的另一半）。
-//
-// 页面侧原先的 /admin/products/reapply-preset 随写通道一起删除：结论改成一行回执
-// （成功由 ui/write-base.js 存进 flash 再整页刷新 —— 模式徽标变了，必须重渲染）。
+// SetDetailTemplateModePort 为当前处理器注入双轨能力；不同应用实例互不覆盖。
+func (h *ProductHandle) SetDetailTemplateModePort(port presentationcontract.DetailTemplateModePort) {
+	h.modePort = port
+}
+
 func (h *ProductHandle) ReapplyDetailTemplatePreset(c *gin.Context) {
 	req, ok := binding.JSON[productdto.DetailTemplateModeReapplyReq](c)
 	if !ok {
 		return
 	}
-	port, err := detailTemplateModePortFor(req.InstanceID)
-	if err != nil {
-		productDetailTemplateModeFail(c, err)
-		return
-	}
-	if _, err = port.ReapplyPreset(c.Request.Context(), &presentationcontract.ReapplyPresetReq{
-		InstanceID: strings.TrimSpace(req.InstanceID),
-		ProjectID:  strings.TrimSpace(req.ProjectID),
-		TemplateID: strings.TrimSpace(req.TemplateID),
-	}); err != nil {
-		productDetailTemplateModeFail(c, err)
-		return
-	}
-	response.SuccessMsg(c, productActionDoneMsg)
+	detailTemplateFinish(c, productservice.ReapplyDetailTemplatePreset(c.Request.Context(), h.modePort, req))
 }
 
-// RollbackDetailTemplateDocument POST /api/product/detail-template/rollback-document：
-// 快照级文档回滚 —— 取历史快照的文档重新发布（实体数据仍取最新）。
-//
-// 与上面的重新套用预设是**对称的两半**：一个放弃独立文档，一个把某份历史文档立为当前。
-// 两者都重建产物，所以成功之后页面必须刷新（产物指针与快照清单都变了）。
 func (h *ProductHandle) RollbackDetailTemplateDocument(c *gin.Context) {
 	req, ok := binding.JSON[productdto.DetailTemplateModeRollbackReq](c)
 	if !ok {
 		return
 	}
-	port, err := detailTemplateModePortFor(req.InstanceID)
+	detailTemplateFinish(c, productservice.RollbackDetailTemplateDocument(c.Request.Context(), h.modePort, req))
+}
+
+func detailTemplateFinish(c *gin.Context, err error) {
 	if err != nil {
-		productDetailTemplateModeFail(c, err)
-		return
-	}
-	if _, err = port.RollbackDocument(c.Request.Context(), &presentationcontract.RollbackDocumentReq{
-		InstanceID: strings.TrimSpace(req.InstanceID),
-		ProjectID:  strings.TrimSpace(req.ProjectID),
-		SnapshotID: strings.TrimSpace(req.SnapshotID),
-	}); err != nil {
-		productDetailTemplateModeFail(c, err)
+		response.ErrorStatusAuto(c, productErrScene, err)
 		return
 	}
 	response.SuccessMsg(c, productActionDoneMsg)
 }
 
-// detailTemplateWriteDeps 详情页模板页四个写动作的依赖（装配期**后置**注入）。
-//
-// 为什么不让 ProductHandle 在构造时持有：这四个动作要 contenttemplate 与 presentation 两个契约，
-// 而 SetupProductRoutes 只拿得到 database 与 project —— 内容模板与发布服务在
-// assembly_publish 那一段才建好（同 BindDetailTemplateModePort 的时序，见 product_router.go 末尾）。
-// 未注入 = 装配缺陷，走 errModeUnavailable → 500 归口文案，而不是让请求在空指针上崩。
-var detailTemplateWriteDeps *productservice.DetailTemplateDeps
-
-// BindDetailTemplateWriteDeps 注入四个写动作的依赖（装配期调用一次）。
-func BindDetailTemplateWriteDeps(deps productservice.DetailTemplateDeps) {
-	detailTemplateWriteDeps = &deps
-}
-
-func detailTemplateWriteDepsOrErr() (productservice.DetailTemplateDeps, error) {
-	if detailTemplateWriteDeps == nil {
-		return productservice.DetailTemplateDeps{}, errModeUnavailable
-	}
-	return *detailTemplateWriteDeps, nil
-}
-
-// detailTemplateWriteFail 四个写动作的 JSON 失败出口。
-//
-// 文案已经由 detailTemplate*Msg 系列收口（presentation / contenttemplate 的 enums → 人话），
-// 这里只决定状态码：参数与业务状态问题 400、对象不存在 404。
-func detailTemplateWriteFail(c *gin.Context, status int, msg facing.Msg) {
-	response.ErrorMsg(c, status, msg)
-}
-
-// detailTemplateDepsOrFail 取写动作依赖；没装配就地写完 500 并告诉调用方别再往下走。
-func detailTemplateDepsOrFail(c *gin.Context) (productservice.DetailTemplateDeps, bool) {
-	deps, err := detailTemplateWriteDepsOrErr()
-	if err != nil {
-		productDetailTemplateModeFail(c, err)
-		return productservice.DetailTemplateDeps{}, false
-	}
-	return deps, true
-}
-
-// detailTemplateWriteJSON 四个写动作的共同骨架：绑定 → 取依赖 → 交给业务函数 → 回执。
-//
-// 业务函数里要自己写完响应（例如名字为空这种请求级校验）时返回 response.ErrHandled，
-// 收尾只认「已经写完」而不再叠一条回执。
-func detailTemplateWriteJSON[T any](c *gin.Context, run func(req *T, deps productservice.DetailTemplateDeps) error) {
-	req, ok := binding.JSON[T](c)
-	if !ok {
-		return
-	}
-	deps, ok := detailTemplateDepsOrFail(c)
-	if !ok {
-		return
-	}
-	detailTemplateFinish(c, run(req, deps))
-}
-
-// detailTemplateFinish 写动作统一使用错误声明处的状态码与文案事实。
-func detailTemplateFinish(c *gin.Context, err error) {
-	if err == nil {
-		response.SuccessMsg(c, productActionDoneMsg)
-		return
-	}
-	if !errors.Is(err, response.ErrHandled) {
-		response.ErrorStatusAuto(c, productErrScene, err)
-	}
-}
-
-// CreateDetailTemplate POST /api/product/detail-template/create：
-// 新建一套命名模板（复制指定模板或默认模板的文档），初始版本 v1。
-//
-// 模板内容编辑不在这里：新建只给出一个可被工作台打开的结构，改文档走 /workbench?template=…。
 func (h *ProductHandle) CreateDetailTemplate(c *gin.Context) {
-	detailTemplateWriteJSON(c, func(req *productdto.DetailTemplateCreateReq, deps productservice.DetailTemplateDeps) error {
-		// binding 只拦空串，拦不住「全是空格」的名字；判据必须在 TrimSpace 之后。
-		name := strings.TrimSpace(req.Name)
-		if name == "" {
-			detailTemplateWriteFail(c, http.StatusBadRequest, productDetailTemplateNameRequiredMsg)
-			return response.ErrHandled
-		}
-		// 顺序：**先取文档、再建模板**（取不到复制来源就不建空的）。
-		return productservice.CreateDetailTemplate(c.Request.Context(), deps, strings.TrimSpace(req.ProjectID), name, strings.TrimSpace(req.CopyFrom))
-	})
-}
-
-// PublishDetailTemplate POST /api/product/detail-template/publish：
-// 首次为该商品建立发布实例并发布（URLPath 留空时按站点 URL 规则从商品 slug 派生）。
-//
-// 取商品失败（product 的 enums）与建实例失败（presentation 的 enums）是两类事实：
-// 收尾按 DetailTemplateProductLookupError 单独给 404，合成一句会把「商品不存在」
-// 说成「还没有详情页实例」。
-func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
-	detailTemplateWriteJSON(c, func(req *productdto.DetailTemplatePublishReq, deps productservice.DetailTemplateDeps) error {
-		return productservice.PublishDetailTemplate(c.Request.Context(), deps,
-			strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID),
-			strings.TrimSpace(req.TemplateID), strings.TrimSpace(req.URLPath))
-	})
-}
-
-// ApplyDetailTemplate POST /api/product/detail-template/apply：
-// 把商品切换（或确认）到选中的模板并重新发布 —— 产物随模板变化。
-//
-// projectID 显式回传，不走 presentation 的「工程唯一时取该工程」兜底：多工程站点上
-// 兜底会落到另一个工程，改的是别的站点的页面而这里仍回成功。
-func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
-	detailTemplateWriteJSON(c, func(req *productdto.DetailTemplateApplyReq, deps productservice.DetailTemplateDeps) error {
-		return productservice.ApplyDetailTemplate(c.Request.Context(), deps.Instances,
-			strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID),
-			strings.TrimSpace(req.TemplateID))
-	})
-}
-
-// UpdateDetailTemplateURL POST /api/product/detail-template/update-url：
-// 修改商品详情页的线上路径（内容、模板绑定、产物内容完全不动）。
-func (h *ProductHandle) UpdateDetailTemplateURL(c *gin.Context) {
-	detailTemplateWriteJSON(c, func(req *productdto.DetailTemplateUpdateURLReq, deps productservice.DetailTemplateDeps) error {
-		newPath := strings.TrimSpace(req.NewPath)
-		if newPath == "" {
-			detailTemplateWriteFail(c, http.StatusBadRequest, productDetailTemplatePathRequiredMsg)
-			return response.ErrHandled
-		}
-		return productservice.UpdateDetailTemplateURL(c.Request.Context(), deps.Instances,
-			strings.TrimSpace(req.ProjectID), strings.TrimSpace(req.ProductID), newPath, req.WithRedirect)
-	})
-}
-
-// detailTemplateModePortFor 取双轨能力并校验实例标识（两个端点的共同前置）。
-//
-// 端口是后置注入的（见 product_router.go 的 BindDetailTemplateModePort）：没注入 = 装配缺陷，
-// 走非业务错误出口（500 归口文案，说清楚是哪一类问题）；实例标识空 = 请求不合法 ——
-// binding 已拦一次，这里是服务端边界，不假设调用方一定经过模板。
-func detailTemplateModePortFor(instanceID string) (ProductDetailTemplateModePort, error) {
-	if detailTemplateModePort == nil {
-		return nil, errModeUnavailable
-	}
-	if strings.TrimSpace(instanceID) == "" {
-		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
-	}
-	return detailTemplateModePort, nil
-}
-
-// productDetailTemplateModeFail 双轨写动作的 JSON 失败出口。
-//
-// 两类失败分档：业务 key（本模块或 presentation 的 enums 常量，兜底各自跟着声明处走）按成品文案回报，
-// 400 / 404 如实；非业务（装配缺失、驱动报错）交给 ErrorAuto —— 原文只进日志，对外 500
-// 归口文案。直接写 err.Error() 两条都不满足：裸 key 运营看不懂，库表细节又不该出去。
-func productDetailTemplateModeFail(c *gin.Context, err error) {
-	fact, ok := facing.FactOf(err)
-	if !ok || !fact.Business {
-		response.ErrorStatusAuto(c, productErrScene, err)
+	req, ok := binding.JSON[productdto.DetailTemplateCreateReq](c)
+	if !ok {
 		return
 	}
-	status := http.StatusBadRequest
-	if fact.Key == presentationenums.ErrNotFound {
-		status = http.StatusNotFound
+	detailTemplateFinish(c, productservice.CreateDetailTemplate(c.Request.Context(), h.templateDeps, req.ProjectID, req.Name, req.CopyFrom))
+}
+
+func (h *ProductHandle) PublishDetailTemplate(c *gin.Context) {
+	req, ok := binding.JSON[productdto.DetailTemplatePublishReq](c)
+	if !ok {
+		return
 	}
-	response.ErrorMsg(c, status, facing.Msg{Key: fact.Key, Fallback: fact.Fallback})
+	detailTemplateFinish(c, productservice.PublishDetailTemplate(c.Request.Context(), h.templateDeps, req.ProjectID, req.ProductID, req.TemplateID, req.URLPath))
+}
+
+func (h *ProductHandle) ApplyDetailTemplate(c *gin.Context) {
+	req, ok := binding.JSON[productdto.DetailTemplateApplyReq](c)
+	if !ok {
+		return
+	}
+	detailTemplateFinish(c, productservice.ApplyDetailTemplate(c.Request.Context(), h.templateDeps.Instances, req.ProjectID, req.ProductID, req.TemplateID))
+}
+
+func (h *ProductHandle) UpdateDetailTemplateURL(c *gin.Context) {
+	req, ok := binding.JSON[productdto.DetailTemplateUpdateURLReq](c)
+	if !ok {
+		return
+	}
+	detailTemplateFinish(c, productservice.UpdateDetailTemplateURL(c.Request.Context(), h.templateDeps.Instances, req.ProjectID, req.ProductID, req.NewPath, req.WithRedirect))
 }
 
 // 详情页模板与发布实例都以实体类型为键：取值用 productcontract.EntityTypeProduct
@@ -345,17 +173,6 @@ func (h *ProductPageHandle) SetDetailTemplateDeps(templates contenttemplatecontr
 	}
 }
 
-// detailTemplateDeps 把装配期注入的依赖打成 service 用例的入参（写动作 / 预览共用）。
-//
-// 为什么不直接让 handler 持有 service 实例：本包测试用 fake 实现 productcontract.ProductService
-// 构造 handler（NewProductPageHandle(fake, nil, nil)），handler 一旦要求具体的 service 实例，
-// 这些 fake 场景就全部用不了。装配照旧在 product_router.go，这里只把同一批依赖换个形状交出去。
-func (h *ProductPageHandle) detailTemplateDeps() productservice.DetailTemplateDeps {
-	return productservice.DetailTemplateDeps{
-		Templates: h.templates, Instances: h.instances, Products: h.products, Projects: h.projects,
-	}
-}
-
 // ProductDetailTemplatePage 只命名传递现成商品、模板目录与发布实例。
 func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	req, ok := binding.Query[productdto.ProductDetailTemplatePageReq](c)
@@ -396,73 +213,19 @@ func (h *ProductPageHandle) ProductDetailTemplatePage(c *gin.Context) {
 	))
 }
 
-// ProductDetailTemplatePreview POST /admin/products/template/preview：
-// 发布前预览模板渲染效果 —— 只读渲染，直接把构建结果的 HTML 输出到新标签页；
-// 响应头带上实际使用的模板与版本，便于核对「预览的是哪一套」。
+// ProductDetailTemplatePreview 成功传递构建产物字节，失败由 JSON 出口返回声明处状态。
 func (h *ProductPageHandle) ProductDetailTemplatePreview(c *gin.Context) {
-	if h.instances == nil {
-		// 装配缺陷：预览没有可渲染的契约，出口交给统一错误形状（对外是归口文案，原文只进日志）。
-		pageview.Fail(c, errors.New(errTemplateDepsMissing))
-		return
-	}
+	c.Header("Cache-Control", "no-store")
 	req, ok := binding.Form[productdto.DetailTemplatePreviewReq](c)
 	if !ok {
 		return
 	}
-	res, err := productservice.PreviewDetailTemplate(c.Request.Context(), h.instances,
-		req.ProjectID, req.ProductID, req.TemplateID)
+	res, err := productservice.PreviewProductDetailTemplate(c.Request.Context(), h.products, h.instances, req.ProjectID, req.ProductID, req.TemplateID)
 	if err != nil {
-		// 「预览失败」对作者是可用信息，原因（模板不存在 / 文档非法 / 渲染出错）只进日志。
-		pageview.Fail(c, err)
+		response.ErrorStatusAuto(c, productErrScene, err)
 		return
 	}
-	if res.TemplateName != "" {
-		c.Header("X-Preview-Template", fmt.Sprintf("%s@v%d", res.TemplateName, res.TemplateVersion))
-	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(res.HTML))
-	return
 }
 
-// errTemplateDepsMissing 详情模板契约未装配时的提示（装配缺陷，页面可见）。
-//
-// 中文原文**兼作取词兜底**（与 product_bulk_handle.go 的 productBulkText 同形）：词条缺失时页面显示
-// 这句话，而不是裸 key（页面上出现 `admin.product_detail_template.depsMissing` 这种串，
-// 运营只会以为后台坏了）。
-const errTemplateDepsMissing = "详情页模板能力未装配（缺少内容模板或自动发布契约）"
-
-// detailTemplateDepsMissingMsg 「依赖未装配」提示的**事实**（key + 中文兜底）。
-// key 在 productenums.ProductDetailTemplateDepsMissing（迁移 407 登记中英词条）。
-var detailTemplateDepsMissingMsg = facing.Msg{Key: productenums.ProductDetailTemplateDepsMissing, Fallback: errTemplateDepsMissing}
-
-// 本页的两个参数级提示的中文兜底（key 在 productenums.ProductDetailTemplate*Required）。
-const (
-	productDetailTemplateNameRequiredFallback = "模板名不能为空"
-	productDetailTemplatePathRequiredFallback = "请填写新的访问路径。"
-)
-
-// 两个参数级提示的**事实**（模板在渲染期取词，控制器不再拼成品串）。
-var (
-	productDetailTemplateNameRequiredMsg = facing.Msg{
-		Key: productenums.ProductDetailTemplateNameRequired, Fallback: productDetailTemplateNameRequiredFallback,
-	}
-	productDetailTemplatePathRequiredMsg = facing.Msg{
-		Key: productenums.ProductDetailTemplatePathRequired, Fallback: productDetailTemplatePathRequiredFallback,
-	}
-)
-
-// ==========================================================================
-// SEO 评分：行内面板、抽屉与三个实体的取数入口（商品 / 分类 / 品牌）。
-//
-// 取数与算分都在 productservice（product_seo_score.go 的 SeoScoreInputOf / SeoTitleIndex /
-// SeoEntityScore）—— 三个 POST 端点与抽屉共用**同一份**取数口径，抽屉与行内按钮各写一份的
-// 下场是「同一个商品在两处分数不同」。本文件只剩请求绑定、取词、调用与渲染。
-
-// 评分等级文案（颜色 → 当前语言）的**唯一映射**在 seoscore.ScoreGradeText
-// （internal/seo/score_grade.go），调用点在下面的 entityScoreView。本文件此前自带一份
-// key + 中文兜底表（与本模块 enums 里的 admin.seo.grade.* 常量配套），已按「同一批展示文案
-// 只能有一份定义」收编 —— 收编后 product 取到的是 content / project 用的同一批词条
-// admin.seo.score.grade.*。
-// ==========================================================================
-const (
-	MsgProductsTitle = "MsgProductsTitle"
-)
+const MsgProductsTitle = "MsgProductsTitle"

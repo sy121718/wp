@@ -1,23 +1,12 @@
 package feature
 
-// product_page_error_leak_test.go — 商品后台页不直出内部错误（第三波 CQ-009 形态 ②）。
-//
-// 传输通道已改为 shell.RenderJump 渲染整页提示（对应 ThinkPHP 的 success() / error()）：
-// 写动作的结论走响应体，**不再**经 302 + ?err= 回带列表页。本文件制造一个**真实的
-// 基础设施错误** —— 把 products 表改名，查询立刻报 relation "products" does not exist
-// (SQLSTATE 42P01) —— 先反证 service 层的原始错误确实带表名与 SQLSTATE，
-// 再断言提示页里没有它们、只有归口文案。
-//
-// 同时断言**业务错误文案仍然原样可见**：归口助手不是「一律吞成通用文案」，
-// 否则运营再也看不到「哪一项不合法」。
+// 商品写接口的 JSON 错误不暴露数据库细节，业务错误保留声明处文案。
+// 通过真实数据库故障验证统一响应出口，而不是用伪造错误代替链路。
 
 import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,7 +16,6 @@ import (
 	productdto "go_wp/internal/module/product/dto"
 	productenums "go_wp/internal/module/product/enums"
 	producthttp "go_wp/internal/module/product/inbound/http"
-	"go_wp/internal/templates"
 	bulkids "go_wp/pkg/bulkids"
 )
 
@@ -47,71 +35,6 @@ func assertNoProductInternalLeak(t *testing.T, where, text string) {
 	}
 }
 
-// productNoticeBody 断言响应是**失败态整页提示**（HTTP 200 + data-jump-state="err"）并返回正文。
-//
-// 取代原先的 productRedirectErr（读 302 Location 上的 ?err=）：结论不再进 URL。
-func productNoticeBody(t *testing.T, rec *httptest.ResponseRecorder) string {
-	t.Helper()
-	if rec.Code != http.StatusOK {
-		t.Fatalf("应渲染提示页（200），实际 %d，body=%s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, `data-jump-state="err"`) {
-		t.Fatalf("应渲染失败态提示页，body=%s", body)
-	}
-	return body
-}
-
-// assertJumpOK 断言响应是**成功态整页提示**（写动作的结论走 shell.RenderJump，不再 302）。
-func assertJumpOK(t *testing.T, rec *httptest.ResponseRecorder) {
-	t.Helper()
-	if rec.Code != http.StatusOK {
-		t.Fatalf("应为成功态提示页（200），实际 %d，body=%s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), `data-jump-state="ok"`) {
-		t.Fatalf("应为成功态提示页（data-jump-state=ok），body=%s", rec.Body.String())
-	}
-}
-
-// assertJumpErr 断言响应是**失败态整页提示**并返回正文（取代读 302 Location 上的 ?err=）。
-func assertJumpErr(t *testing.T, rec *httptest.ResponseRecorder) string {
-	t.Helper()
-	return productNoticeBody(t, rec)
-}
-
-// jumpBackHref 从提示页里取回跳链接的 href（提示页一定有：失败与成功都渲染它）。
-//
-// Jet 会把属性值里的 & 转义成 &amp;，这里先还原再交给 url.Parse。
-func jumpBackHref(t *testing.T, rec *httptest.ResponseRecorder) string {
-	t.Helper()
-	body := strings.ReplaceAll(rec.Body.String(), "&amp;", "&")
-	re := regexp.MustCompile(`href="(/[^"]*\?[^"]*)"`)
-	m := re.FindStringSubmatch(body)
-	if m == nil {
-		t.Fatalf("提示页里找不到带 query 的回跳链接：body=%s", rec.Body.String())
-	}
-	return m[1]
-}
-
-// jumpBackQuery 从提示页的回跳链接里取查询参数（取代原先读 302 Location）。
-func jumpBackQuery(t *testing.T, rec *httptest.ResponseRecorder, key string) string {
-	t.Helper()
-	u, err := url.Parse(jumpBackHref(t, rec))
-	if err != nil {
-		t.Fatalf("回跳链接无法解析：%v", err)
-	}
-	return u.Query().Get(key)
-}
-
-// postProductForm 发一个原生表单 POST（后台页写操作的唯一形态）。
-func postProductForm(engine *gin.Engine, path string, form url.Values) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := httptest.NewRecorder()
-	engine.ServeHTTP(rec, req)
-	return rec
-}
-
 // newProductErrorLeakEnv 装配只挂两个写端点的测试引擎（真实 service + 真实 PG）。
 // 商品保存已迁到 JSON 写基座直调 /api/product/update，页面那条 POST 不存在了；
 // 删除 / 批量删除同理，唯一出口是 JSON 回执 —— 判据也跟着搬到 message 上。
@@ -123,7 +46,6 @@ func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	handle := producthttp.NewProductHandle(f.svc)
 	engine.POST("/api/product/delete", handle.Delete)
 	engine.POST("/api/product/bulk-delete", handle.BulkDelete)
@@ -131,7 +53,7 @@ func newProductErrorLeakEnv(t *testing.T) (*gin.Engine, *attrFixture) {
 }
 
 // TestProductPageHidesInternalError 真实基础设施错误（products 表不存在）只进日志：
-// 提示页必须是归口文案，不含表名 / SQLSTATE / 约束名。
+// JSON message 必须是归口文案，不含表名 / SQLSTATE / 约束名。
 func TestProductPageHidesInternalError(t *testing.T) {
 	engine, f := newProductErrorLeakEnv(t)
 	if engine == nil {
@@ -159,24 +81,19 @@ func TestProductPageHidesInternalError(t *testing.T) {
 		t.Fatalf("内部错误不该回成功")
 	}
 	assertNoProductInternalLeak(t, "JSON 回执", env.Message)
-	// 归口文案是 pkg/response 的常量 msgInternalError（「服务器内部错误，请稍后重试」），
-	// 不经 i18n 查询 —— 未装配 i18n 的测试引擎里它也照样成立。
-	// 它**不是** internal/adminui 的「系统内部错误」：那是页面出口的另一份常量，
-	// JSON 出口走 response.ErrorAuto，两者不要互相套用断言。
+	// 未装配 i18n 时，统一 JSON 出口仍须给内部错误的安全兜底。
 	if !strings.Contains(env.Message, "服务器内部错误") {
 		t.Fatalf("内部错误应给归口文案，message=%s", env.Message)
 	}
 }
 
-// TestProductPageKeepsBusinessErrorText 业务文案原样可见（白名单命中 → 中文提示）。
+// TestProductPageKeepsBusinessErrorText 业务文案采用错误声明处的兜底。
 func TestProductPageKeepsBusinessErrorText(t *testing.T) {
 	engine, f := newProductErrorLeakEnv(t)
 	if engine == nil {
 		return
 	}
-	// 删不存在的商品 → productenums.ErrNotFound（在白名单里，文案「商品或变体不存在」）。
-	// 商品保存 / 标签 create 的页面出口已随写动作迁到 JSON 基座，页面出口仍走提示页的只剩
-	// 删除 / 批量删除这一族。
+	// 删不存在的商品返回 ErrNotFound 的声明文案「商品或变体不存在」。
 	env := decodeJSONEnvelope(t, postJSON(t, engine, "/api/product/delete", map[string]any{
 		"projectId": f.projectID, "id": "11111111-1111-1111-1111-111111111111",
 	}))
@@ -187,13 +104,13 @@ func TestProductPageKeepsBusinessErrorText(t *testing.T) {
 	// 这个 feature 包从不装配 i18n，pkg/response 的 translate 未命中时退回**声明处的兜底**
 	// （productenums.Err 用 ProductErrFallbacks 给错误配的中文）—— 所以在这个引擎上
 	// 「业务文案」的可见形态就是那句中文，而不是裸 key。生产装配后它被译成对应语言的词条。
-	// 这里钉的是两件事：业务错误不被归口成系统内部错误；页面上不出现 ErrNotFound 这种串。
+	// 业务错误保留声明处事实，JSON 回执不得泄漏内部标识。
 	if env.Message != productenums.ProductErrFallbacks[productenums.ErrNotFound] {
 		t.Fatalf("业务错误应透出声明处的兜底文案，message=%s", env.Message)
 	}
 }
 
-// TestProductPageKeepsBulkLimitText 受控提示（shell.BulkIDs 的上限拒绝）保持可见：
+// TestProductPageKeepsBulkLimitText 批量上限拒绝的数字事实保持可见：
 // 它不是 enums key，但整句由本仓库拼出、带着可行动的数字，收口后不能变成通用文案。
 func TestProductPageKeepsBulkLimitText(t *testing.T) {
 	engine, f := newProductErrorLeakEnv(t)

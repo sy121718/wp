@@ -21,7 +21,7 @@
     function refresh(root) { return global.WPSiteData.refresh(root); }
     function read(root, name, orderID) {
         var host = root.querySelector('[data-order-read="' + name + '"]'); if (!host) return;
-        var url = new URL(root.getAttribute('data-orders-' + name + '-url'), global.location.href);
+        var url = new URL(root.getAttribute('data-orders-' + name + '-url'), document.baseURI || global.location.href);
         url.searchParams.set('orderId', orderID);
         host.setAttribute('data-site-read', url.pathname + url.search); refresh(host);
     }
@@ -36,7 +36,7 @@
             text(row, '[data-order-status]', status(root, item.status)); text(row, '[data-order-total]', money(item.total, item.currency));
             row.querySelector('[data-order-open]').setAttribute('data-order-id', String(item.id)); list.appendChild(row);
         });
-        var url = new URL(root.getAttribute('data-site-read'), global.location.href), offset = Number(url.searchParams.get('offset') || 0), limit = Number(url.searchParams.get('limit') || 10);
+        var url = new URL(root.getAttribute('data-site-read'), document.baseURI || global.location.href), offset = Number(url.searchParams.get('offset') || 0), limit = Number(url.searchParams.get('limit') || 10);
         root.querySelector('[data-orders-empty]').hidden = items.length !== 0;
         root.querySelector('[data-orders-prev]').disabled = offset === 0;
         root.querySelector('[data-orders-next]').disabled = offset + items.length >= Number(data && data.total || 0);
@@ -122,12 +122,12 @@
         if (trigger.hasAttribute('data-orders-show')) { show(root,trigger.getAttribute('data-orders-show'),true); return; }
         if (trigger.hasAttribute('data-orders-apply')) { prepareReturn(root); return; }
         if (trigger.hasAttribute('data-orders-retry')) { refresh(root._ordersRetryTarget || root); return; }
-        var url = new URL(root.getAttribute('data-site-read'),global.location.href), limit = Number(url.searchParams.get('limit') || 10), offset = Number(url.searchParams.get('offset') || 0);
+        var url = new URL(root.getAttribute('data-site-read'),document.baseURI || global.location.href), limit = Number(url.searchParams.get('limit') || 10), offset = Number(url.searchParams.get('offset') || 0);
         url.searchParams.set('offset',String(Math.max(0,offset + (trigger.hasAttribute('data-orders-next') ? limit : -limit)))); root.setAttribute('data-site-read',url.pathname + url.search); refresh(root);
     });
     document.addEventListener('change',function(event){
         var target = event.target, root = owner(target); if (!root) return;
-        if (target.hasAttribute('data-orders-filter')) { var url = new URL(root.getAttribute('data-site-read'),global.location.href); url.searchParams.set('status',target.value); url.searchParams.delete('offset'); root.setAttribute('data-site-read',url.pathname + url.search); refresh(root); }
+        if (target.hasAttribute('data-orders-filter')) { var url = new URL(root.getAttribute('data-site-read'),document.baseURI || global.location.href); url.searchParams.set('status',target.value); url.searchParams.delete('offset'); root.setAttribute('data-site-read',url.pathname + url.search); refresh(root); }
         if (target.hasAttribute('data-return-select')) target.closest('.sky-orders-return-line').querySelectorAll('[name="orderItemId"], [name="quantity"]').forEach(function(input){input.disabled = !target.checked;});
     });
     document.addEventListener('input',function(event){var form=event.target.closest('form[data-write-handler="commerce.orders"]');if(form)form.setAttribute('data-orders-dirty','true');});

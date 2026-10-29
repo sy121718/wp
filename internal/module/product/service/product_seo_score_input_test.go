@@ -1,35 +1,18 @@
 package productservice
 
-// product_seo_score_input_test.go — C5「SEO 评分逻辑可独立测试」的判据（dd.txt 第九节）。
-//
-// 被测是 product_seo_score.go 的 SeoScoreInputOf（task-157 从 HTTP 层下沉）。下沉的判据只是
-// 「本文件对框架包标识符零命中」，那不等于可独立测试：service 包此前**没有任何 ProductReadPort
-// 的 fake**（HTTP 侧测试用的是真 Service + 真库），于是「读取失败」与「数据缺失」的区分一直
-// 只能靠读注释。本文件就是给这条契约配一个会变红的判据。
-//
-// 三条语义（契约原文见 product_seo_score.go 的 SeoScoreInputResult 注释）：
-//
-//	Input == nil 且 Err != nil —— 读取失败（库 / 契约报错）；
-//	Input == nil 且 Err == nil —— 数据缺失（没传 id，或实体不存在）；
-//	Input != nil               —— 正常，字段按实体与 lang 原样填入。
-//
-// 前两者在 HTTP 出口上共用同一个空态视图，调用方只能靠 Err 区分：把「读取失败」分支里的
-// res.Err = err 删掉，页面一模一样、渲染测试全绿，只有本文件的用例会红。
-//
-// 依赖有两个 fake：seoReadStub（ProductReadPort 六方法）与 seoInstanceStub
-//（SeoInstancePathReader）。两者都按「未设定的读口被调用即失败」写 —— 取数走错分支
-//（分类分支去读商品）用一个万能 stub 是测不出来的：那样它照样返回实体，用例反而绿。
+// 评分输入的纯逻辑测试：读取失败、工程隔离与算法输入事实。
 
 import (
 	"context"
 	"errors"
+	"go_wp/pkg/facing"
 	json "go_wp/pkg/jsonx"
 	"testing"
 
 	presentationcontract "go_wp/internal/module/presentation/contract"
+	presentationdto "go_wp/internal/module/presentation/dto"
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
-	productenums "go_wp/internal/module/product/enums"
 	"go_wp/internal/seo/scoring"
 )
 
@@ -163,97 +146,34 @@ func seoTestBrand() *productdto.BrandResp {
 // ==========================================================================
 
 func TestSeoScoreInputOfReadFailureIsNotMissing(t *testing.T) {
-	// 变红实验：删掉 product_seo_score.go 里「读取失败」分支的 res.Err = err 那一行，
-	// 本用例在 “Err == nil” 处失败并打印 Empty 内容（真实输出见交付报告）。
 	boom := errors.New("db down")
 	cases := []struct {
-		name    string
-		kind    scoring.PageKind
-		wantKey string
-		stub    *seoReadStub
+		kind scoring.PageKind
+		stub *seoReadStub
 	}{
-		{"商品读取失败", scoring.KindProduct, productenums.SEOEmptyProductUnreadable, &seoReadStub{t: t,
-			get: func(context.Context, *productdto.GetReq) (*productdto.ProductResp, error) { return nil, boom }}},
-		{"分类读取失败", scoring.KindCategory, productenums.SEOEmptyCategoryUnreadable, &seoReadStub{t: t,
-			getCat: func(context.Context, *productdto.GetCategoryReq) (*productdto.CategoryResp, error) { return nil, boom }}},
-		{"品牌读取失败", scoring.KindBrand, productenums.SEOEmptyBrandUnreadable, &seoReadStub{t: t,
-			getBrand: func(context.Context, *productdto.GetBrandReq) (*productdto.BrandResp, error) { return nil, boom }}},
+		{scoring.KindProduct, &seoReadStub{t: t, get: func(context.Context, *productdto.GetReq) (*productdto.ProductResp, error) { return nil, boom }}},
+		{scoring.KindCategory, &seoReadStub{t: t, getCat: func(context.Context, *productdto.GetCategoryReq) (*productdto.CategoryResp, error) { return nil, boom }}},
+		{scoring.KindBrand, &seoReadStub{t: t, getBrand: func(context.Context, *productdto.GetBrandReq) (*productdto.BrandResp, error) { return nil, boom }}},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			res := SeoScoreInputOf(context.Background(), tc.stub, nil, tc.kind, "e1", seoTestProjectID, "zh-CN")
-			if res.Input != nil {
-				t.Fatalf("读取失败时不该给出 Input，实际 %+v", res.Input)
-			}
-			if res.Err == nil {
-				t.Fatalf("读取失败被吞成了数据缺失：Err == nil（Empty=%+v）—— 这正是 C5 要挡的回归", res.Empty)
-			}
-			if !errors.Is(res.Err, boom) {
-				t.Fatalf("Err 应把读口的错误原样带出，实际 %v", res.Err)
-			}
-			if res.Empty.Key != tc.wantKey {
-				t.Fatalf("空态 key 应为 %q，实际 %q", tc.wantKey, res.Empty.Key)
-			}
-			if res.Empty.Fallback == "" {
-				t.Fatal("空态必须带中文兜底（取词失败时才不至于渲染成空白）")
-			}
-			if res.SelfID != "" {
-				t.Fatalf("读取失败时没有实体 id 可回填，实际 %q", res.SelfID)
-			}
-		})
+		res := SeoScoreInputOf(context.Background(), tc.stub, nil, tc.kind, "e1", seoTestProjectID, "zh-CN")
+		if res.Input != nil || !errors.Is(res.Err, boom) || res.SelfID != "" {
+			t.Fatalf("%s 的读取失败必须原样传播，实际 %+v", tc.kind, res)
+		}
 	}
 }
 
-// ==========================================================================
-// 判据 2：数据缺失（缺 id / 实体不存在）必须是 Err == nil 且 Empty.Key 非空。
-// ==========================================================================
-
-func TestSeoScoreInputOfMissingIsNotFailure(t *testing.T) {
-	kinds := []struct {
-		name          string
-		kind          scoring.PageKind
-		missingKey    string
-		unreadableKey string
-	}{
-		{"商品", scoring.KindProduct, productenums.SEOEmptyMissingProduct, productenums.SEOEmptyProductUnreadable},
-		{"分类", scoring.KindCategory, productenums.SEOEmptyMissingCategory, productenums.SEOEmptyCategoryUnreadable},
-		{"品牌", scoring.KindBrand, productenums.SEOEmptyMissingBrand, productenums.SEOEmptyBrandUnreadable},
-	}
-	for _, k := range kinds {
-		t.Run("缺 id/"+k.name, func(t *testing.T) {
-			// 读口一个都不设：缺 id 必须在取数之前就返回，任何读口被调用都是 bug。
-			res := SeoScoreInputOf(context.Background(), &seoReadStub{t: t}, nil, k.kind, "", seoTestProjectID, "zh-CN")
-			if res.Input != nil {
-				t.Fatalf("数据缺失时 Input 必须是 nil，实际 %+v", res.Input)
-			}
-			if res.Err != nil {
-				t.Fatalf("数据缺失不是读取失败：Err 必须是 nil，实际 %v", res.Err)
-			}
-			if res.Empty.Key != k.missingKey {
-				t.Fatalf("缺 id 的空态 key 应为 %q，实际 %q", k.missingKey, res.Empty.Key)
-			}
-		})
-
-		t.Run("实体不存在/"+k.name, func(t *testing.T) {
-			res := SeoScoreInputOf(context.Background(), seoStubReturningNil(k.kind, t), nil, k.kind, "e1", seoTestProjectID, "zh-CN")
-			if res.Input != nil {
-				t.Fatalf("实体不存在时 Input 必须是 nil，实际 %+v", res.Input)
-			}
-			if res.Err != nil {
-				t.Fatalf("实体不存在不是读取失败：Err 必须是 nil，实际 %v", res.Err)
-			}
-			if res.Empty.Key != k.unreadableKey {
-				t.Fatalf("实体不存在的空态 key 应为 %q，实际 %q", k.unreadableKey, res.Empty.Key)
-			}
-		})
-
-		t.Run("两类空态可区分/"+k.name, func(t *testing.T) {
-			// 两者共用同一个视图出口，只有 key 能把「还没建」与「库挂了」分开：
-			// 合并成一个 key 会让运维去查一个不存在的实体，而真正坏掉的读口没人看。
-			if k.missingKey == k.unreadableKey {
-				t.Fatalf("「数据缺失」与「读取失败」不能共用 key %q", k.missingKey)
-			}
-		})
+func TestSeoScoreInputOfMissingIsAnError(t *testing.T) {
+	for _, kind := range []scoring.PageKind{scoring.KindProduct, scoring.KindCategory, scoring.KindBrand} {
+		missing := SeoScoreInputOf(context.Background(), &seoReadStub{t: t}, nil, kind, "", seoTestProjectID, "zh-CN")
+		if missing.Input != nil || missing.Err == nil {
+			t.Fatalf("缺 ID 必须在读库前返回参数错误：%+v", missing)
+		}
+		absent := SeoScoreInputOf(context.Background(), seoStubReturningNil(kind, t), nil, kind, "e1", seoTestProjectID, "zh-CN")
+		status, _ := facing.StatusOf(absent.Err)
+		if absent.Input != nil || status != 404 {
+			t.Fatalf("不存在必须声明404：%+v status=%d", absent, status)
+		}
 	}
 }
 
@@ -277,7 +197,7 @@ func seoStubReturningNil(kind scoring.PageKind, t *testing.T) *seoReadStub {
 
 func TestSeoScoreInputOfFillsProductFacts(t *testing.T) {
 	detail := seoTestProduct()
-	insts := &seoInstanceStub{inst: &presentationcontract.InstanceResp{URLPath: "/products/water"}}
+	insts := &seoInstanceStub{inst: &presentationcontract.InstanceResp{URLPath: "/products/water", Publications: []presentationdto.InstancePublicationResp{{ActivePath: "/products/water", ArtifactHash: "active-product"}}}}
 	r := &seoReadStub{t: t, get: func(context.Context, *productdto.GetReq) (*productdto.ProductResp, error) { return detail, nil }}
 
 	res := SeoScoreInputOf(context.Background(), r, insts, scoring.KindProduct, detail.ID, seoTestProjectID, "zh-CN")
@@ -370,7 +290,7 @@ func TestSeoScoreInputOfFillsCategoryFacts(t *testing.T) {
 
 func TestSeoScoreInputOfFillsBrandFacts(t *testing.T) {
 	brand := seoTestBrand()
-	insts := &seoInstanceStub{inst: &presentationcontract.InstanceResp{URLPath: "/brands/brand-x"}}
+	insts := &seoInstanceStub{inst: &presentationcontract.InstanceResp{URLPath: "/brands/brand-x", Publications: []presentationdto.InstancePublicationResp{{ActivePath: "/brands/brand-x", ArtifactHash: "active-brand"}}}}
 	// listCats 刻意不设：品牌分支不该查分类树（一旦被调用，fake 会让用例失败）。
 	r := &seoReadStub{t: t,
 		getBrand: func(context.Context, *productdto.GetBrandReq) (*productdto.BrandResp, error) { return brand, nil }}
@@ -420,32 +340,12 @@ func TestSeoScoreInputOfPassesLangThrough(t *testing.T) {
 	}
 }
 
-// ==========================================================================
-// 未知页型：取数与文案都按商品那一档回落（未知枚举取值不该造出一个新口径）。
-// ==========================================================================
-
-func TestSeoScoreInputOfUnknownKindFallsBackToProduct(t *testing.T) {
-	detail := seoTestProduct()
-	r := &seoReadStub{t: t, get: func(context.Context, *productdto.GetReq) (*productdto.ProductResp, error) { return detail, nil }}
-	kind := scoring.PageKind("landing")
-
-	res := SeoScoreInputOf(context.Background(), r, nil, kind, detail.ID, seoTestProjectID, "zh-CN")
-	if res.Input == nil || res.Err != nil {
-		t.Fatalf("未知页型走商品读口，应给出 Input，实际 Input=%+v Err=%v", res.Input, res.Err)
-	}
-	if res.Input.Kind != scoring.KindProduct {
-		t.Fatalf("未知页型必须落成 scoring.KindProduct（不能让 scoring 收到没档案的页型），实际 %q", res.Input.Kind)
-	}
-
-	missing := SeoScoreInputOf(context.Background(), &seoReadStub{t: t}, nil, kind, "", seoTestProjectID, "zh-CN")
-	if missing.Empty.Key != productenums.SEOEmptyMissingProduct {
-		t.Fatalf("未知页型缺 id 时回落到「缺少商品」，实际 %q", missing.Empty.Key)
+func TestSeoScoreInputOfRejectsUnknownKind(t *testing.T) {
+	res := SeoScoreInputOf(context.Background(), &seoReadStub{t: t}, nil, scoring.PageKind("landing"), "e1", seoTestProjectID, "zh-CN")
+	if res.Input != nil || res.Err == nil {
+		t.Fatalf("未知页型必须在读取前拒绝：%+v", res)
 	}
 }
-
-// ==========================================================================
-// 其余可单测入口：非法 JSON、空实体、读失败降级 —— 这三个边界此前没有直接判据。
-// ==========================================================================
 
 func TestPageDraftTitleBoundaries(t *testing.T) {
 	// 页面草稿的 settings.seo.title。非法 / 形状不符一律空串：拿不到标题只该让
@@ -546,7 +446,7 @@ func TestFlatCategoriesOfReturnsTreeInDFSOrder(t *testing.T) {
 }
 
 func TestFlatCategoriesOfPropagatesReadFailure(t *testing.T) {
-	// 读失败必须是 nil + err：调用方据此返回 nil（少一个小标题），
+	// 读失败必须是 nil + err：上层评分用例必须传播错误，
 	// 而不是把空切片当成「这个工程没有分类」。
 	boom := errors.New("cats down")
 	r := &seoReadStub{t: t, listCats: func(context.Context, *productdto.ListCategoryReq) ([]*productdto.CategoryResp, error) {
@@ -566,8 +466,8 @@ func TestCategoryChildNamesBoundaries(t *testing.T) {
 	fail := &seoReadStub{t: t, listCats: func(context.Context, *productdto.ListCategoryReq) ([]*productdto.CategoryResp, error) {
 		return nil, boom
 	}}
-	if got := CategoryChildNames(context.Background(), fail, seoTestProjectID, "c1"); got != nil {
-		t.Fatalf("分类树读失败应返回 nil（少个标题，不让评分整体失败），实际 %+v", got)
+	if got, err := CategoryChildNames(context.Background(), fail, seoTestProjectID, "c1"); got != nil || !errors.Is(err, boom) {
+		t.Fatalf("分类树读失败必须传播，实际 got=%+v err=%v", got, err)
 	}
 
 	ok := &seoReadStub{t: t, listCats: func(context.Context, *productdto.ListCategoryReq) ([]*productdto.CategoryResp, error) {
@@ -578,7 +478,10 @@ func TestCategoryChildNamesBoundaries(t *testing.T) {
 			{ID: "c5", ParentID: "c1", Name: " 子二 "},
 		}, nil
 	}}
-	got := CategoryChildNames(context.Background(), ok, seoTestProjectID, "c1")
+	got, err := CategoryChildNames(context.Background(), ok, seoTestProjectID, "c1")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 2 || got[0] != "子一" || got[1] != "子二" {
 		t.Fatalf("只取直接子级、丢掉空白名并 trim，实际 %+v", got)
 	}
@@ -628,17 +531,7 @@ func TestFirstNonEmptyTextAndSlashSlug(t *testing.T) {
 	}
 }
 
-// ==========================================================================
-// 工程作用域：商品分支取商品那一跳必须带上调用方已经收到的 projectID。
-//
-// 多工程部署下 product 侧的 resolveProjectID 在「显式工程为空且工程数 != 1」时回
-// ErrInvalidParam，而 SeoScoreInputOf 把它当成**读取失败**、回「读不到这个商品，无法评分」空态
-// —— 商品其实就在调用方那个工程里（handler 已经把 projectId 传进来了）。
-//
-// 本用例断言的是**读口收到的 GetReq**：只断言「有 Input」照不出漏传 —— 单工程夹具下兜底
-// 解析出的那一个恰好就是唯一的那个，传与不传行为等价。
-// ==========================================================================
-
+// 工程必须传递到只读契约，不依赖单工程环境的隐式回退。
 func TestSeoScoreInputOfProductScopeReachesReadPort(t *testing.T) {
 	detail := seoTestProduct()
 	var got *productdto.GetReq
@@ -649,28 +542,18 @@ func TestSeoScoreInputOfProductScopeReachesReadPort(t *testing.T) {
 
 	res := SeoScoreInputOf(context.Background(), r, nil, scoring.KindProduct, detail.ID, seoTestProjectID, "zh-CN")
 	if res.Input == nil {
-		t.Fatalf("正常档应给出 Input，实际 Err=%v Empty=%+v", res.Err, res.Empty)
+		t.Fatalf("正常档应给出 Input，实际 Err=%v", res.Err)
 	}
 	if got == nil {
 		t.Fatal("商品读口一次都没被调用")
 	}
 	if got.ProjectID != seoTestProjectID {
 		t.Fatalf("取商品收到的工程 id = %q，want %q —— 漏传时多工程部署下 resolveProjectID 回 ErrInvalidParam，"+
-			"评分退化成「读不到这个商品，无法评分」空态", got.ProjectID, seoTestProjectID)
+			"评分会错误读取其它工程或拒绝请求", got.ProjectID, seoTestProjectID)
 	}
 }
 
-// ==========================================================================
-// 工程作用域：分类 / 品牌两个分支的读口也必须带上调用方已经收到的 projectID。
-//
-// 与商品那一条同源、同一档：product 侧 resolveProjectID 在「显式工程为空且工程数 != 1」时回
-// ErrInvalidParam，SeoScoreInputOf 把它当成**读取失败**、回「读不到这个分类 / 品牌，无法评分」
-// 空态 —— 实体其实就在调用方那个工程里（handler 已经把 projectId 传进来了）。
-//
-// 断言落在**读口收到的 req** 上：只断言「有 Input」照不出漏传 —— 单工程夹具下兜底解析出的
-// 那一个恰好就是唯一的那个，传与不传行为等价。
-// ==========================================================================
-
+// 分类与品牌读取也必须带上同一工程。
 func TestSeoScoreInputOfCategoryScopeReachesReadPort(t *testing.T) {
 	node := seoTestCategory()
 	var got *productdto.GetCategoryReq
@@ -687,14 +570,14 @@ func TestSeoScoreInputOfCategoryScopeReachesReadPort(t *testing.T) {
 
 	res := SeoScoreInputOf(context.Background(), r, nil, scoring.KindCategory, node.ID, seoTestProjectID, "zh-CN")
 	if res.Input == nil {
-		t.Fatalf("正常档应给出 Input，实际 Err=%v Empty=%+v", res.Err, res.Empty)
+		t.Fatalf("正常档应给出 Input，实际 Err=%v", res.Err)
 	}
 	if got == nil {
 		t.Fatal("分类读口一次都没被调用")
 	}
 	if got.ProjectID != seoTestProjectID {
 		t.Fatalf("取分类收到的工程 id = %q，want %q —— 漏传时多工程部署下 resolveProjectID 回 ErrInvalidParam，"+
-			"评分退化成「读不到这个分类，无法评分」空态", got.ProjectID, seoTestProjectID)
+			"评分会错误读取其它工程或拒绝请求", got.ProjectID, seoTestProjectID)
 	}
 }
 
@@ -708,13 +591,13 @@ func TestSeoScoreInputOfBrandScopeReachesReadPort(t *testing.T) {
 
 	res := SeoScoreInputOf(context.Background(), r, nil, scoring.KindBrand, brand.ID, seoTestProjectID, "zh-CN")
 	if res.Input == nil {
-		t.Fatalf("正常档应给出 Input，实际 Err=%v Empty=%+v", res.Err, res.Empty)
+		t.Fatalf("正常档应给出 Input，实际 Err=%v", res.Err)
 	}
 	if got == nil {
 		t.Fatal("品牌读口一次都没被调用")
 	}
 	if got.ProjectID != seoTestProjectID {
 		t.Fatalf("取品牌收到的工程 id = %q，want %q —— 漏传时多工程部署下 resolveProjectID 回 ErrInvalidParam，"+
-			"评分退化成「读不到这个品牌，无法评分」空态", got.ProjectID, seoTestProjectID)
+			"评分会错误读取其它工程或拒绝请求", got.ProjectID, seoTestProjectID)
 	}
 }

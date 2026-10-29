@@ -41,9 +41,11 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 	if _, err := f.svc.CreateCategory(ctx, &productdto.CreateCategoryReq{ProjectID: f.projectID, Name: "轻量冲锋衣", Slug: "lightweight-jackets", ParentID: root.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.svc.CreateTag(ctx, &productdto.CreateTagReq{ProjectID: f.projectID, Name: "精选商品", Slug: "featured-products", Kind: "manual"}); err != nil {
+	tag, err := f.svc.CreateTag(ctx, &productdto.CreateTagReq{ProjectID: f.projectID, Name: "精选商品", Slug: "featured-products", Kind: "manual"})
+	if err != nil {
 		t.Fatal(err)
 	}
+	seedTagProducts(t, f.db, f.projectID, tag.ID, "浏览器验收商品", 23)
 	router := gin.New()
 	router.Use(gin.Recovery(), func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
@@ -76,6 +78,14 @@ func newTaxonomyUIFixture(t *testing.T) *gin.Engine {
 	router.GET("/admin/product-brands", adminui.PageSlot(producthttp.ProductBrandsPageTemplate), h.ProductBrandsPage)
 	router.GET("/admin/product-categories", adminui.PageSlot(producthttp.ProductCategoriesPageTemplate), h.ProductCategoriesPage)
 	router.GET("/admin/product-tags", adminui.PageSlot(producthttp.ProductTagsPageTemplate), h.ProductTagsPage)
+	// JSON读取与保存使用真实业务服务，供集中浏览器验收；不代替生产鉴权链路测试。
+	write := producthttp.NewProductHandle(f.svc)
+	router.GET("/api/product/category/parents", write.ProductCategoryParents)
+	router.GET("/api/product/tag/products", write.ListTagProducts)
+	router.POST("/api/product/category/seo-score", h.CategorySeoScore)
+	router.POST("/api/product/brand/seo-score", h.BrandSeoScore)
+	router.POST("/api/product/category/update", write.UpdateCategory)
+	router.POST("/api/product/brand/update", write.UpdateBrand)
 	router.Static("/static", attrTemplateRoot()+"/static")
 	return router
 }

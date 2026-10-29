@@ -79,11 +79,12 @@ func newTemplateScopePageEngine(t *testing.T) (*gin.Engine, *projectScopeFixture
 	port := &detailTemplateRecordingPort{inner: dtoutbound.New(base.templates, base.pres)}
 	base.products.SetDetailTemplatePort(port)
 	// 「新建模板」已迁到 /api/product/detail-template/create（页面表单走 ui/write-base.js）。
-	producthttp.BindDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
+	api := producthttp.NewProductHandle(base.products)
+	api.SetDetailTemplateWriteDeps(productservice.DetailTemplateDeps{
 		Templates: base.templates, Instances: base.pres, Products: base.products, Projects: base.projects,
 	})
 	engine.GET("/admin/products/template", adminui.PageSlot(producthttp.ProductDetailTemplatePageTemplate), handle.ProductDetailTemplatePage)
-	engine.POST("/api/product/detail-template/create", producthttp.NewProductHandle(base.products).CreateDetailTemplate)
+	engine.POST("/api/product/detail-template/create", api.CreateDetailTemplate)
 	return engine, scope, port
 }
 

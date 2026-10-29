@@ -227,13 +227,14 @@ func TestGroupDProductEditPageRenders(t *testing.T) {
 		// 变体 / 评分的写入口都在 JSON 写基座上（变体清单整张提交、评分增删各一条）。
 		`data-write-url="/api/product/variant/save"`,
 		`data-write-builder="product-variant-rows"`,
-		`data-preview-url="/admin/products/variant/preview"`,
+		`data-preview-url="/api/product/variant/preview"`,
 		`data-write-url="/api/product/variant/create"`,
 		`data-write-url="/api/product/rating/add"`,
 		`data-write-url="/api/product/rating/delete"`,
-		// SEO 评分已移入抽屉：编辑页只留入口，评分按钮与结果容器在
-		// admin/product/entity_seo_drawer.html（该片段由模块内的用例守着）。
-		`data-drawer-url="/admin/products/seo/drawer?productId=p1`,
+		// SEO抽屉结构在前端template，业务结果只读JSON。
+		`data-drawer-open="#tpl-product-seo"`,
+		`data-write-url="/api/product/seo-score"`,
+		`data-write-handler="product.seo"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("商品编辑页缺少 %q", want)
@@ -265,7 +266,7 @@ func TestGroupDProductDetailPageRenders(t *testing.T) {
 		"基本信息", "属性引用", "标签", "变体", "评分", "各仓库存",
 		"自动标签（按规则重算维护，不能手工改动）")
 	// 唯一的 POST 是「预览」：渲染前台效果、不写库。
-	if !strings.Contains(out, `action="/admin/products/template/preview"`) {
+	if !strings.Contains(out, `action="/admin/products/template/preview"`) || !strings.Contains(out, `data-product-preview-form`) {
 		t.Fatalf("详情页缺少「预览」表单（只读渲染的唯一 POST）")
 	}
 	// 写表单一个都不该出现：它们全在编辑页（admin/product_edit.html）。

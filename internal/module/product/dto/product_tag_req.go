@@ -82,33 +82,12 @@ type ListTagReq struct {
 	Size int `form:"size"`
 }
 
-// ListTagProductsReq 查某标签命中的商品（验收 4：后台可查看某标签命中哪些商品）。
+// ListTagProductsReq 查询某标签命中的商品；API 与后台控件共用分页事实。
 type ListTagProductsReq struct {
 	TagID     string `form:"id" binding:"required"`
 	ProjectID string `form:"projectId"`
-	// Limit 展示上限（<=0 用服务端默认上限）。
-	Limit int `form:"limit"`
-}
-
-// ListTagProductsPageReq 按页取某标签命中的商品（审计 PERF-02）。
-//
-// 与 ListTagProductsReq 的分工：那个是接口形态（只要一个上限），这个是后台页形态 ——
-// 标签页首屏不再内联命中商品，展开某个标签时按页拉一段，页面 SQL 条数与标签数无关。
-type ListTagProductsPageReq struct {
-	TagID     string `form:"id"`
-	ProjectID string `form:"project"`
-	// Page 从 1 开始（<=0 归一为 1）。
-	Page int `form:"page"`
-	// Size 每页条数（<=0 用服务端默认；超过上限按上限截断，不由调用方决定）。
-	Size int `form:"size"`
-}
-
-// BindQuery 兼容两套工程键名：标签页的片段链接给 project，接口调用方给 projectId。
-func (r *ListTagProductsPageReq) BindQuery(q url.Values) error {
-	if r.ProjectID == "" {
-		r.ProjectID = strings.TrimSpace(q.Get("projectId"))
-	}
-	return nil
+	Page      int    `form:"page"`
+	Size      int    `form:"size"`
 }
 
 // DeleteTagReq 删除标签（连同它在商品上的引用一起解绑）。

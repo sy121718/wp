@@ -41,12 +41,7 @@ func (s translationProjectStub) DefaultLocale(context.Context, string) (string, 
 	return s.sourceLang, nil
 }
 
-// TestProductTranslationsPageProjectListFailureIsAnError 工程清单读不到 = 这一页打不开
-// （返回 error，调用方走提示页出口）。
-//
-// 与同模块其它屏的取舍不同：那些屏的工程清单读失败会渲染一档失败页（页面骨架还在、只是
-// 数据没读到），而工作台**所有**内容都挂在选中工程上 —— 空工程的工作台是一张没有意义的表，
-// 给失败页只会让人以为「这个工程没有可翻译的内容」。
+// 工程清单读取失败必须向上返回错误，不能伪装成没有可翻译内容。
 func TestProductTranslationsPageProjectListFailureIsAnError(t *testing.T) {
 	s := NewService(nil, translationProjectStub{listErr: errors.New("projects read failed")})
 	view, err := s.QueryProductTranslations(context.Background(), &productdto.ProductTranslationsPageReq{ProjectID: "p1"})

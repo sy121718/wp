@@ -1,182 +1,172 @@
 package producthttp
 
-// product_seo_score_handler_test.go — 三个评分端点的行为测试（审计 SEO-016 / SEO-018）。
-//
-// 原 dashboard/inbound/http/seo_entity_score_handler_test.go，随商品评分端点搬回本模块。
-//
-// 与 seo_entity_score_test.go 的分工：那边测纯逻辑与模板，这边测**端点自己**——
-// 取数、按页型选权重、把冲突页面渲染进响应。SEO-016 的根因是「评分器写好了但生产
-// 入口没接线」，只测评分函数是测不出这种缺口的，必须从端点这一层打进去。
-//
-// 数据源用一个只实现所需方法的假实现（接口嵌入 + 覆盖几个只读方法），
-// 不碰数据库 —— 与模块内就近单测的定位一致。
-
 import (
 	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"go_wp/internal/adminui"
 
 	"github.com/gin-gonic/gin"
 
 	productcontract "go_wp/internal/module/product/contract"
 	productdto "go_wp/internal/module/product/dto"
-	"go_wp/internal/templates"
+	productenums "go_wp/internal/module/product/enums"
+	json "go_wp/pkg/jsonx"
 )
 
-// fakeProductService 只实现评分入口用到的只读方法；其余方法由嵌入的接口兜底
-// （本组测试不会调到它们，写 40 个空方法只会变成噪音）。
 type fakeProductService struct {
 	productcontract.ProductService
 	detail *productdto.ProductResp
 	listed []*productdto.ProductResp
 	cats   []*productdto.CategoryResp
 	brands []*productdto.BrandResp
+	err    error
 }
 
 func (f *fakeProductService) Get(_ context.Context, req *productdto.GetReq) (*productdto.ProductResp, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
 	if f.detail == nil || req.ID != f.detail.ID {
-		return nil, errors.New("not found")
+		return nil, productenums.Err(productenums.ErrNotFound)
 	}
 	return f.detail, nil
 }
-
 func (f *fakeProductService) List(_ context.Context, _ *productdto.ListReq) ([]*productdto.ProductResp, error) {
-	return f.listed, nil
+	return f.listed, f.err
 }
-
 func (f *fakeProductService) ListCategories(_ context.Context, _ *productdto.ListCategoryReq) ([]*productdto.CategoryResp, error) {
-	return f.cats, nil
+	return f.cats, f.err
 }
-
 func (f *fakeProductService) ListBrands(_ context.Context, _ *productdto.ListBrandReq) ([]*productdto.BrandResp, error) {
-	return f.brands, nil
+	return f.brands, f.err
 }
-
 func (f *fakeProductService) GetCategory(_ context.Context, req *productdto.GetCategoryReq) (*productdto.CategoryResp, error) {
-	for _, c := range f.cats {
-		if c != nil && c.ID == req.ID {
-			return c, nil
+	if f.err != nil {
+		return nil, f.err
+	}
+	for _, row := range f.cats {
+		if row != nil && row.ID == req.ID {
+			return row, nil
 		}
 	}
-	return nil, errors.New("not found")
+	return nil, productenums.Err(productenums.ErrCategoryNotFound)
 }
-
 func (f *fakeProductService) GetBrand(_ context.Context, req *productdto.GetBrandReq) (*productdto.BrandResp, error) {
-	for _, b := range f.brands {
-		if b != nil && b.ID == req.ID {
-			return b, nil
+	if f.err != nil {
+		return nil, f.err
+	}
+	for _, row := range f.brands {
+		if row != nil && row.ID == req.ID {
+			return row, nil
 		}
 	}
-	return nil, errors.New("not found")
+	return nil, productenums.Err(productenums.ErrBrandNotFound)
 }
 
-// postScorePanel 向评分端点发一个表单 POST 并返回响应 HTML。
-func postScorePanel(t *testing.T, handler gin.HandlerFunc, form url.Values) string {
+func postScoreJSON(t *testing.T, handler gin.HandlerFunc, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	engine.HTMLRender = templates.NewJetHTMLRender(filepath.Join("..", "..", "..", "..", "templates"), true)
-	engine.POST("/score", adminui.BareSlot(SeoScoreFragmentTemplate), handler)
+	engine.POST("/score", handler)
 	req := httptest.NewRequest(http.MethodPost, "/score", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	engine.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("评分端点应返回 200（HTMX 片段），实际 %d", rec.Code)
+	if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+		t.Fatalf("评分必须返回JSON：%s", rec.Body.String())
 	}
-	return rec.Body.String()
-}
-
-// TestProductScorePanelUsesProductProfile 商品端点按商品页权重评分（SEO-016 的核心验收）。
-func TestProductScorePanelUsesProductProfile(t *testing.T) {
-	fake := &fakeProductService{
-		detail: &productdto.ProductResp{
-			ID: "p1", ProjectID: "proj-1", Name: "纯棉 T 恤", Slug: "tee",
-			SEOTitle: "", SEODescription: "", Description: []byte(`"透气亲肤的夏季基础款"`),
-			Images: []string{"/img/tee.webp"}, ImageAlts: []string{"白色纯棉 T 恤"},
-		},
-	}
-	h := NewProductPageHandle(fake, nil, nil)
-	body := postScorePanel(t, h.ProductScorePanel, url.Values{
-		"projectId": {"proj-1"}, "productId": {"p1"},
-	})
-	for _, want := range []string{
-		"SEO 评分（0-100）",
-		"页型权重：product",  // 页型回显（文档 §5 要求）
-		"商品页：图片与技术权重上调", // 调权理由
-		"纯棉 T 恤",        // SERP 预览用实体名回落
-		"/tee",          // slug 构成的近似路径
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("商品评分片段应包含 %q，实际输出：%s", want, body)
+	for _, header := range []string{"Location", "HX-Redirect", "HX-Location"} {
+		if rec.Header().Get(header) != "" {
+			t.Fatalf("评分不得暗示导航：%s", header)
 		}
 	}
+	return rec
 }
 
-// TestProductScorePanelListsTitleConflicts 商品端点列出同工程已发布商品的标题冲突（SEO-018）。
-func TestProductScorePanelListsTitleConflicts(t *testing.T) {
+func TestScorePanelsReturnEntityFacts(t *testing.T) {
 	fake := &fakeProductService{
-		detail: &productdto.ProductResp{ID: "p1", ProjectID: "proj-1", Name: "纯棉 T 恤", Slug: "tee"},
-		// 同工程另一个已发布商品用了同一个 SEO 标题（名称回落口径一致才比得出来）。
-		listed: []*productdto.ProductResp{
-			{ID: "p2", ProjectID: "proj-1", Name: "纯棉 T 恤", Slug: "tee-b", Status: "published"},
-		},
+		detail: &productdto.ProductResp{ID: "p1", ProjectID: "proj-1", Name: "纯棉T恤", Slug: "tee"},
+		listed: []*productdto.ProductResp{{ID: "p2", ProjectID: "proj-1", Name: "纯棉T恤", Slug: "tee-b"}},
+		cats:   []*productdto.CategoryResp{{ID: "c1", ProjectID: "proj-1", Name: "男装", Slug: "men"}},
+		brands: []*productdto.BrandResp{{ID: "b1", ProjectID: "proj-1", Name: "示例品牌", Slug: "brand"}},
 	}
 	h := NewProductPageHandle(fake, nil, nil)
-	body := postScorePanel(t, h.ProductScorePanel, url.Values{
-		"projectId": {"proj-1"}, "productId": {"p1"},
-	})
-	for _, want := range []string{"标题重复", "/tee-b", "重复的 title（纯棉 T 恤）出现在 1 个页面"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("标题冲突应被检出并列出冲突页面，期望包含 %q，实际输出：%s", want, body)
-		}
+	cases := []struct {
+		id, kind, profile, title, path string
+		handler                        gin.HandlerFunc
+	}{
+		{"p1", "product", "product", "纯棉T恤", "/tee", h.SeoScore},
+		{"c1", "category", "landing", "男装", "/men", h.CategorySeoScore},
+		{"b1", "brand", "landing", "示例品牌", "/brand", h.BrandSeoScore},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			rec := postScoreJSON(t, tc.handler, url.Values{"projectId": {"proj-1"}, "id": {tc.id}})
+			if rec.Code != http.StatusOK {
+				t.Fatalf("正常评分失败：%d %s", rec.Code, rec.Body.String())
+			}
+			var envelope struct {
+				Code int                     `json:"code"`
+				Data productdto.SeoScoreResp `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			data := envelope.Data
+			if data.EntityID != tc.id || data.EntityType != tc.kind || data.ProfileType != tc.profile || data.Title != tc.title || data.URL != tc.path || len(data.Sections) == 0 {
+				t.Fatalf("实体事实不匹配：%+v", data)
+			}
+			if tc.kind == "product" && (len(data.Duplicates) != 1 || data.Duplicates[0].ID != "p2") {
+				t.Fatalf("重复标题事实丢失：%+v", data.Duplicates)
+			}
+			for _, forbidden := range []string{`"color":`, `"grade":`, `"targetId":`, `"hiddenFields":`, `"actual":`, `"target":`, `"html":`, `"profileReason":`} {
+				if strings.Contains(rec.Body.String(), forbidden) {
+					t.Fatalf("响应仍携带展示字段 %s：%s", forbidden, rec.Body.String())
+				}
+			}
+		})
 	}
 }
 
-// TestBrandScorePanelUsesLandingProfile 品牌端点按落地页权重评分。
-func TestBrandScorePanelUsesLandingProfile(t *testing.T) {
-	fake := &fakeProductService{
-		brands: []*productdto.BrandResp{{ID: "b1", ProjectID: "proj-1", Name: "示例品牌", Slug: "demo"}},
-	}
-	h := NewProductPageHandle(fake, nil, nil)
-	body := postScorePanel(t, h.ProductBrandScorePanel, url.Values{
-		"projectId": {"proj-1"}, "id": {"b1"},
-	})
-	for _, want := range []string{"页型权重：landing", "示例品牌", "/demo"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("品牌评分片段应包含 %q，实际输出：%s", want, body)
+func TestScorePanelsReportFailureStatusAndNeverExposeInternalError(t *testing.T) {
+	for _, kind := range []string{"product", "category", "brand"} {
+		for _, tc := range []struct {
+			name, id, project string
+			err               error
+			status            int
+		}{
+			{"缺ID", "", "proj-1", nil, 400},
+			{"缺工程", "e1", "", nil, 400},
+			{"实体不存在", "e1", "proj-1", nil, 404},
+			{"数据库失败", "e1", "proj-1", errors.New("postgres password=private database failed"), 500},
+		} {
+			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				h := NewProductPageHandle(&fakeProductService{err: tc.err}, nil, nil)
+				handler := h.SeoScore
+				if kind == "category" {
+					handler = h.CategorySeoScore
+				}
+				if kind == "brand" {
+					handler = h.BrandSeoScore
+				}
+				rec := postScoreJSON(t, handler, url.Values{"projectId": {tc.project}, "id": {tc.id}})
+				if rec.Code != tc.status {
+					t.Fatalf("状态码=%d，期望%d：%s", rec.Code, tc.status, rec.Body.String())
+				}
+				var envelope struct {
+					Message string `json:"message"`
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+					t.Fatal(err)
+				}
+				if envelope.Message == "" || strings.Contains(rec.Body.String(), "password=private") {
+					t.Fatalf("错误必须有对外文案且不得泄露内部原文：%s", rec.Body.String())
+				}
+			})
 		}
-	}
-}
-
-// TestCategoryScorePanelUsesLandingProfile 分类端点按落地页权重评分。
-func TestCategoryScorePanelUsesLandingProfile(t *testing.T) {
-	fake := &fakeProductService{
-		cats: []*productdto.CategoryResp{{ID: "c1", ProjectID: "proj-1", Name: "男装", Slug: "men"}},
-	}
-	h := NewProductPageHandle(fake, nil, nil)
-	body := postScorePanel(t, h.ProductCategoryScorePanel, url.Values{
-		"projectId": {"proj-1"}, "id": {"c1"},
-	})
-	for _, want := range []string{"页型权重：landing", "男装", "/men"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("分类评分片段应包含 %q，实际输出：%s", want, body)
-		}
-	}
-}
-
-// TestProductScorePanelMissingEntityIsReadable 读不到实体时给一句可读的话，不是 500。
-func TestProductScorePanelMissingEntityIsReadable(t *testing.T) {
-	h := NewProductPageHandle(&fakeProductService{}, nil, nil)
-	body := postScorePanel(t, h.ProductScorePanel, url.Values{"projectId": {"proj-1"}, "productId": {"ghost"}})
-	if !strings.Contains(body, "读不到这个商品") {
-		t.Fatalf("空态应给出可读文案，实际输出：%s", body)
 	}
 }

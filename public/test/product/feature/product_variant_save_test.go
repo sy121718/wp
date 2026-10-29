@@ -510,7 +510,7 @@ func TestVariantListPagePreviewAndSaveFlow(t *testing.T) {
 	engine := gin.New()
 	engine.HTMLRender = templates.NewJetHTMLRender(attrTemplateRoot(), true)
 	handle := producthttp.NewProductPageHandle(f.products, f.products, f.projects)
-	engine.POST("/admin/products/variant/preview", handle.ProductsVariantPreview)
+	engine.POST("/admin/products/variant/preview", handle.PreviewVariant)
 	// 保存由页面 data-write-url 声明的 JSON 端点处理。
 	engine.POST("/api/product/variant/save", producthttp.NewProductHandle(f.products).SaveVariantList)
 

@@ -28,10 +28,3 @@ func taxonomyCategories(rows ...*productdto.CategoryResp) map[string]any {
 	data["Categories"] = rows
 	return data
 }
-func tagHitsData(total, page, size int, project string, rows []*productdto.TagProductResp) map[string]any {
-	return groupDData(map[string]any{
-		"Query":    &productdto.ListTagProductsPageReq{ProjectID: project, TagID: "t1"},
-		"Result":   &productdto.TagProductsListResp{TagID: "t1", TagName: "清仓", Total: total, Page: page, PageSize: size, Items: rows},
-		"req_path": "/admin/product-tags/hits?id=t1&project=" + project,
-	})
-}

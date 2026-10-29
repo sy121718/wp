@@ -685,6 +685,13 @@ const (
 	// 变体更新（POST /api/product/variant/update）
 	ProductVariantUpdate Perm = "product:variant_update"
 
+	// 商品只读计算与候选查询仍逐条授权。
+	ProductSEOScore         Perm = "product:seo_score"
+	ProductCategorySEOScore Perm = "product:category_seo_score"
+	ProductBrandSEOScore    Perm = "product:brand_seo_score"
+	ProductCategoryParents  Perm = "product:category_parents"
+	ProductVariantPreview   Perm = "product:variant_preview"
+
 	// —— project（12）——
 	// 新建项目（POST /api/project/create）
 	ProjectCreate Perm = "project:create"
@@ -1122,6 +1129,11 @@ var specs = map[Perm]spec{
 	ProductBrandUpdate:             {module: "product", name: "商品品牌更新"},
 	ProductBulkDelete:              {module: "product", name: "商品批量删除"},
 	ProductBulkPricing:             {module: "product", name: "批量改价"},
+	ProductSEOScore:                {module: "product", name: "商品 SEO 评分"},
+	ProductCategorySEOScore:        {module: "product", name: "商品分类 SEO 评分"},
+	ProductBrandSEOScore:           {module: "product", name: "商品品牌 SEO 评分"},
+	ProductCategoryParents:         {module: "product", name: "商品父分类候选"},
+	ProductVariantPreview:          {module: "product", name: "商品变体组合预览"},
 	ProductCategoryBulkDelete:      {module: "product", name: "商品分类批量删除"},
 	ProductCategoryCreate:          {module: "product", name: "商品分类创建"},
 	ProductCategoryDelete:          {module: "product", name: "商品分类删除"},

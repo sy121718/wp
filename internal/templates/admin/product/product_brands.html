@@ -189,15 +189,13 @@
             <div class="action-row">
                 <button type="button" class="btn btn-ghost" data-drawer-close>{{ .["t"]("admin.common.action.cancel", "取消") }}</button>
 
-                <button type="button" class="btn"
-                        hx-post="/admin/product-brands/seo-score" hx-include="closest form"
-                        hx-target="#brand-seo-score-{{b.ID}}" hx-swap="innerHTML">{{ .["t"]("admin.product_brands.seoScore", "SEO 评分") }}</button>
                 <button type="submit" class="btn btn-primary" data-requires-js hidden>{{ .["t"]("admin.product_brands.list.save", "保存品牌") }}</button>
+                <button type="submit" formnovalidate class="btn" data-write="custom" data-write-url="/api/product/brand/seo-score" data-write-handler="product.seo">{{ .["t"]("admin.product_brands.seoScore", "SEO 评分") }}</button>
             </div>
 
             <p class="form-hint" data-write-status role="status" hidden></p>
 
-            <div id="brand-seo-score-{{b.ID}}" class="wb-seo-panel"></div>
+            {{include "product_seo_panel.html"}}
         </form>
     </template>
     {{end}}
@@ -231,4 +229,5 @@
 
 <script src="/static/vendor/trix/trix.umd.js"></script>
 <script src="/static/js/rich-editor/index.js"></script>
+{{include "product_seo_dictionary.html"}}
 {{end}}

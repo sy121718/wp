@@ -93,18 +93,7 @@ func productEditStack(t *testing.T, root *html.Node) *html.Node {
 	return stacks[0]
 }
 
-// productEditFormByAction 按 action 找页面上的表单（用来定位两块折叠区）。
-//
-// 写动作迁到 JSON 写基座之后 action 就不再存在了，新页面一律用
-// productEditFormByWriteAPI；这个还留着是因为「原生提交」仍是合法形态
-// （例如整页 GET 的筛选表单），按 action 找它们没有替代品。
-func productEditFormByAction(root *html.Node, action string) []*html.Node {
-	return peAll(root, func(n *html.Node) bool {
-		return peEl(n, "form") && peAttr(n, "action") == action
-	})
-}
-
-// productEditFormByWriteAPI 按 data-write-api 找页面上的表单（写动作的定位依据）。
+// productEditFormByWriteAPI 定位JSON操作表单。
 func productEditFormByWriteAPI(root *html.Node, api string) []*html.Node {
 	return peAll(root, func(n *html.Node) bool {
 		return peEl(n, "form") && peAttr(n, "data-write-url") == api
@@ -188,17 +177,23 @@ func TestProductEditLowFrequencyBlocksFolded(t *testing.T) {
 		}
 	}
 
-	// SEO 检查已移入抽屉（页头按钮是入口）：这里只校验**入口**在、且评测表单不在页面上。
-	// 评测表单与结果容器本身在 admin/product/entity_seo_drawer.html，由模块内的用例守着
-	// （那边断言 hx-post / hx-target / 容器 id 三者一致）。
-	//
-	// 这条替代了原来的「SEO 表单应在折叠区内」：本判据的本意是「低频只读内容不得摊在页面上」，
-	// 抽屉满足它，只是换了容器 —— 所以断言入口与「不再常驻」两件事。
-	if !strings.Contains(raw, `data-drawer-url="/admin/products/seo/drawer?productId=`) {
-		t.Fatal("商品编辑页缺少 SEO 抽屉入口（评测面板的唯一落点）")
+	// SEO 外壳放在本地 template 中，点击入口只打开它，数据另走 JSON。
+	if !strings.Contains(raw, `data-drawer-open="#tpl-product-seo"`) {
+		t.Fatal("商品编辑页缺少SEO本地抽屉入口")
 	}
-	if n := len(productEditFormByAction(stack, "/admin/products/seo-score")); n != 0 {
-		t.Fatalf("SEO 评分表单不应再出现在编辑页上（实际 %d 个）：它属于抽屉片段", n)
+	if strings.Contains(raw, "/admin/products/seo/drawer") || strings.Contains(raw, `action="/admin/products/seo-score"`) {
+		t.Fatal("SEO不得恢复后端HTML片段入口")
+	}
+	seoTemplates := peAll(root, func(n *html.Node) bool { return peEl(n, "template") && peAttr(n, "id") == "tpl-product-seo" })
+	if len(seoTemplates) != 1 {
+		t.Fatalf("SEO必须有一个本地抽屉模板，实际%d", len(seoTemplates))
+	}
+	seoForms := productEditFormByWriteAPI(seoTemplates[0], "/api/product/seo-score")
+	if len(seoForms) != 1 || peAttr(seoForms[0], "data-write-handler") != "product.seo" {
+		t.Fatal("SEO抽屉必须使用JSON评分处理器")
+	}
+	if len(productEditFormByWriteAPI(stack, "/api/product/seo-score")) != 0 {
+		t.Fatal("SEO表单应处于未激活的本地模板，不能常驻编辑区")
 	}
 
 	// 详情页模板：两个 form-inline（重新套用预设 / 回滚文档）都在同一个折叠区内。
