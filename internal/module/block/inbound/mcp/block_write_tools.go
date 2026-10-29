@@ -7,9 +7,7 @@ package blockmcp
 // 所以这三个工具只处理块的**元数据**（名称、类型、分类、复用模式）；
 // 新建时给一个能被编辑器打开的空块，重命名与改分类走 update。
 //
-// 两处后果必须写进描述与回执：
-//   - global 块被页面引用时，删除默认被拒（ErrBlockInUse）；
-//   - Force=true 会强行删除，被引用的页面**退化成没有这个块**并标记为待重建。
+// global 块仍被引用时一律拒绝删除，并返回实际引用定位。
 //
 // UpdateReq 是**整树覆盖**（编辑器语义）：name / kind / document 必须给全，
 // category 与 reuseMode 留空表示保留原值。
@@ -52,8 +50,6 @@ type BlockIDArgs struct {
 type BlockDeleteArgs struct {
 	ProjectID string `json:"projectId"`
 	BlockID   string `json:"blockId"`
-	// Force 强制删除被引用的块。危险：被引用的页面会退化成没有这个块并标待重建。
-	Force bool `json:"force,omitempty"`
 }
 
 // BlockCreateArgs 建块（只给元数据）。
@@ -237,16 +233,13 @@ func WriteTools(w blockcontract.BlockWriter, r blockcontract.BlockReader, store 
 		})
 
 	del := mcp.NewWrite("block_delete", "删除全局块",
-		"删除一个全局块。**默认拒绝删除正被页面引用的块**（服务端会报「块正在被使用」）。\n"+
-			"`force=true` 会强行删除，那时**引用它的页面会退化成没有这个块**，并被标记为待重建 ——\n"+
-			"前台看到的可能是少了一截的页面，直到重新发布。\n"+
+		"删除一个全局块。仍被引用时一律拒绝，并返回页面、模板或其它区块的引用定位。\n"+
 			"被引用时正确做法通常是：先改块的内容（页眉页脚这类块本来就是拿来改的），\n"+
 			"或者先解除页面上的引用。只有确认没人用了才删。",
 		permission.BlockDelete,
 		mcp.Object("删除全局块", map[string]mcp.Schema{
 			"projectId": mcp.String("工程 id"),
 			"blockId":   mcp.String("要删除的块 id"),
-			"force":     mcp.Boolean("true = 即使正被页面引用也强制删除（那些页面会少掉这个块并标待重建）。默认 false"),
 		}, "projectId", "blockId"),
 		store,
 		func(ctx context.Context, args BlockDeleteArgs) (mcp.Result, error) {
@@ -260,13 +253,10 @@ func WriteTools(w blockcontract.BlockWriter, r blockcontract.BlockReader, store 
 				name = cur.Name
 			}
 			_ = projectID
-			if err := w.Delete(ctx, &blockdto.DeleteReq{ID: blockID, Force: args.Force}); err != nil {
+			if err := w.Delete(ctx, &blockdto.DeleteReq{ID: blockID}); err != nil {
 				return mcp.Result{}, err
 			}
 			text := fmt.Sprintf("块「%s」（id=%s）已删除。", emptyAsDash(name), blockID)
-			if args.Force {
-				text += "\n**这是强制删除** —— 之前引用它的页面已经少掉这个块并标记为待重建，需要重新发布才会更新前台。"
-			}
 			return mcp.Result{Text: text}, nil
 		})
 

@@ -7,12 +7,14 @@ package unit
 // 操作者没有任何线索去解除它。本文件钉住三件事：
 //
 //  1. 明细必须随拒绝一起返回（errors.As 取得到 *BlockInUseError，且带上类别与实体）；
-//  2. 明细不影响强制删除（Force 仍然删得掉）；
+//  2. 拒绝后实体原文与版本保持不变；
 //  3. 检查器缺失 / 报错时仍然拒绝（宁拒勿删，不把失败伪装成「没有引用」）。
 
 import (
 	"context"
 	"errors"
+	json "go_wp/pkg/jsonx"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -50,10 +52,20 @@ func TestBlockDeleteReportsReferenceDetail(t *testing.T) {
 			t.Fatalf("拒绝文案应能定位到 %q，实际 %q", want, msg)
 		}
 	}
-	// 明细只是提示，不改变强制语义：Force 仍要删得掉。
-	if err := e.svc.Delete(ctx, &blockdto.DeleteReq{ID: b.ID, Force: true}); err != nil {
-		t.Fatalf("Force 删除不应被拦截: %v", err)
+	current, readErr := e.svc.Detail(ctx, &blockdto.DetailReq{ProjectID: e.projectID, ID: b.ID})
+	var original, persisted any
+	if err := json.Unmarshal(b.Document, &original); err != nil {
+		t.Fatal(err)
 	}
+	if current != nil {
+		if err := json.Unmarshal(current.Document, &persisted); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if readErr != nil || current.Version != b.Version || !reflect.DeepEqual(original, persisted) {
+		t.Fatalf("拒绝不得改变块: %+v %v", current, readErr)
+	}
+
 }
 
 // TestBlockDeleteCheckFailureStillRefuses 明细检查器报错时按「被引用」处理（宁拒勿删）。

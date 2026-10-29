@@ -83,7 +83,7 @@ func (h *Handle) Update(c *gin.Context) {
 	response.Success(c, res)
 }
 
-// Delete 删除块（global 块被引用默认拒绝，force=true 强制删除）。
+// Delete 删除块（global 块仍被引用时拒绝）。
 //
 // 被拒（409）时用 blockRefErrorMessage：与批量删除逐条原因同一套文案 ——
 // 「哪些页面/资源挡住了」是操作者唯一能据此行动的信息，不能只剩一句「不能删除」。

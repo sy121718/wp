@@ -205,41 +205,23 @@ func TestBlockUpdateMergesCurrentValues(t *testing.T) {
 	}
 }
 
-// 删除被引用的块默认被拒 —— 描述要说清 force 的后果。
-func TestBlockDeleteDescribesForceConsequence(t *testing.T) {
-	desc := blockTool(t, "block_delete", &stubBlockRW{}, true).Description()
-	if !strings.Contains(desc, "force") {
-		t.Errorf("描述应点名 force：\n%s", desc)
-	}
-	if !strings.Contains(desc, "待重建") {
-		t.Errorf("描述应说明强制删除会让引用页待重建：\n%s", desc)
-	}
-	if !strings.Contains(desc, "被引用") && !strings.Contains(desc, "引用") {
-		t.Errorf("描述应说明默认对引用中的块会拒绝：\n%s", desc)
-	}
-}
-
-func TestBlockDeleteForceEchoedInResult(t *testing.T) {
+// 工具不再承诺绕过引用，旧输入也只能走相同的受保护删除请求。
+func TestBlockDeleteHasNoForceBypass(t *testing.T) {
 	s := &stubBlockRW{detail: &blockdto.BlockResp{ID: "b1", Name: "公告条"}}
-	text, err := invokeBlock(t, blockTool(t, "block_delete", s, true), map[string]any{
-		"projectId": "pr1", "blockId": "b1", "force": true,
-	}, true)
+	tool := blockTool(t, "block_delete", s, true)
+	schema, err := tool.SchemaJSON()
 	if err != nil {
-		t.Fatalf("调用失败: %v", err)
+		t.Fatal(err)
 	}
-	if !strings.Contains(text, "强制") {
-		t.Errorf("force=true 的回执必须点明是强制删除：%s", text)
+	if strings.Contains(string(schema), `"force"`) || strings.Contains(tool.Description(), "强行删除") {
+		t.Fatal("工具不得暴露强制删除")
 	}
-
-	s2 := &stubBlockRW{detail: &blockdto.BlockResp{ID: "b1", Name: "公告条"}}
-	text2, err := invokeBlock(t, blockTool(t, "block_delete", s2, true), map[string]any{
-		"projectId": "pr1", "blockId": "b1",
-	}, true)
+	text, err := invokeBlock(t, tool, map[string]any{"projectId": "pr1", "blockId": "b1", "force": true}, true)
 	if err != nil {
-		t.Fatalf("调用失败: %v", err)
-	}
-	if strings.Contains(text2, "强制") {
-		t.Errorf("非 force 的回执不该提强制删除：%s", text2)
+		return
+	} // 严格schema拒绝旧参数也符合合同。
+	if s.deleted == nil || s.deleted.ID != "b1" || strings.Contains(text, "强制") {
+		t.Fatalf("旧参数不得改变受保护请求: %+v %s", s.deleted, text)
 	}
 }
 

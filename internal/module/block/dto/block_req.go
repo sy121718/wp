@@ -84,17 +84,14 @@ type ListReq struct {
 }
 
 // DeleteReq 删除块请求。
-// global 块被引用时默认拒绝（ErrBlockInUse）；Force=true 强制删除（引用页面退化为无该块并标待重建）。
+// global 块仍被引用时一律拒绝（ErrBlockInUse），先解除可定位的引用再删除。
 type DeleteReq struct {
-	ID    string `json:"id" form:"id" binding:"required"`
-	Force bool   `json:"force" form:"force"`
+	ID string `json:"id" form:"id" binding:"required"`
 }
 
 // BulkDeleteReq 批量删除块请求（POST /api/block/bulk-delete）。
 //
-// 只有 ids，**没有 force** —— 这是刻意的：批量删除沿用旧的页面批量语义（force 恒为 false），
-// 被页面 / 主题引用的 global 块一律拒绝并逐条回报原因。强制删除仍然只有单条路径
-// （DeleteReq.Force）那一个入口：它是「明确知道后果」的单个动作，不该被批量顺手带过去。
+// 被引用的 global 块与单条删除同样拒绝，不能绕过源码引用保护。
 //
 // ids 由客户端构造（勾选框），因此服务端必须自己去重与限量（pkg/bulkids.Normalize）——
 // 客户端的上限只是快速反馈，不是安全边界。binding 上的 dive,required 让空串元素在绑定期就被拒。

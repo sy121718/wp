@@ -116,9 +116,6 @@ func TestBlockDeleteReferenceGuard(t *testing.T) {
 	if !errors.Is(err, blockcontract.ErrBlockInUse) {
 		t.Fatalf("期望 ErrBlockInUse，实际 %v", err)
 	}
-	if err := e.svc.Delete(context.Background(), &blockdto.DeleteReq{ID: global.ID, Force: true}); err != nil {
-		t.Fatalf("Force 删除失败: %v", err)
-	}
 
 	tpl, err := e.svc.Create(context.Background(), &blockdto.CreateReq{
 		ProjectID: e.projectID, Name: "复制块", Kind: "snippet", ReuseMode: "template",

@@ -6,7 +6,7 @@
   "/api/block/bulk-delete": {"dto":"blockdto.BulkDeleteReq","handler":"BulkDelete","fields":[{"name":"ids","required":false}]},
   "/api/block/clone": {"dto":"blockdto.CloneReq","handler":"CloneAST","fields":[{"name":"id","required":false}]},
   "/api/block/create": {"dto":"blockdto.CreateReq","handler":"Create","fields":[{"name":"projectId","required":false},{"name":"name","required":false},{"name":"kind","required":false},{"name":"category","required":false},{"name":"reuseMode","required":false},{"name":"document","required":false},{"name":"presetKey","required":false},{"name":"presetVersion","required":false}]},
-  "/api/block/delete": {"dto":"blockdto.DeleteReq","handler":"Delete","fields":[{"name":"id","required":false},{"name":"force","required":false}]},
+  "/api/block/delete": {"dto":"blockdto.DeleteReq","handler":"Delete","fields":[{"name":"id","required":false}]},
   "/api/block/update": {"dto":"blockdto.UpdateReq","handler":"Update","fields":[{"name":"id","required":false},{"name":"name","required":false},{"name":"kind","required":false},{"name":"category","required":false},{"name":"reuseMode","required":false},{"name":"document","required":false},{"name":"expectedVersion","required":false}]},
   "/api/blueprint/create": {"dto":"blueprintdto.CreateReq","handler":"Create","fields":[{"name":"name","required":false},{"name":"kind","required":false},{"name":"draftDocument","required":false}]},
   "/api/blueprint/delete": {"dto":"blueprintdto.DeleteReq","handler":"Delete","fields":[{"name":"id","required":false}]},

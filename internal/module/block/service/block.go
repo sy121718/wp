@@ -216,8 +216,7 @@ func (s *Service) Update(ctx context.Context, req *blockdto.UpdateReq) (res *blo
 
 // Delete 删除块。docs/02-D §9：
 //   - reuse_mode=template：页面已持有独立副本，删除无副作用，不传播；
-//   - reuse_mode=global：仍被页面（globalref/structure）或主题槽位引用时默认拒绝（ErrBlockInUse），
-//     Force=true 强制删除并传播（引用页面退化为无该块，下次构建 globalref 降级占位）。
+//   - reuse_mode=global：仍被页面、主题或其它源码引用时一律拒绝（ErrBlockInUse）。
 func (s *Service) Delete(ctx context.Context, req *blockdto.DeleteReq) (err error) {
 	// 参数缺失（nil/空 ID）是调用方错误，与「ID 对应块不存在」区分开（与 List/Detail 语义一致）。
 	if req == nil || strings.TrimSpace(req.ID) == "" {
@@ -229,7 +228,7 @@ func (s *Service) Delete(ctx context.Context, req *blockdto.DeleteReq) (err erro
 	if err != nil {
 		return err
 	}
-	if entity.ReuseMode == blockmodel.ReuseGlobal && !req.Force {
+	if entity.ReuseMode == blockmodel.ReuseGlobal {
 		if usages, inUse := s.blockRefState(ctx, entity.ID); inUse {
 			// 明细随错误返回：拒绝必须可定位（哪一类引用、哪些实体），
 			// 日志与页面提示共用同一份清单，不允许各拼一套。

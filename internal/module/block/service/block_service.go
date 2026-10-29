@@ -159,7 +159,7 @@ var (
 	ErrDuplicate = blockcontract.ErrDuplicate
 	// ErrInvalidReuseMode 块复用方式不合法（非 global/template）。
 	ErrInvalidReuseMode = blockcontract.ErrInvalidReuseMode
-	// ErrBlockInUse global 块仍被页面/主题引用：删除或切换 global→template 前须先解除引用或 Force。
+	// ErrBlockInUse global 块仍被页面/主题引用：删除或切换 global→template 前须先解除引用。
 	ErrBlockInUse = blockcontract.ErrBlockInUse
 )
 

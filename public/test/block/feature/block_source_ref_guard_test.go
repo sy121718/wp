@@ -38,6 +38,7 @@ import (
 	pubservice "go_wp/internal/module/publication/service"
 	"go_wp/internal/routers"
 
+	json "go_wp/pkg/jsonx"
 	"go_wp/public/test/support"
 )
 
@@ -272,5 +273,27 @@ func TestBlockDeleteGuardIgnoresPublishedArtifact(t *testing.T) {
 	}
 	if err := e.blocks.Delete(context.Background(), &blockdto.DeleteReq{ID: blockID}); err != nil {
 		t.Fatalf("只被历史产物引用时删除必须放行（产物由 GC 策略处理），实际 %v", err)
+	}
+}
+
+// 即使旧客户端仍发送 force=true，也不能删除仍被当前源码引用的区块。
+func TestBlockDeleteOldForceInputCannotBypassSourceReference(t *testing.T) {
+	e := newRefEnv(t)
+	inner := e.createBlock("不可强删的内部块")
+	_, err := e.blocks.Create(context.Background(), &blockdto.CreateReq{ProjectID: e.projectID, Name: "实际引用者", Document: []byte(fmt.Sprintf(`{"settings":{"layout":{"mode":"full"}},"root":[{"id":"ref","type":"core.globalref","props":{"blockId":%q}}]}`, inner))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var req blockdto.DeleteReq
+	if err = json.Unmarshal([]byte(fmt.Sprintf(`{"id":%q,"force":true}`, inner)), &req); err != nil {
+		t.Fatal(err)
+	}
+	err = e.blocks.Delete(context.Background(), &req)
+	var inUse *blockcontract.BlockInUseError
+	if !errors.Is(err, blockcontract.ErrBlockInUse) || !errors.As(err, &inUse) || len(inUse.Usages) == 0 {
+		t.Fatalf("必须拒绝且有实际引用定位: %v", err)
+	}
+	if _, err = e.blocks.Detail(context.Background(), &blockdto.DetailReq{ProjectID: e.projectID, ID: inner}); err != nil {
+		t.Fatalf("拒绝后块必须仍存在: %v", err)
 	}
 }

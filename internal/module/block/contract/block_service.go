@@ -30,8 +30,8 @@ type BlockService interface {
 	Create(ctx context.Context, req *blockdto.CreateReq) (res *blockdto.BlockResp, err error)
 	// Update 更新块（名称/类型/复用方式/文档整树保存）。
 	Update(ctx context.Context, req *blockdto.UpdateReq) (res *blockdto.BlockResp, err error)
-	// Delete 删除块。global 块被引用且未 Force 时返回 ErrBlockInUse；
-	// template 块（页面已持有副本）或 Force 删除无引用副作用，直接删除。
+	// Delete 删除块。global 块被引用时一律返回带定位信息的 ErrBlockInUse；
+	// template 块的页面持有独立副本，可直接删除。
 	Delete(ctx context.Context, req *blockdto.DeleteReq) (err error)
 	// CloneAST 复制块文档为独立 AST（全部节点重生成 ID，docs/02-D §5.2「插入-复制」动作）。
 	// 返回的文档与源块脱钩：此后源块修改不传播到已并入的页面。
@@ -74,7 +74,7 @@ var (
 	ErrPresetUnavailable = blockenums.Err(blockenums.ErrBlockPresetUnavailable)
 	// ErrInvalidReuseMode 块复用方式不合法（非 global/template）。
 	ErrInvalidReuseMode = blockenums.Err(blockenums.ErrBlockInvalidReuseMode)
-	// ErrBlockInUse global 块仍被页面/主题引用：删除或切换 global→template 前须先解除引用或 Force。
+	// ErrBlockInUse global 块仍被页面/主题引用：删除或切换 global→template 前须先解除引用。
 	ErrBlockInUse = blockenums.Err(blockenums.ErrBlockInUse)
 	// ErrBlockVersionConflict 保存时 expectedVersion 与库里不一致（409，B2）。
 	ErrBlockVersionConflict = blockenums.Err(blockenums.ErrBlockVersionConflict)
