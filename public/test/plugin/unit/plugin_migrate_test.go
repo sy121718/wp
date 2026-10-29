@@ -27,6 +27,7 @@ func newMigrateService(t *testing.T) (*gorm.DB, *pluginservice.Service) {
 	// 插件存储隔离到临时目录（避免相对路径 public/runtime/plugins 污染测试目录）。
 	t.Setenv("GO_WP_PLUGIN_ROOT", t.TempDir())
 	db := support.NewMigratedPGTestDB(t)
+	grantPluginMigrationCreate(t, db)
 	return db, pluginservice.NewService(pluginmodel.NewModel(db))
 }
 

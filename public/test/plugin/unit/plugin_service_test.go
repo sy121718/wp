@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	pluginmodel "go_wp/internal/module/plugin/model"
@@ -13,6 +14,8 @@ import (
 	plugindto "go_wp/internal/module/plugin/dto"
 
 	"go_wp/public/test/support"
+
+	"gorm.io/gorm"
 )
 
 // 最小合法插件 zip（manifest + 一个组件模板）。
@@ -53,7 +56,25 @@ func newService(t *testing.T) *pluginservice.Service {
 	// 插件存储隔离到临时目录（避免相对路径 public/runtime/plugins 污染测试目录）。
 	t.Setenv("GO_WP_PLUGIN_ROOT", t.TempDir())
 	db := support.NewMigratedPGTestDB(t)
+	grantPluginMigrationCreate(t, db)
 	return pluginservice.NewService(pluginmodel.NewModel(db))
+}
+
+// grantPluginMigrationCreate 为隔离测试库补齐插件迁移所需的授权，并在测试结束时撤销。
+func grantPluginMigrationCreate(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	quoteIdent := func(name string) string {
+		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+	}
+	databaseName := quoteIdent(db.Migrator().CurrentDatabase())
+	roleName := quoteIdent(pluginservice.PluginMigrationRole)
+	// 隔离测试库需要单独授权，生产库由角色初始化脚本授权。
+	if err := db.Exec("GRANT CREATE ON DATABASE " + databaseName + " TO " + roleName).Error; err != nil {
+		t.Skipf("无法在测试库上授权（插件迁移需要该前提）: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Exec("REVOKE CREATE ON DATABASE " + databaseName + " FROM " + roleName).Error
+	})
 }
 
 // TestInstallListToggleUninstall 完整生命周期。
