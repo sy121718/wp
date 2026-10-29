@@ -42,11 +42,15 @@ jobs:
         run: |
           go test ./pkg/... ./internal/... ./cmd/... ./config/... \
             ./public/migrations/... -count=1 -timeout 10m
-      - name: Race detector (core five areas)
+      - name: Race detector (concurrent-write domains)
         # 竞态既不会编译失败也不会让普通 go test 变红 —— 只能靠 -race 抓。
-        # 本机 16 核实测这条命令约 1 分钟（73 包，0 DATA RACE），换来 publication /
-        # presentation 这类多 goroutine 路径的真实覆盖（评审 R-04）。与本地
-        # `make test-race` 是同一组包与参数。
+        #
+        # 覆盖范围与参数只在 Makefile 的 test-race 里写一份（这里是调用，不重复列举）：
+        # 发布/展示/workbench/构建管线，加上订单、购物车、库存、用户会话、
+        # 访客片段、AI 与 MCP —— 都是「同一资源被多请求同时改」的形态。
+        #
+        # 早先的 job 名写的是 "core five areas"，而实际包的清单已经扩过两次；
+        # 名字不跟着改就会让人以为覆盖面比现实窄（或宽）。
         run: make test-race
 
   integration:
