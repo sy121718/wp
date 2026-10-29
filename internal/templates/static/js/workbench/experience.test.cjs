@@ -113,6 +113,33 @@ test('撤销重做须使旧节点引用失效并立即更新按钮状态', () =>
     assert.equal(buttons.get('wb-redo').disabled, true);
 });
 
+test('已保存文档同层移动后立即同步脏状态与撤销按钮，撤销恢复原顺序', () => {
+    const { wb, buttons } = editor();
+    Object.assign(wb, methods('nodes', 'nodesMethods'));
+    wb.invalidateInspector = function () {};
+    wb.doc.root = [{ id: 'first', props: {} }, { id: 'second', props: {} }];
+    wb.saveState = 'saved';
+    wb.renderUI();
+    assert.equal(buttons.get('wb-undo').disabled, true);
+    const before = JSON.stringify(wb.doc);
+
+    wb.moveNodeOrder('first', 1);
+
+    assert.deepEqual(wb.doc.root.map(node => node.id), ['second', 'first']);
+    assert.equal(wb.undoStack.length, 1);
+    assert.equal(wb.undoStack[0], before);
+    assert.equal(wb.saveState, 'dirty');
+    assert.equal(buttons.get('wb-status').textContent, 'dirty');
+    assert.equal(buttons.get('wb-undo').disabled, false);
+    assert.equal(buttons.get('wb-redo').disabled, true);
+
+    wb.undo();
+
+    assert.equal(JSON.stringify(wb.doc), before);
+    assert.equal(buttons.get('wb-undo').disabled, true);
+    assert.equal(buttons.get('wb-redo').disabled, false);
+});
+
 for (const [type, spec] of [
     ['page', {idKey:'id',documentKey:'draftDocument',versionKey:'expectedVersion',pathKey:'draftPath'}],
     ['block', {idKey:'blockId',documentKey:'document',versionKey:'expectedVersion'}],

@@ -190,6 +190,7 @@ export const nodesMethods = {
                 if (loc.parent) this.syncAlignFromChildren(loc.parent, { op: 'move', index: loc.index, to: target });
                 this.renderTree();
                 this.refreshCanvas();
+                this.renderUI();
             },
 
             // ---------------- 选择与联动 ----------------
