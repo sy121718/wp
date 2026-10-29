@@ -11,9 +11,47 @@ import (
 	"github.com/google/uuid"
 	pagecontract "go_wp/internal/module/page/contract"
 	pagedto "go_wp/internal/module/page/dto"
+	pageservice "go_wp/internal/module/page/service"
 	"go_wp/internal/pipeline"
 	json "go_wp/pkg/jsonx"
 )
+
+func TestFirstPublishSelfActionUsesFrozenPathAndOtherDraftFails(t *testing.T) {
+	_, api, projectID := newPageService(t)
+	ctx := context.Background()
+	self, err := api.Create(ctx, &pagedto.CreateReq{ProjectID: projectID, Kind: "home", ContentTargetType: "none", DraftPath: "/self-checkout", DraftDocument: json.RawMessage(slotPlainDocument)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := func(target string) json.RawMessage {
+		return json.RawMessage(fmt.Sprintf(`{"settings":{"layout":{"mode":"full"}},"root":[{"id":"cart","type":"core.cartIcon","props":{"mode":"inline"},"actions":{"checkout":{"kind":"page","pageId":%q}}}]}`, target))
+	}
+	if _, err := api.SaveDraft(ctx, &pagedto.SaveDraftReq{ID: self.ID, ExpectedVersion: self.DraftVersion, DraftPath: "/self-checkout", DraftDocument: doc(self.ID)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Build(ctx, &pagedto.BuildReq{ID: self.ID}); err != nil {
+		t.Fatalf("自指首次构建应使用冻结路径: %v", err)
+	}
+	if _, err := api.Publish(ctx, &pagedto.PublishReq{ID: self.ID}); err != nil {
+		t.Fatal(err)
+	}
+	key := pipeline.PageTargetKey(self.ID)
+	refs, err := api.(*pageservice.Service).FindPagesByDependency(ctx, projectID, key.Kind, key.Key)
+	if err != nil || len(refs) != 1 || refs[0].ID != self.ID {
+		t.Fatalf("自身也须登记真实目标依赖: %+v %v", refs, err)
+	}
+	draft, err := api.Create(ctx, &pagedto.CreateReq{ProjectID: projectID, Kind: "search", ContentTargetType: "none", DraftPath: "/other-draft", DraftDocument: json.RawMessage(slotPlainDocument)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := api.Create(ctx, &pagedto.CreateReq{ProjectID: projectID, Kind: "home", ContentTargetType: "none", DraftPath: "/other-consumer", DraftDocument: doc(draft.ID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := api.Build(ctx, &pagedto.BuildReq{ID: source.ID}); err == nil {
+		t.Fatal("其它未发布目标仍必须拒绝")
+	}
+}
 
 func TestPublishedPageActionTargetIsScopedExactAndReadable(t *testing.T) {
 	_, svc, projectID := newPageService(t)

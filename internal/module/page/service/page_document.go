@@ -743,7 +743,8 @@ func (s *Service) assembleCompile(ctx context.Context, in pipeline.BuildInput) (
 	// 发布计划同样来自构建输入（审计 I18N-01）：它是这次构建的站点环境的一部分，
 	// 装配层只原样使用，不再回读语言配置。
 	html, err := s.compileDocument(ctx, page, projectID, currentPath, in.Lang, in.Usage, true,
-		builder.CompileModePublish, in.Diagnostics, in.Plan)
+		builder.CompileModePublish, in.Diagnostics, in.Plan,
+		s.buildActionOptions(ctx, projectID, in.Lang, in.PageID, in.Path))
 	if err != nil {
 		if errors.Is(err, errCompileFailed) {
 			logger.Scene("build").Error(err, "页面编译失败")

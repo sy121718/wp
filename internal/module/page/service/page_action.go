@@ -43,7 +43,16 @@ func (s *Service) PublishedPagePath(ctx context.Context, projectID, pageID, lang
 }
 
 func (s *Service) publishedActionOptions(ctx context.Context, projectID, lang string) builder.CompileOption {
+	return s.buildActionOptions(ctx, projectID, lang, "", "")
+}
+
+// buildActionOptions 只允许本次构建自身使用冻结路径，首次发布不依赖尚未存在的自身Publication。
+// 其它页面和语言仍必须通过真实激活状态；不提供通用未发布目标回退。
+func (s *Service) buildActionOptions(ctx context.Context, projectID, lang, pageID, frozenPath string) builder.CompileOption {
 	return builder.WithPublishedActionPaths(func(id string) (string, error) {
+		if pageID != "" && id == pageID {
+			return pipeline.NormalizeURL(frozenPath)
+		}
 		return s.PublishedPagePath(ctx, projectID, id, lang)
 	}, func(id string) (string, error) {
 		if s.actionInstances == nil {
