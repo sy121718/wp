@@ -50,14 +50,14 @@ type Props struct {
 	OptionsField string `json:"optionsField,omitempty" ct:"string,maxlen=60,hidden,sec=content,label=规格维度字段"`
 	// VariantsField 变体组合字段（JSON 数组，如 product.variants）：变体 id 与价格从它取。
 	VariantsField string `json:"variantsField,omitempty" ct:"string,maxlen=60,hidden,sec=content,label=变体组合字段"`
-	// Currency 货币符号（价格前缀；留空用默认符号）。
-	Currency string `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
+	// Currency 仅控制价格展示前缀，不改变结算币种。
+	Currency string `json:"currency,omitempty" ct:"string,maxlen=8,sec=content,label=价格展示符号"`
 	// VariantMode 变体呈现：single（单个规格）/ perVariant（逐规格一行）。
 	VariantMode string `json:"variantMode,omitempty" ct:"select,single=单个变体,perVariant=逐变体,default=single,sec=content,label=变体呈现"`
 	// ShowQuantity 是否显示数量输入（关掉就是「一键加购一件」）。
 	ShowQuantity bool `json:"showQuantity,omitempty" ct:"bool,sec=content,label=数量输入"`
 	// Label 按钮文字。
-	Label string `json:"label,omitempty" ct:"text,maxlen=20,sec=content,label=按钮文字"`
+	Label string `json:"label,omitempty" ct:"string,maxlen=20,sec=content,label=按钮文字"`
 	// Color 按钮主色（色值或主题 Token）。
 	Color string `json:"color,omitempty" ct:"color,maxlen=200,sec=style,label=按钮颜色"`
 	// Advanced 通用高级属性（docs/02-C0）。

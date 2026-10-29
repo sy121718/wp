@@ -43,7 +43,7 @@ type Props struct {
 
 	OptionsField  string             `json:"optionsField,omitempty" ct:"string,maxlen=60,hidden,sec=content,label=规格维度字段"`
 	VariantsField string             `json:"variantsField,omitempty" ct:"string,maxlen=60,hidden,sec=content,label=规格组合字段"`
-	Currency      string             `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
+	Currency      string             `json:"currency,omitempty" ct:"string,maxlen=8,sec=content,label=价格展示符号"`
 	Stock         string             `json:"stock,omitempty" ct:"select,=开启,off=关闭,default=,sec=content,label=实时可用量"`
 	EmptyText     string             `json:"emptyText,omitempty" ct:"text,maxlen=50,sec=content,label=空态文案"`
 	Advanced      core.AdvancedProps `json:"advanced" ct:"group"`

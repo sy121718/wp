@@ -8,7 +8,7 @@ export function variantName(variant, options) {
         var value = (option.values || []).find(function (item) { return item.key === key; });
         return value ? value.name : '';
     }).filter(Boolean);
-    return names.join(' · ') || variant.sku || '默认规格';
+    return names.join(' · ') || (variant.sku ? '默认规格（' + variant.sku + '）' : '默认规格');
 }
 
 export function productBindingPanel(ctx) {

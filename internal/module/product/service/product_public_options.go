@@ -52,16 +52,16 @@ func (s *Service) PublicProductOptions(ctx context.Context, req *productdto.Publ
 		return nil, err
 	}
 	values := s.translateFields(ctx, lang, "product", map[string]string{"name": row.Name})
-	result := &productdto.PublicProductOptionsResp{ID: row.ID, Name: values["name"], Options: []productdto.PublicProductOption{}, Variants: []productdto.PublicProductVariantOption{}}
+	result := &productdto.PublicProductOptionsResp{ID: row.ID, Name: values["name"], Options: []productdto.PublicProductOptionResp{}, Variants: []productdto.PublicProductVariantOptionResp{}}
 	for _, group := range groups {
-		option := productdto.PublicProductOption{Key: group.Key, Name: group.Name, Values: []productdto.PublicProductOptionValue{}}
+		option := productdto.PublicProductOptionResp{Key: group.Key, Name: group.Name, Values: []productdto.PublicProductOptionValueResp{}}
 		for _, value := range group.Values {
-			option.Values = append(option.Values, productdto.PublicProductOptionValue{Key: value.Key, Name: value.Label})
+			option.Values = append(option.Values, productdto.PublicProductOptionValueResp{Key: value.Key, Name: value.Label})
 		}
 		result.Options = append(result.Options, option)
 	}
 	for _, variant := range variants {
-		fact := productdto.PublicProductVariantOption{ID: variant.ID, SKU: variant.SKUCode, Options: map[string]string{}, Price: yuanToCents(variant.Price)}
+		fact := productdto.PublicProductVariantOptionResp{ID: variant.ID, SKU: variant.SKUCode, Options: map[string]string{}, Price: yuanToCents(variant.Price)}
 		if variant.ComparePrice != nil {
 			value := yuanToCents(*variant.ComparePrice)
 			fact.ComparePrice = &value
