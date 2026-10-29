@@ -59,7 +59,7 @@ var siteSlotFacingMessages = map[string]string{
 
 // 槽位状态的徽章档与标签已移交模板（internal/templates/admin/page/site_slots.html）：
 // Go 只给事实（Bound / PageDeleted / Published），选档与取词是展示判断，见
-// docs/rules/template-boundary.md「Go 给事实 + Jet 决定怎么显示」。
+// AGENTS.md 给事实 + Jet 决定怎么显示」。
 //
 // 词条 key 仍是 admin.site_slots.state.{unbound,deleted,published,unpublished}
 //（public/migrations/451_i18n_go_hardcoded_texts.sql 已种 zh-CN / en-US 两语）；

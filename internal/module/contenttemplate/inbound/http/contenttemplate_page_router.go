@@ -6,7 +6,7 @@ package contenttemplatehttp
 // handler 在 contenttemplate_page.go。路由注册只出现在 *_router.go，门禁
 // scripts/check-route-registration-placement.sh 守这条。
 //
-// 页面 GET 的 Casbin 待补（见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3）；
+// 页面 GET 的 Casbin 待补（见 AGENTS.md §4.3）；
 // 写动作已按 /api/contenttemplate/* 的权限点 enforce。
 
 import (

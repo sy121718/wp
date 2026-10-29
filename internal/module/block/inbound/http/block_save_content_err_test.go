@@ -28,6 +28,7 @@ import (
 	blockdto "go_wp/internal/module/block/dto"
 	blockenums "go_wp/internal/module/block/enums"
 	"go_wp/pkg/facing"
+	"go_wp/pkg/i18n"
 
 	"github.com/gin-gonic/gin"
 )
@@ -74,12 +75,15 @@ func (s *stubBlockService) ListBlockSourceRefs(context.Context, string) ([]block
 	panic("SaveBlockContent 不应调用 ListBlockSourceRefs")
 }
 
-// stubVersionConflict 与 service 层的 versionConflictError 同形（key + 兜底 + 版本号）。
+// stubVersionConflict 与 service 层的 versionConflictError **同形**（`key: 明细` 复合形态）。
+//
+// 关键点：不实现 facing.Source。实现了它就走进「自带文案」分支，
+// 出口只会用 Facing() 给的 key + 兜底，**tail（当前版本号）被丢掉** ——
+// 而版本号是这条文案里唯一可行动的信息。
 type stubVersionConflict struct{ version string }
 
-func (e *stubVersionConflict) Error() string { return blockenums.ErrBlockVersionConflict }
-func (e *stubVersionConflict) Facing() (string, string) {
-	return blockenums.ErrBlockVersionConflict, blockenums.FallbackFor(blockenums.ErrBlockVersionConflict)
+func (e *stubVersionConflict) Error() string {
+	return blockenums.ErrBlockVersionConflict + ": current version " + e.version
 }
 func (e *stubVersionConflict) Version() string { return e.version }
 
@@ -237,6 +241,15 @@ func assertControlledMessage(t *testing.T, got string, allowed ...string) {
 //	· 当成 500 → 前端走「系统内部错误」提示，用户以为出了 bug，不会想到刷新重试；
 //	· 文案里不带当前版本 → 用户只能整页刷新，无法知道"别人的改动到第几版了"。
 func TestSaveBlockContentVersionConflictIs409WithVersion(t *testing.T) {
+	// 注入这条 key 的词条：出口用 TranslateMessage 按当前语言取词，
+	// 而测试进程的 i18n 缓存默认是空的 —— 不注入的话取不到词条，
+	// translate 会把 `key|param` 原样返回（那正是"未取词"的形态，
+	// 本用例要验的是**取词之后**的文案）。
+	i18n.InjectForTest(map[string]map[string]string{
+		blockenums.ErrBlockVersionConflict: {"zh-CN": "该全局块已被其他人修改（当前第 %s 版），请刷新后重试"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
 	// service 层的 conflict 错误形状：声明 409，并实现 facing.Source + Version()。
 	// 不用 `key|param` 字符串：facing.FactOf 只认「单段 key / key: 明细」，带竖线的
 	// 整串过不了业务判据会退成 500（这条是实测踩出来的）。
@@ -258,10 +271,13 @@ func TestSaveBlockContentVersionConflictIs409WithVersion(t *testing.T) {
 	if !strings.Contains(parsed.Message, "7") {
 		t.Errorf("冲突文案应带当前版本号 7，实际 %q", parsed.Message)
 	}
-	// 不许把内部 key 或错误原文漏出去。
-	for _, leak := range []string{"ErrBlockVersionConflict", "blockenums"} {
-		if strings.Contains(parsed.Message, leak) {
-			t.Errorf("文案里出现了内部标识 %q：%s", leak, parsed.Message)
-		}
+	// 不许把**内部标识**漏出去。判据是"没有裸 key 的形态"，而不是字面量黑名单：
+	// 未命中词条时 translate 会把 `key|param` 原样返回（本轮实测踩到），
+	// 那种输出里必然带 `|`，而正常译文里不会有。
+	if strings.Contains(parsed.Message, "|") {
+		t.Errorf("文案里出现了未经取词的 key|param 形态：%q", parsed.Message)
+	}
+	if strings.HasPrefix(parsed.Message, "Err") || strings.HasPrefix(parsed.Message, "order.") {
+		t.Errorf("文案以错误 key 开头：%q", parsed.Message)
 	}
 }

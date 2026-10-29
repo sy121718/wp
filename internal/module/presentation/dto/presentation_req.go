@@ -47,7 +47,7 @@ type RebuildReq struct {
 	TemplateID string `json:"templateId" form:"templateId"`
 }
 
-// SaveOverrideReq 保存实例级文档覆盖（迁移 281，docs/04-C-instance-override.md）：
+// SaveOverrideReq 保存实例级文档覆盖（迁移 281，AGENTS.md）：
 // workbench 实例模式的保存通道。Document 必须是合法的 Page Document JSON。
 type SaveOverrideReq struct {
 	InstanceID string `json:"instanceId" form:"instanceId" binding:"required"`

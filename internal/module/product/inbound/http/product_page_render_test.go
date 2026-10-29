@@ -8,7 +8,7 @@ package producthttp
 // 因此这里的相对路径与 dashboard 侧逐字相同。
 //
 // 后一组用例（task-28）钉住整页 GET 的**失败出口**：契约见
-// docs/rules/template-boundary.md §整页 GET 的失败出口 —— 取数失败的整页 GET 也必须是
+// AGENTS.md §整页 GET 的失败出口 —— 取数失败的整页 GET 也必须是
 // 「这一页」（同一模板 + 页壳 + 侧边菜单 + no-store），状态码按档位说实话
 //（主数据没读到 = 500；请求参数不合法 = 400；资源不存在 = 404），
 // 且驱动原文（pq: / 约束名 / 表名）只进日志。

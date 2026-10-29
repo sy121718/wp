@@ -5,7 +5,7 @@
 {{tr := .["t"]}}
 {{csrf := .["csrf_token"]}}
 {* 整页装载失败的归口文案：只在 Go 侧那条失败路径上有值（零值数据 + 500/400 + no-store，
-   契约见 docs/rules/template-boundary.md §整页 GET 的失败出口）。正常渲染一律为空串。 *}
+   契约见 AGENTS.md §整页 GET 的失败出口）。正常渲染一律为空串。 *}
 {{selectedProject := .["SelectedProject"]}}
 {{defaultTplID := .DefaultTemplateID}}
 {{warehouseOptions := .WarehouseOptions}}

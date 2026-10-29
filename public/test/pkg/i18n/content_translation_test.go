@@ -1,6 +1,6 @@
 package i18n_test
 
-// content_translation_test.go — 内容翻译基础设施（多语言 P5a，docs/06-D-site-i18n.md §7）
+// content_translation_test.go — 内容翻译基础设施（多语言 P5a，AGENTS.md §7）
 // 在真实 PostgreSQL 上的链路验证。
 //
 // 覆盖（贴真实输出见交付报告）：
@@ -401,7 +401,7 @@ func TestContentDefaultStoreAgainstGlobalDB(t *testing.T) {
 	}
 }
 
-// TestContentRevisionTracksWrites 内容译文资源版本号（多语言 P5b，docs/06-D §9）：
+// TestContentRevisionTracksWrites 内容译文资源版本号（多语言 P5b，AGENTS.md §9）：
 // sys_translation 的 max(update_time) 随写入推进 —— 依赖条目（i18n:content）据此
 // 触发重建，补齐译文后站点不会长期停留在回退内容。
 func TestContentRevisionTracksWrites(t *testing.T) {

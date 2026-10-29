@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-permission-gaps.sh — 审计「路由表 ↔ 权限点表」双向同源（docs/02-Y-permission-source-of-truth.md）。
+# check-permission-gaps.sh — 审计「路由表 ↔ 权限点表」双向同源（AGENTS.md）。
 #
 # 判据两个方向都要过：
 #   A. 每条 /api/* 路由都要有权限点 —— 否则那条路由挂了 Casbin 却没有任何策略能匹配，

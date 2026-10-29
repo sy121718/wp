@@ -1,6 +1,6 @@
 package builder
 
-// 插件组件编译集成测试（docs/06-plugin-system.md §7）：
+// 插件组件编译集成测试（AGENTS.md §7）：
 // plugin.* 节点经 RenderContext.Plugin 取规格 → 模板渲染 + 样式编译，
 // 产物与内置组件同一确定性管线。
 

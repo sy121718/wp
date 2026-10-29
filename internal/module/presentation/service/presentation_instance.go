@@ -8,7 +8,7 @@ package presentationservice
 // 没有归档模板时**静默跳过** —— 那是正常状态（不是每个站点都要归档页），
 // 报错会让「新建一个分类」变成一件会失败的事。
 
-// 双轨语义（docs/04-C-instance-override.md）：
+// 双轨语义（AGENTS.md）：
 //   template（默认）：文档 = 绑定模板文档；模板更新可全局下发；
 //   document：文档 = override_document；模板更新不影响它（UI 上叫「独立文档」）。
 //
@@ -34,7 +34,7 @@ package presentationservice
 // 立刻生效，是因为它的 URL 每次请求现算；静态发布没有这个奢侈。
 
 // 内容模板是「完整文档层」，内部可以引用页眉/页脚/信任徽章等全局区块
-// （docs/02-D §1.2：两者是包含关系，不是二选一）；构建期由本适配器把区块
+// （AGENTS.md §1.2：两者是包含关系，不是二选一）；构建期由本适配器把区块
 // 文档内联进同一次编译输出，访问面仍是纯静态（无运行时拼接）。
 //
 // 与手工 Page 路径（page/service/page_document.go）同口径：
@@ -369,7 +369,7 @@ func (s *Service) toResp(ctx context.Context, e *presentationmodel.InstanceEntit
 	if e.CurrentSnapshotID != nil {
 		resp.SnapshotID = *e.CurrentSnapshotID
 	}
-	// 渲染模式（迁移 282）与可编辑底稿（docs/04-C-instance-override.md）：
+	// 渲染模式（迁移 282）与可编辑底稿（AGENTS.md）：
 	//   document → 覆盖文档即该商品当前文档；
 	//   template → 取当前快照文档，供 workbench 以「当前生效布局」为起点编辑
 	//             （首次编辑即播种，避免空白画布），并用它判定「文档结构是否真的变了」。

@@ -1,6 +1,6 @@
 package style
 
-// style_rules_test.go — 表达力补齐的回归（docs/06-E-plugin-authoring.md §3）：
+// style_rules_test.go — 表达力补齐的回归（AGENTS.md §3）：
 //   - 触屏治理分派：hover / hover-none / active 各自进专用样式桶；
 //   - CSS 变量导出（vars）：控件值 → --name，供插件包 assets/*.css 消费；
 //   - 容器/主题查询（queries）：size / theme / local 三桶分层输出；

@@ -13,7 +13,7 @@ import (
 	"go_wp/pkg/logger"
 )
 
-// 状态常量（规范 0-A1 §2 发布生命周期，docs/03-pipeline.md §6）。
+// 状态常量（规范 0-A1 §2 发布生命周期，AGENTS.md §6）。
 const (
 	// StateDraft 草稿态：最新 Draft AST 已保存，无就绪产物。
 	StateDraft = "draft"
@@ -61,10 +61,10 @@ type PageRecord struct {
 	// 语言访问路径（默认语言无前缀 /about，非默认语言短码 /en/about，
 	// 见 LangURLRule.Path）。激活与回滚校验都以它为准。
 	Path string
-	// Lang 本记录的构建语言（多语言 P2，docs/06-D §4.1 第 5 项）。
+	// Lang 本记录的构建语言（多语言 P2，AGENTS.md §4.1 第 5 项）。
 	//
 	// 内存记录仍以页面 ID 为键（一次构建一个语言）；「按 (pageID, lang) 持有
-	// 独立状态机」属后续阶段（docs/06-D §4.1 第 5 项标注为高风险改动）。
+	// 独立状态机」属后续阶段（AGENTS.md §4.1 第 5 项标注为高风险改动）。
 	// 为空表示未接入语言：Manifest 不写 lang，路径不带前缀（行为与改造前一致）。
 	Lang string
 	// Plan 本记录的冻结发布计划（审计 I18N-01，可空 = 未冻结）。
@@ -89,7 +89,7 @@ type PageRecord struct {
 	Histories []*HistoryEntry
 }
 
-// BuildInput 一次构建的完整输入（多语言 P2，docs/06-D §4.1 第 3 项）。
+// BuildInput 一次构建的完整输入（多语言 P2，AGENTS.md §4.1 第 3 项）。
 //
 // 语言（Lang）与访问路径（Path）是同一层构建环境：同一 Page Document 在每个语言
 // 下独立构建，产物路径按语言方案映射（默认语言无前缀、非默认语言短码）、
@@ -161,7 +161,7 @@ type CompileUsage struct {
 	//
 	// 为什么必须记：缺译文时构建期**回退原文**，补齐/修改译文都要改变产物字节；
 	// 若依赖表里没有 i18n:content 这条，revision 未变 → 不触发重建 →
-	// 页面长期停在回退内容（docs/06-D §9 关键约束，page 侧同口径）。
+	// 页面长期停在回退内容（AGENTS.md §9 关键约束，page 侧同口径）。
 	ContentTranslation bool
 }
 
@@ -387,7 +387,7 @@ func CompileUsageFromContext(ctx context.Context) *CompileUsage {
 }
 
 // CompileFn 冻结编译函数：构建输入 → 完整 HTML 文档字节。
-// 发布期唯一编译入口；实现必须确定性（docs/03-pipeline.md §3.4）。
+// 发布期唯一编译入口；实现必须确定性（AGENTS.md §3.4）。
 // ctx 为发起构建的请求上下文（构建链需查库解析块/集合时传播，支持超时取消）。
 type CompileFn func(ctx context.Context, in BuildInput) (html []byte, err error)
 
@@ -437,7 +437,7 @@ func WithCompile(fn CompileFn) Option {
 }
 
 // DependencyProvider 构建期依赖提供者：按构建输入返回依赖条目，
-// 内核把它们写入 Manifest.dependencies（docs/03-pipeline.md §8.2）。
+// 内核把它们写入 Manifest.dependencies（AGENTS.md §8.2）。
 //
 // 装配层用它声明「产物字节依赖的外部资源」（如文案词条 revision），
 // 内核保持通用——不 import 业务模块、不认识具体资源类型。
@@ -539,7 +539,7 @@ func (p *Publisher) saveDraftLocked(pageID string, expectedVersion int, d Draft)
 	copy(snap, docJSON)
 	rec.DocumentJSON = snap
 
-	// 保存草稿不改 staged/active（docs/03-pipeline.md §6.1）。
+	// 保存草稿不改 staged/active（AGENTS.md §6.1）。
 	rec.Status = rec.currentStatus()
 	return rec.Version, nil
 }
@@ -640,7 +640,7 @@ func (p *Publisher) Publish(pageID string) (hash string, err error) {
 	return rec.ActiveHash, nil
 }
 
-// Rollback 秒级回滚（0-A1 §2.4 / docs/03-pipeline.md §6.4）：
+// Rollback 秒级回滚（0-A1 §2.4 / AGENTS.md §6.4）：
 // 任意历史产物可重新激活，无需重新编译。
 func (p *Publisher) Rollback(pageID string, targetHash string) (err error) {
 	p.mu.Lock()
@@ -669,13 +669,13 @@ func (p *Publisher) Rollback(pageID string, targetHash string) (err error) {
 
 	p.supersedeActiveLocked(rec)
 	rec.ActiveHash = targetHash
-	// 不修改 StagedHash：回滚不影响暂存指针（docs/03-pipeline.md §6.4）。
+	// 不修改 StagedHash：回滚不影响暂存指针（AGENTS.md §6.4）。
 	rec.Status = StatePublished
 	rec.markLatestHistory(targetHash, StatePublished, rec.Path)
 	return nil
 }
 
-// UpdateURL 修改访问路径（docs/03-pipeline.md §6.5）：
+// UpdateURL 修改访问路径（AGENTS.md §6.5）：
 // 先基于新 URL 构建并原子激活新 URL，再按显式策略处理旧 URL（301 / 取消激活）。
 // withRedirect 为 true 时旧 URL 注册 301 永久重定向（规范 0-A2 §1.1）。
 func (p *Publisher) UpdateURL(ctx context.Context, pageID string, newPath string, withRedirect bool) (oldPath string, err error) {

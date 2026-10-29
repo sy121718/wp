@@ -31,7 +31,7 @@
 // fragment_err.go 包内，不进本包）。新增常量时按语义路径取名即可，除非 key 落在 `msg` 段
 // —— 那一段统一用 `FragmentMsg` 前缀。
 //
-// 详见 `docs/rules/i18n.md` §五（Go 侧取词的形态清单与归零验收口径）。
+// 详见 `AGENTS.md §五（Go 侧取词的形态清单与归零验收口径）。
 package runtimefragmentenums
 
 // 取词调用点一律写成 `r.tr(rfenums.Xxx, "中文兜底")` —— **第二个实参必须留在原地**：

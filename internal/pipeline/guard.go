@@ -59,7 +59,7 @@ type GuardMeta struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
-// ManifestAccess Manifest 里的访问面标记（docs/03-pipeline.md §4.2 的 AccessGuard 属性）。
+// ManifestAccess Manifest 里的访问面标记（AGENTS.md §4.2 的 AccessGuard 属性）。
 //
 // 只放类型，**不放 bcrypt 哈希**：Manifest 是公开可读的清单（访问面能直接取到
 // manifest.json），把哈希写进去等于把「离线爆破的目标」随产物一起发布。

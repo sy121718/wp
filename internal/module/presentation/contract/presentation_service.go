@@ -8,7 +8,7 @@ import (
 	"go_wp/internal/module/presentation/dto"
 )
 
-// PresentationService 内容实体自动发布实例契约（docs/02-domain.md §3）。
+// PresentationService 内容实体自动发布实例契约（AGENTS.md §3）。
 // 与手工 Page 共享 Publish Compiler + ArtifactStore + PublicationStore，
 // 但管理路径由 CMS 实体驱动（创建/编辑/删除，不经 Visual Builder）。
 type PresentationService interface {

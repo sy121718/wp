@@ -8,7 +8,7 @@ import (
 	blueprintdto "go_wp/internal/module/blueprint/dto"
 )
 
-// BlueprintService Page 初始化工具 Blueprint 契约（docs/02-domain.md §1.2）。
+// BlueprintService Page 初始化工具 Blueprint 契约（AGENTS.md §1.2）。
 // Blueprint 是创建 Page Document 的版本化初始化输入，用完即弃：创建 Page 时
 // 经 InitPageDocument 复制完整 AST 并递归生成新 Node ID，得到不再依赖
 // Blueprint 的独立 Page Document；后续修改不传播、不参与构建期。

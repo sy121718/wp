@@ -2,7 +2,7 @@ package rlstest
 
 // rls_policy_coverage_test.go — 「除白名单外，所有带 project_id 的基表都必须装 RLS」的**可执行判据**（审计 DB-01）。
 //
-// 为什么需要它：这句话以前只写在文档与代码注释里，而且写错过 —— `docs/rules/database.md` 与
+// 为什么需要它：这句话以前只写在文档与代码注释里，而且写错过 —— `AGENTS.md 与
 // `build/model/build_model.go` 都说 `build_jobs` 是**唯一**的豁免表，实际有**两张**
 // （迁移 309 的 `product_outbox_events` 自己都写着「本表不装 RLS 策略（与 build_jobs 同一情形）」）。
 // 靠人记的断言一定会漂移，后果是评审按「唯一」只查一张表。

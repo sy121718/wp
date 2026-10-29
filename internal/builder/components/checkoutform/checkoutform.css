@@ -6,7 +6,7 @@
  *   @hover / @active   选择器前缀，指定进哪个桶（构建期决定要不要包 @media (hover: hover)）
  *   @media (max-width: Npx)          只认既有断点 1024 / 767，自造断点会构建期报错
  *
- * 多端适配（docs/rules/frontend.md 硬规则）：
+ * 多端适配（AGENTS.md 硬规则）：
  *   · 字段栅格用 auto-fit + minmax(min(100%, 220px), 1fr)：桌面两列、平板两列、
  *     手机自动一列，靠容器宽度而不是断点硬切（不会在窄屏溢出）；
  *   · 所有控件 width:100% + min-width:0，绝对值（圆角 / ring）都是固定小值；

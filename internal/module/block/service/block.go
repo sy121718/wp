@@ -295,16 +295,24 @@ func (s *Service) versionConflict(ctx context.Context, projectID, id string) err
 // "单段 key / key: 明细" 切，带竖线的那串整体过不了业务判据，会退成 500。
 type versionConflictError struct{ version int64 }
 
-func (e *versionConflictError) Error() string { return blockenums.ErrBlockVersionConflict }
+// Error 返回 `key: 明细` 的复合形态，明细就是当前版本号。
+//
+// 为什么用复合形态而不是 `key|param`：facing.FactOf 只认「单段 key / key: 明细」，
+// 带竖线的整串过不了业务判据（会退成 500 且文案是裸 key）。复合形态里
+// 前半段是 key（出口据此取词），后半段是**已经可读的明细**（拼在译文之后）。
+//
+// 这样控制器只需要一次 response.ErrorAuto —— 不必自己判分档、也不必再拼文案，
+// 而版本号仍然到了用户眼前（"该全局块已被其他人修改：当前第 7 版"）。
+func (e *versionConflictError) Error() string {
+	return blockenums.ErrBlockVersionConflict + ": current version " + strconv.FormatInt(e.version, 10)
+}
 
 // Is 按 key 匹配（与 facing.Error.Is 同形）：调用方用 errors.Is(err, ErrBlockVersionConflict)
 // 判类别，而不是断言具体类型 —— 断言类型会把「谁包装了谁」变成契约的一部分。
 func (e *versionConflictError) Is(target error) bool {
 	return target != nil && target.Error() == blockenums.ErrBlockVersionConflict
 }
-func (e *versionConflictError) Facing() (string, string) {
-	return blockenums.ErrBlockVersionConflict, blockenums.FallbackFor(blockenums.ErrBlockVersionConflict)
-}
+
 
 // Version 当前版本号（出口用它填 %s）。
 func (e *versionConflictError) Version() string { return strconv.FormatInt(e.version, 10) }

@@ -73,7 +73,7 @@ func (h *Handle) PreviewDraft(c *gin.Context) {
 }
 
 // renderPreview 只完成 AST 校验与编译，响应生命周期结束即丢弃结果。
-// 编译复用 page 模块 CompilePreview（与正式构建同源装配管线，docs/06 §10）：
+// 编译复用 page 模块 CompilePreview（与正式构建同源装配管线，AGENTS.md §10）：
 // 全局块引用展开、插件组件集注入、主题/集合解析均与构建一致，画布所见即产物。
 // editorBridge（画布联动 JS）为后处理拼接，与编译无关，仅预览启用。
 // projectID 为文档所属站点工程（页面/块的记录字段），驱动导航等站点级资源解析；
@@ -204,7 +204,7 @@ const (
 	EditTargetPage     = "page"
 	EditTargetBlock    = "block"
 	EditTargetTemplate = "template"
-	// EditTargetInstance 实例编辑模式（迁移 281，docs/04-C-instance-override.md）：
+	// EditTargetInstance 实例编辑模式（迁移 281，AGENTS.md）：
 	// 画布改的是该实例自己的覆盖文档，保存只影响本实例。
 	EditTargetInstance = "instance"
 )
@@ -284,7 +284,7 @@ var workbenchTargets = map[string]EditTarget{
 		// 模板保存即产生新版本（无独立发布动作），也没有自己的 URL。
 		Caps: TargetCapabilities{},
 	},
-	// 实例编辑模式（迁移 281，docs/04-C-instance-override.md）：保存只影响本实例
+	// 实例编辑模式（迁移 281，AGENTS.md）：保存只影响本实例
 	//（覆盖文档 + 重编译发布），不产生模板新版本，也没有自己的 URL。
 	EditTargetInstance: {
 		Type: EditTargetInstance,

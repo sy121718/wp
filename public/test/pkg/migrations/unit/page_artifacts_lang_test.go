@@ -2,7 +2,7 @@ package unit
 
 // page_artifacts_lang_test.go — 迁移 061（page_artifacts 加 lang 维度）验证。
 //
-// 对应多语言上线第一阻塞项（docs/06-D-site-i18n.md §15.5 第 1 条）：
+// 对应多语言上线第一阻塞项（AGENTS.md §15.5 第 1 条）：
 // UNIQUE(page_id, version) → UNIQUE(page_id, version, lang)，存量行回填站点默认语言。
 // 覆盖：存量行回填、旧唯一键移除、新唯一键生效（同页多语言并存）、重复执行幂等。
 

@@ -1,6 +1,6 @@
 // Package feature inventory 模块 feature 测试 —— 成本快照口径收口（2026-09-19 商品域评审）。
 //
-// 口径（docs/14-product-sku-and-cost-model.md §1.3 / §4.2 / §4.3 / §9.3）：
+// 口径（AGENTS.md §1.3 / §4.2 / §4.3 / §9.3）：
 //
 //	· 归属仓成本 = 该变体在**归属仓**（行上显式仓库，为空按既有解析规则取默认仓）
 //	  那一行 inventory_stocks 的当前成本；未核算（NULL）返回 nil —— 绝不用 0 冒充

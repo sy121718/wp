@@ -265,7 +265,7 @@ func registerProductPricingAPI(g *permission.RouteGroup, handle *ProductHandle) 
 // product_page.go 及其功能文件里。路由注册只出现在 *_router.go —— 门禁
 // scripts/check-route-registration-placement.sh 守这条。
 //
-// 页面 GET 的 Casbin 待补（见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3）。
+// 页面 GET 的 Casbin 待补（见 AGENTS.md §4.3）。
 
 // SetupProductPages 装配 product 域后台页面，返回页面处理器。
 // reader 是 products 的读模型面（同一个实现，类型不同）；两者都是构造页处理器的必需实参。
@@ -332,7 +332,7 @@ func SetupProductPages(pages *gin.RouterGroup,
 func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageHandle) {
 	// —— 商品列表 / 新建 / 详情 / 编辑 ——
 	pages.GET("/products", adminui.PageAuthz("/api/product/list"), adminui.PageSlot(ProductListPageTemplate), productPages.ProductsPage)
-	// 商品新建整页（docs/04-C §5，弃抽屉）：左表单右模板卡片。
+	// 商品新建整页（AGENTS.md §5，弃抽屉）：左表单右模板卡片。
 	pages.GET("/products/new", adminui.PageAuthzAs("/api/product/create", http.MethodPost), adminui.PageSlot(ProductNewPageTemplate), productPages.ProductNewPage)
 	// 商品详情页：变体与评分是某个商品的子资源，连同四个商品级表单一起从列表页拆出来。
 	// 页面 GET 同样走页面组（Session+CSRF，无 Casbin）；页内写动作复用各自既有权限点。
@@ -347,7 +347,7 @@ func registerProductListPages(pages *gin.RouterGroup, productPages *ProductPageH
 	// 明细表，所以这里不编造「上次失败」这类行。页内「重新发布」复用
 	// /api/product/detail-template/apply（已有权限点），本页只多一条 GET。
 	pages.GET("/products/publish-records", adminui.PageAuthz("/api/product/list"), adminui.PageSlot(ProductPublishRecordPageTemplate), productPages.ProductPublishRecordPage)
-	// 变体清单的组合预览（docs/14 §8 的「预览—保存」模型）：**只算不写** —— 纯计算，
+	// 变体清单的组合预览（AGENTS.md §8 的「预览—保存」模型）：**只算不写** —— 纯计算，
 	// 因此不挂 Casbin（与 /product-attributes/value-rows 同一先例：页面组已有 Session + CSRF，
 	// 而这个端点落不了任何库）。返回的行由前端追加进清单，用户点保存才落库。
 	// 变体的四个写动作（新建 / 生成 / 删除 / 清单保存）已全部在 /api/product/variant/* 。

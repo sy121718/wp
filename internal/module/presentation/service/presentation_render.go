@@ -140,7 +140,7 @@ func (s *Service) resolveBoundTemplate(ctx context.Context, inst *presentationmo
 	return s.resolveTemplate(ctx, inst.ProjectID, inst.EntityType, "")
 }
 
-// withInstanceDocument 实例级文档覆盖（迁移 281，docs/04-C-instance-override.md）：
+// withInstanceDocument 实例级文档覆盖（迁移 281，AGENTS.md）：
 // 实例带 override_document 时以它为编译底稿（binding 照常解析，实体数据照常刷新），
 // 否则原样返回模板 —— 既有行为零回归。
 //

@@ -366,7 +366,7 @@ func (h *ProductPageHandle) detailTemplateDeps() productservice.DetailTemplateDe
 // ProductDetailTemplatePage GET /admin/products/template：某商品的详情页模板选择与预览页。
 //
 // 取数失败**不在这里出口**：整页 GET 只有末尾那一次渲染（成功 / 失败同模板同页壳，
-// 差别只有状态码 / no-store / 失败槽）—— 契约见 docs/rules/template-boundary.md §整页 GET 的失败出口。
+// 差别只有状态码 / no-store / 失败槽）—— 契约见 AGENTS.md §整页 GET 的失败出口。
 //
 // 这一屏的两个出口判断留在控制器，因为它们都是**HTTP 出口**而不是取数结论：
 //

@@ -20,7 +20,7 @@ func manifestDir(lang string) string {
 	return builder.DirAttr(lang)
 }
 
-// 常量：manifest 版本号与支持来源类型（docs/03-pipeline.md §4.2）。
+// 常量：manifest 版本号与支持来源类型（AGENTS.md §4.2）。
 const (
 	// ManifestSchemaVersion manifest schema 版本。
 	ManifestSchemaVersion = 1
@@ -37,7 +37,7 @@ type Dependency struct {
 	Revision string `json:"revision"`
 }
 
-// Manifest Artifact 清单（docs/03-pipeline.md §4.2）。
+// Manifest Artifact 清单（AGENTS.md §4.2）。
 // 确定性守则（§3.4）：manifest 不写构建时间；files 由标准库按 key 排序；
 // dependencies 在编码前按 (kind,key) 显式排序。
 type Manifest struct {
@@ -49,7 +49,7 @@ type Manifest struct {
 	CanonicalPath             string `json:"canonicalPath"`
 	SourceHash                string `json:"sourceHash"`
 	BuildInputHash            string `json:"buildInputHash"`
-	// Lang 本次构建的目标语言（多语言 P2，docs/06-D §4.2 决策 D2：lang 进 Manifest）。
+	// Lang 本次构建的目标语言（多语言 P2，AGENTS.md §4.2 决策 D2：lang 进 Manifest）。
 	//
 	// 必须显式记录：不同语言产物内容不同，若不进 Manifest 可能两个语言 hash 相同
 	// 而内容不同，回滚校验与去重都会失效。omitempty 让未接入语言的来源
@@ -137,7 +137,7 @@ type ManifestTranslationMisses struct {
 	Misses     int64  `json:"misses"`
 }
 
-// 依赖类型常量（docs/03-pipeline.md §8.2 / docs/06-D §10.4）。
+// 依赖类型常量（AGENTS.md §8.2 / AGENTS.md §10.4）。
 const (
 	// DependencyKindI18N 界面文案词条依赖：sys_i18n 变更后需重建产物
 	// （组件固定文案由构建期取词注入 HTML 字节）。
@@ -162,7 +162,7 @@ const I18NContentDependencyKey = "i18n:content"
 // I18NContentDependency 构造内容译文依赖条目（revision 取自 sys_translation 的
 // max(update_time)，见 pkg/i18n.ContentRevision）。
 //
-// 为什么必须记（docs/06-D §9 关键约束）：缺译文时构建期**回退原文**，补齐译文后
+// 为什么必须记（AGENTS.md §9 关键约束）：缺译文时构建期**回退原文**，补齐译文后
 // 若依赖里没有这条记录，revision 未变 → 不触发重建 → 站点长期停留在回退内容。
 // 因此「本页用到了内容翻译」（存在可翻译候选字段）就必须登记本条依赖。
 func I18NContentDependency(revision string) Dependency {
@@ -174,7 +174,7 @@ func I18NContentDependency(revision string) Dependency {
 type Artifact struct {
 	// Hash 内容寻址哈希 = sha256(manifestJSON + "\n" + indexHTML)。
 	Hash string
-	// CanonicalPath 产物绑定的规范化访问路径（docs/03-pipeline.md §6.4 回滚校验）。
+	// CanonicalPath 产物绑定的规范化访问路径（AGENTS.md §6.4 回滚校验）。
 	CanonicalPath string
 	// Manifest 产物清单。
 	Manifest Manifest
@@ -182,7 +182,7 @@ type Artifact struct {
 	Entries map[string][]byte
 }
 
-// RedirectDirective 重定向指令（docs/03-pipeline.md §4.4）：极简 Artifact 内容。
+// RedirectDirective 重定向指令（AGENTS.md §4.4）：极简 Artifact 内容。
 type RedirectDirective struct {
 	TargetPath string `json:"targetPath"`
 	// StatusCode 301 永久（URL 修改默认）/ 302 临时。
@@ -225,7 +225,7 @@ func EncodeManifest(m *Manifest) ([]byte, error) {
 }
 
 // NewArtifact 组装不可变产物：入口 HTML + manifest → 内容寻址哈希。
-// docs/03-pipeline.md §4.1：Artifact 目录保存入口与 manifest，文件名不含可变别名。
+// AGENTS.md §4.1：Artifact 目录保存入口与 manifest，文件名不含可变别名。
 func NewArtifact(html []byte, m *Manifest) (*Artifact, error) {
 	return NewArtifactWithEntries(html, m, nil)
 }
@@ -298,7 +298,7 @@ func NewArtifactWithEntries(html []byte, m *Manifest, extra map[string][]byte) (
 	}, nil
 }
 
-// NewRedirectArtifact 构建重定向产物（docs/03-pipeline.md §4.4）。
+// NewRedirectArtifact 构建重定向产物（AGENTS.md §4.4）。
 // 目标路径必须已规范化；状态码仅允许 301/302。
 func NewRedirectArtifact(targetPath string, statusCode int) (*RedirectArtifact, error) {
 	p, err := NormalizeURL(targetPath)

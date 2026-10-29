@@ -211,7 +211,7 @@ func NewNavigationPageHandle(navigations navigationcontract.NavigationService,
 // 行上只放**事实**（标题 / 链接 / 层级 / 打开方式取值 / 同级首末），不放展示加工：
 // · 打开方式的文案由模板按 Target 取词 —— 与「添加菜单项」抽屉的 target 下拉同一批 key；
 // · 层级缩进由模板把 Depth 塞进 CSS 变量 `--tree-depth`、CSS 的 `.tree-cell` 算间距。
-// Go 侧既不产 px 也不产标签（判据见 docs/rules/template-boundary.md：语义归 Go、
+// Go 侧既不产 px 也不产标签（判据见 AGENTS.md：语义归 Go、
 // 取词与外观归模板/CSS）。
 type navMenuRow struct {
 	ID    string

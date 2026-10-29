@@ -62,7 +62,7 @@ type InstanceEntity struct {
 	InstanceRole string `gorm:"column:instance_role;not null;default:detail"`
 	URLPath      string `gorm:"column:url_path;not null"`
 	TemplateID   string `gorm:"column:template_id;not null"`
-	// OverrideDocument 实例级文档覆盖（迁移 281，docs/04-C-instance-override.md）。
+	// OverrideDocument 实例级文档覆盖（迁移 281，AGENTS.md）。
 	// NULL = 跟随模板（既有行为不变）；非空 = 发布/重建以此文档为准，
 	// binding 照常经 ContentResolver 解析，实体数据更新后重建不丢自定义。
 	// json.RawMessage gorm 无法推断列型，保留 type 标签属 model 不声明列型的例外清单。
@@ -458,7 +458,7 @@ func (m *Model) CreateSnapshot(ctx context.Context, e *SnapshotEntity) error {
 
 // NextArtifactVersion 取该实例下一个产物版本号（version 在实例内唯一）。
 
-// GetSnapshot 按 ID 读取快照（可编辑底稿来源，docs/04-C-instance-override.md）。
+// GetSnapshot 按 ID 读取快照（可编辑底稿来源，AGENTS.md）。
 // document_snapshots 无 project_id 列（属主是实例），不走工程作用域。
 func (m *Model) GetSnapshot(ctx context.Context, id string) (e *SnapshotEntity, err error) {
 	var row SnapshotEntity
@@ -648,7 +648,7 @@ func (m *Model) UpdateInstanceURLTx(tx *gorm.DB, projectID, id, urlPath string, 
 	}).Error
 }
 
-// UpdateInstanceOverrideTx 事务内写入实例级文档覆盖（迁移 281，docs/04-C-instance-override.md）。
+// UpdateInstanceOverrideTx 事务内写入实例级文档覆盖（迁移 281，AGENTS.md）。
 //
 // 与快照/产物/指针同一事务落库：产物已按覆盖文档编译、实例却还记着「跟随模板」，
 // 下次重建就会静默退回模板文档 —— 自定义凭空消失。document 必须非空；清空走

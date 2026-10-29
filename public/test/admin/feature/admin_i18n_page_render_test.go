@@ -4,7 +4,7 @@ package feature
 //
 // 背景：`internal/module/admin/inbound/http/admin_page.go` 的 I18nEntriesPage 在主数据
 // i18n.ListEntries 读失败时原先回 shell.PageError（JSON）。而这一页是**导航目标** ——
-// 点菜单、直输 URL、刷新都落到它，响应必须自带内容（见 docs/rules/response-shapes.md 第 1/3 格）。
+// 点菜单、直输 URL、刷新都落到它，响应必须自带内容（见 AGENTS.md 第 1/3 格）。
 // 本文件钉的就是「主数据失败 → 同一模板 + 500 + no-store + 受控文案，驱动原文只进日志」。
 //
 // 夹具走真实链路，不用 stub：

@@ -6,7 +6,7 @@
 
    分工：服务端只给事实（Status 值、EmailVerified 布尔、tab 的键 / 计数 / URL），
    「取哪一档、怎么拼出来」是本片段的事（展示判断在模板侧，见
-   docs/rules/template-boundary.md §语义 vs 外观）。档位只能取 ok / warn / danger / mute / info
+   AGENTS.md §语义 vs 外观）。档位只能取 ok / warn / danger / mute / info
    —— ui.css 的 `.badge-<tone>` 别名只定义了这些；自造档不会报错、只会静默失色，
    由 scripts/check-template-presentation.sh 判据 4 与
    internal/templates/css_class_audit_test.go 的 TestDynamicClassToneValuesInVocabulary 守住。

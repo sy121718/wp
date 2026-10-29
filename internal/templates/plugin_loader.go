@@ -1,4 +1,4 @@
-// Package templates — 插件模板的复合加载器（docs/06-plugin-system.md §7）。
+// Package templates — 插件模板的复合加载器（AGENTS.md §7）。
 //
 // 命名空间合并（终态设计，强于 overlay 回退）：内置模板与插件模板路径空间
 // 不相交——内置为 "{name}.jet"，插件为 "plugin/{pluginID}/{file}.jet"——

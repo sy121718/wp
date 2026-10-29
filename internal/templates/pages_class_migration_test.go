@@ -4,7 +4,7 @@ package templates
 //
 // 邮件六个页面与 locale 行片段原先靠 theme.css 的一组容器类上样式：
 // .pages-wrap / .pages-card / .pages-table / .pages-badge(-ok/-warn) / .pages-form / .pages-empty。
-// 这套类属于「桥接」——只为存量，不再扩大使用面（见 docs/02-F-ui-kit.md §10.4）。
+// 这套类属于「桥接」——只为存量，不再扩大使用面（见 AGENTS.md §10.4）。
 // 视觉的唯一来源是 ui.css 的公共类，迁移后的映射：
 //
 //	pages-wrap            → stack

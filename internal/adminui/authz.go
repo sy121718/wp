@@ -12,7 +12,7 @@ package adminui
 //
 // 为什么不是留在壳层：`internal/shell` 正在按计划整体删除，页面鉴权的路由侧写法与
 // 「拒绝长什么样」同属后台外壳知识，终局归属就是本包（迁移计划表见
-// internal/shell/shell_migration_test.go；docs/rules/response-shapes.md 的「计数口径与时点」）。
+// internal/shell/shell_migration_test.go；AGENTS.md 的「计数口径与时点」）。
 //
 // 分档（与迁移前逐字一致，实现在 reject.go）：
 //   · 未登录 → 302 到 /admin/login，与既有页面语义一致（API 侧返回 401 JSON）；

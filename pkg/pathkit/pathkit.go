@@ -6,7 +6,7 @@
 //   - NormalizeRoutePath：**写入路由表之前**的严格校验口径。站点路径是页面的身份
 //     —— 路由占用判断、canonical、产物目录名都由它派生 —— 畸形输入必须在入口拒绝，
 //     而不是被静默纠正：纠正会让「用户以为的路径」与「数据库里的路径」分裂，线上表现
-//     为重复内容、链接 404、占用判断失真（docs/03-pipeline.md §5.1）。
+//     为重复内容、链接 404、占用判断失真（AGENTS.md §5.1）。
 //   - MatchKey：**可信路径之间做比较**的匹配口径（去尾部斜杠）。它不做合法性判断、
 //     不返回错误：输入都是可信来源（当前请求路径、已落库的菜单路径），这里只需要把
 //     「/admin/pages/ 与 /admin/pages 是同一页」这件事表达出来。
@@ -25,7 +25,7 @@ import (
 
 // MaxRoutePathLen 站点路径长度上限。
 //
-// 超长路径会导致 FS 激活 ENAMETOOLONG 与 DB 行膨胀（docs/03-pipeline.md §5.1）。
+// 超长路径会导致 FS 激活 ENAMETOOLONG 与 DB 行膨胀（AGENTS.md §5.1）。
 const MaxRoutePathLen = 500
 
 // NormalizeRoutePath 严格规范化站点访问路径。

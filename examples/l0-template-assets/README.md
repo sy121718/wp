@@ -35,4 +35,4 @@ zip -r /tmp/notecards-1.0.0.zip manifest.json components assets
 3. 预设里的 `props` 键必须是该组件 manifest 声明过的键，否则页面编译时
    按「未声明的键」拒绝（白名单），错误信息会点名组件类型与键名。
 
-能力边界（能做什么 / 不能做什么）见 `docs/06-E-plugin-authoring.md`。
+能力边界（能做什么 / 不能做什么）见 `AGENTS.md`。

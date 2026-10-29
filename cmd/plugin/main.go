@@ -1,6 +1,6 @@
 // Package main 插件脚手架 CLI：`go run ./cmd/plugin init <name>`。
 //
-// 生成标准插件模板工程（docs/06-plugin-system.md §5），与后台插件体系
+// 生成标准插件模板工程（AGENTS.md §5），与后台插件体系
 // 端到端配套：模板改内容 → zip 打包 → 上传安装 → 组件进工作台组件库。
 package main
 
@@ -49,7 +49,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Println("脚手架（docs/06-plugin-system.md）")
+	fmt.Println("脚手架（AGENTS.md）")
 	fmt.Println("  go run ./cmd/plugin init <name>     生成插件模板工程（zip 上传安装）")
 	fmt.Println("  go run ./cmd/plugin module <name>   生成新业务模块目录骨架（internal/module 分层）")
 }

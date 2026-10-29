@@ -4,7 +4,7 @@ import "sync"
 
 // register_order_new_i18n.go — 代客建单整页的词条（433）。
 //
-// 见 433_i18n_order_new.sql 的头部：order_new.html 是新增的整页表单（docs/02-W-admin-order-create.md），
+// 见 433_i18n_order_new.sql 的头部：order_new.html 是新增的整页表单（AGENTS.md），
 // 页面与词条 seed 没有同批落地 —— 76 个 key 一条都不在 sys_i18n 里，英文界面下整页回落
 // 模板里的中文兜底（页头说明、字段标签、候选 SKU 检索区、金额提示、开号提示）。
 //

@@ -22,7 +22,7 @@ type (
 )
 
 // PluginService 插件管理契约：安装/列表/启停/卸载 + 编译装配查询。
-// 英文入口：docs/plugin-development.en.md。
+// 英文入口：AGENTS.md。
 //
 // 编译装配（EnabledAssembly）供 dashboard 预览与 page 构建路径注入：
 // 返回启用插件的模板文件系统 + 组件规格 + 检查器 schema 的合并素材。
@@ -54,7 +54,7 @@ type PluginService interface {
 }
 
 // Assembly 编译装配素材（按启用插件集构建，确定性：同插件版本集恒定）。
-// 英文入口：docs/plugin-development.en.md。
+// 英文入口：AGENTS.md。
 type Assembly struct {
 	// Fingerprint 启用插件集指纹（由 plugin service 计算，审计 PERF-006）。
 	//
@@ -80,7 +80,7 @@ type Assembly struct {
 	// Presets 区块预设摘要（palette「区块预设」分组注入，document 为预组合 AST 片段）。
 	Presets []plugindto.PresetSummary
 	// ExtraCSS 插件静态样式（assets/*.css，按启用插件字典序拼接；
-	// 构建期经 WithExtraCSS 注入产物主 CSS 之后，docs/06 §5.1 资产规范）。
+	// 构建期经 WithExtraCSS 注入产物主 CSS 之后，AGENTS.md §5.1 资产规范）。
 	ExtraCSS []string
 }
 
@@ -94,7 +94,7 @@ func (m pluginSpecResolver) LookupPluginComponent(typeName string) (*source.Plug
 }
 
 // AssemblyResolver 构建 source.PluginResolver（nil 安全：无插件时返回空 resolver）。
-// 英文入口：docs/plugin-development.en.md。
+// 英文入口：AGENTS.md。
 //
 // 返回值可直接喂 builder.WithPluginResolver：core.PluginResolver 是
 // source.PluginResolver 的别名（共享形状在 source，见 AGENTS.md 不变量 7），

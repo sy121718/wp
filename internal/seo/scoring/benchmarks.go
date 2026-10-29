@@ -1,6 +1,6 @@
 package scoring
 
-// benchmarks.go — SEO 评分基准表（docs/02-E1-seo-scoring-rules.md §2 的数据化）。
+// benchmarks.go — SEO 评分基准表（AGENTS.md §2 的数据化）。
 //
 // 规则即数据：调整阈值只改本文件，不改检查逻辑。
 

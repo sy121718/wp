@@ -1,6 +1,6 @@
 // Package feature inventory 模块 feature 测试 —— 仓库侧成本与库存身份收口（批次 A）。
 //
-// 口径（docs/14-product-sku-and-cost-model.md §4，用户 2026-09-19 逐条确认）：
+// 口径（AGENTS.md §4，用户 2026-09-19 逐条确认）：
 //
 //	· 成本写到**仓库侧**：只记一个当前成本价、不做成本流水，(仓库, SKU) 与库存同维度；
 //	· cost_price 可空：NULL = 尚未核算 —— 绝不用 0 冒充「未知成本」

@@ -1,6 +1,6 @@
-{* admin/order/order_new.html — 后台代客建单（GET /admin/orders/new + POST /admin/orders/create，docs/02-W-admin-order-create.md）
+{* admin/order/order_new.html — 后台代客建单（GET /admin/orders/new + POST /admin/orders/create，AGENTS.md）
 
-   四条与本页相关的约定（改这个模板前先读 docs/02-W §2 / §4 / §6）：
+   四条与本页相关的约定（改这个模板前先读 AGENTS.md §2 / §4 / §6）：
      · 金额一律**整数分**：运费的输入框占位符里写明单位，分 → 元的换算只在订单列表页发生；
      · 开号**默认不开**：复选框不勾选 = 明确不开号（提交 false），勾了才开号并发初始密码；
        「同账单地址」勾上则账单地址整块不渲染，由服务端复制收货地址（不让两份地址各填一遍）；

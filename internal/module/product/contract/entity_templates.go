@@ -25,7 +25,7 @@ type EntityTemplateOptionResp = productdto.EntityTemplateOptionResp
 // EntityTemplatePort 某实体类型的模板清单与当前模板的只读端口（由内容模板模块实现）。
 //
 // 两个方法的失败语义在调用方：清单读不到 = 「这一页的模板卡片区暂时没有候选」，
-// 不构成整页失败（右侧卡片是**可选辅助**，见 docs/rules/template-boundary.md
+// 不构成整页失败（右侧卡片是**可选辅助**，见 AGENTS.md
 // §整页 GET 的失败出口）；因此实现方按普通 error 返回即可，调用方决定降级还是失败。
 type EntityTemplatePort interface {
 	// 两个方法的 projectID 都紧随 ctx（与 contenttemplate 的

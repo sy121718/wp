@@ -49,7 +49,7 @@ func IsStructureTemplateType(entityType string) bool {
 	}
 }
 
-// ContentTemplateService 内容结构模板管理契约（docs/02-domain.md §2）。
+// ContentTemplateService 内容结构模板管理契约（AGENTS.md §2）。
 // 与 Page Blueprint 的关键区别：模板参与每次构建（presentation 派生
 // DocumentSnapshot 时经 ResolveTemplate 取当前版本 AST）。
 type ContentTemplateService interface {

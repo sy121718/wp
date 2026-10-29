@@ -1,7 +1,7 @@
 package feature
 
-// trade_empty_state_honesty_test.go — 交易域后台页的**空态诚实性**回归（docs/02-O-trade-site-audit.md）
-// 与后台代客建单页（docs/02-W-admin-order-create.md）的渲染 / 回填判据。
+// trade_empty_state_honesty_test.go — 交易域后台页的**空态诚实性**回归（AGENTS.md）
+// 与后台代客建单页（AGENTS.md）的渲染 / 回填判据。
 //
 // 判据（都是「错了会静默」的那类）：
 //
@@ -242,7 +242,7 @@ func TestOrdersEmptyStateActionsFollowFilter(t *testing.T) {
 
 // TestOrdersEmptyCopyMatchesRoutes 空态文案与路由表一致，且**入口必须真的存在**（02-O orders T1，P0）。
 //
-// 判据 ① 已按 docs/02-W §6 反转：路由表里存在建单入口（GET /admin/orders/new）时，
+// 判据 ① 已按 AGENTS.md §6 反转：路由表里存在建单入口（GET /admin/orders/new）时，
 // 页面必须真的给出指向它的入口 —— 原判据只防「文案吹牛」（路由表里没有建单端点），
 // 现在入口是真的，判据升级成「**承诺了什么就必须给出什么**」，反面更强。
 func TestOrdersEmptyCopyMatchesRoutes(t *testing.T) {
@@ -529,7 +529,7 @@ func TestOrdersMissingDetailSaysNotFound(t *testing.T) {
 	}
 }
 
-// ——— 后台代客建单页（docs/02-W-admin-order-create.md）———
+// ——— 后台代客建单页（AGENTS.md）———
 
 // orderCreatePageEnv 建单页的最小真实环境：真 service + 真商品目录 + 真模板 + 隔离库。
 type orderCreatePageEnv struct {
@@ -616,7 +616,7 @@ func adminOrderCreateForm(project, variantID, email, requestID string) url.Value
 	}
 }
 
-// TestAdminOrderCreatePageEchoesOnFailure 长表单失败后**就地重渲 200 + 回填**（docs/02-W §6）。
+// TestAdminOrderCreatePageEchoesOnFailure 长表单失败后**就地重渲 200 + 回填**（AGENTS.md §6）。
 //
 // 判据是「用户刚打的字还在不在」：字段 20+ 的表单一旦走 303 + ?err=，303 之后是一次 GET，
 // 请求里没有 PostForm，几十个字段必然全丢（admin-ui-logic §9 第 7 条）。
@@ -711,7 +711,7 @@ func TestAdminOrderCreatePageEchoesOnFailure(t *testing.T) {
 	}
 }
 
-// TestAdminOrderCreateDefaultsToNoGuestAccount 后台代客建单**默认不开号**（docs/02-W §4）。
+// TestAdminOrderCreateDefaultsToNoGuestAccount 后台代客建单**默认不开号**（AGENTS.md §4）。
 //
 // 这是本项最关键的语义：默认档必须让 user_id 留空、且**一封信都不发**；
 // 只有显式勾选 opt-in 才开号 + 发初始密码。两个方向都要钉 —— 只测「勾了会开号」

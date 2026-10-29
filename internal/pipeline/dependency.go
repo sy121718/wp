@@ -1,6 +1,6 @@
 package pipeline
 
-// dependency.go — 依赖 fan-out 内核（docs/03-pipeline.md §8.1/§8.2，PIPE-3）。
+// dependency.go — 依赖 fan-out 内核（AGENTS.md §8.1/§8.2，PIPE-3）。
 //
 // 职责边界：
 //   - 本文件只做「依赖源键 → 受影响来源 ID」的分发与编排，不认识任何业务模块；
@@ -20,7 +20,7 @@ import (
 )
 
 // 依赖类型常量（与 page_dependencies / presentation_dependencies 的 CHECK 约束一致，
-// 见迁移 071 与 docs/03-pipeline.md §8.2）。
+// 见迁移 071 与 AGENTS.md §8.2）。
 const (
 	// DepKindDirectContent 单个 CMS 实体字段变化（product:{id}）。
 	DepKindDirectContent = "direct_content"
@@ -64,7 +64,7 @@ const (
 	DepKindRuntime = "runtime"
 )
 
-// DepKey 依赖源标识（kind + key）。key 的构造规则见 docs/03-pipeline.md §8.1 表。
+// DepKey 依赖源标识（kind + key）。key 的构造规则见 AGENTS.md §8.1 表。
 type DepKey struct {
 	Kind string
 	Key  string
@@ -78,7 +78,7 @@ func DirectContentKey(entityType, entityID string) DepKey {
 // ContentCollectionKey 内容集合依赖键，如 collection:content:product。
 //
 // 语义：该类型实体的**成员集合**变化（新增/删除/排序）会让所有渲染该集合的
-// 产物失效——即使旧产物里还没有新实体（docs/03-pipeline.md §8.2 典型 fan-out）。
+// 产物失效——即使旧产物里还没有新实体（AGENTS.md §8.2 典型 fan-out）。
 func ContentCollectionKey(entityType string) DepKey {
 	return DepKey{Kind: DepKindContentCollection, Key: "collection:content:" + entityType}
 }
@@ -162,7 +162,7 @@ type targetEntry struct {
 
 // StaleRebuilder 自动重建端口：把被标记的来源按各自策略重建。
 //
-// 是否自动发布由实现决定（docs/03-pipeline.md §8.3：自动重建默认只产生
+// 是否自动发布由实现决定（AGENTS.md §8.3：自动重建默认只产生
 // staged Artifact；是否 publish 由内容类型的显式发布策略决定）。
 type StaleRebuilder interface {
 	RebuildStale(ctx context.Context, ids []string) error
@@ -269,7 +269,7 @@ func (f *Fanout) InvalidateKeys(ctx context.Context, keys ...DepKey) map[string]
 	seen := map[string]map[string]bool{}
 	for _, key := range keys {
 		if key.Kind == "" || key.Key == "" || key.Kind == DepKindRuntime {
-			continue // runtime 依赖不触发重建（docs/03-pipeline.md §8.2）
+			continue // runtime 依赖不触发重建（AGENTS.md §8.2）
 		}
 		for _, entry := range targets {
 			ids, err := entry.target.MarkStaleByDependency(ctx, key.Kind, key.Key)

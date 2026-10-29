@@ -39,7 +39,7 @@ var siteRootFileNames = map[string]struct{}{
 
 // IsSiteRootFile 判断激活目录内的相对路径是否为白名单内的站点级真实文件。
 //
-// 只认**根层**：白名单说的是「激活目录根的文件」，深层同名条目（如 /docs/404.html）
+// 只认**根层**：白名单说的是「激活目录根的文件」，深层同名条目（如 /AGENTS.md）
 // 是页面产物或异常占位，不属于站点级文件。
 func IsSiteRootFile(rel string) bool {
 	rel = filepath.ToSlash(strings.TrimSpace(rel))

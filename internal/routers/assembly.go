@@ -287,7 +287,7 @@ func (a *assembly) buildFoundation(ready func() error) {
 	// 行为等价，但对普通文件仍以 *os.File 透出，静态大文件才能走内核零拷贝。
 	// StaticGzipMiddleware：文本类资源（js/css/svg）gzip 传输压缩。
 	// StaticCacheMiddleware：静态资源统一协商缓存（no-cache + Last-Modified），
-	// 避免 ES modules 子模块因启发式缓存执行旧代码（docs/09 §3 拆分后修复）。
+	// 避免 ES modules 子模块因启发式缓存执行旧代码（AGENTS.md §3 拆分后修复）。
 	// 静态资源来源按模式分流（审计 OSS-018）：开发模式读磁盘（改 CSS/JS 立即生效），
 	// 生产模式走 embed —— 二进制自带静态资产，不再要求部署时附带源码树。
 	staticFS := builtin.NoDirListFS("internal/templates/static")
@@ -410,7 +410,7 @@ func (a *assembly) buildFoundation(ready func() error) {
 	// seed 直写 sys_casbin_rule 后重载 Casbin 内存策略与 urlCodeMap，保证启动时策略即生效。
 	//
 	// database.run_migrations=false 时跳过 seed（切到非超级业务角色后，seed 里的写入会被
-	// 策略 / 权限挡住，且本来就应该由管理连接的 -migrate-only 完成，见 docs/rls-role-cutover.md）。
+	// 策略 / 权限挡住，且本来就应该由管理连接的 -migrate-only 完成，见 AGENTS.md）。
 	// **注意范围**：这里跳过的只有 seed。装配末尾的 permission.SyncToDB 是权限点幂等 upsert，
 	// 不属于 seed，每次启动照跑。
 	if !config.RunMigrationsEnabled() {

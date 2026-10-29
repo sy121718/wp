@@ -179,7 +179,6 @@ var pendingControllerMethods = map[string]bool{
 	"internal/module/ai/inbound/http/ai_page.go:SessionsPage":                                   true,
 	"internal/module/ai/inbound/http/ai_router.go:SetupAIRoutes":                                true,
 	"internal/module/analytics/inbound/http/analytics_page.go:AnalyticsPage":                    true,
-	"internal/module/block/inbound/http/block_page.go:SaveBlockContent":                         true,
 	"internal/module/comment/inbound/http/comment_page.go:CommentsPage":                         true,
 	"internal/module/content/inbound/http/content_handle.go:ArticleLinkSuggestions":             true,
 	"internal/module/content/inbound/http/content_page.go:SaveArticleTranslations":              true,

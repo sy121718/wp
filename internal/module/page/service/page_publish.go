@@ -126,7 +126,7 @@ import (
 	"go_wp/pkg/utils"
 )
 
-// 发布链路（docs/03-pipeline.md §6 / 0-A1 §2）：
+// 发布链路（AGENTS.md §6 / 0-A1 §2）：
 //
 //	Build   草稿确定性编译 → 不可变产物落盘 → 元数据入库 → 暂存指针回写；
 //	Publish 校验暂存 → 原子激活符号链接 → active 指针与路由 active 化；
@@ -187,7 +187,7 @@ func (s *Service) Build(ctx context.Context, req *pagedto.BuildReq) (res *pagedt
 		return nil, err
 	}
 	now := time.Now().UTC()
-	// 依赖记录（docs/03-pipeline.md §8.2：本次产物声明的依赖集合，供依赖源变更时按
+	// 依赖记录（AGENTS.md §8.2：本次产物声明的依赖集合，供依赖源变更时按
 	// (kind,key) 反查受影响页面）与暂存指针**同事务**。
 	//
 	// 此前依赖写失败只记日志，于是那一页不再被精确标 stale：内容改了、页面不重建，

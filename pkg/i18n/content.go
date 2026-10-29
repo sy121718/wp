@@ -1,6 +1,6 @@
 package i18n
 
-// content.go — 内容翻译基础设施（多语言 P5a，docs/06-D-site-i18n.md §7）。
+// content.go — 内容翻译基础设施（多语言 P5a，AGENTS.md §7）。
 //
 // 与 sys_i18n 的分工（决策 F17）：
 //   - sys_i18n（本包既有能力）= 开发者 key，跟代码发布走，寻址 item_key + lang；
@@ -31,7 +31,7 @@ import (
 	"sync/atomic"
 )
 
-// contentSkipValue 跳过规则正则（docs/06-D §7.6）：整体只由数字、标点、符号、空白组成。
+// contentSkipValue 跳过规则正则（AGENTS.md §7.6）：整体只由数字、标点、符号、空白组成。
 //
 //	纯数字   2024 / 42 / 3.14 / -5 / 1,024 → 跳过
 //	纯符号   → / -- / · / | / …            → 跳过
@@ -71,7 +71,7 @@ func ContentContext(typ, field string) string {
 	return typ + "." + field
 }
 
-// contentIndexSep 索引键分隔符（NUL）：docs/06-D §7.7 的 source_hash + "\x00" + context。
+// contentIndexSep 索引键分隔符（NUL）：AGENTS.md §7.7 的 source_hash + "\x00" + context。
 // hash 是十六进制、context 是「类型.字段名」，都不会含 NUL，故该键无歧义。
 const contentIndexSep = "\x00"
 

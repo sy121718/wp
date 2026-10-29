@@ -189,7 +189,7 @@ type SEO struct {
 	RobotsFollow string `json:"robotsFollow,omitempty"`
 }
 
-// 页面访问权限类型（PIPE-6 AccessGuard，规格 docs/0-A2-page-routing-meta.md §2.2）。
+// 页面访问权限类型（PIPE-6 AccessGuard，规格 AGENTS.md §2.2）。
 //
 // 三个取值是**同一维度的三态**，不是三个开关：公开不生成守卫产物，
 // 密码与登录各生成一份守卫页 + 元数据，放行判据不同。

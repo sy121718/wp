@@ -5,7 +5,7 @@ package feature
 // 建表单模板（internal/templates/admin/product/product_create_form.html）现在只有一个调用点：
 // 新建整页 `/admin/products/new`。列表页那份抽屉（`<template id="tpl-product-create">`）
 // 没有任何 `data-drawer-open` 指向它，已随「写失败不丢输入」批 1 删除
-// （见 docs/02-T-write-fail-echo-batch1.md §5 P1-2）。
+// （见 AGENTS.md §5 P1-2）。
 //
 // 本用例两个方向：
 //   · 整页必须渲染片段里**全部**协议钩子 —— 少一个不会编译失败，只会让某个能力在某条入口上

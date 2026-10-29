@@ -1,4 +1,4 @@
-// Package core — 集合内容解析契约（docs/06-plugin-system.md §9，不变量 4）。
+// Package core — 集合内容解析契约（AGENTS.md §9，不变量 4）。
 //
 // CollectionResolver 与 ContentResolver（单字段）互补：前者解析「集合」
 // （列表数据，如 product 列表 / 插件 campaigns 集合），后者解析「单字段」

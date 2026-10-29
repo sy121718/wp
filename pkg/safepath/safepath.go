@@ -4,7 +4,7 @@
 // 写操作后的回跳地址（shell.BackPath）、整页提示页的自动跳转目标（shell.RenderJump）、
 // 以及 returnUrl 这类回跳参数（消费侧 LocalReturnPath）。它们的共同点是：这个字符串最终
 // 会进 Location 头、href 或 meta refresh —— 一旦能放进外站地址，一个带凭据的后台入口
-// 就成了开放重定向的跳板（docs/08-dev-login.md 记的正是这个面）。
+// 就成了开放重定向的跳板（AGENTS.md 记的正是这个面）。
 //
 // 判据四条，逐条对应一个真实攻击面：
 //

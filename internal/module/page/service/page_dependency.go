@@ -323,7 +323,7 @@ func (s *Service) persistDependenciesFromManifest(ctx context.Context, projectID
 
 // pageDependencyKeys 由页面记录与文档推导本次构建的依赖源集合。
 //
-// 组成（docs/03-pipeline.md §8.2 典型 fan-out 的可精确表达部分）：
+// 组成（AGENTS.md §8.2 典型 fan-out 的可精确表达部分）：
 //  1. block:{id}        —— core.globalref 引用块 + settings.structure 页眉/页脚绑定块；
 //  2. direct_content    —— 页面绑定的内容实体（pages.content_target_type/id）；
 //  3. content_collection—— 文档中「声明了集合绑定」的插件组件所使用的集合源。

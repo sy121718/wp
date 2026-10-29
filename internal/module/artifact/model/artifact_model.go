@@ -148,7 +148,7 @@ func (m *Model) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) err
 // GetByHash 按 (pageID, hash) 查询产物记录。
 //
 // 不带 lang 维度：产物 hash 覆盖 Manifest（含 lang），同 hash 必同语言
-// （docs/06-D-site-i18n.md §15.4），因此 (page_id, hash) 已足以定位唯一一行。
+// （AGENTS.md §15.4），因此 (page_id, hash) 已足以定位唯一一行。
 // 回滚等只持有 hash 的调用方因此无需知道语言。
 func (m *Model) GetByHash(ctx context.Context, pageID, hash string) (e *PageArtifactEntity, err error) {
 	e = &PageArtifactEntity{}

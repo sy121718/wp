@@ -1,4 +1,4 @@
-// Package pipeline 实现 go_wp 发布管道内核（对应规范 docs/03-pipeline.md 与 0-A1）。
+// Package pipeline 实现 go_wp 发布管道内核（对应规范 AGENTS.md 与 0-A1）。
 //
 // 覆盖控制面发布链路：Draft 草稿冻结 → 确定性编译 → 不可变 Artifact（内容寻址）
 // → 符号链接式原子激活 → 状态机（Draft/Building/Ready/Failed/Published/Superseded）
@@ -7,7 +7,7 @@
 // 设计边界：
 //   - 本包不依赖数据库：持久化由 Phase 0-A1 的 page/build/artifact/publication
 //     模块以 GORM 落地，本内核保持纯 Go + 文件系统；
-//   - 删除/取消发布/GC 与构建队列（docs/03-pipeline.md §7/§8）属后续阶段。
+//   - 删除/取消发布/GC 与构建队列（AGENTS.md §7/§8）属后续阶段。
 package pipeline
 
 import (
@@ -19,7 +19,7 @@ import (
 	"go_wp/pkg/pathkit"
 )
 
-// 系统保留路径前缀（docs/03-pipeline.md §5.1）：Page 不可占用。
+// 系统保留路径前缀（AGENTS.md §5.1）：Page 不可占用。
 var reservedPrefixes = []string{
 	"/admin",
 	"/api",
@@ -28,7 +28,7 @@ var reservedPrefixes = []string{
 	"/objects",
 }
 
-// NormalizeURL 规范化页面访问路径（docs/03-pipeline.md §5.1）。
+// NormalizeURL 规范化页面访问路径（AGENTS.md §5.1）。
 //
 // **归一化规则本身不在这里**：唯一实现在 pkg/pathkit.NormalizeRoutePath
 // （审计 CQ-012 —— 此前 pipeline / publication / dashboard / nav 各有一份，

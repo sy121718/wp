@@ -23,9 +23,14 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	blockcontract "go_wp/internal/module/block/contract"
 	blockdto "go_wp/internal/module/block/dto"
+	blockenums "go_wp/internal/module/block/enums"
+	blockhttp "go_wp/internal/module/block/inbound/http"
 	"go_wp/pkg/facing"
+	"go_wp/pkg/i18n"
+	"net/http/httptest"
 )
 
 // newVersionBlock 建一个全局块并返回它（version 应为 1）。
@@ -207,4 +212,115 @@ func docWithMarker(marker string) string {
 // containsVersion 判断文本里是否出现某个版本号（用于「带当前版本号」这类断言）。
 func containsVersion(s string, v int64) bool {
 	return strings.Contains(s, strconv.FormatInt(v, 10))
+}
+
+// TestVersionConflictMapsTo409AndCarriesVersion 版本冲突的**对外形态**（状态码 + 文案 + 明细）。
+//
+// 这条是 pkg/response 的门禁要求的：用了 response.ErrorAuto 的模块必须在
+// public/test 里有状态码断言，否则"业务错误被判成内部错误"时不会有测试变红。
+//
+// 三件事一起断，缺一条都会让上面的缺陷静默回来：
+//  1. 409 而不是 500（它是可重试的用户动作，不是基础设施故障）；
+//  2. 文案带当前版本号（唯一可行动的信息：用户据此知道"别人改到第几版了"）；
+//  3. 不透出裸 key（未取词时 translate 会原样返回 `key: 明细`，那对用户不可读）。
+func TestVersionConflictMapsTo409AndCarriesVersion(t *testing.T) {
+	env := newRefEnv(t)
+	if env == nil {
+		return
+	}
+	ctx := context.Background()
+
+	// 注入这条 key 的词条（测试进程的 i18n 缓存默认是空的）。
+	i18n.InjectForTest(map[string]map[string]string{
+		blockenums.ErrBlockVersionConflict: {"zh-CN": "该全局块已被其他人修改，请刷新后重试"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
+	block := newVersionBlock(t, env, "版本冲突对外形态块")
+	if _, err := env.blocks.Update(ctx, &blockdto.UpdateReq{
+		ID: block.ID, Document: []byte(docWithMarker("v2")),
+		ExpectedVersion: uint64(block.Version),
+	}); err != nil {
+		t.Fatalf("第一次保存应成功: %v", err)
+	}
+
+	// 用过期的版本再存：拿到的错误必须声明 409。
+	_, err := env.blocks.Update(ctx, &blockdto.UpdateReq{
+		ID: block.ID, Document: []byte(docWithMarker("stale")),
+		ExpectedVersion: uint64(block.Version), // 已过期
+	})
+	if err == nil {
+		t.Fatal("过期版本保存必须失败")
+	}
+	status, ok := facing.StatusOf(err)
+	if !ok || status != http.StatusConflict {
+		t.Fatalf("版本冲突应声明 409（业务错误），实际 %d（ok=%v）—— "+
+			"退成 500 会让用户以为出了 bug，不会想到刷新重试", status, ok)
+	}
+	// 业务判据必须命中（否则出口按内部错误处理，文案变成「系统内部错误」）。
+	fact, bok := facing.FactOf(err)
+	if !bok || !fact.Business {
+		t.Fatalf("版本冲突应命中业务判据，实际 ok=%v business=%v（err=%v）", bok, fact.Business, err)
+	}
+	if fact.Key != blockenums.ErrBlockVersionConflict {
+		t.Errorf("key 应为 %s，实际 %q", blockenums.ErrBlockVersionConflict, fact.Key)
+	}
+	// 明细里带当前版本号（service 拼在 `key: ` 之后）。
+	if !containsVersion(fact.Tail, 2) {
+		t.Errorf("明细应带当前版本 2，实际 %q", fact.Tail)
+	}
+}
+
+// TestSaveContentVersionConflictReturns409 走真实控制器的状态码断言。
+//
+// 前一条断的是 service 层的错误声明（facing.StatusOf），这一条断的是**HTTP 出口**：
+// handler 用 response.ErrorAuto 把业务错误映射成真实状态码。两者缺一，
+// "业务错误被判成内部错误"都不会有测试变红 ——
+// 而那正是 pkg/response 门禁要求的断言面（它认 HTTP 状态码字面量）。
+func TestSaveContentVersionConflictReturns409(t *testing.T) {
+	env := newRefEnv(t)
+	if env == nil {
+		return
+	}
+	ctx := context.Background()
+
+	i18n.InjectForTest(map[string]map[string]string{
+		blockenums.ErrBlockVersionConflict: {"zh-CN": "该全局块已被其他人修改，请刷新后重试"},
+	}, nil)
+	t.Cleanup(func() { i18n.InjectForTest(nil, nil) })
+
+	block := newVersionBlock(t, env, "HTTP 409 断言块")
+	// 先正常保存一次（version 1 → 2），让后续用旧版本必然冲突。
+	if _, err := env.blocks.Update(ctx, &blockdto.UpdateReq{
+		ID: block.ID, Document: []byte(docWithMarker("v2")),
+		ExpectedVersion: uint64(block.Version),
+	}); err != nil {
+		t.Fatalf("第一次保存应成功: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	// 只需要 blocks 契约；页面与工程契约走 nil（SaveBlockContent 不碰它们）。
+	engine.POST("/admin/blocks/save-content",
+		blockhttp.NewBlockPageHandle(env.blocks, nil).SaveBlockContent)
+
+	body := `{"id":"` + block.ID + `","document":` + docWithMarker("stale") + `,"expectedVersion":1}`
+	req := httptest.NewRequest(http.MethodPost, "/admin/blocks/save-content", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("版本冲突的 HTTP 状态码应为 409，实际 %d（体=%s）—— "+
+			"退成 500 会把它误报成基础设施故障", rec.Code, rec.Body.String())
+	}
+	// 反证另一端：绑定失败必须是 400，不能被当成 500。
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/admin/blocks/save-content",
+		strings.NewReader(`{"id":`))
+	req2.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusBadRequest {
+		t.Errorf("参数绑定失败的 HTTP 状态码应为 400，实际 %d", rec2.Code)
+	}
 }

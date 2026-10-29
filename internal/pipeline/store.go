@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// Locator 产物定位器（docs/03-pipeline.md §4.3）：不保存 endpoint、凭据或临时签名。
+// Locator 产物定位器（AGENTS.md §4.3）：不保存 endpoint、凭据或临时签名。
 type Locator struct {
 	Provider string `json:"provider"`
 	// Key 存储键；本地实现为 artifacts/{hash} 或 artifacts/redirects/{hash}。
@@ -21,7 +21,7 @@ func ArtifactLocator(hash string) Locator {
 	return Locator{Provider: "local", Key: "artifacts/" + hash}
 }
 
-// Store ArtifactStore 契约（docs/03-pipeline.md §4.3）。
+// Store ArtifactStore 契约（AGENTS.md §4.3）。
 // 删除接口只接受持久的 Locator 与期望 hash，必须幂等；Store 自身不判断业务引用，
 // 引用检查由生命周期服务（Phase 0-A1 publication 模块）负责。
 type Store interface {
@@ -36,7 +36,7 @@ type Store interface {
 	// DeleteArtifactObject 幂等删除 Artifact 内的单个文件（内容对象）。
 	DeleteArtifactObject(loc Locator, relPath string) error
 
-	// PutRedirect 写入重定向产物（docs/03-pipeline.md §4.4）。
+	// PutRedirect 写入重定向产物（AGENTS.md §4.4）。
 	PutRedirect(r *RedirectArtifact) (Locator, error)
 	// GetRedirect 按 locator 读取重定向产物并重新校验内容哈希。
 	GetRedirect(loc Locator) (*RedirectArtifact, error)
@@ -46,7 +46,7 @@ type Store interface {
 
 // LocalStore 本地文件系统 ArtifactStore：内容寻址目录，永不覆盖历史文件。
 //
-// 布局（docs/03-pipeline.md §4.1/§4.4）：
+// 布局（AGENTS.md §4.1/§4.4）：
 //
 //	{root}/artifacts/{hash}/index.html
 //	{root}/artifacts/{hash}/manifest.json

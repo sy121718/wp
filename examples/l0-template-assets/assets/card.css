@@ -1,4 +1,4 @@
-/* 插件静态资产（docs/06-plugin-system.md §5.1）：按文件名序拼接，构建期注入产物主 CSS 之后。
+/* 插件静态资产（AGENTS.md §5.1）：按文件名序拼接，构建期注入产物主 CSS 之后。
    这里消费组件导出的 CSS 变量：静态 CSS 是全局的，拿不到单个组件的检查器值，
    manifest styles.vars 是两者之间唯一的桥（变量声明在组件根，子树内可继承，不外溢）。 */
 .nc-card__subtitle {

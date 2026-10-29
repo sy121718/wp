@@ -1,4 +1,4 @@
-// pluginview.go — 插件组件的编译视图装配（docs/06-plugin-system.md §5/§7）。
+// pluginview.go — 插件组件的编译视图装配（AGENTS.md §5/§7）。
 //
 // plugin.{pluginID}.{name} 类型节点经 RenderContext.Plugin 解析规格：
 //   - props 按 spec 白名单解码校验（未知键拒绝、文本长度限幅、枚举比对）；

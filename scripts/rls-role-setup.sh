@@ -29,7 +29,7 @@
 # 刻意 **不** 自动改 config.yaml：切连接用户会让「没接好工程作用域」的路径全部查不到
 # 数据（fail closed 而不是报错，很难定位）。必须先把各 model 的读写路径都包上
 # pkg/rls.InProjectScope 之后再切 —— 顺序见 AGENTS.md「数据库」段的 RLS 条目与
-# docs/rls-role-cutover.md。
+# AGENTS.md。
 #
 # 用法：bash scripts/rls-role-setup.sh [角色名]
 set -euo pipefail
@@ -241,7 +241,7 @@ if [ -z "$PROBE" ]; then
     echo "✗ 没有合格的探针表：需要一张「带 project_id、已启用 RLS、有数据且数据分属 ≥2 个工程」的表。" >&2
     echo "   候选实测：$DIAG" >&2
     echo "   空表 / 单工程表无法验证 RLS（0 行对 0 行说明不了任何事）—— 请先造数据（至少两个工程各一行），" >&2
-    echo "   或按 docs/rls-role-cutover.md 换一张有数据的表再跑。" >&2
+    echo "   或按 AGENTS.md 换一张有数据的表再跑。" >&2
     exit 1
 fi
 
@@ -302,7 +302,7 @@ cat <<'TXT'
      用 pkg/rls.InProjectScope(ctx, db, projectID, fn) 包起来。
      **必须先做完这一步再切角色**：顺序反过来的话，没包 scope 的路径会静默返回 0 行
      （fail closed 不报错），表现为「功能突然查不到数据」而没有任何错误日志。
-     盘点与检索命令见 docs/rls-role-cutover.md（含当前缺口清单）。
+     盘点与检索命令见 AGENTS.md（含当前缺口清单）。
 
   2. 改 config.yaml 的 database.user / database.password 为本角色，重启应用。
      · 口令建议走环境变量注入：database.password 留空 + GOWP_DATABASE_PASSWORD=...

@@ -1,7 +1,7 @@
 package feature
 
 // customer_empty_state_honesty_test.go — 客户管理页空态的**主行动条件渲染**回归
-//（docs/02-O-trade-site-audit.md 的 customers T1 / T2 / T3，customer_detail T1）。
+//（AGENTS.md 的 customers T1 / T2 / T3，customer_detail T1）。
 //
 // 背景：空态里那个「重置」**无条件渲染**时，无筛选的用户点下去 URL 与页面逐字不变
 //（href == 当前 URL）—— 判据 1「操作流闭环：点了没反应」，而且比没有按钮更糟：

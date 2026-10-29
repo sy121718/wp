@@ -1,6 +1,6 @@
 // Package feature inventory 模块 feature 测试 —— 仓库 SKU 外部编码映射（迁移 251）。
 //
-// 口径（docs/14-product-sku-and-cost-model.md §9.3，2026-09-19 用户补充确认）：
+// 口径（AGENTS.md §9.3，2026-09-19 用户补充确认）：
 // 属性属于**商品**，仓库侧只回答「这条货在这个仓叫什么」—— 那就是本列的语义。
 // 映射是 **N:1**（多个 variant → 一个外部码）：
 //

@@ -47,7 +47,7 @@ import (
 // 文案填充 / 分页）。新增一个之前先问：「这是不是纯函数、且两个以上的模板会用到」——
 // 只服务一个页面的格式化留在视图层，不要往这里堆。
 //
-// 日期一族共五个（时区 × 精度两维，见 docs/rules/template-boundary.md 的清单）：
+// 日期一族共五个（时区 × 精度两维，见 AGENTS.md 的清单）：
 // dateTime（本地，分钟）、date（本地，日）、dateTimeLocal（本地，datetime-local 控件值）、
 // siteDateTime（**站点时区**，分钟）、dateTimeSecond（本地，秒）。
 func injectGlobals(set *jet.Set) {
@@ -139,7 +139,7 @@ func percent(v any, digits int) string {
 // 模板里不能写裸 nil 字面量：`{{ dateTime(nil) }}` 在 Jet 里不是「没有值」而是**实参无效**，
 // 渲染当场失败（半截输出 + HTTP 500），不会收敛成空串。模板侧判空只有一条写法 —— 用
 // `{{if .X}}`。实测见 internal/templates/funcs_boundary_test.go 与
-// docs/rules/jet-template-contract.md §8。
+// AGENTS.md §8。
 func dateTime(v any) string {
 	t, ok := toTime("dateTime", v)
 	if !ok {
@@ -186,7 +186,7 @@ func dateTimeLocal(v any) string {
 // 为什么不在模板里传时区名（dateTimeIn("Asia/Shanghai", v)）：那会让 IANA 名散进模板，与
 // 「口径只在一处声明」相悖 —— 模板只做展示选择，不去拼口径。
 // 零值 / typed nil（Go 侧传入）/ 空指针一律返回空串，由模板决定显示什么（与 dateTime 同规则）。
-// 裸 nil 字面量不能当实参、模板侧判空的唯一写法见 dateTime 的注释（docs/rules/jet-template-contract.md §8）。
+// 裸 nil 字面量不能当实参、模板侧判空的唯一写法见 dateTime 的注释（AGENTS.md §8）。
 func siteDateTime(v any) string {
 	t, ok := toTime("siteDateTime", v)
 	if !ok {
@@ -300,7 +300,7 @@ func DateTimeLocal(v any) string { return dateTimeLocal(v) }
 //
 // 这里的「nil」同样只指 **Go 侧传入的 typed nil**（例如 *float64）：模板里写
 // `{{ percentChange(nil, 1) }}` 会**在求值期失败**（半截输出 + HTTP 500），不是空串。
-// 判空用 `{{if .X}}`。实测见 docs/rules/jet-template-contract.md §8。
+// 判空用 `{{if .X}}`。实测见 AGENTS.md §8。
 func percentChange(v any, digits int) string {
 	if isNil(v) {
 		return ""

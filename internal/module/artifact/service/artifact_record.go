@@ -33,7 +33,7 @@ import (
 //
 // 必要性：lang 是 page_artifacts 唯一键 (page_id, version, lang) 的第三维，
 // 落库为空会让唯一键退化成 (page_id, version)，同页多语言重新互相覆盖
-// （docs/06-D-site-i18n.md §15.5 第 1 条）。调用方（page 装配层）通常已显式传语言，
+// （AGENTS.md §15.5 第 1 条）。调用方（page 装配层）通常已显式传语言，
 // 本函数是契约层直调与历史调用方的兜底，保证任何路径都不会写入空 lang。
 func normalizeLang(lang string) string {
 	if l := strings.TrimSpace(lang); l != "" {
@@ -60,7 +60,7 @@ func validateRecordReq(req *artifactdto.RecordReq) error {
 	return nil
 }
 
-// Record 归档产物元数据与内容对象闭包（docs/03-pipeline.md §4）。
+// Record 归档产物元数据与内容对象闭包（AGENTS.md §4）。
 // 产物字节由 pipeline.ArtifactStore 在构建期落盘，本方法只做数据库投影：
 // 元数据行 + manifest 内文件闭包写入 content_objects / page_artifact_objects，
 // 三者同一事务提交；hash 重复时按产物不可变语义幂等返回现有记录。

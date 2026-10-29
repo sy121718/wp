@@ -589,7 +589,7 @@ func (a *assembly) startRuntimeTasks() {
 			Info("检测到组件已更新：相关自动发布实例已标记待重建并开始自动重建")
 		rebuildStaleAsync("init", presentationStaleRebuilder(presentationSvc), marked)
 	}
-	// 依赖 fan-out（PIPE-3，docs/03-pipeline.md §8.2）：内容实体变更 → 按依赖表
+	// 依赖 fan-out（PIPE-3，AGENTS.md §8.2）：内容实体变更 → 按依赖表
 	// 反查受影响产物 → 精确标记 stale（不再是全站标记）→ 自动重建。
 	//
 	// 装配顺序要求：page 服务必须先装配完成（作为失效目标与重建实现），
@@ -770,7 +770,7 @@ func (a *assembly) mountAdminPages() {
 	workbenchHandle := workbenchhttp.SetupWorkbenchRoutes(a.workbenchPages, a.pageService, a.projectService,
 		a.blockSvc, a.pluginSvc, a.collectionResolver, a.contentTemplateSvc, a.presentationSvc,
 		a.blueprintSvc, a.productSvc, nil)
-	// 实例编辑模式（docs/04-C）：?instance= 画布改覆盖文档，保存走 SaveOverrideDocument。
+	// 实例编辑模式（AGENTS.md）：?instance= 画布改覆盖文档，保存走 SaveOverrideDocument。
 	workbenchHandle.SetInstanceOverrideDeps(a.presentationSvc)
 	marks.mark(portWorkbenchInstanceOverrideDeps)
 	// 检查器的「具体菜单项」下拉（nav 组件 Props.Navigation，ct=entityref,navigation）。

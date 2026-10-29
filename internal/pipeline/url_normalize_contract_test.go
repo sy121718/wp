@@ -3,7 +3,7 @@ package pipeline
 // 路径归一化行为对照（审计 CQ-012）：同一批输入喂给本包实现，逐条打印结果。
 // 收敛前用于确认「哪些是真重复、哪些语义本就不同」；收敛后作为回归基准。
 
-// url.go 的 NormalizeURL 是文档化的唯一口径（docs/03-pipeline.md §5.1）。
+// url.go 的 NormalizeURL 是文档化的唯一口径（AGENTS.md §5.1）。
 
 import (
 	"strings"

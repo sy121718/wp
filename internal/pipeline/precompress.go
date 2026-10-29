@@ -8,7 +8,7 @@
 //
 // 为什么不交给 nginx 的 gzip_static 就完事：/site 面上挂着 AccessGuard（登录可见 /
 // 密码保护）、SiteRedirect（redirect.json）与站点根目录映射三种语义，**必须保持 Go 直出**
-// （docs/deploy-storage-nginx.md）。预压缩因此要在 Go 里做完，nginx 只是可选的第二层加速。
+// （AGENTS.md）。预压缩因此要在 Go 里做完，nginx 只是可选的第二层加速。
 package pipeline
 
 import (

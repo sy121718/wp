@@ -1,6 +1,6 @@
 package i18n
 
-// content_test.go — 内容翻译基础设施（多语言 P5a，docs/06-D-site-i18n.md §7）单元验证。
+// content_test.go — 内容翻译基础设施（多语言 P5a，AGENTS.md §7）单元验证。
 //
 // 覆盖（不查库，全部用注入的 stub 存储）：
 //  1. 跳过规则（§7.6）：纯数字 / 纯符号 / 空白跳过；含数字的句子照常翻译；

@@ -1,12 +1,12 @@
 package pagemodel
 
-// page_dependency_model.go — page_dependencies 表访问（依赖记录投影，docs/03-pipeline.md §8.2）。
+// page_dependency_model.go — page_dependencies 表访问（依赖记录投影，AGENTS.md §8.2）。
 //
 // 定位：Artifact Manifest 是历史事实，本表是按 Artifact 可重建的**查询投影**。
 // 构建成功后写入，失效查询按 (dependency_kind, dependency_key) 反查受影响的页面。
 //
 // 反查为什么用「active OR staged」而不是仅 active：
-// docs/03-pipeline.md §8.2 只连 pages.active_artifact_id。但未发布的页面
+// AGENTS.md §8.2 只连 pages.active_artifact_id。但未发布的页面
 // （只有 staged 产物）在内容变更后不会被标记，其暂存产物会静默过期，
 // 一旦发布就上线旧内容。本实现把「当前活跃产物」与「当前暂存产物」两个指针
 // 都纳入——两者都只指向一个产物，不含历史噪音，仍是精确集合。

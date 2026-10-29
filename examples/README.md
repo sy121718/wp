@@ -30,7 +30,7 @@ zip -r /tmp/campaignkit-1.0.0.zip manifest.json components assets migrations
 ## 失败时看什么
 
 上传失败会返回明确的前缀错误（`ErrInstallParse` / `ErrUnsafePackage` / `ErrMigrationFailed`），
-逐条对照表见 [docs/06-E-plugin-authoring.md](../docs/06-E-plugin-authoring.md) §2.3。
+逐条对照表见 [AGENTS.md](../AGENTS.md) §2.3。
 
 ## 自动化验收
 

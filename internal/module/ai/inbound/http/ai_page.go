@@ -93,6 +93,22 @@ import (
 // 即使有人手工构造出别人的 key，也读不到内容。
 const fabSessionKey = "admin-fab"
 
+// fabSendReq 悬浮球一次提问的请求体（会话键按用户派生，见 fabSessionKeyOf）。
+//
+// 抽成函数的理由：handler 的语句数有上限（架构门禁 pendingControllerStatements），
+// 而"把页面上下文拼成请求体"是独立编排，不属于该 handler 的主体。
+func fabSendReq(c *gin.Context, providerKey, model, input string) *aidto.SendMessageReq {
+	uid := userID(c)
+	return &aidto.SendMessageReq{
+		SessionKey:  fabSessionKeyOf(uid),
+		ProviderKey: providerKey,
+		Model:       model,
+		Input:       composeFabInput(c, input),
+		UserText:    input,
+		UserID:      uid,
+	}
+}
+
 // fabSessionKeyOf 按用户派生悬浮球会话键。
 //
 // 为什么不用「常量 + 服务层过滤」：uk_ai_session_key 是全局唯一约束，
@@ -136,15 +152,7 @@ func (h *SessionPageHandle) FabAsk(c *gin.Context) {
 		truncated = true
 	}
 
-	uid := userID(c)
-	res, err := h.svc.SendMessage(c.Request.Context(), aidto.SendMessageReq{
-		SessionKey:  fabSessionKeyOf(uid),
-		ProviderKey: providerKey,
-		Model:       model,
-		Input:       composeFabInput(c, input),
-		UserText:    input,
-		UserID:      uid,
-	})
+	res, err := h.svc.SendMessage(c.Request.Context(), *fabSendReq(c, providerKey, model, input))
 	if err != nil {
 		h.renderFabError(c, fabMsg(aienums.MsgFabFailed), c.PostForm("ctxPath"))
 		return
@@ -466,7 +474,7 @@ func (h *McpPageHandle) pageData(c *gin.Context, newToken, errText, doneText str
 // mcpSwitchTone 对外接入开关 → 徽标分档。
 //
 // 分档而不是让模板写 {{if .McpEnabled}}badge-success{{else}}…：阈值（什么算「开」）
-// 是这片代码的语义，颜色是 CSS 的事 —— 模板只把分档写进 class（见 docs/rules/template-boundary.md）。
+// 是这片代码的语义，颜色是 CSS 的事 —— 模板只把分档写进 class（见 AGENTS.md）。
 func mcpSwitchTone(enabled bool) string {
 	if enabled {
 		return "ok"

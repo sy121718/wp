@@ -1,7 +1,7 @@
 package unit
 
 // page_artifact_lang_test.go — 同页多语言产物行并存与路由绑定（多语言 P3 前置，
-// docs/06-D-site-i18n.md §15.5 第 1 条）。
+// AGENTS.md §15.5 第 1 条）。
 //
 // 回归对象：page_artifacts 唯一键 (page_id, version) 曾让第二个语言的产物替换
 // 第一个语言的行，page_routes.artifact_id 于是指向错内容。本用例走完整装配链

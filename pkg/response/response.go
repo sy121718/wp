@@ -194,6 +194,12 @@ func blockedDataOf(c *gin.Context, scene string, err error) (gin.H, bool) {
 func businessText(c *gin.Context, scene string, fact facing.Fact) string {
 	out := translate(c, fact.Key)
 	if out != fact.Key {
+		// 复合形态（`key: 明细`）：译文在前、明细原样拼在后。
+		// 明细是模块自造的可读片段（如「当前第 7 版」），不参与翻译；
+		// 不拼它等于把「哪一版」这个唯一可行动的信息丢掉。
+		if fact.Tail != "" {
+			return out + "：" + fact.Tail
+		}
 		return out
 	}
 	// 声明处给了中文兜底（facing.New(key, "一句话") / enums.Err 工厂）→ 用兜底。

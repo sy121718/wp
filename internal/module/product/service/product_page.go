@@ -179,7 +179,7 @@ func (s *Service) ProductNewPage(ctx context.Context, req *productdto.ProductNew
 			view.WarehouseSKUOptions = groups
 		}
 	}
-	// 模板卡片区是**可选辅助**（docs/rules/template-boundary.md：主数据的失败才让整页失败）。
+	// 模板卡片区是**可选辅助**（AGENTS.md：主数据的失败才让整页失败）。
 	// 端口没注入 = 模板能力未装配；注入后读不到 = 这一屏没有候选 —— 都不构成整页失败，
 	// 页面右侧据此给两句不同的提示（TemplatesAvail 分开说）。
 	if firstErr == nil && s.pageTemplates != nil {

@@ -7,7 +7,7 @@ package orderhttp
 // 路由注册只出现在 *_router.go，门禁 scripts/check-route-registration-placement.sh 守这条。
 //
 // 页面写动作复用订单 API 的权限点，由 builtin.CasbinMiddlewareForPath 按**实际 API 路径**鉴权
-// —— 权限点路径一个字符都不能改。页面 GET 的 Casbin 待补（见 docs/02-Z §4.3）。
+// —— 权限点路径一个字符都不能改。页面 GET 的 Casbin 待补（见 AGENTS.md §4.3）。
 // 页面 handler 与 API handler 同用一个 svc 实例（同一个契约，不另建一套）。
 
 import (
@@ -98,7 +98,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 		adminui.PageSlot(OrderListPageTemplate),
 		orderPages.OrdersPage)
 	// 销售概览页（GET /admin/orders/overview）：整页只读报表 —— 只读不等于不鉴权，
-	// 菜单隐藏不是访问控制（docs/02-Z §4.3）。obj 取该页菜单绑的码 order:overview 声明的
+	// 菜单隐藏不是访问控制（AGENTS.md §4.3）。obj 取该页菜单绑的码 order:overview 声明的
 	// api_path，而它恰好就是这条页面路径本身（**存量特例**：绝大多数页面的 obj 是 `/api/*`
 	// 形态，见 internal/middleware/builtin/page_authz.go 的说明），归一与 02-Z 第二刀同批。
 	salesPages := NewOrderSalesPageHandle(svc, projects)
@@ -121,7 +121,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 	// 声明放在这里（与路由同一处），启动期 SyncToDB 幂等 upsert 进 sys_permission，
 	// **不写权限点 seed 迁移**（AGENTS.md §数据库：新增权限点加常量 + 在路由注册处声明）。
 	permission.Declare(http.MethodGet, "/admin/orders/overview", permission.OrderOverview)
-	// 后台代客建单页（docs/02-W-admin-order-create.md）：独立整页，页头与空态两个入口
+	// 后台代客建单页（AGENTS.md）：独立整页，页头与空态两个入口
 	// 都指向它（同一个 URL）。写动作复用 order:create —— 与上面几条同手法，
 	// **不新增权限点、不写 seed 迁移**；权限点路径一个字符都不能改。
 	//
@@ -134,7 +134,7 @@ func SetupOrderPages(pages *gin.RouterGroup, svc ordercontract.OrderService,
 		adminui.PageSlot(OrderNewPageTemplate),
 		orderCreate.OrderCreatePage)
 	// POST 也挂 PageSlot：失败时回的是**同一张建单页**（200 + 回填），
-	// 成功时导航由前端 data-write-nav 决定（见 docs/02-W §6）。
+	// 成功时导航由前端 data-write-nav 决定（见 AGENTS.md §6）。
 	pages.POST("/orders/create",
 		builtin.CasbinMiddlewareForPath("/api/order/create"),
 		adminui.PageSlot(OrderNewPageTemplate),

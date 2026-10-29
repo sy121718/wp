@@ -5,7 +5,7 @@ package migrations
 // 由 register.go 的 init() 按主题拆出：本文件只做注册，不含任何 SQL 文本，
 // 注册项引用的 SQL 一律经 mustSQL 从嵌入的 .sql 取。
 func registerI18nDataLayer() {
-	// ---- i18n 数据层（P0：表结构 + 词条 seed，docs/06-D §13 P0/P1）----
+	// ---- i18n 数据层（P0：表结构 + 词条 seed，AGENTS.md §13 P0/P1）----
 	//
 	// 055：sys_i18n 补 category/remark。sys_i18n 由 init_schema.sql 建表，
 	// 默认「表存在即跳过」会误跳过，故按 category 列是否存在判定。
@@ -73,7 +73,7 @@ func registerI18nDataLayer() {
 		SQL: mustSQL("060_i18n_seed_site_components.sql"),
 	})
 
-	// 061：page_artifacts 加 lang 维度（多语言上线第一阻塞项，docs/06-D §15.5 第 1 条）。
+	// 061：page_artifacts 加 lang 维度（多语言上线第一阻塞项，AGENTS.md §15.5 第 1 条）。
 	// 唯一键 (page_id, version) → (page_id, version, lang)，同页多语言各占一行。
 	// page_artifacts 由 002-init-builder-schema 创建，默认「表存在即跳过」会误跳过，
 	// 故按 lang 列是否存在判定（与 047/049/054/055 同一手法）。
@@ -84,7 +84,7 @@ func registerI18nDataLayer() {
 		SQL:       mustSQL("061_page_artifacts_lang.sql"),
 	})
 
-	// 062：page_publications（页面每语言激活状态，多语言 P3，docs/06-D §15.5 第 2 条）。
+	// 062：page_publications（页面每语言激活状态，多语言 P3，AGENTS.md §15.5 第 2 条）。
 	// 解掉 pages.active_path 单值导致「Publish(en-US) 取消 /zh-CN/about 激活路由」。
 	// 新表，默认「表存在即跳过」检查即可。
 	register(Migration{
@@ -101,7 +101,7 @@ func registerI18nDataLayer() {
 		SQL:       mustSQL("063_page_stagings.sql"),
 	})
 
-	// 064：project_locales（站点语言清单，多语言 P3，docs/06-D §14 D10）。
+	// 064：project_locales（站点语言清单，多语言 P3，AGENTS.md §14 D10）。
 	register(Migration{
 		Version:   "064-project-locales",
 		TableName: "project_locales",
@@ -119,7 +119,7 @@ func registerI18nDataLayer() {
 		SQL:          mustSQL("065_i18n_seed_language_switcher.sql"),
 	})
 
-	// 066：sys_translation 内容寻址翻译表（多语言 P5a，docs/06-D §7.3）。
+	// 066：sys_translation 内容寻址翻译表（多语言 P5a，AGENTS.md §7.3）。
 	// 与 sys_i18n 分工见决策 F17：本表跟内容编辑走（构建器内联文本 + CMS 字段），
 	// 按 (source_hash, context, lang) 寻址，改原文即自动失效。
 	// 新表，默认「表存在即跳过」检查即可（CheckSQL 留空 = 按表存在判定）。
@@ -247,7 +247,7 @@ func registerI18nDataLayer() {
 
 	// 229：后台页壳改造配套词条（13 key × 2 语言，zh-CN 13 行 / en-US 13 行）。
 	//
-	// 逐页改造（docs/02-H-admin-page-shell.md）新增的固定文案位：页头说明按钮的
+	// 逐页改造（AGENTS.md）新增的固定文案位：页头说明按钮的
 	// 无障碍标签、列表空状态（标题 + 一句话）、操作列表头、筛选行「重置」。
 	// 与 228 同理：模板兜底只在缺词条时显示中文，英文界面会因此回落中文，
 	// 所以新 key 必须同批 seed（门禁见 admin_group_f_i18n_test.go 的双向校验）。
@@ -278,7 +278,7 @@ func registerI18nDataLayer() {
 	//
 	// 通用件（说明按钮、操作列表头、预览动作、字数提示）已被多页复用；
 	// 变更记录页把「逐条记录 / 按实体汇总」改成页签后新增了页签组与两个表格的无障碍标签。
-	// 本轮其余页面的新增文案位（223 个 key）尚未翻译，清单见 docs/02-I-admin-i18n-todo.md。
+	// 本轮其余页面的新增文案位（223 个 key）尚未翻译，清单见 AGENTS.md。
 	registerSeed(Seed{
 		Version:      "231-i18n-seed-list-skeleton-two",
 		TableName:    "sys_i18n",
@@ -290,7 +290,7 @@ func registerI18nDataLayer() {
 	//
 	// 本轮改造覆盖 55 个后台页面，产生了大量新文案位（页签组、空态标题、筛选标签、
 	// 行内动作、危险操作确认……）。模板兜底只在缺词条时生效，英文界面会回落中文，
-	// 故成对 seed。逐条中文对照见 docs/02-I-admin-i18n-todo.md。
+	// 故成对 seed。逐条中文对照见 AGENTS.md。
 	registerSeed(Seed{
 		Version:      "232-i18n-seed-admin-pages-round4",
 		TableName:    "sys_i18n",
@@ -330,7 +330,7 @@ func registerI18nDataLayer() {
 		SQL:          mustSQL("237_i18n_seed_block_project_required.sql"),
 	})
 
-	// 253：变体清单「预览—保存」模型的词条（docs/14 §8，2026-09-19 用户拍板）——
+	// 253：变体清单「预览—保存」模型的词条（AGENTS.md §8，2026-09-19 用户拍板）——
 	// 「保存」时服务端重算清单行得出的两条业务错误（ErrVariantSKUEmpty /
 	// ErrVariantOptionsInvalid）+ 四个跳过原因（VariantSkip*：仍有库存 / 被 BOM 引用 /
 	// 行重复 / 变体已被别处删除），加上商品详情页清单区块与生成抽屉的新文案位。

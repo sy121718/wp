@@ -52,7 +52,7 @@ func (s *Service) SetDependencyInvalidator(inv contentcontract.DependencyInvalid
 
 // notifyContentChanged 内容实体变更后推导依赖源键并交给扇出端口。
 //
-// 两条键（docs/03-pipeline.md §8.2 典型 fan-out）：
+// 两条键（AGENTS.md §8.2 典型 fan-out）：
 //   - direct_content:{type}:{id}       —— 直接引用该实体的产物；
 //   - content_collection:collection:content:{type}
 //     —— 渲染该类型集合的产物（新增/删除成员时旧产物里还没有该实体，

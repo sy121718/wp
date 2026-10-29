@@ -67,7 +67,7 @@ func (s *Service) RenameReserved(ctx context.Context, req *pubdto.RenameReserved
 	return nil
 }
 
-// Activate 把路径占用切换为 active（两段式回执，docs/03-pipeline.md §9）：
+// Activate 把路径占用切换为 active（两段式回执，AGENTS.md §9）：
 //
 //	第一段：pending 回执在独立事务中先行持久化并提交——进程在后续任一步
 //	崩溃时，恢复流程（RollbackReceipts）有据可查；

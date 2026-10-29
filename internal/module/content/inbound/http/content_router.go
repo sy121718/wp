@@ -5,7 +5,7 @@ package contenthttp
 //   - 页面注册从「模块 Setup 内部」提到独立导出函数，并落到 content_page_router.go。
 //
 // 权限点一个字符都没动：页面注册见 content_page_router.go（页面 GET 的 Casbin 待补，
-// 见 docs/02-Z-admin-menu-code-and-page-authz.md §4.3），写动作复用既有
+// 见 AGENTS.md §4.3），写动作复用既有
 // content:* / page:create / presentation:* 权限点（迁移 033）。
 
 // 挂 authorizedAPI 三层链（SessionAuth + CSRF + Casbin）。

@@ -63,21 +63,21 @@ func registerCoreSchemaAndAccess() {
 		SQL:          mustSQL("031_business_permissions_superadmin.sql"),
 	})
 
-	// 插件注册表（docs/06-plugin-system.md §8：安装/版本/启停记账）。
+	// 插件注册表（AGENTS.md §8：安装/版本/启停记账）。
 	register(Migration{
 		Version:   "040-plugin-registry",
 		TableName: "plugin_registry",
 		SQL:       mustSQL("040_plugin_registry.sql"),
 	})
 
-	// CMS 内容实体（docs/02-domain.md §1，0-A2 content 模块）。
+	// CMS 内容实体（AGENTS.md §1，0-A2 content 模块）。
 	register(Migration{
 		Version:   "042-content",
 		TableName: "contents",
 		SQL:       mustSQL("042_content.sql"),
 	})
 
-	// 内容结构模板（docs/02-domain.md §2，0-A2 contenttemplate 模块）与自动发布实例
+	// 内容结构模板（AGENTS.md §2，0-A2 contenttemplate 模块）与自动发布实例
 	// （§3，presentation 模块）：建表由 002-init-builder-schema 承担。
 	//
 	// 原 043_content_template.sql / 044_presentation.sql 是同一批表的重复定义，
@@ -90,7 +90,7 @@ func registerCoreSchemaAndAccess() {
 	// 因 002 先建表而永远被跳过 —— 已删除，DDL 唯一真源为 002。
 	// 历史库的结构对齐见迁移 073-blueprint-ddl-align。
 
-	// 公开站点导航（docs/05 阶段6，0-C）。
+	// 公开站点导航（AGENTS.md 阶段6，0-C）。
 	register(Migration{
 		Version:   "046-navigation",
 		TableName: "navigations",
@@ -107,7 +107,7 @@ func registerCoreSchemaAndAccess() {
 		SQL:       mustSQL("047_block_category.sql"),
 	})
 
-	// 全局块复用方式维度（docs/02-D：global 引用 / template 一次性复制）。
+	// 全局块复用方式维度（AGENTS.md：global 引用 / template 一次性复制）。
 	// blocks 表已在 021 创建，默认幂等检查会误跳过，仿 047 按 reuse_mode 列是否存在判断。
 	register(Migration{
 		Version:   "049-block-reuse-mode",
@@ -124,7 +124,7 @@ func registerCoreSchemaAndAccess() {
 		SQL:       mustSQL("054_navigation_sources.sql"),
 	})
 
-	// 插件权限 seed（权限点 + 后台菜单，docs/06）。
+	// 插件权限 seed（权限点 + 后台菜单，AGENTS.md）。
 	registerSeed(Seed{
 		Version:      "032-plugin-permissions",
 		TableName:    "sys_permission",
@@ -351,7 +351,7 @@ func registerCoreSchemaAndAccess() {
 		SQL:       mustSQL("267_publication_receipts_pending_index.sql"),
 	})
 
-	// 281：presentation_instances 实例级文档覆盖列（docs/04-C-instance-override.md，方案 B）。
+	// 281：presentation_instances 实例级文档覆盖列（AGENTS.md，方案 B）。
 	//
 	// 商品级可视化自定义：override_document 非空 = 实例发布/重建以此文档为准（binding
 	// 照常解析，实体数据更新不丢自定义）；NULL = 跟随模板（既有行为零回归）。
@@ -364,7 +364,7 @@ func registerCoreSchemaAndAccess() {
 		SQL:       mustSQL("281_presentation_override_document.sql"),
 	})
 
-	// 282：presentation_instances 渲染模式（商品页双轨，docs/04-C-instance-override.md）。
+	// 282：presentation_instances 渲染模式（商品页双轨，AGENTS.md）。
 	//
 	// template（默认）= 跟随绑定模板（现状零回归）；document = 该商品独立文档（override_document）。
 	// 显式成列的原因：模板更新的 stale 分流要在 SQL 里可判定，且「改了又改回去」这类

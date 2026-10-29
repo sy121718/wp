@@ -421,7 +421,7 @@ SELECT c.relname             AS table_name,
 // AuditRLSCoverage 巡检「所有带 project_id 的基表是否都有完整工程隔离」。
 //
 // 豁免名单由**调用方**传入（如 build_jobs / product_outbox_events）：
-// 「这张表为什么可以不带隔离」是工程判断，归口在 docs/rules/database.md 与 pkg/rls
+// 「这张表为什么可以不带隔离」是工程判断，归口在 AGENTS.md 与 pkg/rls
 // 的运行时探针，本包不复制那份名单 —— 复制出来的第二份真源必然会与被复制的那份漂移，
 // 而漂移的表现是「巡检放过了一张本该被拦的表」或反之。
 //
@@ -430,7 +430,7 @@ SELECT c.relname             AS table_name,
 //   - AuditPartitionRLSCoverage：「根表有策略则叶子分区必须有」—— **零外部输入**，
 //     所以能进日常任务而不产生假警报；
 //   - 「没有实现也没有 project_id」的保留表（如 page_component_pins）：与隔离无关，
-//     记录在 docs/schema-snapshot.md §3.1。
+//     记录在 AGENTS.md §3.1。
 //
 // 返回的 gaps **不含**豁免表；checked 是受检表总数（含豁免）。
 func AuditRLSCoverage(ctx context.Context, db *gorm.DB, exempt ...string) (gaps []RLSGap, checked int, err error) {

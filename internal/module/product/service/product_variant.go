@@ -8,7 +8,7 @@ package productservice
 //	· 「空」以 NULL 判定 —— 入参用可空类型，0 与 false 视为已填；
 //	· 编辑路径一个字都不动，包括调用方主动清空字段。
 //
-// SKU 编码（2026-09-19 商品域评审第四轮定稿，规则见 docs/14-product-sku-and-cost-model.md §1/§4）：
+// SKU 编码（2026-09-19 商品域评审第四轮定稿，规则见 AGENTS.md §1/§4）：
 //
 //	· 容器主体 SKU 两种来源 ——
 //	  ① 从仓库选：<仓库短码大写>_<仓库里那条 SKU 原样>（不再追加序号）；
@@ -467,7 +467,7 @@ func (s *Service) uniqueSKUCode(ctx context.Context, productID, base string, tak
 
 // containerSKUInput 容器主体 SKU 的解析输入（三处调用点共用的形状）。
 //
-// 三处取得容器主体 SKU 的路径（docs/14 §1.2「容器 SKU 获取函数合并」）：
+// 三处取得容器主体 SKU 的路径（AGENTS.md §1.2「容器 SKU 获取函数合并」）：
 //
 //	① 商品新建 —— 从仓库选（Custom = 那条仓库 SKU）或自己创建（Custom = 运营填的编码）；
 //	② 变体生成 / 预览 / 保存 —— 已存在商品的主体段（products.sku_code），
@@ -1201,7 +1201,7 @@ func shortHash(s string) string {
 	return fmt.Sprintf("%08x", h.Sum32())
 }
 
-// —— 变体清单：预览—保存模型（docs/14 §8，2026-09-19 用户拍板）——
+// —— 变体清单：预览—保存模型（AGENTS.md §8，2026-09-19 用户拍板）——
 //
 // 用户口径：「变体 sku 也是一样系统生产 + 可编辑，生产只是显示，并不会存入数据库，
 // 必须保存才行，所以删除不是删除，是相当于清除前端显示，不存入数据库」。
@@ -1700,7 +1700,7 @@ func variationValueIndex(attrs []*productmodel.ProductAttributeEntity) map[strin
 // sortedOptionPairs 组合对按**属性组固定顺序**排序（组内按属性组 key 字典序兜底）。
 //
 // SKU 属性段的拼接与 option_values 的写入顺序都取它 —— 顺序不固定则同一组合会
-// 生成不同 SKU（docs/14 §1.2 的第一条约束）。
+// 生成不同 SKU（AGENTS.md §1.2 的第一条约束）。
 func sortedOptionPairs(pairs []optionPair, groupOrder map[string]int) []optionPair {
 	sorted := make([]optionPair, len(pairs))
 	copy(sorted, pairs)
@@ -1760,7 +1760,7 @@ func (s *Service) VariantSnapshots(ctx context.Context, variantIDs []string, pro
 	}
 	// 成本来自 **(仓库, SKU)**：该变体在归属仓（未指定仓库时按库存域既有的归属仓解析
 	// 规则 —— 默认仓）的当前成本。成本搬到仓库之后，变体级 product_variants.cost_price
-	// 不再是订单成本快照的来源（docs/14 §9.3 的 ⚠️：沿用变体级会让订单利润与仓库侧
+	// 不再是订单成本快照的来源（AGENTS.md §9.3 的 ⚠️：沿用变体级会让订单利润与仓库侧
 	// 对不上，且改价后历史利润会漂移）。
 	refs := make([]inventorycontract.VariantWarehouseCostRef, 0, len(variants))
 	for _, v := range variants {

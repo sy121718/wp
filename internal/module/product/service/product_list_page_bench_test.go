@@ -6,7 +6,7 @@ package productservice_test
 // 与本包 product_list_page_sql_count_test.go 的分工是**刻意分开**的两件事：
 //   - 那边是**判据**：逐商品详情查询 == 0、三档（1/20/100）SQL 总次数相等 —— 硬断言，
 //     往 productRowsFromList 里加一行逐商品 s.Get 必须让它变红（真实输出见
-//     docs/audit/product-list-n1-report.md §5）；
+//     AGENTS.md §5）；
 //   - 这边是**记录**：墙钟耗时只 t.Logf，**不做任何耗时阈值断言**。
 //
 // 为什么耗时不断言：阈值断言在负载抖动时随机变红，而变红那一次不指向任何代码缺陷；

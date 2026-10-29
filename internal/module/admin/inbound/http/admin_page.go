@@ -1969,24 +1969,27 @@ func (h *AdminPagesHandle) RolePermissionsSave(c *gin.Context) {
 		}
 		// 权限树片段里的错误槽是**文本**（模板直接渲染 .Err），取词落在这一层。
 		data.Err = adminui.MsgText(c, msg)
-		// 失败回同一张抽屉片段（htmx outerHTML 局部替换，见 menuEditFail 的说明）。
-		c.HTML(http.StatusOK, RolePermissionsFragmentTemplate, adminui.PrepareBareView(c, data))
+		renderRolePermissionsFragment(c, data)
 		return
 	}
 
 	if adminDrawerHX(c) {
 		// 成功态片段只读 PermSaved 一个键（见模板）：不取树也不给列表数据，
 		// 少一次查询，也避免「回执里那棵树的勾选」被误读成本次保存的结果快照。
-		//
-		// 走 RenderBare 而不是 pageview.Render：这条路由是**写动作**，注册处没有
-		// PageSlot / BareSlot（见 admin_pages_router.go），而 pageview.Render 的槽就是
-		// 路由挂上来的 —— 没槽时它报「视图出口未装配」并回 500。失败分支一直是对的
-		// （它直接调 adminui.PrepareBareView + c.HTML），只有成功分支走了槽。
-		// 症状：htmx 保存**成功**反而 500，而失败路径正常。
-		adminui.RenderBare(c, RolePermissionsFragmentTemplate, &admindto.PermSavedResp{PermSaved: true})
+		renderRolePermissionsFragment(c, &admindto.PermSavedResp{PermSaved: true})
 		return
 	}
 	adminRolesPage.done(c)
+}
+
+// renderRolePermissionsFragment 角色权限抽屉片段的**唯一**渲染出口（成功态与失败态共用）。
+//
+// 为什么合成一个出口：两个分支此前各写一次整页渲染调用，
+// 而成功分支曾经走 pageview.Render —— 那条路由是**写动作**，注册处没有 PageSlot / BareSlot，
+// 于是 htmx 保存**成功反而 500**（失败路径一直正常）。合成一个出口之后，
+// 「模板名 + 渲染方式」只有一处，不可能再出现"一条走槽、一条不走"。
+func renderRolePermissionsFragment(c *gin.Context, view any) {
+	c.HTML(http.StatusOK, RolePermissionsFragmentTemplate, adminui.PrepareBareView(c, view))
 }
 
 // RolesCreate 新建角色（POST /admin/roles/create）。

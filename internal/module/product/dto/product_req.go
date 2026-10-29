@@ -19,14 +19,14 @@ type CreateReq struct {
 	// Description 走 BindForm（见 CreateReq.BindForm）。
 	Description json.RawMessage `json:"description" form:"-"`
 	Slug        string          `json:"slug" form:"slug"`
-	// SKUCode 商品主体 SKU 编码（规则见 docs/14-product-sku-and-cost-model.md）。
+	// SKUCode 商品主体 SKU 编码（规则见 AGENTS.md）。
 	//
 	// 语义：运营填的商品主体编码。留空则按规则派生 —— 取商品 URL 段的 ASCII 段；
 	// 派生不出 ASCII 段时明确报错（ErrSkuContainerMissing），不退回随机码。
 	// 填了时原样保留、选了仓库自动加仓库码前缀（已带前缀不重复加）。
 	// **存量编码一律不重写** —— 本字段只作用于新建商品。
 	SKUCode string `json:"sku" form:"sku"`
-	// SKUSource 新建商品的 SKU 来源（docs/14 §1.1 的两条入口）：
+	// SKUSource 新建商品的 SKU 来源（AGENTS.md §1.1 的两条入口）：
 	//
 	//	"" / "custom" —— 自己创建（默认行为：填 SKUCode，选了仓库自动加仓码前缀）；
 	//	"warehouse"  —— 从仓库选（必须同时给 WarehouseID 与 WarehouseSKU）。
@@ -37,7 +37,7 @@ type CreateReq struct {
 	// WarehouseSKU 「从仓库选」时该仓的那条货（inventory_stocks.sku_code）。
 	//
 	// 服务端会带着 WarehouseID 在该仓复核它确实存在，**编码本体也取自仓库那一行** ——
-	// 这条路径上 SKUCode 不被采信（服务端不信任前端，见 docs/14 §9.3）。
+	// 这条路径上 SKUCode 不被采信（服务端不信任前端，见 AGENTS.md §9.3）。
 	WarehouseSKU string `json:"warehouseSku" form:"warehouseSku"`
 	// ExternalSKU 这条库存行在**该仓**的外部 / 第三方编码（迁移 251；空 = 该仓用我们
 	// 自己的 SKU）。从仓库选时留空即带入所选那条货的编码；自己创建 + 回填时填了才写。
@@ -75,7 +75,7 @@ type CreateReq struct {
 	WarehouseID string `json:"warehouseId" form:"warehouseId"`
 	// WarehouseIDs 本次要在哪些仓各建一行（多仓，2026-09-19 口径）。
 	//
-	// 三条语义（docs/14 §1.1）：
+	// 三条语义（AGENTS.md §1.1）：
 	//   · 勾了哪些仓就在哪些仓各建一行 —— 仓库侧写**裸码**（剥掉仓码前缀的那一串）；
 	//   · 该仓已有同裸码的行 → **复用那一行，不新建**（幂等）；
 	//   · **前缀仓 = 本列表的第一个仓**（为空则默认仓），只有它决定主体 SKU 的仓码前缀。

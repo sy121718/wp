@@ -52,7 +52,7 @@ func (m *Model) MarkReceiptStateTx(ctx context.Context, tx *gorm.DB, id int64, s
 // CreateReceiptTx 在外层事务内写一条发布回执（pending）。
 //
 // Activate / Redirect 与它们的 Tx 变体都先落 pending 回执再动路由：进程在后续任一步
-// 崩溃时，恢复流程（RollbackReceipts）有据可查（docs/03-pipeline.md §9）。
+// 崩溃时，恢复流程（RollbackReceipts）有据可查（AGENTS.md §9）。
 // 事务句柄由 service 决定归属 —— Activate 用独立事务先提交回执，ActivateTx 让它与外层
 // 事务同生共死；两种语义的差别在 service，写回执这一条 SQL 只有这一份。
 func (m *Model) CreateReceiptTx(ctx context.Context, tx *gorm.DB, r *ReceiptEntity) error {
