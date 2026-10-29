@@ -131,7 +131,8 @@ export const treeMethods = {
                 // 这里用事件委托补方向键移动焦点、Enter 选中、空格折叠、←→ 展开收起、菜单键开右键菜单。
                 rootUl.addEventListener('keydown', function (e) {
                     var row = e.target.closest ? e.target.closest('.wb-node') : null;
-                    if (!row || !rootUl.contains(row)) return;
+                    // 只接管树行自身的快捷键，子按钮、输入等保留原生键盘行为。
+                    if (!row || e.target !== row || !rootUl.contains(row)) return;
                     var rows = Array.prototype.filter.call(rootUl.querySelectorAll('.wb-node'), function (el) {
                         return el.offsetParent !== null;   // 折叠分组内的节点不参与键盘游走
                     });
