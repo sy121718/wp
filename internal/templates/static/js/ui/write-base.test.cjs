@@ -277,3 +277,46 @@ test('buildBody data-write-json-wrap 把裸 HTML 包成 {html}', () => {
     assert.equal(body.has('descriptionHtml'), false);
     assert.deepEqual(JSON.parse(body.get('description')), { html: '<p>正文</p>' });
 });
+
+test('buildBody 表单级 data-write-keep-empty 保留空串（提升为顶级）', () => {
+    const m = load();
+    // 商品分类表单的真实形态：父级下拉选「（顶级分类）」时值是空串，
+    // 后端语义「nil = 本次不改，空串 = 提升为顶级」。
+    //
+    // 曾经的真实缺陷：模板写的是**表单级** data-write-keep-empty，
+    // 而基座只读控件级 data-keep-empty —— 属性写了从不生效，
+    // 门禁认它合规，于是用户点「提升为顶级」什么都没改，界面却显示保存成功。
+    const f = form({ 'data-write': 'update', 'data-write-keep-empty': 'parentId' }, [
+        el({ name: 'parentId', value: '' }),
+        el({ name: 'name', value: '子分类' }),
+    ]);
+    const body = m.buildBody(f, null);
+    assert.equal(body.has('parentId'), true, '表单级 keep-empty 必须保留空串');
+    assert.equal(body.get('parentId'), '');
+    // 没点名的字段仍按「空 = 没填」删掉。
+    assert.equal(body.has('name'), true);
+});
+
+test('buildBody 表单级 keep-empty 支持逗号分隔多个字段', () => {
+    const m = load();
+    const f = form({ 'data-write': 'update', 'data-write-keep-empty': 'parentId, primaryCategoryId' }, [
+        el({ name: 'parentId', value: '' }),
+        el({ name: 'primaryCategoryId', value: '' }),
+        el({ name: 'sort', value: '' }),
+    ]);
+    const body = m.buildBody(f, null);
+    assert.equal(body.has('parentId'), true);
+    assert.equal(body.has('primaryCategoryId'), true);
+    assert.equal(body.has('sort'), false, '未点名且为空的字段仍删掉');
+});
+
+test('buildBody 控件级与表单级 keep-empty 同时生效', () => {
+    const m = load();
+    const f = form({ 'data-write': 'update', 'data-write-keep-empty': 'parentId' }, [
+        el({ name: 'parentId', value: '' }),
+        el({ name: 'legacyId', value: '', keepEmpty: true }),
+    ]);
+    const body = m.buildBody(f, null);
+    assert.equal(body.has('parentId'), true, '表单级');
+    assert.equal(body.has('legacyId'), true, '控件级');
+});

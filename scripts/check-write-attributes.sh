@@ -142,5 +142,25 @@ if [[ $violations -gt 0 ]]; then
   exit 1
 fi
 
-printf '✓ 写表单属性合规（白名单 %d 个已删属性 / %d 个禁用 htmx 属性）\n' \
-  "${#REMOVED[@]}" "${#NO_HTMX[@]}"
+# ── 反向判据：白名单里的整形属性，基座必须真的读它 ───────────────────────────
+#
+# 这条是补一个真实的洞（2026-10-29 实测）：data-write-keep-empty 一直在
+# ALLOWED_SHAPING 白名单里，于是模板"合规"、门禁绿灯；而 ui/write-base.js
+# **从不读这个属性**（它只认控件级 data-keep-empty）。属性写了不生效，
+# 没有任何判据会发现 —— 症状是用户点「提升为顶级」什么都没改，界面却说保存成功。
+#
+# 判据：白名单里每个 data-write-* 整形属性，基座源码里必须出现字符串字面量。
+# 存量兼容层（data-write-rows/-object/-builder）由 legacyJson 读，同样要出现。
+BASE_JS="$ROOT/internal/templates/static/js/ui/write-base.js"
+if [[ ! -f "$BASE_JS" ]]; then
+  fail "写基座不存在：$BASE_JS"
+else
+  for attr in "${!ALLOWED_SHAPING[@]}"; do
+    if ! grep -q "$attr" "$BASE_JS"; then
+      fail "白名单里的 $attr 在 ui/write-base.js 里从未被读取 —— 属性写了不生效，模板却仍判合规"
+    fi
+  done
+fi
+
+printf '✓ 写表单属性合规（白名单 %d 个整形属性均基座可读 / %d 个已删属性 / %d 个禁用 htmx 属性）\n' \
+  "${#ALLOWED_SHAPING[@]}" "${#REMOVED[@]}" "${#NO_HTMX[@]}"
