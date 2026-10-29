@@ -289,14 +289,15 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 	// projectID 必须一起传：块查询以工程归属做越权防护，缺它只会拿到「参数缺失」，
 	// 表现是页眉/页脚在这一层静默消失（降级不报错，产物只是少一截）。
 	blockAdapter := newBlockResolverAdapter(s.blocks, buildCtx, projectID)
-	// 归档上下文（审计 EDT-004）：**归档模板**渲染的是「实例实体下面的内容列表」，
+	// 当前商品详情和归档模板都携带真实实例实体；加购只认product类型，
+	// 归档集合仍按自身的源类型校验实体。**归档模板**渲染的是「实例实体下面的内容列表」，
 	// 列表组件（core.productList 的 filterFromArchive）据此把筛选值落到实例实体上。
 	//
 	// 判据取**已解析模板的角色**，而不是调用方传参或实例行的角色：模板才是"这一页讲什么"
 	// 的定义处（同一份模板既能给实例用也能给预览用，两条路径都必须拿到同样的上下文）。
 	// 缺它的表现是"归档页列的是全站商品"——页面打得开、不报错，没人会发现。
 	archiveOpts := []builder.CompileOption{}
-	if tpl != nil && strings.TrimSpace(tpl.TemplateRole) == contenttemplatecontract.TemplateRoleArchive {
+	if entityType == "product" || (tpl != nil && strings.TrimSpace(tpl.TemplateRole) == contenttemplatecontract.TemplateRoleArchive) {
 		archiveOpts = append(archiveOpts, builder.WithArchiveEntity(entityType, entityID))
 	}
 	compileOpts := []builder.CompileOption{

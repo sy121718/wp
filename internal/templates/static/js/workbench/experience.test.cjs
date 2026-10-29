@@ -436,3 +436,21 @@ test('复制实例同时重映射组内动作，组外目标保持显式引用�
     assert.equal(copy.locked, false);
     assert.equal(JSON.stringify(original), before);
 });
+
+
+test('实例未保存预览走实体预览端点并保留实例身份与草稿', async () => {
+    let request;
+    const canvas = methods('canvas', 'canvasMethods', {
+        meta: {pageId: 'instance-1', saveBase: 'instance', projectId: 'project-1', entityType: 'product', entityId: 'product-1'},
+        getCSRFToken: () => 'csrf',
+        fetch: async (url, options) => { request = {url, options}; return {ok: true, text: async () => 'PREVIEW'}; }
+    });
+    const wb = Object.assign({doc: {settings: {}, root: [{id: 'buy', type: 'core.addToCart', props: {}}]}}, canvas);
+    assert.equal(await wb.fetchCanvasHTML(), 'PREVIEW');
+    assert.equal(request.url, '/workbench/template/preview');
+    const body = new URLSearchParams(request.options.body);
+    assert.equal(body.get('instance'), 'instance-1');
+    assert.equal(body.get('id'), '');
+    assert.equal(body.get('draftDocument'), JSON.stringify(wb.doc));
+    assert.equal(body.get('csrf_token'), 'csrf');
+});

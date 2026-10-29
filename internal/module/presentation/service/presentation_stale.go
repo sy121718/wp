@@ -312,6 +312,19 @@ func (s *Service) findOneInstanceAnyProject(ctx context.Context, instanceID stri
 }
 
 func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error) {
+	if req != nil && strings.TrimSpace(req.InstanceID) != "" {
+		instance, err := s.Get(ctx, &presentationdto.GetReq{ID: req.InstanceID, ProjectID: req.ProjectID})
+		if err != nil {
+			return nil, err
+		}
+		effective := *req
+		effective.EntityType, effective.EntityID, effective.ProjectID = instance.EntityType, instance.EntityID, instance.ProjectID
+		effective.TemplateID = instance.TemplateID
+		if len(effective.DraftDocument) == 0 {
+			effective.DraftDocument = instance.Document
+		}
+		req = &effective
+	}
 	if req == nil || req.EntityType == "" || req.EntityID == "" {
 		return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
 	}

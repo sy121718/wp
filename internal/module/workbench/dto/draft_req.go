@@ -25,6 +25,7 @@ type OutlineTreeReq struct {
 
 // TemplatePreviewDraftReq 基于未保存 AST 的模板预览（画布刷新）。
 type TemplatePreviewDraftReq struct {
+	InstanceID    string `form:"instance"`
 	ID            string `form:"id"`
 	DraftDocument string `form:"draftDocument"`
 	ProjectID     string `form:"projectId"`

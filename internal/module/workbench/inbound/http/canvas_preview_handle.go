@@ -30,6 +30,10 @@ import (
 // 结构模板（页眉 / 页脚）没有样例实体：entityId 缺省/为空时按无实体模式渲染
 // （判据是**模板自己的 entity_type**，见 workbenchTemplate 的同名说明）。
 func (h *Handle) TemplatePreview(c *gin.Context) {
+	if instanceID := strings.TrimSpace(c.Query("instance")); instanceID != "" {
+		h.renderInstancePreview(c, instanceID, c.Query("projectId"), nil, c.Query("editor") == "1")
+		return
+	}
 	templateID := strings.TrimSpace(c.Query("template"))
 	if templateID == "" {
 		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrTemplateParamRequired))
@@ -65,6 +69,10 @@ func (h *Handle) TemplatePreviewDraft(c *gin.Context) {
 	req, _ := binding.ParseForm[workbenchdto.TemplatePreviewDraftReq](c)
 	templateID := strings.TrimSpace(req.ID)
 	document := json.RawMessage(req.DraftDocument)
+	if req.InstanceID != "" && len(document) > 0 {
+		h.renderInstancePreview(c, req.InstanceID, req.ProjectID, document, true)
+		return
+	}
 	if templateID == "" || len(document) == 0 {
 		c.String(http.StatusBadRequest, workbenchShortText(c, workbenchenums.ErrPreviewParamsIncomplete))
 		return
@@ -124,10 +132,22 @@ func (h *Handle) renderStructureTemplatePreview(c *gin.Context, document json.Ra
 
 func (h *Handle) renderTemplatePreview(c *gin.Context, templateID, entityType, entityID, projectID string,
 	draftDocument json.RawMessage, withEditorBridge bool) {
-	res, err := h.templatePreview.PreviewInstance(c.Request.Context(), &presentationdto.PreviewInstanceReq{
+	h.renderEntityPreview(c, &presentationdto.PreviewInstanceReq{
 		EntityType: entityType, EntityID: entityID, TemplateID: templateID,
 		ProjectID: projectID, DraftDocument: draftDocument,
-	})
+	}, withEditorBridge)
+}
+
+func (h *Handle) renderInstancePreview(c *gin.Context, instanceID, projectID string, document json.RawMessage, withEditorBridge bool) {
+	h.renderEntityPreview(c, &presentationdto.PreviewInstanceReq{InstanceID: instanceID, ProjectID: projectID, DraftDocument: document}, withEditorBridge)
+}
+
+func (h *Handle) renderEntityPreview(c *gin.Context, req *presentationdto.PreviewInstanceReq, withEditorBridge bool) {
+	if h.templatePreview == nil {
+		c.String(http.StatusServiceUnavailable, workbenchShortText(c, workbenchenums.ErrContentTemplatePreviewNotAssembled))
+		return
+	}
+	res, err := h.templatePreview.PreviewInstance(c.Request.Context(), req)
 	if err != nil {
 		// 422 保留（编译失败对作者是业务信息），错误原文只进日志：
 		// 编译器的错误里带节点路径与模板片段，直接铺在页面上等于把内部结构公开。

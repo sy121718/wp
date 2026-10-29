@@ -153,8 +153,10 @@ type GetByEntityReq struct {
 //
 // 只读渲染：不写快照/产物/指针，不激活 URL —— 预览不得改变线上状态。
 type PreviewInstanceReq struct {
-	EntityType string `json:"entityType" form:"entityType" binding:"required"`
-	EntityID   string `json:"entityId" form:"entityId" binding:"required"`
+	// InstanceID 非空时以本工程真实实例为上下文，实体和模板不接受调用方覆盖。
+	InstanceID string `json:"instanceId" form:"instanceId"`
+	EntityType string `json:"entityType" form:"entityType" binding:"required_without=InstanceID"`
+	EntityID   string `json:"entityId" form:"entityId" binding:"required_without=InstanceID"`
 	// TemplateID 预览哪套模板；可空 = 按实体类型取默认模板。
 	TemplateID string `json:"templateId" form:"templateId"`
 	// ProjectID 构建上下文所属工程（集合源按工程取数）；可空时经 project 契约解析。

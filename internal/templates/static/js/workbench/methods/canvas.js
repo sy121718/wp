@@ -472,7 +472,7 @@ export const canvasMethods = {
                 if (!frame) return;
                 // flushCanvas 和直接提交也必须终止上一轮局部回写。
                 this._patchSeq = (this._patchSeq || 0) + 1;
-                if (meta.saveBase === 'template') {
+                if ((meta.saveBase === 'template' || meta.saveBase === 'instance')) {
                     this.submitTemplateCanvas();
                     return;
                 }
@@ -508,14 +508,15 @@ export const canvasMethods = {
                     form.action = '/workbench/template/preview';
                     form.target = frame.name || 'wb-canvas';
                     form.style.display = 'none';
-                    ['id', 'entityType', 'entityId', 'projectId', 'draftDocument', 'csrf_token'].forEach(function (name) {
+                    ['id', 'instance', 'entityType', 'entityId', 'projectId', 'draftDocument', 'csrf_token'].forEach(function (name) {
                         var el = document.createElement('input');
                         el.name = name;
                         form.appendChild(el);
                     });
                     document.body.appendChild(form);
                 }
-                form.elements.id.value = meta.pageId;
+                form.elements.id.value = meta.saveBase === 'instance' ? '' : meta.pageId;
+                form.elements.instance.value = meta.saveBase === 'instance' ? meta.pageId : '';
                 form.elements.entityType.value = meta.entityType || '';
                 form.elements.entityId.value = meta.entityId || '';
                 form.elements.projectId.value = meta.projectId || '';
@@ -526,8 +527,9 @@ export const canvasMethods = {
             // fetchCanvasHTML 拉取整页预览 HTML（不重载 iframe），供局部刷新提取节点片段。
             fetchCanvasHTML() {
                 var body = new URLSearchParams();
-                if (meta.saveBase === 'template') {
-                    body.set('id', meta.pageId);
+                if ((meta.saveBase === 'template' || meta.saveBase === 'instance')) {
+                    body.set('id', meta.saveBase === 'instance' ? '' : meta.pageId);
+                    if (meta.saveBase === 'instance') body.set('instance', meta.pageId);
                     body.set('entityType', meta.entityType || '');
                     body.set('entityId', meta.entityId || '');
                     body.set('projectId', meta.projectId || '');
