@@ -33,7 +33,7 @@
              · 空值键：基座统一删掉（`sort=` 否则会让后端 *int 绑成 0）。
            要声明的只有 data-write-nav：成功后按响应 data.id 跳到编辑页。 *}
         <form data-write="create" data-write-url="/api/product/create" id="product-create-form" class="form-stack"
-              data-write-nav="/admin/products/edit?project={{cfProject}}&id={id}"
+              data-write-nav="/admin/products/edit?project={{cfProject}}&product={id}"
               data-product-create-form>
             <input type="hidden" name="projectId" value="{{cfProject}}">
             {* 写结论落在表单最上方：保存按钮在表单底部，失败原因若出现在别处，视线根本走不到。 *}

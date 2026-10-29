@@ -14,6 +14,7 @@ package builder
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"html/template"
@@ -53,6 +54,7 @@ import (
 	navPkg "go_wp/internal/builder/components/nav"
 	orderlistPkg "go_wp/internal/builder/components/orderlist"
 	productPkg "go_wp/internal/builder/components/product"
+	"go_wp/internal/builder/components/productbinding"
 	productcardPkg "go_wp/internal/builder/components/productcard"
 	productlistPkg "go_wp/internal/builder/components/productlist"
 	productselectorPkg "go_wp/internal/builder/components/productselector"
@@ -109,7 +111,12 @@ type nodeView struct {
 }
 
 // nodeViewOf 把单个 Node 转换为 nodeView（含递归 children，CSS 加入顺序对齐旧路径）。
-func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
+func nodeViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (view *nodeView, err error) {
+	defer func() {
+		if err != nil && ctx != nil && ctx.AllowIncomplete && errors.Is(err, core.ErrIncompleteNode) {
+			view, err = incompleteViewOf(node, topLevel, ctx), nil
+		}
+	}()
 	if ctx != nil && ctx.IncompleteNodes[node.ID] {
 		return incompleteViewOf(node, topLevel, ctx), nil
 	}
@@ -725,6 +732,10 @@ func productSelectorViewOf(node *core.Node, topLevel bool, ctx *core.RenderConte
 	return contentAtomViewOf(node, topLevel, ctx, productselectorPkg.Type, "product_selector", productselectorPkg.CompileCSS,
 		// 与商品详情同一条闭包适配：规格选择器也要把工程 id 烘进片段 URL。
 		func(p *productselectorPkg.Props, content core.ContentResolver) (productselectorPkg.View, error) {
+			content, err := productbinding.Resolve(ctx, p.ProductSource, p.ProductID)
+			if err != nil {
+				return productselectorPkg.View{}, err
+			}
 			return productselectorPkg.BuildView(p, content, ctx.ProjectID, ctx.Lang)
 		})
 }
@@ -856,7 +867,11 @@ func addToCartViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*
 	}
 	classes, customID := advancedClasses(node, &p, ctx)
 	addtocartPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	view, err := addtocartPkg.BuildView(&p, ctx.Content, ctx.ProjectID, ctx.Lang)
+	content, err := productbinding.Resolve(ctx, p.ProductSource, p.ProductID)
+	if err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
+	view, err := addtocartPkg.BuildView(&p, content, ctx.ProjectID, ctx.Lang)
 	if err != nil {
 		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
 	}

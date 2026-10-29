@@ -142,7 +142,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 		ShowQuantity: p.ShowQuantity,
 	}
 	if content == nil {
-		return View{}, fmt.Errorf("编译上下文缺少内容解析器，无法解析商品变体")
+		return View{}, fmt.Errorf("%w: 当前页面没有商品，请选择指定商品", core.ErrIncompleteNode)
 	}
 	if view.ProjectID == "" {
 		// 没有工程 id 的表单提交不了（API 校验工程归属）。
@@ -156,22 +156,39 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 		return view, nil
 	}
 
-	rawOptions, err := content.ResolveString(strings.TrimSpace(p.OptionsField))
+	optionsField := strings.TrimSpace(p.OptionsField)
+	if optionsField == "" {
+		optionsField = "product.options"
+	}
+	variantsField := strings.TrimSpace(p.VariantsField)
+	if variantsField == "" {
+		variantsField = "product.variants"
+	}
+	rawOptions, err := content.ResolveString(optionsField)
 	if err != nil {
 		return View{}, fmt.Errorf("解析规格维度字段 %q 失败: %w", p.OptionsField, err)
 	}
-	rawVariants, err := content.ResolveString(strings.TrimSpace(p.VariantsField))
+	rawVariants, err := content.ResolveString(variantsField)
 	if err != nil {
 		return View{}, fmt.Errorf("解析变体组合字段 %q 失败: %w", p.VariantsField, err)
 	}
 
 	groups := product.ParseOptionGroups(rawOptions)
 	options := product.ParseVariantOptions(rawVariants, groups, effectiveCurrency(p), view.ProjectID, view.Lang)
+	if p.VariantID != "" {
+		selected := options[:0]
+		for _, option := range options {
+			if option.ID == p.VariantID {
+				selected = append(selected, option)
+			}
+		}
+		if len(selected) == 0 {
+			return View{}, fmt.Errorf("所选规格不属于当前商品或已停用")
+		}
+		options = selected
+	}
 	if len(options) == 0 {
-		// 有规格维度、但没有可买的组合（未上架 / 全部停用）：留一句提示，
-		// 不做成一个点了没反应的按钮。
-		view.Notice, view.noticeKey = noticeNoVariant, TextKeyNoticeNoVariant
-		return view, nil
+		return View{}, fmt.Errorf("%w: 商品暂无可用规格，请选择有效商品和规格", core.ErrIncompleteNode)
 	}
 
 	if effectiveMode(p) == ModePerVariant {

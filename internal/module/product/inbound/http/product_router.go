@@ -644,3 +644,8 @@ func productTranslateMiddleware() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// SetupProductOptionsRoutes 公开商品选项仅返回安全事实。
+func SetupProductOptionsRoutes(router *gin.Engine, svc productcontract.PublicProductOptionsReader) {
+	router.GET("/api/site/product/options", builtin.RequestRateLimitMiddleware(90, time.Minute), (&ProductOptionsHandle{svc: svc}).Get)
+}

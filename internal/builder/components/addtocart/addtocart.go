@@ -5,10 +5,13 @@ package addtocart
 
 import (
 	_ "embed" // addtocart.css / add_to_cart.jet 经 //go:embed 打进二进制
+	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	json "go_wp/pkg/jsonx"
 	"strings"
 
+	"go_wp/internal/builder/components/productbinding"
 	"go_wp/internal/builder/core"
 )
 
@@ -17,10 +20,7 @@ const Type = "core.addToCart"
 
 // 变体呈现方式。
 const (
-	// ModeSingle 只输出一个加购表单：取商品启用变体里价格最低的那个。
-	//
-	// 用在卡片上（一键加购）。多变体商品取最低价是**展示口径**而不是「默认变体」——
-	// 商品数据里没有「默认变体」这个概念，凭空造一个会与规格选择器的首选项打架。
+	// ModeSingle 只输出一个加购表单：使用明确选定的规格，未指定时取第一项。
 	ModeSingle = "single"
 	// ModePerVariant 每个启用变体一行（带规格标签与价格），各自一个加购按钮。
 	ModePerVariant = "perVariant"
@@ -39,16 +39,20 @@ const (
 
 // Props 加购组件属性。
 type Props struct {
+	ProductSource string `json:"productSource,omitempty" ct:"select,current=当前商品,specific=指定商品,hidden,sec=content,label=商品来源"`
+	ProductID     string `json:"productId,omitempty" ct:"string,maxlen=36,hidden,sec=content,label=商品"`
+	VariantID     string `json:"variantId,omitempty" ct:"string,maxlen=36,hidden,sec=content,label=规格"`
+
 	// Source 数据源实体类型（当前只有 product；跨数据源绑定会被校验拒绝）。
-	Source string `json:"source,omitempty" ct:"select,product=商品,default=product,sec=content,label=数据源"`
+	Source string `json:"source,omitempty" ct:"select,product=商品,default=product,hidden,sec=content,label=数据源"`
 	// OptionsField 规格维度字段（JSON 数组，如 product.options）：变体的规格标签靠它拼出来
 	//（「红色 · L」），与商品详情/规格选择器同源。
-	OptionsField string `json:"optionsField,omitempty" ct:"string,maxlen=60,sec=content,label=规格维度字段"`
+	OptionsField string `json:"optionsField,omitempty" ct:"string,maxlen=60,hidden,sec=content,label=规格维度字段"`
 	// VariantsField 变体组合字段（JSON 数组，如 product.variants）：变体 id 与价格从它取。
-	VariantsField string `json:"variantsField,omitempty" ct:"string,maxlen=60,sec=content,label=变体组合字段"`
+	VariantsField string `json:"variantsField,omitempty" ct:"string,maxlen=60,hidden,sec=content,label=变体组合字段"`
 	// Currency 货币符号（价格前缀；留空用默认符号）。
 	Currency string `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
-	// VariantMode 变体呈现：single（一键加购最低价变体）/ perVariant（逐变体一行）。
+	// VariantMode 变体呈现：single（单个规格）/ perVariant（逐规格一行）。
 	VariantMode string `json:"variantMode,omitempty" ct:"select,single=单个变体,perVariant=逐变体,default=single,sec=content,label=变体呈现"`
 	// ShowQuantity 是否显示数量输入（关掉就是「一键加购一件」）。
 	ShowQuantity bool `json:"showQuantity,omitempty" ct:"bool,sec=content,label=数量输入"`
@@ -97,17 +101,25 @@ var Widget = core.Atom[Props]{
 	},
 }
 
-// validateExtra 关系性校验：没有变体来源的加购按钮点了只会报错，在保存期就拦住。
-func validateExtra(p *Props, nodeID string) (err error) {
-	if strings.TrimSpace(p.OptionsField) == "" {
-		// 没有规格维度就拼不出变体标签，逐变体模式会渲染成一排没有区别的按钮 ——
-		// 「L 和 XL 长一样」这种事只能靠保存期拦住。
-		return fmt.Errorf("加购组件必须声明规格维度字段（如 product.options）")
+// validateExtra 先拒绝非法配置，再把未选商品的编辑态交给预览局部占位。
+func validateExtra(p *Props, nodeID string) error {
+	bindingErr := productbinding.Validate(p.ProductSource, p.ProductID)
+	if bindingErr != nil && !errors.Is(bindingErr, core.ErrIncompleteNode) {
+		return bindingErr
 	}
-	if strings.TrimSpace(p.VariantsField) == "" {
-		return fmt.Errorf("加购组件必须声明变体组合字段（如 product.variants）")
+	if p.Source != "" && p.Source != "product" {
+		return fmt.Errorf("无效的商品数据源")
 	}
-	return nil
+	if p.OptionsField != "" && p.OptionsField != "product.options" {
+		return fmt.Errorf("无效的商品规格字段")
+	}
+	if p.VariantsField != "" && p.VariantsField != "product.variants" {
+		return fmt.Errorf("无效的商品变体字段")
+	}
+	if p.VariantID != "" && uuid.Validate(p.VariantID) != nil {
+		return fmt.Errorf("无效的商品规格引用")
+	}
+	return bindingErr
 }
 
 // effectiveMode 有效变体呈现方式（未知值兜底 single）。

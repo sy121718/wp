@@ -657,6 +657,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	ctx := &core.RenderContext{
 		CSS: &b, Context: buildCtx, Content: cfg.content, Block: cfg.block,
 		IncompleteNodes: incompleteIDs,
+		AllowIncomplete: cfg.mode != CompileModePublish,
 		Plugin:          cfg.plugin, Collection: cfg.collection,
 		Product: cfg.product, ContentSource: cfg.contentSource,
 		Navigation: cfg.navigation, ProjectID: cfg.projectID, CurrentPath: cfg.currentPath,

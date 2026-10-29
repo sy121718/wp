@@ -51,7 +51,7 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 		return View{}, fmt.Errorf("规格选择器属性为空")
 	}
 	if content == nil {
-		return View{}, fmt.Errorf("编译上下文缺少内容解析器，无法解析商品规格字段（数据源 product）")
+		return View{}, fmt.Errorf("%w: 当前页面没有商品，请选择指定商品", core.ErrIncompleteNode)
 	}
 	optionsField, variantsField := EffectiveOptionsField(p), EffectiveVariantsField(p)
 	optionsRaw, err := content.ResolveString(optionsField)
@@ -65,6 +65,9 @@ func BuildView(p *Props, content core.ContentResolver, projectID, lang string) (
 
 	groups := product.ParseOptionGroups(strings.TrimSpace(optionsRaw))
 	rows := product.ParseVariantOptions(strings.TrimSpace(variantsRaw), groups, EffectiveCurrency(p), projectID, lang)
+	if len(rows) == 0 {
+		return View{}, fmt.Errorf("%w: 商品暂无可用规格，请选择有效商品", core.ErrIncompleteNode)
+	}
 
 	view := View{
 		OptionGroups:   groups,

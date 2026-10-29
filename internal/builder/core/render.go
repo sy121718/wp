@@ -25,6 +25,8 @@ type RenderContext struct {
 	// IncompleteNodes 仅草稿预览使用：按节点 ID 生成局部占位，不修改输入 AST。
 	// 正式发布严格校验，因此该集合为空。
 	IncompleteNodes map[string]bool
+	// AllowIncomplete 只在预览中将解析期发现的未配置节点替换为局部占位。
+	AllowIncomplete bool
 	// renderPanel 菜单悬浮面板的块渲染闭包（见 SetPanelRenderer / RenderPanel）。
 	// 私有：注入方（builder）与消费方（navViewOf）都在同一编译流程内，不对外暴露。
 	renderPanel func(blockID string) (string, error)

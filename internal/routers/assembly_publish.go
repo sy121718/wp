@@ -804,6 +804,7 @@ func (a *assembly) runSelfCheck() {
 // mountPublicFace 公开端点与兜底路由：运行时片段端点 + 未匹配路由处理。
 func (a *assembly) mountPublicFace() {
 	producthttp.SetupProductPublicRoutes(a.router, a.productSvc)
+	producthttp.SetupProductOptionsRoutes(a.router, a.productSvc)
 	// 运行时片段端点（0-D，公开路由：capability 白名单 + 认证策略在 handler 内）。
 	runtimefragment.SetupFragmentRoutes(a.router)
 

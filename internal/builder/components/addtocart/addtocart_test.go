@@ -3,13 +3,15 @@ package addtocart
 // addtocart_test.go — 加购组件的校验与视图测试。
 //
 // 覆盖的是**不变量**而不是「函数能跑通」：
-//   · 没有变体来源 / 规格维度的组件在保存期就被拒（否则产物里会有一个点了报错的按钮）；
+//   · 未配置商品的草稿保留局部占位，发布仍严格拒绝；
 //   · 变体标签与价格与规格选择器同源（复用 product 包的解析，测试用同一份 JSON 形状）；
 //   · 未启用的变体不出现在可加购列表里（停用的规格不能买）；
-//   · 没有启用变体时留提示而不是让整页构建失败（那是数据状态，不是配置错误）；
+//   · 非法字段、未知商品和失效规格不被草稿容错吞掉。
 
 import (
+	"errors"
 	"fmt"
+	"go_wp/internal/builder/core"
 	"strings"
 	"testing"
 )
@@ -47,7 +49,7 @@ func baseContent() stubContent {
 	return stubContent{"product.options": optionsJSON, "product.variants": variantsJSON}
 }
 
-// TestValidateExtra 保存期校验：缺任一槽位都拒绝。
+// TestValidateExtra 允许编辑中间态，字段只接受固定商品事实。
 func TestValidateExtra(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -55,9 +57,10 @@ func TestValidateExtra(t *testing.T) {
 		wantErr bool
 	}{
 		{"齐备合法", baseProps(), false},
-		{"缺规格维度字段", &Props{VariantsField: "product.variants"}, true},
-		{"缺变体组合字段", &Props{OptionsField: "product.options"}, true},
-		{"两者都缺", &Props{}, true},
+		{"默认规格维度字段", &Props{VariantsField: "product.variants"}, false},
+		{"默认变体组合字段", &Props{OptionsField: "product.options"}, false},
+		{"默认两字段", &Props{}, false},
+		{"任意查询字段不允许", &Props{OptionsField: "product.costPrice"}, true},
 		{"只填空格不算声明", &Props{OptionsField: "  ", VariantsField: "product.variants"}, true},
 	}
 	for _, tt := range tests {
@@ -125,18 +128,11 @@ func TestBuildViewPerVariantMode(t *testing.T) {
 	}
 }
 
-// TestBuildViewEmptyVariantsRendersNotice 没有启用变体时留提示，不让整页构建失败。
-func TestBuildViewEmptyVariantsRendersNotice(t *testing.T) {
+// 无可用变体属于未完成节点，由预览调用方局部占位，发布必须拒绝。
+func TestBuildViewEmptyVariantsIsIncomplete(t *testing.T) {
 	content := stubContent{"product.options": optionsJSON, "product.variants": ""}
-	v, err := BuildView(baseProps(), content, "proj-1", "")
-	if err != nil {
-		t.Fatalf("无变体属于数据状态，不该让构建失败: %v", err)
-	}
-	if v.Notice == "" {
-		t.Fatal("无变体时应给出提示，而不是渲染一个点了没反应的按钮")
-	}
-	if len(v.Rows) != 0 {
-		t.Fatalf("无变体时不该有加购行: %+v", v.Rows)
+	if _, err := BuildView(baseProps(), content, "proj-1", ""); !errors.Is(err, core.ErrIncompleteNode) {
+		t.Fatalf("无可用变体必须标记未完成: %v", err)
 	}
 }
 

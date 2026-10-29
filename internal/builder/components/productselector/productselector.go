@@ -13,10 +13,12 @@ package productselector
 
 import (
 	_ "embed" // productselector.css 经 //go:embed 打进二进制
+	"errors"
 	"fmt"
 	json "go_wp/pkg/jsonx"
 	"strings"
 
+	"go_wp/internal/builder/components/productbinding"
 	"go_wp/internal/builder/core"
 )
 
@@ -36,8 +38,11 @@ const (
 
 // Props core.productSelector 属性。
 type Props struct {
-	OptionsField  string             `json:"optionsField,omitempty" ct:"string,maxlen=60,sec=content,label=规格维度字段"`
-	VariantsField string             `json:"variantsField,omitempty" ct:"string,maxlen=60,sec=content,label=规格组合字段"`
+	ProductSource string `json:"productSource,omitempty" ct:"select,current=当前商品,specific=指定商品,hidden,sec=content,label=商品来源"`
+	ProductID     string `json:"productId,omitempty" ct:"string,maxlen=36,hidden,sec=content,label=商品"`
+
+	OptionsField  string             `json:"optionsField,omitempty" ct:"string,maxlen=60,hidden,sec=content,label=规格维度字段"`
+	VariantsField string             `json:"variantsField,omitempty" ct:"string,maxlen=60,hidden,sec=content,label=规格组合字段"`
 	Currency      string             `json:"currency,omitempty" ct:"text,maxlen=8,sec=content,label=货币符号"`
 	Stock         string             `json:"stock,omitempty" ct:"select,=开启,off=关闭,default=,sec=content,label=实时可用量"`
 	EmptyText     string             `json:"emptyText,omitempty" ct:"text,maxlen=50,sec=content,label=空态文案"`
@@ -71,6 +76,10 @@ var Widget = &Component{Atom: core.Atom[Props]{
 // 字段名是否在白名单内由 builder.ValidateFieldRefs（保存期）与解析器（构建期）判定 ——
 // 组件不另写一份白名单，白名单只有商品域一份。
 func validateExtra(p *Props, _ string) (err error) {
+	bindingErr := productbinding.Validate(p.ProductSource, p.ProductID)
+	if bindingErr != nil && !errors.Is(bindingErr, core.ErrIncompleteNode) {
+		return bindingErr
+	}
 	for _, field := range []string{EffectiveOptionsField(p), EffectiveVariantsField(p)} {
 		parts := strings.SplitN(field, ".", 2)
 		if len(parts) != 2 || parts[1] == "" {
@@ -85,7 +94,7 @@ func validateExtra(p *Props, _ string) (err error) {
 	default:
 		return fmt.Errorf("无效的实时可用量开关 %q（空 = 开启 / off = 关闭）", p.Stock)
 	}
-	return nil
+	return bindingErr
 }
 
 // FieldBindings 实现 core.FieldBindingProvider：自报规格维度 / 组合两个字段绑定。
