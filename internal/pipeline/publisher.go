@@ -404,7 +404,8 @@ func DefaultCompile(ctx context.Context, in BuildInput) ([]byte, error) {
 		return nil, err
 	}
 	opts := append(ClientAssetOptions(),
-		builder.WithContext(ctx), builder.WithComponentSet(set), builder.WithLanguage(in.Lang))
+		builder.WithContext(ctx), builder.WithCompileMode(builder.CompileModePublish),
+		builder.WithComponentSet(set), builder.WithLanguage(in.Lang))
 	compiled, err := builder.Compile(page, opts...)
 	if err != nil {
 		return nil, err

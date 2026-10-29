@@ -104,8 +104,12 @@ func TestProductListEmptyStateAndResponsive(t *testing.T) {
 	if !strings.Contains(compiled.HTML, "该标签下还没有商品") {
 		t.Fatalf("无命中应渲染空态文案\n%s", compiled.HTML)
 	}
-	if strings.Contains(compiled.HTML, "sky-product-list-item") {
-		t.Fatalf("空集合不该输出项目节点\n%s", compiled.HTML)
+	cardEnd := strings.Index(compiled.HTML, "</template>")
+	if cardEnd < 0 || !strings.Contains(compiled.HTML[:cardEnd], "data-catalog-card") {
+		t.Fatal("JSON目录必须保留受控卡片模板")
+	}
+	if strings.Contains(compiled.HTML[cardEnd:], `class="sky-product-list-item"`) {
+		t.Fatalf("空集合不该输出已实例化的项目节点\n%s", compiled.HTML)
 	}
 
 	// 多端契约：自适应列不写死宽度、窄屏单列。

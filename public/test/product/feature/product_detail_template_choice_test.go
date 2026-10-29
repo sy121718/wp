@@ -38,6 +38,7 @@ import (
 	productservice "go_wp/internal/module/product/service"
 	"go_wp/internal/pipeline"
 	"go_wp/internal/templates"
+	"go_wp/public/test/support"
 
 	"github.com/google/uuid"
 )
@@ -287,12 +288,15 @@ func TestProductPreviewBeforePublish(t *testing.T) {
 		t.Fatalf("预览不应激活访问面产物")
 	}
 
-	// 预览字节与随后发布的产物字节一致（预览看到的就是发布出来的）；唯一例外是
-	// URL 相关的 SEO 片段 —— 预览不激活 URL，只有发布产物带实例线上路径
+	// 预览与正式产物共享业务内容及增强脚本；明确的模拟外壳、正式采集和
+	// URL 相关 SEO 不参与公共字节比较。预览不激活线上路径
 	// （见 internal/module/presentation/service/presentation_seo.go 的取舍 2）。
 	f.publishWithTemplate(t, productID, "/products/summer-shirt", chosen.ID)
 	published := activeHTML(t, "/products/summer-shirt")
-	if stripURLTags(published) != stripURLTags(res.HTML) {
+	if !strings.Contains(res.HTML, `name="site-preview-mode" content="readonly"`) || strings.Contains(published, `name="site-preview-mode"`) {
+		t.Fatal("预览必须声明只读，正式产物不能携带模拟上下文")
+	}
+	if stripURLTags(support.ComparableSiteHTML(t, published)) != stripURLTags(support.ComparableSiteHTML(t, res.HTML)) {
 		t.Fatalf("发布产物应与预览渲染（除 URL 相关 SEO 片段外）一致\n预览: %s\n产物: %s", res.HTML, published)
 	}
 	if got := canonicalOf(published); got != "/products/summer-shirt" {

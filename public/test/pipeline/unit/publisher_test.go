@@ -401,6 +401,9 @@ func TestDefaultCompilePlainPageHasNoClientAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(out)
+	if strings.Contains(body, "site-preview-mode") || strings.Contains(body, "sky-preview-notice") {
+		t.Fatal("默认发布编译不应携带模拟预览标识")
+	}
 	// 无关控件资源一个都不许有（这条不因采集脚本而放松）。
 	for _, unwanted := range []string{"WBUI", ".wbs-trigger"} {
 		if strings.Contains(body, unwanted) {
@@ -419,5 +422,13 @@ func TestDefaultCompilePlainPageHasNoClientAssets(t *testing.T) {
 		if strings.Contains(body, empty) {
 			t.Errorf("不应输出空脚本 %q", empty)
 		}
+	}
+}
+
+// 默认编译器属于正式发布链路，不能沿用预览的未完成节点容错。
+func TestDefaultCompileRejectsIncompleteNode(t *testing.T) {
+	doc := []byte(`{"root":[{"id":"unfinished","type":"core.text","props":{"mode":"plaintext"}}]}`)
+	if _, err := pipeline.DefaultCompile(context.Background(), pipeline.BuildInput{DocJSON: doc}); err == nil {
+		t.Fatal("默认发布编译必须拒绝未完成文本")
 	}
 }

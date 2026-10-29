@@ -4,8 +4,7 @@
 <meta charset="utf-8">
 {{ if .PreviewReadOnly }}<meta name="site-preview-mode" content="readonly">
 <meta name="site-preview-state" content="{{ .PreviewState }}">
-{{ end }}
-<meta name="viewport" content="width=device-width, initial-scale=1">
+{{ end }}<meta name="viewport" content="width=device-width, initial-scale=1">
 {{ if .Title }}<title>{{ .Title }}</title>
 {{ end }}{{ if .MetaDescription }}<meta name="description" content="{{ .MetaDescription }}">
 {{ end }}{{ if .SEOHead }}{{ .SEOHead | unsafe }}
@@ -15,13 +14,13 @@
 {{ end }}<style>
 {{ if .ThemeVarsCSS }}{{ .ThemeVarsCSS | unsafe }}
 {{ end }}{{ .CSS | unsafe }}
-{{ if .PreviewReadOnly }}.sky-preview-notice{position:fixed;inset:auto 16px 16px;z-index:2147483647;width:fit-content;max-width:calc(100% - 32px);margin:auto;padding:10px 16px;border:1px solid #d4d4d4;border-radius:10px;background:#fff;color:#171717;font:12px/1.5 system-ui,sans-serif;box-shadow:0 4px 20px #0001;pointer-events:none}{{ end }}
-</style>
+{{ if .PreviewReadOnly }}.sky-preview-notice{position:fixed;inset:auto 16px 16px;z-index:2147483647;width:fit-content;max-width:calc(100% - 32px);margin:auto;padding:10px 16px;border:1px solid #d4d4d4;border-radius:10px;background:#fff;color:#171717;font:12px/1.5 system-ui,sans-serif;box-shadow:0 4px 20px #0001;pointer-events:none}
+{{ end }}</style>
 </head>
 <body{{ if .BodyClass }} class="{{ .BodyClass | unsafe }}"{{ end }}>
 {{ .HTML | unsafe }}
-{{ if .PreviewReadOnly }}<aside class="sky-preview-notice" role="status">{{ .PreviewNotice }}</aside>{{ end }}
-{{ if .EnhanceScript }}<script>{{ .EnhanceScript | unsafe }}</script>
+{{ if .PreviewReadOnly }}<aside class="sky-preview-notice" role="status">{{ .PreviewNotice }}</aside>
+{{ end }}{{ if .EnhanceScript }}<script>{{ .EnhanceScript | unsafe }}</script>
 {{ end }}{{ if .BodyScripts }}{{ .BodyScripts | unsafe }}
 {{ end }}</body>
 </html>

@@ -3,8 +3,7 @@ package feature
 // site_ga4_test.go — 站点统计代码（GA4）的**构建期端到端**验证（BIZ-8 目标 1）。
 //
 // 链路：SiteSettings（projects.settings）→ page 服务构建上下文 → builder → 产物 head。
-// 走的是真实预览编译（page.CompilePreview，与正式发布共用 compileDocument），
-// 因此「预览里看到的 head」与「发布会产出的字节」同源。
+// 使用真实项目设置与发布共用的AnalyticsCompileOptions；另验证只读预览不执行GA4。
 //
 // 断言两条：
 //   - 配了测量 ID：产物 head 里出现 gtag 脚本，ID 正确；
@@ -18,12 +17,15 @@ import (
 	"strings"
 	"testing"
 
+	"go_wp/internal/builder"
 	pagemodel "go_wp/internal/module/page/model"
 	pageservice "go_wp/internal/module/page/service"
 	projectcontract "go_wp/internal/module/project/contract"
 	projectdto "go_wp/internal/module/project/dto"
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
+	"go_wp/internal/pipeline"
+	"go_wp/internal/templates"
 	"go_wp/public/test/support"
 )
 
@@ -59,8 +61,32 @@ func TestSiteGA4InjectedIntoBuiltHead(t *testing.T) {
 		}
 	}
 
+	compilePublished := func() ([]byte, error) {
+		page, err := builder.ParsePage([]byte(ga4DocJSON))
+		if err != nil {
+			return nil, err
+		}
+		set, err := templates.NewEmbeddedComponentSet()
+		if err != nil {
+			return nil, err
+		}
+		opts := append(pipeline.AnalyticsCompileOptions(ctx, projects, project.ID), builder.WithComponentSet(set), builder.WithCompileMode(builder.CompileModePublish))
+		compiled, err := builder.Compile(page, opts...)
+		if err != nil {
+			return nil, err
+		}
+		html, err := builder.RenderDocument(compiled)
+		return []byte(html), err
+	}
 	setGA4("G-ABC1234567")
-	html, err := pages.CompilePreview(ctx, []byte(ga4DocJSON), project.ID, "/about", "zh-CN", false)
+	preview, err := pages.CompilePreview(ctx, []byte(ga4DocJSON), project.ID, "/about", "zh-CN", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(preview), "googletagmanager") {
+		t.Fatal("只读预览不应执行正式GA4采集")
+	}
+	html, err := compilePublished()
 	if err != nil {
 		t.Fatalf("预览编译失败: %v", err)
 	}
@@ -76,7 +102,7 @@ func TestSiteGA4InjectedIntoBuiltHead(t *testing.T) {
 
 	// 清空测量 ID：产物里不再有统计代码（零字节注入不变量）。
 	setGA4("")
-	html, err = pages.CompilePreview(ctx, []byte(ga4DocJSON), project.ID, "/about", "zh-CN", false)
+	html, err = compilePublished()
 	if err != nil {
 		t.Fatalf("清空后预览编译失败: %v", err)
 	}
@@ -86,7 +112,7 @@ func TestSiteGA4InjectedIntoBuiltHead(t *testing.T) {
 
 	// 非法形状：不注入，也不把原始输入拼进 head（脚本注入防线）。
 	setGA4(`G-ABC"><script>alert(1)</script>`)
-	html, err = pages.CompilePreview(ctx, []byte(ga4DocJSON), project.ID, "/about", "zh-CN", false)
+	html, err = compilePublished()
 	if err != nil {
 		t.Fatalf("非法 ID 时预览编译失败: %v", err)
 	}

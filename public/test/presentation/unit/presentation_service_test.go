@@ -260,9 +260,12 @@ func TestPresentationPreviewAndPublishedAssets(t *testing.T) {
 	}
 	published := activeHTML(t, "/interactive-assets")
 	// 预览不激活 URL，发布产物带实例线上路径 —— canonical / og:url / 由 URL 生成面包屑
-	// 的 JSON-LD 是两者唯一的有意差异（见 presentation_seo.go 取舍 2）：
-	// 剥掉这些 URL 相关片段后必须逐字节一致，并各自断言 SEO 头的有无。
-	if stripURLTags(published) != stripURLTags(preview.HTML) {
+	// 的 JSON-LD，以及明确的只读外壳/正式采集是有意差异。
+	// 去掉这些用途差异后，业务内容与增强脚本必须逐字节一致。
+	if !strings.Contains(preview.HTML, `name="site-preview-mode" content="readonly"`) || strings.Contains(published, `name="site-preview-mode"`) {
+		t.Fatal("预览必须声明只读，正式产物不能携带模拟上下文")
+	}
+	if stripURLTags(support.ComparableSiteHTML(t, published)) != stripURLTags(support.ComparableSiteHTML(t, preview.HTML)) {
 		t.Fatal("预览与激活产物（除 URL 相关 SEO 片段外）字节不一致")
 	}
 	if got := canonicalOf(published); got != "/interactive-assets" {
