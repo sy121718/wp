@@ -140,11 +140,10 @@ for dirpath, _, files in os.walk(root):
             #（membership 的 thresholdYuan → thresholdAmount、freeShipping+discountPercent
             # → entitlements 数组）。这种映射只有页面脚本知道，本门禁看不到 —— 跳过对账。
             #
-            # 谁来守这些映射：内联脚本自己（ui/membership_write.js 有 membership_write.test.cjs；
-            # ui/product_variant_write.js **当前没有测试**）。注释此前把后者写成
-            # product_bundle_write.test.cjs —— 那个文件从来不存在（bundle 概念已下线），
-            # 于是"由测试守"这句话对商品变体行一直是假的。缺的那条测试记在 B00 的待办里，
-            # 不在这里假装它有。
+            # 谁来守这些映射：各自的 .test.cjs —— onboarding 侧是
+            # ui/membership_write.test.cjs，商品侧是 ui/product_variant_write.test.cjs。
+            # 注释此前把后者写成 product_bundle_write.test.cjs（bundle 概念已下线，
+            # 那个文件从来不存在），于是"由测试守"这句话对商品变体行一直是假的。
             if 'data-write-builder=' in attrs:
                 continue
 

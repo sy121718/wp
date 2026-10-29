@@ -76,20 +76,32 @@ def statements(src):
 # 判据是返回类型，不是函数名（名字随时会改）。三种返回形态都是中间产物：
 #   map[string]any / map[string]interface{}  —— 元数据表，通常随后 json.Marshal
 #   []gin.H / map[string]gin.H               —— 控件/选项列表，之后还会被再加工
+# RENDER_EXIT 渲染出口：语句里一旦出现它，函数体内就有真视图，不能再按内部结构豁免。
+RENDER_EXIT = re.compile(r"pageview\.Render|adminui\.RenderPage|adminui\.RenderBare|view\.Render\(")
+
 NON_VIEW_RETURN = re.compile(
     r"^func\b[^{]*\b(map\[string\](any|interface\{\})|\[\]gin\.H|map\[string\]gin\.H)\s*\{"
 )
 
 
-def main():
-    path = sys.argv[1]
-    src = open(path, encoding="utf-8").read()
+def count(src):
+    """在源码字符串上跑一遍判据，返回 (gin.H 页面视图数, c.HTML 数)。
+
+    **判据只有这一份**：main() 只负责读文件与打印，测试直接调用本函数。
+    判据若在测试里复刻一份，改主循环时测试仍全绿而真门禁已经漂移 ——
+    这正是本仓「同一套判据写两处」的老问题。
+    """
     gin = 0
     for st in statements(src):
         if JSON_EGRESS.search(st):
             continue
         # 内部结构构造器：它的 gin.H 不进模板。
-        if NON_VIEW_RETURN.search(st.strip()):
+        #
+        # 但豁免必须收窄：statements() 把顶格 func 连同函数体切成**一条**语句，
+        # 所以「返回 map[string]any」的函数里如果有 gin.H 直接喂给 pageview.Render，
+        # 整条语句豁免会把它一起放过（实测这种页面视图扫出 0）。
+        # 判据：该语句里出现渲染出口时不豁免 —— 那种情况下函数内部就有一条真视图。
+        if NON_VIEW_RETURN.search(st.strip()) and not RENDER_EXIT.search(st):
             continue
         # 注释里提到的 gin.H（技术说明）不是代码：先把注释行剔掉再数。
         code_only = "\n".join(re.sub(r"//.*$", "", ln) for ln in st.split("\n"))
@@ -104,7 +116,14 @@ def main():
             if re.match(r"gin\.H\{\s*\}", code_only[m.start():]):
                 continue
             gin += 1
-    print(gin, src.count("c.HTML("))
+    return gin, src.count("c.HTML(")
+
+
+def main():
+    path = sys.argv[1]
+    src = open(path, encoding="utf-8").read()
+    gin, html = count(src)
+    print(gin, html)
 
 
 if __name__ == "__main__":

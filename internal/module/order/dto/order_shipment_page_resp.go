@@ -17,8 +17,11 @@ import (
 
 // PendingShipPageView 待发货页整页的渲染视图。
 type PendingShipPageView struct {
-	Title string
-	Menu  string
+	// view tag 不可省：layout.html 读的是小写 `.title` / `.menu`（页签与顶栏标题）。
+	// 不写 tag 时 ViewMap 按字段名摊平成 `Title`，模板 isset(.title) 为假，
+	// 整页标题静默退化成品牌名「管理后台」—— 状态码仍是 200，日志也干净。
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
 
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string
@@ -47,8 +50,9 @@ func (v PendingShipPageView) Paging() pagination.Page {
 
 // CarrierListPageView 承运商配置页整页的渲染视图。
 type CarrierListPageView struct {
-	Title string
-	Menu  string
+	// view tag 不可省，理由同 PendingShipPageView。
+	Title string `view:"title"`
+	Menu  string `view:"menu"`
 
 	Projects        []projectcontract.ProjectResp
 	SelectedProject string

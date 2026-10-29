@@ -26,27 +26,13 @@ def load_scanner():
 
 
 def count(src):
-    """在源码字符串上跑一遍判据，返回 (gin.H 页面视图数, c.HTML 数)。"""
-    mod = load_scanner()
-    gin = 0
-    for st in mod.statements(src):
-        if mod.JSON_EGRESS.search(st):
-            continue
-        if mod.NON_VIEW_RETURN.search(st.strip()):
-            continue
-        code_only = "\n".join(
-            __import__("re").sub(r"//.*$", "", ln) for ln in st.split("\n")
-        )
-        for m in __import__("re").finditer(r"gin\.H\{", code_only):
-            prefix = code_only[max(0, m.start() - 24):m.start()]
-            if mod.CONTAINER.search(prefix) or __import__("re").search(
-                r"append\([^)]*,\s*$", prefix
-            ):
-                continue
-            if __import__("re").match(r"gin\.H\{\s*\}", code_only[m.start():]):
-                continue
-            gin += 1
-    return gin, src.count("c.HTML(")
+    """在源码字符串上跑判据，返回 (gin.H 页面视图数, c.HTML 数)。
+
+    **直接调用扫描器暴露的 count()**，不在这里复刻主循环 —— 复刻一份的后果是：
+    改扫描器判据（新豁免、窗口长度）时这里仍全绿，而真门禁已经漂移，
+    正是本仓「同一套判据写两处」的老问题。
+    """
+    return load_scanner().count(src)
 
 
 CASES = [
@@ -113,6 +99,16 @@ func palette(raw any) []gin.H {
 }
 """,
         0,
+    ),
+    (
+        "返回 map[string]any 但内部有渲染出口时仍计入",
+        """package x
+func pageMap() map[string]any {
+    pageview.Render(c, gin.H{"Title": "t"})
+    return nil
+}
+""",
+        1,
     ),
     (
         "同一文件里，视图与内部构造器分别判定",

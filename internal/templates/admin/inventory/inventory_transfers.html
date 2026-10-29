@@ -24,6 +24,9 @@
 {{csrf := .["csrf_token"]}}
 {{selectedProject := .SelectedProject}}
 {{rows := .Rows}}
+{* warehouses 收进局部变量：Jet 没有 `$` 父作用域语法（`$.Warehouses` 是解析错误，
+   会让整页 500）。嵌套 range 里要取外层键只能事先绑到变量上。 *}
+{{warehouses := .Warehouses}}
 {{loadError := .["LoadError"]}}
 <div class="stack">
     <header class="page-head">
@@ -187,7 +190,7 @@
                 <label class="form-label" for="tr-approve-to-{{r.ID}}">{{tr("admin.inventory.transfers.approveToWh", "目标仓（可改）")}}</label>
                 <select class="form-select" id="tr-approve-to-{{r.ID}}" name="toWarehouseId">
                     <option value="">{{tr("admin.inventory.transfers.approveKeepTo", "沿用申请时的目标仓")}}</option>
-                    {{range _, w := $.Warehouses}}
+                    {{range _, w := warehouses}}
                     <option value="{{w.ID}}">{{w.Name}} ({{w.Code}})</option>
                     {{end}}
                 </select>

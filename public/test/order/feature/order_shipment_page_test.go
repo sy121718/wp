@@ -235,3 +235,52 @@ func clipHTML(s string) string {
 	}
 	return s[:1200] + "…"
 }
+
+// TestShipmentPagesCarryTheirOwnTitle 页面 <title> / 顶栏标题取自视图，不能退化成品牌名。
+//
+// 守的是一个**静默**的缺陷形态：视图结构体字段没写 `view:"title"` 时，ViewMap 按字段名
+// 摊平成 `Title`，而 layout.html 读的是小写 `.title` —— isset 为假就回落到品牌名。
+// 结果是状态码 200、日志干净、页面能打开，只有浏览器标签与顶栏标题错了
+// （「待发货」变成「管理后台」）。外观类断言必须落到真实 HTML 片段上才抓得到。
+func TestShipmentPagesCarryTheirOwnTitle(t *testing.T) {
+	f := newOrderFixture(t)
+	if f == nil {
+		return
+	}
+	engine := newShipPagesEngine(t, f)
+
+	cases := []struct {
+		name string
+		path string
+		want string
+	}{
+		// want 取的是页签里那一段：`<title>待发货 — go_wp …`。
+		{"待发货页", "/admin/orders/pending-ship?project=" + f.projectID, "<title>待发货"},
+		{"承运商页", "/admin/order-carriers?project=" + f.projectID, "<title>承运商"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("应 200，实际 %d：%s", rec.Code, clipHTML(rec.Body.String()))
+			}
+			body := rec.Body.String()
+			if !strings.Contains(body, tc.want) {
+				t.Errorf("页签标题没有取自视图（缺 %q）：视图字段大概率漏了 view:\"title\" tag，"+
+					"layout 读 .title 取不到就回落成品牌名。实际片段：%s",
+					tc.want, clipHTML(body[:min(len(body), 400)]))
+			}
+			if strings.Contains(body, "<title>管理后台") {
+				t.Errorf("标题退化成品牌名了（视图的 Title 没有摊平到 .title 键）")
+			}
+		})
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
