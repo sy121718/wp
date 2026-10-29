@@ -1478,6 +1478,7 @@ func (a *assembly) wireRuntimeAccessFace() {
 	// 而回调带的是原始报文）。
 	carthttp.SetupCartRoutes(router, cartSvc)
 	carthttp.SetupCartPublicRoutes(router, cartSvc, userhttp.VisitorIdentityMiddleware(a.userSvc), userhttp.VisitorCSRFMiddleware())
+	orderhttp.SetupOrderPublicRoutes(router, a.orderSvc, userhttp.VisitorIdentityMiddleware(a.userSvc), userhttp.VisitorCSRFMiddleware())
 	// 访问统计（BIZ-8）：打点端点挂**公开路由** —— 访客浏览器直连，没有后台会话也没有
 	// CSRF token（与 mail 追踪、支付回调同一位置与同一理由）。越权防护靠接口形状：
 	// 公开路由拿到的那份契约只有「写一条浏览记录」，查询与删除能力传不出去。

@@ -1,8 +1,8 @@
 package orderservice
 
 // 客户能做的只有三件事：提交申请、撤销自己**还没被审核**的申请、查自己的申请。
-// 三件事都按 userID 收口：片段层写入的 UserID 是身份的来源，这里**再核一次订单归属** ——
-// 片段层写错了、被绕过了，这一层仍然拦得住。（安全边界不靠某一层独守。）
+// 三件事都按 userID 收口：访客入口写入的 UserID 是身份的来源，这里**再核一次订单归属** ——
+// 调用方写错了、被绕过了，这一层仍然拦得住。（安全边界不靠某一层独守。）
 
 // 唯一的强顺序：**先入库、后退款**。反过来的失败模式是「钱退了、货没回来」，
 // 而这正是退货流程最容易被薅的地方 —— 所以收货把入库放在退款之前，
@@ -61,14 +61,11 @@ var returnableOrderStatuses = map[string]bool{
 
 // 退货状态 → 展示文案的映射**不在这里**。
 //
-// 真源是 orderenums.ReturnStatusLabel（key + 中文兜底，词条 admin.returns.status.*），
-// 取词在出口：后台页（inbound/http 的 returnStatusText）、JSON 接口（order_handle.go
-// 的 localizeReturnStatusLabels）、访客片段（runtimefragment 的 returnStatusLabelOf）。
-// service 拿不到请求语言 —— 在这里拼中文的表现是英文站点的接口响应与访客页面恒中文，
-// 而页面上不会有任何报错。
+// 后台展示使用 orderenums.ReturnStatusLabel；访客 JSON 保留原始状态，
+// 构建期静态外壳与前端负责显示，服务不把状态译文塞进事实 DTO。
 
 // RequestReturn 客户提交退货申请。
-func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequestReq) (res *orderdto.ReturnResp, err error) {
+func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequestReq) (res *orderdto.VisitorReturnResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
@@ -85,6 +82,16 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 	if len(req.Items) > maxReturnItems {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
+	if req.UserID == 0 {
+		return nil, orderenums.Err(orderenums.ErrInvalidParam)
+	}
+	seen := make(map[uint64]bool, len(req.Items))
+	for _, line := range req.Items {
+		if seen[line.OrderItemID] {
+			return nil, orderenums.Err(orderenums.ErrInvalidParam)
+		}
+		seen[line.OrderItemID] = true
+	}
 	projectID := strings.TrimSpace(req.ProjectID)
 
 	// 幂等：同一个 requestID 只落一张申请单（客户在网络不稳时点两次是常态）。
@@ -94,11 +101,17 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 			return nil, gerr
 		}
 		if existing != nil {
+			if err := checkVisitorReturnReplay(existing, req); err != nil {
+				return nil, err
+			}
 			items, ierr := s.returns.ItemsByReturnID(ctx, existing.ID)
 			if ierr != nil {
 				return nil, ierr
 			}
-			return toReturnResp(existing, items, nil), nil
+			if !sameReturnRequest(existing, items, req) {
+				return nil, orderenums.Err(orderenums.ErrReturnRequestConflict)
+			}
+			return toVisitorReturnResp(existing, items), nil
 		}
 	}
 
@@ -110,11 +123,8 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		// 跨工程与不存在返回同一句话：区分开来就是一个订单 id 探测器。
 		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
-	// 归属：登录访客只能退自己的单。userID 为 0 表示没带身份（片段层未登录或调用错误），
+	// 归属：登录访客只能退自己的单。userID 为 0 表示没带可信访客身份，
 	// 一律拒绝 —— 「不传即放行」是这里最危险的默认值。
-	if req.UserID == 0 {
-		return nil, orderenums.Err(orderenums.ErrInvalidParam)
-	}
 	if order.UserID == nil || *order.UserID != req.UserID {
 		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
@@ -162,8 +172,11 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 		if lerr != nil {
 			return lerr
 		}
-		if locked == nil {
+		if locked == nil || locked.UserID == nil || *locked.UserID != req.UserID {
 			return orderenums.Err(orderenums.ErrOrderNotFound)
+		}
+		if !returnableOrderStatuses[locked.Status] {
+			return orderenums.Err(orderenums.ErrReturnOrderNotReturnable)
 		}
 		returnable, lerr = s.returnableByItemTx(ctx, tx, locked.ProjectID, locked.ID, orderItems)
 		if lerr != nil {
@@ -180,7 +193,7 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 				return orderenums.Err(orderenums.ErrReturnQuantityInvalid)
 			}
 			if line.Quantity > returnable[it.ID] {
-				return fmt.Errorf("%s：%s", orderenums.ErrReturnQuantityExceeded, it.ProductName)
+				return fmt.Errorf("%w: %s", orderenums.Err(orderenums.ErrReturnQuantityExceeded), it.ProductName)
 			}
 			amount := lineRefundAmount(it, line.Quantity)
 			total += amount
@@ -209,16 +222,22 @@ func (s *Service) RequestReturn(ctx context.Context, req *orderdto.ReturnRequest
 	if err != nil {
 		if reqID := strings.TrimSpace(req.RequestID); reqID != "" && database.IsUniqueViolation(err) {
 			if existing, gerr := s.returns.GetByRequestID(ctx, projectID, reqID); gerr == nil && existing != nil {
+				if err := checkVisitorReturnReplay(existing, req); err != nil {
+					return nil, err
+				}
 				items, ierr := s.returns.ItemsByReturnID(ctx, existing.ID)
 				if ierr != nil {
 					return nil, ierr
 				}
-				return toReturnResp(existing, items, nil), nil
+				if !sameReturnRequest(existing, items, req) {
+					return nil, orderenums.Err(orderenums.ErrReturnRequestConflict)
+				}
+				return toVisitorReturnResp(existing, items), nil
 			}
 		}
 		return nil, err
 	}
-	return toReturnResp(head, items, returnable), nil
+	return toVisitorReturnResp(head, items), nil
 }
 
 // CancelReturn 客户撤销自己尚未审核的申请。
@@ -257,12 +276,21 @@ func (s *Service) CancelReturn(ctx context.Context, req *orderdto.ReturnCancelRe
 }
 
 // ListVisitorReturns 访客查自己的退货申请。
-func (s *Service) ListVisitorReturns(ctx context.Context, req *orderdto.VisitorReturnListReq) (res *orderdto.ReturnListResp, err error) {
+func (s *Service) ListVisitorReturns(ctx context.Context, req *orderdto.VisitorReturnListReq) (res *orderdto.VisitorReturnListResp, err error) {
 	if req == nil || strings.TrimSpace(req.ProjectID) == "" {
 		return nil, orderenums.Err(orderenums.ErrProjectRequired)
 	}
 	if req.UserID == 0 {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
+	}
+	if req.OrderID != 0 {
+		order, readErr := s.orders.GetByIDForUser(ctx, req.ProjectID, req.OrderID, req.UserID)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if order == nil {
+			return nil, orderenums.Err(orderenums.ErrOrderNotFound)
+		}
 	}
 	uid := req.UserID
 	list, total, lerr := s.returns.List(ctx, ordermodel.ReturnFilter{
@@ -280,9 +308,9 @@ func (s *Service) ListVisitorReturns(ctx context.Context, req *orderdto.VisitorR
 		return nil, ierr
 	}
 	byReturn := groupReturnItems(items)
-	res = &orderdto.ReturnListResp{List: make([]*orderdto.ReturnResp, 0, len(list)), Total: total}
+	res = &orderdto.VisitorReturnListResp{List: make([]*orderdto.VisitorReturnResp, 0, len(list)), Total: total}
 	for _, e := range list {
-		res.List = append(res.List, toReturnResp(e, byReturn[e.ID], nil))
+		res.List = append(res.List, toVisitorReturnResp(e, byReturn[e.ID]))
 	}
 	return res, nil
 }
@@ -534,6 +562,7 @@ func (s *Service) ReturnableOfOrder(ctx context.Context, req *orderdto.VisitorOr
 		})
 		res.ReturnableTotal += left
 	}
+	res.CanRequest = res.ReturnableTotal > 0 && returnableOrderStatuses[order.Status]
 	return res, nil
 }
 
@@ -1139,4 +1168,37 @@ func (s *Service) returnRespOf(ctx context.Context, returnID uint64) (*orderdto.
 		return nil, ierr
 	}
 	return toReturnResp(e, items, nil), nil
+}
+
+// checkVisitorReturnReplay 幂等回执仍须属于本访客与本订单，不能用请求键探测别人的申请。
+func checkVisitorReturnReplay(existing *ordermodel.ReturnEntity, req *orderdto.ReturnRequestReq) error {
+	if existing.UserID == nil || *existing.UserID != req.UserID || existing.OrderID != req.OrderID {
+		return orderenums.Err(orderenums.ErrOrderNotFound)
+	}
+	return nil
+}
+
+func toVisitorReturnResp(e *ordermodel.ReturnEntity, items []*ordermodel.ReturnItemEntity) *orderdto.VisitorReturnResp {
+	r := &orderdto.VisitorReturnResp{ID: e.ID, OrderID: e.OrderID, OrderNo: e.OrderNo, ReturnNo: e.ReturnNo, Status: e.Status, Reason: e.Reason, RefundAmount: e.RefundAmount,
+		Items: make([]*orderdto.VisitorReturnItemResp, 0, len(items)), ReviewedAt: utils.NewJSONTimePtr(e.ReviewedAt), ReceivedAt: utils.NewJSONTimePtr(e.ReceivedAt), RefundedAt: utils.NewJSONTimePtr(e.RefundedAt), CreateTime: utils.NewJSONTime(e.CreateTime)}
+	for _, it := range items {
+		r.Items = append(r.Items, &orderdto.VisitorReturnItemResp{OrderItemID: it.OrderItemID, ProductName: it.ProductName, VariantLabel: it.VariantLabel, SKU: it.SKU, Quantity: it.Quantity, ReceivedQuantity: it.ReceivedQuantity, UnitPrice: it.UnitPrice, RefundAmount: it.RefundAmount})
+	}
+	return r
+}
+
+func sameReturnRequest(existing *ordermodel.ReturnEntity, items []*ordermodel.ReturnItemEntity, req *orderdto.ReturnRequestReq) bool {
+	if existing.Reason != strings.TrimSpace(req.Reason) || len(items) != len(req.Items) {
+		return false
+	}
+	quantities := make(map[uint64]int, len(items))
+	for _, item := range items {
+		quantities[item.OrderItemID] = item.Quantity
+	}
+	for _, item := range req.Items {
+		if quantities[item.OrderItemID] != item.Quantity {
+			return false
+		}
+	}
+	return true
 }

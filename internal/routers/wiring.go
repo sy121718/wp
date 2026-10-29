@@ -127,7 +127,6 @@ const (
 	portInventoryProductCatalog       = "inventory.SetProductCatalog"
 	portPurchaseVariantCatalog        = "purchase.SetVariantCatalog"
 	portRuntimeFragCommentHasher      = "runtimefragment.SetDependencies.CommentSourceHasher"
-	portRuntimeFragCountryLabel       = "runtimefragment.SetDependencies.CountryLabelReader"
 	portWorkbenchInstanceOverrideDeps = "workbench.SetInstanceOverrideDeps"
 	portWorkbenchNavigationPicker     = "workbench.SetNavigationPicker"
 	portContentTemplateImpactPort     = "contenttemplate.SetImpactPort"
@@ -155,14 +154,12 @@ const (
 	// 片段层端口都由装配期唯一一次 runtimefragment.SetDependencies 提交：装配点先把各段落的
 	// 提供方攒进 assembly.fragDeps（见 assembly.go / assembly_publish.go），全部就位后才提交。
 	// 端口值因此写成「提交点.字段名」——从清单可以直接对到 Deps 的具体字段。
-	portPublicSearchContent           = "content.PublicSearchService.articles"
-	portPublicSearchProduct           = "content.PublicSearchService.products"
-	portPublicSearchIndex             = "content.PublicSearchService.publications"
-	portRuntimeFragSitePageResolver   = "runtimefragment.SetDependencies.SitePageResolver"
-	portRuntimeFragProject            = "runtimefragment.SetDependencies.FragmentProject"
-	portRuntimeFragVisitorOrderReader = "runtimefragment.SetDependencies.VisitorOrderReader"
-	portRuntimeFragVisitorReturn      = "runtimefragment.SetDependencies.VisitorReturnProvider"
-	portRuntimeFragVisitorIdentity    = "runtimefragment.SetDependencies.VisitorIdentityMiddleware"
+	portPublicSearchContent         = "content.PublicSearchService.articles"
+	portPublicSearchProduct         = "content.PublicSearchService.products"
+	portPublicSearchIndex           = "content.PublicSearchService.publications"
+	portRuntimeFragSitePageResolver = "runtimefragment.SetDependencies.SitePageResolver"
+	portRuntimeFragProject          = "runtimefragment.SetDependencies.FragmentProject"
+	portRuntimeFragVisitorIdentity  = "runtimefragment.SetDependencies.VisitorIdentityMiddleware"
 	// portAccessGuardLoginProbe 访问面守卫的访客登录态探针（PIPE-6 AccessGuard）。
 	portAccessGuardLoginProbe = "builtin.SetAccessGuardLoginProbe"
 	// —— BIZ-3 会员体系的消费侧接线（本批）——
@@ -303,8 +300,6 @@ var wiringManifest = []wiringEntry{
 		"采购入库页的 SKU 下拉为空（用户看到空列表，不是错误；入库入口仍可手工填编码）"},
 	{portRuntimeFragCommentHasher, "装配层（盐来自配置）", "runtimefragment", wiringOptionalDegraded,
 		"评论来源 IP 哈希退化为无盐 / 会话密钥回退（resolvePurposeSecret 记 Warn）"},
-	{portRuntimeFragCountryLabel, "sysconfig（字典只读口）", "runtimefragment", wiringOptionalDegraded,
-		"访客订单地址的国家/地区显示代码（CN）而不是名称（中国）—— 肉眼可见"},
 	{portWorkbenchInstanceOverrideDeps, "presentation", "workbench", wiringOptionalDegraded,
 		"实例编辑模式（?instance= 画布改覆盖文档）的保存走不通：编辑者改了画布不生效"},
 	{portWorkbenchNavigationPicker, "navigation", "workbench", wiringOptionalDegraded,
@@ -370,10 +365,6 @@ var wiringManifest = []wiringEntry{
 		"槽位链接不渲染（不输出死链）+ 日志告警，其余片段照常"},
 	{portRuntimeFragProject, "project", "runtimefragment", wiringOptionalDegraded,
 		"片段语言回落默认语言（单语言站点即此形态，多语言站点才会看出来）"},
-	{portRuntimeFragVisitorOrderReader, "order", "runtimefragment", wiringRequiredPort,
-		"访客订单列表 / 详情永远只显示「服务暂不可用」"},
-	{portRuntimeFragVisitorReturn, "order", "runtimefragment", wiringRequiredPort,
-		"退货申请永远只显示「退货功能暂不可用」"},
 	{portRuntimeFragVisitorIdentity, "user", "runtimefragment", wiringRequiredPort,
 		"片段层永远按未登录渲染（已登录访客看到登录引导）"},
 	// AccessGuard 的登录态探针刻意是 **optional-degraded**：未注入时守卫对

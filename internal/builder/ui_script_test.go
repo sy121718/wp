@@ -23,6 +23,7 @@ func uiSrcForTest() map[string]string {
 		"requires_js.js":   "/* requires_js */",
 		"write-base.js":    "/* write-base */",
 		"site-commerce.js": "/* site-commerce */",
+		"site-orders.js":   "/* site-orders */",
 		"site-user.js":     "/* site-user */",
 		"htmx.min.js":      "/* htmx */ var htmx=function(){};",
 		"select.js":        "/* select */ WBUI.register(function(){});",
@@ -128,7 +129,7 @@ func uiScriptForTest(t *testing.T, content string, sources map[string]string) st
 }
 
 func TestUIAssetRegistryAndSelection(t *testing.T) {
-	want := []string{"_util.js", "site-preview.js", "site-actions.js", "site-data.js", "site-catalog.js", "site-product.js", "write-base.js", "requires_js.js", "site-commerce.js", "site-user.js", "htmx.min.js", "select.js", "modal.js", "drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js", "index.js"}
+	want := []string{"_util.js", "site-preview.js", "site-actions.js", "site-data.js", "site-catalog.js", "site-product.js", "write-base.js", "requires_js.js", "site-commerce.js", "site-orders.js", "site-user.js", "htmx.min.js", "select.js", "modal.js", "drawer.js", "confirm.js", "colorfield.js", "iconfield.js", "themetoggle.js", "index.js"}
 	got := UIAssetFiles()
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("资源清单 = %v", got)

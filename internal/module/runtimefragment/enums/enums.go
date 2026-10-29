@@ -70,47 +70,6 @@ const (
 	LivePriceDelisted = "site.fragment.live_price.delisted"
 	LivePriceUpdated  = "site.fragment.live_price.updated"
 
-	// —— 订单（site.fragment.order.*） ——
-	OrderCurrency                = "site.fragment.order.currency"
-	OrderDiscount                = "site.fragment.order.discount"
-	OrderEmpty                   = "site.fragment.order.empty"
-	OrderGoShop                  = "site.fragment.order.go_shop"
-	OrderNeedLoginDetail         = "site.fragment.order.need_login_detail"
-	OrderNeedLoginList           = "site.fragment.order.need_login_list"
-	OrderNextPage                = "site.fragment.order.next_page"
-	OrderNoReturnable            = "site.fragment.order.no_returnable"
-	OrderPagerAria               = "site.fragment.order.pager_aria"
-	OrderPayMethod               = "site.fragment.order.pay_method"
-	OrderPrevPage                = "site.fragment.order.prev_page"
-	OrderReaderUnavailable       = "site.fragment.order.reader_unavailable"
-	OrderRemark                  = "site.fragment.order.remark"
-	OrderReturnApply             = "site.fragment.order.return_apply"
-	OrderReturnHint              = "site.fragment.order.return_hint"
-	OrderReturnQtyAria           = "site.fragment.order.return_qty_aria"
-	OrderReturnQtyHint           = "site.fragment.order.return_qty_hint"
-	OrderReturnQtyPlaceholder    = "site.fragment.order.return_qty_placeholder"
-	OrderReturnReason            = "site.fragment.order.return_reason"
-	OrderReturnReasonPlaceholder = "site.fragment.order.return_reason_placeholder"
-	OrderReturnsTitle            = "site.fragment.order.returns_title"
-	OrderReturnSubmit            = "site.fragment.order.return_submit"
-	OrderShipping                = "site.fragment.order.shipping"
-	OrderShippingAddr            = "site.fragment.order.shipping_addr"
-	OrderSubtotalGoods           = "site.fragment.order.subtotal_goods"
-	OrderTabAll                  = "site.fragment.order.tab_all"
-	OrderTabsAria                = "site.fragment.order.tabs_aria"
-	OrderTotalCount              = "site.fragment.order.total_count"
-	OrderUnavailable             = "site.fragment.order.unavailable"
-	OrderViewDetail              = "site.fragment.order.view_detail"
-
-	// —— 退货（site.fragment.return.*） ——
-	ReturnNeedLogin           = "site.fragment.return.need_login"
-	ReturnProviderUnavailable = "site.fragment.return.provider_unavailable"
-	ReturnReasonPrefix        = "site.fragment.return.reason_prefix"
-	ReturnRefundNote          = "site.fragment.return.refund_note"
-	ReturnStatusLine          = "site.fragment.return.status_line"
-	ReturnTitleError          = "site.fragment.return.title_error"
-	ReturnTitleSuccess        = "site.fragment.return.title_success"
-
 	// —— 会员身份（site.fragment.membership.*，BIZ-3 消费侧接入） ——
 	//
 	// 会员片段的降级形态各有各的说法（未登录要访客去登录、端口未接入要运维去接线、
@@ -153,18 +112,4 @@ const (
 	CommentCSRFExpired     = "site.fragment.comment.csrf_expired"
 	CommentRateLimited     = "site.fragment.comment.rate_limited"
 	CommentSubmitFailed    = "site.fragment.comment.submit_failed"
-
-	// —— 模块文案过渡表（site.fragment.msg.*，fragmentMessageKeys 用） ——
-	FragmentMsgCartEmpty           = "site.fragment.msg.cart_empty"
-	FragmentMsgInternal            = "site.fragment.msg.internal"
-	FragmentMsgInvalidParam        = "site.fragment.msg.invalid_param"
-	FragmentMsgLoginRequired       = "site.fragment.msg.login_required"
-	FragmentMsgLoginRequiredOrders = "site.fragment.msg.login_required_orders"
-	FragmentMsgOrderNotFound       = "site.fragment.msg.order_not_found"
-	FragmentMsgOrdersUnavailable   = "site.fragment.msg.orders_unavailable"
-	FragmentMsgProductUnavailable  = "site.fragment.msg.product_unavailable"
-	FragmentMsgQtyInvalid          = "site.fragment.msg.qty_invalid"
-	FragmentMsgReturnItemsRequired = "site.fragment.msg.return_items_required"
-	FragmentMsgReturnsUnavailable  = "site.fragment.msg.returns_unavailable"
-	FragmentMsgStockInsufficient   = "site.fragment.msg.stock_insufficient"
 )

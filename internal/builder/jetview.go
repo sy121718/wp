@@ -799,34 +799,21 @@ func searchResultsViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext
 	}, nil
 }
 
-// orderListViewOf 转换访客订单列表节点（BIZ-1 访问面）。
-//
-// 手写而不是走 contentAtomViewOf：它需要两条**槽位路径**（未登录引导的登录页、
-// 无 JS 时的订单页），而那个通用助手只把内容解析器传给 BuildView。
+// orderListViewOf 编译完整订单与售后静态区块，不解析系统页面槽位。
 func orderListViewOf(node *core.Node, topLevel bool, ctx *core.RenderContext) (*nodeView, error) {
-	var p orderlistPkg.Props
-	if len(node.Props) > 0 {
-		if err := json.Unmarshal(node.Props, &p); err != nil {
-			return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
-		}
+	p, err := core.DecodeProps[orderlistPkg.Props](node.Props)
+	if err != nil {
+		return nil, fmt.Errorf("节点 %s props 反序列化失败: %w", node.ID, err)
 	}
 	classes, customID := advancedClasses(node, &p, ctx)
 	orderlistPkg.CompileCSS(node.ID, &p, ctx.CSS)
-	view := orderlistPkg.BuildView(&p, ctx.ProjectID, ctx.Lang,
-		ctx.SitePage(core.SiteSlotLogin), ctx.SitePage(core.SiteSlotOrders))
-	// applyI18n：视图实现了 core.I18nAware，固定文案（含带计数的成品文案）在渲染前回填。
+	view := orderlistPkg.BuildView(&p, ctx.ProjectID, ctx.Lang)
+	if err := view.ResolveActions(node, ctx); err != nil {
+		return nil, fmt.Errorf("节点 %s: %w", node.ID, err)
+	}
 	applyI18n(&view, ctx)
 	declareViewFeatures(&view, ctx)
-	return &nodeView{
-		Type:     orderlistPkg.Type,
-		Template: "orders_widget",
-		NodeID:   node.ID,
-		Classes:  strings.Join(classes, " "),
-		CustomID: customID,
-		TopLevel: topLevel,
-		Props:    p,
-		V:        view,
-	}, nil
+	return &nodeView{Type: orderlistPkg.Type, Template: "orders_widget", NodeID: node.ID, Classes: strings.Join(classes, " "), CustomID: customID, TopLevel: topLevel, Props: p, V: view}, nil
 }
 
 // userFormsViewOf 转换访客账号表单节点（issue #36）。

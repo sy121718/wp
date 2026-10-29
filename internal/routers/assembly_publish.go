@@ -417,21 +417,6 @@ func (a *assembly) wirePublishingPorts() {
 	marks.mark(portRuntimeFragSitePageResolver)
 	a.fragDeps.FragmentProject = projectService
 	marks.mark(portRuntimeFragProject)
-	// 访客订单片段（BIZ-1）：片段端点按访客会话取自己的订单。传的是 orderSvc ——
-	// 它嵌入了只读的 VisitorOrderReader，写路径（建单 / 状态流转 / 优惠码管理）
-	// 那部分能力传不进片段层。归属校验在 order 模块的 SQL 条件里，不在这层。
-	a.fragDeps.VisitorOrderReader = a.orderSvc
-	marks.mark(portRuntimeFragVisitorOrderReader)
-	// 访客订单地址里的国家/地区名（迁移 501 存的是代码快照）：同一份系统字典只读口，
-	// 与后台订单页共用实例（缓存也只有一份）。未注入时片段照常渲染、国家显示代码 ——
-	// 所以它不是 required-port，这里的注入不是为了「能力可用」而是为了「显示是人话」。
-	a.fragDeps.CountryLabelReader = a.sysConfigDict
-	marks.mark(portRuntimeFragCountryLabel)
-	// 访客退货片段（RMA）：orderSvc 嵌入了收窄的 VisitorReturnPort（只读申请面，
-	// 拿不到「后台审核 / 入库 / 退款」）。此端口此前**从未被任何地方注入** ——
-	// 退货申请片段因此恒返回「退货功能暂不可用」（审计 CQ-019：静默降级窗口）。
-	a.fragDeps.VisitorReturnProvider = a.orderSvc
-	marks.mark(portRuntimeFragVisitorReturn)
 	// 访客身份解析中间件：片段端点需要知道「这个请求是谁」。
 	// 它与后台的 SessionAuthMiddleware 是两套身份（不同 cookie、不同存储），
 	// 挂在片段组上只做「尽力解析」，未登录不阻断 —— 必须登录的能力自己渲染引导文案。

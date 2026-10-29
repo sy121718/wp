@@ -231,25 +231,6 @@ type GetOrderByNoReq struct {
 	OrderNo   string `form:"orderNo" json:"orderNo"`
 }
 
-// VisitorOrderListReq 访客查自己的订单。
-//
-// UserID 由片段层从访客会话写入；归属过滤落在 SQL 条件里（user_id = ?），
-// 而不是「查出来再比对」—— 后者一旦有人调换了查询顺序，越权就只剩一行代码的距离。
-type VisitorOrderListReq struct {
-	ProjectID string
-	Status    string
-	Offset    int
-	Limit     int
-	UserID    uint64
-}
-
-// VisitorOrderDetailReq 访客查自己的订单详情（同样按 user_id 收口）。
-type VisitorOrderDetailReq struct {
-	OrderID   uint64
-	ProjectID string
-	UserID    uint64
-}
-
 // CouponSaveReq 优惠码新建 / 修改。
 //
 // 时间窗用**字符串**而不是 *time.Time：同一份结构既要服务后台原生表单（form）

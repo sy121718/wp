@@ -2,8 +2,7 @@ package orderdto
 
 // order_return_resp.go — 退货入库的响应（BIZ-1）。
 //
-// 金额与展示文案都由服务端算好（分与元的换算只在一处发生）；
-// StatusLabel 也是服务端给的 —— 同一个状态在后台页、访客片段、邮件里必须是同一句话。
+// 后台保留既有响应；访客仅使用 order_visitor_resp.go 的事实白名单。
 
 import (
 	"go_wp/pkg/utils"
@@ -84,7 +83,8 @@ type ReturnableItem struct {
 
 // ReturnableResp 订单的可退明细（访客侧渲染退货表单用）。
 type ReturnableResp struct {
-	Items []*ReturnableItem `json:"items"`
+	CanRequest bool              `json:"canRequest"`
+	Items      []*ReturnableItem `json:"items"`
 	// ReturnableTotal 整单还能退的总件数（0 表示这单已经没什么可退的了）。
 	ReturnableTotal int `json:"returnableTotal"`
 }

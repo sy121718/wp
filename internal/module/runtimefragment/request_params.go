@@ -1,6 +1,9 @@
 package runtimefragment
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // paramOf 取参数值（去空白；参数长度已由端点校验）。
 func paramOf(r *Request, key string) string {
@@ -27,4 +30,13 @@ func cartSitePages(r *Request, projectID string) map[string]string {
 		lang = strings.TrimSpace(paramOf(r, fragmentLangParam))
 	}
 	return r.SitePagesOf(projectID, lang)
+}
+
+// visitorIDOf 只读取统一入口注入的访客身份。
+func visitorIDOf(r *Request) (uint64, bool) {
+	if r == nil {
+		return 0, false
+	}
+	id, err := strconv.ParseUint(strings.TrimSpace(r.UserID), 10, 64)
+	return id, err == nil && id != 0
 }

@@ -114,23 +114,3 @@ func TestFragmentEndpointBodyFollowsLang(t *testing.T) {
 		t.Fatalf("缺 lang 时 Content-Language 应为工程默认语言，实际 %q", got)
 	}
 }
-
-// TestOrderFragmentURLEscapesLang 订单片段的内部链接对 lang 做 URL 转义。
-//
-// lang 是访客可改的 query：手拼时一个 & 就能把后面的参数顶掉（projectId 被换掉
-// 即等于让访客自选工程）。它不是越权面（片段只出公开/自有数据），但会让链接本身
-// 变成能把 URL 改坏的注入点 —— 转义后它只是 URL 里的一个普通取值。
-func TestOrderFragmentURLEscapesLang(t *testing.T) {
-	r := &Request{Params: map[string]string{fragmentLangParam: "en-US&projectId=evil"}}
-	list := orderListFragmentURL(r, "proj-1", "paid", 0, 0)
-	if !strings.Contains(list, "lang=en-US%26projectId%3Devil") {
-		t.Fatalf("ordersList 的 lang 应被转义，实际 %s", list)
-	}
-	if strings.Contains(list, "&projectId=evil") {
-		t.Fatalf("ordersList 的 lang 不得顶掉后面的参数，实际 %s", list)
-	}
-	detail := orderDetailURL(r, "proj-1", 7)
-	if !strings.Contains(detail, "lang=en-US%26projectId%3Devil") {
-		t.Fatalf("orderDetail 的 lang 应被转义，实际 %s", detail)
-	}
-}

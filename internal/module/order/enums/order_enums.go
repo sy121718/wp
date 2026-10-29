@@ -7,6 +7,7 @@
 package orderenums
 
 import (
+	"net/http"
 	"strings"
 
 	"go_wp/pkg/facing"
@@ -100,6 +101,7 @@ const (
 	ErrReturnNotReviewable        = "order.err.returnNotReviewable"
 	ErrReturnNotReceivable        = "order.err.returnNotReceivable"
 	ErrReturnRejectReasonRequired = "order.err.returnRejectReasonRequired"
+	ErrReturnRequestConflict      = "order.err.returnRequestConflict"
 )
 
 // 商品与库存。
@@ -153,6 +155,7 @@ var errFallbacks = map[string]string{
 	ErrShipWarehouseRequired:      "发货必须指定发货仓",
 	ErrShipLinesRequired:          "发货单至少需要一行商品",
 	ErrShipQuantityExceeded:       "发货数量超出可发数量",
+	ErrReturnRequestConflict:      "这个退货请求已用于另一份申请，请重新发起",
 	ErrShipRequestKeyConflict:     "该发货请求已处理过（请求键冲突）",
 	ErrOrderNotShippable:          "当前订单状态不允许发货",
 	ErrInternal:                   "操作失败，请稍后重试",
@@ -207,7 +210,16 @@ var errFallbacks = map[string]string{
 }
 
 // Err 声明一条自带对外文案的订单业务错误（兜底与本表同源）。
-func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+func Err(key string) error {
+	err := error(facing.New(key, errFallbacks[key]))
+	if key == ErrReturnRequestConflict {
+		return facing.WithStatus(err, http.StatusConflict)
+	}
+	if key == ErrOrderNotFound {
+		return facing.WithStatus(err, http.StatusNotFound)
+	}
+	return err
+}
 
 // UserFacingMessages 可以原样展示给访客的全部业务文案（白名单）。
 //
@@ -240,7 +252,7 @@ var UserFacingMessages = []string{
 	// 退货申请：访客在订单里点「申请退货」时会看到这些。
 	MsgReturnRequested, MsgReturnCancelled,
 	ErrReturnItemsRequired, ErrReturnQuantityInvalid, ErrReturnQuantityExceeded,
-	ErrReturnReasonRequired, ErrReturnNotCancellable, ErrReturnOrderNotReturnable,
+	ErrReturnReasonRequired, ErrReturnNotCancellable, ErrReturnOrderNotReturnable, ErrReturnRequestConflict,
 	ErrInternal,
 }
 

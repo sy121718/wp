@@ -1,46 +1,88 @@
 package orderlist
 
-// i18n.go — 订单列表外壳的固定文案取词（审计 I18N-010）。
-
-// 文案 key（sys_i18n）：site.component.orderList.<语义>。
-const (
-	TextKeyLoginHint = "site.component.orderList.loginHint"
-	TextKeyLoginText = "site.component.orderList.loginText"
-	TextKeyPagesText = "site.component.orderList.pagesText"
-	TextKeyNotice    = "site.component.orderList.notice"
+import (
+	"sort"
+	"strings"
 )
 
-// 中文兜底（与抽 key 前的产物逐字一致）。
-const (
-	fallbackLoginHint = "登录后可以查看你的订单。"
-	fallbackLoginText = "去登录"
-	fallbackPagesText = "订单页"
-	fallbackNotice    = "订单列表暂不可用（未取到站点工程）"
-)
+// 固定界面文案属于构建期前端，访客接口只提供状态与金额事实。
+var labelFallbacks = map[string]string{
+	"Loading":           "正在读取订单…",
+	"Unavailable":       "订单暂不可用，请稍后重试。",
+	"Empty":             "还没有订单",
+	"LoginHint":         "登录后可以查看你的订单。",
+	"LoginText":         "去登录",
+	"Retry":             "重试",
+	"All":               "全部订单",
+	"Detail":            "查看详情",
+	"Back":              "返回订单列表",
+	"Prev":              "上一页",
+	"Next":              "下一页",
+	"OrderNo":           "订单号",
+	"Created":           "下单时间",
+	"Total":             "实付金额",
+	"Subtotal":          "商品小计",
+	"Discount":          "优惠",
+	"Shipping":          "运费",
+	"Tax":               "税费",
+	"Address":           "收货信息",
+	"Payment":           "付款方式",
+	"Remark":            "订单备注",
+	"History":           "订单进度",
+	"Apply":             "申请退货",
+	"ReturnTitle":       "退货申请",
+	"ReturnReason":      "退货原因",
+	"ReturnPlaceholder": "请说明退货原因",
+	"ReturnSelect":      "选择商品",
+	"Quantity":          "退货数量",
+	"Returnable":        "可退数量",
+	"Submit":            "提交申请",
+	"Cancel":            "返回详情",
+	"NoReturnable":      "这笔订单当前没有可申请退货的商品。",
+	"Returns":           "售后进度",
+	"ReturnNo":          "申请单号",
+	"Refund":            "申请退款金额",
+	"ReturnSuccess":     "退货申请已提交",
+	"ReturnNotice":      "申请已受理，退款进度以售后状态为准。",
+	"ScriptHint":        "请启用 JavaScript 查看订单和提交售后申请。",
+	"NotFound":          "订单不存在或已无法查看。",
+	"Forbidden":         "当前账号无权查看此订单。",
+	"Pending":           "待付款",
+	"Paid":              "已付款",
+	"Shipped":           "已发货",
+	"Completed":         "已完成",
+	"Cancelled":         "已取消",
+	"Refunded":          "已退款",
+	"Requested":         "待审核",
+	"Approved":          "已批准",
+	"Rejected":          "已拒绝",
+	"Received":          "已收货",
+	"ReturnCompleted":   "已退款",
+	"ReturnCancelled":   "已撤销",
+}
 
-// ApplyI18n 按当前语言回填固定文案（实现 core.I18nAware）。
-//
-// 这四句里前三句是**无 JS 时访客唯一看得到的内容**：容器默认内容就是未登录引导，
-// 空容器在无 JS 下等于这个组件不存在。所以它们必须随语言变，而不是只在有 JS 时可见。
-func (v *View) ApplyI18n(text func(key, fallback string) string) {
+func (v *View) ApplyI18n(t func(string, string) string) {
 	if v == nil {
 		return
 	}
-	if text == nil {
-		v.LoginHint = fallbackLoginHint
-		v.LoginText = fallbackLoginText
-		v.PagesText = fallbackPagesText
-		if v.Notice != "" {
-			v.Notice = fallbackNotice
+	v.Labels = make(map[string]string, len(labelFallbacks))
+	for key, fallback := range labelFallbacks {
+		if t != nil {
+			v.Labels[key] = t("site.component.orderList."+key, fallback)
+		} else {
+			v.Labels[key] = fallback
 		}
-		return
 	}
-	v.LoginHint = text(TextKeyLoginHint, fallbackLoginHint)
-	v.LoginText = text(TextKeyLoginText, fallbackLoginText)
-	v.PagesText = text(TextKeyPagesText, fallbackPagesText)
-	// Notice 只在「缺站点工程」这条错误路径上有值：空值时不填，
-	// 否则正常渲染的容器会凭空多出一行提示。
+	v.LabelAttrs = nil
+	keys := make([]string, 0, len(v.Labels))
+	for key := range v.Labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		v.LabelAttrs = append(v.LabelAttrs, LabelAttribute{Key: strings.ToLower(key), Value: v.Labels[key]})
+	}
 	if v.Notice != "" {
-		v.Notice = text(TextKeyNotice, fallbackNotice)
+		v.Notice = v.Labels["Unavailable"]
 	}
 }

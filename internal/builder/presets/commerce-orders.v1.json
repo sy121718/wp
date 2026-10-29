@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "settings": {
+    "layout": {
+      "mode": "full"
+    }
+  },
+  "root": [
+    {
+      "id": "orders-center",
+      "type": "core.container",
+      "name": "订单与售后中心",
+      "props": {
+        "tag": "main",
+        "layout": {
+          "engine": "flex",
+          "flex": {
+            "direction": "column",
+            "gap": "32px"
+          }
+        },
+        "box": {
+          "maxWidth": "1040px",
+          "center": true,
+          "padding": {
+            "desktop": "40px 28px",
+            "mobile": "24px 16px"
+          }
+        }
+      },
+      "children": [
+        {
+          "id": "orders-account",
+          "type": "core.userForms",
+          "name": "账号",
+          "props": {
+            "mode": "account",
+            "title": "我的账号",
+            "showTitle": true
+          },
+          "actions": {
+            "authenticated": {
+              "kind": "local",
+              "partKey": "account"
+            }
+          }
+        },
+        {
+          "id": "orders-history",
+          "type": "core.orderList",
+          "name": "订单与售后",
+          "props": {
+            "title": "订单与售后",
+            "showTitle": true,
+            "pageSize": 10
+          },
+          "actions": {
+            "login": {
+              "kind": "instance",
+              "nodeId": "orders-account",
+              "partKey": "login"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

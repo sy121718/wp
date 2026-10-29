@@ -27,7 +27,6 @@ import (
 // 又能抓「新增了能力却没同步这份清单」。
 var builtinFragmentCapabilities = []string{
 	"commentList", "commentSubmit", "membershipBadge", "membershipPanel",
-	"orderDetail", "ordersList", "returnRequest",
 }
 
 // nonProductFragmentCapabilities 运行期注册的**非产品**能力 → 理由。
@@ -58,8 +57,8 @@ func TestFragmentStyleTablesCoverRegistry(t *testing.T) {
 	for _, typ := range builtinFragmentCapabilities {
 		builtin[strings.ToLower(typ)] = true
 	}
-	if len(builtin) != 7 {
-		t.Fatalf("内置能力对照集只有 %d 项（预期 7，购物车、列表搜索与账号能力已迁至 JSON）：对表断言可能在空转", len(builtin))
+	if len(builtin) != 4 {
+		t.Fatalf("内置能力对照集只有 %d 项（预期 4，购物车、列表搜索、账号与订单能力已迁至 JSON）：对表断言可能在空转", len(builtin))
 	}
 
 	// ① 每个内置能力都要有样式归属（有族 / 无样式清单）。

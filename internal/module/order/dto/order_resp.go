@@ -166,15 +166,6 @@ type OrderListResp struct {
 	FulfillmentCounts map[string]int64 `json:"fulfillmentCounts"`
 }
 
-// VisitorOrderListResp 访客自己的订单列表。
-//
-// 刻意不带 Counts：订单管理页的「各状态各有多少单」是全站口径，
-// 给访客看等于把别人的单量也一并告诉他。
-type VisitorOrderListResp struct {
-	List  []*OrderResp `json:"list"`
-	Total int64        `json:"total"`
-}
-
 // CouponResp 优惠码视图。
 type CouponResp struct {
 	ID               uint64          `json:"id"`

@@ -1,11 +1,31 @@
-{* orders_widget.jet — 访客订单列表外壳（core.orderList，BIZ-1）。
-
-   产物里只有外壳，订单由片段 /_fragments/ordersList 现拉：
-   订单是「谁买过什么」的事实，烘进静态产物等于把某一个人的订单发给所有人。
-
-   容器的默认内容（hx-get 生效之前）是**未登录引导**：
-   无 JS 时它就是访客看到的东西，所以不能是空的 —— 空容器在无 JS 下等于这个组件不存在。
-   登录链接来自系统页面槽位 login，订单页链接来自槽位 orders；槽位没配就不输出该链接。 *}
-<div class="{{ .Classes }}"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }} data-orders-widget>
-{{ if .V.Notice }}<p class="sky-orders-notice">{{ .V.Notice }}</p>{{ else }}{{ title := .V.Title }}{{ showTitle := .V.ShowTitle }}{{ mountURL := .V.FragmentURL }}{{ loginURL := .V.LoginURL }}{{ hasLogin := .V.HasLoginURL }}{{ pageURL := .V.OrderPageURL }}{{ hasPage := .V.HasOrderPage }}{{ if showTitle }}<h2 class="sky-orders-title">{{ title }}</h2>{{ end }}<div class="sky-orders-mount" hx-get="{{ mountURL }}" hx-trigger="load" hx-swap="innerHTML" aria-live="polite"><p class="sky-orders-notice">{{ .V.LoginHint }}</p>{{ if hasLogin }}<a class="sky-orders-action" href="{{ loginURL }}">{{ .V.LoginText }}</a>{{ end }}{{ if hasPage }}<a class="sky-orders-action" href="{{ pageURL }}">{{ .V.PagesText }}</a>{{ end }}</div>{{ end }}
+{* 完整订单与售后区块：静态外壳只声明入口，运行时由模块JSON填入本人事实。 *}
+<div class="{{ .Classes }} sky-orders"{{ if .CustomID }} id="{{ .CustomID }}"{{ end }}{{ if not .V.Notice }} data-component-instance="{{ .NodeID }}" data-site-orders data-site-read="{{ .V.ReadURL }}" data-site-view="ordersList" data-orders-detail-url="{{ .V.DetailURL }}" data-orders-returnable-url="{{ .V.ReturnableURL }}" data-orders-returns-url="{{ .V.ReturnsURL }}"{{ range _, label := .V.LabelAttrs }} data-label-{{ label.Key }}="{{ label.Value }}"{{ end }}{{ end }}>
+{{ if .V.ShowTitle }}<h2 class="sky-orders-title">{{ .V.Title }}</h2>{{ end }}
+{{ if .V.Notice }}<p role="status">{{ .V.Notice }}</p>{{ else }}
+<p data-site-status role="status">{{ .V.Labels.Loading }}</p>
+<div data-orders-guest hidden><p>{{ .V.Labels.LoginHint }}</p>{{ if .V.HasLoginAction }}{{ if .V.LoginAction.URL }}<a class="sky-orders-button" href="{{ .V.LoginAction.URL }}">{{ .V.Labels.LoginText }}</a>{{ else }}<button class="sky-orders-button" type="button" data-component-action="login" data-action-kind="{{ .V.LoginAction.Kind }}" data-action-instance="{{ .V.LoginAction.InstanceID }}" data-action-part="{{ .V.LoginAction.PartKey }}">{{ .V.Labels.LoginText }}</button>{{ end }}{{ end }}</div>
+<button class="sky-orders-link" type="button" data-orders-retry hidden>{{ .V.Labels.Retry }}</button>
+<section data-component-part="list" data-orders-panel="list" tabindex="-1">
+<label class="sky-orders-filter">{{ .V.Labels.All }}<select data-orders-filter aria-label="{{ .V.Labels.All }}"><option value="">{{ .V.Labels.All }}</option><option value="pending">{{ .V.Labels.Pending }}</option><option value="paid">{{ .V.Labels.Paid }}</option><option value="shipped">{{ .V.Labels.Shipped }}</option><option value="completed">{{ .V.Labels.Completed }}</option><option value="cancelled">{{ .V.Labels.Cancelled }}</option><option value="refunded">{{ .V.Labels.Refunded }}</option></select></label>
+<p data-orders-empty hidden>{{ .V.Labels.Empty }}</p><div class="sky-orders-list" data-orders-list></div>
+<template data-orders-row><article class="sky-orders-row"><div><strong data-order-number></strong><p data-order-time class="sky-orders-muted"></p></div><span data-order-status class="sky-orders-badge"></span><strong data-order-total></strong><button class="sky-orders-button" type="button" data-order-open>{{ .V.Labels.Detail }}</button></article></template>
+<nav class="sky-orders-pager" aria-label="{{ .V.Labels.All }}"><button class="sky-orders-link" type="button" data-orders-prev disabled>{{ .V.Labels.Prev }}</button><span data-orders-count></span><button class="sky-orders-link" type="button" data-orders-next disabled>{{ .V.Labels.Next }}</button></nav>
+</section>
+<section data-component-part="detail" data-orders-panel="detail" tabindex="-1" hidden>
+<button class="sky-orders-link" type="button" data-orders-show="list">← {{ .V.Labels.Back }}</button>
+<div data-order-read="detail" data-site-view="orderDetail"><p data-site-status role="status"></p><div class="sky-orders-detail-head"><div><span>{{ .V.Labels.OrderNo }}</span><h3 data-detail-number></h3><p data-detail-time class="sky-orders-muted"></p></div><span data-detail-status class="sky-orders-badge"></span></div>
+<div data-detail-items class="sky-orders-lines"></div><template data-order-item-row><article class="sky-orders-line"><div><strong data-item-name></strong><p data-item-variant class="sky-orders-muted"></p></div><span data-item-quantity></span><strong data-item-total></strong></article></template>
+<dl class="sky-orders-totals"><div><dt>{{ .V.Labels.Subtotal }}</dt><dd data-detail-subtotal></dd></div><div><dt>{{ .V.Labels.Discount }}</dt><dd data-detail-discount></dd></div><div><dt>{{ .V.Labels.Shipping }}</dt><dd data-detail-shipping></dd></div><div><dt>{{ .V.Labels.Tax }}</dt><dd data-detail-tax></dd></div><div><dt>{{ .V.Labels.Total }}</dt><dd data-detail-total></dd></div></dl>
+<div class="sky-orders-meta"><div><h4>{{ .V.Labels.Address }}</h4><p data-detail-address></p></div><div><h4>{{ .V.Labels.Payment }}</h4><p data-detail-payment></p></div><div><h4>{{ .V.Labels.Remark }}</h4><p data-detail-remark></p></div></div>
+<h4>{{ .V.Labels.History }}</h4><ol class="sky-orders-history" data-detail-history></ol><template data-order-log-row><li><span data-log-status></span><time data-log-time></time></li></template></div>
+<div data-order-read="returnable" data-site-view="orderReturnable"><p data-site-status role="status"></p><p data-orders-no-returnable hidden>{{ .V.Labels.NoReturnable }}</p><button class="sky-orders-button" type="button" data-orders-apply hidden>{{ .V.Labels.Apply }}</button></div>
+<h4>{{ .V.Labels.Returns }}</h4><div data-order-read="returns" data-site-view="orderReturns"><p data-site-status role="status"></p><div data-orders-returns></div><template data-order-return-row><article class="sky-orders-return"><div><strong data-return-number></strong><p data-return-reason></p></div><span data-return-status class="sky-orders-badge"></span><strong data-return-amount></strong></article></template></div>
+</section>
+<section data-component-part="return" data-orders-panel="return" tabindex="-1" hidden><button class="sky-orders-link" type="button" data-orders-show="detail">← {{ .V.Labels.Cancel }}</button><h3>{{ .V.Labels.ReturnTitle }}</h3>
+<form method="post" action="{{ .V.ReturnAction }}" data-write="custom" data-write-url="{{ .V.ReturnAction }}" data-write-handler="commerce.orders"><input type="hidden" name="projectId" value="{{ .V.ProjectID }}"><input type="hidden" name="orderId"><input type="hidden" name="requestId">
+<div data-orders-return-lines class="sky-orders-lines"></div><template data-order-return-item><div class="sky-orders-return-line"><label><input type="checkbox" data-return-select> <strong data-return-item-name></strong><span data-return-item-variant class="sky-orders-muted"></span></label><input type="hidden" name="orderItemId" disabled><label>{{ .V.Labels.Quantity }}<input type="number" name="quantity" min="1" value="1" required disabled></label><span>{{ .V.Labels.Returnable }} <strong data-return-item-max></strong></span></div></template>
+<label class="sky-orders-reason">{{ .V.Labels.ReturnReason }}<textarea name="reason" rows="3" required maxlength="1000" placeholder="{{ .V.Labels.ReturnPlaceholder }}"></textarea></label><p data-write-status role="status" hidden></p><button class="sky-orders-button" type="submit" data-requires-js hidden disabled>{{ .V.Labels.Submit }}</button></form></section>
+<section data-component-part="result" data-orders-panel="result" tabindex="-1" hidden><h3>{{ .V.Labels.ReturnSuccess }}</h3><p>{{ .V.Labels.ReturnNotice }}</p><dl><dt>{{ .V.Labels.ReturnNo }}</dt><dd data-orders-result-number></dd><dt>{{ .V.Labels.Refund }}</dt><dd data-orders-result-amount></dd></dl><button class="sky-orders-button" type="button" data-orders-show="detail">{{ .V.Labels.Detail }}</button></section>
+<noscript>{{ .V.Labels.ScriptHint }}</noscript>
+{{ end }}
 </div>

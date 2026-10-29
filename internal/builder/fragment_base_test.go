@@ -11,8 +11,6 @@ package builder
 import (
 	"strings"
 	"testing"
-
-	"go_wp/internal/builder/core"
 )
 
 // fragmentCSSFor 走一遍真实的注入判定（无脚本源模式：本文件只关心 CSS）。
@@ -41,37 +39,6 @@ func TestFragmentBaseStyleInjectedByHxTargetOnly(t *testing.T) {
 	}
 }
 
-// TestFragmentBaseStylePerCapability 按片段能力分族：只带引用到的那一族。
-func TestFragmentBaseStylePerCapability(t *testing.T) {
-	cases := []struct {
-		name    string
-		html    string
-		want    []string
-		notWant []string
-	}{
-		{"只有购物车", "<div data-site-cart></div>", []string{".sky-cart-item {"}, []string{".sky-orders-item {"}},
-		{"只有订单", "<div hx-get='/_fragments/ordersList?projectId=p1' hx-trigger='load'></div>", []string{".sky-orders-item {", ".sky-order-line-total {"}, []string{".sky-cart-item {"}},
-		{"两者都有", "<div data-site-cart></div><div hx-get='/_fragments/orderDetail'></div>", []string{".sky-cart-item {", ".sky-orders-item {"}, nil},
-		{"退货也在订单族", "<form hx-post='/_fragments/returnRequest'></form>", []string{".sky-return-form {"}, []string{".sky-cart-item {"}},
-		{"结算在购物车族", "<form data-site-cart></form>", []string{".sky-cart-checkout {"}, []string{".sky-orders-item {"}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			css := fragmentCSSFor(t, tc.html)
-			for _, want := range tc.want {
-				if !strings.Contains(css, want) {
-					t.Errorf("缺少 %q\n%s", want, css)
-				}
-			}
-			for _, notWant := range tc.notWant {
-				if strings.Contains(css, notWant) {
-					t.Errorf("不该出现 %q（按能力细分失效）\n%s", notWant, css)
-				}
-			}
-		})
-	}
-}
-
 // TestFragmentBaseStyleNotInjectedWithoutFragmentReference 指向别处的 htmx 请求不带片段样式。
 func TestFragmentBaseStyleNotInjectedWithoutFragmentReference(t *testing.T) {
 	for _, html := range []string{
@@ -84,22 +51,6 @@ func TestFragmentBaseStyleNotInjectedWithoutFragmentReference(t *testing.T) {
 		if strings.Contains(css, ".sky-cart-item {") {
 			t.Errorf("输入 %s 不该注入片段样式；实际 CSS:\n%s", html, css)
 		}
-	}
-}
-
-// TestFragmentBaseStyleOnlyOnceInProduct 产物级幂等：多个订单组件同页，片段样式只出一份。
-func TestFragmentBaseStyleOnlyOnceInProduct(t *testing.T) {
-	set := crosscheckSet(t)
-	cp := crosscheckCompile(t, set, []*core.Node{
-		probeNode("ol-a", "core.orderList", "{}"),
-		probeNode("ol-b", "core.orderList", "{}"),
-	}, WithProjectID("proj-fragment"))
-	doc := renderOrFatal(t, cp)
-	if n := strings.Count(doc, ".sky-orders-item {"); n != 1 {
-		t.Fatalf("订单片段样式在产物里出现 %d 次（应为 1 次）", n)
-	}
-	if n := strings.Count(doc, ".sky-cart-item {"); n != 0 {
-		t.Fatalf("页面没有引用购物车片段，却带了 %d 份购物车片段样式", n)
 	}
 }
 
@@ -132,46 +83,12 @@ func TestFragmentCapabilityTablesCoverEachOther(t *testing.T) {
 			t.Errorf("能力 %s 同时在「有样式族」与「无样式族」表里：两张表必须互斥", c)
 		}
 	}
-	if len(styled) != 3 {
-		t.Fatalf("有样式族只登记了 %d 个能力（订单族 3 个能力；购物车已迁 JSON）：表可能被清空", len(styled))
+	if len(styled) != 0 {
+		t.Fatalf("有样式族只登记了 %d 个能力（购物车与订单均已迁 JSON）：表可能被清空", len(styled))
 	}
 	for name, reason := range unstyled {
 		if len([]rune(strings.TrimSpace(reason))) < 12 {
 			t.Errorf("无样式能力 %s 缺少现状说明（每个都要写清「为什么还没有样式 / 归属在哪」）", name)
-		}
-	}
-}
-
-// TestFragmentBaseCSSObeysBaseRules 片段基座样式自身要守两条基座规则：
-// 只消费 --sky-* 令牌（审计 UIK-003 第一层），且不引入节点作用域类。
-func TestFragmentBaseCSSObeysBaseRules(t *testing.T) {
-	var all strings.Builder
-	for _, g := range fragmentStyleGroups() {
-		all.WriteString(g.css)
-		all.WriteString("\n")
-	}
-	css := all.String()
-	if strings.Contains(css, "var(--c-") {
-		t.Error("片段基座引用了后台令牌 --c-*：基座只写 --sky-*（后台取值由 theme.css 的别名段供给）")
-	}
-	if !strings.Contains(css, "min-width: 0") {
-		t.Error("片段基座缺少 min-width: 0：窄屏下 flex 子项会被内容撑宽（多端硬规则）")
-	}
-	if strings.Contains(css, ".sky-c-") {
-		t.Error("片段基座里出现节点作用域类 .sky-c-*：片段是运行时 HTML，拿不到构建期的 node id")
-	}
-}
-
-// TestFragmentBaseCSSPassesMultiDeviceGuard 片段基座样式必须自己过一遍多端硬规则守卫。
-//
-// 守卫扫的是组件源与后台静态样式（css_verify_scan.go），基座样式是 Go 里的常量，
-// 不在那两条扫描路径上 —— 少了这道断言，基座就成了守卫的盲区（UI-015 想防的正是这个）。
-func TestFragmentBaseCSSPassesMultiDeviceGuard(t *testing.T) {
-	for _, g := range fragmentStyleGroups() {
-		if v := analyzeCSS(g.css, "fragment-base:"+g.id, "", false); len(v) > 0 {
-			for _, one := range v {
-				t.Errorf("片段基座族 %s 违反多端硬规则：%s", g.id, one)
-			}
 		}
 	}
 }

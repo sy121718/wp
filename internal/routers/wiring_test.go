@@ -98,7 +98,7 @@ func TestCheckWiringIgnoresMissingOptionalPorts(t *testing.T) {
 // （否则清单会慢慢与实际装配脱节，越用越不可信）。
 func TestCheckWiringReportsUnknownMarks(t *testing.T) {
 	marks := newWiringMarks()
-	marks.mark(portRuntimeFragVisitorOrderReader)
+	marks.mark(portPublicSearchContent)
 	marks.mark("product.SetSomethingNew")
 
 	missing, unknown := CheckWiring(marks)
@@ -130,7 +130,7 @@ func TestMustAllPortsWiredPanicsWithPortName(t *testing.T) {
 		marks.mark(e.Port)
 	}
 	delete(marks, portProjectLocaleRetire)
-	delete(marks, portRuntimeFragVisitorReturn)
+	delete(marks, portPublicSearchProduct)
 
 	defer func() {
 		r := recover()
@@ -141,7 +141,7 @@ func TestMustAllPortsWiredPanicsWithPortName(t *testing.T) {
 		if !ok {
 			t.Fatalf("panic 值应为字符串，实际 %T", r)
 		}
-		for _, want := range []string{portProjectLocaleRetire, portRuntimeFragVisitorReturn,
+		for _, want := range []string{portProjectLocaleRetire, portPublicSearchProduct,
 			"禁用语言只记日志不下路由"} {
 			if !strings.Contains(msg, want) {
 				t.Fatalf("panic 文案缺少 %q：\n%s", want, msg)

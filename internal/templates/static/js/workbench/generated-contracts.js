@@ -446,8 +446,8 @@ export const paletteSpec = {
         },
         "core.orderList": {
             "type": "core.orderList",
-            "displayName": "我的订单",
-            "hint": "访客订单列表（登录后可见，片段现拉）",
+            "displayName": "订单与售后",
+            "hint": "订单列表、详情、退货申请与进度，自动衔接完整流程",
             "category": "basic",
             "defaultProps": {
                 "pageSize": 10,
@@ -676,14 +676,14 @@ export const paletteSpec = {
         },
         "core.userForms": {
             "type": "core.userForms",
-            "displayName": "账号表单",
-            "hint": "登录、注册、找回密码与账号管理，使用 JSON 接口",
+            "displayName": "账号中心",
+            "hint": "登录注册、找回密码、资料偏好与设备管理，自动衔接完整流程",
             "category": "basic",
             "defaultProps": {
-                "mode": "login",
+                "mode": "account",
                 "next": "",
                 "showTitle": true,
-                "title": "登录"
+                "title": ""
             }
         },
         "core.video": {

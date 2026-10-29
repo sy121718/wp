@@ -1,12 +1,16 @@
 // order_router.go — 订单模块路由自装配（BIZ-1 销售侧）。
 //
 // 挂 authorizedAPI 三层链（SessionAuth + CSRF + Casbin），与其它后台模块一致。
-// 访客侧下单是另一条路径（走 Runtime Fragment），不在这里。
+// 访客业务由独立的 /api/site 入口装配。
 package orderhttp
 
 import (
 	"github.com/gin-gonic/gin"
+	"go_wp/internal/middleware/builtin"
+	userenums "go_wp/internal/module/user/enums"
+	"go_wp/pkg/response"
 	"gorm.io/gorm"
+	"time"
 
 	ordercontract "go_wp/internal/module/order/contract"
 	ordermodel "go_wp/internal/module/order/model"
@@ -148,4 +152,30 @@ func SetupOrderRoutes(rg *permission.RouteGroup,
 	SetupOrderPages(pages, svc, projects, product, warehouses, dict)
 
 	return svc
+}
+
+// SetupOrderPublicRoutes 与后台会话/Casbin分离，只接受访客身份与访客CSRF。
+func SetupOrderPublicRoutes(router *gin.Engine, svc ordercontract.VisitorOrderPort, middleware ...gin.HandlerFunc) {
+	if router == nil || svc == nil {
+		return
+	}
+	publicAPI := router.Group("/api/site/orders", middleware...)
+	publicAPI.Use(builtin.RequestRateLimitMiddleware(90, time.Minute), requireVisitorOrderUser())
+	h := &PublicHandle{svc: svc}
+	publicAPI.GET("", h.VisitorList)
+	publicAPI.GET("/detail", h.VisitorDetail)
+	publicAPI.GET("/returnable", h.VisitorReturnable)
+	publicAPI.GET("/returns", h.VisitorReturns)
+	publicAPI.POST("/returns", h.VisitorRequestReturn)
+}
+func requireVisitorOrderUser() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		if visitorOrderUserID(c) == 0 {
+			response.ErrorStatusAuto(c, "user", userenums.Err(userenums.ErrNotLoggedIn))
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
 }

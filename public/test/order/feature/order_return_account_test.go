@@ -72,7 +72,7 @@ func (f *orderFixture) paidOrderWithLines(t *testing.T, email string, lines []or
 }
 
 // requestReturn 提一张退货申请（带访客身份）。
-func (f *orderFixture) requestReturn(t *testing.T, orderID, userID, itemID uint64, qty int) *orderdto.ReturnResp {
+func (f *orderFixture) requestReturn(t *testing.T, orderID, userID, itemID uint64, qty int) *orderdto.VisitorReturnResp {
 	t.Helper()
 	req := f.returnReq(orderID, []orderdto.ReturnItemReq{{OrderItemID: itemID, Quantity: qty}})
 	req.UserID = userID

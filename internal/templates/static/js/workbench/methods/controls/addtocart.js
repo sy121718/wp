@@ -15,8 +15,8 @@ export function clearRetiredCartWiring(node) {
 
 export function addToCartPanel(ctx) {
     var root = document.createElement('div'); root.className = 'wb-field';
-    var hint = document.createElement('p'); hint.className = 'wb-field-hint';
-    hint.textContent = '自动加入当前商品。多规格由买家在加购区域选择，价格和库存以商品数据为准。';
+    var hint = document.createElement('p'); hint.className = 'wb-field-hint'; hint.style.color = 'var(--sky-c-text-muted, #6b7280)';
+    hint.textContent = '自动加入当前商品';
     root.appendChild(hint);
     if (hasRetiredCartWiring(ctx.node)) {
         var note = document.createElement('p'); note.className = 'wb-field-hint';

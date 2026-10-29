@@ -16,10 +16,8 @@ import (
 
 	commentcontract "go_wp/internal/module/comment/contract"
 	membershipcontract "go_wp/internal/module/membership/contract"
-	ordercontract "go_wp/internal/module/order/contract"
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
-	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
 )
 
 // Deps 是片段层的**全部**外部能力。
@@ -49,15 +47,6 @@ type Deps struct {
 	SitePageResolver pagecontract.SitePageResolver
 	// FragmentProject 工程语言配置（project；可缺 → 只用默认语言）。
 	FragmentProject projectcontract.ProjectService
-	// VisitorOrderReader 访客订单查询（order；required-port）。归属校验在 order 模块的
-	// SQL 条件里，不在这层。
-	VisitorOrderReader ordercontract.VisitorOrderReader
-	// CountryLabelReader 国家 / 地区字典只读口（sysconfig；可缺 → 显示代码）。
-	// 一个展示标签的字典读不到，不该让访客的订单页失败。
-	CountryLabelReader sysconfigcontract.DictReader
-	// VisitorReturnProvider 访客退货（order；required-port）。类型是收窄过的
-	// VisitorReturnPort：片段层拿不到「后台审核 / 入库 / 退款」那几条。
-	VisitorReturnProvider ordercontract.VisitorReturnPort
 	// VisitorIdentityMiddleware 访客身份解析中间件（尽力解析；未登录不阻断，
 	// 必须登录的能力自己渲染引导文案）。
 	VisitorIdentityMiddleware func(c *gin.Context)

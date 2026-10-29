@@ -38,7 +38,7 @@ func (s *Service) GetOrder(ctx context.Context, req *orderdto.GetOrderReq) (res 
 	return s.detailOf(ctx, head)
 }
 
-// detailOf 用已取到的订单头组装详情（后台按 id 查与访客按归属查共用同一份组装）。
+// detailOf 用已取到的订单头组装后台详情；访客出口采用独立的事实白名单。
 func (s *Service) detailOf(ctx context.Context, head *ordermodel.OrderEntity) (res *orderdto.OrderDetailResp, err error) {
 	orderID := head.ID
 	items, err := s.items.ListByOrderID(ctx, orderID)
@@ -157,11 +157,11 @@ func (s *Service) ListVisitorOrders(ctx context.Context, req *orderdto.VisitorOr
 		return nil, err
 	}
 	res = &orderdto.VisitorOrderListResp{
-		List:  make([]*orderdto.OrderResp, 0, len(list)),
+		List:  make([]*orderdto.VisitorOrderResp, 0, len(list)),
 		Total: total,
 	}
 	for _, e := range list {
-		res.List = append(res.List, toOrderResp(e))
+		res.List = append(res.List, toVisitorOrderResp(e))
 	}
 	return res, nil
 }
@@ -171,7 +171,7 @@ func (s *Service) ListVisitorOrders(ctx context.Context, req *orderdto.VisitorOr
 // 归属校验写在 SQL 条件里（GetByIDForUser 的 WHERE 带 user_id）：
 // 「取回来再看是不是他的」一旦有人调整了调用顺序就会漏判，
 // 而这里的失败模式是「访客看到别人的订单」—— 不可接受。
-func (s *Service) GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.OrderDetailResp, err error) {
+func (s *Service) GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.VisitorOrderDetailResp, err error) {
 	if req == nil || req.OrderID == 0 || req.UserID == 0 {
 		return nil, orderenums.Err(orderenums.ErrInvalidParam)
 	}
@@ -186,7 +186,22 @@ func (s *Service) GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrde
 	if pid := strings.TrimSpace(req.ProjectID); pid != "" && head.ProjectID != pid {
 		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
-	return s.detailOf(ctx, head)
+	items, err := s.items.ListByOrderID(ctx, head.ID)
+	if err != nil {
+		return nil, err
+	}
+	logs, err := s.logs.ListByOrderID(ctx, head.ID)
+	if err != nil {
+		return nil, err
+	}
+	res = &orderdto.VisitorOrderDetailResp{Head: toVisitorOrderResp(head), Items: make([]*orderdto.VisitorOrderItemResp, 0, len(items)), Logs: make([]*orderdto.VisitorOrderLogResp, 0, len(logs))}
+	for _, it := range items {
+		res.Items = append(res.Items, &orderdto.VisitorOrderItemResp{ID: it.ID, ProductName: it.ProductName, VariantLabel: it.VariantLabel, SKU: it.SKU, UnitPrice: it.UnitPrice, Quantity: it.Quantity, LineTotal: it.LineTotal})
+	}
+	for _, log := range logs {
+		res.Logs = append(res.Logs, &orderdto.VisitorOrderLogResp{FromStatus: log.FromStatus, ToStatus: log.ToStatus, CreateTime: utils.NewJSONTime(log.CreateTime)})
+	}
+	return res, nil
 }
 
 // toOrderResp 实体 → 视图。归因列在这里反序列化：形状由 dto 定义，
@@ -292,4 +307,12 @@ func (s *Service) GetOrderDetailByNo(ctx context.Context, req *orderdto.GetOrder
 		return nil, orderenums.Err(orderenums.ErrOrderNotFound)
 	}
 	return s.detailOf(ctx, head)
+}
+
+// toVisitorOrderResp 在订单服务边界收窄事实，不让调用方拿后台形状后自行删字段。
+func toVisitorOrderResp(e *ordermodel.OrderEntity) *orderdto.VisitorOrderResp {
+	return &orderdto.VisitorOrderResp{ID: e.ID, OrderNo: e.OrderNo, Status: e.Status, FulfillmentStatus: e.FulfillmentStatus, Currency: e.Currency,
+		Subtotal: e.Subtotal, DiscountTotal: e.DiscountTotal, ShippingTotal: e.ShippingTotal, TaxTotal: e.TaxTotal, Total: e.Total,
+		ShipName: e.ShipName, ShipPhone: e.ShipPhone, ShipProvince: e.ShipProvince, ShipCity: e.ShipCity, ShipDistrict: e.ShipDistrict, ShipAddress: e.ShipAddress, ShipZip: e.ShipZip, ShipCountry: e.ShipCountry,
+		PaymentMethod: e.PaymentMethod, PaymentMethodTitle: e.PaymentMethodTitle, PaidAt: utils.NewJSONTimePtr(e.PaidAt), CompletedAt: utils.NewJSONTimePtr(e.CompletedAt), Remark: e.Remark, CancelReason: e.CancelReason, CreateTime: utils.NewJSONTime(e.CreateTime)}
 }

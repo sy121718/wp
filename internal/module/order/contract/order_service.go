@@ -109,18 +109,24 @@ type OrderService interface {
 	RefundOrder(ctx context.Context, req *orderdto.RefundOrderReq) (err error)
 }
 
-// VisitorReturnPort 访客侧的退货能力（访问面片段层消费的**收窄面**）。
+// VisitorOrderPort 访客订单与售后入口，只含本人查询和申请能力。
+type VisitorOrderPort interface {
+	VisitorOrderReader
+	VisitorReturnPort
+}
+
+// VisitorReturnPort 访客侧的退货能力。
 //
-// 为什么单独成接口：片段层不该拿到「后台审核 / 入库 / 退款」那几条 ——
+// 为什么单独成接口：访客入口不该拿到「后台审核 / 入库 / 退款」那几条 ——
 // 越权防护靠接口形状，而不是靠调用方自觉。三条方法都以 userID 收口，
 // 调用方没有「不传身份」这个选项。
 type VisitorReturnPort interface {
-	// RequestReturn 提交退货申请（UserID 由片段层从会话写入）。
-	RequestReturn(ctx context.Context, req *orderdto.ReturnRequestReq) (res *orderdto.ReturnResp, err error)
+	// RequestReturn 提交退货申请（UserID 由可信访客入口写入）。
+	RequestReturn(ctx context.Context, req *orderdto.ReturnRequestReq) (res *orderdto.VisitorReturnResp, err error)
 	// ReturnableOfOrder 该订单各订单项的当前可退数量（渲染表单用）。
 	ReturnableOfOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.ReturnableResp, err error)
 	// ListVisitorReturns 访客查自己的退货申请。
-	ListVisitorReturns(ctx context.Context, req *orderdto.VisitorReturnListReq) (res *orderdto.ReturnListResp, err error)
+	ListVisitorReturns(ctx context.Context, req *orderdto.VisitorReturnListReq) (res *orderdto.VisitorReturnListResp, err error)
 }
 
 // ReturnService 退货申请（RMA）：客户申请 → 管理员审核 → **先入库、后退款**。
@@ -299,7 +305,7 @@ type OrderQueryReader interface {
 // 这里两个方法把 user_id 钉进契约：调用方没有不传的选项，归属过滤写在 SQL 条件里。
 type VisitorOrderReader interface {
 	ListVisitorOrders(ctx context.Context, req *orderdto.VisitorOrderListReq) (res *orderdto.VisitorOrderListResp, err error)
-	GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.OrderDetailResp, err error)
+	GetVisitorOrder(ctx context.Context, req *orderdto.VisitorOrderDetailReq) (res *orderdto.VisitorOrderDetailResp, err error)
 }
 
 // CouponService 优惠码能力。
