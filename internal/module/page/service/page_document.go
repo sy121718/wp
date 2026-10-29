@@ -803,6 +803,7 @@ func (s *Service) compileDocument(ctx context.Context, page *builder.Page, proje
 	opts := []builder.CompileOption{
 		builder.WithContext(ctx), builder.WithBlockResolver(resolver), builder.WithComponentSet(set),
 		builder.WithCompileMode(mode),
+		s.publishedActionOptions(ctx, projectID, lang),
 	}
 	if diags != nil {
 		opts = append(opts, builder.WithDegradeCollector(diags))

@@ -307,6 +307,7 @@ func (s *Service) renderHTML(ctx context.Context, entityType, entityID, urlPath,
 		builder.WithBlockResolver(blockAdapter),
 		// 引用失败策略（审计 ARCH-05）：发布期显式绑定但拿不到的块 / 模板直接失败。
 		builder.WithCompileMode(mode),
+		s.publishedActionOptions(ctx, projectID, lang),
 	}
 	if diags != nil {
 		compileOpts = append(compileOpts, builder.WithDegradeCollector(diags))

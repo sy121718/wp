@@ -44,15 +44,20 @@ func snapshotBlockReads(source core.BlockResolver) core.BlockResolver {
 }
 
 type actionGraph struct {
-	nodes    map[string]*core.Node
-	ordered  []*core.Node
-	resolved map[string]map[string]core.ResolvedAction
+	nodes     map[string]*core.Node
+	ordered   []*core.Node
+	resolved  map[string]map[string]core.ResolvedAction
+	published core.ActionResolver
+	locations map[string]core.ResolvedAction
 }
 
 // configureActions 按真实展开后的文档索引实例。全局块引用的前缀是确定的，
 // 同一来源出现两次时，各自动作只能指向自己那份已重映射的目标。
-func configureActions(roots []*core.Node, ctx *core.RenderContext) error {
-	graph := &actionGraph{nodes: map[string]*core.Node{}, resolved: map[string]map[string]core.ResolvedAction{}}
+func configureActions(roots []*core.Node, ctx *core.RenderContext, published ...core.ActionResolver) error {
+	graph := &actionGraph{nodes: map[string]*core.Node{}, resolved: map[string]map[string]core.ResolvedAction{}, locations: map[string]core.ResolvedAction{}}
+	if len(published) > 0 {
+		graph.published = published[0]
+	}
 	if err := graph.collect(roots, ctx.Block, nil); err != nil {
 		return err
 	}
@@ -163,7 +168,22 @@ func (g *actionGraph) resolve(node *core.Node, key string, spec core.ActionSpec)
 		result.URL, result.NewTab = target.URL, target.NewTab
 		return result, nil
 	case core.ActionPage, core.ActionPresentation:
-		return result, fmt.Errorf("%w: 尚未取得当前工程和语言的已发布动作目标", core.ErrIncompleteNode)
+		locationKey := string(target.Kind) + ":" + target.PageID + target.InstanceID
+		if location, ok := g.locations[locationKey]; ok {
+			return location, nil
+		}
+		if g.published == nil {
+			return result, fmt.Errorf("%w: 尚未取得当前工程和语言的已发布动作目标", core.ErrIncompleteNode)
+		}
+		resolved, err := g.published(node, key)
+		if err != nil {
+			return result, err
+		}
+		if resolved.Kind != target.Kind || resolved.InstanceID != "" || resolved.PartKey != "" || resolved.NewTab || !strings.HasPrefix(resolved.URL, "/") || strings.HasPrefix(resolved.URL, "//") {
+			return result, fmt.Errorf("已发布动作目标解析结果不合法")
+		}
+		g.locations[locationKey] = resolved
+		return resolved, nil
 	case core.ActionLocal, core.ActionInstance:
 		id := node.ID
 		if target.Kind == core.ActionInstance {

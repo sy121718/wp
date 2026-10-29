@@ -86,7 +86,8 @@ type Service struct {
 	// navigation 公开站点菜单（EDT-003）：core.nav 构建期解析。
 	navigation navigationcontract.NavigationService
 	// sitePages 系统页面槽位（EDT-003）：购物车/登录等链接烘进详情页产物。
-	sitePages pagecontract.SitePageResolver
+	sitePages   pagecontract.SitePageResolver
+	actionPages pagecontract.PublishedPageLocator
 	// mediaProbe 响应式图片变体探测（EDT-003）；nil 时不输出 srcset。
 	mediaProbe func(ctx context.Context, url string) []mediacontract.VariantRef
 	// plugins 启用插件装配（EDT-003）：CompositeSet + PluginResolver + ExtraCSS。

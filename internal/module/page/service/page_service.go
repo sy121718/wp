@@ -40,6 +40,7 @@ import (
 	"go_wp/internal/module/page/enums"
 	"go_wp/internal/module/page/model"
 	"go_wp/internal/module/plugin/contract"
+	presentationcontract "go_wp/internal/module/presentation/contract"
 	"go_wp/internal/module/product/contract"
 	"go_wp/internal/module/project/contract"
 	"go_wp/internal/module/publication/contract"
@@ -87,6 +88,7 @@ type Service struct {
 	// 的 DTO / 版本表 / 类型校验，只要「一份文档」。未注入时模板槽位一律回退块绑定 ——
 	// 存量站点行为与改造前逐字节一致（见 page_document.go 的装配注释）。
 	structureTemplates pipeline.StructureTemplatePort
+	actionInstances    presentationcontract.PublishedInstanceLocator
 	// contentStore 内容译文读取端口（多语言 P5b）：为 nil 时用 pkg/i18n 默认存储
 	// （sys_translation 表 + 默认数据库）。测试经 SetContentTranslationStore 注入
 	// 隔离 schema 的存储，用于验证「块内文本进候选集合 + 每页每语言一次查库」。
@@ -357,7 +359,6 @@ var (
 	ErrRedirectOccupied    = pageenums.Err(pageenums.ErrRedirectOccupied)
 	ErrRedirectTargetMiss  = pageenums.Err(pageenums.ErrRedirectTargetMiss)
 	ErrRedirectLoop        = pageenums.Err(pageenums.ErrRedirectLoop)
-
 )
 
 const (

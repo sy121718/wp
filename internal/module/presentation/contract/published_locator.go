@@ -8,6 +8,11 @@ package presentationcontract
 
 import "context"
 
+// PublishedInstanceLocator 按实例ID解析本工程、精确语言的真实发布路径，不回退实体默认实例。
+type PublishedInstanceLocator interface {
+	PublishedInstancePath(ctx context.Context, projectID, instanceID, lang string) (string, error)
+}
+
 // PublishedEntityLocator 按实体 id 批量解析**已上线**详情页的线上路径。
 type PublishedEntityLocator interface {
 	// PublishedEntityPaths 返回 entity_id → 线上路径（url_path），只含已上线（active 指针非空）

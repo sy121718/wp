@@ -485,6 +485,19 @@ func (a *assembly) wirePublishingPorts() {
 		panic("发布实例模块未提供站点装配注入点（SetNavigationService / SetSitePageResolver / SetMediaProbe / SetPluginService）")
 	}
 	marks.mark(portPresentationSiteAssembly)
+	pageActionTargets, pageOK := pageService.(pagecontract.PublishedPageLocator)
+	instanceActionTargets, instanceOK := presentationSvc.(presentationcontract.PublishedInstanceLocator)
+	pageActionSetter, pageSetterOK := pageService.(interface {
+		SetPublishedInstanceLocator(presentationcontract.PublishedInstanceLocator)
+	})
+	instanceActionSetter, instanceSetterOK := presentationSvc.(interface {
+		SetPublishedPageLocator(pagecontract.PublishedPageLocator)
+	})
+	if !pageOK || !instanceOK || !pageSetterOK || !instanceSetterOK {
+		panic("发布动作目标解析端口未装配")
+	}
+	pageActionSetter.SetPublishedInstanceLocator(instanceActionTargets)
+	instanceActionSetter.SetPublishedPageLocator(pageActionTargets)
 
 	// 换图失效通知（媒体变体的缓存与失效）：media 拿到「谁引用了这张图」后回调引用方
 	// 标记待重建。变体文件名带内容指纹（这是 /storage 敢给 immutable 长缓存的前提），

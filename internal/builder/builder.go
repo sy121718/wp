@@ -134,6 +134,7 @@ type compileConfig struct {
 	block      core.BlockResolver
 	set        *jet.Set
 	plugin     core.PluginResolver
+	action     core.ActionResolver
 	collection core.CollectionResolver
 	// issue #35：构建期数据源（业务侧声明的受限接口）。专用组件优先用它，
 	// 通用组件仍走上面的 collection 按名路由。
@@ -226,6 +227,12 @@ type compileConfig struct {
 // 一行都不用改，行为与改造前逐字一致。
 func WithCompileMode(mode CompileMode) CompileOption {
 	return func(c *compileConfig) { c.mode = mode }
+}
+
+// WithActionResolver 注入本工程和精确语言的已发布 page/presentation 目标解析。
+// 同文档区域与外链仍由编译器统一校验，不委托模块重复实现。
+func WithActionResolver(resolve core.ActionResolver) CompileOption {
+	return func(c *compileConfig) { c.action = resolve }
 }
 
 // WithCanvasSlotFrames 开启结构槽位的「画布标记层」（**只给编辑器画布用**）。
@@ -712,7 +719,7 @@ func Compile(p *Page, opts ...CompileOption) (res *CompiledPage, err error) {
 	// 结构槽位展开（审计 VIS-001）：绑定变成 root 首尾的 core.layoutSlot 节点，
 	// 页眉页脚因此进入 AST，与页面里的节点走同一条渲染与 CSS 收集路径。
 	rootNodes := expandStructureSlots(p.Root, cfg.structureSlots)
-	if err := configureActions(rootNodes, ctx); err != nil {
+	if err := configureActions(rootNodes, ctx, cfg.action); err != nil {
 		return nil, err
 	}
 	roots := make([]rootView, 0, len(rootNodes))
