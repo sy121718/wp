@@ -24,6 +24,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"go_wp/internal/mcp"
 	aidto "go_wp/internal/module/ai/dto"
 	aienums "go_wp/internal/module/ai/enums"
 	aimodel "go_wp/internal/module/ai/model"
@@ -389,5 +390,65 @@ func TestSessionIsolatedByOwner(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("同一把 key 应只有 1 条会话，实际 %d", count)
+	}
+}
+
+// TestToolIdempotencyIsolatedByActor 幂等键必须按调用主体隔离（SEC-05）。
+//
+// 缺陷形态：幂等台账的唯一约束原先是 (tool_name, idem_key)，**不含主体**。
+// idempotencyKey 由客户端生成（MCP 客户端 / 模型自拟的 uuid、retry-1 之类），
+// 撞键完全可能。于是后一个用户用同一个 key 时：
+//
+//	· 拿到前一个人的写结果（跨用户回放，result_text 可能含业务数据）；
+//	· 且**不真正执行写入** —— 他以为成功了，实际什么都没写。
+//
+// 判据：同一 (tool, key) 在两个 actor 下各自独立执行、各自落一条记录。
+func TestToolIdempotencyIsolatedByActor(t *testing.T) {
+	_, db := newAISessionService(t)
+	store := aiservice.NewToolIdempotencyStore(aimodel.NewToolIdempotencyModel(db))
+
+	const (
+		alice int64 = 2001
+		bob   int64 = 2002
+		tool        = "inventory.adjust"
+		key         = "retry-1" // 客户端固定用它，撞键很现实
+	)
+	ctxFor := func(uid int64) context.Context { return mcp.WithUserID(context.Background(), uid) }
+
+	// Alice 执行并落结果。
+	if err := store.Save(ctxFor(alice), tool, key, mcp.Result{Text: "ALICE-RESULT"}); err != nil {
+		t.Fatalf("Alice 落幂等记录失败: %v", err)
+	}
+
+	// ① Bob 用**同一个 key**：不能命中 Alice 的记录。
+	if res, ok, err := store.Lookup(ctxFor(bob), tool, key); err != nil {
+		t.Fatalf("Bob 查幂等记录出错: %v", err)
+	} else if ok {
+		t.Fatalf("Bob 命中了 Alice 的幂等记录（result=%q）—— 跨用户回放，且他的写不会真的执行", res.Text)
+	}
+
+	// ② Alice 自己仍然命中（证明隔离不是"谁都查不到"）。
+	if res, ok, err := store.Lookup(ctxFor(alice), tool, key); err != nil {
+		t.Fatalf("Alice 查幂等记录出错: %v", err)
+	} else if !ok || res.Text != "ALICE-RESULT" {
+		t.Fatalf("Alice 应命中自己的记录，实际 ok=%v result=%q", ok, res.Text)
+	}
+
+	// ③ Bob 自己写一条同 key：必须成功（唯一约束按主体分作用域）。
+	if err := store.Save(ctxFor(bob), tool, key, mcp.Result{Text: "BOB-RESULT"}); err != nil {
+		t.Fatalf("Bob 用同一 key 落记录失败（唯一约束未按主体分作用域）: %v", err)
+	}
+	if res, ok, _ := store.Lookup(ctxFor(bob), tool, key); !ok || res.Text != "BOB-RESULT" {
+		t.Fatalf("Bob 应读到自己那条，实际 ok=%v result=%q", ok, res.Text)
+	}
+
+	// ④ 落库确实是两条（不是被 ON CONFLICT 吃掉一条）。
+	var count int64
+	if err := db.Table("ai_tool_idempotency").
+		Where("tool_name = ? AND idem_key = ?", tool, key).Count(&count).Error; err != nil {
+		t.Fatalf("统计幂等记录失败: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("同一 (tool,key) 在两个 actor 下应有 2 条记录，实际 %d", count)
 	}
 }

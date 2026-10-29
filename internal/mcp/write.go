@@ -43,8 +43,17 @@ const (
 //
 // 端口在这里而不是直接依赖某个 model：工具层的可测性靠它 —— 假实现可以让
 // 「第二次调用返回上次结果且不碰业务代码」变成一个纯函数断言。
+// IdempotencyStore 记「同一次意图上次的结果」，**按调用主体隔离**。
+//
+// 主体必须是键的一部分（SEC-05）：idempotencyKey 由客户端生成（MCP 客户端、
+// 模型自拟的 uuid/retry-1），撞键完全可能。不带主体时，后一个用户用同一个 key
+// 会命中前一个人的记录 —— 直接拿到别人的写结果，且**不真正执行写入**。
+// 这是两个后果：跨用户回放 + 静默丢写。
+//
+// actor 由实现方从 ctx 取（mcp.UserIDFrom），不放进参数：让请求方填调用主体，
+// 等于把隔离本身交给调用方决定。
 type IdempotencyStore interface {
-	// Lookup 取同一次意图上次的结果。ok=false 表示没记录过（或已过期）。
+	// Lookup 取同一主体、同一次意图上次的结果。ok=false 表示没记录过（或已过期）。
 	Lookup(ctx context.Context, tool, key string) (res Result, ok bool, err error)
 	// Save 记下这次成功的结果。
 	Save(ctx context.Context, tool, key string, res Result) error

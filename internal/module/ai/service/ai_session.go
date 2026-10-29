@@ -2347,7 +2347,10 @@ func NewToolIdempotencyStore(m *aimodel.ToolIdempotencyModel) *ToolIdempotencySt
 	return &ToolIdempotencyStore{m: m}
 }
 
-// Lookup 取同一次意图上次的结果。
+// Lookup 取**同一主体**同一次意图上次的结果。
+//
+// 主体从 ctx 取（mcp.UserIDFrom）而不是从参数：让请求方填调用主体，
+// 等于把隔离交给调用方决定（SEC-05）。
 func (s *ToolIdempotencyStore) Lookup(ctx context.Context, tool, key string) (mcp.Result, bool, error) {
 	if s == nil || s.m == nil {
 		// 没接台账时**不阻断**写操作：接入缺失是装配问题，而把它变成
@@ -2355,7 +2358,7 @@ func (s *ToolIdempotencyStore) Lookup(ctx context.Context, tool, key string) (mc
 		// 代价是这段时间没有幂等保护 —— 这是有意的取舍，见装配处的断言。
 		return mcp.Result{}, false, nil
 	}
-	row, ok, err := s.m.Lookup(ctx, tool, key)
+	row, ok, err := s.m.Lookup(ctx, tool, mcp.UserIDFrom(ctx), key)
 	if err != nil || !ok {
 		return mcp.Result{}, false, err
 	}
@@ -2367,5 +2370,5 @@ func (s *ToolIdempotencyStore) Save(ctx context.Context, tool, key string, res m
 	if s == nil || s.m == nil {
 		return nil
 	}
-	return s.m.Save(ctx, tool, key, res.Text)
+	return s.m.Save(ctx, tool, mcp.UserIDFrom(ctx), key, res.Text)
 }
