@@ -10,6 +10,7 @@ export const treeMethods = {
             // 选中/右键/双击重命名/caret 折叠/拖拽排序（含组件库拖入）。
             renderTreeHtmx(rootUl) {
                 var self = this;
+                var sequence = this._treeRequest = (this._treeRequest || 0) + 1;
                 var body = new URLSearchParams();
                 body.set('document', JSON.stringify(this.doc));
                 body.set('selectedId', this.selectedId || '');
@@ -19,23 +20,21 @@ export const treeMethods = {
                     credentials: 'same-origin',
                     headers: csrfHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
                     body: body.toString()
-                }).then(function (r) { return r.text(); }).then(function (html) {
-                    // 刻意保留整块 innerHTML，不切 idiomorph morph（docs/06-C §四评估结论）：
-                    // 1) 服务端片段（fragments/outline_tree）不给节点输出 id 属性，idiomorph 只能
-                    //    退化为「同 tagName 软匹配」，深层 ul/li 增删时可能错配到相邻节点；
-                    // 2) 折叠态 is-collapsed 只存在于客户端（服务端每次渲染都是展开的 ▾），
-                    //    morph 会用新片段属性覆盖旧节点，折叠态照样丢——morph 解决不了本树的
-                    //    真实痛点；
-                    // 3) 拖拽态（is-drop-target / data-dropPlacement）与键盘焦点是渲染间的瞬时
-                    //    状态，匹配错误会残留脏标记；
-                    // 4) renderThemeStructure 在根下追加的「主题结构」li 不在服务端片段里，整块
-                    //    替换天然清理，morph 需要额外增删分支。
-                    // 后续若服务端给 <div class="wb-node"> 输出稳定 id、且折叠态改为客户端
-                    // data-wb-collapsed 集合在渲染后回放，再评估切 morph。
+                }).then(function (r) { if (!r.ok) throw new Error('outline'); return r.text(); }).then(function (html) {
+                    if (sequence !== self._treeRequest) return;
+                    // 替换前保留用户刚刚折叠的分支，迟到的请求不能覆盖较新的文档。
+                    var collapsed = new Set(Array.from(rootUl.querySelectorAll('li.is-collapsed > .wb-node')).map(function (row) { return row.dataset.id; }));
                     rootUl.innerHTML = html;
+                    rootUl.querySelectorAll('.wb-node').forEach(function (row) {
+                        if (!collapsed.has(row.dataset.id)) return;
+                        row.closest('li').classList.add('is-collapsed');
+                        var caret = row.querySelector('.wb-caret');
+                        if (caret) caret.textContent = '▸';
+                    });
                     self.bindTreeHtmx(rootUl);
                     self.renderThemeStructure(rootUl);
                 }).catch(function () {
+                    if (sequence !== self._treeRequest) return;
                     rootUl.innerHTML = '<li class="wb-empty">结构树加载失败</li>';
                 });
             },
@@ -253,13 +252,13 @@ export const treeMethods = {
                 var node = this.findNode(id); if (!node) return;
                 this.snapshot();
                 node.hidden = !node.hidden;
-                this.renderTree(); this.refreshCanvas();
+                this.renderTree(); this.refreshCanvas(); this.renderUI();
             },
             toggleLocked(id) {
                 var node = this.findNode(id); if (!node) return;
                 this.snapshot();
                 node.locked = !node.locked;
-                this.renderTree();
+                this.renderTree(); this.renderUI();
             },
 
 };

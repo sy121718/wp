@@ -69,8 +69,8 @@ func TestWorkbenchSlotFrameSelectionFlow(t *testing.T) {
 		}
 	}
 	// 槽位不是本页节点：隐藏 / 锁定 / 删除对它没有意义。
-	if !strings.Contains(panels, "wb-edit-delete") {
-		t.Fatalf("槽位面板应隐藏删除按钮（它对编译期注入的边界无效）")
+	if !strings.Contains(panels, "if (this.selectedSlot) { this.renderSlotPanel(); return; }") {
+		t.Fatalf("槽位必须先进入独立面板，不能挂载普通节点的内容操作")
 	}
 }
 

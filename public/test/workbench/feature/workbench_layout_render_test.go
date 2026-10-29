@@ -130,8 +130,8 @@ func assertLayoutRenderedFully(t *testing.T, mode string, rec *httptest.Response
 		t.Fatalf("%s：状态码应为 200，实际 %d，body=%s", mode, rec.Code, firstN(rec.Body.String(), 300))
 	}
 	body := rec.Body.String()
-	// 关键元素：画布 iframe、保存按钮、草稿数据岛、底栏 —— 任一缺失都说明渲染中断在它之前。
-	for _, needle := range []string{"</html>", "id=\"wb-canvas\"", "id=\"wb-save-draft\"", "id=\"wb-bootstrap\"", "id=\"wb-meta\"", "wb-bottombar"} {
+	// 关键元素：画布 iframe、保存按钮、草稿数据岛、画布工具栏与恢复面板入口 —— 任一缺失都说明渲染中断在它之前。
+	for _, needle := range []string{"</html>", "id=\"wb-canvas\"", "id=\"wb-save-draft\"", "id=\"wb-bootstrap\"", "id=\"wb-meta\"", "wb-canvas-toolbar", "id=\"wb-sidebar-restore\"", "data-tab=\"layout\"", "data-tab=\"motion\""} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("%s：页面未渲染完整（缺 %q，共 %d 字节）—— 典型的「200 + 静默截断」，多半是 layout.html 里某个可选键没走 isset：%s", mode, needle, len(body), firstN(body, 400))
 		}

@@ -17,6 +17,7 @@ export function set(ctx, path, value) {
 }
 
 export function commit(ctx, path, value, after) {
+    if (ctx.self.findNode && ctx.self.findNode(ctx.node.id) !== ctx.node) return;
     ctx.self.snapshot();
     set(ctx, path, value);
     if (after) after(ctx, value);
@@ -64,7 +65,7 @@ export function field(ctx, label, path, kind, choices, after, extra) {
         // 点选即 commit，程序化赋值不触发（对齐原生 change 语义）。
         wrap.appendChild(window.WBUI.select.create(choices, get(ctx, path) == null ? '' : String(get(ctx, path)), {
             key: path, label: label,
-            onChange: function (v) { commit(ctx, path, v, after); }
+            onChange: function (v) { commit(ctx, path, extra && extra.number ? Number(v) : v, after); }
         }).root);
         ctx.panel.appendChild(wrap);
         return;

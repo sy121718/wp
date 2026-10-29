@@ -1,0 +1,27 @@
+-- 676：构建器工作区的基础控件、四栏检查器与画布操作文案。
+INSERT INTO sys_i18n (item_key, lang, item_value) VALUES
+('workbench.ui.action.collapsePreview', 'zh-CN', '收起面板并预览'),
+('workbench.ui.action.collapsePreview', 'en-US', 'Collapse panel and preview'),
+('workbench.ui.canvas.directHint', 'zh-CN', '双击文字直接编辑'),
+('workbench.ui.canvas.directHint', 'en-US', 'Double-click text to edit'),
+('workbench.ui.canvas.page', 'zh-CN', '页面'),
+('workbench.ui.canvas.page', 'en-US', 'Page'),
+('workbench.ui.canvas.responsive', 'zh-CN', '响应式'),
+('workbench.ui.canvas.responsive', 'en-US', 'Responsive'),
+('workbench.ui.edit.editing', 'zh-CN', '正在编辑'),
+('workbench.ui.edit.editing', 'en-US', 'Editing'),
+('workbench.ui.edit.restorePanel', 'zh-CN', '恢复编辑面板'),
+('workbench.ui.edit.restorePanel', 'en-US', 'Restore editor panel'),
+('workbench.ui.edit.tabLayout', 'zh-CN', '布局'),
+('workbench.ui.edit.tabLayout', 'en-US', 'Layout'),
+('workbench.ui.edit.tabMotion', 'zh-CN', '动效'),
+('workbench.ui.edit.tabMotion', 'en-US', 'Motion'),
+('workbench.ui.library.categories', 'zh-CN', '组件分类'),
+('workbench.ui.library.categories', 'en-US', 'Element categories'),
+('workbench.ui.nav.pageMenu', 'zh-CN', '页面菜单'),
+('workbench.ui.nav.pageMenu', 'en-US', 'Page menu'),
+('workbench.ui.tree.fold', 'zh-CN', '折叠结构树'),
+('workbench.ui.tree.fold', 'en-US', 'Collapse navigator'),
+('workbench.ui.tree.pageStructure', 'zh-CN', '页面结构'),
+('workbench.ui.tree.pageStructure', 'en-US', 'Page structure')
+ON CONFLICT (item_key, lang) DO NOTHING;

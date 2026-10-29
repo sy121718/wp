@@ -23,6 +23,7 @@
   // 于是画布发回父窗口的每一条消息（选中 / 直改文本 / 右键操作 / 拖放重排 /
   // 就地插入）带的都是 findNode 查不到的 id：双击能进入编辑态，失焦后
   // 回写被静默丢弃（文字弹回），点选也毫无反应。
+  var editorState = { nodes: [], preview: false };
   var WB_SKY_PREFIX = 'sky-c-';
   document.querySelectorAll('[class]').forEach(function(el){
     el.classList.forEach(function(cls){
@@ -56,6 +57,7 @@
     });
   }
   document.addEventListener('dragstart', function(ev){
+    if (editorState.preview || ev.target.closest('[data-wb-locked="true"]')) { ev.preventDefault(); return; }
     // 槽位子树（页眉 / 页脚）不属于本页 AST：拖它只会得到一次无人响应 moveNode。
     if (ev.target.closest && ev.target.closest('[data-sky-slot]')) return;
     var target = ev.target.closest ? ev.target.closest('[data-sky-id]') : null;
@@ -66,6 +68,7 @@
     setTimeout(function(){ target.style.opacity = ''; }, 0);
   }, true);
   document.addEventListener('dragover', function(ev){
+    if (editorState.preview || ev.target.closest('[data-wb-locked="true"]')) return;
     // 槽位子树不接收落点：往里插组件等于往「站点结构里那份块」插，而这里改的是本页文档。
     if (ev.target.closest && ev.target.closest('[data-sky-slot]')) { clearDropMarks(); dropCtx = null; return; }
     var target = ev.target.closest ? ev.target.closest('[data-sky-id]') : null;
@@ -84,6 +87,7 @@
     if (!ev.relatedTarget) { clearDropMarks(); dropCtx = null; }
   });
   document.addEventListener('drop', function(ev){
+    if (editorState.preview) return;
     ev.preventDefault();
     clearDropMarks();
     var componentType = ev.dataTransfer.getData('application/x-wb-component');
@@ -107,18 +111,18 @@
 
   var style = document.createElement('style');
   style.textContent = [
-    '[data-sky-id]:hover{outline:1px solid rgba(37,99,235,.45);outline-offset:-1px;cursor:pointer;}',
-    '[data-sky-id].wb-selected{outline:2px solid #2563eb;outline-offset:-2px;}',
+    '[data-sky-id]:hover{outline:1px solid rgba(24,24,27,.4);outline-offset:-1px;cursor:pointer;}',
+    '[data-sky-id].wb-selected{outline:2px solid #18181b;outline-offset:-2px;}',
     '.wb-bridge-insert{',
     '  position:absolute;z-index:99998;left:50%;transform:translateX(-50%);',
     '  padding:4px 12px;font-size:12px;line-height:1.6;white-space:nowrap;',
-    '  color:#fff;background:#2563eb;border:none;border-radius:999px;cursor:pointer;',
-    '  box-shadow:0 2px 10px rgba(37,99,235,.45);',
+    '  color:#fff;background:#18181b;border:none;border-radius:999px;cursor:pointer;',
+    '  box-shadow:0 2px 10px rgba(24,24,27,.4);',
     '}',
-    '.wb-bridge-insert:hover{background:#1d4ed8;}',
-    '[data-sky-id].wb-drop-before{box-shadow:0 -3px 0 0 #2563eb;}',
-    '[data-sky-id].wb-drop-after{box-shadow:0 3px 0 0 #2563eb;}',
-    '[data-sky-id].wb-drop-inside{outline:2px dashed #2563eb;outline-offset:-2px;}',
+    '.wb-bridge-insert:hover{background:#38383d;}',
+    '[data-sky-id].wb-drop-before{box-shadow:0 -3px 0 0 #18181b;}',
+    '[data-sky-id].wb-drop-after{box-shadow:0 3px 0 0 #18181b;}',
+    '[data-sky-id].wb-drop-inside{outline:2px dashed #18181b;outline-offset:-2px;}',
     // 结构槽位：紫色虚线边界，与普通组件的蓝色区分开 —— 它不是本页的节点。
     '[data-sky-slot].wb-slot{outline:1px dashed rgba(124,58,237,.5);outline-offset:-1px;}',
     '[data-sky-slot].wb-slot:hover{outline:2px dashed #7c3aed;}',
@@ -127,6 +131,7 @@
   document.head.appendChild(style);
 
   document.addEventListener('click', function(ev){
+    if (editorState.preview) return;
     // 槽位优先：点页眉 / 页脚（含它们内部的内容）走的不是「选中本页节点」，
     // 而是「这段 DOM 属于站点结构」——父窗口据此打开槽位面板。
     var slotEl = ev.target.closest ? ev.target.closest('[data-sky-slot]') : null;
@@ -144,6 +149,7 @@
     var target = ev.target.closest('[data-sky-id]');
     if(!target) return;
     ev.preventDefault(); ev.stopPropagation();
+    if (target.closest('[data-wb-locked="true"]')) return;
     parent.postMessage({type:'wb-select', id: target.getAttribute('data-sky-id')}, location.origin);
   }, true);
 
@@ -163,8 +169,8 @@
   });
 
   window.addEventListener('message', function(ev){
-    if (ev.origin !== location.origin || !ev.data) return;
-    if (ev.data.type === 'wb-mark-selected') {
+    if (ev.origin !== location.origin || ev.source !== parent || !ev.data) return;
+    if (ev.data.type === 'wb-mark-selected' && !editorState.preview) {
       var prev = document.querySelector('[data-sky-id].wb-selected');
       if (prev) prev.classList.remove('wb-selected');
       var el = ev.data.id ? document.querySelector('[data-sky-id="' + ev.data.id + '"]') : null;
@@ -190,15 +196,24 @@
   // 1) 双击就地编辑：文本类组件（heading/text/button/card 等）双击 →
   //    contenteditable 就地编辑 → 失焦/回车回写 AST（wb-edit-text 消息）。
   document.addEventListener('dblclick', function(ev){
+    if (editorState.preview || ev.target.closest('[data-wb-locked="true"]')) return;
     // 槽位（页眉 / 页脚）里的文本不能就地改：改的必须是**全局块**，
     // 否则页内副本会与站点结构那份分叉（就是「两个页眉」那条老路）。
     if (ev.target.closest && ev.target.closest('[data-sky-slot]')) return;
     var target = ev.target.closest('[data-sky-id]');
     if(!target) return;
+    // 只对文本叶节点直改，容器或复合组件不能被压成一段文字。
+    if (!/^(H[1-6]|P|A|BUTTON|BLOCKQUOTE|SPAN)$/.test(target.tagName) || target.querySelector('[data-sky-id]')) return;
     ev.preventDefault(); ev.stopPropagation();
     // 已在编辑中不重复进入。
     if (target.isContentEditable) return;
+    var originalHTML = target.innerHTML;
+    var originalText = target.textContent;
+    var selection = window.getSelection();
+    var originalRange = selection.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+    var finished = false;
     target.setAttribute('contenteditable', 'plaintext-only');
+    target.setAttribute('draggable', 'false');
     target.focus();
     // 全选文本（就地替换习惯）。
     var range = document.createRange();
@@ -207,22 +222,27 @@
     sel.removeAllRanges(); sel.addRange(range);
     target.classList.add('wb-editing');
     function finish(save){
+      if (finished) return;
+      finished = true;
       target.removeAttribute('contenteditable');
       target.classList.remove('wb-editing');
       target.removeEventListener('blur', onBlur);
       target.removeEventListener('keydown', onKey);
-      if (save) {
+      target.setAttribute('draggable', 'true');
+      if (save && target.textContent !== originalText) {
         parent.postMessage({
           type: 'wb-edit-text',
           id: target.getAttribute('data-sky-id'),
-          text: target.textContent.trim()
+          text: target.textContent
         }, location.origin);
       } else {
-        // 取消：下次画布刷新自动还原（不主动刷新，等下次交互）。
+        target.innerHTML = originalHTML;
+        if (originalRange) { try { selection.removeAllRanges(); selection.addRange(originalRange); } catch (_) {} }
       }
     }
     function onBlur(){ finish(true); }
     function onKey(e){
+      if (e.isComposing) return;
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); target.blur(); }
       if (e.key === 'Escape') { e.preventDefault(); finish(false); }
     }
@@ -234,6 +254,7 @@
   var ctxMenu = null;
   function closeCtxMenu(){ if (ctxMenu) { ctxMenu.remove(); ctxMenu = null; } }
   document.addEventListener('contextmenu', function(ev){
+    if (editorState.preview || ev.target.closest('[data-wb-locked="true"]')) return;
     var slotHit = ev.target.closest ? ev.target.closest('[data-sky-slot]') : null;
     closeCtxMenu();
     if (slotHit) {
@@ -277,7 +298,7 @@
     // 动效快捷子项（效果基本库入口：常用 4 种入场 + 悬浮）。
     var anim = document.createElement('div'); anim.className='wb-ctx-group'; anim.textContent='✨ {{bridge.entranceGroup}}';
     ctxMenu.appendChild(anim);
-    ['fade-up','zoom-in','slide-up','blur-in'].forEach(function(eff){
+    ['fade-in-up','zoom-in','slide-in-up','blur-in'].forEach(function(eff){
       item('　' + eff, function(){ send({type:'wb-ctx', id:id, op:'entrance', value:eff}); });
     });
     item('🌀 {{bridge.hoverLift}}', function(){ send({type:'wb-ctx', id:id, op:'hover', value:'lift'}); });
@@ -297,28 +318,33 @@
   var quickBar = document.createElement('div');
   quickBar.className = 'wb-quick-bar';
   quickBar.style.display = 'none';
+  var quickLabel = document.createElement('span');
+  quickLabel.className = 'wb-quick-label';
+  quickBar.appendChild(quickLabel);
   document.body.appendChild(quickBar);
   function positionQuickBar(el){
     var rect = el.getBoundingClientRect();
     quickBar.style.display = 'flex';
-    quickBar.style.left = rect.left + 'px';
-    quickBar.style.top = (rect.top - 30 + window.scrollY) + 'px';
+    quickBar.style.left = Math.max(0, Math.min(rect.left, window.innerWidth - quickBar.offsetWidth)) + 'px';
+    quickBar.style.top = (Math.max(0, rect.top - 30) + window.scrollY) + 'px';
     quickBar.setAttribute('data-target-id', el.getAttribute('data-sky-id'));
+    var info = editorState.nodes.find(function (node) { return node.id === el.getAttribute('data-sky-id'); });
+    quickLabel.textContent = info ? info.name : el.tagName.toLowerCase();
   }
   window.addEventListener('message', function(ev){
-    if (ev.origin !== location.origin || !ev.data) return;
-    if (ev.data.type === 'wb-mark-selected') {
+    if (ev.origin !== location.origin || ev.source !== parent || !ev.data) return;
+    if (ev.data.type === 'wb-mark-selected' && !editorState.preview) {
       var el = ev.data.id ? document.querySelector('[data-sky-id="' + ev.data.id + '"]') : null;
       // 槽位的快捷条没有意义（没有「复制本页副本 / 删除」这类操作），不显示。
       if (el && !el.hasAttribute('data-sky-slot')) positionQuickBar(el); else quickBar.style.display = 'none';
     }
   });
   [['✏️','{{bridge.editText}}',function(){ var el=document.querySelector('[data-sky-id="'+quickBar.getAttribute('data-target-id')+'"]'); if(el) el.dispatchEvent(new MouseEvent('dblclick',{bubbles:true})); }],
-   ['⧉','{{bridge.copy}}',function(){ send2({type:'wb-ctx', id:quickBar.getAttribute('data-target-id'), op:'copy'}); }],
+   ['⧉','创建副本',function(){ send2({type:'wb-ctx', id:quickBar.getAttribute('data-target-id'), op:'duplicate'}); }],
    ['🗑','{{bridge.delete}}',function(){ send2({type:'wb-ctx', id:quickBar.getAttribute('data-target-id'), op:'delete'}); }]
   ].forEach(function(t){
     var b = document.createElement('button');
-    b.type='button'; b.textContent=t[0]; b.title=t[1];
+    b.type='button'; b.textContent=t[0]; b.title=t[1]; b.setAttribute('aria-label', t[1]);
     b.addEventListener('click', function(e){ e.stopPropagation(); t[2](); });
     quickBar.appendChild(b);
   });
@@ -358,6 +384,7 @@
         fresh.setAttribute('draggable', 'true');
         if (el.classList.contains('wb-selected')) fresh.classList.add('wb-selected');
         el.replaceWith(fresh);
+        applyEditorState();
       }
     }
     if (typeof ev.data.css === 'string') {
@@ -366,6 +393,51 @@
       st.textContent = ev.data.css;
     }
   });
+
+  // 局部替换后重新映射整棵子树，选择、空容器和继承锁定都跟随同一份文档。
+  function applyEditorState() {
+    document.documentElement.toggleAttribute('data-wb-preview', !!editorState.preview);
+    document.querySelectorAll('[class]').forEach(function (element) {
+      element.classList.forEach(function (cls) {
+        if (cls.indexOf(WB_SKY_PREFIX) === 0) element.dataset.skyId = cls.slice(WB_SKY_PREFIX.length);
+      });
+    });
+    editorState.nodes.forEach(function (node) {
+      document.querySelectorAll('[data-sky-id="' + node.id + '"]').forEach(function (element) {
+        element.dataset.wbLocked = String(node.locked);
+        element.dataset.wbHidden = String(node.hidden);
+        element.draggable = !editorState.preview && !node.locked;
+        element.classList.toggle('wb-empty-container', node.type === 'core.container' && !element.querySelector('[data-sky-id]') && !element.textContent.trim());
+        element.classList.toggle('wb-selected', !editorState.preview && node.id === editorState.selectedId);
+      });
+    });
+    var selected = editorState.selectedId && document.querySelector('[data-sky-id="' + editorState.selectedId + '"]');
+    if (!editorState.preview && selected && selected.dataset.wbLocked !== 'true') positionQuickBar(selected);
+    else quickBar.style.display = 'none';
+    if (editorState.preview) { insertBtn.style.display = 'none'; closeCtxMenu(); clearDropMarks(); }
+  }
+  var stateStyle = document.createElement('style');
+  stateStyle.textContent = [
+    '.wb-quick-label{font:500 11px/28px system-ui,sans-serif;padding:0 8px;max-width:180px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}',
+    '.wb-quick-bar{background:#18181b!important;border-radius:5px!important;gap:0!important;}',
+    '.wb-quick-bar button{color:#fff!important;min-width:28px;height:28px;}',
+    'html:not([data-wb-preview]) [data-wb-hidden="true"]{display:block!important;opacity:.35;}',
+    'html:not([data-wb-preview]) .wb-empty-container{min-height:96px;outline:1px dashed #bbb;outline-offset:-1px;position:relative;}',
+    'html:not([data-wb-preview]) .wb-empty-container::after{content:"+ {{bridge.insert}}";position:absolute;inset:0;display:grid;place-items:center;font:12px system-ui;color:#888;pointer-events:none;}',
+    '[data-wb-preview] [data-sky-id],[data-wb-preview] [data-sky-slot]{outline:none!important;cursor:revert!important;}',
+    '[data-wb-preview] .wb-bridge-insert,[data-wb-preview] .wb-quick-bar,[data-wb-preview] .wb-ctx-menu{display:none!important;}'
+  ].join('');
+  document.head.appendChild(stateStyle);
+  window.addEventListener('message', function (event) {
+    if (event.origin !== location.origin || event.source !== parent || !event.data || event.data.type !== 'wb-editor-state') return;
+    editorState = event.data;
+    applyEditorState();
+  });
+  window.addEventListener('scroll', function () {
+    var selected = document.querySelector('[data-sky-id].wb-selected');
+    if (selected && !editorState.preview) positionQuickBar(selected);
+  }, { passive: true });
+  window.addEventListener('resize', applyEditorState);
 
   // 拖放落点指示：父窗口 bindCanvasDrop 在 dragover 时给目标加类，
   // 这里只负责样式；drop/dragleave 时父窗口负责移除。

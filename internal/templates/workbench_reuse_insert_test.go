@@ -77,28 +77,13 @@ func TestWorkbenchStructuredConfigControls(t *testing.T) {
 // 预览、校验、历史四处各加一条分支，而分派散在 JS 里 —— 漏改一处不会编译失败，
 // 只会在用户点保存时表现为「什么都没发生」。
 //
-// 这里只看 saveDraft 这一段：api() 仍按 saveBase 拼前缀（手工页面的路径语义），
-// 那是另一件事，不该被这条断言牵连。
+// 保存与发布共享 persistDraft；描述符的实际请求体另由 experience.test.cjs 验证。
 func TestWorkbenchSaveDraftFollowsTargetDescriptor(t *testing.T) {
 	js := readTemplateFile(t, "static/js/workbench/methods/api.js")
-	start := strings.Index(js, "saveDraft() {")
-	if start < 0 {
-		t.Fatalf("未找到 saveDraft 实现")
-	}
-	rest := js[start:]
-	end := strings.Index(rest, "publishFlow() {")
-	if end < 0 {
-		t.Fatalf("未找到 saveDraft 的结束边界（publishFlow）")
-	}
-	body := rest[:end]
-	if !strings.Contains(body, "meta.target") {
-		t.Fatalf("saveDraft 应读后端下发的目标描述符")
-	}
-	if !strings.Contains(body, "saveBody") {
-		t.Fatalf("saveDraft 应按描述符构造请求体（键名由后端给）")
-	}
-	if strings.Contains(body, "saveBase") {
-		t.Fatalf("saveDraft 不应再按 saveBase 分派（描述符就是用来取代它的）")
+	for _, want := range []string{"meta.target", "target.save.path", "this.saveBody(savedDocument)", "await this.persistDraft(savedDocument)"} {
+		if !strings.Contains(js, want) {
+			t.Errorf("保存调用链缺少 %q", want)
+		}
 	}
 }
 

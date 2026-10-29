@@ -12,9 +12,7 @@ export const stateMethods = {
                 this.device = d;
                 var DEF = {
                     desktop: { w: 0, bp: 'desktop' },
-                    laptop: { w: 1024, bp: 'desktop' },
                     tablet: { w: 768, bp: 'tablet' },
-                    mobileL: { w: 640, bp: 'mobile' },
                     mobile: { w: 375, bp: 'mobile' }
                 };
                 var cfg = DEF[d] || DEF.desktop;
@@ -25,20 +23,27 @@ export const stateMethods = {
                 }
                 Object.keys(DEF).forEach(function (k) {
                     var button = document.getElementById('wb-device-' + k);
-                    if (button) button.classList.toggle('is-active', k === d);
+                    if (button) {
+                        button.classList.toggle('is-active', k === d);
+                        button.setAttribute('aria-pressed', k === d ? 'true' : 'false');
+                    }
                 });
+                var label = document.getElementById('wb-device-label');
+                if (label) label.textContent = { desktop: '响应式', tablet: '平板 · 768 px', mobile: '手机 · 375 px' }[d] || '响应式';
             },
             renderUI() {
                 var status = document.getElementById('wb-status');
-                if (status) status.textContent = this.statusText();
+                if (status) { status.textContent = this.statusText(); status.dataset.state = this.busy ? 'busy' : this.saveState; }
                 var undo = document.getElementById('wb-undo');
                 if (undo) undo.disabled = !this.canUndo;
                 var redo = document.getElementById('wb-redo');
                 if (redo) redo.disabled = !this.canRedo;
+                var busy = this.busy;
                 ['wb-save-draft', 'wb-publish'].forEach(function (id) {
                     var button = document.getElementById(id);
-                    if (button) button.disabled = window.__wb && window.__wb.busy;
+                    if (button) button.disabled = !!busy;
                 });
+                if (this.syncCanvasState) this.syncCanvasState();
             },
 
             // ---------------- 组件库与插入 ----------------
@@ -74,25 +79,32 @@ export const stateMethods = {
                 if (this.undoStack.length > 100) this.undoStack.shift();
                 this.redoStack.length = 0;
                 this.saveState = 'dirty';
+                this.notice = '';
                 this.backupDoc();
             },
             undo() {
                 var prev = this.undoStack.pop();
                 if (!prev) return;
+                this.invalidateInspector();
                 this.redoStack.push(JSON.stringify(this.doc));
                 this.doc = JSON.parse(prev);
                 this.renderTree(); this.refreshCanvas(); this.syncInspector();
                 this.saveState = 'dirty';
+                this.notice = '';
                 this.backupDoc();
+                this.renderUI();
             },
             redo() {
                 var next = this.redoStack.pop();
                 if (!next) return;
+                this.invalidateInspector();
                 this.undoStack.push(JSON.stringify(this.doc));
                 this.doc = JSON.parse(next);
                 this.renderTree(); this.refreshCanvas(); this.syncInspector();
                 this.saveState = 'dirty';
+                this.notice = '';
                 this.backupDoc();
+                this.renderUI();
             },
 
             // ---------------- 本地草稿备份（崩溃恢复） ----------------

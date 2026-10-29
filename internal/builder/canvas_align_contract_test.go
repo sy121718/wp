@@ -146,6 +146,7 @@ function makeWB() {
   wb.renderTree = function () {}; wb.renderUI = function () {};
   wb.syncInspector = function () {}; wb.refreshCanvas = function () {};
   wb.patchCanvas = function () {}; wb.backupDoc = function () {};
+  wb.setNotice = function () {}; wb.invalidateInspector = function () {}; wb.showLibrary = function () {}; wb.showEdit = function () {};
   return wb;
 }
 // insertRoot 与画布「未选中任何节点时点击组件库」一致：插到顶级。

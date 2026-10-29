@@ -50,6 +50,7 @@ export const shortcutsMethods = {
                 // 容器按需添加；空文档/多根文档打开即干净（不再误标 dirty）。
                 window.__wb = this;
                 this.registerPluginPalette();
+                this.initWorkspace();
                 this.setDevice(this.device);
                 this.renderPalette();
                 this.renderTree();
@@ -61,7 +62,8 @@ export const shortcutsMethods = {
                 document.addEventListener('keydown', function (e) { self.onKeydown(e); });
                 // iframe 内点击经 postMessage 上报选中（editor=1 注入桥接脚本）。
                 window.addEventListener('message', function (ev) {
-                    if (ev.origin !== window.location.origin || !ev.data) return;
+                    var canvas = document.getElementById('wb-canvas');
+                    if (ev.origin !== window.location.origin || !canvas || ev.source !== canvas.contentWindow || !ev.data || self.immersive) return;
                     if (ev.data.type === 'wb-select' && ev.data.id) { self.select(ev.data.id); return; }
                     // 结构槽位（页眉 / 页脚）：桥接层把「点到了槽位区域」单独上报，
                     // 它没有对应的 AST 节点，走 select() 只会得到一次查不到的静默失败。
@@ -95,6 +97,9 @@ export const shortcutsMethods = {
                             node.props = node.props || {};
                             node.props[textField] = ev.data.text.slice(0, 2000);
                             self.saveState = 'dirty';
+                            self.backupDoc();
+                            self.invalidateInspector();
+                            self.showEditPanel();
                             self.renderTree(); self.refreshCanvas(); self.renderUI();
                         }
                     }
@@ -108,76 +113,24 @@ export const shortcutsMethods = {
                     self.filter = search.value;
                     self.renderTree();
                 });
-                // 检查器三个页签：布局(内容) / 样式 / 扩展——切换后重渲染面板。
-                // 检查器两个页签：内容 / 样式（样式类属性全部归样式页签）。
-                var tabKeys = ['content', 'style'];
-                var tabButtons = document.querySelectorAll('.wb-tabs button');
-                tabButtons.forEach(function (button, index) {
+                // 页签名称与 DOM 同源，避免新增页签落回内容面板。
+                var tabButtons = document.querySelectorAll('.wb-tabs [data-tab]');
+                tabButtons.forEach(function (button) {
                     button.addEventListener('click', function () {
-                        self.tab = tabKeys[index] || 'content';
-                        tabButtons.forEach(function (b, i) { b.classList.toggle('is-active', i === index); });
+                        self.tab = button.dataset.tab;
+                        tabButtons.forEach(function (b) {
+                            b.classList.toggle('is-active', b === button);
+                            b.setAttribute('aria-selected', b === button ? 'true' : 'false');
+                        });
                         self.syncInspector();
                     });
                 });
-                // 面板头部显隐/锁定快捷开关。
-                var editHideBtn = document.getElementById('wb-edit-hide');
-                if (editHideBtn) editHideBtn.addEventListener('click', function () {
-                    var n = self.findNode(self.selectedId);
-                    if (!n) return;
-                    self.toggleHidden(n.id);
-                    editHideBtn.textContent = n.hidden ? '🚫' : '👁';
-                });
-                var editLockBtn = document.getElementById('wb-edit-lock');
-                if (editLockBtn) editLockBtn.addEventListener('click', function () {
-                    var n = self.findNode(self.selectedId);
-                    if (!n) return;
-                    self.toggleLocked(n.id);
-                    editLockBtn.textContent = n.locked ? '🔒' : '🔓';
-                });
-                // 左侧双视图：+ 打开组件库；× 收起面板；🗑 删除选中组件。
                 var back = document.getElementById('wb-back-library');
                 if (back) back.addEventListener('click', function () { self.showLibrary(); });
-                // 「+ 添加组件」与「SEO」并入左侧面板顶部标签条（对齐 Elementor 的顶部入口）。
-                var railAdd = document.getElementById('wb-rail-add');
-                if (railAdd) railAdd.addEventListener('click', function () {
-                    var inspector = document.querySelector('.wb-inspector');
-                    if (inspector) inspector.classList.add('is-open');
-                    self.showLibrary();
-                });
-                var railSeo = document.getElementById('wb-rail-seo');
-                if (railSeo) railSeo.addEventListener('click', function () {
-                    self.showPanel('settings');
-                    // 页面设置打开后滚到 SEO 区块（标题输入处）。
-                    setTimeout(function () {
-                        var wrap = Array.prototype.slice.call(document.querySelectorAll('#wb-settings-body .wb-field')).filter(function (w) {
-                            var l = w.querySelector('label');
-                            return l && l.textContent === 'SEO 标题';
-                        })[0];
-                        if (wrap) wrap.scrollIntoView({ block: 'start', behavior: 'smooth' });
-                    }, 150);
-                });
-                var libClose = document.getElementById('wb-library-close');
-                if (libClose) libClose.addEventListener('click', function () {
-                    document.getElementById('wb-panel-library').hidden = true;
-                    if (!self.selectedId) self.showEdit();
-                });
-                var editDelete = document.getElementById('wb-edit-delete');
-                if (editDelete) editDelete.addEventListener('click', function () { self.deleteSelected(); });
                 var libSearch = document.getElementById('wb-library-search');
                 if (libSearch) libSearch.addEventListener('input', function () {
                     self.libraryFilter = libSearch.value;
                     self.renderPalette();
-                });
-                // 左侧图标栏：面板切换（编辑视图归入「组件」入口）。
-                [['wb-rail-library', 'library'], ['wb-rail-settings', 'settings'],
-                 ['wb-rail-global', 'global'], ['wb-rail-history', 'history']].forEach(function (pair) {
-                    var b = document.getElementById(pair[0]);
-                    if (b) b.addEventListener('click', function () { self.showPanel(pair[1]); });
-                });
-                var railNav = document.getElementById('wb-rail-navigator');
-                if (railNav) railNav.addEventListener('click', function () {
-                    self.navigatorOpen = !self.navigatorOpen;
-                    document.getElementById('wb-navigator').classList.toggle('is-hidden', !self.navigatorOpen);
                 });
                 // 组件库页签：组件 | 全局块 | SEO。
                 document.querySelectorAll('.wb-lib-tabs button').forEach(function (btn) {
@@ -222,24 +175,12 @@ export const shortcutsMethods = {
                 }
                 var controls = {
                     'wb-device-desktop': function () { self.setDevice('desktop'); },
-                    'wb-device-laptop': function () { self.setDevice('laptop'); },
                     'wb-device-tablet': function () { self.setDevice('tablet'); },
-                    'wb-device-mobileL': function () { self.setDevice('mobileL'); },
                     'wb-device-mobile': function () { self.setDevice('mobile'); },
                     'wb-save-draft': function () { self.saveDraft(); },
                     'wb-publish': function () { self.buildAndPublish(); },
-                    'wb-page-settings': function () { self.showPanel('settings'); },
-                    'wb-navigator-toggle': function () {
-                        self.navigatorOpen = !self.navigatorOpen;
-                        document.getElementById('wb-navigator').classList.toggle('is-hidden', !self.navigatorOpen);
-                    },
-                    'wb-navigator-close': function () {
-                        self.navigatorOpen = false;
-                        document.getElementById('wb-navigator').classList.add('is-hidden');
-                    },
                     'wb-undo': function () { self.undo(); self.renderUI(); },
-                    'wb-redo': function () { self.redo(); self.renderUI(); },
-                    'wb-immersive': function () { self.toggleImmersive(); }
+                    'wb-redo': function () { self.redo(); self.renderUI(); }
                 };
                 Object.keys(controls).forEach(function (id) {
                     var button = document.getElementById(id);
@@ -250,16 +191,9 @@ export const shortcutsMethods = {
                 if (frame) frame.addEventListener('load', function () {
                     self.bindCanvasDrop();
                     self.markTreeSelection();
+                    self.syncCanvasState();
                 });
+                this.syncCanvasState();
             },
-            toggleImmersive() {
-                this.immersive = !this.immersive;
-                var main = document.getElementById('wb-main');
-                var button = document.getElementById('wb-immersive');
-                if (main) main.classList.toggle('is-immersive', this.immersive);
-                if (button) {
-                    button.setAttribute('aria-pressed', this.immersive ? 'true' : 'false');
-                    button.textContent = this.immersive ? '退出聚焦模式' : '聚焦模式 (Ctrl+P)';
-                }
-            }
+            toggleImmersive() { this.setPreviewMode(!this.immersive); }
 };

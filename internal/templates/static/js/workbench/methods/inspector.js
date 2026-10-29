@@ -1,12 +1,23 @@
 // workbench/methods/inspector.js — 检查器面板与事件接线（docs/09 §3 拆分）。
 // 方法以 `this` 互调，由 index.js 用 Object.assign 合并为同一个 workbench 实例。
 // 控件函数已按功能拆分到 methods/controls/*（base/color/corners/spacing/media/text/repeater/misc）。
-import { csrfHeaders, meta, morphHTML, wbLinkedPatch } from '../core.js';
-import { fillInspectorSlots, inlineSlots, renderInspectorExtras } from './controls/misc.js';
+import { csrfHeaders, meta, morphHTML, wbLinkedPatch, controlLabel } from '../core.js';
+import { fillInspectorSlots, inlineSlots, renderInspectorExtras, sectionFor } from './controls/misc.js';
+import { inspectorTabOf } from '../experience.js';
 import { set } from './controls/base.js';
 import { upgradeNativeSelects, renderFieldHints, refreshFieldHints } from './controls/selects.js';
 
 export const inspectorMethods = {
+            // 撤销替换了节点对象：先废止请求与旧控件，再读取新快照。
+            invalidateInspector() {
+                this._inspectorReq = (this._inspectorReq || 0) + 1;
+                var panel = document.getElementById('inspector-panel');
+                if (!panel) return;
+                panel.onchange = null;
+                panel.onclick = null;
+                panel.replaceChildren();
+                this._inspectorNode = null;
+            },
             // 说明：面板/结构树/设置的 HTML 全部由服务端渲染（fragments/*），客户端只做
             // 「值回写 + 事件委托」。旧的前端渲染路径已删除，故不再有 htmx 开关。
             // fetchInspectorPanel 拉取服务端渲染的面板片段并填入面板（done 回调在片段就绪后执行）。
@@ -17,14 +28,14 @@ export const inspectorMethods = {
                 var body = new URLSearchParams();
                 body.set('nodeId', node.id);
                 body.set('document', JSON.stringify(this.doc));
-                body.set('tab', this.tab || 'content');   // 内容/样式页签由服务端过滤分组
+                body.set('tab', ''); // 读取完整字段，展示位置由前端的四个页签决定。
                 if (meta.projectId) body.set('projectId', meta.projectId);
                 fetch('/workbench/inspector', {
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: csrfHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
                     body: body.toString()
-                }).then(function (r) { return r.text(); }).then(function (html) {
+                }).then(function (r) { if (!r.ok) throw new Error('面板请求失败'); return r.text(); }).then(function (html) {
                     if (seq !== self._inspectorReq) return;   // 过期响应：丢弃
                     // morph 替换：未变节点（输入框/展开的分组）原地保留，滚动位置与焦点不复位。
                     morphHTML(panel, html);
@@ -45,10 +56,32 @@ export const inspectorMethods = {
                     morphHTML(panel, '<p class="wb-empty">面板加载失败</p>');
                 });
             },
+            arrangeInspector(ctx) {
+                var panel = ctx.panel;
+                var tab = this.tab;
+                Array.from(panel.querySelectorAll('[data-wb-section]')).forEach(function (group) {
+                    var section = group.dataset.wbSection;
+                    Array.from(group.children).forEach(function (field) {
+                        if (field.tagName === 'SUMMARY') return;
+                        var input = field.matches('[data-wb-path]') ? field : field.querySelector('[data-wb-path]');
+                        var path = field.dataset.wbSlot || (input && input.dataset.wbPath) || '';
+                        var destination = inspectorTabOf(section, path);
+                        if (destination === inspectorTabOf(section)) return;
+                        var labels = { layout: '尺寸与布局', motion: '动效与交互', style: '基础样式', content: '内容' };
+                        var target = sectionFor(ctx, destination, labels[destination]);
+                        target.open = true;
+                        target.appendChild(field);
+                    });
+                });
+                panel.querySelectorAll('[data-wb-section]').forEach(function (group) {
+                    if (inspectorTabOf(group.dataset.wbSection) !== tab || group.children.length < 2) group.remove();
+                });
+            },
             bindInspectorHtmx() {
                 var panel = document.getElementById('inspector-panel');
                 if (!panel) return;
                 var self = this;
+                var boundNode = self.findNode(self.selectedId);
                 function setPath(path, value) {
                     var node = self.findNode(self.selectedId);
                     if (!node) return;
@@ -61,6 +94,7 @@ export const inspectorMethods = {
                     target[parts[parts.length - 1]] = value;
                 }
                 function commit(el) {
+                    if (self.findNode(self.selectedId) !== boundNode || !panel.contains(el)) return;
                     var path = el.getAttribute('data-wb-path');
                     if (!path) return;
                     var kind = el.getAttribute('data-wb-kind') || 'text';
@@ -168,6 +202,7 @@ export const inspectorMethods = {
                         var key = pick.getAttribute('data-wb-media-pick');
                         var input = panel.querySelector('[data-wb-path="' + key + '"]');
                         self.openMediaPicker(function (url) {
+                            if (self.findNode(self.selectedId) !== boundNode || !input || !panel.contains(input)) return;
                             if (input) input.value = url;
                             self.snapshot();
                             setPath(key, url);
@@ -213,6 +248,8 @@ export const inspectorMethods = {
                 if (!panel) return;
                 var node = this.findNode(this.selectedId);
                 var self = this;
+                if (this._inspectorNode !== node) this.invalidateInspector();
+                this._inspectorNode = node;
                 if (!node) {
                     // 未选中节点：没有可 morph 的旧内容，保持整块清空 + 占位。
                     panel.innerHTML = '';
@@ -236,12 +273,23 @@ export const inspectorMethods = {
                 // 不在这里记录，重渲染就等于把用户刚点开的下拉强行收起。
                 var openSelectKeys = window.WBUI && window.WBUI.select ? window.WBUI.select.openKeys(panel) : [];
                 self.fetchInspectorPanel(node, panel, function () {
+                    self.arrangeInspector(ctx);
                     fillInspectorSlots(ctx);
                     // 最小/最大高度并到一行（WP 式紧凑布局）。
                     inlineSlots(ctx, 'box.minHeight', 'box.maxHeight');
                     // 原生字段与复杂字段使用同一个公共下拉。
                     upgradeNativeSelects(ctx);
                     renderInspectorExtras(ctx);
+                    panel.querySelectorAll('.wb-field').forEach(function (field, index) {
+                        var label = field.querySelector('label');
+                        var input = field.querySelector('input:not([type=hidden]), textarea, select');
+                        if (!label || !input || input.type === 'checkbox') return;
+                        var path = input.dataset.wbPath || field.dataset.wbSlot || '';
+                        if (label.textContent.trim() === path) label.textContent = controlLabel(path);
+                        input.id = 'wb-field-' + node.id + '-' + index;
+                        label.htmlFor = input.id;
+                        input.setAttribute('aria-label', label.textContent.trim());
+                    });
                     // 联动后仍非法的字段给出就地提示（如 native 动作缺号码）。
                     renderFieldHints(ctx);
                     window.WBUI.select.restoreOpen(panel, openSelectKeys);
