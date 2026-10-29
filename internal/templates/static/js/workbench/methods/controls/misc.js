@@ -8,6 +8,7 @@ import { unitInput, dimensionsField, dimensionControl, marginControl, spacingCon
 import { mediaControl, mediaListControl, galleryItemsPanel, carouselFirstEagerControl } from './media.js';
 import { richTextField, typographyPanel, classesControl } from './text.js';
 import { listPanel, infoboxPanel, socialPanel, bindRepeaterPanel, marqueePanel, navPanel, faqPanel } from './repeater.js';
+import { tablePanel, formPanel } from './structured.js';
 
 // schema 控件 → 表单字段（key 即 props 顶层键，与后端 JSON 序列化一致）。
 export function schemaField(ctx, ctl) {
@@ -456,6 +457,8 @@ export function renderInspectorExtras(ctx) {
             if (ctx.node.type === 'core.list') listPanel(ctx);
             if (ctx.node.type === 'core.infobox') infoboxPanel(ctx);
             if (ctx.node.type === 'core.faq') faqPanel(ctx);
+            if (ctx.node.type === 'core.table') tablePanel(ctx);
+            if (ctx.node.type === 'core.form') formPanel(ctx);
             if (ctx.node.type === 'core.social_buttons') socialPanel(ctx);
             if (ctx.node.type === 'core.nav') navPanel(ctx);
             bindRepeaterPanel(ctx);

@@ -182,7 +182,7 @@ test('撤销后迟到的富文本事件不能污染历史和当前文档',()=>{
 
 function controlContext(globals = {}) {
     const context = vm.createContext({ console, ...globals });
-    for (const file of ['base', 'text', 'repeater']) {
+    for (const file of ['base', 'text', 'repeater', 'structured']) {
         const source = fs.readFileSync(__dirname + '/methods/controls/' + file + '.js', 'utf8')
             .replace(/^import[^;]+;/gm, '').replace(/export /g, '');
         vm.runInContext(source, context);
@@ -255,4 +255,52 @@ test('弹层图标选择器能打开、搜索和回填，并拒绝把未知图�
     control.renderIcon(fallback, '<img src=x>', '');
     assert.equal(fallback.innerHTML, undefined);
     assert.equal(fallback.textContent, '<img src=x>');
+});
+
+test('表格增删列同时维护每行，且一次撤销恢复整个结构', () => {
+    const control = controlContext({ clone: value => JSON.parse(JSON.stringify(value)) });
+    const { wb } = editor();
+    wb.doc.root[0].props = { headers: ['名称','价格'], rows: [['A','10'],['B','20']], advanced: {customId:'prices'} };
+    wb.findNode = id => wb.doc.root.find(node => node.id === id);
+    wb.patchCanvas = () => {};
+    wb.invalidateInspector = () => {};
+    const ctx = { node: wb.doc.root[0], self: wb };
+    const before = JSON.stringify(wb.doc);
+    control.updateProps(ctx, control.addTableColumn);
+    assert.equal(ctx.node.props.headers.length, 3);
+    assert.ok(ctx.node.props.rows.every(row => row.length === ctx.node.props.headers.length));
+    assert.equal(ctx.node.props.advanced.customId, 'prices');
+    wb.undo();
+    assert.equal(JSON.stringify(wb.doc), before);
+    ctx.node = wb.doc.root[0];
+    control.updateProps(ctx, props => { control.removeTableColumn(props, 0); });
+    assert.equal(ctx.node.props.headers[0], '价格');
+    assert.equal(ctx.node.props.rows[0][0], '10');
+    wb.undo();
+    assert.equal(JSON.stringify(wb.doc), before);
+    const headerless = {rows:[['A']]};
+    control.addTableColumn(headerless);
+    assert.equal(headerless.headers, undefined);
+    assert.equal(headerless.rows[0].length, 2);
+});
+
+test('表单字段结构操作读取最新值，撤销恢复标签和顺序', () => {
+    const control = controlContext({ clone: value => JSON.parse(JSON.stringify(value)) });
+    const { wb } = editor();
+    wb.doc.root[0].props = {fields:[{type:'text',label:'姓名',name:'name'},{type:'email',label:'邮箱',name:'email'}],action:'/contact'};
+    wb.findNode = id => wb.doc.root.find(node => node.id === id);
+    wb.patchCanvas = () => {};
+    wb.invalidateInspector = () => {};
+    const ctx = { node: wb.doc.root[0], self: wb };
+    control.commit(ctx, 'props.fields.0.label', '联系人');
+    const before = JSON.stringify(wb.doc);
+    control.updateFormFields(ctx, fields => { fields.reverse(); });
+    assert.equal(ctx.node.props.fields[1].label, '联系人');
+    assert.equal(ctx.node.props.action, '/contact');
+    wb.undo();
+    assert.equal(JSON.stringify(wb.doc), before);
+    ctx.node = wb.doc.root[0];
+    control.updateFormFields(ctx, fields => { fields.splice(0, 1); });
+    wb.undo();
+    assert.equal(JSON.stringify(wb.doc), before);
 });

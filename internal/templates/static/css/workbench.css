@@ -248,6 +248,15 @@
 .wb-repeater-mid { flex: 1 1 auto; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .wb-repeater-mid input:not([type="checkbox"]):not([type="radio"]) { width: 100%; box-sizing: border-box; padding: 4px 6px; font-size: 12px; border: 1px solid var(--sky-c-border, #e5e7eb); border-radius: 5px; }
 .wb-repeater-add { width: 100%; }
+.wb-table-editor { max-block-size: 320px; overflow: auto; border: 1px solid var(--sky-c-border); border-radius: var(--ui-r-sm, 6px); }
+.wb-table-editor table { border-collapse: collapse; width: 100%; font-size: var(--ui-fs-xs); }
+.wb-table-editor th, .wb-table-editor td { padding: var(--ui-sp-1, 4px); border: 1px solid var(--sky-c-border); }
+.wb-table-editor input { min-width: min(100%, 100px); width: 100%; padding: var(--ui-sp-1, 4px); color: inherit; background: var(--sky-c-surface); border: 1px solid var(--sky-c-border); border-radius: var(--ui-r-sm, 6px); }
+.wb-table-editor .wb-btn { white-space: nowrap; margin-block-start: var(--ui-sp-1, 4px); }
+.wb-structured-actions { display: flex; flex-wrap: wrap; gap: var(--ui-sp-2, 8px); margin-block: var(--ui-sp-2, 8px); }
+.wb-form-field { border: 1px solid var(--sky-c-border); border-radius: var(--ui-r-sm, 6px); margin-block-end: var(--ui-sp-2, 8px); }
+.wb-form-field > summary { cursor: pointer; padding: var(--ui-sp-2, 8px); font-size: var(--ui-fs-sm); }
+.wb-form-field-body { padding: var(--ui-sp-2, 8px); }
 /* ===== 颜色行 ===== */
 .wb-color-row { display: flex; gap: 6px; align-items: center; }
 .wb-color-row .wb-color-text { flex: 1 1 auto; }
