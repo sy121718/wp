@@ -27,7 +27,7 @@ type ActionTarget struct {
 	NodeID     string     `json:"nodeId,omitempty"`
 	PartKey    string     `json:"partKey,omitempty"`
 	URL        string     `json:"url,omitempty"`
-	NewTab     bool       `json:"newTab,omitempty"`
+	NewTab     bool       `json:"newTab,omitzero"`
 }
 
 func actionFields(kind ActionKind) []string {

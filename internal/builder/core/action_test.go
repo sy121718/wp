@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	json "go_wp/pkg/jsonx"
+	"reflect"
 	"testing"
 )
 
@@ -82,5 +83,28 @@ func TestActionDeclarationsRejectInvalidAfterIncomplete(t *testing.T) {
 	node.Actions = map[string]ActionTarget{"undeclared": {Kind: ActionLocal, PartKey: "result"}}
 	if err := ValidateNodeActions(node, component); err == nil {
 		t.Fatal("组件未声明动作必须拒绝")
+	}
+}
+
+func TestActionTargetJSONXRoundTripAllKinds(t *testing.T) {
+	for _, target := range []ActionTarget{
+		{Kind: ActionPage, PageID: "page"},
+		{Kind: ActionPresentation, InstanceID: "presentation"},
+		{Kind: ActionLocal, PartKey: "result"},
+		{Kind: ActionInstance, NodeID: "checkout", PartKey: "checkout"},
+		{Kind: ActionExternal, URL: "https://example.test/help"},
+		{Kind: ActionExternal, URL: "https://example.test/help", NewTab: true},
+	} {
+		raw, err := json.Marshal(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got ActionTarget
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatalf("合法目标序列化后不可读取: %s: %v", raw, err)
+		}
+		if !reflect.DeepEqual(got, target) {
+			t.Fatalf("动作往返改变: got=%+v want=%+v", got, target)
+		}
 	}
 }

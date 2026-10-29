@@ -312,6 +312,7 @@ func (s *Service) findOneInstanceAnyProject(ctx context.Context, instanceID stri
 }
 
 func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.PreviewInstanceReq) (res *presentationdto.PreviewInstanceResp, err error) {
+	var tpl *contenttemplatecontract.ResolvedTemplate
 	if req != nil && strings.TrimSpace(req.InstanceID) != "" {
 		instance, err := s.Get(ctx, &presentationdto.GetReq{ID: req.InstanceID, ProjectID: req.ProjectID})
 		if err != nil {
@@ -323,6 +324,15 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 		if len(effective.DraftDocument) == 0 {
 			effective.DraftDocument = instance.Document
 		}
+		if len(effective.DraftDocument) == 0 {
+			return nil, presentationenums.Err(presentationenums.ErrInvalidParam)
+		}
+		// 实例预览以已取得的当前文档或未保存草稿为底稿，不能先校验另一份最新模板。
+		// 当前实体和来源元数据仍只取工程内的实例事实；最终字段及组件校验由预览编译完成。
+		tpl = &contenttemplatecontract.ResolvedTemplate{
+			TemplateID: instance.TemplateID, VersionID: instance.SourceTemplateVersionID,
+			EntityType: instance.EntityType, TemplateRole: instance.InstanceRole, Document: effective.DraftDocument,
+		}
 		req = &effective
 	}
 	if req == nil || req.EntityType == "" || req.EntityID == "" {
@@ -332,9 +342,11 @@ func (s *Service) PreviewInstance(ctx context.Context, req *presentationdto.Prev
 	if err != nil {
 		return nil, err
 	}
-	tpl, err := s.resolveTemplate(ctx, projectID, req.EntityType, req.TemplateID)
-	if err != nil {
-		return nil, err
+	if tpl == nil {
+		tpl, err = s.resolveTemplate(ctx, projectID, req.EntityType, req.TemplateID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if len(req.DraftDocument) > 0 {
 		if !json.Valid(req.DraftDocument) {

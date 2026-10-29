@@ -24,6 +24,11 @@ func TestProductInstancePreviewUsesRealCurrentProductAndRemainsReadOnly(t *testi
 	}
 	productID := f.createProduct(t, "实例预览杯", "instance-preview-cup", "当前商品", 88, 99)
 	instance := f.publishWithTemplate(t, productID, "/instance-preview-cup", template.ID)
+	// 模板保存了一个尚未完成的新版本，不能阻断实例当前快照及其临时草稿。
+	incomplete := json.RawMessage(`{"settings":{"layout":{"mode":"full"}},"root":[{"id":"unfinished","type":"core.text","props":{"text":""}}]}`)
+	if _, err := f.templates.Update(ctx, &contenttemplatedto.UpdateReq{ID: template.ID, DraftDocument: incomplete}); err != nil {
+		t.Fatal(err)
+	}
 	beforeInstances := countRows(t, f.db, "presentation_instances", "")
 	beforeArtifacts := countRows(t, f.db, "presentation_artifacts", "")
 	beforeSnapshots := countRows(t, f.db, "document_snapshots", "")
