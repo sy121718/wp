@@ -101,15 +101,6 @@ func FragmentEndpoint(c *gin.Context) {
 		}
 	}
 
-	// 访客会话令牌：同上，由 VisitorIdentityMiddleware 在解析身份时一并挂上。
-	// 只服务「登录设备列表里哪个是当前设备」这一件事（见 Request.VisitorToken 注释）。
-	visitorToken := ""
-	if v, ok := c.Get(usercontract.VisitorTokenContextKey); ok {
-		if s, ok := v.(string); ok {
-			visitorToken = s
-		}
-	}
-
 	// 访客身份：user 模块的 VisitorIdentityMiddleware 已尽力解析并挂到 context（不阻断）。
 	//
 	// 未登录时**留空**而不是让端点回 401：HTMX 默认不替换 401 响应的目标节点，
@@ -149,19 +140,18 @@ func FragmentEndpoint(c *gin.Context) {
 	slotCache := map[slotCacheKey]map[string]string{}
 	lang := resolveRequestLang(c.Request.Context(), params["projectId"], params[fragmentLangParam])
 	req := &Request{
-		Type:         typeName,
-		CurrentPath:  currentURLPath(c),
-		Context:      params["context"],
-		Params:       params,
-		Values:       values,
-		UserID:       userID,
-		CSRFToken:    csrfToken,
-		VisitorToken: visitorToken,
-		Cookies:      collectFragmentCookies(c),
-		IP:           c.ClientIP(),
-		UserAgent:    strings.TrimSpace(c.GetHeader("User-Agent")),
-		Lang:         lang,
-		T:            i18n.Snapshot(lang),
+		Type:        typeName,
+		CurrentPath: currentURLPath(c),
+		Context:     params["context"],
+		Params:      params,
+		Values:      values,
+		UserID:      userID,
+		CSRFToken:   csrfToken,
+		Cookies:     collectFragmentCookies(c),
+		IP:          c.ClientIP(),
+		UserAgent:   strings.TrimSpace(c.GetHeader("User-Agent")),
+		Lang:        lang,
+		T:           i18n.Snapshot(lang),
 	}
 	req.SitePagesOf = func(projectID, slotLang string) map[string]string {
 		useLang := req.Lang

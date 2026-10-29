@@ -60,6 +60,7 @@ func SetupUserRoutes(
 		siteName,
 	)
 	h := NewHandle(svc)
+	setupSiteUserRoutes(router, h)
 
 	// CSRF：用访客自己的 token 存取器（存在访客会话里）。
 	// 直接用 builtin.CSRFMiddleware() 会去读后台的 gowp_session，

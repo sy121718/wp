@@ -5,6 +5,7 @@ package runtimefragment
 
 import (
 	"context"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	Register(Spec{Type: "endpointProbeTestOnly", Method: "GET", Auth: AuthAnonymous, Render: func(_ context.Context, r *Request) (string, error) {
+		return "<span class=\"endpoint-probe\">" + html.EscapeString(r.Context) + "</span>", nil
+	}})
+}
 
 // newRouter 挂载片段端点路由的测试引擎。
 func newRouter() *gin.Engine {
@@ -32,12 +39,12 @@ func doGet(t *testing.T, r *gin.Engine, path string) *httptest.ResponseRecorder 
 // TestFragmentEndpointKnownCapability 已注册能力返回 HTML 片段。
 func TestFragmentEndpointKnownCapability(t *testing.T) {
 	r := newRouter()
-	w := doGet(t, r, "/_fragments/loginPanel")
+	w := doGet(t, r, "/_fragments/endpointProbeTestOnly")
 	if w.Code != http.StatusOK {
 		t.Fatalf("已知能力应 200: %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "login-panel") {
-		t.Fatalf("应返回登录面板片段: %s", w.Body.String())
+	if !strings.Contains(w.Body.String(), "endpoint-probe") {
+		t.Fatalf("应返回探测片段: %s", w.Body.String())
 	}
 }
 
@@ -75,20 +82,20 @@ func TestFragmentEndpointSessionAuth(t *testing.T) {
 func TestFragmentEndpointParamLimit(t *testing.T) {
 	r := newRouter()
 	// 非法上下文。
-	if w := doGet(t, r, "/_fragments/loginPanel?context=evil"); w.Code != http.StatusBadRequest {
+	if w := doGet(t, r, "/_fragments/endpointProbeTestOnly?context=evil"); w.Code != http.StatusBadRequest {
 		t.Fatalf("非法上下文应 400: %d", w.Code)
 	}
 	// 超长参数。
 	long := strings.Repeat("x", maxParamLen+1)
-	if w := doGet(t, r, "/_fragments/loginPanel?q="+long); w.Code != http.StatusBadRequest {
+	if w := doGet(t, r, "/_fragments/endpointProbeTestOnly?q="+long); w.Code != http.StatusBadRequest {
 		t.Fatalf("超长参数应 400: %d", w.Code)
 	}
 }
 
-// TestFragmentRenderEscapes 处理器输出用户数据经 escape（loginPanel 的 label）。
+// TestFragmentRenderEscapes 处理器输出用户数据经 escape（探测能力的上下文）。
 func TestFragmentRenderEscapes(t *testing.T) {
 	r := newRouter()
-	w := doGet(t, r, "/_fragments/loginPanel?context=visitorSession")
+	w := doGet(t, r, "/_fragments/endpointProbeTestOnly?context=visitorSession")
 	body := w.Body.String()
 	// 输出是受控固定模板，不拼接未转义的用户输入（此处验证无注入面）。
 	if strings.Contains(body, "<script") {
@@ -120,7 +127,7 @@ func TestFragmentEndpointLangHeader(t *testing.T) {
 		{"不带 lang 取工程默认", "?projectId=p1", "zh-CN"},
 	}
 	for _, tc := range cases {
-		w := doGet(t, r, "/_fragments/loginPanel"+tc.query)
+		w := doGet(t, r, "/_fragments/endpointProbeTestOnly"+tc.query)
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s: 应 200，实际 %d", tc.name, w.Code)
 		}
@@ -151,6 +158,14 @@ func TestCatalogAndSearchHTMLCapabilitiesRemoved(t *testing.T) {
 		w := doGet(t, newRouter(), "/_fragments/"+capability)
 		if w.Code != http.StatusNotFound {
 			t.Fatalf("旧HTML入口%s仍可用: %d", capability, w.Code)
+		}
+	}
+}
+
+func TestUserHTMLCapabilitiesRemoved(t *testing.T) {
+	for _, name := range []string{"loginPanel", "loginForm", "registerForm", "forgotForm", "resetForm", "accountPanel", "accountProfileForm", "accountPreferenceForm", "accountPasswordForm", "accountSessionsPanel"} {
+		if w := doGet(t, newRouter(), "/_fragments/"+name); w.Code != http.StatusNotFound {
+			t.Fatalf("旧账号HTML入口%s仍可用: %d", name, w.Code)
 		}
 	}
 }

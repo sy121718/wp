@@ -30,82 +30,31 @@ func userFormsDoc(t *testing.T, props map[string]any) *Page {
 	return page
 }
 
-// TestUserFormsCompilesToFragmentMount 产物里必须是一个真能拉表单的容器。
-func TestUserFormsCompilesToFragmentMount(t *testing.T) {
+// TestUserFormsCompilesStaticJSONForms 组件无工程也能发布，凭据不进入产物。
+func TestUserFormsCompilesStaticJSONForms(t *testing.T) {
 	set, err := templates.NewComponentSet("../templates/components")
 	if err != nil {
-		t.Fatalf("NewComponentSet: %v", err)
+		t.Fatal(err)
 	}
-	page := userFormsDoc(t, map[string]any{
-		"mode": "register", "title": "加入我们", "showTitle": true, "next": "/account",
-	})
-	compiled, err := Compile(page, WithComponentSet(set), WithProjectID("proj-9"))
-	if err != nil {
-		t.Fatalf("编译失败: %v", err)
-	}
-	doc, err := RenderDocument(compiled)
-	if err != nil {
-		t.Fatalf("组装文档失败: %v", err)
-	}
-	for _, want := range []string{
-		`hx-get="/_fragments/registerForm?`, // 形态映射到片段能力
-		`hx-trigger="load"`,
-		"projectId=proj-9",
-		"next=%2Faccount",
-		">加入我们<",                // 作者自定义标题
-		`href="/user/register"`, // 无 JS 时的降级落点（内置页面）
-	} {
-		if !strings.Contains(doc, want) {
-			t.Errorf("产物缺少 %q；实际产物：%s", want, doc)
+	for _, mode := range []string{"login", "register", "forgot", "reset", "account", "profile", "preference", "password", "sessions"} {
+		page := userFormsDoc(t, map[string]any{"mode": mode, "title": "加入我们", "showTitle": true, "next": "/account"})
+		compiled, err := Compile(page, WithComponentSet(set))
+		if err != nil {
+			t.Fatalf("%s: %v", mode, err)
 		}
-	}
-}
-
-// TestUserFormsModesMapToFragments 九种形态在产物里各自指向自己的片段。
-func TestUserFormsModesMapToFragments(t *testing.T) {
-	set, err := templates.NewComponentSet("../templates/components")
-	if err != nil {
-		t.Fatalf("NewComponentSet: %v", err)
-	}
-	for mode, fragment := range map[string]string{
-		"login": "loginForm", "register": "registerForm",
-		"forgot": "forgotForm", "reset": "resetForm", "account": "accountPanel",
-		// 账号中心四块：它们渲染的是本人数据，但**容器**这一侧与上面五个同构
-		// （都是「外壳 + hx-get 拉片段」），所以走同一条断言。
-		"profile": "accountProfileForm", "preference": "accountPreferenceForm",
-		"password": "accountPasswordForm", "sessions": "accountSessionsPanel",
-	} {
-		page := userFormsDoc(t, map[string]any{"mode": mode})
-		compiled, cerr := Compile(page, WithComponentSet(set), WithProjectID("proj-1"))
-		if cerr != nil {
-			t.Fatalf("形态 %s 编译失败: %v", mode, cerr)
+		doc, err := RenderDocument(compiled)
+		if err != nil {
+			t.Fatal(err)
 		}
-		doc, rerr := RenderDocument(compiled)
-		if rerr != nil {
-			t.Fatalf("形态 %s 组装失败: %v", mode, rerr)
+		for _, want := range []string{`data-user-form="` + mode + `"`, `data-component-instance="auth"`, `data-site-read="/api/site/user/session"`, `data-write-handler="user.forms"`, `data-write-url="/api/site/user/account/profile"`, `name="locale"`, `name="timezone"`, `data-user-next="/account"`, ">加入我们<"} {
+			if !strings.Contains(doc, want) {
+				t.Errorf("模式%s缺少%s", mode, want)
+			}
 		}
-		if !strings.Contains(doc, "/_fragments/"+fragment+"?") {
-			t.Errorf("形态 %s 应指向片段 %s；实际产物：%s", mode, fragment, doc)
+		for _, forbidden := range []string{`/_fragments/login`, `/_fragments/account`, `action="/user/`, `name="csrf_token"`, `hx-get=`} {
+			if strings.Contains(doc, forbidden) {
+				t.Errorf("模式%s残留旧链%s", mode, forbidden)
+			}
 		}
-	}
-}
-
-// TestUserFormsWithoutProjectStaysCompilable 缺工程 id 时降级为提示而不是构建失败。
-func TestUserFormsWithoutProjectStaysCompilable(t *testing.T) {
-	set, err := templates.NewComponentSet("../templates/components")
-	if err != nil {
-		t.Fatalf("NewComponentSet: %v", err)
-	}
-	page := userFormsDoc(t, map[string]any{"mode": "login"})
-	compiled, err := Compile(page, WithComponentSet(set))
-	if err != nil {
-		t.Fatalf("缺工程 id 不该让整页编译失败: %v", err)
-	}
-	doc, err := RenderDocument(compiled)
-	if err != nil {
-		t.Fatalf("组装文档失败: %v", err)
-	}
-	if !strings.Contains(doc, "暂不可用") {
-		t.Errorf("缺工程 id 时应渲染可见提示；实际产物：%s", doc)
 	}
 }

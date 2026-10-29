@@ -1,68 +1,32 @@
 package userforms
 
-// jet.go — Jet 渲染路径（视图组装）。
-//
-// 片段地址与降级链接都在这里编好交给模板：让模板自己拼 URL，等于把
-// 「片段端点长什么样」散到模板里，端点改名时要满世界找。
+import "go_wp/internal/builder/core"
 
-import (
-	"strings"
-
-	"go_wp/internal/builder/core"
-)
-
-// View 访客账号表单视图。
-type View struct {
-	// Mode 形态（模板用它写 data 属性，便于作者按形态覆写样式）。
-	Mode string
-	// Title 区块标题。
+// View 只包含构建期表单配置和前端文案，不包含访客凭据。
+type ModeTitle struct {
+	Mode  string
 	Title string
-	// ShowTitle 是否显示标题。
-	ShowTitle bool
-	// FragmentURL 片段地址（进页面即拉）。
-	FragmentURL string
-	// FallbackURL 无 JS 时的落点（user 模块的内置页面）。
-	FallbackURL string
-	// FallbackText 降级链接的文案。
-	FallbackText string
-	// Notice 无法渲染时的提示（缺站点工程 id）。空表示正常。
-	Notice string
-	// ScriptHint / OpenFallbackText 无 JS 时的降级文案（审计 I18N-010）：
-	// 两句都已把表单名（FallbackText）填进占位符，模板直接输出。
-	ScriptHint       string
-	OpenFallbackText string
 }
 
-// CompileCSS 导出样式编译。
-func CompileCSS(id string, p *Props, b *core.CSSBuckets) {
-	compileCSS(id, p, b)
+type View struct {
+	Titles      []ModeTitle
+	Mode        string
+	Title       string
+	ShowTitle   bool
+	Next        string
+	Labels      Labels
+	ScriptHint  string
+	RetryText   string
+	TitleKeys   map[string]string
+	customTitle bool
 }
 
-// BuildView 生成视图。
-func BuildView(p *Props, projectID, lang string) View {
-	mode := effectiveMode(p)
-	view := View{
-		Mode:         mode,
-		Title:        effectiveTitle(p),
-		ShowTitle:    p.ShowTitle,
-		FallbackText: formSpecs[mode].title,
-	}
-	if strings.TrimSpace(projectID) == "" {
-		// 片段端点按工程定位（槽位互链也要它）。没有工程 id 就给一句可见提示，
-		// 而不是渲染一个永远空着的容器。
-		view.Notice = "账号表单暂不可用（未取到站点工程）"
-		return view
-	}
-	view.FragmentURL, view.FallbackURL = buildFragmentURL(mode, projectID, lang, p.Next)
-	return view
+func CompileCSS(id string, p *Props, b *core.CSSBuckets) { compileCSS(id, p, b) }
+func BuildView(p *Props, _, _ string) View {
+	v := View{Mode: effectiveMode(p), Title: effectiveTitle(p), ShowTitle: p.ShowTitle, Next: p.Next, customTitle: p.Title != "" && p.Title != formSpecs[effectiveMode(p)].title, TitleKeys: map[string]string{}}
+	v.ApplyI18n(nil)
+	return v
 }
-
-// DeclareFeatures 实现 core.ViewFeatureDeclarer（审计 PERF-014）：外壳根 div 恒带形态属性，
-// 表单容器（hx-get）只在取到工程 id 时输出 —— 没有工程 id 就没有片段地址，容器只是一句提示。
 func (v View) DeclareFeatures() (attrs, classes []string) {
-	attrs = append(attrs, "data-user-form")
-	if v.Notice != "" {
-		return attrs, nil
-	}
-	return append(attrs, "hx-get", "hx-trigger", "hx-swap"), nil
+	return []string{"data-user-form", "data-site-read", "data-site-view", "data-write"}, nil
 }

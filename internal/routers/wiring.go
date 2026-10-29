@@ -163,7 +163,6 @@ const (
 	portRuntimeFragVisitorOrderReader = "runtimefragment.SetDependencies.VisitorOrderReader"
 	portRuntimeFragVisitorReturn      = "runtimefragment.SetDependencies.VisitorReturnProvider"
 	portRuntimeFragVisitorIdentity    = "runtimefragment.SetDependencies.VisitorIdentityMiddleware"
-	portRuntimeFragVisitorAccount     = "runtimefragment.SetDependencies.VisitorAccountPort"
 	// portAccessGuardLoginProbe 访问面守卫的访客登录态探针（PIPE-6 AccessGuard）。
 	portAccessGuardLoginProbe = "builtin.SetAccessGuardLoginProbe"
 	// —— BIZ-3 会员体系的消费侧接线（本批）——
@@ -377,8 +376,6 @@ var wiringManifest = []wiringEntry{
 		"退货申请永远只显示「退货功能暂不可用」"},
 	{portRuntimeFragVisitorIdentity, "user", "runtimefragment", wiringRequiredPort,
 		"片段层永远按未登录渲染（已登录访客看到登录引导）"},
-	{portRuntimeFragVisitorAccount, "user", "runtimefragment", wiringRequiredPort,
-		"账号中心四块永远只显示「账号功能暂不可用」"},
 	// AccessGuard 的登录态探针刻意是 **optional-degraded**：未注入时守卫对
 	// 「登录用户可见」恒判未登录，表现为已登录访客也只看到守卫页（可见、可诊断），
 	// 而不是放行未授权访客。判据（文件头那两条）成立：能说清用户看到什么，

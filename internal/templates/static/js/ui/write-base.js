@@ -18,7 +18,8 @@
  *   </form>
  *
  * 必填 3 个：data-write / data-write-url / data-write-status
- * 可选 6 个：
+ * 可选属性：
+ *   data-write-handler  已注册的成功结果处理能力，返回 true 时接管导航/刷新
  *   data-write-nav      成功后跳转，含 {id}（取响应 data.id）
  *   data-write-reload   成功后整页刷新（裸属性）
  *   data-write-close    成功后关闭的容器选择器（抽屉 / 弹窗）
@@ -74,6 +75,8 @@
 // 所以行数会在兼容层删掉后自然降到 ~450。在那之前，行数不是进度指标。
 (function () {
     'use strict';
+    if (window.WBUI && window.WBUI.writeBase && window.WBUI.writeBase.registerResultHandler) return;
+    var resultHandlers = Object.create(null);
 
     // 不依赖 htmx：本基座用 fetch 发 formdata，只有在取 CSRF 头时才碰页面上的 meta。
     // （早先版本这里有一句 `if (!window.htmx) return;` —— 那是从旧基座照抄的守卫，
@@ -573,10 +576,26 @@
         }
     }
 
+    function previewReadOnly() {
+        return !!document.querySelector('meta[name="site-preview-mode"][content="readonly"]');
+    }
+
+    function previewStatus(form) {
+        setStatus(form, '模拟预览：不会提交真实数据，请在发布页面中操作。', 'error');
+    }
+
     function onSubmit(ev) {
         var form = ev.target;
         if (!form || form.tagName !== 'FORM') return;
         var submitter = ev.submitter || null;
+        // 构建器临时上下文由统一文档出口给出；不能由组件Props开启线上模拟。
+        // 原生POST表单也必须被拦截，旧组件迁移期间同样不能产生真实写操作。
+        if (previewReadOnly() && (String(form.getAttribute('method') || 'get').toLowerCase() !== 'get' || hasAttr(form, submitter, 'data-write'))) {
+            ev.preventDefault();
+            previewStatus(form);
+            return;
+        }
+
         // 声明可以写在表单上，也可以写在提交按钮上；两者都有时按钮优先（见 attr）。
         // 所以**任一处**有 data-write 即算本基座的表单 —— 只判表单会让
         // 「一个表单并排几个动作、端点各写在按钮上」这种形态整个失效（实测：
@@ -585,6 +604,16 @@
         if (!attr(form, submitter, 'data-write-url')) return;
 
         ev.preventDefault();
+
+        var handlerName = attr(form, submitter, 'data-write-handler');
+        if (handlerName && hasAttr(form, submitter, 'data-write-reload')) {
+            setStatus(form, 'data-write-handler 与 data-write-reload 不能同时声明', 'error');
+            return;
+        }
+        if (handlerName && !resultHandlers[handlerName]) {
+            setStatus(form, '未注册的写结果处理能力: ' + handlerName, 'error');
+            return;
+        }
 
         var confirmText = attr(form, submitter, 'data-write-confirm');
         if (confirmText && !window.confirm(confirmText)) return;
@@ -613,7 +642,7 @@
             var ctype = res.headers.get('Content-Type') || '';
             if (ctype.indexOf('application/json') < 0) {
                 // 非 JSON（典型是会话过期回登录页 HTML）：不吞，直接走。
-                if (res.redirected) { window.location.assign(res.url); return; }
+                if (res.redirected && attr(form, submitter, 'data-write-url').indexOf('/api/site/') !== 0) { window.location.assign(res.url); return; }
                 throw new Error('unexpected content-type');
             }
             return res.json().then(function (payload) {
@@ -647,6 +676,12 @@
 
     function finishOk(form, submitter, mode, payload, text) {
         var data = payload.data || {};
+        var handlerName = attr(form, submitter, 'data-write-handler');
+        if (handlerName) {
+            setStatus(form, payload.message || text, 'ok');
+            var instance = form.closest('[data-component-instance]');
+            if (resultHandlers[handlerName]({form:form, submitter:submitter, data:data, payload:payload, text:payload.message || text, instanceId:instance ? instance.getAttribute('data-component-instance') : ''}) === true) return;
+        }
         if (mode === 'bulk') {
             var outcome = attr(form, submitter, 'data-write-outcome') || 'receipt';
             if (outcome === 'review') {
@@ -703,6 +738,12 @@
     if (!window.__wbWriteBaseBound) {
         window.__wbWriteBaseBound = true;
         document.addEventListener('submit', onSubmit, true);
+        document.addEventListener('htmx:configRequest', function (event) {
+            var detail=event.detail || {};
+            if (!previewReadOnly() || /^(get|head|options)$/i.test(detail.verb || 'get')) return;
+            event.preventDefault();
+            if (detail.elt) previewStatus(detail.elt.closest('form') || detail.elt);
+        });
         document.addEventListener('DOMContentLoaded', consumeFlash);
         if (document.readyState !== 'loading') consumeFlash();
     }
@@ -717,6 +758,12 @@
     // 而那些组装逻辑依赖各自页面特有的 DOM 结构，用通用的 <template data-row> 表达不了
     //（例如变体清单的行是从清单 DOM 读出来的，不是表单控件）。
     var builders = {};
+
+    function registerResultHandler(name, fn) {
+        if (!name || typeof fn !== 'function') throw new Error('写结果处理能力需要名称和函数');
+        if (Object.prototype.hasOwnProperty.call(resultHandlers, name)) throw new Error('写结果处理能力重复注册: ' + name);
+        resultHandlers[name] = fn;
+    }
 
     function registerPayloadBuilder(name, fn) {
         if (name && typeof fn === 'function') builders[name] = fn;
@@ -734,7 +781,7 @@
 
     // 暴露两个纯函数给测试用（node:test 里以 vm 加载，见 write-base.test.cjs）。
     window.WBUI = window.WBUI || {};
-    window.WBUI.writeBase = { buildBody: buildBody, bulkIDs: bulkIDs, registerPayloadBuilder: registerPayloadBuilder };
+    window.WBUI.writeBase = { buildBody: buildBody, bulkIDs: bulkIDs, registerPayloadBuilder: registerPayloadBuilder, registerResultHandler: registerResultHandler };
     // 旧附属脚本（product_variant_write.js 等）仍在向这两个名字注册组装器，
     // 保留别名让它们不必同时改动 —— 迁完那批模板后可以删掉。
     window.WPJsonWrite = window.WPJsonWrite || { registerPayloadBuilder: registerPayloadBuilder };

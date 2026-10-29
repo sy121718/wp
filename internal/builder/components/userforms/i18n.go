@@ -1,13 +1,11 @@
 package userforms
 
-import "fmt"
-
 // i18n.go — 访客账号表单外壳的固定文案取词（审计 I18N-010）。
 
 // 文案 key（sys_i18n）：site.component.userForms.<语义>。
 const (
-	TextKeyScriptHint   = "site.component.userForms.scriptHint"
-	TextKeyOpenFallback = "site.component.userForms.openFallback"
+	TextKeyScriptHint = "site.component.userForms.noScript"
+	TextKeyRetry      = "site.component.userForms.retry"
 	// 九种形态的**默认标题**（作者没填 Title 时用它，填了就不动）。
 	// 默认标题此前是 Go 侧的 formSpecs 常量：模板里看不到中文，契约测试也扫不到，
 	// 属于「模板干净、Go 侧还有硬编码」的漏网 —— 英文站点上九个表单标题全是中文。
@@ -22,43 +20,26 @@ const (
 	TextKeyTitleSessions   = "site.component.userForms.title.sessions"
 )
 
-// 中文兜底。两句都含 %s：
-//   - scriptHint  的 %s 是表单名（登录 / 注册 / 找回密码…）
-//   - openFallback 的 %s 同上
-//
-// 用占位符而不是拼接，是因为「打开 X 页」在别的语言里未必是「打开」在前 ——
-// 整句交给译文，位置由译者决定。占位符只允许 %s（pkg/i18n 约定）。
-const (
-	fallbackScriptHint   = "%s表单需要脚本加载；也可以"
-	fallbackOpenFallback = "打开%s页"
-)
+const fallbackScriptHint = "请启用 JavaScript 以安全使用账号表单。"
 
-// ApplyI18n 按当前语言回填固定文案（实现 core.I18nAware）。
-func (v *View) ApplyI18n(text func(key, fallback string) string) {
+// ApplyI18n 在构建时取词，运行时接口只返回数据事实。
+func (v *View) ApplyI18n(text func(string, string) string) {
 	if v == nil {
 		return
 	}
-	hint := fallbackScriptHint
-	open := fallbackOpenFallback
-	if text != nil {
-		hint = text(TextKeyScriptHint, fallbackScriptHint)
-		open = text(TextKeyOpenFallback, fallbackOpenFallback)
+	if text == nil {
+		text = func(_, fallback string) string { return fallback }
 	}
-	// 默认标题跟随语言；作者显式填过的**不动**（与 addToCart 的「用户配置优先」同一规则）。
-	// 判据是「当前值恰好等于中文默认」——BuildView 已经把默认值写进 Title/FallbackText，
-	// 这里不做区分的话，作者自己写的标题会在构建时被译文覆盖掉。
-	if key, zh := titleKeyOf(v.Mode); key != "" {
-		translated := zh
-		if text != nil {
-			translated = text(key, zh)
-		}
-		if v.Title == zh {
-			v.Title = translated
-		}
-		if v.FallbackText == zh {
-			v.FallbackText = translated
-		}
+	v.Labels = labelsOf(text)
+	v.ScriptHint = text(TextKeyScriptHint, fallbackScriptHint)
+	v.RetryText = text(TextKeyRetry, "重试")
+	v.Titles = nil
+	for _, mode := range []string{ModeLogin, ModeRegister, ModeForgot, ModeReset, ModeAccount, ModeProfile, ModePreference, ModePassword, ModeSessions} {
+		spec := formSpecs[mode]
+		v.TitleKeys[mode] = text(spec.titleKey, spec.title)
+		v.Titles = append(v.Titles, ModeTitle{Mode: mode, Title: v.TitleKeys[mode]})
 	}
-	v.ScriptHint = fmt.Sprintf(hint, v.FallbackText)
-	v.OpenFallbackText = fmt.Sprintf(open, v.FallbackText)
+	if !v.customTitle {
+		v.Title = v.TitleKeys[v.Mode]
+	}
 }

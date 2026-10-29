@@ -19,8 +19,8 @@ const VisitorContextKey = "gowp_visitor_user_id"
 
 // VisitorCSRFContextKey 访客 CSRF token 在 gin context 里的键。
 //
-// 访问面的片段渲染表单（登录 / 注册 / 找回密码）必须带上访客域的 CSRF token，
-// 而 token 存在**签名会话 cookie** 里、静态产物烘不进去 —— 只能由片段现读现写。
+// 访客 JSON 链从独立签名会话获取 CSRF；首次读取的响应头下发给站点写基座，
+// 不写入静态产物，也不借用后台 meta。
 // 与 VisitorContextKey 同理：两边各写字面量，改一处漏一处的表现是「表单永远 403」。
 const VisitorCSRFContextKey = "gowp_visitor_csrf_token"
 
@@ -47,13 +47,6 @@ type UserService interface {
 	// 嵌进来的理由同 product 的 VariantSnapshotPort：装配处拿到的 UserService
 	// 天然也能当开号端口传给订单模块，不必再做类型断言。
 	GuestAccountProvisioner
-
-	// VisitorAccountPort 来账号中心片段读**本人**的资料 / 偏好 / 登录设备。
-	//
-	// 嵌进来的理由同上：装配处拿到的 UserService 直接就能当这个端口传给 runtimefragment。
-	// 但注意它**本身是收窄的**（只有两条只读方法）—— 片段层拿到的那份接口里
-	// 没有注册、没有改密码、没有踢出设备，userID 也只能由会话推出。
-	VisitorAccountPort
 
 	// Register 注册：写用户（待激活）并发送验证邮件。
 	//

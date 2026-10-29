@@ -26,12 +26,8 @@ import (
 // （注册表 ⊆ 对照集 ∪ 非产品能力、对照集 ⊆ 注册表）既隔离了测试污染，
 // 又能抓「新增了能力却没同步这份清单」。
 var builtinFragmentCapabilities = []string{
-	"accountPanel", "accountPasswordForm", "accountPreferenceForm", "accountProfileForm",
-	"accountSessionsPanel",
-	"commentList", "commentSubmit",
-	"forgotForm", "loginForm", "loginPanel", "membershipBadge", "membershipPanel",
-	"orderDetail", "ordersList",
-	"registerForm", "resetForm", "returnRequest",
+	"commentList", "commentSubmit", "membershipBadge", "membershipPanel",
+	"orderDetail", "ordersList", "returnRequest",
 }
 
 // nonProductFragmentCapabilities 运行期注册的**非产品**能力 → 理由。
@@ -39,8 +35,9 @@ var builtinFragmentCapabilities = []string{
 // 登记它们不是「放宽」：这些能力不参与产物注入（没有对应模板与样式诉求），
 // 单独列出来是为了让「产品能力」与「测试脚手架」在清单上分得开。
 var nonProductFragmentCapabilities = map[string]string{
-	"sessionprobetestonly": "端到端测试在运行期注册的探测能力（endpoint_test.go 的认证策略用例），不参与产物注入，也不是产品能力",
-	"langprobetestonly":    "端到端测试在运行期注册的探测能力（fragment_lang_test.go 的片段语言取词用例），不参与产物注入，也不是产品能力",
+	"endpointprobetestonly": "端点协议与安全测试专用的静态探针，不参与产品产物",
+	"sessionprobetestonly":  "端到端测试在运行期注册的探测能力（endpoint_test.go 的认证策略用例），不参与产物注入，也不是产品能力",
+	"langprobetestonly":     "端到端测试在运行期注册的探测能力（fragment_lang_test.go 的片段语言取词用例），不参与产物注入，也不是产品能力",
 }
 
 // TestFragmentStyleTablesCoverRegistry 三张表互相闭合。
@@ -61,8 +58,8 @@ func TestFragmentStyleTablesCoverRegistry(t *testing.T) {
 	for _, typ := range builtinFragmentCapabilities {
 		builtin[strings.ToLower(typ)] = true
 	}
-	if len(builtin) != 17 {
-		t.Fatalf("内置能力对照集只有 %d 项（预期 17，购物车六项与列表搜索两项已迁至 JSON）：对表断言可能在空转", len(builtin))
+	if len(builtin) != 7 {
+		t.Fatalf("内置能力对照集只有 %d 项（预期 7，购物车、列表搜索与账号能力已迁至 JSON）：对表断言可能在空转", len(builtin))
 	}
 
 	// ① 每个内置能力都要有样式归属（有族 / 无样式清单）。

@@ -63,6 +63,7 @@ var uiBlocks = []uiBlock{
 	{file: "write-base.js", attrs: []string{"data-write"}, noStyle: true},
 	{file: "requires_js.js", attrs: []string{"data-requires-js"}, noStyle: true},
 	{file: "site-commerce.js", attrs: []string{"data-site-cart"}, noStyle: true},
+	{file: "site-user.js", attrs: []string{"data-user-form"}, noStyle: true},
 	// htmx 是访问面所有 hx-* 属性的唯一执行者，也是控件入口 index.js 监听
 	// htmx:after:swap 的前提。产物此前从不携带它 —— 组件按 HTMX 约定写出的
 	// hx-get / hx-post 在访问面全部是哑属性（组件自己降级成原生表单，功能

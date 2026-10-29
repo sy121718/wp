@@ -1,11 +1,20 @@
-/* userforms.css — core.userForms 外壳与**片段内容**的基础样式。
-   片段 HTML 是运行时渲染的，页面作者在编辑器里看不到它 —— 不带样式的结果是
-   「登录表单是一列裸输入框」。颜色走主题 token（带兜底），站点主题仍可覆盖 sky-user-* 类名。 */
+/* 账号表单静态界面：凭据由独立访客 JSON 链路提供。 */
 & {
     display: flex;
     flex-direction: column;
     gap: var(--sky-space-6, 12px);
     min-width: 0;
+    width: 100%;
+    max-width: 680px;
+    box-sizing: border-box;
+    margin: 24px auto;
+    padding: 28px;
+    color: var(--sky-c-text, #171717);
+    background: var(--sky-c-surface, #fff);
+    border: 1px solid var(--sky-c-border, #e5e7eb);
+    border-radius: var(--sky-radius-xl, 16px);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    line-height: 1.5;
 }
 & .sky-user-title {
     margin: 0;
@@ -37,6 +46,9 @@
     font-size: 0.9rem;
 }
 & .sky-user-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     min-height: 44px;
     padding: var(--sky-space-4, 8px) var(--sky-space-5, 10px);
     font: inherit;
@@ -112,6 +124,7 @@
 }
 & .sky-user-meta dd {
     margin: 0;
+    overflow-wrap: anywhere;
 }
 & .sky-user-tag {
     padding: 1px var(--sky-space-3, 6px);
@@ -157,6 +170,10 @@
     color: {{color}};
 }
 @media (max-width: 767px) {
+    & {
+        margin: 16px auto;
+        padding: 20px;
+    }
     & .sky-user-title {
         font-size: 1.05rem;
     }
@@ -164,3 +181,11 @@
         align-self: stretch;
     }
 }
+
+& [hidden] { display: none !important; }
+& fieldset { padding: 0; border: 0; min-width: 0; }
+& [data-write-status]:empty, & [data-site-status]:empty { display: none; }
+& .sky-user-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+& .sky-user-link { align-self: flex-start; padding: 6px 0; color: inherit; font: inherit; background: none; border: 0; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+& button:focus-visible, & input:focus-visible, & select:focus-visible, & textarea:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+& .sky-user-submit:hover { opacity: .86; }

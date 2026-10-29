@@ -15,10 +15,10 @@ import (
 // 注意这里**没有 role 字段**：用户侧的注册不接受调用方指定身份
 // （注册即普通用户），身份只能由管理侧授予。
 type RegisterReq struct {
-	Username string `form:"username"`
-	Email    string `form:"email"`
-	Password string `form:"password"`
-	Nickname string `form:"nickname"`
+	Username string `form:"username" json:"username"`
+	Email    string `form:"email" json:"email"`
+	Password string `form:"password" json:"password"`
+	Nickname string `form:"nickname" json:"nickname"`
 	// RegisterIP / RegisterLocation 由 inbound 覆盖写入，客户端不可伪造。
 	RegisterIP       string `form:"-" json:"-"`
 	RegisterLocation string `form:"-" json:"-"`
@@ -35,21 +35,21 @@ type ActivateEmailReq struct {
 
 // ResendActivationReq 重发验证邮件。
 type ResendActivationReq struct {
-	Email  string `form:"email"`
+	Email  string `form:"email" json:"email"`
 	Locale string `form:"-" json:"-"`
 }
 
 // PasswordResetReqRequest 申请重置密码。
 type PasswordResetReqRequest struct {
-	Email  string `form:"email"`
+	Email  string `form:"email" json:"email"`
 	Locale string `form:"-" json:"-"`
 }
 
 // ResetPasswordReq 用重置码改密。
 type ResetPasswordReq struct {
-	Email       string `form:"email"`
-	Key         string `form:"key"`
-	NewPassword string `form:"password"`
+	Email       string `form:"email" json:"email"`
+	Key         string `form:"key" json:"key"`
+	NewPassword string `form:"password" json:"password"`
 }
 
 // LoginReq 密码登录。
@@ -57,11 +57,11 @@ type ResetPasswordReq struct {
 // Account 同时接受用户名与邮箱：用户记不清自己当初用哪个注册的很常见，
 // 强制二选一只是把「登录失败」变成「登录失败而且我不知道该填哪个」。
 type LoginReq struct {
-	Account  string `form:"account"`
-	Password string `form:"password"`
+	Account  string `form:"account" json:"account"`
+	Password string `form:"password" json:"password"`
 	// RememberMe 由复选框产生，取值是 "on"（勾选时才提交）—— gin 的 bool 绑定
 	// 走 strconv.ParseBool，不认 "on"，所以这一档由 BindForm 宽容解析。
-	RememberMe bool `form:"-"`
+	RememberMe bool `form:"-" json:"remember"`
 }
 
 // BindForm 见 user_form.go 的宽容取值口径。
@@ -110,23 +110,23 @@ type SessionItem struct {
 // （见 service 的说明）。
 type UpdateProfileReq struct {
 	UserID    uint64 `form:"-" json:"-"`
-	Nickname  string `form:"nickname"`
-	FirstName string `form:"firstName"`
-	LastName  string `form:"lastName"`
+	Nickname  string `form:"nickname" json:"nickname"`
+	FirstName string `form:"firstName" json:"firstName"`
+	LastName  string `form:"lastName" json:"lastName"`
 	// Gender 是下拉框产生的整数；解析失败按 0（未指定），见 BindForm。
-	Gender   int    `form:"-"`
-	Birthday string `form:"birthday"`
-	Bio      string `form:"bio"`
-	Website  string `form:"website"`
-	Locale   string `form:"locale"`
-	Timezone string `form:"timezone"`
-	Country  string `form:"country"`
-	Province string `form:"province"`
-	City     string `form:"city"`
-	Address  string `form:"address"`
-	Postcode string `form:"postcode"`
-	Phone    string `form:"phone"`
-	Company  string `form:"company"`
+	Gender   int    `form:"-" json:"gender"`
+	Birthday string `form:"birthday" json:"birthday"`
+	Bio      string `form:"bio" json:"bio"`
+	Website  string `form:"website" json:"website"`
+	Locale   string `form:"locale" json:"locale"`
+	Timezone string `form:"timezone" json:"timezone"`
+	Country  string `form:"country" json:"country"`
+	Province string `form:"province" json:"province"`
+	City     string `form:"city" json:"city"`
+	Address  string `form:"address" json:"address"`
+	Postcode string `form:"postcode" json:"postcode"`
+	Phone    string `form:"phone" json:"phone"`
+	Company  string `form:"company" json:"company"`
 }
 
 // BindForm 只补反射绑不了的两档：整数下拉框与复选框。口径与前端一致 ——
@@ -140,14 +140,14 @@ func (r *UpdateProfileReq) BindForm(values url.Values) error {
 // UpdatePreferenceReq 保存前台偏好。
 type UpdatePreferenceReq struct {
 	UserID            uint64 `form:"-" json:"-"`
-	Theme             string `form:"theme"`
-	Locale            string `form:"locale"`
-	Timezone          string `form:"timezone"`
-	PageSize          int    `form:"-"`
-	EmailNotify       bool   `form:"-"`
-	SmsNotify         bool   `form:"-"`
-	ProfileVisibility string `form:"profileVisibility"`
-	ShowOnline        bool   `form:"-"`
+	Theme             string `form:"theme" json:"theme"`
+	Locale            string `form:"locale" json:"locale"`
+	Timezone          string `form:"timezone" json:"timezone"`
+	PageSize          int    `form:"-" json:"pageSize"`
+	EmailNotify       bool   `form:"-" json:"emailNotify"`
+	SmsNotify         bool   `form:"-" json:"smsNotify"`
+	ProfileVisibility string `form:"profileVisibility" json:"profileVisibility"`
+	ShowOnline        bool   `form:"-" json:"showOnline"`
 }
 
 // BindForm 补整数与复选框（每页条数默认 20，越界由 service 拒）。
@@ -162,8 +162,8 @@ func (r *UpdatePreferenceReq) BindForm(values url.Values) error {
 // ChangePasswordReq 修改密码（已登录用户，需验证旧密码）。
 type ChangePasswordReq struct {
 	UserID      uint64 `form:"-" json:"-"`
-	OldPassword string `form:"oldPassword"`
-	NewPassword string `form:"newPassword"`
+	OldPassword string `form:"oldPassword" json:"oldPassword"`
+	NewPassword string `form:"newPassword" json:"newPassword"`
 }
 
 // ResetLinkReq 重置密码页的链接参数（GET：?email=…&key=…）。
@@ -171,14 +171,14 @@ type ChangePasswordReq struct {
 // 单独一个类型而不是复用 ResetPasswordReq：页面上还**没有**新密码，
 // 复用会让「链接校验」与「提交新密码」共用一个必填集，两边都会写错。
 type ResetLinkReq struct {
-	Email string `form:"email"`
-	Key   string `form:"key"`
+	Email string `form:"email" json:"email"`
+	Key   string `form:"key" json:"key"`
 }
 
 // RevokeSessionReq 踢掉某台设备：入参是会话令牌的 sha256，不是数据库行 id
 // （会话不落库，见账号中心「我的设备」）。
 type RevokeSessionReq struct {
-	ID string `form:"id"`
+	ID string `form:"id" json:"id"`
 }
 
 // formText 取文本字段并去空白。
@@ -211,4 +211,9 @@ func formInt(values url.Values, key string, def int) int {
 		return def
 	}
 	return n
+}
+
+// SiteRevokeReq 不接受账号ID，归属只能来自访客会话。
+type SiteRevokeReq struct {
+	ID string `form:"id" json:"id"`
 }

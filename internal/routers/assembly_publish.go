@@ -428,10 +428,6 @@ func (a *assembly) wirePublishingPorts() {
 	// 挂在片段组上只做「尽力解析」，未登录不阻断 —— 必须登录的能力自己渲染引导文案。
 	a.fragDeps.VisitorIdentityMiddleware = userhttp.VisitorIdentityMiddleware(a.userSvc)
 	marks.mark(portRuntimeFragVisitorIdentity)
-	// 账号中心片段（资料 / 偏好 / 改密码 / 登录设备）：只注入**收窄后的**只读端口 ——
-	// 片段层拿不到注册、改密码、踢出设备这些写能力，越权防护靠接口形状。
-	a.fragDeps.VisitorAccountPort = a.userSvc
-	marks.mark(portRuntimeFragVisitorAccount)
 	// 访问面守卫的登录态探针（PIPE-6 AccessGuard，「登录用户可见」）。
 	// 传的是收窄后的 UserService（只用到 ResolveVisitorID 一条只读能力）：
 	// 守卫拿不到注册 / 改密码 / 踢设备，越权防护靠接口形状。

@@ -20,7 +20,6 @@ import (
 	pagecontract "go_wp/internal/module/page/contract"
 	projectcontract "go_wp/internal/module/project/contract"
 	sysconfigcontract "go_wp/internal/module/sysconfig/contract"
-	usercontract "go_wp/internal/module/user/contract"
 )
 
 // Deps 是片段层的**全部**外部能力。
@@ -62,9 +61,6 @@ type Deps struct {
 	// VisitorIdentityMiddleware 访客身份解析中间件（尽力解析；未登录不阻断，
 	// 必须登录的能力自己渲染引导文案）。
 	VisitorIdentityMiddleware func(c *gin.Context)
-	// VisitorAccountPort 访客账号事实读取（user；required-port）。片段层拿不到注册、
-	// 改密码、踢出设备这些写能力。
-	VisitorAccountPort usercontract.VisitorAccountPort
 }
 
 // deps 是 Deps 的唯一实例：装配期写入一次，之后全包只读。

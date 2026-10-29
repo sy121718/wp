@@ -14,7 +14,8 @@
 #      自带 CasbinMiddleware，权限点声明同时供 check-permission-gaps.sh 对账）→ 免检；
 #   2. 否则是原生 gin 组 → 实参里必须出现 CasbinMiddleware*，或该文件在组级
 #      `.Use(...)` 里挂了它；
-#   3. 都不满足 → 违规，除非命中豁免清单（scripts/page-endpoint-authz-allow.txt）。
+#   3. gin.Engine/Group 路径可解析为 /api/site/** → 独立访客 JSON 面，由访客认证/CSRF链处理；
+#   4. 都不满足 → 违规，除非命中豁免清单（scripts/page-endpoint-authz-allow.txt）。
 #
 # 只查 POST：本仓库路由只用 GET/POST，且 GET 不构成越权写面（既有未挂 Casbin 的页面
 # 端点全是只读的）。豁免清单条目**不再命中即失败** —— 只增不减的清单等于没有门禁。
@@ -220,6 +221,39 @@ def has_group_casbin(clean, mask):
     return False
 
 
+def site_api_route(clean, mask, start, route):
+    """解析当前函数内的 gin.Engine → Group 路径，识别独立访客 JSON 面。
+
+    /api/site/** 属访客认证/CSRF 链，不是后台页面权限面；只按已解析完整路径
+    分类，不能因文件名、相同变量名或任意 /api 前缀放行。
+    """
+    functions = list(re.finditer(r"^func\s+(?:\([^\n]*?\)\s+)?\w+\s*\([^\n]*", clean[:start], re.M))
+    if not functions:
+        return False
+    fn = functions[-1]
+    signature = fn.group(0)
+    paths = {name: "" for name in re.findall(r"(\w+)\s+\*gin\.Engine", signature)}
+    scope = clean[fn.end():start]
+    scope_mask = mask[fn.end():start]
+    for offset, args_text in iter_calls(scope, scope_mask, ".Group("):
+        args = split_args(args_text)
+        if not args or not args[0].startswith(('"', '`')):
+            continue
+        before = scope[max(0, scope.rfind("\n", 0, offset) + 1):offset]
+        assignment = re.search(r"(\w+)\s*(?::=|=)\s*(\w+)$", before)
+        if not assignment or assignment[2] not in paths:
+            continue
+        base = paths[assignment[2]]
+        part = first_string_literal(args[0])
+        paths[assignment[1]] = base.rstrip("/") + "/" + part.lstrip("/") if part else base
+    before = clean[max(0, clean.rfind("\n", 0, start) + 1):start]
+    recv = re.search(r"(\w+)$", before)
+    if not recv or recv[1] not in paths:
+        return False
+    full = paths[recv[1]].rstrip("/") + "/" + route.lstrip("/")
+    return full.startswith("/api/site/")
+
+
 def load_allow():
     entries = {}
     if not os.path.isfile(ALLOW_FILE):
@@ -240,7 +274,7 @@ def main():
     allow = load_allow()
     used = set()
     hits = []
-    stats = {"total": 0, "declared": 0, "guarded": 0, "allowed": 0}
+    stats = {"total": 0, "declared": 0, "guarded": 0, "allowed": 0, "site_api": 0}
 
     for rel in iter_go_files():
         with open(os.path.join(ROOT, rel), encoding="utf-8") as fh:
@@ -259,6 +293,9 @@ def main():
                 stats["guarded"] += 1
                 continue
             route = first_string_literal(args[0])
+            if site_api_route(clean, mask, start, route):
+                stats["site_api"] += 1
+                continue
             key = (rel, route)
             if key in allow:
                 used.add(key)
@@ -287,7 +324,7 @@ def main():
     if hits or stale:
         print(
             f"扫描 POST 注册点 {stats['total']} 个：声明式授权 {stats['declared']}、"
-            f"显式 Casbin {stats['guarded']}、豁免 {stats['allowed']}、违规 {len(hits)}、"
+            f"显式 Casbin {stats['guarded']}、访客 JSON {stats['site_api']}、豁免 {stats['allowed']}、违规 {len(hits)}、"
             f"过期豁免 {len(stale)}",
             file=sys.stderr,
         )
@@ -295,7 +332,7 @@ def main():
 
     print(
         f"✓ 页面写端点鉴权齐备（POST 注册点 {stats['total']} 个：声明式授权 {stats['declared']}、"
-        f"显式 Casbin {stats['guarded']}、豁免 {stats['allowed']}）"
+        f"显式 Casbin {stats['guarded']}、访客 JSON {stats['site_api']}、豁免 {stats['allowed']}）"
     )
     return 0
 

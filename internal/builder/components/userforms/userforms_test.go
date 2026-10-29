@@ -35,50 +35,33 @@ func TestEffectiveMode(t *testing.T) {
 	}
 }
 
-// TestBuildViewMapsEveryMode 每个形态都映射到自己的片段与内置页面。
-func TestBuildViewMapsEveryMode(t *testing.T) {
-	for mode, spec := range formSpecs {
-		v := BuildView(&Props{Mode: mode}, "proj-9", "zh-CN")
-		if !strings.Contains(v.FragmentURL, "/_fragments/"+spec.fragment+"?") {
-			t.Errorf("形态 %s 的片段地址不对: %q", mode, v.FragmentURL)
+// TestBuildViewIsStatic 所有模式脱离工程槽位，文案在构建期准备。
+func TestBuildViewIsStatic(t *testing.T) {
+	for mode := range formSpecs {
+		v := BuildView(&Props{Mode: mode}, "", "en-US")
+		if v.Mode != mode || v.Labels.Login.Identity == "" || len(v.Titles) != 9 {
+			t.Fatalf("模式%s缺少静态表单配置: %+v", mode, v)
 		}
-		if v.FallbackURL != spec.page {
-			t.Errorf("形态 %s 的降级落点应为 %q，实际 %q", mode, spec.page, v.FallbackURL)
+		v.ApplyI18n(func(key, fallback string) string {
+			if key == TextKeyTitleLogin {
+				return "Sign in"
+			}
+			if key == "site.fragment.user.login.identity" {
+				return "Email or username"
+			}
+			return fallback
+		})
+		if v.Labels.Login.Identity != "Email or username" {
+			t.Fatalf("表单标签没有跟随构建语言")
 		}
-		if v.FallbackText == "" {
-			t.Errorf("形态 %s 缺少降级链接文案（无 JS 时容器不能是空的）", mode)
+		if mode == ModeLogin && v.Title != "Sign in" {
+			t.Fatalf("默认标题未翻译: %s", v.Title)
 		}
 	}
-}
-
-// TestBuildViewCarriesProjectLangAndNext 片段地址的三个要素。
-func TestBuildViewCarriesProjectLangAndNext(t *testing.T) {
-	v := BuildView(&Props{Mode: ModeLogin, Next: "/account"}, "proj-9", "en-US")
-	for _, want := range []string{"projectId=proj-9", "lang=en-US", "next=%2Faccount"} {
-		if !strings.Contains(v.FragmentURL, want) {
-			t.Fatalf("片段地址缺少 %q: %q", want, v.FragmentURL)
-		}
-	}
-}
-
-// TestBuildViewOmitsEmptyNext 没配回跳时不带 next 参数（带了空值会让片段多做一次判断）。
-func TestBuildViewOmitsEmptyNext(t *testing.T) {
-	v := BuildView(&Props{Mode: ModeLogin}, "proj-9", "zh-CN")
-	if strings.Contains(v.FragmentURL, "next=") {
-		t.Fatalf("没配回跳时不该带 next 参数: %q", v.FragmentURL)
-	}
-}
-
-// TestBuildViewWithoutProjectRendersNotice 缺工程 id 时给可见提示，不让整页构建失败。
-func TestBuildViewWithoutProjectRendersNotice(t *testing.T) {
-	for _, pid := range []string{"", "   "} {
-		v := BuildView(&Props{Mode: ModeLogin}, pid, "zh-CN")
-		if v.Notice == "" {
-			t.Fatal("缺工程 id 时应给可见提示")
-		}
-		if v.FragmentURL != "" {
-			t.Fatalf("不可用时不该输出片段地址: %q", v.FragmentURL)
-		}
+	v := BuildView(&Props{Title: "加入我们"}, "", "en-US")
+	v.ApplyI18n(func(_, fallback string) string { return "translated" })
+	if v.Title != "加入我们" {
+		t.Fatalf("作者标题被覆盖: %s", v.Title)
 	}
 }
 

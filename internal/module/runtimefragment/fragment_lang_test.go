@@ -115,56 +115,6 @@ func TestFragmentEndpointBodyFollowsLang(t *testing.T) {
 	}
 }
 
-// TestLoginPanelFollowsLang loginPanel 的文案按请求语言取词（迁移 293）。
-//
-// 它曾是本包唯一恒为默认语言的片段文案（两句中文写死在 capability.go 里）：
-// 端点已解析出语言、其余片段都已走 r.tr，只有它不看语言 ——
-// 现象是「英文站点的登录面板显示中文」，没有任何报错。
-func TestLoginPanelFollowsLang(t *testing.T) {
-	i18n.InjectForTest(map[string]map[string]string{
-		"site.fragment.login_panel.login_register":    {"zh-CN": "登录 / 注册", "en-US": "Sign in / Sign up"},
-		"site.fragment.login_panel.continue_shopping": {"zh-CN": "继续购物", "en-US": "Continue shopping"},
-	}, nil)
-	defer i18n.InjectForTest(map[string]map[string]string{}, nil)
-	deps.FragmentProject = &stubProjectLocales{langs: []string{"zh-CN", "en-US"}, def: "zh-CN"}
-	defer func() { deps.FragmentProject = nil }()
-
-	r := newRouter()
-	en := doGet(t, r, "/_fragments/loginPanel?projectId=p1&lang=en-US")
-	if !strings.Contains(en.Body.String(), "Sign in / Sign up") {
-		t.Fatalf("en-US 请求应出英文文案，实际 %s", en.Body.String())
-	}
-	// 语义上下文影响取的是哪一条词条，不影响语言链路。
-	enCtx := doGet(t, r, "/_fragments/loginPanel?projectId=p1&lang=en-US&context=visitorSession")
-	if !strings.Contains(enCtx.Body.String(), "Continue shopping") {
-		t.Fatalf("visitorSession + en-US 应出英文会话态文案，实际 %s", enCtx.Body.String())
-	}
-	zh := doGet(t, r, "/_fragments/loginPanel?projectId=p1")
-	if !strings.Contains(zh.Body.String(), "登录 / 注册") {
-		t.Fatalf("缺 lang 应回落工程默认语言（zh-CN），实际 %s", zh.Body.String())
-	}
-}
-
-// TestLoginPanelFallsBackToSourceText 词条缺失时回退 Go 里的中文原文，绝不输出裸 key。
-//
-// 与构建期组件同一口径：访客看到 site.fragment.login_panel.login_register 是事故，
-// 看到中文原文只是「这个语言还没翻译」。
-func TestLoginPanelFallsBackToSourceText(t *testing.T) {
-	i18n.InjectForTest(map[string]map[string]string{}, nil)
-	defer i18n.InjectForTest(map[string]map[string]string{}, nil)
-	deps.FragmentProject = &stubProjectLocales{langs: []string{"zh-CN", "en-US"}, def: "zh-CN"}
-	defer func() { deps.FragmentProject = nil }()
-
-	w := doGet(t, newRouter(), "/_fragments/loginPanel?projectId=p1&lang=en-US")
-	body := w.Body.String()
-	if strings.Contains(body, "site.fragment.login_panel") {
-		t.Fatalf("词条缺失时不得输出裸 key，实际 %s", body)
-	}
-	if !strings.Contains(body, "登录 / 注册") {
-		t.Fatalf("词条缺失时应回退中文原文，实际 %s", body)
-	}
-}
-
 // TestOrderFragmentURLEscapesLang 订单片段的内部链接对 lang 做 URL 转义。
 //
 // lang 是访客可改的 query：手拼时一个 & 就能把后面的参数顶掉（projectId 被换掉

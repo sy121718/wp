@@ -64,6 +64,7 @@ import (
 	"go_wp/internal/module/user/enums"
 	usermodel "go_wp/internal/module/user/model"
 	"go_wp/pkg/crypto"
+	"go_wp/pkg/upload"
 	"go_wp/pkg/utils"
 )
 
@@ -113,8 +114,8 @@ func (s *Service) GetAccount(ctx context.Context, userID uint64) (res *userdto.A
 		Username:          u.Username,
 		Email:             u.Email,
 		EmailVerified:     u.EmailVerifiedAt != nil,
-		DisplayName:       displayName(u),
-		Avatar:            deref(u.Avatar),
+		DisplayName:       deref(u.DisplayName),
+		Avatar:            upload.StorageURL(deref(u.Avatar)),
 		Status:            u.Status,
 		RegisteredAt:      utils.NewJSONTimePtr(u.RegisteredAt),
 		LastLoginTime:     utils.NewJSONTimePtr(u.LastLoginTime),
@@ -134,6 +135,8 @@ func (s *Service) GetAccount(ctx context.Context, userID uint64) (res *userdto.A
 			return nil, perr
 		}
 		if p != nil {
+			res.ProfileLocale = deref(p.Locale)
+			res.ProfileTimezone = deref(p.Timezone)
 			res.FirstName = deref(p.FirstName)
 			res.LastName = deref(p.LastName)
 			res.Gender = p.Gender
@@ -313,9 +316,6 @@ func (s *Service) ChangePassword(ctx context.Context, req *userdto.ChangePasswor
 	}
 	return s.RevokeAllSessions(ctx, req.UserID)
 }
-
-// 编译期断言：装配期注入的就是这个实现。
-var _ usercontract.VisitorAccountPort = (*Service)(nil)
 
 // AccountOf 读账号概览与资料 / 偏好。
 func (s *Service) AccountOf(ctx context.Context, userID uint64) (res *userdto.AccountResp, err error) {

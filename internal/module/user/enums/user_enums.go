@@ -4,6 +4,7 @@ package userenums
 import (
 	"fmt"
 	"go_wp/pkg/facing"
+	"net/http"
 )
 
 const (
@@ -314,7 +315,22 @@ var errFallbacks = map[string]string{
 }
 
 // Err 声明一条自带对外文案的业务错误（兜底与本表同源）。
-func Err(key string) error { return facing.New(key, errFallbacks[key]) }
+func Err(key string) error {
+	status := http.StatusBadRequest
+	switch key {
+	case ErrNotLoggedIn, ErrBadCredentials, ErrSessionExpired:
+		status = http.StatusUnauthorized
+	case ErrAccountLocked, ErrAccountDisabled, ErrAccountPending, ErrPasswordLoginUnavailable:
+		status = http.StatusForbidden
+	case ErrUserNotFound, ErrSessionNotFound:
+		status = http.StatusNotFound
+	case ErrUsernameTaken, ErrEmailTaken:
+		status = http.StatusConflict
+	case ErrInternal, ErrMailUnavailable, ErrLogoutFailed:
+		status = http.StatusInternalServerError
+	}
+	return facing.WithStatus(facing.New(key, errFallbacks[key]), status)
+}
 
 // FallbackFor 兜底表取值（没有 error 对象、只有 key 的场景用：逐条原因、页面事实）。
 // 未登记返回空串 —— 调用方据此回落自己的最后一句，不要在这里编一句通用文案。

@@ -101,7 +101,7 @@ func TestFragmentFailNeverLeaksErrorDetail(t *testing.T) {
 		{"上下文非法", errFragmentContext, http.StatusBadRequest, fragmentErrTextContext.fallback},
 	}
 	for _, tc := range cases {
-		c, w := newFragmentFailContext(http.MethodGet, "/_fragments/loginPanel")
+		c, w := newFragmentFailContext(http.MethodGet, "/_fragments/endpointProbeTestOnly")
 		fragmentFail(c, tc.err, nil, map[string]any{"context": fragmentErrLeakMarker})
 		body := w.Body.String()
 		if w.Code != tc.status {
@@ -120,9 +120,9 @@ func TestFragmentFailNeverLeaksErrorDetail(t *testing.T) {
 //
 // 这条用例在收口之前是**红的**：validateContext 原来返回
 // `fmt.Errorf("非法的片段上下文: %q", ctx)`，而 endpoint 把它直出 ——
-// /_fragments/loginPanel?context=<任意串> 的输出由请求方决定。
+// /_fragments/endpointProbeTestOnly?context=<任意串> 的输出由请求方决定。
 func TestFragmentEndpointContextErrorDoesNotEchoInput(t *testing.T) {
-	w := doGet(t, newRouter(), "/_fragments/loginPanel?"+url.Values{"context": {fragmentErrLeakMarker}}.Encode())
+	w := doGet(t, newRouter(), "/_fragments/endpointProbeTestOnly?"+url.Values{"context": {fragmentErrLeakMarker}}.Encode())
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("非法上下文应 400，实际 %d", w.Code)
 	}
@@ -141,8 +141,8 @@ func TestFragmentEndpointContextErrorDoesNotEchoInput(t *testing.T) {
 // 标记串分别放在**参数值**与**参数名**里：参数名回路是最容易被忽略的一条
 // （原来那些 `errors.New("参数非法")` 恰好没有回显，但形状上没有任何东西保证下一个改动不会）。
 func TestFragmentEndpointParamErrorDoesNotEchoInput(t *testing.T) {
-	tooLongValue := "/_fragments/loginPanel?" + url.Values{"q": {strings.Repeat("x", maxParamLen+1) + fragmentErrLeakMarker}}.Encode()
-	tooLongName := "/_fragments/loginPanel?" + url.Values{strings.Repeat("n", 65): {fragmentErrLeakMarker}}.Encode()
+	tooLongValue := "/_fragments/endpointProbeTestOnly?" + url.Values{"q": {strings.Repeat("x", maxParamLen+1) + fragmentErrLeakMarker}}.Encode()
+	tooLongName := "/_fragments/endpointProbeTestOnly?" + url.Values{strings.Repeat("n", 65): {fragmentErrLeakMarker}}.Encode()
 
 	many := url.Values{}
 	for i := 0; i <= maxParamCount; i++ {
@@ -156,7 +156,7 @@ func TestFragmentEndpointParamErrorDoesNotEchoInput(t *testing.T) {
 	}{
 		{"参数值超长", tooLongValue, fragmentErrTextParam.fallback},
 		{"参数名超长", tooLongName, fragmentErrTextParam.fallback},
-		{"参数名数量超限", "/_fragments/loginPanel?" + many.Encode(), fragmentErrTextTooMany.fallback},
+		{"参数名数量超限", "/_fragments/endpointProbeTestOnly?" + many.Encode(), fragmentErrTextTooMany.fallback},
 	}
 	r := newRouter()
 	for _, tc := range cases {

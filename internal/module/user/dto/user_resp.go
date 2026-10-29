@@ -40,26 +40,28 @@ type AccountResp struct {
 	Status        int             `json:"status"`
 	RegisteredAt  *utils.JSONTime `json:"registeredAt"`
 	LastLoginTime *utils.JSONTime `json:"lastLoginTime"`
-	// RegisteredAtText / LastLoginTimeText 是给页面直接显示的时间文本（口径见 service.formatTime）。
-	RegisteredAtText  string `json:"registeredAtText"`
-	LastLoginTimeText string `json:"lastLoginTimeText"`
+	// 旧内置页面仍使用这两个字段；站点 JSON 不携带格式化展示值。
+	RegisteredAtText  string `json:"-"`
+	LastLoginTimeText string `json:"-"`
 	LastLoginIP       string `json:"lastLoginIp"`
 	LastLoginLocation string `json:"lastLoginLocation"`
 
 	// 资料（user_profiles），未建行时为零值。
-	FirstName string `json:"firstName"`
-	LastName  string `json:"lastName"`
-	Gender    int    `json:"gender"`
-	Birthday  string `json:"birthday"`
-	Bio       string `json:"bio"`
-	Website   string `json:"website"`
-	Country   string `json:"country"`
-	Province  string `json:"province"`
-	City      string `json:"city"`
-	Address   string `json:"address"`
-	Postcode  string `json:"postcode"`
-	Phone     string `json:"phone"`
-	Company   string `json:"company"`
+	ProfileLocale   string `json:"profileLocale"`
+	ProfileTimezone string `json:"profileTimezone"`
+	FirstName       string `json:"firstName"`
+	LastName        string `json:"lastName"`
+	Gender          int    `json:"gender"`
+	Birthday        string `json:"birthday"`
+	Bio             string `json:"bio"`
+	Website         string `json:"website"`
+	Country         string `json:"country"`
+	Province        string `json:"province"`
+	City            string `json:"city"`
+	Address         string `json:"address"`
+	Postcode        string `json:"postcode"`
+	Phone           string `json:"phone"`
+	Company         string `json:"company"`
 
 	// 偏好（user_preferences）。
 	Theme             string `json:"theme"`
