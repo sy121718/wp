@@ -237,10 +237,7 @@ type Props struct {
 	CardLinkText string `json:"cardLinkText,omitempty" ct:"text,maxlen=30,sec=collection,label=链接文案"`
 	// ListPageLink 列表页链接的文案（留空按集合源取缺省：「更多文章」/「全部商品」）。
 	//
-	// 链接**目标不由作者填**：它来自系统页面槽位（文章集合 → blog、商品集合 → shop，BIZ-2）——
-	// 「列表页是哪一页」是站点级事实，运维在槽位里绑一次，页面改 URL 后链接自动跟着走。
-	// 槽位没绑或那页没发布时**整块不输出**（绝不猜路径：猜错的链接就是死链，
-	// 而作者从产物上看不出它是猜的）。
+	// 目标由节点的 list 动作显式引用，未设置时不显示入口。
 	ListPageLink string `json:"listPageLink,omitempty" ct:"text,maxlen=30,sec=collection,label=列表页链接文案"`
 	// CardImageField 图片字段名（如 product.images / article.featuredImage；留空不渲染图片）。
 	CardImageField string `json:"cardImageField,omitempty" ct:"collectionfield,maxlen=40,sec=collection,label=图片字段"`
@@ -278,6 +275,11 @@ type Props struct {
 
 // Component 卡片堆叠组件（结构型：子节点即卡片内容，可留空退回数字占位卡）。
 type Component struct{}
+
+func (*Component) Actions() []core.ActionSpec {
+	return []core.ActionSpec{{Key: "list", AllowedKinds: []core.ActionKind{core.ActionPage, core.ActionPresentation, core.ActionExternal}}}
+}
+func (*Component) RequiredActions() []string { return nil }
 
 // CollectionProp 实现 core.CollectionProvider：集合源取自 Props.CollectionSource
 // （审计 ARCH-01）。手写组件（非 core.Atom 基座）必须显式声明，否则依赖登记看不见它 ——
@@ -407,51 +409,35 @@ func effectiveShape(p *Props) string {
 // collectionSource 集合源（空 = 静态卡片模式）。
 func collectionSource(p *Props) string { return strings.TrimSpace(p.CollectionSource) }
 
-// 集合源 → 系统页面槽位与缺省文案（BIZ-2）。
-//
-// 槽位键在这里写的是**字面量**：builder 是底层包（依赖方向 module → builder），
-// 不能反向 import page 模块拿常量。键名与 core.SiteSlot* / page enums 保持一致，
-// 两边一致由测试钉住（core 侧已有「键集合必须完全相同」的同类测试）。
+// 集合源与缺省入口文案。
 const (
 	collectionSourceArticle = "content:article"
 	collectionSourceProduct = "content:product"
-	siteSlotBlog            = "blog"
-	siteSlotShop            = "shop"
 
 	defaultArticleMoreText = "更多文章"
 	defaultProductMoreText = "全部商品"
 )
 
-// collectionListPageLink 集合列表的「列表页入口」链接（系统页面槽位）。
-//
-// 映射：文章集合 → blog 槽位（更多文章）、商品集合 → shop 槽位（全部商品）。
-// 其他集合源没有对应的系统页面语义（分类列表页不是槽位），一律不输出链接 ——
-// 宁可少一个入口，也不要一个猜出来的死链。
-//
-// 槽位没绑、或绑了但那页没发布时，ctx.SitePages 里根本没有这个键
-// （page 侧只返回已绑且已发布的绑定），此时返回 has=false，模板整块不渲染。
-func collectionListPageLink(source string, p *Props, ctx *core.RenderContext) (has bool, href, text string) {
-	if ctx == nil {
-		return false, "", ""
+// collectionListPageLink 只消费显式动作，集合源仅决定缺省文案。
+func collectionListPageLink(node *core.Node, source string, p *Props, ctx *core.RenderContext) (action core.ResolvedAction, text string, err error) {
+	if _, configured := node.Actions["list"]; !configured {
+		return action, "", nil
 	}
-	var slot, fallback string
+	action, err = ctx.ResolveAction(node, "list")
+	if err != nil {
+		return action, "", err
+	}
+	text = "查看全部"
 	switch source {
 	case collectionSourceArticle:
-		slot, fallback = siteSlotBlog, defaultArticleMoreText
+		text = defaultArticleMoreText
 	case collectionSourceProduct:
-		slot, fallback = siteSlotShop, defaultProductMoreText
-	default:
-		return false, "", ""
+		text = defaultProductMoreText
 	}
-	href = strings.TrimSpace(ctx.SitePage(slot))
-	if href == "" {
-		return false, "", ""
-	}
-	text = fallback
 	if p != nil && strings.TrimSpace(p.ListPageLink) != "" {
 		text = strings.TrimSpace(p.ListPageLink)
 	}
-	return true, href, text
+	return action, text, nil
 }
 
 // effectiveCollectionLimit 集合取几条，缺省 6。

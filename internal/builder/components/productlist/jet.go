@@ -149,14 +149,11 @@ type View struct {
 	// PushQuery 当前语义参数；静态产物作为前端合并地址栏参数的基线。
 	PushQuery string
 
-	// —— 列表页链接（系统页面槽位 shop）——
-	//
-	// HasListPageLink 为真才输出链接：槽位没绑、或绑了但那页没发布，ctx.SitePages 里
-	// 就没有 shop 这个键，组件**不输出任何链接**（也绝不猜一个默认路径）——
-	// 猜错的链接是死链，而页面作者从产物上看不出它是猜的。
+	// 列表入口只消费构建期已解析的显式动作。
 	HasListPageLink  bool
 	ListPageLinkHref string
 	ListPageLinkText string
+	ListPageNewTab   bool
 }
 
 // collectionFilterOptionsProvider 能力探测：上下文里的数据源能否给出可选筛选项。
@@ -344,11 +341,14 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 	view.ImageField, view.ImageAltField, view.TitleField = p.ImageField, p.ImageAltField, p.TitleField
 	view.PriceField, view.ComparePriceField, view.TagsField = p.PriceField, p.ComparePriceField, p.TagsField
 	view.PushQuery = lc.pushQuery
-	// 槽位解析是零成本的 map 读：没有条目就是「这个站还没指定商品列表页」，
-	// 与「槽位绑了但那页没发布」同一条路（page 侧只返回已发布的绑定）。
-	if href := strings.TrimSpace(ctx.SitePage(core.SiteSlotShop)); href != "" {
-		view.HasListPageLink, view.ListPageLinkHref = true, href
+	if _, configured := node.Actions["list"]; configured {
+		action, err := ctx.ResolveAction(node, "list")
+		if err != nil {
+			return View{}, err
+		}
+		view.HasListPageLink, view.ListPageLinkHref = action.URL != "", action.URL
 		view.ListPageLinkText = effectiveListPageLinkText(p)
+		view.ListPageNewTab = action.NewTab
 	}
 	// 筛选选项按能力探测取：集合源没实现该能力 → 筛选栏不渲染（列表本身照常可用，
 	// 契约缺失不阻断构建，与 CollectionSchemaProvider 的处理一致）；取选项失败同理。

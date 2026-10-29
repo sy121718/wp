@@ -1,30 +1,25 @@
 package feature
 
-// site_slot_dependency_test.go — 槽位换绑的精确失效范围（审计 VIS-006）。
-//
-// 此前 page_slot.go 的绑定/解绑无条件 MarkStaleForProject（整个工程）——
-// 大站点上「改一次结算页绑定」等于全站重建。精确范围只有构建期才知道：
-// 页面文档里没有「我用了购物车槽位」这种声明，那是组件渲染时取的值。
-//
-// 本用例的关键设计：两个页面，一个渲染购物车图标（消费 cart 槽位），一个纯文本。
-// 只建一个页面时，「精确标记」与「全量标记」看起来是一样的。
+// 购物车已使用数据与显式动作；旧槽位换绑不能把无关JSON组件标记待重建。
 
 import (
 	"context"
 	json "go_wp/pkg/jsonx"
 	"testing"
+	"time"
 
 	pagedto "go_wp/internal/module/page/dto"
+	pagemodel "go_wp/internal/module/page/model"
 )
 
-// slotCartDocument 渲染时会取 cart 槽位路径。
+// slotCartDocument 不含任何槽位或显式页面目标。
 const slotCartDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.cartIcon","id":"cart-1","props":{}}]}`
 
 // slotPlainDocument 完全不碰系统页面槽位。
 const slotPlainDocument = `{"settings":{"layout":{"mode":"full"}},"root":[{"type":"core.text","id":"t1","props":{"text":"PLAIN-PAGE"}}]}`
 
-func TestSiteSlotChangeMarksOnlyReferencingPages(t *testing.T) {
-	_, svc, projectID := newPageService(t)
+func TestSiteSlotChangeDoesNotAffectJSONCart(t *testing.T) {
+	db, svc, projectID := newPageService(t)
 	ctx := context.Background()
 
 	// page_dependencies 由生产迁移建（迁移 174 已把 site_slot 写进 CHECK 约束的真实枚举）。
@@ -74,7 +69,7 @@ func TestSiteSlotChangeMarksOnlyReferencingPages(t *testing.T) {
 		}
 	}
 
-	// 换绑购物车槽位：只有真的把该槽位路径烘进产物的页面需要重建。
+	// 旧表仍在过渡期，但JSON组件不再消费它。
 	if err := svc.BindSiteSlot(ctx, &pagedto.SiteSlotBindReq{
 		ProjectID: projectID, Slot: "cart", PageID: otherTarget.ID,
 	}); err != nil {
@@ -85,14 +80,36 @@ func TestSiteSlotChangeMarksOnlyReferencingPages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("查询消费槽位的页面失败: %v", err)
 	}
-	if !after.Stale {
-		t.Fatalf("渲染过购物车链接的页面应被标记待重建")
+	if after.Stale {
+		t.Fatalf("JSON购物车不依赖旧槽位，不能被旧换绑标记待重建")
 	}
 	b, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: plain.ID})
 	if err != nil {
 		t.Fatalf("查询未消费槽位的页面失败: %v", err)
 	}
 	if b.Stale {
-		t.Fatalf("未渲染任何槽位链接的页面不应被标记待重建（这正是本次改造要消除的全量重建）")
+		t.Fatalf("未渲染任何槽位链接的页面不应被标记待重建")
+	}
+	// 过渡期仍存在旧活跃产物：仅其真实登记的依赖应失效。
+	if after.StagedArtifactID == nil {
+		t.Fatal("构建必须产生暂存产物以验证真实依赖")
+	}
+	model := pagemodel.NewPageModel(db)
+	if err := model.ReplaceDependencies(ctx, projectID, withCart.ID, *after.StagedArtifactID, []pagemodel.DependencyEntity{{
+		PageID: withCart.ID, ArtifactID: *after.StagedArtifactID, DependencyKind: "site_slot", DependencyKey: "cart", LastChecked: time.Now().UTC(),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.BindSiteSlot(ctx, &pagedto.SiteSlotBindReq{ProjectID: projectID, Slot: "cart", PageID: cartTarget.ID}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		id    string
+		stale bool
+	}{{withCart.ID, true}, {plain.ID, false}} {
+		detail, err := svc.Detail(ctx, &pagedto.DetailReq{ProjectID: projectID, ID: tc.id})
+		if err != nil || detail.Stale != tc.stale {
+			t.Fatalf("旧依赖只应影响命中产物: id=%s want=%t detail=%+v err=%v", tc.id, tc.stale, detail, err)
+		}
 	}
 }

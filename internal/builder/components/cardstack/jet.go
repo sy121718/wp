@@ -84,14 +84,11 @@ type View struct {
 	// Labels 无障碍与控件文案（审计 I18N-010）：构建期由 ApplyI18n 按语言回填。
 	Labels CardstackLabels
 
-	// —— 列表页入口（系统页面槽位 blog / shop）——
-	//
-	// 只对能对上系统页面语义的集合源输出：文章集合 → blog（更多文章）、
-	// 商品集合 → shop（全部商品）。其余集合源（分类列表等）没有对应的系统页面，恒不输出。
-	// HasListPageLink 为假时模板整块不渲染 —— 未绑定或未发布都不输出死链。
+	// 列表入口只消费构建期已解析的显式动作。
 	HasListPageLink  bool
 	ListPageLinkHref string
 	ListPageLinkText string
+	ListPageNewTab   bool
 }
 
 // zoomGroup 放大用 radio 的组名：以节点 ID 结尾，保证同页多个 cardstack 各自独立成组
@@ -139,7 +136,10 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 		if err != nil {
 			return View{}, err
 		}
-		hasListLink, listHref, listText := collectionListPageLink(source, p, ctx)
+		action, listText, err := collectionListPageLink(node, source, p, ctx)
+		if err != nil {
+			return View{}, err
+		}
 		return View{
 			Cards: cards, Collection: true,
 			Drag: drag, Deck: deck, DeckIndex: len(cards) / 2, DeckLoop: p.DeckLoop,
@@ -147,7 +147,7 @@ func BuildView(node *core.Node, p *Props, ctx *core.RenderContext) (View, error)
 			LinkText: linkText(p), Slide: slide, PageTotal: len(cards),
 			DeckVertical: deckVertical, DeckArrows: p.DeckArrows, DeckClickNext: p.DeckClick == deckClickNext,
 			ZoomGroup: zoomGroup(node.ID), ListSemantics: !deck, Labels: defaultCardstackLabels(),
-			HasListPageLink: hasListLink, ListPageLinkHref: listHref, ListPageLinkText: listText,
+			HasListPageLink: action.URL != "", ListPageLinkHref: action.URL, ListPageLinkText: listText, ListPageNewTab: action.NewTab,
 		}, nil
 	}
 

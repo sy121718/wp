@@ -457,7 +457,7 @@ func (s *Service) BindSiteSlot(ctx context.Context, req *pagedto.SiteSlotBindReq
 // （审计 VIS-006）。
 //
 // 依赖记录里的 site_slot 条目是构建期写入的（页面真的渲染过该槽位的链接），
-// 因此「只标记受影响的页面」与「不漏标」是同一件事：查得到就精确标，查不到就退回全量。
+// 未命中表示没有活跃消费者，不能把已迁移的JSON组件或纯展示页面全量标为失效。
 //
 // 影响面**限于本次换绑的工程**：槽位绑定按 project_id 隔离，一个工程的换绑不会让
 // 另一个工程的页面产物过期；依赖键（槽位名）本身不带工程，跨工程扇出会把无关工程
@@ -469,14 +469,10 @@ func (s *Service) markProjectStaleForSlotTx(ctx context.Context, tx *gorm.DB, pr
 	}
 	if len(ids) > 0 {
 		// 精确命中：影响面在这里记下来（只读，失败不影响换绑主流程）。
-		// 兜底分支（没有任何页面登记过该槽位依赖）不记 —— 那是「按工程全量标记」，
-		// 影响面就是全工程的页面清单，/admin/pages 的待重建区块本来就是它的反查面。
 		s.logStaleImpact(ctx, "site_slot:"+slot, ids)
 		return nil
 	}
-	// 没有任何页面登记过这个槽位依赖：可能确实没人用，也可能页面还没构建过
-	// （依赖随构建写入）。这两种情况无法从依赖表区分，因此按工程兜底标记。
-	return s.model.MarkStaleForProjectTx(ctx, tx, projectID, now)
+	return nil
 }
 
 // UnbindSiteSlot 解绑槽位（幂等：本来没绑也返回成功）。
