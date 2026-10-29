@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -77,6 +78,14 @@ func TestPublishedPageActionTargetIsScopedExactAndReadable(t *testing.T) {
 		t.Fatalf("发布必须有精确语言账本: %+v %v", detail, err)
 	}
 	pub := detail.Publications[0]
+	rows, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID, Lang: pub.Lang})
+	if err != nil || len(rows) != 1 || rows[0].ID != target.ID || !reflect.DeepEqual(rows[0].Publications, detail.Publications) {
+		t.Fatalf("作者目标列表必须等于真实语言发布账本: rows=%+v detail=%+v err=%v", rows, detail.Publications, err)
+	}
+	missing, err := svc.List(ctx, &pagedto.ListReq{ProjectID: projectID, Lang: "missing-language"})
+	if err != nil || len(missing) != 0 {
+		t.Fatalf("缺失语言不能列出最近发布镜像: %+v %v", missing, err)
+	}
 	if got, err := locator.PublishedPagePath(ctx, projectID, target.ID, pub.Lang); err != nil || got != pub.ActivePath {
 		t.Fatalf("路径必须与真实Publication相等: got=%s pub=%+v err=%v", got, pub, err)
 	}

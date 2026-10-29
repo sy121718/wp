@@ -477,8 +477,14 @@ func (s *Service) List(ctx context.Context, req *pagedto.ListReq) (res []pagedto
 		return nil, err
 	}
 	published := make(map[string]bool, len(pubs))
+	publications := make(map[string][]pagedto.PagePublicationResp, len(pubs))
 	for i := range pubs {
-		published[pubs[i].PageID] = strings.TrimSpace(pubs[i].ActivePath) != ""
+		pub := pubs[i]
+		published[pub.PageID] = strings.TrimSpace(pub.ActivePath) != ""
+		publications[pub.PageID] = append(publications[pub.PageID], pagedto.PagePublicationResp{
+			Lang: pub.Lang, ActivePath: pub.ActivePath, ArtifactID: pub.ArtifactID,
+			ArtifactHash: pub.ArtifactHash, PublishedAt: utils.NewJSONTimePtr(&pub.PublishedAt),
+		})
 	}
 	want := pageenums.LangStatusParse(req.LangState, pageenums.LangStatusPublished)
 	res = make([]pagedto.PageResp, 0, len(entities))
@@ -489,6 +495,7 @@ func (s *Service) List(ctx context.Context, req *pagedto.ListReq) (res []pagedto
 		}
 		row := pageResp(&entities[i])
 		row.LangStatus = state
+		row.Publications = publications[entities[i].ID]
 		res = append(res, *row)
 	}
 	return res, nil

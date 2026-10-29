@@ -19,6 +19,7 @@ import (
 	projectmodel "go_wp/internal/module/project/model"
 	projectservice "go_wp/internal/module/project/service"
 	workbenchhttp "go_wp/internal/module/workbench/inbound/http"
+	"go_wp/internal/templates"
 	"go_wp/pkg/casbin"
 	"go_wp/public/test/support"
 	"gorm.io/gorm"
@@ -59,6 +60,7 @@ func TestBlockDraftPreviewReadonlyScopedAndVersioned(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	engine.HTMLRender = templates.NewJetHTMLRender("../../../../internal/templates", true)
 	group := engine.Group("")
 	group.Use(func(c *gin.Context) {
 		id, _ := strconv.ParseInt(c.GetHeader("X-Test-User"), 10, 64)
