@@ -570,6 +570,10 @@ export const canvasMethods = {
                     var doc = new DOMParser().parseFromString(html, 'text/html');
                     var fresh = doc.querySelector('.sky-c-' + nodeId);
                     if (!fresh) { self.refreshCanvas(); return; }
+                    // 失败页和初始空画布没有局部目标或桥接，postMessage无法恢复它。
+                    // 只在本次作者修改触发时回退完整预览；失败响应不会自行再刷新。
+                    var currentDoc = frame.contentDocument;
+                    if (!currentDoc || !currentDoc.querySelector('.sky-c-' + nodeId)) { self.refreshCanvas(); return; }
                     var styleEl = doc.querySelector('style');
                     frame.contentWindow.postMessage({
                         type: 'wb-patch',

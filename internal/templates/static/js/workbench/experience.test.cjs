@@ -349,7 +349,7 @@ function canvasEditor() {
     const messages = [];
     const timers = [];
     const submissions = [];
-    const frame = { name: 'wb-canvas', contentWindow: { postMessage(message) { messages.push(message); } } };
+    const frame = { name: 'wb-canvas', contentDocument: { querySelector() { return {}; } }, contentWindow: { postMessage(message) { messages.push(message); } } };
     const form = {
         elements: { id: {}, expectedVersion: {}, draftDocument: {}, csrf_token: {} },
         submit() { submissions.push(JSON.parse(this.elements.draftDocument.value)); }
@@ -366,7 +366,7 @@ function canvasEditor() {
             setTimeout(fn) { timers.push(fn); return timers.length; }, clearTimeout() {},
         }));
     wb.fetchCanvasHTML = () => new Promise((resolve, reject) => pending.push({ resolve, reject }));
-    return { wb, pending, messages, timers, submissions };
+    return { wb, pending, messages, timers, submissions, frame };
 }
 
 const settleCanvas = () => new Promise(resolve => setImmediate(resolve));
@@ -453,4 +453,21 @@ test('实例未保存预览走实体预览端点并保留实例身份与草稿',
     assert.equal(body.get('id'), '');
     assert.equal(body.get('draftDocument'), JSON.stringify(wb.doc));
     assert.equal(body.get('csrf_token'), 'csrf');
+});
+
+
+test('失败iframe没有局部目标时一次完整提交恢复原作者草稿', async () => {
+    const { wb, pending, messages, timers, submissions, frame } = canvasEditor();
+    frame.contentDocument.querySelector = () => null;
+    wb.doc.root[0].props.text = '已清理旧配置的当前正文';
+    wb.patchCanvas('n1');
+    pending[0].resolve('<button class="sky-c-n1">加入购物车</button>');
+    await settleCanvas();
+    assert.equal(messages.length, 0, '失败页没有桥接，不能静默发送无效局部消息');
+    assert.equal(timers.length, 1);
+    timers.shift()();
+    assert.equal(submissions.length, 1);
+    assert.equal(submissions[0].root[0].props.text, '已清理旧配置的当前正文');
+    await settleCanvas();
+    assert.equal(timers.length, 0, '完整预览若仍失败，不能自行无限重载');
 });
