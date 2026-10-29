@@ -69,47 +69,4 @@ const (
 	// —— 实时价格（site.fragment.live_price.*） ——
 	LivePriceDelisted = "site.fragment.live_price.delisted"
 	LivePriceUpdated  = "site.fragment.live_price.updated"
-
-	// —— 会员身份（site.fragment.membership.*，BIZ-3 消费侧接入） ——
-	//
-	// 会员片段的降级形态各有各的说法（未登录要访客去登录、端口未接入要运维去接线、
-	// 解析失败可以稍后重试），所以不是一句通用提示 —— 三者页面上长得一样的话，
-	// 装配缺陷会被当成「这站要登录」而被忽略很久。
-	MembershipTitle          = "site.fragment.membership.title"
-	MembershipGuest          = "site.fragment.membership.guest"
-	MembershipUnavailable    = "site.fragment.membership.unavailable"
-	MembershipProjectMissing = "site.fragment.membership.project_missing"
-	MembershipFailed         = "site.fragment.membership.failed"
-	MembershipDefaultHint    = "site.fragment.membership.default_hint"
-	MembershipDiscount       = "site.fragment.membership.discount"
-	MembershipFreeShipping   = "site.fragment.membership.free_shipping"
-	MembershipNoBenefit      = "site.fragment.membership.none"
-
-	// —— 评论（site.fragment.comment.*，BIZ-5） ——
-	//
-	// 降级形态各有各的说法（未登录要访客去登录、端口未接入要运维去接线、没给工程 / 实体是
-	// 页面作者的配置问题、类型未注册说明注册表缺了一项、限流要访客等一会儿），
-	// 所以不是一句通用提示 —— 三者页面上长得一样的话，装配缺陷会被当成「这站不让评论」
-	// 而被忽略很久。词条与迁移 466a 的 seed 逐条对应。
-	CommentTitle           = "site.fragment.comment.title"
-	CommentEmpty           = "site.fragment.comment.empty"
-	CommentFormTitle       = "site.fragment.comment.form_title"
-	CommentBodyPlaceholder = "site.fragment.comment.body_placeholder"
-	CommentSubmit          = "site.fragment.comment.submit"
-	CommentMore            = "site.fragment.comment.more"
-	CommentReply           = "site.fragment.comment.reply"
-	CommentReplyTo         = "site.fragment.comment.reply_to"
-	CommentAuthorGuest     = "site.fragment.comment.author_guest"
-	CommentPendingNotice   = "site.fragment.comment.pending_notice"
-	CommentGuest           = "site.fragment.comment.guest"
-	CommentUnavailable     = "site.fragment.comment.unavailable"
-	CommentProjectMissing  = "site.fragment.comment.project_missing"
-	CommentEntityMissing   = "site.fragment.comment.entity_missing"
-	CommentEntityInvalid   = "site.fragment.comment.entity_invalid"
-	CommentListFailed      = "site.fragment.comment.list_failed"
-	CommentBodyRequired    = "site.fragment.comment.body_required"
-	CommentBodyTooLong     = "site.fragment.comment.body_too_long"
-	CommentCSRFExpired     = "site.fragment.comment.csrf_expired"
-	CommentRateLimited     = "site.fragment.comment.rate_limited"
-	CommentSubmitFailed    = "site.fragment.comment.submit_failed"
 )
