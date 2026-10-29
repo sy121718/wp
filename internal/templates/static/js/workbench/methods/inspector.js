@@ -5,7 +5,7 @@ import { csrfHeaders, meta, morphHTML, wbLinkedPatch, controlLabel } from '../co
 import { fillInspectorSlots, inlineSlots, renderInspectorExtras, sectionFor } from './controls/misc.js';
 import { inspectorTabOf } from '../experience.js';
 import { renderActionTargets } from '../actions.js';
-import { set } from './controls/base.js';
+import { get, set } from './controls/base.js';
 import { upgradeNativeSelects, renderFieldHints, refreshFieldHints } from './controls/selects.js';
 
 export const inspectorMethods = {
@@ -15,6 +15,10 @@ export const inspectorMethods = {
                 var panel = document.getElementById('inspector-panel');
                 if (!panel) return;
                 panel.onchange = null;
+                panel.oninput = null;
+                panel.onfocusout = null;
+                panel.oncompositionstart = null;
+                panel.oncompositionend = null;
                 panel.onclick = null;
                 panel.replaceChildren();
                 this._inspectorNode = null;
@@ -88,6 +92,7 @@ export const inspectorMethods = {
                 if (!panel) return;
                 var self = this;
                 var boundNode = self.findNode(self.selectedId);
+                var composing = new WeakSet();
                 function setPath(path, value) {
                     var node = self.findNode(self.selectedId);
                     if (!node) return;
@@ -99,14 +104,24 @@ export const inspectorMethods = {
                     }
                     target[parts[parts.length - 1]] = value;
                 }
-                function commit(el) {
-                    if (self.findNode(self.selectedId) !== boundNode || !panel.contains(el)) return;
+                function commit(el, numericInput) {
+                    if (!boundNode || self.findNode(self.selectedId) !== boundNode || !panel.contains(el)) return;
+                    if (composing.has(el)) return;
                     var path = el.getAttribute('data-wb-path');
                     if (!path) return;
                     var kind = el.getAttribute('data-wb-kind') || 'text';
                     var value;
                     if (el.type === 'checkbox') { value = el.checked; }
-                    else if (kind === 'number') { value = el.value === '' ? '' : Number(el.value); }
+                    else if (kind === 'number') {
+                        // 不改写正在输入的空值、负号、小数或 IME 中间态。
+                        // 清空在结束编辑时仍沿用原有空字符串语义，由现有校验决定是否合法。
+                        if (el.validity && el.validity.badInput) return;
+                        if (numericInput && el.value === '') return;
+                        value = el.value === '' ? '' : Number(el.value);
+                        if (value !== '' && !Number.isFinite(value)) return;
+                        // input 已同步的值不再因 change / focusout 重复入历史。
+                        if (get({ node: boundNode }, 'props.' + path) === value) return;
+                    }
                     else if (kind === 'mediaList') { value = el.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean); }
                     else if (kind === 'multientityref') {
                         // 勾选项拼成逗号分隔 id 串（EDT-007）：与手写格式一致，
@@ -145,6 +160,29 @@ export const inspectorMethods = {
                 panel.onchange = function (e) {
                     var el = e.target && e.target.closest ? e.target.closest('[data-wb-path]') : null;
                     if (el && panel.contains(el)) commit(el);
+                };
+                // 数值字段不能只等 change：有效输入立即进入草稿，结束编辑只补交未同步的值。
+                // 原生字段共用此入口，不在商品列表等组件内另绑一份事件。
+                function numberField(e) {
+                    var el = e.target;
+                    return el && el.getAttribute && el.getAttribute('data-wb-kind') === 'number'
+                        && el.hasAttribute('data-wb-path') ? el : null;
+                }
+                panel.oninput = function (e) {
+                    var el = numberField(e);
+                    if (el && !e.isComposing) commit(el, true);
+                };
+                panel.onfocusout = function (e) {
+                    var el = numberField(e);
+                    if (el) commit(el);
+                };
+                panel.oncompositionstart = function (e) {
+                    var el = numberField(e);
+                    if (el) composing.add(el);
+                };
+                panel.oncompositionend = function (e) {
+                    var el = numberField(e);
+                    if (el) { composing.delete(el); commit(el, true); }
                 };
                 // createNav 检查器内就地新建菜单项（nav 组件的「具体菜单项」字段）。
                 //
